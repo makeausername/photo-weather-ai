@@ -15,6 +15,8 @@ import {
 } from "@photo-weather/db";
 import type { DatabaseClient, JsonValue, ProviderType } from "@photo-weather/db";
 import { z } from "zod";
+import type { AuthConfig } from "./auth-routes.js";
+import { requirePermission } from "./auth-routes.js";
 
 const jsonSchema: z.ZodType<JsonValue> = z.lazy(() =>
   z.union([
@@ -67,6 +69,7 @@ const auditLogsQuerySchema = z.object({
 
 export type AdminRoutesOptions = {
   readonly dbClient?: DatabaseClient;
+  readonly authConfig: AuthConfig;
 };
 
 function toAuditJson(value: unknown): JsonValue {
@@ -105,11 +108,30 @@ function sendError(reply: FastifyReply, statusCode: number, error: string, messa
   });
 }
 
-export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOptions = {}): void {
-  // TODO: Replace this temporary unauthenticated admin surface with RBAC once auth lands.
+export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOptions): void {
   const client = options.dbClient;
+  const authConfig = options.authConfig;
+
+  app.get("/admin", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "admin.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    return {
+      ok: true,
+      user: auth.principal.user,
+      roles: auth.principal.roles,
+      permissions: auth.principal.permissions,
+    };
+  });
 
   app.get("/admin/settings", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "settings.manage");
+    if (!auth) {
+      return reply;
+    }
+
     const parsedQuery = listSettingsQuerySchema.safeParse(request.query);
     if (!parsedQuery.success) {
       return sendZodError(reply, parsedQuery.error);
@@ -127,7 +149,12 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
     };
   });
 
-  app.get("/admin/settings/groups", async () => {
+  app.get("/admin/settings/groups", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "settings.manage");
+    if (!auth) {
+      return reply;
+    }
+
     const settings = await listSystemSettings({ client });
     const groupedSettings = groupBy(settings, (setting) => setting.group);
 
@@ -140,6 +167,11 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
   });
 
   app.get<{ Params: { key: string } }>("/admin/settings/:key", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "settings.manage");
+    if (!auth) {
+      return reply;
+    }
+
     try {
       validateSettingKey(request.params.key);
     } catch (error) {
@@ -157,6 +189,11 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
   });
 
   app.patch<{ Params: { key: string } }>("/admin/settings/:key", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "settings.manage");
+    if (!auth) {
+      return reply;
+    }
+
     try {
       validateSettingKey(request.params.key);
     } catch (error) {
@@ -203,7 +240,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
 
     await createAuditLog(
       {
-        actorUserId: null,
+        actorUserId: auth.auditActorUserId,
         action: "system_setting.update",
         targetType: "system_setting",
         targetId: existingSetting.key,
@@ -221,6 +258,11 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
   });
 
   app.get("/admin/providers", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "providers.manage");
+    if (!auth) {
+      return reply;
+    }
+
     const parsedQuery = listProvidersQuerySchema.safeParse(request.query);
     if (!parsedQuery.success) {
       return sendZodError(reply, parsedQuery.error);
@@ -251,6 +293,11 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
   app.get<{ Params: { providerType: string; providerCode: string } }>(
     "/admin/providers/:providerType/:providerCode",
     async (request, reply) => {
+      const auth = await requirePermission(request, reply, client, authConfig, "providers.manage");
+      if (!auth) {
+        return reply;
+      }
+
       let providerType: ProviderType;
       try {
         assertProviderType(request.params.providerType);
@@ -276,6 +323,11 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
   app.patch<{ Params: { providerType: string; providerCode: string } }>(
     "/admin/providers/:providerType/:providerCode",
     async (request, reply) => {
+      const auth = await requirePermission(request, reply, client, authConfig, "providers.manage");
+      if (!auth) {
+        return reply;
+      }
+
       let providerType: ProviderType;
       try {
         assertProviderType(request.params.providerType);
@@ -306,7 +358,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
 
       await createAuditLog(
         {
-          actorUserId: null,
+          actorUserId: auth.auditActorUserId,
           action: "provider_config.update",
           targetType: "provider_config",
           targetId: `${providerType}:${request.params.providerCode}`,
@@ -327,6 +379,11 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
   app.post<{ Params: { providerType: string; providerCode: string } }>(
     "/admin/providers/:providerType/:providerCode/test-connection",
     async (request, reply) => {
+      const auth = await requirePermission(request, reply, client, authConfig, "providers.manage");
+      if (!auth) {
+        return reply;
+      }
+
       try {
         assertProviderType(request.params.providerType);
         validateProviderCode(request.params.providerCode);
@@ -345,6 +402,11 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
   );
 
   app.get("/admin/audit-logs", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "audit.read");
+    if (!auth) {
+      return reply;
+    }
+
     const parsedQuery = auditLogsQuerySchema.safeParse(request.query);
     if (!parsedQuery.success) {
       return sendZodError(reply, parsedQuery.error);

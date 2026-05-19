@@ -12,6 +12,7 @@
     "db:push": "pnpm --filter @photo-weather/db db:push",
     "db:seed": "pnpm --filter @photo-weather/db db:seed",
     "db:studio": "pnpm --filter @photo-weather/db db:studio",
+    "create-admin": "pnpm --filter @photo-weather/db create-admin",
     "lint": "eslint . --ext .js,.cjs,.mjs,.ts,.tsx --max-warnings=0",
     "typecheck": "pnpm -r --workspace-concurrency=1 --if-present typecheck",
     "test": "pnpm -r --workspace-concurrency=1 --if-present test",

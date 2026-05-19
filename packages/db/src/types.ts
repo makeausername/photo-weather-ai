@@ -53,6 +53,52 @@ export type ProviderConfigRecord = {
 
 export type SafeProviderConfig = Omit<ProviderConfigRecord, "secretJson">;
 
+export type UserRecord = {
+  readonly id: string;
+  readonly email: string;
+  readonly phone: string | null;
+  readonly passwordHash: string;
+  readonly displayName: string | null;
+  readonly status: UserStatus;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+  readonly lastLoginAt: Date | null;
+};
+
+export type SafeUser = Omit<UserRecord, "passwordHash">;
+
+export type RoleRecord = {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly description: string | null;
+};
+
+export type PermissionRecord = {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly description: string | null;
+};
+
+export type AuthenticatedPrincipal = {
+  readonly user: SafeUser;
+  readonly roles: readonly string[];
+  readonly permissions: readonly string[];
+};
+
+export type UserSessionRecord = {
+  readonly id: string;
+  readonly userId: string;
+  readonly refreshTokenHash: string;
+  readonly expiresAt: Date;
+  readonly revokedAt: Date | null;
+  readonly ipAddress: string | null;
+  readonly userAgent: string | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+};
+
 export type AdminAuditLogInput = {
   readonly actorUserId?: string | null;
   readonly action: string;
@@ -92,6 +138,11 @@ export type ApiUsageLogInput = {
 };
 
 export type DatabaseClient = {
+  readonly user?: {
+    readonly findUnique: (args: any) => Promise<any>;
+    readonly create: (args: any) => Promise<any>;
+    readonly update: (args: any) => Promise<any>;
+  };
   readonly systemSetting: {
     readonly findUnique: (args: any) => Promise<any>;
     readonly findMany: (args?: any) => Promise<any[]>;
@@ -109,6 +160,14 @@ export type DatabaseClient = {
   };
   readonly apiUsageLog: {
     readonly create: (args: any) => Promise<any>;
+  };
+  readonly userSession?: {
+    readonly create: (args: any) => Promise<any>;
+    readonly findUnique: (args: any) => Promise<any>;
+    readonly update: (args: any) => Promise<any>;
+  };
+  readonly userRole?: {
+    readonly upsert: (args: any) => Promise<any>;
   };
   readonly role?: {
     readonly upsert: (args: any) => Promise<any>;

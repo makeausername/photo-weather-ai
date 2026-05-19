@@ -152,6 +152,10 @@ h1 {
 }
 
 .adminHeader {
+  align-items: flex-start;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
   margin-bottom: 28px;
 }
 
@@ -166,6 +170,62 @@ h1 {
   line-height: 1.6;
   margin: 12px 0 0;
   max-width: 760px;
+}
+
+.adminSessionBadge {
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  flex-shrink: 0;
+  gap: 12px;
+  padding: 8px 10px;
+}
+
+.adminSessionBadge span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.adminSessionBadge button {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--foreground);
+  cursor: pointer;
+  font-weight: 700;
+  padding: 7px 10px;
+}
+
+.adminAuthLoading,
+.adminLoginShell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+}
+
+.adminLoginForm {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 16px;
+  max-width: 420px;
+  padding: 24px;
+  width: 100%;
+}
+
+.adminLoginForm h1 {
+  font-size: 2rem;
+  line-height: 1.1;
+}
+
+.adminLoginForm p:last-child {
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 12px 0 0;
 }
 
 .adminOverviewGrid {
@@ -435,5 +495,13 @@ h1 {
   .settingsRow,
   .auditRow {
     grid-template-columns: 1fr;
+  }
+
+  .adminHeader {
+    display: grid;
+  }
+
+  .adminSessionBadge {
+    width: fit-content;
   }
 }

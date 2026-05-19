@@ -60,6 +60,7 @@ corepack pnpm db:migrate
 corepack pnpm db:push
 corepack pnpm db:seed
 corepack pnpm db:studio
+corepack pnpm create-admin
 ```
 
 Use `db:migrate` for deployed PostgreSQL databases. Use `db:push` only for disposable local
@@ -85,9 +86,51 @@ settings belong in database-backed admin configuration, not in business code. Se
 placeholder providers and empty secret objects; it does not include real DeepSeek, QWeather,
 Open-Meteo, Amap, storage, SMS, or payment credentials.
 
+## First Admin Bootstrap
+
+Run the deterministic database seed first so the default roles and permissions exist, then create
+the first super admin account through the bootstrap script:
+
+```bash
+corepack pnpm db:migrate
+corepack pnpm db:seed
+ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=change-me-to-a-long-random-password ADMIN_DISPLAY_NAME="Super Admin" corepack pnpm create-admin
+```
+
+The script reads:
+
+- `ADMIN_EMAIL`
+- `ADMIN_PASSWORD`
+- `ADMIN_DISPLAY_NAME`
+- `ADMIN_RESET_PASSWORD`
+
+Passwords are hashed with bcrypt before storage and are never printed. Existing users keep their
+current password unless `ADMIN_RESET_PASSWORD=true` is set explicitly. Do not commit real admin
+credentials to `.env.local` or any source-controlled file.
+
+Set a strong `JWT_SECRET` of at least 32 characters before starting the API. Access and refresh
+token lifetimes are controlled by `JWT_ACCESS_TOKEN_TTL_SECONDS` and
+`JWT_REFRESH_TOKEN_TTL_DAYS`. `ADMIN_AUTH_BYPASS` defaults to `false`; if enabled for local
+development, it is rejected in production.
+
+## Auth API
+
+The Fastify API exposes the initial admin authentication endpoints:
+
+```bash
+POST /auth/login
+POST /auth/refresh
+POST /auth/logout
+GET  /auth/me
+```
+
+Login returns a JWT access token, a DB-backed refresh token, a safe user profile, roles, and
+permissions. User responses exclude `passwordHash`. Refresh tokens are stored as hashes in
+`user_sessions`.
+
 ## Admin Configuration API
 
-The Fastify API now exposes the initial admin configuration surface:
+The Fastify API exposes the protected admin configuration surface:
 
 ```bash
 GET   /admin/settings
@@ -103,14 +146,20 @@ POST  /admin/providers/:providerType/:providerCode/test-connection
 GET   /admin/audit-logs
 ```
 
+Admin configuration routes require JWT authentication and database-backed RBAC:
+
+- settings routes require `settings.manage`
+- provider routes require `providers.manage`
+- audit logs require `audit.read`
+- generic `/admin` status requires `admin.manage`
+
 System-setting updates validate the stored setting value type and reject settings that are marked
 non-editable. Provider updates validate provider type and provider code, merge JSON config and
 secret patches, and return only safe provider output.
 
 Provider API responses return `maskedSecretJson` only. They must never return raw `secretJson`.
 Audit metadata is redacted before persistence, and every settings/provider `PATCH` writes an
-`AdminAuditLog`. Until real admin auth exists, these audit entries use a null actor; this is a
-temporary bootstrap behavior and must be replaced by RBAC-backed actor IDs before production use.
+`AdminAuditLog` with the authenticated actor user id.
 
 Provider connection testing is intentionally mocked in this phase. The test endpoint returns a
 deterministic local response and does not call DeepSeek, QWeather, Open-Meteo, Amap, storage,
@@ -121,6 +170,7 @@ billing, SMS, or payment providers.
 The Next.js app includes the initial admin route skeleton:
 
 ```bash
+/admin/login
 /admin
 /admin/settings
 /admin/providers
@@ -136,8 +186,10 @@ placeholders, masked secret status, mock connection tests, and recent audit logs
 Set `NEXT_PUBLIC_API_BASE_URL` if the browser should call an API origin other than
 `http://localhost:4000`.
 
-Admin authentication is not implemented yet. The admin pages and admin API are not production-secure
-and must be protected by login, session handling, and RBAC before any public deployment.
+Admin routes redirect unauthenticated users to `/admin/login`, attach `Authorization: Bearer` to
+admin API requests, and show the current admin display name with a logout action. The current
+frontend stores tokens in `localStorage` as an early skeleton implementation; this should be
+hardened later with production-grade cookie/session handling before public deployment.
 
 ## External Services
 
@@ -155,9 +207,9 @@ from environment variables or future encrypted admin configuration, never hard-c
 
 The final commercial target is one-command Docker deployment plus visual admin configuration for
 DeepSeek, QWeather, Open-Meteo, Amap, storage, billing, scoring weights, prompt templates, and
-deployment-related settings. This repository currently implements only the database foundation for
-that direction; authentication UI, admin pages, billing, weather scoring, and real provider calls
-remain intentionally out of scope.
+deployment-related settings. This repository currently implements the database foundation, protected
+admin configuration APIs, minimal admin console, and initial admin auth/RBAC. Billing, weather
+scoring, public user registration, and real provider calls remain intentionally out of scope.
 
 ## Docker Skeleton
 

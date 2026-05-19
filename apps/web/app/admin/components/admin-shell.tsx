@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { AdminSessionBadge } from "./admin-session-badge";
 
 const adminLinks = [
   { href: "/admin", label: "Overview" },
@@ -35,13 +36,16 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
       </aside>
       <section className="adminMain">
         <div className="adminNotice">
-          TODO: Admin RBAC and login are not implemented yet. This console is a configuration
-          skeleton for local/self-hosted development only.
+          Admin access is protected by JWT login and database-backed RBAC. TODO: harden browser
+          token storage before production release.
         </div>
         <header className="adminHeader">
-          <p className="eyebrow">Admin configuration</p>
-          <h1>{title}</h1>
-          <p>{description}</p>
+          <div>
+            <p className="eyebrow">Admin configuration</p>
+            <h1>{title}</h1>
+            <p>{description}</p>
+          </div>
+          <AdminSessionBadge />
         </header>
         {children}
       </section>

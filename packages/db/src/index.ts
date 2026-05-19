@@ -1,4 +1,18 @@
 export { createAuditLog, listAuditLogs, sanitizeAuditJson } from "./audit.js";
+export {
+  assertPermission,
+  createRefreshToken,
+  createUserSession,
+  getActiveUserSessionByRefreshToken,
+  getUserAuthContextByEmail,
+  getUserAuthContextById,
+  hashRefreshToken,
+  hasPermission,
+  requiredAdminPermissions,
+  revokeUserSessionByRefreshToken,
+  safeUser,
+  touchUserLastLogin,
+} from "./auth.js";
 export { disconnectPrismaClient, getPrismaClient } from "./client.js";
 export {
   assertProviderType,
@@ -10,6 +24,12 @@ export {
   userStatuses,
 } from "./constants.js";
 export {
+  createOrUpdateSuperAdmin,
+  formatCreateAdminResult,
+  readCreateAdminEnv,
+  runCreateAdminFromEnv,
+} from "./create-admin.js";
+export {
   getProviderConfig,
   listProviderConfigs,
   updateProviderConfig,
@@ -18,6 +38,12 @@ export {
 export { buildSeedData } from "./seed-data.js";
 export { seedDatabase } from "./seed.js";
 export { maskSecretJson, maskSecretString, maskSecretValue } from "./secrets.js";
+export {
+  hashPassword,
+  minimumAdminPasswordLength,
+  validateAdminPassword,
+  verifyPassword,
+} from "./passwords.js";
 export { safeProviderConfig, safeSystemSetting } from "./serializers.js";
 export {
   getSystemSetting,
@@ -31,6 +57,7 @@ export type {
   AdminAuditLogInput,
   AdminAuditLogRecord,
   ApiUsageLogInput,
+  AuthenticatedPrincipal,
   DatabaseClient,
   JsonObject,
   JsonPrimitive,
@@ -39,8 +66,11 @@ export type {
   ProviderType,
   SafeProviderConfig,
   SafeSystemSetting,
+  SafeUser,
   SettingValueType,
   SystemSettingRecord,
+  UserRecord,
+  UserSessionRecord,
   UserStatus,
 } from "./types.js";
 
