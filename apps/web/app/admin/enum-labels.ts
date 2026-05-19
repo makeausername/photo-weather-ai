@@ -1,7 +1,7 @@
 export const locationTypeLabels = {
   scenic_area: "景区",
   viewpoint: "观景点",
-  mountain: "山岳",
+  mountain: "山地",
   lake: "湖泊",
   city: "城市",
   custom: "自定义",

@@ -4,11 +4,11 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "风光天气 AI",
-  description: "面向中国大陆风光摄影的天气决策助手。",
+  description: "面向中国大陆风光摄影用户的天气与拍摄机会判断工具。",
 };
 
 type RootLayoutProps = {
-  children: ReactNode;
+  readonly children: ReactNode;
 };
 
 export default function RootLayout({ children }: RootLayoutProps) {

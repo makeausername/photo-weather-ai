@@ -1,12 +1,37 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Badge, Card, EmptyState, Table } from "../../../components/ui";
 import { adminApiFetch } from "../admin-api";
 import type { AdminAuditLog } from "../admin-api";
 
 type AuditResponse = {
   readonly logs: AdminAuditLog[];
 };
+
+const actionLabels: Record<string, string> = {
+  "system_setting.update": "更新系统设置",
+  "provider_config.update": "更新服务商配置",
+  "location.create": "新增地点",
+  "location.update": "编辑地点",
+  "location.delete": "删除地点",
+  "photo_spot.create": "新增机位",
+  "photo_spot.update": "编辑机位",
+  "photo_spot.delete": "删除机位",
+};
+
+const targetTypeLabels: Record<string, string> = {
+  system_setting: "系统设置",
+  provider_config: "服务商配置",
+  location: "地点",
+  photo_spot: "机位",
+};
+
+function formatDate(value: string): string {
+  return new Date(value).toLocaleString("zh-CN", {
+    timeZone: "Asia/Shanghai",
+  });
+}
 
 export function AdminAuditClient() {
   const [logs, setLogs] = useState<AdminAuditLog[]>([]);
@@ -27,34 +52,44 @@ export function AdminAuditClient() {
   }, []);
 
   return (
-    <section className="adminSection">
-      <div className="adminSectionHeader">
-        <h2>近期操作</h2>
-        <span>{status}</span>
-      </div>
-      <div className="auditTable" role="table" aria-label="近期后台审计日志">
-        <div className="auditRow auditHead" role="row">
-          <span>时间</span>
-          <span>操作</span>
-          <span>对象</span>
-          <span>操作者</span>
+    <Card className="overflow-hidden">
+      <div className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-lg font-bold">近期操作</h2>
+          <p className="mt-1 text-sm text-muted">展示最近 50 条后台操作记录。</p>
         </div>
-        {logs.map((log) => (
-          <div key={log.id} className="auditRow" role="row">
-            <span>
-              {new Date(log.createdAt).toLocaleString("zh-CN", {
-                timeZone: "Asia/Shanghai",
-              })}
-            </span>
-            <span>{log.action}</span>
-            <span>
-              {log.targetType}
-              {log.targetId ? `:${log.targetId}` : ""}
-            </span>
-            <span>{log.actorUserId ?? "系统"}</span>
-          </div>
-        ))}
+        <Badge variant="muted">{status}</Badge>
       </div>
-    </section>
+      {logs.length > 0 ? (
+        <Table aria-label="近期后台审计日志">
+          <thead className="bg-slate-50 text-xs font-semibold text-muted">
+            <tr>
+              <th className="px-4 py-3">时间</th>
+              <th className="px-4 py-3">操作</th>
+              <th className="px-4 py-3">对象</th>
+              <th className="px-4 py-3">操作者</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {logs.map((log) => (
+              <tr key={log.id}>
+                <td className="px-4 py-3 text-slate-700">{formatDate(log.createdAt)}</td>
+                <td className="px-4 py-3 font-medium">{actionLabels[log.action] ?? log.action}</td>
+                <td className="px-4 py-3 text-muted">
+                  {targetTypeLabels[log.targetType] ?? log.targetType}
+                  {log.targetId ? ` / ${log.targetId}` : ""}
+                </td>
+                <td className="px-4 py-3 text-muted">{log.actorUserId ?? "系统"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      ) : (
+        <EmptyState
+          title="暂无审计日志"
+          description="后台产生配置、地点或机位变更后会显示在这里。"
+        />
+      )}
+    </Card>
   );
 }

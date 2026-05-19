@@ -53,7 +53,11 @@ export function AdminAuthGate({ children }: AdminAuthGateProps) {
   }, [pathname, router]);
 
   if (!checked) {
-    return <main className="adminAuthLoading">正在检查后台登录状态...</main>;
+    return (
+      <main className="grid min-h-screen place-items-center bg-slate-100 px-6 text-sm text-muted">
+        正在检查后台登录状态...
+      </main>
+    );
   }
 
   return children;

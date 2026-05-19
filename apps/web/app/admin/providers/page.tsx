@@ -5,7 +5,7 @@ export default function AdminProvidersPage() {
   return (
     <AdminShell
       title="服务商配置"
-      description="查看服务商占位配置、脱敏密钥状态、本地模拟测试和 JSON 参数。"
+      description="管理天气、地图、AI 与存储等服务商占位配置；测试连接仅使用本地模拟接口。"
     >
       <AdminProvidersClient />
     </AdminShell>

@@ -239,7 +239,7 @@ export async function adminApiFetch<TResponse>(
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(errorText || `Admin API request failed with ${response.status}`);
+    throw new Error(errorText || `后台接口请求失败：${response.status}`);
   }
 
   return (await response.json()) as TResponse;
@@ -256,7 +256,7 @@ export async function loginAdmin(email: string, password: string): Promise<Admin
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(errorText || "后台登录失败。");
+    throw new Error(errorText || "后台登录失败，请检查邮箱和密码。");
   }
 
   const session = (await response.json()) as AdminAuthSession;

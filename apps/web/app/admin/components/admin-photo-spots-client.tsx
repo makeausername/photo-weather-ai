@@ -2,9 +2,22 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { viewDirectionLabels, type ViewDirectionCode } from "../enum-labels";
+import {
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  EmptyState,
+  FormField,
+  Input,
+  Select,
+  SwitchRow,
+  Table,
+  Textarea,
+} from "../../../components/ui";
 import { adminApiFetch } from "../admin-api";
 import type { AdminLocation, AdminPhotoSpot } from "../admin-api";
+import { viewDirectionLabels, type ViewDirectionCode } from "../enum-labels";
 
 type LocationsResponse = {
   readonly locations: AdminLocation[];
@@ -39,6 +52,14 @@ type PhotoSpotFormState = {
   readonly isVerified: boolean;
 };
 
+type PhotoSpotFeatureField =
+  | "bestForSunrise"
+  | "bestForSunset"
+  | "bestForCloudSea"
+  | "bestForStars"
+  | "bestForMilkyWay"
+  | "bestForSnow";
+
 const emptyPhotoSpotForm: PhotoSpotFormState = {
   locationId: "",
   name: "",
@@ -64,7 +85,7 @@ const emptyPhotoSpotForm: PhotoSpotFormState = {
   isVerified: false,
 };
 
-const featureFields = [
+const featureFields: readonly [PhotoSpotFeatureField, string][] = [
   ["bestForSunrise", "适合日出"],
   ["bestForSunset", "适合日落"],
   ["bestForCloudSea", "适合云海"],
@@ -153,6 +174,18 @@ function spotPayloadFromForm(form: PhotoSpotFormState) {
   };
 }
 
+function statusClass(status: string): string {
+  if (status.includes("失败") || status.includes("错误") || status.includes("Error")) {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+
+  if (status.includes("保存") || status.includes("加载") || status.includes("删除")) {
+    return "border-blue-200 bg-blue-50 text-blue-700";
+  }
+
+  return "border-slate-200 bg-slate-50 text-slate-600";
+}
+
 export function AdminPhotoSpotsClient() {
   const [locations, setLocations] = useState<AdminLocation[]>([]);
   const [photoSpots, setPhotoSpots] = useState<AdminPhotoSpot[]>([]);
@@ -164,12 +197,16 @@ export function AdminPhotoSpotsClient() {
   const [status, setStatus] = useState("正在加载机位...");
 
   async function loadLocations() {
-    const response = await adminApiFetch<LocationsResponse>("/admin/locations");
-    setLocations(response.locations);
-    setForm((current) => ({
-      ...current,
-      locationId: current.locationId || response.locations[0]?.id || "",
-    }));
+    try {
+      const response = await adminApiFetch<LocationsResponse>("/admin/locations");
+      setLocations(response.locations);
+      setForm((current) => ({
+        ...current,
+        locationId: current.locationId || response.locations[0]?.id || "",
+      }));
+    } catch (error) {
+      setStatus((error as Error).message);
+    }
   }
 
   async function loadPhotoSpots(query = search, nextLocationFilter = locationFilter) {
@@ -247,7 +284,7 @@ export function AdminPhotoSpotsClient() {
   async function deletePhotoSpot(spot: AdminPhotoSpot) {
     setStatus("正在删除机位...");
     try {
-      await adminApiFetch(`/admin/photo-spots/${spot.id}`, { method: "DELETE" });
+      await adminApiFetch<unknown>(`/admin/photo-spots/${spot.id}`, { method: "DELETE" });
       setPhotoSpots((current) => current.filter((item) => item.id !== spot.id));
       setDeleteTarget(null);
       if (editingId === spot.id) {
@@ -260,21 +297,34 @@ export function AdminPhotoSpotsClient() {
   }
 
   return (
-    <div className="adminStack">
-      <div className="adminTabs">
-        <Link href="/admin/locations">地点</Link>
-        <Link href="/admin/photo-spots" className="active">
-          摄影机位
+    <div className="grid gap-6">
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        <Link
+          href="/admin/locations"
+          className="whitespace-nowrap rounded-lg border border-border bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-primary hover:text-primary"
+        >
+          地点管理
+        </Link>
+        <Link
+          href="/admin/photo-spots"
+          className="whitespace-nowrap rounded-lg border border-primary bg-primary px-3 py-2 text-sm font-semibold text-white"
+        >
+          机位管理
         </Link>
       </div>
 
-      <section className="adminSection">
-        <div className="adminSectionHeader">
-          <h2>摄影机位</h2>
-          <span>{status}</span>
+      <Card className="overflow-hidden">
+        <div className="flex flex-col gap-3 border-b border-border px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-lg font-bold">摄影机位</h2>
+            <p className="mt-1 text-sm text-muted">管理具体拍摄点、朝向、适拍类型和安全备注。</p>
+          </div>
+          <span className={`rounded-lg border px-3 py-2 text-sm ${statusClass(status)}`}>
+            {status}
+          </span>
         </div>
-        <div className="adminToolbar">
-          <select
+        <div className="grid gap-3 border-b border-border p-5 md:grid-cols-[220px_minmax(0,1fr)_auto_auto]">
+          <Select
             value={locationFilter}
             onChange={(event) => {
               setLocationFilter(event.target.value);
@@ -287,18 +337,15 @@ export function AdminPhotoSpotsClient() {
                 {location.name}
               </option>
             ))}
-          </select>
-          <input
+          </Select>
+          <Input
             value={search}
             placeholder="搜索机位名称、slug 或说明"
             onChange={(event) => setSearch(event.target.value)}
           />
-          <button type="button" onClick={() => void loadPhotoSpots()}>
-            搜索
-          </button>
-          <button
-            type="button"
-            className="secondaryButton"
+          <Button onClick={() => void loadPhotoSpots()}>搜索</Button>
+          <Button
+            variant="secondary"
             onClick={() => {
               setSearch("");
               setLocationFilter("");
@@ -306,82 +353,93 @@ export function AdminPhotoSpotsClient() {
             }}
           >
             重置
-          </button>
+          </Button>
         </div>
-        <div className="adminDataTable" role="table" aria-label="机位列表">
-          <div className="adminDataRow photoSpotRow adminDataHead" role="row">
-            <span>机位</span>
-            <span>地点</span>
-            <span>坐标与海拔</span>
-            <span>适拍</span>
-            <span>说明</span>
-            <span>操作</span>
-          </div>
-          {photoSpots.map((spot) => (
-            <div key={spot.id} className="adminDataRow photoSpotRow" role="row">
-              <span>
-                <strong>{spot.name}</strong>
-                <small>{spot.slug}</small>
-                <small>
-                  {viewDirectionLabels[spot.viewDirection as ViewDirectionCode] ?? "未标注"}
-                </small>
-              </span>
-              <span>{spot.location?.name ?? spot.locationId}</span>
-              <span>
-                <small>GCJ-02：{formatCoordinate(spot.latitudeGcj02, spot.longitudeGcj02)}</small>
-                <small>WGS84：{formatCoordinate(spot.latitudeWgs84, spot.longitudeWgs84)}</small>
-                <small>海拔：{spot.elevation === null ? "未填" : `${spot.elevation} 米`}</small>
-              </span>
-              <span className="adminPillRow">
-                {featureFields
-                  .filter(([field]) => spot[field])
-                  .map(([, label]) => (
-                    <span key={label} className="adminPill success">
-                      {label}
-                    </span>
-                  ))}
-                {spot.isHot ? <span className="adminPill success">热门</span> : null}
-                <span className={spot.isVerified ? "adminPill success" : "adminPill"}>
-                  {spot.isVerified ? "已核验" : "待核验"}
-                </span>
-              </span>
-              <span>
-                <small>交通：{spot.trafficNote ?? "未填"}</small>
-                <small>安全：{spot.safetyNote ?? "未填"}</small>
-                <small>风险：{spot.riskNote ?? "未填"}</small>
-              </span>
-              <span className="rowActions">
-                <button type="button" onClick={() => startEdit(spot)}>
-                  编辑
-                </button>
-                <button type="button" onClick={() => setDeleteTarget(spot)}>
-                  删除
-                </button>
-              </span>
-            </div>
-          ))}
-          {photoSpots.length === 0 ? (
-            <div className="adminEmpty">暂无机位，请先新增摄影机位。</div>
-          ) : null}
-        </div>
-      </section>
 
-      <section className="adminSection">
-        <div className="adminSectionHeader">
-          <h2>{editingId ? "编辑机位" : "新增机位"}</h2>
-          <span>机位坐标同样需要同时维护 GCJ-02 和 WGS84。</span>
+        {photoSpots.length > 0 ? (
+          <Table aria-label="机位列表">
+            <thead className="bg-slate-50 text-xs font-semibold text-muted">
+              <tr>
+                <th className="px-4 py-3">机位</th>
+                <th className="px-4 py-3">地点</th>
+                <th className="px-4 py-3">坐标与海拔</th>
+                <th className="px-4 py-3">适拍</th>
+                <th className="px-4 py-3">说明</th>
+                <th className="px-4 py-3">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {photoSpots.map((spot) => (
+                <tr key={spot.id}>
+                  <td className="px-4 py-3">
+                    <div className="font-semibold text-foreground">{spot.name}</div>
+                    <div className="mt-1 text-xs text-muted">{spot.slug}</div>
+                    <Badge variant="muted" className="mt-2">
+                      {viewDirectionLabels[spot.viewDirection as ViewDirectionCode] ?? "未标注"}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-slate-700">
+                    {spot.location?.name ?? spot.locationId}
+                  </td>
+                  <td className="px-4 py-3 text-xs leading-6 text-muted">
+                    <div>GCJ-02：{formatCoordinate(spot.latitudeGcj02, spot.longitudeGcj02)}</div>
+                    <div>WGS84：{formatCoordinate(spot.latitudeWgs84, spot.longitudeWgs84)}</div>
+                    <div>海拔：{spot.elevation === null ? "未填写" : `${spot.elevation} 米`}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-2">
+                      {featureFields
+                        .filter(([field]) => spot[field])
+                        .map(([, label]) => (
+                          <Badge key={label} variant="success">
+                            {label}
+                          </Badge>
+                        ))}
+                      {spot.isHot ? <Badge variant="warning">热门</Badge> : null}
+                      <Badge variant={spot.isVerified ? "success" : "warning"}>
+                        {spot.isVerified ? "已核验" : "待核验"}
+                      </Badge>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-xs leading-6 text-muted">
+                    <div>交通：{spot.trafficNote ?? "未填写"}</div>
+                    <div>安全：{spot.safetyNote ?? "未填写"}</div>
+                    <div>风险：{spot.riskNote ?? "未填写"}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" onClick={() => startEdit(spot)}>
+                        编辑
+                      </Button>
+                      <Button size="sm" variant="danger" onClick={() => setDeleteTarget(spot)}>
+                        删除
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        ) : (
+          <EmptyState title="暂无机位" description="请先新增一个摄影机位。" />
+        )}
+      </Card>
+
+      <Card className="overflow-hidden">
+        <div className="border-b border-border px-5 py-4">
+          <h2 className="text-lg font-bold">{editingId ? "编辑机位" : "新增机位"}</h2>
+          <p className="mt-1 text-sm text-muted">机位坐标需要同时维护 GCJ-02 和 WGS84。</p>
         </div>
         <form
-          className="adminForm"
+          className="grid gap-5 p-5"
           onSubmit={(event) => {
             event.preventDefault();
             void savePhotoSpot();
           }}
         >
-          <div className="adminFormGrid">
-            <label className="fieldLabel">
-              所属地点
-              <select
+          <div className="grid gap-4 md:grid-cols-2">
+            <FormField label="所属地点">
+              <Select
                 value={form.locationId}
                 onChange={(event) => updateForm("locationId", event.target.value)}
               >
@@ -391,25 +449,22 @@ export function AdminPhotoSpotsClient() {
                     {location.name}
                   </option>
                 ))}
-              </select>
-            </label>
-            <label className="fieldLabel">
-              机位名称
-              <input
+              </Select>
+            </FormField>
+            <FormField label="机位名称">
+              <Input
                 value={form.name}
                 onChange={(event) => updateForm("name", event.target.value)}
               />
-            </label>
-            <label className="fieldLabel">
-              slug
-              <input
+            </FormField>
+            <FormField label="slug">
+              <Input
                 value={form.slug}
                 onChange={(event) => updateForm("slug", event.target.value)}
               />
-            </label>
-            <label className="fieldLabel">
-              朝向
-              <select
+            </FormField>
+            <FormField label="朝向">
+              <Select
                 value={form.viewDirection}
                 onChange={(event) =>
                   updateForm("viewDirection", event.target.value as ViewDirectionCode)
@@ -420,143 +475,118 @@ export function AdminPhotoSpotsClient() {
                     {label}
                   </option>
                 ))}
-              </select>
-            </label>
-            <label className="fieldLabel">
-              GCJ-02 纬度
-              <input
+              </Select>
+            </FormField>
+            <FormField label="GCJ-02 纬度">
+              <Input
                 inputMode="decimal"
                 value={form.latitudeGcj02}
                 onChange={(event) => updateForm("latitudeGcj02", event.target.value)}
               />
-            </label>
-            <label className="fieldLabel">
-              GCJ-02 经度
-              <input
+            </FormField>
+            <FormField label="GCJ-02 经度">
+              <Input
                 inputMode="decimal"
                 value={form.longitudeGcj02}
                 onChange={(event) => updateForm("longitudeGcj02", event.target.value)}
               />
-            </label>
-            <label className="fieldLabel">
-              WGS84 纬度
-              <input
+            </FormField>
+            <FormField label="WGS84 纬度">
+              <Input
                 inputMode="decimal"
                 value={form.latitudeWgs84}
                 onChange={(event) => updateForm("latitudeWgs84", event.target.value)}
               />
-            </label>
-            <label className="fieldLabel">
-              WGS84 经度
-              <input
+            </FormField>
+            <FormField label="WGS84 经度">
+              <Input
                 inputMode="decimal"
                 value={form.longitudeWgs84}
                 onChange={(event) => updateForm("longitudeWgs84", event.target.value)}
               />
-            </label>
-            <label className="fieldLabel">
-              海拔（米）
-              <input
+            </FormField>
+            <FormField label="海拔（米）">
+              <Input
                 inputMode="decimal"
                 value={form.elevation}
                 onChange={(event) => updateForm("elevation", event.target.value)}
               />
-            </label>
-            <label className="fieldLabel wideField">
-              机位说明
-              <textarea
+            </FormField>
+            <FormField label="机位说明" className="md:col-span-2">
+              <Textarea
                 value={form.description}
                 onChange={(event) => updateForm("description", event.target.value)}
               />
-            </label>
-            <div className="checkboxGrid wideField">
+            </FormField>
+            <div className="grid gap-3 md:col-span-2 md:grid-cols-2 xl:grid-cols-3">
               {featureFields.map(([field, label]) => (
-                <label key={field} className="toggleRow">
-                  <input
-                    type="checkbox"
-                    checked={form[field]}
-                    onChange={(event) => updateForm(field, event.target.checked)}
-                  />
-                  {label}
-                </label>
+                <SwitchRow
+                  key={field}
+                  label={label}
+                  checked={form[field]}
+                  onChange={(checked) => updateForm(field, checked)}
+                />
               ))}
-              <label className="toggleRow">
-                <input
-                  type="checkbox"
-                  checked={form.isHot}
-                  onChange={(event) => updateForm("isHot", event.target.checked)}
-                />
-                热门机位
-              </label>
-              <label className="toggleRow">
-                <input
-                  type="checkbox"
-                  checked={form.isVerified}
-                  onChange={(event) => updateForm("isVerified", event.target.checked)}
-                />
-                已人工核验
-              </label>
+              <SwitchRow
+                label="热门机位"
+                checked={form.isHot}
+                onChange={(checked) => updateForm("isHot", checked)}
+              />
+              <SwitchRow
+                label="已人工核验"
+                checked={form.isVerified}
+                onChange={(checked) => updateForm("isVerified", checked)}
+              />
             </div>
-            <label className="fieldLabel">
-              到达说明
-              <textarea
+            <FormField label="到达说明">
+              <Textarea
                 value={form.accessNote}
                 onChange={(event) => updateForm("accessNote", event.target.value)}
               />
-            </label>
-            <label className="fieldLabel">
-              交通说明
-              <textarea
+            </FormField>
+            <FormField label="交通说明">
+              <Textarea
                 value={form.trafficNote}
                 onChange={(event) => updateForm("trafficNote", event.target.value)}
               />
-            </label>
-            <label className="fieldLabel">
-              安全说明
-              <textarea
+            </FormField>
+            <FormField label="安全说明">
+              <Textarea
                 value={form.safetyNote}
                 onChange={(event) => updateForm("safetyNote", event.target.value)}
               />
-            </label>
-            <label className="fieldLabel">
-              风险提示
-              <textarea
+            </FormField>
+            <FormField label="风险提示">
+              <Textarea
                 value={form.riskNote}
                 onChange={(event) => updateForm("riskNote", event.target.value)}
               />
-            </label>
+            </FormField>
           </div>
-          <div className="adminActions">
-            <button type="submit" disabled={locations.length === 0}>
+          <div className="flex flex-wrap gap-3">
+            <Button type="submit" disabled={locations.length === 0}>
               保存
-            </button>
-            <button type="button" className="secondaryButton" onClick={resetForm}>
+            </Button>
+            <Button variant="secondary" onClick={resetForm}>
               取消
-            </button>
+            </Button>
           </div>
         </form>
-      </section>
+      </Card>
 
-      {deleteTarget ? (
-        <div className="adminDialogBackdrop" role="presentation">
-          <div className="adminDialog" role="dialog" aria-modal="true" aria-label="删除机位确认">
-            <h2>删除机位</h2>
-            <p>确认删除“{deleteTarget.name}”？该操作会写入审计日志。</p>
-            <div className="adminActions">
-              <button type="button" onClick={() => void deletePhotoSpot(deleteTarget)}>
-                删除
-              </button>
-              <button
-                type="button"
-                className="secondaryButton"
-                onClick={() => setDeleteTarget(null)}
-              >
-                取消
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="删除机位"
+        description={<>确认删除「{deleteTarget?.name}」？该操作会写入审计日志。</>}
+        confirmLabel="删除"
+        cancelLabel="取消"
+        onConfirm={() => {
+          if (deleteTarget) {
+            void deletePhotoSpot(deleteTarget);
+          }
+        }}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

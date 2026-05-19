@@ -20,7 +20,10 @@ const providerTypeLabels: Record<string, string> = {
   ai: "AI 服务商",
   weather: "天气服务商",
   geo: "地理服务商",
+  terrain: "地形服务商",
   storage: "存储服务商",
+  billing: "支付服务商",
+  sms: "短信服务商",
 };
 
 export default function AdminProviderTypePage({ params }: AdminProviderTypePageProps) {

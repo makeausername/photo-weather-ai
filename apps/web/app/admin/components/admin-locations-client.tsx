@@ -3,13 +3,25 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  EmptyState,
+  FormField,
+  Input,
+  Select,
+  SwitchRow,
+  Table,
+} from "../../../components/ui";
+import { adminApiFetch } from "../admin-api";
+import type { AdminLocation } from "../admin-api";
+import {
   locationSourceLabels,
   locationTypeLabels,
   type LocationSourceCode,
   type LocationTypeCode,
 } from "../enum-labels";
-import { adminApiFetch } from "../admin-api";
-import type { AdminLocation } from "../admin-api";
 
 type LocationsResponse = {
   readonly locations: AdminLocation[];
@@ -113,6 +125,18 @@ function locationPayloadFromForm(form: LocationFormState) {
   };
 }
 
+function statusClass(status: string): string {
+  if (status.includes("失败") || status.includes("错误") || status.includes("Error")) {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+
+  if (status.includes("保存") || status.includes("加载") || status.includes("删除")) {
+    return "border-blue-200 bg-blue-50 text-blue-700";
+  }
+
+  return "border-slate-200 bg-slate-50 text-slate-600";
+}
+
 export function AdminLocationsClient() {
   const [locations, setLocations] = useState<AdminLocation[]>([]);
   const [search, setSearch] = useState("");
@@ -184,7 +208,7 @@ export function AdminLocationsClient() {
   async function deleteLocation(location: AdminLocation) {
     setStatus("正在删除地点...");
     try {
-      await adminApiFetch(`/admin/locations/${location.id}`, { method: "DELETE" });
+      await adminApiFetch<unknown>(`/admin/locations/${location.id}`, { method: "DELETE" });
       setLocations((current) => current.filter((item) => item.id !== location.id));
       setDeleteTarget(null);
       if (editingId === location.id) {
@@ -197,144 +221,167 @@ export function AdminLocationsClient() {
   }
 
   return (
-    <div className="adminStack">
-      <div className="adminTabs">
-        <Link href="/admin/locations" className="active">
-          地点
+    <div className="grid gap-6">
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        <Link
+          href="/admin/locations"
+          className="whitespace-nowrap rounded-lg border border-primary bg-primary px-3 py-2 text-sm font-semibold text-white"
+        >
+          地点管理
         </Link>
-        <Link href="/admin/photo-spots">摄影机位</Link>
+        <Link
+          href="/admin/photo-spots"
+          className="whitespace-nowrap rounded-lg border border-border bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-primary hover:text-primary"
+        >
+          机位管理
+        </Link>
       </div>
 
-      <section className="adminSection">
-        <div className="adminSectionHeader">
-          <h2>地点资料</h2>
-          <span>{status}</span>
+      <Card className="overflow-hidden">
+        <div className="flex flex-col gap-3 border-b border-border px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-lg font-bold">地点资料</h2>
+            <p className="mt-1 text-sm text-muted">管理景区、山地、城市与自定义拍摄地点。</p>
+          </div>
+          <span className={`rounded-lg border px-3 py-2 text-sm ${statusClass(status)}`}>
+            {status}
+          </span>
         </div>
-        <div className="adminToolbar">
-          <input
+        <div className="flex flex-col gap-3 border-b border-border p-5 md:flex-row">
+          <Input
             value={search}
             placeholder="搜索地点、省份、城市或 slug"
             onChange={(event) => setSearch(event.target.value)}
+            className="md:max-w-md"
           />
-          <button type="button" onClick={() => void loadLocations()}>
-            搜索
-          </button>
-          <button
-            type="button"
-            className="secondaryButton"
+          <Button onClick={() => void loadLocations()}>搜索</Button>
+          <Button
+            variant="secondary"
             onClick={() => {
               setSearch("");
               void loadLocations("");
             }}
           >
             重置
-          </button>
+          </Button>
         </div>
-        <div className="adminDataTable" role="table" aria-label="地点列表">
-          <div className="adminDataRow adminDataHead" role="row">
-            <span>地点</span>
-            <span>行政区</span>
-            <span>GCJ-02</span>
-            <span>WGS84</span>
-            <span>状态</span>
-            <span>操作</span>
-          </div>
-          {locations.map((location) => (
-            <div key={location.id} className="adminDataRow" role="row">
-              <span>
-                <strong>{location.name}</strong>
-                <small>{location.slug}</small>
-              </span>
-              <span>
-                {location.province} / {location.city}
-                {location.district ? ` / ${location.district}` : ""}
-              </span>
-              <span>{formatCoordinate(location.latitudeGcj02, location.longitudeGcj02)}</span>
-              <span>{formatCoordinate(location.latitudeWgs84, location.longitudeWgs84)}</span>
-              <span>
-                <span className="adminPill">
-                  {locationTypeLabels[location.locationType as LocationTypeCode] ?? "未知类型"}
-                </span>
-                <span className="adminPill">
-                  {locationSourceLabels[location.source as LocationSourceCode] ?? "未知来源"}
-                </span>
-                <span className={location.isVerified ? "adminPill success" : "adminPill"}>
-                  {location.isVerified ? "已核验" : "待核验"}
-                </span>
-              </span>
-              <span className="rowActions">
-                <button type="button" onClick={() => startEdit(location)}>
-                  编辑
-                </button>
-                <button type="button" onClick={() => setDeleteTarget(location)}>
-                  删除
-                </button>
-              </span>
-            </div>
-          ))}
-          {locations.length === 0 ? <div className="adminEmpty">暂无地点，请先新增。</div> : null}
-        </div>
-      </section>
 
-      <section className="adminSection">
-        <div className="adminSectionHeader">
-          <h2>{editingId ? "编辑地点" : "新增地点"}</h2>
-          <span>地图展示使用 GCJ-02，计算使用 WGS84。</span>
+        {locations.length > 0 ? (
+          <Table aria-label="地点列表">
+            <thead className="bg-slate-50 text-xs font-semibold text-muted">
+              <tr>
+                <th className="px-4 py-3">地点</th>
+                <th className="px-4 py-3">行政区</th>
+                <th className="px-4 py-3">GCJ-02</th>
+                <th className="px-4 py-3">WGS84</th>
+                <th className="px-4 py-3">状态</th>
+                <th className="px-4 py-3">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {locations.map((location) => (
+                <tr key={location.id}>
+                  <td className="px-4 py-3">
+                    <div className="font-semibold text-foreground">{location.name}</div>
+                    <div className="mt-1 text-xs text-muted">{location.slug}</div>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-slate-700">
+                    {location.province} / {location.city}
+                    {location.district ? ` / ${location.district}` : ""}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-muted">
+                    {formatCoordinate(location.latitudeGcj02, location.longitudeGcj02)}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-muted">
+                    {formatCoordinate(location.latitudeWgs84, location.longitudeWgs84)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant="muted">
+                        {locationTypeLabels[location.locationType as LocationTypeCode] ??
+                          "未知类型"}
+                      </Badge>
+                      <Badge variant="muted">
+                        {locationSourceLabels[location.source as LocationSourceCode] ?? "未知来源"}
+                      </Badge>
+                      <Badge variant={location.isVerified ? "success" : "warning"}>
+                        {location.isVerified ? "已核验" : "待核验"}
+                      </Badge>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" onClick={() => startEdit(location)}>
+                        编辑
+                      </Button>
+                      <Button size="sm" variant="danger" onClick={() => setDeleteTarget(location)}>
+                        删除
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        ) : (
+          <EmptyState title="暂无地点" description="请先新增一个拍摄地点。" />
+        )}
+      </Card>
+
+      <Card className="overflow-hidden">
+        <div className="border-b border-border px-5 py-4">
+          <h2 className="text-lg font-bold">{editingId ? "编辑地点" : "新增地点"}</h2>
+          <p className="mt-1 text-sm text-muted">
+            地图展示使用 GCJ-02，天气、天文和地形计算使用 WGS84。
+          </p>
         </div>
         <form
-          className="adminForm"
+          className="grid gap-5 p-5"
           onSubmit={(event) => {
             event.preventDefault();
             void saveLocation();
           }}
         >
-          <div className="adminFormGrid">
-            <label className="fieldLabel">
-              地点名称
-              <input
+          <div className="grid gap-4 md:grid-cols-2">
+            <FormField label="地点名称">
+              <Input
                 value={form.name}
                 onChange={(event) => updateForm("name", event.target.value)}
               />
-            </label>
-            <label className="fieldLabel">
-              slug
-              <input
+            </FormField>
+            <FormField label="slug">
+              <Input
                 value={form.slug}
                 onChange={(event) => updateForm("slug", event.target.value)}
               />
-            </label>
-            <label className="fieldLabel">
-              省份
-              <input
+            </FormField>
+            <FormField label="省份">
+              <Input
                 value={form.province}
                 onChange={(event) => updateForm("province", event.target.value)}
               />
-            </label>
-            <label className="fieldLabel">
-              城市
-              <input
+            </FormField>
+            <FormField label="城市">
+              <Input
                 value={form.city}
                 onChange={(event) => updateForm("city", event.target.value)}
               />
-            </label>
-            <label className="fieldLabel">
-              区县
-              <input
+            </FormField>
+            <FormField label="区县">
+              <Input
                 value={form.district}
                 onChange={(event) => updateForm("district", event.target.value)}
               />
-            </label>
-            <label className="fieldLabel">
-              海拔（米）
-              <input
+            </FormField>
+            <FormField label="海拔（米）">
+              <Input
                 inputMode="decimal"
                 value={form.elevation}
                 onChange={(event) => updateForm("elevation", event.target.value)}
               />
-            </label>
-            <label className="fieldLabel">
-              地点类型
-              <select
+            </FormField>
+            <FormField label="地点类型">
+              <Select
                 value={form.locationType}
                 onChange={(event) =>
                   updateForm("locationType", event.target.value as LocationTypeCode)
@@ -345,11 +392,10 @@ export function AdminLocationsClient() {
                     {label}
                   </option>
                 ))}
-              </select>
-            </label>
-            <label className="fieldLabel">
-              来源
-              <select
+              </Select>
+            </FormField>
+            <FormField label="来源">
+              <Select
                 value={form.source}
                 onChange={(event) => updateForm("source", event.target.value as LocationSourceCode)}
               >
@@ -358,85 +404,71 @@ export function AdminLocationsClient() {
                     {label}
                   </option>
                 ))}
-              </select>
-            </label>
-            <label className="fieldLabel">
-              GCJ-02 纬度
-              <input
+              </Select>
+            </FormField>
+            <FormField label="GCJ-02 纬度">
+              <Input
                 inputMode="decimal"
                 value={form.latitudeGcj02}
                 onChange={(event) => updateForm("latitudeGcj02", event.target.value)}
               />
-            </label>
-            <label className="fieldLabel">
-              GCJ-02 经度
-              <input
+            </FormField>
+            <FormField label="GCJ-02 经度">
+              <Input
                 inputMode="decimal"
                 value={form.longitudeGcj02}
                 onChange={(event) => updateForm("longitudeGcj02", event.target.value)}
               />
-            </label>
-            <label className="fieldLabel">
-              WGS84 纬度
-              <input
+            </FormField>
+            <FormField label="WGS84 纬度">
+              <Input
                 inputMode="decimal"
                 value={form.latitudeWgs84}
                 onChange={(event) => updateForm("latitudeWgs84", event.target.value)}
               />
-            </label>
-            <label className="fieldLabel">
-              WGS84 经度
-              <input
+            </FormField>
+            <FormField label="WGS84 经度">
+              <Input
                 inputMode="decimal"
                 value={form.longitudeWgs84}
                 onChange={(event) => updateForm("longitudeWgs84", event.target.value)}
               />
-            </label>
-            <label className="fieldLabel wideField">
-              详细地址
-              <input
+            </FormField>
+            <FormField label="详细地址" className="md:col-span-2">
+              <Input
                 value={form.address}
                 onChange={(event) => updateForm("address", event.target.value)}
               />
-            </label>
-            <label className="toggleRow">
-              <input
-                type="checkbox"
-                checked={form.isVerified}
-                onChange={(event) => updateForm("isVerified", event.target.checked)}
-              />
-              已人工核验
-            </label>
+            </FormField>
+            <SwitchRow
+              label="已人工核验"
+              checked={form.isVerified}
+              onChange={(checked) => updateForm("isVerified", checked)}
+              className="md:col-span-2"
+            />
           </div>
-          <div className="adminActions">
-            <button type="submit">保存</button>
-            <button type="button" className="secondaryButton" onClick={resetForm}>
+          <div className="flex flex-wrap gap-3">
+            <Button type="submit">保存</Button>
+            <Button variant="secondary" onClick={resetForm}>
               取消
-            </button>
+            </Button>
           </div>
         </form>
-      </section>
+      </Card>
 
-      {deleteTarget ? (
-        <div className="adminDialogBackdrop" role="presentation">
-          <div className="adminDialog" role="dialog" aria-modal="true" aria-label="删除地点确认">
-            <h2>删除地点</h2>
-            <p>确认删除“{deleteTarget.name}”？该地点下的机位也会一起删除。</p>
-            <div className="adminActions">
-              <button type="button" onClick={() => void deleteLocation(deleteTarget)}>
-                删除
-              </button>
-              <button
-                type="button"
-                className="secondaryButton"
-                onClick={() => setDeleteTarget(null)}
-              >
-                取消
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="删除地点"
+        description={<>确认删除「{deleteTarget?.name}」？该地点下的机位也会一起删除。</>}
+        confirmLabel="删除"
+        cancelLabel="取消"
+        onConfirm={() => {
+          if (deleteTarget) {
+            void deleteLocation(deleteTarget);
+          }
+        }}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

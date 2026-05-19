@@ -1,63 +1,71 @@
 # Photo Weather AI
 
-Commercial landscape photography weather decision system for Chinese mainland users. The product
-name used in the current public placeholder is “风光天气 AI”.
+风光天气 AI 是面向中国大陆风光摄影用户的天气与拍摄机会判断系统。当前仓库处于自托管 SaaS 产品基础阶段，重点是数据库、后台配置、地点/机位资料和前端 UI 基线。
 
-This repository currently contains the TypeScript monorepo foundation only. It is designed to grow
-into a self-hostable SaaS product with one-command Docker deployment and visual admin
-configuration for provider keys, scoring weights, prompts, storage, billing, locations, photo
-spots, and deployment-related settings.
+## 当前状态
 
-## Product Defaults
+已实现：
 
-This project is Chinese-first by default:
+- 中文优先的 Next.js 前端 UI 基线。
+- Tailwind CSS 全局样式、设计变量和适合中文界面的字体栈。
+- 公开首页占位版：输入目的地、快速地点、功能卡片和静态决策卡预览。
+- 后台登录页：居中登录卡片、中文表单和样式化错误提示。
+- 后台控制台布局：左侧导航、顶部标题区、当前管理员信息、退出登录、内容区域。
+- 后台页面视觉层：系统设置、服务商配置、地点管理、机位管理、审计日志使用统一卡片、表格、表单、按钮和空状态。
+- 受保护的后台 API、JWT 登录、数据库 RBAC、系统设置、服务商占位配置、地点/机位 CRUD、审计日志基础。
 
-- Default language: `zh-CN`.
-- Default timezone: `Asia/Shanghai`.
-- Default currency: `CNY`.
-- Default map provider: Amap / 高德地图.
-- Admin and public interface copy should use Simplified Chinese unless a value is a technical key,
-  provider code, JSON key, or similar identifier.
+尚未实现：
 
-Coordinate systems are intentionally separated:
+- 最终 forecast / 预测结果页。
+- 真实天气服务商调用。
+- 真实 DeepSeek 或其他 AI 调用。
+- 支付、套餐、额度和商业化流程。
+- 生产级 Cookie/Session 加固。
 
-- Map display and map-provider results use GCJ-02.
-- Weather, astronomy, terrain, DEM, and future scoring calculations use WGS84.
-- Location and photo spot records store both GCJ-02 and WGS84 coordinates so future code does not
-  silently mix systems.
+当前公开首页的决策卡为静态 mock 内容，只用于展示产品方向，不包含真实预报、评分或 AI 分析。
 
-## Architecture
+## 产品默认
 
-- `apps/web`: Next.js App Router placeholder frontend.
-- `apps/api`: Fastify API service skeleton.
-- `apps/worker`: Node.js worker placeholder for future BullMQ jobs.
-- `packages/shared`: shared types, Zod schemas, and utility contracts.
-- `packages/config`: environment validation, runtime config loading, public/server config
-  separation, admin setting definitions, and secret masking.
-- `packages/db`: Prisma PostgreSQL schema, generated client access, additive migrations, seed
-  data, and secret-safe repository helpers for settings, providers, locations, photo spots, and
-  audit logs.
-- `packages/geo`: geo provider interfaces, mock-safe place search, Amap skeleton, coordinate
-  validation, and GCJ-02/WGS84 conversion utilities.
-- `packages/weather`: normalized weather types and provider interfaces.
-- `packages/terrain`: terrain and elevation provider interfaces.
-- `packages/astro`: astronomy provider interfaces.
-- `packages/scoring`: scoring engine contracts.
-- `packages/ai`: AI provider interfaces, mock provider, rule-only fallback, and DeepSeek
-  skeleton.
-- `packages/storage`: storage provider interfaces and mock storage.
-- `packages/billing`: billing and quota placeholder types.
+- 默认语言：`zh-CN`。
+- 默认时区：`Asia/Shanghai`。
+- 默认币种：`CNY`。
+- 默认地图服务商：Amap / 高德地图。
+- 面向用户和管理员的界面文案默认使用简体中文。
+- 技术 key、provider code、JSON 字段和 API 标识可以保留英文。
 
-## Local Development
+坐标系约定：
 
-Use pnpm through Corepack:
+- 地图展示和地图服务商结果使用 GCJ-02。
+- 天气、天文、地形和未来评分计算使用 WGS84。
+- 地点和机位记录同时保存 GCJ-02 与 WGS84，避免未来计算混用。
+
+## 架构
+
+- `apps/web`：Next.js App Router 前端与后台控制台。
+- `apps/api`：Fastify API 服务。
+- `apps/worker`：未来任务队列 worker 占位。
+- `packages/shared`：共享类型、Zod schema 和标签。
+- `packages/config`：环境配置、运行时配置和密钥遮罩。
+- `packages/db`：Prisma schema、迁移、seed、系统设置、服务商配置、地点、机位、审计日志。
+- `packages/geo`：地理服务接口、mock 搜索、高德地图骨架、坐标校验与转换。
+- `packages/weather`：天气服务接口与标准化类型。
+- `packages/terrain`：地形与海拔服务接口。
+- `packages/astro`：天文服务接口。
+- `packages/scoring`：评分引擎合同。
+- `packages/ai`：AI 服务接口、mock provider、规则兜底和 DeepSeek 骨架。
+- `packages/storage`：存储服务接口与 mock 存储。
+- `packages/billing`：计费与额度占位类型。
+
+## 本地开发
+
+使用 Corepack 管理 pnpm：
 
 ```bash
 corepack pnpm install
 corepack pnpm dev
 ```
 
-Validation commands:
+常用验证命令：
 
 ```bash
 corepack pnpm lint
@@ -66,14 +74,29 @@ corepack pnpm test
 corepack pnpm build
 ```
 
-## Database
+Web app 默认端口：
 
-PostgreSQL is the production database target. The database package owns the Prisma schema under
-`packages/db/prisma/schema.prisma`, the initial additive migration under
-`packages/db/prisma/migrations`, deterministic seed data, and helpers for system settings,
-provider configuration, locations, photo spots, admin audit logs, and API usage logs.
+```bash
+corepack pnpm --filter @photo-weather/web dev
+```
 
-Root database commands:
+浏览器访问：
+
+- 公开首页：`http://localhost:3000`
+- 后台登录：`http://localhost:3000/admin/login`
+- 后台控制台：`http://localhost:3000/admin`
+
+如浏览器需要访问非默认 API 地址，设置：
+
+```bash
+NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
+```
+
+## 数据库
+
+PostgreSQL 是生产数据库目标。数据库包维护 Prisma schema、迁移、seed data，以及系统设置、服务商、地点、机位、审计日志等 repository helper。
+
+根目录数据库命令：
 
 ```bash
 corepack pnpm db:generate
@@ -84,70 +107,47 @@ corepack pnpm db:studio
 corepack pnpm create-admin
 ```
 
-Use `db:migrate` for deployed PostgreSQL databases. Use `db:push` only for disposable local
-development databases where schema drift is acceptable. The current migration is additive: it
-creates the foundation tables and does not drop or rewrite existing data.
+部署数据库使用 `db:migrate`。一次性本地开发库可以使用 `db:push`。
 
-Set `DATABASE_URL` in `.env.local` or `.env`; do not commit local credentials. For Docker Compose,
-the example is:
+设置 `DATABASE_URL` 到 `.env.local` 或 `.env`，不要提交本地凭据。例如 Docker Compose 内部连接：
 
 ```bash
 DATABASE_URL=postgresql://photo_weather:photo_weather@postgres:5432/photo_weather_ai
 ```
 
-For an existing Alibaba Cloud PostgreSQL instance reached through an SSH tunnel, create a separate
-database for this project, for example `photo_weather_ai`, then point the local tunnel URL at it:
+Provider secrets 和永久服务商配置属于数据库后台配置，不应写进业务代码。Seed data 只创建占位服务商和空密钥对象，不包含真实 DeepSeek、QWeather、Open-Meteo、高德地图、存储、短信或支付凭据。
 
-```bash
-DATABASE_URL=postgresql://photo_weather_ai:CHANGE_ME@127.0.0.1:15432/photo_weather_ai?schema=public
-```
-
-The project must not reuse another product's database. Provider secrets and permanent provider
-settings belong in database-backed admin configuration, not in business code. Seed data only creates
-placeholder providers and empty secret objects; it does not include real DeepSeek, QWeather,
-Open-Meteo, Amap, storage, SMS, or payment credentials.
-
-The seed also creates unverified Chinese sample locations and photography spots:
+Seed data 包含未核验的中国风光摄影示例地点与机位：
 
 - 黄山 / 黄山光明顶
 - 老君山 / 老君山金顶
 - 三清山 / 三清山女神峰
 - 武功山 / 武功山金顶
 
-These coordinates, elevations, traffic notes, safety notes, and risk notes are safe examples only.
-They are stored with `isVerified=false` and must be manually verified in the admin console before
-production use.
+这些坐标、海拔、交通、安全和风险信息仅为示例，生产使用前必须在后台人工核验。
 
-## First Admin Bootstrap
+## 首个管理员
 
-Run the deterministic database seed first so the default roles and permissions exist, then create
-the first super admin account through the bootstrap script:
+先执行数据库迁移和 seed，再创建超级管理员：
 
 ```bash
 corepack pnpm db:migrate
 corepack pnpm db:seed
-ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=change-me-to-a-long-random-password ADMIN_DISPLAY_NAME="Super Admin" corepack pnpm create-admin
+ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=change-me-to-a-long-random-password ADMIN_DISPLAY_NAME="超级管理员" corepack pnpm create-admin
 ```
 
-The script reads:
+脚本读取：
 
 - `ADMIN_EMAIL`
 - `ADMIN_PASSWORD`
 - `ADMIN_DISPLAY_NAME`
 - `ADMIN_RESET_PASSWORD`
 
-Passwords are hashed with bcrypt before storage and are never printed. Existing users keep their
-current password unless `ADMIN_RESET_PASSWORD=true` is set explicitly. Do not commit real admin
-credentials to `.env.local` or any source-controlled file.
+密码会先 bcrypt 哈希再写入数据库，不会明文打印。上线前设置至少 32 字符的强 `JWT_SECRET`。
 
-Set a strong `JWT_SECRET` of at least 32 characters before starting the API. Access and refresh
-token lifetimes are controlled by `JWT_ACCESS_TOKEN_TTL_SECONDS` and
-`JWT_REFRESH_TOKEN_TTL_DAYS`. `ADMIN_AUTH_BYPASS` defaults to `false`; if enabled for local
-development, it is rejected in production.
+## 后台 API
 
-## Auth API
-
-The Fastify API exposes the initial admin authentication endpoints:
+认证接口：
 
 ```bash
 POST /auth/login
@@ -156,13 +156,7 @@ POST /auth/logout
 GET  /auth/me
 ```
 
-Login returns a JWT access token, a DB-backed refresh token, a safe user profile, roles, and
-permissions. User responses exclude `passwordHash`. Refresh tokens are stored as hashes in
-`user_sessions`.
-
-## Admin Configuration API
-
-The Fastify API exposes the protected admin configuration surface:
+配置与资料接口：
 
 ```bash
 GET   /admin/settings
@@ -188,35 +182,23 @@ PATCH  /admin/photo-spots/:id
 DELETE /admin/photo-spots/:id
 
 GET   /admin/geo/search?q=
-
 GET   /admin/audit-logs
 ```
 
-Admin configuration routes require JWT authentication and database-backed RBAC:
+后台 API 使用 JWT 和数据库 RBAC：
 
-- settings routes require `settings.manage`
-- provider routes require `providers.manage`
-- location routes and mock geo search require `locations.manage`
-- photo spot routes require `photo_spots.manage`
-- audit logs require `audit.read`
-- generic `/admin` status requires `admin.manage`
+- 系统设置：`settings.manage`
+- 服务商配置：`providers.manage`
+- 地点和 mock 地理搜索：`locations.manage`
+- 机位：`photo_spots.manage`
+- 审计日志：`audit.read`
+- `/admin` 状态：`admin.manage`
 
-System-setting updates validate the stored setting value type and reject settings that are marked
-non-editable. Provider updates validate provider type and provider code, merge JSON config and
-secret patches, and return only safe provider output.
+服务商测试连接和后台地理搜索在当前阶段为本地 mock，不调用真实外部服务。
 
-Provider API responses return `maskedSecretJson` only. They must never return raw `secretJson`.
-Audit metadata is redacted before persistence. Settings/provider `PATCH` operations and
-location/photo spot create/update/delete operations write an `AdminAuditLog` with the authenticated
-actor user id.
+## 后台控制台
 
-Provider connection testing and admin geo search are intentionally mocked in this phase. The
-endpoints return deterministic local responses and do not call DeepSeek, QWeather, Open-Meteo,
-Amap, storage, billing, SMS, or payment providers.
-
-## Admin Console Skeleton
-
-The Next.js app includes the initial admin route skeleton:
+当前 Next.js 后台路由：
 
 ```bash
 /admin/login
@@ -232,44 +214,27 @@ The Next.js app includes the initial admin route skeleton:
 /admin/audit
 ```
 
-The pages are a minimal Chinese operator console for visual configuration. They load settings,
-provider placeholders, masked secret status, mock connection tests, Chinese sample locations,
-photography spots, and recent audit logs from the API.
-Set `NEXT_PUBLIC_API_BASE_URL` if the browser should call an API origin other than
-`http://localhost:4000`.
+后台控制台已具备统一 SaaS 风格布局：
 
-Admin routes redirect unauthenticated users to `/admin/login`, attach `Authorization: Bearer` to
-admin API requests, and show the current admin display name with a logout action. The current
-frontend stores tokens in `localStorage` as an early skeleton implementation; this should be
-hardened later with production-grade cookie/session handling before public deployment.
+- 左侧导航：控制台、系统设置、服务商配置、地点管理、机位管理、审计日志。
+- 顶部标题区：当前页面标题、描述、当前管理员名称、退出登录。
+- 内容区：卡片、表格、表单、空状态、确认弹窗和统一按钮。
+- 移动端：导航横向滚动，表格允许横向滚动，避免常见笔记本宽度溢出。
 
-## External Services
+后台路由会将未登录用户重定向到 `/admin/login`。当前前端仍使用 `localStorage` 存储 token，这是早期骨架实现，正式公开部署前需要改为生产级会话方案。
 
-Local automated tests must not call real external services. The current implementation only uses
-deterministic mock providers and placeholders. Do not call QWeather, Open-Meteo, Amap, DeepSeek,
-or any other external provider from tests.
+## 外部服务边界
 
-The Amap provider is currently a skeleton. Real Amap network integration must be added later behind
-explicit database/admin configuration and must not be used in automated tests.
+本阶段不允许自动化测试调用真实外部服务。当前实现只使用 deterministic mock providers 和配置占位：
 
-Real provider testing should be added later and run only on staging or production servers with
-configured provider keys and explicit operator intent.
+- 不调用 QWeather。
+- 不调用 Open-Meteo。
+- 不调用高德地图真实接口。
+- 不调用 DeepSeek。
+- 不调用真实存储、短信、支付或计费服务。
 
-## Configuration
+真实服务商联调应在后续阶段通过后台配置显式启用，并且只在 staging 或 production 环境按操作员意图执行。
 
-Copy `.env.example` to `.env` for local development. Secrets and provider settings must be loaded
-from environment variables or future encrypted admin configuration, never hard-coded.
+## Docker
 
-The final commercial target is one-command Docker deployment plus visual admin configuration for
-DeepSeek, QWeather, Open-Meteo, Amap, storage, billing, scoring weights, prompt templates, location
-data, photography spot data, and deployment-related settings. This repository currently implements
-the database foundation, protected admin configuration APIs, location/photo spot management
-foundation, minimal admin console, and initial admin auth/RBAC. Billing, weather scoring, weather
-analysis, AI analysis, public forecast result pages, public user registration, and real provider
-calls remain intentionally out of scope.
-
-## Docker Skeleton
-
-`docker-compose.yml` defines future `web`, `api`, `worker`, `postgres`, `redis`, and `nginx`
-services. The shell scripts under `scripts/` are placeholders for the later one-command installer,
-first-admin creation flow, and backup tooling.
+`docker-compose.yml` 包含未来 `web`、`api`、`worker`、`postgres`、`redis`、`nginx` 服务骨架。`scripts/` 下脚本是后续一键安装、首个管理员创建和备份流程的基础。

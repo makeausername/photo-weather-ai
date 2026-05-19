@@ -1,6 +1,17 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  FormField,
+  Input,
+  SwitchRow,
+  Textarea,
+} from "../../../components/ui";
 import { adminApiFetch } from "../admin-api";
 import type { JsonValue, MockConnectionTestResult, SafeProviderConfig } from "../admin-api";
 
@@ -17,6 +28,35 @@ type RowState = {
   readonly message?: string;
 };
 
+const providerTypeLabels: Record<string, string> = {
+  ai: "AI 服务商",
+  weather: "天气服务商",
+  geo: "地理服务商",
+  terrain: "地形服务商",
+  storage: "存储服务商",
+  billing: "支付服务商",
+  sms: "短信服务商",
+};
+
+const providerDisplayLabels: Record<string, string> = {
+  "ai:deepseek": "DeepSeek",
+  "weather:qweather": "和风天气",
+  "weather:open_meteo": "Open-Meteo",
+  "geo:amap": "高德地图",
+  "storage:local_storage": "本地存储",
+  "storage:aliyun_oss": "阿里云 OSS",
+  "storage:tencent_cos": "腾讯云 COS",
+  "storage:s3_compatible": "S3 兼容存储",
+};
+
+const providerTabs = [
+  { href: "/admin/providers", label: "全部" },
+  { href: "/admin/providers/weather", label: "天气" },
+  { href: "/admin/providers/geo", label: "地图" },
+  { href: "/admin/providers/ai", label: "AI" },
+  { href: "/admin/providers/storage", label: "存储" },
+] as const;
+
 function stringifyJson(value: JsonValue | null): string {
   return JSON.stringify(value ?? {}, null, 2);
 }
@@ -30,27 +70,38 @@ function parseJsonObject(input: string): Record<string, JsonValue> {
   return parsed as Record<string, JsonValue>;
 }
 
-const providerTypeLabels: Record<string, string> = {
-  ai: "AI 服务商",
-  weather: "天气服务商",
-  geo: "地理服务商",
-  terrain: "地形服务商",
-  storage: "存储服务商",
-  billing: "支付服务商",
-  sms: "短信服务商",
-};
+function providerName(provider: SafeProviderConfig): string {
+  return (
+    providerDisplayLabels[`${provider.providerType}:${provider.providerCode}`] ||
+    provider.displayName ||
+    "未命名服务商"
+  );
+}
+
+function stateClass(status: RowState["status"]): string {
+  if (status === "error") {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+
+  if (status === "saved") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+
+  if (status === "testing" || status === "saving") {
+    return "border-blue-200 bg-blue-50 text-blue-700";
+  }
+
+  return "border-slate-200 bg-slate-50 text-slate-600";
+}
 
 function ProviderStatus({ provider }: { readonly provider: SafeProviderConfig }) {
   return (
-    <div className="adminPillRow">
-      <span className={provider.enabled ? "adminPill success" : "adminPill"}>
+    <div className="flex flex-wrap gap-2">
+      <Badge variant={provider.enabled ? "success" : "muted"}>
         {provider.enabled ? "已启用" : "未启用"}
-      </span>
-      <span className="adminPill">优先级 {provider.priority}</span>
-      <span className="adminPill">
-        {providerTypeLabels[provider.providerType] ?? provider.providerType}
-      </span>
-      <span className="adminPill">{provider.providerCode}</span>
+      </Badge>
+      <Badge variant="muted">优先级 {provider.priority}</Badge>
+      <Badge variant="muted">{providerTypeLabels[provider.providerType] ?? "其他服务商"}</Badge>
     </div>
   );
 }
@@ -160,7 +211,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       );
       setStateByProvider((current) => ({
         ...current,
-        [provider.id]: { status: "saved", message: result.message },
+        [provider.id]: { status: "saved", message: result.message || "测试通过。" },
       }));
     } catch (error) {
       setStateByProvider((current) => ({
@@ -170,104 +221,148 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     }
   }
 
+  if (providers.length === 0 && loadState.status === "error") {
+    return (
+      <Card>
+        <EmptyState
+          title="无法加载服务商配置"
+          description={
+            loadState.message ?? "请确认后台 API 已启动，并且当前账号拥有服务商配置权限。"
+          }
+        />
+      </Card>
+    );
+  }
+
   return (
-    <div className="adminStack">
+    <div className="grid gap-6">
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {providerTabs.map((tab) => (
+          <Link
+            key={tab.href}
+            href={tab.href}
+            className="whitespace-nowrap rounded-lg border border-border bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-primary hover:text-primary"
+          >
+            {tab.label}
+          </Link>
+        ))}
+      </div>
+
       {loadState.message ? (
-        <div className={`adminInlineStatus ${loadState.status}`}>{loadState.message}</div>
+        <div className={`rounded-xl border px-4 py-3 text-sm ${stateClass(loadState.status)}`}>
+          {loadState.message}
+        </div>
       ) : null}
+
       {Object.entries(groupedProviders).map(([group, groupProviders]) => (
-        <section key={group} className="adminSection">
-          <div className="adminSectionHeader">
-            <h2>{providerTypeLabels[group] ?? group}</h2>
-            <span>{groupProviders.length} 个服务商</span>
+        <Card key={group} className="overflow-hidden">
+          <div className="flex flex-col gap-2 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-bold">{providerTypeLabels[group] ?? "其他服务商"}</h2>
+              <p className="mt-1 text-sm text-muted">{groupProviders.length} 个服务商</p>
+            </div>
+            <Badge variant="muted">不会调用真实外部服务</Badge>
           </div>
-          <div className="providerGrid">
-            {groupProviders.map((provider) => (
-              <article key={provider.id} className="providerCard">
-                <div className="providerHeader">
-                  <div>
-                    <h3>{provider.displayName}</h3>
-                    <p>{provider.providerCode}</p>
+
+          <div className="grid gap-4 p-5 xl:grid-cols-2">
+            {groupProviders.map((provider) => {
+              const state = stateByProvider[provider.id];
+
+              return (
+                <article
+                  key={provider.id}
+                  className="grid gap-4 rounded-xl border border-border bg-slate-50 p-4"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <h3 className="text-base font-bold">{providerName(provider)}</h3>
+                      <p className="mt-1 text-sm text-muted">代码：{provider.providerCode}</p>
+                    </div>
+                    <ProviderStatus provider={provider} />
                   </div>
-                  <label className="toggleRow">
-                    <input
-                      type="checkbox"
-                      checked={enabledDrafts[provider.id] ?? provider.enabled}
+
+                  <SwitchRow
+                    label="启用该服务商"
+                    description="仅保存配置开关，不触发真实连接。"
+                    checked={enabledDrafts[provider.id] ?? provider.enabled}
+                    onChange={(checked) =>
+                      setEnabledDrafts((current) => ({
+                        ...current,
+                        [provider.id]: checked,
+                      }))
+                    }
+                  />
+
+                  <FormField label="优先级">
+                    <Input
+                      type="number"
+                      value={priorityDrafts[provider.id] ?? provider.priority}
                       onChange={(event) =>
-                        setEnabledDrafts((current) => ({
+                        setPriorityDrafts((current) => ({
                           ...current,
-                          [provider.id]: event.target.checked,
+                          [provider.id]: Number(event.target.value),
                         }))
                       }
                     />
-                    启用
-                  </label>
-                </div>
-                <ProviderStatus provider={provider} />
-                <label className="fieldLabel">
-                  优先级
-                  <input
-                    type="number"
-                    value={priorityDrafts[provider.id] ?? provider.priority}
-                    onChange={(event) =>
-                      setPriorityDrafts((current) => ({
-                        ...current,
-                        [provider.id]: Number(event.target.value),
-                      }))
-                    }
-                  />
-                </label>
-                <label className="fieldLabel">
-                  配置 JSON
-                  <textarea
-                    value={configDrafts[provider.id] ?? "{}"}
-                    onChange={(event) =>
-                      setConfigDrafts((current) => ({
-                        ...current,
-                        [provider.id]: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <label className="fieldLabel">
-                  密钥 JSON
-                  <textarea
-                    placeholder='{"apiKey":"新的密钥值"}'
-                    value={secretDrafts[provider.id] ?? ""}
-                    onChange={(event) =>
-                      setSecretDrafts((current) => ({
-                        ...current,
-                        [provider.id]: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <div className="maskedSecrets">
-                  <span>已脱敏密钥</span>
-                  <code>{stringifyJson(provider.maskedSecretJson)}</code>
-                </div>
-                <div className="adminActions">
-                  <button type="button" onClick={() => void saveProvider(provider)}>
-                    保存
-                  </button>
-                  <button
-                    type="button"
-                    className="secondaryButton"
-                    onClick={() => void testProvider(provider)}
-                  >
-                    本地测试
-                  </button>
-                </div>
-                {stateByProvider[provider.id]?.message ? (
-                  <div className={`adminInlineStatus ${stateByProvider[provider.id]?.status}`}>
-                    {stateByProvider[provider.id]?.message}
+                  </FormField>
+
+                  <FormField label="配置 JSON">
+                    <Textarea
+                      value={configDrafts[provider.id] ?? "{}"}
+                      onChange={(event) =>
+                        setConfigDrafts((current) => ({
+                          ...current,
+                          [provider.id]: event.target.value,
+                        }))
+                      }
+                    />
+                  </FormField>
+
+                  <FormField label="密钥 JSON" hint="留空表示不更新密钥；保存后只显示脱敏结果。">
+                    <Textarea
+                      placeholder='{"apiKey":"新的密钥值"}'
+                      value={secretDrafts[provider.id] ?? ""}
+                      onChange={(event) =>
+                        setSecretDrafts((current) => ({
+                          ...current,
+                          [provider.id]: event.target.value,
+                        }))
+                      }
+                    />
+                  </FormField>
+
+                  <div className="rounded-lg border border-border bg-white p-3">
+                    <p className="text-sm font-semibold text-slate-700">已脱敏密钥</p>
+                    <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words text-xs leading-5 text-muted">
+                      {stringifyJson(provider.maskedSecretJson)}
+                    </pre>
                   </div>
-                ) : null}
-              </article>
-            ))}
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button onClick={() => void saveProvider(provider)}>保存</Button>
+                    <Button variant="secondary" onClick={() => void testProvider(provider)}>
+                      测试连接
+                    </Button>
+                    {state?.message ? (
+                      <span
+                        className={`rounded-lg border px-3 py-2 text-sm ${stateClass(state.status)}`}
+                      >
+                        {state.message}
+                      </span>
+                    ) : null}
+                  </div>
+                </article>
+              );
+            })}
           </div>
-        </section>
+        </Card>
       ))}
+
+      {providers.length === 0 && loadState.status !== "saving" ? (
+        <Card>
+          <EmptyState title="暂无服务商配置" description="初始化数据写入后会显示在这里。" />
+        </Card>
+      ) : null}
     </div>
   );
 }
