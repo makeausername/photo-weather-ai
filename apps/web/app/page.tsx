@@ -1,5 +1,5 @@
-import { ThemeToggle } from "../components/theme-toggle";
 import { PlaceSearchCard } from "../components/place-search-card";
+import { PublicHeader } from "../components/public-header";
 import { Badge, Card } from "../components/ui";
 
 const features = [
@@ -35,26 +35,7 @@ const previewItems = [
 export default function HomePage() {
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border bg-card">
-        <nav className="mx-auto flex w-full max-w-[1320px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
-          <a href="/" className="flex min-w-0 items-center gap-3">
-            <img src="/brand-mark.svg" alt="" className="h-10 w-10 shrink-0" aria-hidden="true" />
-            <span className="grid min-w-0 leading-tight">
-              <span className="text-base font-bold text-card-foreground sm:text-lg">逐光天气</span>
-              <span className="text-xs text-muted-foreground">风光摄影出行判断工具</span>
-            </span>
-          </a>
-          <div className="flex flex-wrap items-center gap-2">
-            <ThemeToggle compact />
-            <a
-              href="/admin"
-              className="inline-flex h-8 items-center rounded-md border border-border bg-card px-2.5 text-xs font-medium text-foreground transition hover:border-primary hover:bg-secondary"
-            >
-              管理后台
-            </a>
-          </div>
-        </nav>
-      </header>
+      <PublicHeader />
 
       <section className="mx-auto w-full max-w-[1320px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1.04fr)_minmax(400px,0.96fr)] lg:items-start xl:gap-14">
@@ -67,7 +48,9 @@ export default function HomePage() {
               综合云层、湿度、风速、海拔、地形、月相与银河窗口，辅助判断朝霞、晚霞、云海、星空和银河拍摄机会。
             </p>
 
-            <PlaceSearchCard />
+            <div id="analysis" className="scroll-mt-24">
+              <PlaceSearchCard />
+            </div>
           </section>
 
           <Card className="relative overflow-hidden p-5 shadow-soft lg:mt-2 lg:max-w-[520px] lg:justify-self-end">

@@ -11,6 +11,7 @@ import {
   type ForecastScore,
   type ForecastScoreLevel,
 } from "@photo-weather/shared";
+import { PublicHeader } from "../../components/public-header";
 import { Badge, Button, Card, cn } from "../../components/ui";
 
 type ForecastResultClientProps = {
@@ -104,15 +105,21 @@ export function ForecastResultClient({ query }: ForecastResultClientProps) {
   }, [query, queryKey]);
 
   return (
-    <main className="min-h-screen bg-background px-4 py-6 text-foreground sm:px-6 lg:px-8">
-      <div className="mx-auto grid w-full max-w-6xl gap-5">
+    <main className="min-h-screen bg-background text-foreground">
+      <PublicHeader />
+      <div className="mx-auto grid w-full max-w-6xl gap-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <a href="/" className="text-sm font-semibold text-primary">
-            返回逐光天气
-          </a>
+          <nav aria-label="当前位置" className="flex items-center gap-2 text-sm">
+            <a href="/" className="font-medium text-muted-foreground transition hover:text-primary">
+              首页
+            </a>
+            <span className="text-muted-foreground">/</span>
+            <span className="font-semibold text-foreground">拍摄天气分析</span>
+          </nav>
           <Button
             variant="secondary"
             size="sm"
+            className="h-8 px-2.5"
             onClick={() => {
               window.location.assign("/");
             }}
@@ -122,13 +129,13 @@ export function ForecastResultClient({ query }: ForecastResultClientProps) {
         </div>
 
         <header className="grid gap-3">
-          <Badge variant="muted">本地模拟计算</Badge>
+          <Badge variant="muted">拍摄判断</Badge>
           <div className="grid gap-2">
             <h1 className="text-2xl font-bold tracking-normal text-foreground sm:text-3xl">
               拍摄天气分析
             </h1>
             <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-              当前页面用于验证本地预报计算核心，真实天气、地形和天文数据将在后续服务器环境接入。
+              根据已选择的地点、预报范围和拍摄目标生成出发参考。当前结果仍使用本地样例数据，请结合现场条件与官方预报判断。
             </p>
           </div>
         </header>

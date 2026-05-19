@@ -187,9 +187,9 @@ export function PlaceSearchCard() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="请输入景区、城市或机位，例如：黄山光明顶"
-          className="h-11 text-[15px]"
+          className="h-10 text-[15px]"
         />
-        <Button type="submit" size="lg" className="h-11 px-6" disabled={status === "loading"}>
+        <Button type="submit" className="h-10 px-5" disabled={status === "loading"}>
           搜索地点
         </Button>
       </form>
@@ -349,8 +349,7 @@ export function PlaceSearchCard() {
 
         <Button
           type="button"
-          size="lg"
-          className="mt-1 h-11 w-full sm:w-auto sm:justify-self-start"
+          className="mt-1 h-10 w-full sm:w-auto sm:justify-self-start"
           disabled={!selectedPlace}
           onClick={() => {
             if (!selectedPlace) {
