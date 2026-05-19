@@ -16,19 +16,19 @@ type ButtonSize = "sm" | "md" | "lg";
 
 const buttonVariants: Record<ButtonVariant, string> = {
   primary:
-    "border-primary bg-primary text-primary-foreground hover:bg-blue-700 disabled:hover:bg-primary",
+    "border-primary bg-primary text-primary-foreground hover:brightness-95 disabled:hover:brightness-100",
   secondary:
-    "border-border bg-white text-foreground hover:border-slate-300 hover:bg-slate-50 disabled:hover:bg-white",
+    "border-border bg-card text-card-foreground hover:border-primary hover:bg-secondary disabled:hover:bg-card",
   ghost:
-    "border-transparent bg-transparent text-slate-600 hover:bg-slate-100 hover:text-foreground disabled:hover:bg-transparent",
-  danger: "border-danger bg-danger text-white hover:bg-red-700 disabled:hover:bg-danger",
-  success: "border-success bg-success text-white hover:bg-emerald-700 disabled:hover:bg-success",
+    "border-transparent bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground disabled:hover:bg-transparent",
+  danger: "border-danger bg-danger text-white hover:brightness-95 disabled:hover:brightness-100",
+  success: "border-success bg-success text-white hover:brightness-95 disabled:hover:brightness-100",
 };
 
 const buttonSizes: Record<ButtonSize, string> = {
-  sm: "h-9 px-3 text-sm",
-  md: "h-10 px-4 text-sm",
-  lg: "h-12 px-5 text-base",
+  sm: "h-8 px-2.5 text-xs",
+  md: "h-9 px-3 text-sm",
+  lg: "h-11 px-4 text-sm",
 };
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -63,7 +63,7 @@ export function Input({ className, ...props }: InputProps) {
   return (
     <input
       className={cn(
-        "h-10 w-full min-w-0 rounded-lg border border-border bg-white px-3 text-sm text-foreground shadow-sm transition placeholder:text-slate-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-500",
+        "h-10 w-full min-w-0 rounded-lg border border-border bg-card px-3 text-sm text-foreground shadow-sm transition placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted disabled:text-muted-foreground",
         className,
       )}
       {...props}
@@ -77,7 +77,7 @@ export function Textarea({ className, ...props }: TextareaProps) {
   return (
     <textarea
       className={cn(
-        "min-h-24 w-full min-w-0 rounded-lg border border-border bg-white px-3 py-2 text-sm text-foreground shadow-sm transition placeholder:text-slate-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-500",
+        "min-h-24 w-full min-w-0 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground shadow-sm transition placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted disabled:text-muted-foreground",
         className,
       )}
       {...props}
@@ -91,7 +91,7 @@ export function Select({ className, ...props }: SelectProps) {
   return (
     <select
       className={cn(
-        "h-10 w-full min-w-0 rounded-lg border border-border bg-white px-3 text-sm text-foreground shadow-sm transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-500",
+        "h-10 w-full min-w-0 rounded-lg border border-border bg-card px-3 text-sm text-foreground shadow-sm transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted disabled:text-muted-foreground",
         className,
       )}
       {...props}
@@ -106,7 +106,7 @@ type CardProps = {
 
 export function Card({ children, className }: CardProps) {
   return (
-    <section className={cn("rounded-2xl border border-border bg-card shadow-sm", className)}>
+    <section className={cn("rounded-lg border border-border bg-card shadow-sm", className)}>
       {children}
     </section>
   );
@@ -115,11 +115,11 @@ export function Card({ children, className }: CardProps) {
 type BadgeVariant = "default" | "success" | "warning" | "danger" | "muted";
 
 const badgeVariants: Record<BadgeVariant, string> = {
-  default: "border-blue-200 bg-blue-50 text-blue-700",
-  success: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  warning: "border-amber-200 bg-amber-50 text-amber-700",
-  danger: "border-red-200 bg-red-50 text-red-700",
-  muted: "border-slate-200 bg-slate-100 text-slate-600",
+  default: "border-primary bg-secondary text-secondary-foreground",
+  success: "border-success bg-card text-success",
+  warning: "border-warning bg-card text-warning",
+  danger: "border-danger bg-card text-danger",
+  muted: "border-border bg-muted text-muted-foreground",
 };
 
 type BadgeProps = {
@@ -144,7 +144,7 @@ export function Badge({ children, variant = "default", className }: BadgeProps) 
 
 export function Table({ className, ...props }: TableHTMLAttributes<HTMLTableElement>) {
   return (
-    <div className="w-full overflow-x-auto rounded-xl border border-border bg-white">
+    <div className="w-full overflow-x-auto rounded-lg border border-border bg-card">
       <table
         className={cn("w-full min-w-[760px] border-collapse text-left text-sm", className)}
         {...props}
@@ -163,10 +163,12 @@ type FormFieldProps = {
 
 export function FormField({ label, children, hint, error, className }: FormFieldProps) {
   return (
-    <label className={cn("grid gap-2 text-sm font-semibold text-slate-700", className)}>
+    <label className={cn("grid gap-2 text-sm font-semibold text-card-foreground", className)}>
       <span>{label}</span>
       {children}
-      {hint ? <span className="text-xs font-normal leading-5 text-muted">{hint}</span> : null}
+      {hint ? (
+        <span className="text-xs font-normal leading-5 text-muted-foreground">{hint}</span>
+      ) : null}
       {error ? <span className="text-xs font-normal leading-5 text-danger">{error}</span> : null}
     </label>
   );
@@ -192,7 +194,7 @@ export function SwitchRow({
   return (
     <label
       className={cn(
-        "flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-white p-3 text-sm",
+        "flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-card p-3 text-sm shadow-sm transition hover:border-primary hover:bg-secondary",
         disabled && "cursor-not-allowed opacity-60",
         className,
       )}
@@ -206,7 +208,9 @@ export function SwitchRow({
       />
       <span className="grid gap-1">
         <span className="font-semibold text-foreground">{label}</span>
-        {description ? <span className="text-xs leading-5 text-muted">{description}</span> : null}
+        {description ? (
+          <span className="text-xs leading-5 text-muted-foreground">{description}</span>
+        ) : null}
       </span>
     </label>
   );
@@ -231,7 +235,7 @@ export function PageHeader({ eyebrow, title, description, action, className }: P
         ) : null}
         <h1 className="text-2xl font-bold tracking-normal text-foreground sm:text-3xl">{title}</h1>
         {description ? (
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">{description}</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
         ) : null}
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
@@ -252,7 +256,7 @@ export function EmptyState({ title, description, action, className }: EmptyState
       <div>
         <p className="font-semibold text-foreground">{title}</p>
         {description ? (
-          <p className="mt-2 max-w-md text-sm leading-6 text-muted">{description}</p>
+          <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">{description}</p>
         ) : null}
       </div>
       {action}
@@ -286,16 +290,16 @@ export function ConfirmDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="grid w-full max-w-md gap-5 rounded-2xl border border-border bg-white p-6 shadow-soft"
+        className="grid w-full max-w-md gap-5 rounded-2xl border border-border bg-card p-6 shadow-soft"
       >
         <div>
           <h2 className="text-lg font-bold text-foreground">{title}</h2>
-          <div className="mt-2 text-sm leading-6 text-muted">{description}</div>
+          <div className="mt-2 text-sm leading-6 text-muted-foreground">{description}</div>
         </div>
         <div className="flex flex-wrap justify-end gap-3">
           <Button variant="secondary" onClick={onCancel}>

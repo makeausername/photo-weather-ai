@@ -1,5 +1,6 @@
 /** @type {import("tailwindcss").Config} */
 module.exports = {
+  darkMode: ["selector", '[data-theme="dark"]'],
   content: [
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -11,13 +12,20 @@ module.exports = {
         background: "var(--background)",
         foreground: "var(--foreground)",
         card: "var(--card)",
+        "card-foreground": "var(--card-foreground)",
         border: "var(--border)",
         muted: "var(--muted)",
+        "muted-foreground": "var(--muted-foreground)",
         primary: "var(--primary)",
         "primary-foreground": "var(--primary-foreground)",
+        secondary: "var(--secondary)",
+        "secondary-foreground": "var(--secondary-foreground)",
+        accent: "var(--accent)",
+        "accent-foreground": "var(--accent-foreground)",
         warning: "var(--warning)",
         danger: "var(--danger)",
         success: "var(--success)",
+        ring: "var(--ring)",
       },
       fontFamily: {
         sans: [
@@ -33,7 +41,7 @@ module.exports = {
         ],
       },
       boxShadow: {
-        soft: "0 18px 60px rgb(15 23 42 / 10%)",
+        soft: "var(--soft-shadow)",
       },
     },
   },

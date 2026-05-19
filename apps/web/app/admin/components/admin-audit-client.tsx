@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { Badge, Card, EmptyState, Table } from "../../../components/ui";
@@ -53,33 +53,35 @@ export function AdminAuditClient() {
 
   return (
     <Card className="overflow-hidden">
-      <div className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-bold">近期操作</h2>
-          <p className="mt-1 text-sm text-muted">展示最近 50 条后台操作记录。</p>
+          <h2 className="text-base font-bold">近期操作</h2>
+          <p className="mt-1 text-xs text-muted-foreground">展示最近 50 条后台操作记录。</p>
         </div>
         <Badge variant="muted">{status}</Badge>
       </div>
       {logs.length > 0 ? (
         <Table aria-label="近期后台审计日志">
-          <thead className="bg-slate-50 text-xs font-semibold text-muted">
+          <thead className="bg-muted text-xs font-semibold text-muted-foreground">
             <tr>
-              <th className="px-4 py-3">时间</th>
-              <th className="px-4 py-3">操作</th>
-              <th className="px-4 py-3">对象</th>
-              <th className="px-4 py-3">操作者</th>
+              <th className="px-3 py-2.5">时间</th>
+              <th className="px-3 py-2.5">操作</th>
+              <th className="px-3 py-2.5">对象</th>
+              <th className="px-3 py-2.5">操作者</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {logs.map((log) => (
               <tr key={log.id}>
-                <td className="px-4 py-3 text-slate-700">{formatDate(log.createdAt)}</td>
-                <td className="px-4 py-3 font-medium">{actionLabels[log.action] ?? log.action}</td>
-                <td className="px-4 py-3 text-muted">
+                <td className="px-3 py-2.5 text-card-foreground">{formatDate(log.createdAt)}</td>
+                <td className="px-3 py-2.5 font-medium">
+                  {actionLabels[log.action] ?? log.action}
+                </td>
+                <td className="px-3 py-2.5 text-muted-foreground">
                   {targetTypeLabels[log.targetType] ?? log.targetType}
                   {log.targetId ? ` / ${log.targetId}` : ""}
                 </td>
-                <td className="px-4 py-3 text-muted">{log.actorUserId ?? "系统"}</td>
+                <td className="px-3 py-2.5 text-muted-foreground">{log.actorUserId ?? "系统"}</td>
               </tr>
             ))}
           </tbody>

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -127,14 +127,14 @@ function locationPayloadFromForm(form: LocationFormState) {
 
 function statusClass(status: string): string {
   if (status.includes("失败") || status.includes("错误") || status.includes("Error")) {
-    return "border-red-200 bg-red-50 text-red-700";
+    return "border-danger bg-card text-danger";
   }
 
   if (status.includes("保存") || status.includes("加载") || status.includes("删除")) {
-    return "border-blue-200 bg-blue-50 text-blue-700";
+    return "border-primary bg-secondary text-secondary-foreground";
   }
 
-  return "border-slate-200 bg-slate-50 text-slate-600";
+  return "border-border bg-muted text-muted-foreground";
 }
 
 export function AdminLocationsClient() {
@@ -225,13 +225,13 @@ export function AdminLocationsClient() {
       <div className="flex gap-2 overflow-x-auto pb-1">
         <Link
           href="/admin/locations"
-          className="whitespace-nowrap rounded-lg border border-primary bg-primary px-3 py-2 text-sm font-semibold text-white"
+          className="whitespace-nowrap rounded-lg border border-primary bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"
         >
           地点管理
         </Link>
         <Link
           href="/admin/photo-spots"
-          className="whitespace-nowrap rounded-lg border border-border bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-primary hover:text-primary"
+          className="whitespace-nowrap rounded-lg border border-border bg-card px-3 py-2 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary hover:text-primary"
         >
           机位管理
         </Link>
@@ -241,7 +241,7 @@ export function AdminLocationsClient() {
         <div className="flex flex-col gap-3 border-b border-border px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-lg font-bold">地点资料</h2>
-            <p className="mt-1 text-sm text-muted">管理景区、山地、城市与自定义拍摄地点。</p>
+            <p className="mt-1 text-sm text-muted-foreground">管理景区、山地、城市与自定义拍摄地点。</p>
           </div>
           <span className={`rounded-lg border px-3 py-2 text-sm ${statusClass(status)}`}>
             {status}
@@ -250,7 +250,7 @@ export function AdminLocationsClient() {
         <div className="flex flex-col gap-3 border-b border-border p-5 md:flex-row">
           <Input
             value={search}
-            placeholder="搜索地点、省份、城市或 slug"
+            placeholder="搜索地点、省份、城市或标识"
             onChange={(event) => setSearch(event.target.value)}
             className="md:max-w-md"
           />
@@ -268,7 +268,7 @@ export function AdminLocationsClient() {
 
         {locations.length > 0 ? (
           <Table aria-label="地点列表">
-            <thead className="bg-slate-50 text-xs font-semibold text-muted">
+            <thead className="bg-muted text-xs font-semibold text-muted-foreground">
               <tr>
                 <th className="px-4 py-3">地点</th>
                 <th className="px-4 py-3">行政区</th>
@@ -283,16 +283,16 @@ export function AdminLocationsClient() {
                 <tr key={location.id}>
                   <td className="px-4 py-3">
                     <div className="font-semibold text-foreground">{location.name}</div>
-                    <div className="mt-1 text-xs text-muted">{location.slug}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{location.slug}</div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-slate-700">
+                  <td className="px-4 py-3 text-sm text-card-foreground">
                     {location.province} / {location.city}
                     {location.district ? ` / ${location.district}` : ""}
                   </td>
-                  <td className="px-4 py-3 text-sm text-muted">
+                  <td className="px-4 py-3 text-sm text-muted-foreground">
                     {formatCoordinate(location.latitudeGcj02, location.longitudeGcj02)}
                   </td>
-                  <td className="px-4 py-3 text-sm text-muted">
+                  <td className="px-4 py-3 text-sm text-muted-foreground">
                     {formatCoordinate(location.latitudeWgs84, location.longitudeWgs84)}
                   </td>
                   <td className="px-4 py-3">
@@ -305,7 +305,7 @@ export function AdminLocationsClient() {
                         {locationSourceLabels[location.source as LocationSourceCode] ?? "未知来源"}
                       </Badge>
                       <Badge variant={location.isVerified ? "success" : "warning"}>
-                        {location.isVerified ? "已核验" : "待核验"}
+                        {location.isVerified ? "已验证" : "未验证"}
                       </Badge>
                     </div>
                   </td>
@@ -331,7 +331,7 @@ export function AdminLocationsClient() {
       <Card className="overflow-hidden">
         <div className="border-b border-border px-5 py-4">
           <h2 className="text-lg font-bold">{editingId ? "编辑地点" : "新增地点"}</h2>
-          <p className="mt-1 text-sm text-muted">
+          <p className="mt-1 text-sm text-muted-foreground">
             地图展示使用 GCJ-02，天气、天文和地形计算使用 WGS84。
           </p>
         </div>
@@ -349,7 +349,7 @@ export function AdminLocationsClient() {
                 onChange={(event) => updateForm("name", event.target.value)}
               />
             </FormField>
-            <FormField label="slug">
+            <FormField label="访问标识">
               <Input
                 value={form.slug}
                 onChange={(event) => updateForm("slug", event.target.value)}

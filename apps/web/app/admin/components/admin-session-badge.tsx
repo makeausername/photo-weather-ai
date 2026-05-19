@@ -29,14 +29,19 @@ export function AdminSessionBadge() {
   }, []);
 
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-white px-3 py-2 shadow-sm">
-      <div className="grid leading-tight">
-        <span className="text-xs text-muted">当前管理员</span>
-        <span className="max-w-48 truncate text-sm font-semibold text-foreground">
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="max-w-44 truncate text-xs text-muted-foreground">
+        <span className="mr-1">当前管理员</span>
+        <span className="font-medium text-foreground">
           {user?.displayName || user?.email || "管理员"}
         </span>
       </div>
-      <Button variant="secondary" size="sm" onClick={() => void logoutAdmin()}>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-8 px-2 text-xs font-medium"
+        onClick={() => void logoutAdmin()}
+      >
         退出登录
       </Button>
     </div>

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -80,18 +80,18 @@ function providerName(provider: SafeProviderConfig): string {
 
 function stateClass(status: RowState["status"]): string {
   if (status === "error") {
-    return "border-red-200 bg-red-50 text-red-700";
+    return "border-danger bg-card text-danger";
   }
 
   if (status === "saved") {
-    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    return "border-success bg-card text-success";
   }
 
   if (status === "testing" || status === "saving") {
-    return "border-blue-200 bg-blue-50 text-blue-700";
+    return "border-primary bg-secondary text-secondary-foreground";
   }
 
-  return "border-slate-200 bg-slate-50 text-slate-600";
+  return "border-border bg-muted text-muted-foreground";
 }
 
 function ProviderStatus({ provider }: { readonly provider: SafeProviderConfig }) {
@@ -112,6 +112,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   const [secretDrafts, setSecretDrafts] = useState<Record<string, string>>({});
   const [enabledDrafts, setEnabledDrafts] = useState<Record<string, boolean>>({});
   const [priorityDrafts, setPriorityDrafts] = useState<Record<string, number>>({});
+  const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({});
   const [stateByProvider, setStateByProvider] = useState<Record<string, RowState>>({});
   const [loadState, setLoadState] = useState<RowState>({ status: "idle" });
 
@@ -136,6 +137,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       setPriorityDrafts(
         Object.fromEntries(response.providers.map((provider) => [provider.id, provider.priority])),
       );
+      setExpandedProviders({});
       setLoadState({ status: "saved", message: "服务商配置已加载。" });
     } catch (error) {
       setLoadState({ status: "error", message: (error as Error).message });
@@ -221,6 +223,13 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     }
   }
 
+  function toggleProviderEditor(providerId: string) {
+    setExpandedProviders((current) => ({
+      ...current,
+      [providerId]: !current[providerId],
+    }));
+  }
+
   if (providers.length === 0 && loadState.status === "error") {
     return (
       <Card>
@@ -237,15 +246,24 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   return (
     <div className="grid gap-6">
       <div className="flex gap-2 overflow-x-auto pb-1">
-        {providerTabs.map((tab) => (
-          <Link
-            key={tab.href}
-            href={tab.href}
-            className="whitespace-nowrap rounded-lg border border-border bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-primary hover:text-primary"
-          >
-            {tab.label}
-          </Link>
-        ))}
+        {providerTabs.map((tab) => {
+          const active =
+            (!providerType && tab.href === "/admin/providers") ||
+            (providerType ? tab.href.endsWith(`/${providerType}`) : false);
+          return (
+            <Link
+              key={tab.href}
+              href={tab.href}
+              className={`whitespace-nowrap rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                active
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-card text-foreground hover:border-primary hover:bg-secondary hover:text-primary"
+              }`}
+            >
+              {tab.label}
+            </Link>
+          );
+        })}
       </div>
 
       {loadState.message ? (
@@ -259,7 +277,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
           <div className="flex flex-col gap-2 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-bold">{providerTypeLabels[group] ?? "其他服务商"}</h2>
-              <p className="mt-1 text-sm text-muted">{groupProviders.length} 个服务商</p>
+              <p className="mt-1 text-sm text-muted-foreground">{groupProviders.length} 个服务商</p>
             </div>
             <Badge variant="muted">不会调用真实外部服务</Badge>
           </div>
@@ -267,79 +285,32 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
           <div className="grid gap-4 p-5 xl:grid-cols-2">
             {groupProviders.map((provider) => {
               const state = stateByProvider[provider.id];
+              const isExpanded = expandedProviders[provider.id] ?? false;
 
               return (
                 <article
                   key={provider.id}
-                  className="grid gap-4 rounded-xl border border-border bg-slate-50 p-4"
+                  className="grid gap-4 rounded-xl border border-border bg-card p-4 shadow-sm"
                 >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <h3 className="text-base font-bold">{providerName(provider)}</h3>
-                      <p className="mt-1 text-sm text-muted">代码：{provider.providerCode}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">代码：{provider.providerCode}</p>
                     </div>
                     <ProviderStatus provider={provider} />
                   </div>
 
-                  <SwitchRow
-                    label="启用该服务商"
-                    description="仅保存配置开关，不触发真实连接。"
-                    checked={enabledDrafts[provider.id] ?? provider.enabled}
-                    onChange={(checked) =>
-                      setEnabledDrafts((current) => ({
-                        ...current,
-                        [provider.id]: checked,
-                      }))
-                    }
-                  />
-
-                  <FormField label="优先级">
-                    <Input
-                      type="number"
-                      value={priorityDrafts[provider.id] ?? provider.priority}
-                      onChange={(event) =>
-                        setPriorityDrafts((current) => ({
-                          ...current,
-                          [provider.id]: Number(event.target.value),
-                        }))
-                      }
-                    />
-                  </FormField>
-
-                  <FormField label="配置 JSON">
-                    <Textarea
-                      value={configDrafts[provider.id] ?? "{}"}
-                      onChange={(event) =>
-                        setConfigDrafts((current) => ({
-                          ...current,
-                          [provider.id]: event.target.value,
-                        }))
-                      }
-                    />
-                  </FormField>
-
-                  <FormField label="密钥 JSON" hint="留空表示不更新密钥；保存后只显示脱敏结果。">
-                    <Textarea
-                      placeholder='{"apiKey":"新的密钥值"}'
-                      value={secretDrafts[provider.id] ?? ""}
-                      onChange={(event) =>
-                        setSecretDrafts((current) => ({
-                          ...current,
-                          [provider.id]: event.target.value,
-                        }))
-                      }
-                    />
-                  </FormField>
-
-                  <div className="rounded-lg border border-border bg-white p-3">
-                    <p className="text-sm font-semibold text-slate-700">已脱敏密钥</p>
-                    <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words text-xs leading-5 text-muted">
+                  <div className="rounded-lg border border-border bg-muted p-3">
+                    <p className="text-sm font-semibold text-card-foreground">已脱敏密钥</p>
+                    <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">
                       {stringifyJson(provider.maskedSecretJson)}
                     </pre>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-3">
-                    <Button onClick={() => void saveProvider(provider)}>保存</Button>
+                    <Button variant="secondary" onClick={() => toggleProviderEditor(provider.id)}>
+                      编辑
+                    </Button>
                     <Button variant="secondary" onClick={() => void testProvider(provider)}>
                       测试连接
                     </Button>
@@ -351,6 +322,77 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                       </span>
                     ) : null}
                   </div>
+
+                  {isExpanded ? (
+                    <div className="grid gap-4 rounded-xl border border-border bg-muted p-4">
+                      <SwitchRow
+                        label="启用该服务商"
+                        description="仅保存配置开关，不触发真实连接。"
+                        checked={enabledDrafts[provider.id] ?? provider.enabled}
+                        onChange={(checked) =>
+                          setEnabledDrafts((current) => ({
+                            ...current,
+                            [provider.id]: checked,
+                          }))
+                        }
+                      />
+
+                      <FormField label="优先级">
+                        <Input
+                          type="number"
+                          value={priorityDrafts[provider.id] ?? provider.priority}
+                          onChange={(event) =>
+                            setPriorityDrafts((current) => ({
+                              ...current,
+                              [provider.id]: Number(event.target.value),
+                            }))
+                          }
+                        />
+                      </FormField>
+
+                      <details>
+                        <summary className="cursor-pointer text-sm font-semibold text-card-foreground">
+                          高级配置
+                        </summary>
+                        <div className="mt-4 grid gap-4">
+                          <FormField label="配置 JSON">
+                            <Textarea
+                              value={configDrafts[provider.id] ?? "{}"}
+                              onChange={(event) =>
+                                setConfigDrafts((current) => ({
+                                  ...current,
+                                  [provider.id]: event.target.value,
+                                }))
+                              }
+                            />
+                          </FormField>
+
+                          <FormField
+                            label="密钥 JSON"
+                            hint="留空表示不更新密钥；保存后只显示脱敏结果。"
+                          >
+                            <Textarea
+                              placeholder="留空则保持现有密钥不变"
+                              value={secretDrafts[provider.id] ?? ""}
+                              onChange={(event) =>
+                                setSecretDrafts((current) => ({
+                                  ...current,
+                                  [provider.id]: event.target.value,
+                                }))
+                              }
+                            />
+                          </FormField>
+                        </div>
+                      </details>
+
+                      <div className="flex flex-wrap justify-end gap-3">
+                        <Button variant="secondary" onClick={() => toggleProviderEditor(provider.id)}>
+                          取消
+                        </Button>
+                        <Button onClick={() => void saveProvider(provider)}>保存</Button>
+                      </div>
+                    </div>
+                  ) : null}
                 </article>
               );
             })}

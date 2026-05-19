@@ -1,7 +1,16 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Badge, Button, Card, EmptyState, FormField, Textarea } from "../../../components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  FormField,
+  Input,
+  Select,
+  Textarea,
+} from "../../../components/ui";
 import { adminApiFetch } from "../admin-api";
 import type { JsonValue, SafeSystemSetting } from "../admin-api";
 
@@ -131,14 +140,14 @@ function parseSettingValue(valueType: string, input: string): JsonValue {
 
 function stateClass(status: SaveState["status"]): string {
   if (status === "error") {
-    return "border-red-200 bg-red-50 text-red-700";
+    return "border-danger bg-card text-danger";
   }
 
   if (status === "saved") {
-    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    return "border-success bg-card text-success";
   }
 
-  return "border-slate-200 bg-slate-50 text-slate-600";
+  return "border-border bg-muted text-muted-foreground";
 }
 
 export function AdminSettingsClient() {
@@ -230,7 +239,7 @@ export function AdminSettingsClient() {
           <div className="flex flex-col gap-2 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-bold">{groupLabels[group] ?? "其他设置"}</h2>
-              <p className="mt-1 text-sm text-muted">{groupSettings.length} 项设置</p>
+              <p className="mt-1 text-sm text-muted-foreground">{groupSettings.length} 项设置</p>
             </div>
             <Badge variant="muted">系统参数</Badge>
           </div>
@@ -248,7 +257,7 @@ export function AdminSettingsClient() {
                   <div className="grid content-start gap-3">
                     <div>
                       <h3 className="font-bold text-foreground">{text.label}</h3>
-                      <p className="mt-2 text-sm leading-6 text-muted">{text.description}</p>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">{text.description}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Badge variant="muted">{setting.key}</Badge>
@@ -264,19 +273,59 @@ export function AdminSettingsClient() {
                   </div>
 
                   <div className="grid gap-3">
-                    <FormField label="配置值">
-                      <Textarea
-                        value={editValues[setting.key] ?? ""}
-                        disabled={!setting.isEditable}
-                        aria-label={`${text.label} 的配置值`}
-                        onChange={(event) =>
-                          setEditValues((current) => ({
-                            ...current,
-                            [setting.key]: event.target.value,
-                          }))
-                        }
-                      />
-                    </FormField>
+                    {setting.valueType === "json" ? (
+                      <details className="rounded-xl border border-border bg-muted p-4">
+                        <summary className="cursor-pointer text-sm font-semibold text-card-foreground">
+                          高级配置
+                        </summary>
+                        <FormField label="JSON 配置值" className="mt-4">
+                          <Textarea
+                            value={editValues[setting.key] ?? ""}
+                            disabled={!setting.isEditable}
+                            aria-label={`${text.label} 的配置值`}
+                            onChange={(event) =>
+                              setEditValues((current) => ({
+                                ...current,
+                                [setting.key]: event.target.value,
+                              }))
+                            }
+                          />
+                        </FormField>
+                      </details>
+                    ) : setting.valueType === "boolean" ? (
+                      <FormField label="配置值">
+                        <Select
+                          value={editValues[setting.key] ?? "false"}
+                          disabled={!setting.isEditable}
+                          aria-label={`${text.label} 的配置值`}
+                          onChange={(event) =>
+                            setEditValues((current) => ({
+                              ...current,
+                              [setting.key]: event.target.value,
+                            }))
+                          }
+                        >
+                          <option value="true">启用</option>
+                          <option value="false">停用</option>
+                        </Select>
+                      </FormField>
+                    ) : (
+                      <FormField label="配置值">
+                        <Input
+                          type={setting.valueType === "url" ? "url" : "text"}
+                          inputMode={setting.valueType === "number" ? "decimal" : undefined}
+                          value={editValues[setting.key] ?? ""}
+                          disabled={!setting.isEditable}
+                          aria-label={`${text.label} 的配置值`}
+                          onChange={(event) =>
+                            setEditValues((current) => ({
+                              ...current,
+                              [setting.key]: event.target.value,
+                            }))
+                          }
+                        />
+                      </FormField>
+                    )}
                     <div className="flex flex-wrap items-center gap-3">
                       <Button
                         disabled={

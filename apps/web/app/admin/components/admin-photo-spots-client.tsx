@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -176,14 +176,14 @@ function spotPayloadFromForm(form: PhotoSpotFormState) {
 
 function statusClass(status: string): string {
   if (status.includes("失败") || status.includes("错误") || status.includes("Error")) {
-    return "border-red-200 bg-red-50 text-red-700";
+    return "border-danger bg-card text-danger";
   }
 
   if (status.includes("保存") || status.includes("加载") || status.includes("删除")) {
-    return "border-blue-200 bg-blue-50 text-blue-700";
+    return "border-primary bg-secondary text-secondary-foreground";
   }
 
-  return "border-slate-200 bg-slate-50 text-slate-600";
+  return "border-border bg-muted text-muted-foreground";
 }
 
 export function AdminPhotoSpotsClient() {
@@ -301,13 +301,13 @@ export function AdminPhotoSpotsClient() {
       <div className="flex gap-2 overflow-x-auto pb-1">
         <Link
           href="/admin/locations"
-          className="whitespace-nowrap rounded-lg border border-border bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-primary hover:text-primary"
+          className="whitespace-nowrap rounded-lg border border-border bg-card px-3 py-2 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary hover:text-primary"
         >
           地点管理
         </Link>
         <Link
           href="/admin/photo-spots"
-          className="whitespace-nowrap rounded-lg border border-primary bg-primary px-3 py-2 text-sm font-semibold text-white"
+          className="whitespace-nowrap rounded-lg border border-primary bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"
         >
           机位管理
         </Link>
@@ -317,7 +317,7 @@ export function AdminPhotoSpotsClient() {
         <div className="flex flex-col gap-3 border-b border-border px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-lg font-bold">摄影机位</h2>
-            <p className="mt-1 text-sm text-muted">管理具体拍摄点、朝向、适拍类型和安全备注。</p>
+            <p className="mt-1 text-sm text-muted-foreground">管理具体拍摄点、朝向、适拍类型和安全备注。</p>
           </div>
           <span className={`rounded-lg border px-3 py-2 text-sm ${statusClass(status)}`}>
             {status}
@@ -340,7 +340,7 @@ export function AdminPhotoSpotsClient() {
           </Select>
           <Input
             value={search}
-            placeholder="搜索机位名称、slug 或说明"
+            placeholder="搜索机位名称、标识或说明"
             onChange={(event) => setSearch(event.target.value)}
           />
           <Button onClick={() => void loadPhotoSpots()}>搜索</Button>
@@ -358,7 +358,7 @@ export function AdminPhotoSpotsClient() {
 
         {photoSpots.length > 0 ? (
           <Table aria-label="机位列表">
-            <thead className="bg-slate-50 text-xs font-semibold text-muted">
+            <thead className="bg-muted text-xs font-semibold text-muted-foreground">
               <tr>
                 <th className="px-4 py-3">机位</th>
                 <th className="px-4 py-3">地点</th>
@@ -373,15 +373,15 @@ export function AdminPhotoSpotsClient() {
                 <tr key={spot.id}>
                   <td className="px-4 py-3">
                     <div className="font-semibold text-foreground">{spot.name}</div>
-                    <div className="mt-1 text-xs text-muted">{spot.slug}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{spot.slug}</div>
                     <Badge variant="muted" className="mt-2">
                       {viewDirectionLabels[spot.viewDirection as ViewDirectionCode] ?? "未标注"}
                     </Badge>
                   </td>
-                  <td className="px-4 py-3 text-sm text-slate-700">
+                  <td className="px-4 py-3 text-sm text-card-foreground">
                     {spot.location?.name ?? spot.locationId}
                   </td>
-                  <td className="px-4 py-3 text-xs leading-6 text-muted">
+                  <td className="px-4 py-3 text-xs leading-6 text-muted-foreground">
                     <div>GCJ-02：{formatCoordinate(spot.latitudeGcj02, spot.longitudeGcj02)}</div>
                     <div>WGS84：{formatCoordinate(spot.latitudeWgs84, spot.longitudeWgs84)}</div>
                     <div>海拔：{spot.elevation === null ? "未填写" : `${spot.elevation} 米`}</div>
@@ -397,11 +397,11 @@ export function AdminPhotoSpotsClient() {
                         ))}
                       {spot.isHot ? <Badge variant="warning">热门</Badge> : null}
                       <Badge variant={spot.isVerified ? "success" : "warning"}>
-                        {spot.isVerified ? "已核验" : "待核验"}
+                        {spot.isVerified ? "已验证" : "未验证"}
                       </Badge>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-xs leading-6 text-muted">
+                  <td className="px-4 py-3 text-xs leading-6 text-muted-foreground">
                     <div>交通：{spot.trafficNote ?? "未填写"}</div>
                     <div>安全：{spot.safetyNote ?? "未填写"}</div>
                     <div>风险：{spot.riskNote ?? "未填写"}</div>
@@ -428,7 +428,7 @@ export function AdminPhotoSpotsClient() {
       <Card className="overflow-hidden">
         <div className="border-b border-border px-5 py-4">
           <h2 className="text-lg font-bold">{editingId ? "编辑机位" : "新增机位"}</h2>
-          <p className="mt-1 text-sm text-muted">机位坐标需要同时维护 GCJ-02 和 WGS84。</p>
+          <p className="mt-1 text-sm text-muted-foreground">机位坐标需要同时维护 GCJ-02 和 WGS84。</p>
         </div>
         <form
           className="grid gap-5 p-5"
@@ -457,7 +457,7 @@ export function AdminPhotoSpotsClient() {
                 onChange={(event) => updateForm("name", event.target.value)}
               />
             </FormField>
-            <FormField label="slug">
+            <FormField label="访问标识">
               <Input
                 value={form.slug}
                 onChange={(event) => updateForm("slug", event.target.value)}

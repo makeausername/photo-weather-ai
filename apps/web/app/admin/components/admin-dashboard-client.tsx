@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { Badge, Card, EmptyState, Table } from "../../../components/ui";
@@ -125,55 +125,57 @@ export function AdminDashboardClient() {
   ] as const;
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-5">
       {state.error ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div className="rounded-xl border border-warning bg-card px-4 py-3 text-sm text-warning">
           {state.error}
         </div>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {summaryCards.map((card) => (
-          <Card key={card.title} className="grid gap-4 p-5">
-            <div className="flex items-start justify-between gap-4">
-              <h2 className="text-sm font-semibold text-muted">{card.title}</h2>
+          <Card key={card.title} className="grid gap-3 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <h2 className="text-sm font-semibold text-muted-foreground">{card.title}</h2>
               <Badge variant={card.badge === "正常" ? "success" : "muted"}>{card.badge}</Badge>
             </div>
-            <p className="text-3xl font-bold tracking-normal text-foreground">
+            <p className="text-2xl font-bold tracking-normal text-foreground">
               {loading ? "..." : card.value}
             </p>
-            <p className="text-sm leading-6 text-muted">{card.description}</p>
+            <p className="text-xs leading-5 text-muted-foreground">{card.description}</p>
           </Card>
         ))}
       </div>
 
       <Card className="overflow-hidden">
-        <div className="border-b border-border px-5 py-4">
-          <h2 className="text-lg font-bold">最近操作</h2>
-          <p className="mt-1 text-sm text-muted">最近 5 条后台审计日志，敏感字段由后端脱敏。</p>
+        <div className="border-b border-border px-4 py-3">
+          <h2 className="text-base font-bold">最近操作</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            最近 5 条后台审计日志，敏感字段由后端脱敏。
+          </p>
         </div>
         {state.auditLogs.length > 0 ? (
           <Table>
-            <thead className="bg-slate-50 text-xs font-semibold text-muted">
+            <thead className="bg-muted text-xs font-semibold text-muted-foreground">
               <tr>
-                <th className="px-4 py-3">时间</th>
-                <th className="px-4 py-3">操作</th>
-                <th className="px-4 py-3">对象</th>
-                <th className="px-4 py-3">操作者</th>
+                <th className="px-3 py-2.5">时间</th>
+                <th className="px-3 py-2.5">操作</th>
+                <th className="px-3 py-2.5">对象</th>
+                <th className="px-3 py-2.5">操作者</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {state.auditLogs.map((log) => (
                 <tr key={log.id}>
-                  <td className="px-4 py-3 text-slate-700">{formatDate(log.createdAt)}</td>
-                  <td className="px-4 py-3 font-medium">
+                  <td className="px-3 py-2.5 text-card-foreground">{formatDate(log.createdAt)}</td>
+                  <td className="px-3 py-2.5 font-medium">
                     {actionLabels[log.action] ?? log.action}
                   </td>
-                  <td className="px-4 py-3 text-muted">
+                  <td className="px-3 py-2.5 text-muted-foreground">
                     {targetTypeLabels[log.targetType] ?? log.targetType}
                     {log.targetId ? ` / ${log.targetId}` : ""}
                   </td>
-                  <td className="px-4 py-3 text-muted">{log.actorUserId ?? "系统"}</td>
+                  <td className="px-3 py-2.5 text-muted-foreground">{log.actorUserId ?? "系统"}</td>
                 </tr>
               ))}
             </tbody>

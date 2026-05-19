@@ -3,17 +3,37 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "风光天气 AI",
-  description: "面向中国大陆风光摄影用户的天气与拍摄机会判断工具。",
+  title: "逐光天气",
+  description: "风光摄影出行判断工具。",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 type RootLayoutProps = {
   readonly children: ReactNode;
 };
 
+const themeScript = `
+(function() {
+  try {
+    var storedTheme = window.localStorage.getItem("photo_weather_theme");
+    var theme = storedTheme === "dark" || storedTheme === "light" ? storedTheme : "light";
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+  } catch (error) {
+    document.documentElement.dataset.theme = "light";
+    document.documentElement.style.colorScheme = "light";
+  }
+})();
+`;
+
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" data-theme="light" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body>{children}</body>
     </html>
   );

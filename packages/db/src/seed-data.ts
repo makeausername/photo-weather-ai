@@ -189,7 +189,7 @@ const rolePermissions = [
 const systemSettings = [
   {
     key: "site.name",
-    valueJson: "风光天气 AI",
+    valueJson: "逐光天气",
     valueType: "string",
     group: "site",
     label: "站点名称",

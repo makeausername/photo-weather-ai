@@ -1,0 +1,12 @@
+<svg width="96" height="96" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">逐光天气品牌图标</title>
+  <desc id="desc">山脊、日出与前行路径组成的几何标志。</desc>
+  <rect x="6" y="6" width="84" height="84" rx="24" fill="#F8FCFF"/>
+  <rect x="6" y="6" width="84" height="84" rx="24" stroke="#D5E6F1" stroke-width="2"/>
+  <path d="M23 58C30.5 43.5 38.2 36 45.7 36C52.4 36 57.2 44.8 64.6 45.3C68.7 45.6 72 43.4 76 39" stroke="#0B73C8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M22 66H74" stroke="#0F2E46" stroke-width="5" stroke-linecap="round"/>
+  <path d="M35 66C42.5 56.5 48.7 51.8 53.5 51.8C58 51.8 62.6 56.2 68 66" stroke="#14A6C8" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M26 74C40.5 76.5 55.5 76.3 70 73.5" stroke="#8EC8DA" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="60" cy="28" r="10" fill="#F5B642"/>
+  <path d="M60 12V17M76 28H81M69.8 18.2L73.3 14.7M69.8 37.8L73.3 41.3" stroke="#F5B642" stroke-width="4" stroke-linecap="round"/>
+</svg>

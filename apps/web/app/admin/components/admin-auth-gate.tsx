@@ -54,7 +54,7 @@ export function AdminAuthGate({ children }: AdminAuthGateProps) {
 
   if (!checked) {
     return (
-      <main className="grid min-h-screen place-items-center bg-slate-100 px-6 text-sm text-muted">
+      <main className="grid min-h-screen place-items-center bg-background px-6 text-sm text-muted-foreground">
         正在检查后台登录状态...
       </main>
     );
