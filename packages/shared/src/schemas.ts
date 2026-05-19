@@ -31,3 +31,23 @@ export const decisionCardSchema = z.object({
   reasons: z.array(z.string().min(1)),
   recommendedWindow: timeWindowSchema.optional(),
 });
+
+const latitudeSchema = z.number().finite().min(-90).max(90);
+const longitudeSchema = z.number().finite().min(-180).max(180);
+
+export const forecastHorizonSchema = z.enum(["24h", "48h", "72h", "7d"]);
+
+export const forecastTargetSchema = z.enum(["general", "cloud_sea", "glow", "astro"]);
+
+export const forecastQueryInputSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  source: z.string().trim().min(1).max(80),
+  latitudeGcj02: latitudeSchema,
+  longitudeGcj02: longitudeSchema,
+  latitudeWgs84: latitudeSchema,
+  longitudeWgs84: longitudeSchema,
+  horizon: forecastHorizonSchema,
+  target: forecastTargetSchema,
+  locationId: z.string().trim().min(1).max(120).optional(),
+  photoSpotId: z.string().trim().min(1).max(120).optional(),
+});

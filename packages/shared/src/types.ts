@@ -40,6 +40,23 @@ export type DecisionCard = {
   readonly recommendedWindow?: TimeWindow;
 };
 
+export type ForecastHorizon = "24h" | "48h" | "72h" | "7d";
+
+export type ForecastTarget = "general" | "cloud_sea" | "glow" | "astro";
+
+export type ForecastQueryInput = {
+  readonly name: string;
+  readonly source: string;
+  readonly latitudeGcj02: number;
+  readonly longitudeGcj02: number;
+  readonly latitudeWgs84: number;
+  readonly longitudeWgs84: number;
+  readonly horizon: ForecastHorizon;
+  readonly target: ForecastTarget;
+  readonly locationId?: string;
+  readonly photoSpotId?: string;
+};
+
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 export type JsonObject = {

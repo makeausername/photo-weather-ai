@@ -59,6 +59,9 @@ importers:
       '@photo-weather/geo':
         specifier: workspace:*
         version: link:../../packages/geo
+      '@photo-weather/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@photo-weather/weather':
         specifier: workspace:*
         version: link:../../packages/weather

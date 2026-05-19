@@ -8,6 +8,7 @@ import { MockWeatherProvider } from "@photo-weather/weather";
 import { registerAdminRoutes } from "./admin-routes.js";
 import type { AuthConfig } from "./auth-routes.js";
 import { loadAuthConfig, registerAuthRoutes } from "./auth-routes.js";
+import { registerForecastRoutes } from "./forecast-routes.js";
 import { resolveGeoProvider } from "./geo-provider.js";
 import { registerSearchRoutes } from "./search-routes.js";
 
@@ -86,6 +87,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
   });
 
   registerAuthRoutes(app, { dbClient: options.dbClient, authConfig });
+  registerForecastRoutes(app);
   registerSearchRoutes(app, {
     dbClient: options.dbClient,
     resolveGeoProvider: resolveRuntimeGeoProvider,
