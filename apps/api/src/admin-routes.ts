@@ -58,6 +58,10 @@ const providerPatchSchema = z
     priority: z.number().int().min(0).max(10000).optional(),
     configJson: jsonObjectSchema.optional(),
     secretJson: jsonObjectSchema.nullable().optional(),
+    clearSecretKeys: z
+      .array(z.string().min(1).max(80).regex(/^[A-Za-z][A-Za-z0-9_]*$/))
+      .max(50)
+      .optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: "请至少提供一个要更新的服务商字段。",
@@ -614,9 +618,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       return {
         success: true,
         mode: "mock",
-        providerType: request.params.providerType,
-        providerCode: request.params.providerCode,
-        message: "当前为本地模拟测试，未调用真实外部服务。",
+        message: "当前为本地模拟测试，未触发真实外部连接。",
       };
     },
   );

@@ -168,7 +168,56 @@ describe("admin config routes", () => {
     expect(JSON.stringify(auditResponse.json())).not.toContain("sk-real-secret");
   });
 
-  it("returns a deterministic mock provider connection test", async () => {
+  it("preserves blank secret updates and clears secrets only when explicit", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const saveResponse = await app.inject({
+      method: "PATCH",
+      url: "/admin/providers/geo/amap",
+      headers: adminAuthorizationHeader(),
+      payload: {
+        secretJson: {
+          apiKey: "amap-real-secret",
+        },
+      },
+    });
+    expect(saveResponse.statusCode).toBe(200);
+
+    const blankResponse = await app.inject({
+      method: "PATCH",
+      url: "/admin/providers/geo/amap",
+      headers: adminAuthorizationHeader(),
+      payload: {
+        secretJson: {
+          apiKey: "",
+        },
+      },
+    });
+
+    expect(blankResponse.statusCode).toBe(200);
+    expect(state.providers.get("geo:amap").secretJson).toMatchObject({
+      apiKey: "amap-real-secret",
+    });
+    expect(blankResponse.body).not.toContain("amap-real-secret");
+    expect(blankResponse.body).not.toContain("secretJson");
+
+    const clearResponse = await app.inject({
+      method: "PATCH",
+      url: "/admin/providers/geo/amap",
+      headers: adminAuthorizationHeader(),
+      payload: {
+        clearSecretKeys: ["apiKey"],
+      },
+    });
+
+    expect(clearResponse.statusCode).toBe(200);
+    expect(state.providers.get("geo:amap").secretJson).toEqual({});
+    expect(clearResponse.json().provider.maskedSecretJson).toEqual({});
+    expect(clearResponse.body).not.toContain("amap-real-secret");
+  });
+
+  it("returns a deterministic mock provider connection test for empty body and {}", async () => {
     const { client } = await createFakeDatabaseClient();
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
 
@@ -182,9 +231,38 @@ describe("admin config routes", () => {
     expect(response.json()).toEqual({
       success: true,
       mode: "mock",
-      providerType: "weather",
-      providerCode: "qweather",
-      message: "当前为本地模拟测试，未调用真实外部服务。",
+      message: "当前为本地模拟测试，未触发真实外部连接。",
+    });
+
+    const emptyJsonBodyResponse = await app.inject({
+      method: "POST",
+      url: "/admin/providers/weather/qweather/test-connection",
+      headers: {
+        ...adminAuthorizationHeader(),
+        "content-type": "application/json",
+        "content-length": "0",
+      },
+    });
+
+    expect(emptyJsonBodyResponse.statusCode).toBe(200);
+    expect(emptyJsonBodyResponse.json()).toMatchObject({
+      success: true,
+      mode: "mock",
+      message: "当前为本地模拟测试，未触发真实外部连接。",
+    });
+
+    const emptyObjectResponse = await app.inject({
+      method: "POST",
+      url: "/admin/providers/weather/qweather/test-connection",
+      headers: adminAuthorizationHeader(),
+      payload: {},
+    });
+
+    expect(emptyObjectResponse.statusCode).toBe(200);
+    expect(emptyObjectResponse.json()).toMatchObject({
+      success: true,
+      mode: "mock",
+      message: "当前为本地模拟测试，未触发真实外部连接。",
     });
   });
 
@@ -212,8 +290,7 @@ describe("admin config routes", () => {
     expect(response.json()).toMatchObject({
       success: true,
       mode: "mock",
-      providerType: "geo",
-      providerCode: "amap",
+      message: "当前为本地模拟测试，未触发真实外部连接。",
     });
     expect(response.body).not.toContain("amap-test-secret");
     expect(response.body).not.toContain("secretJson");

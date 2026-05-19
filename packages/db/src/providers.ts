@@ -1,6 +1,6 @@
 import { assertProviderType } from "./constants.js";
 import { getPrismaClient } from "./client.js";
-import { mergeJsonObjects } from "./json.js";
+import { cloneJsonValue, isPlainJsonObject, mergeJsonObjects } from "./json.js";
 import { maskSecretJson } from "./secrets.js";
 import { normalizeProviderConfig, safeProviderConfig } from "./serializers.js";
 import type {
@@ -25,6 +25,7 @@ export type UpdateProviderConfigInput = {
   readonly priority?: number;
   readonly configJson?: JsonValue;
   readonly secretJson?: JsonValue | null;
+  readonly clearSecretKeys?: readonly string[];
   readonly client?: DatabaseClient;
 };
 
@@ -36,6 +37,30 @@ export function validateProviderCode(providerCode: string): void {
   if (!/^[a-z][a-z0-9_]*$/.test(providerCode)) {
     throw new Error(`Invalid provider code: ${providerCode}`);
   }
+}
+
+function mergeSecretJson(
+  base: JsonValue | null | undefined,
+  patch: JsonValue | null | undefined,
+  clearSecretKeys: readonly string[] = [],
+): JsonValue {
+  const next: Record<string, JsonValue> = isPlainJsonObject(base) ? cloneJsonValue(base) : {};
+
+  if (isPlainJsonObject(patch)) {
+    for (const [key, value] of Object.entries(patch)) {
+      if (typeof value === "string" && value.trim() === "") {
+        continue;
+      }
+
+      next[key] = cloneJsonValue(value);
+    }
+  }
+
+  for (const key of clearSecretKeys) {
+    delete next[key];
+  }
+
+  return next;
 }
 
 export async function getProviderConfig(
@@ -142,11 +167,15 @@ export async function updateProviderConfig(
     data.configJson = mergeJsonObjects(existingProviderConfig.configJson, input.configJson);
   }
 
-  if (input.secretJson !== undefined) {
+  if (input.secretJson !== undefined || (input.clearSecretKeys?.length ?? 0) > 0) {
     const nextSecretJson =
       input.secretJson === null
         ? null
-        : mergeJsonObjects(existingProviderConfig.secretJson, input.secretJson);
+        : mergeSecretJson(
+            existingProviderConfig.secretJson,
+            input.secretJson,
+            input.clearSecretKeys,
+          );
     data.secretJson = nextSecretJson;
     data.maskedSecretJson = maskSecretJson(nextSecretJson);
   }

@@ -117,8 +117,8 @@ export type AdminAuditLog = {
 export type MockConnectionTestResult = {
   readonly success: boolean;
   readonly mode: "mock" | "real";
-  readonly providerType: string;
-  readonly providerCode: string;
+  readonly providerType?: string;
+  readonly providerCode?: string;
   readonly message: string;
 };
 
@@ -144,6 +144,12 @@ export type AdminAuthSession = {
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 const accessTokenKey = "photo_weather_admin_access_token";
 const refreshTokenKey = "photo_weather_admin_refresh_token";
+
+type AdminApiErrorPayload = {
+  readonly error?: string;
+  readonly message?: string;
+  readonly issues?: readonly { readonly message?: string }[];
+};
 
 function isBrowser(): boolean {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
@@ -188,6 +194,39 @@ function redirectToLogin(): void {
 
   const returnTo = `${window.location.pathname}${window.location.search}`;
   window.location.href = `/admin/login?returnTo=${encodeURIComponent(returnTo)}`;
+}
+
+function formatAdminApiError(errorText: string, status: number): string {
+  if (!errorText) {
+    return `后台接口请求失败，状态码 ${status}`;
+  }
+
+  try {
+    const payload = JSON.parse(errorText) as AdminApiErrorPayload;
+    if (payload.message) {
+      return payload.message;
+    }
+
+    const issueMessage = payload.issues?.find((issue) => issue.message)?.message;
+    if (issueMessage) {
+      return issueMessage;
+    }
+
+    if (payload.error) {
+      return `后台接口请求失败：${payload.error}`;
+    }
+  } catch {
+    return errorText;
+  }
+
+  return errorText;
+}
+
+export function createProviderConnectionTestRequestInit(): RequestInit {
+  return {
+    method: "POST",
+    body: JSON.stringify({}),
+  };
 }
 
 async function refreshAdminSession(): Promise<boolean> {
@@ -239,7 +278,7 @@ export async function adminApiFetch<TResponse>(
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(errorText || `后台接口请求失败：${response.status}`);
+    throw new Error(formatAdminApiError(errorText, response.status));
   }
 
   return (await response.json()) as TResponse;

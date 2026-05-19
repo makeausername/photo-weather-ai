@@ -202,4 +202,43 @@ describe("provider config helpers", () => {
       listProviderConfigs({ providerType: "ai", enabledOnly: true, client }),
     ).resolves.toHaveLength(1);
   });
+
+  it("preserves existing provider secrets on blank input and supports explicit clear", async () => {
+    const client = createFakeClient();
+    await updateProviderConfig({
+      providerType: "ai",
+      providerCode: "deepseek",
+      secretJson: {
+        apiKey: "new-secret-value",
+        baseUrl: "https://api.deepseek.com",
+      },
+      client,
+    });
+
+    const blankUpdate = await updateProviderConfig({
+      providerType: "ai",
+      providerCode: "deepseek",
+      secretJson: {
+        apiKey: "",
+      },
+      client,
+    });
+
+    expect(blankUpdate.maskedSecretJson).toMatchObject({
+      apiKey: "new-****alue",
+      baseUrl: "http****.com",
+    });
+
+    const cleared = await updateProviderConfig({
+      providerType: "ai",
+      providerCode: "deepseek",
+      clearSecretKeys: ["apiKey"],
+      client,
+    });
+
+    expect(cleared.maskedSecretJson).toEqual({
+      baseUrl: "http****.com",
+    });
+    expect("secretJson" in (cleared as unknown as Record<string, unknown>)).toBe(false);
+  });
 });

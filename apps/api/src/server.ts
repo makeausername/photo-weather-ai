@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import Fastify from "fastify";
 import { MockAIProvider } from "@photo-weather/ai";
 import type { DatabaseClient } from "@photo-weather/db";
@@ -16,6 +17,10 @@ export type ApiServerOptions = {
   readonly geoProvider?: GeoProvider;
   readonly logger?: boolean;
 };
+
+function isProviderConnectionTestPath(url: string): boolean {
+  return /^\/admin\/providers\/[a-z]+\/[a-z][a-z0-9_]*\/test-connection(?:[?#].*)?$/.test(url);
+}
 
 export function buildApiServer(options: ApiServerOptions = {}) {
   const app = Fastify({
@@ -36,6 +41,25 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     reply.header("Access-Control-Allow-Origin", "*");
     reply.header("Access-Control-Allow-Methods", "GET,PATCH,POST,DELETE,OPTIONS");
     reply.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
+  });
+
+  app.addHook("preParsing", (request, _reply, payload, done) => {
+    const contentType = request.headers["content-type"];
+    const contentLength = request.headers["content-length"];
+
+    if (
+      request.method === "POST" &&
+      isProviderConnectionTestPath(request.url) &&
+      typeof contentType === "string" &&
+      contentType.includes("application/json") &&
+      (contentLength === undefined || contentLength === "0")
+    ) {
+      delete request.headers["content-length"];
+      done(null, Readable.from(["{}"]));
+      return;
+    }
+
+    done(null, payload);
   });
 
   app.options("/*", async (_request, reply) => reply.status(204).send());

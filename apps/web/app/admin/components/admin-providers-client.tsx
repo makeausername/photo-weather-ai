@@ -1,7 +1,9 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { getProviderFieldPreset } from "../../../../../packages/shared/src/provider-fields";
+import type { ProviderFieldDefinition } from "../../../../../packages/shared/src/provider-fields";
 import {
   Badge,
   Button,
@@ -12,7 +14,10 @@ import {
   SwitchRow,
   Textarea,
 } from "../../../components/ui";
-import { adminApiFetch } from "../admin-api";
+import {
+  adminApiFetch,
+  createProviderConnectionTestRequestInit,
+} from "../admin-api";
 import type { JsonValue, MockConnectionTestResult, SafeProviderConfig } from "../admin-api";
 
 type ProvidersResponse = {
@@ -27,6 +32,9 @@ type RowState = {
   readonly status: "idle" | "saving" | "saved" | "testing" | "error";
   readonly message?: string;
 };
+
+type FieldDrafts = Record<string, Record<string, string>>;
+type ClearSecretDrafts = Record<string, Record<string, boolean>>;
 
 const providerTypeLabels: Record<string, string> = {
   ai: "AI 服务商",
@@ -57,17 +65,41 @@ const providerTabs = [
   { href: "/admin/providers/storage", label: "存储" },
 ] as const;
 
+function isJsonObject(value: JsonValue | null | undefined): value is Record<string, JsonValue> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function stringifyJson(value: JsonValue | null): string {
   return JSON.stringify(value ?? {}, null, 2);
 }
 
 function parseJsonObject(input: string): Record<string, JsonValue> {
   const parsed = JSON.parse(input) as JsonValue;
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+  if (!isJsonObject(parsed)) {
     throw new Error("请填写 JSON 对象。");
   }
 
-  return parsed as Record<string, JsonValue>;
+  return parsed;
+}
+
+function readJsonField(value: JsonValue | null | undefined, key: string): JsonValue | undefined {
+  return isJsonObject(value) ? value[key] : undefined;
+}
+
+function fieldValueToInput(value: JsonValue | undefined): string {
+  if (value === undefined || value === null) {
+    return "";
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  return JSON.stringify(value);
 }
 
 function providerName(provider: SafeProviderConfig): string {
@@ -76,6 +108,66 @@ function providerName(provider: SafeProviderConfig): string {
     provider.displayName ||
     "未命名服务商"
   );
+}
+
+function getPresetFields(
+  provider: SafeProviderConfig,
+  target: "configJson" | "secretJson",
+): readonly ProviderFieldDefinition[] {
+  return (
+    getProviderFieldPreset(provider.providerCode)?.fields.filter((field) => field.target === target) ??
+    []
+  );
+}
+
+function createConfigFieldDraft(provider: SafeProviderConfig): Record<string, string> {
+  const configJson = isJsonObject(provider.configJson) ? provider.configJson : {};
+
+  return Object.fromEntries(
+    getPresetFields(provider, "configJson").map((field) => {
+      const value =
+        field.key === "basePath" && provider.providerCode === "local_storage"
+          ? configJson.basePath ?? configJson.rootPath
+          : configJson[field.key];
+
+      return [field.key, fieldValueToInput(value)];
+    }),
+  );
+}
+
+function createConfigFieldDrafts(providers: readonly SafeProviderConfig[]): FieldDrafts {
+  return Object.fromEntries(
+    providers.map((provider) => [provider.id, createConfigFieldDraft(provider)]),
+  );
+}
+
+function createEmptyFieldDrafts(providers: readonly SafeProviderConfig[]): FieldDrafts {
+  return Object.fromEntries(providers.map((provider) => [provider.id, {}]));
+}
+
+function hasSavedSecret(provider: SafeProviderConfig, key: string): boolean {
+  const value = readJsonField(provider.maskedSecretJson, key);
+  return value !== undefined && value !== null && value !== "";
+}
+
+function maskedSecretLabel(provider: SafeProviderConfig, key: string): string {
+  const value = readJsonField(provider.maskedSecretJson, key);
+  if (value === undefined || value === null || value === "") {
+    return "未保存";
+  }
+
+  return fieldValueToInput(value);
+}
+
+function listMaskedSecrets(provider: SafeProviderConfig): readonly [string, string][] {
+  if (!isJsonObject(provider.maskedSecretJson)) {
+    return [];
+  }
+
+  return Object.entries(provider.maskedSecretJson).map(([key, value]) => [
+    key,
+    fieldValueToInput(value),
+  ]);
 }
 
 function stateClass(status: RowState["status"]): string {
@@ -106,10 +198,40 @@ function ProviderStatus({ provider }: { readonly provider: SafeProviderConfig })
   );
 }
 
+function SavedSecretSummary({ provider }: { readonly provider: SafeProviderConfig }) {
+  const maskedSecrets = listMaskedSecrets(provider);
+
+  return (
+    <div className="rounded-lg border border-border bg-muted p-3">
+      <p className="text-sm font-semibold text-card-foreground">已保存密钥</p>
+      {maskedSecrets.length > 0 ? (
+        <dl className="mt-3 grid gap-2 text-xs leading-5">
+          {maskedSecrets.map(([key, value]) => (
+            <div key={key} className="grid gap-1 sm:grid-cols-[140px_1fr]">
+              <dt className="font-semibold text-muted-foreground">{key}</dt>
+              <dd className="break-all text-card-foreground">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="mt-2 text-xs leading-5 text-muted-foreground">
+          暂无已保存密钥。请在密钥配置中填写后保存。
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function AdminProvidersClient({ providerType }: AdminProvidersClientProps) {
   const [providers, setProviders] = useState<SafeProviderConfig[]>([]);
   const [configDrafts, setConfigDrafts] = useState<Record<string, string>>({});
+  const [configFieldDrafts, setConfigFieldDrafts] = useState<FieldDrafts>({});
   const [secretDrafts, setSecretDrafts] = useState<Record<string, string>>({});
+  const [secretFieldDrafts, setSecretFieldDrafts] = useState<FieldDrafts>({});
+  const [clearSecretDrafts, setClearSecretDrafts] = useState<ClearSecretDrafts>({});
+  const [secretVisibility, setSecretVisibility] = useState<Record<string, Record<string, boolean>>>(
+    {},
+  );
   const [enabledDrafts, setEnabledDrafts] = useState<Record<string, boolean>>({});
   const [priorityDrafts, setPriorityDrafts] = useState<Record<string, number>>({});
   const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({});
@@ -130,7 +252,11 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
           response.providers.map((provider) => [provider.id, stringifyJson(provider.configJson)]),
         ),
       );
+      setConfigFieldDrafts(createConfigFieldDrafts(response.providers));
       setSecretDrafts(Object.fromEntries(response.providers.map((provider) => [provider.id, ""])));
+      setSecretFieldDrafts(createEmptyFieldDrafts(response.providers));
+      setClearSecretDrafts(Object.fromEntries(response.providers.map((provider) => [provider.id, {}])));
+      setSecretVisibility(Object.fromEntries(response.providers.map((provider) => [provider.id, {}])));
       setEnabledDrafts(
         Object.fromEntries(response.providers.map((provider) => [provider.id, provider.enabled])),
       );
@@ -164,14 +290,43 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     }));
 
     try {
+      const configJson = parseJsonObject(configDrafts[provider.id] ?? "{}");
+      for (const field of getPresetFields(provider, "configJson")) {
+        const value = configFieldDrafts[provider.id]?.[field.key];
+        if (value !== undefined) {
+          configJson[field.key] = value.trim();
+        }
+      }
+
       const payload: Record<string, unknown> = {
         enabled: enabledDrafts[provider.id] ?? provider.enabled,
         priority: priorityDrafts[provider.id] ?? provider.priority,
-        configJson: parseJsonObject(configDrafts[provider.id] ?? "{}"),
+        configJson,
       };
+
+      const secretJson: Record<string, JsonValue> = {};
       const secretDraft = secretDrafts[provider.id]?.trim();
       if (secretDraft) {
-        payload.secretJson = parseJsonObject(secretDraft);
+        Object.assign(secretJson, parseJsonObject(secretDraft));
+      }
+
+      for (const field of getPresetFields(provider, "secretJson")) {
+        const value = secretFieldDrafts[provider.id]?.[field.key]?.trim();
+        if (value) {
+          secretJson[field.key] = value;
+        }
+      }
+
+      const clearSecretKeys = Object.entries(clearSecretDrafts[provider.id] ?? {})
+        .filter(([, shouldClear]) => shouldClear)
+        .map(([key]) => key);
+
+      if (Object.keys(secretJson).length > 0) {
+        payload.secretJson = secretJson;
+      }
+
+      if (clearSecretKeys.length > 0) {
+        payload.clearSecretKeys = clearSecretKeys;
       }
 
       const response = await adminApiFetch<{ readonly provider: SafeProviderConfig }>(
@@ -181,16 +336,33 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
           body: JSON.stringify(payload),
         },
       );
+
       setProviders((current) =>
         current.map((item) => (item.id === provider.id ? response.provider : item)),
       );
+      setConfigDrafts((current) => ({
+        ...current,
+        [provider.id]: stringifyJson(response.provider.configJson),
+      }));
+      setConfigFieldDrafts((current) => ({
+        ...current,
+        [provider.id]: createConfigFieldDraft(response.provider),
+      }));
       setSecretDrafts((current) => ({
         ...current,
         [provider.id]: "",
       }));
+      setSecretFieldDrafts((current) => ({
+        ...current,
+        [provider.id]: {},
+      }));
+      setClearSecretDrafts((current) => ({
+        ...current,
+        [provider.id]: {},
+      }));
       setStateByProvider((current) => ({
         ...current,
-        [provider.id]: { status: "saved", message: "已保存。" },
+        [provider.id]: { status: "saved", message: "配置已保存" },
       }));
     } catch (error) {
       setStateByProvider((current) => ({
@@ -209,11 +381,11 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     try {
       const result = await adminApiFetch<MockConnectionTestResult>(
         `/admin/providers/${provider.providerType}/${provider.providerCode}/test-connection`,
-        { method: "POST" },
+        createProviderConnectionTestRequestInit(),
       );
       setStateByProvider((current) => ({
         ...current,
-        [provider.id]: { status: "saved", message: result.message || "测试通过。" },
+        [provider.id]: { status: "saved", message: result.message || "测试连接成功。" },
       }));
     } catch (error) {
       setStateByProvider((current) => ({
@@ -227,6 +399,46 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     setExpandedProviders((current) => ({
       ...current,
       [providerId]: !current[providerId],
+    }));
+  }
+
+  function updateConfigField(providerId: string, key: string, value: string) {
+    setConfigFieldDrafts((current) => ({
+      ...current,
+      [providerId]: {
+        ...(current[providerId] ?? {}),
+        [key]: value,
+      },
+    }));
+  }
+
+  function updateSecretField(providerId: string, key: string, value: string) {
+    setSecretFieldDrafts((current) => ({
+      ...current,
+      [providerId]: {
+        ...(current[providerId] ?? {}),
+        [key]: value,
+      },
+    }));
+  }
+
+  function toggleSecretVisibility(providerId: string, key: string) {
+    setSecretVisibility((current) => ({
+      ...current,
+      [providerId]: {
+        ...(current[providerId] ?? {}),
+        [key]: !(current[providerId]?.[key] ?? false),
+      },
+    }));
+  }
+
+  function toggleClearSecret(providerId: string, key: string) {
+    setClearSecretDrafts((current) => ({
+      ...current,
+      [providerId]: {
+        ...(current[providerId] ?? {}),
+        [key]: !(current[providerId]?.[key] ?? false),
+      },
     }));
   }
 
@@ -267,7 +479,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       </div>
 
       {loadState.message ? (
-        <div className={`rounded-xl border px-4 py-3 text-sm ${stateClass(loadState.status)}`}>
+        <div className={`rounded-lg border px-4 py-3 text-sm ${stateClass(loadState.status)}`}>
           {loadState.message}
         </div>
       ) : null}
@@ -279,18 +491,21 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               <h2 className="text-lg font-bold">{providerTypeLabels[group] ?? "其他服务商"}</h2>
               <p className="mt-1 text-sm text-muted-foreground">{groupProviders.length} 个服务商</p>
             </div>
-            <Badge variant="muted">不会调用真实外部服务</Badge>
+            <Badge variant="muted">本地测试不会调用真实外部服务</Badge>
           </div>
 
           <div className="grid gap-4 p-5 xl:grid-cols-2">
             {groupProviders.map((provider) => {
+              const preset = getProviderFieldPreset(provider.providerCode);
+              const configFields = getPresetFields(provider, "configJson");
+              const secretFields = getPresetFields(provider, "secretJson");
               const state = stateByProvider[provider.id];
               const isExpanded = expandedProviders[provider.id] ?? false;
 
               return (
                 <article
                   key={provider.id}
-                  className="grid gap-4 rounded-xl border border-border bg-card p-4 shadow-sm"
+                  className="grid gap-4 rounded-lg border border-border bg-card p-4 shadow-sm"
                 >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
@@ -300,25 +515,17 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                     <ProviderStatus provider={provider} />
                   </div>
 
-                  {provider.providerType === "geo" && provider.providerCode === "amap" ? (
-                    <div className="rounded-lg border border-border bg-muted px-3 py-2 text-sm leading-6 text-muted-foreground">
-                      高德地图服务状态：
-                      {provider.enabled
-                        ? "已启用，真实搜索需要已配置 Web 服务 API Key。"
-                        : "未启用，前台搜索优先使用本地地点与模拟数据。"}
-                    </div>
+                  {preset?.helpText ? (
+                    <p className="rounded-lg border border-border bg-muted px-3 py-2 text-sm leading-6 text-muted-foreground">
+                      {preset.helpText}
+                    </p>
                   ) : null}
 
-                  <div className="rounded-lg border border-border bg-muted p-3">
-                    <p className="text-sm font-semibold text-card-foreground">已脱敏密钥</p>
-                    <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">
-                      {stringifyJson(provider.maskedSecretJson)}
-                    </pre>
-                  </div>
+                  <SavedSecretSummary provider={provider} />
 
                   <div className="flex flex-wrap items-center gap-3">
                     <Button variant="secondary" onClick={() => toggleProviderEditor(provider.id)}>
-                      编辑
+                      {isExpanded ? "收起配置" : "编辑配置"}
                     </Button>
                     <Button variant="secondary" onClick={() => void testProvider(provider)}>
                       测试连接
@@ -333,7 +540,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                   </div>
 
                   {isExpanded ? (
-                    <div className="grid gap-4 rounded-xl border border-border bg-muted p-4">
+                    <div className="grid gap-5 rounded-lg border border-border bg-muted p-4">
                       <SwitchRow
                         label="启用该服务商"
                         description="仅保存配置开关，不触发真实连接。"
@@ -359,12 +566,108 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                         />
                       </FormField>
 
-                      <details>
+                      <section className="grid gap-3">
+                        <div>
+                          <h4 className="text-sm font-bold text-card-foreground">基础配置</h4>
+                          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                            用于服务商地址、模型、Bucket、Region 等非密钥配置。
+                          </p>
+                        </div>
+                        {configFields.length > 0 ? (
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {configFields.map((field) => (
+                              <FormField
+                                key={field.key}
+                                label={field.label}
+                                hint={field.helpText}
+                              >
+                                <Input
+                                  value={configFieldDrafts[provider.id]?.[field.key] ?? ""}
+                                  placeholder={field.placeholder}
+                                  onChange={(event) =>
+                                    updateConfigField(provider.id, field.key, event.target.value)
+                                  }
+                                />
+                              </FormField>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
+                            该服务商暂无预设基础配置项，可在高级配置中补充 JSON。
+                          </p>
+                        )}
+                      </section>
+
+                      <section className="grid gap-3">
+                        <div>
+                          <h4 className="text-sm font-bold text-card-foreground">密钥配置</h4>
+                          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                            密钥不会回填原文；留空则保持现有密钥不变。保存后仅显示脱敏结果。
+                          </p>
+                        </div>
+                        {secretFields.length > 0 ? (
+                          <div className="grid gap-3">
+                            {secretFields.map((field) => {
+                              const visible = secretVisibility[provider.id]?.[field.key] ?? false;
+                              const clearSelected =
+                                clearSecretDrafts[provider.id]?.[field.key] ?? false;
+                              const saved = hasSavedSecret(provider, field.key);
+
+                              return (
+                                <FormField
+                                  key={field.key}
+                                  label={field.label}
+                                  hint={
+                                    <span>
+                                      {field.helpText ? `${field.helpText} ` : ""}
+                                      已保存：{maskedSecretLabel(provider, field.key)}
+                                    </span>
+                                  }
+                                >
+                                  <div className="flex flex-col gap-2 sm:flex-row">
+                                    <Input
+                                      type={field.password && !visible ? "password" : "text"}
+                                      value={secretFieldDrafts[provider.id]?.[field.key] ?? ""}
+                                      placeholder={field.placeholder ?? "留空则保持现有密钥不变"}
+                                      disabled={clearSelected}
+                                      onChange={(event) =>
+                                        updateSecretField(provider.id, field.key, event.target.value)
+                                      }
+                                    />
+                                    {field.password ? (
+                                      <Button
+                                        variant="secondary"
+                                        onClick={() => toggleSecretVisibility(provider.id, field.key)}
+                                      >
+                                        {visible ? "隐藏" : "显示"}
+                                      </Button>
+                                    ) : null}
+                                    {saved ? (
+                                      <Button
+                                        variant={clearSelected ? "danger" : "secondary"}
+                                        onClick={() => toggleClearSecret(provider.id, field.key)}
+                                      >
+                                        {clearSelected ? "取消清除" : "清除"}
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                </FormField>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
+                            该服务商暂无预设密钥项。
+                          </p>
+                        )}
+                      </section>
+
+                      <details className="rounded-lg border border-border bg-card p-3">
                         <summary className="cursor-pointer text-sm font-semibold text-card-foreground">
                           高级配置
                         </summary>
                         <div className="mt-4 grid gap-4">
-                          <FormField label="配置 JSON">
+                          <FormField label="基础配置 JSON">
                             <Textarea
                               value={configDrafts[provider.id] ?? "{}"}
                               onChange={(event) =>
@@ -377,8 +680,8 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                           </FormField>
 
                           <FormField
-                            label="密钥 JSON"
-                            hint="留空表示不更新密钥；保存后只显示脱敏结果。"
+                            label="额外密钥 JSON"
+                            hint="仅填写要新增或更新的密钥字段；留空表示不更新密钥。"
                           >
                             <Textarea
                               placeholder="留空则保持现有密钥不变"
@@ -398,7 +701,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                         <Button variant="secondary" onClick={() => toggleProviderEditor(provider.id)}>
                           取消
                         </Button>
-                        <Button onClick={() => void saveProvider(provider)}>保存</Button>
+                        <Button onClick={() => void saveProvider(provider)}>保存配置</Button>
                       </div>
                     </div>
                   ) : null}

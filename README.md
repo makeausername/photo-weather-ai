@@ -113,7 +113,7 @@ corepack pnpm stop:local
 NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
 ```
 
-高德地图真实联调后续通过后台服务商配置或环境变量提供 Web 服务 API Key：
+高德地图 Web 服务 Key 后续优先在后台服务商配置页填写；环境变量仅作为部署兼容入口：
 
 ```bash
 AMAP_API_KEY=
@@ -162,6 +162,8 @@ DATABASE_URL=postgresql://photo_weather:photo_weather@postgres:5432/photo_weathe
 ```
 
 Provider secrets 和永久服务商配置属于数据库后台配置，不应写进业务代码。Seed data 只创建占位服务商和空密钥对象，不包含真实 DeepSeek、QWeather、Open-Meteo、高德地图、存储、短信或支付凭据。
+
+`/admin/providers` 提供可视化服务商配置表单，常用字段包括高德 Web 服务 Key、DeepSeek API Key、和风天气 API Key、Open-Meteo API Key，以及 OSS / COS / S3 的 Access Key、Secret Key、Bucket、Region 和 Endpoint。密钥保存后 API 只返回 `maskedSecretJson`，不会返回原始 `secretJson`；空密钥输入表示保留现有密钥不变，如需删除已保存字段请使用后台表单中的清除操作。
 
 Seed data 包含未核验的中国风光摄影示例地点与机位：
 
@@ -243,7 +245,7 @@ GET   /admin/audit-logs
 - `/admin` 状态：`admin.manage`
 
 服务商测试连接和后台地理搜索在当前阶段为本地 mock，不调用真实外部服务。
-`/admin/providers/geo/amap/test-connection` 默认返回模拟成功；只有请求体显式传入 `{ "mode": "real" }` 时，才会使用已配置的高德 Web 服务 API Key 做最小搜索联调。接口响应和日志不得暴露原始密钥。
+后台“测试连接”按钮会向 `/admin/providers/:providerType/:providerCode/test-connection` 发送 `{}`，默认返回 `mode: "mock"` 和“当前为本地模拟测试，未触发真实外部连接。”；自动化测试不启用真实服务商联调。接口响应和日志不得暴露原始密钥。
 
 ## 后台控制台
 
