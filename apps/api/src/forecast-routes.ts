@@ -4,6 +4,7 @@ import {
   forecastQueryInputSchema,
   forecastTargetLabels,
 } from "@photo-weather/shared";
+import { buildMockForecastInput, calculateForecast } from "@photo-weather/scoring";
 import type { ZodError } from "zod";
 
 function sendZodError(reply: FastifyReply, error: ZodError): FastifyReply {
@@ -30,5 +31,17 @@ export function registerForecastRoutes(app: FastifyInstance): void {
         target: forecastTargetLabels[parsedBody.data.target],
       },
     };
+  });
+
+  app.post("/forecast/calculate", async (request, reply) => {
+    const parsedBody = forecastQueryInputSchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return sendZodError(reply, parsedBody.error);
+    }
+
+    const calculationInput = buildMockForecastInput(parsedBody.data);
+    const result = calculateForecast(calculationInput);
+
+    return reply.send(result);
   });
 }

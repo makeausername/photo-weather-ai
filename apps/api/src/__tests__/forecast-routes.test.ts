@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApiServer } from "../server.js";
 import { testAuthConfig } from "./fake-db.js";
@@ -24,6 +24,7 @@ describe("forecast query validation route", () => {
       await app.close();
       app = undefined;
     }
+    vi.unstubAllGlobals();
   });
 
   it("normalizes a public forecast query without calling providers", async () => {
@@ -60,6 +61,101 @@ describe("forecast query validation route", () => {
     expect(response.statusCode).toBe(400);
     expect(response.json()).toMatchObject({
       error: "validation_error",
+    });
+  });
+
+  it("calculates a deterministic mock forecast result without real network calls", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("real network calls are disabled in forecast tests");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    app = buildApiServer({ authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: validPayload,
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(body).toMatchObject({
+      place: {
+        name: "黄山光明顶",
+        countryCode: "CN",
+      },
+      horizon: "48h",
+      target: "cloud_sea",
+      recommendationLabel: expect.stringMatching(/不建议前往|谨慎参考|值得等待|推荐前往/),
+      isMock: true,
+      dataNotice: "当前为本地模拟计算结果，尚未接入真实天气数据。",
+    });
+    expect(body.overallScore).toEqual(expect.any(Number));
+    expect(body.scores).toMatchObject({
+      sunriseGlow: {
+        label: "朝霞",
+        score: expect.any(Number),
+      },
+      sunsetGlow: {
+        label: "晚霞",
+        score: expect.any(Number),
+      },
+      cloudSea: {
+        label: "云海",
+        score: expect.any(Number),
+      },
+      whiteoutRisk: {
+        label: "白墙风险",
+        score: expect.any(Number),
+      },
+      stars: {
+        label: "星空",
+        score: expect.any(Number),
+      },
+      milkyWay: {
+        label: "银河",
+        score: expect.any(Number),
+      },
+      transparency: {
+        label: "通透度",
+        score: expect.any(Number),
+      },
+    });
+    expect(body.bestWindows.length).toBeGreaterThan(0);
+    expect(body.keyReasons.length).toBeGreaterThan(0);
+    expect(body.photographyAdvice.length).toBeGreaterThan(0);
+  });
+
+  it("rejects unsupported horizon and target for calculation", async () => {
+    app = buildApiServer({ authConfig: testAuthConfig, logger: false });
+
+    const horizonResponse = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        horizon: "96h",
+      },
+    });
+    const targetResponse = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        target: "rainbow",
+      },
+    });
+
+    expect(horizonResponse.statusCode).toBe(400);
+    expect(horizonResponse.json()).toMatchObject({
+      error: "validation_error",
+      issues: expect.arrayContaining([expect.objectContaining({ path: "horizon" })]),
+    });
+    expect(targetResponse.statusCode).toBe(400);
+    expect(targetResponse.json()).toMatchObject({
+      error: "validation_error",
+      issues: expect.arrayContaining([expect.objectContaining({ path: "target" })]),
     });
   });
 });

@@ -2,7 +2,7 @@
 
 逐光天气是面向中国大陆风光摄影用户的天气与拍摄机会判断系统，公开标语为“风光摄影出行判断工具”。当前仓库处于自托管 SaaS 产品基础与界面打磨阶段，重点是数据库、后台配置、地点/机位资料、亮色默认主题和前端 UI 基线。
 
-当前步骤是 forecast 查询流程基础：可见产品品牌使用“逐光天气”，公开首页搜索框已接入地点识别与机位匹配，并可以选择预报范围、分析目标后进入 `/forecast` 查询参数确认页；内部仓库名、包名和 scope 仍保持 `photo-weather-ai` / `@photo-weather/*`，不做代码仓库或包作用域重命名。
+当前步骤是 forecast 本地模拟计算核心 V1：可见产品品牌使用“逐光天气”，公开首页搜索框已接入地点识别与机位匹配，并可以选择预报范围、分析目标后进入 `/forecast` 模拟计算结果页；内部仓库名、包名和 scope 仍保持 `photo-weather-ai` / `@photo-weather/*`，不做代码仓库或包作用域重命名。
 
 ## 当前状态
 
@@ -14,7 +14,8 @@
 - 公开地点搜索：`GET /search/places?q=` 会先查本地地点和摄影机位，再使用当前 GeoProvider 返回标准化地点结果。
 - 公开搜索选择态：选择地点后展示地点名称、地址 / 城市信息、数据来源、GCJ-02 / WGS84 经纬度、验证状态和本地机位匹配状态。
 - 公开 forecast 查询基础：支持选择预报范围和分析目标，下一步跳转 `/forecast`，URL 中显式携带地点名称、来源、GCJ-02 坐标、WGS84 坐标、预报范围、分析目标以及可用的本地地点 / 机位 ID。
-- 公开 forecast 参数校验：`POST /forecast/validate-query` 只校验查询输入并返回中文标签，不调用真实天气、地形、天文或 AI 服务。
+- Forecast 计算核心 V1：已定义标准化小时天气、日天气、地形摘要、天文摘要、计算输入和计算结果契约，`packages/scoring` 提供本地 mock 数据构造器和可解释评分计算器。
+- 公开 forecast 端点：`POST /forecast/validate-query` 只校验查询输入并返回中文标签；`POST /forecast/calculate` 使用 deterministic mock 数据生成本地模拟计算结果，不调用真实天气、地形、天文或 AI 服务。
 - 后台登录页：亮色渐变背景、居中登录卡片、中文表单和样式化错误提示。
 - 后台控制台布局：亮色侧栏、顶部标题区、当前管理员信息、主题切换、返回前台、退出登录、内容区域。
 - 后台页面视觉层：系统设置、服务商配置、地点管理、机位管理、审计日志使用统一卡片、表格、表单、按钮和空状态。
@@ -22,14 +23,14 @@
 
 尚未实现：
 
-- 真实 forecast / 预测结果、天气评分和决策建议。
+- 真实天气数据驱动的 forecast / 预测结果、真实服务商接入和生产级决策建议。
 - 真实天气服务商调用。
 - 真实 DeepSeek 或其他 AI 调用。
 - 支付、套餐、额度和商业化流程。
 - 生产级 Cookie/Session 加固。
 - 公开用户登录、查询历史、收藏机位、额度控制、付费套餐和已保存报告。
 
-当前公开首页的决策卡为静态 mock 内容，只用于展示产品方向，不包含真实预报、评分或真实服务商调用。当前搜索与 forecast 流程只完成地点识别、坐标归一化、机位匹配、预报范围选择、分析目标选择和查询参数确认；后续真实 forecast 结果、公开用户账号和真实判断逻辑尚未实现。
+当前公开首页的决策卡为静态 mock 内容，只用于展示产品方向，不包含真实预报或真实服务商调用。当前搜索与 forecast 流程已完成地点识别、坐标归一化、机位匹配、预报范围选择、分析目标选择、本地 mock 预报输入构造、摄影评分和 `/forecast` 模拟结果展示；后续真实 provider 接入、公开用户账号和生产判断逻辑尚未实现。
 
 ## 产品默认
 
@@ -51,9 +52,18 @@
 - 天气、天文、地形和未来评分计算使用 WGS84。
 - 地点和机位记录同时保存 GCJ-02 与 WGS84，避免未来计算混用。
 
-## Forecast 查询基础
+## Forecast 计算核心 V1
 
-当前 `/forecast` 是分析流程占位页，用于确认用户选择的地点、预报范围、分析目标、坐标信息和数据来源。天气数据、地形分析、天文窗口与智能解读将在后续步骤接入，当前不会生成真实天气分析。
+当前 `/forecast` 是本地模拟计算结果页，用于展示用户选择的地点、预报范围、分析目标、坐标信息和本地 mock 评分结果。页面会调用 `POST /forecast/calculate`，后端使用 deterministic mock 数据构造标准化预报输入并运行本地评分引擎。当前不会调用真实 QWeather、Open-Meteo、高德地图、DeepSeek、存储、支付或短信服务。
+
+当前计算核心覆盖：
+
+- 云海、白墙风险、朝霞、晚霞、星空、银河和通透度评分。
+- 综合出片指数、推荐等级、最佳拍摄窗口、风险提示、关键依据和拍摄建议。
+- 黄山光明顶、老君山金顶、三清山女神峰、武功山金顶等本地模拟样例。
+- Mock 数据提示：`当前为本地模拟计算结果，尚未接入真实天气数据。`
+
+真实 QWeather / Open-Meteo / 高德地图 / DeepSeek 集成会在后续 staging / production 服务器环境测试，本地开发和自动化测试仍只使用 mock providers 与 deterministic test data。
 
 支持的预报范围：
 
@@ -69,7 +79,7 @@
 - 朝霞晚霞
 - 星空银河
 
-当前查询契约由 `@photo-weather/shared` 中的 `forecastQueryInputSchema` 维护，前端 URL 会显式携带地点名称、来源、GCJ-02 坐标、WGS84 坐标、预报范围、分析目标以及可用的本地地点 / 机位 ID。`POST /forecast/validate-query` 只做 schema 校验和中文标签返回，不调用 QWeather、Open-Meteo、高德地图真实 API、DeepSeek、存储、支付或短信服务。
+当前查询契约由 `@photo-weather/shared` 中的 `forecastQueryInputSchema` 维护，前端 URL 会显式携带地点名称、来源、GCJ-02 坐标、WGS84 坐标、预报范围、分析目标以及可用的本地地点 / 机位 ID。`POST /forecast/calculate` 会先复用该 schema 校验输入，再构造 `ForecastCalculationInput` 并返回 `ForecastCalculationResult`。
 
 公开用户登录、查询历史、收藏机位、额度控制和付费套餐计划在后续阶段实现，不属于当前 forecast 查询基础步骤。
 
@@ -82,10 +92,10 @@
 - `packages/config`：环境配置、运行时配置和密钥遮罩。
 - `packages/db`：Prisma schema、迁移、seed、系统设置、服务商配置、地点、机位、审计日志。
 - `packages/geo`：地理服务接口、deterministic mock 搜索、高德地图 Web 服务 provider 基础、坐标校验与 GCJ-02 / WGS84 转换。
-- `packages/weather`：天气服务接口与标准化类型。
+- `packages/weather`：天气服务接口与早期天气标准化类型。
 - `packages/terrain`：地形与海拔服务接口。
 - `packages/astro`：天文服务接口。
-- `packages/scoring`：评分引擎合同。
+- `packages/scoring`：本地 forecast mock 数据构造器、摄影评分 helper、朝霞/晚霞/云海/白墙/星空/银河/通透度计算器和综合推荐分类。
 - `packages/ai`：AI 服务接口、mock provider、规则兜底和 DeepSeek 骨架。
 - `packages/storage`：存储服务接口与 mock 存储。
 - `packages/billing`：计费与额度占位类型。
@@ -233,6 +243,7 @@ GET  /auth/me
 ```bash
 GET   /search/places?q=
 POST  /forecast/validate-query
+POST  /forecast/calculate
 
 GET   /admin/settings
 GET   /admin/settings/:key
@@ -289,7 +300,6 @@ GET   /admin/audit-logs
 /admin/photo-spots
 /admin/audit
 /forecast
-/forecast/placeholder
 ```
 
 后台控制台已具备统一 SaaS 风格布局：

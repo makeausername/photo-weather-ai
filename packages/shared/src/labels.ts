@@ -1,4 +1,4 @@
-import type { ForecastHorizon, ForecastTarget } from "./types.js";
+import type { ForecastHorizon, ForecastRecommendationLevel, ForecastTarget } from "./types.js";
 
 export const locationTypeLabels = {
   scenic_area: "景区",
@@ -46,6 +46,13 @@ export const forecastTargetLabels: Record<ForecastTarget, string> = {
   astro: "星空银河",
 } as const;
 
+export const forecastRecommendationLabels: Record<ForecastRecommendationLevel, string> = {
+  not_recommended: "不建议前往",
+  cautious: "谨慎参考",
+  worth_waiting: "值得等待",
+  recommended: "推荐前往",
+} as const;
+
 export function getLocationTypeLabel(code: LocationTypeCode): string {
   return locationTypeLabels[code];
 }
@@ -64,4 +71,8 @@ export function getForecastHorizonLabel(code: ForecastHorizon): string {
 
 export function getForecastTargetLabel(code: ForecastTarget): string {
   return forecastTargetLabels[code];
+}
+
+export function getForecastRecommendationLabel(code: ForecastRecommendationLevel): string {
+  return forecastRecommendationLabels[code];
 }
