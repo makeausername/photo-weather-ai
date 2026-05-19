@@ -12,6 +12,7 @@
   "dependencies": {
     "@photo-weather/ai": "workspace:*",
     "@photo-weather/config": "workspace:*",
+    "@photo-weather/db": "workspace:*",
     "@photo-weather/geo": "workspace:*",
     "@photo-weather/weather": "workspace:*",
     "fastify": "4.27.0"

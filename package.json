@@ -7,6 +7,11 @@
   "scripts": {
     "dev": "pnpm -r --parallel --if-present dev",
     "build": "pnpm -r --workspace-concurrency=1 --if-present build",
+    "db:generate": "pnpm --filter @photo-weather/db db:generate",
+    "db:migrate": "pnpm --filter @photo-weather/db db:migrate",
+    "db:push": "pnpm --filter @photo-weather/db db:push",
+    "db:seed": "pnpm --filter @photo-weather/db db:seed",
+    "db:studio": "pnpm --filter @photo-weather/db db:studio",
     "lint": "eslint . --ext .js,.cjs,.mjs,.ts,.tsx --max-warnings=0",
     "typecheck": "pnpm -r --workspace-concurrency=1 --if-present typecheck",
     "test": "pnpm -r --workspace-concurrency=1 --if-present test",

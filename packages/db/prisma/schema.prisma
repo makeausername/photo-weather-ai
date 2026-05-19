@@ -7,5 +7,189 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Business tables are intentionally deferred until auth, billing, reports, and admin
-// ownership boundaries are designed.
+enum UserStatus {
+  active
+  disabled
+}
+
+enum ProviderType {
+  ai
+  weather
+  geo
+  terrain
+  storage
+  billing
+  sms
+}
+
+enum SettingValueType {
+  string
+  number
+  boolean
+  json
+  url
+  select
+  prompt
+  secret
+}
+
+model User {
+  id           String          @id @default(cuid())
+  email        String          @unique
+  phone        String?         @unique
+  passwordHash String          @map("password_hash")
+  displayName  String?         @map("display_name")
+  status       UserStatus      @default(active)
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+  lastLoginAt  DateTime?       @map("last_login_at")
+  profile      UserProfile?
+  roles        UserRole[]
+  auditLogs    AdminAuditLog[]
+
+  @@index([status])
+  @@map("users")
+}
+
+model UserProfile {
+  id                String   @id @default(cuid())
+  userId            String   @unique @map("user_id")
+  avatarUrl         String?  @map("avatar_url")
+  preferredUnits    String   @default("metric") @map("preferred_units")
+  preferredLanguage String   @default("zh-CN") @map("preferred_language")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_profiles")
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  code        String           @unique
+  name        String
+  description String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  code        String           @unique
+  name        String
+  description String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserRole {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  roleId    String   @map("role_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  roleId       String     @map("role_id")
+  permissionId String     @map("permission_id")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model SystemSetting {
+  id          String           @id @default(cuid())
+  key         String           @unique
+  valueJson   Json             @map("value_json")
+  valueType   SettingValueType @map("value_type")
+  group       String           @map("setting_group")
+  label       String
+  description String?
+  isPublic    Boolean          @default(false) @map("is_public")
+  isSecret    Boolean          @default(false) @map("is_secret")
+  isEditable  Boolean          @default(true) @map("is_editable")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  @@index([group])
+  @@index([isPublic])
+  @@map("system_settings")
+}
+
+model ProviderConfig {
+  id               String       @id @default(cuid())
+  providerType     ProviderType @map("provider_type")
+  providerCode     String       @map("provider_code")
+  displayName      String       @map("display_name")
+  enabled          Boolean      @default(false)
+  priority         Int          @default(100)
+  configJson       Json         @map("config_json")
+  secretJson       Json?        @map("secret_json")
+  maskedSecretJson Json?        @map("masked_secret_json")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  @@unique([providerType, providerCode])
+  @@index([providerType, enabled, priority])
+  @@map("provider_configs")
+}
+
+model AdminAuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?  @map("actor_user_id")
+  action      String
+  targetType  String   @map("target_type")
+  targetId    String?  @map("target_id")
+  beforeJson  Json?    @map("before_json")
+  afterJson   Json?    @map("after_json")
+  ipAddress   String?  @map("ip_address")
+  userAgent   String?  @map("user_agent")
+  createdAt   DateTime @default(now()) @map("created_at")
+  actor       User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId])
+  @@index([action])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+  @@map("admin_audit_logs")
+}
+
+model ApiUsageLog {
+  id            String       @id @default(cuid())
+  providerType  ProviderType @map("provider_type")
+  providerCode  String       @map("provider_code")
+  operation     String
+  requestId     String?      @map("request_id")
+  success       Boolean
+  statusCode    Int?         @map("status_code")
+  latencyMs     Int?         @map("latency_ms")
+  estimatedCost Decimal?     @map("estimated_cost") @db.Decimal(18, 8)
+  inputTokens   Int?         @map("input_tokens")
+  outputTokens  Int?         @map("output_tokens")
+  errorMessage  String?      @map("error_message")
+  createdAt     DateTime     @default(now()) @map("created_at")
+
+  @@index([providerType, providerCode])
+  @@index([operation])
+  @@index([requestId])
+  @@index([createdAt])
+  @@map("api_usage_logs")
+}

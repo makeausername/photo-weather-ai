@@ -12,7 +12,7 @@ describe("workspace package imports", () => {
   it("loads the initial architecture packages", () => {
     expect(new MockAIProvider()).toBeInstanceOf(MockAIProvider);
     expect(new MockAstroProvider()).toBeInstanceOf(MockAstroProvider);
-    expect(databasePackageStatus.businessModels).toBe("not_created");
+    expect(databasePackageStatus.businessModels).toBe("created");
     expect(new MockGeoProvider()).toBeInstanceOf(MockGeoProvider);
     expect(new MockScoringEngine()).toBeInstanceOf(MockScoringEngine);
     expect(new MockStorageProvider()).toBeInstanceOf(MockStorageProvider);
