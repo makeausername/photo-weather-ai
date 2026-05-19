@@ -53,10 +53,10 @@ export function AdminAuditClient() {
 
   return (
     <Card className="overflow-hidden">
-      <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-base font-bold">近期操作</h2>
-          <p className="mt-1 text-xs text-muted-foreground">展示最近 50 条后台操作记录。</p>
+          <h2 className="text-lg font-bold">近期操作</h2>
+          <p className="mt-1 text-sm text-muted-foreground">展示最近 50 条后台操作记录。</p>
         </div>
         <Badge variant="muted">{status}</Badge>
       </div>

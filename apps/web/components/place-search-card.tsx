@@ -174,7 +174,7 @@ export function PlaceSearchCard() {
   }, [searchPlaces, trimmedQuery]);
 
   return (
-    <Card className="mt-6 grid max-w-[680px] gap-4 p-4 shadow-soft">
+    <Card className="mt-6 grid w-full gap-4 p-4 shadow-soft sm:p-5">
       <form
         className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
         onSubmit={(event) => {
@@ -187,9 +187,9 @@ export function PlaceSearchCard() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="请输入景区、城市或机位，例如：黄山光明顶"
-          className="h-10 text-[15px]"
+          className="h-11 text-[15px]"
         />
-        <Button type="submit" className="h-10 px-5" disabled={status === "loading"}>
+        <Button type="submit" className="h-11 px-5" disabled={status === "loading"}>
           搜索地点
         </Button>
       </form>
@@ -200,7 +200,7 @@ export function PlaceSearchCard() {
             key={location}
             type="button"
             onClick={() => setQuery(location)}
-            className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground transition hover:border-primary hover:bg-secondary hover:text-secondary-foreground"
+            className="rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-semibold text-muted-foreground transition hover:border-primary hover:bg-secondary hover:text-secondary-foreground"
           >
             {location}
           </button>
@@ -258,11 +258,11 @@ export function PlaceSearchCard() {
       </div>
 
       {selectedPlace ? (
-        <div className="grid gap-3 rounded-lg border border-border bg-secondary p-4">
+        <div className="grid gap-3 rounded-lg border border-border bg-muted p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-semibold text-muted-foreground">地点名称</p>
-              <p className="mt-1 break-words font-bold text-secondary-foreground">
+              <p className="mt-1 break-words font-bold text-card-foreground">
                 {selectedPlace.name}
               </p>
             </div>
@@ -276,25 +276,25 @@ export function PlaceSearchCard() {
           <dl className="grid gap-3 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-xs font-semibold text-muted-foreground">地址 / 城市信息</dt>
-              <dd className="mt-1 leading-6 text-secondary-foreground">
+              <dd className="mt-1 leading-6 text-card-foreground">
                 {formatAddressAndCity(selectedPlace)}
               </dd>
             </div>
             <div>
               <dt className="text-xs font-semibold text-muted-foreground">数据来源</dt>
-              <dd className="mt-1 font-semibold text-secondary-foreground">
+              <dd className="mt-1 font-semibold text-card-foreground">
                 {sourceLabels[selectedPlace.source]}
               </dd>
             </div>
             <div>
               <dt className="text-xs font-semibold text-muted-foreground">经纬度</dt>
-              <dd className="mt-1 break-words leading-6 text-secondary-foreground">
+              <dd className="mt-1 break-words leading-6 text-card-foreground">
                 {selectedCoordinateText}
               </dd>
             </div>
             <div>
               <dt className="text-xs font-semibold text-muted-foreground">是否已验证</dt>
-              <dd className="mt-1 font-semibold text-secondary-foreground">
+              <dd className="mt-1 font-semibold text-card-foreground">
                 {selectedPlace.isVerified ? "已验证" : "待验证"}
               </dd>
             </div>

@@ -229,7 +229,7 @@ export function AdminSettingsClient() {
   return (
     <div className="grid gap-6">
       {loadState.message ? (
-        <div className={`rounded-xl border px-4 py-3 text-sm ${stateClass(loadState.status)}`}>
+        <div className={`rounded-lg border px-4 py-3 text-sm ${stateClass(loadState.status)}`}>
           {loadState.message}
         </div>
       ) : null}
@@ -274,7 +274,7 @@ export function AdminSettingsClient() {
 
                   <div className="grid gap-3">
                     {setting.valueType === "json" ? (
-                      <details className="rounded-xl border border-border bg-muted p-4">
+                      <details className="rounded-lg border border-border bg-muted p-4">
                         <summary className="cursor-pointer text-sm font-semibold text-card-foreground">
                           高级配置
                         </summary>

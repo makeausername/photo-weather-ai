@@ -16,19 +16,19 @@ type ButtonSize = "sm" | "md" | "lg";
 
 const buttonVariants: Record<ButtonVariant, string> = {
   primary:
-    "border-primary bg-primary text-primary-foreground hover:brightness-95 disabled:hover:brightness-100",
+    "border-primary bg-primary text-primary-foreground shadow-sm hover:bg-[var(--primary-hover)] disabled:hover:bg-primary",
   secondary:
     "border-border bg-card text-card-foreground hover:border-primary hover:bg-secondary disabled:hover:bg-card",
   ghost:
     "border-transparent bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground disabled:hover:bg-transparent",
-  danger: "border-danger bg-danger text-white hover:brightness-95 disabled:hover:brightness-100",
-  success: "border-success bg-success text-white hover:brightness-95 disabled:hover:brightness-100",
+  danger: "border-danger bg-danger text-white shadow-sm hover:brightness-95 disabled:hover:brightness-100",
+  success: "border-success bg-success text-white shadow-sm hover:brightness-95 disabled:hover:brightness-100",
 };
 
 const buttonSizes: Record<ButtonSize, string> = {
   sm: "h-8 px-2.5 text-xs",
-  md: "h-9 px-3 text-sm",
-  lg: "h-11 px-4 text-sm",
+  md: "h-9 px-3.5 text-sm",
+  lg: "h-10 px-4 text-sm",
 };
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -112,7 +112,7 @@ export function Card({ children, className }: CardProps) {
   );
 }
 
-type BadgeVariant = "default" | "success" | "warning" | "danger" | "muted";
+type BadgeVariant = "default" | "success" | "warning" | "danger" | "muted" | "accent" | "info";
 
 const badgeVariants: Record<BadgeVariant, string> = {
   default: "border-primary bg-secondary text-secondary-foreground",
@@ -120,6 +120,8 @@ const badgeVariants: Record<BadgeVariant, string> = {
   warning: "border-warning bg-card text-warning",
   danger: "border-danger bg-card text-danger",
   muted: "border-border bg-muted text-muted-foreground",
+  accent: "border-accent bg-card text-accent",
+  info: "border-info bg-card text-info",
 };
 
 type BadgeProps = {
@@ -146,7 +148,7 @@ export function Table({ className, ...props }: TableHTMLAttributes<HTMLTableElem
   return (
     <div className="w-full overflow-x-auto rounded-lg border border-border bg-card">
       <table
-        className={cn("w-full min-w-[760px] border-collapse text-left text-sm", className)}
+        className={cn("w-full min-w-[760px] border-collapse text-left text-[13px]", className)}
         {...props}
       />
     </div>
@@ -233,7 +235,9 @@ export function PageHeader({ eyebrow, title, description, action, className }: P
         {eyebrow ? (
           <p className="mb-2 text-xs font-bold tracking-normal text-primary">{eyebrow}</p>
         ) : null}
-        <h1 className="text-2xl font-bold tracking-normal text-foreground sm:text-3xl">{title}</h1>
+        <h1 className="text-2xl font-bold tracking-normal text-foreground sm:text-[28px]">
+          {title}
+        </h1>
         {description ? (
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
         ) : null}
@@ -295,7 +299,7 @@ export function ConfirmDialog({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="grid w-full max-w-md gap-5 rounded-2xl border border-border bg-card p-6 shadow-soft"
+        className="grid w-full max-w-md gap-5 rounded-lg border border-border bg-card p-6 shadow-soft"
       >
         <div>
           <h2 className="text-lg font-bold text-foreground">{title}</h2>

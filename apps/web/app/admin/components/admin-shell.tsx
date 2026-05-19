@@ -34,18 +34,18 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
   const pathname = usePathname();
 
   return (
-    <main className="min-h-screen bg-background text-foreground lg:grid lg:grid-cols-[236px_minmax(0,1fr)]">
-      <aside className="border-b border-border bg-card lg:min-h-screen lg:border-b-0 lg:border-r">
-        <div className="sticky top-0 grid content-start gap-4 p-4 lg:min-h-screen">
-          <Link href="/admin" className="flex items-center gap-3 rounded-xl">
+    <main className="min-h-screen bg-background text-foreground lg:grid lg:grid-cols-[252px_minmax(0,1fr)]">
+      <aside className="border-b border-border bg-card/96 lg:min-h-screen lg:border-b-0 lg:border-r">
+        <div className="sticky top-0 grid content-start gap-5 p-4 lg:min-h-screen lg:p-5">
+          <Link href="/admin" className="flex items-center gap-3">
             <img src="/brand-mark.svg" alt="" className="h-10 w-10 shrink-0" aria-hidden="true" />
             <span className="grid leading-tight">
               <span className="text-base font-bold text-card-foreground">逐光天气</span>
-              <span className="text-xs text-muted-foreground">管理后台</span>
+              <span className="text-xs text-muted-foreground">管理控制台</span>
             </span>
           </Link>
 
-          <nav className="flex gap-2 overflow-x-auto pb-1 lg:grid lg:content-start lg:gap-1 lg:overflow-visible lg:pb-0">
+          <nav className="flex gap-2 overflow-x-auto pb-1 lg:grid lg:gap-1 lg:overflow-visible lg:pb-0">
             {adminLinks.map((link) => {
               const active = isActive(pathname, link.href);
               return (
@@ -53,10 +53,10 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
                   key={link.href}
                   href={link.href}
                   className={cn(
-                    "whitespace-nowrap rounded-lg border px-3 py-2 text-sm font-medium transition",
+                    "whitespace-nowrap rounded-lg border px-3 py-2 text-sm font-semibold transition lg:border-l-2",
                     active
-                      ? "border-transparent bg-muted text-foreground"
-                      : "border-transparent text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground",
+                      ? "border-primary bg-secondary text-secondary-foreground"
+                      : "border-transparent text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground lg:hover:border-l-primary",
                   )}
                 >
                   {link.label}
@@ -68,26 +68,19 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
       </aside>
 
       <section className="min-w-0">
-        <header className="border-b border-border bg-card px-4 py-3 shadow-sm lg:px-6">
-          <div className="mx-auto flex max-w-[1320px] flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <header className="border-b border-border bg-card/92 px-4 py-3 backdrop-blur sm:px-6 lg:px-8">
+          <div className="mx-auto flex max-w-[1480px] flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-2">
-                <img src="/brand-mark.svg" alt="" className="h-6 w-6 shrink-0" aria-hidden="true" />
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-muted-foreground">管理后台</p>
-                  <h1 className="text-lg font-bold tracking-normal text-foreground sm:text-xl">
-                    {title}
-                  </h1>
-                </div>
-              </div>
-              <p className="mt-2 max-w-3xl text-xs leading-5 text-muted-foreground sm:text-sm">
-                {description}
-              </p>
+              <p className="text-xs font-semibold text-primary">逐光天气后台</p>
+              <h1 className="mt-1 text-2xl font-bold leading-tight tracking-normal text-foreground sm:text-[28px]">
+                {title}
+              </h1>
+              <p className="mt-2 max-w-4xl text-sm leading-6 text-muted-foreground">{description}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Link
                 href="/"
-                className="inline-flex h-7 items-center rounded-md border border-border bg-card px-2.5 text-xs font-medium text-foreground transition hover:border-primary hover:bg-secondary"
+                className="inline-flex h-8 items-center rounded-lg border border-border bg-card px-3 text-xs font-semibold text-foreground transition hover:border-primary hover:bg-secondary"
               >
                 返回前台
               </Link>
@@ -96,7 +89,7 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
             </div>
           </div>
         </header>
-        <div className="mx-auto grid max-w-[1320px] gap-5 px-4 py-5 lg:px-6 lg:py-6">
+        <div className="mx-auto grid max-w-[1480px] gap-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
           {children}
         </div>
       </section>

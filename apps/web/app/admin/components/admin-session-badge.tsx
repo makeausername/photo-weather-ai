@@ -30,7 +30,7 @@ export function AdminSessionBadge() {
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <div className="max-w-44 truncate text-xs text-muted-foreground">
+      <div className="max-w-44 truncate rounded-lg border border-border bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">
         <span className="mr-1">管理员</span>
         <span className="font-medium text-foreground">
           {user?.displayName || user?.email || "管理员"}

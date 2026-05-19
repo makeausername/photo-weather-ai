@@ -225,7 +225,7 @@ export function AdminLocationsClient() {
       <div className="flex gap-2 overflow-x-auto pb-1">
         <Link
           href="/admin/locations"
-          className="whitespace-nowrap rounded-lg border border-primary bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"
+          className="whitespace-nowrap rounded-lg border border-primary bg-secondary px-3 py-2 text-sm font-semibold text-secondary-foreground"
         >
           地点管理
         </Link>

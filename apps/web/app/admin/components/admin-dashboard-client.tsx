@@ -127,20 +127,20 @@ export function AdminDashboardClient() {
   return (
     <div className="grid gap-5">
       {state.error ? (
-        <div className="rounded-xl border border-warning bg-card px-4 py-3 text-sm text-warning">
+        <div className="rounded-lg border border-warning bg-card px-4 py-3 text-sm text-warning">
           {state.error}
         </div>
       ) : null}
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {summaryCards.map((card) => (
-          <Card key={card.title} className="grid gap-3 p-4">
+          <Card key={card.title} className="grid gap-3 p-5">
             <div className="flex items-start justify-between gap-3">
               <h2 className="text-sm font-semibold text-muted-foreground">{card.title}</h2>
               <Badge variant={card.badge === "正常" ? "success" : "muted"}>{card.badge}</Badge>
             </div>
-            <p className="text-2xl font-bold tracking-normal text-foreground">
-              {loading ? "..." : card.value}
+            <p className="text-[28px] font-bold leading-none tracking-normal text-foreground">
+              {loading ? "--" : card.value}
             </p>
             <p className="text-xs leading-5 text-muted-foreground">{card.description}</p>
           </Card>
@@ -148,9 +148,9 @@ export function AdminDashboardClient() {
       </div>
 
       <Card className="overflow-hidden">
-        <div className="border-b border-border px-4 py-3">
-          <h2 className="text-base font-bold">最近操作</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
+        <div className="border-b border-border px-5 py-4">
+          <h2 className="text-lg font-bold">最近操作</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
             最近 5 条后台审计日志，敏感字段由后端脱敏。
           </p>
         </div>

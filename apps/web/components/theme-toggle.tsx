@@ -64,13 +64,13 @@ export function ThemeToggle({ className, compact = false }: ThemeToggleProps) {
             onClick={() => updateTheme(item)}
             className={cn(
               "rounded-md font-medium transition",
-              compact ? "h-7 px-2.5 text-xs" : "h-8 px-3 text-sm",
+              compact ? "h-7 px-2 text-xs" : "h-8 px-3 text-sm",
               active
                 ? "bg-primary text-primary-foreground shadow-sm"
                 : "text-muted-foreground hover:bg-secondary hover:text-foreground",
             )}
           >
-            {item === "light" ? "浅色" : "深色"}
+            {compact ? (item === "light" ? "浅" : "深") : item === "light" ? "浅色" : "深色"}
           </button>
         );
       })}

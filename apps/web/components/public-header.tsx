@@ -39,7 +39,7 @@ function NavLink({
       href={href}
       onClick={onClick}
       className={cn(
-        "inline-flex h-9 items-center rounded-md px-3 text-sm font-medium transition",
+        "inline-flex h-9 items-center rounded-lg px-3 text-sm font-medium transition",
         active
           ? "bg-secondary text-secondary-foreground"
           : "text-muted-foreground hover:bg-secondary hover:text-foreground",
@@ -55,21 +55,21 @@ export function PublicHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-card/95 shadow-sm backdrop-blur">
-      <nav className="mx-auto flex w-full max-w-[1320px] items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
+    <header className="sticky top-0 z-40 border-b border-border bg-card/92 backdrop-blur-xl">
+      <nav className="mx-auto flex w-full max-w-[1440px] items-center gap-4 px-4 py-3 sm:px-8 lg:px-12 xl:px-[72px]">
         <Link
           href="/"
           className="flex min-w-0 shrink-0 items-center gap-3"
           onClick={() => setMenuOpen(false)}
         >
-          <img src="/brand-mark.svg" alt="" className="h-9 w-9 shrink-0" aria-hidden="true" />
+          <img src="/brand-mark.svg" alt="" className="h-10 w-10 shrink-0" aria-hidden="true" />
           <span className="grid min-w-0 leading-tight">
             <span className="truncate text-base font-bold text-card-foreground">逐光天气</span>
             <span className="truncate text-xs text-muted-foreground">风光摄影出行判断工具</span>
           </span>
         </Link>
 
-        <div className="hidden min-w-0 flex-1 items-center justify-center gap-1 lg:flex">
+        <div className="hidden min-w-0 flex-1 items-center justify-center gap-1 xl:flex">
           {navLinks.map((link) => (
             <NavLink
               key={link.href}
@@ -80,31 +80,31 @@ export function PublicHeader() {
           ))}
         </div>
 
-        <div className="ml-auto hidden shrink-0 items-center gap-2 lg:flex">
+        <div className="ml-auto hidden shrink-0 items-center gap-2 xl:flex">
           <ThemeToggle compact />
           <Link
-            href="/admin"
-            className="inline-flex h-8 items-center rounded-md px-2 text-xs font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-          >
-            管理后台
-          </Link>
-          <Link
             href="/login"
-            className="inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground transition hover:border-primary hover:bg-secondary"
+            className="inline-flex h-9 items-center rounded-lg border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary"
           >
             登录
           </Link>
           <Link
             href="/#analysis"
-            className="inline-flex h-9 items-center rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:brightness-95"
+            className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
           >
             开始分析
+          </Link>
+          <Link
+            href="/admin"
+            className="inline-flex h-8 items-center rounded-lg px-2 text-xs font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+          >
+            管理后台
           </Link>
         </div>
 
         <button
           type="button"
-          className="ml-auto inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary lg:hidden"
+          className="ml-auto inline-flex h-9 items-center rounded-lg border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary xl:hidden"
           aria-expanded={menuOpen}
           aria-controls="public-mobile-menu"
           onClick={() => setMenuOpen((current) => !current)}
@@ -114,8 +114,8 @@ export function PublicHeader() {
       </nav>
 
       {menuOpen ? (
-        <div id="public-mobile-menu" className="border-t border-border bg-card lg:hidden">
-          <div className="mx-auto grid w-full max-w-[1320px] gap-3 px-4 py-3 sm:px-6">
+        <div id="public-mobile-menu" className="border-t border-border bg-card xl:hidden">
+          <div className="mx-auto grid w-full max-w-[1440px] gap-3 px-4 py-3 sm:px-8 lg:px-12">
             <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
               {navLinks.map((link) => (
                 <NavLink
@@ -132,21 +132,21 @@ export function PublicHeader() {
               <Link
                 href="/login"
                 onClick={() => setMenuOpen(false)}
-                className="inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground transition hover:border-primary hover:bg-secondary"
+                className="inline-flex h-9 items-center rounded-lg border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary"
               >
                 登录
               </Link>
               <Link
                 href="/#analysis"
                 onClick={() => setMenuOpen(false)}
-                className="inline-flex h-9 items-center rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:brightness-95"
+                className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:bg-[var(--primary-hover)]"
               >
                 开始分析
               </Link>
               <Link
                 href="/admin"
                 onClick={() => setMenuOpen(false)}
-                className="inline-flex h-8 items-center rounded-md px-2 text-xs font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                className="inline-flex h-8 items-center rounded-lg px-2 text-xs font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground"
               >
                 管理后台
               </Link>

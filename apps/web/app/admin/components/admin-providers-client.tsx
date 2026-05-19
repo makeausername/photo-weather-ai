@@ -468,7 +468,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               href={tab.href}
               className={`whitespace-nowrap rounded-lg border px-3 py-2 text-sm font-semibold transition ${
                 active
-                  ? "border-primary bg-primary text-primary-foreground"
+                  ? "border-primary bg-secondary text-secondary-foreground"
                   : "border-border bg-card text-foreground hover:border-primary hover:bg-secondary hover:text-primary"
               }`}
             >

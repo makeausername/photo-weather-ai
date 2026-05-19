@@ -4,45 +4,49 @@
 
 :root {
   color-scheme: light;
-  --background: #f5f9fc;
+  --background: #f6f8f7;
   --foreground: #102033;
   --card: #ffffff;
   --card-foreground: #102033;
-  --border: #d9e6ef;
-  --muted: #eef5f9;
-  --muted-foreground: #64748b;
-  --primary: #0875c9;
+  --border: #dde7e4;
+  --muted: #eef4f2;
+  --muted-foreground: #66788a;
+  --primary: #0f766e;
+  --primary-hover: #0b5f59;
   --primary-foreground: #ffffff;
-  --secondary: #e6f6ff;
-  --secondary-foreground: #075985;
-  --accent: #06b6d4;
-  --accent-foreground: #073642;
-  --success: #059669;
-  --warning: #d97706;
-  --danger: #dc2626;
-  --ring: #38bdf8;
-  --soft-shadow: 0 18px 55px rgb(15 23 42 / 8%);
+  --secondary: #e5f0ed;
+  --secondary-foreground: #0b5f59;
+  --accent: #f59e0b;
+  --accent-foreground: #3b2503;
+  --info: #3b82a0;
+  --success: #138a5b;
+  --warning: #b7791f;
+  --danger: #b42318;
+  --ring: #79c7bd;
+  --soft-shadow: 0 18px 46px rgb(16 32 51 / 9%);
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --background: #08111f;
-  --foreground: #e6eef8;
-  --card: #101c2b;
-  --card-foreground: #e6eef8;
-  --border: #26384d;
-  --muted: #152437;
-  --muted-foreground: #9fb0c4;
-  --primary: #38bdf8;
-  --primary-foreground: #062033;
-  --secondary: #123047;
-  --secondary-foreground: #d6f3ff;
-  --accent: #22d3ee;
-  --accent-foreground: #062033;
-  --success: #34d399;
-  --warning: #fbbf24;
-  --danger: #fb7185;
-  --ring: #67e8f9;
+  --background: #0c1718;
+  --foreground: #e9f1ef;
+  --card: #122123;
+  --card-foreground: #e9f1ef;
+  --border: #284044;
+  --muted: #182b2d;
+  --muted-foreground: #9cafb3;
+  --primary: #5fc7b8;
+  --primary-hover: #8ad8cd;
+  --primary-foreground: #062725;
+  --secondary: #183531;
+  --secondary-foreground: #bde9e1;
+  --accent: #f4b544;
+  --accent-foreground: #2b1b04;
+  --info: #7cb1c5;
+  --success: #63c796;
+  --warning: #f4c56a;
+  --danger: #f18b82;
+  --ring: #5fc7b8;
   --soft-shadow: 0 20px 60px rgb(0 0 0 / 28%);
 }
 
@@ -57,10 +61,7 @@ html {
 
 body {
   min-height: 100%;
-  background:
-    radial-gradient(circle at top left, rgb(56 189 248 / 14%), transparent 28rem),
-    linear-gradient(180deg, rgb(255 255 255 / 64%), transparent 22rem),
-    var(--background);
+  background: linear-gradient(180deg, #f9fbfa 0%, var(--background) 34rem, #eef4f2 100%);
   color: var(--foreground);
   font-family: Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC",
     "Source Han Sans SC", ui-sans-serif, system-ui, sans-serif;
@@ -75,7 +76,7 @@ select {
 }
 
 ::selection {
-  background: rgb(56 189 248 / 28%);
+  background: rgb(15 118 110 / 20%);
 }
 
 :focus-visible {

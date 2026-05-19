@@ -307,7 +307,7 @@ export function AdminPhotoSpotsClient() {
         </Link>
         <Link
           href="/admin/photo-spots"
-          className="whitespace-nowrap rounded-lg border border-primary bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"
+          className="whitespace-nowrap rounded-lg border border-primary bg-secondary px-3 py-2 text-sm font-semibold text-secondary-foreground"
         >
           机位管理
         </Link>
