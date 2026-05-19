@@ -56,6 +56,7 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
     recommendationLabel,
     summary: buildSummary(input, overallScore, recommendationLabel, scores),
     scores,
+    astroSummaries: input.astroSummaries,
     bestWindows: buildBestWindows(input, scores),
     riskFlags,
     keyReasons: buildKeyReasons(scores),
@@ -433,20 +434,24 @@ function buildBestWindows(
   const windows: ForecastTimeWindow[] = [];
 
   if (astro) {
-    windows.push({
-      label: `朝霞 ${formatChineseTimeRange(addHours(astro.sunrise, -0.75), addHours(astro.sunrise, 1))}`,
-      startTime: addHours(astro.sunrise, -0.75),
-      endTime: addHours(astro.sunrise, 1),
-      score: scores.sunriseGlow.score,
-      target: "glow",
-    });
-    windows.push({
-      label: `晚霞 ${formatChineseTimeRange(addHours(astro.sunset, -1), addHours(astro.sunset, 0.75))}`,
-      startTime: addHours(astro.sunset, -1),
-      endTime: addHours(astro.sunset, 0.75),
-      score: scores.sunsetGlow.score,
-      target: "glow",
-    });
+    if (astro.sunrise) {
+      windows.push({
+        label: `朝霞 ${formatChineseTimeRange(addHours(astro.sunrise, -0.75), addHours(astro.sunrise, 1))}`,
+        startTime: addHours(astro.sunrise, -0.75),
+        endTime: addHours(astro.sunrise, 1),
+        score: scores.sunriseGlow.score,
+        target: "glow",
+      });
+    }
+    if (astro.sunset) {
+      windows.push({
+        label: `晚霞 ${formatChineseTimeRange(addHours(astro.sunset, -1), addHours(astro.sunset, 0.75))}`,
+        startTime: addHours(astro.sunset, -1),
+        endTime: addHours(astro.sunset, 0.75),
+        score: scores.sunsetGlow.score,
+        target: "glow",
+      });
+    }
 
     if (astro.milkyWayWindowStart && astro.milkyWayWindowEnd) {
       windows.push({
@@ -676,9 +681,10 @@ function calculateMoonScore(astro: AstroSummary | undefined): number {
       ? moonAltitudeValues.reduce((sum, value) => sum + value, 0) / moonAltitudeValues.length
       : 0;
 
-  return clampScore(
-    100 - astro.moonIllumination * 0.72 - Math.max(0, averageMoonAltitude - 15) * 0.8,
-  );
+  const illuminationPercent =
+    astro.moonIllumination <= 1 ? astro.moonIllumination * 100 : astro.moonIllumination;
+
+  return clampScore(100 - illuminationPercent * 0.72 - Math.max(0, averageMoonAltitude - 15) * 0.8);
 }
 
 function cloudSeaHourScore(hour: NormalizedHourlyWeather, elevationDiff5km: number): number {

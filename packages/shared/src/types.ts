@@ -107,22 +107,32 @@ export type TerrainSummary = {
 
 export type AstroSummary = {
   readonly date: string;
-  readonly sunrise: string;
-  readonly sunset: string;
-  readonly civilDawn: string;
-  readonly civilDusk: string;
-  readonly nauticalDawn: string;
-  readonly nauticalDusk: string;
-  readonly astronomicalDawn: string;
-  readonly astronomicalDusk: string;
-  readonly moonPhase: string;
+  readonly timezone: string;
+  readonly sunrise?: string;
+  readonly sunset?: string;
+  readonly solarNoon?: string;
+  readonly sunriseAzimuth?: number;
+  readonly sunsetAzimuth?: number;
+  readonly civilDawn?: string;
+  readonly civilDusk?: string;
+  readonly nauticalDawn?: string;
+  readonly nauticalDusk?: string;
+  readonly astronomicalDawn?: string;
+  readonly astronomicalDusk?: string;
+  readonly astronomicalNightStart?: string;
+  readonly astronomicalNightEnd?: string;
+  readonly moonPhase: number;
+  readonly moonPhaseNameZh: string;
   readonly moonIllumination: number;
   readonly moonrise?: string;
   readonly moonset?: string;
   readonly moonAltitudeByHour?: Readonly<Record<string, number>>;
   readonly milkyWayWindowStart?: string;
   readonly milkyWayWindowEnd?: string;
+  readonly milkyWayBestTime?: string;
   readonly milkyWayDirection?: string;
+  readonly milkyWayVisibilityLevel?: "unavailable" | "poor" | "fair" | "good";
+  readonly milkyWayNoteZh?: string;
 };
 
 export type ForecastCalculationInput = {
@@ -191,6 +201,7 @@ export type ForecastCalculationResult = {
   readonly recommendationLabel: string;
   readonly summary: string;
   readonly scores: ForecastScoreSet;
+  readonly astroSummaries: readonly AstroSummary[];
   readonly bestWindows: readonly ForecastTimeWindow[];
   readonly riskFlags: readonly ForecastRiskFlag[];
   readonly keyReasons: readonly string[];

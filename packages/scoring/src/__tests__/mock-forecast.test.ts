@@ -40,13 +40,20 @@ describe("mock forecast input builder", () => {
     expect(first.hourlyWeather).toHaveLength(48);
     expect(first.dailyWeather).toHaveLength(2);
     expect(first.astroSummaries).toHaveLength(2);
+    expect(first.astroSummaries[0]).toMatchObject({
+      timezone: "Asia/Shanghai",
+      moonPhaseNameZh: expect.any(String),
+      milkyWayVisibilityLevel: expect.any(String),
+    });
+    expect(first.astroSummaries[0]?.moonIllumination).toBeGreaterThanOrEqual(0);
+    expect(first.astroSummaries[0]?.moonIllumination).toBeLessThanOrEqual(1);
   });
 
   it("generates 7 day mock weather and astro windows", () => {
     expect(generateMockHourlyWeather("7d")).toHaveLength(168);
     expect(generateMockDailyWeather("7d")).toHaveLength(7);
     expect(generateMockAstroSummaries("7d")[0]).toMatchObject({
-      milkyWayDirection: "东南至南方",
+      milkyWayVisibilityLevel: expect.any(String),
     });
   });
 
@@ -74,6 +81,26 @@ describe("mock forecast input builder", () => {
     );
     expect(result.dataSourceLabel).toBe("模拟天气数据");
     expect(result.scores.cloudSea.label).toBe("云海");
+    expect(result.astroSummaries).toHaveLength(2);
     expect(result.bestWindows.length).toBeGreaterThan(0);
+  });
+
+  it("does not call external network while building and scoring mock forecasts", () => {
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+    globalThis.fetch = (async () => {
+      fetchCalls += 1;
+      throw new Error("network should not be called");
+    }) as typeof fetch;
+
+    try {
+      const result = calculateForecast(buildMockForecastInput(query));
+
+      expect(result.isMock).toBe(true);
+      expect(result.astroSummaries.length).toBeGreaterThan(0);
+      expect(fetchCalls).toBe(0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

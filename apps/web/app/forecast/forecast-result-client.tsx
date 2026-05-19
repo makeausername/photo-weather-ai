@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import {
   forecastHorizonLabels,
   forecastTargetLabels,
+  type AstroSummary,
   type ForecastCalculationResult,
   type ForecastQueryInput,
   type ForecastRiskLevel,
@@ -260,6 +261,7 @@ function ForecastResultView({
   const scoreEntries = scoreOrder.map((key) => result.scores[key]);
   const bestWindow = result.bestWindows[0];
   const mainRisk = result.riskFlags[0];
+  const astroSummary = result.astroSummaries[0];
 
   return (
     <DashboardFrame query={query}>
@@ -307,6 +309,8 @@ function ForecastResultView({
 
         <WindowPanel windows={result.bestWindows} />
 
+        <AstronomyPanel astro={astroSummary} />
+
         <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
           {scoreEntries.map((score) => (
             <ScoreCard key={score.key} score={score} />
@@ -334,6 +338,83 @@ function ForecastResultView({
         <DataStatusPanel result={result} />
       </aside>
     </DashboardFrame>
+  );
+}
+
+const missingText = "暂无数据";
+
+const milkyWayVisibilityLabels: Record<NonNullable<AstroSummary["milkyWayVisibilityLevel"]>, string> = {
+  unavailable: "不可见",
+  poor: "条件较差",
+  fair: "可尝试",
+  good: "条件较好",
+};
+
+function AstronomyPanel({ astro }: { readonly astro: AstroSummary | undefined }) {
+  return (
+    <Card className="p-5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-card-foreground">天文条件</h2>
+        <Badge variant="muted">本地计算</Badge>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-5">
+        <AstronomyFactCard
+          title="日出 / 日落"
+          primary={`${formatOptionalTime(astro?.sunrise)} / ${formatOptionalTime(astro?.sunset)}`}
+          detail={`太阳中天：${formatOptionalTime(astro?.solarNoon)}`}
+        />
+        <AstronomyFactCard
+          title="月相 / 月亮照明"
+          primary={`${astro?.moonPhaseNameZh ?? missingText} / ${formatPercent(astro?.moonIllumination)}`}
+          detail={`月相值：${formatNumber(astro?.moonPhase)}`}
+        />
+        <AstronomyFactCard
+          title="月出 / 月落"
+          primary={`${formatOptionalTime(astro?.moonrise)} / ${formatOptionalTime(astro?.moonset)}`}
+          detail="以当地地平线近似计算"
+        />
+        <AstronomyFactCard
+          title="天文黑夜窗口"
+          primary={formatOptionalWindow(astro?.astronomicalNightStart, astro?.astronomicalNightEnd)}
+          detail={`天文晨光：${formatOptionalTime(astro?.astronomicalDawn)}`}
+        />
+        <AstronomyFactCard
+          title="银河窗口"
+          primary={formatOptionalWindow(astro?.milkyWayWindowStart, astro?.milkyWayWindowEnd)}
+          detail={`${formatMilkyWayVisibility(astro?.milkyWayVisibilityLevel)} / ${
+            astro?.milkyWayDirection ?? missingText
+          }`}
+        />
+      </div>
+
+      <p className="mt-4 rounded-lg border border-border bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground">
+        天文时间基于经纬度本地计算，真实拍摄效果仍需结合云量、能见度和地形遮挡。
+      </p>
+      {astro?.milkyWayNoteZh ? (
+        <p className="mt-2 text-xs leading-5 text-muted-foreground">{astro.milkyWayNoteZh}</p>
+      ) : null}
+    </Card>
+  );
+}
+
+function AstronomyFactCard({
+  title,
+  primary,
+  detail,
+}: {
+  readonly title: string;
+  readonly primary: string;
+  readonly detail: string;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-muted p-3">
+      <p className="text-xs font-semibold text-muted-foreground">{title}</p>
+      <p className="mt-2 break-words text-sm font-bold leading-5 text-card-foreground">
+        {primary}
+      </p>
+      <p className="mt-2 text-xs leading-5 text-muted-foreground">{detail}</p>
+    </div>
   );
 }
 
@@ -499,6 +580,36 @@ function ScoreCard({ score }: { readonly score: ForecastScore }) {
       </div>
     </Card>
   );
+}
+
+function formatOptionalTime(value: string | undefined): string {
+  return value ? formatTime(value) : missingText;
+}
+
+function formatOptionalWindow(startTime: string | undefined, endTime: string | undefined): string {
+  return startTime && endTime ? `${formatTime(startTime)} - ${formatTime(endTime)}` : missingText;
+}
+
+function formatPercent(value: number | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return missingText;
+  }
+
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatNumber(value: number | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return missingText;
+  }
+
+  return value.toFixed(3);
+}
+
+function formatMilkyWayVisibility(
+  value: AstroSummary["milkyWayVisibilityLevel"] | undefined,
+): string {
+  return value ? milkyWayVisibilityLabels[value] : missingText;
 }
 
 function formatCoordinate(value: number): string {

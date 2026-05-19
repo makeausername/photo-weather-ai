@@ -9,6 +9,16 @@ import type {
   Place,
   TerrainSummary,
 } from "@photo-weather/shared";
+import {
+  getAstronomicalNightWindow,
+  getMilkyWayWindow,
+  getMoonAltitudeByHour,
+  getMoonIllumination,
+  getMoonPhase,
+  getMoonTimes,
+  getSunTimes,
+  getTwilightTimes,
+} from "@photo-weather/astro";
 import { clampScore, getHorizonHours } from "./helpers.js";
 
 type MockPlaceProfile = {
@@ -34,12 +44,14 @@ type MockPlaceProfile = {
   readonly tempBase: number;
   readonly sunriseClock: string;
   readonly sunsetClock: string;
-  readonly moonIlluminationBase: number;
 };
 
 type MockGenerationOptions = {
   readonly placeName?: string;
   readonly target?: ForecastTarget;
+  readonly latitudeWgs84?: number;
+  readonly longitudeWgs84?: number;
+  readonly dates?: readonly string[];
 };
 
 export type NormalizedForecastInputOptions = {
@@ -78,7 +90,6 @@ const profiles: readonly MockPlaceProfile[] = [
     tempBase: 16,
     sunriseClock: "05:18",
     sunsetClock: "18:56",
-    moonIlluminationBase: 34,
   },
   {
     key: "laojunshan",
@@ -103,7 +114,6 @@ const profiles: readonly MockPlaceProfile[] = [
     tempBase: 14,
     sunriseClock: "05:26",
     sunsetClock: "19:24",
-    moonIlluminationBase: 42,
   },
   {
     key: "sanqingshan",
@@ -128,7 +138,6 @@ const profiles: readonly MockPlaceProfile[] = [
     tempBase: 17,
     sunriseClock: "05:20",
     sunsetClock: "18:58",
-    moonIlluminationBase: 47,
   },
   {
     key: "wugongshan",
@@ -153,7 +162,6 @@ const profiles: readonly MockPlaceProfile[] = [
     tempBase: 15,
     sunriseClock: "05:34",
     sunsetClock: "19:08",
-    moonIlluminationBase: 24,
   },
 ];
 
@@ -192,6 +200,7 @@ export function buildForecastInputFromNormalizedWeather(
     },
   };
   const options = { placeName: query.name, target: query.target };
+  const astroDates = getForecastDates(query.horizon, weather.dailyWeather);
 
   return {
     place,
@@ -200,7 +209,12 @@ export function buildForecastInputFromNormalizedWeather(
     hourlyWeather: weather.hourlyWeather,
     dailyWeather: weather.dailyWeather,
     terrainSummary: generateMockTerrainSummary(place),
-    astroSummaries: generateMockAstroSummaries(query.horizon, options),
+    astroSummaries: generateMockAstroSummaries(query.horizon, {
+      ...options,
+      latitudeWgs84: query.latitudeWgs84,
+      longitudeWgs84: query.longitudeWgs84,
+      dates: astroDates,
+    }),
     generatedAt,
     isMock: weather.isMock,
     dataSourceLabel: weather.dataSourceLabel,
@@ -349,39 +363,54 @@ export function generateMockAstroSummaries(
 ): readonly AstroSummary[] {
   const profile = resolveProfile(options.placeName);
   const days = horizon === "7d" ? 7 : Math.ceil(getHorizonHours(horizon) / 24);
+  const latitudeWgs84 = options.latitudeWgs84 ?? defaultCoordinates.latitudeWgs84;
+  const longitudeWgs84 = options.longitudeWgs84 ?? defaultCoordinates.longitudeWgs84;
 
   return Array.from({ length: days }, (_, dayIndex) => {
-    const date = formatShanghaiDate(baseUtcMs + dayIndex * dayMs);
-    const sunrise = `${date}T${profile.sunriseClock}:00+08:00`;
-    const sunset = `${date}T${profile.sunsetClock}:00+08:00`;
-    const moonIllumination = clampScore(
-      profile.moonIlluminationBase + dayIndex * 6 + (options.target === "astro" ? -8 : 0),
-    );
+    const date = options.dates?.[dayIndex] ?? formatShanghaiDate(baseUtcMs + dayIndex * dayMs);
+    const astroInput = {
+      latitudeWgs84,
+      longitudeWgs84,
+      date,
+      timezone: "Asia/Shanghai",
+    };
+    const sunTimes = getSunTimes(astroInput);
+    const twilightTimes = getTwilightTimes(astroInput);
+    const moonPhase = getMoonPhase(astroInput);
+    const moonIllumination = getMoonIllumination(astroInput);
+    const moonTimes = getMoonTimes(astroInput);
+    const moonAltitude = getMoonAltitudeByHour(astroInput);
+    const astronomicalNight = getAstronomicalNightWindow(astroInput);
+    const milkyWayWindow = getMilkyWayWindow(astroInput);
 
     return {
       date,
-      sunrise,
-      sunset,
-      civilDawn: addMinutesToShanghaiIso(sunrise, -30),
-      civilDusk: addMinutesToShanghaiIso(sunset, 30),
-      nauticalDawn: addMinutesToShanghaiIso(sunrise, -60),
-      nauticalDusk: addMinutesToShanghaiIso(sunset, 60),
-      astronomicalDawn: addMinutesToShanghaiIso(sunrise, -90),
-      astronomicalDusk: addMinutesToShanghaiIso(sunset, 90),
-      moonPhase: moonIllumination < 25 ? "蛾眉月" : moonIllumination > 70 ? "盈凸月" : "上弦前后",
-      moonIllumination,
-      moonrise: `${date}T21:12:00+08:00`,
-      moonset: addDaysToShanghaiIso(`${date}T09:36:00+08:00`, 1),
-      moonAltitudeByHour: {
-        "00": Math.max(0, 26 - dayIndex * 2),
-        "01": Math.max(0, 20 - dayIndex * 2),
-        "02": Math.max(0, 14 - dayIndex),
-        "03": Math.max(0, 8 - dayIndex),
-        "04": Math.max(0, 3 - dayIndex),
-      },
-      milkyWayWindowStart: `${date}T02:10:00+08:00`,
-      milkyWayWindowEnd: `${date}T04:35:00+08:00`,
-      milkyWayDirection: "东南至南方",
+      timezone: "Asia/Shanghai",
+      sunrise: sunTimes.sunrise ?? `${date}T${profile.sunriseClock}:00+08:00`,
+      sunset: sunTimes.sunset ?? `${date}T${profile.sunsetClock}:00+08:00`,
+      solarNoon: sunTimes.solarNoon,
+      sunriseAzimuth: sunTimes.sunriseAzimuth,
+      sunsetAzimuth: sunTimes.sunsetAzimuth,
+      civilDawn: twilightTimes.civilDawn,
+      civilDusk: twilightTimes.civilDusk,
+      nauticalDawn: twilightTimes.nauticalDawn,
+      nauticalDusk: twilightTimes.nauticalDusk,
+      astronomicalDawn: twilightTimes.astronomicalDawn,
+      astronomicalDusk: twilightTimes.astronomicalDusk,
+      astronomicalNightStart: astronomicalNight.windowStart,
+      astronomicalNightEnd: astronomicalNight.windowEnd,
+      moonPhase: moonPhase.moonPhase,
+      moonPhaseNameZh: moonPhase.moonPhaseNameZh,
+      moonIllumination: moonIllumination.moonIllumination,
+      moonrise: moonTimes.moonrise,
+      moonset: moonTimes.moonset,
+      moonAltitudeByHour: moonAltitude.moonAltitudeByHour,
+      milkyWayWindowStart: milkyWayWindow.windowStart,
+      milkyWayWindowEnd: milkyWayWindow.windowEnd,
+      milkyWayBestTime: milkyWayWindow.bestTime,
+      milkyWayDirection: milkyWayWindow.directionZh,
+      milkyWayVisibilityLevel: milkyWayWindow.visibilityLevel,
+      milkyWayNoteZh: milkyWayWindow.noteZh,
     };
   });
 }
@@ -419,22 +448,26 @@ function formatShanghaiDate(timestamp: number): string {
   return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
 }
 
-function addMinutesToShanghaiIso(value: string, minutes: number): string {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
-    return value;
-  }
+function getForecastDates(
+  horizon: ForecastHorizon,
+  dailyWeather: readonly NormalizedDailyWeather[],
+): readonly string[] {
+  const days = horizon === "7d" ? 7 : Math.ceil(getHorizonHours(horizon) / 24);
+  const firstDate = dailyWeather[0]?.date ?? formatShanghaiDate(baseUtcMs);
 
-  return formatShanghaiDateTime(timestamp + minutes * 60 * 1000);
+  return Array.from(
+    { length: days },
+    (_, dayIndex) => dailyWeather[dayIndex]?.date ?? addDaysToShanghaiDate(firstDate, dayIndex),
+  );
 }
 
-function addDaysToShanghaiIso(value: string, days: number): string {
-  const timestamp = Date.parse(value);
+function addDaysToShanghaiDate(value: string, days: number): string {
+  const timestamp = Date.parse(`${value}T00:00:00+08:00`);
   if (!Number.isFinite(timestamp)) {
-    return value;
+    return formatShanghaiDate(baseUtcMs + days * dayMs);
   }
 
-  return formatShanghaiDateTime(timestamp + days * dayMs);
+  return formatShanghaiDate(timestamp + days * dayMs);
 }
 
 function round1(value: number): number {
@@ -444,3 +477,8 @@ function round1(value: number): number {
 function pad2(value: number): string {
   return value.toString().padStart(2, "0");
 }
+
+const defaultCoordinates = {
+  latitudeWgs84: 30.13012,
+  longitudeWgs84: 118.16389,
+} as const;

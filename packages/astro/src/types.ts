@@ -1,35 +1,93 @@
-import type { Coordinates, TimeWindow } from "@photo-weather/shared";
+export type AstroInput = {
+  readonly latitudeWgs84: number;
+  readonly longitudeWgs84: number;
+  readonly date: string;
+  readonly timezone?: string;
+};
+
+export type MoonPhaseNameZh =
+  | "新月"
+  | "娥眉月"
+  | "上弦月"
+  | "盈凸月"
+  | "满月"
+  | "亏凸月"
+  | "下弦月"
+  | "残月";
+
+export type MilkyWayVisibilityLevel = "unavailable" | "poor" | "fair" | "good";
 
 export type SunTimes = {
   readonly date: string;
-  readonly coordinates: Coordinates;
-  readonly sunriseAt: string;
-  readonly sunsetAt: string;
-  readonly goldenHourMorning: TimeWindow;
-  readonly goldenHourEvening: TimeWindow;
+  readonly timezone: string;
+  readonly sunrise?: string;
+  readonly sunset?: string;
+  readonly solarNoon?: string;
+  readonly sunriseAzimuth?: number;
+  readonly sunsetAzimuth?: number;
 };
 
-export type MoonTimes = {
+export type TwilightTimes = {
   readonly date: string;
-  readonly moonriseAt: string;
-  readonly moonsetAt: string;
+  readonly timezone: string;
+  readonly civilDawn?: string;
+  readonly civilDusk?: string;
+  readonly nauticalDawn?: string;
+  readonly nauticalDusk?: string;
+  readonly astronomicalDawn?: string;
+  readonly astronomicalDusk?: string;
 };
 
 export type MoonPhase = {
   readonly date: string;
-  readonly phaseName: "new" | "waxing" | "full" | "waning";
-  readonly illuminationPercent: number;
+  readonly timezone: string;
+  readonly moonPhase: number;
+  readonly moonPhaseNameZh: MoonPhaseNameZh;
+};
+
+export type MoonIllumination = {
+  readonly date: string;
+  readonly timezone: string;
+  readonly moonIllumination: number;
+};
+
+export type MoonTimes = {
+  readonly date: string;
+  readonly timezone: string;
+  readonly moonrise?: string;
+  readonly moonset?: string;
+};
+
+export type MoonAltitudeByHour = {
+  readonly date: string;
+  readonly timezone: string;
+  readonly moonAltitudeByHour: Readonly<Record<string, number>>;
+};
+
+export type AstronomicalNightWindow = {
+  readonly date: string;
+  readonly timezone: string;
+  readonly windowStart?: string;
+  readonly windowEnd?: string;
 };
 
 export type MilkyWayWindow = {
-  readonly window: TimeWindow;
-  readonly visibilityScore: number;
-  readonly notes: readonly string[];
+  readonly date: string;
+  readonly timezone: string;
+  readonly windowStart?: string;
+  readonly windowEnd?: string;
+  readonly bestTime?: string;
+  readonly directionZh?: string;
+  readonly visibilityLevel: MilkyWayVisibilityLevel;
+  readonly noteZh: string;
 };
 
 export type AstroProvider = {
-  getSunTimes(coordinates: Coordinates, date: string): Promise<SunTimes>;
-  getMoonTimes(coordinates: Coordinates, date: string): Promise<MoonTimes>;
-  getMoonPhase(date: string): Promise<MoonPhase>;
-  getMilkyWayWindow(coordinates: Coordinates, date: string): Promise<MilkyWayWindow>;
+  getSunTimes(input: AstroInput): Promise<SunTimes>;
+  getTwilightTimes(input: AstroInput): Promise<TwilightTimes>;
+  getMoonPhase(input: AstroInput): Promise<MoonPhase>;
+  getMoonIllumination(input: AstroInput): Promise<MoonIllumination>;
+  getMoonTimes(input: AstroInput): Promise<MoonTimes>;
+  getMoonAltitudeByHour(input: AstroInput): Promise<MoonAltitudeByHour>;
+  getMilkyWayWindow(input: AstroInput): Promise<MilkyWayWindow>;
 };

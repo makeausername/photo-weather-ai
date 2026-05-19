@@ -67,8 +67,18 @@
 
 - 云海、白墙风险、朝霞、晚霞、星空、银河和通透度评分。
 - 综合出片指数、推荐等级、最佳拍摄窗口、风险提示、关键依据和拍摄建议。
+- Astronomy Core V1：本地计算日出 / 日落、太阳中天、民用 / 航海 / 天文晨昏光、月相、月亮照明、月出 / 月落和逐小时月亮高度。
+- 银河窗口 V1：基于天文黑夜、季节和月光影响给出初步窗口、方向和可见性等级；该结果是拍摄规划基础估算，尚未计算银心精确高度、地形遮挡和光污染。
 - 黄山光明顶、老君山金顶、三清山女神峰、武功山金顶等本地模拟样例。
 - Mock 数据提示：`当前为本地模拟天气数据，计算结果仅用于验证流程，不代表真实预报。`
+
+天文计算约定：
+
+- 天文计算只使用 WGS84 经纬度，不使用 GCJ-02。
+- 默认时区为 `Asia/Shanghai`。
+- 日出 / 日落、暮光、月相和月亮照明为本地 deterministic 计算，不调用外部 API。
+- 天文结果会随 forecast mock pipeline 一起进入 `ForecastCalculationResult.astroSummaries`，供结果页展示日出日落、月相月照、月出月落、天文黑夜窗口和银河窗口。
+- 真实天气准确率仍需要后续接入 QWeather / Open-Meteo 真实预报、云层 / 能见度校准和地形遮挡数据；当前步骤不实现真实 QWeather、Open-Meteo 或 DeepSeek 调用。
 
 `packages/weather` 已提供天气服务商契约、ProviderFactory、QWeather / Open-Meteo fixture adapter 和小时/日天气标准化逻辑。QWeather fixture 会把不可用的低云/中云/高云分层置为 `null` 并写入 source notes；Open-Meteo fixture 会映射 `cloud_cover_low`、`cloud_cover_mid`、`cloud_cover_high`、能见度、露点、风速、阵风、降水概率和降水量。
 
@@ -103,7 +113,7 @@
 - `packages/geo`：地理服务接口、deterministic mock 搜索、高德地图 Web 服务 provider 基础、坐标校验与 GCJ-02 / WGS84 转换。
 - `packages/weather`：天气服务接口、标准化天气模型、ProviderFactory、MockWeatherProvider，以及 QWeather / Open-Meteo fixture-based normalization adapters。
 - `packages/terrain`：地形与海拔服务接口。
-- `packages/astro`：天文服务接口。
+- `packages/astro`：Astronomy Core V1，本地 deterministic 日出 / 日落、暮光、月相、月亮照明、月出 / 月落、逐小时月亮高度和初步银河窗口估算。
 - `packages/scoring`：本地 forecast mock 数据构造器、摄影评分 helper、朝霞/晚霞/云海/白墙/星空/银河/通透度计算器和综合推荐分类。
 - `packages/ai`：AI 服务接口、mock provider、规则兜底和 DeepSeek 骨架。
 - `packages/storage`：存储服务接口与 mock 存储。

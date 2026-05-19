@@ -40,7 +40,7 @@ const workflow = [
   { step: "04", title: "决定是否出发", text: "把天气、地形、窗口和风险整理成一次出行决策。" },
 ] as const;
 
-const layerChips = ["云层", "风速", "湿度", "能见度", "月相", "地形"] as const;
+const layerChips = ["云层", "风速", "湿度", "能见度", "月相", "地形", "银河"] as const;
 
 const mapTimeline = [
   { time: "04:00", label: "云层偏厚", tone: "muted" },
@@ -142,6 +142,8 @@ function ForecastMapWorkspace() {
             <span>低云：海拔下方抬升</span>
             <span>风速：山顶阵风偏大</span>
             <span>能见度：清晨较好</span>
+            <span>月相：示例月相层待切换</span>
+            <span>银河：示例窗口待计算</span>
           </div>
         </div>
       </div>
@@ -167,7 +169,7 @@ function ForecastMapWorkspace() {
           ))}
         </div>
         <p className="text-xs leading-5 text-muted-foreground">
-          当前为界面占位，真实地图与天气图层将在后续接入。
+          默认演示图层；选择地点后将切换为该地区数据。
         </p>
       </div>
     </section>

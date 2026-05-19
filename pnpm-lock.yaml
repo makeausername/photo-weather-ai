@@ -169,6 +169,9 @@ importers:
 
   packages/scoring:
     dependencies:
+      '@photo-weather/astro':
+        specifier: workspace:*
+        version: link:../astro
       '@photo-weather/shared':
         specifier: workspace:*
         version: link:../shared

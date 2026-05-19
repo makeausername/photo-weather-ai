@@ -17,6 +17,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@photo-weather/astro": "workspace:*",
     "@photo-weather/shared": "workspace:*",
     "@photo-weather/weather": "workspace:*"
   }
