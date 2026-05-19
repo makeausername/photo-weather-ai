@@ -6,6 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "pnpm -r --parallel --if-present dev",
+    "dev:local": "powershell -ExecutionPolicy Bypass -File scripts/dev-local.ps1",
+    "stop:local": "powershell -ExecutionPolicy Bypass -File scripts/stop-local.ps1",
+    "check:local": "powershell -ExecutionPolicy Bypass -File scripts/check-local.ps1",
     "build": "pnpm -r --workspace-concurrency=1 --if-present build",
     "db:generate": "pnpm --filter @photo-weather/db db:generate",
     "db:migrate": "pnpm --filter @photo-weather/db db:migrate",

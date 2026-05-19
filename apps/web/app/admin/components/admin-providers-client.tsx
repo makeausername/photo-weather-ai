@@ -300,6 +300,15 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                     <ProviderStatus provider={provider} />
                   </div>
 
+                  {provider.providerType === "geo" && provider.providerCode === "amap" ? (
+                    <div className="rounded-lg border border-border bg-muted px-3 py-2 text-sm leading-6 text-muted-foreground">
+                      高德地图服务状态：
+                      {provider.enabled
+                        ? "已启用，真实搜索需要已配置 Web 服务 API Key。"
+                        : "未启用，前台搜索优先使用本地地点与模拟数据。"}
+                    </div>
+                  ) : null}
+
                   <div className="rounded-lg border border-border bg-muted p-3">
                     <p className="text-sm font-semibold text-card-foreground">已脱敏密钥</p>
                     <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">

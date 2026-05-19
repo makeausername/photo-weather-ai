@@ -49,6 +49,7 @@ export {
 } from "./locations.js";
 export {
   getProviderConfig,
+  getRuntimeProviderConfig,
   listProviderConfigs,
   updateProviderConfig,
   validateProviderCode,

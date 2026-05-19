@@ -22,6 +22,7 @@ export const serverEnvSchema = z
     DEEPSEEK_API_KEY: optionalSecret,
     DEEPSEEK_BASE_URL: optionalString.default("https://api.deepseek.com"),
     AMAP_API_KEY: optionalSecret,
+    AMAP_WEB_SERVICE_KEY: optionalSecret,
     QWEATHER_API_KEY: optionalSecret,
     OPEN_METEO_API_KEY: optionalSecret,
     STORAGE_PROVIDER: z.enum(["local", "aliyun_oss", "tencent_cos", "s3"]).default("local"),

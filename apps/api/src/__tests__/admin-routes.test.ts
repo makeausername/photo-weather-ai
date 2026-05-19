@@ -188,6 +188,37 @@ describe("admin config routes", () => {
     });
   });
 
+  it("keeps Amap connection tests in mock mode by default and hides secrets", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const amapProvider = state.providers.get("geo:amap");
+    state.providers.set("geo:amap", {
+      ...amapProvider,
+      secretJson: {
+        apiKey: "amap-test-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "amap****cret",
+      },
+    });
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/providers/geo/amap/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: true,
+      mode: "mock",
+      providerType: "geo",
+      providerCode: "amap",
+    });
+    expect(response.body).not.toContain("amap-test-secret");
+    expect(response.body).not.toContain("secretJson");
+  });
+
   it("lists seeded Chinese locations and validates unsafe coordinates", async () => {
     const { client } = await createFakeDatabaseClient();
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
@@ -344,7 +375,7 @@ describe("admin config routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().results[0]).toMatchObject({
-      name: "黄山",
+      name: "黄山光明顶",
       source: "mock",
       coordinatesGcj02: {
         system: "gcj02",
@@ -353,5 +384,71 @@ describe("admin config routes", () => {
         system: "wgs84",
       },
     });
+  });
+
+  it("validates the public place search query", async () => {
+    const { client } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/search/places?q=",
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      error: "validation_error",
+    });
+  });
+
+  it("maps local locations and photo spots before provider results in public search", async () => {
+    const { client } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/search/places?q=%E9%BB%84%E5%B1%B1",
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.results[0]).toMatchObject({
+      name: "黄山",
+      source: "local_location",
+      matchedLocationId: "location-0",
+      latitudeGcj02: 30.1351,
+      longitudeWgs84: 118.171,
+    });
+    expect(body.results[1]).toMatchObject({
+      name: "黄山光明顶",
+      source: "local_photo_spot",
+      matchedPhotoSpotId: "photo-spot-0",
+      matchedLocationId: "location-0",
+      locationType: "viewpoint",
+    });
+  });
+
+  it("returns a clear public search error when Amap is enabled without a key", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const amapProvider = state.providers.get("geo:amap");
+    state.providers.set("geo:amap", {
+      ...amapProvider,
+      enabled: true,
+      secretJson: {},
+      maskedSecretJson: {},
+    });
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/search/places?q=%E9%BB%84%E5%B1%B1",
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({
+      error: "place_search_unavailable",
+      message: "高德地图已启用，但尚未配置 Web 服务 API Key。",
+    });
+    expect(response.body).not.toContain("secretJson");
   });
 });

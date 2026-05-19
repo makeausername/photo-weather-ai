@@ -32,8 +32,15 @@ export type GeoPlaceResult = Place & {
   readonly city?: string;
   readonly district?: string;
   readonly address?: string;
+  readonly latitudeGcj02: number;
+  readonly longitudeGcj02: number;
+  readonly latitudeWgs84: number;
+  readonly longitudeWgs84: number;
   readonly coordinatesGcj02: Gcj02Coordinates;
   readonly coordinatesWgs84: Wgs84Coordinates;
+  readonly elevation?: number | null;
+  readonly locationType?: string;
+  readonly isVerified?: boolean;
   readonly providerPlaceId?: string;
   readonly source: GeoPlaceSource;
   readonly raw?: JsonValue;
@@ -49,6 +56,9 @@ export type RawGeoPlaceResult = {
   readonly address?: string;
   readonly coordinatesGcj02?: Gcj02Coordinates;
   readonly coordinatesWgs84?: Wgs84Coordinates;
+  readonly elevation?: number | null;
+  readonly locationType?: string;
+  readonly isVerified?: boolean;
   readonly providerPlaceId?: string;
   readonly source?: GeoPlaceSource;
   readonly raw?: JsonValue;

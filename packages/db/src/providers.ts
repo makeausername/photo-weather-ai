@@ -3,7 +3,13 @@ import { getPrismaClient } from "./client.js";
 import { mergeJsonObjects } from "./json.js";
 import { maskSecretJson } from "./secrets.js";
 import { normalizeProviderConfig, safeProviderConfig } from "./serializers.js";
-import type { DatabaseClient, JsonValue, ProviderType, SafeProviderConfig } from "./types.js";
+import type {
+  DatabaseClient,
+  JsonValue,
+  ProviderConfigRecord,
+  ProviderType,
+  SafeProviderConfig,
+} from "./types.js";
 
 export type ListProviderConfigsOptions = {
   readonly providerType?: ProviderType;
@@ -51,6 +57,27 @@ export async function getProviderConfig(
   });
 
   return record ? safeProviderConfig(record) : null;
+}
+
+export async function getRuntimeProviderConfig(
+  providerType: ProviderType,
+  providerCode: string,
+  options: { readonly client?: DatabaseClient } = {},
+): Promise<ProviderConfigRecord | null> {
+  assertProviderType(providerType);
+  validateProviderCode(providerCode);
+
+  const client = await resolveClient(options.client);
+  const record = await client.providerConfig.findUnique({
+    where: {
+      providerType_providerCode: {
+        providerType,
+        providerCode,
+      },
+    },
+  });
+
+  return record ? normalizeProviderConfig(record) : null;
 }
 
 export async function listProviderConfigs(

@@ -14,21 +14,6 @@ import type {
 
 const mockPlaces: readonly RawGeoPlaceResult[] = [
   {
-    id: "mock-place-huangshan",
-    name: "黄山",
-    countryCode: "CN",
-    province: "安徽省",
-    city: "黄山市",
-    district: "黄山区",
-    address: "安徽省黄山市黄山风景区",
-    coordinatesGcj02: {
-      latitude: 30.1351,
-      longitude: 118.1767,
-      system: "gcj02",
-    },
-    source: "mock",
-  },
-  {
     id: "mock-place-huangshan-guangmingding",
     name: "黄山光明顶",
     countryCode: "CN",
@@ -41,21 +26,83 @@ const mockPlaces: readonly RawGeoPlaceResult[] = [
       longitude: 118.1767,
       system: "gcj02",
     },
+    coordinatesWgs84: {
+      latitude: 30.1328,
+      longitude: 118.171,
+      system: "wgs84",
+    },
+    elevation: 1860,
+    locationType: "viewpoint",
+    isVerified: false,
     source: "mock",
   },
   {
-    id: "mock-place-laojunshan",
-    name: "老君山",
+    id: "mock-place-laojunshan-jinding",
+    name: "老君山金顶",
     countryCode: "CN",
     province: "河南省",
     city: "洛阳市",
     district: "栾川县",
-    address: "河南省洛阳市栾川县老君山景区",
+    address: "河南省洛阳市栾川县老君山景区金顶",
     coordinatesGcj02: {
       latitude: 33.7867,
       longitude: 111.6462,
       system: "gcj02",
     },
+    coordinatesWgs84: {
+      latitude: 33.7852,
+      longitude: 111.6402,
+      system: "wgs84",
+    },
+    elevation: 2190,
+    locationType: "viewpoint",
+    isVerified: false,
+    source: "mock",
+  },
+  {
+    id: "mock-place-sanqingshan-nvshenfeng",
+    name: "三清山女神峰",
+    countryCode: "CN",
+    province: "江西省",
+    city: "上饶市",
+    district: "玉山县",
+    address: "江西省上饶市三清山风景名胜区女神峰",
+    coordinatesGcj02: {
+      latitude: 28.9169,
+      longitude: 118.0751,
+      system: "gcj02",
+    },
+    coordinatesWgs84: {
+      latitude: 28.9139,
+      longitude: 118.0699,
+      system: "wgs84",
+    },
+    elevation: 1600,
+    locationType: "viewpoint",
+    isVerified: false,
+    source: "mock",
+  },
+  {
+    id: "mock-place-wugongshan-jinding",
+    name: "武功山金顶",
+    countryCode: "CN",
+    province: "江西省",
+    city: "萍乡市",
+    district: "芦溪县",
+    address: "江西省萍乡市芦溪县武功山景区金顶",
+    coordinatesGcj02: {
+      latitude: 27.4748,
+      longitude: 114.1859,
+      system: "gcj02",
+    },
+    coordinatesWgs84: {
+      latitude: 27.4716,
+      longitude: 114.1808,
+      system: "wgs84",
+    },
+    elevation: 1918,
+    locationType: "viewpoint",
+    isVerified: false,
     source: "mock",
   },
 ];
@@ -92,6 +139,14 @@ export class MockGeoProvider implements GeoProvider {
     coordinates: Coordinates,
     _options: ReverseGeocodeOptions = {},
   ): Promise<ReverseGeocodeResult> {
+    const validation = validateCoordinates(coordinates);
+    if (!validation.ok) {
+      throw new Error(`坐标不合法：${validation.issues.join(",")}`);
+    }
+    if (coordinates.system !== "gcj02" && coordinates.system !== "wgs84") {
+      throw new Error("MockGeoProvider 仅支持 GCJ-02 和 WGS84 坐标。");
+    }
+
     const coordinatesWgs84 =
       coordinates.system === "gcj02"
         ? gcj02ToWgs84(coordinates as Gcj02Coordinates)

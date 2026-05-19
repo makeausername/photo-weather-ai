@@ -2,7 +2,7 @@
 
 逐光天气是面向中国大陆风光摄影用户的天气与拍摄机会判断系统，公开标语为“风光摄影出行判断工具”。当前仓库处于自托管 SaaS 产品基础与界面打磨阶段，重点是数据库、后台配置、地点/机位资料、亮色默认主题和前端 UI 基线。
 
-当前步骤是公开品牌与 UI 布局打磨 v2：可见产品品牌使用“逐光天气”，公开页面避免把 AI 作为产品身份；内部仓库名、包名和 scope 仍保持 `photo-weather-ai` / `@photo-weather/*`，不做代码仓库或包作用域重命名。
+当前步骤是地理搜索基础：可见产品品牌使用“逐光天气”，公开首页搜索框已接入地点识别与机位匹配；内部仓库名、包名和 scope 仍保持 `photo-weather-ai` / `@photo-weather/*`，不做代码仓库或包作用域重命名。
 
 ## 当前状态
 
@@ -11,6 +11,8 @@
 - 中文优先的 Next.js 前端 UI 基线。
 - Tailwind CSS 全局样式、CSS 变量设计 token、亮色默认主题、可选深色主题和适合中文界面的字体栈。
 - 公开首页占位版：逐光天气品牌、SVG 品牌图标、输入目的地、快速地点、功能卡片和静态决策卡预览。
+- 公开地点搜索：`GET /search/places?q=` 会先查本地地点和摄影机位，再使用当前 GeoProvider 返回标准化地点结果。
+- 公开搜索选择态：选择地点后展示地址、GCJ-02 / WGS84 经纬度、数据来源，并进入占位分析页。
 - 后台登录页：亮色渐变背景、居中登录卡片、中文表单和样式化错误提示。
 - 后台控制台布局：亮色侧栏、顶部标题区、当前管理员信息、主题切换、返回前台、退出登录、内容区域。
 - 后台页面视觉层：系统设置、服务商配置、地点管理、机位管理、审计日志使用统一卡片、表格、表单、按钮和空状态。
@@ -25,7 +27,7 @@
 - 生产级 Cookie/Session 加固。
 - 公开用户登录、查询历史、收藏机位、额度控制、付费套餐和已保存报告。
 
-当前公开首页的决策卡为静态 mock 内容，只用于展示产品方向，不包含真实预报、评分或真实服务商调用。当前 UI 仍属于 foundation / polish 阶段，v2 已细化首页排版、标题尺寸、搜索入口、后台操作区和管理台密度；后续 forecast 结果页、公开用户账号和真实判断逻辑尚未实现。
+当前公开首页的决策卡为静态 mock 内容，只用于展示产品方向，不包含真实预报、评分或真实服务商调用。当前搜索只完成地点识别、坐标归一化和机位匹配；后续 forecast 结果页、公开用户账号和真实判断逻辑尚未实现。
 
 ## 产品默认
 
@@ -55,7 +57,7 @@
 - `packages/shared`：共享类型、Zod schema 和标签。
 - `packages/config`：环境配置、运行时配置和密钥遮罩。
 - `packages/db`：Prisma schema、迁移、seed、系统设置、服务商配置、地点、机位、审计日志。
-- `packages/geo`：地理服务接口、mock 搜索、高德地图骨架、坐标校验与转换。
+- `packages/geo`：地理服务接口、deterministic mock 搜索、高德地图 Web 服务 provider 基础、坐标校验与 GCJ-02 / WGS84 转换。
 - `packages/weather`：天气服务接口与标准化类型。
 - `packages/terrain`：地形与海拔服务接口。
 - `packages/astro`：天文服务接口。
@@ -70,7 +72,61 @@
 
 ```bash
 corepack pnpm install
-corepack pnpm dev
+```
+
+Windows PowerShell 本地开发流程：
+
+1. 先打开 SSH tunnel，确保远程 PostgreSQL 映射到 `127.0.0.1:15432`。
+2. 在 `.env.local` 写入本地配置，不要提交 `.env.local`。
+3. 检查端口和数据库隧道：
+
+```bash
+corepack pnpm check:local
+```
+
+4. 启动 API 和前台：
+
+```bash
+corepack pnpm dev:local
+```
+
+5. 浏览器访问：
+
+- 公开首页：`http://localhost:3000`
+- 后台登录：`http://localhost:3000/admin/login`
+- 后台控制台：`http://localhost:3000/admin`
+
+停止本地服务：
+
+```bash
+corepack pnpm stop:local
+```
+
+`dev:local` 会启动：
+
+- API：`http://localhost:4000`
+- 前台：`http://localhost:3000`
+
+前台默认读取：
+
+```bash
+NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
+```
+
+高德地图真实联调后续通过后台服务商配置或环境变量提供 Web 服务 API Key：
+
+```bash
+AMAP_API_KEY=
+# 兼容部分部署命名：
+AMAP_WEB_SERVICE_KEY=
+```
+
+本地自动化测试默认使用 `MockGeoProvider`，不会读取真实高德密钥，也不会调用高德地图网络接口。
+
+如需清理 Next.js 缓存后启动：
+
+```bash
+corepack pnpm dev:local -- -Clean
 ```
 
 常用验证命令：
@@ -80,24 +136,6 @@ corepack pnpm lint
 corepack pnpm typecheck
 corepack pnpm test
 corepack pnpm build
-```
-
-Web app 默认端口：
-
-```bash
-corepack pnpm --filter @photo-weather/web dev
-```
-
-浏览器访问：
-
-- 公开首页：`http://localhost:3000`
-- 后台登录：`http://localhost:3000/admin/login`
-- 后台控制台：`http://localhost:3000/admin`
-
-如浏览器需要访问非默认 API 地址，设置：
-
-```bash
-NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
 ```
 
 ## 数据库
@@ -167,6 +205,8 @@ GET  /auth/me
 配置与资料接口：
 
 ```bash
+GET   /search/places?q=
+
 GET   /admin/settings
 GET   /admin/settings/:key
 PATCH /admin/settings/:key
@@ -203,6 +243,7 @@ GET   /admin/audit-logs
 - `/admin` 状态：`admin.manage`
 
 服务商测试连接和后台地理搜索在当前阶段为本地 mock，不调用真实外部服务。
+`/admin/providers/geo/amap/test-connection` 默认返回模拟成功；只有请求体显式传入 `{ "mode": "real" }` 时，才会使用已配置的高德 Web 服务 API Key 做最小搜索联调。接口响应和日志不得暴露原始密钥。
 
 ## 后台控制台
 
@@ -220,6 +261,7 @@ GET   /admin/audit-logs
 /admin/locations
 /admin/photo-spots
 /admin/audit
+/forecast/placeholder
 ```
 
 后台控制台已具备统一 SaaS 风格布局：
@@ -237,11 +279,13 @@ GET   /admin/audit-logs
 
 - 不调用 QWeather。
 - 不调用 Open-Meteo。
-- 不调用高德地图真实接口。
+- 自动化测试不调用高德地图真实接口。
 - 不调用 DeepSeek。
 - 不调用真实存储、短信、支付或计费服务。
 
 真实服务商联调应在后续阶段通过后台配置显式启用，并且只在 staging 或 production 环境按操作员意图执行。
+
+高德地图 provider 当前只负责地点搜索、地理编码、逆地理编码和坐标归一化基础。地图展示使用 GCJ-02；天气、天文、地形、DEM 和后续评分计算必须使用 WGS84。天气预报、天气评分和 AI 分析不在本步骤实现。
 
 ## Docker
 

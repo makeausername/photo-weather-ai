@@ -1,7 +1,6 @@
 import { ThemeToggle } from "../components/theme-toggle";
-import { Badge, Button, Card, Input } from "../components/ui";
-
-const quickLocations = ["黄山光明顶", "老君山金顶", "三清山女神峰", "武功山金顶"] as const;
+import { PlaceSearchCard } from "../components/place-search-card";
+import { Badge, Card } from "../components/ui";
 
 const features = [
   {
@@ -68,27 +67,7 @@ export default function HomePage() {
               综合云层、湿度、风速、海拔、地形、月相与银河窗口，辅助判断朝霞、晚霞、云海、星空和银河拍摄机会。
             </p>
 
-            <Card className="mt-6 grid max-w-[620px] gap-3 p-4 shadow-soft md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-              <Input
-                aria-label="目的地"
-                placeholder="请输入景区、城市或机位，例如：黄山光明顶"
-                className="h-11 text-[15px]"
-              />
-              <Button size="lg" className="h-11 px-6">
-                开始分析
-              </Button>
-              <div className="flex flex-wrap gap-2 md:col-span-2">
-                {quickLocations.map((location) => (
-                  <button
-                    key={location}
-                    type="button"
-                    className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground transition hover:border-primary hover:bg-secondary hover:text-secondary-foreground"
-                  >
-                    {location}
-                  </button>
-                ))}
-              </div>
-            </Card>
+            <PlaceSearchCard />
           </section>
 
           <Card className="relative overflow-hidden p-5 shadow-soft lg:mt-2 lg:max-w-[520px] lg:justify-self-end">

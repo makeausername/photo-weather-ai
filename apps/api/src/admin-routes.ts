@@ -32,6 +32,7 @@ import type { GeoProvider } from "@photo-weather/geo";
 import { z } from "zod";
 import type { AuthConfig } from "./auth-routes.js";
 import { requirePermission } from "./auth-routes.js";
+import { createRealAmapProvider } from "./geo-provider.js";
 
 const jsonSchema: z.ZodType<JsonValue> = z.lazy(() =>
   z.union([
@@ -203,10 +204,17 @@ const geoSearchQuerySchema = z.object({
   q: z.string().trim().min(1, "请输入搜索关键词。"),
 });
 
+const providerConnectionTestSchema = z
+  .object({
+    mode: z.enum(["mock", "real"]).optional(),
+  })
+  .optional();
+
 export type AdminRoutesOptions = {
   readonly dbClient?: DatabaseClient;
   readonly authConfig: AuthConfig;
   readonly geoProvider?: GeoProvider;
+  readonly resolveGeoProvider?: () => Promise<GeoProvider>;
 };
 
 function toAuditJson(value: unknown): JsonValue {
@@ -283,6 +291,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
   const client = options.dbClient;
   const authConfig = options.authConfig;
   const geoProvider = options.geoProvider ?? new MockGeoProvider();
+  const resolveAdminGeoProvider = options.resolveGeoProvider ?? (() => Promise.resolve(geoProvider));
 
   app.get("/admin", async (request, reply) => {
     const auth = await requirePermission(request, reply, client, authConfig, "admin.manage");
@@ -561,6 +570,45 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
         validateProviderCode(request.params.providerCode);
       } catch (error) {
         return sendError(reply, 400, "invalid_provider", (error as Error).message);
+      }
+
+      const parsedBody = providerConnectionTestSchema.safeParse(request.body ?? {});
+      if (!parsedBody.success) {
+        return sendZodError(reply, parsedBody.error);
+      }
+
+      if (
+        request.params.providerType === "geo" &&
+        request.params.providerCode === "amap" &&
+        parsedBody.data?.mode === "real"
+      ) {
+        try {
+          const amapProvider = await createRealAmapProvider({ dbClient: client });
+          const results = await amapProvider.searchPlace("黄山光明顶", {
+            countryCode: "CN",
+            locale: "zh-CN",
+            limit: 1,
+          });
+
+          return {
+            success: true,
+            mode: "real",
+            providerType: request.params.providerType,
+            providerCode: request.params.providerCode,
+            message: results[0]
+              ? "高德地图连接测试通过。"
+              : "高德地图连接成功，但未返回测试地点。",
+            sample: results[0]
+              ? {
+                  name: results[0].name,
+                  source: results[0].source,
+                  city: results[0].city ?? null,
+                }
+              : null,
+          };
+        } catch (error) {
+          return sendError(reply, 503, "provider_test_failed", (error as Error).message);
+        }
       }
 
       return {
@@ -875,16 +923,21 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       return sendZodError(reply, parsedQuery.error);
     }
 
-    const results = await geoProvider.searchPlace(parsedQuery.data.q, {
-      countryCode: "CN",
-      locale: "zh-CN",
-      limit: 8,
-    });
+    try {
+      const provider = await resolveAdminGeoProvider();
+      const results = await provider.searchPlace(parsedQuery.data.q, {
+        countryCode: "CN",
+        locale: "zh-CN",
+        limit: 8,
+      });
 
-    return {
-      provider: "mock",
-      results,
-    };
+      return {
+        provider: results[0]?.source ?? "mock",
+        results,
+      };
+    } catch (error) {
+      return sendError(reply, 503, "geo_search_unavailable", (error as Error).message);
+    }
   });
 
   app.get("/admin/audit-logs", async (request, reply) => {
