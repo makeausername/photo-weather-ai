@@ -64,6 +64,19 @@ export type AdminAuditLogInput = {
   readonly userAgent?: string | null;
 };
 
+export type AdminAuditLogRecord = {
+  readonly id: string;
+  readonly actorUserId: string | null;
+  readonly action: string;
+  readonly targetType: string;
+  readonly targetId: string | null;
+  readonly beforeJson: JsonValue | null;
+  readonly afterJson: JsonValue | null;
+  readonly ipAddress: string | null;
+  readonly userAgent: string | null;
+  readonly createdAt: Date;
+};
+
 export type ApiUsageLogInput = {
   readonly providerType: ProviderType;
   readonly providerCode: string;
@@ -92,6 +105,7 @@ export type DatabaseClient = {
   };
   readonly adminAuditLog: {
     readonly create: (args: any) => Promise<any>;
+    readonly findMany: (args?: any) => Promise<any[]>;
   };
   readonly apiUsageLog: {
     readonly create: (args: any) => Promise<any>;

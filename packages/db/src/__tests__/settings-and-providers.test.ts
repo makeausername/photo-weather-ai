@@ -94,6 +94,7 @@ function createFakeClient(): DatabaseClient {
     },
     adminAuditLog: {
       create: async ({ data }: any) => ({ id: "audit-log", ...data, createdAt: now }),
+      findMany: async () => [],
     },
     apiUsageLog: {
       create: async ({ data }: any) => ({ id: "api-usage-log", ...data, createdAt: now }),
@@ -182,17 +183,23 @@ describe("provider config helpers", () => {
       providerType: "ai",
       providerCode: "deepseek",
       enabled: true,
+      configJson: { retry: { maxAttempts: 2 } },
       secretJson: { apiKey: "new-secret-value" },
       client,
     });
 
     expect(updated).toMatchObject({
       enabled: true,
+      configJson: {
+        defaultModel: "deepseek-chat",
+        retry: { maxAttempts: 2 },
+      },
       maskedSecretJson: { apiKey: "new-****alue" },
     });
     expect("secretJson" in (updated as unknown as Record<string, unknown>)).toBe(false);
 
-    await expect(listProviderConfigs({ providerType: "ai", enabledOnly: true, client })).resolves
-      .toHaveLength(1);
+    await expect(
+      listProviderConfigs({ providerType: "ai", enabledOnly: true, client }),
+    ).resolves.toHaveLength(1);
   });
 });

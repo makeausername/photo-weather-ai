@@ -1,7 +1,12 @@
 import { getPrismaClient } from "./client.js";
 import { isPlainJsonObject } from "./json.js";
 import { maskSecretValue } from "./secrets.js";
-import type { AdminAuditLogInput, DatabaseClient, JsonValue } from "./types.js";
+import type {
+  AdminAuditLogInput,
+  AdminAuditLogRecord,
+  DatabaseClient,
+  JsonValue,
+} from "./types.js";
 
 const SENSITIVE_AUDIT_KEY_PATTERN =
   /(api[_-]?key|access[_-]?key|authorization|credential|database[_-]?url|password|private[_-]?key|secret|token)/i;
@@ -57,4 +62,32 @@ export async function createAuditLog(
       userAgent: input.userAgent ?? null,
     },
   });
+}
+
+function normalizeAuditLog(record: any): AdminAuditLogRecord {
+  return {
+    id: record.id,
+    actorUserId: record.actorUserId ?? null,
+    action: record.action,
+    targetType: record.targetType,
+    targetId: record.targetId ?? null,
+    beforeJson: record.beforeJson ?? null,
+    afterJson: record.afterJson ?? null,
+    ipAddress: record.ipAddress ?? null,
+    userAgent: record.userAgent ?? null,
+    createdAt: record.createdAt,
+  };
+}
+
+export async function listAuditLogs(
+  options: { readonly limit?: number; readonly client?: DatabaseClient } = {},
+): Promise<AdminAuditLogRecord[]> {
+  const client = await resolveClient(options.client);
+  const take = Math.min(Math.max(options.limit ?? 50, 1), 100);
+  const records = await client.adminAuditLog.findMany({
+    take,
+    orderBy: { createdAt: "desc" },
+  });
+
+  return records.map((record) => normalizeAuditLog(record));
 }

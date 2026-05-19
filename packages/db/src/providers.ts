@@ -1,7 +1,8 @@
 import { assertProviderType } from "./constants.js";
 import { getPrismaClient } from "./client.js";
+import { mergeJsonObjects } from "./json.js";
 import { maskSecretJson } from "./secrets.js";
-import { safeProviderConfig } from "./serializers.js";
+import { normalizeProviderConfig, safeProviderConfig } from "./serializers.js";
 import type { DatabaseClient, JsonValue, ProviderType, SafeProviderConfig } from "./types.js";
 
 export type ListProviderConfigsOptions = {
@@ -82,6 +83,20 @@ export async function updateProviderConfig(
   validateProviderCode(input.providerCode);
 
   const client = await resolveClient(input.client);
+  const existing = await client.providerConfig.findUnique({
+    where: {
+      providerType_providerCode: {
+        providerType: input.providerType,
+        providerCode: input.providerCode,
+      },
+    },
+  });
+
+  if (!existing) {
+    throw new Error(`Provider config not found: ${input.providerType}/${input.providerCode}`);
+  }
+
+  const existingProviderConfig = normalizeProviderConfig(existing);
   const data: Record<string, unknown> = {};
 
   if (input.displayName !== undefined) {
@@ -97,12 +112,16 @@ export async function updateProviderConfig(
   }
 
   if (input.configJson !== undefined) {
-    data.configJson = input.configJson;
+    data.configJson = mergeJsonObjects(existingProviderConfig.configJson, input.configJson);
   }
 
   if (input.secretJson !== undefined) {
-    data.secretJson = input.secretJson;
-    data.maskedSecretJson = maskSecretJson(input.secretJson);
+    const nextSecretJson =
+      input.secretJson === null
+        ? null
+        : mergeJsonObjects(existingProviderConfig.secretJson, input.secretJson);
+    data.secretJson = nextSecretJson;
+    data.maskedSecretJson = maskSecretJson(nextSecretJson);
   }
 
   const record = await client.providerConfig.update({

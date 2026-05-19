@@ -1,16 +1,31 @@
 import Fastify from "fastify";
 import { MockAIProvider } from "@photo-weather/ai";
+import type { DatabaseClient } from "@photo-weather/db";
 import { MockGeoProvider } from "@photo-weather/geo";
 import { MockWeatherProvider } from "@photo-weather/weather";
+import { registerAdminRoutes } from "./admin-routes.js";
 
-export function buildApiServer() {
+export type ApiServerOptions = {
+  readonly dbClient?: DatabaseClient;
+  readonly logger?: boolean;
+};
+
+export function buildApiServer(options: ApiServerOptions = {}) {
   const app = Fastify({
-    logger: true,
+    logger: options.logger ?? true,
   });
 
   const weatherProvider = new MockWeatherProvider();
   const geoProvider = new MockGeoProvider();
   const aiProvider = new MockAIProvider();
+
+  app.addHook("onRequest", async (_request, reply) => {
+    reply.header("Access-Control-Allow-Origin", "*");
+    reply.header("Access-Control-Allow-Methods", "GET,PATCH,POST,OPTIONS");
+    reply.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
+  });
+
+  app.options("/*", async (_request, reply) => reply.status(204).send());
 
   app.get("/health", async () => ({
     ok: true,
@@ -32,6 +47,8 @@ export function buildApiServer() {
       decision,
     };
   });
+
+  registerAdminRoutes(app, { dbClient: options.dbClient });
 
   return app;
 }

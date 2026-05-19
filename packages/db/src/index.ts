@@ -1,4 +1,4 @@
-export { createAuditLog, sanitizeAuditJson } from "./audit.js";
+export { createAuditLog, listAuditLogs, sanitizeAuditJson } from "./audit.js";
 export { disconnectPrismaClient, getPrismaClient } from "./client.js";
 export {
   assertProviderType,
@@ -29,6 +29,7 @@ export {
 export { createApiUsageLog } from "./usage.js";
 export type {
   AdminAuditLogInput,
+  AdminAuditLogRecord,
   ApiUsageLogInput,
   DatabaseClient,
   JsonObject,

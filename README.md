@@ -85,6 +85,60 @@ settings belong in database-backed admin configuration, not in business code. Se
 placeholder providers and empty secret objects; it does not include real DeepSeek, QWeather,
 Open-Meteo, Amap, storage, SMS, or payment credentials.
 
+## Admin Configuration API
+
+The Fastify API now exposes the initial admin configuration surface:
+
+```bash
+GET   /admin/settings
+GET   /admin/settings/:key
+PATCH /admin/settings/:key
+GET   /admin/settings/groups
+
+GET   /admin/providers
+GET   /admin/providers/:providerType/:providerCode
+PATCH /admin/providers/:providerType/:providerCode
+POST  /admin/providers/:providerType/:providerCode/test-connection
+
+GET   /admin/audit-logs
+```
+
+System-setting updates validate the stored setting value type and reject settings that are marked
+non-editable. Provider updates validate provider type and provider code, merge JSON config and
+secret patches, and return only safe provider output.
+
+Provider API responses return `maskedSecretJson` only. They must never return raw `secretJson`.
+Audit metadata is redacted before persistence, and every settings/provider `PATCH` writes an
+`AdminAuditLog`. Until real admin auth exists, these audit entries use a null actor; this is a
+temporary bootstrap behavior and must be replaced by RBAC-backed actor IDs before production use.
+
+Provider connection testing is intentionally mocked in this phase. The test endpoint returns a
+deterministic local response and does not call DeepSeek, QWeather, Open-Meteo, Amap, storage,
+billing, SMS, or payment providers.
+
+## Admin Console Skeleton
+
+The Next.js app includes the initial admin route skeleton:
+
+```bash
+/admin
+/admin/settings
+/admin/providers
+/admin/providers/ai
+/admin/providers/weather
+/admin/providers/geo
+/admin/providers/storage
+/admin/audit
+```
+
+The pages are a minimal operator console for visual configuration. They load settings, provider
+placeholders, masked secret status, mock connection tests, and recent audit logs from the API.
+Set `NEXT_PUBLIC_API_BASE_URL` if the browser should call an API origin other than
+`http://localhost:4000`.
+
+Admin authentication is not implemented yet. The admin pages and admin API are not production-secure
+and must be protected by login, session handling, and RBAC before any public deployment.
+
 ## External Services
 
 Local automated tests must not call real external services. The current implementation only uses
