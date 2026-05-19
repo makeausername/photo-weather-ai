@@ -1,0 +1,29 @@
+{
+  "name": "photo-weather-ai",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.33.2",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm -r --parallel --if-present dev",
+    "build": "pnpm -r --workspace-concurrency=1 --if-present build",
+    "lint": "eslint . --ext .js,.cjs,.mjs,.ts,.tsx --max-warnings=0",
+    "typecheck": "pnpm -r --workspace-concurrency=1 --if-present typecheck",
+    "test": "pnpm -r --workspace-concurrency=1 --if-present test",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@eslint/js": "8.57.0",
+    "@types/node": "20.12.12",
+    "@types/react": "18.2.79",
+    "@types/react-dom": "18.2.25",
+    "@typescript-eslint/eslint-plugin": "7.18.0",
+    "@typescript-eslint/parser": "7.18.0",
+    "eslint": "8.57.0",
+    "eslint-config-prettier": "9.1.0",
+    "prettier": "3.2.5",
+    "tsx": "4.10.5",
+    "typescript": "5.4.5",
+    "vitest": "1.6.0"
+  }
+}

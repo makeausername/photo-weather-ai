@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "allowJs": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@photo-weather/ai": ["packages/ai/src/index.ts"],
+      "@photo-weather/astro": ["packages/astro/src/index.ts"],
+      "@photo-weather/billing": ["packages/billing/src/index.ts"],
+      "@photo-weather/config": ["packages/config/src/index.ts"],
+      "@photo-weather/db": ["packages/db/src/index.ts"],
+      "@photo-weather/geo": ["packages/geo/src/index.ts"],
+      "@photo-weather/scoring": ["packages/scoring/src/index.ts"],
+      "@photo-weather/shared": ["packages/shared/src/index.ts"],
+      "@photo-weather/storage": ["packages/storage/src/index.ts"],
+      "@photo-weather/terrain": ["packages/terrain/src/index.ts"],
+      "@photo-weather/weather": ["packages/weather/src/index.ts"]
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "@photo-weather/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@photo-weather/config": "workspace:*",
+    "@photo-weather/shared": "workspace:*"
+  }
+}

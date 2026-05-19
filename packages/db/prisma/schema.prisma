@@ -1,0 +1,11 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Business tables are intentionally deferred until auth, billing, reports, and admin
+// ownership boundaries are designed.

@@ -1,0 +1,19 @@
+{
+  "name": "@photo-weather/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@photo-weather/ai": "workspace:*",
+    "@photo-weather/config": "workspace:*",
+    "@photo-weather/geo": "workspace:*",
+    "@photo-weather/weather": "workspace:*",
+    "fastify": "4.27.0"
+  }
+}
