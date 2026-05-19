@@ -11,13 +11,17 @@ function Get-PortProcessIds {
       Where-Object { $_.OwningProcess -and $_.OwningProcess -ne 0 } |
       Select-Object -ExpandProperty OwningProcess
   } catch {
-    $pattern = "^\s*TCP\s+\S+:$Port\s+\S+\s+LISTENING\s+(\d+)"
-    $lines = netstat -ano -p tcp | Select-String -Pattern ":$Port\s"
+    try {
+      $pattern = "^\s*TCP\s+\S+:$Port\s+\S+\s+LISTENING\s+(\d+)"
+      $lines = netstat -ano -p tcp | Select-String -Pattern ":$Port\s"
 
-    foreach ($line in $lines) {
-      if ($line.Line -match $pattern) {
-        $processIds += [int]$Matches[1]
+      foreach ($line in $lines) {
+        if ($line.Line -match $pattern) {
+          $processIds += [int]$Matches[1]
+        }
       }
+    } catch {
+      Write-Warning "无法读取端口 $Port 占用情况：$($_.Exception.Message)"
     }
   }
 
@@ -54,9 +58,9 @@ foreach ($port in @(3000, 4000)) {
   $processIds = @(Get-PortProcessIds -Port $port)
 
   if ($processIds.Count -eq 0) {
-    Write-Host "端口 $port 可用."
+    Write-Host "应用端口 $port 可用。"
   } else {
-    Write-Warning "端口 $port 已被占用，PID：$($processIds -join ', ')"
+    Write-Warning "应用端口 $port 已被占用，PID：$($processIds -join ', ')"
     $hasProblem = $true
   }
 }
@@ -64,7 +68,7 @@ foreach ($port in @(3000, 4000)) {
 if (Test-TcpPort -HostName "127.0.0.1" -Port 15432) {
   Write-Host "数据库隧道可用：127.0.0.1:15432"
 } else {
-  Write-Warning "未检测到数据库隧道：127.0.0.1:15432。请先打开 SSH tunnel."
+  Write-Warning "未检测到数据库隧道：127.0.0.1:15432。请先打开 SSH tunnel。"
   $hasProblem = $true
 }
 
@@ -72,5 +76,4 @@ if ($hasProblem) {
   exit 1
 }
 
-Write-Host "本地开发环境检查通过."
-
+Write-Host "本地开发环境检查通过。"

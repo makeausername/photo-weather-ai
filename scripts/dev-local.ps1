@@ -7,8 +7,11 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $envFile = Join-Path $repoRoot ".env.local"
 $logDir = Join-Path $repoRoot "logs"
-$apiLog = Join-Path $logDir "photo-weather-api.log"
-$webLog = Join-Path $logDir "photo-weather-web.log"
+$runStamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$apiLog = Join-Path $logDir "photo-weather-api-$runStamp.log"
+$webLog = Join-Path $logDir "photo-weather-web-$runStamp.log"
+$apiLatest = Join-Path $logDir "photo-weather-api-latest.txt"
+$webLatest = Join-Path $logDir "photo-weather-web-latest.txt"
 
 function Get-PortProcessIds {
   param([int]$Port)
@@ -21,13 +24,17 @@ function Get-PortProcessIds {
       Where-Object { $_.OwningProcess -and $_.OwningProcess -ne 0 } |
       Select-Object -ExpandProperty OwningProcess
   } catch {
-    $pattern = "^\s*TCP\s+\S+:$Port\s+\S+\s+LISTENING\s+(\d+)"
-    $lines = netstat -ano -p tcp | Select-String -Pattern ":$Port\s"
+    try {
+      $pattern = "^\s*TCP\s+\S+:$Port\s+\S+\s+LISTENING\s+(\d+)"
+      $lines = netstat -ano -p tcp | Select-String -Pattern ":$Port\s"
 
-    foreach ($line in $lines) {
-      if ($line.Line -match $pattern) {
-        $processIds += [int]$Matches[1]
+      foreach ($line in $lines) {
+        if ($line.Line -match $pattern) {
+          $processIds += [int]$Matches[1]
+        }
       }
+    } catch {
+      Write-Warning "无法读取端口 $Port 占用情况：$($_.Exception.Message)"
     }
   }
 
@@ -38,6 +45,11 @@ function Stop-PortProcess {
   param([int]$Port)
 
   $processIds = @(Get-PortProcessIds -Port $Port)
+
+  if ($processIds.Count -eq 0) {
+    Write-Host "端口 $Port 未被占用。"
+    return
+  }
 
   foreach ($processId in $processIds) {
     try {
@@ -52,7 +64,12 @@ function Stop-PortProcess {
 function Stop-LocalJob {
   param([string]$Name)
 
-  $jobs = @(Get-Job -Name $Name -ErrorAction SilentlyContinue)
+  $jobs = @(Get-Job -Name $Name -ErrorAction SilentlyContinue -WarningAction SilentlyContinue)
+
+  if ($jobs.Count -eq 0) {
+    Write-Host "未发现后台任务：$Name"
+    return
+  }
 
   foreach ($job in $jobs) {
     Stop-Job -Job $job -ErrorAction SilentlyContinue
@@ -61,15 +78,43 @@ function Stop-LocalJob {
   }
 }
 
-function Import-DotEnv {
+function Remove-LogFileSafe {
   param([string]$Path)
 
-  if (-not (Test-Path $Path)) {
-    Write-Host "未找到 .env.local，使用脚本内置本地默认值."
+  if (-not (Test-Path -LiteralPath $Path)) {
     return
   }
 
-  foreach ($rawLine in Get-Content $Path) {
+  try {
+    Remove-Item -LiteralPath $Path -Force -ErrorAction Stop
+    Write-Host "已清理旧日志：$Path"
+  } catch {
+    Write-Warning "旧日志文件正在被占用，已跳过清理，不影响本次启动。$Path"
+  }
+}
+
+function Write-LatestLogPath {
+  param(
+    [string]$Path,
+    [string]$LogPath
+  )
+
+  try {
+    Set-Content -LiteralPath $Path -Value $LogPath -Encoding utf8 -ErrorAction Stop
+  } catch {
+    Write-Warning "最新日志指针写入失败，不影响本次启动：$Path"
+  }
+}
+
+function Import-DotEnv {
+  param([string]$Path)
+
+  if (-not (Test-Path -LiteralPath $Path)) {
+    Write-Host "未找到 .env.local，使用脚本内置本地默认值。"
+    return
+  }
+
+  foreach ($rawLine in Get-Content -LiteralPath $Path) {
     $line = $rawLine.Trim()
 
     if (-not $line -or $line.StartsWith("#")) {
@@ -98,7 +143,7 @@ function Import-DotEnv {
     Set-Item -Path "Env:$name" -Value $value
   }
 
-  Write-Host "已加载 .env.local."
+  Write-Host "已加载 .env.local。"
 }
 
 function Export-ProcessEnvironment {
@@ -118,11 +163,8 @@ function Start-LocalJob {
     [hashtable]$Environment
   )
 
-  if (Test-Path $LogPath) {
-    Remove-Item $LogPath -Force
-  }
-
   Start-Job -Name $Name -ScriptBlock $ScriptBlock -ArgumentList $repoRoot, $LogPath, $Environment | Out-Null
+  Write-Host "已启动后台任务：$Name"
 }
 
 function Wait-ForPort {
@@ -152,14 +194,25 @@ Stop-LocalJob -Name "photo-weather-api"
 Stop-LocalJob -Name "photo-weather-web"
 Stop-PortProcess -Port 3000
 Stop-PortProcess -Port 4000
+Start-Sleep -Milliseconds 800
+
+Remove-LogFileSafe -Path (Join-Path $logDir "photo-weather-api.log")
+Remove-LogFileSafe -Path (Join-Path $logDir "photo-weather-web.log")
 
 if ($Clean) {
   $nextDir = Join-Path $repoRoot "apps/web/.next"
-  if (Test-Path $nextDir) {
-    Remove-Item $nextDir -Recurse -Force
-    Write-Host "已清理 apps/web/.next."
+  if (Test-Path -LiteralPath $nextDir) {
+    try {
+      Remove-Item -LiteralPath $nextDir -Recurse -Force -ErrorAction Stop
+      Write-Host "已清理 apps/web/.next。"
+    } catch {
+      Write-Warning "apps/web/.next 正在被占用，已跳过清理，不影响本次启动。"
+    }
   }
 }
+
+Write-LatestLogPath -Path $apiLatest -LogPath $apiLog
+Write-LatestLogPath -Path $webLatest -LogPath $webLog
 
 Import-DotEnv -Path $envFile
 
@@ -169,7 +222,7 @@ if (-not $env:NEXT_PUBLIC_API_BASE_URL) {
 
 if (-not $env:JWT_SECRET -or $env:JWT_SECRET.Length -lt 32) {
   if ($env:JWT_SECRET) {
-    Write-Warning "JWT_SECRET 少于 32 字符，已使用本地临时值."
+    Write-Warning "JWT_SECRET 少于 32 字符，已使用本地临时值。"
   }
 
   $env:JWT_SECRET = "change-this-local-dev-secret-for-dev-only"
@@ -223,10 +276,14 @@ if ($webReady) {
 
 Write-Host "后台入口：http://localhost:3000/admin/login"
 Write-Host ""
-Write-Host "查看 API 日志：Get-Content -Wait .\logs\photo-weather-api.log"
-Write-Host "查看前台日志：Get-Content -Wait .\logs\photo-weather-web.log"
+Write-Host "API 日志：$apiLog"
+Write-Host "前台日志：$webLog"
+Write-Host "最新 API 日志指针：$apiLatest"
+Write-Host "最新前台日志指针：$webLatest"
+Write-Host ("查看 API 日志：Get-Content -Wait " + $apiLog)
+Write-Host ("查看前台日志：Get-Content -Wait " + $webLog)
 Write-Host "停止本地服务：corepack pnpm stop:local"
-Write-Host "保持此窗口打开以维持本地服务运行."
+Write-Host "保持此窗口打开以维持本地服务运行。"
 
 try {
   Wait-Job -Name "photo-weather-api", "photo-weather-web" | Out-Null
@@ -234,4 +291,3 @@ try {
   Stop-LocalJob -Name "photo-weather-api"
   Stop-LocalJob -Name "photo-weather-web"
 }
-
