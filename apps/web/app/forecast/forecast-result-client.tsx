@@ -10,6 +10,7 @@ import {
   type ForecastRiskLevel,
   type ForecastScore,
   type ForecastScoreLevel,
+  type ForecastTimeWindow,
 } from "@photo-weather/shared";
 import { PublicShell } from "../../components/public-shell";
 import { Badge, Button, Card, cn } from "../../components/ui";
@@ -105,7 +106,7 @@ export function ForecastResultClient({ query }: ForecastResultClientProps) {
   }, [query, queryKey]);
 
   return (
-    <PublicShell contentClassName="grid gap-5 pb-14 lg:gap-6">
+    <PublicShell contentClassName="grid gap-5 pb-14">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <nav aria-label="当前位置" className="flex items-center gap-2 text-sm">
           <a href="/" className="font-medium text-muted-foreground transition hover:text-primary">
@@ -118,93 +119,104 @@ export function ForecastResultClient({ query }: ForecastResultClientProps) {
           variant="secondary"
           size="sm"
           onClick={() => {
-            window.location.assign("/");
+            window.location.assign("/#analysis");
           }}
         >
           重新选择地点
         </Button>
       </div>
 
-      <header className="grid gap-3 rounded-lg border border-border bg-card p-5 shadow-sm sm:p-6">
-        <Badge variant="muted" className="w-fit">
-          拍摄判断
-        </Badge>
-        <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <div>
-            <h1 className="text-[28px] font-bold leading-tight tracking-normal text-foreground sm:text-[34px] lg:text-[38px]">
-              拍摄天气分析
-            </h1>
-            <p className="mt-3 max-w-4xl text-sm leading-6 text-muted-foreground sm:text-[15px]">
-              根据已选择的地点、预报范围和拍摄目标生成出发参考。当前结果仍使用本地样例数据，请结合现场条件与官方预报判断。
-            </p>
-          </div>
-          <Badge variant={result?.isMock ? "warning" : "success"}>
-            {result?.isMock ? "本地模拟" : "已接入数据源"}
-          </Badge>
+      <header className="flex flex-col justify-between gap-4 border-b border-border pb-5 min-[900px]:flex-row min-[900px]:items-end">
+        <div className="max-w-4xl">
+          <Badge variant="default">结果工作台</Badge>
+          <h1 className="mt-3 text-[32px] font-bold leading-tight tracking-normal text-foreground sm:text-[36px]">
+            拍摄天气分析
+          </h1>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground sm:text-[15px]">
+            按地点、时间范围和拍摄目标展示综合指数、窗口、风险、建议与数据状态。当前结果用于界面和本地计算验证，不代表真实预报。
+          </p>
         </div>
+        <Badge variant={result?.isMock || status === "loading" ? "warning" : "success"}>
+          {result?.isMock || status === "loading" ? "模拟展示" : "已接入数据源"}
+        </Badge>
       </header>
 
-      {query ? <QuerySummaryCard query={query} /> : <InvalidQueryCard />}
+      {!query ? <InvalidQueryCard /> : null}
 
-      {status === "loading" ? (
-        <Card className="p-5 shadow-sm">
-          <div className="flex items-center gap-3 text-sm font-semibold text-card-foreground">
-            <span className="h-2.5 w-2.5 rounded-full bg-primary" />
-            正在生成拍摄天气分析...
-          </div>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            正在使用本地模拟天气、地形和天文数据计算出片指数。
-          </p>
-        </Card>
+      {query && status === "loading" ? <LoadingDashboard query={query} /> : null}
+
+      {query && status === "error" ? (
+        <DashboardFrame query={query}>
+          <Card className="border-danger p-5 shadow-sm">
+            <h2 className="text-lg font-bold text-danger">分析失败</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{errorMessage}</p>
+          </Card>
+        </DashboardFrame>
       ) : null}
 
-      {status === "error" ? (
-        <Card className="border-danger p-5 shadow-sm">
-          <h2 className="text-lg font-bold text-danger">分析失败</h2>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">{errorMessage}</p>
-        </Card>
-      ) : null}
-
-      {result ? <ForecastResultView result={result} /> : null}
+      {query && result ? <ForecastResultView query={query} result={result} /> : null}
     </PublicShell>
   );
 }
 
-function QuerySummaryCard({ query }: { readonly query: ForecastQueryInput }) {
+function DashboardFrame({
+  query,
+  children,
+}: {
+  readonly query: ForecastQueryInput;
+  readonly children: ReactNode;
+}) {
   return (
-    <Card className="p-5 shadow-sm">
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1.8fr)] lg:items-start">
-        <div className="min-w-0">
-          <p className="text-xs font-bold text-muted-foreground">地点</p>
-          <h2 className="mt-1 break-words text-2xl font-bold text-card-foreground">
-            {query.name}
-          </h2>
+    <section className="grid gap-5 min-[900px]:grid-cols-[clamp(300px,32vw,360px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(320px,23vw,380px)_minmax(0,1fr)_clamp(320px,23vw,380px)] min-[1200px]:items-start">
+      <aside className="grid content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]">
+        <QuerySummaryPanel query={query} />
+      </aside>
+      <div className="grid gap-5 min-[1200px]:contents">{children}</div>
+    </section>
+  );
+}
+
+function LoadingDashboard({ query }: { readonly query: ForecastQueryInput }) {
+  return (
+    <DashboardFrame query={query}>
+      <Card className="p-5 shadow-sm">
+        <div className="flex items-center gap-3 text-sm font-semibold text-card-foreground">
+          <span className="h-2.5 w-2.5 rounded-full bg-primary" />
+          正在生成拍摄天气分析...
         </div>
-        <dl className="grid gap-4 text-sm sm:grid-cols-3">
-          <div>
-            <dt className="text-xs font-semibold text-muted-foreground">预报范围</dt>
-            <dd className="mt-1 font-semibold text-card-foreground">
-              {forecastHorizonLabels[query.horizon]}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs font-semibold text-muted-foreground">分析目标</dt>
-            <dd className="mt-1 font-semibold text-card-foreground">
-              {forecastTargetLabels[query.target]}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs font-semibold text-muted-foreground">数据来源</dt>
-            <dd className="mt-1 font-semibold text-card-foreground">
-              {sourceLabels[query.source] ?? "其他来源"}
-            </dd>
-          </div>
-        </dl>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          正在使用本地模拟天气、地形和天文数据计算出片指数。
+        </p>
+      </Card>
+      <Card className="p-5 shadow-sm">
+        <h2 className="text-lg font-bold text-card-foreground">数据状态</h2>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          当前展示模拟计算流程，不会调用真实天气、地图图层或外部分析服务。
+        </p>
+      </Card>
+    </DashboardFrame>
+  );
+}
+
+function QuerySummaryPanel({ query }: { readonly query: ForecastQueryInput }) {
+  return (
+    <Card className="grid gap-4 p-4 shadow-sm">
+      <div>
+        <p className="text-xs font-bold text-primary">地点 / 查询</p>
+        <h2 className="mt-2 break-words text-2xl font-bold leading-tight text-card-foreground">
+          {query.name}
+        </h2>
       </div>
 
-      <details className="mt-4 rounded-lg border border-border bg-muted px-3 py-3 text-sm">
+      <dl className="grid gap-3 text-sm">
+        <SummaryItem label="预报范围" value={forecastHorizonLabels[query.horizon]} />
+        <SummaryItem label="分析目标" value={forecastTargetLabels[query.target]} />
+        <SummaryItem label="数据来源" value={sourceLabels[query.source] ?? "其他来源"} />
+      </dl>
+
+      <details className="rounded-lg border border-border bg-muted px-3 py-3 text-sm">
         <summary className="cursor-pointer font-semibold text-card-foreground">坐标信息</summary>
-        <div className="mt-3 grid gap-1 leading-6 text-muted-foreground">
+        <div className="mt-3 grid gap-1 break-words text-xs leading-5 text-muted-foreground">
           <span>
             GCJ-02：{formatCoordinate(query.latitudeGcj02)},{" "}
             {formatCoordinate(query.longitudeGcj02)}
@@ -215,6 +227,15 @@ function QuerySummaryCard({ query }: { readonly query: ForecastQueryInput }) {
         </div>
       </details>
     </Card>
+  );
+}
+
+function SummaryItem({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-muted p-3">
+      <dt className="text-xs font-semibold text-muted-foreground">{label}</dt>
+      <dd className="mt-1 font-bold text-card-foreground">{value}</dd>
+    </div>
   );
 }
 
@@ -229,204 +250,194 @@ function InvalidQueryCard() {
   );
 }
 
-function ForecastResultView({ result }: { readonly result: ForecastCalculationResult }) {
+function ForecastResultView({
+  query,
+  result,
+}: {
+  readonly query: ForecastQueryInput;
+  readonly result: ForecastCalculationResult;
+}) {
   const scoreEntries = scoreOrder.map((key) => result.scores[key]);
   const bestWindow = result.bestWindows[0];
   const mainRisk = result.riskFlags[0];
 
   return (
-    <>
-      <Card className={cn("p-4 shadow-sm", result.isMock ? "border-warning" : "")}>
-        <p
-          className={cn(
-            "text-sm font-semibold leading-6",
-            result.isMock ? "text-warning" : "text-card-foreground",
-          )}
-        >
-          {result.dataNotice}
-        </p>
-      </Card>
-
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          title="综合出片指数"
-          value={`${result.overallScore} / 100`}
-          detail={result.summary}
-          tone="primary"
-        />
-        <MetricCard
-          title="推荐判断"
-          value={result.recommendationLabel}
-          detail={`分析目标：${forecastTargetLabels[result.target]}`}
-          tone="default"
-        />
-        <MetricCard
-          title="最佳拍摄窗口"
-          value={bestWindow?.label ?? "暂无明确高分窗口"}
-          detail={
-            bestWindow
-              ? `窗口评分 ${bestWindow.score} / 100`
-              : "建议等待真实天气数据接入后再判断。"
-          }
-          tone="accent"
-        />
-        <MetricCard
-          title="主要风险"
-          value={mainRisk?.label ?? "未发现高等级风险"}
-          detail={
-            mainRisk
-              ? `${riskLevelLabels[mainRisk.level]}风险：${mainRisk.description}`
-              : "出行前仍需核对真实天气和景区信息。"
-          }
-          tone="danger"
-        />
-      </section>
-
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {scoreEntries.map((score) => (
-          <ScoreCard key={score.key} score={score} />
-        ))}
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-12">
-        <div className="grid gap-4 lg:col-span-7">
-          <ListCard title="最佳拍摄窗口" emptyText="暂无明确高分窗口。">
-            {result.bestWindows.map((window) => (
-              <li
-                key={`${window.target}-${window.startTime}`}
-                className="rounded-lg border border-border bg-muted px-4 py-3"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-semibold text-card-foreground">{window.label}</span>
-                  <Badge variant="muted">{window.score} 分</Badge>
-                </div>
-              </li>
-            ))}
-          </ListCard>
-
-          <ListCard title="拍摄建议" emptyText="暂无拍摄建议。">
-            {result.photographyAdvice.map((advice) => (
-              <li key={advice} className="text-sm leading-6 text-muted-foreground">
-                {advice}
-              </li>
-            ))}
-          </ListCard>
-        </div>
-
-        <div className="grid gap-4 lg:col-span-5">
-          <ListCard title="主要风险" emptyText="未发现高等级风险。">
-            {result.riskFlags.map((risk) => (
-              <li key={risk.key} className="rounded-lg border border-border bg-muted px-4 py-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold text-card-foreground">{risk.label}</span>
-                  <Badge variant={risk.level === "high" ? "danger" : "warning"}>
-                    {riskLevelLabels[risk.level]}风险
-                  </Badge>
-                </div>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">{risk.description}</p>
-              </li>
-            ))}
-          </ListCard>
-
-          <ListCard title="关键依据" emptyText="暂无关键依据。">
-            {result.keyReasons.map((reason) => (
-              <li key={reason} className="text-sm leading-6 text-muted-foreground">
-                {reason}
-              </li>
-            ))}
-          </ListCard>
-        </div>
-      </section>
-
-      <Card className="p-5 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-lg font-bold text-card-foreground">数据状态</h2>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              当前页面展示计算模式、生成时间和数据说明。
-            </p>
+    <DashboardFrame query={query}>
+      <main className="grid gap-4">
+        <Card className="grid gap-4 p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold text-primary">综合判断</p>
+              <h2 className="mt-2 text-2xl font-bold leading-tight text-card-foreground">
+                {result.recommendationLabel}
+              </h2>
+            </div>
+            <Badge variant={result.isMock ? "warning" : "success"}>
+              {result.isMock ? "模拟展示" : "真实数据"}
+            </Badge>
           </div>
-          <Badge variant={result.isMock ? "warning" : "success"}>
-            {result.isMock ? "模拟预报" : "真实数据"}
-          </Badge>
-        </div>
-        <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-3">
-          <div>
-            <dt className="text-xs font-semibold text-muted-foreground">计算模式</dt>
-            <dd className="mt-1 font-semibold text-card-foreground">{result.dataSourceLabel}</dd>
+
+          <div className="grid gap-4 md:grid-cols-[180px_minmax(0,1fr)]">
+            <div className="rounded-lg border border-border bg-muted p-4">
+              <p className="text-xs font-semibold text-muted-foreground">综合指数</p>
+              <p className="mt-2 text-5xl font-bold leading-none text-primary">
+                {result.overallScore}
+              </p>
+              <p className="mt-2 text-sm font-semibold text-muted-foreground">/ 100</p>
+            </div>
+            <div className="grid gap-3">
+              <p className="text-sm leading-6 text-muted-foreground">{result.summary}</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <CompactFact
+                  label="最佳窗口"
+                  value={bestWindow?.label ?? "暂无明确高分窗口"}
+                  detail={bestWindow ? formatWindowRange(bestWindow) : "等待更多数据"}
+                  tone="accent"
+                />
+                <CompactFact
+                  label="主要风险"
+                  value={mainRisk?.label ?? "未发现高等级风险"}
+                  detail={mainRisk ? `${riskLevelLabels[mainRisk.level]}风险` : "仍需现场核对"}
+                  tone="danger"
+                />
+              </div>
+            </div>
           </div>
-          <div>
-            <dt className="text-xs font-semibold text-muted-foreground">生成时间</dt>
-            <dd className="mt-1 font-semibold text-card-foreground">
-              {formatDateTime(result.generatedAt)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs font-semibold text-muted-foreground">数据说明</dt>
-            <dd className="mt-1 leading-6 text-card-foreground">{result.dataNotice}</dd>
-          </div>
-        </dl>
-      </Card>
-    </>
+        </Card>
+
+        <WindowPanel windows={result.bestWindows} />
+
+        <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+          {scoreEntries.map((score) => (
+            <ScoreCard key={score.key} score={score} />
+          ))}
+        </section>
+      </main>
+
+      <aside className="grid content-start gap-4">
+        <MockWarningCard result={result} />
+        <RiskPanel risks={result.riskFlags} />
+        <TextListPanel title="拍摄建议" emptyText="暂无拍摄建议。">
+          {result.photographyAdvice.map((advice) => (
+            <li key={advice} className="text-sm leading-6 text-muted-foreground">
+              {advice}
+            </li>
+          ))}
+        </TextListPanel>
+        <TextListPanel title="关键依据" emptyText="暂无关键依据。">
+          {result.keyReasons.map((reason) => (
+            <li key={reason} className="text-sm leading-6 text-muted-foreground">
+              {reason}
+            </li>
+          ))}
+        </TextListPanel>
+        <DataStatusPanel result={result} />
+      </aside>
+    </DashboardFrame>
   );
 }
 
-function MetricCard({
-  title,
+function CompactFact({
+  label,
   value,
   detail,
   tone,
 }: {
-  readonly title: string;
+  readonly label: string;
   readonly value: string;
   readonly detail: string;
-  readonly tone: "primary" | "accent" | "danger" | "default";
+  readonly tone: "accent" | "danger";
 }) {
   return (
-    <Card className="grid content-start gap-3 p-5 shadow-sm">
-      <p className="text-xs font-bold text-muted-foreground">{title}</p>
+    <div className="rounded-lg border border-border bg-card p-3">
+      <p className="text-xs font-semibold text-muted-foreground">{label}</p>
       <p
         className={cn(
-          "text-2xl font-bold leading-8",
-          tone === "primary" && "text-primary",
+          "mt-1 text-sm font-bold text-card-foreground",
           tone === "accent" && "text-accent",
           tone === "danger" && "text-danger",
-          tone === "default" && "text-card-foreground",
         )}
       >
         {value}
       </p>
-      <p className="text-sm leading-6 text-muted-foreground">{detail}</p>
-    </Card>
+      <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+    </div>
   );
 }
 
-function ScoreCard({ score }: { readonly score: ForecastScore }) {
-  const isRisk = score.key === "whiteoutRisk";
-
+function WindowPanel({ windows }: { readonly windows: readonly ForecastTimeWindow[] }) {
   return (
-    <Card className="p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-bold text-card-foreground">{score.label}</p>
-          <p className="mt-2 text-3xl font-bold leading-9 text-card-foreground">{score.score}</p>
-        </div>
-        <Badge variant={score.level === "poor" ? "warning" : "muted"}>
-          {isRisk ? "风险值" : scoreLevelLabels[score.level]}
-        </Badge>
+    <Card className="p-5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-card-foreground">时间窗口</h2>
+        <Badge variant="muted">按评分排序</Badge>
       </div>
-      <p className="mt-3 text-sm leading-6 text-muted-foreground">{score.reasons[0]}</p>
-      <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
-        <div
-          className={cn("h-full rounded-full", isRisk ? "bg-warning" : "bg-primary")}
-          style={{ width: `${score.score}%` }}
-        />
-      </div>
+      {windows.length > 0 ? (
+        <ul className="mt-4 grid gap-3">
+          {windows.map((window) => (
+            <li
+              key={`${window.target}-${window.startTime}`}
+              className="grid gap-2 rounded-lg border border-border bg-muted px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+            >
+              <div>
+                <p className="font-semibold text-card-foreground">{window.label}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{formatWindowRange(window)}</p>
+              </div>
+              <Badge variant={window.score >= 75 ? "default" : "accent"}>{window.score} 分</Badge>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">暂无明确高分窗口。</p>
+      )}
     </Card>
   );
 }
 
-function ListCard({
+function MockWarningCard({ result }: { readonly result: ForecastCalculationResult }) {
+  return (
+    <Card className={cn("p-4 shadow-sm", result.isMock ? "border-warning" : "")}>
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant={result.isMock ? "warning" : "success"}>
+          {result.isMock ? "模拟展示" : "真实数据"}
+        </Badge>
+        <p className="text-sm font-semibold text-card-foreground">数据提醒</p>
+      </div>
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">{result.dataNotice}</p>
+    </Card>
+  );
+}
+
+function RiskPanel({
+  risks,
+}: {
+  readonly risks: readonly ForecastCalculationResult["riskFlags"][number][];
+}) {
+  return (
+    <Card className="p-5 shadow-sm">
+      <h2 className="text-lg font-bold text-card-foreground">风险与注意事项</h2>
+      {risks.length > 0 ? (
+        <ul className="mt-4 grid gap-3">
+          {risks.map((risk) => (
+            <li key={risk.key} className="rounded-lg border border-border bg-muted px-4 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold text-card-foreground">{risk.label}</span>
+                <Badge variant={risk.level === "high" ? "danger" : "warning"}>
+                  {riskLevelLabels[risk.level]}风险
+                </Badge>
+              </div>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">{risk.description}</p>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">未发现高等级风险。</p>
+      )}
+    </Card>
+  );
+}
+
+function TextListPanel({
   title,
   emptyText,
   children,
@@ -450,8 +461,66 @@ function ListCard({
   );
 }
 
+function DataStatusPanel({ result }: { readonly result: ForecastCalculationResult }) {
+  return (
+    <Card className="p-5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-card-foreground">数据状态</h2>
+        <Badge variant={result.isMock ? "warning" : "success"}>
+          {result.isMock ? "模拟预报" : "真实数据"}
+        </Badge>
+      </div>
+      <dl className="mt-4 grid gap-3 text-sm">
+        <SummaryItem label="计算模式" value={result.dataSourceLabel} />
+        <SummaryItem label="生成时间" value={formatDateTime(result.generatedAt)} />
+      </dl>
+    </Card>
+  );
+}
+
+function ScoreCard({ score }: { readonly score: ForecastScore }) {
+  const isRisk = score.key === "whiteoutRisk";
+  const barTone = isRisk ? "bg-warning" : "bg-primary";
+
+  return (
+    <Card className="p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold text-card-foreground">{score.label}</p>
+          <p className="mt-2 text-3xl font-bold leading-9 text-card-foreground">{score.score}</p>
+        </div>
+        <Badge variant={score.level === "poor" || isRisk ? "warning" : "muted"}>
+          {isRisk ? "风险值" : scoreLevelLabels[score.level]}
+        </Badge>
+      </div>
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">{score.reasons[0]}</p>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+        <div className={cn("h-full rounded-full", barTone)} style={{ width: `${score.score}%` }} />
+      </div>
+    </Card>
+  );
+}
+
 function formatCoordinate(value: number): string {
   return Number.isFinite(value) ? value.toFixed(5) : "未提供";
+}
+
+function formatWindowRange(window: ForecastTimeWindow): string {
+  return `${formatTime(window.startTime)} - ${formatTime(window.endTime)}`;
+}
+
+function formatTime(value: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(timestamp));
 }
 
 function formatDateTime(value: string): string {

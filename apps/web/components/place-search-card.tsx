@@ -33,6 +33,10 @@ type SearchResponse = {
 
 type SearchStatus = "idle" | "loading" | "ready" | "error";
 
+type PlaceSearchCardProps = {
+  readonly className?: string;
+};
+
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
 const quickLocations = ["黄山光明顶", "老君山金顶", "三清山女神峰", "武功山金顶"] as const;
@@ -69,7 +73,7 @@ function formatAddressAndCity(result: PlaceSearchResult): string {
     return address;
   }
 
-  return `${address} · ${area}`;
+  return `${address} / ${area}`;
 }
 
 function buildForecastUrl(
@@ -99,7 +103,7 @@ function buildForecastUrl(
   return `/forecast?${params.toString()}`;
 }
 
-export function PlaceSearchCard() {
+export function PlaceSearchCard({ className }: PlaceSearchCardProps) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<SearchStatus>("idle");
   const [results, setResults] = useState<readonly PlaceSearchResult[]>([]);
@@ -133,10 +137,9 @@ export function PlaceSearchCard() {
 
     setStatus("loading");
     try {
-      const response = await fetch(
-        `${apiBaseUrl}/search/places?q=${encodeURIComponent(keyword)}`,
-        { signal },
-      );
+      const response = await fetch(`${apiBaseUrl}/search/places?q=${encodeURIComponent(keyword)}`, {
+        signal,
+      });
       if (!response.ok) {
         throw new Error("地点搜索暂时不可用。");
       }
@@ -174,9 +177,17 @@ export function PlaceSearchCard() {
   }, [searchPlaces, trimmedQuery]);
 
   return (
-    <Card className="mt-6 grid w-full gap-4 p-4 shadow-soft sm:p-5">
+    <Card className={cn("grid gap-4 p-4 shadow-sm", className)}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold text-card-foreground">选择拍摄地点</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">搜索景区、城市或具体机位</p>
+        </div>
+        <Badge variant="muted">模拟数据</Badge>
+      </div>
+
       <form
-        className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
+        className="grid gap-2"
         onSubmit={(event) => {
           event.preventDefault();
           void searchPlaces(query);
@@ -186,31 +197,34 @@ export function PlaceSearchCard() {
           aria-label="目的地"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="请输入景区、城市或机位，例如：黄山光明顶"
-          className="h-11 text-[15px]"
+          placeholder="请输入拍摄地点"
+          className="h-9 bg-card text-sm"
         />
-        <Button type="submit" className="h-11 px-5" disabled={status === "loading"}>
+        <Button type="submit" size="sm" className="h-9 w-full" disabled={status === "loading"}>
           搜索地点
         </Button>
       </form>
 
-      <div className="flex flex-wrap gap-2">
-        {quickLocations.map((location) => (
-          <button
-            key={location}
-            type="button"
-            onClick={() => setQuery(location)}
-            className="rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-semibold text-muted-foreground transition hover:border-primary hover:bg-secondary hover:text-secondary-foreground"
-          >
-            {location}
-          </button>
-        ))}
+      <div className="grid gap-2">
+        <p className="text-xs font-semibold text-muted-foreground">常用机位</p>
+        <div className="flex flex-wrap gap-2">
+          {quickLocations.map((location) => (
+            <button
+              key={location}
+              type="button"
+              onClick={() => setQuery(location)}
+              className="rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-semibold text-muted-foreground transition hover:border-primary hover:bg-secondary hover:text-secondary-foreground"
+            >
+              {location}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div aria-live="polite" className="grid gap-2">
         {status === "loading" ? (
           <div className="rounded-lg border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
-            正在搜索地点…
+            正在搜索地点...
           </div>
         ) : null}
 
@@ -227,14 +241,14 @@ export function PlaceSearchCard() {
         ) : null}
 
         {status === "ready" && results.length > 0 ? (
-          <div className="max-h-[300px] overflow-y-auto rounded-lg border border-border bg-card shadow-sm">
+          <div className="max-h-[260px] overflow-y-auto rounded-lg border border-border bg-card">
             {results.map((result) => (
               <button
                 key={result.id}
                 type="button"
                 onClick={() => setSelectedPlace(result)}
                 className={cn(
-                  "grid w-full gap-2 border-b border-border px-3 py-3 text-left transition last:border-b-0 hover:bg-secondary",
+                  "grid w-full gap-1.5 border-b border-border px-3 py-2.5 text-left transition last:border-b-0 hover:bg-secondary",
                   selectedPlace?.id === result.id && "bg-secondary",
                 )}
               >
@@ -244,11 +258,8 @@ export function PlaceSearchCard() {
                   <Badge variant={result.isVerified ? "success" : "warning"}>
                     {result.isVerified ? "已验证" : "待验证"}
                   </Badge>
-                  {result.matchedPhotoSpotId ? (
-                    <Badge variant="success">已匹配本地机位</Badge>
-                  ) : null}
                 </span>
-                <span className="text-sm leading-6 text-muted-foreground">
+                <span className="text-xs leading-5 text-muted-foreground">
                   {formatAddressAndCity(result)}
                 </span>
               </button>
@@ -258,45 +269,28 @@ export function PlaceSearchCard() {
       </div>
 
       {selectedPlace ? (
-        <div className="grid gap-3 rounded-lg border border-border bg-muted p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="grid gap-3 rounded-lg border border-border bg-muted p-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-xs font-semibold text-muted-foreground">地点名称</p>
-              <p className="mt-1 break-words font-bold text-card-foreground">
+              <p className="text-xs font-semibold text-muted-foreground">已选地点</p>
+              <p className="mt-1 break-words text-base font-bold text-card-foreground">
                 {selectedPlace.name}
               </p>
             </div>
             {selectedPlace.matchedPhotoSpotId ? (
               <Badge variant="success" className="shrink-0">
-                已匹配本地机位
+                已匹配机位
               </Badge>
             ) : null}
           </div>
-
-          <dl className="grid gap-3 text-sm sm:grid-cols-2">
+          <dl className="grid gap-2 text-xs leading-5 text-muted-foreground">
             <div>
-              <dt className="text-xs font-semibold text-muted-foreground">地址 / 城市信息</dt>
-              <dd className="mt-1 leading-6 text-card-foreground">
-                {formatAddressAndCity(selectedPlace)}
-              </dd>
+              <dt className="font-semibold text-card-foreground">位置</dt>
+              <dd>{formatAddressAndCity(selectedPlace)}</dd>
             </div>
             <div>
-              <dt className="text-xs font-semibold text-muted-foreground">数据来源</dt>
-              <dd className="mt-1 font-semibold text-card-foreground">
-                {sourceLabels[selectedPlace.source]}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs font-semibold text-muted-foreground">经纬度</dt>
-              <dd className="mt-1 break-words leading-6 text-card-foreground">
-                {selectedCoordinateText}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs font-semibold text-muted-foreground">是否已验证</dt>
-              <dd className="mt-1 font-semibold text-card-foreground">
-                {selectedPlace.isVerified ? "已验证" : "待验证"}
-              </dd>
+              <dt className="font-semibold text-card-foreground">坐标</dt>
+              <dd className="break-words">{selectedCoordinateText}</dd>
             </div>
           </dl>
         </div>
@@ -305,7 +299,7 @@ export function PlaceSearchCard() {
       <div className="grid gap-3 border-t border-border pt-4">
         <div className="grid gap-2">
           <p className="text-sm font-semibold text-card-foreground">预报范围</p>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2">
             {horizonOptions.map((option) => (
               <button
                 key={option}
@@ -313,7 +307,7 @@ export function PlaceSearchCard() {
                 aria-pressed={horizon === option}
                 onClick={() => setHorizon(option)}
                 className={cn(
-                  "h-10 rounded-lg border px-3 text-sm font-semibold transition",
+                  "h-8 rounded-md border px-2 text-xs font-semibold transition",
                   horizon === option
                     ? "border-primary bg-primary text-primary-foreground"
                     : "border-border bg-card text-card-foreground hover:border-primary hover:bg-secondary",
@@ -327,7 +321,7 @@ export function PlaceSearchCard() {
 
         <div className="grid gap-2">
           <p className="text-sm font-semibold text-card-foreground">分析目标</p>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2">
             {targetOptions.map((option) => (
               <button
                 key={option}
@@ -335,7 +329,7 @@ export function PlaceSearchCard() {
                 aria-pressed={target === option}
                 onClick={() => setTarget(option)}
                 className={cn(
-                  "h-10 rounded-lg border px-3 text-sm font-semibold transition",
+                  "h-8 rounded-md border px-2 text-xs font-semibold transition",
                   target === option
                     ? "border-primary bg-primary text-primary-foreground"
                     : "border-border bg-card text-card-foreground hover:border-primary hover:bg-secondary",
@@ -349,7 +343,7 @@ export function PlaceSearchCard() {
 
         <Button
           type="button"
-          className="mt-1 h-10 w-full sm:w-auto sm:justify-self-start"
+          className="h-9 w-full"
           disabled={!selectedPlace}
           onClick={() => {
             if (!selectedPlace) {

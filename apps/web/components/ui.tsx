@@ -21,8 +21,10 @@ const buttonVariants: Record<ButtonVariant, string> = {
     "border-border bg-card text-card-foreground hover:border-primary hover:bg-secondary disabled:hover:bg-card",
   ghost:
     "border-transparent bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground disabled:hover:bg-transparent",
-  danger: "border-danger bg-danger text-white shadow-sm hover:brightness-95 disabled:hover:brightness-100",
-  success: "border-success bg-success text-white shadow-sm hover:brightness-95 disabled:hover:brightness-100",
+  danger:
+    "border-danger bg-danger text-white shadow-sm hover:brightness-95 disabled:hover:brightness-100",
+  success:
+    "border-success bg-success text-white shadow-sm hover:brightness-95 disabled:hover:brightness-100",
 };
 
 const buttonSizes: Record<ButtonSize, string> = {
@@ -148,7 +150,10 @@ export function Table({ className, ...props }: TableHTMLAttributes<HTMLTableElem
   return (
     <div className="w-full overflow-x-auto rounded-lg border border-border bg-card">
       <table
-        className={cn("w-full min-w-[760px] border-collapse text-left text-[13px]", className)}
+        className={cn(
+          "w-full min-w-[760px] border-collapse text-left text-[13px] leading-5",
+          className,
+        )}
         {...props}
       />
     </div>
@@ -294,7 +299,7 @@ export function ConfirmDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#17231F]/50 p-4 backdrop-blur-sm">
       <div
         role="dialog"
         aria-modal="true"

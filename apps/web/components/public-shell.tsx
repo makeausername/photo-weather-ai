@@ -13,10 +13,7 @@ export function PublicShell({ children, className, contentClassName }: PublicShe
     <main className={cn("min-h-screen bg-background text-foreground", className)}>
       <PublicHeader />
       <div
-        className={cn(
-          "mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-8 sm:py-8 lg:px-12 lg:py-10 xl:px-[72px]",
-          contentClassName,
-        )}
+        className={cn("w-full px-[clamp(24px,4vw,72px)] py-6 sm:py-8 lg:py-9", contentClassName)}
       >
         {children}
       </div>
