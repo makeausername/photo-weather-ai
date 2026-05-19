@@ -60,23 +60,24 @@ export type ForecastQueryInput = {
 export type NormalizedHourlyWeather = {
   readonly time: string;
   readonly temperature: number;
-  readonly feelsLike?: number;
+  readonly feelsLike: number | null;
   readonly humidity: number;
-  readonly pressure?: number;
+  readonly pressure: number | null;
   readonly windSpeed: number;
-  readonly windGust?: number;
-  readonly windDirection?: number;
+  readonly windGust: number | null;
+  readonly windDirection: number | null;
   readonly precipitationProbability: number;
-  readonly precipitation?: number;
-  readonly visibility?: number;
-  readonly dewPoint?: number;
+  readonly precipitation: number | null;
+  readonly visibility: number | null;
+  readonly dewPoint: number | null;
   readonly cloudTotal: number;
-  readonly cloudLow: number;
-  readonly cloudMid: number;
-  readonly cloudHigh: number;
-  readonly weatherCode?: string;
+  readonly cloudLow: number | null;
+  readonly cloudMid: number | null;
+  readonly cloudHigh: number | null;
+  readonly weatherCode: string | null;
   readonly providerCode: string;
-  readonly sourceConfidence?: number;
+  readonly sourceConfidence: number | null;
+  readonly sourceNotes?: readonly string[];
 };
 
 export type NormalizedDailyWeather = {
@@ -134,6 +135,7 @@ export type ForecastCalculationInput = {
   readonly astroSummaries: readonly AstroSummary[];
   readonly generatedAt: string;
   readonly isMock: boolean;
+  readonly dataSourceLabel: string;
 };
 
 export type ForecastScoreLevel = "poor" | "fair" | "good" | "excellent";
@@ -195,6 +197,7 @@ export type ForecastCalculationResult = {
   readonly photographyAdvice: readonly string[];
   readonly dataNotice: string;
   readonly isMock: boolean;
+  readonly dataSourceLabel: string;
   readonly generatedAt: string;
 };
 

@@ -89,7 +89,7 @@ export function formatChineseTimeRange(startTime: string, endTime: string): stri
 
 export function averageHourly(
   hourlyWeather: readonly NormalizedHourlyWeather[],
-  selector: (hour: NormalizedHourlyWeather) => number | undefined,
+  selector: (hour: NormalizedHourlyWeather) => number | null | undefined,
 ): number {
   const values = hourlyWeather
     .map((hour) => selector(hour))

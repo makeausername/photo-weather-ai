@@ -1,0 +1,30 @@
+{
+  "code": "200",
+  "updateTime": "2026-05-19T08:35+08:00",
+  "daily": [
+    {
+      "fxDate": "2026-05-19",
+      "sunrise": "05:16",
+      "sunset": "18:55",
+      "tempMax": "23",
+      "tempMin": "12",
+      "iconDay": "101",
+      "textDay": "多云",
+      "iconNight": "150",
+      "textNight": "晴",
+      "pop": "18"
+    },
+    {
+      "fxDate": "2026-05-20",
+      "sunrise": "05:15",
+      "sunset": "18:56",
+      "tempMax": "24",
+      "tempMin": "13",
+      "iconDay": "305",
+      "textDay": "小雨",
+      "iconNight": "104",
+      "textNight": "阴",
+      "pop": "45"
+    }
+  ]
+}

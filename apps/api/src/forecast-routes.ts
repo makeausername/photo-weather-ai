@@ -4,8 +4,17 @@ import {
   forecastQueryInputSchema,
   forecastTargetLabels,
 } from "@photo-weather/shared";
-import { buildMockForecastInput, calculateForecast } from "@photo-weather/scoring";
+import {
+  buildForecastInputFromNormalizedWeather,
+  calculateForecast,
+  getHorizonHours,
+} from "@photo-weather/scoring";
+import { createWeatherProvider, type WeatherProvider } from "@photo-weather/weather";
 import type { ZodError } from "zod";
+
+export type ForecastRoutesOptions = {
+  readonly weatherProvider?: WeatherProvider;
+};
 
 function sendZodError(reply: FastifyReply, error: ZodError): FastifyReply {
   return reply.status(400).send({
@@ -17,7 +26,9 @@ function sendZodError(reply: FastifyReply, error: ZodError): FastifyReply {
   });
 }
 
-export function registerForecastRoutes(app: FastifyInstance): void {
+export function registerForecastRoutes(app: FastifyInstance, options: ForecastRoutesOptions = {}): void {
+  const weatherProvider = options.weatherProvider ?? createWeatherProvider();
+
   app.post("/forecast/validate-query", async (request, reply) => {
     const parsedBody = forecastQueryInputSchema.safeParse(request.body);
     if (!parsedBody.success) {
@@ -39,9 +50,31 @@ export function registerForecastRoutes(app: FastifyInstance): void {
       return sendZodError(reply, parsedBody.error);
     }
 
-    const calculationInput = buildMockForecastInput(parsedBody.data);
+    const coordinates = {
+      latitude: parsedBody.data.latitudeWgs84,
+      longitude: parsedBody.data.longitudeWgs84,
+      system: "wgs84" as const,
+    };
+    const [hourlyWeather, dailyWeather] = await Promise.all([
+      weatherProvider.getHourlyForecast(coordinates, {
+        hours: getHorizonHours(parsedBody.data.horizon),
+      }),
+      weatherProvider.getDailyForecast(coordinates, {
+        days: getHorizonDays(parsedBody.data.horizon),
+      }),
+    ]);
+    const calculationInput = buildForecastInputFromNormalizedWeather(parsedBody.data, {
+      hourlyWeather,
+      dailyWeather,
+      isMock: weatherProvider.source.isMock,
+      dataSourceLabel: weatherProvider.source.displayName,
+    });
     const result = calculateForecast(calculationInput);
 
     return reply.send(result);
   });
+}
+
+function getHorizonDays(horizon: "24h" | "48h" | "72h" | "7d"): number {
+  return horizon === "7d" ? 7 : Math.ceil(getHorizonHours(horizon) / 24);
 }

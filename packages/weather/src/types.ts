@@ -1,4 +1,15 @@
-import type { Coordinates } from "@photo-weather/shared";
+import type { Coordinates, NormalizedDailyWeather, NormalizedHourlyWeather } from "@photo-weather/shared";
+
+export type WeatherProviderCode = "mock" | "qweather" | "open_meteo";
+
+export type WeatherProviderMode = "mock" | "fixture" | "real";
+
+export type WeatherDataSource = {
+  readonly providerCode: WeatherProviderCode;
+  readonly displayName: string;
+  readonly isMock: boolean;
+  readonly mode: WeatherProviderMode;
+};
 
 export type WeatherCondition = "clear" | "partly_cloudy" | "cloudy" | "rain" | "snow" | "fog";
 
@@ -69,10 +80,11 @@ export type AirQuality = {
 
 export type NormalizedWeatherData = {
   readonly current: CurrentWeather;
-  readonly hourly: HourlyForecast;
-  readonly daily: DailyForecast;
+  readonly hourly: readonly NormalizedHourlyWeather[];
+  readonly daily: readonly NormalizedDailyWeather[];
   readonly alerts: readonly WeatherAlert[];
   readonly airQuality: AirQuality;
+  readonly source: WeatherDataSource;
 };
 
 export type ForecastRequestOptions = {

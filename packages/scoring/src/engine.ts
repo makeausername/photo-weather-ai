@@ -21,7 +21,8 @@ import {
   pickHighestScoredHour,
 } from "./helpers.js";
 
-const dataNotice = "当前为本地模拟计算结果，尚未接入真实天气数据。";
+const mockDataNotice =
+  "当前为本地模拟天气数据，计算结果仅用于验证流程，不代表真实预报。";
 
 export function calculateForecast(input: ForecastCalculationInput): ForecastCalculationResult {
   const sunriseGlow = calculateSunriseGlowScore(input);
@@ -59,8 +60,9 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
     riskFlags,
     keyReasons: buildKeyReasons(scores),
     photographyAdvice: buildPhotographyAdvice(input, scores, riskFlags),
-    dataNotice,
+    dataNotice: buildDataNotice(input),
     isMock: input.isMock,
+    dataSourceLabel: input.dataSourceLabel,
     generatedAt: input.generatedAt,
   };
 }
@@ -355,7 +357,11 @@ function calculateGlowWindowScore(
   horizonAngle: number | undefined,
   kind: "sunrise" | "sunset",
 ): number {
-  const midHighCloud = averageHourly(window, (hour) => (hour.cloudMid + hour.cloudHigh) / 2);
+  const midHighCloud = averageHourly(window, (hour) =>
+    hour.cloudMid !== null && hour.cloudHigh !== null
+      ? (hour.cloudMid + hour.cloudHigh) / 2
+      : undefined,
+  );
   const lowCloud = averageHourly(window, (hour) => hour.cloudLow);
   const precipitationProbability = averageHourly(window, (hour) => hour.precipitationProbability);
   const visibility = averageHourly(window, (hour) => hour.visibility);
@@ -383,7 +389,11 @@ function calculateGlowWindowScore(
 }
 
 function glowReasons(window: readonly NormalizedHourlyWeather[], label: string): readonly string[] {
-  const midHighCloud = averageHourly(window, (hour) => (hour.cloudMid + hour.cloudHigh) / 2);
+  const midHighCloud = averageHourly(window, (hour) =>
+    hour.cloudMid !== null && hour.cloudHigh !== null
+      ? (hour.cloudMid + hour.cloudHigh) / 2
+      : undefined,
+  );
   const visibility = averageHourly(window, (hour) => hour.visibility);
   const precipitationProbability = averageHourly(window, (hour) => hour.precipitationProbability);
 
@@ -673,17 +683,26 @@ function calculateMoonScore(astro: AstroSummary | undefined): number {
 
 function cloudSeaHourScore(hour: NormalizedHourlyWeather, elevationDiff5km: number): number {
   const dewPointSpread = typeof hour.dewPoint === "number" ? hour.temperature - hour.dewPoint : 8;
+  const cloudLow = hour.cloudLow ?? 0;
 
   return averageWeightedScore([
     { score: hour.humidity, weight: 0.28 },
     { score: clampScore(110 - hour.windSpeed * 14), weight: 0.2 },
     {
-      score: hour.cloudLow >= 30 && hour.cloudLow <= 72 ? 88 : clampScore(110 - hour.cloudLow),
+      score: cloudLow >= 30 && cloudLow <= 72 ? 88 : clampScore(110 - cloudLow),
       weight: 0.24,
     },
     { score: clampScore((elevationDiff5km / 1500) * 100), weight: 0.16 },
     { score: clampScore(100 - dewPointSpread * 18), weight: 0.12 },
   ]);
+}
+
+function buildDataNotice(input: ForecastCalculationInput): string {
+  if (input.isMock) {
+    return mockDataNotice;
+  }
+
+  return `数据来源：${input.dataSourceLabel}`;
 }
 
 function getShanghaiHour(time: string): number {

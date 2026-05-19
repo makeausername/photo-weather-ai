@@ -4,7 +4,7 @@ import { MockAIProvider } from "@photo-weather/ai";
 import type { DatabaseClient } from "@photo-weather/db";
 import { MockGeoProvider } from "@photo-weather/geo";
 import type { GeoProvider } from "@photo-weather/geo";
-import { MockWeatherProvider } from "@photo-weather/weather";
+import { createWeatherProvider, type WeatherProvider } from "@photo-weather/weather";
 import { registerAdminRoutes } from "./admin-routes.js";
 import type { AuthConfig } from "./auth-routes.js";
 import { loadAuthConfig, registerAuthRoutes } from "./auth-routes.js";
@@ -16,6 +16,7 @@ export type ApiServerOptions = {
   readonly dbClient?: DatabaseClient;
   readonly authConfig?: AuthConfig;
   readonly geoProvider?: GeoProvider;
+  readonly weatherProvider?: WeatherProvider;
   readonly logger?: boolean;
 };
 
@@ -28,7 +29,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     logger: options.logger ?? true,
   });
 
-  const weatherProvider = new MockWeatherProvider();
+  const weatherProvider = options.weatherProvider ?? createWeatherProvider();
   const geoProvider = options.geoProvider ?? new MockGeoProvider();
   const aiProvider = new MockAIProvider();
   const authConfig = options.authConfig ?? loadAuthConfig();
@@ -87,7 +88,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
   });
 
   registerAuthRoutes(app, { dbClient: options.dbClient, authConfig });
-  registerForecastRoutes(app);
+  registerForecastRoutes(app, { weatherProvider });
   registerSearchRoutes(app, {
     dbClient: options.dbClient,
     resolveGeoProvider: resolveRuntimeGeoProvider,

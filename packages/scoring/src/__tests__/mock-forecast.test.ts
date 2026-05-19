@@ -69,7 +69,10 @@ describe("mock forecast input builder", () => {
     const result = calculateForecast(buildMockForecastInput(query));
 
     expect(result.isMock).toBe(true);
-    expect(result.dataNotice).toBe("当前为本地模拟计算结果，尚未接入真实天气数据。");
+    expect(result.dataNotice).toBe(
+      "当前为本地模拟天气数据，计算结果仅用于验证流程，不代表真实预报。",
+    );
+    expect(result.dataSourceLabel).toBe("模拟天气数据");
     expect(result.scores.cloudSea.label).toBe("云海");
     expect(result.bestWindows.length).toBeGreaterThan(0);
   });

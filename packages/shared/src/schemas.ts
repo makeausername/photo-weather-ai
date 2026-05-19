@@ -51,3 +51,39 @@ export const forecastQueryInputSchema = z.object({
   locationId: z.string().trim().min(1).max(120).optional(),
   photoSpotId: z.string().trim().min(1).max(120).optional(),
 });
+
+const nullableFiniteNumberSchema = z.number().finite().nullable();
+const nullablePercentSchema = z.number().finite().min(0).max(100).nullable();
+
+export const normalizedHourlyWeatherSchema = z.object({
+  time: z.string().datetime({ offset: true }),
+  temperature: z.number().finite(),
+  feelsLike: nullableFiniteNumberSchema,
+  humidity: z.number().finite().min(0).max(100),
+  pressure: nullableFiniteNumberSchema,
+  windSpeed: z.number().finite().min(0),
+  windGust: nullableFiniteNumberSchema,
+  windDirection: z.number().finite().min(0).max(360).nullable(),
+  precipitationProbability: z.number().finite().min(0).max(100),
+  precipitation: nullableFiniteNumberSchema,
+  visibility: nullableFiniteNumberSchema,
+  dewPoint: nullableFiniteNumberSchema,
+  cloudTotal: z.number().finite().min(0).max(100),
+  cloudLow: nullablePercentSchema,
+  cloudMid: nullablePercentSchema,
+  cloudHigh: nullablePercentSchema,
+  weatherCode: z.string().trim().min(1).nullable(),
+  providerCode: z.string().trim().min(1),
+  sourceConfidence: z.number().finite().min(0).max(1).nullable(),
+  sourceNotes: z.array(z.string().trim().min(1)).optional(),
+});
+
+export const normalizedDailyWeatherSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  tempMin: z.number().finite(),
+  tempMax: z.number().finite(),
+  precipitationProbability: z.number().finite().min(0).max(100),
+  weatherSummary: z.string().trim().min(1),
+  sunrise: z.string().datetime({ offset: true }).optional(),
+  sunset: z.string().datetime({ offset: true }).optional(),
+});

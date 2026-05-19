@@ -89,7 +89,8 @@ describe("forecast query validation route", () => {
       target: "cloud_sea",
       recommendationLabel: expect.stringMatching(/不建议前往|谨慎参考|值得等待|推荐前往/),
       isMock: true,
-      dataNotice: "当前为本地模拟计算结果，尚未接入真实天气数据。",
+      dataNotice: "当前为本地模拟天气数据，计算结果仅用于验证流程，不代表真实预报。",
+      dataSourceLabel: "模拟天气数据",
     });
     expect(body.overallScore).toEqual(expect.any(Number));
     expect(body.scores).toMatchObject({

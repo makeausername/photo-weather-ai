@@ -224,11 +224,16 @@ function ForecastResultView({ result }: { readonly result: ForecastCalculationRe
 
   return (
     <>
-      {result.isMock ? (
-        <Card className="border-warning bg-card p-4 shadow-sm">
-          <p className="text-sm font-semibold leading-6 text-warning">{result.dataNotice}</p>
-        </Card>
-      ) : null}
+      <Card className={cn("bg-card p-4 shadow-sm", result.isMock ? "border-warning" : "")}>
+        <p
+          className={cn(
+            "text-sm font-semibold leading-6",
+            result.isMock ? "text-warning" : "text-card-foreground",
+          )}
+        >
+          {result.dataNotice}
+        </p>
+      </Card>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
@@ -331,7 +336,7 @@ function ForecastResultView({ result }: { readonly result: ForecastCalculationRe
           <div>
             <dt className="text-xs font-semibold text-muted-foreground">计算模式</dt>
             <dd className="mt-1 font-semibold text-card-foreground">
-              {result.isMock ? "本地模拟数据" : "真实数据"}
+              {result.dataSourceLabel}
             </dd>
           </div>
           <div>

@@ -11,16 +11,23 @@ import type { NormalizedHourlyWeather } from "@photo-weather/shared";
 const sampleHour: NormalizedHourlyWeather = {
   time: "2026-05-20T05:00:00+08:00",
   temperature: 14,
+  feelsLike: 13.6,
   humidity: 82,
+  pressure: 1008,
   windSpeed: 2.1,
+  windGust: 4.2,
+  windDirection: 135,
   precipitationProbability: 10,
+  precipitation: 0,
   visibility: 24,
   dewPoint: 11,
   cloudTotal: 55,
   cloudLow: 42,
   cloudMid: 48,
   cloudHigh: 36,
+  weatherCode: "mock-partly-cloudy",
   providerCode: "mock-weather-v1",
+  sourceConfidence: 0.78,
 };
 
 describe("forecast scoring helpers", () => {

@@ -42,6 +42,13 @@ type MockGenerationOptions = {
   readonly target?: ForecastTarget;
 };
 
+export type NormalizedForecastInputOptions = {
+  readonly hourlyWeather: readonly NormalizedHourlyWeather[];
+  readonly dailyWeather: readonly NormalizedDailyWeather[];
+  readonly isMock: boolean;
+  readonly dataSourceLabel: string;
+};
+
 const generatedAt = "2026-05-19T08:00:00+08:00";
 const baseUtcMs = Date.UTC(2026, 4, 19, 16, 0, 0);
 const hourMs = 60 * 60 * 1000;
@@ -153,6 +160,24 @@ const profiles: readonly MockPlaceProfile[] = [
 const defaultProfile = profiles[0]!;
 
 export function buildMockForecastInput(query: ForecastQueryInput): ForecastCalculationInput {
+  return buildForecastInputFromNormalizedWeather(query, {
+    hourlyWeather: generateMockHourlyWeather(query.horizon, {
+      placeName: query.name,
+      target: query.target,
+    }),
+    dailyWeather: generateMockDailyWeather(query.horizon, {
+      placeName: query.name,
+      target: query.target,
+    }),
+    isMock: true,
+    dataSourceLabel: "模拟天气数据",
+  });
+}
+
+export function buildForecastInputFromNormalizedWeather(
+  query: ForecastQueryInput,
+  weather: NormalizedForecastInputOptions,
+): ForecastCalculationInput {
   const profile = resolveProfile(query.name);
   const place: Place = {
     id: query.photoSpotId ?? query.locationId ?? `mock-${profile.key}`,
@@ -172,12 +197,13 @@ export function buildMockForecastInput(query: ForecastQueryInput): ForecastCalcu
     place,
     horizon: query.horizon,
     target: query.target,
-    hourlyWeather: generateMockHourlyWeather(query.horizon, options),
-    dailyWeather: generateMockDailyWeather(query.horizon, options),
+    hourlyWeather: weather.hourlyWeather,
+    dailyWeather: weather.dailyWeather,
     terrainSummary: generateMockTerrainSummary(place),
     astroSummaries: generateMockAstroSummaries(query.horizon, options),
     generatedAt,
-    isMock: true,
+    isMock: weather.isMock,
+    dataSourceLabel: weather.dataSourceLabel,
   };
 }
 
