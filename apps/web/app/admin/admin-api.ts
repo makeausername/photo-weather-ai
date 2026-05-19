@@ -33,6 +33,76 @@ export type SafeProviderConfig = {
   readonly updatedAt: string;
 };
 
+export type AdminLocation = {
+  readonly id: string;
+  readonly name: string;
+  readonly slug: string;
+  readonly province: string;
+  readonly city: string;
+  readonly district: string | null;
+  readonly address: string | null;
+  readonly latitudeGcj02: number;
+  readonly longitudeGcj02: number;
+  readonly latitudeWgs84: number;
+  readonly longitudeWgs84: number;
+  readonly elevation: number | null;
+  readonly locationType: string;
+  readonly source: string;
+  readonly isVerified: boolean;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
+
+export type AdminPhotoSpot = {
+  readonly id: string;
+  readonly locationId: string;
+  readonly name: string;
+  readonly slug: string;
+  readonly description: string | null;
+  readonly latitudeGcj02: number;
+  readonly longitudeGcj02: number;
+  readonly latitudeWgs84: number;
+  readonly longitudeWgs84: number;
+  readonly elevation: number | null;
+  readonly viewDirection: string;
+  readonly bestForSunrise: boolean;
+  readonly bestForSunset: boolean;
+  readonly bestForCloudSea: boolean;
+  readonly bestForStars: boolean;
+  readonly bestForMilkyWay: boolean;
+  readonly bestForSnow: boolean;
+  readonly accessNote: string | null;
+  readonly trafficNote: string | null;
+  readonly safetyNote: string | null;
+  readonly riskNote: string | null;
+  readonly isHot: boolean;
+  readonly isVerified: boolean;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly location?: AdminLocation;
+};
+
+export type AdminGeoSearchResult = {
+  readonly id: string;
+  readonly name: string;
+  readonly countryCode: string;
+  readonly province?: string;
+  readonly city?: string;
+  readonly district?: string;
+  readonly address?: string;
+  readonly coordinatesGcj02: {
+    readonly latitude: number;
+    readonly longitude: number;
+    readonly system: "gcj02";
+  };
+  readonly coordinatesWgs84: {
+    readonly latitude: number;
+    readonly longitude: number;
+    readonly system: "wgs84";
+  };
+  readonly source: string;
+};
+
 export type AdminAuditLog = {
   readonly id: string;
   readonly actorUserId: string | null;
@@ -186,7 +256,7 @@ export async function loginAdmin(email: string, password: string): Promise<Admin
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(errorText || "Admin login failed.");
+    throw new Error(errorText || "后台登录失败。");
   }
 
   const session = (await response.json()) as AdminAuthSession;

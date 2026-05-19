@@ -10,6 +10,22 @@ export type UserStatus = "active" | "disabled";
 
 export type ProviderType = "ai" | "weather" | "geo" | "terrain" | "storage" | "billing" | "sms";
 
+export type LocationType = "scenic_area" | "viewpoint" | "mountain" | "lake" | "city" | "custom";
+
+export type LocationSource = "manual" | "amap" | "user";
+
+export type ViewDirection =
+  | "north"
+  | "northeast"
+  | "east"
+  | "southeast"
+  | "south"
+  | "southwest"
+  | "west"
+  | "northwest"
+  | "all"
+  | "unknown";
+
 export type SettingValueType =
   | "string"
   | "number"
@@ -137,6 +153,55 @@ export type ApiUsageLogInput = {
   readonly errorMessage?: string | null;
 };
 
+export type LocationRecord = {
+  readonly id: string;
+  readonly name: string;
+  readonly slug: string;
+  readonly province: string;
+  readonly city: string;
+  readonly district: string | null;
+  readonly address: string | null;
+  readonly latitudeGcj02: number;
+  readonly longitudeGcj02: number;
+  readonly latitudeWgs84: number;
+  readonly longitudeWgs84: number;
+  readonly elevation: number | null;
+  readonly locationType: LocationType;
+  readonly source: LocationSource;
+  readonly isVerified: boolean;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+};
+
+export type PhotoSpotRecord = {
+  readonly id: string;
+  readonly locationId: string;
+  readonly name: string;
+  readonly slug: string;
+  readonly description: string | null;
+  readonly latitudeGcj02: number;
+  readonly longitudeGcj02: number;
+  readonly latitudeWgs84: number;
+  readonly longitudeWgs84: number;
+  readonly elevation: number | null;
+  readonly viewDirection: ViewDirection;
+  readonly bestForSunrise: boolean;
+  readonly bestForSunset: boolean;
+  readonly bestForCloudSea: boolean;
+  readonly bestForStars: boolean;
+  readonly bestForMilkyWay: boolean;
+  readonly bestForSnow: boolean;
+  readonly accessNote: string | null;
+  readonly trafficNote: string | null;
+  readonly safetyNote: string | null;
+  readonly riskNote: string | null;
+  readonly isHot: boolean;
+  readonly isVerified: boolean;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+  readonly location?: LocationRecord;
+};
+
 export type DatabaseClient = {
   readonly user?: {
     readonly findUnique: (args: any) => Promise<any>;
@@ -160,6 +225,25 @@ export type DatabaseClient = {
   };
   readonly apiUsageLog: {
     readonly create: (args: any) => Promise<any>;
+  };
+  readonly location?: {
+    readonly findUnique: (args: any) => Promise<any>;
+    readonly findMany: (args?: any) => Promise<any[]>;
+    readonly create: (args: any) => Promise<any>;
+    readonly update: (args: any) => Promise<any>;
+    readonly delete: (args: any) => Promise<any>;
+    readonly upsert: (args: any) => Promise<any>;
+  };
+  readonly photoSpot?: {
+    readonly findUnique: (args: any) => Promise<any>;
+    readonly findMany: (args?: any) => Promise<any[]>;
+    readonly create: (args: any) => Promise<any>;
+    readonly update: (args: any) => Promise<any>;
+    readonly delete: (args: any) => Promise<any>;
+    readonly upsert: (args: any) => Promise<any>;
+  };
+  readonly spotTag?: {
+    readonly upsert: (args: any) => Promise<any>;
   };
   readonly userSession?: {
     readonly create: (args: any) => Promise<any>;

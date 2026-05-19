@@ -2,18 +2,33 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import {
   assertProviderType,
   createAuditLog,
+  createLocation,
+  createPhotoSpot,
+  deleteLocation,
+  deletePhotoSpot,
   getProviderConfig,
+  getLocation,
+  getPhotoSpot,
+  listLocations,
+  listPhotoSpots,
   getSystemSetting,
   listAuditLogs,
   listProviderConfigs,
   listSystemSettings,
+  locationSources,
+  locationTypes,
   setSystemSetting,
   updateProviderConfig,
+  updateLocation,
+  updatePhotoSpot,
   validateProviderCode,
   validateSettingKey,
   validateSettingValue,
+  viewDirections,
 } from "@photo-weather/db";
 import type { DatabaseClient, JsonValue, ProviderType } from "@photo-weather/db";
+import { MockGeoProvider, validateCoordinates } from "@photo-weather/geo";
+import type { GeoProvider } from "@photo-weather/geo";
 import { z } from "zod";
 import type { AuthConfig } from "./auth-routes.js";
 import { requirePermission } from "./auth-routes.js";
@@ -44,7 +59,7 @@ const providerPatchSchema = z
     secretJson: jsonObjectSchema.nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
-    message: "At least one provider field must be provided.",
+    message: "请至少提供一个要更新的服务商字段。",
   });
 
 const listSettingsQuerySchema = z.object({
@@ -67,9 +82,131 @@ const auditLogsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 
+const slugSchema = z
+  .string({ required_error: "请填写 slug。" })
+  .trim()
+  .min(1, "请填写 slug。")
+  .max(120, "slug 不能超过 120 个字符。")
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "slug 只能使用小写字母、数字和连字符。");
+
+const requiredTextSchema = (fieldName: string, maxLength = 120) =>
+  z
+    .string({ required_error: `请填写${fieldName}。` })
+    .trim()
+    .min(1, `请填写${fieldName}。`)
+    .max(maxLength, `${fieldName}不能超过 ${maxLength} 个字符。`);
+
+const optionalTextSchema = (fieldName: string, maxLength = 1000) =>
+  z
+    .string()
+    .max(maxLength, `${fieldName}不能超过 ${maxLength} 个字符。`)
+    .nullable()
+    .optional()
+    .transform((value) => {
+      if (value === undefined) {
+        return undefined;
+      }
+
+      const trimmed = value?.trim() ?? "";
+      return trimmed ? trimmed : null;
+    });
+
+const latitudeSchema = z
+  .number({ invalid_type_error: "纬度必须是数字。" })
+  .finite("纬度必须是有效数字。")
+  .min(-90, "纬度不能小于 -90。")
+  .max(90, "纬度不能大于 90。");
+
+const longitudeSchema = z
+  .number({ invalid_type_error: "经度必须是数字。" })
+  .finite("经度必须是有效数字。")
+  .min(-180, "经度不能小于 -180。")
+  .max(180, "经度不能大于 180。");
+
+const elevationSchema = z
+  .number({ invalid_type_error: "海拔必须是数字。" })
+  .finite("海拔必须是有效数字。")
+  .min(-500, "海拔不能小于 -500 米。")
+  .max(9000, "海拔不能大于 9000 米。")
+  .nullable()
+  .optional();
+
+const locationPayloadSchema = z.object({
+  name: requiredTextSchema("地点名称"),
+  slug: slugSchema,
+  province: requiredTextSchema("省份"),
+  city: requiredTextSchema("城市"),
+  district: optionalTextSchema("区县", 120),
+  address: optionalTextSchema("详细地址", 500),
+  latitudeGcj02: latitudeSchema,
+  longitudeGcj02: longitudeSchema,
+  latitudeWgs84: latitudeSchema,
+  longitudeWgs84: longitudeSchema,
+  elevation: elevationSchema,
+  locationType: z.enum(locationTypes, {
+    invalid_type_error: "请选择地点类型。",
+    required_error: "请选择地点类型。",
+  }),
+  source: z.enum(locationSources, {
+    invalid_type_error: "请选择地点来源。",
+    required_error: "请选择地点来源。",
+  }),
+  isVerified: z.boolean().default(false),
+});
+
+const locationPatchSchema = locationPayloadSchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, "请至少提供一个要更新的地点字段。");
+
+const photoSpotPayloadSchema = z.object({
+  locationId: requiredTextSchema("所属地点"),
+  name: requiredTextSchema("机位名称"),
+  slug: slugSchema,
+  description: optionalTextSchema("机位说明", 2000),
+  latitudeGcj02: latitudeSchema,
+  longitudeGcj02: longitudeSchema,
+  latitudeWgs84: latitudeSchema,
+  longitudeWgs84: longitudeSchema,
+  elevation: elevationSchema,
+  viewDirection: z.enum(viewDirections, {
+    invalid_type_error: "请选择朝向。",
+    required_error: "请选择朝向。",
+  }),
+  bestForSunrise: z.boolean().default(false),
+  bestForSunset: z.boolean().default(false),
+  bestForCloudSea: z.boolean().default(false),
+  bestForStars: z.boolean().default(false),
+  bestForMilkyWay: z.boolean().default(false),
+  bestForSnow: z.boolean().default(false),
+  accessNote: optionalTextSchema("到达说明", 2000),
+  trafficNote: optionalTextSchema("交通说明", 2000),
+  safetyNote: optionalTextSchema("安全说明", 2000),
+  riskNote: optionalTextSchema("风险提示", 2000),
+  isHot: z.boolean().default(false),
+  isVerified: z.boolean().default(false),
+});
+
+const photoSpotPatchSchema = photoSpotPayloadSchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, "请至少提供一个要更新的机位字段。");
+
+const listLocationsQuerySchema = z.object({
+  q: z.string().trim().optional(),
+});
+
+const listPhotoSpotsQuerySchema = z.object({
+  locationId: z.string().trim().min(1).optional(),
+  q: z.string().trim().optional(),
+});
+
+const geoSearchQuerySchema = z.object({
+  q: z.string().trim().min(1, "请输入搜索关键词。"),
+});
+
 export type AdminRoutesOptions = {
   readonly dbClient?: DatabaseClient;
   readonly authConfig: AuthConfig;
+  readonly geoProvider?: GeoProvider;
 };
 
 function toAuditJson(value: unknown): JsonValue {
@@ -108,9 +245,44 @@ function sendError(reply: FastifyReply, statusCode: number, error: string, messa
   });
 }
 
+function validateCoordinatePair(input: {
+  readonly latitudeGcj02: number;
+  readonly longitudeGcj02: number;
+  readonly latitudeWgs84: number;
+  readonly longitudeWgs84: number;
+}): string | null {
+  const gcj02Validation = validateCoordinates(
+    {
+      latitude: input.latitudeGcj02,
+      longitude: input.longitudeGcj02,
+      system: "gcj02",
+    },
+    { expectedSystem: "gcj02" },
+  );
+  const wgs84Validation = validateCoordinates(
+    {
+      latitude: input.latitudeWgs84,
+      longitude: input.longitudeWgs84,
+      system: "wgs84",
+    },
+    { expectedSystem: "wgs84" },
+  );
+
+  if (!gcj02Validation.ok) {
+    return "GCJ-02 坐标不合法。";
+  }
+
+  if (!wgs84Validation.ok) {
+    return "WGS84 坐标不合法。";
+  }
+
+  return null;
+}
+
 export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOptions): void {
   const client = options.dbClient;
   const authConfig = options.authConfig;
+  const geoProvider = options.geoProvider ?? new MockGeoProvider();
 
   app.get("/admin", async (request, reply) => {
     const auth = await requirePermission(request, reply, client, authConfig, "admin.manage");
@@ -396,10 +568,324 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
         mode: "mock",
         providerType: request.params.providerType,
         providerCode: request.params.providerCode,
-        message: "Provider connection test is mocked in local development.",
+        message: "当前为本地模拟测试，未调用真实外部服务。",
       };
     },
   );
+
+  app.get("/admin/locations", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "locations.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedQuery = listLocationsQuerySchema.safeParse(request.query);
+    if (!parsedQuery.success) {
+      return sendZodError(reply, parsedQuery.error);
+    }
+
+    const locations = await listLocations({
+      search: parsedQuery.data.q,
+      client,
+    });
+
+    return { locations };
+  });
+
+  app.get<{ Params: { id: string } }>("/admin/locations/:id", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "locations.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const location = await getLocation(request.params.id, { client });
+    if (!location) {
+      return sendError(reply, 404, "location_not_found", "未找到地点。");
+    }
+
+    return { location };
+  });
+
+  app.post("/admin/locations", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "locations.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedBody = locationPayloadSchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return sendZodError(reply, parsedBody.error);
+    }
+
+    const coordinateError = validateCoordinatePair(parsedBody.data);
+    if (coordinateError) {
+      return sendError(reply, 400, "invalid_coordinates", coordinateError);
+    }
+
+    const location = await createLocation(parsedBody.data, { client });
+    await createAuditLog(
+      {
+        actorUserId: auth.auditActorUserId,
+        action: "location.create",
+        targetType: "location",
+        targetId: location.id,
+        afterJson: toAuditJson(location),
+        ipAddress: request.ip,
+        userAgent: request.headers["user-agent"] ?? null,
+      },
+      { client },
+    );
+
+    return reply.status(201).send({ location });
+  });
+
+  app.patch<{ Params: { id: string } }>("/admin/locations/:id", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "locations.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedBody = locationPatchSchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return sendZodError(reply, parsedBody.error);
+    }
+
+    const existingLocation = await getLocation(request.params.id, { client });
+    if (!existingLocation) {
+      return sendError(reply, 404, "location_not_found", "未找到地点。");
+    }
+
+    const coordinateError = validateCoordinatePair({
+      latitudeGcj02: parsedBody.data.latitudeGcj02 ?? existingLocation.latitudeGcj02,
+      longitudeGcj02: parsedBody.data.longitudeGcj02 ?? existingLocation.longitudeGcj02,
+      latitudeWgs84: parsedBody.data.latitudeWgs84 ?? existingLocation.latitudeWgs84,
+      longitudeWgs84: parsedBody.data.longitudeWgs84 ?? existingLocation.longitudeWgs84,
+    });
+    if (coordinateError) {
+      return sendError(reply, 400, "invalid_coordinates", coordinateError);
+    }
+
+    const location = await updateLocation(request.params.id, parsedBody.data, { client });
+    await createAuditLog(
+      {
+        actorUserId: auth.auditActorUserId,
+        action: "location.update",
+        targetType: "location",
+        targetId: location.id,
+        beforeJson: toAuditJson(existingLocation),
+        afterJson: toAuditJson(location),
+        ipAddress: request.ip,
+        userAgent: request.headers["user-agent"] ?? null,
+      },
+      { client },
+    );
+
+    return { location };
+  });
+
+  app.delete<{ Params: { id: string } }>("/admin/locations/:id", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "locations.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const existingLocation = await getLocation(request.params.id, { client });
+    if (!existingLocation) {
+      return sendError(reply, 404, "location_not_found", "未找到地点。");
+    }
+
+    const location = await deleteLocation(request.params.id, { client });
+    await createAuditLog(
+      {
+        actorUserId: auth.auditActorUserId,
+        action: "location.delete",
+        targetType: "location",
+        targetId: existingLocation.id,
+        beforeJson: toAuditJson(existingLocation),
+        afterJson: toAuditJson(location),
+        ipAddress: request.ip,
+        userAgent: request.headers["user-agent"] ?? null,
+      },
+      { client },
+    );
+
+    return { location };
+  });
+
+  app.get("/admin/photo-spots", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "photo_spots.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedQuery = listPhotoSpotsQuerySchema.safeParse(request.query);
+    if (!parsedQuery.success) {
+      return sendZodError(reply, parsedQuery.error);
+    }
+
+    const photoSpots = await listPhotoSpots({
+      locationId: parsedQuery.data.locationId,
+      search: parsedQuery.data.q,
+      client,
+    });
+
+    return { photoSpots };
+  });
+
+  app.get<{ Params: { id: string } }>("/admin/photo-spots/:id", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "photo_spots.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const photoSpot = await getPhotoSpot(request.params.id, { client });
+    if (!photoSpot) {
+      return sendError(reply, 404, "photo_spot_not_found", "未找到摄影机位。");
+    }
+
+    return { photoSpot };
+  });
+
+  app.post("/admin/photo-spots", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "photo_spots.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedBody = photoSpotPayloadSchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return sendZodError(reply, parsedBody.error);
+    }
+
+    const location = await getLocation(parsedBody.data.locationId, { client });
+    if (!location) {
+      return sendError(reply, 400, "invalid_location", "请选择有效的所属地点。");
+    }
+
+    const coordinateError = validateCoordinatePair(parsedBody.data);
+    if (coordinateError) {
+      return sendError(reply, 400, "invalid_coordinates", coordinateError);
+    }
+
+    const photoSpot = await createPhotoSpot(parsedBody.data, { client });
+    await createAuditLog(
+      {
+        actorUserId: auth.auditActorUserId,
+        action: "photo_spot.create",
+        targetType: "photo_spot",
+        targetId: photoSpot.id,
+        afterJson: toAuditJson(photoSpot),
+        ipAddress: request.ip,
+        userAgent: request.headers["user-agent"] ?? null,
+      },
+      { client },
+    );
+
+    return reply.status(201).send({ photoSpot });
+  });
+
+  app.patch<{ Params: { id: string } }>("/admin/photo-spots/:id", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "photo_spots.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedBody = photoSpotPatchSchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return sendZodError(reply, parsedBody.error);
+    }
+
+    const existingPhotoSpot = await getPhotoSpot(request.params.id, { client });
+    if (!existingPhotoSpot) {
+      return sendError(reply, 404, "photo_spot_not_found", "未找到摄影机位。");
+    }
+
+    if (parsedBody.data.locationId) {
+      const location = await getLocation(parsedBody.data.locationId, { client });
+      if (!location) {
+        return sendError(reply, 400, "invalid_location", "请选择有效的所属地点。");
+      }
+    }
+
+    const coordinateError = validateCoordinatePair({
+      latitudeGcj02: parsedBody.data.latitudeGcj02 ?? existingPhotoSpot.latitudeGcj02,
+      longitudeGcj02: parsedBody.data.longitudeGcj02 ?? existingPhotoSpot.longitudeGcj02,
+      latitudeWgs84: parsedBody.data.latitudeWgs84 ?? existingPhotoSpot.latitudeWgs84,
+      longitudeWgs84: parsedBody.data.longitudeWgs84 ?? existingPhotoSpot.longitudeWgs84,
+    });
+    if (coordinateError) {
+      return sendError(reply, 400, "invalid_coordinates", coordinateError);
+    }
+
+    const photoSpot = await updatePhotoSpot(request.params.id, parsedBody.data, { client });
+    await createAuditLog(
+      {
+        actorUserId: auth.auditActorUserId,
+        action: "photo_spot.update",
+        targetType: "photo_spot",
+        targetId: photoSpot.id,
+        beforeJson: toAuditJson(existingPhotoSpot),
+        afterJson: toAuditJson(photoSpot),
+        ipAddress: request.ip,
+        userAgent: request.headers["user-agent"] ?? null,
+      },
+      { client },
+    );
+
+    return { photoSpot };
+  });
+
+  app.delete<{ Params: { id: string } }>("/admin/photo-spots/:id", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "photo_spots.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const existingPhotoSpot = await getPhotoSpot(request.params.id, { client });
+    if (!existingPhotoSpot) {
+      return sendError(reply, 404, "photo_spot_not_found", "未找到摄影机位。");
+    }
+
+    const photoSpot = await deletePhotoSpot(request.params.id, { client });
+    await createAuditLog(
+      {
+        actorUserId: auth.auditActorUserId,
+        action: "photo_spot.delete",
+        targetType: "photo_spot",
+        targetId: existingPhotoSpot.id,
+        beforeJson: toAuditJson(existingPhotoSpot),
+        afterJson: toAuditJson(photoSpot),
+        ipAddress: request.ip,
+        userAgent: request.headers["user-agent"] ?? null,
+      },
+      { client },
+    );
+
+    return { photoSpot };
+  });
+
+  app.get("/admin/geo/search", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "locations.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedQuery = geoSearchQuerySchema.safeParse(request.query);
+    if (!parsedQuery.success) {
+      return sendZodError(reply, parsedQuery.error);
+    }
+
+    const results = await geoProvider.searchPlace(parsedQuery.data.q, {
+      countryCode: "CN",
+      locale: "zh-CN",
+      limit: 8,
+    });
+
+    return {
+      provider: "mock",
+      results,
+    };
+  });
 
   app.get("/admin/audit-logs", async (request, reply) => {
     const auth = await requirePermission(request, reply, client, authConfig, "audit.read");

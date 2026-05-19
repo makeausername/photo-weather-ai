@@ -24,20 +24,32 @@ function stringifyJson(value: JsonValue | null): string {
 function parseJsonObject(input: string): Record<string, JsonValue> {
   const parsed = JSON.parse(input) as JsonValue;
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new Error("Use a JSON object.");
+    throw new Error("请填写 JSON 对象。");
   }
 
   return parsed as Record<string, JsonValue>;
 }
 
+const providerTypeLabels: Record<string, string> = {
+  ai: "AI 服务商",
+  weather: "天气服务商",
+  geo: "地理服务商",
+  terrain: "地形服务商",
+  storage: "存储服务商",
+  billing: "支付服务商",
+  sms: "短信服务商",
+};
+
 function ProviderStatus({ provider }: { readonly provider: SafeProviderConfig }) {
   return (
     <div className="adminPillRow">
       <span className={provider.enabled ? "adminPill success" : "adminPill"}>
-        {provider.enabled ? "enabled" : "disabled"}
+        {provider.enabled ? "已启用" : "未启用"}
       </span>
-      <span className="adminPill">priority {provider.priority}</span>
-      <span className="adminPill">{provider.providerType}</span>
+      <span className="adminPill">优先级 {provider.priority}</span>
+      <span className="adminPill">
+        {providerTypeLabels[provider.providerType] ?? provider.providerType}
+      </span>
       <span className="adminPill">{provider.providerCode}</span>
     </div>
   );
@@ -57,7 +69,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     : "/admin/providers";
 
   async function loadProviders() {
-    setLoadState({ status: "saving", message: "Loading providers..." });
+    setLoadState({ status: "saving", message: "正在加载服务商配置..." });
     try {
       const response = await adminApiFetch<ProvidersResponse>(path);
       setProviders(response.providers);
@@ -73,7 +85,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       setPriorityDrafts(
         Object.fromEntries(response.providers.map((provider) => [provider.id, provider.priority])),
       );
-      setLoadState({ status: "saved", message: "Providers loaded." });
+      setLoadState({ status: "saved", message: "服务商配置已加载。" });
     } catch (error) {
       setLoadState({ status: "error", message: (error as Error).message });
     }
@@ -95,7 +107,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   async function saveProvider(provider: SafeProviderConfig) {
     setStateByProvider((current) => ({
       ...current,
-      [provider.id]: { status: "saving", message: "Saving..." },
+      [provider.id]: { status: "saving", message: "正在保存..." },
     }));
 
     try {
@@ -125,7 +137,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       }));
       setStateByProvider((current) => ({
         ...current,
-        [provider.id]: { status: "saved", message: "Saved." },
+        [provider.id]: { status: "saved", message: "已保存。" },
       }));
     } catch (error) {
       setStateByProvider((current) => ({
@@ -138,7 +150,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   async function testProvider(provider: SafeProviderConfig) {
     setStateByProvider((current) => ({
       ...current,
-      [provider.id]: { status: "testing", message: "Testing..." },
+      [provider.id]: { status: "testing", message: "正在执行本地模拟测试..." },
     }));
 
     try {
@@ -166,8 +178,8 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       {Object.entries(groupedProviders).map(([group, groupProviders]) => (
         <section key={group} className="adminSection">
           <div className="adminSectionHeader">
-            <h2>{group}</h2>
-            <span>{groupProviders.length} providers</span>
+            <h2>{providerTypeLabels[group] ?? group}</h2>
+            <span>{groupProviders.length} 个服务商</span>
           </div>
           <div className="providerGrid">
             {groupProviders.map((provider) => (
@@ -188,12 +200,12 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                         }))
                       }
                     />
-                    Enabled
+                    启用
                   </label>
                 </div>
                 <ProviderStatus provider={provider} />
                 <label className="fieldLabel">
-                  Priority
+                  优先级
                   <input
                     type="number"
                     value={priorityDrafts[provider.id] ?? provider.priority}
@@ -206,7 +218,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                   />
                 </label>
                 <label className="fieldLabel">
-                  Config JSON
+                  配置 JSON
                   <textarea
                     value={configDrafts[provider.id] ?? "{}"}
                     onChange={(event) =>
@@ -218,9 +230,9 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                   />
                 </label>
                 <label className="fieldLabel">
-                  Secret JSON
+                  密钥 JSON
                   <textarea
-                    placeholder='{"apiKey":"new secret value"}'
+                    placeholder='{"apiKey":"新的密钥值"}'
                     value={secretDrafts[provider.id] ?? ""}
                     onChange={(event) =>
                       setSecretDrafts((current) => ({
@@ -231,19 +243,19 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                   />
                 </label>
                 <div className="maskedSecrets">
-                  <span>Masked secrets</span>
+                  <span>已脱敏密钥</span>
                   <code>{stringifyJson(provider.maskedSecretJson)}</code>
                 </div>
                 <div className="adminActions">
                   <button type="button" onClick={() => void saveProvider(provider)}>
-                    Save
+                    保存
                   </button>
                   <button
                     type="button"
                     className="secondaryButton"
                     onClick={() => void testProvider(provider)}
                   >
-                    Test connection
+                    本地测试
                   </button>
                 </div>
                 {stateByProvider[provider.id]?.message ? (

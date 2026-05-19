@@ -33,6 +33,34 @@ enum SettingValueType {
   secret
 }
 
+enum LocationType {
+  scenic_area
+  viewpoint
+  mountain
+  lake
+  city
+  custom
+}
+
+enum LocationSource {
+  manual
+  amap
+  user
+}
+
+enum ViewDirection {
+  north
+  northeast
+  east
+  southeast
+  south
+  southwest
+  west
+  northwest
+  all
+  unknown
+}
+
 model User {
   id           String          @id @default(cuid())
   email        String          @unique
@@ -210,4 +238,121 @@ model ApiUsageLog {
   @@index([requestId])
   @@index([createdAt])
   @@map("api_usage_logs")
+}
+
+model Location {
+  id             String         @id @default(cuid())
+  name           String
+  slug           String         @unique
+  province       String
+  city           String
+  district       String?
+  address        String?
+  latitudeGcj02  Float          @map("latitude_gcj02")
+  longitudeGcj02 Float          @map("longitude_gcj02")
+  latitudeWgs84  Float          @map("latitude_wgs84")
+  longitudeWgs84 Float          @map("longitude_wgs84")
+  elevation      Float?
+  locationType   LocationType   @default(scenic_area) @map("location_type")
+  source         LocationSource @default(manual)
+  isVerified     Boolean        @default(false) @map("is_verified")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+  photoSpots     PhotoSpot[]
+
+  @@index([province, city])
+  @@index([locationType])
+  @@index([source])
+  @@index([isVerified])
+  @@map("locations")
+}
+
+model PhotoSpot {
+  id               String                @id @default(cuid())
+  locationId       String                @map("location_id")
+  name             String
+  slug             String
+  description      String?
+  latitudeGcj02    Float                 @map("latitude_gcj02")
+  longitudeGcj02   Float                 @map("longitude_gcj02")
+  latitudeWgs84    Float                 @map("latitude_wgs84")
+  longitudeWgs84   Float                 @map("longitude_wgs84")
+  elevation        Float?
+  viewDirection    ViewDirection         @default(unknown) @map("view_direction")
+  bestForSunrise   Boolean               @default(false) @map("best_for_sunrise")
+  bestForSunset    Boolean               @default(false) @map("best_for_sunset")
+  bestForCloudSea  Boolean               @default(false) @map("best_for_cloud_sea")
+  bestForStars     Boolean               @default(false) @map("best_for_stars")
+  bestForMilkyWay  Boolean               @default(false) @map("best_for_milky_way")
+  bestForSnow      Boolean               @default(false) @map("best_for_snow")
+  accessNote       String?               @map("access_note")
+  trafficNote      String?               @map("traffic_note")
+  safetyNote       String?               @map("safety_note")
+  riskNote         String?               @map("risk_note")
+  isHot            Boolean               @default(false) @map("is_hot")
+  isVerified       Boolean               @default(false) @map("is_verified")
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+  location         Location              @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  tags             PhotoSpotTag[]
+  directionProfile SpotDirectionProfile?
+  lightPollution   SpotLightPollution?
+
+  @@unique([locationId, slug])
+  @@index([slug])
+  @@index([locationId])
+  @@index([isHot])
+  @@index([isVerified])
+  @@map("photo_spots")
+}
+
+model SpotTag {
+  id          String         @id @default(cuid())
+  code        String         @unique
+  name        String
+  description String?
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  photoSpots  PhotoSpotTag[]
+
+  @@map("spot_tags")
+}
+
+model PhotoSpotTag {
+  id          String    @id @default(cuid())
+  photoSpotId String    @map("photo_spot_id")
+  spotTagId   String    @map("spot_tag_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  photoSpot   PhotoSpot @relation(fields: [photoSpotId], references: [id], onDelete: Cascade)
+  spotTag     SpotTag   @relation(fields: [spotTagId], references: [id], onDelete: Cascade)
+
+  @@unique([photoSpotId, spotTagId])
+  @@index([spotTagId])
+  @@map("photo_spot_tags")
+}
+
+model SpotDirectionProfile {
+  id                  String    @id @default(cuid())
+  photoSpotId         String    @unique @map("photo_spot_id")
+  sunriseDirectionNote String?   @map("sunrise_direction_note")
+  sunsetDirectionNote  String?   @map("sunset_direction_note")
+  milkyWayDirectionNote String?  @map("milky_way_direction_note")
+  blockedDirectionsJson Json?    @map("blocked_directions_json")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  photoSpot           PhotoSpot @relation(fields: [photoSpotId], references: [id], onDelete: Cascade)
+
+  @@map("spot_direction_profiles")
+}
+
+model SpotLightPollution {
+  id                 String    @id @default(cuid())
+  photoSpotId        String    @unique @map("photo_spot_id")
+  bortleLevel        Int?      @map("bortle_level")
+  lightPollutionNote String?   @map("light_pollution_note")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  photoSpot          PhotoSpot @relation(fields: [photoSpotId], references: [id], onDelete: Cascade)
+
+  @@map("spot_light_pollution")
 }

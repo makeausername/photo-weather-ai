@@ -24,7 +24,7 @@ function stringifyValue(value: JsonValue): string {
 function parseSettingValue(valueType: string, input: string): JsonValue {
   if (valueType === "boolean") {
     if (input !== "true" && input !== "false") {
-      throw new Error("Use true or false for boolean settings.");
+      throw new Error("布尔值请填写 true 或 false。");
     }
     return input === "true";
   }
@@ -32,7 +32,7 @@ function parseSettingValue(valueType: string, input: string): JsonValue {
   if (valueType === "number") {
     const value = Number(input);
     if (!Number.isFinite(value)) {
-      throw new Error("Use a finite number.");
+      throw new Error("请填写有效数字。");
     }
     return value;
   }
@@ -48,6 +48,18 @@ function StatusPill({ children }: { readonly children: string }) {
   return <span className="adminPill">{children}</span>;
 }
 
+const groupLabels: Record<string, string> = {
+  site: "站点",
+  locale: "本地化",
+  map: "地图",
+  ai: "AI",
+  weather: "天气",
+  scoring: "评分",
+  storage: "存储",
+  billing: "支付",
+  deployment: "部署",
+};
+
 export function AdminSettingsClient() {
   const [settings, setSettings] = useState<SafeSystemSetting[]>([]);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
@@ -55,7 +67,7 @@ export function AdminSettingsClient() {
   const [loadState, setLoadState] = useState<SaveState>({ status: "idle" });
 
   async function loadSettings() {
-    setLoadState({ status: "saving", message: "Loading settings..." });
+    setLoadState({ status: "saving", message: "正在加载系统设置..." });
     try {
       const response = await adminApiFetch<SettingsResponse>("/admin/settings");
       setSettings(response.settings);
@@ -64,7 +76,7 @@ export function AdminSettingsClient() {
           response.settings.map((setting) => [setting.key, stringifyValue(setting.valueJson)]),
         ),
       );
-      setLoadState({ status: "saved", message: "Settings loaded." });
+      setLoadState({ status: "saved", message: "系统设置已加载。" });
     } catch (error) {
       setLoadState({ status: "error", message: (error as Error).message });
     }
@@ -86,7 +98,7 @@ export function AdminSettingsClient() {
   async function saveSetting(setting: SafeSystemSetting) {
     setStatusByKey((current) => ({
       ...current,
-      [setting.key]: { status: "saving", message: "Saving..." },
+      [setting.key]: { status: "saving", message: "正在保存..." },
     }));
 
     try {
@@ -103,7 +115,7 @@ export function AdminSettingsClient() {
       );
       setStatusByKey((current) => ({
         ...current,
-        [setting.key]: { status: "saved", message: "Saved." },
+        [setting.key]: { status: "saved", message: "已保存。" },
       }));
     } catch (error) {
       setStatusByKey((current) => ({
@@ -121,8 +133,8 @@ export function AdminSettingsClient() {
       {Object.entries(groupedSettings).map(([group, groupSettings]) => (
         <section key={group} className="adminSection">
           <div className="adminSectionHeader">
-            <h2>{group}</h2>
-            <span>{groupSettings.length} settings</span>
+            <h2>{groupLabels[group] ?? group}</h2>
+            <span>{groupSettings.length} 项设置</span>
           </div>
           <div className="settingsTable">
             {groupSettings.map((setting) => (
@@ -133,16 +145,16 @@ export function AdminSettingsClient() {
                   <div className="adminPillRow">
                     <StatusPill>{setting.key}</StatusPill>
                     <StatusPill>{setting.valueType}</StatusPill>
-                    <StatusPill>{setting.isPublic ? "public" : "server"}</StatusPill>
-                    <StatusPill>{setting.isSecret ? "secret" : "plain"}</StatusPill>
-                    <StatusPill>{setting.isEditable ? "editable" : "locked"}</StatusPill>
+                    <StatusPill>{setting.isPublic ? "公开" : "服务端"}</StatusPill>
+                    <StatusPill>{setting.isSecret ? "密钥" : "普通"}</StatusPill>
+                    <StatusPill>{setting.isEditable ? "可编辑" : "锁定"}</StatusPill>
                   </div>
                 </div>
                 <div className="settingsEditor">
                   <textarea
                     value={editValues[setting.key] ?? ""}
                     disabled={!setting.isEditable}
-                    aria-label={`Value for ${setting.key}`}
+                    aria-label={`${setting.key} 的配置值`}
                     onChange={(event) =>
                       setEditValues((current) => ({
                         ...current,
@@ -158,7 +170,7 @@ export function AdminSettingsClient() {
                       }
                       onClick={() => void saveSetting(setting)}
                     >
-                      Save
+                      保存
                     </button>
                     {statusByKey[setting.key]?.message ? (
                       <span className={`adminInlineStatus ${statusByKey[setting.key]?.status}`}>

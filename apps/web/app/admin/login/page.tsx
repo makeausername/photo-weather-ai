@@ -13,13 +13,13 @@ export default function AdminLoginPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setStatus("Signing in...");
+    setStatus("正在登录...");
 
     try {
       const session = await loginAdmin(email, password);
       if (!session.permissions.includes("admin.manage")) {
         clearAdminSession();
-        setStatus("This account does not have admin console access.");
+        setStatus("当前账号没有后台访问权限。");
         return;
       }
 
@@ -34,14 +34,12 @@ export default function AdminLoginPage() {
     <main className="adminLoginShell">
       <form className="adminLoginForm" onSubmit={(event) => void handleSubmit(event)}>
         <div>
-          <p className="eyebrow">Admin login</p>
-          <h1>Photo Weather AI</h1>
-          <p>
-            Sign in with the first super admin account created by the deployment bootstrap script.
-          </p>
+          <p className="eyebrow">后台登录</p>
+          <h1>风光天气 AI</h1>
+          <p>请使用部署初始化脚本创建的超级管理员账号登录。</p>
         </div>
         <label className="fieldLabel">
-          Email
+          邮箱
           <input
             type="email"
             autoComplete="email"
@@ -51,7 +49,7 @@ export default function AdminLoginPage() {
           />
         </label>
         <label className="fieldLabel">
-          Password
+          密码
           <input
             type="password"
             autoComplete="current-password"
@@ -61,7 +59,7 @@ export default function AdminLoginPage() {
           />
         </label>
         <div className="adminActions">
-          <button type="submit">Login</button>
+          <button type="submit">登录</button>
         </div>
         {status ? <div className="adminInlineStatus">{status}</div> : null}
       </form>

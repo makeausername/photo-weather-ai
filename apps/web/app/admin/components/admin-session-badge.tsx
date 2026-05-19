@@ -29,9 +29,9 @@ export function AdminSessionBadge() {
 
   return (
     <div className="adminSessionBadge">
-      <span>{user?.displayName || user?.email || "Admin"}</span>
+      <span>{user?.displayName || user?.email || "管理员"}</span>
       <button type="button" onClick={() => void logoutAdmin()}>
-        Logout
+        退出
       </button>
     </div>
   );

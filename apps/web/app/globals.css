@@ -66,6 +66,39 @@ h1 {
   max-width: 640px;
 }
 
+.homeSearch {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  margin-top: 32px;
+  max-width: 680px;
+}
+
+.homeSearch input,
+.homeSearch button {
+  border-radius: 8px;
+  font: inherit;
+  min-height: 48px;
+}
+
+.homeSearch input {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  color: var(--foreground);
+  flex: 1;
+  min-width: 0;
+  padding: 0 14px;
+}
+
+.homeSearch button {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 800;
+  padding: 0 20px;
+}
+
 .statusGrid {
   display: grid;
   gap: 1px;
@@ -94,6 +127,11 @@ h1 {
 
   .statusGrid {
     grid-template-columns: 1fr;
+  }
+
+  .homeSearch {
+    align-items: stretch;
+    display: grid;
   }
 }
 
@@ -231,7 +269,7 @@ h1 {
 .adminOverviewGrid {
   display: grid;
   gap: 14px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .adminOverviewItem,
@@ -339,7 +377,10 @@ h1 {
 
 .settingsEditor textarea,
 .fieldLabel textarea,
-.fieldLabel input {
+.fieldLabel input,
+.fieldLabel select,
+.adminToolbar input,
+.adminToolbar select {
   background: #fbfcfb;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -378,12 +419,25 @@ h1 {
   padding: 9px 12px;
 }
 
+.adminToolbar button,
+.rowActions button {
+  background: #1f6f68;
+  border: 1px solid #1f6f68;
+  border-radius: 6px;
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 700;
+  padding: 9px 12px;
+}
+
 .adminActions button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
 
-.adminActions .secondaryButton {
+.adminActions .secondaryButton,
+.adminToolbar .secondaryButton,
+.rowActions .secondaryButton {
   background: #ffffff;
   color: #1f6f68;
 }
@@ -476,6 +530,146 @@ h1 {
   text-transform: uppercase;
 }
 
+.adminTabs,
+.adminToolbar,
+.rowActions,
+.checkboxGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.adminTabs a {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--foreground);
+  font-weight: 800;
+  padding: 9px 12px;
+  text-decoration: none;
+}
+
+.adminTabs a.active {
+  background: #1f6f68;
+  border-color: #1f6f68;
+  color: #ffffff;
+}
+
+.adminToolbar {
+  border-bottom: 1px solid var(--line);
+  padding: 16px 18px;
+}
+
+.adminToolbar input {
+  max-width: 420px;
+}
+
+.adminDataTable {
+  display: grid;
+}
+
+.adminDataRow {
+  align-items: start;
+  display: grid;
+  gap: 12px;
+  grid-template-columns:
+    minmax(150px, 1fr) minmax(180px, 1fr) minmax(170px, 1fr) minmax(170px, 1fr)
+    minmax(160px, 1fr) minmax(120px, auto);
+  padding: 14px 18px;
+}
+
+.adminDataRow + .adminDataRow,
+.adminEmpty {
+  border-top: 1px solid var(--line);
+}
+
+.photoSpotRow {
+  grid-template-columns:
+    minmax(150px, 0.8fr) minmax(120px, 0.5fr) minmax(180px, 1fr)
+    minmax(170px, 0.8fr) minmax(180px, 1fr) minmax(120px, auto);
+}
+
+.adminDataHead {
+  background: #f0f3ef;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.adminDataRow span,
+.adminDataRow small {
+  min-width: 0;
+}
+
+.adminDataRow span {
+  display: grid;
+  gap: 5px;
+}
+
+.adminDataRow small {
+  color: var(--muted);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.adminEmpty {
+  color: var(--muted);
+  padding: 18px;
+}
+
+.adminForm {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.adminFormGrid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.wideField {
+  grid-column: 1 / -1;
+}
+
+.checkboxGrid {
+  align-items: center;
+}
+
+.adminDialogBackdrop {
+  align-items: center;
+  background: rgb(10 18 15 / 48%);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 20;
+}
+
+.adminDialog {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 18px 60px rgb(10 18 15 / 20%);
+  display: grid;
+  gap: 12px;
+  max-width: 460px;
+  padding: 20px;
+  width: 100%;
+}
+
+.adminDialog h2,
+.adminDialog p {
+  margin: 0;
+}
+
+.adminDialog p {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
 @media (max-width: 980px) {
   .adminShell {
     grid-template-columns: 1fr;
@@ -493,7 +687,10 @@ h1 {
   .adminOverviewGrid,
   .providerGrid,
   .settingsRow,
-  .auditRow {
+  .auditRow,
+  .adminDataRow,
+  .photoSpotRow,
+  .adminFormGrid {
     grid-template-columns: 1fr;
   }
 

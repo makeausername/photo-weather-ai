@@ -184,7 +184,174 @@ describe("admin config routes", () => {
       mode: "mock",
       providerType: "weather",
       providerCode: "qweather",
-      message: "Provider connection test is mocked in local development.",
+      message: "当前为本地模拟测试，未调用真实外部服务。",
+    });
+  });
+
+  it("lists seeded Chinese locations and validates unsafe coordinates", async () => {
+    const { client } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: "/admin/locations",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(listResponse.statusCode).toBe(200);
+    expect(listResponse.json().locations.map((location: any) => location.name)).toContain("黄山");
+
+    const invalidResponse = await app.inject({
+      method: "POST",
+      url: "/admin/locations",
+      headers: adminAuthorizationHeader(),
+      payload: {
+        name: "测试地点",
+        slug: "test-location",
+        province: "浙江省",
+        city: "杭州市",
+        district: null,
+        address: null,
+        latitudeGcj02: 120,
+        longitudeGcj02: 120.1,
+        latitudeWgs84: 30.2,
+        longitudeWgs84: 120.1,
+        elevation: null,
+        locationType: "city",
+        source: "manual",
+        isVerified: false,
+      },
+    });
+
+    expect(invalidResponse.statusCode).toBe(400);
+    expect(invalidResponse.json()).toMatchObject({
+      error: "validation_error",
+    });
+  });
+
+  it("creates a location and a photo spot with authenticated audit logs", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const locationResponse = await app.inject({
+      method: "POST",
+      url: "/admin/locations",
+      headers: adminAuthorizationHeader(),
+      payload: {
+        name: "测试山地",
+        slug: "test-mountain",
+        province: "四川省",
+        city: "阿坝州",
+        district: "小金县",
+        address: "测试地址",
+        latitudeGcj02: 31.002,
+        longitudeGcj02: 102.002,
+        latitudeWgs84: 31,
+        longitudeWgs84: 102,
+        elevation: 3200,
+        locationType: "mountain",
+        source: "manual",
+        isVerified: false,
+      },
+    });
+
+    expect(locationResponse.statusCode).toBe(201);
+    const location = locationResponse.json().location;
+    expect(location).toMatchObject({
+      name: "测试山地",
+      source: "manual",
+      isVerified: false,
+    });
+
+    const photoSpotResponse = await app.inject({
+      method: "POST",
+      url: "/admin/photo-spots",
+      headers: adminAuthorizationHeader(),
+      payload: {
+        locationId: location.id,
+        name: "测试机位",
+        slug: "test-spot",
+        description: "测试说明",
+        latitudeGcj02: 31.002,
+        longitudeGcj02: 102.002,
+        latitudeWgs84: 31,
+        longitudeWgs84: 102,
+        elevation: 3210,
+        viewDirection: "east",
+        bestForSunrise: true,
+        bestForSunset: false,
+        bestForCloudSea: true,
+        bestForStars: false,
+        bestForMilkyWay: false,
+        bestForSnow: true,
+        accessNote: "测试到达说明",
+        trafficNote: "测试交通说明",
+        safetyNote: "测试安全说明",
+        riskNote: "测试风险提示",
+        isHot: false,
+        isVerified: false,
+      },
+    });
+
+    expect(photoSpotResponse.statusCode).toBe(201);
+    expect(photoSpotResponse.json().photoSpot).toMatchObject({
+      name: "测试机位",
+      viewDirection: "east",
+      bestForSunrise: true,
+    });
+    expect(state.auditLogs.map((log) => log.action)).toEqual([
+      "photo_spot.create",
+      "location.create",
+    ]);
+  });
+
+  it("rejects photo spot creation for an unknown location", async () => {
+    const { client } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/photo-spots",
+      headers: adminAuthorizationHeader(),
+      payload: {
+        locationId: "missing-location",
+        name: "无效机位",
+        slug: "invalid-spot",
+        latitudeGcj02: 30,
+        longitudeGcj02: 120,
+        latitudeWgs84: 29.998,
+        longitudeWgs84: 119.995,
+        viewDirection: "east",
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      error: "invalid_location",
+      message: "请选择有效的所属地点。",
+    });
+  });
+
+  it("returns deterministic local geo search results without external services", async () => {
+    const { client } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/geo/search?q=%E9%BB%84%E5%B1%B1",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().results[0]).toMatchObject({
+      name: "黄山",
+      source: "mock",
+      coordinatesGcj02: {
+        system: "gcj02",
+      },
+      coordinatesWgs84: {
+        system: "wgs84",
+      },
     });
   });
 });

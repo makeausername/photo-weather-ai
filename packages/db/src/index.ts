@@ -17,11 +17,17 @@ export { disconnectPrismaClient, getPrismaClient } from "./client.js";
 export {
   assertProviderType,
   assertSettingValueType,
+  isLocationSource,
+  isLocationType,
   isProviderType,
   isSettingValueType,
+  isViewDirection,
+  locationSources,
+  locationTypes,
   providerTypes,
   settingValueTypes,
   userStatuses,
+  viewDirections,
 } from "./constants.js";
 export {
   createOrUpdateSuperAdmin,
@@ -29,6 +35,18 @@ export {
   readCreateAdminEnv,
   runCreateAdminFromEnv,
 } from "./create-admin.js";
+export {
+  createLocation,
+  createPhotoSpot,
+  deleteLocation,
+  deletePhotoSpot,
+  getLocation,
+  getPhotoSpot,
+  listLocations,
+  listPhotoSpots,
+  updateLocation,
+  updatePhotoSpot,
+} from "./locations.js";
 export {
   getProviderConfig,
   listProviderConfigs,
@@ -62,6 +80,10 @@ export type {
   JsonObject,
   JsonPrimitive,
   JsonValue,
+  LocationRecord,
+  LocationSource,
+  LocationType,
+  PhotoSpotRecord,
   ProviderConfigRecord,
   ProviderType,
   SafeProviderConfig,
@@ -72,6 +94,7 @@ export type {
   UserRecord,
   UserSessionRecord,
   UserStatus,
+  ViewDirection,
 } from "./types.js";
 
 export type DatabasePackageStatus = {

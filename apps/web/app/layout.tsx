@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Photo Weather AI",
-  description: "Self-hostable weather decision system for landscape photography.",
+  title: "风光天气 AI",
+  description: "面向中国大陆风光摄影的天气决策助手。",
 };
 
 type RootLayoutProps = {

@@ -3,10 +3,7 @@ import { AdminShell } from "../components/admin-shell";
 
 export default function AdminAuditPage() {
   return (
-    <AdminShell
-      title="Audit logs"
-      description="Recent admin configuration changes. Metadata is redacted before persistence."
-    >
+    <AdminShell title="审计日志" description="查看近期后台操作记录。审计元数据入库前会先脱敏。">
       <AdminAuditClient />
     </AdminShell>
   );

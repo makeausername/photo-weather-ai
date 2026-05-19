@@ -53,7 +53,7 @@ export function AdminAuthGate({ children }: AdminAuthGateProps) {
   }, [pathname, router]);
 
   if (!checked) {
-    return <main className="adminAuthLoading">Checking admin session...</main>;
+    return <main className="adminAuthLoading">正在检查后台登录状态...</main>;
   }
 
   return children;

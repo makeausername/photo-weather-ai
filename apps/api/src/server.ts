@@ -25,7 +25,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
 
   app.addHook("onRequest", async (_request, reply) => {
     reply.header("Access-Control-Allow-Origin", "*");
-    reply.header("Access-Control-Allow-Methods", "GET,PATCH,POST,OPTIONS");
+    reply.header("Access-Control-Allow-Methods", "GET,PATCH,POST,DELETE,OPTIONS");
     reply.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
   });
 
@@ -53,7 +53,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
   });
 
   registerAuthRoutes(app, { dbClient: options.dbClient, authConfig });
-  registerAdminRoutes(app, { dbClient: options.dbClient, authConfig });
+  registerAdminRoutes(app, { dbClient: options.dbClient, authConfig, geoProvider });
 
   return app;
 }

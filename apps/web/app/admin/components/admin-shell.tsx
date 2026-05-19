@@ -3,14 +3,11 @@ import type { ReactNode } from "react";
 import { AdminSessionBadge } from "./admin-session-badge";
 
 const adminLinks = [
-  { href: "/admin", label: "Overview" },
-  { href: "/admin/settings", label: "Settings" },
-  { href: "/admin/providers", label: "Providers" },
-  { href: "/admin/providers/ai", label: "AI" },
-  { href: "/admin/providers/weather", label: "Weather" },
-  { href: "/admin/providers/geo", label: "Geo" },
-  { href: "/admin/providers/storage", label: "Storage" },
-  { href: "/admin/audit", label: "Audit" },
+  { href: "/admin", label: "控制台" },
+  { href: "/admin/settings", label: "系统设置" },
+  { href: "/admin/providers", label: "服务商配置" },
+  { href: "/admin/locations", label: "地点与机位" },
+  { href: "/admin/audit", label: "审计日志" },
 ] as const;
 
 type AdminShellProps = {
@@ -22,9 +19,9 @@ type AdminShellProps = {
 export function AdminShell({ title, description, children }: AdminShellProps) {
   return (
     <main className="adminShell">
-      <aside className="adminSidebar" aria-label="Admin navigation">
+      <aside className="adminSidebar" aria-label="后台导航">
         <Link href="/" className="adminBrand">
-          Photo Weather AI
+          风光天气 AI
         </Link>
         <nav className="adminNav">
           {adminLinks.map((link) => (
@@ -36,12 +33,12 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
       </aside>
       <section className="adminMain">
         <div className="adminNotice">
-          Admin access is protected by JWT login and database-backed RBAC. TODO: harden browser
-          token storage before production release.
+          后台访问已接入 JWT 登录和数据库
+          RBAC。当前浏览器令牌存储仍是早期实现，上线前需要加固为生产级会话方案。
         </div>
         <header className="adminHeader">
           <div>
-            <p className="eyebrow">Admin configuration</p>
+            <p className="eyebrow">后台管理</p>
             <h1>{title}</h1>
             <p>{description}</p>
           </div>
