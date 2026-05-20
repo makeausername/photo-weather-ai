@@ -686,9 +686,12 @@ function DataStatusPanel({ result }: { readonly result: ForecastCalculationResul
       <dl className="mt-4 grid gap-3 text-sm">
         <SummaryItem label="天文数据" value="本地算法计算" />
         <SummaryItem label="天气数据" value={result.dataSourceLabel} />
-        <SummaryItem label="地形数据" value="本地模拟数据" />
+        <SummaryItem label="地形数据" value={result.terrainAnalysis.dataSourceLabelZh} />
         <SummaryItem label="计算基准" value={result.calendarBasis.forecastStartLabel} />
       </dl>
+      <p className="mt-3 text-xs leading-5 text-muted-foreground">
+        {result.terrainAnalysis.honestyNoteZh}
+      </p>
     </Card>
   );
 }
@@ -710,9 +713,23 @@ function CalculationBasisPanel({ result }: { readonly result: ForecastCalculatio
         <SummaryItem label="时区" value={basis.timezoneLabel} />
         <SummaryItem label="WGS84 经纬度" value={formatWgs84Coordinates(basis)} />
         <SummaryItem label="坐标来源" value={basis.coordinateSource} />
+        <SummaryItem
+          label="机位海拔"
+          value={formatMeters(result.terrainAnalysis.terrainProfile.locationElevation)}
+        />
+        <SummaryItem
+          label="周边5公里高差"
+          value={formatMeters(result.terrainAnalysis.terrainProfile.elevationDiff5km)}
+        />
+        <SummaryItem
+          label="云海地形潜力"
+          value={terrainPotentialLabel(
+            result.terrainAnalysis.terrainProfile.terrainCloudSeaPotential,
+          )}
+        />
         <SummaryItem label="天文数据" value="本地算法计算" />
         <SummaryItem label="天气数据" value={result.dataSourceLabel} />
-        <SummaryItem label="地形数据" value="本地模拟数据" />
+        <SummaryItem label="地形数据来源" value={result.terrainAnalysis.dataSourceLabelZh} />
       </dl>
 
       <div className="mt-3 rounded-lg border border-border bg-muted p-3">
@@ -759,6 +776,22 @@ function ScoreCard({ score }: { readonly score: ForecastScore }) {
 
 function formatCoordinate(value: number): string {
   return Number.isFinite(value) ? value.toFixed(5) : "未提供";
+}
+
+function formatMeters(value: number): string {
+  return Number.isFinite(value) ? `${Math.round(value)} 米` : "暂无数据";
+}
+
+function terrainPotentialLabel(
+  potential: ForecastCalculationResult["terrainAnalysis"]["terrainProfile"]["terrainCloudSeaPotential"],
+): string {
+  if (potential === "high") {
+    return "高";
+  }
+  if (potential === "medium") {
+    return "中";
+  }
+  return "低";
 }
 
 function formatWgs84Coordinates(result: ForecastCalculationResult["calendarBasis"]): string {

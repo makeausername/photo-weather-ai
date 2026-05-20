@@ -23,7 +23,7 @@ import {
 } from "./helpers.js";
 
 const mockDataNotice =
-  "当前天气数据和地形数据为本地模拟数据，天文数据由本地算法按 WGS84 坐标计算；整体结果仍不代表真实预报。";
+  "天气数据：本地模拟数据；地形数据：本地模拟地形数据，真实 DEM / 海拔数据将在后续接入；天文数据：本地算法按 WGS84 坐标计算。当前结果不代表真实预报。";
 
 type ForecastTimeRange = {
   readonly forecastStart: string;
@@ -73,10 +73,12 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
     recommendationLabel,
     summary: buildSummary(input, overallScore, recommendationLabel, scores),
     scores,
+    terrainSummary: input.terrainSummary,
+    terrainAnalysis: input.terrainAnalysis,
     astroSummaries: input.astroSummaries,
     bestWindows: buildBestWindows(input, scores),
     riskFlags,
-    keyReasons: buildKeyReasons(scores),
+    keyReasons: buildKeyReasons(input, scores),
     photographyAdvice: buildPhotographyAdvice(input, scores, riskFlags),
     dataNotice: buildDataNotice(input),
     isMock: input.isMock,
@@ -86,30 +88,29 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
 }
 
 export function calculateSunriseGlowScore(input: ForecastCalculationInput): ForecastScore {
+  const horizonAngle = input.terrainAnalysis.horizonProfile.sunriseHorizonAngle;
   const candidate = findBestGlowCandidate(input, "sunrise");
   const window = candidate?.weatherWindow ?? input.hourlyWeather.slice(0, 6);
-  const score = calculateGlowWindowScore(
-    window,
-    input.terrainSummary.sunriseHorizonAngle,
-    "sunrise",
-  );
-  const risks = glowRisks(window, input.terrainSummary.sunriseHorizonAngle, "朝霞");
-  const reasons = glowReasons(window, "朝霞");
+  const score = calculateGlowWindowScore(window, horizonAngle, "sunrise");
+  const risks = glowRisks(window, horizonAngle, "朝霞");
+  const reasons = [...glowReasons(window, "朝霞"), horizonReason("日出方向", horizonAngle)];
 
   return makeScore("sunriseGlow", "朝霞", score, reasons, risks);
 }
 
 export function calculateSunsetGlowScore(input: ForecastCalculationInput): ForecastScore {
+  const horizonAngle = input.terrainAnalysis.horizonProfile.sunsetHorizonAngle;
   const candidate = findBestGlowCandidate(input, "sunset");
   const window = candidate?.weatherWindow ?? input.hourlyWeather.slice(-6);
-  const score = calculateGlowWindowScore(window, input.terrainSummary.sunsetHorizonAngle, "sunset");
-  const risks = glowRisks(window, input.terrainSummary.sunsetHorizonAngle, "晚霞");
-  const reasons = glowReasons(window, "晚霞");
+  const score = calculateGlowWindowScore(window, horizonAngle, "sunset");
+  const risks = glowRisks(window, horizonAngle, "晚霞");
+  const reasons = [...glowReasons(window, "晚霞"), horizonReason("日落方向", horizonAngle)];
 
   return makeScore("sunsetGlow", "晚霞", score, reasons, risks);
 }
 
 export function calculateCloudSeaScore(input: ForecastCalculationInput): ForecastScore {
+  const terrainProfile = input.terrainAnalysis.terrainProfile;
   const window = morningWindow(input.hourlyWeather);
   const humidity = averageHourly(window, (hour) => hour.humidity);
   const lowCloud = averageHourly(window, (hour) => hour.cloudLow);
@@ -117,7 +118,14 @@ export function calculateCloudSeaScore(input: ForecastCalculationInput): Forecas
   const dewPointSpread = averageHourly(window, (hour) =>
     typeof hour.dewPoint === "number" ? hour.temperature - hour.dewPoint : undefined,
   );
-  const terrainScore = clampScore((input.terrainSummary.elevationDiff5km / 1500) * 100);
+  const terrainDiffScore = clampScore((terrainProfile.elevationDiff5km / 1500) * 100);
+  const terrainPotentialScore = terrainCloudSeaPotentialScore(
+    terrainProfile.terrainCloudSeaPotential,
+  );
+  const terrainScore = averageWeightedScore([
+    { score: terrainDiffScore, weight: 0.44 },
+    { score: terrainPotentialScore, weight: 0.56 },
+  ]);
   const lowCloudScore =
     lowCloud >= 30 && lowCloud <= 68
       ? 92
@@ -134,8 +142,9 @@ export function calculateCloudSeaScore(input: ForecastCalculationInput): Forecas
   ]);
   const reasons = [
     `清晨平均湿度约 ${Math.round(humidity)}%，有利于山谷水汽聚集。`,
-    `5公里范围海拔落差约 ${Math.round(input.terrainSummary.elevationDiff5km)} 米，具备云海地形基础。`,
+    `5公里范围海拔落差约 ${Math.round(terrainProfile.elevationDiff5km)} 米，云海地形潜力为${terrainPotentialLabel(terrainProfile.terrainCloudSeaPotential)}。`,
     `清晨低云量约 ${Math.round(lowCloud)}%，可作为云海形成的本地模拟信号。`,
+    terrainProfile.terrainNoteZh,
   ];
   const risks = [
     ...(lowCloud > 82 && humidity > 88 ? ["低云和湿度同时偏高，山顶可能被云雾包裹。"] : []),
@@ -146,6 +155,7 @@ export function calculateCloudSeaScore(input: ForecastCalculationInput): Forecas
 }
 
 export function calculateWhiteoutRiskScore(input: ForecastCalculationInput): ForecastScore {
+  const terrainProfile = input.terrainAnalysis.terrainProfile;
   const window = morningWindow(input.hourlyWeather);
   const lowCloud = averageHourly(window, (hour) => hour.cloudLow);
   const humidity = averageHourly(window, (hour) => hour.humidity);
@@ -160,6 +170,7 @@ export function calculateWhiteoutRiskScore(input: ForecastCalculationInput): For
   const reasons = [
     `低云量约 ${Math.round(lowCloud)}%，湿度约 ${Math.round(humidity)}%。`,
     `模拟能见度约 ${Math.round(visibility)} 公里，用于估算白墙概率。`,
+    `地形辅助提示：${terrainProfile.terrainNoteZh} 该项只作本地模拟参考，不代表真实 DEM 精度。`,
   ];
   const risks = [
     ...(riskScore >= 70 ? ["白墙风险偏高，山顶视野可能被低云遮挡。"] : []),
@@ -201,22 +212,29 @@ export function calculateStarsScore(input: ForecastCalculationInput): ForecastSc
 }
 
 export function calculateMilkyWayScore(input: ForecastCalculationInput): ForecastScore {
+  const milkyWayHorizonAngle = input.terrainAnalysis.horizonProfile.milkyWayHorizonAngle;
   const candidate = findBestMilkyWayCandidate(input);
   const hasWindow = Boolean(candidate);
   const window = candidate?.weatherWindow ?? nightWindow(input.hourlyWeather);
   const cloudClearScore = 100 - averageHourly(window, (hour) => hour.cloudTotal);
   const moonScore = calculateMoonScoreForWindow(window, input.astroSummaries);
-  const score = candidate?.score ?? 18;
+  const horizonPenalty =
+    typeof milkyWayHorizonAngle === "number" ? Math.max(0, milkyWayHorizonAngle - 8) * 3 : 0;
+  const score = clampScore((candidate?.score ?? 18) - horizonPenalty);
   const reasons = [
     hasWindow
       ? `本地算法银河窗口为 ${formatChineseTimeRange(candidate!.startTime, candidate!.endTime)}。`
       : "本地天文算法未给出可用银河窗口。",
     `银河窗口附近云量和月光综合折算得分 ${Math.round(score)}。`,
+    horizonReason("银河方向", milkyWayHorizonAngle),
   ];
   const risks = [
     ...(!hasWindow ? ["缺少银河窗口，只能按星空条件保守参考。"] : []),
     ...(cloudClearScore < 45 ? ["银河窗口附近云量偏多，银心细节可能不明显。"] : []),
     ...(moonScore < 45 ? ["月光偏强，银河对比度会降低。"] : []),
+    ...(typeof milkyWayHorizonAngle === "number" && milkyWayHorizonAngle > 10
+      ? ["银河方向地平线遮挡偏高，低仰角银心或地景衔接可能受山体影响。"]
+      : []),
   ];
 
   return makeScore("milkyWay", "银河", score, reasons, risks);
@@ -350,6 +368,38 @@ function makeScore(
   };
 }
 
+function terrainCloudSeaPotentialScore(
+  potential: ForecastCalculationInput["terrainAnalysis"]["terrainProfile"]["terrainCloudSeaPotential"],
+): number {
+  if (potential === "high") {
+    return 90;
+  }
+  if (potential === "medium") {
+    return 64;
+  }
+  return 34;
+}
+
+function terrainPotentialLabel(
+  potential: ForecastCalculationInput["terrainAnalysis"]["terrainProfile"]["terrainCloudSeaPotential"],
+): string {
+  if (potential === "high") {
+    return "高";
+  }
+  if (potential === "medium") {
+    return "中";
+  }
+  return "低";
+}
+
+function horizonReason(label: string, horizonAngle: number | undefined): string {
+  if (typeof horizonAngle !== "number" || !Number.isFinite(horizonAngle)) {
+    return `${label}暂无可用地平线遮挡角，本次不额外扣减地形遮挡。`;
+  }
+
+  return `${label}本地模拟地平线遮挡角约 ${horizonAngle.toFixed(1)}°，用于辅助判断低角度光线和构图遮挡。`;
+}
+
 function calculateGlowWindowScore(
   window: readonly NormalizedHourlyWeather[],
   horizonAngle: number | undefined,
@@ -429,8 +479,8 @@ function findBestGlowCandidate(
 ): ScoredForecastWindow | undefined {
   const horizonAngle =
     kind === "sunrise"
-      ? input.terrainSummary.sunriseHorizonAngle
-      : input.terrainSummary.sunsetHorizonAngle;
+      ? input.terrainAnalysis.horizonProfile.sunriseHorizonAngle
+      : input.terrainAnalysis.horizonProfile.sunsetHorizonAngle;
   const candidates = buildGlowCandidates(input, kind).map((candidate) => ({
     ...candidate,
     score: calculateGlowWindowScore(candidate.weatherWindow, horizonAngle, kind),
@@ -663,7 +713,7 @@ function buildBestWindows(
   }
 
   const cloudSeaHour = pickHighestScoredHour(morningWindow(input.hourlyWeather), (hour) =>
-    cloudSeaHourScore(hour, input.terrainSummary.elevationDiff5km),
+    cloudSeaHourScore(hour, input.terrainAnalysis.terrainProfile.elevationDiff5km),
   );
   if (cloudSeaHour) {
     const startTime = cloudSeaHour.time;
@@ -750,8 +800,12 @@ function buildRiskFlags(
   return flags;
 }
 
-function buildKeyReasons(scores: ForecastCalculationResult["scores"]): readonly string[] {
+function buildKeyReasons(
+  input: ForecastCalculationInput,
+  scores: ForecastCalculationResult["scores"],
+): readonly string[] {
   return [
+    `地形参考：机位海拔约 ${Math.round(input.terrainAnalysis.terrainProfile.locationElevation)} 米，5公里高差约 ${Math.round(input.terrainAnalysis.terrainProfile.elevationDiff5km)} 米。`,
     ...scores.cloudSea.reasons.slice(0, 1),
     ...scores.sunriseGlow.reasons.slice(0, 1),
     ...scores.transparency.reasons.slice(0, 1),
@@ -944,7 +998,7 @@ function buildDataNotice(input: ForecastCalculationInput): string {
     return mockDataNotice;
   }
 
-  return `数据来源：${input.dataSourceLabel}`;
+  return `天气数据：${input.dataSourceLabel}；地形数据：${input.terrainAnalysis.dataSourceLabelZh}；天文数据：本地算法按 WGS84 坐标计算。`;
 }
 
 function getShanghaiHour(time: string): number {

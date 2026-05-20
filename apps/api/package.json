@@ -17,6 +17,7 @@
     "@photo-weather/geo": "workspace:*",
     "@photo-weather/scoring": "workspace:*",
     "@photo-weather/shared": "workspace:*",
+    "@photo-weather/terrain": "workspace:*",
     "@photo-weather/weather": "workspace:*",
     "fastify": "4.27.0",
     "zod": "3.23.8"

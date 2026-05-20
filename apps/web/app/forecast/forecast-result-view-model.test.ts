@@ -63,6 +63,54 @@ const baseResult: ForecastCalculationResult = {
     milkyWay: score("milkyWay", "银河", 68),
     transparency: score("transparency", "通透度", 72),
   },
+  terrainSummary: {
+    locationElevation: 1860,
+    minElevation1km: 980,
+    minElevation3km: 520,
+    minElevation5km: 380,
+    maxElevation5km: 1864,
+    avgElevation5km: 1125,
+    elevationDiff5km: 1484,
+    valleyDirectionZh: "东南",
+    ridgeDirectionZh: "西北-东南",
+    terrainCloudSeaPotential: "high",
+    terrainNoteZh: "本地模拟地形显示山顶与周边谷地高差明显。",
+    sunriseHorizonAngle: 4.8,
+    sunsetHorizonAngle: 5.5,
+    milkyWayHorizonAngle: 7.2,
+    blockedDirectionsZh: ["西北", "东北"],
+    obstructionNoteZh: "本地模拟地形显示主要方向地平遮挡较低。",
+    dataSource: "mock_terrain",
+    dataSourceLabelZh: "本地模拟地形数据",
+    isMock: true,
+    honestyNoteZh: "地形数据：本地模拟地形数据，真实 DEM / 海拔数据将在后续接入。",
+  },
+  terrainAnalysis: {
+    terrainProfile: {
+      locationElevation: 1860,
+      minElevation1km: 980,
+      minElevation3km: 520,
+      minElevation5km: 380,
+      maxElevation5km: 1864,
+      avgElevation5km: 1125,
+      elevationDiff5km: 1484,
+      valleyDirectionZh: "东南",
+      ridgeDirectionZh: "西北-东南",
+      terrainCloudSeaPotential: "high",
+      terrainNoteZh: "本地模拟地形显示山顶与周边谷地高差明显。",
+    },
+    horizonProfile: {
+      sunriseHorizonAngle: 4.8,
+      sunsetHorizonAngle: 5.5,
+      milkyWayHorizonAngle: 7.2,
+      blockedDirectionsZh: ["西北", "东北"],
+      obstructionNoteZh: "本地模拟地形显示主要方向地平遮挡较低。",
+    },
+    dataSource: "mock_terrain",
+    dataSourceLabelZh: "本地模拟地形数据",
+    isMock: true,
+    honestyNoteZh: "地形数据：本地模拟地形数据，真实 DEM / 海拔数据将在后续接入。",
+  },
   astroSummaries: [
     {
       date: "2026-05-20",
@@ -173,6 +221,7 @@ describe("forecast result target-aware view model", () => {
       "transparency",
     ]);
     expect(viewModel.detailSections.map((section) => section.title)).toContain("天文数据");
+    expect(viewModel.detailSections.map((section) => section.title)).toContain("地形摘要");
     expect(viewModel.detailSections.map((section) => section.title)).toContain("关键依据");
     expect(viewModel.riskSections.map((section) => section.title)).toContain("风险提示");
     expect(viewModel.adviceSections.map((section) => section.title)).toContain("拍摄建议");
@@ -196,6 +245,14 @@ describe("forecast result target-aware view model", () => {
       "transparency",
     ]);
     expect(viewModel.bestWindows.map((window) => window.target)).toEqual(["cloud_sea"]);
+    expect(viewModel.detailSections.map((section) => section.title)).toEqual(
+      expect.arrayContaining([
+        "地形与海拔参考",
+        "山谷高差",
+        "云海地形潜力",
+        "白墙风险辅助判断",
+      ]),
+    );
     expect(viewModel.hiddenModuleKeys).toEqual(
       expect.arrayContaining(["stars", "milkyWay", "astronomy"]),
     );
@@ -212,7 +269,14 @@ describe("forecast result target-aware view model", () => {
       "最佳霞光窗口",
     ]);
     expect(viewModel.detailSections.map((section) => section.title)).toEqual(
-      expect.arrayContaining(["朝霞判断依据", "晚霞判断依据", "晨昏时间"]),
+      expect.arrayContaining([
+        "朝霞判断依据",
+        "晚霞判断依据",
+        "日出方向遮挡",
+        "日落方向遮挡",
+        "地形遮挡提示",
+        "晨昏时间",
+      ]),
     );
     expect(viewModel.bestWindows.every((window) => window.target === "glow")).toBe(true);
     expect(viewModel.scoreCards.map((card) => card.key)).toEqual([
@@ -233,7 +297,14 @@ describe("forecast result target-aware view model", () => {
       "银河窗口",
     ]);
     expect(viewModel.detailSections.map((section) => section.title)).toEqual(
-      expect.arrayContaining(["月相与月亮照明", "天文黑夜", "银河方向 / 银河窗口"]),
+      expect.arrayContaining([
+        "月相与月亮照明",
+        "天文黑夜",
+        "银河方向 / 银河窗口",
+        "银河方向遮挡",
+        "地平线遮挡提示",
+        "山体遮挡风险",
+      ]),
     );
     expect(viewModel.scoreCards.map((card) => card.key)).toEqual([
       "stars",
@@ -249,7 +320,8 @@ describe("forecast result target-aware view model", () => {
     const viewModel = buildForecastResultViewModel(resultForTarget("astro"), "astro");
 
     expect(viewModel.dataNotice).toContain("天气数据：本地模拟数据");
-    expect(viewModel.dataNotice).toContain("地形数据：本地模拟数据");
+    expect(viewModel.dataNotice).toContain("地形数据：本地模拟地形数据");
+    expect(viewModel.dataNotice).toContain("真实 DEM / 海拔数据将在后续接入");
     expect(viewModel.dataNotice).toContain("天文数据：本地算法计算");
     expect(viewModel.dataNotice).toContain("不代表真实预报");
   });

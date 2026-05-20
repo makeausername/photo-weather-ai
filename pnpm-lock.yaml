@@ -68,6 +68,9 @@ importers:
       '@photo-weather/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@photo-weather/terrain':
+        specifier: workspace:*
+        version: link:../../packages/terrain
       '@photo-weather/weather':
         specifier: workspace:*
         version: link:../../packages/weather
@@ -196,6 +199,9 @@ importers:
       '@photo-weather/shared':
         specifier: workspace:*
         version: link:../shared
+      '@photo-weather/terrain':
+        specifier: workspace:*
+        version: link:../terrain
       '@photo-weather/weather':
         specifier: workspace:*
         version: link:../weather

@@ -20,6 +20,7 @@
     "@photo-weather/astro": "workspace:*",
     "@photo-weather/calendar": "workspace:*",
     "@photo-weather/shared": "workspace:*",
+    "@photo-weather/terrain": "workspace:*",
     "@photo-weather/weather": "workspace:*"
   }
 }

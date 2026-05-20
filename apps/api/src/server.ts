@@ -4,6 +4,7 @@ import { MockAIProvider } from "@photo-weather/ai";
 import type { DatabaseClient } from "@photo-weather/db";
 import { MockGeoProvider } from "@photo-weather/geo";
 import type { GeoProvider } from "@photo-weather/geo";
+import type { TerrainProvider } from "@photo-weather/terrain";
 import { createWeatherProvider, type WeatherProvider } from "@photo-weather/weather";
 import { registerAdminRoutes } from "./admin-routes.js";
 import type { AuthConfig } from "./auth-routes.js";
@@ -17,6 +18,7 @@ export type ApiServerOptions = {
   readonly authConfig?: AuthConfig;
   readonly geoProvider?: GeoProvider;
   readonly weatherProvider?: WeatherProvider;
+  readonly terrainProvider?: TerrainProvider;
   readonly env?: NodeJS.ProcessEnv;
   readonly logger?: boolean;
 };
@@ -93,6 +95,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
   registerForecastRoutes(app, {
     dbClient: options.dbClient,
     weatherProvider,
+    terrainProvider: options.terrainProvider,
     env: options.env,
   });
   registerSearchRoutes(app, {

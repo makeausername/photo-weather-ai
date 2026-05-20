@@ -92,18 +92,46 @@ export type NormalizedDailyWeather = {
 
 export type TerrainCloudSeaPotential = "low" | "medium" | "high";
 
-export type TerrainSummary = {
+export type TerrainDataSource = "mock_terrain" | "open_meteo_elevation";
+
+export type TerrainProfileSummary = {
   readonly locationElevation: number;
   readonly minElevation1km: number;
   readonly minElevation3km: number;
   readonly minElevation5km: number;
   readonly maxElevation5km: number;
+  readonly avgElevation5km: number;
   readonly elevationDiff5km: number;
-  readonly valleyDirection?: string;
+  readonly valleyDirectionZh?: string;
+  readonly ridgeDirectionZh?: string;
+  readonly terrainCloudSeaPotential: TerrainCloudSeaPotential;
+  readonly terrainNoteZh: string;
+};
+
+export type HorizonProfileSummary = {
   readonly sunriseHorizonAngle?: number;
   readonly sunsetHorizonAngle?: number;
-  readonly terrainCloudSeaPotential: TerrainCloudSeaPotential;
+  readonly milkyWayHorizonAngle?: number;
+  readonly blockedDirectionsZh: readonly string[];
+  readonly obstructionNoteZh: string;
 };
+
+export type TerrainAnalysisSummary = {
+  readonly terrainProfile: TerrainProfileSummary;
+  readonly horizonProfile: HorizonProfileSummary;
+  readonly dataSource: TerrainDataSource;
+  readonly dataSourceLabelZh: string;
+  readonly isMock: boolean;
+  readonly honestyNoteZh: string;
+};
+
+export type TerrainSummary = TerrainProfileSummary &
+  HorizonProfileSummary & {
+    readonly dataSource: TerrainDataSource;
+    readonly dataSourceLabelZh: string;
+    readonly isMock: boolean;
+    readonly honestyNoteZh: string;
+  };
 
 export type AstroSummary = {
   readonly date: string;
@@ -143,6 +171,7 @@ export type ForecastCalculationInput = {
   readonly hourlyWeather: readonly NormalizedHourlyWeather[];
   readonly dailyWeather: readonly NormalizedDailyWeather[];
   readonly terrainSummary: TerrainSummary;
+  readonly terrainAnalysis: TerrainAnalysisSummary;
   readonly astroSummaries: readonly AstroSummary[];
   readonly generatedAt: string;
   readonly isMock: boolean;
@@ -203,6 +232,8 @@ export type ForecastCalculationResult = {
   readonly recommendationLabel: string;
   readonly summary: string;
   readonly scores: ForecastScoreSet;
+  readonly terrainSummary: TerrainSummary;
+  readonly terrainAnalysis: TerrainAnalysisSummary;
   readonly astroSummaries: readonly AstroSummary[];
   readonly bestWindows: readonly ForecastTimeWindow[];
   readonly riskFlags: readonly ForecastRiskFlag[];

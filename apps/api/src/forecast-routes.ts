@@ -10,6 +10,7 @@ import {
 import { createRuleBasedForecastExplanation, type ForecastAiExplanation } from "@photo-weather/ai";
 import type { DatabaseClient } from "@photo-weather/db";
 import { buildForecastInputFromNormalizedWeather, calculateForecast } from "@photo-weather/scoring";
+import { MockTerrainProvider, type TerrainProvider } from "@photo-weather/terrain";
 import { createWeatherProvider, type WeatherProvider } from "@photo-weather/weather";
 import { z, type ZodError } from "zod";
 import {
@@ -21,6 +22,7 @@ import {
 export type ForecastRoutesOptions = {
   readonly dbClient?: DatabaseClient;
   readonly weatherProvider?: WeatherProvider;
+  readonly terrainProvider?: TerrainProvider;
   readonly env?: NodeJS.ProcessEnv;
 };
 
@@ -62,6 +64,7 @@ export function registerForecastRoutes(
   options: ForecastRoutesOptions = {},
 ): void {
   const weatherProvider = options.weatherProvider ?? createWeatherProvider();
+  const terrainProvider = options.terrainProvider ?? new MockTerrainProvider();
   const env = options.env ?? process.env;
 
   app.post("/forecast/validate-query", async (request, reply) => {
@@ -86,7 +89,12 @@ export function registerForecastRoutes(
     }
 
     const { useAiExplanation, ...query } = parsedBody.data;
-    const result = await calculateForecastResultOrReply(query, weatherProvider, reply);
+    const result = await calculateForecastResultOrReply(
+      query,
+      weatherProvider,
+      terrainProvider,
+      reply,
+    );
     if (!result) {
       return reply;
     }
@@ -131,7 +139,12 @@ export function registerForecastRoutes(
       return sendZodError(reply, parsedBody.error);
     }
 
-    const result = await calculateForecastResultOrReply(parsedBody.data, weatherProvider, reply);
+    const result = await calculateForecastResultOrReply(
+      parsedBody.data,
+      weatherProvider,
+      terrainProvider,
+      reply,
+    );
     if (!result) {
       return reply;
     }
@@ -174,10 +187,11 @@ export function registerForecastRoutes(
 async function calculateForecastResultOrReply(
   query: ForecastQueryInput,
   weatherProvider: WeatherProvider,
+  terrainProvider: TerrainProvider,
   reply: FastifyReply,
 ): Promise<ForecastCalculationResult | null> {
   try {
-    return await calculateForecastResult(query, weatherProvider);
+    return await calculateForecastResult(query, weatherProvider, terrainProvider);
   } catch (error) {
     const message = (error as Error).message;
     if (message === forecastDateRangeErrorMessage) {
@@ -202,6 +216,7 @@ async function calculateForecastResultOrReply(
 async function calculateForecastResult(
   query: ForecastQueryInput,
   weatherProvider: WeatherProvider,
+  terrainProvider: TerrainProvider,
 ): Promise<ForecastCalculationResult> {
   const forecastRange = buildForecastDateRange(query.horizon);
   const coordinates = {
@@ -209,7 +224,14 @@ async function calculateForecastResult(
     longitude: query.longitudeWgs84,
     system: "wgs84" as const,
   };
-  const [hourlyWeather, dailyWeather] = await Promise.all([
+  const terrainInput = {
+    locationName: query.name,
+    coordinate: {
+      ...coordinates,
+      name: query.name,
+    },
+  };
+  const [hourlyWeather, dailyWeather, terrainProfile, horizonProfile] = await Promise.all([
     weatherProvider.getHourlyForecast(coordinates, {
       hours: forecastRange.horizonHours,
       forecastStart: forecastRange.forecastStart,
@@ -222,7 +244,17 @@ async function calculateForecastResult(
       targetDates: forecastRange.targetDates,
       timezone: forecastRange.timezone,
     }),
+    terrainProvider.buildTerrainProfile(terrainInput),
+    terrainProvider.buildHorizonProfile(terrainInput),
   ]);
+  const terrainAnalysis = {
+    terrainProfile,
+    horizonProfile,
+    dataSource: "mock_terrain" as const,
+    dataSourceLabelZh: "本地模拟地形数据",
+    isMock: true,
+    honestyNoteZh: "地形数据：本地模拟地形数据，真实 DEM / 海拔数据将在后续接入。",
+  };
   const calculationInput = buildForecastInputFromNormalizedWeather(
     query,
     {
@@ -233,6 +265,7 @@ async function calculateForecastResult(
     },
     {
       forecastRange,
+      terrainAnalysis,
     },
   );
 

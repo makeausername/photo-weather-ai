@@ -9,6 +9,7 @@ import type {
   NormalizedDailyWeather,
   NormalizedHourlyWeather,
   Place,
+  TerrainAnalysisSummary,
   TerrainSummary,
 } from "@photo-weather/shared";
 import {
@@ -34,6 +35,7 @@ import {
   getSunTimes,
   getTwilightTimes,
 } from "@photo-weather/astro";
+import { buildMockTerrainAnalysis } from "@photo-weather/terrain";
 import { clampScore } from "./helpers.js";
 
 type MockPlaceProfile = {
@@ -41,14 +43,6 @@ type MockPlaceProfile = {
   readonly adminArea: string;
   readonly locality: string;
   readonly elevation: number;
-  readonly minElevation1km: number;
-  readonly minElevation3km: number;
-  readonly minElevation5km: number;
-  readonly maxElevation5km: number;
-  readonly valleyDirection: string;
-  readonly sunriseHorizonAngle: number;
-  readonly sunsetHorizonAngle: number;
-  readonly terrainCloudSeaPotential: "low" | "medium" | "high";
   readonly humidityBase: number;
   readonly lowCloudBase: number;
   readonly midCloudBase: number;
@@ -80,6 +74,7 @@ export type ForecastInputBuildOptions = {
   readonly forecastRange?: ForecastDateRange;
   readonly now?: CalendarDateInput;
   readonly timezone?: string;
+  readonly terrainAnalysis?: TerrainAnalysisSummary;
 };
 
 const profiles: readonly MockPlaceProfile[] = [
@@ -88,14 +83,6 @@ const profiles: readonly MockPlaceProfile[] = [
     adminArea: "安徽省",
     locality: "黄山市",
     elevation: 1860,
-    minElevation1km: 980,
-    minElevation3km: 520,
-    minElevation5km: 380,
-    maxElevation5km: 1864,
-    valleyDirection: "东南",
-    sunriseHorizonAngle: 4.8,
-    sunsetHorizonAngle: 5.5,
-    terrainCloudSeaPotential: "high",
     humidityBase: 72,
     lowCloudBase: 38,
     midCloudBase: 34,
@@ -110,14 +97,6 @@ const profiles: readonly MockPlaceProfile[] = [
     adminArea: "河南省",
     locality: "洛阳市",
     elevation: 2190,
-    minElevation1km: 1280,
-    minElevation3km: 780,
-    minElevation5km: 560,
-    maxElevation5km: 2217,
-    valleyDirection: "西南",
-    sunriseHorizonAngle: 6.2,
-    sunsetHorizonAngle: 7.4,
-    terrainCloudSeaPotential: "high",
     humidityBase: 66,
     lowCloudBase: 30,
     midCloudBase: 38,
@@ -132,14 +111,6 @@ const profiles: readonly MockPlaceProfile[] = [
     adminArea: "江西省",
     locality: "上饶市",
     elevation: 1600,
-    minElevation1km: 870,
-    minElevation3km: 510,
-    minElevation5km: 410,
-    maxElevation5km: 1819,
-    valleyDirection: "东北",
-    sunriseHorizonAngle: 8.4,
-    sunsetHorizonAngle: 6.5,
-    terrainCloudSeaPotential: "medium",
     humidityBase: 80,
     lowCloudBase: 52,
     midCloudBase: 36,
@@ -154,14 +125,6 @@ const profiles: readonly MockPlaceProfile[] = [
     adminArea: "江西省",
     locality: "萍乡市",
     elevation: 1918,
-    minElevation1km: 1120,
-    minElevation3km: 720,
-    minElevation5km: 610,
-    maxElevation5km: 1918,
-    valleyDirection: "东南",
-    sunriseHorizonAngle: 3.7,
-    sunsetHorizonAngle: 4.6,
-    terrainCloudSeaPotential: "high",
     humidityBase: 58,
     lowCloudBase: 22,
     midCloudBase: 25,
@@ -201,6 +164,7 @@ export function buildMockForecastInput(
     },
     {
       forecastRange,
+      terrainAnalysis: options.terrainAnalysis,
     },
   );
 }
@@ -228,6 +192,15 @@ export function buildForecastInputFromNormalizedWeather(
     },
   };
   const generationOptions = { placeName: query.name, target: query.target, forecastRange };
+  const terrainAnalysis =
+    options.terrainAnalysis ??
+    buildMockTerrainAnalysis({
+      locationName: query.name,
+      coordinate: {
+        ...place.coordinates,
+        name: query.name,
+      },
+    });
 
   return {
     place,
@@ -236,7 +209,8 @@ export function buildForecastInputFromNormalizedWeather(
     calendarBasis: buildCalculationBasis(query, forecastRange),
     hourlyWeather: weather.hourlyWeather,
     dailyWeather: weather.dailyWeather,
-    terrainSummary: generateMockTerrainSummary(place),
+    terrainSummary: flattenTerrainAnalysis(terrainAnalysis),
+    terrainAnalysis,
     astroSummaries: generateLocalAstroSummaries(query.horizon, {
       ...generationOptions,
       latitudeWgs84: query.latitudeWgs84,
@@ -369,19 +343,39 @@ export function generateMockDailyWeather(
 }
 
 export function generateMockTerrainSummary(place: Place): TerrainSummary {
-  const profile = resolveProfile(place.name);
+  return flattenTerrainAnalysis(
+    buildMockTerrainAnalysis({
+      locationName: place.name,
+      coordinate: {
+        ...place.coordinates,
+        name: place.name,
+      },
+    }),
+  );
+}
 
+function flattenTerrainAnalysis(analysis: TerrainAnalysisSummary): TerrainSummary {
   return {
-    locationElevation: profile.elevation,
-    minElevation1km: profile.minElevation1km,
-    minElevation3km: profile.minElevation3km,
-    minElevation5km: profile.minElevation5km,
-    maxElevation5km: profile.maxElevation5km,
-    elevationDiff5km: profile.maxElevation5km - profile.minElevation5km,
-    valleyDirection: profile.valleyDirection,
-    sunriseHorizonAngle: profile.sunriseHorizonAngle,
-    sunsetHorizonAngle: profile.sunsetHorizonAngle,
-    terrainCloudSeaPotential: profile.terrainCloudSeaPotential,
+    locationElevation: analysis.terrainProfile.locationElevation,
+    minElevation1km: analysis.terrainProfile.minElevation1km,
+    minElevation3km: analysis.terrainProfile.minElevation3km,
+    minElevation5km: analysis.terrainProfile.minElevation5km,
+    maxElevation5km: analysis.terrainProfile.maxElevation5km,
+    avgElevation5km: analysis.terrainProfile.avgElevation5km,
+    elevationDiff5km: analysis.terrainProfile.elevationDiff5km,
+    valleyDirectionZh: analysis.terrainProfile.valleyDirectionZh,
+    ridgeDirectionZh: analysis.terrainProfile.ridgeDirectionZh,
+    terrainCloudSeaPotential: analysis.terrainProfile.terrainCloudSeaPotential,
+    terrainNoteZh: analysis.terrainProfile.terrainNoteZh,
+    sunriseHorizonAngle: analysis.horizonProfile.sunriseHorizonAngle,
+    sunsetHorizonAngle: analysis.horizonProfile.sunsetHorizonAngle,
+    milkyWayHorizonAngle: analysis.horizonProfile.milkyWayHorizonAngle,
+    blockedDirectionsZh: analysis.horizonProfile.blockedDirectionsZh,
+    obstructionNoteZh: analysis.horizonProfile.obstructionNoteZh,
+    dataSource: analysis.dataSource,
+    dataSourceLabelZh: analysis.dataSourceLabelZh,
+    isMock: analysis.isMock,
+    honestyNoteZh: analysis.honestyNoteZh,
   };
 }
 

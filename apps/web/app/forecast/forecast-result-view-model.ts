@@ -196,6 +196,7 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
     detailSections: [
       buildScoreOverviewSection(scoreCards),
       buildAstronomySection(result),
+      buildCompactTerrainSection(result),
       listSection("key-reasons", "关键依据", "综合依据", result.keyReasons),
     ],
     riskSections: [buildRiskSection("general-risks", "风险提示", result.riskFlags)],
@@ -265,14 +266,11 @@ function buildCloudSeaViewModel(result: ForecastCalculationResult): ForecastResu
     windowsDescription: "只展示云海相关窗口，不把星空或银河窗口作为主推荐。",
     scoreSectionTitle: "云海相关评分",
     detailSections: [
-      scoreSection("cloud-sea-reasons", "云海判断依据", "云海判断", result.scores.cloudSea),
-      scoreSection(
-        "whiteout-risk-analysis",
-        "白墙风险分析",
-        "白墙风险",
-        result.scores.whiteoutRisk,
-      ),
       buildTerrainReferenceSection(result),
+      buildValleyElevationDiffSection(result),
+      buildCloudSeaTerrainPotentialSection(result),
+      buildWhiteoutTerrainAssistSection(result),
+      scoreSection("cloud-sea-reasons", "云海判断依据", "云海判断", result.scores.cloudSea),
       buildCloudSeaWeatherSection(result),
       listSection("cloud-sea-backup", "备选拍摄策略", "云海备选", cloudSeaAdvice.slice(2)),
     ],
@@ -349,8 +347,10 @@ function buildGlowViewModel(result: ForecastCalculationResult): ForecastResultVi
     detailSections: [
       scoreSection("sunrise-reasons", "朝霞判断依据", "朝霞", result.scores.sunriseGlow),
       scoreSection("sunset-reasons", "晚霞判断依据", "晚霞", result.scores.sunsetGlow),
+      buildSunriseObstructionSection(result),
+      buildSunsetObstructionSection(result),
+      buildTerrainObstructionTipSection(result),
       buildCloudLayerSection(result),
-      buildTerrainBlockingSection(result),
       buildTwilightSection(result),
     ],
     riskSections: [buildGlowRiskSection(result)],
@@ -434,6 +434,9 @@ function buildAstroViewModel(result: ForecastCalculationResult): ForecastResultV
       buildMoonRiseSetSection(result),
       buildAstronomicalNightSection(result),
       buildMilkyWaySection(result),
+      buildMilkyWayObstructionSection(result),
+      buildHorizonObstructionTipSection(result),
+      buildMountainObstructionRiskSection(result),
       buildAstroWeatherRiskSection(result),
     ],
     riskSections: [buildAstroRiskSection(result)],
@@ -492,22 +495,145 @@ function buildAstronomySection(result: ForecastCalculationResult): ForecastResul
 }
 
 function buildTerrainReferenceSection(result: ForecastCalculationResult): ForecastResultSection {
+  const terrain = result.terrainAnalysis.terrainProfile;
+
   return {
     key: "terrain-reference",
     title: "地形与海拔参考",
-    badgeLabel: "地形与湿度依据",
+    badgeLabel: result.terrainAnalysis.dataSourceLabelZh,
     items: [
       {
-        label: "地形落差",
-        value: "本地模拟地形",
-        detail: result.scores.cloudSea.reasons[1] ?? "已使用本地模拟地形估算山谷落差。",
+        label: "机位海拔",
+        value: formatMeters(terrain.locationElevation),
+        detail: terrain.terrainNoteZh,
       },
       {
-        label: "坐标基准",
-        value: result.calendarBasis.coordinateSource,
-        detail: `WGS84：${formatCoordinate(result.calendarBasis.wgs84Coordinates.latitude)}, ${formatCoordinate(
-          result.calendarBasis.wgs84Coordinates.longitude,
-        )}`,
+        label: "周边海拔范围",
+        value: `${formatMeters(terrain.minElevation5km)} - ${formatMeters(terrain.maxElevation5km)}`,
+        detail: `5公里范围平均海拔约 ${formatMeters(terrain.avgElevation5km)}，用于本地模拟云海与遮挡判断。`,
+      },
+      {
+        label: "山谷方向",
+        value: terrain.valleyDirectionZh ?? "暂无方向",
+        detail: `山脊参考：${terrain.ridgeDirectionZh ?? "暂无方向"}。该方向仅来自本地模拟地形。`,
+      },
+    ],
+  };
+}
+
+function buildValleyElevationDiffSection(result: ForecastCalculationResult): ForecastResultSection {
+  const terrain = result.terrainAnalysis.terrainProfile;
+
+  return {
+    key: "valley-elevation-diff",
+    title: "山谷高差",
+    badgeLabel: "周边5公里",
+    items: [
+      {
+        label: "1公里低点",
+        value: formatMeters(terrain.minElevation1km),
+        detail: "用于估算机位附近短距离谷地落差。",
+      },
+      {
+        label: "3公里低点",
+        value: formatMeters(terrain.minElevation3km),
+        detail: "用于估算中距离山谷云雾聚集空间。",
+      },
+      {
+        label: "5公里高差",
+        value: formatMeters(terrain.elevationDiff5km),
+        detail: "高差越明显，清晨低云与山顶视角形成云海边界的地形基础通常越好。",
+      },
+    ],
+  };
+}
+
+function buildCloudSeaTerrainPotentialSection(
+  result: ForecastCalculationResult,
+): ForecastResultSection {
+  const terrain = result.terrainAnalysis.terrainProfile;
+
+  return {
+    key: "cloud-sea-terrain-potential",
+    title: "云海地形潜力",
+    badgeLabel: "本地模拟地形",
+    items: [
+      {
+        label: "潜力等级",
+        value: terrainPotentialLabel(terrain.terrainCloudSeaPotential),
+        detail: "按机位海拔、周边5公里高差和本地模拟山谷结构折算。",
+      },
+      {
+        label: "评分影响",
+        value: `${result.scores.cloudSea.score} 分`,
+        detail:
+          result.scores.cloudSea.reasons.find((reason) => reason.includes("地形潜力")) ??
+          terrain.terrainNoteZh,
+      },
+      {
+        label: "数据边界",
+        value: result.terrainAnalysis.dataSourceLabelZh,
+        detail: result.terrainAnalysis.honestyNoteZh,
+      },
+    ],
+  };
+}
+
+function buildWhiteoutTerrainAssistSection(result: ForecastCalculationResult): ForecastResultSection {
+  const terrain = result.terrainAnalysis.terrainProfile;
+
+  return {
+    key: "whiteout-terrain-assist",
+    title: "白墙风险辅助判断",
+    badgeLabel: "地形辅助",
+    items: [
+      {
+        label: "白墙风险值",
+        value: `${result.scores.whiteoutRisk.score} 分`,
+        detail: firstText(
+          result.scores.whiteoutRisk.reasons,
+          "低云、湿度和能见度用于估算白墙风险。",
+        ),
+      },
+      {
+        label: "地形提示",
+        value: terrain.valleyDirectionZh ?? "暂无方向",
+        detail: "地形只辅助判断云雾可能堆积的方向，不代表真实 DEM 或现场能见度。",
+      },
+      {
+        label: "现场复核",
+        detail: terrain.terrainNoteZh,
+      },
+    ],
+  };
+}
+
+function buildCompactTerrainSection(result: ForecastCalculationResult): ForecastResultSection {
+  const terrain = result.terrainAnalysis.terrainProfile;
+  const horizon = result.terrainAnalysis.horizonProfile;
+
+  return {
+    key: "compact-terrain",
+    title: "地形摘要",
+    badgeLabel: result.terrainAnalysis.dataSourceLabelZh,
+    items: [
+      {
+        label: "机位海拔",
+        value: formatMeters(terrain.locationElevation),
+        detail: `周边5公里高差约 ${formatMeters(terrain.elevationDiff5km)}。`,
+      },
+      {
+        label: "云海地形潜力",
+        value: terrainPotentialLabel(terrain.terrainCloudSeaPotential),
+        detail: terrain.terrainNoteZh,
+      },
+      {
+        label: "遮挡方向",
+        value:
+          horizon.blockedDirectionsZh.length > 0
+            ? horizon.blockedDirectionsZh.join("、")
+            : "暂无明显方向",
+        detail: horizon.obstructionNoteZh,
       },
     ],
   };
@@ -562,23 +688,70 @@ function buildCloudLayerSection(result: ForecastCalculationResult): ForecastResu
   };
 }
 
-function buildTerrainBlockingSection(result: ForecastCalculationResult): ForecastResultSection {
+function buildSunriseObstructionSection(result: ForecastCalculationResult): ForecastResultSection {
+  const horizon = result.terrainAnalysis.horizonProfile;
+
   return {
-    key: "terrain-blocking",
-    title: "地形遮挡",
-    badgeLabel: "日出日落窗口",
+    key: "sunrise-obstruction",
+    title: "日出方向遮挡",
+    badgeLabel: "地平线参考",
     items: [
       {
-        label: "日出方向",
+        label: "遮挡角",
+        value: formatAngle(horizon.sunriseHorizonAngle),
         detail:
           result.scores.sunriseGlow.risks.find((risk) => risk.includes("地平遮挡")) ??
           "日出方向地形遮挡会压缩低角度暖光时间，需要提前确认机位朝向。",
       },
       {
-        label: "日落方向",
+        label: "遮挡方向",
+        value: formatBlockedDirections(horizon.blockedDirectionsZh),
+        detail: horizon.obstructionNoteZh,
+      },
+    ],
+  };
+}
+
+function buildSunsetObstructionSection(result: ForecastCalculationResult): ForecastResultSection {
+  const horizon = result.terrainAnalysis.horizonProfile;
+
+  return {
+    key: "sunset-obstruction",
+    title: "日落方向遮挡",
+    badgeLabel: "地平线参考",
+    items: [
+      {
+        label: "遮挡角",
+        value: formatAngle(horizon.sunsetHorizonAngle),
         detail:
           result.scores.sunsetGlow.risks.find((risk) => risk.includes("地平遮挡")) ??
           "日落方向若被山脊遮挡，应优先选择更开阔的侧逆光机位。",
+      },
+      {
+        label: "遮挡方向",
+        value: formatBlockedDirections(horizon.blockedDirectionsZh),
+        detail: horizon.obstructionNoteZh,
+      },
+    ],
+  };
+}
+
+function buildTerrainObstructionTipSection(result: ForecastCalculationResult): ForecastResultSection {
+  const horizon = result.terrainAnalysis.horizonProfile;
+
+  return {
+    key: "terrain-obstruction-tip",
+    title: "地形遮挡提示",
+    badgeLabel: result.terrainAnalysis.dataSourceLabelZh,
+    items: [
+      {
+        label: "低角度光线",
+        detail: "日出日落接近地平线时，局部山脊会影响第一束或最后一束光线出现时间。",
+      },
+      {
+        label: "数据边界",
+        value: "模拟地形",
+        detail: `${horizon.obstructionNoteZh} ${result.terrainAnalysis.honestyNoteZh}`,
       },
     ],
   };
@@ -693,6 +866,82 @@ function buildMilkyWaySection(result: ForecastCalculationResult): ForecastResult
         label: "方向参考",
         value: astro?.milkyWayDirection ?? "暂无数据",
         detail: "实际构图仍需结合机位视野、山体遮挡和光污染。",
+      },
+    ],
+  };
+}
+
+function buildMilkyWayObstructionSection(
+  result: ForecastCalculationResult,
+): ForecastResultSection {
+  const horizon = result.terrainAnalysis.horizonProfile;
+
+  return {
+    key: "milky-way-obstruction",
+    title: "银河方向遮挡",
+    badgeLabel: "银河地平线",
+    items: [
+      {
+        label: "银河遮挡角",
+        value: formatAngle(horizon.milkyWayHorizonAngle),
+        detail:
+          result.scores.milkyWay.risks.find((risk) => risk.includes("地平线遮挡")) ??
+          "银河方向遮挡角用于辅助判断低仰角银心和地景衔接是否容易被山体挡住。",
+      },
+      {
+        label: "遮挡方向",
+        value: formatBlockedDirections(horizon.blockedDirectionsZh),
+        detail: horizon.obstructionNoteZh,
+      },
+    ],
+  };
+}
+
+function buildHorizonObstructionTipSection(
+  result: ForecastCalculationResult,
+): ForecastResultSection {
+  const horizon = result.terrainAnalysis.horizonProfile;
+
+  return {
+    key: "horizon-obstruction-tip",
+    title: "地平线遮挡提示",
+    badgeLabel: result.terrainAnalysis.dataSourceLabelZh,
+    items: [
+      {
+        label: "地平线条件",
+        value: formatBlockedDirections(horizon.blockedDirectionsZh),
+        detail: horizon.obstructionNoteZh,
+      },
+      {
+        label: "银河窗口限制",
+        detail: "银河窗口 V1 仍需结合云量、月光、光污染和真实机位视野，当前地形只作本地模拟辅助。",
+      },
+    ],
+  };
+}
+
+function buildMountainObstructionRiskSection(
+  result: ForecastCalculationResult,
+): ForecastResultSection {
+  const terrain = result.terrainAnalysis.terrainProfile;
+  const horizon = result.terrainAnalysis.horizonProfile;
+
+  return {
+    key: "mountain-obstruction-risk",
+    title: "山体遮挡风险",
+    badgeLabel: "夜间构图",
+    items: [
+      {
+        label: "山脊参考",
+        value: terrain.ridgeDirectionZh ?? "暂无方向",
+        detail: terrain.terrainNoteZh,
+      },
+      {
+        label: "遮挡风险",
+        value: formatAngle(horizon.milkyWayHorizonAngle),
+        detail:
+          result.scores.milkyWay.risks.find((risk) => risk.includes("山体")) ??
+          "若银河主体贴近山脊，建议现场用星图和机位实测复核。",
       },
     ],
   };
@@ -1053,7 +1302,7 @@ function buildDataNotice(result: ForecastCalculationResult): string {
   const weatherNotice = result.isMock
     ? "天气数据：本地模拟数据"
     : `天气数据：${result.dataSourceLabel}`;
-  return `${weatherNotice}；地形数据：本地模拟数据；天文数据：本地算法计算。当前结果不代表真实预报。`;
+  return `${weatherNotice}；${result.terrainAnalysis.honestyNoteZh}；天文数据：本地算法计算。当前结果不代表真实预报。`;
 }
 
 function formatOptionalTime(value: string | undefined): string {
@@ -1098,6 +1347,26 @@ function formatNumber(value: number | undefined): string {
   return value.toFixed(3);
 }
 
-function formatCoordinate(value: number): string {
-  return Number.isFinite(value) ? value.toFixed(5) : "未提供";
+function formatMeters(value: number): string {
+  return Number.isFinite(value) ? `${Math.round(value)} 米` : "暂无数据";
+}
+
+function formatAngle(value: number | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(1)}°` : "暂无数据";
+}
+
+function formatBlockedDirections(directions: readonly string[]): string {
+  return directions.length > 0 ? directions.join("、") : "暂无明显方向";
+}
+
+function terrainPotentialLabel(
+  potential: ForecastCalculationResult["terrainAnalysis"]["terrainProfile"]["terrainCloudSeaPotential"],
+): string {
+  if (potential === "high") {
+    return "高";
+  }
+  if (potential === "medium") {
+    return "中";
+  }
+  return "低";
 }

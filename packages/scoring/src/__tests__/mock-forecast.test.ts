@@ -60,6 +60,14 @@ describe("mock forecast input builder", () => {
     expect(first.astroSummaries[0]?.milkyWayNoteZh).toBe(
       "银河窗口为本地天文算法初步估算，实际拍摄仍需结合云量、月光、光污染和地形遮挡。",
     );
+    expect(first.terrainAnalysis).toMatchObject({
+      dataSource: "mock_terrain",
+      dataSourceLabelZh: "本地模拟地形数据",
+      terrainProfile: {
+        locationElevation: 1860,
+        terrainCloudSeaPotential: "high",
+      },
+    });
     expect(first.dailyWeather[0]?.sunrise).toBe(first.astroSummaries[0]?.sunrise);
     expect(first.dailyWeather[0]?.sunset).toBe(first.astroSummaries[0]?.sunset);
   });
@@ -105,9 +113,10 @@ describe("mock forecast input builder", () => {
 
     expect(result.isMock).toBe(true);
     expect(result.dataNotice).toBe(
-      "当前天气数据和地形数据为本地模拟数据，天文数据由本地算法按 WGS84 坐标计算；整体结果仍不代表真实预报。",
+      "天气数据：本地模拟数据；地形数据：本地模拟地形数据，真实 DEM / 海拔数据将在后续接入；天文数据：本地算法按 WGS84 坐标计算。当前结果不代表真实预报。",
     );
     expect(result.dataSourceLabel).toBe("模拟天气数据");
+    expect(result.terrainAnalysis.dataSource).toBe("mock_terrain");
     expect(result.scores.cloudSea.label).toBe("云海");
     expect(result.astroSummaries).toHaveLength(2);
     expect(result.bestWindows.length).toBeGreaterThan(0);

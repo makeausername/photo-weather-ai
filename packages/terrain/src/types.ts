@@ -1,20 +1,45 @@
-import type { Coordinates } from "@photo-weather/shared";
+import type {
+  Coordinates,
+  HorizonProfileSummary,
+  TerrainAnalysisSummary,
+  TerrainDataSource,
+  TerrainProfileSummary,
+} from "@photo-weather/shared";
 
-export type ElevationPoint = {
-  readonly coordinates: Coordinates;
-  readonly elevationMeters: number;
+export type TerrainCoordinate = Coordinates & {
+  readonly name?: string;
 };
 
-export type TerrainProfile = {
-  readonly points: readonly ElevationPoint[];
-  readonly minElevationMeters: number;
-  readonly maxElevationMeters: number;
-  readonly ascentMeters: number;
-  readonly descentMeters: number;
+export type ElevationSample = {
+  readonly coordinate: TerrainCoordinate;
+  readonly elevation: number;
+  readonly distanceMeters?: number;
+  readonly azimuth?: number;
+  readonly directionZh?: string;
+  readonly dataSource: TerrainDataSource;
+};
+
+export type TerrainProfile = TerrainProfileSummary & {
+  readonly samples: readonly ElevationSample[];
+};
+
+export type HorizonProfile = HorizonProfileSummary;
+
+export type TerrainAnalysisInput = {
+  readonly coordinate: TerrainCoordinate;
+  readonly locationName?: string;
+  readonly sunriseAzimuth?: number;
+  readonly sunsetAzimuth?: number;
+  readonly milkyWayAzimuth?: number;
+};
+
+export type TerrainAnalysisResult = Omit<TerrainAnalysisSummary, "terrainProfile"> & {
+  readonly terrainProfile: TerrainProfile;
 };
 
 export type TerrainProvider = {
-  getElevation(coordinates: Coordinates): Promise<ElevationPoint>;
-  getElevationBatch(coordinates: readonly Coordinates[]): Promise<readonly ElevationPoint[]>;
-  buildTerrainProfile(path: readonly Coordinates[]): Promise<TerrainProfile>;
+  getElevation(coordinate: TerrainCoordinate): Promise<ElevationSample>;
+  getElevationBatch(coordinates: readonly TerrainCoordinate[]): Promise<readonly ElevationSample[]>;
+  buildTerrainProfile(input: TerrainAnalysisInput): Promise<TerrainProfile>;
+  buildHorizonProfile(input: TerrainAnalysisInput): Promise<HorizonProfile>;
 };

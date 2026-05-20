@@ -91,8 +91,19 @@ describe("forecast query validation route", () => {
       recommendationLabel: expect.stringMatching(/不建议前往|谨慎参考|值得等待|推荐前往/),
       isMock: true,
       dataNotice:
-        "当前天气数据和地形数据为本地模拟数据，天文数据由本地算法按 WGS84 坐标计算；整体结果仍不代表真实预报。",
+        "天气数据：本地模拟数据；地形数据：本地模拟地形数据，真实 DEM / 海拔数据将在后续接入；天文数据：本地算法按 WGS84 坐标计算。当前结果不代表真实预报。",
       dataSourceLabel: "模拟天气数据",
+    });
+    expect(body.terrainAnalysis).toMatchObject({
+      dataSource: "mock_terrain",
+      dataSourceLabelZh: "本地模拟地形数据",
+      terrainProfile: {
+        locationElevation: 1860,
+        terrainCloudSeaPotential: "high",
+      },
+      horizonProfile: {
+        blockedDirectionsZh: expect.any(Array),
+      },
     });
     expect(body.overallScore).toEqual(expect.any(Number));
     expect(body.scores).toMatchObject({

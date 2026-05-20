@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ForecastQueryInput, ForecastScore } from "@photo-weather/shared";
+import type { ForecastQueryInput, ForecastScore, TerrainAnalysisSummary } from "@photo-weather/shared";
 import {
   buildMockForecastInput,
   calculateCloudSeaScore,
@@ -28,6 +28,31 @@ const baseQuery: ForecastQueryInput = {
   photoSpotId: "spot-guangmingding",
 };
 const fixedNow = "2026-05-20T00:00:00+08:00";
+
+const lowTerrainAnalysis: TerrainAnalysisSummary = {
+  terrainProfile: {
+    locationElevation: 420,
+    minElevation1km: 360,
+    minElevation3km: 330,
+    minElevation5km: 310,
+    maxElevation5km: 520,
+    avgElevation5km: 410,
+    elevationDiff5km: 210,
+    terrainCloudSeaPotential: "low",
+    terrainNoteZh: "本地模拟地形显示周边高差较小，云海地形基础偏弱。",
+  },
+  horizonProfile: {
+    sunriseHorizonAngle: 2,
+    sunsetHorizonAngle: 2,
+    milkyWayHorizonAngle: 2,
+    blockedDirectionsZh: [],
+    obstructionNoteZh: "本地模拟地形显示地平遮挡较低。",
+  },
+  dataSource: "mock_terrain",
+  dataSourceLabelZh: "本地模拟地形数据",
+  isMock: true,
+  honestyNoteZh: "地形数据：本地模拟地形数据，真实 DEM / 海拔数据将在后续接入。",
+};
 
 function expectForecastScore(score: ForecastScore, label: string): void {
   expect(score.label).toBe(label);
@@ -72,6 +97,32 @@ describe("forecast score calculators", () => {
       calculateWhiteoutRiskScore(clearInput).score,
     );
     expect(calculateCloudSeaScore(humidInput).score).toBeGreaterThan(40);
+  });
+
+  it("uses terrain potential and elevation difference for cloud sea scoring", () => {
+    const highTerrainInput = buildMockForecastInput(
+      {
+        ...baseQuery,
+        target: "cloud_sea",
+      },
+      { now: fixedNow },
+    );
+    const lowTerrainInput = buildMockForecastInput(
+      {
+        ...baseQuery,
+        name: "平原测试点",
+        target: "cloud_sea",
+      },
+      {
+        now: fixedNow,
+        terrainAnalysis: lowTerrainAnalysis,
+      },
+    );
+
+    expect(calculateCloudSeaScore(highTerrainInput).score).toBeGreaterThan(
+      calculateCloudSeaScore(lowTerrainInput).score,
+    );
+    expect(calculateCloudSeaScore(highTerrainInput).reasons.join("")).toContain("云海地形潜力");
   });
 
   it("classifies score and recommendation levels", () => {

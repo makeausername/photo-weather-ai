@@ -26,6 +26,7 @@
 - 公开搜索选择态：选择地点后展示地点名称、地址 / 城市信息、数据来源、GCJ-02 / WGS84 经纬度、验证状态和本地机位匹配状态。
 - 公开 forecast 查询基础：首页作为综合判断快速入口，只选择地点和预报范围并固定 `target=general`；云海、朝霞晚霞、星空银河专项分析由顶部导航进入对应专题页。下一步跳转 `/forecast`，URL 中显式携带地点名称、来源、GCJ-02 坐标、WGS84 坐标、预报范围、分析目标以及可用的本地地点 / 机位 ID。
 - Forecast 计算核心 V1：已定义标准化小时天气、日天气、地形摘要、天文摘要、计算依据、计算输入和计算结果契约，`packages/calendar` 统一生成预报时间范围和中国本地日历信息，`packages/scoring` 提供本地 mock 天气/地形数据构造器、标准化天气输入 builder、真实本地天文摘要和可解释 rule-based 评分计算器。
+- Terrain Core V1：`packages/terrain` 已提供地形/海拔类型契约、地形 provider 接口、本地模拟地形 provider、周边高差计算、云海地形潜力分类和地平线遮挡基础；当前只使用本地模拟地形数据，真实 DEM / 海拔 provider 后续接入。
 - 公开 forecast 端点：`POST /forecast/validate-query` 只校验查询输入并返回中文标签；`POST /forecast/calculate` 默认使用 MockWeatherProvider 的标准化天气数据和本地模拟地形数据，同时使用本地 astronomy-engine 天文计算，不调用真实天气、地形、天文在线 API 或 AI 服务；`POST /forecast/ai-explain` 默认返回规则解读，只有后台启用 DeepSeek 服务商、启用真实调用且 Key 已保存时才请求真实 DeepSeek。
 - 后台登录页：宽屏产品式登录布局、中文表单、样式化错误提示和单一返回前台入口。
 - 后台控制台布局：约 252px 亮色侧栏、紧凑顶部标题区、当前管理员信息、主题切换、返回前台、退出登录和更宽的内容区域。
@@ -36,6 +37,7 @@
 
 - 真实天气数据驱动的 forecast / 预测结果、真实服务商接入和生产级决策建议。
 - 真实天气服务商调用。
+- 真实 DEM / elevation provider 接入；Open-Meteo Elevation 目前仅保留禁用占位，不参与本地自动化测试。
 - 生产级 DeepSeek 或其他 AI 自动分析流程；当前只允许后台服务商配置显式启用后的 DeepSeek 解读调用。
 - 支付、套餐、额度和商业化流程。
 - 生产级 Cookie/Session 加固。
@@ -73,10 +75,19 @@
 - 云海、白墙风险、朝霞、晚霞、星空、银河和通透度评分。
 - 综合出片指数、推荐等级、最佳拍摄窗口、风险提示、关键依据和拍摄建议。
 - 结果页目标感知展示：`general` 显示完整模块总览；`cloud_sea` 聚焦云海概率、白墙风险、清晨云海窗口、地形与湿度依据和云海备选策略；`glow` 聚焦朝霞晚霞、日出日落、晨昏时间、云层结构和地形遮挡；`astro` 聚焦月相月光、天文黑夜、银河窗口、云量能见度风险和夜间拍摄建议。
+- Terrain Core V1：当前地形来自 `MockTerrainProvider`，输出 `terrainProfile`、`horizonProfile` 和 `dataSource=mock_terrain`；地形会影响云海潜力、白墙风险辅助判断、日出/日落方向遮挡、银河地平线遮挡和综合拍摄依据。
 - Astronomy Core V1：使用 `astronomy-engine` 在本地 deterministic 计算日出 / 日落、太阳中天、民用 / 航海 / 天文晨昏光、月相、月亮照明、月出 / 月落和逐小时月亮高度。
 - 银河窗口 V1：基于天文黑夜、近似银心 J2000 坐标、当地地平坐标和月光影响给出初步窗口、方向和可见性等级；该结果是拍摄规划基础估算，尚未完整建模银河拱桥、地形遮挡和光污染。
 - 黄山光明顶、老君山金顶、三清山女神峰、武功山金顶等本地模拟样例。
-- 数据提示：`当前天气数据和地形数据为本地模拟数据，天文数据由本地算法按 WGS84 坐标计算；整体结果仍不代表真实预报。`
+- 数据提示：`天气数据：本地模拟数据；地形数据：本地模拟地形数据，真实 DEM / 海拔数据将在后续接入；天文数据：本地算法按 WGS84 坐标计算。当前结果不代表真实预报。`
+
+地形计算约定：
+
+- 地形计算只使用 WGS84 经纬度，不使用 GCJ-02。
+- 当前 `packages/terrain` 的默认实现是本地 deterministic mock，不调用真实外部 DEM / elevation API。
+- 黄山光明顶、老君山金顶、三清山女神峰、武功山金顶有本地模拟山地地形档案，用于验证云海、遮挡和结果页展示流程。
+- Open-Meteo Elevation provider 目前仅是禁用占位，不需要 API Key，也不会在自动化测试中发起请求。
+- 真实 elevation / DEM provider、真实地形剖面和更高精度山体遮挡模型将在后续接入。
 
 天文计算约定：
 
@@ -142,7 +153,7 @@ Scenario Module Pages V1：
 - `packages/geo`：地理服务接口、deterministic mock 搜索、高德地图 Web 服务 provider、坐标校验与 GCJ-02 / WGS84 转换。
 - `packages/calendar`：Calendar Core V1，集中处理 `Asia/Shanghai` 预报范围、覆盖日期、中文日期时间格式、农历和节气。
 - `packages/weather`：天气服务接口、标准化天气模型、ProviderFactory、MockWeatherProvider，以及 QWeather / Open-Meteo fixture-based normalization adapters。
-- `packages/terrain`：地形与海拔服务接口。
+- `packages/terrain`：Terrain Core V1，包含地形/海拔数据契约、mock terrain provider、地形剖面、高差计算、云海地形潜力分类、地平线遮挡辅助判断和禁用的 Open-Meteo Elevation 占位 provider。
 - `packages/astro`：Astronomy Core V1，基于 `astronomy-engine` 的本地 deterministic 日出 / 日落、暮光、月相、月亮照明、月出 / 月落、逐小时月亮高度和初步银河窗口估算。
 - `packages/scoring`：本地 forecast mock 数据构造器、摄影评分 helper、朝霞/晚霞/云海/白墙/星空/银河/通透度计算器和综合推荐分类。
 - `packages/ai`：AI 服务接口、mock provider、规则兜底和 DeepSeek 开发模式 JSON 解读 provider。
@@ -395,6 +406,7 @@ GET   /admin/audit-logs
 
 - 不调用真实 QWeather；只允许读取本地 QWeather fixture JSON。
 - 不调用真实 Open-Meteo；只允许读取本地 Open-Meteo fixture JSON。
+- 不调用真实 Open-Meteo Elevation 或其他 DEM / elevation API；Terrain Core V1 默认只使用 `MockTerrainProvider`。
 - 自动化测试不调用高德地图真实接口；真实高德只允许人工本地开发或部署环境中通过后台服务商配置显式启用，`ENABLE_REAL_AMAP` 只作为缺少后台字段时的兜底。
 - 自动化测试不调用 DeepSeek；真实 DeepSeek 只允许人工本地开发或部署环境中通过后台服务商配置显式启用，`ENABLE_REAL_DEEPSEEK` 只作为缺少后台字段时的兜底。
 - 天文计算只使用本地 `astronomy-engine`，不调用在线天文 API。

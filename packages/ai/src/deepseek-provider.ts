@@ -141,6 +141,7 @@ function pickForecastInput(result: ForecastCalculationResult) {
     riskFlags: result.riskFlags,
     keyReasons: result.keyReasons,
     photographyAdvice: result.photographyAdvice,
+    terrainAnalysis: result.terrainAnalysis,
     astroSummaries: result.astroSummaries,
     dataNotice: result.dataNotice,
     isMock: result.isMock,
