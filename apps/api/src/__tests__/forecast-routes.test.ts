@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApiServer } from "../server.js";
-import { testAuthConfig } from "./fake-db.js";
+import { createFakeDatabaseClient, testAuthConfig } from "./fake-db.js";
 
 const validPayload = {
   name: "黄山光明顶",
@@ -89,7 +89,8 @@ describe("forecast query validation route", () => {
       target: "cloud_sea",
       recommendationLabel: expect.stringMatching(/不建议前往|谨慎参考|值得等待|推荐前往/),
       isMock: true,
-      dataNotice: "当前为本地模拟天气数据，计算结果仅用于验证流程，不代表真实预报。",
+      dataNotice:
+        "当前天气数据和地形数据为本地模拟数据，天文数据由本地算法按 WGS84 坐标计算；整体结果仍不代表真实预报。",
       dataSourceLabel: "模拟天气数据",
     });
     expect(body.overallScore).toEqual(expect.any(Number));
@@ -123,9 +124,82 @@ describe("forecast query validation route", () => {
         score: expect.any(Number),
       },
     });
+    expect(body.astroSummaries[0]).toMatchObject({
+      timezone: "Asia/Shanghai",
+      sunrise: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+08:00$/),
+      sunset: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+08:00$/),
+      moonPhaseNameZh: expect.stringMatching(/新月|娥眉月|上弦月|盈凸月|满月|亏凸月|下弦月|残月/),
+      milkyWayNoteZh:
+        "银河窗口为本地天文算法初步估算，实际拍摄仍需结合云量、月光、光污染和地形遮挡。",
+    });
+    expect(Date.parse(body.astroSummaries[0].sunrise)).toBeLessThan(
+      Date.parse(body.astroSummaries[0].sunset),
+    );
+    expect(body.astroSummaries[0].moonIllumination).toBeGreaterThanOrEqual(0);
+    expect(body.astroSummaries[0].moonIllumination).toBeLessThanOrEqual(1);
+    expect(Object.keys(body.astroSummaries[0].moonAltitudeByHour)).toHaveLength(24);
     expect(body.bestWindows.length).toBeGreaterThan(0);
     expect(body.keyReasons.length).toBeGreaterThan(0);
     expect(body.photographyAdvice.length).toBeGreaterThan(0);
+  });
+
+  it("can return a rule-based explanation from calculate without DeepSeek", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("real network calls are disabled in forecast tests");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    app = buildApiServer({ authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        useAiExplanation: true,
+      },
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(body.aiExplanation).toMatchObject({
+      summary: expect.any(String),
+      recommendation: expect.any(String),
+      confidenceNote: expect.stringContaining("模拟"),
+    });
+  });
+
+  it("returns a clear DeepSeek key error for AI explanation when real mode is enabled", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const provider = state.providers.get("ai:deepseek");
+    state.providers.set("ai:deepseek", {
+      ...provider,
+      enabled: true,
+      secretJson: {},
+      maskedSecretJson: {},
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        ENABLE_REAL_DEEPSEEK: "true",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/ai-explain",
+      payload: validPayload,
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({
+      error: "ai_explanation_unavailable",
+      message: "DeepSeek 服务未配置 API Key，请先在后台服务商配置中填写 DeepSeek API Key。",
+    });
+    expect(response.body).not.toContain("secretJson");
   });
 
   it("rejects unsupported horizon and target for calculation", async () => {

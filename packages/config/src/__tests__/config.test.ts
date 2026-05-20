@@ -14,6 +14,21 @@ describe("environment config", () => {
       storageProvider: "local",
       sentryDsn: undefined,
     });
+    expect(config.serverEnv.ENABLE_REAL_AMAP).toBe(false);
+    expect(config.serverEnv.ENABLE_REAL_DEEPSEEK).toBe(false);
+    expect(config.serverEnv.DEEPSEEK_DEFAULT_MODEL).toBe("deepseek-chat");
+  });
+
+  it("parses explicit real development provider flags", () => {
+    const config = loadRuntimeConfig({
+      NODE_ENV: "development",
+      STORAGE_PROVIDER: "local",
+      ENABLE_REAL_AMAP: "true",
+      ENABLE_REAL_DEEPSEEK: "true",
+    });
+
+    expect(config.serverEnv.ENABLE_REAL_AMAP).toBe(true);
+    expect(config.serverEnv.ENABLE_REAL_DEEPSEEK).toBe(true);
   });
 
   it("requires core deployment secrets in production", () => {

@@ -67,6 +67,14 @@ type AmapReverseGeocodeResponse = AmapApiEnvelope & {
 };
 
 const defaultBaseUrl = "https://restapi.amap.com";
+const amapPaths = {
+  placeText: "/v3/place/text",
+  geocode: "/v3/geocode/geo",
+  reverseGeocode: "/v3/geocode/regeo",
+} as const;
+
+export const missingAmapApiKeyMessage =
+  "高德地图服务未配置 API Key，请先在后台服务商配置中填写高德 Web 服务 Key。";
 
 function toText(value: unknown): string | undefined {
   if (typeof value === "string") {
@@ -167,11 +175,13 @@ export class AmapProvider implements GeoProvider {
       return [];
     }
 
-    const data = await this.request<AmapPlaceSearchResponse>("/v5/place/text", {
+    const data = await this.request<AmapPlaceSearchResponse>(amapPaths.placeText, {
       keywords: trimmedQuery,
-      region: options.city,
-      page_size: String(Math.min(Math.max(options.limit ?? 8, 1), 25)),
-      show_fields: "children,business,photos",
+      city: options.city,
+      citylimit: options.city ? "true" : undefined,
+      offset: String(Math.min(Math.max(options.limit ?? 8, 1), 25)),
+      page: "1",
+      extensions: "base",
     });
 
     return (data.pois ?? []).map((poi) => normalizeAmapPoi(poi));
@@ -183,7 +193,7 @@ export class AmapProvider implements GeoProvider {
       throw new Error("地理编码地址不能为空。");
     }
 
-    const data = await this.request<AmapGeocodeResponse>("/v3/geocode/geo", {
+    const data = await this.request<AmapGeocodeResponse>(amapPaths.geocode, {
       address: trimmedAddress,
       city: options.city,
     });
@@ -211,7 +221,7 @@ export class AmapProvider implements GeoProvider {
       coordinates.system === "wgs84"
         ? wgs84ToGcj02(coordinates as Wgs84Coordinates)
         : (coordinates as Gcj02Coordinates);
-    const data = await this.request<AmapReverseGeocodeResponse>("/v3/geocode/regeo", {
+    const data = await this.request<AmapReverseGeocodeResponse>(amapPaths.reverseGeocode, {
       location: `${coordinatesGcj02.longitude},${coordinatesGcj02.latitude}`,
       extensions: "base",
       radius: "1000",
@@ -272,6 +282,7 @@ export class AmapProvider implements GeoProvider {
     const apiKey = this.getApiKey();
     const url = new URL(path, this.config.baseUrl ?? defaultBaseUrl);
     url.searchParams.set("key", apiKey);
+    url.searchParams.set("output", "JSON");
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value.trim().length > 0) {
         url.searchParams.set(key, value);
@@ -299,9 +310,9 @@ export class AmapProvider implements GeoProvider {
     }
 
     if (this.config.enabled) {
-      throw new Error("高德地图已启用，但尚未配置 Web 服务 API Key。");
+      throw new Error(missingAmapApiKeyMessage);
     }
 
-    throw new Error("高德地图 Web 服务 API Key 尚未配置。");
+    throw new Error(missingAmapApiKeyMessage);
   }
 }

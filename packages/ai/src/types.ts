@@ -1,4 +1,5 @@
 import type { DecisionCard, Place } from "@photo-weather/shared";
+import type { ForecastCalculationResult } from "@photo-weather/shared";
 import type { CurrentWeather, DailyForecast, HourlyForecast } from "@photo-weather/weather";
 import type { z } from "zod";
 
@@ -22,6 +23,21 @@ export type DecisionCardInput = {
   readonly place: Place;
   readonly forecastSummary: string;
   readonly score?: number;
+};
+
+export type ForecastAiExplanation = {
+  readonly summary: string;
+  readonly recommendation: string;
+  readonly mainReasons: readonly string[];
+  readonly mainRisks: readonly string[];
+  readonly photographerAdvice: readonly string[];
+  readonly backupPlan: readonly string[];
+  readonly confidenceNote: string;
+};
+
+export type ForecastExplanationInput = {
+  readonly forecastResult: ForecastCalculationResult;
+  readonly userGoal?: string;
 };
 
 export interface AIProvider {

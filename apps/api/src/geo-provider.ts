@@ -10,7 +10,8 @@ export type GeoProviderRuntimeOptions = {
 };
 
 type RuntimeAmapConfig = {
-  readonly enabled: boolean;
+  readonly providerEnabled: boolean;
+  readonly realModeEnabled: boolean;
   readonly apiKey?: string;
   readonly baseUrl?: string;
 };
@@ -25,6 +26,10 @@ function readString(value: JsonValue | undefined): string | undefined {
 
 function readEnvString(value: string | undefined): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function readOptInFlag(value: string | undefined): boolean {
+  return value?.trim().toLowerCase() === "true";
 }
 
 function readAmapApiKey(
@@ -42,10 +47,18 @@ function readAmapApiKey(
   );
 }
 
-function readAmapBaseUrl(provider: ProviderConfigRecord | null): string | undefined {
+function readAmapBaseUrl(
+  provider: ProviderConfigRecord | null,
+  env: NodeJS.ProcessEnv,
+): string | undefined {
+  const secretJson = isJsonObject(provider?.secretJson) ? provider.secretJson : {};
   const configJson = isJsonObject(provider?.configJson) ? provider.configJson : {};
 
-  return readString(configJson.baseUrl);
+  return (
+    readString(secretJson.baseUrl) ??
+    readString(configJson.baseUrl) ??
+    readEnvString(env.AMAP_BASE_URL)
+  );
 }
 
 export async function readRuntimeAmapConfig(
@@ -55,9 +68,10 @@ export async function readRuntimeAmapConfig(
   const provider = await getRuntimeProviderConfig("geo", "amap", { client: options.dbClient });
 
   return {
-    enabled: provider?.enabled ?? false,
+    providerEnabled: provider?.enabled ?? false,
+    realModeEnabled: readOptInFlag(env.ENABLE_REAL_AMAP),
     apiKey: readAmapApiKey(provider, env),
-    baseUrl: readAmapBaseUrl(provider),
+    baseUrl: readAmapBaseUrl(provider, env),
   };
 }
 
@@ -69,7 +83,7 @@ export async function resolveGeoProvider(
   }
 
   const config = await readRuntimeAmapConfig(options);
-  if (!config.enabled) {
+  if (!config.providerEnabled || !config.realModeEnabled) {
     return new MockGeoProvider();
   }
 
@@ -86,7 +100,7 @@ export async function createRealAmapProvider(
   const config = await readRuntimeAmapConfig(options);
 
   return new AmapProvider({
-    enabled: true,
+    enabled: config.providerEnabled,
     apiKey: config.apiKey,
     baseUrl: config.baseUrl,
   });

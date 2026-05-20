@@ -1,3 +1,15 @@
+import {
+  Body,
+  DefineStar,
+  Equator,
+  Horizon,
+  Illumination,
+  MoonPhase as astronomyMoonPhase,
+  Observer,
+  SearchAltitude,
+  SearchHourAngle,
+  SearchRiseSet,
+} from "astronomy-engine";
 import type {
   AstroInput,
   AstronomicalNightWindow,
@@ -13,54 +25,50 @@ import type {
 } from "./types.js";
 
 const defaultTimezone = "Asia/Shanghai";
-const dayMs = 86_400_000;
+const hourMs = 3_600_000;
 const minuteMs = 60_000;
-const rad = Math.PI / 180;
-const eclipticObliquity = rad * 23.4397;
-const j1970 = 2440588;
-const j2000 = 2451545;
-const j0 = 0.0009;
+const milkyWaySampleStepMs = 15 * minuteMs;
+const milkyWayMinimumAltitude = 10;
+const milkyWayNoteZh =
+  "银河窗口为本地天文算法初步估算，实际拍摄仍需结合云量、月光、光污染和地形遮挡。";
+
+let isGalacticCenterDefined = false;
 
 export function getSunTimes(input: AstroInput): SunTimes {
   const context = normalizeInput(input);
-  const result = calculateSunEventSet(context, -0.833);
-  const sunriseAzimuth =
-    result.sunrise === undefined ? undefined : calculateSunAzimuth(result.sunrise, context);
-  const sunsetAzimuth =
-    result.sunset === undefined ? undefined : calculateSunAzimuth(result.sunset, context);
+  const sunrise = findRiseSet(Body.Sun, context, 1);
+  const sunset = findRiseSet(Body.Sun, context, -1);
+  const solarNoon = findSolarNoon(context);
 
   return {
     date: context.date,
     timezone: context.timezone,
-    sunrise: formatZonedIso(result.sunrise, context.timezone),
-    sunset: formatZonedIso(result.sunset, context.timezone),
-    solarNoon: formatZonedIso(result.solarNoon, context.timezone),
-    sunriseAzimuth,
-    sunsetAzimuth,
+    sunrise: formatZonedIso(sunrise, context.timezone),
+    sunset: formatZonedIso(sunset, context.timezone),
+    solarNoon: formatZonedIso(solarNoon, context.timezone),
+    sunriseAzimuth: sunrise === undefined ? undefined : getBodyAzimuth(Body.Sun, sunrise, context),
+    sunsetAzimuth: sunset === undefined ? undefined : getBodyAzimuth(Body.Sun, sunset, context),
   };
 }
 
 export function getTwilightTimes(input: AstroInput): TwilightTimes {
   const context = normalizeInput(input);
-  const civil = calculateSunEventSet(context, -6);
-  const nautical = calculateSunEventSet(context, -12);
-  const astronomical = calculateSunEventSet(context, -18);
 
   return {
     date: context.date,
     timezone: context.timezone,
-    civilDawn: formatZonedIso(civil.sunrise, context.timezone),
-    civilDusk: formatZonedIso(civil.sunset, context.timezone),
-    nauticalDawn: formatZonedIso(nautical.sunrise, context.timezone),
-    nauticalDusk: formatZonedIso(nautical.sunset, context.timezone),
-    astronomicalDawn: formatZonedIso(astronomical.sunrise, context.timezone),
-    astronomicalDusk: formatZonedIso(astronomical.sunset, context.timezone),
+    civilDawn: formatZonedIso(findSunAltitudeCrossing(context, 1, -6), context.timezone),
+    civilDusk: formatZonedIso(findSunAltitudeCrossing(context, -1, -6), context.timezone),
+    nauticalDawn: formatZonedIso(findSunAltitudeCrossing(context, 1, -12), context.timezone),
+    nauticalDusk: formatZonedIso(findSunAltitudeCrossing(context, -1, -12), context.timezone),
+    astronomicalDawn: formatZonedIso(findSunAltitudeCrossing(context, 1, -18), context.timezone),
+    astronomicalDusk: formatZonedIso(findSunAltitudeCrossing(context, -1, -18), context.timezone),
   };
 }
 
 export function getMoonPhase(input: AstroInput): MoonPhase {
   const context = normalizeInput(input);
-  const phase = getMoonIlluminationDetails(context.noonUtcMs).phase;
+  const phase = normalizePhase(astronomyMoonPhase(new Date(context.noonUtcMs)) / 360);
 
   return {
     date: context.date,
@@ -72,7 +80,7 @@ export function getMoonPhase(input: AstroInput): MoonPhase {
 
 export function getMoonIllumination(input: AstroInput): MoonIllumination {
   const context = normalizeInput(input);
-  const fraction = getMoonIlluminationDetails(context.noonUtcMs).fraction;
+  const fraction = Illumination(Body.Moon, new Date(context.noonUtcMs)).phase_fraction;
 
   return {
     date: context.date,
@@ -83,13 +91,14 @@ export function getMoonIllumination(input: AstroInput): MoonIllumination {
 
 export function getMoonTimes(input: AstroInput): MoonTimes {
   const context = normalizeInput(input);
-  const events = searchMoonRiseSet(context);
+  const moonrise = findRiseSet(Body.Moon, context, 1);
+  const moonset = findRiseSet(Body.Moon, context, -1);
 
   return {
     date: context.date,
     timezone: context.timezone,
-    moonrise: formatZonedIso(events.moonrise, context.timezone),
-    moonset: formatZonedIso(events.moonset, context.timezone),
+    moonrise: formatZonedIso(moonrise, context.timezone),
+    moonset: formatZonedIso(moonset, context.timezone),
   };
 }
 
@@ -99,9 +108,7 @@ export function getMoonAltitudeByHour(input: AstroInput): MoonAltitudeByHour {
 
   for (let hour = 0; hour < 24; hour += 1) {
     const timestamp = zonedDateTimeToUtcMs(context.date, context.timezone, hour, 0, 0);
-    altitudeByHour[pad2(hour)] = round1(
-      getMoonPosition(timestamp, context.latitudeWgs84, context.longitudeWgs84).altitude,
-    );
+    altitudeByHour[pad2(hour)] = round1(getBodyHorizontal(Body.Moon, timestamp, context).altitude);
   }
 
   return {
@@ -129,76 +136,66 @@ export function getAstronomicalNightWindow(input: AstroInput): AstronomicalNight
 
 export function getMilkyWayWindow(input: AstroInput): MilkyWayWindow {
   const context = normalizeInput(input);
-  const seasonal = getSeasonalMilkyWayWindow(context.date);
-  const noteZh =
-    "银河窗口为 V1 初步估算，基于天文黑夜、季节和月光影响，尚未计算银心精确高度、地形遮挡和光污染。";
-
-  if (!seasonal) {
-    return {
-      date: context.date,
-      timezone: context.timezone,
-      visibilityLevel: "unavailable",
-      noteZh,
-    };
-  }
-
   const nightWindow = getAstronomicalNightWindow(context);
-  if (!nightWindow.windowStart || !nightWindow.windowEnd) {
+  const darkStart = parseTimestamp(nightWindow.windowStart);
+  const darkEnd = parseTimestamp(nightWindow.windowEnd);
+
+  if (darkStart === undefined || darkEnd === undefined || darkEnd <= darkStart) {
     return {
       date: context.date,
       timezone: context.timezone,
-      directionZh: seasonal.directionZh,
       visibilityLevel: "unavailable",
-      noteZh,
+      noteZh: milkyWayNoteZh,
     };
   }
 
-  const candidateStart = seasonalLocalHourToUtcMs(context.date, context.timezone, seasonal.startHour);
-  const candidateEnd = seasonalLocalHourToUtcMs(context.date, context.timezone, seasonal.endHour);
-  const darkStart = Date.parse(nightWindow.windowStart);
-  const darkEnd = Date.parse(nightWindow.windowEnd);
-  const windowStartMs = Math.max(darkStart, candidateStart);
-  const windowEndMs = Math.min(darkEnd, candidateEnd);
-  const windowMinutes = (windowEndMs - windowStartMs) / minuteMs;
-
-  if (!Number.isFinite(windowMinutes) || windowMinutes < 45) {
+  const samples = sampleMilkyWayWindow(context, darkStart, darkEnd);
+  if (samples.length === 0) {
     return {
       date: context.date,
       timezone: context.timezone,
-      directionZh: seasonal.directionZh,
-      visibilityLevel: "poor",
-      noteZh,
+      visibilityLevel: "unavailable",
+      noteZh: milkyWayNoteZh,
     };
   }
 
-  const bestTimeMs = windowStartMs + (windowEndMs - windowStartMs) / 2;
-  const moonIllumination = getMoonIlluminationDetails(bestTimeMs).fraction;
-  const moonAltitude = getMoonPosition(
-    bestTimeMs,
-    context.latitudeWgs84,
-    context.longitudeWgs84,
-  ).altitude;
-  const visibilityLevel = adjustVisibilityForMoon(
-    seasonal.baseVisibility,
-    moonIllumination,
-    moonAltitude,
-    windowMinutes,
+  const bestSample = samples.reduce((best, sample) => (sample.score > best.score ? sample : best));
+  const eligibleSamples = samples.filter(
+    (sample) => sample.galacticCenterAltitude >= milkyWayMinimumAltitude,
   );
+  if (eligibleSamples.length === 0) {
+    return {
+      date: context.date,
+      timezone: context.timezone,
+      bestTime: formatZonedIso(bestSample.timestamp, context.timezone),
+      directionZh: directionFromAzimuth(bestSample.galacticCenterAzimuth),
+      visibilityLevel: "poor",
+      noteZh: milkyWayNoteZh,
+    };
+  }
+
+  const windowStart = eligibleSamples[0]!.timestamp;
+  const windowEnd = Math.min(
+    eligibleSamples[eligibleSamples.length - 1]!.timestamp + milkyWaySampleStepMs,
+    darkEnd,
+  );
+  const durationHours = (windowEnd - windowStart) / hourMs;
+  const visibilityLevel = classifyMilkyWayVisibility(bestSample, durationHours);
 
   return {
     date: context.date,
     timezone: context.timezone,
-    windowStart: formatZonedIso(windowStartMs, context.timezone),
-    windowEnd: formatZonedIso(windowEndMs, context.timezone),
-    bestTime: formatZonedIso(bestTimeMs, context.timezone),
-    directionZh: seasonal.directionZh,
+    windowStart: formatZonedIso(windowStart, context.timezone),
+    windowEnd: formatZonedIso(windowEnd, context.timezone),
+    bestTime: formatZonedIso(bestSample.timestamp, context.timezone),
+    directionZh: directionFromAzimuth(bestSample.galacticCenterAzimuth),
     visibilityLevel,
-    noteZh,
+    noteZh: milkyWayNoteZh,
   };
 }
 
 export function getMoonPhaseNameZh(phase: number): MoonPhaseNameZh {
-  const normalized = ((phase % 1) + 1) % 1;
+  const normalized = normalizePhase(phase);
 
   if (normalized < 1 / 16 || normalized >= 15 / 16) {
     return "新月";
@@ -226,20 +223,18 @@ export function getMoonPhaseNameZh(phase: number): MoonPhaseNameZh {
 
 type NormalizedAstroInput = Required<AstroInput> & {
   readonly midnightUtcMs: number;
+  readonly nextMidnightUtcMs: number;
   readonly noonUtcMs: number;
+  readonly observer: Observer;
 };
 
-type SunEventSet = {
-  readonly sunrise?: number;
-  readonly sunset?: number;
-  readonly solarNoon?: number;
-};
-
-type SeasonalMilkyWayWindow = {
-  readonly startHour: number;
-  readonly endHour: number;
-  readonly directionZh: string;
-  readonly baseVisibility: Exclude<MilkyWayVisibilityLevel, "unavailable">;
+type MilkyWaySample = {
+  readonly timestamp: number;
+  readonly galacticCenterAltitude: number;
+  readonly galacticCenterAzimuth: number;
+  readonly moonAltitude: number;
+  readonly moonIllumination: number;
+  readonly score: number;
 };
 
 function normalizeInput(input: AstroInput): NormalizedAstroInput {
@@ -255,341 +250,181 @@ function normalizeInput(input: AstroInput): NormalizedAstroInput {
     date,
     timezone,
     midnightUtcMs: zonedDateTimeToUtcMs(date, timezone, 0, 0, 0),
+    nextMidnightUtcMs: zonedDateTimeToUtcMs(addDays(date, 1), timezone, 0, 0, 0),
     noonUtcMs: zonedDateTimeToUtcMs(date, timezone, 12, 0, 0),
+    observer: new Observer(input.latitudeWgs84, input.longitudeWgs84, 0),
   };
 }
 
-function calculateSunEventSet(context: NormalizedAstroInput, altitudeDeg: number): SunEventSet {
-  const lw = rad * -context.longitudeWgs84;
-  const phi = rad * context.latitudeWgs84;
-  const d = toDays(new Date(context.noonUtcMs));
-  const n = julianCycle(d, lw);
-  const ds = approxTransit(0, lw, n);
-  const m = solarMeanAnomaly(ds);
-  const l = eclipticLongitude(m);
-  const dec = declination(l, 0);
-  const solarNoonJ = solarTransitJ(ds, m, l);
-  const setJ = getSetJ(altitudeDeg * rad, lw, phi, dec, n, m, l);
-
-  if (setJ === undefined) {
-    return {
-      solarNoon: fromJulian(solarNoonJ).getTime(),
-    };
-  }
-
-  const riseJ = solarNoonJ - (setJ - solarNoonJ);
-
-  return {
-    sunrise: fromJulian(riseJ).getTime(),
-    sunset: fromJulian(setJ).getTime(),
-    solarNoon: fromJulian(solarNoonJ).getTime(),
-  };
+function findRiseSet(
+  body: Body,
+  context: NormalizedAstroInput,
+  direction: 1 | -1,
+): number | undefined {
+  const event = SearchRiseSet(
+    body,
+    context.observer,
+    direction,
+    new Date(context.midnightUtcMs),
+    1,
+  );
+  return timestampWithinLocalDate(event?.date.getTime(), context);
 }
 
-function calculateSunAzimuth(timestamp: number, context: NormalizedAstroInput): number {
-  const lw = rad * -context.longitudeWgs84;
-  const phi = rad * context.latitudeWgs84;
-  const d = toDays(new Date(timestamp));
-  const sun = sunCoords(d);
-  const h = siderealTime(d, lw) - sun.ra;
-  const azimuthDeg = ((azimuth(h, phi, sun.dec) / rad + 180) % 360) - 180;
-
-  return round1(azimuthDeg);
+function findSolarNoon(context: NormalizedAstroInput): number | undefined {
+  const event = SearchHourAngle(Body.Sun, context.observer, 0, new Date(context.midnightUtcMs), 1);
+  return timestampWithinLocalDate(event.time.date.getTime(), context);
 }
 
-function searchMoonRiseSet(context: NormalizedAstroInput): {
-  readonly moonrise?: number;
-  readonly moonset?: number;
-} {
-  const intervalMs = 10 * minuteMs;
-  let previousTime = context.midnightUtcMs;
-  let previousAltitude = getMoonPosition(
-    previousTime,
-    context.latitudeWgs84,
-    context.longitudeWgs84,
-  ).altitude;
-  let moonrise: number | undefined;
-  let moonset: number | undefined;
+function findSunAltitudeCrossing(
+  context: NormalizedAstroInput,
+  direction: 1 | -1,
+  altitude: number,
+): number | undefined {
+  const event = SearchAltitude(
+    Body.Sun,
+    context.observer,
+    direction,
+    new Date(context.midnightUtcMs),
+    1,
+    altitude,
+  );
 
-  for (
-    let timestamp = context.midnightUtcMs + intervalMs;
-    timestamp <= context.midnightUtcMs + dayMs;
-    timestamp += intervalMs
+  return timestampWithinLocalDate(event?.date.getTime(), context);
+}
+
+function timestampWithinLocalDate(
+  timestamp: number | undefined,
+  context: NormalizedAstroInput,
+): number | undefined {
+  if (
+    timestamp === undefined ||
+    !Number.isFinite(timestamp) ||
+    timestamp < context.midnightUtcMs ||
+    timestamp >= context.nextMidnightUtcMs
   ) {
-    const altitude = getMoonPosition(
-      timestamp,
-      context.latitudeWgs84,
-      context.longitudeWgs84,
-    ).altitude;
-
-    if (previousAltitude < 0 && altitude >= 0 && moonrise === undefined) {
-      moonrise = interpolateCrossing(previousTime, timestamp, previousAltitude, altitude);
-    }
-    if (previousAltitude >= 0 && altitude < 0 && moonset === undefined) {
-      moonset = interpolateCrossing(previousTime, timestamp, previousAltitude, altitude);
-    }
-    if (moonrise !== undefined && moonset !== undefined) {
-      break;
-    }
-
-    previousTime = timestamp;
-    previousAltitude = altitude;
+    return undefined;
   }
 
-  return { moonrise, moonset };
+  return timestamp;
 }
 
-function getMoonPosition(
+function getBodyAzimuth(body: Body, timestamp: number, context: NormalizedAstroInput): number {
+  return round1(getBodyHorizontal(body, timestamp, context).azimuth);
+}
+
+function getBodyHorizontal(
+  body: Body,
   timestamp: number,
-  latitudeWgs84: number,
-  longitudeWgs84: number,
+  context: Pick<NormalizedAstroInput, "observer">,
 ): {
   readonly altitude: number;
   readonly azimuth: number;
 } {
-  const lw = rad * -longitudeWgs84;
-  const phi = rad * latitudeWgs84;
-  const d = toDays(new Date(timestamp));
-  const moon = moonCoords(d);
-  const h = siderealTime(d, lw) - moon.ra;
-  const altitudeRad = altitude(h, phi, moon.dec);
+  const date = new Date(timestamp);
+  const equatorial = Equator(body, date, context.observer, true, true);
+  const horizontal = Horizon(date, context.observer, equatorial.ra, equatorial.dec, "normal");
 
   return {
-    altitude: (altitudeRad + astroRefraction(altitudeRad)) / rad,
-    azimuth: azimuth(h, phi, moon.dec) / rad,
+    altitude: horizontal.altitude,
+    azimuth: horizontal.azimuth,
   };
 }
 
-function getMoonIlluminationDetails(timestamp: number): {
-  readonly fraction: number;
-  readonly phase: number;
-} {
-  const d = toDays(new Date(timestamp));
-  const sun = sunCoords(d);
-  const moon = moonCoords(d);
-  const sunDistance = 149_598_000;
-  const phi = Math.acos(
-    Math.sin(sun.dec) * Math.sin(moon.dec) +
-      Math.cos(sun.dec) * Math.cos(moon.dec) * Math.cos(sun.ra - moon.ra),
-  );
-  const inc = Math.atan2(sunDistance * Math.sin(phi), moon.dist - sunDistance * Math.cos(phi));
-  const angle = Math.atan2(
-    Math.cos(sun.dec) * Math.sin(sun.ra - moon.ra),
-    Math.sin(sun.dec) * Math.cos(moon.dec) -
-      Math.cos(sun.dec) * Math.sin(moon.dec) * Math.cos(sun.ra - moon.ra),
-  );
-  const phase = 0.5 + (0.5 * inc * (angle < 0 ? -1 : 1)) / Math.PI;
+function sampleMilkyWayWindow(
+  context: NormalizedAstroInput,
+  darkStart: number,
+  darkEnd: number,
+): readonly MilkyWaySample[] {
+  ensureGalacticCenterStar();
 
-  return {
-    fraction: (1 + Math.cos(inc)) / 2,
-    phase: ((phase % 1) + 1) % 1,
-  };
-}
+  const samples: MilkyWaySample[] = [];
+  const firstSample = Math.ceil(darkStart / milkyWaySampleStepMs) * milkyWaySampleStepMs;
 
-function sunCoords(d: number): {
-  readonly dec: number;
-  readonly ra: number;
-} {
-  const m = solarMeanAnomaly(d);
-  const l = eclipticLongitude(m);
+  for (let timestamp = firstSample; timestamp <= darkEnd; timestamp += milkyWaySampleStepMs) {
+    const galacticCenter = getBodyHorizontal(Body.Star1, timestamp, context);
+    const moon = getBodyHorizontal(Body.Moon, timestamp, context);
+    const moonIllumination = clamp(
+      Illumination(Body.Moon, new Date(timestamp)).phase_fraction,
+      0,
+      1,
+    );
+    const moonPenalty =
+      moon.altitude <= 0
+        ? 0
+        : moonIllumination * (moon.altitude >= 20 ? 35 : moon.altitude >= 8 ? 24 : 14);
+    const altitudeScore = clamp((galacticCenter.altitude - 5) * 3.2, 0, 100);
+    const score = clamp(altitudeScore - moonPenalty, 0, 100);
 
-  return {
-    dec: declination(l, 0),
-    ra: rightAscension(l, 0),
-  };
-}
-
-function moonCoords(d: number): {
-  readonly dec: number;
-  readonly dist: number;
-  readonly ra: number;
-} {
-  const l = rad * (218.316 + 13.176396 * d);
-  const m = rad * (134.963 + 13.064993 * d);
-  const f = rad * (93.272 + 13.22935 * d);
-  const longitude = l + rad * 6.289 * Math.sin(m);
-  const latitude = rad * 5.128 * Math.sin(f);
-
-  return {
-    ra: rightAscension(longitude, latitude),
-    dec: declination(longitude, latitude),
-    dist: 385_001 - 20_905 * Math.cos(m),
-  };
-}
-
-function getSeasonalMilkyWayWindow(date: string): SeasonalMilkyWayWindow | undefined {
-  const month = Number(date.slice(5, 7));
-
-  switch (month) {
-    case 2:
-      return { startHour: 4, endHour: 5.5, directionZh: "东南方低空", baseVisibility: "poor" };
-    case 3:
-      return { startHour: 3, endHour: 5.5, directionZh: "东南至南方", baseVisibility: "fair" };
-    case 4:
-      return { startHour: 1.5, endHour: 4.5, directionZh: "东南至南方", baseVisibility: "fair" };
-    case 5:
-      return { startHour: 0, endHour: 3.5, directionZh: "东南至南方", baseVisibility: "good" };
-    case 6:
-      return { startHour: 22.5, endHour: 26.5, directionZh: "南方", baseVisibility: "good" };
-    case 7:
-      return { startHour: 21.5, endHour: 25.5, directionZh: "南方至西南", baseVisibility: "good" };
-    case 8:
-      return { startHour: 20.5, endHour: 23.5, directionZh: "南方至西南", baseVisibility: "good" };
-    case 9:
-      return { startHour: 19.5, endHour: 22.5, directionZh: "西南方", baseVisibility: "fair" };
-    case 10:
-      return { startHour: 18.5, endHour: 20.5, directionZh: "西南方低空", baseVisibility: "poor" };
-    default:
-      return undefined;
+    samples.push({
+      timestamp,
+      galacticCenterAltitude: galacticCenter.altitude,
+      galacticCenterAzimuth: galacticCenter.azimuth,
+      moonAltitude: moon.altitude,
+      moonIllumination,
+      score,
+    });
   }
+
+  return samples;
 }
 
-function adjustVisibilityForMoon(
-  baseVisibility: Exclude<MilkyWayVisibilityLevel, "unavailable">,
-  moonIllumination: number,
-  moonAltitude: number,
-  windowMinutes: number,
+function ensureGalacticCenterStar(): void {
+  if (isGalacticCenterDefined) {
+    return;
+  }
+
+  // Local V1 approximation: Sagittarius A* J2000 coordinates stand in for the Galactic Center.
+  DefineStar(Body.Star1, 17 + 45 / 60 + 40.04 / 3600, -29.00781, 26_000);
+  isGalacticCenterDefined = true;
+}
+
+function classifyMilkyWayVisibility(
+  bestSample: MilkyWaySample,
+  durationHours: number,
 ): MilkyWayVisibilityLevel {
-  let levelScore = baseVisibility === "good" ? 3 : baseVisibility === "fair" ? 2 : 1;
+  let score = bestSample.score;
 
-  if (windowMinutes < 90) {
-    levelScore -= 1;
-  }
-  if (moonAltitude > 5 && moonIllumination > 0.35) {
-    levelScore -= 1;
-  }
-  if (moonAltitude > 15 && moonIllumination > 0.65) {
-    levelScore -= 1;
+  if (bestSample.galacticCenterAltitude >= 25) {
+    score += 12;
+  } else if (bestSample.galacticCenterAltitude < 15) {
+    score -= 15;
   }
 
-  if (levelScore >= 3) {
+  if (durationHours >= 2.5) {
+    score += 10;
+  } else if (durationHours < 1) {
+    score -= 18;
+  }
+
+  if (score >= 78) {
     return "good";
   }
-  if (levelScore === 2) {
+  if (score >= 52) {
     return "fair";
   }
   return "poor";
 }
 
-function seasonalLocalHourToUtcMs(date: string, timezone: string, hourFloat: number): number {
-  const dayOffset = hourFloat >= 24 ? Math.floor(hourFloat / 24) : hourFloat < 12 ? 1 : 0;
-  const normalizedHour = ((hourFloat % 24) + 24) % 24;
-  const hour = Math.floor(normalizedHour);
-  const minute = Math.round((normalizedHour - hour) * 60);
+function directionFromAzimuth(azimuth: number): string {
+  const normalized = ((azimuth % 360) + 360) % 360;
+  const directions = [
+    "北方",
+    "东北方",
+    "东方",
+    "东南方",
+    "南方",
+    "西南方",
+    "西方",
+    "西北方",
+  ] as const;
+  const index = Math.round(normalized / 45) % directions.length;
 
-  return zonedDateTimeToUtcMs(addDays(date, dayOffset), timezone, hour, minute, 0);
+  return directions[index]!;
 }
 
-function getSetJ(
-  altitudeRad: number,
-  lw: number,
-  phi: number,
-  dec: number,
-  n: number,
-  m: number,
-  l: number,
-): number | undefined {
-  const hourAngleValue = hourAngle(altitudeRad, phi, dec);
-  if (hourAngleValue === undefined) {
-    return undefined;
-  }
-
-  const a = approxTransit(hourAngleValue, lw, n);
-  return solarTransitJ(a, m, l);
-}
-
-function rightAscension(l: number, b: number): number {
-  return Math.atan2(
-    Math.sin(l) * Math.cos(eclipticObliquity) - Math.tan(b) * Math.sin(eclipticObliquity),
-    Math.cos(l),
-  );
-}
-
-function declination(l: number, b: number): number {
-  return Math.asin(
-    Math.sin(b) * Math.cos(eclipticObliquity) +
-      Math.cos(b) * Math.sin(eclipticObliquity) * Math.sin(l),
-  );
-}
-
-function azimuth(h: number, phi: number, dec: number): number {
-  return Math.atan2(
-    Math.sin(h),
-    Math.cos(h) * Math.sin(phi) - Math.tan(dec) * Math.cos(phi),
-  );
-}
-
-function altitude(h: number, phi: number, dec: number): number {
-  return Math.asin(Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.cos(h));
-}
-
-function siderealTime(d: number, lw: number): number {
-  return rad * (280.16 + 360.9856235 * d) - lw;
-}
-
-function astroRefraction(altitudeRad: number): number {
-  const safeAltitude = altitudeRad < 0 ? 0 : altitudeRad;
-  return (0.0002967 / Math.tan(safeAltitude + 0.00312536 / (safeAltitude + 0.08901179))) || 0;
-}
-
-function solarMeanAnomaly(d: number): number {
-  return rad * (357.5291 + 0.98560028 * d);
-}
-
-function eclipticLongitude(m: number): number {
-  const c = rad * (1.9148 * Math.sin(m) + 0.02 * Math.sin(2 * m) + 0.0003 * Math.sin(3 * m));
-  const p = rad * 102.9372;
-
-  return m + c + p + Math.PI;
-}
-
-function julianCycle(d: number, lw: number): number {
-  return Math.round(d - j0 - lw / (2 * Math.PI));
-}
-
-function approxTransit(ht: number, lw: number, n: number): number {
-  return j0 + (ht + lw) / (2 * Math.PI) + n;
-}
-
-function solarTransitJ(ds: number, m: number, l: number): number {
-  return j2000 + ds + 0.0053 * Math.sin(m) - 0.0069 * Math.sin(2 * l);
-}
-
-function hourAngle(altitudeRad: number, phi: number, dec: number): number | undefined {
-  const value =
-    (Math.sin(altitudeRad) - Math.sin(phi) * Math.sin(dec)) / (Math.cos(phi) * Math.cos(dec));
-
-  if (value < -1 || value > 1) {
-    return undefined;
-  }
-
-  return Math.acos(value);
-}
-
-function toJulian(date: Date): number {
-  return date.getTime() / dayMs - 0.5 + j1970;
-}
-
-function fromJulian(julianDate: number): Date {
-  return new Date((julianDate + 0.5 - j1970) * dayMs);
-}
-
-function toDays(date: Date): number {
-  return toJulian(date) - j2000;
-}
-
-function interpolateCrossing(
-  previousTime: number,
-  nextTime: number,
-  previousAltitude: number,
-  nextAltitude: number,
-): number {
-  const fraction =
-    previousAltitude === nextAltitude
-      ? 0
-      : (0 - previousAltitude) / (nextAltitude - previousAltitude);
-
-  return previousTime + clamp(fraction, 0, 1) * (nextTime - previousTime);
+function normalizePhase(phase: number): number {
+  return ((phase % 1) + 1) % 1;
 }
 
 function normalizeDate(value: string): string {
@@ -614,7 +449,7 @@ function zonedDateTimeToUtcMs(
   minute: number,
   second: number,
 ): number {
-  const [year, month, day] = date.split("-").map(Number) as [number, number, number];
+  const [year, month, day] = parseDateParts(date);
   let utcMs = Date.UTC(year, month - 1, day, hour, minute, second);
 
   for (let iteration = 0; iteration < 3; iteration += 1) {
@@ -701,12 +536,27 @@ function formatOffset(offsetMinutes: number): string {
   return `${sign}${pad2(hours)}:${pad2(minutes)}`;
 }
 
+function parseTimestamp(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
 function addDays(date: string, days: number): string {
-  const [year, month, day] = date.split("-").map(Number) as [number, number, number];
+  const [year, month, day] = parseDateParts(date);
   const timestamp = Date.UTC(year, month - 1, day + days);
   const next = new Date(timestamp);
 
   return `${next.getUTCFullYear()}-${pad2(next.getUTCMonth() + 1)}-${pad2(next.getUTCDate())}`;
+}
+
+function parseDateParts(date: string): [number, number, number] {
+  const parts = date.split("-").map(Number);
+
+  return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0];
 }
 
 function clamp(value: number, min: number, max: number): number {

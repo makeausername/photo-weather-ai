@@ -101,7 +101,7 @@ describe("AmapProvider normalization", () => {
     const provider = new AmapProvider({ enabled: true });
 
     await expect(provider.searchPlace("黄山光明顶")).rejects.toThrow(
-      "高德地图已启用，但尚未配置 Web 服务 API Key。",
+      "高德地图服务未配置 API Key，请先在后台服务商配置中填写高德 Web 服务 Key。",
     );
   });
 });

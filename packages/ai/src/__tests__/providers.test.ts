@@ -1,6 +1,13 @@
 import { decisionCardSchema } from "@photo-weather/shared";
 import { describe, expect, it } from "vitest";
-import { DeepSeekProvider, MockAIProvider, RuleOnlyProvider } from "../index";
+import type { ForecastCalculationResult } from "@photo-weather/shared";
+import {
+  buildDeepSeekForecastExplanationRequest,
+  DeepSeekProvider,
+  forecastAiExplanationSchema,
+  MockAIProvider,
+  RuleOnlyProvider,
+} from "../index";
 
 const place = {
   id: "mock-place-huangshan",
@@ -45,7 +52,7 @@ describe("AI providers", () => {
         place,
         forecastSummary: "Should not call network",
       }),
-    ).rejects.toThrow("not implemented for local tests");
+    ).rejects.toThrow("DeepSeek 真实开发调用未启用");
   });
 
   it("validates JSON output through a supplied schema", () => {
@@ -63,4 +70,207 @@ describe("AI providers", () => {
 
     expect(parsed.score).toBe(80);
   });
+
+  it("builds a DeepSeek JSON-mode forecast explanation request without secrets", () => {
+    const request = buildDeepSeekForecastExplanationRequest(
+      {
+        forecastResult: forecastResultFixture,
+      },
+      {
+        baseUrl: "https://example.deepseek.test/",
+        defaultModel: "deepseek-chat",
+      },
+    );
+
+    expect(request.url).toBe("https://example.deepseek.test/chat/completions");
+    expect(request.body).toMatchObject({
+      model: "deepseek-chat",
+      response_format: {
+        type: "json_object",
+      },
+      stream: false,
+    });
+    expect(JSON.stringify(request.body)).toContain("不要发明任何未提供的天气");
+    expect(JSON.stringify(request.body)).not.toContain("sk-");
+  });
+
+  it("calls DeepSeek with a mocked fetcher and parses forecast explanation JSON", async () => {
+    const fetcher = async (_input: string | URL, init?: RequestInit) => {
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer sk-test",
+      });
+      expect(String(init?.body)).not.toContain("sk-test");
+
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  summary: "模拟数据下窗口条件较好，但需要实地复核。",
+                  recommendation: "可以作为计划参考，不建议直接作为出行依据。",
+                  mainReasons: ["综合指数较高", "最佳窗口明确"],
+                  mainRisks: ["天气与地形仍为模拟数据"],
+                  photographerAdvice: ["提前准备防风和防雨方案"],
+                  backupPlan: ["若云量偏厚，改拍近景或延后到下一窗口"],
+                  confidenceNote: "当前为模拟数据解读，不代表真实预报准确率。",
+                }),
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
+    };
+    const provider = new DeepSeekProvider({
+      enabled: true,
+      realModeEnabled: true,
+      apiKey: "sk-test",
+      fetcher,
+    });
+
+    const explanation = await provider.generateForecastExplanation({
+      forecastResult: forecastResultFixture,
+    });
+
+    expect(explanation.summary).toContain("模拟数据");
+    expect(explanation.mainReasons).toHaveLength(2);
+  });
+
+  it("throws a clear DeepSeek key error only after real mode is explicitly enabled", async () => {
+    const provider = new DeepSeekProvider({
+      enabled: true,
+      realModeEnabled: true,
+    });
+
+    await expect(
+      provider.generateForecastExplanation({
+        forecastResult: forecastResultFixture,
+      }),
+    ).rejects.toThrow("DeepSeek 服务未配置 API Key，请先在后台服务商配置中填写 DeepSeek API Key。");
+  });
+
+  it("validates DeepSeek forecast explanation output shape", () => {
+    const provider = new DeepSeekProvider({ mode: "mock" });
+    const parsed = provider.validateJsonOutput(
+      forecastAiExplanationSchema,
+      JSON.stringify({
+        summary: "综合解读",
+        recommendation: "推荐谨慎参考",
+        mainReasons: ["云量窗口可用"],
+        mainRisks: ["模拟数据"],
+        photographerAdvice: ["提前到位"],
+        backupPlan: ["改拍近景"],
+        confidenceNote: "仅作模拟流程验证。",
+      }),
+    );
+
+    expect(parsed.backupPlan[0]).toBe("改拍近景");
+  });
 });
+
+const forecastResultFixture: ForecastCalculationResult = {
+  place: {
+    id: "spot-guangmingding",
+    name: "黄山光明顶",
+    countryCode: "CN",
+    coordinates: {
+      latitude: 30.1328,
+      longitude: 118.171,
+      system: "wgs84",
+    },
+  },
+  horizon: "48h",
+  target: "cloud_sea",
+  overallScore: 82,
+  recommendationLevel: "recommended",
+  recommendationLabel: "推荐前往",
+  summary: "模拟条件下清晨云海机会较好。",
+  scores: {
+    sunriseGlow: {
+      key: "sunriseGlow",
+      label: "朝霞",
+      score: 75,
+      level: "good",
+      reasons: ["高云比例适中。"],
+      risks: [],
+    },
+    sunsetGlow: {
+      key: "sunsetGlow",
+      label: "晚霞",
+      score: 62,
+      level: "fair",
+      reasons: ["傍晚云层偏厚。"],
+      risks: [],
+    },
+    cloudSea: {
+      key: "cloudSea",
+      label: "云海",
+      score: 86,
+      level: "excellent",
+      reasons: ["低云和湿度组合较好。"],
+      risks: [],
+    },
+    whiteoutRisk: {
+      key: "whiteoutRisk",
+      label: "白墙风险",
+      score: 38,
+      level: "fair",
+      reasons: ["低云可能贴近山顶。"],
+      risks: ["局部能见度下降。"],
+    },
+    stars: {
+      key: "stars",
+      label: "星空",
+      score: 58,
+      level: "fair",
+      reasons: ["夜间云量一般。"],
+      risks: [],
+    },
+    milkyWay: {
+      key: "milkyWay",
+      label: "银河",
+      score: 44,
+      level: "poor",
+      reasons: ["银河条件有限。"],
+      risks: [],
+    },
+    transparency: {
+      key: "transparency",
+      label: "通透度",
+      score: 71,
+      level: "good",
+      reasons: ["能见度较好。"],
+      risks: [],
+    },
+  },
+  astroSummaries: [],
+  bestWindows: [
+    {
+      label: "清晨云海窗口",
+      startTime: "2026-05-20T05:00:00+08:00",
+      endTime: "2026-05-20T07:00:00+08:00",
+      score: 86,
+      target: "cloud_sea",
+    },
+  ],
+  riskFlags: [
+    {
+      key: "mock_data",
+      label: "模拟数据",
+      level: "medium",
+      description: "天气与地形仍为本地模拟数据。",
+    },
+  ],
+  keyReasons: ["清晨低云和湿度组合较好。"],
+  photographyAdvice: ["提前到达机位并预留风雨备选。"],
+  dataNotice: "当前天气数据和地形数据为本地模拟数据。",
+  isMock: true,
+  dataSourceLabel: "模拟天气数据",
+  generatedAt: "2026-05-19T08:00:00+08:00",
+};

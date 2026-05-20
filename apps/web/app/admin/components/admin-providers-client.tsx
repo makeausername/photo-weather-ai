@@ -14,14 +14,12 @@ import {
   SwitchRow,
   Textarea,
 } from "../../../components/ui";
-import {
-  adminApiFetch,
-  createProviderConnectionTestRequestInit,
-} from "../admin-api";
+import { adminApiFetch, createProviderConnectionTestRequestInit } from "../admin-api";
 import type { JsonValue, MockConnectionTestResult, SafeProviderConfig } from "../admin-api";
 
 type ProvidersResponse = {
   readonly providers: SafeProviderConfig[];
+  readonly realDevCallFlags?: RealDevCallFlags;
 };
 
 type AdminProvidersClientProps = {
@@ -35,6 +33,11 @@ type RowState = {
 
 type FieldDrafts = Record<string, Record<string, string>>;
 type ClearSecretDrafts = Record<string, Record<string, boolean>>;
+
+type RealDevCallFlags = {
+  readonly amap: boolean;
+  readonly deepseek: boolean;
+};
 
 const providerTypeLabels: Record<string, string> = {
   ai: "AI 服务商",
@@ -115,8 +118,9 @@ function getPresetFields(
   target: "configJson" | "secretJson",
 ): readonly ProviderFieldDefinition[] {
   return (
-    getProviderFieldPreset(provider.providerCode)?.fields.filter((field) => field.target === target) ??
-    []
+    getProviderFieldPreset(provider.providerCode)?.fields.filter(
+      (field) => field.target === target,
+    ) ?? []
   );
 }
 
@@ -198,6 +202,52 @@ function ProviderStatus({ provider }: { readonly provider: SafeProviderConfig })
   );
 }
 
+function getRealDevCallFlagKey(provider: SafeProviderConfig): keyof RealDevCallFlags | null {
+  if (provider.providerType === "geo" && provider.providerCode === "amap") {
+    return "amap";
+  }
+
+  if (provider.providerType === "ai" && provider.providerCode === "deepseek") {
+    return "deepseek";
+  }
+
+  return null;
+}
+
+function isRealDevCallEnabled(provider: SafeProviderConfig, flags: RealDevCallFlags): boolean {
+  const key = getRealDevCallFlagKey(provider);
+  return key ? flags[key] : false;
+}
+
+function RealDevCallNotice({
+  provider,
+  flags,
+}: {
+  readonly provider: SafeProviderConfig;
+  readonly flags: RealDevCallFlags;
+}) {
+  const key = getRealDevCallFlagKey(provider);
+  if (!key) {
+    return null;
+  }
+
+  const enabled = flags[key];
+
+  return (
+    <div className="rounded-lg border border-border bg-muted px-3 py-2 text-sm leading-6 text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-semibold text-card-foreground">真实开发调用：</span>
+        <Badge variant={enabled ? "warning" : "muted"}>{enabled ? "已启用" : "未启用"}</Badge>
+      </div>
+      <p className="mt-1 text-xs leading-5">
+        {enabled
+          ? "当前将请求真实服务，请确认 Key 有效且注意调用费用。"
+          : "当前测试连接为本地模拟，不会请求外部服务。"}
+      </p>
+    </div>
+  );
+}
+
 function SavedSecretSummary({ provider }: { readonly provider: SafeProviderConfig }) {
   const maskedSecrets = listMaskedSecrets(provider);
 
@@ -237,6 +287,10 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({});
   const [stateByProvider, setStateByProvider] = useState<Record<string, RowState>>({});
   const [loadState, setLoadState] = useState<RowState>({ status: "idle" });
+  const [realDevCallFlags, setRealDevCallFlags] = useState<RealDevCallFlags>({
+    amap: false,
+    deepseek: false,
+  });
 
   const path = providerType
     ? `/admin/providers?providerType=${encodeURIComponent(providerType)}`
@@ -247,6 +301,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     try {
       const response = await adminApiFetch<ProvidersResponse>(path);
       setProviders(response.providers);
+      setRealDevCallFlags(response.realDevCallFlags ?? { amap: false, deepseek: false });
       setConfigDrafts(
         Object.fromEntries(
           response.providers.map((provider) => [provider.id, stringifyJson(provider.configJson)]),
@@ -255,8 +310,12 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       setConfigFieldDrafts(createConfigFieldDrafts(response.providers));
       setSecretDrafts(Object.fromEntries(response.providers.map((provider) => [provider.id, ""])));
       setSecretFieldDrafts(createEmptyFieldDrafts(response.providers));
-      setClearSecretDrafts(Object.fromEntries(response.providers.map((provider) => [provider.id, {}])));
-      setSecretVisibility(Object.fromEntries(response.providers.map((provider) => [provider.id, {}])));
+      setClearSecretDrafts(
+        Object.fromEntries(response.providers.map((provider) => [provider.id, {}])),
+      );
+      setSecretVisibility(
+        Object.fromEntries(response.providers.map((provider) => [provider.id, {}])),
+      );
       setEnabledDrafts(
         Object.fromEntries(response.providers.map((provider) => [provider.id, provider.enabled])),
       );
@@ -373,9 +432,13 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   }
 
   async function testProvider(provider: SafeProviderConfig) {
+    const realEnabled = isRealDevCallEnabled(provider, realDevCallFlags);
     setStateByProvider((current) => ({
       ...current,
-      [provider.id]: { status: "testing", message: "正在执行本地模拟测试..." },
+      [provider.id]: {
+        status: "testing",
+        message: realEnabled ? "正在请求真实服务..." : "正在执行本地模拟测试...",
+      },
     }));
 
     try {
@@ -510,7 +573,9 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <h3 className="text-base font-bold">{providerName(provider)}</h3>
-                      <p className="mt-1 text-sm text-muted-foreground">代码：{provider.providerCode}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        代码：{provider.providerCode}
+                      </p>
                     </div>
                     <ProviderStatus provider={provider} />
                   </div>
@@ -520,6 +585,8 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                       {preset.helpText}
                     </p>
                   ) : null}
+
+                  <RealDevCallNotice provider={provider} flags={realDevCallFlags} />
 
                   <SavedSecretSummary provider={provider} />
 
@@ -576,11 +643,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                         {configFields.length > 0 ? (
                           <div className="grid gap-3 sm:grid-cols-2">
                             {configFields.map((field) => (
-                              <FormField
-                                key={field.key}
-                                label={field.label}
-                                hint={field.helpText}
-                              >
+                              <FormField key={field.key} label={field.label} hint={field.helpText}>
                                 <Input
                                   value={configFieldDrafts[provider.id]?.[field.key] ?? ""}
                                   placeholder={field.placeholder}
@@ -631,13 +694,19 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                                       placeholder={field.placeholder ?? "留空则保持现有密钥不变"}
                                       disabled={clearSelected}
                                       onChange={(event) =>
-                                        updateSecretField(provider.id, field.key, event.target.value)
+                                        updateSecretField(
+                                          provider.id,
+                                          field.key,
+                                          event.target.value,
+                                        )
                                       }
                                     />
                                     {field.password ? (
                                       <Button
                                         variant="secondary"
-                                        onClick={() => toggleSecretVisibility(provider.id, field.key)}
+                                        onClick={() =>
+                                          toggleSecretVisibility(provider.id, field.key)
+                                        }
                                       >
                                         {visible ? "隐藏" : "显示"}
                                       </Button>
@@ -698,7 +767,10 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                       </details>
 
                       <div className="flex flex-wrap justify-end gap-3">
-                        <Button variant="secondary" onClick={() => toggleProviderEditor(provider.id)}>
+                        <Button
+                          variant="secondary"
+                          onClick={() => toggleProviderEditor(provider.id)}
+                        >
                           取消
                         </Button>
                         <Button onClick={() => void saveProvider(provider)}>保存配置</Button>

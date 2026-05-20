@@ -209,7 +209,7 @@ export function buildForecastInputFromNormalizedWeather(
     hourlyWeather: weather.hourlyWeather,
     dailyWeather: weather.dailyWeather,
     terrainSummary: generateMockTerrainSummary(place),
-    astroSummaries: generateMockAstroSummaries(query.horizon, {
+    astroSummaries: generateLocalAstroSummaries(query.horizon, {
       ...options,
       latitudeWgs84: query.latitudeWgs84,
       longitudeWgs84: query.longitudeWgs84,
@@ -357,11 +357,10 @@ export function generateMockTerrainSummary(place: Place): TerrainSummary {
   };
 }
 
-export function generateMockAstroSummaries(
+export function generateLocalAstroSummaries(
   horizon: ForecastHorizon,
   options: MockGenerationOptions = {},
 ): readonly AstroSummary[] {
-  const profile = resolveProfile(options.placeName);
   const days = horizon === "7d" ? 7 : Math.ceil(getHorizonHours(horizon) / 24);
   const latitudeWgs84 = options.latitudeWgs84 ?? defaultCoordinates.latitudeWgs84;
   const longitudeWgs84 = options.longitudeWgs84 ?? defaultCoordinates.longitudeWgs84;
@@ -386,8 +385,8 @@ export function generateMockAstroSummaries(
     return {
       date,
       timezone: "Asia/Shanghai",
-      sunrise: sunTimes.sunrise ?? `${date}T${profile.sunriseClock}:00+08:00`,
-      sunset: sunTimes.sunset ?? `${date}T${profile.sunsetClock}:00+08:00`,
+      sunrise: sunTimes.sunrise,
+      sunset: sunTimes.sunset,
       solarNoon: sunTimes.solarNoon,
       sunriseAzimuth: sunTimes.sunriseAzimuth,
       sunsetAzimuth: sunTimes.sunsetAzimuth,

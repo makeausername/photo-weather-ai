@@ -22,6 +22,27 @@ type ForecastResultClientProps = {
 
 type LoadStatus = "idle" | "loading" | "ready" | "error";
 
+type AiStatus = "idle" | "loading" | "ready" | "error";
+
+type ForecastAiExplanation = {
+  readonly summary: string;
+  readonly recommendation: string;
+  readonly mainReasons: readonly string[];
+  readonly mainRisks: readonly string[];
+  readonly photographerAdvice: readonly string[];
+  readonly backupPlan: readonly string[];
+  readonly confidenceNote: string;
+};
+
+type AiExplainResponse = {
+  readonly explanation: ForecastAiExplanation;
+};
+
+type ApiErrorPayload = {
+  readonly message?: string;
+  readonly error?: string;
+};
+
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
 const sourceLabels: Record<string, string> = {
@@ -54,10 +75,27 @@ const scoreOrder = [
   "transparency",
 ] as const;
 
+async function readApiErrorMessage(response: Response, fallback: string): Promise<string> {
+  const text = await response.text();
+  if (!text) {
+    return fallback;
+  }
+
+  try {
+    const payload = JSON.parse(text) as ApiErrorPayload;
+    return payload.message || payload.error || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export function ForecastResultClient({ query }: ForecastResultClientProps) {
   const [status, setStatus] = useState<LoadStatus>(query ? "loading" : "idle");
   const [result, setResult] = useState<ForecastCalculationResult | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
+  const [aiStatus, setAiStatus] = useState<AiStatus>("idle");
+  const [aiExplanation, setAiExplanation] = useState<ForecastAiExplanation | null>(null);
+  const [aiErrorMessage, setAiErrorMessage] = useState("");
 
   const queryKey = useMemo(() => (query ? JSON.stringify(query) : ""), [query]);
 
@@ -70,6 +108,9 @@ export function ForecastResultClient({ query }: ForecastResultClientProps) {
     setStatus("loading");
     setResult(null);
     setErrorMessage("");
+    setAiStatus("idle");
+    setAiExplanation(null);
+    setAiErrorMessage("");
 
     async function calculateForecast() {
       try {
@@ -106,6 +147,35 @@ export function ForecastResultClient({ query }: ForecastResultClientProps) {
     };
   }, [query, queryKey]);
 
+  async function generateAiExplanation() {
+    if (!query || !result || aiStatus === "loading") {
+      return;
+    }
+
+    setAiStatus("loading");
+    setAiErrorMessage("");
+    try {
+      const response = await fetch(`${apiBaseUrl}/forecast/ai-explain`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(query),
+      });
+
+      if (!response.ok) {
+        throw new Error(await readApiErrorMessage(response, "智能解读暂时不可用。"));
+      }
+
+      const data = (await response.json()) as AiExplainResponse;
+      setAiExplanation(data.explanation);
+      setAiStatus("ready");
+    } catch (error) {
+      setAiErrorMessage((error as Error).message || "智能解读暂时不可用。");
+      setAiStatus("error");
+    }
+  }
+
   return (
     <PublicShell contentClassName="grid gap-5 pb-14">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -134,11 +204,11 @@ export function ForecastResultClient({ query }: ForecastResultClientProps) {
             拍摄天气分析
           </h1>
           <p className="mt-3 text-sm leading-6 text-muted-foreground sm:text-[15px]">
-            按地点、时间范围和拍摄目标展示综合指数、窗口、风险、建议与数据状态。当前结果用于界面和本地计算验证，不代表真实预报。
+            按地点、时间范围和拍摄目标展示综合指数、窗口、风险、建议与数据状态。天文数据来自本地算法，天气与地形仍为本地模拟数据。
           </p>
         </div>
         <Badge variant={result?.isMock || status === "loading" ? "warning" : "success"}>
-          {result?.isMock || status === "loading" ? "模拟展示" : "已接入数据源"}
+          {result?.isMock || status === "loading" ? "部分模拟数据" : "已接入数据源"}
         </Badge>
       </header>
 
@@ -155,7 +225,16 @@ export function ForecastResultClient({ query }: ForecastResultClientProps) {
         </DashboardFrame>
       ) : null}
 
-      {query && result ? <ForecastResultView query={query} result={result} /> : null}
+      {query && result ? (
+        <ForecastResultView
+          query={query}
+          result={result}
+          aiStatus={aiStatus}
+          aiExplanation={aiExplanation}
+          aiErrorMessage={aiErrorMessage}
+          onGenerateAiExplanation={generateAiExplanation}
+        />
+      ) : null}
     </PublicShell>
   );
 }
@@ -186,13 +265,13 @@ function LoadingDashboard({ query }: { readonly query: ForecastQueryInput }) {
           正在生成拍摄天气分析...
         </div>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          正在使用本地模拟天气、地形和天文数据计算出片指数。
+          正在使用本地算法天文数据、模拟天气数据和模拟地形数据计算出片指数。
         </p>
       </Card>
       <Card className="p-5 shadow-sm">
         <h2 className="text-lg font-bold text-card-foreground">数据状态</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          当前展示模拟计算流程，不会调用真实天气、地图图层或外部分析服务。
+          天文计算在本地完成；天气与地形仍使用本地模拟数据，不会调用外部分析服务。
         </p>
       </Card>
     </DashboardFrame>
@@ -254,9 +333,17 @@ function InvalidQueryCard() {
 function ForecastResultView({
   query,
   result,
+  aiStatus,
+  aiExplanation,
+  aiErrorMessage,
+  onGenerateAiExplanation,
 }: {
   readonly query: ForecastQueryInput;
   readonly result: ForecastCalculationResult;
+  readonly aiStatus: AiStatus;
+  readonly aiExplanation: ForecastAiExplanation | null;
+  readonly aiErrorMessage: string;
+  readonly onGenerateAiExplanation: () => void;
 }) {
   const scoreEntries = scoreOrder.map((key) => result.scores[key]);
   const bestWindow = result.bestWindows[0];
@@ -275,7 +362,7 @@ function ForecastResultView({
               </h2>
             </div>
             <Badge variant={result.isMock ? "warning" : "success"}>
-              {result.isMock ? "模拟展示" : "真实数据"}
+              {result.isMock ? "天气/地形模拟" : "已接入数据源"}
             </Badge>
           </div>
 
@@ -320,6 +407,12 @@ function ForecastResultView({
 
       <aside className="grid content-start gap-4">
         <MockWarningCard result={result} />
+        <AiExplanationPanel
+          status={aiStatus}
+          explanation={aiExplanation}
+          errorMessage={aiErrorMessage}
+          onGenerate={onGenerateAiExplanation}
+        />
         <RiskPanel risks={result.riskFlags} />
         <TextListPanel title="拍摄建议" emptyText="暂无拍摄建议。">
           {result.photographyAdvice.map((advice) => (
@@ -343,7 +436,10 @@ function ForecastResultView({
 
 const missingText = "暂无数据";
 
-const milkyWayVisibilityLabels: Record<NonNullable<AstroSummary["milkyWayVisibilityLevel"]>, string> = {
+const milkyWayVisibilityLabels: Record<
+  NonNullable<AstroSummary["milkyWayVisibilityLevel"]>,
+  string
+> = {
   unavailable: "不可见",
   poor: "条件较差",
   fair: "可尝试",
@@ -354,11 +450,11 @@ function AstronomyPanel({ astro }: { readonly astro: AstroSummary | undefined })
   return (
     <Card className="p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">天文条件</h2>
-        <Badge variant="muted">本地计算</Badge>
+        <h2 className="text-lg font-bold text-card-foreground">天文数据</h2>
+        <Badge variant="muted">本地算法计算</Badge>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-5">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
         <AstronomyFactCard
           title="日出 / 日落"
           primary={`${formatOptionalTime(astro?.sunrise)} / ${formatOptionalTime(astro?.sunset)}`}
@@ -375,9 +471,18 @@ function AstronomyPanel({ astro }: { readonly astro: AstroSummary | undefined })
           detail="以当地地平线近似计算"
         />
         <AstronomyFactCard
-          title="天文黑夜窗口"
-          primary={formatOptionalWindow(astro?.astronomicalNightStart, astro?.astronomicalNightEnd)}
-          detail={`天文晨光：${formatOptionalTime(astro?.astronomicalDawn)}`}
+          title="晨光"
+          primary={`民用晨光：${formatOptionalTime(astro?.civilDawn)}`}
+          detail={`航海晨光：${formatOptionalTime(astro?.nauticalDawn)} / 天文晨光：${formatOptionalTime(
+            astro?.astronomicalDawn,
+          )}`}
+        />
+        <AstronomyFactCard
+          title="昏影"
+          primary={`民用昏影：${formatOptionalTime(astro?.civilDusk)}`}
+          detail={`航海昏影：${formatOptionalTime(astro?.nauticalDusk)} / 天文昏影：${formatOptionalTime(
+            astro?.astronomicalDusk,
+          )}`}
         />
         <AstronomyFactCard
           title="银河窗口"
@@ -389,7 +494,7 @@ function AstronomyPanel({ astro }: { readonly astro: AstroSummary | undefined })
       </div>
 
       <p className="mt-4 rounded-lg border border-border bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground">
-        天文时间基于经纬度本地计算，真实拍摄效果仍需结合云量、能见度和地形遮挡。
+        天文数据基于 WGS84 经纬度和本地算法计算；天气数据、地形数据当前仍为本地模拟数据。
       </p>
       {astro?.milkyWayNoteZh ? (
         <p className="mt-2 text-xs leading-5 text-muted-foreground">{astro.milkyWayNoteZh}</p>
@@ -410,9 +515,7 @@ function AstronomyFactCard({
   return (
     <div className="rounded-lg border border-border bg-muted p-3">
       <p className="text-xs font-semibold text-muted-foreground">{title}</p>
-      <p className="mt-2 break-words text-sm font-bold leading-5 text-card-foreground">
-        {primary}
-      </p>
+      <p className="mt-2 break-words text-sm font-bold leading-5 text-card-foreground">{primary}</p>
       <p className="mt-2 text-xs leading-5 text-muted-foreground">{detail}</p>
     </div>
   );
@@ -480,12 +583,110 @@ function MockWarningCard({ result }: { readonly result: ForecastCalculationResul
     <Card className={cn("p-4 shadow-sm", result.isMock ? "border-warning" : "")}>
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant={result.isMock ? "warning" : "success"}>
-          {result.isMock ? "模拟展示" : "真实数据"}
+          {result.isMock ? "部分模拟数据" : "已接入数据源"}
         </Badge>
         <p className="text-sm font-semibold text-card-foreground">数据提醒</p>
       </div>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">{result.dataNotice}</p>
     </Card>
+  );
+}
+
+function AiExplanationPanel({
+  status,
+  explanation,
+  errorMessage,
+  onGenerate,
+}: {
+  readonly status: AiStatus;
+  readonly explanation: ForecastAiExplanation | null;
+  readonly errorMessage: string;
+  readonly onGenerate: () => void;
+}) {
+  return (
+    <Card className="p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-card-foreground">智能解读</h2>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            仅解释当前确定性结果，不重新计算天气、天文或地形。
+          </p>
+        </div>
+        <Badge variant="muted">手动触发</Badge>
+      </div>
+
+      <Button
+        className="mt-4 w-full"
+        variant="secondary"
+        disabled={status === "loading"}
+        onClick={onGenerate}
+      >
+        {status === "loading" ? "正在生成解读…" : "生成智能解读"}
+      </Button>
+
+      {status === "error" ? (
+        <p className="mt-3 rounded-lg border border-danger bg-card px-3 py-2 text-sm leading-6 text-danger">
+          {errorMessage || "智能解读暂时不可用。"}
+        </p>
+      ) : null}
+
+      {explanation ? (
+        <div className="mt-4 grid gap-4">
+          <AiTextSection title="综合解读">
+            <p className="text-sm leading-6 text-muted-foreground">{explanation.summary}</p>
+            <p className="mt-2 text-sm font-semibold leading-6 text-card-foreground">
+              {explanation.recommendation}
+            </p>
+          </AiTextSection>
+          <AiListSection title="关键依据" items={explanation.mainReasons} />
+          <AiListSection title="主要风险" items={explanation.mainRisks} />
+          <AiListSection title="拍摄建议" items={explanation.photographerAdvice} />
+          <AiListSection title="备用方案" items={explanation.backupPlan} />
+          <AiTextSection title="置信说明">
+            <p className="text-sm leading-6 text-muted-foreground">{explanation.confidenceNote}</p>
+          </AiTextSection>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
+function AiTextSection({
+  title,
+  children,
+}: {
+  readonly title: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <section className="rounded-lg border border-border bg-muted p-3">
+      <h3 className="text-sm font-bold text-card-foreground">{title}</h3>
+      <div className="mt-2">{children}</div>
+    </section>
+  );
+}
+
+function AiListSection({
+  title,
+  items,
+}: {
+  readonly title: string;
+  readonly items: readonly string[];
+}) {
+  return (
+    <AiTextSection title={title}>
+      {items.length > 0 ? (
+        <ul className="grid gap-2">
+          {items.map((item) => (
+            <li key={item} className="text-sm leading-6 text-muted-foreground">
+              {item}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm leading-6 text-muted-foreground">暂无。</p>
+      )}
+    </AiTextSection>
   );
 }
 
@@ -548,11 +749,13 @@ function DataStatusPanel({ result }: { readonly result: ForecastCalculationResul
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-card-foreground">数据状态</h2>
         <Badge variant={result.isMock ? "warning" : "success"}>
-          {result.isMock ? "模拟预报" : "真实数据"}
+          {result.isMock ? "部分模拟数据" : "已接入数据源"}
         </Badge>
       </div>
       <dl className="mt-4 grid gap-3 text-sm">
-        <SummaryItem label="计算模式" value={result.dataSourceLabel} />
+        <SummaryItem label="天文数据" value="本地算法计算" />
+        <SummaryItem label="天气数据" value={result.dataSourceLabel} />
+        <SummaryItem label="地形数据" value="本地模拟数据" />
         <SummaryItem label="生成时间" value={formatDateTime(result.generatedAt)} />
       </dl>
     </Card>

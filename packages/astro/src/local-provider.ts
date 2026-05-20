@@ -19,7 +19,7 @@ import type {
   TwilightTimes,
 } from "./types.js";
 
-export class MockAstroProvider implements AstroProvider {
+export class LocalAstroProvider implements AstroProvider {
   async getSunTimes(input: AstroInput): Promise<SunTimes> {
     return getSunTimes(input);
   }

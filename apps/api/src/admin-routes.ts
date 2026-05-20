@@ -32,7 +32,8 @@ import type { GeoProvider } from "@photo-weather/geo";
 import { z } from "zod";
 import type { AuthConfig } from "./auth-routes.js";
 import { requirePermission } from "./auth-routes.js";
-import { createRealAmapProvider } from "./geo-provider.js";
+import { createRealDeepSeekProvider, readRuntimeDeepSeekConfig } from "./ai-provider.js";
+import { createRealAmapProvider, readRuntimeAmapConfig } from "./geo-provider.js";
 
 const jsonSchema: z.ZodType<JsonValue> = z.lazy(() =>
   z.union([
@@ -59,7 +60,13 @@ const providerPatchSchema = z
     configJson: jsonObjectSchema.optional(),
     secretJson: jsonObjectSchema.nullable().optional(),
     clearSecretKeys: z
-      .array(z.string().min(1).max(80).regex(/^[A-Za-z][A-Za-z0-9_]*$/))
+      .array(
+        z
+          .string()
+          .min(1)
+          .max(80)
+          .regex(/^[A-Za-z][A-Za-z0-9_]*$/),
+      )
       .max(50)
       .optional(),
   })
@@ -219,6 +226,7 @@ export type AdminRoutesOptions = {
   readonly authConfig: AuthConfig;
   readonly geoProvider?: GeoProvider;
   readonly resolveGeoProvider?: () => Promise<GeoProvider>;
+  readonly env?: NodeJS.ProcessEnv;
 };
 
 function toAuditJson(value: unknown): JsonValue {
@@ -294,8 +302,10 @@ function validateCoordinatePair(input: {
 export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOptions): void {
   const client = options.dbClient;
   const authConfig = options.authConfig;
+  const env = options.env ?? process.env;
   const geoProvider = options.geoProvider ?? new MockGeoProvider();
-  const resolveAdminGeoProvider = options.resolveGeoProvider ?? (() => Promise.resolve(geoProvider));
+  const resolveAdminGeoProvider =
+    options.resolveGeoProvider ?? (() => Promise.resolve(geoProvider));
 
   app.get("/admin", async (request, reply) => {
     const auth = await requirePermission(request, reply, client, authConfig, "admin.manage");
@@ -472,6 +482,10 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
     return {
       providers,
       groups: groupBy(providers, (provider) => provider.providerType),
+      realDevCallFlags: {
+        amap: (await readRuntimeAmapConfig({ dbClient: client, env })).realModeEnabled,
+        deepseek: (await readRuntimeDeepSeekConfig({ dbClient: client, env })).realModeEnabled,
+      },
     };
   });
 
@@ -581,13 +595,27 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
         return sendZodError(reply, parsedBody.error);
       }
 
-      if (
-        request.params.providerType === "geo" &&
-        request.params.providerCode === "amap" &&
-        parsedBody.data?.mode === "real"
-      ) {
+      if (request.params.providerType === "geo" && request.params.providerCode === "amap") {
+        const runtimeConfig = await readRuntimeAmapConfig({ dbClient: client, env });
+        if (!runtimeConfig.realModeEnabled) {
+          return {
+            success: true,
+            mode: "mock",
+            message: "当前为本地模拟测试，未触发真实高德连接。",
+          };
+        }
+
+        if (!runtimeConfig.providerEnabled) {
+          return sendError(
+            reply,
+            409,
+            "provider_not_enabled",
+            "高德地图服务商未启用，请先在后台服务商配置中启用高德地图。",
+          );
+        }
+
         try {
-          const amapProvider = await createRealAmapProvider({ dbClient: client });
+          const amapProvider = await createRealAmapProvider({ dbClient: client, env });
           const results = await amapProvider.searchPlace("黄山光明顶", {
             countryCode: "CN",
             locale: "zh-CN",
@@ -599,9 +627,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
             mode: "real",
             providerType: request.params.providerType,
             providerCode: request.params.providerCode,
-            message: results[0]
-              ? "高德地图连接测试通过。"
-              : "高德地图连接成功，但未返回测试地点。",
+            message: results[0] ? "高德地图连接测试通过。" : "高德地图连接成功，但未返回测试地点。",
             sample: results[0]
               ? {
                   name: results[0].name,
@@ -609,6 +635,41 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
                   city: results[0].city ?? null,
                 }
               : null,
+          };
+        } catch (error) {
+          return sendError(reply, 503, "provider_test_failed", (error as Error).message);
+        }
+      }
+
+      if (request.params.providerType === "ai" && request.params.providerCode === "deepseek") {
+        const runtimeConfig = await readRuntimeDeepSeekConfig({ dbClient: client, env });
+        if (!runtimeConfig.realModeEnabled) {
+          return {
+            success: true,
+            mode: "mock",
+            message: "当前为本地模拟测试，未触发真实 DeepSeek 连接。",
+          };
+        }
+
+        if (!runtimeConfig.providerEnabled) {
+          return sendError(
+            reply,
+            409,
+            "provider_not_enabled",
+            "DeepSeek 服务商未启用，请先在后台服务商配置中启用 DeepSeek。",
+          );
+        }
+
+        try {
+          const deepSeekProvider = await createRealDeepSeekProvider({ dbClient: client, env });
+          const result = await deepSeekProvider.testConnection();
+
+          return {
+            success: true,
+            mode: "real",
+            providerType: request.params.providerType,
+            providerCode: request.params.providerCode,
+            message: result.message || "DeepSeek 连接测试通过。",
           };
         } catch (error) {
           return sendError(reply, 503, "provider_test_failed", (error as Error).message);

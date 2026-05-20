@@ -3,7 +3,7 @@ import type { ForecastQueryInput } from "@photo-weather/shared";
 import {
   buildMockForecastInput,
   calculateForecast,
-  generateMockAstroSummaries,
+  generateLocalAstroSummaries,
   generateMockDailyWeather,
   generateMockHourlyWeather,
   generateMockTerrainSummary,
@@ -47,12 +47,18 @@ describe("mock forecast input builder", () => {
     });
     expect(first.astroSummaries[0]?.moonIllumination).toBeGreaterThanOrEqual(0);
     expect(first.astroSummaries[0]?.moonIllumination).toBeLessThanOrEqual(1);
+    expect(Date.parse(first.astroSummaries[0]!.sunrise!)).toBeLessThan(
+      Date.parse(first.astroSummaries[0]!.sunset!),
+    );
+    expect(first.astroSummaries[0]?.milkyWayNoteZh).toBe(
+      "银河窗口为本地天文算法初步估算，实际拍摄仍需结合云量、月光、光污染和地形遮挡。",
+    );
   });
 
-  it("generates 7 day mock weather and astro windows", () => {
+  it("generates 7 day mock weather and local astro windows", () => {
     expect(generateMockHourlyWeather("7d")).toHaveLength(168);
     expect(generateMockDailyWeather("7d")).toHaveLength(7);
-    expect(generateMockAstroSummaries("7d")[0]).toMatchObject({
+    expect(generateLocalAstroSummaries("7d")[0]).toMatchObject({
       milkyWayVisibilityLevel: expect.any(String),
     });
   });
@@ -77,7 +83,7 @@ describe("mock forecast input builder", () => {
 
     expect(result.isMock).toBe(true);
     expect(result.dataNotice).toBe(
-      "当前为本地模拟天气数据，计算结果仅用于验证流程，不代表真实预报。",
+      "当前天气数据和地形数据为本地模拟数据，天文数据由本地算法按 WGS84 坐标计算；整体结果仍不代表真实预报。",
     );
     expect(result.dataSourceLabel).toBe("模拟天气数据");
     expect(result.scores.cloudSea.label).toBe("云海");

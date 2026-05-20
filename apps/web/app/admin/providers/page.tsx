@@ -5,7 +5,7 @@ export default function AdminProvidersPage() {
   return (
     <AdminShell
       title="服务商配置"
-      description="管理天气、地图、AI 与存储等服务商占位配置；测试连接仅使用本地模拟接口。"
+      description="管理天气、地图、AI 与存储等服务商配置；高德地图和 DeepSeek 可通过显式开发开关真实测试，其他服务商本地仍只使用模拟接口。"
     >
       <AdminProvidersClient />
     </AdminShell>

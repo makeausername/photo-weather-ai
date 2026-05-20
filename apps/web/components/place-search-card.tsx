@@ -31,6 +31,11 @@ type SearchResponse = {
   readonly results: readonly PlaceSearchResult[];
 };
 
+type SearchErrorPayload = {
+  readonly message?: string;
+  readonly error?: string;
+};
+
 type SearchStatus = "idle" | "loading" | "ready" | "error";
 
 type PlaceSearchCardProps = {
@@ -76,6 +81,21 @@ function formatAddressAndCity(result: PlaceSearchResult): string {
   return `${address} / ${area}`;
 }
 
+async function readSearchErrorMessage(response: Response): Promise<string> {
+  const fallback = "地点搜索暂时不可用，请稍后重试。";
+  const text = await response.text();
+  if (!text) {
+    return fallback;
+  }
+
+  try {
+    const payload = JSON.parse(text) as SearchErrorPayload;
+    return payload.message || payload.error || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function buildForecastUrl(
   place: PlaceSearchResult,
   horizon: ForecastHorizon,
@@ -106,6 +126,7 @@ function buildForecastUrl(
 export function PlaceSearchCard({ className }: PlaceSearchCardProps) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<SearchStatus>("idle");
+  const [errorMessage, setErrorMessage] = useState("");
   const [results, setResults] = useState<readonly PlaceSearchResult[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<PlaceSearchResult | null>(null);
   const [horizon, setHorizon] = useState<ForecastHorizon>("48h");
@@ -132,16 +153,18 @@ export function PlaceSearchCard({ className }: PlaceSearchCardProps) {
     if (!keyword) {
       setStatus("idle");
       setResults([]);
+      setErrorMessage("");
       return;
     }
 
     setStatus("loading");
+    setErrorMessage("");
     try {
       const response = await fetch(`${apiBaseUrl}/search/places?q=${encodeURIComponent(keyword)}`, {
         signal,
       });
       if (!response.ok) {
-        throw new Error("地点搜索暂时不可用。");
+        throw new Error(await readSearchErrorMessage(response));
       }
 
       const data = (await response.json()) as SearchResponse;
@@ -153,6 +176,7 @@ export function PlaceSearchCard({ className }: PlaceSearchCardProps) {
       }
 
       setResults([]);
+      setErrorMessage((error as Error).message || "地点搜索暂时不可用，请稍后重试。");
       setStatus("error");
     }
   }, []);
@@ -162,6 +186,7 @@ export function PlaceSearchCard({ className }: PlaceSearchCardProps) {
       setStatus("idle");
       setResults([]);
       setSelectedPlace(null);
+      setErrorMessage("");
       return;
     }
 
@@ -183,7 +208,7 @@ export function PlaceSearchCard({ className }: PlaceSearchCardProps) {
           <p className="text-sm font-bold text-card-foreground">选择拍摄地点</p>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">搜索景区、城市或具体机位</p>
         </div>
-        <Badge variant="muted">模拟数据</Badge>
+        <Badge variant="muted">本地优先</Badge>
       </div>
 
       <form
@@ -230,7 +255,7 @@ export function PlaceSearchCard({ className }: PlaceSearchCardProps) {
 
         {status === "error" ? (
           <div className="rounded-lg border border-danger bg-card px-3 py-2 text-sm text-danger">
-            地点搜索暂时不可用，请稍后重试。
+            {errorMessage || "地点搜索暂时不可用，请稍后重试。"}
           </div>
         ) : null}
 

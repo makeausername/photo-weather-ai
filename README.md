@@ -21,8 +21,8 @@
 - 公开地点搜索：`GET /search/places?q=` 会先查本地地点和摄影机位，再使用当前 GeoProvider 返回标准化地点结果。
 - 公开搜索选择态：选择地点后展示地点名称、地址 / 城市信息、数据来源、GCJ-02 / WGS84 经纬度、验证状态和本地机位匹配状态。
 - 公开 forecast 查询基础：支持选择预报范围和分析目标，下一步跳转 `/forecast`，URL 中显式携带地点名称、来源、GCJ-02 坐标、WGS84 坐标、预报范围、分析目标以及可用的本地地点 / 机位 ID。
-- Forecast 计算核心 V1：已定义标准化小时天气、日天气、地形摘要、天文摘要、计算输入和计算结果契约，`packages/scoring` 提供本地 mock 数据构造器、标准化天气输入 builder 和可解释 rule-based 评分计算器。
-- 公开 forecast 端点：`POST /forecast/validate-query` 只校验查询输入并返回中文标签；`POST /forecast/calculate` 默认使用 MockWeatherProvider 的标准化天气数据生成本地模拟计算结果，不调用真实天气、地形、天文或 AI 服务。
+- Forecast 计算核心 V1：已定义标准化小时天气、日天气、地形摘要、天文摘要、计算输入和计算结果契约，`packages/scoring` 提供本地 mock 天气/地形数据构造器、标准化天气输入 builder、真实本地天文摘要和可解释 rule-based 评分计算器。
+- 公开 forecast 端点：`POST /forecast/validate-query` 只校验查询输入并返回中文标签；`POST /forecast/calculate` 默认使用 MockWeatherProvider 的标准化天气数据和本地模拟地形数据，同时使用本地 astronomy-engine 天文计算，不调用真实天气、地形、天文在线 API 或 AI 服务；`POST /forecast/ai-explain` 只在显式启用 DeepSeek 真实开发调用后生成智能解读。
 - 后台登录页：宽屏产品式登录布局、中文表单、样式化错误提示和单一返回前台入口。
 - 后台控制台布局：约 252px 亮色侧栏、紧凑顶部标题区、当前管理员信息、主题切换、返回前台、退出登录和更宽的内容区域。
 - 后台页面视觉层：系统设置、服务商配置、地点管理、机位管理、审计日志使用统一卡片、表格、表单、按钮、空状态、横向可滚动表格和更克制的自然色 active 状态。
@@ -32,12 +32,12 @@
 
 - 真实天气数据驱动的 forecast / 预测结果、真实服务商接入和生产级决策建议。
 - 真实天气服务商调用。
-- 真实 DeepSeek 或其他 AI 调用。
+- 生产级 DeepSeek 或其他 AI 自动分析流程；当前只允许本地开发显式开关下的 DeepSeek 解读调用。
 - 支付、套餐、额度和商业化流程。
 - 生产级 Cookie/Session 加固。
 - 公开用户登录、查询历史、收藏机位、额度控制、付费套餐和已保存报告；当前 `/login` 只是公开登录占位页，不包含真实登录逻辑。
 
-当前公开首页的地图、云层、地形和时间线仍是界面占位，只用于展示产品方向，不包含真实地图图层、真实天气图层或真实服务商调用。当前搜索与 forecast 流程已完成地点识别、坐标归一化、机位匹配、预报范围选择、分析目标选择、本地 mock 预报输入构造、摄影评分和 `/forecast` 模拟结果展示；后续真实 provider 接入、公开用户账号、支付和生产判断逻辑尚未实现。
+当前公开首页的地图、云层、地形和时间线仍是界面占位，只用于展示产品方向，不包含真实地图图层、真实天气图层或真实服务商调用。当前搜索与 forecast 流程已完成地点识别、坐标归一化、机位匹配、预报范围选择、分析目标选择、本地 mock 天气/地形预报输入构造、本地天文计算、摄影评分和 `/forecast` 结果展示；后续真实天气/地形 provider 接入、公开用户账号、支付和生产判断逻辑尚未实现。
 
 ## 产品默认
 
@@ -61,28 +61,29 @@
 
 ## Forecast 计算核心 V1
 
-当前 `/forecast` 是本地模拟计算结果页，用于展示用户选择的地点、预报范围、分析目标、坐标信息和本地 mock 评分结果。页面会调用 `POST /forecast/calculate`，后端默认使用 `MockWeatherProvider` 输出的标准化天气数据，并运行 deterministic rule-based 评分引擎。当前不会调用真实 QWeather、Open-Meteo、高德地图、DeepSeek、存储、支付或短信服务。
+当前 `/forecast` 是本地计算结果页，用于展示用户选择的地点、预报范围、分析目标、坐标信息和评分结果。页面会调用 `POST /forecast/calculate`，后端默认使用 `MockWeatherProvider` 输出的标准化天气数据、模拟地形摘要和 astronomy-engine 本地天文数据，并运行 deterministic rule-based 评分引擎。默认不会调用真实 QWeather、Open-Meteo、高德地图、DeepSeek、存储、支付或短信服务；高德地图和 DeepSeek 仅在显式开发开关、后台服务商启用且 Key 已配置时允许真实调用。
 
 当前计算核心覆盖：
 
 - 云海、白墙风险、朝霞、晚霞、星空、银河和通透度评分。
 - 综合出片指数、推荐等级、最佳拍摄窗口、风险提示、关键依据和拍摄建议。
-- Astronomy Core V1：本地计算日出 / 日落、太阳中天、民用 / 航海 / 天文晨昏光、月相、月亮照明、月出 / 月落和逐小时月亮高度。
-- 银河窗口 V1：基于天文黑夜、季节和月光影响给出初步窗口、方向和可见性等级；该结果是拍摄规划基础估算，尚未计算银心精确高度、地形遮挡和光污染。
+- Astronomy Core V1：使用 `astronomy-engine` 在本地 deterministic 计算日出 / 日落、太阳中天、民用 / 航海 / 天文晨昏光、月相、月亮照明、月出 / 月落和逐小时月亮高度。
+- 银河窗口 V1：基于天文黑夜、近似银心 J2000 坐标、当地地平坐标和月光影响给出初步窗口、方向和可见性等级；该结果是拍摄规划基础估算，尚未完整建模银河拱桥、地形遮挡和光污染。
 - 黄山光明顶、老君山金顶、三清山女神峰、武功山金顶等本地模拟样例。
-- Mock 数据提示：`当前为本地模拟天气数据，计算结果仅用于验证流程，不代表真实预报。`
+- 数据提示：`当前天气数据和地形数据为本地模拟数据，天文数据由本地算法按 WGS84 坐标计算；整体结果仍不代表真实预报。`
 
 天文计算约定：
 
 - 天文计算只使用 WGS84 经纬度，不使用 GCJ-02。
 - 默认时区为 `Asia/Shanghai`。
-- 日出 / 日落、暮光、月相和月亮照明为本地 deterministic 计算，不调用外部 API。
+- 日出 / 日落、暮光、月相、月亮照明、月出 / 月落、逐小时月亮高度和银河窗口为本地 deterministic 计算，不调用在线 API。
+- Astronomy Core 依赖本地 `astronomy-engine` 包；自动化测试会校验天文计算不触发网络请求。
 - 天文结果会随 forecast mock pipeline 一起进入 `ForecastCalculationResult.astroSummaries`，供结果页展示日出日落、月相月照、月出月落、天文黑夜窗口和银河窗口。
-- 真实天气准确率仍需要后续接入 QWeather / Open-Meteo 真实预报、云层 / 能见度校准和地形遮挡数据；当前步骤不实现真实 QWeather、Open-Meteo 或 DeepSeek 调用。
+- 真实天气准确率仍需要后续接入 QWeather / Open-Meteo 真实预报、云层 / 能见度校准和地形遮挡数据；DeepSeek 当前只解释确定性结果，不计算天气、天文、地形或评分。
 
 `packages/weather` 已提供天气服务商契约、ProviderFactory、QWeather / Open-Meteo fixture adapter 和小时/日天气标准化逻辑。QWeather fixture 会把不可用的低云/中云/高云分层置为 `null` 并写入 source notes；Open-Meteo fixture 会映射 `cloud_cover_low`、`cloud_cover_mid`、`cloud_cover_high`、能见度、露点、风速、阵风、降水概率和降水量。
 
-真实准确率仍需要后续接入 QWeather / Open-Meteo 真实预报、地形 DEM、天文数据、云层/能见度校准和历史天气数据回测。历史天气数据会用于后续校准、backtesting 和评分权重验证。真实 QWeather / Open-Meteo / 高德地图 / DeepSeek 集成会在后续 staging / production 服务器环境测试，本地开发和自动化测试仍只使用 mock providers、fixture JSON 与 deterministic test data。
+真实准确率仍需要后续接入 QWeather / Open-Meteo 真实预报、地形 DEM、云层/能见度校准和历史天气数据回测。历史天气数据会用于后续校准、backtesting 和评分权重验证。当前本地开发可显式启用真实高德地图和 DeepSeek 便于人工测试；QWeather、Open-Meteo、存储、支付和短信仍保持本地 mock / interface-only，后续在 staging 或服务器环境测试。
 
 支持的预报范围：
 
@@ -98,7 +99,7 @@
 - 朝霞晚霞
 - 星空银河
 
-当前查询契约由 `@photo-weather/shared` 中的 `forecastQueryInputSchema` 维护，前端 URL 会显式携带地点名称、来源、GCJ-02 坐标、WGS84 坐标、预报范围、分析目标以及可用的本地地点 / 机位 ID。`POST /forecast/calculate` 会先复用该 schema 校验输入，再构造 `ForecastCalculationInput` 并返回 `ForecastCalculationResult`。
+当前查询契约由 `@photo-weather/shared` 中的 `forecastQueryInputSchema` 维护，前端 URL 会显式携带地点名称、来源、GCJ-02 坐标、WGS84 坐标、预报范围、分析目标以及可用的本地地点 / 机位 ID。`POST /forecast/calculate` 会先复用该 schema 校验输入，再构造 `ForecastCalculationInput` 并返回 `ForecastCalculationResult`；可选 `useAiExplanation=true` 时会附带规则兜底解读，只有 `ENABLE_REAL_DEEPSEEK=true` 且后台配置完整时才尝试 DeepSeek。结果页按钮调用 `POST /forecast/ai-explain`，不会在页面加载时自动调用 DeepSeek。
 
 公开用户登录、查询历史、收藏机位、额度控制和付费套餐计划在后续阶段实现，不属于当前 forecast 查询基础步骤。当前 `/login` 仅作为公开导航入口和功能说明占位，不接入真实公开账号体系。
 
@@ -110,12 +111,12 @@
 - `packages/shared`：共享类型、Zod schema 和标签。
 - `packages/config`：环境配置、运行时配置和密钥遮罩。
 - `packages/db`：Prisma schema、迁移、seed、系统设置、服务商配置、地点、机位、审计日志。
-- `packages/geo`：地理服务接口、deterministic mock 搜索、高德地图 Web 服务 provider 基础、坐标校验与 GCJ-02 / WGS84 转换。
+- `packages/geo`：地理服务接口、deterministic mock 搜索、高德地图 Web 服务 provider、坐标校验与 GCJ-02 / WGS84 转换。
 - `packages/weather`：天气服务接口、标准化天气模型、ProviderFactory、MockWeatherProvider，以及 QWeather / Open-Meteo fixture-based normalization adapters。
 - `packages/terrain`：地形与海拔服务接口。
-- `packages/astro`：Astronomy Core V1，本地 deterministic 日出 / 日落、暮光、月相、月亮照明、月出 / 月落、逐小时月亮高度和初步银河窗口估算。
+- `packages/astro`：Astronomy Core V1，基于 `astronomy-engine` 的本地 deterministic 日出 / 日落、暮光、月相、月亮照明、月出 / 月落、逐小时月亮高度和初步银河窗口估算。
 - `packages/scoring`：本地 forecast mock 数据构造器、摄影评分 helper、朝霞/晚霞/云海/白墙/星空/银河/通透度计算器和综合推荐分类。
-- `packages/ai`：AI 服务接口、mock provider、规则兜底和 DeepSeek 骨架。
+- `packages/ai`：AI 服务接口、mock provider、规则兜底和 DeepSeek 开发模式 JSON 解读 provider。
 - `packages/storage`：存储服务接口与 mock 存储。
 - `packages/billing`：计费与额度占位类型。
 
@@ -175,12 +176,27 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
 高德地图 Web 服务 Key 后续优先在后台服务商配置页填写；环境变量仅作为部署兼容入口：
 
 ```bash
+ENABLE_REAL_AMAP=false
 AMAP_API_KEY=
 # 兼容部分部署命名：
 AMAP_WEB_SERVICE_KEY=
+AMAP_BASE_URL=https://restapi.amap.com
 ```
 
-本地自动化测试默认使用 `MockGeoProvider`，不会读取真实高德密钥，也不会调用高德地图网络接口。
+DeepSeek Key 后续同样优先在后台服务商配置页填写；`.env.local` 只用于本机开发兜底，不要提交：
+
+```bash
+ENABLE_REAL_DEEPSEEK=false
+DEEPSEEK_API_KEY=
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_DEFAULT_MODEL=deepseek-chat
+```
+
+显式设置 `ENABLE_REAL_AMAP=true` 且后台 `geo/amap` 已启用并配置高德 Web 服务 Key 后，公开地点搜索和后台高德测试连接可以请求真实高德 Web Service。高德返回坐标按 GCJ-02 处理，并同步归一化为 WGS84；天气、天文、地形和评分计算仍只使用 WGS84。
+
+显式设置 `ENABLE_REAL_DEEPSEEK=true` 且后台 `ai/deepseek` 已启用并配置 DeepSeek API Key 后，forecast 结果页可以手动点击“生成智能解读”。DeepSeek 只解释确定性输入中的评分、风险、最佳窗口、建议和备用方案，不计算或覆盖天气、天文、地形、坐标和评分；模拟数据场景下不得声称真实天气准确率。
+
+本地自动化测试默认使用 `MockGeoProvider`、规则兜底和 mocked fetch，不会读取真实高德 / DeepSeek 密钥，也不会调用真实外部网络接口。
 
 如需清理 Next.js 缓存后启动：
 
@@ -269,6 +285,7 @@ GET  /auth/me
 GET   /search/places?q=
 POST  /forecast/validate-query
 POST  /forecast/calculate
+POST  /forecast/ai-explain
 
 GET   /admin/settings
 GET   /admin/settings/:key
@@ -305,8 +322,9 @@ GET   /admin/audit-logs
 - 审计日志：`audit.read`
 - `/admin` 状态：`admin.manage`
 
-服务商测试连接和后台地理搜索在当前阶段为本地 mock，不调用真实外部服务。
-后台“测试连接”按钮会向 `/admin/providers/:providerType/:providerCode/test-connection` 发送 `{}`，默认返回 `mode: "mock"` 和“当前为本地模拟测试，未触发真实外部连接。”；自动化测试不启用真实服务商联调。接口响应和日志不得暴露原始密钥。
+服务商测试连接默认仍为本地 mock，不调用真实外部服务。高德地图与 DeepSeek 是当前仅允许本地开发真实调用的例外：必须同时满足显式环境开关为 `true`、后台服务商已启用、API Key 已配置。
+
+后台“测试连接”按钮会向 `/admin/providers/:providerType/:providerCode/test-connection` 发送 `{}`。未启用真实开发调用时，高德返回“当前为本地模拟测试，未触发真实高德连接。”，DeepSeek 返回“当前为本地模拟测试，未触发真实 DeepSeek 连接。”，其他服务商仍返回通用本地模拟结果。自动化测试不启用真实服务商联调。接口响应和日志不得暴露原始密钥。
 
 ## 后台控制台
 
@@ -338,17 +356,18 @@ GET   /admin/audit-logs
 
 ## 外部服务边界
 
-本阶段不允许自动化测试调用真实外部服务。当前实现只使用 deterministic mock providers、fixture JSON 和配置占位：
+本阶段不允许自动化测试调用真实外部服务。当前自动化测试只使用 deterministic mock providers、fixture JSON、本地 astronomy-engine 天文计算、mocked fetch 和配置占位：
 
 - 不调用真实 QWeather；只允许读取本地 QWeather fixture JSON。
 - 不调用真实 Open-Meteo；只允许读取本地 Open-Meteo fixture JSON。
-- 自动化测试不调用高德地图真实接口。
-- 不调用 DeepSeek。
+- 自动化测试不调用高德地图真实接口；真实高德只允许人工本地开发时通过 `ENABLE_REAL_AMAP=true` 显式启用。
+- 自动化测试不调用 DeepSeek；真实 DeepSeek 只允许人工本地开发时通过 `ENABLE_REAL_DEEPSEEK=true` 显式启用。
+- 天文计算只使用本地 `astronomy-engine`，不调用在线天文 API。
 - 不调用真实存储、短信、支付或计费服务。
 
-本地和测试默认天气服务商为 `mock`。如需验证服务商 adapter，只能显式设置 `WEATHER_PROVIDER=qweather|open_meteo` 且 `WEATHER_PROVIDER_MODE=fixture`；`WEATHER_PROVIDER_MODE=real` 当前会 fail closed，不会悄悄发起网络请求。真实服务商联调应在后续阶段通过后台配置或环境旗标显式启用，并且只在 staging 或 production 环境按操作员意图执行。
+本地和测试默认天气服务商为 `mock`。如需验证服务商 adapter，只能显式设置 `WEATHER_PROVIDER=qweather|open_meteo` 且 `WEATHER_PROVIDER_MODE=fixture`；`WEATHER_PROVIDER_MODE=real` 当前会 fail closed，不会悄悄发起网络请求。除高德地图和 DeepSeek 的人工开发开关外，真实服务商联调应在后续阶段通过后台配置或环境旗标显式启用，并且只在 staging 或 production 环境按操作员意图执行。
 
-高德地图 provider 当前只负责地点搜索、地理编码、逆地理编码和坐标归一化基础。地图展示使用 GCJ-02；天气、天文、地形、DEM 和后续评分计算必须使用 WGS84。真实天气预报请求、真实天气评分校准和 AI 分析不在本步骤实现。
+高德地图 provider 当前只负责地点搜索、地理编码、逆地理编码和坐标归一化。地图展示使用 GCJ-02；天气、天文、地形、DEM 和后续评分计算必须使用 WGS84。DeepSeek 只负责解释确定性 forecast 结果，不负责计算真实天气、天文、地形或评分。
 
 ## Docker
 

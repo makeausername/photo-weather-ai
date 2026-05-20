@@ -10,6 +10,25 @@ const optionalSecret = z.preprocess(
   z.string().trim().min(1).optional(),
 );
 
+const optInFlag = z.preprocess((value) => {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "") {
+      return undefined;
+    }
+
+    if (normalized === "true") {
+      return true;
+    }
+
+    if (normalized === "false") {
+      return false;
+    }
+  }
+
+  return value;
+}, z.boolean().default(false));
+
 export const serverEnvSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -21,8 +40,12 @@ export const serverEnvSchema = z
     ),
     DEEPSEEK_API_KEY: optionalSecret,
     DEEPSEEK_BASE_URL: optionalString.default("https://api.deepseek.com"),
+    DEEPSEEK_DEFAULT_MODEL: optionalString.default("deepseek-chat"),
+    ENABLE_REAL_DEEPSEEK: optInFlag,
     AMAP_API_KEY: optionalSecret,
     AMAP_WEB_SERVICE_KEY: optionalSecret,
+    AMAP_BASE_URL: optionalString.default("https://restapi.amap.com"),
+    ENABLE_REAL_AMAP: optInFlag,
     WEATHER_PROVIDER: z.enum(["mock", "qweather", "open_meteo"]).default("mock"),
     WEATHER_PROVIDER_MODE: z.enum(["mock", "fixture", "real"]).default("mock"),
     QWEATHER_API_KEY: optionalSecret,

@@ -20,7 +20,7 @@ const keepExistingSecretPlaceholder = "留空则保持现有密钥不变";
 export const providerFieldPresets = [
   {
     providerCode: "deepseek",
-    helpText: "用于后续生成摄影天气决策解释，当前不会在本地测试中触发真实调用。",
+    helpText: "用于生成摄影天气智能解读；仅在 ENABLE_REAL_DEEPSEEK=true 时允许本地真实开发调用。",
     fields: [
       {
         key: "apiKey",
@@ -83,7 +83,8 @@ export const providerFieldPresets = [
   },
   {
     providerCode: "amap",
-    helpText: "用于地点搜索、地理编码和逆地理编码。保存后仅显示脱敏结果。",
+    helpText:
+      "用于地点搜索、地理编码和逆地理编码；仅在 ENABLE_REAL_AMAP=true 时允许本地真实开发调用。",
     fields: [
       {
         key: "apiKey",
@@ -91,6 +92,12 @@ export const providerFieldPresets = [
         target: "secretJson",
         placeholder: keepExistingSecretPlaceholder,
         password: true,
+      },
+      {
+        key: "baseUrl",
+        label: "高德 Web 服务 Base URL",
+        target: "configJson",
+        placeholder: "https://restapi.amap.com",
       },
     ],
   },

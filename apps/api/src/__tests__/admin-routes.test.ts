@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApiServer } from "../server.js";
 import { adminAuthorizationHeader, createFakeDatabaseClient, testAuthConfig } from "./fake-db.js";
@@ -11,6 +11,7 @@ describe("admin config routes", () => {
       await app.close();
       app = undefined;
     }
+    vi.unstubAllGlobals();
   });
 
   it("rejects unauthenticated admin API requests", async () => {
@@ -115,6 +116,10 @@ describe("admin config routes", () => {
       expect.arrayContaining(["deepseek", "qweather", "open_meteo", "amap"]),
     );
     expect(body.groups.storage).toBeTruthy();
+    expect(body.realDevCallFlags).toEqual({
+      amap: false,
+      deepseek: false,
+    });
     expect(JSON.stringify(body)).not.toContain("secretJson");
   });
 
@@ -290,9 +295,39 @@ describe("admin config routes", () => {
     expect(response.json()).toMatchObject({
       success: true,
       mode: "mock",
-      message: "当前为本地模拟测试，未触发真实外部连接。",
+      message: "当前为本地模拟测试，未触发真实高德连接。",
     });
     expect(response.body).not.toContain("amap-test-secret");
+    expect(response.body).not.toContain("secretJson");
+  });
+
+  it("keeps DeepSeek connection tests in mock mode by default and hides secrets", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const deepSeekProvider = state.providers.get("ai:deepseek");
+    state.providers.set("ai:deepseek", {
+      ...deepSeekProvider,
+      secretJson: {
+        apiKey: "deepseek-test-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "deep****cret",
+      },
+    });
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/providers/ai/deepseek/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: true,
+      mode: "mock",
+      message: "当前为本地模拟测试，未触发真实 DeepSeek 连接。",
+    });
+    expect(response.body).not.toContain("deepseek-test-secret");
     expect(response.body).not.toContain("secretJson");
   });
 
@@ -505,7 +540,7 @@ describe("admin config routes", () => {
     });
   });
 
-  it("returns a clear public search error when Amap is enabled without a key", async () => {
+  it("keeps public search mock-safe when Amap is enabled but real flag is false", async () => {
     const { client, state } = await createFakeDatabaseClient();
     const amapProvider = state.providers.get("geo:amap");
     state.providers.set("geo:amap", {
@@ -521,10 +556,108 @@ describe("admin config routes", () => {
       url: "/search/places?q=%E9%BB%84%E5%B1%B1",
     });
 
+    expect(response.statusCode).toBe(200);
+    expect(response.json().results[0]).toMatchObject({
+      name: "黄山",
+      source: "local_location",
+    });
+  });
+
+  it("mixes real Amap results after local public search results when explicitly enabled", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const amapProvider = state.providers.get("geo:amap");
+    state.providers.set("geo:amap", {
+      ...amapProvider,
+      enabled: true,
+      secretJson: {
+        apiKey: "amap-real-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "amap****cret",
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      async () =>
+        new Response(
+          JSON.stringify({
+            status: "1",
+            info: "OK",
+            infocode: "10000",
+            count: "1",
+            pois: [
+              {
+                id: "B0AMAPTEST",
+                name: "黄山迎客松",
+                pname: "安徽省",
+                cityname: "黄山市",
+                adname: "黄山区",
+                address: "黄山风景区",
+                location: "118.1812,30.1304",
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+            },
+          },
+        ),
+    );
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        ENABLE_REAL_AMAP: "true",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/search/places?q=%E9%BB%84%E5%B1%B1",
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.results[0]).toMatchObject({
+      name: "黄山",
+      source: "local_location",
+    });
+    expect(body.results.some((result: any) => result.source === "amap")).toBe(true);
+    expect(response.body).not.toContain("amap-real-secret");
+  });
+
+  it("returns a clear public search error when real Amap is enabled without a key", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const amapProvider = state.providers.get("geo:amap");
+    state.providers.set("geo:amap", {
+      ...amapProvider,
+      enabled: true,
+      secretJson: {},
+      maskedSecretJson: {},
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        ENABLE_REAL_AMAP: "true",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/search/places?q=%E9%BB%84%E5%B1%B1",
+    });
+
     expect(response.statusCode).toBe(503);
     expect(response.json()).toMatchObject({
       error: "place_search_unavailable",
-      message: "高德地图已启用，但尚未配置 Web 服务 API Key。",
+      message: "高德地图服务未配置 API Key，请先在后台服务商配置中填写高德 Web 服务 Key。",
     });
     expect(response.body).not.toContain("secretJson");
   });

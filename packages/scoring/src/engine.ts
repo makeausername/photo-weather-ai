@@ -22,7 +22,7 @@ import {
 } from "./helpers.js";
 
 const mockDataNotice =
-  "当前为本地模拟天气数据，计算结果仅用于验证流程，不代表真实预报。";
+  "当前天气数据和地形数据为本地模拟数据，天文数据由本地算法按 WGS84 坐标计算；整体结果仍不代表真实预报。";
 
 export function calculateForecast(input: ForecastCalculationInput): ForecastCalculationResult {
   const sunriseGlow = calculateSunriseGlowScore(input);
@@ -212,8 +212,8 @@ export function calculateMilkyWayScore(input: ForecastCalculationInput): Forecas
     : 18;
   const reasons = [
     hasWindow
-      ? `模拟银河窗口为 ${formatChineseTimeRange(astro!.milkyWayWindowStart!, astro!.milkyWayWindowEnd!)}。`
-      : "当前模拟天文数据没有给出银河窗口。",
+      ? `本地算法银河窗口为 ${formatChineseTimeRange(astro!.milkyWayWindowStart!, astro!.milkyWayWindowEnd!)}。`
+      : "本地天文算法未给出可用银河窗口。",
     `银河窗口附近云量和月光综合折算得分 ${Math.round(score)}。`,
   ];
   const risks = [

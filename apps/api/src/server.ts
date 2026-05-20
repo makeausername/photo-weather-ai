@@ -17,6 +17,7 @@ export type ApiServerOptions = {
   readonly authConfig?: AuthConfig;
   readonly geoProvider?: GeoProvider;
   readonly weatherProvider?: WeatherProvider;
+  readonly env?: NodeJS.ProcessEnv;
   readonly logger?: boolean;
 };
 
@@ -37,6 +38,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     resolveGeoProvider({
       dbClient: options.dbClient,
       geoProvider: options.geoProvider,
+      env: options.env,
     });
 
   app.addHook("onRequest", async (_request, reply) => {
@@ -88,7 +90,11 @@ export function buildApiServer(options: ApiServerOptions = {}) {
   });
 
   registerAuthRoutes(app, { dbClient: options.dbClient, authConfig });
-  registerForecastRoutes(app, { weatherProvider });
+  registerForecastRoutes(app, {
+    dbClient: options.dbClient,
+    weatherProvider,
+    env: options.env,
+  });
   registerSearchRoutes(app, {
     dbClient: options.dbClient,
     resolveGeoProvider: resolveRuntimeGeoProvider,
@@ -98,6 +104,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     authConfig,
     geoProvider,
     resolveGeoProvider: resolveRuntimeGeoProvider,
+    env: options.env,
   });
 
   return app;
