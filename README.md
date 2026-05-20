@@ -88,6 +88,7 @@
 - 默认时区统一为 `Asia/Shanghai`，运行时使用实际当前时间，测试可显式注入固定 `now`。
 - 支持的预报范围由 Calendar Core 统一生成：`24h`、`48h`、`72h` 和 `7d`。
 - `forecastStart`、`forecastEnd`、`targetDates`、中文日期时间范围、最佳窗口展示标签和结果页“计算依据”均来自 Calendar Core。
+- 朝霞、晚霞、云海、星空和银河评分窗口都会限制在 Calendar Core 生成的 `forecastStart` / `forecastEnd` 内，不输出预报起点之前的过去窗口，也不使用固定运行日期。
 - `lunar-typescript` 用于本地农历、干支生肖和节气信息，不调用在线日历 API。
 - 天文计算使用 Calendar Core 的覆盖日期和用户选择地点的 WGS84 经纬度；天气和地形在当前阶段仍为 mock / fixture，等待后续真实 provider 接入。
 

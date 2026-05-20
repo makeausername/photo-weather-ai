@@ -118,15 +118,46 @@ describe("mock forecast input builder", () => {
 
   it("uses Calendar Core target dates for scored windows", () => {
     const result = calculateForecast(buildMockForecastInput(query, { now: fixedNow }));
+    const forecastStart = Date.parse(result.calendarBasis.forecastStart);
+    const forecastEnd = Date.parse(result.calendarBasis.forecastEnd);
 
     expect(result.calendarBasis.targetDates).toEqual(["2026-05-20", "2026-05-21"]);
     expect(result.bestWindows.length).toBeGreaterThan(0);
     for (const window of result.bestWindows) {
+      const windowStart = Date.parse(window.startTime);
+      const windowEnd = Date.parse(window.endTime);
+
+      expect(windowStart).toBeGreaterThanOrEqual(forecastStart);
+      expect(windowEnd).toBeLessThanOrEqual(forecastEnd);
+      expect(windowEnd).toBeGreaterThan(windowStart);
       expect(
         result.calendarBasis.targetDates.some(
           (date) => window.startTime.startsWith(date) || window.endTime.startsWith(date),
         ),
       ).toBe(true);
+    }
+  });
+
+  it("does not surface past sunrise windows when the forecast starts after sunrise", () => {
+    const result = calculateForecast(
+      buildMockForecastInput(
+        {
+          ...query,
+          horizon: "24h",
+          target: "glow",
+        },
+        { now: "2026-05-20T12:00:00+08:00" },
+      ),
+    );
+    const forecastStart = Date.parse(result.calendarBasis.forecastStart);
+    const forecastEnd = Date.parse(result.calendarBasis.forecastEnd);
+    const sunriseWindow = result.bestWindows.find((window) => window.label.startsWith("朝霞"));
+
+    expect(result.calendarBasis.targetDates).toEqual(["2026-05-20", "2026-05-21"]);
+    expect(sunriseWindow?.startTime.startsWith("2026-05-21")).toBe(true);
+    for (const window of result.bestWindows) {
+      expect(Date.parse(window.startTime)).toBeGreaterThanOrEqual(forecastStart);
+      expect(Date.parse(window.endTime)).toBeLessThanOrEqual(forecastEnd);
     }
   });
 

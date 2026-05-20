@@ -81,7 +81,8 @@ export function buildForecastDateRange(
   options: ForecastDateRangeOptions = {},
 ): ForecastDateRange {
   const timezone = normalizeTimezone(options.timezone);
-  const now = toValidDate(options.now ?? new Date(), timezone);
+  const now =
+    options.now === undefined ? getNowInTimezone(timezone) : toValidDate(options.now, timezone);
   const horizonHours = getForecastHorizonHours(horizon);
   const forecastEndDate = horizon === "7d" ? addDays(now, 7) : addHours(now, horizonHours);
   const targetDates = getForecastTargetDates(now, forecastEndDate, timezone);

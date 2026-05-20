@@ -18,6 +18,7 @@ import { Badge, Button, Card, cn } from "../../components/ui";
 
 type ForecastResultClientProps = {
   readonly query: ForecastQueryInput | null;
+  readonly invalidReason?: string;
 };
 
 type LoadStatus = "idle" | "loading" | "ready" | "error";
@@ -89,7 +90,7 @@ async function readApiErrorMessage(response: Response, fallback: string): Promis
   }
 }
 
-export function ForecastResultClient({ query }: ForecastResultClientProps) {
+export function ForecastResultClient({ query, invalidReason }: ForecastResultClientProps) {
   const [status, setStatus] = useState<LoadStatus>(query ? "loading" : "idle");
   const [result, setResult] = useState<ForecastCalculationResult | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
@@ -214,7 +215,7 @@ export function ForecastResultClient({ query }: ForecastResultClientProps) {
         </Badge>
       </header>
 
-      {!query ? <InvalidQueryCard /> : null}
+      {!query ? <InvalidQueryCard message={invalidReason} /> : null}
 
       {query && status === "loading" ? <LoadingDashboard query={query} /> : null}
 
@@ -321,12 +322,12 @@ function SummaryItem({ label, value }: { readonly label: string; readonly value:
   );
 }
 
-function InvalidQueryCard() {
+function InvalidQueryCard({ message }: { readonly message?: string }) {
   return (
     <Card className="border-warning p-5 shadow-sm">
       <h2 className="text-lg font-bold text-warning">查询参数不完整</h2>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">
-        请从首页选择地点、预报范围和分析目标后进入分析页面。
+        {message ?? "请从首页选择地点、预报范围和分析目标后进入分析页面。"}
       </p>
     </Card>
   );

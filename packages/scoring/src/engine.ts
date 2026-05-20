@@ -11,7 +11,7 @@ import {
   type ForecastTimeWindow,
   type NormalizedHourlyWeather,
 } from "@photo-weather/shared";
-import { defaultTimezone, getHourInTimezone } from "@photo-weather/calendar";
+import { defaultTimezone, formatZonedIso, getHourInTimezone } from "@photo-weather/calendar";
 import {
   addHours,
   averageHourly,
@@ -24,6 +24,21 @@ import {
 
 const mockDataNotice =
   "当前天气数据和地形数据为本地模拟数据，天文数据由本地算法按 WGS84 坐标计算；整体结果仍不代表真实预报。";
+
+type ForecastTimeRange = {
+  readonly forecastStart: string;
+  readonly forecastEnd: string;
+  readonly startMs: number;
+  readonly endMs: number;
+};
+
+type ScoredForecastWindow = {
+  readonly astro?: AstroSummary;
+  readonly startTime: string;
+  readonly endTime: string;
+  readonly weatherWindow: readonly NormalizedHourlyWeather[];
+  readonly score: number;
+};
 
 export function calculateForecast(input: ForecastCalculationInput): ForecastCalculationResult {
   const sunriseGlow = calculateSunriseGlowScore(input);
@@ -71,11 +86,8 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
 }
 
 export function calculateSunriseGlowScore(input: ForecastCalculationInput): ForecastScore {
-  const astro = firstAstro(input.astroSummaries);
-  const window = usableWeatherWindow(
-    getWeatherWindowAroundTime(input.hourlyWeather, astro?.sunrise, 1, 2),
-    input.hourlyWeather.slice(0, 6),
-  );
+  const candidate = findBestGlowCandidate(input, "sunrise");
+  const window = candidate?.weatherWindow ?? input.hourlyWeather.slice(0, 6);
   const score = calculateGlowWindowScore(
     window,
     input.terrainSummary.sunriseHorizonAngle,
@@ -88,11 +100,8 @@ export function calculateSunriseGlowScore(input: ForecastCalculationInput): Fore
 }
 
 export function calculateSunsetGlowScore(input: ForecastCalculationInput): ForecastScore {
-  const astro = firstAstro(input.astroSummaries);
-  const window = usableWeatherWindow(
-    getWeatherWindowAroundTime(input.hourlyWeather, astro?.sunset, 2, 1),
-    input.hourlyWeather.slice(-6),
-  );
+  const candidate = findBestGlowCandidate(input, "sunset");
+  const window = candidate?.weatherWindow ?? input.hourlyWeather.slice(-6);
   const score = calculateGlowWindowScore(window, input.terrainSummary.sunsetHorizonAngle, "sunset");
   const risks = glowRisks(window, input.terrainSummary.sunsetHorizonAngle, "晚霞");
   const reasons = glowReasons(window, "晚霞");
@@ -169,11 +178,10 @@ export function calculateWhiteoutRiskScore(input: ForecastCalculationInput): For
 
 export function calculateStarsScore(input: ForecastCalculationInput): ForecastScore {
   const window = nightWindow(input.hourlyWeather);
-  const astro = firstAstro(input.astroSummaries);
   const cloudClearScore = 100 - averageHourly(window, (hour) => hour.cloudTotal);
   const humidityScore = 100 - averageHourly(window, (hour) => hour.humidity);
   const visibilityScore = clampScore(averageHourly(window, (hour) => hour.visibility) * 4);
-  const moonScore = calculateMoonScore(astro);
+  const moonScore = calculateMoonScoreForWindow(window, input.astroSummaries);
   const score = averageWeightedScore([
     { score: cloudClearScore, weight: 0.38 },
     { score: humidityScore, weight: 0.2 },
@@ -193,28 +201,15 @@ export function calculateStarsScore(input: ForecastCalculationInput): ForecastSc
 }
 
 export function calculateMilkyWayScore(input: ForecastCalculationInput): ForecastScore {
-  const astro = firstAstro(input.astroSummaries);
-  const hasWindow = Boolean(astro?.milkyWayWindowStart && astro.milkyWayWindowEnd);
-  const window = usableWeatherWindow(
-    getWeatherWindowAroundTime(input.hourlyWeather, astro?.milkyWayWindowStart, 0, 3),
-    nightWindow(input.hourlyWeather),
-  );
+  const candidate = findBestMilkyWayCandidate(input);
+  const hasWindow = Boolean(candidate);
+  const window = candidate?.weatherWindow ?? nightWindow(input.hourlyWeather);
   const cloudClearScore = 100 - averageHourly(window, (hour) => hour.cloudTotal);
-  const humidityScore = 100 - averageHourly(window, (hour) => hour.humidity);
-  const visibilityScore = clampScore(averageHourly(window, (hour) => hour.visibility) * 4);
-  const moonScore = calculateMoonScore(astro);
-  const score = hasWindow
-    ? averageWeightedScore([
-        { score: cloudClearScore, weight: 0.32 },
-        { score: humidityScore, weight: 0.16 },
-        { score: visibilityScore, weight: 0.2 },
-        { score: moonScore, weight: 0.22 },
-        { score: 90, weight: 0.1 },
-      ])
-    : 18;
+  const moonScore = calculateMoonScoreForWindow(window, input.astroSummaries);
+  const score = candidate?.score ?? 18;
   const reasons = [
     hasWindow
-      ? `本地算法银河窗口为 ${formatChineseTimeRange(astro!.milkyWayWindowStart!, astro!.milkyWayWindowEnd!)}。`
+      ? `本地算法银河窗口为 ${formatChineseTimeRange(candidate!.startTime, candidate!.endTime)}。`
       : "本地天文算法未给出可用银河窗口。",
     `银河窗口附近云量和月光综合折算得分 ${Math.round(score)}。`,
   ];
@@ -428,42 +423,243 @@ function glowRisks(
   return risks;
 }
 
+function findBestGlowCandidate(
+  input: ForecastCalculationInput,
+  kind: "sunrise" | "sunset",
+): ScoredForecastWindow | undefined {
+  const horizonAngle =
+    kind === "sunrise"
+      ? input.terrainSummary.sunriseHorizonAngle
+      : input.terrainSummary.sunsetHorizonAngle;
+  const candidates = buildGlowCandidates(input, kind).map((candidate) => ({
+    ...candidate,
+    score: calculateGlowWindowScore(candidate.weatherWindow, horizonAngle, kind),
+  }));
+
+  return pickBestScoredWindow(candidates);
+}
+
+function buildGlowCandidates(
+  input: ForecastCalculationInput,
+  kind: "sunrise" | "sunset",
+): readonly ScoredForecastWindow[] {
+  const forecastRange = parseForecastRange(input);
+  if (!forecastRange) {
+    return [];
+  }
+
+  const beforeHours = kind === "sunrise" ? 0.75 : 1;
+  const afterHours = kind === "sunrise" ? 1 : 0.75;
+
+  return input.astroSummaries.flatMap((astro) => {
+    const eventTime = kind === "sunrise" ? astro.sunrise : astro.sunset;
+    if (!eventTime) {
+      return [];
+    }
+
+    const rawStartTime = addHours(eventTime, -beforeHours);
+    const rawEndTime = addHours(eventTime, afterHours);
+    const clippedWindow = clipWindowToForecastRange(rawStartTime, rawEndTime, forecastRange);
+    if (!clippedWindow) {
+      return [];
+    }
+
+    const weatherWindow = filterWeatherInForecastRange(
+      getWeatherWindowAroundTime(input.hourlyWeather, eventTime, beforeHours, afterHours),
+      forecastRange,
+    );
+    if (weatherWindow.length === 0) {
+      return [];
+    }
+
+    return [
+      {
+        astro,
+        ...clippedWindow,
+        weatherWindow,
+        score: 0,
+      },
+    ];
+  });
+}
+
+function findBestMilkyWayCandidate(
+  input: ForecastCalculationInput,
+): ScoredForecastWindow | undefined {
+  const candidates = buildMilkyWayCandidates(input).map((candidate) => ({
+    ...candidate,
+    score: calculateMilkyWayWindowScore(candidate.weatherWindow, input.astroSummaries),
+  }));
+
+  return pickBestScoredWindow(candidates);
+}
+
+function buildMilkyWayCandidates(input: ForecastCalculationInput): readonly ScoredForecastWindow[] {
+  const forecastRange = parseForecastRange(input);
+  if (!forecastRange) {
+    return [];
+  }
+
+  return input.astroSummaries.flatMap((astro) => {
+    if (!astro.milkyWayWindowStart || !astro.milkyWayWindowEnd) {
+      return [];
+    }
+
+    const clippedWindow = clipWindowToForecastRange(
+      astro.milkyWayWindowStart,
+      astro.milkyWayWindowEnd,
+      forecastRange,
+    );
+    if (!clippedWindow) {
+      return [];
+    }
+
+    const weatherWindow = filterWeatherInForecastRange(
+      getWeatherWindowAroundTime(input.hourlyWeather, astro.milkyWayWindowStart, 0, 3),
+      forecastRange,
+    );
+    if (weatherWindow.length === 0) {
+      return [];
+    }
+
+    return [
+      {
+        astro,
+        ...clippedWindow,
+        weatherWindow,
+        score: 0,
+      },
+    ];
+  });
+}
+
+function calculateMilkyWayWindowScore(
+  window: readonly NormalizedHourlyWeather[],
+  astroSummaries: readonly AstroSummary[],
+): number {
+  const cloudClearScore = 100 - averageHourly(window, (hour) => hour.cloudTotal);
+  const humidityScore = 100 - averageHourly(window, (hour) => hour.humidity);
+  const visibilityScore = clampScore(averageHourly(window, (hour) => hour.visibility) * 4);
+  const moonScore = calculateMoonScoreForWindow(window, astroSummaries);
+
+  return averageWeightedScore([
+    { score: cloudClearScore, weight: 0.32 },
+    { score: humidityScore, weight: 0.16 },
+    { score: visibilityScore, weight: 0.2 },
+    { score: moonScore, weight: 0.22 },
+    { score: 90, weight: 0.1 },
+  ]);
+}
+
+function pickBestScoredWindow(
+  windows: readonly ScoredForecastWindow[],
+): ScoredForecastWindow | undefined {
+  return windows.reduce<ScoredForecastWindow | undefined>((best, window) => {
+    if (!best) {
+      return window;
+    }
+
+    return window.score > best.score ? window : best;
+  }, undefined);
+}
+
+function parseForecastRange(input: ForecastCalculationInput): ForecastTimeRange | undefined {
+  const startMs = Date.parse(input.calendarBasis.forecastStart);
+  const endMs = Date.parse(input.calendarBasis.forecastEnd);
+
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    return undefined;
+  }
+
+  return {
+    forecastStart: input.calendarBasis.forecastStart,
+    forecastEnd: input.calendarBasis.forecastEnd,
+    startMs,
+    endMs,
+  };
+}
+
+function clipWindowToForecastRange(
+  startTime: string,
+  endTime: string,
+  forecastRange: ForecastTimeRange,
+): Pick<ScoredForecastWindow, "startTime" | "endTime"> | undefined {
+  const startMs = Date.parse(startTime);
+  const endMs = Date.parse(endTime);
+
+  if (
+    !Number.isFinite(startMs) ||
+    !Number.isFinite(endMs) ||
+    endMs <= startMs ||
+    endMs <= forecastRange.startMs ||
+    startMs >= forecastRange.endMs
+  ) {
+    return undefined;
+  }
+
+  const clippedStartTime =
+    startMs < forecastRange.startMs ? forecastRange.forecastStart : startTime;
+  const clippedEndTime = endMs > forecastRange.endMs ? forecastRange.forecastEnd : endTime;
+
+  if (Date.parse(clippedEndTime) <= Date.parse(clippedStartTime)) {
+    return undefined;
+  }
+
+  return {
+    startTime: clippedStartTime,
+    endTime: clippedEndTime,
+  };
+}
+
+function filterWeatherInForecastRange(
+  hourlyWeather: readonly NormalizedHourlyWeather[],
+  forecastRange: ForecastTimeRange,
+): readonly NormalizedHourlyWeather[] {
+  return hourlyWeather.filter((hour) => {
+    const hourMs = Date.parse(hour.time);
+    return (
+      Number.isFinite(hourMs) && hourMs >= forecastRange.startMs && hourMs < forecastRange.endMs
+    );
+  });
+}
+
 function buildBestWindows(
   input: ForecastCalculationInput,
   scores: ForecastCalculationResult["scores"],
 ): readonly ForecastTimeWindow[] {
-  const astro = firstAstro(input.astroSummaries);
+  const forecastRange = parseForecastRange(input);
+  const sunriseWindow = findBestGlowCandidate(input, "sunrise");
+  const sunsetWindow = findBestGlowCandidate(input, "sunset");
+  const milkyWayWindow = findBestMilkyWayCandidate(input);
   const windows: ForecastTimeWindow[] = [];
 
-  if (astro) {
-    if (astro.sunrise) {
-      windows.push({
-        label: `朝霞 ${formatChineseTimeRange(addHours(astro.sunrise, -0.75), addHours(astro.sunrise, 1))}`,
-        startTime: addHours(astro.sunrise, -0.75),
-        endTime: addHours(astro.sunrise, 1),
-        score: scores.sunriseGlow.score,
-        target: "glow",
-      });
-    }
-    if (astro.sunset) {
-      windows.push({
-        label: `晚霞 ${formatChineseTimeRange(addHours(astro.sunset, -1), addHours(astro.sunset, 0.75))}`,
-        startTime: addHours(astro.sunset, -1),
-        endTime: addHours(astro.sunset, 0.75),
-        score: scores.sunsetGlow.score,
-        target: "glow",
-      });
-    }
+  if (sunriseWindow) {
+    windows.push({
+      label: `朝霞 ${formatChineseTimeRange(sunriseWindow.startTime, sunriseWindow.endTime)}`,
+      startTime: sunriseWindow.startTime,
+      endTime: sunriseWindow.endTime,
+      score: scores.sunriseGlow.score,
+      target: "glow",
+    });
+  }
+  if (sunsetWindow) {
+    windows.push({
+      label: `晚霞 ${formatChineseTimeRange(sunsetWindow.startTime, sunsetWindow.endTime)}`,
+      startTime: sunsetWindow.startTime,
+      endTime: sunsetWindow.endTime,
+      score: scores.sunsetGlow.score,
+      target: "glow",
+    });
+  }
 
-    if (astro.milkyWayWindowStart && astro.milkyWayWindowEnd) {
-      windows.push({
-        label: `银河 ${formatChineseTimeRange(astro.milkyWayWindowStart, astro.milkyWayWindowEnd)}`,
-        startTime: astro.milkyWayWindowStart,
-        endTime: astro.milkyWayWindowEnd,
-        score: scores.milkyWay.score,
-        target: "astro",
-      });
-    }
+  if (milkyWayWindow) {
+    windows.push({
+      label: `银河 ${formatChineseTimeRange(milkyWayWindow.startTime, milkyWayWindow.endTime)}`,
+      startTime: milkyWayWindow.startTime,
+      endTime: milkyWayWindow.endTime,
+      score: scores.milkyWay.score,
+      target: "astro",
+    });
   }
 
   const cloudSeaHour = pickHighestScoredHour(morningWindow(input.hourlyWeather), (hour) =>
@@ -472,13 +668,19 @@ function buildBestWindows(
   if (cloudSeaHour) {
     const startTime = cloudSeaHour.time;
     const endTime = addHours(startTime, 2);
-    windows.push({
-      label: `云海 ${formatChineseTimeRange(startTime, endTime)}`,
-      startTime,
-      endTime,
-      score: scores.cloudSea.score,
-      target: "cloud_sea",
-    });
+    const clippedWindow = forecastRange
+      ? clipWindowToForecastRange(startTime, endTime, forecastRange)
+      : { startTime, endTime };
+
+    if (clippedWindow) {
+      windows.push({
+        label: `云海 ${formatChineseTimeRange(clippedWindow.startTime, clippedWindow.endTime)}`,
+        startTime: clippedWindow.startTime,
+        endTime: clippedWindow.endTime,
+        score: scores.cloudSea.score,
+        target: "cloud_sea",
+      });
+    }
   }
 
   return windows
@@ -637,13 +839,6 @@ function classifyRiskIntensityAsScoreLevel(score: number): ForecastScoreLevel {
   return "excellent";
 }
 
-function usableWeatherWindow(
-  preferred: readonly NormalizedHourlyWeather[],
-  fallback: readonly NormalizedHourlyWeather[],
-): readonly NormalizedHourlyWeather[] {
-  return preferred.length > 0 ? preferred : fallback;
-}
-
 function morningWindow(
   hourlyWeather: readonly NormalizedHourlyWeather[],
 ): readonly NormalizedHourlyWeather[] {
@@ -670,23 +865,62 @@ function firstAstro(astroSummaries: readonly AstroSummary[]): AstroSummary | und
   return astroSummaries[0];
 }
 
-function calculateMoonScore(astro: AstroSummary | undefined): number {
+function calculateMoonScoreForWindow(
+  window: readonly NormalizedHourlyWeather[],
+  astroSummaries: readonly AstroSummary[],
+): number {
+  const hourlyScores = window
+    .map((hour) => calculateMoonScoreForHour(hour, astroSummaries))
+    .filter((score): score is number => typeof score === "number" && Number.isFinite(score));
+
+  if (hourlyScores.length === 0) {
+    return calculateMoonScore(firstAstro(astroSummaries));
+  }
+
+  return clampScore(hourlyScores.reduce((sum, score) => sum + score, 0) / hourlyScores.length);
+}
+
+function calculateMoonScoreForHour(
+  hour: NormalizedHourlyWeather,
+  astroSummaries: readonly AstroSummary[],
+): number | undefined {
+  if (!Number.isFinite(Date.parse(hour.time))) {
+    return undefined;
+  }
+
+  const localTime = formatZonedIso(hour.time, defaultTimezone);
+  const localDate = localTime.slice(0, 10);
+  const localHour = localTime.slice(11, 13);
+  const astro = astroSummaries.find((summary) => summary.date === localDate);
+  if (!astro) {
+    return undefined;
+  }
+
+  return calculateMoonScore(astro, astro.moonAltitudeByHour?.[localHour]);
+}
+
+function calculateMoonScore(astro: AstroSummary | undefined, moonAltitude?: number): number {
   if (!astro) {
     return 65;
   }
 
-  const moonAltitudeValues = astro.moonAltitudeByHour
-    ? Object.values(astro.moonAltitudeByHour).filter((value) => value > 0)
-    : [];
   const averageMoonAltitude =
-    moonAltitudeValues.length > 0
-      ? moonAltitudeValues.reduce((sum, value) => sum + value, 0) / moonAltitudeValues.length
-      : 0;
+    moonAltitude === undefined ? averagePositiveMoonAltitude(astro) : Math.max(0, moonAltitude);
 
   const illuminationPercent =
     astro.moonIllumination <= 1 ? astro.moonIllumination * 100 : astro.moonIllumination;
 
   return clampScore(100 - illuminationPercent * 0.72 - Math.max(0, averageMoonAltitude - 15) * 0.8);
+}
+
+function averagePositiveMoonAltitude(astro: AstroSummary): number {
+  const moonAltitudeValues = astro.moonAltitudeByHour
+    ? Object.values(astro.moonAltitudeByHour).filter((value) => value > 0)
+    : [];
+
+  return moonAltitudeValues.length > 0
+    ? moonAltitudeValues.reduce((sum, value) => sum + value, 0) / moonAltitudeValues.length
+    : 0;
 }
 
 function cloudSeaHourScore(hour: NormalizedHourlyWeather, elevationDiff5km: number): number {
