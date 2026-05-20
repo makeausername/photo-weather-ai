@@ -17,7 +17,7 @@ export default function LoginPage() {
             用户登录
           </h1>
           <p className="mt-4 max-w-[760px] text-[15px] leading-7 text-muted-foreground sm:text-base sm:leading-8">
-            公开用户登录将在后续接入，用于查询历史、收藏机位、套餐权益和报告管理。当前阶段仍可直接使用首页的本地模拟分析流程。
+            用户登录功能将在后续接入。未来将用于查询历史、收藏机位、套餐权益和报告管理。当前阶段仍可直接使用首页的本地模拟分析流程。
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link

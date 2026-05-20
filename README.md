@@ -13,11 +13,11 @@
 - 新自然色调色板：核心 token 包括 `#F7F4EC`、`#FFFDF7`、`#ECE7DC`、`#17231F`、`#2F6F5E`、`#D88A20`、`#DDD4C4`。
 - Tailwind CSS 全局样式、CSS 变量设计 token、亮色默认主题、可选深色主题和适合中文界面的字体栈。
 - 响应式公开产品 shell：全宽 sticky 导航、`clamp(24px, 4vw, 72px)` 内容 gutter、桌面充分利用视口宽度、移动端折叠菜单和统一导航。
-- 公开产品导航 shell：逐光天气品牌、SVG 品牌图标、风光摄影出行判断工具标语、首页 / 云海 / 朝霞晚霞 / 星空银河 / 机位库 / 定价导航、主题切换、登录入口和开始分析入口。
+- 公开产品导航 shell：逐光天气品牌、SVG 品牌图标、风光摄影出行判断工具标语、首页 / 云海 / 朝霞晚霞 / 星空银河 / 机位库 / 定价导航、主题切换、统一“账户”入口和开始分析入口；顶层公开导航不再展示“管理后台”按钮。
 - 公开首页：响应式三栏桌面工作区，左侧地点查询面板、中间大幅 forecast/map 视觉工作区、右侧决策摘要面板；900px 到 1199px 自动变为左查询 + 右侧堆叠，移动端单列无横向溢出。
 - 首页下方信息架构：场景能力、热门机位和工作流使用同一页面 gutter 的宽屏响应式网格，不再放进窄居中容器。
 - 公开 forecast 结果页：同一产品 shell 下的 dashboard 布局，左侧地点/查询摘要，中间综合指数、时间窗口和分项评分，右侧风险、建议、计算依据和数据状态。
-- 公开占位模块：`/cloud-sea`、`/glow`、`/astro`、`/spots`、`/pricing` 和 `/login` 使用统一公开导航与中文产品化占位页；`/login` 仍是公开登录占位，不包含真实登录逻辑。
+- 公开占位模块：`/cloud-sea`、`/glow`、`/astro`、`/spots`、`/pricing`、`/account` 和 `/login` 使用统一公开导航与中文产品化占位页；`/login` 仍是公开登录占位，不包含真实登录逻辑。
 - 公开地点搜索：`GET /search/places?q=` 会先查本地地点和摄影机位，再使用当前 GeoProvider 返回标准化地点结果。
 - 公开搜索选择态：选择地点后展示地点名称、地址 / 城市信息、数据来源、GCJ-02 / WGS84 经纬度、验证状态和本地机位匹配状态。
 - 公开 forecast 查询基础：支持选择预报范围和分析目标，下一步跳转 `/forecast`，URL 中显式携带地点名称、来源、GCJ-02 坐标、WGS84 坐标、预报范围、分析目标以及可用的本地地点 / 机位 ID。
@@ -111,7 +111,7 @@
 
 当前查询契约由 `@photo-weather/shared` 中的 `forecastQueryInputSchema` 维护，前端 URL 会显式携带地点名称、来源、GCJ-02 坐标、WGS84 坐标、预报范围、分析目标以及可用的本地地点 / 机位 ID。`POST /forecast/calculate` 会先复用该 schema 校验输入，再构造 `ForecastCalculationInput` 并返回 `ForecastCalculationResult`；可选 `useAiExplanation=true` 时会附带规则兜底解读，只有后台 `ai/deepseek` 启用真实调用且 Key 已保存时才尝试 DeepSeek。结果页按钮调用 `POST /forecast/ai-explain`，不会在页面加载时自动调用 DeepSeek。
 
-公开用户登录、查询历史、收藏机位、额度控制和付费套餐计划在后续阶段实现，不属于当前 forecast 查询基础步骤。当前 `/login` 仅作为公开导航入口和功能说明占位，不接入真实公开账号体系。
+公开用户登录、查询历史、收藏机位、额度控制和付费套餐计划在后续阶段实现，不属于当前 forecast 查询基础步骤。当前公开导航使用统一“账户”入口；未登录时进入 `/login`，已登录时可进入 `/account`，管理员账号才会在账户菜单或账户中心看到“管理后台”。当前 `/login` 仅作为功能说明占位，不接入真实公开账号体系。
 
 ## 架构
 
@@ -163,6 +163,7 @@ corepack pnpm dev:local
 - 星空银河：`http://localhost:3000/astro`
 - 摄影机位库：`http://localhost:3000/spots`
 - 定价方案：`http://localhost:3000/pricing`
+- 账户中心占位：`http://localhost:3000/account`
 - 用户登录占位：`http://localhost:3000/login`
 - 后台登录：`http://localhost:3000/admin/login`
 - 后台控制台：`http://localhost:3000/admin`
@@ -353,10 +354,11 @@ GET   /admin/audit-logs
 /admin/locations
 /admin/photo-spots
 /admin/audit
+/account
 /forecast
 ```
 
-后台控制台已同步 Product UI redesign V4 的自然色和紧凑布局整理。公开导航中“管理后台”只保留为次要入口，不作为主要公开转化按钮：
+后台控制台已同步 Product UI redesign V4 的自然色和紧凑布局整理。公开导航不展示顶层“管理后台”按钮；后台入口只在已确认具备 `admin.manage` 权限的账户菜单或账户中心中显示：
 
 - 左侧导航：控制台、系统设置、服务商配置、地点管理、机位管理、审计日志。
 - 顶部标题区：当前页面标题、描述、当前管理员名称、主题切换、单一返回前台入口、退出。

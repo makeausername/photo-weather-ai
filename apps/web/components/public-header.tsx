@@ -3,8 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { PublicAccountEntry } from "./public-account-entry";
 import { ThemeToggle } from "./theme-toggle";
 import { cn } from "./ui";
+
+export const publicHeaderActionLabels = ["账户", "开始分析"] as const;
 
 const navLinks = [
   { href: "/", label: "首页" },
@@ -82,23 +85,12 @@ export function PublicHeader() {
 
         <div className="hidden shrink-0 items-center justify-end gap-2 min-[1200px]:flex">
           <ThemeToggle compact />
-          <Link
-            href="/login"
-            className="inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary"
-          >
-            登录
-          </Link>
+          <PublicAccountEntry />
           <Link
             href="/#analysis"
             className="inline-flex h-8 items-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
           >
             开始分析
-          </Link>
-          <Link
-            href="/admin"
-            className="inline-flex h-8 items-center rounded-md px-2 text-xs font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-          >
-            管理后台
           </Link>
         </div>
 
@@ -129,26 +121,13 @@ export function PublicHeader() {
             </div>
             <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
               <ThemeToggle compact />
-              <Link
-                href="/login"
-                onClick={() => setMenuOpen(false)}
-                className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary"
-              >
-                登录
-              </Link>
+              <PublicAccountEntry onNavigate={() => setMenuOpen(false)} />
               <Link
                 href="/#analysis"
                 onClick={() => setMenuOpen(false)}
                 className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:bg-[var(--primary-hover)]"
               >
                 开始分析
-              </Link>
-              <Link
-                href="/admin"
-                onClick={() => setMenuOpen(false)}
-                className="inline-flex h-8 items-center rounded-md px-2 text-xs font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-              >
-                管理后台
               </Link>
             </div>
           </div>
