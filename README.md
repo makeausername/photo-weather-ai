@@ -18,7 +18,7 @@
 - 公开首页：响应式三栏桌面工作区，左侧地点查询面板、中间大幅 forecast/map 视觉工作区、右侧决策摘要面板；900px 到 1199px 自动变为左查询 + 右侧堆叠，移动端单列无横向溢出。
 - 首页下方信息架构：场景能力、热门机位和工作流使用同一页面 gutter 的宽屏响应式网格，不再放进窄居中容器。
 - 公开 forecast 结果页：同一产品 shell 下的 dashboard 布局，左侧地点/查询摘要，中间综合指数、时间窗口和分项评分，右侧风险、建议、计算依据和数据状态。
-- 公开占位模块：`/cloud-sea`、`/glow`、`/astro`、`/spots` 和 `/pricing` 使用统一公开导航与中文产品化占位页。
+- Scenario Module Pages V1：`/cloud-sea`、`/glow`、`/astro` 已升级为云海、朝霞晚霞、星空银河专项入口页，复用地点搜索、预报范围选择和 forecast 查询跳转流程；`/spots` 和 `/pricing` 仍为中文产品化占位页。
 - Public User Auth V1：`/login` 支持邮箱密码登录，`/register` 支持邮箱密码注册，`/auth/register` 会创建普通 `user` 角色账户并返回安全用户数据；短信登录计划后续接入。
 - Account Center Foundation V1：`/account` 使用公开产品 shell，未登录时显示登录提示；已登录时展示账户概览、我的查询、收藏机位、报告管理、套餐权益和安全设置。查询历史、收藏机位、报告管理和权益仍为占位，不接入支付、订阅或计费。
 - 管理后台入口只在具备 `admin` / `super_admin` 角色或 `admin.manage` 权限的账户菜单、账户中心中显示；公开导航不展示顶层“管理后台”或单独“登录”主入口。
@@ -116,6 +116,14 @@
 - 星空银河
 
 当前查询契约由 `@photo-weather/shared` 中的 `forecastQueryInputSchema` 维护，前端 URL 会显式携带地点名称、来源、GCJ-02 坐标、WGS84 坐标、预报范围、分析目标以及可用的本地地点 / 机位 ID。`POST /forecast/calculate` 会先复用该 schema 校验输入，再构造 `ForecastCalculationInput` 并返回 `ForecastCalculationResult`；可选 `useAiExplanation=true` 时会附带规则兜底解读，只有后台 `ai/deepseek` 启用真实调用且 Key 已保存时才尝试 DeepSeek。结果页按钮调用 `POST /forecast/ai-explain`，不会在页面加载时自动调用 DeepSeek。
+
+Scenario Module Pages V1：
+
+- `/cloud-sea` 云海判断：固定 `target=cloud_sea`，默认 `horizon=48h`。
+- `/glow` 朝霞晚霞：固定 `target=glow`，默认 `horizon=72h`。
+- `/astro` 星空银河：固定 `target=astro`，默认 `horizon=7d`。
+- 三个页面都复用公开地点搜索和 `/forecast` 查询 URL 构造，跳转时保留地点名称、来源、GCJ-02 坐标、WGS84 坐标、`locationId`、`photoSpotId`、`horizon` 和 `target`。
+- 真实天气数据仍未接入；结果页默认继续使用本地模拟天气数据和本地模拟地形数据验证流程，除非后续显式启用真实 provider。
 
 公开用户邮箱密码登录和注册已接入 Public User Auth V1。当前公开导航使用统一“账户”入口；未登录时进入 `/login`，已登录时可进入 `/account`，管理员账号才会在账户菜单或账户中心看到“管理后台”。短信登录、真实查询历史、收藏机位持久化、额度控制和付费套餐计划在后续阶段实现，不属于当前 forecast 查询基础步骤。
 

@@ -5,9 +5,9 @@ import type { ForecastHorizon, ForecastTarget } from "@photo-weather/shared";
 import { forecastHorizonLabels, forecastTargetLabels } from "@photo-weather/shared";
 import { Badge, Button, Card, Input, cn } from "./ui";
 
-type PlaceResultSource = "local_location" | "local_photo_spot" | "amap" | "mock";
+export type PlaceResultSource = "local_location" | "local_photo_spot" | "amap" | "mock";
 
-type PlaceSearchResult = {
+export type PlaceSearchResult = {
   readonly id: string;
   readonly name: string;
   readonly address: string | null;
@@ -40,13 +40,20 @@ type SearchStatus = "idle" | "loading" | "ready" | "error";
 
 type PlaceSearchCardProps = {
   readonly className?: string;
+  readonly title?: string;
+  readonly description?: string;
+  readonly badgeLabel?: string;
+  readonly defaultHorizon?: ForecastHorizon;
+  readonly defaultTarget?: ForecastTarget;
+  readonly fixedTarget?: ForecastTarget;
+  readonly ctaLabel?: string;
 };
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
 const quickLocations = ["黄山光明顶", "老君山金顶", "三清山女神峰", "武功山金顶"] as const;
 
-const horizonOptions: readonly ForecastHorizon[] = ["24h", "48h", "72h", "7d"];
+export const horizonOptions: readonly ForecastHorizon[] = ["24h", "48h", "72h", "7d"];
 
 const targetOptions: readonly ForecastTarget[] = ["general", "cloud_sea", "glow", "astro"];
 
@@ -96,7 +103,7 @@ async function readSearchErrorMessage(response: Response): Promise<string> {
   }
 }
 
-function buildForecastUrl(
+export function buildForecastUrl(
   place: PlaceSearchResult,
   horizon: ForecastHorizon,
   target: ForecastTarget,
@@ -123,17 +130,79 @@ function buildForecastUrl(
   return `/forecast?${params.toString()}`;
 }
 
-export function PlaceSearchCard({ className }: PlaceSearchCardProps) {
+export function PopularSpotChips({
+  locations = quickLocations,
+  onSelect,
+}: {
+  readonly locations?: readonly string[];
+  readonly onSelect: (value: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {locations.map((location) => (
+        <button
+          key={location}
+          type="button"
+          onClick={() => onSelect(location)}
+          className="rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-semibold text-muted-foreground transition hover:border-primary hover:bg-secondary hover:text-secondary-foreground"
+        >
+          {location}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function HorizonSelector({
+  value,
+  onChange,
+}: {
+  readonly value: ForecastHorizon;
+  readonly onChange: (value: ForecastHorizon) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {horizonOptions.map((option) => (
+        <button
+          key={option}
+          type="button"
+          aria-pressed={value === option}
+          onClick={() => onChange(option)}
+          className={cn(
+            "h-8 rounded-md border px-2 text-xs font-semibold transition",
+            value === option
+              ? "border-primary bg-primary text-primary-foreground"
+              : "border-border bg-card text-card-foreground hover:border-primary hover:bg-secondary",
+          )}
+        >
+          {forecastHorizonLabels[option]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function PlaceSearchCard({
+  className,
+  title = "选择拍摄地点",
+  description = "搜索景区、城市或具体机位",
+  badgeLabel = "本地优先",
+  defaultHorizon = "48h",
+  defaultTarget = "general",
+  fixedTarget,
+  ctaLabel = "查看拍摄天气分析",
+}: PlaceSearchCardProps) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<SearchStatus>("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [results, setResults] = useState<readonly PlaceSearchResult[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<PlaceSearchResult | null>(null);
-  const [horizon, setHorizon] = useState<ForecastHorizon>("48h");
-  const [target, setTarget] = useState<ForecastTarget>("general");
+  const [horizon, setHorizon] = useState<ForecastHorizon>(defaultHorizon);
+  const [target, setTarget] = useState<ForecastTarget>(fixedTarget ?? defaultTarget);
 
   const trimmedQuery = query.trim();
   const showEmptyState = status === "ready" && trimmedQuery.length > 0 && results.length === 0;
+  const activeTarget = fixedTarget ?? target;
 
   const selectedCoordinateText = useMemo(() => {
     if (!selectedPlace) {
@@ -205,10 +274,10 @@ export function PlaceSearchCard({ className }: PlaceSearchCardProps) {
     <Card className={cn("grid gap-4 p-4 shadow-sm", className)}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-bold text-card-foreground">选择拍摄地点</p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">搜索景区、城市或具体机位</p>
+          <p className="text-sm font-bold text-card-foreground">{title}</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
         </div>
-        <Badge variant="muted">本地优先</Badge>
+        <Badge variant="muted">{badgeLabel}</Badge>
       </div>
 
       <form
@@ -232,18 +301,7 @@ export function PlaceSearchCard({ className }: PlaceSearchCardProps) {
 
       <div className="grid gap-2">
         <p className="text-xs font-semibold text-muted-foreground">常用机位</p>
-        <div className="flex flex-wrap gap-2">
-          {quickLocations.map((location) => (
-            <button
-              key={location}
-              type="button"
-              onClick={() => setQuery(location)}
-              className="rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-semibold text-muted-foreground transition hover:border-primary hover:bg-secondary hover:text-secondary-foreground"
-            >
-              {location}
-            </button>
-          ))}
-        </div>
+        <PopularSpotChips onSelect={setQuery} />
       </div>
 
       <div aria-live="polite" className="grid gap-2">
@@ -323,48 +381,43 @@ export function PlaceSearchCard({ className }: PlaceSearchCardProps) {
 
       <div className="grid gap-3 border-t border-border pt-4">
         <div className="grid gap-2">
-          <p className="text-sm font-semibold text-card-foreground">预报范围</p>
-          <div className="grid grid-cols-2 gap-2">
-            {horizonOptions.map((option) => (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={horizon === option}
-                onClick={() => setHorizon(option)}
-                className={cn(
-                  "h-8 rounded-md border px-2 text-xs font-semibold transition",
-                  horizon === option
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-card text-card-foreground hover:border-primary hover:bg-secondary",
-                )}
-              >
-                {forecastHorizonLabels[option]}
-              </button>
-            ))}
-          </div>
+          <p className="text-sm font-semibold text-card-foreground">预报范围选择</p>
+          <HorizonSelector value={horizon} onChange={setHorizon} />
         </div>
 
-        <div className="grid gap-2">
-          <p className="text-sm font-semibold text-card-foreground">分析目标</p>
-          <div className="grid grid-cols-2 gap-2">
-            {targetOptions.map((option) => (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={target === option}
-                onClick={() => setTarget(option)}
-                className={cn(
-                  "h-8 rounded-md border px-2 text-xs font-semibold transition",
-                  target === option
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-card text-card-foreground hover:border-primary hover:bg-secondary",
-                )}
-              >
-                {forecastTargetLabels[option]}
-              </button>
-            ))}
+        {fixedTarget ? (
+          <div className="rounded-lg border border-border bg-muted p-3">
+            <p className="text-xs font-semibold text-muted-foreground">分析目标</p>
+            <p className="mt-1 text-sm font-bold text-card-foreground">
+              {forecastTargetLabels[fixedTarget]}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              当前页面已固定题材，结果页会按该题材排序窗口和评分。
+            </p>
           </div>
-        </div>
+        ) : (
+          <div className="grid gap-2">
+            <p className="text-sm font-semibold text-card-foreground">分析目标</p>
+            <div className="grid grid-cols-2 gap-2">
+              {targetOptions.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  aria-pressed={target === option}
+                  onClick={() => setTarget(option)}
+                  className={cn(
+                    "h-8 rounded-md border px-2 text-xs font-semibold transition",
+                    target === option
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-card text-card-foreground hover:border-primary hover:bg-secondary",
+                  )}
+                >
+                  {forecastTargetLabels[option]}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <Button
           type="button"
@@ -375,10 +428,10 @@ export function PlaceSearchCard({ className }: PlaceSearchCardProps) {
               return;
             }
 
-            window.location.assign(buildForecastUrl(selectedPlace, horizon, target));
+            window.location.assign(buildForecastUrl(selectedPlace, horizon, activeTarget));
           }}
         >
-          查看拍摄天气分析
+          {ctaLabel}
         </Button>
       </div>
     </Card>
