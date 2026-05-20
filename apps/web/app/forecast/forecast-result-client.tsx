@@ -5,16 +5,21 @@ import type { ReactNode } from "react";
 import {
   forecastHorizonLabels,
   forecastTargetLabels,
-  type AstroSummary,
   type ForecastCalculationResult,
   type ForecastQueryInput,
-  type ForecastRiskLevel,
   type ForecastScore,
   type ForecastScoreLevel,
-  type ForecastTimeWindow,
 } from "@photo-weather/shared";
 import { PublicShell } from "../../components/public-shell";
 import { Badge, Button, Card, cn } from "../../components/ui";
+import {
+  buildForecastResultViewModel,
+  getForecastResultPageShellCopy,
+  type ForecastResultCard,
+  type ForecastResultCardTone,
+  type ForecastResultSection,
+  type ForecastResultWindow,
+} from "./forecast-result-view-model";
 
 type ForecastResultClientProps = {
   readonly query: ForecastQueryInput | null;
@@ -60,22 +65,6 @@ const scoreLevelLabels: Record<ForecastScoreLevel, string> = {
   excellent: "优秀",
 };
 
-const riskLevelLabels: Record<ForecastRiskLevel, string> = {
-  low: "低",
-  medium: "中",
-  high: "高",
-};
-
-const scoreOrder = [
-  "sunriseGlow",
-  "sunsetGlow",
-  "cloudSea",
-  "whiteoutRisk",
-  "stars",
-  "milkyWay",
-  "transparency",
-] as const;
-
 async function readApiErrorMessage(response: Response, fallback: string): Promise<string> {
   const text = await response.text();
   if (!text) {
@@ -99,6 +88,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
   const [aiErrorMessage, setAiErrorMessage] = useState("");
 
   const queryKey = useMemo(() => (query ? JSON.stringify(query) : ""), [query]);
+  const shellCopy = getForecastResultPageShellCopy(query?.target ?? result?.target ?? "general");
 
   useEffect(() => {
     if (!query) {
@@ -187,7 +177,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
             首页
           </a>
           <span className="text-muted-foreground">/</span>
-          <span className="font-semibold text-foreground">拍摄天气分析</span>
+          <span className="font-semibold text-foreground">{shellCopy.pageTitle}</span>
         </nav>
         <Button
           variant="secondary"
@@ -202,12 +192,12 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
 
       <header className="flex flex-col justify-between gap-4 border-b border-border pb-5 min-[900px]:flex-row min-[900px]:items-end">
         <div className="max-w-4xl">
-          <Badge variant="default">结果工作台</Badge>
+          <Badge variant="default">{shellCopy.badgeLabel}</Badge>
           <h1 className="mt-3 text-[32px] font-bold leading-tight tracking-normal text-foreground sm:text-[36px]">
-            拍摄天气分析
+            {shellCopy.pageTitle}
           </h1>
           <p className="mt-3 text-sm leading-6 text-muted-foreground sm:text-[15px]">
-            按地点、时间范围和拍摄目标展示综合指数、窗口、风险、建议与数据状态。天文数据来自本地算法，天气与地形仍为本地模拟数据。
+            {shellCopy.pageSubtitle}
           </p>
         </div>
         <Badge variant={result?.isMock || status === "loading" ? "warning" : "success"}>
@@ -348,10 +338,10 @@ function ForecastResultView({
   readonly aiErrorMessage: string;
   readonly onGenerateAiExplanation: () => void;
 }) {
-  const scoreEntries = scoreOrder.map((key) => result.scores[key]);
-  const bestWindow = result.bestWindows[0];
-  const mainRisk = result.riskFlags[0];
-  const astroSummary = result.astroSummaries[0];
+  const viewModel = useMemo(
+    () => buildForecastResultViewModel(result, query.target),
+    [query.target, result],
+  );
 
   return (
     <DashboardFrame query={query}>
@@ -359,9 +349,9 @@ function ForecastResultView({
         <Card className="grid gap-4 p-5 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-bold text-primary">综合判断</p>
+              <p className="text-xs font-bold text-primary">{viewModel.targetLabel}</p>
               <h2 className="mt-2 text-2xl font-bold leading-tight text-card-foreground">
-                {result.recommendationLabel}
+                {viewModel.recommendationLabel}
               </h2>
             </div>
             <Badge variant={result.isMock ? "warning" : "success"}>
@@ -369,68 +359,35 @@ function ForecastResultView({
             </Badge>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-[180px_minmax(0,1fr)]">
-            <div className="rounded-lg border border-border bg-muted p-4">
-              <p className="text-xs font-semibold text-muted-foreground">综合指数</p>
-              <p className="mt-2 text-5xl font-bold leading-none text-primary">
-                {result.overallScore}
-              </p>
-              <p className="mt-2 text-sm font-semibold text-muted-foreground">/ 100</p>
-            </div>
-            <div className="grid gap-3">
-              <p className="text-sm leading-6 text-muted-foreground">{result.summary}</p>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <CompactFact
-                  label="最佳窗口"
-                  value={bestWindow?.label ?? "暂无明确高分窗口"}
-                  detail={bestWindow ? formatWindowRange(bestWindow) : "等待更多数据"}
-                  tone="accent"
-                />
-                <CompactFact
-                  label="主要风险"
-                  value={mainRisk?.label ?? "未发现高等级风险"}
-                  detail={mainRisk ? `${riskLevelLabels[mainRisk.level]}风险` : "仍需现场核对"}
-                  tone="danger"
-                />
-              </div>
-            </div>
-          </div>
+          <p className="text-sm leading-6 text-muted-foreground">{viewModel.primarySummary}</p>
+          <section className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+            {viewModel.primaryCards.map((card) => (
+              <PrimaryResultCard key={card.key} card={card} />
+            ))}
+          </section>
         </Card>
 
-        <WindowPanel windows={result.bestWindows} />
+        <WindowPanel
+          title={viewModel.windowsTitle}
+          description={viewModel.windowsDescription}
+          windows={viewModel.bestWindows}
+        />
 
-        <AstronomyPanel astro={astroSummary} />
+        <ScoreCardsPanel title={viewModel.scoreSectionTitle} scores={viewModel.scoreCards} />
 
-        <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-          {scoreEntries.map((score) => (
-            <ScoreCard key={score.key} score={score} />
-          ))}
-        </section>
+        <SectionGrid sections={viewModel.detailSections} />
       </main>
 
       <aside className="grid content-start gap-4">
-        <MockWarningCard result={result} />
+        <MockWarningCard result={result} dataNotice={viewModel.dataNotice} />
         <AiExplanationPanel
           status={aiStatus}
           explanation={aiExplanation}
           errorMessage={aiErrorMessage}
           onGenerate={onGenerateAiExplanation}
         />
-        <RiskPanel risks={result.riskFlags} />
-        <TextListPanel title="拍摄建议" emptyText="暂无拍摄建议。">
-          {result.photographyAdvice.map((advice) => (
-            <li key={advice} className="text-sm leading-6 text-muted-foreground">
-              {advice}
-            </li>
-          ))}
-        </TextListPanel>
-        <TextListPanel title="关键依据" emptyText="暂无关键依据。">
-          {result.keyReasons.map((reason) => (
-            <li key={reason} className="text-sm leading-6 text-muted-foreground">
-              {reason}
-            </li>
-          ))}
-        </TextListPanel>
+        <SectionStack sections={viewModel.riskSections} />
+        <SectionStack sections={viewModel.adviceSections} />
         <CalculationBasisPanel result={result} />
         <DataStatusPanel result={result} />
       </aside>
@@ -438,128 +395,142 @@ function ForecastResultView({
   );
 }
 
-const missingText = "暂无数据";
-
-const milkyWayVisibilityLabels: Record<
-  NonNullable<AstroSummary["milkyWayVisibilityLevel"]>,
-  string
-> = {
-  unavailable: "不可见",
-  poor: "条件较差",
-  fair: "可尝试",
-  good: "条件较好",
-};
-
-function AstronomyPanel({ astro }: { readonly astro: AstroSummary | undefined }) {
+function PrimaryResultCard({ card }: { readonly card: ForecastResultCard }) {
   return (
-    <Card className="p-5 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">天文数据</h2>
-        <Badge variant="muted">本地算法计算</Badge>
-      </div>
-
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
-        <AstronomyFactCard
-          title="日出 / 日落"
-          primary={`${formatOptionalTime(astro?.sunrise)} / ${formatOptionalTime(astro?.sunset)}`}
-          detail={`太阳中天：${formatOptionalTime(astro?.solarNoon)}`}
-        />
-        <AstronomyFactCard
-          title="月相 / 月亮照明"
-          primary={`${astro?.moonPhaseNameZh ?? missingText} / ${formatPercent(astro?.moonIllumination)}`}
-          detail={`月相值：${formatNumber(astro?.moonPhase)}`}
-        />
-        <AstronomyFactCard
-          title="月出 / 月落"
-          primary={`${formatOptionalTime(astro?.moonrise)} / ${formatOptionalTime(astro?.moonset)}`}
-          detail="以当地地平线近似计算"
-        />
-        <AstronomyFactCard
-          title="晨光"
-          primary={`民用晨光：${formatOptionalTime(astro?.civilDawn)}`}
-          detail={`航海晨光：${formatOptionalTime(astro?.nauticalDawn)} / 天文晨光：${formatOptionalTime(
-            astro?.astronomicalDawn,
-          )}`}
-        />
-        <AstronomyFactCard
-          title="昏影"
-          primary={`民用昏影：${formatOptionalTime(astro?.civilDusk)}`}
-          detail={`航海昏影：${formatOptionalTime(astro?.nauticalDusk)} / 天文昏影：${formatOptionalTime(
-            astro?.astronomicalDusk,
-          )}`}
-        />
-        <AstronomyFactCard
-          title="银河窗口"
-          primary={formatOptionalWindow(astro?.milkyWayWindowStart, astro?.milkyWayWindowEnd)}
-          detail={`${formatMilkyWayVisibility(astro?.milkyWayVisibilityLevel)} / ${
-            astro?.milkyWayDirection ?? missingText
-          }`}
-        />
-      </div>
-
-      <p className="mt-4 rounded-lg border border-border bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground">
-        天文数据基于 WGS84 经纬度和本地算法计算；天气数据、地形数据当前仍为本地模拟数据。
+    <div className="rounded-lg border border-border bg-muted p-4">
+      <p className="text-xs font-semibold text-muted-foreground">{card.label}</p>
+      <p className={cn("mt-2 break-words text-3xl font-bold leading-9", cardToneText(card.tone))}>
+        {card.value}
       </p>
-      {astro?.milkyWayNoteZh ? (
-        <p className="mt-2 text-xs leading-5 text-muted-foreground">{astro.milkyWayNoteZh}</p>
+      <p className="mt-2 text-xs leading-5 text-muted-foreground">{card.detail}</p>
+      {typeof card.score === "number" ? (
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-card">
+          <div
+            className={cn("h-full rounded-full", cardToneBar(card.tone))}
+            style={{ width: `${card.score}%` }}
+          />
+        </div>
       ) : null}
+    </div>
+  );
+}
+
+function cardToneText(tone: ForecastResultCardTone): string {
+  const toneClasses: Record<ForecastResultCardTone, string> = {
+    primary: "text-primary",
+    accent: "text-accent",
+    danger: "text-danger",
+    info: "text-info",
+    muted: "text-card-foreground",
+  };
+
+  return toneClasses[tone];
+}
+
+function cardToneBar(tone: ForecastResultCardTone): string {
+  const toneClasses: Record<ForecastResultCardTone, string> = {
+    primary: "bg-primary",
+    accent: "bg-accent",
+    danger: "bg-danger",
+    info: "bg-info",
+    muted: "bg-muted-foreground",
+  };
+
+  return toneClasses[tone];
+}
+
+function ScoreCardsPanel({
+  title,
+  scores,
+}: {
+  readonly title: string;
+  readonly scores: readonly ForecastScore[];
+}) {
+  return (
+    <section className="grid gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-foreground">{title}</h2>
+        <Badge variant="muted">按当前目标筛选</Badge>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+        {scores.map((score) => (
+          <ScoreCard key={score.key} score={score} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SectionGrid({ sections }: { readonly sections: readonly ForecastResultSection[] }) {
+  return (
+    <section className="grid gap-4 xl:grid-cols-2">
+      {sections.map((section) => (
+        <SectionPanel key={section.key} section={section} />
+      ))}
+    </section>
+  );
+}
+
+function SectionStack({ sections }: { readonly sections: readonly ForecastResultSection[] }) {
+  return (
+    <>
+      {sections.map((section) => (
+        <SectionPanel key={section.key} section={section} compact />
+      ))}
+    </>
+  );
+}
+
+function SectionPanel({
+  section,
+  compact = false,
+}: {
+  readonly section: ForecastResultSection;
+  readonly compact?: boolean;
+}) {
+  return (
+    <Card className={cn("p-5 shadow-sm", compact && "p-4")}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-card-foreground">{section.title}</h2>
+        {section.badgeLabel ? <Badge variant="muted">{section.badgeLabel}</Badge> : null}
+      </div>
+      {section.description ? (
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">{section.description}</p>
+      ) : null}
+      <ul className="mt-4 grid gap-3">
+        {section.items.map((item, index) => (
+          <li
+            key={`${section.key}-${index}`}
+            className="rounded-lg border border-border bg-muted p-3"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold text-card-foreground">{item.label}</span>
+              {item.value ? <Badge variant="accent">{item.value}</Badge> : null}
+            </div>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.detail}</p>
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }
 
-function AstronomyFactCard({
+function WindowPanel({
   title,
-  primary,
-  detail,
+  description,
+  windows,
 }: {
   readonly title: string;
-  readonly primary: string;
-  readonly detail: string;
+  readonly description: string;
+  readonly windows: readonly ForecastResultWindow[];
 }) {
-  return (
-    <div className="rounded-lg border border-border bg-muted p-3">
-      <p className="text-xs font-semibold text-muted-foreground">{title}</p>
-      <p className="mt-2 break-words text-sm font-bold leading-5 text-card-foreground">{primary}</p>
-      <p className="mt-2 text-xs leading-5 text-muted-foreground">{detail}</p>
-    </div>
-  );
-}
-
-function CompactFact({
-  label,
-  value,
-  detail,
-  tone,
-}: {
-  readonly label: string;
-  readonly value: string;
-  readonly detail: string;
-  readonly tone: "accent" | "danger";
-}) {
-  return (
-    <div className="rounded-lg border border-border bg-card p-3">
-      <p className="text-xs font-semibold text-muted-foreground">{label}</p>
-      <p
-        className={cn(
-          "mt-1 text-sm font-bold text-card-foreground",
-          tone === "accent" && "text-accent",
-          tone === "danger" && "text-danger",
-        )}
-      >
-        {value}
-      </p>
-      <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
-    </div>
-  );
-}
-
-function WindowPanel({ windows }: { readonly windows: readonly ForecastTimeWindow[] }) {
   return (
     <Card className="p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">时间窗口</h2>
-        <Badge variant="muted">按评分排序</Badge>
+        <h2 className="text-lg font-bold text-card-foreground">{title}</h2>
+        <Badge variant="muted">目标优先</Badge>
       </div>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
       {windows.length > 0 ? (
         <ul className="mt-4 grid gap-3">
           {windows.map((window) => (
@@ -569,9 +540,12 @@ function WindowPanel({ windows }: { readonly windows: readonly ForecastTimeWindo
             >
               <div>
                 <p className="font-semibold text-card-foreground">{window.label}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{formatWindowRange(window)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{window.timeRangeLabel}</p>
               </div>
-              <Badge variant={window.score >= 75 ? "default" : "accent"}>{window.score} 分</Badge>
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                <Badge variant="muted">{window.badgeLabel}</Badge>
+                <Badge variant={window.score >= 75 ? "default" : "accent"}>{window.score} 分</Badge>
+              </div>
             </li>
           ))}
         </ul>
@@ -582,7 +556,13 @@ function WindowPanel({ windows }: { readonly windows: readonly ForecastTimeWindo
   );
 }
 
-function MockWarningCard({ result }: { readonly result: ForecastCalculationResult }) {
+function MockWarningCard({
+  result,
+  dataNotice,
+}: {
+  readonly result: ForecastCalculationResult;
+  readonly dataNotice: string;
+}) {
   return (
     <Card className={cn("p-4 shadow-sm", result.isMock ? "border-warning" : "")}>
       <div className="flex flex-wrap items-center gap-2">
@@ -591,7 +571,7 @@ function MockWarningCard({ result }: { readonly result: ForecastCalculationResul
         </Badge>
         <p className="text-sm font-semibold text-card-foreground">数据提醒</p>
       </div>
-      <p className="mt-3 text-sm leading-6 text-muted-foreground">{result.dataNotice}</p>
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">{dataNotice}</p>
     </Card>
   );
 }
@@ -694,59 +674,6 @@ function AiListSection({
   );
 }
 
-function RiskPanel({
-  risks,
-}: {
-  readonly risks: readonly ForecastCalculationResult["riskFlags"][number][];
-}) {
-  return (
-    <Card className="p-5 shadow-sm">
-      <h2 className="text-lg font-bold text-card-foreground">风险与注意事项</h2>
-      {risks.length > 0 ? (
-        <ul className="mt-4 grid gap-3">
-          {risks.map((risk) => (
-            <li key={risk.key} className="rounded-lg border border-border bg-muted px-4 py-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-semibold text-card-foreground">{risk.label}</span>
-                <Badge variant={risk.level === "high" ? "danger" : "warning"}>
-                  {riskLevelLabels[risk.level]}风险
-                </Badge>
-              </div>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">{risk.description}</p>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-3 text-sm leading-6 text-muted-foreground">未发现高等级风险。</p>
-      )}
-    </Card>
-  );
-}
-
-function TextListPanel({
-  title,
-  emptyText,
-  children,
-}: {
-  readonly title: string;
-  readonly emptyText: string;
-  readonly children: ReactNode;
-}) {
-  const items = Array.isArray(children) ? children.filter(Boolean) : children;
-  const hasItems = Array.isArray(items) ? items.length > 0 : Boolean(items);
-
-  return (
-    <Card className="p-5 shadow-sm">
-      <h2 className="text-lg font-bold text-card-foreground">{title}</h2>
-      {hasItems ? (
-        <ul className="mt-4 grid gap-3">{items}</ul>
-      ) : (
-        <p className="mt-3 text-sm leading-6 text-muted-foreground">{emptyText}</p>
-      )}
-    </Card>
-  );
-}
-
 function DataStatusPanel({ result }: { readonly result: ForecastCalculationResult }) {
   return (
     <Card className="p-5 shadow-sm">
@@ -830,36 +757,6 @@ function ScoreCard({ score }: { readonly score: ForecastScore }) {
   );
 }
 
-function formatOptionalTime(value: string | undefined): string {
-  return value ? formatTime(value) : missingText;
-}
-
-function formatOptionalWindow(startTime: string | undefined, endTime: string | undefined): string {
-  return startTime && endTime ? `${formatTime(startTime)} - ${formatTime(endTime)}` : missingText;
-}
-
-function formatPercent(value: number | undefined): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return missingText;
-  }
-
-  return `${Math.round(value * 100)}%`;
-}
-
-function formatNumber(value: number | undefined): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return missingText;
-  }
-
-  return value.toFixed(3);
-}
-
-function formatMilkyWayVisibility(
-  value: AstroSummary["milkyWayVisibilityLevel"] | undefined,
-): string {
-  return value ? milkyWayVisibilityLabels[value] : missingText;
-}
-
 function formatCoordinate(value: number): string {
   return Number.isFinite(value) ? value.toFixed(5) : "未提供";
 }
@@ -868,22 +765,4 @@ function formatWgs84Coordinates(result: ForecastCalculationResult["calendarBasis
   return `${formatCoordinate(result.wgs84Coordinates.latitude)}, ${formatCoordinate(
     result.wgs84Coordinates.longitude,
   )}`;
-}
-
-function formatWindowRange(window: ForecastTimeWindow): string {
-  return `${formatTime(window.startTime)} - ${formatTime(window.endTime)}`;
-}
-
-function formatTime(value: string): string {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(timestamp));
 }
