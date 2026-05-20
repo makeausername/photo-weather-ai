@@ -83,6 +83,7 @@
 - 默认时区为 `Asia/Shanghai`。
 - 天文摘要使用 Calendar Core 生成的 `targetDates`，不会在 astro / scoring 内部再生成独立日期。
 - 日出 / 日落、暮光、月相、月亮照明、月出 / 月落、逐小时月亮高度和银河窗口为本地 deterministic 计算，不调用在线 API。
+- MockWeatherProvider 不再生成固定日出 / 日落占位；需要日出日落时只使用 Calendar Core 覆盖日期和 WGS84 坐标驱动的本地 Astronomy Core。
 - Astronomy Core 依赖本地 `astronomy-engine` 包；自动化测试会校验天文计算不触发网络请求。
 - 天文结果会随 forecast mock pipeline 一起进入 `ForecastCalculationResult.astroSummaries`，供结果页展示日出日落、月相月照、月出月落、天文黑夜窗口和银河窗口。
 - 真实天气准确率仍需要后续接入 QWeather / Open-Meteo 真实预报、云层 / 能见度校准和地形遮挡数据；DeepSeek 当前只解释确定性结果，不计算天气、天文、地形或评分。

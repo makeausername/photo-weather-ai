@@ -760,7 +760,7 @@ function DataStatusPanel({ result }: { readonly result: ForecastCalculationResul
         <SummaryItem label="天文数据" value="本地算法计算" />
         <SummaryItem label="天气数据" value={result.dataSourceLabel} />
         <SummaryItem label="地形数据" value="本地模拟数据" />
-        <SummaryItem label="生成时间" value={formatDateTime(result.generatedAt)} />
+        <SummaryItem label="计算基准" value={result.calendarBasis.forecastStartLabel} />
       </dl>
     </Card>
   );
@@ -783,6 +783,9 @@ function CalculationBasisPanel({ result }: { readonly result: ForecastCalculatio
         <SummaryItem label="时区" value={basis.timezoneLabel} />
         <SummaryItem label="WGS84 经纬度" value={formatWgs84Coordinates(basis)} />
         <SummaryItem label="坐标来源" value={basis.coordinateSource} />
+        <SummaryItem label="天文数据" value="本地算法计算" />
+        <SummaryItem label="天气数据" value={result.dataSourceLabel} />
+        <SummaryItem label="地形数据" value="本地模拟数据" />
       </dl>
 
       <div className="mt-3 rounded-lg border border-border bg-muted p-3">
@@ -879,22 +882,6 @@ function formatTime(value: string): string {
 
   return new Intl.DateTimeFormat("zh-CN", {
     timeZone: "Asia/Shanghai",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(timestamp));
-}
-
-function formatDateTime(value: string): string {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    month: "numeric",
-    day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,

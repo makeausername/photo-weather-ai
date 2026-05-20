@@ -39,6 +39,20 @@ describe("MockWeatherProvider", () => {
     expect(first[0]?.time).toBe("2026-05-20T00:00:00+08:00");
     expect(first[0]?.providerCode).toBe("mock-weather");
   });
+
+  it("does not invent astronomy fields in mock daily weather", async () => {
+    const provider = new MockWeatherProvider();
+    const [daily] = await provider.getDailyForecast(coordinates, {
+      days: 1,
+      forecastStart: "2026-05-20T00:00:00+08:00",
+      targetDates: ["2026-05-20"],
+      timezone: "Asia/Shanghai",
+    });
+
+    expect(daily?.date).toBe("2026-05-20");
+    expect(daily?.sunrise).toBeUndefined();
+    expect(daily?.sunset).toBeUndefined();
+  });
 });
 
 describe("fixture weather provider normalization", () => {

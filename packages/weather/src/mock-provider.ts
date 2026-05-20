@@ -77,8 +77,6 @@ export class MockWeatherProvider implements WeatherProvider {
         tempMax: 22 + index,
         precipitationProbability: index === 1 ? 24 : 12,
         weatherSummary: index === 1 ? "多云，局地有弱降水" : "多云间晴",
-        sunrise: `${dates[index] ?? dates[dates.length - 1]!}T06:42:00+08:00`,
-        sunset: `${dates[index] ?? dates[dates.length - 1]!}T17:28:00+08:00`,
       })),
     );
   }

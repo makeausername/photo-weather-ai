@@ -57,8 +57,6 @@ type MockPlaceProfile = {
   readonly visibilityBase: number;
   readonly precipitationBase: number;
   readonly tempBase: number;
-  readonly sunriseClock: string;
-  readonly sunsetClock: string;
 };
 
 type MockGenerationOptions = {
@@ -106,8 +104,6 @@ const profiles: readonly MockPlaceProfile[] = [
     visibilityBase: 24,
     precipitationBase: 12,
     tempBase: 16,
-    sunriseClock: "05:18",
-    sunsetClock: "18:56",
   },
   {
     key: "laojunshan",
@@ -130,8 +126,6 @@ const profiles: readonly MockPlaceProfile[] = [
     visibilityBase: 26,
     precipitationBase: 9,
     tempBase: 14,
-    sunriseClock: "05:26",
-    sunsetClock: "19:24",
   },
   {
     key: "sanqingshan",
@@ -154,8 +148,6 @@ const profiles: readonly MockPlaceProfile[] = [
     visibilityBase: 16,
     precipitationBase: 22,
     tempBase: 17,
-    sunriseClock: "05:20",
-    sunsetClock: "18:58",
   },
   {
     key: "wugongshan",
@@ -178,8 +170,6 @@ const profiles: readonly MockPlaceProfile[] = [
     visibilityBase: 32,
     precipitationBase: 7,
     tempBase: 15,
-    sunriseClock: "05:34",
-    sunsetClock: "19:08",
   },
 ];
 
@@ -203,6 +193,8 @@ export function buildMockForecastInput(
         placeName: query.name,
         target: query.target,
         forecastRange,
+        latitudeWgs84: query.latitudeWgs84,
+        longitudeWgs84: query.longitudeWgs84,
       }),
       isMock: true,
       dataSourceLabel: "模拟天气数据",
@@ -361,6 +353,7 @@ export function generateMockDailyWeather(
 
   return forecastRange.targetDates.map((date, dayIndex) => {
     const precipitationProbability = clampScore(profile.precipitationBase + dayIndex * 3);
+    const sunTimes = getDailySunTimes(date, forecastRange.timezone, options);
 
     return {
       date,
@@ -369,8 +362,8 @@ export function generateMockDailyWeather(
       precipitationProbability,
       weatherSummary:
         precipitationProbability >= 45 ? "阵雨间歇，云量偏多" : "多云间晴，山地局部有雾",
-      sunrise: `${date}T${profile.sunriseClock}:00+08:00`,
-      sunset: `${date}T${profile.sunsetClock}:00+08:00`,
+      sunrise: sunTimes?.sunrise,
+      sunset: sunTimes?.sunset,
     };
   });
 }
@@ -550,6 +543,33 @@ function getCoordinateSourceLabel(source: string): string {
     default:
       return "查询地点 WGS84 坐标";
   }
+}
+
+function getDailySunTimes(
+  date: string,
+  timezone: string,
+  options: Pick<MockGenerationOptions, "latitudeWgs84" | "longitudeWgs84">,
+): Pick<NormalizedDailyWeather, "sunrise" | "sunset"> | undefined {
+  if (
+    typeof options.latitudeWgs84 !== "number" ||
+    typeof options.longitudeWgs84 !== "number" ||
+    !Number.isFinite(options.latitudeWgs84) ||
+    !Number.isFinite(options.longitudeWgs84)
+  ) {
+    return undefined;
+  }
+
+  const sunTimes = getSunTimes({
+    latitudeWgs84: options.latitudeWgs84,
+    longitudeWgs84: options.longitudeWgs84,
+    date,
+    timezone,
+  });
+
+  return {
+    sunrise: sunTimes.sunrise,
+    sunset: sunTimes.sunset,
+  };
 }
 
 function requireWgs84Coordinate(

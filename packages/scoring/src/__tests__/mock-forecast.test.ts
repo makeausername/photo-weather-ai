@@ -60,11 +60,17 @@ describe("mock forecast input builder", () => {
     expect(first.astroSummaries[0]?.milkyWayNoteZh).toBe(
       "银河窗口为本地天文算法初步估算，实际拍摄仍需结合云量、月光、光污染和地形遮挡。",
     );
+    expect(first.dailyWeather[0]?.sunrise).toBe(first.astroSummaries[0]?.sunrise);
+    expect(first.dailyWeather[0]?.sunset).toBe(first.astroSummaries[0]?.sunset);
   });
 
   it("generates 7 day mock weather and local astro windows", () => {
     expect(generateMockHourlyWeather("7d", { now: fixedNow })).toHaveLength(168);
-    expect(generateMockDailyWeather("7d", { now: fixedNow })).toHaveLength(7);
+    const dailyWithoutCoordinates = generateMockDailyWeather("7d", { now: fixedNow });
+
+    expect(dailyWithoutCoordinates).toHaveLength(7);
+    expect(dailyWithoutCoordinates[0]?.sunrise).toBeUndefined();
+    expect(dailyWithoutCoordinates[0]?.sunset).toBeUndefined();
     expect(
       generateLocalAstroSummaries("7d", {
         now: fixedNow,
