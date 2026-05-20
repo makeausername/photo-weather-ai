@@ -10,6 +10,7 @@
 
 - 中文优先的 Next.js 前端 UI 基线。
 - Product UI redesign V4：产品 UI 已改为工具式天气/摄影判断工作台，而不是居中 marketing demo。
+- `DESIGN.md` 定义项目级设计系统；后续 UI 修改应先阅读并遵循该文件。
 - 新自然色调色板：核心 token 包括 `#F7F4EC`、`#FFFDF7`、`#ECE7DC`、`#17231F`、`#2F6F5E`、`#D88A20`、`#DDD4C4`。
 - Tailwind CSS 全局样式、CSS 变量设计 token、亮色默认主题、可选深色主题和适合中文界面的字体栈。
 - 响应式公开产品 shell：全宽 sticky 导航、`clamp(24px, 4vw, 72px)` 内容 gutter、桌面充分利用视口宽度、移动端折叠菜单和统一导航。
