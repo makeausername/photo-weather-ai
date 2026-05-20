@@ -5,6 +5,13 @@ import {
   type NormalizedDailyWeather,
   type NormalizedHourlyWeather,
 } from "@photo-weather/shared";
+import {
+  addHoursInTimezone,
+  defaultTimezone,
+  formatZonedIso,
+  getForecastTargetDates,
+  getNowInTimezone,
+} from "@photo-weather/calendar";
 import type {
   AirQuality,
   CurrentWeather,
@@ -14,7 +21,6 @@ import type {
 } from "./types.js";
 import type { WeatherProvider } from "./provider.js";
 
-const BASE_TIME = "2026-01-01T06:00:00.000Z";
 const PROVIDER_ID = "mock-weather";
 const DATA_SOURCE = {
   providerCode: "mock",
@@ -23,25 +29,13 @@ const DATA_SOURCE = {
   mode: "mock",
 } as const;
 
-function addHours(hours: number): string {
-  const date = new Date(BASE_TIME);
-  date.setUTCHours(date.getUTCHours() + hours);
-  return date.toISOString();
-}
-
-function addDays(days: number): string {
-  const date = new Date(BASE_TIME);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
 export class MockWeatherProvider implements WeatherProvider {
   readonly source = DATA_SOURCE;
 
   async getCurrentWeather(coordinates: Coordinates): Promise<CurrentWeather> {
     return {
       provider: PROVIDER_ID,
-      observedAt: BASE_TIME,
+      observedAt: formatZonedIso(getNowInTimezone(defaultTimezone), defaultTimezone),
       coordinates,
       condition: "partly_cloudy",
       summary: "本地模拟天气：碎云与较高能见度，用于验证流程。",
@@ -59,8 +53,13 @@ export class MockWeatherProvider implements WeatherProvider {
     options: ForecastRequestOptions = {},
   ): Promise<readonly NormalizedHourlyWeather[]> {
     const hours = Math.min(Math.max(options.hours ?? 6, 1), 168);
+    const timezone = options.timezone ?? defaultTimezone;
+    const forecastStart =
+      options.forecastStart ?? formatZonedIso(getNowInTimezone(timezone), timezone);
 
-    return this.normalizeHourlyWeather(Array.from({ length: hours }, (_, index) => buildMockHour(index)));
+    return this.normalizeHourlyWeather(
+      Array.from({ length: hours }, (_, index) => buildMockHour(index, forecastStart, timezone)),
+    );
   }
 
   async getDailyForecast(
@@ -68,16 +67,18 @@ export class MockWeatherProvider implements WeatherProvider {
     options: ForecastRequestOptions = {},
   ): Promise<readonly NormalizedDailyWeather[]> {
     const days = Math.min(Math.max(options.days ?? 3, 1), 10);
+    const timezone = options.timezone ?? defaultTimezone;
+    const dates = resolveTargetDates(days, options, timezone);
 
     return this.normalizeDailyWeather(
       Array.from({ length: days }, (_, index) => ({
-        date: addDays(index),
+        date: dates[index] ?? dates[dates.length - 1]!,
         tempMin: 12 + index,
         tempMax: 22 + index,
         precipitationProbability: index === 1 ? 24 : 12,
         weatherSummary: index === 1 ? "多云，局地有弱降水" : "多云间晴",
-        sunrise: `${addDays(index)}T06:42:00.000Z`,
-        sunset: `${addDays(index)}T17:28:00.000Z`,
+        sunrise: `${dates[index] ?? dates[dates.length - 1]!}T06:42:00+08:00`,
+        sunset: `${dates[index] ?? dates[dates.length - 1]!}T17:28:00+08:00`,
       })),
     );
   }
@@ -89,7 +90,7 @@ export class MockWeatherProvider implements WeatherProvider {
   async getAirQuality(_coordinates: Coordinates): Promise<AirQuality> {
     return {
       provider: PROVIDER_ID,
-      observedAt: BASE_TIME,
+      observedAt: formatZonedIso(getNowInTimezone(defaultTimezone), defaultTimezone),
       aqi: 42,
       category: "good",
       pm25: 18,
@@ -135,7 +136,11 @@ function isNormalizedWeatherData(input: unknown): input is NormalizedWeatherData
   );
 }
 
-function buildMockHour(index: number): NormalizedHourlyWeather {
+function buildMockHour(
+  index: number,
+  forecastStart: string,
+  timezone: string,
+): NormalizedHourlyWeather {
   const cloudLow = 28 + (index % 7);
   const cloudMid = 32 + (index % 5);
   const cloudHigh = 26 + (index % 6);
@@ -145,7 +150,7 @@ function buildMockHour(index: number): NormalizedHourlyWeather {
   const windSpeed = round1(2.8 + index * 0.1);
 
   return {
-    time: addHours(index),
+    time: addHoursInTimezone(forecastStart, index, timezone),
     temperature,
     feelsLike: round1(temperature - windSpeed * 0.2),
     humidity: 58 + (index % 8),
@@ -166,6 +171,23 @@ function buildMockHour(index: number): NormalizedHourlyWeather {
     sourceConfidence: 0.78,
     sourceNotes: ["本地模拟天气数据用于流程验证。"],
   };
+}
+
+function resolveTargetDates(
+  days: number,
+  options: ForecastRequestOptions,
+  timezone: string,
+): readonly string[] {
+  if (options.targetDates && options.targetDates.length > 0) {
+    return options.targetDates.slice(0, days);
+  }
+
+  const forecastStart =
+    options.forecastStart ?? formatZonedIso(getNowInTimezone(timezone), timezone);
+  const forecastEnd = addHoursInTimezone(forecastStart, days * 24, timezone);
+  const targetDates = getForecastTargetDates(forecastStart, forecastEnd, timezone);
+
+  return targetDates.slice(0, days);
 }
 
 function round1(value: number): number {

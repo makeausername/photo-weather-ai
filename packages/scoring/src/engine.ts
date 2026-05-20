@@ -11,6 +11,7 @@ import {
   type ForecastTimeWindow,
   type NormalizedHourlyWeather,
 } from "@photo-weather/shared";
+import { defaultTimezone, getHourInTimezone } from "@photo-weather/calendar";
 import {
   addHours,
   averageHourly,
@@ -51,6 +52,7 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
     place: input.place,
     horizon: input.horizon,
     target: input.target,
+    calendarBasis: input.calendarBasis,
     overallScore,
     recommendationLevel,
     recommendationLabel,
@@ -712,10 +714,9 @@ function buildDataNotice(input: ForecastCalculationInput): string {
 }
 
 function getShanghaiHour(time: string): number {
-  const timestamp = Date.parse(time);
-  if (!Number.isFinite(timestamp)) {
+  if (!Number.isFinite(Date.parse(time))) {
     return 0;
   }
 
-  return new Date(timestamp + 8 * 60 * 60 * 1000).getUTCHours();
+  return getHourInTimezone(time, defaultTimezone);
 }

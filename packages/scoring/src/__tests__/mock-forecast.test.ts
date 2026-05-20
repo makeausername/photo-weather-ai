@@ -21,11 +21,12 @@ const query: ForecastQueryInput = {
   locationId: "location-huangshan",
   photoSpotId: "spot-guangmingding",
 };
+const fixedNow = "2026-05-20T00:00:00+08:00";
 
 describe("mock forecast input builder", () => {
   it("builds deterministic normalized calculation input", () => {
-    const first = buildMockForecastInput(query);
-    const second = buildMockForecastInput(query);
+    const first = buildMockForecastInput(query, { now: fixedNow });
+    const second = buildMockForecastInput(query, { now: fixedNow });
 
     expect(first).toEqual(second);
     expect(first).toMatchObject({
@@ -40,6 +41,12 @@ describe("mock forecast input builder", () => {
     expect(first.hourlyWeather).toHaveLength(48);
     expect(first.dailyWeather).toHaveLength(2);
     expect(first.astroSummaries).toHaveLength(2);
+    expect(first.calendarBasis).toMatchObject({
+      forecastStart: "2026-05-20T00:00:00+08:00",
+      forecastEnd: "2026-05-22T00:00:00+08:00",
+      targetDates: ["2026-05-20", "2026-05-21"],
+      timezone: "Asia/Shanghai",
+    });
     expect(first.astroSummaries[0]).toMatchObject({
       timezone: "Asia/Shanghai",
       moonPhaseNameZh: expect.any(String),
@@ -56,20 +63,29 @@ describe("mock forecast input builder", () => {
   });
 
   it("generates 7 day mock weather and local astro windows", () => {
-    expect(generateMockHourlyWeather("7d")).toHaveLength(168);
-    expect(generateMockDailyWeather("7d")).toHaveLength(7);
-    expect(generateLocalAstroSummaries("7d")[0]).toMatchObject({
+    expect(generateMockHourlyWeather("7d", { now: fixedNow })).toHaveLength(168);
+    expect(generateMockDailyWeather("7d", { now: fixedNow })).toHaveLength(7);
+    expect(
+      generateLocalAstroSummaries("7d", {
+        now: fixedNow,
+        latitudeWgs84: query.latitudeWgs84,
+        longitudeWgs84: query.longitudeWgs84,
+      })[0],
+    ).toMatchObject({
       milkyWayVisibilityLevel: expect.any(String),
     });
   });
 
   it("varies terrain profiles for supported mainland photography places", () => {
-    const huangshan = buildMockForecastInput(query);
-    const wugongshan = buildMockForecastInput({
-      ...query,
-      name: "武功山金顶",
-      target: "astro",
-    });
+    const huangshan = buildMockForecastInput(query, { now: fixedNow });
+    const wugongshan = buildMockForecastInput(
+      {
+        ...query,
+        name: "武功山金顶",
+        target: "astro",
+      },
+      { now: fixedNow },
+    );
 
     expect(generateMockTerrainSummary(huangshan.place).locationElevation).toBe(1860);
     expect(generateMockTerrainSummary(wugongshan.place).locationElevation).toBe(1918);
@@ -79,7 +95,7 @@ describe("mock forecast input builder", () => {
   });
 
   it("can be consumed by the forecast scoring engine", () => {
-    const result = calculateForecast(buildMockForecastInput(query));
+    const result = calculateForecast(buildMockForecastInput(query, { now: fixedNow }));
 
     expect(result.isMock).toBe(true);
     expect(result.dataNotice).toBe(
@@ -91,6 +107,29 @@ describe("mock forecast input builder", () => {
     expect(result.bestWindows.length).toBeGreaterThan(0);
   });
 
+  it("does not output January 1 windows unless tests inject January 1", () => {
+    const result = calculateForecast(buildMockForecastInput(query, { now: fixedNow }));
+    const serialized = JSON.stringify(result);
+
+    expect(serialized).not.toContain("2026-01-01");
+    expect(serialized).not.toContain("1月1日");
+    expect(serialized).not.toContain("January 1");
+  });
+
+  it("uses Calendar Core target dates for scored windows", () => {
+    const result = calculateForecast(buildMockForecastInput(query, { now: fixedNow }));
+
+    expect(result.calendarBasis.targetDates).toEqual(["2026-05-20", "2026-05-21"]);
+    expect(result.bestWindows.length).toBeGreaterThan(0);
+    for (const window of result.bestWindows) {
+      expect(
+        result.calendarBasis.targetDates.some(
+          (date) => window.startTime.startsWith(date) || window.endTime.startsWith(date),
+        ),
+      ).toBe(true);
+    }
+  });
+
   it("does not call external network while building and scoring mock forecasts", () => {
     const originalFetch = globalThis.fetch;
     let fetchCalls = 0;
@@ -100,7 +139,7 @@ describe("mock forecast input builder", () => {
     }) as typeof fetch;
 
     try {
-      const result = calculateForecast(buildMockForecastInput(query));
+      const result = calculateForecast(buildMockForecastInput(query, { now: fixedNow }));
 
       expect(result.isMock).toBe(true);
       expect(result.astroSummaries.length).toBeGreaterThan(0);

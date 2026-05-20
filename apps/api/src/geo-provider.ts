@@ -32,6 +32,24 @@ function readOptInFlag(value: string | undefined): boolean {
   return value?.trim().toLowerCase() === "true";
 }
 
+function readBoolean(value: JsonValue | undefined): boolean | undefined {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") {
+      return true;
+    }
+    if (normalized === "false") {
+      return false;
+    }
+  }
+
+  return undefined;
+}
+
 function readAmapApiKey(
   provider: ProviderConfigRecord | null,
   env: NodeJS.ProcessEnv,
@@ -61,6 +79,18 @@ function readAmapBaseUrl(
   );
 }
 
+function readAmapRealModeEnabled(
+  provider: ProviderConfigRecord | null,
+  env: NodeJS.ProcessEnv,
+): boolean {
+  if (env.NODE_ENV === "test") {
+    return false;
+  }
+
+  const configJson = isJsonObject(provider?.configJson) ? provider.configJson : {};
+  return readBoolean(configJson.realCallEnabled) ?? readOptInFlag(env.ENABLE_REAL_AMAP);
+}
+
 export async function readRuntimeAmapConfig(
   options: Pick<GeoProviderRuntimeOptions, "dbClient" | "env"> = {},
 ): Promise<RuntimeAmapConfig> {
@@ -69,7 +99,7 @@ export async function readRuntimeAmapConfig(
 
   return {
     providerEnabled: provider?.enabled ?? false,
-    realModeEnabled: readOptInFlag(env.ENABLE_REAL_AMAP),
+    realModeEnabled: readAmapRealModeEnabled(provider, env),
     apiKey: readAmapApiKey(provider, env),
     baseUrl: readAmapBaseUrl(provider, env),
   };
@@ -100,7 +130,7 @@ export async function createRealAmapProvider(
   const config = await readRuntimeAmapConfig(options);
 
   return new AmapProvider({
-    enabled: config.providerEnabled,
+    enabled: config.providerEnabled && config.realModeEnabled,
     apiKey: config.apiKey,
     baseUrl: config.baseUrl,
   });

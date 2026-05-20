@@ -27,6 +27,7 @@ const baseQuery: ForecastQueryInput = {
   locationId: "location-huangshan",
   photoSpotId: "spot-guangmingding",
 };
+const fixedNow = "2026-05-20T00:00:00+08:00";
 
 function expectForecastScore(score: ForecastScore, label: string): void {
   expect(score.label).toBe(label);
@@ -38,7 +39,7 @@ function expectForecastScore(score: ForecastScore, label: string): void {
 
 describe("forecast score calculators", () => {
   it("calculates each major photography score with Chinese labels", () => {
-    const input = buildMockForecastInput(baseQuery);
+    const input = buildMockForecastInput(baseQuery, { now: fixedNow });
 
     expectForecastScore(calculateSunriseGlowScore(input), "朝霞");
     expectForecastScore(calculateSunsetGlowScore(input), "晚霞");
@@ -50,16 +51,22 @@ describe("forecast score calculators", () => {
   });
 
   it("keeps whiteout risk separate from cloud sea opportunity", () => {
-    const humidInput = buildMockForecastInput({
-      ...baseQuery,
-      name: "三清山女神峰",
-      target: "cloud_sea",
-    });
-    const clearInput = buildMockForecastInput({
-      ...baseQuery,
-      name: "武功山金顶",
-      target: "astro",
-    });
+    const humidInput = buildMockForecastInput(
+      {
+        ...baseQuery,
+        name: "三清山女神峰",
+        target: "cloud_sea",
+      },
+      { now: fixedNow },
+    );
+    const clearInput = buildMockForecastInput(
+      {
+        ...baseQuery,
+        name: "武功山金顶",
+        target: "astro",
+      },
+      { now: fixedNow },
+    );
 
     expect(calculateWhiteoutRiskScore(humidInput).score).toBeGreaterThan(
       calculateWhiteoutRiskScore(clearInput).score,
@@ -80,15 +87,21 @@ describe("forecast score calculators", () => {
   });
 
   it("calculates target-aware overall scores and full results", () => {
-    const cloudSeaInput = buildMockForecastInput({
-      ...baseQuery,
-      target: "cloud_sea",
-    });
-    const astroInput = buildMockForecastInput({
-      ...baseQuery,
-      name: "武功山金顶",
-      target: "astro",
-    });
+    const cloudSeaInput = buildMockForecastInput(
+      {
+        ...baseQuery,
+        target: "cloud_sea",
+      },
+      { now: fixedNow },
+    );
+    const astroInput = buildMockForecastInput(
+      {
+        ...baseQuery,
+        name: "武功山金顶",
+        target: "astro",
+      },
+      { now: fixedNow },
+    );
     const cloudSeaResult = calculateForecast(cloudSeaInput);
     const astroResult = calculateForecast(astroInput);
 

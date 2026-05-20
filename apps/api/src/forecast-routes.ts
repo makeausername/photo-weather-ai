@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
+import { buildForecastDateRange, forecastDateRangeErrorMessage } from "@photo-weather/calendar";
 import {
   type ForecastCalculationResult,
   type ForecastQueryInput,
@@ -8,14 +9,14 @@ import {
 } from "@photo-weather/shared";
 import { createRuleBasedForecastExplanation, type ForecastAiExplanation } from "@photo-weather/ai";
 import type { DatabaseClient } from "@photo-weather/db";
-import {
-  buildForecastInputFromNormalizedWeather,
-  calculateForecast,
-  getHorizonHours,
-} from "@photo-weather/scoring";
+import { buildForecastInputFromNormalizedWeather, calculateForecast } from "@photo-weather/scoring";
 import { createWeatherProvider, type WeatherProvider } from "@photo-weather/weather";
 import { z, type ZodError } from "zod";
-import { createRealDeepSeekProvider } from "./ai-provider.js";
+import {
+  createRealDeepSeekProvider,
+  readRuntimeDeepSeekConfig,
+  type RuntimeDeepSeekConfig,
+} from "./ai-provider.js";
 
 export type ForecastRoutesOptions = {
   readonly dbClient?: DatabaseClient;
@@ -28,11 +29,25 @@ type ForecastCalculationWithAiResult = ForecastCalculationResult & {
   aiExplanationError?: string;
 };
 
+const missingWgs84CoordinateErrorMessage =
+  "当前地点缺少有效 WGS84 坐标，无法计算日出日落、月相和银河窗口。";
+
 const forecastCalculateRequestSchema = forecastQueryInputSchema.extend({
   useAiExplanation: z.boolean().optional().default(false),
 });
 
 function sendZodError(reply: FastifyReply, error: ZodError): FastifyReply {
+  if (
+    error.issues.some(
+      (issue) => issue.path[0] === "latitudeWgs84" || issue.path[0] === "longitudeWgs84",
+    )
+  ) {
+    return reply.status(400).send({
+      error: "invalid_wgs84_coordinates",
+      message: missingWgs84CoordinateErrorMessage,
+    });
+  }
+
   return reply.status(400).send({
     error: "validation_error",
     issues: error.issues.map((issue) => ({
@@ -71,7 +86,10 @@ export function registerForecastRoutes(
     }
 
     const { useAiExplanation, ...query } = parsedBody.data;
-    const result = await calculateForecastResult(query, weatherProvider);
+    const result = await calculateForecastResultOrReply(query, weatherProvider, reply);
+    if (!result) {
+      return reply;
+    }
 
     if (!useAiExplanation) {
       return reply.send(result);
@@ -82,7 +100,15 @@ export function registerForecastRoutes(
       aiExplanation: createRuleBasedForecastExplanation(result),
     };
 
-    if (env.ENABLE_REAL_DEEPSEEK?.trim().toLowerCase() === "true") {
+    const runtimeDeepSeek = await readRuntimeDeepSeekConfigOrDisabled({
+      dbClient: options.dbClient,
+      env,
+    });
+    if (
+      runtimeDeepSeek?.providerEnabled &&
+      runtimeDeepSeek.realModeEnabled &&
+      runtimeDeepSeek.apiKey
+    ) {
       try {
         const deepSeekProvider = await createRealDeepSeekProvider({
           dbClient: options.dbClient,
@@ -105,11 +131,22 @@ export function registerForecastRoutes(
       return sendZodError(reply, parsedBody.error);
     }
 
-    const result = await calculateForecastResult(parsedBody.data, weatherProvider);
-    if (env.ENABLE_REAL_DEEPSEEK?.trim().toLowerCase() !== "true") {
-      return reply.status(503).send({
-        error: "ai_explanation_unavailable",
-        message: "DeepSeek 真实开发调用未启用，请设置 ENABLE_REAL_DEEPSEEK=true 后再测试。",
+    const result = await calculateForecastResultOrReply(parsedBody.data, weatherProvider, reply);
+    if (!result) {
+      return reply;
+    }
+    const runtimeDeepSeek = await readRuntimeDeepSeekConfigOrDisabled({
+      dbClient: options.dbClient,
+      env,
+    });
+
+    if (
+      !runtimeDeepSeek?.providerEnabled ||
+      !runtimeDeepSeek.realModeEnabled ||
+      !runtimeDeepSeek.apiKey
+    ) {
+      return reply.send({
+        explanation: createRuleBasedForecastExplanation(result),
       });
     }
 
@@ -134,10 +171,39 @@ export function registerForecastRoutes(
   });
 }
 
+async function calculateForecastResultOrReply(
+  query: ForecastQueryInput,
+  weatherProvider: WeatherProvider,
+  reply: FastifyReply,
+): Promise<ForecastCalculationResult | null> {
+  try {
+    return await calculateForecastResult(query, weatherProvider);
+  } catch (error) {
+    const message = (error as Error).message;
+    if (message === forecastDateRangeErrorMessage) {
+      reply.status(400).send({
+        error: "invalid_forecast_range",
+        message: forecastDateRangeErrorMessage,
+      });
+      return null;
+    }
+    if (message === missingWgs84CoordinateErrorMessage) {
+      reply.status(400).send({
+        error: "invalid_wgs84_coordinates",
+        message: missingWgs84CoordinateErrorMessage,
+      });
+      return null;
+    }
+
+    throw error;
+  }
+}
+
 async function calculateForecastResult(
   query: ForecastQueryInput,
   weatherProvider: WeatherProvider,
 ): Promise<ForecastCalculationResult> {
+  const forecastRange = buildForecastDateRange(query.horizon);
   const coordinates = {
     latitude: query.latitudeWgs84,
     longitude: query.longitudeWgs84,
@@ -145,22 +211,41 @@ async function calculateForecastResult(
   };
   const [hourlyWeather, dailyWeather] = await Promise.all([
     weatherProvider.getHourlyForecast(coordinates, {
-      hours: getHorizonHours(query.horizon),
+      hours: forecastRange.horizonHours,
+      forecastStart: forecastRange.forecastStart,
+      targetDates: forecastRange.targetDates,
+      timezone: forecastRange.timezone,
     }),
     weatherProvider.getDailyForecast(coordinates, {
-      days: getHorizonDays(query.horizon),
+      days: forecastRange.targetDates.length,
+      forecastStart: forecastRange.forecastStart,
+      targetDates: forecastRange.targetDates,
+      timezone: forecastRange.timezone,
     }),
   ]);
-  const calculationInput = buildForecastInputFromNormalizedWeather(query, {
-    hourlyWeather,
-    dailyWeather,
-    isMock: weatherProvider.source.isMock,
-    dataSourceLabel: weatherProvider.source.displayName,
-  });
+  const calculationInput = buildForecastInputFromNormalizedWeather(
+    query,
+    {
+      hourlyWeather,
+      dailyWeather,
+      isMock: weatherProvider.source.isMock,
+      dataSourceLabel: weatherProvider.source.displayName,
+    },
+    {
+      forecastRange,
+    },
+  );
 
   return calculateForecast(calculationInput);
 }
 
-function getHorizonDays(horizon: "24h" | "48h" | "72h" | "7d"): number {
-  return horizon === "7d" ? 7 : Math.ceil(getHorizonHours(horizon) / 24);
+async function readRuntimeDeepSeekConfigOrDisabled(options: {
+  readonly dbClient?: DatabaseClient;
+  readonly env?: NodeJS.ProcessEnv;
+}): Promise<RuntimeDeepSeekConfig | null> {
+  try {
+    return await readRuntimeDeepSeekConfig(options);
+  } catch {
+    return null;
+  }
 }

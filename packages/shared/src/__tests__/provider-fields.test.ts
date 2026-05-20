@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { getProviderFieldPreset, providerFieldPresets } from "../provider-fields.js";
+import {
+  deepSeekModelOptions,
+  getProviderFieldPreset,
+  normalizeDeepSeekModel,
+  providerFieldPresets,
+} from "../provider-fields.js";
 
 describe("provider field presets", () => {
   it("defines visual fields for common provider secrets", () => {
@@ -30,9 +35,23 @@ describe("provider field presets", () => {
     expect(getProviderFieldPreset("deepseek")?.fields).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ key: "apiKey", target: "secretJson" }),
-        expect.objectContaining({ key: "baseUrl", target: "configJson" }),
-        expect.objectContaining({ key: "defaultModel", target: "configJson" }),
+        expect.objectContaining({ key: "realCallEnabled", target: "configJson" }),
+        expect.objectContaining({
+          key: "defaultModel",
+          target: "configJson",
+          control: "select",
+        }),
+        expect.objectContaining({ key: "baseUrl", target: "configJson", advanced: true }),
       ]),
     );
+  });
+
+  it("keeps DeepSeek model dropdown values centralized", () => {
+    expect(deepSeekModelOptions.map((option) => option.value)).toEqual([
+      "deepseek-chat",
+      "deepseek-reasoner",
+    ]);
+    expect(normalizeDeepSeekModel("deepseek-reasoner")).toBe("deepseek-reasoner");
+    expect(normalizeDeepSeekModel("custom-model")).toBe("deepseek-chat");
   });
 });

@@ -12,6 +12,8 @@ export default defineConfig({
       "@photo-weather/astro": new URL("./packages/astro/src/index.ts", import.meta.url).pathname,
       "@photo-weather/billing": new URL("./packages/billing/src/index.ts", import.meta.url)
         .pathname,
+      "@photo-weather/calendar": new URL("./packages/calendar/src/index.ts", import.meta.url)
+        .pathname,
       "@photo-weather/config": new URL("./packages/config/src/index.ts", import.meta.url).pathname,
       "@photo-weather/db": new URL("./packages/db/src/index.ts", import.meta.url).pathname,
       "@photo-weather/geo": new URL("./packages/geo/src/index.ts", import.meta.url).pathname,

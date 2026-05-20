@@ -11,6 +11,7 @@ import {
   EmptyState,
   FormField,
   Input,
+  Select,
   SwitchRow,
   Textarea,
 } from "../../../components/ui";
@@ -105,6 +106,57 @@ function fieldValueToInput(value: JsonValue | undefined): string {
   return JSON.stringify(value);
 }
 
+function fieldDefaultToInput(field: ProviderFieldDefinition): string {
+  return fieldValueToInput(field.defaultValue as JsonValue | undefined);
+}
+
+function readBooleanJson(value: JsonValue | undefined): boolean | undefined {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") {
+      return true;
+    }
+    if (normalized === "false") {
+      return false;
+    }
+  }
+
+  return undefined;
+}
+
+function parseConfigFieldValue(
+  field: ProviderFieldDefinition,
+  value: string | undefined,
+): JsonValue | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (field.control === "boolean") {
+    return value === "true";
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return field.defaultValue === undefined ? undefined : (field.defaultValue as JsonValue);
+  }
+
+  if (field.control === "number") {
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+      throw new Error(`${field.label} 必须是有效数字。`);
+    }
+
+    return parsed;
+  }
+
+  return trimmed;
+}
+
 function providerName(provider: SafeProviderConfig): string {
   return (
     providerDisplayLabels[`${provider.providerType}:${provider.providerCode}`] ||
@@ -124,6 +176,17 @@ function getPresetFields(
   );
 }
 
+function getNormalPresetFields(
+  provider: SafeProviderConfig,
+  target: "configJson" | "secretJson",
+): readonly ProviderFieldDefinition[] {
+  return getPresetFields(provider, target).filter((field) => !field.advanced);
+}
+
+function getAdvancedPresetFields(provider: SafeProviderConfig): readonly ProviderFieldDefinition[] {
+  return getPresetFields(provider, "configJson").filter((field) => field.advanced);
+}
+
 function createConfigFieldDraft(provider: SafeProviderConfig): Record<string, string> {
   const configJson = isJsonObject(provider.configJson) ? provider.configJson : {};
 
@@ -134,7 +197,10 @@ function createConfigFieldDraft(provider: SafeProviderConfig): Record<string, st
           ? configJson.basePath ?? configJson.rootPath
           : configJson[field.key];
 
-      return [field.key, fieldValueToInput(value)];
+      return [
+        field.key,
+        value === undefined ? fieldDefaultToInput(field) : fieldValueToInput(value),
+      ];
     }),
   );
 }
@@ -190,18 +256,6 @@ function stateClass(status: RowState["status"]): string {
   return "border-border bg-muted text-muted-foreground";
 }
 
-function ProviderStatus({ provider }: { readonly provider: SafeProviderConfig }) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      <Badge variant={provider.enabled ? "success" : "muted"}>
-        {provider.enabled ? "已启用" : "未启用"}
-      </Badge>
-      <Badge variant="muted">优先级 {provider.priority}</Badge>
-      <Badge variant="muted">{providerTypeLabels[provider.providerType] ?? "其他服务商"}</Badge>
-    </div>
-  );
-}
-
 function getRealDevCallFlagKey(provider: SafeProviderConfig): keyof RealDevCallFlags | null {
   if (provider.providerType === "geo" && provider.providerCode === "amap") {
     return "amap";
@@ -216,7 +270,58 @@ function getRealDevCallFlagKey(provider: SafeProviderConfig): keyof RealDevCallF
 
 function isRealDevCallEnabled(provider: SafeProviderConfig, flags: RealDevCallFlags): boolean {
   const key = getRealDevCallFlagKey(provider);
-  return key ? flags[key] : false;
+  if (key) {
+    return flags[key];
+  }
+
+  return readBooleanJson(readJsonField(provider.configJson, "realCallEnabled")) ?? false;
+}
+
+function readConfiguredRealCallEnabled(provider: SafeProviderConfig): boolean | undefined {
+  return readBooleanJson(readJsonField(provider.configJson, "realCallEnabled"));
+}
+
+function primarySecretField(provider: SafeProviderConfig): ProviderFieldDefinition | undefined {
+  return getPresetFields(provider, "secretJson")[0];
+}
+
+function providerHasSecret(provider: SafeProviderConfig): boolean | null {
+  const secretField = primarySecretField(provider);
+  return secretField ? hasSavedSecret(provider, secretField.key) : null;
+}
+
+function ProviderStatus({
+  provider,
+  flags,
+}: {
+  readonly provider: SafeProviderConfig;
+  readonly flags: RealDevCallFlags;
+}) {
+  const realEnabled = isRealDevCallEnabled(provider, flags);
+  const hasSecret = providerHasSecret(provider);
+
+  return (
+    <div className="grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs">
+      <div className="flex flex-wrap gap-2">
+        <Badge variant={provider.enabled ? "success" : "muted"}>
+          服务状态：{provider.enabled ? "已启用" : "未启用"}
+        </Badge>
+        <Badge variant={realEnabled ? "warning" : "muted"}>
+          真实调用：{realEnabled ? "已启用" : "未启用"}
+        </Badge>
+        <Badge variant={hasSecret === null ? "muted" : hasSecret ? "success" : "warning"}>
+          密钥状态：{hasSecret === null ? "不需要" : hasSecret ? "已保存" : "未保存"}
+        </Badge>
+        <Badge variant={realEnabled ? "warning" : "muted"}>
+          测试模式：{realEnabled ? "真实服务" : "本地模拟"}
+        </Badge>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Badge variant="muted">优先级 {provider.priority}</Badge>
+        <Badge variant="muted">{providerTypeLabels[provider.providerType] ?? "其他服务商"}</Badge>
+      </div>
+    </div>
+  );
 }
 
 function RealDevCallNotice({
@@ -232,12 +337,14 @@ function RealDevCallNotice({
   }
 
   const enabled = flags[key];
+  const configured = readConfiguredRealCallEnabled(provider);
 
   return (
     <div className="rounded-lg border border-border bg-muted px-3 py-2 text-sm leading-6 text-muted-foreground">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold text-card-foreground">真实开发调用：</span>
+        <span className="font-semibold text-card-foreground">真实调用：</span>
         <Badge variant={enabled ? "warning" : "muted"}>{enabled ? "已启用" : "未启用"}</Badge>
+        {configured === undefined ? <Badge variant="muted">使用环境兜底</Badge> : null}
       </div>
       <p className="mt-1 text-xs leading-5">
         {enabled
@@ -353,7 +460,10 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       for (const field of getPresetFields(provider, "configJson")) {
         const value = configFieldDrafts[provider.id]?.[field.key];
         if (value !== undefined) {
-          configJson[field.key] = value.trim();
+          const parsedValue = parseConfigFieldValue(field, value);
+          if (parsedValue !== undefined) {
+            configJson[field.key] = parsedValue;
+          }
         }
       }
 
@@ -399,6 +509,14 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       setProviders((current) =>
         current.map((item) => (item.id === provider.id ? response.provider : item)),
       );
+      const realFlagKey = getRealDevCallFlagKey(response.provider);
+      const configuredRealCall = readConfiguredRealCallEnabled(response.provider);
+      if (realFlagKey && configuredRealCall !== undefined) {
+        setRealDevCallFlags((current) => ({
+          ...current,
+          [realFlagKey]: configuredRealCall,
+        }));
+      }
       setConfigDrafts((current) => ({
         ...current,
         [provider.id]: stringifyJson(response.provider.configJson),
@@ -485,6 +603,53 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     }));
   }
 
+  function renderConfigField(provider: SafeProviderConfig, field: ProviderFieldDefinition) {
+    const value = configFieldDrafts[provider.id]?.[field.key] ?? fieldDefaultToInput(field);
+
+    if (field.control === "boolean") {
+      return (
+        <SwitchRow
+          key={field.key}
+          label={field.label}
+          description={field.helpText}
+          checked={value === "true"}
+          onChange={(checked) => updateConfigField(provider.id, field.key, String(checked))}
+        />
+      );
+    }
+
+    if (field.control === "select") {
+      return (
+        <FormField key={field.key} label={field.label} hint={field.helpText}>
+          <Select
+            value={value}
+            onChange={(event) => updateConfigField(provider.id, field.key, event.target.value)}
+          >
+            {field.options?.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </FormField>
+      );
+    }
+
+    return (
+      <FormField key={field.key} label={field.label} hint={field.helpText}>
+        <Input
+          type={field.control === "number" ? "number" : "text"}
+          value={value}
+          placeholder={field.placeholder}
+          min={field.min}
+          max={field.max}
+          step={field.step}
+          onChange={(event) => updateConfigField(provider.id, field.key, event.target.value)}
+        />
+      </FormField>
+    );
+  }
+
   function toggleSecretVisibility(providerId: string, key: string) {
     setSecretVisibility((current) => ({
       ...current,
@@ -554,13 +719,14 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               <h2 className="text-lg font-bold">{providerTypeLabels[group] ?? "其他服务商"}</h2>
               <p className="mt-1 text-sm text-muted-foreground">{groupProviders.length} 个服务商</p>
             </div>
-            <Badge variant="muted">本地测试不会调用真实外部服务</Badge>
+            <Badge variant="muted">高德和 DeepSeek 可在此显式启用真实调用</Badge>
           </div>
 
           <div className="grid gap-4 p-5 xl:grid-cols-2">
             {groupProviders.map((provider) => {
               const preset = getProviderFieldPreset(provider.providerCode);
-              const configFields = getPresetFields(provider, "configJson");
+              const configFields = getNormalPresetFields(provider, "configJson");
+              const advancedConfigFields = getAdvancedPresetFields(provider);
               const secretFields = getPresetFields(provider, "secretJson");
               const state = stateByProvider[provider.id];
               const isExpanded = expandedProviders[provider.id] ?? false;
@@ -577,7 +743,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                         代码：{provider.providerCode}
                       </p>
                     </div>
-                    <ProviderStatus provider={provider} />
+                    <ProviderStatus provider={provider} flags={realDevCallFlags} />
                   </div>
 
                   {preset?.helpText ? (
@@ -642,17 +808,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                         </div>
                         {configFields.length > 0 ? (
                           <div className="grid gap-3 sm:grid-cols-2">
-                            {configFields.map((field) => (
-                              <FormField key={field.key} label={field.label} hint={field.helpText}>
-                                <Input
-                                  value={configFieldDrafts[provider.id]?.[field.key] ?? ""}
-                                  placeholder={field.placeholder}
-                                  onChange={(event) =>
-                                    updateConfigField(provider.id, field.key, event.target.value)
-                                  }
-                                />
-                              </FormField>
-                            ))}
+                            {configFields.map((field) => renderConfigField(provider, field))}
                           </div>
                         ) : (
                           <p className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
@@ -736,6 +892,14 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                           高级配置
                         </summary>
                         <div className="mt-4 grid gap-4">
+                          {advancedConfigFields.length > 0 ? (
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              {advancedConfigFields.map((field) =>
+                                renderConfigField(provider, field),
+                              )}
+                            </div>
+                          ) : null}
+
                           <FormField label="基础配置 JSON">
                             <Textarea
                               value={configDrafts[provider.id] ?? "{}"}

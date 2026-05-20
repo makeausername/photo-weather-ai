@@ -601,7 +601,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
           return {
             success: true,
             mode: "mock",
-            message: "当前为本地模拟测试，未触发真实高德连接。",
+            message: "当前为本地模拟测试，未请求高德地图服务。",
           };
         }
 
@@ -612,6 +612,10 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
             "provider_not_enabled",
             "高德地图服务商未启用，请先在后台服务商配置中启用高德地图。",
           );
+        }
+
+        if (!runtimeConfig.apiKey) {
+          return sendError(reply, 400, "provider_key_missing", "请先填写高德 Web 服务 Key。");
         }
 
         try {
@@ -647,7 +651,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
           return {
             success: true,
             mode: "mock",
-            message: "当前为本地模拟测试，未触发真实 DeepSeek 连接。",
+            message: "当前为本地模拟测试，未请求 DeepSeek 服务。",
           };
         }
 
@@ -658,6 +662,10 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
             "provider_not_enabled",
             "DeepSeek 服务商未启用，请先在后台服务商配置中启用 DeepSeek。",
           );
+        }
+
+        if (!runtimeConfig.apiKey) {
+          return sendError(reply, 400, "provider_key_missing", "请先填写 DeepSeek API Key。");
         }
 
         try {

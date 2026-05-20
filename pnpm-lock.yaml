@@ -50,6 +50,9 @@ importers:
       '@photo-weather/ai':
         specifier: workspace:*
         version: link:../../packages/ai
+      '@photo-weather/calendar':
+        specifier: workspace:*
+        version: link:../../packages/calendar
       '@photo-weather/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -142,6 +145,18 @@ importers:
         specifier: workspace:*
         version: link:../shared
 
+  packages/calendar:
+    dependencies:
+      '@date-fns/tz':
+        specifier: ^1.4.1
+        version: 1.4.1
+      date-fns:
+        specifier: ^4.2.1
+        version: 4.2.1
+      lunar-typescript:
+        specifier: ^1.8.6
+        version: 1.8.6
+
   packages/config:
     dependencies:
       '@photo-weather/shared':
@@ -175,6 +190,9 @@ importers:
       '@photo-weather/astro':
         specifier: workspace:*
         version: link:../astro
+      '@photo-weather/calendar':
+        specifier: workspace:*
+        version: link:../calendar
       '@photo-weather/shared':
         specifier: workspace:*
         version: link:../shared
@@ -198,6 +216,9 @@ importers:
 
   packages/weather:
     dependencies:
+      '@photo-weather/calendar':
+        specifier: workspace:*
+        version: link:../calendar
       '@photo-weather/shared':
         specifier: workspace:*
         version: link:../shared
@@ -207,6 +228,9 @@ packages:
   '@alloc/quick-lru@5.2.0':
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
     engines: {node: '>=10'}
+
+  '@date-fns/tz@1.4.1':
+    resolution: {integrity: sha512-P5LUNhtbj6YfI3iJjw5EL9eUAG6OitD0W3fWQcpQjDRc/QIsL0tRNuO1PcDvPccWL1fSTXXdE1ds+l95DV/OFA==}
 
   '@esbuild/aix-ppc64@0.20.2':
     resolution: {integrity: sha512-D+EBOJHXdNZcLJRBkhENNG8Wji2kgc9AZ9KiPr1JuZjsNtyHzrsfLRrY0tk2H2aoFu6RANO1y1iPPUCDYWkb5g==}
@@ -1073,6 +1097,9 @@ packages:
   csstype@3.2.3:
     resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
 
+  date-fns@4.2.1:
+    resolution: {integrity: sha512-37RhSdxaG1suen6VDCza6rNrQfooyQh57HFVPwQGEq2QWliVLzPQZ8Oa017weOu+HZCnzI7N3Pf/wyoBKfEqrA==}
+
   debug@4.4.3:
     resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
     engines: {node: '>=6.0'}
@@ -1431,6 +1458,9 @@ packages:
 
   loupe@2.3.7:
     resolution: {integrity: sha512-zSMINGVYkdpYSOBmLi0D1Uo7JU9nVdQKrHxC8eYlV+9YKK9WePqAlL7lSlorG/U2Fw1w0hTBmaa/jrQ3UbPHtA==}
+
+  lunar-typescript@1.8.6:
+    resolution: {integrity: sha512-5Eo4T/cnuXfrgO4k5LCpOGHIUOuz5hCF/IfNv0T29WY2shR36Hiz+ecN9WjnUuxUKhql9gbOkPaQoqLFKtPRNA==}
 
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
@@ -2053,6 +2083,8 @@ packages:
 snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
+
+  '@date-fns/tz@1.4.1': {}
 
   '@esbuild/aix-ppc64@0.20.2':
     optional: true
@@ -2718,6 +2750,8 @@ snapshots:
 
   csstype@3.2.3: {}
 
+  date-fns@4.2.1: {}
+
   debug@4.4.3:
     dependencies:
       ms: 2.1.3
@@ -3140,6 +3174,8 @@ snapshots:
   loupe@2.3.7:
     dependencies:
       get-func-name: 2.0.2
+
+  lunar-typescript@1.8.6: {}
 
   magic-string@0.30.21:
     dependencies:

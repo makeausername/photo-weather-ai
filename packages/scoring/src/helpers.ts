@@ -1,4 +1,10 @@
 import type { ForecastHorizon, NormalizedHourlyWeather } from "@photo-weather/shared";
+import {
+  addHoursInTimezone,
+  defaultTimezone,
+  formatChineseDateTimeRange,
+  getForecastHorizonHours,
+} from "@photo-weather/calendar";
 
 export type WeightedScore = {
   readonly score: number;
@@ -32,16 +38,7 @@ export function averageWeightedScore(items: readonly WeightedScore[]): number {
 }
 
 export function getHorizonHours(horizon: ForecastHorizon): number {
-  switch (horizon) {
-    case "24h":
-      return 24;
-    case "48h":
-      return 48;
-    case "72h":
-      return 72;
-    case "7d":
-      return 168;
-  }
+  return getForecastHorizonHours(horizon);
 }
 
 export function getWeatherWindowAroundTime(
@@ -69,22 +66,11 @@ export function getWeatherWindowAroundTime(
 }
 
 export function formatChineseTimeRange(startTime: string, endTime: string): string {
-  const start = toShanghaiParts(startTime);
-  const end = toShanghaiParts(endTime);
-
-  if (!start || !end) {
+  if (!Number.isFinite(Date.parse(startTime)) || !Number.isFinite(Date.parse(endTime))) {
     return `${startTime} 至 ${endTime}`;
   }
 
-  const startDate = `${start.month}月${start.day}日`;
-  const startClock = `${pad2(start.hour)}:${pad2(start.minute)}`;
-  const endClock = `${pad2(end.hour)}:${pad2(end.minute)}`;
-
-  if (start.year === end.year && start.month === end.month && start.day === end.day) {
-    return `${startDate} ${startClock}-${endClock}`;
-  }
-
-  return `${startDate} ${startClock} 至 ${end.month}月${end.day}日 ${endClock}`;
+  return formatChineseDateTimeRange(startTime, endTime, defaultTimezone);
 }
 
 export function averageHourly(
@@ -116,38 +102,9 @@ export function pickHighestScoredHour(
 }
 
 export function addHours(time: string, hours: number): string {
-  const timestamp = Date.parse(time);
-  if (!Number.isFinite(timestamp)) {
+  if (!Number.isFinite(Date.parse(time))) {
     return time;
   }
 
-  return new Date(timestamp + hours * oneHourMs).toISOString();
-}
-
-function toShanghaiParts(value: string):
-  | {
-      readonly year: number;
-      readonly month: number;
-      readonly day: number;
-      readonly hour: number;
-      readonly minute: number;
-    }
-  | undefined {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
-    return undefined;
-  }
-
-  const shifted = new Date(timestamp + 8 * oneHourMs);
-  return {
-    year: shifted.getUTCFullYear(),
-    month: shifted.getUTCMonth() + 1,
-    day: shifted.getUTCDate(),
-    hour: shifted.getUTCHours(),
-    minute: shifted.getUTCMinutes(),
-  };
-}
-
-function pad2(value: number): string {
-  return value.toString().padStart(2, "0");
+  return addHoursInTimezone(time, hours, defaultTimezone);
 }

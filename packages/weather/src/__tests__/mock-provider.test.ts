@@ -26,12 +26,17 @@ describe("MockWeatherProvider", () => {
 
   it("returns deterministic normalized hourly forecasts", async () => {
     const provider = new MockWeatherProvider();
-    const first = await provider.getHourlyForecast(coordinates, { hours: 2 });
-    const second = await provider.getHourlyForecast(coordinates, { hours: 2 });
+    const options = {
+      hours: 2,
+      forecastStart: "2026-05-20T00:00:00+08:00",
+      timezone: "Asia/Shanghai",
+    };
+    const first = await provider.getHourlyForecast(coordinates, options);
+    const second = await provider.getHourlyForecast(coordinates, options);
 
     expect(first).toEqual(second);
     expect(first).toHaveLength(2);
-    expect(first[0]?.time).toBe("2026-01-01T06:00:00.000Z");
+    expect(first[0]?.time).toBe("2026-05-20T00:00:00+08:00");
     expect(first[0]?.providerCode).toBe("mock-weather");
   });
 });

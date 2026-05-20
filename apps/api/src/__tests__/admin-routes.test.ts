@@ -135,6 +135,7 @@ describe("admin config routes", () => {
         enabled: true,
         configJson: {
           defaultModel: "deepseek-reasoner",
+          realCallEnabled: true,
         },
         secretJson: {
           apiKey: "sk-real-secret",
@@ -152,6 +153,7 @@ describe("admin config routes", () => {
       configJson: {
         baseUrl: "https://api.deepseek.com",
         defaultModel: "deepseek-reasoner",
+        realCallEnabled: true,
       },
       maskedSecretJson: {
         apiKey: "sk-r****cret",
@@ -295,7 +297,7 @@ describe("admin config routes", () => {
     expect(response.json()).toMatchObject({
       success: true,
       mode: "mock",
-      message: "当前为本地模拟测试，未触发真实高德连接。",
+      message: "当前为本地模拟测试，未请求高德地图服务。",
     });
     expect(response.body).not.toContain("amap-test-secret");
     expect(response.body).not.toContain("secretJson");
@@ -325,10 +327,147 @@ describe("admin config routes", () => {
     expect(response.json()).toMatchObject({
       success: true,
       mode: "mock",
-      message: "当前为本地模拟测试，未触发真实 DeepSeek 连接。",
+      message: "当前为本地模拟测试，未请求 DeepSeek 服务。",
     });
     expect(response.body).not.toContain("deepseek-test-secret");
     expect(response.body).not.toContain("secretJson");
+  });
+
+  it("uses admin real-call settings before env fallback when listing providers", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const amapProvider = state.providers.get("geo:amap");
+    const deepSeekProvider = state.providers.get("ai:deepseek");
+    state.providers.set("geo:amap", {
+      ...amapProvider,
+      configJson: {
+        ...(amapProvider.configJson ?? {}),
+        realCallEnabled: true,
+      },
+    });
+    state.providers.set("ai:deepseek", {
+      ...deepSeekProvider,
+      configJson: {
+        ...(deepSeekProvider.configJson ?? {}),
+        realCallEnabled: false,
+      },
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+        ENABLE_REAL_AMAP: "false",
+        ENABLE_REAL_DEEPSEEK: "true",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/providers",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().realDevCallFlags).toEqual({
+      amap: true,
+      deepseek: false,
+    });
+  });
+
+  it("returns Chinese no-key errors for real Amap and DeepSeek connection tests", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const amapProvider = state.providers.get("geo:amap");
+    const deepSeekProvider = state.providers.get("ai:deepseek");
+    state.providers.set("geo:amap", {
+      ...amapProvider,
+      enabled: true,
+      configJson: {
+        ...(amapProvider.configJson ?? {}),
+        realCallEnabled: true,
+      },
+      secretJson: {},
+      maskedSecretJson: {},
+    });
+    state.providers.set("ai:deepseek", {
+      ...deepSeekProvider,
+      enabled: true,
+      configJson: {
+        ...(deepSeekProvider.configJson ?? {}),
+        realCallEnabled: true,
+      },
+      secretJson: {},
+      maskedSecretJson: {},
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+      },
+      logger: false,
+    });
+
+    const amapResponse = await app.inject({
+      method: "POST",
+      url: "/admin/providers/geo/amap/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+    const deepSeekResponse = await app.inject({
+      method: "POST",
+      url: "/admin/providers/ai/deepseek/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(amapResponse.statusCode).toBe(400);
+    expect(amapResponse.json()).toMatchObject({
+      error: "provider_key_missing",
+      message: "请先填写高德 Web 服务 Key。",
+    });
+    expect(deepSeekResponse.statusCode).toBe(400);
+    expect(deepSeekResponse.json()).toMatchObject({
+      error: "provider_key_missing",
+      message: "请先填写 DeepSeek API Key。",
+    });
+  });
+
+  it("forces real provider connection tests back to mock mode under NODE_ENV=test", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("real network calls are disabled in automated tests");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const amapProvider = state.providers.get("geo:amap");
+    state.providers.set("geo:amap", {
+      ...amapProvider,
+      enabled: true,
+      configJson: {
+        ...(amapProvider.configJson ?? {}),
+        realCallEnabled: true,
+      },
+      secretJson: {
+        apiKey: "amap-test-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "amap****cret",
+      },
+    });
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/providers/geo/amap/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: true,
+      mode: "mock",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("lists seeded Chinese locations and validates unsafe coordinates", async () => {
@@ -541,11 +680,19 @@ describe("admin config routes", () => {
   });
 
   it("keeps public search mock-safe when Amap is enabled but real flag is false", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("real network calls are disabled in search tests");
+    });
+    vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
     const amapProvider = state.providers.get("geo:amap");
     state.providers.set("geo:amap", {
       ...amapProvider,
       enabled: true,
+      configJson: {
+        ...(amapProvider.configJson ?? {}),
+        realCallEnabled: false,
+      },
       secretJson: {},
       maskedSecretJson: {},
     });
@@ -561,6 +708,7 @@ describe("admin config routes", () => {
       name: "黄山",
       source: "local_location",
     });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("mixes real Amap results after local public search results when explicitly enabled", async () => {
@@ -569,6 +717,10 @@ describe("admin config routes", () => {
     state.providers.set("geo:amap", {
       ...amapProvider,
       enabled: true,
+      configJson: {
+        ...(amapProvider.configJson ?? {}),
+        realCallEnabled: true,
+      },
       secretJson: {
         apiKey: "amap-real-secret",
       },
@@ -576,8 +728,7 @@ describe("admin config routes", () => {
         apiKey: "amap****cret",
       },
     });
-    vi.stubGlobal(
-      "fetch",
+    const fetchMock = vi.fn(
       async () =>
         new Response(
           JSON.stringify({
@@ -605,12 +756,13 @@ describe("admin config routes", () => {
           },
         ),
     );
+    vi.stubGlobal("fetch", fetchMock);
     app = buildApiServer({
       dbClient: client,
       authConfig: testAuthConfig,
       env: {
         ...process.env,
-        ENABLE_REAL_AMAP: "true",
+        NODE_ENV: "development",
       },
       logger: false,
     });
@@ -627,6 +779,7 @@ describe("admin config routes", () => {
       source: "local_location",
     });
     expect(body.results.some((result: any) => result.source === "amap")).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(response.body).not.toContain("amap-real-secret");
   });
 
@@ -636,6 +789,10 @@ describe("admin config routes", () => {
     state.providers.set("geo:amap", {
       ...amapProvider,
       enabled: true,
+      configJson: {
+        ...(amapProvider.configJson ?? {}),
+        realCallEnabled: true,
+      },
       secretJson: {},
       maskedSecretJson: {},
     });
@@ -644,7 +801,7 @@ describe("admin config routes", () => {
       authConfig: testAuthConfig,
       env: {
         ...process.env,
-        ENABLE_REAL_AMAP: "true",
+        NODE_ENV: "development",
       },
       logger: false,
     });

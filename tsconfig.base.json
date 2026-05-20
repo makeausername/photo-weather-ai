@@ -20,6 +20,7 @@
       "@photo-weather/ai": ["packages/ai/src/index.ts"],
       "@photo-weather/astro": ["packages/astro/src/index.ts"],
       "@photo-weather/billing": ["packages/billing/src/index.ts"],
+      "@photo-weather/calendar": ["packages/calendar/src/index.ts"],
       "@photo-weather/config": ["packages/config/src/index.ts"],
       "@photo-weather/db": ["packages/db/src/index.ts"],
       "@photo-weather/geo": ["packages/geo/src/index.ts"],

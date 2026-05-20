@@ -124,7 +124,9 @@ export function ForecastResultClient({ query }: ForecastResultClientProps) {
         });
 
         if (!response.ok) {
-          throw new Error("拍摄天气分析暂时不可用，请稍后重试。");
+          throw new Error(
+            await readApiErrorMessage(response, "拍摄天气分析暂时不可用，请稍后重试。"),
+          );
         }
 
         const data = (await response.json()) as ForecastCalculationResult;
@@ -428,6 +430,7 @@ function ForecastResultView({
             </li>
           ))}
         </TextListPanel>
+        <CalculationBasisPanel result={result} />
         <DataStatusPanel result={result} />
       </aside>
     </DashboardFrame>
@@ -762,6 +765,44 @@ function DataStatusPanel({ result }: { readonly result: ForecastCalculationResul
   );
 }
 
+function CalculationBasisPanel({ result }: { readonly result: ForecastCalculationResult }) {
+  const basis = result.calendarBasis;
+
+  return (
+    <Card className="p-5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-card-foreground">计算依据</h2>
+        <Badge variant="muted">日历核心</Badge>
+      </div>
+
+      <dl className="mt-4 grid gap-3 text-sm">
+        <SummaryItem label="预报起点" value={basis.forecastStartLabel} />
+        <SummaryItem label="预报终点" value={basis.forecastEndLabel} />
+        <SummaryItem label="覆盖日期" value={basis.targetDateLabels.join("、")} />
+        <SummaryItem label="时区" value={basis.timezoneLabel} />
+        <SummaryItem label="WGS84 经纬度" value={formatWgs84Coordinates(basis)} />
+        <SummaryItem label="坐标来源" value={basis.coordinateSource} />
+      </dl>
+
+      <div className="mt-3 rounded-lg border border-border bg-muted p-3">
+        <p className="text-xs font-semibold text-muted-foreground">农历 / 节气</p>
+        {basis.calendarDays.length > 0 ? (
+          <ul className="mt-2 grid gap-1 text-xs leading-5 text-muted-foreground">
+            {basis.calendarDays.map((day) => (
+              <li key={day.date}>
+                {day.dateLabel}：农历{day.lunarDateText}
+                {day.solarTerm ? ` / ${day.solarTerm}` : ""}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-2 text-xs leading-5 text-muted-foreground">暂无农历或节气信息。</p>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 function ScoreCard({ score }: { readonly score: ForecastScore }) {
   const isRisk = score.key === "whiteoutRisk";
   const barTone = isRisk ? "bg-warning" : "bg-primary";
@@ -817,6 +858,12 @@ function formatMilkyWayVisibility(
 
 function formatCoordinate(value: number): string {
   return Number.isFinite(value) ? value.toFixed(5) : "未提供";
+}
+
+function formatWgs84Coordinates(result: ForecastCalculationResult["calendarBasis"]): string {
+  return `${formatCoordinate(result.wgs84Coordinates.latitude)}, ${formatCoordinate(
+    result.wgs84Coordinates.longitude,
+  )}`;
 }
 
 function formatWindowRange(window: ForecastTimeWindow): string {

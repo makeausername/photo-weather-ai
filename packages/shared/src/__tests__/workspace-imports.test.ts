@@ -1,5 +1,6 @@
 import { MockAIProvider } from "@photo-weather/ai";
 import { LocalAstroProvider } from "@photo-weather/astro";
+import { defaultTimezone } from "@photo-weather/calendar";
 import { databasePackageStatus } from "@photo-weather/db";
 import { MockGeoProvider } from "@photo-weather/geo";
 import { MockScoringEngine } from "@photo-weather/scoring";
@@ -12,6 +13,7 @@ describe("workspace package imports", () => {
   it("loads the initial architecture packages", () => {
     expect(new MockAIProvider()).toBeInstanceOf(MockAIProvider);
     expect(new LocalAstroProvider()).toBeInstanceOf(LocalAstroProvider);
+    expect(defaultTimezone).toBe("Asia/Shanghai");
     expect(databasePackageStatus.businessModels).toBe("created");
     expect(new MockGeoProvider()).toBeInstanceOf(MockGeoProvider);
     expect(new MockScoringEngine()).toBeInstanceOf(MockScoringEngine);

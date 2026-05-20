@@ -139,6 +139,7 @@ export type ForecastCalculationInput = {
   readonly place: Place;
   readonly horizon: ForecastHorizon;
   readonly target: ForecastTarget;
+  readonly calendarBasis: ForecastCalculationBasis;
   readonly hourlyWeather: readonly NormalizedHourlyWeather[];
   readonly dailyWeather: readonly NormalizedDailyWeather[];
   readonly terrainSummary: TerrainSummary;
@@ -196,6 +197,7 @@ export type ForecastCalculationResult = {
   readonly place: Place;
   readonly horizon: ForecastHorizon;
   readonly target: ForecastTarget;
+  readonly calendarBasis: ForecastCalculationBasis;
   readonly overallScore: number;
   readonly recommendationLevel: ForecastRecommendationLevel;
   readonly recommendationLabel: string;
@@ -210,6 +212,34 @@ export type ForecastCalculationResult = {
   readonly isMock: boolean;
   readonly dataSourceLabel: string;
   readonly generatedAt: string;
+};
+
+export type ForecastCalendarDayInfo = {
+  readonly date: string;
+  readonly dateLabel: string;
+  readonly lunarDateText: string;
+  readonly solarTerm?: string;
+  readonly ganzhiYear?: string;
+  readonly zodiac?: string;
+};
+
+export type ForecastCalculationBasis = {
+  readonly forecastStart: string;
+  readonly forecastEnd: string;
+  readonly forecastStartLabel: string;
+  readonly forecastEndLabel: string;
+  readonly forecastRangeLabel: string;
+  readonly targetDates: readonly string[];
+  readonly targetDateLabels: readonly string[];
+  readonly horizonHours: number;
+  readonly timezone: string;
+  readonly timezoneLabel: string;
+  readonly calendarDays: readonly ForecastCalendarDayInfo[];
+  readonly wgs84Coordinates: {
+    readonly latitude: number;
+    readonly longitude: number;
+  };
+  readonly coordinateSource: string;
 };
 
 export type JsonPrimitive = string | number | boolean | null;

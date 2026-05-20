@@ -1,5 +1,7 @@
 import type {
   AstroSummary,
+  ForecastCalculationBasis,
+  ForecastCalendarDayInfo,
   ForecastCalculationInput,
   ForecastHorizon,
   ForecastQueryInput,
@@ -10,6 +12,19 @@ import type {
   TerrainSummary,
 } from "@photo-weather/shared";
 import {
+  addHoursInTimezone,
+  buildForecastDateRange,
+  defaultTimezone,
+  formatChineseDate,
+  formatChineseDateTime,
+  formatChineseDateTimeRange,
+  forecastDateRangeErrorMessage,
+  getChineseCalendarInfo,
+  getHourInTimezone,
+  type CalendarDateInput,
+  type ForecastDateRange,
+} from "@photo-weather/calendar";
+import {
   getAstronomicalNightWindow,
   getMilkyWayWindow,
   getMoonAltitudeByHour,
@@ -19,7 +34,7 @@ import {
   getSunTimes,
   getTwilightTimes,
 } from "@photo-weather/astro";
-import { clampScore, getHorizonHours } from "./helpers.js";
+import { clampScore } from "./helpers.js";
 
 type MockPlaceProfile = {
   readonly key: string;
@@ -51,7 +66,9 @@ type MockGenerationOptions = {
   readonly target?: ForecastTarget;
   readonly latitudeWgs84?: number;
   readonly longitudeWgs84?: number;
-  readonly dates?: readonly string[];
+  readonly forecastRange?: ForecastDateRange;
+  readonly now?: CalendarDateInput;
+  readonly timezone?: string;
 };
 
 export type NormalizedForecastInputOptions = {
@@ -61,10 +78,11 @@ export type NormalizedForecastInputOptions = {
   readonly dataSourceLabel: string;
 };
 
-const generatedAt = "2026-05-19T08:00:00+08:00";
-const baseUtcMs = Date.UTC(2026, 4, 19, 16, 0, 0);
-const hourMs = 60 * 60 * 1000;
-const dayMs = 24 * hourMs;
+export type ForecastInputBuildOptions = {
+  readonly forecastRange?: ForecastDateRange;
+  readonly now?: CalendarDateInput;
+  readonly timezone?: string;
+};
 
 const profiles: readonly MockPlaceProfile[] = [
   {
@@ -167,26 +185,44 @@ const profiles: readonly MockPlaceProfile[] = [
 
 const defaultProfile = profiles[0]!;
 
-export function buildMockForecastInput(query: ForecastQueryInput): ForecastCalculationInput {
-  return buildForecastInputFromNormalizedWeather(query, {
-    hourlyWeather: generateMockHourlyWeather(query.horizon, {
-      placeName: query.name,
-      target: query.target,
-    }),
-    dailyWeather: generateMockDailyWeather(query.horizon, {
-      placeName: query.name,
-      target: query.target,
-    }),
-    isMock: true,
-    dataSourceLabel: "模拟天气数据",
-  });
+export function buildMockForecastInput(
+  query: ForecastQueryInput,
+  options: ForecastInputBuildOptions = {},
+): ForecastCalculationInput {
+  const forecastRange = resolveForecastRange(query.horizon, options);
+
+  return buildForecastInputFromNormalizedWeather(
+    query,
+    {
+      hourlyWeather: generateMockHourlyWeather(query.horizon, {
+        placeName: query.name,
+        target: query.target,
+        forecastRange,
+      }),
+      dailyWeather: generateMockDailyWeather(query.horizon, {
+        placeName: query.name,
+        target: query.target,
+        forecastRange,
+      }),
+      isMock: true,
+      dataSourceLabel: "模拟天气数据",
+    },
+    {
+      forecastRange,
+    },
+  );
 }
 
 export function buildForecastInputFromNormalizedWeather(
   query: ForecastQueryInput,
   weather: NormalizedForecastInputOptions,
+  options: ForecastInputBuildOptions = {},
 ): ForecastCalculationInput {
+  assertValidWgs84Coordinate(query.latitudeWgs84, "latitudeWgs84", -90, 90);
+  assertValidWgs84Coordinate(query.longitudeWgs84, "longitudeWgs84", -180, 180);
+
   const profile = resolveProfile(query.name);
+  const forecastRange = resolveForecastRange(query.horizon, options);
   const place: Place = {
     id: query.photoSpotId ?? query.locationId ?? `mock-${profile.key}`,
     name: query.name,
@@ -199,23 +235,22 @@ export function buildForecastInputFromNormalizedWeather(
       system: "wgs84",
     },
   };
-  const options = { placeName: query.name, target: query.target };
-  const astroDates = getForecastDates(query.horizon, weather.dailyWeather);
+  const generationOptions = { placeName: query.name, target: query.target, forecastRange };
 
   return {
     place,
     horizon: query.horizon,
     target: query.target,
+    calendarBasis: buildCalculationBasis(query, forecastRange),
     hourlyWeather: weather.hourlyWeather,
     dailyWeather: weather.dailyWeather,
     terrainSummary: generateMockTerrainSummary(place),
     astroSummaries: generateLocalAstroSummaries(query.horizon, {
-      ...options,
+      ...generationOptions,
       latitudeWgs84: query.latitudeWgs84,
       longitudeWgs84: query.longitudeWgs84,
-      dates: astroDates,
     }),
-    generatedAt,
+    generatedAt: forecastRange.forecastStart,
     isMock: weather.isMock,
     dataSourceLabel: weather.dataSourceLabel,
   };
@@ -226,11 +261,12 @@ export function generateMockHourlyWeather(
   options: MockGenerationOptions = {},
 ): readonly NormalizedHourlyWeather[] {
   const profile = resolveProfile(options.placeName);
-  const hours = getHorizonHours(horizon);
+  const forecastRange = resolveForecastRange(horizon, options);
+  const hours = forecastRange.horizonHours;
 
   return Array.from({ length: hours }, (_, index) => {
-    const dateTime = formatShanghaiDateTime(baseUtcMs + index * hourMs);
-    const localHour = index % 24;
+    const dateTime = addHoursInTimezone(forecastRange.forecastStart, index, forecastRange.timezone);
+    const localHour = getHourInTimezone(dateTime, forecastRange.timezone);
     const isMorning = localHour >= 4 && localHour <= 8;
     const isSunset = localHour >= 16 && localHour <= 19;
     const isAfternoon = localHour >= 12 && localHour <= 16;
@@ -321,10 +357,9 @@ export function generateMockDailyWeather(
   options: MockGenerationOptions = {},
 ): readonly NormalizedDailyWeather[] {
   const profile = resolveProfile(options.placeName);
-  const days = horizon === "7d" ? 7 : Math.ceil(getHorizonHours(horizon) / 24);
+  const forecastRange = resolveForecastRange(horizon, options);
 
-  return Array.from({ length: days }, (_, dayIndex) => {
-    const date = formatShanghaiDate(baseUtcMs + dayIndex * dayMs);
+  return forecastRange.targetDates.map((date, dayIndex) => {
     const precipitationProbability = clampScore(profile.precipitationBase + dayIndex * 3);
 
     return {
@@ -361,17 +396,21 @@ export function generateLocalAstroSummaries(
   horizon: ForecastHorizon,
   options: MockGenerationOptions = {},
 ): readonly AstroSummary[] {
-  const days = horizon === "7d" ? 7 : Math.ceil(getHorizonHours(horizon) / 24);
-  const latitudeWgs84 = options.latitudeWgs84 ?? defaultCoordinates.latitudeWgs84;
-  const longitudeWgs84 = options.longitudeWgs84 ?? defaultCoordinates.longitudeWgs84;
+  const forecastRange = resolveForecastRange(horizon, options);
+  const latitudeWgs84 = requireWgs84Coordinate(options.latitudeWgs84, "latitudeWgs84", -90, 90);
+  const longitudeWgs84 = requireWgs84Coordinate(
+    options.longitudeWgs84,
+    "longitudeWgs84",
+    -180,
+    180,
+  );
 
-  return Array.from({ length: days }, (_, dayIndex) => {
-    const date = options.dates?.[dayIndex] ?? formatShanghaiDate(baseUtcMs + dayIndex * dayMs);
+  return forecastRange.targetDates.map((date) => {
     const astroInput = {
       latitudeWgs84,
       longitudeWgs84,
       date,
-      timezone: "Asia/Shanghai",
+      timezone: forecastRange.timezone,
     };
     const sunTimes = getSunTimes(astroInput);
     const twilightTimes = getTwilightTimes(astroInput);
@@ -384,7 +423,7 @@ export function generateLocalAstroSummaries(
 
     return {
       date,
-      timezone: "Asia/Shanghai",
+      timezone: forecastRange.timezone,
       sunrise: sunTimes.sunrise,
       sunset: sunTimes.sunset,
       solarNoon: sunTimes.solarNoon,
@@ -437,47 +476,105 @@ function placeSeed(value: string): number {
   return Array.from(value).reduce((sum, char) => sum + char.charCodeAt(0), 0);
 }
 
-function formatShanghaiDateTime(timestamp: number): string {
-  const date = new Date(timestamp + 8 * hourMs);
-  return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}T${pad2(date.getUTCHours())}:${pad2(date.getUTCMinutes())}:00+08:00`;
-}
-
-function formatShanghaiDate(timestamp: number): string {
-  const date = new Date(timestamp + 8 * hourMs);
-  return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
-}
-
-function getForecastDates(
+function resolveForecastRange(
   horizon: ForecastHorizon,
-  dailyWeather: readonly NormalizedDailyWeather[],
-): readonly string[] {
-  const days = horizon === "7d" ? 7 : Math.ceil(getHorizonHours(horizon) / 24);
-  const firstDate = dailyWeather[0]?.date ?? formatShanghaiDate(baseUtcMs);
-
-  return Array.from(
-    { length: days },
-    (_, dayIndex) => dailyWeather[dayIndex]?.date ?? addDaysToShanghaiDate(firstDate, dayIndex),
+  options: ForecastInputBuildOptions | MockGenerationOptions,
+): ForecastDateRange {
+  return (
+    options.forecastRange ??
+    buildForecastDateRange(horizon, {
+      now: options.now,
+      timezone: options.timezone ?? defaultTimezone,
+    })
   );
 }
 
-function addDaysToShanghaiDate(value: string, days: number): string {
-  const timestamp = Date.parse(`${value}T00:00:00+08:00`);
-  if (!Number.isFinite(timestamp)) {
-    return formatShanghaiDate(baseUtcMs + days * dayMs);
+function buildCalculationBasis(
+  query: ForecastQueryInput,
+  forecastRange: ForecastDateRange,
+): ForecastCalculationBasis {
+  return {
+    forecastStart: forecastRange.forecastStart,
+    forecastEnd: forecastRange.forecastEnd,
+    forecastStartLabel: formatChineseDateTime(forecastRange.forecastStart, forecastRange.timezone),
+    forecastEndLabel: formatChineseDateTime(forecastRange.forecastEnd, forecastRange.timezone),
+    forecastRangeLabel: formatChineseDateTimeRange(
+      forecastRange.forecastStart,
+      forecastRange.forecastEnd,
+      forecastRange.timezone,
+    ),
+    targetDates: forecastRange.targetDates,
+    targetDateLabels: forecastRange.targetDates.map((date) =>
+      formatChineseDate(date, forecastRange.timezone),
+    ),
+    horizonHours: forecastRange.horizonHours,
+    timezone: forecastRange.timezone,
+    timezoneLabel:
+      forecastRange.timezone === defaultTimezone
+        ? "Asia/Shanghai（中国标准时间）"
+        : forecastRange.timezone,
+    calendarDays: forecastRange.targetDates.map((date) =>
+      buildCalendarDayInfo(date, forecastRange.timezone),
+    ),
+    wgs84Coordinates: {
+      latitude: query.latitudeWgs84,
+      longitude: query.longitudeWgs84,
+    },
+    coordinateSource: getCoordinateSourceLabel(query.source),
+  };
+}
+
+function buildCalendarDayInfo(date: string, timezone: string): ForecastCalendarDayInfo {
+  const calendarInfo = getChineseCalendarInfo(date, timezone);
+
+  return {
+    date,
+    dateLabel: formatChineseDate(date, timezone),
+    lunarDateText: calendarInfo.lunarDateText,
+    solarTerm: calendarInfo.solarTerm,
+    ganzhiYear: calendarInfo.ganzhiYear,
+    zodiac: calendarInfo.zodiac,
+  };
+}
+
+function getCoordinateSourceLabel(source: string): string {
+  switch (source) {
+    case "local_photo_spot":
+      return "本地机位 WGS84 坐标";
+    case "local_location":
+      return "本地地点 WGS84 坐标";
+    case "amap":
+      return "高德地点转换后的 WGS84 坐标";
+    case "mock":
+      return "模拟地点 WGS84 坐标";
+    default:
+      return "查询地点 WGS84 坐标";
+  }
+}
+
+function requireWgs84Coordinate(
+  value: number | undefined,
+  _label: string,
+  min: number,
+  max: number,
+): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) {
+    throw new Error("当前地点缺少有效 WGS84 坐标，无法计算日出日落、月相和银河窗口。");
   }
 
-  return formatShanghaiDate(timestamp + days * dayMs);
+  return value;
+}
+
+function assertValidWgs84Coordinate(value: number, label: string, min: number, max: number): void {
+  if (!Number.isFinite(value) || value < min || value > max) {
+    throw new Error(
+      label === "latitudeWgs84" || label === "longitudeWgs84"
+        ? "当前地点缺少有效 WGS84 坐标，无法计算日出日落、月相和银河窗口。"
+        : forecastDateRangeErrorMessage,
+    );
+  }
 }
 
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }
-
-function pad2(value: number): string {
-  return value.toString().padStart(2, "0");
-}
-
-const defaultCoordinates = {
-  latitudeWgs84: 30.13012,
-  longitudeWgs84: 118.16389,
-} as const;

@@ -1,4 +1,4 @@
-import { decisionCardSchema } from "@photo-weather/shared";
+import { decisionCardSchema, normalizeDeepSeekModel } from "@photo-weather/shared";
 import type { DecisionCard, ForecastCalculationResult } from "@photo-weather/shared";
 import { z } from "zod";
 import { MockAIProvider } from "./mock-provider.js";
@@ -21,6 +21,9 @@ export type DeepSeekProviderOptions = {
   readonly realModeEnabled?: boolean;
   readonly fetcher?: DeepSeekFetch;
   readonly mode?: "disabled" | "mock" | "real";
+  readonly temperature?: number;
+  readonly maxTokens?: number;
+  readonly jsonOutputEnabled?: boolean;
 };
 
 type DeepSeekChatMessage = {
@@ -34,7 +37,7 @@ type DeepSeekRequestBody = {
   readonly temperature: number;
   readonly max_tokens: number;
   readonly stream: false;
-  readonly response_format: {
+  response_format?: {
     readonly type: "json_object";
   };
 };
@@ -63,7 +66,8 @@ const deepSeekProviderDisabledMessage =
   "DeepSeek 服务商未启用，请先在后台服务商配置中启用 DeepSeek。";
 
 const defaultBaseUrl = "https://api.deepseek.com";
-const defaultModel = "deepseek-chat";
+const defaultTemperature = 0.2;
+const defaultMaxTokens = 1200;
 
 export const forecastAiExplanationSchema = z.object({
   summary: z.string().trim().min(1),
@@ -92,8 +96,23 @@ function normalizeBaseUrl(value: string | undefined): string {
 }
 
 function normalizeModel(value: string | undefined): string {
-  const trimmed = value?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : defaultModel;
+  return normalizeDeepSeekModel(value);
+}
+
+function normalizeTemperature(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return defaultTemperature;
+  }
+
+  return Math.min(2, Math.max(0, value));
+}
+
+function normalizeMaxTokens(value: number | undefined, fallback = defaultMaxTokens): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.min(8192, Math.max(1, Math.round(value)));
 }
 
 function getMessageContent(response: DeepSeekChatResponse): string {
@@ -142,8 +161,12 @@ function buildJsonOnlySystemPrompt(): string {
 
 export function buildDeepSeekForecastExplanationRequest(
   input: ForecastExplanationInput,
-  options: Pick<DeepSeekProviderOptions, "baseUrl" | "defaultModel"> = {},
+  options: Pick<
+    DeepSeekProviderOptions,
+    "baseUrl" | "defaultModel" | "temperature" | "maxTokens" | "jsonOutputEnabled"
+  > = {},
 ): DeepSeekRequestPreview {
+  const jsonOutputEnabled = options.jsonOutputEnabled ?? true;
   const body: DeepSeekRequestBody = {
     model: normalizeModel(options.defaultModel),
     messages: [
@@ -175,13 +198,15 @@ export function buildDeepSeekForecastExplanationRequest(
         }),
       },
     ],
-    temperature: 0.2,
-    max_tokens: 1200,
+    temperature: normalizeTemperature(options.temperature),
+    max_tokens: normalizeMaxTokens(options.maxTokens),
     stream: false,
-    response_format: {
-      type: "json_object",
-    },
   };
+  if (jsonOutputEnabled) {
+    body.response_format = {
+      type: "json_object",
+    };
+  }
 
   return {
     url: `${normalizeBaseUrl(options.baseUrl)}/chat/completions`,
@@ -218,11 +243,17 @@ export class DeepSeekProvider implements AIProvider {
   readonly apiKey?: string;
   readonly baseUrl: string;
   readonly defaultModel: string;
+  readonly temperature: number;
+  readonly maxTokens: number;
+  readonly jsonOutputEnabled: boolean;
 
   constructor(private readonly options: DeepSeekProviderOptions = {}) {
     this.apiKey = options.apiKey?.trim();
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
     this.defaultModel = normalizeModel(options.defaultModel);
+    this.temperature = normalizeTemperature(options.temperature);
+    this.maxTokens = normalizeMaxTokens(options.maxTokens);
+    this.jsonOutputEnabled = options.jsonOutputEnabled ?? true;
     this.enabled = options.enabled ?? false;
     this.realModeEnabled = options.realModeEnabled ?? options.mode === "real";
     this.fetcher = options.fetcher ?? fetch;
@@ -305,6 +336,9 @@ export class DeepSeekProvider implements AIProvider {
     const request = buildDeepSeekForecastExplanationRequest(input, {
       baseUrl: this.baseUrl,
       defaultModel: this.defaultModel,
+      temperature: this.temperature,
+      maxTokens: this.maxTokens,
+      jsonOutputEnabled: this.jsonOutputEnabled,
     });
     const parsed = await this.request(request);
 
@@ -356,18 +390,22 @@ export class DeepSeekProvider implements AIProvider {
     messages: readonly DeepSeekChatMessage[],
     maxTokens: number,
   ): Promise<string> {
+    const body: DeepSeekRequestBody = {
+      model: this.defaultModel,
+      messages,
+      temperature: this.temperature,
+      max_tokens: normalizeMaxTokens(maxTokens, this.maxTokens),
+      stream: false,
+    };
+    if (this.jsonOutputEnabled) {
+      body.response_format = {
+        type: "json_object",
+      };
+    }
+
     const request: DeepSeekRequestPreview = {
       url: `${this.baseUrl}/chat/completions`,
-      body: {
-        model: this.defaultModel,
-        messages,
-        temperature: 0.2,
-        max_tokens: maxTokens,
-        stream: false,
-        response_format: {
-          type: "json_object",
-        },
-      },
+      body,
     };
 
     return this.request(request);

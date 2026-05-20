@@ -1,4 +1,8 @@
-import type { Coordinates, NormalizedDailyWeather, NormalizedHourlyWeather } from "@photo-weather/shared";
+import type {
+  Coordinates,
+  NormalizedDailyWeather,
+  NormalizedHourlyWeather,
+} from "@photo-weather/shared";
 
 export type WeatherProviderCode = "mock" | "qweather" | "open_meteo";
 
@@ -90,4 +94,7 @@ export type NormalizedWeatherData = {
 export type ForecastRequestOptions = {
   readonly hours?: number;
   readonly days?: number;
+  readonly forecastStart?: string;
+  readonly targetDates?: readonly string[];
+  readonly timezone?: string;
 };

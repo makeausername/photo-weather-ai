@@ -60,7 +60,8 @@ describe("forecast query validation route", () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.json()).toMatchObject({
-      error: "validation_error",
+      error: "invalid_wgs84_coordinates",
+      message: "当前地点缺少有效 WGS84 坐标，无法计算日出日落、月相和银河窗口。",
     });
   });
 
@@ -139,6 +140,20 @@ describe("forecast query validation route", () => {
     expect(body.astroSummaries[0].moonIllumination).toBeLessThanOrEqual(1);
     expect(Object.keys(body.astroSummaries[0].moonAltitudeByHour)).toHaveLength(24);
     expect(body.bestWindows.length).toBeGreaterThan(0);
+    expect(body.calendarBasis).toMatchObject({
+      timezone: "Asia/Shanghai",
+      timezoneLabel: "Asia/Shanghai（中国标准时间）",
+      horizonHours: 48,
+      coordinateSource: "本地机位 WGS84 坐标",
+      wgs84Coordinates: {
+        latitude: 30.13012,
+        longitude: 118.16389,
+      },
+    });
+    expect(body.calendarBasis.targetDates.length).toBeGreaterThanOrEqual(2);
+    expect(body.calendarBasis.calendarDays[0]).toMatchObject({
+      lunarDateText: expect.any(String),
+    });
     expect(body.keyReasons.length).toBeGreaterThan(0);
     expect(body.photographyAdvice.length).toBeGreaterThan(0);
   });
@@ -169,24 +184,24 @@ describe("forecast query validation route", () => {
     });
   });
 
-  it("returns a clear DeepSeek key error for AI explanation when real mode is enabled", async () => {
+  it("returns a rule-based AI explanation when DeepSeek is not fully configured", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("real network calls are disabled in forecast tests");
+    });
+    vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
     const provider = state.providers.get("ai:deepseek");
     state.providers.set("ai:deepseek", {
       ...provider,
       enabled: true,
+      configJson: {
+        ...(provider.configJson ?? {}),
+        realCallEnabled: true,
+      },
       secretJson: {},
       maskedSecretJson: {},
     });
-    app = buildApiServer({
-      dbClient: client,
-      authConfig: testAuthConfig,
-      env: {
-        ...process.env,
-        ENABLE_REAL_DEEPSEEK: "true",
-      },
-      logger: false,
-    });
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
 
     const response = await app.inject({
       method: "POST",
@@ -194,11 +209,15 @@ describe("forecast query validation route", () => {
       payload: validPayload,
     });
 
-    expect(response.statusCode).toBe(503);
+    expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
-      error: "ai_explanation_unavailable",
-      message: "DeepSeek 服务未配置 API Key，请先在后台服务商配置中填写 DeepSeek API Key。",
+      explanation: {
+        summary: expect.any(String),
+        recommendation: expect.any(String),
+        confidenceNote: expect.stringContaining("模拟"),
+      },
     });
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(response.body).not.toContain("secretJson");
   });
 
