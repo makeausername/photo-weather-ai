@@ -1,4 +1,7 @@
 import { defineConfig } from "vitest/config";
+import { fileURLToPath } from "node:url";
+
+const fromRoot = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
 export default defineConfig({
   test: {
@@ -8,24 +11,18 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@photo-weather/ai": new URL("./packages/ai/src/index.ts", import.meta.url).pathname,
-      "@photo-weather/astro": new URL("./packages/astro/src/index.ts", import.meta.url).pathname,
-      "@photo-weather/billing": new URL("./packages/billing/src/index.ts", import.meta.url)
-        .pathname,
-      "@photo-weather/calendar": new URL("./packages/calendar/src/index.ts", import.meta.url)
-        .pathname,
-      "@photo-weather/config": new URL("./packages/config/src/index.ts", import.meta.url).pathname,
-      "@photo-weather/db": new URL("./packages/db/src/index.ts", import.meta.url).pathname,
-      "@photo-weather/geo": new URL("./packages/geo/src/index.ts", import.meta.url).pathname,
-      "@photo-weather/scoring": new URL("./packages/scoring/src/index.ts", import.meta.url)
-        .pathname,
-      "@photo-weather/shared": new URL("./packages/shared/src/index.ts", import.meta.url).pathname,
-      "@photo-weather/storage": new URL("./packages/storage/src/index.ts", import.meta.url)
-        .pathname,
-      "@photo-weather/terrain": new URL("./packages/terrain/src/index.ts", import.meta.url)
-        .pathname,
-      "@photo-weather/weather": new URL("./packages/weather/src/index.ts", import.meta.url)
-        .pathname,
+      "@photo-weather/ai": fromRoot("./packages/ai/src/index.ts"),
+      "@photo-weather/astro": fromRoot("./packages/astro/src/index.ts"),
+      "@photo-weather/billing": fromRoot("./packages/billing/src/index.ts"),
+      "@photo-weather/calendar": fromRoot("./packages/calendar/src/index.ts"),
+      "@photo-weather/config": fromRoot("./packages/config/src/index.ts"),
+      "@photo-weather/db": fromRoot("./packages/db/src/index.ts"),
+      "@photo-weather/geo": fromRoot("./packages/geo/src/index.ts"),
+      "@photo-weather/scoring": fromRoot("./packages/scoring/src/index.ts"),
+      "@photo-weather/shared": fromRoot("./packages/shared/src/index.ts"),
+      "@photo-weather/storage": fromRoot("./packages/storage/src/index.ts"),
+      "@photo-weather/terrain": fromRoot("./packages/terrain/src/index.ts"),
+      "@photo-weather/weather": fromRoot("./packages/weather/src/index.ts"),
     },
   },
 });

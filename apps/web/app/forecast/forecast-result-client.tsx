@@ -327,7 +327,7 @@ function InvalidQueryCard({ message }: { readonly message?: string }) {
     <Card className="border-warning p-5 shadow-sm">
       <h2 className="text-lg font-bold text-warning">查询参数不完整</h2>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">
-        {message ?? "请从首页选择地点、预报范围和分析目标后进入分析页面。"}
+        {message ?? "请从首页选择地点和预报范围，或从专题页进入对应题材分析。"}
       </p>
     </Card>
   );

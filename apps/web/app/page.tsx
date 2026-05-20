@@ -1,4 +1,4 @@
-import { PlaceSearchCard } from "../components/place-search-card";
+import { HomepageSearchPanel } from "../components/homepage-search-panel";
 import { PublicShell } from "../components/public-shell";
 import { Badge, Card } from "../components/ui";
 
@@ -266,7 +266,7 @@ export default function HomePage() {
           id="analysis"
           className="grid scroll-mt-24 gap-5 min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(360px,24vw,420px)_minmax(0,1fr)_clamp(360px,24vw,420px)] min-[1200px]:items-start"
         >
-          <PlaceSearchCard className="min-[900px]:sticky min-[900px]:top-[88px]" />
+          <HomepageSearchPanel />
           <div className="grid gap-5 min-[1200px]:contents">
             <ForecastMapWorkspace />
             <DecisionSummaryPanel />

@@ -46,6 +46,8 @@ type PlaceSearchCardProps = {
   readonly defaultHorizon?: ForecastHorizon;
   readonly defaultTarget?: ForecastTarget;
   readonly fixedTarget?: ForecastTarget;
+  readonly showTargetSelector?: boolean;
+  readonly targetHelperText?: string;
   readonly ctaLabel?: string;
 };
 
@@ -190,6 +192,8 @@ export function PlaceSearchCard({
   defaultHorizon = "48h",
   defaultTarget = "general",
   fixedTarget,
+  showTargetSelector = true,
+  targetHelperText,
   ctaLabel = "查看拍摄天气分析",
 }: PlaceSearchCardProps) {
   const [query, setQuery] = useState("");
@@ -202,7 +206,7 @@ export function PlaceSearchCard({
 
   const trimmedQuery = query.trim();
   const showEmptyState = status === "ready" && trimmedQuery.length > 0 && results.length === 0;
-  const activeTarget = fixedTarget ?? target;
+  const activeTarget = fixedTarget ?? (showTargetSelector ? target : defaultTarget);
 
   const selectedCoordinateText = useMemo(() => {
     if (!selectedPlace) {
@@ -395,7 +399,7 @@ export function PlaceSearchCard({
               当前页面已固定题材，结果页会按该题材排序窗口和评分。
             </p>
           </div>
-        ) : (
+        ) : showTargetSelector ? (
           <div className="grid gap-2">
             <p className="text-sm font-semibold text-card-foreground">分析目标</p>
             <div className="grid grid-cols-2 gap-2">
@@ -417,7 +421,11 @@ export function PlaceSearchCard({
               ))}
             </div>
           </div>
-        )}
+        ) : targetHelperText ? (
+          <p className="rounded-md border border-border bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground">
+            {targetHelperText}
+          </p>
+        ) : null}
 
         <Button
           type="button"
