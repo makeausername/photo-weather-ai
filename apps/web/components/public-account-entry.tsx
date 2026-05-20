@@ -62,6 +62,7 @@ export function PublicAccountEntry({ onNavigate }: PublicAccountEntryProps) {
     setSession(null);
     setMenuOpen(false);
     onNavigate?.();
+    window.location.href = "/";
   }
 
   return (

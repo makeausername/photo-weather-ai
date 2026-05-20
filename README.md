@@ -18,7 +18,10 @@
 - 公开首页：响应式三栏桌面工作区，左侧地点查询面板、中间大幅 forecast/map 视觉工作区、右侧决策摘要面板；900px 到 1199px 自动变为左查询 + 右侧堆叠，移动端单列无横向溢出。
 - 首页下方信息架构：场景能力、热门机位和工作流使用同一页面 gutter 的宽屏响应式网格，不再放进窄居中容器。
 - 公开 forecast 结果页：同一产品 shell 下的 dashboard 布局，左侧地点/查询摘要，中间综合指数、时间窗口和分项评分，右侧风险、建议、计算依据和数据状态。
-- 公开占位模块：`/cloud-sea`、`/glow`、`/astro`、`/spots`、`/pricing`、`/account` 和 `/login` 使用统一公开导航与中文产品化占位页；`/login` 仍是公开登录占位，不包含真实登录逻辑。
+- 公开占位模块：`/cloud-sea`、`/glow`、`/astro`、`/spots` 和 `/pricing` 使用统一公开导航与中文产品化占位页。
+- Public User Auth V1：`/login` 支持邮箱密码登录，`/register` 支持邮箱密码注册，`/auth/register` 会创建普通 `user` 角色账户并返回安全用户数据；短信登录计划后续接入。
+- Account Center Foundation V1：`/account` 使用公开产品 shell，未登录时显示登录提示；已登录时展示账户概览、我的查询、收藏机位、报告管理、套餐权益和安全设置。查询历史、收藏机位、报告管理和权益仍为占位，不接入支付、订阅或计费。
+- 管理后台入口只在具备 `admin` / `super_admin` 角色或 `admin.manage` 权限的账户菜单、账户中心中显示；公开导航不展示顶层“管理后台”或单独“登录”主入口。
 - 公开地点搜索：`GET /search/places?q=` 会先查本地地点和摄影机位，再使用当前 GeoProvider 返回标准化地点结果。
 - 公开搜索选择态：选择地点后展示地点名称、地址 / 城市信息、数据来源、GCJ-02 / WGS84 经纬度、验证状态和本地机位匹配状态。
 - 公开 forecast 查询基础：支持选择预报范围和分析目标，下一步跳转 `/forecast`，URL 中显式携带地点名称、来源、GCJ-02 坐标、WGS84 坐标、预报范围、分析目标以及可用的本地地点 / 机位 ID。
@@ -36,9 +39,9 @@
 - 生产级 DeepSeek 或其他 AI 自动分析流程；当前只允许后台服务商配置显式启用后的 DeepSeek 解读调用。
 - 支付、套餐、额度和商业化流程。
 - 生产级 Cookie/Session 加固。
-- 公开用户登录、查询历史、收藏机位、额度控制、付费套餐和已保存报告；当前 `/login` 只是公开登录占位页，不包含真实登录逻辑。
+- 短信登录、真实查询历史、收藏机位持久化、额度控制、付费套餐、订阅计费和已保存报告；当前 `/account` 的查询、收藏、报告和权益模块为基础占位。
 
-当前公开首页的地图、云层、地形和时间线仍是界面占位，只用于展示产品方向，不包含真实地图图层、真实天气图层或真实服务商调用。当前搜索与 forecast 流程已完成地点识别、坐标归一化、机位匹配、预报范围选择、分析目标选择、本地 mock 天气/地形预报输入构造、本地天文计算、摄影评分和 `/forecast` 结果展示；后续真实天气/地形 provider 接入、公开用户账号、支付和生产判断逻辑尚未实现。
+当前公开首页的地图、云层、地形和时间线仍是界面占位，只用于展示产品方向，不包含真实地图图层、真实天气图层或真实服务商调用。当前搜索与 forecast 流程已完成地点识别、坐标归一化、机位匹配、预报范围选择、分析目标选择、本地 mock 天气/地形预报输入构造、本地天文计算、摄影评分和 `/forecast` 结果展示；后续真实天气/地形 provider 接入、查询历史、收藏机位、支付和生产判断逻辑尚未实现。
 
 ## 产品默认
 
@@ -113,7 +116,7 @@
 
 当前查询契约由 `@photo-weather/shared` 中的 `forecastQueryInputSchema` 维护，前端 URL 会显式携带地点名称、来源、GCJ-02 坐标、WGS84 坐标、预报范围、分析目标以及可用的本地地点 / 机位 ID。`POST /forecast/calculate` 会先复用该 schema 校验输入，再构造 `ForecastCalculationInput` 并返回 `ForecastCalculationResult`；可选 `useAiExplanation=true` 时会附带规则兜底解读，只有后台 `ai/deepseek` 启用真实调用且 Key 已保存时才尝试 DeepSeek。结果页按钮调用 `POST /forecast/ai-explain`，不会在页面加载时自动调用 DeepSeek。
 
-公开用户登录、查询历史、收藏机位、额度控制和付费套餐计划在后续阶段实现，不属于当前 forecast 查询基础步骤。当前公开导航使用统一“账户”入口；未登录时进入 `/login`，已登录时可进入 `/account`，管理员账号才会在账户菜单或账户中心看到“管理后台”。当前 `/login` 仅作为功能说明占位，不接入真实公开账号体系。
+公开用户邮箱密码登录和注册已接入 Public User Auth V1。当前公开导航使用统一“账户”入口；未登录时进入 `/login`，已登录时可进入 `/account`，管理员账号才会在账户菜单或账户中心看到“管理后台”。短信登录、真实查询历史、收藏机位持久化、额度控制和付费套餐计划在后续阶段实现，不属于当前 forecast 查询基础步骤。
 
 ## 架构
 
@@ -165,8 +168,9 @@ corepack pnpm dev:local
 - 星空银河：`http://localhost:3000/astro`
 - 摄影机位库：`http://localhost:3000/spots`
 - 定价方案：`http://localhost:3000/pricing`
-- 账户中心占位：`http://localhost:3000/account`
-- 用户登录占位：`http://localhost:3000/login`
+- 账户中心：`http://localhost:3000/account`
+- 用户登录：`http://localhost:3000/login`
+- 用户注册：`http://localhost:3000/register`
 - 后台登录：`http://localhost:3000/admin/login`
 - 后台控制台：`http://localhost:3000/admin`
 
@@ -287,6 +291,7 @@ ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=change-me-to-a-long-random-password
 认证接口：
 
 ```bash
+POST /auth/register
 POST /auth/login
 POST /auth/refresh
 POST /auth/logout
@@ -356,6 +361,8 @@ GET   /admin/audit-logs
 /admin/locations
 /admin/photo-spots
 /admin/audit
+/login
+/register
 /account
 /forecast
 ```
@@ -367,7 +374,7 @@ GET   /admin/audit-logs
 - 内容区：使用可用宽度的卡片、表格、表单、空状态、确认弹窗和统一按钮。
 - 移动端：侧栏转为顶部横向导航，表格允许横向滚动，避免手机、平板和常见笔记本宽度溢出。
 
-后台路由会将未登录用户重定向到 `/admin/login`。当前前端仍使用 `localStorage` 存储 token，这是早期骨架实现，正式公开部署前需要改为生产级会话方案。
+后台路由会将未登录用户重定向到 `/admin/login`。公开用户登录和后台登录当前复用同一套浏览器 `localStorage` token 存储，这是开发阶段实现；正式公开部署前需要改为生产级会话方案。
 
 ## 外部服务边界
 

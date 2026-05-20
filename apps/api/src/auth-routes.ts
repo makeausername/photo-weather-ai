@@ -2,8 +2,10 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   createAuditLog,
+  createPublicUserAccount,
   createRefreshToken,
   createUserSession,
+  DuplicateUserEmailError,
   getActiveUserSessionByRefreshToken,
   getUserAuthContextByEmail,
   getUserAuthContextById,
@@ -52,8 +54,19 @@ class ApiAuthError extends Error {
 }
 
 const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(1).max(1000),
+  email: z.string().trim().email("请输入有效邮箱地址。"),
+  password: z.string().min(1, "请输入密码。").max(1000, "密码长度超过限制。"),
+});
+
+const registerSchema = z.object({
+  email: z.string().trim().email("请输入有效邮箱地址。"),
+  password: z.string().min(8, "密码至少需要 8 个字符。").max(1000, "密码长度超过限制。"),
+  displayName: z
+    .string()
+    .trim()
+    .max(40, "昵称最多 40 个字符。")
+    .optional()
+    .transform((value) => value || undefined),
 });
 
 const refreshSchema = z.object({
@@ -198,6 +211,7 @@ function createDevBypassContext(): AuthenticatedRequestContext {
         updatedAt: now,
         lastLoginAt: null,
       },
+      profile: null,
       roles: ["super_admin"],
       permissions: [...requiredAdminPermissions],
     },
@@ -230,6 +244,14 @@ export async function authenticateRequest(
 
 function hasPermission(principal: AuthenticatedPrincipal, permission: string): boolean {
   return principal.permissions.includes(permission);
+}
+
+function isAdminPrincipal(principal: AuthenticatedPrincipal): boolean {
+  return (
+    principal.permissions.includes("admin.manage") ||
+    principal.roles.includes("admin") ||
+    principal.roles.includes("super_admin")
+  );
 }
 
 export async function requirePermission(
@@ -278,8 +300,20 @@ function authResponse(
     accessToken,
     refreshToken,
     user: principal.user,
+    profile: principal.profile,
     roles: principal.roles,
     permissions: principal.permissions,
+    isAdmin: isAdminPrincipal(principal),
+  };
+}
+
+function publicPrincipalResponse(principal: AuthenticatedPrincipal) {
+  return {
+    user: principal.user,
+    profile: principal.profile,
+    roles: principal.roles,
+    permissions: principal.permissions,
+    isAdmin: isAdminPrincipal(principal),
   };
 }
 
@@ -330,6 +364,54 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
   const client = options.dbClient;
   const authConfig = options.authConfig;
 
+  app.post("/auth/register", async (request, reply) => {
+    const parsedBody = registerSchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return sendZodError(reply, parsedBody.error);
+    }
+
+    const email = parsedBody.data.email.trim().toLowerCase();
+
+    try {
+      const principal = await createPublicUserAccount(
+        {
+          email,
+          password: parsedBody.data.password,
+          displayName: parsedBody.data.displayName,
+        },
+        { client },
+      );
+
+      await recordAuthAudit(app, {
+        client,
+        actorUserId: principal.user.id,
+        action: "auth.register.success",
+        email,
+        ipAddress: request.ip,
+        userAgent: request.headers["user-agent"] ?? null,
+      });
+
+      return reply.status(201).send(publicPrincipalResponse(principal));
+    } catch (error) {
+      if (error instanceof DuplicateUserEmailError) {
+        await recordAuthAudit(app, {
+          client,
+          action: "auth.register.duplicate",
+          email,
+          ipAddress: request.ip,
+          userAgent: request.headers["user-agent"] ?? null,
+        });
+
+        return reply.status(409).send({
+          error: "duplicate_email",
+          message: "该邮箱已注册，请直接登录。",
+        });
+      }
+
+      throw error;
+    }
+  });
+
   app.post("/auth/login", async (request, reply) => {
     const parsedBody = loginSchema.safeParse(request.body);
     if (!parsedBody.success) {
@@ -353,7 +435,7 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
 
       return reply.status(401).send({
         error: "invalid_credentials",
-        message: "Invalid email or password.",
+        message: "邮箱或密码不正确，请检查后重试。",
       });
     }
 
@@ -439,11 +521,7 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
   app.get("/auth/me", async (request, reply) => {
     try {
       const context = await authenticateRequest(request, client, authConfig);
-      return {
-        user: context.principal.user,
-        roles: context.principal.roles,
-        permissions: context.principal.permissions,
-      };
+      return publicPrincipalResponse(context.principal);
     } catch (error) {
       if (error instanceof ApiAuthError) {
         return reply.status(error.statusCode).send({

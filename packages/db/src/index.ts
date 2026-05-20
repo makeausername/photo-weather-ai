@@ -2,6 +2,8 @@ export { createAuditLog, listAuditLogs, sanitizeAuditJson } from "./audit.js";
 export {
   assertPermission,
   createRefreshToken,
+  createPublicUserAccount,
+  DuplicateUserEmailError,
   createUserSession,
   getActiveUserSessionByRefreshToken,
   getUserAuthContextByEmail,
@@ -59,8 +61,11 @@ export { seedDatabase } from "./seed.js";
 export { maskSecretJson, maskSecretString, maskSecretValue } from "./secrets.js";
 export {
   hashPassword,
+  hashUserPassword,
   minimumAdminPasswordLength,
+  minimumUserPasswordLength,
   validateAdminPassword,
+  validateUserPassword,
   verifyPassword,
 } from "./passwords.js";
 export { safeProviderConfig, safeSystemSetting } from "./serializers.js";
@@ -90,9 +95,11 @@ export type {
   SafeProviderConfig,
   SafeSystemSetting,
   SafeUser,
+  SafeUserProfile,
   SettingValueType,
   SystemSettingRecord,
   UserRecord,
+  UserProfileRecord,
   UserSessionRecord,
   UserStatus,
   ViewDirection,

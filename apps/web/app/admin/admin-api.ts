@@ -133,12 +133,24 @@ export type SafeAdminUser = {
   readonly lastLoginAt: string | null;
 };
 
+export type SafeAccountProfile = {
+  readonly id: string;
+  readonly userId: string;
+  readonly avatarUrl: string | null;
+  readonly preferredUnits: string;
+  readonly preferredLanguage: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
+
 export type AdminAuthSession = {
   readonly accessToken: string;
   readonly refreshToken: string;
   readonly user: SafeAdminUser;
+  readonly profile: SafeAccountProfile | null;
   readonly roles: readonly string[];
   readonly permissions: readonly string[];
+  readonly isAdmin: boolean;
 };
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";

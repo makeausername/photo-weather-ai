@@ -1,9 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
 
 import { getPrismaClient } from "./client.js";
+import { hashUserPassword } from "./passwords.js";
 import type {
   AuthenticatedPrincipal,
   DatabaseClient,
+  SafeUserProfile,
   SafeUser,
   UserRecord,
   UserSessionRecord,
@@ -40,6 +42,28 @@ function requireUserSessionDelegate(client: DatabaseClient) {
   return client.userSession;
 }
 
+function requireRoleDelegate(client: DatabaseClient) {
+  if (!client.role) {
+    throw new Error("Database client is missing the role delegate.");
+  }
+
+  return client.role;
+}
+
+function requireUserRoleDelegate(client: DatabaseClient) {
+  if (!client.userRole) {
+    throw new Error("Database client is missing the userRole delegate.");
+  }
+
+  return client.userRole;
+}
+
+export class DuplicateUserEmailError extends Error {
+  constructor(readonly email: string) {
+    super("Duplicate user email.");
+  }
+}
+
 export function safeUser(record: UserRecord | any): SafeUser {
   return {
     id: record.id,
@@ -50,6 +74,22 @@ export function safeUser(record: UserRecord | any): SafeUser {
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     lastLoginAt: record.lastLoginAt ?? null,
+  };
+}
+
+export function safeUserProfile(record: any): SafeUserProfile | null {
+  if (!record) {
+    return null;
+  }
+
+  return {
+    id: record.id,
+    userId: record.userId,
+    avatarUrl: record.avatarUrl ?? null,
+    preferredUnits: record.preferredUnits,
+    preferredLanguage: record.preferredLanguage,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
   };
 }
 
@@ -79,12 +119,14 @@ function normalizePrincipal(record: any): AuthenticatedPrincipal | null {
 
   return {
     user: safeUser(record),
+    profile: safeUserProfile(record.profile),
     roles: [...roles].sort(),
     permissions: [...permissions].sort(),
   };
 }
 
 const userAuthInclude = {
+  profile: true,
   roles: {
     include: {
       role: {
@@ -125,6 +167,82 @@ export async function getUserAuthContextById(
   });
 
   return normalizePrincipal(user);
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function normalizeDisplayName(displayName: string | null | undefined): string | null {
+  const normalized = displayName?.trim();
+  return normalized ? normalized : null;
+}
+
+export async function createPublicUserAccount(
+  input: {
+    readonly email: string;
+    readonly password: string;
+    readonly displayName?: string | null;
+  },
+  options: { readonly client?: DatabaseClient } = {},
+): Promise<AuthenticatedPrincipal> {
+  const client = await resolveClient(options.client);
+  const userDelegate = requireUserDelegate(client);
+  const roleDelegate = requireRoleDelegate(client);
+  const userRoleDelegate = requireUserRoleDelegate(client);
+  const email = normalizeEmail(input.email);
+
+  const existingUser = await userDelegate.findUnique({
+    where: { email },
+  });
+  if (existingUser) {
+    throw new DuplicateUserEmailError(email);
+  }
+
+  const userRole = await roleDelegate.findUnique({
+    where: { code: "user" },
+  });
+  if (!userRole) {
+    throw new Error("Missing user role. Run db:seed before public registration.");
+  }
+
+  const user = await userDelegate.create({
+    data: {
+      email,
+      passwordHash: await hashUserPassword(input.password),
+      displayName: normalizeDisplayName(input.displayName),
+      status: "active",
+    },
+  });
+
+  if (client.userProfile) {
+    await client.userProfile.create({
+      data: {
+        userId: user.id,
+      },
+    });
+  }
+
+  await userRoleDelegate.upsert({
+    where: {
+      userId_roleId: {
+        userId: user.id,
+        roleId: userRole.id,
+      },
+    },
+    create: {
+      userId: user.id,
+      roleId: userRole.id,
+    },
+    update: {},
+  });
+
+  const principal = await getUserAuthContextById(user.id, { client });
+  if (!principal) {
+    throw new Error("Created public user could not be loaded.");
+  }
+
+  return principal;
 }
 
 export function hasPermission(

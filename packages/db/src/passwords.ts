@@ -7,6 +7,7 @@ const bcrypt = require("bcryptjs") as {
 };
 
 export const minimumAdminPasswordLength = 12;
+export const minimumUserPasswordLength = 8;
 
 export function validateAdminPassword(password: string): void {
   if (password.length < minimumAdminPasswordLength) {
@@ -14,8 +15,19 @@ export function validateAdminPassword(password: string): void {
   }
 }
 
+export function validateUserPassword(password: string): void {
+  if (password.length < minimumUserPasswordLength) {
+    throw new Error(`User password must be at least ${minimumUserPasswordLength} characters.`);
+  }
+}
+
 export async function hashPassword(password: string): Promise<string> {
   validateAdminPassword(password);
+  return bcrypt.hash(password, 12);
+}
+
+export async function hashUserPassword(password: string): Promise<string> {
+  validateUserPassword(password);
   return bcrypt.hash(password, 12);
 }
 

@@ -15,6 +15,7 @@ export type FakeDatabaseState = {
   readonly providers: Map<string, any>;
   readonly auditLogs: any[];
   readonly users: Map<string, any>;
+  readonly profiles: Map<string, any>;
   readonly sessions: Map<string, any>;
   readonly roles: Map<string, any>;
   readonly locations: Map<string, any>;
@@ -54,9 +55,10 @@ function createRoleGraph(seedData: ReturnType<typeof buildSeedData>, now: Date) 
   return roles;
 }
 
-function userWithRoles(user: any, roles: Map<string, any>) {
+function userWithRoles(user: any, roles: Map<string, any>, profiles: Map<string, any>) {
   return {
     ...user,
+    profile: profiles.get(user.id) ?? null,
     roles: user.roleCodes.map((roleCode: string) => ({
       role: roles.get(roleCode),
     })),
@@ -100,6 +102,7 @@ export async function createFakeDatabaseClient(): Promise<{
   const providers = new Map<string, any>();
   const auditLogs: any[] = [];
   const users = new Map<string, any>();
+  const profiles = new Map<string, any>();
   const sessions = new Map<string, any>();
   const roles = createRoleGraph(seedData, now);
   const locations = new Map<string, any>();
@@ -186,6 +189,7 @@ export async function createFakeDatabaseClient(): Promise<{
     providers,
     auditLogs,
     users,
+    profiles,
     sessions,
     roles,
     locations,
@@ -200,7 +204,7 @@ export async function createFakeDatabaseClient(): Promise<{
             ? state.users.get(where.id)
             : [...state.users.values()].find((record) => record.email === where.email);
 
-        return user ? userWithRoles(user, state.roles) : null;
+        return user ? userWithRoles(user, state.roles, state.profiles) : null;
       },
       create: async ({ data }: any) => {
         const user = {
@@ -215,7 +219,7 @@ export async function createFakeDatabaseClient(): Promise<{
           ...data,
         };
         state.users.set(user.id, user);
-        return userWithRoles(user, state.roles);
+        return userWithRoles(user, state.roles, state.profiles);
       },
       update: async ({ where, data }: any) => {
         const existing = state.users.get(where.id);
@@ -229,7 +233,22 @@ export async function createFakeDatabaseClient(): Promise<{
           updatedAt: now,
         };
         state.users.set(where.id, next);
-        return userWithRoles(next, state.roles);
+        return userWithRoles(next, state.roles, state.profiles);
+      },
+    },
+    userProfile: {
+      create: async ({ data }: any) => {
+        const profile = {
+          id: `profile-${state.profiles.size}`,
+          avatarUrl: null,
+          preferredUnits: "metric",
+          preferredLanguage: "zh-CN",
+          createdAt: now,
+          updatedAt: now,
+          ...data,
+        };
+        state.profiles.set(profile.userId, profile);
+        return profile;
       },
     },
     userSession: {

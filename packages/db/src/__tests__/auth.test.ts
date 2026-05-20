@@ -3,6 +3,7 @@ import {
   formatCreateAdminResult,
   hasPermission,
   hashPassword,
+  hashUserPassword,
   safeUser,
   verifyPassword,
 } from "../index.js";
@@ -111,6 +112,14 @@ describe("admin auth helpers", () => {
     expect(passwordHash).not.toBe(password);
     expect(await verifyPassword(password, passwordHash)).toBe(true);
     expect(await verifyPassword("wrong-password", passwordHash)).toBe(false);
+  });
+
+  it("hashes public user passwords with the shorter public minimum", async () => {
+    const password = "public88";
+    const passwordHash = await hashUserPassword(password);
+
+    expect(passwordHash).not.toBe(password);
+    expect(await verifyPassword(password, passwordHash)).toBe(true);
   });
 
   it("serializes users without passwordHash", () => {

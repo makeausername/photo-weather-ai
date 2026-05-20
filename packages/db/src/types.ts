@@ -83,6 +83,18 @@ export type UserRecord = {
 
 export type SafeUser = Omit<UserRecord, "passwordHash">;
 
+export type UserProfileRecord = {
+  readonly id: string;
+  readonly userId: string;
+  readonly avatarUrl: string | null;
+  readonly preferredUnits: string;
+  readonly preferredLanguage: string;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+};
+
+export type SafeUserProfile = UserProfileRecord;
+
 export type RoleRecord = {
   readonly id: string;
   readonly code: string;
@@ -99,6 +111,7 @@ export type PermissionRecord = {
 
 export type AuthenticatedPrincipal = {
   readonly user: SafeUser;
+  readonly profile: SafeUserProfile | null;
   readonly roles: readonly string[];
   readonly permissions: readonly string[];
 };
@@ -252,6 +265,9 @@ export type DatabaseClient = {
   };
   readonly userRole?: {
     readonly upsert: (args: any) => Promise<any>;
+  };
+  readonly userProfile?: {
+    readonly create: (args: any) => Promise<any>;
   };
   readonly role?: {
     readonly upsert: (args: any) => Promise<any>;

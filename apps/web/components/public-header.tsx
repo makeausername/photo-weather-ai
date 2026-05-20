@@ -18,6 +18,8 @@ const navLinks = [
   { href: "/pricing", label: "定价" },
 ] as const;
 
+export const publicHeaderNavLabels = navLinks.map((link) => link.label);
+
 function isActive(pathname: string, href: string): boolean {
   if (href === "/") {
     return pathname === "/";

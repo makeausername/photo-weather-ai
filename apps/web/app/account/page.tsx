@@ -15,7 +15,7 @@ export default function AccountPage() {
           账户中心
         </h1>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground sm:text-[15px]">
-          用于查看查询历史、收藏机位、套餐权益和报告管理。完整用户系统将在后续接入。
+          登录后可查看查询历史、收藏机位、保存报告和管理套餐权益。
         </p>
       </header>
 

@@ -45,6 +45,94 @@ describe("auth routes", () => {
     });
   });
 
+  it("registers a public account with the normal user role and safe response", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/register",
+      payload: {
+        email: "New.User@Example.com",
+        password: "public88",
+        displayName: "逐光用户",
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({
+      user: {
+        email: "new.user@example.com",
+        displayName: "逐光用户",
+        status: "active",
+      },
+      roles: ["user"],
+      permissions: [],
+      isAdmin: false,
+    });
+    expect(response.body).not.toContain("passwordHash");
+
+    const createdUser = [...state.users.values()].find(
+      (user) => user.email === "new.user@example.com",
+    );
+    expect(createdUser).toMatchObject({
+      roleCodes: ["user"],
+    });
+    expect(createdUser?.passwordHash).not.toBe("public88");
+    expect(state.profiles.get(createdUser?.id)).toMatchObject({
+      userId: createdUser?.id,
+      preferredLanguage: "zh-CN",
+    });
+  });
+
+  it("rejects duplicate public registration with a Chinese-friendly error", async () => {
+    const { client } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/register",
+      payload: {
+        email: "user@example.com",
+        password: "public88",
+      },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      error: "duplicate_email",
+      message: "该邮箱已注册，请直接登录。",
+    });
+  });
+
+  it("logs in with a normal public user account", async () => {
+    const { client } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: {
+        email: "user@example.com",
+        password: "CorrectHorseBattery99",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      accessToken: expect.any(String),
+      refreshToken: expect.any(String),
+      user: {
+        id: "plain-user",
+        email: "user@example.com",
+      },
+      roles: ["user"],
+      permissions: [],
+      isAdmin: false,
+    });
+    expect(response.body).not.toContain("passwordHash");
+  });
+
   it("rejects login with the wrong password and does not return tokens", async () => {
     const { client, state } = await createFakeDatabaseClient();
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
@@ -109,6 +197,30 @@ describe("auth routes", () => {
         email: "admin@example.com",
       },
       roles: ["super_admin"],
+      isAdmin: true,
+    });
+    expect(response.body).not.toContain("passwordHash");
+  });
+
+  it("returns roles and isAdmin for a normal current user", async () => {
+    const { client } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/auth/me",
+      headers: adminAuthorizationHeader("plain-user"),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      user: {
+        id: "plain-user",
+        email: "user@example.com",
+      },
+      roles: ["user"],
+      permissions: [],
+      isAdmin: false,
     });
     expect(response.body).not.toContain("passwordHash");
   });
