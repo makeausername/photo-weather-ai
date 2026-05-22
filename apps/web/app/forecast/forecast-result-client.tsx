@@ -493,7 +493,11 @@ function CloudSeaForecastView({
           <CloudSeaTravelRecommendationSection items={viewModel.travelRecommendations} />
           <CloudSeaRiskSummarySection items={viewModel.riskSummary} />
           <CloudSeaBackupPlanSection plans={viewModel.backupPlans} />
-          <CloudSeaDataStatusSection result={result} dataNotice={viewModel.dataNotice} />
+          <CloudSeaDataStatusSection
+            result={result}
+            dataNotice={viewModel.dataNotice}
+            missingDataNotes={viewModel.missingDataNotes}
+          />
         </aside>
       </div>
     </section>
@@ -682,7 +686,7 @@ function CloudSeaTerrainSection({
   return (
     <Card className="p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">地形与海拔</h2>
+        <h2 className="text-lg font-bold text-card-foreground">地形依据</h2>
         <Badge variant="muted">{terrainEvidence.dataSource}</Badge>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -706,7 +710,7 @@ function CloudSeaWeatherEvidenceSection({
   return (
     <Card className="p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">天气证据</h2>
+        <h2 className="text-lg font-bold text-card-foreground">气象依据</h2>
         <Badge variant="muted">水汽 / 低云 / 风 / 通透</Badge>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -760,7 +764,7 @@ function CloudSeaRiskSummarySection({
 }) {
   return (
     <Card className="p-5 shadow-sm">
-      <h2 className="text-lg font-bold text-card-foreground">风险摘要</h2>
+      <h2 className="text-lg font-bold text-card-foreground">白墙风险原因</h2>
       <div className="mt-4 grid gap-3">
         {items.map((item, index) => (
           <article
@@ -799,9 +803,11 @@ function CloudSeaBackupPlanSection({ plans }: { readonly plans: readonly CloudSe
 function CloudSeaDataStatusSection({
   result,
   dataNotice,
+  missingDataNotes,
 }: {
   readonly result: ForecastCalculationResult;
   readonly dataNotice: string;
+  readonly missingDataNotes: readonly string[];
 }) {
   return (
     <Card className="p-5 shadow-sm">
@@ -823,6 +829,16 @@ function CloudSeaDataStatusSection({
       <p className="mt-4 rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground">
         {dataNotice}
       </p>
+      {missingDataNotes.length > 0 ? (
+        <div className="mt-3 rounded-lg border border-warning/30 bg-warning/10 p-3">
+          <p className="text-xs font-semibold text-card-foreground">数据缺失说明</p>
+          <ul className="mt-2 grid gap-1 text-xs leading-5 text-muted-foreground">
+            {missingDataNotes.map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </Card>
   );
 }

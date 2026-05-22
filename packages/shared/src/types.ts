@@ -256,6 +256,87 @@ export type ForecastScoreSet = {
   readonly transparency: ForecastScore;
 };
 
+export type CloudSeaConfidenceLevel = "high" | "medium" | "low";
+
+export type CloudSeaEvidenceEffect = "positive" | "neutral" | "negative" | "risk";
+
+export type CloudSeaWindowPhase = "accumulation" | "observation" | "waiting" | "dissipation";
+
+export type CloudSeaRecommendationLabel =
+  | "推荐重点关注"
+  | "值得等待"
+  | "谨慎参考"
+  | "不建议专程";
+
+export type CloudSeaAnalysisWindow = {
+  readonly label: string;
+  readonly date?: string;
+  readonly startTime: string;
+  readonly endTime: string;
+  readonly score: number;
+  readonly target: "cloud_sea";
+  readonly phase: CloudSeaWindowPhase;
+  readonly noteZh: string;
+  readonly riskTag: string;
+};
+
+export type DailyCloudSea = {
+  readonly date: string;
+  readonly dateLabelZh: string;
+  readonly opportunityScore: number;
+  readonly whiteoutRiskScore: number;
+  readonly travelScore: number;
+  readonly bestWindow: CloudSeaAnalysisWindow;
+  readonly recommendationLabel: CloudSeaRecommendationLabel;
+  readonly keyReason: string;
+  readonly riskNote: string;
+};
+
+export type CloudSeaWeatherEvidenceItem = {
+  readonly label: string;
+  readonly value: string;
+  readonly effect: CloudSeaEvidenceEffect;
+  readonly noteZh: string;
+};
+
+export type CloudSeaTerrainEvidenceItem = {
+  readonly label: string;
+  readonly value: string;
+  readonly effect: CloudSeaEvidenceEffect;
+  readonly noteZh: string;
+};
+
+export type CloudSeaTravelRecommendation = {
+  readonly situation: "已在山上" | "周边短途" | "远途专程";
+  readonly action: string;
+  readonly detail: string;
+};
+
+export type CloudSeaBackupPlan = {
+  readonly condition: string;
+  readonly action: string;
+  readonly detail: string;
+};
+
+export type CloudSeaAnalysisResult = {
+  readonly overallScore: number;
+  readonly cloudSeaOpportunityScore: number;
+  readonly whiteoutRiskScore: number;
+  readonly travelScore: number;
+  readonly recommendationLabel: CloudSeaRecommendationLabel;
+  readonly confidenceLevel: CloudSeaConfidenceLevel;
+  readonly bestCloudSeaWindows: readonly CloudSeaAnalysisWindow[];
+  readonly dailyCloudSea: readonly DailyCloudSea[];
+  readonly weatherEvidence: readonly CloudSeaWeatherEvidenceItem[];
+  readonly terrainEvidence: readonly CloudSeaTerrainEvidenceItem[];
+  readonly whiteoutReasons: readonly string[];
+  readonly opportunityReasons: readonly string[];
+  readonly travelRecommendations: readonly CloudSeaTravelRecommendation[];
+  readonly backupPlans: readonly CloudSeaBackupPlan[];
+  readonly missingDataNotes: readonly string[];
+  readonly dataMode: WeatherDataMode;
+};
+
 export type ForecastDailyMetric = {
   readonly label: string;
   readonly score: number;
@@ -302,6 +383,7 @@ export type ForecastCalculationResult = {
   readonly recommendationLabel: string;
   readonly summary: string;
   readonly scores: ForecastScoreSet;
+  readonly cloudSeaAnalysis: CloudSeaAnalysisResult;
   readonly terrainSummary: TerrainSummary;
   readonly terrainAnalysis: TerrainAnalysisSummary;
   readonly astroSummaries: readonly AstroSummary[];

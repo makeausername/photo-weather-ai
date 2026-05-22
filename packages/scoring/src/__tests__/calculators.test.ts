@@ -141,7 +141,7 @@ describe("forecast score calculators", () => {
     expect(calculateCloudSeaScore(highTerrainInput).score).toBeGreaterThan(
       calculateCloudSeaScore(lowTerrainInput).score,
     );
-    expect(calculateCloudSeaScore(highTerrainInput).reasons.join("")).toContain("云海地形潜力");
+    expect(calculateCloudSeaScore(highTerrainInput).reasons.join("")).toContain("地形云海潜力");
   });
 
   it("classifies score and recommendation levels", () => {
@@ -175,9 +175,9 @@ describe("forecast score calculators", () => {
     const cloudSeaResult = calculateForecast(cloudSeaInput);
     const astroResult = calculateForecast(astroInput);
 
-    expect(calculateOverallScore(cloudSeaResult.scores, "cloud_sea")).toBe(
-      cloudSeaResult.overallScore,
-    );
+    expect(cloudSeaResult.overallScore).toBe(cloudSeaResult.cloudSeaAnalysis.travelScore);
+    expect(calculateOverallScore(cloudSeaResult.scores, "cloud_sea")).toBeGreaterThanOrEqual(0);
+    expect(cloudSeaResult.summary).toContain("白墙风险");
     expect(astroResult.scores.milkyWay.score).toBeGreaterThan(
       astroResult.scores.whiteoutRisk.score,
     );

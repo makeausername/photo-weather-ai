@@ -88,7 +88,9 @@ describe("forecast query validation route", () => {
       },
       horizon: "48h",
       target: "cloud_sea",
-      recommendationLabel: expect.stringMatching(/不建议前往|谨慎参考|值得等待|推荐前往/),
+      recommendationLabel: expect.stringMatching(
+        /不建议前往|推荐重点关注|不建议专程|谨慎参考|值得等待|推荐前往/,
+      ),
       isMock: true,
       dataNotice:
         "天气数据：演示数据；地形数据：演示数据；天文数据：本地算法计算。当前结果基于演示天气数据生成，仅用于体验分析流程。正式天气数据源启用后，将显示对应的数据来源与预报时间。天文时间基于地点经纬度本地计算，实际拍摄仍需结合云量、光污染和地形遮挡。",
@@ -108,6 +110,12 @@ describe("forecast query validation route", () => {
       },
     });
     expect(body.overallScore).toEqual(expect.any(Number));
+    expect(body.cloudSeaAnalysis).toMatchObject({
+      cloudSeaOpportunityScore: expect.any(Number),
+      whiteoutRiskScore: expect.any(Number),
+      travelScore: expect.any(Number),
+      recommendationLabel: expect.stringMatching(/推荐重点关注|不建议专程|谨慎参考|值得等待/),
+    });
     expect(body.forecastStart).toBe(body.calendarBasis.forecastStart);
     expect(body.forecastEnd).toBe(body.calendarBasis.forecastEnd);
     expect(body.targetDates).toEqual(body.calendarBasis.targetDates);

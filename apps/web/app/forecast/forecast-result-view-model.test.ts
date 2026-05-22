@@ -69,6 +69,195 @@ const baseResult: ForecastCalculationResult = {
     milkyWay: score("milkyWay", "银河", 68),
     transparency: score("transparency", "通透度", 72),
   },
+  cloudSeaAnalysis: {
+    overallScore: 72,
+    cloudSeaOpportunityScore: 82,
+    whiteoutRiskScore: 58,
+    travelScore: 72,
+    recommendationLabel: "值得等待",
+    confidenceLevel: "medium",
+    bestCloudSeaWindows: [
+      {
+        label: "清晨云海窗口 05:00 - 07:00",
+        date: "2026-05-20",
+        startTime: "2026-05-20T05:00:00+08:00",
+        endTime: "2026-05-20T07:00:00+08:00",
+        score: 72,
+        target: "cloud_sea",
+        phase: "observation",
+        noteZh: "清晨云海信号可等待，现场重点复核云雾上沿和能见度。",
+        riskTag: "白墙风险中",
+      },
+      {
+        label: "清晨云海窗口 05:00 - 07:00",
+        date: "2026-05-21",
+        startTime: "2026-05-21T05:00:00+08:00",
+        endTime: "2026-05-21T07:00:00+08:00",
+        score: 70,
+        target: "cloud_sea",
+        phase: "observation",
+        noteZh: "清晨云海信号可等待，现场重点复核云雾上沿和能见度。",
+        riskTag: "白墙风险中",
+      },
+    ],
+    dailyCloudSea: [
+      {
+        date: "2026-05-20",
+        dateLabelZh: "2026年5月20日 星期三",
+        opportunityScore: 82,
+        whiteoutRiskScore: 58,
+        travelScore: 72,
+        bestWindow: {
+          label: "清晨云海窗口 05:00 - 07:00",
+          date: "2026-05-20",
+          startTime: "2026-05-20T05:00:00+08:00",
+          endTime: "2026-05-20T07:00:00+08:00",
+          score: 72,
+          target: "cloud_sea",
+          phase: "observation",
+          noteZh: "清晨云海信号可等待，现场重点复核云雾上沿和能见度。",
+          riskTag: "白墙风险中",
+        },
+        recommendationLabel: "值得等待",
+        keyReason: "清晨湿度、低云和地形条件支持等待云海。",
+        riskNote: "白墙风险中等，需要现场观察云雾上沿。",
+      },
+      {
+        date: "2026-05-21",
+        dateLabelZh: "2026年5月21日 星期四",
+        opportunityScore: 78,
+        whiteoutRiskScore: 55,
+        travelScore: 70,
+        bestWindow: {
+          label: "清晨云海窗口 05:00 - 07:00",
+          date: "2026-05-21",
+          startTime: "2026-05-21T05:00:00+08:00",
+          endTime: "2026-05-21T07:00:00+08:00",
+          score: 70,
+          target: "cloud_sea",
+          phase: "observation",
+          noteZh: "清晨云海信号可等待，现场重点复核云雾上沿和能见度。",
+          riskTag: "白墙风险中",
+        },
+        recommendationLabel: "值得等待",
+        keyReason: "第二天清晨仍有云海观察窗口。",
+        riskNote: "白墙风险中等，需要现场复核能见度。",
+      },
+    ],
+    weatherEvidence: [
+      {
+        label: "湿度",
+        value: "92%",
+        effect: "positive",
+        noteZh: "高湿度有利于山谷低云和雾形成。",
+      },
+      {
+        label: "露点差",
+        value: "1.8°C",
+        effect: "positive",
+        noteZh: "露点差越小，水汽越接近凝结。",
+      },
+      {
+        label: "风速",
+        value: "2.4 m/s",
+        effect: "positive",
+        noteZh: "0.5-4 m/s 更利于稳定云海。",
+      },
+      {
+        label: "风向",
+        value: "东南（135°）",
+        effect: "neutral",
+        noteZh: "正式风向与谷地方向结合后，可判断云雾是否向机位推移或被吹散。",
+      },
+      {
+        label: "能见度",
+        value: "14 km",
+        effect: "positive",
+        noteZh: "8-20km 更利于看见云海边界。",
+      },
+      {
+        label: "降水",
+        value: "12% / 0 mm",
+        effect: "neutral",
+        noteZh: "观测窗口内强降水会降低拍摄和通行价值。",
+      },
+      {
+        label: "低云",
+        value: "55%",
+        effect: "positive",
+        noteZh: "低云适中更接近云海；低云过厚时更接近白墙。",
+      },
+    ],
+    terrainEvidence: [
+      {
+        label: "机位海拔",
+        value: "1860 m",
+        effect: "neutral",
+        noteZh: "机位越可能高于谷地云雾层，越有机会俯拍云海。",
+      },
+      {
+        label: "周边 1km 最低海拔",
+        value: "980 m",
+        effect: "neutral",
+        noteZh: "用于判断近处谷地是否具备积雾空间。",
+      },
+      {
+        label: "5km 高差",
+        value: "1484 m",
+        effect: "positive",
+        noteZh: "高差明显，具备云海地形基础。",
+      },
+      {
+        label: "云海地形潜力",
+        value: "高",
+        effect: "positive",
+        noteZh: "演示地形数据显示山顶与周边谷地高差明显。",
+      },
+    ],
+    whiteoutReasons: ["白墙风险中等，需要现场观察云雾上沿是否低于机位。"],
+    opportunityReasons: ["清晨湿度、低云和地形条件支持等待云海。"],
+    travelRecommendations: [
+      {
+        situation: "已在山上",
+        action: "建议早起等待",
+        detail: "等待价值较高，重点观察低云是否低于机位。",
+      },
+      {
+        situation: "周边短途",
+        action: "可作为备选",
+        detail: "适合短途机动，不建议只押一个机位。",
+      },
+      {
+        situation: "远途专程",
+        action: "谨慎专程",
+        detail: "建议等临近预报确认低云、能见度和降水再决定。",
+      },
+    ],
+    backupPlans: [
+      {
+        condition: "白墙时",
+        action: "转拍雾中树影、山路氛围、延时",
+        detail: "降低远景预期，利用近景层次、人物比例和雾气流动完成素材。",
+      },
+      {
+        condition: "无云海但通透",
+        action: "转拍层峦、日出、长焦山脊",
+        detail: "能见度较好时，远山层次和日出侧光仍有拍摄价值。",
+      },
+      {
+        condition: "低云过厚",
+        action: "等待风口或转更高机位",
+        detail: "优先观察谷地方向是否出现云雾边界或短暂开口。",
+      },
+      {
+        condition: "风大",
+        action: "转拍流云延时",
+        detail: "完整云海边界不稳定时，流云、山脊掠影和延时素材更可控。",
+      },
+    ],
+    missingDataNotes: [],
+    dataMode: "mock",
+  },
   terrainSummary: {
     locationElevation: 1860,
     minElevation1km: 980,
@@ -430,8 +619,8 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.primaryCards.map((card) => card.label)).toEqual([
       "云海机会",
       "白墙风险",
-      "最佳云海窗口",
-      "推荐动作",
+      "最佳清晨窗口",
+      "出行推荐",
     ]);
     expect(viewModel.primaryCards.map((card) => card.moduleKey)).not.toContain("stars");
     expect(viewModel.primaryCards.map((card) => card.moduleKey)).not.toContain("milkyWay");
@@ -458,8 +647,8 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.coreCards.map((card) => card.label)).toEqual([
       "云海机会",
       "白墙风险",
-      "最佳云海窗口",
-      "推荐动作",
+      "最佳清晨窗口",
+      "出行推荐",
     ]);
     expect(viewModel.coreCards.find((card) => card.label === "白墙风险")?.value).toBe("中");
     expect(viewModel.cloudSeaVsWhiteout.cloudSeaDefinition).toContain("机位高于云雾层");
@@ -546,6 +735,47 @@ describe("forecast result target-aware view model", () => {
           weatherSummary: "清晨低云可关注",
         },
       ],
+      cloudSeaAnalysis: {
+        ...baseResult.cloudSeaAnalysis,
+        bestCloudSeaWindows: [
+          ...baseResult.cloudSeaAnalysis.bestCloudSeaWindows,
+          {
+            label: "清晨云海窗口 05:00 - 07:00",
+            date: "2026-05-22",
+            startTime: "2026-05-22T05:00:00+08:00",
+            endTime: "2026-05-22T07:00:00+08:00",
+            score: 68,
+            target: "cloud_sea",
+            phase: "observation",
+            noteZh: "第三天清晨仍可观察云海。",
+            riskTag: "白墙风险中",
+          },
+        ],
+        dailyCloudSea: [
+          ...baseResult.cloudSeaAnalysis.dailyCloudSea,
+          {
+            date: "2026-05-22",
+            dateLabelZh: "2026年5月22日 星期五",
+            opportunityScore: 74,
+            whiteoutRiskScore: 50,
+            travelScore: 68,
+            bestWindow: {
+              label: "清晨云海窗口 05:00 - 07:00",
+              date: "2026-05-22",
+              startTime: "2026-05-22T05:00:00+08:00",
+              endTime: "2026-05-22T07:00:00+08:00",
+              score: 68,
+              target: "cloud_sea",
+              phase: "observation",
+              noteZh: "第三天清晨仍可观察云海。",
+              riskTag: "白墙风险中",
+            },
+            recommendationLabel: "值得等待",
+            keyReason: "第三天清晨湿度和地形仍支持等待。",
+            riskNote: "白墙风险中等。",
+          },
+        ],
+      },
     };
 
     const viewModel = buildCloudSeaForecastViewModel(sevenDayResult);

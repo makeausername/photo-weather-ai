@@ -29,8 +29,8 @@ These documents define the strategic product boundary for 逐光天气. Future C
 - 公开首页：响应式三栏桌面工作区，左侧地点查询面板、中间大幅 forecast/map 视觉工作区、右侧决策摘要面板；900px 到 1199px 自动变为左查询 + 右侧堆叠，移动端单列无横向溢出。
 - 首页下方信息架构：场景能力、热门机位和工作流使用同一页面 gutter 的宽屏响应式网格，不再放进窄居中容器。
 - 公开 forecast 结果页：同一产品 shell 下的目标感知 dashboard 布局，左侧地点/查询摘要，中间按 `general` / `cloud_sea` / `glow` / `astro` 展示对应主卡、窗口、分项评分和判断依据，右侧展示对应风险、建议、计算依据和数据状态；结果页已按 24h / 48h / 72h / 7d 选择范围生成窗口和逐日判断，星空银河结果页支持整月月相日历。
-- 云海结果页已专项化：`target=cloud_sea` 不再复用通用 forecast 模板，单独展示云海机会、白墙风险、最佳云海窗口、推荐动作、逐日云海趋势、云海/白墙区别、云海时间窗口、出行建议和备选拍摄方案。
-- 云海页将云海机会与白墙风险分开呈现，并把地形/海拔证据、天气证据、低云分层缺失提示和数据状态作为独立模块；真实天气和真实 DEM 接入前，天气与地形仍可能显示为演示数据或样例数据。
+- 云海结果页已专项化：`target=cloud_sea` 不再复用通用 forecast 模板，单独展示云海机会、白墙风险、出行推荐、最佳清晨窗口、逐日云海趋势、云海/白墙区别、云海时间窗口、出行建议和备选拍摄方案。
+- 云海页将云海机会、白墙风险和出行推荐拆成独立确定性输出，并把地形/海拔证据、天气证据、低云分层缺失提示和数据状态作为独立模块；真实天气和真实 DEM 接入前，天气与地形仍可能显示为演示数据或样例数据。
 - Product Copy Polish V1：公开首页、专题页、结果页、账户空状态和后台服务商配置已去除开发味提示；公开数据状态统一为“天气数据：演示数据”“地形数据：演示数据”“天文数据：本地算法计算”，并保留产品化的数据诚实说明。
 - Scenario Module Pages V1：`/cloud-sea`、`/glow`、`/astro` 已升级为云海、朝霞晚霞、星空银河专项入口页，复用地点搜索、预报范围选择和 forecast 查询跳转流程；`/spots` 和 `/pricing` 使用“即将开放”型中文产品页。
 - Public User Auth V1：`/login` 支持邮箱密码登录，`/register` 支持邮箱密码注册，`/auth/register` 会创建普通 `user` 角色账户并返回安全用户数据；短信登录暂未开放。
@@ -89,7 +89,7 @@ These documents define the strategic product boundary for 逐光天气. Future C
 - Calendar Core V1：`packages/calendar` 集中处理 `Asia/Shanghai` 时区、24h / 48h / 72h / 7d 预报范围、覆盖日期、中文日期时间格式、农历和节气信息。
 - 云海、白墙风险、朝霞、晚霞、星空、银河和通透度评分。
 - 评分只消费归一化后的 `NormalizedHourlyWeather` / `NormalizedDailyWeather` 和 `WeatherDataBundle` 状态，不读取 provider 原始 JSON。
-- 云海评分使用湿度、低云、风速、露点、能见度和地形；霞光评分使用总云量、低/中/高云、降水和能见度；星空银河评分使用总云量、云层分层、湿度、能见度和月光；通透度使用能见度、湿度、降水概率和总云量。
+- 云海专项逻辑 V1 输出 `cloudSeaOpportunityScore`、`whiteoutRiskScore` 和 `cloudSeaTravelScore`，按湿度/露点差、低云、地形高差、风速、能见度、降水/气压 proxy 加权计算；白墙风险单独按低云、高湿、低能见度、近静风和总云量判断，星空/银河不参与云海出行推荐。
 - 综合出片指数、推荐等级、最佳拍摄窗口、逐日判断、风险提示、关键依据和拍摄建议。
 - 结果页目标感知展示：`general` 显示完整模块总览和全范围高分窗口；`cloud_sea` 使用专项云海结果页，聚焦每日清晨云海机会、白墙风险、云海/白墙区分、地形海拔条件、天气证据、清晨等待窗口、出行建议和云海失败后的备选策略；`glow` 聚焦每日朝霞/晚霞机会、日出日落、晨昏时间、云层结构和地形遮挡；`astro` 聚焦每晚观星条件、月相/月亮照明、天文黑夜、银河窗口、云量能见度风险和夜间拍摄建议。
 - Terrain Core V1：当前地形来自 `MockTerrainProvider`，输出 `terrainProfile`、`horizonProfile` 和 `dataSource=mock_terrain`；公开结果页显示为“地形数据：演示数据”，地形会影响云海潜力、白墙风险辅助判断、日出/日落方向遮挡、银河地平线遮挡和综合拍摄依据。
@@ -181,7 +181,7 @@ Scenario Module Pages V1：
 - `packages/weather`：天气服务接口、标准化天气模型、WeatherDataBundle、WeatherDataService、ProviderFactory、MockWeatherProvider，以及 QWeather / Open-Meteo fixture-based normalization adapters。
 - `packages/terrain`：Terrain Core V1，包含地形/海拔数据契约、mock terrain provider、地形剖面、高差计算、云海地形潜力分类、地平线遮挡辅助判断和禁用的 Open-Meteo Elevation provider。
 - `packages/astro`：Astronomy Core V1，基于 `astronomy-engine` 的本地 deterministic 日出 / 日落、暮光、月相、月亮照明、月出 / 月落、逐小时月亮高度、整月月相日历和初步银河窗口估算。
-- `packages/scoring`：本地 forecast mock 数据构造器、摄影评分 helper、朝霞/晚霞/云海/白墙/星空/银河/通透度计算器和综合推荐分类。
+- `packages/scoring`：本地 forecast mock 数据构造器、摄影评分 helper、朝霞/晚霞/云海/白墙/星空/银河/通透度计算器、云海专项确定性分析和综合推荐分类。
 - `packages/ai`：AI 服务接口、mock provider、规则兜底和 DeepSeek 开发模式 JSON 解读 provider。
 - `packages/storage`：存储服务接口与 mock 存储。
 - `packages/billing`：计费与额度基础类型。
