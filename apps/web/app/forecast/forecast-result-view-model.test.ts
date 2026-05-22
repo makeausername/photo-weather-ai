@@ -4,7 +4,10 @@ import {
   type ForecastCalculationResult,
   type ForecastScore,
 } from "@photo-weather/shared";
-import { buildForecastResultViewModel } from "./forecast-result-view-model";
+import {
+  buildCloudSeaForecastViewModel,
+  buildForecastResultViewModel,
+} from "./forecast-result-view-model";
 
 function score(key: string, label: string, value: number): ForecastScore {
   return {
@@ -425,10 +428,10 @@ describe("forecast result target-aware view model", () => {
     const viewModel = buildForecastResultViewModel(resultForTarget("cloud_sea"), "cloud_sea");
 
     expect(viewModel.primaryCards.map((card) => card.label)).toEqual([
-      "云海概率",
+      "云海机会",
       "白墙风险",
       "最佳云海窗口",
-      "是否值得前往",
+      "推荐动作",
     ]);
     expect(viewModel.primaryCards.map((card) => card.moduleKey)).not.toContain("stars");
     expect(viewModel.primaryCards.map((card) => card.moduleKey)).not.toContain("milkyWay");
@@ -446,6 +449,147 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.hiddenModuleKeys).toEqual(
       expect.arrayContaining(["stars", "milkyWay", "astronomy"]),
     );
+    expect(viewModel.cloudSea).toBeDefined();
+  });
+
+  it("builds a specialized cloud sea view model with separated whiteout, terrain, weather, and travel modules", () => {
+    const viewModel = buildCloudSeaForecastViewModel(resultForTarget("cloud_sea"));
+
+    expect(viewModel.coreCards.map((card) => card.label)).toEqual([
+      "云海机会",
+      "白墙风险",
+      "最佳云海窗口",
+      "推荐动作",
+    ]);
+    expect(viewModel.coreCards.find((card) => card.label === "白墙风险")?.value).toBe("中");
+    expect(viewModel.cloudSeaVsWhiteout.cloudSeaDefinition).toContain("机位高于云雾层");
+    expect(viewModel.cloudSeaVsWhiteout.whiteoutDefinition).toContain("能见度下降");
+    expect(viewModel.terrainEvidence.items.map((item) => item.label)).toEqual(
+      expect.arrayContaining(["机位海拔", "周边 1km 最低海拔", "5km 高差", "云海地形潜力"]),
+    );
+    expect(viewModel.weatherEvidence.map((item) => item.label)).toEqual(
+      expect.arrayContaining(["湿度", "露点差", "风速", "风向", "能见度", "降水", "低云"]),
+    );
+    expect(viewModel.travelRecommendations.map((item) => item.situation)).toEqual([
+      "已在山上",
+      "周边短途",
+      "远途专程",
+    ]);
+    expect(viewModel.backupPlans.map((plan) => plan.condition)).toEqual(
+      expect.arrayContaining(["白墙时", "无云海但通透", "低云过厚", "风大"]),
+    );
+  });
+
+  it("does not prioritize astro or Milky Way modules in the specialized cloud sea model", () => {
+    const viewModel = buildCloudSeaForecastViewModel(resultForTarget("cloud_sea"));
+    const primaryModuleKeys = viewModel.coreCards.map((card) => card.moduleKey);
+    const windowLabels = viewModel.cloudSeaWindows.map((window) => window.label).join(" ");
+
+    expect(primaryModuleKeys).not.toContain("stars");
+    expect(primaryModuleKeys).not.toContain("milkyWay");
+    expect(windowLabels).not.toContain("银河");
+    expect(viewModel.weatherEvidence.map((item) => item.label)).not.toContain("月相");
+  });
+
+  it("shows multiple daily cloud sea entries for a 7d cloud sea result", () => {
+    const sevenDayResult: ForecastCalculationResult = {
+      ...resultForTarget("cloud_sea"),
+      horizon: "7d",
+      forecastEnd: "2026-05-27T00:00:00+08:00",
+      targetDates: ["2026-05-20", "2026-05-21", "2026-05-22"],
+      calendarBasis: {
+        ...baseResult.calendarBasis,
+        forecastEnd: "2026-05-27T00:00:00+08:00",
+        forecastEndLabel: "2026年5月27日 00:00",
+        forecastRangeLabel: "2026年5月20日 00:00 至 2026年5月27日 00:00",
+        targetDates: ["2026-05-20", "2026-05-21", "2026-05-22"],
+        targetDateLabels: ["2026年5月20日 星期三", "2026年5月21日 星期四", "2026年5月22日 星期五"],
+        horizonHours: 168,
+      },
+      dailySummaries: [
+        ...baseResult.dailySummaries.map((summary) => ({
+          ...summary,
+          target: "cloud_sea" as const,
+        })),
+        {
+          date: "2026-05-22",
+          dateLabelZh: "2026年5月22日 星期五",
+          lunarDateText: "四月初六",
+          score: 74,
+          recommendationLabel: "值得等待",
+          target: "cloud_sea",
+          keyWindows: [],
+          riskFlags: [],
+          shortAdvice: "清晨云海仍可等待。",
+        },
+      ],
+      targetDailyBreakdown: [
+        ...baseResult.targetDailyBreakdown,
+        {
+          date: "2026-05-22",
+          cloudSea: {
+            label: "清晨云海机会",
+            score: 74,
+            detail: "第三天清晨湿度和地形仍支持等待。",
+          },
+          whiteoutRisk: {
+            label: "白墙风险",
+            score: 50,
+            detail: "白墙风险中等。",
+          },
+          transparency: {
+            label: "通透度",
+            score: 68,
+            detail: "能见度可用。",
+          },
+          terrainSummary: "演示地形数据显示山顶与周边谷地高差明显。",
+          weatherSummary: "清晨低云可关注",
+        },
+      ],
+    };
+
+    const viewModel = buildCloudSeaForecastViewModel(sevenDayResult);
+
+    expect(viewModel.dailyTrend).toHaveLength(3);
+    expect(viewModel.dailyTrend.map((item) => item.date)).toContain("2026-05-22");
+  });
+
+  it("shows a cloud sea confidence warning when low cloud data is missing", () => {
+    const viewModel = buildCloudSeaForecastViewModel({
+      ...resultForTarget("cloud_sea"),
+      weatherDataMode: "fixture",
+      weatherProviderCode: "qweather",
+      weatherProviderLabelZh: "和风天气样例数据",
+      dataSourceLabel: "和风天气样例数据",
+      weatherNoticeZh: "天气数据：和风天气样例数据",
+      weatherMissingFields: ["cloudLow"],
+    });
+
+    expect(viewModel.dataNotice).toContain("当前天气源缺少低云分层数据，云海判断置信度会降低。");
+    expect(
+      viewModel.weatherEvidence.some(
+        (item) =>
+          item.label === "低云" &&
+          item.confidenceNote === "当前天气源缺少低云分层数据，云海判断置信度会降低。",
+      ),
+    ).toBe(true);
+  });
+
+  it("does not call external APIs while shaping the cloud sea view model", () => {
+    const fetchBackup = globalThis.fetch;
+    let fetchCalled = false;
+    globalThis.fetch = (async () => {
+      fetchCalled = true;
+      throw new Error("external call blocked");
+    }) as typeof fetch;
+
+    try {
+      const viewModel = buildCloudSeaForecastViewModel(resultForTarget("cloud_sea"));
+      expect(viewModel.coreCards.length).toBe(4);
+      expect(fetchCalled).toBe(false);
+    } finally {
+      globalThis.fetch = fetchBackup;
+    }
   });
 
   it("prioritizes sunrise, sunset, and twilight on the glow view", () => {
