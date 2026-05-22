@@ -360,7 +360,7 @@ export function buildCloudSeaForecastViewModel(
       textCard(
         "cloud-sea-best-window",
         "bestWindow",
-        "最佳清晨窗口",
+        "最佳云海窗口",
         bestCloudSeaWindow?.timeRangeLabel ?? "暂无明确窗口",
         bestCloudSeaWindow
           ? `${windowDateLabel(result, bestCloudSeaWindow.date)}，${cloudSeaWindowRiskTag(
@@ -373,7 +373,7 @@ export function buildCloudSeaForecastViewModel(
       textCard(
         "cloud-sea-action",
         "recommendation",
-        "出行推荐",
+        "推荐动作",
         action,
         cloudSeaActionDetail(result, action),
         action === "不建议专程" ? "danger" : action === "谨慎参考" ? "accent" : "primary",
@@ -1603,14 +1603,10 @@ function buildCloudSeaRiskSummary(
       detail: firstText(result.cloudSeaAnalysis.whiteoutReasons, "低云或雾包住机位时，云海会转为白墙和低能见度。"),
     },
     {
-      label: "出行推荐",
+      label: "推荐动作",
       value: `${result.cloudSeaAnalysis.travelScore} 分`,
       detail: `推荐动作：${result.cloudSeaAnalysis.recommendationLabel}。`,
     },
-    ...result.cloudSeaAnalysis.missingDataNotes.map((note) => ({
-      label: "数据缺失说明",
-      detail: note,
-    })),
     ...result.riskFlags.map(riskItem),
   ];
 }
@@ -1632,7 +1628,7 @@ function cloudSeaActionDetail(
   const wind = cloudSeaWindValue(result);
 
   if (action === "推荐重点关注") {
-    return `云海机会 ${result.cloudSeaAnalysis.cloudSeaOpportunityScore} 分，白墙风险${whiteout}，地形潜力${terrain}，出行推荐 ${result.cloudSeaAnalysis.travelScore} 分。`;
+    return `云海机会 ${result.cloudSeaAnalysis.cloudSeaOpportunityScore} 分，白墙风险${whiteout}，地形潜力${terrain}，推荐动作评分 ${result.cloudSeaAnalysis.travelScore} 分。`;
   }
   if (action === "值得等待") {
     return `适合清晨等待，但需复核低云高度、能见度和风速变化；当前风速状态：${wind}。`;

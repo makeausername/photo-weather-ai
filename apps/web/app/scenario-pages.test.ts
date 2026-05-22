@@ -13,6 +13,10 @@ import {
   scenarioPageConfigs,
 } from "./scenario-configs";
 
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/cloud-sea",
+}));
+
 const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
 
@@ -66,6 +70,21 @@ describe("scenario module pages", () => {
     });
   });
 
+  it("renders the cloud-sea entry page without the popular spot placeholder", () => {
+    const html = renderToStaticMarkup(React.createElement(CloudSeaPage));
+
+    expect(html).not.toContain("热门云海机位");
+    expect(html).not.toContain("机位参考");
+    expect(html).toContain("云海判断需要看什么");
+    expect(html).toContain("云海机会");
+    expect(html).toContain("白墙风险");
+    expect(html).toContain("最佳清晨窗口");
+    expect(html).toContain("地形高差");
+    expect(html).toContain("风速与稳定性");
+    expect(html).toContain("湿度、露点差、低云和地形高差共同影响云海形成。");
+    expect(html).toContain("正式数据源启用后将显示对应来源与更新时间");
+  });
+
   it("builds complete forecast query URLs for each scenario CTA", () => {
     for (const config of scenarioPageConfigs) {
       const url = new URL(
@@ -96,10 +115,12 @@ describe("scenario module pages", () => {
     expect(searchPanelHtml).toContain("地点搜索与机位选择");
     expect(searchPanelHtml).toContain("预报范围选择");
     expect(searchPanelHtml).toContain("查看云海拍摄判断");
-    expect(serialized).toContain("热门云海机位");
+    expect(serialized).not.toContain("热门云海机位");
+    expect(serialized).toContain("云海判断需要看什么");
+    expect(serialized).toContain("湿度、露点差、低云和地形高差共同影响云海形成。");
     expect(serialized).toContain("热门朝霞晚霞机位");
     expect(serialized).toContain("热门星空银河机位");
-    expect(serialized).toContain("当前为体验模式，结果使用演示天气数据生成");
+    expect(serialized).toContain("天气与地形结果使用演示数据生成");
     expect(serialized).not.toMatch(/coming soon|placeholder|todo|mock|fixture/i);
     expect(serialized).not.toContain("模块准备中");
     expect(serialized).not.toContain("本地模拟");

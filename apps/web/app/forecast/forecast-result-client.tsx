@@ -394,7 +394,7 @@ function ForecastResultView({
   }
 
   if (viewModel.target === "cloud_sea" && viewModel.cloudSea) {
-    return <CloudSeaForecastView query={query} result={result} viewModel={viewModel.cloudSea} />;
+    return <CloudSeaResultPage query={query} result={result} viewModel={viewModel.cloudSea} />;
   }
 
   return (
@@ -466,7 +466,7 @@ function ForecastResultView({
   );
 }
 
-function CloudSeaForecastView({
+export function CloudSeaResultPage({
   query,
   result,
   viewModel,
@@ -476,30 +476,32 @@ function CloudSeaForecastView({
   readonly viewModel: CloudSeaForecastViewModel;
 }) {
   return (
-    <section className="grid gap-5">
+    <section
+      className="CloudSeaResultPage cloud-sea-result-page grid gap-5"
+      data-cloud-sea-section="CloudSeaResultPage"
+    >
       <CloudSeaTopContext query={query} result={result} />
-      <CloudSeaCoreDecisionCards cards={viewModel.coreCards} />
+      <CloudSeaCoreDecision cards={viewModel.coreCards} />
 
-      <div className="grid gap-5 min-[1024px]:grid-cols-12 min-[1024px]:items-start">
-        <main className="grid gap-5 min-[1024px]:col-span-8">
-          <CloudSeaDailyTrendSection result={result} items={viewModel.dailyTrend} />
-          <CloudSeaTimeWindowSection windows={viewModel.cloudSeaWindows} />
-          <CloudSeaVsWhiteoutSection view={viewModel.cloudSeaVsWhiteout} />
-          <CloudSeaTerrainSection terrainEvidence={viewModel.terrainEvidence} />
-          <CloudSeaWeatherEvidenceSection items={viewModel.weatherEvidence} />
-        </main>
-
-        <aside className="grid content-start gap-5 min-[1024px]:col-span-4">
-          <CloudSeaTravelRecommendationSection items={viewModel.travelRecommendations} />
-          <CloudSeaRiskSummarySection items={viewModel.riskSummary} />
-          <CloudSeaBackupPlanSection plans={viewModel.backupPlans} />
-          <CloudSeaDataStatusSection
-            result={result}
-            dataNotice={viewModel.dataNotice}
-            missingDataNotes={viewModel.missingDataNotes}
-          />
-        </aside>
-      </div>
+      <main
+        className="cloud-sea-result-stack grid gap-5"
+        data-cloud-sea-section="CloudSeaStackedLayout"
+      >
+        <CloudSeaDailyTrend result={result} items={viewModel.dailyTrend} />
+        <CloudSeaWhiteoutSection view={viewModel.cloudSeaVsWhiteout} />
+        <CloudSeaTimeWindowSection windows={viewModel.cloudSeaWindows} />
+        <CloudSeaTerrainEvidence terrainEvidence={viewModel.terrainEvidence} />
+        <CloudSeaWeatherEvidence items={viewModel.weatherEvidence} />
+        <CloudSeaActionGrid
+          result={result}
+          travelRecommendations={viewModel.travelRecommendations}
+          riskSummary={viewModel.riskSummary}
+          backupPlans={viewModel.backupPlans}
+        />
+        {viewModel.missingDataNotes.length > 0 ? (
+          <CloudSeaMissingDataSection notes={viewModel.missingDataNotes} />
+        ) : null}
+      </main>
     </section>
   );
 }
@@ -513,7 +515,7 @@ function CloudSeaTopContext({
 }) {
   return (
     <Card className="p-4 shadow-sm">
-      <div className="grid gap-4 min-[760px]:grid-cols-[minmax(0,1fr)_auto] min-[760px]:items-center">
+      <div className="grid gap-4 min-[900px]:grid-cols-[minmax(0,1fr)_auto] min-[900px]:items-center">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="default">云海专项判断</Badge>
@@ -525,7 +527,7 @@ function CloudSeaTopContext({
           <h1 className="mt-3 break-words text-2xl font-bold leading-tight text-foreground sm:text-[28px]">
             {query.name}
           </h1>
-          <div className="mt-3 grid gap-1 text-xs leading-5 text-muted-foreground sm:grid-cols-2 min-[1120px]:flex min-[1120px]:flex-wrap min-[1120px]:gap-2">
+          <div className="mt-3 grid gap-1 text-xs leading-5 text-muted-foreground min-[900px]:grid-cols-2 min-[1120px]:flex min-[1120px]:flex-wrap min-[1120px]:gap-2">
             <span>预报范围：{result.calendarBasis.forecastRangeLabel}</span>
             <span>生成时间：{formatDateTime(result.generatedAt)}</span>
             <span>天气数据：{weatherStatusLabel(result)}</span>
@@ -547,9 +549,12 @@ function CloudSeaTopContext({
   );
 }
 
-function CloudSeaCoreDecisionCards({ cards }: { readonly cards: readonly ForecastResultCard[] }) {
+function CloudSeaCoreDecision({ cards }: { readonly cards: readonly ForecastResultCard[] }) {
   return (
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <section
+      className="cloud-sea-core-decision grid gap-3 min-[900px]:grid-cols-2 min-[1280px]:grid-cols-4"
+      data-cloud-sea-section="CloudSeaCoreDecision"
+    >
       {cards.map((card) => (
         <PrimaryResultCard key={card.key} card={card} />
       ))}
@@ -557,7 +562,7 @@ function CloudSeaCoreDecisionCards({ cards }: { readonly cards: readonly Forecas
   );
 }
 
-function CloudSeaDailyTrendSection({
+function CloudSeaDailyTrend({
   result,
   items,
 }: {
@@ -567,39 +572,43 @@ function CloudSeaDailyTrendSection({
   const title = result.calendarBasis.horizonHours <= 24 ? "每日清晨窗口" : "逐日云海趋势";
 
   return (
-    <Card className="p-5 shadow-sm">
+    <Card className="CloudSeaDailyTrend cloud-sea-daily-trend p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-card-foreground">{title}</h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            按云海机会、白墙风险和清晨窗口排序，不混入星空或银河窗口。
+            按云海机会、白墙风险和清晨窗口排列，便于横向比较每天是否值得等待。
           </p>
         </div>
         <Badge variant="muted">{forecastHorizonLabels[result.horizon]}</Badge>
       </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-2 min-[1320px]:grid-cols-3">
+      <div className="mt-4 grid gap-2">
         {items.map((item) => (
-          <article key={item.key} className="rounded-lg border border-border bg-muted p-4">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
+          <article
+            key={item.key}
+            className="grid gap-3 rounded-lg border border-border bg-muted p-3 min-[900px]:grid-cols-[minmax(150px,1.1fr)_minmax(170px,1fr)_minmax(170px,1fr)_minmax(0,1.4fr)] min-[900px]:items-center"
+          >
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
                 <h3 className="font-bold text-card-foreground">{item.dateLabel}</h3>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  最佳清晨窗口：{item.bestMorningWindow}
-                </p>
+                <Badge variant={item.cloudSeaScore >= 70 ? "default" : "accent"}>
+                  {item.cloudSeaScore} 分
+                </Badge>
               </div>
-              <Badge variant={item.cloudSeaScore >= 70 ? "default" : "accent"}>
-                {item.cloudSeaScore} 分
-              </Badge>
+              <p className="mt-1 text-xs text-muted-foreground">{item.bestMorningWindow}</p>
             </div>
-            <dl className="mt-4 grid gap-2 text-sm">
+            <dl className="grid gap-1 text-sm">
               <CloudSeaInlineDefinition label="云海机会" value={item.cloudSeaLevel} />
               <CloudSeaInlineDefinition
                 label="白墙风险"
                 value={`${item.whiteoutRiskLabel}（${item.whiteoutRiskScore} 分）`}
               />
-              <CloudSeaInlineDefinition label="推荐动作" value={item.recommendedAction} />
             </dl>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.keyReason}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-muted-foreground">推荐动作</span>
+              <Badge variant="muted">{item.recommendedAction}</Badge>
+            </div>
+            <p className="text-sm leading-6 text-muted-foreground">{item.keyReason}</p>
           </article>
         ))}
       </div>
@@ -607,14 +616,16 @@ function CloudSeaDailyTrendSection({
   );
 }
 
-function CloudSeaVsWhiteoutSection({ view }: { readonly view: CloudSeaVsWhiteoutView }) {
+function CloudSeaWhiteoutSection({ view }: { readonly view: CloudSeaVsWhiteoutView }) {
   return (
-    <Card className="p-5 shadow-sm">
+    <Card
+      className="CloudSeaWhiteoutSection cloud-sea-whiteout-section p-4 shadow-sm"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">云海还是白墙</h2>
+        <h2 className="text-lg font-bold text-card-foreground">云海 vs 白墙判断</h2>
         <Badge variant="muted">低云 / 能见度 / 海拔</Badge>
       </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
+      <div className="mt-4 grid gap-3 min-[900px]:grid-cols-2">
         <div className="rounded-lg border border-border bg-muted p-4">
           <h3 className="font-bold text-primary">云海</h3>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">{view.cloudSeaDefinition}</p>
@@ -624,7 +635,7 @@ function CloudSeaVsWhiteoutSection({ view }: { readonly view: CloudSeaVsWhiteout
           <p className="mt-2 text-sm leading-6 text-muted-foreground">{view.whiteoutDefinition}</p>
         </div>
       </div>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+      <div className="mt-3 grid gap-3 min-[900px]:grid-cols-2">
         {view.indicators.map((item) => (
           <CloudSeaIndicatorCard key={item.key} item={item} />
         ))}
@@ -660,7 +671,7 @@ function CloudSeaTimeWindowSection({
         {windows.map((window) => (
           <article
             key={window.key}
-            className="grid gap-3 rounded-lg border border-border bg-muted p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+            className="grid gap-3 rounded-lg border border-border bg-muted p-4 min-[900px]:grid-cols-[minmax(0,1fr)_auto] min-[900px]:items-center"
           >
             <div>
               <div className="flex flex-wrap items-center gap-2">
@@ -678,18 +689,20 @@ function CloudSeaTimeWindowSection({
   );
 }
 
-function CloudSeaTerrainSection({
+function CloudSeaTerrainEvidence({
   terrainEvidence,
 }: {
   readonly terrainEvidence: CloudSeaForecastViewModel["terrainEvidence"];
 }) {
   return (
-    <Card className="p-5 shadow-sm">
+    <Card
+      className="CloudSeaTerrainEvidence cloud-sea-terrain-evidence p-4 shadow-sm"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-card-foreground">地形依据</h2>
         <Badge variant="muted">{terrainEvidence.dataSource}</Badge>
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="mt-4 grid gap-3 min-[900px]:grid-cols-2">
         {terrainEvidence.items.map((item) => (
           <article key={item.key} className="rounded-lg border border-border bg-muted p-4">
             <p className="text-xs font-semibold text-muted-foreground">{item.label}</p>
@@ -702,18 +715,20 @@ function CloudSeaTerrainSection({
   );
 }
 
-function CloudSeaWeatherEvidenceSection({
+function CloudSeaWeatherEvidence({
   items,
 }: {
   readonly items: readonly CloudSeaWeatherEvidenceItem[];
 }) {
   return (
-    <Card className="p-5 shadow-sm">
+    <Card
+      className="CloudSeaWeatherEvidence cloud-sea-weather-evidence p-4 shadow-sm"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-card-foreground">气象依据</h2>
         <Badge variant="muted">水汽 / 低云 / 风 / 通透</Badge>
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="mt-4 grid gap-3 min-[900px]:grid-cols-2">
         {items.map((item) => (
           <article key={item.key} className="rounded-lg border border-border bg-muted p-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -734,17 +749,41 @@ function CloudSeaWeatherEvidenceSection({
   );
 }
 
+function CloudSeaActionGrid({
+  result,
+  travelRecommendations,
+  riskSummary,
+  backupPlans,
+}: {
+  readonly result: ForecastCalculationResult;
+  readonly travelRecommendations: readonly CloudSeaTravelRecommendation[];
+  readonly riskSummary: readonly ForecastResultSectionItem[];
+  readonly backupPlans: readonly CloudSeaBackupPlan[];
+}) {
+  return (
+    <section
+      className="cloud-sea-action-grid grid gap-5 min-[900px]:grid-cols-2"
+      data-cloud-sea-section="CloudSeaActionGrid"
+    >
+      <CloudSeaTravelRecommendationSection items={travelRecommendations} />
+      <CloudSeaRiskSummarySection items={riskSummary} />
+      <CloudSeaBackupPlanSection plans={backupPlans} />
+      <CloudSeaDataStatusSection result={result} />
+    </section>
+  );
+}
+
 function CloudSeaTravelRecommendationSection({
   items,
 }: {
   readonly items: readonly CloudSeaTravelRecommendation[];
 }) {
   return (
-    <Card className="p-5 shadow-sm">
+    <Card className="p-4 shadow-sm">
       <h2 className="text-lg font-bold text-card-foreground">出行建议</h2>
-      <div className="mt-4 grid gap-3">
+      <div className="mt-3 grid gap-3">
         {items.map((item) => (
-          <article key={item.situation} className="rounded-lg border border-border bg-muted p-4">
+          <article key={item.situation} className="rounded-lg border border-border bg-muted p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="font-bold text-card-foreground">{item.situation}</h3>
               <Badge variant={badgeVariantForTone(item.tone)}>{item.action}</Badge>
@@ -763,9 +802,9 @@ function CloudSeaRiskSummarySection({
   readonly items: readonly ForecastResultSectionItem[];
 }) {
   return (
-    <Card className="p-5 shadow-sm">
-      <h2 className="text-lg font-bold text-card-foreground">白墙风险原因</h2>
-      <div className="mt-4 grid gap-3">
+    <Card className="p-4 shadow-sm">
+      <h2 className="text-lg font-bold text-card-foreground">风险提示</h2>
+      <div className="mt-3 grid gap-3">
         {items.map((item, index) => (
           <article
             key={`${item.label}-${index}`}
@@ -785,11 +824,11 @@ function CloudSeaRiskSummarySection({
 
 function CloudSeaBackupPlanSection({ plans }: { readonly plans: readonly CloudSeaBackupPlan[] }) {
   return (
-    <Card className="p-5 shadow-sm">
+    <Card className="p-4 shadow-sm">
       <h2 className="text-lg font-bold text-card-foreground">备选拍摄方案</h2>
-      <div className="mt-4 grid gap-3">
+      <div className="mt-3 grid gap-3">
         {plans.map((plan) => (
-          <article key={plan.condition} className="rounded-lg border border-border bg-muted p-4">
+          <article key={plan.condition} className="rounded-lg border border-border bg-muted p-3">
             <p className="text-xs font-semibold text-muted-foreground">{plan.condition}</p>
             <h3 className="mt-2 font-bold text-card-foreground">{plan.action}</h3>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">{plan.detail}</p>
@@ -802,22 +841,18 @@ function CloudSeaBackupPlanSection({ plans }: { readonly plans: readonly CloudSe
 
 function CloudSeaDataStatusSection({
   result,
-  dataNotice,
-  missingDataNotes,
 }: {
   readonly result: ForecastCalculationResult;
-  readonly dataNotice: string;
-  readonly missingDataNotes: readonly string[];
 }) {
   return (
-    <Card className="p-5 shadow-sm">
+    <Card className="p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-card-foreground">数据状态</h2>
         <Badge variant={result.weatherDataMode === "real" ? "success" : "warning"}>
           {weatherModeBadge(result)}
         </Badge>
       </div>
-      <dl className="mt-4 grid gap-3 text-sm">
+      <dl className="mt-3 grid gap-2 text-sm">
         <CompactDefinition label="天气数据" value={weatherStatusLabel(result)} />
         <CompactDefinition label="地形数据" value={result.terrainAnalysis.dataSourceLabelZh} />
         <CompactDefinition label="天文数据" value="本地算法计算" />
@@ -826,19 +861,28 @@ function CloudSeaDataStatusSection({
           value={formatWgs84Coordinates(result.calendarBasis)}
         />
       </dl>
-      <p className="mt-4 rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground">
-        {dataNotice}
+      <p className="mt-3 rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground">
+        天气数据：{weatherStatusLabel(result)}；地形数据：
+        {result.terrainAnalysis.dataSourceLabelZh}；正式数据源启用后将显示对应来源与更新时间。
       </p>
-      {missingDataNotes.length > 0 ? (
-        <div className="mt-3 rounded-lg border border-warning/30 bg-warning/10 p-3">
-          <p className="text-xs font-semibold text-card-foreground">数据缺失说明</p>
-          <ul className="mt-2 grid gap-1 text-xs leading-5 text-muted-foreground">
-            {missingDataNotes.map((note) => (
-              <li key={note}>{note}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+    </Card>
+  );
+}
+
+function CloudSeaMissingDataSection({ notes }: { readonly notes: readonly string[] }) {
+  return (
+    <Card className="p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-card-foreground">数据缺失说明</h2>
+        <Badge variant="warning">需复核</Badge>
+      </div>
+      <ul className="mt-3 grid gap-2 text-sm leading-6 text-muted-foreground">
+        {notes.map((note) => (
+          <li key={note} className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
+            {note}
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }

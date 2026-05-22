@@ -11,6 +11,11 @@ type PopularScenarioSpot = {
   readonly tag: string;
 };
 
+type ScenarioLearningItem = {
+  readonly title: string;
+  readonly description: string;
+};
+
 export type ScenarioPageConfig = {
   readonly title: string;
   readonly subtitle: string;
@@ -23,12 +28,14 @@ export type ScenarioPageConfig = {
   readonly featurePoints: readonly string[];
   readonly infoTitle: string;
   readonly infoItems: readonly string[];
-  readonly popularTitle: string;
-  readonly popularSpots: readonly PopularScenarioSpot[];
+  readonly popularTitle?: string;
+  readonly popularSpots?: readonly PopularScenarioSpot[];
+  readonly learningTitle?: string;
+  readonly learningItems?: readonly ScenarioLearningItem[];
 };
 
 export const scenarioDataNotice =
-  "当前为体验模式，结果使用演示天气数据生成。";
+  "当前为体验模式，天气与地形结果使用演示数据生成；正式数据源启用后将显示对应来源与更新时间。";
 
 export function ScenarioModulePage({ config }: { readonly config: ScenarioPageConfig }) {
   return (
@@ -55,58 +62,158 @@ export function ScenarioModulePage({ config }: { readonly config: ScenarioPageCo
       </header>
 
       <section className="grid gap-5 min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(340px,24vw,410px)_minmax(0,1fr)_clamp(320px,22vw,380px)] min-[1200px]:items-start">
-        <ScenarioSearchPanel config={config} />
-
-        <div className="grid gap-5">
-          <ScenarioInfoCard
-            title={config.focusTitle}
-            description={config.focusDescription}
-            items={config.focusItems}
-            tone="primary"
-          />
-          <ScenarioFeatureGrid title={`${config.title}核心指标`} items={config.featurePoints} />
-          <section className="grid gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-primary">机位参考</p>
-                <h2 className="mt-1 text-xl font-bold text-foreground">{config.popularTitle}</h2>
-              </div>
-              <Badge variant="warning">机位参考</Badge>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              {config.popularSpots.map((spot) => (
-                <Card key={spot.name} className="grid gap-3 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <h3 className="text-base font-bold text-card-foreground">{spot.name}</h3>
-                      <p className="mt-1 text-xs text-muted-foreground">{spot.province}</p>
-                    </div>
-                    <Badge variant="muted">{spot.tag}</Badge>
-                  </div>
-                  <p className="text-sm leading-6 text-muted-foreground">{spot.reason}</p>
-                </Card>
-              ))}
-            </div>
-          </section>
-        </div>
-
-        <aside className="grid content-start gap-4 min-[1200px]:sticky min-[1200px]:top-[88px]">
-          <ScenarioInfoCard
-            title={config.infoTitle}
-            description="结果页会把该题材相关窗口和风险前置展示，便于快速判断是否值得等待。"
-            items={config.infoItems}
-            tone="accent"
-          />
-          <Card className="border-warning p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="warning">数据提醒</Badge>
-              <p className="text-sm font-bold text-card-foreground">当前为体验模式</p>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">{scenarioDataNotice}</p>
-          </Card>
-        </aside>
+        {config.learningItems ? (
+          <ScenarioLearningPageContent config={config} />
+        ) : (
+          <ScenarioStandardPageContent config={config} />
+        )}
       </section>
     </PublicShell>
+  );
+}
+
+function ScenarioStandardPageContent({ config }: { readonly config: ScenarioPageConfig }) {
+  return (
+    <>
+      <ScenarioSearchPanel config={config} />
+
+      <div className="grid gap-5">
+        <ScenarioInfoCard
+          title={config.focusTitle}
+          description={config.focusDescription}
+          items={config.focusItems}
+          tone="primary"
+        />
+        <ScenarioFeatureGrid title={`${config.title}核心指标`} items={config.featurePoints} />
+        <ScenarioPopularSpotGrid title={config.popularTitle} spots={config.popularSpots} />
+      </div>
+
+      <ScenarioSupportRail config={config} />
+    </>
+  );
+}
+
+function ScenarioLearningPageContent({ config }: { readonly config: ScenarioPageConfig }) {
+  if (!config.learningItems) {
+    return null;
+  }
+
+  return (
+    <>
+      <ScenarioSearchPanel config={config} />
+
+      <div className="grid gap-5 min-[1200px]:col-span-2">
+        <div className="grid gap-5 min-[1200px]:grid-cols-[minmax(0,1fr)_clamp(300px,28vw,360px)] min-[1200px]:items-start">
+          <div className="grid gap-5">
+            <ScenarioInfoCard
+              title={config.focusTitle}
+              description={config.focusDescription}
+              items={config.focusItems}
+              tone="primary"
+            />
+            <ScenarioFeatureGrid title={`${config.title}核心指标`} items={config.featurePoints} />
+          </div>
+
+          <ScenarioSupportRail config={config} />
+        </div>
+
+        <ScenarioLearningGrid
+          title={config.learningTitle ?? "判断需要看什么"}
+          items={config.learningItems}
+        />
+      </div>
+    </>
+  );
+}
+
+function ScenarioSupportRail({ config }: { readonly config: ScenarioPageConfig }) {
+  return (
+    <aside className="grid content-start gap-4 min-[1200px]:sticky min-[1200px]:top-[88px]">
+      <ScenarioInfoCard
+        title={config.infoTitle}
+        description="结果页会把该题材相关窗口和风险前置展示，便于快速判断是否值得等待。"
+        items={config.infoItems}
+        tone="accent"
+      />
+      <Card className="border-warning p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="warning">数据提醒</Badge>
+          <p className="text-sm font-bold text-card-foreground">当前为体验模式</p>
+        </div>
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">{scenarioDataNotice}</p>
+      </Card>
+    </aside>
+  );
+}
+
+function ScenarioPopularSpotGrid({
+  title,
+  spots,
+}: {
+  readonly title?: string;
+  readonly spots?: readonly PopularScenarioSpot[];
+}) {
+  if (!title || !spots || spots.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="grid gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-primary">机位参考</p>
+          <h2 className="mt-1 text-xl font-bold text-foreground">{title}</h2>
+        </div>
+        <Badge variant="warning">机位参考</Badge>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        {spots.map((spot) => (
+          <Card key={spot.name} className="grid gap-3 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h3 className="text-base font-bold text-card-foreground">{spot.name}</h3>
+                <p className="mt-1 text-xs text-muted-foreground">{spot.province}</p>
+              </div>
+              <Badge variant="muted">{spot.tag}</Badge>
+            </div>
+            <p className="text-sm leading-6 text-muted-foreground">{spot.reason}</p>
+          </Card>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ScenarioLearningGrid({
+  title,
+  items,
+}: {
+  readonly title: string;
+  readonly items: readonly ScenarioLearningItem[];
+}) {
+  return (
+    <section className="grid gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-primary">判断方法</p>
+          <h2 className="mt-1 text-xl font-bold text-foreground">{title}</h2>
+        </div>
+        <Badge variant="muted">云海要素</Badge>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        {items.map((item, index) => (
+          <Card key={item.title} className="grid gap-2 p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-bold text-primary">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <h3 className="text-base font-bold text-card-foreground">{item.title}</h3>
+            </div>
+            <p className="text-sm leading-6 text-muted-foreground">{item.description}</p>
+          </Card>
+        ))}
+      </div>
+    </section>
   );
 }
 

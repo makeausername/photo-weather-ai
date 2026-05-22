@@ -1,13 +1,24 @@
-import { describe, expect, it } from "vitest";
+import * as React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vitest";
 import {
   forecastTargetLabels,
   type ForecastCalculationResult,
+  type ForecastQueryInput,
   type ForecastScore,
 } from "@photo-weather/shared";
+import { CloudSeaResultPage } from "./forecast-result-client";
 import {
   buildCloudSeaForecastViewModel,
   buildForecastResultViewModel,
 } from "./forecast-result-view-model";
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/forecast",
+}));
+
+const testGlobal = globalThis as typeof globalThis & { React: typeof React };
+testGlobal.React = React;
 
 function score(key: string, label: string, value: number): ForecastScore {
   return {
@@ -577,6 +588,21 @@ function resultForTarget(target: ForecastCalculationResult["target"]): ForecastC
   };
 }
 
+function queryForTarget(target: ForecastCalculationResult["target"]): ForecastQueryInput {
+  return {
+    name: baseResult.place.name,
+    source: "local_photo_spot",
+    latitudeGcj02: 30.1351,
+    longitudeGcj02: 118.1767,
+    latitudeWgs84: baseResult.calendarBasis.wgs84Coordinates.latitude,
+    longitudeWgs84: baseResult.calendarBasis.wgs84Coordinates.longitude,
+    horizon: baseResult.horizon,
+    target,
+    locationId: "location-huangshan",
+    photoSpotId: "spot-guangmingding",
+  };
+}
+
 describe("forecast result target-aware view model", () => {
   it("uses Simplified Chinese target labels", () => {
     expect(forecastTargetLabels).toMatchObject({
@@ -616,11 +642,13 @@ describe("forecast result target-aware view model", () => {
   it("prioritizes cloud sea and whiteout risk without making astro primary", () => {
     const viewModel = buildForecastResultViewModel(resultForTarget("cloud_sea"), "cloud_sea");
 
+    expect(viewModel.target).toBe("cloud_sea");
+    expect(viewModel.cloudSea).toBeDefined();
     expect(viewModel.primaryCards.map((card) => card.label)).toEqual([
       "云海机会",
       "白墙风险",
-      "最佳清晨窗口",
-      "出行推荐",
+      "最佳云海窗口",
+      "推荐动作",
     ]);
     expect(viewModel.primaryCards.map((card) => card.moduleKey)).not.toContain("stars");
     expect(viewModel.primaryCards.map((card) => card.moduleKey)).not.toContain("milkyWay");
@@ -638,7 +666,6 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.hiddenModuleKeys).toEqual(
       expect.arrayContaining(["stars", "milkyWay", "astronomy"]),
     );
-    expect(viewModel.cloudSea).toBeDefined();
   });
 
   it("builds a specialized cloud sea view model with separated whiteout, terrain, weather, and travel modules", () => {
@@ -647,8 +674,8 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.coreCards.map((card) => card.label)).toEqual([
       "云海机会",
       "白墙风险",
-      "最佳清晨窗口",
-      "出行推荐",
+      "最佳云海窗口",
+      "推荐动作",
     ]);
     expect(viewModel.coreCards.find((card) => card.label === "白墙风险")?.value).toBe("中");
     expect(viewModel.cloudSeaVsWhiteout.cloudSeaDefinition).toContain("机位高于云雾层");
@@ -667,6 +694,79 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.backupPlans.map((plan) => plan.condition)).toEqual(
       expect.arrayContaining(["白墙时", "无云海但通透", "低云过厚", "风大"]),
     );
+  });
+
+  it("renders the cloud sea result without the entry-page popular spots placeholder", () => {
+    const result = resultForTarget("cloud_sea");
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const fetchMock = vi.fn(() => {
+      throw new Error("cloud sea result render should not call external APIs");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      const html = renderToStaticMarkup(
+        React.createElement(CloudSeaResultPage, {
+          query: queryForTarget("cloud_sea"),
+          result,
+          viewModel,
+        }),
+      );
+
+      expect(html).not.toContain("热门云海机位");
+      expect(html).not.toContain("老君山金顶");
+      expect(html).not.toContain("三清山女神峰");
+      expect(html).not.toContain("武功山金顶");
+      expect(html).toContain("云海机会");
+      expect(html).toContain("白墙风险");
+      expect(html).toContain("最佳云海窗口");
+      expect(html).toContain("推荐动作");
+      expect(html).toContain("逐日云海趋势");
+      expect(html).toContain("云海 vs 白墙判断");
+      expect(html).toContain("地形依据");
+      expect(html).toContain("气象依据");
+      expect(html).toContain("出行建议");
+      expect(html).toContain("备选拍摄方案");
+      expect(html).toContain("天气数据：演示数据");
+      expect(html).toContain("地形数据：演示数据");
+      expect(html).toContain("正式数据源启用后将显示对应来源与更新时间");
+      expect(html).toContain("CloudSeaResultPage");
+      expect(html).toContain("CloudSeaCoreDecision");
+      expect(html).toContain("CloudSeaDailyTrend");
+      expect(html).toContain("CloudSeaWhiteoutSection");
+      expect(html).toContain("CloudSeaTerrainEvidence");
+      expect(html).toContain("CloudSeaWeatherEvidence");
+      expect(html).toContain("CloudSeaStackedLayout");
+      expect(html).toContain("CloudSeaActionGrid");
+      expect(html).not.toContain("CloudSeaAdviceRail");
+      expect(html).not.toContain("cloud-sea-advice-rail");
+      expect(html).not.toContain("CloudSeaFullWidthDetails");
+      expect(html).not.toContain("cloud-sea-full-width-details");
+      expect(html).not.toContain("<aside");
+      expect(html).not.toMatch(/cloud-sea-(placeholder|spacer|empty)/i);
+      expect(html).not.toMatch(/\bmin-h-/);
+      expect(html).not.toContain("row-span");
+      expect(html).not.toContain("min-[1024px]:col-span-4");
+      expect(html.indexOf("逐日云海趋势")).toBeLessThan(html.indexOf("云海 vs 白墙判断"));
+      expect(html.indexOf("云海 vs 白墙判断")).toBeLessThan(html.indexOf("云海时间窗口"));
+      expect(html.indexOf("云海时间窗口")).toBeLessThan(html.indexOf("地形依据"));
+      expect(html.indexOf("地形依据")).toBeLessThan(html.indexOf("气象依据"));
+      expect(html.indexOf("气象依据")).toBeLessThan(html.indexOf("CloudSeaActionGrid"));
+
+      const actionGridIndex = html.indexOf("CloudSeaActionGrid");
+      const travelAdviceIndex = html.indexOf("出行建议", actionGridIndex);
+      const riskSummaryIndex = html.indexOf("风险提示", actionGridIndex);
+      const backupPlanIndex = html.indexOf("备选拍摄方案", actionGridIndex);
+      const dataStatusIndex = html.indexOf("数据状态", actionGridIndex);
+
+      expect(travelAdviceIndex).toBeGreaterThan(actionGridIndex);
+      expect(travelAdviceIndex).toBeLessThan(riskSummaryIndex);
+      expect(riskSummaryIndex).toBeLessThan(backupPlanIndex);
+      expect(backupPlanIndex).toBeLessThan(dataStatusIndex);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("does not prioritize astro or Milky Way modules in the specialized cloud sea model", () => {

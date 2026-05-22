@@ -20,33 +20,29 @@ export const cloudSeaScenarioConfig = {
   infoItems: [
     "低云过厚且湿度过高时，山顶可能直接被云雾包裹。",
     "风速偏大时云雾层容易被打散，窗口可能很短。",
-    "当前为体验模式，结果使用演示天气数据生成；正式数据源启用后再用于出行前复核。",
+    "当前为体验模式，天气与地形结果使用演示数据生成；正式数据源启用后将显示对应来源与更新时间。",
   ],
-  popularTitle: "热门云海机位",
-  popularSpots: [
+  learningTitle: "云海判断需要看什么",
+  learningItems: [
     {
-      name: "黄山光明顶",
-      province: "安徽",
-      reason: "高海拔观景平台，适合观察雨后转晴、山谷云雾抬升和日出云海。",
-      tag: "高山云海",
+      title: "云海机会",
+      description: "湿度、露点差、低云和地形高差共同影响云海形成。",
     },
     {
-      name: "老君山金顶",
-      province: "河南",
-      reason: "山体高差明显，冬季和雨后常见低云、雾凇与金顶建筑层次。",
-      tag: "山巅建筑",
+      title: "白墙风险",
+      description: "低云过厚、能见度过低时，机位可能被云雾包裹。",
     },
     {
-      name: "三清山女神峰",
-      province: "江西",
-      reason: "峰林地形适合观察云雾穿行，但需要关注低云遮挡和能见度变化。",
-      tag: "峰林云雾",
+      title: "最佳清晨窗口",
+      description: "云海通常重点关注日出前后窗口。",
     },
     {
-      name: "武功山金顶",
-      province: "江西",
-      reason: "草甸山脊与山谷高差明显，清晨云雾窗口和风速变化都需要重点观察。",
-      tag: "草甸云海",
+      title: "地形高差",
+      description: "高机位和山谷高差越明显，越利于俯拍云海。",
+    },
+    {
+      title: "风速与稳定性",
+      description: "风太大容易打散云层，风太弱可能增加白墙风险。",
     },
   ],
 } satisfies ScenarioPageConfig;
