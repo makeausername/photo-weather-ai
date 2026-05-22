@@ -122,7 +122,8 @@ export const providerFieldPresets = [
   },
   {
     providerCode: "qweather",
-    helpText: "用于后续天气数据获取，当前不会在本地测试中触发真实调用。",
+    helpText:
+      "中国大陆主天气源；部分云层分层字段可能不可用。当前本地自动化仅使用和风天气样例数据，不触发真实调用。",
     fields: [
       {
         key: "apiKey",
@@ -141,7 +142,7 @@ export const providerFieldPresets = [
   },
   {
     providerCode: "open_meteo",
-    helpText: "用于后续云层细分和多模型交叉验证，当前不会在本地测试中触发真实调用。",
+    helpText: "云层分层与能见度辅助源；当前本地仅使用 Open-Meteo 样例数据，不触发真实调用。",
     fields: [
       {
         key: "apiKey",

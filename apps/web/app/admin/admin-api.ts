@@ -116,7 +116,7 @@ export type AdminAuditLog = {
 
 export type MockConnectionTestResult = {
   readonly success: boolean;
-  readonly mode: "mock" | "real";
+  readonly mode: "mock" | "fixture" | "real";
   readonly providerType?: string;
   readonly providerCode?: string;
   readonly message: string;

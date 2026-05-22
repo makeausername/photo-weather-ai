@@ -92,7 +92,9 @@ describe("forecast query validation route", () => {
       isMock: true,
       dataNotice:
         "天气数据：本地模拟数据；地形数据：本地模拟地形数据，真实 DEM / 海拔数据将在后续接入；天文数据：本地算法按 WGS84 坐标计算。当前结果不代表真实预报。",
-      dataSourceLabel: "模拟天气数据",
+      dataSourceLabel: "本地模拟数据",
+      weatherDataMode: "mock",
+      weatherNoticeZh: "天气数据：本地模拟数据",
     });
     expect(body.terrainAnalysis).toMatchObject({
       dataSource: "mock_terrain",
@@ -106,6 +108,9 @@ describe("forecast query validation route", () => {
       },
     });
     expect(body.overallScore).toEqual(expect.any(Number));
+    expect(body.forecastStart).toBe(body.calendarBasis.forecastStart);
+    expect(body.forecastEnd).toBe(body.calendarBasis.forecastEnd);
+    expect(body.targetDates).toEqual(body.calendarBasis.targetDates);
     expect(body.scores).toMatchObject({
       sunriseGlow: {
         label: "朝霞",
@@ -141,6 +146,13 @@ describe("forecast query validation route", () => {
       sunrise: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+08:00$/),
       sunset: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+08:00$/),
       moonPhaseNameZh: expect.stringMatching(/新月|娥眉月|上弦月|盈凸月|满月|亏凸月|下弦月|残月/),
+      waxingOrWaning: expect.stringMatching(/waxing|waning|unknown/),
+      lunarDateText: expect.any(String),
+      calculationNoteZh:
+        "月相基于本地天文算法计算；农历日期基于本地历法库生成。实际观星仍需结合云量、光污染和地形遮挡。",
+      moonInfo: {
+        lunarDateText: expect.any(String),
+      },
       milkyWayNoteZh:
         "银河窗口为本地天文算法初步估算，实际拍摄仍需结合云量、月光、光污染和地形遮挡。",
     });
@@ -151,6 +163,8 @@ describe("forecast query validation route", () => {
     expect(body.astroSummaries[0].moonIllumination).toBeLessThanOrEqual(1);
     expect(Object.keys(body.astroSummaries[0].moonAltitudeByHour)).toHaveLength(24);
     expect(body.bestWindows.length).toBeGreaterThan(0);
+    expect(body.dailySummaries.length).toBeGreaterThanOrEqual(2);
+    expect(body.targetDailyBreakdown.length).toBeGreaterThanOrEqual(2);
     expect(body.calendarBasis).toMatchObject({
       timezone: "Asia/Shanghai",
       timezoneLabel: "Asia/Shanghai（中国标准时间）",
@@ -167,6 +181,38 @@ describe("forecast query validation route", () => {
     });
     expect(body.keyReasons.length).toBeGreaterThan(0);
     expect(body.photographyAdvice.length).toBeGreaterThan(0);
+  });
+
+  it("returns multi-day windows for a 7 day astro calculation without real network calls", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("real network calls are disabled in forecast tests");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    app = buildApiServer({ authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        horizon: "7d",
+        target: "astro",
+      },
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(body.targetDates.length).toBeGreaterThanOrEqual(7);
+    expect(body.dailySummaries.length).toBeGreaterThanOrEqual(7);
+    expect(
+      body.bestWindows.filter((window: { label: string }) => window.label.startsWith("天文黑夜"))
+        .length,
+    ).toBeGreaterThan(1);
+    expect(
+      body.bestWindows.filter((window: { label: string }) => window.label.startsWith("银河窗口"))
+        .length,
+    ).toBeGreaterThan(1);
   });
 
   it("can return a rule-based explanation from calculate without DeepSeek", async () => {

@@ -32,6 +32,9 @@ const baseResult: ForecastCalculationResult = {
   },
   horizon: "48h",
   target: "general",
+  forecastStart: "2026-05-20T00:00:00+08:00",
+  forecastEnd: "2026-05-22T00:00:00+08:00",
+  targetDates: ["2026-05-20", "2026-05-21"],
   calendarBasis: {
     forecastStart: "2026-05-20T00:00:00+08:00",
     forecastEnd: "2026-05-22T00:00:00+08:00",
@@ -129,43 +132,224 @@ const baseResult: ForecastCalculationResult = {
       moonPhase: 0.18,
       moonPhaseNameZh: "娥眉月",
       moonIllumination: 0.24,
+      waxingOrWaning: "waxing",
+      lunarDateText: "四月初四",
       moonrise: "2026-05-20T08:40:00+08:00",
       moonset: "2026-05-20T22:35:00+08:00",
+      calculationNoteZh:
+        "月相基于本地天文算法计算；农历日期基于本地历法库生成。实际观星仍需结合云量、光污染和地形遮挡。",
+      moonInfo: {
+        moonPhase: 0.18,
+        moonPhaseNameZh: "娥眉月",
+        moonIllumination: 0.24,
+        waxingOrWaning: "waxing",
+        lunarDateText: "四月初四",
+        moonrise: "2026-05-20T08:40:00+08:00",
+        moonset: "2026-05-20T22:35:00+08:00",
+        calculationNoteZh:
+          "月相基于本地天文算法计算；农历日期基于本地历法库生成。实际观星仍需结合云量、光污染和地形遮挡。",
+      },
       milkyWayWindowStart: "2026-05-21T01:10:00+08:00",
       milkyWayWindowEnd: "2026-05-21T03:30:00+08:00",
       milkyWayDirection: "东南至南方",
       milkyWayVisibilityLevel: "fair",
       milkyWayNoteZh: "银河窗口为本地天文算法初步估算。",
     },
+    {
+      date: "2026-05-21",
+      timezone: "Asia/Shanghai",
+      sunrise: "2026-05-21T05:14:00+08:00",
+      sunset: "2026-05-21T18:57:00+08:00",
+      solarNoon: "2026-05-21T12:05:00+08:00",
+      civilDawn: "2026-05-21T04:49:00+08:00",
+      civilDusk: "2026-05-21T19:22:00+08:00",
+      nauticalDawn: "2026-05-21T04:19:00+08:00",
+      nauticalDusk: "2026-05-21T19:53:00+08:00",
+      astronomicalDawn: "2026-05-21T03:47:00+08:00",
+      astronomicalDusk: "2026-05-21T20:25:00+08:00",
+      astronomicalNightStart: "2026-05-21T20:25:00+08:00",
+      astronomicalNightEnd: "2026-05-22T03:47:00+08:00",
+      moonPhase: 0.22,
+      moonPhaseNameZh: "娥眉月",
+      moonIllumination: 0.31,
+      waxingOrWaning: "waxing",
+      lunarDateText: "四月初五",
+      moonrise: "2026-05-21T09:35:00+08:00",
+      moonset: "2026-05-21T23:20:00+08:00",
+      calculationNoteZh:
+        "月相基于本地天文算法计算；农历日期基于本地历法库生成。实际观星仍需结合云量、光污染和地形遮挡。",
+      moonInfo: {
+        moonPhase: 0.22,
+        moonPhaseNameZh: "娥眉月",
+        moonIllumination: 0.31,
+        waxingOrWaning: "waxing",
+        lunarDateText: "四月初五",
+        moonrise: "2026-05-21T09:35:00+08:00",
+        moonset: "2026-05-21T23:20:00+08:00",
+        calculationNoteZh:
+          "月相基于本地天文算法计算；农历日期基于本地历法库生成。实际观星仍需结合云量、光污染和地形遮挡。",
+      },
+      milkyWayWindowStart: "2026-05-22T01:05:00+08:00",
+      milkyWayWindowEnd: "2026-05-22T03:20:00+08:00",
+      milkyWayDirection: "东南至南方",
+      milkyWayVisibilityLevel: "good",
+      milkyWayNoteZh: "银河窗口为本地天文算法初步估算。",
+    },
   ],
   bestWindows: [
     {
-      label: "云海 05:00 - 07:00",
+      label: "清晨云海窗口 05:00 - 07:00",
+      date: "2026-05-20",
       startTime: "2026-05-20T05:00:00+08:00",
       endTime: "2026-05-20T07:00:00+08:00",
       score: 82,
       target: "cloud_sea",
     },
     {
-      label: "晚霞 17:56 - 19:41",
+      label: "清晨云海窗口 05:10 - 07:10",
+      date: "2026-05-21",
+      startTime: "2026-05-21T05:10:00+08:00",
+      endTime: "2026-05-21T07:10:00+08:00",
+      score: 78,
+      target: "cloud_sea",
+    },
+    {
+      label: "晚霞窗口 17:56 - 19:41",
+      date: "2026-05-20",
       startTime: "2026-05-20T17:56:00+08:00",
       endTime: "2026-05-20T19:41:00+08:00",
       score: 74,
       target: "glow",
     },
     {
-      label: "朝霞 04:30 - 06:15",
+      label: "朝霞窗口 04:30 - 06:15",
+      date: "2026-05-20",
       startTime: "2026-05-20T04:30:00+08:00",
       endTime: "2026-05-20T06:15:00+08:00",
       score: 70,
       target: "glow",
     },
     {
-      label: "银河 01:10 - 03:30",
+      label: "天文黑夜 20:24 - 03:48",
+      date: "2026-05-20",
+      startTime: "2026-05-20T20:24:00+08:00",
+      endTime: "2026-05-21T03:48:00+08:00",
+      score: 69,
+      target: "astro",
+    },
+    {
+      label: "银河窗口 01:10 - 03:30",
+      date: "2026-05-20",
       startTime: "2026-05-21T01:10:00+08:00",
       endTime: "2026-05-21T03:30:00+08:00",
       score: 68,
       target: "astro",
+    },
+    {
+      label: "银河窗口 01:05 - 03:20",
+      date: "2026-05-21",
+      startTime: "2026-05-22T01:05:00+08:00",
+      endTime: "2026-05-22T03:20:00+08:00",
+      score: 72,
+      target: "astro",
+    },
+  ],
+  dailySummaries: [
+    {
+      date: "2026-05-20",
+      dateLabelZh: "2026年5月20日 星期三",
+      lunarDateText: "四月初四",
+      score: 78,
+      recommendationLabel: "值得等待",
+      target: "general",
+      keyWindows: [],
+      riskFlags: [],
+      shortAdvice: "当天有可优先关注的拍摄窗口。",
+    },
+    {
+      date: "2026-05-21",
+      dateLabelZh: "2026年5月21日 星期四",
+      lunarDateText: "四月初五",
+      score: 76,
+      recommendationLabel: "值得等待",
+      target: "general",
+      keyWindows: [],
+      riskFlags: [],
+      shortAdvice: "当天有可优先关注的拍摄窗口。",
+    },
+  ],
+  targetDailyBreakdown: [
+    {
+      date: "2026-05-20",
+      cloudSea: {
+        label: "清晨云海机会",
+        score: 82,
+        detail: "清晨湿度、低云、风速、露点差和地形落差共同影响云海形成。",
+      },
+      whiteoutRisk: {
+        label: "白墙风险",
+        score: 58,
+        detail: "清晨低云约 52%，湿度约 86%，能见度约 14 公里。",
+      },
+      sunriseGlow: {
+        label: "朝霞机会",
+        score: 70,
+        detail: "朝霞窗口可用。",
+      },
+      sunsetGlow: {
+        label: "晚霞机会",
+        score: 74,
+        detail: "晚霞窗口可用。",
+      },
+      stars: {
+        label: "每晚观星条件",
+        score: 66,
+        detail: "天文黑夜内云量和月光可控。",
+      },
+      milkyWay: {
+        label: "银河窗口",
+        score: 68,
+        detail: "银河窗口为本地算法初步估算。",
+      },
+      transparency: {
+        label: "通透度",
+        score: 72,
+        detail: "能见度较好。",
+      },
+      astroSummary: undefined,
+      terrainSummary: "本地模拟地形显示山顶与周边谷地高差明显。",
+      weatherSummary: "多云间晴，山地局部有雾",
+    },
+    {
+      date: "2026-05-21",
+      cloudSea: {
+        label: "清晨云海机会",
+        score: 78,
+        detail: "清晨云海窗口仍可关注。",
+      },
+      whiteoutRisk: {
+        label: "白墙风险",
+        score: 52,
+        detail: "白墙风险中等。",
+      },
+      stars: {
+        label: "每晚观星条件",
+        score: 70,
+        detail: "夜间窗口可关注。",
+      },
+      milkyWay: {
+        label: "银河窗口",
+        score: 72,
+        detail: "第二晚银河窗口可用。",
+      },
+      transparency: {
+        label: "通透度",
+        score: 70,
+        detail: "能见度较好。",
+      },
+      astroSummary: undefined,
+      terrainSummary: "本地模拟地形显示山顶与周边谷地高差明显。",
+      weatherSummary: "多云间晴，山地局部有雾",
     },
   ],
   riskFlags: [
@@ -181,14 +365,21 @@ const baseResult: ForecastCalculationResult = {
   dataNotice:
     "当前天气数据和地形数据为本地模拟数据，天文数据由本地算法按 WGS84 坐标计算；整体结果仍不代表真实预报。",
   isMock: true,
-  dataSourceLabel: "模拟天气数据",
+  dataSourceLabel: "本地模拟数据",
   generatedAt: "2026-05-20T00:00:00+08:00",
+  weatherProviderCode: "mock",
+  weatherProviderLabelZh: "本地模拟数据",
+  weatherDataMode: "mock",
+  weatherNoticeZh: "天气数据：本地模拟数据",
+  weatherMissingFields: [],
+  weatherEstimatedFields: [],
 };
 
 function resultForTarget(target: ForecastCalculationResult["target"]): ForecastCalculationResult {
   return {
     ...baseResult,
     target,
+    dailySummaries: baseResult.dailySummaries.map((summary) => ({ ...summary, target })),
   };
 }
 
@@ -244,14 +435,11 @@ describe("forecast result target-aware view model", () => {
       "whiteoutRisk",
       "transparency",
     ]);
-    expect(viewModel.bestWindows.map((window) => window.target)).toEqual(["cloud_sea"]);
+    expect(viewModel.bestWindows.length).toBeGreaterThan(1);
+    expect(viewModel.bestWindows.every((window) => window.target === "cloud_sea")).toBe(true);
+    expect(viewModel.windowGroups.length).toBeGreaterThan(1);
     expect(viewModel.detailSections.map((section) => section.title)).toEqual(
-      expect.arrayContaining([
-        "地形与海拔参考",
-        "山谷高差",
-        "云海地形潜力",
-        "白墙风险辅助判断",
-      ]),
+      expect.arrayContaining(["地形与海拔参考", "山谷高差", "云海地形潜力", "白墙风险辅助判断"]),
     );
     expect(viewModel.hiddenModuleKeys).toEqual(
       expect.arrayContaining(["stars", "milkyWay", "astronomy"]),
@@ -298,13 +486,21 @@ describe("forecast result target-aware view model", () => {
     ]);
     expect(viewModel.detailSections.map((section) => section.title)).toEqual(
       expect.arrayContaining([
-        "月相与月亮照明",
+        "每晚观星条件",
+        "月相 / 月亮照明",
         "天文黑夜",
-        "银河方向 / 银河窗口",
+        "银河窗口",
         "银河方向遮挡",
         "地平线遮挡提示",
         "山体遮挡风险",
       ]),
+    );
+    const moonSection = viewModel.detailSections.find((section) => section.key === "moon-phase");
+    expect(moonSection?.items).toHaveLength(2);
+    expect(JSON.stringify(moonSection)).toContain("农历日期");
+    expect(JSON.stringify(moonSection)).toContain("四月初五");
+    expect(JSON.stringify(moonSection)).toContain(
+      "月相基于本地天文算法计算；农历日期基于本地历法库生成",
     );
     expect(viewModel.scoreCards.map((card) => card.key)).toEqual([
       "stars",
@@ -314,6 +510,7 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.bestWindows[0]?.moduleKey).toBe("astronomicalNight");
     expect(viewModel.bestWindows.map((window) => window.moduleKey)).toContain("milkyWay");
     expect(viewModel.bestWindows.map((window) => window.moduleKey)).not.toContain("cloudSea");
+    expect(viewModel.windowGroups.length).toBeGreaterThan(1);
   });
 
   it("keeps data-source honesty in the shaped notice", () => {
@@ -324,5 +521,30 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.dataNotice).toContain("真实 DEM / 海拔数据将在后续接入");
     expect(viewModel.dataNotice).toContain("天文数据：本地算法计算");
     expect(viewModel.dataNotice).toContain("不代表真实预报");
+  });
+
+  it("shows a compact note when cloud layer fields are missing", () => {
+    const viewModel = buildForecastResultViewModel(
+      {
+        ...resultForTarget("glow"),
+        weatherDataMode: "fixture",
+        weatherProviderCode: "qweather",
+        weatherProviderLabelZh: "和风天气样例数据",
+        dataSourceLabel: "和风天气样例数据",
+        weatherNoticeZh: "天气数据：和风天气样例数据",
+        weatherMissingFields: ["cloudLow", "cloudMid", "cloudHigh"],
+      },
+      "glow",
+    );
+
+    expect(viewModel.dataNotice).toContain("天气数据：和风天气样例数据");
+    expect(viewModel.dataNotice).toContain(
+      "当前天气源缺少低云/中云/高云分层数据，相关判断将降低置信度。",
+    );
+    expect(
+      viewModel.detailSections.some((section) =>
+        section.items.some((item) => item.detail.includes("低云/中云/高云分层数据")),
+      ),
+    ).toBe(true);
   });
 });

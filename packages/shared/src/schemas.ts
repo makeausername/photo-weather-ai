@@ -54,6 +54,7 @@ export const forecastQueryInputSchema = z.object({
 
 const nullableFiniteNumberSchema = z.number().finite().nullable();
 const nullablePercentSchema = z.number().finite().min(0).max(100).nullable();
+const weatherFieldListSchema = z.array(z.string().trim().min(1)).optional();
 
 export const normalizedHourlyWeatherSchema = z.object({
   time: z.string().datetime({ offset: true }),
@@ -75,6 +76,8 @@ export const normalizedHourlyWeatherSchema = z.object({
   weatherCode: z.string().trim().min(1).nullable(),
   providerCode: z.string().trim().min(1),
   sourceConfidence: z.number().finite().min(0).max(1).nullable(),
+  missingFields: weatherFieldListSchema,
+  estimatedFields: weatherFieldListSchema,
   sourceNotes: z.array(z.string().trim().min(1)).optional(),
 });
 
@@ -86,4 +89,7 @@ export const normalizedDailyWeatherSchema = z.object({
   weatherSummary: z.string().trim().min(1),
   sunrise: z.string().datetime({ offset: true }).optional(),
   sunset: z.string().datetime({ offset: true }).optional(),
+  providerCode: z.string().trim().min(1),
+  missingFields: weatherFieldListSchema,
+  estimatedFields: weatherFieldListSchema,
 });

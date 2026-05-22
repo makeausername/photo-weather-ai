@@ -7,11 +7,14 @@ import {
   getSunTimes,
   getTwilightTimes,
 } from "./calculations.js";
+import { buildMoonCalendarMonth } from "./moon-calendar.js";
 import type {
   AstroInput,
   AstroProvider,
   MilkyWayWindow,
   MoonAltitudeByHour,
+  MoonCalendarMonth,
+  MoonCalendarMonthInput,
   MoonIllumination,
   MoonPhase,
   MoonTimes,
@@ -34,6 +37,10 @@ export class LocalAstroProvider implements AstroProvider {
 
   async getMoonIllumination(input: AstroInput): Promise<MoonIllumination> {
     return getMoonIllumination(input);
+  }
+
+  async getMoonCalendarMonth(input: MoonCalendarMonthInput): Promise<MoonCalendarMonth> {
+    return buildMoonCalendarMonth(input);
   }
 
   async getMoonTimes(input: AstroInput): Promise<MoonTimes> {

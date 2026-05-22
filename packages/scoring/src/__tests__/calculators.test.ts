@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
-import type { ForecastQueryInput, ForecastScore, TerrainAnalysisSummary } from "@photo-weather/shared";
+import type {
+  ForecastCalculationInput,
+  ForecastQueryInput,
+  ForecastScore,
+  NormalizedHourlyWeather,
+  TerrainAnalysisSummary,
+} from "@photo-weather/shared";
+import type { WeatherDataBundle } from "@photo-weather/weather";
 import {
+  buildForecastInputFromWeatherBundle,
   buildMockForecastInput,
   calculateCloudSeaScore,
   calculateForecast,
@@ -60,6 +68,16 @@ function expectForecastScore(score: ForecastScore, label: string): void {
   expect(score.score).toBeLessThanOrEqual(100);
   expect(["poor", "fair", "good", "excellent"]).toContain(score.level);
   expect(score.reasons.length).toBeGreaterThan(0);
+}
+
+function withHourlyWeather(
+  input: ForecastCalculationInput,
+  mapper: (hour: NormalizedHourlyWeather) => NormalizedHourlyWeather,
+): ForecastCalculationInput {
+  return {
+    ...input,
+    hourlyWeather: input.hourlyWeather.map(mapper),
+  };
 }
 
 describe("forecast score calculators", () => {
@@ -166,5 +184,129 @@ describe("forecast score calculators", () => {
       astroResult.recommendationLabel,
     );
     expect(astroResult.summary).toContain("模拟评分");
+  });
+
+  it("builds forecast input from a normalized weather bundle", () => {
+    const baseInput = buildMockForecastInput(baseQuery, { now: fixedNow });
+    const bundle: WeatherDataBundle = {
+      hourly: baseInput.hourlyWeather,
+      daily: baseInput.dailyWeather,
+      alerts: [],
+      providerCode: "open_meteo",
+      providerLabelZh: "Open-Meteo 样例数据",
+      dataMode: "fixture",
+      generatedAt: fixedNow,
+      noticeZh: "天气数据：Open-Meteo 样例数据",
+    };
+    const input = buildForecastInputFromWeatherBundle({ ...baseQuery, target: "glow" }, bundle, {
+      now: fixedNow,
+      terrainAnalysis: baseInput.terrainAnalysis,
+    });
+
+    const result = calculateForecast(input);
+
+    expect(result.weatherDataMode).toBe("fixture");
+    expect(result.weatherNoticeZh).toBe("天气数据：Open-Meteo 样例数据");
+    expect(result.dataSourceLabel).toBe("Open-Meteo 样例数据");
+    expect(result.summary).toContain("样例评分");
+  });
+
+  it("uses humidity, low cloud, wind, dew point, and visibility for cloud sea scoring", () => {
+    const baseInput = buildMockForecastInput(
+      { ...baseQuery, target: "cloud_sea" },
+      { now: fixedNow },
+    );
+    const favorable = withHourlyWeather(baseInput, (hour) => ({
+      ...hour,
+      humidity: 88,
+      cloudLow: 48,
+      windSpeed: 1.8,
+      visibility: 18,
+      dewPoint: hour.temperature - 1.8,
+    }));
+    const unfavorable = withHourlyWeather(baseInput, (hour) => ({
+      ...hour,
+      humidity: 42,
+      cloudLow: 8,
+      windSpeed: 8.5,
+      visibility: 5,
+      dewPoint: hour.temperature - 11,
+    }));
+
+    expect(calculateCloudSeaScore(favorable).score).toBeGreaterThan(
+      calculateCloudSeaScore(unfavorable).score,
+    );
+  });
+
+  it("uses cloud layer fields when available for glow scoring", () => {
+    const baseInput = buildMockForecastInput({ ...baseQuery, target: "glow" }, { now: fixedNow });
+    const layered = withHourlyWeather(baseInput, (hour) => ({
+      ...hour,
+      cloudTotal: 58,
+      cloudLow: 18,
+      cloudMid: 45,
+      cloudHigh: 52,
+      precipitationProbability: 8,
+      visibility: 28,
+      missingFields: [],
+    }));
+    const missingLayers = withHourlyWeather(baseInput, (hour) => ({
+      ...hour,
+      cloudTotal: 58,
+      cloudLow: null,
+      cloudMid: null,
+      cloudHigh: null,
+      precipitationProbability: 8,
+      visibility: 28,
+      missingFields: ["cloudLow", "cloudMid", "cloudHigh"],
+    }));
+
+    expect(calculateSunriseGlowScore(layered).score).toBeGreaterThan(
+      calculateSunriseGlowScore(missingLayers).score,
+    );
+  });
+
+  it("uses cloud, moon, humidity, and visibility for astro scoring", () => {
+    const baseInput = buildMockForecastInput(
+      { ...baseQuery, name: "武功山金顶", target: "astro" },
+      { now: fixedNow },
+    );
+    const clearDark = {
+      ...withHourlyWeather(baseInput, (hour) => ({
+        ...hour,
+        cloudTotal: 10,
+        cloudLow: 4,
+        cloudMid: 6,
+        cloudHigh: 8,
+        humidity: 42,
+        visibility: 34,
+      })),
+      astroSummaries: baseInput.astroSummaries.map((summary) => ({
+        ...summary,
+        moonIllumination: 0.08,
+      })),
+    };
+    const humidMoonlit = {
+      ...withHourlyWeather(baseInput, (hour) => ({
+        ...hour,
+        cloudTotal: 82,
+        cloudLow: 55,
+        cloudMid: 70,
+        cloudHigh: 76,
+        humidity: 88,
+        visibility: 6,
+      })),
+      astroSummaries: baseInput.astroSummaries.map((summary) => ({
+        ...summary,
+        moonIllumination: 0.86,
+      })),
+    };
+
+    expect(calculateStarsScore(clearDark).score).toBeGreaterThan(
+      calculateStarsScore(humidMoonlit).score,
+    );
+    expect(calculateMilkyWayScore(clearDark).score).toBeGreaterThan(
+      calculateMilkyWayScore(humidMoonlit).score,
+    );
   });
 });

@@ -11,7 +11,9 @@ import type {
   Place,
   TerrainAnalysisSummary,
   TerrainSummary,
+  WeatherDataMode,
 } from "@photo-weather/shared";
+import type { WeatherDataBundle } from "@photo-weather/weather";
 import {
   addHoursInTimezone,
   buildForecastDateRange,
@@ -29,7 +31,6 @@ import {
   getAstronomicalNightWindow,
   getMilkyWayWindow,
   getMoonAltitudeByHour,
-  getMoonIllumination,
   getMoonPhase,
   getMoonTimes,
   getSunTimes,
@@ -68,6 +69,12 @@ export type NormalizedForecastInputOptions = {
   readonly dailyWeather: readonly NormalizedDailyWeather[];
   readonly isMock: boolean;
   readonly dataSourceLabel: string;
+  readonly weatherProviderCode?: string;
+  readonly weatherProviderLabelZh?: string;
+  readonly weatherDataMode?: WeatherDataMode;
+  readonly weatherNoticeZh?: string;
+  readonly weatherMissingFields?: readonly string[];
+  readonly weatherEstimatedFields?: readonly string[];
 };
 
 export type ForecastInputBuildOptions = {
@@ -137,6 +144,8 @@ const profiles: readonly MockPlaceProfile[] = [
 ];
 
 const defaultProfile = profiles[0]!;
+const moonCalculationNoteZh =
+  "月相基于本地天文算法计算；农历日期基于本地历法库生成。实际观星仍需结合云量、光污染和地形遮挡。";
 
 export function buildMockForecastInput(
   query: ForecastQueryInput,
@@ -160,12 +169,47 @@ export function buildMockForecastInput(
         longitudeWgs84: query.longitudeWgs84,
       }),
       isMock: true,
-      dataSourceLabel: "模拟天气数据",
+      dataSourceLabel: "本地模拟数据",
+      weatherProviderCode: "mock",
+      weatherProviderLabelZh: "本地模拟数据",
+      weatherDataMode: "mock",
+      weatherNoticeZh: "天气数据：本地模拟数据",
     },
     {
       forecastRange,
       terrainAnalysis: options.terrainAnalysis,
     },
+  );
+}
+
+export function buildForecastInputFromWeatherBundle(
+  query: ForecastQueryInput,
+  weatherBundle: WeatherDataBundle,
+  options: ForecastInputBuildOptions = {},
+): ForecastCalculationInput {
+  return buildForecastInputFromNormalizedWeather(
+    query,
+    {
+      hourlyWeather: weatherBundle.hourly,
+      dailyWeather: weatherBundle.daily,
+      isMock: weatherBundle.dataMode !== "real",
+      dataSourceLabel: weatherBundle.providerLabelZh,
+      weatherProviderCode: weatherBundle.providerCode,
+      weatherProviderLabelZh: weatherBundle.providerLabelZh,
+      weatherDataMode: weatherBundle.dataMode,
+      weatherNoticeZh: weatherBundle.noticeZh,
+      weatherMissingFields: collectWeatherFields(
+        weatherBundle.hourly,
+        weatherBundle.daily,
+        "missingFields",
+      ),
+      weatherEstimatedFields: collectWeatherFields(
+        weatherBundle.hourly,
+        weatherBundle.daily,
+        "estimatedFields",
+      ),
+    },
+    options,
   );
 }
 
@@ -192,6 +236,14 @@ export function buildForecastInputFromNormalizedWeather(
     },
   };
   const generationOptions = { placeName: query.name, target: query.target, forecastRange };
+  const weatherProviderLabelZh = weather.weatherProviderLabelZh ?? weather.dataSourceLabel;
+  const weatherDataMode = weather.weatherDataMode ?? (weather.isMock ? "mock" : "real");
+  const weatherMissingFields =
+    weather.weatherMissingFields ??
+    collectWeatherFields(weather.hourlyWeather, weather.dailyWeather, "missingFields");
+  const weatherEstimatedFields =
+    weather.weatherEstimatedFields ??
+    collectWeatherFields(weather.hourlyWeather, weather.dailyWeather, "estimatedFields");
   const terrainAnalysis =
     options.terrainAnalysis ??
     buildMockTerrainAnalysis({
@@ -219,6 +271,12 @@ export function buildForecastInputFromNormalizedWeather(
     generatedAt: forecastRange.forecastStart,
     isMock: weather.isMock,
     dataSourceLabel: weather.dataSourceLabel,
+    weatherProviderCode: weather.weatherProviderCode ?? (weather.isMock ? "mock" : "unknown"),
+    weatherProviderLabelZh,
+    weatherDataMode,
+    weatherNoticeZh: weather.weatherNoticeZh ?? `天气数据：${weatherProviderLabelZh}`,
+    weatherMissingFields,
+    weatherEstimatedFields,
   };
 }
 
@@ -338,8 +396,30 @@ export function generateMockDailyWeather(
         precipitationProbability >= 45 ? "阵雨间歇，云量偏多" : "多云间晴，山地局部有雾",
       sunrise: sunTimes?.sunrise,
       sunset: sunTimes?.sunset,
+      providerCode: "mock",
     };
   });
+}
+
+function collectWeatherFields(
+  hourlyWeather: readonly NormalizedHourlyWeather[],
+  dailyWeather: readonly NormalizedDailyWeather[],
+  key: "missingFields" | "estimatedFields",
+): readonly string[] {
+  const values = new Set<string>();
+
+  for (const hour of hourlyWeather) {
+    for (const field of hour[key] ?? []) {
+      values.add(field);
+    }
+  }
+  for (const day of dailyWeather) {
+    for (const field of day[key] ?? []) {
+      values.add(field);
+    }
+  }
+
+  return [...values].sort();
 }
 
 export function generateMockTerrainSummary(place: Place): TerrainSummary {
@@ -402,11 +482,23 @@ export function generateLocalAstroSummaries(
     const sunTimes = getSunTimes(astroInput);
     const twilightTimes = getTwilightTimes(astroInput);
     const moonPhase = getMoonPhase(astroInput);
-    const moonIllumination = getMoonIllumination(astroInput);
     const moonTimes = getMoonTimes(astroInput);
     const moonAltitude = getMoonAltitudeByHour(astroInput);
     const astronomicalNight = getAstronomicalNightWindow(astroInput);
     const milkyWayWindow = getMilkyWayWindow(astroInput);
+    const calendarInfo = getChineseCalendarInfo(date, forecastRange.timezone);
+    const moonInfo = {
+      moonPhase: moonPhase.moonPhase,
+      moonPhaseNameZh: moonPhase.moonPhaseNameZh,
+      moonIllumination: moonPhase.moonIllumination,
+      waxingOrWaning: moonPhase.waxingOrWaning,
+      lunarDateText: calendarInfo.lunarDateText,
+      solarTerm: calendarInfo.solarTerm,
+      moonrise: moonTimes.moonrise,
+      moonset: moonTimes.moonset,
+      moonAltitudeByHour: moonAltitude.moonAltitudeByHour,
+      calculationNoteZh: moonCalculationNoteZh,
+    };
 
     return {
       date,
@@ -426,10 +518,15 @@ export function generateLocalAstroSummaries(
       astronomicalNightEnd: astronomicalNight.windowEnd,
       moonPhase: moonPhase.moonPhase,
       moonPhaseNameZh: moonPhase.moonPhaseNameZh,
-      moonIllumination: moonIllumination.moonIllumination,
+      moonIllumination: moonPhase.moonIllumination,
+      waxingOrWaning: moonPhase.waxingOrWaning,
+      lunarDateText: calendarInfo.lunarDateText,
+      solarTerm: calendarInfo.solarTerm,
       moonrise: moonTimes.moonrise,
       moonset: moonTimes.moonset,
       moonAltitudeByHour: moonAltitude.moonAltitudeByHour,
+      calculationNoteZh: moonCalculationNoteZh,
+      moonInfo,
       milkyWayWindowStart: milkyWayWindow.windowStart,
       milkyWayWindowEnd: milkyWayWindow.windowEnd,
       milkyWayBestTime: milkyWayWindow.bestTime,

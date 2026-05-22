@@ -77,7 +77,9 @@ export function buildApiServer(options: ApiServerOptions = {}) {
 
   app.get("/foundation/mock-decision", async () => {
     const place = await geoProvider.geocode("Huangshan");
-    const currentWeather = await weatherProvider.getCurrentWeather(place.coordinates);
+    const currentWeather = await weatherProvider.getCurrentWeather({
+      coordinates: place.coordinates,
+    });
     const decision = await aiProvider.generateDecisionCard({
       place,
       forecastSummary: currentWeather.summary,

@@ -11,14 +11,17 @@ import {
   type ForecastScoreLevel,
 } from "@photo-weather/shared";
 import { PublicShell } from "../../components/public-shell";
+import { MoonPhaseCalendar } from "../../components/moon-phase-calendar";
 import { Badge, Button, Card, cn } from "../../components/ui";
 import {
   buildForecastResultViewModel,
   getForecastResultPageShellCopy,
   type ForecastResultCard,
   type ForecastResultCardTone,
+  type ForecastResultDailyItem,
   type ForecastResultSection,
   type ForecastResultWindow,
+  type ForecastResultWindowGroup,
 } from "./forecast-result-view-model";
 
 type ForecastResultClientProps = {
@@ -312,6 +315,20 @@ function SummaryItem({ label, value }: { readonly label: string; readonly value:
   );
 }
 
+function weatherStatusLabel(result: ForecastCalculationResult): string {
+  return result.weatherNoticeZh.replace(/^天气数据：/, "");
+}
+
+function weatherModeBadge(result: ForecastCalculationResult): string {
+  if (result.weatherDataMode === "real") {
+    return "真实数据源";
+  }
+  if (result.weatherDataMode === "fixture") {
+    return "样例数据";
+  }
+  return "本地模拟数据";
+}
+
 function InvalidQueryCard({ message }: { readonly message?: string }) {
   return (
     <Card className="border-warning p-5 shadow-sm">
@@ -367,15 +384,32 @@ function ForecastResultView({
           </section>
         </Card>
 
+        {viewModel.dailyItems.length > 0 ? (
+          <DailyOverviewPanel
+            title={viewModel.dailyOverviewTitle ?? "逐日判断"}
+            description={viewModel.dailyOverviewDescription ?? "按日期展示主要判断。"}
+            items={viewModel.dailyItems}
+          />
+        ) : null}
+
         <WindowPanel
           title={viewModel.windowsTitle}
           description={viewModel.windowsDescription}
           windows={viewModel.bestWindows}
+          groups={viewModel.windowGroups}
         />
 
         <ScoreCardsPanel title={viewModel.scoreSectionTitle} scores={viewModel.scoreCards} />
 
         <SectionGrid sections={viewModel.detailSections} />
+
+        {query.target === "astro" ? (
+          <MoonPhaseCalendar
+            latitudeWgs84={query.latitudeWgs84}
+            longitudeWgs84={query.longitudeWgs84}
+            timezone={result.calendarBasis.timezone}
+          />
+        ) : null}
       </main>
 
       <aside className="grid content-start gap-4">
@@ -515,14 +549,63 @@ function SectionPanel({
   );
 }
 
+function DailyOverviewPanel({
+  title,
+  description,
+  items,
+}: {
+  readonly title: string;
+  readonly description: string;
+  readonly items: readonly ForecastResultDailyItem[];
+}) {
+  return (
+    <Card className="p-5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-card-foreground">{title}</h2>
+        <Badge variant="muted">逐日判断</Badge>
+      </div>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+      <ul className="mt-4 grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+        {items.map((item) => (
+          <li key={item.key} className="rounded-lg border border-border bg-muted p-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="text-sm font-bold text-card-foreground">{item.dateLabel}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{item.recommendationLabel}</p>
+              </div>
+              <Badge variant={item.score >= 70 ? "default" : "accent"}>{item.score} 分</Badge>
+            </div>
+            <dl className="mt-3 grid gap-2 text-xs leading-5 text-muted-foreground">
+              <div>
+                <dt className="font-semibold text-card-foreground">最佳窗口</dt>
+                <dd className="mt-1">{item.bestWindowLabel}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-card-foreground">主要风险</dt>
+                <dd className="mt-1">{item.riskLabel}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-card-foreground">建议</dt>
+                <dd className="mt-1">{item.shortAdvice}</dd>
+              </div>
+            </dl>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
 function WindowPanel({
   title,
   description,
   windows,
+  groups,
 }: {
   readonly title: string;
   readonly description: string;
   readonly windows: readonly ForecastResultWindow[];
+  readonly groups: readonly ForecastResultWindowGroup[];
 }) {
   return (
     <Card className="p-5 shadow-sm">
@@ -531,28 +614,46 @@ function WindowPanel({
         <Badge variant="muted">目标优先</Badge>
       </div>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
-      {windows.length > 0 ? (
-        <ul className="mt-4 grid gap-3">
-          {windows.map((window) => (
-            <li
-              key={`${window.target}-${window.startTime}`}
-              className="grid gap-2 rounded-lg border border-border bg-muted px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
-            >
-              <div>
-                <p className="font-semibold text-card-foreground">{window.label}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{window.timeRangeLabel}</p>
+      {groups.length > 0 ? (
+        <div className="mt-4 grid gap-4">
+          {groups.map((group) => (
+            <section key={group.key} className="rounded-lg border border-border bg-muted p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-bold text-card-foreground">{group.dateLabel}</h3>
+                <Badge variant="muted">每日窗口</Badge>
               </div>
-              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                <Badge variant="muted">{window.badgeLabel}</Badge>
-                <Badge variant={window.score >= 75 ? "default" : "accent"}>{window.score} 分</Badge>
-              </div>
-            </li>
+              <WindowList windows={group.windows} />
+            </section>
           ))}
-        </ul>
+        </div>
+      ) : windows.length > 0 ? (
+        <WindowList windows={windows} />
       ) : (
         <p className="mt-3 text-sm leading-6 text-muted-foreground">暂无明确高分窗口。</p>
       )}
     </Card>
+  );
+}
+
+function WindowList({ windows }: { readonly windows: readonly ForecastResultWindow[] }) {
+  return (
+    <ul className="mt-4 grid gap-3">
+      {windows.map((window) => (
+        <li
+          key={`${window.target}-${window.startTime}`}
+          className="grid gap-2 rounded-lg border border-border bg-card px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+        >
+          <div>
+            <p className="font-semibold text-card-foreground">{window.label}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{window.timeRangeLabel}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <Badge variant="muted">{window.badgeLabel}</Badge>
+            <Badge variant={window.score >= 75 ? "default" : "accent"}>{window.score} 分</Badge>
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -563,12 +664,12 @@ function MockWarningCard({
   readonly result: ForecastCalculationResult;
   readonly dataNotice: string;
 }) {
+  const nonReal = result.weatherDataMode !== "real" || result.terrainAnalysis.isMock;
+
   return (
-    <Card className={cn("p-4 shadow-sm", result.isMock ? "border-warning" : "")}>
+    <Card className={cn("p-4 shadow-sm", nonReal ? "border-warning" : "")}>
       <div className="flex flex-wrap items-center gap-2">
-        <Badge variant={result.isMock ? "warning" : "success"}>
-          {result.isMock ? "部分模拟数据" : "已接入数据源"}
-        </Badge>
+        <Badge variant={nonReal ? "warning" : "success"}>{weatherModeBadge(result)}</Badge>
         <p className="text-sm font-semibold text-card-foreground">数据提醒</p>
       </div>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">{dataNotice}</p>
@@ -675,17 +776,17 @@ function AiListSection({
 }
 
 function DataStatusPanel({ result }: { readonly result: ForecastCalculationResult }) {
+  const nonReal = result.weatherDataMode !== "real" || result.terrainAnalysis.isMock;
+
   return (
     <Card className="p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-card-foreground">数据状态</h2>
-        <Badge variant={result.isMock ? "warning" : "success"}>
-          {result.isMock ? "部分模拟数据" : "已接入数据源"}
-        </Badge>
+        <Badge variant={nonReal ? "warning" : "success"}>{weatherModeBadge(result)}</Badge>
       </div>
       <dl className="mt-4 grid gap-3 text-sm">
         <SummaryItem label="天文数据" value="本地算法计算" />
-        <SummaryItem label="天气数据" value={result.dataSourceLabel} />
+        <SummaryItem label="天气数据" value={weatherStatusLabel(result)} />
         <SummaryItem label="地形数据" value={result.terrainAnalysis.dataSourceLabelZh} />
         <SummaryItem label="计算基准" value={result.calendarBasis.forecastStartLabel} />
       </dl>
@@ -728,7 +829,7 @@ function CalculationBasisPanel({ result }: { readonly result: ForecastCalculatio
           )}
         />
         <SummaryItem label="天文数据" value="本地算法计算" />
-        <SummaryItem label="天气数据" value={result.dataSourceLabel} />
+        <SummaryItem label="天气数据" value={weatherStatusLabel(result)} />
         <SummaryItem label="地形数据来源" value={result.terrainAnalysis.dataSourceLabelZh} />
       </dl>
 

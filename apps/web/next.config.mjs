@@ -3,6 +3,8 @@ const nextConfig = {
   transpilePackages: [
     "@photo-weather/config",
     "@photo-weather/shared",
+    "@photo-weather/astro",
+    "@photo-weather/calendar",
     "@photo-weather/weather",
     "@photo-weather/geo",
     "@photo-weather/scoring",

@@ -23,6 +23,17 @@ const query: ForecastQueryInput = {
 };
 const fixedNow = "2026-05-20T00:00:00+08:00";
 
+function expectWindowsWithinRange(result: ReturnType<typeof calculateForecast>): void {
+  const forecastStart = Date.parse(result.forecastStart);
+  const forecastEnd = Date.parse(result.forecastEnd);
+
+  for (const window of result.bestWindows) {
+    expect(Date.parse(window.startTime)).toBeGreaterThanOrEqual(forecastStart);
+    expect(Date.parse(window.endTime)).toBeLessThanOrEqual(forecastEnd);
+    expect(Date.parse(window.endTime)).toBeGreaterThan(Date.parse(window.startTime));
+  }
+}
+
 describe("mock forecast input builder", () => {
   it("builds deterministic normalized calculation input", () => {
     const first = buildMockForecastInput(query, { now: fixedNow });
@@ -50,8 +61,18 @@ describe("mock forecast input builder", () => {
     expect(first.astroSummaries[0]).toMatchObject({
       timezone: "Asia/Shanghai",
       moonPhaseNameZh: expect.any(String),
+      waxingOrWaning: expect.stringMatching(/waxing|waning|unknown/),
+      lunarDateText: expect.any(String),
       milkyWayVisibilityLevel: expect.any(String),
+      calculationNoteZh:
+        "月相基于本地天文算法计算；农历日期基于本地历法库生成。实际观星仍需结合云量、光污染和地形遮挡。",
+      moonInfo: {
+        lunarDateText: expect.any(String),
+        calculationNoteZh:
+          "月相基于本地天文算法计算；农历日期基于本地历法库生成。实际观星仍需结合云量、光污染和地形遮挡。",
+      },
     });
+    expect(first.astroSummaries[0]?.lunarDateText).not.toHaveLength(0);
     expect(first.astroSummaries[0]?.moonIllumination).toBeGreaterThanOrEqual(0);
     expect(first.astroSummaries[0]?.moonIllumination).toBeLessThanOrEqual(1);
     expect(Date.parse(first.astroSummaries[0]!.sunrise!)).toBeLessThan(
@@ -115,10 +136,17 @@ describe("mock forecast input builder", () => {
     expect(result.dataNotice).toBe(
       "天气数据：本地模拟数据；地形数据：本地模拟地形数据，真实 DEM / 海拔数据将在后续接入；天文数据：本地算法按 WGS84 坐标计算。当前结果不代表真实预报。",
     );
-    expect(result.dataSourceLabel).toBe("模拟天气数据");
+    expect(result.dataSourceLabel).toBe("本地模拟数据");
+    expect(result.weatherDataMode).toBe("mock");
+    expect(result.weatherNoticeZh).toBe("天气数据：本地模拟数据");
     expect(result.terrainAnalysis.dataSource).toBe("mock_terrain");
     expect(result.scores.cloudSea.label).toBe("云海");
     expect(result.astroSummaries).toHaveLength(2);
+    expect(result.forecastStart).toBe(result.calendarBasis.forecastStart);
+    expect(result.forecastEnd).toBe(result.calendarBasis.forecastEnd);
+    expect(result.targetDates).toEqual(result.calendarBasis.targetDates);
+    expect(result.dailySummaries).toHaveLength(2);
+    expect(result.targetDailyBreakdown).toHaveLength(2);
     expect(result.bestWindows.length).toBeGreaterThan(0);
   });
 
@@ -151,6 +179,63 @@ describe("mock forecast input builder", () => {
         ),
       ).toBe(true);
     }
+  });
+
+  it("produces multi-day cloud sea, glow, astro, and general windows for 7 day horizons", () => {
+    const cloudSeaResult = calculateForecast(
+      buildMockForecastInput({ ...query, horizon: "7d", target: "cloud_sea" }, { now: fixedNow }),
+    );
+    const glowResult = calculateForecast(
+      buildMockForecastInput({ ...query, horizon: "7d", target: "glow" }, { now: fixedNow }),
+    );
+    const astroResult = calculateForecast(
+      buildMockForecastInput({ ...query, horizon: "7d", target: "astro" }, { now: fixedNow }),
+    );
+    const generalResult = calculateForecast(
+      buildMockForecastInput({ ...query, horizon: "7d", target: "general" }, { now: fixedNow }),
+    );
+
+    expect(cloudSeaResult.targetDates).toHaveLength(7);
+    expect(cloudSeaResult.dailySummaries).toHaveLength(7);
+    expect(
+      cloudSeaResult.bestWindows.filter((window) => window.label.startsWith("清晨云海窗口")),
+    ).toHaveLength(7);
+
+    expect(
+      glowResult.bestWindows.filter((window) => window.label.startsWith("朝霞窗口")).length,
+    ).toBeGreaterThanOrEqual(7);
+    expect(
+      glowResult.bestWindows.filter((window) => window.label.startsWith("晚霞窗口")).length,
+    ).toBeGreaterThanOrEqual(7);
+
+    expect(
+      astroResult.bestWindows.filter((window) => window.label.startsWith("天文黑夜")).length,
+    ).toBeGreaterThanOrEqual(7);
+    expect(
+      astroResult.bestWindows.filter((window) => window.label.startsWith("银河窗口")).length,
+    ).toBeGreaterThan(1);
+    expect(
+      astroResult.dailySummaries.filter((day) => day.keyWindows.length > 0).length,
+    ).toBeGreaterThan(1);
+
+    expect(new Set(generalResult.bestWindows.map((window) => window.target))).toEqual(
+      new Set(["cloud_sea", "glow", "astro"]),
+    );
+    for (const result of [cloudSeaResult, glowResult, astroResult, generalResult]) {
+      expectWindowsWithinRange(result);
+    }
+  });
+
+  it("keeps 48 hour windows inside the selected range and across covered dates", () => {
+    const result = calculateForecast(
+      buildMockForecastInput({ ...query, horizon: "48h", target: "general" }, { now: fixedNow }),
+    );
+
+    expect(result.targetDates).toEqual(["2026-05-20", "2026-05-21"]);
+    expect(new Set(result.bestWindows.map((window) => window.date))).toEqual(
+      new Set(["2026-05-20", "2026-05-21"]),
+    );
+    expectWindowsWithinRange(result);
   });
 
   it("does not surface past sunrise windows when the forecast starts after sunrise", () => {

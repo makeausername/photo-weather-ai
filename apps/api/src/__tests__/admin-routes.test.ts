@@ -224,7 +224,7 @@ describe("admin config routes", () => {
     expect(clearResponse.body).not.toContain("amap-real-secret");
   });
 
-  it("returns a deterministic mock provider connection test for empty body and {}", async () => {
+  it("returns a deterministic fixture weather provider connection test for empty body and {}", async () => {
     const { client } = await createFakeDatabaseClient();
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
 
@@ -237,8 +237,8 @@ describe("admin config routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       success: true,
-      mode: "mock",
-      message: "当前为本地模拟测试，未触发真实外部连接。",
+      mode: "fixture",
+      message: "当前为和风天气样例数据测试，未请求真实天气服务。",
     });
 
     const emptyJsonBodyResponse = await app.inject({
@@ -254,8 +254,8 @@ describe("admin config routes", () => {
     expect(emptyJsonBodyResponse.statusCode).toBe(200);
     expect(emptyJsonBodyResponse.json()).toMatchObject({
       success: true,
-      mode: "mock",
-      message: "当前为本地模拟测试，未触发真实外部连接。",
+      mode: "fixture",
+      message: "当前为和风天气样例数据测试，未请求真实天气服务。",
     });
 
     const emptyObjectResponse = await app.inject({
@@ -268,8 +268,8 @@ describe("admin config routes", () => {
     expect(emptyObjectResponse.statusCode).toBe(200);
     expect(emptyObjectResponse.json()).toMatchObject({
       success: true,
-      mode: "mock",
-      message: "当前为本地模拟测试，未触发真实外部连接。",
+      mode: "fixture",
+      message: "当前为和风天气样例数据测试，未请求真实天气服务。",
     });
   });
 

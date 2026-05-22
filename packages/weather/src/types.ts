@@ -2,15 +2,18 @@ import type {
   Coordinates,
   NormalizedDailyWeather,
   NormalizedHourlyWeather,
+  WeatherDataMode,
+  ForecastTarget,
 } from "@photo-weather/shared";
 
 export type WeatherProviderCode = "mock" | "qweather" | "open_meteo";
 
-export type WeatherProviderMode = "mock" | "fixture" | "real";
+export type WeatherProviderMode = WeatherDataMode;
 
 export type WeatherDataSource = {
   readonly providerCode: WeatherProviderCode;
   readonly displayName: string;
+  readonly providerLabelZh: string;
   readonly isMock: boolean;
   readonly mode: WeatherProviderMode;
 };
@@ -82,19 +85,31 @@ export type AirQuality = {
   readonly pm10: number;
 };
 
-export type NormalizedWeatherData = {
-  readonly current: CurrentWeather;
+export type WeatherDataBundle = {
+  readonly current?: CurrentWeather;
   readonly hourly: readonly NormalizedHourlyWeather[];
   readonly daily: readonly NormalizedDailyWeather[];
   readonly alerts: readonly WeatherAlert[];
-  readonly airQuality: AirQuality;
-  readonly source: WeatherDataSource;
+  readonly airQuality?: AirQuality;
+  readonly providerCode: WeatherProviderCode;
+  readonly providerLabelZh: string;
+  readonly dataMode: WeatherDataMode;
+  readonly generatedAt: string;
+  readonly noticeZh: string;
 };
 
 export type ForecastRequestOptions = {
   readonly hours?: number;
   readonly days?: number;
   readonly forecastStart?: string;
+  readonly forecastEnd?: string;
   readonly targetDates?: readonly string[];
+  readonly target?: ForecastTarget;
   readonly timezone?: string;
 };
+
+export type WeatherRequestInput = ForecastRequestOptions & {
+  readonly coordinates: Coordinates;
+};
+
+export type NormalizedWeatherData = WeatherDataBundle;

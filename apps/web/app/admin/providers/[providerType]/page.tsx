@@ -32,7 +32,7 @@ export default function AdminProviderTypePage({ params }: AdminProviderTypePageP
   return (
     <AdminShell
       title={title}
-      description="按类型筛选服务商配置，展示脱敏密钥状态和真实开发调用开关；未显式启用时测试连接仍为本地模拟。"
+      description="按类型筛选服务商配置，展示脱敏密钥状态和真实开发调用开关；天气服务商当前本地仅使用样例或模拟数据。"
     >
       <AdminProvidersClient providerType={params.providerType} />
     </AdminShell>

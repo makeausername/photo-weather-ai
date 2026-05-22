@@ -9,9 +9,13 @@ import {
 } from "@photo-weather/shared";
 import { createRuleBasedForecastExplanation, type ForecastAiExplanation } from "@photo-weather/ai";
 import type { DatabaseClient } from "@photo-weather/db";
-import { buildForecastInputFromNormalizedWeather, calculateForecast } from "@photo-weather/scoring";
+import { buildForecastInputFromWeatherBundle, calculateForecast } from "@photo-weather/scoring";
 import { MockTerrainProvider, type TerrainProvider } from "@photo-weather/terrain";
-import { createWeatherProvider, type WeatherProvider } from "@photo-weather/weather";
+import {
+  createWeatherProvider,
+  WeatherDataService,
+  type WeatherProvider,
+} from "@photo-weather/weather";
 import { z, type ZodError } from "zod";
 import {
   createRealDeepSeekProvider,
@@ -22,6 +26,7 @@ import {
 export type ForecastRoutesOptions = {
   readonly dbClient?: DatabaseClient;
   readonly weatherProvider?: WeatherProvider;
+  readonly weatherDataService?: WeatherDataService;
   readonly terrainProvider?: TerrainProvider;
   readonly env?: NodeJS.ProcessEnv;
 };
@@ -64,6 +69,7 @@ export function registerForecastRoutes(
   options: ForecastRoutesOptions = {},
 ): void {
   const weatherProvider = options.weatherProvider ?? createWeatherProvider();
+  const weatherDataService = options.weatherDataService ?? new WeatherDataService(weatherProvider);
   const terrainProvider = options.terrainProvider ?? new MockTerrainProvider();
   const env = options.env ?? process.env;
 
@@ -91,7 +97,7 @@ export function registerForecastRoutes(
     const { useAiExplanation, ...query } = parsedBody.data;
     const result = await calculateForecastResultOrReply(
       query,
-      weatherProvider,
+      weatherDataService,
       terrainProvider,
       reply,
     );
@@ -141,7 +147,7 @@ export function registerForecastRoutes(
 
     const result = await calculateForecastResultOrReply(
       parsedBody.data,
-      weatherProvider,
+      weatherDataService,
       terrainProvider,
       reply,
     );
@@ -186,12 +192,12 @@ export function registerForecastRoutes(
 
 async function calculateForecastResultOrReply(
   query: ForecastQueryInput,
-  weatherProvider: WeatherProvider,
+  weatherDataService: WeatherDataService,
   terrainProvider: TerrainProvider,
   reply: FastifyReply,
 ): Promise<ForecastCalculationResult | null> {
   try {
-    return await calculateForecastResult(query, weatherProvider, terrainProvider);
+    return await calculateForecastResult(query, weatherDataService, terrainProvider);
   } catch (error) {
     const message = (error as Error).message;
     if (message === forecastDateRangeErrorMessage) {
@@ -215,7 +221,7 @@ async function calculateForecastResultOrReply(
 
 async function calculateForecastResult(
   query: ForecastQueryInput,
-  weatherProvider: WeatherProvider,
+  weatherDataService: WeatherDataService,
   terrainProvider: TerrainProvider,
 ): Promise<ForecastCalculationResult> {
   const forecastRange = buildForecastDateRange(query.horizon);
@@ -231,17 +237,15 @@ async function calculateForecastResult(
       name: query.name,
     },
   };
-  const [hourlyWeather, dailyWeather, terrainProfile, horizonProfile] = await Promise.all([
-    weatherProvider.getHourlyForecast(coordinates, {
+  const [weatherDataBundle, terrainProfile, horizonProfile] = await Promise.all([
+    weatherDataService.getWeatherDataBundle({
+      coordinates,
       hours: forecastRange.horizonHours,
-      forecastStart: forecastRange.forecastStart,
-      targetDates: forecastRange.targetDates,
-      timezone: forecastRange.timezone,
-    }),
-    weatherProvider.getDailyForecast(coordinates, {
       days: forecastRange.targetDates.length,
       forecastStart: forecastRange.forecastStart,
+      forecastEnd: forecastRange.forecastEnd,
       targetDates: forecastRange.targetDates,
+      target: query.target,
       timezone: forecastRange.timezone,
     }),
     terrainProvider.buildTerrainProfile(terrainInput),
@@ -255,19 +259,10 @@ async function calculateForecastResult(
     isMock: true,
     honestyNoteZh: "地形数据：本地模拟地形数据，真实 DEM / 海拔数据将在后续接入。",
   };
-  const calculationInput = buildForecastInputFromNormalizedWeather(
-    query,
-    {
-      hourlyWeather,
-      dailyWeather,
-      isMock: weatherProvider.source.isMock,
-      dataSourceLabel: weatherProvider.source.displayName,
-    },
-    {
-      forecastRange,
-      terrainAnalysis,
-    },
-  );
+  const calculationInput = buildForecastInputFromWeatherBundle(query, weatherDataBundle, {
+    forecastRange,
+    terrainAnalysis,
+  });
 
   return calculateForecast(calculationInput);
 }

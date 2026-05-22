@@ -290,6 +290,16 @@ function providerHasSecret(provider: SafeProviderConfig): boolean | null {
   return secretField ? hasSavedSecret(provider, secretField.key) : null;
 }
 
+function providerTestModeLabel(provider: SafeProviderConfig, realEnabled: boolean): string {
+  if (realEnabled) {
+    return "真实服务";
+  }
+  if (provider.providerType === "weather") {
+    return "样例数据";
+  }
+  return "本地模拟";
+}
+
 function ProviderStatus({
   provider,
   flags,
@@ -313,7 +323,7 @@ function ProviderStatus({
           密钥状态：{hasSecret === null ? "不需要" : hasSecret ? "已保存" : "未保存"}
         </Badge>
         <Badge variant={realEnabled ? "warning" : "muted"}>
-          测试模式：{realEnabled ? "真实服务" : "本地模拟"}
+          测试模式：{providerTestModeLabel(provider, realEnabled)}
         </Badge>
       </div>
       <div className="flex flex-wrap gap-2">

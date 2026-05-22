@@ -83,6 +83,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@photo-weather/astro':
+        specifier: workspace:*
+        version: link:../../packages/astro
       '@photo-weather/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -135,6 +138,9 @@ importers:
 
   packages/astro:
     dependencies:
+      '@photo-weather/calendar':
+        specifier: workspace:*
+        version: link:../calendar
       '@photo-weather/shared':
         specifier: workspace:*
         version: link:../shared

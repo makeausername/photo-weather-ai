@@ -6,6 +6,7 @@ import {
   MockWeatherProvider,
   OpenMeteoProvider,
   QWeatherProvider,
+  WeatherDataService,
 } from "../index";
 
 const coordinates = {
@@ -17,7 +18,7 @@ const coordinates = {
 describe("MockWeatherProvider", () => {
   it("returns deterministic current weather without network access", async () => {
     const provider = new MockWeatherProvider();
-    const current = await provider.getCurrentWeather(coordinates);
+    const current = await provider.getCurrentWeather({ coordinates });
 
     expect(current.provider).toBe("mock-weather");
     expect(current.cloudCoverPercent).toBe(42);
@@ -27,22 +28,40 @@ describe("MockWeatherProvider", () => {
   it("returns deterministic normalized hourly forecasts", async () => {
     const provider = new MockWeatherProvider();
     const options = {
+      coordinates,
       hours: 2,
       forecastStart: "2026-05-20T00:00:00+08:00",
       timezone: "Asia/Shanghai",
     };
-    const first = await provider.getHourlyForecast(coordinates, options);
-    const second = await provider.getHourlyForecast(coordinates, options);
+    const first = await provider.getHourlyForecast(options);
+    const second = await provider.getHourlyForecast(options);
 
     expect(first).toEqual(second);
     expect(first).toHaveLength(2);
     expect(first[0]?.time).toBe("2026-05-20T00:00:00+08:00");
-    expect(first[0]?.providerCode).toBe("mock-weather");
+    expect(first[0]?.providerCode).toBe("mock");
+  });
+
+  it("uses forecastStart and forecastEnd instead of fixed mock calendar dates", async () => {
+    const provider = new MockWeatherProvider();
+    const hourly = await provider.getHourlyForecast({
+      coordinates,
+      forecastStart: "2026-05-22T03:00:00+08:00",
+      forecastEnd: "2026-05-22T09:00:00+08:00",
+      timezone: "Asia/Shanghai",
+      target: "cloud_sea",
+    });
+
+    expect(hourly).toHaveLength(6);
+    expect(hourly[0]?.time).toBe("2026-05-22T03:00:00+08:00");
+    expect(hourly.at(-1)?.time).toBe("2026-05-22T08:00:00+08:00");
+    expect(hourly.every((hour) => hour.time.startsWith("2026-05-22"))).toBe(true);
   });
 
   it("does not invent astronomy fields in mock daily weather", async () => {
     const provider = new MockWeatherProvider();
-    const [daily] = await provider.getDailyForecast(coordinates, {
+    const [daily] = await provider.getDailyForecast({
+      coordinates,
       days: 1,
       forecastStart: "2026-05-20T00:00:00+08:00",
       targetDates: ["2026-05-20"],
@@ -78,6 +97,8 @@ describe("fixture weather provider normalization", () => {
       providerCode: "qweather",
       sourceConfidence: 0.72,
     });
+    expect(hourly[0]?.missingFields).toEqual(["cloudLow", "cloudMid", "cloudHigh"]);
+    expect(hourly[0]?.estimatedFields).toBeUndefined();
     expect(hourly[0]?.sourceNotes?.join("")).toContain("未提供低云、中云、高云分层");
     expect(() => normalizedHourlyWeatherSchema.parse(hourly[0])).not.toThrow();
   });
@@ -92,7 +113,7 @@ describe("fixture weather provider normalization", () => {
       temperature: 17.4,
       feelsLike: 17.1,
       humidity: 74,
-      pressure: 872.4,
+      pressure: 1008.4,
       windSpeed: 3,
       windGust: 5,
       windDirection: 136,
@@ -123,7 +144,21 @@ describe("fixture weather provider normalization", () => {
     expect(normalized[0]?.cloudLow).toBeNull();
     expect(normalized[0]?.cloudMid).toBe(34);
     expect(normalized[0]?.cloudHigh).toBe(40);
+    expect(normalized[0]?.missingFields).toEqual(["cloudLow"]);
     expect(normalized[0]?.sourceNotes?.join("")).toContain("缺失");
+  });
+
+  it("tracks estimated Open-Meteo pressure fallback fields", () => {
+    const fixture = cloneRecord(readJsonFixture("open-meteo-forecast.json"));
+    const hourly = cloneRecord(fixture.hourly);
+    delete hourly.pressure_msl;
+    fixture.hourly = hourly;
+
+    const provider = new OpenMeteoProvider({ forecast: fixture });
+    const normalized = provider.normalizeHourlyWeather(fixture);
+
+    expect(normalized[0]?.pressure).toBe(872.4);
+    expect(normalized[0]?.estimatedFields).toEqual(["pressure"]);
   });
 
   it("validates normalized hourly weather bounds", () => {
@@ -185,9 +220,34 @@ describe("WeatherProviderFactory", () => {
       nodeEnv: "test",
     });
 
-    await expect(provider.getHourlyForecast(coordinates, { hours: 1 })).resolves.toHaveLength(1);
+    await expect(provider.getHourlyForecast({ coordinates, hours: 1 })).resolves.toHaveLength(1);
     expect(fetchMock).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
+  });
+});
+
+describe("WeatherDataService", () => {
+  it("builds a fixture bundle with honest source status", async () => {
+    const provider = new QWeatherProvider();
+    const service = new WeatherDataService(provider);
+    const bundle = await service.getWeatherDataBundle({
+      coordinates,
+      hours: 2,
+      days: 2,
+      forecastStart: "2026-05-22T00:00:00+08:00",
+      forecastEnd: "2026-05-24T00:00:00+08:00",
+      timezone: "Asia/Shanghai",
+      target: "cloud_sea",
+    });
+
+    expect(bundle).toMatchObject({
+      providerCode: "qweather",
+      providerLabelZh: "和风天气样例数据",
+      dataMode: "fixture",
+      noticeZh: "天气数据：和风天气样例数据",
+      generatedAt: "2026-05-22T00:00:00+08:00",
+    });
+    expect(bundle.hourly[0]?.missingFields).toEqual(["cloudLow", "cloudMid", "cloudHigh"]);
   });
 });
 

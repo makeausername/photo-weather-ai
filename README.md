@@ -2,7 +2,7 @@
 
 逐光天气是面向中国大陆风光摄影用户的天气与拍摄机会判断系统，公开标语为“风光摄影出行判断工具”。当前仓库处于自托管 SaaS 产品基础与界面打磨阶段，重点是数据库、后台配置、地点/机位资料、亮色默认主题和前端 UI 基线。
 
-当前步骤是 Product UI redesign V4：可见产品品牌使用“逐光天气”，公开首页已从居中演示页重构为工具式 forecast 工作台，forecast 结果页和后台控制台也同步到更克制的自然色产品界面。公开端不使用“AI”作为品牌表达；内部仓库名、包名和 scope 仍保持 `photo-weather-ai` / `@photo-weather/*`，不做代码仓库或包作用域重命名。
+当前步骤是 Weather Provider Normalization V1：在既有 Product UI redesign V4、地点选择、预报范围、目标感知结果页、天文/地形基础和评分逻辑之上，天气数据层已准备好 mock / fixture provider、标准化天气模型、数据源状态和缺失字段追踪。公开端不使用“AI”作为品牌表达；内部仓库名、包名和 scope 仍保持 `photo-weather-ai` / `@photo-weather/*`，不做代码仓库或包作用域重命名。
 
 ## 当前状态
 
@@ -17,7 +17,7 @@
 - 公开产品导航 shell：逐光天气品牌、SVG 品牌图标、风光摄影出行判断工具标语、首页 / 云海 / 朝霞晚霞 / 星空银河 / 机位库 / 定价导航、主题切换、统一“账户”入口和开始分析入口；顶层公开导航不再展示“管理后台”按钮。
 - 公开首页：响应式三栏桌面工作区，左侧地点查询面板、中间大幅 forecast/map 视觉工作区、右侧决策摘要面板；900px 到 1199px 自动变为左查询 + 右侧堆叠，移动端单列无横向溢出。
 - 首页下方信息架构：场景能力、热门机位和工作流使用同一页面 gutter 的宽屏响应式网格，不再放进窄居中容器。
-- 公开 forecast 结果页：同一产品 shell 下的目标感知 dashboard 布局，左侧地点/查询摘要，中间按 `general` / `cloud_sea` / `glow` / `astro` 展示对应主卡、窗口、分项评分和判断依据，右侧展示对应风险、建议、计算依据和数据状态。
+- 公开 forecast 结果页：同一产品 shell 下的目标感知 dashboard 布局，左侧地点/查询摘要，中间按 `general` / `cloud_sea` / `glow` / `astro` 展示对应主卡、窗口、分项评分和判断依据，右侧展示对应风险、建议、计算依据和数据状态；结果页已按 24h / 48h / 72h / 7d 选择范围生成窗口和逐日判断，星空银河结果页支持整月月相日历。
 - Scenario Module Pages V1：`/cloud-sea`、`/glow`、`/astro` 已升级为云海、朝霞晚霞、星空银河专项入口页，复用地点搜索、预报范围选择和 forecast 查询跳转流程；`/spots` 和 `/pricing` 仍为中文产品化占位页。
 - Public User Auth V1：`/login` 支持邮箱密码登录，`/register` 支持邮箱密码注册，`/auth/register` 会创建普通 `user` 角色账户并返回安全用户数据；短信登录计划后续接入。
 - Account Center Foundation V1：`/account` 使用公开产品 shell，未登录时显示登录提示；已登录时展示账户概览、我的查询、收藏机位、报告管理、套餐权益和安全设置。查询历史、收藏机位、报告管理和权益仍为占位，不接入支付、订阅或计费。
@@ -25,7 +25,8 @@
 - 公开地点搜索：`GET /search/places?q=` 会先查本地地点和摄影机位，再使用当前 GeoProvider 返回标准化地点结果。
 - 公开搜索选择态：选择地点后展示地点名称、地址 / 城市信息、数据来源、GCJ-02 / WGS84 经纬度、验证状态和本地机位匹配状态。
 - 公开 forecast 查询基础：首页作为综合判断快速入口，只选择地点和预报范围并固定 `target=general`；云海、朝霞晚霞、星空银河专项分析由顶部导航进入对应专题页。下一步跳转 `/forecast`，URL 中显式携带地点名称、来源、GCJ-02 坐标、WGS84 坐标、预报范围、分析目标以及可用的本地地点 / 机位 ID。
-- Forecast 计算核心 V1：已定义标准化小时天气、日天气、地形摘要、天文摘要、计算依据、计算输入和计算结果契约，`packages/calendar` 统一生成预报时间范围和中国本地日历信息，`packages/scoring` 提供本地 mock 天气/地形数据构造器、标准化天气输入 builder、真实本地天文摘要和可解释 rule-based 评分计算器。
+- Forecast 计算核心 V1：已定义标准化小时天气、日天气、地形摘要、天文摘要、计算依据、逐日摘要、目标逐日拆解、计算输入和计算结果契约，`packages/calendar` 统一生成预报时间范围和中国本地日历信息，`packages/scoring` 提供本地 mock 天气/地形数据构造器、标准化天气输入 builder、真实本地天文摘要和可解释 rule-based 评分计算器。
+- Weather Provider Normalization V1：`packages/weather` 提供 `WeatherProvider`、`WeatherDataService`、`WeatherDataBundle`、`MockWeatherProvider`、QWeather fixture adapter 和 Open-Meteo fixture adapter；本地和测试默认只使用 mock / fixture，不调用真实 QWeather 或 Open-Meteo。
 - Terrain Core V1：`packages/terrain` 已提供地形/海拔类型契约、地形 provider 接口、本地模拟地形 provider、周边高差计算、云海地形潜力分类和地平线遮挡基础；当前只使用本地模拟地形数据，真实 DEM / 海拔 provider 后续接入。
 - 公开 forecast 端点：`POST /forecast/validate-query` 只校验查询输入并返回中文标签；`POST /forecast/calculate` 默认使用 MockWeatherProvider 的标准化天气数据和本地模拟地形数据，同时使用本地 astronomy-engine 天文计算，不调用真实天气、地形、天文在线 API 或 AI 服务；`POST /forecast/ai-explain` 默认返回规则解读，只有后台启用 DeepSeek 服务商、启用真实调用且 Key 已保存时才请求真实 DeepSeek。
 - 后台登录页：宽屏产品式登录布局、中文表单、样式化错误提示和单一返回前台入口。
@@ -67,16 +68,18 @@
 
 ## Forecast 计算核心 V1
 
-当前 `/forecast` 是本地计算结果页，用于展示用户选择的地点、预报范围、分析目标、坐标信息和评分结果。页面会调用 `POST /forecast/calculate`，后端默认使用 `MockWeatherProvider` 输出的标准化天气数据、模拟地形摘要和 astronomy-engine 本地天文数据，并运行 deterministic rule-based 评分引擎。默认不会调用真实 QWeather、Open-Meteo、高德地图、DeepSeek、存储、支付或短信服务；高德地图和 DeepSeek 仅在后台服务商配置中启用真实调用、服务商已启用且 Key 已配置时允许真实调用，环境开关只作为旧配置兜底。
+当前 `/forecast` 是本地计算结果页，用于展示用户选择的地点、预报范围、分析目标、坐标信息和评分结果。页面会调用 `POST /forecast/calculate`，后端默认通过 `WeatherDataService` 构造 `WeatherDataBundle`，使用 `MockWeatherProvider` 输出的标准化天气数据、模拟地形摘要和 astronomy-engine 本地天文数据，并运行 deterministic rule-based 评分引擎。默认不会调用真实 QWeather、Open-Meteo、高德地图、DeepSeek、存储、支付或短信服务；高德地图和 DeepSeek 仅在后台服务商配置中启用真实调用、服务商已启用且 Key 已配置时允许真实调用，环境开关只作为旧配置兜底。
 
 当前计算核心覆盖：
 
 - Calendar Core V1：`packages/calendar` 集中处理 `Asia/Shanghai` 时区、24h / 48h / 72h / 7d 预报范围、覆盖日期、中文日期时间格式、农历和节气信息。
 - 云海、白墙风险、朝霞、晚霞、星空、银河和通透度评分。
-- 综合出片指数、推荐等级、最佳拍摄窗口、风险提示、关键依据和拍摄建议。
-- 结果页目标感知展示：`general` 显示完整模块总览；`cloud_sea` 聚焦云海概率、白墙风险、清晨云海窗口、地形与湿度依据和云海备选策略；`glow` 聚焦朝霞晚霞、日出日落、晨昏时间、云层结构和地形遮挡；`astro` 聚焦月相月光、天文黑夜、银河窗口、云量能见度风险和夜间拍摄建议。
+- 评分只消费归一化后的 `NormalizedHourlyWeather` / `NormalizedDailyWeather` 和 `WeatherDataBundle` 状态，不读取 provider 原始 JSON。
+- 云海评分使用湿度、低云、风速、露点、能见度和地形；霞光评分使用总云量、低/中/高云、降水和能见度；星空银河评分使用总云量、云层分层、湿度、能见度和月光；通透度使用能见度、湿度、降水概率和总云量。
+- 综合出片指数、推荐等级、最佳拍摄窗口、逐日判断、风险提示、关键依据和拍摄建议。
+- 结果页目标感知展示：`general` 显示完整模块总览和全范围高分窗口；`cloud_sea` 聚焦每日清晨云海机会、白墙风险、清晨云海窗口、地形与湿度依据和云海备选策略；`glow` 聚焦每日朝霞/晚霞机会、日出日落、晨昏时间、云层结构和地形遮挡；`astro` 聚焦每晚观星条件、月相/月亮照明、天文黑夜、银河窗口、云量能见度风险和夜间拍摄建议。
 - Terrain Core V1：当前地形来自 `MockTerrainProvider`，输出 `terrainProfile`、`horizonProfile` 和 `dataSource=mock_terrain`；地形会影响云海潜力、白墙风险辅助判断、日出/日落方向遮挡、银河地平线遮挡和综合拍摄依据。
-- Astronomy Core V1：使用 `astronomy-engine` 在本地 deterministic 计算日出 / 日落、太阳中天、民用 / 航海 / 天文晨昏光、月相、月亮照明、月出 / 月落和逐小时月亮高度。
+- Astronomy Core V1：使用 `astronomy-engine` 在本地 deterministic 计算日出 / 日落、太阳中天、民用 / 航海 / 天文晨昏光、月相、月亮照明、盈亏方向、月出 / 月落、逐小时月亮高度和整月月相日历；月相标签已按相位、照明比例和盈亏方向细化，避免把 30%-40% 照明的盈月粗略标为“上弦月”。
 - 银河窗口 V1：基于天文黑夜、近似银心 J2000 坐标、当地地平坐标和月光影响给出初步窗口、方向和可见性等级；该结果是拍摄规划基础估算，尚未完整建模银河拱桥、地形遮挡和光污染。
 - 黄山光明顶、老君山金顶、三清山女神峰、武功山金顶等本地模拟样例。
 - 数据提示：`天气数据：本地模拟数据；地形数据：本地模拟地形数据，真实 DEM / 海拔数据将在后续接入；天文数据：本地算法按 WGS84 坐标计算。当前结果不代表真实预报。`
@@ -94,10 +97,14 @@
 - 天文计算只使用 WGS84 经纬度，不使用 GCJ-02。
 - 默认时区为 `Asia/Shanghai`。
 - 天文摘要使用 Calendar Core 生成的 `targetDates`，不会在 astro / scoring 内部再生成独立日期。
-- 日出 / 日落、暮光、月相、月亮照明、月出 / 月落、逐小时月亮高度和银河窗口为本地 deterministic 计算，不调用在线 API。
+- 日出 / 日落、暮光、天文月相、月亮照明、盈亏方向、月出 / 月落、逐小时月亮高度和银河窗口为本地 deterministic 计算，不调用在线 API，也不使用 DeepSeek / AI 计算月相。
+- 星空银河页面支持整月月相日历，可按上个月、下个月和回到本月浏览；月相日历基于本地天文计算逐日生成月相、月亮照明和主要月相摘要，不调用外部天气或天文服务。
+- 农历日期、中文农历文本和二十四节气来自 `packages/calendar` 中的本地 `lunar-typescript`，仅用于历法展示，不作为月亮照明、月亮高度或月光影响的计算来源。
+- 月相日历的数据结构已预留农历展示字段，后续可继续扩展更完整的农历信息、节气提醒或观星节奏提示。
+- 月相展示会分开呈现天文相位、照明比例、盈亏方向和农历日期；`上弦月` / `下弦月` / `满月` 只在接近对应相位和照明阈值时使用。
 - MockWeatherProvider 不再生成固定日出 / 日落占位；需要日出日落时只使用 Calendar Core 覆盖日期和 WGS84 坐标驱动的本地 Astronomy Core。
 - Astronomy Core 依赖本地 `astronomy-engine` 包；自动化测试会校验天文计算不触发网络请求。
-- 天文结果会随 forecast mock pipeline 一起进入 `ForecastCalculationResult.astroSummaries`，供结果页展示日出日落、月相月照、月出月落、天文黑夜窗口和银河窗口。
+- 天文结果会随 forecast mock pipeline 一起进入 `ForecastCalculationResult.astroSummaries`，供结果页展示日出日落、月相月照、农历日期、节气、月出月落、天文黑夜窗口和银河窗口。
 - 真实天气准确率仍需要后续接入 QWeather / Open-Meteo 真实预报、云层 / 能见度校准和地形遮挡数据；DeepSeek 当前只解释确定性结果，不计算天气、天文、地形或评分。
 
 日历与预报时间约定：
@@ -105,13 +112,16 @@
 - 默认时区统一为 `Asia/Shanghai`，运行时使用实际当前时间，测试可显式注入固定 `now`。
 - 支持的预报范围由 Calendar Core 统一生成：`24h`、`48h`、`72h` 和 `7d`。
 - `forecastStart`、`forecastEnd`、`targetDates`、中文日期时间范围、最佳窗口展示标签和结果页“计算依据”均来自 Calendar Core。
+- 24h 只展示未来 24 小时内窗口；48h / 72h 会按覆盖日期分组展示窗口；7d 会展示多日逐日判断和跨范围窗口。天气和地形在真实 provider 接入前仍可保持 mock / fixture。
 - 朝霞、晚霞、云海、星空和银河评分窗口都会限制在 Calendar Core 生成的 `forecastStart` / `forecastEnd` 内，不输出预报起点之前的过去窗口，也不使用固定运行日期。
-- `lunar-typescript` 用于本地农历、干支生肖和节气信息，不调用在线日历 API。
+- `lunar-typescript` 用于本地农历、干支生肖和节气信息，不调用在线日历 API；月相照明、月出月落和月亮高度仍由 `astronomy-engine` 负责。
 - 天文计算使用 Calendar Core 的覆盖日期和用户选择地点的 WGS84 经纬度；天气和地形在当前阶段仍为 mock / fixture，等待后续真实 provider 接入。
 
-`packages/weather` 已提供天气服务商契约、ProviderFactory、QWeather / Open-Meteo fixture adapter 和小时/日天气标准化逻辑。QWeather fixture 会把不可用的低云/中云/高云分层置为 `null` 并写入 source notes；Open-Meteo fixture 会映射 `cloud_cover_low`、`cloud_cover_mid`、`cloud_cover_high`、能见度、露点、风速、阵风、降水概率和降水量。
+`packages/weather` 已提供天气服务商契约、ProviderFactory、WeatherDataService、QWeather / Open-Meteo fixture adapter 和小时/日天气标准化逻辑。QWeather fixture 会把不可用的低云/中云/高云分层置为 `null`，写入 `missingFields=["cloudLow","cloudMid","cloudHigh"]`，并在结果页显示“当前天气源缺少低云/中云/高云分层数据，相关判断将降低置信度。”Open-Meteo fixture 会映射 `temperature_2m`、`relative_humidity_2m`、`dew_point_2m`、`precipitation_probability`、`precipitation`、`cloud_cover`、`cloud_cover_low`、`cloud_cover_mid`、`cloud_cover_high`、`visibility`、`wind_speed_10m`、`wind_gusts_10m`、`wind_direction_10m` 和 `pressure_msl`。
 
-真实准确率仍需要后续接入 QWeather / Open-Meteo 真实预报、地形 DEM、云层/能见度校准和历史天气数据回测。历史天气数据会用于后续校准、backtesting 和评分权重验证。当前本地开发和部署可在后台服务商配置页显式启用真实高德地图和 DeepSeek 便于人工测试；QWeather、Open-Meteo、存储、支付和短信仍保持本地 mock / interface-only，后续在 staging 或服务器环境测试。
+结果页会诚实显示天气数据来源：`天气数据：本地模拟数据`、`天气数据：和风天气样例数据` 或 `天气数据：Open-Meteo 样例数据`。mock / fixture 结果不会被描述为实时或真实预报，缺失字段和估算字段会随标准化天气记录追踪并进入评分置信度提示。
+
+真实准确率仍需要后续接入 QWeather / Open-Meteo 真实预报、地形 DEM、云层/能见度校准和历史天气数据回测。历史天气数据会用于后续校准、backtesting 和评分权重验证。当前本地开发和部署可在后台服务商配置页显式启用真实高德地图和 DeepSeek 便于人工测试；QWeather、Open-Meteo、存储、支付和短信仍保持本地 mock / fixture / interface-only，真实天气 provider 测试将在后续 staging 或服务器环境按操作员意图进行。
 
 支持的预报范围：
 
@@ -137,6 +147,8 @@ Scenario Module Pages V1：
 - 三个页面都复用公开地点搜索和 `/forecast` 查询 URL 构造，跳转时保留地点名称、来源、GCJ-02 坐标、WGS84 坐标、`locationId`、`photoSpotId`、`horizon` 和 `target`。
 - 专项分析由这些导航模块承载，不通过首页题材选择器进入。
 - `/forecast` 会根据 `target` 塑造结果视图：综合判断展示全模块；云海页不把星空/银河作为主模块；霞光页不展示星空/银河评分主网格；星空银河页不把云海或白天霞光作为主推荐。
+- `/forecast` 会按所选 horizon 返回 `dailySummaries`、`targetDailyBreakdown` 和跨范围 `bestWindows`；7d 结果展示多日摘要，24h / 48h / 72h / 7d 都使用同一组 `forecastStart` / `forecastEnd` / `targetDates`。
+- 星空银河结果页在观测判断内容下方提供“月相日历”，支持查看当前整月月相、月亮照明和主要月相日期，并可在前后月份之间切换。
 - 真实天气数据仍未接入；结果页默认继续使用本地模拟天气数据和本地模拟地形数据验证流程，除非后续显式启用真实 provider。
 - DeepSeek 解读仍是可选后续能力；结果页基础判断、评分、窗口和风险不依赖 DeepSeek，也不会在页面加载时自动调用外部解释服务。
 
@@ -152,9 +164,9 @@ Scenario Module Pages V1：
 - `packages/db`：Prisma schema、迁移、seed、系统设置、服务商配置、地点、机位、审计日志。
 - `packages/geo`：地理服务接口、deterministic mock 搜索、高德地图 Web 服务 provider、坐标校验与 GCJ-02 / WGS84 转换。
 - `packages/calendar`：Calendar Core V1，集中处理 `Asia/Shanghai` 预报范围、覆盖日期、中文日期时间格式、农历和节气。
-- `packages/weather`：天气服务接口、标准化天气模型、ProviderFactory、MockWeatherProvider，以及 QWeather / Open-Meteo fixture-based normalization adapters。
+- `packages/weather`：天气服务接口、标准化天气模型、WeatherDataBundle、WeatherDataService、ProviderFactory、MockWeatherProvider，以及 QWeather / Open-Meteo fixture-based normalization adapters。
 - `packages/terrain`：Terrain Core V1，包含地形/海拔数据契约、mock terrain provider、地形剖面、高差计算、云海地形潜力分类、地平线遮挡辅助判断和禁用的 Open-Meteo Elevation 占位 provider。
-- `packages/astro`：Astronomy Core V1，基于 `astronomy-engine` 的本地 deterministic 日出 / 日落、暮光、月相、月亮照明、月出 / 月落、逐小时月亮高度和初步银河窗口估算。
+- `packages/astro`：Astronomy Core V1，基于 `astronomy-engine` 的本地 deterministic 日出 / 日落、暮光、月相、月亮照明、月出 / 月落、逐小时月亮高度、整月月相日历和初步银河窗口估算。
 - `packages/scoring`：本地 forecast mock 数据构造器、摄影评分 helper、朝霞/晚霞/云海/白墙/星空/银河/通透度计算器和综合推荐分类。
 - `packages/ai`：AI 服务接口、mock provider、规则兜底和 DeepSeek 开发模式 JSON 解读 provider。
 - `packages/storage`：存储服务接口与 mock 存储。
@@ -280,7 +292,7 @@ DATABASE_URL=postgresql://photo_weather:photo_weather@postgres:5432/photo_weathe
 
 Provider secrets 和永久服务商配置属于数据库后台配置，不应写进业务代码。Seed data 只创建占位服务商和空密钥对象，不包含真实 DeepSeek、QWeather、Open-Meteo、高德地图、存储、短信或支付凭据。
 
-`/admin/providers` 提供可视化服务商配置表单。高德地图支持“启用该服务商”“启用真实调用”“高德 Web 服务 Key”和优先级；DeepSeek 支持“启用该服务商”“启用真实调用”“DeepSeek API Key”“模型选择”下拉框和优先级。其他服务商保留接口和 mock 配置。密钥保存后 API 只返回 `maskedSecretJson`，不会返回原始 `secretJson`；空密钥输入表示保留现有密钥不变，如需删除已保存字段请使用后台表单中的清除操作。
+`/admin/providers` 提供可视化服务商配置表单。高德地图支持“启用该服务商”“启用真实调用”“高德 Web 服务 Key”和优先级；DeepSeek 支持“启用该服务商”“启用真实调用”“DeepSeek API Key”“模型选择”下拉框和优先级。和风天气显示中国大陆主天气源与云层分层字段可能不可用的能力说明；Open-Meteo 显示云层分层与能见度辅助源说明。QWeather / Open-Meteo 当前本地只使用样例数据，不暴露密钥、不触发真实调用。密钥保存后 API 只返回 `maskedSecretJson`，不会返回原始 `secretJson`；空密钥输入表示保留现有密钥不变，如需删除已保存字段请使用后台表单中的清除操作。
 
 Seed data 包含未核验的中国风光摄影示例地点与机位：
 
@@ -365,9 +377,9 @@ GET   /admin/audit-logs
 - 审计日志：`audit.read`
 - `/admin` 状态：`admin.manage`
 
-服务商测试连接默认仍为本地 mock，不调用真实外部服务。高德地图与 DeepSeek 是当前仅允许真实开发调用的例外：必须同时满足后台服务商已启用、后台“启用真实调用”已打开、API Key 已配置。若旧数据库记录缺少 `realCallEnabled` 字段，才会读取 `ENABLE_REAL_AMAP` / `ENABLE_REAL_DEEPSEEK` 作为兜底。
+服务商测试连接默认仍为本地 mock 或 fixture，不调用真实外部服务。高德地图与 DeepSeek 是当前仅允许真实开发调用的例外：必须同时满足后台服务商已启用、后台“启用真实调用”已打开、API Key 已配置。若旧数据库记录缺少 `realCallEnabled` 字段，才会读取 `ENABLE_REAL_AMAP` / `ENABLE_REAL_DEEPSEEK` 作为兜底。
 
-后台“测试连接”按钮会向 `/admin/providers/:providerType/:providerCode/test-connection` 发送 `{}`。未启用真实调用时，高德返回“当前为本地模拟测试，未请求高德地图服务。”，DeepSeek 返回“当前为本地模拟测试，未请求 DeepSeek 服务。”；启用真实调用但缺少 Key 时分别返回“请先填写高德 Web 服务 Key。”和“请先填写 DeepSeek API Key。”其他服务商仍返回通用本地模拟结果。自动化测试强制 mock，不启用真实服务商联调。接口响应和日志不得暴露原始密钥。
+后台“测试连接”按钮会向 `/admin/providers/:providerType/:providerCode/test-connection` 发送 `{}`。未启用真实调用时，高德返回“当前为本地模拟测试，未请求高德地图服务。”，DeepSeek 返回“当前为本地模拟测试，未请求 DeepSeek 服务。”；QWeather 返回和风天气样例数据测试，Open-Meteo 返回 Open-Meteo 样例数据测试，均不会请求真实天气服务。启用真实调用但缺少 Key 时，高德和 DeepSeek 分别返回“请先填写高德 Web 服务 Key。”和“请先填写 DeepSeek API Key。”自动化测试强制 mock / fixture，不启用真实服务商联调。接口响应和日志不得暴露原始密钥。
 
 ## 后台控制台
 

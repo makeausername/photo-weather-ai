@@ -93,12 +93,15 @@ describe("Calendar Core", () => {
       previous: {
         name: expect.any(String),
         date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        dateTime: expect.stringMatching(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/),
       },
       next: {
         name: expect.any(String),
         date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        dateTime: expect.stringMatching(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/),
       },
     });
+    expect(info.solarTerm === undefined || typeof info.solarTerm === "string").toBe(true);
   });
 
   it("does not call external network APIs", () => {

@@ -19,6 +19,7 @@ import type {
   MoonIllumination,
   MoonPhase,
   MoonPhaseNameZh,
+  MoonWaxingOrWaning,
   MoonTimes,
   SunTimes,
   TwilightTimes,
@@ -69,18 +70,22 @@ export function getTwilightTimes(input: AstroInput): TwilightTimes {
 export function getMoonPhase(input: AstroInput): MoonPhase {
   const context = normalizeInput(input);
   const phase = normalizePhase(astronomyMoonPhase(new Date(context.noonUtcMs)) / 360);
+  const illumination = getMoonIlluminationFraction(context.noonUtcMs);
+  const waxingOrWaning = getMoonWaxingOrWaning(phase);
 
   return {
     date: context.date,
     timezone: context.timezone,
     moonPhase: round3(phase),
-    moonPhaseNameZh: getMoonPhaseNameZh(phase),
+    moonPhaseNameZh: getMoonPhaseNameZh(phase, illumination, waxingOrWaning),
+    moonIllumination: round3(illumination),
+    waxingOrWaning,
   };
 }
 
 export function getMoonIllumination(input: AstroInput): MoonIllumination {
   const context = normalizeInput(input);
-  const fraction = Illumination(Body.Moon, new Date(context.noonUtcMs)).phase_fraction;
+  const fraction = getMoonIlluminationFraction(context.noonUtcMs);
 
   return {
     date: context.date,
@@ -194,31 +199,62 @@ export function getMilkyWayWindow(input: AstroInput): MilkyWayWindow {
   };
 }
 
-export function getMoonPhaseNameZh(phase: number): MoonPhaseNameZh {
+export function getMoonPhaseNameZh(
+  phase: number,
+  illumination?: number | null,
+  waxingOrWaning: MoonWaxingOrWaning = getMoonWaxingOrWaning(phase),
+): MoonPhaseNameZh {
   const normalized = normalizePhase(phase);
+  const normalizedIllumination = normalizeIllumination(illumination, normalized);
+  const distanceToNew = Math.min(normalized, 1 - normalized);
+  const distanceToFull = Math.abs(normalized - 0.5);
+  const firstQuarterDistance = Math.abs(normalized - 0.25);
+  const lastQuarterDistance = Math.abs(normalized - 0.75);
+  const isNearFirstQuarter =
+    firstQuarterDistance <= 0.035 &&
+    normalizedIllumination >= 0.42 &&
+    normalizedIllumination <= 0.58;
+  const isNearLastQuarter =
+    lastQuarterDistance <= 0.035 &&
+    normalizedIllumination >= 0.42 &&
+    normalizedIllumination <= 0.58;
 
-  if (normalized < 1 / 16 || normalized >= 15 / 16) {
+  if (distanceToNew <= 0.035 || normalizedIllumination <= 0.03) {
     return "新月";
   }
-  if (normalized < 3 / 16) {
-    return "娥眉月";
-  }
-  if (normalized < 5 / 16) {
-    return "上弦月";
-  }
-  if (normalized < 7 / 16) {
-    return "盈凸月";
-  }
-  if (normalized < 9 / 16) {
+  if (distanceToFull <= 0.035 || normalizedIllumination >= 0.97) {
     return "满月";
   }
-  if (normalized < 11 / 16) {
-    return "亏凸月";
+  if (isNearFirstQuarter) {
+    return "上弦月";
   }
-  if (normalized < 13 / 16) {
+  if (isNearLastQuarter) {
     return "下弦月";
   }
-  return "残月";
+
+  const direction =
+    waxingOrWaning === "unknown" ? getMoonWaxingOrWaning(normalized) : waxingOrWaning;
+
+  if (direction === "waxing") {
+    return normalized < 0.25 ? "娥眉月" : "盈凸月";
+  }
+  if (direction === "waning") {
+    return normalized < 0.75 ? "亏凸月" : "残月";
+  }
+
+  return normalized < 0.5 ? "娥眉月" : "残月";
+}
+
+export function getMoonWaxingOrWaning(phase: number): MoonWaxingOrWaning {
+  const normalized = normalizePhase(phase);
+
+  if (normalized > 0 && normalized < 0.5) {
+    return "waxing";
+  }
+  if (normalized > 0.5 && normalized < 1) {
+    return "waning";
+  }
+  return "unknown";
 }
 
 type NormalizedAstroInput = Required<AstroInput> & {
@@ -425,6 +461,20 @@ function directionFromAzimuth(azimuth: number): string {
 
 function normalizePhase(phase: number): number {
   return ((phase % 1) + 1) % 1;
+}
+
+function normalizeIllumination(illumination: number | null | undefined, phase: number): number {
+  if (typeof illumination === "number" && Number.isFinite(illumination)) {
+    const asRatio = illumination > 1 && illumination <= 100 ? illumination / 100 : illumination;
+
+    return clamp(asRatio, 0, 1);
+  }
+
+  return clamp((1 - Math.cos(phase * Math.PI * 2)) / 2, 0, 1);
+}
+
+function getMoonIlluminationFraction(timestamp: number): number {
+  return clamp(Illumination(Body.Moon, new Date(timestamp)).phase_fraction, 0, 1);
 }
 
 function normalizeDate(value: string): string {

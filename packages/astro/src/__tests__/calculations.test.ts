@@ -6,6 +6,7 @@ import {
   getMoonIllumination,
   getMoonPhase,
   getMoonPhaseNameZh,
+  getMoonWaxingOrWaning,
   getMoonTimes,
   getSunTimes,
   getTwilightTimes,
@@ -86,11 +87,33 @@ describe("local astronomy calculations", () => {
     expect(getMoonPhase(huangshanInput).moonPhaseNameZh).toEqual(expect.any(String));
   });
 
+  it("does not label a 36% illuminated waxing crescent as first quarter", () => {
+    expect(getMoonPhaseNameZh(0.205, 0.36, "waxing")).toBe("娥眉月");
+    expect(getMoonPhaseNameZh(0.2, 36, "waxing")).toBe("娥眉月");
+  });
+
+  it("uses narrow thresholds for first quarter and full moon labels", () => {
+    expect(getMoonPhaseNameZh(0.25, 0.5, "waxing")).toBe("上弦月");
+    expect(getMoonPhaseNameZh(0.5, 0.99, "unknown")).toBe("满月");
+    expect(getMoonPhaseNameZh(0.54, 0.96, "waning")).toBe("亏凸月");
+  });
+
+  it("maps waning phases to waning gibbous, last quarter, and crescent labels", () => {
+    expect(getMoonWaxingOrWaning(0.62)).toBe("waning");
+    expect(getMoonPhaseNameZh(0.62, 0.86, "waning")).toBe("亏凸月");
+    expect(getMoonPhaseNameZh(0.75, 0.5, "waning")).toBe("下弦月");
+    expect(getMoonPhaseNameZh(0.88, 0.25, "waning")).toBe("残月");
+  });
+
   it("keeps moon illumination in the 0-1 range", () => {
     const illumination = getMoonIllumination(huangshanInput).moonIllumination;
+    const phase = getMoonPhase(huangshanInput);
 
     expect(illumination).toBeGreaterThanOrEqual(0);
     expect(illumination).toBeLessThanOrEqual(1);
+    expect(phase.moonIllumination).toBeGreaterThanOrEqual(0);
+    expect(phase.moonIllumination).toBeLessThanOrEqual(1);
+    expect(["waxing", "waning", "unknown"]).toContain(phase.waxingOrWaning);
   });
 
   it("calculates moonrise, moonset, and hourly moon altitude locally", () => {

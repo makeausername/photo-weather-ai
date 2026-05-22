@@ -1,7 +1,7 @@
 import {
   normalizedDailyWeatherSchema,
   normalizedHourlyWeatherSchema,
-  type Coordinates,
+  type ForecastTarget,
   type NormalizedDailyWeather,
   type NormalizedHourlyWeather,
 } from "@photo-weather/shared";
@@ -10,14 +10,15 @@ import {
   defaultTimezone,
   formatZonedIso,
   getForecastTargetDates,
+  getHourInTimezone,
   getNowInTimezone,
 } from "@photo-weather/calendar";
 import type {
   AirQuality,
   CurrentWeather,
-  ForecastRequestOptions,
   NormalizedWeatherData,
   WeatherAlert,
+  WeatherRequestInput,
 } from "./types.js";
 import type { WeatherProvider } from "./provider.js";
 
@@ -25,6 +26,7 @@ const PROVIDER_ID = "mock-weather";
 const DATA_SOURCE = {
   providerCode: "mock",
   displayName: "模拟天气数据",
+  providerLabelZh: "本地模拟数据",
   isMock: true,
   mode: "mock",
 } as const;
@@ -32,11 +34,11 @@ const DATA_SOURCE = {
 export class MockWeatherProvider implements WeatherProvider {
   readonly source = DATA_SOURCE;
 
-  async getCurrentWeather(coordinates: Coordinates): Promise<CurrentWeather> {
+  async getCurrentWeather(input: WeatherRequestInput): Promise<CurrentWeather> {
     return {
       provider: PROVIDER_ID,
       observedAt: formatZonedIso(getNowInTimezone(defaultTimezone), defaultTimezone),
-      coordinates,
+      coordinates: input.coordinates,
       condition: "partly_cloudy",
       summary: "本地模拟天气：碎云与较高能见度，用于验证流程。",
       temperatureCelsius: 18.4,
@@ -48,27 +50,23 @@ export class MockWeatherProvider implements WeatherProvider {
     };
   }
 
-  async getHourlyForecast(
-    _coordinates: Coordinates,
-    options: ForecastRequestOptions = {},
-  ): Promise<readonly NormalizedHourlyWeather[]> {
-    const hours = Math.min(Math.max(options.hours ?? 6, 1), 168);
-    const timezone = options.timezone ?? defaultTimezone;
+  async getHourlyForecast(input: WeatherRequestInput): Promise<readonly NormalizedHourlyWeather[]> {
+    const timezone = input.timezone ?? defaultTimezone;
     const forecastStart =
-      options.forecastStart ?? formatZonedIso(getNowInTimezone(timezone), timezone);
+      input.forecastStart ?? formatZonedIso(getNowInTimezone(timezone), timezone);
+    const hours = resolveForecastHours(input);
 
     return this.normalizeHourlyWeather(
-      Array.from({ length: hours }, (_, index) => buildMockHour(index, forecastStart, timezone)),
+      Array.from({ length: hours }, (_, index) =>
+        buildMockHour(index, forecastStart, timezone, input.target ?? "general"),
+      ),
     );
   }
 
-  async getDailyForecast(
-    _coordinates: Coordinates,
-    options: ForecastRequestOptions = {},
-  ): Promise<readonly NormalizedDailyWeather[]> {
-    const days = Math.min(Math.max(options.days ?? 3, 1), 10);
-    const timezone = options.timezone ?? defaultTimezone;
-    const dates = resolveTargetDates(days, options, timezone);
+  async getDailyForecast(input: WeatherRequestInput): Promise<readonly NormalizedDailyWeather[]> {
+    const days = Math.min(Math.max(input.days ?? 3, 1), 10);
+    const timezone = input.timezone ?? defaultTimezone;
+    const dates = resolveTargetDates(days, input, timezone);
 
     return this.normalizeDailyWeather(
       Array.from({ length: days }, (_, index) => ({
@@ -77,15 +75,16 @@ export class MockWeatherProvider implements WeatherProvider {
         tempMax: 22 + index,
         precipitationProbability: index === 1 ? 24 : 12,
         weatherSummary: index === 1 ? "多云，局地有弱降水" : "多云间晴",
+        providerCode: DATA_SOURCE.providerCode,
       })),
     );
   }
 
-  async getWeatherAlerts(_coordinates: Coordinates): Promise<readonly WeatherAlert[]> {
+  async getWeatherAlerts(_input: WeatherRequestInput): Promise<readonly WeatherAlert[]> {
     return [];
   }
 
-  async getAirQuality(_coordinates: Coordinates): Promise<AirQuality> {
+  async getAirQuality(_input: WeatherRequestInput): Promise<AirQuality> {
     return {
       provider: PROVIDER_ID,
       observedAt: formatZonedIso(getNowInTimezone(defaultTimezone), defaultTimezone),
@@ -125,12 +124,14 @@ function isNormalizedWeatherData(input: unknown): input is NormalizedWeatherData
   return (
     typeof input === "object" &&
     input !== null &&
-    "current" in input &&
     "hourly" in input &&
     "daily" in input &&
     "alerts" in input &&
-    "airQuality" in input &&
-    "source" in input
+    "providerCode" in input &&
+    "providerLabelZh" in input &&
+    "dataMode" in input &&
+    "generatedAt" in input &&
+    "noticeZh" in input
   );
 }
 
@@ -138,14 +139,37 @@ function buildMockHour(
   index: number,
   forecastStart: string,
   timezone: string,
+  target: ForecastTarget,
 ): NormalizedHourlyWeather {
-  const cloudLow = 28 + (index % 7);
-  const cloudMid = 32 + (index % 5);
-  const cloudHigh = 26 + (index % 6);
+  const localHour = getHourInTimezone(addHoursInTimezone(forecastStart, index, timezone), timezone);
+  const isMorning = localHour >= 4 && localHour <= 8;
+  const isSunset = localHour >= 16 && localHour <= 19;
+  const isNight = localHour >= 20 || localHour <= 5;
+  const cloudSeaBoost = target === "cloud_sea" && isMorning ? 16 : 0;
+  const glowBoost = target === "glow" && (isMorning || isSunset) ? 14 : 0;
+  const astroClear = target === "astro" && isNight ? 18 : 0;
+  const humidity = clampPercent(
+    58 + (isMorning ? 12 : 0) + (isNight ? 8 : 0) + cloudSeaBoost * 0.7 - astroClear * 0.5,
+  );
+  const cloudLow = clampPercent(
+    28 + (index % 7) + (isMorning ? 14 : 0) + cloudSeaBoost - astroClear * 0.6,
+  );
+  const cloudMid = clampPercent(
+    32 + (index % 5) + (isMorning || isSunset ? 12 : 0) + glowBoost - astroClear,
+  );
+  const cloudHigh = clampPercent(
+    26 + (index % 6) + (isMorning || isSunset ? 10 : 0) + glowBoost * 0.8 - astroClear,
+  );
   const cloudTotal = Math.min(100, Math.round(Math.max(cloudLow, cloudMid, cloudHigh) + 12));
-  const precipitationProbability = index > 3 ? 12 : 4;
-  const temperature = round1(17 + index * 0.4);
-  const windSpeed = round1(2.8 + index * 0.1);
+  const precipitationProbability = clampPercent(
+    5 + (cloudTotal > 72 ? 10 : 0) + (target === "general" && index > 18 ? 6 : 0),
+  );
+  const temperature = round1(17 + Math.sin(((localHour - 6) / 24) * Math.PI * 2) * 4);
+  const windSpeed = round1(Math.max(0.8, 2.8 + (localHour >= 13 && localHour <= 17 ? 1.1 : 0)));
+  const visibility = round1(
+    Math.max(4, 30 - Math.max(0, humidity - 62) * 0.18 - precipitationProbability * 0.08),
+  );
+  const dewPoint = round1(temperature - Math.max(1.4, (100 - humidity) / 8 + windSpeed * 0.35));
 
   return {
     time: addHoursInTimezone(forecastStart, index, timezone),
@@ -158,14 +182,14 @@ function buildMockHour(
     windDirection: (120 + index * 18) % 360,
     precipitationProbability,
     precipitation: precipitationProbability > 55 ? 1.2 : 0,
-    visibility: 26,
-    dewPoint: round1(temperature - 5.2),
+    visibility,
+    dewPoint,
     cloudTotal,
     cloudLow,
     cloudMid,
     cloudHigh,
     weatherCode: index % 3 === 0 ? "mock-partly-cloudy" : "mock-clear",
-    providerCode: PROVIDER_ID,
+    providerCode: DATA_SOURCE.providerCode,
     sourceConfidence: 0.78,
     sourceNotes: ["本地模拟天气数据用于流程验证。"],
   };
@@ -173,7 +197,7 @@ function buildMockHour(
 
 function resolveTargetDates(
   days: number,
-  options: ForecastRequestOptions,
+  options: WeatherRequestInput,
   timezone: string,
 ): readonly string[] {
   if (options.targetDates && options.targetDates.length > 0) {
@@ -188,6 +212,22 @@ function resolveTargetDates(
   return targetDates.slice(0, days);
 }
 
+function resolveForecastHours(options: WeatherRequestInput): number {
+  if (options.forecastStart && options.forecastEnd) {
+    const startMs = Date.parse(options.forecastStart);
+    const endMs = Date.parse(options.forecastEnd);
+    if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs) {
+      return Math.min(Math.max(Math.ceil((endMs - startMs) / (60 * 60 * 1000)), 1), 168);
+    }
+  }
+
+  return Math.min(Math.max(options.hours ?? 6, 1), 168);
+}
+
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
+}
+
+function clampPercent(value: number): number {
+  return Math.min(100, Math.max(0, Math.round(value)));
 }

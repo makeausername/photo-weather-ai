@@ -17,6 +17,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@photo-weather/calendar": "workspace:*",
     "@photo-weather/shared": "workspace:*",
     "astronomy-engine": "2.1.19"
   }

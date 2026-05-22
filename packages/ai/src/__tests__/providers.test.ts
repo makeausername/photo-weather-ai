@@ -187,6 +187,9 @@ const forecastResultFixture: ForecastCalculationResult = {
   },
   horizon: "48h",
   target: "cloud_sea",
+  forecastStart: "2026-05-20T08:00:00+08:00",
+  forecastEnd: "2026-05-22T08:00:00+08:00",
+  targetDates: ["2026-05-20", "2026-05-21", "2026-05-22"],
   calendarBasis: {
     forecastStart: "2026-05-20T08:00:00+08:00",
     forecastEnd: "2026-05-22T08:00:00+08:00",
@@ -327,10 +330,55 @@ const forecastResultFixture: ForecastCalculationResult = {
   bestWindows: [
     {
       label: "清晨云海窗口",
+      date: "2026-05-20",
       startTime: "2026-05-20T05:00:00+08:00",
       endTime: "2026-05-20T07:00:00+08:00",
       score: 86,
       target: "cloud_sea",
+    },
+  ],
+  dailySummaries: [
+    {
+      date: "2026-05-20",
+      dateLabelZh: "2026年5月20日 星期三",
+      lunarDateText: "四月初四",
+      score: 86,
+      recommendationLabel: "推荐前往",
+      target: "cloud_sea",
+      keyWindows: [
+        {
+          label: "清晨云海窗口",
+          date: "2026-05-20",
+          startTime: "2026-05-20T05:00:00+08:00",
+          endTime: "2026-05-20T07:00:00+08:00",
+          score: 86,
+          target: "cloud_sea",
+        },
+      ],
+      riskFlags: [],
+      shortAdvice: "清晨云海窗口值得等待。",
+    },
+  ],
+  targetDailyBreakdown: [
+    {
+      date: "2026-05-20",
+      cloudSea: {
+        label: "清晨云海机会",
+        score: 86,
+        detail: "清晨云海窗口值得关注。",
+      },
+      whiteoutRisk: {
+        label: "白墙风险",
+        score: 38,
+        detail: "白墙风险较低。",
+      },
+      transparency: {
+        label: "通透度",
+        score: 71,
+        detail: "能见度较好。",
+      },
+      terrainSummary: "本地模拟地形显示山顶与周边谷地高差明显。",
+      weatherSummary: "多云间晴，山地局部有雾",
     },
   ],
   riskFlags: [
@@ -345,6 +393,12 @@ const forecastResultFixture: ForecastCalculationResult = {
   photographyAdvice: ["提前到达机位并预留风雨备选。"],
   dataNotice: "当前天气数据和地形数据为本地模拟数据。",
   isMock: true,
-  dataSourceLabel: "模拟天气数据",
+  dataSourceLabel: "本地模拟数据",
   generatedAt: "2026-05-19T08:00:00+08:00",
+  weatherProviderCode: "mock",
+  weatherProviderLabelZh: "本地模拟数据",
+  weatherDataMode: "mock",
+  weatherNoticeZh: "天气数据：本地模拟数据",
+  weatherMissingFields: [],
+  weatherEstimatedFields: [],
 };

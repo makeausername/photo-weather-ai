@@ -44,6 +44,8 @@ export type ForecastHorizon = "24h" | "48h" | "72h" | "7d";
 
 export type ForecastTarget = "general" | "cloud_sea" | "glow" | "astro";
 
+export type WeatherDataMode = "mock" | "fixture" | "real";
+
 export type ForecastQueryInput = {
   readonly name: string;
   readonly source: string;
@@ -77,6 +79,8 @@ export type NormalizedHourlyWeather = {
   readonly weatherCode: string | null;
   readonly providerCode: string;
   readonly sourceConfidence: number | null;
+  readonly missingFields?: readonly string[];
+  readonly estimatedFields?: readonly string[];
   readonly sourceNotes?: readonly string[];
 };
 
@@ -88,6 +92,9 @@ export type NormalizedDailyWeather = {
   readonly weatherSummary: string;
   readonly sunrise?: string;
   readonly sunset?: string;
+  readonly providerCode: string;
+  readonly missingFields?: readonly string[];
+  readonly estimatedFields?: readonly string[];
 };
 
 export type TerrainCloudSeaPotential = "low" | "medium" | "high";
@@ -133,6 +140,21 @@ export type TerrainSummary = TerrainProfileSummary &
     readonly honestyNoteZh: string;
   };
 
+export type MoonWaxingOrWaning = "waxing" | "waning" | "unknown";
+
+export type MoonInfo = {
+  readonly moonPhase: number;
+  readonly moonPhaseNameZh: string;
+  readonly moonIllumination: number;
+  readonly waxingOrWaning: MoonWaxingOrWaning;
+  readonly lunarDateText: string;
+  readonly solarTerm?: string;
+  readonly moonrise?: string;
+  readonly moonset?: string;
+  readonly moonAltitudeByHour?: Readonly<Record<string, number>>;
+  readonly calculationNoteZh: string;
+};
+
 export type AstroSummary = {
   readonly date: string;
   readonly timezone: string;
@@ -152,9 +174,14 @@ export type AstroSummary = {
   readonly moonPhase: number;
   readonly moonPhaseNameZh: string;
   readonly moonIllumination: number;
+  readonly waxingOrWaning: MoonWaxingOrWaning;
+  readonly lunarDateText: string;
+  readonly solarTerm?: string;
   readonly moonrise?: string;
   readonly moonset?: string;
   readonly moonAltitudeByHour?: Readonly<Record<string, number>>;
+  readonly calculationNoteZh: string;
+  readonly moonInfo: MoonInfo;
   readonly milkyWayWindowStart?: string;
   readonly milkyWayWindowEnd?: string;
   readonly milkyWayBestTime?: string;
@@ -176,6 +203,12 @@ export type ForecastCalculationInput = {
   readonly generatedAt: string;
   readonly isMock: boolean;
   readonly dataSourceLabel: string;
+  readonly weatherProviderCode: string;
+  readonly weatherProviderLabelZh: string;
+  readonly weatherDataMode: WeatherDataMode;
+  readonly weatherNoticeZh: string;
+  readonly weatherMissingFields: readonly string[];
+  readonly weatherEstimatedFields: readonly string[];
 };
 
 export type ForecastScoreLevel = "poor" | "fair" | "good" | "excellent";
@@ -191,6 +224,7 @@ export type ForecastScore = {
 
 export type ForecastTimeWindow = {
   readonly label: string;
+  readonly date?: string;
   readonly startTime: string;
   readonly endTime: string;
   readonly score: number;
@@ -222,10 +256,46 @@ export type ForecastScoreSet = {
   readonly transparency: ForecastScore;
 };
 
+export type ForecastDailyMetric = {
+  readonly label: string;
+  readonly score: number;
+  readonly detail: string;
+  readonly window?: ForecastTimeWindow;
+};
+
+export type ForecastDailySummary = {
+  readonly date: string;
+  readonly dateLabelZh: string;
+  readonly lunarDateText?: string;
+  readonly score: number;
+  readonly recommendationLabel: string;
+  readonly target: ForecastTarget;
+  readonly keyWindows: readonly ForecastTimeWindow[];
+  readonly riskFlags: readonly ForecastRiskFlag[];
+  readonly shortAdvice: string;
+};
+
+export type TargetDailyBreakdown = {
+  readonly date: string;
+  readonly sunriseGlow?: ForecastDailyMetric;
+  readonly sunsetGlow?: ForecastDailyMetric;
+  readonly cloudSea?: ForecastDailyMetric;
+  readonly whiteoutRisk?: ForecastDailyMetric;
+  readonly stars?: ForecastDailyMetric;
+  readonly milkyWay?: ForecastDailyMetric;
+  readonly transparency?: ForecastDailyMetric;
+  readonly astroSummary?: AstroSummary;
+  readonly terrainSummary?: string;
+  readonly weatherSummary?: string;
+};
+
 export type ForecastCalculationResult = {
   readonly place: Place;
   readonly horizon: ForecastHorizon;
   readonly target: ForecastTarget;
+  readonly forecastStart: string;
+  readonly forecastEnd: string;
+  readonly targetDates: readonly string[];
   readonly calendarBasis: ForecastCalculationBasis;
   readonly overallScore: number;
   readonly recommendationLevel: ForecastRecommendationLevel;
@@ -235,6 +305,8 @@ export type ForecastCalculationResult = {
   readonly terrainSummary: TerrainSummary;
   readonly terrainAnalysis: TerrainAnalysisSummary;
   readonly astroSummaries: readonly AstroSummary[];
+  readonly dailySummaries: readonly ForecastDailySummary[];
+  readonly targetDailyBreakdown: readonly TargetDailyBreakdown[];
   readonly bestWindows: readonly ForecastTimeWindow[];
   readonly riskFlags: readonly ForecastRiskFlag[];
   readonly keyReasons: readonly string[];
@@ -243,6 +315,12 @@ export type ForecastCalculationResult = {
   readonly isMock: boolean;
   readonly dataSourceLabel: string;
   readonly generatedAt: string;
+  readonly weatherProviderCode: string;
+  readonly weatherProviderLabelZh: string;
+  readonly weatherDataMode: WeatherDataMode;
+  readonly weatherNoticeZh: string;
+  readonly weatherMissingFields: readonly string[];
+  readonly weatherEstimatedFields: readonly string[];
 };
 
 export type ForecastCalendarDayInfo = {

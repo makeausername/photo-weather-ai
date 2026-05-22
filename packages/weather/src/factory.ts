@@ -17,6 +17,10 @@ export function createWeatherProvider(
   const provider = options.provider ?? readProviderCode(process.env.WEATHER_PROVIDER);
   const mode = options.mode ?? readProviderMode(process.env.WEATHER_PROVIDER_MODE);
 
+  if (nodeEnv === "test" && options.provider === undefined && options.mode === undefined) {
+    return new MockWeatherProvider();
+  }
+
   if (!provider || provider === "mock" || !mode || mode === "mock") {
     return new MockWeatherProvider();
   }

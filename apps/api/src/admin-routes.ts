@@ -217,7 +217,7 @@ const geoSearchQuerySchema = z.object({
 
 const providerConnectionTestSchema = z
   .object({
-    mode: z.enum(["mock", "real"]).optional(),
+    mode: z.enum(["mock", "fixture", "real"]).optional(),
   })
   .optional();
 
@@ -682,6 +682,17 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
         } catch (error) {
           return sendError(reply, 503, "provider_test_failed", (error as Error).message);
         }
+      }
+
+      if (request.params.providerType === "weather") {
+        return {
+          success: true,
+          mode: "fixture",
+          message:
+            request.params.providerCode === "qweather"
+              ? "当前为和风天气样例数据测试，未请求真实天气服务。"
+              : "当前为 Open-Meteo 样例数据测试，未请求真实天气服务。",
+        };
       }
 
       return {
