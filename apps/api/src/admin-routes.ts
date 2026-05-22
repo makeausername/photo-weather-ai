@@ -38,6 +38,12 @@ import {
   readRuntimeDeepSeekConfig,
 } from "./ai-provider.js";
 import { createRealAmapProvider, readRuntimeAmapConfig } from "./geo-provider.js";
+import {
+  normalizeOpenMeteoAdminConfigJson,
+  normalizeQWeatherAdminConfigJson,
+  readRuntimeOpenMeteoConfig,
+  readRuntimeQWeatherConfig,
+} from "./weather-provider.js";
 
 const jsonSchema: z.ZodType<JsonValue> = z.lazy(() =>
   z.union([
@@ -493,6 +499,8 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       realDevCallFlags: {
         amap: (await readRuntimeAmapConfig({ dbClient: client, env })).realModeEnabled,
         deepseek: (await readRuntimeDeepSeekConfig({ dbClient: client, env })).realModeEnabled,
+        qweather: (await readRuntimeQWeatherConfig({ dbClient: client, env })).realModeEnabled,
+        openMeteo: (await readRuntimeOpenMeteoConfig({ dbClient: client, env })).realModeEnabled,
       },
     };
   });
@@ -590,6 +598,24 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
         providerPatch.configJson = normalizeDeepSeekAdminConfigJson({
           ...mergedConfigJson,
         });
+      }
+      if (
+        providerType === "weather" &&
+        providerPatch.configJson !== undefined &&
+        (request.params.providerCode === "qweather" ||
+          request.params.providerCode === "open_meteo")
+      ) {
+        const incomingConfigJson = isJsonObjectValue(providerPatch.configJson)
+          ? providerPatch.configJson
+          : {};
+        const mergedConfigJson: Record<string, JsonValue> = {
+          ...(isJsonObjectValue(existingProvider.configJson) ? existingProvider.configJson : {}),
+          ...incomingConfigJson,
+        };
+        providerPatch.configJson =
+          request.params.providerCode === "qweather"
+            ? normalizeQWeatherAdminConfigJson(mergedConfigJson)
+            : normalizeOpenMeteoAdminConfigJson(mergedConfigJson);
       }
 
       const updatedProvider = await updateProviderConfig({
@@ -737,14 +763,85 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       }
 
       if (request.params.providerType === "weather") {
-        return {
-          success: true,
-          mode: "fixture",
-          message:
-            request.params.providerCode === "qweather"
-              ? "当前为和风天气样例数据测试，未请求真实天气服务。"
-              : "当前为 Open-Meteo 样例数据测试，未请求真实天气服务。",
-        };
+        if (request.params.providerCode === "qweather") {
+          const runtimeConfig = await readRuntimeQWeatherConfig({ dbClient: client, env });
+          if (!runtimeConfig.realCallEnabled) {
+            return {
+              success: true,
+              mode: "mock",
+              connectionMode: "mock",
+              providerType: request.params.providerType,
+              providerCode: request.params.providerCode,
+              message: "当前为本地模拟测试，未请求真实天气服务。",
+            };
+          }
+
+          if (!runtimeConfig.enabled) {
+            return sendError(
+              reply,
+              409,
+              "provider_not_enabled",
+              "和风天气服务商未启用，请先在后台服务商配置中启用和风天气。",
+            );
+          }
+
+          if (!runtimeConfig.apiKeyPresent) {
+            return sendError(reply, 400, "provider_key_missing", "请先填写和风天气 API Key。");
+          }
+
+          return {
+            success: true,
+            mode: "real",
+            connectionMode: "real",
+            providerType: request.params.providerType,
+            providerCode: request.params.providerCode,
+            message: "和风天气真实连接测试尚未接入，已完成本地配置校验，未请求真实天气服务。",
+          };
+        }
+
+        if (request.params.providerCode === "open_meteo") {
+          const runtimeConfig = await readRuntimeOpenMeteoConfig({ dbClient: client, env });
+          if (!runtimeConfig.realCallEnabled) {
+            return {
+              success: true,
+              mode: "mock",
+              connectionMode: "mock",
+              providerType: request.params.providerType,
+              providerCode: request.params.providerCode,
+              message: "当前为本地模拟测试，未请求真实天气服务。",
+            };
+          }
+
+          if (!runtimeConfig.enabled) {
+            return sendError(
+              reply,
+              409,
+              "provider_not_enabled",
+              "Open-Meteo 服务商未启用，请先在后台服务商配置中启用 Open-Meteo。",
+            );
+          }
+
+          if (!runtimeConfig.apiKeyPresent && !runtimeConfig.customerEndpointPresent) {
+            return {
+              success: true,
+              mode: "mock",
+              connectionMode: "mock",
+              providerType: request.params.providerType,
+              providerCode: request.params.providerCode,
+              message:
+                "Open-Meteo 未配置商业 Key，将使用默认样例/模拟数据；真实商业接口请填写 API Key 和 Customer Endpoint。",
+            };
+          }
+
+          return {
+            success: true,
+            mode: "real",
+            connectionMode: "real",
+            providerType: request.params.providerType,
+            providerCode: request.params.providerCode,
+            message: "Open-Meteo 商业配置已保存，当前版本未请求真实天气服务。",
+          };
+        }
       }
 
       return {

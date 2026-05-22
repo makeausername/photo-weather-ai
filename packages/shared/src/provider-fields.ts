@@ -165,6 +165,18 @@ export function getDeepSeekModeRuntimeDefaults(
   return deepSeekModeRuntimeDefaults[mode];
 }
 
+export const qWeatherDefaultApiHost = "https://devapi.qweather.com";
+
+export const qWeatherDefaultBaseUrl = qWeatherDefaultApiHost;
+
+export const openMeteoDefaultBaseUrl = "https://api.open-meteo.com/v1";
+
+export const openMeteoDefaultModel = "forecast";
+
+export const weatherDefaultTimeoutMs = 8000;
+
+export const weatherDefaultRetryCount = 1;
+
 const keepExistingSecretPlaceholder = "留空则保持现有密钥不变";
 
 export const providerFieldPresets = [
@@ -248,39 +260,130 @@ export const providerFieldPresets = [
   {
     providerCode: "qweather",
     helpText:
-      "中国大陆主天气源；部分云层分层字段可能不可用。当前本地自动化仅使用和风天气样例数据，不触发真实调用。",
+      "中国大陆主天气源，用于实时天气、逐小时预报、天气预警、空气质量和基础天气数据。",
     fields: [
+      {
+        key: "realCallEnabled",
+        label: "启用真实调用",
+        target: "configJson",
+        control: "boolean",
+        defaultValue: false,
+        helpText: "关闭时测试连接只返回本地模拟结果，不请求真实天气服务。",
+      },
       {
         key: "apiKey",
         label: "和风天气 API Key",
         target: "secretJson",
         placeholder: keepExistingSecretPlaceholder,
         password: true,
+        helpText: "用于后续获取实时天气、逐小时预报、天气预警和空气质量。保存后仅显示脱敏结果。",
       },
       {
         key: "apiHost",
-        label: "API Host",
+        label: "API Host（接口主机）",
         target: "configJson",
-        placeholder: "https://devapi.qweather.com",
+        placeholder: qWeatherDefaultApiHost,
+        defaultValue: qWeatherDefaultApiHost,
+        advanced: true,
+      },
+      {
+        key: "baseUrl",
+        label: "API Base URL（接口地址）",
+        target: "configJson",
+        placeholder: qWeatherDefaultBaseUrl,
+        defaultValue: qWeatherDefaultBaseUrl,
+        advanced: true,
+      },
+      {
+        key: "timeoutMs",
+        label: "请求超时（毫秒）",
+        target: "configJson",
+        control: "number",
+        defaultValue: weatherDefaultTimeoutMs,
+        min: 1000,
+        max: 30000,
+        step: 100,
+        advanced: true,
+      },
+      {
+        key: "retryCount",
+        label: "重试次数",
+        target: "configJson",
+        control: "number",
+        defaultValue: weatherDefaultRetryCount,
+        min: 0,
+        max: 5,
+        step: 1,
+        advanced: true,
       },
     ],
   },
   {
     providerCode: "open_meteo",
-    helpText: "云层分层与能见度辅助源；当前本地仅使用 Open-Meteo 样例数据，不触发真实调用。",
+    helpText: "用于云层分层、能见度、露点和多模型交叉验证；本地测试默认使用样例数据。",
     fields: [
       {
+        key: "realCallEnabled",
+        label: "启用真实调用",
+        target: "configJson",
+        control: "boolean",
+        defaultValue: false,
+        helpText: "关闭时测试连接只返回本地模拟结果，不请求真实天气服务。",
+      },
+      {
         key: "apiKey",
-        label: "Open-Meteo API Key",
+        label: "Open-Meteo API Key（可选）",
         target: "secretJson",
         placeholder: keepExistingSecretPlaceholder,
         password: true,
+        helpText:
+          "如使用商业版 Open-Meteo，可填写 API Key；普通本地开发可保持为空。",
       },
       {
         key: "customerEndpoint",
-        label: "Customer Endpoint",
+        label: "Customer Endpoint（商业版可选）",
         target: "configJson",
         placeholder: "https://customer-api.open-meteo.com",
+        helpText:
+          "商业版可选。普通本地开发可保持为空，系统使用样例或模拟数据。",
+      },
+      {
+        key: "defaultModel",
+        label: "默认模型",
+        target: "configJson",
+        placeholder: openMeteoDefaultModel,
+        defaultValue: openMeteoDefaultModel,
+        advanced: true,
+      },
+      {
+        key: "baseUrl",
+        label: "Base URL（接口地址）",
+        target: "configJson",
+        placeholder: openMeteoDefaultBaseUrl,
+        defaultValue: openMeteoDefaultBaseUrl,
+        advanced: true,
+      },
+      {
+        key: "timeoutMs",
+        label: "请求超时（毫秒）",
+        target: "configJson",
+        control: "number",
+        defaultValue: weatherDefaultTimeoutMs,
+        min: 1000,
+        max: 30000,
+        step: 100,
+        advanced: true,
+      },
+      {
+        key: "retryCount",
+        label: "重试次数",
+        target: "configJson",
+        control: "number",
+        defaultValue: weatherDefaultRetryCount,
+        min: 0,
+        max: 5,
+        step: 1,
+        advanced: true,
       },
     ],
   },

@@ -119,8 +119,56 @@ describe("admin config routes", () => {
     expect(body.realDevCallFlags).toEqual({
       amap: false,
       deepseek: false,
+      qweather: false,
+      openMeteo: false,
     });
     expect(JSON.stringify(body)).not.toContain("secretJson");
+  });
+
+  it("updates QWeather config and returns only masked weather secrets", async () => {
+    const { client } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/admin/providers/weather/qweather",
+      headers: adminAuthorizationHeader(),
+      payload: {
+        enabled: true,
+        configJson: {
+          realCallEnabled: true,
+        },
+        secretJson: {
+          apiKey: "qweather-real-secret",
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().provider).toMatchObject({
+      providerType: "weather",
+      providerCode: "qweather",
+      enabled: true,
+      configJson: {
+        realCallEnabled: true,
+        apiHost: "https://devapi.qweather.com",
+        baseUrl: "https://devapi.qweather.com",
+        timeoutMs: 8000,
+        retryCount: 1,
+      },
+      maskedSecretJson: {
+        apiKey: "qwea****cret",
+      },
+    });
+    expect(response.body).not.toContain("secretJson");
+    expect(response.body).not.toContain("qweather-real-secret");
+
+    const auditResponse = await app.inject({
+      method: "GET",
+      url: "/admin/audit-logs",
+      headers: adminAuthorizationHeader(),
+    });
+    expect(JSON.stringify(auditResponse.json())).not.toContain("qweather-real-secret");
   });
 
   it("updates provider config and never exposes raw secrets", async () => {
@@ -230,7 +278,11 @@ describe("admin config routes", () => {
     expect(clearResponse.body).not.toContain("amap-real-secret");
   });
 
-  it("returns a deterministic fixture weather provider connection test for empty body and {}", async () => {
+  it("returns a deterministic mock weather provider connection test for empty body and {}", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("weather provider tests must not call network");
+    });
+    vi.stubGlobal("fetch", fetchMock);
     const { client } = await createFakeDatabaseClient();
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
 
@@ -243,8 +295,11 @@ describe("admin config routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       success: true,
-      mode: "fixture",
-      message: "当前为和风天气样例数据测试，未请求真实天气服务。",
+      mode: "mock",
+      connectionMode: "mock",
+      providerType: "weather",
+      providerCode: "qweather",
+      message: "当前为本地模拟测试，未请求真实天气服务。",
     });
 
     const emptyJsonBodyResponse = await app.inject({
@@ -260,8 +315,8 @@ describe("admin config routes", () => {
     expect(emptyJsonBodyResponse.statusCode).toBe(200);
     expect(emptyJsonBodyResponse.json()).toMatchObject({
       success: true,
-      mode: "fixture",
-      message: "当前为和风天气样例数据测试，未请求真实天气服务。",
+      mode: "mock",
+      message: "当前为本地模拟测试，未请求真实天气服务。",
     });
 
     const emptyObjectResponse = await app.inject({
@@ -274,9 +329,75 @@ describe("admin config routes", () => {
     expect(emptyObjectResponse.statusCode).toBe(200);
     expect(emptyObjectResponse.json()).toMatchObject({
       success: true,
-      mode: "fixture",
-      message: "当前为和风天气样例数据测试，未请求真实天气服务。",
+      mode: "mock",
+      message: "当前为本地模拟测试，未请求真实天气服务。",
     });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("returns Chinese weather real-call guard results without network calls", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("weather real-call guard must not call network");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const qWeatherProvider = state.providers.get("weather:qweather");
+    const openMeteoProvider = state.providers.get("weather:open_meteo");
+    state.providers.set("weather:qweather", {
+      ...qWeatherProvider,
+      enabled: true,
+      configJson: {
+        ...(qWeatherProvider.configJson ?? {}),
+        realCallEnabled: true,
+      },
+      secretJson: {},
+      maskedSecretJson: {},
+    });
+    state.providers.set("weather:open_meteo", {
+      ...openMeteoProvider,
+      enabled: true,
+      configJson: {
+        ...(openMeteoProvider.configJson ?? {}),
+        realCallEnabled: true,
+      },
+      secretJson: {},
+      maskedSecretJson: {},
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+      },
+      logger: false,
+    });
+
+    const qWeatherResponse = await app.inject({
+      method: "POST",
+      url: "/admin/providers/weather/qweather/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+    const openMeteoResponse = await app.inject({
+      method: "POST",
+      url: "/admin/providers/weather/open_meteo/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(qWeatherResponse.statusCode).toBe(400);
+    expect(qWeatherResponse.json()).toMatchObject({
+      error: "provider_key_missing",
+      message: "请先填写和风天气 API Key。",
+    });
+    expect(openMeteoResponse.statusCode).toBe(200);
+    expect(openMeteoResponse.json()).toMatchObject({
+      success: true,
+      mode: "mock",
+      connectionMode: "mock",
+      message:
+        "Open-Meteo 未配置商业 Key，将使用默认样例/模拟数据；真实商业接口请填写 API Key 和 Customer Endpoint。",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("keeps Amap connection tests in mock mode by default and hides secrets", async () => {
@@ -381,6 +502,8 @@ describe("admin config routes", () => {
     expect(response.json().realDevCallFlags).toEqual({
       amap: true,
       deepseek: false,
+      qweather: false,
+      openMeteo: false,
     });
   });
 
@@ -534,6 +657,8 @@ describe("admin config routes", () => {
     const { client, state } = await createFakeDatabaseClient();
     const amapProvider = state.providers.get("geo:amap");
     const deepSeekProvider = state.providers.get("ai:deepseek");
+    const qWeatherProvider = state.providers.get("weather:qweather");
+    const openMeteoProvider = state.providers.get("weather:open_meteo");
     state.providers.set("geo:amap", {
       ...amapProvider,
       enabled: true,
@@ -562,6 +687,35 @@ describe("admin config routes", () => {
         apiKey: "deep****cret",
       },
     });
+    state.providers.set("weather:qweather", {
+      ...qWeatherProvider,
+      enabled: true,
+      configJson: {
+        ...(qWeatherProvider.configJson ?? {}),
+        realCallEnabled: true,
+      },
+      secretJson: {
+        apiKey: "qweather-test-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "qwea****cret",
+      },
+    });
+    state.providers.set("weather:open_meteo", {
+      ...openMeteoProvider,
+      enabled: true,
+      configJson: {
+        ...(openMeteoProvider.configJson ?? {}),
+        realCallEnabled: true,
+        customerEndpoint: "https://customer.open-meteo.example",
+      },
+      secretJson: {
+        apiKey: "open-meteo-test-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "open****cret",
+      },
+    });
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
 
     const amapResponse = await app.inject({
@@ -572,6 +726,16 @@ describe("admin config routes", () => {
     const deepSeekResponse = await app.inject({
       method: "POST",
       url: "/admin/providers/ai/deepseek/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+    const qWeatherResponse = await app.inject({
+      method: "POST",
+      url: "/admin/providers/weather/qweather/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+    const openMeteoResponse = await app.inject({
+      method: "POST",
+      url: "/admin/providers/weather/open_meteo/test-connection",
       headers: adminAuthorizationHeader(),
     });
 
@@ -586,6 +750,18 @@ describe("admin config routes", () => {
       mode: "fast",
       connectionMode: "mock",
       model: "deepseek-v4-flash",
+    });
+    expect(qWeatherResponse.statusCode).toBe(200);
+    expect(qWeatherResponse.json()).toMatchObject({
+      success: true,
+      mode: "mock",
+      connectionMode: "mock",
+    });
+    expect(openMeteoResponse.statusCode).toBe(200);
+    expect(openMeteoResponse.json()).toMatchObject({
+      success: true,
+      mode: "mock",
+      connectionMode: "mock",
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });

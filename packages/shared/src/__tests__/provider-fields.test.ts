@@ -46,6 +46,32 @@ describe("provider field presets", () => {
         expect.objectContaining({ key: "baseUrl", target: "configJson", advanced: true }),
       ]),
     );
+
+    expect(getProviderFieldPreset("qweather")?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "realCallEnabled", target: "configJson" }),
+        expect.objectContaining({
+          key: "apiKey",
+          label: "和风天气 API Key",
+          target: "secretJson",
+        }),
+        expect.objectContaining({ key: "apiHost", target: "configJson", advanced: true }),
+        expect.objectContaining({ key: "timeoutMs", target: "configJson", advanced: true }),
+      ]),
+    );
+
+    expect(getProviderFieldPreset("open_meteo")?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "realCallEnabled", target: "configJson" }),
+        expect.objectContaining({
+          key: "apiKey",
+          label: "Open-Meteo API Key（可选）",
+          target: "secretJson",
+        }),
+        expect.objectContaining({ key: "customerEndpoint", target: "configJson" }),
+        expect.objectContaining({ key: "defaultModel", target: "configJson", advanced: true }),
+      ]),
+    );
   });
 
   it("keeps DeepSeek model dropdown values centralized", () => {

@@ -246,11 +246,26 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_DEFAULT_MODEL=deepseek-v4-flash
 ```
 
+天气服务商也优先在后台服务商配置页填写。和风天气普通管理员只需要填写 API Key、启用服务商、按需启用真实调用、保存并测试连接；Open-Meteo 的商业 API Key 和 Customer Endpoint 是可选配置，普通本地开发可保持为空。API Host、Base URL、默认模型、超时和重试次数默认折叠在“高级配置”中：
+
+```bash
+WEATHER_PROVIDER=mock
+WEATHER_PROVIDER_MODE=mock
+QWEATHER_API_KEY=
+QWEATHER_API_HOST=https://devapi.qweather.com
+QWEATHER_BASE_URL=https://devapi.qweather.com
+OPEN_METEO_API_KEY=
+OPEN_METEO_CUSTOMER_ENDPOINT=
+OPEN_METEO_BASE_URL=https://api.open-meteo.com/v1
+```
+
 后台 `geo/amap` 已启用、`configJson.realCallEnabled=true` 且已配置高德 Web 服务 Key 后，公开地点搜索和后台高德测试连接可以请求真实高德 Web Service。若数据库配置中没有 `realCallEnabled` 字段，才会读取 `ENABLE_REAL_AMAP` 作为兜底。高德返回坐标按 GCJ-02 处理，并同步归一化为 WGS84；天气、天文、地形和评分计算仍只使用 WGS84。
 
 后台 `ai/deepseek` 已启用、`configJson.realCallEnabled=true` 且已配置 DeepSeek API Key 后，forecast 结果页可以手动点击“生成智能解读”。默认快速模式使用 `deepseek-v4-flash`，专业模式使用 `deepseek-v4-pro`；旧的 `deepseek-chat` / `deepseek-reasoner` 只作为历史配置兼容名，运行时会分别映射到快速模式和专业模式。若数据库配置中没有 `realCallEnabled` 字段，才会读取 `ENABLE_REAL_DEEPSEEK` 作为兜底。DeepSeek 只解释确定性输入中的评分、风险、最佳窗口、建议和备用方案，不计算或覆盖天气、天文、地形、坐标和评分；模拟数据场景下不得声称真实天气准确率。Base URL、温度、最大输出 Token、推理强度和思考模式属于高级配置，后台默认折叠；JSON 输出模式固定为 `response_format: { type: "json_object" }`。
 
-本地自动化测试默认使用 `MockGeoProvider`、规则兜底和 mocked fetch，不会读取真实高德 / DeepSeek 密钥，也不会调用真实外部网络接口。
+和风天气与 Open-Meteo 真实 forecast 获取仍保留给后续 staging / 服务器环境验证；当前 forecast 计算默认不调用真实天气接口。后台天气测试连接在本地模拟模式返回“当前为本地模拟测试，未请求真实天气服务。”；自动化测试不会调用真实 QWeather 或 Open-Meteo API。
+
+本地自动化测试默认使用 `MockGeoProvider`、规则兜底和 mocked fetch，不会读取真实高德 / DeepSeek / 天气服务商密钥，也不会调用真实外部网络接口。
 
 如需清理 Next.js 缓存后启动：
 
@@ -292,7 +307,7 @@ DATABASE_URL=postgresql://photo_weather:photo_weather@postgres:5432/photo_weathe
 
 Provider secrets 和永久服务商配置属于数据库后台配置，不应写进业务代码。Seed data 只创建占位服务商和空密钥对象，不包含真实 DeepSeek、QWeather、Open-Meteo、高德地图、存储、短信或支付凭据。
 
-`/admin/providers` 提供可视化服务商配置表单。高德地图支持“启用该服务商”“启用真实调用”“高德 Web 服务 Key”和优先级；DeepSeek 卡片改为简化配置，只显示“启用该服务商”“启用真实调用”“DeepSeek API Key”和“分析模式”下拉框，快速模式使用 `deepseek-v4-flash`，专业模式使用 `deepseek-v4-pro`。Base URL、Temperature、Max Tokens、Reasoning Effort 和 Thinking Mode 默认折叠在“高级配置”中，普通管理员不需要理解或编辑 `response_format`。和风天气显示中国大陆主天气源与云层分层字段可能不可用的能力说明；Open-Meteo 显示云层分层与能见度辅助源说明。QWeather / Open-Meteo 当前本地只使用样例数据，不暴露密钥、不触发真实调用。密钥保存后 API 只返回 `maskedSecretJson`，不会返回原始 `secretJson`；空密钥输入表示保留现有密钥不变，如需删除已保存字段请使用后台表单中的清除操作。
+`/admin/providers` 提供可视化服务商配置表单。高德地图支持“启用该服务商”“启用真实调用”“高德 Web 服务 Key”和优先级；DeepSeek 卡片改为简化配置，只显示“启用该服务商”“启用真实调用”“DeepSeek API Key”和“分析模式”下拉框，快速模式使用 `deepseek-v4-flash`，专业模式使用 `deepseek-v4-pro`。Base URL、Temperature、Max Tokens、Reasoning Effort 和 Thinking Mode 默认折叠在“高级配置”中，普通管理员不需要理解或编辑 `response_format`。和风天气卡片显示“和风天气 API Key”、启用开关、真实调用开关、优先级和数据能力；API Host、API Base URL、请求超时、重试次数和原始配置 JSON 都在“高级配置”内。Open-Meteo 卡片显示可选 API Key、可选 Customer Endpoint、启用开关、真实调用开关、优先级和数据能力；默认模型、Base URL、超时、重试和原始配置 JSON 默认折叠。QWeather / Open-Meteo 当前本地只使用样例或模拟数据，不暴露密钥、不触发真实天气调用。密钥保存后 API 只返回 `maskedSecretJson`，不会返回原始 `secretJson`；空密钥输入表示保留现有密钥不变，如需删除已保存字段请使用后台表单中的清除操作。
 
 Seed data 包含未核验的中国风光摄影示例地点与机位：
 
@@ -377,9 +392,9 @@ GET   /admin/audit-logs
 - 审计日志：`audit.read`
 - `/admin` 状态：`admin.manage`
 
-服务商测试连接默认仍为本地 mock 或 fixture，不调用真实外部服务。高德地图与 DeepSeek 是当前仅允许真实开发调用的例外：必须同时满足后台服务商已启用、后台“启用真实调用”已打开、API Key 已配置。若旧数据库记录缺少 `realCallEnabled` 字段，才会读取 `ENABLE_REAL_AMAP` / `ENABLE_REAL_DEEPSEEK` 作为兜底。
+服务商测试连接默认仍为本地 mock 或 fixture，不调用真实外部服务。高德地图与 DeepSeek 是当前仅允许真实开发调用的例外：必须同时满足后台服务商已启用、后台“启用真实调用”已打开、API Key 已配置。和风天气与 Open-Meteo 已具备简化后台配置和运行时解析，但真实天气接口请求仍保留给后续 staging / 服务器验证；自动化测试强制本地模拟。若旧数据库记录缺少 `realCallEnabled` 字段，才会读取环境变量作为兜底。
 
-后台“测试连接”按钮会向 `/admin/providers/:providerType/:providerCode/test-connection` 发送 `{}`。未启用真实调用时，高德返回“当前为本地模拟测试，未请求高德地图服务。”，DeepSeek 返回“当前为本地模拟测试，未请求 DeepSeek 服务。”并带回当前模式和模型；QWeather 返回和风天气样例数据测试，Open-Meteo 返回 Open-Meteo 样例数据测试，均不会请求真实天气服务。启用真实调用但缺少 Key 时，高德和 DeepSeek 分别返回“请先填写高德 Web 服务 Key。”和“请先填写 DeepSeek API Key。”自动化测试强制 mock / fixture，不启用真实服务商联调。接口响应和日志不得暴露原始密钥。
+后台“测试连接”按钮会向 `/admin/providers/:providerType/:providerCode/test-connection` 发送 `{}`。未启用真实调用时，高德返回“当前为本地模拟测试，未请求高德地图服务。”，DeepSeek 返回“当前为本地模拟测试，未请求 DeepSeek 服务。”并带回当前模式和模型；和风天气与 Open-Meteo 返回“当前为本地模拟测试，未请求真实天气服务。”。启用真实调用但缺少 Key 时，高德、DeepSeek、和风天气分别返回“请先填写高德 Web 服务 Key。”“请先填写 DeepSeek API Key。”“请先填写和风天气 API Key。”；Open-Meteo 未配置商业 Key 时提示可继续使用默认样例 / 模拟数据，真实商业接口需填写 API Key 和 Customer Endpoint。接口响应和日志不得暴露原始密钥。
 
 ## 后台控制台
 
@@ -425,7 +440,7 @@ GET   /admin/audit-logs
 - 日历、农历和节气只使用本地 Calendar Core 与 `lunar-typescript`，不调用在线日历 API。
 - 不调用真实存储、短信、支付或计费服务。
 
-本地和测试默认天气服务商为 `mock`。如需验证服务商 adapter，只能显式设置 `WEATHER_PROVIDER=qweather|open_meteo` 且 `WEATHER_PROVIDER_MODE=fixture`；`WEATHER_PROVIDER_MODE=real` 当前会 fail closed，不会悄悄发起网络请求。除高德地图和 DeepSeek 的后台真实调用开关外，真实服务商联调应在后续阶段通过后台配置或环境旗标显式启用，并且只在 staging 或 production 环境按操作员意图执行。
+本地和测试默认天气服务商为 `mock`。如需验证服务商 adapter，只能显式设置 `WEATHER_PROVIDER=qweather|open_meteo` 且 `WEATHER_PROVIDER_MODE=fixture`；`WEATHER_PROVIDER_MODE=real` 当前会 fail closed，不会悄悄发起网络请求。后台天气服务商配置中的真实调用开关只用于后续人工联调准备；真实 QWeather / Open-Meteo 调用应在 staging 或 production 环境按操作员意图执行，自动化测试仍强制本地模拟。
 
 高德地图 provider 当前只负责地点搜索、地理编码、逆地理编码和坐标归一化。地图展示使用 GCJ-02；天气、天文、地形、DEM 和后续评分计算必须使用 WGS84。DeepSeek 只负责解释确定性 forecast 结果，不负责计算真实天气、天文、地形或评分。
 

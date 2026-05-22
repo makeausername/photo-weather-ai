@@ -43,6 +43,15 @@ type ClearSecretDrafts = Record<string, Record<string, boolean>>;
 type RealDevCallFlags = {
   readonly amap: boolean;
   readonly deepseek: boolean;
+  readonly qweather: boolean;
+  readonly openMeteo: boolean;
+};
+
+const defaultRealDevCallFlags: RealDevCallFlags = {
+  amap: false,
+  deepseek: false,
+  qweather: false,
+  openMeteo: false,
 };
 
 const providerTypeLabels: Record<string, string> = {
@@ -284,6 +293,14 @@ function getRealDevCallFlagKey(provider: SafeProviderConfig): keyof RealDevCallF
     return "deepseek";
   }
 
+  if (provider.providerType === "weather" && provider.providerCode === "qweather") {
+    return "qweather";
+  }
+
+  if (provider.providerType === "weather" && provider.providerCode === "open_meteo") {
+    return "openMeteo";
+  }
+
   return null;
 }
 
@@ -306,6 +323,17 @@ function readStringJson(value: JsonValue | undefined): string | undefined {
 
 function isDeepSeekProvider(provider: SafeProviderConfig): boolean {
   return provider.providerType === "ai" && provider.providerCode === "deepseek";
+}
+
+function isWeatherProvider(provider: SafeProviderConfig): boolean {
+  return (
+    provider.providerType === "weather" &&
+    (provider.providerCode === "qweather" || provider.providerCode === "open_meteo")
+  );
+}
+
+function isOpenMeteoProvider(provider: SafeProviderConfig): boolean {
+  return provider.providerType === "weather" && provider.providerCode === "open_meteo";
 }
 
 function getDeepSeekAnalysisMode(provider: SafeProviderConfig): DeepSeekAnalysisMode {
@@ -333,14 +361,61 @@ function providerHasSecret(provider: SafeProviderConfig): boolean | null {
   return secretField ? hasSavedSecret(provider, secretField.key) : null;
 }
 
+function secretStatusLabel(provider: SafeProviderConfig): string {
+  const hasSecret = providerHasSecret(provider);
+  if (hasSecret) {
+    return "已保存";
+  }
+
+  if (isOpenMeteoProvider(provider)) {
+    return "可选";
+  }
+
+  if (hasSecret === null) {
+    return "不需要";
+  }
+
+  return "未保存";
+}
+
+function secretStatusVariant(provider: SafeProviderConfig): "success" | "warning" | "muted" {
+  const hasSecret = providerHasSecret(provider);
+  if (hasSecret) {
+    return "success";
+  }
+
+  if (isOpenMeteoProvider(provider) || hasSecret === null) {
+    return "muted";
+  }
+
+  return "warning";
+}
+
 function providerTestModeLabel(provider: SafeProviderConfig, realEnabled: boolean): string {
   if (realEnabled) {
     return "真实服务";
   }
-  if (provider.providerType === "weather") {
-    return "样例数据";
-  }
   return "本地模拟";
+}
+
+function providerFieldLabel(provider: SafeProviderConfig, key: string): string {
+  return (
+    getPresetFields(provider, "secretJson").find((field) => field.key === key)?.label ??
+    getPresetFields(provider, "configJson").find((field) => field.key === key)?.label ??
+    key
+  );
+}
+
+function weatherCapabilities(provider: SafeProviderConfig): readonly string[] {
+  if (provider.providerCode === "qweather") {
+    return ["实时天气", "逐小时预报", "能见度", "空气质量", "天气预警"];
+  }
+
+  if (provider.providerCode === "open_meteo") {
+    return ["逐小时预报", "云层分层", "能见度", "露点", "多模型交叉验证"];
+  }
+
+  return [];
 }
 
 function ProviderStatus({
@@ -351,7 +426,6 @@ function ProviderStatus({
   readonly flags: RealDevCallFlags;
 }) {
   const realEnabled = isRealDevCallEnabled(provider, flags);
-  const hasSecret = providerHasSecret(provider);
 
   return (
     <div className="grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs">
@@ -362,8 +436,8 @@ function ProviderStatus({
         <Badge variant={realEnabled ? "warning" : "muted"}>
           真实调用：{realEnabled ? "已启用" : "未启用"}
         </Badge>
-        <Badge variant={hasSecret === null ? "muted" : hasSecret ? "success" : "warning"}>
-          密钥状态：{hasSecret === null ? "不需要" : hasSecret ? "已保存" : "未保存"}
+        <Badge variant={secretStatusVariant(provider)}>
+          密钥状态：{secretStatusLabel(provider)}
         </Badge>
         <Badge variant={realEnabled ? "warning" : "muted"}>
           测试模式：{providerTestModeLabel(provider, realEnabled)}
@@ -372,6 +446,46 @@ function ProviderStatus({
       <div className="flex flex-wrap gap-2">
         <Badge variant="muted">优先级 {provider.priority}</Badge>
         <Badge variant="muted">{providerTypeLabels[provider.providerType] ?? "其他服务商"}</Badge>
+      </div>
+    </div>
+  );
+}
+
+function WeatherStatus({
+  provider,
+  flags,
+}: {
+  readonly provider: SafeProviderConfig;
+  readonly flags: RealDevCallFlags;
+}) {
+  const realEnabled = isRealDevCallEnabled(provider, flags);
+  const capabilities = weatherCapabilities(provider);
+
+  return (
+    <div className="grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs">
+      <div className="flex flex-wrap gap-2">
+        <Badge variant={provider.enabled ? "success" : "muted"}>
+          服务状态：{provider.enabled ? "已启用" : "未启用"}
+        </Badge>
+        <Badge variant={realEnabled ? "warning" : "muted"}>
+          真实调用：{realEnabled ? "已启用" : "未启用"}
+        </Badge>
+        <Badge variant={secretStatusVariant(provider)}>
+          密钥状态：{secretStatusLabel(provider)}
+        </Badge>
+        <Badge variant={realEnabled ? "warning" : "muted"}>
+          测试模式：{providerTestModeLabel(provider, realEnabled)}
+        </Badge>
+      </div>
+      <div className="grid gap-2">
+        <p className="font-semibold text-card-foreground">数据能力</p>
+        <div className="flex flex-wrap gap-2">
+          {capabilities.map((capability) => (
+            <Badge key={capability} variant="info">
+              {capability}
+            </Badge>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -449,7 +563,9 @@ function SavedSecretSummary({ provider }: { readonly provider: SafeProviderConfi
         <dl className="mt-3 grid gap-2 text-xs leading-5">
           {maskedSecrets.map(([key, value]) => (
             <div key={key} className="grid gap-1 sm:grid-cols-[140px_1fr]">
-              <dt className="font-semibold text-muted-foreground">{key}</dt>
+              <dt className="font-semibold text-muted-foreground">
+                {providerFieldLabel(provider, key)}
+              </dt>
               <dd className="break-all text-card-foreground">{value}</dd>
             </div>
           ))}
@@ -476,12 +592,13 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   const [enabledDrafts, setEnabledDrafts] = useState<Record<string, boolean>>({});
   const [priorityDrafts, setPriorityDrafts] = useState<Record<string, number>>({});
   const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({});
+  const [expandedAdvancedProviders, setExpandedAdvancedProviders] = useState<
+    Record<string, boolean>
+  >({});
   const [stateByProvider, setStateByProvider] = useState<Record<string, RowState>>({});
   const [loadState, setLoadState] = useState<RowState>({ status: "idle" });
-  const [realDevCallFlags, setRealDevCallFlags] = useState<RealDevCallFlags>({
-    amap: false,
-    deepseek: false,
-  });
+  const [realDevCallFlags, setRealDevCallFlags] =
+    useState<RealDevCallFlags>(defaultRealDevCallFlags);
 
   const path = providerType
     ? `/admin/providers?providerType=${encodeURIComponent(providerType)}`
@@ -492,7 +609,10 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     try {
       const response = await adminApiFetch<ProvidersResponse>(path);
       setProviders(response.providers);
-      setRealDevCallFlags(response.realDevCallFlags ?? { amap: false, deepseek: false });
+      setRealDevCallFlags({
+        ...defaultRealDevCallFlags,
+        ...(response.realDevCallFlags ?? {}),
+      });
       setConfigDrafts(
         Object.fromEntries(
           response.providers.map((provider) => [provider.id, stringifyJson(provider.configJson)]),
@@ -514,6 +634,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         Object.fromEntries(response.providers.map((provider) => [provider.id, provider.priority])),
       );
       setExpandedProviders({});
+      setExpandedAdvancedProviders({});
       setLoadState({ status: "saved", message: "服务商配置已加载。" });
     } catch (error) {
       setLoadState({ status: "error", message: (error as Error).message });
@@ -863,7 +984,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               <h2 className="text-lg font-bold">{providerTypeLabels[group] ?? "其他服务商"}</h2>
               <p className="mt-1 text-sm text-muted-foreground">{groupProviders.length} 个服务商</p>
             </div>
-            <Badge variant="muted">高德和 DeepSeek 可在此显式启用真实调用</Badge>
+            <Badge variant="muted">真实调用需显式启用，自动化测试保持本地模拟</Badge>
           </div>
 
           <div className="grid gap-4 p-5 xl:grid-cols-2">
@@ -874,7 +995,9 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               const secretFields = getPresetFields(provider, "secretJson");
               const state = stateByProvider[provider.id];
               const isExpanded = expandedProviders[provider.id] ?? false;
+              const isAdvancedExpanded = expandedAdvancedProviders[provider.id] ?? false;
               const isDeepSeek = isDeepSeekProvider(provider);
+              const isWeather = isWeatherProvider(provider);
 
               return (
                 <article
@@ -892,6 +1015,8 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                     </div>
                     {isDeepSeek ? (
                       <DeepSeekStatus provider={provider} flags={realDevCallFlags} />
+                    ) : isWeather ? (
+                      <WeatherStatus provider={provider} flags={realDevCallFlags} />
                     ) : (
                       <ProviderStatus provider={provider} flags={realDevCallFlags} />
                     )}
@@ -908,7 +1033,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                   <SavedSecretSummary provider={provider} />
 
                   <div className="flex flex-wrap items-center gap-3">
-                    {!isDeepSeek ? (
+                    {!isDeepSeek && !isWeather ? (
                       <Button variant="secondary" onClick={() => toggleProviderEditor(provider.id)}>
                         {isExpanded ? "收起配置" : "编辑配置"}
                       </Button>
@@ -925,7 +1050,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                     ) : null}
                   </div>
 
-                  {isExpanded || isDeepSeek ? (
+                  {isExpanded || isDeepSeek || isWeather ? (
                     <div className="grid gap-5 rounded-lg border border-border bg-muted p-4">
                       <SwitchRow
                         label="启用该服务商"
@@ -957,17 +1082,19 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                       <section className="grid gap-3">
                         <div>
                           <h4 className="text-sm font-bold text-card-foreground">
-                            {isDeepSeek ? "调用开关" : "基础配置"}
+                            {isDeepSeek || isWeather ? "调用开关" : "基础配置"}
                           </h4>
                           <p className="mt-1 text-xs leading-5 text-muted-foreground">
                             {isDeepSeek
                               ? "真实调用关闭时，测试连接只返回本地模拟结果，不会请求 DeepSeek。"
-                              : "用于服务商地址、模型、Bucket、Region 等非密钥配置。"}
+                              : isWeather
+                                ? "真实调用关闭时，测试连接只返回本地模拟结果，不会请求真实天气服务。"
+                                : "用于服务商地址、模型、Bucket、Region 等非密钥配置。"}
                           </p>
                         </div>
                         {configFields.length > 0 ? (
                           <div className="grid gap-3 sm:grid-cols-2">
-                            {(isDeepSeek
+                            {(isDeepSeek || isWeather
                               ? configFields.filter((field) => field.key === "realCallEnabled")
                               : configFields
                             ).map((field) => renderConfigField(provider, field))}
@@ -1066,9 +1193,37 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                         </section>
                       ) : null}
 
-                      <details className="rounded-lg border border-border bg-card p-3">
+                      {isWeather && provider.providerCode === "open_meteo" ? (
+                        <section className="grid gap-3">
+                          <div>
+                            <h4 className="text-sm font-bold text-card-foreground">
+                              商业版设置
+                            </h4>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                              如使用商业版 Open-Meteo，可填写商业版专属 Endpoint；普通本地开发可保持为空。
+                            </p>
+                          </div>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {configFields
+                              .filter((field) => field.key === "customerEndpoint")
+                              .map((field) => renderConfigField(provider, field))}
+                          </div>
+                        </section>
+                      ) : null}
+
+                      <details
+                        className="rounded-lg border border-border bg-card p-3"
+                        open={isAdvancedExpanded}
+                        onToggle={(event) => {
+                          const open = event.currentTarget.open;
+                          setExpandedAdvancedProviders((current) => ({
+                            ...current,
+                            [provider.id]: open,
+                          }));
+                        }}
+                      >
                         <summary className="cursor-pointer text-sm font-semibold text-card-foreground">
-                          高级配置
+                          {isAdvancedExpanded ? "收起高级配置" : "展开高级配置"}
                         </summary>
                         <div className="mt-4 grid gap-4">
                           {advancedConfigFields.length > 0 ? (
@@ -1093,28 +1248,30 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                                 />
                               </FormField>
 
-                              <FormField
-                                label="额外密钥 JSON"
-                                hint="仅填写要新增或更新的密钥字段；留空表示不更新密钥。"
-                              >
-                                <Textarea
-                                  placeholder="留空则保持现有密钥不变"
-                                  value={secretDrafts[provider.id] ?? ""}
-                                  onChange={(event) =>
-                                    setSecretDrafts((current) => ({
-                                      ...current,
-                                      [provider.id]: event.target.value,
-                                    }))
-                                  }
-                                />
-                              </FormField>
+                              {!isWeather ? (
+                                <FormField
+                                  label="额外密钥 JSON"
+                                  hint="仅填写要新增或更新的密钥字段；留空表示不更新密钥。"
+                                >
+                                  <Textarea
+                                    placeholder="留空则保持现有密钥不变"
+                                    value={secretDrafts[provider.id] ?? ""}
+                                    onChange={(event) =>
+                                      setSecretDrafts((current) => ({
+                                        ...current,
+                                        [provider.id]: event.target.value,
+                                      }))
+                                    }
+                                  />
+                                </FormField>
+                              ) : null}
                             </>
                           ) : null}
                         </div>
                       </details>
 
                       <div className="flex flex-wrap justify-end gap-3">
-                        {!isDeepSeek ? (
+                        {!isDeepSeek && !isWeather ? (
                           <Button
                             variant="secondary"
                             onClick={() => toggleProviderEditor(provider.id)}
