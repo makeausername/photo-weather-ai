@@ -5,7 +5,14 @@ import {
 } from "@photo-weather/ai";
 import { getRuntimeProviderConfig } from "@photo-weather/db";
 import type { DatabaseClient, JsonValue, ProviderConfigRecord } from "@photo-weather/db";
-import { deepSeekDefaultModel, normalizeDeepSeekModel } from "@photo-weather/shared";
+import {
+  deepSeekResponseFormat,
+  getDeepSeekModeRuntimeDefaults,
+  normalizeDeepSeekAnalysisMode,
+  normalizeDeepSeekModel,
+  type DeepSeekAnalysisMode,
+  type DeepSeekReasoningEffort,
+} from "@photo-weather/shared";
 
 export type AiProviderRuntimeOptions = {
   readonly dbClient?: DatabaseClient;
@@ -13,14 +20,26 @@ export type AiProviderRuntimeOptions = {
   readonly fetcher?: DeepSeekProviderOptions["fetcher"];
 };
 
-export type RuntimeDeepSeekConfig = {
+export type ResolvedDeepSeekRuntimeConfig = {
+  readonly enabled: boolean;
+  readonly realCallEnabled: boolean;
+  readonly apiKeyPresent: boolean;
+  readonly analysisMode: DeepSeekAnalysisMode;
+  readonly baseUrl: string;
+  readonly model: string;
+  readonly responseFormat: "json_object";
+  readonly temperature: number;
+  readonly maxTokens: number;
+  readonly thinkingEnabled: boolean;
+  readonly reasoningEffort: DeepSeekReasoningEffort;
+  readonly modeLabelZh: string;
+};
+
+export type RuntimeDeepSeekConfig = ResolvedDeepSeekRuntimeConfig & {
   readonly providerEnabled: boolean;
   readonly realModeEnabled: boolean;
   readonly apiKey?: string;
-  readonly baseUrl: string;
   readonly defaultModel: string;
-  readonly temperature?: number;
-  readonly maxTokens?: number;
   readonly jsonOutputEnabled: boolean;
 };
 
@@ -73,6 +92,28 @@ function readNumber(value: JsonValue | undefined): number | undefined {
   return undefined;
 }
 
+function clampNumber(
+  value: number | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, value));
+}
+
+function clampInteger(
+  value: number | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  return Math.round(clampNumber(value, fallback, min, max));
+}
+
 function readSecretAndConfig(provider: ProviderConfigRecord | null): {
   readonly secretJson: Record<string, JsonValue>;
   readonly configJson: Record<string, JsonValue>;
@@ -83,7 +124,15 @@ function readSecretAndConfig(provider: ProviderConfigRecord | null): {
   };
 }
 
-function readDeepSeekRealModeEnabled(
+function readDeepSeekApiKey(
+  provider: ProviderConfigRecord | null,
+  env: NodeJS.ProcessEnv,
+): string | undefined {
+  const { secretJson } = readSecretAndConfig(provider);
+  return readString(secretJson.apiKey) ?? readEnvString(env.DEEPSEEK_API_KEY);
+}
+
+function readDeepSeekRealCallEnabled(
   provider: ProviderConfigRecord | null,
   env: NodeJS.ProcessEnv,
 ): boolean {
@@ -95,6 +144,111 @@ function readDeepSeekRealModeEnabled(
   return readBoolean(configJson.realCallEnabled) ?? readOptInFlag(env.ENABLE_REAL_DEEPSEEK);
 }
 
+function normalizeReasoningEffort(
+  value: string | undefined,
+  fallback: DeepSeekReasoningEffort,
+): DeepSeekReasoningEffort {
+  if (value === "none" || value === "low" || value === "medium" || value === "high") {
+    return value;
+  }
+
+  return fallback;
+}
+
+export function resolveDeepSeekRuntimeConfig(
+  provider: ProviderConfigRecord | null,
+  env: NodeJS.ProcessEnv = process.env,
+): ResolvedDeepSeekRuntimeConfig {
+  const { secretJson, configJson } = readSecretAndConfig(provider);
+  const configuredMode = readString(configJson.analysisMode);
+  const hasConfiguredMode = configuredMode === "fast" || configuredMode === "professional";
+  const configuredModel =
+    readString(configJson.model) ??
+    readString(secretJson.model) ??
+    readString(configJson.defaultModel) ??
+    readString(secretJson.defaultModel);
+  const envModel = readEnvString(env.DEEPSEEK_DEFAULT_MODEL);
+  const analysisMode = normalizeDeepSeekAnalysisMode(
+    configuredMode,
+    hasConfiguredMode ? undefined : configuredModel ?? envModel,
+  );
+  const modeDefaults = getDeepSeekModeRuntimeDefaults(analysisMode);
+  const model = hasConfiguredMode
+    ? modeDefaults.model
+    : normalizeDeepSeekModel(configuredModel ?? envModel ?? modeDefaults.model);
+  const thinkingEnabled =
+    readBoolean(configJson.thinkingEnabled) ??
+    readBoolean(secretJson.thinkingEnabled) ??
+    modeDefaults.thinkingEnabled;
+  const reasoningEffort = thinkingEnabled
+    ? normalizeReasoningEffort(
+        readString(configJson.reasoningEffort) ?? readString(secretJson.reasoningEffort),
+        modeDefaults.reasoningEffort === "none" ? "medium" : modeDefaults.reasoningEffort,
+      )
+    : "none";
+
+  return {
+    enabled: provider?.enabled ?? false,
+    realCallEnabled: readDeepSeekRealCallEnabled(provider, env),
+    apiKeyPresent: Boolean(readDeepSeekApiKey(provider, env)),
+    analysisMode,
+    baseUrl:
+      readString(configJson.baseUrl) ??
+      readString(secretJson.baseUrl) ??
+      readEnvString(env.DEEPSEEK_BASE_URL) ??
+      defaultDeepSeekBaseUrl,
+    model,
+    responseFormat: deepSeekResponseFormat,
+    temperature: clampNumber(
+      readNumber(configJson.temperature) ?? readNumber(secretJson.temperature),
+      modeDefaults.temperature,
+      0,
+      2,
+    ),
+    maxTokens: clampInteger(
+      readNumber(configJson.maxTokens) ?? readNumber(secretJson.maxTokens),
+      modeDefaults.maxTokens,
+      128,
+      8192,
+    ),
+    thinkingEnabled,
+    reasoningEffort,
+    modeLabelZh: modeDefaults.modeLabelZh,
+  };
+}
+
+export function normalizeDeepSeekAdminConfigJson(
+  configJson: JsonValue | undefined,
+): Record<string, JsonValue> {
+  const current = isJsonObject(configJson) ? { ...configJson } : {};
+  const analysisMode = normalizeDeepSeekAnalysisMode(
+    readString(current.analysisMode),
+    readString(current.model) ?? readString(current.defaultModel),
+  );
+  const modeDefaults = getDeepSeekModeRuntimeDefaults(analysisMode);
+  const thinkingEnabled = readBoolean(current.thinkingEnabled) ?? modeDefaults.thinkingEnabled;
+  const reasoningEffort = thinkingEnabled
+    ? normalizeReasoningEffort(
+        readString(current.reasoningEffort),
+        modeDefaults.reasoningEffort === "none" ? "medium" : modeDefaults.reasoningEffort,
+      )
+    : "none";
+
+  return {
+    ...current,
+    realCallEnabled: readBoolean(current.realCallEnabled) ?? false,
+    analysisMode,
+    model: modeDefaults.model,
+    defaultModel: modeDefaults.model,
+    baseUrl: readString(current.baseUrl) ?? defaultDeepSeekBaseUrl,
+    responseFormat: deepSeekResponseFormat,
+    temperature: clampNumber(readNumber(current.temperature), modeDefaults.temperature, 0, 2),
+    maxTokens: clampInteger(readNumber(current.maxTokens), modeDefaults.maxTokens, 128, 8192),
+    thinkingEnabled,
+    reasoningEffort,
+  };
+}
+
 export async function readRuntimeDeepSeekConfig(
   options: Pick<AiProviderRuntimeOptions, "dbClient" | "env"> = {},
 ): Promise<RuntimeDeepSeekConfig> {
@@ -102,29 +256,16 @@ export async function readRuntimeDeepSeekConfig(
   const provider = await getRuntimeProviderConfig("ai", "deepseek", {
     client: options.dbClient,
   });
-  const { secretJson, configJson } = readSecretAndConfig(provider);
+  const resolved = resolveDeepSeekRuntimeConfig(provider, env);
+  const apiKey = readDeepSeekApiKey(provider, env);
 
   return {
-    providerEnabled: provider?.enabled ?? false,
-    realModeEnabled: readDeepSeekRealModeEnabled(provider, env),
-    apiKey: readString(secretJson.apiKey) ?? readEnvString(env.DEEPSEEK_API_KEY),
-    baseUrl:
-      readString(secretJson.baseUrl) ??
-      readString(configJson.baseUrl) ??
-      readEnvString(env.DEEPSEEK_BASE_URL) ??
-      defaultDeepSeekBaseUrl,
-    defaultModel: normalizeDeepSeekModel(
-      readString(secretJson.defaultModel) ??
-        readString(configJson.defaultModel) ??
-        readEnvString(env.DEEPSEEK_DEFAULT_MODEL) ??
-        deepSeekDefaultModel,
-    ),
-    temperature: readNumber(secretJson.temperature) ?? readNumber(configJson.temperature),
-    maxTokens: readNumber(secretJson.maxTokens) ?? readNumber(configJson.maxTokens),
-    jsonOutputEnabled:
-      readBoolean(secretJson.jsonOutputEnabled) ??
-      readBoolean(configJson.jsonOutputEnabled) ??
-      true,
+    ...resolved,
+    providerEnabled: resolved.enabled,
+    realModeEnabled: resolved.realCallEnabled,
+    apiKey,
+    defaultModel: resolved.model,
+    jsonOutputEnabled: resolved.responseFormat === "json_object",
   };
 }
 
@@ -134,13 +275,16 @@ export async function createRealDeepSeekProvider(
   const config = await readRuntimeDeepSeekConfig(options);
 
   return new DeepSeekProvider({
-    enabled: config.providerEnabled,
-    realModeEnabled: config.realModeEnabled,
+    enabled: config.enabled,
+    realModeEnabled: config.realCallEnabled,
     apiKey: config.apiKey,
     baseUrl: config.baseUrl,
-    defaultModel: config.defaultModel,
+    defaultModel: config.model,
     temperature: config.temperature,
     maxTokens: config.maxTokens,
+    responseFormat: config.responseFormat,
+    thinkingEnabled: config.thinkingEnabled,
+    reasoningEffort: config.reasoningEffort,
     jsonOutputEnabled: config.jsonOutputEnabled,
     fetcher: options.fetcher,
   });

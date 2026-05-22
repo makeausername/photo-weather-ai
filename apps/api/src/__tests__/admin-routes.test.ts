@@ -134,7 +134,7 @@ describe("admin config routes", () => {
       payload: {
         enabled: true,
         configJson: {
-          defaultModel: "deepseek-reasoner",
+          analysisMode: "professional",
           realCallEnabled: true,
         },
         secretJson: {
@@ -152,8 +152,14 @@ describe("admin config routes", () => {
       enabled: true,
       configJson: {
         baseUrl: "https://api.deepseek.com",
-        defaultModel: "deepseek-reasoner",
         realCallEnabled: true,
+        analysisMode: "professional",
+        model: "deepseek-v4-pro",
+        responseFormat: "json_object",
+        temperature: 0.2,
+        maxTokens: 6000,
+        thinkingEnabled: true,
+        reasoningEffort: "medium",
       },
       maskedSecretJson: {
         apiKey: "sk-r****cret",
@@ -326,7 +332,9 @@ describe("admin config routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       success: true,
-      mode: "mock",
+      mode: "fast",
+      connectionMode: "mock",
+      model: "deepseek-v4-flash",
       message: "当前为本地模拟测试，未请求 DeepSeek 服务。",
     });
     expect(response.body).not.toContain("deepseek-test-secret");
@@ -433,6 +441,91 @@ describe("admin config routes", () => {
     });
   });
 
+  it("tests a real DeepSeek connection through mocked fetch outside NODE_ENV=test", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer deepseek-real-secret",
+      });
+      expect(String(init?.body)).not.toContain("deepseek-real-secret");
+      expect(JSON.parse(String(init?.body))).toMatchObject({
+        model: "deepseek-v4-pro",
+        response_format: {
+          type: "json_object",
+        },
+        reasoning_effort: "medium",
+      });
+
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  message: "DeepSeek 连接测试通过。",
+                }),
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const deepSeekProvider = state.providers.get("ai:deepseek");
+    state.providers.set("ai:deepseek", {
+      ...deepSeekProvider,
+      enabled: true,
+      configJson: {
+        ...(deepSeekProvider.configJson ?? {}),
+        realCallEnabled: true,
+        analysisMode: "professional",
+        maxTokens: 6000,
+        thinkingEnabled: true,
+        reasoningEffort: "medium",
+      },
+      secretJson: {
+        apiKey: "deepseek-real-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "deep****cret",
+      },
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/providers/ai/deepseek/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: true,
+      mode: "professional",
+      connectionMode: "real",
+      model: "deepseek-v4-pro",
+      latencyMs: expect.any(Number),
+      message: "DeepSeek 连接测试通过。",
+    });
+    expect(response.body).not.toContain("deepseek-real-secret");
+    expect(response.body).not.toContain("secretJson");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("forces real provider connection tests back to mock mode under NODE_ENV=test", async () => {
     const fetchMock = vi.fn(() => {
       throw new Error("real network calls are disabled in automated tests");
@@ -440,6 +533,7 @@ describe("admin config routes", () => {
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
     const amapProvider = state.providers.get("geo:amap");
+    const deepSeekProvider = state.providers.get("ai:deepseek");
     state.providers.set("geo:amap", {
       ...amapProvider,
       enabled: true,
@@ -454,18 +548,44 @@ describe("admin config routes", () => {
         apiKey: "amap****cret",
       },
     });
+    state.providers.set("ai:deepseek", {
+      ...deepSeekProvider,
+      enabled: true,
+      configJson: {
+        ...(deepSeekProvider.configJson ?? {}),
+        realCallEnabled: true,
+      },
+      secretJson: {
+        apiKey: "deepseek-test-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "deep****cret",
+      },
+    });
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
 
-    const response = await app.inject({
+    const amapResponse = await app.inject({
       method: "POST",
       url: "/admin/providers/geo/amap/test-connection",
       headers: adminAuthorizationHeader(),
     });
+    const deepSeekResponse = await app.inject({
+      method: "POST",
+      url: "/admin/providers/ai/deepseek/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
 
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({
+    expect(amapResponse.statusCode).toBe(200);
+    expect(amapResponse.json()).toMatchObject({
       success: true,
       mode: "mock",
+    });
+    expect(deepSeekResponse.statusCode).toBe(200);
+    expect(deepSeekResponse.json()).toMatchObject({
+      success: true,
+      mode: "fast",
+      connectionMode: "mock",
+      model: "deepseek-v4-flash",
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });

@@ -52,7 +52,7 @@ describe("AI providers", () => {
         place,
         forecastSummary: "Should not call network",
       }),
-    ).rejects.toThrow("DeepSeek 真实开发调用未启用");
+    ).rejects.toThrow("DeepSeek 真实调用未启用");
   });
 
   it("validates JSON output through a supplied schema", () => {
@@ -84,13 +84,14 @@ describe("AI providers", () => {
 
     expect(request.url).toBe("https://example.deepseek.test/chat/completions");
     expect(request.body).toMatchObject({
-      model: "deepseek-chat",
+      model: "deepseek-v4-flash",
       response_format: {
         type: "json_object",
       },
       stream: false,
     });
-    expect(JSON.stringify(request.body)).toContain("不要发明任何未提供的天气");
+    expect(JSON.stringify(request.body)).toContain("Do not invent weather data.");
+    expect(JSON.stringify(request.body)).toContain("exampleJsonOutput");
     expect(JSON.stringify(request.body)).not.toContain("sk-");
   });
 
@@ -152,7 +153,7 @@ describe("AI providers", () => {
       provider.generateForecastExplanation({
         forecastResult: forecastResultFixture,
       }),
-    ).rejects.toThrow("DeepSeek 服务未配置 API Key，请先在后台服务商配置中填写 DeepSeek API Key。");
+    ).rejects.toThrow("请先填写 DeepSeek API Key。");
   });
 
   it("validates DeepSeek forecast explanation output shape", () => {

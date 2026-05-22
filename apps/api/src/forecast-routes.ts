@@ -119,9 +119,9 @@ export function registerForecastRoutes(
       env,
     });
     if (
-      runtimeDeepSeek?.providerEnabled &&
-      runtimeDeepSeek.realModeEnabled &&
-      runtimeDeepSeek.apiKey
+      runtimeDeepSeek?.enabled &&
+      runtimeDeepSeek.realCallEnabled &&
+      runtimeDeepSeek.apiKeyPresent
     ) {
       try {
         const deepSeekProvider = await createRealDeepSeekProvider({
@@ -160,12 +160,20 @@ export function registerForecastRoutes(
     });
 
     if (
-      !runtimeDeepSeek?.providerEnabled ||
-      !runtimeDeepSeek.realModeEnabled ||
-      !runtimeDeepSeek.apiKey
+      !runtimeDeepSeek?.enabled ||
+      !runtimeDeepSeek.realCallEnabled ||
+      !runtimeDeepSeek.apiKeyPresent
     ) {
-      return reply.send({
-        explanation: createRuleBasedForecastExplanation(result),
+      if (runtimeDeepSeek?.realCallEnabled && !runtimeDeepSeek.apiKeyPresent) {
+        return reply.status(400).send({
+          error: "provider_key_missing",
+          message: "请先填写 DeepSeek API Key。",
+        });
+      }
+
+      return reply.status(409).send({
+        error: "ai_explanation_not_enabled",
+        message: "DeepSeek 智能解读未启用，请先在后台启用 DeepSeek 服务商和真实调用。",
       });
     }
 

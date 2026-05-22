@@ -21,7 +21,7 @@ function createFakeClient(): DatabaseClient {
     displayName: "DeepSeek",
     enabled: false,
     priority: 100,
-    configJson: { defaultModel: "deepseek-chat" },
+    configJson: { model: "deepseek-v4-flash" },
     secretJson: { apiKey: "sk-1234567890" },
     maskedSecretJson: null,
     createdAt: now,
@@ -191,7 +191,7 @@ describe("provider config helpers", () => {
     expect(updated).toMatchObject({
       enabled: true,
       configJson: {
-        defaultModel: "deepseek-chat",
+        model: "deepseek-v4-flash",
         retry: { maxAttempts: 2 },
       },
       maskedSecretJson: { apiKey: "new-****alue" },

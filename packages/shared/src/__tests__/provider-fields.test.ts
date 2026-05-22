@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  getDeepSeekModeRuntimeDefaults,
   deepSeekModelOptions,
   getProviderFieldPreset,
+  normalizeDeepSeekAnalysisMode,
   normalizeDeepSeekModel,
   providerFieldPresets,
 } from "../provider-fields.js";
@@ -37,7 +39,7 @@ describe("provider field presets", () => {
         expect.objectContaining({ key: "apiKey", target: "secretJson" }),
         expect.objectContaining({ key: "realCallEnabled", target: "configJson" }),
         expect.objectContaining({
-          key: "defaultModel",
+          key: "analysisMode",
           target: "configJson",
           control: "select",
         }),
@@ -48,10 +50,27 @@ describe("provider field presets", () => {
 
   it("keeps DeepSeek model dropdown values centralized", () => {
     expect(deepSeekModelOptions.map((option) => option.value)).toEqual([
-      "deepseek-chat",
-      "deepseek-reasoner",
+      "deepseek-v4-flash",
+      "deepseek-v4-pro",
     ]);
-    expect(normalizeDeepSeekModel("deepseek-reasoner")).toBe("deepseek-reasoner");
-    expect(normalizeDeepSeekModel("custom-model")).toBe("deepseek-chat");
+    expect(normalizeDeepSeekModel("deepseek-reasoner")).toBe("deepseek-v4-pro");
+    expect(normalizeDeepSeekModel("deepseek-chat")).toBe("deepseek-v4-flash");
+    expect(normalizeDeepSeekModel("custom-model")).toBe("deepseek-v4-flash");
+  });
+
+  it("maps DeepSeek modes and legacy models to v4 runtime defaults", () => {
+    expect(getDeepSeekModeRuntimeDefaults("fast")).toMatchObject({
+      model: "deepseek-v4-flash",
+      maxTokens: 4000,
+      thinkingEnabled: false,
+    });
+    expect(getDeepSeekModeRuntimeDefaults("professional")).toMatchObject({
+      model: "deepseek-v4-pro",
+      maxTokens: 6000,
+      thinkingEnabled: true,
+      reasoningEffort: "medium",
+    });
+    expect(normalizeDeepSeekAnalysisMode(undefined, "deepseek-chat")).toBe("fast");
+    expect(normalizeDeepSeekAnalysisMode(undefined, "deepseek-reasoner")).toBe("professional");
   });
 });

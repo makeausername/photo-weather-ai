@@ -116,7 +116,10 @@ export type AdminAuditLog = {
 
 export type MockConnectionTestResult = {
   readonly success: boolean;
-  readonly mode: "mock" | "fixture" | "real";
+  readonly mode: "mock" | "fixture" | "real" | "fast" | "professional";
+  readonly connectionMode?: "mock" | "fixture" | "real";
+  readonly model?: string;
+  readonly latencyMs?: number;
   readonly providerType?: string;
   readonly providerCode?: string;
   readonly message: string;

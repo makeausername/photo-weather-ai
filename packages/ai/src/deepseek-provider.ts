@@ -1,4 +1,9 @@
-import { decisionCardSchema, normalizeDeepSeekModel } from "@photo-weather/shared";
+import {
+  decisionCardSchema,
+  deepSeekResponseFormat,
+  normalizeDeepSeekModel,
+  type DeepSeekReasoningEffort,
+} from "@photo-weather/shared";
 import type { DecisionCard, ForecastCalculationResult } from "@photo-weather/shared";
 import { z } from "zod";
 import { MockAIProvider } from "./mock-provider.js";
@@ -23,6 +28,9 @@ export type DeepSeekProviderOptions = {
   readonly mode?: "disabled" | "mock" | "real";
   readonly temperature?: number;
   readonly maxTokens?: number;
+  readonly responseFormat?: "json_object";
+  readonly thinkingEnabled?: boolean;
+  readonly reasoningEffort?: DeepSeekReasoningEffort;
   readonly jsonOutputEnabled?: boolean;
 };
 
@@ -37,6 +45,7 @@ type DeepSeekRequestBody = {
   readonly temperature: number;
   readonly max_tokens: number;
   readonly stream: false;
+  reasoning_effort?: Exclude<DeepSeekReasoningEffort, "none">;
   response_format?: {
     readonly type: "json_object";
   };
@@ -56,18 +65,17 @@ export type DeepSeekRequestPreview = {
   readonly body: DeepSeekRequestBody;
 };
 
-export const missingDeepSeekApiKeyMessage =
-  "DeepSeek 服务未配置 API Key，请先在后台服务商配置中填写 DeepSeek API Key。";
+export const missingDeepSeekApiKeyMessage = "请先填写 DeepSeek API Key。";
 
 const deepSeekRealModeDisabledMessage =
-  "DeepSeek 真实开发调用未启用，请设置 ENABLE_REAL_DEEPSEEK=true 后再测试。";
+  "DeepSeek 真实调用未启用，请先在后台服务商配置中启用真实调用。";
 
 const deepSeekProviderDisabledMessage =
   "DeepSeek 服务商未启用，请先在后台服务商配置中启用 DeepSeek。";
 
 const defaultBaseUrl = "https://api.deepseek.com";
 const defaultTemperature = 0.2;
-const defaultMaxTokens = 1200;
+const defaultMaxTokens = 4000;
 
 export const forecastAiExplanationSchema = z.object({
   summary: z.string().trim().min(1),
@@ -115,6 +123,36 @@ function normalizeMaxTokens(value: number | undefined, fallback = defaultMaxToke
   return Math.min(8192, Math.max(1, Math.round(value)));
 }
 
+function normalizeResponseFormat(value: "json_object" | undefined): "json_object" {
+  return value ?? deepSeekResponseFormat;
+}
+
+function normalizeReasoningEffort(
+  value: DeepSeekReasoningEffort | undefined,
+): DeepSeekReasoningEffort {
+  if (value === "low" || value === "medium" || value === "high") {
+    return value;
+  }
+
+  return "none";
+}
+
+function applyReasoningEffort(
+  body: DeepSeekRequestBody,
+  options: Pick<DeepSeekProviderOptions, "thinkingEnabled" | "reasoningEffort">,
+): void {
+  if (!options.thinkingEnabled) {
+    return;
+  }
+
+  const effort = normalizeReasoningEffort(options.reasoningEffort);
+  if (effort === "none") {
+    return;
+  }
+
+  body.reasoning_effort = effort;
+}
+
 function getMessageContent(response: DeepSeekChatResponse): string {
   const content = response.choices?.[0]?.message?.content;
   if (typeof content !== "string" || content.trim().length === 0) {
@@ -152,11 +190,11 @@ function pickForecastInput(result: ForecastCalculationResult) {
 
 function buildJsonOnlySystemPrompt(): string {
   return [
-    "你是面向中国摄影师的拍摄天气解读助手。",
+    "你是面向中国风光摄影用户的拍摄天气解读助手。",
     "只解释已经计算好的确定性结果，不得计算、覆盖或改写天气、天文、地形、坐标或评分数据。",
-    "不得编造天气数据，不得声称模拟数据具有真实预报准确率。",
+    "不得编造天气数据，不得覆盖 deterministic scores，不得声称 mock weather 是真实 forecast。",
     "输出简体中文。",
-    "必须只输出 JSON 对象，不要输出 Markdown、解释文字或代码块。",
+    "必须只输出 json 对象，不要输出 Markdown、解释文字或代码块。",
   ].join("\n");
 }
 
@@ -164,10 +202,18 @@ export function buildDeepSeekForecastExplanationRequest(
   input: ForecastExplanationInput,
   options: Pick<
     DeepSeekProviderOptions,
-    "baseUrl" | "defaultModel" | "temperature" | "maxTokens" | "jsonOutputEnabled"
+    | "baseUrl"
+    | "defaultModel"
+    | "temperature"
+    | "maxTokens"
+    | "responseFormat"
+    | "thinkingEnabled"
+    | "reasoningEffort"
+    | "jsonOutputEnabled"
   > = {},
 ): DeepSeekRequestPreview {
-  const jsonOutputEnabled = options.jsonOutputEnabled ?? true;
+  const responseFormat = normalizeResponseFormat(options.responseFormat);
+  const jsonOutputEnabled = options.jsonOutputEnabled ?? responseFormat === "json_object";
   const body: DeepSeekRequestBody = {
     model: normalizeModel(options.defaultModel),
     messages: [
@@ -188,11 +234,27 @@ export function buildDeepSeekForecastExplanationRequest(
             backupPlan: ["备用方案"],
             confidenceNote: "置信说明，必须说明若 isMock=true 则不代表真实预报准确率",
           },
+          exampleJsonOutput: {
+            summary: "这里写简体中文综合解读。",
+            recommendation: "这里写一句行动建议。",
+            mainReasons: ["只引用输入中已有的评分、窗口、风险和建议。"],
+            mainRisks: ["不新增输入中没有的天气或地形事实。"],
+            photographerAdvice: ["结合确定性结果给出拍摄准备建议。"],
+            backupPlan: ["若条件变化，优先选择备用窗口或近距离机位。"],
+            confidenceNote: "若 isMock=true，明确说明这是模拟数据解读，不代表真实预报。",
+          },
           constraints: [
             "不要发明任何未提供的天气、天文、地形或交通数据。",
             "不要覆盖 deterministicForecastResult 中的评分、窗口和风险。",
             "如果 isMock=true，必须明确这是模拟数据解读，只适合流程验证和规划参考。",
             "输出 JSON only。",
+          ],
+          safetyRules: [
+            "Do not invent weather data.",
+            "Do not override deterministic scores.",
+            "Do not claim mock weather is real forecast.",
+            "Output Simplified Chinese.",
+            "Output json only.",
           ],
           userGoal: input.userGoal ?? null,
           deterministicForecastResult: pickForecastInput(input.forecastResult),
@@ -208,6 +270,7 @@ export function buildDeepSeekForecastExplanationRequest(
       type: "json_object",
     };
   }
+  applyReasoningEffort(body, options);
 
   return {
     url: `${normalizeBaseUrl(options.baseUrl)}/chat/completions`,
@@ -246,6 +309,9 @@ export class DeepSeekProvider implements AIProvider {
   readonly defaultModel: string;
   readonly temperature: number;
   readonly maxTokens: number;
+  readonly responseFormat: "json_object";
+  readonly thinkingEnabled: boolean;
+  readonly reasoningEffort: DeepSeekReasoningEffort;
   readonly jsonOutputEnabled: boolean;
 
   constructor(private readonly options: DeepSeekProviderOptions = {}) {
@@ -254,7 +320,10 @@ export class DeepSeekProvider implements AIProvider {
     this.defaultModel = normalizeModel(options.defaultModel);
     this.temperature = normalizeTemperature(options.temperature);
     this.maxTokens = normalizeMaxTokens(options.maxTokens);
-    this.jsonOutputEnabled = options.jsonOutputEnabled ?? true;
+    this.responseFormat = normalizeResponseFormat(options.responseFormat);
+    this.thinkingEnabled = options.thinkingEnabled ?? false;
+    this.reasoningEffort = normalizeReasoningEffort(options.reasoningEffort);
+    this.jsonOutputEnabled = options.jsonOutputEnabled ?? this.responseFormat === "json_object";
     this.enabled = options.enabled ?? false;
     this.realModeEnabled = options.realModeEnabled ?? options.mode === "real";
     this.fetcher = options.fetcher ?? fetch;
@@ -339,6 +408,9 @@ export class DeepSeekProvider implements AIProvider {
       defaultModel: this.defaultModel,
       temperature: this.temperature,
       maxTokens: this.maxTokens,
+      responseFormat: this.responseFormat,
+      thinkingEnabled: this.thinkingEnabled,
+      reasoningEffort: this.reasoningEffort,
       jsonOutputEnabled: this.jsonOutputEnabled,
     });
     const parsed = await this.request(request);
@@ -403,6 +475,10 @@ export class DeepSeekProvider implements AIProvider {
         type: "json_object",
       };
     }
+    applyReasoningEffort(body, {
+      thinkingEnabled: this.thinkingEnabled,
+      reasoningEffort: this.reasoningEffort,
+    });
 
     const request: DeepSeekRequestPreview = {
       url: `${this.baseUrl}/chat/completions`,

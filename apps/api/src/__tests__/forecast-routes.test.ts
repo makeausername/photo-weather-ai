@@ -241,7 +241,7 @@ describe("forecast query validation route", () => {
     });
   });
 
-  it("returns a rule-based AI explanation when DeepSeek is not fully configured", async () => {
+  it("returns a Chinese error when DeepSeek real call is enabled without a key", async () => {
     const fetchMock = vi.fn(() => {
       throw new Error("real network calls are disabled in forecast tests");
     });
@@ -258,7 +258,15 @@ describe("forecast query validation route", () => {
       secretJson: {},
       maskedSecretJson: {},
     });
-    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+      },
+      logger: false,
+    });
 
     const response = await app.inject({
       method: "POST",
@@ -266,13 +274,10 @@ describe("forecast query validation route", () => {
       payload: validPayload,
     });
 
-    expect(response.statusCode).toBe(200);
+    expect(response.statusCode).toBe(400);
     expect(response.json()).toMatchObject({
-      explanation: {
-        summary: expect.any(String),
-        recommendation: expect.any(String),
-        confidenceNote: expect.stringContaining("模拟"),
-      },
+      error: "provider_key_missing",
+      message: "请先填写 DeepSeek API Key。",
     });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(response.body).not.toContain("secretJson");

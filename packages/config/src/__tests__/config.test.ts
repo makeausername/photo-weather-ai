@@ -16,7 +16,7 @@ describe("environment config", () => {
     });
     expect(config.serverEnv.ENABLE_REAL_AMAP).toBe(false);
     expect(config.serverEnv.ENABLE_REAL_DEEPSEEK).toBe(false);
-    expect(config.serverEnv.DEEPSEEK_DEFAULT_MODEL).toBe("deepseek-chat");
+    expect(config.serverEnv.DEEPSEEK_DEFAULT_MODEL).toBe("deepseek-v4-flash");
   });
 
   it("parses explicit real development provider flags", () => {

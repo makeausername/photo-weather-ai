@@ -29,24 +29,140 @@ export type ProviderFieldPreset = {
   readonly fields: readonly ProviderFieldDefinition[];
 };
 
-export const deepSeekDefaultModel = "deepseek-chat";
+export const deepSeekAnalysisModes = ["fast", "professional"] as const;
+
+export type DeepSeekAnalysisMode = (typeof deepSeekAnalysisModes)[number];
+
+export type DeepSeekReasoningEffort = "none" | "low" | "medium" | "high";
+
+export type DeepSeekModeRuntimeDefaults = {
+  readonly analysisMode: DeepSeekAnalysisMode;
+  readonly model: string;
+  readonly responseFormat: "json_object";
+  readonly temperature: number;
+  readonly maxTokens: number;
+  readonly thinkingEnabled: boolean;
+  readonly reasoningEffort: DeepSeekReasoningEffort;
+  readonly modeLabelZh: string;
+};
+
+export const deepSeekDefaultModel = "deepseek-v4-flash";
+
+export const deepSeekProfessionalModel = "deepseek-v4-pro";
+
+export const deepSeekResponseFormat = "json_object";
 
 export const deepSeekModelOptions = [
   {
-    value: "deepseek-chat",
-    label: "deepseek-chat: 通用分析，推荐",
+    value: "deepseek-v4-flash",
+    label: "deepseek-v4-flash：快速模式，推荐",
   },
   {
-    value: "deepseek-reasoner",
-    label: "deepseek-reasoner: 深度推理，成本和延迟更高",
+    value: "deepseek-v4-pro",
+    label: "deepseek-v4-pro：专业模式，适合复杂分析",
   },
 ] as const satisfies readonly ProviderFieldOption[];
 
-const deepSeekModelValues = new Set<string>(deepSeekModelOptions.map((option) => option.value));
+export const deepSeekAnalysisModeOptions = [
+  {
+    value: "fast",
+    label: "快速模式（deepseek-v4-flash，推荐）",
+  },
+  {
+    value: "professional",
+    label: "专业模式（deepseek-v4-pro，适合复杂分析）",
+  },
+] as const satisfies readonly ProviderFieldOption[];
+
+export const deepSeekReasoningEffortOptions = [
+  {
+    value: "none",
+    label: "关闭",
+  },
+  {
+    value: "low",
+    label: "低",
+  },
+  {
+    value: "medium",
+    label: "中",
+  },
+  {
+    value: "high",
+    label: "高",
+  },
+] as const satisfies readonly ProviderFieldOption[];
+
+const deepSeekModeRuntimeDefaults = {
+  fast: {
+    analysisMode: "fast",
+    model: deepSeekDefaultModel,
+    responseFormat: deepSeekResponseFormat,
+    temperature: 0.2,
+    maxTokens: 4000,
+    thinkingEnabled: false,
+    reasoningEffort: "none",
+    modeLabelZh: "快速模式",
+  },
+  professional: {
+    analysisMode: "professional",
+    model: deepSeekProfessionalModel,
+    responseFormat: deepSeekResponseFormat,
+    temperature: 0.2,
+    maxTokens: 6000,
+    thinkingEnabled: true,
+    reasoningEffort: "medium",
+    modeLabelZh: "专业模式",
+  },
+} as const satisfies Record<DeepSeekAnalysisMode, DeepSeekModeRuntimeDefaults>;
+
+const deepSeekModelValues = new Set<string>([
+  deepSeekDefaultModel,
+  deepSeekProfessionalModel,
+  "deepseek-chat",
+  "deepseek-reasoner",
+]);
 
 export function normalizeDeepSeekModel(value: string | undefined): string {
   const trimmed = value?.trim();
-  return trimmed && deepSeekModelValues.has(trimmed) ? trimmed : deepSeekDefaultModel;
+  if (!trimmed || !deepSeekModelValues.has(trimmed)) {
+    return deepSeekDefaultModel;
+  }
+
+  if (trimmed === "deepseek-chat") {
+    return deepSeekDefaultModel;
+  }
+
+  if (trimmed === "deepseek-reasoner") {
+    return deepSeekProfessionalModel;
+  }
+
+  return trimmed;
+}
+
+export function inferDeepSeekAnalysisModeFromModel(
+  value: string | undefined,
+): DeepSeekAnalysisMode {
+  const normalized = normalizeDeepSeekModel(value);
+  return normalized === deepSeekProfessionalModel ? "professional" : "fast";
+}
+
+export function normalizeDeepSeekAnalysisMode(
+  value: string | undefined,
+  model?: string | undefined,
+): DeepSeekAnalysisMode {
+  const trimmed = value?.trim();
+  if (trimmed === "fast" || trimmed === "professional") {
+    return trimmed;
+  }
+
+  return inferDeepSeekAnalysisModeFromModel(model);
+}
+
+export function getDeepSeekModeRuntimeDefaults(
+  mode: DeepSeekAnalysisMode,
+): DeepSeekModeRuntimeDefaults {
+  return deepSeekModeRuntimeDefaults[mode];
 }
 
 const keepExistingSecretPlaceholder = "留空则保持现有密钥不变";
@@ -55,7 +171,7 @@ export const providerFieldPresets = [
   {
     providerCode: "deepseek",
     helpText:
-      "用于生成摄影天气智能解读。普通配置只需要填写 API Key、选择模型、启用服务商和真实调用。",
+      "DeepSeek 仅用于解释系统已计算出的评分、风险和拍摄建议，不负责重新计算天气、天文和地形数据。",
     fields: [
       {
         key: "realCallEnabled",
@@ -66,12 +182,12 @@ export const providerFieldPresets = [
         helpText: "启用后，手动生成智能解读和测试连接会请求 DeepSeek 服务。",
       },
       {
-        key: "defaultModel",
-        label: "模型选择",
+        key: "analysisMode",
+        label: "分析模式",
         target: "configJson",
         control: "select",
-        options: deepSeekModelOptions,
-        defaultValue: deepSeekDefaultModel,
+        options: deepSeekAnalysisModeOptions,
+        defaultValue: "fast",
       },
       {
         key: "apiKey",
@@ -82,7 +198,7 @@ export const providerFieldPresets = [
       },
       {
         key: "baseUrl",
-        label: "Base URL",
+        label: "接口地址（Base URL）",
         target: "configJson",
         placeholder: "https://api.deepseek.com",
         defaultValue: "https://api.deepseek.com",
@@ -90,7 +206,7 @@ export const providerFieldPresets = [
       },
       {
         key: "temperature",
-        label: "Temperature",
+        label: "温度（Temperature）",
         target: "configJson",
         control: "number",
         defaultValue: 0.2,
@@ -101,21 +217,30 @@ export const providerFieldPresets = [
       },
       {
         key: "maxTokens",
-        label: "Max Tokens",
+        label: "最大输出 Token",
         target: "configJson",
         control: "number",
-        defaultValue: 1200,
+        defaultValue: 4000,
         min: 128,
         max: 8192,
         step: 1,
         advanced: true,
       },
       {
-        key: "jsonOutputEnabled",
-        label: "JSON Output enabled",
+        key: "reasoningEffort",
+        label: "推理强度",
+        target: "configJson",
+        control: "select",
+        options: deepSeekReasoningEffortOptions,
+        defaultValue: "none",
+        advanced: true,
+      },
+      {
+        key: "thinkingEnabled",
+        label: "思考模式",
         target: "configJson",
         control: "boolean",
-        defaultValue: true,
+        defaultValue: false,
         advanced: true,
       },
     ],

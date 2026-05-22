@@ -32,7 +32,11 @@ import type { GeoProvider } from "@photo-weather/geo";
 import { z } from "zod";
 import type { AuthConfig } from "./auth-routes.js";
 import { requirePermission } from "./auth-routes.js";
-import { createRealDeepSeekProvider, readRuntimeDeepSeekConfig } from "./ai-provider.js";
+import {
+  createRealDeepSeekProvider,
+  normalizeDeepSeekAdminConfigJson,
+  readRuntimeDeepSeekConfig,
+} from "./ai-provider.js";
 import { createRealAmapProvider, readRuntimeAmapConfig } from "./geo-provider.js";
 
 const jsonSchema: z.ZodType<JsonValue> = z.lazy(() =>
@@ -263,6 +267,10 @@ function sendError(reply: FastifyReply, statusCode: number, error: string, messa
     error,
     message,
   });
+}
+
+function isJsonObjectValue(value: JsonValue | undefined): value is Record<string, JsonValue> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function validateCoordinatePair(input: {
@@ -548,10 +556,46 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
         return sendError(reply, 404, "provider_not_found", "Provider config was not found.");
       }
 
+      const providerPatch = { ...parsedBody.data };
+      if (
+        providerType === "ai" &&
+        request.params.providerCode === "deepseek" &&
+        providerPatch.configJson !== undefined
+      ) {
+        const incomingConfigJson = isJsonObjectValue(providerPatch.configJson)
+          ? providerPatch.configJson
+          : {};
+        const mergedConfigJson: Record<string, JsonValue> = {
+          ...(isJsonObjectValue(existingProvider.configJson) ? existingProvider.configJson : {}),
+          ...incomingConfigJson,
+        };
+        if (
+          incomingConfigJson.analysisMode !== undefined &&
+          incomingConfigJson.maxTokens === undefined
+        ) {
+          delete mergedConfigJson.maxTokens;
+        }
+        if (
+          incomingConfigJson.analysisMode !== undefined &&
+          incomingConfigJson.thinkingEnabled === undefined
+        ) {
+          delete mergedConfigJson.thinkingEnabled;
+        }
+        if (
+          incomingConfigJson.analysisMode !== undefined &&
+          incomingConfigJson.reasoningEffort === undefined
+        ) {
+          delete mergedConfigJson.reasoningEffort;
+        }
+        providerPatch.configJson = normalizeDeepSeekAdminConfigJson({
+          ...mergedConfigJson,
+        });
+      }
+
       const updatedProvider = await updateProviderConfig({
         providerType,
         providerCode: request.params.providerCode,
-        ...parsedBody.data,
+        ...providerPatch,
         client,
       });
 
@@ -647,15 +691,17 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
 
       if (request.params.providerType === "ai" && request.params.providerCode === "deepseek") {
         const runtimeConfig = await readRuntimeDeepSeekConfig({ dbClient: client, env });
-        if (!runtimeConfig.realModeEnabled) {
+        if (!runtimeConfig.realCallEnabled) {
           return {
             success: true,
-            mode: "mock",
+            mode: runtimeConfig.analysisMode,
+            connectionMode: "mock",
+            model: runtimeConfig.model,
             message: "当前为本地模拟测试，未请求 DeepSeek 服务。",
           };
         }
 
-        if (!runtimeConfig.providerEnabled) {
+        if (!runtimeConfig.enabled) {
           return sendError(
             reply,
             409,
@@ -664,20 +710,26 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
           );
         }
 
-        if (!runtimeConfig.apiKey) {
+        if (!runtimeConfig.apiKeyPresent) {
           return sendError(reply, 400, "provider_key_missing", "请先填写 DeepSeek API Key。");
         }
 
         try {
+          const startedAt = Date.now();
           const deepSeekProvider = await createRealDeepSeekProvider({ dbClient: client, env });
           const result = await deepSeekProvider.testConnection();
+          const latencyMs = Date.now() - startedAt;
 
           return {
             success: true,
-            mode: "real",
+            mode: runtimeConfig.analysisMode,
+            connectionMode: "real",
             providerType: request.params.providerType,
             providerCode: request.params.providerCode,
-            message: result.message || "DeepSeek 连接测试通过。",
+            model: runtimeConfig.model,
+            latencyMs,
+            message:
+              result.message || `DeepSeek 连接测试通过，当前使用${runtimeConfig.modeLabelZh}。`,
           };
         } catch (error) {
           return sendError(reply, 503, "provider_test_failed", (error as Error).message);

@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { getProviderFieldPreset } from "../../../../../packages/shared/src/provider-fields";
+import {
+  getDeepSeekModeRuntimeDefaults,
+  getProviderFieldPreset,
+  normalizeDeepSeekAnalysisMode,
+  type DeepSeekAnalysisMode,
+} from "../../../../../packages/shared/src/provider-fields";
 import type { ProviderFieldDefinition } from "../../../../../packages/shared/src/provider-fields";
 import {
   Badge,
@@ -51,7 +56,7 @@ const providerTypeLabels: Record<string, string> = {
 };
 
 const providerDisplayLabels: Record<string, string> = {
-  "ai:deepseek": "DeepSeek",
+  "ai:deepseek": "DeepSeek 智能解读",
   "weather:qweather": "和风天气",
   "weather:open_meteo": "Open-Meteo",
   "geo:amap": "高德地图",
@@ -189,6 +194,8 @@ function getAdvancedPresetFields(provider: SafeProviderConfig): readonly Provide
 
 function createConfigFieldDraft(provider: SafeProviderConfig): Record<string, string> {
   const configJson = isJsonObject(provider.configJson) ? provider.configJson : {};
+  const deepSeekMode = isDeepSeekProvider(provider) ? getDeepSeekAnalysisMode(provider) : null;
+  const deepSeekDefaults = deepSeekMode ? getDeepSeekModeRuntimeDefaults(deepSeekMode) : null;
 
   return Object.fromEntries(
     getPresetFields(provider, "configJson").map((field) => {
@@ -196,6 +203,18 @@ function createConfigFieldDraft(provider: SafeProviderConfig): Record<string, st
         field.key === "basePath" && provider.providerCode === "local_storage"
           ? configJson.basePath ?? configJson.rootPath
           : configJson[field.key];
+      if (isDeepSeekProvider(provider) && field.key === "analysisMode" && value === undefined) {
+        return [field.key, deepSeekMode ?? "fast"];
+      }
+      if (deepSeekDefaults && field.key === "maxTokens" && value === undefined) {
+        return [field.key, String(deepSeekDefaults.maxTokens)];
+      }
+      if (deepSeekDefaults && field.key === "thinkingEnabled" && value === undefined) {
+        return [field.key, String(deepSeekDefaults.thinkingEnabled)];
+      }
+      if (deepSeekDefaults && field.key === "reasoningEffort" && value === undefined) {
+        return [field.key, deepSeekDefaults.reasoningEffort];
+      }
 
       return [
         field.key,
@@ -281,6 +300,30 @@ function readConfiguredRealCallEnabled(provider: SafeProviderConfig): boolean | 
   return readBooleanJson(readJsonField(provider.configJson, "realCallEnabled"));
 }
 
+function readStringJson(value: JsonValue | undefined): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function isDeepSeekProvider(provider: SafeProviderConfig): boolean {
+  return provider.providerType === "ai" && provider.providerCode === "deepseek";
+}
+
+function getDeepSeekAnalysisMode(provider: SafeProviderConfig): DeepSeekAnalysisMode {
+  return normalizeDeepSeekAnalysisMode(
+    readStringJson(readJsonField(provider.configJson, "analysisMode")),
+    readStringJson(readJsonField(provider.configJson, "model")) ??
+      readStringJson(readJsonField(provider.configJson, "defaultModel")),
+  );
+}
+
+function getDeepSeekModeLabel(provider: SafeProviderConfig): string {
+  return getDeepSeekModeRuntimeDefaults(getDeepSeekAnalysisMode(provider)).modeLabelZh;
+}
+
+function getDeepSeekModelLabel(provider: SafeProviderConfig): string {
+  return getDeepSeekModeRuntimeDefaults(getDeepSeekAnalysisMode(provider)).model;
+}
+
 function primarySecretField(provider: SafeProviderConfig): ProviderFieldDefinition | undefined {
   return getPresetFields(provider, "secretJson")[0];
 }
@@ -330,6 +373,37 @@ function ProviderStatus({
         <Badge variant="muted">优先级 {provider.priority}</Badge>
         <Badge variant="muted">{providerTypeLabels[provider.providerType] ?? "其他服务商"}</Badge>
       </div>
+    </div>
+  );
+}
+
+function DeepSeekStatus({
+  provider,
+  flags,
+}: {
+  readonly provider: SafeProviderConfig;
+  readonly flags: RealDevCallFlags;
+}) {
+  const realEnabled = isRealDevCallEnabled(provider, flags);
+  const hasSecret = providerHasSecret(provider);
+
+  return (
+    <div className="grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs">
+      <div className="flex flex-wrap gap-2">
+        <Badge variant={provider.enabled ? "success" : "muted"}>
+          服务状态：{provider.enabled ? "已启用" : "未启用"}
+        </Badge>
+        <Badge variant={realEnabled ? "warning" : "muted"}>
+          真实调用：{realEnabled ? "已启用" : "未启用"}
+        </Badge>
+        <Badge variant={hasSecret ? "success" : "warning"}>
+          密钥状态：{hasSecret ? "已保存" : "未保存"}
+        </Badge>
+        <Badge variant="info">当前模式：{getDeepSeekModeLabel(provider)}</Badge>
+      </div>
+      <p className="text-xs leading-5 text-muted-foreground">
+        当前模型：{getDeepSeekModelLabel(provider)}
+      </p>
     </div>
   );
 }
@@ -476,6 +550,37 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
           }
         }
       }
+      if (isDeepSeekProvider(provider)) {
+        const analysisMode = normalizeDeepSeekAnalysisMode(
+          readStringJson(configJson.analysisMode),
+          readStringJson(configJson.model) ?? readStringJson(configJson.defaultModel),
+        );
+        const defaults = getDeepSeekModeRuntimeDefaults(analysisMode);
+        const thinkingEnabled =
+          readBooleanJson(configJson.thinkingEnabled) ?? defaults.thinkingEnabled;
+        const reasoningEffort = readStringJson(configJson.reasoningEffort);
+        configJson.realCallEnabled = readBooleanJson(configJson.realCallEnabled) ?? false;
+        configJson.analysisMode = analysisMode;
+        configJson.model = defaults.model;
+        configJson.defaultModel = defaults.model;
+        configJson.baseUrl = readStringJson(configJson.baseUrl) ?? "https://api.deepseek.com";
+        configJson.responseFormat = "json_object";
+        configJson.temperature =
+          typeof configJson.temperature === "number"
+            ? configJson.temperature
+            : defaults.temperature;
+        configJson.maxTokens =
+          typeof configJson.maxTokens === "number" ? configJson.maxTokens : defaults.maxTokens;
+        configJson.thinkingEnabled = thinkingEnabled;
+        if (!thinkingEnabled) {
+          configJson.reasoningEffort = "none";
+        } else if (reasoningEffort && ["low", "medium", "high"].includes(reasoningEffort)) {
+          configJson.reasoningEffort = reasoningEffort;
+        } else {
+          configJson.reasoningEffort =
+            defaults.reasoningEffort === "none" ? "medium" : defaults.reasoningEffort;
+        }
+      }
 
       const payload: Record<string, unknown> = {
         enabled: enabledDrafts[provider.id] ?? provider.enabled,
@@ -574,9 +679,15 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         `/admin/providers/${provider.providerType}/${provider.providerCode}/test-connection`,
         createProviderConnectionTestRequestInit(),
       );
+      const modelSuffix = result.model ? ` 当前模型：${result.model}` : "";
+      const latencySuffix =
+        typeof result.latencyMs === "number" ? `，耗时 ${result.latencyMs}ms` : "";
       setStateByProvider((current) => ({
         ...current,
-        [provider.id]: { status: "saved", message: result.message || "测试连接成功。" },
+        [provider.id]: {
+          status: "saved",
+          message: `${result.message || "测试连接成功。"}${modelSuffix}${latencySuffix}`,
+        },
       }));
     } catch (error) {
       setStateByProvider((current) => ({
@@ -599,6 +710,22 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       [providerId]: {
         ...(current[providerId] ?? {}),
         [key]: value,
+      },
+    }));
+  }
+
+  function applyDeepSeekModeDefaults(providerId: string, mode: string) {
+    const normalizedMode = normalizeDeepSeekAnalysisMode(mode);
+    const defaults = getDeepSeekModeRuntimeDefaults(normalizedMode);
+    setConfigFieldDrafts((current) => ({
+      ...current,
+      [providerId]: {
+        ...(current[providerId] ?? {}),
+        analysisMode: normalizedMode,
+        temperature: String(defaults.temperature),
+        maxTokens: String(defaults.maxTokens),
+        reasoningEffort: defaults.reasoningEffort,
+        thinkingEnabled: String(defaults.thinkingEnabled),
       },
     }));
   }
@@ -633,7 +760,14 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         <FormField key={field.key} label={field.label} hint={field.helpText}>
           <Select
             value={value}
-            onChange={(event) => updateConfigField(provider.id, field.key, event.target.value)}
+            onChange={(event) => {
+              if (isDeepSeekProvider(provider) && field.key === "analysisMode") {
+                applyDeepSeekModeDefaults(provider.id, event.target.value);
+                return;
+              }
+
+              updateConfigField(provider.id, field.key, event.target.value);
+            }}
           >
             {field.options?.map((option) => (
               <option key={option.value} value={option.value}>
@@ -740,6 +874,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               const secretFields = getPresetFields(provider, "secretJson");
               const state = stateByProvider[provider.id];
               const isExpanded = expandedProviders[provider.id] ?? false;
+              const isDeepSeek = isDeepSeekProvider(provider);
 
               return (
                 <article
@@ -748,12 +883,18 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                 >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <h3 className="text-base font-bold">{providerName(provider)}</h3>
+                      <h3 className="text-base font-bold">
+                        {isDeepSeek ? "DeepSeek 智能解读" : providerName(provider)}
+                      </h3>
                       <p className="mt-1 text-sm text-muted-foreground">
                         代码：{provider.providerCode}
                       </p>
                     </div>
-                    <ProviderStatus provider={provider} flags={realDevCallFlags} />
+                    {isDeepSeek ? (
+                      <DeepSeekStatus provider={provider} flags={realDevCallFlags} />
+                    ) : (
+                      <ProviderStatus provider={provider} flags={realDevCallFlags} />
+                    )}
                   </div>
 
                   {preset?.helpText ? (
@@ -767,9 +908,11 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                   <SavedSecretSummary provider={provider} />
 
                   <div className="flex flex-wrap items-center gap-3">
-                    <Button variant="secondary" onClick={() => toggleProviderEditor(provider.id)}>
-                      {isExpanded ? "收起配置" : "编辑配置"}
-                    </Button>
+                    {!isDeepSeek ? (
+                      <Button variant="secondary" onClick={() => toggleProviderEditor(provider.id)}>
+                        {isExpanded ? "收起配置" : "编辑配置"}
+                      </Button>
+                    ) : null}
                     <Button variant="secondary" onClick={() => void testProvider(provider)}>
                       测试连接
                     </Button>
@@ -782,7 +925,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                     ) : null}
                   </div>
 
-                  {isExpanded ? (
+                  {isExpanded || isDeepSeek ? (
                     <div className="grid gap-5 rounded-lg border border-border bg-muted p-4">
                       <SwitchRow
                         label="启用该服务商"
@@ -796,29 +939,38 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                         }
                       />
 
-                      <FormField label="优先级">
-                        <Input
-                          type="number"
-                          value={priorityDrafts[provider.id] ?? provider.priority}
-                          onChange={(event) =>
-                            setPriorityDrafts((current) => ({
-                              ...current,
-                              [provider.id]: Number(event.target.value),
-                            }))
-                          }
-                        />
-                      </FormField>
+                      {!isDeepSeek ? (
+                        <FormField label="优先级">
+                          <Input
+                            type="number"
+                            value={priorityDrafts[provider.id] ?? provider.priority}
+                            onChange={(event) =>
+                              setPriorityDrafts((current) => ({
+                                ...current,
+                                [provider.id]: Number(event.target.value),
+                              }))
+                            }
+                          />
+                        </FormField>
+                      ) : null}
 
                       <section className="grid gap-3">
                         <div>
-                          <h4 className="text-sm font-bold text-card-foreground">基础配置</h4>
+                          <h4 className="text-sm font-bold text-card-foreground">
+                            {isDeepSeek ? "调用开关" : "基础配置"}
+                          </h4>
                           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                            用于服务商地址、模型、Bucket、Region 等非密钥配置。
+                            {isDeepSeek
+                              ? "真实调用关闭时，测试连接只返回本地模拟结果，不会请求 DeepSeek。"
+                              : "用于服务商地址、模型、Bucket、Region 等非密钥配置。"}
                           </p>
                         </div>
                         {configFields.length > 0 ? (
                           <div className="grid gap-3 sm:grid-cols-2">
-                            {configFields.map((field) => renderConfigField(provider, field))}
+                            {(isDeepSeek
+                              ? configFields.filter((field) => field.key === "realCallEnabled")
+                              : configFields
+                            ).map((field) => renderConfigField(provider, field))}
                           </div>
                         ) : (
                           <p className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
@@ -897,6 +1049,23 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                         )}
                       </section>
 
+                      {isDeepSeek ? (
+                        <section className="grid gap-3">
+                          <div>
+                            <h4 className="text-sm font-bold text-card-foreground">分析模式</h4>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                              快速模式使用 deepseek-v4-flash；专业模式使用
+                              deepseek-v4-pro，适合复杂分析。
+                            </p>
+                          </div>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {configFields
+                              .filter((field) => field.key === "analysisMode")
+                              .map((field) => renderConfigField(provider, field))}
+                          </div>
+                        </section>
+                      ) : null}
+
                       <details className="rounded-lg border border-border bg-card p-3">
                         <summary className="cursor-pointer text-sm font-semibold text-card-foreground">
                           高级配置
@@ -910,43 +1079,49 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                             </div>
                           ) : null}
 
-                          <FormField label="基础配置 JSON">
-                            <Textarea
-                              value={configDrafts[provider.id] ?? "{}"}
-                              onChange={(event) =>
-                                setConfigDrafts((current) => ({
-                                  ...current,
-                                  [provider.id]: event.target.value,
-                                }))
-                              }
-                            />
-                          </FormField>
+                          {!isDeepSeek ? (
+                            <>
+                              <FormField label="基础配置 JSON">
+                                <Textarea
+                                  value={configDrafts[provider.id] ?? "{}"}
+                                  onChange={(event) =>
+                                    setConfigDrafts((current) => ({
+                                      ...current,
+                                      [provider.id]: event.target.value,
+                                    }))
+                                  }
+                                />
+                              </FormField>
 
-                          <FormField
-                            label="额外密钥 JSON"
-                            hint="仅填写要新增或更新的密钥字段；留空表示不更新密钥。"
-                          >
-                            <Textarea
-                              placeholder="留空则保持现有密钥不变"
-                              value={secretDrafts[provider.id] ?? ""}
-                              onChange={(event) =>
-                                setSecretDrafts((current) => ({
-                                  ...current,
-                                  [provider.id]: event.target.value,
-                                }))
-                              }
-                            />
-                          </FormField>
+                              <FormField
+                                label="额外密钥 JSON"
+                                hint="仅填写要新增或更新的密钥字段；留空表示不更新密钥。"
+                              >
+                                <Textarea
+                                  placeholder="留空则保持现有密钥不变"
+                                  value={secretDrafts[provider.id] ?? ""}
+                                  onChange={(event) =>
+                                    setSecretDrafts((current) => ({
+                                      ...current,
+                                      [provider.id]: event.target.value,
+                                    }))
+                                  }
+                                />
+                              </FormField>
+                            </>
+                          ) : null}
                         </div>
                       </details>
 
                       <div className="flex flex-wrap justify-end gap-3">
-                        <Button
-                          variant="secondary"
-                          onClick={() => toggleProviderEditor(provider.id)}
-                        >
-                          取消
-                        </Button>
+                        {!isDeepSeek ? (
+                          <Button
+                            variant="secondary"
+                            onClick={() => toggleProviderEditor(provider.id)}
+                          >
+                            取消
+                          </Button>
+                        ) : null}
                         <Button onClick={() => void saveProvider(provider)}>保存配置</Button>
                       </div>
                     </div>
