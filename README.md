@@ -1,5 +1,16 @@
 # Photo Weather AI
 
+## Documentation
+
+- [Product Scope](docs/product-scope.md)
+- [Data Source Blueprint](docs/data-source-blueprint.md)
+- [Accuracy Strategy](docs/accuracy-strategy.md)
+- [Development Roadmap](docs/development-roadmap.md)
+- [Cost Control](docs/provider-cost-control.md)
+- [Module Map](docs/module-map.md)
+
+These documents define the strategic product boundary for 逐光天气. Future Codex tasks must not narrow the product into a simple weather query site or an AI text explanation tool. If a task touches weather, astronomy, terrain, scoring, provider normalization, AI explanation, result pages, or data-source display, preserve this boundary: 逐光天气 should eventually cover at least Tianwentong + Lijing Weather style information and provide more detailed photography decision support.
+
 逐光天气是面向中国大陆风光摄影用户的天气与拍摄机会判断系统，公开标语为“风光摄影出行判断工具”。当前仓库处于自托管 SaaS 产品基础与界面打磨阶段，重点是数据库、后台配置、地点/机位资料、亮色默认主题和前端 UI 基线。
 
 当前步骤是 Product Copy Polish V1：在既有 Product UI redesign V4、地点选择、预报范围、目标感知结果页、天文/地形基础、天气服务商配置和评分逻辑之上，公开端与后台控制台已清理开发味文案，统一使用“体验模式”“演示数据”“本地算法计算”等产品化表达。必要的数据诚实提示仍保留，公开端不使用“AI”作为品牌表达；内部仓库名、包名和 scope 仍保持 `photo-weather-ai` / `@photo-weather/*`，不做代码仓库或包作用域重命名。
