@@ -17,7 +17,7 @@ export function generateStaticParams() {
 }
 
 const providerTypeLabels: Record<string, string> = {
-  ai: "AI 服务商",
+  ai: "智能解读服务商",
   weather: "天气服务商",
   geo: "地理服务商",
   terrain: "地形服务商",
@@ -32,7 +32,7 @@ export default function AdminProviderTypePage({ params }: AdminProviderTypePageP
   return (
     <AdminShell
       title={title}
-      description="按类型筛选服务商配置，展示脱敏密钥状态和真实开发调用开关；天气服务商当前本地仅使用样例或模拟数据。"
+      description="按类型筛选服务商配置，展示脱敏密钥状态、真实调用开关和测试模式。"
     >
       <AdminProvidersClient providerType={params.providerType} />
     </AdminShell>

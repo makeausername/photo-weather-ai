@@ -22,7 +22,7 @@ describe("MockWeatherProvider", () => {
 
     expect(current.provider).toBe("mock-weather");
     expect(current.cloudCoverPercent).toBe(42);
-    expect(current.summary).toContain("本地模拟天气");
+    expect(current.summary).toContain("演示天气数据");
   });
 
   it("returns deterministic normalized hourly forecasts", async () => {

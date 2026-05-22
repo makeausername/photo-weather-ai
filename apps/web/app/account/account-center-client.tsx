@@ -149,12 +149,12 @@ function AuthenticatedAccountCenter({
         <PlaceholderCard
           id="favorites"
           title="收藏机位"
-          description="暂无收藏机位。后续你可以收藏常用拍摄地点，快速发起天气分析。"
+          description="暂无收藏机位。你可以在机位库中收藏常用拍摄点，便于快速分析。"
         />
         <PlaceholderCard
           id="reports"
           title="报告管理"
-          description="暂无已保存报告。后续生成的拍摄天气报告会在这里集中管理。"
+          description="暂无已保存报告。后续生成的拍摄天气报告会集中显示在这里。"
         />
       </div>
 
@@ -216,7 +216,7 @@ function PlaceholderCard({
             <h2 className="text-lg font-bold text-card-foreground">{title}</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
           </div>
-          <Badge variant="muted">待接入</Badge>
+          <Badge variant="muted">即将开放</Badge>
         </div>
       </Card>
     </div>
@@ -231,9 +231,9 @@ function PlanCard() {
           <div>
             <h2 className="text-lg font-bold text-card-foreground">套餐权益</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">当前为基础体验模式。</p>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            后续将支持套餐权益、报告保存和更多账户能力。
-          </p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              该功能将在后续版本开放。
+            </p>
           </div>
           <Badge variant="info">规划中</Badge>
         </div>
@@ -259,7 +259,7 @@ function SecurityCard({
         <div className="rounded-lg border border-border bg-muted px-4 py-3">
           <p className="font-semibold text-card-foreground">修改密码</p>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            修改密码功能将在后续安全设置中开放。
+            该功能将在后续版本开放。
           </p>
         </div>
       </div>

@@ -207,7 +207,7 @@ export function resolveQWeatherRuntimeConfig(
       0,
       5,
     ),
-    modeLabelZh: realCallEnabled ? "真实服务" : "本地模拟",
+    modeLabelZh: realCallEnabled ? "真实服务" : "模拟测试",
   };
 }
 
@@ -245,7 +245,7 @@ export function resolveOpenMeteoRuntimeConfig(
       0,
       5,
     ),
-    modeLabelZh: realCallEnabled ? "真实服务" : "本地模拟",
+    modeLabelZh: realCallEnabled ? "真实服务" : "模拟测试",
   };
 }
 

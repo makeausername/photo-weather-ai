@@ -13,7 +13,7 @@ export function PublicModulePage({ title, description, highlights }: PublicModul
     <PublicShell contentClassName="pb-14">
       <section className="grid gap-8 lg:grid-cols-12 lg:items-start">
         <div className="min-w-0 lg:col-span-7">
-          <Badge variant="muted">模块准备中</Badge>
+          <Badge variant="muted">即将开放</Badge>
           <h1 className="mt-5 max-w-[760px] text-[30px] font-bold leading-[1.16] tracking-normal text-foreground sm:text-[36px] lg:text-[40px]">
             {title}
           </h1>
@@ -38,7 +38,7 @@ export function PublicModulePage({ title, description, highlights }: PublicModul
 
         <Card className="lg:col-span-5">
           <div className="border-b border-border p-5 sm:p-6">
-            <p className="text-sm font-semibold text-primary">后续将提供</p>
+            <p className="text-sm font-semibold text-primary">即将开放</p>
             <h2 className="mt-2 text-xl font-bold text-card-foreground">清晰的题材判断视图</h2>
           </div>
           <div className="grid gap-3 p-5 sm:p-6">

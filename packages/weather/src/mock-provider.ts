@@ -25,8 +25,8 @@ import type { WeatherProvider } from "./provider.js";
 const PROVIDER_ID = "mock-weather";
 const DATA_SOURCE = {
   providerCode: "mock",
-  displayName: "模拟天气数据",
-  providerLabelZh: "本地模拟数据",
+  displayName: "演示天气数据",
+  providerLabelZh: "演示数据",
   isMock: true,
   mode: "mock",
 } as const;
@@ -40,7 +40,7 @@ export class MockWeatherProvider implements WeatherProvider {
       observedAt: formatZonedIso(getNowInTimezone(defaultTimezone), defaultTimezone),
       coordinates: input.coordinates,
       condition: "partly_cloudy",
-      summary: "本地模拟天气：碎云与较高能见度，用于验证流程。",
+      summary: "演示天气数据：碎云与较高能见度，用于体验分析流程。",
       temperatureCelsius: 18.4,
       feelsLikeCelsius: 18.1,
       humidityPercent: 58,
@@ -191,7 +191,7 @@ function buildMockHour(
     weatherCode: index % 3 === 0 ? "mock-partly-cloudy" : "mock-clear",
     providerCode: DATA_SOURCE.providerCode,
     sourceConfidence: 0.78,
-    sourceNotes: ["本地模拟天气数据用于流程验证。"],
+    sourceNotes: ["演示天气数据用于体验分析流程。"],
   };
 }
 

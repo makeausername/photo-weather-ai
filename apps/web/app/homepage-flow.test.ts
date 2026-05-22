@@ -8,6 +8,7 @@ import {
   homepageDefaultTarget,
   homepageTargetHelperText,
 } from "../components/homepage-search-panel";
+import HomePage from "./page";
 import { ForecastResultClient } from "./forecast/forecast-result-client";
 import {
   buildForecastUrl,
@@ -89,6 +90,14 @@ describe("homepage forecast flow", () => {
     expect(hasExactButton(html, "云海")).toBe(false);
     expect(hasExactButton(html, "朝霞晚霞")).toBe(false);
     expect(hasExactButton(html, "星空银河")).toBe(false);
+  });
+
+  it("keeps public homepage copy product-friendly", () => {
+    const html = renderToStaticMarkup(React.createElement(HomePage));
+
+    expect(html).toContain("体验模式");
+    expect(html).toContain("当前为演示分析结果");
+    expect(html).not.toMatch(/\bmock\b|\bfixture\b|本地模拟|不含真实预报|开发环境|调试|占位/i);
   });
 
   it("keeps dedicated scenario pages on their fixed forecast targets", () => {

@@ -110,7 +110,7 @@ describe("weather runtime resolvers", () => {
     );
 
     expect(config.realCallEnabled).toBe(false);
-    expect(config.modeLabelZh).toBe("本地模拟");
+    expect(config.modeLabelZh).toBe("模拟测试");
   });
 
   it("supports optional Open-Meteo key and customer endpoint config", () => {

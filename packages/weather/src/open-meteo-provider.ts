@@ -56,7 +56,7 @@ export class OpenMeteoProvider implements WeatherProvider {
       observedAt: firstHour.time,
       coordinates: input.coordinates,
       condition: weatherConditionFromCode(firstHour.weatherCode),
-      summary: "Open-Meteo 夹具数据：仅用于本地归一化验证。",
+      summary: "Open-Meteo 样例数据：用于适配校验。",
       temperatureCelsius: firstHour.temperature,
       feelsLikeCelsius: firstHour.feelsLike ?? firstHour.temperature,
       humidityPercent: firstHour.humidity,

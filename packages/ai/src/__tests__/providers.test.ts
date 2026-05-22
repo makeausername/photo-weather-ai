@@ -108,13 +108,13 @@ describe("AI providers", () => {
             {
               message: {
                 content: JSON.stringify({
-                  summary: "模拟数据下窗口条件较好，但需要实地复核。",
+                  summary: "演示数据下窗口条件较好，但需要实地复核。",
                   recommendation: "可以作为计划参考，不建议直接作为出行依据。",
                   mainReasons: ["综合指数较高", "最佳窗口明确"],
-                  mainRisks: ["天气与地形仍为模拟数据"],
+                  mainRisks: ["天气与地形仍为演示数据"],
                   photographerAdvice: ["提前准备防风和防雨方案"],
                   backupPlan: ["若云量偏厚，改拍近景或延后到下一窗口"],
-                  confidenceNote: "当前为模拟数据解读，不代表真实预报准确率。",
+                  confidenceNote: "当前为演示数据解读，仅用于体验分析流程。",
                 }),
               },
             },
@@ -139,7 +139,7 @@ describe("AI providers", () => {
       forecastResult: forecastResultFixture,
     });
 
-    expect(explanation.summary).toContain("模拟数据");
+    expect(explanation.summary).toContain("演示数据");
     expect(explanation.mainReasons).toHaveLength(2);
   });
 
@@ -164,10 +164,10 @@ describe("AI providers", () => {
         summary: "综合解读",
         recommendation: "推荐谨慎参考",
         mainReasons: ["云量窗口可用"],
-        mainRisks: ["模拟数据"],
+        mainRisks: ["演示数据"],
         photographerAdvice: ["提前到位"],
         backupPlan: ["改拍近景"],
-        confidenceNote: "仅作模拟流程验证。",
+        confidenceNote: "仅用于体验分析流程。",
       }),
     );
 
@@ -290,16 +290,17 @@ const forecastResultFixture: ForecastCalculationResult = {
     valleyDirectionZh: "东南",
     ridgeDirectionZh: "西北-东南",
     terrainCloudSeaPotential: "high",
-    terrainNoteZh: "本地模拟地形显示山顶与周边谷地高差明显。",
+    terrainNoteZh: "演示地形数据显示山顶与周边谷地高差明显。",
     sunriseHorizonAngle: 4.8,
     sunsetHorizonAngle: 5.5,
     milkyWayHorizonAngle: 7.2,
     blockedDirectionsZh: ["西北", "东北"],
-    obstructionNoteZh: "本地模拟地形显示主要方向地平遮挡较低。",
+    obstructionNoteZh: "演示地形数据显示主要方向地平遮挡较低。",
     dataSource: "mock_terrain",
-    dataSourceLabelZh: "本地模拟地形数据",
+    dataSourceLabelZh: "演示数据",
     isMock: true,
-    honestyNoteZh: "地形数据：本地模拟地形数据，真实 DEM / 海拔数据将在后续接入。",
+    honestyNoteZh:
+      "地形信息当前使用演示地形数据，正式海拔与 DEM 数据接入后将用于提升云海和遮挡判断。",
   },
   terrainAnalysis: {
     terrainProfile: {
@@ -313,19 +314,20 @@ const forecastResultFixture: ForecastCalculationResult = {
       valleyDirectionZh: "东南",
       ridgeDirectionZh: "西北-东南",
       terrainCloudSeaPotential: "high",
-      terrainNoteZh: "本地模拟地形显示山顶与周边谷地高差明显。",
+      terrainNoteZh: "演示地形数据显示山顶与周边谷地高差明显。",
     },
     horizonProfile: {
       sunriseHorizonAngle: 4.8,
       sunsetHorizonAngle: 5.5,
       milkyWayHorizonAngle: 7.2,
       blockedDirectionsZh: ["西北", "东北"],
-      obstructionNoteZh: "本地模拟地形显示主要方向地平遮挡较低。",
+      obstructionNoteZh: "演示地形数据显示主要方向地平遮挡较低。",
     },
     dataSource: "mock_terrain",
-    dataSourceLabelZh: "本地模拟地形数据",
+    dataSourceLabelZh: "演示数据",
     isMock: true,
-    honestyNoteZh: "地形数据：本地模拟地形数据，真实 DEM / 海拔数据将在后续接入。",
+    honestyNoteZh:
+      "地形信息当前使用演示地形数据，正式海拔与 DEM 数据接入后将用于提升云海和遮挡判断。",
   },
   astroSummaries: [],
   bestWindows: [
@@ -378,28 +380,29 @@ const forecastResultFixture: ForecastCalculationResult = {
         score: 71,
         detail: "能见度较好。",
       },
-      terrainSummary: "本地模拟地形显示山顶与周边谷地高差明显。",
+      terrainSummary: "演示地形数据显示山顶与周边谷地高差明显。",
       weatherSummary: "多云间晴，山地局部有雾",
     },
   ],
   riskFlags: [
     {
       key: "mock_data",
-      label: "模拟数据",
+      label: "演示数据",
       level: "medium",
-      description: "天气与地形仍为本地模拟数据。",
+      description: "天气与地形仍为演示数据。",
     },
   ],
   keyReasons: ["清晨低云和湿度组合较好。"],
   photographyAdvice: ["提前到达机位并预留风雨备选。"],
-  dataNotice: "当前天气数据和地形数据为本地模拟数据。",
+  dataNotice:
+    "天气数据：演示数据；地形数据：演示数据；天文数据：本地算法计算。当前结果基于演示天气数据生成，仅用于体验分析流程。",
   isMock: true,
-  dataSourceLabel: "本地模拟数据",
+  dataSourceLabel: "演示数据",
   generatedAt: "2026-05-19T08:00:00+08:00",
   weatherProviderCode: "mock",
-  weatherProviderLabelZh: "本地模拟数据",
+  weatherProviderLabelZh: "演示数据",
   weatherDataMode: "mock",
-  weatherNoticeZh: "天气数据：本地模拟数据",
+  weatherNoticeZh: "天气数据：演示数据",
   weatherMissingFields: [],
   weatherEstimatedFields: [],
 };

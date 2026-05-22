@@ -232,7 +232,7 @@ export function buildDeepSeekForecastExplanationRequest(
             mainRisks: ["主要风险"],
             photographerAdvice: ["拍摄建议"],
             backupPlan: ["备用方案"],
-            confidenceNote: "置信说明，必须说明若 isMock=true 则不代表真实预报准确率",
+            confidenceNote: "置信说明，必须说明若 isMock=true 则当前结果基于演示数据",
           },
           exampleJsonOutput: {
             summary: "这里写简体中文综合解读。",
@@ -241,12 +241,12 @@ export function buildDeepSeekForecastExplanationRequest(
             mainRisks: ["不新增输入中没有的天气或地形事实。"],
             photographerAdvice: ["结合确定性结果给出拍摄准备建议。"],
             backupPlan: ["若条件变化，优先选择备用窗口或近距离机位。"],
-            confidenceNote: "若 isMock=true，明确说明这是模拟数据解读，不代表真实预报。",
+            confidenceNote: "若 isMock=true，明确说明这是演示数据解读，仅用于体验分析流程。",
           },
           constraints: [
             "不要发明任何未提供的天气、天文、地形或交通数据。",
             "不要覆盖 deterministicForecastResult 中的评分、窗口和风险。",
-            "如果 isMock=true，必须明确这是模拟数据解读，只适合流程验证和规划参考。",
+            "如果 isMock=true，必须明确这是演示数据解读，只适合体验分析流程和规划参考。",
             "输出 JSON only。",
           ],
           safetyRules: [
@@ -294,7 +294,7 @@ export function createRuleBasedForecastExplanation(
             .map((window) => `备选 ${window.label}，分值 ${window.score}，仍需现场确认。`)
         : ["若现场云量、降水或风力与模拟结果不一致，优先选择近距离机位并保留撤离时间。"],
     confidenceNote: result.isMock
-      ? "当前解读基于本地模拟天气和地形数据，只适合流程验证与拍摄计划草拟，不代表真实预报准确率。"
+      ? "当前解读基于演示天气和地形数据，仅用于体验分析流程；正式数据源启用后再用于出行前复核。"
       : "当前解读基于已接入的数据源和确定性评分结果，仍需结合现场安全与最新预报复核。",
   };
 }

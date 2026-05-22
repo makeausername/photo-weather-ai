@@ -263,9 +263,10 @@ async function calculateForecastResult(
     terrainProfile,
     horizonProfile,
     dataSource: "mock_terrain" as const,
-    dataSourceLabelZh: "本地模拟地形数据",
+    dataSourceLabelZh: "演示数据",
     isMock: true,
-    honestyNoteZh: "地形数据：本地模拟地形数据，真实 DEM / 海拔数据将在后续接入。",
+    honestyNoteZh:
+      "地形信息当前使用演示地形数据，正式海拔与 DEM 数据接入后将用于提升云海和遮挡判断。",
   };
   const calculationInput = buildForecastInputFromWeatherBundle(query, weatherDataBundle, {
     forecastRange,

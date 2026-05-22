@@ -77,16 +77,17 @@ const baseResult: ForecastCalculationResult = {
     valleyDirectionZh: "东南",
     ridgeDirectionZh: "西北-东南",
     terrainCloudSeaPotential: "high",
-    terrainNoteZh: "本地模拟地形显示山顶与周边谷地高差明显。",
+    terrainNoteZh: "演示地形数据显示山顶与周边谷地高差明显。",
     sunriseHorizonAngle: 4.8,
     sunsetHorizonAngle: 5.5,
     milkyWayHorizonAngle: 7.2,
     blockedDirectionsZh: ["西北", "东北"],
-    obstructionNoteZh: "本地模拟地形显示主要方向地平遮挡较低。",
+    obstructionNoteZh: "演示地形数据显示主要方向地平遮挡较低。",
     dataSource: "mock_terrain",
-    dataSourceLabelZh: "本地模拟地形数据",
+    dataSourceLabelZh: "演示数据",
     isMock: true,
-    honestyNoteZh: "地形数据：本地模拟地形数据，真实 DEM / 海拔数据将在后续接入。",
+    honestyNoteZh:
+      "地形信息当前使用演示地形数据，正式海拔与 DEM 数据接入后将用于提升云海和遮挡判断。",
   },
   terrainAnalysis: {
     terrainProfile: {
@@ -100,19 +101,20 @@ const baseResult: ForecastCalculationResult = {
       valleyDirectionZh: "东南",
       ridgeDirectionZh: "西北-东南",
       terrainCloudSeaPotential: "high",
-      terrainNoteZh: "本地模拟地形显示山顶与周边谷地高差明显。",
+      terrainNoteZh: "演示地形数据显示山顶与周边谷地高差明显。",
     },
     horizonProfile: {
       sunriseHorizonAngle: 4.8,
       sunsetHorizonAngle: 5.5,
       milkyWayHorizonAngle: 7.2,
       blockedDirectionsZh: ["西北", "东北"],
-      obstructionNoteZh: "本地模拟地形显示主要方向地平遮挡较低。",
+      obstructionNoteZh: "演示地形数据显示主要方向地平遮挡较低。",
     },
     dataSource: "mock_terrain",
-    dataSourceLabelZh: "本地模拟地形数据",
+    dataSourceLabelZh: "演示数据",
     isMock: true,
-    honestyNoteZh: "地形数据：本地模拟地形数据，真实 DEM / 海拔数据将在后续接入。",
+    honestyNoteZh:
+      "地形信息当前使用演示地形数据，正式海拔与 DEM 数据接入后将用于提升云海和遮挡判断。",
   },
   astroSummaries: [
     {
@@ -317,7 +319,7 @@ const baseResult: ForecastCalculationResult = {
         detail: "能见度较好。",
       },
       astroSummary: undefined,
-      terrainSummary: "本地模拟地形显示山顶与周边谷地高差明显。",
+      terrainSummary: "演示地形数据显示山顶与周边谷地高差明显。",
       weatherSummary: "多云间晴，山地局部有雾",
     },
     {
@@ -348,7 +350,7 @@ const baseResult: ForecastCalculationResult = {
         detail: "能见度较好。",
       },
       astroSummary: undefined,
-      terrainSummary: "本地模拟地形显示山顶与周边谷地高差明显。",
+      terrainSummary: "演示地形数据显示山顶与周边谷地高差明显。",
       weatherSummary: "多云间晴，山地局部有雾",
     },
   ],
@@ -363,14 +365,14 @@ const baseResult: ForecastCalculationResult = {
   keyReasons: ["清晨低云和湿度组合较好。", "夜间月光影响可控。"],
   photographyAdvice: ["提前到达机位并预留风雨备选。"],
   dataNotice:
-    "当前天气数据和地形数据为本地模拟数据，天文数据由本地算法按 WGS84 坐标计算；整体结果仍不代表真实预报。",
+    "天气数据：演示数据；地形数据：演示数据；天文数据：本地算法计算。当前结果基于演示天气数据生成，仅用于体验分析流程。正式天气数据源启用后，将显示对应的数据来源与预报时间。天文时间基于地点经纬度本地计算，实际拍摄仍需结合云量、光污染和地形遮挡。",
   isMock: true,
-  dataSourceLabel: "本地模拟数据",
+  dataSourceLabel: "演示数据",
   generatedAt: "2026-05-20T00:00:00+08:00",
   weatherProviderCode: "mock",
-  weatherProviderLabelZh: "本地模拟数据",
+  weatherProviderLabelZh: "演示数据",
   weatherDataMode: "mock",
-  weatherNoticeZh: "天气数据：本地模拟数据",
+  weatherNoticeZh: "天气数据：演示数据",
   weatherMissingFields: [],
   weatherEstimatedFields: [],
 };
@@ -516,11 +518,11 @@ describe("forecast result target-aware view model", () => {
   it("keeps data-source honesty in the shaped notice", () => {
     const viewModel = buildForecastResultViewModel(resultForTarget("astro"), "astro");
 
-    expect(viewModel.dataNotice).toContain("天气数据：本地模拟数据");
-    expect(viewModel.dataNotice).toContain("地形数据：本地模拟地形数据");
-    expect(viewModel.dataNotice).toContain("真实 DEM / 海拔数据将在后续接入");
+    expect(viewModel.dataNotice).toContain("天气数据：演示数据");
+    expect(viewModel.dataNotice).toContain("地形信息当前使用演示地形数据");
+    expect(viewModel.dataNotice).toContain("正式海拔与 DEM 数据接入后");
     expect(viewModel.dataNotice).toContain("天文数据：本地算法计算");
-    expect(viewModel.dataNotice).toContain("不代表真实预报");
+    expect(viewModel.dataNotice).toContain("当前结果基于演示天气数据生成");
   });
 
   it("shows a compact note when cloud layer fields are missing", () => {

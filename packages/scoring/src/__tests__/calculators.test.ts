@@ -47,19 +47,20 @@ const lowTerrainAnalysis: TerrainAnalysisSummary = {
     avgElevation5km: 410,
     elevationDiff5km: 210,
     terrainCloudSeaPotential: "low",
-    terrainNoteZh: "本地模拟地形显示周边高差较小，云海地形基础偏弱。",
+    terrainNoteZh: "演示地形数据显示周边高差较小，云海地形基础偏弱。",
   },
   horizonProfile: {
     sunriseHorizonAngle: 2,
     sunsetHorizonAngle: 2,
     milkyWayHorizonAngle: 2,
     blockedDirectionsZh: [],
-    obstructionNoteZh: "本地模拟地形显示地平遮挡较低。",
+    obstructionNoteZh: "演示地形数据显示地平遮挡较低。",
   },
   dataSource: "mock_terrain",
-  dataSourceLabelZh: "本地模拟地形数据",
+  dataSourceLabelZh: "演示数据",
   isMock: true,
-  honestyNoteZh: "地形数据：本地模拟地形数据，真实 DEM / 海拔数据将在后续接入。",
+  honestyNoteZh:
+    "地形信息当前使用演示地形数据，正式海拔与 DEM 数据接入后将用于提升云海和遮挡判断。",
 };
 
 function expectForecastScore(score: ForecastScore, label: string): void {
@@ -183,7 +184,7 @@ describe("forecast score calculators", () => {
     expect(["不建议前往", "谨慎参考", "值得等待", "推荐前往"]).toContain(
       astroResult.recommendationLabel,
     );
-    expect(astroResult.summary).toContain("模拟评分");
+    expect(astroResult.summary).toContain("演示评分");
   });
 
   it("builds forecast input from a normalized weather bundle", () => {
@@ -208,7 +209,7 @@ describe("forecast score calculators", () => {
     expect(result.weatherDataMode).toBe("fixture");
     expect(result.weatherNoticeZh).toBe("天气数据：Open-Meteo 样例数据");
     expect(result.dataSourceLabel).toBe("Open-Meteo 样例数据");
-    expect(result.summary).toContain("样例评分");
+    expect(result.summary).toContain("演示评分");
   });
 
   it("uses humidity, low cloud, wind, dew point, and visibility for cloud sea scoring", () => {

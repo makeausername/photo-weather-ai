@@ -268,7 +268,7 @@ export const providerFieldPresets = [
         target: "configJson",
         control: "boolean",
         defaultValue: false,
-        helpText: "关闭时测试连接只返回本地模拟结果，不请求真实天气服务。",
+        helpText: "关闭时测试连接只返回模拟测试结果，不请求真实天气服务。",
       },
       {
         key: "apiKey",
@@ -320,7 +320,7 @@ export const providerFieldPresets = [
   },
   {
     providerCode: "open_meteo",
-    helpText: "用于云层分层、能见度、露点和多模型交叉验证；本地测试默认使用样例数据。",
+    helpText: "用于云层分层、能见度、露点和多模型交叉验证；体验模式默认使用样例数据。",
     fields: [
       {
         key: "realCallEnabled",
@@ -328,7 +328,7 @@ export const providerFieldPresets = [
         target: "configJson",
         control: "boolean",
         defaultValue: false,
-        helpText: "关闭时测试连接只返回本地模拟结果，不请求真实天气服务。",
+        helpText: "关闭时测试连接只返回模拟测试结果，不请求真实天气服务。",
       },
       {
         key: "apiKey",
@@ -337,7 +337,7 @@ export const providerFieldPresets = [
         placeholder: keepExistingSecretPlaceholder,
         password: true,
         helpText:
-          "如使用商业版 Open-Meteo，可填写 API Key；普通本地开发可保持为空。",
+          "如使用商业版 Open-Meteo，可填写 API Key；普通体验模式可保持为空。",
       },
       {
         key: "customerEndpoint",
@@ -345,7 +345,7 @@ export const providerFieldPresets = [
         target: "configJson",
         placeholder: "https://customer-api.open-meteo.com",
         helpText:
-          "商业版可选。普通本地开发可保持为空，系统使用样例或模拟数据。",
+          "商业版可选。普通体验模式可保持为空，系统使用样例或演示数据。",
       },
       {
         key: "defaultModel",

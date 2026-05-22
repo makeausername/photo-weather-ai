@@ -8,7 +8,7 @@ import type {
 } from "./types.js";
 
 const disabledMessage =
-  "Open-Meteo Elevation Provider 仍是 Terrain Core V1 占位，当前默认禁用且不会发起真实外部请求。";
+  "Open-Meteo Elevation 当前默认禁用，不会发起真实外部请求。";
 
 export class OpenMeteoElevationProvider implements TerrainProvider {
   async getElevation(_coordinate: TerrainCoordinate): Promise<ElevationSample> {

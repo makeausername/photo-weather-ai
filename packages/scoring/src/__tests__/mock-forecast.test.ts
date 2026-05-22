@@ -65,11 +65,11 @@ describe("mock forecast input builder", () => {
       lunarDateText: expect.any(String),
       milkyWayVisibilityLevel: expect.any(String),
       calculationNoteZh:
-        "月相基于本地天文算法计算；农历日期基于本地历法库生成。实际观星仍需结合云量、光污染和地形遮挡。",
+        "月相基于本地天文算法计算；农历日期基于本地历法库生成。天文时间基于地点经纬度本地计算，实际拍摄仍需结合云量、光污染和地形遮挡。",
       moonInfo: {
         lunarDateText: expect.any(String),
         calculationNoteZh:
-          "月相基于本地天文算法计算；农历日期基于本地历法库生成。实际观星仍需结合云量、光污染和地形遮挡。",
+          "月相基于本地天文算法计算；农历日期基于本地历法库生成。天文时间基于地点经纬度本地计算，实际拍摄仍需结合云量、光污染和地形遮挡。",
       },
     });
     expect(first.astroSummaries[0]?.lunarDateText).not.toHaveLength(0);
@@ -83,7 +83,7 @@ describe("mock forecast input builder", () => {
     );
     expect(first.terrainAnalysis).toMatchObject({
       dataSource: "mock_terrain",
-      dataSourceLabelZh: "本地模拟地形数据",
+      dataSourceLabelZh: "演示数据",
       terrainProfile: {
         locationElevation: 1860,
         terrainCloudSeaPotential: "high",
@@ -134,11 +134,11 @@ describe("mock forecast input builder", () => {
 
     expect(result.isMock).toBe(true);
     expect(result.dataNotice).toBe(
-      "天气数据：本地模拟数据；地形数据：本地模拟地形数据，真实 DEM / 海拔数据将在后续接入；天文数据：本地算法按 WGS84 坐标计算。当前结果不代表真实预报。",
+      "天气数据：演示数据；地形数据：演示数据；天文数据：本地算法计算。当前结果基于演示天气数据生成，仅用于体验分析流程。正式天气数据源启用后，将显示对应的数据来源与预报时间。天文时间基于地点经纬度本地计算，实际拍摄仍需结合云量、光污染和地形遮挡。",
     );
-    expect(result.dataSourceLabel).toBe("本地模拟数据");
+    expect(result.dataSourceLabel).toBe("演示数据");
     expect(result.weatherDataMode).toBe("mock");
-    expect(result.weatherNoticeZh).toBe("天气数据：本地模拟数据");
+    expect(result.weatherNoticeZh).toBe("天气数据：演示数据");
     expect(result.terrainAnalysis.dataSource).toBe("mock_terrain");
     expect(result.scores.cloudSea.label).toBe("云海");
     expect(result.astroSummaries).toHaveLength(2);

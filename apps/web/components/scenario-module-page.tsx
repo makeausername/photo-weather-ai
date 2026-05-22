@@ -28,7 +28,7 @@ export type ScenarioPageConfig = {
 };
 
 export const scenarioDataNotice =
-  "当前页面用于选择地点和分析目标；真实天气数据接入前，结果页仍以本地模拟天气数据验证流程。";
+  "当前为体验模式，结果使用演示天气数据生成。";
 
 export function ScenarioModulePage({ config }: { readonly config: ScenarioPageConfig }) {
   return (
@@ -71,7 +71,7 @@ export function ScenarioModulePage({ config }: { readonly config: ScenarioPageCo
                 <p className="text-sm font-semibold text-primary">机位参考</p>
                 <h2 className="mt-1 text-xl font-bold text-foreground">{config.popularTitle}</h2>
               </div>
-              <Badge variant="warning">示例资料</Badge>
+              <Badge variant="warning">机位参考</Badge>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               {config.popularSpots.map((spot) => (
@@ -93,14 +93,14 @@ export function ScenarioModulePage({ config }: { readonly config: ScenarioPageCo
         <aside className="grid content-start gap-4 min-[1200px]:sticky min-[1200px]:top-[88px]">
           <ScenarioInfoCard
             title={config.infoTitle}
-            description="结果页会把该题材相关窗口和风险前置展示，但当前天气与地形仍是本地模拟数据。"
+            description="结果页会把该题材相关窗口和风险前置展示，便于快速判断是否值得等待。"
             items={config.infoItems}
             tone="accent"
           />
           <Card className="border-warning p-4">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="warning">数据提醒</Badge>
-              <p className="text-sm font-bold text-card-foreground">结果仍需等待真实天气接入</p>
+              <p className="text-sm font-bold text-card-foreground">当前为体验模式</p>
             </div>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">{scenarioDataNotice}</p>
           </Card>

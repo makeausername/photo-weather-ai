@@ -99,8 +99,10 @@ describe("scenario module pages", () => {
     expect(serialized).toContain("热门云海机位");
     expect(serialized).toContain("热门朝霞晚霞机位");
     expect(serialized).toContain("热门星空银河机位");
-    expect(serialized).not.toMatch(/coming soon|placeholder|todo/i);
+    expect(serialized).toContain("当前为体验模式，结果使用演示天气数据生成");
+    expect(serialized).not.toMatch(/coming soon|placeholder|todo|mock|fixture/i);
     expect(serialized).not.toContain("模块准备中");
+    expect(serialized).not.toContain("本地模拟");
     expect(serialized).not.toMatch(/\bAI\b/);
   });
 

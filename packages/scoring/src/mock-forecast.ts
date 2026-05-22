@@ -145,7 +145,7 @@ const profiles: readonly MockPlaceProfile[] = [
 
 const defaultProfile = profiles[0]!;
 const moonCalculationNoteZh =
-  "月相基于本地天文算法计算；农历日期基于本地历法库生成。实际观星仍需结合云量、光污染和地形遮挡。";
+  "月相基于本地天文算法计算；农历日期基于本地历法库生成。天文时间基于地点经纬度本地计算，实际拍摄仍需结合云量、光污染和地形遮挡。";
 
 export function buildMockForecastInput(
   query: ForecastQueryInput,
@@ -169,11 +169,11 @@ export function buildMockForecastInput(
         longitudeWgs84: query.longitudeWgs84,
       }),
       isMock: true,
-      dataSourceLabel: "本地模拟数据",
+      dataSourceLabel: "演示数据",
       weatherProviderCode: "mock",
-      weatherProviderLabelZh: "本地模拟数据",
+      weatherProviderLabelZh: "演示数据",
       weatherDataMode: "mock",
-      weatherNoticeZh: "天气数据：本地模拟数据",
+      weatherNoticeZh: "天气数据：演示数据",
     },
     {
       forecastRange,

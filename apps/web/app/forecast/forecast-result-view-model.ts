@@ -209,7 +209,7 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
         "risk",
         "主要风险",
         mainRisk?.label ?? "未发现高等级风险",
-        mainRisk ? `${riskLevelText(mainRisk.level)}风险` : "仍需现场核对真实天气。",
+        mainRisk ? `${riskLevelText(mainRisk.level)}风险` : "仍需出行前核对最新天气。",
         mainRisk?.level === "high" ? "danger" : "muted",
       ),
     ],
@@ -598,7 +598,9 @@ function buildCloudSeaDailySections(
         label: dateLabelForResult(result, day.date),
         value: formatScoreValue(day.cloudSea?.score),
         detail:
-          `${formatDailyMetricWindow(day.cloudSea)} ${day.weatherSummary ?? "天气摘要仍为本地模拟。"}`.trim(),
+          `${formatDailyMetricWindow(day.cloudSea)} ${
+            day.weatherSummary ?? "天气摘要当前使用演示数据。"
+          }`.trim(),
       })),
     },
     {
@@ -614,13 +616,13 @@ function buildCloudSeaDailySections(
     {
       key: "daily-cloud-sea-weather",
       title: "风速/湿度/低云摘要",
-      badgeLabel: "本地模拟天气",
+      badgeLabel: "演示数据",
       items: result.targetDailyBreakdown.map((day) => ({
         label: dateLabelForResult(result, day.date),
         value: day.weatherSummary ?? "暂无逐日天气摘要",
         detail:
           day.whiteoutRisk?.detail ??
-          "当前逐日摘要来自本地模拟天气，真实天气 provider 接入前只用于流程验证。",
+          "当前逐日摘要基于演示天气数据生成，正式数据源启用后将显示对应预报时间。",
       })),
     },
     {
@@ -718,12 +720,12 @@ function buildTerrainReferenceSection(result: ForecastCalculationResult): Foreca
       {
         label: "周边海拔范围",
         value: `${formatMeters(terrain.minElevation5km)} - ${formatMeters(terrain.maxElevation5km)}`,
-        detail: `5公里范围平均海拔约 ${formatMeters(terrain.avgElevation5km)}，用于本地模拟云海与遮挡判断。`,
+        detail: `5公里范围平均海拔约 ${formatMeters(terrain.avgElevation5km)}，用于云海与遮挡判断。`,
       },
       {
         label: "山谷方向",
         value: terrain.valleyDirectionZh ?? "暂无方向",
-        detail: `山脊参考：${terrain.ridgeDirectionZh ?? "暂无方向"}。该方向仅来自本地模拟地形。`,
+        detail: `山脊参考：${terrain.ridgeDirectionZh ?? "暂无方向"}。当前使用演示地形数据。`,
       },
     ],
   };
@@ -764,12 +766,12 @@ function buildCloudSeaTerrainPotentialSection(
   return {
     key: "cloud-sea-terrain-potential",
     title: "云海地形潜力",
-    badgeLabel: "本地模拟地形",
+    badgeLabel: "演示数据",
     items: [
       {
         label: "潜力等级",
         value: terrainPotentialLabel(terrain.terrainCloudSeaPotential),
-        detail: "按机位海拔、周边5公里高差和本地模拟山谷结构折算。",
+        detail: "按机位海拔、周边5公里高差和山谷结构折算。",
       },
       {
         label: "评分影响",
@@ -864,7 +866,7 @@ function buildCloudSeaWeatherSection(result: ForecastCalculationResult): Forecas
       },
       {
         label: "露点差",
-        detail: "露点差越小，山谷水汽越容易接近凝结；当前评分已纳入本地模拟露点差。",
+        detail: "露点差越小，山谷水汽越容易接近凝结；当前评分已纳入演示天气数据中的露点差。",
       },
       {
         label: "风速变化",
@@ -1080,7 +1082,7 @@ function buildHorizonObstructionTipSection(
       },
       {
         label: "银河窗口限制",
-        detail: "银河窗口 V1 仍需结合云量、月光、光污染和真实机位视野，当前地形只作本地模拟辅助。",
+        detail: "银河窗口 V1 仍需结合云量、月光、光污染和真实机位视野，当前地形信息作为辅助参考。",
       },
     ],
   };
@@ -1189,7 +1191,7 @@ function buildRiskSection(
             {
               label: "风险状态",
               value: "未发现高等级风险",
-              detail: "仍需在出行前核对真实天气、道路和景区开放信息。",
+              detail: "仍需在出行前核对最新天气、道路和景区开放信息。",
             },
           ],
   };
@@ -1234,7 +1236,7 @@ function listSection(
         : [
             {
               label: "暂无",
-              detail: "当前模拟结果尚未给出明确条目。",
+              detail: "当前分析结果尚未给出明确条目。",
             },
           ],
   };
@@ -1250,7 +1252,7 @@ function buildCloudSeaAdvice(result: ForecastCalculationResult): readonly string
       ? "如果已经在山上，清晨云海窗口值得等待；优先守高点，观察云雾上沿和风向变化。"
       : "如果已经在山上，可短时等待清晨窗口，但不要只押云海，建议同步准备山脊、林线和局部光影题材。",
     cloudSeaScore >= 72 && whiteoutRisk < 65
-      ? "如果是专程远途，当前云海信号具备出行参考价值，但仍需等真实天气数据接入后再做最终决定。"
+      ? "如果是专程远途，当前云海信号具备参考价值；正式天气数据源启用后再做最终决定。"
       : "如果是专程远途，不建议只为云海出发；白墙或低云不稳定时，远途成本和不确定性偏高。",
     "低云过高或过厚时，转拍山脊剪影、雾中林线、局部霞光或延时素材，避免继续等待完整云海边界。",
     "风速增大时，云雾层容易被吹散或快速包顶，三脚架稳定性和山顶体感风险也会升高。",
@@ -1287,7 +1289,7 @@ function buildAstroAdvice(result: ForecastCalculationResult): readonly string[] 
     moonIsBright
       ? "月光偏强时会压低银河对比度，可改拍月光照亮的山体、云海夜景或城市灯光层次。"
       : "月光影响相对可控时，优先利用天文黑夜和银河窗口完成深空或广角银河素材。",
-    "如果银河条件差，建议转拍月光风景、城市夜景、星轨堆栈测试或晨昏过渡光线，不要只守银心。",
+    "如果银河条件差，建议转拍月光风景、城市夜景、星轨素材或晨昏过渡光线，不要只守银心。",
   ];
 }
 
@@ -1421,7 +1423,7 @@ function riskItemsFromScore(
     : [
         {
           label: fallbackLabel,
-          detail: `${score.label}暂未给出明显风险，仍需结合真实天气和现场条件复核。`,
+          detail: `${score.label}暂未给出明显风险，仍需结合最新天气和现场条件复核。`,
         },
       ];
 }
@@ -1438,7 +1440,7 @@ function riskLevelText(level: ForecastRiskFlag["level"]): string {
 
 function cloudSeaGoDetail(result: ForecastCalculationResult): string {
   if (result.scores.cloudSea.score >= 72 && result.scores.whiteoutRisk.score < 65) {
-    return "云海信号优先，但仍需真实天气接入后复核。";
+    return "云海信号优先，正式天气数据源启用后可进一步复核。";
   }
   if (result.scores.whiteoutRisk.score >= 70) {
     return "白墙风险偏高，专程远途需要谨慎。";
@@ -1491,12 +1493,17 @@ function firstText(items: readonly string[], fallback: string): string {
 }
 
 function buildDataNotice(result: ForecastCalculationResult): string {
-  const nonRealNotice = result.weatherDataMode === "real" ? "" : "当前结果不代表真实预报。";
+  const nonRealNotice =
+    result.weatherDataMode === "real"
+      ? ""
+      : "当前结果基于演示天气数据生成，仅用于体验分析流程。正式天气数据源启用后，将显示对应的数据来源与预报时间。";
+  const astronomyNotice =
+    "天文时间基于地点经纬度本地计算，实际拍摄仍需结合云量、光污染和地形遮挡。";
   const cloudLayerNote = hasMissingCloudLayers(result)
     ? "；当前天气源缺少低云/中云/高云分层数据，相关判断将降低置信度。"
     : "";
 
-  return `${result.weatherNoticeZh}；${result.terrainAnalysis.honestyNoteZh}；天文数据：本地算法计算。${nonRealNotice}${cloudLayerNote}`;
+  return `${result.weatherNoticeZh}；${result.terrainAnalysis.honestyNoteZh}；天文数据：本地算法计算。${nonRealNotice}${astronomyNotice}${cloudLayerNote}`;
 }
 
 function buildCloudLayerMissingItem(

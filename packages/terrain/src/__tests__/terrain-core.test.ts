@@ -54,8 +54,8 @@ describe("Terrain Core V1", () => {
       expect(firstProfile.locationElevation).toBe(spot.elevation);
       expect(firstProfile.minElevation5km).toBeLessThan(firstProfile.locationElevation);
       expect(firstProfile.elevationDiff5km).toBeGreaterThan(700);
-      expect(firstProfile.terrainNoteZh).toContain("本地模拟地形");
-      expect(horizon.obstructionNoteZh).toContain("本地模拟地形");
+      expect(firstProfile.terrainNoteZh).toContain("演示地形数据");
+      expect(horizon.obstructionNoteZh).toContain("演示地形数据");
       expect(horizon.blockedDirectionsZh.length).toBeGreaterThan(0);
     }
   });

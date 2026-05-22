@@ -55,7 +55,7 @@ const defaultRealDevCallFlags: RealDevCallFlags = {
 };
 
 const providerTypeLabels: Record<string, string> = {
-  ai: "AI 服务商",
+  ai: "智能解读服务商",
   weather: "天气服务商",
   geo: "地理服务商",
   terrain: "地形服务商",
@@ -79,7 +79,7 @@ const providerTabs = [
   { href: "/admin/providers", label: "全部" },
   { href: "/admin/providers/weather", label: "天气" },
   { href: "/admin/providers/geo", label: "地图" },
-  { href: "/admin/providers/ai", label: "AI" },
+  { href: "/admin/providers/ai", label: "智能解读" },
   { href: "/admin/providers/storage", label: "存储" },
 ] as const;
 
@@ -94,7 +94,7 @@ function stringifyJson(value: JsonValue | null): string {
 function parseJsonObject(input: string): Record<string, JsonValue> {
   const parsed = JSON.parse(input) as JsonValue;
   if (!isJsonObject(parsed)) {
-    throw new Error("请填写 JSON 对象。");
+    throw new Error("请填写有效的配置对象。");
   }
 
   return parsed;
@@ -395,7 +395,7 @@ function providerTestModeLabel(provider: SafeProviderConfig, realEnabled: boolea
   if (realEnabled) {
     return "真实服务";
   }
-  return "本地模拟";
+  return "模拟测试";
 }
 
 function providerFieldLabel(provider: SafeProviderConfig, key: string): string {
@@ -547,7 +547,7 @@ function RealDevCallNotice({
       <p className="mt-1 text-xs leading-5">
         {enabled
           ? "当前将请求真实服务，请确认 Key 有效且注意调用费用。"
-          : "当前测试连接为本地模拟，不会请求外部服务。"}
+          : "当前测试连接为模拟测试，不会请求外部服务。"}
       </p>
     </div>
   );
@@ -791,7 +791,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       ...current,
       [provider.id]: {
         status: "testing",
-        message: realEnabled ? "正在请求真实服务..." : "正在执行本地模拟测试...",
+        message: realEnabled ? "正在请求真实服务..." : "正在执行模拟测试...",
       },
     }));
 
@@ -984,7 +984,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               <h2 className="text-lg font-bold">{providerTypeLabels[group] ?? "其他服务商"}</h2>
               <p className="mt-1 text-sm text-muted-foreground">{groupProviders.length} 个服务商</p>
             </div>
-            <Badge variant="muted">真实调用需显式启用，自动化测试保持本地模拟</Badge>
+            <Badge variant="muted">真实调用需显式启用，自动化测试保持模拟测试</Badge>
           </div>
 
           <div className="grid gap-4 p-5 xl:grid-cols-2">
@@ -1086,9 +1086,9 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                           </h4>
                           <p className="mt-1 text-xs leading-5 text-muted-foreground">
                             {isDeepSeek
-                              ? "真实调用关闭时，测试连接只返回本地模拟结果，不会请求 DeepSeek。"
+                              ? "真实调用关闭时，测试连接只返回模拟测试结果，不会请求 DeepSeek。"
                               : isWeather
-                                ? "真实调用关闭时，测试连接只返回本地模拟结果，不会请求真实天气服务。"
+                                ? "真实调用关闭时，测试连接只返回模拟测试结果，不会请求真实天气服务。"
                                 : "用于服务商地址、模型、Bucket、Region 等非密钥配置。"}
                           </p>
                         </div>
@@ -1101,7 +1101,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                           </div>
                         ) : (
                           <p className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
-                            该服务商暂无预设基础配置项，可在高级配置中补充 JSON。
+                            该服务商暂无预设基础配置项，可在高级配置中补充。
                           </p>
                         )}
                       </section>
@@ -1200,7 +1200,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                               商业版设置
                             </h4>
                             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                              如使用商业版 Open-Meteo，可填写商业版专属 Endpoint；普通本地开发可保持为空。
+                              如使用商业版 Open-Meteo，可填写商业版专属 Endpoint；普通体验模式可保持为空。
                             </p>
                           </div>
                           <div className="grid gap-3 sm:grid-cols-2">
@@ -1236,7 +1236,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
 
                           {!isDeepSeek ? (
                             <>
-                              <FormField label="基础配置 JSON">
+                              <FormField label="基础配置">
                                 <Textarea
                                   value={configDrafts[provider.id] ?? "{}"}
                                   onChange={(event) =>
@@ -1250,7 +1250,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
 
                               {!isWeather ? (
                                 <FormField
-                                  label="额外密钥 JSON"
+                                  label="额外密钥配置"
                                   hint="仅填写要新增或更新的密钥字段；留空表示不更新密钥。"
                                 >
                                   <Textarea

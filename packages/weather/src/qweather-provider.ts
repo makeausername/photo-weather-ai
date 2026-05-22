@@ -58,7 +58,7 @@ export class QWeatherProvider implements WeatherProvider {
       observedAt: firstHour.time,
       coordinates: input.coordinates,
       condition: weatherConditionFromCode(firstHour.weatherCode),
-      summary: "和风天气夹具数据：仅用于本地归一化验证。",
+      summary: "和风天气样例数据：用于适配校验。",
       temperatureCelsius: firstHour.temperature,
       feelsLikeCelsius: firstHour.feelsLike ?? firstHour.temperature,
       humidityPercent: firstHour.humidity,

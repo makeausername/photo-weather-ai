@@ -299,7 +299,7 @@ describe("admin config routes", () => {
       connectionMode: "mock",
       providerType: "weather",
       providerCode: "qweather",
-      message: "当前为本地模拟测试，未请求真实天气服务。",
+      message: "当前为模拟测试，未请求真实天气服务。",
     });
 
     const emptyJsonBodyResponse = await app.inject({
@@ -316,7 +316,7 @@ describe("admin config routes", () => {
     expect(emptyJsonBodyResponse.json()).toMatchObject({
       success: true,
       mode: "mock",
-      message: "当前为本地模拟测试，未请求真实天气服务。",
+      message: "当前为模拟测试，未请求真实天气服务。",
     });
 
     const emptyObjectResponse = await app.inject({
@@ -330,7 +330,7 @@ describe("admin config routes", () => {
     expect(emptyObjectResponse.json()).toMatchObject({
       success: true,
       mode: "mock",
-      message: "当前为本地模拟测试，未请求真实天气服务。",
+      message: "当前为模拟测试，未请求真实天气服务。",
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -395,7 +395,7 @@ describe("admin config routes", () => {
       mode: "mock",
       connectionMode: "mock",
       message:
-        "Open-Meteo 未配置商业 Key，将使用默认样例/模拟数据；真实商业接口请填写 API Key 和 Customer Endpoint。",
+        "Open-Meteo 未配置商业 Key，将使用默认样例/演示数据；真实商业接口请填写 API Key 和 Customer Endpoint。",
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -424,7 +424,7 @@ describe("admin config routes", () => {
     expect(response.json()).toMatchObject({
       success: true,
       mode: "mock",
-      message: "当前为本地模拟测试，未请求高德地图服务。",
+      message: "当前为模拟测试，未请求高德地图服务。",
     });
     expect(response.body).not.toContain("amap-test-secret");
     expect(response.body).not.toContain("secretJson");
@@ -456,7 +456,7 @@ describe("admin config routes", () => {
       mode: "fast",
       connectionMode: "mock",
       model: "deepseek-v4-flash",
-      message: "当前为本地模拟测试，未请求 DeepSeek 服务。",
+      message: "当前为模拟测试，未请求 DeepSeek 服务。",
     });
     expect(response.body).not.toContain("deepseek-test-secret");
     expect(response.body).not.toContain("secretJson");

@@ -25,8 +25,11 @@ import {
   pickHighestScoredHour,
 } from "./helpers.js";
 
-const mockDataNotice =
-  "天气数据：本地模拟数据；地形数据：本地模拟地形数据，真实 DEM / 海拔数据将在后续接入；天文数据：本地算法按 WGS84 坐标计算。当前结果不代表真实预报。";
+const demoWeatherHonestyNotice =
+  "当前结果基于演示天气数据生成，仅用于体验分析流程。正式天气数据源启用后，将显示对应的数据来源与预报时间。";
+const astronomyHonestyNotice =
+  "天文时间基于地点经纬度本地计算，实际拍摄仍需结合云量、光污染和地形遮挡。";
+const mockDataNotice = `天气数据：演示数据；地形数据：演示数据；天文数据：本地算法计算。${demoWeatherHonestyNotice}${astronomyHonestyNotice}`;
 
 const cloudLayerMissingNote = "当前天气源缺少低云/中云/高云分层数据，相关判断将降低置信度。";
 
@@ -173,7 +176,7 @@ export function calculateCloudSeaScore(input: ForecastCalculationInput): Forecas
     `清晨平均湿度约 ${Math.round(humidity)}%，有利于山谷水汽聚集。`,
     `5公里范围海拔落差约 ${Math.round(terrainProfile.elevationDiff5km)} 米，云海地形潜力为${terrainPotentialLabel(terrainProfile.terrainCloudSeaPotential)}。`,
     hasLowCloud
-      ? `清晨低云量约 ${Math.round(lowCloud)}%，可作为云海形成的本地模拟信号。`
+      ? `清晨低云量约 ${Math.round(lowCloud)}%，可作为云海形成的演示数据信号。`
       : "当前天气源缺少低云分层，云海判断会降低置信度。",
     `清晨能见度约 ${Math.round(visibility)} 公里，露点差${
       hasDewPoint ? `约 ${Math.round(dewPointSpread)}℃` : "暂无有效分层"
@@ -203,8 +206,8 @@ export function calculateWhiteoutRiskScore(input: ForecastCalculationInput): For
   ]);
   const reasons = [
     `低云量约 ${Math.round(lowCloud)}%，湿度约 ${Math.round(humidity)}%。`,
-    `模拟能见度约 ${Math.round(visibility)} 公里，用于估算白墙概率。`,
-    `地形辅助提示：${terrainProfile.terrainNoteZh} 该项只作本地模拟参考，不代表真实 DEM 精度。`,
+    `能见度约 ${Math.round(visibility)} 公里，用于估算白墙概率。`,
+    `地形辅助提示：${terrainProfile.terrainNoteZh} 该项为演示地形参考。`,
   ];
   const risks = [
     ...(riskScore >= 70 ? ["白墙风险偏高，山顶视野可能被低云遮挡。"] : []),
@@ -436,7 +439,7 @@ function horizonReason(label: string, horizonAngle: number | undefined): string 
     return `${label}暂无可用地平线遮挡角，本次不额外扣减地形遮挡。`;
   }
 
-  return `${label}本地模拟地平线遮挡角约 ${horizonAngle.toFixed(1)}°，用于辅助判断低角度光线和构图遮挡。`;
+  return `${label}演示地形遮挡角约 ${horizonAngle.toFixed(1)}°，用于辅助判断低角度光线和构图遮挡。`;
 }
 
 function calculateGlowWindowScore(
@@ -1361,7 +1364,9 @@ function buildPhotographyAdvice(
   if (riskFlags.some((flag) => flag.level === "high")) {
     advice.push("存在高等级风险提示，出行前应再次核对真实天气、道路和景区开放信息。");
   }
-  advice.push("当前结果只用于本地计算流程验证，真实出行需要等待后续接入的生产天气数据。");
+  advice.push(
+    "当前结果基于演示天气数据生成，仅用于体验分析流程；正式天气数据源启用后可用于出行前复核。",
+  );
 
   return advice;
 }
@@ -1380,12 +1385,7 @@ function buildSummary(
         : input.target === "astro"
           ? "星空银河"
           : "综合拍摄";
-  const scoreLabel =
-    input.weatherDataMode === "fixture"
-      ? "样例评分"
-      : input.weatherDataMode === "mock"
-        ? "模拟评分"
-        : "评分";
+  const scoreLabel = input.weatherDataMode === "real" ? "评分" : "演示评分";
 
   return `${input.place.name}${targetPhrase}${scoreLabel}为 ${overallScore} 分，建议等级为“${recommendationLabel}”。云海 ${scores.cloudSea.score} 分，霞光最高 ${Math.max(scores.sunriseGlow.score, scores.sunsetGlow.score)} 分，通透度 ${scores.transparency.score} 分。`;
 }
@@ -1561,12 +1561,12 @@ function buildDataNotice(input: ForecastCalculationInput): string {
     return mockDataNotice;
   }
 
-  const weatherHonesty = input.weatherDataMode === "real" ? "" : "当前结果不代表真实预报。";
+  const weatherHonesty = input.weatherDataMode === "real" ? "" : demoWeatherHonestyNotice;
   const cloudLayerNote = hasMissingCloudLayerFields(input.weatherMissingFields)
     ? `；${cloudLayerMissingNote}`
     : "";
 
-  return `${input.weatherNoticeZh}；地形数据：${input.terrainAnalysis.dataSourceLabelZh}；天文数据：本地算法按 WGS84 坐标计算。${weatherHonesty}${cloudLayerNote}`;
+  return `${input.weatherNoticeZh}；地形数据：${input.terrainAnalysis.dataSourceLabelZh}；天文数据：本地算法计算。${weatherHonesty}${astronomyHonestyNotice}${cloudLayerNote}`;
 }
 
 function getShanghaiHour(time: string): number {

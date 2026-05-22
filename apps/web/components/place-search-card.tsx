@@ -63,7 +63,7 @@ const sourceLabels: Record<PlaceResultSource, string> = {
   local_location: "本地地点",
   local_photo_spot: "本地机位",
   amap: "高德地图",
-  mock: "模拟数据",
+  mock: "演示数据",
 };
 
 function formatCoordinate(value: number): string {

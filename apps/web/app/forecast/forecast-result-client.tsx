@@ -58,7 +58,7 @@ const sourceLabels: Record<string, string> = {
   local_location: "本地地点",
   local_photo_spot: "本地机位",
   amap: "高德地图",
-  mock: "模拟数据",
+  mock: "演示数据",
 };
 
 const scoreLevelLabels: Record<ForecastScoreLevel, string> = {
@@ -204,7 +204,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
           </p>
         </div>
         <Badge variant={result?.isMock || status === "loading" ? "warning" : "success"}>
-          {result?.isMock || status === "loading" ? "部分模拟数据" : "已接入数据源"}
+          {result?.isMock || status === "loading" ? "体验模式" : "已接入数据源"}
         </Badge>
       </header>
 
@@ -261,13 +261,13 @@ function LoadingDashboard({ query }: { readonly query: ForecastQueryInput }) {
           正在生成拍摄天气分析...
         </div>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          正在使用本地算法天文数据、模拟天气数据和模拟地形数据计算出片指数。
+          正在结合本地算法天文数据、演示天气数据和演示地形数据计算出片指数。
         </p>
       </Card>
       <Card className="p-5 shadow-sm">
         <h2 className="text-lg font-bold text-card-foreground">数据状态</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          天文计算在本地完成；天气与地形仍使用本地模拟数据，不会调用外部分析服务。
+          天文数据由本地算法计算；天气与地形当前使用演示数据生成体验结果。
         </p>
       </Card>
     </DashboardFrame>
@@ -326,7 +326,7 @@ function weatherModeBadge(result: ForecastCalculationResult): string {
   if (result.weatherDataMode === "fixture") {
     return "样例数据";
   }
-  return "本地模拟数据";
+  return "演示数据";
 }
 
 function InvalidQueryCard({ message }: { readonly message?: string }) {
@@ -372,7 +372,7 @@ function ForecastResultView({
               </h2>
             </div>
             <Badge variant={result.isMock ? "warning" : "success"}>
-              {result.isMock ? "天气/地形模拟" : "已接入数据源"}
+              {result.isMock ? "演示数据" : "已接入数据源"}
             </Badge>
           </div>
 

@@ -671,7 +671,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
           return {
             success: true,
             mode: "mock",
-            message: "当前为本地模拟测试，未请求高德地图服务。",
+            message: "当前为模拟测试，未请求高德地图服务。",
           };
         }
 
@@ -723,7 +723,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
             mode: runtimeConfig.analysisMode,
             connectionMode: "mock",
             model: runtimeConfig.model,
-            message: "当前为本地模拟测试，未请求 DeepSeek 服务。",
+            message: "当前为模拟测试，未请求 DeepSeek 服务。",
           };
         }
 
@@ -772,7 +772,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
               connectionMode: "mock",
               providerType: request.params.providerType,
               providerCode: request.params.providerCode,
-              message: "当前为本地模拟测试，未请求真实天气服务。",
+              message: "当前为模拟测试，未请求真实天气服务。",
             };
           }
 
@@ -808,7 +808,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
               connectionMode: "mock",
               providerType: request.params.providerType,
               providerCode: request.params.providerCode,
-              message: "当前为本地模拟测试，未请求真实天气服务。",
+              message: "当前为模拟测试，未请求真实天气服务。",
             };
           }
 
@@ -829,7 +829,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
               providerType: request.params.providerType,
               providerCode: request.params.providerCode,
               message:
-                "Open-Meteo 未配置商业 Key，将使用默认样例/模拟数据；真实商业接口请填写 API Key 和 Customer Endpoint。",
+                "Open-Meteo 未配置商业 Key，将使用默认样例/演示数据；真实商业接口请填写 API Key 和 Customer Endpoint。",
             };
           }
 
@@ -847,7 +847,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       return {
         success: true,
         mode: "mock",
-        message: "当前为本地模拟测试，未触发真实外部连接。",
+        message: "当前为模拟测试，未触发真实外部连接。",
       };
     },
   );

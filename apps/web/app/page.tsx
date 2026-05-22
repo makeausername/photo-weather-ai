@@ -93,7 +93,7 @@ function ForecastMapWorkspace() {
           className="absolute inset-x-0 bottom-12 h-[280px] w-full"
           viewBox="0 0 900 300"
           role="img"
-          aria-label="山地轮廓与等高线占位图"
+          aria-label="山地轮廓与等高线示意图"
           preserveAspectRatio="none"
         >
           <path
@@ -142,8 +142,8 @@ function ForecastMapWorkspace() {
             <span>低云：海拔下方抬升</span>
             <span>风速：山顶阵风偏大</span>
             <span>能见度：清晨较好</span>
-            <span>月相：示例月相层待切换</span>
-            <span>银河：示例窗口待计算</span>
+            <span>月相：当前月相层</span>
+            <span>银河：夜间窗口</span>
           </div>
         </div>
       </div>
@@ -184,7 +184,7 @@ function DecisionSummaryPanel() {
           <p className="text-xs font-bold text-primary">决策摘要</p>
           <h2 className="mt-1 text-xl font-bold leading-7 text-card-foreground">清晨出行判断</h2>
         </div>
-        <Badge variant="warning">模拟展示</Badge>
+        <Badge variant="warning">演示分析</Badge>
       </div>
 
       <dl className="grid gap-3 text-sm">
@@ -231,7 +231,7 @@ function DecisionSummaryPanel() {
       </div>
 
       <p className="rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold leading-5 text-muted-foreground">
-        模拟展示，不含真实预报
+        当前为演示分析结果
       </p>
     </Card>
   );
@@ -254,10 +254,10 @@ export default function HomePage() {
           <div className="grid gap-2 rounded-lg border border-border bg-card px-4 py-3 text-sm shadow-sm sm:min-w-[320px]">
             <div className="flex items-center justify-between gap-3">
               <span className="font-semibold text-card-foreground">当前模式</span>
-              <Badge variant="muted">本地模拟</Badge>
+              <Badge variant="muted">体验模式</Badge>
             </div>
             <p className="text-xs leading-5 text-muted-foreground">
-              真实地图、天气图层和服务商调用仍是后续工作。
+              搜索地点、选择时间并查看判断；正式数据源配置后将显示实时结果。
             </p>
           </div>
         </div>
@@ -281,7 +281,7 @@ export default function HomePage() {
             <h2 className="mt-2 text-2xl font-bold text-foreground">按拍摄目标组织天气判断</h2>
           </div>
           <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-            页面先保留产品信息架构和交互骨架，后续接入真实数据后再替换当前图层与示例判断。
+            从拍摄目标出发，把天气窗口、地形条件和风险提示组织成可执行的出行判断。
           </p>
         </div>
 
@@ -303,7 +303,7 @@ export default function HomePage() {
           <p className="text-sm font-semibold text-primary">热门机位</p>
           <h2 className="mt-2 text-2xl font-bold text-foreground">从常用地点开始判断</h2>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">
-            这些是本地示例资料，用于演示地点选择、机位资料和结果页面的联动。
+            常用机位资料可帮助快速选择地点，并与拍摄天气分析联动。
           </p>
         </div>
         <div className="grid gap-4 md:grid-cols-2 lg:col-span-9 xl:grid-cols-4">
@@ -329,7 +329,7 @@ export default function HomePage() {
             <h2 className="mt-2 text-2xl font-bold text-foreground">四步完成一次出发判断</h2>
           </div>
           <Badge variant="muted" className="w-fit">
-            本地模拟计算
+            拍摄天气分析流程
           </Badge>
         </div>
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">

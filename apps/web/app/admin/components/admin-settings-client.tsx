@@ -27,7 +27,7 @@ const groupLabels: Record<string, string> = {
   site: "站点",
   locale: "本地化",
   map: "地图",
-  ai: "AI",
+  ai: "智能解读",
   weather: "天气",
   scoring: "评分",
   storage: "存储",
@@ -74,12 +74,12 @@ const settingText: Record<string, { readonly label: string; readonly description
     description: "地图展示使用 GCJ-02，天气、天文和地形计算使用 WGS84。",
   },
   "ai.defaultProvider": {
-    label: "默认 AI 服务商",
-    description: "未来解读流程使用的默认 AI 服务商代码。",
+    label: "默认智能解读服务商",
+    description: "解读流程使用的默认服务商代码。",
   },
   "ai.defaultModel": {
-    label: "默认 AI 模型",
-    description: "未来 AI 请求使用的默认模型标识。",
+    label: "默认解读模型",
+    description: "解读请求使用的默认模型标识。",
   },
   "weather.primaryProvider": {
     label: "主天气服务商",
@@ -278,7 +278,7 @@ export function AdminSettingsClient() {
                         <summary className="cursor-pointer text-sm font-semibold text-card-foreground">
                           高级配置
                         </summary>
-                        <FormField label="JSON 配置值" className="mt-4">
+                        <FormField label="配置值" className="mt-4">
                           <Textarea
                             value={editValues[setting.key] ?? ""}
                             disabled={!setting.isEditable}

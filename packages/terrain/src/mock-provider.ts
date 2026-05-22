@@ -17,8 +17,9 @@ import type {
 } from "./types.js";
 
 const mockTerrainDataSource: TerrainDataSource = "mock_terrain";
-const mockTerrainDataSourceLabelZh = "本地模拟地形数据";
-const mockTerrainHonestyNoteZh = "地形数据：本地模拟地形数据，真实 DEM / 海拔数据将在后续接入。";
+const mockTerrainDataSourceLabelZh = "演示数据";
+const mockTerrainHonestyNoteZh =
+  "地形信息当前使用演示地形数据，正式海拔与 DEM 数据接入后将用于提升云海和遮挡判断。";
 
 type MockTerrainSeed = {
   readonly key: string;
@@ -182,7 +183,7 @@ function buildMockTerrainProfile(
     valleyDirectionZh: seed.valleyDirectionZh,
     ridgeDirectionZh: seed.ridgeDirectionZh,
     terrainCloudSeaPotential: potential,
-    terrainNoteZh: `${seed.weatherToneZh} 当前为本地模拟地形，不代表真实 DEM。`,
+    terrainNoteZh: `${seed.weatherToneZh} 当前使用演示地形数据，正式 DEM 接入后可进一步校准。`,
     samples: [
       {
         coordinate,
@@ -244,7 +245,7 @@ function buildMockHorizonProfile(
     sunsetHorizonAngle: seed.sunsetHorizonAngle,
     milkyWayHorizonAngle: seed.milkyWayHorizonAngle,
     blockedDirectionsZh,
-    obstructionNoteZh: `本地模拟地形显示主要方向地平遮挡${obstructionText}，只能作为日出日落和银河构图的辅助参考。`,
+    obstructionNoteZh: `演示地形数据显示主要方向地平遮挡${obstructionText}，可作为日出日落和银河构图的辅助参考。`,
   };
 }
 
