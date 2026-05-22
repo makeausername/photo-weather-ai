@@ -12,6 +12,9 @@ import { z } from "zod";
 
 type PublicPlaceSearchSource = "local_location" | "local_photo_spot" | "amap" | "mock";
 
+export const publicPlaceSearchUnavailableMessage =
+  "地点搜索暂时不可用，请检查数据库连接或稍后重试。";
+
 export type PublicPlaceSearchResult = {
   readonly id: string;
   readonly name: string;
@@ -48,6 +51,32 @@ function sendZodError(reply: FastifyReply, error: z.ZodError): FastifyReply {
       message: issue.message,
     })),
   });
+}
+
+function isUnsafePublicErrorMessage(message: string): boolean {
+  return [
+    /prisma/i,
+    /database/i,
+    /findMany\(/i,
+    /require[A-Z]\w*Delegate/i,
+    /Can't reach database server/i,
+    /127\.0\.0\.1:15432/i,
+    /P1001/i,
+    /:\d+:\d+/,
+    /[A-Z]:\\/,
+    /\.ts:\d+/,
+    /\bat\s+/,
+  ].some((pattern) => pattern.test(message));
+}
+
+function publicSearchErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message.trim() : "";
+  const errorName = error instanceof Error ? error.name : "";
+  if (!message || isUnsafePublicErrorMessage(`${errorName}\n${message}`)) {
+    return publicPlaceSearchUnavailableMessage;
+  }
+
+  return message;
 }
 
 function assertCoordinatePair(input: {
@@ -199,9 +228,10 @@ export function registerSearchRoutes(app: FastifyInstance, options: SearchRoutes
         results,
       };
     } catch (error) {
+      request.log.error({ err: error, query }, "Public place search failed");
       return reply.status(503).send({
         error: "place_search_unavailable",
-        message: (error as Error).message || "地点搜索暂时不可用。",
+        message: publicSearchErrorMessage(error),
       });
     }
   });

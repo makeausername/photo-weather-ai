@@ -53,6 +53,24 @@ type PlaceSearchCardProps = {
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
+export const publicPlaceSearchUnavailableMessage =
+  "地点搜索暂时不可用，请检查数据库连接或稍后重试。";
+
+const unsafeSearchErrorPatterns: readonly RegExp[] = [
+  /prisma/i,
+  /database/i,
+  /findMany\(/i,
+  /require[A-Z]\w*Delegate/i,
+  /Can't reach database server/i,
+  /127\.0\.0\.1:15432/i,
+  /P1001/i,
+  /:\d+:\d+/,
+  /[A-Z]:\\/,
+  /\.ts:\d+/,
+  /\bat\s+/,
+  /^[a-z0-9_]+$/,
+];
+
 const quickLocations = ["黄山光明顶", "老君山金顶", "三清山女神峰", "武功山金顶"] as const;
 
 export const horizonOptions: readonly ForecastHorizon[] = ["24h", "48h", "72h", "7d"];
@@ -65,6 +83,30 @@ const sourceLabels: Record<PlaceResultSource, string> = {
   amap: "高德地图",
   mock: "演示数据",
 };
+
+export function sanitizePlaceSearchErrorMessage(message: string | undefined): string {
+  const trimmedMessage = message?.trim();
+  if (!trimmedMessage) {
+    return publicPlaceSearchUnavailableMessage;
+  }
+
+  if (unsafeSearchErrorPatterns.some((pattern) => pattern.test(trimmedMessage))) {
+    return publicPlaceSearchUnavailableMessage;
+  }
+
+  return trimmedMessage;
+}
+
+export function PlaceSearchErrorAlert({ message }: { readonly message?: string }) {
+  return (
+    <div
+      role="alert"
+      className="rounded-lg border border-danger bg-card px-3 py-2 text-sm leading-6 text-danger"
+    >
+      {sanitizePlaceSearchErrorMessage(message)}
+    </div>
+  );
+}
 
 function formatCoordinate(value: number): string {
   return value.toFixed(5);
@@ -91,17 +133,16 @@ function formatAddressAndCity(result: PlaceSearchResult): string {
 }
 
 async function readSearchErrorMessage(response: Response): Promise<string> {
-  const fallback = "地点搜索暂时不可用，请稍后重试。";
   const text = await response.text();
   if (!text) {
-    return fallback;
+    return publicPlaceSearchUnavailableMessage;
   }
 
   try {
     const payload = JSON.parse(text) as SearchErrorPayload;
-    return payload.message || payload.error || fallback;
+    return sanitizePlaceSearchErrorMessage(payload.message || payload.error);
   } catch {
-    return fallback;
+    return publicPlaceSearchUnavailableMessage;
   }
 }
 
@@ -249,7 +290,7 @@ export function PlaceSearchCard({
       }
 
       setResults([]);
-      setErrorMessage((error as Error).message || "地点搜索暂时不可用，请稍后重试。");
+      setErrorMessage(sanitizePlaceSearchErrorMessage((error as Error).message));
       setStatus("error");
     }
   }, []);
@@ -316,9 +357,7 @@ export function PlaceSearchCard({
         ) : null}
 
         {status === "error" ? (
-          <div className="rounded-lg border border-danger bg-card px-3 py-2 text-sm text-danger">
-            {errorMessage || "地点搜索暂时不可用，请稍后重试。"}
-          </div>
+          <PlaceSearchErrorAlert message={errorMessage} />
         ) : null}
 
         {showEmptyState ? (

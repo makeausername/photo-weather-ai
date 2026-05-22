@@ -12,6 +12,9 @@ import HomePage from "./page";
 import { ForecastResultClient } from "./forecast/forecast-result-client";
 import {
   buildForecastUrl,
+  PlaceSearchErrorAlert,
+  publicPlaceSearchUnavailableMessage,
+  sanitizePlaceSearchErrorMessage,
   type PlaceSearchResult,
 } from "../components/place-search-card";
 import {
@@ -98,6 +101,26 @@ describe("homepage forecast flow", () => {
     expect(html).toContain("体验模式");
     expect(html).toContain("当前为演示分析结果");
     expect(html).not.toMatch(/\bmock\b|\bfixture\b|本地模拟|不含真实预报|开发环境|调试|占位/i);
+  });
+
+  it("does not render raw Prisma details in the public place search error alert", () => {
+    const rawDatabaseError =
+      "Invalid `requireLocationDelegate(client).findMany()` invocation in C:\\Users\\konne\\Desktop\\photo-weather-ai\\packages\\db\\src\\locations.ts:141:58\nCan't reach database server at `127.0.0.1:15432`";
+    const html = renderToStaticMarkup(
+      React.createElement(PlaceSearchErrorAlert, { message: rawDatabaseError }),
+    );
+
+    expect(sanitizePlaceSearchErrorMessage(rawDatabaseError)).toBe(
+      publicPlaceSearchUnavailableMessage,
+    );
+    expect(html).toContain(publicPlaceSearchUnavailableMessage);
+    expect(html).toContain('role="alert"');
+    expect(html).not.toContain("Prisma");
+    expect(html).not.toContain("requireLocationDelegate");
+    expect(html).not.toContain("findMany");
+    expect(html).not.toContain("127.0.0.1:15432");
+    expect(html).not.toContain("C:\\Users");
+    expect(html).not.toContain("locations.ts");
   });
 
   it("keeps dedicated scenario pages on their fixed forecast targets", () => {
