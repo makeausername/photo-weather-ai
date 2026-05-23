@@ -49,8 +49,7 @@ export const cloudSeaScenarioConfig = {
 
 export const glowScenarioConfig = {
   title: "朝霞晚霞",
-  subtitle:
-    "围绕日出日落、晨昏时间、云层高度、能见度与地形遮挡，辅助判断朝霞和晚霞机会。",
+  subtitle: "围绕日出日落、晨昏时间、云层高度、能见度与地形遮挡，辅助判断朝霞和晚霞机会。",
   target: "glow",
   defaultHorizon: "72h",
   ctaLabel: "查看朝霞晚霞判断",
@@ -102,33 +101,35 @@ export const astroScenarioConfig = {
     "月亮在地平线以上且照明较强时，银河对比度会明显下降。",
     "银河窗口为本地算法初步估算，仍需结合云量、光污染和地形遮挡。",
   ],
-  popularTitle: "热门星空银河机位",
-  popularSpots: [
+  learningTitle: "星空银河判断需要看什么",
+  learningBadgeLabel: "星空要素",
+  learningItems: [
     {
-      name: "武功山金顶",
-      province: "江西",
-      reason: "高山草甸视野开阔，适合星空、帐篷前景和银河方向规划。",
-      tag: "草甸星空",
+      title: "天文黑夜",
+      description: "只有太阳低于地平线足够角度后，天空背景才适合深空和银河拍摄。",
     },
     {
-      name: "老君山金顶",
-      province: "河南",
-      reason: "高海拔建筑前景辨识度高，适合判断月光与云量对夜景的影响。",
-      tag: "高山夜景",
+      title: "月相与月光",
+      description: "月亮照明和月亮高度会显著影响银河对比度。",
     },
     {
-      name: "黄山光明顶",
-      province: "安徽",
-      reason: "山顶视野和前景层次丰富，但需要重点关注云量、湿度和景区通行。",
-      tag: "山岳星空",
+      title: "无月黑夜",
+      description: "月落后或月亮低影响时段通常更适合银河和深空。",
     },
     {
-      name: "三清山女神峰",
-      province: "江西",
-      reason: "峰林前景有辨识度，适合在透明度较好、月光较弱时规划夜景。",
-      tag: "峰林夜色",
+      title: "银河窗口",
+      description: "需要银河核心位于地平线上方，并结合方向和高度判断。",
+    },
+    {
+      title: "云量与能见度",
+      description: "总云量、低云、中高云和能见度会直接影响观星条件。",
+    },
+    {
+      title: "光污染与地形",
+      description: "光污染、山体遮挡和地平线方向会影响实际可见度。",
     },
   ],
+  dataNotice: "当前为体验模式，天气与地形结果会使用演示数据；天文时间基于本地天文计算。",
 } satisfies ScenarioPageConfig;
 
 export const scenarioPageConfigs = [

@@ -142,12 +142,39 @@ describe("scenario module pages", () => {
     expect(serialized).not.toContain("热门朝霞晚霞机位");
     expect(serialized).not.toContain("热门朝霞机位");
     expect(serialized).not.toContain("热门晚霞机位");
-    expect(serialized).toContain("热门星空银河机位");
+    expect(serialized).not.toContain("热门星空银河机位");
+    expect(serialized).not.toContain("热门星空机位");
+    expect(serialized).not.toContain("热门银河机位");
+    expect(serialized).toContain("星空银河判断需要看什么");
+    expect(serialized).toContain("天文黑夜");
+    expect(serialized).toContain("无月黑夜");
+    expect(serialized).toContain("光污染与地形");
     expect(serialized).toContain("天气与地形结果使用演示数据生成");
     expect(serialized).not.toMatch(/coming soon|placeholder|todo|mock|fixture/i);
     expect(serialized).not.toContain("模块准备中");
     expect(serialized).not.toContain("本地模拟");
     expect(serialized).not.toMatch(/\bAI\b/);
+  });
+
+  it("renders the astro entry page without the popular spot placeholder grid", () => {
+    const html = renderToStaticMarkup(React.createElement(AstroPage));
+
+    expect(html).not.toContain("热门星空银河机位");
+    expect(html).not.toContain("热门星空机位");
+    expect(html).not.toContain("热门银河机位");
+    expect(html).toContain("地点搜索与机位选择");
+    expect(html).toContain("常用机位");
+    expect(html).toContain("预报范围选择");
+    expect(html).toContain("固定分析目标");
+    expect(html).toContain("查看星空银河判断");
+    expect(html).toContain("星空银河判断需要看什么");
+    expect(html).toContain("天文黑夜");
+    expect(html).toContain("月相与月光");
+    expect(html).toContain("无月黑夜");
+    expect(html).toContain("银河窗口");
+    expect(html).toContain("云量与能见度");
+    expect(html).toContain("光污染与地形");
+    expect(html).toContain("天文时间基于本地天文计算");
   });
 
   it("does not call external APIs while loading static scenario modules", () => {

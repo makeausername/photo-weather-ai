@@ -31,7 +31,9 @@ export type ScenarioPageConfig = {
   readonly popularTitle?: string;
   readonly popularSpots?: readonly PopularScenarioSpot[];
   readonly learningTitle?: string;
+  readonly learningBadgeLabel?: string;
   readonly learningItems?: readonly ScenarioLearningItem[];
+  readonly dataNotice?: string;
 };
 
 export const scenarioDataNotice =
@@ -98,6 +100,31 @@ function ScenarioLearningPageContent({ config }: { readonly config: ScenarioPage
     return null;
   }
 
+  if (config.target === "astro") {
+    return (
+      <>
+        <ScenarioSearchPanel config={config} />
+
+        <div className="grid gap-5 min-[900px]:min-w-0 min-[1200px]:col-span-2">
+          <ScenarioLearningGrid
+            title={config.learningTitle ?? "判断需要看什么"}
+            badgeLabel={config.learningBadgeLabel ?? "判断要素"}
+            items={config.learningItems}
+          />
+          <Card className="border-warning p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="warning">数据提醒</Badge>
+              <p className="text-sm font-bold text-card-foreground">当前为体验模式</p>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+              {config.dataNotice ?? scenarioDataNotice}
+            </p>
+          </Card>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <ScenarioSearchPanel config={config} />
@@ -119,6 +146,7 @@ function ScenarioLearningPageContent({ config }: { readonly config: ScenarioPage
 
         <ScenarioLearningGrid
           title={config.learningTitle ?? "判断需要看什么"}
+          badgeLabel={config.learningBadgeLabel ?? "云海要素"}
           items={config.learningItems}
         />
       </div>
@@ -140,7 +168,9 @@ function ScenarioSupportRail({ config }: { readonly config: ScenarioPageConfig }
           <Badge variant="warning">数据提醒</Badge>
           <p className="text-sm font-bold text-card-foreground">当前为体验模式</p>
         </div>
-        <p className="mt-3 text-sm leading-6 text-muted-foreground">{scenarioDataNotice}</p>
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">
+          {config.dataNotice ?? scenarioDataNotice}
+        </p>
       </Card>
     </aside>
   );
@@ -186,9 +216,11 @@ function ScenarioPopularSpotGrid({
 
 function ScenarioLearningGrid({
   title,
+  badgeLabel,
   items,
 }: {
   readonly title: string;
+  readonly badgeLabel: string;
   readonly items: readonly ScenarioLearningItem[];
 }) {
   return (
@@ -198,7 +230,7 @@ function ScenarioLearningGrid({
           <p className="text-sm font-semibold text-primary">判断方法</p>
           <h2 className="mt-1 text-xl font-bold text-foreground">{title}</h2>
         </div>
-        <Badge variant="muted">云海要素</Badge>
+        <Badge variant="muted">{badgeLabel}</Badge>
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         {items.map((item, index) => (

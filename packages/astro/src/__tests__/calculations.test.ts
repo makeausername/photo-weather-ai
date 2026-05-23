@@ -141,7 +141,7 @@ describe("local astronomy calculations", () => {
     expect(window).toMatchObject({
       date: "2026-05-20",
       timezone: "Asia/Shanghai",
-      noteZh: "银河窗口为本地天文算法初步估算，实际拍摄仍需结合云量、月光、光污染和地形遮挡。",
+      noteZh: "银河窗口为简化本地估算，实际拍摄仍需结合云量、月光、光污染和地形遮挡。",
     });
     expect(["unavailable", "poor", "fair", "good"]).toContain(window.visibilityLevel);
     if (window.windowStart && window.windowEnd) {

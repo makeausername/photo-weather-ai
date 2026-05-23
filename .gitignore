@@ -6,5 +6,9 @@ coverage/
 logs/
 .env
 .env.local
+apps/astro-service/data/*.bsp
 *.log
 *.tsbuildinfo
+packages/db/.env
+apps/astro-service/.venv/
+astro-result.json

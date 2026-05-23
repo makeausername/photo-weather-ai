@@ -142,6 +142,12 @@ export type TerrainSummary = TerrainProfileSummary &
 
 export type MoonWaxingOrWaning = "waxing" | "waning" | "unknown";
 
+export type MoonAltitudeSample = {
+  readonly time: string;
+  readonly altitude: number;
+  readonly azimuth?: number;
+};
+
 export type MoonInfo = {
   readonly moonPhase: number;
   readonly moonPhaseNameZh: string;
@@ -152,6 +158,7 @@ export type MoonInfo = {
   readonly moonrise?: string;
   readonly moonset?: string;
   readonly moonAltitudeByHour?: Readonly<Record<string, number>>;
+  readonly moonAltitudeSamples?: readonly MoonAltitudeSample[];
   readonly calculationNoteZh: string;
 };
 
@@ -180,14 +187,45 @@ export type AstroSummary = {
   readonly moonrise?: string;
   readonly moonset?: string;
   readonly moonAltitudeByHour?: Readonly<Record<string, number>>;
+  readonly moonAltitudeSamples?: readonly MoonAltitudeSample[];
+  readonly moonImpactLevel?: MoonImpactLevel;
+  readonly moonImpactScore?: number;
+  readonly moonImpactReasonsZh?: readonly string[];
   readonly calculationNoteZh: string;
   readonly moonInfo: MoonInfo;
   readonly milkyWayWindowStart?: string;
   readonly milkyWayWindowEnd?: string;
   readonly milkyWayBestTime?: string;
   readonly milkyWayDirection?: string;
+  readonly milkyWayGalacticCenterAltitude?: number;
+  readonly milkyWayGalacticCenterAzimuth?: number;
+  readonly milkyWayCalculationPrecision?: "v1_approximate" | "skyfield";
   readonly milkyWayVisibilityLevel?: "unavailable" | "poor" | "fair" | "good";
   readonly milkyWayNoteZh?: string;
+};
+
+export type AstroCalculationBasis = {
+  readonly ephemerisFileName?: string;
+  readonly coordinateSystem: "WGS84";
+  readonly timezone: string;
+  readonly elevationMeters?: number;
+  readonly generatedAt: string;
+  readonly computeElapsedMs?: number;
+  readonly samplingResolutionMinutes?: {
+    readonly sunCrossing?: number;
+    readonly solarNoon?: number;
+    readonly moonAltitude?: number;
+    readonly moonlessWindow?: number;
+    readonly moonImpact?: number;
+    readonly galacticCenter?: number;
+  };
+};
+
+export type AstroWindowBundle = {
+  readonly astronomicalNightWindows: readonly AstroWindow[];
+  readonly moonlessNightWindows: readonly AstroWindow[];
+  readonly milkyWayCandidateWindows: readonly AstroWindow[];
+  readonly recommendedMilkyWayWindows: readonly AstroWindow[];
 };
 
 export type ForecastCalculationInput = {
@@ -209,6 +247,9 @@ export type ForecastCalculationInput = {
   readonly weatherNoticeZh: string;
   readonly weatherMissingFields: readonly string[];
   readonly weatherEstimatedFields: readonly string[];
+  readonly astroDataSourceLabelZh: string;
+  readonly astroCalculationBasis?: AstroCalculationBasis;
+  readonly astroWindowBundle?: AstroWindowBundle;
 };
 
 export type ForecastScoreLevel = "poor" | "fair" | "good" | "excellent";
@@ -262,11 +303,7 @@ export type CloudSeaEvidenceEffect = "positive" | "neutral" | "negative" | "risk
 
 export type CloudSeaWindowPhase = "accumulation" | "observation" | "waiting" | "dissipation";
 
-export type CloudSeaRecommendationLabel =
-  | "推荐重点关注"
-  | "值得等待"
-  | "谨慎参考"
-  | "不建议专程";
+export type CloudSeaRecommendationLabel = "推荐重点关注" | "值得等待" | "谨慎参考" | "不建议专程";
 
 export type CloudSeaAnalysisWindow = {
   readonly label: string;
@@ -339,11 +376,7 @@ export type CloudSeaAnalysisResult = {
 
 export type GlowConfidenceLevel = "high" | "medium" | "low";
 
-export type GlowRecommendationLabel =
-  | "推荐重点关注"
-  | "值得等待"
-  | "谨慎参考"
-  | "不建议专程";
+export type GlowRecommendationLabel = "推荐重点关注" | "值得等待" | "谨慎参考" | "不建议专程";
 
 export type GlowWindowType = "sunrise" | "sunset" | "afterglow" | "warm_light";
 
@@ -405,6 +438,98 @@ export type GlowAnalysisResult = {
   readonly dataMode: WeatherDataMode;
 };
 
+export type AstroConfidenceLevel = "high" | "medium" | "low";
+
+export type AstroRecommendationLabel = "推荐重点关注" | "值得等待" | "谨慎参考" | "不建议专程";
+
+export type MoonImpactLevel = "low" | "medium" | "high";
+
+export type AstroWindowType =
+  | "astronomical_night"
+  | "moonless_night"
+  | "milky_way_candidate"
+  | "recommended_milky_way"
+  | "star";
+
+export type AstroWindow = {
+  readonly type: AstroWindowType;
+  readonly labelZh: string;
+  readonly date?: string;
+  readonly start: string;
+  readonly end: string;
+  readonly durationMinutes: number;
+  readonly score: number;
+  readonly riskTags: readonly string[];
+  readonly noteZh: string;
+  readonly directionZh?: string;
+  readonly galacticCenterAltitude?: number;
+};
+
+export type MoonlessNightWindow = {
+  readonly start: string;
+  readonly end: string;
+  readonly durationMinutes: number;
+  readonly noteZh: string;
+};
+
+export type DailyAstro = {
+  readonly date: string;
+  readonly dateLabelZh: string;
+  readonly lunarDateText?: string;
+  readonly starsScore: number;
+  readonly milkyWayScore: number;
+  readonly moonImpactLevel: MoonImpactLevel;
+  readonly astronomicalNightWindow?: AstroWindow;
+  readonly moonlessNightWindow?: AstroWindow;
+  readonly recommendedMilkyWayWindow?: AstroWindow;
+  readonly recommendationLabel: AstroRecommendationLabel;
+  readonly keyReason: string;
+  readonly riskNote: string;
+};
+
+export type AstroEvidenceItem = {
+  readonly label: string;
+  readonly value: string;
+  readonly effect: "positive" | "neutral" | "negative" | "risk";
+  readonly noteZh: string;
+};
+
+export type LightPollutionInfo = {
+  readonly bortleLevel?: number;
+  readonly lightPollutionLevel?: string;
+  readonly lightPollutionSource: "unavailable" | "demo" | "provider";
+  readonly lightPollutionNoteZh: string;
+};
+
+export type AstroAnalysisResult = {
+  readonly starsScore: number;
+  readonly milkyWayScore: number;
+  readonly moonImpactScore: number;
+  readonly transparencyScore: number;
+  readonly astroTravelScore: number;
+  readonly recommendationLabel: AstroRecommendationLabel;
+  readonly confidenceLevel: AstroConfidenceLevel;
+  readonly bestAstroWindows: readonly AstroWindow[];
+  readonly dailyAstro: readonly DailyAstro[];
+  readonly moonInfo?: MoonInfo;
+  readonly moonlessNightWindows: readonly AstroWindow[];
+  readonly astronomicalNightWindows: readonly AstroWindow[];
+  readonly milkyWayCandidateWindows: readonly AstroWindow[];
+  readonly recommendedMilkyWayWindows: readonly AstroWindow[];
+  readonly lightPollution: LightPollutionInfo;
+  readonly cloudEvidence: readonly AstroEvidenceItem[];
+  readonly visibilityEvidence: readonly AstroEvidenceItem[];
+  readonly moonEvidence: readonly AstroEvidenceItem[];
+  readonly terrainEvidence: readonly AstroEvidenceItem[];
+  readonly lightPollutionEvidence: readonly AstroEvidenceItem[];
+  readonly riskReasons: readonly string[];
+  readonly opportunityReasons: readonly string[];
+  readonly travelRecommendations: readonly string[];
+  readonly backupPlans: readonly GlowBackupPlan[];
+  readonly missingDataNotes: readonly string[];
+  readonly dataMode: WeatherDataMode;
+};
+
 export type ForecastDailyMetric = {
   readonly label: string;
   readonly score: number;
@@ -453,6 +578,7 @@ export type ForecastCalculationResult = {
   readonly scores: ForecastScoreSet;
   readonly cloudSeaAnalysis: CloudSeaAnalysisResult;
   readonly glowAnalysis: GlowAnalysisResult;
+  readonly astroAnalysis: AstroAnalysisResult;
   readonly terrainSummary: TerrainSummary;
   readonly terrainAnalysis: TerrainAnalysisSummary;
   readonly astroSummaries: readonly AstroSummary[];
@@ -472,6 +598,8 @@ export type ForecastCalculationResult = {
   readonly weatherNoticeZh: string;
   readonly weatherMissingFields: readonly string[];
   readonly weatherEstimatedFields: readonly string[];
+  readonly astroDataSourceLabelZh: string;
+  readonly astroCalculationBasis?: AstroCalculationBasis;
 };
 
 export type ForecastCalendarDayInfo = {

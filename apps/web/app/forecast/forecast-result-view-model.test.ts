@@ -7,8 +7,9 @@ import {
   type ForecastQueryInput,
   type ForecastScore,
 } from "@photo-weather/shared";
-import { CloudSeaResultPage, GlowResultPage } from "./forecast-result-client";
+import { AstroResultPage, CloudSeaResultPage, GlowResultPage } from "./forecast-result-client";
 import {
+  buildAstroForecastViewModel,
   buildCloudSeaForecastViewModel,
   buildForecastResultViewModel,
   buildGlowForecastViewModel,
@@ -427,6 +428,350 @@ const baseResult: ForecastCalculationResult = {
     missingDataNotes: ["当前天气数据为演示数据，结果仅用于体验分析流程。"],
     dataMode: "mock",
   },
+  astroAnalysis: {
+    starsScore: 66,
+    milkyWayScore: 68,
+    moonImpactScore: 38,
+    transparencyScore: 72,
+    astroTravelScore: 70,
+    recommendationLabel: "值得等待",
+    confidenceLevel: "medium",
+    bestAstroWindows: [
+      {
+        type: "recommended_milky_way",
+        labelZh: "推荐银河窗口",
+        date: "2026-05-20",
+        start: "2026-05-21T01:10:00+08:00",
+        end: "2026-05-21T03:30:00+08:00",
+        durationMinutes: 140,
+        score: 68,
+        riskTags: ["月光较低"],
+        noteZh: "该窗口同时位于天文黑夜、低月光影响窗口和银心可见候选窗口内。",
+        directionZh: "东南至南方",
+        galacticCenterAltitude: 24,
+      },
+      {
+        type: "moonless_night",
+        labelZh: "无月黑夜",
+        date: "2026-05-20",
+        start: "2026-05-20T22:35:00+08:00",
+        end: "2026-05-21T03:48:00+08:00",
+        durationMinutes: 313,
+        score: 69,
+        riskTags: ["月光较低"],
+        noteZh: "该窗口位于天文黑夜内，月亮低于地平线或月光影响较低。",
+      },
+    ],
+    dailyAstro: [
+      {
+        date: "2026-05-20",
+        dateLabelZh: "2026年5月20日 星期三",
+        lunarDateText: "四月初四",
+        starsScore: 66,
+        milkyWayScore: 68,
+        moonImpactLevel: "medium",
+        astronomicalNightWindow: {
+          type: "astronomical_night",
+          labelZh: "天文黑夜",
+          date: "2026-05-20",
+          start: "2026-05-20T20:24:00+08:00",
+          end: "2026-05-21T03:48:00+08:00",
+          durationMinutes: 444,
+          score: 69,
+          riskTags: ["月光中等"],
+          noteZh: "太阳低于地平线约 18 度后，天空背景更适合星空、星轨和银河拍摄。",
+        },
+        moonlessNightWindow: {
+          type: "moonless_night",
+          labelZh: "无月黑夜",
+          date: "2026-05-20",
+          start: "2026-05-20T22:35:00+08:00",
+          end: "2026-05-21T03:48:00+08:00",
+          durationMinutes: 313,
+          score: 69,
+          riskTags: ["月光较低"],
+          noteZh: "该窗口位于天文黑夜内，月亮低于地平线或月光影响较低。",
+        },
+        recommendedMilkyWayWindow: {
+          type: "recommended_milky_way",
+          labelZh: "推荐银河窗口",
+          date: "2026-05-20",
+          start: "2026-05-21T01:10:00+08:00",
+          end: "2026-05-21T03:30:00+08:00",
+          durationMinutes: 140,
+          score: 68,
+          riskTags: ["月光较低"],
+          noteZh: "该窗口同时位于天文黑夜、低月光影响窗口和银心可见候选窗口内。",
+          directionZh: "东南至南方",
+          galacticCenterAltitude: 24,
+        },
+        recommendationLabel: "值得等待",
+        keyReason: "推荐银河窗口 01:10 - 03:30，方向 东南至南方。",
+        riskNote: "风险可控",
+      },
+      {
+        date: "2026-05-21",
+        dateLabelZh: "2026年5月21日 星期四",
+        lunarDateText: "四月初五",
+        starsScore: 70,
+        milkyWayScore: 72,
+        moonImpactLevel: "medium",
+        astronomicalNightWindow: {
+          type: "astronomical_night",
+          labelZh: "天文黑夜",
+          date: "2026-05-21",
+          start: "2026-05-21T20:25:00+08:00",
+          end: "2026-05-22T03:47:00+08:00",
+          durationMinutes: 442,
+          score: 70,
+          riskTags: ["月光中等"],
+          noteZh: "太阳低于地平线约 18 度后，天空背景更适合星空、星轨和银河拍摄。",
+        },
+        moonlessNightWindow: {
+          type: "moonless_night",
+          labelZh: "无月黑夜",
+          date: "2026-05-21",
+          start: "2026-05-21T23:20:00+08:00",
+          end: "2026-05-22T03:47:00+08:00",
+          durationMinutes: 267,
+          score: 70,
+          riskTags: ["月光较低"],
+          noteZh: "该窗口位于天文黑夜内，月亮低于地平线或月光影响较低。",
+        },
+        recommendedMilkyWayWindow: {
+          type: "recommended_milky_way",
+          labelZh: "推荐银河窗口",
+          date: "2026-05-21",
+          start: "2026-05-22T01:05:00+08:00",
+          end: "2026-05-22T03:20:00+08:00",
+          durationMinutes: 135,
+          score: 72,
+          riskTags: ["月光较低"],
+          noteZh: "该窗口同时位于天文黑夜、低月光影响窗口和银心可见候选窗口内。",
+          directionZh: "东南至南方",
+          galacticCenterAltitude: 26,
+        },
+        recommendationLabel: "值得等待",
+        keyReason: "推荐银河窗口 01:05 - 03:20，方向 东南至南方。",
+        riskNote: "风险可控",
+      },
+    ],
+    moonInfo: {
+      moonPhase: 0.18,
+      moonPhaseNameZh: "娥眉月",
+      moonIllumination: 0.24,
+      waxingOrWaning: "waxing",
+      lunarDateText: "四月初四",
+      moonrise: "2026-05-20T08:40:00+08:00",
+      moonset: "2026-05-20T22:35:00+08:00",
+      calculationNoteZh:
+        "月相基于本地天文算法计算；农历日期基于本地历法库生成。实际观星仍需结合云量、光污染和地形遮挡。",
+    },
+    moonlessNightWindows: [
+      {
+        type: "moonless_night",
+        labelZh: "无月黑夜",
+        date: "2026-05-20",
+        start: "2026-05-20T22:35:00+08:00",
+        end: "2026-05-21T03:48:00+08:00",
+        durationMinutes: 313,
+        score: 69,
+        riskTags: ["月光较低"],
+        noteZh: "该窗口位于天文黑夜内，月亮低于地平线或月光影响较低。",
+      },
+      {
+        type: "moonless_night",
+        labelZh: "无月黑夜",
+        date: "2026-05-21",
+        start: "2026-05-21T23:20:00+08:00",
+        end: "2026-05-22T03:47:00+08:00",
+        durationMinutes: 267,
+        score: 70,
+        riskTags: ["月光较低"],
+        noteZh: "该窗口位于天文黑夜内，月亮低于地平线或月光影响较低。",
+      },
+    ],
+    astronomicalNightWindows: [
+      {
+        type: "astronomical_night",
+        labelZh: "天文黑夜",
+        date: "2026-05-20",
+        start: "2026-05-20T20:24:00+08:00",
+        end: "2026-05-21T03:48:00+08:00",
+        durationMinutes: 444,
+        score: 69,
+        riskTags: ["月光中等"],
+        noteZh: "太阳低于地平线约 18 度后，天空背景更适合星空、星轨和银河拍摄。",
+      },
+      {
+        type: "astronomical_night",
+        labelZh: "天文黑夜",
+        date: "2026-05-21",
+        start: "2026-05-21T20:25:00+08:00",
+        end: "2026-05-22T03:47:00+08:00",
+        durationMinutes: 442,
+        score: 70,
+        riskTags: ["月光中等"],
+        noteZh: "太阳低于地平线约 18 度后，天空背景更适合星空、星轨和银河拍摄。",
+      },
+    ],
+    milkyWayCandidateWindows: [
+      {
+        type: "milky_way_candidate",
+        labelZh: "银河候选窗口",
+        date: "2026-05-20",
+        start: "2026-05-21T01:10:00+08:00",
+        end: "2026-05-21T03:30:00+08:00",
+        durationMinutes: 140,
+        score: 68,
+        riskTags: ["月光较低"],
+        noteZh: "银心方向与高度为简化本地估算。",
+        directionZh: "东南至南方",
+        galacticCenterAltitude: 24,
+      },
+      {
+        type: "milky_way_candidate",
+        labelZh: "银河候选窗口",
+        date: "2026-05-21",
+        start: "2026-05-22T01:05:00+08:00",
+        end: "2026-05-22T03:20:00+08:00",
+        durationMinutes: 135,
+        score: 72,
+        riskTags: ["月光较低"],
+        noteZh: "银心方向与高度为简化本地估算。",
+        directionZh: "东南至南方",
+        galacticCenterAltitude: 26,
+      },
+    ],
+    recommendedMilkyWayWindows: [
+      {
+        type: "recommended_milky_way",
+        labelZh: "推荐银河窗口",
+        date: "2026-05-20",
+        start: "2026-05-21T01:10:00+08:00",
+        end: "2026-05-21T03:30:00+08:00",
+        durationMinutes: 140,
+        score: 68,
+        riskTags: ["月光较低"],
+        noteZh: "该窗口同时位于天文黑夜、低月光影响窗口和银心可见候选窗口内。",
+        directionZh: "东南至南方",
+        galacticCenterAltitude: 24,
+      },
+      {
+        type: "recommended_milky_way",
+        labelZh: "推荐银河窗口",
+        date: "2026-05-21",
+        start: "2026-05-22T01:05:00+08:00",
+        end: "2026-05-22T03:20:00+08:00",
+        durationMinutes: 135,
+        score: 72,
+        riskTags: ["月光较低"],
+        noteZh: "该窗口同时位于天文黑夜、低月光影响窗口和银心可见候选窗口内。",
+        directionZh: "东南至南方",
+        galacticCenterAltitude: 26,
+      },
+    ],
+    lightPollution: {
+      lightPollutionSource: "unavailable",
+      lightPollutionNoteZh: "暂未接入光污染数据，实际观星仍需结合现场环境判断。",
+    },
+    cloudEvidence: [
+      {
+        label: "总云量",
+        value: "32%",
+        effect: "positive",
+        noteZh: "总云量直接决定星点和银河主体是否会被遮挡。",
+      },
+      {
+        label: "低云 / 中云 / 高云",
+        value: "8% / 16% / 20%",
+        effect: "negative",
+        noteZh: "低云遮挡地景和近地平线，中高云会影响银河反差和星点密度。",
+      },
+    ],
+    visibilityEvidence: [
+      {
+        label: "能见度",
+        value: "24 公里",
+        effect: "positive",
+        noteZh: "能见度影响银河暗部、远山层次和夜景空气感。",
+      },
+      {
+        label: "湿度 / 降水",
+        value: "58% / 8%",
+        effect: "neutral",
+        noteZh: "高湿和降水概率会降低透明度，也会增加镜头结露风险。",
+      },
+    ],
+    moonEvidence: [
+      {
+        label: "2026年5月20日 星期三",
+        value: "娥眉月 / 24%",
+        effect: "negative",
+        noteZh: "月出 08:40，月落 22:35。",
+      },
+    ],
+    terrainEvidence: [
+      {
+        label: "银河方向地平遮挡",
+        value: "7.2°",
+        effect: "neutral",
+        noteZh: "演示地形数据显示主要方向地平遮挡较低。",
+      },
+      {
+        label: "地形数据",
+        value: "演示数据",
+        effect: "neutral",
+        noteZh: "地形信息当前使用演示地形数据，正式海拔与 DEM 数据接入后将用于提升云海和遮挡判断。",
+      },
+    ],
+    lightPollutionEvidence: [
+      {
+        label: "光污染数据",
+        value: "暂未接入",
+        effect: "neutral",
+        noteZh: "暂未接入光污染数据，实际观星仍需结合现场环境判断。",
+      },
+    ],
+    riskReasons: ["暂未接入光污染数据，实际观星仍需结合现场环境判断。"],
+    opportunityReasons: ["共找到 2 个推荐银河窗口。"],
+    travelRecommendations: [
+      "月落后优先拍摄银河，月亮未落前可转拍月光风景或星轨堆栈。",
+      "若银河窗口较短，建议提前完成构图和对焦。",
+      "若云量偏高，可优先选择城市夜景、月景或等待云缝。",
+      "光污染较强时，优先避开城市方向或选择高海拔暗场机位。",
+      "透明度好但银河条件一般时，可转拍星轨或山脊夜景。",
+    ],
+    backupPlans: [
+      {
+        condition: "银河受月光影响",
+        action: "转拍月景、月光山脊、星轨",
+        detail: "月亮未落或照明偏强时，把月光作为环境光。",
+      },
+      {
+        condition: "云量偏高",
+        action: "等待云缝或转城市夜景",
+        detail: "银河主体被云遮挡时，优先观察云缝移动。",
+      },
+      {
+        condition: "透明度较好但银河低",
+        action: "转拍星空环境人像或广角星轨",
+        detail: "银心高度不足时，利用高透明度拍摄星点和地景关系。",
+      },
+      {
+        condition: "光污染强",
+        action: "调整朝向，避开城市光源方向",
+        detail: "优先选择背离城市光源的方向。",
+      },
+    ],
+    missingDataNotes: [
+      "银河窗口为简化本地估算，尚未完整建模银河拱桥、地形遮挡和光污染。",
+      "暂未接入光污染数据，实际观星仍需结合现场环境判断。",
+      "天气数据当前为演示数据，正式出行前需要复核真实预报。",
+      "地形数据当前为演示数据，现场地平线遮挡仍需复核。",
+    ],
+    dataMode: "mock",
+  },
   terrainSummary: {
     locationElevation: 1860,
     minElevation1km: 980,
@@ -516,7 +861,7 @@ const baseResult: ForecastCalculationResult = {
       milkyWayWindowEnd: "2026-05-21T03:30:00+08:00",
       milkyWayDirection: "东南至南方",
       milkyWayVisibilityLevel: "fair",
-      milkyWayNoteZh: "银河窗口为本地天文算法初步估算。",
+      milkyWayNoteZh: "银河窗口为简化本地估算。",
     },
     {
       date: "2026-05-21",
@@ -556,7 +901,7 @@ const baseResult: ForecastCalculationResult = {
       milkyWayWindowEnd: "2026-05-22T03:20:00+08:00",
       milkyWayDirection: "东南至南方",
       milkyWayVisibilityLevel: "good",
-      milkyWayNoteZh: "银河窗口为本地天文算法初步估算。",
+      milkyWayNoteZh: "银河窗口为简化本地估算。",
     },
   ],
   bestWindows: [
@@ -672,7 +1017,7 @@ const baseResult: ForecastCalculationResult = {
       milkyWay: {
         label: "银河窗口",
         score: 68,
-        detail: "银河窗口为本地算法初步估算。",
+        detail: "银河窗口为本地天文计算。",
       },
       transparency: {
         label: "通透度",
@@ -736,12 +1081,24 @@ const baseResult: ForecastCalculationResult = {
   weatherNoticeZh: "天气数据：演示数据",
   weatherMissingFields: [],
   weatherEstimatedFields: [],
+  astroDataSourceLabelZh: "本地算法计算",
 };
 
 function resultForTarget(target: ForecastCalculationResult["target"]): ForecastCalculationResult {
   return {
     ...baseResult,
     target,
+    astroDataSourceLabelZh: target === "astro" ? "本地天文服务计算" : "本地算法计算",
+    astroCalculationBasis:
+      target === "astro"
+        ? {
+            ephemerisFileName: "de421.bsp",
+            coordinateSystem: "WGS84",
+            timezone: "Asia/Shanghai",
+            elevationMeters: 1800,
+            generatedAt: "2026-05-20T00:00:01+08:00",
+          }
+        : undefined,
     dailySummaries: baseResult.dailySummaries.map((summary) => ({ ...summary, target })),
   };
 }
@@ -1233,12 +1590,12 @@ describe("forecast result target-aware view model", () => {
   it("prioritizes moon, astronomical night, Milky Way, and star modules on the astro view", () => {
     const viewModel = buildForecastResultViewModel(resultForTarget("astro"), "astro");
 
+    expect(viewModel.astro).toBeDefined();
     expect(viewModel.primaryCards.map((card) => card.label)).toEqual([
       "星空指数",
       "银河指数",
       "月光影响",
-      "天文黑夜窗口",
-      "银河窗口",
+      "推荐银河窗口 / 无月黑夜",
     ]);
     expect(viewModel.detailSections.map((section) => section.title)).toEqual(
       expect.arrayContaining([
@@ -1251,6 +1608,9 @@ describe("forecast result target-aware view model", () => {
         "山体遮挡风险",
       ]),
     );
+    expect(viewModel.astro?.dailyTrend).toHaveLength(2);
+    expect(viewModel.astro?.recommendedMilkyWayWindows).toHaveLength(2);
+    expect(viewModel.astro?.moonlessNightWindows[0]?.timeRangeLabel).toBe("22:35 - 03:48");
     const moonSection = viewModel.detailSections.find((section) => section.key === "moon-phase");
     expect(moonSection?.items).toHaveLength(2);
     expect(JSON.stringify(moonSection)).toContain("农历日期");
@@ -1269,13 +1629,99 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.windowGroups.length).toBeGreaterThan(1);
   });
 
+  it("builds and renders a dedicated astro result page without popular spots or side rails", () => {
+    const result = resultForTarget("astro");
+    const viewModel = buildAstroForecastViewModel(result);
+    const fetchMock = vi.fn(() => {
+      throw new Error("astro result render should not call external APIs");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      const html = renderToStaticMarkup(
+        React.createElement(AstroResultPage, {
+          query: queryForTarget("astro"),
+          result,
+          viewModel,
+        }),
+      );
+
+      expect(html).not.toContain("热门星空银河机位");
+      expect(html).not.toContain("热门星空机位");
+      expect(html).not.toContain("热门银河机位");
+      expect(html).toContain("星空银河判断");
+      expect(html).toContain("星空指数");
+      expect(html).toContain("银河指数");
+      expect(html).toContain("月光影响");
+      expect(html).toContain("天文黑夜与无月黑夜");
+      expect(html).toContain("推荐银河窗口");
+      expect(html).toContain("月相与月光影响");
+      expect(html).toContain("月出月落");
+      expect(html).toContain("云量与能见度");
+      expect(html).toContain("光污染与地形遮挡");
+      expect(html).toContain("拍摄建议");
+      expect(html).toContain("备选拍摄方案");
+      expect(html).toContain("数据状态 / 数据缺失说明");
+      expect(html).toContain("AstroResultPage");
+      expect(html).toContain("AstroCoreDecision");
+      expect(html).toContain("AstroDailyTrend");
+      expect(html).toContain("AstroResultLayout");
+      expect(html).not.toContain("<aside");
+      expect(html).not.toContain("SideRail");
+      expect(html).not.toContain("min-[1024px]:col-span-4");
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("shows multiple nightly astro entries for a 7d astro result", () => {
+    const sevenDayResult: ForecastCalculationResult = {
+      ...resultForTarget("astro"),
+      horizon: "7d",
+      forecastEnd: "2026-05-27T00:00:00+08:00",
+      targetDates: ["2026-05-20", "2026-05-21", "2026-05-22"],
+      calendarBasis: {
+        ...baseResult.calendarBasis,
+        forecastEnd: "2026-05-27T00:00:00+08:00",
+        forecastEndLabel: "2026年5月27日 00:00",
+        forecastRangeLabel: "2026年5月20日 00:00 至 2026年5月27日 00:00",
+        targetDates: ["2026-05-20", "2026-05-21", "2026-05-22"],
+        targetDateLabels: ["2026年5月20日 星期三", "2026年5月21日 星期四", "2026年5月22日 星期五"],
+        horizonHours: 168,
+      },
+      astroAnalysis: {
+        ...baseResult.astroAnalysis,
+        dailyAstro: [
+          ...baseResult.astroAnalysis.dailyAstro,
+          {
+            date: "2026-05-22",
+            dateLabelZh: "2026年5月22日 星期五",
+            lunarDateText: "四月初六",
+            starsScore: 64,
+            milkyWayScore: 66,
+            moonImpactLevel: "medium",
+            recommendationLabel: "值得等待",
+            keyReason: "第三晚仍有可等待的夜间窗口。",
+            riskNote: "月光中等",
+          },
+        ],
+      },
+    };
+
+    const viewModel = buildAstroForecastViewModel(sevenDayResult);
+
+    expect(viewModel.dailyTrend).toHaveLength(3);
+    expect(viewModel.dailyTrend.map((item) => item.date)).toContain("2026-05-22");
+  });
+
   it("keeps data-source honesty in the shaped notice", () => {
     const viewModel = buildForecastResultViewModel(resultForTarget("astro"), "astro");
 
     expect(viewModel.dataNotice).toContain("天气数据：演示数据");
     expect(viewModel.dataNotice).toContain("地形信息当前使用演示地形数据");
     expect(viewModel.dataNotice).toContain("正式海拔与 DEM 数据接入后");
-    expect(viewModel.dataNotice).toContain("天文数据：本地算法计算");
+    expect(viewModel.dataNotice).toContain("天文数据：本地天文服务计算");
     expect(viewModel.dataNotice).toContain("当前结果基于演示天气数据生成");
   });
 

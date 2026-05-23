@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { forecastQueryInputSchema } from "../index";
+import {
+  forecastQueryInputSchema,
+  normalizeForecastQueryInput,
+  normalizeForecastTargetValue,
+} from "../index";
 
 const validForecastQuery = {
   name: "黄山光明顶",
@@ -49,5 +53,27 @@ describe("forecast query schema", () => {
         longitudeGcj02: -181,
       }).success,
     ).toBe(false);
+  });
+
+  it("normalizes supported astro target aliases before validation", () => {
+    for (const target of ["astro", "星空银河", "milky_way", "stars"]) {
+      const normalized = normalizeForecastQueryInput({
+        ...validForecastQuery,
+        target,
+      });
+
+      expect(forecastQueryInputSchema.parse(normalized).target).toBe("astro");
+    }
+
+    expect(
+      forecastQueryInputSchema.parse(
+        normalizeForecastQueryInput({
+          ...validForecastQuery,
+          target: "general",
+          scenario: "astro",
+        }),
+      ).target,
+    ).toBe("astro");
+    expect(normalizeForecastTargetValue("rainbow")).toBeUndefined();
   });
 });

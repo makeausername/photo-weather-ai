@@ -4,6 +4,8 @@
 
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "local-env.ps1")
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $envFile = Join-Path $repoRoot ".env.local"
 $logDir = Join-Path $repoRoot "logs"
@@ -106,46 +108,6 @@ function Write-LatestLogPath {
   }
 }
 
-function Import-DotEnv {
-  param([string]$Path)
-
-  if (-not (Test-Path -LiteralPath $Path)) {
-    Write-Host "未找到 .env.local，使用脚本内置本地默认值。"
-    return
-  }
-
-  foreach ($rawLine in Get-Content -LiteralPath $Path) {
-    $line = $rawLine.Trim()
-
-    if (-not $line -or $line.StartsWith("#")) {
-      continue
-    }
-
-    if ($line.StartsWith("export ")) {
-      $line = $line.Substring(7).Trim()
-    }
-
-    $separatorIndex = $line.IndexOf("=")
-    if ($separatorIndex -lt 1) {
-      continue
-    }
-
-    $name = $line.Substring(0, $separatorIndex).Trim()
-    $value = $line.Substring($separatorIndex + 1).Trim()
-
-    if (
-      ($value.StartsWith('"') -and $value.EndsWith('"')) -or
-      ($value.StartsWith("'") -and $value.EndsWith("'"))
-    ) {
-      $value = $value.Substring(1, $value.Length - 2)
-    }
-
-    Set-Item -Path "Env:$name" -Value $value
-  }
-
-  Write-Host "已加载 .env.local。"
-}
-
 function Export-ProcessEnvironment {
   $envMap = @{}
   Get-ChildItem Env: | ForEach-Object {
@@ -214,10 +176,27 @@ if ($Clean) {
 Write-LatestLogPath -Path $apiLatest -LogPath $apiLog
 Write-LatestLogPath -Path $webLatest -LogPath $webLog
 
-Import-DotEnv -Path $envFile
+$envLocalLoaded = Import-LocalDotEnv -Path $envFile
+if ($envLocalLoaded) {
+  Write-Host "已加载 .env.local。"
+} else {
+  Write-Host "未找到 .env.local 或文件为空，使用脚本内置本地默认值。"
+}
 
 if (-not $env:NEXT_PUBLIC_API_BASE_URL) {
   $env:NEXT_PUBLIC_API_BASE_URL = "http://localhost:4000"
+}
+
+if (-not $env:ASTRO_SERVICE_URL) {
+  $env:ASTRO_SERVICE_URL = "http://127.0.0.1:4100"
+}
+
+if (-not $env:ASTRO_SERVICE_TIMEOUT_MS) {
+  $env:ASTRO_SERVICE_TIMEOUT_MS = "45000"
+}
+
+if (-not $env:ENABLE_ASTRO_SERVICE) {
+  $env:ENABLE_ASTRO_SERVICE = "false"
 }
 
 if (-not $env:JWT_SECRET -or $env:JWT_SECRET.Length -lt 32) {
@@ -241,6 +220,10 @@ $apiScript = {
 
   Set-Location $RepoRoot
   "[$(Get-Date -Format o)] 启动 API：http://localhost:4000" | Out-File -FilePath $LogPath -Encoding utf8 -Append
+  "[$(Get-Date -Format o)] 天文计算服务启用：$($env:ENABLE_ASTRO_SERVICE)" | Out-File -FilePath $LogPath -Encoding utf8 -Append
+  "[$(Get-Date -Format o)] 天文计算服务 URL：$($env:ASTRO_SERVICE_URL)" | Out-File -FilePath $LogPath -Encoding utf8 -Append
+  "[$(Get-Date -Format o)] 天文计算服务超时：$($env:ASTRO_SERVICE_TIMEOUT_MS) ms" | Out-File -FilePath $LogPath -Encoding utf8 -Append
+  "[$(Get-Date -Format o)] 已加载 .env.local：$($env:PHOTO_WEATHER_ENV_LOCAL_LOADED)" | Out-File -FilePath $LogPath -Encoding utf8 -Append
   & corepack pnpm --filter "@photo-weather/api" dev *>> $LogPath
 }
 

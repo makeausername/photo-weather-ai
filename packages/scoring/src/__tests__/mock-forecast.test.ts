@@ -79,7 +79,7 @@ describe("mock forecast input builder", () => {
       Date.parse(first.astroSummaries[0]!.sunset!),
     );
     expect(first.astroSummaries[0]?.milkyWayNoteZh).toBe(
-      "银河窗口为本地天文算法初步估算，实际拍摄仍需结合云量、月光、光污染和地形遮挡。",
+      "银河窗口为简化本地估算，实际拍摄仍需结合云量、月光、光污染和地形遮挡。",
     );
     expect(first.terrainAnalysis).toMatchObject({
       dataSource: "mock_terrain",
@@ -213,7 +213,7 @@ describe("mock forecast input builder", () => {
       astroResult.bestWindows.filter((window) => window.label.startsWith("天文黑夜")).length,
     ).toBeGreaterThanOrEqual(7);
     expect(
-      astroResult.bestWindows.filter((window) => window.label.startsWith("银河窗口")).length,
+      astroResult.bestWindows.filter((window) => window.label.startsWith("推荐银河窗口")).length,
     ).toBeGreaterThan(1);
     expect(
       astroResult.dailySummaries.filter((day) => day.keyWindows.length > 0).length,

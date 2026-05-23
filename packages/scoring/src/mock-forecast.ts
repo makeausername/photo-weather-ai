@@ -1,5 +1,7 @@
 import type {
+  AstroCalculationBasis,
   AstroSummary,
+  AstroWindowBundle,
   ForecastCalculationBasis,
   ForecastCalendarDayInfo,
   ForecastCalculationInput,
@@ -82,6 +84,10 @@ export type ForecastInputBuildOptions = {
   readonly now?: CalendarDateInput;
   readonly timezone?: string;
   readonly terrainAnalysis?: TerrainAnalysisSummary;
+  readonly astroSummaries?: readonly AstroSummary[];
+  readonly astroDataSourceLabelZh?: string;
+  readonly astroCalculationBasis?: AstroCalculationBasis;
+  readonly astroWindowBundle?: AstroWindowBundle;
 };
 
 const profiles: readonly MockPlaceProfile[] = [
@@ -263,11 +269,13 @@ export function buildForecastInputFromNormalizedWeather(
     dailyWeather: weather.dailyWeather,
     terrainSummary: flattenTerrainAnalysis(terrainAnalysis),
     terrainAnalysis,
-    astroSummaries: generateLocalAstroSummaries(query.horizon, {
-      ...generationOptions,
-      latitudeWgs84: query.latitudeWgs84,
-      longitudeWgs84: query.longitudeWgs84,
-    }),
+    astroSummaries:
+      options.astroSummaries ??
+      generateLocalAstroSummaries(query.horizon, {
+        ...generationOptions,
+        latitudeWgs84: query.latitudeWgs84,
+        longitudeWgs84: query.longitudeWgs84,
+      }),
     generatedAt: forecastRange.forecastStart,
     isMock: weather.isMock,
     dataSourceLabel: weather.dataSourceLabel,
@@ -277,6 +285,11 @@ export function buildForecastInputFromNormalizedWeather(
     weatherNoticeZh: weather.weatherNoticeZh ?? `天气数据：${weatherProviderLabelZh}`,
     weatherMissingFields,
     weatherEstimatedFields,
+    astroDataSourceLabelZh:
+      options.astroDataSourceLabelZh ??
+      (query.target === "astro" ? "简化本地估算" : "本地算法计算"),
+    astroCalculationBasis: options.astroCalculationBasis,
+    astroWindowBundle: options.astroWindowBundle,
   };
 }
 
@@ -531,6 +544,9 @@ export function generateLocalAstroSummaries(
       milkyWayWindowEnd: milkyWayWindow.windowEnd,
       milkyWayBestTime: milkyWayWindow.bestTime,
       milkyWayDirection: milkyWayWindow.directionZh,
+      milkyWayGalacticCenterAltitude: milkyWayWindow.galacticCenterAltitude,
+      milkyWayGalacticCenterAzimuth: milkyWayWindow.galacticCenterAzimuth,
+      milkyWayCalculationPrecision: milkyWayWindow.calculationPrecision,
       milkyWayVisibilityLevel: milkyWayWindow.visibilityLevel,
       milkyWayNoteZh: milkyWayWindow.noteZh,
     };

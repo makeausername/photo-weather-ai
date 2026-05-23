@@ -7,6 +7,7 @@ import type { GeoProvider } from "@photo-weather/geo";
 import type { TerrainProvider } from "@photo-weather/terrain";
 import { createWeatherProvider, type WeatherProvider } from "@photo-weather/weather";
 import { registerAdminRoutes } from "./admin-routes.js";
+import { resolveAstroServiceConfig, type AstroServiceClientLike } from "./astro-service-client.js";
 import type { AuthConfig } from "./auth-routes.js";
 import { loadAuthConfig, registerAuthRoutes } from "./auth-routes.js";
 import { registerForecastRoutes } from "./forecast-routes.js";
@@ -19,6 +20,7 @@ export type ApiServerOptions = {
   readonly geoProvider?: GeoProvider;
   readonly weatherProvider?: WeatherProvider;
   readonly terrainProvider?: TerrainProvider;
+  readonly astroServiceClient?: AstroServiceClientLike;
   readonly env?: NodeJS.ProcessEnv;
   readonly logger?: boolean;
 };
@@ -32,6 +34,22 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     logger: options.logger ?? true,
   });
 
+  const env = options.env ?? process.env;
+  const astroServiceConfig = resolveAstroServiceConfig(env);
+  app.log.info(
+    {
+      astroServiceEnabled: astroServiceConfig.enabled,
+      astroServiceUrl: astroServiceConfig.logUrl,
+      astroServiceTimeoutMs: astroServiceConfig.timeoutMs,
+      envLocalLoaded: astroServiceConfig.envLocalLoaded,
+    },
+    "Astro service configuration",
+  );
+  app.log.info(`Astro service enabled: ${astroServiceConfig.enabled}`);
+  app.log.info(`Astro service URL: ${astroServiceConfig.logUrl}`);
+  app.log.info(`Astro service timeout ms: ${astroServiceConfig.timeoutMs}`);
+  app.log.info(`Environment loaded from .env.local: ${astroServiceConfig.envLocalLoaded}`);
+
   const weatherProvider = options.weatherProvider ?? createWeatherProvider();
   const geoProvider = options.geoProvider ?? new MockGeoProvider();
   const aiProvider = new MockAIProvider();
@@ -40,7 +58,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     resolveGeoProvider({
       dbClient: options.dbClient,
       geoProvider: options.geoProvider,
-      env: options.env,
+      env,
     });
 
   app.addHook("onRequest", async (_request, reply) => {
@@ -98,7 +116,8 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     dbClient: options.dbClient,
     weatherProvider,
     terrainProvider: options.terrainProvider,
-    env: options.env,
+    astroServiceClient: options.astroServiceClient,
+    env,
   });
   registerSearchRoutes(app, {
     dbClient: options.dbClient,
@@ -109,7 +128,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     authConfig,
     geoProvider,
     resolveGeoProvider: resolveRuntimeGeoProvider,
-    env: options.env,
+    env,
   });
 
   return app;

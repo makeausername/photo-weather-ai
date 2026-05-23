@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ForecastTarget } from "./types.js";
 
 export const coordinateSystemSchema = z.enum(["wgs84", "gcj02", "bd09"]);
 
@@ -38,6 +39,71 @@ const longitudeSchema = z.number().finite().min(-180).max(180);
 export const forecastHorizonSchema = z.enum(["24h", "48h", "72h", "7d"]);
 
 export const forecastTargetSchema = z.enum(["general", "cloud_sea", "glow", "astro"]);
+
+const forecastTargetAliases: Readonly<Record<string, ForecastTarget>> = {
+  general: "general",
+  综合: "general",
+  综合判断: "general",
+  cloud_sea: "cloud_sea",
+  cloudsea: "cloud_sea",
+  云海: "cloud_sea",
+  glow: "glow",
+  朝霞晚霞: "glow",
+  霞光: "glow",
+  astro: "astro",
+  stars: "astro",
+  star: "astro",
+  milky_way: "astro",
+  milkyway: "astro",
+  星空银河: "astro",
+  星空: "astro",
+  银河: "astro",
+};
+
+const astroScenarioFields = [
+  "scenario",
+  "scenarioTarget",
+  "sourceScenario",
+  "fixedTarget",
+  "module",
+] as const;
+
+export function normalizeForecastTargetValue(value: unknown): ForecastTarget | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const aliasKey = value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  return forecastTargetAliases[aliasKey];
+}
+
+export function normalizeForecastQueryInput(input: unknown): unknown {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return input;
+  }
+
+  const record = input as Record<string, unknown>;
+  const normalizedTarget = normalizeForecastTargetValue(record.target);
+  const scenarioTarget = astroScenarioFields
+    .map((field) => normalizeForecastTargetValue(record[field]))
+    .find((target) => target === "astro");
+  const nextTarget =
+    normalizedTarget === "general" && scenarioTarget === "astro"
+      ? "astro"
+      : normalizedTarget ?? scenarioTarget;
+
+  if (!nextTarget || nextTarget === record.target) {
+    return input;
+  }
+
+  return {
+    ...record,
+    target: nextTarget,
+  };
+}
 
 export const forecastQueryInputSchema = z.object({
   name: z.string().trim().min(1).max(120),

@@ -128,6 +128,9 @@ export type MilkyWayWindow = {
   readonly windowEnd?: string;
   readonly bestTime?: string;
   readonly directionZh?: string;
+  readonly galacticCenterAltitude?: number;
+  readonly galacticCenterAzimuth?: number;
+  readonly calculationPrecision: "v1_approximate";
   readonly visibilityLevel: MilkyWayVisibilityLevel;
   readonly noteZh: string;
 };

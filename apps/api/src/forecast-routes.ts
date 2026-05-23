@@ -1,9 +1,10 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from "fastify";
 import { buildForecastDateRange, forecastDateRangeErrorMessage } from "@photo-weather/calendar";
 import {
   type ForecastCalculationResult,
   type ForecastQueryInput,
   forecastHorizonLabels,
+  normalizeForecastQueryInput,
   forecastQueryInputSchema,
   forecastTargetLabels,
 } from "@photo-weather/shared";
@@ -22,12 +23,27 @@ import {
   readRuntimeDeepSeekConfig,
   type RuntimeDeepSeekConfig,
 } from "./ai-provider.js";
+import {
+  AstroServiceClient,
+  AstroServiceClientError,
+  astroServiceInvalidResponseMessage,
+  astroServiceTimeoutMessage,
+  astroServiceUrlMissingMessage,
+  astroServiceUnavailableMessage,
+  checkAstroServiceHealth,
+  mapAstroServiceResponseToForecastData,
+  resolveAstroServiceConfig,
+  sanitizeAstroServiceUrlForLog,
+  type AstroServiceClientLike,
+  type AstroServiceConfig,
+} from "./astro-service-client.js";
 
 export type ForecastRoutesOptions = {
   readonly dbClient?: DatabaseClient;
   readonly weatherProvider?: WeatherProvider;
   readonly weatherDataService?: WeatherDataService;
   readonly terrainProvider?: TerrainProvider;
+  readonly astroServiceClient?: AstroServiceClientLike;
   readonly env?: NodeJS.ProcessEnv;
 };
 
@@ -36,12 +52,20 @@ type ForecastCalculationWithAiResult = ForecastCalculationResult & {
   aiExplanationError?: string;
 };
 
-const missingWgs84CoordinateErrorMessage =
-  "当前地点缺少有效 WGS84 坐标，无法计算日出日落、月相和银河窗口。";
+const missingWgs84CoordinateErrorMessage = "当前地点缺少有效 WGS84 坐标，无法计算星空银河窗口。";
 
 const forecastCalculateRequestSchema = forecastQueryInputSchema.extend({
   useAiExplanation: z.boolean().optional().default(false),
+  elevationMeters: z.number().finite().optional(),
+  timezone: z.string().trim().min(1).optional(),
+  startDateTime: z.string().datetime({ offset: true }).optional(),
 });
+
+type ForecastCalculationOptions = {
+  readonly elevationMeters?: number;
+  readonly timezone?: string;
+  readonly startDateTime?: string;
+};
 
 function sendZodError(reply: FastifyReply, error: ZodError): FastifyReply {
   if (
@@ -72,9 +96,19 @@ export function registerForecastRoutes(
   const weatherDataService = options.weatherDataService ?? new WeatherDataService(weatherProvider);
   const terrainProvider = options.terrainProvider ?? new MockTerrainProvider();
   const env = options.env ?? process.env;
+  const astroServiceConfig = resolveAstroServiceConfig(env);
+  const astroServiceClient =
+    options.astroServiceClient ??
+    new AstroServiceClient({
+      baseUrl: astroServiceConfig.resolvedUrl,
+      timeoutMs: astroServiceConfig.timeoutMs,
+      logger: app.log,
+    });
 
   app.post("/forecast/validate-query", async (request, reply) => {
-    const parsedBody = forecastQueryInputSchema.safeParse(request.body);
+    const parsedBody = forecastQueryInputSchema.safeParse(
+      normalizeForecastQueryInput(request.body),
+    );
     if (!parsedBody.success) {
       return sendZodError(reply, parsedBody.error);
     }
@@ -89,17 +123,37 @@ export function registerForecastRoutes(
   });
 
   app.post("/forecast/calculate", async (request, reply) => {
-    const parsedBody = forecastCalculateRequestSchema.safeParse(request.body);
+    const normalizedBody = normalizeForecastQueryInput(request.body);
+    logForecastCalculationStart({
+      logger: request.log,
+      rawQueryLike: request.body,
+      normalizedQueryLike: normalizedBody,
+      astroServiceConfig,
+    });
+
+    const parsedBody = forecastCalculateRequestSchema.safeParse(normalizedBody);
     if (!parsedBody.success) {
+      logForecastCalculationFailure({
+        logger: request.log,
+        route: "/forecast/calculate",
+        queryLike: normalizedBody,
+        astroServiceConfig,
+        error: parsedBody.error,
+      });
       return sendZodError(reply, parsedBody.error);
     }
 
-    const { useAiExplanation, ...query } = parsedBody.data;
+    const { useAiExplanation, elevationMeters, timezone, startDateTime, ...query } =
+      parsedBody.data;
     const result = await calculateForecastResultOrReply(
       query,
+      { elevationMeters, timezone, startDateTime },
       weatherDataService,
       terrainProvider,
+      astroServiceClient,
+      astroServiceConfig,
       reply,
+      request.log,
     );
     if (!result) {
       return reply;
@@ -140,16 +194,22 @@ export function registerForecastRoutes(
   });
 
   app.post("/forecast/ai-explain", async (request, reply) => {
-    const parsedBody = forecastQueryInputSchema.safeParse(request.body);
+    const parsedBody = forecastQueryInputSchema.safeParse(
+      normalizeForecastQueryInput(request.body),
+    );
     if (!parsedBody.success) {
       return sendZodError(reply, parsedBody.error);
     }
 
     const result = await calculateForecastResultOrReply(
       parsedBody.data,
+      {},
       weatherDataService,
       terrainProvider,
+      astroServiceClient,
+      astroServiceConfig,
       reply,
+      request.log,
     );
     if (!result) {
       return reply;
@@ -196,18 +256,72 @@ export function registerForecastRoutes(
       });
     }
   });
+
+  if (isLocalDevelopment(env)) {
+    app.get("/debug/astro-service", async () =>
+      checkAstroServiceHealth({
+        config: astroServiceConfig,
+      }),
+    );
+  }
 }
 
 async function calculateForecastResultOrReply(
   query: ForecastQueryInput,
+  requestOptions: ForecastCalculationOptions,
   weatherDataService: WeatherDataService,
   terrainProvider: TerrainProvider,
+  astroServiceClient: AstroServiceClientLike,
+  astroServiceConfig: AstroServiceConfig,
   reply: FastifyReply,
+  logger: FastifyBaseLogger,
 ): Promise<ForecastCalculationResult | null> {
   try {
-    return await calculateForecastResult(query, weatherDataService, terrainProvider);
+    return await calculateForecastResult(
+      query,
+      requestOptions,
+      weatherDataService,
+      terrainProvider,
+      astroServiceClient,
+      astroServiceConfig,
+    );
   } catch (error) {
+    logForecastCalculationFailure({
+      logger,
+      route: "/forecast/calculate",
+      queryLike: query,
+      astroServiceConfig,
+      error,
+    });
     const message = (error as Error).message;
+    if (message === astroServiceUnavailableMessage) {
+      reply.status(503).send({
+        error: "astro_service_unavailable",
+        message: astroServiceUnavailableMessage,
+      });
+      return null;
+    }
+    if (message === astroServiceTimeoutMessage) {
+      reply.status(503).send({
+        error: "astro_service_timeout",
+        message: astroServiceTimeoutMessage,
+      });
+      return null;
+    }
+    if (message === astroServiceInvalidResponseMessage) {
+      reply.status(502).send({
+        error: "astro_service_invalid_response",
+        message: astroServiceInvalidResponseMessage,
+      });
+      return null;
+    }
+    if (message === astroServiceUrlMissingMessage) {
+      reply.status(503).send({
+        error: "astro_service_url_missing",
+        message: astroServiceUrlMissingMessage,
+      });
+      return null;
+    }
     if (message === forecastDateRangeErrorMessage) {
       reply.status(400).send({
         error: "invalid_forecast_range",
@@ -229,9 +343,16 @@ async function calculateForecastResultOrReply(
 
 async function calculateForecastResult(
   query: ForecastQueryInput,
+  requestOptions: ForecastCalculationOptions,
   weatherDataService: WeatherDataService,
   terrainProvider: TerrainProvider,
+  astroServiceClient: AstroServiceClientLike,
+  astroServiceConfig: AstroServiceConfig,
 ): Promise<ForecastCalculationResult> {
+  if (query.target === "astro" && astroServiceConfig.enabled && !astroServiceConfig.configuredUrl) {
+    throw new Error(astroServiceUrlMissingMessage);
+  }
+
   const forecastRange = buildForecastDateRange(query.horizon);
   const coordinates = {
     latitude: query.latitudeWgs84,
@@ -273,7 +394,34 @@ async function calculateForecastResult(
     terrainAnalysis,
   });
 
-  return calculateForecast(calculationInput);
+  if (query.target !== "astro") {
+    return calculateForecast(calculationInput);
+  }
+
+  if (!astroServiceConfig.enabled) {
+    return calculateForecast(calculationInput);
+  }
+
+  const serviceResponse = await astroServiceClient.calculate({
+    latitudeWgs84: query.latitudeWgs84,
+    longitudeWgs84: query.longitudeWgs84,
+    elevationMeters: requestOptions.elevationMeters ?? terrainProfile.locationElevation,
+    timezone: requestOptions.timezone ?? "Asia/Shanghai",
+    horizon: query.horizon,
+    startDateTime: requestOptions.startDateTime ?? forecastRange.forecastStart,
+  });
+  const astroServiceData = mapAstroServiceResponseToForecastData(
+    serviceResponse,
+    calculationInput.calendarBasis.calendarDays,
+  );
+
+  return calculateForecast({
+    ...calculationInput,
+    astroSummaries: astroServiceData.astroSummaries,
+    astroWindowBundle: astroServiceData.astroWindowBundle,
+    astroCalculationBasis: astroServiceData.astroCalculationBasis,
+    astroDataSourceLabelZh: astroServiceData.astroDataSourceLabelZh,
+  });
 }
 
 async function readRuntimeDeepSeekConfigOrDisabled(options: {
@@ -285,4 +433,114 @@ async function readRuntimeDeepSeekConfigOrDisabled(options: {
   } catch {
     return null;
   }
+}
+
+function isLocalDevelopment(env: NodeJS.ProcessEnv): boolean {
+  return env.NODE_ENV !== "production";
+}
+
+function logForecastCalculationStart(options: {
+  readonly logger: FastifyBaseLogger;
+  readonly rawQueryLike: unknown;
+  readonly normalizedQueryLike: unknown;
+  readonly astroServiceConfig: AstroServiceConfig;
+}): void {
+  const { logger, rawQueryLike, normalizedQueryLike, astroServiceConfig } = options;
+  const rawQuery = extractForecastQueryLogFields(rawQueryLike);
+  const normalizedQuery = extractForecastQueryLogFields(normalizedQueryLike);
+
+  logger.info(
+    {
+      route: "/forecast/calculate",
+      forecastTargetRaw: rawQuery.target,
+      forecastTargetNormalized: normalizedQuery.target,
+      horizon: normalizedQuery.horizon ?? rawQuery.horizon,
+      hasLatitudeWgs84: normalizedQuery.coordinatesPresent.latitudeWgs84,
+      hasLongitudeWgs84: normalizedQuery.coordinatesPresent.longitudeWgs84,
+      astroServiceEnabled: astroServiceConfig.enabled,
+      astroServiceUrl: astroServiceConfig.enabled ? astroServiceConfig.logUrl : "not configured",
+      astroServiceTimeoutMs: astroServiceConfig.timeoutMs,
+      locationName: normalizedQuery.locationName ?? rawQuery.locationName,
+    },
+    "Forecast calculation started",
+  );
+}
+
+function logForecastCalculationFailure(options: {
+  readonly logger: FastifyBaseLogger;
+  readonly route: string;
+  readonly queryLike: unknown;
+  readonly astroServiceConfig: AstroServiceConfig;
+  readonly error: unknown;
+}): void {
+  const { logger, route, queryLike, astroServiceConfig, error } = options;
+  const normalizedError = normalizeError(error);
+  const astroError = error instanceof AstroServiceClientError ? error : null;
+  const query = extractForecastQueryLogFields(queryLike);
+  const diagnostics = astroError?.diagnostics;
+
+  logger.error(
+    {
+      route,
+      target: query.target,
+      horizon: query.horizon,
+      astroServiceEnabled: astroServiceConfig.enabled,
+      astroServiceUrl: astroServiceConfig.logUrl,
+      astroServiceConfiguredUrl: sanitizeAstroServiceUrlForLog(astroServiceConfig.configuredUrl),
+      astroServiceTimeoutMs: astroServiceConfig.timeoutMs,
+      coordinatesPresent: query.coordinatesPresent,
+      locationName: query.locationName,
+      errorName: diagnostics?.upstreamErrorName ?? normalizedError.name,
+      errorMessage: diagnostics?.upstreamErrorMessage ?? normalizedError.message,
+      wrappedErrorName: normalizedError.name,
+      wrappedErrorMessage: normalizedError.message,
+      stack: normalizedError.stack,
+      upstreamAstroServiceStatus: diagnostics?.status,
+      upstreamAstroServiceResponseBodyExcerpt: diagnostics?.responseBodyExcerpt,
+      elapsedMs: diagnostics?.elapsedMs,
+      upstreamAstroServiceTimeoutMs: diagnostics?.timeoutMs,
+      upstreamAstroServiceTimedOut: diagnostics?.timedOut,
+    },
+    "Forecast calculation failed",
+  );
+}
+
+function extractForecastQueryLogFields(queryLike: unknown): {
+  readonly target: string | null;
+  readonly horizon: string | null;
+  readonly locationName: string | null;
+  readonly coordinatesPresent: {
+    readonly latitudeWgs84: boolean;
+    readonly longitudeWgs84: boolean;
+  };
+} {
+  if (!queryLike || typeof queryLike !== "object") {
+    return {
+      target: null,
+      horizon: null,
+      locationName: null,
+      coordinatesPresent: {
+        latitudeWgs84: false,
+        longitudeWgs84: false,
+      },
+    };
+  }
+
+  const record = queryLike as Record<string, unknown>;
+  return {
+    target: typeof record.target === "string" ? record.target : null,
+    horizon: typeof record.horizon === "string" ? record.horizon : null,
+    locationName: typeof record.name === "string" ? record.name : null,
+    coordinatesPresent: {
+      latitudeWgs84: Number.isFinite(record.latitudeWgs84),
+      longitudeWgs84: Number.isFinite(record.longitudeWgs84),
+    },
+  };
+}
+
+function normalizeError(error: unknown): Error {
+  if (error instanceof Error) {
+    return error;
+  }
+  return new Error(String(error));
 }

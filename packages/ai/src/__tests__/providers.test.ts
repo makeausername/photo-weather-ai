@@ -424,9 +424,7 @@ const forecastResultFixture: ForecastCalculationResult = {
     ],
     riskReasons: ["低云遮挡风险较低，仍需现场复核太阳方向。"],
     opportunityReasons: ["朝霞最佳参考为朝霞峰值窗口，评分 75 分。"],
-    travelRecommendations: [
-      "朝霞：建议日出前 40-60 分钟到达机位，先完成构图、测光和安全检查。",
-    ],
+    travelRecommendations: ["朝霞：建议日出前 40-60 分钟到达机位，先完成构图、测光和安全检查。"],
     backupPlans: [
       {
         condition: "无霞但通透",
@@ -435,6 +433,43 @@ const forecastResultFixture: ForecastCalculationResult = {
       },
     ],
     missingDataNotes: ["当前天气数据为演示数据，结果仅用于体验分析流程。"],
+    dataMode: "mock",
+  },
+  astroAnalysis: {
+    starsScore: 58,
+    milkyWayScore: 44,
+    moonImpactScore: 45,
+    transparencyScore: 71,
+    astroTravelScore: 52,
+    recommendationLabel: "谨慎参考",
+    confidenceLevel: "medium",
+    bestAstroWindows: [],
+    dailyAstro: [],
+    moonlessNightWindows: [],
+    astronomicalNightWindows: [],
+    milkyWayCandidateWindows: [],
+    recommendedMilkyWayWindows: [],
+    lightPollution: {
+      lightPollutionSource: "unavailable",
+      lightPollutionNoteZh: "暂未接入光污染数据，实际观星仍需结合现场环境判断。",
+    },
+    cloudEvidence: [],
+    visibilityEvidence: [],
+    moonEvidence: [],
+    terrainEvidence: [],
+    lightPollutionEvidence: [
+      {
+        label: "光污染数据",
+        value: "暂未接入",
+        effect: "neutral",
+        noteZh: "暂未接入光污染数据，实际观星仍需结合现场环境判断。",
+      },
+    ],
+    riskReasons: ["暂未接入光污染数据，实际观星仍需结合现场环境判断。"],
+    opportunityReasons: [],
+    travelRecommendations: [],
+    backupPlans: [],
+    missingDataNotes: ["天气数据当前为演示数据，正式出行前需要复核真实预报。"],
     dataMode: "mock",
   },
   terrainSummary: {
@@ -563,4 +598,5 @@ const forecastResultFixture: ForecastCalculationResult = {
   weatherNoticeZh: "天气数据：演示数据",
   weatherMissingFields: [],
   weatherEstimatedFields: [],
+  astroDataSourceLabelZh: "本地算法计算",
 };

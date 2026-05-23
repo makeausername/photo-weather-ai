@@ -13,7 +13,7 @@ These documents define the strategic product boundary for 逐光天气. Future C
 
 逐光天气是面向中国大陆风光摄影用户的天气与拍摄机会判断系统，公开标语为“风光摄影出行判断工具”。当前仓库处于自托管 SaaS 产品基础与界面打磨阶段，重点是数据库、后台配置、地点/机位资料、亮色默认主题和前端 UI 基线。
 
-当前步骤是 Product Copy Polish V1：在既有 Product UI redesign V4、地点选择、预报范围、目标感知结果页、天文/地形基础、天气服务商配置和评分逻辑之上，公开端与后台控制台已清理开发味文案，统一使用“体验模式”“演示数据”“本地算法计算”等产品化表达。必要的数据诚实提示仍保留，公开端不使用“AI”作为品牌表达；内部仓库名、包名和 scope 仍保持 `photo-weather-ai` / `@photo-weather/*`，不做代码仓库或包作用域重命名。
+当前步骤加入 Astro Calculation Service V1：在既有 Product UI redesign V4、地点选择、预报范围、目标感知结果页、天文/地形基础、天气服务商配置和评分逻辑之上，星空银河计算可通过本地 Python 天文服务使用 Skyfield 和本地 JPL 星历文件完成。必要的数据诚实提示仍保留，公开端不使用“AI”作为品牌表达；内部仓库名、包名和 scope 仍保持 `photo-weather-ai` / `@photo-weather/*`，不做代码仓库或包作用域重命名。
 
 ## 当前状态
 
@@ -31,7 +31,8 @@ These documents define the strategic product boundary for 逐光天气. Future C
 - 公开 forecast 结果页：同一产品 shell 下的目标感知 dashboard 布局，左侧地点/查询摘要，中间按 `general` / `cloud_sea` / `glow` / `astro` 展示对应主卡、窗口、分项评分和判断依据，右侧展示对应风险、建议、计算依据和数据状态；结果页已按 24h / 48h / 72h / 7d 选择范围生成窗口和逐日判断，星空银河结果页支持整月月相日历。
 - 云海结果页已专项化：`target=cloud_sea` 不再复用通用 forecast 模板，单独展示云海机会、白墙风险、出行推荐、最佳清晨窗口、逐日云海趋势、云海/白墙区别、云海时间窗口、出行建议和备选拍摄方案。
 - 云海页将云海机会、白墙风险和出行推荐拆成独立确定性输出，并把地形/海拔证据、天气证据、低云分层缺失提示和数据状态作为独立模块；真实天气和真实 DEM 接入前，天气与地形仍可能显示为演示数据或样例数据。
-- Product Copy Polish V1：公开首页、专题页、结果页、账户空状态和后台服务商配置已去除开发味提示；公开数据状态统一为“天气数据：演示数据”“地形数据：演示数据”“天文数据：本地算法计算”，并保留产品化的数据诚实说明。
+- Astro Calculation Service V1：新增 `apps/astro-service`，使用 FastAPI、Pydantic、Skyfield、zoneinfo 和本地 `de421.bsp` 计算星空银河所需天文窗口；运行时不调用在线天文 API，不使用 DeepSeek / AI 计算天文结果。
+- Product Copy Polish V1：公开首页、专题页、结果页、账户空状态和后台服务商配置已去除开发味提示；公开数据状态使用“天气数据：演示数据”“地形数据：演示数据”“天文数据：本地天文服务计算”或“天文数据：简化本地估算”等产品化表达，并保留产品化的数据诚实说明。
 - Scenario Module Pages V1：`/cloud-sea`、`/glow`、`/astro` 已升级为云海、朝霞晚霞、星空银河专项入口页，复用地点搜索、预报范围选择和 forecast 查询跳转流程；`/spots` 和 `/pricing` 使用“即将开放”型中文产品页。
 - Public User Auth V1：`/login` 支持邮箱密码登录，`/register` 支持邮箱密码注册，`/auth/register` 会创建普通 `user` 角色账户并返回安全用户数据；短信登录暂未开放。
 - Account Center Foundation V1：`/account` 使用公开产品 shell，未登录时显示登录提示；已登录时展示账户概览、我的查询、收藏机位、报告管理、套餐权益和安全设置。查询历史、收藏机位、报告管理和权益显示中文空状态或“即将开放”，不接入支付、订阅或计费。
@@ -42,7 +43,7 @@ These documents define the strategic product boundary for 逐光天气. Future C
 - Forecast 计算核心 V1：已定义标准化小时天气、日天气、地形摘要、天文摘要、计算依据、逐日摘要、目标逐日拆解、计算输入和计算结果契约，`packages/calendar` 统一生成预报时间范围和中国本地日历信息，`packages/scoring` 提供演示天气/地形数据构造器、标准化天气输入 builder、本地天文摘要和可解释 rule-based 评分计算器。
 - Weather Provider Normalization V1：`packages/weather` 提供 `WeatherProvider`、`WeatherDataService`、`WeatherDataBundle`、`MockWeatherProvider`、QWeather fixture adapter 和 Open-Meteo fixture adapter；本地和测试默认只使用 mock / fixture，不调用真实 QWeather 或 Open-Meteo。
 - Terrain Core V1：`packages/terrain` 已提供地形/海拔类型契约、地形 provider 接口、演示地形数据 provider、周边高差计算、云海地形潜力分类和地平线遮挡基础；正式海拔与 DEM 数据接入后将用于提升云海和遮挡判断。
-- 公开 forecast 端点：`POST /forecast/validate-query` 只校验查询输入并返回中文标签；`POST /forecast/calculate` 默认使用 MockWeatherProvider 的标准化天气数据和演示地形数据，同时使用本地 astronomy-engine 天文计算，不调用真实天气、地形、天文在线 API 或 AI 服务；`POST /forecast/ai-explain` 默认返回规则解读，只有后台启用 DeepSeek 服务商、启用真实调用且 Key 已保存时才请求真实 DeepSeek。
+- 公开 forecast 端点：`POST /forecast/validate-query` 只校验查询输入并返回中文标签；`POST /forecast/calculate` 默认使用 MockWeatherProvider 的标准化天气数据和演示地形数据。`target=astro` 可在 `ENABLE_ASTRO_SERVICE=true` 时调用本地 Python 天文服务；未启用时使用明确标注的简化本地估算，不调用真实天气、地形、在线天文 API 或 AI 服务；`POST /forecast/ai-explain` 默认返回规则解读，只有后台启用 DeepSeek 服务商、启用真实调用且 Key 已保存时才请求真实 DeepSeek。
 - 后台登录页：宽屏产品式登录布局、中文表单、样式化错误提示和单一返回前台入口。
 - 后台控制台布局：约 252px 亮色侧栏、紧凑顶部标题区、当前管理员信息、主题切换、返回前台、退出登录和更宽的内容区域。
 - 后台页面视觉层：系统设置、服务商配置、地点管理、机位管理、审计日志使用统一卡片、表格、表单、按钮、空状态、横向可滚动表格和更克制的自然色 active 状态。
@@ -82,7 +83,7 @@ These documents define the strategic product boundary for 逐光天气. Future C
 
 ## Forecast 计算核心 V1
 
-当前 `/forecast` 是拍摄天气分析结果页，用于展示用户选择的地点、预报范围、分析目标、坐标信息和评分结果。页面会调用 `POST /forecast/calculate`，后端默认通过 `WeatherDataService` 构造 `WeatherDataBundle`，使用 `MockWeatherProvider` 输出的标准化演示天气数据、演示地形摘要和 astronomy-engine 本地天文数据，并运行 deterministic rule-based 评分引擎。默认不会调用真实 QWeather、Open-Meteo、高德地图、DeepSeek、存储、支付或短信服务；高德地图和 DeepSeek 仅在后台服务商配置中启用真实调用、服务商已启用且 Key 已配置时允许真实调用，环境开关只作为旧配置兜底。
+当前 `/forecast` 是拍摄天气分析结果页，用于展示用户选择的地点、预报范围、分析目标、坐标信息和评分结果。页面会调用 `POST /forecast/calculate`，后端默认通过 `WeatherDataService` 构造 `WeatherDataBundle`，使用 `MockWeatherProvider` 输出的标准化演示天气数据和演示地形摘要，并运行 deterministic rule-based 评分引擎。`target=astro` 可通过 `ASTRO_SERVICE_URL` 调用本地 Python 天文服务；未启用时保留明确标注的 JS 简化本地估算。默认不会调用真实 QWeather、Open-Meteo、高德地图、在线天文 API、DeepSeek、存储、支付或短信服务；高德地图和 DeepSeek 仅在后台服务商配置中启用真实调用、服务商已启用且 Key 已配置时允许真实调用，环境开关只作为旧配置兜底。
 
 当前计算核心覆盖：
 
@@ -93,10 +94,11 @@ These documents define the strategic product boundary for 逐光天气. Future C
 - 综合出片指数、推荐等级、最佳拍摄窗口、逐日判断、风险提示、关键依据和拍摄建议。
 - 结果页目标感知展示：`general` 显示完整模块总览和全范围高分窗口；`cloud_sea` 使用专项云海结果页，聚焦每日清晨云海机会、白墙风险、云海/白墙区分、地形海拔条件、天气证据、清晨等待窗口、出行建议和云海失败后的备选策略；`glow` 聚焦每日朝霞/晚霞机会、日出日落、晨昏时间、云层结构和地形遮挡；`astro` 聚焦每晚观星条件、月相/月亮照明、天文黑夜、银河窗口、云量能见度风险和夜间拍摄建议。
 - Terrain Core V1：当前地形来自 `MockTerrainProvider`，输出 `terrainProfile`、`horizonProfile` 和 `dataSource=mock_terrain`；公开结果页显示为“地形数据：演示数据”，地形会影响云海潜力、白墙风险辅助判断、日出/日落方向遮挡、银河地平线遮挡和综合拍摄依据。
-- Astronomy Core V1：使用 `astronomy-engine` 在本地 deterministic 计算日出 / 日落、太阳中天、民用 / 航海 / 天文晨昏光、月相、月亮照明、盈亏方向、月出 / 月落、逐小时月亮高度和整月月相日历；月相标签已按相位、照明比例和盈亏方向细化，避免把 30%-40% 照明的盈月粗略标为“上弦月”。
-- 银河窗口 V1：基于天文黑夜、近似银心 J2000 坐标、当地地平坐标和月光影响给出初步窗口、方向和可见性等级；该结果是拍摄规划基础估算，尚未完整建模银河拱桥、地形遮挡和光污染。
+- Astro Calculation Service V1：`apps/astro-service` 使用本地 `de421.bsp` 星历、Skyfield 和 WGS84 坐标计算日出 / 日落、太阳中天、民用 / 航海 / 天文晨昏光、月相、月亮照明、盈亏方向、月出 / 月落、逐小时月亮高度、天文黑夜、无月黑夜、银心高度方位、银河候选窗口和推荐银河窗口。
+- JS 简化本地估算：未启用 `ENABLE_ASTRO_SERVICE` 时仍保留 `packages/astro` 的本地估算作为体验流程兜底；结果必须显示“天文数据：简化本地估算”，不应被描述为精确天文服务结果。
+- 银河推荐窗口：推荐银河窗口必须同时位于天文黑夜、低月光影响或无月黑夜窗口、银心有效高度候选窗口内；天气数据仍为演示数据，地形数据仍为演示数据，光污染数据暂未接入。
 - 黄山光明顶、老君山金顶、三清山女神峰、武功山金顶等演示样例。
-- 数据提示：`天气数据：演示数据；地形数据：演示数据；天文数据：本地算法计算。当前结果基于演示天气数据生成，仅用于体验分析流程。正式天气数据源启用后，将显示对应的数据来源与预报时间。天文时间基于地点经纬度本地计算，实际拍摄仍需结合云量、光污染和地形遮挡。`
+- 数据提示：星空银河服务启用时显示 `天文数据：本地天文服务计算`；未启用时显示 `天文数据：简化本地估算`。天气数据仍显示 `天气数据：演示数据`，地形数据仍显示 `地形数据：演示数据`，光污染数据显示 `光污染数据：暂未接入`。
 
 地形计算约定：
 
@@ -111,13 +113,15 @@ These documents define the strategic product boundary for 逐光天气. Future C
 - 天文计算只使用 WGS84 经纬度，不使用 GCJ-02。
 - 默认时区为 `Asia/Shanghai`。
 - 天文摘要使用 Calendar Core 生成的 `targetDates`，不会在 astro / scoring 内部再生成独立日期。
-- 日出 / 日落、暮光、天文月相、月亮照明、盈亏方向、月出 / 月落、逐小时月亮高度和银河窗口为本地 deterministic 计算，不调用在线 API，也不使用 DeepSeek / AI 计算月相。
+- `target=astro` 的精确路径由 `apps/astro-service` 提供：FastAPI 接收 WGS84 经纬度、可选海拔、时区、预报范围和起始时间，返回太阳、月亮、夜间和银河窗口结构。
+- 天文服务使用本地缓存星历文件，例如 `apps/astro-service/data/de421.bsp`。服务运行时不会下载星历，也不会调用在线天文 API；缺少星历时会返回明确错误。
+- 日出 / 日落、暮光、天文月相、月亮照明、盈亏方向、月出 / 月落、逐小时月亮高度、天文黑夜、无月黑夜和银河窗口不使用 DeepSeek / AI 计算。
 - 星空银河页面支持整月月相日历，可按上个月、下个月和回到本月浏览；月相日历基于本地天文计算逐日生成月相、月亮照明和主要月相摘要，不调用外部天气或天文服务。
 - 农历日期、中文农历文本和二十四节气来自 `packages/calendar` 中的本地 `lunar-typescript`，仅用于历法展示，不作为月亮照明、月亮高度或月光影响的计算来源。
 - 月相日历的数据结构已预留农历展示字段，后续可继续扩展更完整的农历信息、节气提醒或观星节奏提示。
 - 月相展示会分开呈现天文相位、照明比例、盈亏方向和农历日期；`上弦月` / `下弦月` / `满月` 只在接近对应相位和照明阈值时使用。
-- MockWeatherProvider 不再生成固定日出 / 日落字段；需要日出日落时只使用 Calendar Core 覆盖日期和 WGS84 坐标驱动的本地 Astronomy Core。
-- Astronomy Core 依赖本地 `astronomy-engine` 包；自动化测试会校验天文计算不触发网络请求。
+- MockWeatherProvider 不再生成固定日出 / 日落字段；需要日出日落时优先使用本地 Python 天文服务，未启用服务时才使用明确标注的简化本地估算。
+- 自动化测试会校验天文计算不触发在线外部天文 API；Node 侧只会在 `ENABLE_ASTRO_SERVICE=true` 时调用 `ASTRO_SERVICE_URL` 指向的本地服务。
 - 天文结果会随 forecast pipeline 一起进入 `ForecastCalculationResult.astroSummaries`，供结果页展示日出日落、月相月照、农历日期、节气、月出月落、天文黑夜窗口和银河窗口。
 - 真实天气准确率仍需要未来接入 QWeather / Open-Meteo 真实预报、云层 / 能见度校准和地形遮挡数据；DeepSeek 当前只解释确定性结果，不计算天气、天文、地形或评分。
 
@@ -128,7 +132,7 @@ These documents define the strategic product boundary for 逐光天气. Future C
 - `forecastStart`、`forecastEnd`、`targetDates`、中文日期时间范围、最佳窗口展示标签和结果页“计算依据”均来自 Calendar Core。
 - 24h 只展示未来 24 小时内窗口；48h / 72h 会按覆盖日期分组展示窗口；7d 会展示多日逐日判断和跨范围窗口。天气和地形在真实 provider 接入前仍显示为演示数据。
 - 朝霞、晚霞、云海、星空和银河评分窗口都会限制在 Calendar Core 生成的 `forecastStart` / `forecastEnd` 内，不输出预报起点之前的过去窗口，也不使用固定运行日期。
-- `lunar-typescript` 用于本地农历、干支生肖和节气信息，不调用在线日历 API；月相照明、月出月落和月亮高度仍由 `astronomy-engine` 负责。
+- `lunar-typescript` 用于本地农历、干支生肖和节气信息，不调用在线日历 API；月相照明、月出月落和月亮高度由本地天文服务或明确标注的简化本地估算提供。
 - 天文计算使用 Calendar Core 的覆盖日期和用户选择地点的 WGS84 经纬度；天气和地形在当前阶段仍为演示数据，等待未来真实 provider 接入。
 
 `packages/weather` 已提供天气服务商契约、ProviderFactory、WeatherDataService、QWeather / Open-Meteo fixture adapter 和小时/日天气标准化逻辑。QWeather fixture 会把不可用的低云/中云/高云分层置为 `null`，写入 `missingFields=["cloudLow","cloudMid","cloudHigh"]`，并在结果页显示“当前天气源缺少低云/中云/高云分层数据，相关判断将降低置信度。”Open-Meteo fixture 会映射 `temperature_2m`、`relative_humidity_2m`、`dew_point_2m`、`precipitation_probability`、`precipitation`、`cloud_cover`、`cloud_cover_low`、`cloud_cover_mid`、`cloud_cover_high`、`visibility`、`wind_speed_10m`、`wind_gusts_10m`、`wind_direction_10m` 和 `pressure_msl`。
@@ -172,6 +176,7 @@ Scenario Module Pages V1：
 
 - `apps/web`：Next.js App Router 前端与后台控制台。
 - `apps/api`：Fastify API 服务。
+- `apps/astro-service`：Python FastAPI 本地天文计算服务，使用 Skyfield 和本地 JPL 星历文件为 `target=astro` 生成精确天文窗口。
 - `apps/worker`：未来任务队列 worker 骨架。
 - `packages/shared`：共享类型、Zod schema 和标签。
 - `packages/config`：环境配置、运行时配置和密钥遮罩。
@@ -180,7 +185,7 @@ Scenario Module Pages V1：
 - `packages/calendar`：Calendar Core V1，集中处理 `Asia/Shanghai` 预报范围、覆盖日期、中文日期时间格式、农历和节气。
 - `packages/weather`：天气服务接口、标准化天气模型、WeatherDataBundle、WeatherDataService、ProviderFactory、MockWeatherProvider，以及 QWeather / Open-Meteo fixture-based normalization adapters。
 - `packages/terrain`：Terrain Core V1，包含地形/海拔数据契约、mock terrain provider、地形剖面、高差计算、云海地形潜力分类、地平线遮挡辅助判断和禁用的 Open-Meteo Elevation provider。
-- `packages/astro`：Astronomy Core V1，基于 `astronomy-engine` 的本地 deterministic 日出 / 日落、暮光、月相、月亮照明、月出 / 月落、逐小时月亮高度、整月月相日历和初步银河窗口估算。
+- `packages/astro`：JS 简化本地估算与整月月相日历基础，作为未启用 Python 天文服务时的明确标注兜底。
 - `packages/scoring`：本地 forecast mock 数据构造器、摄影评分 helper、朝霞/晚霞/云海/白墙/星空/银河/通透度计算器、云海专项确定性分析和综合推荐分类。
 - `packages/ai`：AI 服务接口、mock provider、规则兜底和 DeepSeek 开发模式 JSON 解读 provider。
 - `packages/storage`：存储服务接口与 mock 存储。
@@ -219,6 +224,80 @@ corepack pnpm dev:local
 - 摄影机位库：`http://localhost:3000/spots`
 - 定价方案：`http://localhost:3000/pricing`
 - 账户中心：`http://localhost:3000/account`
+
+### 本地天文服务
+
+`target=astro` 的精确天文计算需要单独启动 Python 服务：
+
+```bash
+cd apps/astro-service
+python -m pip install -r requirements.txt
+python scripts/fetch_ephemeris.py
+python -m uvicorn app.main:app --host 127.0.0.1 --port 4100
+```
+
+也可以在仓库根目录运行：
+
+```bash
+corepack pnpm dev:astro
+```
+
+本地 API 默认读取：
+
+```bash
+ASTRO_SERVICE_URL=http://127.0.0.1:4100
+ASTRO_SERVICE_TIMEOUT_MS=45000
+ENABLE_ASTRO_SERVICE=false
+```
+
+将 `ENABLE_ASTRO_SERVICE=true` 后，`target=astro` 会要求本地天文服务可用；服务不可用时返回：
+
+`天文计算服务暂不可用，无法生成精确的星空银河窗口。请确认本地天文服务已启动。`
+
+如果 astro forecast 在本地返回超时：
+
+1. 确认 `http://127.0.0.1:4100/health` 正常，`corepack pnpm debug:astro` 中 `Astro service: OK`、`Astro health via API: true`。
+2. 运行 `corepack pnpm test:astro-api`，确认 `24h` 与 `7d` 请求的 HTTP 状态和 `Elapsed ms`。
+3. 如本机计算耗时较高，在 `.env.local` 中提高 `ASTRO_SERVICE_TIMEOUT_MS`，例如 `ASTRO_SERVICE_TIMEOUT_MS=60000`。
+4. 修改 `.env.local` 后重启主开发栈 `corepack pnpm dev:local`。
+
+星空银河页面显示“天文计算服务暂不可用”时，先运行本地诊断脚本：
+
+```bash
+corepack pnpm debug:astro
+corepack pnpm test:astro-api
+```
+
+运行前保持三个本地进程可用：数据库隧道、Python astro-service、主开发栈 `corepack pnpm dev:local`。
+
+预期结果：
+
+- `debug:astro` 中 `DB tunnel: OK`、`API: OK`、`Web: OK`、`Astro service: OK`。
+- `debug:astro` 中 `Astro enabled: true`。
+- `debug:astro` 中 `Astro URL: http://127.0.0.1:4100`。
+- `debug:astro` 中 `/debug/astro-service` 对应的 `Astro health via API: true`。
+- `test:astro-api` 能返回 `target=astro` 的 forecast JSON，并在 API 日志中出现 `/forecast/calculate` 与 astro-service 调用记录。
+- astro-service 终端出现 `POST /astro/calculate 200 OK`。
+
+本地排查顺序：
+
+1. 启动数据库隧道并确认 `127.0.0.1:15432` 可用。
+2. 启动 Python astro-service，并检查 `http://127.0.0.1:4100/health` 是否返回 `200`。
+3. 检查 `.env.local` 是否包含 `ENABLE_ASTRO_SERVICE=true`、`ASTRO_SERVICE_URL=http://127.0.0.1:4100` 和合适的 `ASTRO_SERVICE_TIMEOUT_MS`。
+4. 修改 `.env.local` 后重启主开发栈 `corepack pnpm dev:local`。
+5. 运行 `corepack pnpm debug:astro` 和 `corepack pnpm test:astro-api`。
+6. 查看 `logs/photo-weather-api-latest.txt` 指向的 API 日志，`/forecast/calculate` 会记录目标、范围、坐标是否存在、天文服务 URL、上游状态、错误名称、错误消息和服务端堆栈。
+7. 本地开发环境可访问 `http://localhost:4000/debug/astro-service` 查看天文服务开关、URL、`timeoutMs`、健康检查状态、时区数据库、星历文件状态和脱敏错误。
+
+黄山光明顶校验：
+
+```bash
+cd apps/astro-service
+python -m pytest
+```
+
+测试使用 WGS84 近似坐标 `30.1321, 118.1691`、海拔约 `1800` 米、`Asia/Shanghai` 和 `2026-05-22`。断言只检查逻辑关系，不硬编码第三方天文应用的具体分钟值。
+
 - 用户登录：`http://localhost:3000/login`
 - 用户注册：`http://localhost:3000/register`
 - 后台登录：`http://localhost:3000/admin/login`

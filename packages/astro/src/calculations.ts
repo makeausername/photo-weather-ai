@@ -30,8 +30,7 @@ const hourMs = 3_600_000;
 const minuteMs = 60_000;
 const milkyWaySampleStepMs = 15 * minuteMs;
 const milkyWayMinimumAltitude = 10;
-const milkyWayNoteZh =
-  "银河窗口为本地天文算法初步估算，实际拍摄仍需结合云量、月光、光污染和地形遮挡。";
+const milkyWayNoteZh = "银河窗口为简化本地估算，实际拍摄仍需结合云量、月光、光污染和地形遮挡。";
 
 let isGalacticCenterDefined = false;
 
@@ -149,6 +148,7 @@ export function getMilkyWayWindow(input: AstroInput): MilkyWayWindow {
     return {
       date: context.date,
       timezone: context.timezone,
+      calculationPrecision: "v1_approximate",
       visibilityLevel: "unavailable",
       noteZh: milkyWayNoteZh,
     };
@@ -159,6 +159,7 @@ export function getMilkyWayWindow(input: AstroInput): MilkyWayWindow {
     return {
       date: context.date,
       timezone: context.timezone,
+      calculationPrecision: "v1_approximate",
       visibilityLevel: "unavailable",
       noteZh: milkyWayNoteZh,
     };
@@ -174,6 +175,9 @@ export function getMilkyWayWindow(input: AstroInput): MilkyWayWindow {
       timezone: context.timezone,
       bestTime: formatZonedIso(bestSample.timestamp, context.timezone),
       directionZh: directionFromAzimuth(bestSample.galacticCenterAzimuth),
+      galacticCenterAltitude: round1(bestSample.galacticCenterAltitude),
+      galacticCenterAzimuth: round1(bestSample.galacticCenterAzimuth),
+      calculationPrecision: "v1_approximate",
       visibilityLevel: "poor",
       noteZh: milkyWayNoteZh,
     };
@@ -194,6 +198,9 @@ export function getMilkyWayWindow(input: AstroInput): MilkyWayWindow {
     windowEnd: formatZonedIso(windowEnd, context.timezone),
     bestTime: formatZonedIso(bestSample.timestamp, context.timezone),
     directionZh: directionFromAzimuth(bestSample.galacticCenterAzimuth),
+    galacticCenterAltitude: round1(bestSample.galacticCenterAltitude),
+    galacticCenterAzimuth: round1(bestSample.galacticCenterAzimuth),
+    calculationPrecision: "v1_approximate",
     visibilityLevel,
     noteZh: milkyWayNoteZh,
   };
