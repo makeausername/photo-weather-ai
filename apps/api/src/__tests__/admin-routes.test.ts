@@ -198,7 +198,12 @@ describe("admin config routes", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().provider).toMatchObject({
+    const body = response.json();
+    expect(body).toMatchObject({
+      success: true,
+      messageZh: "配置已保存。",
+    });
+    expect(body.provider).toMatchObject({
       providerType: "weather",
       providerCode: "qweather",
       enabled: true,
@@ -251,6 +256,10 @@ describe("admin config routes", () => {
     expect(response.statusCode).toBe(200);
     const bodyText = response.body;
     const body = response.json();
+    expect(body).toMatchObject({
+      success: true,
+      messageZh: "配置已保存。",
+    });
     expect(body.provider).toMatchObject({
       providerType: "ai",
       providerCode: "deepseek",

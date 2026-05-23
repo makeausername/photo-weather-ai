@@ -615,8 +615,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       if (
         providerType === "weather" &&
         providerPatch.configJson !== undefined &&
-        (request.params.providerCode === "qweather" ||
-          request.params.providerCode === "open_meteo")
+        (request.params.providerCode === "qweather" || request.params.providerCode === "open_meteo")
       ) {
         const incomingConfigJson = isJsonObjectValue(providerPatch.configJson)
           ? providerPatch.configJson
@@ -653,6 +652,8 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       );
 
       return {
+        success: true,
+        messageZh: "配置已保存。",
         provider: updatedProvider,
       };
     },

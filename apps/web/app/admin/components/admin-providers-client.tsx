@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getDeepSeekModeRuntimeDefaults,
   getProviderFieldPreset,
@@ -22,6 +22,13 @@ import {
 } from "../../../components/ui";
 import { adminApiFetch, createProviderConnectionTestRequestInit } from "../admin-api";
 import type { JsonValue, MockConnectionTestResult, SafeProviderConfig } from "../admin-api";
+import {
+  isProviderSaveDisabled,
+  providerSaveButtonLabel,
+  providerSaveErrorMessage,
+  providerSaveSuccessMessage,
+  type ProviderSaveFeedbackState,
+} from "./provider-save-feedback";
 
 type ProvidersResponse = {
   readonly providers: SafeProviderConfig[];
@@ -32,10 +39,7 @@ type AdminProvidersClientProps = {
   readonly providerType?: string;
 };
 
-type RowState = {
-  readonly status: "idle" | "saving" | "saved" | "testing" | "error";
-  readonly message?: string;
-};
+type RowState = ProviderSaveFeedbackState;
 
 type FieldDrafts = Record<string, Record<string, string>>;
 type ClearSecretDrafts = Record<string, Record<string, boolean>>;
@@ -282,6 +286,28 @@ function stateClass(status: RowState["status"]): string {
   }
 
   return "border-border bg-muted text-muted-foreground";
+}
+
+function ProviderSaveFeedback({
+  state,
+  dirty,
+}: {
+  readonly state?: RowState;
+  readonly dirty: boolean;
+}) {
+  const message = state?.message ?? (dirty ? "有未保存修改" : null);
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <span
+      aria-live="polite"
+      className={`rounded-lg border px-3 py-2 text-sm ${stateClass(state?.status ?? "idle")}`}
+    >
+      {message}
+    </span>
+  );
 }
 
 function getRealDevCallFlagKey(provider: SafeProviderConfig): keyof RealDevCallFlags | null {
@@ -616,10 +642,13 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   const [expandedAdvancedProviders, setExpandedAdvancedProviders] = useState<
     Record<string, boolean>
   >({});
-  const [stateByProvider, setStateByProvider] = useState<Record<string, RowState>>({});
+  const [saveStateByProvider, setSaveStateByProvider] = useState<Record<string, RowState>>({});
+  const [testStateByProvider, setTestStateByProvider] = useState<Record<string, RowState>>({});
+  const [dirtyProviders, setDirtyProviders] = useState<Record<string, boolean>>({});
   const [loadState, setLoadState] = useState<RowState>({ status: "idle" });
   const [realDevCallFlags, setRealDevCallFlags] =
     useState<RealDevCallFlags>(defaultRealDevCallFlags);
+  const savingProviderIds = useRef<Set<string>>(new Set());
 
   const path = providerType
     ? `/admin/providers?providerType=${encodeURIComponent(providerType)}`
@@ -654,6 +683,10 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       setPriorityDrafts(
         Object.fromEntries(response.providers.map((provider) => [provider.id, provider.priority])),
       );
+      setSaveStateByProvider({});
+      setTestStateByProvider({});
+      setDirtyProviders({});
+      savingProviderIds.current.clear();
       setExpandedProviders({});
       setExpandedAdvancedProviders({});
       setLoadState({ status: "saved", message: "服务商配置已加载。" });
@@ -675,8 +708,34 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     }, {});
   }, [providers]);
 
+  function markProviderDirty(providerId: string) {
+    setDirtyProviders((current) => ({
+      ...current,
+      [providerId]: true,
+    }));
+    setSaveStateByProvider((current) => {
+      const state = current[providerId];
+      if (!state || state.status === "saving") {
+        return current;
+      }
+
+      return {
+        ...current,
+        [providerId]: { status: "idle" },
+      };
+    });
+  }
+
   async function saveProvider(provider: SafeProviderConfig) {
-    setStateByProvider((current) => ({
+    if (
+      savingProviderIds.current.has(provider.id) ||
+      saveStateByProvider[provider.id]?.status === "saving"
+    ) {
+      return;
+    }
+    savingProviderIds.current.add(provider.id);
+
+    setSaveStateByProvider((current) => ({
       ...current,
       [provider.id]: { status: "saving", message: "正在保存..." },
     }));
@@ -755,13 +814,14 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         payload.clearSecretKeys = clearSecretKeys;
       }
 
-      const response = await adminApiFetch<{ readonly provider: SafeProviderConfig }>(
-        `/admin/providers/${provider.providerType}/${provider.providerCode}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        },
-      );
+      const response = await adminApiFetch<{
+        readonly success?: boolean;
+        readonly messageZh?: string;
+        readonly provider: SafeProviderConfig;
+      }>(`/admin/providers/${provider.providerType}/${provider.providerCode}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
 
       setProviders((current) =>
         current.map((item) => (item.id === provider.id ? response.provider : item)),
@@ -794,21 +854,30 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         ...current,
         [provider.id]: {},
       }));
-      setStateByProvider((current) => ({
+      setDirtyProviders((current) => ({
         ...current,
-        [provider.id]: { status: "saved", message: "配置已保存" },
+        [provider.id]: false,
+      }));
+      setSaveStateByProvider((current) => ({
+        ...current,
+        [provider.id]: {
+          status: "saved",
+          message: providerSaveSuccessMessage(response.provider),
+        },
       }));
     } catch (error) {
-      setStateByProvider((current) => ({
+      setSaveStateByProvider((current) => ({
         ...current,
-        [provider.id]: { status: "error", message: (error as Error).message },
+        [provider.id]: { status: "error", message: providerSaveErrorMessage(error) },
       }));
+    } finally {
+      savingProviderIds.current.delete(provider.id);
     }
   }
 
   async function testProvider(provider: SafeProviderConfig) {
     const realEnabled = isRealDevCallEnabled(provider, realDevCallFlags);
-    setStateByProvider((current) => ({
+    setTestStateByProvider((current) => ({
       ...current,
       [provider.id]: {
         status: "testing",
@@ -824,7 +893,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       const modelSuffix = result.model ? ` 当前模型：${result.model}` : "";
       const latencySuffix =
         typeof result.latencyMs === "number" ? `，耗时 ${result.latencyMs}ms` : "";
-      setStateByProvider((current) => ({
+      setTestStateByProvider((current) => ({
         ...current,
         [provider.id]: {
           status: "saved",
@@ -832,7 +901,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         },
       }));
     } catch (error) {
-      setStateByProvider((current) => ({
+      setTestStateByProvider((current) => ({
         ...current,
         [provider.id]: { status: "error", message: (error as Error).message },
       }));
@@ -847,6 +916,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   }
 
   function updateConfigField(providerId: string, key: string, value: string) {
+    markProviderDirty(providerId);
     setConfigFieldDrafts((current) => ({
       ...current,
       [providerId]: {
@@ -857,6 +927,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   }
 
   function applyDeepSeekModeDefaults(providerId: string, mode: string) {
+    markProviderDirty(providerId);
     const normalizedMode = normalizeDeepSeekAnalysisMode(mode);
     const defaults = getDeepSeekModeRuntimeDefaults(normalizedMode);
     setConfigFieldDrafts((current) => ({
@@ -873,6 +944,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   }
 
   function updateSecretField(providerId: string, key: string, value: string) {
+    markProviderDirty(providerId);
     setSecretFieldDrafts((current) => ({
       ...current,
       [providerId]: {
@@ -947,6 +1019,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   }
 
   function toggleClearSecret(providerId: string, key: string) {
+    markProviderDirty(providerId);
     setClearSecretDrafts((current) => ({
       ...current,
       [providerId]: {
@@ -1014,7 +1087,10 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               const configFields = getNormalPresetFields(provider, "configJson");
               const advancedConfigFields = getAdvancedPresetFields(provider);
               const secretFields = getPresetFields(provider, "secretJson");
-              const state = stateByProvider[provider.id];
+              const saveState = saveStateByProvider[provider.id];
+              const testState = testStateByProvider[provider.id];
+              const isSaving = isProviderSaveDisabled(saveState);
+              const hasUnsavedChanges = dirtyProviders[provider.id] ?? false;
               const isExpanded = expandedProviders[provider.id] ?? false;
               const isAdvancedExpanded = expandedAdvancedProviders[provider.id] ?? false;
               const isDeepSeek = isDeepSeekProvider(provider);
@@ -1062,11 +1138,11 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                     <Button variant="secondary" onClick={() => void testProvider(provider)}>
                       测试连接
                     </Button>
-                    {state?.message ? (
+                    {testState?.message ? (
                       <span
-                        className={`rounded-lg border px-3 py-2 text-sm ${stateClass(state.status)}`}
+                        className={`rounded-lg border px-3 py-2 text-sm ${stateClass(testState.status)}`}
                       >
-                        {state.message}
+                        {testState.message}
                       </span>
                     ) : null}
                   </div>
@@ -1077,12 +1153,13 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                         label="启用该服务商"
                         description="仅保存配置开关，不触发真实连接。"
                         checked={enabledDrafts[provider.id] ?? provider.enabled}
-                        onChange={(checked) =>
+                        onChange={(checked) => {
+                          markProviderDirty(provider.id);
                           setEnabledDrafts((current) => ({
                             ...current,
                             [provider.id]: checked,
-                          }))
-                        }
+                          }));
+                        }}
                       />
 
                       {!isDeepSeek ? (
@@ -1090,12 +1167,13 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                           <Input
                             type="number"
                             value={priorityDrafts[provider.id] ?? provider.priority}
-                            onChange={(event) =>
+                            onChange={(event) => {
+                              markProviderDirty(provider.id);
                               setPriorityDrafts((current) => ({
                                 ...current,
                                 [provider.id]: Number(event.target.value),
-                              }))
-                            }
+                              }));
+                            }}
                           />
                         </FormField>
                       ) : null}
@@ -1233,11 +1311,10 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                       {isWeather && provider.providerCode === "open_meteo" ? (
                         <section className="grid gap-3">
                           <div>
-                            <h4 className="text-sm font-bold text-card-foreground">
-                              商业版设置
-                            </h4>
+                            <h4 className="text-sm font-bold text-card-foreground">商业版设置</h4>
                             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                              如使用商业版 Open-Meteo，可填写商业版专属 Endpoint；普通体验模式可保持为空。
+                              如使用商业版 Open-Meteo，可填写商业版专属
+                              Endpoint；普通体验模式可保持为空。
                             </p>
                           </div>
                           <div className="grid gap-3 sm:grid-cols-2">
@@ -1276,12 +1353,13 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                               <FormField label="基础配置">
                                 <Textarea
                                   value={configDrafts[provider.id] ?? "{}"}
-                                  onChange={(event) =>
+                                  onChange={(event) => {
+                                    markProviderDirty(provider.id);
                                     setConfigDrafts((current) => ({
                                       ...current,
                                       [provider.id]: event.target.value,
-                                    }))
-                                  }
+                                    }));
+                                  }}
                                 />
                               </FormField>
 
@@ -1293,12 +1371,13 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                                   <Textarea
                                     placeholder="留空则保持现有密钥不变"
                                     value={secretDrafts[provider.id] ?? ""}
-                                    onChange={(event) =>
+                                    onChange={(event) => {
+                                      markProviderDirty(provider.id);
                                       setSecretDrafts((current) => ({
                                         ...current,
                                         [provider.id]: event.target.value,
-                                      }))
-                                    }
+                                      }));
+                                    }}
                                   />
                                 </FormField>
                               ) : null}
@@ -1316,7 +1395,10 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                             取消
                           </Button>
                         ) : null}
-                        <Button onClick={() => void saveProvider(provider)}>保存配置</Button>
+                        <ProviderSaveFeedback state={saveState} dirty={hasUnsavedChanges} />
+                        <Button disabled={isSaving} onClick={() => void saveProvider(provider)}>
+                          {providerSaveButtonLabel(saveState)}
+                        </Button>
                       </div>
                     </div>
                   ) : null}

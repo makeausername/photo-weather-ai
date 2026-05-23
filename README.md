@@ -414,7 +414,7 @@ DATABASE_URL=postgresql://photo_weather:photo_weather@postgres:5432/photo_weathe
 
 Provider secrets 和永久服务商配置属于数据库后台配置，不应写进业务代码。Seed data 只创建基础服务商和空密钥对象，不包含真实 DeepSeek、QWeather、Open-Meteo、高德地图、存储、短信或支付凭据。
 
-`/admin/providers` 提供可视化服务商配置表单。高德地图支持“启用该服务商”“启用真实调用”“高德 Web 服务 Key”和优先级；DeepSeek 卡片改为简化配置，只显示“启用该服务商”“启用真实调用”“DeepSeek API Key”和“分析模式”下拉框，快速模式使用 `deepseek-v4-flash`，专业模式使用 `deepseek-v4-pro`。Base URL、Temperature、Max Tokens、Reasoning Effort 和 Thinking Mode 默认折叠在“高级配置”中，普通管理员不需要理解或编辑 `response_format`。和风天气卡片显示“启用该服务商”“启用真实调用”“和风天气 API Key”“API Host”和优先级，并显示服务状态、真实调用、密钥状态、API Host 和测试模式状态；请求超时、重试次数、语言、单位和原始配置在“高级配置”内。Open-Meteo 卡片显示可选 API Key、可选 Customer Endpoint、启用开关、真实调用开关、优先级和数据能力；默认模型、Base URL、超时、重试和原始配置默认折叠。QWeather 的真实测试连接只在管理员显式启用真实调用并点击测试连接时请求和风天气，Open-Meteo 当前仍不触发真实天气调用。密钥保存后 API 只返回 `maskedSecretJson`，不会返回原始 `secretJson`；空密钥输入表示保留现有密钥不变，如需删除已保存字段请使用后台表单中的清除操作。
+`/admin/providers` 提供可视化服务商配置表单。高德地图支持“启用该服务商”“启用真实调用”“高德 Web 服务 Key”和优先级；DeepSeek 卡片改为简化配置，只显示“启用该服务商”“启用真实调用”“DeepSeek API Key”和“分析模式”下拉框，快速模式使用 `deepseek-v4-flash`，专业模式使用 `deepseek-v4-pro`。Base URL、Temperature、Max Tokens、Reasoning Effort 和 Thinking Mode 默认折叠在“高级配置”中，普通管理员不需要理解或编辑 `response_format`。和风天气卡片显示“启用该服务商”“启用真实调用”“和风天气 API Key”“API Host”和优先级，并显示服务状态、真实调用、密钥状态、API Host 和测试模式状态；请求超时、重试次数、语言、单位和原始配置在“高级配置”内。Open-Meteo 卡片显示可选 API Key、可选 Customer Endpoint、启用开关、真实调用开关、优先级和数据能力；默认模型、Base URL、超时、重试和原始配置默认折叠。保存配置后后台会显示保存成功提示，测试连接用于验证真实服务可用性。QWeather 的真实测试连接只在管理员显式启用真实调用并点击测试连接时请求和风天气，Open-Meteo 当前仍不触发真实天气调用。密钥保存后 API 只返回 `maskedSecretJson`，不会返回原始 `secretJson`；空密钥输入表示保留现有密钥不变，如需删除已保存字段请使用后台表单中的清除操作。
 
 Seed data 包含未核验的中国风光摄影示例地点与机位：
 
