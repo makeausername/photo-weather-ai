@@ -336,6 +336,10 @@ function isOpenMeteoProvider(provider: SafeProviderConfig): boolean {
   return provider.providerType === "weather" && provider.providerCode === "open_meteo";
 }
 
+function isQWeatherProvider(provider: SafeProviderConfig): boolean {
+  return provider.providerType === "weather" && provider.providerCode === "qweather";
+}
+
 function getDeepSeekAnalysisMode(provider: SafeProviderConfig): DeepSeekAnalysisMode {
   return normalizeDeepSeekAnalysisMode(
     readStringJson(readJsonField(provider.configJson, "analysisMode")),
@@ -395,7 +399,14 @@ function providerTestModeLabel(provider: SafeProviderConfig, realEnabled: boolea
   if (realEnabled) {
     return "真实服务";
   }
+  if (isQWeatherProvider(provider)) {
+    return "演示模式";
+  }
   return "模拟测试";
+}
+
+function qWeatherApiHostPresent(provider: SafeProviderConfig): boolean {
+  return Boolean(readStringJson(readJsonField(provider.configJson, "apiHost")));
 }
 
 function providerFieldLabel(provider: SafeProviderConfig, key: string): string {
@@ -439,6 +450,11 @@ function ProviderStatus({
         <Badge variant={secretStatusVariant(provider)}>
           密钥状态：{secretStatusLabel(provider)}
         </Badge>
+        {isQWeatherProvider(provider) ? (
+          <Badge variant={qWeatherApiHostPresent(provider) ? "success" : "warning"}>
+            API Host：{qWeatherApiHostPresent(provider) ? "已配置" : "未配置"}
+          </Badge>
+        ) : null}
         <Badge variant={realEnabled ? "warning" : "muted"}>
           测试模式：{providerTestModeLabel(provider, realEnabled)}
         </Badge>
@@ -473,6 +489,11 @@ function WeatherStatus({
         <Badge variant={secretStatusVariant(provider)}>
           密钥状态：{secretStatusLabel(provider)}
         </Badge>
+        {isQWeatherProvider(provider) ? (
+          <Badge variant={qWeatherApiHostPresent(provider) ? "success" : "warning"}>
+            API Host：{qWeatherApiHostPresent(provider) ? "已配置" : "未配置"}
+          </Badge>
+        ) : null}
         <Badge variant={realEnabled ? "warning" : "muted"}>
           测试模式：{providerTestModeLabel(provider, realEnabled)}
         </Badge>
@@ -1175,6 +1196,22 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                           </p>
                         )}
                       </section>
+
+                      {isQWeatherProvider(provider) ? (
+                        <section className="grid gap-3">
+                          <div>
+                            <h4 className="text-sm font-bold text-card-foreground">接口主机</h4>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                              在和风天气控制台的开发者信息中复制 API Host，不需要填写 https://。
+                            </p>
+                          </div>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {configFields
+                              .filter((field) => field.key === "apiHost")
+                              .map((field) => renderConfigField(provider, field))}
+                          </div>
+                        </section>
+                      ) : null}
 
                       {isDeepSeek ? (
                         <section className="grid gap-3">

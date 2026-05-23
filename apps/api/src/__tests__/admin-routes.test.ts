@@ -125,6 +125,57 @@ describe("admin config routes", () => {
     expect(JSON.stringify(body)).not.toContain("secretJson");
   });
 
+  it("exposes safe local provider debug status without QWeather secrets", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const qWeatherProvider = state.providers.get("weather:qweather");
+    state.providers.set("weather:qweather", {
+      ...qWeatherProvider,
+      enabled: true,
+      configJson: {
+        ...(qWeatherProvider.configJson ?? {}),
+        realCallEnabled: true,
+        apiHost: "xxxxx.qweatherapi.com",
+        timeoutMs: 10000,
+        retryCount: 1,
+      },
+      secretJson: {
+        apiKey: "qweather-debug-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "qwea****cret",
+      },
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/debug/providers",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      qweather: {
+        enabled: true,
+        realCallEnabled: true,
+        apiKeyPresent: true,
+        apiHostPresent: true,
+        apiHost: "xxxx***.qweatherapi.com",
+        timeoutMs: 10000,
+        retryCount: 1,
+      },
+    });
+    expect(response.body).not.toContain("qweather-debug-secret");
+    expect(response.body).not.toContain("secretJson");
+  });
+
   it("updates QWeather config and returns only masked weather secrets", async () => {
     const { client } = await createFakeDatabaseClient();
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
@@ -137,6 +188,8 @@ describe("admin config routes", () => {
         enabled: true,
         configJson: {
           realCallEnabled: true,
+          apiHost: "https://xxxxx.qweatherapi.com/",
+          apiKey: "wrong-place-secret",
         },
         secretJson: {
           apiKey: "qweather-real-secret",
@@ -151,10 +204,12 @@ describe("admin config routes", () => {
       enabled: true,
       configJson: {
         realCallEnabled: true,
-        apiHost: "https://devapi.qweather.com",
-        baseUrl: "https://devapi.qweather.com",
-        timeoutMs: 8000,
+        apiHost: "xxxxx.qweatherapi.com",
+        timeoutMs: 10000,
         retryCount: 1,
+        language: "zh",
+        unit: "metric",
+        apiKey: null,
       },
       maskedSecretJson: {
         apiKey: "qwea****cret",
@@ -162,6 +217,7 @@ describe("admin config routes", () => {
     });
     expect(response.body).not.toContain("secretJson");
     expect(response.body).not.toContain("qweather-real-secret");
+    expect(response.body).not.toContain("wrong-place-secret");
 
     const auditResponse = await app.inject({
       method: "GET",
@@ -169,6 +225,7 @@ describe("admin config routes", () => {
       headers: adminAuthorizationHeader(),
     });
     expect(JSON.stringify(auditResponse.json())).not.toContain("qweather-real-secret");
+    expect(JSON.stringify(auditResponse.json())).not.toContain("wrong-place-secret");
   });
 
   it("updates provider config and never exposes raw secrets", async () => {
@@ -299,7 +356,7 @@ describe("admin config routes", () => {
       connectionMode: "mock",
       providerType: "weather",
       providerCode: "qweather",
-      message: "当前为模拟测试，未请求真实天气服务。",
+      message: "当前为演示测试，未请求和风天气服务。",
     });
 
     const emptyJsonBodyResponse = await app.inject({
@@ -316,7 +373,7 @@ describe("admin config routes", () => {
     expect(emptyJsonBodyResponse.json()).toMatchObject({
       success: true,
       mode: "mock",
-      message: "当前为模拟测试，未请求真实天气服务。",
+      message: "当前为演示测试，未请求和风天气服务。",
     });
 
     const emptyObjectResponse = await app.inject({
@@ -330,7 +387,7 @@ describe("admin config routes", () => {
     expect(emptyObjectResponse.json()).toMatchObject({
       success: true,
       mode: "mock",
-      message: "当前为模拟测试，未请求真实天气服务。",
+      message: "当前为演示测试，未请求和风天气服务。",
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -398,6 +455,139 @@ describe("admin config routes", () => {
         "Open-Meteo 未配置商业 Key，将使用默认样例/演示数据；真实商业接口请填写 API Key 和 Customer Endpoint。",
     });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("returns a Chinese error when QWeather real call is enabled without API Host", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("QWeather host guard must not call network");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const qWeatherProvider = state.providers.get("weather:qweather");
+    state.providers.set("weather:qweather", {
+      ...qWeatherProvider,
+      enabled: true,
+      configJson: {
+        ...(qWeatherProvider.configJson ?? {}),
+        realCallEnabled: true,
+        apiHost: "",
+      },
+      secretJson: {
+        apiKey: "qweather-test-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "qwea****cret",
+      },
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/providers/weather/qweather/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      error: "provider_host_missing",
+      message: "请先填写和风天气 API Host。",
+    });
+    expect(response.body).not.toContain("qweather-test-secret");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("tests a real QWeather connection through mocked fetch outside NODE_ENV=test", async () => {
+    const fetchMock = vi.fn(async (input: string | URL) => {
+      const url = new URL(String(input));
+      expect(url.origin).toBe("https://xxxxx.qweatherapi.com");
+      expect(url.pathname).toBe("/v7/weather/now");
+      expect(url.searchParams.get("location")).toBe("118.1718,30.1328");
+      expect(url.searchParams.get("key")).toBe("qweather-real-secret");
+      expect(url.searchParams.get("lang")).toBe("zh");
+      expect(url.searchParams.get("unit")).toBe("m");
+
+      return new Response(
+        JSON.stringify({
+          code: "200",
+          updateTime: "2026-05-23T12:00+08:00",
+          now: {
+            obsTime: "2026-05-23T11:58+08:00",
+            temp: "18",
+            text: "多云",
+            humidity: "72",
+          },
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const qWeatherProvider = state.providers.get("weather:qweather");
+    state.providers.set("weather:qweather", {
+      ...qWeatherProvider,
+      enabled: true,
+      configJson: {
+        ...(qWeatherProvider.configJson ?? {}),
+        realCallEnabled: true,
+        apiHost: "https://xxxxx.qweatherapi.com/",
+        timeoutMs: 10000,
+        retryCount: 1,
+        language: "zh",
+        unit: "metric",
+      },
+      secretJson: {
+        apiKey: "qweather-real-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "qwea****cret",
+      },
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/providers/weather/qweather/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: true,
+      mode: "real",
+      connectionMode: "real",
+      provider: "qweather",
+      providerType: "weather",
+      providerCode: "qweather",
+      statusCode: 200,
+      qweatherCode: "200",
+      location: "118.1718,30.1328",
+      observedWeatherSummary: "多云，18°C，湿度 72%",
+      messageZh: "和风天气连接测试通过。",
+    });
+    expect(response.body).not.toContain("qweather-real-secret");
+    expect(response.body).not.toContain("secretJson");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("keeps Amap connection tests in mock mode by default and hides secrets", async () => {

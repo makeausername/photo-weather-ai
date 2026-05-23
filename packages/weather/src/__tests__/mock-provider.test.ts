@@ -2,8 +2,11 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { normalizedHourlyWeatherSchema } from "@photo-weather/shared";
 import {
+  buildQWeatherRequestUrl,
   createWeatherProvider,
+  formatQWeatherLocation,
   MockWeatherProvider,
+  normalizeQWeatherApiHost,
   OpenMeteoProvider,
   QWeatherProvider,
   WeatherDataService,
@@ -223,6 +226,41 @@ describe("WeatherProviderFactory", () => {
     await expect(provider.getHourlyForecast({ coordinates, hours: 1 })).resolves.toHaveLength(1);
     expect(fetchMock).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
+  });
+});
+
+describe("QWeatherClient helpers", () => {
+  it("normalizes dedicated API hosts and strips accidental URL wrappers", () => {
+    expect(normalizeQWeatherApiHost("xxxxx.qweatherapi.com")).toBe("xxxxx.qweatherapi.com");
+    expect(normalizeQWeatherApiHost("https://xxxxx.qweatherapi.com/")).toBe(
+      "xxxxx.qweatherapi.com",
+    );
+  });
+
+  it("builds requests with the account API host and longitude,latitude location", () => {
+    const location = formatQWeatherLocation({
+      latitude: 30.1328,
+      longitude: 118.1718,
+      system: "wgs84",
+    });
+    const requestUrl = buildQWeatherRequestUrl(
+      {
+        apiKey: "qweather-secret",
+        apiHost: "xxxxx.qweatherapi.com",
+        language: "zh",
+        unit: "metric",
+      },
+      "/v7/weather/now",
+      { location },
+    );
+    const url = new URL(requestUrl);
+
+    expect(url.origin).toBe("https://xxxxx.qweatherapi.com");
+    expect(url.pathname).toBe("/v7/weather/now");
+    expect(url.searchParams.get("location")).toBe("118.1718,30.1328");
+    expect(url.searchParams.get("key")).toBe("qweather-secret");
+    expect(url.searchParams.get("lang")).toBe("zh");
+    expect(url.searchParams.get("unit")).toBe("m");
   });
 });
 

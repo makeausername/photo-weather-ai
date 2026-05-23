@@ -165,9 +165,28 @@ export function getDeepSeekModeRuntimeDefaults(
   return deepSeekModeRuntimeDefaults[mode];
 }
 
-export const qWeatherDefaultApiHost = "https://devapi.qweather.com";
+export const qWeatherDefaultApiHost = "";
 
 export const qWeatherDefaultBaseUrl = qWeatherDefaultApiHost;
+
+export const qWeatherApiHostPlaceholder = "xxxxx.qweatherapi.com";
+
+export const qWeatherDefaultTimeoutMs = 10000;
+
+export const qWeatherDefaultLanguage = "zh";
+
+export const qWeatherDefaultUnit = "metric";
+
+export const qWeatherUnitOptions = [
+  {
+    value: "metric",
+    label: "公制（metric）",
+  },
+  {
+    value: "imperial",
+    label: "英制（imperial）",
+  },
+] as const satisfies readonly ProviderFieldOption[];
 
 export const openMeteoDefaultBaseUrl = "https://api.open-meteo.com/v1";
 
@@ -268,7 +287,7 @@ export const providerFieldPresets = [
         target: "configJson",
         control: "boolean",
         defaultValue: false,
-        helpText: "关闭时测试连接只返回模拟测试结果，不请求真实天气服务。",
+        helpText: "关闭时测试连接只返回演示测试结果，不请求和风天气服务。",
       },
       {
         key: "apiKey",
@@ -276,30 +295,23 @@ export const providerFieldPresets = [
         target: "secretJson",
         placeholder: keepExistingSecretPlaceholder,
         password: true,
-        helpText: "用于后续获取实时天气、逐小时预报、天气预警和空气质量。保存后仅显示脱敏结果。",
+        helpText: "保存后仅显示脱敏结果，不会在前端暴露。",
       },
       {
         key: "apiHost",
-        label: "API Host（接口主机）",
+        label: "API Host",
         target: "configJson",
-        placeholder: qWeatherDefaultApiHost,
+        placeholder: qWeatherApiHostPlaceholder,
         defaultValue: qWeatherDefaultApiHost,
-        advanced: true,
-      },
-      {
-        key: "baseUrl",
-        label: "API Base URL（接口地址）",
-        target: "configJson",
-        placeholder: qWeatherDefaultBaseUrl,
-        defaultValue: qWeatherDefaultBaseUrl,
-        advanced: true,
+        helpText:
+          "在和风天气控制台的开发者信息中复制，例如 xxxxx.qweatherapi.com，不需要填写 https://。",
       },
       {
         key: "timeoutMs",
         label: "请求超时（毫秒）",
         target: "configJson",
         control: "number",
-        defaultValue: weatherDefaultTimeoutMs,
+        defaultValue: qWeatherDefaultTimeoutMs,
         min: 1000,
         max: 30000,
         step: 100,
@@ -314,6 +326,23 @@ export const providerFieldPresets = [
         min: 0,
         max: 5,
         step: 1,
+        advanced: true,
+      },
+      {
+        key: "language",
+        label: "语言",
+        target: "configJson",
+        placeholder: qWeatherDefaultLanguage,
+        defaultValue: qWeatherDefaultLanguage,
+        advanced: true,
+      },
+      {
+        key: "unit",
+        label: "单位",
+        target: "configJson",
+        control: "select",
+        options: qWeatherUnitOptions,
+        defaultValue: qWeatherDefaultUnit,
         advanced: true,
       },
     ],

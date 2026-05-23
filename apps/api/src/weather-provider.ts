@@ -1,9 +1,17 @@
 import { getRuntimeProviderConfig } from "@photo-weather/db";
 import type { DatabaseClient, JsonValue, ProviderConfigRecord } from "@photo-weather/db";
 import {
+  buildQWeatherBaseUrl,
+  normalizeQWeatherApiHost,
+  type QWeatherUnit,
+} from "@photo-weather/weather";
+import {
   openMeteoDefaultBaseUrl,
   openMeteoDefaultModel,
   qWeatherDefaultApiHost,
+  qWeatherDefaultLanguage,
+  qWeatherDefaultTimeoutMs,
+  qWeatherDefaultUnit,
   qWeatherDefaultBaseUrl,
   weatherDefaultRetryCount,
   weatherDefaultTimeoutMs,
@@ -17,11 +25,15 @@ export type WeatherProviderRuntimeOptions = {
 export type ResolvedQWeatherRuntimeConfig = {
   readonly enabled: boolean;
   readonly realCallEnabled: boolean;
+  readonly priority: number;
   readonly apiKeyPresent: boolean;
+  readonly apiHostPresent: boolean;
   readonly apiHost: string;
   readonly baseUrl: string;
   readonly timeoutMs: number;
   readonly retryCount: number;
+  readonly language: string;
+  readonly unit: QWeatherUnit;
   readonly modeLabelZh: string;
 };
 
@@ -56,6 +68,10 @@ function isJsonObject(value: JsonValue | null | undefined): value is Record<stri
 
 function readString(value: JsonValue | undefined): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function readRawString(value: JsonValue | undefined): string | undefined {
+  return typeof value === "string" ? value.trim() : undefined;
 }
 
 function readEnvString(value: string | undefined): string | undefined {
@@ -125,6 +141,22 @@ function readSecretAndConfig(provider: ProviderConfigRecord | null): {
   };
 }
 
+function readConfiguredHost(
+  configJson: Record<string, JsonValue>,
+  keys: readonly string[],
+): { readonly provided: boolean; readonly value?: string } {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(configJson, key)) {
+      return {
+        provided: true,
+        value: normalizeQWeatherApiHost(readRawString(configJson[key])),
+      };
+    }
+  }
+
+  return { provided: false };
+}
+
 function readWeatherRealCallEnabled(
   provider: ProviderConfigRecord | null,
   env: NodeJS.ProcessEnv,
@@ -147,6 +179,26 @@ function readQWeatherApiKey(
 ): string | undefined {
   const { secretJson } = readSecretAndConfig(provider);
   return readString(secretJson.apiKey) ?? readEnvString(env.QWEATHER_API_KEY);
+}
+
+function readEnvQWeatherApiHost(env: NodeJS.ProcessEnv): string | undefined {
+  return (
+    normalizeQWeatherApiHost(readEnvString(env.QWEATHER_API_HOST)) ??
+    normalizeQWeatherApiHost(readEnvString(env.QWEATHER_BASE_URL)) ??
+    normalizeQWeatherApiHost(readEnvString(env.QWEATHER_API_BASE_URL))
+  );
+}
+
+function normalizeQWeatherLanguage(value: string | undefined): string {
+  return value && /^[A-Za-z-]{2,12}$/.test(value) ? value : qWeatherDefaultLanguage;
+}
+
+function normalizeQWeatherUnit(value: string | undefined): QWeatherUnit {
+  if (value === "imperial" || value === "i") {
+    return "imperial";
+  }
+
+  return qWeatherDefaultUnit;
 }
 
 function readOpenMeteoApiKey(
@@ -174,30 +226,27 @@ export function resolveQWeatherRuntimeConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): ResolvedQWeatherRuntimeConfig {
   const { configJson } = readSecretAndConfig(provider);
+  const configuredHost = readConfiguredHost(configJson, ["apiHost", "baseUrl", "apiBaseUrl"]);
   const apiHost =
-    readString(configJson.apiHost) ??
-    readEnvString(env.QWEATHER_API_HOST) ??
-    qWeatherDefaultApiHost;
-  const baseUrl =
-    readString(configJson.baseUrl) ??
-    readString(configJson.apiBaseUrl) ??
-    readEnvString(env.QWEATHER_BASE_URL) ??
-    readEnvString(env.QWEATHER_API_BASE_URL) ??
-    apiHost ??
-    qWeatherDefaultBaseUrl;
+    configuredHost.provided
+      ? configuredHost.value ?? ""
+      : readEnvQWeatherApiHost(env) ?? qWeatherDefaultApiHost;
+  const baseUrl = apiHost ? buildQWeatherBaseUrl(apiHost) : qWeatherDefaultBaseUrl;
   const realCallEnabled = readWeatherRealCallEnabled(provider, env, "qweather");
 
   return {
     enabled: provider?.enabled ?? false,
     realCallEnabled,
+    priority: provider?.priority ?? 0,
     apiKeyPresent: Boolean(readQWeatherApiKey(provider, env)),
+    apiHostPresent: Boolean(apiHost),
     apiHost,
     baseUrl,
     timeoutMs: clampInteger(
       readNumber(configJson.timeoutMs) ??
         readNumber(configJson.requestTimeoutMs) ??
         readEnvNumber(env.QWEATHER_TIMEOUT_MS),
-      weatherDefaultTimeoutMs,
+      qWeatherDefaultTimeoutMs,
       1000,
       30000,
     ),
@@ -207,7 +256,11 @@ export function resolveQWeatherRuntimeConfig(
       0,
       5,
     ),
-    modeLabelZh: realCallEnabled ? "真实服务" : "模拟测试",
+    language: normalizeQWeatherLanguage(
+      readString(configJson.language) ?? readEnvString(env.QWEATHER_LANGUAGE),
+    ),
+    unit: normalizeQWeatherUnit(readString(configJson.unit) ?? readEnvString(env.QWEATHER_UNIT)),
+    modeLabelZh: realCallEnabled ? "真实服务" : "演示模式",
   };
 }
 
@@ -253,16 +306,28 @@ export function normalizeQWeatherAdminConfigJson(
   configJson: JsonValue | undefined,
 ): Record<string, JsonValue> {
   const current = isJsonObject(configJson) ? { ...configJson } : {};
-  const apiHost = readString(current.apiHost) ?? qWeatherDefaultApiHost;
+  const hasApiHost = Object.prototype.hasOwnProperty.call(current, "apiHost");
+  const apiHost = hasApiHost
+    ? normalizeQWeatherApiHost(readRawString(current.apiHost)) ?? ""
+    : normalizeQWeatherApiHost(readRawString(current.baseUrl)) ??
+      normalizeQWeatherApiHost(readRawString(current.apiBaseUrl)) ??
+      qWeatherDefaultApiHost;
 
-  return {
+  const normalized: Record<string, JsonValue> = {
     ...current,
     realCallEnabled: readBoolean(current.realCallEnabled) ?? false,
     apiHost,
-    baseUrl: readString(current.baseUrl) ?? readString(current.apiBaseUrl) ?? apiHost,
-    timeoutMs: clampInteger(readNumber(current.timeoutMs), weatherDefaultTimeoutMs, 1000, 30000),
+    timeoutMs: clampInteger(readNumber(current.timeoutMs), qWeatherDefaultTimeoutMs, 1000, 30000),
     retryCount: clampInteger(readNumber(current.retryCount), weatherDefaultRetryCount, 0, 5),
+    language: normalizeQWeatherLanguage(readString(current.language)),
+    unit: normalizeQWeatherUnit(readString(current.unit)),
   };
+
+  if (Object.prototype.hasOwnProperty.call(normalized, "apiKey")) {
+    normalized.apiKey = null;
+  }
+
+  return normalized;
 }
 
 export function normalizeOpenMeteoAdminConfigJson(

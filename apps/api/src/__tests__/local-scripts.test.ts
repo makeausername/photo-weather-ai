@@ -83,12 +83,16 @@ describe("local astro diagnostics scripts", () => {
     const checkLocalScript = readRepoFile("scripts/check-local.ps1");
     const debugAstroScript = readRepoFile("scripts/debug-astro-local.ps1");
     const testAstroApiScript = readRepoFile("scripts/test-astro-forecast-api.ps1");
+    const testQWeatherScript = readRepoFile("scripts/test-qweather-provider.ps1");
 
     expect(packageJson.scripts["debug:astro"]).toBe(
       "powershell -ExecutionPolicy Bypass -File scripts/debug-astro-local.ps1",
     );
     expect(packageJson.scripts["test:astro-api"]).toBe(
       "powershell -ExecutionPolicy Bypass -File scripts/test-astro-forecast-api.ps1",
+    );
+    expect(packageJson.scripts["test:qweather"]).toBe(
+      "powershell -ExecutionPolicy Bypass -File scripts/test-qweather-provider.ps1",
     );
 
     for (const script of [devLocalScript, checkLocalScript, debugAstroScript]) {
@@ -110,12 +114,16 @@ describe("local astro diagnostics scripts", () => {
     expect(testAstroApiScript).toContain("/forecast/calculate");
     expect(testAstroApiScript).toContain("horizon=7d");
     expect(testAstroApiScript).toContain("Elapsed ms:");
+    expect(testQWeatherScript).toContain("/admin/providers/weather/qweather/test-connection");
+    expect(testQWeatherScript).toContain("/debug/providers");
+    expect(testQWeatherScript).toContain("PHOTO_WEATHER_ADMIN_ACCESS_TOKEN");
   });
 
   it("keeps diagnostic scripts Windows PowerShell 5.1 friendly and ASCII-safe", () => {
     const scripts = [
       readRepoFile("scripts/debug-astro-local.ps1"),
       readRepoFile("scripts/test-astro-forecast-api.ps1"),
+      readRepoFile("scripts/test-qweather-provider.ps1"),
     ];
     const forbiddenSnippets = [
       "??",
@@ -146,7 +154,11 @@ describe("local astro diagnostics scripts", () => {
   });
 
   itOnWindows("parses diagnostic scripts with Windows PowerShell", () => {
-    for (const scriptName of ["debug-astro-local.ps1", "test-astro-forecast-api.ps1"]) {
+    for (const scriptName of [
+      "debug-astro-local.ps1",
+      "test-astro-forecast-api.ps1",
+      "test-qweather-provider.ps1",
+    ]) {
       const scriptPath = join(repoRoot, "scripts", scriptName);
       const command = [
         "$ErrorActionPreference = 'Stop'",

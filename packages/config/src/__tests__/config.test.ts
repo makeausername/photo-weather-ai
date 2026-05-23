@@ -17,7 +17,9 @@ describe("environment config", () => {
     expect(config.serverEnv.ENABLE_REAL_AMAP).toBe(false);
     expect(config.serverEnv.ENABLE_REAL_DEEPSEEK).toBe(false);
     expect(config.serverEnv.DEEPSEEK_DEFAULT_MODEL).toBe("deepseek-v4-flash");
-    expect(config.serverEnv.QWEATHER_API_HOST).toBe("https://devapi.qweather.com");
+    expect(config.serverEnv.QWEATHER_API_HOST).toBeUndefined();
+    expect(config.serverEnv.QWEATHER_LANGUAGE).toBe("zh");
+    expect(config.serverEnv.QWEATHER_UNIT).toBe("metric");
     expect(config.serverEnv.OPEN_METEO_BASE_URL).toBe("https://api.open-meteo.com/v1");
   });
 

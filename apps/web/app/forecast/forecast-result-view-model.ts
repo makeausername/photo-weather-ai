@@ -1582,10 +1582,14 @@ function buildGlowDataNotice(result: ForecastCalculationResult): string {
     (note) => !note.includes("当前天气数据为演示数据"),
   );
   const uniqueNotes = [...new Set(notes)];
+  const modeNotice =
+    result.weatherDataMode === "real"
+      ? "当前天气数据来自已启用的正式数据源，评分仍按标准化天气字段计算。"
+      : "当前为体验模式，结果会使用演示天气数据生成；正式天气数据源启用后将显示对应来源与更新时间。";
 
   return [
     `${weatherText}；${terrainText}；天文数据：${result.astroDataSourceLabelZh}。`,
-    "当前为体验模式，结果会使用演示天气数据生成；正式天气数据源启用后将显示对应来源与更新时间。",
+    modeNotice,
     ...uniqueNotes,
   ].join("");
 }
@@ -2345,11 +2349,16 @@ function buildAstroDataNotice(result: ForecastCalculationResult): string {
     ? "；当前天气源缺少低云/中云/高云分层数据，星空银河判断置信度会降低。"
     : "";
 
+  const weatherNotice =
+    result.weatherDataMode === "real"
+      ? "当前天气数据来自已启用的正式数据源，星空银河判断仍需结合现场环境复核。"
+      : "当前结果基于演示天气数据生成，用于体验分析流程，正式出行前需要复核真实预报和现场环境。";
+
   return `天文数据：${result.astroDataSourceLabelZh}；天气数据：${weatherStatusLabelForViewModel(
     result,
   )}；地形数据：${result.terrainAnalysis.dataSourceLabelZh}；光污染数据：暂未接入。${
     result.terrainAnalysis.honestyNoteZh
-  }当前结果基于演示天气数据生成，用于体验分析流程，正式出行前需要复核真实预报和现场环境。${cloudLayerNote}`;
+  }${weatherNotice}${cloudLayerNote}`;
 }
 
 function buildCloudLayerMissingItem(

@@ -42,9 +42,11 @@ describe("weather runtime resolvers", () => {
         ...baseQWeatherProvider,
         configJson: {
           realCallEnabled: true,
-          apiHost: "https://admin.qweather.example",
+          apiHost: "https://admin.qweather.example/",
           timeoutMs: 9000,
           retryCount: 2,
+          language: "en",
+          unit: "imperial",
         },
         secretJson: {
           apiKey: "qweather-admin-secret",
@@ -63,10 +65,13 @@ describe("weather runtime resolvers", () => {
       enabled: true,
       realCallEnabled: true,
       apiKeyPresent: true,
-      apiHost: "https://admin.qweather.example",
+      apiHostPresent: true,
+      apiHost: "admin.qweather.example",
       baseUrl: "https://admin.qweather.example",
       timeoutMs: 9000,
       retryCount: 2,
+      language: "en",
+      unit: "imperial",
       modeLabelZh: "真实服务",
     });
     expect(JSON.stringify(config)).not.toContain("qweather-admin-secret");
@@ -79,7 +84,7 @@ describe("weather runtime resolvers", () => {
       WEATHER_PROVIDER: "qweather",
       WEATHER_PROVIDER_MODE: "real",
       QWEATHER_API_KEY: "qweather-env-secret",
-      QWEATHER_API_HOST: "https://env.qweather.example",
+      QWEATHER_API_HOST: "https://env.qweather.example/",
       QWEATHER_TIMEOUT_MS: "12000",
       QWEATHER_RETRY_COUNT: "3",
     });
@@ -87,10 +92,36 @@ describe("weather runtime resolvers", () => {
     expect(config).toMatchObject({
       realCallEnabled: true,
       apiKeyPresent: true,
-      apiHost: "https://env.qweather.example",
+      apiHostPresent: true,
+      apiHost: "env.qweather.example",
       baseUrl: "https://env.qweather.example",
       timeoutMs: 12000,
       retryCount: 3,
+      language: "zh",
+      unit: "metric",
+    });
+  });
+
+  it("keeps an empty admin QWeather API Host empty instead of falling back to env", () => {
+    const config = resolveQWeatherRuntimeConfig(
+      {
+        ...baseQWeatherProvider,
+        configJson: {
+          realCallEnabled: true,
+          apiHost: "",
+        },
+      },
+      {
+        NODE_ENV: "development",
+        QWEATHER_API_HOST: "env.qweather.example",
+      },
+    );
+
+    expect(config).toMatchObject({
+      realCallEnabled: true,
+      apiHostPresent: false,
+      apiHost: "",
+      baseUrl: "",
     });
   });
 
@@ -110,7 +141,7 @@ describe("weather runtime resolvers", () => {
     );
 
     expect(config.realCallEnabled).toBe(false);
-    expect(config.modeLabelZh).toBe("模拟测试");
+    expect(config.modeLabelZh).toBe("演示模式");
   });
 
   it("supports optional Open-Meteo key and customer endpoint config", () => {
@@ -144,12 +175,18 @@ describe("weather runtime resolvers", () => {
   });
 
   it("normalizes weather admin config with safe advanced defaults", () => {
-    expect(normalizeQWeatherAdminConfigJson({ realCallEnabled: true })).toMatchObject({
+    expect(
+      normalizeQWeatherAdminConfigJson({
+        realCallEnabled: true,
+        apiHost: "https://admin.qweatherapi.com/",
+      }),
+    ).toMatchObject({
       realCallEnabled: true,
-      apiHost: "https://devapi.qweather.com",
-      baseUrl: "https://devapi.qweather.com",
-      timeoutMs: 8000,
+      apiHost: "admin.qweatherapi.com",
+      timeoutMs: 10000,
       retryCount: 1,
+      language: "zh",
+      unit: "metric",
     });
 
     expect(normalizeOpenMeteoAdminConfigJson({ customerEndpoint: "" })).toEqual({

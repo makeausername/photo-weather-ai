@@ -47,7 +47,8 @@ describe("provider field presets", () => {
       ]),
     );
 
-    expect(getProviderFieldPreset("qweather")?.fields).toEqual(
+    const qweatherFields = getProviderFieldPreset("qweather")?.fields;
+    expect(qweatherFields).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ key: "realCallEnabled", target: "configJson" }),
         expect.objectContaining({
@@ -55,10 +56,13 @@ describe("provider field presets", () => {
           label: "和风天气 API Key",
           target: "secretJson",
         }),
-        expect.objectContaining({ key: "apiHost", target: "configJson", advanced: true }),
+        expect.objectContaining({ key: "apiHost", target: "configJson" }),
         expect.objectContaining({ key: "timeoutMs", target: "configJson", advanced: true }),
+        expect.objectContaining({ key: "language", target: "configJson", advanced: true }),
+        expect.objectContaining({ key: "unit", target: "configJson", advanced: true }),
       ]),
     );
+    expect(qweatherFields?.find((field) => field.key === "apiHost")?.advanced).toBeUndefined();
 
     expect(getProviderFieldPreset("open_meteo")?.fields).toEqual(
       expect.arrayContaining([

@@ -118,10 +118,17 @@ export type MockConnectionTestResult = {
   readonly success: boolean;
   readonly mode: "mock" | "fixture" | "real" | "fast" | "professional";
   readonly connectionMode?: "mock" | "fixture" | "real";
+  readonly provider?: string;
   readonly model?: string;
+  readonly apiHost?: string;
+  readonly statusCode?: number;
+  readonly qweatherCode?: string;
+  readonly location?: string;
+  readonly observedWeatherSummary?: string;
   readonly latencyMs?: number;
   readonly providerType?: string;
   readonly providerCode?: string;
+  readonly messageZh?: string;
   readonly message: string;
 };
 

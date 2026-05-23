@@ -29,6 +29,7 @@ import {
 import type { DatabaseClient, JsonValue, ProviderType } from "@photo-weather/db";
 import { MockGeoProvider, validateCoordinates } from "@photo-weather/geo";
 import type { GeoProvider } from "@photo-weather/geo";
+import { maskQWeatherApiHost, QWeatherClient } from "@photo-weather/weather";
 import { z } from "zod";
 import type { AuthConfig } from "./auth-routes.js";
 import { requirePermission } from "./auth-routes.js";
@@ -241,6 +242,18 @@ export type AdminRoutesOptions = {
 
 function toAuditJson(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue;
+}
+
+function isLocalDevelopment(env: NodeJS.ProcessEnv): boolean {
+  return env.NODE_ENV !== "production";
+}
+
+function sanitizeProviderErrorMessage(message: string, secret: string | undefined): string {
+  if (!secret) {
+    return message;
+  }
+
+  return message.split(secret).join("[redacted]");
 }
 
 function groupBy<TItem, TKey extends string>(
@@ -772,8 +785,16 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
               connectionMode: "mock",
               providerType: request.params.providerType,
               providerCode: request.params.providerCode,
-              message: "当前为模拟测试，未请求真实天气服务。",
+              message: "当前为演示测试，未请求和风天气服务。",
             };
+          }
+
+          if (!runtimeConfig.apiKeyPresent || !runtimeConfig.apiKey) {
+            return sendError(reply, 400, "provider_key_missing", "请先填写和风天气 API Key。");
+          }
+
+          if (!runtimeConfig.apiHostPresent || !runtimeConfig.apiHost) {
+            return sendError(reply, 400, "provider_host_missing", "请先填写和风天气 API Host。");
           }
 
           if (!runtimeConfig.enabled) {
@@ -785,18 +806,44 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
             );
           }
 
-          if (!runtimeConfig.apiKeyPresent) {
-            return sendError(reply, 400, "provider_key_missing", "请先填写和风天气 API Key。");
-          }
+          try {
+            const qweatherClient = new QWeatherClient({
+              apiKey: runtimeConfig.apiKey,
+              apiHost: runtimeConfig.apiHost,
+              timeoutMs: runtimeConfig.timeoutMs,
+              retryCount: runtimeConfig.retryCount,
+              language: runtimeConfig.language,
+              unit: runtimeConfig.unit,
+            });
+            const result = await qweatherClient.testConnection();
 
-          return {
-            success: true,
-            mode: "real",
-            connectionMode: "real",
-            providerType: request.params.providerType,
-            providerCode: request.params.providerCode,
-            message: "和风天气真实连接测试尚未接入，已完成本地配置校验，未请求真实天气服务。",
-          };
+            return {
+              success: result.success,
+              mode: "real",
+              connectionMode: "real",
+              provider: "qweather",
+              providerType: request.params.providerType,
+              providerCode: request.params.providerCode,
+              apiHost: maskQWeatherApiHost(runtimeConfig.apiHost),
+              statusCode: result.statusCode,
+              qweatherCode: result.qweatherCode,
+              location: result.location,
+              observedWeatherSummary: result.observedWeatherSummary,
+              latencyMs: result.latencyMs,
+              messageZh: result.messageZh,
+              message: result.messageZh,
+            };
+          } catch (error) {
+            return sendError(
+              reply,
+              503,
+              "provider_test_failed",
+              sanitizeProviderErrorMessage(
+                (error as Error).message || "和风天气连接测试失败。",
+                runtimeConfig.apiKey,
+              ),
+            );
+          }
         }
 
         if (request.params.providerCode === "open_meteo") {
@@ -851,6 +898,24 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       };
     },
   );
+
+  if (isLocalDevelopment(env)) {
+    app.get("/debug/providers", async () => {
+      const qweather = await readRuntimeQWeatherConfig({ dbClient: client, env });
+
+      return {
+        qweather: {
+          enabled: qweather.enabled,
+          realCallEnabled: qweather.realCallEnabled,
+          apiKeyPresent: qweather.apiKeyPresent,
+          apiHostPresent: qweather.apiHostPresent,
+          apiHost: maskQWeatherApiHost(qweather.apiHost),
+          timeoutMs: qweather.timeoutMs,
+          retryCount: qweather.retryCount,
+        },
+      };
+    });
+  }
 
   app.get("/admin/locations", async (request, reply) => {
     const auth = await requirePermission(request, reply, client, authConfig, "locations.manage");

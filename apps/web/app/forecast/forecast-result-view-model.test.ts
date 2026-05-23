@@ -1725,6 +1725,23 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.dataNotice).toContain("当前结果基于演示天气数据生成");
   });
 
+  it("can show QWeather as the weather source when a real weather bundle is used", () => {
+    const viewModel = buildForecastResultViewModel(
+      {
+        ...resultForTarget("glow"),
+        weatherDataMode: "real",
+        weatherProviderCode: "qweather",
+        weatherProviderLabelZh: "和风天气",
+        dataSourceLabel: "和风天气",
+        weatherNoticeZh: "天气数据：和风天气",
+      },
+      "glow",
+    );
+
+    expect(viewModel.dataNotice).toContain("天气数据：和风天气");
+    expect(viewModel.dataNotice).not.toContain("演示天气数据生成");
+  });
+
   it("shows a compact note when cloud layer fields are missing", () => {
     const viewModel = buildForecastResultViewModel(
       {
