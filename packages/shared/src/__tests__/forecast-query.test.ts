@@ -21,6 +21,12 @@ const validForecastQuery = {
 describe("forecast query schema", () => {
   it("accepts the public forecast query contract", () => {
     expect(forecastQueryInputSchema.parse(validForecastQuery)).toEqual(validForecastQuery);
+    expect(
+      forecastQueryInputSchema.parse({
+        ...validForecastQuery,
+        elevationMeters: 1860,
+      }).elevationMeters,
+    ).toBe(1860);
   });
 
   it("rejects unsupported forecast horizons and targets", () => {

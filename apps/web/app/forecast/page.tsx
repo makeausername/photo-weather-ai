@@ -21,6 +21,15 @@ function parseNumberParam(value: string | undefined): number {
   return value === undefined || value.trim() === "" ? Number.NaN : Number(value);
 }
 
+function parseOptionalNumberParam(value: string | undefined): number | undefined {
+  if (value === undefined || value.trim() === "") {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 export default function ForecastPage({ searchParams }: ForecastPageProps) {
   const latitudeWgs84 = parseNumberParam(firstParam(searchParams.latWgs84));
   const longitudeWgs84 = parseNumberParam(firstParam(searchParams.lngWgs84));
@@ -34,6 +43,7 @@ export default function ForecastPage({ searchParams }: ForecastPageProps) {
       longitudeWgs84,
       horizon: firstParam(searchParams.horizon),
       target: firstParam(searchParams.target),
+      elevationMeters: parseOptionalNumberParam(firstParam(searchParams.elevationMeters)),
       scenario: firstParam(searchParams.scenario),
       locationId: firstParam(searchParams.locationId),
       photoSpotId: firstParam(searchParams.photoSpotId),

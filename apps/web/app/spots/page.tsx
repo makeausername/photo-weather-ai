@@ -1,20 +1,21 @@
 import type { Metadata } from "next";
-import { PublicModulePage } from "../../components/public-module-page";
+import { PublicShell } from "../../components/public-shell";
+import { PageHeader } from "../../components/ui";
+import { SpotLibraryClient } from "./spot-library-client";
 
 export const metadata: Metadata = {
-  title: "摄影机位库 - 逐光天气",
+  title: "机位库 - 逐光天气",
+  description: "按题材、地区和地形条件筛选适合风光摄影的拍摄机位。",
 };
 
 export default function SpotsPage() {
   return (
-    <PublicModulePage
-      title="摄影机位库"
-      description="摄影机位库即将开放。这里会集中整理常用风光摄影地点、机位方向、海拔、通行方式、安全备注和适合题材。"
-      highlights={[
-        "按地区、题材和季节整理适合拍摄的机位资料。",
-        "为每个机位保留经纬度、海拔、朝向、交通和风险说明。",
-        "收藏常用机位，并与拍摄天气分析联动。",
-      ]}
-    />
+    <PublicShell contentClassName="grid gap-5 pb-14">
+      <PageHeader
+        title="机位库"
+        description="按题材、地区和地形条件筛选适合拍摄云海、霞光、星空与银河的风光摄影机位。"
+      />
+      <SpotLibraryClient />
+    </PublicShell>
   );
 }

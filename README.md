@@ -33,13 +33,14 @@ These documents define the strategic product boundary for 逐光天气. Future C
 - 云海页将云海机会、白墙风险和出行推荐拆成独立确定性输出，并把地形/海拔证据、天气证据、低云分层缺失提示和数据状态作为独立模块；真实天气和真实 DEM 接入前，天气与地形仍可能显示为演示数据或样例数据。
 - Astro Calculation Service V1：新增 `apps/astro-service`，使用 FastAPI、Pydantic、Skyfield、zoneinfo 和本地 `de421.bsp` 计算星空银河所需天文窗口；运行时不调用在线天文 API，不使用 DeepSeek / AI 计算天文结果。
 - Product Copy Polish V1：公开首页、专题页、结果页、账户空状态和后台服务商配置已去除开发味提示；公开数据状态使用“天气数据：演示数据”“地形数据：演示数据”“天文数据：本地天文服务计算”或“天文数据：简化本地估算”等产品化表达，并保留产品化的数据诚实说明。
-- Scenario Module Pages V1：`/cloud-sea`、`/glow`、`/astro` 已升级为云海、朝霞晚霞、星空银河专项入口页，复用地点搜索、预报范围选择和 forecast 查询跳转流程；`/spots` 和 `/pricing` 使用“即将开放”型中文产品页。
+- Scenario Module Pages V1：`/cloud-sea`、`/glow`、`/astro` 已升级为云海、朝霞晚霞、星空银河专项入口页，复用地点搜索、预报范围选择和 forecast 查询跳转流程；`/spots` 已升级为机位库 V1，`/pricing` 仍使用“即将开放”型中文产品页。
+- Spot Library V1：`/spots` 提供公开机位库列表，支持关键词、题材、地区、海拔和数据状态筛选；`/spots/[slug]` 提供机位详情页；机位卡片和详情页都可直接生成 `/forecast` 快速分析链接，并携带名称、`source=local_photo_spot`、GCJ-02 坐标、WGS84 坐标、`photoSpotId`、`elevationMeters`、`horizon` 和 `target`。
 - Public User Auth V1：`/login` 支持邮箱密码登录，`/register` 支持邮箱密码注册，`/auth/register` 会创建普通 `user` 角色账户并返回安全用户数据；短信登录暂未开放。
 - Account Center Foundation V1：`/account` 使用公开产品 shell，未登录时显示登录提示；已登录时展示账户概览、我的查询、收藏机位、报告管理、套餐权益和安全设置。查询历史、收藏机位、报告管理和权益显示中文空状态或“即将开放”，不接入支付、订阅或计费。
 - 管理后台入口只在具备 `admin` / `super_admin` 角色或 `admin.manage` 权限的账户菜单、账户中心中显示；公开导航不展示顶层“管理后台”或单独“登录”主入口。
 - 公开地点搜索：`GET /search/places?q=` 会先查本地地点和摄影机位，再使用当前 GeoProvider 返回标准化地点结果。
 - 公开搜索选择态：选择地点后展示地点名称、地址 / 城市信息、数据来源、GCJ-02 / WGS84 经纬度、验证状态和本地机位匹配状态。
-- 公开 forecast 查询基础：首页作为综合判断快速入口，只选择地点和预报范围并固定 `target=general`；云海、朝霞晚霞、星空银河专项分析由顶部导航进入对应专题页。下一步跳转 `/forecast`，URL 中显式携带地点名称、来源、GCJ-02 坐标、WGS84 坐标、预报范围、分析目标以及可用的本地地点 / 机位 ID。
+- 公开 forecast 查询基础：首页作为综合判断快速入口，只选择地点和预报范围并固定 `target=general`；云海、朝霞晚霞、星空银河专项分析由顶部导航进入对应专题页。下一步跳转 `/forecast`，URL 中显式携带地点名称、来源、GCJ-02 坐标、WGS84 坐标、可用海拔、预报范围、分析目标以及可用的本地地点 / 机位 ID。
 - Forecast 计算核心 V1：已定义标准化小时天气、日天气、地形摘要、天文摘要、计算依据、逐日摘要、目标逐日拆解、计算输入和计算结果契约，`packages/calendar` 统一生成预报时间范围和中国本地日历信息，`packages/scoring` 提供演示天气/地形数据构造器、标准化天气输入 builder、本地天文摘要和可解释 rule-based 评分计算器。
 - Weather Provider Normalization V1：`packages/weather` 提供 `WeatherProvider`、`WeatherDataService`、`WeatherDataBundle`、`MockWeatherProvider`、QWeather fixture adapter 和 Open-Meteo fixture adapter；本地和测试默认只使用 mock / fixture，不调用真实 QWeather 或 Open-Meteo。
 - Terrain Core V1：`packages/terrain` 已提供地形/海拔类型契约、地形 provider 接口、演示地形数据 provider、周边高差计算、云海地形潜力分类和地平线遮挡基础；正式海拔与 DEM 数据接入后将用于提升云海和遮挡判断。
@@ -155,15 +156,23 @@ These documents define the strategic product boundary for 逐光天气. Future C
 - 朝霞晚霞
 - 星空银河
 
-当前查询契约由 `@photo-weather/shared` 中的 `forecastQueryInputSchema` 维护，前端 URL 会显式携带地点名称、来源、GCJ-02 坐标、WGS84 坐标、预报范围、分析目标以及可用的本地地点 / 机位 ID。`POST /forecast/calculate` 会先复用该 schema 校验输入，再构造 `ForecastCalculationInput` 并返回 `ForecastCalculationResult`；可选 `useAiExplanation=true` 时会附带规则兜底解读，只有后台 `ai/deepseek` 启用真实调用且 Key 已保存时才尝试 DeepSeek。结果页按钮调用 `POST /forecast/ai-explain`，不会在页面加载时自动调用 DeepSeek。
+当前查询契约由 `@photo-weather/shared` 中的 `forecastQueryInputSchema` 维护，前端 URL 会显式携带地点名称、来源、GCJ-02 坐标、WGS84 坐标、预报范围、分析目标、可用的海拔以及可用的本地地点 / 机位 ID。`POST /forecast/calculate` 会先复用该 schema 校验输入，再构造 `ForecastCalculationInput` 并返回 `ForecastCalculationResult`；可选 `useAiExplanation=true` 时会附带规则兜底解读，只有后台 `ai/deepseek` 启用真实调用且 Key 已保存时才尝试 DeepSeek。结果页按钮调用 `POST /forecast/ai-explain`，不会在页面加载时自动调用 DeepSeek。
 
 Scenario Module Pages V1：
 
 - `/cloud-sea` 云海判断：固定 `target=cloud_sea`，默认 `horizon=48h`。
 - `/glow` 朝霞晚霞：固定 `target=glow`，默认 `horizon=72h`。
 - `/astro` 星空银河：固定 `target=astro`，默认 `horizon=7d`。
-- 三个页面都复用公开地点搜索和 `/forecast` 查询 URL 构造，跳转时保留地点名称、来源、GCJ-02 坐标、WGS84 坐标、`locationId`、`photoSpotId`、`horizon` 和 `target`。
+- 三个页面都复用公开地点搜索和 `/forecast` 查询 URL 构造，跳转时保留地点名称、来源、GCJ-02 坐标、WGS84 坐标、可用海拔、`locationId`、`photoSpotId`、`horizon` 和 `target`。
 - 专项分析由这些导航模块承载，不通过首页题材选择器进入。
+
+Spot Library V1：
+
+- `/spots` 是公开机位库页面，不是占位列表；当前展示黄山光明顶、老君山金顶、三清山女神峰和武功山金顶等本地种子机位。
+- `/spots/[slug]` 是机位详情页，展示海拔、WGS84 坐标、GCJ-02 坐标、适合题材、推荐方向、数据完整度、到达与安全提醒和各题材判断价值。
+- 机位库快速入口支持综合判断、云海、朝霞晚霞和星空银河，统一跳转 `/forecast`，并保留 WGS84 坐标、GCJ-02 坐标、`photoSpotId` 和可用的 `elevationMeters`。
+- 天文计算只使用 WGS84 坐标；GCJ-02 坐标保留给后续地图展示和位置校对。
+- 公开数据状态使用“演示数据”“待完善”“已校准”，不在公开机位页面使用开发态标签。
 - `/forecast` 会根据 `target` 塑造结果视图：综合判断展示全模块；云海页不把星空/银河作为主模块；霞光页不展示星空/银河评分主网格；星空银河页不把云海或白天霞光作为主推荐。
 - `/forecast` 会按所选 horizon 返回 `dailySummaries`、`targetDailyBreakdown` 和跨范围 `bestWindows`；7d 结果展示多日摘要，24h / 48h / 72h / 7d 都使用同一组 `forecastStart` / `forecastEnd` / `targetDates`。
 - 星空银河结果页在观测判断内容下方提供“月相日历”，支持查看当前整月月相、月亮照明和主要月相日期，并可在前后月份之间切换。

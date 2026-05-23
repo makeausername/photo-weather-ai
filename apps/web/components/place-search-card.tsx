@@ -170,6 +170,10 @@ export function buildForecastUrl(
     params.set("photoSpotId", place.matchedPhotoSpotId);
   }
 
+  if (typeof place.elevation === "number" && Number.isFinite(place.elevation)) {
+    params.set("elevationMeters", String(place.elevation));
+  }
+
   return `/forecast?${params.toString()}`;
 }
 

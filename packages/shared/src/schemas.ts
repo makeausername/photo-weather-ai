@@ -114,6 +114,7 @@ export const forecastQueryInputSchema = z.object({
   longitudeWgs84: longitudeSchema,
   horizon: forecastHorizonSchema,
   target: forecastTargetSchema,
+  elevationMeters: z.number().finite().optional(),
   locationId: z.string().trim().min(1).max(120).optional(),
   photoSpotId: z.string().trim().min(1).max(120).optional(),
 });

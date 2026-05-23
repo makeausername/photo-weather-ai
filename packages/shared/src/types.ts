@@ -55,6 +55,7 @@ export type ForecastQueryInput = {
   readonly longitudeWgs84: number;
   readonly horizon: ForecastHorizon;
   readonly target: ForecastTarget;
+  readonly elevationMeters?: number;
   readonly locationId?: string;
   readonly photoSpotId?: string;
 };
