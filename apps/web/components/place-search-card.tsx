@@ -430,7 +430,7 @@ export function PlaceSearchCard({
 
         {fixedTarget ? (
           <div className="rounded-lg border border-border bg-muted p-3">
-            <p className="text-xs font-semibold text-muted-foreground">分析目标</p>
+            <p className="text-xs font-semibold text-muted-foreground">固定分析目标</p>
             <p className="mt-1 text-sm font-bold text-card-foreground">
               {forecastTargetLabels[fixedTarget]}
             </p>

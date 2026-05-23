@@ -85,6 +85,27 @@ describe("scenario module pages", () => {
     expect(html).toContain("正式数据源启用后将显示对应来源与更新时间");
   });
 
+  it("renders the glow entry page without the popular spot placeholder", () => {
+    const html = renderToStaticMarkup(React.createElement(GlowPage));
+
+    expect(html).not.toContain("热门朝霞晚霞机位");
+    expect(html).not.toContain("热门朝霞机位");
+    expect(html).not.toContain("热门晚霞机位");
+    expect(html).toContain("地点搜索与机位选择");
+    expect(html).toContain("常用机位");
+    expect(html).toContain("预报范围选择");
+    expect(html).toContain("固定分析目标");
+    expect(html).toContain("查看朝霞晚霞判断");
+    expect(html).toContain("朝霞晚霞判断需要看什么");
+    expect(html).toContain("日出日落时间");
+    expect(html).toContain("中高云条件");
+    expect(html).toContain("低云遮挡风险");
+    expect(html).toContain("能见度与通透度");
+    expect(html).toContain("地形遮挡");
+    expect(html).toContain("风与降水");
+    expect(html).toContain("当前为体验模式，结果会使用演示天气数据生成");
+  });
+
   it("builds complete forecast query URLs for each scenario CTA", () => {
     for (const config of scenarioPageConfigs) {
       const url = new URL(
@@ -118,7 +139,9 @@ describe("scenario module pages", () => {
     expect(serialized).not.toContain("热门云海机位");
     expect(serialized).toContain("云海判断需要看什么");
     expect(serialized).toContain("湿度、露点差、低云和地形高差共同影响云海形成。");
-    expect(serialized).toContain("热门朝霞晚霞机位");
+    expect(serialized).not.toContain("热门朝霞晚霞机位");
+    expect(serialized).not.toContain("热门朝霞机位");
+    expect(serialized).not.toContain("热门晚霞机位");
     expect(serialized).toContain("热门星空银河机位");
     expect(serialized).toContain("天气与地形结果使用演示数据生成");
     expect(serialized).not.toMatch(/coming soon|placeholder|todo|mock|fixture/i);

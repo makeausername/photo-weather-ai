@@ -202,11 +202,12 @@ describe("mock forecast input builder", () => {
     ).toHaveLength(7);
 
     expect(
-      glowResult.bestWindows.filter((window) => window.label.startsWith("朝霞窗口")).length,
+      glowResult.bestWindows.filter((window) => window.label.startsWith("朝霞")).length,
     ).toBeGreaterThanOrEqual(7);
     expect(
-      glowResult.bestWindows.filter((window) => window.label.startsWith("晚霞窗口")).length,
+      glowResult.bestWindows.filter((window) => window.label.startsWith("晚霞")).length,
     ).toBeGreaterThanOrEqual(7);
+    expect(glowResult.glowAnalysis.dailyGlow).toHaveLength(7);
 
     expect(
       astroResult.bestWindows.filter((window) => window.label.startsWith("天文黑夜")).length,

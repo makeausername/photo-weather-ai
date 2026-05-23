@@ -8,6 +8,11 @@ import {
   type ForecastScore,
   type ForecastTarget,
   type ForecastTimeWindow,
+  type GlowAnalysisResult,
+  type GlowBackupPlan,
+  type GlowBestTarget,
+  type GlowEvidenceItem,
+  type GlowWindow,
 } from "@photo-weather/shared";
 
 export type ForecastResultModuleKey =
@@ -109,6 +114,7 @@ export type ForecastResultViewModel = {
   readonly hiddenModuleKeys: readonly ForecastResultModuleKey[];
   readonly dataNotice: string;
   readonly cloudSea?: CloudSeaForecastViewModel;
+  readonly glow?: GlowForecastViewModel;
 };
 
 export type CloudSeaDailyTrendItem = {
@@ -193,6 +199,52 @@ export type CloudSeaForecastViewModel = {
   readonly travelRecommendations: readonly CloudSeaTravelRecommendation[];
   readonly riskSummary: readonly ForecastResultSectionItem[];
   readonly backupPlans: readonly CloudSeaBackupPlan[];
+  readonly missingDataNotes: readonly string[];
+  readonly dataNotice: string;
+};
+
+export type GlowDailyTrendItem = {
+  readonly key: string;
+  readonly date: string;
+  readonly dateLabel: string;
+  readonly sunriseScore: number;
+  readonly sunsetScore: number;
+  readonly bestWindowLabel: string;
+  readonly bestTargetLabel: string;
+  readonly recommendationLabel: GlowAnalysisResult["recommendationLabel"];
+  readonly keyReason: string;
+  readonly riskNote: string;
+};
+
+export type GlowWindowItem = {
+  readonly key: string;
+  readonly type: GlowWindow["type"];
+  readonly label: string;
+  readonly timeRangeLabel: string;
+  readonly score: number;
+  readonly riskTags: readonly string[];
+  readonly note: string;
+  readonly tone: ForecastResultCardTone;
+};
+
+export type GlowEvidenceViewItem = {
+  readonly key: string;
+  readonly label: string;
+  readonly value: string;
+  readonly detail: string;
+  readonly tone: ForecastResultCardTone;
+};
+
+export type GlowForecastViewModel = {
+  readonly coreCards: readonly ForecastResultCard[];
+  readonly dailyTrend: readonly GlowDailyTrendItem[];
+  readonly glowWindows: readonly GlowWindowItem[];
+  readonly cloudLayerEvidence: readonly GlowEvidenceViewItem[];
+  readonly visibilityEvidence: readonly GlowEvidenceViewItem[];
+  readonly terrainObstructionEvidence: readonly GlowEvidenceViewItem[];
+  readonly travelRecommendations: readonly string[];
+  readonly riskReasons: readonly string[];
+  readonly backupPlans: readonly GlowBackupPlan[];
   readonly missingDataNotes: readonly string[];
   readonly dataNotice: string;
 };
@@ -432,11 +484,77 @@ function buildCloudSeaViewModel(result: ForecastCalculationResult): ForecastResu
   };
 }
 
+export function buildGlowForecastViewModel(result: ForecastCalculationResult): GlowForecastViewModel {
+  const analysis = result.glowAnalysis;
+  const bestWindow = analysis.bestGlowWindows[0];
+  const lowCloudRiskLabel = glowRiskLabel(analysis.lowCloudObstructionRisk);
+  const recommendedAction = firstText(
+    analysis.travelRecommendations,
+    "建议结合朝霞、晚霞和现场云层变化灵活安排。",
+  );
+
+  return {
+    coreCards: [
+      scoreCard(
+        "glow-sunrise-opportunity",
+        "sunriseGlow",
+        "朝霞机会",
+        `${analysis.sunriseGlowScore} 分`,
+        firstText(
+          result.scores.sunriseGlow.reasons,
+          "按日出前后中高云、低云遮挡、通透度和地形遮挡折算。",
+        ),
+        "accent",
+        analysis.sunriseGlowScore,
+      ),
+      scoreCard(
+        "glow-sunset-opportunity",
+        "sunsetGlow",
+        "晚霞机会",
+        `${analysis.sunsetGlowScore} 分`,
+        firstText(
+          result.scores.sunsetGlow.reasons,
+          "按日落前后中高云承载、低云遮挡、降水和通透度折算。",
+        ),
+        "accent",
+        analysis.sunsetGlowScore,
+      ),
+      textCard(
+        "glow-best-window",
+        "bestWindow",
+        "最佳霞光窗口",
+        bestWindow ? `${windowDateLabel(result, bestWindow.date)} ${bestWindow.labelZh}` : "暂无精确霞光窗口",
+        bestWindow
+          ? `${formatWindow(bestWindow.start, bestWindow.end)}，${bestWindow.noteZh}`
+          : "缺少日出日落时间时，不生成精确霞光窗口。",
+        "primary",
+      ),
+      textCard(
+        "glow-main-action",
+        "risk",
+        "主要遮挡风险 / 推荐动作",
+        `${lowCloudRiskLabel}（${analysis.lowCloudObstructionRisk} 分）`,
+        recommendedAction,
+        analysis.lowCloudObstructionRisk >= 70 ? "danger" : "info",
+      ),
+    ],
+    dailyTrend: buildGlowDailyTrend(result, analysis),
+    glowWindows: buildGlowWindowItems(result, analysis),
+    cloudLayerEvidence: mapGlowEvidence(analysis.cloudLayerEvidence),
+    visibilityEvidence: mapGlowEvidence(analysis.visibilityEvidence),
+    terrainObstructionEvidence: mapGlowEvidence(analysis.terrainObstructionEvidence),
+    travelRecommendations: analysis.travelRecommendations,
+    riskReasons: analysis.riskReasons,
+    backupPlans: analysis.backupPlans,
+    missingDataNotes: analysis.missingDataNotes,
+    dataNotice: buildGlowDataNotice(result),
+  };
+}
+
 function buildGlowViewModel(result: ForecastCalculationResult): ForecastResultViewModel {
   const shellCopy = targetShellCopies.glow;
-  const astro = firstAstro(result);
+  const glow = buildGlowForecastViewModel(result);
   const glowWindows = result.bestWindows.filter((window) => window.target === "glow");
-  const bestGlowWindow = firstWindow(glowWindows);
   const glowAdvice = buildGlowAdvice(result);
   const resultWindows = mapResultWindows(glowWindows);
 
@@ -446,51 +564,8 @@ function buildGlowViewModel(result: ForecastCalculationResult): ForecastResultVi
     pageTitle: shellCopy.pageTitle,
     pageSubtitle: shellCopy.pageSubtitle,
     primarySummary: `本页优先看朝霞、晚霞、晨昏时间和云层遮挡。${result.summary}`,
-    recommendationLabel: result.recommendationLabel,
-    primaryCards: [
-      scoreCard(
-        "sunrise-glow-score",
-        "sunriseGlow",
-        "朝霞机会",
-        `${result.scores.sunriseGlow.score}`,
-        "重点看日出前后的中高云、低云遮挡和通透度。",
-        "accent",
-        result.scores.sunriseGlow.score,
-      ),
-      scoreCard(
-        "sunset-glow-score",
-        "sunsetGlow",
-        "晚霞机会",
-        `${result.scores.sunsetGlow.score}`,
-        "重点看日落前后的中高云承载和降水风险。",
-        "accent",
-        result.scores.sunsetGlow.score,
-      ),
-      textCard(
-        "sunrise-time",
-        "twilight",
-        "日出时间",
-        formatOptionalTime(astro?.sunrise),
-        "建议日出前 45-60 分钟到位。",
-        "info",
-      ),
-      textCard(
-        "sunset-time",
-        "twilight",
-        "日落时间",
-        formatOptionalTime(astro?.sunset),
-        "建议日落前 60-90 分钟观察云层。",
-        "info",
-      ),
-      textCard(
-        "best-glow-window",
-        "bestWindow",
-        "最佳霞光窗口",
-        bestGlowWindow?.label ?? "暂无明确霞光窗口",
-        bestGlowWindow?.timeRangeLabel ?? "继续观察日出日落方向云层。",
-        "accent",
-      ),
-    ],
+    recommendationLabel: result.glowAnalysis.recommendationLabel,
+    primaryCards: glow.coreCards,
     scoreCards: [result.scores.sunriseGlow, result.scores.sunsetGlow, result.scores.transparency],
     bestWindows: resultWindows,
     ...buildHorizonViewFields(result, resultWindows),
@@ -517,7 +592,8 @@ function buildGlowViewModel(result: ForecastCalculationResult): ForecastResultVi
       "astronomicalNight",
       "moon",
     ],
-    dataNotice: buildDataNotice(result),
+    dataNotice: glow.dataNotice,
+    glow,
   };
 }
 
@@ -1336,6 +1412,98 @@ function scoreSection(
       ...riskItemsFromScore(score, "风险"),
     ],
   };
+}
+
+function buildGlowDailyTrend(
+  result: ForecastCalculationResult,
+  analysis: GlowAnalysisResult,
+): readonly GlowDailyTrendItem[] {
+  return analysis.dailyGlow.map((day) => ({
+    key: day.date,
+    date: day.date,
+    dateLabel: day.dateLabelZh,
+    sunriseScore: day.sunriseScore,
+    sunsetScore: day.sunsetScore,
+    bestWindowLabel: day.bestWindow
+      ? `${day.bestWindow.labelZh} ${formatWindow(day.bestWindow.start, day.bestWindow.end)}`
+      : "暂无精确霞光窗口",
+    bestTargetLabel: glowBestTargetLabel(day.bestTarget),
+    recommendationLabel: day.recommendationLabel,
+    keyReason: day.keyReason,
+    riskNote: day.riskNote,
+  }));
+}
+
+function buildGlowWindowItems(
+  result: ForecastCalculationResult,
+  analysis: GlowAnalysisResult,
+): readonly GlowWindowItem[] {
+  return [...analysis.bestGlowWindows]
+    .sort((left, right) => Date.parse(left.start) - Date.parse(right.start))
+    .map((window) => ({
+      key: `${window.type}-${window.start}-${window.labelZh}`,
+      type: window.type,
+      label: `${windowDateLabel(result, window.date)} ${window.labelZh}`,
+      timeRangeLabel: formatWindow(window.start, window.end),
+      score: window.score,
+      riskTags: window.riskTags,
+      note: window.noteZh,
+      tone: window.score >= 75 ? "primary" : window.score >= 60 ? "accent" : "muted",
+    }));
+}
+
+function mapGlowEvidence(items: readonly GlowEvidenceItem[]): readonly GlowEvidenceViewItem[] {
+  return items.map((item) => ({
+    key: keyFromLabel(`${item.label}-${item.value}`),
+    label: item.label,
+    value: item.value,
+    detail: item.noteZh,
+    tone: evidenceTone(item.effect),
+  }));
+}
+
+function buildGlowDataNotice(result: ForecastCalculationResult): string {
+  const weatherText =
+    result.weatherDataMode === "mock" ? "天气数据：演示数据" : result.weatherNoticeZh;
+  const terrainText = result.terrainAnalysis.isMock
+    ? "地形数据：演示数据"
+    : `地形数据：${result.terrainAnalysis.dataSourceLabelZh}`;
+  const fieldNotes = hasMissingCloudLayers(result)
+    ? ["当前天气源缺少低云/中云/高云分层数据，相关判断将降低置信度。"]
+    : [];
+  const notes = [...result.glowAnalysis.missingDataNotes, ...fieldNotes].filter(
+    (note) => !note.includes("当前天气数据为演示数据"),
+  );
+  const uniqueNotes = [...new Set(notes)];
+
+  return [
+    `${weatherText}；${terrainText}；天文数据：本地算法计算。`,
+    "当前为体验模式，结果会使用演示天气数据生成；正式天气数据源启用后将显示对应来源与更新时间。",
+    ...uniqueNotes,
+  ].join("");
+}
+
+function glowBestTargetLabel(target: GlowBestTarget): string {
+  if (target === "sunrise") {
+    return "优先朝霞";
+  }
+  if (target === "sunset") {
+    return "优先晚霞";
+  }
+  if (target === "both") {
+    return "朝霞晚霞都可关注";
+  }
+  return "不建议只押霞光";
+}
+
+function glowRiskLabel(score: number): "低" | "中" | "高" {
+  if (score >= 70) {
+    return "高";
+  }
+  if (score >= 45) {
+    return "中";
+  }
+  return "低";
 }
 
 function listSection(

@@ -223,6 +223,42 @@ describe("forecast query validation route", () => {
     ).toBeGreaterThan(1);
   });
 
+  it("calculates a deterministic glow forecast result without real network calls", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("real network calls are disabled in glow forecast tests");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    app = buildApiServer({ authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        horizon: "7d",
+        target: "glow",
+      },
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(body.target).toBe("glow");
+    expect(body.glowAnalysis).toMatchObject({
+      sunriseGlowScore: expect.any(Number),
+      sunsetGlowScore: expect.any(Number),
+      lowCloudObstructionRisk: expect.any(Number),
+      glowTravelScore: expect.any(Number),
+      recommendationLabel: expect.stringMatching(/推荐重点关注|值得等待|谨慎参考|不建议专程/),
+      dataMode: "mock",
+    });
+    expect(body.glowAnalysis.bestGlowWindows.length).toBeGreaterThan(1);
+    expect(body.glowAnalysis.dailyGlow.length).toBeGreaterThanOrEqual(7);
+    expect(body.dataNotice).toContain("天气数据：演示数据");
+    expect(body.dataNotice).toContain("地形数据：演示数据");
+    expect(body.dataNotice).toContain("天文数据：本地算法计算");
+  });
+
   it("can return a rule-based explanation from calculate without DeepSeek", async () => {
     const fetchMock = vi.fn(() => {
       throw new Error("real network calls are disabled in forecast tests");

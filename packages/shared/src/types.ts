@@ -337,6 +337,74 @@ export type CloudSeaAnalysisResult = {
   readonly dataMode: WeatherDataMode;
 };
 
+export type GlowConfidenceLevel = "high" | "medium" | "low";
+
+export type GlowRecommendationLabel =
+  | "推荐重点关注"
+  | "值得等待"
+  | "谨慎参考"
+  | "不建议专程";
+
+export type GlowWindowType = "sunrise" | "sunset" | "afterglow" | "warm_light";
+
+export type GlowWindow = {
+  readonly type: GlowWindowType;
+  readonly labelZh: string;
+  readonly date?: string;
+  readonly start: string;
+  readonly end: string;
+  readonly score: number;
+  readonly riskTags: readonly string[];
+  readonly noteZh: string;
+};
+
+export type GlowBestTarget = "sunrise" | "sunset" | "both" | "none";
+
+export type DailyGlow = {
+  readonly date: string;
+  readonly dateLabelZh: string;
+  readonly sunriseScore: number;
+  readonly sunsetScore: number;
+  readonly bestWindow?: GlowWindow;
+  readonly bestTarget: GlowBestTarget;
+  readonly recommendationLabel: GlowRecommendationLabel;
+  readonly keyReason: string;
+  readonly riskNote: string;
+};
+
+export type GlowEvidenceItem = {
+  readonly label: string;
+  readonly value: string;
+  readonly effect: CloudSeaEvidenceEffect;
+  readonly noteZh: string;
+};
+
+export type GlowBackupPlan = {
+  readonly condition: string;
+  readonly action: string;
+  readonly detail: string;
+};
+
+export type GlowAnalysisResult = {
+  readonly sunriseGlowScore: number;
+  readonly sunsetGlowScore: number;
+  readonly lowCloudObstructionRisk: number;
+  readonly glowTravelScore: number;
+  readonly recommendationLabel: GlowRecommendationLabel;
+  readonly confidenceLevel: GlowConfidenceLevel;
+  readonly bestGlowWindows: readonly GlowWindow[];
+  readonly dailyGlow: readonly DailyGlow[];
+  readonly cloudLayerEvidence: readonly GlowEvidenceItem[];
+  readonly visibilityEvidence: readonly GlowEvidenceItem[];
+  readonly terrainObstructionEvidence: readonly GlowEvidenceItem[];
+  readonly riskReasons: readonly string[];
+  readonly opportunityReasons: readonly string[];
+  readonly travelRecommendations: readonly string[];
+  readonly backupPlans: readonly GlowBackupPlan[];
+  readonly missingDataNotes: readonly string[];
+  readonly dataMode: WeatherDataMode;
+};
+
 export type ForecastDailyMetric = {
   readonly label: string;
   readonly score: number;
@@ -384,6 +452,7 @@ export type ForecastCalculationResult = {
   readonly summary: string;
   readonly scores: ForecastScoreSet;
   readonly cloudSeaAnalysis: CloudSeaAnalysisResult;
+  readonly glowAnalysis: GlowAnalysisResult;
   readonly terrainSummary: TerrainSummary;
   readonly terrainAnalysis: TerrainAnalysisSummary;
   readonly astroSummaries: readonly AstroSummary[];

@@ -7,10 +7,11 @@ import {
   type ForecastQueryInput,
   type ForecastScore,
 } from "@photo-weather/shared";
-import { CloudSeaResultPage } from "./forecast-result-client";
+import { CloudSeaResultPage, GlowResultPage } from "./forecast-result-client";
 import {
   buildCloudSeaForecastViewModel,
   buildForecastResultViewModel,
+  buildGlowForecastViewModel,
 } from "./forecast-result-view-model";
 
 vi.mock("next/navigation", () => ({
@@ -267,6 +268,163 @@ const baseResult: ForecastCalculationResult = {
       },
     ],
     missingDataNotes: [],
+    dataMode: "mock",
+  },
+  glowAnalysis: {
+    sunriseGlowScore: 70,
+    sunsetGlowScore: 74,
+    lowCloudObstructionRisk: 42,
+    glowTravelScore: 72,
+    recommendationLabel: "值得等待",
+    confidenceLevel: "medium",
+    bestGlowWindows: [
+      {
+        type: "sunset",
+        labelZh: "晚霞峰值窗口",
+        date: "2026-05-20",
+        start: "2026-05-20T17:56:00+08:00",
+        end: "2026-05-20T19:41:00+08:00",
+        score: 74,
+        riskTags: ["风险可控"],
+        noteZh: "晚霞窗口中高云和通透度较可用，适合提前到位观察色彩发展。",
+      },
+      {
+        type: "sunrise",
+        labelZh: "朝霞峰值窗口",
+        date: "2026-05-20",
+        start: "2026-05-20T04:30:00+08:00",
+        end: "2026-05-20T06:15:00+08:00",
+        score: 70,
+        riskTags: ["低云遮挡"],
+        noteZh: "朝霞窗口可作为谨慎参考，重点观察中高云是否继续保留色彩载体。",
+      },
+      {
+        type: "sunset",
+        labelZh: "晚霞峰值窗口",
+        date: "2026-05-21",
+        start: "2026-05-21T17:57:00+08:00",
+        end: "2026-05-21T19:42:00+08:00",
+        score: 72,
+        riskTags: ["风险可控"],
+        noteZh: "晚霞窗口中高云和通透度较可用，适合提前到位观察色彩发展。",
+      },
+    ],
+    dailyGlow: [
+      {
+        date: "2026-05-20",
+        dateLabelZh: "2026年5月20日 星期三",
+        sunriseScore: 70,
+        sunsetScore: 74,
+        bestWindow: {
+          type: "sunset",
+          labelZh: "晚霞峰值窗口",
+          date: "2026-05-20",
+          start: "2026-05-20T17:56:00+08:00",
+          end: "2026-05-20T19:41:00+08:00",
+          score: 74,
+          riskTags: ["风险可控"],
+          noteZh: "晚霞窗口中高云和通透度较可用，适合提前到位观察色彩发展。",
+        },
+        bestTarget: "sunset",
+        recommendationLabel: "值得等待",
+        keyReason: "晚霞 74 分高于朝霞，优先观察日落前云层移动和西向通透度。",
+        riskNote: "风险可控",
+      },
+      {
+        date: "2026-05-21",
+        dateLabelZh: "2026年5月21日 星期四",
+        sunriseScore: 66,
+        sunsetScore: 72,
+        bestWindow: {
+          type: "sunset",
+          labelZh: "晚霞峰值窗口",
+          date: "2026-05-21",
+          start: "2026-05-21T17:57:00+08:00",
+          end: "2026-05-21T19:42:00+08:00",
+          score: 72,
+          riskTags: ["风险可控"],
+          noteZh: "晚霞窗口中高云和通透度较可用，适合提前到位观察色彩发展。",
+        },
+        bestTarget: "sunset",
+        recommendationLabel: "值得等待",
+        keyReason: "晚霞 72 分高于朝霞，优先观察日落前云层移动和西向通透度。",
+        riskNote: "风险可控",
+      },
+    ],
+    cloudLayerEvidence: [
+      {
+        label: "总云量",
+        value: "58%",
+        effect: "positive",
+        noteZh: "总云量 20%-75% 通常更容易形成可用霞光层次。",
+      },
+      {
+        label: "低云",
+        value: "38%",
+        effect: "neutral",
+        noteZh: "低云可能遮挡太阳方向，低云过厚会导致无明显霞光或只剩白光。",
+      },
+      {
+        label: "中云",
+        value: "45%",
+        effect: "positive",
+        noteZh: "适量中云可承载霞光色彩。",
+      },
+      {
+        label: "高云",
+        value: "52%",
+        effect: "positive",
+        noteZh: "高云是霞光色彩的重要载体。",
+      },
+    ],
+    visibilityEvidence: [
+      {
+        label: "能见度",
+        value: "18 km",
+        effect: "positive",
+        noteZh: "能见度较好，有利于远山层次和霞光色彩稳定。",
+      },
+      {
+        label: "湿度",
+        value: "72%",
+        effect: "neutral",
+        noteZh: "湿度本身不直接否定霞光。",
+      },
+    ],
+    terrainObstructionEvidence: [
+      {
+        label: "日出地平遮挡",
+        value: "4.8°",
+        effect: "positive",
+        noteZh: "日出方向遮挡角用于判断第一束低角度光线是否容易被山体或建筑挡住。",
+      },
+      {
+        label: "日落地平遮挡",
+        value: "5.5°",
+        effect: "positive",
+        noteZh: "日落方向遮挡角用于判断最后一束暖光和余晖是否容易被山脊挡住。",
+      },
+    ],
+    riskReasons: ["低云遮挡风险中等，需要现场观察太阳方向是否留有透光缝。"],
+    opportunityReasons: ["晚霞最佳参考为晚霞峰值窗口，评分 74 分。"],
+    travelRecommendations: [
+      "朝霞：建议日出前 40-60 分钟到达机位，先完成构图、测光和安全检查。",
+      "晚霞：建议日落前 60 分钟观察云层移动，重点看太阳方向是否留有透光缝。",
+      "如果低云遮挡太阳方向，优先寻找更高机位或转拍层峦、云缝光和局部暖色。",
+    ],
+    backupPlans: [
+      {
+        condition: "无霞但通透",
+        action: "转拍远山层次、长焦山脊",
+        detail: "利用清晰空气和低角度侧光保留空间层次。",
+      },
+      {
+        condition: "低云遮挡",
+        action: "转更高机位或拍雾中局部",
+        detail: "寻找能越过低云的视角。",
+      },
+    ],
+    missingDataNotes: ["当前天气数据为演示数据，结果仅用于体验分析流程。"],
     dataMode: "mock",
   },
   terrainSummary: {
@@ -925,12 +1083,12 @@ describe("forecast result target-aware view model", () => {
   it("prioritizes sunrise, sunset, and twilight on the glow view", () => {
     const viewModel = buildForecastResultViewModel(resultForTarget("glow"), "glow");
 
+    expect(viewModel.glow).toBeDefined();
     expect(viewModel.primaryCards.map((card) => card.label)).toEqual([
       "朝霞机会",
       "晚霞机会",
-      "日出时间",
-      "日落时间",
       "最佳霞光窗口",
+      "主要遮挡风险 / 推荐动作",
     ]);
     expect(viewModel.detailSections.map((section) => section.title)).toEqual(
       expect.arrayContaining([
@@ -948,6 +1106,128 @@ describe("forecast result target-aware view model", () => {
       "sunsetGlow",
       "transparency",
     ]);
+  });
+
+  it("builds a specialized glow view model with separate sunrise, sunset, cloud, visibility, terrain, and backup modules", () => {
+    const viewModel = buildGlowForecastViewModel(resultForTarget("glow"));
+
+    expect(viewModel.coreCards.map((card) => card.label)).toEqual([
+      "朝霞机会",
+      "晚霞机会",
+      "最佳霞光窗口",
+      "主要遮挡风险 / 推荐动作",
+    ]);
+    expect(viewModel.dailyTrend.map((item) => item.date)).toEqual(["2026-05-20", "2026-05-21"]);
+    expect(viewModel.cloudLayerEvidence.map((item) => item.label)).toEqual(
+      expect.arrayContaining(["总云量", "低云", "中云", "高云"]),
+    );
+    expect(viewModel.visibilityEvidence.map((item) => item.label)).toEqual(
+      expect.arrayContaining(["能见度", "湿度"]),
+    );
+    expect(viewModel.terrainObstructionEvidence.map((item) => item.label)).toEqual(
+      expect.arrayContaining(["日出地平遮挡", "日落地平遮挡"]),
+    );
+    expect(viewModel.travelRecommendations.join("")).toContain("日出前 40-60 分钟到达机位");
+    expect(viewModel.backupPlans.map((plan) => plan.condition)).toEqual(
+      expect.arrayContaining(["无霞但通透", "低云遮挡"]),
+    );
+  });
+
+  it("renders the glow result without the entry-page popular spots placeholder", () => {
+    const result = resultForTarget("glow");
+    const viewModel = buildGlowForecastViewModel(result);
+    const fetchMock = vi.fn(() => {
+      throw new Error("glow result render should not call external APIs");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      const html = renderToStaticMarkup(
+        React.createElement(GlowResultPage, {
+          query: queryForTarget("glow"),
+          result,
+          viewModel,
+        }),
+      );
+
+      expect(html).not.toContain("热门朝霞晚霞机位");
+      expect(html).not.toContain("热门朝霞机位");
+      expect(html).not.toContain("热门晚霞机位");
+      expect(html).toContain("朝霞机会");
+      expect(html).toContain("晚霞机会");
+      expect(html).toContain("日出日落与晨昏窗口");
+      expect(html).toContain("云层结构判断");
+      expect(html).toContain("低云遮挡风险");
+      expect(html).toContain("能见度与通透度");
+      expect(html).toContain("地形遮挡参考");
+      expect(html).toContain("拍摄建议");
+      expect(html).toContain("风险提示");
+      expect(html).toContain("备选拍摄方案");
+      expect(html).toContain("数据状态 / 数据缺失说明");
+      expect(html).toContain("天气数据：演示数据");
+      expect(html).toContain("地形数据：演示数据");
+      expect(html).toContain("天文数据：本地算法计算");
+      expect(html).toContain("GlowResultPage");
+      expect(html).toContain("GlowCoreDecision");
+      expect(html).toContain("GlowDailyTrend");
+      expect(html).toContain("GlowCloudLayerSection");
+      expect(html).toContain("GlowVisibilitySection");
+      expect(html).not.toContain("<aside");
+      expect(html).not.toContain("SideRail");
+      expect(html).not.toContain("min-[1024px]:col-span-4");
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("shows multiple daily glow entries for a 7d glow result", () => {
+    const sevenDayResult: ForecastCalculationResult = {
+      ...resultForTarget("glow"),
+      horizon: "7d",
+      forecastEnd: "2026-05-27T00:00:00+08:00",
+      targetDates: ["2026-05-20", "2026-05-21", "2026-05-22"],
+      calendarBasis: {
+        ...baseResult.calendarBasis,
+        forecastEnd: "2026-05-27T00:00:00+08:00",
+        forecastEndLabel: "2026年5月27日 00:00",
+        forecastRangeLabel: "2026年5月20日 00:00 至 2026年5月27日 00:00",
+        targetDates: ["2026-05-20", "2026-05-21", "2026-05-22"],
+        targetDateLabels: ["2026年5月20日 星期三", "2026年5月21日 星期四", "2026年5月22日 星期五"],
+        horizonHours: 168,
+      },
+      glowAnalysis: {
+        ...baseResult.glowAnalysis,
+        dailyGlow: [
+          ...baseResult.glowAnalysis.dailyGlow,
+          {
+            date: "2026-05-22",
+            dateLabelZh: "2026年5月22日 星期五",
+            sunriseScore: 68,
+            sunsetScore: 77,
+            bestWindow: {
+              type: "sunset",
+              labelZh: "晚霞峰值窗口",
+              date: "2026-05-22",
+              start: "2026-05-22T17:58:00+08:00",
+              end: "2026-05-22T19:43:00+08:00",
+              score: 77,
+              riskTags: ["风险可控"],
+              noteZh: "晚霞窗口中高云和通透度较可用，适合提前到位观察色彩发展。",
+            },
+            bestTarget: "sunset",
+            recommendationLabel: "值得等待",
+            keyReason: "第三天晚霞信号仍可等待。",
+            riskNote: "风险可控",
+          },
+        ],
+      },
+    };
+
+    const viewModel = buildGlowForecastViewModel(sevenDayResult);
+
+    expect(viewModel.dailyTrend).toHaveLength(3);
+    expect(viewModel.dailyTrend.map((item) => item.date)).toContain("2026-05-22");
   });
 
   it("prioritizes moon, astronomical night, Milky Way, and star modules on the astro view", () => {

@@ -77,33 +77,6 @@ export const glowScenarioConfig = {
     "晚霞通常关注日落前后云层层次和西向通透度。",
     "天文时间基于地点经纬度本地计算，天气条件当前使用演示数据辅助判断。",
   ],
-  popularTitle: "热门朝霞晚霞机位",
-  popularSpots: [
-    {
-      name: "黄山光明顶",
-      province: "安徽",
-      reason: "适合观察东向日出、云海边缘霞光和远山层次。",
-      tag: "日出云霞",
-    },
-    {
-      name: "三清山女神峰",
-      province: "江西",
-      reason: "峰林轮廓适合作为霞光前景，但低云遮挡需要提前判断。",
-      tag: "峰林霞光",
-    },
-    {
-      name: "老君山金顶",
-      province: "河南",
-      reason: "建筑轮廓与高山日出日落结合度高，适合观察云缝光线。",
-      tag: "金顶光影",
-    },
-    {
-      name: "武功山金顶",
-      province: "江西",
-      reason: "草甸山脊视野开阔，日落方向与云层变化适合作为重点判断。",
-      tag: "山脊晚霞",
-    },
-  ],
 } satisfies ScenarioPageConfig;
 
 export const astroScenarioConfig = {

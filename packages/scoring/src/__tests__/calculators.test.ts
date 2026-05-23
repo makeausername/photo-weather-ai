@@ -12,6 +12,7 @@ import {
   buildMockForecastInput,
   calculateCloudSeaScore,
   calculateForecast,
+  calculateGlowAnalysis,
   calculateMilkyWayScore,
   calculateOverallScore,
   calculateStarsScore,
@@ -264,6 +265,116 @@ describe("forecast score calculators", () => {
 
     expect(calculateSunriseGlowScore(layered).score).toBeGreaterThan(
       calculateSunriseGlowScore(missingLayers).score,
+    );
+  });
+
+  it("improves glow scoring when mid and high clouds are favorable", () => {
+    const baseInput = buildMockForecastInput({ ...baseQuery, target: "glow" }, { now: fixedNow });
+    const favorable = withHourlyWeather(baseInput, (hour) => ({
+      ...hour,
+      cloudTotal: 58,
+      cloudLow: 18,
+      cloudMid: 42,
+      cloudHigh: 48,
+      precipitationProbability: 5,
+      visibility: 24,
+    }));
+    const emptySky = withHourlyWeather(baseInput, (hour) => ({
+      ...hour,
+      cloudTotal: 5,
+      cloudLow: 2,
+      cloudMid: 0,
+      cloudHigh: 0,
+      precipitationProbability: 5,
+      visibility: 24,
+    }));
+
+    expect(calculateGlowAnalysis(favorable).sunriseGlowScore).toBeGreaterThan(
+      calculateGlowAnalysis(emptySky).sunriseGlowScore,
+    );
+    expect(calculateGlowAnalysis(favorable).opportunityReasons.join("")).toContain("中高云");
+  });
+
+  it("raises low cloud obstruction risk when low cloud is excessive", () => {
+    const baseInput = buildMockForecastInput({ ...baseQuery, target: "glow" }, { now: fixedNow });
+    const lowObstruction = withHourlyWeather(baseInput, (hour) => ({
+      ...hour,
+      cloudTotal: 52,
+      cloudLow: 18,
+      cloudMid: 38,
+      cloudHigh: 46,
+      visibility: 22,
+    }));
+    const highObstruction = withHourlyWeather(baseInput, (hour) => ({
+      ...hour,
+      cloudTotal: 96,
+      cloudLow: 88,
+      cloudMid: 38,
+      cloudHigh: 46,
+      visibility: 22,
+    }));
+
+    expect(calculateGlowAnalysis(highObstruction).lowCloudObstructionRisk).toBeGreaterThan(
+      calculateGlowAnalysis(lowObstruction).lowCloudObstructionRisk,
+    );
+    expect(calculateGlowAnalysis(highObstruction).riskReasons.join("")).toContain("低云遮挡");
+  });
+
+  it("reduces glow scores when visibility is low", () => {
+    const baseInput = buildMockForecastInput({ ...baseQuery, target: "glow" }, { now: fixedNow });
+    const transparent = withHourlyWeather(baseInput, (hour) => ({
+      ...hour,
+      cloudTotal: 58,
+      cloudLow: 18,
+      cloudMid: 42,
+      cloudHigh: 48,
+      visibility: 24,
+      humidity: 68,
+    }));
+    const hazy = withHourlyWeather(baseInput, (hour) => ({
+      ...hour,
+      cloudTotal: 58,
+      cloudLow: 18,
+      cloudMid: 42,
+      cloudHigh: 48,
+      visibility: 2.5,
+      humidity: 96,
+    }));
+
+    expect(calculateGlowAnalysis(transparent).glowTravelScore).toBeGreaterThan(
+      calculateGlowAnalysis(hazy).glowTravelScore,
+    );
+  });
+
+  it("reduces sunrise and sunset glow scores when terrain obstruction is high", () => {
+    const baseInput = buildMockForecastInput({ ...baseQuery, target: "glow" }, { now: fixedNow });
+    const openHorizon = withHourlyWeather(baseInput, (hour) => ({
+      ...hour,
+      cloudTotal: 58,
+      cloudLow: 18,
+      cloudMid: 42,
+      cloudHigh: 48,
+      visibility: 24,
+    }));
+    const obstructed = {
+      ...openHorizon,
+      terrainAnalysis: {
+        ...openHorizon.terrainAnalysis,
+        horizonProfile: {
+          ...openHorizon.terrainAnalysis.horizonProfile,
+          sunriseHorizonAngle: 18,
+          sunsetHorizonAngle: 19,
+          blockedDirectionsZh: ["东南", "西南"],
+          obstructionNoteZh: "演示地形数据显示日出和日落方向存在明显遮挡。",
+        },
+      },
+    };
+
+    expect(calculateGlowAnalysis(openHorizon).sunriseGlowScore).toBeGreaterThan(
+      calculateGlowAnalysis(obstructed).sunriseGlowScore,
+    );
+    expect(calculateGlowAnalysis(openHorizon).sunsetGlowScore).toBeGreaterThan(
+      calculateGlowAnalysis(obstructed).sunsetGlowScore,
     );
   });
 

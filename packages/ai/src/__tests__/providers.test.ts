@@ -357,6 +357,86 @@ const forecastResultFixture: ForecastCalculationResult = {
     missingDataNotes: [],
     dataMode: "mock",
   },
+  glowAnalysis: {
+    sunriseGlowScore: 75,
+    sunsetGlowScore: 62,
+    lowCloudObstructionRisk: 38,
+    glowTravelScore: 72,
+    recommendationLabel: "值得等待",
+    confidenceLevel: "medium",
+    bestGlowWindows: [
+      {
+        type: "sunrise",
+        labelZh: "朝霞峰值窗口",
+        date: "2026-05-21",
+        start: "2026-05-21T04:45:00+08:00",
+        end: "2026-05-21T05:35:00+08:00",
+        score: 75,
+        riskTags: ["风险可控"],
+        noteZh: "朝霞窗口中高云和通透度较可用，适合提前到位观察色彩发展。",
+      },
+    ],
+    dailyGlow: [
+      {
+        date: "2026-05-21",
+        dateLabelZh: "2026年5月21日 星期四",
+        sunriseScore: 75,
+        sunsetScore: 62,
+        bestWindow: {
+          type: "sunrise",
+          labelZh: "朝霞峰值窗口",
+          date: "2026-05-21",
+          start: "2026-05-21T04:45:00+08:00",
+          end: "2026-05-21T05:35:00+08:00",
+          score: 75,
+          riskTags: ["风险可控"],
+          noteZh: "朝霞窗口中高云和通透度较可用，适合提前到位观察色彩发展。",
+        },
+        bestTarget: "sunrise",
+        recommendationLabel: "值得等待",
+        keyReason: "朝霞 75 分高于晚霞，优先关注日出前后中高云和东方低云遮挡。",
+        riskNote: "风险可控",
+      },
+    ],
+    cloudLayerEvidence: [
+      {
+        label: "高云",
+        value: "45%",
+        effect: "positive",
+        noteZh: "高云比例适中，有利于承载朝霞色彩。",
+      },
+    ],
+    visibilityEvidence: [
+      {
+        label: "能见度",
+        value: "18 km",
+        effect: "positive",
+        noteZh: "能见度较好，有利于远山层次和霞光色彩稳定。",
+      },
+    ],
+    terrainObstructionEvidence: [
+      {
+        label: "日出地平遮挡",
+        value: "4.8°",
+        effect: "positive",
+        noteZh: "日出方向遮挡角用于判断第一束低角度光线是否容易被山体或建筑挡住。",
+      },
+    ],
+    riskReasons: ["低云遮挡风险较低，仍需现场复核太阳方向。"],
+    opportunityReasons: ["朝霞最佳参考为朝霞峰值窗口，评分 75 分。"],
+    travelRecommendations: [
+      "朝霞：建议日出前 40-60 分钟到达机位，先完成构图、测光和安全检查。",
+    ],
+    backupPlans: [
+      {
+        condition: "无霞但通透",
+        action: "转拍远山层次、长焦山脊",
+        detail: "利用清晰空气和低角度侧光保留空间层次。",
+      },
+    ],
+    missingDataNotes: ["当前天气数据为演示数据，结果仅用于体验分析流程。"],
+    dataMode: "mock",
+  },
   terrainSummary: {
     locationElevation: 1860,
     minElevation1km: 980,

@@ -12,12 +12,12 @@ import {
   type ForecastScoreLevel,
   type ForecastTarget,
   type ForecastTimeWindow,
+  type GlowAnalysisResult,
   type NormalizedHourlyWeather,
   type TargetDailyBreakdown,
 } from "@photo-weather/shared";
 import { defaultTimezone, formatZonedIso, getHourInTimezone } from "@photo-weather/calendar";
 import {
-  addHours,
   averageHourly,
   averageWeightedScore,
   clampScore,
@@ -28,6 +28,7 @@ import {
   analyzeCloudSea,
   cloudSeaRecommendationLevel,
 } from "./cloud-sea-analysis.js";
+import { buildGlowForecastScore, calculateGlowAnalysis } from "./glow-analysis.js";
 
 const demoWeatherHonestyNotice =
   "当前结果基于演示天气数据生成，仅用于体验分析流程。正式天气数据源启用后，将显示对应的数据来源与预报时间。";
@@ -54,8 +55,9 @@ type ScoredForecastWindow = {
 
 export function calculateForecast(input: ForecastCalculationInput): ForecastCalculationResult {
   const cloudSeaAnalysis = analyzeCloudSea(input);
-  const sunriseGlow = calculateSunriseGlowScore(input);
-  const sunsetGlow = calculateSunsetGlowScore(input);
+  const glowAnalysis = calculateGlowAnalysis(input);
+  const sunriseGlow = buildGlowForecastScore(glowAnalysis, "sunrise");
+  const sunsetGlow = buildGlowForecastScore(glowAnalysis, "sunset");
   const cloudSea = calculateCloudSeaScore(input, cloudSeaAnalysis);
   const whiteoutRisk = calculateWhiteoutRiskScore(input, cloudSeaAnalysis);
   const stars = calculateStarsScore(input);
@@ -74,22 +76,29 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
   const overallScore =
     input.target === "cloud_sea"
       ? cloudSeaAnalysis.travelScore
+      : input.target === "glow"
+        ? glowAnalysis.glowTravelScore
       : calculateOverallScore(scores, input.target);
   const riskFlags = buildRiskFlags(input, whiteoutRisk);
   const recommendationLevel =
     input.target === "cloud_sea"
       ? cloudSeaRecommendationLevel(cloudSeaAnalysis.travelScore)
+      : input.target === "glow"
+        ? classifyRecommendationLevel(glowAnalysis.glowTravelScore)
       : applyRiskCap(classifyRecommendationLevel(overallScore), riskFlags);
   const recommendationLabel =
     input.target === "cloud_sea"
       ? cloudSeaAnalysis.recommendationLabel
+      : input.target === "glow"
+        ? glowAnalysis.recommendationLabel
       : forecastRecommendationLabels[recommendationLevel];
-  const bestWindows = buildBestWindows(input, scores, cloudSeaAnalysis);
+  const bestWindows = buildBestWindows(input, scores, cloudSeaAnalysis, glowAnalysis);
   const targetDailyBreakdown = buildTargetDailyBreakdown(
     input,
     scores,
     bestWindows,
     cloudSeaAnalysis,
+    glowAnalysis,
   );
   const dailySummaries = buildDailySummaries(input, targetDailyBreakdown, bestWindows);
 
@@ -107,6 +116,7 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
     summary: buildSummary(input, overallScore, recommendationLabel, scores),
     scores,
     cloudSeaAnalysis,
+    glowAnalysis,
     terrainSummary: input.terrainSummary,
     terrainAnalysis: input.terrainAnalysis,
     astroSummaries: input.astroSummaries,
@@ -130,25 +140,11 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
 }
 
 export function calculateSunriseGlowScore(input: ForecastCalculationInput): ForecastScore {
-  const horizonAngle = input.terrainAnalysis.horizonProfile.sunriseHorizonAngle;
-  const candidate = findBestGlowCandidate(input, "sunrise");
-  const window = candidate?.weatherWindow ?? input.hourlyWeather.slice(0, 6);
-  const score = calculateGlowWindowScore(window, horizonAngle, "sunrise");
-  const risks = glowRisks(window, horizonAngle, "朝霞");
-  const reasons = [...glowReasons(window, "朝霞"), horizonReason("日出方向", horizonAngle)];
-
-  return makeScore("sunriseGlow", "朝霞", score, reasons, risks);
+  return buildGlowForecastScore(calculateGlowAnalysis(input), "sunrise");
 }
 
 export function calculateSunsetGlowScore(input: ForecastCalculationInput): ForecastScore {
-  const horizonAngle = input.terrainAnalysis.horizonProfile.sunsetHorizonAngle;
-  const candidate = findBestGlowCandidate(input, "sunset");
-  const window = candidate?.weatherWindow ?? input.hourlyWeather.slice(-6);
-  const score = calculateGlowWindowScore(window, horizonAngle, "sunset");
-  const risks = glowRisks(window, horizonAngle, "晚霞");
-  const reasons = [...glowReasons(window, "晚霞"), horizonReason("日落方向", horizonAngle)];
-
-  return makeScore("sunsetGlow", "晚霞", score, reasons, risks);
+  return buildGlowForecastScore(calculateGlowAnalysis(input), "sunset");
 }
 
 export function calculateCloudSeaScore(
@@ -373,157 +369,6 @@ function horizonReason(label: string, horizonAngle: number | undefined): string 
   return `${label}演示地形遮挡角约 ${horizonAngle.toFixed(1)}°，用于辅助判断低角度光线和构图遮挡。`;
 }
 
-function calculateGlowWindowScore(
-  window: readonly NormalizedHourlyWeather[],
-  horizonAngle: number | undefined,
-  kind: "sunrise" | "sunset",
-): number {
-  const hasMidHighCloud = hasAnyWeatherField(window, (hour) =>
-    hour.cloudMid !== null && hour.cloudHigh !== null
-      ? (hour.cloudMid + hour.cloudHigh) / 2
-      : undefined,
-  );
-  const midHighCloud = averageHourly(window, (hour) =>
-    hour.cloudMid !== null && hour.cloudHigh !== null
-      ? (hour.cloudMid + hour.cloudHigh) / 2
-      : undefined,
-  );
-  const cloudTotal = averageHourly(window, (hour) => hour.cloudTotal);
-  const lowCloud = averageHourly(window, (hour) => hour.cloudLow);
-  const precipitationProbability = averageHourly(window, (hour) => hour.precipitationProbability);
-  const visibility = averageHourly(window, (hour) => hour.visibility);
-  const horizonPenalty = typeof horizonAngle === "number" ? Math.max(0, horizonAngle - 7) * 4 : 0;
-  const cloudCarrier = hasMidHighCloud ? midHighCloud : cloudTotal;
-  const midHighCloudScore =
-    cloudCarrier >= 25 && cloudCarrier <= 70
-      ? 92
-      : cloudCarrier < 25
-        ? clampScore(35 + cloudCarrier * 1.5)
-        : clampScore(118 - cloudCarrier);
-  const lowCloudPenalty = lowCloud > 72 ? 28 : lowCloud > 58 ? 14 : 0;
-  const sunsetBonus = kind === "sunset" && cloudCarrier >= 35 ? 3 : 0;
-  const missingLayerPenalty = hasMidHighCloud ? 0 : 8;
-
-  return clampScore(
-    averageWeightedScore([
-      { score: midHighCloudScore, weight: 0.36 },
-      { score: 100 - cloudTotal * 0.45, weight: 0.1 },
-      { score: 100 - precipitationProbability, weight: 0.24 },
-      { score: clampScore(visibility * 4), weight: 0.24 },
-      { score: 100 - lowCloud * 0.7, weight: 0.06 },
-    ]) -
-      lowCloudPenalty -
-      horizonPenalty +
-      sunsetBonus -
-      missingLayerPenalty,
-  );
-}
-
-function glowReasons(window: readonly NormalizedHourlyWeather[], label: string): readonly string[] {
-  const hasMidHighCloud = hasAnyWeatherField(window, (hour) =>
-    hour.cloudMid !== null && hour.cloudHigh !== null
-      ? (hour.cloudMid + hour.cloudHigh) / 2
-      : undefined,
-  );
-  const midHighCloud = averageHourly(window, (hour) =>
-    hour.cloudMid !== null && hour.cloudHigh !== null
-      ? (hour.cloudMid + hour.cloudHigh) / 2
-      : undefined,
-  );
-  const cloudTotal = averageHourly(window, (hour) => hour.cloudTotal);
-  const visibility = averageHourly(window, (hour) => hour.visibility);
-  const precipitationProbability = averageHourly(window, (hour) => hour.precipitationProbability);
-
-  return [
-    hasMidHighCloud
-      ? `${label}窗口中高云量约 ${Math.round(midHighCloud)}%，用于判断霞光承载条件。`
-      : `${label}窗口缺少中高云分层，暂按总云量约 ${Math.round(cloudTotal)}% 降低置信度参考。`,
-    `窗口能见度约 ${Math.round(visibility)} 公里，降水概率约 ${Math.round(precipitationProbability)}%。`,
-  ];
-}
-
-function glowRisks(
-  window: readonly NormalizedHourlyWeather[],
-  horizonAngle: number | undefined,
-  label: string,
-): readonly string[] {
-  const risks: string[] = [];
-  const lowCloud = averageHourly(window, (hour) => hour.cloudLow);
-  const precipitationProbability = averageHourly(window, (hour) => hour.precipitationProbability);
-
-  if (lowCloud > 68) {
-    risks.push(`${label}窗口低云偏多，可能遮挡太阳附近光线。`);
-  }
-  if (precipitationProbability > 45) {
-    risks.push(`${label}窗口降水概率偏高，霞光稳定性较差。`);
-  }
-  if (typeof horizonAngle === "number" && horizonAngle > 9) {
-    risks.push(`${label}方向地平遮挡角偏高，低角度光线可能被地形遮挡。`);
-  }
-
-  return risks;
-}
-
-function findBestGlowCandidate(
-  input: ForecastCalculationInput,
-  kind: "sunrise" | "sunset",
-): ScoredForecastWindow | undefined {
-  const horizonAngle =
-    kind === "sunrise"
-      ? input.terrainAnalysis.horizonProfile.sunriseHorizonAngle
-      : input.terrainAnalysis.horizonProfile.sunsetHorizonAngle;
-  const candidates = buildGlowCandidates(input, kind).map((candidate) => ({
-    ...candidate,
-    score: calculateGlowWindowScore(candidate.weatherWindow, horizonAngle, kind),
-  }));
-
-  return pickBestScoredWindow(candidates);
-}
-
-function buildGlowCandidates(
-  input: ForecastCalculationInput,
-  kind: "sunrise" | "sunset",
-): readonly ScoredForecastWindow[] {
-  const forecastRange = parseForecastRange(input);
-  if (!forecastRange) {
-    return [];
-  }
-
-  const beforeHours = kind === "sunrise" ? 0.75 : 1;
-  const afterHours = kind === "sunrise" ? 1 : 0.75;
-
-  return input.astroSummaries.flatMap((astro) => {
-    const eventTime = kind === "sunrise" ? astro.sunrise : astro.sunset;
-    if (!eventTime) {
-      return [];
-    }
-
-    const rawStartTime = addHours(eventTime, -beforeHours);
-    const rawEndTime = addHours(eventTime, afterHours);
-    const clippedWindow = clipWindowToForecastRange(rawStartTime, rawEndTime, forecastRange);
-    if (!clippedWindow) {
-      return [];
-    }
-
-    const weatherWindow = filterWeatherInForecastRange(
-      getWeatherWindowAroundTime(input.hourlyWeather, eventTime, beforeHours, afterHours),
-      forecastRange,
-    );
-    if (weatherWindow.length === 0) {
-      return [];
-    }
-
-    return [
-      {
-        astro,
-        ...clippedWindow,
-        weatherWindow,
-        score: 0,
-      },
-    ];
-  });
-}
-
 function findBestMilkyWayCandidate(
   input: ForecastCalculationInput,
 ): ScoredForecastWindow | undefined {
@@ -670,10 +515,10 @@ function buildBestWindows(
   input: ForecastCalculationInput,
   scores: ForecastCalculationResult["scores"],
   cloudSeaAnalysis: CloudSeaAnalysisResult,
+  glowAnalysis: GlowAnalysisResult,
 ): readonly ForecastTimeWindow[] {
   const windows = [
-    ...buildGlowWindows(input, scores, "sunrise"),
-    ...buildGlowWindows(input, scores, "sunset"),
+    ...buildGlowWindows(glowAnalysis),
     ...buildCloudSeaWindows(cloudSeaAnalysis),
     ...buildAstronomicalNightWindows(input, scores),
     ...buildMilkyWayWindows(input),
@@ -690,30 +535,15 @@ function buildBestWindows(
     });
 }
 
-function buildGlowWindows(
-  input: ForecastCalculationInput,
-  scores: ForecastCalculationResult["scores"],
-  kind: "sunrise" | "sunset",
-): readonly ForecastTimeWindow[] {
-  const horizonAngle =
-    kind === "sunrise"
-      ? input.terrainAnalysis.horizonProfile.sunriseHorizonAngle
-      : input.terrainAnalysis.horizonProfile.sunsetHorizonAngle;
-  const label = kind === "sunrise" ? "朝霞窗口" : "晚霞窗口";
-  const fallbackScore = kind === "sunrise" ? scores.sunriseGlow.score : scores.sunsetGlow.score;
-
-  return buildGlowCandidates(input, kind).map((candidate) => {
-    const score = calculateGlowWindowScore(candidate.weatherWindow, horizonAngle, kind);
-
-    return {
-      label: `${label} ${formatChineseTimeRange(candidate.startTime, candidate.endTime)}`,
-      date: candidate.astro?.date,
-      startTime: candidate.startTime,
-      endTime: candidate.endTime,
-      score: score || fallbackScore,
-      target: "glow",
-    };
-  });
+function buildGlowWindows(glowAnalysis: GlowAnalysisResult): readonly ForecastTimeWindow[] {
+  return glowAnalysis.bestGlowWindows.map((window) => ({
+    label: `${window.labelZh} ${formatChineseTimeRange(window.start, window.end)}`,
+    date: window.date,
+    startTime: window.start,
+    endTime: window.end,
+    score: window.score,
+    target: "glow",
+  }));
 }
 
 function buildMilkyWayWindows(input: ForecastCalculationInput): readonly ForecastTimeWindow[] {
@@ -794,32 +624,52 @@ function buildTargetDailyBreakdown(
   scores: ForecastCalculationResult["scores"],
   windows: readonly ForecastTimeWindow[],
   cloudSeaAnalysis: CloudSeaAnalysisResult,
+  glowAnalysis: GlowAnalysisResult,
 ): readonly TargetDailyBreakdown[] {
   return input.calendarBasis.targetDates.map((date) => {
     const dayWindows = windowsForCalendarDate(windows, date, input.calendarBasis.timezone);
     const dailyWeather = input.dailyWeather.find((day) => day.date === date);
     const astroSummary = input.astroSummaries.find((summary) => summary.date === date);
-    const sunriseWindow = firstWindowByLabel(dayWindows, "朝霞窗口");
-    const sunsetWindow = firstWindowByLabel(dayWindows, "晚霞窗口");
+    const sunriseWindow =
+      firstWindowByLabel(dayWindows, "朝霞") ?? firstWindowByLabel(dayWindows, "日出后");
+    const sunsetWindow =
+      firstWindowByLabel(dayWindows, "晚霞") ??
+      firstWindowByLabel(dayWindows, "日落前") ??
+      firstWindowByLabel(dayWindows, "霞光余晖");
     const cloudSeaWindow = firstWindowByLabel(dayWindows, "清晨云海窗口");
     const astronomicalNightWindow = firstWindowByLabel(dayWindows, "天文黑夜");
     const milkyWayWindow = firstWindowByLabel(dayWindows, "银河窗口");
     const dailyCloudSea = cloudSeaAnalysis.dailyCloudSea.find((day) => day.date === date);
+    const dailyGlow = glowAnalysis.dailyGlow.find((day) => day.date === date);
 
     return {
       date,
-      sunriseGlow: metricFromWindow(
-        sunriseWindow,
-        "朝霞机会",
-        "日出前后中高云、降水和地形遮挡共同影响朝霞表现。",
-        scores.sunriseGlow.score,
-      ),
-      sunsetGlow: metricFromWindow(
-        sunsetWindow,
-        "晚霞机会",
-        "日落前后中高云承载、低云遮挡和降水风险共同影响晚霞表现。",
-        scores.sunsetGlow.score,
-      ),
+      sunriseGlow: dailyGlow
+        ? {
+            label: "朝霞机会",
+            score: dailyGlow.sunriseScore,
+            detail: dailyGlow.keyReason,
+            window: sunriseWindow,
+          }
+        : metricFromWindow(
+            sunriseWindow,
+            "朝霞机会",
+            "日出前后中高云、降水和地形遮挡共同影响朝霞表现。",
+            scores.sunriseGlow.score,
+          ),
+      sunsetGlow: dailyGlow
+        ? {
+            label: "晚霞机会",
+            score: dailyGlow.sunsetScore,
+            detail: dailyGlow.keyReason,
+            window: sunsetWindow,
+          }
+        : metricFromWindow(
+            sunsetWindow,
+            "晚霞机会",
+            "日落前后中高云承载、低云遮挡和降水风险共同影响晚霞表现。",
+            scores.sunsetGlow.score,
+          ),
       cloudSea: dailyCloudSea
         ? {
             label: "清晨云海机会",

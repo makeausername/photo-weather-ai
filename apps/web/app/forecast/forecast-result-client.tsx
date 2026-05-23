@@ -9,6 +9,7 @@ import {
   type ForecastQueryInput,
   type ForecastScore,
   type ForecastScoreLevel,
+  type GlowBackupPlan,
 } from "@photo-weather/shared";
 import { PublicShell } from "../../components/public-shell";
 import { MoonPhaseCalendar } from "../../components/moon-phase-calendar";
@@ -32,6 +33,9 @@ import {
   type ForecastResultViewModel,
   type ForecastResultWindow,
   type ForecastResultWindowGroup,
+  type GlowDailyTrendItem,
+  type GlowEvidenceViewItem,
+  type GlowForecastViewModel,
 } from "./forecast-result-view-model";
 
 type ForecastResultClientProps = {
@@ -103,7 +107,8 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
   const queryKey = useMemo(() => (query ? JSON.stringify(query) : ""), [query]);
   const shellCopy = getForecastResultPageShellCopy(query?.target ?? result?.target ?? "general");
   const usesSpecializedResultHeader =
-    (query?.target === "general" || query?.target === "cloud_sea") && result !== null;
+    (query?.target === "general" || query?.target === "cloud_sea" || query?.target === "glow") &&
+    result !== null;
 
   useEffect(() => {
     if (!query) {
@@ -397,6 +402,10 @@ function ForecastResultView({
     return <CloudSeaResultPage query={query} result={result} viewModel={viewModel.cloudSea} />;
   }
 
+  if (viewModel.target === "glow" && viewModel.glow) {
+    return <GlowResultPage query={query} result={result} viewModel={viewModel.glow} />;
+  }
+
   return (
     <DashboardFrame query={query}>
       <main className="grid gap-4">
@@ -503,6 +512,458 @@ export function CloudSeaResultPage({
         ) : null}
       </main>
     </section>
+  );
+}
+
+export function GlowResultPage({
+  query,
+  result,
+  viewModel,
+}: {
+  readonly query: ForecastQueryInput;
+  readonly result: ForecastCalculationResult;
+  readonly viewModel: GlowForecastViewModel;
+}) {
+  return (
+    <section className="GlowResultPage glow-result-page grid gap-5" data-glow-section="GlowResultPage">
+      <GlowTopContext query={query} result={result} />
+      <GlowCoreDecision cards={viewModel.coreCards} />
+
+      <main className="glow-result-stack grid gap-5" data-glow-section="GlowStackedLayout">
+        <GlowDailyTrend result={result} items={viewModel.dailyTrend} />
+        <GlowTwilightSection result={result} />
+        <GlowEvidenceSection
+          title="云层结构判断"
+          badgeLabel="总云量 / 低云 / 中云 / 高云"
+          items={viewModel.cloudLayerEvidence}
+          dataSection="GlowCloudLayerSection"
+        />
+        <GlowLowCloudRiskSection result={result} />
+        <GlowEvidenceSection
+          title="能见度与通透度"
+          badgeLabel="能见度 / 湿度 / 风 / 降水"
+          items={viewModel.visibilityEvidence}
+          dataSection="GlowVisibilitySection"
+        />
+        <GlowTerrainSection result={result} items={viewModel.terrainObstructionEvidence} />
+        <GlowAdviceSection items={viewModel.travelRecommendations} />
+        <GlowRiskSection result={result} risks={viewModel.riskReasons} />
+        <GlowBackupPlanSection plans={viewModel.backupPlans} />
+        <GlowDataStatusSection
+          result={result}
+          notes={viewModel.missingDataNotes}
+          dataNotice={viewModel.dataNotice}
+        />
+      </main>
+    </section>
+  );
+}
+
+function GlowTopContext({
+  query,
+  result,
+}: {
+  readonly query: ForecastQueryInput;
+  readonly result: ForecastCalculationResult;
+}) {
+  return (
+    <Card className="p-4 shadow-sm">
+      <div className="grid gap-4 min-[900px]:grid-cols-[minmax(0,1fr)_auto] min-[900px]:items-center">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="default">朝霞晚霞专项判断</Badge>
+            <Badge variant={result.isMock ? "warning" : "success"}>
+              {result.isMock ? "体验模式" : "已接入数据源"}
+            </Badge>
+            <Badge variant="muted">{forecastHorizonLabels[query.horizon]}</Badge>
+            <Badge variant="info">置信度：{confidenceLabel(result.glowAnalysis.confidenceLevel)}</Badge>
+          </div>
+          <h1 className="mt-3 break-words text-2xl font-bold leading-tight text-foreground sm:text-[28px]">
+            {query.name}
+          </h1>
+          <div className="mt-3 grid gap-1 text-xs leading-5 text-muted-foreground min-[900px]:grid-cols-2 min-[1120px]:flex min-[1120px]:flex-wrap min-[1120px]:gap-2">
+            <span>预报范围：{result.calendarBasis.forecastRangeLabel}</span>
+            <span>生成时间：{formatDateTime(result.generatedAt)}</span>
+            <span>更新时间：{formatDateTime(result.generatedAt)}</span>
+            <span>数据状态：{weatherStatusLabel(result)}</span>
+            <span>地形数据：{result.terrainAnalysis.dataSourceLabelZh}</span>
+            <span>天文数据：本地算法计算</span>
+          </div>
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            window.location.assign("/glow");
+          }}
+        >
+          重新选择地点
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function GlowCoreDecision({ cards }: { readonly cards: readonly ForecastResultCard[] }) {
+  return (
+    <section
+      className="glow-core-decision grid gap-3 min-[900px]:grid-cols-2 min-[1280px]:grid-cols-4"
+      data-glow-section="GlowCoreDecision"
+    >
+      {cards.map((card) => (
+        <PrimaryResultCard key={card.key} card={card} />
+      ))}
+    </section>
+  );
+}
+
+function GlowDailyTrend({
+  result,
+  items,
+}: {
+  readonly result: ForecastCalculationResult;
+  readonly items: readonly GlowDailyTrendItem[];
+}) {
+  return (
+    <Card className="GlowDailyTrend glow-daily-trend p-4 shadow-sm" data-glow-section="GlowDailyTrend">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-card-foreground">逐日朝霞晚霞趋势</h2>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            {result.calendarBasis.horizonHours <= 24
+              ? "仅展示未来24小时内可用的朝霞、晚霞和余晖窗口。"
+              : "按每天的朝霞分、晚霞分、最佳窗口和主要风险横向比较。"}
+          </p>
+        </div>
+        <Badge variant="muted">{forecastHorizonLabels[result.horizon]}</Badge>
+      </div>
+      <div className="mt-4 grid gap-3">
+        {items.map((item) => (
+          <article
+            key={item.key}
+            className="grid gap-3 rounded-lg border border-border bg-muted p-3 min-[900px]:grid-cols-[minmax(150px,1fr)_minmax(180px,1fr)_minmax(0,1.35fr)_minmax(0,1.4fr)] min-[900px]:items-center"
+          >
+            <div className="min-w-0">
+              <h3 className="font-bold text-card-foreground">{item.dateLabel}</h3>
+              <p className="mt-1 text-xs text-muted-foreground">{item.bestTargetLabel}</p>
+            </div>
+            <dl className="grid gap-1 text-sm">
+              <GlowInlineDefinition label="朝霞机会" value={`${item.sunriseScore} 分`} />
+              <GlowInlineDefinition label="晚霞机会" value={`${item.sunsetScore} 分`} />
+            </dl>
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground">最佳窗口</p>
+              <p className="mt-1 text-sm font-semibold leading-5 text-card-foreground">
+                {item.bestWindowLabel}
+              </p>
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={item.recommendationLabel === "不建议专程" ? "warning" : "default"}>
+                  {item.recommendationLabel}
+                </Badge>
+                <Badge variant="muted">{item.riskNote}</Badge>
+              </div>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.keyReason}</p>
+            </div>
+          </article>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function GlowTwilightSection({ result }: { readonly result: ForecastCalculationResult }) {
+  return (
+    <Card className="GlowTwilightSection glow-twilight-section p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-card-foreground">日出日落与晨昏窗口</h2>
+        <Badge variant="muted">本地算法计算</Badge>
+      </div>
+      {result.astroSummaries.length > 0 ? (
+        <div className="mt-4 grid gap-3">
+          {result.astroSummaries.map((astro) => (
+            <article
+              key={astro.date}
+              className="grid gap-3 rounded-lg border border-border bg-muted p-3 min-[900px]:grid-cols-[minmax(150px,0.9fr)_repeat(3,minmax(160px,1fr))] min-[900px]:items-start"
+            >
+              <div>
+                <h3 className="font-bold text-card-foreground">
+                  {dateLabelForResultClient(result, astro.date)}
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground">{astro.timezone}</p>
+              </div>
+              <dl className="grid gap-2 text-sm">
+                <GlowInlineDefinition label="日出" value={formatOptionalTime(astro.sunrise)} />
+                <GlowInlineDefinition label="日落" value={formatOptionalTime(astro.sunset)} />
+              </dl>
+              <dl className="grid gap-2 text-sm">
+                <GlowInlineDefinition label="民用晨光" value={formatOptionalTime(astro.civilDawn)} />
+                <GlowInlineDefinition label="民用昏影" value={formatOptionalTime(astro.civilDusk)} />
+              </dl>
+              <dl className="grid gap-2 text-sm">
+                <GlowInlineDefinition
+                  label="航海晨光/昏影"
+                  value={`${formatOptionalTime(astro.nauticalDawn)} / ${formatOptionalTime(
+                    astro.nauticalDusk,
+                  )}`}
+                />
+                <GlowInlineDefinition
+                  label="天文晨光/昏影"
+                  value={`${formatOptionalTime(astro.astronomicalDawn)} / ${formatOptionalTime(
+                    astro.astronomicalDusk,
+                  )}`}
+                />
+              </dl>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-3 rounded-lg border border-warning bg-muted p-3 text-sm leading-6 text-muted-foreground">
+          缺少日出日落时间，无法生成精确霞光窗口。
+        </p>
+      )}
+    </Card>
+  );
+}
+
+function GlowEvidenceSection({
+  title,
+  badgeLabel,
+  items,
+  dataSection,
+}: {
+  readonly title: string;
+  readonly badgeLabel: string;
+  readonly items: readonly GlowEvidenceViewItem[];
+  readonly dataSection: string;
+}) {
+  return (
+    <Card className={`${dataSection} p-4 shadow-sm`} data-glow-section={dataSection}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-card-foreground">{title}</h2>
+        <Badge variant="muted">{badgeLabel}</Badge>
+      </div>
+      <div className="mt-4 grid gap-3 min-[900px]:grid-cols-2">
+        {items.map((item) => (
+          <article key={item.key} className="rounded-lg border border-border bg-muted p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="font-semibold text-card-foreground">{item.label}</h3>
+              <Badge variant={badgeVariantForTone(item.tone)}>{item.value}</Badge>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.detail}</p>
+          </article>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function GlowLowCloudRiskSection({ result }: { readonly result: ForecastCalculationResult }) {
+  const risk = result.glowAnalysis.lowCloudObstructionRisk;
+  return (
+    <Card className="GlowLowCloudRiskSection glow-low-cloud-risk p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-card-foreground">低云遮挡风险</h2>
+        <Badge variant={risk >= 70 ? "danger" : risk >= 45 ? "warning" : "info"}>
+          {risk} 分
+        </Badge>
+      </div>
+      <div className="mt-4 grid gap-3 min-[900px]:grid-cols-3">
+        <article className="rounded-lg border border-border bg-muted p-4">
+          <h3 className="font-bold text-card-foreground">太阳方向</h3>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            低云可能遮挡太阳方向，低云过厚可能导致无明显霞光或只剩白光。
+          </p>
+        </article>
+        <article className="rounded-lg border border-border bg-muted p-4">
+          <h3 className="font-bold text-card-foreground">色彩载体</h3>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            中高云更适合作为霞光载体，低云更多用于判断遮挡和反差风险。
+          </p>
+        </article>
+        <article className="rounded-lg border border-border bg-muted p-4">
+          <h3 className="font-bold text-card-foreground">现场动作</h3>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            若太阳方向被低云压住，优先寻找更高机位、侧逆光角度或转拍层峦与云缝光。
+          </p>
+        </article>
+      </div>
+    </Card>
+  );
+}
+
+function GlowTerrainSection({
+  result,
+  items,
+}: {
+  readonly result: ForecastCalculationResult;
+  readonly items: readonly GlowEvidenceViewItem[];
+}) {
+  const horizon = result.terrainAnalysis.horizonProfile;
+  const terrainMissing =
+    typeof horizon.sunriseHorizonAngle !== "number" ||
+    typeof horizon.sunsetHorizonAngle !== "number";
+
+  return (
+    <Card className="GlowTerrainSection glow-terrain-section p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-card-foreground">地形遮挡参考</h2>
+        <Badge variant="muted">{result.terrainAnalysis.dataSourceLabelZh}</Badge>
+      </div>
+      <div className="mt-4 grid gap-3 min-[900px]:grid-cols-3">
+        {items.map((item) => (
+          <article key={item.key} className="rounded-lg border border-border bg-muted p-4">
+            <p className="text-xs font-semibold text-muted-foreground">{item.label}</p>
+            <p className="mt-2 break-words text-xl font-bold text-card-foreground">{item.value}</p>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.detail}</p>
+          </article>
+        ))}
+      </div>
+      <dl className="mt-3 grid gap-2 text-sm min-[900px]:grid-cols-3">
+        <CompactDefinition label="日出遮挡角" value={formatAngle(result.terrainAnalysis.horizonProfile.sunriseHorizonAngle)} />
+        <CompactDefinition label="日落遮挡角" value={formatAngle(result.terrainAnalysis.horizonProfile.sunsetHorizonAngle)} />
+        <CompactDefinition
+          label="遮挡方向"
+          value={formatBlockedDirections(result.terrainAnalysis.horizonProfile.blockedDirectionsZh)}
+        />
+      </dl>
+      {terrainMissing ? (
+        <p className="mt-3 rounded-lg border border-warning bg-muted p-3 text-sm leading-6 text-muted-foreground">
+          暂缺地形遮挡细节，正式地形数据接入后将提升判断精度。
+        </p>
+      ) : null}
+    </Card>
+  );
+}
+
+function GlowAdviceSection({ items }: { readonly items: readonly string[] }) {
+  return (
+    <Card className="GlowAdviceSection glow-advice-section p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-card-foreground">拍摄建议</h2>
+        <Badge variant="muted">到达 / 等待 / 转拍</Badge>
+      </div>
+      <ul className="mt-3 grid gap-2 text-sm leading-6 text-muted-foreground">
+        {items.map((item) => (
+          <li key={item} className="rounded-lg border border-border bg-muted px-3 py-2">
+            {item}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+function GlowRiskSection({
+  result,
+  risks,
+}: {
+  readonly result: ForecastCalculationResult;
+  readonly risks: readonly string[];
+}) {
+  const runtimeRisks = result.riskFlags.filter((risk) =>
+    ["precipitation", "visibility", "wind"].includes(risk.key),
+  );
+
+  return (
+    <Card className="GlowRiskSection glow-risk-section p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-card-foreground">风险提示</h2>
+        <Badge variant="muted">低云 / 降水 / 通透 / 风</Badge>
+      </div>
+      <div className="mt-3 grid gap-3 min-[900px]:grid-cols-2">
+        {risks.map((risk) => (
+          <article key={risk} className="rounded-lg border border-border bg-muted p-3">
+            <p className="text-sm leading-6 text-muted-foreground">{risk}</p>
+          </article>
+        ))}
+        {runtimeRisks.map((risk) => (
+          <article key={risk.key} className="rounded-lg border border-border bg-muted p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-bold text-card-foreground">{risk.label}</h3>
+              <Badge variant={risk.level === "high" ? "danger" : "warning"}>
+                {riskLevelText(risk.level)}风险
+              </Badge>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{risk.description}</p>
+          </article>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function GlowBackupPlanSection({ plans }: { readonly plans: readonly GlowBackupPlan[] }) {
+  return (
+    <Card className="GlowBackupPlanSection glow-backup-plan p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-card-foreground">备选拍摄方案</h2>
+        <Badge variant="muted">霞光失败时</Badge>
+      </div>
+      <div className="mt-3 grid gap-3 min-[900px]:grid-cols-2">
+        {plans.map((plan) => (
+          <article key={plan.condition} className="rounded-lg border border-border bg-muted p-3">
+            <p className="text-xs font-semibold text-muted-foreground">{plan.condition}</p>
+            <h3 className="mt-2 font-bold text-card-foreground">{plan.action}</h3>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{plan.detail}</p>
+          </article>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function GlowDataStatusSection({
+  result,
+  notes,
+  dataNotice,
+}: {
+  readonly result: ForecastCalculationResult;
+  readonly notes: readonly string[];
+  readonly dataNotice: string;
+}) {
+  return (
+    <Card className="GlowDataStatusSection glow-data-status p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-card-foreground">数据状态 / 数据缺失说明</h2>
+        <Badge variant={result.weatherDataMode === "real" ? "success" : "warning"}>
+          {weatherModeBadge(result)}
+        </Badge>
+      </div>
+      <dl className="mt-3 grid gap-2 text-sm min-[900px]:grid-cols-3">
+        <CompactDefinition label="天气数据" value={weatherStatusLabel(result)} />
+        <CompactDefinition label="地形数据" value={result.terrainAnalysis.dataSourceLabelZh} />
+        <CompactDefinition label="天文数据" value="本地算法计算" />
+      </dl>
+      <p className="mt-3 rounded-lg border border-border bg-muted p-3 text-sm leading-6 text-muted-foreground">
+        {dataNotice}
+      </p>
+      {notes.length > 0 ? (
+        <ul className="mt-3 grid gap-2 text-sm leading-6 text-muted-foreground">
+          {notes.map((note) => (
+            <li key={note} className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
+              {note}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </Card>
+  );
+}
+
+function GlowInlineDefinition({
+  label,
+  value,
+}: {
+  readonly label: string;
+  readonly value: string;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="font-semibold text-card-foreground">{value}</dd>
+    </div>
   );
 }
 
@@ -2133,6 +2594,21 @@ function formatOptionalTime(value: string | undefined): string {
   return value ? formatTime(value) : "暂无数据";
 }
 
+function dateLabelForResultClient(result: ForecastCalculationResult, date: string): string {
+  const index = result.calendarBasis.targetDates.indexOf(date);
+  return result.calendarBasis.targetDateLabels[index] ?? date;
+}
+
+function confidenceLabel(level: ForecastCalculationResult["glowAnalysis"]["confidenceLevel"]): string {
+  if (level === "high") {
+    return "高";
+  }
+  if (level === "medium") {
+    return "中";
+  }
+  return "低";
+}
+
 function formatWindow(startTime: string, endTime: string): string {
   return `${formatTime(startTime)} - ${formatTime(endTime)}`;
 }
@@ -2157,6 +2633,14 @@ function formatPercent(value: number | undefined): string {
   }
 
   return `${Math.round(value * 100)}%`;
+}
+
+function formatAngle(value: number | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(1)}°` : "暂缺数据";
+}
+
+function formatBlockedDirections(directions: readonly string[]): string {
+  return directions.length > 0 ? directions.join("、") : "暂无明显方向";
 }
 
 function moonImpactText(
