@@ -8,7 +8,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/api ./apps/api
 COPY packages ./packages
 
-ENV DATABASE_URL=postgresql://photo_weather:photo_weather@postgres:5432/photo_weather_ai
+ENV DATABASE_URL=postgresql://photo_weather_ai:photo_weather_ai@postgres:5432/photo_weather_ai
 
 RUN pnpm install --frozen-lockfile
 RUN pnpm db:generate

@@ -42,6 +42,10 @@ describe("production deployment assets", () => {
 
     expect(compose).toContain('"80:80"');
     expect(compose).toContain('"443:443"');
+    expect(compose).toContain("POSTGRES_DB: ${POSTGRES_DB}");
+    expect(compose).toContain("POSTGRES_USER: ${POSTGRES_USER}");
+    expect(compose).toContain("POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}");
+    expect(compose).toContain("DATABASE_URL: ${DATABASE_URL}");
     expect(compose).toContain("postgres_data:");
     expect(compose).toContain("redis_data:");
     expect(compose).toContain("caddy_data:");
@@ -68,6 +72,9 @@ describe("production deployment assets", () => {
       "SITE_URL=https://DOMAIN_PLACEHOLDER",
       "PUBLIC_SITE_URL=https://DOMAIN_PLACEHOLDER",
       "NEXT_PUBLIC_API_BASE_URL=https://DOMAIN_PLACEHOLDER/api",
+      "POSTGRES_DB=POSTGRES_DB_PLACEHOLDER",
+      "POSTGRES_USER=POSTGRES_USER_PLACEHOLDER",
+      "POSTGRES_PASSWORD=POSTGRES_PASSWORD_PLACEHOLDER",
       "DATABASE_URL=",
       "REDIS_URL=",
       "JWT_SECRET=JWT_SECRET_PLACEHOLDER",
@@ -122,6 +129,34 @@ describe("production deployment assets", () => {
     expect(readRepoFile("apps/astro-service/Dockerfile")).toContain("pip install --no-cache-dir");
   });
 
+  it("does not hard-code the old production database user in deployment assets", () => {
+    for (const relativePath of [
+      "scripts/install.sh",
+      "scripts/update.sh",
+      "scripts/backup.sh",
+      "scripts/reset-prod-db.sh",
+      "docker-compose.prod.yml",
+      "apps/api/Dockerfile",
+      "apps/worker/Dockerfile",
+      "deploy/env.production.template",
+    ]) {
+      const source = readRepoFile(relativePath);
+      expect(source).not.toContain('"photo_weather"');
+      expect(source).not.toContain("photo_weather:");
+    }
+  });
+
+  it("generates production DATABASE_URL from encoded PostgreSQL prompt values", () => {
+    const installer = readRepoFile("scripts/install.sh");
+    expect(installer).toContain("urllib.parse.quote");
+    expect(installer).toContain('db_user_encoded="$(urlencode "${POSTGRES_USER}")"');
+    expect(installer).toContain('db_password_encoded="$(urlencode "${POSTGRES_PASSWORD}")"');
+    expect(installer).toContain('db_name_encoded="$(urlencode "${POSTGRES_DB}")"');
+    expect(installer).toContain(
+      'database_url="postgresql://${db_user_encoded}:${db_password_encoded}@postgres:5432/${db_name_encoded}?schema=public"',
+    );
+  });
+
   const bashAvailable = commandAvailable("bash", ["--version"]);
   const bashIt = bashAvailable ? it : it.skip;
 
@@ -132,6 +167,7 @@ describe("production deployment assets", () => {
       "scripts/backup.sh",
       "scripts/status.sh",
       "scripts/uninstall.sh",
+      "scripts/reset-prod-db.sh",
     ]) {
       execFileSync("bash", ["-n", bashPath(script)], { cwd: root, stdio: "pipe" });
     }

@@ -8,6 +8,7 @@ COMPOSE_FILE="${PROJECT_ROOT}/docker-compose.prod.yml"
 CADDY_TEMPLATE="${PROJECT_ROOT}/deploy/Caddyfile.template"
 CADDY_FILE="${PROJECT_ROOT}/deploy/Caddyfile"
 ENV_TEMPLATE="${PROJECT_ROOT}/deploy/env.production.template"
+COMPOSE_PROJECT_NAME_DEFAULT="photo-weather-ai"
 
 cd "${PROJECT_ROOT}"
 
@@ -119,6 +120,12 @@ generate_secret() {
 
 urlencode() {
   local raw="$1"
+
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "${raw}"
+    return
+  fi
+
   local length="${#raw}"
   local encoded=""
   local char=""
@@ -136,6 +143,28 @@ urlencode() {
     esac
   done
   printf '%s' "${encoded}"
+}
+
+mask_database_url() {
+  local url="$1"
+
+  if [[ -z "${url}" ]]; then
+    printf '(empty)\n'
+    return
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import sys, urllib.parse
+url = sys.argv[1]
+parts = urllib.parse.urlsplit(url)
+username = parts.username or ""
+hostname = parts.hostname or ""
+port = f":{parts.port}" if parts.port else ""
+auth = f"{username}:***@" if username else ""
+print(urllib.parse.urlunsplit((parts.scheme, f"{auth}{hostname}{port}", parts.path, parts.query, parts.fragment)))' "${url}" 2>/dev/null && return
+  fi
+
+  printf '%s\n' "${url}" | sed -E 's#(postgres(ql)?://[^:/@]+:)[^@]*(@)#\1***\3#'
 }
 
 dotenv_quote() {
@@ -243,6 +272,14 @@ load_env_file() {
   set +a
 }
 
+compose_project_name() {
+  printf '%s' "${COMPOSE_PROJECT_NAME:-${COMPOSE_PROJECT_NAME_DEFAULT}}"
+}
+
+postgres_volume_name() {
+  printf '%s_postgres_data' "$(compose_project_name)"
+}
+
 install_docker_packages() {
   if [[ ! -r /etc/os-release ]]; then
     echo "This installer targets Ubuntu/Debian servers."
@@ -335,6 +372,32 @@ check_dns() {
   fi
 }
 
+handle_existing_postgres_volume() {
+  local volume_name
+  volume_name="$(postgres_volume_name)"
+
+  if ! docker_cmd volume inspect "${volume_name}" >/dev/null 2>&1; then
+    return
+  fi
+
+  echo
+  echo "检测到已有 PostgreSQL 数据卷。PostgreSQL 首次初始化后的用户名和密码不会因修改 .env.production 自动改变。"
+  echo "如果这是重新安装测试环境，可以选择清空数据卷。"
+  echo "如果是正式环境，请先备份数据库。"
+  echo
+
+  local confirmation=""
+  read -r -p "是否清空旧数据库卷重新初始化？输入 DELETE_DB_DATA 确认，否则中止安装: " confirmation
+  if [[ "${confirmation}" != "DELETE_DB_DATA" ]]; then
+    echo "已中止安装，避免误用旧数据库凭据。"
+    exit 1
+  fi
+
+  echo "Stopping existing production stack before removing ${volume_name}..."
+  compose down --remove-orphans || true
+  docker_cmd volume rm "${volume_name}"
+}
+
 wait_for_postgres() {
   echo "Waiting for PostgreSQL..."
   for _ in $(seq 1 60); do
@@ -346,6 +409,42 @@ wait_for_postgres() {
 
   echo "PostgreSQL did not become ready in time."
   compose logs --tail=80 postgres || true
+  exit 1
+}
+
+print_migration_diagnostics() {
+  echo
+  echo "Migration diagnostics:"
+  echo "DATABASE_URL=$(mask_database_url "${DATABASE_URL:-}")"
+  echo "POSTGRES_DB=${POSTGRES_DB:-}"
+  echo "POSTGRES_USER=${POSTGRES_USER:-}"
+  echo
+  echo "PostgreSQL container status:"
+  compose ps postgres || true
+  echo
+  echo "Last 80 PostgreSQL log lines:"
+  compose logs --tail=80 postgres || true
+}
+
+preflight_database_connection() {
+  echo "Checking database connectivity from the API image..."
+  if compose run --rm api node -e 'async function main() { let prisma; try { const { PrismaClient } = require("@prisma/client"); prisma = new PrismaClient(); await prisma.$queryRawUnsafe("SELECT 1"); } catch { console.error("数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"); process.exitCode = 1; } finally { if (prisma) { await prisma.$disconnect().catch(() => {}); } } } main();'; then
+    return
+  fi
+
+  print_migration_diagnostics
+  exit 1
+}
+
+run_migrations() {
+  echo "Running database migrations..."
+  if compose run --rm api corepack pnpm db:migrate; then
+    return
+  fi
+
+  echo "数据库迁移失败。"
+  echo "数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"
+  print_migration_diagnostics
   exit 1
 }
 
@@ -365,7 +464,7 @@ collect_configuration() {
 
   ADMIN_DISPLAY_NAME="$(prompt_required "Admin display name" "Super Admin")"
   POSTGRES_DB="$(prompt_required "Database name" "photo_weather_ai")"
-  POSTGRES_USER="$(prompt_required "Database user" "photo_weather")"
+  POSTGRES_USER="$(prompt_required "Database user" "${POSTGRES_DB}")"
   require_postgres_identifier "Database name" "${POSTGRES_DB}"
   require_postgres_identifier "Database user" "${POSTGRES_USER}"
 
@@ -431,8 +530,8 @@ bootstrap_stack() {
     echo "Warning: ephemeris download failed. Astro-service will report unhealthy until de421.bsp is available in the astro_data volume."
   fi
 
-  echo "Running database migrations..."
-  compose run --rm api corepack pnpm db:migrate
+  preflight_database_connection
+  run_migrations
 
   echo "Running database seed..."
   compose run --rm api corepack pnpm db:seed
@@ -473,10 +572,12 @@ main() {
     render_env_file
   fi
 
+  load_env_file
   render_caddyfile
   ensure_docker
   check_ports
   check_dns
+  handle_existing_postgres_volume
   bootstrap_stack
 
   echo
