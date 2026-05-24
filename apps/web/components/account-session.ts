@@ -6,6 +6,7 @@ import {
   type SafeAccountProfile,
   type SafeAdminUser,
 } from "../app/admin/admin-api";
+import { loginServiceUnavailableMessage, sanitizeAuthErrorMessage } from "./auth-errors";
 
 export type PublicAccountSession = {
   readonly user: SafeAdminUser;
@@ -51,15 +52,15 @@ async function readPublicApiError(response: Response, fallback: string): Promise
   try {
     const payload = JSON.parse(errorText) as PublicApiErrorPayload;
     if (payload.message) {
-      return payload.message;
+      return sanitizeAuthErrorMessage(payload.message, fallback);
     }
 
     const issueMessage = payload.issues?.find((issue) => issue.message)?.message;
     if (issueMessage) {
-      return issueMessage;
+      return sanitizeAuthErrorMessage(issueMessage, fallback);
     }
   } catch {
-    return errorText;
+    return sanitizeAuthErrorMessage(errorText, fallback);
   }
 
   return fallback;
@@ -130,7 +131,7 @@ export async function loginPublicAccount(
   });
 
   if (!response.ok) {
-    throw new Error(await readPublicApiError(response, "登录失败，请检查邮箱和密码。"));
+    throw new Error(await readPublicApiError(response, loginServiceUnavailableMessage));
   }
 
   const session = (await response.json()) as AdminAuthSession;

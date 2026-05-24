@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
+import { invalidCredentialsMessage, loginServiceUnavailableMessage } from "../auth-routes.js";
 import { buildApiServer } from "../server.js";
 import { adminAuthorizationHeader, createFakeDatabaseClient, testAuthConfig } from "./fake-db.js";
 
@@ -149,6 +150,7 @@ describe("auth routes", () => {
     expect(response.statusCode).toBe(401);
     expect(response.json()).toMatchObject({
       error: "invalid_credentials",
+      message: invalidCredentialsMessage,
     });
     expect(response.body).not.toContain("accessToken");
     expect(state.auditLogs[0]).toMatchObject({
@@ -156,6 +158,38 @@ describe("auth routes", () => {
       action: "auth.login.failure",
     });
     expect(JSON.stringify(state.auditLogs)).not.toContain("wrong-password");
+  });
+
+  it("sanitizes database login failures instead of exposing Prisma details", async () => {
+    const { client } = await createFakeDatabaseClient();
+    (client.user as any).findUnique = async () => {
+      const error = new Error(
+        "Invalid `prisma.user.findUnique()` invocation: Authentication failed against database server at `postgres`, the provided database credentials for `photo_weather_ai` are not valid.",
+      );
+      error.name = "PrismaClientInitializationError";
+      throw error;
+    };
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: {
+        email: "admin@example.com",
+        password: "CorrectHorseBattery99",
+      },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({
+      error: "login_service_unavailable",
+      message: loginServiceUnavailableMessage,
+    });
+    expect(response.body).not.toContain("Prisma");
+    expect(response.body).not.toContain("findUnique");
+    expect(response.body).not.toContain("postgres");
+    expect(response.body).not.toContain("photo_weather_ai");
+    expect(response.body).not.toContain("Authentication failed");
   });
 
   it("refreshes a valid refresh token and revokes the old session", async () => {

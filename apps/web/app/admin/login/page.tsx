@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
 import { useState } from "react";
+import { sanitizeAuthErrorMessage } from "../../../components/auth-errors";
 import { ThemeToggle } from "../../../components/theme-toggle";
 import { Button, Card, FormField, Input } from "../../../components/ui";
 import { clearAdminSession, loginAdmin } from "../admin-api";
@@ -30,7 +31,7 @@ export default function AdminLoginPage() {
       const returnTo = new URLSearchParams(window.location.search).get("returnTo");
       router.replace(returnTo?.startsWith("/admin") ? returnTo : "/admin");
     } catch (error) {
-      setStatus((error as Error).message);
+      setStatus(sanitizeAuthErrorMessage((error as Error).message));
     } finally {
       setIsSubmitting(false);
     }
@@ -99,7 +100,10 @@ export default function AdminLoginPage() {
               />
             </FormField>
             {status ? (
-              <div className="rounded-lg border border-danger bg-card px-3 py-2 text-sm leading-6 text-danger">
+              <div
+                role="alert"
+                className="rounded-lg border border-danger bg-card px-3 py-2 text-sm leading-6 text-danger"
+              >
                 {status}
               </div>
             ) : null}

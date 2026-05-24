@@ -23,7 +23,7 @@ docker_cmd() {
 }
 
 compose() {
-  docker_cmd compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
+  docker_cmd compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
 if [[ ! -f "${ENV_FILE}" ]]; then
@@ -39,16 +39,12 @@ set +a
 echo "Service status:"
 compose ps
 
-echo
-echo "Recent logs:"
-for service in web api astro-service caddy; do
-  echo "--- ${service} ---"
-  compose logs --tail=60 "${service}" || true
-done
-
 if [[ -n "${DOMAIN:-}" ]]; then
   echo
-  echo "Domain health:"
+  echo "Public URL:"
+  echo "https://${DOMAIN}"
+  echo
+  echo "API health:"
   if curl -fsS --max-time 10 "https://${DOMAIN}" >/dev/null; then
     echo "OK https://${DOMAIN}"
   else
@@ -63,5 +59,27 @@ if [[ -n "${DOMAIN:-}" ]]; then
 fi
 
 echo
+echo "Database status:"
+compose exec -T postgres pg_isready -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" || true
+
+echo
+echo "Caddy status:"
+compose ps caddy || true
+
+echo
 echo "Internal astro-service health from the app network:"
 compose exec -T api node -e "fetch('http://astro-service:4100/health').then(async r => { console.log(r.status, await r.text()) }).catch(e => { console.error(e.message); process.exit(1) })" || true
+
+echo
+echo "Recent service logs:"
+for service in web api worker astro-service caddy postgres redis; do
+  echo "--- ${service} ---"
+  compose logs --tail=40 "${service}" || true
+done
+
+echo
+echo "Recent error logs:"
+for service in web api worker astro-service caddy postgres redis; do
+  echo "--- ${service} errors ---"
+  compose logs --tail=160 "${service}" 2>/dev/null | grep -Ei "error|failed|exception|prisma|p1000|p1001|panic|fatal" || true
+done

@@ -12,6 +12,123 @@ COMPOSE_PROJECT_NAME_DEFAULT="photo-weather-ai"
 
 cd "${PROJECT_ROOT}"
 
+VERBOSE=0
+for arg in "$@"; do
+  case "${arg}" in
+    --verbose) VERBOSE=1 ;;
+    -h|--help)
+      echo "Usage: bash scripts/install.sh [--verbose]"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: ${arg}"
+      echo "Usage: bash scripts/install.sh [--verbose]"
+      exit 1
+      ;;
+  esac
+done
+
+INSTALL_LOG="${PROJECT_ROOT}/deploy/install.log"
+mkdir -p "${PROJECT_ROOT}/deploy"
+: > "${INSTALL_LOG}"
+chmod 600 "${INSTALL_LOG}" 2>/dev/null || true
+
+if [[ -t 1 ]] && command -v tput >/dev/null 2>&1 && [[ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]]; then
+  COLOR_GREEN="$(tput setaf 2)"
+  COLOR_YELLOW="$(tput setaf 3)"
+  COLOR_RED="$(tput setaf 1)"
+  COLOR_CYAN="$(tput setaf 6)"
+  COLOR_RESET="$(tput sgr0)"
+else
+  COLOR_GREEN=""
+  COLOR_YELLOW=""
+  COLOR_RED=""
+  COLOR_CYAN=""
+  COLOR_RESET=""
+fi
+
+line() {
+  printf '%s\n' "=================================================="
+}
+
+title() {
+  line
+  printf '%s\n' "逐光天气 一键部署安装程序"
+  line
+}
+
+section() {
+  local number="$1"
+  local label="$2"
+  echo
+  line
+  printf '%s%s. %s%s\n' "${COLOR_CYAN}" "${number}" "${label}" "${COLOR_RESET}"
+  line
+}
+
+ok() {
+  printf '%sOK%s %s\n' "${COLOR_GREEN}" "${COLOR_RESET}" "$1"
+}
+
+warn() {
+  printf '%sWARNING%s %s\n' "${COLOR_YELLOW}" "${COLOR_RESET}" "$1"
+}
+
+error_message() {
+  printf '%sERROR%s %s\n' "${COLOR_RED}" "${COLOR_RESET}" "$1"
+}
+
+show_log_tail() {
+  if [[ -f "${INSTALL_LOG}" ]]; then
+    echo
+    echo "最近安装日志："
+    tail -n 80 "${INSTALL_LOG}" || true
+  fi
+}
+
+fail_install() {
+  error_message "$1"
+  echo "安装失败，请查看 deploy/install.log"
+  show_log_tail
+  exit 1
+}
+
+on_unhandled_error() {
+  local status=$?
+  if [[ "${status}" -ne 0 ]]; then
+    error_message "安装失败，请查看 deploy/install.log"
+    show_log_tail
+  fi
+}
+
+trap on_unhandled_error ERR
+
+run_logged_allow_fail() {
+  local label="$1"
+  shift
+
+  printf '%s...\n' "${label}"
+  printf '\n### %s\n' "${label}" >> "${INSTALL_LOG}"
+  if [[ "${VERBOSE}" == "1" ]]; then
+    "$@" 2>&1 | tee -a "${INSTALL_LOG}"
+    return "${PIPESTATUS[0]}"
+  fi
+
+  "$@" >> "${INSTALL_LOG}" 2>&1
+}
+
+run_logged() {
+  local label="$1"
+  shift
+
+  if run_logged_allow_fail "${label}" "$@"; then
+    ok "${label}"
+    return
+  fi
+
+  fail_install "${label}"
+}
+
 if [[ "$(id -u)" -eq 0 ]]; then
   SUDO=""
 else
@@ -35,7 +152,7 @@ docker_cmd() {
 }
 
 compose() {
-  docker_cmd compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
+  docker_cmd compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
 require_env_file() {
@@ -58,14 +175,14 @@ validate_compose_config() {
     echo "生产 Docker Compose 配置校验失败，请检查 .env.production 和 docker-compose.prod.yml。"
     cat "${compose_err}" >&2
     rm -f "${compose_check}" "${compose_err}"
-    exit 1
+    fail_install "生产 Docker Compose 配置校验失败。"
   fi
 
   if grep -E "variable is not set|is not set\\. Defaulting" "${compose_err}" >/dev/null 2>&1; then
     echo "生产 Docker Compose 配置缺少变量，请检查 .env.production。"
     cat "${compose_err}" >&2
     rm -f "${compose_check}" "${compose_err}"
-    exit 1
+    fail_install "生产 Docker Compose 配置缺少变量。"
   fi
 
   rm -f "${compose_check}" "${compose_err}"
@@ -414,35 +531,78 @@ handle_existing_postgres_volume() {
   fi
 
   echo
-  echo "检测到已有 PostgreSQL 数据卷。PostgreSQL 首次初始化后的用户名和密码不会因修改 .env.production 自动改变。"
-  echo "如果这是重新安装测试环境，可以选择清空数据卷。"
+  warn "检测到已有 PostgreSQL 数据卷。"
+  echo "PostgreSQL 首次初始化后的用户名和密码不会因为修改 .env.production 自动改变。"
+  echo "如果这是测试环境重新安装，可以清空旧数据库卷。"
   echo "如果是正式环境，请先备份数据库。"
   echo
+  echo "请选择处理方式："
+  echo "1. 保留现有数据并停止安装"
+  echo "2. 备份数据库后继续"
+  echo "3. 删除测试数据库卷并重新初始化"
+  echo
 
-  local confirmation=""
-  read -r -p "是否清空旧数据库卷重新初始化？输入 DELETE_DB_DATA 确认，否则中止安装: " confirmation
-  if [[ "${confirmation}" != "DELETE_DB_DATA" ]]; then
-    echo "已中止安装，避免误用旧数据库凭据。"
-    exit 1
+  local choice=""
+  read -r -p "请输入选项 [1/2/3]: " choice
+  case "${choice}" in
+    1)
+      warn "已停止安装，保留现有 PostgreSQL 数据卷。"
+      exit 1
+      ;;
+    2)
+      backup_existing_database
+      ;;
+    3)
+      local confirmation=""
+      read -r -p "输入 DELETE_DB_DATA 确认删除测试数据库卷: " confirmation
+      if [[ "${confirmation}" != "DELETE_DB_DATA" ]]; then
+        warn "未确认删除，已停止安装。"
+        exit 1
+      fi
+      run_logged_allow_fail "停止现有生产服务" compose down --remove-orphans || true
+      run_logged "删除 PostgreSQL 数据卷 ${volume_name}" docker_cmd volume rm "${volume_name}"
+      ;;
+    *)
+      warn "未选择有效选项，已停止安装。"
+      exit 1
+      ;;
+  esac
+}
+
+backup_existing_database() {
+  local timestamp backup_dir
+  timestamp="$(date +%Y%m%d-%H%M%S)"
+  backup_dir="${PROJECT_ROOT}/backups/${timestamp}"
+  mkdir -p "${backup_dir}"
+  chmod 700 "${PROJECT_ROOT}/backups" "${backup_dir}"
+
+  run_logged "启动 PostgreSQL 以执行备份" compose up -d postgres
+  wait_for_postgres
+
+  echo "正在备份 PostgreSQL 数据库到 backups/${timestamp}/postgres.dump..."
+  if ! compose exec -T postgres pg_dump -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -Fc -f - > "${backup_dir}/postgres.dump"; then
+    print_migration_diagnostics
+    fail_install "数据库备份失败，请确认 .env.production 中的数据库凭据与现有数据卷一致。"
   fi
 
-  echo "Stopping existing production stack before removing ${volume_name}..."
-  compose down --remove-orphans || true
-  docker_cmd volume rm "${volume_name}"
+  cp "${ENV_FILE}" "${backup_dir}/env.production.backup"
+  chmod 600 "${backup_dir}/env.production.backup"
+  ok "数据库备份完成：backups/${timestamp}"
 }
 
 wait_for_postgres() {
-  echo "Waiting for PostgreSQL..."
+  echo "等待 PostgreSQL 就绪..."
   for _ in $(seq 1 60); do
     if compose exec -T postgres pg_isready -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" >/dev/null 2>&1; then
+      ok "PostgreSQL 已就绪。"
       return
     fi
     sleep 2
   done
 
-  echo "PostgreSQL did not become ready in time."
-  compose logs --tail=80 postgres || true
-  exit 1
+  echo "PostgreSQL 未在预期时间内就绪。"
+  compose logs --tail=100 postgres || true
+  fail_install "PostgreSQL 启动超时。"
 }
 
 print_migration_diagnostics() {
@@ -455,172 +615,248 @@ print_migration_diagnostics() {
   echo "PostgreSQL container status:"
   compose ps postgres || true
   echo
-  echo "Last 80 PostgreSQL log lines:"
-  compose logs --tail=80 postgres || true
+  echo "Last 100 PostgreSQL log lines:"
+  compose logs --tail=100 postgres || true
+  echo
+  echo "Last 100 API log lines:"
+  compose logs --tail=100 api || true
+  echo
+  echo "Last 100 installer log lines:"
+  tail -n 100 "${INSTALL_LOG}" || true
 }
 
 preflight_database_connection() {
-  echo "Checking database connectivity from the API image..."
-  if compose run --rm api node -e 'async function main() { let prisma; try { const { PrismaClient } = require("@prisma/client"); prisma = new PrismaClient(); await prisma.$queryRawUnsafe("SELECT 1"); } catch { console.error("数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"); process.exitCode = 1; } finally { if (prisma) { await prisma.$disconnect().catch(() => {}); } } } main();'; then
+  if run_logged_allow_fail "检查 API 容器内数据库连接" compose run --rm api node -e 'async function main() { let prisma; try { const { PrismaClient } = require("@prisma/client"); prisma = new PrismaClient(); await prisma.$queryRawUnsafe("SELECT 1"); } catch { console.error("数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"); process.exitCode = 1; } finally { if (prisma) { await prisma.$disconnect().catch(() => {}); } } } main();'; then
+    ok "数据库连接检查通过。"
     return
   fi
 
+  echo "数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"
   print_migration_diagnostics
-  exit 1
+  fail_install "数据库连接预检失败。"
 }
 
 run_migrations() {
-  echo "Running database migrations..."
-  if compose run --rm api corepack pnpm db:migrate; then
+  if run_logged_allow_fail "运行数据库迁移" compose run --rm api corepack pnpm db:migrate; then
+    ok "数据库迁移完成。"
     return
   fi
 
   echo "数据库迁移失败。"
   echo "数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"
   print_migration_diagnostics
-  exit 1
+  fail_install "数据库迁移失败。"
 }
 
 collect_configuration() {
-  DOMAIN="$(normalize_domain "$(prompt_required "Domain, without path")")"
-  ADMIN_EMAIL="$(prompt_required "Admin email")"
+  section 2 "域名配置"
+  DOMAIN="$(normalize_domain "$(prompt_required "请输入绑定域名，例如 example.com")")"
 
-  while true; do
-    ADMIN_PASSWORD="$(prompt_secret "Admin password")"
-    local confirm_password
-    confirm_password="$(prompt_secret "Confirm admin password")"
-    if [[ "${ADMIN_PASSWORD}" == "${confirm_password}" && -n "${ADMIN_PASSWORD}" ]]; then
-      break
-    fi
-    echo "Passwords did not match."
-  done
-
-  ADMIN_DISPLAY_NAME="$(prompt_required "Admin display name" "Super Admin")"
-  POSTGRES_DB="$(prompt_required "Database name" "photo_weather_ai")"
-  POSTGRES_USER="$(prompt_required "Database user" "${POSTGRES_DB}")"
+  section 3 "数据库配置"
+  POSTGRES_DB="$(prompt_required "请输入数据库名称" "photo_weather_ai")"
+  POSTGRES_USER="$(prompt_required "请输入数据库用户" "${POSTGRES_DB}")"
   require_postgres_identifier "Database name" "${POSTGRES_DB}"
   require_postgres_identifier "Database user" "${POSTGRES_USER}"
 
-  POSTGRES_PASSWORD="$(prompt_secret "Database password")"
+  POSTGRES_PASSWORD="$(prompt_secret "请输入数据库密码（留空自动生成）")"
   if [[ -z "${POSTGRES_PASSWORD}" ]]; then
     POSTGRES_PASSWORD="$(generate_secret)"
-    echo "Generated database password."
+    ok "已自动生成数据库密码。"
   fi
 
-  REDIS_PASSWORD="$(prompt_secret "Redis password (blank to auto-generate)")"
+  REDIS_PASSWORD="$(prompt_secret "请输入 Redis 密码（留空自动生成）")"
   if [[ -z "${REDIS_PASSWORD}" ]]; then
     REDIS_PASSWORD="$(generate_secret)"
-    echo "Generated Redis password."
+    ok "已自动生成 Redis 密码。"
   fi
 
-  JWT_SECRET="$(prompt_secret "JWT secret (blank to auto-generate)")"
+  JWT_SECRET="$(prompt_secret "请输入 JWT 密钥（留空自动生成）")"
   if [[ -z "${JWT_SECRET}" ]]; then
     JWT_SECRET="$(generate_secret)"
-    echo "Generated JWT secret."
+    ok "已自动生成 JWT 密钥。"
   fi
 
+  section 4 "管理员账号"
+  ADMIN_EMAIL="$(prompt_required "请输入管理员邮箱")"
+
+  while true; do
+    ADMIN_PASSWORD="$(prompt_secret "请输入管理员密码")"
+    local confirm_password
+    confirm_password="$(prompt_secret "请再次输入管理员密码")"
+    if [[ "${ADMIN_PASSWORD}" == "${confirm_password}" && -n "${ADMIN_PASSWORD}" ]]; then
+      break
+    fi
+    warn "两次输入的管理员密码不一致，请重新输入。"
+  done
+
+  ADMIN_DISPLAY_NAME="$(prompt_required "请输入管理员显示名称" "Super Admin")"
+
+  section 5 "第三方服务配置"
   AMAP_API_KEY=""
   AMAP_WEB_SERVICE_KEY=""
-  if ask_yes_no "Configure Amap Web Service key now" "n"; then
-    AMAP_API_KEY="$(prompt_secret "Amap Web Service key")"
+  if ask_yes_no "现在配置高德 Web Service Key" "n"; then
+    AMAP_API_KEY="$(prompt_secret "请输入高德 Web Service Key")"
     AMAP_WEB_SERVICE_KEY="${AMAP_API_KEY}"
   fi
 
   DEEPSEEK_API_KEY=""
   DEEPSEEK_BASE_URL="https://api.deepseek.com"
-  if ask_yes_no "Configure DeepSeek key now" "n"; then
-    DEEPSEEK_API_KEY="$(prompt_secret "DeepSeek API key")"
-    DEEPSEEK_BASE_URL="$(prompt_optional "DeepSeek base URL" "${DEEPSEEK_BASE_URL}")"
+  if ask_yes_no "现在配置 DeepSeek Key" "n"; then
+    DEEPSEEK_API_KEY="$(prompt_secret "请输入 DeepSeek API Key")"
+    DEEPSEEK_BASE_URL="$(prompt_optional "请输入 DeepSeek Base URL" "${DEEPSEEK_BASE_URL}")"
   fi
 
   QWEATHER_API_KEY=""
   QWEATHER_API_HOST=""
-  if ask_yes_no "Configure QWeather key and API Host now" "n"; then
-    QWEATHER_API_KEY="$(prompt_secret "QWeather API key")"
-    QWEATHER_API_HOST="$(prompt_required "QWeather API Host, for example xxxxx.qweatherapi.com")"
+  if ask_yes_no "现在配置和风天气 Key 与 API Host" "n"; then
+    QWEATHER_API_KEY="$(prompt_secret "请输入和风天气 API Key")"
+    QWEATHER_API_HOST="$(prompt_required "请输入和风天气 API Host，例如 xxxxx.qweatherapi.com")"
   fi
 
   OPEN_METEO_API_KEY=""
   OPEN_METEO_MODE="free"
   OPEN_METEO_CUSTOMER_ENDPOINT=""
-  if ask_yes_no "Configure Open-Meteo commercial key now" "n"; then
-    OPEN_METEO_API_KEY="$(prompt_secret "Open-Meteo API key")"
-    OPEN_METEO_CUSTOMER_ENDPOINT="$(prompt_optional "Open-Meteo customer endpoint")"
+  if ask_yes_no "现在配置 Open-Meteo 商业 Key" "n"; then
+    OPEN_METEO_API_KEY="$(prompt_secret "请输入 Open-Meteo API Key")"
+    OPEN_METEO_CUSTOMER_ENDPOINT="$(prompt_optional "请输入 Open-Meteo Customer Endpoint")"
     OPEN_METEO_MODE="customer"
+  fi
+}
+
+provider_enabled_label() {
+  local value="$1"
+  if [[ -n "${value}" ]]; then
+    printf '%s' "是"
+  else
+    printf '%s' "否"
+  fi
+}
+
+print_deployment_summary() {
+  echo
+  line
+  echo "部署摘要"
+  line
+  printf 'Domain: %s\n' "${DOMAIN}"
+  printf 'Database name: %s\n' "${POSTGRES_DB}"
+  printf 'Database user: %s\n' "${POSTGRES_USER}"
+  printf 'Admin email: %s\n' "${ADMIN_EMAIL}"
+  printf 'Providers configured: Amap=%s / QWeather=%s / DeepSeek=%s / Open-Meteo=%s\n' \
+    "$(provider_enabled_label "${AMAP_API_KEY:-}")" \
+    "$(provider_enabled_label "${QWEATHER_API_KEY:-}")" \
+    "$(provider_enabled_label "${DEEPSEEK_API_KEY:-}")" \
+    "$(provider_enabled_label "${OPEN_METEO_API_KEY:-}")"
+  echo "Passwords and API keys are hidden."
+}
+
+confirm_deployment() {
+  local confirmation=""
+  echo
+  read -r -p "确认开始部署？输入 YES 继续: " confirmation
+  if [[ "${confirmation}" != "YES" ]]; then
+    warn "已取消部署，未启动 Docker 服务。"
+    exit 1
   fi
 }
 
 bootstrap_stack() {
   local production_services=(postgres redis astro-service api web caddy worker)
 
-  echo "Building production images..."
-  compose build
+  section 7 "启动 Docker 服务"
+  run_logged "构建生产镜像" compose build
 
-  echo "Starting database, Redis, and astro-service..."
-  compose up -d postgres redis astro-service
+  run_logged "启动数据库、Redis 和星历服务" compose up -d postgres redis astro-service
   wait_for_postgres
 
-  echo "Preparing astro-service ephemeris cache..."
-  if ! compose run --rm astro-service python scripts/fetch_ephemeris.py; then
-    echo "Warning: ephemeris download failed. Astro-service will report unhealthy until de421.bsp is available in the astro_data volume."
+  if ! run_logged_allow_fail "准备 astro-service 星历缓存" compose run --rm astro-service python scripts/fetch_ephemeris.py; then
+    warn "星历缓存下载失败。astro-service 会在 astro_data 卷中缺少 de421.bsp 时显示为不健康。"
   fi
 
+  section 8 "数据库初始化"
   preflight_database_connection
   run_migrations
 
-  echo "Running database seed..."
-  compose run --rm api corepack pnpm db:seed
+  run_logged "写入数据库种子数据" compose run --rm api corepack pnpm db:seed
 
-  echo "Creating or verifying the first admin account..."
-  compose run --rm \
+  run_logged "创建或确认初始管理员账号" compose run --rm \
     -e ADMIN_EMAIL="${ADMIN_EMAIL}" \
     -e ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
     -e ADMIN_DISPLAY_NAME="${ADMIN_DISPLAY_NAME}" \
     api corepack pnpm create-admin
 
-  echo "Starting full stack..."
-  compose up -d --remove-orphans "${production_services[@]}"
-  compose restart api web worker caddy
-  echo "Production service status:"
+  run_logged "启动完整生产服务" compose up -d --remove-orphans "${production_services[@]}"
+  run_logged "重启应用服务" compose restart api web worker caddy
+  echo "生产服务状态："
   compose ps
 }
 
-main() {
-  if [[ ! -f "${COMPOSE_FILE}" || ! -f "${ENV_TEMPLATE}" || ! -f "${CADDY_TEMPLATE}" ]]; then
-    echo "Missing deployment templates. Run this script from the project checkout."
-    exit 1
+check_https_after_start() {
+  section 9 "HTTPS 检查"
+  if curl -fsS --max-time 15 "https://${DOMAIN}" >/dev/null 2>&1; then
+    ok "HTTPS 首页可访问：https://${DOMAIN}"
+  else
+    warn "暂时无法访问 https://${DOMAIN}。请确认 DNS、80/443 端口和 Caddy 证书签发状态。"
   fi
 
+  if curl -fsS --max-time 15 "https://${DOMAIN}/api/health" >/dev/null 2>&1; then
+    ok "API 健康检查可访问：https://${DOMAIN}/api/health"
+  else
+    warn "暂时无法访问 API 健康检查：https://${DOMAIN}/api/health"
+  fi
+}
+
+main() {
+  title
+  section 1 "环境检查"
+  local should_render_env=0
+  if [[ ! -f "${COMPOSE_FILE}" || ! -f "${ENV_TEMPLATE}" || ! -f "${CADDY_TEMPLATE}" ]]; then
+    fail_install "缺少部署模板，请在项目 checkout 根目录运行。"
+  fi
+  ok "部署模板检查通过。"
+
   if [[ -f "${ENV_FILE}" ]]; then
-    echo ".env.production already exists."
-    if ask_yes_no "Reuse existing production environment" "y"; then
+    warn ".env.production 已存在。"
+    if ask_yes_no "是否复用现有生产环境配置" "y"; then
       load_env_file
       DOMAIN="${DOMAIN:-}"
       if [[ -z "${DOMAIN}" ]]; then
-        echo "Existing .env.production does not define DOMAIN."
-        exit 1
+        fail_install "现有 .env.production 未定义 DOMAIN。"
       fi
     else
       collect_configuration
-      render_env_file
+      should_render_env=1
     fi
   else
     collect_configuration
-    render_env_file
+    should_render_env=1
   fi
 
+  section 6 "生成配置文件"
+  if [[ "${should_render_env}" == "1" ]]; then
+    render_env_file
+    ok "已生成 .env.production。"
+  else
+    ok "复用现有 .env.production。"
+  fi
   require_env_file "未生成 .env.production，请检查安装输入后重试。"
   load_env_file
   render_caddyfile
+  ok "已生成 deploy/Caddyfile。"
+  print_deployment_summary
+  confirm_deployment
   ensure_docker
+  ok "Docker 与 Docker Compose 检查通过。"
   validate_compose_config
+  ok "生产 Docker Compose 配置校验通过。"
   check_ports
   check_dns
   handle_existing_postgres_volume
   bootstrap_stack
+  check_https_after_start
 
+  section 10 "完成"
   echo
-  echo "Deployment complete."
+  ok "部署完成。"
   echo "Public URL: https://${DOMAIN}"
   echo "API health: https://${DOMAIN}/api/health"
   echo "Admin login: https://${DOMAIN}/admin/login"

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
 import { useState } from "react";
+import { sanitizeAuthErrorMessage } from "../../components/auth-errors";
 import { loginPublicAccount } from "../../components/account-session";
 import { Badge, Button, Card, FormField, Input } from "../../components/ui";
 
@@ -40,7 +41,7 @@ export function LoginForm({ initialEmail = "", registered = false }: LoginFormPr
       await loginPublicAccount(email.trim(), password);
       router.replace("/account");
     } catch (error) {
-      setStatus((error as Error).message || "登录失败，请检查邮箱和密码。");
+      setStatus(sanitizeAuthErrorMessage((error as Error).message));
     } finally {
       setIsSubmitting(false);
     }
@@ -79,7 +80,10 @@ export function LoginForm({ initialEmail = "", registered = false }: LoginFormPr
         </FormField>
 
         {status ? (
-          <div className="rounded-lg border border-info bg-card px-3 py-2 text-sm leading-6 text-info">
+          <div
+            role="alert"
+            className="rounded-lg border border-info bg-card px-3 py-2 text-sm leading-6 text-info"
+          >
             {status}
           </div>
         ) : null}

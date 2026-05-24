@@ -1,7 +1,15 @@
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
-import { shouldShowAdminEntry } from "../../components/account-session";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  loginPublicAccount,
+  shouldShowAdminEntry,
+} from "../../components/account-session";
+import {
+  invalidCredentialsMessage,
+  loginServiceUnavailableMessage,
+  sanitizeAuthErrorMessage,
+} from "../../components/auth-errors";
 import { publicHeaderActionLabels, publicHeaderNavLabels } from "../../components/public-header";
 import AccountPage, { metadata as accountMetadata } from "./page";
 import { accountCenterSectionLabels, UnauthenticatedAccountPrompt } from "./account-center-client";
@@ -13,6 +21,10 @@ import { publicRegisterFormLabels } from "../register/register-form";
 
 const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("public account navigation", () => {
   it("uses a unified account entry instead of top-level login or admin actions", () => {
@@ -82,5 +94,52 @@ describe("account center foundation", () => {
       "注册",
       "已有账户，去登录",
     ]);
+  });
+});
+
+describe("login error sanitization", () => {
+  const rawPrismaLoginError =
+    "Invalid `prisma.user.findUnique()` invocation: Authentication failed against database server at `postgres`, the provided database credentials for `photo_weather_ai` are not valid.\n    at login (auth-routes.ts:1:1)";
+
+  it("does not expose raw Prisma/database text in login alerts", () => {
+    expect(sanitizeAuthErrorMessage(rawPrismaLoginError)).toBe(loginServiceUnavailableMessage);
+    const html = renderToStaticMarkup(
+      React.createElement("div", { role: "alert" }, sanitizeAuthErrorMessage(rawPrismaLoginError)),
+    );
+
+    expect(html).toContain(loginServiceUnavailableMessage);
+    expect(html).not.toContain("Prisma");
+    expect(html).not.toContain("postgres");
+    expect(html).not.toContain("photo_weather_ai");
+    expect(html).not.toContain("auth-routes.ts");
+  });
+
+  it("preserves invalid-credential copy from the auth API", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: "invalid_credentials", message: invalidCredentialsMessage }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await expect(loginPublicAccount("user@example.com", "wrong-password")).rejects.toThrow(
+      invalidCredentialsMessage,
+    );
+  });
+
+  it("sanitizes raw database failures returned to the browser", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ message: rawPrismaLoginError }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(loginPublicAccount("user@example.com", "CorrectHorseBattery99")).rejects.toThrow(
+      loginServiceUnavailableMessage,
+    );
   });
 });

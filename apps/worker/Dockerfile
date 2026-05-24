@@ -8,7 +8,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/worker ./apps/worker
 COPY packages ./packages
 
-ENV DATABASE_URL=postgresql://photo_weather_ai:photo_weather_ai@postgres:5432/photo_weather_ai
+ENV DATABASE_URL=postgresql://prisma_generate:prisma_generate@localhost:5432/prisma_generate?schema=public
 
 RUN pnpm install --frozen-lockfile
 RUN pnpm db:generate

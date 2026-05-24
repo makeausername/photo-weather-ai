@@ -151,6 +151,7 @@ describe("production deployment assets", () => {
       const source = readRepoFile(relativePath);
       expect(source).not.toContain('"photo_weather"');
       expect(source).not.toContain("photo_weather:");
+      expect(source).not.toContain("photo_weather_ai:photo_weather_ai@postgres");
     }
   });
 
@@ -172,7 +173,7 @@ describe("production deployment assets", () => {
       expect(source).toContain('COMPOSE_FILE="docker-compose.prod.yml"');
       expect(source).toContain("compose() {");
       expect(source).toContain(
-        'docker_cmd compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"',
+        'docker_cmd compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"',
       );
 
       for (const line of source.split(/\r?\n/)) {
@@ -194,6 +195,7 @@ describe("production deployment assets", () => {
       "scripts/status.sh",
       "scripts/backup.sh",
       "scripts/uninstall.sh",
+      "scripts/reset-prod-db.sh",
     ]) {
       const source = readRepoFile(relativePath);
       expect(source).toContain('if [[ ! -f "${ENV_FILE}" ]]; then');
@@ -207,6 +209,33 @@ describe("production deployment assets", () => {
     expect(installer).toContain('compose config > "${compose_check}" 2> "${compose_err}"');
     expect(installer).toContain("variable is not set");
     expect(installer).toContain("compose ps");
+  });
+
+  it("keeps installer safeguards for old PostgreSQL volumes and polished interaction", () => {
+    const installer = readRepoFile("scripts/install.sh");
+    for (const expected of [
+      "逐光天气 一键部署安装程序",
+      'section 1 "环境检查"',
+      'section 2 "域名配置"',
+      'section 3 "数据库配置"',
+      'section 4 "管理员账号"',
+      'section 5 "第三方服务配置"',
+      'section 6 "生成配置文件"',
+      'section 7 "启动 Docker 服务"',
+      'section 8 "数据库初始化"',
+      'section 9 "HTTPS 检查"',
+      'section 10 "完成"',
+      "检测到已有 PostgreSQL 数据卷",
+      "PostgreSQL 首次初始化后的用户名和密码不会因为修改 .env.production 自动改变",
+      "备份数据库后继续",
+      "DELETE_DB_DATA",
+      "backup_existing_database",
+      "确认开始部署？输入 YES 继续",
+      "deploy/install.log",
+      "--verbose",
+    ]) {
+      expect(installer).toContain(expected);
+    }
   });
 
   const bashAvailable = commandAvailable("bash", ["--version"]);

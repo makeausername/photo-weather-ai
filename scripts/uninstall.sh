@@ -23,7 +23,7 @@ docker_cmd() {
 }
 
 compose() {
-  docker_cmd compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
+  docker_cmd compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
 if [[ ! -f "${ENV_FILE}" ]]; then

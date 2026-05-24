@@ -17,6 +17,19 @@ This deployment path is for a single Ubuntu/Debian server with Docker Compose, P
 bash scripts/install.sh
 ```
 
+The installer uses a guided flow:
+
+1. Environment check
+2. Domain configuration
+3. Database configuration
+4. Admin account
+5. Third-party service configuration
+6. Config file generation
+7. Docker service startup
+8. Database initialization
+9. HTTPS check
+10. Completion summary
+
 The installer prompts for:
 
 - Domain.
@@ -26,9 +39,19 @@ The installer prompts for:
 - JWT secret, with automatic generation when left blank.
 - Optional Amap, DeepSeek, QWeather, and Open-Meteo commercial credentials.
 
-The script writes `.env.production` and `deploy/Caddyfile`, installs Docker and the Docker Compose plugin if needed, builds images, starts PostgreSQL/Redis/astro-service, downloads the local `de421.bsp` astro ephemeris into a Docker volume, runs Prisma migrations and seed data, creates the first admin account, and starts the full stack.
+The script writes `.env.production` and `deploy/Caddyfile`, installs Docker and the Docker Compose plugin if needed, validates the production Compose config, builds images, starts PostgreSQL/Redis/astro-service, downloads the local `de421.bsp` astro ephemeris into a Docker volume, runs Prisma migrations and seed data, creates the first admin account, and starts the full stack.
 
 If the PostgreSQL password prompt is left blank, the installer generates a URL-safe password and uses the same value for `POSTGRES_PASSWORD` and the encoded password inside `DATABASE_URL`.
+
+Docker build and initialization logs are written to `deploy/install.log`. Pass `--verbose` to print full command logs:
+
+```bash
+bash scripts/install.sh --verbose
+```
+
+Before Docker services are started, the installer prints a summary with domain, database name, database user, admin email, and whether optional providers were configured. It never prints database passwords, JWT secrets, or provider keys.
+
+If an existing PostgreSQL Docker volume is detected, the installer stops and asks whether to keep data and stop, back up the database and continue, or delete a test database volume after typing `DELETE_DB_DATA`. It never deletes database data silently.
 
 ## Compose Environment File
 
@@ -66,7 +89,7 @@ Backups are stored under `backups/YYYYMMDD-HHMMSS/`. The PostgreSQL dump is save
 bash scripts/status.sh
 ```
 
-The status script shows Docker Compose service state, recent logs for `web`, `api`, `astro-service`, and `caddy`, checks `https://your-domain`, checks `https://your-domain/api/health`, and tries the internal astro-service health endpoint from the API container network.
+The status script shows Docker Compose service state, public URL, API health, PostgreSQL status, Caddy status, recent service logs, recent error logs, and the internal astro-service health endpoint from the API container network.
 
 ## Reset Test Database
 
@@ -127,15 +150,17 @@ Amap, DeepSeek, QWeather, and Open-Meteo credentials can be entered during insta
 - Port `80` or `443` occupied: stop the conflicting service before Caddy starts.
 - DNS not pointed: update the domain `A` record and wait for propagation; Caddy may fail certificate issuance until DNS is correct.
 - Caddy certificate failure: check `bash scripts/status.sh` and `docker compose --env-file .env.production -f docker-compose.prod.yml logs caddy`.
-- Database migration failure: check PostgreSQL status, confirm `DATABASE_URL`, then rerun `bash scripts/update.sh`.
+- Database migration failure: check PostgreSQL status with `bash scripts/status.sh`, confirm `DATABASE_URL`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` are generated from the same database inputs, then rerun `bash scripts/update.sh`.
 - Prisma `P1000` during migration: the database credentials in `DATABASE_URL` do not match the credentials used when the PostgreSQL volume was first initialized, or the deployment is reusing an old PostgreSQL volume. For a new test deployment, reset the stack and regenerate runtime files:
 
   ```bash
-  docker compose --env-file .env.production -f docker-compose.prod.yml down -v --remove-orphans
+  bash scripts/reset-prod-db.sh
   rm -f .env.production deploy/Caddyfile
   bash scripts/install.sh
   ```
 
   For an existing deployment with real data, run `bash scripts/backup.sh` first, then alter the PostgreSQL user/password inside the database or update `.env.production` to match the already-initialized database credentials. Do not remove volumes on a real deployment unless the backup has been verified.
+- Login shows `登录服务暂时不可用，请稍后重试或联系管理员。`: check `bash scripts/status.sh`, then inspect server-side logs with `docker compose --env-file .env.production -f docker-compose.prod.yml logs -f api`. The UI intentionally hides raw Prisma, PostgreSQL host, and stack-trace details.
+- Login shows `邮箱或密码不正确。`: the auth service is reachable, but the email/password pair did not match an active account. Use the admin credentials created during installation or rerun `bash scripts/update.sh` to reapply migrations and seed data.
 - Astro-service health failure: confirm `astro_data` contains `de421.bsp`; rerun `docker compose --env-file .env.production -f docker-compose.prod.yml run --rm astro-service python scripts/fetch_ephemeris.py`.
 - Web cannot call API: confirm `.env.production` has `NEXT_PUBLIC_API_BASE_URL=https://your-domain/api`, rebuild with `bash scripts/update.sh`, and check `https://your-domain/api/health`.

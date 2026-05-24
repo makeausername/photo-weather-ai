@@ -53,6 +53,10 @@ class ApiAuthError extends Error {
   }
 }
 
+export const invalidCredentialsMessage = "邮箱或密码不正确。";
+export const loginServiceUnavailableMessage =
+  "登录服务暂时不可用，请稍后重试或联系管理员。";
+
 const loginSchema = z.object({
   email: z.string().trim().email("请输入有效邮箱地址。"),
   password: z.string().min(1, "请输入密码。").max(1000, "密码长度超过限制。"),
@@ -360,6 +364,13 @@ function sendZodError(reply: FastifyReply, error: z.ZodError): FastifyReply {
   });
 }
 
+function sendLoginServiceUnavailable(reply: FastifyReply): FastifyReply {
+  return reply.status(503).send({
+    error: "login_service_unavailable",
+    message: loginServiceUnavailableMessage,
+  });
+}
+
 export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOptions): void {
   const client = options.dbClient;
   const authConfig = options.authConfig;
@@ -419,51 +430,56 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
     }
 
     const email = parsedBody.data.email.trim().toLowerCase();
-    const authContext = await getUserAuthContextByEmail(email, { client });
-    const passwordMatches = authContext
-      ? await verifyPassword(parsedBody.data.password, authContext.passwordHash)
-      : false;
+    try {
+      const authContext = await getUserAuthContextByEmail(email, { client });
+      const passwordMatches = authContext
+        ? await verifyPassword(parsedBody.data.password, authContext.passwordHash)
+        : false;
 
-    if (!authContext || !passwordMatches) {
+      if (!authContext || !passwordMatches) {
+        await recordAuthAudit(app, {
+          client,
+          action: "auth.login.failure",
+          email,
+          ipAddress: request.ip,
+          userAgent: request.headers["user-agent"] ?? null,
+        });
+
+        return reply.status(401).send({
+          error: "invalid_credentials",
+          message: invalidCredentialsMessage,
+        });
+      }
+
+      const refreshToken = createRefreshToken();
+      await createUserSession(
+        {
+          userId: authContext.user.id,
+          refreshTokenHash: hashRefreshToken(refreshToken),
+          expiresAt: refreshTokenExpiresAt(authConfig),
+          ipAddress: request.ip,
+          userAgent: request.headers["user-agent"] ?? null,
+        },
+        { client },
+      );
+      await touchUserLastLogin(authContext.user.id, { client });
+
+      const refreshedPrincipal = await getUserAuthContextById(authContext.user.id, { client });
+      const principal = refreshedPrincipal ?? authContext;
       await recordAuthAudit(app, {
         client,
-        action: "auth.login.failure",
+        actorUserId: principal.user.id,
+        action: "auth.login.success",
         email,
         ipAddress: request.ip,
         userAgent: request.headers["user-agent"] ?? null,
       });
 
-      return reply.status(401).send({
-        error: "invalid_credentials",
-        message: "邮箱或密码不正确，请检查后重试。",
-      });
+      return authResponse(principal, signAccessToken(principal.user.id, authConfig), refreshToken);
+    } catch (error) {
+      request.log.error({ err: error, email }, "Auth login failed");
+      return sendLoginServiceUnavailable(reply);
     }
-
-    const refreshToken = createRefreshToken();
-    await createUserSession(
-      {
-        userId: authContext.user.id,
-        refreshTokenHash: hashRefreshToken(refreshToken),
-        expiresAt: refreshTokenExpiresAt(authConfig),
-        ipAddress: request.ip,
-        userAgent: request.headers["user-agent"] ?? null,
-      },
-      { client },
-    );
-    await touchUserLastLogin(authContext.user.id, { client });
-
-    const refreshedPrincipal = await getUserAuthContextById(authContext.user.id, { client });
-    const principal = refreshedPrincipal ?? authContext;
-    await recordAuthAudit(app, {
-      client,
-      actorUserId: principal.user.id,
-      action: "auth.login.success",
-      email,
-      ipAddress: request.ip,
-      userAgent: request.headers["user-agent"] ?? null,
-    });
-
-    return authResponse(principal, signAccessToken(principal.user.id, authConfig), refreshToken);
   });
 
   app.post("/auth/refresh", async (request, reply) => {

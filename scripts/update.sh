@@ -23,7 +23,57 @@ docker_cmd() {
 }
 
 compose() {
-  docker_cmd compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
+  docker_cmd compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+}
+
+mask_database_url() {
+  local url="$1"
+  if [[ -z "${url}" ]]; then
+    printf '(empty)\n'
+    return
+  fi
+
+  printf '%s\n' "${url}" | sed -E 's#(postgres(ql)?://[^:/@]+:)[^@]*(@)#\1***\3#'
+}
+
+print_migration_diagnostics() {
+  echo
+  echo "Migration diagnostics:"
+  echo "DATABASE_URL=$(mask_database_url "${DATABASE_URL:-}")"
+  echo "POSTGRES_DB=${POSTGRES_DB:-}"
+  echo "POSTGRES_USER=${POSTGRES_USER:-}"
+  echo
+  echo "PostgreSQL container status:"
+  compose ps postgres || true
+  echo
+  echo "Last 100 PostgreSQL log lines:"
+  compose logs --tail=100 postgres || true
+  echo
+  echo "Last 100 API log lines:"
+  compose logs --tail=100 api || true
+}
+
+preflight_database_connection() {
+  echo "Checking database connectivity from the API image..."
+  if compose run --rm api node -e 'async function main() { let prisma; try { const { PrismaClient } = require("@prisma/client"); prisma = new PrismaClient(); await prisma.$queryRawUnsafe("SELECT 1"); } catch { console.error("数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"); process.exitCode = 1; } finally { if (prisma) { await prisma.$disconnect().catch(() => {}); } } } main();'; then
+    return
+  fi
+
+  echo "数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"
+  print_migration_diagnostics
+  exit 1
+}
+
+run_migrations() {
+  echo "Running database migrations..."
+  if compose run --rm api corepack pnpm db:migrate; then
+    return
+  fi
+
+  echo "数据库迁移失败。"
+  echo "数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"
+  print_migration_diagnostics
+  exit 1
 }
 
 wait_for_postgres() {
@@ -68,8 +118,8 @@ echo "Starting database dependencies..."
 compose up -d postgres redis astro-service
 wait_for_postgres
 
-echo "Running database migrations..."
-compose run --rm api corepack pnpm db:migrate
+preflight_database_connection
+run_migrations
 
 echo "Running database seed..."
 compose run --rm api corepack pnpm db:seed

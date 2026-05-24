@@ -1,3 +1,8 @@
+import {
+  loginServiceUnavailableMessage,
+  sanitizeAuthErrorMessage,
+} from "../../components/auth-errors";
+
 export type JsonPrimitive = string | number | boolean | null;
 
 export type JsonValue =
@@ -226,22 +231,44 @@ function formatAdminApiError(errorText: string, status: number): string {
   try {
     const payload = JSON.parse(errorText) as AdminApiErrorPayload;
     if (payload.message) {
-      return payload.message;
+      return sanitizeAuthErrorMessage(payload.message, `后台接口请求失败，状态码 ${status}`);
     }
 
     const issueMessage = payload.issues?.find((issue) => issue.message)?.message;
     if (issueMessage) {
-      return issueMessage;
+      return sanitizeAuthErrorMessage(issueMessage, `后台接口请求失败，状态码 ${status}`);
     }
 
     if (payload.error) {
       return `后台接口请求失败：${payload.error}`;
     }
   } catch {
-    return errorText;
+    return sanitizeAuthErrorMessage(errorText, `后台接口请求失败，状态码 ${status}`);
   }
 
   return errorText;
+}
+
+function formatAdminLoginError(errorText: string): string {
+  if (!errorText) {
+    return loginServiceUnavailableMessage;
+  }
+
+  try {
+    const payload = JSON.parse(errorText) as AdminApiErrorPayload;
+    if (payload.message) {
+      return sanitizeAuthErrorMessage(payload.message, loginServiceUnavailableMessage);
+    }
+
+    const issueMessage = payload.issues?.find((issue) => issue.message)?.message;
+    if (issueMessage) {
+      return sanitizeAuthErrorMessage(issueMessage, loginServiceUnavailableMessage);
+    }
+  } catch {
+    return sanitizeAuthErrorMessage(errorText, loginServiceUnavailableMessage);
+  }
+
+  return loginServiceUnavailableMessage;
 }
 
 export function createProviderConnectionTestRequestInit(): RequestInit {
@@ -317,7 +344,7 @@ export async function loginAdmin(email: string, password: string): Promise<Admin
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(errorText || "后台登录失败，请检查邮箱和密码。");
+    throw new Error(formatAdminLoginError(errorText));
   }
 
   const session = (await response.json()) as AdminAuthSession;
