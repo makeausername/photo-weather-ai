@@ -209,6 +209,8 @@ export const openMeteoModeOptions = [
 
 export const meteoblueDefaultBaseUrl = "https://my.meteoblue.com";
 
+export const meteoblueDefaultPackages = "basic-1h,clouds-1h";
+
 export const weatherDefaultTimeoutMs = 8000;
 
 export const weatherDefaultRetryCount = 1;
@@ -295,8 +297,7 @@ export const providerFieldPresets = [
   },
   {
     providerCode: "qweather",
-    helpText:
-      "中国大陆主天气源，用于实时天气、逐小时预报、天气预警、空气质量和基础天气数据。",
+    helpText: "中国大陆主天气源，用于实时天气、逐小时预报、天气预警、空气质量和基础天气数据。",
     fields: [
       {
         key: "realCallEnabled",
@@ -304,7 +305,7 @@ export const providerFieldPresets = [
         target: "configJson",
         control: "boolean",
         defaultValue: false,
-        helpText: "关闭时测试连接只返回演示测试结果，不请求和风天气服务。",
+        helpText: "关闭时测试连接只返回模拟测试结果，不请求和风天气服务。",
       },
       {
         key: "apiKey",
@@ -392,8 +393,7 @@ export const providerFieldPresets = [
         target: "secretJson",
         placeholder: keepExistingSecretPlaceholder,
         password: true,
-        helpText:
-          "如使用商业版 Open-Meteo，可填写 API Key；普通体验模式可保持为空。",
+        helpText: "如使用商业版 Open-Meteo，可填写 API Key；普通体验模式可保持为空。",
       },
       {
         key: "customerEndpoint",
@@ -401,8 +401,7 @@ export const providerFieldPresets = [
         target: "configJson",
         placeholder: openMeteoCustomerEndpoint,
         defaultValue: openMeteoCustomerEndpoint,
-        helpText:
-          "商业客户模式使用；免费开发模式可保持默认值，系统不会把 Key 暴露到前端。",
+        helpText: "商业客户模式使用；免费开发模式可保持默认值，系统不会把 Key 暴露到前端。",
       },
       {
         key: "modelPreference",
@@ -461,7 +460,8 @@ export const providerFieldPresets = [
   },
   {
     providerCode: "meteoblue",
-    helpText: "专业增强源，后续用于商业精度提升。当前先保留配置、状态和接口占位。",
+    helpText:
+      "meteoblue Free Weather API 可用于 Forecast API 测试。建议先启用 basic-1h 和 clouds-1h，用于云层与基础天气增强。",
     fields: [
       {
         key: "realCallEnabled",
@@ -469,7 +469,7 @@ export const providerFieldPresets = [
         target: "configJson",
         control: "boolean",
         defaultValue: false,
-        helpText: "关闭时只做配置检查，不请求 meteoblue 服务。",
+        helpText: "关闭时测试连接只返回模拟测试结果，不请求 meteoblue 服务。",
       },
       {
         key: "apiKey",
@@ -479,10 +479,13 @@ export const providerFieldPresets = [
         password: true,
       },
       {
-        key: "packageName",
-        label: "Package Name",
+        key: "packages",
+        label: "数据包 / Packages",
         target: "configJson",
-        placeholder: "basic-1h",
+        placeholder: meteoblueDefaultPackages,
+        defaultValue: meteoblueDefaultPackages,
+        helpText:
+          "多个数据包用英文逗号分隔，例如 basic-1h,clouds-1h。Free Weather API 可用于 Forecast API 测试。",
       },
       {
         key: "baseUrl",

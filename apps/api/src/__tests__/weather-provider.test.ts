@@ -223,7 +223,7 @@ describe("weather runtime resolvers", () => {
         configJson: {
           realCallEnabled: true,
           baseUrl: "https://my.meteoblue.com/",
-          packageName: "basic-1h",
+          packages: "basic-1h,clouds-1h",
           timeoutMs: 5000,
         },
         secretJson: {
@@ -240,7 +240,8 @@ describe("weather runtime resolvers", () => {
       realCallEnabled: true,
       apiKeyPresent: true,
       baseUrl: "https://my.meteoblue.com",
-      packageName: "basic-1h",
+      packages: ["basic-1h", "clouds-1h"],
+      packageName: "basic-1h,clouds-1h",
       timeoutMs: 5000,
       modeLabelZh: "真实服务",
     });
@@ -276,7 +277,8 @@ describe("weather runtime resolvers", () => {
     expect(normalizeMeteoblueAdminConfigJson({ baseUrl: "" })).toEqual({
       realCallEnabled: false,
       baseUrl: "https://my.meteoblue.com",
-      packageName: "",
+      packages: "basic-1h,clouds-1h",
+      packageName: "basic-1h,clouds-1h",
       timeoutMs: 8000,
       retryCount: 1,
     });

@@ -15,6 +15,7 @@ describe("provider field presets", () => {
         "deepseek",
         "qweather",
         "open_meteo",
+        "meteoblue",
         "amap",
         "aliyun_oss",
         "tencent_cos",
@@ -74,6 +75,22 @@ describe("provider field presets", () => {
         }),
         expect.objectContaining({ key: "customerEndpoint", target: "configJson" }),
         expect.objectContaining({ key: "defaultModel", target: "configJson", advanced: true }),
+      ]),
+    );
+
+    expect(getProviderFieldPreset("meteoblue")?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "realCallEnabled", target: "configJson" }),
+        expect.objectContaining({
+          key: "apiKey",
+          label: "meteoblue API Key",
+          target: "secretJson",
+        }),
+        expect.objectContaining({
+          key: "packages",
+          target: "configJson",
+          defaultValue: "basic-1h,clouds-1h",
+        }),
       ]),
     );
   });

@@ -24,9 +24,13 @@ import { adminApiFetch, createProviderConnectionTestRequestInit } from "../admin
 import type { JsonValue, MockConnectionTestResult, SafeProviderConfig } from "../admin-api";
 import {
   isProviderSaveDisabled,
+  isProviderTestDisabled,
   providerSaveButtonLabel,
   providerSaveErrorMessage,
   providerSaveSuccessMessage,
+  providerTestButtonLabel,
+  providerTestErrorMessage,
+  providerTestSuccessMessage,
   type ProviderSaveFeedbackState,
 } from "./provider-save-feedback";
 
@@ -43,6 +47,7 @@ type RowState = ProviderSaveFeedbackState;
 
 type FieldDrafts = Record<string, Record<string, string>>;
 type ClearSecretDrafts = Record<string, Record<string, boolean>>;
+type TestResultDrafts = Record<string, MockConnectionTestResult | undefined>;
 
 type RealDevCallFlags = {
   readonly amap: boolean;
@@ -89,6 +94,35 @@ const providerTabs = [
   { href: "/admin/providers/ai", label: "智能解读" },
   { href: "/admin/providers/storage", label: "存储" },
 ] as const;
+
+const providerGroupOrder = ["geo", "weather", "ai", "storage"] as const;
+
+const providerGroupLabels: Record<string, string> = {
+  geo: "地图与地理服务",
+  weather: "天气数据源",
+  ai: "智能解读",
+  storage: "存储服务",
+};
+
+const providerPurposeLabels: Record<string, string> = {
+  "geo:amap": "地点搜索、地理编码和坐标转换。",
+  "weather:qweather": "中国主天气源，用于实况、预报、预警和空气质量。",
+  "weather:open_meteo": "补充云层分层、露点、能见度和多模型数据。",
+  "weather:meteoblue": "Forecast API 专业增强，用于云层与商业精度提升测试。",
+  "ai:deepseek": "解释确定性评分、风险和拍摄建议。",
+  "storage:local_storage": "本地上传文件和运行时素材存储。",
+  "storage:aliyun_oss": "阿里云 OSS 对象存储预留。",
+  "storage:tencent_cos": "腾讯云 COS 对象存储预留。",
+  "storage:s3_compatible": "S3 兼容对象存储预留。",
+};
+
+const providerCapabilityLabels: Record<string, readonly string[]> = {
+  "weather:qweather": ["实时天气", "逐小时预报", "能见度", "空气质量", "天气预警"],
+  "weather:open_meteo": ["逐小时预报", "云层分层", "能见度", "露点", "多模型交叉验证"],
+  "weather:meteoblue": ["Forecast API", "云层增强", "专业预报", "商业精度提升"],
+  "geo:amap": ["地点搜索", "地理编码", "坐标转换"],
+  "ai:deepseek": ["智能解读", "文案生成", "结果说明"],
+};
 
 function isJsonObject(value: JsonValue | null | undefined): value is Record<string, JsonValue> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -184,6 +218,18 @@ function providerName(provider: SafeProviderConfig): string {
     provider.displayName ||
     "未命名服务商"
   );
+}
+
+function providerIdentityKey(provider: SafeProviderConfig): string {
+  return `${provider.providerType}:${provider.providerCode}`;
+}
+
+function providerPurpose(provider: SafeProviderConfig): string {
+  return providerPurposeLabels[providerIdentityKey(provider)] ?? "服务商配置与连接测试。";
+}
+
+function providerCapabilities(provider: SafeProviderConfig): readonly string[] {
+  return providerCapabilityLabels[providerIdentityKey(provider)] ?? [];
 }
 
 function getPresetFields(
@@ -375,10 +421,6 @@ function isQWeatherProvider(provider: SafeProviderConfig): boolean {
   return provider.providerType === "weather" && provider.providerCode === "qweather";
 }
 
-function isMeteoblueProvider(provider: SafeProviderConfig): boolean {
-  return provider.providerType === "weather" && provider.providerCode === "meteoblue";
-}
-
 function getDeepSeekAnalysisMode(provider: SafeProviderConfig): DeepSeekAnalysisMode {
   return normalizeDeepSeekAnalysisMode(
     readStringJson(readJsonField(provider.configJson, "analysisMode")),
@@ -434,17 +476,42 @@ function secretStatusVariant(provider: SafeProviderConfig): "success" | "warning
   return "warning";
 }
 
-function providerTestModeLabel(provider: SafeProviderConfig, realEnabled: boolean): string {
+function providerTestModeLabel(realEnabled: boolean): string {
   if (realEnabled) {
     return "真实服务";
   }
-  if (isQWeatherProvider(provider)) {
-    return "演示模式";
-  }
-  if (isMeteoblueProvider(provider)) {
-    return "配置检查";
-  }
   return "模拟测试";
+}
+
+function testStatusLabel(state: RowState | undefined): string {
+  if (!state || state.status === "idle") {
+    return "未测试";
+  }
+  if (state.status === "testing") {
+    return "测试中";
+  }
+  if (state.status === "saved") {
+    return "通过";
+  }
+  if (state.status === "error") {
+    return "失败";
+  }
+  return "未测试";
+}
+
+function testStatusVariant(
+  state: RowState | undefined,
+): "success" | "warning" | "danger" | "muted" {
+  if (state?.status === "saved") {
+    return "success";
+  }
+  if (state?.status === "testing") {
+    return "warning";
+  }
+  if (state?.status === "error") {
+    return "danger";
+  }
+  return "muted";
 }
 
 function qWeatherApiHostPresent(provider: SafeProviderConfig): boolean {
@@ -459,189 +526,130 @@ function providerFieldLabel(provider: SafeProviderConfig, key: string): string {
   );
 }
 
-function weatherCapabilities(provider: SafeProviderConfig): readonly string[] {
-  if (provider.providerCode === "qweather") {
-    return ["实时天气", "逐小时预报", "能见度", "空气质量", "天气预警"];
-  }
-
-  if (provider.providerCode === "open_meteo") {
-    return ["逐小时预报", "云层分层", "能见度", "露点", "多模型交叉验证"];
-  }
-
-  if (provider.providerCode === "meteoblue") {
-    return ["专业增强源", "商业精度提升", "接口占位", "后续合同接入"];
-  }
-
-  return [];
-}
-
-function ProviderStatus({
+function ProviderBadgeRow({
   provider,
   flags,
+  testState,
 }: {
   readonly provider: SafeProviderConfig;
   readonly flags: RealDevCallFlags;
+  readonly testState?: RowState;
 }) {
   const realEnabled = isRealDevCallEnabled(provider, flags);
 
   return (
-    <div className="grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs">
-      <div className="flex flex-wrap gap-2">
-        <Badge variant={provider.enabled ? "success" : "muted"}>
-          服务状态：{provider.enabled ? "已启用" : "未启用"}
+    <div className="flex flex-wrap gap-2">
+      <Badge variant={provider.enabled ? "success" : "muted"}>
+        服务状态：{provider.enabled ? "已启用" : "未启用"}
+      </Badge>
+      <Badge variant={realEnabled ? "warning" : "muted"}>
+        真实调用：{realEnabled ? "已启用" : "未启用"}
+      </Badge>
+      <Badge variant={secretStatusVariant(provider)}>密钥状态：{secretStatusLabel(provider)}</Badge>
+      <Badge variant={testStatusVariant(testState)}>最近测试：{testStatusLabel(testState)}</Badge>
+      {isQWeatherProvider(provider) ? (
+        <Badge variant={qWeatherApiHostPresent(provider) ? "success" : "warning"}>
+          API Host：{qWeatherApiHostPresent(provider) ? "已配置" : "未配置"}
         </Badge>
-        <Badge variant={realEnabled ? "warning" : "muted"}>
-          真实调用：{realEnabled ? "已启用" : "未启用"}
-        </Badge>
-        <Badge variant={secretStatusVariant(provider)}>
-          密钥状态：{secretStatusLabel(provider)}
-        </Badge>
-        {isQWeatherProvider(provider) ? (
-          <Badge variant={qWeatherApiHostPresent(provider) ? "success" : "warning"}>
-            API Host：{qWeatherApiHostPresent(provider) ? "已配置" : "未配置"}
-          </Badge>
-        ) : null}
-        <Badge variant={realEnabled ? "warning" : "muted"}>
-          测试模式：{providerTestModeLabel(provider, realEnabled)}
-        </Badge>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <Badge variant="muted">优先级 {provider.priority}</Badge>
-        <Badge variant="muted">{providerTypeLabels[provider.providerType] ?? "其他服务商"}</Badge>
-      </div>
+      ) : null}
+      <Badge variant={realEnabled ? "warning" : "muted"}>
+        测试模式：{providerTestModeLabel(realEnabled)}
+      </Badge>
+      <Badge variant="muted">优先级 {provider.priority}</Badge>
     </div>
   );
 }
 
-function WeatherStatus({
-  provider,
-  flags,
-}: {
-  readonly provider: SafeProviderConfig;
-  readonly flags: RealDevCallFlags;
-}) {
-  const realEnabled = isRealDevCallEnabled(provider, flags);
-  const capabilities = weatherCapabilities(provider);
-
-  return (
-    <div className="grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs">
-      <div className="flex flex-wrap gap-2">
-        <Badge variant={provider.enabled ? "success" : "muted"}>
-          服务状态：{provider.enabled ? "已启用" : "未启用"}
-        </Badge>
-        <Badge variant={realEnabled ? "warning" : "muted"}>
-          真实调用：{realEnabled ? "已启用" : "未启用"}
-        </Badge>
-        <Badge variant={secretStatusVariant(provider)}>
-          密钥状态：{secretStatusLabel(provider)}
-        </Badge>
-        {isQWeatherProvider(provider) ? (
-          <Badge variant={qWeatherApiHostPresent(provider) ? "success" : "warning"}>
-            API Host：{qWeatherApiHostPresent(provider) ? "已配置" : "未配置"}
-          </Badge>
-        ) : null}
-        <Badge variant={realEnabled ? "warning" : "muted"}>
-          测试模式：{providerTestModeLabel(provider, realEnabled)}
-        </Badge>
-      </div>
-      <div className="grid gap-2">
-        <p className="font-semibold text-card-foreground">数据能力</p>
-        <div className="flex flex-wrap gap-2">
-          {capabilities.map((capability) => (
-            <Badge key={capability} variant="info">
-              {capability}
-            </Badge>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DeepSeekStatus({
-  provider,
-  flags,
-}: {
-  readonly provider: SafeProviderConfig;
-  readonly flags: RealDevCallFlags;
-}) {
-  const realEnabled = isRealDevCallEnabled(provider, flags);
-  const hasSecret = providerHasSecret(provider);
-
-  return (
-    <div className="grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs">
-      <div className="flex flex-wrap gap-2">
-        <Badge variant={provider.enabled ? "success" : "muted"}>
-          服务状态：{provider.enabled ? "已启用" : "未启用"}
-        </Badge>
-        <Badge variant={realEnabled ? "warning" : "muted"}>
-          真实调用：{realEnabled ? "已启用" : "未启用"}
-        </Badge>
-        <Badge variant={hasSecret ? "success" : "warning"}>
-          密钥状态：{hasSecret ? "已保存" : "未保存"}
-        </Badge>
-        <Badge variant="info">当前模式：{getDeepSeekModeLabel(provider)}</Badge>
-      </div>
-      <p className="text-xs leading-5 text-muted-foreground">
-        当前模型：{getDeepSeekModelLabel(provider)}
-      </p>
-    </div>
-  );
-}
-
-function RealDevCallNotice({
-  provider,
-  flags,
-}: {
-  readonly provider: SafeProviderConfig;
-  readonly flags: RealDevCallFlags;
-}) {
-  const key = getRealDevCallFlagKey(provider);
-  if (!key) {
+function CapabilityBadges({ provider }: { readonly provider: SafeProviderConfig }) {
+  const capabilities = providerCapabilities(provider);
+  if (capabilities.length === 0) {
     return null;
   }
 
-  const enabled = flags[key];
-  const configured = readConfiguredRealCallEnabled(provider);
-
   return (
-    <div className="rounded-lg border border-border bg-muted px-3 py-2 text-sm leading-6 text-muted-foreground">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold text-card-foreground">真实调用：</span>
-        <Badge variant={enabled ? "warning" : "muted"}>{enabled ? "已启用" : "未启用"}</Badge>
-        {configured === undefined ? <Badge variant="muted">使用环境兜底</Badge> : null}
-      </div>
-      <p className="mt-1 text-xs leading-5">
-        {enabled
-          ? "当前将请求真实服务，请确认 Key 有效且注意调用费用。"
-          : "当前测试连接为模拟测试，不会请求外部服务。"}
-      </p>
+    <div className="flex flex-wrap gap-2">
+      {capabilities.map((capability) => (
+        <Badge key={capability} variant="info">
+          {capability}
+        </Badge>
+      ))}
     </div>
   );
 }
 
-function SavedSecretSummary({ provider }: { readonly provider: SafeProviderConfig }) {
+function ProviderCompactFacts({
+  provider,
+  flags,
+}: {
+  readonly provider: SafeProviderConfig;
+  readonly flags: RealDevCallFlags;
+}) {
+  const realEnabled = isRealDevCallEnabled(provider, flags);
+  const configured = readConfiguredRealCallEnabled(provider);
   const maskedSecrets = listMaskedSecrets(provider);
+  const shownSecrets = maskedSecrets.slice(0, 2);
 
   return (
-    <div className="rounded-lg border border-border bg-muted p-3">
-      <p className="text-sm font-semibold text-card-foreground">已保存密钥</p>
-      {maskedSecrets.length > 0 ? (
-        <dl className="mt-3 grid gap-2 text-xs leading-5">
-          {maskedSecrets.map(([key, value]) => (
-            <div key={key} className="grid gap-1 sm:grid-cols-[140px_1fr]">
-              <dt className="font-semibold text-muted-foreground">
-                {providerFieldLabel(provider, key)}
-              </dt>
-              <dd className="break-all text-card-foreground">{value}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : (
-        <p className="mt-2 text-xs leading-5 text-muted-foreground">
-          暂无已保存密钥。请在密钥配置中填写后保存。
-        </p>
-      )}
+    <dl className="grid gap-x-4 gap-y-2 rounded-lg border border-border bg-card px-3 py-2 text-xs leading-5 sm:grid-cols-2">
+      <div className="flex min-w-0 gap-2">
+        <dt className="shrink-0 font-semibold text-muted-foreground">真实调用</dt>
+        <dd className="text-card-foreground">
+          {realEnabled ? "已启用" : "未启用"}
+          {configured === undefined ? "（环境兜底）" : ""}
+        </dd>
+      </div>
+      <div className="flex min-w-0 gap-2">
+        <dt className="shrink-0 font-semibold text-muted-foreground">密钥</dt>
+        <dd className="truncate text-card-foreground">
+          {shownSecrets.length > 0
+            ? shownSecrets
+                .map(([key, value]) => `${providerFieldLabel(provider, key)} ${value}`)
+                .join(" / ")
+            : secretStatusLabel(provider)}
+        </dd>
+      </div>
+    </dl>
+  );
+}
+
+function ProviderModeBadge({ provider }: { readonly provider: SafeProviderConfig }) {
+  if (isDeepSeekProvider(provider)) {
+    return (
+      <>
+        <Badge variant="info">当前模式：{getDeepSeekModeLabel(provider)}</Badge>
+        <Badge variant="muted">模型：{getDeepSeekModelLabel(provider)}</Badge>
+      </>
+    );
+  }
+
+  return null;
+}
+
+function ProviderTestDetails({ result }: { readonly result?: MockConnectionTestResult }) {
+  if (!result) {
+    return null;
+  }
+
+  const details = [
+    result.modeZh ?? (result.connectionMode === "real" ? "真实服务" : "模拟测试"),
+    typeof result.statusCode === "number" ? `HTTP ${result.statusCode}` : null,
+    typeof result.latencyMs === "number" ? `${Math.round(result.latencyMs)}ms` : null,
+    result.sampleLocation ?? result.location,
+    result.testedAt ? new Date(result.testedAt).toLocaleString("zh-CN") : null,
+    result.packages?.length ? result.packages.join(",") : null,
+  ].filter((detail): detail is string => typeof detail === "string" && detail.length > 0);
+
+  if (details.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2 text-xs">
+      {details.map((detail) => (
+        <Badge key={detail} variant="muted">
+          {detail}
+        </Badge>
+      ))}
     </div>
   );
 }
@@ -664,11 +672,13 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   >({});
   const [saveStateByProvider, setSaveStateByProvider] = useState<Record<string, RowState>>({});
   const [testStateByProvider, setTestStateByProvider] = useState<Record<string, RowState>>({});
+  const [testResultByProvider, setTestResultByProvider] = useState<TestResultDrafts>({});
   const [dirtyProviders, setDirtyProviders] = useState<Record<string, boolean>>({});
   const [loadState, setLoadState] = useState<RowState>({ status: "idle" });
   const [realDevCallFlags, setRealDevCallFlags] =
     useState<RealDevCallFlags>(defaultRealDevCallFlags);
   const savingProviderIds = useRef<Set<string>>(new Set());
+  const testingProviderIds = useRef<Set<string>>(new Set());
 
   const path = providerType
     ? `/admin/providers?providerType=${encodeURIComponent(providerType)}`
@@ -705,8 +715,10 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       );
       setSaveStateByProvider({});
       setTestStateByProvider({});
+      setTestResultByProvider({});
       setDirtyProviders({});
       savingProviderIds.current.clear();
+      testingProviderIds.current.clear();
       setExpandedProviders({});
       setExpandedAdvancedProviders({});
       setLoadState({ status: "saved", message: "服务商配置已加载。" });
@@ -727,6 +739,40 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       return groups;
     }, {});
   }, [providers]);
+
+  const orderedProviderGroups = useMemo(() => {
+    const knownGroups = providerGroupOrder.flatMap((group) => {
+      const groupProviders = groupedProviders[group];
+      return groupProviders?.length ? ([[group, groupProviders]] as const) : [];
+    });
+    const extraGroups = Object.entries(groupedProviders).filter(
+      ([group]) => !providerGroupOrder.includes(group as (typeof providerGroupOrder)[number]),
+    );
+
+    return [...knownGroups, ...extraGroups];
+  }, [groupedProviders]);
+
+  const providerOverview = useMemo(() => {
+    const enabledCount = providers.filter((provider) => provider.enabled).length;
+    const realEnabledCount = providers.filter((provider) =>
+      isRealDevCallEnabled(provider, realDevCallFlags),
+    ).length;
+    const savedSecretCount = providers.filter((provider) => providerHasSecret(provider)).length;
+    const failedTests = Object.values(testStateByProvider).filter(
+      (state) => state.status === "error",
+    ).length;
+    const missingRequired = providers.filter((provider) => {
+      const hasSecret = providerHasSecret(provider);
+      return provider.enabled && hasSecret === false && !isOpenMeteoProvider(provider);
+    }).length;
+
+    return {
+      enabledCount,
+      realEnabledCount,
+      savedSecretCount,
+      needsAttentionCount: failedTests + missingRequired,
+    };
+  }, [providers, realDevCallFlags, testStateByProvider]);
 
   function markProviderDirty(providerId: string) {
     setDirtyProviders((current) => ({
@@ -896,12 +942,19 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   }
 
   async function testProvider(provider: SafeProviderConfig) {
+    if (
+      testingProviderIds.current.has(provider.id) ||
+      testStateByProvider[provider.id]?.status === "testing"
+    ) {
+      return;
+    }
+    testingProviderIds.current.add(provider.id);
     const realEnabled = isRealDevCallEnabled(provider, realDevCallFlags);
     setTestStateByProvider((current) => ({
       ...current,
       [provider.id]: {
         status: "testing",
-        message: realEnabled ? "正在请求真实服务..." : "正在执行模拟测试...",
+        message: realEnabled ? "测试中，正在请求真实服务..." : "测试中，正在执行模拟测试...",
       },
     }));
 
@@ -910,21 +963,24 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         `/admin/providers/${provider.providerType}/${provider.providerCode}/test-connection`,
         createProviderConnectionTestRequestInit(),
       );
-      const modelSuffix = result.model ? ` 当前模型：${result.model}` : "";
-      const latencySuffix =
-        typeof result.latencyMs === "number" ? `，耗时 ${result.latencyMs}ms` : "";
+      setTestResultByProvider((current) => ({
+        ...current,
+        [provider.id]: result,
+      }));
       setTestStateByProvider((current) => ({
         ...current,
         [provider.id]: {
-          status: "saved",
-          message: `${result.message || "测试连接成功。"}${modelSuffix}${latencySuffix}`,
+          status: result.success === false ? "error" : "saved",
+          message: providerTestSuccessMessage(provider, result),
         },
       }));
     } catch (error) {
       setTestStateByProvider((current) => ({
         ...current,
-        [provider.id]: { status: "error", message: (error as Error).message },
+        [provider.id]: { status: "error", message: providerTestErrorMessage(provider, error) },
       }));
+    } finally {
+      testingProviderIds.current.delete(provider.id);
     }
   }
 
@@ -1091,14 +1147,40 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         </div>
       ) : null}
 
-      {Object.entries(groupedProviders).map(([group, groupProviders]) => (
+      <Card className="p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-base font-bold">服务商总览</h2>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              保存配置只更新后台设置；测试连接只在启用真实调用后请求外部服务。
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {[
+              { label: "已启用", value: providerOverview.enabledCount },
+              { label: "真实调用", value: providerOverview.realEnabledCount },
+              { label: "密钥已保存", value: providerOverview.savedSecretCount },
+              { label: "需要处理", value: providerOverview.needsAttentionCount },
+            ].map((item) => (
+              <div key={item.label} className="rounded-lg border border-border bg-muted px-3 py-2">
+                <p className="text-xs font-semibold text-muted-foreground">{item.label}</p>
+                <p className="mt-1 text-xl font-bold text-card-foreground">{item.value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Card>
+
+      {orderedProviderGroups.map(([group, groupProviders]) => (
         <Card key={group} className="overflow-hidden">
           <div className="flex flex-col gap-2 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-lg font-bold">{providerTypeLabels[group] ?? "其他服务商"}</h2>
+              <h2 className="text-lg font-bold">
+                {providerGroupLabels[group] ?? providerTypeLabels[group] ?? "其他服务商"}
+              </h2>
               <p className="mt-1 text-sm text-muted-foreground">{groupProviders.length} 个服务商</p>
             </div>
-            <Badge variant="muted">真实调用需显式启用，自动化测试保持模拟测试</Badge>
+            <Badge variant="muted">真实调用需显式启用</Badge>
           </div>
 
           <div className="grid gap-4 p-5 xl:grid-cols-2">
@@ -1110,64 +1192,73 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               const saveState = saveStateByProvider[provider.id];
               const testState = testStateByProvider[provider.id];
               const isSaving = isProviderSaveDisabled(saveState);
+              const isTesting = isProviderTestDisabled(testState);
               const hasUnsavedChanges = dirtyProviders[provider.id] ?? false;
               const isExpanded = expandedProviders[provider.id] ?? false;
               const isAdvancedExpanded = expandedAdvancedProviders[provider.id] ?? false;
               const isDeepSeek = isDeepSeekProvider(provider);
               const isWeather = isWeatherProvider(provider);
+              const showEditor = isExpanded || provider.providerType !== "storage";
 
               return (
                 <article
                   key={provider.id}
                   className="grid gap-4 rounded-lg border border-border bg-card p-4 shadow-sm"
                 >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <h3 className="text-base font-bold">
-                        {isDeepSeek ? "DeepSeek 智能解读" : providerName(provider)}
-                      </h3>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        代码：{provider.providerCode}
-                      </p>
+                  <div className="grid gap-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-base font-bold">{providerName(provider)}</h3>
+                          <Badge variant="muted">{provider.providerCode}</Badge>
+                          <ProviderModeBadge provider={provider} />
+                        </div>
+                        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                          {providerPurpose(provider)}
+                        </p>
+                      </div>
                     </div>
-                    {isDeepSeek ? (
-                      <DeepSeekStatus provider={provider} flags={realDevCallFlags} />
-                    ) : isWeather ? (
-                      <WeatherStatus provider={provider} flags={realDevCallFlags} />
-                    ) : (
-                      <ProviderStatus provider={provider} flags={realDevCallFlags} />
-                    )}
+                    <ProviderBadgeRow
+                      provider={provider}
+                      flags={realDevCallFlags}
+                      testState={testState}
+                    />
+                    <CapabilityBadges provider={provider} />
+                    <ProviderCompactFacts provider={provider} flags={realDevCallFlags} />
+                    {preset?.helpText ? (
+                      <p className="text-xs leading-5 text-muted-foreground">{preset.helpText}</p>
+                    ) : null}
                   </div>
 
-                  {preset?.helpText ? (
-                    <p className="rounded-lg border border-border bg-muted px-3 py-2 text-sm leading-6 text-muted-foreground">
-                      {preset.helpText}
-                    </p>
-                  ) : null}
-
-                  <RealDevCallNotice provider={provider} flags={realDevCallFlags} />
-
-                  <SavedSecretSummary provider={provider} />
-
-                  <div className="flex flex-wrap items-center gap-3">
-                    {!isDeepSeek && !isWeather ? (
-                      <Button variant="secondary" onClick={() => toggleProviderEditor(provider.id)}>
-                        {isExpanded ? "收起配置" : "编辑配置"}
-                      </Button>
-                    ) : null}
-                    <Button variant="secondary" onClick={() => void testProvider(provider)}>
-                      测试连接
-                    </Button>
-                    {testState?.message ? (
-                      <span
-                        className={`rounded-lg border px-3 py-2 text-sm ${stateClass(testState.status)}`}
+                  <div className="grid gap-2 border-t border-border pt-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      {provider.providerType === "storage" ? (
+                        <Button
+                          variant="secondary"
+                          onClick={() => toggleProviderEditor(provider.id)}
+                        >
+                          {isExpanded ? "收起配置" : "编辑配置"}
+                        </Button>
+                      ) : null}
+                      <Button
+                        variant="secondary"
+                        disabled={isTesting}
+                        onClick={() => void testProvider(provider)}
                       >
-                        {testState.message}
-                      </span>
-                    ) : null}
+                        {providerTestButtonLabel(testState)}
+                      </Button>
+                      {testState?.message ? (
+                        <span
+                          className={`rounded-lg border px-3 py-2 text-sm ${stateClass(testState.status)}`}
+                        >
+                          {testState.message}
+                        </span>
+                      ) : null}
+                    </div>
+                    <ProviderTestDetails result={testResultByProvider[provider.id]} />
                   </div>
 
-                  {isExpanded || isDeepSeek || isWeather ? (
+                  {showEditor ? (
                     <div className="grid gap-5 rounded-lg border border-border bg-muted p-4">
                       <SwitchRow
                         label="启用该服务商"
@@ -1182,21 +1273,19 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                         }}
                       />
 
-                      {!isDeepSeek ? (
-                        <FormField label="优先级">
-                          <Input
-                            type="number"
-                            value={priorityDrafts[provider.id] ?? provider.priority}
-                            onChange={(event) => {
-                              markProviderDirty(provider.id);
-                              setPriorityDrafts((current) => ({
-                                ...current,
-                                [provider.id]: Number(event.target.value),
-                              }));
-                            }}
-                          />
-                        </FormField>
-                      ) : null}
+                      <FormField label="优先级">
+                        <Input
+                          type="number"
+                          value={priorityDrafts[provider.id] ?? provider.priority}
+                          onChange={(event) => {
+                            markProviderDirty(provider.id);
+                            setPriorityDrafts((current) => ({
+                              ...current,
+                              [provider.id]: Number(event.target.value),
+                            }));
+                          }}
+                        />
+                      </FormField>
 
                       <section className="grid gap-3">
                         <div>
@@ -1339,7 +1428,9 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                           </div>
                           <div className="grid gap-3 sm:grid-cols-2">
                             {configFields
-                              .filter((field) => field.key === "mode" || field.key === "customerEndpoint")
+                              .filter(
+                                (field) => field.key === "mode" || field.key === "customerEndpoint",
+                              )
                               .map((field) => renderConfigField(provider, field))}
                           </div>
                         </section>
@@ -1350,12 +1441,15 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                           <div>
                             <h4 className="text-sm font-bold text-card-foreground">专业增强源</h4>
                             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                              专业增强源，后续用于商业精度提升。未启用真实调用时仅做配置检查。
+                              Free Weather API 可用于 Forecast API 测试，建议先使用
+                              basic-1h,clouds-1h。
                             </p>
                           </div>
                           <div className="grid gap-3 sm:grid-cols-2">
                             {configFields
-                              .filter((field) => field.key === "baseUrl" || field.key === "packageName")
+                              .filter(
+                                (field) => field.key === "baseUrl" || field.key === "packages",
+                              )
                               .map((field) => renderConfigField(provider, field))}
                           </div>
                         </section>
@@ -1423,7 +1517,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                       </details>
 
                       <div className="flex flex-wrap justify-end gap-3">
-                        {!isDeepSeek && !isWeather ? (
+                        {provider.providerType === "storage" ? (
                           <Button
                             variant="secondary"
                             onClick={() => toggleProviderEditor(provider.id)}

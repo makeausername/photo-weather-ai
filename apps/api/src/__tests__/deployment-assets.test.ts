@@ -17,6 +17,7 @@ const productionScripts = [
   "scripts/reset-admin.sh",
   "scripts/resume-install.sh",
   "scripts/download-ephemeris.sh",
+  "scripts/test-providers.sh",
 ] as const;
 
 const bashScripts = [
@@ -196,9 +197,15 @@ describe("production deployment assets", () => {
     const installer = readRepoFile("scripts/install.sh");
     expect(installer).toContain("urllib.parse.quote");
     expect(installer).toContain("set_database_config()");
-    expect(installer).toContain('DB_NAME="$(prompt_required "请输入数据库名称" "photo_weather_ai")"');
-    expect(installer).toContain('DB_USER="$(prompt_required "请输入数据库用户" "photo_weather_ai")"');
-    expect(installer).toContain('DB_PASSWORD="$(prompt_secret "请输入数据库密码（留空自动生成）")"');
+    expect(installer).toContain(
+      'DB_NAME="$(prompt_required "请输入数据库名称" "photo_weather_ai")"',
+    );
+    expect(installer).toContain(
+      'DB_USER="$(prompt_required "请输入数据库用户" "photo_weather_ai")"',
+    );
+    expect(installer).toContain(
+      'DB_PASSWORD="$(prompt_secret "请输入数据库密码（留空自动生成）")"',
+    );
     expect(installer).toContain('URL_ENCODED_DB_PASSWORD="$(urlencode_password "${DB_PASSWORD}")"');
     expect(installer).toContain('POSTGRES_DB="${DB_NAME}"');
     expect(installer).toContain('POSTGRES_USER="${DB_USER}"');
@@ -228,7 +235,9 @@ describe("production deployment assets", () => {
     expect(installer).toContain("openssl rand -hex 32 | tr -d '\\r\\n'");
     expect(installer).toContain("od -An -N32 -tx1 /dev/urandom | tr -d ' \\r\\n'");
     expect(installer).toContain("validate_admin_password_for_env()");
-    expect(installer).toContain("管理员密码包含暂不支持的特殊字符，请使用字母、数字和 . _ @ # % + = -。");
+    expect(installer).toContain(
+      "管理员密码包含暂不支持的特殊字符，请使用字母、数字和 . _ @ # % + = -。",
+    );
     expect(installer).toContain("第三方服务 Key 建议部署完成后在后台管理中配置");
     expect(installer).not.toContain("write_env_line");
     expect(installer).not.toContain("dotenv_quote");
@@ -247,9 +256,7 @@ describe("production deployment assets", () => {
       expect(source).toContain('ENV_FILE=".env.production"');
       expect(source).toContain('COMPOSE_FILE="docker-compose.prod.yml"');
       expect(source).toContain("compose() {");
-      expect(source).toContain(
-        'docker_cmd compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"',
-      );
+      expect(source).toContain('docker_cmd compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"');
 
       for (const line of source.split(/\r?\n/)) {
         const invokesDockerCompose = /\bdocker(?:_cmd)? compose\b/.test(line);
@@ -298,9 +305,7 @@ describe("production deployment assets", () => {
         relativePath === "scripts/status.sh"
           ? source.lastIndexOf("compose ps")
           : source.indexOf("compose config >/dev/null");
-      expect(source.indexOf('bash "${CHECK_ENV_SCRIPT}"')).toBeLessThan(
-        firstComposeUse,
-      );
+      expect(source.indexOf('bash "${CHECK_ENV_SCRIPT}"')).toBeLessThan(firstComposeUse);
     }
   });
 
@@ -403,7 +408,9 @@ describe("production deployment assets", () => {
       expect(source).toContain(
         'psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -c "SELECT 1;"',
       );
-      expect(source).toContain("数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。");
+      expect(source).toContain(
+        "数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。",
+      );
       expect(source.lastIndexOf("preflight_database_connection")).toBeLessThan(
         source.lastIndexOf("run_migrations"),
       );
@@ -427,19 +434,39 @@ describe("production deployment assets", () => {
     expect(script).toContain("https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/de421.bsp");
     expect(script).toContain('CONTAINER_EPHEMERIS_PATH="/app/data/de421.bsp"');
     expect(script).toContain("MIN_EPHEMERIS_BYTES=$((10 * 1024 * 1024))");
-    expect(script).toContain('compose cp "${EPHEMERIS_FILE}" "astro-service:${CONTAINER_EPHEMERIS_PATH}"');
+    expect(script).toContain(
+      'compose cp "${EPHEMERIS_FILE}" "astro-service:${CONTAINER_EPHEMERIS_PATH}"',
+    );
     expect(script).toContain('compose exec -T astro-service ls -lh "${CONTAINER_EPHEMERIS_PATH}"');
     expect(script).toContain("compose restart astro-service api web");
     expect(script).toContain("http://astro-service:4100/health");
     expect(script).toContain("ephemerisAvailable !== true");
-    expect(script).toContain('body.ephemerisPath !== \'${CONTAINER_EPHEMERIS_PATH}\'');
+    expect(script).toContain("body.ephemerisPath !== '${CONTAINER_EPHEMERIS_PATH}'");
     expect(installer).toContain('section 9 "天文星历文件检查"');
     expect(installer).toContain("download-ephemeris.sh");
     expect(resume).toContain("ensure_ephemeris_available");
-    expect(resume).toContain("bash \"${SCRIPT_DIR}/download-ephemeris.sh\"");
+    expect(resume).toContain('bash "${SCRIPT_DIR}/download-ephemeris.sh"');
     expect(status).toContain("ephemerisAvailable");
     expect(status).toContain("ephemerisPath");
     expect(status).toContain("星历文件缺失，请执行 bash scripts/download-ephemeris.sh");
+  });
+
+  it("ships the production provider diagnostics script without printing secrets", () => {
+    const script = readRepoFile("scripts/test-providers.sh");
+
+    expect(script).toContain('ENV_FILE=".env.production"');
+    expect(script).toContain('COMPOSE_FILE="docker-compose.prod.yml"');
+    expect(script).toContain('docker_cmd compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"');
+    expect(script).toContain("/admin/providers/${providerType}/${providerCode}/test-connection");
+    expect(script).toContain("QWeather");
+    expect(script).toContain("Open-Meteo");
+    expect(script).toContain("meteoblue");
+    expect(script).toContain("Amap");
+    expect(script).toContain("DeepSeek");
+    expect(script).toContain("No API keys or secrets will be printed.");
+    expect(script).toContain("Bearer [redacted]");
+    expect(script).not.toMatch(/console\.log\(.*ADMIN_PASSWORD/);
+    expect(script).not.toMatch(/echo .*ADMIN_PASSWORD/);
   });
 
   const bashCommand = resolveBashCommand();

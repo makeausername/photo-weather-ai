@@ -15,8 +15,16 @@ const unsafeSaveErrorPatterns = [
   /secretJson/i,
   /configJson/i,
   /apiKey/i,
+  /apikey/i,
+  /authorization/i,
+  /token/i,
+  /password/i,
+  /secret/i,
+  /DATABASE_URL/i,
+  /postgres/i,
   /\bat\s+\S+\s+\(/,
   /\bError:\s/i,
+  /:\d+:\d+/,
 ];
 
 export function providerSaveSuccessMessage(provider: ProviderIdentity): string {
@@ -64,4 +72,58 @@ export function providerSaveErrorMessage(error: unknown): string {
   }
 
   return `保存失败：${trimmed}`;
+}
+
+export function providerTestButtonLabel(state: ProviderSaveFeedbackState | undefined): string {
+  return state?.status === "testing" ? "测试中..." : "测试连接";
+}
+
+export function isProviderTestDisabled(state: ProviderSaveFeedbackState | undefined): boolean {
+  return state?.status === "testing";
+}
+
+export function providerTestSuccessMessage(
+  provider: ProviderIdentity,
+  result: {
+    readonly message?: string;
+    readonly messageZh?: string;
+    readonly latencyMs?: number;
+    readonly success?: boolean;
+    readonly connectionMode?: "mock" | "fixture" | "real";
+  },
+): string {
+  const providerLabel = providerSaveSuccessMessage(provider).replace("配置已保存。", "").trim();
+  const safeLabel = providerLabel || provider.displayName || "服务商";
+  const latency =
+    typeof result.latencyMs === "number" && Number.isFinite(result.latencyMs)
+      ? `，耗时 ${Math.max(0, Math.round(result.latencyMs))}ms`
+      : "";
+
+  if (result.success === false) {
+    const message = result.messageZh ?? result.message ?? "上游服务未返回成功状态。";
+    return `${safeLabel} 连接测试失败：${message}`;
+  }
+
+  if (result.connectionMode && result.connectionMode !== "real") {
+    return result.messageZh ?? result.message ?? `${safeLabel} 连接测试通过。`;
+  }
+
+  return `${safeLabel} 连接测试通过${latency}。`;
+}
+
+export function providerTestErrorMessage(provider: ProviderIdentity, error: unknown): string {
+  const providerLabel = providerSaveSuccessMessage(provider).replace("配置已保存。", "").trim();
+  const safeLabel = providerLabel || provider.displayName || "服务商";
+  const fallback = `${safeLabel} 连接测试失败：请稍后重试。`;
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  const trimmed = message.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+
+  if (unsafeSaveErrorPatterns.some((pattern) => pattern.test(trimmed))) {
+    return fallback;
+  }
+
+  return `${safeLabel} 连接测试失败：${trimmed}`;
 }

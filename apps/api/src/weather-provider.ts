@@ -24,6 +24,7 @@ import {
   openMeteoFreeEndpoint,
   openMeteoDefaultModel,
   meteoblueDefaultBaseUrl,
+  meteoblueDefaultPackages,
   qWeatherDefaultApiHost,
   qWeatherDefaultLanguage,
   qWeatherDefaultTimeoutMs,
@@ -93,6 +94,7 @@ export type ResolvedMeteoblueRuntimeConfig = {
   readonly priority: number;
   readonly apiKeyPresent: boolean;
   readonly baseUrl: string;
+  readonly packages: readonly string[];
   readonly packageName?: string;
   readonly timeoutMs: number;
   readonly retryCount: number;
@@ -310,16 +312,36 @@ function normalizeEndpoint(value: string | undefined, fallback: string): string 
     : `https://${withoutTrailingSlash}`;
 }
 
+function normalizeMeteobluePackageList(value: JsonValue | string | undefined): readonly string[] {
+  const rawPackages = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(",")
+      : [];
+  const packages = rawPackages
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter((item) => /^[A-Za-z0-9-]+$/.test(item));
+
+  if (packages.length > 0) {
+    return [...new Set(packages)];
+  }
+
+  return meteoblueDefaultPackages.split(",");
+}
+
+function serializeMeteobluePackageList(value: JsonValue | string | undefined): string {
+  return normalizeMeteobluePackageList(value).join(",");
+}
+
 export function resolveQWeatherRuntimeConfig(
   provider: ProviderConfigRecord | null,
   env: NodeJS.ProcessEnv = process.env,
 ): ResolvedQWeatherRuntimeConfig {
   const { configJson } = readSecretAndConfig(provider);
   const configuredHost = readConfiguredHost(configJson, ["apiHost", "baseUrl", "apiBaseUrl"]);
-  const apiHost =
-    configuredHost.provided
-      ? configuredHost.value ?? ""
-      : readEnvQWeatherApiHost(env) ?? qWeatherDefaultApiHost;
+  const apiHost = configuredHost.provided
+    ? configuredHost.value ?? ""
+    : readEnvQWeatherApiHost(env) ?? qWeatherDefaultApiHost;
   const baseUrl = apiHost ? buildQWeatherBaseUrl(apiHost) : qWeatherDefaultBaseUrl;
   const realCallEnabled = readWeatherRealCallEnabled(provider, env, "qweather");
 
@@ -362,10 +384,7 @@ export function resolveOpenMeteoRuntimeConfig(
     readString(configJson.mode) ?? readEnvString(env.OPEN_METEO_MODE),
   );
   const configuredCustomerEndpoint = readOpenMeteoCustomerEndpoint(provider, env);
-  const customerEndpoint = normalizeEndpoint(
-    configuredCustomerEndpoint,
-    openMeteoCustomerEndpoint,
-  );
+  const customerEndpoint = normalizeEndpoint(configuredCustomerEndpoint, openMeteoCustomerEndpoint);
   const realCallEnabled = readWeatherRealCallEnabled(provider, env, "open_meteo");
   const endpoint = mode === "customer" ? customerEndpoint : openMeteoFreeEndpoint;
 
@@ -415,6 +434,12 @@ export function resolveMeteoblueRuntimeConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): ResolvedMeteoblueRuntimeConfig {
   const { configJson } = readSecretAndConfig(provider);
+  const packageSource =
+    configJson.packages ??
+    configJson.packageName ??
+    readEnvString(env.METEOBLUE_PACKAGES) ??
+    readEnvString(env.METEOBLUE_PACKAGE_NAME);
+  const packages = normalizeMeteobluePackageList(packageSource);
   const realCallEnabled =
     env.NODE_ENV === "test"
       ? false
@@ -430,7 +455,8 @@ export function resolveMeteoblueRuntimeConfig(
       readString(configJson.baseUrl) ?? readEnvString(env.METEOBLUE_BASE_URL),
       meteoblueDefaultBaseUrl,
     ),
-    packageName: readString(configJson.packageName) ?? readEnvString(env.METEOBLUE_PACKAGE_NAME),
+    packages,
+    packageName: packages.join(","),
     timeoutMs: clampInteger(
       readNumber(configJson.timeoutMs) ?? readEnvNumber(env.METEOBLUE_TIMEOUT_MS),
       weatherDefaultTimeoutMs,
@@ -443,7 +469,7 @@ export function resolveMeteoblueRuntimeConfig(
       0,
       5,
     ),
-    modeLabelZh: realCallEnabled ? "真实服务" : "配置检查",
+    modeLabelZh: realCallEnabled ? "真实服务" : "模拟测试",
   };
 }
 
@@ -505,11 +531,13 @@ export function normalizeMeteoblueAdminConfigJson(
   configJson: JsonValue | undefined,
 ): Record<string, JsonValue> {
   const current = isJsonObject(configJson) ? { ...configJson } : {};
+  const packages = serializeMeteobluePackageList(current.packages ?? current.packageName);
   return {
     ...current,
     realCallEnabled: readBoolean(current.realCallEnabled) ?? false,
     baseUrl: normalizeEndpoint(readString(current.baseUrl), meteoblueDefaultBaseUrl),
-    packageName: readString(current.packageName) ?? "",
+    packages,
+    packageName: packages,
     timeoutMs: clampInteger(readNumber(current.timeoutMs), weatherDefaultTimeoutMs, 1000, 30000),
     retryCount: clampInteger(readNumber(current.retryCount), weatherDefaultRetryCount, 0, 5),
   };

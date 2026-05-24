@@ -360,13 +360,15 @@ describe("admin config routes", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
+    expect(response.json()).toMatchObject({
       success: true,
       mode: "mock",
       connectionMode: "mock",
+      modeZh: "模拟测试",
       providerType: "weather",
       providerCode: "qweather",
-      message: "当前为演示测试，未请求和风天气服务。",
+      sampleLocation: "黄山光明顶",
+      message: "当前为模拟测试，未请求和风天气服务。",
     });
 
     const emptyJsonBodyResponse = await app.inject({
@@ -383,7 +385,7 @@ describe("admin config routes", () => {
     expect(emptyJsonBodyResponse.json()).toMatchObject({
       success: true,
       mode: "mock",
-      message: "当前为演示测试，未请求和风天气服务。",
+      message: "当前为模拟测试，未请求和风天气服务。",
     });
 
     const emptyObjectResponse = await app.inject({
@@ -397,7 +399,7 @@ describe("admin config routes", () => {
     expect(emptyObjectResponse.json()).toMatchObject({
       success: true,
       mode: "mock",
-      message: "当前为演示测试，未请求和风天气服务。",
+      message: "当前为模拟测试，未请求和风天气服务。",
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -598,6 +600,68 @@ describe("admin config routes", () => {
       messageZh: "和风天气连接测试通过。",
     });
     expect(response.body).not.toContain("qweather-real-secret");
+    expect(response.body).not.toContain("secretJson");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("tests Open-Meteo free mode through mocked fetch without requiring an API key", async () => {
+    const fetchMock = vi.fn(async (input: string | URL) => {
+      const url = new URL(String(input));
+      expect(url.origin).toBe("https://api.open-meteo.com");
+      expect(url.pathname).toBe("/v1/forecast");
+      expect(url.searchParams.get("apikey")).toBeNull();
+      expect(url.searchParams.get("hourly")).toContain("cloud_cover_low");
+      expect(url.searchParams.get("hourly")).toContain("dew_point_2m");
+      expect(url.searchParams.get("hourly")).toContain("visibility");
+
+      return new Response(JSON.stringify({ hourly: { time: [] }, daily: { time: [] } }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const openMeteoProvider = state.providers.get("weather:open_meteo");
+    state.providers.set("weather:open_meteo", {
+      ...openMeteoProvider,
+      enabled: true,
+      configJson: {
+        ...(openMeteoProvider.configJson ?? {}),
+        realCallEnabled: true,
+        mode: "free",
+      },
+      secretJson: {},
+      maskedSecretJson: {},
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/providers/weather/open_meteo/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: true,
+      mode: "free",
+      connectionMode: "real",
+      modeZh: "真实服务",
+      providerCode: "open_meteo",
+      statusCode: 200,
+      message: "Open-Meteo 连接测试通过。",
+    });
+    expect(response.body).not.toContain("apiKey");
     expect(response.body).not.toContain("secretJson");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -825,7 +889,7 @@ describe("admin config routes", () => {
     });
   });
 
-  it("returns meteoblue config-check status without real calls when disabled", async () => {
+  it("returns meteoblue mock status without real calls when disabled", async () => {
     const fetchMock = vi.fn(() => {
       throw new Error("real network calls are disabled in automated tests");
     });
@@ -842,12 +906,83 @@ describe("admin config routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       success: true,
-      mode: "config_check",
+      mode: "mock",
       connectionMode: "mock",
-      message: "当前为配置检查，未请求 meteoblue 服务。",
+      modeZh: "模拟测试",
+      providerCode: "meteoblue",
+      message: "当前为模拟测试，未请求 meteoblue 服务。",
     });
     expect(fetchMock).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
+  });
+
+  it("tests a real meteoblue Forecast API connection through mocked fetch", async () => {
+    const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      expect(url.origin).toBe("https://my.meteoblue.com");
+      expect(url.pathname).toBe("/packages/basic-1h_clouds-1h");
+      expect(url.searchParams.get("lat")).toBe("30.1328");
+      expect(url.searchParams.get("lon")).toBe("118.1718");
+      expect(url.searchParams.get("apikey")).toBe("meteoblue-real-secret");
+      expect(init?.headers).toBeUndefined();
+
+      return new Response(JSON.stringify({ metadata: { name: "basic-1h" }, data_1h: {} }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const meteoblueProvider = state.providers.get("weather:meteoblue");
+    state.providers.set("weather:meteoblue", {
+      ...meteoblueProvider,
+      enabled: true,
+      configJson: {
+        ...(meteoblueProvider.configJson ?? {}),
+        realCallEnabled: true,
+        baseUrl: "https://my.meteoblue.com",
+        packages: "basic-1h,clouds-1h",
+      },
+      secretJson: {
+        apiKey: "meteoblue-real-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "mete****cret",
+      },
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/providers/weather/meteoblue/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: true,
+      mode: "real",
+      connectionMode: "real",
+      modeZh: "真实服务",
+      providerCode: "meteoblue",
+      statusCode: 200,
+      packages: ["basic-1h", "clouds-1h"],
+      sampleLocation: "黄山光明顶",
+      message: "meteoblue 连接测试通过。",
+    });
+    expect(response.body).not.toContain("meteoblue-real-secret");
+    expect(response.body).not.toContain("secretJson");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("tests a real DeepSeek connection through mocked fetch outside NODE_ENV=test", async () => {
@@ -945,6 +1080,7 @@ describe("admin config routes", () => {
     const deepSeekProvider = state.providers.get("ai:deepseek");
     const qWeatherProvider = state.providers.get("weather:qweather");
     const openMeteoProvider = state.providers.get("weather:open_meteo");
+    const meteoblueProvider = state.providers.get("weather:meteoblue");
     state.providers.set("geo:amap", {
       ...amapProvider,
       enabled: true,
@@ -1002,6 +1138,20 @@ describe("admin config routes", () => {
         apiKey: "open****cret",
       },
     });
+    state.providers.set("weather:meteoblue", {
+      ...meteoblueProvider,
+      enabled: true,
+      configJson: {
+        ...(meteoblueProvider.configJson ?? {}),
+        realCallEnabled: true,
+      },
+      secretJson: {
+        apiKey: "meteoblue-test-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "mete****cret",
+      },
+    });
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
 
     const amapResponse = await app.inject({
@@ -1022,6 +1172,11 @@ describe("admin config routes", () => {
     const openMeteoResponse = await app.inject({
       method: "POST",
       url: "/admin/providers/weather/open_meteo/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+    const meteoblueResponse = await app.inject({
+      method: "POST",
+      url: "/admin/providers/weather/meteoblue/test-connection",
       headers: adminAuthorizationHeader(),
     });
 
@@ -1045,6 +1200,12 @@ describe("admin config routes", () => {
     });
     expect(openMeteoResponse.statusCode).toBe(200);
     expect(openMeteoResponse.json()).toMatchObject({
+      success: true,
+      mode: "mock",
+      connectionMode: "mock",
+    });
+    expect(meteoblueResponse.statusCode).toBe(200);
+    expect(meteoblueResponse.json()).toMatchObject({
       success: true,
       mode: "mock",
       connectionMode: "mock",

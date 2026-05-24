@@ -234,6 +234,14 @@ If a previous installer run left a broken env file, run `bash scripts/install.sh
 
 Third-party API keys may contain characters that are easy to break in env files. The production installer now leaves initial provider keys empty; configure weather, map, and model provider keys in the admin console after deployment.
 
+Provider configuration lives in `/admin/providers`; see [admin-providers.md](admin-providers.md). After saving QWeather, Open-Meteo, meteoblue, Amap, or DeepSeek settings, click `测试连接` in the UI. For a server-side safe diagnostic that does not print API keys:
+
+```bash
+bash scripts/test-providers.sh
+```
+
+The script uses `.env.production` and `docker compose --env-file .env.production -f docker-compose.prod.yml`. If admin login cannot be performed from the script, the UI manual test remains primary.
+
 Correct production command examples:
 
 ```bash

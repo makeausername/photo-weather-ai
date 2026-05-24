@@ -29,7 +29,12 @@ import {
 import type { DatabaseClient, JsonValue, ProviderType } from "@photo-weather/db";
 import { MockGeoProvider, validateCoordinates } from "@photo-weather/geo";
 import type { GeoProvider } from "@photo-weather/geo";
-import { maskQWeatherApiHost, OpenMeteoClient, QWeatherClient } from "@photo-weather/weather";
+import {
+  maskQWeatherApiHost,
+  MeteoblueClient,
+  OpenMeteoClient,
+  QWeatherClient,
+} from "@photo-weather/weather";
 import { z } from "zod";
 import type { AuthConfig } from "./auth-routes.js";
 import { requirePermission } from "./auth-routes.js";
@@ -288,6 +293,21 @@ function sendError(reply: FastifyReply, statusCode: number, error: string, messa
     error,
     message,
   });
+}
+
+function createProviderTestMetadata(
+  providerType: string,
+  providerCode: string,
+  connectionMode: "mock" | "fixture" | "real",
+) {
+  return {
+    providerType,
+    providerCode,
+    connectionMode,
+    modeZh: connectionMode === "real" ? "真实服务" : "模拟测试",
+    testedAt: new Date().toISOString(),
+    sampleLocation: "黄山光明顶",
+  };
 }
 
 function isJsonObjectValue(value: JsonValue | undefined): value is Record<string, JsonValue> {
@@ -692,6 +712,11 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
           return {
             success: true,
             mode: "mock",
+            ...createProviderTestMetadata(
+              request.params.providerType,
+              request.params.providerCode,
+              "mock",
+            ),
             message: "当前为模拟测试，未请求高德地图服务。",
           };
         }
@@ -710,18 +735,24 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
         }
 
         try {
+          const startedAt = Date.now();
           const amapProvider = await createRealAmapProvider({ dbClient: client, env });
           const results = await amapProvider.searchPlace("黄山光明顶", {
             countryCode: "CN",
             locale: "zh-CN",
             limit: 1,
           });
+          const latencyMs = Date.now() - startedAt;
 
           return {
             success: true,
             mode: "real",
-            providerType: request.params.providerType,
-            providerCode: request.params.providerCode,
+            ...createProviderTestMetadata(
+              request.params.providerType,
+              request.params.providerCode,
+              "real",
+            ),
+            latencyMs,
             message: results[0] ? "高德地图连接测试通过。" : "高德地图连接成功，但未返回测试地点。",
             sample: results[0]
               ? {
@@ -743,6 +774,11 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
             success: true,
             mode: runtimeConfig.analysisMode,
             connectionMode: "mock",
+            modeZh: "模拟测试",
+            providerType: request.params.providerType,
+            providerCode: request.params.providerCode,
+            testedAt: new Date().toISOString(),
+            sampleLocation: "黄山光明顶",
             model: runtimeConfig.model,
             message: "当前为模拟测试，未请求 DeepSeek 服务。",
           };
@@ -770,9 +806,11 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
           return {
             success: true,
             mode: runtimeConfig.analysisMode,
-            connectionMode: "real",
-            providerType: request.params.providerType,
-            providerCode: request.params.providerCode,
+            ...createProviderTestMetadata(
+              request.params.providerType,
+              request.params.providerCode,
+              "real",
+            ),
             model: runtimeConfig.model,
             latencyMs,
             message:
@@ -790,10 +828,12 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
             return {
               success: true,
               mode: "mock",
-              connectionMode: "mock",
-              providerType: request.params.providerType,
-              providerCode: request.params.providerCode,
-              message: "当前为演示测试，未请求和风天气服务。",
+              ...createProviderTestMetadata(
+                request.params.providerType,
+                request.params.providerCode,
+                "mock",
+              ),
+              message: "当前为模拟测试，未请求和风天气服务。",
             };
           }
 
@@ -828,10 +868,12 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
             return {
               success: result.success,
               mode: "real",
-              connectionMode: "real",
+              ...createProviderTestMetadata(
+                request.params.providerType,
+                request.params.providerCode,
+                "real",
+              ),
               provider: "qweather",
-              providerType: request.params.providerType,
-              providerCode: request.params.providerCode,
               apiHost: maskQWeatherApiHost(runtimeConfig.apiHost),
               statusCode: result.statusCode,
               qweatherCode: result.qweatherCode,
@@ -860,9 +902,11 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
             return {
               success: true,
               mode: "mock",
-              connectionMode: "mock",
-              providerType: request.params.providerType,
-              providerCode: request.params.providerCode,
+              ...createProviderTestMetadata(
+                request.params.providerType,
+                request.params.providerCode,
+                "mock",
+              ),
               message: "当前为模拟测试，未请求真实天气服务。",
             };
           }
@@ -900,9 +944,11 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
             return {
               success: result.success,
               mode: runtimeConfig.mode,
-              connectionMode: "real",
-              providerType: request.params.providerType,
-              providerCode: request.params.providerCode,
+              ...createProviderTestMetadata(
+                request.params.providerType,
+                request.params.providerCode,
+                "real",
+              ),
               endpoint: result.endpoint,
               statusCode: result.statusCode,
               latencyMs: result.latencyMs,
@@ -927,11 +973,14 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
           if (!runtimeConfig.realCallEnabled) {
             return {
               success: true,
-              mode: "config_check",
-              connectionMode: "mock",
-              providerType: request.params.providerType,
-              providerCode: request.params.providerCode,
-              message: "当前为配置检查，未请求 meteoblue 服务。",
+              mode: "mock",
+              ...createProviderTestMetadata(
+                request.params.providerType,
+                request.params.providerCode,
+                "mock",
+              ),
+              packages: runtimeConfig.packages,
+              message: "当前为模拟测试，未请求 meteoblue 服务。",
             };
           }
 
@@ -948,20 +997,54 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
             return sendError(reply, 400, "provider_key_missing", "请先填写 meteoblue API Key。");
           }
 
-          return {
-            success: true,
-            mode: "config_check",
-            connectionMode: "mock",
-            providerType: request.params.providerType,
-            providerCode: request.params.providerCode,
-            message: "meteoblue 配置已保存。V1 仅保留专业增强源接口，不在自动流程中请求 meteoblue 服务。",
-          };
+          try {
+            const meteoblueClient = new MeteoblueClient({
+              apiKey: runtimeConfig.apiKey,
+              baseUrl: runtimeConfig.baseUrl,
+              packages: runtimeConfig.packages,
+              timeoutMs: runtimeConfig.timeoutMs,
+              retryCount: runtimeConfig.retryCount,
+            });
+            const result = await meteoblueClient.testConnection();
+
+            return {
+              success: result.success,
+              mode: "real",
+              ...createProviderTestMetadata(
+                request.params.providerType,
+                request.params.providerCode,
+                "real",
+              ),
+              statusCode: result.statusCode,
+              latencyMs: result.latencyMs,
+              endpoint: result.baseUrl,
+              packages: result.packages,
+              sampleLocation: result.sampleLocation,
+              messageZh: result.messageZh,
+              message: result.messageZh,
+            };
+          } catch (error) {
+            return sendError(
+              reply,
+              503,
+              "provider_test_failed",
+              sanitizeProviderErrorMessage(
+                (error as Error).message || "meteoblue 连接测试失败。",
+                runtimeConfig.apiKey,
+              ),
+            );
+          }
         }
       }
 
       return {
         success: true,
         mode: "mock",
+        ...createProviderTestMetadata(
+          request.params.providerType,
+          request.params.providerCode,
+          "mock",
+        ),
         message: "当前为模拟测试，未触发真实外部连接。",
       };
     },
@@ -1002,6 +1085,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
           realCallEnabled: meteoblue.realCallEnabled,
           apiKeyPresent: meteoblue.apiKeyPresent,
           baseUrl: meteoblue.baseUrl,
+          packages: meteoblue.packages,
           packageName: meteoblue.packageName ?? null,
           timeoutMs: meteoblue.timeoutMs,
           retryCount: meteoblue.retryCount,

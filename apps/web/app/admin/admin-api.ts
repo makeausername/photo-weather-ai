@@ -121,16 +121,29 @@ export type AdminAuditLog = {
 
 export type MockConnectionTestResult = {
   readonly success: boolean;
-  readonly mode: "mock" | "fixture" | "real" | "fast" | "professional";
+  readonly mode:
+    | "mock"
+    | "fixture"
+    | "real"
+    | "free"
+    | "customer"
+    | "config_check"
+    | "fast"
+    | "professional";
   readonly connectionMode?: "mock" | "fixture" | "real";
+  readonly modeZh?: string;
   readonly provider?: string;
   readonly model?: string;
   readonly apiHost?: string;
+  readonly endpoint?: string;
+  readonly packages?: readonly string[];
   readonly statusCode?: number;
   readonly qweatherCode?: string;
   readonly location?: string;
+  readonly sampleLocation?: string;
   readonly observedWeatherSummary?: string;
   readonly latencyMs?: number;
+  readonly testedAt?: string;
   readonly providerType?: string;
   readonly providerCode?: string;
   readonly messageZh?: string;
