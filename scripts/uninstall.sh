@@ -3,8 +3,8 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-ENV_FILE="${PROJECT_ROOT}/.env.production"
-COMPOSE_FILE="${PROJECT_ROOT}/docker-compose.prod.yml"
+ENV_FILE=".env.production"
+COMPOSE_FILE="docker-compose.prod.yml"
 
 cd "${PROJECT_ROOT}"
 
@@ -27,8 +27,8 @@ compose() {
 }
 
 if [[ ! -f "${ENV_FILE}" ]]; then
-  echo "Missing .env.production. Nothing to uninstall from this checkout."
-  exit 0
+  echo "未找到 .env.production，请先运行 bash scripts/install.sh"
+  exit 1
 fi
 
 read -r -p "Stop the production stack for this checkout? Type STOP to continue: " confirmation

@@ -6,6 +6,14 @@ import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "../../../..");
+const productionScripts = [
+  "scripts/install.sh",
+  "scripts/update.sh",
+  "scripts/status.sh",
+  "scripts/backup.sh",
+  "scripts/uninstall.sh",
+  "scripts/reset-prod-db.sh",
+] as const;
 
 function readRepoFile(relativePath: string): string {
   return readFileSync(path.join(root, relativePath), "utf8");
@@ -155,6 +163,50 @@ describe("production deployment assets", () => {
     expect(installer).toContain(
       'database_url="postgresql://${db_user_encoded}:${db_password_encoded}@postgres:5432/${db_name_encoded}?schema=public"',
     );
+  });
+
+  it("forces production Docker Compose commands to load .env.production", () => {
+    for (const relativePath of productionScripts) {
+      const source = readRepoFile(relativePath);
+      expect(source).toContain('ENV_FILE=".env.production"');
+      expect(source).toContain('COMPOSE_FILE="docker-compose.prod.yml"');
+      expect(source).toContain("compose() {");
+      expect(source).toContain(
+        'docker_cmd compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"',
+      );
+
+      for (const line of source.split(/\r?\n/)) {
+        const invokesDockerCompose = /\bdocker(?:_cmd)? compose\b/.test(line);
+        const targetsProdCompose =
+          line.includes("docker-compose.prod.yml") ||
+          line.includes("COMPOSE_FILE") ||
+          /(?:^|\s)-f(?:\s|$)/.test(line);
+
+        if (invokesDockerCompose && targetsProdCompose) {
+          expect(line).toContain("--env-file");
+          expect(line).toMatch(/ENV_FILE|\.env\.production/);
+        }
+      }
+    }
+
+    for (const relativePath of [
+      "scripts/update.sh",
+      "scripts/status.sh",
+      "scripts/backup.sh",
+      "scripts/uninstall.sh",
+    ]) {
+      const source = readRepoFile(relativePath);
+      expect(source).toContain('if [[ ! -f "${ENV_FILE}" ]]; then');
+      expect(source).toContain("未找到 .env.production，请先运行 bash scripts/install.sh");
+    }
+  });
+
+  it("validates the production compose config before installer compose operations", () => {
+    const installer = readRepoFile("scripts/install.sh");
+    expect(installer).toContain("validate_compose_config");
+    expect(installer).toContain('compose config > "${compose_check}" 2> "${compose_err}"');
+    expect(installer).toContain("variable is not set");
+    expect(installer).toContain("compose ps");
   });
 
   const bashAvailable = commandAvailable("bash", ["--version"]);

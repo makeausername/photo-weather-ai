@@ -30,6 +30,20 @@ The script writes `.env.production` and `deploy/Caddyfile`, installs Docker and 
 
 If the PostgreSQL password prompt is left blank, the installer generates a URL-safe password and uses the same value for `POSTGRES_PASSWORD` and the encoded password inside `DATABASE_URL`.
 
+## Compose Environment File
+
+Production scripts always load `.env.production` through `--env-file`. Docker Compose reads `.env` automatically, but it does not automatically read `.env.production`.
+
+Do not run plain `docker compose -f docker-compose.prod.yml ...` manually unless you also pass `--env-file .env.production`.
+
+Correct production command examples:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml ps
+docker compose --env-file .env.production -f docker-compose.prod.yml logs -f api
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d
+```
+
 ## Update
 
 ```bash
@@ -117,7 +131,7 @@ Amap, DeepSeek, QWeather, and Open-Meteo credentials can be entered during insta
 - Prisma `P1000` during migration: the database credentials in `DATABASE_URL` do not match the credentials used when the PostgreSQL volume was first initialized, or the deployment is reusing an old PostgreSQL volume. For a new test deployment, reset the stack and regenerate runtime files:
 
   ```bash
-  docker compose -f docker-compose.prod.yml down -v --remove-orphans
+  docker compose --env-file .env.production -f docker-compose.prod.yml down -v --remove-orphans
   rm -f .env.production deploy/Caddyfile
   bash scripts/install.sh
   ```

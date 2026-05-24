@@ -3,8 +3,8 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-ENV_FILE="${PROJECT_ROOT}/.env.production"
-COMPOSE_FILE="${PROJECT_ROOT}/docker-compose.prod.yml"
+ENV_FILE=".env.production"
+COMPOSE_FILE="docker-compose.prod.yml"
 COMPOSE_PROJECT_NAME_DEFAULT="photo-weather-ai"
 
 cd "${PROJECT_ROOT}"
@@ -54,6 +54,11 @@ if [[ ! -f "${COMPOSE_FILE}" ]]; then
   exit 1
 fi
 
+if [[ ! -f "${ENV_FILE}" ]]; then
+  echo "未找到 .env.production，请先运行 bash scripts/install.sh"
+  exit 1
+fi
+
 load_env_file
 
 echo "This reset helper is only for staging/test deployments."
@@ -72,11 +77,7 @@ project_name="$(compose_project_name)"
 postgres_volume="${project_name}_postgres_data"
 
 echo "Stopping production stack..."
-if [[ -f "${ENV_FILE}" ]]; then
-  compose down --remove-orphans || true
-else
-  docker_cmd compose -f "${COMPOSE_FILE}" down --remove-orphans || true
-fi
+compose down --remove-orphans || true
 
 echo "Removing PostgreSQL volume: ${postgres_volume}"
 remove_volume_if_exists "${postgres_volume}"

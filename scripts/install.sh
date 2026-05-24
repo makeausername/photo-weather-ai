@@ -3,8 +3,8 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-ENV_FILE="${PROJECT_ROOT}/.env.production"
-COMPOSE_FILE="${PROJECT_ROOT}/docker-compose.prod.yml"
+ENV_FILE=".env.production"
+COMPOSE_FILE="docker-compose.prod.yml"
 CADDY_TEMPLATE="${PROJECT_ROOT}/deploy/Caddyfile.template"
 CADDY_FILE="${PROJECT_ROOT}/deploy/Caddyfile"
 ENV_TEMPLATE="${PROJECT_ROOT}/deploy/env.production.template"
@@ -36,6 +36,39 @@ docker_cmd() {
 
 compose() {
   docker_cmd compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
+}
+
+require_env_file() {
+  local message="${1:-未找到 .env.production，请先运行 bash scripts/install.sh}"
+  if [[ ! -f "${ENV_FILE}" ]]; then
+    echo "${message}"
+    exit 1
+  fi
+}
+
+validate_compose_config() {
+  local compose_check="/tmp/photo-weather-compose-check.yml"
+  local compose_err
+  compose_err="$(mktemp /tmp/photo-weather-compose-check.err.XXXXXX)"
+
+  : > "${compose_check}"
+  chmod 600 "${compose_check}" "${compose_err}"
+
+  if ! compose config > "${compose_check}" 2> "${compose_err}"; then
+    echo "生产 Docker Compose 配置校验失败，请检查 .env.production 和 docker-compose.prod.yml。"
+    cat "${compose_err}" >&2
+    rm -f "${compose_check}" "${compose_err}"
+    exit 1
+  fi
+
+  if grep -E "variable is not set|is not set\\. Defaulting" "${compose_err}" >/dev/null 2>&1; then
+    echo "生产 Docker Compose 配置缺少变量，请检查 .env.production。"
+    cat "${compose_err}" >&2
+    rm -f "${compose_check}" "${compose_err}"
+    exit 1
+  fi
+
+  rm -f "${compose_check}" "${compose_err}"
 }
 
 trim() {
@@ -518,6 +551,8 @@ collect_configuration() {
 }
 
 bootstrap_stack() {
+  local production_services=(postgres redis astro-service api web caddy worker)
+
   echo "Building production images..."
   compose build
 
@@ -544,8 +579,10 @@ bootstrap_stack() {
     api corepack pnpm create-admin
 
   echo "Starting full stack..."
-  compose up -d --remove-orphans
+  compose up -d --remove-orphans "${production_services[@]}"
   compose restart api web worker caddy
+  echo "Production service status:"
+  compose ps
 }
 
 main() {
@@ -572,9 +609,11 @@ main() {
     render_env_file
   fi
 
+  require_env_file "未生成 .env.production，请检查安装输入后重试。"
   load_env_file
   render_caddyfile
   ensure_docker
+  validate_compose_config
   check_ports
   check_dns
   handle_existing_postgres_volume
