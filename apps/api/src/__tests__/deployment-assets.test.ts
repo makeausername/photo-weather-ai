@@ -1,0 +1,139 @@
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const root = path.resolve(__dirname, "../../../..");
+
+function readRepoFile(relativePath: string): string {
+  return readFileSync(path.join(root, relativePath), "utf8");
+}
+
+function bashPath(relativePath: string): string {
+  const resolved = path.join(root, relativePath);
+  return process.platform === "win32" ? resolved.replace(/\\/g, "/") : resolved;
+}
+
+function commandAvailable(command: string, args: readonly string[]): boolean {
+  try {
+    execFileSync(command, [...args], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+describe("production deployment assets", () => {
+  it("includes the required production compose services and private astro-service", () => {
+    const compose = readRepoFile("docker-compose.prod.yml");
+    for (const service of [
+      "caddy:",
+      "web:",
+      "api:",
+      "worker:",
+      "astro-service:",
+      "postgres:",
+      "redis:",
+    ]) {
+      expect(compose).toContain(service);
+    }
+
+    expect(compose).toContain('"80:80"');
+    expect(compose).toContain('"443:443"');
+    expect(compose).toContain("postgres_data:");
+    expect(compose).toContain("redis_data:");
+    expect(compose).toContain("caddy_data:");
+    expect(compose).toContain("caddy_config:");
+    expect(compose).toContain("app_uploads:");
+    expect(compose).toContain("logs:");
+    expect(compose).not.toContain('"4100:4100"');
+  });
+
+  it("keeps Caddy routing same-domain API traffic with a domain placeholder", () => {
+    const caddyfile = readRepoFile("deploy/Caddyfile.template");
+    expect(caddyfile).toContain("DOMAIN_PLACEHOLDER");
+    expect(caddyfile).toContain("encode zstd gzip");
+    expect(caddyfile).toContain("handle_path /api/*");
+    expect(caddyfile).toContain("reverse_proxy api:4000");
+    expect(caddyfile).toContain("reverse_proxy web:3000");
+  });
+
+  it("keeps the production environment template complete and secret-free", () => {
+    const template = readRepoFile("deploy/env.production.template");
+    for (const key of [
+      "NODE_ENV=production",
+      "APP_ENV=production",
+      "SITE_URL=https://DOMAIN_PLACEHOLDER",
+      "PUBLIC_SITE_URL=https://DOMAIN_PLACEHOLDER",
+      "NEXT_PUBLIC_API_BASE_URL=https://DOMAIN_PLACEHOLDER/api",
+      "DATABASE_URL=",
+      "REDIS_URL=",
+      "JWT_SECRET=JWT_SECRET_PLACEHOLDER",
+      "ADMIN_EMAIL=ADMIN_EMAIL_PLACEHOLDER",
+      "ADMIN_PASSWORD=ADMIN_PASSWORD_PLACEHOLDER",
+      "ADMIN_DISPLAY_NAME=ADMIN_DISPLAY_NAME_PLACEHOLDER",
+      "ENABLE_ASTRO_SERVICE=true",
+      "ASTRO_SERVICE_URL=http://astro-service:4100",
+      "ASTRO_SERVICE_TIMEOUT_MS=45000",
+      "QWEATHER_API_KEY=",
+      "QWEATHER_API_HOST=",
+      "AMAP_API_KEY=",
+      "DEEPSEEK_API_KEY=",
+      "DEEPSEEK_BASE_URL=",
+      "OPEN_METEO_API_KEY=",
+      "OPEN_METEO_CUSTOMER_ENDPOINT=",
+    ]) {
+      expect(template).toContain(key);
+    }
+
+    expect(template).not.toMatch(/sk-[A-Za-z0-9]{16,}/);
+    expect(template).not.toContain("DATABASE_URL=postgresql://user:password@");
+  });
+
+  it("ignores generated production secrets and runtime artifacts", () => {
+    const gitignore = readRepoFile(".gitignore");
+    for (const entry of [
+      ".env.production",
+      "deploy/Caddyfile",
+      "deploy/generated/",
+      ".runtime/",
+      "backups/",
+      "apps/astro-service/.venv/",
+      "*.backup",
+      "*.log",
+    ]) {
+      expect(gitignore).toContain(entry);
+    }
+  });
+
+  it("has the requested production Dockerfiles", () => {
+    for (const relativePath of [
+      "apps/web/Dockerfile",
+      "apps/api/Dockerfile",
+      "apps/worker/Dockerfile",
+      "apps/astro-service/Dockerfile",
+    ]) {
+      expect(existsSync(path.join(root, relativePath))).toBe(true);
+    }
+
+    expect(readRepoFile("apps/astro-service/Dockerfile")).toContain("EXPOSE 4100");
+    expect(readRepoFile("apps/astro-service/Dockerfile")).toContain("pip install --no-cache-dir");
+  });
+
+  const bashAvailable = commandAvailable("bash", ["--version"]);
+  const bashIt = bashAvailable ? it : it.skip;
+
+  bashIt("passes bash syntax checks for deployment scripts", () => {
+    for (const script of [
+      "scripts/install.sh",
+      "scripts/update.sh",
+      "scripts/backup.sh",
+      "scripts/status.sh",
+      "scripts/uninstall.sh",
+    ]) {
+      execFileSync("bash", ["-n", bashPath(script)], { cwd: root, stdio: "pipe" });
+    }
+  });
+});

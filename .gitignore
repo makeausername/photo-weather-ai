@@ -6,8 +6,14 @@ coverage/
 logs/
 .env
 .env.local
+.env.production
+deploy/Caddyfile
+deploy/generated/
+.runtime/
+backups/
 apps/astro-service/data/*.bsp
 *.log
+*.backup
 *.tsbuildinfo
 packages/db/.env
 apps/astro-service/.venv/

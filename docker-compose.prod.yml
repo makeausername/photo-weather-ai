@@ -1,0 +1,125 @@
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+      - api
+    networks:
+      - app
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+        PUBLIC_SITE_URL: ${PUBLIC_SITE_URL}
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    expose:
+      - "3000"
+    depends_on:
+      - api
+    networks:
+      - app
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4000
+      ASTRO_SERVICE_URL: http://astro-service:4100
+    expose:
+      - "4000"
+    volumes:
+      - app_uploads:/app/uploads
+      - logs:/app/logs
+    depends_on:
+      - postgres
+      - redis
+      - astro-service
+    networks:
+      - app
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    volumes:
+      - app_uploads:/app/uploads
+      - logs:/app/logs
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - app
+
+  astro-service:
+    build:
+      context: .
+      dockerfile: apps/astro-service/Dockerfile
+    restart: unless-stopped
+    expose:
+      - "4100"
+    volumes:
+      - astro_data:/app/apps/astro-service/data
+      - logs:/app/logs
+    networks:
+      - app
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    expose:
+      - "5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    command: ["sh", "-c", "redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\""]
+    expose:
+      - "6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - app
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:
+  app_uploads:
+  logs:
+  astro_data:
+
+networks:
+  app:
+    driver: bridge

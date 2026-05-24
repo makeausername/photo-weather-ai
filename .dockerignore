@@ -3,5 +3,15 @@ dist
 .next
 coverage
 .env
+.env.*
+!.env.example
 .git
 *.log
+logs
+backups
+.runtime
+deploy/Caddyfile
+deploy/generated
+apps/astro-service/.venv
+apps/astro-service/.pytest_cache
+apps/astro-service/data/*.bsp
