@@ -143,5 +143,6 @@ class HealthResponse(BaseModel):
     service: str
     ephemerisAvailable: bool
     ephemerisFileName: str
+    ephemerisPath: str
     timezoneAvailable: bool
     defaultTimezone: str

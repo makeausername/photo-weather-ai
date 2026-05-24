@@ -29,13 +29,14 @@ The installer runs these sections:
 6. 生成配置文件
 7. Docker 与系统资源检查
 8. 构建并启动服务
-9. 数据库连接预检
-10. 数据库迁移
-11. 管理员创建与验证
-12. HTTPS 与健康检查
-13. 完成
+9. 天文星历文件检查
+10. 数据库连接预检
+11. 数据库迁移
+12. 管理员创建与验证
+13. HTTPS 与健康检查
+14. 完成
 
-The installer writes `.env.production` and `deploy/Caddyfile`, installs Docker only when Docker or the Compose plugin is missing, validates Compose config, builds images sequentially, starts PostgreSQL/Redis/astro-service, runs database preflight, then runs migrations and seed data. After that it creates or updates the admin account, verifies the same admin email/password through `pnpm verify-admin`, then starts the full stack.
+The installer writes `.env.production` and `deploy/Caddyfile`, installs Docker only when Docker or the Compose plugin is missing, validates Compose config, builds images sequentially, starts PostgreSQL/Redis/astro-service, downloads the local JPL ephemeris file when accepted, runs database preflight, then runs migrations and seed data. After that it creates or updates the admin account, verifies the same admin email/password through `pnpm verify-admin`, then starts the full stack.
 
 During database configuration the installer uses one source of truth:
 
@@ -65,6 +66,39 @@ Final output includes:
 - `Admin email: ADMIN_EMAIL`
 - `Password: hidden`
 - `Reset admin: bash scripts/reset-admin.sh`
+
+## Local Ephemeris File
+
+Accurate moon phase, moonrise/moonset, astronomical night, and Milky Way windows require the local JPL `de421.bsp` ephemeris file. Production uses one explicit path:
+
+- `EPHEMERIS_PATH=/app/data/de421.bsp`
+- Compose volume: `astro_data:/app/data`
+
+The installer prompts:
+
+```text
+需要下载本地天文星历文件 de421.bsp，用于精确计算月相、月出月落和银河窗口。直接回车下载，输入 n 跳过:
+```
+
+Direct Enter downloads by default. If skipped, precise astro calculations stay unavailable until the file is installed.
+
+Manual fix:
+
+```bash
+bash scripts/download-ephemeris.sh
+docker compose --env-file .env.production -f docker-compose.prod.yml restart astro-service api web
+```
+
+After installation, `GET http://astro-service:4100/health` from inside the app network should include:
+
+```json
+{
+  "ephemerisAvailable": true,
+  "ephemerisPath": "/app/data/de421.bsp"
+}
+```
+
+If health still shows `ephemerisAvailable=false`, check `EPHEMERIS_PATH`, verify `/app/data/de421.bsp` exists inside the astro-service container, and confirm file permissions allow the container user to read it.
 
 ## Admin Password Reset
 
@@ -139,7 +173,7 @@ Backups are stored under `backups/YYYYMMDD-HHMMSS/`. The PostgreSQL dump is `pos
 bash scripts/status.sh
 ```
 
-The status script shows Compose service state, public URL, API health, PostgreSQL status, Caddy status, internal astro-service health, recent logs, and recent error logs.
+The status script shows Compose service state, public URL, API health, PostgreSQL status, Caddy status, internal astro-service health, `ephemerisAvailable`, `ephemerisPath`, recent logs, and recent error logs.
 
 ## Reinstall Test Environment
 
@@ -213,6 +247,7 @@ docker compose --env-file .env.production -f docker-compose.prod.yml up -d
 - `邮箱或密码不正确。`: run `bash scripts/reset-admin.sh`, then `bash scripts/check-login.sh`. The admin command updates existing users; it does not skip password rotation when the user already exists.
 - `登录服务暂时不可用，请稍后重试或联系管理员。`: run `bash scripts/status.sh`, then inspect API logs with `docker compose --env-file .env.production -f docker-compose.prod.yml logs -f api`. The UI intentionally hides Prisma, PostgreSQL hostnames, SQL details, and stack traces.
 - Compose `unexpected character` while reading `.env.production`: the env file has an invalid line, usually a standalone generated secret or an unescaped value. Run `bash scripts/check-env-production.sh`; then rerun `bash scripts/install.sh` and choose to back up/regenerate the broken file.
+- Astro health has `ephemerisAvailable=false`: run `bash scripts/download-ephemeris.sh`. If it remains false, check `EPHEMERIS_PATH=/app/data/de421.bsp`, inspect `docker compose --env-file .env.production -f docker-compose.prod.yml exec astro-service ls -lh /app/data/de421.bsp`, and fix file permissions.
 - Prisma `P1000` or database authentication failure: likely `.env.production` no longer matches an old PostgreSQL volume. For test reinstall, use `bash scripts/reset-prod-db.sh`. For real data, run `bash scripts/backup.sh` first and repair credentials inside PostgreSQL or restore the matching `.env.production`.
 - Docker installation waits on apt/dpkg: the installer waits up to 5 minutes and prints blocking processes. It never deletes apt lock files.
 - Docker build fails on a small server: enable the offered 4 GB swap file or move the build to a larger machine.

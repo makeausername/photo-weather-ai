@@ -10,6 +10,7 @@ CADDY_FILE="${PROJECT_ROOT}/deploy/Caddyfile"
 ENV_TEMPLATE="${PROJECT_ROOT}/deploy/env.production.template"
 CHECK_ENV_SCRIPT="${SCRIPT_DIR}/check-env-production.sh"
 COMPOSE_PROJECT_NAME_DEFAULT="photo-weather-ai"
+EPHEMERIS_DOWNLOAD_SKIPPED=0
 
 cd "${PROJECT_ROOT}"
 
@@ -1225,6 +1226,20 @@ confirm_deployment() {
   fi
 }
 
+download_ephemeris_if_requested() {
+  if confirm_continue "需要下载本地天文星历文件 de421.bsp，用于精确计算月相、月出月落和银河窗口。" "直接回车下载，输入 n 跳过:"; then
+    run_logged_with_heartbeat \
+      "下载并安装天文星历文件" \
+      "de421.bsp 下载或写入仍在进行，请稍候..." \
+      bash "${SCRIPT_DIR}/download-ephemeris.sh"
+    ok "天文星历文件检查通过。"
+    return
+  fi
+
+  EPHEMERIS_DOWNLOAD_SKIPPED=1
+  warn "已跳过天文星历文件下载。星空银河精确计算不可用，稍后执行 bash scripts/download-ephemeris.sh。"
+}
+
 compose_service_exists() {
   local service="$1"
   compose config --services | grep -qx "${service}"
@@ -1270,18 +1285,17 @@ bootstrap_stack() {
 
   run_logged "启动数据库、Redis 和星历服务" compose up -d postgres redis astro-service
 
-  if ! run_logged_allow_fail "准备 astro-service 星历缓存" compose run --rm astro-service python scripts/fetch_ephemeris.py; then
-    warn "星历缓存下载失败。astro-service 会在 astro_data 卷中缺少 de421.bsp 时显示为不健康。"
-  fi
+  section 9 "天文星历文件检查"
+  download_ephemeris_if_requested
 
-  section 9 "数据库连接预检"
+  section 10 "数据库连接预检"
   preflight_database_connection
 
-  section 10 "数据库迁移"
+  section 11 "数据库迁移"
   run_migrations
   run_logged "写入数据库种子数据" compose run --rm api corepack pnpm db:seed
 
-  section 11 "管理员创建与验证"
+  section 12 "管理员创建与验证"
   create_admin_account
   verify_admin_account
 
@@ -1292,7 +1306,7 @@ bootstrap_stack() {
 }
 
 check_https_after_start() {
-  section 12 "HTTPS 与健康检查"
+  section 13 "HTTPS 与健康检查"
   if curl -fsS --max-time 15 "https://${DOMAIN}" >/dev/null 2>&1; then
     ok "HTTPS 首页可访问：https://${DOMAIN}"
   else
@@ -1386,13 +1400,16 @@ main() {
   bootstrap_stack
   check_https_after_start
 
-  section 13 "完成"
+  section 14 "完成"
   echo
   ok "部署完成。"
   echo "Website: https://${DOMAIN}"
   echo "Admin login: https://${DOMAIN}/admin/login"
   echo "Admin email: ${ADMIN_EMAIL}"
   echo "Password: hidden"
+  if [[ "${EPHEMERIS_DOWNLOAD_SKIPPED}" == "1" ]]; then
+    echo "星空银河精确计算不可用，稍后执行 bash scripts/download-ephemeris.sh。"
+  fi
   echo "Reset admin: bash scripts/reset-admin.sh"
   echo "Status: bash scripts/status.sh"
   echo "Update: bash scripts/update.sh"

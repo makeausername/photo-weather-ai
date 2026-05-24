@@ -83,10 +83,12 @@ services:
       context: .
       dockerfile: apps/astro-service/Dockerfile
     restart: unless-stopped
+    environment:
+      EPHEMERIS_PATH: /app/data/de421.bsp
     expose:
       - "4100"
     volumes:
-      - astro_data:/app/apps/astro-service/data
+      - astro_data:/app/data
       - logs:/app/logs
     networks:
       - app

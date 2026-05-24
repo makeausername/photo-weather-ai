@@ -19,14 +19,21 @@ python -m pip install -r requirements.txt
 
 ## 准备星历
 
-受控下载一次 `de421.bsp`：
+服务只从 `EPHEMERIS_PATH` 读取 `de421.bsp`。未设置时默认读取：
+
+```text
+/app/data/de421.bsp
+```
+
+本地开发可设置到仓库内缓存路径后再启动：
 
 ```powershell
 cd apps/astro-service
 python scripts/fetch_ephemeris.py
+$env:EPHEMERIS_PATH = (Resolve-Path .\data\de421.bsp).Path
 ```
 
-星历会缓存到 `apps/astro-service/data/de421.bsp`。该文件较大，不提交到仓库。
+星历会缓存到 `apps/astro-service/data/de421.bsp`。该文件较大，不提交到仓库。生产部署使用 `bash scripts/download-ephemeris.sh` 下载并写入 Docker 持久化卷 `/app/data/de421.bsp`。
 
 ## 启动
 

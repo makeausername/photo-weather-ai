@@ -16,6 +16,7 @@ const productionScripts = [
   "scripts/reset-prod-db.sh",
   "scripts/reset-admin.sh",
   "scripts/resume-install.sh",
+  "scripts/download-ephemeris.sh",
 ] as const;
 
 const bashScripts = [
@@ -85,8 +86,10 @@ describe("production deployment assets", () => {
     expect(compose).toContain("POSTGRES_USER: ${POSTGRES_USER}");
     expect(compose).toContain("POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}");
     expect(compose).toContain("DATABASE_URL: ${DATABASE_URL}");
+    expect(compose).toContain("EPHEMERIS_PATH: /app/data/de421.bsp");
     expect(compose).toContain("postgres_data:");
     expect(compose).toContain("redis_data:");
+    expect(compose).toContain("- astro_data:/app/data");
     expect(compose).toContain("caddy_data:");
     expect(compose).toContain("caddy_config:");
     expect(compose).toContain("app_uploads:");
@@ -166,6 +169,9 @@ describe("production deployment assets", () => {
 
     expect(readRepoFile("apps/astro-service/Dockerfile")).toContain("EXPOSE 4100");
     expect(readRepoFile("apps/astro-service/Dockerfile")).toContain("pip install --no-cache-dir");
+    expect(readRepoFile("apps/astro-service/Dockerfile")).toContain(
+      "ENV EPHEMERIS_PATH=/app/data/de421.bsp",
+    );
   });
 
   it("does not hard-code the old production database user in deployment assets", () => {
@@ -310,11 +316,14 @@ describe("production deployment assets", () => {
       'section 6 "生成配置文件"',
       'section 7 "Docker 与系统资源检查"',
       'section 8 "构建并启动服务"',
-      'section 9 "数据库连接预检"',
-      'section 10 "数据库迁移"',
-      'section 11 "管理员创建与验证"',
-      'section 12 "HTTPS 与健康检查"',
-      'section 13 "完成"',
+      'section 9 "天文星历文件检查"',
+      'section 10 "数据库连接预检"',
+      'section 11 "数据库迁移"',
+      'section 12 "管理员创建与验证"',
+      'section 13 "HTTPS 与健康检查"',
+      'section 14 "完成"',
+      "需要下载本地天文星历文件 de421.bsp",
+      "bash scripts/download-ephemeris.sh",
       "检测到已有 PostgreSQL 数据卷",
       "PostgreSQL 首次初始化后的用户名和密码不会因为修改 .env.production 自动改变",
       "1. 保留现有数据并停止安装",
@@ -378,8 +387,8 @@ describe("production deployment assets", () => {
     }
 
     const bootstrap = installer.slice(installer.indexOf("bootstrap_stack()"));
-    expect(bootstrap.indexOf('section 9 "数据库连接预检"')).toBeLessThan(
-      bootstrap.indexOf('section 10 "数据库迁移"'),
+    expect(bootstrap.indexOf('section 10 "数据库连接预检"')).toBeLessThan(
+      bootstrap.indexOf('section 11 "数据库迁移"'),
     );
     expect(bootstrap.indexOf("preflight_database_connection")).toBeLessThan(
       bootstrap.indexOf("run_migrations"),
@@ -407,6 +416,30 @@ describe("production deployment assets", () => {
     expect(resetProdDb).toContain("DELETE_CADDY_DATA");
     expect(resetProdDb).toContain("compose down --remove-orphans");
     expect(resetProdDb).not.toContain("compose down -v");
+  });
+
+  it("ships the production ephemeris download flow", () => {
+    const script = readRepoFile("scripts/download-ephemeris.sh");
+    const installer = readRepoFile("scripts/install.sh");
+    const status = readRepoFile("scripts/status.sh");
+    const resume = readRepoFile("scripts/resume-install.sh");
+
+    expect(script).toContain("https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/de421.bsp");
+    expect(script).toContain('CONTAINER_EPHEMERIS_PATH="/app/data/de421.bsp"');
+    expect(script).toContain("MIN_EPHEMERIS_BYTES=$((10 * 1024 * 1024))");
+    expect(script).toContain('compose cp "${EPHEMERIS_FILE}" "astro-service:${CONTAINER_EPHEMERIS_PATH}"');
+    expect(script).toContain('compose exec -T astro-service ls -lh "${CONTAINER_EPHEMERIS_PATH}"');
+    expect(script).toContain("compose restart astro-service api web");
+    expect(script).toContain("http://astro-service:4100/health");
+    expect(script).toContain("ephemerisAvailable !== true");
+    expect(script).toContain('body.ephemerisPath !== \'${CONTAINER_EPHEMERIS_PATH}\'');
+    expect(installer).toContain('section 9 "天文星历文件检查"');
+    expect(installer).toContain("download-ephemeris.sh");
+    expect(resume).toContain("ensure_ephemeris_available");
+    expect(resume).toContain("bash \"${SCRIPT_DIR}/download-ephemeris.sh\"");
+    expect(status).toContain("ephemerisAvailable");
+    expect(status).toContain("ephemerisPath");
+    expect(status).toContain("星历文件缺失，请执行 bash scripts/download-ephemeris.sh");
   });
 
   const bashCommand = resolveBashCommand();

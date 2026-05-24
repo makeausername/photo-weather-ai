@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 import logging
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -9,6 +10,7 @@ from fastapi import FastAPI, HTTPException
 from .calculator import (
     EPHEMERIS_FILE_NAME,
     AstronomyCalculator,
+    EphemerisLoadError,
     EphemerisMissingError,
 )
 from .models import AstroCalculateRequest, AstroCalculateResponse, HealthResponse
@@ -16,9 +18,31 @@ from .responses import Utf8JSONResponse
 from .timezones import DEFAULT_TIMEZONE, get_timezone
 
 
-APP_ROOT = Path(__file__).resolve().parents[1]
-EPHEMERIS_PATH = APP_ROOT / "data" / EPHEMERIS_FILE_NAME
+DEFAULT_EPHEMERIS_PATH_TEXT = f"/app/data/{EPHEMERIS_FILE_NAME}"
+DEFAULT_EPHEMERIS_PATH = Path(DEFAULT_EPHEMERIS_PATH_TEXT)
 logger = logging.getLogger("astro-service")
+
+
+def resolve_ephemeris_path() -> Path:
+    configured_path = os.environ.get("EPHEMERIS_PATH", "").strip()
+    if not configured_path:
+        return DEFAULT_EPHEMERIS_PATH
+
+    path = Path(configured_path)
+    if not path.is_absolute():
+        logger.warning("Ignoring relative EPHEMERIS_PATH; using default absolute path")
+        return DEFAULT_EPHEMERIS_PATH
+
+    return path
+
+
+EPHEMERIS_PATH = resolve_ephemeris_path()
+
+
+def format_ephemeris_path(path: Path) -> str:
+    if path == DEFAULT_EPHEMERIS_PATH:
+        return DEFAULT_EPHEMERIS_PATH_TEXT
+    return str(path)
 
 app = FastAPI(
     title="逐光天气本地天文计算服务",
@@ -45,6 +69,7 @@ def health() -> HealthResponse:
         service="astro-service",
         ephemerisAvailable=ephemeris_available,
         ephemerisFileName=EPHEMERIS_FILE_NAME,
+        ephemerisPath=format_ephemeris_path(EPHEMERIS_PATH),
         timezoneAvailable=timezone_available,
         defaultTimezone=DEFAULT_TIMEZONE,
     )
@@ -69,6 +94,11 @@ def calculate(request: AstroCalculateRequest) -> AstroCalculateResponse:
             status_code=503,
             detail=(
                 "本地星历文件缺失，无法生成精确的星空银河窗口。"
-                "请先按 README 下载 de421.bsp 后重试。"
+                "请执行 bash scripts/download-ephemeris.sh 后重试。"
             ),
+        ) from error
+    except EphemerisLoadError as error:
+        raise HTTPException(
+            status_code=503,
+            detail="本地星历文件无法读取，请检查文件完整性和权限。",
         ) from error

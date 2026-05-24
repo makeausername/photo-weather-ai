@@ -194,6 +194,17 @@ create_and_verify_admin() {
     api pnpm verify-admin
 }
 
+ensure_ephemeris_available() {
+  echo "检查天文星历文件..."
+  if compose run --rm api node -e "fetch('http://astro-service:4100/health').then(async (response) => { const text = await response.text(); if (!response.ok) process.exit(1); const body = JSON.parse(text); if (body.ephemerisAvailable !== true) process.exit(2); console.log(text); }).catch(() => process.exit(1));"; then
+    echo "OK 天文星历文件可用。"
+    return
+  fi
+
+  echo "星历文件缺失，正在执行 bash scripts/download-ephemeris.sh"
+  bash "${SCRIPT_DIR}/download-ephemeris.sh"
+}
+
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "未找到 .env.production，请先运行 bash scripts/install.sh"
   exit 1
@@ -220,9 +231,7 @@ build_production_images
 
 run_logged "启动数据库、Redis 和星历服务" compose up -d postgres redis astro-service
 
-if ! run_logged_allow_fail "准备 astro-service 星历缓存" compose run --rm astro-service python scripts/fetch_ephemeris.py; then
-  echo "星历缓存下载失败。astro-service 会在 astro_data 卷中缺少 de421.bsp 时显示为不健康。"
-fi
+ensure_ephemeris_available
 
 preflight_database_connection
 run_migrations

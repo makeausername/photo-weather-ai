@@ -5,7 +5,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import EPHEMERIS_PATH, app
+import app.main as astro_main
+from app.main import app
 
 
 APP_ROOT = Path(__file__).resolve().parents[1] / "app"
@@ -59,7 +60,7 @@ def test_app_python_sources_are_utf8_and_not_mojibake() -> None:
 
 
 @pytest.mark.skipif(
-    not Path(EPHEMERIS_PATH).exists(),
+    not Path(astro_main.EPHEMERIS_PATH).exists(),
     reason="de421.bsp is required; run python apps/astro-service/scripts/fetch_ephemeris.py",
 )
 def test_calculate_response_returns_readable_utf8_chinese_fields() -> None:

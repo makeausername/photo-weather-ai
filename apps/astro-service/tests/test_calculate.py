@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import EPHEMERIS_PATH, app
+import app.main as astro_main
+from app.main import app
 from app.timezones import INVALID_TIMEZONE_MESSAGE, get_timezone
 
 
@@ -68,7 +69,7 @@ def test_calculate_invalid_timezone_does_not_expose_zoneinfo_error() -> None:
 
 
 @pytest.mark.skipif(
-    not Path(EPHEMERIS_PATH).exists(),
+    not Path(astro_main.EPHEMERIS_PATH).exists(),
     reason="de421.bsp is required; run python apps/astro-service/scripts/fetch_ephemeris.py",
 )
 class TestAstroCalculate:
@@ -213,7 +214,79 @@ def test_health_endpoint_reports_ephemeris_state() -> None:
     response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json()["service"] == "astro-service"
-    assert response.json()["ephemerisFileName"] == "de421.bsp"
-    assert response.json()["timezoneAvailable"] is True
-    assert response.json()["defaultTimezone"] == "Asia/Shanghai"
+    body = response.json()
+    assert body["service"] == "astro-service"
+    assert body["ephemerisFileName"] == "de421.bsp"
+    assert body["ephemerisPath"] == astro_main.format_ephemeris_path(astro_main.EPHEMERIS_PATH)
+    assert astro_main.DEFAULT_EPHEMERIS_PATH_TEXT == "/app/data/de421.bsp"
+    assert body["timezoneAvailable"] is True
+    assert body["defaultTimezone"] == "Asia/Shanghai"
+
+
+def test_health_endpoint_reports_configured_ephemeris_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    ephemeris_path = tmp_path / "de421.bsp"
+    ephemeris_path.write_bytes(b"fixture")
+    monkeypatch.setattr(astro_main, "EPHEMERIS_PATH", ephemeris_path)
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ephemerisAvailable"] is True
+    assert body["ephemerisPath"] == str(ephemeris_path)
+
+
+def test_calculate_missing_ephemeris_returns_controlled_503(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    missing_path = tmp_path / "missing-de421.bsp"
+    monkeypatch.setattr(astro_main, "EPHEMERIS_PATH", missing_path)
+    astro_main.get_calculator.cache_clear()
+
+    try:
+        response = client.post(
+            "/astro/calculate",
+            json={
+                "latitudeWgs84": 30.1321,
+                "longitudeWgs84": 118.1691,
+                "timezone": "Asia/Shanghai",
+                "horizon": "24h",
+                "targetDate": "2026-05-22",
+            },
+        )
+    finally:
+        astro_main.get_calculator.cache_clear()
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == (
+        "本地星历文件缺失，无法生成精确的星空银河窗口。"
+        "请执行 bash scripts/download-ephemeris.sh 后重试。"
+    )
+    assert "Traceback" not in response.text
+
+
+def test_calculate_unreadable_ephemeris_returns_controlled_503(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    invalid_path = tmp_path / "de421.bsp"
+    invalid_path.write_text("not a bsp file", encoding="utf-8")
+    monkeypatch.setattr(astro_main, "EPHEMERIS_PATH", invalid_path)
+    astro_main.get_calculator.cache_clear()
+
+    try:
+        response = client.post(
+            "/astro/calculate",
+            json={
+                "latitudeWgs84": 30.1321,
+                "longitudeWgs84": 118.1691,
+                "timezone": "Asia/Shanghai",
+                "horizon": "24h",
+                "targetDate": "2026-05-22",
+            },
+        )
+    finally:
+        astro_main.get_calculator.cache_clear()
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "本地星历文件无法读取，请检查文件完整性和权限。"
+    assert "Traceback" not in response.text

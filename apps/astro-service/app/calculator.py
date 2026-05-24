@@ -87,6 +87,10 @@ class EphemerisMissingError(RuntimeError):
     pass
 
 
+class EphemerisLoadError(RuntimeError):
+    pass
+
+
 class AstronomyCalculator:
     def __init__(self, ephemeris_path: Path) -> None:
         if not ephemeris_path.exists():
@@ -96,10 +100,13 @@ class AstronomyCalculator:
 
         self.ephemeris_path = ephemeris_path
         self.timescale = load.timescale()
-        self.ephemeris = load_file(str(ephemeris_path))
-        self.earth = self.ephemeris["earth"]
-        self.sun = self.ephemeris["sun"]
-        self.moon = self.ephemeris["moon"]
+        try:
+            self.ephemeris = load_file(str(ephemeris_path))
+            self.earth = self.ephemeris["earth"]
+            self.sun = self.ephemeris["sun"]
+            self.moon = self.ephemeris["moon"]
+        except Exception as exc:
+            raise EphemerisLoadError(f"Unable to load ephemeris file: {ephemeris_path}") from exc
         self.galactic_center = Star(
             ra_hours=(17, 45, 40.04),
             dec_degrees=(-29, 0, 28.1),

@@ -74,7 +74,18 @@ compose ps caddy || true
 
 echo
 echo "Internal astro-service health from the app network:"
-compose exec -T api node -e "fetch('http://astro-service:4100/health').then(async r => { console.log(r.status, await r.text()) }).catch(e => { console.error(e.message); process.exit(1) })" || true
+compose exec -T api node -e 'fetch("http://astro-service:4100/health").then(async (response) => {
+  const text = await response.text();
+  console.log(response.status, text);
+  try {
+    const body = JSON.parse(text);
+    console.log(`ephemerisAvailable=${body.ephemerisAvailable}`);
+    console.log(`ephemerisPath=${body.ephemerisPath ?? ""}`);
+    if (body.ephemerisAvailable !== true) {
+      console.log("星历文件缺失，请执行 bash scripts/download-ephemeris.sh");
+    }
+  } catch {}
+}).catch((error) => { console.error(error.message); process.exit(1); })' || true
 
 echo
 echo "Recent service logs:"
