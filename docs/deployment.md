@@ -51,6 +51,12 @@ bash scripts/install.sh --verbose
 
 Before Docker services are started, the installer prints a summary with domain, database name, database user, admin email, and whether optional providers were configured. It never prints database passwords, JWT secrets, or provider keys.
 
+The normal deployment confirmation accepts Enter, `y`, or `yes` to continue, and `n` or `no` to cancel. Destructive operations are still strict: deleting a PostgreSQL test volume requires typing `DELETE_DB_DATA`, and Caddy certificate data is not removed unless separately confirmed.
+
+Docker is installed automatically if it is missing. If Docker and the Docker Compose plugin are already available, the installer skips package installation and prints `OK Docker 已安装，跳过安装。` and `OK Docker Compose 插件可用。`.
+
+If `.env.production` already exists, the installer asks whether to reuse it or regenerate it. If `deploy/Caddyfile` already exists, the installer asks whether to reuse it or regenerate it for the current domain.
+
 If an existing PostgreSQL Docker volume is detected, the installer stops and asks whether to keep data and stop, back up the database and continue, or delete a test database volume after typing `DELETE_DB_DATA`. It never deletes database data silently.
 
 ## Compose Environment File
@@ -147,6 +153,8 @@ Amap, DeepSeek, QWeather, and Open-Meteo credentials can be entered during insta
 ## Troubleshooting
 
 - Docker not running: run `sudo systemctl status docker`, then rerun `bash scripts/install.sh`.
+- Docker installation looks slow: keep the installer running and check `deploy/install.log` from another SSH session. Use `bash scripts/install.sh --verbose` when you want full apt and Docker logs streamed to the terminal.
+- Apt/dpkg lock warning: another package manager process is running. Wait for it to finish, or inspect running apt/dpkg processes before retrying the installer.
 - Port `80` or `443` occupied: stop the conflicting service before Caddy starts.
 - DNS not pointed: update the domain `A` record and wait for propagation; Caddy may fail certificate issuance until DNS is correct.
 - Caddy certificate failure: check `bash scripts/status.sh` and `docker compose --env-file .env.production -f docker-compose.prod.yml logs caddy`.

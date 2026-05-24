@@ -229,13 +229,31 @@ describe("production deployment assets", () => {
       "PostgreSQL 首次初始化后的用户名和密码不会因为修改 .env.production 自动改变",
       "备份数据库后继续",
       "DELETE_DB_DATA",
+      "confirm_continue()",
+      "confirm_dangerous_delete()",
+      "直接回车继续，输入 n 取消:",
+      "请输入 y/yes 继续，或 n/no 取消。",
       "backup_existing_database",
-      "确认开始部署？输入 YES 继续",
+      'confirm_continue "确认开始部署？" "直接回车继续，输入 n 取消:"',
+      "command -v docker",
+      "docker --version",
+      "docker compose version",
+      "Docker 已安装，跳过安装。",
+      "Docker Compose 插件可用。",
+      "DEBIAN_FRONTEND=noninteractive",
+      "正在安装 Docker，请稍候",
+      "当前命令：${display_command}",
+      'run_apt_step "apt-get update"',
+      "Docker 安装仍在进行，请稍候",
+      "系统软件包管理器被占用，请稍后重试或检查是否有其他 apt 进程。",
+      "Docker install needed:",
       "deploy/install.log",
       "--verbose",
     ]) {
       expect(installer).toContain(expected);
     }
+
+    expect(installer).not.toContain("确认开始部署？输入 YES 继续");
   });
 
   const bashAvailable = commandAvailable("bash", ["--version"]);

@@ -129,6 +129,32 @@ run_logged() {
   fail_install "${label}"
 }
 
+run_logged_with_heartbeat() {
+  local label="$1"
+  local heartbeat="$2"
+  shift 2
+
+  printf '%s...\n' "${label}"
+  printf '\n### %s\n' "${label}" >> "${INSTALL_LOG}"
+  if [[ "${VERBOSE}" == "1" ]]; then
+    "$@" 2>&1 | tee -a "${INSTALL_LOG}"
+    return "${PIPESTATUS[0]}"
+  fi
+
+  "$@" >> "${INSTALL_LOG}" 2>&1 &
+  local pid=$!
+  local elapsed=0
+  while kill -0 "${pid}" >/dev/null 2>&1; do
+    sleep 2
+    elapsed=$((elapsed + 2))
+    if [[ $((elapsed % 20)) -eq 0 ]] && kill -0 "${pid}" >/dev/null 2>&1; then
+      echo "${heartbeat}"
+    fi
+  done
+
+  wait "${pid}"
+}
+
 if [[ "$(id -u)" -eq 0 ]]; then
   SUDO=""
 else
@@ -257,6 +283,38 @@ ask_yes_no() {
     y|yes) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+confirm_continue() {
+  local prompt="${1:-确认开始部署？}"
+  local hint="${2:-直接回车继续，输入 n 取消:}"
+  local answer=""
+
+  while true; do
+    echo
+    echo "${prompt}"
+    read -r -p "${hint} " answer
+    answer="$(trim "${answer}")"
+    case "${answer,,}" in
+      ""|y|yes) return 0 ;;
+      n|no) return 1 ;;
+      *) warn "请输入 y/yes 继续，或 n/no 取消。" ;;
+    esac
+  done
+}
+
+confirm_dangerous_delete() {
+  local expected="${1:-DELETE_DB_DATA}"
+  local prompt="${2:-输入 DELETE_DB_DATA 确认删除测试数据库卷:}"
+  local confirmation=""
+
+  read -r -p "${prompt} " confirmation
+  if [[ "${confirmation}" == "${expected}" ]]; then
+    return 0
+  fi
+
+  warn "未输入 ${expected}，已取消危险操作。"
+  return 1
 }
 
 generate_secret() {
@@ -415,6 +473,22 @@ render_caddyfile() {
   sed "s/DOMAIN_PLACEHOLDER/${DOMAIN}/g" "${CADDY_TEMPLATE}" > "${CADDY_FILE}"
 }
 
+ensure_caddyfile() {
+  if [[ -f "${CADDY_FILE}" ]]; then
+    warn "deploy/Caddyfile 已存在。"
+    if confirm_continue "检测到已有 deploy/Caddyfile，是否重新生成？" "直接回车重新生成，输入 n 复用:"; then
+      render_caddyfile
+      ok "已重新生成 deploy/Caddyfile。"
+    else
+      ok "复用现有 deploy/Caddyfile。"
+    fi
+    return
+  fi
+
+  render_caddyfile
+  ok "已生成 deploy/Caddyfile。"
+}
+
 load_env_file() {
   set -a
   # shellcheck disable=SC1090
@@ -428,6 +502,76 @@ compose_project_name() {
 
 postgres_volume_name() {
   printf '%s_postgres_data' "$(compose_project_name)"
+}
+
+apt_lock_held() {
+  local lock_paths=(
+    /var/lib/dpkg/lock-frontend
+    /var/lib/dpkg/lock
+    /var/lib/apt/lists/lock
+    /var/cache/apt/archives/lock
+  )
+
+  if command -v fuser >/dev/null 2>&1; then
+    for lock_path in "${lock_paths[@]}"; do
+      if run_sudo fuser "${lock_path}" >/dev/null 2>&1; then
+        return 0
+      fi
+    done
+  fi
+
+  if command -v pgrep >/dev/null 2>&1; then
+    if pgrep -x apt >/dev/null 2>&1 ||
+      pgrep -x apt-get >/dev/null 2>&1 ||
+      pgrep -x dpkg >/dev/null 2>&1 ||
+      pgrep -x unattended-upgr >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+run_apt_step() {
+  local display_command="$1"
+  local label="$2"
+  shift 2
+
+  echo "当前命令：${display_command}"
+  if apt_lock_held; then
+    fail_install "系统软件包管理器被占用，请稍后重试或检查是否有其他 apt 进程。"
+  fi
+
+  if run_logged_with_heartbeat "${label}" "Docker 安装仍在进行，请稍候..." "$@"; then
+    ok "${label}"
+    return
+  fi
+
+  if apt_lock_held; then
+    fail_install "系统软件包管理器被占用，请稍后重试或检查是否有其他 apt 进程。"
+  fi
+
+  fail_install "${label}"
+}
+
+docker_cli_available() {
+  command -v docker >/dev/null 2>&1 && docker --version >/dev/null 2>&1
+}
+
+docker_compose_available() {
+  docker_cli_available && docker compose version >/dev/null 2>&1
+}
+
+docker_install_needed() {
+  ! docker_cli_available || ! docker_compose_available
+}
+
+docker_install_needed_label() {
+  if docker_install_needed; then
+    printf '%s' "是"
+  else
+    printf '%s' "否"
+  fi
 }
 
 install_docker_packages() {
@@ -446,14 +590,20 @@ install_docker_packages() {
       ;;
   esac
 
-  echo "Installing Docker packages..."
-  run_sudo apt-get update
-  run_sudo apt-get install -y ca-certificates curl gnupg
-  run_sudo install -m 0755 -d /etc/apt/keyrings
+  export DEBIAN_FRONTEND=noninteractive
+
+  echo "正在安装 Docker，请稍候..."
+  run_apt_step "apt-get update" "更新系统软件包索引" run_sudo apt-get update
+  run_apt_step "apt-get install -y ca-certificates curl gnupg" "安装 Docker 仓库依赖" run_sudo apt-get install -y ca-certificates curl gnupg
+  run_logged "创建 Docker apt keyring 目录" run_sudo install -m 0755 -d /etc/apt/keyrings
 
   if [[ ! -f /etc/apt/keyrings/docker.gpg ]]; then
-    curl -fsSL "https://download.docker.com/linux/${ID}/gpg" | run_sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    run_sudo chmod a+r /etc/apt/keyrings/docker.gpg
+    echo "当前命令：curl https://download.docker.com/linux/${ID}/gpg"
+    printf '\n### 下载 Docker apt GPG key\n' >> "${INSTALL_LOG}"
+    if ! curl -fsSL "https://download.docker.com/linux/${ID}/gpg" | run_sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg >> "${INSTALL_LOG}" 2>&1; then
+      fail_install "下载 Docker apt GPG key"
+    fi
+    run_logged "设置 Docker apt GPG key 权限" run_sudo chmod a+r /etc/apt/keyrings/docker.gpg
   fi
 
   local codename="${VERSION_CODENAME:-}"
@@ -462,23 +612,42 @@ install_docker_packages() {
   fi
 
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${ID} ${codename} stable" \
-    | run_sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
+    | run_sudo tee /etc/apt/sources.list.d/docker.list >> "${INSTALL_LOG}" >/dev/null
 
-  run_sudo apt-get update
-  run_sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  run_apt_step "apt-get update" "更新 Docker 软件包索引" run_sudo apt-get update
+  run_apt_step "apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin" "安装 Docker Engine 与 Compose 插件" run_sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 }
 
 ensure_docker() {
-  if ! command -v docker >/dev/null 2>&1; then
+  local needs_install=0
+
+  if docker_cli_available; then
+    ok "Docker 已安装，跳过安装。"
+  else
+    needs_install=1
+  fi
+
+  if docker_compose_available; then
+    ok "Docker Compose 插件可用。"
+  else
+    needs_install=1
+  fi
+
+  if [[ "${needs_install}" == "1" ]]; then
     install_docker_packages
   fi
 
-  if ! docker_cmd compose version >/dev/null 2>&1; then
-    install_docker_packages
+  if ! docker_cli_available || ! docker_compose_available; then
+    fail_install "Docker 安装失败，请查看 deploy/install.log"
   fi
 
   if command -v systemctl >/dev/null 2>&1; then
-    run_sudo systemctl enable --now docker
+    run_logged "设置 Docker 开机自启" run_sudo systemctl enable docker
+    run_logged "启动 Docker 服务" run_sudo systemctl start docker
+  fi
+
+  if ! docker --version >> "${INSTALL_LOG}" 2>&1 || ! docker_cmd compose version >> "${INSTALL_LOG}" 2>&1; then
+    fail_install "Docker 安装失败，请查看 deploy/install.log"
   fi
 }
 
@@ -553,9 +722,7 @@ handle_existing_postgres_volume() {
       backup_existing_database
       ;;
     3)
-      local confirmation=""
-      read -r -p "输入 DELETE_DB_DATA 确认删除测试数据库卷: " confirmation
-      if [[ "${confirmation}" != "DELETE_DB_DATA" ]]; then
+      if ! confirm_dangerous_delete "DELETE_DB_DATA" "输入 DELETE_DB_DATA 确认删除测试数据库卷:"; then
         warn "未确认删除，已停止安装。"
         exit 1
       fi
@@ -746,14 +913,12 @@ print_deployment_summary() {
     "$(provider_enabled_label "${QWEATHER_API_KEY:-}")" \
     "$(provider_enabled_label "${DEEPSEEK_API_KEY:-}")" \
     "$(provider_enabled_label "${OPEN_METEO_API_KEY:-}")"
+  printf 'Docker install needed: %s\n' "$(docker_install_needed_label)"
   echo "Passwords and API keys are hidden."
 }
 
 confirm_deployment() {
-  local confirmation=""
-  echo
-  read -r -p "确认开始部署？输入 YES 继续: " confirmation
-  if [[ "${confirmation}" != "YES" ]]; then
+  if ! confirm_continue "确认开始部署？" "直接回车继续，输入 n 取消:"; then
     warn "已取消部署，未启动 Docker 服务。"
     exit 1
   fi
@@ -840,8 +1005,7 @@ main() {
   fi
   require_env_file "未生成 .env.production，请检查安装输入后重试。"
   load_env_file
-  render_caddyfile
-  ok "已生成 deploy/Caddyfile。"
+  ensure_caddyfile
   print_deployment_summary
   confirm_deployment
   ensure_docker
