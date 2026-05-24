@@ -159,6 +159,14 @@ bash scripts/update.sh
 
 The update script pulls latest Git code when an upstream is configured, rebuilds images sequentially, reruns database preflight, runs migrations and seed data, creates/verifies the admin account from `.env.production`, restarts services, and prints Compose status.
 
+After provider configuration changes or forecast pipeline updates, run the public forecast smoke test:
+
+```bash
+bash scripts/test-real-weather.sh
+```
+
+Set `PHOTO_WEATHER_API_BASE_URL=https://your-domain/api` if `.env.production` does not contain `NEXT_PUBLIC_API_BASE_URL`.
+
 ## Backup
 
 ```bash
@@ -248,6 +256,7 @@ Correct production command examples:
 docker compose --env-file .env.production -f docker-compose.prod.yml ps
 docker compose --env-file .env.production -f docker-compose.prod.yml logs -f api
 docker compose --env-file .env.production -f docker-compose.prod.yml up -d
+bash scripts/test-real-weather.sh
 ```
 
 ## Troubleshooting

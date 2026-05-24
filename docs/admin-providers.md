@@ -38,7 +38,7 @@ Open-Meteo 支持两种模式：
 
 ## meteoblue
 
-meteoblue 可作为专业增强天气源，用于 Forecast API 真实测试和后续多源融合。当前任务只启用后台“测试连接”，不会把 meteoblue 自动加入 forecast 计算流程，除非天气融合后续显式接入。
+meteoblue 可作为专业增强天气源，用于 Forecast API 真实测试和多源融合。启用服务商、启用真实调用且 API Key 已保存后，forecast 计算会尝试拉取配置的 Forecast API packages；meteoblue 失败只会降低置信度并写入来源警告，不会中断结果页。
 
 在 meteoblue 控制台开通 Free Forecast API key 后填写 `meteoblue API Key`。默认配置：
 
@@ -64,3 +64,11 @@ bash scripts/test-providers.sh
 ```
 
 脚本会使用 `.env.production` 和 `docker compose --env-file .env.production -f docker-compose.prod.yml` 调用后台测试端点，输出安全状态，不打印 API Key。若管理员登录凭据不可用，以后台 UI 手动测试为准。
+
+真实 forecast 结果链路可运行：
+
+```bash
+bash scripts/test-real-weather.sh
+```
+
+该脚本会请求公开 `/forecast/calculate` 端点，使用黄山光明顶作为固定测试点，输出数据状态、来源摘要、温度、云量、穿衣指南和置信度，不打印 API Key。

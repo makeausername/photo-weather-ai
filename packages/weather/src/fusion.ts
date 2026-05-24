@@ -1,6 +1,7 @@
 import type {
   Coordinates,
   ForecastTarget,
+  NormalizedCurrentWeather,
   NormalizedDailyWeather,
   NormalizedHourlyWeather,
   TerrainProfileSummary,
@@ -30,6 +31,7 @@ export type WeatherFusionInput = {
 };
 
 export type WeatherFusionResult = {
+  readonly current?: NormalizedCurrentWeather;
   readonly fusedHourly: readonly NormalizedHourlyWeather[];
   readonly fusedDaily: readonly NormalizedDailyWeather[];
   readonly sourceSummaries: readonly WeatherSourceSummary[];
@@ -40,6 +42,7 @@ export type WeatherFusionResult = {
   readonly dataStatusZh: string;
   readonly missingDataNotes: readonly string[];
   readonly fusionNotesZh: readonly string[];
+  readonly generatedAt: string;
   readonly summary: WeatherFusionSummary;
 };
 
@@ -112,6 +115,7 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
   });
 
   return {
+    current: fuseCurrent(primaryBundle, fusedHourly[0]),
     fusedHourly,
     fusedDaily,
     sourceSummaries,
@@ -122,6 +126,7 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
     dataStatusZh,
     missingDataNotes,
     fusionNotesZh,
+    generatedAt: primaryBundle.generatedAt,
     summary: {
       primarySource: primaryBundle.providerLabelZh,
       auxiliarySources: usableBundles
@@ -131,6 +136,8 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
       confidenceLevel,
       conflictStatusZh,
       dataStatusZh,
+      sourceSummaries,
+      missingDataNotes,
     },
   };
 }
@@ -185,6 +192,7 @@ function emptyFusionResult(): WeatherFusionResult {
   ) as WeatherConfidenceByField;
 
   return {
+    current: undefined,
     fusedHourly: [],
     fusedDaily: [],
     sourceSummaries: [],
@@ -200,6 +208,7 @@ function emptyFusionResult(): WeatherFusionResult {
     dataStatusZh: "天气数据：演示数据",
     missingDataNotes: ["没有可用于融合的天气源。"],
     fusionNotesZh: ["未找到可用天气源，当前只能使用演示数据。"],
+    generatedAt: new Date("2026-01-01T00:00:00.000Z").toISOString(),
     summary: {
       primarySource: "演示数据",
       auxiliarySources: [],
@@ -207,7 +216,58 @@ function emptyFusionResult(): WeatherFusionResult {
       confidenceLevel: "low",
       conflictStatusZh: "无明显冲突",
       dataStatusZh: "天气数据：演示数据",
+      sourceSummaries: [],
+      missingDataNotes: ["没有可用于融合的天气源。"],
     },
+  };
+}
+
+function fuseCurrent(
+  primaryBundle: WeatherDataBundle,
+  firstFusedHour: NormalizedHourlyWeather | undefined,
+): NormalizedCurrentWeather | undefined {
+  if (primaryBundle.currentWeather && !firstFusedHour) {
+    return primaryBundle.currentWeather;
+  }
+
+  if (!primaryBundle.currentWeather && !firstFusedHour) {
+    return undefined;
+  }
+
+  const primary = primaryBundle.currentWeather;
+  const hour = firstFusedHour;
+
+  return {
+    providerCode: primaryBundle.providerCode,
+    providerLabelZh: primaryBundle.providerLabelZh,
+    dataMode: primaryBundle.dataMode,
+    observedAt: primary?.observedAt ?? hour?.time ?? primaryBundle.generatedAt,
+    temperature: primary?.temperature ?? hour?.temperature ?? 0,
+    feelsLike: primary?.feelsLike ?? hour?.feelsLike ?? null,
+    humidity: primary?.humidity ?? hour?.humidity ?? 0,
+    dewPoint: primary?.dewPoint ?? hour?.dewPoint ?? null,
+    dewPointSpread: primary?.dewPointSpread ?? hour?.dewPointSpread ?? null,
+    windSpeed: primary?.windSpeed ?? hour?.windSpeed ?? 0,
+    windDirection: primary?.windDirection ?? hour?.windDirection ?? null,
+    windGust: primary?.windGust ?? hour?.windGust ?? null,
+    pressure: primary?.pressure ?? hour?.pressure ?? null,
+    visibility: primary?.visibility ?? hour?.visibility ?? null,
+    cloudTotal: primary?.cloudTotal ?? hour?.cloudTotal ?? null,
+    cloudLow: primary?.cloudLow ?? hour?.cloudLow ?? null,
+    cloudMid: primary?.cloudMid ?? hour?.cloudMid ?? null,
+    cloudHigh: primary?.cloudHigh ?? hour?.cloudHigh ?? null,
+    precipitation: primary?.precipitation ?? hour?.precipitation ?? null,
+    precipitationProbability:
+      primary?.precipitationProbability ?? hour?.precipitationProbability ?? null,
+    weatherTextZh: primary?.weatherTextZh ?? hour?.weatherTextZh ?? null,
+    weatherCode: primary?.weatherCode ?? hour?.weatherCode ?? null,
+    airQuality: primary?.airQuality ?? null,
+    missingFields: [
+      ...new Set([...(primary?.missingFields ?? []), ...(hour?.missingFields ?? [])]),
+    ],
+    estimatedFields: [
+      ...new Set([...(primary?.estimatedFields ?? []), ...(hour?.estimatedFields ?? [])]),
+    ],
   };
 }
 
@@ -412,6 +472,7 @@ function sourceSummary(bundle: WeatherDataBundle): WeatherSourceSummary {
     providerCode: bundle.providerCode,
     providerLabelZh: bundle.providerLabelZh,
     dataMode: bundle.dataMode,
+    status: "available",
     availableFields,
     missingFields,
     generatedAt: bundle.generatedAt,
@@ -538,7 +599,9 @@ function buildDataStatus(
   const weatherSource =
     bundles.find((bundle) => bundle.providerCode === "qweather" && bundle.dataMode === "real")
       ?.providerLabelZh ?? bundles.find((bundle) => bundle.dataMode === "real")?.providerLabelZh ?? "正式数据源";
-  const cloudAuxiliary = bundles.some((bundle) => bundle.providerCode === "open_meteo")
+  const cloudAuxiliary = bundles.some(
+    (bundle) => bundle.providerCode === "open_meteo" && bundle.dataMode === "real",
+  )
     ? "；云层辅助：Open-Meteo"
     : "";
   const confidenceLabel =

@@ -346,6 +346,113 @@ function SummaryItem({ label, value }: { readonly label: string; readonly value:
   );
 }
 
+function WeatherEssentialsPanel({ result }: { readonly result: ForecastCalculationResult }) {
+  const current = result.currentWeather;
+  const clothing = result.clothingGuide;
+  const fusion = result.weatherFusionSummary;
+  const failedSources = result.weatherSourceSummaries.filter(
+    (summary) => summary.status === "failed" && summary.warningZh,
+  );
+  const openMeteo = result.weatherSourceSummaries.find(
+    (summary) => summary.providerCode === "open_meteo" && summary.status === "available",
+  );
+  const meteoblue = result.weatherSourceSummaries.find(
+    (summary) => summary.providerCode === "meteoblue" && summary.status === "available",
+  );
+
+  return (
+    <section className="grid gap-3 min-[900px]:grid-cols-2 min-[1280px]:grid-cols-5">
+      <CompactInfoCard
+        title="当前天气"
+        badge={weatherModeBadge(result)}
+        value={current?.weatherTextZh ?? weatherStatusLabel(result)}
+        detail={
+          current
+            ? `观测 ${formatDateTime(current.observedAt)}，湿度 ${formatPercentNumber(
+                current.humidity,
+              )}`
+            : "暂未返回当前实况，已使用预报首小时参与判断。"
+        }
+        tone={result.weatherDataMode === "real" ? "success" : "warning"}
+      />
+      <CompactInfoCard
+        title="温度与体感"
+        badge={formatWind(current?.windSpeed, current?.windDirection)}
+        value={`${formatTemperature(current?.temperature)} / 体感 ${formatTemperature(
+          current?.feelsLike,
+        )}`}
+        detail={`能见度 ${formatKilometers(current?.visibility)}，总云量 ${formatPercentNumber(
+          current?.cloudTotal,
+        )}，降水概率 ${formatPercentNumber(current?.precipitationProbability)}`}
+      />
+      <CompactInfoCard
+        title="穿衣指南"
+        badge={comfortLevelLabel(clothing.comfortLevel)}
+        value={clothing.titleZh}
+        detail={`${clothing.summaryZh} ${clothing.layers.slice(0, 2).join("、")}`}
+      />
+      <CompactInfoCard
+        title="数据来源"
+        badge={result.weatherDataMode === "real" ? "真实数据" : "演示/回退"}
+        value={weatherStatusLabel(result)}
+        detail={[
+          openMeteo ? "云层辅助：Open-Meteo" : null,
+          meteoblue ? "专业增强：meteoblue" : null,
+          `天文数据：${result.astroDataSourceLabelZh}`,
+        ]
+          .filter((item): item is string => Boolean(item))
+          .join("；")}
+        tone={result.weatherDataMode === "real" ? "success" : "warning"}
+      />
+      <CompactInfoCard
+        title="数据置信度"
+        badge={fusion ? confidenceLevelLabel(fusion.confidenceLevel) : "低"}
+        value={fusion?.conflictStatusZh ?? "无明显冲突"}
+        detail={
+          failedSources.length > 0
+            ? failedSources.map((summary) => summary.warningZh).join(" ")
+            : fusion?.dataStatusZh ?? result.weatherNoticeZh
+        }
+        tone={failedSources.length > 0 ? "warning" : "default"}
+      />
+      {clothing.riskNotes.length > 0 ? (
+        <div className="rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground min-[900px]:col-span-2 min-[1280px]:col-span-5">
+          {clothing.riskNotes.join(" ")}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function CompactInfoCard({
+  title,
+  value,
+  detail,
+  badge,
+  tone = "default",
+}: {
+  readonly title: string;
+  readonly value: string;
+  readonly detail: string;
+  readonly badge?: string;
+  readonly tone?: "default" | "success" | "warning";
+}) {
+  return (
+    <Card className="p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-bold text-card-foreground">{title}</p>
+        {badge ? (
+          <Badge variant={tone === "success" ? "success" : tone === "warning" ? "warning" : "muted"}>
+            {badge}
+          </Badge>
+        ) : null}
+      </div>
+      <p className="mt-3 break-words text-lg font-bold leading-6 text-card-foreground">{value}</p>
+      <p className="mt-2 text-xs leading-5 text-muted-foreground">{detail}</p>
+    </Card>
+  );
+}
+
 function weatherStatusLabel(result: ForecastCalculationResult): string {
   return result.weatherNoticeZh.replace(/^天气数据：/, "");
 }
@@ -354,10 +461,27 @@ function weatherModeBadge(result: ForecastCalculationResult): string {
   if (result.weatherDataMode === "real") {
     return "真实数据源";
   }
+  if (result.weatherDataMode === "fallback") {
+    return "已回退演示";
+  }
   if (result.weatherDataMode === "fixture") {
     return "样例数据";
   }
   return "演示数据";
+}
+
+function comfortLevelLabel(level: ForecastCalculationResult["clothingGuide"]["comfortLevel"]): string {
+  const labels: Record<ForecastCalculationResult["clothingGuide"]["comfortLevel"], string> = {
+    comfortable: "舒适",
+    cool: "偏凉",
+    cold: "寒冷",
+    very_cold: "严寒",
+    hot: "炎热",
+    humid: "潮湿",
+    windy: "多风",
+    rainy: "有雨",
+  };
+  return labels[level];
 }
 
 function InvalidQueryCard({ message }: { readonly message?: string }) {
@@ -502,6 +626,7 @@ export function CloudSeaResultPage({
     >
       <CloudSeaTopContext query={query} result={result} />
       <CloudSeaCoreDecision cards={viewModel.coreCards} />
+      <WeatherEssentialsPanel result={result} />
 
       <main
         className="cloud-sea-result-stack grid gap-5"
@@ -542,6 +667,7 @@ export function GlowResultPage({
     >
       <GlowTopContext query={query} result={result} />
       <GlowCoreDecision cards={viewModel.coreCards} />
+      <WeatherEssentialsPanel result={result} />
 
       <main className="glow-result-stack grid gap-5" data-glow-section="GlowStackedLayout">
         <GlowDailyTrend result={result} items={viewModel.dailyTrend} />
@@ -589,6 +715,7 @@ export function AstroResultPage({
     >
       <AstroTopContext query={query} result={result} />
       <AstroCoreDecision cards={viewModel.coreCards} />
+      <WeatherEssentialsPanel result={result} />
 
       <main
         className="AstroResultLayout astro-result-stack grid gap-5"
@@ -1941,6 +2068,7 @@ function ComprehensiveForecastView({
         bestSubject={bestSubject}
         mainRisk={mainRisk}
       />
+      <WeatherEssentialsPanel result={result} />
 
       <div className="grid gap-5 min-[1024px]:grid-cols-12 min-[1024px]:items-start">
         <main className="grid gap-5 min-[1024px]:col-span-8">
@@ -2744,9 +2872,12 @@ function AiListSection({
 function DataStatusPanel({ result }: { readonly result: ForecastCalculationResult }) {
   const nonReal = result.weatherDataMode !== "real" || result.terrainAnalysis.isMock;
   const fusion = result.weatherFusionSummary;
-  const weatherSource = result.weatherDataMode === "real"
-    ? fusion?.primarySource ?? weatherStatusLabel(result)
-    : "演示数据";
+  const weatherSource =
+    result.weatherDataMode === "real"
+      ? fusion?.primarySource ?? weatherStatusLabel(result)
+      : result.weatherDataMode === "fallback"
+        ? weatherStatusLabel(result)
+        : "演示数据";
   const cloudAuxiliary =
     fusion?.auxiliarySources.find((source) => source.includes("Open-Meteo")) ??
     (result.weatherProviderCode === "open_meteo" ? result.weatherProviderLabelZh : "Open-Meteo 未启用");
@@ -3167,6 +3298,37 @@ function formatTime(value: string): string {
     minute: "2-digit",
     hour12: false,
   }).format(new Date(timestamp));
+}
+
+function formatTemperature(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value)}°C` : "暂无";
+}
+
+function formatKilometers(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? `${roundDisplay(value)} 公里` : "暂无";
+}
+
+function formatPercentNumber(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value)}%` : "暂无";
+}
+
+function formatWind(
+  windSpeed: number | null | undefined,
+  windDirection: number | null | undefined,
+): string {
+  const speed =
+    typeof windSpeed === "number" && Number.isFinite(windSpeed)
+      ? `${roundDisplay(windSpeed)} m/s`
+      : "暂无风速";
+  const direction =
+    typeof windDirection === "number" && Number.isFinite(windDirection)
+      ? `${Math.round(windDirection)}°`
+      : "";
+  return direction ? `${speed} ${direction}` : speed;
+}
+
+function roundDisplay(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 function formatPercent(value: number | undefined): string {

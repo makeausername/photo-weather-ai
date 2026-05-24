@@ -403,6 +403,7 @@ async function calculateForecastResult(
   const [weatherDataBundle, terrainProfile, horizonProfile] = await Promise.all([
     weatherDataService.getWeatherDataBundle({
       coordinates,
+      elevationMeters: requestOptions.elevationMeters ?? query.elevationMeters,
       hours: forecastRange.horizonHours,
       days: forecastRange.targetDates.length,
       forecastStart: forecastRange.forecastStart,

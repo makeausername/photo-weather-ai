@@ -54,6 +54,14 @@ const hourlyFields = [
   "weather_code",
 ] as const;
 
+const currentFields = [
+  "temperature_2m",
+  "relative_humidity_2m",
+  "wind_speed_10m",
+  "wind_direction_10m",
+  "weather_code",
+] as const;
+
 const dailyFields = [
   "weather_code",
   "temperature_2m_min",
@@ -81,6 +89,7 @@ export function buildOpenMeteoForecastUrl(
   url.searchParams.set("longitude", formatCoordinate(request.coordinates.longitude));
   url.searchParams.set("timezone", options.timezone);
   url.searchParams.set("hourly", hourlyFields.join(","));
+  url.searchParams.set("current", currentFields.join(","));
   url.searchParams.set("daily", dailyFields.join(","));
   url.searchParams.set("wind_speed_unit", "kmh");
   url.searchParams.set("forecast_days", String(clampDays(request.days ?? daysFromHours(request.hours))));

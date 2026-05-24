@@ -25,6 +25,9 @@ describe("OpenMeteoClient", () => {
     expect(url.searchParams.get("apikey")).toBeNull();
     expect(url.searchParams.get("timezone")).toBe("Asia/Shanghai");
     expect(url.searchParams.get("hourly")).toContain("cloud_cover_low");
+    expect(url.searchParams.get("current")).toBe(
+      "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code",
+    );
   });
 
   it("resolves customer mode with the apikey parameter only when provided", () => {

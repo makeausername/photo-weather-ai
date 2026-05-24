@@ -2,6 +2,7 @@ import type {
   AstroCalculationBasis,
   AstroSummary,
   AstroWindowBundle,
+  ForecastWeatherSourceSummary,
   ForecastCalculationBasis,
   ForecastCalendarDayInfo,
   ForecastCalculationInput,
@@ -9,6 +10,7 @@ import type {
   ForecastQueryInput,
   ForecastTarget,
   NormalizedDailyWeather,
+  NormalizedCurrentWeather,
   NormalizedHourlyWeather,
   Place,
   TerrainAnalysisSummary,
@@ -70,6 +72,7 @@ type MockGenerationOptions = {
 export type NormalizedForecastInputOptions = {
   readonly hourlyWeather: readonly NormalizedHourlyWeather[];
   readonly dailyWeather: readonly NormalizedDailyWeather[];
+  readonly currentWeather?: NormalizedCurrentWeather;
   readonly isMock: boolean;
   readonly dataSourceLabel: string;
   readonly weatherProviderCode?: string;
@@ -78,6 +81,8 @@ export type NormalizedForecastInputOptions = {
   readonly weatherNoticeZh?: string;
   readonly weatherMissingFields?: readonly string[];
   readonly weatherEstimatedFields?: readonly string[];
+  readonly weatherSourceSummaries?: readonly ForecastWeatherSourceSummary[];
+  readonly weatherMissingDataNotes?: readonly string[];
   readonly weatherFusionSummary?: WeatherFusionSummary;
 };
 
@@ -182,6 +187,8 @@ export function buildMockForecastInput(
       weatherProviderLabelZh: "演示数据",
       weatherDataMode: "mock",
       weatherNoticeZh: "天气数据：演示数据",
+      weatherSourceSummaries: [],
+      weatherMissingDataNotes: [],
     },
     {
       forecastRange,
@@ -200,6 +207,7 @@ export function buildForecastInputFromWeatherBundle(
     {
       hourlyWeather: weatherBundle.hourly,
       dailyWeather: weatherBundle.daily,
+      currentWeather: weatherBundle.currentWeather,
       isMock: weatherBundle.dataMode !== "real",
       dataSourceLabel: weatherBundle.providerLabelZh,
       weatherProviderCode: weatherBundle.providerCode,
@@ -216,6 +224,8 @@ export function buildForecastInputFromWeatherBundle(
         weatherBundle.daily,
         "estimatedFields",
       ),
+      weatherSourceSummaries: weatherBundle.sourceSummaries ?? [],
+      weatherMissingDataNotes: weatherBundle.missingDataNotes ?? [],
       weatherFusionSummary: weatherBundle.fusionSummary,
     },
     options,
@@ -253,6 +263,12 @@ export function buildForecastInputFromNormalizedWeather(
   const weatherEstimatedFields =
     weather.weatherEstimatedFields ??
     collectWeatherFields(weather.hourlyWeather, weather.dailyWeather, "estimatedFields");
+  const currentWeather = weather.currentWeather ?? buildCurrentWeatherFromHourly({
+    hourlyWeather: weather.hourlyWeather,
+    providerCode: weather.weatherProviderCode ?? (weather.isMock ? "mock" : "unknown"),
+    providerLabelZh: weatherProviderLabelZh,
+    dataMode: weatherDataMode,
+  });
   const terrainAnalysis =
     options.terrainAnalysis ??
     buildMockTerrainAnalysis({
@@ -280,6 +296,7 @@ export function buildForecastInputFromNormalizedWeather(
         longitudeWgs84: query.longitudeWgs84,
       }),
     generatedAt: forecastRange.forecastStart,
+    currentWeather,
     isMock: weather.isMock,
     dataSourceLabel: weather.dataSourceLabel,
     weatherProviderCode: weather.weatherProviderCode ?? (weather.isMock ? "mock" : "unknown"),
@@ -288,6 +305,8 @@ export function buildForecastInputFromNormalizedWeather(
     weatherNoticeZh: weather.weatherNoticeZh ?? `天气数据：${weatherProviderLabelZh}`,
     weatherMissingFields,
     weatherEstimatedFields,
+    weatherSourceSummaries: weather.weatherSourceSummaries ?? [],
+    weatherMissingDataNotes: weather.weatherMissingDataNotes ?? [],
     weatherFusionSummary: weather.weatherFusionSummary,
     astroDataSourceLabelZh:
       options.astroDataSourceLabelZh ??
@@ -437,6 +456,46 @@ function collectWeatherFields(
   }
 
   return [...values].sort();
+}
+
+function buildCurrentWeatherFromHourly(input: {
+  readonly hourlyWeather: readonly NormalizedHourlyWeather[];
+  readonly providerCode: string;
+  readonly providerLabelZh: string;
+  readonly dataMode: WeatherDataMode;
+}): NormalizedCurrentWeather | undefined {
+  const firstHour = input.hourlyWeather[0];
+  if (!firstHour) {
+    return undefined;
+  }
+
+  return {
+    providerCode: input.providerCode,
+    providerLabelZh: input.providerLabelZh,
+    dataMode: input.dataMode,
+    observedAt: firstHour.time,
+    temperature: firstHour.temperature,
+    feelsLike: firstHour.feelsLike,
+    humidity: firstHour.humidity,
+    dewPoint: firstHour.dewPoint,
+    dewPointSpread: firstHour.dewPointSpread,
+    windSpeed: firstHour.windSpeed,
+    windDirection: firstHour.windDirection,
+    windGust: firstHour.windGust,
+    pressure: firstHour.pressure,
+    visibility: firstHour.visibility,
+    cloudTotal: firstHour.cloudTotal,
+    cloudLow: firstHour.cloudLow,
+    cloudMid: firstHour.cloudMid,
+    cloudHigh: firstHour.cloudHigh,
+    precipitation: firstHour.precipitation,
+    precipitationProbability: firstHour.precipitationProbability,
+    weatherTextZh: firstHour.weatherTextZh,
+    weatherCode: firstHour.weatherCode,
+    airQuality: null,
+    missingFields: firstHour.missingFields ?? [],
+    estimatedFields: firstHour.estimatedFields ?? [],
+  };
 }
 
 export function generateMockTerrainSummary(place: Place): TerrainSummary {

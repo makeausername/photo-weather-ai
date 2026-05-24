@@ -8,6 +8,7 @@
 - [Development Roadmap](docs/development-roadmap.md)
 - [Cost Control](docs/provider-cost-control.md)
 - [Admin Provider Configuration](docs/admin-providers.md)
+- [Real Forecast Data Pipeline V1](docs/real-forecast-data-pipeline-v1.md)
 - [Module Map](docs/module-map.md)
 - [Production/Staging Deployment](docs/deployment.md)
 

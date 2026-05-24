@@ -103,6 +103,7 @@ export class QWeatherProvider implements WeatherProvider {
     return validateHourlyWeather(
       hourly.map((record) => {
         const weatherCode = toText(record.icon);
+        const weatherTextZh = toText(record.text);
         const windSpeed = kmhToMetersPerSecond(record.windSpeed);
         const precipitationProbability = nullablePercent(record.pop);
         const cloudTotal = nullablePercent(record.cloud);
@@ -144,6 +145,7 @@ export class QWeatherProvider implements WeatherProvider {
           cloudMid: null,
           cloudHigh: null,
           weatherCode,
+          weatherTextZh,
           providerCode: source.providerCode,
           providerLabelZh: source.providerLabelZh,
           dataMode: source.mode,

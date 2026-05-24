@@ -150,6 +150,7 @@ export class OpenMeteoProvider implements WeatherProvider {
           cloudMid,
           cloudHigh,
           weatherCode,
+          weatherTextZh: describeOpenMeteoCode(weatherCode),
           providerCode: source.providerCode,
           providerLabelZh: source.providerLabelZh,
           dataMode: source.mode,
@@ -254,22 +255,29 @@ export class OpenMeteoRealProvider implements WeatherProvider {
   constructor(private readonly options: OpenMeteoRealProviderOptions) {}
 
   async getCurrentWeather(input: WeatherRequestInput): Promise<CurrentWeather> {
-    const firstHour = (await this.getHourlyForecast(input))[0];
+    const result = await this.fetchForecast(input);
+    const body = asRecord(result.body);
+    const current = asRecord(body.current ?? {});
+    const firstHour = this.normalizer.normalizeHourlyWeather(body)[0];
     if (!firstHour) {
       throw new Error("Open-Meteo response did not include hourly weather.");
     }
+    const weatherCode = toText(current.weather_code) ?? firstHour.weatherCode;
+    const temperature = toNumber(current.temperature_2m) ?? firstHour.temperature;
+    const humidity = toNumber(current.relative_humidity_2m) ?? firstHour.humidity;
+    const windSpeed = kmhToMetersPerSecond(current.wind_speed_10m) ?? firstHour.windSpeed;
 
     return {
       provider: realSource.providerCode,
       observedAt: firstHour.time,
       coordinates: input.coordinates,
-      condition: weatherConditionFromCode(firstHour.weatherCode),
-      summary: "Open-Meteo 实况/逐小时天气",
-      temperatureCelsius: firstHour.temperature,
+      condition: weatherConditionFromCode(weatherCode),
+      summary: describeOpenMeteoCode(weatherCode),
+      temperatureCelsius: temperature,
       feelsLikeCelsius: firstHour.feelsLike ?? firstHour.temperature,
-      humidityPercent: firstHour.humidity,
+      humidityPercent: humidity,
       cloudCoverPercent: firstHour.cloudTotal,
-      windSpeedMetersPerSecond: firstHour.windSpeed,
+      windSpeedMetersPerSecond: windSpeed,
       visibilityKilometers: firstHour.visibility ?? 0,
     };
   }

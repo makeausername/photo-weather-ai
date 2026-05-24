@@ -44,7 +44,7 @@ export type ForecastHorizon = "24h" | "48h" | "72h" | "7d";
 
 export type ForecastTarget = "general" | "cloud_sea" | "glow" | "astro";
 
-export type WeatherDataMode = "mock" | "demo" | "fixture" | "real";
+export type WeatherDataMode = "mock" | "demo" | "fixture" | "fallback" | "real";
 
 export type ForecastQueryInput = {
   readonly name: string;
@@ -79,6 +79,7 @@ export type NormalizedHourlyWeather = {
   readonly cloudMid: number | null;
   readonly cloudHigh: number | null;
   readonly weatherCode: string | null;
+  readonly weatherTextZh?: string | null;
   readonly providerCode: string;
   readonly providerLabelZh?: string;
   readonly dataMode?: WeatherDataMode;
@@ -86,6 +87,39 @@ export type NormalizedHourlyWeather = {
   readonly missingFields?: readonly string[];
   readonly estimatedFields?: readonly string[];
   readonly sourceNotes?: readonly string[];
+};
+
+export type NormalizedCurrentWeather = {
+  readonly providerCode: string;
+  readonly providerLabelZh: string;
+  readonly dataMode: WeatherDataMode;
+  readonly observedAt: string;
+  readonly temperature: number;
+  readonly feelsLike?: number | null;
+  readonly humidity: number;
+  readonly dewPoint?: number | null;
+  readonly dewPointSpread?: number | null;
+  readonly windSpeed: number;
+  readonly windDirection?: number | null;
+  readonly windGust?: number | null;
+  readonly pressure?: number | null;
+  readonly visibility?: number | null;
+  readonly cloudTotal?: number | null;
+  readonly cloudLow?: number | null;
+  readonly cloudMid?: number | null;
+  readonly cloudHigh?: number | null;
+  readonly precipitation?: number | null;
+  readonly precipitationProbability?: number | null;
+  readonly weatherTextZh?: string | null;
+  readonly weatherCode?: string | null;
+  readonly airQuality?: {
+    readonly aqi?: number;
+    readonly category?: string;
+    readonly pm25?: number;
+    readonly pm10?: number;
+  } | null;
+  readonly missingFields: readonly string[];
+  readonly estimatedFields: readonly string[];
 };
 
 export type NormalizedDailyWeather = {
@@ -102,6 +136,39 @@ export type NormalizedDailyWeather = {
   readonly dataMode?: WeatherDataMode;
   readonly missingFields?: readonly string[];
   readonly estimatedFields?: readonly string[];
+};
+
+export type ClothingComfortLevel =
+  | "comfortable"
+  | "cool"
+  | "cold"
+  | "very_cold"
+  | "hot"
+  | "humid"
+  | "windy"
+  | "rainy";
+
+export type ClothingGuide = {
+  readonly titleZh: string;
+  readonly summaryZh: string;
+  readonly layers: readonly string[];
+  readonly accessories: readonly string[];
+  readonly riskNotes: readonly string[];
+  readonly comfortLevel: ClothingComfortLevel;
+};
+
+export type ForecastWeatherSourceStatus = "available" | "failed" | "fallback";
+
+export type ForecastWeatherSourceSummary = {
+  readonly providerCode: string;
+  readonly providerLabelZh: string;
+  readonly dataMode: WeatherDataMode;
+  readonly status: ForecastWeatherSourceStatus;
+  readonly availableFields: readonly string[];
+  readonly missingFields: readonly string[];
+  readonly latencyMs?: number;
+  readonly generatedAt?: string;
+  readonly warningZh?: string;
 };
 
 export type TerrainCloudSeaPotential = "low" | "medium" | "high";
@@ -246,6 +313,8 @@ export type ForecastCalculationInput = {
   readonly terrainAnalysis: TerrainAnalysisSummary;
   readonly astroSummaries: readonly AstroSummary[];
   readonly generatedAt: string;
+  readonly currentWeather?: NormalizedCurrentWeather;
+  readonly clothingGuide?: ClothingGuide;
   readonly isMock: boolean;
   readonly dataSourceLabel: string;
   readonly weatherProviderCode: string;
@@ -254,6 +323,8 @@ export type ForecastCalculationInput = {
   readonly weatherNoticeZh: string;
   readonly weatherMissingFields: readonly string[];
   readonly weatherEstimatedFields: readonly string[];
+  readonly weatherSourceSummaries: readonly ForecastWeatherSourceSummary[];
+  readonly weatherMissingDataNotes: readonly string[];
   readonly weatherFusionSummary?: WeatherFusionSummary;
   readonly astroDataSourceLabelZh: string;
   readonly astroCalculationBasis?: AstroCalculationBasis;
@@ -600,12 +671,16 @@ export type ForecastCalculationResult = {
   readonly isMock: boolean;
   readonly dataSourceLabel: string;
   readonly generatedAt: string;
+  readonly currentWeather?: NormalizedCurrentWeather;
+  readonly clothingGuide: ClothingGuide;
   readonly weatherProviderCode: string;
   readonly weatherProviderLabelZh: string;
   readonly weatherDataMode: WeatherDataMode;
   readonly weatherNoticeZh: string;
   readonly weatherMissingFields: readonly string[];
   readonly weatherEstimatedFields: readonly string[];
+  readonly weatherSourceSummaries: readonly ForecastWeatherSourceSummary[];
+  readonly weatherMissingDataNotes: readonly string[];
   readonly weatherFusionSummary?: WeatherFusionSummary;
   readonly astroDataSourceLabelZh: string;
   readonly astroCalculationBasis?: AstroCalculationBasis;
@@ -620,6 +695,8 @@ export type WeatherFusionSummary = {
   readonly confidenceLevel: WeatherConfidenceLevel;
   readonly conflictStatusZh: string;
   readonly dataStatusZh: string;
+  readonly sourceSummaries?: readonly ForecastWeatherSourceSummary[];
+  readonly missingDataNotes?: readonly string[];
 };
 
 export type ForecastCalendarDayInfo = {

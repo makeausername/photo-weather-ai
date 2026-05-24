@@ -6,6 +6,8 @@ import {
   InMemoryWeatherProviderUsageLogger,
   MockWeatherProvider,
   normalizeQWeatherApiHost,
+  MeteoblueClient,
+  MeteoblueRealProvider,
   OpenMeteoClient,
   OpenMeteoProvider,
   OpenMeteoRealProvider,
@@ -597,9 +599,10 @@ export async function readRuntimeMeteoblueConfig(
 async function resolveRuntimeWeatherProviders(
   options: WeatherProviderRuntimeOptions,
 ): Promise<readonly WeatherProvider[]> {
-  const [qweather, openMeteo] = await Promise.all([
+  const [qweather, openMeteo, meteoblue] = await Promise.all([
     readRuntimeQWeatherConfig(options),
     readRuntimeOpenMeteoConfig(options),
+    readRuntimeMeteoblueConfig(options),
   ]);
   const providers: WeatherProvider[] = [];
 
@@ -643,6 +646,21 @@ async function resolveRuntimeWeatherProviders(
     } else if (!openMeteo.realCallEnabled) {
       providers.push(new OpenMeteoProvider());
     }
+  }
+
+  if (meteoblue.enabled && meteoblue.realCallEnabled && meteoblue.apiKey) {
+    providers.push(
+      new MeteoblueRealProvider({
+        client: new MeteoblueClient({
+          apiKey: meteoblue.apiKey,
+          baseUrl: meteoblue.baseUrl,
+          packages: meteoblue.packages,
+          timeoutMs: meteoblue.timeoutMs,
+          retryCount: meteoblue.retryCount,
+        }),
+        timezone: "Asia/Shanghai",
+      }),
+    );
   }
 
   return providers.length > 0 ? providers : [new MockWeatherProvider()];

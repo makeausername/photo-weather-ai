@@ -1,5 +1,7 @@
 import type {
   Coordinates,
+  ForecastWeatherSourceSummary,
+  NormalizedCurrentWeather,
   NormalizedDailyWeather,
   NormalizedHourlyWeather,
   WeatherDataMode,
@@ -89,6 +91,7 @@ export type AirQuality = {
 
 export type WeatherDataBundle = {
   readonly current?: CurrentWeather;
+  readonly currentWeather?: NormalizedCurrentWeather;
   readonly hourly: readonly NormalizedHourlyWeather[];
   readonly daily: readonly NormalizedDailyWeather[];
   readonly alerts: readonly WeatherAlert[];
@@ -104,6 +107,8 @@ export type WeatherDataBundle = {
   readonly estimatedFields?: readonly string[];
   readonly sourceSummaries?: readonly WeatherSourceSummary[];
   readonly conflictFlags?: readonly WeatherConflictFlag[];
+  readonly missingDataNotes?: readonly string[];
+  readonly confidenceByField?: WeatherConfidenceByField;
   readonly confidenceByTarget?: WeatherConfidenceByTarget;
   readonly fusionSummary?: WeatherFusionSummary;
 };
@@ -111,6 +116,7 @@ export type WeatherDataBundle = {
 export type ForecastRequestOptions = {
   readonly hours?: number;
   readonly days?: number;
+  readonly elevationMeters?: number;
   readonly horizon?: ForecastHorizon;
   readonly forecastStart?: string;
   readonly forecastEnd?: string;
@@ -125,14 +131,10 @@ export type WeatherRequestInput = ForecastRequestOptions & {
 
 export type NormalizedWeatherData = WeatherDataBundle;
 
-export type WeatherSourceSummary = {
+export type WeatherSourceSummary = ForecastWeatherSourceSummary & {
   readonly providerCode: WeatherProviderCode;
   readonly providerLabelZh: string;
   readonly dataMode: WeatherDataMode;
-  readonly availableFields: readonly string[];
-  readonly missingFields: readonly string[];
-  readonly latencyMs?: number;
-  readonly generatedAt?: string;
 };
 
 export type WeatherConflictSeverity = "low" | "medium" | "high";

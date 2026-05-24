@@ -27,6 +27,7 @@ import {
 } from "./helpers.js";
 import { analyzeCloudSea, cloudSeaRecommendationLevel } from "./cloud-sea-analysis.js";
 import { calculateAstroAnalysis } from "./astro-analysis.js";
+import { buildClothingGuide } from "./clothing-guide.js";
 import { buildGlowForecastScore, calculateGlowAnalysis } from "./glow-analysis.js";
 
 const demoWeatherHonestyNotice =
@@ -53,6 +54,16 @@ type ScoredForecastWindow = {
 };
 
 export function calculateForecast(input: ForecastCalculationInput): ForecastCalculationResult {
+  const clothingGuide =
+    input.clothingGuide ??
+    buildClothingGuide({
+      currentWeather: input.currentWeather,
+      hourlyWeather: input.hourlyWeather,
+      elevationMeters: input.terrainAnalysis.terrainProfile.locationElevation,
+      target: input.target,
+      timezone: input.calendarBasis.timezone,
+      forecastStart: input.calendarBasis.forecastStart,
+    });
   const cloudSeaAnalysis = analyzeCloudSea(input);
   const glowAnalysis = calculateGlowAnalysis(input);
   const sunriseGlow = buildGlowForecastScore(glowAnalysis, "sunrise");
@@ -141,12 +152,16 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
     isMock: input.isMock,
     dataSourceLabel: input.dataSourceLabel,
     generatedAt: input.generatedAt,
+    currentWeather: input.currentWeather,
+    clothingGuide,
     weatherProviderCode: input.weatherProviderCode,
     weatherProviderLabelZh: input.weatherProviderLabelZh,
     weatherDataMode: input.weatherDataMode,
     weatherNoticeZh: input.weatherNoticeZh,
     weatherMissingFields: input.weatherMissingFields,
     weatherEstimatedFields: input.weatherEstimatedFields,
+    weatherSourceSummaries: input.weatherSourceSummaries,
+    weatherMissingDataNotes: input.weatherMissingDataNotes,
     weatherFusionSummary: input.weatherFusionSummary,
     astroDataSourceLabelZh: input.astroDataSourceLabelZh,
     astroCalculationBasis: input.astroCalculationBasis,
@@ -1088,7 +1103,9 @@ function buildPhotographyAdvice(
     advice.push("存在高等级风险提示，出行前应再次核对真实天气、道路和景区开放信息。");
   }
   advice.push(
-    "当前结果基于演示天气数据生成，仅用于体验分析流程；正式天气数据源启用后可用于出行前复核。",
+    input.weatherDataMode === "real"
+      ? "当前评分已使用真实天气源参与计算，出行前仍建议核对最新预警、道路和景区开放信息。"
+      : "当前结果基于演示天气数据生成，仅用于体验分析流程；正式天气数据源启用后可用于出行前复核。",
   );
 
   return advice;
