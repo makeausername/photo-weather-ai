@@ -19,6 +19,7 @@ import {
   InMemoryWeatherProviderUsageLogger,
   type WeatherProviderUsageLogger,
 } from "./usage.js";
+import { isWeatherProviderError } from "./provider-error.js";
 
 export class WeatherDataService {
   constructor(private readonly provider: WeatherProvider = createWeatherProvider()) {}
@@ -31,6 +32,14 @@ export class WeatherDataService {
       this.provider.getWeatherAlerts(input),
       this.provider.getAirQuality(input),
     ]);
+    const generated =
+      input.forecastStart ??
+      current.observedAt ??
+      formatZonedIso(
+        getNowInTimezone(input.timezone ?? defaultTimezone),
+        input.timezone ?? defaultTimezone,
+      );
+    const missingFields = collectWeatherFields(hourly, daily, "missingFields");
 
     return {
       current,
@@ -49,18 +58,22 @@ export class WeatherDataService {
       providerCode: this.provider.source.providerCode,
       providerLabelZh: this.provider.source.providerLabelZh,
       dataMode: this.provider.source.mode,
-      generatedAt:
-        input.forecastStart ??
-        current.observedAt ??
-        formatZonedIso(
-          getNowInTimezone(input.timezone ?? defaultTimezone),
-          input.timezone ?? defaultTimezone,
-        ),
+      generatedAt: generated,
       forecastStart: input.forecastStart,
       forecastEnd: input.forecastEnd,
       noticeZh: `天气数据：${this.provider.source.providerLabelZh}`,
-      missingFields: collectWeatherFields(hourly, daily, "missingFields"),
+      missingFields,
       estimatedFields: collectWeatherFields(hourly, daily, "estimatedFields"),
+      sourceSummaries: [
+        successfulSourceSummary({
+          providerCode: this.provider.source.providerCode,
+          providerLabelZh: this.provider.source.providerLabelZh,
+          dataMode: this.provider.source.mode,
+          generatedAt: generated,
+          availableFields: collectAvailableFields(hourly),
+          missingFields,
+        }),
+      ],
     };
   }
 }
@@ -169,10 +182,18 @@ export class WeatherIntelligenceService {
       providerCode: "mock",
       providerLabelZh: "演示数据",
       dataMode: fallbackMode,
+      enabled: true,
+      realCallEnabled: false,
+      attempted: true,
+      success: true,
       status: "fallback",
       availableFields: ["temperature", "humidity", "wind", "cloudTotal"],
       missingFields: ["realWeather"],
       generatedAt: generated,
+      messageZh:
+        failedSourceSummaries.length > 0
+          ? "真实天气暂不可用，当前显示演示图层。"
+          : "演示天气数据可用。",
       warningZh:
         failedSourceSummaries.length > 0
           ? "真实天气源暂时不可用，当前结果已回退到演示数据。"
@@ -225,6 +246,12 @@ export class WeatherIntelligenceService {
         auxiliarySources: [],
         professionalSourceStatus: "专业增强：meteoblue 未启用",
         confidenceLevel: "low",
+        confidenceByTarget: {
+          cloud_sea: 0,
+          glow: 0,
+          astro: 0,
+          general: 0,
+        },
         conflictStatusZh: "无明显冲突",
         dataStatusZh,
         sourceSummaries: [...failedSourceSummaries, fallbackSummary],
@@ -261,16 +288,18 @@ export class WeatherIntelligenceService {
     const startedAt = Date.now();
     try {
       const bundle = await new WeatherDataService(provider).getWeatherDataBundle(input);
-      this.cache.set(key, bundle, weatherCacheTtlMs.fusion);
+      const latencyMs = Date.now() - startedAt;
+      const annotatedBundle = annotateProviderBundle(bundle, latencyMs);
+      this.cache.set(key, annotatedBundle, weatherCacheTtlMs.fusion);
       await this.usageLogger.recordUsage({
         providerCode: provider.source.providerCode,
         endpoint: "weather.bundle",
         success: true,
-        latencyMs: Date.now() - startedAt,
+        latencyMs,
         cacheHit: false,
         createdAt: new Date().toISOString(),
       });
-      return bundle;
+      return annotatedBundle;
     } catch (error) {
       await this.usageLogger.recordUsage({
         providerCode: provider.source.providerCode,
@@ -351,17 +380,139 @@ function normalizeCurrentWeather(input: {
   };
 }
 
-function failedSourceSummary(provider: WeatherProvider, _error: unknown): WeatherSourceSummary {
+function failedSourceSummary(provider: WeatherProvider, errorInput: unknown): WeatherSourceSummary {
+  const error = classifyProviderError(provider, errorInput);
   return {
     providerCode: provider.source.providerCode,
     providerLabelZh: provider.source.providerLabelZh,
     dataMode: provider.source.mode,
+    enabled: true,
+    realCallEnabled: provider.source.mode === "real",
+    attempted: true,
+    success: false,
     status: "failed",
     availableFields: [],
     missingFields: ["weather"],
-    warningZh: `${provider.source.providerLabelZh} 暂时不可用，结果已降低置信度。`,
+    statusCode: error.statusCode,
+    latencyMs: error.latencyMs,
+    errorCategory: error.errorCategory,
+    messageZh: error.messageZh,
+    warningZh: error.messageZh,
     generatedAt: new Date().toISOString(),
   };
+}
+
+function classifyProviderError(
+  provider: WeatherProvider,
+  error: unknown,
+): Pick<WeatherSourceSummary, "errorCategory" | "messageZh" | "statusCode" | "latencyMs"> {
+  if (isWeatherProviderError(error)) {
+    return {
+      errorCategory: error.errorCategory,
+      messageZh: error.messageZh,
+      statusCode: error.statusCode,
+      latencyMs: error.latencyMs,
+    };
+  }
+
+  const name = error instanceof Error ? error.name : "";
+  if (name === "AbortError") {
+    return {
+      errorCategory: "timeout",
+      messageZh: `${provider.source.providerLabelZh} 请求超时`,
+    };
+  }
+
+  return {
+    errorCategory: "provider_error",
+    messageZh: `${provider.source.providerLabelZh} 暂时不可用，结果已降低置信度。`,
+  };
+}
+
+function annotateProviderBundle(bundle: WeatherDataBundle, latencyMs: number): WeatherDataBundle {
+  return {
+    ...bundle,
+    sourceSummaries: [
+      {
+        ...sourceSummaryFromBundle(bundle),
+        latencyMs,
+        messageZh: `${bundle.providerLabelZh} 通过。`,
+      },
+    ],
+  };
+}
+
+function successfulSourceSummary(input: {
+  readonly providerCode: WeatherSourceSummary["providerCode"];
+  readonly providerLabelZh: string;
+  readonly dataMode: WeatherSourceSummary["dataMode"];
+  readonly generatedAt: string;
+  readonly availableFields: readonly string[];
+  readonly missingFields: readonly string[];
+  readonly latencyMs?: number;
+}): WeatherSourceSummary {
+  return {
+    providerCode: input.providerCode,
+    providerLabelZh: input.providerLabelZh,
+    dataMode: input.dataMode,
+    enabled: true,
+    realCallEnabled: input.dataMode === "real",
+    attempted: true,
+    success: true,
+    status: "available",
+    availableFields: input.availableFields,
+    missingFields: input.missingFields,
+    latencyMs: input.latencyMs,
+    generatedAt: input.generatedAt,
+    messageZh: `${input.providerLabelZh} 通过。`,
+  };
+}
+
+function sourceSummaryFromBundle(bundle: WeatherDataBundle): WeatherSourceSummary {
+  const existing = bundle.sourceSummaries?.find(
+    (summary) => summary.providerCode === bundle.providerCode,
+  );
+
+  return {
+    ...successfulSourceSummary({
+      providerCode: bundle.providerCode,
+      providerLabelZh: bundle.providerLabelZh,
+      dataMode: bundle.dataMode,
+      generatedAt: bundle.generatedAt,
+      availableFields: collectAvailableFields(bundle.hourly),
+      missingFields: bundle.missingFields ?? [],
+    }),
+    ...existing,
+    success: existing?.success ?? true,
+    attempted: existing?.attempted ?? true,
+    enabled: existing?.enabled ?? true,
+    realCallEnabled: existing?.realCallEnabled ?? bundle.dataMode === "real",
+    messageZh: existing?.messageZh ?? `${bundle.providerLabelZh} 通过。`,
+  };
+}
+
+function collectAvailableFields(hourly: readonly NormalizedHourlyWeather[]): readonly string[] {
+  const fields = [
+    "temperature",
+    "humidity",
+    "windSpeed",
+    "windDirection",
+    "cloudTotal",
+    "cloudLow",
+    "cloudMid",
+    "cloudHigh",
+    "visibility",
+    "dewPoint",
+    "pressure",
+    "precipitation",
+  ] as const;
+
+  return fields.filter((field) =>
+    hourly.some((hour) => {
+      const value = hour[field];
+      return typeof value === "number" && Number.isFinite(value);
+    }),
+  );
 }
 
 function collectWeatherFields(

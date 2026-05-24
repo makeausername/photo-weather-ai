@@ -134,6 +134,7 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
         .map((bundle) => bundle.providerLabelZh),
       professionalSourceStatus,
       confidenceLevel,
+      confidenceByTarget,
       conflictStatusZh,
       dataStatusZh,
       sourceSummaries,
@@ -214,6 +215,12 @@ function emptyFusionResult(): WeatherFusionResult {
       auxiliarySources: [],
       professionalSourceStatus: "专业增强：meteoblue 未启用",
       confidenceLevel: "low",
+      confidenceByTarget: {
+        cloud_sea: 0,
+        glow: 0,
+        astro: 0,
+        general: 0,
+      },
       conflictStatusZh: "无明显冲突",
       dataStatusZh: "天气数据：演示数据",
       sourceSummaries: [],
@@ -453,6 +460,9 @@ function fuseDailyByDate(
 }
 
 function sourceSummary(bundle: WeatherDataBundle): WeatherSourceSummary {
+  const existing = bundle.sourceSummaries?.find(
+    (summary) => summary.providerCode === bundle.providerCode,
+  );
   const missingFields = [
     ...new Set([
       ...(bundle.missingFields ?? []),
@@ -468,14 +478,32 @@ function sourceSummary(bundle: WeatherDataBundle): WeatherSourceSummary {
     ),
   ];
 
-  return {
+  const base: WeatherSourceSummary = {
     providerCode: bundle.providerCode,
     providerLabelZh: bundle.providerLabelZh,
     dataMode: bundle.dataMode,
+    enabled: true,
+    realCallEnabled: bundle.dataMode === "real",
+    attempted: true,
+    success: true,
     status: "available",
     availableFields,
     missingFields,
     generatedAt: bundle.generatedAt,
+    messageZh: `${bundle.providerLabelZh} 通过。`,
+  };
+
+  return {
+    ...base,
+    ...existing,
+    status: existing?.status ?? base.status,
+    availableFields: existing?.availableFields ?? base.availableFields,
+    missingFields: existing?.missingFields ?? base.missingFields,
+    messageZh: existing?.messageZh ?? base.messageZh,
+    success: existing?.success ?? base.success,
+    attempted: existing?.attempted ?? base.attempted,
+    enabled: existing?.enabled ?? base.enabled,
+    realCallEnabled: existing?.realCallEnabled ?? base.realCallEnabled,
   };
 }
 

@@ -22,6 +22,7 @@ import {
   validateHourlyWeather,
   weatherConditionFromCode,
 } from "./normalization.js";
+import { WeatherProviderError } from "./provider-error.js";
 
 const source = {
   providerCode: "meteoblue",
@@ -159,12 +160,22 @@ export class MeteoblueClient {
           signal: controller.signal,
         });
         const text = await response.text();
-        const body = parseJsonBody<TBody>(text);
         const latencyMs = Date.now() - startedAt;
+        const body = parseJsonBody<TBody>(text, latencyMs);
+        const recordBody = asRecord(body);
 
         if (response.status >= 500 && attempt < attempts) {
-          lastError = new Error(`meteoblue upstream status ${response.status}`);
+          lastError = meteoblueError({
+            errorCategory: "provider_error",
+            messageZh: `meteoblue 服务返回错误，HTTP 状态码 ${response.status}。`,
+            statusCode: response.status,
+            latencyMs,
+          });
           continue;
+        }
+
+        if (response.status < 200 || response.status >= 300 || hasMeteoblueErrorPayload(recordBody)) {
+          throw meteoblueHttpError(response.status, recordBody, latencyMs);
         }
 
         return {
@@ -173,9 +184,9 @@ export class MeteoblueClient {
           latencyMs,
         };
       } catch (error) {
-        lastError = error;
+        lastError = normalizeMeteoblueError(error, Date.now() - startedAt);
         if (attempt >= attempts) {
-          throw error;
+          throw lastError;
         }
       } finally {
         clearTimeout(timeout);
@@ -184,6 +195,75 @@ export class MeteoblueClient {
 
     throw lastError instanceof Error ? lastError : new Error("meteoblue request failed.");
   }
+}
+
+function meteoblueError(
+  options: Omit<
+    ConstructorParameters<typeof WeatherProviderError>[0],
+    "providerCode" | "providerLabelZh" | "dataMode"
+  >,
+): WeatherProviderError {
+  return new WeatherProviderError({
+    providerCode: "meteoblue",
+    providerLabelZh: "meteoblue",
+    dataMode: "real",
+    ...options,
+  });
+}
+
+function meteoblueHttpError(
+  statusCode: number,
+  body: Record<string, unknown>,
+  latencyMs: number,
+): WeatherProviderError {
+  const text = safeMeteoblueErrorText(body);
+  if (statusCode === 401 || statusCode === 403 || /invalid|unauthorized|forbidden|key/i.test(text)) {
+    return meteoblueError({
+      errorCategory: "invalid_key",
+      messageZh: "meteoblue Key 无效或权限不足",
+      statusCode,
+      latencyMs,
+    });
+  }
+
+  if (/package|packages|subscription|subscribed|not.*available|access|permission|权限|套餐/i.test(text)) {
+    return meteoblueError({
+      errorCategory: "unsupported",
+      messageZh: "meteoblue 套餐不支持当前数据包",
+      statusCode,
+      latencyMs,
+    });
+  }
+
+  return meteoblueError({
+    errorCategory: "provider_error",
+    messageZh: `meteoblue 服务返回错误，HTTP 状态码 ${statusCode}。`,
+    statusCode,
+    latencyMs,
+  });
+}
+
+function normalizeMeteoblueError(error: unknown, latencyMs: number): WeatherProviderError {
+  if (error instanceof WeatherProviderError) {
+    return error;
+  }
+
+  const name = error instanceof Error ? error.name : "";
+  if (name === "AbortError") {
+    return meteoblueError({
+      errorCategory: "timeout",
+      messageZh: "meteoblue 请求超时",
+      latencyMs,
+      cause: error,
+    });
+  }
+
+  return meteoblueError({
+    errorCategory: "network",
+    messageZh: "meteoblue 网络不可用",
+    latencyMs,
+    cause: error,
+  });
 }
 
 export class MeteoblueProvider implements WeatherProvider {
@@ -261,7 +341,7 @@ export class MeteoblueRealProvider implements WeatherProvider {
   async getCurrentWeather(input: WeatherRequestInput): Promise<CurrentWeather> {
     const firstHour = (await this.getHourlyForecast(input))[0];
     if (!firstHour) {
-      throw new Error("meteoblue response did not include usable hourly weather.");
+      throw meteoblueParseError("meteoblue 返回格式异常");
     }
 
     return {
@@ -311,7 +391,7 @@ export class MeteoblueRealProvider implements WeatherProvider {
     const data1h = firstRecord(root.data_1h, root.data1h, root.hourly);
     const timeValues = arrayField(data1h, "time", "timestamp", "valid_time");
     if (timeValues.length === 0) {
-      return [];
+      throw meteoblueParseError("meteoblue 返回格式异常");
     }
 
     return validateHourlyWeather(
@@ -479,11 +559,21 @@ function hasMeteoblueErrorPayload(body: Record<string, unknown>): boolean {
   );
 }
 
-function parseJsonBody<TBody>(text: string): TBody {
+function safeMeteoblueErrorText(body: Record<string, unknown>): string {
+  return [body.error, body.error_message, body.message, body.reason]
+    .filter((value): value is string => typeof value === "string")
+    .join(" ");
+}
+
+function parseJsonBody<TBody>(text: string, latencyMs: number): TBody {
   try {
     return JSON.parse(text) as TBody;
   } catch {
-    return {} as TBody;
+    throw meteoblueError({
+      errorCategory: "parse_error",
+      messageZh: "meteoblue 返回格式异常",
+      latencyMs,
+    });
   }
 }
 
@@ -536,7 +626,7 @@ function pickAt(
 function requiredMeteoblueNumber(value: unknown, fieldName: string): number {
   const parsed = nullableRounded(value);
   if (parsed === null) {
-    throw new Error(`Missing meteoblue numeric weather field: ${fieldName}`);
+    throw meteoblueParseError(`meteoblue 返回格式异常：缺少 ${fieldName}`);
   }
   return parsed;
 }
@@ -544,7 +634,7 @@ function requiredMeteoblueNumber(value: unknown, fieldName: string): number {
 function normalizePercentWithFallback(value: unknown, fieldName: string): number {
   const parsed = nullablePercent(value);
   if (parsed === null) {
-    throw new Error(`Missing meteoblue percent weather field: ${fieldName}`);
+    throw meteoblueParseError(`meteoblue 返回格式异常：缺少 ${fieldName}`);
   }
   return parsed;
 }
@@ -596,4 +686,15 @@ function buildDailyFromHourly(
 
 function roundTo(value: number): number {
   return Math.round(value * 10) / 10;
+}
+
+function meteoblueParseError(messageZh: string, cause?: unknown): WeatherProviderError {
+  return new WeatherProviderError({
+    providerCode: "meteoblue",
+    providerLabelZh: "meteoblue",
+    dataMode: "real",
+    errorCategory: "parse_error",
+    messageZh,
+    cause,
+  });
 }

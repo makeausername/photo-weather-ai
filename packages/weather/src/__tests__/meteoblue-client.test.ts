@@ -67,4 +67,33 @@ describe("MeteoblueClient", () => {
     expect(capturedUrl).toContain("apikey=meteoblue-secret");
     expect(capturedInit?.headers).toBeUndefined();
   });
+
+  it("classifies invalid key responses without exposing the key", async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: "Invalid API key" }), {
+          status: 403,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }),
+    );
+    const client = new MeteoblueClient({
+      apiKey: "meteoblue-secret",
+      baseUrl: "https://my.meteoblue.com",
+      packages: ["basic-1h", "clouds-1h"],
+      timeoutMs: 1000,
+      retryCount: 0,
+      fetcher,
+    });
+
+    await expect(client.fetchForecast({ coordinates })).rejects.toMatchObject({
+      errorCategory: "invalid_key",
+      messageZh: "meteoblue Key 无效或权限不足",
+      statusCode: 403,
+    });
+    await expect(client.fetchForecast({ coordinates })).rejects.not.toMatchObject({
+      message: expect.stringContaining("meteoblue-secret"),
+    });
+  });
 });

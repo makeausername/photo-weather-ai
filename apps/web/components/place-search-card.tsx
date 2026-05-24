@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ForecastHorizon, ForecastTarget } from "@photo-weather/shared";
 import { forecastHorizonLabels, forecastTargetLabels } from "@photo-weather/shared";
+import {
+  buildForecastUrlFromSelectedLocation,
+  selectedLocationFromSearchResult,
+  type SelectedLocation,
+} from "./selected-location";
 import { Badge, Button, Card, Input, cn } from "./ui";
 
 export type PlaceResultSource = "local_location" | "local_photo_spot" | "amap" | "mock";
@@ -49,6 +54,11 @@ type PlaceSearchCardProps = {
   readonly showTargetSelector?: boolean;
   readonly targetHelperText?: string;
   readonly ctaLabel?: string;
+  readonly onSelectedLocationChange?: (location: SelectedLocation | null) => void;
+  readonly onForecastOptionsChange?: (options: {
+    readonly horizon: ForecastHorizon;
+    readonly target: ForecastTarget;
+  }) => void;
 };
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
@@ -151,30 +161,11 @@ export function buildForecastUrl(
   horizon: ForecastHorizon,
   target: ForecastTarget,
 ): string {
-  const params = new URLSearchParams({
-    name: place.name,
-    source: place.source,
-    lat: String(place.latitudeGcj02),
-    lng: String(place.longitudeGcj02),
-    latWgs84: String(place.latitudeWgs84),
-    lngWgs84: String(place.longitudeWgs84),
+  return buildForecastUrlFromSelectedLocation(
+    selectedLocationFromSearchResult(place),
     horizon,
     target,
-  });
-
-  if (place.matchedLocationId) {
-    params.set("locationId", place.matchedLocationId);
-  }
-
-  if (place.matchedPhotoSpotId) {
-    params.set("photoSpotId", place.matchedPhotoSpotId);
-  }
-
-  if (typeof place.elevation === "number" && Number.isFinite(place.elevation)) {
-    params.set("elevationMeters", String(place.elevation));
-  }
-
-  return `/forecast?${params.toString()}`;
+  );
 }
 
 export function PopularSpotChips({
@@ -240,6 +231,8 @@ export function PlaceSearchCard({
   showTargetSelector = true,
   targetHelperText,
   ctaLabel = "查看拍摄天气分析",
+  onSelectedLocationChange,
+  onForecastOptionsChange,
 }: PlaceSearchCardProps) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<SearchStatus>("idle");
@@ -252,6 +245,10 @@ export function PlaceSearchCard({
   const trimmedQuery = query.trim();
   const showEmptyState = status === "ready" && trimmedQuery.length > 0 && results.length === 0;
   const activeTarget = fixedTarget ?? (showTargetSelector ? target : defaultTarget);
+
+  useEffect(() => {
+    onForecastOptionsChange?.({ horizon, target: activeTarget });
+  }, [activeTarget, horizon, onForecastOptionsChange]);
 
   const selectedCoordinateText = useMemo(() => {
     if (!selectedPlace) {
@@ -268,6 +265,7 @@ export function PlaceSearchCard({
   const searchPlaces = useCallback(async (nextQuery: string, signal?: AbortSignal) => {
     const keyword = nextQuery.trim();
     setSelectedPlace(null);
+    onSelectedLocationChange?.(null);
     if (!keyword) {
       setStatus("idle");
       setResults([]);
@@ -297,13 +295,14 @@ export function PlaceSearchCard({
       setErrorMessage(sanitizePlaceSearchErrorMessage((error as Error).message));
       setStatus("error");
     }
-  }, []);
+  }, [onSelectedLocationChange]);
 
   useEffect(() => {
     if (!trimmedQuery) {
       setStatus("idle");
       setResults([]);
       setSelectedPlace(null);
+      onSelectedLocationChange?.(null);
       setErrorMessage("");
       return;
     }
@@ -317,7 +316,7 @@ export function PlaceSearchCard({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [searchPlaces, trimmedQuery]);
+  }, [onSelectedLocationChange, searchPlaces, trimmedQuery]);
 
   return (
     <Card className={cn("grid gap-4 p-4 shadow-sm", className)}>
@@ -376,7 +375,10 @@ export function PlaceSearchCard({
               <button
                 key={result.id}
                 type="button"
-                onClick={() => setSelectedPlace(result)}
+                onClick={() => {
+                  setSelectedPlace(result);
+                  onSelectedLocationChange?.(selectedLocationFromSearchResult(result));
+                }}
                 className={cn(
                   "grid w-full gap-1.5 border-b border-border px-3 py-2.5 text-left transition last:border-b-0 hover:bg-secondary",
                   selectedPlace?.id === result.id && "bg-secondary",
@@ -479,7 +481,13 @@ export function PlaceSearchCard({
               return;
             }
 
-            window.location.assign(buildForecastUrl(selectedPlace, horizon, activeTarget));
+            window.location.assign(
+              buildForecastUrlFromSelectedLocation(
+                selectedLocationFromSearchResult(selectedPlace),
+                horizon,
+                activeTarget,
+              ),
+            );
           }}
         >
           {ctaLabel}

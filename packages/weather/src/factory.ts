@@ -1,5 +1,10 @@
 import { MockWeatherProvider } from "./mock-provider.js";
-import { MeteoblueProvider } from "./meteoblue-provider.js";
+import {
+  MeteoblueClient,
+  MeteoblueProvider,
+  MeteoblueRealProvider,
+  type MeteoblueClientOptions,
+} from "./meteoblue-provider.js";
 import { OpenMeteoClient, type OpenMeteoClientOptions } from "./open-meteo-client.js";
 import { OpenMeteoProvider, OpenMeteoRealProvider } from "./open-meteo-provider.js";
 import type { WeatherProvider } from "./provider.js";
@@ -14,6 +19,7 @@ export type WeatherProviderFactoryOptions = {
   readonly nodeEnv?: string;
   readonly qweather?: QWeatherClientOptions;
   readonly openMeteo?: OpenMeteoClientOptions;
+  readonly meteoblue?: MeteoblueClientOptions;
 };
 
 export function createWeatherProvider(
@@ -46,6 +52,13 @@ export function createWeatherProvider(
     if (provider === "open_meteo" && options.openMeteo) {
       return new OpenMeteoRealProvider({
         client: new OpenMeteoClient(options.openMeteo),
+      });
+    }
+
+    if (provider === "meteoblue" && options.meteoblue) {
+      return new MeteoblueRealProvider({
+        client: new MeteoblueClient(options.meteoblue),
+        timezone: "Asia/Shanghai",
       });
     }
 

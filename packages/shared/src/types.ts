@@ -157,17 +157,34 @@ export type ClothingGuide = {
   readonly comfortLevel: ClothingComfortLevel;
 };
 
-export type ForecastWeatherSourceStatus = "available" | "failed" | "fallback";
+export type ForecastWeatherSourceStatus = "available" | "failed" | "fallback" | "skipped";
+
+export type ForecastWeatherSourceErrorCategory =
+  | "missing_config"
+  | "timeout"
+  | "network"
+  | "invalid_key"
+  | "provider_error"
+  | "parse_error"
+  | "unsupported"
+  | "skipped";
 
 export type ForecastWeatherSourceSummary = {
   readonly providerCode: string;
   readonly providerLabelZh: string;
   readonly dataMode: WeatherDataMode;
+  readonly enabled: boolean;
+  readonly realCallEnabled: boolean;
+  readonly attempted: boolean;
+  readonly success: boolean;
   readonly status: ForecastWeatherSourceStatus;
   readonly availableFields: readonly string[];
   readonly missingFields: readonly string[];
+  readonly statusCode?: number;
   readonly latencyMs?: number;
   readonly generatedAt?: string;
+  readonly errorCategory?: ForecastWeatherSourceErrorCategory;
+  readonly messageZh: string;
   readonly warningZh?: string;
 };
 
@@ -693,6 +710,7 @@ export type WeatherFusionSummary = {
   readonly auxiliarySources: readonly string[];
   readonly professionalSourceStatus: string;
   readonly confidenceLevel: WeatherConfidenceLevel;
+  readonly confidenceByTarget?: Partial<Record<ForecastTarget, number>>;
   readonly conflictStatusZh: string;
   readonly dataStatusZh: string;
   readonly sourceSummaries?: readonly ForecastWeatherSourceSummary[];

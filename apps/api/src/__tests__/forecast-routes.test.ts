@@ -34,6 +34,169 @@ function addOneDay(date: string): string {
   ).padStart(2, "0")}`;
 }
 
+function isoHour(index: number): string {
+  return new Date(Date.UTC(2026, 4, 20, index, 0, 0)).toISOString().replace(".000Z", "+08:00");
+}
+
+function dateForIndex(index: number): string {
+  return new Date(Date.UTC(2026, 4, 20 + index, 0, 0, 0)).toISOString().slice(0, 10);
+}
+
+function buildQWeatherHourlyPayload() {
+  return {
+    code: "200",
+    hourly: Array.from({ length: 48 }, (_, index) => ({
+      fxTime: isoHour(index),
+      temp: String(12 + (index % 6)),
+      feelsLike: String(10 + (index % 5)),
+      humidity: "82",
+      dew: "10",
+      pressure: "1008",
+      windSpeed: "9",
+      windGust: "16",
+      wind360: "120",
+      pop: "12",
+      precip: "0",
+      vis: "22",
+      cloud: "52",
+      icon: "101",
+      text: "多云",
+    })),
+  };
+}
+
+function buildQWeatherDailyPayload() {
+  return {
+    code: "200",
+    daily: Array.from({ length: 3 }, (_, index) => ({
+      fxDate: dateForIndex(index),
+      tempMin: "8",
+      tempMax: "18",
+      pop: "20",
+      textDay: "多云",
+      textNight: "晴",
+      sunrise: "05:10",
+      sunset: "18:55",
+    })),
+  };
+}
+
+function buildOpenMeteoPayload() {
+  const times = Array.from({ length: 48 }, (_, index) => isoHour(index).slice(0, 16));
+  const dates = Array.from({ length: 3 }, (_, index) => dateForIndex(index));
+
+  return {
+    utc_offset_seconds: 28800,
+    current: {
+      temperature_2m: 13,
+      relative_humidity_2m: 84,
+      wind_speed_10m: 11,
+      wind_direction_10m: 125,
+      weather_code: 2,
+    },
+    hourly: {
+      time: times,
+      temperature_2m: times.map((_, index) => 12 + (index % 6)),
+      relative_humidity_2m: times.map(() => 84),
+      dew_point_2m: times.map(() => 10),
+      cloud_cover: times.map(() => 55),
+      cloud_cover_low: times.map(() => 24),
+      cloud_cover_mid: times.map(() => 38),
+      cloud_cover_high: times.map(() => 48),
+      visibility: times.map(() => 22000),
+      wind_speed_10m: times.map(() => 10),
+      wind_gusts_10m: times.map(() => 18),
+      wind_direction_10m: times.map(() => 125),
+      pressure_msl: times.map(() => 1008),
+      precipitation_probability: times.map(() => 12),
+      precipitation: times.map(() => 0),
+      weather_code: times.map(() => 2),
+    },
+    daily: {
+      time: dates,
+      weather_code: dates.map(() => 2),
+      temperature_2m_min: dates.map(() => 8),
+      temperature_2m_max: dates.map(() => 18),
+      precipitation_probability_max: dates.map(() => 20),
+      sunrise: dates.map((date) => `${date}T05:10`),
+      sunset: dates.map((date) => `${date}T18:55`),
+    },
+  };
+}
+
+function buildMeteobluePayload() {
+  const times = Array.from({ length: 48 }, (_, index) => isoHour(index));
+  const dates = Array.from({ length: 3 }, (_, index) => dateForIndex(index));
+
+  return {
+    metadata: { name: "basic-1h_clouds-1h" },
+    data_1h: {
+      time: times,
+      temperature: times.map((_, index) => 11 + (index % 6)),
+      felttemperature: times.map((_, index) => 9 + (index % 5)),
+      relativehumidity: times.map(() => 86),
+      dewpointtemperature: times.map(() => 10),
+      sealevelpressure: times.map(() => 1007),
+      windspeed: times.map(() => 3.2),
+      windgust: times.map(() => 5.1),
+      winddirection: times.map(() => 130),
+      precipitation_probability: times.map(() => 15),
+      precipitation: times.map(() => 0),
+      visibility: times.map(() => 24),
+      cloudcover: times.map(() => 58),
+      lowclouds: times.map(() => 26),
+      midclouds: times.map(() => 40),
+      highclouds: times.map(() => 52),
+      pictocode: times.map(() => 2),
+    },
+    data_day: {
+      time: dates,
+      temperature_min: dates.map(() => 8),
+      temperature_max: dates.map(() => 18),
+      precipitation_probability: dates.map(() => 20),
+    },
+  };
+}
+
+function configureRealWeatherProviders(state: Awaited<ReturnType<typeof createFakeDatabaseClient>>["state"]) {
+  const qweather = state.providers.get("weather:qweather");
+  state.providers.set("weather:qweather", {
+    ...qweather,
+    enabled: true,
+    configJson: {
+      ...(qweather.configJson ?? {}),
+      realCallEnabled: true,
+      apiHost: "qweather.example",
+    },
+    secretJson: { apiKey: "qweather-secret" },
+  });
+
+  const openMeteo = state.providers.get("weather:open_meteo");
+  state.providers.set("weather:open_meteo", {
+    ...openMeteo,
+    enabled: true,
+    configJson: {
+      ...(openMeteo.configJson ?? {}),
+      realCallEnabled: true,
+      mode: "free",
+    },
+    secretJson: {},
+  });
+
+  const meteoblue = state.providers.get("weather:meteoblue");
+  state.providers.set("weather:meteoblue", {
+    ...meteoblue,
+    enabled: true,
+    configJson: {
+      ...(meteoblue.configJson ?? {}),
+      realCallEnabled: true,
+      baseUrl: "https://my.meteoblue.com",
+      packages: "basic-1h,clouds-1h",
+    },
+    secretJson: { apiKey: "meteoblue-secret" },
+  });
+}
+
 function buildAstroServiceResponse(
   input: AstroServiceCalculateInput,
 ): AstroServiceCalculationResponse {
@@ -328,6 +491,116 @@ describe("forecast query validation route", () => {
     });
     expect(body.keyReasons.length).toBeGreaterThan(0);
     expect(body.photographyAdvice.length).toBeGreaterThan(0);
+  });
+
+  it("uses configured real weather providers through the server pipeline with mocked fetch", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    configureRealWeatherProviders(state);
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("qweather.example/v7/weather/now")) {
+        return new Response(
+          JSON.stringify({
+            code: "200",
+            now: {
+              obsTime: "2026-05-20T00:00:00+08:00",
+              temp: "13",
+              feelsLike: "11",
+              icon: "101",
+              text: "多云",
+              wind360: "120",
+              windSpeed: "9",
+              humidity: "82",
+              pressure: "1008",
+              vis: "22",
+              cloud: "52",
+              dew: "10",
+            },
+          }),
+        );
+      }
+      if (url.includes("qweather.example/v7/weather/")) {
+        return new Response(
+          JSON.stringify(url.includes("7d") ? buildQWeatherDailyPayload() : buildQWeatherHourlyPayload()),
+        );
+      }
+      if (url.includes("api.open-meteo.com/v1/forecast")) {
+        return new Response(JSON.stringify(buildOpenMeteoPayload()));
+      }
+      if (url.includes("my.meteoblue.com/packages/basic-1h_clouds-1h")) {
+        return new Response(JSON.stringify(buildMeteobluePayload()));
+      }
+
+      throw new Error(`unexpected test URL: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+        ENABLE_ASTRO_SERVICE: "false",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        target: "general",
+        horizon: "48h",
+      },
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.weatherDataMode).toBe("real");
+    expect(body.currentWeather).toMatchObject({
+      providerCode: "qweather",
+      temperature: 13,
+      feelsLike: 11,
+    });
+    expect(body.weatherSourceSummaries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          providerCode: "qweather",
+          attempted: true,
+          success: true,
+          status: "available",
+        }),
+        expect.objectContaining({
+          providerCode: "open_meteo",
+          attempted: true,
+          success: true,
+          status: "available",
+        }),
+        expect.objectContaining({
+          providerCode: "meteoblue",
+          attempted: true,
+          success: true,
+          status: "available",
+        }),
+      ]),
+    );
+    expect(body.weatherFusionSummary).toMatchObject({
+      confidenceLevel: "high",
+      confidenceByTarget: expect.objectContaining({
+        general: expect.any(Number),
+        cloud_sea: expect.any(Number),
+      }),
+    });
+    expect(body.currentWeather).toMatchObject({
+      cloudLow: expect.any(Number),
+      cloudMid: expect.any(Number),
+      cloudHigh: expect.any(Number),
+      visibility: expect.any(Number),
+    });
+    expect(body.clothingGuide.titleZh).toEqual(expect.any(String));
+    expect(JSON.stringify(body)).not.toContain("qweather-secret");
+    expect(JSON.stringify(body)).not.toContain("meteoblue-secret");
   });
 
   it("returns multi-day windows for a 7 day astro calculation without real network calls", async () => {

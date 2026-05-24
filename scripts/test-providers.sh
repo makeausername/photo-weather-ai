@@ -67,6 +67,30 @@ async function readJsonSafe(response) {
   }
 }
 
+function configuredStatus(body) {
+  if (body.connectionMode === "real" || body.mode === "real") {
+    return "configured";
+  }
+  if (body.error === "provider_key_missing" || body.error === "provider_not_enabled") {
+    return "not-configured";
+  }
+  return "mock-or-disabled";
+}
+
+function testedStatus(response, body) {
+  if (response.ok && body.success === true) {
+    return "tested";
+  }
+  if (body.success === false) {
+    return "failed";
+  }
+  return response.ok ? "checked" : `http-${response.status}`;
+}
+
+function modeText(body) {
+  return protect(body.modeLabelZh || body.modeZh || body.connectionMode || body.mode || "unknown");
+}
+
 async function main() {
   const baseUrl = process.env.PROVIDER_TEST_INTERNAL_API_URL || "http://127.0.0.1:4000";
   const health = await fetch(`${baseUrl}/health`).catch((error) => {
@@ -114,12 +138,12 @@ async function main() {
       body: "{}",
     });
     const body = await readJsonSafe(response);
-    const configured = body.connectionMode === "real" || body.mode === "real" ? "configured" : "configured-or-mock";
-    const tested = response.ok && body.success !== false ? "tested" : "not-tested";
+    const configured = configuredStatus(body);
+    const tested = testedStatus(response, body);
     const latency = typeof body.latencyMs === "number" ? ` ${body.latencyMs}ms` : "";
     const status = body.statusCode ? ` upstream=${body.statusCode}` : "";
-    const message = protect(body.messageZh || body.message || "");
-    console.log(`${label}: ${configured} / ${tested}${latency}${status} ${message}`.trim());
+    const message = protect(body.messageZh || body.message || body.error || `HTTP ${response.status}`);
+    console.log(`${label}: configured=${configured}; tested=${tested}; mode=${modeText(body)};${latency}${status}; reason=${message}`.trim());
     if (response.status >= 500 || (response.ok && body.success === false)) {
       hardFailure = true;
     }

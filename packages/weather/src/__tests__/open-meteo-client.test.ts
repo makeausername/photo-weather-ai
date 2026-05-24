@@ -25,6 +25,7 @@ describe("OpenMeteoClient", () => {
     expect(url.searchParams.get("apikey")).toBeNull();
     expect(url.searchParams.get("timezone")).toBe("Asia/Shanghai");
     expect(url.searchParams.get("hourly")).toContain("cloud_cover_low");
+    expect(url.searchParams.get("hourly")).not.toContain("apparent_temperature");
     expect(url.searchParams.get("current")).toBe(
       "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code",
     );
@@ -71,5 +72,22 @@ describe("OpenMeteoClient", () => {
       statusCode: 200,
     });
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a safe parse error without leaking request details", async () => {
+    const fetcher = vi.fn(async () => new Response("not-json", { status: 200 }));
+    const client = new OpenMeteoClient({
+      endpoint: "https://api.open-meteo.com",
+      mode: "free",
+      timezone: "Asia/Shanghai",
+      timeoutMs: 1000,
+      retryCount: 0,
+      fetcher,
+    });
+
+    await expect(client.fetchForecast({ coordinates, hours: 24 })).rejects.toMatchObject({
+      errorCategory: "parse_error",
+      messageZh: "Open-Meteo 返回格式异常",
+    });
   });
 });

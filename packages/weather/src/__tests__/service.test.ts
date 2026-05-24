@@ -39,7 +39,10 @@ describe("WeatherIntelligenceService", () => {
         expect.objectContaining({
           providerCode: "open_meteo",
           status: "failed",
-          warningZh: "Open-Meteo 暂时不可用，结果已降低置信度。",
+          attempted: true,
+          success: false,
+          errorCategory: "provider_error",
+          messageZh: "Open-Meteo 暂时不可用，结果已降低置信度。",
         }),
       ]),
     );
@@ -62,7 +65,12 @@ describe("WeatherIntelligenceService", () => {
     expect(bundle.sourceSummaries).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ providerCode: "mock", status: "fallback" }),
-        expect.objectContaining({ providerCode: "qweather", status: "failed" }),
+        expect.objectContaining({
+          providerCode: "qweather",
+          status: "failed",
+          attempted: true,
+          success: false,
+        }),
       ]),
     );
     expect(bundle.fusionSummary?.dataStatusZh).toBe(

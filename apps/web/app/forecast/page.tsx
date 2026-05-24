@@ -31,14 +31,22 @@ function parseOptionalNumberParam(value: string | undefined): number | undefined
 }
 
 export default function ForecastPage({ searchParams }: ForecastPageProps) {
-  const latitudeWgs84 = parseNumberParam(firstParam(searchParams.latWgs84));
-  const longitudeWgs84 = parseNumberParam(firstParam(searchParams.lngWgs84));
+  const latitudeWgs84 = parseNumberParam(
+    firstParam(searchParams.latWgs84) ?? firstParam(searchParams.latitudeWgs84),
+  );
+  const longitudeWgs84 = parseNumberParam(
+    firstParam(searchParams.lngWgs84) ?? firstParam(searchParams.longitudeWgs84),
+  );
   const parsedQuery = forecastQueryInputSchema.safeParse(
     normalizeForecastQueryInput({
       name: firstParam(searchParams.name),
       source: firstParam(searchParams.source),
-      latitudeGcj02: parseNumberParam(firstParam(searchParams.lat)),
-      longitudeGcj02: parseNumberParam(firstParam(searchParams.lng)),
+      latitudeGcj02: parseNumberParam(
+        firstParam(searchParams.lat) ?? firstParam(searchParams.latGcj02),
+      ),
+      longitudeGcj02: parseNumberParam(
+        firstParam(searchParams.lng) ?? firstParam(searchParams.lngGcj02),
+      ),
       latitudeWgs84,
       longitudeWgs84,
       horizon: firstParam(searchParams.horizon),

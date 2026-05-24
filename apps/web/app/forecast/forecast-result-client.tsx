@@ -232,8 +232,8 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
                 {shellCopy.pageSubtitle}
               </p>
             </div>
-            <Badge variant={result?.isMock || status === "loading" ? "warning" : "success"}>
-              {result?.isMock || status === "loading" ? "体验模式" : "已接入数据源"}
+            <Badge variant={result ? dataReadinessBadgeVariant(result) : "warning"}>
+              {result ? dataReadinessBadgeLabel(result) : "加载中"}
             </Badge>
           </header>
         </>
@@ -351,13 +351,21 @@ function WeatherEssentialsPanel({ result }: { readonly result: ForecastCalculati
   const clothing = result.clothingGuide;
   const fusion = result.weatherFusionSummary;
   const failedSources = result.weatherSourceSummaries.filter(
-    (summary) => summary.status === "failed" && summary.warningZh,
+    (summary) =>
+      isWeatherProviderSummary(summary) &&
+      summary.providerCode !== "mock" &&
+      !(summary.success ?? summary.status === "available") &&
+      (summary.warningZh || summary.messageZh),
   );
   const openMeteo = result.weatherSourceSummaries.find(
-    (summary) => summary.providerCode === "open_meteo" && summary.status === "available",
+    (summary) =>
+      summary.providerCode === "open_meteo" &&
+      (summary.success ?? summary.status === "available"),
   );
   const meteoblue = result.weatherSourceSummaries.find(
-    (summary) => summary.providerCode === "meteoblue" && summary.status === "available",
+    (summary) =>
+      summary.providerCode === "meteoblue" &&
+      (summary.success ?? summary.status === "available"),
   );
 
   return (
@@ -420,7 +428,34 @@ function WeatherEssentialsPanel({ result }: { readonly result: ForecastCalculati
           {clothing.riskNotes.join(" ")}
         </div>
       ) : null}
+      <SourceDiagnosticsPanel result={result} />
     </section>
+  );
+}
+
+export function SourceDiagnosticsPanel({ result }: { readonly result: ForecastCalculationResult }) {
+  return (
+    <Card className="p-4 shadow-sm min-[900px]:col-span-2 min-[1280px]:col-span-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-bold text-card-foreground">数据来源</h2>
+        <Badge variant={dataReadinessBadgeVariant(result)}>
+          置信度：{sourceConfidenceLabel(result)}
+        </Badge>
+      </div>
+      <dl className="mt-3 grid gap-2 text-xs leading-5 text-muted-foreground min-[900px]:grid-cols-2 min-[1280px]:grid-cols-5">
+        <CompactDefinition label="地点" value={result.calendarBasis.coordinateSource} />
+        <CompactDefinition label="天气主源" value={providerDiagnosticText(result, "qweather", "和风天气")} />
+        <CompactDefinition
+          label="云层辅助"
+          value={providerDiagnosticText(result, "open_meteo", "Open-Meteo")}
+        />
+        <CompactDefinition
+          label="专业增强"
+          value={providerDiagnosticText(result, "meteoblue", "meteoblue")}
+        />
+        <CompactDefinition label="天文" value={result.astroDataSourceLabelZh} />
+      </dl>
+    </Card>
   );
 }
 
@@ -468,6 +503,97 @@ function weatherModeBadge(result: ForecastCalculationResult): string {
     return "样例数据";
   }
   return "演示数据";
+}
+
+function isWeatherProviderSummary(
+  summary: ForecastCalculationResult["weatherSourceSummaries"][number],
+): boolean {
+  return (
+    summary.providerCode === "qweather" ||
+    summary.providerCode === "open_meteo" ||
+    summary.providerCode === "meteoblue"
+  );
+}
+
+function sourceSucceeded(
+  summary: ForecastCalculationResult["weatherSourceSummaries"][number] | undefined,
+): boolean {
+  return Boolean(summary && (summary.success ?? summary.status === "available"));
+}
+
+function weatherProviderSummary(
+  result: ForecastCalculationResult,
+  providerCode: "qweather" | "open_meteo" | "meteoblue",
+) {
+  return result.weatherSourceSummaries.find((summary) => summary.providerCode === providerCode);
+}
+
+function successfulRealWeatherSources(
+  result: ForecastCalculationResult,
+): readonly ForecastCalculationResult["weatherSourceSummaries"][number][] {
+  return result.weatherSourceSummaries.filter(
+    (summary) =>
+      isWeatherProviderSummary(summary) &&
+      summary.dataMode === "real" &&
+      sourceSucceeded(summary),
+  );
+}
+
+function dataReadinessBadgeLabel(result: ForecastCalculationResult): string {
+  if (result.weatherDataMode !== "real") {
+    return result.weatherDataMode === "fallback" ? "真实天气不可用" : "演示数据";
+  }
+
+  const sources = successfulRealWeatherSources(result);
+  if (sources.length >= 2) {
+    return "多源数据可用";
+  }
+  if (sources.length === 1) {
+    return `${sources[0]?.providerLabelZh ?? "天气源"} 单源可用`;
+  }
+
+  return "真实天气不可用";
+}
+
+function dataReadinessBadgeVariant(result: ForecastCalculationResult): "success" | "warning" {
+  return result.weatherDataMode === "real" && successfulRealWeatherSources(result).length >= 2
+    ? "success"
+    : "warning";
+}
+
+function providerDiagnosticText(
+  result: ForecastCalculationResult,
+  providerCode: "qweather" | "open_meteo" | "meteoblue",
+  fallbackLabel: string,
+): string {
+  const summary = weatherProviderSummary(result, providerCode);
+  const label = summary?.providerLabelZh ?? fallbackLabel;
+  if (!summary) {
+    return `${label} 未启用`;
+  }
+  if (sourceSucceeded(summary)) {
+    return `${label} 通过`;
+  }
+  const reason = summary.messageZh ?? summary.warningZh ?? "未返回可用数据";
+  return summary.attempted ? `失败：${reason}` : `未参与：${reason}`;
+}
+
+function sourceConfidenceLabel(result: ForecastCalculationResult): string {
+  if (result.weatherDataMode !== "real") {
+    return "低";
+  }
+
+  const qweatherOk = sourceSucceeded(weatherProviderSummary(result, "qweather"));
+  const openMeteoOk = sourceSucceeded(weatherProviderSummary(result, "open_meteo"));
+  const hasMajorConflict = result.weatherFusionSummary?.conflictStatusZh.includes("差异") ?? false;
+
+  if (qweatherOk && openMeteoOk && !hasMajorConflict) {
+    return "高";
+  }
+  if (qweatherOk || successfulRealWeatherSources(result).length > 0) {
+    return "中";
+  }
+  return "低";
 }
 
 function comfortLevelLabel(level: ForecastCalculationResult["clothingGuide"]["comfortLevel"]): string {
@@ -552,8 +678,8 @@ function ForecastResultView({
                 {viewModel.recommendationLabel}
               </h2>
             </div>
-            <Badge variant={result.isMock ? "warning" : "success"}>
-              {result.isMock ? "演示数据" : "已接入数据源"}
+            <Badge variant={dataReadinessBadgeVariant(result)}>
+              {dataReadinessBadgeLabel(result)}
             </Badge>
           </div>
 
@@ -772,8 +898,8 @@ function AstroTopContext({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="default">星空银河判断</Badge>
-            <Badge variant={result.isMock ? "warning" : "success"}>
-              {result.isMock ? "体验模式" : "已接入数据源"}
+            <Badge variant={dataReadinessBadgeVariant(result)}>
+              {dataReadinessBadgeLabel(result)}
             </Badge>
             <Badge variant="muted">{forecastHorizonLabels[query.horizon]}</Badge>
             <Badge variant="info">
@@ -1204,8 +1330,8 @@ function GlowTopContext({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="default">朝霞晚霞专项判断</Badge>
-            <Badge variant={result.isMock ? "warning" : "success"}>
-              {result.isMock ? "体验模式" : "已接入数据源"}
+            <Badge variant={dataReadinessBadgeVariant(result)}>
+              {dataReadinessBadgeLabel(result)}
             </Badge>
             <Badge variant="muted">{forecastHorizonLabels[query.horizon]}</Badge>
             <Badge variant="info">
@@ -1627,8 +1753,8 @@ function CloudSeaTopContext({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="default">云海专项判断</Badge>
-            <Badge variant={result.isMock ? "warning" : "success"}>
-              {result.isMock ? "体验模式" : "已接入数据源"}
+            <Badge variant={dataReadinessBadgeVariant(result)}>
+              {dataReadinessBadgeLabel(result)}
             </Badge>
             <Badge variant="muted">{forecastHorizonLabels[query.horizon]}</Badge>
           </div>
@@ -2108,8 +2234,8 @@ function ComprehensiveContextBar({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="default">综合拍摄判断</Badge>
-            <Badge variant={result.isMock ? "warning" : "success"}>
-              {result.isMock ? "体验模式" : "已接入数据源"}
+            <Badge variant={dataReadinessBadgeVariant(result)}>
+              {dataReadinessBadgeLabel(result)}
             </Badge>
             <Badge variant="muted">{forecastHorizonLabels[query.horizon]}</Badge>
           </div>
@@ -2871,19 +2997,8 @@ function AiListSection({
 
 function DataStatusPanel({ result }: { readonly result: ForecastCalculationResult }) {
   const nonReal = result.weatherDataMode !== "real" || result.terrainAnalysis.isMock;
-  const fusion = result.weatherFusionSummary;
-  const weatherSource =
-    result.weatherDataMode === "real"
-      ? fusion?.primarySource ?? weatherStatusLabel(result)
-      : result.weatherDataMode === "fallback"
-        ? weatherStatusLabel(result)
-        : "演示数据";
-  const cloudAuxiliary =
-    fusion?.auxiliarySources.find((source) => source.includes("Open-Meteo")) ??
-    (result.weatherProviderCode === "open_meteo" ? result.weatherProviderLabelZh : "Open-Meteo 未启用");
-  const professionalSource = fusion?.professionalSourceStatus ?? "专业增强：meteoblue 未启用";
-  const confidence = fusion ? confidenceLevelLabel(fusion.confidenceLevel) : nonReal ? "低" : "中";
-  const conflictStatus = fusion?.conflictStatusZh ?? "无明显冲突";
+  const confidence = sourceConfidenceLabel(result);
+  const conflictStatus = result.weatherFusionSummary?.conflictStatusZh ?? "无明显冲突";
 
   return (
     <Card className="p-5 shadow-sm">
@@ -2892,9 +3007,16 @@ function DataStatusPanel({ result }: { readonly result: ForecastCalculationResul
         <Badge variant={nonReal ? "warning" : "success"}>{weatherModeBadge(result)}</Badge>
       </div>
       <dl className="mt-4 grid gap-3 text-sm">
-        <SummaryItem label="天气数据" value={weatherSource} />
-        <SummaryItem label="云层辅助" value={cloudAuxiliary} />
-        <SummaryItem label="专业增强" value={professionalSource} />
+        <SummaryItem label="地点" value={result.calendarBasis.coordinateSource} />
+        <SummaryItem label="天气主源" value={providerDiagnosticText(result, "qweather", "和风天气")} />
+        <SummaryItem
+          label="云层辅助"
+          value={providerDiagnosticText(result, "open_meteo", "Open-Meteo")}
+        />
+        <SummaryItem
+          label="专业增强"
+          value={providerDiagnosticText(result, "meteoblue", "meteoblue")}
+        />
         <SummaryItem label="数据置信度" value={confidence} />
         <SummaryItem label="数据冲突" value={conflictStatus} />
         <SummaryItem label="天文数据" value={result.astroDataSourceLabelZh} />

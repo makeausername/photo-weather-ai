@@ -1,4 +1,5 @@
 import type { Coordinates } from "@photo-weather/shared";
+import { WeatherProviderError } from "./provider-error.js";
 
 export type OpenMeteoMode = "free" | "customer";
 
@@ -36,7 +37,6 @@ export type OpenMeteoConnectionTestResult = {
 
 const hourlyFields = [
   "temperature_2m",
-  "apparent_temperature",
   "relative_humidity_2m",
   "dew_point_2m",
   "pressure_msl",
@@ -153,12 +153,29 @@ export class OpenMeteoClient {
           signal: controller.signal,
         });
         const text = await response.text();
-        const body = parseJsonBody<TBody>(text);
         const latencyMs = Date.now() - startedAt;
+        const body = parseJsonBody<TBody>(text, latencyMs);
 
         if (response.status >= 500 && attempt < attempts) {
-          lastError = new Error(`Open-Meteo upstream status ${response.status}`);
+          lastError = openMeteoError({
+            errorCategory: "provider_error",
+            messageZh: `Open-Meteo 服务返回错误，HTTP 状态码 ${response.status}。`,
+            statusCode: response.status,
+            latencyMs,
+          });
           continue;
+        }
+
+        if (response.status < 200 || response.status >= 300) {
+          throw openMeteoError({
+            errorCategory: response.status === 401 || response.status === 403 ? "invalid_key" : "provider_error",
+            messageZh:
+              response.status === 401 || response.status === 403
+                ? "Open-Meteo Key 无效或权限不足"
+                : `Open-Meteo 服务返回错误，HTTP 状态码 ${response.status}。`,
+            statusCode: response.status,
+            latencyMs,
+          });
         }
 
         return {
@@ -167,9 +184,9 @@ export class OpenMeteoClient {
           latencyMs,
         };
       } catch (error) {
-        lastError = error;
+        lastError = normalizeOpenMeteoError(error, Date.now() - startedAt);
         if (attempt >= attempts) {
-          throw error;
+          throw lastError;
         }
       } finally {
         clearTimeout(timeout);
@@ -178,6 +195,43 @@ export class OpenMeteoClient {
 
     throw lastError instanceof Error ? lastError : new Error("Open-Meteo request failed.");
   }
+}
+
+function openMeteoError(
+  options: Omit<
+    ConstructorParameters<typeof WeatherProviderError>[0],
+    "providerCode" | "providerLabelZh" | "dataMode"
+  >,
+): WeatherProviderError {
+  return new WeatherProviderError({
+    providerCode: "open_meteo",
+    providerLabelZh: "Open-Meteo",
+    dataMode: "real",
+    ...options,
+  });
+}
+
+function normalizeOpenMeteoError(error: unknown, latencyMs: number): WeatherProviderError {
+  if (error instanceof WeatherProviderError) {
+    return error;
+  }
+
+  const name = error instanceof Error ? error.name : "";
+  if (name === "AbortError") {
+    return openMeteoError({
+      errorCategory: "timeout",
+      messageZh: "Open-Meteo 请求超时",
+      latencyMs,
+      cause: error,
+    });
+  }
+
+  return openMeteoError({
+    errorCategory: "network",
+    messageZh: "Open-Meteo 网络不可用",
+    latencyMs,
+    cause: error,
+  });
 }
 
 function normalizeOpenMeteoEndpoint(endpoint: string): string {
@@ -208,10 +262,14 @@ function formatCoordinate(value: number): string {
   return value.toFixed(6).replace(/\.?0+$/, "");
 }
 
-function parseJsonBody<TBody>(text: string): TBody {
+function parseJsonBody<TBody>(text: string, latencyMs: number): TBody {
   try {
     return JSON.parse(text) as TBody;
   } catch {
-    return {} as TBody;
+    throw openMeteoError({
+      errorCategory: "parse_error",
+      messageZh: "Open-Meteo 返回格式异常",
+      latencyMs,
+    });
   }
 }

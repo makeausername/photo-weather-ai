@@ -19,6 +19,7 @@ import {
   type QWeatherUnit,
   type WeatherDataBundle,
   type WeatherProvider,
+  type WeatherSourceSummary,
 } from "@photo-weather/weather";
 import {
   openMeteoDefaultBaseUrl,
@@ -116,12 +117,14 @@ export class RuntimeWeatherDataService implements WeatherDataServiceLike {
   constructor(private readonly options: WeatherProviderRuntimeOptions = {}) {}
 
   async getWeatherDataBundle(input: WeatherRequestInput): Promise<WeatherDataBundle> {
-    const providers = await resolveRuntimeWeatherProviders(this.options);
-    return new WeatherIntelligenceService({
-      providers,
+    const resolution = await resolveRuntimeWeatherProviders(this.options);
+    const bundle = await new WeatherIntelligenceService({
+      providers: resolution.providers,
       cache: this.cache,
       usageLogger: this.usageLogger,
     }).getWeatherDataBundle(input);
+
+    return appendRuntimeSourceSummaries(bundle, resolution.sourceSummaries);
   }
 }
 
@@ -596,15 +599,21 @@ export async function readRuntimeMeteoblueConfig(
   };
 }
 
+type RuntimeWeatherProviderResolution = {
+  readonly providers: readonly WeatherProvider[];
+  readonly sourceSummaries: readonly WeatherSourceSummary[];
+};
+
 async function resolveRuntimeWeatherProviders(
   options: WeatherProviderRuntimeOptions,
-): Promise<readonly WeatherProvider[]> {
+): Promise<RuntimeWeatherProviderResolution> {
   const [qweather, openMeteo, meteoblue] = await Promise.all([
     readRuntimeQWeatherConfig(options),
     readRuntimeOpenMeteoConfig(options),
     readRuntimeMeteoblueConfig(options),
   ]);
   const providers: WeatherProvider[] = [];
+  const sourceSummaries: WeatherSourceSummary[] = [];
 
   if (qweather.enabled) {
     if (qweather.realCallEnabled && qweather.apiKey && qweather.apiHost) {
@@ -623,6 +632,16 @@ async function resolveRuntimeWeatherProviders(
       );
     } else if (!qweather.realCallEnabled) {
       providers.push(new QWeatherProvider());
+    } else {
+      sourceSummaries.push(
+        skippedSourceSummary({
+          providerCode: "qweather",
+          providerLabelZh: "和风天气",
+          realCallEnabled: qweather.realCallEnabled,
+          messageZh: "和风天气缺少 API Key 或 API Host，未发起真实请求。",
+          errorCategory: "missing_config",
+        }),
+      );
     }
   }
 
@@ -645,23 +664,120 @@ async function resolveRuntimeWeatherProviders(
       );
     } else if (!openMeteo.realCallEnabled) {
       providers.push(new OpenMeteoProvider());
+    } else {
+      sourceSummaries.push(
+        skippedSourceSummary({
+          providerCode: "open_meteo",
+          providerLabelZh: "Open-Meteo",
+          realCallEnabled: openMeteo.realCallEnabled,
+          messageZh: "Open-Meteo 客户模式缺少 API Key，未发起真实请求。",
+          errorCategory: "missing_config",
+        }),
+      );
     }
   }
 
-  if (meteoblue.enabled && meteoblue.realCallEnabled && meteoblue.apiKey) {
-    providers.push(
-      new MeteoblueRealProvider({
-        client: new MeteoblueClient({
-          apiKey: meteoblue.apiKey,
-          baseUrl: meteoblue.baseUrl,
-          packages: meteoblue.packages,
-          timeoutMs: meteoblue.timeoutMs,
-          retryCount: meteoblue.retryCount,
+  if (meteoblue.enabled) {
+    if (meteoblue.realCallEnabled && meteoblue.apiKey) {
+      providers.push(
+        new MeteoblueRealProvider({
+          client: new MeteoblueClient({
+            apiKey: meteoblue.apiKey,
+            baseUrl: meteoblue.baseUrl,
+            packages: meteoblue.packages,
+            timeoutMs: meteoblue.timeoutMs,
+            retryCount: meteoblue.retryCount,
+          }),
+          timezone: "Asia/Shanghai",
         }),
-        timezone: "Asia/Shanghai",
-      }),
-    );
+      );
+    } else {
+      sourceSummaries.push(
+        skippedSourceSummary({
+          providerCode: "meteoblue",
+          providerLabelZh: "meteoblue",
+          realCallEnabled: meteoblue.realCallEnabled,
+          messageZh: meteoblue.realCallEnabled
+            ? "meteoblue 缺少 API Key，未发起真实请求。"
+            : "meteoblue 真实调用未启用，未参与融合。",
+          errorCategory: meteoblue.realCallEnabled ? "missing_config" : "skipped",
+        }),
+      );
+    }
   }
 
-  return providers.length > 0 ? providers : [new MockWeatherProvider()];
+  return {
+    providers: providers.length > 0 ? providers : [new MockWeatherProvider()],
+    sourceSummaries,
+  };
+}
+
+function skippedSourceSummary(input: {
+  readonly providerCode: "qweather" | "open_meteo" | "meteoblue";
+  readonly providerLabelZh: string;
+  readonly realCallEnabled: boolean;
+  readonly messageZh: string;
+  readonly errorCategory: "missing_config" | "skipped";
+}): WeatherSourceSummary {
+  return {
+    providerCode: input.providerCode,
+    providerLabelZh: input.providerLabelZh,
+    dataMode: input.realCallEnabled ? "real" : "mock",
+    enabled: true,
+    realCallEnabled: input.realCallEnabled,
+    attempted: false,
+    success: false,
+    status: "skipped",
+    availableFields: [],
+    missingFields: ["weather"],
+    errorCategory: input.errorCategory,
+    messageZh: input.messageZh,
+    warningZh: input.messageZh,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+function appendRuntimeSourceSummaries(
+  bundle: WeatherDataBundle,
+  extraSummaries: readonly WeatherSourceSummary[],
+): WeatherDataBundle {
+  if (extraSummaries.length === 0) {
+    return bundle;
+  }
+
+  const sourceSummaries = mergeSourceSummaries([
+    ...(bundle.sourceSummaries ?? []),
+    ...extraSummaries,
+  ]);
+  const extraNotes = extraSummaries
+    .map((summary) => summary.warningZh ?? summary.messageZh)
+    .filter((message) => message.length > 0);
+  const missingDataNotes = [...new Set([...(bundle.missingDataNotes ?? []), ...extraNotes])];
+
+  return {
+    ...bundle,
+    sourceSummaries,
+    missingDataNotes,
+    fusionSummary: bundle.fusionSummary
+      ? {
+          ...bundle.fusionSummary,
+          sourceSummaries,
+          missingDataNotes,
+        }
+      : bundle.fusionSummary,
+  };
+}
+
+function mergeSourceSummaries(
+  summaries: readonly WeatherSourceSummary[],
+): readonly WeatherSourceSummary[] {
+  const byCode = new Map<string, WeatherSourceSummary>();
+  for (const summary of summaries) {
+    const existing = byCode.get(summary.providerCode);
+    if (!existing || (summary.attempted && !existing.attempted)) {
+      byCode.set(summary.providerCode, summary);
+    }
+  }
+
+  return [...byCode.values()];
 }

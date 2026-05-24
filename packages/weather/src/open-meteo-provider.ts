@@ -23,6 +23,7 @@ import type {
   WeatherRequestInput,
 } from "./types.js";
 import type { OpenMeteoClient } from "./open-meteo-client.js";
+import { WeatherProviderError } from "./provider-error.js";
 import type { WeatherProvider } from "./provider.js";
 
 const source = {
@@ -255,12 +256,16 @@ export class OpenMeteoRealProvider implements WeatherProvider {
   constructor(private readonly options: OpenMeteoRealProviderOptions) {}
 
   async getCurrentWeather(input: WeatherRequestInput): Promise<CurrentWeather> {
-    const result = await this.fetchForecast(input);
-    const body = asRecord(result.body);
+    const body = await this.fetchForecast(input);
     const current = asRecord(body.current ?? {});
-    const firstHour = this.normalizer.normalizeHourlyWeather(body)[0];
+    let firstHour: NormalizedHourlyWeather | undefined;
+    try {
+      firstHour = this.normalizer.normalizeHourlyWeather(body)[0];
+    } catch (error) {
+      throw openMeteoParseError("Open-Meteo 返回格式异常", error);
+    }
     if (!firstHour) {
-      throw new Error("Open-Meteo response did not include hourly weather.");
+      throw openMeteoParseError("Open-Meteo 返回格式异常");
     }
     const weatherCode = toText(current.weather_code) ?? firstHour.weatherCode;
     const temperature = toNumber(current.temperature_2m) ?? firstHour.temperature;
@@ -283,21 +288,29 @@ export class OpenMeteoRealProvider implements WeatherProvider {
   }
 
   async getHourlyForecast(input: WeatherRequestInput): Promise<readonly NormalizedHourlyWeather[]> {
-    const result = await this.fetchForecast(input);
+    const body = await this.fetchForecast(input);
     const hours = Math.min(Math.max(input.hours ?? 24, 1), 168);
-    return this.normalizer
-      .normalizeHourlyWeather(result.body)
-      .slice(0, hours)
-      .map(toRealHourly);
+    try {
+      return this.normalizer
+        .normalizeHourlyWeather(body)
+        .slice(0, hours)
+        .map(toRealHourly);
+    } catch (error) {
+      throw openMeteoParseError("Open-Meteo 返回格式异常", error);
+    }
   }
 
   async getDailyForecast(input: WeatherRequestInput): Promise<readonly NormalizedDailyWeather[]> {
-    const result = await this.fetchForecast(input);
+    const body = await this.fetchForecast(input);
     const days = Math.min(Math.max(input.days ?? 7, 1), 16);
-    return this.normalizer
-      .normalizeDailyWeather(result.body)
-      .slice(0, days)
-      .map(toRealDaily);
+    try {
+      return this.normalizer
+        .normalizeDailyWeather(body)
+        .slice(0, days)
+        .map(toRealDaily);
+    } catch (error) {
+      throw openMeteoParseError("Open-Meteo 返回格式异常", error);
+    }
   }
 
   async getWeatherAlerts(_input: WeatherRequestInput): Promise<readonly WeatherAlert[]> {
@@ -352,6 +365,17 @@ export class OpenMeteoRealProvider implements WeatherProvider {
     this.forecastRequests.set(key, next);
     return next;
   }
+}
+
+function openMeteoParseError(messageZh: string, cause?: unknown): WeatherProviderError {
+  return new WeatherProviderError({
+    providerCode: "open_meteo",
+    providerLabelZh: "Open-Meteo",
+    dataMode: "real",
+    errorCategory: "parse_error",
+    messageZh,
+    cause,
+  });
 }
 
 function toRealHourly(hour: NormalizedHourlyWeather): NormalizedHourlyWeather {
