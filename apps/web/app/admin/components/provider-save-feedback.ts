@@ -29,7 +29,7 @@ const unsafeSaveErrorPatterns = [
 
 export function providerSaveSuccessMessage(provider: ProviderIdentity): string {
   if (provider.providerCode === "qweather") {
-    return "和风天气配置已保存。";
+    return "和风天气 配置已保存。";
   }
 
   if (provider.providerCode === "open_meteo") {
@@ -45,7 +45,7 @@ export function providerSaveSuccessMessage(provider: ProviderIdentity): string {
   }
 
   if (provider.providerCode === "amap") {
-    return "高德地图配置已保存。";
+    return "高德地图 配置已保存。";
   }
 
   return "服务商配置已保存。";

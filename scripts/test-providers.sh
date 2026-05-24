@@ -80,7 +80,11 @@ async function main() {
   const password = process.env.ADMIN_PASSWORD;
   if (!email || !password) {
     console.log("管理员登录凭据未配置，无法自动调用后台测试端点。");
-    console.log("UI manual test is primary: /admin/providers");
+    console.log("Manual UI checklist:");
+    console.log("1. 打开 /admin/providers。");
+    console.log("2. 检查高德地图、和风天气、Open-Meteo、meteoblue、DeepSeek 卡片均显示脱敏密钥状态。");
+    console.log("3. 对需要验证的服务商点击 保存配置，再点击 测试连接。");
+    console.log("4. 确认页面不显示 API Key、secretJson、configJson 或堆栈。");
     return;
   }
 
@@ -92,7 +96,10 @@ async function main() {
   const loginBody = await readJsonSafe(login);
   if (!login.ok || !loginBody.accessToken) {
     console.log(`Admin login failed: HTTP ${login.status}`);
-    console.log("UI manual test is primary: /admin/providers");
+    console.log("Manual UI checklist:");
+    console.log("1. 使用管理员账号登录后台。");
+    console.log("2. 打开 /admin/providers，逐一检查服务商状态、保存反馈和测试反馈。");
+    console.log("3. 确认任何失败只显示安全中文原因，不显示密钥或堆栈。");
     return;
   }
 

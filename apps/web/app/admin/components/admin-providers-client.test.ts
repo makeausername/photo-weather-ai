@@ -9,13 +9,13 @@ const source = readFileSync(resolve(__dirname, "admin-providers-client.tsx"), "u
 describe("admin provider console source", () => {
   it("defines grouped provider console sections and an overview", () => {
     for (const label of [
-      "服务商总览",
+      "服务商配置",
+      "服务商总数",
       "地图与地理服务",
       "天气数据源",
       "智能解读",
       "已启用",
       "真实调用",
-      "密钥已保存",
       "需要处理",
     ]) {
       expect(source).toContain(label);
@@ -23,13 +23,17 @@ describe("admin provider console source", () => {
   });
 
   it("keeps provider cards secret-safe and compact", () => {
-    expect(source).toContain("ProviderBadgeRow");
-    expect(source).toContain("CapabilityBadges");
+    expect(source).toContain("StatusFacts");
     expect(source).toContain("ProviderTestDetails");
     expect(source).toContain("providerTestButtonLabel");
+    expect(source).toContain("有未保存修改");
+    expect(source).toContain("展开高级配置");
+    expect(source).toContain("data-provider-card");
+    expect(source).not.toContain("providerTabs");
     expect(source).not.toContain("RealDevCallNotice");
     expect(source).not.toContain("SavedSecretSummary");
     expect(source).not.toContain("当前将请求真实服务，请确认 Key 有效且注意调用费用。");
+    expect(source).not.toContain("V1 仅保留专业增强源接口，不在自动流程中请求 meteoblue 服务");
   });
 
   it("declares the requested capability badges", () => {

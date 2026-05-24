@@ -434,7 +434,12 @@ const providerConfigs = [
     displayName: "高德地图",
     enabled: false,
     priority: 100,
-    configJson: {},
+    configJson: {
+      realCallEnabled: false,
+      baseUrl: "https://restapi.amap.com",
+      timeoutMs: 8000,
+      retryCount: 1,
+    },
     secretJson: {},
     maskedSecretJson: {},
   },

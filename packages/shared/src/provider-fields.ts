@@ -240,6 +240,15 @@ export const providerFieldPresets = [
         defaultValue: "fast",
       },
       {
+        key: "model",
+        label: "模型",
+        target: "configJson",
+        control: "select",
+        options: deepSeekModelOptions,
+        defaultValue: deepSeekDefaultModel,
+        helpText: "快速模式使用 deepseek-v4-flash，专业模式使用 deepseek-v4-pro。",
+      },
+      {
         key: "apiKey",
         label: "DeepSeek API Key",
         target: "secretJson",
@@ -460,8 +469,7 @@ export const providerFieldPresets = [
   },
   {
     providerCode: "meteoblue",
-    helpText:
-      "meteoblue Free Weather API 可用于 Forecast API 测试。建议先启用 basic-1h 和 clouds-1h，用于云层与基础天气增强。",
+    helpText: "meteoblue 可作为专业增强天气源，用于 Forecast API 真实测试和后续多源融合。",
     fields: [
       {
         key: "realCallEnabled",
@@ -544,6 +552,28 @@ export const providerFieldPresets = [
         target: "configJson",
         placeholder: "https://restapi.amap.com",
         defaultValue: "https://restapi.amap.com",
+        advanced: true,
+      },
+      {
+        key: "timeoutMs",
+        label: "请求超时（毫秒）",
+        target: "configJson",
+        control: "number",
+        defaultValue: weatherDefaultTimeoutMs,
+        min: 1000,
+        max: 30000,
+        step: 100,
+        advanced: true,
+      },
+      {
+        key: "retryCount",
+        label: "重试次数",
+        target: "configJson",
+        control: "number",
+        defaultValue: weatherDefaultRetryCount,
+        min: 0,
+        max: 5,
+        step: 1,
         advanced: true,
       },
     ],

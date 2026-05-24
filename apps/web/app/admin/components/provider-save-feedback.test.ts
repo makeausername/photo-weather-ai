@@ -13,7 +13,7 @@ import {
 describe("provider save feedback", () => {
   it("uses provider-specific Chinese success messages", () => {
     expect(providerSaveSuccessMessage({ providerType: "weather", providerCode: "qweather" })).toBe(
-      "和风天气配置已保存。",
+      "和风天气 配置已保存。",
     );
     expect(
       providerSaveSuccessMessage({ providerType: "weather", providerCode: "open_meteo" }),
@@ -25,7 +25,7 @@ describe("provider save feedback", () => {
       "DeepSeek 配置已保存。",
     );
     expect(providerSaveSuccessMessage({ providerType: "geo", providerCode: "amap" })).toBe(
-      "高德地图配置已保存。",
+      "高德地图 配置已保存。",
     );
     expect(providerSaveSuccessMessage({ providerType: "storage", providerCode: "local" })).toBe(
       "服务商配置已保存。",
@@ -34,7 +34,7 @@ describe("provider save feedback", () => {
 
   it("keeps save success copy separate from connection-test copy", () => {
     expect(providerSaveSuccessMessage({ providerType: "weather", providerCode: "qweather" })).toBe(
-      "和风天气配置已保存。",
+      "和风天气 配置已保存。",
     );
     expect(
       providerSaveSuccessMessage({ providerType: "weather", providerCode: "qweather" }),

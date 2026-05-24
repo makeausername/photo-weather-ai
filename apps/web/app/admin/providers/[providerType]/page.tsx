@@ -16,23 +16,11 @@ export function generateStaticParams() {
   ];
 }
 
-const providerTypeLabels: Record<string, string> = {
-  ai: "智能解读服务商",
-  weather: "天气服务商",
-  geo: "地理服务商",
-  terrain: "地形服务商",
-  storage: "存储服务商",
-  billing: "支付服务商",
-  sms: "短信服务商",
-};
-
 export default function AdminProviderTypePage({ params }: AdminProviderTypePageProps) {
-  const title = providerTypeLabels[params.providerType] ?? "服务商配置";
-
   return (
     <AdminShell
-      title={title}
-      description="按类型筛选服务商配置，展示脱敏密钥状态、真实调用开关和测试模式。"
+      title="服务商配置"
+      description="统一管理地图、天气数据源和智能解读服务。保存配置只保存参数，测试连接用于验证真实服务是否可用。"
     >
       <AdminProvidersClient providerType={params.providerType} />
     </AdminShell>

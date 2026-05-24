@@ -299,15 +299,68 @@ function createProviderTestMetadata(
   providerType: string,
   providerCode: string,
   connectionMode: "mock" | "fixture" | "real",
+  modeLabelZh?: string,
 ) {
+  const defaultModeLabelZh = connectionMode === "real" ? "真实服务" : "模拟测试";
   return {
     providerType,
     providerCode,
+    providerNameZh: getProviderNameZh(providerType, providerCode),
     connectionMode,
-    modeZh: connectionMode === "real" ? "真实服务" : "模拟测试",
+    modeZh: modeLabelZh ?? defaultModeLabelZh,
+    modeLabelZh: modeLabelZh ?? defaultModeLabelZh,
     testedAt: new Date().toISOString(),
     sampleLocation: "黄山光明顶",
   };
+}
+
+function getProviderNameZh(providerType: string, providerCode: string): string {
+  const key = `${providerType}:${providerCode}`;
+  const names: Record<string, string> = {
+    "geo:amap": "高德地图",
+    "weather:qweather": "和风天气",
+    "weather:open_meteo": "Open-Meteo",
+    "weather:meteoblue": "meteoblue",
+    "ai:deepseek": "DeepSeek",
+  };
+
+  return names[key] ?? "服务商";
+}
+
+function providerSaveMessageZh(providerType: string, providerCode: string): string {
+  return `${getProviderNameZh(providerType, providerCode)} 配置已保存。`;
+}
+
+function sendProviderTestFailure(
+  reply: FastifyReply,
+  input: {
+    readonly providerType: string;
+    readonly providerCode: string;
+    readonly mode?: string;
+    readonly connectionMode?: "mock" | "fixture" | "real";
+    readonly modeLabelZh?: string;
+    readonly messageZh: string;
+    readonly error?: string;
+    readonly statusCode?: number;
+    readonly latencyMs?: number;
+  },
+) {
+  const connectionMode = input.connectionMode ?? "real";
+  return reply.send({
+    success: false,
+    mode: input.mode ?? (connectionMode === "real" ? "real" : "mock"),
+    ...createProviderTestMetadata(
+      input.providerType,
+      input.providerCode,
+      connectionMode,
+      input.modeLabelZh,
+    ),
+    error: input.error ?? "provider_test_failed",
+    statusCode: input.statusCode,
+    latencyMs: input.latencyMs,
+    messageZh: input.messageZh,
+    message: input.messageZh,
+  });
 }
 
 function isJsonObjectValue(value: JsonValue | undefined): value is Record<string, JsonValue> {
@@ -680,7 +733,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
 
       return {
         success: true,
-        messageZh: "配置已保存。",
+        messageZh: providerSaveMessageZh(providerType, request.params.providerCode),
         provider: updatedProvider,
       };
     },
@@ -717,21 +770,27 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
               request.params.providerCode,
               "mock",
             ),
+            messageZh: "当前为模拟测试，未请求高德地图服务。",
             message: "当前为模拟测试，未请求高德地图服务。",
           };
         }
 
         if (!runtimeConfig.providerEnabled) {
-          return sendError(
-            reply,
-            409,
-            "provider_not_enabled",
-            "高德地图服务商未启用，请先在后台服务商配置中启用高德地图。",
-          );
+          return sendProviderTestFailure(reply, {
+            providerType: request.params.providerType,
+            providerCode: request.params.providerCode,
+            error: "provider_not_enabled",
+            messageZh: "高德地图服务商未启用，请先在后台服务商配置中启用高德地图。",
+          });
         }
 
         if (!runtimeConfig.apiKey) {
-          return sendError(reply, 400, "provider_key_missing", "请先填写高德 Web 服务 Key。");
+          return sendProviderTestFailure(reply, {
+            providerType: request.params.providerType,
+            providerCode: request.params.providerCode,
+            error: "provider_key_missing",
+            messageZh: "请先填写高德 Web 服务 Key。",
+          });
         }
 
         try {
@@ -753,7 +812,12 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
               "real",
             ),
             latencyMs,
-            message: results[0] ? "高德地图连接测试通过。" : "高德地图连接成功，但未返回测试地点。",
+            messageZh: results[0]
+              ? `高德地图连接测试通过，耗时 ${latencyMs}ms。`
+              : `高德地图连接成功，但未返回测试地点，耗时 ${latencyMs}ms。`,
+            message: results[0]
+              ? `高德地图连接测试通过，耗时 ${latencyMs}ms。`
+              : `高德地图连接成功，但未返回测试地点，耗时 ${latencyMs}ms。`,
             sample: results[0]
               ? {
                   name: results[0].name,
@@ -763,7 +827,15 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
               : null,
           };
         } catch (error) {
-          return sendError(reply, 503, "provider_test_failed", (error as Error).message);
+          return sendProviderTestFailure(reply, {
+            providerType: request.params.providerType,
+            providerCode: request.params.providerCode,
+            error: "provider_test_failed",
+            messageZh: sanitizeProviderErrorMessage(
+              (error as Error).message || "高德地图连接测试失败。",
+              runtimeConfig.apiKey,
+            ),
+          });
         }
       }
 
@@ -775,26 +847,41 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
             mode: runtimeConfig.analysisMode,
             connectionMode: "mock",
             modeZh: "模拟测试",
+            modeLabelZh: "模拟测试",
             providerType: request.params.providerType,
             providerCode: request.params.providerCode,
+            providerNameZh: getProviderNameZh(
+              request.params.providerType,
+              request.params.providerCode,
+            ),
             testedAt: new Date().toISOString(),
             sampleLocation: "黄山光明顶",
             model: runtimeConfig.model,
+            messageZh: "当前为模拟测试，未请求 DeepSeek 服务。",
             message: "当前为模拟测试，未请求 DeepSeek 服务。",
           };
         }
 
         if (!runtimeConfig.enabled) {
-          return sendError(
-            reply,
-            409,
-            "provider_not_enabled",
-            "DeepSeek 服务商未启用，请先在后台服务商配置中启用 DeepSeek。",
-          );
+          return sendProviderTestFailure(reply, {
+            providerType: request.params.providerType,
+            providerCode: request.params.providerCode,
+            mode: runtimeConfig.analysisMode,
+            modeLabelZh: runtimeConfig.modeLabelZh,
+            error: "provider_not_enabled",
+            messageZh: "DeepSeek 服务商未启用，请先在后台服务商配置中启用 DeepSeek。",
+          });
         }
 
         if (!runtimeConfig.apiKeyPresent) {
-          return sendError(reply, 400, "provider_key_missing", "请先填写 DeepSeek API Key。");
+          return sendProviderTestFailure(reply, {
+            providerType: request.params.providerType,
+            providerCode: request.params.providerCode,
+            mode: runtimeConfig.analysisMode,
+            modeLabelZh: runtimeConfig.modeLabelZh,
+            error: "provider_key_missing",
+            messageZh: "请先填写 DeepSeek API Key。",
+          });
         }
 
         try {
@@ -810,14 +897,27 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
               request.params.providerType,
               request.params.providerCode,
               "real",
+              runtimeConfig.modeLabelZh,
             ),
             model: runtimeConfig.model,
             latencyMs,
+            messageZh:
+              result.message || `DeepSeek 连接测试通过，当前使用${runtimeConfig.modeLabelZh}。`,
             message:
               result.message || `DeepSeek 连接测试通过，当前使用${runtimeConfig.modeLabelZh}。`,
           };
         } catch (error) {
-          return sendError(reply, 503, "provider_test_failed", (error as Error).message);
+          return sendProviderTestFailure(reply, {
+            providerType: request.params.providerType,
+            providerCode: request.params.providerCode,
+            mode: runtimeConfig.analysisMode,
+            modeLabelZh: runtimeConfig.modeLabelZh,
+            error: "provider_test_failed",
+            messageZh: sanitizeProviderErrorMessage(
+              (error as Error).message || "DeepSeek 连接测试失败。",
+              runtimeConfig.apiKey,
+            ),
+          });
         }
       }
 
@@ -833,25 +933,36 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
                 request.params.providerCode,
                 "mock",
               ),
+              messageZh: "当前为模拟测试，未请求和风天气服务。",
               message: "当前为模拟测试，未请求和风天气服务。",
             };
           }
 
           if (!runtimeConfig.apiKeyPresent || !runtimeConfig.apiKey) {
-            return sendError(reply, 400, "provider_key_missing", "请先填写和风天气 API Key。");
+            return sendProviderTestFailure(reply, {
+              providerType: request.params.providerType,
+              providerCode: request.params.providerCode,
+              error: "provider_key_missing",
+              messageZh: "请先填写和风天气 API Key。",
+            });
           }
 
           if (!runtimeConfig.apiHostPresent || !runtimeConfig.apiHost) {
-            return sendError(reply, 400, "provider_host_missing", "请先填写和风天气 API Host。");
+            return sendProviderTestFailure(reply, {
+              providerType: request.params.providerType,
+              providerCode: request.params.providerCode,
+              error: "provider_host_missing",
+              messageZh: "请先填写和风天气 API Host。",
+            });
           }
 
           if (!runtimeConfig.enabled) {
-            return sendError(
-              reply,
-              409,
-              "provider_not_enabled",
-              "和风天气服务商未启用，请先在后台服务商配置中启用和风天气。",
-            );
+            return sendProviderTestFailure(reply, {
+              providerType: request.params.providerType,
+              providerCode: request.params.providerCode,
+              error: "provider_not_enabled",
+              messageZh: "和风天气服务商未启用，请先在后台服务商配置中启用和风天气。",
+            });
           }
 
           try {
@@ -880,19 +991,23 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
               location: result.location,
               observedWeatherSummary: result.observedWeatherSummary,
               latencyMs: result.latencyMs,
-              messageZh: result.messageZh,
-              message: result.messageZh,
+              messageZh: result.success
+                ? `和风天气连接测试通过，耗时 ${Math.round(result.latencyMs)}ms。`
+                : result.messageZh,
+              message: result.success
+                ? `和风天气连接测试通过，耗时 ${Math.round(result.latencyMs)}ms。`
+                : result.messageZh,
             };
           } catch (error) {
-            return sendError(
-              reply,
-              503,
-              "provider_test_failed",
-              sanitizeProviderErrorMessage(
+            return sendProviderTestFailure(reply, {
+              providerType: request.params.providerType,
+              providerCode: request.params.providerCode,
+              error: "provider_test_failed",
+              messageZh: sanitizeProviderErrorMessage(
                 (error as Error).message || "和风天气连接测试失败。",
                 runtimeConfig.apiKey,
               ),
-            );
+            });
           }
         }
 
@@ -907,26 +1022,31 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
                 request.params.providerCode,
                 "mock",
               ),
+              messageZh: "当前为模拟测试，未请求真实天气服务。",
               message: "当前为模拟测试，未请求真实天气服务。",
             };
           }
 
           if (!runtimeConfig.enabled) {
-            return sendError(
-              reply,
-              409,
-              "provider_not_enabled",
-              "Open-Meteo 服务商未启用，请先在后台服务商配置中启用 Open-Meteo。",
-            );
+            return sendProviderTestFailure(reply, {
+              providerType: request.params.providerType,
+              providerCode: request.params.providerCode,
+              mode: runtimeConfig.mode,
+              modeLabelZh: runtimeConfig.modeLabelZh,
+              error: "provider_not_enabled",
+              messageZh: "Open-Meteo 服务商未启用，请先在后台服务商配置中启用 Open-Meteo。",
+            });
           }
 
           if (runtimeConfig.mode === "customer" && !runtimeConfig.apiKey) {
-            return sendError(
-              reply,
-              400,
-              "provider_key_missing",
-              "商业客户模式请先填写 Open-Meteo API Key。",
-            );
+            return sendProviderTestFailure(reply, {
+              providerType: request.params.providerType,
+              providerCode: request.params.providerCode,
+              mode: runtimeConfig.mode,
+              modeLabelZh: runtimeConfig.modeLabelZh,
+              error: "provider_key_missing",
+              messageZh: "商业客户模式请先填写 Open-Meteo API Key。",
+            });
           }
 
           try {
@@ -948,23 +1068,30 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
                 request.params.providerType,
                 request.params.providerCode,
                 "real",
+                runtimeConfig.modeLabelZh,
               ),
               endpoint: result.endpoint,
               statusCode: result.statusCode,
               latencyMs: result.latencyMs,
-              messageZh: result.messageZh,
-              message: result.messageZh,
+              messageZh: result.success
+                ? `Open-Meteo 连接测试通过，耗时 ${Math.round(result.latencyMs)}ms。`
+                : result.messageZh,
+              message: result.success
+                ? `Open-Meteo 连接测试通过，耗时 ${Math.round(result.latencyMs)}ms。`
+                : result.messageZh,
             };
           } catch (error) {
-            return sendError(
-              reply,
-              503,
-              "provider_test_failed",
-              sanitizeProviderErrorMessage(
+            return sendProviderTestFailure(reply, {
+              providerType: request.params.providerType,
+              providerCode: request.params.providerCode,
+              mode: runtimeConfig.mode,
+              modeLabelZh: runtimeConfig.modeLabelZh,
+              error: "provider_test_failed",
+              messageZh: sanitizeProviderErrorMessage(
                 (error as Error).message || "Open-Meteo 连接测试失败。",
                 runtimeConfig.apiKey,
               ),
-            );
+            });
           }
         }
 
@@ -980,21 +1107,27 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
                 "mock",
               ),
               packages: runtimeConfig.packages,
+              messageZh: "当前为模拟测试，未请求 meteoblue 服务。",
               message: "当前为模拟测试，未请求 meteoblue 服务。",
             };
           }
 
           if (!runtimeConfig.enabled) {
-            return sendError(
-              reply,
-              409,
-              "provider_not_enabled",
-              "meteoblue 服务商未启用，请先在后台服务商配置中启用 meteoblue。",
-            );
+            return sendProviderTestFailure(reply, {
+              providerType: request.params.providerType,
+              providerCode: request.params.providerCode,
+              error: "provider_not_enabled",
+              messageZh: "meteoblue 服务商未启用，请先在后台服务商配置中启用 meteoblue。",
+            });
           }
 
           if (!runtimeConfig.apiKeyPresent || !runtimeConfig.apiKey) {
-            return sendError(reply, 400, "provider_key_missing", "请先填写 meteoblue API Key。");
+            return sendProviderTestFailure(reply, {
+              providerType: request.params.providerType,
+              providerCode: request.params.providerCode,
+              error: "provider_key_missing",
+              messageZh: "请先填写 meteoblue API Key。",
+            });
           }
 
           try {
@@ -1020,19 +1153,23 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
               endpoint: result.baseUrl,
               packages: result.packages,
               sampleLocation: result.sampleLocation,
-              messageZh: result.messageZh,
-              message: result.messageZh,
+              messageZh: result.success
+                ? `meteoblue 连接测试通过，耗时 ${Math.round(result.latencyMs)}ms。`
+                : result.messageZh,
+              message: result.success
+                ? `meteoblue 连接测试通过，耗时 ${Math.round(result.latencyMs)}ms。`
+                : result.messageZh,
             };
           } catch (error) {
-            return sendError(
-              reply,
-              503,
-              "provider_test_failed",
-              sanitizeProviderErrorMessage(
+            return sendProviderTestFailure(reply, {
+              providerType: request.params.providerType,
+              providerCode: request.params.providerCode,
+              error: "provider_test_failed",
+              messageZh: sanitizeProviderErrorMessage(
                 (error as Error).message || "meteoblue 连接测试失败。",
                 runtimeConfig.apiKey,
               ),
-            );
+            });
           }
         }
       }
@@ -1045,6 +1182,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
           request.params.providerCode,
           "mock",
         ),
+        messageZh: "当前为模拟测试，未触发真实外部连接。",
         message: "当前为模拟测试，未触发真实外部连接。",
       };
     },

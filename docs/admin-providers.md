@@ -1,11 +1,20 @@
 # 后台服务商配置
 
-`/admin/providers` 是生产服务商配置控制台。API Key 只保存在服务端数据库的 `secretJson` 中，前端只接收 `maskedSecretJson`，测试连接响应也不会返回原始密钥。
+`/admin/providers` 是生产服务商配置控制台。当前控制台按“地图与地理服务”“天气数据源”“智能解读”分组管理高德地图、和风天气、Open-Meteo、meteoblue 和 DeepSeek。
+
+API Key 只保存在服务端数据库的密钥字段中，前端只接收脱敏后的 `maskedSecretJson`。后台页面、测试连接响应、诊断脚本和日志都不应输出原始密钥、原始配置 JSON、Prisma 错误或堆栈。
+
+## 控制台 UX
+
+- 页面顶部显示服务商总数、已启用、真实调用和需要处理四个摘要。
+- 每个服务商卡片使用同一结构：状态摘要、能力标签、基础开关、必填配置、密钥配置、高级配置、保存配置和测试连接。
+- 高级配置默认收起，主要放 `priority`、`timeoutMs`、`retryCount`、Base URL 等低频字段。
+- 普通管理员不需要编辑原始 JSON。
 
 ## 保存配置与测试连接
 
-- **保存配置**：只保存启用状态、优先级、非密钥配置和新填写的密钥，不会自动请求第三方服务。
-- **测试连接**：只有服务商已启用、`启用真实调用` 已打开，并且必要凭据已保存时，才会由管理员点击后请求真实服务。
+- **保存配置**：只保存启用状态、优先级、非密钥配置和新填写的密钥，不会自动请求第三方服务。成功返回 `{服务商} 配置已保存。`
+- **测试连接**：只有服务商已启用、`启用真实调用` 已打开，并且必要凭据已保存时，才会由管理员点击后请求真实服务。成功返回 `{服务商} 连接测试通过，耗时 {latencyMs}ms。`
 - 自动化测试必须 mock 网络请求，不调用真实 QWeather、Open-Meteo、meteoblue、高德地图或 DeepSeek。
 
 ## 和风天气
@@ -29,12 +38,14 @@ Open-Meteo 支持两种模式：
 
 ## meteoblue
 
-meteoblue Free Weather API 可用于 Forecast API 测试。默认配置：
+meteoblue 可作为专业增强天气源，用于 Forecast API 真实测试和后续多源融合。当前任务只启用后台“测试连接”，不会把 meteoblue 自动加入 forecast 计算流程，除非天气融合后续显式接入。
+
+在 meteoblue 控制台开通 Free Forecast API key 后填写 `meteoblue API Key`。默认配置：
 
 - Base URL：`https://my.meteoblue.com`
 - Packages：`basic-1h,clouds-1h`
 
-启用真实调用且 API Key 已保存后，后台测试连接会请求黄山光明顶坐标的 Forecast API package URL。当前任务只启用后台“测试连接”，不会把 meteoblue 自动加入 forecast 计算流程，除非天气融合后续显式接入。
+启用真实调用且 API Key 已保存后，后台测试连接会请求黄山光明顶坐标的 Forecast API package URL。关闭真实调用时，测试连接只返回“当前为模拟测试，未请求 meteoblue 服务。”
 
 ## 高德地图
 

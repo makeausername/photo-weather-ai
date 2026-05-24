@@ -121,6 +121,8 @@ export type AdminAuditLog = {
 
 export type MockConnectionTestResult = {
   readonly success: boolean;
+  readonly providerCode?: string;
+  readonly providerNameZh?: string;
   readonly mode:
     | "mock"
     | "fixture"
@@ -132,6 +134,7 @@ export type MockConnectionTestResult = {
     | "professional";
   readonly connectionMode?: "mock" | "fixture" | "real";
   readonly modeZh?: string;
+  readonly modeLabelZh?: string;
   readonly provider?: string;
   readonly model?: string;
   readonly apiHost?: string;
@@ -145,7 +148,6 @@ export type MockConnectionTestResult = {
   readonly latencyMs?: number;
   readonly testedAt?: string;
   readonly providerType?: string;
-  readonly providerCode?: string;
   readonly messageZh?: string;
   readonly message: string;
 };

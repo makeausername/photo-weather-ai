@@ -202,7 +202,7 @@ describe("admin config routes", () => {
     const body = response.json();
     expect(body).toMatchObject({
       success: true,
-      messageZh: "配置已保存。",
+      messageZh: "和风天气 配置已保存。",
     });
     expect(body.provider).toMatchObject({
       providerType: "weather",
@@ -259,7 +259,7 @@ describe("admin config routes", () => {
     const body = response.json();
     expect(body).toMatchObject({
       success: true,
-      messageZh: "配置已保存。",
+      messageZh: "DeepSeek 配置已保存。",
     });
     expect(body.provider).toMatchObject({
       providerType: "ai",
@@ -453,9 +453,12 @@ describe("admin config routes", () => {
       headers: adminAuthorizationHeader(),
     });
 
-    expect(qWeatherResponse.statusCode).toBe(400);
+    expect(qWeatherResponse.statusCode).toBe(200);
     expect(qWeatherResponse.json()).toMatchObject({
+      success: false,
       error: "provider_key_missing",
+      providerCode: "qweather",
+      providerNameZh: "和风天气",
       message: "请先填写和风天气 API Key。",
     });
     expect(openMeteoResponse.statusCode).toBe(200);
@@ -506,9 +509,11 @@ describe("admin config routes", () => {
       headers: adminAuthorizationHeader(),
     });
 
-    expect(response.statusCode).toBe(400);
+    expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
+      success: false,
       error: "provider_host_missing",
+      providerCode: "qweather",
       message: "请先填写和风天气 API Host。",
     });
     expect(response.body).not.toContain("qweather-test-secret");
@@ -597,7 +602,7 @@ describe("admin config routes", () => {
       qweatherCode: "200",
       location: "118.1718,30.1328",
       observedWeatherSummary: "多云，18°C，湿度 72%",
-      messageZh: "和风天气连接测试通过。",
+      messageZh: expect.stringMatching(/^和风天气连接测试通过，耗时 \d+ms。$/),
     });
     expect(response.body).not.toContain("qweather-real-secret");
     expect(response.body).not.toContain("secretJson");
@@ -656,10 +661,11 @@ describe("admin config routes", () => {
       success: true,
       mode: "free",
       connectionMode: "real",
-      modeZh: "真实服务",
+      modeZh: "免费开发模式",
+      modeLabelZh: "免费开发模式",
       providerCode: "open_meteo",
       statusCode: 200,
-      message: "Open-Meteo 连接测试通过。",
+      message: expect.stringMatching(/^Open-Meteo 连接测试通过，耗时 \d+ms。$/),
     });
     expect(response.body).not.toContain("apiKey");
     expect(response.body).not.toContain("secretJson");
@@ -694,6 +700,90 @@ describe("admin config routes", () => {
     });
     expect(response.body).not.toContain("amap-test-secret");
     expect(response.body).not.toContain("secretJson");
+  });
+
+  it("tests a real Amap connection through mocked fetch outside NODE_ENV=test", async () => {
+    const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      expect(url.origin).toBe("https://restapi.amap.com");
+      expect(url.pathname).toBe("/v3/place/text");
+      expect(url.searchParams.get("keywords")).toBe("黄山光明顶");
+      expect(url.searchParams.get("key")).toBe("amap-real-secret");
+      expect(init?.method).toBe("GET");
+
+      return new Response(
+        JSON.stringify({
+          status: "1",
+          info: "OK",
+          infocode: "10000",
+          pois: [
+            {
+              id: "B0AMAPTEST",
+              name: "黄山光明顶",
+              pname: "安徽省",
+              cityname: "黄山市",
+              adname: "黄山区",
+              address: "黄山风景区",
+              location: "118.1718,30.1328",
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const amapProvider = state.providers.get("geo:amap");
+    state.providers.set("geo:amap", {
+      ...amapProvider,
+      enabled: true,
+      configJson: {
+        ...(amapProvider.configJson ?? {}),
+        realCallEnabled: true,
+        baseUrl: "https://restapi.amap.com",
+        timeoutMs: 8000,
+        retryCount: 1,
+      },
+      secretJson: {
+        apiKey: "amap-real-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "amap****cret",
+      },
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/providers/geo/amap/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: true,
+      mode: "real",
+      connectionMode: "real",
+      providerCode: "amap",
+      providerNameZh: "高德地图",
+      messageZh: expect.stringMatching(/^高德地图连接测试通过，耗时 \d+ms。$/),
+    });
+    expect(response.body).not.toContain("amap-real-secret");
+    expect(response.body).not.toContain("secretJson");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("keeps DeepSeek connection tests in mock mode by default and hides secrets", async () => {
@@ -819,14 +909,20 @@ describe("admin config routes", () => {
       headers: adminAuthorizationHeader(),
     });
 
-    expect(amapResponse.statusCode).toBe(400);
+    expect(amapResponse.statusCode).toBe(200);
     expect(amapResponse.json()).toMatchObject({
+      success: false,
       error: "provider_key_missing",
+      providerCode: "amap",
+      providerNameZh: "高德地图",
       message: "请先填写高德 Web 服务 Key。",
     });
-    expect(deepSeekResponse.statusCode).toBe(400);
+    expect(deepSeekResponse.statusCode).toBe(200);
     expect(deepSeekResponse.json()).toMatchObject({
+      success: false,
       error: "provider_key_missing",
+      providerCode: "deepseek",
+      providerNameZh: "DeepSeek",
       message: "请先填写 DeepSeek API Key。",
     });
   });
@@ -877,14 +973,19 @@ describe("admin config routes", () => {
       headers: adminAuthorizationHeader(),
     });
 
-    expect(openMeteoResponse.statusCode).toBe(400);
+    expect(openMeteoResponse.statusCode).toBe(200);
     expect(openMeteoResponse.json()).toMatchObject({
+      success: false,
       error: "provider_key_missing",
+      providerCode: "open_meteo",
+      modeLabelZh: "商业客户模式",
       message: "商业客户模式请先填写 Open-Meteo API Key。",
     });
-    expect(meteoblueResponse.statusCode).toBe(400);
+    expect(meteoblueResponse.statusCode).toBe(200);
     expect(meteoblueResponse.json()).toMatchObject({
+      success: false,
       error: "provider_key_missing",
+      providerCode: "meteoblue",
       message: "请先填写 meteoblue API Key。",
     });
   });
@@ -974,11 +1075,12 @@ describe("admin config routes", () => {
       mode: "real",
       connectionMode: "real",
       modeZh: "真实服务",
+      modeLabelZh: "真实服务",
       providerCode: "meteoblue",
       statusCode: 200,
       packages: ["basic-1h", "clouds-1h"],
       sampleLocation: "黄山光明顶",
-      message: "meteoblue 连接测试通过。",
+      message: expect.stringMatching(/^meteoblue 连接测试通过，耗时 \d+ms。$/),
     });
     expect(response.body).not.toContain("meteoblue-real-secret");
     expect(response.body).not.toContain("secretJson");
@@ -1061,6 +1163,7 @@ describe("admin config routes", () => {
       success: true,
       mode: "professional",
       connectionMode: "real",
+      modeLabelZh: "专业模式",
       model: "deepseek-v4-pro",
       latencyMs: expect.any(Number),
       message: "DeepSeek 连接测试通过。",

@@ -44,6 +44,11 @@ describe("provider field presets", () => {
           target: "configJson",
           control: "select",
         }),
+        expect.objectContaining({
+          key: "model",
+          target: "configJson",
+          control: "select",
+        }),
         expect.objectContaining({ key: "baseUrl", target: "configJson", advanced: true }),
       ]),
     );
@@ -91,6 +96,15 @@ describe("provider field presets", () => {
           target: "configJson",
           defaultValue: "basic-1h,clouds-1h",
         }),
+      ]),
+    );
+    expect(getProviderFieldPreset("meteoblue")?.helpText).toBe(
+      "meteoblue 可作为专业增强天气源，用于 Forecast API 真实测试和后续多源融合。",
+    );
+    expect(getProviderFieldPreset("amap")?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "timeoutMs", target: "configJson", advanced: true }),
+        expect.objectContaining({ key: "retryCount", target: "configJson", advanced: true }),
       ]),
     );
   });

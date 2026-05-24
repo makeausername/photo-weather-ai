@@ -19,6 +19,8 @@ export type AmapProviderConfig = {
   readonly apiKey?: string;
   readonly baseUrl?: string;
   readonly enabled?: boolean;
+  readonly timeoutMs?: number;
+  readonly retryCount?: number;
   readonly fetcher?: AmapFetch;
 };
 
@@ -67,6 +69,8 @@ type AmapReverseGeocodeResponse = AmapApiEnvelope & {
 };
 
 const defaultBaseUrl = "https://restapi.amap.com";
+const defaultTimeoutMs = 8000;
+const defaultRetryCount = 1;
 const amapPaths = {
   placeText: "/v3/place/text",
   geocode: "/v3/geocode/geo",
@@ -289,18 +293,48 @@ export class AmapProvider implements GeoProvider {
       }
     });
 
-    const response = await this.fetcher(url);
-    if (!response.ok) {
-      throw new Error(`高德地图服务请求失败，状态码 ${response.status}。`);
+    const attempts = Math.max(1, Math.round(this.config.retryCount ?? defaultRetryCount) + 1);
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(
+        () => controller.abort(),
+        Math.max(1000, Math.round(this.config.timeoutMs ?? defaultTimeoutMs)),
+      );
+
+      try {
+        const response = await this.fetcher(url, {
+          method: "GET",
+          signal: controller.signal,
+        });
+        if (response.status >= 500 && attempt < attempts) {
+          lastError = new Error(`高德地图服务请求失败，状态码 ${response.status}。`);
+          continue;
+        }
+
+        if (!response.ok) {
+          throw new Error(`高德地图服务请求失败，状态码 ${response.status}。`);
+        }
+
+        const data = (await response.json()) as TResponse;
+        if (data.status !== "1") {
+          const info = data.info ? `：${data.info}` : "";
+          throw new Error(`高德地图服务返回失败${info}。`);
+        }
+
+        return data;
+      } catch (error) {
+        lastError = error;
+        if (attempt >= attempts) {
+          break;
+        }
+      } finally {
+        clearTimeout(timeout);
+      }
     }
 
-    const data = (await response.json()) as TResponse;
-    if (data.status !== "1") {
-      const info = data.info ? `：${data.info}` : "";
-      throw new Error(`高德地图服务返回失败${info}。`);
-    }
-
-    return data;
+    throw lastError instanceof Error ? lastError : new Error("高德地图服务请求失败。");
   }
 
   private getApiKey(): string {

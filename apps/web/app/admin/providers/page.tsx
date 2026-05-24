@@ -5,7 +5,7 @@ export default function AdminProvidersPage() {
   return (
     <AdminShell
       title="服务商配置"
-      description="管理天气、地图、智能解读与存储等服务商配置；真实调用需显式启用，天气服务商未启用真实调用时使用模拟测试。"
+      description="统一管理地图、天气数据源和智能解读服务。保存配置只保存参数，测试连接用于验证真实服务是否可用。"
     >
       <AdminProvidersClient />
     </AdminShell>
