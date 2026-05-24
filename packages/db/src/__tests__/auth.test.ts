@@ -5,6 +5,7 @@ import {
   hashPassword,
   hashUserPassword,
   safeUser,
+  verifySuperAdmin,
   verifyPassword,
 } from "../index.js";
 import type { DatabaseClient } from "../types.js";
@@ -39,6 +40,7 @@ function createAdminScriptClient(): {
         const user = {
           id: `user-${users.size}`,
           phone: null,
+          roleCodes: [],
           createdAt: now,
           updatedAt: now,
           lastLoginAt: null,
@@ -69,6 +71,10 @@ function createAdminScriptClient(): {
     userRole: {
       upsert: async ({ create }: any) => {
         assignments.push(create);
+        const user = users.get(create.userId);
+        if (user && !user.roleCodes.includes(superAdminRole.code)) {
+          user.roleCodes.push(superAdminRole.code);
+        }
         return { id: "user-role", ...create };
       },
     },
@@ -185,5 +191,124 @@ describe("admin auth helpers", () => {
     });
 
     expect(formatCreateAdminResult(result).join("\n")).not.toContain(password);
+  });
+
+  it("create-admin updates an existing admin password and keeps the login verifier compatible", async () => {
+    const { client, state } = createAdminScriptClient();
+    await createOrUpdateSuperAdmin({
+      email: "admin@example.com",
+      password: "CorrectHorseBattery99",
+      displayName: "Owner",
+      client,
+    });
+
+    const result = await createOrUpdateSuperAdmin({
+      email: "ADMIN@EXAMPLE.COM",
+      password: "UpdatedHorseBattery99",
+      displayName: "Operator",
+      client,
+    });
+
+    const user = [...state.users.values()][0];
+    expect(result).toMatchObject({
+      created: false,
+      passwordUpdated: true,
+      user: {
+        email: "admin@example.com",
+        displayName: "Operator",
+        status: "active",
+      },
+    });
+    expect(await verifyPassword("CorrectHorseBattery99", user.passwordHash)).toBe(false);
+    expect(await verifyPassword("UpdatedHorseBattery99", user.passwordHash)).toBe(true);
+  });
+
+  it("create-admin re-enables an existing disabled admin account", async () => {
+    const { client, state } = createAdminScriptClient();
+    await createOrUpdateSuperAdmin({
+      email: "admin@example.com",
+      password: "CorrectHorseBattery99",
+      client,
+    });
+    const user = [...state.users.values()][0];
+    state.users.set(user.id, {
+      ...user,
+      status: "disabled",
+    });
+
+    const result = await createOrUpdateSuperAdmin({
+      email: "admin@example.com",
+      password: "UpdatedHorseBattery99",
+      client,
+    });
+
+    expect(result).toMatchObject({
+      activated: true,
+      user: {
+        status: "active",
+      },
+    });
+  });
+
+  it("verify-admin succeeds with the correct password", async () => {
+    const { client } = createAdminScriptClient();
+    await createOrUpdateSuperAdmin({
+      email: "admin@example.com",
+      password: "CorrectHorseBattery99",
+      client,
+    });
+
+    await expect(
+      verifySuperAdmin({
+        email: "admin@example.com",
+        password: "CorrectHorseBattery99",
+        client,
+      }),
+    ).resolves.toMatchObject({
+      user: {
+        email: "admin@example.com",
+      },
+      roles: ["super_admin"],
+      passwordChecked: true,
+    });
+  });
+
+  it("verify-admin fails with the wrong password", async () => {
+    const { client } = createAdminScriptClient();
+    await createOrUpdateSuperAdmin({
+      email: "admin@example.com",
+      password: "CorrectHorseBattery99",
+      client,
+    });
+
+    await expect(
+      verifySuperAdmin({
+        email: "admin@example.com",
+        password: "WrongHorseBattery99",
+        client,
+      }),
+    ).rejects.toThrow("管理员密码校验失败");
+  });
+
+  it("verify-admin fails when the admin role is missing", async () => {
+    const { client, state } = createAdminScriptClient();
+    await createOrUpdateSuperAdmin({
+      email: "admin@example.com",
+      password: "CorrectHorseBattery99",
+      client,
+    });
+    const user = [...state.users.values()][0];
+    state.users.set(user.id, {
+      ...user,
+      roleCodes: [],
+    });
+
+    await expect(
+      verifySuperAdmin({
+        email: "admin@example.com",
+        password: "CorrectHorseBattery99",
+        client,
+      }),
+    ).rejects.toThrow("管理员角色缺失");
   });
 });

@@ -1,13 +1,20 @@
+import { createInterface } from "node:readline/promises";
+
 import { disconnectPrismaClient, getPrismaClient } from "./client.js";
-import { hashPassword, validateAdminPassword } from "./passwords.js";
+import { buildSeedData } from "./seed-data.js";
 import { safeUser } from "./auth.js";
+import {
+  hashPassword,
+  minimumAdminPasswordLength,
+  validateAdminPassword,
+  verifyPassword,
+} from "./passwords.js";
 import type { DatabaseClient, SafeUser } from "./types.js";
 
 export type CreateAdminInput = {
   readonly email: string;
   readonly password: string;
   readonly displayName?: string | null;
-  readonly resetPassword?: boolean;
   readonly client?: DatabaseClient;
 };
 
@@ -16,6 +23,19 @@ export type CreateAdminResult = {
   readonly created: boolean;
   readonly passwordUpdated: boolean;
   readonly roleAssigned: boolean;
+  readonly activated: boolean;
+};
+
+export type VerifyAdminInput = {
+  readonly email: string;
+  readonly password?: string;
+  readonly client?: DatabaseClient;
+};
+
+export type VerifyAdminResult = {
+  readonly user: SafeUser;
+  readonly roles: readonly string[];
+  readonly passwordChecked: boolean;
 };
 
 export type CreateAdminEnv = {
@@ -23,10 +43,36 @@ export type CreateAdminEnv = {
   readonly ADMIN_EMAIL?: string;
   readonly ADMIN_PASSWORD?: string;
   readonly ADMIN_DISPLAY_NAME?: string;
-  readonly ADMIN_RESET_PASSWORD?: string;
+};
+
+export type VerifyAdminEnv = {
+  readonly [key: string]: string | undefined;
+  readonly ADMIN_EMAIL?: string;
+  readonly ADMIN_PASSWORD?: string;
+};
+
+export type AdminVerificationErrorCode =
+  | "admin_not_found"
+  | "admin_role_missing"
+  | "admin_password_failed"
+  | "admin_disabled";
+
+export class AdminVerificationError extends Error {
+  constructor(readonly code: AdminVerificationErrorCode) {
+    super(adminVerificationMessages[code]);
+  }
+}
+
+const adminVerificationMessages: Record<AdminVerificationErrorCode, string> = {
+  admin_not_found: "管理员账号不存在",
+  admin_role_missing: "管理员角色缺失",
+  admin_password_failed: "管理员密码校验失败",
+  admin_disabled: "管理员账号未启用",
 };
 
 const adminEmailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const superAdminRoleCode = "super_admin";
+const adminRoleCodes = new Set(["admin", superAdminRoleCode]);
 
 async function resolveClient(client?: DatabaseClient): Promise<DatabaseClient> {
   return client ?? ((await getPrismaClient()) as unknown as DatabaseClient);
@@ -48,82 +94,290 @@ function requireDelegate<TDelegate>(
 function normalizeAdminEmail(email: string): string {
   const normalizedEmail = email.trim().toLowerCase();
   if (!adminEmailPattern.test(normalizedEmail)) {
-    throw new Error("ADMIN_EMAIL must be a valid email address.");
+    throw new Error("ADMIN_EMAIL 不是有效邮箱地址。");
   }
 
   return normalizedEmail;
+}
+
+function normalizeDisplayName(displayName: string | null | undefined): string | undefined {
+  const normalized = displayName?.trim();
+  return normalized || undefined;
+}
+
+function assertAdminPassword(password: string): void {
+  if (!password) {
+    throw new Error("管理员密码不能为空。");
+  }
+
+  try {
+    validateAdminPassword(password);
+  } catch {
+    throw new Error(`管理员密码至少需要 ${minimumAdminPasswordLength} 个字符。`);
+  }
+}
+
+function hasCompleteAdminEnv(source: CreateAdminEnv): boolean {
+  return Boolean(source.ADMIN_EMAIL?.trim()) && Boolean(source.ADMIN_PASSWORD);
+}
+
+function isInteractiveTty(): boolean {
+  return Boolean(process.stdin.isTTY && process.stdout.isTTY);
+}
+
+async function promptLine(label: string, defaultValue?: string): Promise<string> {
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  try {
+    const suffix = defaultValue ? ` [${defaultValue}]` : "";
+    const answer = await rl.question(`${label}${suffix}: `);
+    return (answer || defaultValue || "").trim();
+  } finally {
+    rl.close();
+  }
+}
+
+async function promptHidden(label: string): Promise<string> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY || !process.stdin.setRawMode) {
+    throw new Error("当前终端不支持隐藏输入。");
+  }
+
+  return new Promise((resolve, reject) => {
+    const stdin = process.stdin;
+    let value = "";
+    const wasRaw = stdin.isRaw;
+
+    function cleanup(): void {
+      stdin.off("data", onData);
+      stdin.setRawMode(wasRaw);
+      stdin.pause();
+    }
+
+    function onData(chunk: Buffer): void {
+      const text = chunk.toString("utf8");
+      for (const char of text) {
+        if (char === "\u0003") {
+          cleanup();
+          process.stdout.write("\n");
+          reject(new Error("已取消。"));
+          return;
+        }
+
+        if (char === "\r" || char === "\n") {
+          cleanup();
+          process.stdout.write("\n");
+          resolve(value);
+          return;
+        }
+
+        if (char === "\u007f" || char === "\b") {
+          value = value.slice(0, -1);
+          continue;
+        }
+
+        value += char;
+      }
+    }
+
+    process.stdout.write(`${label}: `);
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.on("data", onData);
+  });
 }
 
 export function readCreateAdminEnv(source: CreateAdminEnv = process.env): CreateAdminInput {
   const email = source.ADMIN_EMAIL?.trim();
   const password = source.ADMIN_PASSWORD ?? "";
 
-  if (!email) {
-    throw new Error("ADMIN_EMAIL is required.");
-  }
-
-  if (!password) {
-    throw new Error("ADMIN_PASSWORD is required.");
+  if (!email || !password) {
+    throw new Error("缺少 ADMIN_EMAIL 或 ADMIN_PASSWORD，无法在非交互环境创建管理员。");
   }
 
   return {
     email,
     password,
-    displayName: source.ADMIN_DISPLAY_NAME?.trim() || "Super Admin",
-    resetPassword: source.ADMIN_RESET_PASSWORD === "true",
+    displayName: normalizeDisplayName(source.ADMIN_DISPLAY_NAME),
   };
+}
+
+export async function readCreateAdminInput(
+  source: CreateAdminEnv = process.env,
+): Promise<CreateAdminInput> {
+  if (hasCompleteAdminEnv(source)) {
+    return readCreateAdminEnv(source);
+  }
+
+  if (!isInteractiveTty()) {
+    throw new Error("缺少 ADMIN_EMAIL 或 ADMIN_PASSWORD，无法在非交互环境创建管理员。");
+  }
+
+  let email = "";
+  while (!email) {
+    email = await promptLine("请输入管理员邮箱", source.ADMIN_EMAIL?.trim());
+    if (!email) {
+      console.error("管理员邮箱不能为空。");
+    }
+  }
+
+  let password = "";
+  while (!password) {
+    password = await promptHidden("请输入管理员密码");
+    const repeatedPassword = await promptHidden("请再次输入管理员密码");
+    if (!password) {
+      console.error("管理员密码不能为空。");
+      continue;
+    }
+    if (password !== repeatedPassword) {
+      console.error("两次输入的管理员密码不一致，请重新输入。");
+      password = "";
+      continue;
+    }
+
+    const displayName = await promptLine(
+      "请输入管理员显示名称",
+      source.ADMIN_DISPLAY_NAME?.trim() || "Super Admin",
+    );
+    return { email, password, displayName };
+  }
+
+  throw new Error("管理员密码不能为空。");
+}
+
+async function ensureSuperAdminRole(client: DatabaseClient): Promise<any> {
+  const roleDelegate = requireDelegate<NonNullable<DatabaseClient["role"]>>(client, "role", "role");
+  const seedData = buildSeedData();
+  const roleSeed =
+    seedData.roles.find((role) => role.code === superAdminRoleCode) ??
+    ({
+      code: superAdminRoleCode,
+      name: "超级管理员",
+      description: "自托管系统的完整管理权限。",
+    } as const);
+
+  const role = await roleDelegate.upsert({
+    where: { code: roleSeed.code },
+    create: {
+      code: roleSeed.code,
+      name: roleSeed.name,
+      description: roleSeed.description,
+    },
+    update: {
+      name: roleSeed.name,
+      description: roleSeed.description,
+    },
+  });
+
+  if (client.permission && client.rolePermission) {
+    for (const permission of seedData.permissions) {
+      const permissionRecord = await client.permission.upsert({
+        where: { code: permission.code },
+        create: permission,
+        update: {
+          name: permission.name,
+          description: permission.description,
+        },
+      });
+
+      await client.rolePermission.upsert({
+        where: {
+          roleId_permissionId: {
+            roleId: role.id,
+            permissionId: permissionRecord.id,
+          },
+        },
+        create: {
+          roleId: role.id,
+          permissionId: permissionRecord.id,
+        },
+        update: {},
+      });
+    }
+  }
+
+  return role;
+}
+
+function extractRoleCodes(user: any): readonly string[] {
+  const roleCodes = new Set<string>();
+
+  for (const roleCode of user?.roleCodes ?? []) {
+    if (typeof roleCode === "string") {
+      roleCodes.add(roleCode);
+    }
+  }
+
+  for (const userRole of user?.roles ?? []) {
+    const roleCode = userRole?.role?.code ?? userRole?.code;
+    if (typeof roleCode === "string") {
+      roleCodes.add(roleCode);
+    }
+  }
+
+  return [...roleCodes].sort();
+}
+
+async function findAdminUserByEmail(client: DatabaseClient, email: string): Promise<any | null> {
+  const userDelegate = requireDelegate<NonNullable<DatabaseClient["user"]>>(client, "user", "user");
+  return userDelegate.findUnique({
+    where: { email },
+    include: {
+      roles: {
+        include: {
+          role: true,
+        },
+      },
+    },
+  });
 }
 
 export async function createOrUpdateSuperAdmin(
   input: CreateAdminInput,
 ): Promise<CreateAdminResult> {
   const email = normalizeAdminEmail(input.email);
-  validateAdminPassword(input.password);
+  assertAdminPassword(input.password);
 
   const client = await resolveClient(input.client);
   const userDelegate = requireDelegate<NonNullable<DatabaseClient["user"]>>(client, "user", "user");
-  const roleDelegate = requireDelegate<NonNullable<DatabaseClient["role"]>>(client, "role", "role");
   const userRoleDelegate = requireDelegate<NonNullable<DatabaseClient["userRole"]>>(
     client,
     "userRole",
     "userRole",
   );
 
-  const superAdminRole = await roleDelegate.findUnique({
-    where: { code: "super_admin" },
-  });
-
-  if (!superAdminRole) {
-    throw new Error("Missing super_admin role. Run db:seed before create-admin.");
-  }
-
-  const existingUser = await userDelegate.findUnique({
-    where: { email },
-  });
+  const superAdminRole = await ensureSuperAdminRole(client);
+  const existingUser = await findAdminUserByEmail(client, email);
+  const displayName = normalizeDisplayName(input.displayName);
+  const passwordHash = await hashPassword(input.password);
 
   let user = existingUser;
   let created = false;
-  let passwordUpdated = false;
+  let activated = false;
 
   if (!existingUser) {
     user = await userDelegate.create({
       data: {
         email,
-        passwordHash: await hashPassword(input.password),
-        displayName: input.displayName?.trim() || "Super Admin",
+        passwordHash,
+        displayName: displayName ?? "Super Admin",
         status: "active",
       },
     });
     created = true;
-    passwordUpdated = true;
-  } else if (input.resetPassword) {
+    activated = true;
+  } else {
+    activated = existingUser.status !== "active";
     user = await userDelegate.update({
       where: { id: existingUser.id },
       data: {
-        passwordHash: await hashPassword(input.password),
+        passwordHash,
+        ...(displayName ? { displayName } : {}),
+        status: "active",
       },
     });
-    passwordUpdated = true;
   }
 
   await userRoleDelegate.upsert({
@@ -143,19 +397,14 @@ export async function createOrUpdateSuperAdmin(
   return {
     user: safeUser(user),
     created,
-    passwordUpdated,
+    passwordUpdated: true,
     roleAssigned: true,
+    activated,
   };
 }
 
 export function formatCreateAdminResult(result: CreateAdminResult): readonly string[] {
-  return [
-    result.created ? "Created super admin user." : "Super admin user already exists.",
-    result.passwordUpdated
-      ? "Password hash is set."
-      : "Password hash was not changed. Set ADMIN_RESET_PASSWORD=true to rotate it.",
-    `Assigned super_admin role to ${result.user.email}.`,
-  ];
+  return [`管理员账号已创建或更新：${result.user.email}`];
 }
 
 export async function runCreateAdminFromEnv(
@@ -164,8 +413,62 @@ export async function runCreateAdminFromEnv(
   return createOrUpdateSuperAdmin(readCreateAdminEnv(source));
 }
 
+export function readVerifyAdminEnv(source: VerifyAdminEnv = process.env): VerifyAdminInput {
+  const email = source.ADMIN_EMAIL?.trim();
+  if (!email) {
+    throw new Error("缺少 ADMIN_EMAIL，无法验证管理员账号。");
+  }
+
+  return {
+    email,
+    password: source.ADMIN_PASSWORD,
+  };
+}
+
+export async function verifySuperAdmin(input: VerifyAdminInput): Promise<VerifyAdminResult> {
+  const email = normalizeAdminEmail(input.email);
+  const client = await resolveClient(input.client);
+  const user = await findAdminUserByEmail(client, email);
+
+  if (!user) {
+    throw new AdminVerificationError("admin_not_found");
+  }
+
+  if (user.status !== "active") {
+    throw new AdminVerificationError("admin_disabled");
+  }
+
+  const roles = extractRoleCodes(user);
+  if (!roles.some((roleCode) => adminRoleCodes.has(roleCode))) {
+    throw new AdminVerificationError("admin_role_missing");
+  }
+
+  if (input.password) {
+    const passwordMatches = await verifyPassword(input.password, user.passwordHash);
+    if (!passwordMatches) {
+      throw new AdminVerificationError("admin_password_failed");
+    }
+  }
+
+  return {
+    user: safeUser(user),
+    roles,
+    passwordChecked: Boolean(input.password),
+  };
+}
+
+export function formatVerifyAdminResult(result: VerifyAdminResult): readonly string[] {
+  return [`管理员账号验证通过：${result.user.email}`];
+}
+
+export async function runVerifyAdminFromEnv(
+  source: VerifyAdminEnv = process.env,
+): Promise<VerifyAdminResult> {
+  return verifySuperAdmin(readVerifyAdminEnv(source));
+}
+
 async function main(): Promise<void> {
-  const result = await runCreateAdminFromEnv();
+  const result = await createOrUpdateSuperAdmin(await readCreateAdminInput());
   for (const line of formatCreateAdminResult(result)) {
     console.log(line);
   }

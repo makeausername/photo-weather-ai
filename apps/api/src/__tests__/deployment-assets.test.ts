@@ -13,6 +13,13 @@ const productionScripts = [
   "scripts/backup.sh",
   "scripts/uninstall.sh",
   "scripts/reset-prod-db.sh",
+  "scripts/reset-admin.sh",
+  "scripts/resume-install.sh",
+] as const;
+
+const bashScripts = [
+  ...productionScripts,
+  "scripts/check-login.sh",
 ] as const;
 
 function readRepoFile(relativePath: string): string {
@@ -221,10 +228,12 @@ describe("production deployment assets", () => {
       'section 4 "管理员账号"',
       'section 5 "第三方服务配置"',
       'section 6 "生成配置文件"',
-      'section 7 "启动 Docker 服务"',
-      'section 8 "数据库初始化"',
-      'section 9 "HTTPS 检查"',
-      'section 10 "完成"',
+      'section 7 "Docker 与系统资源检查"',
+      'section 8 "构建并启动服务"',
+      'section 9 "数据库初始化"',
+      'section 10 "管理员验证"',
+      'section 11 "HTTPS 与健康检查"',
+      'section 12 "完成"',
       "检测到已有 PostgreSQL 数据卷",
       "PostgreSQL 首次初始化后的用户名和密码不会因为修改 .env.production 自动改变",
       "备份数据库后继续",
@@ -235,20 +244,33 @@ describe("production deployment assets", () => {
       "请输入 y/yes 继续，或 n/no 取消。",
       "backup_existing_database",
       'confirm_continue "确认开始部署？" "直接回车继续，输入 n 取消:"',
+      "请输入管理员邮箱",
+      "请输入管理员密码",
+      "请再次输入管理员密码",
+      "请输入管理员显示名称",
       "command -v docker",
       "docker --version",
       "docker compose version",
       "Docker 已安装，跳过安装。",
       "Docker Compose 插件可用。",
+      "wait_for_apt_lock",
+      "当前 apt/dpkg 相关进程",
+      "ensure_swap_capacity",
+      "fallocate -l 4G /swapfile",
       "DEBIAN_FRONTEND=noninteractive",
       "正在安装 Docker，请稍候",
       "当前命令：${display_command}",
       'run_apt_step "apt-get update"',
       "Docker 安装仍在进行，请稍候",
       "系统软件包管理器被占用，请稍后重试或检查是否有其他 apt 进程。",
-      "Docker install needed:",
+      "需要安装 Docker",
       "deploy/install.log",
       "--verbose",
+      "pnpm create-admin",
+      "pnpm verify-admin",
+      "管理员账号验证失败，部署未完成。",
+      "可执行 bash scripts/reset-admin.sh 重新设置管理员密码。",
+      "Reset admin: bash scripts/reset-admin.sh",
     ]) {
       expect(installer).toContain(expected);
     }
@@ -260,15 +282,25 @@ describe("production deployment assets", () => {
   const bashIt = bashAvailable ? it : it.skip;
 
   bashIt("passes bash syntax checks for deployment scripts", () => {
-    for (const script of [
-      "scripts/install.sh",
-      "scripts/update.sh",
-      "scripts/backup.sh",
-      "scripts/status.sh",
-      "scripts/uninstall.sh",
-      "scripts/reset-prod-db.sh",
-    ]) {
+    for (const script of bashScripts) {
       execFileSync("bash", ["-n", bashPath(script)], { cwd: root, stdio: "pipe" });
     }
+  });
+
+  it("ships admin reset and production login diagnostic helpers", () => {
+    const resetAdmin = readRepoFile("scripts/reset-admin.sh");
+    expect(resetAdmin).toContain("管理员密码已重置。");
+    expect(resetAdmin).toContain("后台地址：https://${DOMAIN:-}/admin/login");
+    expect(resetAdmin).toContain("密码：已隐藏");
+    expect(resetAdmin).toContain("api pnpm create-admin");
+    expect(resetAdmin).toContain("api pnpm verify-admin");
+    expect(resetAdmin).not.toMatch(/echo .*ADMIN_PASSWORD/);
+    expect(resetAdmin).not.toContain("密码：${ADMIN_PASSWORD}");
+
+    const checkLogin = readRepoFile("scripts/check-login.sh");
+    expect(checkLogin).toContain("登录验证成功");
+    expect(checkLogin).toContain("登录验证失败");
+    expect(checkLogin).toContain("/auth/login");
+    expect(checkLogin).not.toMatch(/echo .*ADMIN_PASSWORD/);
   });
 });

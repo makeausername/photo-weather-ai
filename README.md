@@ -453,6 +453,7 @@ Seed data 包含未核验的中国风光摄影示例地点与机位：
 corepack pnpm db:migrate
 corepack pnpm db:seed
 ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=change-me-to-a-long-random-password ADMIN_DISPLAY_NAME="超级管理员" corepack pnpm create-admin
+ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=change-me-to-a-long-random-password corepack pnpm verify-admin
 ```
 
 脚本读取：
@@ -460,9 +461,8 @@ ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=change-me-to-a-long-random-password
 - `ADMIN_EMAIL`
 - `ADMIN_PASSWORD`
 - `ADMIN_DISPLAY_NAME`
-- `ADMIN_RESET_PASSWORD`
 
-密码会先 bcrypt 哈希再写入数据库，不会明文打印。上线前设置至少 32 字符的强 `JWT_SECRET`。
+`create-admin` 是幂等的：账号不存在时创建账号，账号已存在时会更新密码、启用账号并确保 `super_admin` 角色存在。密码会先 bcrypt 哈希再写入数据库，不会明文打印。生产环境可使用 `bash scripts/reset-admin.sh` 重置管理员密码，并用 `bash scripts/check-login.sh` 验证登录。上线前设置至少 32 字符的强 `JWT_SECRET`。
 
 ## 后台 API
 

@@ -32,10 +32,15 @@ export {
   viewDirections,
 } from "./constants.js";
 export {
+  AdminVerificationError,
   createOrUpdateSuperAdmin,
   formatCreateAdminResult,
+  formatVerifyAdminResult,
   readCreateAdminEnv,
+  readVerifyAdminEnv,
   runCreateAdminFromEnv,
+  runVerifyAdminFromEnv,
+  verifySuperAdmin,
 } from "./create-admin.js";
 export {
   createLocation,

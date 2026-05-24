@@ -239,7 +239,7 @@ prompt_required() {
       printf '%s' "${value}"
       return
     fi
-    echo "Value is required."
+    warn "此项不能为空。"
   done
 }
 
@@ -397,7 +397,7 @@ require_postgres_identifier() {
   local value="$2"
 
   if [[ ! "${value}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-    echo "${label} must start with a letter or underscore and contain only letters, numbers, and underscores."
+    echo "${label} 必须以字母或下划线开头，且只能包含字母、数字和下划线。"
     exit 1
   fi
 }
@@ -410,7 +410,7 @@ normalize_domain() {
   value="$(trim "${value}")"
 
   if [[ ! "${value}" =~ ^[A-Za-z0-9.-]+$ ]] || [[ "${value}" != *.* ]]; then
-    echo "Domain must look like example.com or app.example.com."
+    echo "域名格式应类似 example.com 或 app.example.com。"
     exit 1
   fi
 
@@ -463,6 +463,43 @@ render_env_file() {
       printf '%s\n' "${line}" >> "${tmp_file}"
     fi
   done < "${ENV_TEMPLATE}"
+
+  mv "${tmp_file}" "${ENV_FILE}"
+  chmod 600 "${ENV_FILE}"
+}
+
+update_env_admin_lines() {
+  local tmp_file="${ENV_FILE}.tmp"
+  local saw_admin_email=0
+  local saw_admin_password=0
+  local saw_admin_display_name=0
+
+  : > "${tmp_file}"
+
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    if [[ "${line}" =~ ^ADMIN_EMAIL= ]]; then
+      write_env_line "ADMIN_EMAIL" "${ADMIN_EMAIL}" >> "${tmp_file}"
+      saw_admin_email=1
+    elif [[ "${line}" =~ ^ADMIN_PASSWORD= ]]; then
+      write_env_line "ADMIN_PASSWORD" "${ADMIN_PASSWORD}" >> "${tmp_file}"
+      saw_admin_password=1
+    elif [[ "${line}" =~ ^ADMIN_DISPLAY_NAME= ]]; then
+      write_env_line "ADMIN_DISPLAY_NAME" "${ADMIN_DISPLAY_NAME}" >> "${tmp_file}"
+      saw_admin_display_name=1
+    else
+      printf '%s\n' "${line}" >> "${tmp_file}"
+    fi
+  done < "${ENV_FILE}"
+
+  if [[ "${saw_admin_email}" == "0" ]]; then
+    write_env_line "ADMIN_EMAIL" "${ADMIN_EMAIL}" >> "${tmp_file}"
+  fi
+  if [[ "${saw_admin_password}" == "0" ]]; then
+    write_env_line "ADMIN_PASSWORD" "${ADMIN_PASSWORD}" >> "${tmp_file}"
+  fi
+  if [[ "${saw_admin_display_name}" == "0" ]]; then
+    write_env_line "ADMIN_DISPLAY_NAME" "${ADMIN_DISPLAY_NAME}" >> "${tmp_file}"
+  fi
 
   mv "${tmp_file}" "${ENV_FILE}"
   chmod 600 "${ENV_FILE}"
@@ -532,15 +569,39 @@ apt_lock_held() {
   return 1
 }
 
+print_apt_lock_processes() {
+  echo "当前 apt/dpkg 相关进程："
+  if command -v ps >/dev/null 2>&1; then
+    ps -eo pid,ppid,comm,args | grep -E "apt|apt-get|dpkg|unattended-upgr" | grep -v grep || true
+  else
+    echo "当前系统缺少 ps，无法列出阻塞进程。"
+  fi
+}
+
+wait_for_apt_lock() {
+  local max_seconds=300
+  local elapsed=0
+
+  while apt_lock_held; do
+    if [[ "${elapsed}" -ge "${max_seconds}" ]]; then
+      print_apt_lock_processes
+      fail_install "系统软件包管理器被占用超过 5 分钟，请稍后重试或检查 apt/dpkg 进程。"
+    fi
+
+    warn "系统软件包管理器被占用，等待 10 秒后重试。"
+    print_apt_lock_processes
+    sleep 10
+    elapsed=$((elapsed + 10))
+  done
+}
+
 run_apt_step() {
   local display_command="$1"
   local label="$2"
   shift 2
 
   echo "当前命令：${display_command}"
-  if apt_lock_held; then
-    fail_install "系统软件包管理器被占用，请稍后重试或检查是否有其他 apt 进程。"
-  fi
+  wait_for_apt_lock
 
   if run_logged_with_heartbeat "${label}" "Docker 安装仍在进行，请稍候..." "$@"; then
     ok "${label}"
@@ -548,6 +609,7 @@ run_apt_step() {
   fi
 
   if apt_lock_held; then
+    print_apt_lock_processes
     fail_install "系统软件包管理器被占用，请稍后重试或检查是否有其他 apt 进程。"
   fi
 
@@ -593,6 +655,7 @@ install_docker_packages() {
   export DEBIAN_FRONTEND=noninteractive
 
   echo "正在安装 Docker，请稍候..."
+  wait_for_apt_lock
   run_apt_step "apt-get update" "更新系统软件包索引" run_sudo apt-get update
   run_apt_step "apt-get install -y ca-certificates curl gnupg" "安装 Docker 仓库依赖" run_sudo apt-get install -y ca-certificates curl gnupg
   run_logged "创建 Docker apt keyring 目录" run_sudo install -m 0755 -d /etc/apt/keyrings
@@ -622,12 +685,14 @@ ensure_docker() {
   local needs_install=0
 
   if docker_cli_available; then
+    docker --version
     ok "Docker 已安装，跳过安装。"
   else
     needs_install=1
   fi
 
   if docker_compose_available; then
+    docker compose version
     ok "Docker Compose 插件可用。"
   else
     needs_install=1
@@ -649,6 +714,54 @@ ensure_docker() {
   if ! docker --version >> "${INSTALL_LOG}" 2>&1 || ! docker_cmd compose version >> "${INSTALL_LOG}" 2>&1; then
     fail_install "Docker 安装失败，请查看 deploy/install.log"
   fi
+}
+
+read_meminfo_mb() {
+  local key="$1"
+  local value
+  value="$(awk -v key="${key}" '$1 == key ":" { printf "%d", $2 / 1024 }' /proc/meminfo 2>/dev/null || true)"
+  printf '%s' "${value:-0}"
+}
+
+ensure_swap_capacity() {
+  if [[ ! -r /proc/meminfo ]]; then
+    warn "无法读取 /proc/meminfo，跳过内存与 swap 检查。"
+    return
+  fi
+
+  local memory_mb swap_mb
+  memory_mb="$(read_meminfo_mb "MemTotal")"
+  swap_mb="$(read_meminfo_mb "SwapTotal")"
+
+  echo "内存：${memory_mb} MB，Swap：${swap_mb} MB。"
+  if [[ "${memory_mb}" -ge 4096 || "${swap_mb}" -ge 4096 ]]; then
+    ok "系统内存与 swap 检查通过。"
+    return
+  fi
+
+  warn "当前内存低于 4GB 且 swap 低于 4GB，构建镜像可能失败。"
+  if ! ask_yes_no "是否创建 4GB /swapfile" "y"; then
+    warn "已跳过 swap 创建，低内存服务器构建可能失败。"
+    return
+  fi
+
+  if [[ -e /swapfile ]]; then
+    warn "/swapfile 已存在，未覆盖现有文件。"
+    return
+  fi
+
+  if ! run_logged_allow_fail "创建 4GB swap 文件" run_sudo fallocate -l 4G /swapfile; then
+    run_logged "创建 4GB swap 文件" run_sudo dd if=/dev/zero of=/swapfile bs=1M count=4096 status=progress
+  fi
+  run_logged "设置 swap 文件权限" run_sudo chmod 600 /swapfile
+  run_logged "格式化 swap 文件" run_sudo mkswap /swapfile
+  run_logged "启用 swap 文件" run_sudo swapon /swapfile
+
+  if ! grep -Eq '^[[:space:]]*/swapfile[[:space:]]+none[[:space:]]+swap[[:space:]]+' /etc/fstab 2>/dev/null; then
+    echo "/swapfile none swap sw 0 0" | run_sudo tee -a /etc/fstab >> "${INSTALL_LOG}" >/dev/null
+  fi
+
+  ok "4GB swap 已创建并写入 /etc/fstab。"
 }
 
 port_in_use() {
@@ -815,9 +928,34 @@ run_migrations() {
   fail_install "数据库迁移失败。"
 }
 
+collect_admin_configuration() {
+  local default_email="${1:-${ADMIN_EMAIL:-}}"
+  local default_display_name="${2:-${ADMIN_DISPLAY_NAME:-Super Admin}}"
+
+  section 4 "管理员账号"
+  ADMIN_EMAIL="$(prompt_required "请输入管理员邮箱" "${default_email}")"
+
+  while true; do
+    ADMIN_PASSWORD="$(prompt_secret "请输入管理员密码")"
+    local confirm_password
+    confirm_password="$(prompt_secret "请再次输入管理员密码")"
+    if [[ -z "${ADMIN_PASSWORD}" ]]; then
+      warn "管理员密码不能为空。"
+      continue
+    fi
+    if [[ "${ADMIN_PASSWORD}" != "${confirm_password}" ]]; then
+      warn "两次输入的管理员密码不一致，请重新输入。"
+      continue
+    fi
+    break
+  done
+
+  ADMIN_DISPLAY_NAME="$(prompt_required "请输入管理员显示名称" "${default_display_name}")"
+}
+
 collect_configuration() {
   section 2 "域名配置"
-  DOMAIN="$(normalize_domain "$(prompt_required "请输入绑定域名，例如 example.com")")"
+  DOMAIN="$(normalize_domain "$(prompt_required "请输入域名" "example.com")")"
 
   section 3 "数据库配置"
   POSTGRES_DB="$(prompt_required "请输入数据库名称" "photo_weather_ai")"
@@ -843,20 +981,7 @@ collect_configuration() {
     ok "已自动生成 JWT 密钥。"
   fi
 
-  section 4 "管理员账号"
-  ADMIN_EMAIL="$(prompt_required "请输入管理员邮箱")"
-
-  while true; do
-    ADMIN_PASSWORD="$(prompt_secret "请输入管理员密码")"
-    local confirm_password
-    confirm_password="$(prompt_secret "请再次输入管理员密码")"
-    if [[ "${ADMIN_PASSWORD}" == "${confirm_password}" && -n "${ADMIN_PASSWORD}" ]]; then
-      break
-    fi
-    warn "两次输入的管理员密码不一致，请重新输入。"
-  done
-
-  ADMIN_DISPLAY_NAME="$(prompt_required "请输入管理员显示名称" "Super Admin")"
+  collect_admin_configuration "" "Super Admin"
 
   section 5 "第三方服务配置"
   AMAP_API_KEY=""
@@ -904,17 +1029,17 @@ print_deployment_summary() {
   line
   echo "部署摘要"
   line
-  printf 'Domain: %s\n' "${DOMAIN}"
-  printf 'Database name: %s\n' "${POSTGRES_DB}"
-  printf 'Database user: %s\n' "${POSTGRES_USER}"
-  printf 'Admin email: %s\n' "${ADMIN_EMAIL}"
-  printf 'Providers configured: Amap=%s / QWeather=%s / DeepSeek=%s / Open-Meteo=%s\n' \
+  printf '域名：%s\n' "${DOMAIN}"
+  printf '数据库名称：%s\n' "${POSTGRES_DB}"
+  printf '数据库用户：%s\n' "${POSTGRES_USER}"
+  printf '管理员邮箱：%s\n' "${ADMIN_EMAIL}"
+  printf '第三方服务：Amap=%s / QWeather=%s / DeepSeek=%s / Open-Meteo=%s\n' \
     "$(provider_enabled_label "${AMAP_API_KEY:-}")" \
     "$(provider_enabled_label "${QWEATHER_API_KEY:-}")" \
     "$(provider_enabled_label "${DEEPSEEK_API_KEY:-}")" \
     "$(provider_enabled_label "${OPEN_METEO_API_KEY:-}")"
-  printf 'Docker install needed: %s\n' "$(docker_install_needed_label)"
-  echo "Passwords and API keys are hidden."
+  printf '需要安装 Docker：%s\n' "$(docker_install_needed_label)"
+  echo "密码与 API Key 均已隐藏。"
 }
 
 confirm_deployment() {
@@ -924,11 +1049,49 @@ confirm_deployment() {
   fi
 }
 
+compose_service_exists() {
+  local service="$1"
+  compose config --services | grep -qx "${service}"
+}
+
+build_production_images() {
+  local service
+  for service in astro-service api web worker; do
+    if compose_service_exists "${service}"; then
+      run_logged "构建 ${service} 镜像" compose build "${service}"
+    fi
+  done
+}
+
+create_admin_account() {
+  run_logged "创建或更新管理员账号" compose run --rm \
+    -e ADMIN_EMAIL="${ADMIN_EMAIL}" \
+    -e ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
+    -e ADMIN_DISPLAY_NAME="${ADMIN_DISPLAY_NAME}" \
+    api pnpm create-admin
+}
+
+verify_admin_account() {
+  section 10 "管理员验证"
+  if run_logged_allow_fail "验证管理员账号" compose run --rm \
+    -e ADMIN_EMAIL="${ADMIN_EMAIL}" \
+    -e ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
+    api pnpm verify-admin; then
+    ok "管理员账号验证通过。"
+    return
+  fi
+
+  echo "管理员账号验证失败，部署未完成。"
+  echo "可执行 bash scripts/reset-admin.sh 重新设置管理员密码。"
+  show_log_tail
+  exit 1
+}
+
 bootstrap_stack() {
   local production_services=(postgres redis astro-service api web caddy worker)
 
-  section 7 "启动 Docker 服务"
-  run_logged "构建生产镜像" compose build
+  section 8 "构建并启动服务"
+  build_production_images
 
   run_logged "启动数据库、Redis 和星历服务" compose up -d postgres redis astro-service
   wait_for_postgres
@@ -937,17 +1100,13 @@ bootstrap_stack() {
     warn "星历缓存下载失败。astro-service 会在 astro_data 卷中缺少 de421.bsp 时显示为不健康。"
   fi
 
-  section 8 "数据库初始化"
+  section 9 "数据库初始化"
   preflight_database_connection
   run_migrations
 
   run_logged "写入数据库种子数据" compose run --rm api corepack pnpm db:seed
-
-  run_logged "创建或确认初始管理员账号" compose run --rm \
-    -e ADMIN_EMAIL="${ADMIN_EMAIL}" \
-    -e ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
-    -e ADMIN_DISPLAY_NAME="${ADMIN_DISPLAY_NAME}" \
-    api corepack pnpm create-admin
+  create_admin_account
+  verify_admin_account
 
   run_logged "启动完整生产服务" compose up -d --remove-orphans "${production_services[@]}"
   run_logged "重启应用服务" compose restart api web worker caddy
@@ -956,7 +1115,7 @@ bootstrap_stack() {
 }
 
 check_https_after_start() {
-  section 9 "HTTPS 检查"
+  section 11 "HTTPS 与健康检查"
   if curl -fsS --max-time 15 "https://${DOMAIN}" >/dev/null 2>&1; then
     ok "HTTPS 首页可访问：https://${DOMAIN}"
   else
@@ -987,6 +1146,9 @@ main() {
       if [[ -z "${DOMAIN}" ]]; then
         fail_install "现有 .env.production 未定义 DOMAIN。"
       fi
+      collect_admin_configuration "${ADMIN_EMAIL:-}" "${ADMIN_DISPLAY_NAME:-Super Admin}"
+      update_env_admin_lines
+      ok "已更新 .env.production 中的管理员账号。"
     else
       collect_configuration
       should_render_env=1
@@ -1008,8 +1170,11 @@ main() {
   ensure_caddyfile
   print_deployment_summary
   confirm_deployment
+
+  section 7 "Docker 与系统资源检查"
   ensure_docker
   ok "Docker 与 Docker Compose 检查通过。"
+  ensure_swap_capacity
   validate_compose_config
   ok "生产 Docker Compose 配置校验通过。"
   check_ports
@@ -1018,12 +1183,14 @@ main() {
   bootstrap_stack
   check_https_after_start
 
-  section 10 "完成"
+  section 12 "完成"
   echo
   ok "部署完成。"
-  echo "Public URL: https://${DOMAIN}"
-  echo "API health: https://${DOMAIN}/api/health"
+  echo "Website: https://${DOMAIN}"
   echo "Admin login: https://${DOMAIN}/admin/login"
+  echo "Admin email: ${ADMIN_EMAIL}"
+  echo "Password: hidden"
+  echo "Reset admin: bash scripts/reset-admin.sh"
   echo "Status: bash scripts/status.sh"
   echo "Update: bash scripts/update.sh"
   echo "Backup: bash scripts/backup.sh"

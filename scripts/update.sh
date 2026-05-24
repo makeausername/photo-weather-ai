@@ -76,6 +76,41 @@ run_migrations() {
   exit 1
 }
 
+compose_service_exists() {
+  local service="$1"
+  compose config --services | grep -qx "${service}"
+}
+
+build_production_images() {
+  local service
+  for service in astro-service api web worker; do
+    if compose_service_exists "${service}"; then
+      echo "Building ${service}..."
+      compose build "${service}"
+    fi
+  done
+}
+
+create_and_verify_admin() {
+  if [[ -z "${ADMIN_EMAIL:-}" || -z "${ADMIN_PASSWORD:-}" ]]; then
+    echo "ADMIN_EMAIL 或 ADMIN_PASSWORD 未配置，跳过管理员账号更新。"
+    return
+  fi
+
+  echo "Creating or updating admin account..."
+  compose run --rm \
+    -e ADMIN_EMAIL="${ADMIN_EMAIL}" \
+    -e ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
+    -e ADMIN_DISPLAY_NAME="${ADMIN_DISPLAY_NAME:-Super Admin}" \
+    api pnpm create-admin
+
+  echo "Verifying admin account..."
+  compose run --rm \
+    -e ADMIN_EMAIL="${ADMIN_EMAIL}" \
+    -e ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
+    api pnpm verify-admin
+}
+
 wait_for_postgres() {
   echo "Waiting for PostgreSQL..."
   for _ in $(seq 1 60); do
@@ -112,7 +147,7 @@ if [[ -d .git ]]; then
 fi
 
 echo "Rebuilding production images..."
-compose build
+build_production_images
 
 echo "Starting database dependencies..."
 compose up -d postgres redis astro-service
@@ -123,6 +158,8 @@ run_migrations
 
 echo "Running database seed..."
 compose run --rm api corepack pnpm db:seed
+
+create_and_verify_admin
 
 echo "Restarting services..."
 compose up -d --remove-orphans
