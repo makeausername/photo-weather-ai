@@ -127,6 +127,10 @@ export class QWeatherProvider implements WeatherProvider {
           temperature: requiredRounded(record.temp, "hourly.temp"),
           feelsLike: nullableRounded(record.feelsLike ?? record.feelLike),
           humidity: percent(record.humidity, "hourly.humidity"),
+          dewPointSpread:
+            nullableRounded(record.dew) === null
+              ? null
+              : roundTo(requiredRounded(record.temp, "hourly.temp") - nullableRounded(record.dew)!),
           pressure: nullableRounded(record.pressure),
           windSpeed: windSpeed ?? 0,
           windGust: kmhToMetersPerSecond(record.windGust),
@@ -141,6 +145,8 @@ export class QWeatherProvider implements WeatherProvider {
           cloudHigh: null,
           weatherCode,
           providerCode: source.providerCode,
+          providerLabelZh: source.providerLabelZh,
+          dataMode: source.mode,
           sourceConfidence: 0.72,
           missingFields,
           estimatedFields: estimatedFields.length > 0 ? estimatedFields : undefined,
@@ -165,9 +171,12 @@ export class QWeatherProvider implements WeatherProvider {
           tempMax: requiredRounded(record.tempMax, "daily.tempMax"),
           precipitationProbability: percent(record.pop ?? 0, "daily.pop"),
           weatherSummary: textNight ? `${textDay}转${textNight}` : textDay,
+          cloudSummary: "和风天气未提供云层分层",
           sunrise: normalizeClockTime(date, record.sunrise),
           sunset: normalizeClockTime(date, record.sunset),
           providerCode: source.providerCode,
+          providerLabelZh: source.providerLabelZh,
+          dataMode: source.mode,
         };
       }),
     );
@@ -197,6 +206,7 @@ export class QWeatherProvider implements WeatherProvider {
       dataMode: source.mode,
       generatedAt: normalizeIsoTime(record.updateTime ?? "2026-05-19T08:35+08:00"),
       noticeZh: "天气数据：和风天气样例数据",
+      missingFields: ["cloudLow", "cloudMid", "cloudHigh"],
     };
   }
 }
@@ -217,4 +227,8 @@ function asRecord(input: unknown): Record<string, unknown> {
   }
 
   return input as Record<string, unknown>;
+}
+
+function roundTo(value: number): number {
+  return Math.round(value * 10) / 10;
 }

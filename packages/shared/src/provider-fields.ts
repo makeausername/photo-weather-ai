@@ -190,7 +190,24 @@ export const qWeatherUnitOptions = [
 
 export const openMeteoDefaultBaseUrl = "https://api.open-meteo.com/v1";
 
+export const openMeteoFreeEndpoint = "https://api.open-meteo.com";
+
+export const openMeteoCustomerEndpoint = "https://customer-api.open-meteo.com";
+
 export const openMeteoDefaultModel = "forecast";
+
+export const openMeteoModeOptions = [
+  {
+    value: "free",
+    label: "免费开发模式",
+  },
+  {
+    value: "customer",
+    label: "商业客户模式",
+  },
+] as const satisfies readonly ProviderFieldOption[];
+
+export const meteoblueDefaultBaseUrl = "https://my.meteoblue.com";
 
 export const weatherDefaultTimeoutMs = 8000;
 
@@ -349,7 +366,8 @@ export const providerFieldPresets = [
   },
   {
     providerCode: "open_meteo",
-    helpText: "用于云层分层、能见度、露点和多模型交叉验证；体验模式默认使用样例数据。",
+    helpText:
+      "用于云层分层、能见度、露点、气压、风和多模型交叉验证。免费开发模式适合评估，商业客户模式用于后续生产接入。",
     fields: [
       {
         key: "realCallEnabled",
@@ -358,6 +376,15 @@ export const providerFieldPresets = [
         control: "boolean",
         defaultValue: false,
         helpText: "关闭时测试连接只返回模拟测试结果，不请求真实天气服务。",
+      },
+      {
+        key: "mode",
+        label: "调用模式",
+        target: "configJson",
+        control: "select",
+        options: openMeteoModeOptions,
+        defaultValue: "free",
+        helpText: "免费开发模式无需 Key；商业客户模式请填写 API Key 和 Customer Endpoint。",
       },
       {
         key: "apiKey",
@@ -370,11 +397,27 @@ export const providerFieldPresets = [
       },
       {
         key: "customerEndpoint",
-        label: "Customer Endpoint（商业版可选）",
+        label: "Customer Endpoint",
         target: "configJson",
-        placeholder: "https://customer-api.open-meteo.com",
+        placeholder: openMeteoCustomerEndpoint,
+        defaultValue: openMeteoCustomerEndpoint,
         helpText:
-          "商业版可选。普通体验模式可保持为空，系统使用样例或演示数据。",
+          "商业客户模式使用；免费开发模式可保持默认值，系统不会把 Key 暴露到前端。",
+      },
+      {
+        key: "modelPreference",
+        label: "模型偏好",
+        target: "configJson",
+        placeholder: "best_match",
+        advanced: true,
+      },
+      {
+        key: "timezone",
+        label: "时区",
+        target: "configJson",
+        placeholder: "Asia/Shanghai",
+        defaultValue: "Asia/Shanghai",
+        advanced: true,
       },
       {
         key: "defaultModel",
@@ -391,6 +434,62 @@ export const providerFieldPresets = [
         placeholder: openMeteoDefaultBaseUrl,
         defaultValue: openMeteoDefaultBaseUrl,
         advanced: true,
+      },
+      {
+        key: "timeoutMs",
+        label: "请求超时（毫秒）",
+        target: "configJson",
+        control: "number",
+        defaultValue: weatherDefaultTimeoutMs,
+        min: 1000,
+        max: 30000,
+        step: 100,
+        advanced: true,
+      },
+      {
+        key: "retryCount",
+        label: "重试次数",
+        target: "configJson",
+        control: "number",
+        defaultValue: weatherDefaultRetryCount,
+        min: 0,
+        max: 5,
+        step: 1,
+        advanced: true,
+      },
+    ],
+  },
+  {
+    providerCode: "meteoblue",
+    helpText: "专业增强源，后续用于商业精度提升。当前先保留配置、状态和接口占位。",
+    fields: [
+      {
+        key: "realCallEnabled",
+        label: "启用真实调用",
+        target: "configJson",
+        control: "boolean",
+        defaultValue: false,
+        helpText: "关闭时只做配置检查，不请求 meteoblue 服务。",
+      },
+      {
+        key: "apiKey",
+        label: "meteoblue API Key",
+        target: "secretJson",
+        placeholder: keepExistingSecretPlaceholder,
+        password: true,
+      },
+      {
+        key: "packageName",
+        label: "Package Name",
+        target: "configJson",
+        placeholder: "basic-1h",
+      },
+      {
+        key: "baseUrl",
+        label: "Base URL",
+        target: "configJson",
+        placeholder: meteoblueDefaultBaseUrl,
+        defaultValue: meteoblueDefaultBaseUrl,
       },
       {
         key: "timeoutMs",

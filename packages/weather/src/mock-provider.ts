@@ -75,7 +75,10 @@ export class MockWeatherProvider implements WeatherProvider {
         tempMax: 22 + index,
         precipitationProbability: index === 1 ? 24 : 12,
         weatherSummary: index === 1 ? "多云，局地有弱降水" : "多云间晴",
+        cloudSummary: index === 1 ? "云量偏多" : "云层适中",
         providerCode: DATA_SOURCE.providerCode,
+        providerLabelZh: DATA_SOURCE.providerLabelZh,
+        dataMode: DATA_SOURCE.mode,
       })),
     );
   }
@@ -176,6 +179,7 @@ function buildMockHour(
     temperature,
     feelsLike: round1(temperature - windSpeed * 0.2),
     humidity: 58 + (index % 8),
+    dewPointSpread: round1(temperature - dewPoint),
     pressure: 1008,
     windSpeed,
     windGust: round1(windSpeed + 2.1),
@@ -190,6 +194,8 @@ function buildMockHour(
     cloudHigh,
     weatherCode: index % 3 === 0 ? "mock-partly-cloudy" : "mock-clear",
     providerCode: DATA_SOURCE.providerCode,
+    providerLabelZh: DATA_SOURCE.providerLabelZh,
+    dataMode: DATA_SOURCE.mode,
     sourceConfidence: 0.78,
     sourceNotes: ["演示天气数据用于体验分析流程。"],
   };

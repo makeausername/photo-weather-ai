@@ -22,6 +22,7 @@ import type {
   WeatherAlert,
   WeatherRequestInput,
 } from "./types.js";
+import type { OpenMeteoClient } from "./open-meteo-client.js";
 import type { WeatherProvider } from "./provider.js";
 
 const source = {
@@ -124,6 +125,15 @@ export class OpenMeteoProvider implements WeatherProvider {
             at(hourly, "relative_humidity_2m", index),
             "hourly.relative_humidity_2m",
           ),
+          dewPointSpread:
+            nullableRounded(at(hourly, "dew_point_2m", index)) === null
+              ? null
+              : roundTo(
+                  requiredRounded(
+                    at(hourly, "temperature_2m", index),
+                    "hourly.temperature_2m",
+                  ) - nullableRounded(at(hourly, "dew_point_2m", index))!,
+                ),
           pressure: pressureMsl ?? pressureFallback,
           windSpeed: kmhToMetersPerSecond(at(hourly, "wind_speed_10m", index)) ?? 0,
           windGust: kmhToMetersPerSecond(at(hourly, "wind_gusts_10m", index)),
@@ -141,6 +151,8 @@ export class OpenMeteoProvider implements WeatherProvider {
           cloudHigh,
           weatherCode,
           providerCode: source.providerCode,
+          providerLabelZh: source.providerLabelZh,
+          dataMode: source.mode,
           sourceConfidence: sourceNotes ? 0.78 : 0.86,
           missingFields: missingFields.length > 0 ? missingFields : undefined,
           estimatedFields: estimatedFields.length > 0 ? estimatedFields : undefined,
@@ -176,9 +188,12 @@ export class OpenMeteoProvider implements WeatherProvider {
             "daily.precipitation_probability_max",
           ),
           weatherSummary: describeOpenMeteoCode(weatherCode),
+          cloudSummary: "包含低云/中云/高云分层",
           sunrise: normalizeOptionalDateTime(at(daily, "sunrise", index), offsetSeconds),
           sunset: normalizeOptionalDateTime(at(daily, "sunset", index), offsetSeconds),
           providerCode: source.providerCode,
+          providerLabelZh: source.providerLabelZh,
+          dataMode: source.mode,
         };
       }),
     );
@@ -213,8 +228,138 @@ export class OpenMeteoProvider implements WeatherProvider {
         offsetSeconds,
       ),
       noticeZh: "天气数据：Open-Meteo 样例数据",
+      missingFields: collectBundleMissingFields(this.normalizeHourlyWeather(input)),
     };
   }
+}
+
+const realSource = {
+  providerCode: "open_meteo",
+  displayName: "Open-Meteo",
+  providerLabelZh: "Open-Meteo",
+  isMock: false,
+  mode: "real",
+} as const;
+
+export type OpenMeteoRealProviderOptions = {
+  readonly client: OpenMeteoClient;
+};
+
+export class OpenMeteoRealProvider implements WeatherProvider {
+  readonly source = realSource;
+
+  private readonly normalizer = new OpenMeteoProvider();
+  private readonly forecastRequests = new Map<string, Promise<Record<string, unknown>>>();
+
+  constructor(private readonly options: OpenMeteoRealProviderOptions) {}
+
+  async getCurrentWeather(input: WeatherRequestInput): Promise<CurrentWeather> {
+    const firstHour = (await this.getHourlyForecast(input))[0];
+    if (!firstHour) {
+      throw new Error("Open-Meteo response did not include hourly weather.");
+    }
+
+    return {
+      provider: realSource.providerCode,
+      observedAt: firstHour.time,
+      coordinates: input.coordinates,
+      condition: weatherConditionFromCode(firstHour.weatherCode),
+      summary: "Open-Meteo 实况/逐小时天气",
+      temperatureCelsius: firstHour.temperature,
+      feelsLikeCelsius: firstHour.feelsLike ?? firstHour.temperature,
+      humidityPercent: firstHour.humidity,
+      cloudCoverPercent: firstHour.cloudTotal,
+      windSpeedMetersPerSecond: firstHour.windSpeed,
+      visibilityKilometers: firstHour.visibility ?? 0,
+    };
+  }
+
+  async getHourlyForecast(input: WeatherRequestInput): Promise<readonly NormalizedHourlyWeather[]> {
+    const result = await this.fetchForecast(input);
+    const hours = Math.min(Math.max(input.hours ?? 24, 1), 168);
+    return this.normalizer
+      .normalizeHourlyWeather(result.body)
+      .slice(0, hours)
+      .map(toRealHourly);
+  }
+
+  async getDailyForecast(input: WeatherRequestInput): Promise<readonly NormalizedDailyWeather[]> {
+    const result = await this.fetchForecast(input);
+    const days = Math.min(Math.max(input.days ?? 7, 1), 16);
+    return this.normalizer
+      .normalizeDailyWeather(result.body)
+      .slice(0, days)
+      .map(toRealDaily);
+  }
+
+  async getWeatherAlerts(_input: WeatherRequestInput): Promise<readonly WeatherAlert[]> {
+    return [];
+  }
+
+  async getAirQuality(_input: WeatherRequestInput): Promise<AirQuality> {
+    return {
+      provider: realSource.providerCode,
+      observedAt: new Date().toISOString(),
+      aqi: 0,
+      category: "good",
+      pm25: 0,
+      pm10: 0,
+    };
+  }
+
+  normalizeHourlyWeather(input: unknown): readonly NormalizedHourlyWeather[] {
+    return this.normalizer.normalizeHourlyWeather(input).map(toRealHourly);
+  }
+
+  normalizeDailyWeather(input: unknown): readonly NormalizedDailyWeather[] {
+    return this.normalizer.normalizeDailyWeather(input).map(toRealDaily);
+  }
+
+  normalizeWeatherData(input: unknown): NormalizedWeatherData {
+    const normalized = this.normalizer.normalizeWeatherData(input);
+    return {
+      ...normalized,
+      providerLabelZh: realSource.providerLabelZh,
+      dataMode: realSource.mode,
+      noticeZh: "云层辅助：Open-Meteo",
+      hourly: normalized.hourly.map(toRealHourly),
+      daily: normalized.daily.map(toRealDaily),
+    };
+  }
+
+  private async fetchForecast(input: WeatherRequestInput): Promise<Record<string, unknown>> {
+    const key = JSON.stringify({
+      latitude: input.coordinates.latitude,
+      longitude: input.coordinates.longitude,
+      hours: input.hours,
+      days: input.days,
+      timezone: input.timezone,
+    });
+    const existing = this.forecastRequests.get(key);
+    if (existing) {
+      return existing;
+    }
+
+    const next = this.options.client.fetchForecast(input).then((result) => result.body);
+    this.forecastRequests.set(key, next);
+    return next;
+  }
+}
+
+function toRealHourly(hour: NormalizedHourlyWeather): NormalizedHourlyWeather {
+  return {
+    ...hour,
+    providerLabelZh: realSource.providerLabelZh,
+    dataMode: realSource.mode,
+  };
+}
+
+function toRealDaily(day: NormalizedDailyWeather): NormalizedDailyWeather {
+  return {
+    ...day,
+    providerLabelZh: realSource.providerLabelZh,
+    dataMode: realSource.mode,
+  };
 }
 
 function at(record: Record<string, unknown>, key: string, index: number): unknown {
@@ -282,4 +427,12 @@ function describeOpenMeteoCode(code: string | null): string {
     default:
       return "天气变化";
   }
+}
+
+function roundTo(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function collectBundleMissingFields(hourly: readonly NormalizedHourlyWeather[]): readonly string[] {
+  return [...new Set(hourly.flatMap((hour) => hour.missingFields ?? []))];
 }

@@ -23,6 +23,7 @@ import {
   readRuntimeDeepSeekConfig,
   type RuntimeDeepSeekConfig,
 } from "./ai-provider.js";
+import type { WeatherDataServiceLike } from "./weather-provider.js";
 import {
   AstroServiceClient,
   AstroServiceClientError,
@@ -41,7 +42,7 @@ import {
 export type ForecastRoutesOptions = {
   readonly dbClient?: DatabaseClient;
   readonly weatherProvider?: WeatherProvider;
-  readonly weatherDataService?: WeatherDataService;
+  readonly weatherDataService?: WeatherDataServiceLike;
   readonly terrainProvider?: TerrainProvider;
   readonly astroServiceClient?: AstroServiceClientLike;
   readonly env?: NodeJS.ProcessEnv;
@@ -263,13 +264,46 @@ export function registerForecastRoutes(
         config: astroServiceConfig,
       }),
     );
+
+    app.get("/debug/weather-fusion", async () => {
+      const forecastRange = buildForecastDateRange("24h");
+      const bundle = await weatherDataService.getWeatherDataBundle({
+        coordinates: {
+          latitude: 30.1328,
+          longitude: 118.1718,
+          system: "wgs84",
+        },
+        horizon: "24h",
+        hours: forecastRange.horizonHours,
+        days: forecastRange.targetDates.length,
+        forecastStart: forecastRange.forecastStart,
+        forecastEnd: forecastRange.forecastEnd,
+        targetDates: forecastRange.targetDates,
+        target: "cloud_sea",
+        timezone: forecastRange.timezone,
+      });
+
+      return {
+        location: "黄山光明顶",
+        providerCode: bundle.providerCode,
+        providerLabelZh: bundle.providerLabelZh,
+        dataMode: bundle.dataMode,
+        noticeZh: bundle.noticeZh,
+        sourceSummaries: bundle.sourceSummaries ?? [],
+        confidenceByTarget: bundle.confidenceByTarget ?? null,
+        conflictFlags: bundle.conflictFlags ?? [],
+        fusionSummary: bundle.fusionSummary ?? null,
+        missingFields: bundle.missingFields ?? [],
+        estimatedFields: bundle.estimatedFields ?? [],
+      };
+    });
   }
 }
 
 async function calculateForecastResultOrReply(
   query: ForecastQueryInput,
   requestOptions: ForecastCalculationOptions,
-  weatherDataService: WeatherDataService,
+  weatherDataService: WeatherDataServiceLike,
   terrainProvider: TerrainProvider,
   astroServiceClient: AstroServiceClientLike,
   astroServiceConfig: AstroServiceConfig,
@@ -344,7 +378,7 @@ async function calculateForecastResultOrReply(
 async function calculateForecastResult(
   query: ForecastQueryInput,
   requestOptions: ForecastCalculationOptions,
-  weatherDataService: WeatherDataService,
+  weatherDataService: WeatherDataServiceLike,
   terrainProvider: TerrainProvider,
   astroServiceClient: AstroServiceClientLike,
   astroServiceConfig: AstroServiceConfig,

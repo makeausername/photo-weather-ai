@@ -49,6 +49,7 @@ type RealDevCallFlags = {
   readonly deepseek: boolean;
   readonly qweather: boolean;
   readonly openMeteo: boolean;
+  readonly meteoblue: boolean;
 };
 
 const defaultRealDevCallFlags: RealDevCallFlags = {
@@ -56,6 +57,7 @@ const defaultRealDevCallFlags: RealDevCallFlags = {
   deepseek: false,
   qweather: false,
   openMeteo: false,
+  meteoblue: false,
 };
 
 const providerTypeLabels: Record<string, string> = {
@@ -72,6 +74,7 @@ const providerDisplayLabels: Record<string, string> = {
   "ai:deepseek": "DeepSeek 智能解读",
   "weather:qweather": "和风天气",
   "weather:open_meteo": "Open-Meteo",
+  "weather:meteoblue": "meteoblue 专业增强",
   "geo:amap": "高德地图",
   "storage:local_storage": "本地存储",
   "storage:aliyun_oss": "阿里云 OSS",
@@ -327,6 +330,10 @@ function getRealDevCallFlagKey(provider: SafeProviderConfig): keyof RealDevCallF
     return "openMeteo";
   }
 
+  if (provider.providerType === "weather" && provider.providerCode === "meteoblue") {
+    return "meteoblue";
+  }
+
   return null;
 }
 
@@ -354,7 +361,9 @@ function isDeepSeekProvider(provider: SafeProviderConfig): boolean {
 function isWeatherProvider(provider: SafeProviderConfig): boolean {
   return (
     provider.providerType === "weather" &&
-    (provider.providerCode === "qweather" || provider.providerCode === "open_meteo")
+    (provider.providerCode === "qweather" ||
+      provider.providerCode === "open_meteo" ||
+      provider.providerCode === "meteoblue")
   );
 }
 
@@ -364,6 +373,10 @@ function isOpenMeteoProvider(provider: SafeProviderConfig): boolean {
 
 function isQWeatherProvider(provider: SafeProviderConfig): boolean {
   return provider.providerType === "weather" && provider.providerCode === "qweather";
+}
+
+function isMeteoblueProvider(provider: SafeProviderConfig): boolean {
+  return provider.providerType === "weather" && provider.providerCode === "meteoblue";
 }
 
 function getDeepSeekAnalysisMode(provider: SafeProviderConfig): DeepSeekAnalysisMode {
@@ -428,6 +441,9 @@ function providerTestModeLabel(provider: SafeProviderConfig, realEnabled: boolea
   if (isQWeatherProvider(provider)) {
     return "演示模式";
   }
+  if (isMeteoblueProvider(provider)) {
+    return "配置检查";
+  }
   return "模拟测试";
 }
 
@@ -450,6 +466,10 @@ function weatherCapabilities(provider: SafeProviderConfig): readonly string[] {
 
   if (provider.providerCode === "open_meteo") {
     return ["逐小时预报", "云层分层", "能见度", "露点", "多模型交叉验证"];
+  }
+
+  if (provider.providerCode === "meteoblue") {
+    return ["专业增强源", "商业精度提升", "接口占位", "后续合同接入"];
   }
 
   return [];
@@ -1319,7 +1339,23 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                           </div>
                           <div className="grid gap-3 sm:grid-cols-2">
                             {configFields
-                              .filter((field) => field.key === "customerEndpoint")
+                              .filter((field) => field.key === "mode" || field.key === "customerEndpoint")
+                              .map((field) => renderConfigField(provider, field))}
+                          </div>
+                        </section>
+                      ) : null}
+
+                      {isWeather && provider.providerCode === "meteoblue" ? (
+                        <section className="grid gap-3">
+                          <div>
+                            <h4 className="text-sm font-bold text-card-foreground">专业增强源</h4>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                              专业增强源，后续用于商业精度提升。未启用真实调用时仅做配置检查。
+                            </p>
+                          </div>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {configFields
+                              .filter((field) => field.key === "baseUrl" || field.key === "packageName")
                               .map((field) => renderConfigField(provider, field))}
                           </div>
                         </section>

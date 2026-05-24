@@ -14,6 +14,7 @@ import type {
   TerrainAnalysisSummary,
   TerrainSummary,
   WeatherDataMode,
+  WeatherFusionSummary,
 } from "@photo-weather/shared";
 import type { WeatherDataBundle } from "@photo-weather/weather";
 import {
@@ -77,6 +78,7 @@ export type NormalizedForecastInputOptions = {
   readonly weatherNoticeZh?: string;
   readonly weatherMissingFields?: readonly string[];
   readonly weatherEstimatedFields?: readonly string[];
+  readonly weatherFusionSummary?: WeatherFusionSummary;
 };
 
 export type ForecastInputBuildOptions = {
@@ -214,6 +216,7 @@ export function buildForecastInputFromWeatherBundle(
         weatherBundle.daily,
         "estimatedFields",
       ),
+      weatherFusionSummary: weatherBundle.fusionSummary,
     },
     options,
   );
@@ -285,6 +288,7 @@ export function buildForecastInputFromNormalizedWeather(
     weatherNoticeZh: weather.weatherNoticeZh ?? `天气数据：${weatherProviderLabelZh}`,
     weatherMissingFields,
     weatherEstimatedFields,
+    weatherFusionSummary: weather.weatherFusionSummary,
     astroDataSourceLabelZh:
       options.astroDataSourceLabelZh ??
       (query.target === "astro" ? "简化本地估算" : "本地算法计算"),

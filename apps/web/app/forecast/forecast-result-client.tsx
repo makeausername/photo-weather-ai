@@ -2743,6 +2743,16 @@ function AiListSection({
 
 function DataStatusPanel({ result }: { readonly result: ForecastCalculationResult }) {
   const nonReal = result.weatherDataMode !== "real" || result.terrainAnalysis.isMock;
+  const fusion = result.weatherFusionSummary;
+  const weatherSource = result.weatherDataMode === "real"
+    ? fusion?.primarySource ?? weatherStatusLabel(result)
+    : "演示数据";
+  const cloudAuxiliary =
+    fusion?.auxiliarySources.find((source) => source.includes("Open-Meteo")) ??
+    (result.weatherProviderCode === "open_meteo" ? result.weatherProviderLabelZh : "Open-Meteo 未启用");
+  const professionalSource = fusion?.professionalSourceStatus ?? "专业增强：meteoblue 未启用";
+  const confidence = fusion ? confidenceLevelLabel(fusion.confidenceLevel) : nonReal ? "低" : "中";
+  const conflictStatus = fusion?.conflictStatusZh ?? "无明显冲突";
 
   return (
     <Card className="p-5 shadow-sm">
@@ -2751,8 +2761,12 @@ function DataStatusPanel({ result }: { readonly result: ForecastCalculationResul
         <Badge variant={nonReal ? "warning" : "success"}>{weatherModeBadge(result)}</Badge>
       </div>
       <dl className="mt-4 grid gap-3 text-sm">
+        <SummaryItem label="天气数据" value={weatherSource} />
+        <SummaryItem label="云层辅助" value={cloudAuxiliary} />
+        <SummaryItem label="专业增强" value={professionalSource} />
+        <SummaryItem label="数据置信度" value={confidence} />
+        <SummaryItem label="数据冲突" value={conflictStatus} />
         <SummaryItem label="天文数据" value={result.astroDataSourceLabelZh} />
-        <SummaryItem label="天气数据" value={weatherStatusLabel(result)} />
         <SummaryItem label="地形数据" value={result.terrainAnalysis.dataSourceLabelZh} />
         <SummaryItem label="计算基准" value={result.calendarBasis.forecastStartLabel} />
       </dl>
@@ -2761,6 +2775,16 @@ function DataStatusPanel({ result }: { readonly result: ForecastCalculationResul
       </p>
     </Card>
   );
+}
+
+function confidenceLevelLabel(level: "high" | "medium" | "low"): string {
+  if (level === "high") {
+    return "高";
+  }
+  if (level === "medium") {
+    return "中";
+  }
+  return "低";
 }
 
 function CalculationBasisPanel({ result }: { readonly result: ForecastCalculationResult }) {

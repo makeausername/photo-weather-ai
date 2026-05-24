@@ -128,11 +128,18 @@ export function buildQWeatherRequestUrl(
       url.searchParams.set(key, String(value));
     }
   }
-  url.searchParams.set("key", options.apiKey);
   url.searchParams.set("lang", options.language);
   url.searchParams.set("unit", qWeatherUnitToRequestParam(options.unit));
 
   return url.toString();
+}
+
+export function buildQWeatherRequestHeaders(options: Pick<QWeatherRequestOptions, "apiKey">): {
+  readonly "X-QW-Api-Key": string;
+} {
+  return {
+    "X-QW-Api-Key": options.apiKey,
+  };
 }
 
 export class QWeatherClient {
@@ -144,6 +151,24 @@ export class QWeatherClient {
 
   async fetchWeatherNow(location: string): Promise<QWeatherFetchResult<QWeatherWeatherNowPayload>> {
     return this.fetchJson<QWeatherWeatherNowPayload>("/v7/weather/now", { location });
+  }
+
+  async fetchWeatherHourly(
+    location: string,
+    hours = 24,
+  ): Promise<QWeatherFetchResult<Record<string, unknown>>> {
+    return this.fetchJson<Record<string, unknown>>(`/v7/weather/${hours > 24 ? "72h" : "24h"}`, {
+      location,
+    });
+  }
+
+  async fetchWeatherDaily(
+    location: string,
+    days = 7,
+  ): Promise<QWeatherFetchResult<Record<string, unknown>>> {
+    return this.fetchJson<Record<string, unknown>>(`/v7/weather/${days > 7 ? "15d" : "7d"}`, {
+      location,
+    });
   }
 
   async testConnection(location = defaultTestLocation): Promise<QWeatherConnectionTestResult> {
@@ -180,6 +205,7 @@ export class QWeatherClient {
       try {
         const response = await this.fetcher(url, {
           method: "GET",
+          headers: buildQWeatherRequestHeaders(this.options),
           signal: controller.signal,
         });
         const text = await response.text();

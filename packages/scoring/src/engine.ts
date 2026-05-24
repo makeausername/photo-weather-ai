@@ -147,6 +147,7 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
     weatherNoticeZh: input.weatherNoticeZh,
     weatherMissingFields: input.weatherMissingFields,
     weatherEstimatedFields: input.weatherEstimatedFields,
+    weatherFusionSummary: input.weatherFusionSummary,
     astroDataSourceLabelZh: input.astroDataSourceLabelZh,
     astroCalculationBasis: input.astroCalculationBasis,
   };

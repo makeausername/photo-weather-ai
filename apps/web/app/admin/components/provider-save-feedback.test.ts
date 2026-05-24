@@ -11,6 +11,12 @@ describe("provider save feedback", () => {
     expect(providerSaveSuccessMessage({ providerType: "weather", providerCode: "qweather" })).toBe(
       "和风天气配置已保存。",
     );
+    expect(
+      providerSaveSuccessMessage({ providerType: "weather", providerCode: "open_meteo" }),
+    ).toBe("Open-Meteo 配置已保存。");
+    expect(
+      providerSaveSuccessMessage({ providerType: "weather", providerCode: "meteoblue" }),
+    ).toBe("meteoblue 配置已保存。");
     expect(providerSaveSuccessMessage({ providerType: "ai", providerCode: "deepseek" })).toBe(
       "DeepSeek 配置已保存。",
     );

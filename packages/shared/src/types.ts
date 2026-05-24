@@ -44,7 +44,7 @@ export type ForecastHorizon = "24h" | "48h" | "72h" | "7d";
 
 export type ForecastTarget = "general" | "cloud_sea" | "glow" | "astro";
 
-export type WeatherDataMode = "mock" | "fixture" | "real";
+export type WeatherDataMode = "mock" | "demo" | "fixture" | "real";
 
 export type ForecastQueryInput = {
   readonly name: string;
@@ -65,6 +65,7 @@ export type NormalizedHourlyWeather = {
   readonly temperature: number;
   readonly feelsLike: number | null;
   readonly humidity: number;
+  readonly dewPointSpread?: number | null;
   readonly pressure: number | null;
   readonly windSpeed: number;
   readonly windGust: number | null;
@@ -79,6 +80,8 @@ export type NormalizedHourlyWeather = {
   readonly cloudHigh: number | null;
   readonly weatherCode: string | null;
   readonly providerCode: string;
+  readonly providerLabelZh?: string;
+  readonly dataMode?: WeatherDataMode;
   readonly sourceConfidence: number | null;
   readonly missingFields?: readonly string[];
   readonly estimatedFields?: readonly string[];
@@ -91,9 +94,12 @@ export type NormalizedDailyWeather = {
   readonly tempMax: number;
   readonly precipitationProbability: number;
   readonly weatherSummary: string;
+  readonly cloudSummary?: string;
   readonly sunrise?: string;
   readonly sunset?: string;
   readonly providerCode: string;
+  readonly providerLabelZh?: string;
+  readonly dataMode?: WeatherDataMode;
   readonly missingFields?: readonly string[];
   readonly estimatedFields?: readonly string[];
 };
@@ -248,6 +254,7 @@ export type ForecastCalculationInput = {
   readonly weatherNoticeZh: string;
   readonly weatherMissingFields: readonly string[];
   readonly weatherEstimatedFields: readonly string[];
+  readonly weatherFusionSummary?: WeatherFusionSummary;
   readonly astroDataSourceLabelZh: string;
   readonly astroCalculationBasis?: AstroCalculationBasis;
   readonly astroWindowBundle?: AstroWindowBundle;
@@ -599,8 +606,20 @@ export type ForecastCalculationResult = {
   readonly weatherNoticeZh: string;
   readonly weatherMissingFields: readonly string[];
   readonly weatherEstimatedFields: readonly string[];
+  readonly weatherFusionSummary?: WeatherFusionSummary;
   readonly astroDataSourceLabelZh: string;
   readonly astroCalculationBasis?: AstroCalculationBasis;
+};
+
+export type WeatherConfidenceLevel = "high" | "medium" | "low";
+
+export type WeatherFusionSummary = {
+  readonly primarySource: string;
+  readonly auxiliarySources: readonly string[];
+  readonly professionalSourceStatus: string;
+  readonly confidenceLevel: WeatherConfidenceLevel;
+  readonly conflictStatusZh: string;
+  readonly dataStatusZh: string;
 };
 
 export type ForecastCalendarDayInfo = {

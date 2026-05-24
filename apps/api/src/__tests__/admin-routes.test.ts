@@ -113,7 +113,7 @@ describe("admin config routes", () => {
     expect(response.statusCode).toBe(200);
     const body = response.json();
     expect(body.providers.map((provider: any) => provider.providerCode)).toEqual(
-      expect.arrayContaining(["deepseek", "qweather", "open_meteo", "amap"]),
+      expect.arrayContaining(["deepseek", "qweather", "open_meteo", "meteoblue", "amap"]),
     );
     expect(body.groups.storage).toBeTruthy();
     expect(body.realDevCallFlags).toEqual({
@@ -121,6 +121,7 @@ describe("admin config routes", () => {
       deepseek: false,
       qweather: false,
       openMeteo: false,
+      meteoblue: false,
     });
     expect(JSON.stringify(body)).not.toContain("secretJson");
   });
@@ -424,7 +425,7 @@ describe("admin config routes", () => {
       enabled: true,
       configJson: {
         ...(openMeteoProvider.configJson ?? {}),
-        realCallEnabled: true,
+        realCallEnabled: false,
       },
       secretJson: {},
       maskedSecretJson: {},
@@ -460,8 +461,7 @@ describe("admin config routes", () => {
       success: true,
       mode: "mock",
       connectionMode: "mock",
-      message:
-        "Open-Meteo 未配置商业 Key，将使用默认样例/演示数据；真实商业接口请填写 API Key 和 Customer Endpoint。",
+      message: "当前为模拟测试，未请求真实天气服务。",
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -514,14 +514,17 @@ describe("admin config routes", () => {
   });
 
   it("tests a real QWeather connection through mocked fetch outside NODE_ENV=test", async () => {
-    const fetchMock = vi.fn(async (input: string | URL) => {
+    const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
       const url = new URL(String(input));
       expect(url.origin).toBe("https://xxxxx.qweatherapi.com");
       expect(url.pathname).toBe("/v7/weather/now");
       expect(url.searchParams.get("location")).toBe("118.1718,30.1328");
-      expect(url.searchParams.get("key")).toBe("qweather-real-secret");
+      expect(url.searchParams.get("key")).toBeNull();
       expect(url.searchParams.get("lang")).toBe("zh");
       expect(url.searchParams.get("unit")).toBe("m");
+      expect((init?.headers as Record<string, string>)?.["X-QW-Api-Key"]).toBe(
+        "qweather-real-secret",
+      );
 
       return new Response(
         JSON.stringify({
@@ -703,6 +706,7 @@ describe("admin config routes", () => {
       deepseek: false,
       qweather: false,
       openMeteo: false,
+      meteoblue: false,
     });
   });
 
@@ -761,6 +765,89 @@ describe("admin config routes", () => {
       error: "provider_key_missing",
       message: "请先填写 DeepSeek API Key。",
     });
+  });
+
+  it("guards Open-Meteo customer mode and meteoblue missing keys", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const openMeteoProvider = state.providers.get("weather:open_meteo");
+    const meteoblueProvider = state.providers.get("weather:meteoblue");
+    state.providers.set("weather:open_meteo", {
+      ...openMeteoProvider,
+      enabled: true,
+      configJson: {
+        ...(openMeteoProvider.configJson ?? {}),
+        realCallEnabled: true,
+        mode: "customer",
+      },
+      secretJson: {},
+      maskedSecretJson: {},
+    });
+    state.providers.set("weather:meteoblue", {
+      ...meteoblueProvider,
+      enabled: true,
+      configJson: {
+        ...(meteoblueProvider.configJson ?? {}),
+        realCallEnabled: true,
+      },
+      secretJson: {},
+      maskedSecretJson: {},
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+      },
+      logger: false,
+    });
+
+    const openMeteoResponse = await app.inject({
+      method: "POST",
+      url: "/admin/providers/weather/open_meteo/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+    const meteoblueResponse = await app.inject({
+      method: "POST",
+      url: "/admin/providers/weather/meteoblue/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(openMeteoResponse.statusCode).toBe(400);
+    expect(openMeteoResponse.json()).toMatchObject({
+      error: "provider_key_missing",
+      message: "商业客户模式请先填写 Open-Meteo API Key。",
+    });
+    expect(meteoblueResponse.statusCode).toBe(400);
+    expect(meteoblueResponse.json()).toMatchObject({
+      error: "provider_key_missing",
+      message: "请先填写 meteoblue API Key。",
+    });
+  });
+
+  it("returns meteoblue config-check status without real calls when disabled", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("real network calls are disabled in automated tests");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/providers/weather/meteoblue/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: true,
+      mode: "config_check",
+      connectionMode: "mock",
+      message: "当前为配置检查，未请求 meteoblue 服务。",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 
   it("tests a real DeepSeek connection through mocked fetch outside NODE_ENV=test", async () => {

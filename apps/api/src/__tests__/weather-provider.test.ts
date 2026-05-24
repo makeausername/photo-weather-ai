@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { ProviderConfigRecord } from "@photo-weather/db";
 import {
   normalizeOpenMeteoAdminConfigJson,
+  normalizeMeteoblueAdminConfigJson,
   normalizeQWeatherAdminConfigJson,
+  resolveMeteoblueRuntimeConfig,
   resolveOpenMeteoRuntimeConfig,
   resolveQWeatherRuntimeConfig,
 } from "../weather-provider.js";
@@ -28,6 +30,20 @@ const baseOpenMeteoProvider: ProviderConfigRecord = {
   displayName: "Open-Meteo",
   enabled: true,
   priority: 200,
+  configJson: {},
+  secretJson: {},
+  maskedSecretJson: {},
+  createdAt: new Date("2026-01-01T00:00:00.000Z"),
+  updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+};
+
+const baseMeteoblueProvider: ProviderConfigRecord = {
+  id: "provider-meteoblue",
+  providerType: "weather",
+  providerCode: "meteoblue",
+  displayName: "meteoblue",
+  enabled: true,
+  priority: 300,
   configJson: {},
   secretJson: {},
   maskedSecretJson: {},
@@ -150,6 +166,7 @@ describe("weather runtime resolvers", () => {
         ...baseOpenMeteoProvider,
         configJson: {
           realCallEnabled: true,
+          mode: "customer",
           customerEndpoint: "https://customer.open-meteo.example",
           defaultModel: "ensemble",
         },
@@ -167,11 +184,67 @@ describe("weather runtime resolvers", () => {
       realCallEnabled: true,
       apiKeyPresent: true,
       customerEndpointPresent: true,
+      endpoint: "https://customer.open-meteo.example",
       customerEndpoint: "https://customer.open-meteo.example",
       defaultModel: "ensemble",
-      modeLabelZh: "真实服务",
+      modeLabelZh: "商业客户模式",
     });
     expect(JSON.stringify(config)).not.toContain("open-meteo-secret");
+  });
+
+  it("resolves Open-Meteo free mode without requiring an API key", () => {
+    const config = resolveOpenMeteoRuntimeConfig(
+      {
+        ...baseOpenMeteoProvider,
+        configJson: {
+          realCallEnabled: true,
+          mode: "free",
+        },
+      },
+      {
+        NODE_ENV: "development",
+      },
+    );
+
+    expect(config).toMatchObject({
+      realCallEnabled: true,
+      mode: "free",
+      apiKeyPresent: false,
+      endpoint: "https://api.open-meteo.com",
+      timezone: "Asia/Shanghai",
+      modeLabelZh: "免费开发模式",
+    });
+  });
+
+  it("resolves meteoblue config and keeps keys masked", () => {
+    const config = resolveMeteoblueRuntimeConfig(
+      {
+        ...baseMeteoblueProvider,
+        configJson: {
+          realCallEnabled: true,
+          baseUrl: "https://my.meteoblue.com/",
+          packageName: "basic-1h",
+          timeoutMs: 5000,
+        },
+        secretJson: {
+          apiKey: "meteoblue-secret",
+        },
+      },
+      {
+        NODE_ENV: "development",
+      },
+    );
+
+    expect(config).toMatchObject({
+      enabled: true,
+      realCallEnabled: true,
+      apiKeyPresent: true,
+      baseUrl: "https://my.meteoblue.com",
+      packageName: "basic-1h",
+      timeoutMs: 5000,
+      modeLabelZh: "真实服务",
+    });
+    expect(JSON.stringify(config)).not.toContain("meteoblue-secret");
   });
 
   it("normalizes weather admin config with safe advanced defaults", () => {
@@ -191,8 +264,19 @@ describe("weather runtime resolvers", () => {
 
     expect(normalizeOpenMeteoAdminConfigJson({ customerEndpoint: "" })).toEqual({
       realCallEnabled: false,
+      mode: "free",
       baseUrl: "https://api.open-meteo.com/v1",
+      customerEndpoint: "https://customer-api.open-meteo.com",
       defaultModel: "forecast",
+      timezone: "Asia/Shanghai",
+      timeoutMs: 8000,
+      retryCount: 1,
+    });
+
+    expect(normalizeMeteoblueAdminConfigJson({ baseUrl: "" })).toEqual({
+      realCallEnabled: false,
+      baseUrl: "https://my.meteoblue.com",
+      packageName: "",
       timeoutMs: 8000,
       retryCount: 1,
     });

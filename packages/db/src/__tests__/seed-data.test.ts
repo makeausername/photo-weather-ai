@@ -39,6 +39,7 @@ describe("database seed data", () => {
       "deepseek",
       "qweather",
       "open_meteo",
+      "meteoblue",
       "amap",
       "local_storage",
       "aliyun_oss",

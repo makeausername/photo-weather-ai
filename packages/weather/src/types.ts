@@ -3,10 +3,12 @@ import type {
   NormalizedDailyWeather,
   NormalizedHourlyWeather,
   WeatherDataMode,
+  ForecastHorizon,
   ForecastTarget,
+  WeatherFusionSummary,
 } from "@photo-weather/shared";
 
-export type WeatherProviderCode = "mock" | "qweather" | "open_meteo";
+export type WeatherProviderCode = "mock" | "qweather" | "open_meteo" | "meteoblue";
 
 export type WeatherProviderMode = WeatherDataMode;
 
@@ -95,12 +97,21 @@ export type WeatherDataBundle = {
   readonly providerLabelZh: string;
   readonly dataMode: WeatherDataMode;
   readonly generatedAt: string;
+  readonly forecastStart?: string;
+  readonly forecastEnd?: string;
   readonly noticeZh: string;
+  readonly missingFields?: readonly string[];
+  readonly estimatedFields?: readonly string[];
+  readonly sourceSummaries?: readonly WeatherSourceSummary[];
+  readonly conflictFlags?: readonly WeatherConflictFlag[];
+  readonly confidenceByTarget?: WeatherConfidenceByTarget;
+  readonly fusionSummary?: WeatherFusionSummary;
 };
 
 export type ForecastRequestOptions = {
   readonly hours?: number;
   readonly days?: number;
+  readonly horizon?: ForecastHorizon;
   readonly forecastStart?: string;
   readonly forecastEnd?: string;
   readonly targetDates?: readonly string[];
@@ -113,3 +124,43 @@ export type WeatherRequestInput = ForecastRequestOptions & {
 };
 
 export type NormalizedWeatherData = WeatherDataBundle;
+
+export type WeatherSourceSummary = {
+  readonly providerCode: WeatherProviderCode;
+  readonly providerLabelZh: string;
+  readonly dataMode: WeatherDataMode;
+  readonly availableFields: readonly string[];
+  readonly missingFields: readonly string[];
+  readonly latencyMs?: number;
+  readonly generatedAt?: string;
+};
+
+export type WeatherConflictSeverity = "low" | "medium" | "high";
+
+export type WeatherConflictFlag = {
+  readonly field: string;
+  readonly time: string;
+  readonly providers: readonly WeatherProviderCode[];
+  readonly severity: WeatherConflictSeverity;
+  readonly noteZh: string;
+};
+
+export type WeatherConfidenceByField = {
+  readonly cloudTotal: number;
+  readonly cloudLow: number;
+  readonly cloudMid: number;
+  readonly cloudHigh: number;
+  readonly visibility: number;
+  readonly humidity: number;
+  readonly dewPoint: number;
+  readonly wind: number;
+  readonly precipitation: number;
+  readonly pressure: number;
+};
+
+export type WeatherConfidenceByTarget = {
+  readonly cloud_sea: number;
+  readonly glow: number;
+  readonly astro: number;
+  readonly general: number;
+};

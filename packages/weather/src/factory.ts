@@ -1,13 +1,19 @@
 import { MockWeatherProvider } from "./mock-provider.js";
-import { OpenMeteoProvider } from "./open-meteo-provider.js";
+import { MeteoblueProvider } from "./meteoblue-provider.js";
+import { OpenMeteoClient, type OpenMeteoClientOptions } from "./open-meteo-client.js";
+import { OpenMeteoProvider, OpenMeteoRealProvider } from "./open-meteo-provider.js";
 import type { WeatherProvider } from "./provider.js";
+import { QWeatherClient, type QWeatherClientOptions } from "./qweather-client.js";
 import { QWeatherProvider } from "./qweather-provider.js";
+import { QWeatherRealProvider } from "./qweather-real-provider.js";
 import type { WeatherProviderCode, WeatherProviderMode } from "./types.js";
 
 export type WeatherProviderFactoryOptions = {
   readonly provider?: WeatherProviderCode;
   readonly mode?: WeatherProviderMode;
   readonly nodeEnv?: string;
+  readonly qweather?: QWeatherClientOptions;
+  readonly openMeteo?: OpenMeteoClientOptions;
 };
 
 export function createWeatherProvider(
@@ -26,10 +32,25 @@ export function createWeatherProvider(
   }
 
   if (mode === "real") {
+    if (nodeEnv === "test") {
+      throw new Error("Real weather provider calls are disabled in tests.");
+    }
+
+    if (provider === "qweather" && options.qweather) {
+      return new QWeatherRealProvider({
+        client: new QWeatherClient(options.qweather),
+        unit: options.qweather.unit,
+      });
+    }
+
+    if (provider === "open_meteo" && options.openMeteo) {
+      return new OpenMeteoRealProvider({
+        client: new OpenMeteoClient(options.openMeteo),
+      });
+    }
+
     throw new Error(
-      nodeEnv === "test"
-        ? "Real weather provider calls are disabled in tests."
-        : "Real weather provider calls are not implemented yet. Use WEATHER_PROVIDER_MODE=fixture for local adapter validation.",
+      "Real weather provider calls require explicit runtime provider credentials. Use fixture mode for local adapter validation.",
     );
   }
 
@@ -38,11 +59,13 @@ export function createWeatherProvider(
       return new QWeatherProvider();
     case "open_meteo":
       return new OpenMeteoProvider();
+    case "meteoblue":
+      return new MeteoblueProvider();
   }
 }
 
 function readProviderCode(value: string | undefined): WeatherProviderCode | undefined {
-  if (value === "mock" || value === "qweather" || value === "open_meteo") {
+  if (value === "mock" || value === "qweather" || value === "open_meteo" || value === "meteoblue") {
     return value;
   }
 

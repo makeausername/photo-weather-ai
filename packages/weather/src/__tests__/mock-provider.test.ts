@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { normalizedHourlyWeatherSchema } from "@photo-weather/shared";
 import {
   buildQWeatherRequestUrl,
+  buildQWeatherRequestHeaders,
   createWeatherProvider,
   formatQWeatherLocation,
   MockWeatherProvider,
@@ -258,9 +259,12 @@ describe("QWeatherClient helpers", () => {
     expect(url.origin).toBe("https://xxxxx.qweatherapi.com");
     expect(url.pathname).toBe("/v7/weather/now");
     expect(url.searchParams.get("location")).toBe("118.1718,30.1328");
-    expect(url.searchParams.get("key")).toBe("qweather-secret");
+    expect(url.searchParams.get("key")).toBeNull();
     expect(url.searchParams.get("lang")).toBe("zh");
     expect(url.searchParams.get("unit")).toBe("m");
+    expect(buildQWeatherRequestHeaders({ apiKey: "qweather-secret" })).toEqual({
+      "X-QW-Api-Key": "qweather-secret",
+    });
   });
 });
 

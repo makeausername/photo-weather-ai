@@ -13,6 +13,7 @@ import { loadAuthConfig, registerAuthRoutes } from "./auth-routes.js";
 import { registerForecastRoutes } from "./forecast-routes.js";
 import { resolveGeoProvider } from "./geo-provider.js";
 import { registerSearchRoutes } from "./search-routes.js";
+import { createRuntimeWeatherDataService } from "./weather-provider.js";
 
 export type ApiServerOptions = {
   readonly dbClient?: DatabaseClient;
@@ -51,6 +52,10 @@ export function buildApiServer(options: ApiServerOptions = {}) {
   app.log.info(`Environment loaded from .env.local: ${astroServiceConfig.envLocalLoaded}`);
 
   const weatherProvider = options.weatherProvider ?? createWeatherProvider();
+  const weatherDataService =
+    options.weatherProvider || !options.dbClient
+      ? undefined
+      : createRuntimeWeatherDataService({ dbClient: options.dbClient, env });
   const geoProvider = options.geoProvider ?? new MockGeoProvider();
   const aiProvider = new MockAIProvider();
   const authConfig = options.authConfig ?? loadAuthConfig();
@@ -115,6 +120,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
   registerForecastRoutes(app, {
     dbClient: options.dbClient,
     weatherProvider,
+    weatherDataService,
     terrainProvider: options.terrainProvider,
     astroServiceClient: options.astroServiceClient,
     env,

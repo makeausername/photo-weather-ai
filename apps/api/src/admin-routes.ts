@@ -29,7 +29,7 @@ import {
 import type { DatabaseClient, JsonValue, ProviderType } from "@photo-weather/db";
 import { MockGeoProvider, validateCoordinates } from "@photo-weather/geo";
 import type { GeoProvider } from "@photo-weather/geo";
-import { maskQWeatherApiHost, QWeatherClient } from "@photo-weather/weather";
+import { maskQWeatherApiHost, OpenMeteoClient, QWeatherClient } from "@photo-weather/weather";
 import { z } from "zod";
 import type { AuthConfig } from "./auth-routes.js";
 import { requirePermission } from "./auth-routes.js";
@@ -41,7 +41,9 @@ import {
 import { createRealAmapProvider, readRuntimeAmapConfig } from "./geo-provider.js";
 import {
   normalizeOpenMeteoAdminConfigJson,
+  normalizeMeteoblueAdminConfigJson,
   normalizeQWeatherAdminConfigJson,
+  readRuntimeMeteoblueConfig,
   readRuntimeOpenMeteoConfig,
   readRuntimeQWeatherConfig,
 } from "./weather-provider.js";
@@ -514,6 +516,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
         deepseek: (await readRuntimeDeepSeekConfig({ dbClient: client, env })).realModeEnabled,
         qweather: (await readRuntimeQWeatherConfig({ dbClient: client, env })).realModeEnabled,
         openMeteo: (await readRuntimeOpenMeteoConfig({ dbClient: client, env })).realModeEnabled,
+        meteoblue: (await readRuntimeMeteoblueConfig({ dbClient: client, env })).realModeEnabled,
       },
     };
   });
@@ -615,7 +618,9 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       if (
         providerType === "weather" &&
         providerPatch.configJson !== undefined &&
-        (request.params.providerCode === "qweather" || request.params.providerCode === "open_meteo")
+        (request.params.providerCode === "qweather" ||
+          request.params.providerCode === "open_meteo" ||
+          request.params.providerCode === "meteoblue")
       ) {
         const incomingConfigJson = isJsonObjectValue(providerPatch.configJson)
           ? providerPatch.configJson
@@ -627,7 +632,9 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
         providerPatch.configJson =
           request.params.providerCode === "qweather"
             ? normalizeQWeatherAdminConfigJson(mergedConfigJson)
-            : normalizeOpenMeteoAdminConfigJson(mergedConfigJson);
+            : request.params.providerCode === "open_meteo"
+              ? normalizeOpenMeteoAdminConfigJson(mergedConfigJson)
+              : normalizeMeteoblueAdminConfigJson(mergedConfigJson);
       }
 
       const updatedProvider = await updateProviderConfig({
@@ -869,25 +876,85 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
             );
           }
 
-          if (!runtimeConfig.apiKeyPresent && !runtimeConfig.customerEndpointPresent) {
+          if (runtimeConfig.mode === "customer" && !runtimeConfig.apiKey) {
+            return sendError(
+              reply,
+              400,
+              "provider_key_missing",
+              "商业客户模式请先填写 Open-Meteo API Key。",
+            );
+          }
+
+          try {
+            const openMeteoClient = new OpenMeteoClient({
+              endpoint: runtimeConfig.endpoint,
+              mode: runtimeConfig.mode,
+              apiKey: runtimeConfig.apiKey,
+              timezone: runtimeConfig.timezone,
+              timeoutMs: runtimeConfig.timeoutMs,
+              retryCount: runtimeConfig.retryCount,
+              modelPreference: runtimeConfig.modelPreference,
+            });
+            const result = await openMeteoClient.testConnection();
+
+            return {
+              success: result.success,
+              mode: runtimeConfig.mode,
+              connectionMode: "real",
+              providerType: request.params.providerType,
+              providerCode: request.params.providerCode,
+              endpoint: result.endpoint,
+              statusCode: result.statusCode,
+              latencyMs: result.latencyMs,
+              messageZh: result.messageZh,
+              message: result.messageZh,
+            };
+          } catch (error) {
+            return sendError(
+              reply,
+              503,
+              "provider_test_failed",
+              sanitizeProviderErrorMessage(
+                (error as Error).message || "Open-Meteo 连接测试失败。",
+                runtimeConfig.apiKey,
+              ),
+            );
+          }
+        }
+
+        if (request.params.providerCode === "meteoblue") {
+          const runtimeConfig = await readRuntimeMeteoblueConfig({ dbClient: client, env });
+          if (!runtimeConfig.realCallEnabled) {
             return {
               success: true,
-              mode: "mock",
+              mode: "config_check",
               connectionMode: "mock",
               providerType: request.params.providerType,
               providerCode: request.params.providerCode,
-              message:
-                "Open-Meteo 未配置商业 Key，将使用默认样例/演示数据；真实商业接口请填写 API Key 和 Customer Endpoint。",
+              message: "当前为配置检查，未请求 meteoblue 服务。",
             };
+          }
+
+          if (!runtimeConfig.enabled) {
+            return sendError(
+              reply,
+              409,
+              "provider_not_enabled",
+              "meteoblue 服务商未启用，请先在后台服务商配置中启用 meteoblue。",
+            );
+          }
+
+          if (!runtimeConfig.apiKeyPresent || !runtimeConfig.apiKey) {
+            return sendError(reply, 400, "provider_key_missing", "请先填写 meteoblue API Key。");
           }
 
           return {
             success: true,
-            mode: "real",
-            connectionMode: "real",
+            mode: "config_check",
+            connectionMode: "mock",
             providerType: request.params.providerType,
             providerCode: request.params.providerCode,
-            message: "Open-Meteo 商业配置已保存，当前版本未请求真实天气服务。",
+            message: "meteoblue 配置已保存。V1 仅保留专业增强源接口，不在自动流程中请求 meteoblue 服务。",
           };
         }
       }
@@ -902,7 +969,11 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
 
   if (isLocalDevelopment(env)) {
     app.get("/debug/providers", async () => {
-      const qweather = await readRuntimeQWeatherConfig({ dbClient: client, env });
+      const [qweather, openMeteo, meteoblue] = await Promise.all([
+        readRuntimeQWeatherConfig({ dbClient: client, env }),
+        readRuntimeOpenMeteoConfig({ dbClient: client, env }),
+        readRuntimeMeteoblueConfig({ dbClient: client, env }),
+      ]);
 
       return {
         qweather: {
@@ -913,6 +984,27 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
           apiHost: maskQWeatherApiHost(qweather.apiHost),
           timeoutMs: qweather.timeoutMs,
           retryCount: qweather.retryCount,
+        },
+        openMeteo: {
+          enabled: openMeteo.enabled,
+          realCallEnabled: openMeteo.realCallEnabled,
+          mode: openMeteo.mode,
+          apiKeyPresent: openMeteo.apiKeyPresent,
+          endpoint: openMeteo.endpoint,
+          customerEndpointPresent: openMeteo.customerEndpointPresent,
+          timezone: openMeteo.timezone,
+          timeoutMs: openMeteo.timeoutMs,
+          retryCount: openMeteo.retryCount,
+          modelPreference: openMeteo.modelPreference ?? null,
+        },
+        meteoblue: {
+          enabled: meteoblue.enabled,
+          realCallEnabled: meteoblue.realCallEnabled,
+          apiKeyPresent: meteoblue.apiKeyPresent,
+          baseUrl: meteoblue.baseUrl,
+          packageName: meteoblue.packageName ?? null,
+          timeoutMs: meteoblue.timeoutMs,
+          retryCount: meteoblue.retryCount,
         },
       };
     });
