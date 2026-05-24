@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -19,6 +20,7 @@ const productionScripts = [
 
 const bashScripts = [
   ...productionScripts,
+  "scripts/check-env-production.sh",
   "scripts/check-login.sh",
 ] as const;
 
@@ -38,6 +40,28 @@ function commandAvailable(command: string, args: readonly string[]): boolean {
   } catch {
     return false;
   }
+}
+
+function resolveBashCommand(): string | null {
+  if (commandAvailable("bash", ["--version"])) {
+    return "bash";
+  }
+
+  if (process.platform !== "win32") {
+    return null;
+  }
+
+  for (const candidate of [
+    "C:/Program Files/Git/bin/bash.exe",
+    "C:/Program Files/Git/usr/bin/bash.exe",
+    "C:/msys64/usr/bin/bash.exe",
+  ]) {
+    if (existsSync(candidate) && commandAvailable(candidate, ["--version"])) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 describe("production deployment assets", () => {
@@ -165,12 +189,50 @@ describe("production deployment assets", () => {
   it("generates production DATABASE_URL from encoded PostgreSQL prompt values", () => {
     const installer = readRepoFile("scripts/install.sh");
     expect(installer).toContain("urllib.parse.quote");
-    expect(installer).toContain('db_user_encoded="$(urlencode "${POSTGRES_USER}")"');
-    expect(installer).toContain('db_password_encoded="$(urlencode "${POSTGRES_PASSWORD}")"');
-    expect(installer).toContain('db_name_encoded="$(urlencode "${POSTGRES_DB}")"');
+    expect(installer).toContain("set_database_config()");
+    expect(installer).toContain('DB_NAME="$(prompt_required "请输入数据库名称" "photo_weather_ai")"');
+    expect(installer).toContain('DB_USER="$(prompt_required "请输入数据库用户" "photo_weather_ai")"');
+    expect(installer).toContain('DB_PASSWORD="$(prompt_secret "请输入数据库密码（留空自动生成）")"');
+    expect(installer).toContain('URL_ENCODED_DB_PASSWORD="$(urlencode_password "${DB_PASSWORD}")"');
+    expect(installer).toContain('POSTGRES_DB="${DB_NAME}"');
+    expect(installer).toContain('POSTGRES_USER="${DB_USER}"');
+    expect(installer).toContain('POSTGRES_PASSWORD="${DB_PASSWORD}"');
     expect(installer).toContain(
-      'database_url="postgresql://${db_user_encoded}:${db_password_encoded}@postgres:5432/${db_name_encoded}?schema=public"',
+      'DATABASE_URL="postgresql://${DB_USER}:${URL_ENCODED_DB_PASSWORD}@postgres:5432/${DB_NAME}?schema=public"',
     );
+    expect(installer).toContain("当前系统未安装 python3，无法安全编码自定义数据库密码。");
+    expect(installer).toContain("print_database_config_summary");
+    expect(installer).toContain('echo "POSTGRES_DB=${POSTGRES_DB}"');
+    expect(installer).toContain('echo "POSTGRES_USER=${POSTGRES_USER}"');
+    expect(installer).toContain('echo "DATABASE_URL=$(mask_database_url "${DATABASE_URL}")"');
+  });
+
+  it("writes production env files through a safe KEY=VALUE helper", () => {
+    const installer = readRepoFile("scripts/install.sh");
+    const renderEnv = installer.slice(
+      installer.indexOf("render_env_file()"),
+      installer.indexOf("update_env_admin_lines()"),
+    );
+
+    expect(installer).toContain("write_env_var()");
+    expect(installer).toContain('! "${key}" =~ ^[A-Z0-9_]+$');
+    expect(installer).toContain("strip_env_value()");
+    expect(installer).toContain("escape_env_value()");
+    expect(installer).toContain('printf \'%s=%s\\n\' "${key}" "$(escape_env_value "${value}")"');
+    expect(installer).toContain("openssl rand -hex 32 | tr -d '\\r\\n'");
+    expect(installer).toContain("od -An -N32 -tx1 /dev/urandom | tr -d ' \\r\\n'");
+    expect(installer).toContain("validate_admin_password_for_env()");
+    expect(installer).toContain("管理员密码包含暂不支持的特殊字符，请使用字母、数字和 . _ @ # % + = -。");
+    expect(installer).toContain("第三方服务 Key 建议部署完成后在后台管理中配置");
+    expect(installer).not.toContain("write_env_line");
+    expect(installer).not.toContain("dotenv_quote");
+    expect(renderEnv).not.toMatch(
+      /printf\s+['"]%s\\n['"].*\$\{(?:POSTGRES_PASSWORD|REDIS_PASSWORD|JWT_SECRET|ADMIN_PASSWORD)\}/,
+    );
+
+    for (const key of ["POSTGRES_PASSWORD", "REDIS_PASSWORD", "JWT_SECRET", "ADMIN_PASSWORD"]) {
+      expect(renderEnv).toContain(`${key}) write_env_var "\${key}" "\${${key}}"`);
+    }
   });
 
   it("forces production Docker Compose commands to load .env.production", () => {
@@ -214,8 +276,26 @@ describe("production deployment assets", () => {
     const installer = readRepoFile("scripts/install.sh");
     expect(installer).toContain("validate_compose_config");
     expect(installer).toContain('compose config > "${compose_check}" 2> "${compose_err}"');
+    expect(installer).toContain("check_env_file");
+    expect(installer).toContain("生产环境配置文件格式错误，请检查 .env.production。");
     expect(installer).toContain("variable is not set");
     expect(installer).toContain("compose ps");
+  });
+
+  it("runs the env checker before resume and status compose commands", () => {
+    for (const relativePath of ["scripts/resume-install.sh", "scripts/status.sh"]) {
+      const source = readRepoFile(relativePath);
+      expect(source).toContain('CHECK_ENV_SCRIPT="${SCRIPT_DIR}/check-env-production.sh"');
+      expect(source).toContain('if ! bash "${CHECK_ENV_SCRIPT}"; then');
+      expect(source).toContain("生产环境配置文件格式错误，请检查 .env.production。");
+      const firstComposeUse =
+        relativePath === "scripts/status.sh"
+          ? source.lastIndexOf("compose ps")
+          : source.indexOf("compose config >/dev/null");
+      expect(source.indexOf('bash "${CHECK_ENV_SCRIPT}"')).toBeLessThan(
+        firstComposeUse,
+      );
+    }
   });
 
   it("keeps installer safeguards for old PostgreSQL volumes and polished interaction", () => {
@@ -230,13 +310,16 @@ describe("production deployment assets", () => {
       'section 6 "生成配置文件"',
       'section 7 "Docker 与系统资源检查"',
       'section 8 "构建并启动服务"',
-      'section 9 "数据库初始化"',
-      'section 10 "管理员验证"',
-      'section 11 "HTTPS 与健康检查"',
-      'section 12 "完成"',
+      'section 9 "数据库连接预检"',
+      'section 10 "数据库迁移"',
+      'section 11 "管理员创建与验证"',
+      'section 12 "HTTPS 与健康检查"',
+      'section 13 "完成"',
       "检测到已有 PostgreSQL 数据卷",
       "PostgreSQL 首次初始化后的用户名和密码不会因为修改 .env.production 自动改变",
-      "备份数据库后继续",
+      "1. 保留现有数据并停止安装",
+      "2. 删除测试数据库卷并重新初始化",
+      'read -r -p "请输入选项 [1/2]: " choice',
       "DELETE_DB_DATA",
       "confirm_continue()",
       "confirm_dangerous_delete()",
@@ -275,15 +358,125 @@ describe("production deployment assets", () => {
       expect(installer).toContain(expected);
     }
 
+    expect(installer).not.toContain("备份数据库后继续");
     expect(installer).not.toContain("确认开始部署？输入 YES 继续");
   });
 
-  const bashAvailable = commandAvailable("bash", ["--version"]);
-  const bashIt = bashAvailable ? it : it.skip;
+  it("runs layered database preflight before migrations", () => {
+    const installer = readRepoFile("scripts/install.sh");
+    for (const expected of [
+      "print_database_diagnostics",
+      "mask_database_url",
+      "compose ps postgres",
+      "compose logs --tail=100 postgres",
+      "pg_isready -U",
+      'psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -c "SELECT 1;"',
+      "检查 API 容器内数据库连接",
+      "数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。",
+    ]) {
+      expect(installer).toContain(expected);
+    }
+
+    const bootstrap = installer.slice(installer.indexOf("bootstrap_stack()"));
+    expect(bootstrap.indexOf('section 9 "数据库连接预检"')).toBeLessThan(
+      bootstrap.indexOf('section 10 "数据库迁移"'),
+    );
+    expect(bootstrap.indexOf("preflight_database_connection")).toBeLessThan(
+      bootstrap.indexOf("run_migrations"),
+    );
+  });
+
+  it("keeps resume/update database preflight aligned with the installer", () => {
+    for (const relativePath of ["scripts/resume-install.sh", "scripts/update.sh"]) {
+      const source = readRepoFile(relativePath);
+      expect(source).toContain("preflight_database_connection");
+      expect(source).toContain("pg_isready -U");
+      expect(source).toContain(
+        'psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -c "SELECT 1;"',
+      );
+      expect(source).toContain("数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。");
+      expect(source.lastIndexOf("preflight_database_connection")).toBeLessThan(
+        source.lastIndexOf("run_migrations"),
+      );
+    }
+  });
+
+  it("requires explicit confirmation before deleting the production PostgreSQL volume", () => {
+    const resetProdDb = readRepoFile("scripts/reset-prod-db.sh");
+    expect(resetProdDb).toContain("DELETE_DB_DATA");
+    expect(resetProdDb).toContain("DELETE_CADDY_DATA");
+    expect(resetProdDb).toContain("compose down --remove-orphans");
+    expect(resetProdDb).not.toContain("compose down -v");
+  });
+
+  const bashCommand = resolveBashCommand();
+  const bashIt = bashCommand ? it : it.skip;
 
   bashIt("passes bash syntax checks for deployment scripts", () => {
+    if (!bashCommand) {
+      throw new Error("bash is not available");
+    }
+
     for (const script of bashScripts) {
-      execFileSync("bash", ["-n", bashPath(script)], { cwd: root, stdio: "pipe" });
+      execFileSync(bashCommand, ["-n", bashPath(script)], { cwd: root, stdio: "pipe" });
+    }
+  });
+
+  bashIt("detects invalid .env.production lines and masks valid values", () => {
+    if (!bashCommand) {
+      throw new Error("bash is not available");
+    }
+
+    const tempDir = mkdtempSync(path.join(os.tmpdir(), "photo-weather-env-"));
+    try {
+      const envPath = path.join(tempDir, ".env.production");
+      writeFileSync(
+        envPath,
+        [
+          "POSTGRES_DB=photo_weather_ai",
+          "POSTGRES_USER=photo_weather_ai",
+          "POSTGRES_PASSWORD=secret123",
+          "DATABASE_URL=postgresql://photo_weather_ai:secret123@postgres:5432/photo_weather_ai?schema=public",
+          "EMPTY_VALUE=",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const validOutput = execFileSync(bashCommand, [bashPath("scripts/check-env-production.sh")], {
+        cwd: tempDir,
+        encoding: "utf8",
+        stdio: "pipe",
+      });
+      expect(validOutput).toContain("POSTGRES_PASSWORD=***");
+      expect(validOutput).toContain("DATABASE_URL=***");
+      expect(validOutput).toContain("EMPTY_VALUE=(empty)");
+      expect(validOutput).not.toContain("secret123");
+
+      writeFileSync(
+        envPath,
+        ["POSTGRES_DB=photo_weather_ai", "nUo2m70877e536MP'", ""].join("\n"),
+        "utf8",
+      );
+
+      let failed = false;
+      let invalidOutput = "";
+      try {
+        execFileSync(bashCommand, [bashPath("scripts/check-env-production.sh")], {
+          cwd: tempDir,
+          encoding: "utf8",
+          stdio: "pipe",
+        });
+      } catch (caught) {
+        failed = true;
+        const error = caught as { stdout?: string; stderr?: string };
+        invalidOutput = `${error.stdout ?? ""}${error.stderr ?? ""}`;
+      }
+
+      expect(failed).toBe(true);
+      expect(invalidOutput).toContain("缺少 =");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
     }
   });
 

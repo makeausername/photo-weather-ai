@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE=".env.production"
 COMPOSE_FILE="docker-compose.prod.yml"
+CHECK_ENV_SCRIPT="${SCRIPT_DIR}/check-env-production.sh"
 
 cd "${PROJECT_ROOT}"
 
@@ -28,6 +29,11 @@ compose() {
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "未找到 .env.production，请先运行 bash scripts/install.sh"
+  exit 1
+fi
+
+if ! bash "${CHECK_ENV_SCRIPT}"; then
+  echo "生产环境配置文件格式错误，请检查 .env.production。"
   exit 1
 fi
 

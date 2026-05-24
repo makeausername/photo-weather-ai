@@ -8,6 +8,7 @@ COMPOSE_FILE="docker-compose.prod.yml"
 CADDY_TEMPLATE="${PROJECT_ROOT}/deploy/Caddyfile.template"
 CADDY_FILE="${PROJECT_ROOT}/deploy/Caddyfile"
 ENV_TEMPLATE="${PROJECT_ROOT}/deploy/env.production.template"
+CHECK_ENV_SCRIPT="${SCRIPT_DIR}/check-env-production.sh"
 COMPOSE_PROJECT_NAME_DEFAULT="photo-weather-ai"
 
 cd "${PROJECT_ROOT}"
@@ -189,6 +190,18 @@ require_env_file() {
   fi
 }
 
+env_file_is_valid() {
+  bash "${CHECK_ENV_SCRIPT}" >/dev/null 2>&1
+}
+
+check_env_file() {
+  if bash "${CHECK_ENV_SCRIPT}"; then
+    return
+  fi
+
+  fail_install "生产环境配置文件格式错误，请检查 .env.production。"
+}
+
 validate_compose_config() {
   local compose_check="/tmp/photo-weather-compose-check.yml"
   local compose_err
@@ -198,10 +211,15 @@ validate_compose_config() {
   chmod 600 "${compose_check}" "${compose_err}"
 
   if ! compose config > "${compose_check}" 2> "${compose_err}"; then
-    echo "生产 Docker Compose 配置校验失败，请检查 .env.production 和 docker-compose.prod.yml。"
+    echo "生产环境配置文件格式错误，请检查 .env.production。"
+    local line_hint
+    line_hint="$(grep -Eo 'line [0-9]+' "${compose_err}" | head -n 1 || true)"
+    if [[ -n "${line_hint}" ]]; then
+      echo "错误位置：${line_hint}"
+    fi
     cat "${compose_err}" >&2
     rm -f "${compose_check}" "${compose_err}"
-    fail_install "生产 Docker Compose 配置校验失败。"
+    fail_install "生产环境配置文件格式错误。"
   fi
 
   if grep -E "variable is not set|is not set\\. Defaulting" "${compose_err}" >/dev/null 2>&1; then
@@ -319,11 +337,15 @@ confirm_dangerous_delete() {
 
 generate_secret() {
   if command -v openssl >/dev/null 2>&1; then
-    openssl rand -hex 32
+    openssl rand -hex 32 | tr -d '\r\n'
   else
-    od -An -N32 -tx1 /dev/urandom | tr -d ' \n'
-    echo
+    od -An -N32 -tx1 /dev/urandom | tr -d ' \r\n'
   fi
+}
+
+is_url_safe_value() {
+  local value="$1"
+  [[ "${value}" =~ ^[A-Za-z0-9._~-]+$ ]]
 }
 
 urlencode() {
@@ -353,6 +375,23 @@ urlencode() {
   printf '%s' "${encoded}"
 }
 
+urlencode_password() {
+  local raw="$1"
+
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "${raw}"
+    return
+  fi
+
+  if is_url_safe_value "${raw}"; then
+    printf '%s' "${raw}"
+    return
+  fi
+
+  echo "当前系统未安装 python3，无法安全编码自定义数据库密码。请安装 python3，或将数据库密码留空让安装程序生成 URL-safe 密码。"
+  exit 1
+}
+
 mask_database_url() {
   local url="$1"
 
@@ -375,21 +414,44 @@ print(urllib.parse.urlunsplit((parts.scheme, f"{auth}{hostname}{port}", parts.pa
   printf '%s\n' "${url}" | sed -E 's#(postgres(ql)?://[^:/@]+:)[^@]*(@)#\1***\3#'
 }
 
-dotenv_quote() {
-  local value="$1"
-  value="${value//\'/\'\\\'\'}"
-  printf "'%s'" "${value}"
+strip_env_value() {
+  local value="${1-}"
+  value="${value//$'\r'/}"
+  value="${value//$'\n'/}"
+  printf '%s' "${value}"
 }
 
-write_env_line() {
-  local key="$1"
-  local value="$2"
+is_plain_env_value() {
+  local value="$1"
+  [[ "${value}" =~ ^[A-Za-z0-9_./:@%+=,?~-]*$ ]]
+}
 
-  if [[ -z "${value}" ]]; then
-    printf '%s=\n' "${key}"
-  else
-    printf '%s=%s\n' "${key}" "$(dotenv_quote "${value}")"
+escape_env_value() {
+  local value
+  value="$(strip_env_value "${1-}")"
+
+  if is_plain_env_value "${value}"; then
+    printf '%s' "${value}"
+    return
   fi
+
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//\$/\\$}"
+  value="${value//\`/\\\`}"
+  printf '"%s"' "${value}"
+}
+
+write_env_var() {
+  local key="$1"
+  local value="${2-}"
+
+  if [[ -z "${key}" || ! "${key}" =~ ^[A-Z0-9_]+$ ]]; then
+    echo "环境变量名称无效：${key:-<empty>}" >&2
+    exit 1
+  fi
+
+  printf '%s=%s\n' "${key}" "$(escape_env_value "${value}")"
 }
 
 require_postgres_identifier() {
@@ -400,6 +462,100 @@ require_postgres_identifier() {
     echo "${label} 必须以字母或下划线开头，且只能包含字母、数字和下划线。"
     exit 1
   fi
+}
+
+validate_db_password_for_env() {
+  local value="$1"
+  [[ "${value}" =~ ^[A-Za-z0-9._@%+=-]{8,128}$ ]]
+}
+
+validate_admin_password_for_env() {
+  local value="$1"
+  [[ "${value}" =~ ^[A-Za-z0-9._@#%+=-]{8,128}$ ]]
+}
+
+set_database_config() {
+  local input_db_name="$1"
+  local input_db_user="$2"
+  local input_db_password="$3"
+
+  DB_NAME="$(trim "${input_db_name}")"
+  DB_USER="$(trim "${input_db_user}")"
+  DB_PASSWORD="$(strip_env_value "${input_db_password}")"
+
+  require_postgres_identifier "DB_NAME" "${DB_NAME}"
+  require_postgres_identifier "DB_USER" "${DB_USER}"
+  if [[ -z "${DB_PASSWORD}" ]]; then
+    echo "DB_PASSWORD 不能为空。"
+    exit 1
+  fi
+
+  URL_ENCODED_DB_PASSWORD="$(urlencode_password "${DB_PASSWORD}")"
+  POSTGRES_DB="${DB_NAME}"
+  POSTGRES_USER="${DB_USER}"
+  POSTGRES_PASSWORD="${DB_PASSWORD}"
+  DATABASE_URL="postgresql://${DB_USER}:${URL_ENCODED_DB_PASSWORD}@postgres:5432/${DB_NAME}?schema=public"
+}
+
+load_existing_database_config() {
+  if [[ -z "${POSTGRES_DB:-}" || -z "${POSTGRES_USER:-}" || -z "${POSTGRES_PASSWORD:-}" ]]; then
+    fail_install ".env.production 缺少 POSTGRES_DB、POSTGRES_USER 或 POSTGRES_PASSWORD。"
+  fi
+
+  set_database_config "${POSTGRES_DB}" "${POSTGRES_USER}" "${POSTGRES_PASSWORD}"
+}
+
+sync_env_database_lines() {
+  local tmp_file="${ENV_FILE}.tmp"
+  local saw_postgres_db=0
+  local saw_postgres_user=0
+  local saw_postgres_password=0
+  local saw_database_url=0
+
+  : > "${tmp_file}"
+
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    if [[ "${line}" =~ ^POSTGRES_DB= ]]; then
+      write_env_var "POSTGRES_DB" "${POSTGRES_DB}" >> "${tmp_file}"
+      saw_postgres_db=1
+    elif [[ "${line}" =~ ^POSTGRES_USER= ]]; then
+      write_env_var "POSTGRES_USER" "${POSTGRES_USER}" >> "${tmp_file}"
+      saw_postgres_user=1
+    elif [[ "${line}" =~ ^POSTGRES_PASSWORD= ]]; then
+      write_env_var "POSTGRES_PASSWORD" "${POSTGRES_PASSWORD}" >> "${tmp_file}"
+      saw_postgres_password=1
+    elif [[ "${line}" =~ ^DATABASE_URL= ]]; then
+      write_env_var "DATABASE_URL" "${DATABASE_URL}" >> "${tmp_file}"
+      saw_database_url=1
+    else
+      printf '%s\n' "${line}" >> "${tmp_file}"
+    fi
+  done < "${ENV_FILE}"
+
+  if [[ "${saw_postgres_db}" == "0" ]]; then
+    write_env_var "POSTGRES_DB" "${POSTGRES_DB}" >> "${tmp_file}"
+  fi
+  if [[ "${saw_postgres_user}" == "0" ]]; then
+    write_env_var "POSTGRES_USER" "${POSTGRES_USER}" >> "${tmp_file}"
+  fi
+  if [[ "${saw_postgres_password}" == "0" ]]; then
+    write_env_var "POSTGRES_PASSWORD" "${POSTGRES_PASSWORD}" >> "${tmp_file}"
+  fi
+  if [[ "${saw_database_url}" == "0" ]]; then
+    write_env_var "DATABASE_URL" "${DATABASE_URL}" >> "${tmp_file}"
+  fi
+
+  mv "${tmp_file}" "${ENV_FILE}"
+  chmod 600 "${ENV_FILE}"
+}
+
+print_database_config_summary() {
+  echo
+  echo "数据库配置摘要："
+  echo "POSTGRES_DB=${POSTGRES_DB}"
+  echo "POSTGRES_USER=${POSTGRES_USER}"
+  echo "DATABASE_URL=$(mask_database_url "${DATABASE_URL}")"
+  echo "POSTGRES_PASSWORD=已隐藏"
 }
 
 normalize_domain() {
@@ -418,12 +574,8 @@ normalize_domain() {
 }
 
 render_env_file() {
-  local db_user_encoded db_password_encoded db_name_encoded database_url redis_password_encoded redis_url
-  db_user_encoded="$(urlencode "${POSTGRES_USER}")"
-  db_password_encoded="$(urlencode "${POSTGRES_PASSWORD}")"
-  db_name_encoded="$(urlencode "${POSTGRES_DB}")"
+  local redis_password_encoded redis_url
   redis_password_encoded="$(urlencode "${REDIS_PASSWORD}")"
-  database_url="postgresql://${db_user_encoded}:${db_password_encoded}@postgres:5432/${db_name_encoded}?schema=public"
   redis_url="redis://:${redis_password_encoded}@redis:6379"
 
   local tmp_file="${ENV_FILE}.tmp"
@@ -433,34 +585,38 @@ render_env_file() {
     if [[ "${line}" =~ ^([A-Z0-9_]+)= ]]; then
       key="${BASH_REMATCH[1]}"
       case "${key}" in
-        NODE_ENV) write_env_line "${key}" "production" >> "${tmp_file}" ;;
-        APP_ENV) write_env_line "${key}" "production" >> "${tmp_file}" ;;
-        DOMAIN) write_env_line "${key}" "${DOMAIN}" >> "${tmp_file}" ;;
-        SITE_URL|PUBLIC_SITE_URL) write_env_line "${key}" "https://${DOMAIN}" >> "${tmp_file}" ;;
-        NEXT_PUBLIC_API_BASE_URL) write_env_line "${key}" "https://${DOMAIN}/api" >> "${tmp_file}" ;;
-        POSTGRES_DB) write_env_line "${key}" "${POSTGRES_DB}" >> "${tmp_file}" ;;
-        POSTGRES_USER) write_env_line "${key}" "${POSTGRES_USER}" >> "${tmp_file}" ;;
-        POSTGRES_PASSWORD) write_env_line "${key}" "${POSTGRES_PASSWORD}" >> "${tmp_file}" ;;
-        DATABASE_URL) write_env_line "${key}" "${database_url}" >> "${tmp_file}" ;;
-        REDIS_PASSWORD) write_env_line "${key}" "${REDIS_PASSWORD}" >> "${tmp_file}" ;;
-        REDIS_URL) write_env_line "${key}" "${redis_url}" >> "${tmp_file}" ;;
-        JWT_SECRET) write_env_line "${key}" "${JWT_SECRET}" >> "${tmp_file}" ;;
-        ADMIN_EMAIL) write_env_line "${key}" "${ADMIN_EMAIL}" >> "${tmp_file}" ;;
-        ADMIN_PASSWORD) write_env_line "${key}" "${ADMIN_PASSWORD}" >> "${tmp_file}" ;;
-        ADMIN_DISPLAY_NAME) write_env_line "${key}" "${ADMIN_DISPLAY_NAME}" >> "${tmp_file}" ;;
-        QWEATHER_API_KEY) write_env_line "${key}" "${QWEATHER_API_KEY}" >> "${tmp_file}" ;;
-        QWEATHER_API_HOST) write_env_line "${key}" "${QWEATHER_API_HOST}" >> "${tmp_file}" ;;
-        AMAP_API_KEY) write_env_line "${key}" "${AMAP_API_KEY}" >> "${tmp_file}" ;;
-        AMAP_WEB_SERVICE_KEY) write_env_line "${key}" "${AMAP_WEB_SERVICE_KEY}" >> "${tmp_file}" ;;
-        DEEPSEEK_API_KEY) write_env_line "${key}" "${DEEPSEEK_API_KEY}" >> "${tmp_file}" ;;
-        DEEPSEEK_BASE_URL) write_env_line "${key}" "${DEEPSEEK_BASE_URL}" >> "${tmp_file}" ;;
-        OPEN_METEO_API_KEY) write_env_line "${key}" "${OPEN_METEO_API_KEY}" >> "${tmp_file}" ;;
-        OPEN_METEO_MODE) write_env_line "${key}" "${OPEN_METEO_MODE}" >> "${tmp_file}" ;;
-        OPEN_METEO_CUSTOMER_ENDPOINT) write_env_line "${key}" "${OPEN_METEO_CUSTOMER_ENDPOINT}" >> "${tmp_file}" ;;
-        *) printf '%s\n' "${line}" >> "${tmp_file}" ;;
+        NODE_ENV) write_env_var "${key}" "production" >> "${tmp_file}" ;;
+        APP_ENV) write_env_var "${key}" "production" >> "${tmp_file}" ;;
+        DOMAIN) write_env_var "${key}" "${DOMAIN}" >> "${tmp_file}" ;;
+        SITE_URL|PUBLIC_SITE_URL) write_env_var "${key}" "https://${DOMAIN}" >> "${tmp_file}" ;;
+        NEXT_PUBLIC_API_BASE_URL) write_env_var "${key}" "https://${DOMAIN}/api" >> "${tmp_file}" ;;
+        POSTGRES_DB) write_env_var "${key}" "${POSTGRES_DB}" >> "${tmp_file}" ;;
+        POSTGRES_USER) write_env_var "${key}" "${POSTGRES_USER}" >> "${tmp_file}" ;;
+        POSTGRES_PASSWORD) write_env_var "${key}" "${POSTGRES_PASSWORD}" >> "${tmp_file}" ;;
+        DATABASE_URL) write_env_var "${key}" "${DATABASE_URL}" >> "${tmp_file}" ;;
+        REDIS_PASSWORD) write_env_var "${key}" "${REDIS_PASSWORD}" >> "${tmp_file}" ;;
+        REDIS_URL) write_env_var "${key}" "${redis_url}" >> "${tmp_file}" ;;
+        JWT_SECRET) write_env_var "${key}" "${JWT_SECRET}" >> "${tmp_file}" ;;
+        ADMIN_EMAIL) write_env_var "${key}" "${ADMIN_EMAIL}" >> "${tmp_file}" ;;
+        ADMIN_PASSWORD) write_env_var "${key}" "${ADMIN_PASSWORD}" >> "${tmp_file}" ;;
+        ADMIN_DISPLAY_NAME) write_env_var "${key}" "${ADMIN_DISPLAY_NAME}" >> "${tmp_file}" ;;
+        QWEATHER_API_KEY) write_env_var "${key}" "${QWEATHER_API_KEY}" >> "${tmp_file}" ;;
+        QWEATHER_API_HOST) write_env_var "${key}" "${QWEATHER_API_HOST}" >> "${tmp_file}" ;;
+        AMAP_API_KEY) write_env_var "${key}" "${AMAP_API_KEY}" >> "${tmp_file}" ;;
+        AMAP_WEB_SERVICE_KEY) write_env_var "${key}" "${AMAP_WEB_SERVICE_KEY}" >> "${tmp_file}" ;;
+        DEEPSEEK_API_KEY) write_env_var "${key}" "${DEEPSEEK_API_KEY}" >> "${tmp_file}" ;;
+        DEEPSEEK_BASE_URL) write_env_var "${key}" "${DEEPSEEK_BASE_URL}" >> "${tmp_file}" ;;
+        OPEN_METEO_API_KEY) write_env_var "${key}" "${OPEN_METEO_API_KEY}" >> "${tmp_file}" ;;
+        OPEN_METEO_MODE) write_env_var "${key}" "${OPEN_METEO_MODE}" >> "${tmp_file}" ;;
+        OPEN_METEO_CUSTOMER_ENDPOINT) write_env_var "${key}" "${OPEN_METEO_CUSTOMER_ENDPOINT}" >> "${tmp_file}" ;;
+        *) write_env_var "${key}" "${line#*=}" >> "${tmp_file}" ;;
       esac
-    else
+    elif [[ -z "${line}" || "${line}" =~ ^[[:space:]]*# ]]; then
       printf '%s\n' "${line}" >> "${tmp_file}"
+    else
+      echo "环境模板存在无效行：${line}" >&2
+      rm -f "${tmp_file}"
+      exit 1
     fi
   done < "${ENV_TEMPLATE}"
 
@@ -478,13 +634,13 @@ update_env_admin_lines() {
 
   while IFS= read -r line || [[ -n "${line}" ]]; do
     if [[ "${line}" =~ ^ADMIN_EMAIL= ]]; then
-      write_env_line "ADMIN_EMAIL" "${ADMIN_EMAIL}" >> "${tmp_file}"
+      write_env_var "ADMIN_EMAIL" "${ADMIN_EMAIL}" >> "${tmp_file}"
       saw_admin_email=1
     elif [[ "${line}" =~ ^ADMIN_PASSWORD= ]]; then
-      write_env_line "ADMIN_PASSWORD" "${ADMIN_PASSWORD}" >> "${tmp_file}"
+      write_env_var "ADMIN_PASSWORD" "${ADMIN_PASSWORD}" >> "${tmp_file}"
       saw_admin_password=1
     elif [[ "${line}" =~ ^ADMIN_DISPLAY_NAME= ]]; then
-      write_env_line "ADMIN_DISPLAY_NAME" "${ADMIN_DISPLAY_NAME}" >> "${tmp_file}"
+      write_env_var "ADMIN_DISPLAY_NAME" "${ADMIN_DISPLAY_NAME}" >> "${tmp_file}"
       saw_admin_display_name=1
     else
       printf '%s\n' "${line}" >> "${tmp_file}"
@@ -492,13 +648,13 @@ update_env_admin_lines() {
   done < "${ENV_FILE}"
 
   if [[ "${saw_admin_email}" == "0" ]]; then
-    write_env_line "ADMIN_EMAIL" "${ADMIN_EMAIL}" >> "${tmp_file}"
+    write_env_var "ADMIN_EMAIL" "${ADMIN_EMAIL}" >> "${tmp_file}"
   fi
   if [[ "${saw_admin_password}" == "0" ]]; then
-    write_env_line "ADMIN_PASSWORD" "${ADMIN_PASSWORD}" >> "${tmp_file}"
+    write_env_var "ADMIN_PASSWORD" "${ADMIN_PASSWORD}" >> "${tmp_file}"
   fi
   if [[ "${saw_admin_display_name}" == "0" ]]; then
-    write_env_line "ADMIN_DISPLAY_NAME" "${ADMIN_DISPLAY_NAME}" >> "${tmp_file}"
+    write_env_var "ADMIN_DISPLAY_NAME" "${ADMIN_DISPLAY_NAME}" >> "${tmp_file}"
   fi
 
   mv "${tmp_file}" "${ENV_FILE}"
@@ -815,26 +971,20 @@ handle_existing_postgres_volume() {
   echo
   warn "检测到已有 PostgreSQL 数据卷。"
   echo "PostgreSQL 首次初始化后的用户名和密码不会因为修改 .env.production 自动改变。"
-  echo "如果这是测试环境重新安装，可以清空旧数据库卷。"
-  echo "如果是正式环境，请先备份数据库。"
   echo
   echo "请选择处理方式："
   echo "1. 保留现有数据并停止安装"
-  echo "2. 备份数据库后继续"
-  echo "3. 删除测试数据库卷并重新初始化"
+  echo "2. 删除测试数据库卷并重新初始化"
   echo
 
   local choice=""
-  read -r -p "请输入选项 [1/2/3]: " choice
+  read -r -p "请输入选项 [1/2]: " choice
   case "${choice}" in
     1)
       warn "已停止安装，保留现有 PostgreSQL 数据卷。"
       exit 1
       ;;
     2)
-      backup_existing_database
-      ;;
-    3)
       if ! confirm_dangerous_delete "DELETE_DB_DATA" "输入 DELETE_DB_DATA 确认删除测试数据库卷:"; then
         warn "未确认删除，已停止安装。"
         exit 1
@@ -861,7 +1011,7 @@ backup_existing_database() {
 
   echo "正在备份 PostgreSQL 数据库到 backups/${timestamp}/postgres.dump..."
   if ! compose exec -T postgres pg_dump -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -Fc -f - > "${backup_dir}/postgres.dump"; then
-    print_migration_diagnostics
+    print_database_diagnostics
     fail_install "数据库备份失败，请确认 .env.production 中的数据库凭据与现有数据卷一致。"
   fi
 
@@ -873,21 +1023,42 @@ backup_existing_database() {
 wait_for_postgres() {
   echo "等待 PostgreSQL 就绪..."
   for _ in $(seq 1 60); do
+    local container_id=""
+    local container_status=""
+    container_id="$(compose ps -q postgres 2>/dev/null || true)"
+    if [[ -n "${container_id}" ]]; then
+      container_status="$(docker_cmd inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${container_id}" 2>/dev/null || true)"
+      case "${container_status}" in
+        healthy|running)
+          ok "PostgreSQL 容器状态正常。"
+          break
+          ;;
+        unhealthy|exited|dead)
+          echo "PostgreSQL 容器状态异常：${container_status}"
+          print_database_diagnostics
+          fail_install "PostgreSQL 容器状态异常。"
+          ;;
+      esac
+    fi
+    sleep 2
+  done
+
+  for _ in $(seq 1 60); do
     if compose exec -T postgres pg_isready -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" >/dev/null 2>&1; then
-      ok "PostgreSQL 已就绪。"
+      ok "PostgreSQL pg_isready 检查通过。"
       return
     fi
     sleep 2
   done
 
   echo "PostgreSQL 未在预期时间内就绪。"
-  compose logs --tail=100 postgres || true
+  print_database_diagnostics
   fail_install "PostgreSQL 启动超时。"
 }
 
-print_migration_diagnostics() {
+print_database_diagnostics() {
   echo
-  echo "Migration diagnostics:"
+  echo "Database diagnostics:"
   echo "DATABASE_URL=$(mask_database_url "${DATABASE_URL:-}")"
   echo "POSTGRES_DB=${POSTGRES_DB:-}"
   echo "POSTGRES_USER=${POSTGRES_USER:-}"
@@ -898,21 +1069,32 @@ print_migration_diagnostics() {
   echo "Last 100 PostgreSQL log lines:"
   compose logs --tail=100 postgres || true
   echo
-  echo "Last 100 API log lines:"
-  compose logs --tail=100 api || true
-  echo
   echo "Last 100 installer log lines:"
   tail -n 100 "${INSTALL_LOG}" || true
 }
 
+run_postgres_select_one() {
+  if run_logged_allow_fail "执行 PostgreSQL SELECT 1 预检" compose exec -T postgres psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -c "SELECT 1;"; then
+    ok "PostgreSQL SELECT 1 预检通过。"
+    return
+  fi
+
+  echo "数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"
+  print_database_diagnostics
+  fail_install "PostgreSQL SELECT 1 预检失败。"
+}
+
 preflight_database_connection() {
+  wait_for_postgres
+  run_postgres_select_one
+
   if run_logged_allow_fail "检查 API 容器内数据库连接" compose run --rm api node -e 'async function main() { let prisma; try { const { PrismaClient } = require("@prisma/client"); prisma = new PrismaClient(); await prisma.$queryRawUnsafe("SELECT 1"); } catch { console.error("数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"); process.exitCode = 1; } finally { if (prisma) { await prisma.$disconnect().catch(() => {}); } } } main();'; then
     ok "数据库连接检查通过。"
     return
   fi
 
   echo "数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"
-  print_migration_diagnostics
+  print_database_diagnostics
   fail_install "数据库连接预检失败。"
 }
 
@@ -924,7 +1106,7 @@ run_migrations() {
 
   echo "数据库迁移失败。"
   echo "数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"
-  print_migration_diagnostics
+  print_database_diagnostics
   fail_install "数据库迁移失败。"
 }
 
@@ -947,6 +1129,10 @@ collect_admin_configuration() {
       warn "两次输入的管理员密码不一致，请重新输入。"
       continue
     fi
+    if ! validate_admin_password_for_env "${ADMIN_PASSWORD}"; then
+      warn "管理员密码包含暂不支持的特殊字符，请使用字母、数字和 . _ @ # % + = -。"
+      continue
+    fi
     break
   done
 
@@ -958,16 +1144,25 @@ collect_configuration() {
   DOMAIN="$(normalize_domain "$(prompt_required "请输入域名" "example.com")")"
 
   section 3 "数据库配置"
-  POSTGRES_DB="$(prompt_required "请输入数据库名称" "photo_weather_ai")"
-  POSTGRES_USER="$(prompt_required "请输入数据库用户" "${POSTGRES_DB}")"
-  require_postgres_identifier "Database name" "${POSTGRES_DB}"
-  require_postgres_identifier "Database user" "${POSTGRES_USER}"
+  DB_NAME="$(prompt_required "请输入数据库名称" "photo_weather_ai")"
+  DB_USER="$(prompt_required "请输入数据库用户" "photo_weather_ai")"
+  require_postgres_identifier "DB_NAME" "${DB_NAME}"
+  require_postgres_identifier "DB_USER" "${DB_USER}"
 
-  POSTGRES_PASSWORD="$(prompt_secret "请输入数据库密码（留空自动生成）")"
-  if [[ -z "${POSTGRES_PASSWORD}" ]]; then
-    POSTGRES_PASSWORD="$(generate_secret)"
-    ok "已自动生成数据库密码。"
-  fi
+  while true; do
+    DB_PASSWORD="$(prompt_secret "请输入数据库密码（留空自动生成）")"
+    if [[ -z "${DB_PASSWORD}" ]]; then
+      DB_PASSWORD="$(generate_secret)"
+      ok "已自动生成数据库密码。"
+      break
+    fi
+    DB_PASSWORD="$(strip_env_value "${DB_PASSWORD}")"
+    if validate_db_password_for_env "${DB_PASSWORD}"; then
+      break
+    fi
+    warn "数据库密码包含暂不支持的特殊字符，请使用字母、数字和 . _ @ % + = -，或留空自动生成。"
+  done
+  set_database_config "${DB_NAME}" "${DB_USER}" "${DB_PASSWORD}"
 
   REDIS_PASSWORD="$(prompt_secret "请输入 Redis 密码（留空自动生成）")"
   if [[ -z "${REDIS_PASSWORD}" ]]; then
@@ -986,33 +1181,14 @@ collect_configuration() {
   section 5 "第三方服务配置"
   AMAP_API_KEY=""
   AMAP_WEB_SERVICE_KEY=""
-  if ask_yes_no "现在配置高德 Web Service Key" "n"; then
-    AMAP_API_KEY="$(prompt_secret "请输入高德 Web Service Key")"
-    AMAP_WEB_SERVICE_KEY="${AMAP_API_KEY}"
-  fi
-
-  DEEPSEEK_API_KEY=""
-  DEEPSEEK_BASE_URL="https://api.deepseek.com"
-  if ask_yes_no "现在配置 DeepSeek Key" "n"; then
-    DEEPSEEK_API_KEY="$(prompt_secret "请输入 DeepSeek API Key")"
-    DEEPSEEK_BASE_URL="$(prompt_optional "请输入 DeepSeek Base URL" "${DEEPSEEK_BASE_URL}")"
-  fi
-
   QWEATHER_API_KEY=""
   QWEATHER_API_HOST=""
-  if ask_yes_no "现在配置和风天气 Key 与 API Host" "n"; then
-    QWEATHER_API_KEY="$(prompt_secret "请输入和风天气 API Key")"
-    QWEATHER_API_HOST="$(prompt_required "请输入和风天气 API Host，例如 xxxxx.qweatherapi.com")"
-  fi
-
+  DEEPSEEK_API_KEY=""
+  DEEPSEEK_BASE_URL="https://api.deepseek.com"
   OPEN_METEO_API_KEY=""
   OPEN_METEO_MODE="free"
   OPEN_METEO_CUSTOMER_ENDPOINT=""
-  if ask_yes_no "现在配置 Open-Meteo 商业 Key" "n"; then
-    OPEN_METEO_API_KEY="$(prompt_secret "请输入 Open-Meteo API Key")"
-    OPEN_METEO_CUSTOMER_ENDPOINT="$(prompt_optional "请输入 Open-Meteo Customer Endpoint")"
-    OPEN_METEO_MODE="customer"
-  fi
+  echo "第三方服务 Key 建议部署完成后在后台管理中配置，本安装器不会写入初始 API Key。"
 }
 
 provider_enabled_label() {
@@ -1072,7 +1248,6 @@ create_admin_account() {
 }
 
 verify_admin_account() {
-  section 10 "管理员验证"
   if run_logged_allow_fail "验证管理员账号" compose run --rm \
     -e ADMIN_EMAIL="${ADMIN_EMAIL}" \
     -e ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
@@ -1094,17 +1269,19 @@ bootstrap_stack() {
   build_production_images
 
   run_logged "启动数据库、Redis 和星历服务" compose up -d postgres redis astro-service
-  wait_for_postgres
 
   if ! run_logged_allow_fail "准备 astro-service 星历缓存" compose run --rm astro-service python scripts/fetch_ephemeris.py; then
     warn "星历缓存下载失败。astro-service 会在 astro_data 卷中缺少 de421.bsp 时显示为不健康。"
   fi
 
-  section 9 "数据库初始化"
+  section 9 "数据库连接预检"
   preflight_database_connection
-  run_migrations
 
+  section 10 "数据库迁移"
+  run_migrations
   run_logged "写入数据库种子数据" compose run --rm api corepack pnpm db:seed
+
+  section 11 "管理员创建与验证"
   create_admin_account
   verify_admin_account
 
@@ -1115,7 +1292,7 @@ bootstrap_stack() {
 }
 
 check_https_after_start() {
-  section 11 "HTTPS 与健康检查"
+  section 12 "HTTPS 与健康检查"
   if curl -fsS --max-time 15 "https://${DOMAIN}" >/dev/null 2>&1; then
     ok "HTTPS 首页可访问：https://${DOMAIN}"
   else
@@ -1139,19 +1316,42 @@ main() {
   ok "部署模板检查通过。"
 
   if [[ -f "${ENV_FILE}" ]]; then
-    warn ".env.production 已存在。"
-    if ask_yes_no "是否复用现有生产环境配置" "y"; then
-      load_env_file
-      DOMAIN="${DOMAIN:-}"
-      if [[ -z "${DOMAIN}" ]]; then
-        fail_install "现有 .env.production 未定义 DOMAIN。"
+    if ! env_file_is_valid; then
+      warn "检测到现有 .env.production 格式错误。"
+      if ask_yes_no "是否备份并重新生成配置？" "y"; then
+        local broken_env_backup
+        broken_env_backup="${ENV_FILE}.broken-$(date +%Y%m%d-%H%M%S)"
+        mv "${ENV_FILE}" "${broken_env_backup}"
+        ok "已备份损坏配置：${broken_env_backup}"
+        collect_configuration
+        should_render_env=1
+      else
+        warn "已停止安装，请修复 .env.production 后重试。"
+        exit 1
       fi
-      collect_admin_configuration "${ADMIN_EMAIL:-}" "${ADMIN_DISPLAY_NAME:-Super Admin}"
-      update_env_admin_lines
-      ok "已更新 .env.production 中的管理员账号。"
     else
-      collect_configuration
-      should_render_env=1
+      warn ".env.production 已存在。"
+      if ask_yes_no "是否复用现有生产环境配置" "y"; then
+        check_env_file
+        load_env_file
+        load_existing_database_config
+        sync_env_database_lines
+        check_env_file
+        load_env_file
+        DOMAIN="${DOMAIN:-}"
+        if [[ -z "${DOMAIN}" ]]; then
+          fail_install "现有 .env.production 未定义 DOMAIN。"
+        fi
+        collect_admin_configuration "${ADMIN_EMAIL:-}" "${ADMIN_DISPLAY_NAME:-Super Admin}"
+        update_env_admin_lines
+        check_env_file
+        load_env_file
+        load_existing_database_config
+        ok "已更新 .env.production 中的数据库连接与管理员账号。"
+      else
+        collect_configuration
+        should_render_env=1
+      fi
     fi
   else
     collect_configuration
@@ -1166,7 +1366,10 @@ main() {
     ok "复用现有 .env.production。"
   fi
   require_env_file "未生成 .env.production，请检查安装输入后重试。"
+  check_env_file
   load_env_file
+  load_existing_database_config
+  print_database_config_summary
   ensure_caddyfile
   print_deployment_summary
   confirm_deployment
@@ -1183,7 +1386,7 @@ main() {
   bootstrap_stack
   check_https_after_start
 
-  section 12 "完成"
+  section 13 "完成"
   echo
   ok "部署完成。"
   echo "Website: https://${DOMAIN}"

@@ -29,12 +29,28 @@ The installer runs these sections:
 6. 生成配置文件
 7. Docker 与系统资源检查
 8. 构建并启动服务
-9. 数据库初始化
-10. 管理员验证
-11. HTTPS 与健康检查
-12. 完成
+9. 数据库连接预检
+10. 数据库迁移
+11. 管理员创建与验证
+12. HTTPS 与健康检查
+13. 完成
 
-The installer writes `.env.production` and `deploy/Caddyfile`, installs Docker only when Docker or the Compose plugin is missing, validates Compose config, builds images sequentially, runs migrations and seed data, creates or updates the admin account, verifies the same admin email/password through `pnpm verify-admin`, then starts the full stack.
+The installer writes `.env.production` and `deploy/Caddyfile`, installs Docker only when Docker or the Compose plugin is missing, validates Compose config, builds images sequentially, starts PostgreSQL/Redis/astro-service, runs database preflight, then runs migrations and seed data. After that it creates or updates the admin account, verifies the same admin email/password through `pnpm verify-admin`, then starts the full stack.
+
+During database configuration the installer uses one source of truth:
+
+- `DB_NAME`, default `photo_weather_ai`
+- `DB_USER`, default `photo_weather_ai`
+- `DB_PASSWORD`, auto-generated when left blank
+
+It writes matching values to:
+
+- `POSTGRES_DB=$DB_NAME`
+- `POSTGRES_USER=$DB_USER`
+- `POSTGRES_PASSWORD=$DB_PASSWORD`
+- `DATABASE_URL=postgresql://$DB_USER:$URL_ENCODED_DB_PASSWORD@postgres:5432/$DB_NAME?schema=public`
+
+Custom database passwords are URL-encoded with `python3 urllib.parse.quote` before `DATABASE_URL` is written. If `python3` is unavailable, leave the DB password blank so the installer generates a URL-safe password, use only URL-safe password characters, or install `python3` before using a custom password with reserved URL characters. The installer prints `POSTGRES_DB`, `POSTGRES_USER`, and a masked `DATABASE_URL`; it never prints `POSTGRES_PASSWORD`.
 
 Logs are written to `deploy/install.log`. For streamed command output:
 
@@ -99,7 +115,7 @@ If SSH disconnects during image build or initialization, reconnect and run:
 bash scripts/resume-install.sh
 ```
 
-It uses `.env.production`, rebuilds images, starts dependencies, runs migrations and seed data, creates/verifies the admin account, starts services, and prints final status.
+It uses `.env.production`, rebuilds images, starts dependencies, reruns database preflight, runs migrations and seed data, creates/verifies the admin account, starts services, and prints final status.
 
 ## Update
 
@@ -107,7 +123,7 @@ It uses `.env.production`, rebuilds images, starts dependencies, runs migrations
 bash scripts/update.sh
 ```
 
-The update script pulls latest Git code when an upstream is configured, rebuilds images sequentially, runs migrations and seed data, creates/verifies the admin account from `.env.production`, restarts services, and prints Compose status.
+The update script pulls latest Git code when an upstream is configured, rebuilds images sequentially, reruns database preflight, runs migrations and seed data, creates/verifies the admin account from `.env.production`, restarts services, and prints Compose status.
 
 ## Backup
 
@@ -129,13 +145,26 @@ The status script shows Compose service state, public URL, API health, PostgreSQ
 
 PostgreSQL only applies `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` during first volume initialization. Changing `.env.production` later does not change credentials inside an existing PostgreSQL data volume.
 
+This is the common cause of:
+
+```text
+数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。
+```
+
+There are two usual causes:
+
+- `.env.production` has inconsistent `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `DATABASE_URL`.
+- An old PostgreSQL Docker volume was initialized with earlier credentials and is still being reused.
+
 When the installer detects an existing PostgreSQL volume, it shows:
 
 ```text
 检测到已有 PostgreSQL 数据卷。
 PostgreSQL 首次初始化后的用户名和密码不会因为修改 .env.production 自动改变。
-如果这是测试环境重新安装，可以清空旧数据库卷。
-如果是正式环境，请先备份数据库。
+
+请选择处理方式：
+1. 保留现有数据并停止安装
+2. 删除测试数据库卷并重新初始化
 ```
 
 For staging/test only:
@@ -146,11 +175,30 @@ rm -f .env.production deploy/Caddyfile
 bash scripts/install.sh
 ```
 
-Deleting database data requires typing `DELETE_DB_DATA`. Do not remove a real production volume until the backup has been verified.
+Deleting database data requires typing `DELETE_DB_DATA`. `scripts/reset-prod-db.sh` stops the Compose stack and removes only the PostgreSQL data volume by default. It does not remove Caddy certificate/config volumes unless you separately type `DELETE_CADDY_DATA`. Do not remove a real production volume until the backup has been verified.
 
 ## Compose Environment File
 
 Production scripts always load `.env.production` through `--env-file`. Docker Compose reads `.env` automatically, but it does not automatically read `.env.production`.
+
+`.env.production` must be a Docker Compose env file:
+
+- one variable per line
+- each non-empty, non-comment line must be `KEY=VALUE`
+- `KEY` must contain only uppercase letters, numbers, and underscores
+- no standalone secret/password lines
+- no multiline values
+
+The installer writes secrets through a safe env writer and uses URL-safe generated secrets for PostgreSQL, Redis, JWT, and generated admin passwords. It also runs:
+
+```bash
+bash scripts/check-env-production.sh
+docker compose --env-file .env.production -f docker-compose.prod.yml config >/tmp/photo-weather-compose-check.yml
+```
+
+If a previous installer run left a broken env file, run `bash scripts/install.sh` again. When it prints `检测到现有 .env.production 格式错误。`, choose the default `Y` to back up the old file as `.env.production.broken-YYYYMMDD-HHMMSS` and regenerate a clean configuration.
+
+Third-party API keys may contain characters that are easy to break in env files. The production installer now leaves initial provider keys empty; configure weather, map, and model provider keys in the admin console after deployment.
 
 Correct production command examples:
 
@@ -164,6 +212,7 @@ docker compose --env-file .env.production -f docker-compose.prod.yml up -d
 
 - `邮箱或密码不正确。`: run `bash scripts/reset-admin.sh`, then `bash scripts/check-login.sh`. The admin command updates existing users; it does not skip password rotation when the user already exists.
 - `登录服务暂时不可用，请稍后重试或联系管理员。`: run `bash scripts/status.sh`, then inspect API logs with `docker compose --env-file .env.production -f docker-compose.prod.yml logs -f api`. The UI intentionally hides Prisma, PostgreSQL hostnames, SQL details, and stack traces.
+- Compose `unexpected character` while reading `.env.production`: the env file has an invalid line, usually a standalone generated secret or an unescaped value. Run `bash scripts/check-env-production.sh`; then rerun `bash scripts/install.sh` and choose to back up/regenerate the broken file.
 - Prisma `P1000` or database authentication failure: likely `.env.production` no longer matches an old PostgreSQL volume. For test reinstall, use `bash scripts/reset-prod-db.sh`. For real data, run `bash scripts/backup.sh` first and repair credentials inside PostgreSQL or restore the matching `.env.production`.
 - Docker installation waits on apt/dpkg: the installer waits up to 5 minutes and prints blocking processes. It never deletes apt lock files.
 - Docker build fails on a small server: enable the offered 4 GB swap file or move the build to a larger machine.
