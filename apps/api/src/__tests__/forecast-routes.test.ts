@@ -564,8 +564,14 @@ describe("forecast query validation route", () => {
     expect(body.weatherDataMode).toBe("real");
     expect(body.currentWeather).toMatchObject({
       providerCode: "qweather",
-      temperature: 13,
-      feelsLike: 11,
+      rawTemperature: 13,
+      temperature: 6.6,
+      elevationAdjustedTemperature: 6.6,
+      feelsLike: 4.6,
+      temperatureAdjustment: expect.objectContaining({
+        correctionApplied: true,
+        correctionCelsius: 6.4,
+      }),
     });
     expect(body.weatherSourceSummaries).toEqual(
       expect.arrayContaining([

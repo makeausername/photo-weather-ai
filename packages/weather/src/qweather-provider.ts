@@ -106,6 +106,7 @@ export class QWeatherProvider implements WeatherProvider {
         const weatherTextZh = toText(record.text);
         const windSpeed = kmhToMetersPerSecond(record.windSpeed);
         const precipitationProbability = nullablePercent(record.pop);
+        const precipitation = nullableRounded(record.precip);
         const cloudTotal = nullablePercent(record.cloud);
         const missingFields = [...cloudLayerMissingFields];
         const estimatedFields: string[] = [];
@@ -116,7 +117,6 @@ export class QWeatherProvider implements WeatherProvider {
         }
         if (precipitationProbability === null) {
           missingFields.push("precipitationProbability");
-          estimatedFields.push("precipitationProbability");
         }
         if (cloudTotal === null) {
           missingFields.push("cloudTotal");
@@ -136,8 +136,23 @@ export class QWeatherProvider implements WeatherProvider {
           windSpeed: windSpeed ?? 0,
           windGust: kmhToMetersPerSecond(record.windGust),
           windDirection: nullableRounded(record.wind360, 0),
-          precipitationProbability: precipitationProbability ?? 0,
-          precipitation: nullableRounded(record.precip),
+          precipitationProbability,
+          precipitationProbabilityPercent: precipitationProbability,
+          precipitation,
+          precipitationAmountMm: precipitation,
+          rainAmountMm:
+            inferQWeatherPrecipitationType(weatherCode, weatherTextZh, precipitation) === "rain"
+              ? precipitation
+              : null,
+          snowAmountMm:
+            inferQWeatherPrecipitationType(weatherCode, weatherTextZh, precipitation) === "snow"
+              ? precipitation
+              : null,
+          precipitationType: inferQWeatherPrecipitationType(
+            weatherCode,
+            weatherTextZh,
+            precipitation,
+          ),
           visibility: nullableRounded(record.vis),
           dewPoint: nullableRounded(record.dew),
           cloudTotal: cloudTotal ?? 0,
@@ -166,19 +181,36 @@ export class QWeatherProvider implements WeatherProvider {
         const date = normalizeDate(record.fxDate);
         const textDay = toText(record.textDay) ?? "未知天气";
         const textNight = toText(record.textNight);
+        const precipitationProbability = nullablePercent(record.pop);
+        const precipitation = nullableRounded(record.precip);
+        const weatherSummary = textNight ? `${textDay}转${textNight}` : textDay;
 
         return {
           date,
           tempMin: requiredRounded(record.tempMin, "daily.tempMin"),
           tempMax: requiredRounded(record.tempMax, "daily.tempMax"),
-          precipitationProbability: percent(record.pop ?? 0, "daily.pop"),
-          weatherSummary: textNight ? `${textDay}转${textNight}` : textDay,
+          precipitationProbability,
+          precipitationProbabilityPercent: precipitationProbability,
+          precipitation,
+          precipitationAmountMm: precipitation,
+          rainAmountMm:
+            inferQWeatherPrecipitationType(null, weatherSummary, precipitation) === "rain"
+              ? precipitation
+              : null,
+          snowAmountMm:
+            inferQWeatherPrecipitationType(null, weatherSummary, precipitation) === "snow"
+              ? precipitation
+              : null,
+          precipitationType: inferQWeatherPrecipitationType(null, weatherSummary, precipitation),
+          weatherSummary,
           cloudSummary: "和风天气未提供云层分层",
           sunrise: normalizeClockTime(date, record.sunrise),
           sunset: normalizeClockTime(date, record.sunset),
           providerCode: source.providerCode,
           providerLabelZh: source.providerLabelZh,
           dataMode: source.mode,
+          missingFields:
+            precipitationProbability === null ? ["precipitationProbability"] : undefined,
         };
       }),
     );
@@ -233,4 +265,28 @@ function asRecord(input: unknown): Record<string, unknown> {
 
 function roundTo(value: number): number {
   return Math.round(value * 10) / 10;
+}
+
+function inferQWeatherPrecipitationType(
+  weatherCode: string | null,
+  weatherTextZh: string | null,
+  precipitation: number | null,
+): "rain" | "snow" | "mixed" | "none" | "unknown" {
+  const text = weatherTextZh ?? "";
+  if (text.includes("雨夹雪")) {
+    return "mixed";
+  }
+  if (text.includes("雪")) {
+    return "snow";
+  }
+  if (text.includes("雨") || /^3\d{2}$/.test(weatherCode ?? "")) {
+    return "rain";
+  }
+  if ((precipitation ?? 0) > 0) {
+    return "rain";
+  }
+  if (precipitation === 0) {
+    return "none";
+  }
+  return "unknown";
 }

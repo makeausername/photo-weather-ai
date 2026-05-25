@@ -7,3 +7,4 @@ export * from "./helpers.js";
 export * from "./mock-engine.js";
 export * from "./mock-forecast.js";
 export * from "./types.js";
+export * from "./weather-decision-metrics.js";

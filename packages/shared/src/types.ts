@@ -46,6 +46,37 @@ export type ForecastTarget = "general" | "cloud_sea" | "glow" | "astro";
 
 export type WeatherDataMode = "mock" | "demo" | "fixture" | "fallback" | "real";
 
+export type PrecipitationType = "rain" | "snow" | "mixed" | "none" | "unknown";
+
+export type ExposedRidgeWindRisk = "low" | "medium" | "high";
+
+export type TransparencyGrade = "excellent" | "good" | "fair" | "poor";
+
+export type CloudFogObstructionRisk = "low" | "medium" | "high";
+
+export type NormalizedWeatherFieldMetadata = {
+  readonly value?: string | number | boolean | null;
+  readonly providerCode: string;
+  readonly providerLabelZh?: string;
+  readonly estimated: boolean;
+  readonly missingReason?: string;
+  readonly providerElevationMeters?: number;
+};
+
+export type NormalizedWeatherFieldMetadataMap = Partial<
+  Record<string, NormalizedWeatherFieldMetadata>
+>;
+
+export type ElevationTemperatureAdjustment = {
+  readonly rawTemperature: number;
+  readonly elevationAdjustedTemperature: number;
+  readonly correctionApplied: boolean;
+  readonly correctionMeters: number;
+  readonly correctionCelsius: number;
+  readonly lapseRateCelsiusPer100m: number;
+  readonly providerElevationMeters?: number;
+};
+
 export type ForecastQueryInput = {
   readonly name: string;
   readonly source: string;
@@ -63,6 +94,9 @@ export type ForecastQueryInput = {
 export type NormalizedHourlyWeather = {
   readonly time: string;
   readonly temperature: number;
+  readonly rawTemperature?: number;
+  readonly elevationAdjustedTemperature?: number;
+  readonly temperatureAdjustment?: ElevationTemperatureAdjustment;
   readonly feelsLike: number | null;
   readonly humidity: number;
   readonly dewPointSpread?: number | null;
@@ -70,14 +104,25 @@ export type NormalizedHourlyWeather = {
   readonly windSpeed: number;
   readonly windGust: number | null;
   readonly windDirection: number | null;
-  readonly precipitationProbability: number;
+  readonly precipitationProbability: number | null;
+  readonly precipitationProbabilityPercent?: number | null;
   readonly precipitation: number | null;
+  readonly precipitationAmountMm?: number | null;
+  readonly rainAmountMm?: number | null;
+  readonly snowAmountMm?: number | null;
+  readonly precipitationType?: PrecipitationType;
   readonly visibility: number | null;
+  readonly rawVisibilityKm?: number | null;
+  readonly photographyTransparencyScore?: number;
+  readonly transparencyGrade?: TransparencyGrade;
+  readonly cloudFogObstructionRisk?: CloudFogObstructionRisk;
   readonly dewPoint: number | null;
   readonly cloudTotal: number;
   readonly cloudLow: number | null;
   readonly cloudMid: number | null;
   readonly cloudHigh: number | null;
+  readonly exposedRidgeWindRisk?: ExposedRidgeWindRisk;
+  readonly providerElevationMeters?: number;
   readonly weatherCode: string | null;
   readonly weatherTextZh?: string | null;
   readonly providerCode: string;
@@ -87,6 +132,7 @@ export type NormalizedHourlyWeather = {
   readonly missingFields?: readonly string[];
   readonly estimatedFields?: readonly string[];
   readonly sourceNotes?: readonly string[];
+  readonly fieldMetadata?: NormalizedWeatherFieldMetadataMap;
 };
 
 export type NormalizedCurrentWeather = {
@@ -95,6 +141,9 @@ export type NormalizedCurrentWeather = {
   readonly dataMode: WeatherDataMode;
   readonly observedAt: string;
   readonly temperature: number;
+  readonly rawTemperature?: number;
+  readonly elevationAdjustedTemperature?: number;
+  readonly temperatureAdjustment?: ElevationTemperatureAdjustment;
   readonly feelsLike?: number | null;
   readonly humidity: number;
   readonly dewPoint?: number | null;
@@ -109,7 +158,18 @@ export type NormalizedCurrentWeather = {
   readonly cloudMid?: number | null;
   readonly cloudHigh?: number | null;
   readonly precipitation?: number | null;
+  readonly precipitationAmountMm?: number | null;
+  readonly rainAmountMm?: number | null;
+  readonly snowAmountMm?: number | null;
   readonly precipitationProbability?: number | null;
+  readonly precipitationProbabilityPercent?: number | null;
+  readonly precipitationType?: PrecipitationType;
+  readonly rawVisibilityKm?: number | null;
+  readonly photographyTransparencyScore?: number;
+  readonly transparencyGrade?: TransparencyGrade;
+  readonly cloudFogObstructionRisk?: CloudFogObstructionRisk;
+  readonly exposedRidgeWindRisk?: ExposedRidgeWindRisk;
+  readonly providerElevationMeters?: number;
   readonly weatherTextZh?: string | null;
   readonly weatherCode?: string | null;
   readonly airQuality?: {
@@ -120,13 +180,43 @@ export type NormalizedCurrentWeather = {
   } | null;
   readonly missingFields: readonly string[];
   readonly estimatedFields: readonly string[];
+  readonly fieldMetadata?: NormalizedWeatherFieldMetadataMap;
 };
 
 export type NormalizedDailyWeather = {
   readonly date: string;
   readonly tempMin: number;
   readonly tempMax: number;
-  readonly precipitationProbability: number;
+  readonly rawTempMin?: number;
+  readonly rawTempMax?: number;
+  readonly elevationAdjustedTempMin?: number;
+  readonly elevationAdjustedTempMax?: number;
+  readonly temperatureAdjustment?: Omit<
+    ElevationTemperatureAdjustment,
+    "rawTemperature" | "elevationAdjustedTemperature"
+  >;
+  readonly precipitationProbability: number | null;
+  readonly precipitationProbabilityPercent?: number | null;
+  readonly precipitation?: number | null;
+  readonly precipitationAmountMm?: number | null;
+  readonly rainAmountMm?: number | null;
+  readonly snowAmountMm?: number | null;
+  readonly precipitationType?: PrecipitationType;
+  readonly windSpeed?: number | null;
+  readonly windGust?: number | null;
+  readonly windDirection?: number | null;
+  readonly humidity?: number | null;
+  readonly visibility?: number | null;
+  readonly rawVisibilityKm?: number | null;
+  readonly photographyTransparencyScore?: number;
+  readonly transparencyGrade?: TransparencyGrade;
+  readonly cloudFogObstructionRisk?: CloudFogObstructionRisk;
+  readonly cloudTotal?: number | null;
+  readonly cloudLow?: number | null;
+  readonly cloudMid?: number | null;
+  readonly cloudHigh?: number | null;
+  readonly exposedRidgeWindRisk?: ExposedRidgeWindRisk;
+  readonly providerElevationMeters?: number;
   readonly weatherSummary: string;
   readonly cloudSummary?: string;
   readonly sunrise?: string;
@@ -136,6 +226,7 @@ export type NormalizedDailyWeather = {
   readonly dataMode?: WeatherDataMode;
   readonly missingFields?: readonly string[];
   readonly estimatedFields?: readonly string[];
+  readonly fieldMetadata?: NormalizedWeatherFieldMetadataMap;
 };
 
 export type ClothingComfortLevel =
@@ -656,15 +747,30 @@ export type ForecastDailyWeatherSummary = {
   readonly weatherTextZh?: string;
   readonly tempMin?: number;
   readonly tempMax?: number;
+  readonly rawTempMin?: number;
+  readonly rawTempMax?: number;
+  readonly elevationAdjustedTempMin?: number;
+  readonly elevationAdjustedTempMax?: number;
+  readonly temperatureCorrectionApplied?: boolean;
+  readonly temperatureCorrectionCelsius?: number;
   readonly feelsLikeMin?: number;
   readonly feelsLikeMax?: number;
-  readonly precipitationProbability?: number;
+  readonly precipitationProbability?: number | null;
   readonly precipitation?: number;
+  readonly precipitationAmountMm?: number;
+  readonly rainAmountMm?: number;
+  readonly snowAmountMm?: number;
+  readonly precipitationType?: PrecipitationType;
   readonly windSpeed?: number;
   readonly windGust?: number;
   readonly windDirection?: number;
   readonly humidity?: number;
   readonly visibility?: number;
+  readonly rawVisibilityKm?: number;
+  readonly photographyTransparencyScore?: number;
+  readonly transparencyGrade?: TransparencyGrade;
+  readonly cloudFogObstructionRisk?: CloudFogObstructionRisk;
+  readonly exposedRidgeWindRisk?: ExposedRidgeWindRisk;
   readonly dewPointSpread?: number;
   readonly cloudTotal?: number;
   readonly cloudLow?: number;

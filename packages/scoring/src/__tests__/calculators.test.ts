@@ -22,6 +22,10 @@ import {
   calculateWhiteoutRiskScore,
   classifyRecommendationLevel,
   classifyScoreLevel,
+  applyMountainWeatherAdjustments,
+  calculatePhotographyTransparencyScore,
+  exposedRidgeWindRisk,
+  transparencyGradeFromScore,
 } from "../index.js";
 
 const baseQuery: ForecastQueryInput = {
@@ -155,6 +159,98 @@ describe("forecast score calculators", () => {
     expect(classifyRecommendationLevel(68)).toBe("worth_waiting");
     expect(classifyRecommendationLevel(50)).toBe("cautious");
     expect(classifyRecommendationLevel(35)).toBe("not_recommended");
+  });
+
+  it("lowers mountain temperatures with elevation correction and avoids double correction", () => {
+    const baseInput = buildMockForecastInput(baseQuery, { now: fixedNow });
+    const lowElevationHour = {
+      ...baseInput.hourlyWeather[0]!,
+      temperature: 28,
+      feelsLike: 29,
+      rawTemperature: undefined,
+      elevationAdjustedTemperature: undefined,
+      temperatureAdjustment: undefined,
+      estimatedFields: [],
+      providerElevationMeters: 600,
+    };
+    const adjusted = applyMountainWeatherAdjustments({
+      currentWeather: {
+        providerCode: "open_meteo",
+        providerLabelZh: "Open-Meteo",
+        dataMode: "real",
+        observedAt: lowElevationHour.time,
+        temperature: 28,
+        feelsLike: 29,
+        humidity: 80,
+        windSpeed: 4,
+        missingFields: [],
+        estimatedFields: [],
+        providerElevationMeters: 600,
+      },
+      hourlyWeather: [lowElevationHour],
+      dailyWeather: [],
+      terrainAnalysis: baseInput.terrainAnalysis,
+    });
+    const closeElevation = applyMountainWeatherAdjustments({
+      hourlyWeather: [
+        {
+          ...lowElevationHour,
+          providerElevationMeters: baseInput.terrainAnalysis.terrainProfile.locationElevation - 30,
+        },
+      ],
+      dailyWeather: [],
+      terrainAnalysis: baseInput.terrainAnalysis,
+    });
+
+    expect(adjusted.hourlyWeather[0]?.temperature).toBeLessThan(28);
+    expect(adjusted.hourlyWeather[0]?.temperatureAdjustment?.correctionApplied).toBe(true);
+    expect(adjusted.currentWeather?.temperature).toBeLessThan(28);
+    expect(closeElevation.hourlyWeather[0]?.temperature).toBe(28);
+    expect(
+      closeElevation.hourlyWeather[0]?.temperatureAdjustment?.correctionApplied,
+    ).toBeUndefined();
+  });
+
+  it("separates raw visibility from photography transparency under cloud and rain risk", () => {
+    const clearScore = calculatePhotographyTransparencyScore({
+      rawVisibilityKm: 90,
+      cloudLow: 18,
+      cloudTotal: 35,
+      humidity: 58,
+      dewPointSpread: 8,
+      precipitationAmountMm: 0,
+      precipitationProbability: null,
+    });
+    const obstructedScore = calculatePhotographyTransparencyScore({
+      rawVisibilityKm: 90,
+      cloudLow: 92,
+      cloudTotal: 98,
+      humidity: 96,
+      dewPointSpread: 1,
+      precipitationAmountMm: 12,
+      precipitationProbability: null,
+    });
+
+    expect(clearScore).toBeGreaterThan(obstructedScore);
+    expect(transparencyGradeFromScore(clearScore)).toMatch(/excellent|good/);
+    expect(transparencyGradeFromScore(obstructedScore)).toMatch(/fair|poor/);
+  });
+
+  it("uses gust and mountain exposure as risk labels without changing sustained wind", () => {
+    expect(
+      exposedRidgeWindRisk({
+        elevationMeters: 1800,
+        windSpeed: 4.2,
+        windGust: 9.2,
+      }),
+    ).toBe("medium");
+    expect(
+      exposedRidgeWindRisk({
+        elevationMeters: 1800,
+        windSpeed: 8.2,
+        windGust: 12.5,
+      }),
+    ).toBe("high");
   });
 
   it("calculates target-aware overall scores and full results", () => {

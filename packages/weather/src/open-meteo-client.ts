@@ -46,6 +46,8 @@ const hourlyFields = [
   "wind_direction_10m",
   "precipitation_probability",
   "precipitation",
+  "rain",
+  "snowfall",
   "visibility",
   "cloud_cover",
   "cloud_cover_low",
@@ -67,6 +69,9 @@ const dailyFields = [
   "temperature_2m_min",
   "temperature_2m_max",
   "precipitation_probability_max",
+  "precipitation_sum",
+  "rain_sum",
+  "snowfall_sum",
   "sunrise",
   "sunset",
 ] as const;
@@ -92,7 +97,10 @@ export function buildOpenMeteoForecastUrl(
   url.searchParams.set("current", currentFields.join(","));
   url.searchParams.set("daily", dailyFields.join(","));
   url.searchParams.set("wind_speed_unit", "kmh");
-  url.searchParams.set("forecast_days", String(clampDays(request.days ?? daysFromHours(request.hours))));
+  url.searchParams.set(
+    "forecast_days",
+    String(clampDays(request.days ?? daysFromHours(request.hours))),
+  );
 
   if (options.modelPreference) {
     url.searchParams.set("models", options.modelPreference);
@@ -168,7 +176,8 @@ export class OpenMeteoClient {
 
         if (response.status < 200 || response.status >= 300) {
           throw openMeteoError({
-            errorCategory: response.status === 401 || response.status === 403 ? "invalid_key" : "provider_error",
+            errorCategory:
+              response.status === 401 || response.status === 403 ? "invalid_key" : "provider_error",
             messageZh:
               response.status === 401 || response.status === 403
                 ? "Open-Meteo Key 无效或权限不足"

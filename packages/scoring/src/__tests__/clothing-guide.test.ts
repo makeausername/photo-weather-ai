@@ -44,6 +44,30 @@ describe("buildClothingGuide", () => {
     expect(guide.accessories).toEqual(expect.arrayContaining(["防水外套", "防滑鞋", "镜头布"]));
     expect(guide.riskNotes.join("")).toContain("防潮");
   });
+
+  it("uses precipitation amount when probability is unavailable", () => {
+    const guide = buildClothingGuide({
+      hourlyWeather: [
+        hour({
+          precipitationProbability: null,
+          precipitation: 8,
+          precipitationAmountMm: 8,
+          rainAmountMm: 8,
+          humidity: 92,
+          windSpeed: 4,
+        }),
+      ],
+      elevationMeters: 1700,
+      target: "general",
+      timezone: "Asia/Shanghai",
+      forecastStart: "2026-05-20T06:00:00+08:00",
+    });
+
+    expect(guide.comfortLevel).toBe("rainy");
+    expect(guide.summaryZh).toContain("预计降水 8 mm");
+    expect(guide.summaryZh).not.toContain("0%");
+    expect(guide.accessories).toEqual(expect.arrayContaining(["防水外套", "防滑鞋", "备用干衣"]));
+  });
 });
 
 function hour(overrides: Partial<NormalizedHourlyWeather> = {}): NormalizedHourlyWeather {

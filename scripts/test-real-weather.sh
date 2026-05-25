@@ -124,12 +124,57 @@ function number(input, suffix = "") {
 }
 
 const current = result.currentWeather || {};
-const hourly = Array.isArray(result.weatherTimeline) ? result.weatherTimeline[0] : undefined;
+const dailySummaries = Array.isArray(result.dailySummaries) ? result.dailySummaries : [];
+const firstDailySummary = dailySummaries[0] || {};
+const firstDaily = firstDailySummary.weather || {};
 const fusion = result.weatherFusionSummary || {};
 const clothing = result.clothingGuide || {};
 const sources = Array.isArray(result.weatherSourceSummaries) ? result.weatherSourceSummaries : [];
 const runtimeSnapshot = Array.isArray(result.weatherProviderRuntimeSnapshot) ? result.weatherProviderRuntimeSnapshot : [];
 const meteoblue = sources.find((source) => source.providerCode === "meteoblue") || {};
+
+function firstNumber(...inputs) {
+  return inputs.find((input) => typeof input === "number" && Number.isFinite(input));
+}
+
+function firstValue(...inputs) {
+  return inputs.find((input) => input !== undefined && input !== null && input !== "");
+}
+
+function gradeZh(input) {
+  return {
+    excellent: "优秀",
+    good: "较好",
+    fair: "一般",
+    poor: "较差",
+  }[input] || value(input);
+}
+
+function probabilityText(input) {
+  return typeof input === "number" && Number.isFinite(input) ? `${Math.round(input)}%` : "暂无";
+}
+
+function precipitationAmount(input) {
+  return firstNumber(input.precipitationAmountMm, input.precipitation, input.rainAmountMm, input.snowAmountMm);
+}
+
+function sourceLine(source) {
+  const status = [
+    `code=${value(source.providerCode)}`,
+    `enabled=${value(source.enabled)}`,
+    `real=${value(source.realCallEnabled)}`,
+    `attempted=${value(source.attempted)}`,
+    `success=${value(source.success)}`,
+    `status=${value(source.status)}`,
+    source.statusCode ? `http=${source.statusCode}` : "",
+    source.latencyMs ? `${Math.round(source.latencyMs)}ms` : "",
+    source.cacheHit === true ? "cacheHit=true" : "",
+    source.errorCategory ? `error=${source.errorCategory}` : "",
+    Array.isArray(source.extractedFields) ? `fields=${source.extractedFields.join(",")}` : "",
+    Array.isArray(source.missingFields) ? `missing=${source.missingFields.join(",")}` : "",
+  ].filter(Boolean).join(" ");
+  return `- ${value(source.providerLabelZh)} ${status} message=${value(source.messageZh || source.warningZh)}`;
+}
 
 console.log(`selectedLocation: ${payload.name} (${payload.source}) WGS84=${payload.latitudeWgs84},${payload.longitudeWgs84} elevation=${value(payload.elevationMeters)}`);
 console.log(`target: ${payload.target} horizon=${payload.horizon}`);
@@ -166,27 +211,32 @@ for (const provider of runtimeSnapshot) {
 }
 console.log("sourceSummaries:");
 for (const source of sources) {
-  const status = [
-    `code=${value(source.providerCode)}`,
-    `enabled=${value(source.enabled)}`,
-    `real=${value(source.realCallEnabled)}`,
-    `attempted=${value(source.attempted)}`,
-    `success=${value(source.success)}`,
-    `status=${value(source.status)}`,
-    source.statusCode ? `http=${source.statusCode}` : "",
-    source.latencyMs ? `${Math.round(source.latencyMs)}ms` : "",
-    source.cacheHit === true ? "cacheHit=true" : "",
-    source.errorCategory ? `error=${source.errorCategory}` : "",
-  ].filter(Boolean).join(" ");
-  console.log(`- ${value(source.providerLabelZh)} ${status} message=${value(source.messageZh || source.warningZh)}`);
+  console.log(sourceLine(source));
 }
-console.log(`temperature: current=${number(current.temperature, "°C")} feelsLike=${number(current.feelsLike, "°C")}`);
-console.log(`wind: speed=${number(current.windSpeed, "m/s")} gust=${number(current.windGust, "m/s")} direction=${value(current.windDirection)}`);
-console.log(`humidity: ${percent(current.humidity)} visibility=${number(current.visibility, "km")}`);
-console.log(`cloud current: total=${percent(current.cloudTotal)} low=${percent(current.cloudLow)} mid=${percent(current.cloudMid)} high=${percent(current.cloudHigh)}`);
-if (hourly) {
-  console.log(`cloud firstHour: total=${percent(hourly.cloudTotal)} low=${percent(hourly.cloudLow)} mid=${percent(hourly.cloudMid)} high=${percent(hourly.cloudHigh)}`);
-}
+const tempAdjustment = current.temperatureAdjustment || firstDaily.temperatureAdjustment || {};
+const rawTemp = firstNumber(current.rawTemperature, current.temperature, firstDaily.rawTempMin);
+const adjustedTemp = firstNumber(current.elevationAdjustedTemperature, current.temperature, firstDaily.elevationAdjustedTempMin);
+const precipAmount = precipitationAmount(current) ?? precipitationAmount(firstDaily);
+const precipProbability = firstValue(current.precipitationProbability, firstDaily.precipitationProbability);
+const rawVisibility = firstNumber(current.rawVisibilityKm, current.visibility, firstDaily.rawVisibilityKm, firstDaily.visibility);
+const transparencyScore = firstNumber(current.photographyTransparencyScore, firstDaily.photographyTransparencyScore);
+const transparencyGrade = firstValue(current.transparencyGrade, firstDaily.transparencyGrade);
+console.log(`rawTemperature: ${number(rawTemp, "°C")}`);
+console.log(`elevationAdjustedTemperature: ${number(adjustedTemp, "°C")}`);
+console.log(`temperatureCorrectionApplied: ${value(tempAdjustment.correctionApplied)}`);
+console.log(`temperatureCorrectionMeters: ${number(tempAdjustment.correctionMeters, "m")}`);
+console.log(`temperatureCorrectionCelsius: ${number(tempAdjustment.correctionCelsius, "°C")}`);
+console.log(`feelsLike: ${number(current.feelsLike, "°C")}`);
+console.log(`precipitationProbability: ${probabilityText(precipProbability)}`);
+console.log(`precipitationAmount: ${number(precipAmount, "mm")} type=${value(current.precipitationType || firstDaily.precipitationType)}`);
+console.log(`rainAmount: ${number(firstNumber(current.rainAmountMm, firstDaily.rainAmountMm), "mm")}`);
+console.log(`snowAmount: ${number(firstNumber(current.snowAmountMm, firstDaily.snowAmountMm), "mm")}`);
+console.log(`wind: speed=${number(current.windSpeed, "m/s")} gust=${number(current.windGust, "m/s")} direction=${value(current.windDirection)} ridgeRisk=${value(current.exposedRidgeWindRisk || firstDaily.exposedRidgeWindRisk)}`);
+console.log(`rawVisibility: ${number(rawVisibility, "km")} transparencyGrade=${gradeZh(transparencyGrade)} transparencyScore=${number(transparencyScore)}`);
+console.log(`humidity: ${percent(current.humidity)} dewPointSpread=${number(firstNumber(current.dewPointSpread, firstDaily.dewPointSpread), "°C")}`);
+console.log(`cloud: total=${percent(firstNumber(current.cloudTotal, firstDaily.cloudTotal))} low=${percent(firstNumber(current.cloudLow, firstDaily.cloudLow))} mid=${percent(firstNumber(current.cloudMid, firstDaily.cloudMid))} high=${percent(firstNumber(current.cloudHigh, firstDaily.cloudHigh))}`);
+console.log(`cloudSeaChance: ${number(result.scores?.cloudSea?.score)} whiteoutRisk=${number(result.scores?.whiteoutRisk?.score)} cloudFogRisk=${value(current.cloudFogObstructionRisk || firstDaily.cloudFogObstructionRisk)}`);
+console.log(`dailyFirst: date=${value(firstDailySummary.date)} score=${number(firstDailySummary.score)} advice=${value(firstDailySummary.shortAdvice)}`);
 console.log(`clothingGuide: ${value(clothing.titleZh)} / ${value(clothing.summaryZh)}`);
 console.log(`clothingLayers: ${(clothing.layers || []).join("、") || "暂无"}`);
 console.log(`confidenceByTarget: ${JSON.stringify(fusion.confidenceByTarget || {})}`);

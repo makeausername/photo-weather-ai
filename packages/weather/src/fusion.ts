@@ -4,6 +4,7 @@ import type {
   NormalizedCurrentWeather,
   NormalizedDailyWeather,
   NormalizedHourlyWeather,
+  NormalizedWeatherFieldMetadataMap,
   TerrainProfileSummary,
   WeatherConfidenceLevel,
   WeatherFusionSummary,
@@ -56,8 +57,12 @@ const numericFields = [
   "dewPoint",
   "pressure",
   "windSpeed",
+  "windGust",
   "precipitation",
   "precipitationProbability",
+  "precipitationAmountMm",
+  "rainAmountMm",
+  "snowAmountMm",
 ] as const satisfies readonly (keyof NormalizedHourlyWeather)[];
 
 const fieldConfidenceKeys = [
@@ -267,8 +272,39 @@ function fuseCurrent(
     cloudMid: primary?.cloudMid ?? hour?.cloudMid ?? null,
     cloudHigh: primary?.cloudHigh ?? hour?.cloudHigh ?? null,
     precipitation: primary?.precipitation ?? hour?.precipitation ?? null,
+    precipitationAmountMm:
+      primary?.precipitationAmountMm ??
+      hour?.precipitationAmountMm ??
+      primary?.precipitation ??
+      hour?.precipitation ??
+      null,
+    rainAmountMm: primary?.rainAmountMm ?? hour?.rainAmountMm ?? null,
+    snowAmountMm: primary?.snowAmountMm ?? hour?.snowAmountMm ?? null,
     precipitationProbability:
       primary?.precipitationProbability ?? hour?.precipitationProbability ?? null,
+    precipitationProbabilityPercent:
+      primary?.precipitationProbabilityPercent ??
+      hour?.precipitationProbabilityPercent ??
+      primary?.precipitationProbability ??
+      hour?.precipitationProbability ??
+      null,
+    precipitationType: primary?.precipitationType ?? hour?.precipitationType,
+    rawVisibilityKm:
+      primary?.rawVisibilityKm ??
+      hour?.rawVisibilityKm ??
+      primary?.visibility ??
+      hour?.visibility ??
+      null,
+    photographyTransparencyScore:
+      primary?.photographyTransparencyScore ?? hour?.photographyTransparencyScore,
+    transparencyGrade: primary?.transparencyGrade ?? hour?.transparencyGrade,
+    cloudFogObstructionRisk: primary?.cloudFogObstructionRisk ?? hour?.cloudFogObstructionRisk,
+    exposedRidgeWindRisk: primary?.exposedRidgeWindRisk ?? hour?.exposedRidgeWindRisk,
+    rawTemperature: primary?.rawTemperature ?? hour?.rawTemperature,
+    elevationAdjustedTemperature:
+      primary?.elevationAdjustedTemperature ?? hour?.elevationAdjustedTemperature,
+    temperatureAdjustment: primary?.temperatureAdjustment ?? hour?.temperatureAdjustment,
+    providerElevationMeters: primary?.providerElevationMeters ?? hour?.providerElevationMeters,
     weatherTextZh: primary?.weatherTextZh ?? hour?.weatherTextZh ?? null,
     weatherCode: primary?.weatherCode ?? hour?.weatherCode ?? null,
     airQuality: primary?.airQuality ?? null,
@@ -315,12 +351,26 @@ function fuseHourlyAt(
   const next: Record<string, unknown> = { ...primaryHour };
   const missingFields = new Set<string>(primaryHour.missingFields ?? []);
   const estimatedFields = new Set<string>(primaryHour.estimatedFields ?? []);
+  const fieldMetadata: NormalizedWeatherFieldMetadataMap = {
+    ...(primaryHour.fieldMetadata ?? {}),
+  };
 
   for (const field of numericFields) {
     const selected = selectFieldValue(field, candidates, primaryHour);
     if (selected.value !== undefined) {
       next[field] = selected.value;
     }
+    fieldMetadata[field] = {
+      value: selected.value ?? null,
+      providerCode: selected.providerCode,
+      providerLabelZh: selected.providerLabelZh,
+      estimated: selected.estimated,
+      missingReason:
+        selected.value === null || selected.value === undefined
+          ? "provider_field_missing"
+          : undefined,
+      providerElevationMeters: selected.providerElevationMeters,
+    };
     if (selected.estimated) {
       estimatedFields.add(field);
     }
@@ -347,6 +397,7 @@ function fuseHourlyAt(
     dataMode: primaryBundle.dataMode,
     missingFields: [...missingFields],
     estimatedFields: estimatedFields.size > 0 ? [...estimatedFields] : undefined,
+    fieldMetadata,
   };
 }
 
@@ -357,7 +408,13 @@ function selectFieldValue(
     readonly hour: NormalizedHourlyWeather;
   }[],
   primaryHour: NormalizedHourlyWeather,
-): { readonly value: number | null | undefined; readonly estimated: boolean } {
+): {
+  readonly value: number | null | undefined;
+  readonly providerCode: string;
+  readonly providerLabelZh?: string;
+  readonly estimated: boolean;
+  readonly providerElevationMeters?: number;
+} {
   const providerOrder = capabilityOrderForField(field);
   const sorted = [...candidates].sort(
     (left, right) =>
@@ -365,14 +422,25 @@ function selectFieldValue(
       providerRank(right.bundle.providerCode, providerOrder),
   );
 
-  const selected = sorted.find((candidate) => candidate.hour[field] !== null);
+  const selected = sorted.find(
+    (candidate) => candidate.hour[field] !== null && candidate.hour[field] !== undefined,
+  );
   if (!selected) {
-    return { value: primaryHour[field] as number | null | undefined, estimated: false };
+    return {
+      value: primaryHour[field] as number | null | undefined,
+      providerCode: primaryHour.providerCode,
+      providerLabelZh: primaryHour.providerLabelZh,
+      estimated: false,
+      providerElevationMeters: primaryHour.providerElevationMeters,
+    };
   }
 
   return {
     value: selected.hour[field] as number | null | undefined,
+    providerCode: selected.bundle.providerCode,
+    providerLabelZh: selected.bundle.providerLabelZh,
     estimated: selected.hour.estimatedFields?.includes(field) ?? false,
+    providerElevationMeters: selected.hour.providerElevationMeters,
   };
 }
 
@@ -385,6 +453,14 @@ function capabilityOrderForField(field: string): readonly WeatherProviderCode[] 
     field === "visibility" ||
     field === "pressure"
   ) {
+    return ["meteoblue", "open_meteo", "qweather", "mock"];
+  }
+
+  if (field === "precipitationProbability") {
+    return ["open_meteo", "qweather", "meteoblue", "mock"];
+  }
+
+  if (field === "precipitation" || field === "precipitationAmountMm") {
     return ["meteoblue", "open_meteo", "qweather", "mock"];
   }
 
@@ -416,7 +492,10 @@ function detectConflicts(bundles: readonly WeatherDataBundle[]): readonly Weathe
     dewPoint: 5,
     pressure: 6,
     windSpeed: 5,
+    windGust: 7,
     precipitationProbability: 35,
+    precipitation: 8,
+    precipitationAmountMm: 8,
   };
 
   for (const time of times) {
@@ -552,8 +631,17 @@ function countSourcesForConfidenceField(
   bundles: readonly WeatherDataBundle[],
   field: keyof WeatherConfidenceByField,
 ): number {
-  const sourceField =
-    field === "wind" ? "windSpeed" : field === "precipitation" ? "precipitationProbability" : field;
+  if (field === "precipitation") {
+    return bundles.filter((bundle) =>
+      bundle.hourly.some(
+        (hour) =>
+          asNumber(hour.precipitationProbability) !== null ||
+          asNumber(hour.precipitation) !== null ||
+          asNumber(hour.precipitationAmountMm) !== null,
+      ),
+    ).length;
+  }
+  const sourceField = field === "wind" ? "windSpeed" : field;
   return bundles.filter((bundle) =>
     bundle.hourly.some(
       (hour) => asNumber(hour[sourceField as keyof NormalizedHourlyWeather]) !== null,
@@ -566,7 +654,13 @@ function fieldMatchesConfidenceKey(field: string, key: keyof WeatherConfidenceBy
     return field === "windSpeed" || field === "windGust" || field === "windDirection";
   }
   if (key === "precipitation") {
-    return field === "precipitation" || field === "precipitationProbability";
+    return (
+      field === "precipitation" ||
+      field === "precipitationProbability" ||
+      field === "precipitationAmountMm" ||
+      field === "rainAmountMm" ||
+      field === "snowAmountMm"
+    );
   }
   return field === key;
 }

@@ -122,10 +122,47 @@ export const forecastQueryInputSchema = z.object({
 const nullableFiniteNumberSchema = z.number().finite().nullable();
 const nullablePercentSchema = z.number().finite().min(0).max(100).nullable();
 const weatherFieldListSchema = z.array(z.string().trim().min(1)).optional();
+const precipitationTypeSchema = z.enum(["rain", "snow", "mixed", "none", "unknown"]);
+const ridgeWindRiskSchema = z.enum(["low", "medium", "high"]);
+const transparencyGradeSchema = z.enum(["excellent", "good", "fair", "poor"]);
+const cloudFogObstructionRiskSchema = z.enum(["low", "medium", "high"]);
+const weatherFieldMetadataSchema = z
+  .record(
+    z.object({
+      value: z.union([z.string(), z.number().finite(), z.boolean(), z.null()]).optional(),
+      providerCode: z.string().trim().min(1),
+      providerLabelZh: z.string().trim().min(1).optional(),
+      estimated: z.boolean(),
+      missingReason: z.string().trim().min(1).optional(),
+      providerElevationMeters: z.number().finite().optional(),
+    }),
+  )
+  .optional();
+const hourlyTemperatureAdjustmentSchema = z
+  .object({
+    rawTemperature: z.number().finite(),
+    elevationAdjustedTemperature: z.number().finite(),
+    correctionApplied: z.boolean(),
+    correctionMeters: z.number().finite().min(0),
+    correctionCelsius: z.number().finite().min(0),
+    lapseRateCelsiusPer100m: z.number().finite().min(0.5).max(0.7),
+    providerElevationMeters: z.number().finite().optional(),
+  })
+  .optional();
+const dailyTemperatureAdjustmentSchema = hourlyTemperatureAdjustmentSchema
+  .unwrap()
+  .omit({
+    rawTemperature: true,
+    elevationAdjustedTemperature: true,
+  })
+  .optional();
 
 export const normalizedHourlyWeatherSchema = z.object({
   time: z.string().datetime({ offset: true }),
   temperature: z.number().finite(),
+  rawTemperature: z.number().finite().optional(),
+  elevationAdjustedTemperature: z.number().finite().optional(),
+  temperatureAdjustment: hourlyTemperatureAdjustmentSchema,
   feelsLike: nullableFiniteNumberSchema,
   humidity: z.number().finite().min(0).max(100),
   dewPointSpread: nullableFiniteNumberSchema.optional(),
@@ -133,14 +170,25 @@ export const normalizedHourlyWeatherSchema = z.object({
   windSpeed: z.number().finite().min(0),
   windGust: nullableFiniteNumberSchema,
   windDirection: z.number().finite().min(0).max(360).nullable(),
-  precipitationProbability: z.number().finite().min(0).max(100),
+  precipitationProbability: nullablePercentSchema,
+  precipitationProbabilityPercent: nullablePercentSchema.optional(),
   precipitation: nullableFiniteNumberSchema,
+  precipitationAmountMm: nullableFiniteNumberSchema.optional(),
+  rainAmountMm: nullableFiniteNumberSchema.optional(),
+  snowAmountMm: nullableFiniteNumberSchema.optional(),
+  precipitationType: precipitationTypeSchema.optional(),
   visibility: nullableFiniteNumberSchema,
+  rawVisibilityKm: nullableFiniteNumberSchema.optional(),
+  photographyTransparencyScore: z.number().finite().min(0).max(100).optional(),
+  transparencyGrade: transparencyGradeSchema.optional(),
+  cloudFogObstructionRisk: cloudFogObstructionRiskSchema.optional(),
   dewPoint: nullableFiniteNumberSchema,
   cloudTotal: z.number().finite().min(0).max(100),
   cloudLow: nullablePercentSchema,
   cloudMid: nullablePercentSchema,
   cloudHigh: nullablePercentSchema,
+  exposedRidgeWindRisk: ridgeWindRiskSchema.optional(),
+  providerElevationMeters: z.number().finite().optional(),
   weatherCode: z.string().trim().min(1).nullable(),
   weatherTextZh: z.string().trim().min(1).nullable().optional(),
   providerCode: z.string().trim().min(1),
@@ -150,13 +198,40 @@ export const normalizedHourlyWeatherSchema = z.object({
   missingFields: weatherFieldListSchema,
   estimatedFields: weatherFieldListSchema,
   sourceNotes: z.array(z.string().trim().min(1)).optional(),
+  fieldMetadata: weatherFieldMetadataSchema,
 });
 
 export const normalizedDailyWeatherSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   tempMin: z.number().finite(),
   tempMax: z.number().finite(),
-  precipitationProbability: z.number().finite().min(0).max(100),
+  rawTempMin: z.number().finite().optional(),
+  rawTempMax: z.number().finite().optional(),
+  elevationAdjustedTempMin: z.number().finite().optional(),
+  elevationAdjustedTempMax: z.number().finite().optional(),
+  temperatureAdjustment: dailyTemperatureAdjustmentSchema,
+  precipitationProbability: nullablePercentSchema,
+  precipitationProbabilityPercent: nullablePercentSchema.optional(),
+  precipitation: nullableFiniteNumberSchema.optional(),
+  precipitationAmountMm: nullableFiniteNumberSchema.optional(),
+  rainAmountMm: nullableFiniteNumberSchema.optional(),
+  snowAmountMm: nullableFiniteNumberSchema.optional(),
+  precipitationType: precipitationTypeSchema.optional(),
+  windSpeed: nullableFiniteNumberSchema.optional(),
+  windGust: nullableFiniteNumberSchema.optional(),
+  windDirection: z.number().finite().min(0).max(360).nullable().optional(),
+  humidity: nullablePercentSchema.optional(),
+  visibility: nullableFiniteNumberSchema.optional(),
+  rawVisibilityKm: nullableFiniteNumberSchema.optional(),
+  photographyTransparencyScore: z.number().finite().min(0).max(100).optional(),
+  transparencyGrade: transparencyGradeSchema.optional(),
+  cloudFogObstructionRisk: cloudFogObstructionRiskSchema.optional(),
+  cloudTotal: nullablePercentSchema.optional(),
+  cloudLow: nullablePercentSchema.optional(),
+  cloudMid: nullablePercentSchema.optional(),
+  cloudHigh: nullablePercentSchema.optional(),
+  exposedRidgeWindRisk: ridgeWindRiskSchema.optional(),
+  providerElevationMeters: z.number().finite().optional(),
   weatherSummary: z.string().trim().min(1),
   cloudSummary: z.string().trim().min(1).optional(),
   sunrise: z.string().datetime({ offset: true }).optional(),
@@ -166,4 +241,5 @@ export const normalizedDailyWeatherSchema = z.object({
   dataMode: z.enum(["mock", "demo", "fixture", "fallback", "real"]).optional(),
   missingFields: weatherFieldListSchema,
   estimatedFields: weatherFieldListSchema,
+  fieldMetadata: weatherFieldMetadataSchema,
 });

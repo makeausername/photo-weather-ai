@@ -378,6 +378,9 @@ function normalizeCurrentWeather(input: {
     dataMode: input.dataMode,
     observedAt: input.current.observedAt,
     temperature: input.current.temperatureCelsius,
+    rawTemperature: input.firstHour?.rawTemperature,
+    elevationAdjustedTemperature: input.firstHour?.elevationAdjustedTemperature,
+    temperatureAdjustment: input.firstHour?.temperatureAdjustment,
     feelsLike: input.current.feelsLikeCelsius,
     humidity: input.current.humidityPercent,
     dewPoint,
@@ -392,7 +395,19 @@ function normalizeCurrentWeather(input: {
     cloudMid: input.firstHour?.cloudMid ?? null,
     cloudHigh: input.firstHour?.cloudHigh ?? null,
     precipitation: input.firstHour?.precipitation ?? null,
+    precipitationAmountMm:
+      input.firstHour?.precipitationAmountMm ?? input.firstHour?.precipitation ?? null,
+    rainAmountMm: input.firstHour?.rainAmountMm ?? null,
+    snowAmountMm: input.firstHour?.snowAmountMm ?? null,
     precipitationProbability: input.firstHour?.precipitationProbability ?? null,
+    precipitationProbabilityPercent: input.firstHour?.precipitationProbability ?? null,
+    precipitationType: input.firstHour?.precipitationType,
+    rawVisibilityKm: input.firstHour?.rawVisibilityKm ?? input.current.visibilityKilometers,
+    photographyTransparencyScore: input.firstHour?.photographyTransparencyScore,
+    transparencyGrade: input.firstHour?.transparencyGrade,
+    cloudFogObstructionRisk: input.firstHour?.cloudFogObstructionRisk,
+    exposedRidgeWindRisk: input.firstHour?.exposedRidgeWindRisk,
+    providerElevationMeters: input.firstHour?.providerElevationMeters,
     weatherTextZh: input.current.summary,
     weatherCode: input.firstHour?.weatherCode ?? null,
     airQuality: input.airQuality
@@ -405,6 +420,7 @@ function normalizeCurrentWeather(input: {
       : null,
     missingFields: [...missingFields],
     estimatedFields: [...estimatedFields],
+    fieldMetadata: input.firstHour?.fieldMetadata,
   };
 }
 
@@ -600,6 +616,9 @@ function collectAvailableFields(hourly: readonly NormalizedHourlyWeather[]): rea
     "dewPoint",
     "pressure",
     "precipitation",
+    "precipitationAmountMm",
+    "rainAmountMm",
+    "snowAmountMm",
   ] as const;
 
   return fields.filter((field) =>

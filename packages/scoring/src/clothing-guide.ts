@@ -6,6 +6,7 @@ import type {
   NormalizedHourlyWeather,
 } from "@photo-weather/shared";
 import { getHourInTimezone } from "@photo-weather/calendar";
+import { precipitationAmountMm, precipitationRiskLevel } from "./weather-decision-metrics.js";
 
 export type ClothingGuideInput = {
   readonly currentWeather?: NormalizedCurrentWeather;
@@ -22,19 +23,23 @@ export function buildClothingGuide(input: ClothingGuideInput): ClothingGuide {
   const windSpeed = reference?.windSpeed ?? 0;
   const windGust = reference?.windGust ?? windSpeed;
   const humidity = reference?.humidity ?? 60;
-  const precipitationProbability = reference?.precipitationProbability ?? 0;
+  const precipitationProbability = reference?.precipitationProbability ?? null;
+  const precipitationAmount = precipitationAmountMm(reference);
+  const precipitationRisk = precipitationRiskLevel({
+    probability: precipitationProbability,
+    amountMm: precipitationAmount,
+  });
   const elevationMeters = input.elevationMeters ?? 0;
   const isMountain = elevationMeters >= 1200;
-  const isNightTarget = input.target === "astro" || isNightTime(input.forecastStart, input.timezone);
+  const isNightTarget =
+    input.target === "astro" || isNightTime(input.forecastStart, input.timezone);
   const effectiveTemperature = round1(
-    temperature -
-      (isMountain ? 2 : 0) -
-      (isNightTarget ? 2 : 0) -
-      Math.max(0, windSpeed - 4) * 0.6,
+    temperature - (isMountain ? 2 : 0) - (isNightTarget ? 2 : 0) - Math.max(0, windSpeed - 4) * 0.6,
   );
   const comfortLevel = classifyComfort({
     effectiveTemperature,
     precipitationProbability,
+    precipitationRisk,
     humidity,
     windSpeed: Math.max(windSpeed, windGust),
   });
@@ -43,6 +48,8 @@ export function buildClothingGuide(input: ClothingGuideInput): ClothingGuide {
     comfortLevel,
     target: input.target,
     precipitationProbability,
+    precipitationRisk,
+    precipitationAmount,
     humidity,
     windSpeed,
     windGust,
@@ -52,6 +59,8 @@ export function buildClothingGuide(input: ClothingGuideInput): ClothingGuide {
     comfortLevel,
     target: input.target,
     precipitationProbability,
+    precipitationRisk,
+    precipitationAmount,
     humidity,
     windSpeed,
     windGust,
@@ -63,7 +72,7 @@ export function buildClothingGuide(input: ClothingGuideInput): ClothingGuide {
     titleZh: titleForComfort(comfortLevel, input.target),
     summaryZh: `参考体感约 ${Math.round(effectiveTemperature)}°C，风速约 ${round1(
       windSpeed,
-    )} m/s，降水概率约 ${Math.round(precipitationProbability)}%。${summarySuffix(
+    )} m/s，${precipitationSummary(precipitationProbability, precipitationAmount)}。${summarySuffix(
       comfortLevel,
       input.target,
     )}`,
@@ -103,11 +112,16 @@ function selectReferenceWeather(input: ClothingGuideInput):
 
 function classifyComfort(input: {
   readonly effectiveTemperature: number;
-  readonly precipitationProbability: number;
+  readonly precipitationProbability: number | null;
+  readonly precipitationRisk: ReturnType<typeof precipitationRiskLevel>;
   readonly humidity: number;
   readonly windSpeed: number;
 }): ClothingComfortLevel {
-  if (input.precipitationProbability >= 55) {
+  if (
+    input.precipitationRisk === "medium" ||
+    input.precipitationRisk === "high" ||
+    input.precipitationRisk === "heavy"
+  ) {
     return "rainy";
   }
   if (input.windSpeed >= 8) {
@@ -154,7 +168,9 @@ function buildLayers(
 function buildAccessories(input: {
   readonly comfortLevel: ClothingComfortLevel;
   readonly target: ForecastTarget;
-  readonly precipitationProbability: number;
+  readonly precipitationProbability: number | null;
+  readonly precipitationRisk: ReturnType<typeof precipitationRiskLevel>;
+  readonly precipitationAmount: number | null;
   readonly humidity: number;
   readonly windSpeed: number;
   readonly windGust: number;
@@ -162,14 +178,23 @@ function buildAccessories(input: {
 }): readonly string[] {
   const accessories = new Set<string>();
 
-  if (input.target === "astro" || input.comfortLevel === "cold" || input.comfortLevel === "very_cold") {
+  if (
+    input.target === "astro" ||
+    input.comfortLevel === "cold" ||
+    input.comfortLevel === "very_cold"
+  ) {
     accessories.add("帽子");
     accessories.add("手套");
   }
-  if (input.precipitationProbability >= 40 || input.comfortLevel === "rainy") {
+  if (
+    input.precipitationRisk !== "none" ||
+    (input.precipitationProbability !== null && input.precipitationProbability >= 40) ||
+    input.comfortLevel === "rainy"
+  ) {
     accessories.add("防水外套");
     accessories.add("防滑鞋");
     accessories.add("备用干衣");
+    accessories.add("干燥袋");
   }
   if (input.humidity >= 80 || input.target === "cloud_sea") {
     accessories.add("镜头布");
@@ -189,7 +214,9 @@ function buildAccessories(input: {
 function buildRiskNotes(input: {
   readonly comfortLevel: ClothingComfortLevel;
   readonly target: ForecastTarget;
-  readonly precipitationProbability: number;
+  readonly precipitationProbability: number | null;
+  readonly precipitationRisk: ReturnType<typeof precipitationRiskLevel>;
+  readonly precipitationAmount: number | null;
   readonly humidity: number;
   readonly windSpeed: number;
   readonly windGust: number;
@@ -201,14 +228,17 @@ function buildRiskNotes(input: {
   if (input.target === "astro" && input.effectiveTemperature <= 10) {
     notes.push("夜间长时间等待会明显降温，建议按更低一档准备保暖。");
   }
-  if (input.precipitationProbability >= 40) {
-    notes.push("存在降水干扰，器材与备用衣物需要防水收纳。");
+  if (input.precipitationRisk !== "none") {
+    notes.push("存在降水干扰，器材、备用衣物和存储卡需要防水收纳。");
   }
   if (input.humidity >= 82 || input.target === "cloud_sea") {
     notes.push("高湿环境注意防潮、防滑，并准备镜头布处理结露。");
   }
   if (input.windSpeed >= 6 || input.windGust >= 9) {
     notes.push("山顶阵风会放大体感寒冷，三脚架和人员站位需要留余量。");
+  }
+  if (input.windSpeed >= 8 || input.windGust >= 12) {
+    notes.push("风力已接近影响长焦和慢门稳定的区间，建议准备三脚架配重。");
   }
   if (input.isMountain) {
     notes.push("高海拔机位早晚温差更明显，返程层也要保留。");
@@ -253,6 +283,23 @@ function summarySuffix(level: ClothingComfortLevel, target: ForecastTarget): str
     return "白天出行注意防晒和补水。";
   }
   return "按分层穿法准备，方便随窗口变化调整。";
+}
+
+function precipitationSummary(probability: number | null, amount: number | null): string {
+  const displayProbability =
+    amount !== null && amount >= 0.1 && probability !== null && probability <= 0
+      ? null
+      : probability;
+  if (displayProbability !== null && amount !== null) {
+    return `降水概率约 ${Math.round(displayProbability)}%，预计 ${round1(amount)} mm`;
+  }
+  if (amount !== null && amount > 0) {
+    return `预计降水 ${round1(amount)} mm`;
+  }
+  if (displayProbability !== null) {
+    return `降水概率约 ${Math.round(displayProbability)}%`;
+  }
+  return "降水概率暂缺";
 }
 
 function isNightTime(time: string, timezone: string): boolean {

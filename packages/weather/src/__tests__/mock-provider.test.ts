@@ -107,6 +107,22 @@ describe("fixture weather provider normalization", () => {
     expect(() => normalizedHourlyWeatherSchema.parse(hourly[0])).not.toThrow();
   });
 
+  it("keeps missing QWeather precipitation probability null instead of defaulting to 0", () => {
+    const fixture = cloneRecord(readJsonFixture("qweather-hourly.json"));
+    const rows = fixture.hourly as Record<string, unknown>[];
+    delete rows[0]!.pop;
+    rows[0]!.precip = "3.2";
+
+    const provider = new QWeatherProvider({ hourly: fixture });
+    const [hour] = provider.normalizeHourlyWeather(fixture);
+
+    expect(hour?.precipitationProbability).toBeNull();
+    expect(hour?.precipitationProbabilityPercent).toBeNull();
+    expect(hour?.precipitationAmountMm).toBe(3.2);
+    expect(hour?.precipitationType).toBe("rain");
+    expect(hour?.missingFields).toEqual(expect.arrayContaining(["precipitationProbability"]));
+  });
+
   it("normalizes Open-Meteo hourly fixtures with cloud layers and visibility", () => {
     const fixture = readJsonFixture("open-meteo-forecast.json");
     const provider = new OpenMeteoProvider({ forecast: fixture });
@@ -134,6 +150,27 @@ describe("fixture weather provider normalization", () => {
       sourceConfidence: 0.86,
     });
     expect(() => normalizedHourlyWeatherSchema.parse(hourly[0])).not.toThrow();
+  });
+
+  it("keeps missing Open-Meteo probability nullable while separating rain and snow amounts", () => {
+    const fixture = cloneRecord(readJsonFixture("open-meteo-forecast.json"));
+    const hourly = cloneRecord(fixture.hourly);
+    delete hourly.precipitation_probability;
+    hourly.precipitation = [1.6, 0];
+    hourly.rain = [1.2, 0];
+    hourly.snowfall = [0.4, 0];
+    fixture.hourly = hourly;
+
+    const provider = new OpenMeteoProvider({ forecast: fixture });
+    const [hour] = provider.normalizeHourlyWeather(fixture);
+
+    expect(hour?.precipitationProbability).toBeNull();
+    expect(hour?.precipitationProbabilityPercent).toBeNull();
+    expect(hour?.precipitationAmountMm).toBe(1.6);
+    expect(hour?.rainAmountMm).toBe(1.2);
+    expect(hour?.snowAmountMm).toBe(0.4);
+    expect(hour?.precipitationType).toBe("mixed");
+    expect(hour?.missingFields).toEqual(expect.arrayContaining(["precipitationProbability"]));
   });
 
   it("handles missing Open-Meteo cloud layer fields safely", () => {

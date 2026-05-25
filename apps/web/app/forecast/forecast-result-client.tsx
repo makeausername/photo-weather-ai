@@ -375,9 +375,7 @@ function WeatherEssentialsPanel({ result }: { readonly result: ForecastCalculati
         <CompactInfoCard
           title="气温与体感"
           badge={comfortLevelLabel(clothing.comfortLevel)}
-          value={`${formatTemperature(current?.temperature ?? averagePair(firstDay?.tempMin, firstDay?.tempMax))} / 体感 ${formatTemperature(
-            current?.feelsLike ?? averagePair(firstDay?.feelsLikeMin, firstDay?.feelsLikeMax),
-          )}`}
+          value={mountainTemperatureValue(current, firstDay)}
           detail={`日内温差 ${dailyTemperatureRangeText(firstDay)}，${temperatureActionText(
             current,
             firstDay,
@@ -385,26 +383,26 @@ function WeatherEssentialsPanel({ result }: { readonly result: ForecastCalculati
         />
         <CompactInfoCard
           title="云层与能见度"
-          badge={`通透度 ${result.scores.transparency.score} 分`}
+          badge={`通透度 ${transparencyGradeLabel(firstDay?.transparencyGrade, result.scores.transparency.score)}`}
           value={`云量 ${formatPercentNumber(current?.cloudTotal ?? firstDay?.cloudTotal)}`}
-          detail={`低云 ${formatPercentNumber(current?.cloudLow ?? firstDay?.cloudLow)}，能见度 ${formatKilometers(
-            current?.visibility ?? firstDay?.visibility,
+          detail={`能见度 ${formatKilometers(
+            current?.rawVisibilityKm ??
+              current?.visibility ??
+              firstDay?.rawVisibilityKm ??
+              firstDay?.visibility,
+          )}，低云 ${formatPercentNumber(
+            current?.cloudLow ?? firstDay?.cloudLow,
           )}。${cloudVisibilityActionText(result)}`}
         />
         <CompactInfoCard
           title="风与降水"
-          badge={formatWind(
+          badge={formatWindWithGust(
             current?.windSpeed ?? firstDay?.windSpeed,
             current?.windDirection ?? firstDay?.windDirection,
-          )}
-          value={`${precipitationLabel(
-            current?.weatherTextZh ?? firstDay?.weatherTextZh,
-          )} ${formatPercentNumber(
-            current?.precipitationProbability ?? firstDay?.precipitationProbability,
-          )}`}
-          detail={`累计降水 ${formatMillimeters(current?.precipitation ?? firstDay?.precipitation)}，阵风 ${formatWindSpeed(
             current?.windGust ?? firstDay?.windGust,
-          )}。${windPrecipitationActionText(result)}`}
+          )}
+          value={precipitationDisplayValue(current ?? firstDay)}
+          detail={`${precipitationDisplayDetail(current ?? firstDay)}。${windPrecipitationActionText(result)}`}
         />
         <CompactInfoCard
           title="湿度与露点"
@@ -768,7 +766,25 @@ function dailyTemperatureRangeText(
       ? `体感 ${Math.round(weather.feelsLikeMin)}-${Math.round(weather.feelsLikeMax)}°C`
       : `体感 ${formatTemperature(averagePair(weather.feelsLikeMin, weather.feelsLikeMax))}`;
 
-  return `${temperature}｜${feelsLike}`;
+  const correction =
+    weather.temperatureCorrectionApplied && typeof weather.temperatureCorrectionCelsius === "number"
+      ? "（已按机位海拔修正）"
+      : "";
+
+  return `${temperature}${correction}｜${feelsLike}`;
+}
+
+function mountainTemperatureValue(
+  current: ForecastCalculationResult["currentWeather"] | undefined,
+  weather: ForecastCalculationResult["dailySummaries"][number]["weather"] | undefined,
+): string {
+  const temperature = current?.temperature ?? averagePair(weather?.tempMin, weather?.tempMax);
+  const feelsLike = current?.feelsLike ?? averagePair(weather?.feelsLikeMin, weather?.feelsLikeMax);
+  const adjusted =
+    current?.temperatureAdjustment?.correctionApplied || weather?.temperatureCorrectionApplied;
+  return `${adjusted ? "山顶估算温度" : "气温"} ${formatTemperature(
+    temperature,
+  )} / 体感 ${formatTemperature(feelsLike)}`;
 }
 
 function temperatureActionText(
@@ -802,7 +818,120 @@ function precipitationLabel(weatherText: string | null | undefined): string {
 function dailyPrecipitationLabel(
   weather: ForecastCalculationResult["dailySummaries"][number]["weather"] | undefined,
 ): string {
+  if (weather?.precipitationType === "snow") {
+    return "降雪";
+  }
+  if (weather?.precipitationType === "mixed") {
+    return "雨雪";
+  }
   return precipitationLabel(weather?.weatherTextZh);
+}
+
+type PrecipitationDisplayWeather = {
+  readonly weatherTextZh?: string | null;
+  readonly precipitationProbability?: number | null;
+  readonly precipitation?: number | null;
+  readonly precipitationAmountMm?: number | null;
+  readonly rainAmountMm?: number | null;
+  readonly snowAmountMm?: number | null;
+  readonly precipitationType?: string | null;
+};
+
+function precipitationDisplayValue(weather: PrecipitationDisplayWeather | undefined): string {
+  const amount = precipitationAmount(weather);
+  const probability = displayedPrecipitationProbability(weather, amount);
+  if (typeof probability === "number" && Number.isFinite(probability) && amount !== null) {
+    return `降水概率 ${Math.round(probability)}%｜预计 ${formatMillimeters(amount)}`;
+  }
+  if (typeof probability === "number" && Number.isFinite(probability)) {
+    return `降水概率 ${Math.round(probability)}%`;
+  }
+  if (amount !== null && amount > 0) {
+    return `预计 ${formatMillimeters(amount)}`;
+  }
+  return "降水暂缺";
+}
+
+function precipitationDisplayDetail(weather: PrecipitationDisplayWeather | undefined): string {
+  const amount = precipitationAmount(weather);
+  const probability = displayedPrecipitationProbability(weather, amount);
+  const risk = precipitationRiskLabel(probability, amount);
+  const rain = weather?.rainAmountMm;
+  const snow = weather?.snowAmountMm;
+  const split = [
+    typeof rain === "number" && rain > 0 ? `降雨 ${formatMillimeters(rain)}` : null,
+    typeof snow === "number" && snow > 0 ? `降雪 ${formatMillimeters(snow)}` : null,
+  ].filter(Boolean);
+
+  if (typeof probability === "number" && Number.isFinite(probability) && amount !== null) {
+    return `降水风险：${risk}，概率 ${Math.round(probability)}%，预计 ${formatMillimeters(amount)}${
+      split.length > 0 ? `（${split.join("，")}）` : ""
+    }`;
+  }
+  if (amount !== null && amount > 0) {
+    return `降水风险：${risk}，预计 ${formatMillimeters(amount)}${
+      split.length > 0 ? `（${split.join("，")}）` : ""
+    }`;
+  }
+  if (typeof probability === "number" && Number.isFinite(probability)) {
+    return `降水风险：${risk}，概率 ${Math.round(probability)}%`;
+  }
+  return "降水概率暂缺，出行前建议复核现场云雨变化";
+}
+
+function displayedPrecipitationProbability(
+  weather: PrecipitationDisplayWeather | undefined,
+  amount: number | null,
+): number | null {
+  const probability = weather?.precipitationProbability;
+  if (typeof probability !== "number" || !Number.isFinite(probability)) {
+    return null;
+  }
+  if (amount !== null && amount >= 0.1 && probability <= 0) {
+    return null;
+  }
+  return probability;
+}
+
+function precipitationAmount(weather: PrecipitationDisplayWeather | undefined): number | null {
+  if (!weather) {
+    return null;
+  }
+  if (
+    typeof weather.precipitationAmountMm === "number" &&
+    Number.isFinite(weather.precipitationAmountMm)
+  ) {
+    return weather.precipitationAmountMm;
+  }
+  if (typeof weather.precipitation === "number" && Number.isFinite(weather.precipitation)) {
+    return weather.precipitation;
+  }
+  const split = [weather.rainAmountMm, weather.snowAmountMm].filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  );
+  return split.length > 0 ? split.reduce((sum, value) => sum + value, 0) : null;
+}
+
+function precipitationRiskLabel(
+  probability: number | null | undefined,
+  amount: number | null,
+): "低" | "中" | "高" | "强" | "无明显" {
+  const probabilityValue =
+    typeof probability === "number" && Number.isFinite(probability) ? probability : 0;
+  const amountValue = amount ?? 0;
+  if (amountValue >= 25) {
+    return "强";
+  }
+  if (amountValue >= 10 || probabilityValue >= 75) {
+    return "高";
+  }
+  if (amountValue >= 2 || probabilityValue >= 55) {
+    return "中";
+  }
+  if (amountValue >= 0.1 || probabilityValue >= 25) {
+    return "低";
+  }
+  return "无明显";
 }
 
 function windPrecipitationActionText(result: ForecastCalculationResult): string {
@@ -2802,20 +2931,33 @@ function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCal
                 <DailyDefinition label="温度" value={dailyTemperatureRangeText(summary.weather)} />
                 <DailyDefinition
                   label={dailyPrecipitationLabel(summary.weather)}
-                  value={`${formatPercentNumber(summary.weather?.precipitationProbability)}｜${formatMillimeters(
-                    summary.weather?.precipitation,
-                  )}`}
+                  value={precipitationDisplayValue(summary.weather)}
                 />
                 <DailyDefinition
                   label="风"
-                  value={formatWind(summary.weather?.windSpeed, summary.weather?.windDirection)}
+                  value={formatWindWithGust(
+                    summary.weather?.windSpeed,
+                    summary.weather?.windDirection,
+                    summary.weather?.windGust,
+                  )}
                 />
                 <DailyDefinition
                   label="通透度"
-                  value={formatKilometers(summary.weather?.visibility)}
+                  value={transparencyGradeLabel(
+                    summary.weather?.transparencyGrade,
+                    summary.weather?.photographyTransparencyScore,
+                  )}
                 />
               </dl>
               <div className="mt-4 grid gap-2 text-xs leading-5 text-muted-foreground">
+                <p>{precipitationDisplayDetail(summary.weather)}</p>
+                <p>
+                  能见度：
+                  {formatKilometers(
+                    summary.weather?.rawVisibilityKm ?? summary.weather?.visibility,
+                  )}
+                  ，低云 {formatPercentNumber(summary.weather?.cloudLow)}
+                </p>
                 <p>{dailyOpportunityLine(dayBreakdown)}</p>
                 <p>
                   最佳窗口：
@@ -3769,6 +3911,17 @@ function formatWind(
   return direction ? `${speed} ${direction}` : speed;
 }
 
+function formatWindWithGust(
+  windSpeed: number | null | undefined,
+  windDirection: number | null | undefined,
+  windGust: number | null | undefined,
+): string {
+  const wind = formatWind(windSpeed, windDirection);
+  return typeof windGust === "number" && Number.isFinite(windGust)
+    ? `${wind}，阵风 ${formatWindSpeed(windGust)}`
+    : wind;
+}
+
 function formatWindSpeed(windSpeed: number | null | undefined): string {
   return typeof windSpeed === "number" && Number.isFinite(windSpeed)
     ? `${roundDisplay(windSpeed)} m/s`
@@ -3797,6 +3950,33 @@ function shiftTime(value: string, minutes: number): string {
 
 function roundDisplay(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function transparencyGradeLabel(
+  grade: string | null | undefined,
+  score: number | null | undefined,
+): string {
+  const normalizedGrade =
+    grade ??
+    (typeof score === "number" && Number.isFinite(score)
+      ? score >= 82
+        ? "excellent"
+        : score >= 68
+          ? "good"
+          : score >= 48
+            ? "fair"
+            : "poor"
+      : undefined);
+  const labels: Record<string, string> = {
+    excellent: "优秀",
+    good: "较好",
+    fair: "一般",
+    poor: "较差",
+  };
+  const label = normalizedGrade ? labels[normalizedGrade] ?? "待复核" : "待复核";
+  return typeof score === "number" && Number.isFinite(score)
+    ? `${label} ${Math.round(score)} 分`
+    : label;
 }
 
 function formatPercent(value: number | undefined): string {

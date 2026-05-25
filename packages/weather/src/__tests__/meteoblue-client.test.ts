@@ -288,6 +288,33 @@ describe("MeteoblueClient", () => {
     });
   });
 
+  it("does not invent meteoblue precipitation probability when only amount is returned", () => {
+    const provider = new MeteoblueRealProvider({
+      client: new MeteoblueClient({
+        apiKey: "meteoblue-secret",
+        baseUrl: "https://my.meteoblue.com",
+        packages: ["basic-1h", "clouds-1h"],
+        timeoutMs: 1000,
+        retryCount: 0,
+        fetcher: vi.fn() as unknown as typeof fetch,
+      }),
+    });
+
+    const [hour] = provider.normalizeHourlyWeather({
+      ...meteobluePayload(),
+      data_1h: {
+        ...meteobluePayload().data_1h,
+        precipitation: [4.8, 0],
+      },
+    });
+
+    expect(hour?.precipitationProbability).toBeNull();
+    expect(hour?.precipitationProbabilityPercent).toBeNull();
+    expect(hour?.precipitationAmountMm).toBe(4.8);
+    expect(hour?.precipitationType).toBe("rain");
+    expect(hour?.missingFields).toEqual(expect.arrayContaining(["precipitationProbability"]));
+  });
+
   it("extracts partial meteoblue fields from nested package payloads and records missing fields", () => {
     const provider = new MeteoblueRealProvider({
       client: new MeteoblueClient({

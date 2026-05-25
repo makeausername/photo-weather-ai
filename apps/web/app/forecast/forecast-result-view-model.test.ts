@@ -1314,6 +1314,54 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toMatch(/(?:^|\s)(?:w|min-w)-\[(?:[1-9]\d{3,})px\]/);
   });
 
+  it("does not render contradictory zero precipitation probability with large rain amount", () => {
+    const result: ForecastCalculationResult = {
+      ...resultForTarget("general"),
+      currentWeather: {
+        ...baseResult.currentWeather!,
+        precipitationProbability: 0,
+        precipitation: 32.2,
+        precipitationAmountMm: 32.2,
+        rainAmountMm: 32.2,
+        precipitationType: "rain",
+        weatherTextZh: "阵雨",
+      },
+      dailySummaries: baseResult.dailySummaries.map((summary, index) =>
+        index === 0
+          ? {
+              ...summary,
+              weather: {
+                ...summary.weather!,
+                weatherTextZh: "阵雨",
+                precipitationProbability: null,
+                precipitation: 32.2,
+                precipitationAmountMm: 32.2,
+                rainAmountMm: 32.2,
+                precipitationType: "rain" as const,
+              },
+            }
+          : summary,
+      ),
+    };
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "idle",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("预计 32.2 mm");
+    expect(html).toContain("降水风险");
+    expect(html).not.toContain("降水概率 0%");
+    expect(html).not.toContain("0%｜预计 32.2 mm");
+  });
+
   it("keeps deterministic analysis visible when the optional DeepSeek interpretation times out", () => {
     const result = resultForTarget("general");
     const viewModel = buildForecastResultViewModel(result, "general");

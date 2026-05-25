@@ -689,14 +689,35 @@ export class MeteoblueRealProvider implements WeatherProvider {
             windSpeed,
             windGust,
             windDirection,
-            precipitationProbability: precipitationProbability ?? 0,
+            precipitationProbability,
+            precipitationProbabilityPercent: precipitationProbability,
             precipitation,
+            precipitationAmountMm: precipitation,
+            rainAmountMm:
+              inferMeteobluePrecipitationType(
+                toText(pickAt(data1h, index, fieldAliases("weatherCode"))),
+                precipitation,
+              ) === "rain"
+                ? precipitation
+                : null,
+            snowAmountMm:
+              inferMeteobluePrecipitationType(
+                toText(pickAt(data1h, index, fieldAliases("weatherCode"))),
+                precipitation,
+              ) === "snow"
+                ? precipitation
+                : null,
+            precipitationType: inferMeteobluePrecipitationType(
+              toText(pickAt(data1h, index, fieldAliases("weatherCode"))),
+              precipitation,
+            ),
             visibility,
             dewPoint,
             cloudTotal: cloudTotal ?? 0,
             cloudLow,
             cloudMid,
             cloudHigh,
+            providerElevationMeters: this.options.elevationMeters,
             weatherCode: toText(pickAt(data1h, index, fieldAliases("weatherCode"))),
             weatherTextZh: "meteoblue 专业预报",
             providerCode: realSource.providerCode,
@@ -749,7 +770,41 @@ export class MeteoblueRealProvider implements WeatherProvider {
               date: normalizeDate(String(dateValue).slice(0, 10)),
               tempMin: tempMin ?? 0,
               tempMax: tempMax ?? tempMin ?? 0,
-              precipitationProbability:
+              precipitationProbability: nullablePercent(
+                pickAt(
+                  dataDay,
+                  index,
+                  "precipitation_probability",
+                  "precipitation_probability_max",
+                  "precipitationprobability",
+                ),
+              ),
+              precipitationProbabilityPercent: nullablePercent(
+                pickAt(
+                  dataDay,
+                  index,
+                  "precipitation_probability",
+                  "precipitation_probability_max",
+                  "precipitationprobability",
+                ),
+              ),
+              precipitation: nullableRounded(
+                pickAt(dataDay, index, "precipitation", "precipitation_sum"),
+              ),
+              precipitationAmountMm: nullableRounded(
+                pickAt(dataDay, index, "precipitation", "precipitation_sum"),
+              ),
+              precipitationType: inferMeteobluePrecipitationType(
+                toText(pickAt(dataDay, index, "pictocode", "weather_code")),
+                nullableRounded(pickAt(dataDay, index, "precipitation", "precipitation_sum")),
+              ),
+              weatherSummary: "meteoblue 专业预报",
+              cloudSummary: "包含 meteoblue 可用云量字段",
+              providerCode: realSource.providerCode,
+              providerLabelZh: realSource.providerLabelZh,
+              dataMode: realSource.mode,
+              providerElevationMeters: this.options.elevationMeters,
+              missingFields:
                 nullablePercent(
                   pickAt(
                     dataDay,
@@ -758,13 +813,11 @@ export class MeteoblueRealProvider implements WeatherProvider {
                     "precipitation_probability_max",
                     "precipitationprobability",
                   ),
-                ) ?? 0,
-              weatherSummary: "meteoblue 专业预报",
-              cloudSummary: "包含 meteoblue 可用云量字段",
-              providerCode: realSource.providerCode,
-              providerLabelZh: realSource.providerLabelZh,
-              dataMode: realSource.mode,
-              missingFields: missingFields.length > 0 ? missingFields : undefined,
+                ) === null
+                  ? [...missingFields, "precipitationProbability"]
+                  : missingFields.length > 0
+                    ? missingFields
+                    : undefined,
             };
           }),
         );
@@ -1307,17 +1360,78 @@ function buildDailyFromHourly(
     date,
     tempMin: Math.min(...hours.map((hour) => hour.temperature)),
     tempMax: Math.max(...hours.map((hour) => hour.temperature)),
-    precipitationProbability: Math.max(...hours.map((hour) => hour.precipitationProbability), 0),
+    precipitationProbability: maxNullable(hours.map((hour) => hour.precipitationProbability)),
+    precipitationProbabilityPercent: maxNullable(
+      hours.map((hour) => hour.precipitationProbability),
+    ),
+    precipitation: sumNullable(hours.map((hour) => hour.precipitation ?? undefined)),
+    precipitationAmountMm: sumNullable(hours.map((hour) => hour.precipitation ?? undefined)),
+    rainAmountMm: sumNullable(hours.map((hour) => hour.rainAmountMm ?? undefined)),
+    snowAmountMm: sumNullable(hours.map((hour) => hour.snowAmountMm ?? undefined)),
+    precipitationType: aggregatePrecipitationType(hours),
     weatherSummary: "meteoblue 专业预报",
     cloudSummary: "由小时级云量聚合",
     providerCode: realSource.providerCode,
     providerLabelZh: realSource.providerLabelZh,
     dataMode: realSource.mode,
+    providerElevationMeters: hours[0]?.providerElevationMeters,
   }));
 }
 
 function roundTo(value: number): number {
   return Math.round(value * 10) / 10;
+}
+
+function inferMeteobluePrecipitationType(
+  weatherCode: string | null,
+  precipitation: number | null,
+): "rain" | "snow" | "mixed" | "none" | "unknown" {
+  if (/snow|雪|4\d{2}|7\d|85|86/i.test(weatherCode ?? "")) {
+    return "snow";
+  }
+  if (/rain|雨|3\d{2}|6\d|8[0-2]/i.test(weatherCode ?? "")) {
+    return "rain";
+  }
+  if ((precipitation ?? 0) > 0) {
+    return "rain";
+  }
+  if (precipitation === 0) {
+    return "none";
+  }
+  return "unknown";
+}
+
+function maxNullable(values: readonly (number | null | undefined)[]): number | null {
+  const usable = values.filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  );
+  return usable.length > 0 ? Math.max(...usable) : null;
+}
+
+function sumNullable(values: readonly (number | null | undefined)[]): number | null {
+  const usable = values.filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  );
+  return usable.length > 0 ? roundTo(usable.reduce((sum, value) => sum + value, 0)) : null;
+}
+
+function aggregatePrecipitationType(
+  hours: readonly NormalizedHourlyWeather[],
+): "rain" | "snow" | "mixed" | "none" | "unknown" {
+  const types = new Set(hours.map((hour) => hour.precipitationType ?? "unknown"));
+  if (types.has("mixed") || (types.has("rain") && types.has("snow"))) {
+    return "mixed";
+  }
+  if (types.has("snow")) {
+    return "snow";
+  }
+  if (types.has("rain")) {
+    return "rain";
+  }
+  if (types.has("unknown")) {
+    return "unknown";
+  }
+  return "none";
 }
 
 function normalizeMeteoblueParseError(

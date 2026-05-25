@@ -30,6 +30,13 @@ import { analyzeCloudSea, cloudSeaRecommendationLevel } from "./cloud-sea-analys
 import { calculateAstroAnalysis } from "./astro-analysis.js";
 import { buildClothingGuide } from "./clothing-guide.js";
 import { buildGlowForecastScore, calculateGlowAnalysis } from "./glow-analysis.js";
+import {
+  calculatePhotographyTransparencyScore,
+  precipitationAmountMm,
+  precipitationRiskLevel,
+  precipitationRiskScore,
+  transparencyGradeFromScore,
+} from "./weather-decision-metrics.js";
 
 const demoWeatherHonestyNotice =
   "当前结果基于演示天气数据生成，仅用于体验分析流程。正式天气数据源启用后，将显示对应的数据来源与预报时间。";
@@ -268,26 +275,55 @@ export function calculateMilkyWayScore(input: ForecastCalculationInput): Forecas
 
 export function calculateTransparencyScore(input: ForecastCalculationInput): ForecastScore {
   const window = input.hourlyWeather;
-  const visibility = averageHourly(window, (hour) => hour.visibility);
+  const visibility = averageHourly(window, (hour) => hour.rawVisibilityKm ?? hour.visibility);
   const humidity = averageHourly(window, (hour) => hour.humidity);
   const precipitationProbability = averageHourly(window, (hour) => hour.precipitationProbability);
+  const precipitationAmount = averageHourly(window, (hour) => precipitationAmountMm(hour));
   const windSpeed = averageHourly(window, (hour) => hour.windSpeed);
   const cloudTotal = averageHourly(window, (hour) => hour.cloudTotal);
+  const lowCloud = averageHourly(window, (hour) => hour.cloudLow);
+  const dewPointSpread = averageHourly(window, (hour) => hour.dewPointSpread);
   const windScore = windSpeed < 1 ? 72 : windSpeed <= 6 ? 88 : clampScore(108 - windSpeed * 9);
-  const score = averageWeightedScore([
-    { score: clampScore(visibility * 4), weight: 0.34 },
-    { score: 100 - humidity, weight: 0.22 },
-    { score: 100 - precipitationProbability, weight: 0.2 },
-    { score: windScore, weight: 0.1 },
-    { score: 100 - cloudTotal * 0.55, weight: 0.14 },
-  ]);
+  const score = clampScore(
+    averageHourly(window, (hour) => calculatePhotographyTransparencyScore(hour)) ||
+      averageWeightedScore([
+        { score: clampScore(Math.min(visibility, 40) * 2.4), weight: 0.26 },
+        { score: 100 - humidity, weight: 0.18 },
+        {
+          score:
+            100 -
+            precipitationRiskScore({
+              probability: precipitationProbability,
+              amountMm: precipitationAmount,
+            }),
+          weight: 0.2,
+        },
+        { score: windScore, weight: 0.1 },
+        { score: 100 - cloudTotal * 0.45, weight: 0.12 },
+        { score: 100 - lowCloud * 0.55, weight: 0.14 },
+      ]),
+  );
+  const grade = transparencyGradeFromScore(score);
   const reasons = [
-    `平均能见度约 ${Math.round(visibility)} 公里。`,
-    `平均湿度约 ${Math.round(humidity)}%，降水概率约 ${Math.round(precipitationProbability)}%。`,
+    `平均能见度约 ${Math.round(visibility)} 公里，摄影通透度为${transparencyGradeLabel(grade)}。`,
+    `平均低云约 ${Math.round(lowCloud)}%，湿度约 ${Math.round(
+      humidity,
+    )}%，降水风险已按概率与降水量共同判断。`,
   ];
   const risks = [
     ...(visibility < 12 ? ["能见度偏低，远山层次和日出日落通透度会受影响。"] : []),
-    ...(precipitationProbability > 45 ? ["降水概率偏高，镜头防护和行程弹性需要提前准备。"] : []),
+    ...(lowCloud >= 70 && humidity >= 85
+      ? ["低云和湿度偏高，即使原始能见度较高，远山层次也可能被云雾削弱。"]
+      : []),
+    ...(precipitationRiskScore({
+      probability: precipitationProbability,
+      amountMm: precipitationAmount,
+    }) > 45
+      ? ["存在降水干扰，镜头防护和行程弹性需要提前准备。"]
+      : []),
+    ...(dewPointSpread > 0 && dewPointSpread <= 3
+      ? ["露点差较小，雾气和结露会降低画面通透度。"]
+      : []),
   ];
 
   return makeScore("transparency", "通透度", score, reasons, risks);
@@ -748,23 +784,115 @@ function buildDailyWeatherSummary(
     weatherTextZh: dayWeather?.weatherSummary ?? firstWeatherText(dayHours),
     tempMin: dayWeather?.tempMin ?? minOptional(dayHours.map((hour) => hour.temperature)),
     tempMax: dayWeather?.tempMax ?? maxOptional(dayHours.map((hour) => hour.temperature)),
+    rawTempMin: dayWeather?.rawTempMin ?? minOptional(dayHours.map((hour) => hour.rawTemperature)),
+    rawTempMax: dayWeather?.rawTempMax ?? maxOptional(dayHours.map((hour) => hour.rawTemperature)),
+    elevationAdjustedTempMin:
+      dayWeather?.elevationAdjustedTempMin ??
+      minOptional(dayHours.map((hour) => hour.elevationAdjustedTemperature)),
+    elevationAdjustedTempMax:
+      dayWeather?.elevationAdjustedTempMax ??
+      maxOptional(dayHours.map((hour) => hour.elevationAdjustedTemperature)),
+    temperatureCorrectionApplied:
+      dayWeather?.temperatureAdjustment?.correctionApplied ??
+      dayHours.some((hour) => hour.temperatureAdjustment?.correctionApplied),
+    temperatureCorrectionCelsius:
+      dayWeather?.temperatureAdjustment?.correctionCelsius ??
+      averageOptional(dayHours.map((hour) => hour.temperatureAdjustment?.correctionCelsius)),
     feelsLikeMin: minOptional(dayHours.map((hour) => hour.feelsLike ?? undefined)),
     feelsLikeMax: maxOptional(dayHours.map((hour) => hour.feelsLike ?? undefined)),
     precipitationProbability:
       dayWeather?.precipitationProbability ??
-      maxOptional(dayHours.map((hour) => hour.precipitationProbability)),
-    precipitation: sumOptional(dayHours.map((hour) => hour.precipitation ?? undefined)),
+      maxOptional(dayHours.map((hour) => hour.precipitationProbability ?? undefined)) ??
+      null,
+    precipitation:
+      dayWeather?.precipitation ??
+      dayWeather?.precipitationAmountMm ??
+      sumOptional(dayHours.map((hour) => precipitationAmountMm(hour) ?? undefined)),
+    precipitationAmountMm:
+      dayWeather?.precipitationAmountMm ??
+      dayWeather?.precipitation ??
+      sumOptional(dayHours.map((hour) => precipitationAmountMm(hour) ?? undefined)),
+    rainAmountMm:
+      dayWeather?.rainAmountMm ??
+      sumOptional(dayHours.map((hour) => hour.rainAmountMm ?? undefined)),
+    snowAmountMm:
+      dayWeather?.snowAmountMm ??
+      sumOptional(dayHours.map((hour) => hour.snowAmountMm ?? undefined)),
+    precipitationType: dayWeather?.precipitationType ?? aggregateDailyPrecipitationType(dayHours),
     windSpeed: averageOptional(dayHours.map((hour) => hour.windSpeed)),
     windGust: maxOptional(dayHours.map((hour) => hour.windGust ?? undefined)),
     windDirection: averageWindDirection(dayHours.map((hour) => hour.windDirection ?? undefined)),
     humidity: averageOptional(dayHours.map((hour) => hour.humidity)),
     visibility: averageOptional(dayHours.map((hour) => hour.visibility ?? undefined)),
+    rawVisibilityKm:
+      dayWeather?.rawVisibilityKm ??
+      averageOptional(dayHours.map((hour) => hour.rawVisibilityKm ?? hour.visibility ?? undefined)),
+    photographyTransparencyScore:
+      dayWeather?.photographyTransparencyScore ??
+      averageOptional(dayHours.map((hour) => hour.photographyTransparencyScore)),
+    transparencyGrade:
+      dayWeather?.transparencyGrade ??
+      transparencyGradeFromScore(
+        averageOptional(dayHours.map((hour) => hour.photographyTransparencyScore)) ??
+          calculatePhotographyTransparencyScore(dayHours[0]),
+      ),
+    cloudFogObstructionRisk: dayWeather?.cloudFogObstructionRisk ?? aggregateCloudFogRisk(dayHours),
+    exposedRidgeWindRisk: dayWeather?.exposedRidgeWindRisk ?? aggregateRidgeWindRisk(dayHours),
     dewPointSpread: averageOptional(dayHours.map((hour) => hour.dewPointSpread ?? undefined)),
     cloudTotal: averageOptional(dayHours.map((hour) => hour.cloudTotal)),
     cloudLow: averageOptional(dayHours.map((hour) => hour.cloudLow ?? undefined)),
     cloudMid: averageOptional(dayHours.map((hour) => hour.cloudMid ?? undefined)),
     cloudHigh: averageOptional(dayHours.map((hour) => hour.cloudHigh ?? undefined)),
   };
+}
+
+function aggregateDailyPrecipitationType(
+  hours: readonly NormalizedHourlyWeather[],
+): ForecastDailyWeatherSummary["precipitationType"] {
+  const types = new Set(hours.map((hour) => hour.precipitationType ?? "unknown"));
+  if (types.has("mixed") || (types.has("rain") && types.has("snow"))) {
+    return "mixed";
+  }
+  if (types.has("snow")) {
+    return "snow";
+  }
+  if (types.has("rain")) {
+    return "rain";
+  }
+  if (types.has("unknown")) {
+    return "unknown";
+  }
+  return "none";
+}
+
+function aggregateCloudFogRisk(
+  hours: readonly NormalizedHourlyWeather[],
+): ForecastDailyWeatherSummary["cloudFogObstructionRisk"] {
+  if (hours.some((hour) => hour.cloudFogObstructionRisk === "high")) {
+    return "high";
+  }
+  if (hours.some((hour) => hour.cloudFogObstructionRisk === "medium")) {
+    return "medium";
+  }
+  if (hours.length > 0) {
+    return "low";
+  }
+  return undefined;
+}
+
+function aggregateRidgeWindRisk(
+  hours: readonly NormalizedHourlyWeather[],
+): ForecastDailyWeatherSummary["exposedRidgeWindRisk"] {
+  if (hours.some((hour) => hour.exposedRidgeWindRisk === "high")) {
+    return "high";
+  }
+  if (hours.some((hour) => hour.exposedRidgeWindRisk === "medium")) {
+    return "medium";
+  }
+  if (hours.length > 0) {
+    return "low";
+  }
+  return undefined;
 }
 
 function metricFromWindow(
@@ -798,11 +926,18 @@ function buildWhiteoutMetricForDate(
   const humidity = averageHourly(window, (hour) => hour.humidity);
   const visibility = averageHourly(window, (hour) => hour.visibility);
   const precipitationProbability = averageHourly(window, (hour) => hour.precipitationProbability);
+  const precipitationAmount = averageHourly(window, (hour) => precipitationAmountMm(hour));
   const score = averageWeightedScore([
     { score: lowCloud, weight: 0.34 },
     { score: humidity, weight: 0.26 },
     { score: clampScore(100 - visibility * 8), weight: 0.28 },
-    { score: precipitationProbability, weight: 0.12 },
+    {
+      score: precipitationRiskScore({
+        probability: precipitationProbability,
+        amountMm: precipitationAmount,
+      }),
+      weight: 0.12,
+    },
   ]);
 
   return {
@@ -827,12 +962,24 @@ function buildTransparencyMetricForDate(
   const visibility = averageHourly(dayHours, (hour) => hour.visibility);
   const humidity = averageHourly(dayHours, (hour) => hour.humidity);
   const precipitationProbability = averageHourly(dayHours, (hour) => hour.precipitationProbability);
+  const precipitationAmount = averageHourly(dayHours, (hour) => precipitationAmountMm(hour));
   const score = clampScore(
-    averageWeightedScore([
-      { score: clampScore(visibility * 4), weight: 0.44 },
-      { score: 100 - humidity, weight: 0.28 },
-      { score: 100 - precipitationProbability, weight: 0.28 },
-    ]) || fallbackScore,
+    averageHourly(dayHours, (hour) => calculatePhotographyTransparencyScore(hour)) ||
+      averageWeightedScore([
+        { score: clampScore(Math.min(visibility, 40) * 2.4), weight: 0.36 },
+        { score: 100 - humidity, weight: 0.22 },
+        {
+          score:
+            100 -
+            precipitationRiskScore({
+              probability: precipitationProbability,
+              amountMm: precipitationAmount,
+            }),
+          weight: 0.26,
+        },
+        { score: 100 - averageHourly(dayHours, (hour) => hour.cloudLow) * 0.55, weight: 0.16 },
+      ]) ||
+      fallbackScore,
   );
 
   return {
@@ -840,7 +987,7 @@ function buildTransparencyMetricForDate(
     score,
     detail: `当日平均能见度约 ${Math.round(visibility)} 公里，湿度约 ${Math.round(
       humidity,
-    )}%，降水概率约 ${Math.round(precipitationProbability)}%。`,
+    )}%，降水风险已结合概率和预计降水量判断。`,
   };
 }
 
@@ -851,6 +998,10 @@ function buildDailyRiskFlags(
   const flags: ForecastRiskFlag[] = [];
   const dailyWeather = input.dailyWeather.find((day) => day.date === breakdown.date);
   const whiteoutRisk = breakdown.whiteoutRisk?.score ?? 0;
+  const precipitationRisk = precipitationRiskLevel({
+    probability: dailyWeather?.precipitationProbability,
+    amountMm: precipitationAmountMm(dailyWeather),
+  });
 
   if (whiteoutRisk >= 70) {
     flags.push({
@@ -868,12 +1019,16 @@ function buildDailyRiskFlags(
     });
   }
 
-  if ((dailyWeather?.precipitationProbability ?? 0) >= 55) {
+  if (
+    precipitationRisk === "medium" ||
+    precipitationRisk === "high" ||
+    precipitationRisk === "heavy"
+  ) {
     flags.push({
       key: "precipitation",
       label: "降水干扰",
-      level: (dailyWeather?.precipitationProbability ?? 0) >= 75 ? "high" : "medium",
-      description: "该日模拟降水概率偏高，可能影响器材防护、通行和画面通透度。",
+      level: precipitationRisk === "high" || precipitationRisk === "heavy" ? "high" : "medium",
+      description: "该日存在降水量或降水概率信号，可能影响器材防护、通行和画面通透度。",
     });
   }
 
@@ -980,6 +1135,21 @@ function buildDailyShortAdvice(
   }
 
   return score >= 65 ? "当天有可优先关注的拍摄窗口。" : "当天更适合作为备选或机动观察。";
+}
+
+function transparencyGradeLabel(
+  grade: ReturnType<typeof transparencyGradeFromScore>,
+): "优秀" | "较好" | "一般" | "较差" {
+  if (grade === "excellent") {
+    return "优秀";
+  }
+  if (grade === "good") {
+    return "较好";
+  }
+  if (grade === "fair") {
+    return "一般";
+  }
+  return "较差";
 }
 
 function firstWindowByLabel(
@@ -1091,8 +1261,13 @@ function buildRiskFlags(
   whiteoutRisk: ForecastScore,
 ): readonly ForecastRiskFlag[] {
   const flags: ForecastRiskFlag[] = [];
-  const maxPrecipitation = Math.max(
-    ...input.hourlyWeather.map((hour) => hour.precipitationProbability),
+  const maxPrecipitationRisk = Math.max(
+    ...input.hourlyWeather.map((hour) =>
+      precipitationRiskScore({
+        probability: hour.precipitationProbability,
+        amountMm: precipitationAmountMm(hour),
+      }),
+    ),
     0,
   );
   const maxWind = Math.max(
@@ -1117,12 +1292,12 @@ function buildRiskFlags(
     });
   }
 
-  if (maxPrecipitation >= 55) {
+  if (maxPrecipitationRisk >= 55) {
     flags.push({
       key: "precipitation",
       label: "降水干扰",
-      level: maxPrecipitation >= 75 ? "high" : "medium",
-      description: "部分时段降水概率偏高，会影响器材防护、通行和画面通透度。",
+      level: maxPrecipitationRisk >= 75 ? "high" : "medium",
+      description: "部分时段存在降水概率或降水量信号，会影响器材防护、通行和画面通透度。",
     });
   }
 

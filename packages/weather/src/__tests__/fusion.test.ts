@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { NormalizedHourlyWeather } from "@photo-weather/shared";
-import {
-  fuseWeatherSources,
-  targetPriorityFields,
-  type WeatherDataBundle,
-} from "../index";
+import { fuseWeatherSources, targetPriorityFields, type WeatherDataBundle } from "../index";
 
 const coordinates = {
   latitude: 30.1328,
@@ -51,6 +47,56 @@ describe("weather source fusion", () => {
     expect(result.summary.conflictStatusZh).toContain("差异");
   });
 
+  it("keeps precipitation probability nullable while using amount for rain confidence", () => {
+    const result = fuseWeatherSources({
+      providerBundles: [
+        bundle(
+          "qweather",
+          "和风天气",
+          hour({
+            providerCode: "qweather",
+            precipitationProbability: null,
+            precipitation: 12,
+            precipitationAmountMm: 12,
+            rainAmountMm: 12,
+            missingFields: ["precipitationProbability"],
+          }),
+        ),
+        bundle(
+          "open_meteo",
+          "Open-Meteo",
+          hour({
+            providerCode: "open_meteo",
+            providerLabelZh: "Open-Meteo",
+            precipitationProbability: null,
+            precipitation: 10,
+            precipitationAmountMm: 10,
+            rainAmountMm: 10,
+            missingFields: ["precipitationProbability"],
+          }),
+        ),
+      ],
+      target: "general",
+      location: { name: "高山机位", coordinates },
+      forecastStart: "2026-05-22T00:00:00+08:00",
+      forecastEnd: "2026-05-23T00:00:00+08:00",
+    });
+
+    expect(result.fusedHourly[0]?.precipitationProbability).toBeNull();
+    expect(result.fusedHourly[0]?.precipitationAmountMm).toBe(10);
+    expect(result.fusedHourly[0]?.fieldMetadata?.precipitationProbability).toMatchObject({
+      value: null,
+      missingReason: "provider_field_missing",
+    });
+    expect(result.fusedHourly[0]?.fieldMetadata?.precipitationAmountMm).toMatchObject({
+      value: 10,
+      providerCode: "open_meteo",
+      estimated: false,
+    });
+    expect(result.confidenceByField.precipitation).toBeGreaterThanOrEqual(0.8);
+    expect(result.confidenceByTarget.general).toBeGreaterThanOrEqual(0.55);
+  });
+
   it("keeps target-specific field priorities explicit", () => {
     expect(targetPriorityFields("cloud_sea")).toEqual(
       expect.arrayContaining(["humidity", "dewPointSpread", "cloudLow", "terrain.elevationDiff"]),
@@ -83,9 +129,7 @@ function bundle(
   };
 }
 
-function hour(
-  overrides: Partial<NormalizedHourlyWeather> = {},
-): NormalizedHourlyWeather {
+function hour(overrides: Partial<NormalizedHourlyWeather> = {}): NormalizedHourlyWeather {
   return {
     time: "2026-05-22T06:00:00+08:00",
     temperature: 15,

@@ -98,6 +98,7 @@ export class OpenMeteoProvider implements WeatherProvider {
     const hourly = asRecord(root.hourly);
     const timeValues = getArray(hourly, "time");
     const offsetSeconds = toNumber(root.utc_offset_seconds) ?? 8 * 60 * 60;
+    const providerElevationMeters = toNumber(root.elevation) ?? undefined;
 
     return validateHourlyWeather(
       timeValues.map((timeValue, index) => {
@@ -110,6 +111,15 @@ export class OpenMeteoProvider implements WeatherProvider {
         const missingFields = missingCloudLayerFields({ cloudLow, cloudMid, cloudHigh });
         const estimatedFields =
           pressureMsl === null && pressureFallback !== null ? ["pressure"] : [];
+        const precipitationProbability = nullablePercent(
+          at(hourly, "precipitation_probability", index),
+        );
+        const precipitation = nullableRounded(at(hourly, "precipitation", index));
+        const rainAmount = nullableRounded(at(hourly, "rain", index));
+        const snowAmount = nullableRounded(at(hourly, "snowfall", index));
+        if (precipitationProbability === null) {
+          missingFields.push("precipitationProbability");
+        }
         const sourceNotes =
           missingFields.length > 0
             ? ["Open-Meteo 未返回完整云量分层，缺失的 cloudLow/cloudMid/cloudHigh 字段置为空。"]
@@ -130,26 +140,33 @@ export class OpenMeteoProvider implements WeatherProvider {
             nullableRounded(at(hourly, "dew_point_2m", index)) === null
               ? null
               : roundTo(
-                  requiredRounded(
-                    at(hourly, "temperature_2m", index),
-                    "hourly.temperature_2m",
-                  ) - nullableRounded(at(hourly, "dew_point_2m", index))!,
+                  requiredRounded(at(hourly, "temperature_2m", index), "hourly.temperature_2m") -
+                    nullableRounded(at(hourly, "dew_point_2m", index))!,
                 ),
           pressure: pressureMsl ?? pressureFallback,
           windSpeed: kmhToMetersPerSecond(at(hourly, "wind_speed_10m", index)) ?? 0,
           windGust: kmhToMetersPerSecond(at(hourly, "wind_gusts_10m", index)),
           windDirection: nullableRounded(at(hourly, "wind_direction_10m", index), 0),
-          precipitationProbability: percent(
-            at(hourly, "precipitation_probability", index) ?? 0,
-            "hourly.precipitation_probability",
-          ),
-          precipitation: nullableRounded(at(hourly, "precipitation", index)),
+          precipitationProbability,
+          precipitationProbabilityPercent: precipitationProbability,
+          precipitation,
+          precipitationAmountMm: precipitation,
+          rainAmountMm: rainAmount,
+          snowAmountMm: snowAmount,
+          precipitationType: inferPrecipitationType({
+            weatherCode,
+            weatherTextZh: describeOpenMeteoCode(weatherCode),
+            rainAmount,
+            snowAmount,
+            precipitation,
+          }),
           visibility: metersToKilometers(at(hourly, "visibility", index)),
           dewPoint: nullableRounded(at(hourly, "dew_point_2m", index)),
           cloudTotal: percent(at(hourly, "cloud_cover", index), "hourly.cloud_cover"),
           cloudLow,
           cloudMid,
           cloudHigh,
+          providerElevationMeters,
           weatherCode,
           weatherTextZh: describeOpenMeteoCode(weatherCode),
           providerCode: source.providerCode,
@@ -169,11 +186,18 @@ export class OpenMeteoProvider implements WeatherProvider {
     const daily = asRecord(root.daily);
     const dates = getArray(daily, "time");
     const offsetSeconds = toNumber(root.utc_offset_seconds) ?? 8 * 60 * 60;
+    const providerElevationMeters = toNumber(root.elevation) ?? undefined;
 
     return validateDailyWeather(
       dates.map((dateValue, index) => {
         const date = normalizeDate(dateValue);
         const weatherCode = toText(at(daily, "weather_code", index));
+        const precipitationProbability = nullablePercent(
+          at(daily, "precipitation_probability_max", index),
+        );
+        const precipitation = nullableRounded(at(daily, "precipitation_sum", index));
+        const rainAmount = nullableRounded(at(daily, "rain_sum", index));
+        const snowAmount = nullableRounded(at(daily, "snowfall_sum", index));
 
         return {
           date,
@@ -185,10 +209,19 @@ export class OpenMeteoProvider implements WeatherProvider {
             at(daily, "temperature_2m_max", index),
             "daily.temperature_2m_max",
           ),
-          precipitationProbability: percent(
-            at(daily, "precipitation_probability_max", index) ?? 0,
-            "daily.precipitation_probability_max",
-          ),
+          precipitationProbability,
+          precipitationProbabilityPercent: precipitationProbability,
+          precipitation,
+          precipitationAmountMm: precipitation,
+          rainAmountMm: rainAmount,
+          snowAmountMm: snowAmount,
+          precipitationType: inferPrecipitationType({
+            weatherCode,
+            weatherTextZh: describeOpenMeteoCode(weatherCode),
+            rainAmount,
+            snowAmount,
+            precipitation,
+          }),
           weatherSummary: describeOpenMeteoCode(weatherCode),
           cloudSummary: "包含低云/中云/高云分层",
           sunrise: normalizeOptionalDateTime(at(daily, "sunrise", index), offsetSeconds),
@@ -196,6 +229,9 @@ export class OpenMeteoProvider implements WeatherProvider {
           providerCode: source.providerCode,
           providerLabelZh: source.providerLabelZh,
           dataMode: source.mode,
+          providerElevationMeters,
+          missingFields:
+            precipitationProbability === null ? ["precipitationProbability"] : undefined,
         };
       }),
     );
@@ -291,10 +327,7 @@ export class OpenMeteoRealProvider implements WeatherProvider {
     const body = await this.fetchForecast(input);
     const hours = Math.min(Math.max(input.hours ?? 24, 1), 168);
     try {
-      return this.normalizer
-        .normalizeHourlyWeather(body)
-        .slice(0, hours)
-        .map(toRealHourly);
+      return this.normalizer.normalizeHourlyWeather(body).slice(0, hours).map(toRealHourly);
     } catch (error) {
       throw openMeteoParseError("Open-Meteo 返回格式异常", error);
     }
@@ -304,10 +337,7 @@ export class OpenMeteoRealProvider implements WeatherProvider {
     const body = await this.fetchForecast(input);
     const days = Math.min(Math.max(input.days ?? 7, 1), 16);
     try {
-      return this.normalizer
-        .normalizeDailyWeather(body)
-        .slice(0, days)
-        .map(toRealDaily);
+      return this.normalizer.normalizeDailyWeather(body).slice(0, days).map(toRealDaily);
     } catch (error) {
       throw openMeteoParseError("Open-Meteo 返回格式异常", error);
     }
@@ -459,6 +489,33 @@ function describeOpenMeteoCode(code: string | null): string {
     default:
       return "天气变化";
   }
+}
+
+function inferPrecipitationType(input: {
+  readonly weatherCode: string | null;
+  readonly weatherTextZh: string | null;
+  readonly rainAmount: number | null;
+  readonly snowAmount: number | null;
+  readonly precipitation: number | null;
+}): "rain" | "snow" | "mixed" | "none" | "unknown" {
+  const rain = input.rainAmount ?? 0;
+  const snow = input.snowAmount ?? 0;
+  if (rain > 0 && snow > 0) {
+    return "mixed";
+  }
+  if (snow > 0 || input.weatherTextZh?.includes("雪")) {
+    return rain > 0 ? "mixed" : "snow";
+  }
+  if (rain > 0 || input.weatherTextZh?.includes("雨")) {
+    return "rain";
+  }
+  if ((input.precipitation ?? 0) > 0) {
+    return "rain";
+  }
+  if (input.precipitation === 0 || rain === 0 || snow === 0) {
+    return "none";
+  }
+  return "unknown";
 }
 
 function roundTo(value: number): number {

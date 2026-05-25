@@ -44,6 +44,7 @@ import {
 } from "@photo-weather/astro";
 import { buildMockTerrainAnalysis } from "@photo-weather/terrain";
 import { clampScore } from "./helpers.js";
+import { applyMountainWeatherAdjustments } from "./weather-decision-metrics.js";
 
 type MockPlaceProfile = {
   readonly key: string;
@@ -263,15 +264,6 @@ export function buildForecastInputFromNormalizedWeather(
   const weatherMissingFields =
     weather.weatherMissingFields ??
     collectWeatherFields(weather.hourlyWeather, weather.dailyWeather, "missingFields");
-  const weatherEstimatedFields =
-    weather.weatherEstimatedFields ??
-    collectWeatherFields(weather.hourlyWeather, weather.dailyWeather, "estimatedFields");
-  const currentWeather = weather.currentWeather ?? buildCurrentWeatherFromHourly({
-    hourlyWeather: weather.hourlyWeather,
-    providerCode: weather.weatherProviderCode ?? (weather.isMock ? "mock" : "unknown"),
-    providerLabelZh: weatherProviderLabelZh,
-    dataMode: weatherDataMode,
-  });
   const terrainAnalysis =
     options.terrainAnalysis ??
     buildMockTerrainAnalysis({
@@ -281,14 +273,35 @@ export function buildForecastInputFromNormalizedWeather(
         name: query.name,
       },
     });
+  const initialCurrentWeather =
+    weather.currentWeather ??
+    buildCurrentWeatherFromHourly({
+      hourlyWeather: weather.hourlyWeather,
+      providerCode: weather.weatherProviderCode ?? (weather.isMock ? "mock" : "unknown"),
+      providerLabelZh: weatherProviderLabelZh,
+      dataMode: weatherDataMode,
+    });
+  const adjustedWeather = applyMountainWeatherAdjustments({
+    currentWeather: initialCurrentWeather,
+    hourlyWeather: weather.hourlyWeather,
+    dailyWeather: weather.dailyWeather,
+    terrainAnalysis,
+  });
+  const weatherEstimatedFields = [
+    ...new Set([
+      ...(weather.weatherEstimatedFields ??
+        collectWeatherFields(weather.hourlyWeather, weather.dailyWeather, "estimatedFields")),
+      ...adjustedWeather.estimatedFields,
+    ]),
+  ];
 
   return {
     place,
     horizon: query.horizon,
     target: query.target,
     calendarBasis: buildCalculationBasis(query, forecastRange),
-    hourlyWeather: weather.hourlyWeather,
-    dailyWeather: weather.dailyWeather,
+    hourlyWeather: adjustedWeather.hourlyWeather,
+    dailyWeather: adjustedWeather.dailyWeather,
     terrainSummary: flattenTerrainAnalysis(terrainAnalysis),
     terrainAnalysis,
     astroSummaries:
@@ -299,7 +312,7 @@ export function buildForecastInputFromNormalizedWeather(
         longitudeWgs84: query.longitudeWgs84,
       }),
     generatedAt: forecastRange.forecastStart,
-    currentWeather,
+    currentWeather: adjustedWeather.currentWeather,
     isMock: weather.isMock,
     dataSourceLabel: weather.dataSourceLabel,
     weatherProviderCode: weather.weatherProviderCode ?? (weather.isMock ? "mock" : "unknown"),
@@ -398,7 +411,15 @@ export function generateMockHourlyWeather(
       windDirection: (120 + index * 17 + placeSeed(profile.key)) % 360,
       precipitationProbability,
       precipitation: round1(precipitationProbability > 55 ? precipitationProbability / 28 : 0),
+      precipitationProbabilityPercent: precipitationProbability,
+      precipitationAmountMm: round1(
+        precipitationProbability > 55 ? precipitationProbability / 28 : 0,
+      ),
+      rainAmountMm: round1(precipitationProbability > 55 ? precipitationProbability / 28 : 0),
+      snowAmountMm: 0,
+      precipitationType: precipitationProbability > 55 ? "rain" : "none",
       visibility,
+      rawVisibilityKm: visibility,
       dewPoint: round1(temperature - dewPointSpread),
       cloudTotal,
       cloudLow: lowCloud,
@@ -432,6 +453,13 @@ export function generateMockDailyWeather(
       tempMin: round1(profile.tempBase - 5 + dayIndex * 0.2),
       tempMax: round1(profile.tempBase + 6 + dayIndex * 0.3),
       precipitationProbability,
+      precipitationProbabilityPercent: precipitationProbability,
+      precipitation: precipitationProbability >= 45 ? round1(precipitationProbability / 18) : 0,
+      precipitationAmountMm:
+        precipitationProbability >= 45 ? round1(precipitationProbability / 18) : 0,
+      rainAmountMm: precipitationProbability >= 45 ? round1(precipitationProbability / 18) : 0,
+      snowAmountMm: 0,
+      precipitationType: precipitationProbability >= 45 ? "rain" : "none",
       weatherSummary:
         precipitationProbability >= 45 ? "阵雨间歇，云量偏多" : "多云间晴，山地局部有雾",
       sunrise: sunTimes?.sunrise,
@@ -493,7 +521,18 @@ function buildCurrentWeatherFromHourly(input: {
     cloudMid: firstHour.cloudMid,
     cloudHigh: firstHour.cloudHigh,
     precipitation: firstHour.precipitation,
+    precipitationAmountMm: firstHour.precipitationAmountMm ?? firstHour.precipitation,
+    rainAmountMm: firstHour.rainAmountMm,
+    snowAmountMm: firstHour.snowAmountMm,
     precipitationProbability: firstHour.precipitationProbability,
+    precipitationProbabilityPercent: firstHour.precipitationProbability,
+    precipitationType: firstHour.precipitationType,
+    rawVisibilityKm: firstHour.rawVisibilityKm ?? firstHour.visibility,
+    photographyTransparencyScore: firstHour.photographyTransparencyScore,
+    transparencyGrade: firstHour.transparencyGrade,
+    cloudFogObstructionRisk: firstHour.cloudFogObstructionRisk,
+    exposedRidgeWindRisk: firstHour.exposedRidgeWindRisk,
+    providerElevationMeters: firstHour.providerElevationMeters,
     weatherTextZh: firstHour.weatherTextZh,
     weatherCode: firstHour.weatherCode,
     airQuality: null,

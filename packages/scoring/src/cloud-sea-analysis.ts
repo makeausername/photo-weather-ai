@@ -13,6 +13,10 @@ import type {
 } from "@photo-weather/shared";
 import { defaultTimezone, formatZonedIso } from "@photo-weather/calendar";
 import { addHours, averageWeightedScore, clampScore, formatChineseTimeRange } from "./helpers.js";
+import {
+  precipitationAmountMm,
+  precipitationRiskScore as weatherPrecipitationRiskScore,
+} from "./weather-decision-metrics.js";
 
 const lowCloudMissingNote = "当前天气源缺少低云分层数据，云海判断置信度降低。";
 
@@ -180,13 +184,21 @@ function evaluateCloudSeaDate(
   const accumulationStats = candidate.accumulation
     ? buildWindowStats(
         input,
-        weatherInWindow(input.hourlyWeather, candidate.accumulation.startTime, candidate.accumulation.endTime),
+        weatherInWindow(
+          input.hourlyWeather,
+          candidate.accumulation.startTime,
+          candidate.accumulation.endTime,
+        ),
       )
     : undefined;
   const dissipationStats = candidate.dissipation
     ? buildWindowStats(
         input,
-        weatherInWindow(input.hourlyWeather, candidate.dissipation.startTime, candidate.dissipation.endTime),
+        weatherInWindow(
+          input.hourlyWeather,
+          candidate.dissipation.startTime,
+          candidate.dissipation.endTime,
+        ),
       )
     : undefined;
   const terrainScore = terrainOpportunityScore(
@@ -212,7 +224,8 @@ function evaluateCloudSeaDate(
     stabilityBonus,
   );
   const missingDataNotes = buildMissingDataNotes(input, stats, candidate.sunriseKnown);
-  const riskTag = whiteoutRiskScore >= 70 ? "白墙风险高" : whiteoutRiskScore >= 45 ? "白墙风险中" : "白墙风险低";
+  const riskTag =
+    whiteoutRiskScore >= 70 ? "白墙风险高" : whiteoutRiskScore >= 45 ? "白墙风险中" : "白墙风险低";
   const noteZh =
     travelScore >= 65
       ? "清晨云海信号可等待，现场重点复核云雾上沿和能见度。"
@@ -395,8 +408,11 @@ function buildWindowStats(
     windGust: averageOptional(weatherWindow, (hour) => hour.windGust),
     windDirection: averageDirection(weatherWindow),
     visibility: averageOptional(weatherWindow, (hour) => hour.visibility),
-    precipitationProbability: averageOptional(weatherWindow, (hour) => hour.precipitationProbability),
-    precipitation: averageOptional(weatherWindow, (hour) => hour.precipitation),
+    precipitationProbability: averageOptional(
+      weatherWindow,
+      (hour) => hour.precipitationProbability,
+    ),
+    precipitation: averageOptional(weatherWindow, (hour) => precipitationAmountMm(hour)),
     cloudTotal: averageOptional(weatherWindow, (hour) => hour.cloudTotal),
     cloudLow: averageOptional(weatherWindow, (hour) => hour.cloudLow),
     pressure: averageOptional(weatherWindow, (hour) => hour.pressure),
@@ -494,13 +510,16 @@ function visibilityOpportunityScore(visibility: number | undefined): number {
 }
 
 function precipitationOpportunityScore(stats: WindowStats): number {
-  const probability = stats.precipitationProbability ?? 0;
+  const riskScore = weatherPrecipitationRiskScore({
+    probability: stats.precipitationProbability,
+    amountMm: stats.precipitation,
+  });
   const precipitation = stats.precipitation ?? 0;
 
-  if (probability >= 70 || precipitation >= 2) {
+  if (riskScore >= 70 || precipitation >= 2) {
     return 20;
   }
-  if (probability >= 45 || precipitation >= 0.8) {
+  if (riskScore >= 45 || precipitation >= 0.8) {
     return 45;
   }
   if ((stats.humidity ?? 0) >= 88 && precipitation > 0 && precipitation < 0.8) {
@@ -615,17 +634,15 @@ function cloudTotalWhiteoutRiskScore(cloudTotal: number | undefined): number {
 }
 
 function precipitationRiskScore(stats: WindowStats): number {
-  const probability = stats.precipitationProbability ?? 0;
-  const precipitation = stats.precipitation ?? 0;
-
-  return clampScore(Math.max(probability, precipitation * 45));
+  return weatherPrecipitationRiskScore({
+    probability: stats.precipitationProbability,
+    amountMm: stats.precipitation,
+  });
 }
 
-function terrainTravelBonus(
-  elevationDiff5km: number,
-  potential: TerrainCloudSeaPotential,
-): number {
-  const diffBonus = elevationDiff5km >= 1000 ? 6 : elevationDiff5km >= 600 ? 3 : elevationDiff5km < 300 ? -8 : 0;
+function terrainTravelBonus(elevationDiff5km: number, potential: TerrainCloudSeaPotential): number {
+  const diffBonus =
+    elevationDiff5km >= 1000 ? 6 : elevationDiff5km >= 600 ? 3 : elevationDiff5km < 300 ? -8 : 0;
   const potentialBonus = potential === "high" ? 4 : potential === "medium" ? 0 : -6;
 
   return diffBonus + potentialBonus;
@@ -746,9 +763,13 @@ function classifyCloudSeaConfidence(
   return "high";
 }
 
-function buildDailyCloudSea(input: ForecastCalculationInput, evaluation: WindowEvaluation): DailyCloudSea {
+function buildDailyCloudSea(
+  input: ForecastCalculationInput,
+  evaluation: WindowEvaluation,
+): DailyCloudSea {
   const dateLabelZh =
-    input.calendarBasis.calendarDays.find((day) => day.date === evaluation.window.date)?.dateLabel ??
+    input.calendarBasis.calendarDays.find((day) => day.date === evaluation.window.date)
+      ?.dateLabel ??
     input.calendarBasis.targetDateLabels[
       input.calendarBasis.targetDates.indexOf(evaluation.window.date ?? "")
     ] ??
@@ -763,7 +784,9 @@ function buildDailyCloudSea(input: ForecastCalculationInput, evaluation: WindowE
     travelScore: evaluation.travelScore,
     bestWindow: evaluation.window,
     recommendationLabel: cloudSeaRecommendationLabel(evaluation.travelScore),
-    keyReason: evaluation.opportunityReasons[0] ?? "清晨云海信号已按湿度、低云、风速、能见度和地形综合判断。",
+    keyReason:
+      evaluation.opportunityReasons[0] ??
+      "清晨云海信号已按湿度、低云、风速、能见度和地形综合判断。",
     riskNote: evaluation.whiteoutReasons[0] ?? "暂未发现高等级白墙风险，仍需现场复核低云高度。",
   };
 }
@@ -797,10 +820,7 @@ function buildOpportunityReasons(
   return reasons;
 }
 
-function buildWhiteoutReasons(
-  stats: WindowStats,
-  whiteoutRiskScore: number,
-): readonly string[] {
+function buildWhiteoutReasons(stats: WindowStats, whiteoutRiskScore: number): readonly string[] {
   const reasons = [
     stats.hasLowCloud
       ? `低云约 ${formatPercent(stats.cloudLow)}，低云过厚或抬升到机位高度时会增加白墙风险。`
@@ -880,7 +900,10 @@ function buildWeatherEvidence(stats: WindowStats): CloudSeaAnalysisResult["weath
     {
       label: "降水",
       value: `${formatPercent(stats.precipitationProbability)} / ${formatMillimeters(stats.precipitation)}`,
-      effect: (stats.precipitationProbability ?? 0) >= 45 || (stats.precipitation ?? 0) >= 0.8 ? "negative" : "neutral",
+      effect:
+        (stats.precipitationProbability ?? 0) >= 45 || (stats.precipitation ?? 0) >= 0.8
+          ? "negative"
+          : "neutral",
       noteZh: "轻微前期降水在高湿条件下可能补充水汽，观测窗口内强降水会降低拍摄和通行价值。",
     },
     {
@@ -907,11 +930,17 @@ function buildWeatherEvidence(stats: WindowStats): CloudSeaAnalysisResult["weath
   ];
 }
 
-function buildTerrainEvidence(input: ForecastCalculationInput): CloudSeaAnalysisResult["terrainEvidence"] {
+function buildTerrainEvidence(
+  input: ForecastCalculationInput,
+): CloudSeaAnalysisResult["terrainEvidence"] {
   const terrain = input.terrainAnalysis.terrainProfile;
   const potential = terrain.terrainCloudSeaPotential;
   const diffEffect: CloudSeaEvidenceEffect =
-    terrain.elevationDiff5km >= 600 ? "positive" : terrain.elevationDiff5km >= 300 ? "neutral" : "negative";
+    terrain.elevationDiff5km >= 600
+      ? "positive"
+      : terrain.elevationDiff5km >= 300
+        ? "neutral"
+        : "negative";
 
   return [
     {
@@ -1130,12 +1159,12 @@ function averageOptional(
     .map((hour) => selector(hour))
     .filter((value): value is number => isFiniteNumber(value));
 
-  return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : undefined;
+  return values.length > 0
+    ? values.reduce((sum, value) => sum + value, 0) / values.length
+    : undefined;
 }
 
-function averageDirection(
-  hourlyWeather: readonly NormalizedHourlyWeather[],
-): number | undefined {
+function averageDirection(hourlyWeather: readonly NormalizedHourlyWeather[]): number | undefined {
   const values = hourlyWeather
     .map((hour) => hour.windDirection)
     .filter((value): value is number => isFiniteNumber(value));
