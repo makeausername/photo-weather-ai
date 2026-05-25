@@ -184,14 +184,18 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
       });
 
       if (!response.ok) {
-        throw new Error(await readApiErrorMessage(response, "智能解读暂时不可用。"));
+        throw new Error(
+          await readApiErrorMessage(response, "DeepSeek 解读暂时不可用，已保留确定性分析结果。"),
+        );
       }
 
       const data = (await response.json()) as AiExplainResponse;
       setAiExplanation(data.explanation);
       setAiStatus("ready");
     } catch (error) {
-      setAiErrorMessage((error as Error).message || "智能解读暂时不可用。");
+      setAiErrorMessage(
+        (error as Error).message || "DeepSeek 解读暂时不可用，已保留确定性分析结果。",
+      );
       setAiStatus("error");
     }
   }
@@ -432,6 +436,9 @@ function WeatherEssentialsPanel({ result }: { readonly result: ForecastCalculati
 }
 
 export function SourceDiagnosticsPanel({ result }: { readonly result: ForecastCalculationResult }) {
+  const meteoblue = weatherProviderSummary(result, "meteoblue");
+  const meteobluePartial = sourceSucceeded(meteoblue) && meteoblue?.partial === true;
+
   return (
     <Card className="p-4 shadow-sm min-[900px]:col-span-2 min-[1280px]:col-span-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -456,6 +463,11 @@ export function SourceDiagnosticsPanel({ result }: { readonly result: ForecastCa
         />
         <CompactDefinition label="天文" value={result.astroDataSourceLabelZh} />
       </dl>
+      {meteobluePartial ? (
+        <p className="mt-3 text-xs leading-5 text-muted-foreground">
+          部分字段缺失不代表服务不可用，仅表示当前数据包未返回全部辅助字段。
+        </p>
+      ) : null}
     </Card>
   );
 }
@@ -586,6 +598,10 @@ export function providerDiagnosticText(
 function sourceConfidenceLabel(result: ForecastCalculationResult): string {
   if (result.weatherDataMode !== "real") {
     return "低";
+  }
+
+  if (result.weatherFusionSummary?.confidenceLevel) {
+    return confidenceLevelLabel(result.weatherFusionSummary.confidenceLevel);
   }
 
   const qweatherOk = sourceSucceeded(weatherProviderSummary(result, "qweather"));
@@ -2942,8 +2958,8 @@ function AiExplanationPanel({
       </Button>
 
       {status === "error" ? (
-        <p className="mt-3 rounded-lg border border-danger bg-card px-3 py-2 text-sm leading-6 text-danger">
-          {errorMessage || "智能解读暂时不可用。"}
+        <p className="mt-3 rounded-lg border border-warning bg-muted px-3 py-2 text-sm leading-6 text-card-foreground">
+          {errorMessage || "DeepSeek 解读暂时不可用，已保留确定性分析结果。"}
         </p>
       ) : null}
 

@@ -17,7 +17,7 @@ const baseProvider: ProviderConfigRecord = {
 };
 
 describe("DeepSeek runtime resolver", () => {
-  it("resolves fast mode to deepseek-v4-flash", () => {
+  it("overrides fast mode to deepseek-v4-pro", () => {
     const config = resolveDeepSeekRuntimeConfig(
       {
         ...baseProvider,
@@ -38,14 +38,15 @@ describe("DeepSeek runtime resolver", () => {
       enabled: true,
       realCallEnabled: true,
       apiKeyPresent: true,
-      analysisMode: "fast",
-      model: "deepseek-v4-flash",
+      analysisMode: "professional",
+      model: "deepseek-v4-pro",
       responseFormat: "json_object",
       temperature: 0.2,
-      maxTokens: 4000,
-      thinkingEnabled: false,
-      reasoningEffort: "none",
-      modeLabelZh: "快速模式",
+      maxTokens: 6000,
+      thinkingEnabled: true,
+      reasoningEffort: "medium",
+      timeoutMs: 90000,
+      modeLabelZh: "专业模式",
     });
     expect(JSON.stringify(config)).not.toContain("sk-test");
   });
@@ -77,7 +78,7 @@ describe("DeepSeek runtime resolver", () => {
     expect(JSON.stringify(config)).not.toContain("sk-env");
   });
 
-  it("maps legacy deepseek-chat and deepseek-reasoner models to new modes", () => {
+  it("maps legacy or stale models to deepseek-v4-pro", () => {
     expect(
       resolveDeepSeekRuntimeConfig(
         {
@@ -91,8 +92,8 @@ describe("DeepSeek runtime resolver", () => {
         },
       ),
     ).toMatchObject({
-      analysisMode: "fast",
-      model: "deepseek-v4-flash",
+      analysisMode: "professional",
+      model: "deepseek-v4-pro",
     });
 
     expect(
@@ -101,6 +102,23 @@ describe("DeepSeek runtime resolver", () => {
           ...baseProvider,
           configJson: {
             defaultModel: "deepseek-reasoner",
+          },
+        },
+        {
+          NODE_ENV: "development",
+        },
+      ),
+    ).toMatchObject({
+      analysisMode: "professional",
+      model: "deepseek-v4-pro",
+    });
+
+    expect(
+      resolveDeepSeekRuntimeConfig(
+        {
+          ...baseProvider,
+          configJson: {
+            model: "deepseek-v4-flash",
           },
         },
         {
@@ -132,8 +150,8 @@ describe("DeepSeek runtime resolver", () => {
 
     expect(config).toMatchObject({
       realCallEnabled: false,
-      analysisMode: "fast",
-      model: "deepseek-v4-flash",
+      analysisMode: "professional",
+      model: "deepseek-v4-pro",
       baseUrl: "https://env.deepseek.example",
     });
   });
@@ -154,6 +172,8 @@ describe("DeepSeek runtime resolver", () => {
       maxTokens: 6000,
       thinkingEnabled: true,
       reasoningEffort: "medium",
+      timeoutMs: 90000,
+      modelPolicyNoteZh: "当前项目固定使用 deepseek-v4-pro。",
     });
   });
 });

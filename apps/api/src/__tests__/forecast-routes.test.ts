@@ -1463,6 +1463,105 @@ describe("forecast query validation route", () => {
     expect(response.body).not.toContain("secretJson");
   });
 
+  it("does not block forecast calculation on DeepSeek when useAiExplanation is requested", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new DOMException("DeepSeek should not be called by calculate", "AbortError");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const provider = state.providers.get("ai:deepseek");
+    state.providers.set("ai:deepseek", {
+      ...provider,
+      enabled: true,
+      configJson: {
+        ...(provider.configJson ?? {}),
+        realCallEnabled: true,
+        model: "deepseek-v4-flash",
+      },
+      secretJson: {
+        apiKey: "deepseek-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "deep****cret",
+      },
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        useAiExplanation: true,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      aiExplanation: expect.objectContaining({
+        summary: expect.any(String),
+      }),
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(response.body).not.toContain("deepseek-secret");
+  });
+
+  it("returns a non-fatal timeout message for manual DeepSeek interpretation", async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new DOMException("Request timed out", "AbortError");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const provider = state.providers.get("ai:deepseek");
+    state.providers.set("ai:deepseek", {
+      ...provider,
+      enabled: true,
+      configJson: {
+        ...(provider.configJson ?? {}),
+        realCallEnabled: true,
+        model: "deepseek-v4-flash",
+        timeoutMs: 60000,
+      },
+      secretJson: {
+        apiKey: "deepseek-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "deep****cret",
+      },
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/ai-explain",
+      payload: validPayload,
+    });
+
+    expect(response.statusCode).toBe(504);
+    expect(response.json()).toMatchObject({
+      error: "ai_explanation_timeout",
+      message: "DeepSeek 解读暂时超时，已保留确定性分析结果，可稍后重试。",
+    });
+    expect(fetchMock).toHaveBeenCalled();
+    expect(response.body).not.toContain("deepseek-secret");
+  });
+
   it("rejects unsupported horizon and target for calculation", async () => {
     app = buildApiServer({ authConfig: testAuthConfig, logger: false });
 

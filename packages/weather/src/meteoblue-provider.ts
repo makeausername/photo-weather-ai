@@ -100,6 +100,7 @@ type MeteoblueSourceSummaryMetadata = Partial<
     | "statusCode"
     | "latencyMs"
     | "messageZh"
+    | "partial"
   >
 >;
 
@@ -938,11 +939,13 @@ function buildMeteoblueSourceSummaryMetadata(
   }
 
   const fieldSummary = summarizeMeteoblueHourlyFields(findMeteoblueHourlyRecord(root));
+  const partial = fieldSummary.extractedFields.length > 0 && fieldSummary.missingFields.length > 0;
   return {
     ...base,
     availableFields: fieldSummary.extractedFields,
     extractedFields: fieldSummary.extractedFields,
     missingFields: fieldSummary.missingFields,
+    partial,
     messageZh:
       fieldSummary.extractedFields.length > 0
         ? successfulMeteoblueMessageZh(fieldSummary.missingFields)

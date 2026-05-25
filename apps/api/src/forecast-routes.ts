@@ -8,7 +8,11 @@ import {
   forecastQueryInputSchema,
   forecastTargetLabels,
 } from "@photo-weather/shared";
-import { createRuleBasedForecastExplanation, type ForecastAiExplanation } from "@photo-weather/ai";
+import {
+  createRuleBasedForecastExplanation,
+  isDeepSeekProviderError,
+  type ForecastAiExplanation,
+} from "@photo-weather/ai";
 import type { DatabaseClient } from "@photo-weather/db";
 import { buildForecastInputFromWeatherBundle, calculateForecast } from "@photo-weather/scoring";
 import { MockTerrainProvider, type TerrainProvider } from "@photo-weather/terrain";
@@ -169,28 +173,6 @@ export function registerForecastRoutes(
       aiExplanation: createRuleBasedForecastExplanation(result),
     };
 
-    const runtimeDeepSeek = await readRuntimeDeepSeekConfigOrDisabled({
-      dbClient: options.dbClient,
-      env,
-    });
-    if (
-      runtimeDeepSeek?.enabled &&
-      runtimeDeepSeek.realCallEnabled &&
-      runtimeDeepSeek.apiKeyPresent
-    ) {
-      try {
-        const deepSeekProvider = await createRealDeepSeekProvider({
-          dbClient: options.dbClient,
-          env,
-        });
-        response.aiExplanation = await deepSeekProvider.generateForecastExplanation({
-          forecastResult: result,
-        });
-      } catch (error) {
-        response.aiExplanationError = (error as Error).message;
-      }
-    }
-
     return reply.send(response);
   });
 
@@ -251,9 +233,10 @@ export function registerForecastRoutes(
         explanation,
       });
     } catch (error) {
-      return reply.status(503).send({
-        error: "ai_explanation_unavailable",
-        message: (error as Error).message || "智能解读暂时不可用。",
+      const normalized = normalizeDeepSeekExplanationError(error);
+      return reply.status(normalized.statusCode).send({
+        error: normalized.error,
+        message: normalized.message,
       });
     }
   });
@@ -468,6 +451,26 @@ async function readRuntimeDeepSeekConfigOrDisabled(options: {
   } catch {
     return null;
   }
+}
+
+function normalizeDeepSeekExplanationError(error: unknown): {
+  readonly statusCode: 503 | 504;
+  readonly error: "ai_explanation_timeout" | "ai_explanation_unavailable";
+  readonly message: string;
+} {
+  if (isDeepSeekProviderError(error) && error.errorCategory === "timeout") {
+    return {
+      statusCode: 504,
+      error: "ai_explanation_timeout",
+      message: "DeepSeek 解读暂时超时，已保留确定性分析结果，可稍后重试。",
+    };
+  }
+
+  return {
+    statusCode: 503,
+    error: "ai_explanation_unavailable",
+    message: "DeepSeek 解读暂时不可用，已保留确定性分析结果。",
+  };
 }
 
 function isLocalDevelopment(env: NodeJS.ProcessEnv): boolean {

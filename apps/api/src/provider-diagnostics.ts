@@ -1,7 +1,4 @@
-import {
-  isDeepSeekProviderError,
-  type DeepSeekProviderOptions,
-} from "@photo-weather/ai";
+import { isDeepSeekProviderError, type DeepSeekProviderOptions } from "@photo-weather/ai";
 import { AmapProvider } from "@photo-weather/geo";
 import {
   isWeatherProviderError,
@@ -56,6 +53,7 @@ export type ProviderDiagnosticResult = {
   readonly endpoint?: string;
   readonly packages?: readonly string[];
   readonly model?: string;
+  readonly timeoutMs?: number;
   readonly provider?: string;
   readonly qweatherCode?: string;
   readonly location?: string;
@@ -78,7 +76,10 @@ const sampleLocation = "黄山光明顶";
 
 const providerMetadata: Record<
   ProviderDiagnosticCode,
-  { readonly providerType: ProviderDiagnosticResult["providerType"]; readonly providerNameZh: string }
+  {
+    readonly providerType: ProviderDiagnosticResult["providerType"];
+    readonly providerNameZh: string;
+  }
 > = {
   amap: {
     providerType: "geo",
@@ -530,6 +531,7 @@ async function testDeepSeekProvider(
     mode: config.analysisMode,
     modeLabelZh: config.modeLabelZh,
     model: config.model,
+    timeoutMs: config.timeoutMs,
   };
   const preflight = preflightDiagnostic("deepseek", common);
   if (preflight) {
@@ -616,6 +618,9 @@ function sanitizeDiagnosticMessage(message: string, secret?: string): string {
 
   return sanitized
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
-    .replace(/((?:apiKey|api_key|apikey|token|authorization|secret)(?:["'\s:=]+))([^&\s,}"]+)/gi, "$1[redacted]")
+    .replace(
+      /((?:apiKey|api_key|apikey|token|authorization|secret)(?:["'\s:=]+))([^&\s,}"]+)/gi,
+      "$1[redacted]",
+    )
     .replace(/((?:apikey|key|token)=)[^&\s]+/gi, "$1[redacted]");
 }

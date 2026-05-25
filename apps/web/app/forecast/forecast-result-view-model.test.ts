@@ -11,6 +11,7 @@ import {
   AstroResultPage,
   CloudSeaResultPage,
   GlowResultPage,
+  SourceDiagnosticsPanel,
   providerDiagnosticText,
 } from "./forecast-result-client";
 import {
@@ -1273,6 +1274,78 @@ describe("forecast result target-aware view model", () => {
     expect(providerDiagnosticText(result, "meteoblue", "meteoblue")).toBe(
       "meteoblue 通过，部分字段缺失",
     );
+  });
+
+  it("renders meteoblue partial success as usable data with medium confidence", () => {
+    const result = {
+      ...resultForTarget("general"),
+      weatherDataMode: "real",
+      weatherFusionSummary: {
+        primarySource: "和风天气",
+        auxiliarySources: ["Open-Meteo", "meteoblue"],
+        professionalSourceStatus: "专业增强：meteoblue 通过，部分字段缺失",
+        confidenceLevel: "medium",
+        confidenceByTarget: {
+          general: 0.61,
+        },
+        conflictStatusZh: "无明显冲突",
+        dataStatusZh: "天气数据：和风天气；云层辅助：Open-Meteo；数据置信度：中",
+        sourceSummaries: [],
+        missingDataNotes: [],
+      },
+      weatherSourceSummaries: [
+        {
+          providerCode: "qweather",
+          providerLabelZh: "和风天气",
+          dataMode: "real",
+          enabled: true,
+          realCallEnabled: true,
+          attempted: true,
+          success: true,
+          status: "available",
+          availableFields: ["temperature", "humidity"],
+          missingFields: [],
+          messageZh: "和风天气 通过。",
+        },
+        {
+          providerCode: "open_meteo",
+          providerLabelZh: "Open-Meteo",
+          dataMode: "real",
+          enabled: true,
+          realCallEnabled: true,
+          attempted: true,
+          success: true,
+          status: "available",
+          availableFields: ["cloudTotal", "cloudLow"],
+          missingFields: [],
+          messageZh: "Open-Meteo 通过。",
+        },
+        {
+          providerCode: "meteoblue",
+          providerLabelZh: "meteoblue",
+          dataMode: "real",
+          enabled: true,
+          realCallEnabled: true,
+          attempted: true,
+          success: true,
+          partial: true,
+          status: "available",
+          availableFields: ["cloudTotal", "cloudLow"],
+          missingFields: ["dewPoint", "visibility"],
+          statusCode: 200,
+          messageZh: "meteoblue 通过，部分字段缺失。",
+        },
+      ],
+    } satisfies ForecastCalculationResult;
+
+    const html = renderToStaticMarkup(React.createElement(SourceDiagnosticsPanel, { result }));
+
+    expect(html).toContain("专业增强");
+    expect(html).toContain("meteoblue 通过，部分字段缺失");
+    expect(html).toContain("部分字段缺失不代表服务不可用");
+    expect(html).toContain("置信度：中");
+    expect(html).not.toContain("meteoblue 暂时不可用");
+    expect(html).not.toContain("数据置信度：低");
   });
 
   it("prioritizes cloud sea and whiteout risk without making astro primary", () => {

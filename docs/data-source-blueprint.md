@@ -34,7 +34,7 @@
 - required data：确定性评分结果、关键依据、风险列表、最佳窗口、备选计划、用户题材目标。
 - preferred source：DeepSeek explanation only。
 - free/open/local option：规则解释、模板摘要、无 AI 解释。
-- paid option if needed：DeepSeek API，默认模型 `deepseek-v4-flash`，专业模式 `deepseek-v4-pro`。
+- paid option if needed：DeepSeek API，固定使用 `deepseek-v4-pro` 高质量解读模型。
 - development mode：允许真实开发测试，但必须后台启用 provider、启用真实调用并配置 key；自动化测试必须 mock 或 rule-only。
 - production mode：默认手动触发生成，后续可按付费权益开放自动生成。
 - cost risk：每次 forecast 自动生成解释会快速增加成本。

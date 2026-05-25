@@ -171,7 +171,7 @@ const providerConfigDefaults: Partial<Record<string, Record<string, JsonValue>>>
   deepseek: {
     baseUrl: "https://api.deepseek.com",
     model: "deepseek-v4-pro",
-    timeoutMs: 30000,
+    timeoutMs: 90000,
   },
 };
 
@@ -369,14 +369,14 @@ function createConfigFieldDraft(provider: SafeProviderConfig): Record<string, st
       const value = configJson[field.key];
       if (provider.providerCode === "deepseek") {
         if (field.key === "analysisMode") {
-          return [field.key, deepSeekMode ?? "fast"];
+          return [field.key, deepSeekMode ?? "professional"];
         }
         if ((field.key === "model" || field.key === "defaultModel") && value === undefined) {
           return [
             field.key,
             providerFieldDefaultToInput(provider, field) ||
               deepSeekDefaults?.model ||
-              "deepseek-v4-flash",
+              "deepseek-v4-pro",
           ];
         }
         if (deepSeekDefaults && field.key === "maxTokens" && value === undefined) {

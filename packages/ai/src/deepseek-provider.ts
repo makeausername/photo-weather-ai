@@ -78,7 +78,8 @@ const deepSeekProviderDisabledMessage =
 const defaultBaseUrl = "https://api.deepseek.com";
 const defaultTemperature = 0.2;
 const defaultMaxTokens = 4000;
-const defaultTimeoutMs = 30000;
+const defaultTimeoutMs = 90000;
+const maxInterpretationPayloadChars = 12000;
 
 export type DeepSeekProviderErrorOptions = {
   readonly errorCategory: ForecastWeatherSourceErrorCategory;
@@ -161,7 +162,7 @@ function normalizeTimeoutMs(value: number | undefined): number {
     return defaultTimeoutMs;
   }
 
-  return Math.min(120000, Math.max(1000, Math.round(value)));
+  return Math.min(120000, Math.max(60000, Math.round(value)));
 }
 
 function normalizeResponseFormat(value: "json_object" | undefined): "json_object" {
@@ -247,8 +248,91 @@ function normalizeDeepSeekRequestError(error: unknown, latencyMs: number): DeepS
   });
 }
 
-function pickForecastInput(result: ForecastCalculationResult) {
+function takeItems<T>(items: readonly T[] | undefined, count: number): readonly T[] {
+  return items?.slice(0, count) ?? [];
+}
+
+function compactScore(
+  score: ForecastCalculationResult["scores"][keyof ForecastCalculationResult["scores"]],
+) {
   return {
+    key: score.key,
+    label: score.label,
+    score: score.score,
+    level: score.level,
+    reasons: takeItems(score.reasons, 3),
+    risks: takeItems(score.risks, 3),
+  };
+}
+
+function compactSourceSummary(
+  summary: ForecastCalculationResult["weatherSourceSummaries"][number],
+) {
+  return {
+    providerCode: summary.providerCode,
+    providerLabelZh: summary.providerLabelZh,
+    dataMode: summary.dataMode,
+    attempted: summary.attempted,
+    success: summary.success,
+    partial: summary.partial,
+    status: summary.status,
+    errorCategory: summary.errorCategory,
+    messageZh: summary.messageZh,
+    extractedFields: takeItems(summary.extractedFields ?? summary.availableFields, 16),
+    missingFields: takeItems(summary.missingFields, 16),
+  };
+}
+
+function compactTargetAnalysis(result: ForecastCalculationResult) {
+  if (result.target === "cloud_sea") {
+    return {
+      target: result.target,
+      confidenceLevel: result.cloudSeaAnalysis.confidenceLevel,
+      opportunityScore: result.cloudSeaAnalysis.cloudSeaOpportunityScore,
+      whiteoutRiskScore: result.cloudSeaAnalysis.whiteoutRiskScore,
+      recommendationLabel: result.cloudSeaAnalysis.recommendationLabel,
+      bestWindows: takeItems(result.cloudSeaAnalysis.bestCloudSeaWindows, 4),
+      missingDataNotes: takeItems(result.cloudSeaAnalysis.missingDataNotes, 6),
+    };
+  }
+
+  if (result.target === "glow") {
+    return {
+      target: result.target,
+      confidenceLevel: result.glowAnalysis.confidenceLevel,
+      sunriseGlowScore: result.glowAnalysis.sunriseGlowScore,
+      sunsetGlowScore: result.glowAnalysis.sunsetGlowScore,
+      lowCloudObstructionRisk: result.glowAnalysis.lowCloudObstructionRisk,
+      recommendationLabel: result.glowAnalysis.recommendationLabel,
+      bestWindows: takeItems(result.glowAnalysis.bestGlowWindows, 4),
+      missingDataNotes: takeItems(result.glowAnalysis.missingDataNotes, 6),
+    };
+  }
+
+  if (result.target === "astro") {
+    return {
+      target: result.target,
+      confidenceLevel: result.astroAnalysis.confidenceLevel,
+      starsScore: result.astroAnalysis.starsScore,
+      milkyWayScore: result.astroAnalysis.milkyWayScore,
+      moonImpactScore: result.astroAnalysis.moonImpactScore,
+      recommendationLabel: result.astroAnalysis.recommendationLabel,
+      bestWindows: takeItems(result.astroAnalysis.bestAstroWindows, 4),
+      missingDataNotes: takeItems(result.astroAnalysis.missingDataNotes, 6),
+    };
+  }
+
+  return {
+    target: result.target,
+    confidenceLevel: result.weatherFusionSummary?.confidenceLevel,
+    recommendationLabel: result.recommendationLabel,
+  };
+}
+
+export function buildDeepSeekForecastContext(result: ForecastCalculationResult) {
+  return {
+    contextVersion: "forecast-interpretation-v2",
+    note: "All values are precomputed read-only facts. Interpret them only.",
     place: {
       name: result.place.name,
       countryCode: result.place.countryCode,
@@ -256,21 +340,101 @@ function pickForecastInput(result: ForecastCalculationResult) {
     },
     horizon: result.horizon,
     target: result.target,
+    forecastStart: result.forecastStart,
+    forecastEnd: result.forecastEnd,
     overallScore: result.overallScore,
+    recommendationLevel: result.recommendationLevel,
     recommendationLabel: result.recommendationLabel,
     summary: result.summary,
-    scores: result.scores,
-    bestWindows: result.bestWindows,
-    riskFlags: result.riskFlags,
-    keyReasons: result.keyReasons,
-    photographyAdvice: result.photographyAdvice,
-    terrainAnalysis: result.terrainAnalysis,
-    astroSummaries: result.astroSummaries,
+    scores: Object.values(result.scores).map(compactScore),
+    bestWindows: takeItems(result.bestWindows, 6),
+    riskFlags: takeItems(result.riskFlags, 8),
+    keyReasons: takeItems(result.keyReasons, 8),
+    photographyAdvice: takeItems(result.photographyAdvice, 8),
+    clothingGuide: result.clothingGuide,
+    currentWeather: result.currentWeather
+      ? {
+          observedAt: result.currentWeather.observedAt,
+          temperature: result.currentWeather.temperature,
+          feelsLike: result.currentWeather.feelsLike,
+          humidity: result.currentWeather.humidity,
+          dewPoint: result.currentWeather.dewPoint,
+          windSpeed: result.currentWeather.windSpeed,
+          windDirection: result.currentWeather.windDirection,
+          visibility: result.currentWeather.visibility,
+          cloudTotal: result.currentWeather.cloudTotal,
+          cloudLow: result.currentWeather.cloudLow,
+          cloudMid: result.currentWeather.cloudMid,
+          cloudHigh: result.currentWeather.cloudHigh,
+          precipitation: result.currentWeather.precipitation,
+          precipitationProbability: result.currentWeather.precipitationProbability,
+          weatherTextZh: result.currentWeather.weatherTextZh,
+          missingFields: result.currentWeather.missingFields,
+        }
+      : undefined,
+    providerSourceSummaries: result.weatherSourceSummaries.map(compactSourceSummary),
+    weatherConfidence: {
+      dataMode: result.weatherDataMode,
+      noticeZh: result.weatherNoticeZh,
+      missingFields: takeItems(result.weatherMissingFields, 20),
+      estimatedFields: takeItems(result.weatherEstimatedFields, 20),
+      missingDataNotes: takeItems(result.weatherMissingDataNotes, 8),
+      fusionConfidenceLevel: result.weatherFusionSummary?.confidenceLevel,
+      confidenceByTarget: result.weatherFusionSummary?.confidenceByTarget,
+      conflictStatusZh: result.weatherFusionSummary?.conflictStatusZh,
+      dataStatusZh: result.weatherFusionSummary?.dataStatusZh,
+    },
+    astroFacts: {
+      dataSourceLabelZh: result.astroDataSourceLabelZh,
+      calculationBasis: result.astroCalculationBasis
+        ? {
+            coordinateSystem: result.astroCalculationBasis.coordinateSystem,
+            timezone: result.astroCalculationBasis.timezone,
+            elevationMeters: result.astroCalculationBasis.elevationMeters,
+            generatedAt: result.astroCalculationBasis.generatedAt,
+          }
+        : undefined,
+      summaries: takeItems(result.astroSummaries, 3).map((summary) => ({
+        date: summary.date,
+        sunrise: summary.sunrise,
+        sunset: summary.sunset,
+        moonIllumination: summary.moonIllumination,
+        moonPhaseNameZh: summary.moonPhaseNameZh,
+        milkyWayWindowStart: summary.milkyWayWindowStart,
+        milkyWayWindowEnd: summary.milkyWayWindowEnd,
+        milkyWayBestTime: summary.milkyWayBestTime,
+        milkyWayDirection: summary.milkyWayDirection,
+        milkyWayVisibilityLevel: summary.milkyWayVisibilityLevel,
+        milkyWayNoteZh: summary.milkyWayNoteZh,
+      })),
+    },
+    terrainFacts: {
+      dataSourceLabelZh: result.terrainAnalysis.dataSourceLabelZh,
+      isMock: result.terrainAnalysis.isMock,
+      locationElevation: result.terrainSummary.locationElevation,
+      elevationDiff5km: result.terrainSummary.elevationDiff5km,
+      terrainCloudSeaPotential: result.terrainSummary.terrainCloudSeaPotential,
+      terrainNoteZh: result.terrainSummary.terrainNoteZh,
+      obstructionNoteZh: result.terrainSummary.obstructionNoteZh,
+    },
+    targetAnalysis: compactTargetAnalysis(result),
+    dailySummaries: takeItems(result.dailySummaries, 3),
     dataNotice: result.dataNotice,
     isMock: result.isMock,
     dataSourceLabel: result.dataSourceLabel,
     generatedAt: result.generatedAt,
   };
+}
+
+function assertInterpretationPayloadSize(content: string): string {
+  if (content.length <= maxInterpretationPayloadChars) {
+    return content;
+  }
+
+  throw deepSeekError({
+    errorCategory: "unsupported",
+    messageZh: "DeepSeek 解读上下文过大，请稍后重试。",
+  });
 }
 
 function buildJsonOnlySystemPrompt(): string {
@@ -299,6 +463,36 @@ export function buildDeepSeekForecastExplanationRequest(
 ): DeepSeekRequestPreview {
   const responseFormat = normalizeResponseFormat(options.responseFormat);
   const jsonOutputEnabled = options.jsonOutputEnabled ?? responseFormat === "json_object";
+  const userPayload = {
+    task: "请基于 computedForecastFacts 输出摄影天气智能解读 JSON。",
+    outputSchema: {
+      summary: "综合解读，一到两句话",
+      recommendation: "行动建议，一句话",
+      mainReasons: ["关键依据"],
+      mainRisks: ["主要风险"],
+      photographerAdvice: ["拍摄建议"],
+      backupPlan: ["备用方案"],
+      confidenceNote: "置信说明，必须说明若 isMock=true 则当前结果基于演示数据",
+    },
+    constraints: [
+      "只解释 computedForecastFacts 中已有的确定性事实。",
+      "不要计算、推断或改写天气、天文、地形、坐标、评分和服务商结果。",
+      "不要生成输入中没有的小时级天气、天文窗口或分数。",
+      "如果 isMock=true，必须明确这是演示数据解读，只适合体验分析流程和规划参考。",
+      "输出 JSON only。",
+    ],
+    safetyRules: [
+      "Do not invent weather data.",
+      "Do not recompute astronomy.",
+      "Do not recompute coordinates.",
+      "Do not override deterministic scores.",
+      "Do not claim mock weather is real forecast.",
+      "Output Simplified Chinese.",
+      "Output json only.",
+    ],
+    userGoal: input.userGoal ?? null,
+    computedForecastFacts: buildDeepSeekForecastContext(input.forecastResult),
+  };
   const body: DeepSeekRequestBody = {
     model: normalizeModel(options.defaultModel),
     messages: [
@@ -308,42 +502,7 @@ export function buildDeepSeekForecastExplanationRequest(
       },
       {
         role: "user",
-        content: JSON.stringify({
-          task: "请基于 deterministicForecastResult 输出摄影天气智能解读 JSON。",
-          outputSchema: {
-            summary: "综合解读，一到两句话",
-            recommendation: "行动建议，一句话",
-            mainReasons: ["关键依据"],
-            mainRisks: ["主要风险"],
-            photographerAdvice: ["拍摄建议"],
-            backupPlan: ["备用方案"],
-            confidenceNote: "置信说明，必须说明若 isMock=true 则当前结果基于演示数据",
-          },
-          exampleJsonOutput: {
-            summary: "这里写简体中文综合解读。",
-            recommendation: "这里写一句行动建议。",
-            mainReasons: ["只引用输入中已有的评分、窗口、风险和建议。"],
-            mainRisks: ["不新增输入中没有的天气或地形事实。"],
-            photographerAdvice: ["结合确定性结果给出拍摄准备建议。"],
-            backupPlan: ["若条件变化，优先选择备用窗口或近距离机位。"],
-            confidenceNote: "若 isMock=true，明确说明这是演示数据解读，仅用于体验分析流程。",
-          },
-          constraints: [
-            "不要发明任何未提供的天气、天文、地形或交通数据。",
-            "不要覆盖 deterministicForecastResult 中的评分、窗口和风险。",
-            "如果 isMock=true，必须明确这是演示数据解读，只适合体验分析流程和规划参考。",
-            "输出 JSON only。",
-          ],
-          safetyRules: [
-            "Do not invent weather data.",
-            "Do not override deterministic scores.",
-            "Do not claim mock weather is real forecast.",
-            "Output Simplified Chinese.",
-            "Output json only.",
-          ],
-          userGoal: input.userGoal ?? null,
-          deterministicForecastResult: pickForecastInput(input.forecastResult),
-        }),
+        content: assertInterpretationPayloadSize(JSON.stringify(userPayload)),
       },
     ],
     temperature: normalizeTemperature(options.temperature),
@@ -600,7 +759,8 @@ export class DeepSeekProvider implements AIProvider {
 
       if (!response.ok) {
         throw deepSeekError({
-          errorCategory: response.status === 401 || response.status === 403 ? "invalid_key" : "provider_error",
+          errorCategory:
+            response.status === 401 || response.status === 403 ? "invalid_key" : "provider_error",
           messageZh:
             response.status === 401 || response.status === 403
               ? "DeepSeek API Key 无效或权限不足。"

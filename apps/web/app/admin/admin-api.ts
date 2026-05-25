@@ -130,13 +130,13 @@ export type MockConnectionTestResult = {
     | "free"
     | "customer"
     | "config_check"
-    | "fast"
     | "professional";
   readonly connectionMode?: "mock" | "fixture" | "real";
   readonly modeZh?: string;
   readonly modeLabelZh?: string;
   readonly provider?: string;
   readonly model?: string;
+  readonly timeoutMs?: number;
   readonly apiHost?: string;
   readonly endpoint?: string;
   readonly packages?: readonly string[];

@@ -90,10 +90,10 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
   const fusedDaily = fuseDailyByDate(usableBundles, primaryBundle);
   const sourceSummaries = usableBundles.map(sourceSummary);
   const confidenceByField = buildConfidenceByField(usableBundles, conflictFlags);
-  const confidenceByTarget = buildConfidenceByTarget(
-    confidenceByField,
+  const confidenceByTarget = applyProviderConfidenceFloor(
+    buildConfidenceByTarget(confidenceByField, conflictFlags, input.terrainSummary),
+    usableBundles,
     conflictFlags,
-    input.terrainSummary,
   );
   const missingDataNotes = buildMissingDataNotes(confidenceByField, sourceSummaries);
   const recommendedPrimarySource = primaryBundle.providerCode;
@@ -491,6 +491,7 @@ function sourceSummary(bundle: WeatherDataBundle): WeatherSourceSummary {
     realCallEnabled: bundle.dataMode === "real",
     attempted: true,
     success: true,
+    partial: bundle.providerCode === "meteoblue" && missingFields.length > 0,
     status: "available",
     availableFields,
     extractedFields: availableFields,
@@ -511,6 +512,7 @@ function sourceSummary(bundle: WeatherDataBundle): WeatherSourceSummary {
     missingFields: existing?.missingFields ?? base.missingFields,
     messageZh: existing?.messageZh ?? base.messageZh,
     success: existing?.success ?? base.success,
+    partial: existing?.partial ?? base.partial,
     attempted: existing?.attempted ?? base.attempted,
     enabled: existing?.enabled ?? base.enabled,
     realCallEnabled: existing?.realCallEnabled ?? base.realCallEnabled,
@@ -609,6 +611,30 @@ function buildConfidenceByTarget(
         field.precipitation,
       ]) - conflictPenalty,
     ),
+  };
+}
+
+function applyProviderConfidenceFloor(
+  confidenceByTarget: WeatherConfidenceByTarget,
+  bundles: readonly WeatherDataBundle[],
+  conflicts: readonly WeatherConflictFlag[],
+): WeatherConfidenceByTarget {
+  const hasQWeather = bundles.some(
+    (bundle) => bundle.providerCode === "qweather" && bundle.dataMode === "real",
+  );
+  const hasOpenMeteo = bundles.some(
+    (bundle) => bundle.providerCode === "open_meteo" && bundle.dataMode === "real",
+  );
+  const hasMajorConflict = conflicts.some((flag) => flag.severity === "high");
+  if (!hasQWeather || !hasOpenMeteo || hasMajorConflict) {
+    return confidenceByTarget;
+  }
+
+  return {
+    cloud_sea: Math.max(confidenceByTarget.cloud_sea, 0.55),
+    glow: Math.max(confidenceByTarget.glow, 0.55),
+    astro: Math.max(confidenceByTarget.astro, 0.55),
+    general: Math.max(confidenceByTarget.general, 0.55),
   };
 }
 

@@ -426,6 +426,7 @@ function failedSourceSummary(provider: WeatherProvider, errorInput: unknown): We
       sourceSummaryMetadata?.availableFields ?? sourceSummaryMetadata?.extractedFields ?? [],
     extractedFields: sourceSummaryMetadata?.extractedFields,
     missingFields: sourceSummaryMetadata?.missingFields ?? ["weather"],
+    partial: false,
     topLevelKeys: sourceSummaryMetadata?.topLevelKeys,
     packages: sourceSummaryMetadata?.packages,
     statusCode: error.statusCode,
@@ -479,6 +480,7 @@ function annotateProviderBundle(
         latencyMs,
         cacheHit,
         missingFields,
+        partial: bundle.providerCode === "meteoblue" && missingFields.length > 0,
         messageZh: successfulSourceMessageZh(
           bundle.providerCode,
           bundle.providerLabelZh,
@@ -528,6 +530,7 @@ function successfulSourceSummary(input: {
     availableFields: input.availableFields,
     extractedFields: input.availableFields,
     missingFields: input.missingFields,
+    partial: input.providerCode === "meteoblue" && input.missingFields.length > 0,
     latencyMs: input.latencyMs,
     cacheHit: false,
     generatedAt: input.generatedAt,
@@ -558,6 +561,9 @@ function sourceSummaryFromBundle(bundle: WeatherDataBundle): WeatherSourceSummar
     attempted: existing?.attempted ?? true,
     enabled: existing?.enabled ?? true,
     realCallEnabled: existing?.realCallEnabled ?? bundle.dataMode === "real",
+    partial:
+      existing?.partial ??
+      (bundle.providerCode === "meteoblue" && (bundle.missingFields?.length ?? 0) > 0),
     messageZh:
       existing?.messageZh ??
       successfulSourceMessageZh(

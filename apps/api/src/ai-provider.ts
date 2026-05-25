@@ -7,6 +7,7 @@ import { getRuntimeProviderConfig } from "@photo-weather/db";
 import type { DatabaseClient, JsonValue, ProviderConfigRecord } from "@photo-weather/db";
 import {
   deepSeekResponseFormat,
+  deepSeekProfessionalModel,
   getDeepSeekModeRuntimeDefaults,
   normalizeDeepSeekAnalysisMode,
   normalizeDeepSeekModel,
@@ -45,6 +46,7 @@ export type RuntimeDeepSeekConfig = ResolvedDeepSeekRuntimeConfig & {
 };
 
 const defaultDeepSeekBaseUrl = "https://api.deepseek.com";
+const defaultDeepSeekTimeoutMs = 90000;
 
 function isJsonObject(value: JsonValue | null | undefined): value is Record<string, JsonValue> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -162,7 +164,7 @@ export function resolveDeepSeekRuntimeConfig(
 ): ResolvedDeepSeekRuntimeConfig {
   const { secretJson, configJson } = readSecretAndConfig(provider);
   const configuredMode = readString(configJson.analysisMode);
-  const hasConfiguredMode = configuredMode === "fast" || configuredMode === "professional";
+  const hasConfiguredMode = configuredMode === "professional";
   const configuredModel =
     readString(configJson.model) ??
     readString(secretJson.model) ??
@@ -174,9 +176,11 @@ export function resolveDeepSeekRuntimeConfig(
     hasConfiguredMode ? undefined : configuredModel ?? envModel,
   );
   const modeDefaults = getDeepSeekModeRuntimeDefaults(analysisMode);
-  const model = hasConfiguredMode
-    ? modeDefaults.model
-    : normalizeDeepSeekModel(configuredModel ?? envModel ?? modeDefaults.model);
+  const model = normalizeDeepSeekModel(
+    hasConfiguredMode
+      ? modeDefaults.model
+      : configuredModel ?? envModel ?? modeDefaults.model ?? deepSeekProfessionalModel,
+  );
   const thinkingEnabled =
     readBoolean(configJson.thinkingEnabled) ??
     readBoolean(secretJson.thinkingEnabled) ??
@@ -214,7 +218,12 @@ export function resolveDeepSeekRuntimeConfig(
     ),
     thinkingEnabled,
     reasoningEffort,
-    timeoutMs: clampInteger(readNumber(configJson.timeoutMs), 30000, 1000, 120000),
+    timeoutMs: clampInteger(
+      readNumber(configJson.timeoutMs),
+      defaultDeepSeekTimeoutMs,
+      60000,
+      120000,
+    ),
     modeLabelZh: modeDefaults.modeLabelZh,
   };
 }
@@ -248,7 +257,8 @@ export function normalizeDeepSeekAdminConfigJson(
     maxTokens: clampInteger(readNumber(current.maxTokens), modeDefaults.maxTokens, 128, 8192),
     thinkingEnabled,
     reasoningEffort,
-    timeoutMs: clampInteger(readNumber(current.timeoutMs), 30000, 1000, 120000),
+    modelPolicyNoteZh: "当前项目固定使用 deepseek-v4-pro。",
+    timeoutMs: clampInteger(readNumber(current.timeoutMs), defaultDeepSeekTimeoutMs, 60000, 120000),
   };
 }
 

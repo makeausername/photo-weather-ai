@@ -144,6 +144,49 @@ describe("WeatherIntelligenceService", () => {
     );
   });
 
+  it("keeps medium confidence when QWeather and Open-Meteo pass with partial meteoblue data", async () => {
+    const service = new WeatherIntelligenceService({
+      providers: [
+        new StaticProvider("qweather", "和风天气", "real", hour({ providerCode: "qweather" })),
+        new StaticProvider(
+          "open_meteo",
+          "Open-Meteo",
+          "real",
+          hour({ providerCode: "open_meteo", providerLabelZh: "Open-Meteo" }),
+        ),
+        new StaticProvider(
+          "meteoblue",
+          "meteoblue",
+          "real",
+          hour({
+            providerCode: "meteoblue",
+            providerLabelZh: "meteoblue",
+            dewPoint: null,
+            windGust: null,
+            pressure: null,
+            visibility: null,
+            missingFields: ["dewPoint", "windGust", "pressure", "visibility"],
+          }),
+        ),
+      ],
+    });
+
+    const bundle = await service.getWeatherDataBundle(requestInput());
+    const meteoblue = bundle.sourceSummaries?.find(
+      (summary) => summary.providerCode === "meteoblue",
+    );
+
+    expect(bundle.fusionSummary?.confidenceLevel).not.toBe("low");
+    expect(bundle.confidenceByTarget?.general ?? 0).toBeGreaterThanOrEqual(0.55);
+    expect(meteoblue).toMatchObject({
+      providerCode: "meteoblue",
+      success: true,
+      partial: true,
+      messageZh: "meteoblue 通过，部分字段缺失。",
+      missingFields: expect.arrayContaining(["dewPoint", "visibility"]),
+    });
+  });
+
   it("keeps meteoblue data_1h success metadata in fusion source summaries", async () => {
     const fetcher = vi.fn(
       async () =>
@@ -180,6 +223,7 @@ describe("WeatherIntelligenceService", () => {
       topLevelKeys: ["metadata", "units", "data_1h"],
       packages: ["basic-1h", "clouds-1h"],
       extractedFields: expect.arrayContaining(["temperature", "humidity", "cloudTotal"]),
+      partial: true,
       messageZh: "meteoblue 通过，部分字段缺失。",
     });
     expect(JSON.stringify(bundle)).not.toContain("meteoblue-secret");

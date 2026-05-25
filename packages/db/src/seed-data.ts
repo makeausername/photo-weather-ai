@@ -277,7 +277,7 @@ const systemSettings = [
   },
   {
     key: "ai.defaultModel",
-    valueJson: "deepseek-v4-flash",
+    valueJson: "deepseek-v4-pro",
     valueType: "string",
     group: "ai",
     label: "默认 AI 模型",

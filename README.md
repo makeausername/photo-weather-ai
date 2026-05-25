@@ -362,7 +362,7 @@ DeepSeek API Key、分析模式和真实调用开关优先在后台服务商配�
 ENABLE_REAL_DEEPSEEK=false
 DEEPSEEK_API_KEY=
 DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_DEFAULT_MODEL=deepseek-v4-flash
+DEEPSEEK_DEFAULT_MODEL=deepseek-v4-pro
 ```
 
 天气服务商也优先在后台服务商配置页填写。和风天气普通管理员只需要填写 API Key、API Host、启用服务商、启用真实调用、保存并测试连接；Open-Meteo 支持免费开发模式和商业客户模式，免费模式不需要 API Key，商业客户模式需要按账号要求填写 API Key 和 Customer Endpoint；meteoblue Free Weather API 可用于后台 Forecast API 测试，默认数据包为 `basic-1h,clouds-1h`。QWeather API Host 在和风天气控制台的开发者信息中查看，形如 `xxxxx.qweatherapi.com`，后台表单和环境变量都填写不带 `https://` 的主机名；请求超时、重试次数、语言、单位和原始配置默认折叠在“高级配置”中：
@@ -391,7 +391,7 @@ METEOBLUE_PACKAGES=basic-1h,clouds-1h
 
 后台 `geo/amap` 已启用、`configJson.realCallEnabled=true` 且已配置高德 Web 服务 Key 后，公开地点搜索和后台高德测试连接可以请求真实高德 Web Service。若数据库配置中没有 `realCallEnabled` 字段，才会读取 `ENABLE_REAL_AMAP` 作为兜底。高德返回坐标按 GCJ-02 处理，并同步归一化为 WGS84；天气、天文、地形和评分计算仍只使用 WGS84。
 
-后台 `ai/deepseek` 已启用、`configJson.realCallEnabled=true` 且已配置 DeepSeek API Key 后，forecast 结果页可以手动点击“生成智能解读”。默认快速模式使用 `deepseek-v4-flash`，专业模式使用 `deepseek-v4-pro`；旧的 `deepseek-chat` / `deepseek-reasoner` 只作为历史配置兼容名，运行时会分别映射到快速模式和专业模式。若数据库配置中没有 `realCallEnabled` 字段，才会读取 `ENABLE_REAL_DEEPSEEK` 作为兜底。DeepSeek 只解释确定性输入中的评分、风险、最佳窗口、建议和备用方案，不计算或覆盖天气、天文、地形、坐标和评分；演示数据场景下不得声称真实天气准确率。Base URL、温度、最大输出 Token、推理强度和思考模式属于高级配置，后台默认折叠；JSON 输出模式固定为 `response_format: { type: "json_object" }`。
+后台 `ai/deepseek` 已启用、`configJson.realCallEnabled=true` 且已配置 DeepSeek API Key 后，forecast 结果页可以手动点击“生成智能解读”。当前项目固定使用 `deepseek-v4-pro` 高质量解读模型；旧的 `deepseek-chat`、`deepseek-reasoner` 或其他历史保存模型会在运行时统一覆盖为 `deepseek-v4-pro`。若数据库配置中没有 `realCallEnabled` 字段，才会读取 `ENABLE_REAL_DEEPSEEK` 作为兜底。DeepSeek 只解释确定性输入中的评分、风险、最佳窗口、建议和备用方案，不计算或覆盖天气、天文、地形、坐标和评分；演示数据场景下不得声称真实天气准确率。Base URL、温度、最大输出 Token、推理强度和思考模式属于高级配置，后台默认折叠；JSON 输出模式固定为 `response_format: { type: "json_object" }`。
 
 和风天气真实连接测试已接入 `/v7/weather/now`，仅在后台已启用服务商、启用真实调用、API Key 和 API Host 均已保存后，由管理员点击“测试连接”触发。Open-Meteo 免费模式测试可由管理员手动触发安全公共端点，商业客户模式启用真实调用时必须填写 Key。meteoblue 在未启用真实调用时只返回“当前为模拟测试，未请求 meteoblue 服务。”，启用真实调用但缺少 Key 时返回“请先填写 meteoblue API Key。”，Key 已保存后会请求 Forecast API package URL。自动化测试不会调用真实 QWeather、Open-Meteo 或 meteoblue API。
 

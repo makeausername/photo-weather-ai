@@ -40,7 +40,7 @@ export const serverEnvSchema = z
     ),
     DEEPSEEK_API_KEY: optionalSecret,
     DEEPSEEK_BASE_URL: optionalString.default("https://api.deepseek.com"),
-    DEEPSEEK_DEFAULT_MODEL: optionalString.default("deepseek-v4-flash"),
+    DEEPSEEK_DEFAULT_MODEL: optionalString.default("deepseek-v4-pro"),
     ENABLE_REAL_DEEPSEEK: optInFlag,
     AMAP_API_KEY: optionalSecret,
     AMAP_WEB_SERVICE_KEY: optionalSecret,

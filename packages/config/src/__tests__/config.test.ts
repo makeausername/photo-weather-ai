@@ -16,7 +16,7 @@ describe("environment config", () => {
     });
     expect(config.serverEnv.ENABLE_REAL_AMAP).toBe(false);
     expect(config.serverEnv.ENABLE_REAL_DEEPSEEK).toBe(false);
-    expect(config.serverEnv.DEEPSEEK_DEFAULT_MODEL).toBe("deepseek-v4-flash");
+    expect(config.serverEnv.DEEPSEEK_DEFAULT_MODEL).toBe("deepseek-v4-pro");
     expect(config.serverEnv.QWEATHER_API_HOST).toBeUndefined();
     expect(config.serverEnv.QWEATHER_LANGUAGE).toBe("zh");
     expect(config.serverEnv.QWEATHER_UNIT).toBe("metric");

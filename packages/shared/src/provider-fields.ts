@@ -29,7 +29,7 @@ export type ProviderFieldPreset = {
   readonly fields: readonly ProviderFieldDefinition[];
 };
 
-export const deepSeekAnalysisModes = ["fast", "professional"] as const;
+export const deepSeekAnalysisModes = ["professional"] as const;
 
 export type DeepSeekAnalysisMode = (typeof deepSeekAnalysisModes)[number];
 
@@ -46,31 +46,23 @@ export type DeepSeekModeRuntimeDefaults = {
   readonly modeLabelZh: string;
 };
 
-export const deepSeekDefaultModel = "deepseek-v4-flash";
-
 export const deepSeekProfessionalModel = "deepseek-v4-pro";
+
+export const deepSeekDefaultModel = deepSeekProfessionalModel;
 
 export const deepSeekResponseFormat = "json_object";
 
 export const deepSeekModelOptions = [
   {
-    value: "deepseek-v4-flash",
-    label: "deepseek-v4-flash：快速模式，推荐",
-  },
-  {
     value: "deepseek-v4-pro",
-    label: "deepseek-v4-pro：专业模式，适合复杂分析",
+    label: "deepseek-v4-pro：高质量解读模型",
   },
 ] as const satisfies readonly ProviderFieldOption[];
 
 export const deepSeekAnalysisModeOptions = [
   {
-    value: "fast",
-    label: "快速模式（deepseek-v4-flash，推荐）",
-  },
-  {
     value: "professional",
-    label: "专业模式（deepseek-v4-pro，适合复杂分析）",
+    label: "固定使用 deepseek-v4-pro",
   },
 ] as const satisfies readonly ProviderFieldOption[];
 
@@ -94,16 +86,6 @@ export const deepSeekReasoningEffortOptions = [
 ] as const satisfies readonly ProviderFieldOption[];
 
 const deepSeekModeRuntimeDefaults = {
-  fast: {
-    analysisMode: "fast",
-    model: deepSeekDefaultModel,
-    responseFormat: deepSeekResponseFormat,
-    temperature: 0.2,
-    maxTokens: 4000,
-    thinkingEnabled: false,
-    reasoningEffort: "none",
-    modeLabelZh: "快速模式",
-  },
   professional: {
     analysisMode: "professional",
     model: deepSeekProfessionalModel,
@@ -117,7 +99,6 @@ const deepSeekModeRuntimeDefaults = {
 } as const satisfies Record<DeepSeekAnalysisMode, DeepSeekModeRuntimeDefaults>;
 
 const deepSeekModelValues = new Set<string>([
-  deepSeekDefaultModel,
   deepSeekProfessionalModel,
   "deepseek-chat",
   "deepseek-reasoner",
@@ -126,25 +107,21 @@ const deepSeekModelValues = new Set<string>([
 export function normalizeDeepSeekModel(value: string | undefined): string {
   const trimmed = value?.trim();
   if (!trimmed || !deepSeekModelValues.has(trimmed)) {
-    return deepSeekDefaultModel;
-  }
-
-  if (trimmed === "deepseek-chat") {
-    return deepSeekDefaultModel;
-  }
-
-  if (trimmed === "deepseek-reasoner") {
     return deepSeekProfessionalModel;
   }
 
-  return trimmed;
+  if (trimmed === "deepseek-chat" || trimmed === "deepseek-reasoner") {
+    return deepSeekProfessionalModel;
+  }
+
+  return deepSeekProfessionalModel;
 }
 
 export function inferDeepSeekAnalysisModeFromModel(
   value: string | undefined,
 ): DeepSeekAnalysisMode {
-  const normalized = normalizeDeepSeekModel(value);
-  return normalized === deepSeekProfessionalModel ? "professional" : "fast";
+  normalizeDeepSeekModel(value);
+  return "professional";
 }
 
 export function normalizeDeepSeekAnalysisMode(
@@ -153,7 +130,7 @@ export function normalizeDeepSeekAnalysisMode(
 ): DeepSeekAnalysisMode {
   const trimmed = value?.trim();
   if (trimmed === "fast" || trimmed === "professional") {
-    return trimmed;
+    return "professional";
   }
 
   return inferDeepSeekAnalysisModeFromModel(model);
@@ -233,11 +210,12 @@ export const providerFieldPresets = [
       },
       {
         key: "analysisMode",
-        label: "分析模式",
+        label: "解读模型",
         target: "configJson",
         control: "select",
         options: deepSeekAnalysisModeOptions,
-        defaultValue: "fast",
+        defaultValue: "professional",
+        helpText: "当前项目固定使用 deepseek-v4-pro。",
       },
       {
         key: "model",
@@ -246,7 +224,7 @@ export const providerFieldPresets = [
         control: "select",
         options: deepSeekModelOptions,
         defaultValue: deepSeekDefaultModel,
-        helpText: "快速模式使用 deepseek-v4-flash，专业模式使用 deepseek-v4-pro。",
+        helpText: "当前项目固定使用 deepseek-v4-pro：高质量解读模型。",
       },
       {
         key: "apiKey",
@@ -268,8 +246,8 @@ export const providerFieldPresets = [
         label: "请求超时（毫秒）",
         target: "configJson",
         control: "number",
-        defaultValue: 30000,
-        min: 1000,
+        defaultValue: 90000,
+        min: 60000,
         max: 120000,
         step: 100,
         advanced: true,

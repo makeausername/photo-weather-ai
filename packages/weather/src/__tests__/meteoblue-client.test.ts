@@ -283,6 +283,7 @@ describe("MeteoblueClient", () => {
         "cloudHigh",
       ]),
       missingFields: expect.arrayContaining(["dewPoint", "windGust", "pressure", "visibility"]),
+      partial: true,
       messageZh: "meteoblue 通过，部分字段缺失。",
     });
   });

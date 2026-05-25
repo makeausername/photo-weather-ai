@@ -18,6 +18,7 @@ const productionScripts = [
   "scripts/resume-install.sh",
   "scripts/download-ephemeris.sh",
   "scripts/test-providers.sh",
+  "scripts/test-deepseek-interpretation.sh",
 ] as const;
 
 const bashScripts = [
@@ -459,7 +460,9 @@ describe("production deployment assets", () => {
     expect(script).toContain('docker_cmd compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"');
     expect(script).toContain("compose run --rm api pnpm test-provider --all");
     expect(script).toContain("No API keys or secrets will be printed.");
-    expect(script).not.toContain("/admin/providers/${providerType}/${providerCode}/test-connection");
+    expect(script).not.toContain(
+      "/admin/providers/${providerType}/${providerCode}/test-connection",
+    );
     expect(script).not.toMatch(/console\.log\(.*ADMIN_PASSWORD/);
     expect(script).not.toMatch(/echo .*ADMIN_PASSWORD/);
   });
@@ -471,10 +474,26 @@ describe("production deployment assets", () => {
     expect(script).toContain("providerRuntimeSnapshot:");
     expect(script).toContain("meteoblueAttempted:");
     expect(script).toContain("meteoblueSuccess:");
+    expect(script).toContain("meteobluePartial:");
+    expect(script).toContain("deepSeekInterpretationStatus:");
     expect(script).toContain("dataConfidence:");
     expect(script).toContain("cacheHit:");
-    expect(script).not.toContain("/admin/providers/${providerType}/${providerCode}/test-connection");
+    expect(script).not.toContain(
+      "/admin/providers/${providerType}/${providerCode}/test-connection",
+    );
     expect(script).not.toMatch(/apikey=.*\\$\\{/i);
+  });
+
+  it("ships a secret-safe DeepSeek interpretation diagnostic script", () => {
+    const script = readRepoFile("scripts/test-deepseek-interpretation.sh");
+
+    expect(script).toContain("model: ${config.model}");
+    expect(script).toContain('config.model !== "deepseek-v4-pro"');
+    expect(script).toContain("timeoutMs: ${config.timeoutMs}");
+    expect(script).toContain("${API_BASE_URL}/forecast/ai-explain");
+    expect(script).toContain("No API keys or secrets will be printed.");
+    expect(script).not.toMatch(/echo .*API_KEY/);
+    expect(script).not.toMatch(/console\.log\(.*apiKey[:=]/i);
   });
 
   const bashCommand = resolveBashCommand();

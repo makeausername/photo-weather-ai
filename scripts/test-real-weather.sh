@@ -137,6 +137,7 @@ console.log(`dataStatusZh: ${value(fusion.dataStatusZh || result.weatherNoticeZh
 console.log(`dataConfidence: ${value(fusion.confidenceLevel)}`);
 console.log(`meteoblueAttempted: ${value(meteoblue.attempted)}`);
 console.log(`meteoblueSuccess: ${value(meteoblue.success)}`);
+console.log(`meteobluePartial: ${value(meteoblue.partial)}`);
 console.log(`meteoblueStatusCode: ${value(meteoblue.statusCode)}`);
 console.log(`meteoblueTopLevelKeys: ${Array.isArray(meteoblue.topLevelKeys) ? meteoblue.topLevelKeys.join(",") || "暂无" : "暂无"}`);
 console.log(`meteobluePackages: ${Array.isArray(meteoblue.packages) ? meteoblue.packages.join(",") || "暂无" : "暂无"}`);
@@ -145,6 +146,8 @@ console.log(`meteoblueMessageZh: ${value(meteoblue.messageZh || meteoblue.warnin
 console.log(`meteoblueValuesExtracted: ${Array.isArray(meteoblue.extractedFields) ? meteoblue.extractedFields.length > 0 : Array.isArray(meteoblue.availableFields) && meteoblue.availableFields.length > 0}`);
 console.log(`meteoblueExtractedFields: ${Array.isArray(meteoblue.extractedFields) ? meteoblue.extractedFields.join(",") || "暂无" : Array.isArray(meteoblue.availableFields) ? meteoblue.availableFields.join(",") || "暂无" : "暂无"}`);
 console.log(`meteoblueMissingFields: ${Array.isArray(meteoblue.missingFields) ? meteoblue.missingFields.join(",") || "无" : "暂无"}`);
+console.log(`deepSeekInterpretationStatus: ${result.aiExplanation ? "success" : result.aiExplanationError ? "failed" : "not_tested"}`);
+console.log(`deepSeekInterpretationMessage: ${value(result.aiExplanationError, "not_tested")}`);
 console.log(`cacheHit: ${sources.some((source) => source.cacheHit === true)}`);
 console.log("providerRuntimeSnapshot:");
 for (const provider of runtimeSnapshot) {

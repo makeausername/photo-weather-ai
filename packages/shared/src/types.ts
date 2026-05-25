@@ -177,6 +177,7 @@ export type ForecastWeatherSourceSummary = {
   readonly realCallEnabled: boolean;
   readonly attempted: boolean;
   readonly success: boolean;
+  readonly partial?: boolean;
   readonly status: ForecastWeatherSourceStatus;
   readonly availableFields: readonly string[];
   readonly missingFields: readonly string[];

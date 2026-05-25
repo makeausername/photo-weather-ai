@@ -2,9 +2,11 @@ import { decisionCardSchema } from "@photo-weather/shared";
 import { describe, expect, it } from "vitest";
 import type { ForecastCalculationResult } from "@photo-weather/shared";
 import {
+  buildDeepSeekForecastContext,
   buildDeepSeekForecastExplanationRequest,
   DeepSeekProvider,
   forecastAiExplanationSchema,
+  isDeepSeekProviderError,
   MockAIProvider,
   RuleOnlyProvider,
 } from "../index";
@@ -84,15 +86,30 @@ describe("AI providers", () => {
 
     expect(request.url).toBe("https://example.deepseek.test/chat/completions");
     expect(request.body).toMatchObject({
-      model: "deepseek-v4-flash",
+      model: "deepseek-v4-pro",
       response_format: {
         type: "json_object",
       },
       stream: false,
     });
     expect(JSON.stringify(request.body)).toContain("Do not invent weather data.");
-    expect(JSON.stringify(request.body)).toContain("exampleJsonOutput");
+    expect(JSON.stringify(request.body)).toContain("computedForecastFacts");
+    expect(JSON.stringify(request.body)).not.toContain("exampleJsonOutput");
+    expect(request.body.messages[1]?.content.length).toBeLessThanOrEqual(12000);
     expect(JSON.stringify(request.body)).not.toContain("sk-");
+  });
+
+  it("builds a compact computed-facts-only DeepSeek context", () => {
+    const context = buildDeepSeekForecastContext(forecastResultFixture);
+    const text = JSON.stringify(context);
+
+    expect(context.providerSourceSummaries[0]).toMatchObject({
+      providerCode: "mock",
+      success: true,
+    });
+    expect(text).toContain("All values are precomputed read-only facts");
+    expect(text).not.toContain("weatherTimeline");
+    expect(text.length).toBeLessThanOrEqual(9000);
   });
 
   it("calls DeepSeek with a mocked fetcher and parses forecast explanation JSON", async () => {
@@ -141,6 +158,35 @@ describe("AI providers", () => {
 
     expect(explanation.summary).toContain("演示数据");
     expect(explanation.mainReasons).toHaveLength(2);
+  });
+
+  it("classifies DeepSeek timeout without exposing secrets", async () => {
+    const fetcher = async () => {
+      throw new DOMException("The operation was aborted.", "AbortError");
+    };
+    const provider = new DeepSeekProvider({
+      enabled: true,
+      realModeEnabled: true,
+      apiKey: "sk-timeout-secret",
+      fetcher,
+    });
+
+    await expect(
+      provider.generateForecastExplanation({
+        forecastResult: forecastResultFixture,
+      }),
+    ).rejects.toMatchObject({
+      errorCategory: "timeout",
+      messageZh: "DeepSeek 服务请求超时。",
+    });
+    await provider
+      .generateForecastExplanation({
+        forecastResult: forecastResultFixture,
+      })
+      .catch((error) => {
+        expect(isDeepSeekProviderError(error)).toBe(true);
+        expect(JSON.stringify(error)).not.toContain("sk-timeout-secret");
+      });
   });
 
   it("throws a clear DeepSeek key error only after real mode is explicitly enabled", async () => {

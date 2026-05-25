@@ -53,7 +53,7 @@ describe("provider field presets", () => {
         expect.objectContaining({
           key: "timeoutMs",
           target: "configJson",
-          defaultValue: 30000,
+          defaultValue: 90000,
           advanced: true,
         }),
       ]),
@@ -116,28 +116,21 @@ describe("provider field presets", () => {
   });
 
   it("keeps DeepSeek model dropdown values centralized", () => {
-    expect(deepSeekModelOptions.map((option) => option.value)).toEqual([
-      "deepseek-v4-flash",
-      "deepseek-v4-pro",
-    ]);
+    expect(deepSeekModelOptions.map((option) => option.value)).toEqual(["deepseek-v4-pro"]);
     expect(normalizeDeepSeekModel("deepseek-reasoner")).toBe("deepseek-v4-pro");
-    expect(normalizeDeepSeekModel("deepseek-chat")).toBe("deepseek-v4-flash");
-    expect(normalizeDeepSeekModel("custom-model")).toBe("deepseek-v4-flash");
+    expect(normalizeDeepSeekModel("deepseek-chat")).toBe("deepseek-v4-pro");
+    expect(normalizeDeepSeekModel("custom-model")).toBe("deepseek-v4-pro");
   });
 
-  it("maps DeepSeek modes and legacy models to v4 runtime defaults", () => {
-    expect(getDeepSeekModeRuntimeDefaults("fast")).toMatchObject({
-      model: "deepseek-v4-flash",
-      maxTokens: 4000,
-      thinkingEnabled: false,
-    });
+  it("maps DeepSeek modes and legacy models to v4 pro runtime defaults", () => {
     expect(getDeepSeekModeRuntimeDefaults("professional")).toMatchObject({
       model: "deepseek-v4-pro",
       maxTokens: 6000,
       thinkingEnabled: true,
       reasoningEffort: "medium",
     });
-    expect(normalizeDeepSeekAnalysisMode(undefined, "deepseek-chat")).toBe("fast");
+    expect(normalizeDeepSeekAnalysisMode(undefined, "deepseek-chat")).toBe("professional");
     expect(normalizeDeepSeekAnalysisMode(undefined, "deepseek-reasoner")).toBe("professional");
+    expect(normalizeDeepSeekAnalysisMode("fast", "deepseek-v4-flash")).toBe("professional");
   });
 });
