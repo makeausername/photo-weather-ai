@@ -414,6 +414,24 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
         mainRisk ? `${riskLevelText(mainRisk.level)}风险` : "仍需出行前核对最新天气。",
         mainRisk?.level === "high" ? "danger" : "muted",
       ),
+      textCard(
+        "prioritySubject",
+        bestGeneralSubjectModuleKey(result),
+        "优先题材",
+        bestGeneralSubjectLabel(result),
+        "按云海、霞光、星空银河和通透度综合排序。",
+        "info",
+      ),
+      textCard(
+        "arrivalAdvice",
+        "recommendation",
+        "到达建议",
+        bestWindow ? "窗口前到达" : "等待更新",
+        bestWindow
+          ? `${bestWindow.timeRangeLabel}，预留取景和机位确认时间。`
+          : "暂无明确高分窗口。",
+        "accent",
+      ),
     ],
     scoreCards,
     bestWindows: resultWindows,
@@ -2195,6 +2213,40 @@ function firstWindow(
 
 function firstRisk(risks: readonly ForecastRiskFlag[]): ForecastRiskFlag | undefined {
   return risks[0];
+}
+
+function bestGeneralSubjectLabel(result: ForecastCalculationResult): string {
+  const best = bestGeneralSubject(result);
+  return best ? `${best.label}（${best.score.score} 分）` : "综合判断";
+}
+
+function bestGeneralSubjectModuleKey(result: ForecastCalculationResult): ForecastResultModuleKey {
+  return bestGeneralSubject(result)?.moduleKey ?? "recommendation";
+}
+
+function bestGeneralSubject(
+  result: ForecastCalculationResult,
+):
+  | {
+      readonly label: string;
+      readonly moduleKey: ForecastResultModuleKey;
+      readonly score: ForecastScore;
+    }
+  | undefined {
+  const candidates: readonly {
+    readonly label: string;
+    readonly moduleKey: ForecastResultModuleKey;
+    readonly score: ForecastScore;
+  }[] = [
+    { label: "云海", moduleKey: "cloudSea", score: result.scores.cloudSea },
+    { label: "朝霞", moduleKey: "sunriseGlow", score: result.scores.sunriseGlow },
+    { label: "晚霞", moduleKey: "sunsetGlow", score: result.scores.sunsetGlow },
+    { label: "星空", moduleKey: "stars", score: result.scores.stars },
+    { label: "银河", moduleKey: "milkyWay", score: result.scores.milkyWay },
+    { label: "通透度", moduleKey: "transparency", score: result.scores.transparency },
+  ];
+
+  return [...candidates].sort((left, right) => right.score.score - left.score.score)[0];
 }
 
 function firstAstro(result: ForecastCalculationResult): AstroSummary | undefined {

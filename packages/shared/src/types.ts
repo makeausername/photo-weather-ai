@@ -652,6 +652,26 @@ export type ForecastDailyMetric = {
   readonly window?: ForecastTimeWindow;
 };
 
+export type ForecastDailyWeatherSummary = {
+  readonly weatherTextZh?: string;
+  readonly tempMin?: number;
+  readonly tempMax?: number;
+  readonly feelsLikeMin?: number;
+  readonly feelsLikeMax?: number;
+  readonly precipitationProbability?: number;
+  readonly precipitation?: number;
+  readonly windSpeed?: number;
+  readonly windGust?: number;
+  readonly windDirection?: number;
+  readonly humidity?: number;
+  readonly visibility?: number;
+  readonly dewPointSpread?: number;
+  readonly cloudTotal?: number;
+  readonly cloudLow?: number;
+  readonly cloudMid?: number;
+  readonly cloudHigh?: number;
+};
+
 export type ForecastDailySummary = {
   readonly date: string;
   readonly dateLabelZh: string;
@@ -659,6 +679,7 @@ export type ForecastDailySummary = {
   readonly score: number;
   readonly recommendationLabel: string;
   readonly target: ForecastTarget;
+  readonly weather?: ForecastDailyWeatherSummary;
   readonly keyWindows: readonly ForecastTimeWindow[];
   readonly riskFlags: readonly ForecastRiskFlag[];
   readonly shortAdvice: string;

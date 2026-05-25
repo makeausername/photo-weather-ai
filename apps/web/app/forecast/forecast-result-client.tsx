@@ -72,13 +72,6 @@ type ApiErrorPayload = {
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
-const sourceLabels: Record<string, string> = {
-  local_location: "本地地点",
-  local_photo_spot: "本地机位",
-  amap: "高德地图",
-  mock: "演示数据",
-};
-
 const scoreLevelLabels: Record<ForecastScoreLevel, string> = {
   poor: "较差",
   fair: "一般",
@@ -193,9 +186,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
       setAiExplanation(data.explanation);
       setAiStatus("ready");
     } catch (error) {
-      setAiErrorMessage(
-        (error as Error).message || "DeepSeek 解读暂时不可用，已保留确定性分析结果。",
-      );
+      setAiErrorMessage(normalizeAiExplanationErrorMessage((error as Error).message));
       setAiStatus("error");
     }
   }
@@ -296,13 +287,13 @@ function LoadingDashboard({ query }: { readonly query: ForecastQueryInput }) {
           正在生成拍摄天气分析...
         </div>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          正在结合天文计算数据、演示天气数据和演示地形数据计算出片指数。
+          正在结合天气条件、天文窗口和地形特征生成出行判断。
         </p>
       </Card>
       <Card className="p-5 shadow-sm">
-        <h2 className="text-lg font-bold text-card-foreground">数据状态</h2>
+        <h2 className="text-lg font-bold text-card-foreground">分析基础</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          天文数据由本地计算流程生成；天气与地形当前使用演示数据生成体验结果。
+          页面会优先呈现是否值得去、什么时候到、拍什么和需要规避的风险。
         </p>
       </Card>
     </DashboardFrame>
@@ -322,21 +313,7 @@ function QuerySummaryPanel({ query }: { readonly query: ForecastQueryInput }) {
       <dl className="grid gap-3 text-sm">
         <SummaryItem label="预报范围" value={forecastHorizonLabels[query.horizon]} />
         <SummaryItem label="分析目标" value={forecastTargetLabels[query.target]} />
-        <SummaryItem label="数据来源" value={sourceLabels[query.source] ?? "其他来源"} />
       </dl>
-
-      <details className="rounded-lg border border-border bg-muted px-3 py-3 text-sm">
-        <summary className="cursor-pointer font-semibold text-card-foreground">坐标信息</summary>
-        <div className="mt-3 grid gap-1 break-words text-xs leading-5 text-muted-foreground">
-          <span>
-            GCJ-02：{formatCoordinate(query.latitudeGcj02)},{" "}
-            {formatCoordinate(query.longitudeGcj02)}
-          </span>
-          <span>
-            WGS84：{formatCoordinate(query.latitudeWgs84)}, {formatCoordinate(query.longitudeWgs84)}
-          </span>
-        </div>
-      </details>
     </Card>
   );
 }
@@ -350,87 +327,98 @@ function SummaryItem({ label, value }: { readonly label: string; readonly value:
   );
 }
 
+function SectionHeading({
+  title,
+  description,
+  badge,
+}: {
+  readonly title: string;
+  readonly description?: string;
+  readonly badge?: string;
+}) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="min-w-0">
+        <h2 className="text-lg font-bold text-card-foreground">{title}</h2>
+        {description ? (
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
+        ) : null}
+      </div>
+      {badge ? <Badge variant="muted">{badge}</Badge> : null}
+    </div>
+  );
+}
+
+function DailyDefinition({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted px-3 py-2">
+      <dt className="text-xs font-semibold text-muted-foreground">{label}</dt>
+      <dd className="text-sm font-bold text-card-foreground">{value}</dd>
+    </div>
+  );
+}
+
 function WeatherEssentialsPanel({ result }: { readonly result: ForecastCalculationResult }) {
   const current = result.currentWeather;
   const clothing = result.clothingGuide;
-  const fusion = result.weatherFusionSummary;
-  const failedSources = result.weatherSourceSummaries.filter(
-    (summary) =>
-      isWeatherProviderSummary(summary) &&
-      summary.providerCode !== "mock" &&
-      !(summary.success ?? summary.status === "available") &&
-      (summary.warningZh || summary.messageZh),
-  );
-  const openMeteo = result.weatherSourceSummaries.find(
-    (summary) =>
-      summary.providerCode === "open_meteo" && (summary.success ?? summary.status === "available"),
-  );
-  const meteoblue = result.weatherSourceSummaries.find(
-    (summary) =>
-      summary.providerCode === "meteoblue" && (summary.success ?? summary.status === "available"),
-  );
+  const firstDay = result.dailySummaries[0]?.weather;
+  const auxiliaryNotice = auxiliaryDataNotice(result);
 
   return (
-    <section className="grid gap-3 min-[900px]:grid-cols-2 min-[1280px]:grid-cols-5">
-      <CompactInfoCard
-        title="当前天气"
-        badge={weatherModeBadge(result)}
-        value={current?.weatherTextZh ?? weatherStatusLabel(result)}
-        detail={
-          current
-            ? `观测 ${formatDateTime(current.observedAt)}，湿度 ${formatPercentNumber(
-                current.humidity,
-              )}`
-            : "暂未返回当前实况，已使用预报首小时参与判断。"
-        }
-        tone={result.weatherDataMode === "real" ? "success" : "warning"}
+    <section className="grid gap-3" data-testid="near-term-weather">
+      <SectionHeading
+        title="当前与近时段天气"
+        description="把气温、云层、降水、风和体感整理成出行前可直接执行的判断。"
+        badge={weatherReadinessLabel(result)}
       />
-      <CompactInfoCard
-        title="温度与体感"
-        badge={formatWind(current?.windSpeed, current?.windDirection)}
-        value={`${formatTemperature(current?.temperature)} / 体感 ${formatTemperature(
-          current?.feelsLike,
-        )}`}
-        detail={`能见度 ${formatKilometers(current?.visibility)}，总云量 ${formatPercentNumber(
-          current?.cloudTotal,
-        )}，降水概率 ${formatPercentNumber(current?.precipitationProbability)}`}
-      />
-      <CompactInfoCard
-        title="穿衣指南"
-        badge={comfortLevelLabel(clothing.comfortLevel)}
-        value={clothing.titleZh}
-        detail={`${clothing.summaryZh} ${clothing.layers.slice(0, 2).join("、")}`}
-      />
-      <CompactInfoCard
-        title="数据来源"
-        badge={result.weatherDataMode === "real" ? "真实数据" : "演示/回退"}
-        value={weatherStatusLabel(result)}
-        detail={[
-          openMeteo ? "云层辅助：Open-Meteo" : null,
-          meteoblue ? "专业增强：meteoblue" : null,
-          `天文数据：${result.astroDataSourceLabelZh}`,
-        ]
-          .filter((item): item is string => Boolean(item))
-          .join("；")}
-        tone={result.weatherDataMode === "real" ? "success" : "warning"}
-      />
-      <CompactInfoCard
-        title="数据置信度"
-        badge={fusion ? confidenceLevelLabel(fusion.confidenceLevel) : "低"}
-        value={fusion?.conflictStatusZh ?? "无明显冲突"}
-        detail={
-          failedSources.length > 0
-            ? failedSources.map((summary) => summary.warningZh).join(" ")
-            : fusion?.dataStatusZh ?? result.weatherNoticeZh
-        }
-        tone={failedSources.length > 0 ? "warning" : "default"}
-      />
-      {clothing.riskNotes.length > 0 ? (
-        <div className="rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground min-[900px]:col-span-2 min-[1280px]:col-span-5">
-          {clothing.riskNotes.join(" ")}
-        </div>
-      ) : null}
-      <SourceDiagnosticsPanel result={result} />
+      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
+        <CompactInfoCard
+          title="气温与体感"
+          badge={comfortLevelLabel(clothing.comfortLevel)}
+          value={`${formatTemperature(current?.temperature ?? averagePair(firstDay?.tempMin, firstDay?.tempMax))} / 体感 ${formatTemperature(
+            current?.feelsLike ?? averagePair(firstDay?.feelsLikeMin, firstDay?.feelsLikeMax),
+          )}`}
+          detail={`日内温差 ${dailyTemperatureRangeText(firstDay)}，${temperatureActionText(
+            current,
+            firstDay,
+          )}`}
+        />
+        <CompactInfoCard
+          title="云层与能见度"
+          badge={`通透度 ${result.scores.transparency.score} 分`}
+          value={`云量 ${formatPercentNumber(current?.cloudTotal ?? firstDay?.cloudTotal)}`}
+          detail={`低云 ${formatPercentNumber(current?.cloudLow ?? firstDay?.cloudLow)}，能见度 ${formatKilometers(
+            current?.visibility ?? firstDay?.visibility,
+          )}。${cloudVisibilityActionText(result)}`}
+        />
+        <CompactInfoCard
+          title="风与降水"
+          badge={formatWind(
+            current?.windSpeed ?? firstDay?.windSpeed,
+            current?.windDirection ?? firstDay?.windDirection,
+          )}
+          value={`${precipitationLabel(
+            current?.weatherTextZh ?? firstDay?.weatherTextZh,
+          )} ${formatPercentNumber(
+            current?.precipitationProbability ?? firstDay?.precipitationProbability,
+          )}`}
+          detail={`累计降水 ${formatMillimeters(current?.precipitation ?? firstDay?.precipitation)}，阵风 ${formatWindSpeed(
+            current?.windGust ?? firstDay?.windGust,
+          )}。${windPrecipitationActionText(result)}`}
+        />
+        <CompactInfoCard
+          title="湿度与露点"
+          badge={`湿度 ${formatPercentNumber(current?.humidity ?? firstDay?.humidity)}`}
+          value={`露点差 ${formatTemperatureDelta(current?.dewPointSpread ?? firstDay?.dewPointSpread)}`}
+          detail={`${dewPointActionText(current?.dewPointSpread ?? firstDay?.dewPointSpread)} ${auxiliaryNotice}`}
+        />
+        <CompactInfoCard
+          title="穿衣与装备"
+          badge={clothing.titleZh}
+          value={packingMainValue(clothing)}
+          detail={packingDetail(clothing)}
+        />
+      </div>
     </section>
   );
 }
@@ -554,15 +542,15 @@ function successfulRealWeatherSources(
 
 function dataReadinessBadgeLabel(result: ForecastCalculationResult): string {
   if (result.weatherDataMode !== "real") {
-    return result.weatherDataMode === "fallback" ? "真实天气不可用" : "演示数据";
+    return result.weatherDataMode === "fallback" ? "真实天气不可用" : "体验参考";
   }
 
   const sources = successfulRealWeatherSources(result);
   if (sources.length >= 2) {
-    return "多源数据可用";
+    return "判断依据较完整";
   }
   if (sources.length === 1) {
-    return `${sources[0]?.providerLabelZh ?? "天气源"} 单源可用`;
+    return "基础预报可用";
   }
 
   return "真实天气不可用";
@@ -636,6 +624,306 @@ function comfortLevelLabel(
     rainy: "有雨",
   };
   return labels[level];
+}
+
+function weatherReadinessLabel(result: ForecastCalculationResult): string {
+  if (result.weatherDataMode === "real") {
+    return "实况与预报已更新";
+  }
+  if (result.weatherDataMode === "fallback") {
+    return "真实天气暂不可用";
+  }
+  return "体验参考";
+}
+
+function judgmentConfidenceText(result: ForecastCalculationResult): string {
+  const level = result.weatherFusionSummary?.confidenceLevel;
+  if (level === "high") {
+    return "当前判断可信度：较高";
+  }
+  if (level === "medium") {
+    return "当前判断可信度：中等";
+  }
+  return result.weatherDataMode === "real" ? "当前判断可信度：中等" : "当前判断可信度：偏低";
+}
+
+function auxiliaryDataNotice(result: ForecastCalculationResult): string {
+  if (result.weatherDataMode === "fallback") {
+    return "真实天气暂不可用，当前结果仅供体验参考。";
+  }
+  if (result.weatherMissingFields.length > 0 || result.weatherMissingDataNotes.length > 0) {
+    return "部分辅助指标缺失，建议结合现场云层变化复核。";
+  }
+  return "云层与能见度已纳入判断。";
+}
+
+function departureRecommendationLabel(result: ForecastCalculationResult): string {
+  if (result.recommendationLabel.includes("不建议") || result.overallScore < 45) {
+    return "不建议前往";
+  }
+  if (result.recommendationLabel.includes("谨慎") || result.overallScore < 65) {
+    return "谨慎参考";
+  }
+  return "推荐前往";
+}
+
+function normalizeRecommendationLabel(label: string): string {
+  if (label.includes("不建议")) {
+    return "不建议前往";
+  }
+  if (label.includes("谨慎")) {
+    return "谨慎参考";
+  }
+  if (label.includes("等待")) {
+    return "可等待转机";
+  }
+  return "推荐前往";
+}
+
+function recommendationBadgeVariant(label: string): BadgeVariant {
+  if (label.includes("不建议")) {
+    return "danger";
+  }
+  if (label.includes("谨慎") || label.includes("等待")) {
+    return "accent";
+  }
+  return "default";
+}
+
+function userFacingResultText(text: string): string {
+  return text
+    .replace(/当前天气或地形仍包含演示数据/g, "部分辅助指标仅供体验参考")
+    .replace(/地形数据：演示数据/g, "辅助指标仅供体验参考")
+    .replace(/本地算法银河窗口/g, "银河窗口")
+    .replace(/本地算法计算/g, "天文窗口判断")
+    .replace(/本地算法/g, "天文窗口")
+    .replace(/演示评分/g, "综合评分")
+    .replace(/模拟评分/g, "综合评分")
+    .replace(/演示数据/g, "体验参考")
+    .replace(/和风天气|QWeather|Open-Meteo|meteoblue|高德地图/g, "预报信息")
+    .replace(/WGS84|GCJ-02|GCJ02/g, "")
+    .replace(/数据置信度/g, "判断可信度")
+    .replace(/数据来源/g, "判断依据")
+    .replace(/计算与数据/g, "拍摄判断")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function primaryReasonSentence(result: ForecastCalculationResult): string {
+  return userFacingResultText(firstText(result.keyReasons, result.summary));
+}
+
+function arrivalAdviceValue(
+  window: ForecastResultWindow | ForecastCalculationResult["bestWindows"][number] | undefined,
+): string {
+  if (!window) {
+    return "等待更新";
+  }
+  const arrivalTime = shiftTime(window.startTime, -50);
+  return `${formatTime(arrivalTime)} 前到达`;
+}
+
+function arrivalAdviceDetail(
+  window: ForecastResultWindow | ForecastCalculationResult["bestWindows"][number] | undefined,
+): string {
+  if (!window) {
+    return "暂无明确高分窗口，先等待下一次预报更新，不建议为单一窗口赶路。";
+  }
+
+  return `最佳窗口 ${formatWindow(window.startTime, window.endTime)}，建议 ${formatTime(
+    shiftTime(window.startTime, -50),
+  )} 前到达，完成取景、三脚架和防护准备。`;
+}
+
+function preparationAdviceDetail(
+  result: ForecastCalculationResult,
+  bestSubject: SubjectBreakdownCard,
+  mainRisk: ForecastResultSectionItem,
+): string {
+  return `优先拍 ${subjectLabels[bestSubject.key]}，同时复核${mainRisk.label}。${packingMainValue(
+    result.clothingGuide,
+  )}`;
+}
+
+function averagePair(left: number | undefined, right: number | undefined): number | undefined {
+  if (typeof left === "number" && typeof right === "number") {
+    return (left + right) / 2;
+  }
+  return left ?? right;
+}
+
+function dailyTemperatureRangeText(
+  weather: ForecastCalculationResult["dailySummaries"][number]["weather"] | undefined,
+): string {
+  if (!weather) {
+    return "温度暂缺";
+  }
+
+  const temperature =
+    typeof weather.tempMin === "number" && typeof weather.tempMax === "number"
+      ? `${Math.round(weather.tempMin)}-${Math.round(weather.tempMax)}°C`
+      : formatTemperature(averagePair(weather.tempMin, weather.tempMax));
+  const feelsLike =
+    typeof weather.feelsLikeMin === "number" && typeof weather.feelsLikeMax === "number"
+      ? `体感 ${Math.round(weather.feelsLikeMin)}-${Math.round(weather.feelsLikeMax)}°C`
+      : `体感 ${formatTemperature(averagePair(weather.feelsLikeMin, weather.feelsLikeMax))}`;
+
+  return `${temperature}｜${feelsLike}`;
+}
+
+function temperatureActionText(
+  current: ForecastCalculationResult["currentWeather"] | undefined,
+  weather: ForecastCalculationResult["dailySummaries"][number]["weather"] | undefined,
+): string {
+  const feelsLike = current?.feelsLike ?? averagePair(weather?.feelsLikeMin, weather?.feelsLikeMax);
+  if (typeof feelsLike === "number" && feelsLike <= 5) {
+    return "风寒感明显，提前加保暖层。";
+  }
+  if (typeof feelsLike === "number" && feelsLike >= 28) {
+    return "体感偏热，注意补水和遮阳。";
+  }
+  return "按分层穿法准备，山顶体感仍需现场复核。";
+}
+
+function cloudVisibilityActionText(result: ForecastCalculationResult): string {
+  if (result.scores.whiteoutRisk.score >= 70) {
+    return "白墙风险偏高，先观察云雾上沿。";
+  }
+  if (result.scores.transparency.score >= 70) {
+    return "通透度较好，适合安排远景层次。";
+  }
+  return "通透度一般，保留近景和云层纹理备选。";
+}
+
+function precipitationLabel(weatherText: string | null | undefined): string {
+  return weatherText?.includes("雪") ? "降雪概率" : "降水概率";
+}
+
+function dailyPrecipitationLabel(
+  weather: ForecastCalculationResult["dailySummaries"][number]["weather"] | undefined,
+): string {
+  return precipitationLabel(weather?.weatherTextZh);
+}
+
+function windPrecipitationActionText(result: ForecastCalculationResult): string {
+  const rainRisk = result.riskFlags.find((risk) => risk.key === "precipitation");
+  const windRisk = result.riskFlags.find((risk) => risk.key === "wind");
+  if (rainRisk) {
+    return "降水干扰需优先规避。";
+  }
+  if (windRisk) {
+    return "注意三脚架稳定和山顶风寒。";
+  }
+  return "风雨对拍摄干扰相对可控。";
+}
+
+function dewPointActionText(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "露点差暂缺，雾气和结露需现场复核。";
+  }
+  if (value <= 2) {
+    return "露点差很小，雾气、结露和云海变化会更敏感。";
+  }
+  if (value <= 5) {
+    return "露点差偏小，清晨云雾变化值得关注。";
+  }
+  return "露点差相对拉开，云雾突变概率较低。";
+}
+
+function packingMainValue(guide: ForecastCalculationResult["clothingGuide"]): string {
+  const layers = guide.layers.slice(0, 2).join("、");
+  const accessories = guide.accessories.slice(0, 2).join("、");
+  return [layers, accessories].filter(Boolean).join("；") || guide.titleZh;
+}
+
+function packingDetail(guide: ForecastCalculationResult["clothingGuide"]): string {
+  return [guide.summaryZh, ...guide.riskNotes.slice(0, 2)].filter(Boolean).join(" ");
+}
+
+function dailyOpportunityLine(
+  breakdown: ForecastCalculationResult["targetDailyBreakdown"][number] | undefined,
+): string {
+  if (!breakdown) {
+    return "题材机会：暂无逐日拆分。";
+  }
+
+  return [
+    scorePillText("云海", breakdown.cloudSea?.score),
+    scorePillText("朝霞", breakdown.sunriseGlow?.score),
+    scorePillText("晚霞", breakdown.sunsetGlow?.score),
+    scorePillText("星空", breakdown.stars?.score),
+    scorePillText("银河", breakdown.milkyWay?.score),
+  ].join("｜");
+}
+
+function scorePillText(label: string, score: number | undefined): string {
+  return `${label} ${typeof score === "number" ? `${score}分` : "暂缺"}`;
+}
+
+function buildRiskDecisionItems(
+  result: ForecastCalculationResult,
+  mainRisk: ForecastResultSectionItem,
+): readonly ForecastResultSectionItem[] {
+  const explicitRisks = result.riskFlags.map((risk) => ({
+    label: risk.label,
+    value: `${riskLevelText(risk.level)}风险`,
+    detail: risk.description,
+  }));
+  const riskItems = explicitRisks.length > 0 ? explicitRisks : [mainRisk];
+  const whiteoutItem =
+    result.scores.whiteoutRisk.score >= 60
+      ? [
+          {
+            label: "白墙风险",
+            value: `${result.scores.whiteoutRisk.score} 分`,
+            detail: firstText(
+              [...result.scores.whiteoutRisk.risks, ...result.scores.whiteoutRisk.reasons],
+              "低云、湿度和能见度组合需要现场复核。",
+            ),
+          },
+        ]
+      : [];
+
+  return dedupeSectionItems([...riskItems, ...whiteoutItem]).slice(0, 4);
+}
+
+function dedupeSectionItems(
+  items: readonly ForecastResultSectionItem[],
+): readonly ForecastResultSectionItem[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (seen.has(item.label)) {
+      return false;
+    }
+    seen.add(item.label);
+    return true;
+  });
+}
+
+function subjectActionSuggestion(key: SubjectScoreKey, score: number): string {
+  if (key === "cloudSea") {
+    return score >= 70 ? "提前到达，先守清晨云海窗口。" : "作为备选，现场重点看低云上沿。";
+  }
+  if (key === "sunriseGlow") {
+    return score >= 70 ? "日出前完成构图，等待云缝和色温变化。" : "只作为清晨备选。";
+  }
+  if (key === "sunsetGlow") {
+    return score >= 70 ? "下午提前踩点，保留日落前后机动窗口。" : "晚霞信号一般，转向云层纹理。";
+  }
+  if (key === "stars") {
+    return score >= 70 ? "夜间可安排星空窗口，注意月光和云量复核。" : "夜景作为备选。";
+  }
+  if (key === "milkyWay") {
+    return score >= 70 ? "银河窗口可纳入计划，提前确认前景和安全通行。" : "银河不宜作为唯一目标。";
+  }
+  return score >= 70 ? "适合远山层次和长焦景别。" : "通透度一般，优先准备中近景构图。";
+}
+
+function normalizeAiExplanationErrorMessage(message: string | undefined): string {
+  if (message?.toLowerCase().includes("timeout") || message?.includes("超时")) {
+    return "DeepSeek 解读暂时超时，已保留确定性分析结果，可稍后重试。";
+  }
+  return "智能解读暂时不可用，已保留确定性分析结果，可稍后重试。";
 }
 
 function InvalidQueryCard({ message }: { readonly message?: string }) {
@@ -2168,6 +2456,7 @@ type SubjectBreakdownCard = {
   readonly score: ForecastScore;
   readonly windowLabel: string;
   readonly reason: string;
+  readonly actionSuggestion: string;
 };
 
 const subjectScoreOrder: readonly SubjectScoreKey[] = [
@@ -2188,7 +2477,7 @@ const subjectLabels: Record<SubjectScoreKey, string> = {
   transparency: "通透 / 景别清晰度",
 };
 
-function ComprehensiveForecastView({
+export function ComprehensiveForecastView({
   query,
   result,
   viewModel,
@@ -2214,7 +2503,7 @@ function ComprehensiveForecastView({
   );
 
   return (
-    <section className="grid gap-5">
+    <section className="mx-auto grid w-full max-w-[1560px] gap-5">
       <ComprehensiveContextBar query={query} result={result} />
       <ComprehensiveCoreDecisionCards
         result={result}
@@ -2223,28 +2512,17 @@ function ComprehensiveForecastView({
         mainRisk={mainRisk}
       />
       <WeatherEssentialsPanel result={result} />
-
-      <div className="grid gap-5 min-[1024px]:grid-cols-12 min-[1024px]:items-start">
-        <main className="grid gap-5 min-[1024px]:col-span-8">
-          <SubjectBreakdownSection cards={subjectCards} />
-          <OpportunityWindowSection result={result} windows={sortedWindows} />
-          {result.calendarBasis.horizonHours > 24 ? (
-            <ComprehensiveMultiDaySummary result={result} />
-          ) : null}
-          <KeyEvidenceSection result={result} />
-        </main>
-
-        <aside className="grid content-start gap-5 min-[1024px]:col-span-4">
-          <ActionableAdviceSection result={result} bestSubject={bestSubject} mainRisk={mainRisk} />
-          <CompactCalculationDataCard result={result} />
-          <AiExplanationPanel
-            status={aiStatus}
-            explanation={aiExplanation}
-            errorMessage={aiErrorMessage}
-            onGenerate={onGenerateAiExplanation}
-          />
-        </aside>
-      </div>
+      {result.dailySummaries.length > 0 ? <ComprehensiveMultiDaySummary result={result} /> : null}
+      <SubjectBreakdownSection cards={subjectCards} />
+      <OpportunityWindowSection result={result} windows={sortedWindows} />
+      <RiskDecisionSection result={result} mainRisk={mainRisk} />
+      <ActionableAdviceSection result={result} bestSubject={bestSubject} mainRisk={mainRisk} />
+      <AiExplanationPanel
+        status={aiStatus}
+        explanation={aiExplanation}
+        errorMessage={aiErrorMessage}
+        onGenerate={onGenerateAiExplanation}
+      />
     </section>
   );
 }
@@ -2257,29 +2535,28 @@ function ComprehensiveContextBar({
   readonly result: ForecastCalculationResult;
 }) {
   return (
-    <Card className="p-4 shadow-sm">
-      <div className="grid gap-4 min-[760px]:grid-cols-[minmax(0,1fr)_auto] min-[760px]:items-center">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="default">综合拍摄判断</Badge>
-            <Badge variant={dataReadinessBadgeVariant(result)}>
-              {dataReadinessBadgeLabel(result)}
-            </Badge>
-            <Badge variant="muted">{forecastHorizonLabels[query.horizon]}</Badge>
-          </div>
-          <h1 className="mt-3 break-words text-2xl font-bold leading-tight text-foreground sm:text-[28px]">
-            {query.name}
-          </h1>
-          <div className="mt-3 flex flex-wrap gap-2 text-xs leading-5 text-muted-foreground">
-            <span>生成时间：{formatDateTime(result.generatedAt)}</span>
-            <span>天气：{weatherStatusLabel(result)}</span>
-            <span>天文：本地算法</span>
-            <span>地形：{result.terrainAnalysis.dataSourceLabelZh}</span>
-          </div>
+    <header className="grid gap-4 min-[880px]:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] min-[880px]:items-stretch">
+      <div className="min-w-0 rounded-lg border border-border bg-card p-5 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="default">出行判断</Badge>
+          <Badge variant={dataReadinessBadgeVariant(result)}>{weatherReadinessLabel(result)}</Badge>
+          <Badge variant="muted">{forecastHorizonLabels[query.horizon]}</Badge>
+        </div>
+        <h1 className="mt-4 break-words text-2xl font-bold leading-tight text-foreground sm:text-[30px]">
+          {query.name}
+        </h1>
+        <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
+          {userFacingResultText(result.summary)}
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2 text-xs leading-5 text-muted-foreground">
+          <span>预报范围：{result.calendarBasis.forecastRangeLabel}</span>
+          <span>生成时间：{formatDateTime(result.generatedAt)}</span>
+          <span>{judgmentConfidenceText(result)}</span>
         </div>
         <Button
-          variant="secondary"
+          className="mt-4"
           size="sm"
+          variant="secondary"
           onClick={() => {
             window.location.assign("/#analysis");
           }}
@@ -2287,7 +2564,32 @@ function ComprehensiveContextBar({
           重新选择地点
         </Button>
       </div>
-    </Card>
+      <Card className="grid content-between gap-4 p-5 shadow-sm">
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground">综合出片指数</p>
+          <div className="mt-2 flex items-end gap-2">
+            <span className="text-5xl font-bold leading-none text-primary">
+              {result.overallScore}
+            </span>
+            <span className="pb-1 text-sm font-semibold text-muted-foreground">/ 100</span>
+          </div>
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-primary"
+              style={{ width: `${result.overallScore}%` }}
+            />
+          </div>
+        </div>
+        <div className="grid gap-2">
+          <Badge variant={recommendationBadgeVariant(result.recommendationLabel)}>
+            {departureRecommendationLabel(result)}
+          </Badge>
+          <p className="text-sm font-semibold leading-6 text-card-foreground">
+            {userFacingResultText(primaryReasonSentence(result))}
+          </p>
+        </div>
+      </Card>
+    </header>
   );
 }
 
@@ -2317,7 +2619,7 @@ function ComprehensiveCoreDecisionCards({
       "recommendation",
       "推荐等级",
       result.recommendationLabel,
-      result.summary,
+      userFacingResultText(result.summary),
       "primary",
     ),
     textCard(
@@ -2333,7 +2635,7 @@ function ComprehensiveCoreDecisionCards({
       bestSubject.key === "milkyWay" ? "milkyWay" : bestSubject.key,
       "最佳题材",
       subjectLabels[bestSubject.key],
-      `${bestSubject.score.score} 分，${bestSubject.reason}`,
+      userFacingResultText(`${bestSubject.score.score} 分，${bestSubject.reason}`),
       "info",
       bestSubject.score.score,
     ),
@@ -2345,10 +2647,21 @@ function ComprehensiveCoreDecisionCards({
       mainRisk.detail,
       mainRisk.value?.includes("高") ? "danger" : "muted",
     ),
+    textCard(
+      "comprehensive-arrival",
+      "recommendation",
+      "到达建议",
+      arrivalAdviceValue(bestWindow),
+      preparationAdviceDetail(result, bestSubject, mainRisk),
+      result.overallScore >= 65 ? "primary" : "accent",
+    ),
   ];
 
   return (
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+    <section
+      className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(210px,1fr))]"
+      data-testid="top-decision-cards"
+    >
       {cards.map((card) => (
         <PrimaryResultCard key={card.key} card={card} />
       ))}
@@ -2358,14 +2671,15 @@ function ComprehensiveCoreDecisionCards({
 
 function SubjectBreakdownSection({ cards }: { readonly cards: readonly SubjectBreakdownCard[] }) {
   return (
-    <Card className="p-5 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">题材拆解</h2>
-        <Badge variant="muted">6 个拍摄方向</Badge>
-      </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 min-[1320px]:grid-cols-3">
+    <section className="grid gap-3" data-testid="subject-breakdown">
+      <SectionHeading
+        title="题材拆解"
+        description="按云海、霞光、星空银河和通透度拆分机会，便于现场快速切换目标。"
+        badge="6 个拍摄方向"
+      />
+      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))]">
         {cards.map((card) => (
-          <article key={card.key} className="rounded-lg border border-border bg-muted p-4">
+          <Card key={card.key} className="p-4 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 className="font-bold text-card-foreground">{card.label}</h3>
@@ -2390,10 +2704,13 @@ function SubjectBreakdownSection({ cards }: { readonly cards: readonly SubjectBr
               </div>
             </div>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">{card.reason}</p>
-          </article>
+            <p className="mt-3 rounded-lg border border-border bg-muted px-3 py-2 text-xs leading-5 text-card-foreground">
+              {card.actionSuggestion}
+            </p>
+          </Card>
         ))}
       </div>
-    </Card>
+    </section>
   );
 }
 
@@ -2405,16 +2722,17 @@ function OpportunityWindowSection({
   readonly windows: readonly ForecastResultWindow[];
 }) {
   return (
-    <Card className="p-5 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">机会窗口</h2>
-        <Badge variant="muted">按评分排序</Badge>
-      </div>
+    <section className="grid gap-3" data-testid="opportunity-windows">
+      <SectionHeading
+        title="拍摄窗口与备选"
+        description="优先看高分窗口，同时保留云层或通透度变化后的备选方案。"
+        badge="按评分排序"
+      />
       <ul className="mt-4 grid gap-3">
         {windows.map((window) => (
           <li
             key={window.key}
-            className="grid gap-3 rounded-lg border border-border bg-muted p-4 min-[720px]:grid-cols-[minmax(0,1fr)_auto] min-[720px]:items-center"
+            className="grid gap-3 rounded-lg border border-border bg-card p-4 shadow-sm min-[720px]:grid-cols-[minmax(0,1fr)_auto] min-[720px]:items-center"
           >
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -2433,18 +2751,22 @@ function OpportunityWindowSection({
           </li>
         ))}
       </ul>
-    </Card>
+    </section>
   );
 }
 
 function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCalculationResult }) {
   return (
-    <Card className="p-5 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">多日摘要</h2>
-        <Badge variant="muted">{forecastHorizonLabels[result.horizon]}</Badge>
-      </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-2 min-[1320px]:grid-cols-3">
+    <section className="grid gap-3" data-testid="daily-forecast-decision">
+      <SectionHeading
+        title="逐日拍摄判断"
+        description="按天查看题材机会、天气风险和最佳窗口。"
+        badge={forecastHorizonLabels[result.horizon]}
+      />
+      <div
+        className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]"
+        data-testid="daily-cards-adaptive-grid"
+      >
         {result.dailySummaries.map((summary) => {
           const dayBreakdown = result.targetDailyBreakdown.find(
             (breakdown) => breakdown.date === summary.date,
@@ -2456,115 +2778,100 @@ function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCal
           const risk = summary.riskFlags[0] ?? result.riskFlags[0];
 
           return (
-            <article key={summary.date} className="rounded-lg border border-border bg-muted p-4">
+            <Card key={summary.date} className="p-4 shadow-sm">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h3 className="font-bold text-card-foreground">{summary.dateLabelZh}</h3>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {summary.lunarDateText ? `农历${summary.lunarDateText}` : summary.shortAdvice}
+                    {summary.lunarDateText ? `农历${summary.lunarDateText}` : "农历暂缺"}
                   </p>
                 </div>
                 <Badge variant={summary.score >= 70 ? "default" : "accent"}>
-                  {summary.score} 分
+                  综合 {summary.score} 分
                 </Badge>
               </div>
-              <dl className="mt-4 grid gap-3 text-sm">
-                <CompactDefinition label="最佳题材" value={bestSubject ?? "综合判断"} />
-                <CompactDefinition
-                  label="最佳窗口"
-                  value={
-                    bestWindow
-                      ? `${bestWindow.label}（${formatWindow(bestWindow.startTime, bestWindow.endTime)}）`
-                      : "暂无明确高分窗口"
-                  }
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Badge variant={recommendationBadgeVariant(summary.recommendationLabel)}>
+                  {normalizeRecommendationLabel(summary.recommendationLabel)}
+                </Badge>
+                <Badge variant="muted">
+                  {dayBreakdown?.weatherSummary ?? summary.weather?.weatherTextZh ?? "天气待复核"}
+                </Badge>
+              </div>
+              <dl className="mt-4 grid gap-2 text-sm">
+                <DailyDefinition label="温度" value={dailyTemperatureRangeText(summary.weather)} />
+                <DailyDefinition
+                  label={dailyPrecipitationLabel(summary.weather)}
+                  value={`${formatPercentNumber(summary.weather?.precipitationProbability)}｜${formatMillimeters(
+                    summary.weather?.precipitation,
+                  )}`}
                 />
-                <CompactDefinition
-                  label="主要风险"
-                  value={
-                    risk ? `${risk.label}：${riskLevelText(risk.level)}风险` : "暂无高等级风险"
-                  }
+                <DailyDefinition
+                  label="风"
+                  value={formatWind(summary.weather?.windSpeed, summary.weather?.windDirection)}
+                />
+                <DailyDefinition
+                  label="通透度"
+                  value={formatKilometers(summary.weather?.visibility)}
                 />
               </dl>
-            </article>
+              <div className="mt-4 grid gap-2 text-xs leading-5 text-muted-foreground">
+                <p>{dailyOpportunityLine(dayBreakdown)}</p>
+                <p>
+                  最佳窗口：
+                  {bestWindow
+                    ? `${bestWindow.label} ${formatWindow(bestWindow.startTime, bestWindow.endTime)}`
+                    : "暂无明确高分窗口"}
+                </p>
+                <p>最佳题材：{bestSubject ?? "综合判断"}</p>
+                <p>
+                  主要风险：
+                  {risk ? `${risk.label}，${riskLevelText(risk.level)}风险` : "暂无高等级风险"}
+                </p>
+              </div>
+              <p className="mt-3 rounded-lg border border-border bg-muted px-3 py-2 text-sm leading-6 text-card-foreground">
+                建议：{summary.shortAdvice}
+              </p>
+            </Card>
           );
         })}
       </div>
-    </Card>
+    </section>
   );
 }
 
-function KeyEvidenceSection({ result }: { readonly result: ForecastCalculationResult }) {
-  const astro = firstAstroSummary(result);
-  const whiteoutReason =
-    firstText(result.scores.whiteoutRisk.risks, "") ||
-    firstText(result.scores.whiteoutRisk.reasons, "白墙风险已纳入云海和通透度判断。");
-  const evidenceItems: readonly ForecastResultSectionItem[] = [
-    {
-      label: "云层结构",
-      value: hasMissingCloudLayers(result) ? "分层缺失" : "已纳入评分",
-      detail: firstText(
-        [
-          ...result.scores.cloudSea.reasons,
-          ...result.scores.sunriseGlow.reasons,
-          ...result.scores.sunsetGlow.reasons,
-        ],
-        "云量和云层结构会影响云海、霞光和星空可见性。",
-      ),
-    },
-    {
-      label: "能见度 / 通透度",
-      value: `${result.scores.transparency.score} 分`,
-      detail: firstText(
-        result.scores.transparency.reasons,
-        "能见度会影响远山层次和夜间星点清晰度。",
-      ),
-    },
-    {
-      label: "风",
-      value: windRiskLabel(result),
-      detail:
-        result.riskFlags.find((risk) => risk.key === "wind")?.description ??
-        "风速、阵风和风向会影响云海稳定、三脚架稳定性和山顶体感风险。",
-    },
-    {
-      label: "湿度 / 露点 / 白墙",
-      value: `${result.scores.whiteoutRisk.score} 分`,
-      detail: whiteoutReason,
-    },
-    {
-      label: "日出 / 日落 / 晨昏光",
-      value: `${formatOptionalTime(astro?.sunrise)} / ${formatOptionalTime(astro?.sunset)}`,
-      detail: `民用晨光 ${formatOptionalTime(astro?.civilDawn)}，民用昏影 ${formatOptionalTime(
-        astro?.civilDusk,
-      )}。`,
-    },
-    {
-      label: "月相 / 月光 / 月出月落",
-      value: `${astro?.moonPhaseNameZh ?? "暂无月相"} / ${formatPercent(astro?.moonIllumination)}`,
-      detail: `月出 ${formatOptionalTime(astro?.moonrise)}，月落 ${formatOptionalTime(
-        astro?.moonset,
-      )}；${moonImpactText(astro)}。`,
-    },
-  ];
+function RiskDecisionSection({
+  result,
+  mainRisk,
+}: {
+  readonly result: ForecastCalculationResult;
+  readonly mainRisk: ForecastResultSectionItem;
+}) {
+  const riskItems = buildRiskDecisionItems(result, mainRisk);
 
   return (
-    <Card className="p-5 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">关键依据</h2>
-        <Badge variant="muted">天气 / 天文 / 地形</Badge>
-      </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        {evidenceItems.map((item) => (
-          <article key={item.label} className="rounded-lg border border-border bg-muted p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-semibold text-card-foreground">{item.label}</h3>
-              {item.value ? <Badge variant="accent">{item.value}</Badge> : null}
+    <section className="grid gap-3" data-testid="risk-section">
+      <SectionHeading
+        title="风险提醒"
+        description="只保留会影响出发、机位等待和器材保护的风险。"
+        badge={riskItems.length > 0 ? `${riskItems.length} 项需关注` : "风险可控"}
+      />
+      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))]">
+        {riskItems.map((item) => (
+          <Card key={item.label} className="p-4 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-bold text-card-foreground">{item.label}</h3>
+              {item.value ? (
+                <Badge variant={item.value.includes("高") ? "danger" : "warning"}>
+                  {item.value}
+                </Badge>
+              ) : null}
             </div>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.detail}</p>
-          </article>
+          </Card>
         ))}
       </div>
-    </Card>
+    </section>
   );
 }
 
@@ -2587,16 +2894,33 @@ function ActionableAdviceSection({
           .map((subject) => `${subjectLabels[subject.key]}（${subject.score.score} 分）`)
           .join("或")}。`
       : "如果主目标不成立，保留现场光线、云层纹理和地景构图作为备选。";
+  const bestWindow = bestWindowForSubject(result, bestSubject.key);
 
   return (
-    <Card className="p-5 shadow-sm">
-      <h2 className="text-lg font-bold text-card-foreground">行动建议</h2>
-      <div className="mt-4 grid gap-3">
-        <AdviceBlock title="拍摄建议" items={result.photographyAdvice.slice(0, 3)} />
-        <AdviceBlock title="风险提醒" items={[`${mainRisk.label}：${mainRisk.detail}`]} />
+    <section className="grid gap-3" data-testid="action-plan">
+      <SectionHeading
+        title="出行建议"
+        description="把最佳到达、优先题材、备选方案和装备准备压缩成一组可执行动作。"
+        badge={departureRecommendationLabel(result)}
+      />
+      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(250px,1fr))]">
+        <AdviceBlock title="建议到达时间" items={[arrivalAdviceDetail(bestWindow)]} />
+        <AdviceBlock
+          title="优先拍摄题材"
+          items={[`${subjectLabels[bestSubject.key]}：${bestSubject.actionSuggestion}`]}
+        />
         <AdviceBlock title="备选方案" items={[backupPlan]} />
+        <AdviceBlock title="风险提醒" items={[`${mainRisk.label}：${mainRisk.detail}`]} />
+        <AdviceBlock
+          title="穿衣与装备"
+          items={[packingDetail(result.clothingGuide), packingMainValue(result.clothingGuide)]}
+        />
+        <AdviceBlock
+          title="是否建议出发"
+          items={[`${departureRecommendationLabel(result)}。${primaryReasonSentence(result)}`]}
+        />
       </div>
-    </Card>
+    </section>
   );
 }
 
@@ -2608,7 +2932,7 @@ function AdviceBlock({
   readonly items: readonly string[];
 }) {
   return (
-    <section className="rounded-lg border border-border bg-muted p-3">
+    <Card className="p-4 shadow-sm">
       <h3 className="text-sm font-bold text-card-foreground">{title}</h3>
       <ul className="mt-2 grid gap-2">
         {(items.length > 0
@@ -2620,36 +2944,6 @@ function AdviceBlock({
           </li>
         ))}
       </ul>
-    </section>
-  );
-}
-
-function CompactCalculationDataCard({ result }: { readonly result: ForecastCalculationResult }) {
-  return (
-    <Card className="p-5 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">计算与数据</h2>
-        <Badge variant={result.weatherDataMode === "real" ? "success" : "warning"}>
-          {weatherModeBadge(result)}
-        </Badge>
-      </div>
-      <dl className="mt-4 grid gap-3 text-sm">
-        <CompactDefinition label="预报起点" value={result.calendarBasis.forecastStartLabel} />
-        <CompactDefinition label="预报终点" value={result.calendarBasis.forecastEndLabel} />
-        <CompactDefinition label="时区" value={result.calendarBasis.timezoneLabel} />
-        <CompactDefinition
-          label="WGS84 经纬度"
-          value={formatWgs84Coordinates(result.calendarBasis)}
-        />
-        <CompactDefinition label="坐标来源" value={result.calendarBasis.coordinateSource} />
-        <CompactDefinition label="天气数据" value={weatherStatusLabel(result)} />
-        <CompactDefinition label="地形数据" value={result.terrainAnalysis.dataSourceLabelZh} />
-      </dl>
-      {result.weatherDataMode !== "real" || result.terrainAnalysis.isMock ? (
-        <p className="mt-4 rounded-lg border border-warning bg-muted p-3 text-xs leading-5 text-muted-foreground">
-          当前天气或地形仍包含演示数据，结论用于体验分析流程，正式出行前需要复核真实预报和现场条件。
-        </p>
-      ) : null}
     </Card>
   );
 }
@@ -2667,10 +2961,12 @@ function PrimaryResultCard({ card }: { readonly card: ForecastResultCard }) {
   return (
     <div className="rounded-lg border border-border bg-muted p-4">
       <p className="text-xs font-semibold text-muted-foreground">{card.label}</p>
-      <p className={cn("mt-2 break-words text-3xl font-bold leading-9", cardToneText(card.tone))}>
+      <p className={cn("mt-2 break-words text-2xl font-bold leading-8", cardToneText(card.tone))}>
         {card.value}
       </p>
-      <p className="mt-2 text-xs leading-5 text-muted-foreground">{card.detail}</p>
+      <p className="mt-2 text-xs leading-5 text-muted-foreground">
+        {userFacingResultText(card.detail)}
+      </p>
       {typeof card.score === "number" ? (
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-card">
           <div
@@ -2958,8 +3254,8 @@ function AiExplanationPanel({
       </Button>
 
       {status === "error" ? (
-        <p className="mt-3 rounded-lg border border-warning bg-muted px-3 py-2 text-sm leading-6 text-card-foreground">
-          {errorMessage || "DeepSeek 解读暂时不可用，已保留确定性分析结果。"}
+        <p className="mt-3 rounded-lg border border-warning/70 bg-muted px-3 py-2 text-sm leading-6 text-card-foreground">
+          {errorMessage || "智能解读暂时不可用，已保留确定性分析结果，可稍后重试。"}
         </p>
       ) : null}
 
@@ -3166,7 +3462,8 @@ function buildSubjectBreakdownCards(
       label: subjectLabels[key],
       score,
       windowLabel: subjectWindowLabel(result, key),
-      reason: firstText(score.reasons, "当前题材已纳入综合评分。"),
+      reason: userFacingResultText(firstText(score.reasons, "当前题材已纳入综合评分。")),
+      actionSuggestion: subjectActionSuggestion(key, score.score),
     };
   });
 }
@@ -3190,6 +3487,7 @@ function pickBestSubject(cards: readonly SubjectBreakdownCard[]): SubjectBreakdo
     },
     windowLabel: "暂无明确高分窗口",
     reason: "当前缺少可用于题材排序的评分。",
+    actionSuggestion: "先以现场通透度和安全条件作为判断基准。",
   };
 }
 
@@ -3367,23 +3665,6 @@ function pickBestDailySubject(
   return best ? `${best.label}（${best.metric?.score ?? 0} 分）` : "综合判断";
 }
 
-function firstAstroSummary(
-  result: ForecastCalculationResult,
-): ForecastCalculationResult["astroSummaries"][number] | undefined {
-  return result.astroSummaries[0];
-}
-
-function windRiskLabel(result: ForecastCalculationResult): string {
-  const windRisk = result.riskFlags.find((risk) => risk.key === "wind");
-  return windRisk ? `${riskLevelText(windRisk.level)}风险` : "已纳入评分";
-}
-
-function hasMissingCloudLayers(result: ForecastCalculationResult): boolean {
-  return ["cloudLow", "cloudMid", "cloudHigh"].some((field) =>
-    result.weatherMissingFields.includes(field),
-  );
-}
-
 function firstText(items: readonly string[], fallback: string): string {
   return items[0] ?? fallback;
 }
@@ -3463,6 +3744,12 @@ function formatKilometers(value: number | null | undefined): string {
     : "暂无";
 }
 
+function formatMillimeters(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${roundDisplay(value)} mm`
+    : "暂无降水量";
+}
+
 function formatPercentNumber(value: number | null | undefined): string {
   return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value)}%` : "暂无";
 }
@@ -3477,9 +3764,35 @@ function formatWind(
       : "暂无风速";
   const direction =
     typeof windDirection === "number" && Number.isFinite(windDirection)
-      ? `${Math.round(windDirection)}°`
+      ? windDirectionLabel(windDirection)
       : "";
   return direction ? `${speed} ${direction}` : speed;
+}
+
+function formatWindSpeed(windSpeed: number | null | undefined): string {
+  return typeof windSpeed === "number" && Number.isFinite(windSpeed)
+    ? `${roundDisplay(windSpeed)} m/s`
+    : "暂无";
+}
+
+function formatTemperatureDelta(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? `${roundDisplay(value)}°C` : "暂无";
+}
+
+function windDirectionLabel(value: number): string {
+  const directions = ["北风", "东北风", "东风", "东南风", "南风", "西南风", "西风", "西北风"];
+  const normalized = ((value % 360) + 360) % 360;
+  const index = Math.round(normalized / 45) % directions.length;
+  return directions[index] ?? `${Math.round(value)}°`;
+}
+
+function shiftTime(value: string, minutes: number): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return value;
+  }
+
+  return new Date(timestamp + minutes * 60 * 1000).toISOString();
 }
 
 function roundDisplay(value: number): string {

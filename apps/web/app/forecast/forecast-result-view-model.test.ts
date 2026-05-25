@@ -8,6 +8,7 @@ import {
   type ForecastScore,
 } from "@photo-weather/shared";
 import {
+  ComprehensiveForecastView,
   AstroResultPage,
   CloudSeaResultPage,
   GlowResultPage,
@@ -976,6 +977,25 @@ const baseResult: ForecastCalculationResult = {
       score: 78,
       recommendationLabel: "值得等待",
       target: "general",
+      weather: {
+        weatherTextZh: "多云间晴",
+        tempMin: 10,
+        tempMax: 18,
+        feelsLikeMin: 7,
+        feelsLikeMax: 16,
+        precipitationProbability: 18,
+        precipitation: 0.2,
+        windSpeed: 3.4,
+        windGust: 5.6,
+        windDirection: 135,
+        humidity: 82,
+        visibility: 18,
+        dewPointSpread: 3,
+        cloudTotal: 58,
+        cloudLow: 42,
+        cloudMid: 35,
+        cloudHigh: 28,
+      },
       keyWindows: [],
       riskFlags: [],
       shortAdvice: "当天有可优先关注的拍摄窗口。",
@@ -987,6 +1007,25 @@ const baseResult: ForecastCalculationResult = {
       score: 76,
       recommendationLabel: "值得等待",
       target: "general",
+      weather: {
+        weatherTextZh: "小雨转多云",
+        tempMin: 11,
+        tempMax: 17,
+        feelsLikeMin: 8,
+        feelsLikeMax: 15,
+        precipitationProbability: 42,
+        precipitation: 1.4,
+        windSpeed: 4.2,
+        windGust: 6.8,
+        windDirection: 45,
+        humidity: 86,
+        visibility: 14,
+        dewPointSpread: 2.2,
+        cloudTotal: 66,
+        cloudLow: 48,
+        cloudMid: 40,
+        cloudHigh: 30,
+      },
       keyWindows: [],
       riskFlags: [],
       shortAdvice: "当天有可优先关注的拍摄窗口。",
@@ -1179,6 +1218,8 @@ describe("forecast result target-aware view model", () => {
       "推荐等级",
       "最佳拍摄窗口",
       "主要风险",
+      "优先题材",
+      "到达建议",
     ]);
     expect(viewModel.scoreCards.map((card) => card.key)).toEqual([
       "sunriseGlow",
@@ -1195,6 +1236,104 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.riskSections.map((section) => section.title)).toContain("风险提示");
     expect(viewModel.adviceSections.map((section) => section.title)).toContain("拍摄建议");
     expect(viewModel.hiddenModuleKeys).toHaveLength(0);
+  });
+
+  it("renders the general result page as a user-facing decision report without provider diagnostics", () => {
+    const result = resultForTarget("general");
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "idle",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("出行判断");
+    expect(html).toContain("综合出片指数");
+    expect(html).toContain("当前与近时段天气");
+    expect(html).toContain("逐日拍摄判断");
+    expect(html).toContain("题材拆解");
+    expect(html).toContain("风险提醒");
+    expect(html).toContain("出行建议");
+    expect(html).not.toContain("数据来源");
+    expect(html).not.toContain("计算与数据");
+    expect(html).not.toContain("WGS84");
+    expect(html).not.toContain("GCJ-02");
+    expect(html).not.toContain("和风天气");
+    expect(html).not.toContain("Open-Meteo");
+    expect(html).not.toContain("meteoblue");
+    expect(html).not.toContain("本地算法");
+    expect(html).not.toContain("地形数据：演示数据");
+    expect(html).not.toContain("当前天气或地形仍包含演示数据");
+  });
+
+  it("renders rich adaptive daily cards with weather and subject opportunities", () => {
+    const result = resultForTarget("general");
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "idle",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('data-testid="daily-forecast-decision"');
+    expect(html).toContain('data-testid="daily-cards-adaptive-grid"');
+    expect(html).toContain('data-testid="top-decision-cards"');
+    expect(html).toContain('data-testid="near-term-weather"');
+    expect(html).toContain('data-testid="subject-breakdown"');
+    expect(html).toContain('data-testid="action-plan"');
+    expect(html).toContain("repeat(auto-fit,minmax(210px,1fr))");
+    expect(html).toContain("repeat(auto-fit,minmax(220px,1fr))");
+    expect(html).toContain("repeat(auto-fit,minmax(250px,1fr))");
+    expect(html).toContain("repeat(auto-fit,minmax(260px,1fr))");
+    expect(html).toContain("repeat(auto-fit,minmax(300px,1fr))");
+    expect(html).toContain("10-18°C");
+    expect(html).toContain("体感 7-16°C");
+    expect(html).toContain("降水概率");
+    expect(html).toContain("0.2 mm");
+    expect(html).toContain("3.4 m/s 东南风");
+    expect(html).toContain("18 公里");
+    expect(html).toContain("云海 82分");
+    expect(html).toContain("朝霞 70分");
+    expect(html).toContain("晚霞 74分");
+    expect(html).toContain("星空 66分");
+    expect(html).toContain("银河 68分");
+    expect(html).toContain("最佳窗口");
+    expect(html).toContain("建议：当天有可优先关注的拍摄窗口。");
+    expect(html).not.toMatch(/(?:^|\s)(?:w|min-w)-\[(?:[1-9]\d{3,})px\]/);
+  });
+
+  it("keeps deterministic analysis visible when the optional DeepSeek interpretation times out", () => {
+    const result = resultForTarget("general");
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "error",
+        aiExplanation: null,
+        aiErrorMessage: "DeepSeek 解读暂时超时，已保留确定性分析结果，可稍后重试。",
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("DeepSeek 解读暂时超时，已保留确定性分析结果，可稍后重试。");
+    expect(html).toContain("综合出片指数");
+    expect(html).toContain("逐日拍摄判断");
+    expect(html).toContain("出行建议");
+    expect(html).not.toContain("分析失败");
   });
 
   it("shows meteoblue source diagnostics with exact category and safe message", () => {

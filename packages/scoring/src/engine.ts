@@ -4,6 +4,7 @@ import {
   type AstroSummary,
   type CloudSeaAnalysisResult,
   type ForecastCalculationInput,
+  type ForecastDailyWeatherSummary,
   type ForecastCalculationResult,
   type ForecastDailyMetric,
   type ForecastDailySummary,
@@ -724,11 +725,46 @@ function buildDailySummaries(
       score,
       recommendationLabel: forecastRecommendationLabels[classifyRecommendationLevel(score)],
       target: input.target,
+      weather: buildDailyWeatherSummary(input, breakdown.date),
       keyWindows,
       riskFlags,
       shortAdvice: buildDailyShortAdvice(input.target, score, riskFlags, keyWindows),
     };
   });
+}
+
+function buildDailyWeatherSummary(
+  input: ForecastCalculationInput,
+  date: string,
+): ForecastDailyWeatherSummary | undefined {
+  const dayWeather = input.dailyWeather.find((day) => day.date === date);
+  const dayHours = hoursForDate(input.hourlyWeather, date, input.calendarBasis.timezone);
+
+  if (!dayWeather && dayHours.length === 0) {
+    return undefined;
+  }
+
+  return {
+    weatherTextZh: dayWeather?.weatherSummary ?? firstWeatherText(dayHours),
+    tempMin: dayWeather?.tempMin ?? minOptional(dayHours.map((hour) => hour.temperature)),
+    tempMax: dayWeather?.tempMax ?? maxOptional(dayHours.map((hour) => hour.temperature)),
+    feelsLikeMin: minOptional(dayHours.map((hour) => hour.feelsLike ?? undefined)),
+    feelsLikeMax: maxOptional(dayHours.map((hour) => hour.feelsLike ?? undefined)),
+    precipitationProbability:
+      dayWeather?.precipitationProbability ??
+      maxOptional(dayHours.map((hour) => hour.precipitationProbability)),
+    precipitation: sumOptional(dayHours.map((hour) => hour.precipitation ?? undefined)),
+    windSpeed: averageOptional(dayHours.map((hour) => hour.windSpeed)),
+    windGust: maxOptional(dayHours.map((hour) => hour.windGust ?? undefined)),
+    windDirection: averageWindDirection(dayHours.map((hour) => hour.windDirection ?? undefined)),
+    humidity: averageOptional(dayHours.map((hour) => hour.humidity)),
+    visibility: averageOptional(dayHours.map((hour) => hour.visibility ?? undefined)),
+    dewPointSpread: averageOptional(dayHours.map((hour) => hour.dewPointSpread ?? undefined)),
+    cloudTotal: averageOptional(dayHours.map((hour) => hour.cloudTotal)),
+    cloudLow: averageOptional(dayHours.map((hour) => hour.cloudLow ?? undefined)),
+    cloudMid: averageOptional(dayHours.map((hour) => hour.cloudMid ?? undefined)),
+    cloudHigh: averageOptional(dayHours.map((hour) => hour.cloudHigh ?? undefined)),
+  };
 }
 
 function metricFromWindow(
@@ -988,6 +1024,58 @@ function localDateForTime(time: string, timezone: string): string {
   }
 
   return formatZonedIso(time, timezone).slice(0, 10);
+}
+
+function firstWeatherText(hours: readonly NormalizedHourlyWeather[]): string | undefined {
+  return hours.find((hour) => hour.weatherTextZh)?.weatherTextZh ?? undefined;
+}
+
+function averageOptional(values: readonly (number | undefined)[]): number | undefined {
+  const usableValues = finiteValues(values);
+  if (usableValues.length === 0) {
+    return undefined;
+  }
+
+  return usableValues.reduce((sum, value) => sum + value, 0) / usableValues.length;
+}
+
+function minOptional(values: readonly (number | undefined)[]): number | undefined {
+  const usableValues = finiteValues(values);
+  return usableValues.length > 0 ? Math.min(...usableValues) : undefined;
+}
+
+function maxOptional(values: readonly (number | undefined)[]): number | undefined {
+  const usableValues = finiteValues(values);
+  return usableValues.length > 0 ? Math.max(...usableValues) : undefined;
+}
+
+function sumOptional(values: readonly (number | undefined)[]): number | undefined {
+  const usableValues = finiteValues(values);
+  if (usableValues.length === 0) {
+    return undefined;
+  }
+
+  return usableValues.reduce((sum, value) => sum + value, 0);
+}
+
+function averageWindDirection(values: readonly (number | undefined)[]): number | undefined {
+  const usableValues = finiteValues(values);
+  if (usableValues.length === 0) {
+    return undefined;
+  }
+
+  const radians = usableValues.map((value) => (value * Math.PI) / 180);
+  const x = radians.reduce((sum, value) => sum + Math.cos(value), 0) / radians.length;
+  const y = radians.reduce((sum, value) => sum + Math.sin(value), 0) / radians.length;
+  const degrees = (Math.atan2(y, x) * 180) / Math.PI;
+
+  return (degrees + 360) % 360;
+}
+
+function finiteValues(values: readonly (number | undefined)[]): readonly number[] {
+  return values.filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  );
 }
 
 function maxDefined(values: readonly (number | undefined)[]): number {
