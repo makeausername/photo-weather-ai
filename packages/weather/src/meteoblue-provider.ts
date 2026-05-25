@@ -677,7 +677,7 @@ export class MeteoblueRealProvider implements WeatherProvider {
           }
 
           return {
-            time: normalizeIsoTime(timeValue),
+            time: normalizeMeteoblueTime(timeValue, root),
             temperature,
             feelsLike: nullableRounded(
               pickAt(data1h, index, "felttemperature", "apparent_temperature", "feels_like"),
@@ -1173,6 +1173,41 @@ function getFirstArray(
   }
 
   return [];
+}
+
+function normalizeMeteoblueTime(value: unknown, root: Record<string, unknown>): string {
+  const text = toText(value);
+  if (!text) {
+    throw new Error("Missing meteoblue data_1h.time field.");
+  }
+
+  const normalized = text
+    .trim()
+    .replace(
+      /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)(Z|[+-]\d{2}:\d{2})?$/,
+      (_, date: string, time: string, offset: string | undefined) =>
+        `${date}T${time}${offset ?? meteoblueUtcOffset(root)}`,
+    );
+
+  return normalizeIsoTime(normalized, meteoblueOffsetSeconds(root));
+}
+
+function meteoblueUtcOffset(root: Record<string, unknown>): string {
+  const offsetHours = toNumber(asRecord(root.metadata).utc_timeoffset);
+  if (offsetHours === null) {
+    return "+08:00";
+  }
+
+  const sign = offsetHours < 0 ? "-" : "+";
+  const absoluteMinutes = Math.round(Math.abs(offsetHours) * 60);
+  const hours = Math.floor(absoluteMinutes / 60);
+  const minutes = absoluteMinutes % 60;
+  return `${sign}${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function meteoblueOffsetSeconds(root: Record<string, unknown>): number {
+  const offsetHours = toNumber(asRecord(root.metadata).utc_timeoffset);
+  return offsetHours === null ? 8 * 60 * 60 : Math.round(offsetHours * 60 * 60);
 }
 
 function pickAt(

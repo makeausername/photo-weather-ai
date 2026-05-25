@@ -39,6 +39,8 @@ import {
   type ForecastProviderRuntimeSnapshot,
 } from "@photo-weather/shared";
 
+const meteoblueParserVersion = "meteoblue-data1h-time-v3";
+
 export type WeatherProviderRuntimeOptions = {
   readonly dbClient?: DatabaseClient;
   readonly env?: NodeJS.ProcessEnv;
@@ -788,6 +790,7 @@ function buildRuntimeSnapshot(
       apiKeyPresent: meteoblue.apiKeyPresent,
       baseUrl: meteoblue.baseUrl,
       packages: meteoblue.packages,
+      parserVersion: meteoblueParserVersion,
       configUpdatedAt: meteoblue.configUpdatedAt,
     },
   ];
@@ -804,6 +807,7 @@ function buildRuntimeCacheNamespace(snapshot: readonly ForecastProviderRuntimeSn
       baseUrl: provider.baseUrl,
       endpoint: provider.endpoint,
       packages: provider.packages,
+      parserVersion: provider.parserVersion,
       configUpdatedAt: provider.configUpdatedAt,
     })),
   );

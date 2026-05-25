@@ -10,25 +10,48 @@ const coordinates = {
 function meteobluePayload() {
   return {
     metadata: {
+      modelrun_updatetime_utc: "2026-05-25 01:40",
+      name: "",
+      height: 1860,
+      timezone_abbreviation: "CST",
       latitude: 30.1328,
       longitude: 118.1718,
-      height: 1860,
+      utc_timeoffset: 8.0,
     },
     units: {
       temperature: "C",
-      windspeed: "ms-1",
+      windspeed: "m/s",
+      winddirection: "degree",
+      relativehumidity: "%",
+      cloudcover: "%",
+      lowclouds: "%",
+      midclouds: "%",
+      highclouds: "%",
+      precipitation: "mm",
     },
     data_1h: {
-      time: ["2026-05-25T08:00+08:00"],
-      temperature: [23],
-      relativehumidity: [97],
-      windspeed: [1.1],
-      winddirection: [129],
-      cloudcover: [99],
-      lowclouds: [90],
-      midclouds: [60],
-      highclouds: [30],
-      precipitation: [0],
+      time: ["2026-05-25T08:00+08:00", "2026-05-25T09:00+08:00"],
+      temperature: [23, 24],
+      felttemperature: [26, 27],
+      relativehumidity: [97, 95],
+      windspeed: [1.1, 1.4],
+      winddirection: [129, 130],
+      cloudcover: [99, 95],
+      lowclouds: [90, 85],
+      midclouds: [60, 55],
+      highclouds: [30, 20],
+      precipitation: [0, 0.1],
+      pictocode: [7, 7],
+    },
+  };
+}
+
+function meteobluePayloadWithSpaceSeparatedTimes() {
+  return {
+    ...meteobluePayload(),
+    data_1h: {
+      ...meteobluePayload().data_1h,
+      time: ["2026-05-25 08:00", "2026-05-25 09:00+08:00"],
     },
   };
 }
@@ -170,6 +193,7 @@ describe("MeteoblueClient", () => {
     expect(hourly[0]).toMatchObject({
       providerCode: "meteoblue",
       temperature: 23,
+      feelsLike: 26,
       humidity: 97,
       windSpeed: 1.1,
       windDirection: 129,
@@ -177,7 +201,53 @@ describe("MeteoblueClient", () => {
       cloudLow: 90,
       cloudMid: 60,
       cloudHigh: 30,
+      weatherCode: "7",
     });
+  });
+
+  it("accepts production-shaped data_1h through the active connection-test parser", async () => {
+    const client = new MeteoblueClient({
+      apiKey: "meteoblue-secret",
+      baseUrl: "https://my.meteoblue.com",
+      packages: ["basic-1h", "clouds-1h"],
+      timeoutMs: 1000,
+      retryCount: 0,
+      fetcher: vi.fn(
+        async () =>
+          new Response(JSON.stringify(meteobluePayload()), {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json; charset=utf-8",
+            },
+          }),
+      ) as unknown as typeof fetch,
+    });
+
+    await expect(client.testConnection()).resolves.toMatchObject({
+      success: true,
+      statusCode: 200,
+      packages: ["basic-1h", "clouds-1h"],
+    });
+  });
+
+  it("normalizes meteoblue space-separated hourly timestamps instead of parser mismatch", () => {
+    const provider = new MeteoblueRealProvider({
+      client: new MeteoblueClient({
+        apiKey: "meteoblue-secret",
+        baseUrl: "https://my.meteoblue.com",
+        packages: ["basic-1h", "clouds-1h"],
+        timeoutMs: 1000,
+        retryCount: 0,
+        fetcher: vi.fn() as unknown as typeof fetch,
+      }),
+    });
+
+    expect(() =>
+      provider.normalizeWeatherData(meteobluePayloadWithSpaceSeparatedTimes()),
+    ).not.toThrow("meteoblue 返回格式与当前解析器不匹配，请检查 packages 配置。");
+    expect(
+      provider.normalizeHourlyWeather(meteobluePayloadWithSpaceSeparatedTimes())[0]?.time,
+    ).toBe("2026-05-25T08:00:00+08:00");
   });
 
   it("lists extracted and missing fields for top-level data_1h payloads", () => {
@@ -212,7 +282,7 @@ describe("MeteoblueClient", () => {
         "cloudMid",
         "cloudHigh",
       ]),
-      missingFields: expect.arrayContaining(["feelsLike", "dewPoint"]),
+      missingFields: expect.arrayContaining(["dewPoint", "windGust", "pressure", "visibility"]),
       messageZh: "meteoblue 通过，部分字段缺失。",
     });
   });

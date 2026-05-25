@@ -137,6 +137,7 @@ console.log(`dataStatusZh: ${value(fusion.dataStatusZh || result.weatherNoticeZh
 console.log(`dataConfidence: ${value(fusion.confidenceLevel)}`);
 console.log(`meteoblueAttempted: ${value(meteoblue.attempted)}`);
 console.log(`meteoblueSuccess: ${value(meteoblue.success)}`);
+console.log(`meteoblueStatusCode: ${value(meteoblue.statusCode)}`);
 console.log(`meteoblueTopLevelKeys: ${Array.isArray(meteoblue.topLevelKeys) ? meteoblue.topLevelKeys.join(",") || "暂无" : "暂无"}`);
 console.log(`meteobluePackages: ${Array.isArray(meteoblue.packages) ? meteoblue.packages.join(",") || "暂无" : "暂无"}`);
 console.log(`meteoblueErrorCategory: ${value(meteoblue.errorCategory)}`);

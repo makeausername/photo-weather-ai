@@ -606,6 +606,7 @@ describe("forecast query validation route", () => {
           apiKeyPresent: true,
           baseUrl: "https://my.meteoblue.com",
           packages: ["basic-1h", "clouds-1h"],
+          parserVersion: expect.stringContaining("meteoblue-data1h"),
         }),
       ]),
     );

@@ -201,6 +201,7 @@ export type ForecastProviderRuntimeSnapshot = {
   readonly baseUrl?: string;
   readonly endpoint?: string;
   readonly packages?: readonly string[];
+  readonly parserVersion?: string;
   readonly configUpdatedAt?: string;
 };
 
