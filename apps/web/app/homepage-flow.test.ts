@@ -92,6 +92,66 @@ const generalForecastQuery: ForecastQueryInput = {
   photoSpotId: samplePlace.matchedPhotoSpotId,
 };
 
+const homepageLayerResult = {
+  overallScore: 82,
+  recommendationLabel: "值得出发",
+  weatherDataMode: "real",
+  generatedAt: "2026-05-25T04:00:00+08:00",
+  currentWeather: {
+    cloudTotal: 72,
+    cloudLow: 18,
+    cloudMid: 42,
+    cloudHigh: 64,
+    windSpeed: 4.6,
+    windDirection: 260,
+    humidity: 68,
+    visibility: 18.5,
+  },
+  astroSummaries: [{ moonPhaseNameZh: "盈凸月" }],
+  bestWindows: [
+    {
+      startTime: "2026-05-25T05:10:00+08:00",
+      endTime: "2026-05-25T06:20:00+08:00",
+      label: "日出/朝霞窗口",
+      score: 82,
+    },
+    {
+      startTime: "2026-05-25T17:40:00+08:00",
+      endTime: "2026-05-25T18:50:00+08:00",
+      label: "晚霞窗口",
+      score: 74,
+    },
+    {
+      startTime: "2026-05-25T22:10:00+08:00",
+      endTime: "2026-05-25T23:40:00+08:00",
+      label: "星空/银河窗口",
+      score: 68,
+    },
+    {
+      startTime: "2026-05-26T06:00:00+08:00",
+      endTime: "2026-05-26T07:10:00+08:00",
+      label: "云海窗口",
+      score: 63,
+    },
+  ],
+  riskFlags: [{ label: "山顶强风" }],
+  weatherSourceSummaries: [
+    {
+      providerCode: "qweather",
+      providerLabelZh: "和风天气",
+      dataMode: "real",
+      enabled: true,
+      realCallEnabled: true,
+      attempted: true,
+      success: true,
+      status: "available",
+      availableFields: ["temperature"],
+      missingFields: [],
+      messageZh: "和风天气通过。",
+    },
+  ],
+} as unknown as ForecastCalculationResult;
+
 function hasExactButton(html: string, label: string): boolean {
   return new RegExp(`<button[^>]*>\\s*${label}\\s*</button>`).test(html);
 }
@@ -157,6 +217,10 @@ describe("homepage forecast flow", () => {
     expect(html).toContain("拍摄条件概览");
     expect(html).toContain("等待选择地点");
     expect(html).toContain("选择地点后生成该机位的拍摄条件摘要。");
+    expect(html).toContain('data-homepage-empty-state="true"');
+    expect(html).toContain('data-homepage-location-marker="true"');
+    expect(html).not.toContain('data-homepage-condition-metrics="true"');
+    expect(html).not.toMatch(/>条件摘要</);
     expect(html).toContain("云层趋势");
     expect(html).toContain("日出窗口");
     expect(html).toContain("云隙机会");
@@ -176,8 +240,82 @@ describe("homepage forecast flow", () => {
 
     expect(html).toContain("老君山金顶 拍摄条件概览");
     expect(html).toContain("正在加载该地点拍摄条件...");
+    expect(html).toContain('data-homepage-condition-metrics="true"');
+    expect(html).toContain('data-homepage-location-marker="true"');
+    expect(html).not.toMatch(/>条件摘要</);
     expect(html).not.toContain("默认演示图层");
     expect(html).not.toContain("黄山光明顶 拍摄条件概览");
+  });
+
+  it("renders selected condition metrics outside the clean visual layer", () => {
+    const location = selectedLocationFromSearchResult(laojunshanPlace);
+    const html = renderToStaticMarkup(
+      React.createElement(HomepageWeatherLayer, {
+        location,
+        state: { status: "ready", result: homepageLayerResult },
+      }),
+    );
+    const metricIndex = html.indexOf('data-homepage-condition-metrics="true"');
+    const visualIndex = html.indexOf('data-homepage-layer-visual="true"');
+    const windowCardsIndex = html.indexOf('data-homepage-window-cards="true"');
+    const visualHtml = html.slice(visualIndex, windowCardsIndex);
+
+    expect(metricIndex).toBeGreaterThan(-1);
+    expect(visualIndex).toBeGreaterThan(-1);
+    expect(windowCardsIndex).toBeGreaterThan(-1);
+    expect(metricIndex).toBeLessThan(visualIndex);
+    expect(visualIndex).toBeLessThan(windowCardsIndex);
+    expect(html).toContain("sm:grid-cols-2");
+    expect(html).toContain("lg:grid-cols-3");
+    expect(html).toContain("2xl:grid-cols-6");
+    expect(html).toContain("云层");
+    expect(html).toContain("总 72% / 低 18%");
+    expect(html).toContain("风");
+    expect(html).toContain("4.6 m/s 260°");
+    expect(html).toContain("湿度");
+    expect(html).toContain("68%");
+    expect(html).toContain("能见度");
+    expect(html).toContain("18.5 公里");
+    expect(html).toContain("月相");
+    expect(html).toContain("盈凸月");
+    expect(html).toContain("天文窗口");
+    expect(visualHtml).toContain('data-homepage-location-marker="true"');
+    expect(visualHtml).toContain("老君山金顶");
+    expect(visualHtml).not.toMatch(/>条件摘要</);
+    expect(visualHtml).not.toContain("总 72% / 低 18%");
+    expect(visualHtml).not.toContain("4.6 m/s 260°");
+  });
+
+  it("keeps provider names out of the homepage center layer", () => {
+    const location = selectedLocationFromSearchResult(laojunshanPlace);
+    const html = renderToStaticMarkup(
+      React.createElement(HomepageWeatherLayer, {
+        location,
+        state: { status: "ready", result: homepageLayerResult },
+      }),
+    );
+
+    expect(html).not.toContain("和风天气");
+    expect(html).not.toContain("Open-Meteo");
+    expect(html).not.toContain("meteoblue");
+    expect(html).not.toContain("本地天文服务");
+  });
+
+  it("still renders compact window cards below the visual layer", () => {
+    const location = selectedLocationFromSearchResult(laojunshanPlace);
+    const html = renderToStaticMarkup(
+      React.createElement(HomepageWeatherLayer, {
+        location,
+        state: { status: "ready", result: homepageLayerResult },
+      }),
+    );
+
+    expect(html).toContain('data-homepage-window-cards="true"');
+    expect(html).toContain("日出/朝霞窗口");
+    expect(html).toContain("晚霞窗口");
+    expect(html).toContain("星空/银河窗口");
+    expect(html).toContain("云海窗口");
+    expect(html).toContain("根据最佳窗口、主要风险和题材机会判断是否出发。");
   });
 
   it("keeps selected location visible when weather layer data is unavailable", () => {

@@ -37,6 +37,8 @@ const emptyTimeline = [
   { time: "风速", label: "风速变化", tone: "risk" },
 ] as const;
 
+const conditionMetricLabels = ["云层", "风", "湿度", "能见度", "月相", "天文窗口"] as const;
+
 export type HomepagePopularSpot = {
   readonly id: string;
   readonly name: string;
@@ -303,7 +305,7 @@ export function HomepageWeatherLayer({
   const highCloudOpacity = typeof current?.cloudHigh === "number" ? current.cloudHigh / 100 : 0.32;
 
   return (
-    <section className="grid min-h-[520px] overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+    <section className="grid overflow-hidden rounded-lg border border-border bg-card shadow-sm">
       <div className="border-b border-border px-4 py-3 sm:px-5">
         <div>
           <p className="text-xs font-bold text-primary">拍摄条件概览</p>
@@ -312,13 +314,24 @@ export function HomepageWeatherLayer({
           </h2>
           <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">
             {location
-              ? "结合该机位的云层、风、湿度、能见度、月相和关键拍摄窗口生成摘要。"
+              ? "根据该机位的云层、风、湿度、能见度、月相和关键窗口生成摘要。"
               : "选择地点后，这里会显示云层、风、湿度、能见度、月相和关键拍摄窗口。"}
           </p>
         </div>
+        {location ? (
+          <ConditionMetricRow
+            state={state}
+            current={current}
+            bestWindow={result?.bestWindows[0]}
+            moonPhaseName={result?.astroSummaries[0]?.moonPhaseNameZh}
+          />
+        ) : null}
       </div>
 
-      <div className="relative min-h-[360px] overflow-hidden bg-[#EFE8D8]">
+      <div
+        data-homepage-layer-visual="true"
+        className="relative min-h-[330px] overflow-hidden bg-[#EFE8D8] sm:min-h-[360px]"
+      >
         <div
           className="absolute inset-0 opacity-75"
           style={{
@@ -383,7 +396,10 @@ export function HomepageWeatherLayer({
           />
         </svg>
 
-        <div className="absolute left-[52%] top-[39%] grid -translate-x-1/2 -translate-y-1/2 place-items-center">
+        <div
+          data-homepage-location-marker="true"
+          className="absolute left-[52%] top-[39%] grid -translate-x-1/2 -translate-y-1/2 place-items-center"
+        >
           <span className="absolute h-14 w-14 rounded-full border border-primary/35 bg-primary/10" />
           <span className="relative h-4 w-4 rounded-full border-[5px] border-primary bg-card shadow-soft" />
           <span className="mt-3 max-w-[260px] rounded-md border border-border bg-card/92 px-2.5 py-1 text-center text-xs font-bold text-card-foreground shadow-sm">
@@ -391,10 +407,7 @@ export function HomepageWeatherLayer({
           </span>
         </div>
 
-        <div className="absolute left-4 top-4 grid max-w-[min(360px,calc(100%-2rem))] gap-2 rounded-lg border border-border bg-card/88 p-3 shadow-sm backdrop-blur">
-          <p className="text-xs font-bold text-card-foreground">条件摘要</p>
-          <LayerStatusText location={location} state={state} current={current} />
-        </div>
+        {!location ? <LayerEmptyState /> : null}
       </div>
 
       <div className="grid gap-3 border-t border-border bg-card px-4 py-3 sm:px-5">
@@ -407,61 +420,90 @@ export function HomepageWeatherLayer({
   );
 }
 
-function LayerStatusText({
-  location,
+function ConditionMetricRow({
   state,
   current,
+  bestWindow,
+  moonPhaseName,
 }: {
-  readonly location: SelectedLocation | null;
   readonly state: ForecastLayerState;
   readonly current?: NormalizedCurrentWeather;
+  readonly bestWindow?: ForecastCalculationResult["bestWindows"][number];
+  readonly moonPhaseName?: string;
 }) {
-  if (!location) {
-    return (
-      <div className="grid gap-1 text-xs leading-5 text-muted-foreground">
-        <span className="font-semibold text-card-foreground">等待选择地点</span>
-        <span>选择地点后生成该机位的拍摄条件摘要。</span>
-      </div>
-    );
-  }
+  const metrics = buildConditionMetrics(state, current, bestWindow, moonPhaseName);
 
+  return (
+    <dl
+      data-homepage-condition-metrics="true"
+      className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6"
+    >
+      {metrics.map((metric) => (
+        <div key={metric.label} className="rounded-lg border border-border bg-muted px-3 py-2">
+          <dt className="text-[11px] font-semibold text-muted-foreground">{metric.label}</dt>
+          <dd className="mt-1 break-words text-xs font-bold leading-5 text-card-foreground">
+            {metric.value}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function buildConditionMetrics(
+  state: ForecastLayerState,
+  current: NormalizedCurrentWeather | undefined,
+  bestWindow: ForecastCalculationResult["bestWindows"][number] | undefined,
+  moonPhaseName: string | undefined,
+): readonly { readonly label: string; readonly value: string }[] {
   if (state.status === "loading") {
-    return (
-      <div className="grid gap-1 text-xs leading-5 text-muted-foreground">
-        <span>{location.displayName}</span>
-        <span>正在加载该地点拍摄条件...</span>
-      </div>
-    );
+    return conditionMetricLabels.map((label) => ({ label, value: "加载中" }));
   }
 
   if (state.status === "error" || state.status === "fallback") {
-    return (
-      <div className="grid gap-1 text-xs leading-5 text-muted-foreground">
-        <span>{location.displayName}</span>
-        <span>该地点拍摄条件暂不可用，请稍后重试。</span>
-      </div>
-    );
+    return conditionMetricLabels.map((label) => ({ label, value: "暂不可用" }));
   }
 
-  const bestWindow = state.result?.bestWindows[0];
+  return [
+    {
+      label: "云层",
+      value: `总 ${formatPercent(current?.cloudTotal)} / 低 ${formatPercent(current?.cloudLow)}`,
+    },
+    {
+      label: "风",
+      value: formatWind(current?.windSpeed, current?.windDirection),
+    },
+    {
+      label: "湿度",
+      value: formatPercent(current?.humidity),
+    },
+    {
+      label: "能见度",
+      value: formatKilometers(current?.visibility),
+    },
+    {
+      label: "月相",
+      value: moonPhaseName ?? "待计算",
+    },
+    {
+      label: "天文窗口",
+      value: bestWindow
+        ? `${formatTime(bestWindow.startTime)} - ${formatTime(bestWindow.endTime)}`
+        : "待计算",
+    },
+  ];
+}
 
+function LayerEmptyState() {
   return (
-    <div className="grid gap-1 text-xs leading-5 text-muted-foreground">
-      <span>时间基准：{formatDateTime(state.result?.generatedAt)}</span>
-      <span>
-        云层：总 {formatPercent(current?.cloudTotal)} / 低 {formatPercent(current?.cloudLow)} / 中{" "}
-        {formatPercent(current?.cloudMid)} / 高 {formatPercent(current?.cloudHigh)}
-      </span>
-      <span>风速：{formatWind(current?.windSpeed, current?.windDirection)}</span>
-      <span>湿度：{formatPercent(current?.humidity)}</span>
-      <span>能见度：{formatKilometers(current?.visibility)}</span>
-      <span>月相：{state.result?.astroSummaries[0]?.moonPhaseNameZh ?? "待计算"}</span>
-      <span>天文窗口：{bestWindow?.label ?? "等待窗口计算"}</span>
-      {state.status === "partial" ? (
-        <span className="font-semibold text-warning">
-          部分辅助数据暂不可用，结果页会给出更完整说明。
-        </span>
-      ) : null}
+    <div
+      data-homepage-empty-state="true"
+      className="absolute left-1/2 top-[30%] grid w-[min(260px,calc(100%-2rem))] -translate-x-1/2 gap-1 rounded-lg border border-border bg-card/88 px-3 py-2 text-center shadow-sm backdrop-blur"
+    >
+      <p className="text-sm font-bold text-card-foreground">等待选择地点</p>
+      <p className="text-xs leading-5 text-muted-foreground">
+        选择地点后生成该机位的拍摄条件摘要。
+      </p>
     </div>
   );
 }
@@ -478,7 +520,7 @@ function WeatherLayerTimeline({ result }: { readonly result: ForecastCalculation
       : emptyTimeline;
 
   return (
-    <div className="grid gap-2 sm:grid-cols-4">
+    <div data-homepage-window-cards="true" className="grid gap-2 sm:grid-cols-4">
       {items.map((item) => (
         <div
           key={`${item.time}-${item.label}`}
@@ -721,25 +763,6 @@ function currentAdviceText(
   ].filter(Boolean);
 
   return adviceParts.length > 0 ? adviceParts.join("；") : "根据窗口和风险安排到达时间与备选题材。";
-}
-
-function formatDateTime(value: string | undefined): string {
-  if (!value) {
-    return "暂无";
-  }
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(timestamp));
 }
 
 function formatTime(value: string): string {
