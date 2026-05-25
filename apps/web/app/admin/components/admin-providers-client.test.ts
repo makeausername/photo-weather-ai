@@ -28,6 +28,8 @@ describe("admin provider console source", () => {
     expect(source).toContain("providerTestButtonLabel");
     expect(source).toContain("有未保存修改");
     expect(source).toContain("展开高级配置");
+    expect(source).toContain("ProviderCardErrorBoundary");
+    expect(source).toContain("该服务商配置暂时无法显示，请刷新或检查配置。");
     expect(source).toContain("data-provider-card");
     expect(source).not.toContain("providerTabs");
     expect(source).not.toContain("RealDevCallNotice");
@@ -50,5 +52,23 @@ describe("admin provider console source", () => {
     ]) {
       expect(source).toContain(label);
     }
+  });
+
+  it("keeps advanced provider defaults crash-safe without exposing secrets", () => {
+    for (const snippet of [
+      "timeoutMs: 10000",
+      "retryCount: 1",
+      'language: "zh"',
+      'unit: "m"',
+      'baseUrl: "https://my.meteoblue.com"',
+      'packages: ["basic-1h", "clouds-1h"]',
+      'model: "deepseek-v4-pro"',
+      "timeoutMs: 30000",
+    ]) {
+      expect(source).toContain(snippet);
+    }
+
+    expect(source).toContain("maskedSecretJson");
+    expect(source).not.toContain("provider.secretJson");
   });
 });

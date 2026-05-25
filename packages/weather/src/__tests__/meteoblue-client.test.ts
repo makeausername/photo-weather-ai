@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildMeteoblueForecastUrl, MeteoblueClient } from "../index";
+import { buildMeteoblueForecastUrl, MeteoblueClient, MeteoblueRealProvider } from "../index";
 
 const coordinates = {
   latitude: 30.1328,
@@ -135,7 +135,93 @@ describe("MeteoblueClient", () => {
 
     await expect(client.testConnection()).rejects.toMatchObject({
       errorCategory: "parse_error",
-      messageZh: "meteoblue 返回格式异常。",
+      messageZh: "meteoblue 返回中未找到可用的 basic-1h/clouds-1h 字段。",
     });
+  });
+
+  it("normalizes the successful diagnostics response through the fusion provider", async () => {
+    const client = new MeteoblueClient({
+      apiKey: "meteoblue-secret",
+      baseUrl: "https://my.meteoblue.com",
+      packages: ["basic-1h", "clouds-1h"],
+      timeoutMs: 1000,
+      retryCount: 0,
+      fetcher: vi.fn(
+        async () => new Response(JSON.stringify(meteobluePayload())),
+      ) as unknown as typeof fetch,
+    });
+    const provider = new MeteoblueRealProvider({ client, timezone: "Asia/Shanghai" });
+
+    const hourly = await provider.getHourlyForecast({
+      coordinates,
+      hours: 1,
+      timezone: "Asia/Shanghai",
+    });
+
+    expect(hourly[0]).toMatchObject({
+      providerCode: "meteoblue",
+      temperature: 12,
+      humidity: 82,
+      cloudLow: 26,
+      cloudMid: 40,
+      cloudHigh: 52,
+    });
+  });
+
+  it("extracts partial meteoblue fields from nested package payloads and records missing fields", () => {
+    const provider = new MeteoblueRealProvider({
+      client: new MeteoblueClient({
+        apiKey: "meteoblue-secret",
+        baseUrl: "https://my.meteoblue.com",
+        packages: ["basic-1h", "clouds-1h"],
+        timeoutMs: 1000,
+        retryCount: 0,
+        fetcher: vi.fn() as unknown as typeof fetch,
+      }),
+    });
+
+    const hourly = provider.normalizeHourlyWeather({
+      "basic-1h": {
+        data_1h: {
+          time: ["2026-05-20T00:00:00+08:00"],
+          temperature_instant: [11],
+          windspeed: [3.6],
+        },
+      },
+      "clouds-1h": {
+        data_1h: {
+          time: ["2026-05-20T00:00:00+08:00"],
+          totalcloudcover: [66],
+          lowclouds: [18],
+        },
+      },
+    });
+
+    expect(hourly[0]).toMatchObject({
+      temperature: 11,
+      cloudTotal: 66,
+      cloudLow: 18,
+      missingFields: expect.arrayContaining(["humidity", "cloudMid", "cloudHigh", "dewPoint"]),
+    });
+  });
+
+  it("returns a safe parse error for unexpected valid JSON without leaking API keys", () => {
+    const provider = new MeteoblueRealProvider({
+      client: new MeteoblueClient({
+        apiKey: "meteoblue-secret",
+        baseUrl: "https://my.meteoblue.com",
+        packages: ["basic-1h", "clouds-1h"],
+        timeoutMs: 1000,
+        retryCount: 0,
+        fetcher: vi.fn() as unknown as typeof fetch,
+      }),
+    });
+
+    expect(() => provider.normalizeWeatherData({ metadata: { name: "basic-1h" } })).toThrow(
+      "meteoblue 返回中未找到可用的 basic-1h/clouds-1h 字段。",
+    );
+    expect(() => provider.normalizeWeatherData({ metadata: { name: "basic-1h" } })).not.toThrow(
+      /meteoblue-secret/,
+    );
   });
 });

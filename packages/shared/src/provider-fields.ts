@@ -175,16 +175,16 @@ export const qWeatherDefaultTimeoutMs = 10000;
 
 export const qWeatherDefaultLanguage = "zh";
 
-export const qWeatherDefaultUnit = "metric";
+export const qWeatherDefaultUnit = "m";
 
 export const qWeatherUnitOptions = [
   {
-    value: "metric",
-    label: "公制（metric）",
+    value: "m",
+    label: "公制（m）",
   },
   {
-    value: "imperial",
-    label: "英制（imperial）",
+    value: "i",
+    label: "英制（i）",
   },
 ] as const satisfies readonly ProviderFieldOption[];
 
@@ -211,7 +211,7 @@ export const meteoblueDefaultBaseUrl = "https://my.meteoblue.com";
 
 export const meteoblueDefaultPackages = "basic-1h,clouds-1h";
 
-export const weatherDefaultTimeoutMs = 8000;
+export const weatherDefaultTimeoutMs = 10000;
 
 export const weatherDefaultRetryCount = 1;
 
@@ -261,6 +261,17 @@ export const providerFieldPresets = [
         target: "configJson",
         placeholder: "https://api.deepseek.com",
         defaultValue: "https://api.deepseek.com",
+        advanced: true,
+      },
+      {
+        key: "timeoutMs",
+        label: "请求超时（毫秒）",
+        target: "configJson",
+        control: "number",
+        defaultValue: 30000,
+        min: 1000,
+        max: 120000,
+        step: 100,
         advanced: true,
       },
       {

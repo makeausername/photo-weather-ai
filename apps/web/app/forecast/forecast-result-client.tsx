@@ -359,13 +359,11 @@ function WeatherEssentialsPanel({ result }: { readonly result: ForecastCalculati
   );
   const openMeteo = result.weatherSourceSummaries.find(
     (summary) =>
-      summary.providerCode === "open_meteo" &&
-      (summary.success ?? summary.status === "available"),
+      summary.providerCode === "open_meteo" && (summary.success ?? summary.status === "available"),
   );
   const meteoblue = result.weatherSourceSummaries.find(
     (summary) =>
-      summary.providerCode === "meteoblue" &&
-      (summary.success ?? summary.status === "available"),
+      summary.providerCode === "meteoblue" && (summary.success ?? summary.status === "available"),
   );
 
   return (
@@ -444,7 +442,10 @@ export function SourceDiagnosticsPanel({ result }: { readonly result: ForecastCa
       </div>
       <dl className="mt-3 grid gap-2 text-xs leading-5 text-muted-foreground min-[900px]:grid-cols-2 min-[1280px]:grid-cols-5">
         <CompactDefinition label="地点" value={result.calendarBasis.coordinateSource} />
-        <CompactDefinition label="天气主源" value={providerDiagnosticText(result, "qweather", "和风天气")} />
+        <CompactDefinition
+          label="天气主源"
+          value={providerDiagnosticText(result, "qweather", "和风天气")}
+        />
         <CompactDefinition
           label="云层辅助"
           value={providerDiagnosticText(result, "open_meteo", "Open-Meteo")}
@@ -477,7 +478,9 @@ function CompactInfoCard({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-bold text-card-foreground">{title}</p>
         {badge ? (
-          <Badge variant={tone === "success" ? "success" : tone === "warning" ? "warning" : "muted"}>
+          <Badge
+            variant={tone === "success" ? "success" : tone === "warning" ? "warning" : "muted"}
+          >
             {badge}
           </Badge>
         ) : null}
@@ -533,9 +536,7 @@ function successfulRealWeatherSources(
 ): readonly ForecastCalculationResult["weatherSourceSummaries"][number][] {
   return result.weatherSourceSummaries.filter(
     (summary) =>
-      isWeatherProviderSummary(summary) &&
-      summary.dataMode === "real" &&
-      sourceSucceeded(summary),
+      isWeatherProviderSummary(summary) && summary.dataMode === "real" && sourceSucceeded(summary),
   );
 }
 
@@ -572,6 +573,9 @@ export function providerDiagnosticText(
     return `${label} 未启用`;
   }
   if (sourceSucceeded(summary)) {
+    if (providerCode === "meteoblue" && summary.messageZh?.includes("部分字段缺失")) {
+      return "meteoblue 通过，部分字段缺失";
+    }
     return `${label} 通过`;
   }
   const reason = summary.messageZh ?? summary.warningZh ?? "未返回可用数据";
@@ -592,13 +596,19 @@ function sourceConfidenceLabel(result: ForecastCalculationResult): string {
   if (qweatherOk && openMeteoOk && meteoblueOk && !hasMajorConflict) {
     return "高";
   }
-  if ((qweatherOk && openMeteoOk) || (qweatherOk && meteoblueOk) || successfulRealWeatherSources(result).length > 0) {
+  if (
+    (qweatherOk && openMeteoOk) ||
+    (qweatherOk && meteoblueOk) ||
+    successfulRealWeatherSources(result).length > 0
+  ) {
     return "中";
   }
   return "低";
 }
 
-function comfortLevelLabel(level: ForecastCalculationResult["clothingGuide"]["comfortLevel"]): string {
+function comfortLevelLabel(
+  level: ForecastCalculationResult["clothingGuide"]["comfortLevel"],
+): string {
   const labels: Record<ForecastCalculationResult["clothingGuide"]["comfortLevel"], string> = {
     comfortable: "舒适",
     cool: "偏凉",
@@ -3010,7 +3020,10 @@ function DataStatusPanel({ result }: { readonly result: ForecastCalculationResul
       </div>
       <dl className="mt-4 grid gap-3 text-sm">
         <SummaryItem label="地点" value={result.calendarBasis.coordinateSource} />
-        <SummaryItem label="天气主源" value={providerDiagnosticText(result, "qweather", "和风天气")} />
+        <SummaryItem
+          label="天气主源"
+          value={providerDiagnosticText(result, "qweather", "和风天气")}
+        />
         <SummaryItem
           label="云层辅助"
           value={providerDiagnosticText(result, "open_meteo", "Open-Meteo")}
@@ -3429,7 +3442,9 @@ function formatTemperature(value: number | null | undefined): string {
 }
 
 function formatKilometers(value: number | null | undefined): string {
-  return typeof value === "number" && Number.isFinite(value) ? `${roundDisplay(value)} 公里` : "暂无";
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${roundDisplay(value)} 公里`
+    : "暂无";
 }
 
 function formatPercentNumber(value: number | null | undefined): string {

@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { Coordinates, NormalizedDailyWeather, NormalizedHourlyWeather } from "@photo-weather/shared";
+import type {
+  Coordinates,
+  NormalizedDailyWeather,
+  NormalizedHourlyWeather,
+} from "@photo-weather/shared";
 import {
   WeatherIntelligenceService,
   InMemoryWeatherCache,
+  WeatherProviderError,
   type AirQuality,
   type CurrentWeather,
   type WeatherAlert,
@@ -74,9 +79,7 @@ describe("WeatherIntelligenceService", () => {
         }),
       ]),
     );
-    expect(bundle.fusionSummary?.dataStatusZh).toBe(
-      "天气数据：真实数据暂不可用，已回退到演示数据",
-    );
+    expect(bundle.fusionSummary?.dataStatusZh).toBe("天气数据：真实数据暂不可用，已回退到演示数据");
   });
 
   it("separates cached provider bundles by runtime namespace", async () => {
@@ -102,6 +105,38 @@ describe("WeatherIntelligenceService", () => {
           attempted: true,
           success: true,
           cacheHit: false,
+        }),
+      ]),
+    );
+  });
+
+  it("keeps confidence usable when QWeather and Open-Meteo pass but meteoblue parse fails", async () => {
+    const service = new WeatherIntelligenceService({
+      providers: [
+        new StaticProvider("qweather", "和风天气", "real", hour({ providerCode: "qweather" })),
+        new StaticProvider(
+          "open_meteo",
+          "Open-Meteo",
+          "real",
+          hour({ providerCode: "open_meteo", providerLabelZh: "Open-Meteo" }),
+        ),
+        new MeteoblueParseFailingProvider(),
+      ],
+    });
+
+    const bundle = await service.getWeatherDataBundle(requestInput());
+
+    expect(bundle.fusionSummary?.confidenceLevel).not.toBe("low");
+    expect(bundle.confidenceByTarget?.general ?? 0).toBeGreaterThanOrEqual(0.55);
+    expect(bundle.sourceSummaries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ providerCode: "qweather", success: true }),
+        expect.objectContaining({ providerCode: "open_meteo", success: true }),
+        expect.objectContaining({
+          providerCode: "meteoblue",
+          success: false,
+          errorCategory: "parse_error",
+          messageZh: "meteoblue 返回中未找到可用的 basic-1h/clouds-1h 字段。",
         }),
       ]),
     );
@@ -155,7 +190,9 @@ class StaticProvider implements WeatherProvider {
     };
   }
 
-  async getHourlyForecast(_input: WeatherRequestInput): Promise<readonly NormalizedHourlyWeather[]> {
+  async getHourlyForecast(
+    _input: WeatherRequestInput,
+  ): Promise<readonly NormalizedHourlyWeather[]> {
     return [this.hourlyPoint];
   }
 
@@ -211,6 +248,22 @@ class FailingProvider extends StaticProvider {
 
   override async getCurrentWeather(_input: WeatherRequestInput): Promise<CurrentWeather> {
     throw new Error("upstream secret failure");
+  }
+}
+
+class MeteoblueParseFailingProvider extends StaticProvider {
+  constructor() {
+    super("meteoblue", "meteoblue", "real", hour());
+  }
+
+  override async getCurrentWeather(_input: WeatherRequestInput): Promise<CurrentWeather> {
+    throw new WeatherProviderError({
+      providerCode: "meteoblue",
+      providerLabelZh: "meteoblue",
+      dataMode: "real",
+      errorCategory: "parse_error",
+      messageZh: "meteoblue 返回中未找到可用的 basic-1h/clouds-1h 字段。",
+    });
   }
 }
 

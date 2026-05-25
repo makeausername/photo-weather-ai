@@ -137,6 +137,11 @@ console.log(`dataStatusZh: ${value(fusion.dataStatusZh || result.weatherNoticeZh
 console.log(`dataConfidence: ${value(fusion.confidenceLevel)}`);
 console.log(`meteoblueAttempted: ${value(meteoblue.attempted)}`);
 console.log(`meteoblueSuccess: ${value(meteoblue.success)}`);
+console.log(`meteoblueErrorCategory: ${value(meteoblue.errorCategory)}`);
+console.log(`meteoblueMessageZh: ${value(meteoblue.messageZh || meteoblue.warningZh)}`);
+console.log(`meteoblueValuesExtracted: ${Array.isArray(meteoblue.availableFields) && meteoblue.availableFields.length > 0}`);
+console.log(`meteoblueAvailableFields: ${Array.isArray(meteoblue.availableFields) ? meteoblue.availableFields.join(",") || "暂无" : "暂无"}`);
+console.log(`meteoblueMissingFields: ${Array.isArray(meteoblue.missingFields) ? meteoblue.missingFields.join(",") || "无" : "暂无"}`);
 console.log(`cacheHit: ${sources.some((source) => source.cacheHit === true)}`);
 console.log("providerRuntimeSnapshot:");
 for (const provider of runtimeSnapshot) {

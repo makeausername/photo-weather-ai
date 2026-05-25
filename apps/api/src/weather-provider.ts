@@ -282,6 +282,14 @@ function normalizeQWeatherUnit(value: string | undefined): QWeatherUnit {
     return "imperial";
   }
 
+  return "metric";
+}
+
+function normalizeQWeatherAdminUnit(value: string | undefined): string {
+  if (value === "imperial" || value === "i") {
+    return "i";
+  }
+
   return qWeatherDefaultUnit;
 }
 
@@ -511,7 +519,7 @@ export function normalizeQWeatherAdminConfigJson(
     timeoutMs: clampInteger(readNumber(current.timeoutMs), qWeatherDefaultTimeoutMs, 1000, 30000),
     retryCount: clampInteger(readNumber(current.retryCount), weatherDefaultRetryCount, 0, 5),
     language: normalizeQWeatherLanguage(readString(current.language)),
-    unit: normalizeQWeatherUnit(readString(current.unit)),
+    unit: normalizeQWeatherAdminUnit(readString(current.unit)),
   };
 
   if (Object.prototype.hasOwnProperty.call(normalized, "apiKey")) {
@@ -785,9 +793,7 @@ function buildRuntimeSnapshot(
   ];
 }
 
-function buildRuntimeCacheNamespace(
-  snapshot: readonly ForecastProviderRuntimeSnapshot[],
-): string {
+function buildRuntimeCacheNamespace(snapshot: readonly ForecastProviderRuntimeSnapshot[]): string {
   return JSON.stringify(
     snapshot.map((provider) => ({
       providerCode: provider.providerCode,

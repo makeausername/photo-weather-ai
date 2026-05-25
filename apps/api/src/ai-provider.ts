@@ -32,6 +32,7 @@ export type ResolvedDeepSeekRuntimeConfig = {
   readonly maxTokens: number;
   readonly thinkingEnabled: boolean;
   readonly reasoningEffort: DeepSeekReasoningEffort;
+  readonly timeoutMs: number;
   readonly modeLabelZh: string;
 };
 
@@ -213,6 +214,7 @@ export function resolveDeepSeekRuntimeConfig(
     ),
     thinkingEnabled,
     reasoningEffort,
+    timeoutMs: clampInteger(readNumber(configJson.timeoutMs), 30000, 1000, 120000),
     modeLabelZh: modeDefaults.modeLabelZh,
   };
 }
@@ -246,6 +248,7 @@ export function normalizeDeepSeekAdminConfigJson(
     maxTokens: clampInteger(readNumber(current.maxTokens), modeDefaults.maxTokens, 128, 8192),
     thinkingEnabled,
     reasoningEffort,
+    timeoutMs: clampInteger(readNumber(current.timeoutMs), 30000, 1000, 120000),
   };
 }
 
@@ -285,6 +288,7 @@ export async function createRealDeepSeekProvider(
     responseFormat: config.responseFormat,
     thinkingEnabled: config.thinkingEnabled,
     reasoningEffort: config.reasoningEffort,
+    timeoutMs: config.timeoutMs,
     jsonOutputEnabled: config.jsonOutputEnabled,
     fetcher: options.fetcher,
   });

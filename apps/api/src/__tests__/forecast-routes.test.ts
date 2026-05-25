@@ -158,7 +158,9 @@ function buildMeteobluePayload() {
   };
 }
 
-function configureRealWeatherProviders(state: Awaited<ReturnType<typeof createFakeDatabaseClient>>["state"]) {
+function configureRealWeatherProviders(
+  state: Awaited<ReturnType<typeof createFakeDatabaseClient>>["state"],
+) {
   const qweather = state.providers.get("weather:qweather");
   state.providers.set("weather:qweather", {
     ...qweather,
@@ -521,7 +523,9 @@ describe("forecast query validation route", () => {
       }
       if (url.includes("qweather.example/v7/weather/")) {
         return new Response(
-          JSON.stringify(url.includes("7d") ? buildQWeatherDailyPayload() : buildQWeatherHourlyPayload()),
+          JSON.stringify(
+            url.includes("7d") ? buildQWeatherDailyPayload() : buildQWeatherHourlyPayload(),
+          ),
         );
       }
       if (url.includes("api.open-meteo.com/v1/forecast")) {
@@ -628,6 +632,91 @@ describe("forecast query validation route", () => {
     expect(JSON.stringify(body)).not.toContain("meteoblue-secret");
   });
 
+  it("keeps QWeather and Open-Meteo confidence when meteoblue returns unexpected valid JSON", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    configureRealWeatherProviders(state);
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("qweather.example/v7/weather/now")) {
+        return new Response(
+          JSON.stringify({
+            code: "200",
+            now: {
+              obsTime: "2026-05-20T00:00:00+08:00",
+              temp: "13",
+              feelsLike: "11",
+              icon: "101",
+              text: "多云",
+              wind360: "120",
+              windSpeed: "9",
+              humidity: "82",
+              pressure: "1008",
+              vis: "22",
+              cloud: "52",
+              dew: "10",
+            },
+          }),
+        );
+      }
+      if (url.includes("qweather.example/v7/weather/")) {
+        return new Response(
+          JSON.stringify(
+            url.includes("7d") ? buildQWeatherDailyPayload() : buildQWeatherHourlyPayload(),
+          ),
+        );
+      }
+      if (url.includes("api.open-meteo.com/v1/forecast")) {
+        return new Response(JSON.stringify(buildOpenMeteoPayload()));
+      }
+      if (url.includes("my.meteoblue.com/packages/basic-1h_clouds-1h")) {
+        return new Response(JSON.stringify({ metadata: { name: "basic-1h_clouds-1h" } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      throw new Error(`unexpected test URL: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+        ENABLE_ASTRO_SERVICE: "false",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        target: "general",
+        horizon: "48h",
+      },
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.weatherDataMode).toBe("real");
+    expect(body.weatherFusionSummary.confidenceLevel).not.toBe("low");
+    expect(body.weatherFusionSummary.confidenceByTarget.general).toBeGreaterThanOrEqual(0.55);
+    expect(
+      body.weatherSourceSummaries.find(
+        (summary: { providerCode: string }) => summary.providerCode === "meteoblue",
+      ),
+    ).toMatchObject({
+      attempted: true,
+      success: false,
+      errorCategory: "parse_error",
+      messageZh: "meteoblue 返回中未找到可用的 basic-1h/clouds-1h 字段。",
+    });
+    expect(JSON.stringify(body)).not.toContain("meteoblue-secret");
+  });
+
   it("does not keep a stale meteoblue source after provider runtime config changes", async () => {
     const { client, state } = await createFakeDatabaseClient();
     configureRealWeatherProviders(state);
@@ -670,7 +759,9 @@ describe("forecast query validation route", () => {
       }
       if (url.includes("qweather.example/v7/weather/")) {
         return new Response(
-          JSON.stringify(url.includes("7d") ? buildQWeatherDailyPayload() : buildQWeatherHourlyPayload()),
+          JSON.stringify(
+            url.includes("7d") ? buildQWeatherDailyPayload() : buildQWeatherHourlyPayload(),
+          ),
         );
       }
       if (url.includes("api.open-meteo.com/v1/forecast")) {

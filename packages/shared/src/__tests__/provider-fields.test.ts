@@ -50,6 +50,12 @@ describe("provider field presets", () => {
           control: "select",
         }),
         expect.objectContaining({ key: "baseUrl", target: "configJson", advanced: true }),
+        expect.objectContaining({
+          key: "timeoutMs",
+          target: "configJson",
+          defaultValue: 30000,
+          advanced: true,
+        }),
       ]),
     );
 

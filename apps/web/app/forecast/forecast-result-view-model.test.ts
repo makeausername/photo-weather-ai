@@ -1248,6 +1248,33 @@ describe("forecast result target-aware view model", () => {
     expect(providerDiagnosticText(result, "meteoblue", "meteoblue")).toBe("meteoblue 通过");
   });
 
+  it("shows meteoblue partial success without hiding the missing-field reason", () => {
+    const result = {
+      ...resultForTarget("general"),
+      weatherSourceSummaries: [
+        {
+          providerCode: "meteoblue",
+          providerLabelZh: "meteoblue",
+          dataMode: "real",
+          enabled: true,
+          realCallEnabled: true,
+          attempted: true,
+          success: true,
+          status: "available",
+          availableFields: ["cloudTotal", "cloudLow"],
+          missingFields: ["cloudMid", "cloudHigh"],
+          statusCode: 200,
+          latencyMs: 143,
+          messageZh: "meteoblue 通过，部分字段缺失。",
+        },
+      ],
+    } satisfies ForecastCalculationResult;
+
+    expect(providerDiagnosticText(result, "meteoblue", "meteoblue")).toBe(
+      "meteoblue 通过，部分字段缺失",
+    );
+  });
+
   it("prioritizes cloud sea and whiteout risk without making astro primary", () => {
     const viewModel = buildForecastResultViewModel(resultForTarget("cloud_sea"), "cloud_sea");
 

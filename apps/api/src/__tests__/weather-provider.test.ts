@@ -260,7 +260,7 @@ describe("weather runtime resolvers", () => {
       timeoutMs: 10000,
       retryCount: 1,
       language: "zh",
-      unit: "metric",
+      unit: "m",
     });
 
     expect(normalizeOpenMeteoAdminConfigJson({ customerEndpoint: "" })).toEqual({
@@ -270,7 +270,7 @@ describe("weather runtime resolvers", () => {
       customerEndpoint: "https://customer-api.open-meteo.com",
       defaultModel: "forecast",
       timezone: "Asia/Shanghai",
-      timeoutMs: 8000,
+      timeoutMs: 10000,
       retryCount: 1,
     });
 
@@ -279,7 +279,7 @@ describe("weather runtime resolvers", () => {
       baseUrl: "https://my.meteoblue.com",
       packages: "basic-1h,clouds-1h",
       packageName: "basic-1h,clouds-1h",
-      timeoutMs: 8000,
+      timeoutMs: 10000,
       retryCount: 1,
     });
   });

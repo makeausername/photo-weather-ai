@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ErrorInfo, ReactNode } from "react";
 import {
   getDeepSeekModeRuntimeDefaults,
   getProviderFieldPreset,
@@ -144,6 +145,36 @@ const providerMeta: Record<ProviderKey, ProviderMeta> = {
 
 const advancedHiddenKeys = new Set(["realCallEnabled", "analysisMode", "model"]);
 
+const providerConfigDefaults: Partial<Record<string, Record<string, JsonValue>>> = {
+  qweather: {
+    timeoutMs: 10000,
+    retryCount: 1,
+    language: "zh",
+    unit: "m",
+  },
+  open_meteo: {
+    mode: "free",
+    timeoutMs: 10000,
+    retryCount: 1,
+    customerEndpoint: "https://customer-api.open-meteo.com",
+  },
+  meteoblue: {
+    baseUrl: "https://my.meteoblue.com",
+    packages: ["basic-1h", "clouds-1h"],
+    timeoutMs: 10000,
+    retryCount: 1,
+  },
+  amap: {
+    timeoutMs: 10000,
+    retryCount: 1,
+  },
+  deepseek: {
+    baseUrl: "https://api.deepseek.com",
+    model: "deepseek-v4-pro",
+    timeoutMs: 30000,
+  },
+};
+
 function isJsonObject(value: JsonValue | null | undefined): value is Record<string, JsonValue> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -192,6 +223,28 @@ function fieldValueToInput(value: JsonValue | undefined): string {
 
 function fieldDefaultToInput(field: ProviderFieldDefinition): string {
   return fieldValueToInput(field.defaultValue as JsonValue | undefined);
+}
+
+function configFieldValueToInput(
+  field: ProviderFieldDefinition,
+  value: JsonValue | undefined,
+): string {
+  if (field.key === "packages" && Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string").join(",");
+  }
+
+  return fieldValueToInput(value);
+}
+
+function providerFieldDefaultToInput(
+  provider: SafeProviderConfig,
+  field: ProviderFieldDefinition,
+): string {
+  const value = providerConfigDefaults[provider.providerCode]?.[field.key];
+  if (field.key === "packages" && Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string").join(",");
+  }
+  return value === undefined ? fieldDefaultToInput(field) : configFieldValueToInput(field, value);
 }
 
 function parseConfigFieldValue(
@@ -299,11 +352,14 @@ function maskedSecretLabel(provider: SafeProviderConfig, key: string): string {
 
 function createConfigFieldDraft(provider: SafeProviderConfig): Record<string, string> {
   const configJson = isJsonObject(provider.configJson) ? provider.configJson : {};
+  const defaultConfig = providerConfigDefaults[provider.providerCode] ?? {};
   const deepSeekMode =
     provider.providerCode === "deepseek"
       ? normalizeDeepSeekAnalysisMode(
           readStringJson(configJson.analysisMode),
-          readStringJson(configJson.model) ?? readStringJson(configJson.defaultModel),
+          readStringJson(configJson.model) ??
+            readStringJson(configJson.defaultModel) ??
+            readStringJson(defaultConfig.model),
         )
       : null;
   const deepSeekDefaults = deepSeekMode ? getDeepSeekModeRuntimeDefaults(deepSeekMode) : null;
@@ -316,7 +372,12 @@ function createConfigFieldDraft(provider: SafeProviderConfig): Record<string, st
           return [field.key, deepSeekMode ?? "fast"];
         }
         if ((field.key === "model" || field.key === "defaultModel") && value === undefined) {
-          return [field.key, deepSeekDefaults?.model ?? "deepseek-v4-flash"];
+          return [
+            field.key,
+            providerFieldDefaultToInput(provider, field) ||
+              deepSeekDefaults?.model ||
+              "deepseek-v4-flash",
+          ];
         }
         if (deepSeekDefaults && field.key === "maxTokens" && value === undefined) {
           return [field.key, String(deepSeekDefaults.maxTokens)];
@@ -331,7 +392,9 @@ function createConfigFieldDraft(provider: SafeProviderConfig): Record<string, st
 
       return [
         field.key,
-        value === undefined ? fieldDefaultToInput(field) : fieldValueToInput(value),
+        value === undefined
+          ? providerFieldDefaultToInput(provider, field)
+          : configFieldValueToInput(field, value),
       ];
     }),
   );
@@ -667,6 +730,87 @@ function ProviderTestDetails({ result }: { readonly result?: MockConnectionTestR
   );
 }
 
+class ProviderCardErrorBoundary extends Component<
+  { readonly providerLabel: string; readonly children: ReactNode },
+  { readonly hasError: boolean }
+> {
+  override state = { hasError: false };
+
+  static getDerivedStateFromError(): { readonly hasError: boolean } {
+    return { hasError: true };
+  }
+
+  override componentDidCatch(error: unknown, info: ErrorInfo): void {
+    console.error("[admin] provider card render failed", {
+      providerLabel: this.props.providerLabel,
+      message: error instanceof Error ? error.message : "unknown provider card render error",
+      componentStack: info.componentStack?.slice(0, 500) ?? "",
+    });
+  }
+
+  override render() {
+    if (this.state.hasError) {
+      return (
+        <div className="rounded-md border border-danger bg-card px-3 py-2 text-sm text-danger">
+          该服务商配置暂时无法显示，请刷新或检查配置。
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+function AdvancedConfigContent({
+  provider,
+  advancedOpen,
+  advancedConfigFields,
+  priority,
+  onOpenChange,
+  onPriorityChange,
+  renderConfigField,
+}: {
+  readonly provider: SafeProviderConfig;
+  readonly advancedOpen: boolean;
+  readonly advancedConfigFields: readonly ProviderFieldDefinition[];
+  readonly priority: number;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onPriorityChange: (priority: number) => void;
+  readonly renderConfigField: (
+    provider: SafeProviderConfig,
+    field: ProviderFieldDefinition,
+  ) => ReactNode;
+}) {
+  return (
+    <details
+      className="rounded-md border border-border bg-background/35 px-3 py-2"
+      open={advancedOpen}
+      onToggle={(event) => onOpenChange(event.currentTarget.open)}
+    >
+      <summary className="cursor-pointer text-sm font-semibold text-card-foreground">
+        {advancedOpen ? "收起高级配置" : "展开高级配置"}
+      </summary>
+      <div className="mt-3 grid gap-3">
+        <FormField label="priority">
+          <Input
+            type="number"
+            value={priority}
+            min={0}
+            max={10000}
+            step={1}
+            onChange={(event) => onPriorityChange(Number(event.target.value))}
+          />
+        </FormField>
+        {advancedConfigFields.length > 0 ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {advancedConfigFields.map((field) => renderConfigField(provider, field))}
+          </div>
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
 export function AdminProvidersClient({ providerType }: AdminProvidersClientProps) {
   const [providers, setProviders] = useState<SafeProviderConfig[]>([]);
   const [realDevCallFlags, setRealDevCallFlags] =
@@ -826,7 +970,8 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   }
 
   function renderConfigField(provider: SafeProviderConfig, field: ProviderFieldDefinition) {
-    const value = configFieldDrafts[provider.id]?.[field.key] ?? fieldDefaultToInput(field);
+    const value =
+      configFieldDrafts[provider.id]?.[field.key] ?? providerFieldDefaultToInput(provider, field);
 
     if (field.control === "boolean") {
       return (
@@ -1267,45 +1412,28 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                         )}
                       </section>
 
-                      <details
-                        className="rounded-md border border-border bg-background/35 px-3 py-2"
-                        open={advancedOpen}
-                        onToggle={(event) => {
-                          setAdvancedProviders((current) => ({
-                            ...current,
-                            [provider.id]: event.currentTarget.open,
-                          }));
-                        }}
-                      >
-                        <summary className="cursor-pointer text-sm font-semibold text-card-foreground">
-                          {advancedOpen ? "收起高级配置" : "展开高级配置"}
-                        </summary>
-                        <div className="mt-3 grid gap-3">
-                          <FormField label="priority">
-                            <Input
-                              type="number"
-                              value={priorityDrafts[provider.id] ?? provider.priority}
-                              min={0}
-                              max={10000}
-                              step={1}
-                              onChange={(event) => {
-                                markProviderDirty(provider.id);
-                                setPriorityDrafts((current) => ({
-                                  ...current,
-                                  [provider.id]: Number(event.target.value),
-                                }));
-                              }}
-                            />
-                          </FormField>
-                          {advancedConfigFields.length > 0 ? (
-                            <div className="grid gap-3 sm:grid-cols-2">
-                              {advancedConfigFields.map((field) =>
-                                renderConfigField(provider, field),
-                              )}
-                            </div>
-                          ) : null}
-                        </div>
-                      </details>
+                      <ProviderCardErrorBoundary providerLabel={providerName(provider)}>
+                        <AdvancedConfigContent
+                          provider={provider}
+                          advancedOpen={advancedOpen}
+                          advancedConfigFields={advancedConfigFields}
+                          priority={priorityDrafts[provider.id] ?? provider.priority}
+                          onOpenChange={(open) => {
+                            setAdvancedProviders((current) => ({
+                              ...current,
+                              [provider.id]: open,
+                            }));
+                          }}
+                          onPriorityChange={(priority) => {
+                            markProviderDirty(provider.id);
+                            setPriorityDrafts((current) => ({
+                              ...current,
+                              [provider.id]: priority,
+                            }));
+                          }}
+                          renderConfigField={renderConfigField}
+                        />
+                      </ProviderCardErrorBoundary>
                     </div>
 
                     <footer className="flex flex-col gap-3 border-t border-border pt-4">

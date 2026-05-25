@@ -235,7 +235,7 @@ describe("admin config routes", () => {
         timeoutMs: 10000,
         retryCount: 1,
         language: "zh",
-        unit: "metric",
+        unit: "m",
         apiKey: null,
       },
       maskedSecretJson: {
@@ -586,7 +586,7 @@ describe("admin config routes", () => {
         timeoutMs: 10000,
         retryCount: 1,
         language: "zh",
-        unit: "metric",
+        unit: "m",
       },
       secretJson: {
         apiKey: "qweather-real-secret",
@@ -830,9 +830,9 @@ describe("admin config routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       success: true,
-      mode: "fast",
+      mode: "professional",
       connectionMode: "mock",
-      model: "deepseek-v4-flash",
+      model: "deepseek-v4-pro",
       message: "当前为模拟测试，未请求 DeepSeek 服务。",
     });
     expect(response.body).not.toContain("deepseek-test-secret");
@@ -1444,9 +1444,9 @@ describe("admin config routes", () => {
     expect(deepSeekResponse.statusCode).toBe(200);
     expect(deepSeekResponse.json()).toMatchObject({
       success: true,
-      mode: "fast",
+      mode: "professional",
       connectionMode: "mock",
-      model: "deepseek-v4-flash",
+      model: "deepseek-v4-pro",
     });
     expect(qWeatherResponse.statusCode).toBe(200);
     expect(qWeatherResponse.json()).toMatchObject({

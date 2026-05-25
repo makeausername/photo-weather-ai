@@ -99,12 +99,15 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
   const recommendedPrimarySource = primaryBundle.providerCode;
   const confidenceLevel = confidenceLevelFromScore(confidenceByTarget[input.target]);
   const dataStatusZh = buildDataStatus(usableBundles, confidenceLevel);
-  const conflictStatusZh =
-    conflictFlags.length === 0 ? "无明显冲突" : "存在差异，请谨慎参考";
-  const professionalSourceStatus = usableBundles.some(
+  const conflictStatusZh = conflictFlags.length === 0 ? "无明显冲突" : "存在差异，请谨慎参考";
+  const meteoblueBundle = usableBundles.find(
     (bundle) => bundle.providerCode === "meteoblue" && bundle.dataMode === "real",
-  )
-    ? "专业增强：meteoblue 通过"
+  );
+  const meteoblueMissingFields = meteoblueBundle ? collectBundleMissingFields(meteoblueBundle) : [];
+  const professionalSourceStatus = meteoblueBundle
+    ? meteoblueMissingFields.length > 0
+      ? "专业增强：meteoblue 通过，部分字段缺失"
+      : "专业增强：meteoblue 通过"
     : "专业增强：meteoblue 未启用";
   const fusionNotesZh = buildFusionNotes({
     usableBundles,
@@ -298,8 +301,9 @@ function fuseHourlyAt(
       bundle,
       hour: bundle.hourly.find((point) => point.time === time),
     }))
-    .filter((candidate): candidate is { bundle: WeatherDataBundle; hour: NormalizedHourlyWeather } =>
-      Boolean(candidate.hour),
+    .filter(
+      (candidate): candidate is { bundle: WeatherDataBundle; hour: NormalizedHourlyWeather } =>
+        Boolean(candidate.hour),
     );
   const primaryHour =
     candidates.find((candidate) => candidate.bundle.providerCode === primaryBundle.providerCode)
@@ -348,7 +352,10 @@ function fuseHourlyAt(
 
 function selectFieldValue(
   field: (typeof numericFields)[number],
-  candidates: readonly { readonly bundle: WeatherDataBundle; readonly hour: NormalizedHourlyWeather }[],
+  candidates: readonly {
+    readonly bundle: WeatherDataBundle;
+    readonly hour: NormalizedHourlyWeather;
+  }[],
   primaryHour: NormalizedHourlyWeather,
 ): { readonly value: number | null | undefined; readonly estimated: boolean } {
   const providerOrder = capabilityOrderForField(field);
@@ -388,7 +395,10 @@ function capabilityOrderForField(field: string): readonly WeatherProviderCode[] 
   return ["qweather", "meteoblue", "open_meteo", "mock"];
 }
 
-function providerRank(providerCode: WeatherProviderCode, order: readonly WeatherProviderCode[]): number {
+function providerRank(
+  providerCode: WeatherProviderCode,
+  order: readonly WeatherProviderCode[],
+): number {
   const index = order.indexOf(providerCode);
   return index === -1 ? order.length : index;
 }
@@ -421,8 +431,9 @@ function detectConflicts(bundles: readonly WeatherDataBundle[]): readonly Weathe
           providerCode: bundle.providerCode,
           value: asNumber(bundle.hourly.find((hour) => hour.time === time)?.[field]),
         }))
-        .filter((entry): entry is { providerCode: WeatherProviderCode; value: number } =>
-          entry.value !== null,
+        .filter(
+          (entry): entry is { providerCode: WeatherProviderCode; value: number } =>
+            entry.value !== null,
         );
       if (values.length < 2) {
         continue;
@@ -449,7 +460,9 @@ function fuseDailyByDate(
   bundles: readonly WeatherDataBundle[],
   primaryBundle: WeatherDataBundle,
 ): readonly NormalizedDailyWeather[] {
-  const dates = [...new Set(bundles.flatMap((bundle) => bundle.daily.map((day) => day.date)))].sort();
+  const dates = [
+    ...new Set(bundles.flatMap((bundle) => bundle.daily.map((day) => day.date))),
+  ].sort();
   return dates
     .map(
       (date) =>
@@ -463,18 +476,10 @@ function sourceSummary(bundle: WeatherDataBundle): WeatherSourceSummary {
   const existing = bundle.sourceSummaries?.find(
     (summary) => summary.providerCode === bundle.providerCode,
   );
-  const missingFields = [
-    ...new Set([
-      ...(bundle.missingFields ?? []),
-      ...bundle.hourly.flatMap((hour) => hour.missingFields ?? []),
-      ...bundle.daily.flatMap((day) => day.missingFields ?? []),
-    ]),
-  ];
+  const missingFields = collectBundleMissingFields(bundle);
   const availableFields = [
     ...new Set(
-      numericFields.filter((field) =>
-        bundle.hourly.some((hour) => asNumber(hour[field]) !== null),
-      ),
+      numericFields.filter((field) => bundle.hourly.some((hour) => asNumber(hour[field]) !== null)),
     ),
   ];
 
@@ -490,7 +495,10 @@ function sourceSummary(bundle: WeatherDataBundle): WeatherSourceSummary {
     availableFields,
     missingFields,
     generatedAt: bundle.generatedAt,
-    messageZh: `${bundle.providerLabelZh} 通过。`,
+    messageZh:
+      bundle.providerCode === "meteoblue" && missingFields.length > 0
+        ? "meteoblue 通过，部分字段缺失。"
+        : `${bundle.providerLabelZh} 通过。`,
   };
 
   return {
@@ -505,6 +513,16 @@ function sourceSummary(bundle: WeatherDataBundle): WeatherSourceSummary {
     enabled: existing?.enabled ?? base.enabled,
     realCallEnabled: existing?.realCallEnabled ?? base.realCallEnabled,
   };
+}
+
+function collectBundleMissingFields(bundle: WeatherDataBundle): readonly string[] {
+  return [
+    ...new Set([
+      ...(bundle.missingFields ?? []),
+      ...bundle.hourly.flatMap((hour) => hour.missingFields ?? []),
+      ...bundle.daily.flatMap((day) => day.missingFields ?? []),
+    ]),
+  ];
 }
 
 function buildConfidenceByField(
@@ -530,9 +548,12 @@ function countSourcesForConfidenceField(
   bundles: readonly WeatherDataBundle[],
   field: keyof WeatherConfidenceByField,
 ): number {
-  const sourceField = field === "wind" ? "windSpeed" : field === "precipitation" ? "precipitationProbability" : field;
+  const sourceField =
+    field === "wind" ? "windSpeed" : field === "precipitation" ? "precipitationProbability" : field;
   return bundles.filter((bundle) =>
-    bundle.hourly.some((hour) => asNumber(hour[sourceField as keyof NormalizedHourlyWeather]) !== null),
+    bundle.hourly.some(
+      (hour) => asNumber(hour[sourceField as keyof NormalizedHourlyWeather]) !== null,
+    ),
   ).length;
 }
 
@@ -560,16 +581,31 @@ function buildConfidenceByTarget(
         conflictPenalty,
     ),
     glow: clampConfidence(
-      average([field.cloudLow, field.cloudMid, field.cloudHigh, field.cloudTotal, field.visibility]) -
-        conflictPenalty,
+      average([
+        field.cloudLow,
+        field.cloudMid,
+        field.cloudHigh,
+        field.cloudTotal,
+        field.visibility,
+      ]) - conflictPenalty,
     ),
     astro: clampConfidence(
-      average([field.cloudTotal, field.cloudLow, field.cloudMid, field.cloudHigh, field.visibility]) -
-        conflictPenalty,
+      average([
+        field.cloudTotal,
+        field.cloudLow,
+        field.cloudMid,
+        field.cloudHigh,
+        field.visibility,
+      ]) - conflictPenalty,
     ),
     general: clampConfidence(
-      average([field.cloudTotal, field.visibility, field.humidity, field.wind, field.precipitation]) -
-        conflictPenalty,
+      average([
+        field.cloudTotal,
+        field.visibility,
+        field.humidity,
+        field.wind,
+        field.precipitation,
+      ]) - conflictPenalty,
     ),
   };
 }
@@ -579,7 +615,11 @@ function buildMissingDataNotes(
   sourceSummaries: readonly WeatherSourceSummary[],
 ): readonly string[] {
   const notes: string[] = [];
-  if (confidenceByField.cloudLow < 0.6 || confidenceByField.cloudMid < 0.6 || confidenceByField.cloudHigh < 0.6) {
+  if (
+    confidenceByField.cloudLow < 0.6 ||
+    confidenceByField.cloudMid < 0.6 ||
+    confidenceByField.cloudHigh < 0.6
+  ) {
     notes.push("云层分层数据不足，云海、霞光和星空判断置信度会降低。");
   }
   if (confidenceByField.visibility < 0.6) {
@@ -626,7 +666,9 @@ function buildDataStatus(
 
   const weatherSource =
     bundles.find((bundle) => bundle.providerCode === "qweather" && bundle.dataMode === "real")
-      ?.providerLabelZh ?? bundles.find((bundle) => bundle.dataMode === "real")?.providerLabelZh ?? "正式数据源";
+      ?.providerLabelZh ??
+    bundles.find((bundle) => bundle.dataMode === "real")?.providerLabelZh ??
+    "正式数据源";
   const cloudAuxiliary = bundles.some(
     (bundle) => bundle.providerCode === "open_meteo" && bundle.dataMode === "real",
   )

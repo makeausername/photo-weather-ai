@@ -10,15 +10,8 @@ import type {
 import { createWeatherProvider, type WeatherProviderFactoryOptions } from "./factory.js";
 import { fuseWeatherSources } from "./fusion.js";
 import { MockWeatherProvider } from "./mock-provider.js";
-import {
-  buildWeatherCacheKey,
-  InMemoryWeatherCache,
-  weatherCacheTtlMs,
-} from "./weather-cache.js";
-import {
-  InMemoryWeatherProviderUsageLogger,
-  type WeatherProviderUsageLogger,
-} from "./usage.js";
+import { buildWeatherCacheKey, InMemoryWeatherCache, weatherCacheTtlMs } from "./weather-cache.js";
+import { InMemoryWeatherProviderUsageLogger, type WeatherProviderUsageLogger } from "./usage.js";
 import { isWeatherProviderError } from "./provider-error.js";
 
 export class WeatherDataService {
@@ -118,7 +111,8 @@ export class WeatherIntelligenceService {
         coordinates: input.coordinates,
       },
       forecastStart: input.forecastStart ?? usableBundles[0]!.generatedAt,
-      forecastEnd: input.forecastEnd ?? usableBundles[0]!.forecastEnd ?? usableBundles[0]!.generatedAt,
+      forecastEnd:
+        input.forecastEnd ?? usableBundles[0]!.forecastEnd ?? usableBundles[0]!.generatedAt,
     });
     const primary =
       usableBundles.find((bundle) => bundle.providerCode === fusion.recommendedPrimarySource) ??
@@ -133,7 +127,9 @@ export class WeatherIntelligenceService {
       airQuality: usableBundles.find((bundle) => bundle.airQuality)?.airQuality,
       providerCode: primary.providerCode,
       providerLabelZh: primary.providerLabelZh,
-      dataMode: usableBundles.some((bundle) => bundle.dataMode === "real") ? "real" : primary.dataMode,
+      dataMode: usableBundles.some((bundle) => bundle.dataMode === "real")
+        ? "real"
+        : primary.dataMode,
       generatedAt: generatedAt(input, fusion.generatedAt),
       forecastStart: input.forecastStart,
       forecastEnd: input.forecastEnd,
@@ -438,6 +434,7 @@ function annotateProviderBundle(
   latencyMs: number,
   cacheHit: boolean,
 ): WeatherDataBundle {
+  const missingFields = collectWeatherFields(bundle.hourly, bundle.daily, "missingFields");
   return {
     ...bundle,
     sourceSummaries: [
@@ -445,7 +442,12 @@ function annotateProviderBundle(
         ...sourceSummaryFromBundle(bundle),
         latencyMs,
         cacheHit,
-        messageZh: `${bundle.providerLabelZh} 通过。`,
+        missingFields,
+        messageZh: successfulSourceMessageZh(
+          bundle.providerCode,
+          bundle.providerLabelZh,
+          missingFields,
+        ),
       },
     ],
   };
@@ -492,7 +494,11 @@ function successfulSourceSummary(input: {
     latencyMs: input.latencyMs,
     cacheHit: false,
     generatedAt: input.generatedAt,
-    messageZh: `${input.providerLabelZh} 通过。`,
+    messageZh: successfulSourceMessageZh(
+      input.providerCode,
+      input.providerLabelZh,
+      input.missingFields,
+    ),
   };
 }
 
@@ -515,8 +521,26 @@ function sourceSummaryFromBundle(bundle: WeatherDataBundle): WeatherSourceSummar
     attempted: existing?.attempted ?? true,
     enabled: existing?.enabled ?? true,
     realCallEnabled: existing?.realCallEnabled ?? bundle.dataMode === "real",
-    messageZh: existing?.messageZh ?? `${bundle.providerLabelZh} 通过。`,
+    messageZh:
+      existing?.messageZh ??
+      successfulSourceMessageZh(
+        bundle.providerCode,
+        bundle.providerLabelZh,
+        bundle.missingFields ?? [],
+      ),
   };
+}
+
+function successfulSourceMessageZh(
+  providerCode: WeatherSourceSummary["providerCode"],
+  providerLabelZh: string,
+  missingFields: readonly string[],
+): string {
+  if (providerCode === "meteoblue" && missingFields.length > 0) {
+    return "meteoblue 通过，部分字段缺失。";
+  }
+
+  return `${providerLabelZh} 通过。`;
 }
 
 function collectAvailableFields(hourly: readonly NormalizedHourlyWeather[]): readonly string[] {
@@ -544,8 +568,14 @@ function collectAvailableFields(hourly: readonly NormalizedHourlyWeather[]): rea
 }
 
 function collectWeatherFields(
-  hourly: readonly { readonly missingFields?: readonly string[]; readonly estimatedFields?: readonly string[] }[],
-  daily: readonly { readonly missingFields?: readonly string[]; readonly estimatedFields?: readonly string[] }[],
+  hourly: readonly {
+    readonly missingFields?: readonly string[];
+    readonly estimatedFields?: readonly string[];
+  }[],
+  daily: readonly {
+    readonly missingFields?: readonly string[];
+    readonly estimatedFields?: readonly string[];
+  }[],
   key: "missingFields" | "estimatedFields",
 ): readonly string[] {
   return [...new Set([...hourly, ...daily].flatMap((point) => point[key] ?? []))];
