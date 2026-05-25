@@ -230,8 +230,13 @@ function normalizeDeepSeekRequestError(error: unknown, latencyMs: number): DeepS
     return error;
   }
 
-  const name = error instanceof Error ? error.name : "";
-  if (name === "AbortError") {
+  const candidate =
+    error && typeof error === "object"
+      ? (error as { readonly name?: unknown; readonly message?: unknown })
+      : undefined;
+  const name = typeof candidate?.name === "string" ? candidate.name : "";
+  const message = typeof candidate?.message === "string" ? candidate.message.toLowerCase() : "";
+  if (name === "AbortError" || message.includes("timed out") || message.includes("timeout")) {
     return deepSeekError({
       errorCategory: "timeout",
       messageZh: "DeepSeek 服务请求超时。",
@@ -347,11 +352,18 @@ export function buildDeepSeekForecastContext(result: ForecastCalculationResult) 
     recommendationLabel: result.recommendationLabel,
     summary: result.summary,
     scores: Object.values(result.scores).map(compactScore),
-    bestWindows: takeItems(result.bestWindows, 6),
+    bestWindows: takeItems(result.bestWindows, 6).map(compactForecastWindow),
     riskFlags: takeItems(result.riskFlags, 8),
     keyReasons: takeItems(result.keyReasons, 8),
-    photographyAdvice: takeItems(result.photographyAdvice, 8),
-    clothingGuide: result.clothingGuide,
+    photographyAdvice: takeItems(result.photographyAdvice, 5),
+    clothingGuide: {
+      titleZh: result.clothingGuide.titleZh,
+      summaryZh: result.clothingGuide.summaryZh,
+      comfortLevel: result.clothingGuide.comfortLevel,
+      layers: takeItems(result.clothingGuide.layers, 5),
+      accessories: takeItems(result.clothingGuide.accessories, 5),
+      riskNotes: takeItems(result.clothingGuide.riskNotes, 5),
+    },
     currentWeather: result.currentWeather
       ? {
           observedAt: result.currentWeather.observedAt,
@@ -418,11 +430,59 @@ export function buildDeepSeekForecastContext(result: ForecastCalculationResult) 
       obstructionNoteZh: result.terrainSummary.obstructionNoteZh,
     },
     targetAnalysis: compactTargetAnalysis(result),
-    dailySummaries: takeItems(result.dailySummaries, 3),
+    dailySummaries: takeItems(result.dailySummaries, 3).map((summary) => ({
+      date: summary.date,
+      dateLabelZh: summary.dateLabelZh,
+      score: summary.score,
+      recommendationLabel: summary.recommendationLabel,
+      target: summary.target,
+      keyWindows: takeItems(summary.keyWindows, 3).map(compactForecastWindow),
+      riskFlags: takeItems(summary.riskFlags, 4),
+      shortAdvice: summary.shortAdvice,
+      weather: summary.weather
+        ? {
+            weatherTextZh: summary.weather.weatherTextZh,
+            tempMin: summary.weather.tempMin,
+            tempMax: summary.weather.tempMax,
+            precipitationProbability: summary.weather.precipitationProbability,
+            precipitationAmountMm: summary.weather.precipitationAmountMm,
+            windSpeed: summary.weather.windSpeed,
+            windGust: summary.weather.windGust,
+            visibility: summary.weather.visibility,
+            cloudTotal: summary.weather.cloudTotal,
+            cloudLow: summary.weather.cloudLow,
+            cloudMid: summary.weather.cloudMid,
+            cloudHigh: summary.weather.cloudHigh,
+          }
+        : undefined,
+    })),
     dataNotice: result.dataNotice,
     isMock: result.isMock,
     dataSourceLabel: result.dataSourceLabel,
     generatedAt: result.generatedAt,
+  };
+}
+
+function compactForecastWindow(window: ForecastCalculationResult["bestWindows"][number]) {
+  return {
+    label: window.label,
+    date: window.date,
+    startTime: window.startTime,
+    endTime: window.endTime,
+    score: window.score,
+    target: window.target,
+    conditionScore: window.conditionScore,
+    practicalScore: window.practicalScore,
+    practicalKind: window.practicalKind,
+    lightPhase: window.lightPhase,
+    subjectPriorityLabel: window.subjectPriorityLabel,
+    arrivalAdvice: window.arrivalAdvice
+      ? {
+          recommendedArrivalLabel: window.arrivalAdvice.recommendedArrivalLabel,
+          setupBufferMinutes: window.arrivalAdvice.setupBufferMinutes,
+          warningZh: window.arrivalAdvice.warningZh,
+        }
+      : undefined,
   };
 }
 

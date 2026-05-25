@@ -61,6 +61,15 @@ export type ForecastResultWindow = {
   readonly score: number;
   readonly target: ForecastTarget;
   readonly badgeLabel: string;
+  readonly conditionScore?: number;
+  readonly practicalScore?: number;
+  readonly practicalKind?: ForecastTimeWindow["practicalKind"];
+  readonly lightPhase?: ForecastTimeWindow["lightPhase"];
+  readonly practicalNoteZh?: string;
+  readonly subjectPriorityLabel?: string;
+  readonly backupSubjectLabel?: string;
+  readonly restWarningZh?: string;
+  readonly arrivalAdvice?: ForecastTimeWindow["arrivalAdvice"];
 };
 
 export type ForecastResultSectionItem = {
@@ -426,10 +435,14 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
         "arrivalAdvice",
         "recommendation",
         "到达建议",
-        bestWindow ? "窗口前到达" : "等待更新",
-        bestWindow
-          ? `${bestWindow.timeRangeLabel}，预留取景和机位确认时间。`
-          : "暂无明确高分窗口。",
+        bestWindow?.arrivalAdvice?.recommendedArrivalLabel ?? (bestWindow ? "窗口前到达" : "等待更新"),
+        bestWindow?.arrivalAdvice
+          ? `${bestWindow.arrivalAdvice.reasonZh}${
+              bestWindow.arrivalAdvice.warningZh ? ` ${bestWindow.arrivalAdvice.warningZh}` : ""
+            }`
+          : bestWindow
+            ? `${bestWindow.timeRangeLabel}，预留取景和机位确认时间。`
+            : "暂无明确高分窗口。",
         "accent",
       ),
     ],
@@ -437,7 +450,7 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
     bestWindows: resultWindows,
     ...buildHorizonViewFields(result, resultWindows),
     windowsTitle: result.horizon === "24h" ? "最佳拍摄窗口" : "每日窗口",
-    windowsDescription: "综合页面按评分混合展示云海、霞光、银河等高分窗口。",
+    windowsDescription: "综合页面按实用性排序，同时保留气象条件较好但时间成本偏高的信号。",
     scoreSectionTitle: "分项评分",
     detailSections: [
       buildScoreOverviewSection(scoreCards),
@@ -2171,6 +2184,15 @@ function mapResultWindows(windows: readonly ForecastTimeWindow[]): readonly Fore
     score: window.score,
     target: window.target,
     badgeLabel: forecastTargetLabels[window.target],
+    conditionScore: window.conditionScore,
+    practicalScore: window.practicalScore,
+    practicalKind: window.practicalKind,
+    lightPhase: window.lightPhase,
+    practicalNoteZh: window.practicalNoteZh,
+    subjectPriorityLabel: window.subjectPriorityLabel,
+    backupSubjectLabel: window.backupSubjectLabel,
+    restWarningZh: window.restWarningZh,
+    arrivalAdvice: window.arrivalAdvice,
   }));
 }
 
@@ -2185,6 +2207,9 @@ function inferWindowModuleKey(window: ForecastTimeWindow): ForecastResultModuleK
     return "cloudSea";
   }
   if (window.label.startsWith("清晨云海")) {
+    return "cloudSea";
+  }
+  if (window.label.startsWith("云海形成")) {
     return "cloudSea";
   }
   if (window.label.startsWith("银河") || window.label.startsWith("推荐银河")) {
@@ -2217,7 +2242,7 @@ function firstRisk(risks: readonly ForecastRiskFlag[]): ForecastRiskFlag | undef
 
 function bestGeneralSubjectLabel(result: ForecastCalculationResult): string {
   const best = bestGeneralSubject(result);
-  return best ? `${best.label}（${best.score.score} 分）` : "综合判断";
+  return best ? `${best.label}（实用 ${best.priorityScore} 分）` : "综合判断";
 }
 
 function bestGeneralSubjectModuleKey(result: ForecastCalculationResult): ForecastResultModuleKey {
@@ -2231,22 +2256,88 @@ function bestGeneralSubject(
       readonly label: string;
       readonly moduleKey: ForecastResultModuleKey;
       readonly score: ForecastScore;
+      readonly priorityScore: number;
     }
   | undefined {
   const candidates: readonly {
     readonly label: string;
     readonly moduleKey: ForecastResultModuleKey;
     readonly score: ForecastScore;
+    readonly priorityScore: number;
   }[] = [
-    { label: "云海", moduleKey: "cloudSea", score: result.scores.cloudSea },
-    { label: "朝霞", moduleKey: "sunriseGlow", score: result.scores.sunriseGlow },
-    { label: "晚霞", moduleKey: "sunsetGlow", score: result.scores.sunsetGlow },
-    { label: "星空", moduleKey: "stars", score: result.scores.stars },
-    { label: "银河", moduleKey: "milkyWay", score: result.scores.milkyWay },
-    { label: "通透度", moduleKey: "transparency", score: result.scores.transparency },
+    {
+      label: "云海",
+      moduleKey: "cloudSea",
+      score: result.scores.cloudSea,
+      priorityScore: practicalSubjectScore(result, "cloud_sea", "云海"),
+    },
+    {
+      label: "朝霞",
+      moduleKey: "sunriseGlow",
+      score: result.scores.sunriseGlow,
+      priorityScore: practicalSubjectScore(result, "glow", "朝霞"),
+    },
+    {
+      label: "晚霞",
+      moduleKey: "sunsetGlow",
+      score: result.scores.sunsetGlow,
+      priorityScore: practicalSubjectScore(result, "glow", "晚霞"),
+    },
+    {
+      label: "星空",
+      moduleKey: "stars",
+      score: result.scores.stars,
+      priorityScore: practicalSubjectScore(result, "astro", "天文黑夜"),
+    },
+    {
+      label: "银河",
+      moduleKey: "milkyWay",
+      score: result.scores.milkyWay,
+      priorityScore: practicalSubjectScore(result, "astro", "银河"),
+    },
+    {
+      label: "通透度",
+      moduleKey: "transparency",
+      score: result.scores.transparency,
+      priorityScore: result.scores.transparency.score,
+    },
   ];
 
-  return [...candidates].sort((left, right) => right.score.score - left.score.score)[0];
+  return [...candidates].sort((left, right) => right.priorityScore - left.priorityScore)[0];
+}
+
+function practicalSubjectScore(
+  result: ForecastCalculationResult,
+  target: ForecastTarget,
+  labelHint: string,
+): number {
+  const window = result.bestWindows.find(
+    (candidate) =>
+      candidate.target === target &&
+      candidate.practicalKind !== "formation_signal" &&
+      candidate.label.includes(labelHint),
+  );
+  if (window) {
+    return window.practicalScore ?? window.score;
+  }
+
+  if (target === "cloud_sea") {
+    return result.scores.cloudSea.score;
+  }
+  if (target === "glow" && labelHint === "朝霞") {
+    return result.scores.sunriseGlow.score;
+  }
+  if (target === "glow") {
+    return result.scores.sunsetGlow.score;
+  }
+  if (target === "astro" && labelHint === "银河") {
+    return result.scores.milkyWay.score;
+  }
+  if (target === "astro") {
+    return result.scores.stars.score;
+  }
+
+  return 0;
 }
 
 function firstAstro(result: ForecastCalculationResult): AstroSummary | undefined {

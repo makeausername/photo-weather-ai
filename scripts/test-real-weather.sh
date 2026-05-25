@@ -127,6 +127,9 @@ const current = result.currentWeather || {};
 const dailySummaries = Array.isArray(result.dailySummaries) ? result.dailySummaries : [];
 const firstDailySummary = dailySummaries[0] || {};
 const firstDaily = firstDailySummary.weather || {};
+const bestWindows = Array.isArray(result.bestWindows) ? result.bestWindows : [];
+const firstWindow = bestWindows[0] || {};
+const firstArrival = firstWindow.arrivalAdvice || {};
 const fusion = result.weatherFusionSummary || {};
 const clothing = result.clothingGuide || {};
 const sources = Array.isArray(result.weatherSourceSummaries) ? result.weatherSourceSummaries : [];
@@ -236,6 +239,8 @@ console.log(`rawVisibility: ${number(rawVisibility, "km")} transparencyGrade=${g
 console.log(`humidity: ${percent(current.humidity)} dewPointSpread=${number(firstNumber(current.dewPointSpread, firstDaily.dewPointSpread), "°C")}`);
 console.log(`cloud: total=${percent(firstNumber(current.cloudTotal, firstDaily.cloudTotal))} low=${percent(firstNumber(current.cloudLow, firstDaily.cloudLow))} mid=${percent(firstNumber(current.cloudMid, firstDaily.cloudMid))} high=${percent(firstNumber(current.cloudHigh, firstDaily.cloudHigh))}`);
 console.log(`cloudSeaChance: ${number(result.scores?.cloudSea?.score)} whiteoutRisk=${number(result.scores?.whiteoutRisk?.score)} cloudFogRisk=${value(current.cloudFogObstructionRisk || firstDaily.cloudFogObstructionRisk)}`);
+console.log(`bestWindow: ${value(firstWindow.label)} score=${number(firstWindow.score)} practical=${number(firstWindow.practicalScore)} condition=${number(firstWindow.conditionScore)} kind=${value(firstWindow.practicalKind)} light=${value(firstWindow.lightPhase)}`);
+console.log(`arrivalAdvice: ${value(firstArrival.recommendedArrivalLabel)} time=${value(firstArrival.recommendedArrivalTime)} setup=${number(firstArrival.setupBufferMinutes, "min")} warning=${value(firstArrival.warningZh, "无")}`);
 console.log(`dailyFirst: date=${value(firstDailySummary.date)} score=${number(firstDailySummary.score)} advice=${value(firstDailySummary.shortAdvice)}`);
 console.log(`clothingGuide: ${value(clothing.titleZh)} / ${value(clothing.summaryZh)}`);
 console.log(`clothingLayers: ${(clothing.layers || []).join("、") || "暂无"}`);

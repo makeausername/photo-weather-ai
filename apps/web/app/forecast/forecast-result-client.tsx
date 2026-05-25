@@ -437,15 +437,15 @@ export function SourceDiagnosticsPanel({ result }: { readonly result: ForecastCa
         <CompactDefinition label="地点" value={result.calendarBasis.coordinateSource} />
         <CompactDefinition
           label="天气主源"
-          value={providerDiagnosticText(result, "qweather", "和风天气")}
+          value={publicSourceDiagnosticText(result, "qweather", "基础天气")}
         />
         <CompactDefinition
           label="云层辅助"
-          value={providerDiagnosticText(result, "open_meteo", "Open-Meteo")}
+          value={publicSourceDiagnosticText(result, "open_meteo", "云层辅助")}
         />
         <CompactDefinition
           label="专业增强"
-          value={providerDiagnosticText(result, "meteoblue", "meteoblue")}
+          value={publicSourceDiagnosticText(result, "meteoblue", "专业增强")}
         />
         <CompactDefinition label="天文" value={result.astroDataSourceLabelZh} />
       </dl>
@@ -536,6 +536,44 @@ function successfulRealWeatherSources(
     (summary) =>
       isWeatherProviderSummary(summary) && summary.dataMode === "real" && sourceSucceeded(summary),
   );
+}
+
+function publicSourceDiagnosticText(
+  result: ForecastCalculationResult,
+  providerCode: "qweather" | "open_meteo" | "meteoblue",
+  sourceRoleLabel: string,
+): string {
+  const summary = weatherProviderSummary(result, providerCode);
+  if (!summary) {
+    return `${sourceRoleLabel}未参与`;
+  }
+  if (sourceSucceeded(summary)) {
+    return summary.partial ? `${sourceRoleLabel}可用，部分辅助字段缺失` : `${sourceRoleLabel}可用`;
+  }
+  if (!summary.attempted) {
+    return `${sourceRoleLabel}未参与本次融合`;
+  }
+
+  return `${sourceRoleLabel}暂不可用：${publicSourceIssueLabel(summary.errorCategory)}`;
+}
+
+function publicSourceIssueLabel(errorCategory: string | undefined): string {
+  switch (errorCategory) {
+    case "invalid_key":
+    case "permission":
+    case "configuration":
+      return "配置或权限未通过";
+    case "timeout":
+      return "响应超时";
+    case "rate_limited":
+      return "调用频率受限";
+    case "network":
+      return "网络连接异常";
+    case "invalid_response":
+      return "返回数据无法用于本次判断";
+    default:
+      return "未返回可用数据";
+  }
 }
 
 function dataReadinessBadgeLabel(result: ForecastCalculationResult): string {
@@ -717,6 +755,9 @@ function arrivalAdviceValue(
   if (!window) {
     return "等待更新";
   }
+  if (window.arrivalAdvice?.recommendedArrivalLabel) {
+    return window.arrivalAdvice.recommendedArrivalLabel;
+  }
   const arrivalTime = shiftTime(window.startTime, -50);
   return `${formatTime(arrivalTime)} 前到达`;
 }
@@ -728,19 +769,14 @@ function arrivalAdviceDetail(
     return "暂无明确高分窗口，先等待下一次预报更新，不建议为单一窗口赶路。";
   }
 
+  if (window.arrivalAdvice) {
+    const warning = window.arrivalAdvice.warningZh ? ` ${window.arrivalAdvice.warningZh}` : "";
+    return `${arrivalAdviceValue(window)}。${window.arrivalAdvice.reasonZh}${warning}`;
+  }
+
   return `最佳窗口 ${formatWindow(window.startTime, window.endTime)}，建议 ${formatTime(
     shiftTime(window.startTime, -50),
   )} 前到达，完成取景、三脚架和防护准备。`;
-}
-
-function preparationAdviceDetail(
-  result: ForecastCalculationResult,
-  bestSubject: SubjectBreakdownCard,
-  mainRisk: ForecastResultSectionItem,
-): string {
-  return `优先拍 ${subjectLabels[bestSubject.key]}，同时复核${mainRisk.label}。${packingMainValue(
-    result.clothingGuide,
-  )}`;
 }
 
 function averagePair(left: number | undefined, right: number | undefined): number | undefined {
@@ -2583,6 +2619,7 @@ type SubjectBreakdownCard = {
   readonly key: SubjectScoreKey;
   readonly label: string;
   readonly score: ForecastScore;
+  readonly priorityScore: number;
   readonly windowLabel: string;
   readonly reason: string;
   readonly actionSuggestion: string;
@@ -2628,7 +2665,8 @@ export function ComprehensiveForecastView({
   const mainRisk = pickMainRisk(result);
   const sortedWindows = [...viewModel.bestWindows].sort(
     (left, right) =>
-      right.score - left.score || Date.parse(left.startTime) - Date.parse(right.startTime),
+      (right.practicalScore ?? right.score) - (left.practicalScore ?? left.score) ||
+      Date.parse(left.startTime) - Date.parse(right.startTime),
   );
 
   return (
@@ -2781,7 +2819,7 @@ function ComprehensiveCoreDecisionCards({
       "recommendation",
       "到达建议",
       arrivalAdviceValue(bestWindow),
-      preparationAdviceDetail(result, bestSubject, mainRisk),
+      arrivalAdviceDetail(bestWindow),
       result.overallScore >= 65 ? "primary" : "accent",
     ),
   ];
@@ -2854,8 +2892,8 @@ function OpportunityWindowSection({
     <section className="grid gap-3" data-testid="opportunity-windows">
       <SectionHeading
         title="拍摄窗口与备选"
-        description="优先看高分窗口，同时保留云层或通透度变化后的备选方案。"
-        badge="按评分排序"
+        description="优先看可执行窗口，同时保留气象条件较好但时间成本较高的信号。"
+        badge="按实用性排序"
       />
       <ul className="mt-4 grid gap-3">
         {windows.map((window) => (
@@ -2871,12 +2909,25 @@ function OpportunityWindowSection({
               <p className="mt-2 text-sm text-muted-foreground">{window.timeRangeLabel}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2 min-[720px]:justify-end">
-              <Badge variant={window.score >= 75 ? "default" : "accent"}>{window.score} 分</Badge>
+              <Badge variant={(window.practicalScore ?? window.score) >= 75 ? "default" : "accent"}>
+                实用 {window.practicalScore ?? window.score} 分
+              </Badge>
+              {typeof window.conditionScore === "number" ? (
+                <Badge variant="muted">气象 {window.conditionScore} 分</Badge>
+              ) : null}
+              {window.practicalKind === "formation_signal" ? (
+                <Badge variant="warning">形成信号</Badge>
+              ) : null}
               <Badge variant="muted">{windowRiskTag(result, window)}</Badge>
-              <Badge variant={window.score >= 75 ? "success" : "info"}>
-                {windowActionLabel(window.score)}
+              <Badge variant={(window.practicalScore ?? window.score) >= 75 ? "success" : "info"}>
+                {windowActionLabel(window)}
               </Badge>
             </div>
+            {window.practicalNoteZh ? (
+              <p className="text-xs leading-5 text-muted-foreground min-[720px]:col-span-2">
+                {window.practicalNoteZh}
+              </p>
+            ) : null}
           </li>
         ))}
       </ul>
@@ -2960,12 +3011,17 @@ function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCal
                 </p>
                 <p>{dailyOpportunityLine(dayBreakdown)}</p>
                 <p>
-                  最佳窗口：
+                  最佳：
                   {bestWindow
                     ? `${bestWindow.label} ${formatWindow(bestWindow.startTime, bestWindow.endTime)}`
                     : "暂无明确高分窗口"}
                 </p>
-                <p>最佳题材：{bestSubject ?? "综合判断"}</p>
+                <p>建议到达：{arrivalAdviceValue(bestWindow)}</p>
+                {bestWindow?.arrivalAdvice?.warningZh ? (
+                  <p>提示：{bestWindow.arrivalAdvice.warningZh}</p>
+                ) : null}
+                <p>优先题材：{bestWindow?.subjectPriorityLabel ?? bestSubject ?? "综合判断"}</p>
+                <p>备选题材：{bestWindow?.backupSubjectLabel ?? backupDailySubject(dayBreakdown)}</p>
                 <p>
                   主要风险：
                   {risk ? `${risk.label}，${riskLevelText(risk.level)}风险` : "暂无高等级风险"}
@@ -3026,17 +3082,19 @@ function ActionableAdviceSection({
   readonly bestSubject: SubjectBreakdownCard;
   readonly mainRisk: ForecastResultSectionItem;
 }) {
+  const bestWindow = bestWindowForSubject(result, bestSubject.key);
   const backupSubjects = buildSubjectBreakdownCards(result)
     .filter((subject) => subject.key !== bestSubject.key)
-    .sort((left, right) => right.score.score - left.score.score)
+    .sort((left, right) => right.priorityScore - left.priorityScore)
     .slice(0, 2);
   const backupPlan =
-    backupSubjects.length > 0
+    bestWindow?.backupSubjectLabel
+      ? `若主窗口不成立，优先转向${bestWindow.backupSubjectLabel}。`
+      : backupSubjects.length > 0
       ? `若${subjectLabels[bestSubject.key]}不成立，优先转向${backupSubjects
           .map((subject) => `${subjectLabels[subject.key]}（${subject.score.score} 分）`)
           .join("或")}。`
       : "如果主目标不成立，保留现场光线、云层纹理和地景构图作为备选。";
-  const bestWindow = bestWindowForSubject(result, bestSubject.key);
 
   return (
     <section className="grid gap-3" data-testid="action-plan">
@@ -3047,9 +3105,16 @@ function ActionableAdviceSection({
       />
       <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(250px,1fr))]">
         <AdviceBlock title="建议到达时间" items={[arrivalAdviceDetail(bestWindow)]} />
+        {bestWindow?.arrivalAdvice?.warningZh ? (
+          <AdviceBlock title="体力与作息提示" items={[bestWindow.arrivalAdvice.warningZh]} />
+        ) : null}
         <AdviceBlock
           title="优先拍摄题材"
-          items={[`${subjectLabels[bestSubject.key]}：${bestSubject.actionSuggestion}`]}
+          items={[
+            `${
+              bestWindow?.subjectPriorityLabel ?? subjectLabels[bestSubject.key]
+            }：${bestSubject.actionSuggestion}`,
+          ]}
         />
         <AdviceBlock title="备选方案" items={[backupPlan]} />
         <AdviceBlock title="风险提醒" items={[`${mainRisk.label}：${mainRisk.detail}`]} />
@@ -3476,15 +3541,15 @@ function DataStatusPanel({ result }: { readonly result: ForecastCalculationResul
         <SummaryItem label="地点" value={result.calendarBasis.coordinateSource} />
         <SummaryItem
           label="天气主源"
-          value={providerDiagnosticText(result, "qweather", "和风天气")}
+          value={publicSourceDiagnosticText(result, "qweather", "基础天气")}
         />
         <SummaryItem
           label="云层辅助"
-          value={providerDiagnosticText(result, "open_meteo", "Open-Meteo")}
+          value={publicSourceDiagnosticText(result, "open_meteo", "云层辅助")}
         />
         <SummaryItem
           label="专业增强"
-          value={providerDiagnosticText(result, "meteoblue", "meteoblue")}
+          value={publicSourceDiagnosticText(result, "meteoblue", "专业增强")}
         />
         <SummaryItem label="数据置信度" value={confidence} />
         <SummaryItem label="数据冲突" value={conflictStatus} />
@@ -3603,6 +3668,7 @@ function buildSubjectBreakdownCards(
       key,
       label: subjectLabels[key],
       score,
+      priorityScore: subjectPriorityScore(result, key, score.score),
       windowLabel: subjectWindowLabel(result, key),
       reason: userFacingResultText(firstText(score.reasons, "当前题材已纳入综合评分。")),
       actionSuggestion: subjectActionSuggestion(key, score.score),
@@ -3611,7 +3677,7 @@ function buildSubjectBreakdownCards(
 }
 
 function pickBestSubject(cards: readonly SubjectBreakdownCard[]): SubjectBreakdownCard {
-  const best = [...cards].sort((left, right) => right.score.score - left.score.score)[0];
+  const best = [...cards].sort((left, right) => right.priorityScore - left.priorityScore)[0];
   if (best) {
     return best;
   }
@@ -3627,10 +3693,24 @@ function pickBestSubject(cards: readonly SubjectBreakdownCard[]): SubjectBreakdo
       reasons: ["当前缺少可用于题材排序的评分。"],
       risks: [],
     },
+    priorityScore: 0,
     windowLabel: "暂无明确高分窗口",
     reason: "当前缺少可用于题材排序的评分。",
     actionSuggestion: "先以现场通透度和安全条件作为判断基准。",
   };
+}
+
+function subjectPriorityScore(
+  result: ForecastCalculationResult,
+  key: SubjectScoreKey,
+  fallbackScore: number,
+): number {
+  const window = bestWindowForSubject(result, key);
+  if (!window) {
+    return fallbackScore;
+  }
+
+  return Math.round((fallbackScore * 0.42 + (window.practicalScore ?? window.score) * 0.58) * 10) / 10;
 }
 
 function pickMainRisk(result: ForecastCalculationResult): ForecastResultSectionItem {
@@ -3715,7 +3795,16 @@ function coreWindowDetail(
     return "优先复核后续天气更新。";
   }
 
-  return `${window.badgeLabel}，${windowActionLabel(window.score)}，${windowRiskTag(result, window)}。`;
+  const scores =
+    typeof window.conditionScore === "number" && typeof window.practicalScore === "number"
+      ? `实用 ${window.practicalScore} 分，气象 ${window.conditionScore} 分`
+      : `${window.score} 分`;
+  const note = window.practicalNoteZh ? ` ${window.practicalNoteZh}` : "";
+
+  return `${window.badgeLabel}，${windowActionLabel(window)}，${windowRiskTag(
+    result,
+    window,
+  )}，${scores}。${note}`;
 }
 
 function subjectWindowLabel(result: ForecastCalculationResult, key: SubjectScoreKey): string {
@@ -3737,29 +3826,40 @@ function bestWindowForSubject(
 ): ForecastCalculationResult["bestWindows"][number] | undefined {
   const windows = [...result.bestWindows].sort(
     (left, right) =>
-      right.score - left.score || Date.parse(left.startTime) - Date.parse(right.startTime),
+      (right.practicalScore ?? right.score) - (left.practicalScore ?? left.score) ||
+      Date.parse(left.startTime) - Date.parse(right.startTime),
   );
+  const shootableWindows = windows.filter((window) => window.practicalKind !== "formation_signal");
+  const candidates = shootableWindows.length > 0 ? shootableWindows : windows;
 
   if (key === "cloudSea") {
-    return windows.find((window) => window.target === "cloud_sea");
+    return candidates.find((window) => window.target === "cloud_sea");
   }
   if (key === "sunriseGlow") {
-    return windows.find((window) => window.target === "glow" && window.label.includes("朝霞"));
+    return candidates.find((window) => window.target === "glow" && window.label.includes("朝霞"));
   }
   if (key === "sunsetGlow") {
-    return windows.find((window) => window.target === "glow" && window.label.includes("晚霞"));
+    return candidates.find((window) => window.target === "glow" && window.label.includes("晚霞"));
   }
   if (key === "stars") {
-    return windows.find((window) => window.target === "astro" && window.label.includes("天文黑夜"));
+    return candidates.find(
+      (window) => window.target === "astro" && window.label.includes("天文黑夜"),
+    );
   }
   if (key === "milkyWay") {
-    return windows.find((window) => window.target === "astro" && window.label.includes("银河"));
+    return candidates.find((window) => window.target === "astro" && window.label.includes("银河"));
   }
 
-  return windows[0];
+  return candidates[0];
 }
 
 function windowRiskTag(result: ForecastCalculationResult, window: ForecastResultWindow): string {
+  if (window.practicalKind === "formation_signal") {
+    return "无光形成信号";
+  }
+  if (window.restWarningZh) {
+    return "作息成本高";
+  }
   if (window.target === "cloud_sea" && result.scores.whiteoutRisk.score >= 65) {
     return "白墙需复核";
   }
@@ -3779,7 +3879,11 @@ function windowRiskTag(result: ForecastCalculationResult, window: ForecastResult
   return result.riskFlags[0]?.label ?? "风险可控";
 }
 
-function windowActionLabel(score: number): string {
+function windowActionLabel(window: ForecastResultWindow): string {
+  if (window.practicalKind === "formation_signal") {
+    return "仅作观察";
+  }
+  const score = window.practicalScore ?? window.score;
   if (score >= 75) {
     return "优先安排";
   }
@@ -3805,6 +3909,30 @@ function pickBestDailySubject(
     .sort((left, right) => (right.metric?.score ?? 0) - (left.metric?.score ?? 0))[0];
 
   return best ? `${best.label}（${best.metric?.score ?? 0} 分）` : "综合判断";
+}
+
+function backupDailySubject(
+  breakdown: ForecastCalculationResult["targetDailyBreakdown"][number] | undefined,
+): string {
+  if (!breakdown) {
+    return "现场光线、云层纹理和安全机位";
+  }
+
+  const metrics = [
+    { label: "云海", metric: breakdown.cloudSea },
+    { label: "朝霞", metric: breakdown.sunriseGlow },
+    { label: "晚霞", metric: breakdown.sunsetGlow },
+    { label: "星空", metric: breakdown.stars },
+    { label: "银河", metric: breakdown.milkyWay },
+    { label: "通透层峦", metric: breakdown.transparency },
+  ];
+  const backups = metrics
+    .filter((item) => item.metric !== undefined)
+    .sort((left, right) => (right.metric?.score ?? 0) - (left.metric?.score ?? 0))
+    .slice(1, 3)
+    .map((item) => item.label);
+
+  return backups.length > 0 ? backups.join(" / ") : "现场光线、云层纹理和安全机位";
 }
 
 function firstText(items: readonly string[], fallback: string): string {

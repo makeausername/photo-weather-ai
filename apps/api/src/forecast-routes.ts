@@ -224,6 +224,7 @@ export function registerForecastRoutes(
       const deepSeekProvider = await createRealDeepSeekProvider({
         dbClient: options.dbClient,
         env,
+        fetcher: globalThis.fetch,
       });
       const explanation = await deepSeekProvider.generateForecastExplanation({
         forecastResult: result,
@@ -458,7 +459,12 @@ function normalizeDeepSeekExplanationError(error: unknown): {
   readonly error: "ai_explanation_timeout" | "ai_explanation_unavailable";
   readonly message: string;
 } {
-  if (isDeepSeekProviderError(error) && error.errorCategory === "timeout") {
+  if (
+    (isDeepSeekProviderError(error) && error.errorCategory === "timeout") ||
+    (isDeepSeekProviderError(error) && isAbortOrTimeoutError(error.cause)) ||
+    isAbortOrTimeoutError(readErrorCause(error)) ||
+    isAbortOrTimeoutError(error)
+  ) {
     return {
       statusCode: 504,
       error: "ai_explanation_timeout",
@@ -471,6 +477,26 @@ function normalizeDeepSeekExplanationError(error: unknown): {
     error: "ai_explanation_unavailable",
     message: "DeepSeek 解读暂时不可用，已保留确定性分析结果。",
   };
+}
+
+function readErrorCause(error: unknown): unknown {
+  if (!error || typeof error !== "object") {
+    return undefined;
+  }
+
+  return (error as { readonly cause?: unknown }).cause;
+}
+
+function isAbortOrTimeoutError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const candidate = error as { readonly name?: unknown; readonly message?: unknown };
+  const name = typeof candidate.name === "string" ? candidate.name : "";
+  const message = typeof candidate.message === "string" ? candidate.message.toLowerCase() : "";
+
+  return name === "AbortError" || message.includes("timed out") || message.includes("timeout");
 }
 
 function isLocalDevelopment(env: NodeJS.ProcessEnv): boolean {

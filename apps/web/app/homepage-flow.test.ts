@@ -500,10 +500,13 @@ describe("homepage forecast flow", () => {
 
     expect(html).toContain("数据来源");
     expect(html).toContain("天气主源");
-    expect(html).toContain("和风天气 通过");
-    expect(html).toContain("失败（timeout）：Open-Meteo 请求超时");
-    expect(html).toContain("失败（invalid_key）：meteoblue Key 无效或权限不足");
+    expect(html).toContain("基础天气可用");
+    expect(html).toContain("云层辅助暂不可用：响应超时");
+    expect(html).toContain("专业增强暂不可用：配置或权限未通过");
     expect(html).toContain("本地天文服务计算");
+    expect(html).not.toContain("和风天气");
+    expect(html).not.toContain("Open-Meteo");
+    expect(html).not.toContain("meteoblue");
     expect(html).not.toContain("已接入数据源");
     expect(html).not.toContain("secret");
   });

@@ -476,6 +476,28 @@ export type ForecastTimeWindow = {
   readonly endTime: string;
   readonly score: number;
   readonly target: ForecastTarget;
+  readonly conditionScore?: number;
+  readonly practicalScore?: number;
+  readonly practicalKind?: "shooting_window" | "formation_signal";
+  readonly lightPhase?:
+    | "deep_night"
+    | "astronomical_night"
+    | "dawn"
+    | "sunrise"
+    | "daytime"
+    | "sunset"
+    | "blue_hour";
+  readonly practicalNoteZh?: string;
+  readonly subjectPriorityLabel?: string;
+  readonly backupSubjectLabel?: string;
+  readonly restWarningZh?: string;
+  readonly arrivalAdvice?: {
+    readonly recommendedArrivalTime: string;
+    readonly recommendedArrivalLabel: string;
+    readonly setupBufferMinutes: number;
+    readonly reasonZh: string;
+    readonly warningZh?: string;
+  };
 };
 
 export type ForecastRiskLevel = "low" | "medium" | "high";

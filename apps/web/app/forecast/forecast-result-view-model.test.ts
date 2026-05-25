@@ -1314,6 +1314,124 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toMatch(/(?:^|\s)(?:w|min-w)-\[(?:[1-9]\d{3,})px\]/);
   });
 
+  it("shows professional arrival advice on general result cards and daily cards", () => {
+    const base = resultForTarget("general");
+    const result: ForecastCalculationResult = {
+      ...base,
+      bestWindows: base.bestWindows.map((window, index) =>
+        index === 0
+          ? {
+              ...window,
+              score: 74,
+              conditionScore: 82,
+              practicalScore: 74,
+              practicalKind: "shooting_window" as const,
+              lightPhase: "sunrise" as const,
+              practicalNoteZh: "适合守清晨云海，云雾变化与可用光线重叠。",
+              subjectPriorityLabel: "清晨云海",
+              backupSubjectLabel: "朝霞、通透层峦或雾景",
+              restWarningZh: "时间偏早，建议前一晚到达附近或住山上。",
+              arrivalAdvice: {
+                recommendedArrivalTime: "2026-05-20T03:30:00+08:00",
+                recommendedArrivalLabel: "03:30 前到达",
+                setupBufferMinutes: 90,
+                reasonZh: "预留上山、找机位和观察云雾变化时间。",
+                warningZh: "时间偏早，建议前一晚到达附近或住山上。",
+              },
+            }
+          : window,
+      ),
+    };
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "idle",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("03:30 前到达");
+    expect(html).toContain("预留上山、找机位和观察云雾变化时间");
+    expect(html).toContain("时间偏早，建议前一晚到达附近或住山上");
+    expect(html).toContain("建议到达：03:30 前到达");
+    expect(html).toContain("备选题材：朝霞、通透层峦或雾景");
+  });
+
+  it("labels no-light cloud sea as a formation signal instead of the top shootable window", () => {
+    const base = resultForTarget("general");
+    const shootableWindow = {
+      ...base.bestWindows[0]!,
+      label: "清晨云海窗口 04:08 - 06:08",
+      startTime: "2026-05-20T04:08:00+08:00",
+      endTime: "2026-05-20T06:08:00+08:00",
+      score: 72,
+      conditionScore: 68,
+      practicalScore: 72,
+      practicalKind: "shooting_window" as const,
+      lightPhase: "sunrise" as const,
+      practicalNoteZh: "适合守清晨云海，云雾变化与可用光线重叠。",
+      subjectPriorityLabel: "清晨云海",
+      backupSubjectLabel: "朝霞、通透层峦或雾景",
+      arrivalAdvice: {
+        recommendedArrivalTime: "2026-05-20T02:38:00+08:00",
+        recommendedArrivalLabel: "02:38 前到达",
+        setupBufferMinutes: 90,
+        reasonZh: "预留上山、找机位和观察云雾变化时间。",
+        warningZh: "时间成本较高，仅建议住在景区附近或已在山上时考虑。",
+      },
+    };
+    const formationSignal = {
+      ...base.bestWindows[0]!,
+      label: "云海形成信号 01:00 - 03:00",
+      startTime: "2026-05-20T01:00:00+08:00",
+      endTime: "2026-05-20T03:00:00+08:00",
+      score: 31,
+      conditionScore: 92,
+      practicalScore: 31,
+      practicalKind: "formation_signal" as const,
+      lightPhase: "deep_night" as const,
+      practicalNoteZh: "云海形成信号，不建议为无光云海单独熬夜。",
+      subjectPriorityLabel: "云海形成观察",
+      backupSubjectLabel: "朝霞、通透层峦或雾景",
+      arrivalAdvice: {
+        recommendedArrivalTime: "2026-05-20T01:00:00+08:00",
+        recommendedArrivalLabel: "若已在山上可观察",
+        setupBufferMinutes: 0,
+        reasonZh: "这是云海形成信号，不是有光拍摄窗口。",
+        warningZh: "不建议为无光云海单独熬夜；若从山下出发，需评估交通和体力成本。",
+      },
+    };
+    const result: ForecastCalculationResult = {
+      ...base,
+      bestWindows: [shootableWindow, formationSignal, ...base.bestWindows.slice(1)],
+    };
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "idle",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("清晨云海窗口 04:08 - 06:08");
+    expect(html).toContain("云海形成信号 01:00 - 03:00");
+    expect(html).toContain("形成信号");
+    expect(html).toContain("无光形成信号");
+    expect(html.indexOf("清晨云海窗口 04:08 - 06:08")).toBeLessThan(
+      html.indexOf("云海形成信号 01:00 - 03:00"),
+    );
+  });
+
   it("does not render contradictory zero precipitation probability with large rain amount", () => {
     const result: ForecastCalculationResult = {
       ...resultForTarget("general"),
@@ -1528,10 +1646,12 @@ describe("forecast result target-aware view model", () => {
     const html = renderToStaticMarkup(React.createElement(SourceDiagnosticsPanel, { result }));
 
     expect(html).toContain("专业增强");
-    expect(html).toContain("meteoblue 通过，部分字段缺失");
+    expect(html).toContain("专业增强可用，部分辅助字段缺失");
     expect(html).toContain("部分字段缺失不代表服务不可用");
     expect(html).toContain("置信度：中");
-    expect(html).not.toContain("meteoblue 暂时不可用");
+    expect(html).not.toContain("meteoblue");
+    expect(html).not.toContain("Open-Meteo");
+    expect(html).not.toContain("和风天气");
     expect(html).not.toContain("数据置信度：低");
   });
 
