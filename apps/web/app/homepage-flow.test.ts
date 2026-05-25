@@ -96,6 +96,24 @@ function hasExactButton(html: string, label: string): boolean {
   return new RegExp(`<button[^>]*>\\s*${label}\\s*</button>`).test(html);
 }
 
+type ElementWithChildren = React.ReactElement<{
+  readonly children?: React.ReactNode;
+  readonly onClick?: () => void;
+}>;
+
+function collectElementsByType(node: React.ReactNode, type: string): ElementWithChildren[] {
+  if (Array.isArray(node)) {
+    return node.flatMap((child) => collectElementsByType(child, type));
+  }
+
+  if (!React.isValidElement<{ children?: React.ReactNode }>(node)) {
+    return [];
+  }
+
+  const matches = node.type === type ? [node as ElementWithChildren] : [];
+  return [...matches, ...collectElementsByType(node.props.children, type)];
+}
+
 describe("homepage forecast flow", () => {
   it("uses general analysis as the homepage forecast target", () => {
     const url = new URL(
@@ -128,7 +146,7 @@ describe("homepage forecast flow", () => {
     expect(url.searchParams.get("photoSpotId")).toBe("spot-laojunshan-jinding");
   });
 
-  it("shows a professional empty weather layer before a location is selected", () => {
+  it("shows a user-friendly empty condition overview before a location is selected", () => {
     const html = renderToStaticMarkup(
       React.createElement(HomepageWeatherLayer, {
         location: null,
@@ -136,9 +154,9 @@ describe("homepage forecast flow", () => {
       }),
     );
 
-    expect(html).toContain("拍摄天气图层");
-    expect(html).toContain("等待选择拍摄地点");
-    expect(html).toContain("请先搜索或选择常用机位。");
+    expect(html).toContain("拍摄条件概览");
+    expect(html).toContain("等待选择地点");
+    expect(html).toContain("选择地点后生成该机位的拍摄条件摘要。");
     expect(html).toContain("云层趋势");
     expect(html).toContain("日出窗口");
     expect(html).toContain("云隙机会");
@@ -156,10 +174,10 @@ describe("homepage forecast flow", () => {
       }),
     );
 
-    expect(html).toContain("老君山金顶 拍摄天气图层");
-    expect(html).toContain("正在加载该地点天气图层...");
+    expect(html).toContain("老君山金顶 拍摄条件概览");
+    expect(html).toContain("正在加载该地点拍摄条件...");
     expect(html).not.toContain("默认演示图层");
-    expect(html).not.toContain("黄山光明顶 拍摄天气图层");
+    expect(html).not.toContain("黄山光明顶 拍摄条件概览");
   });
 
   it("keeps selected location visible when weather layer data is unavailable", () => {
@@ -172,7 +190,7 @@ describe("homepage forecast flow", () => {
     );
 
     expect(html).toContain("老君山金顶");
-    expect(html).toContain("该地点天气图层暂不可用，请稍后重试或查看结果页数据来源。");
+    expect(html).toContain("该地点拍摄条件暂不可用，请稍后重试。");
     expect(html).not.toContain("默认演示图层");
   });
 
@@ -184,8 +202,8 @@ describe("homepage forecast flow", () => {
       }),
     );
 
-    expect(html).toContain("拍摄判断摘要");
-    expect(html).toContain("等待选择拍摄地点");
+    expect(html).toContain("出行判断摘要");
+    expect(html).toContain("等待选择地点");
     expect(html).toContain("地点");
     expect(html).toContain("尚未选择");
     expect(html).toContain("综合指数");
@@ -194,7 +212,9 @@ describe("homepage forecast flow", () => {
     expect(html).toContain("最佳窗口");
     expect(html).toContain("待计算");
     expect(html).toContain("主要风险");
-    expect(html).toContain("选择地点后，将生成综合指数、最佳窗口、主要风险和拍摄建议。");
+    expect(html).toContain("当前建议");
+    expect(html).toContain("选择地点后生成到达时间、拍摄题材、风险和装备建议。");
+    expect(html).toContain("选择地点后，将生成综合指数、最佳窗口、主要风险、当前建议和拍摄题材优先级。");
     expect(html).not.toContain("演示状态");
     expect(html).not.toContain("演示分析");
   });
@@ -224,10 +244,13 @@ describe("homepage forecast flow", () => {
       }),
     );
 
-    expect(html).toContain("老君山金顶 拍摄判断");
+    expect(html).toContain("老君山金顶 出行判断");
     expect(html).toContain("82");
+    expect(html).toContain("推荐等级");
     expect(html).toContain("值得出发");
     expect(html).toContain("山顶强风");
+    expect(html).toContain("当前建议");
+    expect(html).toContain("根据窗口和风险安排到达时间与备选题材。");
     expect(html).not.toContain("尚未选择");
     expect(html).not.toContain("演示状态");
   });
@@ -348,7 +371,7 @@ describe("homepage forecast flow", () => {
     expect(html).toContain("未来48小时");
     expect(html).toContain("未来72小时");
     expect(html).toContain("未来7天");
-    expect(html).toContain("请先选择一个地点");
+    expect(html).toContain("请先选择地点");
     expect(html).toContain(homepageTargetHelperText);
     expect(html).not.toContain("分析目标");
     expect(html).not.toContain("查看拍摄天气分析");
@@ -371,10 +394,13 @@ describe("homepage forecast flow", () => {
       }),
     );
 
-    expect(emptyHtml).toContain("请先选择一个地点");
+    expect(emptyHtml).toContain("请先选择地点");
     expect(emptyHtml).toContain("disabled");
     expect(selectedHtml).toContain("生成拍摄判断");
-    expect(selectedHtml).not.toContain("请先选择一个地点");
+    expect(selectedHtml).toContain("所在地");
+    expect(selectedHtml).toContain("海拔");
+    expect(selectedHtml).toContain("坐标信息");
+    expect(selectedHtml).not.toContain("请先选择地点");
   });
 
   it("renders operational popular spot cards", () => {
@@ -385,7 +411,7 @@ describe("homepage forecast flow", () => {
 
     expect(laojunshan).toBeDefined();
     expect(html).toContain("精选机位");
-    expect(html).toContain("快速选择常用风光摄影机位，进入对应题材判断。");
+    expect(html).toContain("选择常用风光机位，快速进入判断。");
     expect(html).toContain("老君山金顶");
     expect(html).toContain("云海");
     expect(html).toContain("选择机位");
@@ -393,6 +419,20 @@ describe("homepage forecast flow", () => {
     expect(homepagePopularSpotToSelectedLocation(laojunshan!).displayName).toBe("老君山金顶");
     expect(homepagePopularSpotToSelectedLocation(laojunshan!).photoSpotId).toBe(
       "spot-laojunshan-jinding",
+    );
+  });
+
+  it("wires popular spot clicks to selected location updates", () => {
+    const onSelectSpot = vi.fn();
+    const tree = HomepagePopularSpotsSection({ onSelectSpot });
+    const buttons = collectElementsByType(tree, "button");
+
+    expect(buttons[0]).toBeDefined();
+    buttons[0]?.props.onClick?.();
+
+    expect(onSelectSpot).toHaveBeenCalledWith(homepagePopularSpots[0]);
+    expect(homepagePopularSpotToSelectedLocation(homepagePopularSpots[0]).displayName).toBe(
+      "黄山光明顶",
     );
   });
 
@@ -408,10 +448,19 @@ describe("homepage forecast flow", () => {
   it("keeps public homepage copy product-friendly", () => {
     const html = renderToStaticMarkup(React.createElement(HomePage));
 
-    expect(html).toContain("面向风光摄影的拍摄天气决策工具");
-    expect(html).toContain("实时决策工作台");
+    expect(html).toContain("输入拍摄地点，快速判断是否值得出发、最佳到达时间、优先题材和主要风险。");
     expect(html).toContain("精选机位");
-    expect(html).toContain("出发前看这几项");
+    expect(html).toContain("出发前重点");
+    expect(html).toContain("常见题材判断");
+    expect(html).not.toContain("实时决策工作台");
+    expect(html).not.toContain("多源数据");
+    expect(html).not.toContain("数据源未完全配置");
+    expect(html).not.toContain("和风天气");
+    expect(html).not.toContain("Open-Meteo");
+    expect(html).not.toContain("meteoblue");
+    expect(html).not.toContain("本地天文服务");
+    expect(html).not.toContain("工作流");
+    expect(html).not.toContain("四步完成一次出发判断");
     expect(html).not.toContain("体验模式");
     expect(html).not.toContain("默认演示图层");
     expect(html).not.toContain("演示分析");

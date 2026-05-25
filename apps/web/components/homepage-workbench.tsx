@@ -5,7 +5,6 @@ import type {
   ForecastCalculationResult,
   ForecastHorizon,
   ForecastTarget,
-  ForecastWeatherSourceSummary,
   NormalizedCurrentWeather,
 } from "@photo-weather/shared";
 import {
@@ -14,7 +13,7 @@ import {
   homepageDefaultTarget,
 } from "./homepage-search-panel";
 import { buildForecastRequestPayload, type SelectedLocation } from "./selected-location";
-import { Badge, Card } from "./ui";
+import { Card } from "./ui";
 
 type LayerStatus = "idle" | "loading" | "ready" | "partial" | "fallback" | "error";
 
@@ -30,8 +29,6 @@ type ForecastApiErrorPayload = {
 };
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
-
-const layerChips = ["云层", "风速", "湿度", "能见度", "月相", "天文窗口"] as const;
 
 const emptyTimeline = [
   { time: "云层", label: "云层趋势", tone: "muted" },
@@ -217,10 +214,7 @@ export function HomepageWorkbench() {
 
         if (!response.ok) {
           throw new Error(
-            await readForecastApiError(
-              response,
-              "该地点天气图层暂不可用，请稍后重试或查看结果页数据来源。",
-            ),
+            await readForecastApiError(response, "该地点拍摄条件暂不可用，请稍后重试。"),
           );
         }
 
@@ -237,8 +231,7 @@ export function HomepageWorkbench() {
         setLayerState({
           status: "error",
           result: null,
-          errorMessage:
-            (error as Error).message || "该地点天气图层暂不可用，请稍后重试或查看结果页数据来源。",
+          errorMessage: (error as Error).message || "该地点拍摄条件暂不可用，请稍后重试。",
         });
       }
     }
@@ -275,16 +268,15 @@ export function HomepageWorkbench() {
 
 export function buildHomepageLayerStatus(result: ForecastCalculationResult): LayerStatus {
   const summaries = result.weatherSourceSummaries ?? [];
+  const activeSummaries = summaries.filter((summary) => summary.providerCode !== "mock");
   const successfulRealSources = summaries.filter(
     (summary) =>
-      isWeatherProviderSummary(summary) &&
+      summary.providerCode !== "mock" &&
       summary.dataMode === "real" &&
       (summary.success ?? summary.status === "available"),
   );
-  const failedOrSkippedSources = summaries.filter(
+  const failedOrSkippedSources = activeSummaries.filter(
     (summary) =>
-      isWeatherProviderSummary(summary) &&
-      summary.providerCode !== "mock" &&
       summary.enabled &&
       !(summary.success ?? summary.status === "available"),
   );
@@ -309,32 +301,24 @@ export function HomepageWeatherLayer({
   const lowCloudOpacity = typeof current?.cloudLow === "number" ? current.cloudLow / 100 : 0.45;
   const midCloudOpacity = typeof current?.cloudMid === "number" ? current.cloudMid / 100 : 0.38;
   const highCloudOpacity = typeof current?.cloudHigh === "number" ? current.cloudHigh / 100 : 0.32;
-  const sourceLabels = formatSuccessfulSourceLabels(result?.weatherSourceSummaries ?? []);
 
   return (
-    <section className="grid min-h-[560px] overflow-hidden rounded-lg border border-border bg-card shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+    <section className="grid min-h-[520px] overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+      <div className="border-b border-border px-4 py-3 sm:px-5">
         <div>
-          <p className="text-xs font-bold text-primary">拍摄天气图层</p>
+          <p className="text-xs font-bold text-primary">拍摄条件概览</p>
           <h2 className="mt-1 text-xl font-bold leading-7 text-card-foreground">
-            {location ? `${location.displayName} 拍摄天气图层` : "拍摄天气图层"}
+            {location ? `${location.displayName} 拍摄条件概览` : "拍摄条件概览"}
           </h2>
           <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">
             {location
-              ? "结合所选地点的云层、风、湿度、能见度、月相和天文窗口生成图层摘要。"
-              : "选择地点后，这里会显示该机位的云层、风、湿度、能见度、月相和天文窗口摘要。"}
+              ? "结合该机位的云层、风、湿度、能见度、月相和关键拍摄窗口生成摘要。"
+              : "选择地点后，这里会显示云层、风、湿度、能见度、月相和关键拍摄窗口。"}
           </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {layerChips.map((chip) => (
-            <Badge key={chip} variant={chip === "云层" ? "default" : "muted"}>
-              {chip}
-            </Badge>
-          ))}
         </div>
       </div>
 
-      <div className="relative min-h-[390px] overflow-hidden bg-[#EFE8D8]">
+      <div className="relative min-h-[360px] overflow-hidden bg-[#EFE8D8]">
         <div
           className="absolute inset-0 opacity-75"
           style={{
@@ -403,12 +387,12 @@ export function HomepageWeatherLayer({
           <span className="absolute h-14 w-14 rounded-full border border-primary/35 bg-primary/10" />
           <span className="relative h-4 w-4 rounded-full border-[5px] border-primary bg-card shadow-soft" />
           <span className="mt-3 max-w-[260px] rounded-md border border-border bg-card/92 px-2.5 py-1 text-center text-xs font-bold text-card-foreground shadow-sm">
-            {location?.displayName ?? "等待选择拍摄地点"}
+            {location?.displayName ?? "等待选择地点"}
           </span>
         </div>
 
         <div className="absolute left-4 top-4 grid max-w-[min(360px,calc(100%-2rem))] gap-2 rounded-lg border border-border bg-card/88 p-3 shadow-sm backdrop-blur">
-          <p className="text-xs font-bold text-card-foreground">图层状态</p>
+          <p className="text-xs font-bold text-card-foreground">条件摘要</p>
           <LayerStatusText location={location} state={state} current={current} />
         </div>
       </div>
@@ -418,15 +402,6 @@ export function HomepageWeatherLayer({
         <p className="text-xs leading-5 text-muted-foreground">
           {layerFooterText(location, state)}
         </p>
-        {location && sourceLabels.length > 0 ? (
-          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-            {sourceLabels.map((label) => (
-              <span key={label} className="rounded-md border border-border bg-muted px-2 py-1">
-                {label}
-              </span>
-            ))}
-          </div>
-        ) : null}
       </div>
     </section>
   );
@@ -444,8 +419,8 @@ function LayerStatusText({
   if (!location) {
     return (
       <div className="grid gap-1 text-xs leading-5 text-muted-foreground">
-        <span className="font-semibold text-card-foreground">等待选择拍摄地点</span>
-        <span>请先搜索或选择常用机位。</span>
+        <span className="font-semibold text-card-foreground">等待选择地点</span>
+        <span>选择地点后生成该机位的拍摄条件摘要。</span>
       </div>
     );
   }
@@ -454,7 +429,7 @@ function LayerStatusText({
     return (
       <div className="grid gap-1 text-xs leading-5 text-muted-foreground">
         <span>{location.displayName}</span>
-        <span>正在加载该地点天气图层...</span>
+        <span>正在加载该地点拍摄条件...</span>
       </div>
     );
   }
@@ -463,8 +438,7 @@ function LayerStatusText({
     return (
       <div className="grid gap-1 text-xs leading-5 text-muted-foreground">
         <span>{location.displayName}</span>
-        <span>该地点天气图层暂不可用，请稍后重试或查看结果页数据来源。</span>
-        {state.errorMessage ? <span>{state.errorMessage}</span> : null}
+        <span>该地点拍摄条件暂不可用，请稍后重试。</span>
       </div>
     );
   }
@@ -481,10 +455,12 @@ function LayerStatusText({
       <span>风速：{formatWind(current?.windSpeed, current?.windDirection)}</span>
       <span>湿度：{formatPercent(current?.humidity)}</span>
       <span>能见度：{formatKilometers(current?.visibility)}</span>
-      <span>月相：{state.result?.astroSummaries[0]?.moonPhaseNameZh ?? "本地天文服务待计算"}</span>
+      <span>月相：{state.result?.astroSummaries[0]?.moonPhaseNameZh ?? "待计算"}</span>
       <span>天文窗口：{bestWindow?.label ?? "等待窗口计算"}</span>
       {state.status === "partial" ? (
-        <span className="font-semibold text-warning">部分数据源暂不可用，已降低置信度。</span>
+        <span className="font-semibold text-warning">
+          部分辅助数据暂不可用，结果页会给出更完整说明。
+        </span>
       ) : null}
     </div>
   );
@@ -540,16 +516,14 @@ export function HomepageDecisionSummary({
 
   return (
     <Card className="grid content-start gap-4 p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-bold text-primary">决策摘要</p>
-          <h2 className="mt-1 text-xl font-bold leading-7 text-card-foreground">
-            {location ? `${location.displayName} 拍摄判断` : "拍摄判断摘要"}
-          </h2>
-        </div>
-        <Badge variant={result?.weatherDataMode === "real" ? "success" : "warning"}>
-          {summaryBadgeLabel(state)}
-        </Badge>
+      <div>
+        <p className="text-xs font-bold text-primary">出行判断摘要</p>
+        <h2 className="mt-1 text-xl font-bold leading-7 text-card-foreground">
+          {location ? `${location.displayName} 出行判断` : "出行判断摘要"}
+        </h2>
+        {!location ? (
+          <p className="mt-1 text-xs font-semibold text-muted-foreground">等待选择地点</p>
+        ) : null}
       </div>
 
       <dl className="grid gap-3 text-sm">
@@ -564,10 +538,10 @@ export function HomepageDecisionSummary({
           </dd>
         </div>
         <SummaryTile
-          label="推荐"
+          label="推荐等级"
           value={
             state.status === "loading"
-              ? "正在加载该地点天气图层..."
+              ? "正在加载拍摄判断..."
               : result?.recommendationLabel ?? "选择地点后生成判断"
           }
           muted={!result}
@@ -589,6 +563,11 @@ export function HomepageDecisionSummary({
             danger={Boolean(mainRisk)}
           />
         </div>
+        <SummaryTile
+          label="当前建议"
+          value={currentAdviceText(location, state, result)}
+          muted={!result}
+        />
       </dl>
 
       <p className="rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold leading-5 text-muted-foreground">
@@ -629,14 +608,14 @@ export function HomepagePopularSpotsSection({
   readonly onSelectSpot: (spot: HomepagePopularSpot) => void;
 }) {
   return (
-    <section className="mt-10 grid gap-5 border-t border-border pt-6 lg:grid-cols-12">
-      <div className="lg:col-span-3">
+    <section className="mt-8 border-t border-border pt-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <h2 className="text-2xl font-bold text-foreground">精选机位</h2>
-        <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          快速选择常用风光摄影机位，进入对应题材判断。
+        <p className="max-w-xl text-sm leading-6 text-muted-foreground">
+          选择常用风光机位，快速进入判断。
         </p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:col-span-9 xl:grid-cols-4">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {spots.map((spot) => (
           <button
             key={spot.id}
@@ -690,70 +669,58 @@ function layerFooterText(location: SelectedLocation | null, state: ForecastLayer
     return "云层趋势、日出窗口、云隙机会和风速变化会在选择地点后刷新。";
   }
   if (state.status === "loading") {
-    return "正在加载该地点天气图层...";
+    return "正在加载该地点拍摄条件...";
   }
   if (state.status === "partial") {
-    return "部分数据源暂不可用，已降低置信度。";
+    return "部分辅助数据暂不可用，结果页会给出更完整说明。";
   }
   if (state.status === "fallback" || state.status === "error") {
-    return "该地点天气图层暂不可用，请稍后重试或查看结果页数据来源。";
+    return "该地点拍摄条件暂不可用，请稍后重试。";
   }
-  return "当前图层使用所选地点与天气融合结果生成。";
+  return "根据最佳窗口、主要风险和题材机会判断是否出发。";
 }
 
 function decisionSummaryText(location: SelectedLocation | null, state: ForecastLayerState): string {
   if (!location) {
-    return "选择地点后，将生成综合指数、最佳窗口、主要风险和拍摄建议。";
+    return "选择地点后，将生成综合指数、最佳窗口、主要风险、当前建议和拍摄题材优先级。";
   }
   if (state.status === "loading") {
-    return "天气融合结果加载中，完成后会同步刷新图层和决策摘要。";
+    return "正在生成出行判断，完成后会同步刷新条件概览和摘要。";
   }
   if (state.status === "fallback" || state.status === "error") {
-    return "该地点暂未获得可用天气图层，请稍后重试或前往结果页查看数据来源。";
+    return "该地点拍摄条件暂不可用，请稍后重试。";
   }
   if (state.status === "partial") {
-    return "已有真实天气参与计算，但部分数据源失败，结果置信度已降低。";
+    return "部分辅助数据暂不可用，结果页会给出更完整说明。";
   }
-  return "当前摘要来自所选地点的天气、云层、天文窗口和风险判断。";
+  return "综合最佳窗口、主要风险和装备建议，优先安排到达时间与备选题材。";
 }
 
-function summaryBadgeLabel(state: ForecastLayerState): string {
-  if (state.status === "idle") {
-    return "等待选择拍摄地点";
-  }
-  if (state.status === "ready") {
-    return "多源数据";
-  }
-  if (state.status === "partial") {
-    return "部分数据";
+function currentAdviceText(
+  location: SelectedLocation | null,
+  state: ForecastLayerState,
+  result: ForecastCalculationResult | null,
+): string {
+  if (!location) {
+    return "选择地点后生成到达时间、拍摄题材、风险和装备建议。";
   }
   if (state.status === "loading") {
-    return "加载中";
+    return "正在生成到达时间、拍摄题材和装备建议。";
   }
-  return "数据受限";
-}
+  if (!result || state.status === "fallback" || state.status === "error") {
+    return "暂时无法生成建议，请稍后重试。";
+  }
 
-function formatSuccessfulSourceLabels(
-  summaries: readonly ForecastWeatherSourceSummary[],
-): readonly string[] {
-  const labels = summaries
-    .filter(
-      (summary) =>
-        isWeatherProviderSummary(summary) &&
-        (summary.success ?? summary.status === "available") &&
-        summary.providerCode !== "mock",
-    )
-    .map((summary) => summary.providerLabelZh);
+  const clothing = result.clothingGuide;
+  const clothingLayers = clothing?.layers.slice(0, 2).join("、") ?? "";
+  const accessories = clothing?.accessories.slice(0, 2).join("、") ?? "";
+  const adviceParts = [
+    clothing?.summaryZh,
+    clothingLayers ? `穿着：${clothingLayers}` : "",
+    accessories ? `携带：${accessories}` : "",
+  ].filter(Boolean);
 
-  return [...new Set([...labels, "本地天文服务"])];
-}
-
-function isWeatherProviderSummary(summary: ForecastWeatherSourceSummary): boolean {
-  return (
-    summary.providerCode === "qweather" ||
-    summary.providerCode === "open_meteo" ||
-    summary.providerCode === "meteoblue"
-  );
+  return adviceParts.length > 0 ? adviceParts.join("；") : "根据窗口和风险安排到达时间与备选题材。";
 }
 
 function formatDateTime(value: string | undefined): string {

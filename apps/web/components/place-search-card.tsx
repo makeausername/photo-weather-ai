@@ -47,7 +47,7 @@ type PlaceSearchCardProps = {
   readonly className?: string;
   readonly title?: string;
   readonly description?: string;
-  readonly badgeLabel?: string;
+  readonly badgeLabel?: string | null;
   readonly searchPlaceholder?: string;
   readonly horizonLabel?: string;
   readonly defaultHorizon?: ForecastHorizon;
@@ -57,6 +57,8 @@ type PlaceSearchCardProps = {
   readonly targetHelperText?: string;
   readonly ctaLabel?: string;
   readonly ctaDisabledLabel?: string;
+  readonly showResultSourceBadges?: boolean;
+  readonly selectedLocationDetailMode?: "full" | "compact";
   readonly selectedLocation?: SelectedLocation | null;
   readonly onSelectedLocationChange?: (location: SelectedLocation | null) => void;
   readonly onForecastOptionsChange?: (options: {
@@ -238,6 +240,8 @@ export function PlaceSearchCard({
   targetHelperText,
   ctaLabel = "查看拍摄天气分析",
   ctaDisabledLabel,
+  showResultSourceBadges = true,
+  selectedLocationDetailMode = "full",
   selectedLocation,
   onSelectedLocationChange,
   onForecastOptionsChange,
@@ -345,7 +349,7 @@ export function PlaceSearchCard({
           <p className="text-sm font-bold text-card-foreground">{title}</p>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
         </div>
-        <Badge variant="muted">{badgeLabel}</Badge>
+        {badgeLabel ? <Badge variant="muted">{badgeLabel}</Badge> : null}
       </div>
 
       <form
@@ -404,7 +408,9 @@ export function PlaceSearchCard({
               >
                 <span className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold text-card-foreground">{result.name}</span>
-                  <Badge variant="muted">{sourceLabels[result.source]}</Badge>
+                  {showResultSourceBadges ? (
+                    <Badge variant="muted">{sourceLabels[result.source]}</Badge>
+                  ) : null}
                   <Badge variant={result.isVerified ? "success" : "warning"}>
                     {result.isVerified ? "已验证" : "待验证"}
                   </Badge>
@@ -433,20 +439,31 @@ export function PlaceSearchCard({
               </Badge>
             ) : null}
           </div>
-          <dl className="grid gap-2 text-xs leading-5 text-muted-foreground">
-            <div>
-              <dt className="font-semibold text-card-foreground">位置</dt>
-              <dd>{formatSelectedLocationArea(activeSelectedLocation)}</dd>
-            </div>
-            <div>
-              <dt className="font-semibold text-card-foreground">坐标</dt>
-              <dd className="break-words">
-                {selectedPlace && activeSelectedLocation.id === selectedPlace.id
+          {selectedLocationDetailMode === "compact" ? (
+            <CompactSelectedLocationDetails
+              location={activeSelectedLocation}
+              coordinateText={
+                selectedPlace && activeSelectedLocation.id === selectedPlace.id
                   ? selectedCoordinateText
-                  : formatSelectedLocationCoordinates(activeSelectedLocation)}
-              </dd>
-            </div>
-          </dl>
+                  : formatSelectedLocationCoordinates(activeSelectedLocation)
+              }
+            />
+          ) : (
+            <dl className="grid gap-2 text-xs leading-5 text-muted-foreground">
+              <div>
+                <dt className="font-semibold text-card-foreground">位置</dt>
+                <dd>{formatSelectedLocationArea(activeSelectedLocation)}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-card-foreground">坐标</dt>
+                <dd className="break-words">
+                  {selectedPlace && activeSelectedLocation.id === selectedPlace.id
+                    ? selectedCoordinateText
+                    : formatSelectedLocationCoordinates(activeSelectedLocation)}
+                </dd>
+              </div>
+            </dl>
+          )}
         </div>
       ) : null}
 
@@ -518,6 +535,41 @@ export function PlaceSearchCard({
 function formatSelectedLocationArea(location: SelectedLocation): string {
   const area = [location.province, location.city, location.district].filter(Boolean).join(" / ");
   return location.scenicArea ?? (area || "位置资料待补充");
+}
+
+function CompactSelectedLocationDetails({
+  location,
+  coordinateText,
+}: {
+  readonly location: SelectedLocation;
+  readonly coordinateText: string;
+}) {
+  const elevationText = formatSelectedLocationElevation(location);
+
+  return (
+    <div className="grid gap-2 text-xs leading-5 text-muted-foreground">
+      <div>
+        <p className="font-semibold text-card-foreground">所在地</p>
+        <p>{formatSelectedLocationArea(location)}</p>
+      </div>
+      {elevationText ? (
+        <div>
+          <p className="font-semibold text-card-foreground">海拔</p>
+          <p>{elevationText}</p>
+        </div>
+      ) : null}
+      <details className="rounded-md border border-border bg-card px-3 py-2">
+        <summary className="cursor-pointer font-semibold text-card-foreground">坐标信息</summary>
+        <p className="mt-2 break-words">{coordinateText}</p>
+      </details>
+    </div>
+  );
+}
+
+function formatSelectedLocationElevation(location: SelectedLocation): string {
+  return typeof location.elevationMeters === "number" && Number.isFinite(location.elevationMeters)
+    ? `${Math.round(location.elevationMeters)} 米`
+    : "";
 }
 
 function formatSelectedLocationCoordinates(location: SelectedLocation): string {
