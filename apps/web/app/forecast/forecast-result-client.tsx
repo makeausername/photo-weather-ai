@@ -586,12 +586,13 @@ function sourceConfidenceLabel(result: ForecastCalculationResult): string {
 
   const qweatherOk = sourceSucceeded(weatherProviderSummary(result, "qweather"));
   const openMeteoOk = sourceSucceeded(weatherProviderSummary(result, "open_meteo"));
+  const meteoblueOk = sourceSucceeded(weatherProviderSummary(result, "meteoblue"));
   const hasMajorConflict = result.weatherFusionSummary?.conflictStatusZh.includes("差异") ?? false;
 
-  if (qweatherOk && openMeteoOk && !hasMajorConflict) {
+  if (qweatherOk && openMeteoOk && meteoblueOk && !hasMajorConflict) {
     return "高";
   }
-  if (qweatherOk || successfulRealWeatherSources(result).length > 0) {
+  if ((qweatherOk && openMeteoOk) || (qweatherOk && meteoblueOk) || successfulRealWeatherSources(result).length > 0) {
     return "中";
   }
   return "低";

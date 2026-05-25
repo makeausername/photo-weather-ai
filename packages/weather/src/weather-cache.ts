@@ -10,6 +10,7 @@ export type WeatherCacheKeyInput = {
   readonly forecastStart: string;
   readonly target?: ForecastTarget;
   readonly purpose: WeatherCachePurpose;
+  readonly runtimeSignature?: string;
 };
 
 export type WeatherCacheEntry<TValue> = {
@@ -35,6 +36,7 @@ export function buildWeatherCacheKey(input: WeatherCacheKeyInput): string {
   return [
     input.provider,
     input.purpose,
+    input.runtimeSignature ?? "runtime:any",
     coordinateKey,
     input.horizon,
     startBucket,

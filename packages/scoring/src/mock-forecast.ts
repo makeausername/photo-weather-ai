@@ -2,6 +2,7 @@ import type {
   AstroCalculationBasis,
   AstroSummary,
   AstroWindowBundle,
+  ForecastProviderRuntimeSnapshot,
   ForecastWeatherSourceSummary,
   ForecastCalculationBasis,
   ForecastCalendarDayInfo,
@@ -84,6 +85,7 @@ export type NormalizedForecastInputOptions = {
   readonly weatherSourceSummaries?: readonly ForecastWeatherSourceSummary[];
   readonly weatherMissingDataNotes?: readonly string[];
   readonly weatherFusionSummary?: WeatherFusionSummary;
+  readonly weatherProviderRuntimeSnapshot?: readonly ForecastProviderRuntimeSnapshot[];
 };
 
 export type ForecastInputBuildOptions = {
@@ -227,6 +229,7 @@ export function buildForecastInputFromWeatherBundle(
       weatherSourceSummaries: weatherBundle.sourceSummaries ?? [],
       weatherMissingDataNotes: weatherBundle.missingDataNotes ?? [],
       weatherFusionSummary: weatherBundle.fusionSummary,
+      weatherProviderRuntimeSnapshot: weatherBundle.providerRuntimeSnapshot,
     },
     options,
   );
@@ -308,6 +311,7 @@ export function buildForecastInputFromNormalizedWeather(
     weatherSourceSummaries: weather.weatherSourceSummaries ?? [],
     weatherMissingDataNotes: weather.weatherMissingDataNotes ?? [],
     weatherFusionSummary: weather.weatherFusionSummary,
+    weatherProviderRuntimeSnapshot: weather.weatherProviderRuntimeSnapshot,
     astroDataSourceLabelZh:
       options.astroDataSourceLabelZh ??
       (query.target === "astro" ? "简化本地估算" : "本地算法计算"),

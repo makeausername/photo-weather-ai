@@ -67,6 +67,74 @@ describe("provider diagnostics CLI helpers", () => {
     expect(JSON.stringify(result)).not.toContain("meteoblue-cli-secret");
   });
 
+  it("uses the fusion-compatible meteoblue request parser for successful diagnostics", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const meteoblueProvider = state.providers.get("weather:meteoblue");
+    state.providers.set("weather:meteoblue", {
+      ...meteoblueProvider,
+      enabled: true,
+      configJson: {
+        ...(meteoblueProvider.configJson ?? {}),
+        realCallEnabled: true,
+        baseUrl: "https://my.meteoblue.com",
+        packages: "basic-1h,clouds-1h",
+      },
+      secretJson: {
+        apiKey: "meteoblue-cli-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "mete****cret",
+      },
+    });
+    const fetcher = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          data_1h: {
+            time: ["2026-05-20T00:00:00+08:00"],
+            temperature: [12],
+            relativehumidity: [82],
+            windspeed: [3.2],
+            cloudcover: [58],
+            lowclouds: [26],
+            midclouds: [40],
+            highclouds: [52],
+            visibility: [24],
+            precipitation: [0],
+          },
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
+    }) as unknown as typeof fetch;
+
+    const [result] = await runProviderDiagnostics({
+      providerCodes: ["meteoblue"],
+      dbClient: client,
+      env: {
+        ...process.env,
+        NODE_ENV: "production",
+      },
+      fetcher,
+    });
+
+    expect(result).toMatchObject({
+      providerCode: "meteoblue",
+      enabled: true,
+      realCallEnabled: true,
+      apiKeyPresent: true,
+      attempted: true,
+      success: true,
+      statusCode: 200,
+      baseUrl: "https://my.meteoblue.com",
+      packages: ["basic-1h", "clouds-1h"],
+    });
+    expect(JSON.stringify(result)).not.toContain("meteoblue-cli-secret");
+  });
+
   it("distinguishes DeepSeek upstream auth failure from local admin auth", async () => {
     const { client, state } = await createFakeDatabaseClient();
     const deepSeekProvider = state.providers.get("ai:deepseek");

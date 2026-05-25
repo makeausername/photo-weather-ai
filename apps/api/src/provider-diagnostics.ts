@@ -6,7 +6,6 @@ import { AmapProvider } from "@photo-weather/geo";
 import {
   isWeatherProviderError,
   maskQWeatherApiHost,
-  MeteoblueClient,
   OpenMeteoClient,
   QWeatherClient,
 } from "@photo-weather/weather";
@@ -15,6 +14,7 @@ import type { ForecastWeatherSourceErrorCategory } from "@photo-weather/shared";
 import { createRealDeepSeekProvider, readRuntimeDeepSeekConfig } from "./ai-provider.js";
 import { readRuntimeAmapConfig } from "./geo-provider.js";
 import {
+  createMeteoblueClientFromRuntimeConfig,
   readRuntimeMeteoblueConfig,
   readRuntimeOpenMeteoConfig,
   readRuntimeQWeatherConfig,
@@ -495,14 +495,10 @@ async function testMeteoblueProvider(
   }
 
   try {
-    const result = await new MeteoblueClient({
-      apiKey: config.apiKey,
-      baseUrl: config.baseUrl,
-      packages: config.packages,
-      timeoutMs: config.timeoutMs,
-      retryCount: config.retryCount,
-      fetcher: options.fetcher,
-    }).testConnection();
+    const result = await createMeteoblueClientFromRuntimeConfig(
+      config,
+      options.fetcher,
+    ).testConnection();
     return successfulDiagnostic("meteoblue", {
       ...common,
       baseUrl: result.baseUrl,

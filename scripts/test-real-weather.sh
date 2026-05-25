@@ -128,10 +128,31 @@ const hourly = Array.isArray(result.weatherTimeline) ? result.weatherTimeline[0]
 const fusion = result.weatherFusionSummary || {};
 const clothing = result.clothingGuide || {};
 const sources = Array.isArray(result.weatherSourceSummaries) ? result.weatherSourceSummaries : [];
+const runtimeSnapshot = Array.isArray(result.weatherProviderRuntimeSnapshot) ? result.weatherProviderRuntimeSnapshot : [];
+const meteoblue = sources.find((source) => source.providerCode === "meteoblue") || {};
 
 console.log(`selectedLocation: ${payload.name} (${payload.source}) WGS84=${payload.latitudeWgs84},${payload.longitudeWgs84} elevation=${value(payload.elevationMeters)}`);
 console.log(`target: ${payload.target} horizon=${payload.horizon}`);
 console.log(`dataStatusZh: ${value(fusion.dataStatusZh || result.weatherNoticeZh || result.dataNotice)}`);
+console.log(`dataConfidence: ${value(fusion.confidenceLevel)}`);
+console.log(`meteoblueAttempted: ${value(meteoblue.attempted)}`);
+console.log(`meteoblueSuccess: ${value(meteoblue.success)}`);
+console.log(`cacheHit: ${sources.some((source) => source.cacheHit === true)}`);
+console.log("providerRuntimeSnapshot:");
+for (const provider of runtimeSnapshot) {
+  const fields = [
+    `code=${value(provider.providerCode)}`,
+    `enabled=${value(provider.enabled)}`,
+    `real=${value(provider.realCallEnabled)}`,
+    `apiKeyPresent=${value(provider.apiKeyPresent)}`,
+    provider.host ? `host=${provider.host}` : "",
+    provider.baseUrl ? `baseUrl=${provider.baseUrl}` : "",
+    provider.endpoint ? `endpoint=${provider.endpoint}` : "",
+    Array.isArray(provider.packages) ? `packages=${provider.packages.join(",")}` : "",
+    provider.configUpdatedAt ? `updatedAt=${provider.configUpdatedAt}` : "",
+  ].filter(Boolean).join(" ");
+  console.log(`- ${fields}`);
+}
 console.log("sourceSummaries:");
 for (const source of sources) {
   const status = [
@@ -143,6 +164,7 @@ for (const source of sources) {
     `status=${value(source.status)}`,
     source.statusCode ? `http=${source.statusCode}` : "",
     source.latencyMs ? `${Math.round(source.latencyMs)}ms` : "",
+    source.cacheHit === true ? "cacheHit=true" : "",
     source.errorCategory ? `error=${source.errorCategory}` : "",
   ].filter(Boolean).join(" ");
   console.log(`- ${value(source.providerLabelZh)} ${status} message=${value(source.messageZh || source.warningZh)}`);

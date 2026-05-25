@@ -6,6 +6,7 @@ import type {
   NormalizedHourlyWeather,
   WeatherDataMode,
   ForecastHorizon,
+  ForecastProviderRuntimeSnapshot,
   ForecastTarget,
   WeatherFusionSummary,
 } from "@photo-weather/shared";
@@ -111,6 +112,7 @@ export type WeatherDataBundle = {
   readonly confidenceByField?: WeatherConfidenceByField;
   readonly confidenceByTarget?: WeatherConfidenceByTarget;
   readonly fusionSummary?: WeatherFusionSummary;
+  readonly providerRuntimeSnapshot?: readonly ForecastProviderRuntimeSnapshot[];
 };
 
 export type ForecastRequestOptions = {

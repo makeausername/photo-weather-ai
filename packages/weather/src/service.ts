@@ -82,6 +82,7 @@ export type WeatherIntelligenceServiceOptions = {
   readonly providers: readonly WeatherProvider[];
   readonly cache?: InMemoryWeatherCache;
   readonly usageLogger?: WeatherProviderUsageLogger;
+  readonly cacheNamespace?: string;
 };
 
 export class WeatherIntelligenceService {
@@ -190,6 +191,7 @@ export class WeatherIntelligenceService {
       availableFields: ["temperature", "humidity", "wind", "cloudTotal"],
       missingFields: ["realWeather"],
       generatedAt: generated,
+      cacheHit: false,
       messageZh:
         failedSourceSummaries.length > 0
           ? "真实天气暂不可用，当前显示演示图层。"
@@ -271,6 +273,7 @@ export class WeatherIntelligenceService {
       forecastStart: input.forecastStart ?? generatedAt(input),
       target: input.target,
       purpose: "fusion",
+      runtimeSignature: this.options.cacheNamespace,
     });
     const cached = this.cache.get<WeatherDataBundle>(key);
     if (cached) {
@@ -282,14 +285,14 @@ export class WeatherIntelligenceService {
         cacheHit: true,
         createdAt: new Date().toISOString(),
       });
-      return cached;
+      return markBundleCacheHit(cached);
     }
 
     const startedAt = Date.now();
     try {
       const bundle = await new WeatherDataService(provider).getWeatherDataBundle(input);
       const latencyMs = Date.now() - startedAt;
-      const annotatedBundle = annotateProviderBundle(bundle, latencyMs);
+      const annotatedBundle = annotateProviderBundle(bundle, latencyMs, false);
       this.cache.set(key, annotatedBundle, weatherCacheTtlMs.fusion);
       await this.usageLogger.recordUsage({
         providerCode: provider.source.providerCode,
@@ -395,6 +398,7 @@ function failedSourceSummary(provider: WeatherProvider, errorInput: unknown): We
     missingFields: ["weather"],
     statusCode: error.statusCode,
     latencyMs: error.latencyMs,
+    cacheHit: false,
     errorCategory: error.errorCategory,
     messageZh: error.messageZh,
     warningZh: error.messageZh,
@@ -429,16 +433,39 @@ function classifyProviderError(
   };
 }
 
-function annotateProviderBundle(bundle: WeatherDataBundle, latencyMs: number): WeatherDataBundle {
+function annotateProviderBundle(
+  bundle: WeatherDataBundle,
+  latencyMs: number,
+  cacheHit: boolean,
+): WeatherDataBundle {
   return {
     ...bundle,
     sourceSummaries: [
       {
         ...sourceSummaryFromBundle(bundle),
         latencyMs,
+        cacheHit,
         messageZh: `${bundle.providerLabelZh} 通过。`,
       },
     ],
+  };
+}
+
+function markBundleCacheHit(bundle: WeatherDataBundle): WeatherDataBundle {
+  const summaries = bundle.sourceSummaries?.length
+    ? bundle.sourceSummaries
+    : [sourceSummaryFromBundle(bundle)];
+
+  return {
+    ...bundle,
+    sourceSummaries: summaries.map((summary) =>
+      summary.providerCode === bundle.providerCode
+        ? {
+            ...summary,
+            cacheHit: true,
+          }
+        : summary,
+    ),
   };
 }
 
@@ -463,6 +490,7 @@ function successfulSourceSummary(input: {
     availableFields: input.availableFields,
     missingFields: input.missingFields,
     latencyMs: input.latencyMs,
+    cacheHit: false,
     generatedAt: input.generatedAt,
     messageZh: `${input.providerLabelZh} 通过。`,
   };

@@ -130,19 +130,24 @@ export class MeteoblueClient {
       elevationMeters: defaultTestElevationMeters,
       timezone: "Asia/Shanghai",
     });
-    const success =
-      result.statusCode >= 200 && result.statusCode < 300 && !hasMeteoblueErrorPayload(result.body);
+    try {
+      new MeteoblueRealProvider({
+        client: this,
+        elevationMeters: defaultTestElevationMeters,
+        timezone: "Asia/Shanghai",
+      }).normalizeWeatherData(result.body);
+    } catch (error) {
+      throw normalizeMeteoblueParseError(error, result);
+    }
 
     return {
-      success,
+      success: true,
       statusCode: result.statusCode,
       latencyMs: result.latencyMs,
       baseUrl: normalizeMeteoblueBaseUrl(this.options.baseUrl),
       packages: normalizeMeteobluePackages(this.options.packages),
       sampleLocation: "黄山光明顶",
-      messageZh: success
-        ? "meteoblue 连接测试通过。"
-        : "meteoblue 返回格式异常。",
+      messageZh: "meteoblue 连接测试通过。",
     };
   }
 
@@ -352,7 +357,10 @@ export type MeteoblueRealProviderOptions = {
 export class MeteoblueRealProvider implements WeatherProvider {
   readonly source = realSource;
 
-  private readonly forecastRequests = new Map<string, Promise<Record<string, unknown>>>();
+  private readonly forecastRequests = new Map<
+    string,
+    Promise<MeteoblueFetchResult<Record<string, unknown>>>
+  >();
 
   constructor(private readonly options: MeteoblueRealProviderOptions) {}
 
@@ -378,15 +386,23 @@ export class MeteoblueRealProvider implements WeatherProvider {
   }
 
   async getHourlyForecast(input: WeatherRequestInput): Promise<readonly NormalizedHourlyWeather[]> {
-    const body = await this.fetchForecast(input);
+    const result = await this.fetchForecast(input);
     const hours = Math.min(Math.max(input.hours ?? 24, 1), 168);
-    return this.normalizeHourlyWeather(body).slice(0, hours);
+    try {
+      return this.normalizeHourlyWeather(result.body).slice(0, hours);
+    } catch (error) {
+      throw normalizeMeteoblueParseError(error, result);
+    }
   }
 
   async getDailyForecast(input: WeatherRequestInput): Promise<readonly NormalizedDailyWeather[]> {
-    const body = await this.fetchForecast(input);
+    const result = await this.fetchForecast(input);
     const days = Math.min(Math.max(input.days ?? 7, 1), 16);
-    return this.normalizeDailyWeather(body).slice(0, days);
+    try {
+      return this.normalizeDailyWeather(result.body).slice(0, days);
+    } catch (error) {
+      throw normalizeMeteoblueParseError(error, result);
+    }
   }
 
   async getWeatherAlerts(_input: WeatherRequestInput): Promise<readonly WeatherAlert[]> {
@@ -405,146 +421,160 @@ export class MeteoblueRealProvider implements WeatherProvider {
   }
 
   normalizeHourlyWeather(input: unknown): readonly NormalizedHourlyWeather[] {
-    const root = asRecord(input);
-    const data1h = firstRecord(root.data_1h, root.data1h, root.hourly);
-    const timeValues = arrayField(data1h, "time", "timestamp", "valid_time");
-    if (timeValues.length === 0) {
-      throw meteoblueParseError("meteoblue 返回格式异常");
+    try {
+      const root = asRecord(input);
+      const data1h = firstRecord(root.data_1h, root.data1h, root.hourly);
+      const timeValues = arrayField(data1h, "time", "timestamp", "valid_time");
+      if (timeValues.length === 0) {
+        throw meteoblueParseError("meteoblue 返回格式异常");
+      }
+
+      return validateHourlyWeather(
+        timeValues.map((timeValue, index) => {
+          const temperature = requiredMeteoblueNumber(
+            pickAt(data1h, index, "temperature", "temperature_2m", "temp"),
+            "data_1h.temperature",
+          );
+          const dewPoint = nullableRounded(
+            pickAt(data1h, index, "dewpointtemperature", "dewpoint", "dew_point_2m"),
+          );
+          const cloudLow = nullablePercent(
+            pickAt(data1h, index, "lowclouds", "low_clouds", "cloud_cover_low"),
+          );
+          const cloudMid = nullablePercent(
+            pickAt(data1h, index, "midclouds", "mid_clouds", "cloud_cover_mid"),
+          );
+          const cloudHigh = nullablePercent(
+            pickAt(data1h, index, "highclouds", "high_clouds", "cloud_cover_high"),
+          );
+          const cloudTotal = nullablePercent(
+            pickAt(data1h, index, "cloudcover", "cloud_cover", "totalcloudcover"),
+          );
+          const missingFields = [
+            cloudLow === null ? "cloudLow" : null,
+            cloudMid === null ? "cloudMid" : null,
+            cloudHigh === null ? "cloudHigh" : null,
+            cloudTotal === null ? "cloudTotal" : null,
+          ].filter((field): field is string => field !== null);
+
+          return {
+            time: normalizeIsoTime(timeValue),
+            temperature,
+            feelsLike: nullableRounded(
+              pickAt(data1h, index, "felttemperature", "apparent_temperature", "feels_like"),
+            ),
+            humidity: normalizePercentWithFallback(
+              pickAt(data1h, index, "relativehumidity", "relative_humidity", "relative_humidity_2m"),
+              "relativehumidity",
+            ),
+            dewPointSpread: dewPoint === null ? null : roundTo(temperature - dewPoint),
+            pressure: nullableRounded(
+              pickAt(data1h, index, "sealevelpressure", "pressure", "pressure_msl"),
+            ),
+            windSpeed: normalizeWindSpeed(
+              pickAt(data1h, index, "windspeed", "wind_speed", "wind_speed_10m"),
+            ),
+            windGust: normalizeNullableWindSpeed(
+              pickAt(data1h, index, "windgust", "wind_gust", "wind_gusts_10m"),
+            ),
+            windDirection: nullableRounded(
+              pickAt(data1h, index, "winddirection", "wind_direction", "wind_direction_10m"),
+              0,
+            ),
+            precipitationProbability:
+              nullablePercent(
+                pickAt(
+                  data1h,
+                  index,
+                  "precipitation_probability",
+                  "precipitation_probability_1h",
+                  "precipitationprobability",
+                ),
+              ) ?? 0,
+            precipitation: nullableRounded(
+              pickAt(data1h, index, "precipitation", "precipitation_amount"),
+            ),
+            visibility: normalizeVisibilityKm(pickAt(data1h, index, "visibility")),
+            dewPoint,
+            cloudTotal: cloudTotal ?? 0,
+            cloudLow,
+            cloudMid,
+            cloudHigh,
+            weatherCode: toText(pickAt(data1h, index, "pictocode", "weather_code")),
+            weatherTextZh: "meteoblue 专业预报",
+            providerCode: realSource.providerCode,
+            providerLabelZh: realSource.providerLabelZh,
+            dataMode: realSource.mode,
+            sourceConfidence: missingFields.length > 0 ? 0.78 : 0.9,
+            missingFields: missingFields.length > 0 ? missingFields : undefined,
+          };
+        }),
+      );
+    } catch (error) {
+      throw normalizeMeteoblueParseError(error);
     }
-
-    return validateHourlyWeather(
-      timeValues.map((timeValue, index) => {
-        const temperature = requiredMeteoblueNumber(
-          pickAt(data1h, index, "temperature", "temperature_2m", "temp"),
-          "data_1h.temperature",
-        );
-        const dewPoint = nullableRounded(
-          pickAt(data1h, index, "dewpointtemperature", "dewpoint", "dew_point_2m"),
-        );
-        const cloudLow = nullablePercent(
-          pickAt(data1h, index, "lowclouds", "low_clouds", "cloud_cover_low"),
-        );
-        const cloudMid = nullablePercent(
-          pickAt(data1h, index, "midclouds", "mid_clouds", "cloud_cover_mid"),
-        );
-        const cloudHigh = nullablePercent(
-          pickAt(data1h, index, "highclouds", "high_clouds", "cloud_cover_high"),
-        );
-        const cloudTotal = nullablePercent(
-          pickAt(data1h, index, "cloudcover", "cloud_cover", "totalcloudcover"),
-        );
-        const missingFields = [
-          cloudLow === null ? "cloudLow" : null,
-          cloudMid === null ? "cloudMid" : null,
-          cloudHigh === null ? "cloudHigh" : null,
-          cloudTotal === null ? "cloudTotal" : null,
-        ].filter((field): field is string => field !== null);
-
-        return {
-          time: normalizeIsoTime(timeValue),
-          temperature,
-          feelsLike: nullableRounded(
-            pickAt(data1h, index, "felttemperature", "apparent_temperature", "feels_like"),
-          ),
-          humidity: normalizePercentWithFallback(
-            pickAt(data1h, index, "relativehumidity", "relative_humidity", "relative_humidity_2m"),
-            "relativehumidity",
-          ),
-          dewPointSpread: dewPoint === null ? null : roundTo(temperature - dewPoint),
-          pressure: nullableRounded(
-            pickAt(data1h, index, "sealevelpressure", "pressure", "pressure_msl"),
-          ),
-          windSpeed: normalizeWindSpeed(
-            pickAt(data1h, index, "windspeed", "wind_speed", "wind_speed_10m"),
-          ),
-          windGust: normalizeNullableWindSpeed(
-            pickAt(data1h, index, "windgust", "wind_gust", "wind_gusts_10m"),
-          ),
-          windDirection: nullableRounded(
-            pickAt(data1h, index, "winddirection", "wind_direction", "wind_direction_10m"),
-            0,
-          ),
-          precipitationProbability:
-            nullablePercent(
-              pickAt(
-                data1h,
-                index,
-                "precipitation_probability",
-                "precipitation_probability_1h",
-                "precipitationprobability",
-              ),
-            ) ?? 0,
-          precipitation: nullableRounded(
-            pickAt(data1h, index, "precipitation", "precipitation_amount"),
-          ),
-          visibility: normalizeVisibilityKm(pickAt(data1h, index, "visibility")),
-          dewPoint,
-          cloudTotal: cloudTotal ?? 0,
-          cloudLow,
-          cloudMid,
-          cloudHigh,
-          weatherCode: toText(pickAt(data1h, index, "pictocode", "weather_code")),
-          weatherTextZh: "meteoblue 专业预报",
-          providerCode: realSource.providerCode,
-          providerLabelZh: realSource.providerLabelZh,
-          dataMode: realSource.mode,
-          sourceConfidence: missingFields.length > 0 ? 0.78 : 0.9,
-          missingFields: missingFields.length > 0 ? missingFields : undefined,
-        };
-      }),
-    );
   }
 
   normalizeDailyWeather(input: unknown): readonly NormalizedDailyWeather[] {
-    const root = asRecord(input);
-    const dataDay = firstRecord(root.data_day, root.dataDay, root.daily);
-    const dates = arrayField(dataDay, "time", "date");
-    if (dates.length > 0) {
-      return validateDailyWeather(
-        dates.map((dateValue, index) => ({
-          date: normalizeDate(String(dateValue).slice(0, 10)),
-          tempMin: requiredMeteoblueNumber(
-            pickAt(dataDay, index, "temperature_min", "temperature_minimum", "tempmin"),
-            "data_day.temperature_min",
-          ),
-          tempMax: requiredMeteoblueNumber(
-            pickAt(dataDay, index, "temperature_max", "temperature_maximum", "tempmax"),
-            "data_day.temperature_max",
-          ),
-          precipitationProbability:
-            nullablePercent(
-              pickAt(dataDay, index, "precipitation_probability", "precipitationprobability"),
-            ) ?? 0,
-          weatherSummary: "meteoblue 专业预报",
-          cloudSummary: "包含 meteoblue 可用云量字段",
-          providerCode: realSource.providerCode,
-          providerLabelZh: realSource.providerLabelZh,
-          dataMode: realSource.mode,
-        })),
-      );
-    }
+    try {
+      const root = asRecord(input);
+      const dataDay = firstRecord(root.data_day, root.dataDay, root.daily);
+      const dates = arrayField(dataDay, "time", "date");
+      if (dates.length > 0) {
+        return validateDailyWeather(
+          dates.map((dateValue, index) => ({
+            date: normalizeDate(String(dateValue).slice(0, 10)),
+            tempMin: requiredMeteoblueNumber(
+              pickAt(dataDay, index, "temperature_min", "temperature_minimum", "tempmin"),
+              "data_day.temperature_min",
+            ),
+            tempMax: requiredMeteoblueNumber(
+              pickAt(dataDay, index, "temperature_max", "temperature_maximum", "tempmax"),
+              "data_day.temperature_max",
+            ),
+            precipitationProbability:
+              nullablePercent(
+                pickAt(dataDay, index, "precipitation_probability", "precipitationprobability"),
+              ) ?? 0,
+            weatherSummary: "meteoblue 专业预报",
+            cloudSummary: "包含 meteoblue 可用云量字段",
+            providerCode: realSource.providerCode,
+            providerLabelZh: realSource.providerLabelZh,
+            dataMode: realSource.mode,
+          })),
+        );
+      }
 
-    return buildDailyFromHourly(this.normalizeHourlyWeather(input));
+      return buildDailyFromHourly(this.normalizeHourlyWeather(input));
+    } catch (error) {
+      throw normalizeMeteoblueParseError(error);
+    }
   }
 
   normalizeWeatherData(input: unknown): NormalizedWeatherData {
-    const hourly = this.normalizeHourlyWeather(input);
-    const daily = this.normalizeDailyWeather(input);
-    return {
-      hourly,
-      daily,
-      alerts: [],
-      providerCode: realSource.providerCode,
-      providerLabelZh: realSource.providerLabelZh,
-      dataMode: realSource.mode,
-      generatedAt: hourly[0]?.time ?? new Date().toISOString(),
-      noticeZh: "专业增强：meteoblue",
-      missingFields: [...new Set(hourly.flatMap((hour) => hour.missingFields ?? []))],
-      estimatedFields: [],
-    };
+    try {
+      const hourly = this.normalizeHourlyWeather(input);
+      const daily = this.normalizeDailyWeather(input);
+      return {
+        hourly,
+        daily,
+        alerts: [],
+        providerCode: realSource.providerCode,
+        providerLabelZh: realSource.providerLabelZh,
+        dataMode: realSource.mode,
+        generatedAt: hourly[0]?.time ?? new Date().toISOString(),
+        noticeZh: "专业增强：meteoblue",
+        missingFields: [...new Set(hourly.flatMap((hour) => hour.missingFields ?? []))],
+        estimatedFields: [],
+      };
+    } catch (error) {
+      throw normalizeMeteoblueParseError(error);
+    }
   }
 
-  private async fetchForecast(input: WeatherRequestInput): Promise<Record<string, unknown>> {
+  private async fetchForecast(
+    input: WeatherRequestInput,
+  ): Promise<MeteoblueFetchResult<Record<string, unknown>>> {
     const key = JSON.stringify({
       latitude: input.coordinates.latitude,
       longitude: input.coordinates.longitude,
@@ -556,13 +586,11 @@ export class MeteoblueRealProvider implements WeatherProvider {
       return existing;
     }
 
-    const next = this.options.client
-      .fetchForecast({
-        coordinates: input.coordinates,
-        elevationMeters: input.elevationMeters ?? this.options.elevationMeters,
-        timezone: input.timezone ?? this.options.timezone,
-      })
-      .then((result) => result.body);
+    const next = this.options.client.fetchForecast({
+      coordinates: input.coordinates,
+      elevationMeters: input.elevationMeters ?? this.options.elevationMeters,
+      timezone: input.timezone ?? this.options.timezone,
+    });
     this.forecastRequests.set(key, next);
     return next;
   }
@@ -706,13 +734,39 @@ function roundTo(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-function meteoblueParseError(messageZh: string, cause?: unknown): WeatherProviderError {
+function normalizeMeteoblueParseError(
+  error: unknown,
+  result?: Pick<MeteoblueFetchResult<unknown>, "statusCode" | "latencyMs">,
+): WeatherProviderError {
+  if (error instanceof WeatherProviderError) {
+    if (result && (error.statusCode === undefined || error.latencyMs === undefined)) {
+      return meteoblueError({
+        errorCategory: error.errorCategory,
+        messageZh: error.messageZh,
+        statusCode: error.statusCode ?? result.statusCode,
+        latencyMs: error.latencyMs ?? result.latencyMs,
+        cause: error,
+      });
+    }
+    return error;
+  }
+
+  return meteoblueParseError("meteoblue 返回格式异常", error, result);
+}
+
+function meteoblueParseError(
+  messageZh: string,
+  cause?: unknown,
+  result?: Pick<MeteoblueFetchResult<unknown>, "statusCode" | "latencyMs">,
+): WeatherProviderError {
   return new WeatherProviderError({
     providerCode: "meteoblue",
     providerLabelZh: "meteoblue",
     dataMode: "real",
     errorCategory: "parse_error",
     messageZh: messageZh.endsWith("。") ? messageZh : `${messageZh}。`,
+    statusCode: result?.statusCode,
+    latencyMs: result?.latencyMs,
     cause,
   });
 }

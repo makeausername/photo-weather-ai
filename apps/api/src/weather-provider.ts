@@ -5,6 +5,7 @@ import {
   InMemoryWeatherCache,
   InMemoryWeatherProviderUsageLogger,
   MockWeatherProvider,
+  maskQWeatherApiHost,
   normalizeQWeatherApiHost,
   MeteoblueClient,
   MeteoblueRealProvider,
@@ -35,6 +36,7 @@ import {
   qWeatherDefaultBaseUrl,
   weatherDefaultRetryCount,
   weatherDefaultTimeoutMs,
+  type ForecastProviderRuntimeSnapshot,
 } from "@photo-weather/shared";
 
 export type WeatherProviderRuntimeOptions = {
@@ -50,6 +52,7 @@ export type ResolvedQWeatherRuntimeConfig = {
   readonly enabled: boolean;
   readonly realCallEnabled: boolean;
   readonly priority: number;
+  readonly configUpdatedAt?: string;
   readonly apiKeyPresent: boolean;
   readonly apiHostPresent: boolean;
   readonly apiHost: string;
@@ -71,6 +74,7 @@ export type ResolvedOpenMeteoRuntimeConfig = {
   readonly enabled: boolean;
   readonly realCallEnabled: boolean;
   readonly priority: number;
+  readonly configUpdatedAt?: string;
   readonly mode: "free" | "customer";
   readonly apiKeyPresent: boolean;
   readonly customerEndpointPresent: boolean;
@@ -95,6 +99,7 @@ export type ResolvedMeteoblueRuntimeConfig = {
   readonly enabled: boolean;
   readonly realCallEnabled: boolean;
   readonly priority: number;
+  readonly configUpdatedAt?: string;
   readonly apiKeyPresent: boolean;
   readonly baseUrl: string;
   readonly packages: readonly string[];
@@ -113,18 +118,25 @@ export type RuntimeMeteoblueConfig = ResolvedMeteoblueRuntimeConfig & {
 export class RuntimeWeatherDataService implements WeatherDataServiceLike {
   private readonly cache = new InMemoryWeatherCache();
   private readonly usageLogger = new InMemoryWeatherProviderUsageLogger();
+  private cacheNamespace: string | undefined;
 
   constructor(private readonly options: WeatherProviderRuntimeOptions = {}) {}
 
   async getWeatherDataBundle(input: WeatherRequestInput): Promise<WeatherDataBundle> {
     const resolution = await resolveRuntimeWeatherProviders(this.options);
+    if (this.cacheNamespace && this.cacheNamespace !== resolution.cacheNamespace) {
+      this.cache.clear();
+    }
+    this.cacheNamespace = resolution.cacheNamespace;
+
     const bundle = await new WeatherIntelligenceService({
       providers: resolution.providers,
       cache: this.cache,
       usageLogger: this.usageLogger,
+      cacheNamespace: resolution.cacheNamespace,
     }).getWeatherDataBundle(input);
 
-    return appendRuntimeSourceSummaries(bundle, resolution.sourceSummaries);
+    return appendRuntimeResolution(bundle, resolution);
   }
 }
 
@@ -354,6 +366,7 @@ export function resolveQWeatherRuntimeConfig(
     enabled: provider?.enabled ?? false,
     realCallEnabled,
     priority: provider?.priority ?? 0,
+    configUpdatedAt: provider?.updatedAt.toISOString(),
     apiKeyPresent: Boolean(readQWeatherApiKey(provider, env)),
     apiHostPresent: Boolean(apiHost),
     apiHost,
@@ -397,6 +410,7 @@ export function resolveOpenMeteoRuntimeConfig(
     enabled: provider?.enabled ?? false,
     realCallEnabled,
     priority: provider?.priority ?? 0,
+    configUpdatedAt: provider?.updatedAt.toISOString(),
     mode,
     apiKeyPresent: Boolean(readOpenMeteoApiKey(provider, env)),
     customerEndpointPresent: Boolean(configuredCustomerEndpoint),
@@ -455,6 +469,7 @@ export function resolveMeteoblueRuntimeConfig(
     enabled: provider?.enabled ?? false,
     realCallEnabled,
     priority: provider?.priority ?? 0,
+    configUpdatedAt: provider?.updatedAt.toISOString(),
     apiKeyPresent: Boolean(readMeteoblueApiKey(provider, env)),
     baseUrl: normalizeEndpoint(
       readString(configJson.baseUrl) ?? readEnvString(env.METEOBLUE_BASE_URL),
@@ -599,9 +614,39 @@ export async function readRuntimeMeteoblueConfig(
   };
 }
 
+export function createMeteoblueClientFromRuntimeConfig(
+  config: RuntimeMeteoblueConfig,
+  fetcher?: typeof fetch,
+): MeteoblueClient {
+  if (!config.apiKey) {
+    throw new Error("Cannot create meteoblue client without API key.");
+  }
+
+  return new MeteoblueClient({
+    apiKey: config.apiKey,
+    baseUrl: config.baseUrl,
+    packages: config.packages,
+    timeoutMs: config.timeoutMs,
+    retryCount: config.retryCount,
+    fetcher,
+  });
+}
+
+export function createMeteoblueRealProviderFromRuntimeConfig(
+  config: RuntimeMeteoblueConfig,
+  fetcher?: typeof fetch,
+): MeteoblueRealProvider {
+  return new MeteoblueRealProvider({
+    client: createMeteoblueClientFromRuntimeConfig(config, fetcher),
+    timezone: "Asia/Shanghai",
+  });
+}
+
 type RuntimeWeatherProviderResolution = {
   readonly providers: readonly WeatherProvider[];
   readonly sourceSummaries: readonly WeatherSourceSummary[];
+  readonly runtimeSnapshot: readonly ForecastProviderRuntimeSnapshot[];
+  readonly cacheNamespace: string;
 };
 
 async function resolveRuntimeWeatherProviders(
@@ -679,18 +724,7 @@ async function resolveRuntimeWeatherProviders(
 
   if (meteoblue.enabled) {
     if (meteoblue.realCallEnabled && meteoblue.apiKey) {
-      providers.push(
-        new MeteoblueRealProvider({
-          client: new MeteoblueClient({
-            apiKey: meteoblue.apiKey,
-            baseUrl: meteoblue.baseUrl,
-            packages: meteoblue.packages,
-            timeoutMs: meteoblue.timeoutMs,
-            retryCount: meteoblue.retryCount,
-          }),
-          timezone: "Asia/Shanghai",
-        }),
-      );
+      providers.push(createMeteoblueRealProviderFromRuntimeConfig(meteoblue));
     } else {
       sourceSummaries.push(
         skippedSourceSummary({
@@ -706,10 +740,67 @@ async function resolveRuntimeWeatherProviders(
     }
   }
 
+  const runtimeSnapshot = buildRuntimeSnapshot(qweather, openMeteo, meteoblue);
   return {
     providers: providers.length > 0 ? providers : [new MockWeatherProvider()],
     sourceSummaries,
+    runtimeSnapshot,
+    cacheNamespace: buildRuntimeCacheNamespace(runtimeSnapshot),
   };
+}
+
+function buildRuntimeSnapshot(
+  qweather: RuntimeQWeatherConfig,
+  openMeteo: RuntimeOpenMeteoConfig,
+  meteoblue: RuntimeMeteoblueConfig,
+): readonly ForecastProviderRuntimeSnapshot[] {
+  return [
+    {
+      providerCode: "qweather",
+      enabled: qweather.enabled,
+      realCallEnabled: qweather.realCallEnabled,
+      apiKeyPresent: qweather.apiKeyPresent,
+      host: maskQWeatherApiHost(qweather.apiHost),
+      baseUrl: qweather.baseUrl,
+      configUpdatedAt: qweather.configUpdatedAt,
+    },
+    {
+      providerCode: "open_meteo",
+      enabled: openMeteo.enabled,
+      realCallEnabled: openMeteo.realCallEnabled,
+      apiKeyPresent: openMeteo.apiKeyPresent,
+      endpoint: openMeteo.endpoint,
+      baseUrl: openMeteo.baseUrl,
+      configUpdatedAt: openMeteo.configUpdatedAt,
+    },
+    {
+      providerCode: "meteoblue",
+      enabled: meteoblue.enabled,
+      realCallEnabled: meteoblue.realCallEnabled,
+      apiKeyPresent: meteoblue.apiKeyPresent,
+      baseUrl: meteoblue.baseUrl,
+      packages: meteoblue.packages,
+      configUpdatedAt: meteoblue.configUpdatedAt,
+    },
+  ];
+}
+
+function buildRuntimeCacheNamespace(
+  snapshot: readonly ForecastProviderRuntimeSnapshot[],
+): string {
+  return JSON.stringify(
+    snapshot.map((provider) => ({
+      providerCode: provider.providerCode,
+      enabled: provider.enabled,
+      realCallEnabled: provider.realCallEnabled,
+      apiKeyPresent: provider.apiKeyPresent,
+      host: provider.host,
+      baseUrl: provider.baseUrl,
+      endpoint: provider.endpoint,
+      packages: provider.packages,
+      configUpdatedAt: provider.configUpdatedAt,
+    })),
+  );
 }
 
 function skippedSourceSummary(input: {
@@ -733,7 +824,19 @@ function skippedSourceSummary(input: {
     errorCategory: input.errorCategory,
     messageZh: input.messageZh,
     warningZh: input.messageZh,
+    cacheHit: false,
     generatedAt: new Date().toISOString(),
+  };
+}
+
+function appendRuntimeResolution(
+  bundle: WeatherDataBundle,
+  resolution: RuntimeWeatherProviderResolution,
+): WeatherDataBundle {
+  const withSummaries = appendRuntimeSourceSummaries(bundle, resolution.sourceSummaries);
+  return {
+    ...withSummaries,
+    providerRuntimeSnapshot: resolution.runtimeSnapshot,
   };
 }
 

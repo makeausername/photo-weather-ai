@@ -104,7 +104,7 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
   const professionalSourceStatus = usableBundles.some(
     (bundle) => bundle.providerCode === "meteoblue" && bundle.dataMode === "real",
   )
-    ? "专业增强：meteoblue 已启用"
+    ? "专业增强：meteoblue 通过"
     : "专业增强：meteoblue 未启用";
   const fusionNotesZh = buildFusionNotes({
     usableBundles,

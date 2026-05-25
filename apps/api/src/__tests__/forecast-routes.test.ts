@@ -586,11 +586,36 @@ describe("forecast query validation route", () => {
       ]),
     );
     expect(body.weatherFusionSummary).toMatchObject({
+      professionalSourceStatus: "专业增强：meteoblue 通过",
       confidenceLevel: "high",
       confidenceByTarget: expect.objectContaining({
         general: expect.any(Number),
         cloud_sea: expect.any(Number),
       }),
+    });
+    expect(body.weatherProviderRuntimeSnapshot).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          providerCode: "meteoblue",
+          enabled: true,
+          realCallEnabled: true,
+          apiKeyPresent: true,
+          baseUrl: "https://my.meteoblue.com",
+          packages: ["basic-1h", "clouds-1h"],
+        }),
+      ]),
+    );
+    expect(
+      body.weatherSourceSummaries.find(
+        (summary: { providerCode: string }) => summary.providerCode === "meteoblue",
+      ),
+    ).toMatchObject({
+      providerCode: "meteoblue",
+      attempted: true,
+      success: true,
+      status: "available",
+      cacheHit: false,
+      latencyMs: expect.any(Number),
     });
     expect(body.currentWeather).toMatchObject({
       cloudLow: expect.any(Number),
@@ -601,6 +626,148 @@ describe("forecast query validation route", () => {
     expect(body.clothingGuide.titleZh).toEqual(expect.any(String));
     expect(JSON.stringify(body)).not.toContain("qweather-secret");
     expect(JSON.stringify(body)).not.toContain("meteoblue-secret");
+  });
+
+  it("does not keep a stale meteoblue source after provider runtime config changes", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    configureRealWeatherProviders(state);
+    const meteoblueProvider = state.providers.get("weather:meteoblue");
+    state.providers.set("weather:meteoblue", {
+      ...meteoblueProvider,
+      enabled: true,
+      updatedAt: new Date("2026-05-20T00:00:00.000Z"),
+      configJson: {
+        ...(meteoblueProvider.configJson ?? {}),
+        realCallEnabled: true,
+        baseUrl: "https://my.meteoblue.com",
+        packages: "basic-1h,clouds-1h",
+      },
+      secretJson: { apiKey: "old-meteoblue-secret" },
+    });
+    let meteoblueCalls = 0;
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("qweather.example/v7/weather/now")) {
+        return new Response(
+          JSON.stringify({
+            code: "200",
+            now: {
+              obsTime: "2026-05-20T00:00:00+08:00",
+              temp: "13",
+              feelsLike: "11",
+              icon: "101",
+              text: "多云",
+              wind360: "120",
+              windSpeed: "9",
+              humidity: "82",
+              pressure: "1008",
+              vis: "22",
+              cloud: "52",
+              dew: "10",
+            },
+          }),
+        );
+      }
+      if (url.includes("qweather.example/v7/weather/")) {
+        return new Response(
+          JSON.stringify(url.includes("7d") ? buildQWeatherDailyPayload() : buildQWeatherHourlyPayload()),
+        );
+      }
+      if (url.includes("api.open-meteo.com/v1/forecast")) {
+        return new Response(JSON.stringify(buildOpenMeteoPayload()));
+      }
+      if (url.includes("my.meteoblue.com/packages/basic-1h_clouds-1h")) {
+        meteoblueCalls += 1;
+        if (url.includes("apikey=old-meteoblue-secret")) {
+          return new Response(JSON.stringify({ error: "Invalid API key" }), {
+            status: 401,
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+        }
+        return new Response(JSON.stringify(buildMeteobluePayload()));
+      }
+
+      throw new Error(`unexpected test URL: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+        ENABLE_ASTRO_SERVICE: "false",
+      },
+      logger: false,
+    });
+
+    const firstResponse = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        target: "general",
+        horizon: "48h",
+      },
+    });
+    const firstBody = firstResponse.json();
+    expect(firstResponse.statusCode).toBe(200);
+    expect(
+      firstBody.weatherSourceSummaries.find(
+        (summary: { providerCode: string }) => summary.providerCode === "meteoblue",
+      ),
+    ).toMatchObject({
+      attempted: true,
+      success: false,
+      errorCategory: "invalid_key",
+    });
+
+    state.providers.set("weather:meteoblue", {
+      ...meteoblueProvider,
+      enabled: true,
+      updatedAt: new Date("2026-05-25T00:00:00.000Z"),
+      configJson: {
+        ...(meteoblueProvider.configJson ?? {}),
+        realCallEnabled: true,
+        baseUrl: "https://my.meteoblue.com",
+        packages: "basic-1h,clouds-1h",
+      },
+      secretJson: { apiKey: "new-meteoblue-secret" },
+    });
+
+    const secondResponse = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        target: "general",
+        horizon: "48h",
+      },
+    });
+    const secondBody = secondResponse.json();
+
+    expect(secondResponse.statusCode).toBe(200);
+    expect(meteoblueCalls).toBeGreaterThanOrEqual(2);
+    expect(
+      fetchMock.mock.calls.some((call) => String(call[0]).includes("apikey=new-meteoblue-secret")),
+    ).toBe(true);
+    expect(
+      secondBody.weatherSourceSummaries.find(
+        (summary: { providerCode: string }) => summary.providerCode === "meteoblue",
+      ),
+    ).toMatchObject({
+      attempted: true,
+      success: true,
+      status: "available",
+      cacheHit: false,
+    });
+    expect(secondBody.weatherFusionSummary).toMatchObject({
+      professionalSourceStatus: "专业增强：meteoblue 通过",
+    });
+    expect(JSON.stringify(secondBody)).not.toContain("new-meteoblue-secret");
+    expect(JSON.stringify(secondBody)).not.toContain("old-meteoblue-secret");
   });
 
   it("returns multi-day windows for a 7 day astro calculation without real network calls", async () => {

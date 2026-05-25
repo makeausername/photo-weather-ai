@@ -1223,6 +1223,31 @@ describe("forecast result target-aware view model", () => {
     );
   });
 
+  it("shows meteoblue as passed when fusion source summary succeeds", () => {
+    const result = {
+      ...resultForTarget("general"),
+      weatherSourceSummaries: [
+        {
+          providerCode: "meteoblue",
+          providerLabelZh: "meteoblue",
+          dataMode: "real",
+          enabled: true,
+          realCallEnabled: true,
+          attempted: true,
+          success: true,
+          status: "available",
+          availableFields: ["cloudTotal", "cloudLow", "cloudMid", "cloudHigh"],
+          missingFields: [],
+          statusCode: 200,
+          latencyMs: 143,
+          messageZh: "meteoblue 通过。",
+        },
+      ],
+    } satisfies ForecastCalculationResult;
+
+    expect(providerDiagnosticText(result, "meteoblue", "meteoblue")).toBe("meteoblue 通过");
+  });
+
   it("prioritizes cloud sea and whiteout risk without making astro primary", () => {
     const viewModel = buildForecastResultViewModel(resultForTarget("cloud_sea"), "cloud_sea");
 

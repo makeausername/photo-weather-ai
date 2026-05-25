@@ -1048,12 +1048,29 @@ describe("admin config routes", () => {
       expect(url.searchParams.get("apikey")).toBe("meteoblue-real-secret");
       expect(init?.headers).toBeUndefined();
 
-      return new Response(JSON.stringify({ metadata: { name: "basic-1h" }, data_1h: {} }), {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
+      return new Response(
+        JSON.stringify({
+          metadata: { name: "basic-1h" },
+          data_1h: {
+            time: ["2026-05-20T00:00:00+08:00"],
+            temperature: [12],
+            relativehumidity: [82],
+            windspeed: [3.2],
+            cloudcover: [58],
+            lowclouds: [26],
+            midclouds: [40],
+            highclouds: [52],
+            visibility: [24],
+            precipitation: [0],
+          },
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
         },
-      });
+      );
     });
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();

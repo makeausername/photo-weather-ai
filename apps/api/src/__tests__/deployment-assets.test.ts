@@ -464,6 +464,19 @@ describe("production deployment assets", () => {
     expect(script).not.toMatch(/echo .*ADMIN_PASSWORD/);
   });
 
+  it("prints forecast source diagnostics in the real weather smoke script", () => {
+    const script = readRepoFile("scripts/test-real-weather.sh");
+
+    expect(script).toContain("sourceSummaries:");
+    expect(script).toContain("providerRuntimeSnapshot:");
+    expect(script).toContain("meteoblueAttempted:");
+    expect(script).toContain("meteoblueSuccess:");
+    expect(script).toContain("dataConfidence:");
+    expect(script).toContain("cacheHit:");
+    expect(script).not.toContain("/admin/providers/${providerType}/${providerCode}/test-connection");
+    expect(script).not.toMatch(/apikey=.*\\$\\{/i);
+  });
+
   const bashCommand = resolveBashCommand();
   const bashIt = bashCommand ? it : it.skip;
 

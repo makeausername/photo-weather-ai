@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Coordinates, NormalizedDailyWeather, NormalizedHourlyWeather } from "@photo-weather/shared";
 import {
   WeatherIntelligenceService,
+  InMemoryWeatherCache,
   type AirQuality,
   type CurrentWeather,
   type WeatherAlert,
@@ -75,6 +76,34 @@ describe("WeatherIntelligenceService", () => {
     );
     expect(bundle.fusionSummary?.dataStatusZh).toBe(
       "天气数据：真实数据暂不可用，已回退到演示数据",
+    );
+  });
+
+  it("separates cached provider bundles by runtime namespace", async () => {
+    const cache = new InMemoryWeatherCache();
+    const first = await new WeatherIntelligenceService({
+      providers: [new StaticProvider("meteoblue", "meteoblue", "real", hour({ temperature: 8 }))],
+      cache,
+      cacheNamespace: "meteoblue-runtime-v1",
+    }).getWeatherDataBundle(requestInput());
+
+    const second = await new WeatherIntelligenceService({
+      providers: [new StaticProvider("meteoblue", "meteoblue", "real", hour({ temperature: 18 }))],
+      cache,
+      cacheNamespace: "meteoblue-runtime-v2",
+    }).getWeatherDataBundle(requestInput());
+
+    expect(first.currentWeather?.temperature).toBe(8);
+    expect(second.currentWeather?.temperature).toBe(18);
+    expect(second.sourceSummaries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          providerCode: "meteoblue",
+          attempted: true,
+          success: true,
+          cacheHit: false,
+        }),
+      ]),
     );
   });
 });

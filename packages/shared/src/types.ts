@@ -182,10 +182,23 @@ export type ForecastWeatherSourceSummary = {
   readonly missingFields: readonly string[];
   readonly statusCode?: number;
   readonly latencyMs?: number;
+  readonly cacheHit?: boolean;
   readonly generatedAt?: string;
   readonly errorCategory?: ForecastWeatherSourceErrorCategory;
   readonly messageZh: string;
   readonly warningZh?: string;
+};
+
+export type ForecastProviderRuntimeSnapshot = {
+  readonly providerCode: string;
+  readonly enabled: boolean;
+  readonly realCallEnabled: boolean;
+  readonly apiKeyPresent: boolean;
+  readonly host?: string;
+  readonly baseUrl?: string;
+  readonly endpoint?: string;
+  readonly packages?: readonly string[];
+  readonly configUpdatedAt?: string;
 };
 
 export type TerrainCloudSeaPotential = "low" | "medium" | "high";
@@ -343,6 +356,7 @@ export type ForecastCalculationInput = {
   readonly weatherSourceSummaries: readonly ForecastWeatherSourceSummary[];
   readonly weatherMissingDataNotes: readonly string[];
   readonly weatherFusionSummary?: WeatherFusionSummary;
+  readonly weatherProviderRuntimeSnapshot?: readonly ForecastProviderRuntimeSnapshot[];
   readonly astroDataSourceLabelZh: string;
   readonly astroCalculationBasis?: AstroCalculationBasis;
   readonly astroWindowBundle?: AstroWindowBundle;
@@ -699,6 +713,7 @@ export type ForecastCalculationResult = {
   readonly weatherSourceSummaries: readonly ForecastWeatherSourceSummary[];
   readonly weatherMissingDataNotes: readonly string[];
   readonly weatherFusionSummary?: WeatherFusionSummary;
+  readonly weatherProviderRuntimeSnapshot?: readonly ForecastProviderRuntimeSnapshot[];
   readonly astroDataSourceLabelZh: string;
   readonly astroCalculationBasis?: AstroCalculationBasis;
 };

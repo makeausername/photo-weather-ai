@@ -7,6 +7,23 @@ const coordinates = {
   system: "wgs84",
 } as const;
 
+function meteobluePayload() {
+  return {
+    data_1h: {
+      time: ["2026-05-20T00:00:00+08:00"],
+      temperature: [12],
+      relativehumidity: [82],
+      windspeed: [3.2],
+      cloudcover: [58],
+      lowclouds: [26],
+      midclouds: [40],
+      highclouds: [52],
+      visibility: [24],
+      precipitation: [0],
+    },
+  };
+}
+
 describe("MeteoblueClient", () => {
   it("builds Forecast API package requests without exposing keys as headers", () => {
     const url = new URL(
@@ -39,7 +56,7 @@ describe("MeteoblueClient", () => {
     const fetcherMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       capturedUrl = String(input);
       capturedInit = init;
-      return new Response(JSON.stringify({ metadata: { name: "basic-1h" }, data_1h: {} }), {
+      return new Response(JSON.stringify(meteobluePayload()), {
         status: 200,
         headers: {
           "Content-Type": "application/json",
@@ -94,6 +111,31 @@ describe("MeteoblueClient", () => {
     });
     await expect(client.fetchForecast({ coordinates })).rejects.not.toMatchObject({
       message: expect.stringContaining("meteoblue-secret"),
+    });
+  });
+
+  it("does not mark a 200 response as connected when the forecast payload cannot be fused", async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ metadata: { name: "basic-1h" }, data_1h: {} }), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }),
+    ) as unknown as typeof fetch;
+    const client = new MeteoblueClient({
+      apiKey: "meteoblue-secret",
+      baseUrl: "https://my.meteoblue.com",
+      packages: ["basic-1h", "clouds-1h"],
+      timeoutMs: 1000,
+      retryCount: 0,
+      fetcher,
+    });
+
+    await expect(client.testConnection()).rejects.toMatchObject({
+      errorCategory: "parse_error",
+      messageZh: "meteoblue 返回格式异常。",
     });
   });
 });
