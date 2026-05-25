@@ -493,6 +493,7 @@ function sourceSummary(bundle: WeatherDataBundle): WeatherSourceSummary {
     success: true,
     status: "available",
     availableFields,
+    extractedFields: availableFields,
     missingFields,
     generatedAt: bundle.generatedAt,
     messageZh:
@@ -506,6 +507,7 @@ function sourceSummary(bundle: WeatherDataBundle): WeatherSourceSummary {
     ...existing,
     status: existing?.status ?? base.status,
     availableFields: existing?.availableFields ?? base.availableFields,
+    extractedFields: existing?.extractedFields ?? existing?.availableFields ?? base.extractedFields,
     missingFields: existing?.missingFields ?? base.missingFields,
     messageZh: existing?.messageZh ?? base.messageZh,
     success: existing?.success ?? base.success,

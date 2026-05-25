@@ -9,16 +9,25 @@ const coordinates = {
 
 function meteobluePayload() {
   return {
+    metadata: {
+      latitude: 30.1328,
+      longitude: 118.1718,
+      height: 1860,
+    },
+    units: {
+      temperature: "C",
+      windspeed: "ms-1",
+    },
     data_1h: {
-      time: ["2026-05-20T00:00:00+08:00"],
-      temperature: [12],
-      relativehumidity: [82],
-      windspeed: [3.2],
-      cloudcover: [58],
-      lowclouds: [26],
-      midclouds: [40],
-      highclouds: [52],
-      visibility: [24],
+      time: ["2026-05-25T08:00+08:00"],
+      temperature: [23],
+      relativehumidity: [97],
+      windspeed: [1.1],
+      winddirection: [129],
+      cloudcover: [99],
+      lowclouds: [90],
+      midclouds: [60],
+      highclouds: [30],
       precipitation: [0],
     },
   };
@@ -135,7 +144,7 @@ describe("MeteoblueClient", () => {
 
     await expect(client.testConnection()).rejects.toMatchObject({
       errorCategory: "parse_error",
-      messageZh: "meteoblue 返回中未找到可用的 basic-1h/clouds-1h 字段。",
+      messageZh: "meteoblue 返回中没有可用的 basic-1h/clouds-1h 天气字段。",
     });
   });
 
@@ -160,11 +169,51 @@ describe("MeteoblueClient", () => {
 
     expect(hourly[0]).toMatchObject({
       providerCode: "meteoblue",
-      temperature: 12,
-      humidity: 82,
-      cloudLow: 26,
-      cloudMid: 40,
-      cloudHigh: 52,
+      temperature: 23,
+      humidity: 97,
+      windSpeed: 1.1,
+      windDirection: 129,
+      cloudTotal: 99,
+      cloudLow: 90,
+      cloudMid: 60,
+      cloudHigh: 30,
+    });
+  });
+
+  it("lists extracted and missing fields for top-level data_1h payloads", () => {
+    const provider = new MeteoblueRealProvider({
+      client: new MeteoblueClient({
+        apiKey: "meteoblue-secret",
+        baseUrl: "https://my.meteoblue.com",
+        packages: ["basic-1h", "clouds-1h"],
+        timeoutMs: 1000,
+        retryCount: 0,
+        fetcher: vi.fn() as unknown as typeof fetch,
+      }),
+    });
+
+    const normalized = provider.normalizeWeatherData(meteobluePayload());
+    const summary = normalized.sourceSummaries?.[0];
+
+    expect(summary).toMatchObject({
+      providerCode: "meteoblue",
+      attempted: true,
+      success: true,
+      packages: ["basic-1h", "clouds-1h"],
+      topLevelKeys: ["metadata", "units", "data_1h"],
+      extractedFields: expect.arrayContaining([
+        "temperature",
+        "humidity",
+        "windSpeed",
+        "windDirection",
+        "precipitation",
+        "cloudTotal",
+        "cloudLow",
+        "cloudMid",
+        "cloudHigh",
+      ]),
+      missingFields: expect.arrayContaining(["feelsLike", "dewPoint"]),
+      messageZh: "meteoblue 通过，部分字段缺失。",
     });
   });
 
@@ -205,6 +254,33 @@ describe("MeteoblueClient", () => {
     });
   });
 
+  it("succeeds for partial top-level data_1h fields without fake parse success", () => {
+    const provider = new MeteoblueRealProvider({
+      client: new MeteoblueClient({
+        apiKey: "meteoblue-secret",
+        baseUrl: "https://my.meteoblue.com",
+        packages: ["basic-1h", "clouds-1h"],
+        timeoutMs: 1000,
+        retryCount: 0,
+        fetcher: vi.fn() as unknown as typeof fetch,
+      }),
+    });
+
+    const hourly = provider.normalizeHourlyWeather({
+      metadata: { latitude: 30.1328 },
+      data_1h: {
+        time: ["2026-05-25T08:00+08:00"],
+        cloudcover: [88],
+      },
+    });
+
+    expect(hourly[0]).toMatchObject({
+      providerCode: "meteoblue",
+      cloudTotal: 88,
+      missingFields: expect.arrayContaining(["temperature", "humidity", "windSpeed"]),
+    });
+  });
+
   it("returns a safe parse error for unexpected valid JSON without leaking API keys", () => {
     const provider = new MeteoblueRealProvider({
       client: new MeteoblueClient({
@@ -218,7 +294,7 @@ describe("MeteoblueClient", () => {
     });
 
     expect(() => provider.normalizeWeatherData({ metadata: { name: "basic-1h" } })).toThrow(
-      "meteoblue 返回中未找到可用的 basic-1h/clouds-1h 字段。",
+      "meteoblue 返回中未找到 data_1h。",
     );
     expect(() => provider.normalizeWeatherData({ metadata: { name: "basic-1h" } })).not.toThrow(
       /meteoblue-secret/,

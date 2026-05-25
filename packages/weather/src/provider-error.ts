@@ -1,4 +1,5 @@
 import type {
+  ForecastWeatherSourceSummary,
   ForecastWeatherSourceErrorCategory,
   WeatherDataMode,
 } from "@photo-weather/shared";
@@ -12,6 +13,18 @@ export type WeatherProviderErrorOptions = {
   readonly messageZh: string;
   readonly statusCode?: number;
   readonly latencyMs?: number;
+  readonly sourceSummaryMetadata?: Partial<
+    Pick<
+      ForecastWeatherSourceSummary,
+      | "availableFields"
+      | "extractedFields"
+      | "missingFields"
+      | "topLevelKeys"
+      | "packages"
+      | "statusCode"
+      | "latencyMs"
+    >
+  >;
   readonly cause?: unknown;
 };
 
@@ -23,6 +36,7 @@ export class WeatherProviderError extends Error {
   readonly messageZh: string;
   readonly statusCode?: number;
   readonly latencyMs?: number;
+  readonly sourceSummaryMetadata?: WeatherProviderErrorOptions["sourceSummaryMetadata"];
   override readonly cause?: unknown;
 
   constructor(options: WeatherProviderErrorOptions) {
@@ -35,6 +49,7 @@ export class WeatherProviderError extends Error {
     this.messageZh = options.messageZh;
     this.statusCode = options.statusCode;
     this.latencyMs = options.latencyMs;
+    this.sourceSummaryMetadata = options.sourceSummaryMetadata;
     this.cause = options.cause;
   }
 }

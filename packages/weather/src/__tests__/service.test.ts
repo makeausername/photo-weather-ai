@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type {
   Coordinates,
   NormalizedDailyWeather,
@@ -7,6 +7,8 @@ import type {
 import {
   WeatherIntelligenceService,
   InMemoryWeatherCache,
+  MeteoblueClient,
+  MeteoblueRealProvider,
   WeatherProviderError,
   type AirQuality,
   type CurrentWeather,
@@ -136,10 +138,51 @@ describe("WeatherIntelligenceService", () => {
           providerCode: "meteoblue",
           success: false,
           errorCategory: "parse_error",
-          messageZh: "meteoblue 返回中未找到可用的 basic-1h/clouds-1h 字段。",
+          messageZh: "meteoblue 返回中没有可用的 basic-1h/clouds-1h 天气字段。",
         }),
       ]),
     );
+  });
+
+  it("keeps meteoblue data_1h success metadata in fusion source summaries", async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(meteoblueData1hPayload()), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }),
+    ) as unknown as typeof fetch;
+    const service = new WeatherIntelligenceService({
+      providers: [
+        new MeteoblueRealProvider({
+          client: new MeteoblueClient({
+            apiKey: "meteoblue-secret",
+            baseUrl: "https://my.meteoblue.com",
+            packages: ["basic-1h", "clouds-1h"],
+            timeoutMs: 1000,
+            retryCount: 0,
+            fetcher,
+          }),
+        }),
+      ],
+    });
+
+    const bundle = await service.getWeatherDataBundle(requestInput());
+    const summary = bundle.sourceSummaries?.find((source) => source.providerCode === "meteoblue");
+
+    expect(summary).toMatchObject({
+      providerCode: "meteoblue",
+      attempted: true,
+      success: true,
+      statusCode: 200,
+      topLevelKeys: ["metadata", "units", "data_1h"],
+      packages: ["basic-1h", "clouds-1h"],
+      extractedFields: expect.arrayContaining(["temperature", "humidity", "cloudTotal"]),
+      messageZh: "meteoblue 通过，部分字段缺失。",
+    });
+    expect(JSON.stringify(bundle)).not.toContain("meteoblue-secret");
   });
 });
 
@@ -153,6 +196,29 @@ function requestInput(): WeatherRequestInput {
     forecastEnd: "2026-05-21T00:00:00+08:00",
     target: "general",
     timezone: "Asia/Shanghai",
+  };
+}
+
+function meteoblueData1hPayload() {
+  return {
+    metadata: {
+      latitude: 30.1328,
+      longitude: 118.1718,
+      height: 1860,
+    },
+    units: {},
+    data_1h: {
+      time: ["2026-05-25T08:00+08:00"],
+      temperature: [23],
+      relativehumidity: [97],
+      windspeed: [1.1],
+      winddirection: [129],
+      cloudcover: [99],
+      lowclouds: [90],
+      midclouds: [60],
+      highclouds: [30],
+      precipitation: [0],
+    },
   };
 }
 
@@ -262,7 +328,7 @@ class MeteoblueParseFailingProvider extends StaticProvider {
       providerLabelZh: "meteoblue",
       dataMode: "real",
       errorCategory: "parse_error",
-      messageZh: "meteoblue 返回中未找到可用的 basic-1h/clouds-1h 字段。",
+      messageZh: "meteoblue 返回中没有可用的 basic-1h/clouds-1h 天气字段。",
     });
   }
 }

@@ -187,6 +187,9 @@ export type ForecastWeatherSourceSummary = {
   readonly errorCategory?: ForecastWeatherSourceErrorCategory;
   readonly messageZh: string;
   readonly warningZh?: string;
+  readonly extractedFields?: readonly string[];
+  readonly topLevelKeys?: readonly string[];
+  readonly packages?: readonly string[];
 };
 
 export type ForecastProviderRuntimeSnapshot = {

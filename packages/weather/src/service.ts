@@ -33,6 +33,7 @@ export class WeatherDataService {
         input.timezone ?? defaultTimezone,
       );
     const missingFields = collectWeatherFields(hourly, daily, "missingFields");
+    const sourceSummaryMetadata = getProviderSourceSummaryMetadata(this.provider, input);
 
     return {
       current,
@@ -58,14 +59,29 @@ export class WeatherDataService {
       missingFields,
       estimatedFields: collectWeatherFields(hourly, daily, "estimatedFields"),
       sourceSummaries: [
-        successfulSourceSummary({
-          providerCode: this.provider.source.providerCode,
-          providerLabelZh: this.provider.source.providerLabelZh,
-          dataMode: this.provider.source.mode,
-          generatedAt: generated,
-          availableFields: collectAvailableFields(hourly),
-          missingFields,
-        }),
+        {
+          ...successfulSourceSummary({
+            providerCode: this.provider.source.providerCode,
+            providerLabelZh: this.provider.source.providerLabelZh,
+            dataMode: this.provider.source.mode,
+            generatedAt: generated,
+            availableFields: collectAvailableFields(hourly),
+            missingFields,
+          }),
+          ...sourceSummaryMetadata,
+          availableFields:
+            sourceSummaryMetadata?.availableFields ??
+            sourceSummaryMetadata?.extractedFields ??
+            collectAvailableFields(hourly),
+          missingFields: sourceSummaryMetadata?.missingFields ?? missingFields,
+          messageZh:
+            sourceSummaryMetadata?.messageZh ??
+            successfulSourceMessageZh(
+              this.provider.source.providerCode,
+              this.provider.source.providerLabelZh,
+              sourceSummaryMetadata?.missingFields ?? missingFields,
+            ),
+        },
       ],
     };
   }
@@ -319,6 +335,19 @@ export function createWeatherDataService(
   return new WeatherDataService(createWeatherProvider(options));
 }
 
+type SourceSummaryMetadataProvider = WeatherProvider & {
+  readonly getSourceSummaryMetadata?: (
+    input: WeatherRequestInput,
+  ) => Partial<WeatherSourceSummary> | undefined;
+};
+
+function getProviderSourceSummaryMetadata(
+  provider: WeatherProvider,
+  input: WeatherRequestInput,
+): Partial<WeatherSourceSummary> | undefined {
+  return (provider as SourceSummaryMetadataProvider).getSourceSummaryMetadata?.(input);
+}
+
 function normalizeCurrentWeather(input: {
   readonly current: CurrentWeather;
   readonly firstHour?: NormalizedHourlyWeather;
@@ -381,6 +410,9 @@ function normalizeCurrentWeather(input: {
 
 function failedSourceSummary(provider: WeatherProvider, errorInput: unknown): WeatherSourceSummary {
   const error = classifyProviderError(provider, errorInput);
+  const sourceSummaryMetadata = isWeatherProviderError(errorInput)
+    ? errorInput.sourceSummaryMetadata
+    : undefined;
   return {
     providerCode: provider.source.providerCode,
     providerLabelZh: provider.source.providerLabelZh,
@@ -390,8 +422,12 @@ function failedSourceSummary(provider: WeatherProvider, errorInput: unknown): We
     attempted: true,
     success: false,
     status: "failed",
-    availableFields: [],
-    missingFields: ["weather"],
+    availableFields:
+      sourceSummaryMetadata?.availableFields ?? sourceSummaryMetadata?.extractedFields ?? [],
+    extractedFields: sourceSummaryMetadata?.extractedFields,
+    missingFields: sourceSummaryMetadata?.missingFields ?? ["weather"],
+    topLevelKeys: sourceSummaryMetadata?.topLevelKeys,
+    packages: sourceSummaryMetadata?.packages,
     statusCode: error.statusCode,
     latencyMs: error.latencyMs,
     cacheHit: false,
@@ -490,6 +526,7 @@ function successfulSourceSummary(input: {
     success: true,
     status: "available",
     availableFields: input.availableFields,
+    extractedFields: input.availableFields,
     missingFields: input.missingFields,
     latencyMs: input.latencyMs,
     cacheHit: false,

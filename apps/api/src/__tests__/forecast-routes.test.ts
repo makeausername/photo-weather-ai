@@ -618,6 +618,10 @@ describe("forecast query validation route", () => {
       attempted: true,
       success: true,
       status: "available",
+      statusCode: 200,
+      topLevelKeys: expect.arrayContaining(["metadata", "data_1h", "data_day"]),
+      packages: ["basic-1h", "clouds-1h"],
+      extractedFields: expect.arrayContaining(["temperature", "humidity", "cloudTotal"]),
       cacheHit: false,
       latencyMs: expect.any(Number),
     });
@@ -712,7 +716,10 @@ describe("forecast query validation route", () => {
       attempted: true,
       success: false,
       errorCategory: "parse_error",
-      messageZh: "meteoblue 返回中未找到可用的 basic-1h/clouds-1h 字段。",
+      messageZh: "meteoblue 返回中未找到 data_1h。",
+      topLevelKeys: ["metadata"],
+      packages: ["basic-1h", "clouds-1h"],
+      extractedFields: [],
     });
     expect(JSON.stringify(body)).not.toContain("meteoblue-secret");
   });
