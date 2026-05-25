@@ -12,9 +12,14 @@ import HomePage from "./page";
 import { ForecastResultClient } from "./forecast/forecast-result-client";
 import {
   buildForecastUrl,
+  buildStateAfterChangeLocation,
+  buildStateAfterClearSelection,
+  buildStateAfterSearchQueryInput,
+  buildStateAfterSearchResultSelection,
   PlaceSearchErrorAlert,
   publicPlaceSearchUnavailableMessage,
   sanitizePlaceSearchErrorMessage,
+  shouldShowPlaceSearchResults,
   type PlaceSearchResult,
 } from "../components/place-search-card";
 import {
@@ -352,7 +357,9 @@ describe("homepage forecast flow", () => {
     expect(html).toContain("主要风险");
     expect(html).toContain("当前建议");
     expect(html).toContain("选择地点后生成到达时间、拍摄题材、风险和装备建议。");
-    expect(html).toContain("选择地点后，将生成综合指数、最佳窗口、主要风险、当前建议和拍摄题材优先级。");
+    expect(html).toContain(
+      "选择地点后，将生成综合指数、最佳窗口、主要风险、当前建议和拍摄题材优先级。",
+    );
     expect(html).not.toContain("演示状态");
     expect(html).not.toContain("演示分析");
   });
@@ -535,10 +542,112 @@ describe("homepage forecast flow", () => {
     expect(emptyHtml).toContain("请先选择地点");
     expect(emptyHtml).toContain("disabled");
     expect(selectedHtml).toContain("生成拍摄判断");
+    expect(selectedHtml).toContain('value="黄山光明顶"');
+    expect(selectedHtml).toContain('data-selected-location-card="true"');
+    expect(selectedHtml).toContain('data-forecast-range-section="true"');
     expect(selectedHtml).toContain("所在地");
     expect(selectedHtml).toContain("海拔");
     expect(selectedHtml).toContain("坐标信息");
+    expect(selectedHtml).toContain("更换地点");
+    expect(selectedHtml).toContain("清除选择");
+    expect(selectedHtml).toContain("未来48小时");
     expect(selectedHtml).not.toContain("请先选择地点");
+    expect(selectedHtml).not.toContain("常用机位");
+    expect(selectedHtml).not.toContain('data-place-search-results="true"');
+    expect(selectedHtml).not.toContain("高德地图");
+    expect(selectedHtml).not.toContain("Open-Meteo");
+    expect(selectedHtml).not.toContain("meteoblue");
+  });
+
+  it("collapses search results after selecting a search result", () => {
+    const selectionState = buildStateAfterSearchResultSelection(samplePlace);
+
+    expect(selectionState).toMatchObject({
+      query: "黄山光明顶",
+      isActivelySearching: false,
+      isCollapsedAfterSelection: true,
+    });
+    expect(
+      shouldShowPlaceSearchResults({
+        query: selectionState.query,
+        status: "ready",
+        resultsCount: 2,
+        isActivelySearching: selectionState.isActivelySearching,
+        isCollapsedAfterSelection: selectionState.isCollapsedAfterSelection,
+      }),
+    ).toBe(false);
+  });
+
+  it("reopens search results when the user types a different query", () => {
+    const selectedLocation = selectedLocationFromSearchResult(samplePlace);
+    const inputState = buildStateAfterSearchQueryInput("老君山", selectedLocation);
+
+    expect(inputState).toMatchObject({
+      isActivelySearching: true,
+      isCollapsedAfterSelection: false,
+      shouldClearSelection: true,
+    });
+    expect(
+      shouldShowPlaceSearchResults({
+        query: "老君山",
+        status: "ready",
+        resultsCount: 1,
+        isActivelySearching: inputState.isActivelySearching,
+        isCollapsedAfterSelection: inputState.isCollapsedAfterSelection,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps search results collapsed while the query still matches the selected location", () => {
+    const selectedLocation = selectedLocationFromSearchResult(samplePlace);
+    const inputState = buildStateAfterSearchQueryInput("黄山光明顶", selectedLocation);
+
+    expect(inputState.shouldClearSelection).toBe(false);
+    expect(inputState.isActivelySearching).toBe(false);
+    expect(
+      shouldShowPlaceSearchResults({
+        query: "黄山光明顶",
+        status: "ready",
+        resultsCount: 1,
+        isActivelySearching: inputState.isActivelySearching,
+        isCollapsedAfterSelection: inputState.isCollapsedAfterSelection,
+      }),
+    ).toBe(false);
+  });
+
+  it("supports changing or clearing the selected location from the compact selected card", () => {
+    const selectedLocation = selectedLocationFromSearchResult(samplePlace);
+    const changeState = buildStateAfterChangeLocation("", selectedLocation);
+    const clearState = buildStateAfterClearSelection();
+
+    expect(changeState).toMatchObject({
+      query: "黄山光明顶",
+      isActivelySearching: true,
+      isCollapsedAfterSelection: false,
+    });
+    expect(
+      shouldShowPlaceSearchResults({
+        query: changeState.query,
+        status: "ready",
+        resultsCount: 1,
+        isActivelySearching: changeState.isActivelySearching,
+        isCollapsedAfterSelection: changeState.isCollapsedAfterSelection,
+      }),
+    ).toBe(true);
+    expect(clearState).toMatchObject({
+      query: "",
+      isActivelySearching: false,
+      isCollapsedAfterSelection: false,
+    });
+    expect(
+      shouldShowPlaceSearchResults({
+        query: clearState.query,
+        status: "ready",
+        resultsCount: 1,
+        isActivelySearching: clearState.isActivelySearching,
+        isCollapsedAfterSelection: clearState.isCollapsedAfterSelection,
+      }),
+    ).toBe(false);
   });
 
   it("renders operational popular spot cards", () => {
@@ -578,6 +687,8 @@ describe("homepage forecast flow", () => {
     const html = renderToStaticMarkup(React.createElement(HomepageWorkbench));
 
     expect(html).toContain("minmax(0,1fr)");
+    expect(html).toContain("min-w-0");
+    expect(html).toContain("overflow-hidden");
     expect(html).toContain("sm:grid-cols-2");
     expect(html).toContain("xl:grid-cols-4");
     expect(html).not.toMatch(/w-\[(?:[1-9]\d{3,})px\]|min-w-\[(?:[1-9]\d{3,})px\]/);
@@ -586,7 +697,9 @@ describe("homepage forecast flow", () => {
   it("keeps public homepage copy product-friendly", () => {
     const html = renderToStaticMarkup(React.createElement(HomePage));
 
-    expect(html).toContain("输入拍摄地点，快速判断是否值得出发、最佳到达时间、优先题材和主要风险。");
+    expect(html).toContain(
+      "输入拍摄地点，快速判断是否值得出发、最佳到达时间、优先题材和主要风险。",
+    );
     expect(html).toContain("精选机位");
     expect(html).toContain("出发前重点");
     expect(html).toContain("常见题材判断");

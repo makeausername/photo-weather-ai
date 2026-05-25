@@ -278,9 +278,7 @@ export function buildHomepageLayerStatus(result: ForecastCalculationResult): Lay
       (summary.success ?? summary.status === "available"),
   );
   const failedOrSkippedSources = activeSummaries.filter(
-    (summary) =>
-      summary.enabled &&
-      !(summary.success ?? summary.status === "available"),
+    (summary) => summary.enabled && !(summary.success ?? summary.status === "available"),
   );
 
   if (successfulRealSources.length === 0 || result.weatherDataMode !== "real") {
@@ -305,7 +303,7 @@ export function HomepageWeatherLayer({
   const highCloudOpacity = typeof current?.cloudHigh === "number" ? current.cloudHigh / 100 : 0.32;
 
   return (
-    <section className="grid overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+    <section className="grid min-w-0 overflow-hidden rounded-lg border border-border bg-card shadow-sm">
       <div className="border-b border-border px-4 py-3 sm:px-5">
         <div>
           <p className="text-xs font-bold text-primary">拍摄条件概览</p>
@@ -557,7 +555,7 @@ export function HomepageDecisionSummary({
   const mainRisk = result?.riskFlags[0];
 
   return (
-    <Card className="grid content-start gap-4 p-4 shadow-sm">
+    <Card className="grid min-w-0 content-start gap-4 p-4 shadow-sm">
       <div>
         <p className="text-xs font-bold text-primary">出行判断摘要</p>
         <h2 className="mt-1 text-xl font-bold leading-7 text-card-foreground">

@@ -34,6 +34,7 @@ export function HomepageSearchPanel({
       ctaDisabledLabel="请先选择地点"
       showResultSourceBadges={false}
       selectedLocationDetailMode="compact"
+      showSelectedLocationActions
       selectedLocation={selectedLocation}
       onSelectedLocationChange={onSelectedLocationChange}
       onForecastOptionsChange={onForecastOptionsChange}

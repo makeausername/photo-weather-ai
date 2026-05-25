@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ForecastHorizon, ForecastTarget } from "@photo-weather/shared";
 import { forecastHorizonLabels, forecastTargetLabels } from "@photo-weather/shared";
 import {
@@ -41,7 +41,27 @@ type SearchErrorPayload = {
   readonly error?: string;
 };
 
-type SearchStatus = "idle" | "loading" | "ready" | "error";
+export type SearchStatus = "idle" | "loading" | "ready" | "error";
+
+export type PlaceSearchVisibilityState = {
+  readonly query: string;
+  readonly status: SearchStatus;
+  readonly resultsCount: number;
+  readonly isActivelySearching: boolean;
+  readonly isCollapsedAfterSelection: boolean;
+};
+
+export type SearchResultSelectionUiState = {
+  readonly query: string;
+  readonly isActivelySearching: boolean;
+  readonly isCollapsedAfterSelection: boolean;
+};
+
+export type SearchQueryInputUiState = {
+  readonly isActivelySearching: boolean;
+  readonly isCollapsedAfterSelection: boolean;
+  readonly shouldClearSelection: boolean;
+};
 
 type PlaceSearchCardProps = {
   readonly className?: string;
@@ -59,6 +79,7 @@ type PlaceSearchCardProps = {
   readonly ctaDisabledLabel?: string;
   readonly showResultSourceBadges?: boolean;
   readonly selectedLocationDetailMode?: "full" | "compact";
+  readonly showSelectedLocationActions?: boolean;
   readonly selectedLocation?: SelectedLocation | null;
   readonly onSelectedLocationChange?: (location: SelectedLocation | null) => void;
   readonly onForecastOptionsChange?: (options: {
@@ -111,6 +132,72 @@ export function sanitizePlaceSearchErrorMessage(message: string | undefined): st
   }
 
   return trimmedMessage;
+}
+
+export function shouldShowPlaceSearchResults(state: PlaceSearchVisibilityState): boolean {
+  return (
+    state.query.trim().length > 0 &&
+    state.status === "ready" &&
+    state.resultsCount > 0 &&
+    state.isActivelySearching &&
+    !state.isCollapsedAfterSelection
+  );
+}
+
+export function shouldShowPlaceSearchFeedback(
+  state: Omit<PlaceSearchVisibilityState, "resultsCount">,
+): boolean {
+  return (
+    state.query.trim().length > 0 && state.isActivelySearching && !state.isCollapsedAfterSelection
+  );
+}
+
+export function buildStateAfterSearchResultSelection(
+  result: Pick<PlaceSearchResult, "name">,
+): SearchResultSelectionUiState {
+  return {
+    query: result.name,
+    isActivelySearching: false,
+    isCollapsedAfterSelection: true,
+  };
+}
+
+export function buildStateAfterSearchQueryInput(
+  value: string,
+  selectedLocation: SelectedLocation | null | undefined,
+): SearchQueryInputUiState {
+  const trimmedValue = value.trim();
+  const selectedName = selectedLocation
+    ? (selectedLocation.displayName || selectedLocation.name).trim()
+    : "";
+  const matchesSelectedLocation = Boolean(selectedName) && trimmedValue === selectedName;
+
+  return {
+    isActivelySearching: trimmedValue.length > 0 && !matchesSelectedLocation,
+    isCollapsedAfterSelection: false,
+    shouldClearSelection: Boolean(selectedLocation && !matchesSelectedLocation),
+  };
+}
+
+export function buildStateAfterClearSelection(): SearchResultSelectionUiState {
+  return {
+    query: "",
+    isActivelySearching: false,
+    isCollapsedAfterSelection: false,
+  };
+}
+
+export function buildStateAfterChangeLocation(
+  query: string,
+  selectedLocation: SelectedLocation | null | undefined,
+): SearchResultSelectionUiState {
+  const nextQuery = query.trim() || selectedLocation?.displayName || selectedLocation?.name || "";
+
+  return {
+    query: nextQuery,
+    isActivelySearching: nextQuery.trim().length > 0,
+    isCollapsedAfterSelection: false,
+  };
 }
 
 export function PlaceSearchErrorAlert({ message }: { readonly message?: string }) {
@@ -242,20 +329,25 @@ export function PlaceSearchCard({
   ctaDisabledLabel,
   showResultSourceBadges = true,
   selectedLocationDetailMode = "full",
+  showSelectedLocationActions = false,
   selectedLocation,
   onSelectedLocationChange,
   onForecastOptionsChange,
 }: PlaceSearchCardProps) {
-  const [query, setQuery] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState(
+    () => selectedLocation?.displayName || selectedLocation?.name || "",
+  );
   const [status, setStatus] = useState<SearchStatus>("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [results, setResults] = useState<readonly PlaceSearchResult[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<PlaceSearchResult | null>(null);
+  const [isActivelySearching, setIsActivelySearching] = useState(false);
+  const [isCollapsedAfterSelection, setIsCollapsedAfterSelection] = useState(false);
   const [horizon, setHorizon] = useState<ForecastHorizon>(defaultHorizon);
   const [target, setTarget] = useState<ForecastTarget>(fixedTarget ?? defaultTarget);
 
   const trimmedQuery = query.trim();
-  const showEmptyState = status === "ready" && trimmedQuery.length > 0 && results.length === 0;
   const activeTarget = fixedTarget ?? (showTargetSelector ? target : defaultTarget);
   const internalSelectedLocation = useMemo(
     () => (selectedPlace ? selectedLocationFromSearchResult(selectedPlace) : null),
@@ -263,6 +355,17 @@ export function PlaceSearchCard({
   );
   const activeSelectedLocation =
     selectedLocation !== undefined ? selectedLocation : internalSelectedLocation;
+  const visibilityState: PlaceSearchVisibilityState = {
+    query,
+    status,
+    resultsCount: results.length,
+    isActivelySearching,
+    isCollapsedAfterSelection,
+  };
+  const showSearchFeedback = shouldShowPlaceSearchFeedback(visibilityState);
+  const showSearchResults = shouldShowPlaceSearchResults(visibilityState);
+  const showEmptyState = showSearchFeedback && status === "ready" && results.length === 0;
+  const showQuickLocations = !activeSelectedLocation || isActivelySearching;
 
   useEffect(() => {
     onForecastOptionsChange?.({ horizon, target: activeTarget });
@@ -280,11 +383,21 @@ export function PlaceSearchCard({
     )}`;
   }, [selectedPlace]);
 
+  const clearSelection = useCallback(() => {
+    setSelectedPlace(null);
+    onSelectedLocationChange?.(null);
+  }, [onSelectedLocationChange]);
+
   const searchPlaces = useCallback(
-    async (nextQuery: string, signal?: AbortSignal) => {
+    async (
+      nextQuery: string,
+      signal?: AbortSignal,
+      options: { readonly preserveSelection?: boolean } = {},
+    ) => {
       const keyword = nextQuery.trim();
-      setSelectedPlace(null);
-      onSelectedLocationChange?.(null);
+      if (!options.preserveSelection) {
+        clearSelection();
+      }
       if (!keyword) {
         setStatus("idle");
         setResults([]);
@@ -318,32 +431,134 @@ export function PlaceSearchCard({
         setStatus("error");
       }
     },
-    [onSelectedLocationChange],
+    [clearSelection],
   );
 
   useEffect(() => {
     if (!trimmedQuery) {
       setStatus("idle");
       setResults([]);
-      setSelectedPlace(null);
-      onSelectedLocationChange?.(null);
       setErrorMessage("");
+      return;
+    }
+
+    if (!isActivelySearching) {
+      return;
+    }
+
+    const selectedName = activeSelectedLocation
+      ? (activeSelectedLocation.displayName || activeSelectedLocation.name).trim()
+      : "";
+    if (isCollapsedAfterSelection && selectedName && trimmedQuery === selectedName) {
       return;
     }
 
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      void searchPlaces(trimmedQuery, controller.signal);
+      void searchPlaces(trimmedQuery, controller.signal, {
+        preserveSelection: Boolean(selectedName && trimmedQuery === selectedName),
+      });
     }, 320);
 
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [onSelectedLocationChange, searchPlaces, trimmedQuery]);
+  }, [
+    activeSelectedLocation,
+    isActivelySearching,
+    isCollapsedAfterSelection,
+    searchPlaces,
+    trimmedQuery,
+  ]);
+
+  useEffect(() => {
+    if (!selectedLocation) {
+      return;
+    }
+
+    const selectedName = selectedLocation.displayName || selectedLocation.name;
+    setQuery((currentQuery) =>
+      currentQuery.trim() === selectedName.trim() ? currentQuery : selectedName,
+    );
+    setIsActivelySearching(false);
+    setIsCollapsedAfterSelection(true);
+  }, [selectedLocation]);
+
+  const handleQueryChange = useCallback(
+    (value: string) => {
+      const nextState = buildStateAfterSearchQueryInput(value, activeSelectedLocation);
+      setQuery(value);
+      setIsActivelySearching(nextState.isActivelySearching);
+      setIsCollapsedAfterSelection(nextState.isCollapsedAfterSelection);
+
+      if (nextState.shouldClearSelection) {
+        clearSelection();
+      }
+
+      if (!value.trim()) {
+        setStatus("idle");
+        setResults([]);
+        setErrorMessage("");
+      }
+    },
+    [activeSelectedLocation, clearSelection],
+  );
+
+  const handleSelectResult = useCallback(
+    (result: PlaceSearchResult) => {
+      const nextState = buildStateAfterSearchResultSelection(result);
+      setSelectedPlace(result);
+      setQuery(nextState.query);
+      setIsActivelySearching(nextState.isActivelySearching);
+      setIsCollapsedAfterSelection(nextState.isCollapsedAfterSelection);
+      onSelectedLocationChange?.(selectedLocationFromSearchResult(result));
+    },
+    [onSelectedLocationChange],
+  );
+
+  const handleChangeLocation = useCallback(() => {
+    const nextState = buildStateAfterChangeLocation(query, activeSelectedLocation);
+    const nextQuery = nextState.query;
+
+    if (!trimmedQuery && nextQuery) {
+      setQuery(nextQuery);
+    }
+
+    setIsCollapsedAfterSelection(nextState.isCollapsedAfterSelection);
+    setIsActivelySearching(nextState.isActivelySearching);
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+
+    if (nextQuery.trim() && (status !== "ready" || results.length === 0)) {
+      void searchPlaces(nextQuery, undefined, { preserveSelection: true });
+    }
+  }, [activeSelectedLocation, query, results.length, searchPlaces, status, trimmedQuery]);
+
+  const handleClearSelection = useCallback(() => {
+    const nextState = buildStateAfterClearSelection();
+    setQuery(nextState.query);
+    setIsActivelySearching(nextState.isActivelySearching);
+    setIsCollapsedAfterSelection(nextState.isCollapsedAfterSelection);
+    setStatus("idle");
+    setResults([]);
+    setErrorMessage("");
+    clearSelection();
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  }, [clearSelection]);
+
+  const handleSubmitSearch = useCallback(() => {
+    const selectedName = activeSelectedLocation
+      ? (activeSelectedLocation.displayName || activeSelectedLocation.name).trim()
+      : "";
+    const preserveSelection = Boolean(selectedName && trimmedQuery === selectedName);
+
+    setIsCollapsedAfterSelection(false);
+    setIsActivelySearching(trimmedQuery.length > 0);
+    void searchPlaces(query, undefined, { preserveSelection });
+  }, [activeSelectedLocation, query, searchPlaces, trimmedQuery]);
 
   return (
-    <Card className={cn("grid gap-4 p-4 shadow-sm", className)}>
+    <Card className={cn("grid min-w-0 gap-4 p-4 shadow-sm", className)}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-bold text-card-foreground">{title}</p>
@@ -356,13 +571,14 @@ export function PlaceSearchCard({
         className="grid gap-2"
         onSubmit={(event) => {
           event.preventDefault();
-          void searchPlaces(query);
+          handleSubmitSearch();
         }}
       >
         <Input
+          ref={inputRef}
           aria-label="目的地"
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => handleQueryChange(event.target.value)}
           placeholder={searchPlaceholder}
           className="h-9 bg-card text-sm"
         />
@@ -371,19 +587,23 @@ export function PlaceSearchCard({
         </Button>
       </form>
 
-      <div className="grid gap-2">
-        <p className="text-xs font-semibold text-muted-foreground">常用机位</p>
-        <PopularSpotChips onSelect={setQuery} />
-      </div>
+      {showQuickLocations ? (
+        <div className="grid gap-2">
+          <p className="text-xs font-semibold text-muted-foreground">常用机位</p>
+          <PopularSpotChips onSelect={handleQueryChange} />
+        </div>
+      ) : null}
 
       <div aria-live="polite" className="grid gap-2">
-        {status === "loading" ? (
+        {showSearchFeedback && status === "loading" ? (
           <div className="rounded-lg border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
             正在搜索地点...
           </div>
         ) : null}
 
-        {status === "error" ? <PlaceSearchErrorAlert message={errorMessage} /> : null}
+        {showSearchFeedback && status === "error" ? (
+          <PlaceSearchErrorAlert message={errorMessage} />
+        ) : null}
 
         {showEmptyState ? (
           <div className="rounded-lg border border-border bg-muted px-3 py-3 text-sm leading-6 text-muted-foreground">
@@ -391,18 +611,18 @@ export function PlaceSearchCard({
           </div>
         ) : null}
 
-        {status === "ready" && results.length > 0 ? (
-          <div className="max-h-[260px] overflow-y-auto rounded-lg border border-border bg-card">
+        {showSearchResults ? (
+          <div
+            data-place-search-results="true"
+            className="max-h-[220px] overflow-x-hidden overflow-y-auto rounded-lg border border-border bg-card"
+          >
             {results.map((result) => (
               <button
                 key={result.id}
                 type="button"
-                onClick={() => {
-                  setSelectedPlace(result);
-                  onSelectedLocationChange?.(selectedLocationFromSearchResult(result));
-                }}
+                onClick={() => handleSelectResult(result)}
                 className={cn(
-                  "grid w-full gap-1.5 border-b border-border px-3 py-2.5 text-left transition last:border-b-0 hover:bg-secondary",
+                  "grid w-full min-w-0 gap-1.5 border-b border-border px-3 py-2.5 text-left transition last:border-b-0 hover:bg-secondary",
                   selectedPlace?.id === result.id && "bg-secondary",
                 )}
               >
@@ -425,7 +645,10 @@ export function PlaceSearchCard({
       </div>
 
       {activeSelectedLocation ? (
-        <div className="grid gap-3 rounded-lg border border-border bg-muted p-3">
+        <div
+          data-selected-location-card="true"
+          className="grid gap-3 rounded-lg border border-border bg-muted p-3"
+        >
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
               <p className="text-xs font-semibold text-muted-foreground">已选地点</p>
@@ -464,10 +687,20 @@ export function PlaceSearchCard({
               </div>
             </dl>
           )}
+          {showSelectedLocationActions ? (
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" size="sm" onClick={handleChangeLocation}>
+                更换地点
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={handleClearSelection}>
+                清除选择
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
-      <div className="grid gap-3 border-t border-border pt-4">
+      <div data-forecast-range-section="true" className="grid gap-3 border-t border-border pt-4">
         <div className="grid gap-2">
           <p className="text-sm font-semibold text-card-foreground">{horizonLabel}</p>
           <HorizonSelector value={horizon} onChange={setHorizon} />

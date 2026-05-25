@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
@@ -61,9 +62,13 @@ export function Button({
 
 export type InputProps = InputHTMLAttributes<HTMLInputElement>;
 
-export function Input({ className, ...props }: InputProps) {
+export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
+  { className, ...props },
+  ref,
+) {
   return (
     <input
+      ref={ref}
       className={cn(
         "h-10 w-full min-w-0 rounded-lg border border-border bg-card px-3 text-sm text-foreground shadow-sm transition placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted disabled:text-muted-foreground",
         className,
@@ -71,7 +76,7 @@ export function Input({ className, ...props }: InputProps) {
       {...props}
     />
   );
-}
+});
 
 export type TextareaProps = TextareaHTMLAttributes<HTMLTextAreaElement>;
 
