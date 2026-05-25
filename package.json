@@ -12,6 +12,7 @@
     "check:local": "powershell -ExecutionPolicy Bypass -File scripts/check-local.ps1",
     "debug:astro": "powershell -ExecutionPolicy Bypass -File scripts/debug-astro-local.ps1",
     "debug:weather": "powershell -ExecutionPolicy Bypass -File scripts/debug-weather-providers.ps1",
+    "test-provider": "pnpm --filter @photo-weather/api test-provider",
     "test:astro-api": "powershell -ExecutionPolicy Bypass -File scripts/test-astro-forecast-api.ps1",
     "test:qweather": "powershell -ExecutionPolicy Bypass -File scripts/test-qweather-provider.ps1",
     "test:weather-fusion": "powershell -ExecutionPolicy Bypass -File scripts/test-weather-fusion.ps1",

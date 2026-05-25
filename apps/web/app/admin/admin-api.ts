@@ -146,6 +146,11 @@ export type MockConnectionTestResult = {
   readonly sampleLocation?: string;
   readonly observedWeatherSummary?: string;
   readonly latencyMs?: number;
+  readonly enabled?: boolean;
+  readonly realCallEnabled?: boolean;
+  readonly apiKeyPresent?: boolean;
+  readonly attempted?: boolean;
+  readonly errorCategory?: string;
   readonly testedAt?: string;
   readonly providerType?: string;
   readonly messageZh?: string;
@@ -186,6 +191,7 @@ export type AdminAuthSession = {
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 const accessTokenKey = "photo_weather_admin_access_token";
 const refreshTokenKey = "photo_weather_admin_refresh_token";
+export const adminSessionExpiredMessage = "登录状态已失效，请重新登录后台后再测试。";
 
 type AdminApiErrorPayload = {
   readonly error?: string;
@@ -338,6 +344,7 @@ export async function adminApiFetch<TResponse>(
     }
 
     redirectToLogin();
+    throw new Error(adminSessionExpiredMessage);
   }
 
   if (!response.ok) {

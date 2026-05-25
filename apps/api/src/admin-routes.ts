@@ -45,6 +45,11 @@ import {
 } from "./ai-provider.js";
 import { createRealAmapProvider, readRuntimeAmapConfig } from "./geo-provider.js";
 import {
+  providerDiagnosticCodeFromRoute,
+  runProviderDiagnostic,
+  type ProviderDiagnosticResult,
+} from "./provider-diagnostics.js";
+import {
   normalizeOpenMeteoAdminConfigJson,
   normalizeMeteoblueAdminConfigJson,
   normalizeQWeatherAdminConfigJson,
@@ -361,6 +366,54 @@ function sendProviderTestFailure(
     messageZh: input.messageZh,
     message: input.messageZh,
   });
+}
+
+function providerTestAuthFailureResponse(
+  providerType: string,
+  providerCode: string,
+  error: { readonly statusCode: 401 | 403; readonly code: string; readonly message: string },
+) {
+  const errorCategory = error.statusCode === 401 ? "admin_unauthorized" : "admin_forbidden";
+  const messageZh =
+    error.statusCode === 401
+      ? "登录状态已失效，请重新登录后台后再测试。"
+      : "当前账号没有服务商测试权限。";
+
+  return {
+    success: false,
+    mode: "auth",
+    ...createProviderTestMetadata(providerType, providerCode, "real"),
+    enabled: false,
+    realCallEnabled: false,
+    apiKeyPresent: false,
+    attempted: false,
+    error: errorCategory,
+    errorCategory,
+    authErrorCode: error.code,
+    statusCode: error.statusCode,
+    messageZh,
+    message: messageZh,
+  };
+}
+
+function providerDiagnosticResponse(result: ProviderDiagnosticResult) {
+  const modeZh =
+    result.connectionMode === "real" ? result.modeLabelZh ?? "真实服务" : "模拟测试";
+  const mode =
+    result.connectionMode === "mock"
+      ? result.providerCode === "deepseek"
+        ? result.mode ?? "mock"
+        : "mock"
+      : result.mode ?? "real";
+  return {
+    ...result,
+    mode,
+    modeZh,
+    modeLabelZh: modeZh,
+    testedAt: new Date().toISOString(),
+    error: result.errorCategory,
+    message: result.messageZh,
+  };
 }
 
 function isJsonObjectValue(value: JsonValue | undefined): value is Record<string, JsonValue> {
@@ -742,7 +795,14 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
   app.post<{ Params: { providerType: string; providerCode: string } }>(
     "/admin/providers/:providerType/:providerCode/test-connection",
     async (request, reply) => {
-      const auth = await requirePermission(request, reply, client, authConfig, "providers.manage");
+      const auth = await requirePermission(request, reply, client, authConfig, "providers.manage", {
+        onAuthFailure: (error) =>
+          providerTestAuthFailureResponse(
+            request.params.providerType,
+            request.params.providerCode,
+            error,
+          ),
+      });
       if (!auth) {
         return reply;
       }
@@ -757,6 +817,19 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       const parsedBody = providerConnectionTestSchema.safeParse(request.body ?? {});
       if (!parsedBody.success) {
         return sendZodError(reply, parsedBody.error);
+      }
+
+      const diagnosticProviderCode = providerDiagnosticCodeFromRoute(
+        request.params.providerType,
+        request.params.providerCode,
+      );
+      if (diagnosticProviderCode) {
+        const result = await runProviderDiagnostic({
+          providerCode: diagnosticProviderCode,
+          dbClient: client,
+          env,
+        });
+        return providerDiagnosticResponse(result);
       }
 
       if (request.params.providerType === "geo" && request.params.providerCode === "amap") {

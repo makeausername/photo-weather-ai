@@ -63,7 +63,7 @@ DeepSeek 只用于解释确定性评分、风险和拍摄建议。启用服务�
 bash scripts/test-providers.sh
 ```
 
-脚本会使用 `.env.production` 和 `docker compose --env-file .env.production -f docker-compose.prod.yml` 调用后台测试端点，输出安全状态，不打印 API Key。若管理员登录凭据不可用，以后台 UI 手动测试为准。
+脚本会使用 `.env.production` 和 `docker compose --env-file .env.production -f docker-compose.prod.yml run --rm api pnpm test-provider --all` 在 api 容器内读取数据库配置，输出安全状态，不需要浏览器登录态，也不打印 API Key。
 
 真实 forecast 结果链路可运行：
 

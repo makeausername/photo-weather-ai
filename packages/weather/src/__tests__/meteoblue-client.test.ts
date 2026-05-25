@@ -89,7 +89,7 @@ describe("MeteoblueClient", () => {
 
     await expect(client.fetchForecast({ coordinates })).rejects.toMatchObject({
       errorCategory: "invalid_key",
-      messageZh: "meteoblue Key 无效或权限不足",
+      messageZh: "meteoblue API Key 无效、权限不足或当前数据包未授权。",
       statusCode: 403,
     });
     await expect(client.fetchForecast({ coordinates })).rejects.not.toMatchObject({

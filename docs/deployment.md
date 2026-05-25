@@ -248,7 +248,7 @@ Provider configuration lives in `/admin/providers`; see [admin-providers.md](adm
 bash scripts/test-providers.sh
 ```
 
-The script uses `.env.production` and `docker compose --env-file .env.production -f docker-compose.prod.yml`. If admin login cannot be performed from the script, the UI manual test remains primary.
+The script uses `.env.production` and runs `pnpm test-provider --all` inside the api container through `docker compose --env-file .env.production -f docker-compose.prod.yml run --rm api`. It reads provider config from the database, does not require a browser session, and never prints raw keys.
 
 Correct production command examples:
 

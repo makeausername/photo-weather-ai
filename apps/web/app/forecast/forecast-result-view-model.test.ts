@@ -7,7 +7,12 @@ import {
   type ForecastQueryInput,
   type ForecastScore,
 } from "@photo-weather/shared";
-import { AstroResultPage, CloudSeaResultPage, GlowResultPage } from "./forecast-result-client";
+import {
+  AstroResultPage,
+  CloudSeaResultPage,
+  GlowResultPage,
+  providerDiagnosticText,
+} from "./forecast-result-client";
 import {
   buildAstroForecastViewModel,
   buildCloudSeaForecastViewModel,
@@ -1189,6 +1194,33 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.riskSections.map((section) => section.title)).toContain("风险提示");
     expect(viewModel.adviceSections.map((section) => section.title)).toContain("拍摄建议");
     expect(viewModel.hiddenModuleKeys).toHaveLength(0);
+  });
+
+  it("shows meteoblue source diagnostics with exact category and safe message", () => {
+    const result = {
+      ...resultForTarget("general"),
+      weatherSourceSummaries: [
+        {
+          providerCode: "meteoblue",
+          providerLabelZh: "meteoblue",
+          dataMode: "real",
+          enabled: true,
+          realCallEnabled: true,
+          attempted: true,
+          success: false,
+          status: "failed",
+          availableFields: [],
+          missingFields: ["weather"],
+          statusCode: 401,
+          errorCategory: "invalid_key",
+          messageZh: "meteoblue API Key 无效、权限不足或当前数据包未授权。",
+        },
+      ],
+    } satisfies ForecastCalculationResult;
+
+    expect(providerDiagnosticText(result, "meteoblue", "meteoblue")).toBe(
+      "失败（invalid_key）：meteoblue API Key 无效、权限不足或当前数据包未授权。",
+    );
   });
 
   it("prioritizes cloud sea and whiteout risk without making astro primary", () => {

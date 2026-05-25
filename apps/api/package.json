@@ -7,6 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test-provider": "node dist/provider-diagnostics-cli.js",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {

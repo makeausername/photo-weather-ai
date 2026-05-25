@@ -387,7 +387,7 @@ METEOBLUE_PACKAGES=basic-1h,clouds-1h
 
 和风天气部分基础天气接口可能包含每月前 50k 次免费额度，但仍应按真实供应商调用管理：不要把 API Key 写入代码、README、测试 fixture 或提交记录；只在后台配置或本机 `.env.local` 中保存。`corepack pnpm test:qweather` 可用于本地人工检查：有 `PHOTO_WEATHER_ADMIN_ACCESS_TOKEN` 或 `ADMIN_ACCESS_TOKEN` 时调用后台测试连接；没有后台 token 时只读取 `/debug/providers` 的安全状态，真实连接仍以后台 UI 手动测试为主。
 
-天气多源排查脚本：`corepack pnpm debug:weather` 会读取 `.env.local`、检查本地 API、调用 `/debug/providers` 并输出脱敏后的 QWeather / Open-Meteo / meteoblue 状态；`corepack pnpm test:weather-fusion` 会调用 `/debug/weather-fusion`，使用黄山光明顶 WGS84 坐标打印来源摘要、目标置信度、冲突标记、融合摘要和当前使用的 real / fixture / demo 数据模式。
+天气多源排查脚本：`corepack pnpm debug:weather` 会读取 `.env.local`、检查本地 API、调用 `/debug/providers` 并输出脱敏后的 QWeather / Open-Meteo / meteoblue 状态；生产服务器可用 `bash scripts/test-providers.sh` 在 api 容器内运行 `pnpm test-provider --all`，读取数据库中的服务商配置并输出不含密钥的诊断 JSON；`corepack pnpm test:weather-fusion` 会调用 `/debug/weather-fusion`，使用黄山光明顶 WGS84 坐标打印来源摘要、目标置信度、冲突标记、融合摘要和当前使用的 real / fixture / demo 数据模式。
 
 后台 `geo/amap` 已启用、`configJson.realCallEnabled=true` 且已配置高德 Web 服务 Key 后，公开地点搜索和后台高德测试连接可以请求真实高德 Web Service。若数据库配置中没有 `realCallEnabled` 字段，才会读取 `ENABLE_REAL_AMAP` 作为兜底。高德返回坐标按 GCJ-02 处理，并同步归一化为 WGS84；天气、天文、地形和评分计算仍只使用 WGS84。
 

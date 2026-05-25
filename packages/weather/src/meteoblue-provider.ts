@@ -142,7 +142,7 @@ export class MeteoblueClient {
       sampleLocation: "黄山光明顶",
       messageZh: success
         ? "meteoblue 连接测试通过。"
-        : `meteoblue 连接测试未通过，HTTP 状态码：${result.statusCode}。`,
+        : "meteoblue 返回格式异常。",
     };
   }
 
@@ -220,7 +220,25 @@ function meteoblueHttpError(
   if (statusCode === 401 || statusCode === 403 || /invalid|unauthorized|forbidden|key/i.test(text)) {
     return meteoblueError({
       errorCategory: "invalid_key",
-      messageZh: "meteoblue Key 无效或权限不足",
+      messageZh: "meteoblue API Key 无效、权限不足或当前数据包未授权。",
+      statusCode,
+      latencyMs,
+    });
+  }
+
+  if (statusCode === 404) {
+    return meteoblueError({
+      errorCategory: "unsupported",
+      messageZh: "meteoblue Forecast API 地址或数据包路径不正确。",
+      statusCode,
+      latencyMs,
+    });
+  }
+
+  if (statusCode === 429) {
+    return meteoblueError({
+      errorCategory: "provider_error",
+      messageZh: "meteoblue 调用额度或频率受限。",
       statusCode,
       latencyMs,
     });
@@ -229,7 +247,7 @@ function meteoblueHttpError(
   if (/package|packages|subscription|subscribed|not.*available|access|permission|权限|套餐/i.test(text)) {
     return meteoblueError({
       errorCategory: "unsupported",
-      messageZh: "meteoblue 套餐不支持当前数据包",
+      messageZh: "meteoblue API Key 无效、权限不足或当前数据包未授权。",
       statusCode,
       latencyMs,
     });
@@ -252,7 +270,7 @@ function normalizeMeteoblueError(error: unknown, latencyMs: number): WeatherProv
   if (name === "AbortError") {
     return meteoblueError({
       errorCategory: "timeout",
-      messageZh: "meteoblue 请求超时",
+      messageZh: "meteoblue Forecast API 请求超时。",
       latencyMs,
       cause: error,
     });
@@ -694,7 +712,7 @@ function meteoblueParseError(messageZh: string, cause?: unknown): WeatherProvide
     providerLabelZh: "meteoblue",
     dataMode: "real",
     errorCategory: "parse_error",
-    messageZh,
+    messageZh: messageZh.endsWith("。") ? messageZh : `${messageZh}。`,
     cause,
   });
 }

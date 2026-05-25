@@ -29,6 +29,27 @@ describe("admin config routes", () => {
     });
   });
 
+  it("returns a session-expired diagnostic for unauthenticated provider tests", async () => {
+    const { client } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/providers/weather/meteoblue/test-connection",
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({
+      success: false,
+      attempted: false,
+      error: "admin_unauthorized",
+      errorCategory: "admin_unauthorized",
+      messageZh: "登录状态已失效，请重新登录后台后再测试。",
+      message: "登录状态已失效，请重新登录后台后再测试。",
+    });
+  });
+
   it("lists seeded system settings for an authorized admin", async () => {
     const { client } = await createFakeDatabaseClient();
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
@@ -667,7 +688,7 @@ describe("admin config routes", () => {
       statusCode: 200,
       message: expect.stringMatching(/^Open-Meteo 连接测试通过，耗时 \d+ms。$/),
     });
-    expect(response.body).not.toContain("apiKey");
+    expect(response.body).toContain('"apiKeyPresent":false');
     expect(response.body).not.toContain("secretJson");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -1087,6 +1108,64 @@ describe("admin config routes", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("reports meteoblue upstream 401 without returning an admin 401", async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(JSON.stringify({ error: "Invalid API key" }), {
+        status: 401,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const meteoblueProvider = state.providers.get("weather:meteoblue");
+    state.providers.set("weather:meteoblue", {
+      ...meteoblueProvider,
+      enabled: true,
+      configJson: {
+        ...(meteoblueProvider.configJson ?? {}),
+        realCallEnabled: true,
+        baseUrl: "https://my.meteoblue.com",
+        packages: "basic-1h,clouds-1h",
+      },
+      secretJson: {
+        apiKey: "meteoblue-real-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "mete****cret",
+      },
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "production",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/providers/weather/meteoblue/test-connection",
+      headers: adminAuthorizationHeader(),
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: false,
+      attempted: true,
+      statusCode: 401,
+      error: "invalid_key",
+      errorCategory: "invalid_key",
+      message: "meteoblue API Key 无效、权限不足或当前数据包未授权。",
+    });
+    expect(response.body).not.toContain("登录状态已失效");
+    expect(response.body).not.toContain("meteoblue-real-secret");
+  });
+
   it("tests a real DeepSeek connection through mocked fetch outside NODE_ENV=test", async () => {
     const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
       expect(init?.headers).toMatchObject({
@@ -1171,6 +1250,63 @@ describe("admin config routes", () => {
     expect(response.body).not.toContain("deepseek-real-secret");
     expect(response.body).not.toContain("secretJson");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports DeepSeek upstream 401 as provider auth failure, not admin auth failure", async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const deepSeekProvider = state.providers.get("ai:deepseek");
+    state.providers.set("ai:deepseek", {
+      ...deepSeekProvider,
+      enabled: true,
+      configJson: {
+        ...(deepSeekProvider.configJson ?? {}),
+        realCallEnabled: true,
+        analysisMode: "fast",
+      },
+      secretJson: {
+        apiKey: "deepseek-real-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "deep****cret",
+      },
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "production",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/providers/ai/deepseek/test-connection",
+      headers: adminAuthorizationHeader(),
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: false,
+      attempted: true,
+      statusCode: 401,
+      error: "invalid_key",
+      errorCategory: "invalid_key",
+      message: "DeepSeek API Key 无效或权限不足。",
+    });
+    expect(response.body).not.toContain("登录状态已失效");
+    expect(response.body).not.toContain("deepseek-real-secret");
   });
 
   it("forces real provider connection tests back to mock mode under NODE_ENV=test", async () => {

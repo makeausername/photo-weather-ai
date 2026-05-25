@@ -561,7 +561,7 @@ function dataReadinessBadgeVariant(result: ForecastCalculationResult): "success"
     : "warning";
 }
 
-function providerDiagnosticText(
+export function providerDiagnosticText(
   result: ForecastCalculationResult,
   providerCode: "qweather" | "open_meteo" | "meteoblue",
   fallbackLabel: string,
@@ -575,7 +575,8 @@ function providerDiagnosticText(
     return `${label} 通过`;
   }
   const reason = summary.messageZh ?? summary.warningZh ?? "未返回可用数据";
-  return summary.attempted ? `失败：${reason}` : `未参与：${reason}`;
+  const category = summary.errorCategory ? `（${summary.errorCategory}）` : "";
+  return summary.attempted ? `失败${category}：${reason}` : `未参与${category}：${reason}`;
 }
 
 function sourceConfidenceLabel(result: ForecastCalculationResult): string {

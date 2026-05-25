@@ -31,6 +31,14 @@ export type AuthenticatedRequestContext = {
   readonly mode: "jwt" | "dev_bypass";
 };
 
+export type RequirePermissionOptions = {
+  readonly onAuthFailure?: (error: {
+    readonly statusCode: 401 | 403;
+    readonly code: string;
+    readonly message: string;
+  }) => unknown;
+};
+
 export type AuthRoutesOptions = {
   readonly dbClient?: DatabaseClient;
   readonly authConfig: AuthConfig;
@@ -264,6 +272,7 @@ export async function requirePermission(
   client: DatabaseClient | undefined,
   config: AuthConfig,
   permission: string,
+  options: RequirePermissionOptions = {},
 ): Promise<AuthenticatedRequestContext | null> {
   try {
     const context = await authenticateRequest(request, client, config);
@@ -278,10 +287,18 @@ export async function requirePermission(
     return context;
   } catch (error) {
     if (error instanceof ApiAuthError) {
-      reply.status(error.statusCode).send({
-        error: error.code,
-        message: error.message,
-      });
+      reply.status(error.statusCode).send(
+        options.onAuthFailure
+          ? options.onAuthFailure({
+              statusCode: error.statusCode,
+              code: error.code,
+              message: error.message,
+            })
+          : {
+              error: error.code,
+              message: error.message,
+            },
+      );
       return null;
     }
 

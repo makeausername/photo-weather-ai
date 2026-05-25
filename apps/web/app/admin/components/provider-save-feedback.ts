@@ -3,6 +3,9 @@ export type ProviderSaveFeedbackState = {
   readonly message?: string;
 };
 
+export const adminProviderTestSessionExpiredMessage =
+  "登录状态已失效，请重新登录后台后再测试。";
+
 type ProviderIdentity = {
   readonly providerType: string;
   readonly providerCode: string;
@@ -65,6 +68,9 @@ export function providerSaveErrorMessage(error: unknown): string {
   const trimmed = message.trim();
   if (!trimmed) {
     return fallback;
+  }
+  if (trimmed === adminProviderTestSessionExpiredMessage) {
+    return trimmed;
   }
 
   if (unsafeSaveErrorPatterns.some((pattern) => pattern.test(trimmed))) {

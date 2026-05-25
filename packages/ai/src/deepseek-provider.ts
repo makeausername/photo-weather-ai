@@ -2,6 +2,7 @@ import {
   decisionCardSchema,
   deepSeekResponseFormat,
   normalizeDeepSeekModel,
+  type ForecastWeatherSourceErrorCategory,
   type DeepSeekReasoningEffort,
 } from "@photo-weather/shared";
 import type { DecisionCard, ForecastCalculationResult } from "@photo-weather/shared";
@@ -32,6 +33,7 @@ export type DeepSeekProviderOptions = {
   readonly thinkingEnabled?: boolean;
   readonly reasoningEffort?: DeepSeekReasoningEffort;
   readonly jsonOutputEnabled?: boolean;
+  readonly timeoutMs?: number;
 };
 
 type DeepSeekChatMessage = {
@@ -76,6 +78,37 @@ const deepSeekProviderDisabledMessage =
 const defaultBaseUrl = "https://api.deepseek.com";
 const defaultTemperature = 0.2;
 const defaultMaxTokens = 4000;
+const defaultTimeoutMs = 30000;
+
+export type DeepSeekProviderErrorOptions = {
+  readonly errorCategory: ForecastWeatherSourceErrorCategory;
+  readonly messageZh: string;
+  readonly statusCode?: number;
+  readonly latencyMs?: number;
+  readonly cause?: unknown;
+};
+
+export class DeepSeekProviderError extends Error {
+  readonly errorCategory: ForecastWeatherSourceErrorCategory;
+  readonly messageZh: string;
+  readonly statusCode?: number;
+  readonly latencyMs?: number;
+  override readonly cause?: unknown;
+
+  constructor(options: DeepSeekProviderErrorOptions) {
+    super(options.messageZh);
+    this.name = "DeepSeekProviderError";
+    this.errorCategory = options.errorCategory;
+    this.messageZh = options.messageZh;
+    this.statusCode = options.statusCode;
+    this.latencyMs = options.latencyMs;
+    this.cause = options.cause;
+  }
+}
+
+export function isDeepSeekProviderError(error: unknown): error is DeepSeekProviderError {
+  return error instanceof DeepSeekProviderError;
+}
 
 export const forecastAiExplanationSchema = z.object({
   summary: z.string().trim().min(1),
@@ -123,6 +156,14 @@ function normalizeMaxTokens(value: number | undefined, fallback = defaultMaxToke
   return Math.min(8192, Math.max(1, Math.round(value)));
 }
 
+function normalizeTimeoutMs(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return defaultTimeoutMs;
+  }
+
+  return Math.min(120000, Math.max(1000, Math.round(value)));
+}
+
 function normalizeResponseFormat(value: "json_object" | undefined): "json_object" {
   return value ?? deepSeekResponseFormat;
 }
@@ -153,13 +194,57 @@ function applyReasoningEffort(
   body.reasoning_effort = effort;
 }
 
-function getMessageContent(response: DeepSeekChatResponse): string {
+function deepSeekError(options: DeepSeekProviderErrorOptions): DeepSeekProviderError {
+  return new DeepSeekProviderError(options);
+}
+
+function getMessageContent(response: DeepSeekChatResponse, latencyMs?: number): string {
   const content = response.choices?.[0]?.message?.content;
   if (typeof content !== "string" || content.trim().length === 0) {
-    throw new Error("DeepSeek 未返回可解析内容。");
+    throw deepSeekError({
+      errorCategory: "parse_error",
+      messageZh: "DeepSeek 返回格式异常。",
+      latencyMs,
+    });
   }
 
   return content;
+}
+
+function parseDeepSeekChatResponse(text: string, latencyMs: number): DeepSeekChatResponse {
+  try {
+    return JSON.parse(text) as DeepSeekChatResponse;
+  } catch (error) {
+    throw deepSeekError({
+      errorCategory: "parse_error",
+      messageZh: "DeepSeek 返回格式异常。",
+      latencyMs,
+      cause: error,
+    });
+  }
+}
+
+function normalizeDeepSeekRequestError(error: unknown, latencyMs: number): DeepSeekProviderError {
+  if (isDeepSeekProviderError(error)) {
+    return error;
+  }
+
+  const name = error instanceof Error ? error.name : "";
+  if (name === "AbortError") {
+    return deepSeekError({
+      errorCategory: "timeout",
+      messageZh: "DeepSeek 服务请求超时。",
+      latencyMs,
+      cause: error,
+    });
+  }
+
+  return deepSeekError({
+    errorCategory: "network",
+    messageZh: "DeepSeek 网络不可用。",
+    latencyMs,
+    cause: error,
+  });
 }
 
 function pickForecastInput(result: ForecastCalculationResult) {
@@ -313,6 +398,7 @@ export class DeepSeekProvider implements AIProvider {
   readonly thinkingEnabled: boolean;
   readonly reasoningEffort: DeepSeekReasoningEffort;
   readonly jsonOutputEnabled: boolean;
+  readonly timeoutMs: number;
 
   constructor(private readonly options: DeepSeekProviderOptions = {}) {
     this.apiKey = options.apiKey?.trim();
@@ -324,6 +410,7 @@ export class DeepSeekProvider implements AIProvider {
     this.thinkingEnabled = options.thinkingEnabled ?? false;
     this.reasoningEffort = normalizeReasoningEffort(options.reasoningEffort);
     this.jsonOutputEnabled = options.jsonOutputEnabled ?? this.responseFormat === "json_object";
+    this.timeoutMs = normalizeTimeoutMs(options.timeoutMs);
     this.enabled = options.enabled ?? false;
     this.realModeEnabled = options.realModeEnabled ?? options.mode === "real";
     this.fetcher = options.fetcher ?? fetch;
@@ -452,7 +539,11 @@ export class DeepSeekProvider implements AIProvider {
       return schema.parse(JSON.parse(rawOutput));
     } catch (error) {
       if (error instanceof SyntaxError) {
-        throw new Error("DeepSeek 返回的 JSON 无法解析。");
+        throw deepSeekError({
+          errorCategory: "parse_error",
+          messageZh: "DeepSeek 返回格式异常。",
+          cause: error,
+        });
       }
 
       throw error;
@@ -490,20 +581,41 @@ export class DeepSeekProvider implements AIProvider {
 
   private async request(request: DeepSeekRequestPreview): Promise<string> {
     const apiKey = this.getApiKey();
-    const response = await this.fetcher(request.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(request.body),
-    });
+    const startedAt = Date.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
-    if (!response.ok) {
-      throw new Error(`DeepSeek 服务请求失败，状态码 ${response.status}。`);
+    try {
+      const response = await this.fetcher(request.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(request.body),
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      const latencyMs = Date.now() - startedAt;
+
+      if (!response.ok) {
+        throw deepSeekError({
+          errorCategory: response.status === 401 || response.status === 403 ? "invalid_key" : "provider_error",
+          messageZh:
+            response.status === 401 || response.status === 403
+              ? "DeepSeek API Key 无效或权限不足。"
+              : `DeepSeek 服务请求失败，状态码 ${response.status}。`,
+          statusCode: response.status,
+          latencyMs,
+        });
+      }
+
+      return getMessageContent(parseDeepSeekChatResponse(text, latencyMs), latencyMs);
+    } catch (error) {
+      throw normalizeDeepSeekRequestError(error, Date.now() - startedAt);
+    } finally {
+      clearTimeout(timeout);
     }
-
-    return getMessageContent((await response.json()) as DeepSeekChatResponse);
   }
 
   private getApiKey(): string {

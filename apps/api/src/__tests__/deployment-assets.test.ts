@@ -457,14 +457,9 @@ describe("production deployment assets", () => {
     expect(script).toContain('ENV_FILE=".env.production"');
     expect(script).toContain('COMPOSE_FILE="docker-compose.prod.yml"');
     expect(script).toContain('docker_cmd compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"');
-    expect(script).toContain("/admin/providers/${providerType}/${providerCode}/test-connection");
-    expect(script).toContain("QWeather");
-    expect(script).toContain("Open-Meteo");
-    expect(script).toContain("meteoblue");
-    expect(script).toContain("Amap");
-    expect(script).toContain("DeepSeek");
+    expect(script).toContain("compose run --rm api pnpm test-provider --all");
     expect(script).toContain("No API keys or secrets will be printed.");
-    expect(script).toContain("Bearer [redacted]");
+    expect(script).not.toContain("/admin/providers/${providerType}/${providerCode}/test-connection");
     expect(script).not.toMatch(/console\.log\(.*ADMIN_PASSWORD/);
     expect(script).not.toMatch(/echo .*ADMIN_PASSWORD/);
   });

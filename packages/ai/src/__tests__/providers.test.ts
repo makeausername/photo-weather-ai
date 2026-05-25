@@ -156,6 +156,35 @@ describe("AI providers", () => {
     ).rejects.toThrow("请先填写 DeepSeek API Key。");
   });
 
+  it("classifies upstream DeepSeek unauthorized responses without exposing the key", async () => {
+    const fetcher = async (_input: string | URL, init?: RequestInit) => {
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer sk-test-secret",
+      });
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    };
+    const provider = new DeepSeekProvider({
+      enabled: true,
+      realModeEnabled: true,
+      apiKey: "sk-test-secret",
+      fetcher,
+    });
+
+    await expect(provider.testConnection()).rejects.toMatchObject({
+      errorCategory: "invalid_key",
+      messageZh: "DeepSeek API Key 无效或权限不足。",
+      statusCode: 401,
+    });
+    await expect(provider.testConnection()).rejects.not.toMatchObject({
+      message: expect.stringContaining("sk-test-secret"),
+    });
+  });
+
   it("validates DeepSeek forecast explanation output shape", () => {
     const provider = new DeepSeekProvider({ mode: "mock" });
     const parsed = provider.validateJsonOutput(
