@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ForecastCalculationResult,
   ForecastHorizon,
@@ -8,14 +8,15 @@ import type {
   ForecastWeatherSourceSummary,
   NormalizedCurrentWeather,
 } from "@photo-weather/shared";
-import { HomepageSearchPanel, homepageDefaultHorizon, homepageDefaultTarget } from "./homepage-search-panel";
 import {
-  buildForecastRequestPayload,
-  type SelectedLocation,
-} from "./selected-location";
+  HomepageSearchPanel,
+  homepageDefaultHorizon,
+  homepageDefaultTarget,
+} from "./homepage-search-panel";
+import { buildForecastRequestPayload, type SelectedLocation } from "./selected-location";
 import { Badge, Card } from "./ui";
 
-type LayerStatus = "demo" | "loading" | "ready" | "partial" | "fallback" | "error";
+type LayerStatus = "idle" | "loading" | "ready" | "partial" | "fallback" | "error";
 
 type ForecastLayerState = {
   readonly status: LayerStatus;
@@ -32,14 +33,144 @@ const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:400
 
 const layerChips = ["云层", "风速", "湿度", "能见度", "月相", "天文窗口"] as const;
 
-const demoTimeline = [
-  { time: "04:00", label: "演示云层", tone: "muted" },
-  { time: "05:10", label: "示例日出窗口", tone: "best" },
-  { time: "06:25", label: "示例云缝", tone: "good" },
-  { time: "09:00", label: "示例风速", tone: "risk" },
+const emptyTimeline = [
+  { time: "云层", label: "云层趋势", tone: "muted" },
+  { time: "日出", label: "日出窗口", tone: "best" },
+  { time: "云隙", label: "云隙机会", tone: "good" },
+  { time: "风速", label: "风速变化", tone: "risk" },
 ] as const;
 
+export type HomepagePopularSpot = {
+  readonly id: string;
+  readonly name: string;
+  readonly province: string;
+  readonly location: string;
+  readonly subjects: readonly string[];
+  readonly reason: string;
+  readonly selectedLocation: SelectedLocation;
+};
+
+export const homepagePopularSpots = [
+  {
+    id: "homepage-spot-huangshan-guangmingding",
+    name: "黄山光明顶",
+    province: "安徽",
+    location: "黄山风景区",
+    subjects: ["云海", "日出", "雪后层次"],
+    reason: "高海拔观景平台，适合同时判断云海高度、日出方向和山脊层次。",
+    selectedLocation: {
+      id: "homepage-spot-huangshan-guangmingding",
+      name: "黄山光明顶",
+      displayName: "黄山光明顶",
+      source: "local_photo_spot",
+      originalSource: "homepage_popular_spot",
+      latitudeWgs84: 30.1328,
+      longitudeWgs84: 118.171,
+      latitudeGcj02: 30.1351,
+      longitudeGcj02: 118.1767,
+      elevationMeters: 1860,
+      province: "安徽省",
+      city: "黄山市",
+      district: "黄山区",
+      scenicArea: "黄山风景区光明顶",
+      dataStatus: "pending",
+      coordinateSource: "本地机位",
+      locationId: "location-huangshan",
+      photoSpotId: "spot-guangmingding",
+    },
+  },
+  {
+    id: "homepage-spot-laojunshan-jinding",
+    name: "老君山金顶",
+    province: "河南",
+    location: "老君山景区",
+    subjects: ["云海", "日出", "雪后层次"],
+    reason: "金顶主体辨识度强，适合复核高山云海、霞光和冬季强风风险。",
+    selectedLocation: {
+      id: "homepage-spot-laojunshan-jinding",
+      name: "老君山金顶",
+      displayName: "老君山金顶",
+      source: "local_photo_spot",
+      originalSource: "homepage_popular_spot",
+      latitudeWgs84: 33.7852,
+      longitudeWgs84: 111.6402,
+      latitudeGcj02: 33.7867,
+      longitudeGcj02: 111.6462,
+      elevationMeters: 2190,
+      province: "河南省",
+      city: "洛阳市",
+      district: "栾川县",
+      scenicArea: "老君山景区金顶",
+      dataStatus: "pending",
+      coordinateSource: "本地机位",
+      locationId: "location-laojunshan",
+      photoSpotId: "spot-laojunshan-jinding",
+    },
+  },
+  {
+    id: "homepage-spot-sanqingshan-nvshenfeng",
+    name: "三清山女神峰",
+    province: "江西",
+    location: "三清山风景名胜区",
+    subjects: ["云雾", "日出", "山地通透度"],
+    reason: "峰林遮挡和东方视野并存，适合判断清晨云雾、霞光与能见度。",
+    selectedLocation: {
+      id: "homepage-spot-sanqingshan-nvshenfeng",
+      name: "三清山女神峰",
+      displayName: "三清山女神峰",
+      source: "local_photo_spot",
+      originalSource: "homepage_popular_spot",
+      latitudeWgs84: 28.9139,
+      longitudeWgs84: 118.0699,
+      latitudeGcj02: 28.9169,
+      longitudeGcj02: 118.0751,
+      elevationMeters: 1600,
+      province: "江西省",
+      city: "上饶市",
+      district: "玉山县",
+      scenicArea: "三清山风景名胜区女神峰",
+      dataStatus: "pending",
+      coordinateSource: "本地机位",
+      locationId: "location-sanqingshan",
+      photoSpotId: "spot-sanqingshan-nvshenfeng",
+    },
+  },
+  {
+    id: "homepage-spot-wugongshan-jinding",
+    name: "武功山金顶",
+    province: "江西",
+    location: "武功山景区",
+    subjects: ["云海", "日出", "星空银河"],
+    reason: "高山草甸视野开阔，适合同时评估日出日落、云海和银河窗口。",
+    selectedLocation: {
+      id: "homepage-spot-wugongshan-jinding",
+      name: "武功山金顶",
+      displayName: "武功山金顶",
+      source: "local_photo_spot",
+      originalSource: "homepage_popular_spot",
+      latitudeWgs84: 27.4716,
+      longitudeWgs84: 114.1808,
+      latitudeGcj02: 27.4748,
+      longitudeGcj02: 114.1859,
+      elevationMeters: 1918,
+      province: "江西省",
+      city: "萍乡市",
+      district: "芦溪县",
+      scenicArea: "武功山景区金顶",
+      dataStatus: "pending",
+      coordinateSource: "本地机位",
+      locationId: "location-wugongshan",
+      photoSpotId: "spot-wugongshan-jinding",
+    },
+  },
+] as const satisfies readonly HomepagePopularSpot[];
+
+export function homepagePopularSpotToSelectedLocation(spot: HomepagePopularSpot): SelectedLocation {
+  return spot.selectedLocation;
+}
+
 export function HomepageWorkbench() {
+  const workspaceRef = useRef<HTMLDivElement>(null);
   const [selectedLocation, setSelectedLocation] = useState<SelectedLocation | null>(null);
   const [forecastOptions, setForecastOptions] = useState<{
     readonly horizon: ForecastHorizon;
@@ -49,13 +180,21 @@ export function HomepageWorkbench() {
     target: homepageDefaultTarget,
   });
   const [layerState, setLayerState] = useState<ForecastLayerState>({
-    status: "demo",
+    status: "idle",
     result: null,
   });
 
+  const selectPopularSpot = useCallback((spot: HomepagePopularSpot) => {
+    setSelectedLocation(homepagePopularSpotToSelectedLocation(spot));
+    window.requestAnimationFrame(() => {
+      workspaceRef.current?.focus({ preventScroll: true });
+      workspaceRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, []);
+
   useEffect(() => {
     if (!selectedLocation) {
-      setLayerState({ status: "demo", result: null });
+      setLayerState({ status: "idle", result: null });
       return;
     }
 
@@ -71,18 +210,17 @@ export function HomepageWorkbench() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify(
-            buildForecastRequestPayload(
-              location,
-              forecastOptions.horizon,
-              forecastOptions.target,
-            ),
+            buildForecastRequestPayload(location, forecastOptions.horizon, forecastOptions.target),
           ),
           signal: controller.signal,
         });
 
         if (!response.ok) {
           throw new Error(
-            await readForecastApiError(response, "真实天气暂不可用，当前显示演示图层。"),
+            await readForecastApiError(
+              response,
+              "该地点天气图层暂不可用，请稍后重试或查看结果页数据来源。",
+            ),
           );
         }
 
@@ -100,7 +238,7 @@ export function HomepageWorkbench() {
           status: "error",
           result: null,
           errorMessage:
-            (error as Error).message || "真实天气暂不可用，当前显示演示图层。",
+            (error as Error).message || "该地点天气图层暂不可用，请稍后重试或查看结果页数据来源。",
         });
       }
     }
@@ -113,19 +251,25 @@ export function HomepageWorkbench() {
   }, [forecastOptions.horizon, forecastOptions.target, selectedLocation]);
 
   return (
-    <div
-      id="analysis"
-      className="grid scroll-mt-24 gap-5 min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(360px,24vw,420px)_minmax(0,1fr)_clamp(360px,24vw,420px)] min-[1200px]:items-start"
-    >
-      <HomepageSearchPanel
-        onSelectedLocationChange={setSelectedLocation}
-        onForecastOptionsChange={setForecastOptions}
-      />
-      <div className="grid gap-5 min-[1200px]:contents">
-        <HomepageWeatherLayer location={selectedLocation} state={layerState} />
-        <HomepageDecisionSummary location={selectedLocation} state={layerState} />
+    <>
+      <div
+        id="analysis"
+        ref={workspaceRef}
+        tabIndex={-1}
+        className="grid scroll-mt-24 gap-5 outline-none min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(360px,24vw,420px)_minmax(0,1fr)_clamp(360px,24vw,420px)] min-[1200px]:items-start"
+      >
+        <HomepageSearchPanel
+          selectedLocation={selectedLocation}
+          onSelectedLocationChange={setSelectedLocation}
+          onForecastOptionsChange={setForecastOptions}
+        />
+        <div className="grid gap-5 min-[1200px]:contents">
+          <HomepageWeatherLayer location={selectedLocation} state={layerState} />
+          <HomepageDecisionSummary location={selectedLocation} state={layerState} />
+        </div>
       </div>
-    </div>
+      <HomepagePopularSpotsSection onSelectSpot={selectPopularSpot} />
+    </>
   );
 }
 
@@ -171,10 +315,15 @@ export function HomepageWeatherLayer({
     <section className="grid min-h-[560px] overflow-hidden rounded-lg border border-border bg-card shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
         <div>
-          <p className="text-xs font-bold text-primary">中心天气图层</p>
+          <p className="text-xs font-bold text-primary">拍摄天气图层</p>
           <h2 className="mt-1 text-xl font-bold leading-7 text-card-foreground">
-            {location ? `${location.displayName} 天气图层` : "拍摄天气图层预览"}
+            {location ? `${location.displayName} 拍摄天气图层` : "拍摄天气图层"}
           </h2>
+          <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">
+            {location
+              ? "结合所选地点的云层、风、湿度、能见度、月相和天文窗口生成图层摘要。"
+              : "选择地点后，这里会显示该机位的云层、风、湿度、能见度、月相和天文窗口摘要。"}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           {layerChips.map((chip) => (
@@ -254,7 +403,7 @@ export function HomepageWeatherLayer({
           <span className="absolute h-14 w-14 rounded-full border border-primary/35 bg-primary/10" />
           <span className="relative h-4 w-4 rounded-full border-[5px] border-primary bg-card shadow-soft" />
           <span className="mt-3 max-w-[260px] rounded-md border border-border bg-card/92 px-2.5 py-1 text-center text-xs font-bold text-card-foreground shadow-sm">
-            {location?.displayName ?? "待选择地点"}
+            {location?.displayName ?? "等待选择拍摄地点"}
           </span>
         </div>
 
@@ -295,8 +444,8 @@ function LayerStatusText({
   if (!location) {
     return (
       <div className="grid gap-1 text-xs leading-5 text-muted-foreground">
-        <span>默认演示图层，请先选择拍摄地点。</span>
-        <span>选择后将使用同一套天气融合接口刷新图层。</span>
+        <span className="font-semibold text-card-foreground">等待选择拍摄地点</span>
+        <span>请先搜索或选择常用机位。</span>
       </div>
     );
   }
@@ -314,27 +463,26 @@ function LayerStatusText({
     return (
       <div className="grid gap-1 text-xs leading-5 text-muted-foreground">
         <span>{location.displayName}</span>
-        <span>真实天气暂不可用，当前显示演示图层。</span>
+        <span>该地点天气图层暂不可用，请稍后重试或查看结果页数据来源。</span>
         {state.errorMessage ? <span>{state.errorMessage}</span> : null}
       </div>
     );
   }
 
+  const bestWindow = state.result?.bestWindows[0];
+
   return (
     <div className="grid gap-1 text-xs leading-5 text-muted-foreground">
       <span>时间基准：{formatDateTime(state.result?.generatedAt)}</span>
       <span>
-        云量：总 {formatPercent(current?.cloudTotal)} / 低 {formatPercent(current?.cloudLow)} / 中{" "}
+        云层：总 {formatPercent(current?.cloudTotal)} / 低 {formatPercent(current?.cloudLow)} / 中{" "}
         {formatPercent(current?.cloudMid)} / 高 {formatPercent(current?.cloudHigh)}
       </span>
-      <span>
-        风：{formatWind(current?.windSpeed, current?.windDirection)}；湿度{" "}
-        {formatPercent(current?.humidity)}
-      </span>
+      <span>风速：{formatWind(current?.windSpeed, current?.windDirection)}</span>
+      <span>湿度：{formatPercent(current?.humidity)}</span>
       <span>能见度：{formatKilometers(current?.visibility)}</span>
-      <span>
-        月相/天文：{state.result?.astroSummaries[0]?.moonPhaseNameZh ?? "本地天文服务待计算"}
-      </span>
+      <span>月相：{state.result?.astroSummaries[0]?.moonPhaseNameZh ?? "本地天文服务待计算"}</span>
+      <span>天文窗口：{bestWindow?.label ?? "等待窗口计算"}</span>
       {state.status === "partial" ? (
         <span className="font-semibold text-warning">部分数据源暂不可用，已降低置信度。</span>
       ) : null}
@@ -351,12 +499,15 @@ function WeatherLayerTimeline({ result }: { readonly result: ForecastCalculation
           label: window.label,
           tone: window.score >= 75 ? "best" : window.score >= 65 ? "good" : "muted",
         }))
-      : demoTimeline;
+      : emptyTimeline;
 
   return (
     <div className="grid gap-2 sm:grid-cols-4">
       {items.map((item) => (
-        <div key={`${item.time}-${item.label}`} className="rounded-lg border border-border bg-muted px-3 py-2">
+        <div
+          key={`${item.time}-${item.label}`}
+          className="rounded-lg border border-border bg-muted px-3 py-2"
+        >
           <div
             className={
               item.tone === "best"
@@ -376,7 +527,7 @@ function WeatherLayerTimeline({ result }: { readonly result: ForecastCalculation
   );
 }
 
-function HomepageDecisionSummary({
+export function HomepageDecisionSummary({
   location,
   state,
 }: {
@@ -393,7 +544,7 @@ function HomepageDecisionSummary({
         <div>
           <p className="text-xs font-bold text-primary">决策摘要</p>
           <h2 className="mt-1 text-xl font-bold leading-7 text-card-foreground">
-            {location ? `${location.displayName} 判断` : "待选择地点"}
+            {location ? `${location.displayName} 拍摄判断` : "拍摄判断摘要"}
           </h2>
         </div>
         <Badge variant={result?.weatherDataMode === "real" ? "success" : "warning"}>
@@ -424,7 +575,13 @@ function HomepageDecisionSummary({
         <div className="grid grid-cols-2 gap-3">
           <SummaryTile
             label="最佳窗口"
-            value={bestWindow ? `${formatTime(bestWindow.startTime)} - ${formatTime(bestWindow.endTime)}` : "暂无"}
+            value={
+              bestWindow
+                ? `${formatTime(bestWindow.startTime)} - ${formatTime(bestWindow.endTime)}`
+                : location
+                  ? "暂无"
+                  : "待计算"
+            }
           />
           <SummaryTile
             label="主要风险"
@@ -455,10 +612,62 @@ function SummaryTile({
   return (
     <div className={`rounded-lg border border-border ${muted ? "bg-muted" : "bg-card"} p-3`}>
       <dt className="text-xs font-semibold text-muted-foreground">{label}</dt>
-      <dd className={`mt-1 break-words font-bold ${danger ? "text-danger" : "text-card-foreground"}`}>
+      <dd
+        className={`mt-1 break-words font-bold ${danger ? "text-danger" : "text-card-foreground"}`}
+      >
         {value}
       </dd>
     </div>
+  );
+}
+
+export function HomepagePopularSpotsSection({
+  spots = homepagePopularSpots,
+  onSelectSpot,
+}: {
+  readonly spots?: readonly HomepagePopularSpot[];
+  readonly onSelectSpot: (spot: HomepagePopularSpot) => void;
+}) {
+  return (
+    <section className="mt-10 grid gap-5 border-t border-border pt-6 lg:grid-cols-12">
+      <div className="lg:col-span-3">
+        <h2 className="text-2xl font-bold text-foreground">精选机位</h2>
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">
+          快速选择常用风光摄影机位，进入对应题材判断。
+        </p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:col-span-9 xl:grid-cols-4">
+        {spots.map((spot) => (
+          <button
+            key={spot.id}
+            type="button"
+            onClick={() => onSelectSpot(spot)}
+            className="group grid min-w-0 content-start gap-3 rounded-lg border border-border bg-card p-4 text-left shadow-sm transition hover:border-primary hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-muted-foreground">
+                {spot.province} / {spot.location}
+              </p>
+              <h3 className="mt-1 break-words text-lg font-bold text-card-foreground">
+                {spot.name}
+              </h3>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {spot.subjects.map((subject) => (
+                <span
+                  key={subject}
+                  className="rounded-md border border-border bg-muted px-2 py-1 text-xs font-semibold text-muted-foreground group-hover:border-primary/40"
+                >
+                  {subject}
+                </span>
+              ))}
+            </div>
+            <p className="text-sm leading-6 text-muted-foreground">{spot.reason}</p>
+            <span className="text-xs font-bold text-primary">选择机位</span>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -478,7 +687,7 @@ async function readForecastApiError(response: Response, fallback: string): Promi
 
 function layerFooterText(location: SelectedLocation | null, state: ForecastLayerState): string {
   if (!location) {
-    return "默认演示图层，请先选择拍摄地点。";
+    return "云层趋势、日出窗口、云隙机会和风速变化会在选择地点后刷新。";
   }
   if (state.status === "loading") {
     return "正在加载该地点天气图层...";
@@ -487,28 +696,31 @@ function layerFooterText(location: SelectedLocation | null, state: ForecastLayer
     return "部分数据源暂不可用，已降低置信度。";
   }
   if (state.status === "fallback" || state.status === "error") {
-    return "真实天气暂不可用，当前显示演示图层。";
+    return "该地点天气图层暂不可用，请稍后重试或查看结果页数据来源。";
   }
   return "当前图层使用所选地点与天气融合结果生成。";
 }
 
 function decisionSummaryText(location: SelectedLocation | null, state: ForecastLayerState): string {
   if (!location) {
-    return "请选择地点后查看真实数据融合判断。";
+    return "选择地点后，将生成综合指数、最佳窗口、主要风险和拍摄建议。";
   }
   if (state.status === "loading") {
     return "天气融合结果加载中，完成后会同步刷新图层和决策摘要。";
   }
   if (state.status === "fallback" || state.status === "error") {
-    return "真实天气暂不可用，当前判断只可用于界面演示。";
+    return "该地点暂未获得可用天气图层，请稍后重试或前往结果页查看数据来源。";
   }
   if (state.status === "partial") {
     return "已有真实天气参与计算，但部分数据源失败，结果置信度已降低。";
   }
-  return "当前摘要来自所选地点的天气融合结果。";
+  return "当前摘要来自所选地点的天气、云层、天文窗口和风险判断。";
 }
 
 function summaryBadgeLabel(state: ForecastLayerState): string {
+  if (state.status === "idle") {
+    return "等待选择拍摄地点";
+  }
   if (state.status === "ready") {
     return "多源数据";
   }
@@ -518,7 +730,7 @@ function summaryBadgeLabel(state: ForecastLayerState): string {
   if (state.status === "loading") {
     return "加载中";
   }
-  return "演示状态";
+  return "数据受限";
 }
 
 function formatSuccessfulSourceLabels(
@@ -537,7 +749,11 @@ function formatSuccessfulSourceLabels(
 }
 
 function isWeatherProviderSummary(summary: ForecastWeatherSourceSummary): boolean {
-  return summary.providerCode === "qweather" || summary.providerCode === "open_meteo" || summary.providerCode === "meteoblue";
+  return (
+    summary.providerCode === "qweather" ||
+    summary.providerCode === "open_meteo" ||
+    summary.providerCode === "meteoblue"
+  );
 }
 
 function formatDateTime(value: string | undefined): string {
@@ -578,7 +794,9 @@ function formatPercent(value: number | null | undefined): string {
 }
 
 function formatKilometers(value: number | null | undefined): string {
-  return typeof value === "number" && Number.isFinite(value) ? `${roundDisplay(value)} 公里` : "暂无";
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${roundDisplay(value)} 公里`
+    : "暂无";
 }
 
 function formatWind(

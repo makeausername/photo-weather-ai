@@ -19,7 +19,12 @@ import {
 } from "../components/place-search-card";
 import {
   buildHomepageLayerStatus,
+  HomepageDecisionSummary,
+  homepagePopularSpots,
+  HomepagePopularSpotsSection,
   HomepageWeatherLayer,
+  homepagePopularSpotToSelectedLocation,
+  HomepageWorkbench,
 } from "../components/homepage-workbench";
 import { selectedLocationFromSearchResult } from "../components/selected-location";
 import { SourceDiagnosticsPanel } from "./forecast/forecast-result-client";
@@ -123,15 +128,23 @@ describe("homepage forecast flow", () => {
     expect(url.searchParams.get("photoSpotId")).toBe("spot-laojunshan-jinding");
   });
 
-  it("shows the default layer only before a location is selected", () => {
+  it("shows a professional empty weather layer before a location is selected", () => {
     const html = renderToStaticMarkup(
       React.createElement(HomepageWeatherLayer, {
         location: null,
-        state: { status: "demo", result: null },
+        state: { status: "idle", result: null },
       }),
     );
 
-    expect(html).toContain("默认演示图层，请先选择拍摄地点。");
+    expect(html).toContain("拍摄天气图层");
+    expect(html).toContain("等待选择拍摄地点");
+    expect(html).toContain("请先搜索或选择常用机位。");
+    expect(html).toContain("云层趋势");
+    expect(html).toContain("日出窗口");
+    expect(html).toContain("云隙机会");
+    expect(html).toContain("风速变化");
+    expect(html).not.toContain("默认演示图层");
+    expect(html).not.toContain("示例云层");
   });
 
   it("updates the center layer title after selecting a location", () => {
@@ -143,13 +156,13 @@ describe("homepage forecast flow", () => {
       }),
     );
 
-    expect(html).toContain("老君山金顶 天气图层");
+    expect(html).toContain("老君山金顶 拍摄天气图层");
     expect(html).toContain("正在加载该地点天气图层...");
     expect(html).not.toContain("默认演示图层");
-    expect(html).not.toContain("黄山光明顶 天气图层");
+    expect(html).not.toContain("黄山光明顶 拍摄天气图层");
   });
 
-  it("keeps selected location visible when real weather is unavailable", () => {
+  it("keeps selected location visible when weather layer data is unavailable", () => {
     const location = selectedLocationFromSearchResult(laojunshanPlace);
     const html = renderToStaticMarkup(
       React.createElement(HomepageWeatherLayer, {
@@ -159,8 +172,64 @@ describe("homepage forecast flow", () => {
     );
 
     expect(html).toContain("老君山金顶");
-    expect(html).toContain("真实天气暂不可用，当前显示演示图层。");
+    expect(html).toContain("该地点天气图层暂不可用，请稍后重试或查看结果页数据来源。");
     expect(html).not.toContain("默认演示图层");
+  });
+
+  it("shows a professional empty decision summary before a location is selected", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(HomepageDecisionSummary, {
+        location: null,
+        state: { status: "idle", result: null },
+      }),
+    );
+
+    expect(html).toContain("拍摄判断摘要");
+    expect(html).toContain("等待选择拍摄地点");
+    expect(html).toContain("地点");
+    expect(html).toContain("尚未选择");
+    expect(html).toContain("综合指数");
+    expect(html).toContain("--");
+    expect(html).toContain("选择地点后生成判断");
+    expect(html).toContain("最佳窗口");
+    expect(html).toContain("待计算");
+    expect(html).toContain("主要风险");
+    expect(html).toContain("选择地点后，将生成综合指数、最佳窗口、主要风险和拍摄建议。");
+    expect(html).not.toContain("演示状态");
+    expect(html).not.toContain("演示分析");
+  });
+
+  it("updates the right summary after selecting a spot", () => {
+    const location = selectedLocationFromSearchResult(laojunshanPlace);
+    const result = {
+      overallScore: 82,
+      recommendationLabel: "值得出发",
+      weatherDataMode: "real",
+      generatedAt: "2026-05-25T04:00:00+08:00",
+      bestWindows: [
+        {
+          startTime: "2026-05-25T05:10:00+08:00",
+          endTime: "2026-05-25T06:20:00+08:00",
+          label: "朝霞窗口",
+          score: 82,
+        },
+      ],
+      riskFlags: [{ label: "山顶强风" }],
+      weatherSourceSummaries: [],
+    } as unknown as ForecastCalculationResult;
+    const html = renderToStaticMarkup(
+      React.createElement(HomepageDecisionSummary, {
+        location,
+        state: { status: "ready", result },
+      }),
+    );
+
+    expect(html).toContain("老君山金顶 拍摄判断");
+    expect(html).toContain("82");
+    expect(html).toContain("值得出发");
+    expect(html).toContain("山顶强风");
+    expect(html).not.toContain("尚未选择");
+    expect(html).not.toContain("演示状态");
   });
 
   it("derives partial layer status from provider source summaries", () => {
@@ -259,9 +328,7 @@ describe("homepage forecast flow", () => {
         },
       ],
     } as unknown as ForecastCalculationResult;
-    const html = renderToStaticMarkup(
-      React.createElement(SourceDiagnosticsPanel, { result }),
-    );
+    const html = renderToStaticMarkup(React.createElement(SourceDiagnosticsPanel, { result }));
 
     expect(html).toContain("数据来源");
     expect(html).toContain("天气主源");
@@ -276,26 +343,89 @@ describe("homepage forecast flow", () => {
   it("keeps the forecast horizon selector but hides the visible target selector", () => {
     const html = renderToStaticMarkup(React.createElement(HomepageSearchPanel));
 
-    expect(html).toContain("预报范围选择");
+    expect(html).toContain("预报范围");
     expect(html).toContain("未来24小时");
     expect(html).toContain("未来48小时");
     expect(html).toContain("未来72小时");
     expect(html).toContain("未来7天");
-    expect(html).toContain("查看拍摄天气分析");
+    expect(html).toContain("请先选择一个地点");
     expect(html).toContain(homepageTargetHelperText);
     expect(html).not.toContain("分析目标");
+    expect(html).not.toContain("查看拍摄天气分析");
     expect(hasExactButton(html, "综合判断")).toBe(false);
     expect(hasExactButton(html, "云海")).toBe(false);
     expect(hasExactButton(html, "朝霞晚霞")).toBe(false);
     expect(hasExactButton(html, "星空银河")).toBe(false);
   });
 
+  it("keeps the forecast CTA guided until a location is selected", () => {
+    const HomepageSearchPanelComponent = HomepageSearchPanel as React.ComponentType<
+      NonNullable<Parameters<typeof HomepageSearchPanel>[0]>
+    >;
+    const emptyHtml = renderToStaticMarkup(
+      React.createElement(HomepageSearchPanelComponent, { selectedLocation: null }),
+    );
+    const selectedHtml = renderToStaticMarkup(
+      React.createElement(HomepageSearchPanelComponent, {
+        selectedLocation: selectedLocationFromSearchResult(samplePlace),
+      }),
+    );
+
+    expect(emptyHtml).toContain("请先选择一个地点");
+    expect(emptyHtml).toContain("disabled");
+    expect(selectedHtml).toContain("生成拍摄判断");
+    expect(selectedHtml).not.toContain("请先选择一个地点");
+  });
+
+  it("renders operational popular spot cards", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(HomepagePopularSpotsSection, { onSelectSpot: vi.fn() }),
+    );
+    const laojunshan = homepagePopularSpots.find((spot) => spot.name === "老君山金顶");
+
+    expect(laojunshan).toBeDefined();
+    expect(html).toContain("精选机位");
+    expect(html).toContain("快速选择常用风光摄影机位，进入对应题材判断。");
+    expect(html).toContain("老君山金顶");
+    expect(html).toContain("云海");
+    expect(html).toContain("选择机位");
+    expect(html).toContain("<button");
+    expect(homepagePopularSpotToSelectedLocation(laojunshan!).displayName).toBe("老君山金顶");
+    expect(homepagePopularSpotToSelectedLocation(laojunshan!).photoSpotId).toBe(
+      "spot-laojunshan-jinding",
+    );
+  });
+
+  it("keeps the homepage workspace responsive without fixed wide columns", () => {
+    const html = renderToStaticMarkup(React.createElement(HomepageWorkbench));
+
+    expect(html).toContain("minmax(0,1fr)");
+    expect(html).toContain("sm:grid-cols-2");
+    expect(html).toContain("xl:grid-cols-4");
+    expect(html).not.toMatch(/w-\[(?:[1-9]\d{3,})px\]|min-w-\[(?:[1-9]\d{3,})px\]/);
+  });
+
   it("keeps public homepage copy product-friendly", () => {
     const html = renderToStaticMarkup(React.createElement(HomePage));
 
-    expect(html).toContain("体验模式");
-    expect(html).toContain("请选择地点后查看真实数据融合判断。");
-    expect(html).not.toMatch(/\bmock\b|\bfixture\b|本地模拟|不含真实预报|开发环境|调试|占位/i);
+    expect(html).toContain("面向风光摄影的拍摄天气决策工具");
+    expect(html).toContain("实时决策工作台");
+    expect(html).toContain("精选机位");
+    expect(html).toContain("出发前看这几项");
+    expect(html).not.toContain("体验模式");
+    expect(html).not.toContain("默认演示图层");
+    expect(html).not.toContain("演示分析");
+    expect(html).not.toContain("演示状态");
+    expect(html).not.toContain("示例云层");
+    expect(html).not.toContain("示例日出窗口");
+    expect(html).not.toContain("示例云缝");
+    expect(html).not.toContain("示例风速");
+    expect(html).not.toContain("当前模式");
+    expect(html).not.toContain("热门机位");
+    expect(html).not.toContain("四步完成一次出发判断");
+    expect(html).not.toMatch(
+      /\bmock\b|\bfixture\b|\bdemo\b|本地模拟|不含真实预报|开发环境|调试|占位/i,
+    );
   });
 
   it("does not render raw Prisma details in the public place search error alert", () => {

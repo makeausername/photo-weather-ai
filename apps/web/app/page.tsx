@@ -4,13 +4,13 @@ import { Badge, Card } from "../components/ui";
 
 const sceneCapabilities = [
   {
-    label: "云海与白墙风险",
+    label: "云海机会",
     description:
       "把低云高度、湿度、风速、能见度和山谷地形放在同一判断里，区分云海机会与大面积遮挡风险。",
     meta: "低云 / 湿度 / 地形",
   },
   {
-    label: "朝霞晚霞机会",
+    label: "朝霞晚霞",
     description: "关注高云、中云、太阳高度角和通透度，拆出日出日落前后的可执行拍摄窗口。",
     meta: "高云 / 光线 / 透明度",
   },
@@ -20,29 +20,48 @@ const sceneCapabilities = [
     meta: "月相 / 暮光 / 云量",
   },
   {
-    label: "机位地形辅助",
-    description: "沉淀海拔、朝向、通行与安全备注，让天气判断落到具体拍摄位置和到达条件。",
-    meta: "坐标 / 海拔 / 通行",
+    label: "山地通透度",
+    description: "结合能见度、风、湿度和地形遮挡，判断山地层次、远景清晰度与雨后通透机会。",
+    meta: "能见度 / 湿度 / 风",
+  },
+  {
+    label: "拍摄窗口",
+    description: "按未来24小时、48小时、72小时或7天收敛关键时间段，辅助安排到达、等待和备选题材。",
+    meta: "窗口 / 到达 / 备选",
+  },
+  {
+    label: "出行风险",
+    description: "把降水、强风、低温、能见度和交通不确定性放在一起，辅助判断是否出发和备选方案。",
+    meta: "降水 / 强风 / 交通",
   },
 ] as const;
 
-const popularSpots = [
-  { name: "黄山光明顶", province: "安徽", focus: "云海、日出、雪后层次", tag: "山岳日出" },
-  { name: "老君山金顶", province: "河南", focus: "金顶日出、冬季雾凇", tag: "高山建筑" },
-  { name: "三清山女神峰", province: "江西", focus: "峰林云雾、霞光窗口", tag: "峰林云雾" },
-  { name: "武功山金顶", province: "江西", focus: "高山草甸、星空银河", tag: "草甸星空" },
-] as const;
-
 const workflow = [
-  { step: "01", title: "选地点", text: "输入景区、城市或机位，先确认坐标、海拔和资料来源。" },
-  { step: "02", title: "选时间", text: "按未来24小时、48小时、72小时或7天切换判断范围。" },
-  { step: "03", title: "看判断", text: "查看综合指数、最佳窗口、关键依据和主要风险。" },
-  { step: "04", title: "决定是否出发", text: "把天气、地形、窗口和风险整理成一次出行决策。" },
+  {
+    step: "01",
+    title: "机位与坐标",
+    text: "确认景区、具体机位和海拔，避免用城市天气代替山顶条件。",
+  },
+  {
+    step: "02",
+    title: "时间窗口",
+    text: "按题材查看未来24小时、48小时、72小时或7天的关键窗口。",
+  },
+  {
+    step: "03",
+    title: "题材机会",
+    text: "分别评估云海、朝霞晚霞、星空银河和通透度条件。",
+  },
+  {
+    step: "04",
+    title: "风险与行动",
+    text: "结合风、降水、能见度、温差和交通风险，决定是否出发与备选方案。",
+  },
 ] as const;
 
 export default function HomePage() {
   return (
-    <PublicShell contentClassName="pb-14">
+    <PublicShell contentClassName="pb-10">
       <section className="grid gap-5">
         <div className="flex flex-col justify-between gap-4 border-b border-border pb-5 min-[900px]:flex-row min-[900px]:items-end">
           <div className="max-w-3xl">
@@ -51,16 +70,19 @@ export default function HomePage() {
               逐光天气
             </h1>
             <p className="mt-3 text-[15px] leading-7 text-muted-foreground sm:text-base">
-              面向风光摄影的地点判断工作台，把搜索、图层预览、时间窗口和风险摘要放在同一屏，帮助出发前更快判断是否值得等待。
+              面向风光摄影的拍摄天气决策工具，整合地点、天气、云层、天文窗口和风险提示，帮助你判断是否值得出发、何时到达、优先拍什么。
             </p>
           </div>
           <div className="grid gap-2 rounded-lg border border-border bg-card px-4 py-3 text-sm shadow-sm sm:min-w-[320px]">
             <div className="flex items-center justify-between gap-3">
-              <span className="font-semibold text-card-foreground">当前模式</span>
-              <Badge variant="muted">体验模式</Badge>
+              <span className="font-semibold text-card-foreground">实时决策工作台</span>
+              <Badge variant="muted">多源数据</Badge>
             </div>
             <p className="text-xs leading-5 text-muted-foreground">
-              搜索地点、选择时间并查看判断；正式数据源配置后将显示实时结果。
+              选择拍摄地点和预报范围后，系统将结合天气、云层、天文窗口和地形信息生成拍摄判断。
+            </p>
+            <p className="text-xs leading-5 text-muted-foreground">
+              数据源未完全配置时，部分结果将以可用数据和明确提示为准。
             </p>
           </div>
         </div>
@@ -68,7 +90,7 @@ export default function HomePage() {
         <HomepageWorkbench />
       </section>
 
-      <section className="mt-12 border-t border-border pt-8">
+      <section className="mt-10 border-t border-border pt-8">
         <div className="flex flex-col gap-3 min-[900px]:flex-row min-[900px]:items-end min-[900px]:justify-between">
           <div>
             <p className="text-sm font-semibold text-primary">场景能力</p>
@@ -79,7 +101,7 @@ export default function HomePage() {
           </p>
         </div>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {sceneCapabilities.map((feature) => (
             <Card key={feature.label} className="grid gap-3 p-5">
               <Badge variant="muted" className="w-fit">
@@ -92,38 +114,16 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="mt-12 grid gap-5 border-t border-border pt-8 lg:grid-cols-12">
-        <div className="lg:col-span-3">
-          <p className="text-sm font-semibold text-primary">热门机位</p>
-          <h2 className="mt-2 text-2xl font-bold text-foreground">从常用地点开始判断</h2>
-          <p className="mt-3 text-sm leading-6 text-muted-foreground">
-            常用机位资料可帮助快速选择地点，并与拍摄天气分析联动。
-          </p>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:col-span-9 xl:grid-cols-4">
-          {popularSpots.map((spot) => (
-            <Card key={spot.name} className="grid gap-3 p-5">
-              <div>
-                <Badge variant="accent" className="w-fit">
-                  {spot.tag}
-                </Badge>
-                <h3 className="mt-3 text-lg font-bold text-card-foreground">{spot.name}</h3>
-                <p className="mt-1 text-sm text-muted-foreground">{spot.province}</p>
-              </div>
-              <p className="text-sm leading-6 text-muted-foreground">{spot.focus}</p>
-            </Card>
-          ))}
-        </div>
-      </section>
-
-      <section className="mt-12 border-t border-border pt-8">
+      <section className="mt-10 border-t border-border pt-8">
         <div className="flex flex-col gap-3 min-[900px]:flex-row min-[900px]:items-end min-[900px]:justify-between">
           <div>
-            <p className="text-sm font-semibold text-primary">工作流</p>
-            <h2 className="mt-2 text-2xl font-bold text-foreground">四步完成一次出发判断</h2>
+            <h2 className="text-2xl font-bold text-foreground">出发前看这几项</h2>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
+              把复杂的天气和天文信息收敛成可执行判断。
+            </p>
           </div>
           <Badge variant="muted" className="w-fit">
-            拍摄天气分析流程
+            出发前核对
           </Badge>
         </div>
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">

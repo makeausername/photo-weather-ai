@@ -48,12 +48,16 @@ type PlaceSearchCardProps = {
   readonly title?: string;
   readonly description?: string;
   readonly badgeLabel?: string;
+  readonly searchPlaceholder?: string;
+  readonly horizonLabel?: string;
   readonly defaultHorizon?: ForecastHorizon;
   readonly defaultTarget?: ForecastTarget;
   readonly fixedTarget?: ForecastTarget;
   readonly showTargetSelector?: boolean;
   readonly targetHelperText?: string;
   readonly ctaLabel?: string;
+  readonly ctaDisabledLabel?: string;
+  readonly selectedLocation?: SelectedLocation | null;
   readonly onSelectedLocationChange?: (location: SelectedLocation | null) => void;
   readonly onForecastOptionsChange?: (options: {
     readonly horizon: ForecastHorizon;
@@ -91,7 +95,7 @@ const sourceLabels: Record<PlaceResultSource, string> = {
   local_location: "本地地点",
   local_photo_spot: "本地机位",
   amap: "高德地图",
-  mock: "演示数据",
+  mock: "备用地点",
 };
 
 export function sanitizePlaceSearchErrorMessage(message: string | undefined): string {
@@ -225,12 +229,16 @@ export function PlaceSearchCard({
   title = "选择拍摄地点",
   description = "搜索景区、城市或具体机位",
   badgeLabel = "本地优先",
+  searchPlaceholder = "请输入拍摄地点",
+  horizonLabel = "预报范围选择",
   defaultHorizon = "48h",
   defaultTarget = "general",
   fixedTarget,
   showTargetSelector = true,
   targetHelperText,
   ctaLabel = "查看拍摄天气分析",
+  ctaDisabledLabel,
+  selectedLocation,
   onSelectedLocationChange,
   onForecastOptionsChange,
 }: PlaceSearchCardProps) {
@@ -245,6 +253,12 @@ export function PlaceSearchCard({
   const trimmedQuery = query.trim();
   const showEmptyState = status === "ready" && trimmedQuery.length > 0 && results.length === 0;
   const activeTarget = fixedTarget ?? (showTargetSelector ? target : defaultTarget);
+  const internalSelectedLocation = useMemo(
+    () => (selectedPlace ? selectedLocationFromSearchResult(selectedPlace) : null),
+    [selectedPlace],
+  );
+  const activeSelectedLocation =
+    selectedLocation !== undefined ? selectedLocation : internalSelectedLocation;
 
   useEffect(() => {
     onForecastOptionsChange?.({ horizon, target: activeTarget });
@@ -262,40 +276,46 @@ export function PlaceSearchCard({
     )}`;
   }, [selectedPlace]);
 
-  const searchPlaces = useCallback(async (nextQuery: string, signal?: AbortSignal) => {
-    const keyword = nextQuery.trim();
-    setSelectedPlace(null);
-    onSelectedLocationChange?.(null);
-    if (!keyword) {
-      setStatus("idle");
-      setResults([]);
-      setErrorMessage("");
-      return;
-    }
-
-    setStatus("loading");
-    setErrorMessage("");
-    try {
-      const response = await fetch(`${apiBaseUrl}/search/places?q=${encodeURIComponent(keyword)}`, {
-        signal,
-      });
-      if (!response.ok) {
-        throw new Error(await readSearchErrorMessage(response));
-      }
-
-      const data = (await response.json()) as SearchResponse;
-      setResults(data.results);
-      setStatus("ready");
-    } catch (error) {
-      if ((error as Error).name === "AbortError") {
+  const searchPlaces = useCallback(
+    async (nextQuery: string, signal?: AbortSignal) => {
+      const keyword = nextQuery.trim();
+      setSelectedPlace(null);
+      onSelectedLocationChange?.(null);
+      if (!keyword) {
+        setStatus("idle");
+        setResults([]);
+        setErrorMessage("");
         return;
       }
 
-      setResults([]);
-      setErrorMessage(sanitizePlaceSearchErrorMessage((error as Error).message));
-      setStatus("error");
-    }
-  }, [onSelectedLocationChange]);
+      setStatus("loading");
+      setErrorMessage("");
+      try {
+        const response = await fetch(
+          `${apiBaseUrl}/search/places?q=${encodeURIComponent(keyword)}`,
+          {
+            signal,
+          },
+        );
+        if (!response.ok) {
+          throw new Error(await readSearchErrorMessage(response));
+        }
+
+        const data = (await response.json()) as SearchResponse;
+        setResults(data.results);
+        setStatus("ready");
+      } catch (error) {
+        if ((error as Error).name === "AbortError") {
+          return;
+        }
+
+        setResults([]);
+        setErrorMessage(sanitizePlaceSearchErrorMessage((error as Error).message));
+        setStatus("error");
+      }
+    },
+    [onSelectedLocationChange],
+  );
 
   useEffect(() => {
     if (!trimmedQuery) {
@@ -339,7 +359,7 @@ export function PlaceSearchCard({
           aria-label="目的地"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="请输入拍摄地点"
+          placeholder={searchPlaceholder}
           className="h-9 bg-card text-sm"
         />
         <Button type="submit" size="sm" className="h-9 w-full" disabled={status === "loading"}>
@@ -359,9 +379,7 @@ export function PlaceSearchCard({
           </div>
         ) : null}
 
-        {status === "error" ? (
-          <PlaceSearchErrorAlert message={errorMessage} />
-        ) : null}
+        {status === "error" ? <PlaceSearchErrorAlert message={errorMessage} /> : null}
 
         {showEmptyState ? (
           <div className="rounded-lg border border-border bg-muted px-3 py-3 text-sm leading-6 text-muted-foreground">
@@ -400,16 +418,16 @@ export function PlaceSearchCard({
         ) : null}
       </div>
 
-      {selectedPlace ? (
+      {activeSelectedLocation ? (
         <div className="grid gap-3 rounded-lg border border-border bg-muted p-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
               <p className="text-xs font-semibold text-muted-foreground">已选地点</p>
               <p className="mt-1 break-words text-base font-bold text-card-foreground">
-                {selectedPlace.name}
+                {activeSelectedLocation.displayName}
               </p>
             </div>
-            {selectedPlace.matchedPhotoSpotId ? (
+            {activeSelectedLocation.photoSpotId ? (
               <Badge variant="success" className="shrink-0">
                 已匹配机位
               </Badge>
@@ -418,11 +436,15 @@ export function PlaceSearchCard({
           <dl className="grid gap-2 text-xs leading-5 text-muted-foreground">
             <div>
               <dt className="font-semibold text-card-foreground">位置</dt>
-              <dd>{formatAddressAndCity(selectedPlace)}</dd>
+              <dd>{formatSelectedLocationArea(activeSelectedLocation)}</dd>
             </div>
             <div>
               <dt className="font-semibold text-card-foreground">坐标</dt>
-              <dd className="break-words">{selectedCoordinateText}</dd>
+              <dd className="break-words">
+                {selectedPlace && activeSelectedLocation.id === selectedPlace.id
+                  ? selectedCoordinateText
+                  : formatSelectedLocationCoordinates(activeSelectedLocation)}
+              </dd>
             </div>
           </dl>
         </div>
@@ -430,7 +452,7 @@ export function PlaceSearchCard({
 
       <div className="grid gap-3 border-t border-border pt-4">
         <div className="grid gap-2">
-          <p className="text-sm font-semibold text-card-foreground">预报范围选择</p>
+          <p className="text-sm font-semibold text-card-foreground">{horizonLabel}</p>
           <HorizonSelector value={horizon} onChange={setHorizon} />
         </div>
 
@@ -475,24 +497,34 @@ export function PlaceSearchCard({
         <Button
           type="button"
           className="h-9 w-full"
-          disabled={!selectedPlace}
+          disabled={!activeSelectedLocation}
           onClick={() => {
-            if (!selectedPlace) {
+            if (!activeSelectedLocation) {
               return;
             }
 
             window.location.assign(
-              buildForecastUrlFromSelectedLocation(
-                selectedLocationFromSearchResult(selectedPlace),
-                horizon,
-                activeTarget,
-              ),
+              buildForecastUrlFromSelectedLocation(activeSelectedLocation, horizon, activeTarget),
             );
           }}
         >
-          {ctaLabel}
+          {activeSelectedLocation ? ctaLabel : ctaDisabledLabel ?? ctaLabel}
         </Button>
       </div>
     </Card>
   );
+}
+
+function formatSelectedLocationArea(location: SelectedLocation): string {
+  const area = [location.province, location.city, location.district].filter(Boolean).join(" / ");
+  return location.scenicArea ?? (area || "位置资料待补充");
+}
+
+function formatSelectedLocationCoordinates(location: SelectedLocation): string {
+  const gcj02 =
+    typeof location.latitudeGcj02 === "number" && typeof location.longitudeGcj02 === "number"
+      ? `GCJ-02：${formatCoordinate(location.latitudeGcj02)}, ${formatCoordinate(location.longitudeGcj02)}；`
+      : "";
+
+  return `${gcj02}WGS84：${formatCoordinate(location.latitudeWgs84)}, ${formatCoordinate(location.longitudeWgs84)}`;
 }
