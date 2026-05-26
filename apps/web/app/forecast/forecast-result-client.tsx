@@ -7,6 +7,7 @@ import {
   formatShootingWindowZh,
   forecastHorizonLabels,
   forecastTargetLabels,
+  type AstroWindow,
   type ForecastCalculationResult,
   type ForecastQueryInput,
   type ForecastScore,
@@ -1196,6 +1197,102 @@ function subjectActionSuggestion(key: SubjectScoreKey, score: number): string {
   return score >= 70 ? "适合远山层次和长焦景别。" : "通透度一般，优先准备中近景构图。";
 }
 
+function dailyAstroWindowPresenceText(day: DailyAstroLike | undefined): string {
+  if (!day) {
+    return "暂无";
+  }
+  if (!day.astronomicalWindowAvailable || !day.astronomicalNightWindow) {
+    return "无";
+  }
+  return `有｜${formatAstroWindowForUi(day.astronomicalNightWindow)}`;
+}
+
+function dailyAstroShootabilityText(
+  day: DailyAstroLike | undefined,
+  subject: "stars" | "milkyWay",
+): string {
+  if (!day) {
+    return "暂无";
+  }
+  const label = subject === "stars" ? day.labels.starShootability : day.labels.milkyWayShootability;
+  const score = subject === "stars" ? day.practicalAstroScore : day.milkyWayGeometryScore;
+  return `${label}（${score}分）`;
+}
+
+function dailyAstroNightAdvice(day: DailyAstroLike | undefined): string {
+  if (!day) {
+    return "暂无";
+  }
+  if (day.astroShootable) {
+    return "建议夜拍";
+  }
+  if (day.astroWindowAvailable) {
+    return "仅作备选";
+  }
+  return "不建议夜拍";
+}
+
+function dailyAstroRecommendationLine(day: DailyAstroLike): string {
+  if (day.astroShootable && day.recommendedMilkyWayWindow) {
+    return `推荐银河窗口：${formatAstroWindowForUi(day.recommendedMilkyWayWindow)}；云量风险${day.labels.cloudBlocker}，月光影响${day.labels.moonlightImpact}。`;
+  }
+  if (day.astroWindowAvailable) {
+    return `天文窗口存在，但${astroMainBlockersForDay(day).join("、")}不支持拍摄。`;
+  }
+  return "暂无有效天文窗口，不建议把夜拍作为主目标。";
+}
+
+function astroMainBlockers(
+  result: ForecastCalculationResult,
+  day: DailyAstroLike | undefined,
+): readonly string[] {
+  const labels = day?.labels ?? result.astroAnalysis.labels;
+  const rawBlockers = day?.weatherBlockers ?? result.astroAnalysis.weatherBlockers;
+  const text = rawBlockers.join(" ");
+  const blockers = [
+    /低云/.test(text) || labels.cloudBlocker === "高" ? "低云偏多" : "",
+    /总云|云量|云层|厚云/.test(text) ? "云量偏高" : "",
+    /降水|雨|雪/.test(text) ? "降水干扰" : "",
+    labels.moonlightImpact === "高" || /月光/.test(text) ? "月光影响" : "",
+    labels.dewRisk === "高" || /露|结露|湿度/.test(text) ? "露水风险" : "",
+    /通透|能见度|霾|雾/.test(text) ? "通透度不足" : "",
+  ].filter(Boolean);
+
+  if (blockers.length > 0) {
+    return [...new Set(blockers)].slice(0, 4);
+  }
+
+  if (rawBlockers.length > 0) {
+    return rawBlockers.map((blocker) => blocker.replace(/[。.]$/, "")).slice(0, 3);
+  }
+
+  return result.astroAnalysis.astroShootable ? [] : ["云量/低云/降水条件"];
+}
+
+function astroMainBlockersForDay(day: DailyAstroLike): readonly string[] {
+  const text = day.weatherBlockers.join(" ");
+  const blockers = [
+    /低云/.test(text) || day.labels.cloudBlocker === "高" ? "低云偏多" : "",
+    /总云|云量|云层|厚云/.test(text) ? "云量偏高" : "",
+    /降水|雨|雪/.test(text) ? "降水干扰" : "",
+    day.labels.moonlightImpact === "高" || /月光/.test(text) ? "月光影响" : "",
+    day.labels.dewRisk === "高" || /露|结露|湿度/.test(text) ? "露水风险" : "",
+    /通透|能见度|霾|雾/.test(text) ? "通透度不足" : "",
+  ].filter(Boolean);
+
+  if (blockers.length > 0) {
+    return [...new Set(blockers)].slice(0, 4);
+  }
+
+  return day.weatherBlockers.length > 0
+    ? day.weatherBlockers.map((blocker) => blocker.replace(/[。.]$/, "")).slice(0, 3)
+    : ["云量/低云/降水条件"];
+}
+
+function formatAstroWindowForUi(window: AstroWindowLike): string {
+  return formatShootingWindowZh({ startTime: window.start, endTime: window.end });
+}
+
 function normalizeAiExplanationErrorMessage(message: string | undefined): string {
   if (message?.toLowerCase().includes("timeout") || message?.includes("超时")) {
     return "智能解读暂时超时，确定性判断结果仍可正常参考，可稍后重试。";
@@ -1429,6 +1526,11 @@ export function AstroResultPage({
       data-astro-section="AstroResultPage"
     >
       <AstroTopContext query={query} result={result} />
+      <SectionHeading
+        title="核心判断"
+        description="先看实际可拍性，再看天文黑夜、银河几何、月光、云量和露水风险。"
+        badge={result.astroAnalysis.astroShootable ? "建议夜拍" : "谨慎夜拍"}
+      />
       <AstroCoreDecision cards={viewModel.coreCards} />
       <WeatherEssentialsPanel result={result} />
 
@@ -1449,7 +1551,7 @@ export function AstroResultPage({
         <AstroMoonPhaseSection result={result} />
         <AstroMoonriseMoonsetSection result={result} />
         <AstroEvidenceSection
-          title="云量与能见度"
+          title="云量与通透"
           badgeLabel="云层 / 通透 / 湿度"
           items={[...viewModel.cloudEvidence, ...viewModel.visibilityEvidence]}
           dataSection="AstroCloudVisibilitySection"
@@ -1525,7 +1627,7 @@ function AstroTopContext({
 function AstroCoreDecision({ cards }: { readonly cards: readonly ForecastResultCard[] }) {
   return (
     <section
-      className="AstroCoreDecision astro-core-decision grid gap-3 min-[900px]:grid-cols-2 min-[1280px]:grid-cols-4"
+      className="AstroCoreDecision astro-core-decision grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(190px,1fr))]"
       data-astro-section="AstroCoreDecision"
     >
       {cards.map((card) => (
@@ -1595,14 +1697,26 @@ function AstroDailyTrend({
               <AstroInlineDefinition label="透明度" value={`${item.transparencyScore} 分`} />
               <AstroInlineDefinition label="天文黑夜" value={item.astronomicalNightLabel} />
               <AstroInlineDefinition label="无月黑夜" value={item.moonlessNightLabel} />
-              <AstroInlineDefinition label="推荐银河窗口" value={item.recommendedMilkyWayLabel} />
+              <AstroInlineDefinition label="银心窗口" value={item.galacticCenterWindowLabel} />
+              <AstroInlineDefinition
+                label={item.astroShootable ? "推荐银河窗口" : "银河窗口判断"}
+                value={item.recommendedMilkyWayLabel}
+              />
             </dl>
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="muted">{item.riskNote}</Badge>
                 {item.weatherBlockers.length > 0 ? <Badge variant="danger">天气阻断</Badge> : null}
+                <Badge variant={item.astroShootable ? "default" : "warning"}>
+                  {item.nightShootingAdviceLabel}
+                </Badge>
               </div>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.keyReason}</p>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                {item.blockerReasonLabel}；{item.keyReason}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                云量条件：{item.cloudConditionLabel}；降水：{item.precipitationRiskLabel}
+              </p>
             </div>
           </article>
         ))}
@@ -1644,7 +1758,7 @@ function AstroMilkyWaySection({
   return (
     <Card className="AstroMilkyWaySection astro-milky-way p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">推荐银河窗口</h2>
+        <h2 className="text-lg font-bold text-card-foreground">银河窗口与可拍性</h2>
         <Badge variant="muted">银心方向 / 月光交集</Badge>
       </div>
       <div className="mt-4 grid gap-4 min-[900px]:grid-cols-2">
@@ -1691,7 +1805,7 @@ function AstroWindowList({
         ))
       ) : (
         <p className="rounded-lg border border-warning bg-muted p-3 text-sm leading-6 text-muted-foreground">
-          暂无明确窗口，请扩大预报范围或等待后续数据。
+          暂无可推荐拍摄窗口；若只有天文时间，仍需等待云量、月光和降水条件转好。
         </p>
       )}
     </section>
@@ -1702,7 +1816,7 @@ function AstroMoonPhaseSection({ result }: { readonly result: ForecastCalculatio
   return (
     <Card className="AstroMoonPhaseSection astro-moon-phase p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">月相与月光影响</h2>
+        <h2 className="text-lg font-bold text-card-foreground">月相与月光</h2>
         <Badge variant="muted">月相 / 照明 / 高度</Badge>
       </div>
       <div className="mt-4 grid gap-3 min-[900px]:grid-cols-2">
@@ -1720,6 +1834,8 @@ function AstroMoonPhaseSection({ result }: { readonly result: ForecastCalculatio
               <AstroInlineDefinition label="月相" value={astro.moonPhaseNameZh} />
               <AstroInlineDefinition label="农历" value={astro.lunarDateText} />
               <AstroInlineDefinition label="月光影响" value={moonImpactText(astro)} />
+              <AstroInlineDefinition label="月出" value={formatOptionalTime(astro.moonrise)} />
+              <AstroInlineDefinition label="月落" value={formatOptionalTime(astro.moonset)} />
             </dl>
           </article>
         ))}
@@ -1793,7 +1909,7 @@ function AstroAdviceSection({ items }: { readonly items: readonly string[] }) {
     <Card className="AstroAdviceSection astro-advice p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-card-foreground">拍摄建议</h2>
-        <Badge variant="muted">到达 / 等待 / 转拍</Badge>
+        <Badge variant="muted">是否出发 / 到达 / 装备</Badge>
       </div>
       <ul className="mt-3 grid gap-2 text-sm leading-6 text-muted-foreground min-[900px]:grid-cols-2">
         {items.map((item) => (
@@ -2887,6 +3003,13 @@ type SubjectBreakdownCard = {
   }[];
 };
 
+type DailyAstroLike = ForecastCalculationResult["astroAnalysis"]["dailyAstro"][number];
+
+type AstroWindowLike = Pick<
+  AstroWindow,
+  "date" | "start" | "end" | "directionZh" | "galacticCenterAltitude" | "noteZh"
+>;
+
 const subjectScoreOrder: readonly SubjectScoreKey[] = [
   "cloudSea",
   "sunriseGlow",
@@ -2925,8 +3048,10 @@ export function ComprehensiveForecastView({
   const subjectCards = buildSubjectBreakdownCards(result);
   const bestSubject = pickBestSubject(subjectCards);
   const mainRisk = pickMainRisk(result);
+  const primaryBestWindow = viewModel.bestWindows.find(isExecutableDisplayWindow);
   const sortedWindows = [...viewModel.bestWindows].sort(
     (left, right) =>
+      windowDisplayCategoryRank(right) - windowDisplayCategoryRank(left) ||
       (right.practicalScore ?? right.score) - (left.practicalScore ?? left.score) ||
       Date.parse(left.startTime) - Date.parse(right.startTime),
   );
@@ -2936,7 +3061,7 @@ export function ComprehensiveForecastView({
       <ComprehensiveContextBar query={query} result={result} />
       <ComprehensiveCoreDecisionCards
         result={result}
-        bestWindow={viewModel.bestWindows[0]}
+        bestWindow={primaryBestWindow}
         bestSubject={bestSubject}
         mainRisk={mainRisk}
       />
@@ -3265,6 +3390,9 @@ function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCal
             (day) => day.date === summary.date,
           );
           const glowDay = result.glowAnalysis.dailyGlow.find((day) => day.date === summary.date);
+          const astroDay = result.astroAnalysis.dailyAstro.find(
+            (day) => day.date === summary.date,
+          );
 
           return (
             <Card key={summary.date} className="p-4 shadow-sm">
@@ -3334,6 +3462,28 @@ function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCal
                   value={dailyGlowWindowText(result, glowDay, "sunset")}
                 />
                 <DailyDefinition
+                  label="天文窗口"
+                  value={dailyAstroWindowPresenceText(astroDay)}
+                />
+                <DailyDefinition
+                  label="星空可拍性"
+                  value={dailyAstroShootabilityText(astroDay, "stars")}
+                />
+                <DailyDefinition
+                  label="银河可拍性"
+                  value={dailyAstroShootabilityText(astroDay, "milkyWay")}
+                />
+                <DailyDefinition
+                  label="月光影响"
+                  value={astroDay?.labels.moonlightImpact ?? "暂无"}
+                />
+                <DailyDefinition
+                  label="云量阻挡"
+                  value={astroDay?.labels.cloudBlocker ?? "暂无"}
+                />
+                <DailyDefinition label="露水风险" value={astroDay?.labels.dewRisk ?? "暂无"} />
+                <DailyDefinition label="是否建议夜拍" value={dailyAstroNightAdvice(astroDay)} />
+                <DailyDefinition
                   label="风"
                   value={formatWindWithGust(
                     summary.weather?.windSpeed,
@@ -3361,6 +3511,12 @@ function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCal
                   ，低云 {formatPercentNumber(summary.weather?.cloudLow)}
                 </p>
                 <p>{dailyOpportunityLine(dayBreakdown)}</p>
+                {astroDay ? (
+                  <p>
+                    星空银河：
+                    {dailyAstroRecommendationLine(astroDay)}
+                  </p>
+                ) : null}
                 <p>
                   云海窗口：
                   {cloudSeaDay?.labels?.bestWindowLabel ?? "暂无最佳云海窗口"}
@@ -4189,6 +4345,10 @@ function buildSubjectBreakdownCards(
       return buildGlowSubjectBreakdownCard(result, key, score);
     }
 
+    if (key === "stars" || key === "milkyWay") {
+      return buildAstroSubjectBreakdownCard(result, key, score);
+    }
+
     return {
       key,
       label: subjectLabels[key],
@@ -4289,6 +4449,129 @@ function buildGlowSubjectBreakdownCard(
         label: "判断依据",
         value: rainText,
       },
+    ],
+  };
+}
+
+function buildAstroSubjectBreakdownCard(
+  result: ForecastCalculationResult,
+  key: "stars" | "milkyWay",
+  score: ForecastScore,
+): SubjectBreakdownCard {
+  const analysis = result.astroAnalysis;
+  const firstDaily = analysis.dailyAstro[0];
+  const blockers = astroMainBlockers(result, firstDaily);
+  const blockerText = blockers.join("、");
+  const recommendedWindow = analysis.recommendedMilkyWayWindow ?? analysis.recommendedMilkyWayWindows[0];
+  const candidateWindow = analysis.milkyWayCandidateWindows[0];
+  const moonlessWindow = analysis.moonlessNightWindows[0];
+  const astronomicalWindow = analysis.astronomicalNightWindows[0];
+  const isMilkyWay = key === "milkyWay";
+  const displayScore = isMilkyWay ? analysis.milkyWayGeometryScore : analysis.practicalAstroScore;
+  const shootability = isMilkyWay
+    ? analysis.labels.milkyWayShootability
+    : analysis.labels.starShootability;
+  const windowLabel = isMilkyWay
+    ? analysis.astroShootable && recommendedWindow
+      ? `推荐银河窗口：${formatAstroWindowForUi(recommendedWindow)}`
+      : candidateWindow
+        ? `银河天文窗口：${formatAstroWindowForUi(candidateWindow)}；${blockerText}，不建议专程夜拍`
+        : "银河窗口：暂无可用"
+    : astronomicalWindow
+      ? `天文窗口：${analysis.labels.astronomicalWindow}｜${formatAstroWindowForUi(astronomicalWindow)}`
+      : `天文窗口：${analysis.labels.astronomicalWindow}`;
+  const reason = analysis.astroShootable
+    ? isMilkyWay
+      ? "云量较低、月光影响小，可重点关注银河窗口。"
+      : "天文窗口、云量、通透度和月光组合可用，星空可作为夜间主目标。"
+    : analysis.astroWindowAvailable
+      ? isMilkyWay
+        ? `银河方向和时间合适，但${blockerText}，建议放弃专程夜拍。`
+        : `有天文窗口，但${blockerText}，实际可见性较差。`
+      : "暂无有效天文窗口，夜间拍摄不宜作为主目标。";
+
+  return {
+    key,
+    label: subjectLabels[key],
+    score: {
+      ...score,
+      score: displayScore,
+      reasons: [reason],
+    },
+    priorityScore: subjectPriorityScore(result, key, displayScore),
+    windowLabel,
+    reason,
+    actionSuggestion: analysis.astroShootable
+      ? isMilkyWay
+        ? "云量较低、月光影响小，可重点关注银河窗口。"
+        : "夜间可纳入计划，仍需临近复核云层开口、路况和安全撤离时间。"
+      : analysis.astroWindowAvailable
+        ? "天气窗口不足，夜间可作为备选观察，不建议作为主目标。"
+        : "不建议专程夜拍，优先转向云海、霞光或通透地景。",
+    detailItems: [
+      {
+        label: "天文窗口",
+        value: astronomicalWindow
+          ? `${analysis.labels.astronomicalWindow}｜${formatAstroWindowForUi(astronomicalWindow)}`
+          : analysis.labels.astronomicalWindow,
+      },
+      {
+        label: isMilkyWay ? "银河可拍性" : "星空可拍性",
+        value: `${shootability}｜${displayScore} 分`,
+        detail: analysis.astroShootable
+          ? "天文与天气同时可用。"
+          : "天文窗口不等于实际可拍性，需按天气阻断降级。",
+      },
+      {
+        label: "主要阻碍",
+        value: blockers.length > 0 ? blockerText : "暂无主要阻碍",
+      },
+      {
+        label: "云量阻挡",
+        value: analysis.labels.cloudBlocker,
+        detail:
+          analysis.cloudBlockerLevel === "high"
+            ? "低云或总云量已明显压低星空银河实际可见性。"
+            : "云量仍需临近复核。高云会影响银河反差，低云会遮挡地景和近地平线。",
+      },
+      {
+        label: "月光影响",
+        value: analysis.labels.moonlightImpact,
+        detail:
+          analysis.labels.moonlightImpact === "高"
+            ? "月亮在地平线上且照明较强时，不建议把银河作为最佳目标。"
+            : "月光暂未成为主要阻断，可结合无月黑夜窗口安排。",
+      },
+      {
+        label: "露水风险",
+        value: analysis.labels.dewRisk,
+        detail:
+          analysis.dewRiskLevel === "high"
+            ? "湿度和露点差组合偏危险，需准备防露带、镜头布和保暖。"
+            : "仍建议携带镜头布、备用电池和防潮装备。",
+      },
+      ...(isMilkyWay
+        ? [
+            {
+              label: "银心窗口",
+              value: candidateWindow ? formatAstroWindowForUi(candidateWindow) : "暂无明确窗口",
+              detail: candidateWindow?.directionZh
+                ? `银河方向：${candidateWindow.directionZh}`
+                : "银河方向需结合现场前景复核。",
+            },
+            {
+              label: "无月黑夜",
+              value: moonlessWindow ? formatAstroWindowForUi(moonlessWindow) : "暂无明确窗口",
+            },
+            {
+              label: analysis.astroShootable ? "推荐银河窗口" : "银河窗口判断",
+              value:
+                analysis.astroShootable && recommendedWindow
+                  ? formatAstroWindowForUi(recommendedWindow)
+                  : "天气未通过，不显示为推荐窗口",
+            },
+          ]
+        : []),
     ],
   };
 }
@@ -4574,6 +4857,26 @@ function isExecutableClientWindow(
   );
 }
 
+function isExecutableDisplayWindow(window: ForecastResultWindow): boolean {
+  const hasHierarchy =
+    window.windowLevel !== undefined || window.executableForDedicatedTrip !== undefined;
+  if (!hasHierarchy) {
+    return (
+      window.practicalKind !== "formation_signal" &&
+      window.recommendationLevel !== "backup" &&
+      window.recommendationLevel !== "not_recommended"
+    );
+  }
+
+  return (
+    window.executableForDedicatedTrip === true ||
+    (window.practicalKind !== "formation_signal" &&
+      (window.windowLevel === "best" || window.windowLevel === "shootable") &&
+      window.recommendationLevel !== "backup" &&
+      window.recommendationLevel !== "not_recommended")
+  );
+}
+
 function windowUsefulnessRank(window: ForecastCalculationResult["bestWindows"][number]): number {
   if (window.windowLevel === "best") {
     return 4;
@@ -4655,6 +4958,20 @@ function windowDisplayCategory(
   return (window.practicalScore ?? window.score) >= 65 ? "可观察" : "仅作备选";
 }
 
+function windowDisplayCategoryRank(window: ForecastResultWindow): number {
+  const category = windowDisplayCategory(window);
+  if (category === "推荐拍摄") {
+    return 3;
+  }
+  if (category === "可观察") {
+    return 2;
+  }
+  if (category === "仅作备选") {
+    return 1;
+  }
+  return 0;
+}
+
 function windowCategoryBadgeVariant(window: ForecastResultWindow): BadgeVariant {
   return glowWindowCategoryBadge(windowDisplayCategory(window));
 }
@@ -4677,8 +4994,44 @@ function windowListSummary(
   window: ForecastResultWindow,
 ): string {
   const category = windowDisplayCategory(window);
-  const reason = window.copyReasonZh ?? window.practicalNoteZh ?? windowRiskTag(result, window);
+  const reason =
+    window.target === "astro"
+      ? astroWindowListReason(window, category)
+      : window.copyReasonZh ?? window.practicalNoteZh ?? windowRiskTag(result, window);
   return `${category}：${window.label}｜${window.fullTimeRangeLabel}｜${reason}`;
+}
+
+function astroWindowListReason(
+  window: ForecastResultWindow,
+  category: ReturnType<typeof windowDisplayCategory>,
+): string {
+  const blockers = [...(window.blockerReasons ?? []), ...(window.weatherBlockers ?? [])];
+  if (category === "推荐拍摄") {
+    return window.label.includes("银河")
+      ? "云量较低，月光影响小"
+      : (window.copyReasonZh ?? window.practicalNoteZh ?? "天文窗口和天气条件可用");
+  }
+
+  const blockerText =
+    blockers.length > 0
+      ? astroWindowBlockerLabels(blockers).join("、")
+      : "云量、低云或降水条件";
+  return `${blockerText}，不建议专程夜拍`;
+}
+
+function astroWindowBlockerLabels(blockers: readonly string[]): readonly string[] {
+  const text = blockers.join(" ");
+  const labels = [
+    /低云/.test(text) ? "低云偏多" : "",
+    /总云|云量|云层|厚云/.test(text) ? "云量偏高" : "",
+    /降水|雨|雪/.test(text) ? "降水干扰" : "",
+    /通透|能见度|霾|雾/.test(text) ? "通透度不足" : "",
+    /月光/.test(text) ? "月光影响" : "",
+    /露|结露|湿度/.test(text) ? "露水风险" : "",
+  ].filter(Boolean);
+
+  return [...new Set(labels.length > 0 ? labels : blockers.map((blocker) => blocker.replace(/[。.]$/, "")))]
+    .slice(0, 3);
 }
 
 function windowActionLabel(window: ForecastResultWindow): string {

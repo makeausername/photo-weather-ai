@@ -1566,6 +1566,127 @@ function resultForTarget(target: ForecastCalculationResult["target"]): ForecastC
   };
 }
 
+function resultWithBlockedAstro(
+  target: ForecastCalculationResult["target"] = "general",
+): ForecastCalculationResult {
+  const base = resultForTarget(target);
+  const blockers = ["低云偏多，星空银河实际可见性较差。", "降水干扰"];
+  const blockedAssessment = astroAssessmentForTest({
+    skyConditionScore: 24,
+    milkyWayGeometryScore: 62,
+    transparencyScore: 36,
+    dewRiskScore: 78,
+    practicalAstroScore: 24,
+    astroWindowAvailable: true,
+    astroShootable: false,
+    cloudBlockerLevel: "high",
+    dewRiskLevel: "high",
+    astroWeatherBlockers: blockers,
+    gearAdviceZh: ["湿度较高，需准备防露带、镜头布和防水收纳。"],
+    warmthAdviceZh: "夜间湿冷，需准备防风保暖层。",
+    labels: {
+      astronomicalWindow: "有",
+      starShootability: "低",
+      milkyWayShootability: "低",
+      moonlightImpact: "低",
+      cloudBlocker: "高",
+      dewRisk: "高",
+      windowRecommendation: "仅作备选窗口",
+    },
+  });
+  const blockedAstroWindow = {
+    ...base.bestWindows.find((window) => window.target === "astro" && window.label.includes("银河"))!,
+    score: 64,
+    conditionScore: 70,
+    practicalScore: 24,
+    recommendationLevel: "backup" as const,
+    windowLevel: "blocked" as const,
+    executableForDedicatedTrip: false,
+    suitableIfNearby: false,
+    subjectPriorityLabel: "银河天文窗口",
+    weatherBlockers: blockers,
+    blockerReasons: blockers,
+    copyReasonZh: "天文窗口存在，但低云偏多、降水干扰不支持拍摄。",
+  };
+
+  return {
+    ...base,
+    scores: {
+      ...base.scores,
+      stars: score("stars", "星空", 24),
+      milkyWay: score("milkyWay", "银河", 24),
+      transparency: score("transparency", "通透度", 36),
+    },
+    astroAnalysis: {
+      ...base.astroAnalysis,
+      starsScore: 24,
+      milkyWayScore: 24,
+      astroConditionScore: 24,
+      astroPracticalScore: 24,
+      ...astroAnalysisFieldsForTest(blockedAssessment),
+      moonImpactScore: 18,
+      transparencyScore: 36,
+      astroTravelScore: 24,
+      recommendationLabel: "不建议专程",
+      astroWindowAvailable: true,
+      astroShootable: false,
+      recommendedMilkyWayWindow: undefined,
+      recommendedMilkyWayWindows: [],
+      bestAstroWindows: base.astroAnalysis.astronomicalNightWindows,
+      weatherBlockers: blockers,
+      riskReasons: ["低云偏多，星空银河实际可见性较差。", "降水干扰明显。"],
+      travelRecommendations: [
+        "有天文窗口，但低云偏多，不建议作为唯一目标。",
+        "湿度较高，需准备防露和保暖。",
+      ],
+      dailyAstro: base.astroAnalysis.dailyAstro.map((day) => ({
+        ...day,
+        starsScore: 24,
+        milkyWayScore: 24,
+        astroConditionScore: 24,
+        astroPracticalScore: 24,
+        ...dailyAstroFieldsForTest(blockedAssessment),
+        astroWindowAvailable: true,
+        astroShootable: false,
+        weatherBlockers: blockers,
+        recommendedMilkyWayWindow: undefined,
+        moonImpactLevel: "low",
+        recommendationLabel: "不建议专程",
+        keyReason: "天文窗口存在，但低云偏多、降水干扰不支持拍摄。",
+        riskNote: "天气阻断",
+      })),
+    },
+    bestWindows: [
+      blockedAstroWindow,
+      ...base.bestWindows.filter(
+        (window) => !(window.target === "astro" && window.label.includes("银河")),
+      ),
+    ],
+    targetDailyBreakdown: base.targetDailyBreakdown.map((day) => ({
+      ...day,
+      stars: day.stars
+        ? {
+            ...day.stars,
+            score: 24,
+            detail: "有天文窗口，但云量/低云/降水条件不支持拍摄。",
+            window: {
+              ...blockedAstroWindow,
+              label: "天文黑夜 20:24 - 03:48",
+            },
+          }
+        : day.stars,
+      milkyWay: day.milkyWay
+        ? {
+            ...day.milkyWay,
+            score: 24,
+            detail: "银河有天文窗口，但云量/降水不支持拍摄。",
+            window: blockedAstroWindow,
+          }
+        : day.milkyWay,
+    })),
+  };
+}
+
 function queryForTarget(target: ForecastCalculationResult["target"]): ForecastQueryInput {
   return {
     name: baseResult.place.name,
@@ -1701,6 +1822,39 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("优先关注清晨云海窗口");
     expect(html).not.toContain("建议：当天有可优先关注的拍摄窗口。");
     expect(html).not.toMatch(/(?:^|\s)(?:w|min-w)-\[(?:[1-9]\d{3,})px\]/);
+  });
+
+  it("shows blocked astro reasons on the general result page without recommending Milky Way", () => {
+    const result = resultWithBlockedAstro("general");
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "idle",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+    const subjectSection = html.slice(
+      html.indexOf('data-testid="subject-breakdown"'),
+      html.indexOf('data-testid="opportunity-windows"'),
+    );
+    const windowSection = html.slice(html.indexOf('data-testid="opportunity-windows"'));
+
+    expect(html).toContain("天文窗口 有");
+    expect(html).toContain("星空可拍性");
+    expect(html).toContain("低（24分）");
+    expect(html).toContain("银河可拍性");
+    expect(html).toContain("低（62分）");
+    expect(html).toContain("天文窗口存在，但低云偏多、降水干扰不支持拍摄");
+    expect(subjectSection).toContain("银河方向和时间合适，但低云偏多、降水干扰");
+    expect(subjectSection).not.toContain("推荐银河窗口：");
+    expect(windowSection).toContain("不建议：银河天文窗口");
+    expect(windowSection).toContain("低云偏多、降水干扰，不建议专程夜拍");
+    expect(html).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风|高德/i);
   });
 
   it("shows separate deterministic sunrise and sunset glow facts on the general result page", () => {
@@ -2990,12 +3144,13 @@ describe("forecast result target-aware view model", () => {
 
     expect(viewModel.astro).toBeDefined();
     expect(viewModel.primaryCards.map((card) => card.label)).toEqual([
-      "星空可拍性",
-      "天文条件",
+      "天文窗口",
       "星空指数",
       "银河指数",
       "月光影响",
-      "推荐银河窗口 / 无月黑夜",
+      "云量阻挡",
+      "露水风险",
+      "银河窗口判断",
     ]);
     expect(viewModel.detailSections.map((section) => section.title)).toEqual(
       expect.arrayContaining([
@@ -3060,9 +3215,9 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("月光影响");
       expect(html).toContain("天文黑夜与无月黑夜");
       expect(html).toContain("推荐银河窗口");
-      expect(html).toContain("月相与月光影响");
+      expect(html).toContain("月相与月光");
       expect(html).toContain("月出月落");
-      expect(html).toContain("云量与能见度");
+      expect(html).toContain("云量与通透");
       expect(html).toContain("光污染与地形遮挡");
       expect(html).toContain("拍摄建议");
       expect(html).toContain("备选拍摄方案");
@@ -3078,6 +3233,30 @@ describe("forecast result target-aware view model", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("renders dedicated astro cloud, moon, dew, and blocked Milky Way states", () => {
+    const result = resultWithBlockedAstro("astro");
+    const viewModel = buildAstroForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(AstroResultPage, {
+        query: queryForTarget("astro"),
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(html).toContain("核心判断");
+    expect(html).toContain("每晚观星条件");
+    expect(html).toContain("月相与月光");
+    expect(html).toContain("云量与通透");
+    expect(html).toContain("拍摄建议");
+    expect(html).toContain("云量阻挡");
+    expect(html).toContain("月光影响");
+    expect(html).toContain("露水风险");
+    expect(html).toContain("天文窗口存在，但低云偏多、降水干扰不支持拍摄");
+    expect(html).toContain("银河窗口判断");
+    expect(html).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风|高德/i);
   });
 
   it("shows multiple nightly astro entries for a 7d astro result", () => {

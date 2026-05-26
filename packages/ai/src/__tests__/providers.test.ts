@@ -116,6 +116,113 @@ describe("AI providers", () => {
     expect(text.length).toBeLessThanOrEqual(9000);
   });
 
+  it("passes deterministic astro V2 facts to DeepSeek without provider names", () => {
+    const astroWindow = {
+      type: "milky_way_candidate" as const,
+      labelZh: "银河候选窗口",
+      date: "2026-05-21",
+      start: "2026-05-22T01:10:00+08:00",
+      end: "2026-05-22T03:20:00+08:00",
+      durationMinutes: 130,
+      score: 62,
+      riskTags: ["低云偏多"],
+      noteZh: "银心方向可用，但天气未通过。",
+      directionZh: "东南至南方",
+      galacticCenterAltitude: 24,
+    };
+    const context = buildDeepSeekForecastContext({
+      ...forecastResultFixture,
+      astroDataSourceLabelZh: "本地天文服务计算",
+      weatherNoticeZh: "天气数据：和风天气；云层辅助：Open-Meteo；专业增强：meteoblue。",
+      astroAnalysis: {
+        ...forecastResultFixture.astroAnalysis,
+        astronomicalWindowScore: 78,
+        skyConditionScore: 24,
+        milkyWayGeometryScore: 62,
+        moonlightImpactScore: 18,
+        transparencyScore: 36,
+        dewRiskScore: 82,
+        practicalAstroScore: 24,
+        astroWindowAvailable: true,
+        astroShootable: false,
+        labels: {
+          astronomicalWindow: "有",
+          starShootability: "低",
+          milkyWayShootability: "低",
+          moonlightImpact: "低",
+          cloudBlocker: "高",
+          dewRisk: "高",
+          windowRecommendation: "仅作备选窗口",
+        },
+        cloudBlockerLevel: "high",
+        dewRiskLevel: "high",
+        recommendedMilkyWayWindow: undefined,
+        recommendedMilkyWayWindows: [],
+        astronomicalNightWindows: [
+          {
+            ...astroWindow,
+            type: "astronomical_night",
+            labelZh: "天文黑夜",
+            start: "2026-05-21T20:26:00+08:00",
+            end: "2026-05-22T03:48:00+08:00",
+          },
+        ],
+        moonlessNightWindows: [],
+        milkyWayCandidateWindows: [astroWindow],
+        weatherBlockers: ["低云偏多，星空银河实际可见性较差。", "降水干扰"],
+        gearAdviceZh: ["湿度较高，需准备防露带、镜头布和防水收纳。"],
+        warmthAdviceZh: "夜间湿冷，需准备防风保暖层。",
+        assessment: {
+          ...forecastResultFixture.astroAnalysis.assessment,
+          astroWindowAvailable: true,
+          astroShootable: false,
+          skyConditionScore: 24,
+          milkyWayGeometryScore: 62,
+          transparencyScore: 36,
+          dewRiskScore: 82,
+          practicalAstroScore: 24,
+          cloudBlockerLevel: "high",
+          dewRiskLevel: "high",
+          astroWeatherBlockers: ["低云偏多，星空银河实际可见性较差。", "降水干扰"],
+          labels: {
+            astronomicalWindow: "有",
+            starShootability: "低",
+            milkyWayShootability: "低",
+            moonlightImpact: "低",
+            cloudBlocker: "高",
+            dewRisk: "高",
+            windowRecommendation: "仅作备选窗口",
+          },
+          gearAdviceZh: ["湿度较高，需准备防露带、镜头布和防水收纳。"],
+          warmthAdviceZh: "夜间湿冷，需准备防风保暖层。",
+        },
+      },
+    });
+    const text = JSON.stringify(context);
+
+    expect(context.astroFacts.practicalStatus).toMatchObject({
+      astroWindowAvailable: true,
+      astroShootable: false,
+      practicalAstroScore: 24,
+      astroWeatherBlockers: ["低云偏多，星空银河实际可见性较差。", "降水干扰"],
+      dewRisk: {
+        level: "high",
+        labelZh: "高",
+      },
+      recommendedMilkyWayWindow: null,
+    });
+    expect(context.astroFacts.practicalStatus.galacticCenterWindow).toMatchObject({
+      labelZh: "银河候选窗口",
+      windowZh: "2026年5月22日 01:10–03:20",
+      directionZh: "东南至南方",
+    });
+    expect(text).toContain("All values are precomputed deterministic facts");
+    expect(text).not.toContain("和风天气");
+    expect(text).not.toContain("Open-Meteo");
+    expect(text).not.toContain("meteoblue");
+    expect(JSON.stringify(context.astroFacts)).not.toContain("dataSourceLabelZh");
+  });
+
   it("passes deterministic glow facts to DeepSeek without asking it to score glow", () => {
     const context = buildDeepSeekForecastContext({
       ...forecastResultFixture,

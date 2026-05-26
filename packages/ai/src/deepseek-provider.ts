@@ -624,45 +624,53 @@ export function buildDeepSeekForecastContext(result: ForecastCalculationResult) 
       dataStatusZh: providerNeutralText(result.weatherFusionSummary?.dataStatusZh),
     },
     astroFacts: {
-      dataSourceLabelZh: result.astroDataSourceLabelZh,
-      calculationBasis: result.astroCalculationBasis
-        ? {
-            timezone: result.astroCalculationBasis.timezone,
-            elevationMeters: result.astroCalculationBasis.elevationMeters,
-            generatedAt: result.astroCalculationBasis.generatedAt,
-          }
-        : undefined,
-      summaries: takeItems(result.astroSummaries, 2).map((summary) => ({
+      summaries: takeItems(result.astroSummaries, 1).map((summary) => ({
         date: summary.date,
-        sunrise: summary.sunrise,
-        sunset: summary.sunset,
+        astronomicalNightStart: summary.astronomicalNightStart,
+        astronomicalNightEnd: summary.astronomicalNightEnd,
+        moonrise: summary.moonrise,
+        moonset: summary.moonset,
         moonIllumination: summary.moonIllumination,
-        moonPhaseNameZh: summary.moonPhaseNameZh,
         milkyWayWindowStart: summary.milkyWayWindowStart,
         milkyWayWindowEnd: summary.milkyWayWindowEnd,
-        milkyWayBestTime: summary.milkyWayBestTime,
         milkyWayDirection: summary.milkyWayDirection,
         milkyWayVisibilityLevel: summary.milkyWayVisibilityLevel,
-        milkyWayNoteZh: summary.milkyWayNoteZh,
       })),
       practicalStatus: {
-        starsScore: result.astroAnalysis.starsScore,
-        milkyWayScore: result.astroAnalysis.milkyWayScore,
+        astronomicalWindowScore: result.astroAnalysis.astronomicalWindowScore,
+        skyConditionScore: result.astroAnalysis.skyConditionScore,
+        milkyWayGeometryScore: result.astroAnalysis.milkyWayGeometryScore,
+        moonlightImpactScore: result.astroAnalysis.moonlightImpactScore,
+        transparencyScore: result.astroAnalysis.transparencyScore,
+        dewRiskScore: result.astroAnalysis.dewRiskScore,
+        practicalAstroScore: result.astroAnalysis.practicalAstroScore,
+        astroWindowAvailable: result.astroAnalysis.astroWindowAvailable,
         astroShootable: result.astroAnalysis.astroShootable,
         recommendationLabelZh: result.astroAnalysis.recommendationLabel,
-        weatherBlockers: takeTextItems(result.astroAnalysis.weatherBlockers, 4),
-        recommendedMilkyWayWindows: takeItems(
-          result.astroAnalysis.recommendedMilkyWayWindows,
-          2,
-        ).map((window) => ({
-          labelZh: window.labelZh,
-          windowZh: formatShootingWindowZh(
-            { startTime: window.start, endTime: window.end },
-            timezone,
-          ),
-          score: window.score,
-          noteZh: window.noteZh,
-        })),
+        astroWeatherBlockers: takeTextItems(result.astroAnalysis.weatherBlockers, 5),
+        astronomicalNight: compactAstroWindow(result.astroAnalysis.astronomicalNightWindows[0], timezone),
+        moonImpact: {
+          level: result.astroAnalysis.assessment.moonImpactLevel,
+          labelZh: result.astroAnalysis.labels.moonlightImpact,
+          reasonsZh: takeTextItems(result.astroAnalysis.assessment.moonImpactReasonsZh, 2),
+        },
+        moonlessWindow: compactAstroWindow(result.astroAnalysis.moonlessNightWindows[0], timezone),
+        galacticCenterWindow: compactAstroWindow(
+          result.astroAnalysis.milkyWayCandidateWindows[0],
+          timezone,
+        ),
+        recommendedMilkyWayWindow: compactAstroWindow(
+          result.astroAnalysis.recommendedMilkyWayWindow ??
+            result.astroAnalysis.recommendedMilkyWayWindows[0],
+          timezone,
+        ),
+        dewRisk: {
+          level: result.astroAnalysis.dewRiskLevel,
+          labelZh: result.astroAnalysis.labels.dewRisk,
+          score: result.astroAnalysis.dewRiskScore,
+        },
+        gearAdviceZh: takeTextItems(result.astroAnalysis.gearAdviceZh, 4, 140),
+        warmthAdviceZh: limitText(result.astroAnalysis.warmthAdviceZh, 140),
       },
     },
     glowFacts:
@@ -727,6 +735,23 @@ function compactForecastWindow(
   };
 }
 
+function compactAstroWindow(
+  window: ForecastCalculationResult["astroAnalysis"]["recommendedMilkyWayWindows"][number] | undefined,
+  timezone = "Asia/Shanghai",
+) {
+  if (!window) {
+    return null;
+  }
+
+  return {
+    labelZh: window.labelZh,
+    date: window.date,
+    windowZh: formatShootingWindowZh({ startTime: window.start, endTime: window.end }, timezone),
+    directionZh: window.directionZh,
+    galacticCenterAltitude: window.galacticCenterAltitude,
+  };
+}
+
 function compactForecastWindowBrief(
   window: ForecastCalculationResult["bestWindows"][number],
   timezone = "Asia/Shanghai",
@@ -752,7 +777,8 @@ function compactDailyFact(
   timezone: string,
 ) {
   const breakdown = result.targetDailyBreakdown.find((item) => item.date === summary.date);
-  const bestWindow = summary.bestShootableWindow ?? summary.keyWindows[0];
+  const dailyAstro = result.astroAnalysis.dailyAstro.find((item) => item.date === summary.date);
+  const bestWindow = summary.bestShootableWindow ?? summary.keyWindows.find(isExecutableWindow);
 
   return {
     date: summary.date,
@@ -812,7 +838,26 @@ function compactDailyFact(
           cloudLowPercent: summary.weather.cloudLow,
           cloudMidPercent: summary.weather.cloudMid,
           cloudHighPercent: summary.weather.cloudHigh,
-          dewPointSpread: summary.weather.dewPointSpread,
+      dewPointSpread: summary.weather.dewPointSpread,
+        }
+      : null,
+    astro: dailyAstro
+      ? {
+          astroWindowAvailable: dailyAstro.astroWindowAvailable,
+          astroShootable: dailyAstro.astroShootable,
+          recommendedMilkyWayWindow: compactAstroWindow(
+            dailyAstro.astroShootable ? dailyAstro.recommendedMilkyWayWindow : undefined,
+            timezone,
+          ),
+          moonImpact: {
+            level: dailyAstro.moonImpactLevel,
+            labelZh: dailyAstro.labels.moonlightImpact,
+          },
+          astroWeatherBlockers: takeTextItems(dailyAstro.weatherBlockers, 2, 90),
+          dewRisk: {
+            level: dailyAstro.dewRiskLevel,
+            labelZh: dailyAstro.labels.dewRisk,
+          },
         }
       : null,
     topicScores: {

@@ -331,7 +331,12 @@ export type AstroDailyTrendItem = {
   readonly windowRecommendationLabel: string;
   readonly astronomicalNightLabel: string;
   readonly moonlessNightLabel: string;
+  readonly galacticCenterWindowLabel: string;
   readonly recommendedMilkyWayLabel: string;
+  readonly cloudConditionLabel: string;
+  readonly precipitationRiskLabel: string;
+  readonly nightShootingAdviceLabel: string;
+  readonly blockerReasonLabel: string;
   readonly recommendationLabel: AstroAnalysisResult["recommendationLabel"];
   readonly keyReason: string;
   readonly riskNote: string;
@@ -835,62 +840,54 @@ export function buildAstroForecastViewModel(
   const firstDaily = analysis.dailyAstro[0];
   const firstMoon = analysis.moonInfo ?? result.astroSummaries[0]?.moonInfo;
   const bestRecommendedWindow = analysis.recommendedMilkyWayWindows[0];
+  const bestCandidateWindow = analysis.milkyWayCandidateWindows[0];
   const bestMoonlessWindow = analysis.moonlessNightWindows[0];
+  const blockerSummary = astroBlockerSummary(analysis.weatherBlockers);
   const moonImpactTone =
     firstDaily?.moonImpactLevel === "high"
       ? "danger"
       : firstDaily?.moonImpactLevel === "medium"
         ? "accent"
         : "primary";
-  const windowValue = bestRecommendedWindow
-    ? formatAstroWindowValue(bestRecommendedWindow)
-    : bestMoonlessWindow
-      ? formatAstroWindowValue(bestMoonlessWindow)
-      : "暂无明确窗口";
-  const windowDetail = bestRecommendedWindow
-    ? `推荐银河窗口，方向 ${bestRecommendedWindow.directionZh ?? "需现场复核"}。`
-    : bestMoonlessWindow
-      ? "暂无推荐银河窗口，可优先把无月黑夜用于星空、星轨或夜景。"
-      : "月光、云量或银心高度限制明显，建议准备备选题材。";
+  const windowForDisplay = analysis.astroShootable
+    ? bestRecommendedWindow
+    : bestCandidateWindow ?? bestMoonlessWindow;
+  const windowValue = windowForDisplay ? formatAstroWindowValue(windowForDisplay) : "暂无明确窗口";
+  const windowDetail = analysis.astroShootable
+    ? bestRecommendedWindow
+      ? `推荐银河窗口，方向 ${bestRecommendedWindow.directionZh ?? "需现场复核"}；建议提前到达完成构图和对焦。`
+      : "星空条件可用，但暂无银心、月光和天气同时满足的银河窗口。"
+    : analysis.astroWindowAvailable
+      ? `有天文窗口，但${blockerSummary}不支持银河拍摄，不建议专程熬夜。`
+      : "暂无可用天文黑夜或银河几何窗口，夜间只作备选观察。";
 
   return {
     coreCards: [
       scoreCard(
-        "astro-practical-score",
-        "milkyWay",
-        "星空可拍性",
-        `${analysis.practicalAstroScore}`,
-        analysis.weatherBlockers.length > 0
-          ? "天文窗口存在，但云量、低云、降水或透明度不支持作为主拍摄计划。"
-          : "已同时叠加天文窗口、月光、云量、低云、降水和透明度。",
-        analysis.practicalAstroScore >= 60 ? "primary" : "danger",
-        analysis.practicalAstroScore,
-      ),
-      scoreCard(
-        "astro-condition-score",
+        "astro-window-score",
         "astronomicalNight",
-        "天文条件",
-        `${analysis.astronomicalWindowScore}`,
-        "只看天文黑夜、月光和银河可见时间，不等同于实际可拍性。",
-        "info",
+        "天文窗口",
+        analysis.labels.astronomicalWindow,
+        `天文窗口分 ${analysis.astronomicalWindowScore}；只代表天文黑夜、月光和银河几何的理论可用性。`,
+        analysis.astroWindowAvailable ? "info" : "muted",
         analysis.astronomicalWindowScore,
       ),
       scoreCard(
         "astro-stars-score",
         "stars",
         "星空指数",
-        `${analysis.skyConditionScore}`,
-        "按总云量、低云、中高云、能见度、降水和天气现象折算实际天空条件。",
-        "primary",
-        analysis.skyConditionScore,
+        `${analysis.practicalAstroScore}`,
+        `星空可拍性${analysis.labels.starShootability}；已叠加云量、低云、降水、通透度、月光和露水风险。`,
+        analysis.astroShootable ? "primary" : "danger",
+        analysis.practicalAstroScore,
       ),
       scoreCard(
         "astro-milky-way-score",
         "milkyWay",
         "银河指数",
         `${analysis.milkyWayGeometryScore}`,
-        "按银心高度、方向、窗口时长和银河方向地形遮挡折算。",
-        "primary",
+        `银河可拍性${analysis.labels.milkyWayShootability}；按银心高度、方向、窗口时长、月光和天气阻断综合判断。`,
+        analysis.astroShootable ? "primary" : "danger",
         analysis.milkyWayGeometryScore,
       ),
       scoreCard(
@@ -904,16 +901,44 @@ export function buildAstroForecastViewModel(
         moonImpactTone,
         analysis.moonlightImpactScore,
       ),
+      scoreCard(
+        "astro-cloud-blocker",
+        "weather",
+        "云量阻挡",
+        analysis.labels.cloudBlocker,
+        analysis.weatherBlockers.length > 0
+          ? `${blockerSummary}，星空银河实际可见性需降级。`
+          : "总云量和低云暂未构成主要阻断，仍需临近复核云层开口。",
+        analysis.cloudBlockerLevel === "high"
+          ? "danger"
+          : analysis.cloudBlockerLevel === "medium"
+            ? "accent"
+            : "primary",
+        analysis.skyConditionScore,
+      ),
+      scoreCard(
+        "astro-dew-risk",
+        "weather",
+        "露水风险",
+        analysis.labels.dewRisk,
+        `${analysis.warmthAdviceZh} ${analysis.gearAdviceZh[0] ?? "建议准备防露、保暖和备用电池。"}`,
+        analysis.dewRiskLevel === "high"
+          ? "danger"
+          : analysis.dewRiskLevel === "medium"
+            ? "accent"
+            : "info",
+        Math.max(0, 100 - analysis.dewRiskScore),
+      ),
       textCard(
         "astro-best-window",
         "bestWindow",
-        "推荐银河窗口 / 无月黑夜",
+        "银河窗口判断",
         windowValue,
         windowDetail,
-        bestRecommendedWindow ? "accent" : "info",
+        analysis.astroShootable ? "accent" : "muted",
       ),
     ],
-    dailyTrend: analysis.dailyAstro.map(mapDailyAstro),
+    dailyTrend: analysis.dailyAstro.map((day) => mapDailyAstro(day, analysis.milkyWayCandidateWindows)),
     astronomicalNightWindows: mapAstroWindows(result, analysis.astronomicalNightWindows),
     moonlessNightWindows: mapAstroWindows(result, analysis.moonlessNightWindows),
     milkyWayCandidateWindows: mapAstroWindows(result, analysis.milkyWayCandidateWindows),
@@ -2562,7 +2587,15 @@ function buildGlowAdvice(result: ForecastCalculationResult): readonly string[] {
   ];
 }
 
-function mapDailyAstro(day: DailyAstro): AstroDailyTrendItem {
+function mapDailyAstro(
+  day: DailyAstro,
+  milkyWayCandidateWindows: readonly AstroWindow[],
+): AstroDailyTrendItem {
+  const galacticCenterWindow =
+    milkyWayCandidateWindows.find((window) => window.date === day.date) ?? day.recommendedMilkyWayWindow;
+  const blockers = astroBlockerSummary(day.weatherBlockers);
+  const precipitationBlocker = day.weatherBlockers.find((blocker) => /降水|雨|雪/.test(blocker));
+
   return {
     key: `astro-daily-${day.date}`,
     date: day.date,
@@ -2591,15 +2624,55 @@ function mapDailyAstro(day: DailyAstro): AstroDailyTrendItem {
     moonlessNightLabel: day.moonlessNightWindow
       ? formatAstroWindowValue(day.moonlessNightWindow)
       : "暂无明确窗口",
+    galacticCenterWindowLabel: galacticCenterWindow
+      ? `${formatAstroWindowValue(galacticCenterWindow)}${
+          galacticCenterWindow.directionZh ? `，${galacticCenterWindow.directionZh}` : ""
+        }`
+      : "暂无明确银心窗口",
     recommendedMilkyWayLabel: day.recommendedMilkyWayWindow
       ? day.astroShootable
-        ? `银河可拍窗口：${formatAstroWindowValue(day.recommendedMilkyWayWindow)}`
-        : `天文窗口：${formatAstroWindowValue(day.recommendedMilkyWayWindow)}；天气不支持专程拍摄`
-      : "暂无推荐窗口",
+        ? `推荐银河窗口：${formatAstroWindowValue(day.recommendedMilkyWayWindow)}`
+        : `仅作备选：${formatAstroWindowValue(day.recommendedMilkyWayWindow)}；${blockers}不支持专程拍摄`
+      : day.astroWindowAvailable
+        ? `仅作备选窗口：${blockers}不支持专程拍摄`
+        : "暂无推荐窗口",
+    cloudConditionLabel:
+      day.weatherBlockers.length > 0 ? `${day.labels.cloudBlocker}：${blockers}` : day.labels.cloudBlocker,
+    precipitationRiskLabel: precipitationBlocker ?? "降水未构成主要阻断",
+    nightShootingAdviceLabel: day.astroShootable
+      ? "建议夜拍"
+      : day.astroWindowAvailable
+        ? "仅作备选"
+        : "不建议夜拍",
+    blockerReasonLabel:
+      day.weatherBlockers.length > 0
+        ? `主要阻碍：${blockers}`
+        : day.astroShootable
+          ? "云量较低、月光影响小，可重点关注银河窗口。"
+          : "暂无可执行银河窗口。",
     recommendationLabel: day.recommendationLabel,
     keyReason: day.keyReason,
     riskNote: day.riskNote,
   };
+}
+
+function astroBlockerSummary(blockers: readonly string[]): string {
+  if (blockers.length === 0) {
+    return "云量、低云、降水和通透度暂未构成主要阻断";
+  }
+
+  const text = blockers.join(" ");
+  const labels = [
+    /低云/.test(text) ? "低云偏多" : "",
+    /总云|云量|云层|厚云/.test(text) ? "云量偏高" : "",
+    /降水|雨|雪/.test(text) ? "降水干扰" : "",
+    /通透|能见度|霾|雾/.test(text) ? "通透度不足" : "",
+    /露|结露|湿度/.test(text) ? "露水风险" : "",
+  ].filter(Boolean);
+
+  return [...new Set(labels.length > 0 ? labels : blockers.map((blocker) => blocker.replace(/[。.]$/, "")))]
+    .slice(0, 3)
+    .join("、");
 }
 
 function mapAstroWindows(
