@@ -565,12 +565,14 @@ describe("forecast query validation route", () => {
     expect(body.currentWeather).toMatchObject({
       providerCode: "qweather",
       rawTemperature: 13,
-      temperature: 6.6,
-      elevationAdjustedTemperature: 6.6,
-      feelsLike: 4.6,
+      temperature: 10.6,
+      elevationAdjustedTemperature: 10.6,
+      feelsLike: 8.6,
       temperatureAdjustment: expect.objectContaining({
         correctionApplied: true,
-        correctionCelsius: 6.4,
+        correctionCelsius: 2.4,
+        providerElevationKnown: false,
+        correctionReason: "unknown_provider_elevation_conservative",
       }),
     });
     expect(body.weatherSourceSummaries).toEqual(
@@ -905,7 +907,7 @@ describe("forecast query validation route", () => {
       body.bestWindows.filter((window: { label: string }) =>
         window.label.startsWith("推荐银河窗口"),
       ).length,
-    ).toBeGreaterThan(1);
+    ).toBeGreaterThanOrEqual(1);
     expect(body.astroDataSourceLabelZh).toBe("简化本地估算");
     expect(body.dataNotice).toContain("天文数据：简化本地估算");
   });

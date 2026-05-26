@@ -120,7 +120,7 @@ function classifyComfort(input: {
   if (
     input.precipitationRisk === "medium" ||
     input.precipitationRisk === "high" ||
-    input.precipitationRisk === "heavy"
+    input.precipitationRisk === "severe"
   ) {
     return "rainy";
   }

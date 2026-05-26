@@ -4,13 +4,14 @@ import type {
   NormalizedCurrentWeather,
   NormalizedDailyWeather,
   NormalizedHourlyWeather,
+  PhotographyPrecipitationRisk,
   PrecipitationType,
   TerrainAnalysisSummary,
   TransparencyGrade,
 } from "@photo-weather/shared";
 import { clampScore } from "./helpers.js";
 
-export type PrecipitationRiskLevel = "none" | "low" | "medium" | "high" | "heavy";
+export type PrecipitationRiskLevel = PhotographyPrecipitationRisk["rainRiskLevel"];
 
 export type WeatherAdjustmentInput = {
   readonly currentWeather?: NormalizedCurrentWeather;
@@ -41,9 +42,11 @@ type TransparencyWeatherInput = {
 };
 
 const defaultLapseRateCelsiusPer100m = 0.6;
-const assumedUnknownProviderElevationMeters = 800;
-const elevationCloseEnoughMeters = 150;
-const minimumMeaningfulCorrectionMeters = 100;
+const elevationCloseEnoughMeters = 300;
+const unknownProviderCorrectionBaseMeters = 900;
+const unknownProviderCorrectionRatio = 0.42;
+const maxUnknownProviderCoolingCelsius = 4;
+const maxVeryHighTerrainUnknownProviderCoolingCelsius = 5;
 
 export function precipitationAmountMm(
   weather:
@@ -78,18 +81,48 @@ export function precipitationRiskLevel(input: {
   const probability = input.probability;
 
   if (amount >= 25) {
-    return "heavy";
+    return "severe";
   }
-  if (amount >= 10 || (finiteNumber(probability) && probability >= 75)) {
+  if (amount >= 10 || (finiteNumber(probability) && probability >= 70)) {
     return "high";
   }
-  if (amount >= 2 || (finiteNumber(probability) && probability >= 55)) {
+  if (amount >= 2 || (finiteNumber(probability) && probability >= 40)) {
     return "medium";
   }
-  if (amount >= 0.1 || (finiteNumber(probability) && probability >= 25)) {
+  if (amount >= 0.3 || (finiteNumber(probability) && probability >= 20)) {
     return "low";
   }
   return "none";
+}
+
+export function buildPhotographyPrecipitationRisk(input: {
+  readonly probability?: number | null;
+  readonly amountMm?: number | null;
+  readonly affectedWindows?: readonly string[];
+  readonly weatherTextZh?: string | null;
+}): PhotographyPrecipitationRisk {
+  const probability = finiteNumber(input.probability) ? input.probability : null;
+  const amount = finiteNumber(input.amountMm) ? round1(Math.max(0, input.amountMm)) : null;
+  const rainRiskLevel = precipitationRiskLevel({ probability, amountMm: amount });
+  const affectedWindows =
+    input.affectedWindows && input.affectedWindows.length > 0
+      ? [...new Set(input.affectedWindows)]
+      : defaultAffectedWindows(rainRiskLevel);
+
+  return {
+    precipitationProbabilityPercent: probability,
+    precipitationAmountMm: amount,
+    rainRiskLevel,
+    rainRiskLabelZh: rainRiskLabelZh(rainRiskLevel),
+    affectedWindows,
+    recommendationZh: precipitationRecommendationZh({
+      rainRiskLevel,
+      amount,
+      probability,
+      affectedWindows,
+      weatherTextZh: input.weatherTextZh,
+    }),
+  };
 }
 
 export function precipitationRiskScore(input: {
@@ -99,7 +132,7 @@ export function precipitationRiskScore(input: {
   const probabilityScore = finiteNumber(input.probability) ? input.probability : 0;
   const amount = input.amountMm ?? 0;
   const amountScore =
-    amount >= 25 ? 100 : amount >= 10 ? 86 : amount >= 2 ? 62 : amount >= 0.1 ? 34 : 0;
+    amount >= 25 ? 100 : amount >= 10 ? 86 : amount >= 2 ? 62 : amount >= 0.3 ? 34 : 0;
   return clampScore(Math.max(probabilityScore, amountScore));
 }
 
@@ -127,6 +160,66 @@ export function precipitationTypeFromAmounts(input: {
     return "none";
   }
   return "unknown";
+}
+
+function defaultAffectedWindows(level: PrecipitationRiskLevel): readonly string[] {
+  if (level === "none") {
+    return [];
+  }
+  if (level === "low") {
+    return ["局地短时窗口"];
+  }
+  if (level === "medium") {
+    return ["清晨", "傍晚", "夜间"];
+  }
+  return ["主要拍摄窗口", "通行与器材防护"];
+}
+
+function rainRiskLabelZh(level: PrecipitationRiskLevel): string {
+  switch (level) {
+    case "severe":
+      return "严重";
+    case "high":
+      return "高";
+    case "medium":
+      return "中";
+    case "low":
+      return "低";
+    default:
+      return "无明显";
+  }
+}
+
+function precipitationRecommendationZh(input: {
+  readonly rainRiskLevel: PrecipitationRiskLevel;
+  readonly amount: number | null;
+  readonly probability: number | null;
+  readonly affectedWindows: readonly string[];
+  readonly weatherTextZh?: string | null;
+}): string {
+  const amountText = input.amount !== null ? `预计 ${round1(input.amount)}mm` : "预计降水量暂无";
+  const probabilityMissingText =
+    input.probability === null && input.amount !== null
+      ? "降水概率暂无，按预计降水量判断风险。"
+      : "";
+  const weatherText = input.weatherTextZh ? `${input.weatherTextZh}，` : "";
+  const affectedText =
+    input.affectedWindows.length > 0
+      ? `可能影响${input.affectedWindows.join("、")}。`
+      : "拍摄窗口受降水影响不明显。";
+
+  switch (input.rainRiskLevel) {
+    case "severe":
+      return `${weatherText}降水干扰很强，${amountText}，不建议把该日作为主拍摄计划。${probabilityMissingText}`;
+    case "high":
+      return `${weatherText}降水风险高，${amountText}，拍摄窗口可能被打断，优先准备备选日。${probabilityMissingText}`;
+    case "medium":
+      return `${weatherText}有降水干扰，${amountText}，${affectedText}${probabilityMissingText}`;
+    case "low":
+      return `${weatherText}降水风险较低，${amountText}，可作为备选窗口，出发前复核雷达和短临预报。${probabilityMissingText}`;
+    default:
+      return "降水不明显，可作为备选窗口。";
+  }
 }
 
 export function transparencyGradeFromScore(score: number): TransparencyGrade {
@@ -234,10 +327,16 @@ function adjustHourlyTemperature(
   const adjustment = buildTemperatureAdjustment(hour.temperature, {
     spotElevationMeters,
     providerElevationMeters: hour.providerElevationMeters,
+    providerCode: hour.providerCode,
     existing: hour.temperatureAdjustment,
   });
   if (!adjustment.correctionApplied) {
-    return hour;
+    return {
+      ...hour,
+      rawTemperature: hour.rawTemperature ?? adjustment.rawTemperature,
+      elevationAdjustedTemperature: adjustment.elevationAdjustedTemperature,
+      temperatureAdjustment: adjustment,
+    };
   }
 
   return {
@@ -264,10 +363,16 @@ function adjustCurrentTemperature(
   const adjustment = buildTemperatureAdjustment(weather.temperature, {
     spotElevationMeters,
     providerElevationMeters: weather.providerElevationMeters,
+    providerCode: weather.providerCode,
     existing: weather.temperatureAdjustment,
   });
   if (!adjustment.correctionApplied) {
-    return weather;
+    return {
+      ...weather,
+      rawTemperature: weather.rawTemperature ?? adjustment.rawTemperature,
+      elevationAdjustedTemperature: adjustment.elevationAdjustedTemperature,
+      temperatureAdjustment: adjustment,
+    };
   }
 
   return {
@@ -290,10 +395,27 @@ function adjustDailyTemperature(
   const adjustment = buildTemperatureAdjustment((day.tempMin + day.tempMax) / 2, {
     spotElevationMeters,
     providerElevationMeters: day.providerElevationMeters,
+    providerCode: day.providerCode,
     existing: day.temperatureAdjustment,
   });
   if (!adjustment.correctionApplied) {
-    return day;
+    return {
+      ...day,
+      rawTempMin: day.rawTempMin ?? day.tempMin,
+      rawTempMax: day.rawTempMax ?? day.tempMax,
+      elevationAdjustedTempMin: day.elevationAdjustedTempMin ?? day.tempMin,
+      elevationAdjustedTempMax: day.elevationAdjustedTempMax ?? day.tempMax,
+      temperatureAdjustment: {
+        correctionApplied: false,
+        correctionMeters: 0,
+        correctionCelsius: 0,
+        lapseRateCelsiusPer100m: adjustment.lapseRateCelsiusPer100m,
+        selectedSpotElevationMeters: adjustment.selectedSpotElevationMeters,
+        providerElevationMeters: adjustment.providerElevationMeters,
+        providerElevationKnown: adjustment.providerElevationKnown,
+        correctionReason: adjustment.correctionReason,
+      },
+    };
   }
 
   return {
@@ -309,7 +431,10 @@ function adjustDailyTemperature(
       correctionMeters: adjustment.correctionMeters,
       correctionCelsius: adjustment.correctionCelsius,
       lapseRateCelsiusPer100m: adjustment.lapseRateCelsiusPer100m,
+      selectedSpotElevationMeters: adjustment.selectedSpotElevationMeters,
       providerElevationMeters: adjustment.providerElevationMeters,
+      providerElevationKnown: adjustment.providerElevationKnown,
+      correctionReason: adjustment.correctionReason,
     },
     estimatedFields: unique([...(day.estimatedFields ?? []), "temperatureElevationCorrection"]),
   };
@@ -320,6 +445,7 @@ function buildTemperatureAdjustment(
   input: {
     readonly spotElevationMeters: number;
     readonly providerElevationMeters?: number;
+    readonly providerCode?: string;
     readonly existing?: Partial<ElevationTemperatureAdjustment>;
   },
 ): ElevationTemperatureAdjustment {
@@ -332,31 +458,129 @@ function buildTemperatureAdjustment(
       correctionCelsius: input.existing.correctionCelsius ?? 0,
       lapseRateCelsiusPer100m:
         input.existing.lapseRateCelsiusPer100m ?? defaultLapseRateCelsiusPer100m,
+      selectedSpotElevationMeters:
+        input.existing.selectedSpotElevationMeters ?? input.spotElevationMeters,
       providerElevationMeters: input.existing.providerElevationMeters,
+      providerElevationKnown: input.existing.providerElevationKnown ?? false,
+      correctionReason: input.existing.correctionReason ?? "existing_correction_preserved",
     };
   }
 
-  const providerElevationMeters =
-    input.providerElevationMeters ??
-    (input.spotElevationMeters >= 900 ? assumedUnknownProviderElevationMeters : undefined);
-  const correctionMeters = Math.max(0, input.spotElevationMeters - (providerElevationMeters ?? 0));
-  const correctionApplied =
-    correctionMeters >= minimumMeaningfulCorrectionMeters &&
-    Math.abs(input.spotElevationMeters - (providerElevationMeters ?? 0)) >
-      elevationCloseEnoughMeters;
-  const correctionCelsius = correctionApplied
-    ? round1((correctionMeters / 100) * defaultLapseRateCelsiusPer100m)
-    : 0;
+  const providerElevationMeters = finiteNumber(input.providerElevationMeters)
+    ? input.providerElevationMeters
+    : undefined;
+  const providerElevationKnown = providerElevationMeters !== undefined;
+  const providerCode = input.providerCode ?? "";
+
+  if (providerElevationKnown) {
+    const elevationDifference = input.spotElevationMeters - providerElevationMeters;
+    if (Math.abs(elevationDifference) <= elevationCloseEnoughMeters) {
+      return temperatureAdjustmentResult(rawTemperature, {
+        spotElevationMeters: input.spotElevationMeters,
+        providerElevationMeters,
+        providerElevationKnown: true,
+        correctionReason: "provider_elevation_close_to_spot",
+      });
+    }
+
+    if (elevationDifference <= 0) {
+      return temperatureAdjustmentResult(rawTemperature, {
+        spotElevationMeters: input.spotElevationMeters,
+        providerElevationMeters,
+        providerElevationKnown: true,
+        correctionReason: "provider_elevation_higher_than_spot",
+      });
+    }
+
+    const correctionMeters = Math.max(0, elevationDifference - elevationCloseEnoughMeters);
+    const correctionCelsius = round1((correctionMeters / 100) * defaultLapseRateCelsiusPer100m);
+    return temperatureAdjustmentResult(rawTemperature, {
+      spotElevationMeters: input.spotElevationMeters,
+      providerElevationMeters,
+      providerElevationKnown: true,
+      correctionReason: "provider_elevation_delta_beyond_threshold",
+      correctionMeters,
+      correctionCelsius,
+    });
+  }
+
+  if (providerHasTerrainAwareDemoValues(providerCode)) {
+    return temperatureAdjustmentResult(rawTemperature, {
+      spotElevationMeters: input.spotElevationMeters,
+      providerElevationKnown: false,
+      correctionReason: "provider_terrain_aware_no_extra_correction",
+    });
+  }
+
+  if (input.spotElevationMeters < 1200) {
+    return temperatureAdjustmentResult(rawTemperature, {
+      spotElevationMeters: input.spotElevationMeters,
+      providerElevationKnown: false,
+      correctionReason: "spot_elevation_too_low_for_unknown_correction",
+    });
+  }
+
+  const unknownDeltaMeters = Math.max(
+    0,
+    input.spotElevationMeters - unknownProviderCorrectionBaseMeters,
+  );
+  const maxCooling =
+    input.spotElevationMeters >= 2200
+      ? maxVeryHighTerrainUnknownProviderCoolingCelsius
+      : maxUnknownProviderCoolingCelsius;
+  const correctionCelsius = Math.min(
+    maxCooling,
+    round1(
+      (unknownDeltaMeters / 100) *
+        defaultLapseRateCelsiusPer100m *
+        unknownProviderCorrectionRatio,
+    ),
+  );
+  const correctionMeters =
+    correctionCelsius > 0
+      ? Math.round((correctionCelsius / defaultLapseRateCelsiusPer100m) * 100)
+      : 0;
+
+  return temperatureAdjustmentResult(rawTemperature, {
+    spotElevationMeters: input.spotElevationMeters,
+    providerElevationKnown: false,
+    correctionReason: "unknown_provider_elevation_conservative",
+    correctionMeters,
+    correctionCelsius,
+  });
+}
+
+function temperatureAdjustmentResult(
+  rawTemperature: number,
+  input: {
+    readonly spotElevationMeters: number;
+    readonly providerElevationMeters?: number;
+    readonly providerElevationKnown: boolean;
+    readonly correctionReason: ElevationTemperatureAdjustment["correctionReason"];
+    readonly correctionMeters?: number;
+    readonly correctionCelsius?: number;
+  },
+): ElevationTemperatureAdjustment {
+  const correctionMeters = Math.max(0, Math.round(input.correctionMeters ?? 0));
+  const correctionCelsius = round1(Math.max(0, input.correctionCelsius ?? 0));
+  const correctionApplied = correctionMeters > 0 && correctionCelsius > 0;
 
   return {
     rawTemperature,
     elevationAdjustedTemperature: round1(rawTemperature - correctionCelsius),
     correctionApplied,
-    correctionMeters: Math.round(correctionMeters),
+    correctionMeters,
     correctionCelsius,
     lapseRateCelsiusPer100m: defaultLapseRateCelsiusPer100m,
+    selectedSpotElevationMeters: Math.round(input.spotElevationMeters),
     providerElevationMeters: input.providerElevationMeters,
+    providerElevationKnown: input.providerElevationKnown,
+    correctionReason: input.correctionReason,
   };
+}
+
+function providerHasTerrainAwareDemoValues(providerCode: string): boolean {
+  return /^mock/i.test(providerCode) || providerCode.includes("mock");
 }
 
 function annotateDecisionWeather(
@@ -375,6 +599,12 @@ function annotateDecisionWeather(
     precipitationAmountMm: precipitationAmountMm(hour),
     precipitationProbabilityPercent: hour.precipitationProbability,
     precipitationType: precipitationTypeFromAmounts(hour),
+    precipitationRisk: buildPhotographyPrecipitationRisk({
+      probability: hour.precipitationProbability,
+      amountMm: precipitationAmountMm(hour),
+      affectedWindows: [hourWindowLabel(hour.time)],
+      weatherTextZh: hour.weatherTextZh,
+    }),
     rawVisibilityKm: hour.rawVisibilityKm ?? hour.visibility,
     photographyTransparencyScore: transparencyScore,
     transparencyGrade: transparencyGradeFromScore(transparencyScore),
@@ -405,6 +635,11 @@ function annotateDecisionCurrent(
     precipitationAmountMm: precipitationAmountMm(weather),
     precipitationProbabilityPercent: weather.precipitationProbability,
     precipitationType: precipitationTypeFromAmounts(weather),
+    precipitationRisk: buildPhotographyPrecipitationRisk({
+      probability: weather.precipitationProbability,
+      amountMm: precipitationAmountMm(weather),
+      weatherTextZh: weather.weatherTextZh,
+    }),
     rawVisibilityKm: weather.rawVisibilityKm ?? weather.visibility ?? null,
     photographyTransparencyScore: transparencyScore,
     transparencyGrade: transparencyGradeFromScore(transparencyScore),
@@ -444,6 +679,11 @@ function annotateDecisionDaily(
     precipitationAmountMm: precipitationAmountMm(day),
     precipitationProbabilityPercent: day.precipitationProbability,
     precipitationType: precipitationTypeFromAmounts(day),
+    precipitationRisk: buildPhotographyPrecipitationRisk({
+      probability: day.precipitationProbability,
+      amountMm: precipitationAmountMm(day),
+      weatherTextZh: day.weatherSummary,
+    }),
     rawVisibilityKm: day.rawVisibilityKm ?? day.visibility ?? null,
     photographyTransparencyScore: transparencyScore,
     transparencyGrade: transparencyGradeFromScore(transparencyScore),
@@ -468,6 +708,23 @@ function cloudFogRiskFromScore(
     return "medium";
   }
   return "low";
+}
+
+function hourWindowLabel(time: string): string {
+  const hour = Number(time.slice(11, 13));
+  if (!Number.isFinite(hour)) {
+    return "拍摄窗口";
+  }
+  if (hour >= 4 && hour <= 9) {
+    return "清晨窗口";
+  }
+  if (hour >= 16 && hour <= 20) {
+    return "傍晚窗口";
+  }
+  if (hour >= 21 || hour <= 3) {
+    return "夜间窗口";
+  }
+  return "日间窗口";
 }
 
 function finiteNumber(value: unknown): value is number {

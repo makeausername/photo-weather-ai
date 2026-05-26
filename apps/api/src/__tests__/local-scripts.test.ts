@@ -225,4 +225,30 @@ describe("local astro diagnostics scripts", () => {
     expect(serverSource).not.toContain("DATABASE_URL");
     expect(serverSource).not.toContain("JWT_SECRET");
   });
+
+  it("prints real-weather calibration diagnostics without raw provider secrets", () => {
+    const script = readRepoFile("scripts/test-real-weather.sh");
+
+    for (const expected of [
+      "rawTemperature:",
+      "providerElevationMeters:",
+      "selectedSpotElevationMeters:",
+      "temperatureCorrectionApplied:",
+      "correctedTemperature:",
+      "precipitationRisk:",
+      "astroConditionScore:",
+      "astroPracticalScore:",
+      "astroWeatherBlockers:",
+      "generalBestSubject:",
+      "confidenceByTarget:",
+    ]) {
+      expect(script).toContain(expected);
+    }
+
+    expect(script).toContain("No API keys or secrets will be printed.");
+    expect(script).toContain("apiKeyPresent");
+    expect(script).not.toMatch(/provider\.apiKey(?!Present)/);
+    expect(script).not.toContain("process.env.QWEATHER");
+    expect(script).not.toContain("process.env.METEOBLUE");
+  });
 });

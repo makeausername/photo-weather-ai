@@ -67,6 +67,15 @@ export type NormalizedWeatherFieldMetadataMap = Partial<
   Record<string, NormalizedWeatherFieldMetadata>
 >;
 
+export type ElevationTemperatureCorrectionReason =
+  | "provider_elevation_close_to_spot"
+  | "provider_elevation_delta_beyond_threshold"
+  | "provider_terrain_aware_no_extra_correction"
+  | "unknown_provider_elevation_conservative"
+  | "spot_elevation_too_low_for_unknown_correction"
+  | "provider_elevation_higher_than_spot"
+  | "existing_correction_preserved";
+
 export type ElevationTemperatureAdjustment = {
   readonly rawTemperature: number;
   readonly elevationAdjustedTemperature: number;
@@ -74,7 +83,21 @@ export type ElevationTemperatureAdjustment = {
   readonly correctionMeters: number;
   readonly correctionCelsius: number;
   readonly lapseRateCelsiusPer100m: number;
+  readonly selectedSpotElevationMeters: number;
   readonly providerElevationMeters?: number;
+  readonly providerElevationKnown: boolean;
+  readonly correctionReason: ElevationTemperatureCorrectionReason;
+};
+
+export type PhotographyRainRiskLevel = "none" | "low" | "medium" | "high" | "severe";
+
+export type PhotographyPrecipitationRisk = {
+  readonly precipitationProbabilityPercent: number | null;
+  readonly precipitationAmountMm: number | null;
+  readonly rainRiskLevel: PhotographyRainRiskLevel;
+  readonly rainRiskLabelZh: string;
+  readonly affectedWindows: readonly string[];
+  readonly recommendationZh: string;
 };
 
 export type ForecastQueryInput = {
@@ -111,6 +134,7 @@ export type NormalizedHourlyWeather = {
   readonly rainAmountMm?: number | null;
   readonly snowAmountMm?: number | null;
   readonly precipitationType?: PrecipitationType;
+  readonly precipitationRisk?: PhotographyPrecipitationRisk;
   readonly visibility: number | null;
   readonly rawVisibilityKm?: number | null;
   readonly photographyTransparencyScore?: number;
@@ -164,6 +188,7 @@ export type NormalizedCurrentWeather = {
   readonly precipitationProbability?: number | null;
   readonly precipitationProbabilityPercent?: number | null;
   readonly precipitationType?: PrecipitationType;
+  readonly precipitationRisk?: PhotographyPrecipitationRisk;
   readonly rawVisibilityKm?: number | null;
   readonly photographyTransparencyScore?: number;
   readonly transparencyGrade?: TransparencyGrade;
@@ -202,6 +227,7 @@ export type NormalizedDailyWeather = {
   readonly rainAmountMm?: number | null;
   readonly snowAmountMm?: number | null;
   readonly precipitationType?: PrecipitationType;
+  readonly precipitationRisk?: PhotographyPrecipitationRisk;
   readonly windSpeed?: number | null;
   readonly windGust?: number | null;
   readonly windDirection?: number | null;
@@ -488,6 +514,8 @@ export type ForecastTimeWindow = {
     | "sunset"
     | "blue_hour";
   readonly practicalNoteZh?: string;
+  readonly precipitationRisk?: PhotographyPrecipitationRisk;
+  readonly weatherBlockers?: readonly string[];
   readonly subjectPriorityLabel?: string;
   readonly backupSubjectLabel?: string;
   readonly restWarningZh?: string;
@@ -706,6 +734,10 @@ export type DailyAstro = {
   readonly lunarDateText?: string;
   readonly starsScore: number;
   readonly milkyWayScore: number;
+  readonly astroConditionScore: number;
+  readonly astroPracticalScore: number;
+  readonly astronomicalWindowAvailable: boolean;
+  readonly weatherBlockers: readonly string[];
   readonly moonImpactLevel: MoonImpactLevel;
   readonly astronomicalNightWindow?: AstroWindow;
   readonly moonlessNightWindow?: AstroWindow;
@@ -732,6 +764,8 @@ export type LightPollutionInfo = {
 export type AstroAnalysisResult = {
   readonly starsScore: number;
   readonly milkyWayScore: number;
+  readonly astroConditionScore: number;
+  readonly astroPracticalScore: number;
   readonly moonImpactScore: number;
   readonly transparencyScore: number;
   readonly astroTravelScore: number;
@@ -750,6 +784,7 @@ export type AstroAnalysisResult = {
   readonly moonEvidence: readonly AstroEvidenceItem[];
   readonly terrainEvidence: readonly AstroEvidenceItem[];
   readonly lightPollutionEvidence: readonly AstroEvidenceItem[];
+  readonly weatherBlockers: readonly string[];
   readonly riskReasons: readonly string[];
   readonly opportunityReasons: readonly string[];
   readonly travelRecommendations: readonly string[];
@@ -775,6 +810,10 @@ export type ForecastDailyWeatherSummary = {
   readonly elevationAdjustedTempMax?: number;
   readonly temperatureCorrectionApplied?: boolean;
   readonly temperatureCorrectionCelsius?: number;
+  readonly temperatureCorrectionReason?: ElevationTemperatureCorrectionReason;
+  readonly selectedSpotElevationMeters?: number;
+  readonly providerElevationMeters?: number;
+  readonly providerElevationKnown?: boolean;
   readonly feelsLikeMin?: number;
   readonly feelsLikeMax?: number;
   readonly precipitationProbability?: number | null;
@@ -783,6 +822,7 @@ export type ForecastDailyWeatherSummary = {
   readonly rainAmountMm?: number;
   readonly snowAmountMm?: number;
   readonly precipitationType?: PrecipitationType;
+  readonly precipitationRisk?: PhotographyPrecipitationRisk;
   readonly windSpeed?: number;
   readonly windGust?: number;
   readonly windDirection?: number;

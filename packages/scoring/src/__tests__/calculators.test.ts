@@ -23,6 +23,8 @@ import {
   classifyRecommendationLevel,
   classifyScoreLevel,
   applyMountainWeatherAdjustments,
+  buildClothingGuide,
+  buildPhotographyPrecipitationRisk,
   calculatePhotographyTransparencyScore,
   exposedRidgeWindRisk,
   transparencyGradeFromScore,
@@ -161,7 +163,7 @@ describe("forecast score calculators", () => {
     expect(classifyRecommendationLevel(35)).toBe("not_recommended");
   });
 
-  it("lowers mountain temperatures with elevation correction and avoids double correction", () => {
+  it("uses provider elevation awareness for mountain temperature correction", () => {
     const baseInput = buildMockForecastInput(baseQuery, { now: fixedNow });
     const lowElevationHour = {
       ...baseInput.hourlyWeather[0]!,
@@ -204,11 +206,133 @@ describe("forecast score calculators", () => {
 
     expect(adjusted.hourlyWeather[0]?.temperature).toBeLessThan(28);
     expect(adjusted.hourlyWeather[0]?.temperatureAdjustment?.correctionApplied).toBe(true);
+    expect(adjusted.hourlyWeather[0]?.temperatureAdjustment?.correctionReason).toBe(
+      "provider_elevation_delta_beyond_threshold",
+    );
     expect(adjusted.currentWeather?.temperature).toBeLessThan(28);
     expect(closeElevation.hourlyWeather[0]?.temperature).toBe(28);
-    expect(
-      closeElevation.hourlyWeather[0]?.temperatureAdjustment?.correctionApplied,
-    ).toBeUndefined();
+    expect(closeElevation.hourlyWeather[0]?.temperatureAdjustment).toMatchObject({
+      correctionApplied: false,
+      providerElevationKnown: true,
+      correctionReason: "provider_elevation_close_to_spot",
+    });
+  });
+
+  it("does not correct meteoblue values when provider height matches the selected spot", () => {
+    const baseInput = buildMockForecastInput(baseQuery, { now: fixedNow });
+    const adjusted = applyMountainWeatherAdjustments({
+      hourlyWeather: [
+        {
+          ...baseInput.hourlyWeather[0]!,
+          providerCode: "meteoblue",
+          providerElevationMeters: baseInput.terrainAnalysis.terrainProfile.locationElevation,
+          temperature: 20,
+        },
+      ],
+      dailyWeather: [],
+      terrainAnalysis: baseInput.terrainAnalysis,
+    });
+
+    expect(adjusted.hourlyWeather[0]?.temperature).toBe(20);
+    expect(adjusted.hourlyWeather[0]?.temperatureAdjustment).toMatchObject({
+      correctionApplied: false,
+      providerElevationKnown: true,
+      correctionReason: "provider_elevation_close_to_spot",
+    });
+  });
+
+  it("caps unknown-provider high mountain correction instead of applying a full lapse rate", () => {
+    const baseInput = buildMockForecastInput(baseQuery, { now: fixedNow });
+    const veryHighTerrain: TerrainAnalysisSummary = {
+      ...baseInput.terrainAnalysis,
+      terrainProfile: {
+        ...baseInput.terrainAnalysis.terrainProfile,
+        locationElevation: 3200,
+      },
+    };
+    const adjusted = applyMountainWeatherAdjustments({
+      hourlyWeather: [
+        {
+          ...baseInput.hourlyWeather[0]!,
+          providerCode: "qweather",
+          providerElevationMeters: undefined,
+          temperature: 22,
+          feelsLike: 22,
+        },
+      ],
+      dailyWeather: [],
+      terrainAnalysis: veryHighTerrain,
+    });
+    const adjustment = adjusted.hourlyWeather[0]?.temperatureAdjustment;
+
+    expect(adjustment?.correctionApplied).toBe(true);
+    expect(adjustment?.correctionReason).toBe("unknown_provider_elevation_conservative");
+    expect(adjustment?.correctionCelsius).toBeLessThanOrEqual(5);
+    expect(adjusted.hourlyWeather[0]?.temperature).toBeGreaterThanOrEqual(17);
+  });
+
+  it("leaves terrain-aware mock provider values close to the raw provider temperature", () => {
+    const baseInput = buildMockForecastInput(baseQuery, { now: fixedNow });
+    const adjusted = applyMountainWeatherAdjustments({
+      hourlyWeather: [
+        {
+          ...baseInput.hourlyWeather[0]!,
+          providerCode: "mock",
+          providerElevationMeters: undefined,
+          temperature: 21,
+        },
+      ],
+      dailyWeather: [],
+      terrainAnalysis: baseInput.terrainAnalysis,
+    });
+
+    expect(adjusted.hourlyWeather[0]?.temperature).toBe(21);
+    expect(adjusted.hourlyWeather[0]?.temperatureAdjustment?.correctionReason).toBe(
+      "provider_terrain_aware_no_extra_correction",
+    );
+  });
+
+  it("feeds clothing guidance from the adjusted mountain temperature without over-cooling", () => {
+    const baseInput = buildMockForecastInput(baseQuery, { now: fixedNow });
+    const adjusted = applyMountainWeatherAdjustments({
+      hourlyWeather: [
+        {
+          ...baseInput.hourlyWeather[0]!,
+          providerCode: "qweather",
+          providerElevationMeters: undefined,
+          temperature: 18,
+          feelsLike: 18,
+          windSpeed: 2,
+        },
+      ],
+      dailyWeather: [],
+      terrainAnalysis: baseInput.terrainAnalysis,
+    });
+    const guide = buildClothingGuide({
+      hourlyWeather: adjusted.hourlyWeather,
+      elevationMeters: baseInput.terrainAnalysis.terrainProfile.locationElevation,
+      target: "general",
+      timezone: "Asia/Shanghai",
+      forecastStart: fixedNow,
+    });
+
+    expect(adjusted.hourlyWeather[0]?.temperature).toBeGreaterThan(14);
+    expect(guide.comfortLevel).not.toBe("very_cold");
+    expect(guide.summaryZh).not.toContain("0°C");
+  });
+
+  it("derives precipitation risk from amount when probability is unavailable", () => {
+    const risk = buildPhotographyPrecipitationRisk({
+      probability: null,
+      amountMm: 12,
+      affectedWindows: ["清晨窗口"],
+      weatherTextZh: "小雨转小雨",
+    });
+
+    expect(risk.rainRiskLevel).toBe("high");
+    expect(risk.precipitationProbabilityPercent).toBeNull();
+    expect(risk.recommendationZh).toContain("降水概率暂无");
+    expect(risk.recommendationZh).not.toContain("0%");
   });
 
   it("separates raw visibility from photography transparency under cloud and rain risk", () => {

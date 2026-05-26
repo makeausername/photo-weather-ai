@@ -10,6 +10,7 @@ import {
   type ForecastScore,
   type ForecastScoreLevel,
   type GlowBackupPlan,
+  type PhotographyPrecipitationRisk,
 } from "@photo-weather/shared";
 import { PublicShell } from "../../components/public-shell";
 import { MoonPhaseCalendar } from "../../components/moon-phase-calendar";
@@ -376,7 +377,7 @@ function WeatherEssentialsPanel({ result }: { readonly result: ForecastCalculati
           title="气温与体感"
           badge={comfortLevelLabel(clothing.comfortLevel)}
           value={mountainTemperatureValue(current, firstDay)}
-          detail={`日内温差 ${dailyTemperatureRangeText(firstDay)}，${temperatureActionText(
+          detail={`${dailyTemperatureRangeText(firstDay)}，${temperatureActionText(
             current,
             firstDay,
           )}`}
@@ -790,7 +791,7 @@ function dailyTemperatureRangeText(
   weather: ForecastCalculationResult["dailySummaries"][number]["weather"] | undefined,
 ): string {
   if (!weather) {
-    return "温度暂缺";
+    return "山顶估算温度：暂缺";
   }
 
   const temperature =
@@ -802,12 +803,7 @@ function dailyTemperatureRangeText(
       ? `体感 ${Math.round(weather.feelsLikeMin)}-${Math.round(weather.feelsLikeMax)}°C`
       : `体感 ${formatTemperature(averagePair(weather.feelsLikeMin, weather.feelsLikeMax))}`;
 
-  const correction =
-    weather.temperatureCorrectionApplied && typeof weather.temperatureCorrectionCelsius === "number"
-      ? "（已按机位海拔修正）"
-      : "";
-
-  return `${temperature}${correction}｜${feelsLike}`;
+  return `山顶估算温度：${temperature}｜${feelsLike}｜${temperatureCorrectionText(weather)}`;
 }
 
 function mountainTemperatureValue(
@@ -816,11 +812,27 @@ function mountainTemperatureValue(
 ): string {
   const temperature = current?.temperature ?? averagePair(weather?.tempMin, weather?.tempMax);
   const feelsLike = current?.feelsLike ?? averagePair(weather?.feelsLikeMin, weather?.feelsLikeMax);
-  const adjusted =
-    current?.temperatureAdjustment?.correctionApplied || weather?.temperatureCorrectionApplied;
-  return `${adjusted ? "山顶估算温度" : "气温"} ${formatTemperature(
+  return `山顶估算温度：${formatTemperature(
     temperature,
   )} / 体感 ${formatTemperature(feelsLike)}`;
+}
+
+function temperatureCorrectionText(
+  weather: ForecastCalculationResult["dailySummaries"][number]["weather"] | undefined,
+): string {
+  if (!weather) {
+    return "温度修正待复核";
+  }
+  if (weather.temperatureCorrectionApplied) {
+    return "已结合机位海拔做轻量修正";
+  }
+  if (
+    weather.temperatureCorrectionReason === "provider_elevation_close_to_spot" ||
+    weather.temperatureCorrectionReason === "provider_terrain_aware_no_extra_correction"
+  ) {
+    return "预报已接近机位海拔，未额外修正";
+  }
+  return "未额外修正";
 }
 
 function temperatureActionText(
@@ -855,12 +867,12 @@ function dailyPrecipitationLabel(
   weather: ForecastCalculationResult["dailySummaries"][number]["weather"] | undefined,
 ): string {
   if (weather?.precipitationType === "snow") {
-    return "降雪";
+    return "降雪风险";
   }
   if (weather?.precipitationType === "mixed") {
-    return "雨雪";
+    return "雨雪风险";
   }
-  return precipitationLabel(weather?.weatherTextZh);
+  return `${precipitationLabel(weather?.weatherTextZh).replace("概率", "")}风险`;
 }
 
 type PrecipitationDisplayWeather = {
@@ -871,24 +883,31 @@ type PrecipitationDisplayWeather = {
   readonly rainAmountMm?: number | null;
   readonly snowAmountMm?: number | null;
   readonly precipitationType?: string | null;
+  readonly precipitationRisk?: PhotographyPrecipitationRisk;
 };
 
 function precipitationDisplayValue(weather: PrecipitationDisplayWeather | undefined): string {
+  const explicitRisk = weather?.precipitationRisk;
   const amount = precipitationAmount(weather);
   const probability = displayedPrecipitationProbability(weather, amount);
-  if (typeof probability === "number" && Number.isFinite(probability) && amount !== null) {
-    return `降水概率 ${Math.round(probability)}%｜预计 ${formatMillimeters(amount)}`;
+  if (explicitRisk) {
+    const riskAmount = explicitRisk.precipitationAmountMm ?? amount;
+    return `降水风险：${explicitRisk.rainRiskLabelZh}${
+      riskAmount !== null && riskAmount > 0 ? `，预计 ${formatMillimeters(riskAmount)}` : ""
+    }`;
+  }
+  const risk = precipitationRiskLabel(probability, amount);
+  if (amount !== null && amount > 0) {
+    return `降水风险：${risk}，预计 ${formatMillimeters(amount)}`;
   }
   if (typeof probability === "number" && Number.isFinite(probability)) {
-    return `降水概率 ${Math.round(probability)}%`;
+    return `降水风险：${risk}，概率 ${Math.round(probability)}%`;
   }
-  if (amount !== null && amount > 0) {
-    return `预计 ${formatMillimeters(amount)}`;
-  }
-  return "降水暂缺";
+  return "降水风险：待复核";
 }
 
 function precipitationDisplayDetail(weather: PrecipitationDisplayWeather | undefined): string {
+  const explicitRisk = weather?.precipitationRisk;
   const amount = precipitationAmount(weather);
   const probability = displayedPrecipitationProbability(weather, amount);
   const risk = precipitationRiskLabel(probability, amount);
@@ -899,6 +918,9 @@ function precipitationDisplayDetail(weather: PrecipitationDisplayWeather | undef
     typeof snow === "number" && snow > 0 ? `降雪 ${formatMillimeters(snow)}` : null,
   ].filter(Boolean);
 
+  if (explicitRisk) {
+    return explicitRisk.recommendationZh;
+  }
   if (typeof probability === "number" && Number.isFinite(probability) && amount !== null) {
     return `降水风险：${risk}，概率 ${Math.round(probability)}%，预计 ${formatMillimeters(amount)}${
       split.length > 0 ? `（${split.join("，")}）` : ""
@@ -951,20 +973,20 @@ function precipitationAmount(weather: PrecipitationDisplayWeather | undefined): 
 function precipitationRiskLabel(
   probability: number | null | undefined,
   amount: number | null,
-): "低" | "中" | "高" | "强" | "无明显" {
+): "低" | "中" | "高" | "严重" | "无明显" {
   const probabilityValue =
     typeof probability === "number" && Number.isFinite(probability) ? probability : 0;
   const amountValue = amount ?? 0;
   if (amountValue >= 25) {
-    return "强";
+    return "严重";
   }
-  if (amountValue >= 10 || probabilityValue >= 75) {
+  if (amountValue >= 10 || probabilityValue >= 70) {
     return "高";
   }
-  if (amountValue >= 2 || probabilityValue >= 55) {
+  if (amountValue >= 2 || probabilityValue >= 40) {
     return "中";
   }
-  if (amountValue >= 0.1 || probabilityValue >= 25) {
+  if (amountValue >= 0.3 || probabilityValue >= 20) {
     return "低";
   }
   return "无明显";
@@ -1014,10 +1036,12 @@ function dailyOpportunityLine(
 
   return [
     scorePillText("云海", breakdown.cloudSea?.score),
+    scorePillText("白墙风险", breakdown.whiteoutRisk?.score),
     scorePillText("朝霞", breakdown.sunriseGlow?.score),
     scorePillText("晚霞", breakdown.sunsetGlow?.score),
-    scorePillText("星空", breakdown.stars?.score),
-    scorePillText("银河", breakdown.milkyWay?.score),
+    `天文窗口 ${breakdown.stars?.window ? "有" : "无"}`,
+    scorePillText("星空可拍性", breakdown.stars?.score),
+    scorePillText("银河可拍性", breakdown.milkyWay?.score),
   ].join("｜");
 }
 
@@ -1466,8 +1490,9 @@ function AstroDailyTrend({
               </p>
             </div>
             <dl className="grid gap-1 text-sm">
-              <AstroInlineDefinition label="星空指数" value={`${item.starsScore} 分`} />
-              <AstroInlineDefinition label="银河指数" value={`${item.milkyWayScore} 分`} />
+              <AstroInlineDefinition label="天文窗口" value={item.astronomicalWindowAvailable ? "有" : "无"} />
+              <AstroInlineDefinition label="天文条件" value={`${item.astroConditionScore} 分`} />
+              <AstroInlineDefinition label="星空可拍性" value={`${item.astroPracticalScore} 分`} />
               <AstroInlineDefinition label="月光影响" value={item.moonImpactLabel} />
             </dl>
             <dl className="grid gap-1 text-sm">
@@ -1478,6 +1503,9 @@ function AstroDailyTrend({
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="muted">{item.riskNote}</Badge>
+                {item.weatherBlockers.length > 0 ? (
+                  <Badge variant="danger">天气阻断</Badge>
+                ) : null}
               </div>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.keyReason}</p>
             </div>
@@ -3856,6 +3884,12 @@ function bestWindowForSubject(
 function windowRiskTag(result: ForecastCalculationResult, window: ForecastResultWindow): string {
   if (window.practicalKind === "formation_signal") {
     return "无光形成信号";
+  }
+  if (
+    window.precipitationRisk?.rainRiskLevel === "high" ||
+    window.precipitationRisk?.rainRiskLevel === "severe"
+  ) {
+    return "降水打断";
   }
   if (window.restWarningZh) {
     return "作息成本高";

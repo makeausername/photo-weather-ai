@@ -126,6 +126,14 @@ const precipitationTypeSchema = z.enum(["rain", "snow", "mixed", "none", "unknow
 const ridgeWindRiskSchema = z.enum(["low", "medium", "high"]);
 const transparencyGradeSchema = z.enum(["excellent", "good", "fair", "poor"]);
 const cloudFogObstructionRiskSchema = z.enum(["low", "medium", "high"]);
+const precipitationRiskSchema = z.object({
+  precipitationProbabilityPercent: nullablePercentSchema,
+  precipitationAmountMm: nullableFiniteNumberSchema,
+  rainRiskLevel: z.enum(["none", "low", "medium", "high", "severe"]),
+  rainRiskLabelZh: z.string().trim().min(1),
+  affectedWindows: z.array(z.string().trim().min(1)),
+  recommendationZh: z.string().trim().min(1),
+});
 const weatherFieldMetadataSchema = z
   .record(
     z.object({
@@ -146,7 +154,18 @@ const hourlyTemperatureAdjustmentSchema = z
     correctionMeters: z.number().finite().min(0),
     correctionCelsius: z.number().finite().min(0),
     lapseRateCelsiusPer100m: z.number().finite().min(0.5).max(0.7),
+    selectedSpotElevationMeters: z.number().finite(),
     providerElevationMeters: z.number().finite().optional(),
+    providerElevationKnown: z.boolean(),
+    correctionReason: z.enum([
+      "provider_elevation_close_to_spot",
+      "provider_elevation_delta_beyond_threshold",
+      "provider_terrain_aware_no_extra_correction",
+      "unknown_provider_elevation_conservative",
+      "spot_elevation_too_low_for_unknown_correction",
+      "provider_elevation_higher_than_spot",
+      "existing_correction_preserved",
+    ]),
   })
   .optional();
 const dailyTemperatureAdjustmentSchema = hourlyTemperatureAdjustmentSchema
@@ -177,6 +196,7 @@ export const normalizedHourlyWeatherSchema = z.object({
   rainAmountMm: nullableFiniteNumberSchema.optional(),
   snowAmountMm: nullableFiniteNumberSchema.optional(),
   precipitationType: precipitationTypeSchema.optional(),
+  precipitationRisk: precipitationRiskSchema.optional(),
   visibility: nullableFiniteNumberSchema,
   rawVisibilityKm: nullableFiniteNumberSchema.optional(),
   photographyTransparencyScore: z.number().finite().min(0).max(100).optional(),
@@ -217,6 +237,7 @@ export const normalizedDailyWeatherSchema = z.object({
   rainAmountMm: nullableFiniteNumberSchema.optional(),
   snowAmountMm: nullableFiniteNumberSchema.optional(),
   precipitationType: precipitationTypeSchema.optional(),
+  precipitationRisk: precipitationRiskSchema.optional(),
   windSpeed: nullableFiniteNumberSchema.optional(),
   windGust: nullableFiniteNumberSchema.optional(),
   windDirection: z.number().finite().min(0).max(360).nullable().optional(),

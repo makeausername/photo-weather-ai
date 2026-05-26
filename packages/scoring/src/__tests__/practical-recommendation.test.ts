@@ -26,6 +26,26 @@ function withHourlyWeather(
   };
 }
 
+function withLowMoon(input: ForecastCalculationInput): ForecastCalculationInput {
+  return {
+    ...input,
+    astroSummaries: input.astroSummaries.map((summary) => ({
+      ...summary,
+      moonIllumination: 0.08,
+      moonAltitudeByHour: Object.fromEntries(
+        Array.from({ length: 24 }, (_, hour) => [String(hour).padStart(2, "0"), -12]),
+      ),
+      moonInfo: {
+        ...summary.moonInfo,
+        moonIllumination: 0.08,
+        moonAltitudeByHour: Object.fromEntries(
+          Array.from({ length: 24 }, (_, hour) => [String(hour).padStart(2, "0"), -12]),
+        ),
+      },
+    })),
+  };
+}
+
 function localHour(time: string): number {
   const date = new Date(Date.parse(time));
   const value = Number(
@@ -144,5 +164,117 @@ describe("general practical trip recommendation", () => {
     ).toBe(bestWindow!.arrivalAdvice!.setupBufferMinutes * 60 * 1000);
     expect(bestWindow?.backupSubjectLabel).toBeTruthy();
     expect(bestWindow?.subjectPriorityLabel).toContain("云海");
+  });
+
+  it("does not choose astro as the general best subject when night weather is blocked", () => {
+    const input = withLowMoon(
+      withHourlyWeather(buildMockForecastInput(query, { now: fixedNow }), (hour) => {
+        const hourValue = localHour(hour.time);
+        if (hourValue >= 20 || hourValue <= 4) {
+          return {
+            ...hour,
+            cloudTotal: 95,
+            cloudLow: 82,
+            humidity: 95,
+            visibility: 4,
+            precipitationProbability: 72,
+            precipitation: 0.7,
+            precipitationAmountMm: 0.7,
+            rainAmountMm: 0.7,
+            weatherTextZh: "小雨有雾",
+          };
+        }
+        if (hourValue >= 5 && hourValue <= 8) {
+          return {
+            ...hour,
+            humidity: 84,
+            cloudTotal: 52,
+            cloudLow: 38,
+            visibility: 18,
+            precipitationProbability: 5,
+            precipitation: 0,
+            precipitationAmountMm: 0,
+          };
+        }
+        return hour;
+      }),
+    );
+
+    const result = calculateForecast(input);
+
+    expect(result.astroAnalysis.astroPracticalScore).toBeLessThan(40);
+    expect(result.bestWindows[0]?.target).not.toBe("astro");
+  });
+
+  it("penalizes rain overlapping a shootable window without over-penalizing later rain", () => {
+    const baseInput = withHourlyWeather(buildMockForecastInput(query, { now: fixedNow }), (hour) => {
+      const hourValue = localHour(hour.time);
+      if (hourValue >= 4 && hourValue <= 7) {
+        return {
+          ...hour,
+          humidity: 84,
+          cloudTotal: 54,
+          cloudLow: 38,
+          windSpeed: 2.2,
+          visibility: 20,
+          dewPointSpread: 2.8,
+          precipitationProbability: 0,
+          precipitation: 0,
+          precipitationAmountMm: 0,
+        };
+      }
+      return {
+        ...hour,
+        precipitationProbability: 0,
+        precipitation: 0,
+        precipitationAmountMm: 0,
+      };
+    });
+    const rainDuringWindow = withHourlyWeather(baseInput, (hour) => {
+      const hourValue = localHour(hour.time);
+      if (hourValue >= 4 && hourValue <= 7) {
+        return {
+          ...hour,
+          precipitationProbability: 52,
+          precipitation: 0.8,
+          precipitationAmountMm: 0.8,
+          rainAmountMm: 0.8,
+          weatherTextZh: "小雨",
+        };
+      }
+      return hour;
+    });
+    const rainAfterWindow = withHourlyWeather(baseInput, (hour) => {
+      const hourValue = localHour(hour.time);
+      if (hourValue >= 13 && hourValue <= 15) {
+        return {
+          ...hour,
+          precipitationProbability: 70,
+          precipitation: 4,
+          precipitationAmountMm: 4,
+          rainAmountMm: 4,
+          weatherTextZh: "小雨",
+        };
+      }
+      return hour;
+    });
+
+    const clearWindow = calculateForecast(baseInput).bestWindows.find(
+      (window) => window.target === "cloud_sea" && window.practicalKind === "shooting_window",
+    );
+    const wetWindow = calculateForecast(rainDuringWindow).bestWindows.find(
+      (window) => window.target === "cloud_sea" && window.practicalKind === "shooting_window",
+    );
+    const laterRainWindow = calculateForecast(rainAfterWindow).bestWindows.find(
+      (window) => window.target === "cloud_sea" && window.practicalKind === "shooting_window",
+    );
+
+    expect(clearWindow?.practicalScore).toBeDefined();
+    expect(wetWindow?.precipitationRisk?.rainRiskLevel).toBe("medium");
+    expect(wetWindow!.practicalScore ?? 0).toBeLessThan(clearWindow!.practicalScore ?? 0);
+    expect(laterRainWindow?.precipitationRisk?.rainRiskLevel ?? "none").toBe("none");
+    expect(laterRainWindow!.practicalScore ?? 0).toBeGreaterThanOrEqual(
+      (clearWindow!.practicalScore ?? 0) - 4,
+    );
   });
 });

@@ -265,6 +265,8 @@ describe("MeteoblueClient", () => {
     const normalized = provider.normalizeWeatherData(meteobluePayload());
     const summary = normalized.sourceSummaries?.[0];
 
+    expect(normalized.hourly[0]?.providerElevationMeters).toBe(1860);
+    expect(normalized.daily[0]?.providerElevationMeters).toBe(1860);
     expect(summary).toMatchObject({
       providerCode: "meteoblue",
       attempted: true,

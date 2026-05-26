@@ -614,6 +614,8 @@ export class MeteoblueRealProvider implements WeatherProvider {
       if (timeValues.length === 0) {
         throw meteoblueParseError(noUsableMeteoblueFieldsMessage);
       }
+      const providerElevationMeters =
+        meteoblueMetadataHeightMeters(root) ?? this.options.elevationMeters;
 
       return validateHourlyWeather(
         timeValues.map((timeValue, index) => {
@@ -717,7 +719,7 @@ export class MeteoblueRealProvider implements WeatherProvider {
             cloudLow,
             cloudMid,
             cloudHigh,
-            providerElevationMeters: this.options.elevationMeters,
+            providerElevationMeters,
             weatherCode: toText(pickAt(data1h, index, fieldAliases("weatherCode"))),
             weatherTextZh: "meteoblue 专业预报",
             providerCode: realSource.providerCode,
@@ -738,6 +740,8 @@ export class MeteoblueRealProvider implements WeatherProvider {
       const root = asRecord(input);
       const dataDay = findMeteoblueDailyRecord(root);
       const dates = arrayField(dataDay, "time", "date");
+      const providerElevationMeters =
+        meteoblueMetadataHeightMeters(root) ?? this.options.elevationMeters;
       if (dates.length > 0) {
         return validateDailyWeather(
           dates.map((dateValue, index) => {
@@ -803,7 +807,7 @@ export class MeteoblueRealProvider implements WeatherProvider {
               providerCode: realSource.providerCode,
               providerLabelZh: realSource.providerLabelZh,
               dataMode: realSource.mode,
-              providerElevationMeters: this.options.elevationMeters,
+              providerElevationMeters,
               missingFields:
                 nullablePercent(
                   pickAt(
@@ -1259,6 +1263,12 @@ function meteoblueUtcOffset(root: Record<string, unknown>): string {
   const hours = Math.floor(absoluteMinutes / 60);
   const minutes = absoluteMinutes % 60;
   return `${sign}${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function meteoblueMetadataHeightMeters(root: Record<string, unknown>): number | undefined {
+  const metadata = asRecord(root.metadata);
+  const height = toNumber(metadata.height) ?? toNumber(metadata.elevation) ?? toNumber(metadata.asl);
+  return height === null ? undefined : Math.round(height);
 }
 
 function meteoblueOffsetSeconds(root: Record<string, unknown>): number {

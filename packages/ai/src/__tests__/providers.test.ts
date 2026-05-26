@@ -513,6 +513,8 @@ const forecastResultFixture: ForecastCalculationResult = {
   astroAnalysis: {
     starsScore: 58,
     milkyWayScore: 44,
+    astroConditionScore: 52,
+    astroPracticalScore: 44,
     moonImpactScore: 45,
     transparencyScore: 71,
     astroTravelScore: 52,
@@ -540,6 +542,7 @@ const forecastResultFixture: ForecastCalculationResult = {
         noteZh: "暂未接入光污染数据，实际观星仍需结合现场环境判断。",
       },
     ],
+    weatherBlockers: [],
     riskReasons: ["暂未接入光污染数据，实际观星仍需结合现场环境判断。"],
     opportunityReasons: [],
     travelRecommendations: [],

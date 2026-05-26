@@ -438,6 +438,8 @@ const baseResult: ForecastCalculationResult = {
   astroAnalysis: {
     starsScore: 66,
     milkyWayScore: 68,
+    astroConditionScore: 74,
+    astroPracticalScore: 68,
     moonImpactScore: 38,
     transparencyScore: 72,
     astroTravelScore: 70,
@@ -469,6 +471,7 @@ const baseResult: ForecastCalculationResult = {
         noteZh: "该窗口位于天文黑夜内，月亮低于地平线或月光影响较低。",
       },
     ],
+    weatherBlockers: [],
     dailyAstro: [
       {
         date: "2026-05-20",
@@ -476,6 +479,10 @@ const baseResult: ForecastCalculationResult = {
         lunarDateText: "四月初四",
         starsScore: 66,
         milkyWayScore: 68,
+        astroConditionScore: 74,
+        astroPracticalScore: 68,
+        astronomicalWindowAvailable: true,
+        weatherBlockers: [],
         moonImpactLevel: "medium",
         astronomicalNightWindow: {
           type: "astronomical_night",
@@ -522,6 +529,10 @@ const baseResult: ForecastCalculationResult = {
         lunarDateText: "四月初五",
         starsScore: 70,
         milkyWayScore: 72,
+        astroConditionScore: 76,
+        astroPracticalScore: 72,
+        astronomicalWindowAvailable: true,
+        weatherBlockers: [],
         moonImpactLevel: "medium",
         astronomicalNightWindow: {
           type: "astronomical_night",
@@ -981,10 +992,24 @@ const baseResult: ForecastCalculationResult = {
         weatherTextZh: "多云间晴",
         tempMin: 10,
         tempMax: 18,
+        temperatureCorrectionApplied: false,
+        temperatureCorrectionReason: "provider_elevation_close_to_spot",
+        selectedSpotElevationMeters: 1860,
+        providerElevationMeters: 1840,
+        providerElevationKnown: true,
         feelsLikeMin: 7,
         feelsLikeMax: 16,
         precipitationProbability: 18,
         precipitation: 0.2,
+        precipitationAmountMm: 0.2,
+        precipitationRisk: {
+          precipitationProbabilityPercent: 18,
+          precipitationAmountMm: 0.2,
+          rainRiskLevel: "none",
+          rainRiskLabelZh: "无明显",
+          affectedWindows: [],
+          recommendationZh: "降水不明显，可作为备选窗口。",
+        },
         windSpeed: 3.4,
         windGust: 5.6,
         windDirection: 135,
@@ -1011,10 +1036,24 @@ const baseResult: ForecastCalculationResult = {
         weatherTextZh: "小雨转多云",
         tempMin: 11,
         tempMax: 17,
+        temperatureCorrectionApplied: true,
+        temperatureCorrectionCelsius: 1.8,
+        temperatureCorrectionReason: "unknown_provider_elevation_conservative",
+        selectedSpotElevationMeters: 1860,
+        providerElevationKnown: false,
         feelsLikeMin: 8,
         feelsLikeMax: 15,
         precipitationProbability: 42,
         precipitation: 1.4,
+        precipitationAmountMm: 1.4,
+        precipitationRisk: {
+          precipitationProbabilityPercent: 42,
+          precipitationAmountMm: 1.4,
+          rainRiskLevel: "medium",
+          rainRiskLabelZh: "中",
+          affectedWindows: ["清晨窗口"],
+          recommendationZh: "小雨转多云，有降水干扰，预计 1.4mm，可能影响清晨窗口。",
+        },
         windSpeed: 4.2,
         windGust: 6.8,
         windDirection: 45,
@@ -1055,14 +1094,30 @@ const baseResult: ForecastCalculationResult = {
         detail: "晚霞窗口可用。",
       },
       stars: {
-        label: "每晚观星条件",
+        label: "星空可拍性",
         score: 66,
-        detail: "天文黑夜内云量和月光可控。",
+        detail: "天文窗口与天气条件共同支持星空拍摄。",
+        window: {
+          label: "天文黑夜 20:24 - 03:48",
+          date: "2026-05-20",
+          startTime: "2026-05-20T20:24:00+08:00",
+          endTime: "2026-05-21T03:48:00+08:00",
+          score: 69,
+          target: "astro",
+        },
       },
       milkyWay: {
-        label: "银河窗口",
+        label: "银河/天文窗口可拍性",
         score: 68,
-        detail: "银河窗口为本地天文计算。",
+        detail: "银河窗口已叠加月光、云量、低云、降水和透明度。",
+        window: {
+          label: "银河窗口 01:10 - 03:30",
+          date: "2026-05-20",
+          startTime: "2026-05-21T01:10:00+08:00",
+          endTime: "2026-05-21T03:30:00+08:00",
+          score: 68,
+          target: "astro",
+        },
       },
       transparency: {
         label: "通透度",
@@ -1086,14 +1141,30 @@ const baseResult: ForecastCalculationResult = {
         detail: "白墙风险中等。",
       },
       stars: {
-        label: "每晚观星条件",
+        label: "星空可拍性",
         score: 70,
         detail: "夜间窗口可关注。",
+        window: {
+          label: "天文黑夜 20:25 - 03:47",
+          date: "2026-05-21",
+          startTime: "2026-05-21T20:25:00+08:00",
+          endTime: "2026-05-22T03:47:00+08:00",
+          score: 70,
+          target: "astro",
+        },
       },
       milkyWay: {
-        label: "银河窗口",
+        label: "银河/天文窗口可拍性",
         score: 72,
         detail: "第二晚银河窗口可用。",
+        window: {
+          label: "银河窗口 01:05 - 03:20",
+          date: "2026-05-21",
+          startTime: "2026-05-22T01:05:00+08:00",
+          endTime: "2026-05-22T03:20:00+08:00",
+          score: 72,
+          target: "astro",
+        },
       },
       transparency: {
         label: "通透度",
@@ -1298,20 +1369,62 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("repeat(auto-fit,minmax(250px,1fr))");
     expect(html).toContain("repeat(auto-fit,minmax(260px,1fr))");
     expect(html).toContain("repeat(auto-fit,minmax(300px,1fr))");
-    expect(html).toContain("10-18°C");
+    expect(html).toContain("山顶估算温度：10-18°C");
+    expect(html).toContain("预报已接近机位海拔，未额外修正");
     expect(html).toContain("体感 7-16°C");
-    expect(html).toContain("降水概率");
+    expect(html).toContain("降水风险");
     expect(html).toContain("0.2 mm");
     expect(html).toContain("3.4 m/s 东南风");
     expect(html).toContain("18 公里");
     expect(html).toContain("云海 82分");
+    expect(html).toContain("白墙风险 58分");
     expect(html).toContain("朝霞 70分");
     expect(html).toContain("晚霞 74分");
-    expect(html).toContain("星空 66分");
-    expect(html).toContain("银河 68分");
+    expect(html).toContain("天文窗口 有");
+    expect(html).toContain("星空可拍性 66分");
+    expect(html).toContain("银河可拍性 68分");
     expect(html).toContain("最佳窗口");
     expect(html).toContain("建议：当天有可优先关注的拍摄窗口。");
     expect(html).not.toMatch(/(?:^|\s)(?:w|min-w)-\[(?:[1-9]\d{3,})px\]/);
+  });
+
+  it("avoids impossible zero-probability precipitation copy when amount is present", () => {
+    const base = resultForTarget("general");
+    const result: ForecastCalculationResult = {
+      ...base,
+      currentWeather: {
+        ...base.currentWeather!,
+        precipitationProbability: 0,
+        precipitation: 9.9,
+        precipitationAmountMm: 9.9,
+        rainAmountMm: 9.9,
+        precipitationRisk: {
+          precipitationProbabilityPercent: 0,
+          precipitationAmountMm: 9.9,
+          rainRiskLevel: "medium",
+          rainRiskLabelZh: "中",
+          affectedWindows: ["清晨窗口"],
+          recommendationZh: "小雨转小雨，拍摄窗口可能被打断。",
+        },
+      },
+    };
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "idle",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("降水风险：中，预计 9.9 mm");
+    expect(html).toContain("小雨转小雨，拍摄窗口可能被打断");
+    expect(html).not.toContain("降水概率 0%");
+    expect(html).not.toContain("概率 0%，预计 9.9 mm");
   });
 
   it("shows professional arrival advice on general result cards and daily cards", () => {
@@ -2093,6 +2206,8 @@ describe("forecast result target-aware view model", () => {
 
     expect(viewModel.astro).toBeDefined();
     expect(viewModel.primaryCards.map((card) => card.label)).toEqual([
+      "星空可拍性",
+      "天文条件",
       "星空指数",
       "银河指数",
       "月光影响",
@@ -2201,6 +2316,10 @@ describe("forecast result target-aware view model", () => {
             lunarDateText: "四月初六",
             starsScore: 64,
             milkyWayScore: 66,
+            astroConditionScore: 72,
+            astroPracticalScore: 66,
+            astronomicalWindowAvailable: true,
+            weatherBlockers: [],
             moonImpactLevel: "medium",
             recommendationLabel: "值得等待",
             keyReason: "第三晚仍有可等待的夜间窗口。",

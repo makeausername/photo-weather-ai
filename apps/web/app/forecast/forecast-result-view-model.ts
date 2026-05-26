@@ -17,6 +17,7 @@ import {
   type GlowBestTarget,
   type GlowEvidenceItem,
   type GlowWindow,
+  type PhotographyPrecipitationRisk,
 } from "@photo-weather/shared";
 
 export type ForecastResultModuleKey =
@@ -66,6 +67,8 @@ export type ForecastResultWindow = {
   readonly practicalKind?: ForecastTimeWindow["practicalKind"];
   readonly lightPhase?: ForecastTimeWindow["lightPhase"];
   readonly practicalNoteZh?: string;
+  readonly precipitationRisk?: PhotographyPrecipitationRisk;
+  readonly weatherBlockers?: readonly string[];
   readonly subjectPriorityLabel?: string;
   readonly backupSubjectLabel?: string;
   readonly restWarningZh?: string;
@@ -270,6 +273,10 @@ export type AstroDailyTrendItem = {
   readonly lunarDateText?: string;
   readonly starsScore: number;
   readonly milkyWayScore: number;
+  readonly astroConditionScore: number;
+  readonly astroPracticalScore: number;
+  readonly astronomicalWindowAvailable: boolean;
+  readonly weatherBlockers: readonly string[];
   readonly moonImpactLabel: string;
   readonly astronomicalNightLabel: string;
   readonly moonlessNightLabel: string;
@@ -761,6 +768,26 @@ export function buildAstroForecastViewModel(
 
   return {
     coreCards: [
+      scoreCard(
+        "astro-practical-score",
+        "milkyWay",
+        "星空可拍性",
+        `${analysis.astroPracticalScore}`,
+        analysis.weatherBlockers.length > 0
+          ? "天文窗口存在，但云量、低云、降水或透明度不支持作为主拍摄计划。"
+          : "已同时叠加天文窗口、月光、云量、低云、降水和透明度。",
+        analysis.astroPracticalScore >= 60 ? "primary" : "danger",
+        analysis.astroPracticalScore,
+      ),
+      scoreCard(
+        "astro-condition-score",
+        "astronomicalNight",
+        "天文条件",
+        `${analysis.astroConditionScore}`,
+        "只看天文黑夜、月光和银河可见时间，不等同于实际可拍性。",
+        "info",
+        analysis.astroConditionScore,
+      ),
       scoreCard(
         "astro-stars-score",
         "stars",
@@ -2083,6 +2110,10 @@ function mapDailyAstro(day: DailyAstro): AstroDailyTrendItem {
     lunarDateText: day.lunarDateText,
     starsScore: day.starsScore,
     milkyWayScore: day.milkyWayScore,
+    astroConditionScore: day.astroConditionScore,
+    astroPracticalScore: day.astroPracticalScore,
+    astronomicalWindowAvailable: day.astronomicalWindowAvailable,
+    weatherBlockers: day.weatherBlockers,
     moonImpactLabel: moonImpactLevelLabel(day.moonImpactLevel),
     astronomicalNightLabel: day.astronomicalNightWindow
       ? formatAstroWindowValue(day.astronomicalNightWindow)
@@ -2189,6 +2220,8 @@ function mapResultWindows(windows: readonly ForecastTimeWindow[]): readonly Fore
     practicalKind: window.practicalKind,
     lightPhase: window.lightPhase,
     practicalNoteZh: window.practicalNoteZh,
+    precipitationRisk: window.precipitationRisk,
+    weatherBlockers: window.weatherBlockers,
     subjectPriorityLabel: window.subjectPriorityLabel,
     backupSubjectLabel: window.backupSubjectLabel,
     restWarningZh: window.restWarningZh,

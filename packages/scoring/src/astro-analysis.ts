@@ -12,6 +12,10 @@ import type {
   NormalizedHourlyWeather,
 } from "@photo-weather/shared";
 import { averageHourly, averageWeightedScore, clampScore } from "./helpers.js";
+import {
+  precipitationAmountMm,
+  precipitationRiskLevel,
+} from "./weather-decision-metrics.js";
 
 const minuteMs = 60_000;
 const moonlessSampleStepMs = 30 * minuteMs;
@@ -63,11 +67,16 @@ export function calculateAstroAnalysis(
     scores,
   );
   const moonImpactScore = maxMoonImpactScore(input.astroSummaries, astronomicalNightWindows);
-  const astroTravelScore = calculateAstroTravelScore(
-    scores,
+  const weatherBlockers = buildAstroWeatherBlockers(input, astronomicalNightWindows);
+  const astroConditionScore = calculateAstroConditionScore({
+    astronomicalNightWindows,
+    moonlessNightWindows,
+    milkyWayCandidateWindows,
     recommendedMilkyWayWindows,
     moonImpactScore,
-  );
+  });
+  const astroPracticalScore = calculateAstroPracticalScore(dailyAstro, weatherBlockers, scores);
+  const astroTravelScore = astroPracticalScore;
   const recommendationLabel = recommendationLabelForScore(astroTravelScore);
   const missingDataNotes = buildMissingDataNotes(input);
   const confidenceLevel = classifyConfidence(missingDataNotes);
@@ -92,6 +101,8 @@ export function calculateAstroAnalysis(
   return {
     starsScore: scores.starsScore,
     milkyWayScore: scores.milkyWayScore,
+    astroConditionScore,
+    astroPracticalScore,
     moonImpactScore,
     transparencyScore: scores.transparencyScore,
     astroTravelScore,
@@ -113,14 +124,24 @@ export function calculateAstroAnalysis(
     moonEvidence,
     terrainEvidence,
     lightPollutionEvidence,
-    riskReasons: buildAstroRiskReasons(input, moonImpactScore, recommendedMilkyWayWindows),
+    weatherBlockers,
+    riskReasons: buildAstroRiskReasons(
+      input,
+      moonImpactScore,
+      recommendedMilkyWayWindows,
+      weatherBlockers,
+    ),
     opportunityReasons: buildAstroOpportunityReasons(
       input,
       astronomicalNightWindows,
       moonlessNightWindows,
       recommendedMilkyWayWindows,
     ),
-    travelRecommendations: buildAstroTravelRecommendations(scores, recommendedMilkyWayWindows),
+    travelRecommendations: buildAstroTravelRecommendations(
+      scores,
+      recommendedMilkyWayWindows,
+      weatherBlockers,
+    ),
     backupPlans: buildAstroBackupPlans(),
     missingDataNotes,
     dataMode: input.weatherDataMode,
@@ -325,6 +346,16 @@ function buildDailyAstro(
       { score: scores.transparencyScore, weight: 0.18 },
       { score: 100 - moonImpact.score, weight: 0.12 },
     ]);
+    const weatherBlockers = astroWeatherBlockers(weatherWindow);
+    const astroConditionScore = clampScore(
+      averageWeightedScore([
+        { score: astronomicalNightWindow ? 82 : 22, weight: 0.28 },
+        { score: moonlessNightWindow ? 82 : 45, weight: 0.24 },
+        { score: candidateWindow ? 76 : 35, weight: 0.22 },
+        { score: 100 - moonImpact.score, weight: 0.26 },
+      ]),
+    );
+    const astroPracticalScore = applyAstroWeatherBlockers(travelScore, weatherWindow);
 
     return {
       date,
@@ -332,15 +363,20 @@ function buildDailyAstro(
       lunarDateText: astro?.lunarDateText,
       starsScore,
       milkyWayScore,
+      astroConditionScore,
+      astroPracticalScore,
+      astronomicalWindowAvailable: Boolean(astronomicalNightWindow),
+      weatherBlockers,
       moonImpactLevel: moonImpact.level,
       astronomicalNightWindow,
       moonlessNightWindow,
       recommendedMilkyWayWindow,
-      recommendationLabel: recommendationLabelForScore(travelScore),
+      recommendationLabel: recommendationLabelForScore(astroPracticalScore),
       keyReason: dailyKeyReason(
         recommendedMilkyWayWindow,
         moonlessNightWindow,
         astronomicalNightWindow,
+        weatherBlockers,
       ),
       riskNote: dailyRiskNote(weatherWindow, moonImpact, input),
     };
@@ -558,7 +594,7 @@ function calculateDailyStarsScore(
       ? Math.max(0, input.terrainAnalysis.horizonProfile.milkyWayHorizonAngle - 10) * 1.8
       : 0;
 
-  return clampScore(
+  const score = clampScore(
     averageWeightedScore([
       { score: cloudClearScore, weight: 0.24 },
       { score: cloudLayerClearScore, weight: 0.12 },
@@ -568,6 +604,7 @@ function calculateDailyStarsScore(
       { score: precipitationScore, weight: 0.08 },
     ]) - terrainPenalty,
   );
+  return applyAstroWeatherBlockers(score, weatherWindow);
 }
 
 function calculateMilkyWayWindowScore(
@@ -596,7 +633,7 @@ function calculateMilkyWayWindowScore(
       ? Math.max(0, input.terrainAnalysis.horizonProfile.milkyWayHorizonAngle - 8) * 2.4
       : 0;
 
-  return clampScore(
+  const score = clampScore(
     averageWeightedScore([
       { score: durationScore, weight: 0.18 },
       { score: cloudClearScore, weight: 0.2 },
@@ -606,6 +643,7 @@ function calculateMilkyWayWindowScore(
       { score: altitudeScore, weight: 0.12 },
     ]) - terrainPenalty,
   );
+  return applyAstroWeatherBlockers(score, weatherWindow);
 }
 
 function calculateCloudLayerClearScore(window: readonly NormalizedHourlyWeather[]): number {
@@ -624,20 +662,158 @@ function calculateCloudLayerClearScore(window: readonly NormalizedHourlyWeather[
   return clampScore(100 - values.reduce((sum, value) => sum + value, 0) / values.length);
 }
 
-function calculateAstroTravelScore(
-  scores: AstroScoreInput,
-  recommendedWindows: readonly AstroWindow[],
-  moonImpactScore: number,
-): number {
-  const bestMilkyWayWindowScore = recommendedWindows[0]?.score ?? 35;
-
+function calculateAstroConditionScore(input: {
+  readonly astronomicalNightWindows: readonly AstroWindow[];
+  readonly moonlessNightWindows: readonly AstroWindow[];
+  readonly milkyWayCandidateWindows: readonly AstroWindow[];
+  readonly recommendedMilkyWayWindows: readonly AstroWindow[];
+  readonly moonImpactScore: number;
+}): number {
   return averageWeightedScore([
-    { score: scores.starsScore, weight: 0.28 },
-    { score: scores.milkyWayScore, weight: 0.22 },
-    { score: bestMilkyWayWindowScore, weight: 0.2 },
-    { score: scores.transparencyScore, weight: 0.18 },
-    { score: 100 - moonImpactScore, weight: 0.12 },
+    { score: input.astronomicalNightWindows.length > 0 ? 84 : 20, weight: 0.28 },
+    { score: input.moonlessNightWindows.length > 0 ? 82 : 42, weight: 0.24 },
+    { score: input.milkyWayCandidateWindows.length > 0 ? 76 : 35, weight: 0.18 },
+    { score: input.recommendedMilkyWayWindows.length > 0 ? 80 : 38, weight: 0.12 },
+    { score: 100 - input.moonImpactScore, weight: 0.18 },
   ]);
+}
+
+function calculateAstroPracticalScore(
+  dailyAstro: readonly DailyAstro[],
+  weatherBlockers: readonly string[],
+  scores: AstroScoreInput,
+): number {
+  const dailyBest = dailyAstro.length
+    ? Math.max(...dailyAstro.map((day) => day.astroPracticalScore))
+    : averageWeightedScore([
+        { score: scores.starsScore, weight: 0.34 },
+        { score: scores.milkyWayScore, weight: 0.34 },
+        { score: scores.transparencyScore, weight: 0.32 },
+      ]);
+  if (weatherBlockers.length === 0) {
+    return dailyBest;
+  }
+  return Math.min(dailyBest, weatherBlockers.length >= 3 ? 34 : 44);
+}
+
+function buildAstroWeatherBlockers(
+  input: ForecastCalculationInput,
+  windows: readonly AstroWindow[],
+): readonly string[] {
+  return astroWeatherBlockers(weatherForWindows(input.hourlyWeather, windows));
+}
+
+function applyAstroWeatherBlockers(
+  score: number,
+  weatherWindow: readonly NormalizedHourlyWeather[],
+): number {
+  const cap = astroWeatherBlockerCap(weatherWindow);
+  return clampScore(Math.min(score, cap));
+}
+
+function astroWeatherBlockerCap(weatherWindow: readonly NormalizedHourlyWeather[]): number {
+  if (weatherWindow.length === 0) {
+    return 45;
+  }
+
+  const totalCloud = averageHourly(weatherWindow, (hour) => hour.cloudTotal);
+  const lowCloud = averageHourly(weatherWindow, (hour) => hour.cloudLow);
+  const visibility = averageHourly(weatherWindow, (hour) => hour.rawVisibilityKm ?? hour.visibility);
+  const humidity = averageHourly(weatherWindow, (hour) => hour.humidity);
+  const precipitationProbability = Math.max(
+    ...weatherWindow.map((hour) => hour.precipitationProbability ?? 0),
+    0,
+  );
+  const precipitationAmount = weatherWindow.reduce(
+    (sum, hour) => sum + (precipitationAmountMm(hour) ?? 0),
+    0,
+  );
+  const precipitationRisk = precipitationRiskLevel({
+    probability: precipitationProbability,
+    amountMm: precipitationAmount,
+  });
+  const textBlocked = weatherWindow.some((hour) =>
+    /雨|雪|雾|霾|阴|overcast|rain|snow|fog|mist|heavy cloud/i.test(hour.weatherTextZh ?? ""),
+  );
+
+  let cap = 100;
+  if (totalCloud >= 70) {
+    cap = Math.min(cap, totalCloud >= 90 ? 20 : 32);
+  }
+  if (lowCloud >= 50) {
+    cap = Math.min(cap, lowCloud >= 75 ? 22 : 34);
+  }
+  if (precipitationAmount >= 0.3) {
+    cap = Math.min(cap, precipitationAmount >= 2 ? 24 : 34);
+  }
+  if (precipitationRisk === "medium" || precipitationRisk === "high" || precipitationRisk === "severe") {
+    cap = Math.min(cap, precipitationRisk === "medium" ? 38 : 24);
+  }
+  if (visibility > 0 && visibility < 10) {
+    cap = Math.min(cap, visibility < 5 ? 24 : 36);
+  }
+  if (humidity >= 92 && lowCloud >= 45) {
+    cap = Math.min(cap, 34);
+  }
+  if (textBlocked) {
+    cap = Math.min(cap, 32);
+  }
+
+  return cap;
+}
+
+function astroWeatherBlockers(
+  weatherWindow: readonly NormalizedHourlyWeather[],
+): readonly string[] {
+  if (weatherWindow.length === 0) {
+    return ["缺少窗口内天气数据，星空可拍性需要保守处理"];
+  }
+
+  const totalCloud = averageHourly(weatherWindow, (hour) => hour.cloudTotal);
+  const lowCloud = averageHourly(weatherWindow, (hour) => hour.cloudLow);
+  const visibility = averageHourly(weatherWindow, (hour) => hour.rawVisibilityKm ?? hour.visibility);
+  const humidity = averageHourly(weatherWindow, (hour) => hour.humidity);
+  const precipitationProbability = Math.max(
+    ...weatherWindow.map((hour) => hour.precipitationProbability ?? 0),
+    0,
+  );
+  const precipitationAmount = weatherWindow.reduce(
+    (sum, hour) => sum + (precipitationAmountMm(hour) ?? 0),
+    0,
+  );
+  const precipitationRisk = precipitationRiskLevel({
+    probability: precipitationProbability,
+    amountMm: precipitationAmount,
+  });
+  const blockers: string[] = [];
+
+  if (totalCloud >= 70) {
+    blockers.push(`总云量约 ${Math.round(totalCloud)}%，星点和银河主体容易被遮挡`);
+  }
+  if (lowCloud >= 50) {
+    blockers.push(`低云约 ${Math.round(lowCloud)}%，地景和近地平线星空可拍性差`);
+  }
+  if (precipitationRisk === "medium" || precipitationRisk === "high" || precipitationRisk === "severe") {
+    blockers.push(`降水风险${precipitationRisk === "medium" ? "中" : "高"}，夜间窗口可能被打断`);
+  }
+  if (precipitationAmount >= 0.3) {
+    blockers.push(`窗口内预计降水 ${Math.round(precipitationAmount * 10) / 10}mm`);
+  }
+  if (visibility > 0 && visibility < 10) {
+    blockers.push(`能见度约 ${Math.round(visibility)} 公里，透明度不足`);
+  }
+  if (humidity >= 92 && lowCloud >= 45) {
+    blockers.push("湿度极高且低云偏多，雾和镜头结露风险高");
+  }
+  if (
+    weatherWindow.some((hour) =>
+      /雨|雪|雾|霾|阴|overcast|rain|snow|fog|mist|heavy cloud/i.test(hour.weatherTextZh ?? ""),
+    )
+  ) {
+    blockers.push("天气现象包含雨、雾或厚云信号");
+  }
+
+  return [...new Set(blockers)];
 }
 
 function maxMoonImpactScore(
@@ -764,8 +940,13 @@ function buildAstroRiskReasons(
   input: ForecastCalculationInput,
   moonImpactScore: number,
   recommendedWindows: readonly AstroWindow[],
+  weatherBlockers: readonly string[],
 ): readonly string[] {
   return [
+    ...weatherBlockers.map((blocker) => `星空银河天气阻断：${blocker}。`),
+    ...(weatherBlockers.length > 0
+      ? ["天文窗口存在，但云量/降水/低云不支持拍摄；星空银河仅作为备选，不建议为此熬夜。"]
+      : []),
     ...(recommendedWindows.length === 0
       ? ["当前没有同时满足天文黑夜、低月光影响和银心可见的推荐银河窗口。"]
       : []),
@@ -805,8 +986,17 @@ function buildAstroOpportunityReasons(
 function buildAstroTravelRecommendations(
   scores: AstroScoreInput,
   recommendedWindows: readonly AstroWindow[],
+  weatherBlockers: readonly string[] = [],
 ): readonly string[] {
   const bestWindow = recommendedWindows[0];
+
+  if (weatherBlockers.length > 0) {
+    return [
+      "天文窗口存在，但云量/降水/低云不支持拍摄。",
+      "星空银河仅作为备选，不建议为此熬夜；优先等待短临云图和雷达改善。",
+      ...weatherBlockers.slice(0, 2).map((blocker) => `主要阻断：${blocker}。`),
+    ];
+  }
 
   return [
     bestWindow
@@ -899,7 +1089,11 @@ function dailyKeyReason(
   recommended: AstroWindow | undefined,
   moonless: AstroWindow | undefined,
   astronomicalNight: AstroWindow | undefined,
+  weatherBlockers: readonly string[] = [],
 ): string {
+  if (astronomicalNight && weatherBlockers.length > 0) {
+    return "天文窗口存在，但云量/降水/低云不支持拍摄。";
+  }
   if (recommended) {
     return `推荐银河窗口 ${formatTimeRange(recommended.start, recommended.end)}，方向 ${recommended.directionZh ?? "需现场复核"}。`;
   }
@@ -917,6 +1111,10 @@ function dailyRiskNote(
   moonImpact: MoonImpact,
   input: ForecastCalculationInput,
 ): string {
+  const blockers = astroWeatherBlockers(weatherWindow);
+  if (blockers.length > 0) {
+    return blockers[0]!;
+  }
   const cloudTotal = averageHourly(weatherWindow, (hour) => hour.cloudTotal);
   if (cloudTotal >= 65) {
     return "云量偏高";
@@ -938,8 +1136,17 @@ function riskTagsForWeather(
   moonImpact: MoonImpact,
 ): readonly string[] {
   const cloudTotal = averageHourly(weatherWindow, (hour) => hour.cloudTotal);
+  const lowCloud = averageHourly(weatherWindow, (hour) => hour.cloudLow);
   const visibility = averageHourly(weatherWindow, (hour) => hour.visibility);
   const humidity = averageHourly(weatherWindow, (hour) => hour.humidity);
+  const precipitationAmount = weatherWindow.reduce(
+    (sum, hour) => sum + (precipitationAmountMm(hour) ?? 0),
+    0,
+  );
+  const precipitationRisk = precipitationRiskLevel({
+    probability: Math.max(...weatherWindow.map((hour) => hour.precipitationProbability ?? 0), 0),
+    amountMm: precipitationAmount,
+  });
 
   return [
     ...(moonImpact.level === "high"
@@ -948,6 +1155,12 @@ function riskTagsForWeather(
         ? ["月光中等"]
         : ["月光较低"]),
     ...(cloudTotal >= 65 ? ["云量偏高"] : []),
+    ...(lowCloud >= 50 ? ["低云阻挡"] : []),
+    ...(precipitationRisk === "medium" ||
+    precipitationRisk === "high" ||
+    precipitationRisk === "severe"
+      ? ["降水干扰"]
+      : []),
     ...(visibility > 0 && visibility < 12 ? ["能见度偏低"] : []),
     ...(humidity >= 85 ? ["湿度偏高"] : []),
   ];

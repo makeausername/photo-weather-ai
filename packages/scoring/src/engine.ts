@@ -32,6 +32,7 @@ import { buildClothingGuide } from "./clothing-guide.js";
 import { buildGlowForecastScore, calculateGlowAnalysis } from "./glow-analysis.js";
 import {
   calculatePhotographyTransparencyScore,
+  buildPhotographyPrecipitationRisk,
   precipitationAmountMm,
   precipitationRiskLevel,
   precipitationRiskScore,
@@ -128,6 +129,7 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
     bestWindows,
     cloudSeaAnalysis,
     glowAnalysis,
+    astroAnalysis,
   );
   const dailySummaries = buildDailySummaries(input, targetDailyBreakdown, bestWindows);
 
@@ -222,13 +224,16 @@ export function calculateStarsScore(input: ForecastCalculationInput): ForecastSc
   const humidityScore = 100 - averageHourly(window, (hour) => hour.humidity);
   const visibilityScore = clampScore(averageHourly(window, (hour) => hour.visibility) * 4);
   const moonScore = calculateMoonScoreForWindow(window, input.astroSummaries);
-  const score = averageWeightedScore([
-    { score: cloudClearScore, weight: 0.28 },
-    { score: cloudLayerClearScore, weight: 0.1 },
-    { score: humidityScore, weight: 0.2 },
-    { score: visibilityScore, weight: 0.22 },
-    { score: moonScore, weight: 0.2 },
-  ]);
+  const score = applyAstroPracticalWeatherCap(
+    averageWeightedScore([
+      { score: cloudClearScore, weight: 0.28 },
+      { score: cloudLayerClearScore, weight: 0.1 },
+      { score: humidityScore, weight: 0.2 },
+      { score: visibilityScore, weight: 0.22 },
+      { score: moonScore, weight: 0.2 },
+    ]),
+    window,
+  );
   const reasons = [
     `夜间总云量折算得分 ${Math.round(cloudClearScore)}，云越少越利于星空。`,
     hasCloudLayerGaps(window)
@@ -253,7 +258,10 @@ export function calculateMilkyWayScore(input: ForecastCalculationInput): Forecas
   const moonScore = calculateMoonScoreForWindow(window, input.astroSummaries);
   const horizonPenalty =
     typeof milkyWayHorizonAngle === "number" ? Math.max(0, milkyWayHorizonAngle - 8) * 3 : 0;
-  const score = clampScore((candidate?.score ?? 18) - horizonPenalty);
+  const score = applyAstroPracticalWeatherCap(
+    clampScore((candidate?.score ?? 18) - horizonPenalty),
+    window,
+  );
   const reasons = [
     hasWindow
       ? `本地算法银河窗口为 ${formatChineseTimeRange(candidate!.startTime, candidate!.endTime)}。`
@@ -496,14 +504,17 @@ function calculateMilkyWayWindowScore(
   const visibilityScore = clampScore(averageHourly(window, (hour) => hour.visibility) * 4);
   const moonScore = calculateMoonScoreForWindow(window, astroSummaries);
 
-  return averageWeightedScore([
-    { score: cloudClearScore, weight: 0.24 },
-    { score: cloudLayerClearScore, weight: 0.08 },
-    { score: humidityScore, weight: 0.16 },
-    { score: visibilityScore, weight: 0.2 },
-    { score: moonScore, weight: 0.22 },
-    { score: 90, weight: 0.1 },
-  ]);
+  return applyAstroPracticalWeatherCap(
+    averageWeightedScore([
+      { score: cloudClearScore, weight: 0.24 },
+      { score: cloudLayerClearScore, weight: 0.08 },
+      { score: humidityScore, weight: 0.16 },
+      { score: visibilityScore, weight: 0.2 },
+      { score: moonScore, weight: 0.22 },
+      { score: 90, weight: 0.1 },
+    ]),
+    window,
+  );
 }
 
 function pickBestScoredWindow(
@@ -657,6 +668,7 @@ function applyPracticalTripScoring(
     practicalKind: practical.practicalKind,
     lightPhase: practical.lightPhase,
     practicalNoteZh: practical.practicalNoteZh,
+    precipitationRisk: practical.precipitationRisk,
     subjectPriorityLabel: practical.subjectPriorityLabel,
     backupSubjectLabel: practical.backupSubjectLabel,
     restWarningZh: practical.restWarningZh,
@@ -674,6 +686,7 @@ function evaluatePracticalWindow(
   readonly practicalKind: PracticalWindowKind;
   readonly lightPhase: PracticalLightPhase;
   readonly practicalNoteZh: string;
+  readonly precipitationRisk: ForecastTimeWindow["precipitationRisk"];
   readonly subjectPriorityLabel: string;
   readonly backupSubjectLabel: string;
   readonly restWarningZh?: string;
@@ -691,7 +704,8 @@ function evaluatePracticalWindow(
     arrivalAdvice,
     input.calendarBasis.timezone,
   );
-  const riskPenalty = riskPenaltyForWindow(window, riskFlags);
+  const precipitationRisk = precipitationRiskForWindow(input, window);
+  const riskPenalty = riskPenaltyForWindow(window, riskFlags, precipitationRisk);
   const lightScore = lightAvailabilityScore(window, practicalKind, lightPhase);
   const subjectValueScore = subjectPracticalValueScore(window, practicalKind, lightPhase);
   const travelFeasibilityScore = travelFeasibilityForWindow(
@@ -699,6 +713,7 @@ function evaluatePracticalWindow(
     practicalKind,
     arrivalAdvice,
     riskFlags,
+    precipitationRisk,
   );
   const sunriseLinkBonus =
     window.target === "cloud_sea" &&
@@ -722,7 +737,15 @@ function evaluatePracticalWindow(
     practicalScore,
     practicalKind,
     lightPhase,
-    practicalNoteZh: practicalNoteForWindow(window, practicalKind, lightPhase, conditionScore, practicalScore),
+    practicalNoteZh: practicalNoteForWindow(
+      window,
+      practicalKind,
+      lightPhase,
+      conditionScore,
+      practicalScore,
+      precipitationRisk,
+    ),
+    precipitationRisk,
     subjectPriorityLabel: subjectPriorityLabelForWindow(window, practicalKind),
     backupSubjectLabel: backupSubjectLabelForWindow(window),
     restWarningZh: arrivalAdvice.warningZh,
@@ -1111,22 +1134,67 @@ function restPenaltyForWindow(
   return 0;
 }
 
+function precipitationRiskForWindow(
+  input: ForecastCalculationInput,
+  window: ForecastTimeWindow,
+): ForecastTimeWindow["precipitationRisk"] {
+  const hours = weatherHoursForWindow(input.hourlyWeather, window.startTime, window.endTime);
+  if (hours.length === 0) {
+    return undefined;
+  }
+
+  return buildPhotographyPrecipitationRisk({
+    probability: maxOptional(hours.map((hour) => hour.precipitationProbability ?? undefined)) ?? null,
+    amountMm: sumOptional(hours.map((hour) => precipitationAmountMm(hour) ?? undefined)) ?? null,
+    affectedWindows: [subjectPriorityLabelForWindow(window, window.practicalKind ?? "shooting_window")],
+    weatherTextZh: firstWeatherText(hours),
+  });
+}
+
+function weatherHoursForWindow(
+  hourlyWeather: readonly NormalizedHourlyWeather[],
+  startTime: string,
+  endTime: string,
+): readonly NormalizedHourlyWeather[] {
+  const startMs = Date.parse(startTime);
+  const endMs = Date.parse(endTime);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    return [];
+  }
+
+  return hourlyWeather.filter((hour) => {
+    const timestamp = Date.parse(hour.time);
+    return Number.isFinite(timestamp) && timestamp >= startMs && timestamp <= endMs;
+  });
+}
+
 function riskPenaltyForWindow(
   window: ForecastTimeWindow,
   riskFlags: readonly ForecastRiskFlag[],
+  precipitationRisk: ForecastTimeWindow["precipitationRisk"],
 ): number {
   const penalty = riskFlags.reduce((sum, risk) => {
     const base = risk.level === "high" ? 16 : risk.level === "medium" ? 7 : 0;
     if (window.target === "cloud_sea" && risk.key === "whiteout") {
       return sum + base;
     }
-    if (risk.key === "precipitation" || risk.key === "wind" || risk.key === "visibility") {
+    if (risk.key === "wind" || risk.key === "visibility") {
       return sum + base;
     }
     return sum;
   }, 0);
+  const rainPenalty =
+    precipitationRisk?.rainRiskLevel === "severe"
+      ? 28
+      : precipitationRisk?.rainRiskLevel === "high"
+        ? 20
+        : precipitationRisk?.rainRiskLevel === "medium"
+          ? 10
+          : precipitationRisk?.rainRiskLevel === "low"
+            ? 3
+            : 0;
 
-  return Math.min(26, penalty);
+  return Math.min(34, penalty + rainPenalty);
 }
 
 function lightAvailabilityScore(
@@ -1189,13 +1257,17 @@ function travelFeasibilityForWindow(
   practicalKind: PracticalWindowKind,
   arrivalAdvice: PracticalArrivalAdvice,
   riskFlags: readonly ForecastRiskFlag[],
+  precipitationRisk: ForecastTimeWindow["precipitationRisk"],
 ): number {
   if (practicalKind === "formation_signal") {
     return 42;
   }
 
   const arrivalHour = localHourFloat(arrivalAdvice.recommendedArrivalTime, defaultTimezone);
-  const highRisk = riskFlags.some((risk) => risk.level === "high");
+  const highRisk =
+    riskFlags.some((risk) => risk.level === "high" && risk.key !== "precipitation") ||
+    precipitationRisk?.rainRiskLevel === "high" ||
+    precipitationRisk?.rainRiskLevel === "severe";
   if (highRisk) {
     return 52;
   }
@@ -1217,9 +1289,19 @@ function practicalNoteForWindow(
   lightPhase: PracticalLightPhase,
   conditionScore: number,
   practicalScore: number,
+  precipitationRisk: ForecastTimeWindow["precipitationRisk"],
 ): string {
   if (practicalKind === "formation_signal") {
     return "云海形成信号，不建议为无光云海单独熬夜；若已在山上，可提前观察云雾形成。";
+  }
+  if (
+    precipitationRisk?.rainRiskLevel === "severe" ||
+    precipitationRisk?.rainRiskLevel === "high"
+  ) {
+    return `${precipitationRisk.rainRiskLabelZh}降水风险与该窗口重叠，拍摄可能被打断，优先改为备选或等待短临确认。`;
+  }
+  if (precipitationRisk?.rainRiskLevel === "medium") {
+    return "该窗口有中等降水干扰，适合谨慎等待，不宜作为唯一拍摄目标。";
   }
   if (conditionScore - practicalScore >= 22) {
     return "气象条件较好，但时间成本较高，需要结合住宿、交通和体力评估。";
@@ -1347,6 +1429,8 @@ function buildAstroWindowsFromAnalysis(
     endTime: window.end,
     score: window.score,
     target: "astro" as const,
+    weatherBlockers: astroAnalysis.dailyAstro.find((day) => day.date === window.date)
+      ?.weatherBlockers,
   }));
   const recommendedMilkyWayWindows = astroAnalysis.recommendedMilkyWayWindows.map((window) => ({
     label: `推荐银河窗口 ${formatChineseTimeRange(window.start, window.end)}`,
@@ -1355,6 +1439,8 @@ function buildAstroWindowsFromAnalysis(
     endTime: window.end,
     score: window.score,
     target: "astro" as const,
+    weatherBlockers: astroAnalysis.dailyAstro.find((day) => day.date === window.date)
+      ?.weatherBlockers,
   }));
 
   return [...astronomicalNightWindows, ...recommendedMilkyWayWindows];
@@ -1379,6 +1465,7 @@ function buildTargetDailyBreakdown(
   windows: readonly ForecastTimeWindow[],
   cloudSeaAnalysis: CloudSeaAnalysisResult,
   glowAnalysis: GlowAnalysisResult,
+  astroAnalysis: AstroAnalysisResult,
 ): readonly TargetDailyBreakdown[] {
   return input.calendarBasis.targetDates.map((date) => {
     const dayWindows = windowsForCalendarDate(windows, date, input.calendarBasis.timezone);
@@ -1396,6 +1483,29 @@ function buildTargetDailyBreakdown(
       firstWindowByLabel(dayWindows, "推荐银河窗口") ?? firstWindowByLabel(dayWindows, "银河窗口");
     const dailyCloudSea = cloudSeaAnalysis.dailyCloudSea.find((day) => day.date === date);
     const dailyGlow = glowAnalysis.dailyGlow.find((day) => day.date === date);
+    const dailyAstro = astroAnalysis.dailyAstro.find((day) => day.date === date);
+    const dailyAstroStarsMetric: ForecastDailyMetric | undefined = dailyAstro
+      ? {
+          label: "星空可拍性",
+          score: dailyAstro.astroPracticalScore,
+          detail:
+            dailyAstro.weatherBlockers.length > 0
+              ? "天文窗口存在，但云量/降水/低云不支持拍摄。"
+              : "天文窗口与天气条件共同支持星空拍摄。",
+          window: astronomicalNightWindow,
+        }
+      : undefined;
+    const dailyAstroMilkyWayMetric: ForecastDailyMetric | undefined = dailyAstro
+      ? {
+          label: dailyAstro.astronomicalWindowAvailable ? "银河/天文窗口可拍性" : "银河可拍性",
+          score: dailyAstro.astroPracticalScore,
+          detail:
+            dailyAstro.weatherBlockers.length > 0
+              ? "星空银河仅作为备选，不建议为此熬夜。"
+              : "银河窗口已叠加月光、云量、低云、降水和透明度。",
+          window: milkyWayWindow,
+        }
+      : undefined;
 
     return {
       date,
@@ -1446,13 +1556,13 @@ function buildTargetDailyBreakdown(
             window: cloudSeaWindow,
           }
         : buildWhiteoutMetricForDate(input, date),
-      stars: metricFromWindow(
+      stars: dailyAstroStarsMetric ?? metricFromWindow(
         astronomicalNightWindow,
         "每晚观星条件",
         "天文黑夜内云量、湿度、能见度和月光共同影响星空可见度。",
         scores.stars.score,
       ),
-      milkyWay: metricFromWindow(
+      milkyWay: dailyAstroMilkyWayMetric ?? metricFromWindow(
         milkyWayWindow,
         "银河窗口",
         "银河窗口仍需结合云量、月光、光污染和地形遮挡。",
@@ -1524,6 +1634,22 @@ function buildDailyWeatherSummary(
     temperatureCorrectionCelsius:
       dayWeather?.temperatureAdjustment?.correctionCelsius ??
       averageOptional(dayHours.map((hour) => hour.temperatureAdjustment?.correctionCelsius)),
+    temperatureCorrectionReason:
+      dayWeather?.temperatureAdjustment?.correctionReason ??
+      dayHours.find((hour) => hour.temperatureAdjustment)?.temperatureAdjustment?.correctionReason,
+    selectedSpotElevationMeters:
+      dayWeather?.temperatureAdjustment?.selectedSpotElevationMeters ??
+      dayHours.find((hour) => hour.temperatureAdjustment)?.temperatureAdjustment
+        ?.selectedSpotElevationMeters,
+    providerElevationMeters:
+      dayWeather?.temperatureAdjustment?.providerElevationMeters ??
+      dayWeather?.providerElevationMeters ??
+      dayHours.find((hour) => hour.temperatureAdjustment?.providerElevationMeters)
+        ?.temperatureAdjustment?.providerElevationMeters,
+    providerElevationKnown:
+      dayWeather?.temperatureAdjustment?.providerElevationKnown ??
+      dayHours.find((hour) => hour.temperatureAdjustment)?.temperatureAdjustment
+        ?.providerElevationKnown,
     feelsLikeMin: minOptional(dayHours.map((hour) => hour.feelsLike ?? undefined)),
     feelsLikeMax: maxOptional(dayHours.map((hour) => hour.feelsLike ?? undefined)),
     precipitationProbability:
@@ -1545,6 +1671,21 @@ function buildDailyWeatherSummary(
       dayWeather?.snowAmountMm ??
       sumOptional(dayHours.map((hour) => hour.snowAmountMm ?? undefined)),
     precipitationType: dayWeather?.precipitationType ?? aggregateDailyPrecipitationType(dayHours),
+    precipitationRisk:
+      dayWeather?.precipitationRisk ??
+      buildPhotographyPrecipitationRisk({
+        probability:
+          dayWeather?.precipitationProbability ??
+          maxOptional(dayHours.map((hour) => hour.precipitationProbability ?? undefined)) ??
+          null,
+        amountMm:
+          dayWeather?.precipitationAmountMm ??
+          dayWeather?.precipitation ??
+          sumOptional(dayHours.map((hour) => precipitationAmountMm(hour) ?? undefined)) ??
+          null,
+        affectedWindows: affectedPrecipitationWindows(dayHours),
+        weatherTextZh: dayWeather?.weatherSummary ?? firstWeatherText(dayHours),
+      }),
     windSpeed: averageOptional(dayHours.map((hour) => hour.windSpeed)),
     windGust: maxOptional(dayHours.map((hour) => hour.windGust ?? undefined)),
     windDirection: averageWindDirection(dayHours.map((hour) => hour.windDirection ?? undefined)),
@@ -1619,6 +1760,32 @@ function aggregateRidgeWindRisk(
     return "low";
   }
   return undefined;
+}
+
+function affectedPrecipitationWindows(
+  hours: readonly NormalizedHourlyWeather[],
+): readonly string[] {
+  const affected = new Set<string>();
+  for (const hour of hours) {
+    const level = precipitationRiskLevel({
+      probability: hour.precipitationProbability,
+      amountMm: precipitationAmountMm(hour),
+    });
+    if (level === "none") {
+      continue;
+    }
+    const localHour = getShanghaiHour(hour.time);
+    if (localHour >= 4 && localHour <= 9) {
+      affected.add("清晨窗口");
+    } else if (localHour >= 16 && localHour <= 20) {
+      affected.add("傍晚窗口");
+    } else if (localHour >= 21 || localHour <= 3) {
+      affected.add("夜间窗口");
+    } else {
+      affected.add("日间窗口");
+    }
+  }
+  return [...affected];
 }
 
 function metricFromWindow(
@@ -1723,11 +1890,23 @@ function buildDailyRiskFlags(
 ): readonly ForecastRiskFlag[] {
   const flags: ForecastRiskFlag[] = [];
   const dailyWeather = input.dailyWeather.find((day) => day.date === breakdown.date);
+  const dayHours = hoursForDate(input.hourlyWeather, breakdown.date, input.calendarBasis.timezone);
   const whiteoutRisk = breakdown.whiteoutRisk?.score ?? 0;
-  const precipitationRisk = precipitationRiskLevel({
-    probability: dailyWeather?.precipitationProbability,
-    amountMm: precipitationAmountMm(dailyWeather),
-  });
+  const precipitationDecision =
+    dailyWeather?.precipitationRisk ??
+    buildPhotographyPrecipitationRisk({
+      probability:
+        dailyWeather?.precipitationProbability ??
+        maxOptional(dayHours.map((hour) => hour.precipitationProbability ?? undefined)) ??
+        null,
+      amountMm:
+        precipitationAmountMm(dailyWeather) ??
+        sumOptional(dayHours.map((hour) => precipitationAmountMm(hour) ?? undefined)) ??
+        null,
+      affectedWindows: affectedPrecipitationWindows(dayHours),
+      weatherTextZh: dailyWeather?.weatherSummary ?? firstWeatherText(dayHours),
+    });
+  const precipitationRisk = precipitationDecision.rainRiskLevel;
 
   if (whiteoutRisk >= 70) {
     flags.push({
@@ -1748,13 +1927,13 @@ function buildDailyRiskFlags(
   if (
     precipitationRisk === "medium" ||
     precipitationRisk === "high" ||
-    precipitationRisk === "heavy"
+    precipitationRisk === "severe"
   ) {
     flags.push({
       key: "precipitation",
       label: "降水干扰",
-      level: precipitationRisk === "high" || precipitationRisk === "heavy" ? "high" : "medium",
-      description: "该日存在降水量或降水概率信号，可能影响器材防护、通行和画面通透度。",
+      level: precipitationRisk === "high" || precipitationRisk === "severe" ? "high" : "medium",
+      description: precipitationDecision.recommendationZh,
     });
   }
 
@@ -2290,6 +2469,60 @@ function calculateCloudLayerClearScore(window: readonly NormalizedHourlyWeather[
   );
 
   return clampScore(100 - layeredCloud);
+}
+
+function applyAstroPracticalWeatherCap(
+  score: number,
+  window: readonly NormalizedHourlyWeather[],
+): number {
+  if (window.length === 0) {
+    return Math.min(clampScore(score), 45);
+  }
+
+  const cloudTotal = averageHourly(window, (hour) => hour.cloudTotal);
+  const lowCloud = averageHourly(window, (hour) => hour.cloudLow);
+  const visibility = averageHourly(window, (hour) => hour.rawVisibilityKm ?? hour.visibility);
+  const humidity = averageHourly(window, (hour) => hour.humidity);
+  const precipitationProbability = Math.max(
+    ...window.map((hour) => hour.precipitationProbability ?? 0),
+    0,
+  );
+  const precipitationAmount = window.reduce(
+    (sum, hour) => sum + (precipitationAmountMm(hour) ?? 0),
+    0,
+  );
+  const precipitationRisk = precipitationRiskLevel({
+    probability: precipitationProbability,
+    amountMm: precipitationAmount,
+  });
+  const textBlocked = window.some((hour) =>
+    /雨|雪|雾|霾|阴|overcast|rain|snow|fog|mist|heavy cloud/i.test(hour.weatherTextZh ?? ""),
+  );
+  let cap = 100;
+
+  if (cloudTotal >= 70) {
+    cap = Math.min(cap, cloudTotal >= 90 ? 20 : 32);
+  }
+  if (lowCloud >= 50) {
+    cap = Math.min(cap, lowCloud >= 75 ? 22 : 34);
+  }
+  if (precipitationAmount >= 0.3) {
+    cap = Math.min(cap, precipitationAmount >= 2 ? 24 : 34);
+  }
+  if (precipitationRisk === "medium" || precipitationRisk === "high" || precipitationRisk === "severe") {
+    cap = Math.min(cap, precipitationRisk === "medium" ? 38 : 24);
+  }
+  if (visibility > 0 && visibility < 10) {
+    cap = Math.min(cap, visibility < 5 ? 24 : 36);
+  }
+  if (humidity >= 92 && lowCloud >= 45) {
+    cap = Math.min(cap, 34);
+  }
+  if (textBlocked) {
+    cap = Math.min(cap, 32);
+  }
+
+  return Math.min(clampScore(score), cap);
 }
 
 function hasAnyWeatherField(
