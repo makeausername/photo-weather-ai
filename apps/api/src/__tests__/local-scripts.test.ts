@@ -271,6 +271,15 @@ describe("local astro diagnostics scripts", () => {
       "postRainOpeningChance:",
       "cloudSeaConfidence:",
       "cloudSeaReasons:",
+      "sunriseGlowScore:",
+      "sunsetGlowScore:",
+      "colorCarrierScore:",
+      "lowCloudObstructionRisk:",
+      "rainOverlapsSunriseWindow:",
+      "rainOverlapsSunsetWindow:",
+      "bestGlowWindow:",
+      "glowConfidence:",
+      "glowReasons:",
     ]) {
       expect(script).toContain(expected);
     }

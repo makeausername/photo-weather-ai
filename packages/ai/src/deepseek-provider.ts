@@ -640,10 +640,7 @@ function compactForecastWindow(
 ) {
   return {
     labelZh: windowLabelZh(window),
-    date: window.date,
     windowZh: formatShootingWindowZh(window, timezone),
-    startTimeIso: window.startTime,
-    endTimeIso: window.endTime,
     score: window.score,
     target: window.target,
     conditionScore: window.conditionScore,
@@ -664,7 +661,6 @@ function compactForecastWindow(
         }
       : undefined,
     copyReasonZh: limitText(window.copyReasonZh ?? window.practicalNoteZh, 140),
-    backupSubjectLabel: window.backupSubjectLabel,
     weatherBlockers: takeTextItems(window.weatherBlockers, 3),
     precipitationRiskZh: window.precipitationRisk
       ? `${window.precipitationRisk.rainRiskLabelZh}，${window.precipitationRisk.recommendationZh}`

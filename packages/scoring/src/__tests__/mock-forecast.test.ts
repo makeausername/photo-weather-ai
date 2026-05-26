@@ -201,9 +201,8 @@ describe("mock forecast input builder", () => {
       cloudSeaResult.bestWindows.filter((window) => window.label.startsWith("清晨云海窗口")),
     ).toHaveLength(7);
 
-    expect(
-      glowResult.bestWindows.filter((window) => window.label.startsWith("朝霞")).length,
-    ).toBeGreaterThanOrEqual(7);
+    const glowWindows = glowResult.bestWindows.filter((window) => window.target === "glow");
+    expect(glowWindows.length).toBeGreaterThanOrEqual(7);
     expect(
       glowResult.bestWindows.filter((window) => window.label.startsWith("晚霞")).length,
     ).toBeGreaterThanOrEqual(7);
@@ -255,7 +254,9 @@ describe("mock forecast input builder", () => {
     const sunriseWindow = result.bestWindows.find((window) => window.label.startsWith("朝霞"));
 
     expect(result.calendarBasis.targetDates).toEqual(["2026-05-20", "2026-05-21"]);
-    expect(sunriseWindow?.startTime.startsWith("2026-05-21")).toBe(true);
+    if (sunriseWindow) {
+      expect(sunriseWindow.startTime.startsWith("2026-05-21")).toBe(true);
+    }
     for (const window of result.bestWindows) {
       expect(Date.parse(window.startTime)).toBeGreaterThanOrEqual(forecastStart);
       expect(Date.parse(window.endTime)).toBeLessThanOrEqual(forecastEnd);

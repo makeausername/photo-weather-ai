@@ -1842,7 +1842,13 @@ function buildGlowWindows(glowAnalysis: GlowAnalysisResult): readonly ForecastTi
     startTime: window.start,
     endTime: window.end,
     score: window.score,
+    conditionScore: window.conditionScore,
+    practicalScore: window.practicalScore,
     target: "glow",
+    practicalKind: "shooting_window",
+    weatherBlockers: window.riskTags.filter((tag) => tag !== "风险可控" && tag !== "雨后短暂开口"),
+    copyReasonZh: window.noteZh,
+    practicalNoteZh: window.noteZh,
   }));
 }
 
@@ -2975,7 +2981,7 @@ function nearbyObservationLabel(
   if (dedicatedTripRecommendation === "推荐专程前往") {
     return undefined;
   }
-  if (nearbyObservationScore >= 54) {
+  if (nearbyObservationScore >= 50) {
     return "已在附近可观察";
   }
   if (nearbyObservationScore >= 45) {

@@ -812,7 +812,47 @@ export type GlowConfidenceLevel = "high" | "medium" | "low";
 
 export type GlowRecommendationLabel = "推荐重点关注" | "值得等待" | "谨慎参考" | "不建议专程";
 
-export type GlowWindowType = "sunrise" | "sunset" | "afterglow" | "warm_light";
+export type GlowChanceLabel = "高" | "中" | "低";
+
+export type GlowColorCarrierLabel = "好" | "一般" | "差";
+
+export type GlowPostRainOpeningChance = "low" | "medium" | "high";
+
+export type GlowWindowRainRisk = "low" | "medium" | "high";
+
+export type GlowWindowType =
+  | "pre_dawn_glow"
+  | "sunrise_core"
+  | "morning_warm_light"
+  | "sunset_warm_light"
+  | "sunset_core"
+  | "afterglow"
+  | "blue_hour_transition"
+  | "sunrise"
+  | "sunset"
+  | "warm_light";
+
+export type GlowAssessmentLabels = {
+  readonly sunriseGlowOpportunity: GlowChanceLabel;
+  readonly sunsetGlowOpportunity: GlowChanceLabel;
+  readonly lowCloudObstruction: GlowChanceLabel;
+  readonly colorCarrier: GlowColorCarrierLabel;
+  readonly bestWindowLabel: string;
+  readonly watchableWindowLabel?: string;
+  readonly notRecommendedWindowLabel?: string;
+};
+
+export type GlowAssessment = {
+  readonly sunriseGlowScore: number;
+  readonly sunsetGlowScore: number;
+  readonly lowCloudObstructionRisk: number;
+  readonly colorCarrierScore: number;
+  readonly precipitationDisruptionRisk: number;
+  readonly visibilityColorQualityScore: number;
+  readonly practicalGlowScore: number;
+  readonly confidence: number;
+  readonly labels: GlowAssessmentLabels;
+};
 
 export type GlowWindow = {
   readonly type: GlowWindowType;
@@ -821,6 +861,16 @@ export type GlowWindow = {
   readonly start: string;
   readonly end: string;
   readonly score: number;
+  readonly conditionScore?: number;
+  readonly practicalScore?: number;
+  readonly colorCarrierScore?: number;
+  readonly lowCloudObstructionRisk?: number;
+  readonly precipitationDisruptionRisk?: number;
+  readonly visibilityColorQualityScore?: number;
+  readonly terrainScore?: number;
+  readonly rainOverlapsWindow?: boolean;
+  readonly postRainOpeningChance?: GlowPostRainOpeningChance;
+  readonly glowWindowRainRisk?: GlowWindowRainRisk;
   readonly riskTags: readonly string[];
   readonly noteZh: string;
 };
@@ -832,7 +882,19 @@ export type DailyGlow = {
   readonly dateLabelZh: string;
   readonly sunriseScore: number;
   readonly sunsetScore: number;
+  readonly practicalScore?: number;
+  readonly colorCarrierScore?: number;
+  readonly lowCloudObstructionRisk?: number;
+  readonly precipitationDisruptionRisk?: number;
+  readonly visibilityColorQualityScore?: number;
+  readonly labels?: GlowAssessmentLabels;
   readonly bestWindow?: GlowWindow;
+  readonly watchableWindow?: GlowWindow;
+  readonly notRecommendedWindow?: GlowWindow;
+  readonly rainOverlapsSunriseWindow?: boolean;
+  readonly rainOverlapsSunsetWindow?: boolean;
+  readonly postRainOpeningChance?: GlowPostRainOpeningChance;
+  readonly glowWindowRainRisk?: GlowWindowRainRisk;
   readonly bestTarget: GlowBestTarget;
   readonly recommendationLabel: GlowRecommendationLabel;
   readonly keyReason: string;
@@ -852,14 +914,18 @@ export type GlowBackupPlan = {
   readonly detail: string;
 };
 
-export type GlowAnalysisResult = {
-  readonly sunriseGlowScore: number;
-  readonly sunsetGlowScore: number;
-  readonly lowCloudObstructionRisk: number;
+export type GlowAnalysisResult = GlowAssessment & {
   readonly glowTravelScore: number;
+  readonly rainOverlapsSunriseWindow: boolean;
+  readonly rainOverlapsSunsetWindow: boolean;
+  readonly postRainOpeningChance: GlowPostRainOpeningChance;
+  readonly glowWindowRainRisk: GlowWindowRainRisk;
   readonly recommendationLabel: GlowRecommendationLabel;
   readonly confidenceLevel: GlowConfidenceLevel;
+  readonly bestGlowWindow?: GlowWindow;
   readonly bestGlowWindows: readonly GlowWindow[];
+  readonly watchableGlowWindows: readonly GlowWindow[];
+  readonly notRecommendedGlowWindows: readonly GlowWindow[];
   readonly dailyGlow: readonly DailyGlow[];
   readonly cloudLayerEvidence: readonly GlowEvidenceItem[];
   readonly visibilityEvidence: readonly GlowEvidenceItem[];

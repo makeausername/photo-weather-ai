@@ -308,6 +308,15 @@ const cloudSeaReasons = [
   ...(Array.isArray(cloudSeaAnalysis.opportunityReasons) ? cloudSeaAnalysis.opportunityReasons : []),
   ...(Array.isArray(cloudSeaAnalysis.whiteoutReasons) ? cloudSeaAnalysis.whiteoutReasons : []),
 ];
+const glowAnalysis = result.glowAnalysis || {};
+const bestGlowWindow =
+  glowAnalysis.bestGlowWindow ||
+  (Array.isArray(glowAnalysis.bestGlowWindows) ? glowAnalysis.bestGlowWindows[0] : undefined) ||
+  {};
+const glowReasons = [
+  ...(Array.isArray(glowAnalysis.opportunityReasons) ? glowAnalysis.opportunityReasons : []),
+  ...(Array.isArray(glowAnalysis.riskReasons) ? glowAnalysis.riskReasons : []),
+];
 console.log(`rawTemperature: ${number(rawTemp, "°C")}`);
 console.log(`elevationAdjustedTemperature: ${number(adjustedTemp, "°C")}`);
 console.log(`rawProviderDailyTemperature: min=${number(rawDailyMin, "°C")} max=${number(rawDailyMax, "°C")}`);
@@ -350,6 +359,19 @@ console.log(`activeRainDuringWindow: ${value(rainOpening.activeRainDuringWindow)
 console.log(`postRainOpeningChance: ${value(rainOpening.postRainOpeningChance)}`);
 console.log(`cloudSeaConfidence: score=${number(cloudSeaAnalysis.confidence)} level=${value(cloudSeaAnalysis.confidenceLevel)}`);
 console.log(`cloudSeaReasons: ${cloudSeaReasons.slice(0, 8).join(" | ") || "暂无"}`);
+console.log(`sunriseGlowScore: ${number(glowAnalysis.sunriseGlowScore)}`);
+console.log(`sunsetGlowScore: ${number(glowAnalysis.sunsetGlowScore)}`);
+console.log(`colorCarrierScore: ${number(glowAnalysis.colorCarrierScore)}`);
+console.log(`lowCloudObstructionRisk: ${number(glowAnalysis.lowCloudObstructionRisk)}`);
+console.log(`visibilityColorQualityScore: ${number(glowAnalysis.visibilityColorQualityScore)}`);
+console.log(`precipitationDisruptionRisk: ${number(glowAnalysis.precipitationDisruptionRisk)}`);
+console.log(`rainOverlapsSunriseWindow: ${value(glowAnalysis.rainOverlapsSunriseWindow)}`);
+console.log(`rainOverlapsSunsetWindow: ${value(glowAnalysis.rainOverlapsSunsetWindow)}`);
+console.log(`postRainOpeningChance: ${value(glowAnalysis.postRainOpeningChance)}`);
+console.log(`glowWindowRainRisk: ${value(glowAnalysis.glowWindowRainRisk)}`);
+console.log(`bestGlowWindow: ${bestGlowWindow.start && bestGlowWindow.end ? formatWindowLabel(bestGlowWindow, timezone) : "暂无高确定性霞光窗口"} label=${value(bestGlowWindow.labelZh)} score=${number(bestGlowWindow.score)} condition=${number(bestGlowWindow.conditionScore)} practical=${number(bestGlowWindow.practicalScore)} carrier=${number(bestGlowWindow.colorCarrierScore)} lowCloud=${number(bestGlowWindow.lowCloudObstructionRisk)} rain=${value(bestGlowWindow.glowWindowRainRisk)}`);
+console.log(`glowConfidence: score=${number(glowAnalysis.confidence)} level=${value(glowAnalysis.confidenceLevel)}`);
+console.log(`glowReasons: ${glowReasons.slice(0, 8).join(" | ") || "暂无"}`);
 console.log(`astroConditionScore: ${number(astroAnalysis.astroConditionScore)}`);
 console.log(`astroPracticalScore: ${number(astroAnalysis.astroPracticalScore)}`);
 console.log(`astroWindowAvailable: ${value(astroAnalysis.astroWindowAvailable)}`);

@@ -1502,7 +1502,7 @@ describe("forecast query validation route", () => {
       configJson: {
         ...(provider.configJson ?? {}),
         realCallEnabled: true,
-        model: "legacy-fast-model",
+        model: "deepseek-v4-pro",
       },
       secretJson: {
         apiKey: "deepseek-secret",
@@ -1555,7 +1555,7 @@ describe("forecast query validation route", () => {
       configJson: {
         ...(provider.configJson ?? {}),
         realCallEnabled: true,
-        model: "legacy-fast-model",
+        model: "deepseek-v4-pro",
         timeoutMs: 60000,
       },
       secretJson: {
@@ -1636,7 +1636,7 @@ describe("forecast query validation route", () => {
       configJson: {
         ...(provider.configJson ?? {}),
         realCallEnabled: true,
-        model: "legacy-fast-model",
+        model: "deepseek-v4-pro",
       },
       secretJson: {
         apiKey: "deepseek-secret",
