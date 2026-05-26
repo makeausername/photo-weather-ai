@@ -157,11 +157,15 @@ const promptSizeChars = payload.diagnostics && typeof payload.diagnostics.prompt
 const timeoutMs = payload.diagnostics && typeof payload.diagnostics.timeoutMs === "number"
   ? payload.diagnostics.timeoutMs
   : "unknown";
+const parseSuccess = payload.diagnostics && typeof payload.diagnostics.parseSuccess === "boolean"
+  ? payload.diagnostics.parseSuccess
+  : "unknown";
+const fallback = payload.fallback === true || Boolean(payload.diagnostics && payload.diagnostics.fallback);
 const message =
   payload.messageZh ||
   payload.message ||
   payload.error ||
-  (success ? "DeepSeek 解读生成成功。" : "DeepSeek 解读暂时不可用，已保留确定性分析结果。");
+  (success ? "智能解读生成成功。" : "智能解读暂时不可用，确定性判断结果仍可正常参考。");
 
 console.log(`success: ${success}`);
 console.log(`statusCode: ${status}`);
@@ -169,6 +173,8 @@ console.log(`latencyMs: ${latencyMs}`);
 console.log(`errorCategory: ${errorCategory}`);
 console.log(`timeoutMsFromResponse: ${timeoutMs}`);
 console.log(`promptSizeChars: ${promptSizeChars}`);
+console.log(`parseSuccess: ${parseSuccess}`);
+console.log(`fallback: ${fallback}`);
 console.log(`messageZh: ${message}`);
 NODE
 

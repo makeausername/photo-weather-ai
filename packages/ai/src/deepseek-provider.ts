@@ -1,6 +1,8 @@
 import {
   decisionCardSchema,
   deepSeekResponseFormat,
+  formatArrivalDeadlineZh,
+  formatShootingWindowZh,
   normalizeDeepSeekModel,
   type ForecastWeatherSourceErrorCategory,
   type DeepSeekReasoningEffort,
@@ -111,14 +113,73 @@ export function isDeepSeekProviderError(error: unknown): error is DeepSeekProvid
   return error instanceof DeepSeekProviderError;
 }
 
+const nonEmptyZh = z.string().trim().min(1);
+
+const dayByDayExplanationSchema = z.object({
+  dateZh: nonEmptyZh,
+  recommendationZh: nonEmptyZh,
+  scoreZh: nonEmptyZh,
+  temperatureZh: nonEmptyZh,
+  rainZh: nonEmptyZh,
+  cloudSeaZh: nonEmptyZh,
+  glowZh: nonEmptyZh,
+  sunsetGlowZh: nonEmptyZh,
+  astroZh: nonEmptyZh,
+  transparencyZh: nonEmptyZh,
+  bestWindowZh: nonEmptyZh,
+  actionZh: nonEmptyZh,
+});
+
 export const forecastAiExplanationSchema = z.object({
-  summary: z.string().trim().min(1),
-  recommendation: z.string().trim().min(1),
-  mainReasons: z.array(z.string().trim().min(1)).min(1).max(8),
-  mainRisks: z.array(z.string().trim().min(1)).max(8),
-  photographerAdvice: z.array(z.string().trim().min(1)).min(1).max(8),
-  backupPlan: z.array(z.string().trim().min(1)).min(1).max(8),
-  confidenceNote: z.string().trim().min(1),
+  conclusion: z.object({
+    titleZh: nonEmptyZh,
+    summaryZh: nonEmptyZh,
+    recommendedDayZh: nonEmptyZh,
+    recommendationLevelZh: nonEmptyZh,
+    whetherWorthDedicatedTripZh: nonEmptyZh,
+    oneSentenceDecisionZh: nonEmptyZh,
+  }),
+  bestPlan: z.object({
+    primaryTargetZh: nonEmptyZh,
+    bestDateZh: nonEmptyZh,
+    bestWindowZh: nonEmptyZh,
+    recommendedArrivalZh: nonEmptyZh,
+    whyThisWindowZh: nonEmptyZh,
+    backupPlanZh: nonEmptyZh,
+  }),
+  weatherTrend: z.object({
+    trendSummaryZh: nonEmptyZh,
+    temperatureSummaryZh: nonEmptyZh,
+    rainSummaryZh: nonEmptyZh,
+    windSummaryZh: nonEmptyZh,
+    transparencySummaryZh: nonEmptyZh,
+  }),
+  dayByDay: z.array(dayByDayExplanationSchema).min(1).max(7),
+  subjectAdvice: z.object({
+    cloudSeaZh: nonEmptyZh,
+    sunriseGlowZh: nonEmptyZh,
+    sunsetGlowZh: nonEmptyZh,
+    astroMilkyWayZh: nonEmptyZh,
+    transparencyZh: nonEmptyZh,
+  }),
+  riskAndGear: z.object({
+    keyRisks: z.array(nonEmptyZh).min(1).max(8),
+    clothingZh: nonEmptyZh,
+    gearZh: nonEmptyZh,
+    safetyZh: nonEmptyZh,
+  }),
+  finalAdvice: z.object({
+    goNoGoZh: nonEmptyZh,
+    ifAlreadyNearbyZh: nonEmptyZh,
+    ifDedicatedTripZh: nonEmptyZh,
+    nextCheckZh: nonEmptyZh,
+  }),
+  metadata: z
+    .object({
+      source: z.enum(["deepseek", "deterministic_fallback"]),
+      noteZh: nonEmptyZh.optional(),
+    })
+    .optional(),
 });
 
 const forecastAnalysisSchema = z.object({
@@ -270,22 +331,6 @@ function compactScore(
   };
 }
 
-function compactSourceSummary(
-  summary: ForecastCalculationResult["weatherSourceSummaries"][number],
-) {
-  return {
-    dataMode: summary.dataMode,
-    attempted: summary.attempted,
-    success: summary.success,
-    partial: summary.partial,
-    status: summary.status,
-    errorCategory: summary.errorCategory,
-    messageZh: summary.messageZh,
-    extractedFields: takeItems(summary.extractedFields ?? summary.availableFields, 16),
-    missingFields: takeItems(summary.missingFields, 16),
-  };
-}
-
 function compactTargetAnalysis(result: ForecastCalculationResult) {
   if (result.target === "cloud_sea") {
     return {
@@ -333,26 +378,39 @@ function compactTargetAnalysis(result: ForecastCalculationResult) {
 }
 
 export function buildDeepSeekForecastContext(result: ForecastCalculationResult) {
+  const timezone = result.calendarBasis.timezone;
+  const dailyFacts = takeItems(result.dailySummaries, 5).map((summary) =>
+    compactDailyFact(result, summary, timezone),
+  );
+
   return {
-    contextVersion: "forecast-interpretation-v2",
-    note: "All values are precomputed read-only facts. Interpret them only.",
+    contextVersion: "forecast-interpretation-v3",
+    note: "All values are precomputed deterministic facts. Interpret only; do not calculate or invent.",
     place: {
       name: result.place.name,
       countryCode: result.place.countryCode,
     },
-    horizon: result.horizon,
+    forecastHorizon: {
+      key: result.horizon,
+      rangeZh: result.calendarBasis.forecastRangeLabel,
+      timezone: result.calendarBasis.timezone,
+      generatedAt: result.generatedAt,
+    },
     target: result.target,
-    forecastStart: result.forecastStart,
-    forecastEnd: result.forecastEnd,
-    overallScore: result.overallScore,
-    recommendationLevel: result.recommendationLevel,
-    recommendationLabel: result.recommendationLabel,
-    summary: result.summary,
-    scores: Object.values(result.scores).map(compactScore),
-    bestWindows: takeItems(result.bestWindows, 6).map(compactForecastWindow),
+    overallDecision: {
+      score: result.overallScore,
+      recommendationLevel: result.recommendationLevel,
+      recommendationLabelZh: result.recommendationLabel,
+      confidenceLabelZh: confidenceLabelZh(result.weatherFusionSummary?.confidenceLevel),
+      summaryZh: result.summary,
+    },
+    topicScores: Object.values(result.scores).map(compactScore),
+    topRankedWindows: takeItems(result.bestWindows, 6).map((window) =>
+      compactForecastWindow(window, timezone),
+    ),
     riskFlags: takeItems(result.riskFlags, 8),
     keyReasons: takeItems(result.keyReasons, 8),
-    photographyAdvice: takeItems(result.photographyAdvice, 5),
+    deterministicActionSuggestions: takeItems(result.photographyAdvice, 6),
     clothingGuide: {
       titleZh: result.clothingGuide.titleZh,
       summaryZh: result.clothingGuide.summaryZh,
@@ -361,43 +419,37 @@ export function buildDeepSeekForecastContext(result: ForecastCalculationResult) 
       accessories: takeItems(result.clothingGuide.accessories, 5),
       riskNotes: takeItems(result.clothingGuide.riskNotes, 5),
     },
-    currentWeather: result.currentWeather
+    currentWeatherSummary: result.currentWeather
       ? {
           observedAt: result.currentWeather.observedAt,
-          temperature: result.currentWeather.temperature,
-          feelsLike: result.currentWeather.feelsLike,
-          humidity: result.currentWeather.humidity,
-          dewPoint: result.currentWeather.dewPoint,
-          windSpeed: result.currentWeather.windSpeed,
-          windDirection: result.currentWeather.windDirection,
-          visibility: result.currentWeather.visibility,
-          cloudTotal: result.currentWeather.cloudTotal,
-          cloudLow: result.currentWeather.cloudLow,
-          cloudMid: result.currentWeather.cloudMid,
-          cloudHigh: result.currentWeather.cloudHigh,
-          precipitation: result.currentWeather.precipitation,
-          precipitationProbability: result.currentWeather.precipitationProbability,
+          temperatureZh: formatTemperatureValue(result.currentWeather.temperature),
+          feelsLikeZh: formatTemperatureValue(result.currentWeather.feelsLike),
+          humidityPercent: result.currentWeather.humidity,
+          dewPointZh: formatTemperatureValue(result.currentWeather.dewPoint),
+          windZh: formatWindValue(result.currentWeather.windSpeed, result.currentWeather.windGust),
+          visibilityZh: formatDistanceKm(result.currentWeather.visibility),
+          cloudTotalPercent: result.currentWeather.cloudTotal,
+          cloudLowPercent: result.currentWeather.cloudLow,
+          cloudMidPercent: result.currentWeather.cloudMid,
+          cloudHighPercent: result.currentWeather.cloudHigh,
+          rainRiskZh: rainRiskSummaryZh(result.currentWeather),
           weatherTextZh: result.currentWeather.weatherTextZh,
-          missingFields: result.currentWeather.missingFields,
         }
-      : undefined,
-    providerSourceSummaries: result.weatherSourceSummaries.map(compactSourceSummary),
-    weatherConfidence: {
+      : null,
+    sourceStatus: {
       dataMode: result.weatherDataMode,
-      noticeZh: result.weatherNoticeZh,
-      missingFields: takeItems(result.weatherMissingFields, 20),
-      estimatedFields: takeItems(result.weatherEstimatedFields, 20),
-      missingDataNotes: takeItems(result.weatherMissingDataNotes, 8),
+      noticeZh: providerNeutralText(result.weatherNoticeZh),
+      missingFields: takeItems(result.weatherMissingFields, 12),
+      estimatedFields: takeItems(result.weatherEstimatedFields, 12),
+      missingDataNotes: providerNeutralItems(result.weatherMissingDataNotes, 6),
       fusionConfidenceLevel: result.weatherFusionSummary?.confidenceLevel,
-      confidenceByTarget: result.weatherFusionSummary?.confidenceByTarget,
-      conflictStatusZh: result.weatherFusionSummary?.conflictStatusZh,
-      dataStatusZh: result.weatherFusionSummary?.dataStatusZh,
+      conflictStatusZh: providerNeutralText(result.weatherFusionSummary?.conflictStatusZh),
+      dataStatusZh: providerNeutralText(result.weatherFusionSummary?.dataStatusZh),
     },
     astroFacts: {
       dataSourceLabelZh: result.astroDataSourceLabelZh,
       calculationBasis: result.astroCalculationBasis
         ? {
-            coordinateSystem: result.astroCalculationBasis.coordinateSystem,
             timezone: result.astroCalculationBasis.timezone,
             elevationMeters: result.astroCalculationBasis.elevationMeters,
             generatedAt: result.astroCalculationBasis.generatedAt,
@@ -416,6 +468,24 @@ export function buildDeepSeekForecastContext(result: ForecastCalculationResult) 
         milkyWayVisibilityLevel: summary.milkyWayVisibilityLevel,
         milkyWayNoteZh: summary.milkyWayNoteZh,
       })),
+      practicalStatus: {
+        starsScore: result.astroAnalysis.starsScore,
+        milkyWayScore: result.astroAnalysis.milkyWayScore,
+        astroShootable: result.astroAnalysis.astroShootable,
+        recommendationLabelZh: result.astroAnalysis.recommendationLabel,
+        weatherBlockers: takeItems(result.astroAnalysis.weatherBlockers, 6),
+        recommendedMilkyWayWindows: takeItems(result.astroAnalysis.recommendedMilkyWayWindows, 3).map(
+          (window) => ({
+            labelZh: window.labelZh,
+            windowZh: formatShootingWindowZh(
+              { startTime: window.start, endTime: window.end },
+              timezone,
+            ),
+            score: window.score,
+            noteZh: window.noteZh,
+          }),
+        ),
+      },
     },
     terrainFacts: {
       dataSourceLabelZh: result.terrainAnalysis.dataSourceLabelZh,
@@ -427,55 +497,22 @@ export function buildDeepSeekForecastContext(result: ForecastCalculationResult) 
       obstructionNoteZh: result.terrainSummary.obstructionNoteZh,
     },
     targetAnalysis: compactTargetAnalysis(result),
-    dailySummaries: takeItems(result.dailySummaries, 3).map((summary) => ({
-      date: summary.date,
-      dateLabelZh: summary.dateLabelZh,
-      score: summary.score,
-      recommendationLabel: summary.recommendationLabel,
-      dedicatedTripRecommendation: summary.dedicatedTripRecommendation,
-      nearbyObservationRecommendation: summary.nearbyObservationRecommendation,
-      practicalTripScore: summary.practicalTripScore,
-      nearbyObservationScore: summary.nearbyObservationScore,
-      target: summary.target,
-      keyWindows: takeItems(summary.keyWindows, 3).map(compactForecastWindow),
-      bestShootableWindow: summary.bestShootableWindow
-        ? compactForecastWindow(summary.bestShootableWindow)
-        : undefined,
-      watchableWindows: takeItems(summary.watchableWindows, 3),
-      riskFlags: takeItems(summary.riskFlags, 4),
-      shortAdvice: summary.shortAdvice,
-      weather: summary.weather
-        ? {
-            weatherTextZh: summary.weather.weatherTextZh,
-            tempMin: summary.weather.tempMin,
-            tempMax: summary.weather.tempMax,
-            precipitationProbability: summary.weather.precipitationProbability,
-            precipitationAmountMm: summary.weather.precipitationAmountMm,
-            rainRiskLabelZh: summary.weather.precipitationRisk?.rainRiskLabelZh,
-            mainPrecipitationPeriodLabelZh: summary.weather.mainPrecipitationPeriodLabelZh,
-            windSpeed: summary.weather.windSpeed,
-            windGust: summary.weather.windGust,
-            visibility: summary.weather.visibility,
-            cloudTotal: summary.weather.cloudTotal,
-            cloudLow: summary.weather.cloudLow,
-            cloudMid: summary.weather.cloudMid,
-            cloudHigh: summary.weather.cloudHigh,
-          }
-        : undefined,
-    })),
-    dataNotice: result.dataNotice,
+    dailySummaries: dailyFacts,
+    dataNoticeZh: providerNeutralText(result.dataNotice),
     isMock: result.isMock,
-    dataSourceLabel: result.dataSourceLabel,
-    generatedAt: result.generatedAt,
   };
 }
 
-function compactForecastWindow(window: ForecastCalculationResult["bestWindows"][number]) {
+function compactForecastWindow(
+  window: ForecastCalculationResult["bestWindows"][number],
+  timezone = "Asia/Shanghai",
+) {
   return {
-    label: window.label,
+    labelZh: windowLabelZh(window),
     date: window.date,
-    startTime: window.startTime,
-    endTime: window.endTime,
+    windowZh: formatShootingWindowZh(window, timezone),
+    startTimeIso: window.startTime,
+    endTimeIso: window.endTime,
     score: window.score,
     target: window.target,
     conditionScore: window.conditionScore,
@@ -486,11 +523,304 @@ function compactForecastWindow(window: ForecastCalculationResult["bestWindows"][
     arrivalAdvice: window.arrivalAdvice
       ? {
           recommendedArrivalLabel: window.arrivalAdvice.recommendedArrivalLabel,
+          recommendedArrivalZh: formatArrivalDeadlineZh(
+            window.arrivalAdvice.recommendedArrivalTime,
+            timezone,
+          ),
           setupBufferMinutes: window.arrivalAdvice.setupBufferMinutes,
+          reasonZh: window.arrivalAdvice.reasonZh,
           warningZh: window.arrivalAdvice.warningZh,
         }
       : undefined,
+    copyReasonZh: window.copyReasonZh ?? window.practicalNoteZh,
+    backupSubjectLabel: window.backupSubjectLabel,
+    weatherBlockers: takeItems(window.weatherBlockers, 4),
+    precipitationRiskZh: window.precipitationRisk
+      ? `${window.precipitationRisk.rainRiskLabelZh}，${window.precipitationRisk.recommendationZh}`
+      : undefined,
   };
+}
+
+function compactDailyFact(
+  result: ForecastCalculationResult,
+  summary: ForecastCalculationResult["dailySummaries"][number],
+  timezone: string,
+) {
+  const breakdown = result.targetDailyBreakdown.find((item) => item.date === summary.date);
+  const bestWindow = summary.bestShootableWindow ?? summary.keyWindows[0];
+
+  return {
+    date: summary.date,
+    dateZh: summary.dateLabelZh,
+    score: summary.score,
+    recommendationLabelZh: summary.recommendationLabel,
+    dedicatedTripRecommendationZh: summary.dedicatedTripRecommendation,
+    nearbyObservationRecommendationZh: summary.nearbyObservationRecommendation,
+    dedicatedTripAdviceZh: summary.dedicatedTripAdviceZh,
+    nearbyObservationAdviceZh: summary.nearbyObservationAdviceZh,
+    deterministicActionZh: summary.shortAdvice,
+    bestShootableWindow: bestWindow ? compactForecastWindow(bestWindow, timezone) : null,
+    watchableWindows: takeItems(summary.watchableWindows, 3).map((window) => ({
+      subjectZh: windowLabelZh({
+        label: window.subject,
+        target: window.target,
+        startTime: window.startTime ?? "",
+        endTime: window.endTime ?? "",
+      }),
+      windowZh:
+        window.startTime && window.endTime
+          ? formatShootingWindowZh(
+              { startTime: window.startTime, endTime: window.endTime },
+              timezone,
+            )
+          : "暂无明确时间",
+      reasonZh: window.reasonZh,
+      suitableForDedicatedTrip: window.suitableForDedicatedTrip,
+      suitableIfNearby: window.suitableIfNearby,
+    })),
+    riskFlags: takeItems(summary.riskFlags, 4),
+    weather: summary.weather
+      ? {
+          weatherTextZh: summary.weather.weatherTextZh,
+          temperatureRangeZh: formatTemperatureRange(
+            summary.weather.tempMin,
+            summary.weather.tempMax,
+          ),
+          rainRiskZh: rainRiskSummaryZh(summary.weather),
+          rainTimingZh: rainTimingSummaryZh(summary.weather),
+          windZh: formatWindValue(summary.weather.windSpeed, summary.weather.windGust),
+          visibilityZh: formatDistanceKm(
+            summary.weather.rawVisibilityKm ?? summary.weather.visibility,
+          ),
+          transparencyZh: formatTransparencyValue(
+            summary.weather.transparencyGrade,
+            summary.weather.photographyTransparencyScore,
+          ),
+          cloudLowPercent: summary.weather.cloudLow,
+          cloudMidPercent: summary.weather.cloudMid,
+          cloudHighPercent: summary.weather.cloudHigh,
+          dewPointSpread: summary.weather.dewPointSpread,
+        }
+      : null,
+    topicScores: {
+      cloudSeaZh: dailyMetricZh(breakdown?.cloudSea),
+      whiteoutRiskZh: dailyMetricZh(breakdown?.whiteoutRisk),
+      sunriseGlowZh: dailyMetricZh(breakdown?.sunriseGlow),
+      sunsetGlowZh: dailyMetricZh(breakdown?.sunsetGlow),
+      starsZh: dailyMetricZh(breakdown?.stars),
+      milkyWayZh: dailyMetricZh(breakdown?.milkyWay),
+      transparencyZh: dailyMetricZh(breakdown?.transparency),
+    },
+    weatherSummaryZh: breakdown?.weatherSummary,
+    terrainSummaryZh: breakdown?.terrainSummary,
+  };
+}
+
+function windowLabelZh(window: Pick<ForecastCalculationResult["bestWindows"][number], "label" | "target" | "startTime" | "endTime" | "subjectPriorityLabel" | "lightPhase" | "practicalKind" | "weatherBlockers">): string {
+  const raw = stripWindowTime(window.subjectPriorityLabel ?? window.label);
+  const hour = hourOf(window.startTime);
+
+  if (window.target === "glow") {
+    if (window.lightPhase === "blue_hour") {
+      return "日落后余晖";
+    }
+    if (window.lightPhase === "sunset") {
+      return raw.includes("晚霞") ? "晚霞" : "日落暖光";
+    }
+    if (typeof hour === "number" && hour >= 12 && raw.includes("朝霞")) {
+      return "晚霞";
+    }
+  }
+
+  if (window.target === "astro" && (window.weatherBlockers?.length ?? 0) > 0) {
+    return raw.includes("银河") ? "银河天文窗口" : "天文窗口";
+  }
+
+  if (window.target === "cloud_sea" && window.practicalKind === "formation_signal") {
+    return "云海形成信号";
+  }
+
+  return raw || window.label;
+}
+
+function confidenceLabelZh(level: string | undefined): string {
+  if (level === "high") {
+    return "高";
+  }
+  if (level === "medium") {
+    return "中";
+  }
+  if (level === "low") {
+    return "低";
+  }
+  return "待复核";
+}
+
+function providerNeutralText(text: string | undefined): string | undefined {
+  return text
+    ?.replace(/和风天气|QWeather/g, "基础天气")
+    .replace(/Open-Meteo/g, "云层辅助")
+    .replace(/meteoblue/g, "专业增强")
+    .replace(/高德地图|Amap/g, "地理服务");
+}
+
+function providerNeutralItems(
+  items: readonly string[] | undefined,
+  count: number,
+): readonly string[] {
+  return takeItems(items, count).map((item) => providerNeutralText(item) ?? item);
+}
+
+type RainWeatherLike = {
+  readonly precipitationProbability?: number | null;
+  readonly precipitation?: number | null;
+  readonly precipitationAmountMm?: number | null;
+  readonly rainAmountMm?: number | null;
+  readonly snowAmountMm?: number | null;
+  readonly precipitationType?: string | null;
+  readonly precipitationRisk?: {
+    readonly rainRiskLabelZh: string;
+    readonly recommendationZh: string;
+    readonly precipitationAmountMm?: number | null;
+  };
+  readonly mainPrecipitationPeriodLabelZh?: string;
+};
+
+function rainRiskSummaryZh(weather: RainWeatherLike | undefined): string {
+  if (!weather) {
+    return "降水风险待复核";
+  }
+  const amount = precipitationAmountMm(weather);
+  const riskLabel = weather.precipitationRisk?.rainRiskLabelZh ?? rainRiskLevelZh(weather);
+  const amountText = amount !== null && amount > 0 ? `，预计 ${roundDisplay(amount)} mm` : "";
+  const probability =
+    typeof weather.precipitationProbability === "number" && weather.precipitationProbability > 0
+      ? `，概率 ${Math.round(weather.precipitationProbability)}%`
+      : "";
+  return `降水风险${riskLabel}${amountText || probability}`;
+}
+
+function rainTimingSummaryZh(weather: RainWeatherLike | undefined): string {
+  const raw = weather?.mainPrecipitationPeriodLabelZh
+    ?.replace(/^(主要降水[：:]\s*)+/, "")
+    .replace(/夜间、上午/g, "夜间至上午")
+    .replace(/上午、下午/g, "白天大部时段")
+    .replace(/下午、夜间/g, "午后至夜间")
+    .replace(/、/g, "至")
+    .trim();
+  if (raw) {
+    return raw;
+  }
+  return precipitationAmountMm(weather) ? "有降水量信号，具体时段待复核" : "降水不明显";
+}
+
+function rainRiskLevelZh(weather: RainWeatherLike): string {
+  const amount = precipitationAmountMm(weather) ?? 0;
+  const probability =
+    typeof weather.precipitationProbability === "number" ? weather.precipitationProbability : 0;
+  if (amount >= 25) {
+    return "严重";
+  }
+  if (amount >= 10 || probability >= 70) {
+    return "高";
+  }
+  if (amount >= 2 || probability >= 40) {
+    return "中";
+  }
+  if (amount >= 0.3 || probability >= 20) {
+    return "低";
+  }
+  return "无明显";
+}
+
+function precipitationAmountMm(weather: RainWeatherLike | undefined): number | null {
+  if (!weather) {
+    return null;
+  }
+  if (
+    typeof weather.precipitationAmountMm === "number" &&
+    Number.isFinite(weather.precipitationAmountMm)
+  ) {
+    return weather.precipitationAmountMm;
+  }
+  if (typeof weather.precipitation === "number" && Number.isFinite(weather.precipitation)) {
+    return weather.precipitation;
+  }
+  const split = [weather.rainAmountMm, weather.snowAmountMm].filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  );
+  return split.length > 0 ? split.reduce((sum, value) => sum + value, 0) : null;
+}
+
+function formatTemperatureRange(min: number | undefined, max: number | undefined): string {
+  if (typeof min === "number" && typeof max === "number") {
+    return `${Math.round(min)}-${Math.round(max)}°C`;
+  }
+  if (typeof min === "number") {
+    return `${Math.round(min)}°C 左右`;
+  }
+  if (typeof max === "number") {
+    return `${Math.round(max)}°C 左右`;
+  }
+  return "温度待复核";
+}
+
+function formatTemperatureValue(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value)}°C` : "待复核";
+}
+
+function formatWindValue(speed: number | null | undefined, gust?: number | null): string {
+  if (typeof speed !== "number" || !Number.isFinite(speed)) {
+    return "风力待复核";
+  }
+  const gustText = typeof gust === "number" && Number.isFinite(gust) ? `，阵风 ${roundDisplay(gust)} m/s` : "";
+  return `${roundDisplay(speed)} m/s${gustText}`;
+}
+
+function formatDistanceKm(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? `${roundDisplay(value)} 公里` : "待复核";
+}
+
+function formatTransparencyValue(grade: string | undefined, score: number | undefined): string {
+  const gradeText =
+    grade === "excellent"
+      ? "优秀"
+      : grade === "good"
+        ? "较好"
+        : grade === "fair"
+          ? "一般"
+          : grade === "poor"
+            ? "偏差"
+            : "待复核";
+  return typeof score === "number" ? `${gradeText}，${Math.round(score)} 分` : gradeText;
+}
+
+function dailyMetricZh(
+  metric: ForecastCalculationResult["targetDailyBreakdown"][number]["cloudSea"] | undefined,
+): string {
+  if (!metric) {
+    return "暂缺";
+  }
+  return `${metric.label} ${Math.round(metric.score)} 分，${metric.detail}`;
+}
+
+function stripWindowTime(text: string): string {
+  return text
+    .replace(/\s*\d{1,2}:\d{2}\s*[-–至到]\s*\d{1,2}:\d{2}\s*/g, "")
+    .trim();
+}
+
+function hourOf(value: string | undefined): number | undefined {
+  const match = value?.match(/T(\d{2}):/);
+  if (!match) {
+    return undefined;
+  }
+  const hour = Number(match[1]);
+  return Number.isFinite(hour) ? hour : undefined;
+}
+
+function roundDisplay(value: number): string {
+  return Number.isInteger(value) ? `${value}` : value.toFixed(1);
 }
 
 function assertInterpretationPayloadSize(content: string): string {
@@ -531,20 +861,76 @@ export function buildDeepSeekForecastExplanationRequest(
   const responseFormat = normalizeResponseFormat(options.responseFormat);
   const jsonOutputEnabled = options.jsonOutputEnabled ?? responseFormat === "json_object";
   const userPayload = {
-    task: "请基于 computedForecastFacts 输出摄影天气智能解读 JSON。",
+    task: "请基于 computedForecastFacts 输出专业风光摄影决策解读 JSON。",
     outputSchema: {
-      summary: "综合解读，一到两句话",
-      recommendation: "行动建议，一句话",
-      mainReasons: ["关键依据"],
-      mainRisks: ["主要风险"],
-      photographerAdvice: ["拍摄建议"],
-      backupPlan: ["备用方案"],
-      confidenceNote: "置信说明，必须说明若 isMock=true 则当前结果基于演示数据",
+      conclusion: {
+        titleZh: "报告标题",
+        summaryZh: "两到三句话总结天气大势和拍摄价值",
+        recommendedDayZh: "最建议冲哪一天，必须包含具体日期和理由",
+        recommendationLevelZh: "推荐等级",
+        whetherWorthDedicatedTripZh: "推荐专程前往/谨慎参考/不建议专程前往/已在附近可观察/仅作备选",
+        oneSentenceDecisionZh: "一句话出行决策",
+      },
+      bestPlan: {
+        primaryTargetZh: "主拍题材",
+        bestDateZh: "最佳日期",
+        bestWindowZh: "最佳窗口，必须包含完整日期和时间",
+        recommendedArrivalZh: "建议到达时间，必须包含完整日期和时间",
+        whyThisWindowZh: "为什么选这个窗口",
+        backupPlanZh: "备选窗口或备选题材",
+      },
+      weatherTrend: {
+        trendSummaryZh: "天气大势",
+        temperatureSummaryZh: "山顶估算温度区间和体感提示",
+        rainSummaryZh: "降水风险和主要降水时段",
+        windSummaryZh: "风速/阵风和机位影响",
+        transparencySummaryZh: "通透度和远山层次影响",
+      },
+      dayByDay: [
+        {
+          dateZh: "日期",
+          recommendationZh: "当天是否适合拍摄",
+          scoreZh: "分数描述",
+          temperatureZh: "温度",
+          rainZh: "降水",
+          cloudSeaZh: "云海机会/云海分数，不能编造概率",
+          glowZh: "日出/朝霞判断",
+          sunsetGlowZh: "日落/晚霞/日落后余晖判断",
+          astroZh: "星空/银河判断及天气阻断",
+          transparencyZh: "通透度",
+          bestWindowZh: "当天最佳窗口，必须包含完整日期和时间；没有则说明暂无",
+          actionZh: "绑定当天窗口/风险的行动建议",
+        },
+      ],
+      subjectAdvice: {
+        cloudSeaZh: "云海机会、白墙风险、形成条件",
+        sunriseGlowZh: "日出和朝霞是否有戏",
+        sunsetGlowZh: "日落、晚霞和日落后余晖是否有戏",
+        astroMilkyWayZh: "星空/银河是否有戏，必须说明天气阻断",
+        transparencyZh: "通透度对远山层次的影响",
+      },
+      riskAndGear: {
+        keyRisks: ["主要风险"],
+        clothingZh: "穿衣建议",
+        gearZh: "器材建议",
+        safetyZh: "安全和撤离建议",
+      },
+      finalAdvice: {
+        goNoGoZh: "最终去不去",
+        ifAlreadyNearbyZh: "如果已在山上/附近怎么做",
+        ifDedicatedTripZh: "如果需要专程出发是否值得",
+        nextCheckZh: "下次复核重点",
+      },
     },
     constraints: [
       "只解释 computedForecastFacts 中已有的确定性事实。",
       "不要计算、推断或改写天气、天文、地形、坐标、评分和服务商结果。",
       "不要生成输入中没有的小时级天气、天文窗口或分数。",
+      "不要说云海概率，除非输入事实明确提供概率；优先使用云海机会、云海分数、形成条件。",
+      "必须区分日出、朝霞、日落、晚霞和日落后余晖；夜间或傍晚窗口不得写成朝霞。",
+      "有天文窗口不代表能拍银河；如果云量、低云、降水或通透度不支持，必须明确不建议专程。",
+      "重要窗口必须输出完整日期和时间，例如 2026年5月28日 04:07–06:07。",
+      "每条建议必须绑定具体日期、窗口、题材或风险，不要泛泛而谈。",
       "如果 isMock=true，必须明确这是演示数据解读，只适合体验分析流程和规划参考。",
       "输出 JSON only。",
     ],
@@ -592,22 +978,293 @@ export function buildDeepSeekForecastExplanationRequest(
 export function createRuleBasedForecastExplanation(
   result: ForecastCalculationResult,
 ): ForecastAiExplanation {
+  const timezone = result.calendarBasis.timezone;
+  const bestWindow = result.bestWindows.find(isExecutableWindow) ?? result.bestWindows[0];
+  const backupWindow = result.bestWindows.find((window) => window !== bestWindow);
+  const bestDaily = bestDailySummaryForPlan(result, bestWindow);
+  const dedicatedDecision = dedicatedTripDecisionZh(result, bestDaily);
+  const clothing = [
+    result.clothingGuide.summaryZh,
+    ...result.clothingGuide.layers.slice(0, 2),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const gear = [
+    ...result.clothingGuide.accessories.slice(0, 3),
+    ...result.clothingGuide.riskNotes.slice(0, 2),
+  ]
+    .filter(Boolean)
+    .join("、");
+
   return {
-    summary: result.summary,
-    recommendation: result.recommendationLabel,
-    mainReasons: result.keyReasons.slice(0, 5),
-    mainRisks: result.riskFlags.slice(0, 5).map((risk) => `${risk.label}：${risk.description}`),
-    photographerAdvice: result.photographyAdvice.slice(0, 5),
-    backupPlan:
-      result.bestWindows.length > 1
-        ? result.bestWindows
-            .slice(1, 4)
-            .map((window) => `备选 ${window.label}，分值 ${window.score}，仍需现场确认。`)
-        : ["若现场云量、降水或风力与模拟结果不一致，优先选择近距离机位并保留撤离时间。"],
-    confidenceNote: result.isMock
-      ? "当前解读基于演示天气和地形数据，仅用于体验分析流程；正式数据源启用后再用于出行前复核。"
-      : "当前解读基于已接入的数据源和确定性评分结果，仍需结合现场安全与最新预报复核。",
+    conclusion: {
+      titleZh: `${result.place.name}摄影天气决策`,
+      summaryZh: `${result.summary} ${forecastTrendSummary(result)}`,
+      recommendedDayZh: bestDaily
+        ? `最值得关注的是 ${bestDaily.dateLabelZh}，${bestDaily.bestShootableWindow ? `${windowLabelZh(bestDaily.bestShootableWindow)} ${formatShootingWindowZh(bestDaily.bestShootableWindow, timezone)}` : bestDaily.shortAdvice}`
+        : "暂无足够逐日数据，先参考确定性评分和窗口列表。",
+      recommendationLevelZh: result.recommendationLabel,
+      whetherWorthDedicatedTripZh: dedicatedDecision,
+      oneSentenceDecisionZh: `${dedicatedDecision}；优先看${bestWindow ? `${windowLabelZh(bestWindow)} ${formatShootingWindowZh(bestWindow, timezone)}` : "后续天气更新"}。`,
+    },
+    bestPlan: {
+      primaryTargetZh: bestWindow ? windowLabelZh(bestWindow) : bestSubjectFromScores(result),
+      bestDateZh: bestDaily?.dateLabelZh ?? bestWindow?.date ?? "日期待复核",
+      bestWindowZh: bestWindow
+        ? formatShootingWindowZh(bestWindow, timezone)
+        : "暂无高确定性拍摄窗口",
+      recommendedArrivalZh: bestWindow?.arrivalAdvice
+        ? formatArrivalDeadlineZh(bestWindow.arrivalAdvice.recommendedArrivalTime, timezone)
+        : bestWindow
+          ? `建议在 ${formatShootingWindowZh(bestWindow, timezone)} 前预留机位和取景时间`
+          : "暂无明确到达时间",
+      whyThisWindowZh:
+        bestWindow?.copyReasonZh ??
+        bestWindow?.practicalNoteZh ??
+        result.keyReasons[0] ??
+        "当前窗口在确定性评分中排序靠前。",
+      backupPlanZh: backupWindow
+        ? `${windowLabelZh(backupWindow)} ${formatShootingWindowZh(backupWindow, timezone)}`
+        : "若主窗口不成立，转向近景、云层纹理或等待下一轮短临预报。",
+    },
+    weatherTrend: {
+      trendSummaryZh: forecastTrendSummary(result),
+      temperatureSummaryZh: temperatureTrendSummary(result),
+      rainSummaryZh: rainTrendSummary(result),
+      windSummaryZh: windTrendSummary(result),
+      transparencySummaryZh: transparencyTrendSummary(result),
+    },
+    dayByDay: takeItems(result.dailySummaries, 5).map((summary) =>
+      deterministicDayExplanation(result, summary, timezone),
+    ),
+    subjectAdvice: {
+      cloudSeaZh: `${scoreSentence(result.scores.cloudSea)} 白墙风险 ${result.scores.whiteoutRisk.score} 分，重点复核低云厚度、湿度、风和能见度。`,
+      sunriseGlowZh: `${scoreSentence(result.scores.sunriseGlow)} 日出前后需要看东方低云遮挡和中高云承载色彩。`,
+      sunsetGlowZh: `${scoreSentence(result.scores.sunsetGlow)} 傍晚必须区分日落暖光、晚霞和日落后余晖，现场看西向云层开口。`,
+      astroMilkyWayZh: astroAdviceZh(result),
+      transparencyZh: `${scoreSentence(result.scores.transparency)} 通透度会直接影响远山层次、长焦山脊和银河暗部细节。`,
+    },
+    riskAndGear: {
+      keyRisks:
+        result.riskFlags.length > 0
+          ? takeItems(result.riskFlags, 6).map((risk) => `${risk.label}：${risk.description}`)
+          : ["暂无高等级风险，但山地天气仍需出发前复核。"],
+      clothingZh: clothing || result.clothingGuide.titleZh,
+      gearZh: gear || "建议带防风外套、防潮袋、头灯、备用电池和镜头布。",
+      safetyZh:
+        bestWindow?.arrivalAdvice?.warningZh ??
+        "山地机位保留撤离时间，遇到强风、雷雨、低能见度或道路风险时不要硬等窗口。",
+    },
+    finalAdvice: {
+      goNoGoZh: `${dedicatedDecision}。${result.keyReasons[0] ?? result.summary}`,
+      ifAlreadyNearbyZh: nearbyDecisionZh(result, bestDaily),
+      ifDedicatedTripZh: dedicatedDecision.includes("推荐")
+        ? "可以把主窗口作为计划核心，但出发前仍要复核短临降水、低云和风。"
+        : "不建议只为单一窗口远途出发，除非还有住宿、机位和备选题材支撑。",
+      nextCheckZh: "下次重点复核短临降水、低云高度、能见度、阵风和主窗口前后云层开口。",
+    },
+    metadata: {
+      source: "deterministic_fallback",
+      noteZh: result.isMock
+        ? "基于演示天气和地形数据生成，仅用于体验分析流程。"
+        : "基于确定性计算结果生成的简版解读。",
+    },
   };
+}
+
+function bestDailySummaryForPlan(
+  result: ForecastCalculationResult,
+  bestWindow: ForecastCalculationResult["bestWindows"][number] | undefined,
+): ForecastCalculationResult["dailySummaries"][number] | undefined {
+  if (bestWindow) {
+    const matchingDay = result.dailySummaries.find((summary) => summary.date === bestWindow.date);
+    if (matchingDay) {
+      return matchingDay;
+    }
+  }
+
+  return (
+    result.dailySummaries.find((summary) => summary.bestShootableWindow) ??
+    [...result.dailySummaries].sort(
+      (left, right) =>
+        (right.practicalTripScore ?? right.score) - (left.practicalTripScore ?? left.score),
+    )[0]
+  );
+}
+
+function deterministicDayExplanation(
+  result: ForecastCalculationResult,
+  summary: ForecastCalculationResult["dailySummaries"][number],
+  timezone: string,
+): ForecastAiExplanation["dayByDay"][number] {
+  const breakdown = result.targetDailyBreakdown.find((item) => item.date === summary.date);
+  const bestWindow = summary.bestShootableWindow ?? summary.keyWindows.find(isExecutableWindow);
+
+  return {
+    dateZh: summary.dateLabelZh,
+    recommendationZh: summary.dedicatedTripRecommendation ?? summary.recommendationLabel,
+    scoreZh: `综合 ${summary.score} 分`,
+    temperatureZh: summary.weather
+      ? formatTemperatureRange(summary.weather.tempMin, summary.weather.tempMax)
+      : "温度待复核",
+    rainZh: summary.weather ? `${rainRiskSummaryZh(summary.weather)}；${rainTimingSummaryZh(summary.weather)}` : "降水待复核",
+    cloudSeaZh: dailyMetricZh(breakdown?.cloudSea),
+    glowZh: dailyMetricZh(breakdown?.sunriseGlow),
+    sunsetGlowZh: dailyMetricZh(breakdown?.sunsetGlow),
+    astroZh: [
+      dailyMetricZh(breakdown?.stars),
+      dailyMetricZh(breakdown?.milkyWay),
+      result.astroAnalysis.weatherBlockers[0]
+        ? `天气阻断：${result.astroAnalysis.weatherBlockers[0]}`
+        : "仍需结合云量和月光复核",
+    ].join("；"),
+    transparencyZh: dailyMetricZh(breakdown?.transparency),
+    bestWindowZh: bestWindow
+      ? `${windowLabelZh(bestWindow)} ${formatShootingWindowZh(bestWindow, timezone)}`
+      : "暂无高确定性拍摄窗口",
+    actionZh:
+      summary.dedicatedTripAdviceZh ??
+      summary.nearbyObservationAdviceZh ??
+      summary.shortAdvice ??
+      "出发前复核短临天气和现场安全。",
+  };
+}
+
+function isExecutableWindow(window: ForecastCalculationResult["bestWindows"][number]): boolean {
+  return (
+    window.executableForDedicatedTrip === true ||
+    (window.practicalKind !== "formation_signal" &&
+      window.recommendationLevel !== "backup" &&
+      window.recommendationLevel !== "not_recommended" &&
+      window.windowLevel !== "blocked")
+  );
+}
+
+function forecastTrendSummary(result: ForecastCalculationResult): string {
+  const firstWeather = result.dailySummaries[0]?.weather;
+  const lastWeather = result.dailySummaries[result.dailySummaries.length - 1]?.weather;
+  const cloudText =
+    typeof firstWeather?.cloudTotal === "number" || typeof lastWeather?.cloudTotal === "number"
+      ? `云量从 ${formatPercent(firstWeather?.cloudTotal)} 到 ${formatPercent(lastWeather?.cloudTotal)}，需要看云层开口。`
+      : "云量趋势待复核，需结合短临云图。";
+  return `未来 ${result.calendarBasis.forecastRangeLabel} 整体按${result.recommendationLabel}处理，${cloudText}`;
+}
+
+function temperatureTrendSummary(result: ForecastCalculationResult): string {
+  const ranges = result.dailySummaries
+    .map((summary) => summary.weather)
+    .filter(
+      (
+        weather,
+      ): weather is NonNullable<ForecastCalculationResult["dailySummaries"][number]["weather"]> =>
+        Boolean(weather),
+    )
+    .map((weather) => [weather.tempMin, weather.tempMax] as const);
+  const values = ranges.flat().filter((value): value is number => typeof value === "number");
+  if (values.length === 0) {
+    return "山顶估算温度待复核，清晨和夜间按偏凉处理。";
+  }
+  return `山顶估算温度约 ${Math.round(Math.min(...values))}-${Math.round(Math.max(...values))}°C，清晨体感偏凉，按山地防风准备。`;
+}
+
+function rainTrendSummary(result: ForecastCalculationResult): string {
+  const rainyDays = result.dailySummaries
+    .map((summary) => summary.weather)
+    .filter((weather) => {
+      const amount = precipitationAmountMm(weather);
+      return amount !== null && amount > 0.3;
+    });
+  if (rainyDays.length === 0) {
+    return "降水信号不明显，主要变量转为云层开口、低云和通透度。";
+  }
+  const strongest = rainyDays
+    .map((weather) => ({ weather, amount: precipitationAmountMm(weather) ?? 0 }))
+    .sort((left, right) => right.amount - left.amount)[0]?.weather;
+  return `${rainRiskSummaryZh(strongest)}；${rainTimingSummaryZh(strongest)}。`;
+}
+
+function windTrendSummary(result: ForecastCalculationResult): string {
+  const gusts = result.dailySummaries
+    .map((summary) => summary.weather?.windGust)
+    .filter((value): value is number => typeof value === "number");
+  const speeds = result.dailySummaries
+    .map((summary) => summary.weather?.windSpeed)
+    .filter((value): value is number => typeof value === "number");
+  if (gusts.length === 0 && speeds.length === 0) {
+    return "风力待复核，山顶机位仍需按防风和保暖准备。";
+  }
+  const maxGust = gusts.length > 0 ? Math.max(...gusts) : undefined;
+  const maxSpeed = speeds.length > 0 ? Math.max(...speeds) : undefined;
+  return `最大风速约 ${formatWindValue(maxSpeed, maxGust)}，山顶三脚架稳定和风寒要提前考虑。`;
+}
+
+function transparencyTrendSummary(result: ForecastCalculationResult): string {
+  const scores = result.dailySummaries
+    .map((summary) => summary.weather?.photographyTransparencyScore)
+    .filter((value): value is number => typeof value === "number");
+  if (scores.length === 0) {
+    return `${scoreSentence(result.scores.transparency)} 能见度字段不足时，远山层次需要现场复核。`;
+  }
+  const avg = scores.reduce((sum, value) => sum + value, 0) / scores.length;
+  return `平均通透度约 ${Math.round(avg)} 分；湿度、低云和能见度会影响远山层次。`;
+}
+
+function scoreSentence(score: ForecastCalculationResult["scores"][keyof ForecastCalculationResult["scores"]]): string {
+  return `${score.label} ${Math.round(score.score)} 分，${score.reasons[0] ?? "仍需现场复核"}`;
+}
+
+function bestSubjectFromScores(result: ForecastCalculationResult): string {
+  return [
+    result.scores.cloudSea,
+    result.scores.sunriseGlow,
+    result.scores.sunsetGlow,
+    result.scores.milkyWay,
+    result.scores.transparency,
+  ].sort((left, right) => right.score - left.score)[0]?.label ?? "综合题材";
+}
+
+function dedicatedTripDecisionZh(
+  result: ForecastCalculationResult,
+  day: ForecastCalculationResult["dailySummaries"][number] | undefined,
+): string {
+  if (day?.dedicatedTripRecommendation) {
+    return day.dedicatedTripRecommendation;
+  }
+  if (result.recommendationLabel.includes("不建议")) {
+    return "不建议专程前往";
+  }
+  if (result.recommendationLabel.includes("谨慎")) {
+    return "谨慎参考";
+  }
+  if (result.overallScore >= 70) {
+    return "推荐专程前往";
+  }
+  return "仅作备选";
+}
+
+function nearbyDecisionZh(
+  result: ForecastCalculationResult,
+  day: ForecastCalculationResult["dailySummaries"][number] | undefined,
+): string {
+  if (day?.nearbyObservationAdviceZh) {
+    return day.nearbyObservationAdviceZh;
+  }
+  if (day?.nearbyObservationRecommendation) {
+    return `${day.nearbyObservationRecommendation}，优先短时观察云层、低云和雨隙变化。`;
+  }
+  return "如果已经在山上或附近，可短时观察云层开口；不要为单一信号持续消耗体力。";
+}
+
+function astroAdviceZh(result: ForecastCalculationResult): string {
+  const blockers = result.astroAnalysis.weatherBlockers;
+  if (!result.astroAnalysis.astroShootable || blockers.length > 0) {
+    return `有天文窗口不代表能拍银河；当前星空 ${result.scores.stars.score} 分、银河 ${result.scores.milkyWay.score} 分，主要阻断为${blockers.slice(0, 2).join("、") || "云量、月光或通透度待复核"}，不建议只为银河专程。`;
+  }
+  return `星空 ${result.scores.stars.score} 分、银河 ${result.scores.milkyWay.score} 分，可纳入计划，但仍需复核云量、月光和夜间通行安全。`;
+}
+
+function formatPercent(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value)}%` : "待复核";
 }
 
 export class DeepSeekProvider implements AIProvider {
@@ -728,7 +1385,13 @@ export class DeepSeekProvider implements AIProvider {
     });
     const parsed = await this.request(request);
 
-    return this.validateJsonOutput(forecastAiExplanationSchema, parsed);
+    const explanation = this.validateJsonOutput(forecastAiExplanationSchema, parsed);
+    return {
+      ...explanation,
+      metadata: explanation.metadata ?? {
+        source: "deepseek",
+      },
+    };
   }
 
   async testConnection(): Promise<{ readonly message: string }> {
@@ -768,6 +1431,13 @@ export class DeepSeekProvider implements AIProvider {
         throw deepSeekError({
           errorCategory: "parse_error",
           messageZh: "DeepSeek 返回格式异常。",
+          cause: error,
+        });
+      }
+      if (error instanceof z.ZodError) {
+        throw deepSeekError({
+          errorCategory: "parse_error",
+          messageZh: "DeepSeek 返回结构不符合解读要求。",
           cause: error,
         });
       }

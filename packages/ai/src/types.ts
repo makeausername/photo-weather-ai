@@ -26,13 +26,66 @@ export type DecisionCardInput = {
 };
 
 export type ForecastAiExplanation = {
-  readonly summary: string;
-  readonly recommendation: string;
-  readonly mainReasons: readonly string[];
-  readonly mainRisks: readonly string[];
-  readonly photographerAdvice: readonly string[];
-  readonly backupPlan: readonly string[];
-  readonly confidenceNote: string;
+  readonly conclusion: {
+    readonly titleZh: string;
+    readonly summaryZh: string;
+    readonly recommendedDayZh: string;
+    readonly recommendationLevelZh: string;
+    readonly whetherWorthDedicatedTripZh: string;
+    readonly oneSentenceDecisionZh: string;
+  };
+  readonly bestPlan: {
+    readonly primaryTargetZh: string;
+    readonly bestDateZh: string;
+    readonly bestWindowZh: string;
+    readonly recommendedArrivalZh: string;
+    readonly whyThisWindowZh: string;
+    readonly backupPlanZh: string;
+  };
+  readonly weatherTrend: {
+    readonly trendSummaryZh: string;
+    readonly temperatureSummaryZh: string;
+    readonly rainSummaryZh: string;
+    readonly windSummaryZh: string;
+    readonly transparencySummaryZh: string;
+  };
+  readonly dayByDay: readonly {
+    readonly dateZh: string;
+    readonly recommendationZh: string;
+    readonly scoreZh: string;
+    readonly temperatureZh: string;
+    readonly rainZh: string;
+    readonly cloudSeaZh: string;
+    readonly glowZh: string;
+    readonly sunsetGlowZh: string;
+    readonly astroZh: string;
+    readonly transparencyZh: string;
+    readonly bestWindowZh: string;
+    readonly actionZh: string;
+  }[];
+  readonly subjectAdvice: {
+    readonly cloudSeaZh: string;
+    readonly sunriseGlowZh: string;
+    readonly sunsetGlowZh: string;
+    readonly astroMilkyWayZh: string;
+    readonly transparencyZh: string;
+  };
+  readonly riskAndGear: {
+    readonly keyRisks: readonly string[];
+    readonly clothingZh: string;
+    readonly gearZh: string;
+    readonly safetyZh: string;
+  };
+  readonly finalAdvice: {
+    readonly goNoGoZh: string;
+    readonly ifAlreadyNearbyZh: string;
+    readonly ifDedicatedTripZh: string;
+    readonly nextCheckZh: string;
+  };
+  readonly metadata?: {
+    readonly source: "deepseek" | "deterministic_fallback";
+    readonly noteZh?: string;
+  };
 };
 
 export type ForecastExplanationInput = {

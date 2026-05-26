@@ -118,7 +118,7 @@ describe("DeepSeek runtime resolver", () => {
         {
           ...baseProvider,
           configJson: {
-            model: "deepseek-v4-flash",
+            model: "legacy-fast-model",
           },
         },
         {

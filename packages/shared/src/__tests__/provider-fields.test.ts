@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 import {
   getDeepSeekModeRuntimeDefaults,
   deepSeekModelOptions,
@@ -131,6 +131,6 @@ describe("provider field presets", () => {
     });
     expect(normalizeDeepSeekAnalysisMode(undefined, "deepseek-chat")).toBe("professional");
     expect(normalizeDeepSeekAnalysisMode(undefined, "deepseek-reasoner")).toBe("professional");
-    expect(normalizeDeepSeekAnalysisMode("fast", "deepseek-v4-flash")).toBe("professional");
+    expect(normalizeDeepSeekAnalysisMode("fast", "legacy-fast-model")).toBe("professional");
   });
 });

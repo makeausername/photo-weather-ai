@@ -21,7 +21,7 @@ function createFakeClient(): DatabaseClient {
     displayName: "DeepSeek",
     enabled: false,
     priority: 100,
-    configJson: { model: "deepseek-v4-flash" },
+    configJson: { model: "legacy-fast-model" },
     secretJson: { apiKey: "sk-1234567890" },
     maskedSecretJson: null,
     createdAt: now,
@@ -191,7 +191,7 @@ describe("provider config helpers", () => {
     expect(updated).toMatchObject({
       enabled: true,
       configJson: {
-        model: "deepseek-v4-flash",
+        model: "legacy-fast-model",
         retry: { maxAttempts: 2 },
       },
       maskedSecretJson: { apiKey: "new-****alue" },

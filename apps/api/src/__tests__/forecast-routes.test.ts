@@ -1423,13 +1423,17 @@ describe("forecast query validation route", () => {
     expect(response.statusCode).toBe(200);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(body.aiExplanation).toMatchObject({
-      summary: expect.any(String),
-      recommendation: expect.any(String),
-      confidenceNote: expect.stringContaining("演示天气和地形数据"),
+      conclusion: expect.objectContaining({
+        summaryZh: expect.any(String),
+        recommendedDayZh: expect.any(String),
+      }),
+      metadata: expect.objectContaining({
+        source: "deterministic_fallback",
+      }),
     });
   });
 
-  it("returns a Chinese error when DeepSeek real call is enabled without a key", async () => {
+  it("returns a deterministic fallback when DeepSeek real call is enabled without a key", async () => {
     const fetchMock = vi.fn(() => {
       throw new Error("real network calls are disabled in forecast tests");
     });
@@ -1464,12 +1468,22 @@ describe("forecast query validation route", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
-      success: false,
+      success: true,
+      fallback: true,
       errorCategory: "disabled",
-      messageZh: "请先填写 DeepSeek API Key。",
+      messageZh: "基于确定性计算结果生成的简版解读。",
       retryable: false,
       error: "provider_key_missing",
-      message: "请先填写 DeepSeek API Key。",
+      explanation: expect.objectContaining({
+        conclusion: expect.objectContaining({
+          recommendedDayZh: expect.any(String),
+        }),
+      }),
+      diagnostics: expect.objectContaining({
+        model: "deepseek-v4-pro",
+        parseSuccess: false,
+        fallback: true,
+      }),
     });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(response.body).not.toContain("secretJson");
@@ -1488,7 +1502,7 @@ describe("forecast query validation route", () => {
       configJson: {
         ...(provider.configJson ?? {}),
         realCallEnabled: true,
-        model: "deepseek-v4-flash",
+        model: "legacy-fast-model",
       },
       secretJson: {
         apiKey: "deepseek-secret",
@@ -1519,7 +1533,9 @@ describe("forecast query validation route", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       aiExplanation: expect.objectContaining({
-        summary: expect.any(String),
+        conclusion: expect.objectContaining({
+          summaryZh: expect.any(String),
+        }),
       }),
     });
     expect(fetchMock).not.toHaveBeenCalled();
@@ -1539,7 +1555,7 @@ describe("forecast query validation route", () => {
       configJson: {
         ...(provider.configJson ?? {}),
         realCallEnabled: true,
-        model: "deepseek-v4-flash",
+        model: "legacy-fast-model",
         timeoutMs: 60000,
       },
       secretJson: {
@@ -1567,17 +1583,101 @@ describe("forecast query validation route", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
-      success: false,
+      success: true,
+      fallback: true,
       errorCategory: "timeout",
       retryable: true,
       error: "ai_explanation_timeout",
-      messageZh: expect.stringContaining("DeepSeek"),
+      messageZh: "基于确定性计算结果生成的简版解读。",
+      explanation: expect.objectContaining({
+        conclusion: expect.objectContaining({
+          recommendedDayZh: expect.any(String),
+        }),
+      }),
       diagnostics: expect.objectContaining({
         model: "deepseek-v4-pro",
         timeoutMs: 60000,
         promptSizeChars: expect.any(Number),
+        parseSuccess: false,
+        fallback: true,
       }),
-      message: expect.stringContaining("DeepSeek"),
+      message: "基于确定性计算结果生成的简版解读。",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(response.body).not.toContain("deepseek-secret");
+  });
+
+  it("falls back to deterministic interpretation when DeepSeek JSON parsing fails", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: "{not-json",
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const provider = state.providers.get("ai:deepseek");
+    state.providers.set("ai:deepseek", {
+      ...provider,
+      enabled: true,
+      configJson: {
+        ...(provider.configJson ?? {}),
+        realCallEnabled: true,
+        model: "legacy-fast-model",
+      },
+      secretJson: {
+        apiKey: "deepseek-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "deep****cret",
+      },
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/ai-explain",
+      payload: validPayload,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: true,
+      fallback: true,
+      errorCategory: "parse_error",
+      messageZh: "基于确定性计算结果生成的简版解读。",
+      explanation: expect.objectContaining({
+        conclusion: expect.objectContaining({
+          recommendedDayZh: expect.any(String),
+        }),
+      }),
+      diagnostics: expect.objectContaining({
+        model: "deepseek-v4-pro",
+        parseSuccess: false,
+        fallback: true,
+        errorCategory: "parse_error",
+      }),
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(response.body).not.toContain("deepseek-secret");

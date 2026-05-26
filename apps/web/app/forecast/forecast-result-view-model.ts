@@ -23,6 +23,12 @@ import {
   type GlowWindow,
   type PhotographyPrecipitationRisk,
 } from "@photo-weather/shared";
+import {
+  bestShootableWindowText,
+  recommendationLevelText,
+  watchableWindowText,
+  windowLabelText,
+} from "./forecast-copy";
 
 export type ForecastResultModuleKey =
   | "overall"
@@ -897,32 +903,20 @@ function buildDailyItems(result: ForecastCalculationResult): readonly ForecastRe
     dateLabel: summary.dateLabelZh,
     score: summary.score,
     recommendationLabel: summary.recommendationLabel,
-    bestWindowLabel:
-      summary.bestShootableWindow?.subjectPriorityLabel ??
-      summary.bestShootableWindow?.label ??
-      (result.target === "cloud_sea"
+    bestWindowLabel: summary.bestShootableWindow
+      ? windowLabelText(summary.bestShootableWindow)
+      : result.target === "cloud_sea"
         ? "暂无清晨云海窗口"
         : result.target === "glow"
           ? "暂无晨昏窗口"
           : result.target === "astro"
             ? "暂无夜间窗口"
-            : "暂无高确定性拍摄窗口"),
+            : "暂无高确定性拍摄窗口",
     bestShootableWindowLabel: summary.bestShootableWindow
-      ? `${summary.bestShootableWindow.subjectPriorityLabel ?? summary.bestShootableWindow.label} ${formatShootingWindowZh(summary.bestShootableWindow, result.calendarBasis.timezone, { style: "compact" })}`
+      ? bestShootableWindowText(summary, result.calendarBasis.timezone)
       : "暂无高确定性拍摄窗口",
     watchableWindowLabel: summary.watchableWindows?.[0]
-      ? `${summary.watchableWindows[0].subject}${
-          summary.watchableWindows[0].startTime && summary.watchableWindows[0].endTime
-              ? ` ${formatShootingWindowZh(
-                  {
-                    startTime: summary.watchableWindows[0].startTime,
-                    endTime: summary.watchableWindows[0].endTime,
-                  },
-                  result.calendarBasis.timezone,
-                  { style: "compact" },
-              )}`
-            : ""
-        }`
+      ? watchableWindowText(summary, result.calendarBasis.timezone)
       : undefined,
     mainPrecipitationPeriodLabel: summary.weather?.mainPrecipitationPeriodLabelZh,
     riskLabel:
@@ -2291,42 +2285,17 @@ function mapResultWindows(
 }
 
 function displayWindowLabel(window: ForecastTimeWindow): string {
-  if (window.subjectPriorityLabel) {
-    if (window.target === "astro" && (window.weatherBlockers?.length ?? 0) > 0) {
-      return "天文窗口";
-    }
-    return window.subjectPriorityLabel;
-  }
-
-  const labelWithoutTime = window.label
-    .replace(/\s*\d{1,2}:\d{2}\s*[-–至到]\s*\d{1,2}:\d{2}\s*/g, "")
-    .trim();
-
-  if (window.target === "astro" && (window.weatherBlockers?.length ?? 0) > 0) {
-    return "天文窗口";
-  }
-  if (window.target === "astro" && labelWithoutTime.includes("银河")) {
+  const label = windowLabelText(window);
+  if (window.target === "astro" && label.includes("银河") && (window.weatherBlockers?.length ?? 0) === 0) {
     return "银河可拍窗口";
   }
-  return labelWithoutTime || window.label;
+  return label;
 }
 
 function windowRecommendationLevelLabel(
   level: ForecastWindowRecommendationLevel | undefined,
 ): string {
-  if (level === "recommended") {
-    return "推荐";
-  }
-  if (level === "cautious") {
-    return "谨慎参考";
-  }
-  if (level === "backup") {
-    return "仅作备选";
-  }
-  if (level === "not_recommended") {
-    return "不建议专程前往";
-  }
-  return "谨慎参考";
+  return recommendationLevelText(level);
 }
 
 function windowLevelLabel(level: ForecastTimeWindow["windowLevel"]): string {

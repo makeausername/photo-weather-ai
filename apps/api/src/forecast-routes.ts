@@ -208,24 +208,33 @@ export function registerForecastRoutes(
       !runtimeDeepSeek.realCallEnabled ||
       !runtimeDeepSeek.apiKeyPresent
     ) {
-      if (runtimeDeepSeek?.realCallEnabled && !runtimeDeepSeek.apiKeyPresent) {
-        return reply.send({
-          success: false,
-          errorCategory: "disabled",
-          messageZh: "请先填写 DeepSeek API Key。",
-          retryable: false,
-          error: "provider_key_missing",
-          message: "请先填写 DeepSeek API Key。",
-        });
-      }
-
-      return reply.send({
-        success: false,
+      request.log.info({
+        route: "/forecast/ai-explain",
+        model: runtimeDeepSeek?.model ?? "deepseek-v4-pro",
+        timeoutMs: runtimeDeepSeek?.timeoutMs ?? 90000,
+        promptSizeChars: -1,
+        latencyMs: 0,
+        parseSuccess: false,
         errorCategory: "disabled",
-        messageZh: "DeepSeek 智能解读未启用，确定性分析结果已保留。",
+      });
+      return reply.send({
+        success: true,
+        fallback: true,
+        explanation: createRuleBasedForecastExplanation(result),
+        errorCategory: "disabled",
+        messageZh: "基于确定性计算结果生成的简版解读。",
         retryable: false,
-        error: "ai_explanation_not_enabled",
-        message: "DeepSeek 智能解读未启用，请先在后台启用 DeepSeek 服务商和真实调用。",
+        error: runtimeDeepSeek?.realCallEnabled && !runtimeDeepSeek.apiKeyPresent
+          ? "provider_key_missing"
+          : "ai_explanation_not_enabled",
+        message: "基于确定性计算结果生成的简版解读。",
+        diagnostics: {
+          model: runtimeDeepSeek?.model ?? "deepseek-v4-pro",
+          timeoutMs: runtimeDeepSeek?.timeoutMs ?? 90000,
+          promptSizeChars: -1,
+          parseSuccess: false,
+          fallback: true,
+        },
       });
     }
 
@@ -249,6 +258,8 @@ export function registerForecastRoutes(
         promptSizeChars,
         latencyMs: Date.now() - startedAt,
         attempts: retryResult.attempts,
+        parseSuccess: true,
+        errorCategory: null,
       });
 
       return reply.send({
@@ -259,6 +270,7 @@ export function registerForecastRoutes(
           timeoutMs: runtimeDeepSeek.timeoutMs,
           promptSizeChars,
           attempts: retryResult.attempts,
+          parseSuccess: true,
         },
       });
     } catch (error) {
@@ -269,20 +281,26 @@ export function registerForecastRoutes(
         timeoutMs: runtimeDeepSeek.timeoutMs,
         promptSizeChars,
         latencyMs: Date.now() - startedAt,
+        parseSuccess: false,
         errorCategory: normalized.errorCategory,
       });
       return reply.send({
-        success: false,
+        success: true,
+        fallback: true,
+        explanation: createRuleBasedForecastExplanation(result),
         errorCategory: normalized.errorCategory,
-        messageZh: normalized.messageZh,
+        messageZh: "基于确定性计算结果生成的简版解读。",
         retryable: normalized.retryable,
         error: normalized.error,
-        message: normalized.message,
+        message: "基于确定性计算结果生成的简版解读。",
         diagnostics: {
           model: runtimeDeepSeek.model,
           timeoutMs: runtimeDeepSeek.timeoutMs,
           promptSizeChars,
           latencyMs: Date.now() - startedAt,
+          parseSuccess: false,
+          fallback: true,
+          errorCategory: normalized.errorCategory,
         },
       });
     }

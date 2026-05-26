@@ -1388,7 +1388,8 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("星空可拍性 66分");
     expect(html).toContain("银河可拍性 68分");
     expect(html).toContain("最佳窗口");
-    expect(html).toContain("建议：当天有可优先关注的拍摄窗口。");
+    expect(html).toContain("优先关注清晨云海窗口");
+    expect(html).not.toContain("建议：当天有可优先关注的拍摄窗口。");
     expect(html).not.toMatch(/(?:^|\s)(?:w|min-w)-\[(?:[1-9]\d{3,})px\]/);
   });
 
@@ -1425,7 +1426,7 @@ describe("forecast result target-aware view model", () => {
       }),
     );
 
-    expect(html).toContain("降水风险：中，预计 9.9 mm");
+    expect(html).toContain("中，预计 9.9 mm");
     expect(html).toContain("小雨转小雨，拍摄窗口可能被打断");
     expect(html).not.toContain("降水概率 0%");
     expect(html).not.toContain("概率 0%，预计 9.9 mm");
@@ -1713,6 +1714,82 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("0%｜预计 32.2 mm");
   });
 
+  it("deduplicates general result copy and fixes evening glow labels", () => {
+    const base = resultForTarget("general");
+    const result: ForecastCalculationResult = {
+      ...base,
+      bestWindows: [
+        {
+          ...base.bestWindows[2]!,
+          label: "朝霞峰值窗口 19:01 - 19:28",
+          startTime: "2026-05-20T19:01:00+08:00",
+          endTime: "2026-05-20T19:28:00+08:00",
+          subjectPriorityLabel: "朝霞",
+          lightPhase: "blue_hour",
+          target: "glow",
+          recommendationLevel: "recommended",
+          windowLevel: "best",
+          practicalScore: 76,
+          conditionScore: 80,
+          executableForDedicatedTrip: true,
+        },
+        ...base.bestWindows,
+      ],
+      dailySummaries: base.dailySummaries.map((summary, index) =>
+        index === 0
+          ? {
+              ...summary,
+              bestShootableWindow: {
+                ...base.bestWindows[2]!,
+                label: "朝霞峰值窗口 19:01 - 19:28",
+                startTime: "2026-05-20T19:01:00+08:00",
+                endTime: "2026-05-20T19:28:00+08:00",
+                subjectPriorityLabel: "朝霞",
+                lightPhase: "blue_hour",
+                target: "glow",
+              },
+              weather: {
+                ...summary.weather!,
+                precipitationAmountMm: 18.8,
+                rainAmountMm: 18.8,
+                precipitationRisk: {
+                  precipitationProbabilityPercent: 78,
+                  precipitationAmountMm: 18.8,
+                  rainRiskLevel: "high",
+                  rainRiskLabelZh: "高",
+                  affectedWindows: ["夜间", "上午"],
+                  recommendationZh: "降水干扰明显，清晨窗口需要等待雨后短暂开口。",
+                },
+                mainPrecipitationPeriodLabelZh: "主要降水：夜间、上午",
+              },
+            }
+          : summary,
+      ),
+    };
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "idle",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("降水风险");
+    expect(html).toContain("高，预计 18.8 mm");
+    expect(html).toContain("夜间至上午");
+    expect(html).toContain("日落后余晖");
+    expect(html).not.toContain("降水风险：降水风险");
+    expect(html).not.toContain("主要降水：主要降水");
+    expect(html).not.toContain("建议：建议");
+    expect(html).not.toContain("夜间、上午");
+    expect(html).not.toContain("朝霞 2026年5月20日 19:01");
+  });
+
   it("keeps deterministic analysis visible when the optional DeepSeek interpretation times out", () => {
     const result = resultForTarget("general");
     const viewModel = buildForecastResultViewModel(result, "general");
@@ -1723,16 +1800,104 @@ describe("forecast result target-aware view model", () => {
         viewModel,
         aiStatus: "error",
         aiExplanation: null,
-        aiErrorMessage: "DeepSeek 解读暂时超时，已保留确定性分析结果，可稍后重试。",
+        aiErrorMessage: "智能解读暂时超时，确定性判断结果仍可正常参考，可稍后重试。",
         onGenerateAiExplanation: vi.fn(),
       }),
     );
 
-    expect(html).toContain("DeepSeek 解读暂时超时，已保留确定性分析结果，可稍后重试。");
+    expect(html).toContain("智能解读暂时超时，确定性判断结果仍可正常参考，可稍后重试。");
     expect(html).toContain("综合出片指数");
     expect(html).toContain("逐日拍摄判断");
     expect(html).toContain("出行建议");
     expect(html).not.toContain("分析失败");
+  });
+
+  it("renders structured intelligent interpretation sections and deterministic fallback label", () => {
+    const result = resultForTarget("general");
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "ready",
+        aiExplanation: {
+          conclusion: {
+            titleZh: "黄山光明顶摄影天气决策",
+            summaryZh: "未来48小时云量偏多，清晨窗口更值得关注。",
+            recommendedDayZh: "最建议关注 2026年5月20日清晨。",
+            recommendationLevelZh: "值得等待",
+            whetherWorthDedicatedTripZh: "谨慎参考",
+            oneSentenceDecisionZh: "可观察，但不建议只押单一题材专程出发。",
+          },
+          bestPlan: {
+            primaryTargetZh: "清晨云海",
+            bestDateZh: "2026年5月20日",
+            bestWindowZh: "2026年5月20日 05:00–07:00",
+            recommendedArrivalZh: "建议到达：2026年5月20日 04:20 前",
+            whyThisWindowZh: "清晨低云和湿度组合较好。",
+            backupPlanZh: "2026年5月20日 17:56–19:41 晚霞备选。",
+          },
+          weatherTrend: {
+            trendSummaryZh: "整体云量偏多，等待云层开口。",
+            temperatureSummaryZh: "山顶估算温度约 10-18°C。",
+            rainSummaryZh: "降水风险低。",
+            windSummaryZh: "风力可控。",
+            transparencySummaryZh: "通透度一般，远山层次需复核。",
+          },
+          dayByDay: [
+            {
+              dateZh: "2026年5月20日 星期三",
+              recommendationZh: "清晨可观察。",
+              scoreZh: "综合 78 分",
+              temperatureZh: "10-18°C",
+              rainZh: "降水风险低",
+              cloudSeaZh: "云海机会 82 分",
+              glowZh: "朝霞可关注",
+              sunsetGlowZh: "晚霞备选",
+              astroZh: "天气需复核",
+              transparencyZh: "通透度 72 分",
+              bestWindowZh: "2026年5月20日 05:00–07:00",
+              actionZh: "提前到位观察低云上沿。",
+            },
+          ],
+          subjectAdvice: {
+            cloudSeaZh: "云海机会较好，白墙风险需复核。",
+            sunriseGlowZh: "日出和朝霞有机会。",
+            sunsetGlowZh: "日落后余晖仅作备选。",
+            astroMilkyWayZh: "有天文窗口不代表能拍银河，需复核云量。",
+            transparencyZh: "通透度一般。",
+          },
+          riskAndGear: {
+            keyRisks: ["演示数据需要复核"],
+            clothingZh: "清晨偏凉，带防风外套。",
+            gearZh: "三脚架、防潮袋、备用电池。",
+            safetyZh: "保留撤离时间。",
+          },
+          finalAdvice: {
+            goNoGoZh: "谨慎参考。",
+            ifAlreadyNearbyZh: "已在附近可观察。",
+            ifDedicatedTripZh: "不建议只为单一窗口专程。",
+            nextCheckZh: "复核短临降水、低云和阵风。",
+          },
+          metadata: {
+            source: "deterministic_fallback",
+          },
+        },
+        aiErrorMessage: "",
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("一句话结论");
+    expect(html).toContain("最建议关注");
+    expect(html).toContain("天气大势");
+    expect(html).toContain("逐日建议");
+    expect(html).toContain("题材判断");
+    expect(html).toContain("风险与装备");
+    expect(html).toContain("最终建议");
+    expect(html).toContain("确定性简版");
+    expect(html).toContain("2026年5月20日 05:00–07:00");
   });
 
   it("shows meteoblue source diagnostics with exact category and safe message", () => {

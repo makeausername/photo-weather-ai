@@ -12,7 +12,6 @@ import {
   type ForecastScore,
   type ForecastScoreLevel,
   type GlowBackupPlan,
-  type PhotographyPrecipitationRisk,
 } from "@photo-weather/shared";
 import { PublicShell } from "../../components/public-shell";
 import { MoonPhaseCalendar } from "../../components/moon-phase-calendar";
@@ -44,6 +43,18 @@ import {
   type GlowEvidenceViewItem,
   type GlowForecastViewModel,
 } from "./forecast-result-view-model";
+import {
+  astroBlockedReasonText,
+  bestShootableWindowText,
+  clothingEquipmentAdvice,
+  dailyCardActionSuggestion,
+  dedicatedTripText,
+  nearbyObservationText,
+  rainRiskText,
+  rainTimingText,
+  watchableWindowText,
+  windowLabelText,
+} from "./forecast-copy";
 
 type ForecastResultClientProps = {
   readonly query: ForecastQueryInput | null;
@@ -55,19 +66,80 @@ type LoadStatus = "idle" | "loading" | "ready" | "error";
 type AiStatus = "idle" | "loading" | "ready" | "error";
 
 type ForecastAiExplanation = {
-  readonly summary: string;
-  readonly recommendation: string;
-  readonly mainReasons: readonly string[];
-  readonly mainRisks: readonly string[];
-  readonly photographerAdvice: readonly string[];
-  readonly backupPlan: readonly string[];
-  readonly confidenceNote: string;
+  readonly conclusion: {
+    readonly titleZh: string;
+    readonly summaryZh: string;
+    readonly recommendedDayZh: string;
+    readonly recommendationLevelZh: string;
+    readonly whetherWorthDedicatedTripZh: string;
+    readonly oneSentenceDecisionZh: string;
+  };
+  readonly bestPlan: {
+    readonly primaryTargetZh: string;
+    readonly bestDateZh: string;
+    readonly bestWindowZh: string;
+    readonly recommendedArrivalZh: string;
+    readonly whyThisWindowZh: string;
+    readonly backupPlanZh: string;
+  };
+  readonly weatherTrend: {
+    readonly trendSummaryZh: string;
+    readonly temperatureSummaryZh: string;
+    readonly rainSummaryZh: string;
+    readonly windSummaryZh: string;
+    readonly transparencySummaryZh: string;
+  };
+  readonly dayByDay: readonly {
+    readonly dateZh: string;
+    readonly recommendationZh: string;
+    readonly scoreZh: string;
+    readonly temperatureZh: string;
+    readonly rainZh: string;
+    readonly cloudSeaZh: string;
+    readonly glowZh: string;
+    readonly sunsetGlowZh: string;
+    readonly astroZh: string;
+    readonly transparencyZh: string;
+    readonly bestWindowZh: string;
+    readonly actionZh: string;
+  }[];
+  readonly subjectAdvice: {
+    readonly cloudSeaZh: string;
+    readonly sunriseGlowZh: string;
+    readonly sunsetGlowZh: string;
+    readonly astroMilkyWayZh: string;
+    readonly transparencyZh: string;
+  };
+  readonly riskAndGear: {
+    readonly keyRisks: readonly string[];
+    readonly clothingZh: string;
+    readonly gearZh: string;
+    readonly safetyZh: string;
+  };
+  readonly finalAdvice: {
+    readonly goNoGoZh: string;
+    readonly ifAlreadyNearbyZh: string;
+    readonly ifDedicatedTripZh: string;
+    readonly nextCheckZh: string;
+  };
+  readonly metadata?: {
+    readonly source: "deepseek" | "deterministic_fallback";
+    readonly noteZh?: string;
+  };
 };
 
 type AiExplainResponse = {
   readonly success?: boolean;
   readonly explanation?: ForecastAiExplanation;
-  readonly errorCategory?: "timeout" | "provider_error" | "parse_error" | "network" | "disabled";
+  readonly fallback?: boolean;
+  readonly errorCategory?:
+    | "timeout"
+    | "provider_error"
+    | "parse_error"
+    | "network"
+    | "disabled"
+    | "unsupported"
+    | "invalid_key";
   readonly messageZh?: string;
   readonly message?: string;
   readonly retryable?: boolean;
@@ -187,13 +259,20 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
 
       if (!response.ok) {
         throw new Error(
-          await readApiErrorMessage(response, "DeepSeek 解读暂时不可用，已保留确定性分析结果。"),
+          await readApiErrorMessage(
+            response,
+            "智能解读暂时不可用，确定性判断结果仍可正常参考，可稍后重试。",
+          ),
         );
       }
 
       const data = (await response.json()) as AiExplainResponse;
       if (data.success === false || !data.explanation) {
-        throw new Error(data.messageZh || data.message || "DeepSeek 解读暂时不可用，已保留确定性分析结果。");
+        throw new Error(
+          data.messageZh ||
+            data.message ||
+            "智能解读暂时不可用，确定性判断结果仍可正常参考，可稍后重试。",
+        );
       }
       setAiExplanation(data.explanation);
       setAiStatus("ready");
@@ -724,27 +803,13 @@ function dailyDecisionBadgeVariant(label: string | undefined): BadgeVariant {
 function dailyWatchableWindowText(
   summary: ForecastCalculationResult["dailySummaries"][number],
 ): string {
-  const window = summary.watchableWindows?.[0];
-  if (!window) {
-    return "暂无明确可观察窗口";
-  }
-  if (window.startTime && window.endTime) {
-    return `${window.subject} ${formatWindow(window.startTime, window.endTime)}`;
-  }
-  return window.subject;
+  return watchableWindowText(summary);
 }
 
 function dailyBestShootableWindowText(
   summary: ForecastCalculationResult["dailySummaries"][number],
 ): string {
-  const window = summary.bestShootableWindow;
-  if (!window) {
-    return "暂无高确定性拍摄窗口";
-  }
-  return `${window.subjectPriorityLabel ?? window.label} ${formatWindow(
-    window.startTime,
-    window.endTime,
-  )}`;
+  return bestShootableWindowText(summary);
 }
 
 function departureRecommendationLabel(result: ForecastCalculationResult): string {
@@ -931,137 +996,28 @@ function cloudVisibilityActionText(result: ForecastCalculationResult): string {
   return "通透度一般，保留近景和云层纹理备选。";
 }
 
-function precipitationLabel(weatherText: string | null | undefined): string {
-  return weatherText?.includes("雪") ? "降雪概率" : "降水概率";
-}
-
 function dailyPrecipitationLabel(
   weather: ForecastCalculationResult["dailySummaries"][number]["weather"] | undefined,
 ): string {
-  if (weather?.precipitationType === "snow") {
-    return "降雪风险";
-  }
-  if (weather?.precipitationType === "mixed") {
-    return "雨雪风险";
-  }
-  return `${precipitationLabel(weather?.weatherTextZh).replace("概率", "")}风险`;
+  return rainRiskText(weather).label;
 }
 
-type PrecipitationDisplayWeather = {
-  readonly weatherTextZh?: string | null;
-  readonly precipitationProbability?: number | null;
-  readonly precipitation?: number | null;
-  readonly precipitationAmountMm?: number | null;
-  readonly rainAmountMm?: number | null;
-  readonly snowAmountMm?: number | null;
-  readonly precipitationType?: string | null;
-  readonly precipitationRisk?: PhotographyPrecipitationRisk;
-};
-
-function precipitationDisplayValue(weather: PrecipitationDisplayWeather | undefined): string {
-  const explicitRisk = weather?.precipitationRisk;
-  const amount = precipitationAmount(weather);
-  const probability = displayedPrecipitationProbability(weather, amount);
-  if (explicitRisk) {
-    const riskAmount = explicitRisk.precipitationAmountMm ?? amount;
-    return `降水风险：${explicitRisk.rainRiskLabelZh}${
-      riskAmount !== null && riskAmount > 0 ? `，预计 ${formatMillimeters(riskAmount)}` : ""
-    }`;
-  }
-  const risk = precipitationRiskLabel(probability, amount);
-  if (amount !== null && amount > 0) {
-    return `降水风险：${risk}，预计 ${formatMillimeters(amount)}`;
-  }
-  if (typeof probability === "number" && Number.isFinite(probability)) {
-    return `降水风险：${risk}，概率 ${Math.round(probability)}%`;
-  }
-  return "降水风险：待复核";
+function precipitationDisplayValue(
+  weather:
+    | ForecastCalculationResult["dailySummaries"][number]["weather"]
+    | ForecastCalculationResult["currentWeather"]
+    | undefined,
+): string {
+  return rainRiskText(weather).value;
 }
 
-function precipitationDisplayDetail(weather: PrecipitationDisplayWeather | undefined): string {
-  const explicitRisk = weather?.precipitationRisk;
-  const amount = precipitationAmount(weather);
-  const probability = displayedPrecipitationProbability(weather, amount);
-  const risk = precipitationRiskLabel(probability, amount);
-  const rain = weather?.rainAmountMm;
-  const snow = weather?.snowAmountMm;
-  const split = [
-    typeof rain === "number" && rain > 0 ? `降雨 ${formatMillimeters(rain)}` : null,
-    typeof snow === "number" && snow > 0 ? `降雪 ${formatMillimeters(snow)}` : null,
-  ].filter(Boolean);
-
-  if (explicitRisk) {
-    return explicitRisk.recommendationZh;
-  }
-  if (typeof probability === "number" && Number.isFinite(probability) && amount !== null) {
-    return `降水风险：${risk}，概率 ${Math.round(probability)}%，预计 ${formatMillimeters(amount)}${
-      split.length > 0 ? `（${split.join("，")}）` : ""
-    }`;
-  }
-  if (amount !== null && amount > 0) {
-    return `降水风险：${risk}，预计 ${formatMillimeters(amount)}${
-      split.length > 0 ? `（${split.join("，")}）` : ""
-    }`;
-  }
-  if (typeof probability === "number" && Number.isFinite(probability)) {
-    return `降水风险：${risk}，概率 ${Math.round(probability)}%`;
-  }
-  return "降水概率暂缺，出行前建议复核现场云雨变化";
-}
-
-function displayedPrecipitationProbability(
-  weather: PrecipitationDisplayWeather | undefined,
-  amount: number | null,
-): number | null {
-  const probability = weather?.precipitationProbability;
-  if (typeof probability !== "number" || !Number.isFinite(probability)) {
-    return null;
-  }
-  if (amount !== null && amount >= 0.1 && probability <= 0) {
-    return null;
-  }
-  return probability;
-}
-
-function precipitationAmount(weather: PrecipitationDisplayWeather | undefined): number | null {
-  if (!weather) {
-    return null;
-  }
-  if (
-    typeof weather.precipitationAmountMm === "number" &&
-    Number.isFinite(weather.precipitationAmountMm)
-  ) {
-    return weather.precipitationAmountMm;
-  }
-  if (typeof weather.precipitation === "number" && Number.isFinite(weather.precipitation)) {
-    return weather.precipitation;
-  }
-  const split = [weather.rainAmountMm, weather.snowAmountMm].filter(
-    (value): value is number => typeof value === "number" && Number.isFinite(value),
-  );
-  return split.length > 0 ? split.reduce((sum, value) => sum + value, 0) : null;
-}
-
-function precipitationRiskLabel(
-  probability: number | null | undefined,
-  amount: number | null,
-): "低" | "中" | "高" | "严重" | "无明显" {
-  const probabilityValue =
-    typeof probability === "number" && Number.isFinite(probability) ? probability : 0;
-  const amountValue = amount ?? 0;
-  if (amountValue >= 25) {
-    return "严重";
-  }
-  if (amountValue >= 10 || probabilityValue >= 70) {
-    return "高";
-  }
-  if (amountValue >= 2 || probabilityValue >= 40) {
-    return "中";
-  }
-  if (amountValue >= 0.3 || probabilityValue >= 20) {
-    return "低";
-  }
-  return "无明显";
+function precipitationDisplayDetail(
+  weather:
+    | ForecastCalculationResult["dailySummaries"][number]["weather"]
+    | ForecastCalculationResult["currentWeather"]
+    | undefined,
+): string {
+  return rainRiskText(weather).detail;
 }
 
 function windPrecipitationActionText(result: ForecastCalculationResult): string {
@@ -1090,13 +1046,11 @@ function dewPointActionText(value: number | null | undefined): string {
 }
 
 function packingMainValue(guide: ForecastCalculationResult["clothingGuide"]): string {
-  const layers = guide.layers.slice(0, 2).join("、");
-  const accessories = guide.accessories.slice(0, 2).join("、");
-  return [layers, accessories].filter(Boolean).join("；") || guide.titleZh;
+  return clothingEquipmentAdvice(guide)[1] ?? guide.titleZh;
 }
 
 function packingDetail(guide: ForecastCalculationResult["clothingGuide"]): string {
-  return [guide.summaryZh, ...guide.riskNotes.slice(0, 2)].filter(Boolean).join(" ");
+  return clothingEquipmentAdvice(guide)[0] ?? guide.summaryZh;
 }
 
 function dailyOpportunityLine(
@@ -1182,9 +1136,9 @@ function subjectActionSuggestion(key: SubjectScoreKey, score: number): string {
 
 function normalizeAiExplanationErrorMessage(message: string | undefined): string {
   if (message?.toLowerCase().includes("timeout") || message?.includes("超时")) {
-    return "DeepSeek 解读暂时超时，已保留确定性分析结果，可稍后重试。";
+    return "智能解读暂时超时，确定性判断结果仍可正常参考，可稍后重试。";
   }
-  return "智能解读暂时不可用，已保留确定性分析结果，可稍后重试。";
+  return "智能解读暂时不可用，确定性判断结果仍可正常参考，可稍后重试。";
 }
 
 function InvalidQueryCard({ message }: { readonly message?: string }) {
@@ -3102,7 +3056,7 @@ function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCal
                 />
                 <DailyDefinition
                   label="主要降水"
-                  value={summary.weather?.mainPrecipitationPeriodLabelZh ?? "时段待复核"}
+                  value={rainTimingText(summary.weather)}
                 />
                 <DailyDefinition label="可观察" value={dailyWatchableWindowText(summary)} />
                 <DailyDefinition label="最佳可拍" value={dailyBestShootableWindowText(summary)} />
@@ -3124,10 +3078,8 @@ function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCal
               </dl>
               <div className="mt-4 grid gap-2 text-xs leading-5 text-muted-foreground">
                 <p>{precipitationDisplayDetail(summary.weather)}</p>
-                <p>专程判断：{summary.dedicatedTripAdviceZh ?? summary.shortAdvice}</p>
-                {summary.nearbyObservationAdviceZh ? (
-                  <p>附近观察：{summary.nearbyObservationAdviceZh}</p>
-                ) : null}
+                <p>专程判断：{dedicatedTripText(summary)}</p>
+                <p>附近观察：{nearbyObservationText(summary)}</p>
                 <p>
                   能见度：
                   {formatKilometers(
@@ -3139,7 +3091,7 @@ function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCal
                 <p>
                   最佳：
                   {bestWindow
-                    ? `${bestWindow.subjectPriorityLabel ?? bestWindow.label} ${formatWindow(
+                    ? `${windowLabelText(bestWindow)} ${formatWindow(
                         bestWindow.startTime,
                         bestWindow.endTime,
                       )}`
@@ -3149,7 +3101,7 @@ function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCal
                 {bestWindow?.arrivalAdvice?.warningZh ? (
                   <p>提示：{bestWindow.arrivalAdvice.warningZh}</p>
                 ) : null}
-                <p>优先题材：{bestWindow?.subjectPriorityLabel ?? bestSubject ?? "综合判断"}</p>
+                <p>优先题材：{bestWindow ? windowLabelText(bestWindow) : bestSubject ?? "综合判断"}</p>
                 <p>备选题材：{bestWindow?.backupSubjectLabel ?? backupDailySubject(dayBreakdown)}</p>
                 <p>
                   主要风险：
@@ -3157,7 +3109,12 @@ function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCal
                 </p>
               </div>
               <p className="mt-3 rounded-lg border border-border bg-muted px-3 py-2 text-sm leading-6 text-card-foreground">
-                建议：{summary.shortAdvice}
+                {dailyCardActionSuggestion({
+                  summary,
+                  breakdown: dayBreakdown,
+                  bestWindow,
+                  timezone: result.calendarBasis.timezone,
+                })}
               </p>
             </Card>
           );
@@ -3240,9 +3197,7 @@ function ActionableAdviceSection({
         <AdviceBlock
           title="优先拍摄题材"
           items={[
-            `${
-              bestWindow?.subjectPriorityLabel ?? subjectLabels[bestSubject.key]
-            }：${bestSubject.actionSuggestion}`,
+            `${bestWindow ? windowLabelText(bestWindow) : subjectLabels[bestSubject.key]}：${bestSubject.actionSuggestion}`,
           ]}
         />
         <AdviceBlock title="备选方案" items={[backupPlan]} />
@@ -3569,6 +3524,8 @@ function AiExplanationPanel({
   readonly errorMessage: string;
   readonly onGenerate: () => void;
 }) {
+  const isFallback = explanation?.metadata?.source === "deterministic_fallback";
+
   return (
     <Card className="p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -3578,7 +3535,9 @@ function AiExplanationPanel({
             仅解释当前确定性结果，不重新计算天气、天文或地形。
           </p>
         </div>
-        <Badge variant="muted">手动触发</Badge>
+        <Badge variant={isFallback ? "accent" : "muted"}>
+          {isFallback ? "确定性简版" : "手动触发"}
+        </Badge>
       </div>
 
       <Button
@@ -3587,30 +3546,80 @@ function AiExplanationPanel({
         disabled={status === "loading"}
         onClick={onGenerate}
       >
-        {status === "loading" ? "正在生成解读…" : "生成智能解读"}
+        {status === "loading" ? "正在生成解读…" : explanation ? "重新生成智能解读" : "生成智能解读"}
       </Button>
 
       {status === "error" ? (
         <p className="mt-3 rounded-lg border border-warning/70 bg-muted px-3 py-2 text-sm leading-6 text-card-foreground">
-          {errorMessage || "智能解读暂时不可用，已保留确定性分析结果，可稍后重试。"}
+          {errorMessage || "智能解读暂时不可用，确定性判断结果仍可正常参考，可稍后重试。"}
         </p>
       ) : null}
 
       {explanation ? (
-        <div className="mt-4 grid gap-4">
-          <AiTextSection title="综合解读">
-            <p className="text-sm leading-6 text-muted-foreground">{explanation.summary}</p>
-            <p className="mt-2 text-sm font-semibold leading-6 text-card-foreground">
-              {explanation.recommendation}
+        <div className="mt-4 grid gap-3">
+          {isFallback ? (
+            <p className="rounded-lg border border-border bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground">
+              基于确定性计算结果生成的简版解读。
+            </p>
+          ) : null}
+          <AiTextSection title="一句话结论">
+            <p className="text-base font-semibold leading-7 text-card-foreground">
+              {explanation.conclusion.oneSentenceDecisionZh}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              {explanation.conclusion.summaryZh}
             </p>
           </AiTextSection>
-          <AiListSection title="关键依据" items={explanation.mainReasons} />
-          <AiListSection title="主要风险" items={explanation.mainRisks} />
-          <AiListSection title="拍摄建议" items={explanation.photographerAdvice} />
-          <AiListSection title="备用方案" items={explanation.backupPlan} />
-          <AiTextSection title="置信说明">
-            <p className="text-sm leading-6 text-muted-foreground">{explanation.confidenceNote}</p>
-          </AiTextSection>
+          <AiDefinitionGrid
+            title="最建议关注"
+            items={[
+              ["最建议冲哪一天", explanation.conclusion.recommendedDayZh],
+              ["是否推荐", explanation.conclusion.whetherWorthDedicatedTripZh],
+              ["主目标", explanation.bestPlan.primaryTargetZh],
+              ["建议到达", explanation.bestPlan.recommendedArrivalZh],
+              ["建议窗口", explanation.bestPlan.bestWindowZh],
+              ["备选窗口", explanation.bestPlan.backupPlanZh],
+            ]}
+          />
+          <AiDefinitionGrid
+            title="天气大势"
+            items={[
+              ["趋势", explanation.weatherTrend.trendSummaryZh],
+              ["温度", explanation.weatherTrend.temperatureSummaryZh],
+              ["降水", explanation.weatherTrend.rainSummaryZh],
+              ["风", explanation.weatherTrend.windSummaryZh],
+              ["通透度", explanation.weatherTrend.transparencySummaryZh],
+            ]}
+          />
+          <AiDayByDaySection days={explanation.dayByDay} />
+          <AiDefinitionGrid
+            title="题材判断"
+            items={[
+              ["云海", explanation.subjectAdvice.cloudSeaZh],
+              ["日出 / 朝霞", explanation.subjectAdvice.sunriseGlowZh],
+              ["日落 / 晚霞", explanation.subjectAdvice.sunsetGlowZh],
+              ["星空 / 银河", explanation.subjectAdvice.astroMilkyWayZh],
+              ["通透度", explanation.subjectAdvice.transparencyZh],
+            ]}
+          />
+          <AiListSection title="风险与装备" items={explanation.riskAndGear.keyRisks} />
+          <AiDefinitionGrid
+            title="风险与装备建议"
+            items={[
+              ["穿衣", explanation.riskAndGear.clothingZh],
+              ["装备", explanation.riskAndGear.gearZh],
+              ["安全", explanation.riskAndGear.safetyZh],
+            ]}
+          />
+          <AiDefinitionGrid
+            title="最终建议"
+            items={[
+              ["去不去", explanation.finalAdvice.goNoGoZh],
+              ["已在附近", explanation.finalAdvice.ifAlreadyNearbyZh],
+              ["专程出发", explanation.finalAdvice.ifDedicatedTripZh],
+              ["下次复核", explanation.finalAdvice.nextCheckZh],
+            ]}
+          />
         </div>
       ) : null}
     </Card>
@@ -3629,6 +3638,58 @@ function AiTextSection({
       <h3 className="text-sm font-bold text-card-foreground">{title}</h3>
       <div className="mt-2">{children}</div>
     </section>
+  );
+}
+
+function AiDefinitionGrid({
+  title,
+  items,
+}: {
+  readonly title: string;
+  readonly items: readonly (readonly [string, string])[];
+}) {
+  return (
+    <AiTextSection title={title}>
+      <dl className="grid gap-2 sm:grid-cols-2">
+        {items.map(([label, value]) => (
+          <div key={label} className="rounded-md bg-card px-3 py-2">
+            <dt className="text-xs font-semibold text-muted-foreground">{label}</dt>
+            <dd className="mt-1 text-sm leading-6 text-card-foreground">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </AiTextSection>
+  );
+}
+
+function AiDayByDaySection({ days }: { readonly days: ForecastAiExplanation["dayByDay"] }) {
+  return (
+    <AiTextSection title="逐日建议">
+      <div className="grid gap-2">
+        {days.map((day) => (
+          <article key={day.dateZh} className="rounded-md bg-card px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-bold text-card-foreground">{day.dateZh}</h3>
+              <Badge variant="muted">{day.scoreZh}</Badge>
+            </div>
+            <p className="mt-2 text-sm font-semibold leading-6 text-card-foreground">
+              {day.recommendationZh}
+            </p>
+            <dl className="mt-2 grid gap-1 text-xs leading-5 text-muted-foreground sm:grid-cols-2">
+              <div>温度：{day.temperatureZh}</div>
+              <div>降水：{day.rainZh}</div>
+              <div>云海：{day.cloudSeaZh}</div>
+              <div>朝霞：{day.glowZh}</div>
+              <div>晚霞：{day.sunsetGlowZh}</div>
+              <div>星空银河：{day.astroZh}</div>
+              <div>通透度：{day.transparencyZh}</div>
+              <div>窗口：{day.bestWindowZh}</div>
+            </dl>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{day.actionZh}</p>
+          </article>
+        ))}
+      </div>
+    </AiTextSection>
   );
 }
 
@@ -3944,25 +4005,26 @@ function coreWindowDetail(
 function subjectWindowLabel(result: ForecastCalculationResult, key: SubjectScoreKey): string {
   const window = bestWindowForSubject(result, key);
   if (window) {
+    const label = windowLabelText(window);
     const blockers = window.blockerReasons ?? window.weatherBlockers ?? [];
     if (
       (key === "milkyWay" || key === "stars") &&
       (blockers.length > 0 || window.windowLevel === "blocked")
     ) {
       return `天文窗口：${formatWindow(window.startTime, window.endTime)}；${
-        blockers[0] ?? "云量/低云/降水条件不支持拍摄"
+        blockers[0] ?? astroBlockedReasonText(window)
       }，不建议作为唯一目标。`;
     }
     if (key === "milkyWay") {
       return `银河可拍窗口：${formatWindow(window.startTime, window.endTime)}`;
     }
     if (key === "sunsetGlow") {
-      return `${window.subjectPriorityLabel ?? "晚霞"}：${formatWindow(window.startTime, window.endTime)}`;
+      return `${label}：${formatWindow(window.startTime, window.endTime)}`;
     }
     if (key === "sunriseGlow") {
-      return `${window.subjectPriorityLabel ?? "朝霞"}：${formatWindow(window.startTime, window.endTime)}`;
+      return `${label}：${formatWindow(window.startTime, window.endTime)}`;
     }
-    return formatWindow(window.startTime, window.endTime);
+    return `${label}：${formatWindow(window.startTime, window.endTime)}`;
   }
 
   if (key === "transparency") {
@@ -4237,12 +4299,6 @@ function formatKilometers(value: number | null | undefined): string {
   return typeof value === "number" && Number.isFinite(value)
     ? `${roundDisplay(value)} 公里`
     : "暂无";
-}
-
-function formatMillimeters(value: number | null | undefined): string {
-  return typeof value === "number" && Number.isFinite(value)
-    ? `${roundDisplay(value)} mm`
-    : "暂无降水量";
 }
 
 function formatPercentNumber(value: number | null | undefined): string {

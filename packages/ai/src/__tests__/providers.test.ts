@@ -4,6 +4,7 @@ import type { ForecastCalculationResult } from "@photo-weather/shared";
 import {
   buildDeepSeekForecastContext,
   buildDeepSeekForecastExplanationRequest,
+  createRuleBasedForecastExplanation,
   DeepSeekProvider,
   forecastAiExplanationSchema,
   isDeepSeekProviderError,
@@ -94,6 +95,8 @@ describe("AI providers", () => {
     });
     expect(JSON.stringify(request.body)).toContain("Do not invent weather data.");
     expect(JSON.stringify(request.body)).toContain("computedForecastFacts");
+    expect(JSON.stringify(request.body)).toContain("最建议冲哪一天");
+    expect(JSON.stringify(request.body)).toContain("日落后余晖");
     expect(JSON.stringify(request.body)).not.toContain("exampleJsonOutput");
     expect(request.body.messages[1]?.content.length).toBeLessThanOrEqual(18000);
     expect(JSON.stringify(request.body)).not.toContain("sk-");
@@ -103,14 +106,105 @@ describe("AI providers", () => {
     const context = buildDeepSeekForecastContext(forecastResultFixture);
     const text = JSON.stringify(context);
 
-    expect(context.providerSourceSummaries[0]).toMatchObject({
-      success: true,
+    expect(context.sourceStatus).toMatchObject({
+      dataMode: "mock",
     });
-    expect(JSON.stringify(context.providerSourceSummaries[0])).not.toContain("providerCode");
     expect(JSON.stringify(context.place)).not.toContain("coordinates");
-    expect(text).toContain("All values are precomputed read-only facts");
+    expect(text).toContain("All values are precomputed deterministic facts");
     expect(text).not.toContain("weatherTimeline");
+    expect(text).not.toContain("providerCode");
     expect(text.length).toBeLessThanOrEqual(9000);
+  });
+
+  it("keeps DeepSeek context provider-neutral and omits raw temperature ranges", () => {
+    const context = buildDeepSeekForecastContext({
+      ...forecastResultFixture,
+      dataNotice:
+        "天气数据：和风天气；云层辅助：Open-Meteo；专业增强：meteoblue；地理服务：高德地图。",
+      weatherNoticeZh:
+        "天气数据：和风天气；云层辅助：Open-Meteo；专业增强：meteoblue。",
+      weatherFusionSummary: {
+        primarySource: "和风天气",
+        auxiliarySources: ["Open-Meteo", "meteoblue"],
+        professionalSourceStatus: "专业增强：meteoblue 通过",
+        confidenceLevel: "high",
+        conflictStatusZh: "QWeather 与 meteoblue 无明显冲突",
+        dataStatusZh: "天气数据：和风天气；云层辅助：Open-Meteo；数据置信度：高",
+        missingDataNotes: ["meteoblue 部分辅助字段缺失"],
+      },
+      weatherMissingDataNotes: ["Open-Meteo 云层辅助字段部分缺失"],
+    });
+    const text = JSON.stringify(context);
+
+    expect(text).not.toContain("和风天气");
+    expect(text).not.toContain("QWeather");
+    expect(text).not.toContain("Open-Meteo");
+    expect(text).not.toContain("meteoblue");
+    expect(text).not.toContain("高德地图");
+    expect(text).not.toContain("rawTemperatureRangeZh");
+    expect(text).toContain("基础天气");
+    expect(text).toContain("云层辅助");
+    expect(text).toContain("专业增强");
+  });
+
+  it("anchors deterministic fallback interpretation to the selected best day", () => {
+    const baseDay = forecastResultFixture.dailySummaries[0];
+    const baseBreakdown = forecastResultFixture.targetDailyBreakdown[0];
+    if (!baseDay || !baseBreakdown) {
+      throw new Error("forecast fixture must include at least one daily summary");
+    }
+    const laterWindow = {
+      label: "清晨云海窗口",
+      date: "2026-05-21",
+      startTime: "2026-05-21T05:20:00+08:00",
+      endTime: "2026-05-21T07:10:00+08:00",
+      score: 91,
+      target: "cloud_sea" as const,
+    };
+    const result: ForecastCalculationResult = {
+      ...forecastResultFixture,
+      bestWindows: [laterWindow],
+      dailySummaries: [
+        {
+          ...baseDay,
+          score: 44,
+          dedicatedTripRecommendation: "不建议专程前往",
+          shortAdvice: "当天降水干扰明显，仅作备选。",
+        },
+        {
+          ...baseDay,
+          date: "2026-05-21",
+          dateLabelZh: "2026年5月21日 星期四",
+          score: 91,
+          dedicatedTripRecommendation: "推荐专程前往",
+          nearbyObservationRecommendation: "已在附近可观察",
+          keyWindows: [laterWindow],
+          bestShootableWindow: laterWindow,
+          shortAdvice: "清晨云海窗口值得专程等待。",
+        },
+      ],
+      targetDailyBreakdown: [
+        ...forecastResultFixture.targetDailyBreakdown,
+        {
+          ...baseBreakdown,
+          date: "2026-05-21",
+          cloudSea: {
+            label: "清晨云海机会",
+            score: 91,
+            detail: "湿度、低云和地形组合更强。",
+          },
+        },
+      ],
+    };
+
+    const explanation = createRuleBasedForecastExplanation(result);
+
+    expect(explanation.conclusion.recommendedDayZh).toContain("2026年5月21日 星期四");
+    expect(explanation.conclusion.oneSentenceDecisionZh).toContain("推荐专程前往");
+    expect(explanation.bestPlan.bestDateZh).toBe("2026年5月21日 星期四");
+    expect(explanation.bestPlan.bestWindowZh).toContain("2026年5月21日 05:20");
+    expect(explanation.finalAdvice.goNoGoZh).toContain("推荐专程前往");
+    expect(explanation.bestPlan.bestDateZh).not.toBe("2026-05-21");
   });
 
   it("calls DeepSeek with a mocked fetcher and parses forecast explanation JSON", async () => {
@@ -126,13 +220,64 @@ describe("AI providers", () => {
             {
               message: {
                 content: JSON.stringify({
-                  summary: "演示数据下窗口条件较好，但需要实地复核。",
-                  recommendation: "可以作为计划参考，不建议直接作为出行依据。",
-                  mainReasons: ["综合指数较高", "最佳窗口明确"],
-                  mainRisks: ["天气与地形仍为演示数据"],
-                  photographerAdvice: ["提前准备防风和防雨方案"],
-                  backupPlan: ["若云量偏厚，改拍近景或延后到下一窗口"],
-                  confidenceNote: "当前为演示数据解读，仅用于体验分析流程。",
+                  conclusion: {
+                    titleZh: "黄山光明顶摄影天气决策",
+                    summaryZh: "演示数据下清晨窗口较好，但需要实地复核。",
+                    recommendedDayZh: "最建议关注 2026年5月20日清晨云海窗口。",
+                    recommendationLevelZh: "值得等待",
+                    whetherWorthDedicatedTripZh: "谨慎参考",
+                    oneSentenceDecisionZh: "可作为计划参考，不建议直接作为唯一出行依据。",
+                  },
+                  bestPlan: {
+                    primaryTargetZh: "清晨云海",
+                    bestDateZh: "2026年5月20日",
+                    bestWindowZh: "2026年5月20日 05:00–07:00",
+                    recommendedArrivalZh: "建议到达：2026年5月20日 04:20 前",
+                    whyThisWindowZh: "清晨低云和湿度组合较好。",
+                    backupPlanZh: "若云量偏厚，改拍近景或延后到下一窗口。",
+                  },
+                  weatherTrend: {
+                    trendSummaryZh: "未来48小时云量偏多，清晨有短暂开口机会。",
+                    temperatureSummaryZh: "山顶估算温度约 19-24°C。",
+                    rainSummaryZh: "降水风险低，主要看短临变化。",
+                    windSummaryZh: "山顶风力需要防风。",
+                    transparencySummaryZh: "通透度一般，远山层次需复核。",
+                  },
+                  dayByDay: [
+                    {
+                      dateZh: "2026年5月20日 星期三",
+                      recommendationZh: "清晨可观察。",
+                      scoreZh: "综合 86 分",
+                      temperatureZh: "19-24°C",
+                      rainZh: "降水风险低",
+                      cloudSeaZh: "云海 86 分",
+                      glowZh: "朝霞可关注",
+                      sunsetGlowZh: "晚霞仅作备选",
+                      astroZh: "有天文窗口但需看云量",
+                      transparencyZh: "通透度 71 分",
+                      bestWindowZh: "2026年5月20日 05:00–07:00",
+                      actionZh: "提前到达机位，复核低云上沿。",
+                    },
+                  ],
+                  subjectAdvice: {
+                    cloudSeaZh: "云海机会较高，但白墙风险需现场复核。",
+                    sunriseGlowZh: "日出和朝霞可关注。",
+                    sunsetGlowZh: "日落后余晖仅作备选。",
+                    astroMilkyWayZh: "有天文窗口不代表能拍银河，需看云量。",
+                    transparencyZh: "通透度一般。",
+                  },
+                  riskAndGear: {
+                    keyRisks: ["天气与地形仍为演示数据"],
+                    clothingZh: "清晨体感偏凉，带防风外套。",
+                    gearZh: "三脚架、防潮袋、备用电池。",
+                    safetyZh: "保留撤离时间。",
+                  },
+                  finalAdvice: {
+                    goNoGoZh: "谨慎参考。",
+                    ifAlreadyNearbyZh: "已在附近可观察。",
+                    ifDedicatedTripZh: "不建议只为单一窗口专程。",
+                    nextCheckZh: "复核低云、降水和阵风。",
+                  },
                 }),
               },
             },
@@ -157,8 +302,9 @@ describe("AI providers", () => {
       forecastResult: forecastResultFixture,
     });
 
-    expect(explanation.summary).toContain("演示数据");
-    expect(explanation.mainReasons).toHaveLength(2);
+    expect(explanation.conclusion.summaryZh).toContain("演示数据");
+    expect(explanation.bestPlan.bestWindowZh).toContain("2026年5月20日 05:00");
+    expect(explanation.metadata?.source).toBe("deepseek");
   });
 
   it("classifies DeepSeek timeout without exposing secrets", async () => {
@@ -237,17 +383,68 @@ describe("AI providers", () => {
     const parsed = provider.validateJsonOutput(
       forecastAiExplanationSchema,
       JSON.stringify({
-        summary: "综合解读",
-        recommendation: "推荐谨慎参考",
-        mainReasons: ["云量窗口可用"],
-        mainRisks: ["演示数据"],
-        photographerAdvice: ["提前到位"],
-        backupPlan: ["改拍近景"],
-        confidenceNote: "仅用于体验分析流程。",
+        conclusion: {
+          titleZh: "综合解读",
+          summaryZh: "清晨窗口可参考。",
+          recommendedDayZh: "最建议关注 2026年5月20日。",
+          recommendationLevelZh: "谨慎参考",
+          whetherWorthDedicatedTripZh: "谨慎参考",
+          oneSentenceDecisionZh: "可观察但不宜作为唯一目标。",
+        },
+        bestPlan: {
+          primaryTargetZh: "清晨云海",
+          bestDateZh: "2026年5月20日",
+          bestWindowZh: "2026年5月20日 05:00–07:00",
+          recommendedArrivalZh: "建议到达：2026年5月20日 04:20 前",
+          whyThisWindowZh: "云量窗口可用。",
+          backupPlanZh: "改拍近景。",
+        },
+        weatherTrend: {
+          trendSummaryZh: "云量偏多。",
+          temperatureSummaryZh: "19-24°C。",
+          rainSummaryZh: "降水风险低。",
+          windSummaryZh: "风力可控。",
+          transparencySummaryZh: "通透度一般。",
+        },
+        dayByDay: [
+          {
+            dateZh: "2026年5月20日",
+            recommendationZh: "谨慎参考",
+            scoreZh: "综合 70 分",
+            temperatureZh: "19-24°C",
+            rainZh: "降水风险低",
+            cloudSeaZh: "云海 70 分",
+            glowZh: "朝霞 60 分",
+            sunsetGlowZh: "晚霞 50 分",
+            astroZh: "天气待复核",
+            transparencyZh: "通透度 60 分",
+            bestWindowZh: "2026年5月20日 05:00–07:00",
+            actionZh: "提前到位。",
+          },
+        ],
+        subjectAdvice: {
+          cloudSeaZh: "云海可观察。",
+          sunriseGlowZh: "朝霞可参考。",
+          sunsetGlowZh: "晚霞仅作备选。",
+          astroMilkyWayZh: "银河需复核云量。",
+          transparencyZh: "通透度一般。",
+        },
+        riskAndGear: {
+          keyRisks: ["演示数据"],
+          clothingZh: "带外套。",
+          gearZh: "带三脚架。",
+          safetyZh: "注意安全。",
+        },
+        finalAdvice: {
+          goNoGoZh: "谨慎参考。",
+          ifAlreadyNearbyZh: "可观察。",
+          ifDedicatedTripZh: "不建议只为单一窗口专程。",
+          nextCheckZh: "复核短临天气。",
+        },
       }),
     );
 
-    expect(parsed.backupPlan[0]).toBe("改拍近景");
+    expect(parsed.bestPlan.backupPlanZh).toBe("改拍近景。");
   });
 });
 
