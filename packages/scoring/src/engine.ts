@@ -11,6 +11,7 @@ import {
   type ForecastPrecipitationPeriodSummary,
   type ForecastRecommendationLevel,
   type ForecastWindowHumanCostLevel,
+  type ForecastWindowLevel,
   type ForecastWindowRecommendationLevel,
   type ForecastRiskFlag,
   type ForecastScore,
@@ -598,6 +599,286 @@ type PracticalWindowKind = NonNullable<ForecastTimeWindow["practicalKind"]>;
 type PracticalLightPhase = NonNullable<ForecastTimeWindow["lightPhase"]>;
 type PracticalArrivalAdvice = NonNullable<ForecastTimeWindow["arrivalAdvice"]>;
 
+type PhotographyWindowClassification = {
+  readonly lightPhase: PracticalLightPhase;
+  readonly subjectPriorityLabel: string;
+  readonly backupSubjectLabel: string;
+  readonly windowLevel: ForecastWindowLevel;
+  readonly executableForDedicatedTrip: boolean;
+  readonly suitableIfNearby: boolean;
+  readonly blockerReasons: readonly string[];
+  readonly copyReasonZh?: string;
+};
+
+export function classifyPhotographyWindow(
+  window: ForecastTimeWindow,
+  sunTimes?: Partial<AstroSummary>,
+  astroTimes?: Partial<AstroSummary>,
+  timezone = defaultTimezone,
+): PhotographyWindowClassification {
+  const practicalKind = window.practicalKind ?? "shooting_window";
+  const lightPhase = classifyWindowLightPhase(window, practicalKind, sunTimes, astroTimes, timezone);
+  const subjectPriorityLabel = classifiedSubjectPriorityLabel(window, practicalKind, lightPhase);
+  const backupSubjectLabel = classifiedBackupSubjectLabel(window, lightPhase);
+  const blockerReasons = windowBlockerReasons(window);
+  const windowLevel = classifyWindowLevel(window, practicalKind, blockerReasons);
+  const practicalScore = window.practicalScore ?? window.score;
+  const executableForDedicatedTrip =
+    windowLevel === "shootable" &&
+    practicalKind === "shooting_window" &&
+    (window.recommendationLevel === "recommended" || window.recommendationLevel === "cautious") &&
+    practicalScore >= 52;
+  const suitableIfNearby =
+    windowLevel === "watchable" ||
+    windowLevel === "shootable" ||
+    executableForDedicatedTrip ||
+    (windowLevel !== "blocked" && practicalScore >= 34);
+
+  return {
+    lightPhase,
+    subjectPriorityLabel,
+    backupSubjectLabel,
+    windowLevel,
+    executableForDedicatedTrip,
+    suitableIfNearby,
+    blockerReasons,
+    copyReasonZh: classifiedWindowReasonZh(
+      subjectPriorityLabel,
+      window,
+      windowLevel,
+      blockerReasons,
+      lightPhase,
+    ),
+  };
+}
+
+function classifyWindowLightPhase(
+  window: ForecastTimeWindow,
+  practicalKind: PracticalWindowKind,
+  sunTimes: Partial<AstroSummary> | undefined,
+  astroTimes: Partial<AstroSummary> | undefined,
+  timezone: string,
+): PracticalLightPhase {
+  if (window.target === "astro") {
+    return "astronomical_night";
+  }
+  if (practicalKind === "formation_signal") {
+    return "deep_night";
+  }
+
+  const startHour = localHourFloat(window.startTime, timezone);
+  const midpointHour = localHourFloat(windowMidpointIso(window), timezone);
+  const sunset = sunTimes?.sunset;
+  const sunrise = sunTimes?.sunrise;
+  const civilDusk = sunTimes?.civilDusk;
+  const civilDawn = sunTimes?.civilDawn;
+  const nightStart = astroTimes?.astronomicalNightStart ?? sunTimes?.astronomicalNightStart;
+
+  if (
+    (sunset && windowOverlapsTime(window, sunset, 120)) ||
+    (civilDusk && windowOverlapsTime(window, civilDusk, 75)) ||
+    (midpointHour >= 16 && midpointHour <= 20.75) ||
+    (startHour >= 16 && startHour <= 20.75)
+  ) {
+    if (nightStart && windowOverlapsTime(window, nightStart, 45)) {
+      return "blue_hour";
+    }
+    return "sunset";
+  }
+
+  if (
+    (sunrise && windowOverlapsTime(window, sunrise, 120)) ||
+    (civilDawn && windowOverlapsTime(window, civilDawn, 75)) ||
+    (midpointHour >= 3.5 && midpointHour <= 8.75) ||
+    (startHour >= 3.5 && startHour <= 8.75)
+  ) {
+    return midpointHour < 6 ? "dawn" : "sunrise";
+  }
+
+  if (midpointHour > 20.75 && midpointHour <= 22.5) {
+    return "blue_hour";
+  }
+  if (midpointHour > 8.75 && midpointHour < 16) {
+    return "daytime";
+  }
+  return "deep_night";
+}
+
+function classifiedSubjectPriorityLabel(
+  window: ForecastTimeWindow,
+  practicalKind: PracticalWindowKind,
+  lightPhase: PracticalLightPhase,
+): string {
+  if (window.target === "cloud_sea") {
+    if (practicalKind === "formation_signal" || lightPhase === "deep_night") {
+      return "云海形成信号";
+    }
+    if (lightPhase === "dawn" || lightPhase === "sunrise") {
+      return "清晨云海";
+    }
+    if (lightPhase === "sunset" || lightPhase === "blue_hour") {
+      return "傍晚云海";
+    }
+    return "云海层次";
+  }
+
+  if (window.target === "glow") {
+    if (lightPhase === "sunset" || lightPhase === "blue_hour") {
+      if (window.label.includes("暖光")) {
+        return "日落暖光";
+      }
+      if (window.label.includes("余晖")) {
+        return "日落后余晖";
+      }
+      return lightPhase === "blue_hour" ? "蓝调转场" : "晚霞";
+    }
+    if (window.label.includes("暖光") || window.label.includes("日出后")) {
+      return "日出暖光";
+    }
+    return "朝霞";
+  }
+
+  if (window.target === "astro") {
+    if (window.label.includes("银河")) {
+      return "银河";
+    }
+    if (window.label.includes("月")) {
+      return "月光地景";
+    }
+    return "星空";
+  }
+
+  if (lightPhase === "daytime") {
+    return "机动观察";
+  }
+  return "综合拍摄";
+}
+
+function classifiedBackupSubjectLabel(
+  window: ForecastTimeWindow,
+  lightPhase: PracticalLightPhase,
+): string {
+  if (window.target === "cloud_sea") {
+    return lightPhase === "sunset" || lightPhase === "blue_hour"
+      ? "晚霞、日落暖光或云层纹理"
+      : "朝霞、通透层峦或雾景";
+  }
+  if (window.target === "glow") {
+    return "云海、局部光线或云层纹理";
+  }
+  if (window.target === "astro") {
+    return "蓝调夜景、月光地景或次日清晨窗口";
+  }
+  return "现场光线、云层纹理和安全机位";
+}
+
+function windowBlockerReasons(window: ForecastTimeWindow): readonly string[] {
+  const reasons = [...(window.weatherBlockers ?? [])];
+  const rainRisk = window.precipitationRisk?.rainRiskLevel;
+  if (rainRisk === "severe" || rainRisk === "high") {
+    reasons.push(`${window.precipitationRisk?.rainRiskLabelZh ?? "高"}降水干扰`);
+  } else if (rainRisk === "medium") {
+    reasons.push("中等降水干扰");
+  }
+  if (window.practicalKind === "formation_signal") {
+    reasons.push("无可用光线");
+  }
+  return [...new Set(reasons.filter(Boolean))];
+}
+
+function classifyWindowLevel(
+  window: ForecastTimeWindow,
+  practicalKind: PracticalWindowKind,
+  blockerReasons: readonly string[],
+): ForecastWindowLevel {
+  const rainRisk = window.precipitationRisk?.rainRiskLevel;
+  if (practicalKind === "formation_signal") {
+    return "watchable";
+  }
+  if (
+    window.recommendationLevel === "not_recommended" ||
+    rainRisk === "severe" ||
+    (window.target === "astro" && blockerReasons.length > 0)
+  ) {
+    return "blocked";
+  }
+  if (window.recommendationLevel === "backup" || rainRisk === "high") {
+    return "watchable";
+  }
+  return "shootable";
+}
+
+function classifiedWindowReasonZh(
+  subject: string,
+  window: ForecastTimeWindow,
+  windowLevel: ForecastWindowLevel,
+  blockerReasons: readonly string[],
+  lightPhase: PracticalLightPhase,
+): string | undefined {
+  if (windowLevel === "blocked" && window.target === "astro") {
+    const reason = blockerReasons[0] ?? "云量、低云或降水条件不支持拍摄";
+    return `天文窗口存在，但${reason}，不建议作为唯一目标。`;
+  }
+  if (windowLevel === "blocked") {
+    const reason = blockerReasons[0] ?? "天气风险偏高";
+    return `${subject}受${reason}影响，暂不建议专程安排。`;
+  }
+  if (windowLevel === "watchable") {
+    if (window.practicalKind === "formation_signal") {
+      return "夜间云海只算形成信号，不建议为无光云海单独熬夜；若已在山上可观察云雾变化。";
+    }
+    const reason = blockerReasons[0];
+    return reason
+      ? `${subject}有气象信号，但${reason}，仅作机动观察。`
+      : `${subject}可观察，但不宜作为唯一专程目标。`;
+  }
+  if (window.target === "glow" && (lightPhase === "sunset" || lightPhase === "blue_hour")) {
+    return `${subject}窗口可执行，需提前观察西向云层开口和通透度。`;
+  }
+  if (window.target === "cloud_sea" && (lightPhase === "dawn" || lightPhase === "sunrise")) {
+    return "清晨云海具备可执行窗口，仍需现场复核低云厚度和白墙风险。";
+  }
+  return undefined;
+}
+
+function windowLevelRank(level: ForecastWindowLevel | undefined): number {
+  if (level === "best") {
+    return 4;
+  }
+  if (level === "shootable") {
+    return 3;
+  }
+  if (level === "watchable") {
+    return 2;
+  }
+  if (level === "blocked") {
+    return 0;
+  }
+  return 1;
+}
+
+function isExecutableShootableWindow(window: ForecastTimeWindow): boolean {
+  return (
+    window.executableForDedicatedTrip === true ||
+    (window.practicalKind !== "formation_signal" &&
+      (window.windowLevel === "shootable" || window.windowLevel === "best") &&
+      window.recommendationLevel !== "backup" &&
+      window.recommendationLevel !== "not_recommended")
+  );
+}
+
+function promoteBestWindowLevel(
+  windows: readonly ForecastTimeWindow[],
+): readonly ForecastTimeWindow[] {
+  const bestIndex = windows.findIndex(isExecutableShootableWindow);
+  if (bestIndex < 0) {
+    return windows;
+  }
+  return windows.map((window, index) =>
+    index === bestIndex ? { ...window, windowLevel: "best" as const } : window,
+  );
+}
+
 function buildBestWindows(
   input: ForecastCalculationInput,
   cloudSeaAnalysis: CloudSeaAnalysisResult,
@@ -612,7 +893,7 @@ function buildBestWindows(
     ...(input.target === "general" ? buildCloudSeaFormationSignalWindows(input) : []),
   ];
 
-  return windows
+  const scoredWindows = windows
     .map((window) => applyPracticalTripScoring(input, window, riskFlags))
     .filter((window) => {
       const conditionScore = window.conditionScore ?? window.score;
@@ -630,6 +911,11 @@ function buildBestWindows(
     })
     .sort((left, right) => {
       if (input.target === "general") {
+        const levelDelta = windowLevelRank(right.windowLevel) - windowLevelRank(left.windowLevel);
+        if (levelDelta !== 0) {
+          return levelDelta;
+        }
+
         const recommendationDelta =
           windowRecommendationRank(right.recommendationLevel) -
           windowRecommendationRank(left.recommendationLevel);
@@ -652,28 +938,24 @@ function buildBestWindows(
 
       return Date.parse(left.startTime) - Date.parse(right.startTime);
     });
+
+  return promoteBestWindowLevel(scoredWindows);
 }
 
 function calculateGeneralPracticalTripScore(
   scores: ForecastCalculationResult["scores"],
   windows: readonly ForecastTimeWindow[],
 ): number {
-  const bestShootableWindow =
-    windows.find(
-      (window) =>
-        window.practicalKind !== "formation_signal" &&
-        window.recommendationLevel !== "not_recommended" &&
-        window.recommendationLevel !== "backup",
-    );
+  const bestShootableWindow = windows.find(isExecutableShootableWindow);
 
   if (bestShootableWindow) {
     return clampScore(bestShootableWindow.practicalScore ?? bestShootableWindow.score);
   }
 
-  const bestObservableWindow = windows.find(
-    (window) =>
-      window.recommendationLevel === "backup" || window.practicalKind === "formation_signal",
-  ) ?? windows.find((window) => window.practicalKind !== "formation_signal") ?? windows[0];
+  const bestObservableWindow =
+    windows.find((window) => window.windowLevel === "watchable" || window.suitableIfNearby) ??
+    windows.find((window) => window.practicalKind !== "formation_signal") ??
+    windows[0];
   if (bestObservableWindow) {
     return clampScore(
       Math.max(
@@ -694,8 +976,7 @@ function applyPracticalTripScoring(
   const conditionScore = clampScore(window.conditionScore ?? window.score);
   const practical = evaluatePracticalWindow(input, window, conditionScore, riskFlags);
   const score = input.target === "general" ? practical.practicalScore : window.score;
-
-  return {
+  const preliminaryWindow: ForecastTimeWindow = {
     ...window,
     score,
     conditionScore,
@@ -710,6 +991,26 @@ function applyPracticalTripScoring(
     backupSubjectLabel: practical.backupSubjectLabel,
     restWarningZh: practical.restWarningZh,
     arrivalAdvice: practical.arrivalAdvice,
+  };
+  const astro = getWindowAstroSummary(input, preliminaryWindow);
+  const classification = classifyPhotographyWindow(
+    preliminaryWindow,
+    astro,
+    astro,
+    input.calendarBasis.timezone,
+  );
+
+  return {
+    ...preliminaryWindow,
+    lightPhase: classification.lightPhase,
+    subjectPriorityLabel: classification.subjectPriorityLabel,
+    backupSubjectLabel: classification.backupSubjectLabel,
+    windowLevel: classification.windowLevel,
+    executableForDedicatedTrip: classification.executableForDedicatedTrip,
+    suitableIfNearby: classification.suitableIfNearby,
+    blockerReasons: classification.blockerReasons,
+    copyReasonZh: classification.copyReasonZh,
+    practicalNoteZh: classification.copyReasonZh ?? preliminaryWindow.practicalNoteZh,
   };
 }
 
@@ -992,49 +1293,14 @@ function inferLightPhase(
   window: ForecastTimeWindow,
   practicalKind: PracticalWindowKind,
 ): PracticalLightPhase {
-  if (window.target === "astro") {
-    return "astronomical_night";
-  }
-  if (practicalKind === "formation_signal") {
-    return "deep_night";
-  }
-
-  const label = window.label;
   const astro = getWindowAstroSummary(input, window);
-  if (label.includes("朝霞")) {
-    return "dawn";
-  }
-  if (label.includes("晚霞") || label.includes("日落")) {
-    return "sunset";
-  }
-  if (
-    label.includes("清晨") ||
-    label.includes("日出") ||
-    (astro?.sunrise && windowOverlapsTime(window, astro.sunrise, 90))
-  ) {
-    return "sunrise";
-  }
-  if (astro?.sunset && windowOverlapsTime(window, astro.sunset, 90)) {
-    return "sunset";
-  }
-
-  const hour = localHourFloat(window.startTime, input.calendarBasis.timezone);
-  if (hour >= 4 && hour < 6) {
-    return "dawn";
-  }
-  if (hour >= 6 && hour <= 8) {
-    return "sunrise";
-  }
-  if (hour > 8 && hour < 16) {
-    return "daytime";
-  }
-  if (hour >= 16 && hour <= 20) {
-    return "sunset";
-  }
-  if (hour > 20 && hour <= 22) {
-    return "blue_hour";
-  }
-  return "deep_night";
+  return classifyWindowLightPhase(
+    window,
+    practicalKind,
+    astro,
+    astro,
+    input.calendarBasis.timezone,
+  );
 }
 
 function buildArrivalAdvice(
@@ -1476,29 +1742,22 @@ function subjectPriorityLabelForWindow(
   window: ForecastTimeWindow,
   practicalKind: PracticalWindowKind,
 ): string {
-  if (window.target === "cloud_sea") {
-    return practicalKind === "formation_signal" ? "云海形成观察" : "清晨云海";
-  }
-  if (window.target === "glow") {
-    return window.label.includes("晚霞") ? "晚霞" : "朝霞";
-  }
-  if (window.target === "astro") {
-    return window.label.includes("银河") ? "银河" : "星空";
-  }
-  return "综合拍摄";
+  const lightPhase =
+    window.lightPhase ?? classifyWindowLightPhase(window, practicalKind, undefined, undefined, defaultTimezone);
+  return classifiedSubjectPriorityLabel(window, practicalKind, lightPhase);
 }
 
 function backupSubjectLabelForWindow(window: ForecastTimeWindow): string {
-  if (window.target === "cloud_sea") {
-    return "朝霞、通透层峦或雾景";
-  }
-  if (window.target === "glow") {
-    return "云海、局部光线或云层纹理";
-  }
-  if (window.target === "astro") {
-    return "蓝调夜景、月光地景或次日清晨窗口";
-  }
-  return "现场光线、云层纹理和安全机位";
+  const lightPhase =
+    window.lightPhase ??
+    classifyWindowLightPhase(
+      window,
+      window.practicalKind ?? "shooting_window",
+      undefined,
+      undefined,
+      defaultTimezone,
+    );
+  return classifiedBackupSubjectLabel(window, lightPhase);
 }
 
 function getWindowAstroSummary(
@@ -1552,6 +1811,15 @@ function localHourFloat(time: string, timezone: string): number {
   const hour = Number(zoned.slice(11, 13));
   const minute = Number(zoned.slice(14, 16));
   return hour + minute / 60;
+}
+
+function windowMidpointIso(window: Pick<ForecastTimeWindow, "startTime" | "endTime">): string {
+  const start = Date.parse(window.startTime);
+  const end = Date.parse(window.endTime);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return window.startTime;
+  }
+  return new Date(start + (end - start) / 2).toISOString();
 }
 
 function formatClock(time: string, timezone: string): string {
@@ -1745,8 +2013,15 @@ function buildDailySummaries(
     const riskFlags = buildDailyRiskFlags(input, breakdown);
     const calendarDay = input.calendarBasis.calendarDays.find((day) => day.date === breakdown.date);
     const weather = buildDailyWeatherSummary(input, breakdown.date);
-    const bestShootableWindow = pickBestShootableDailyWindow(keyWindows);
-    const decision = buildDailyDecisionModel(breakdown, keyWindows, riskFlags, score, weather);
+    const bestShootableWindow = pickBestShootableDailyWindow(keyWindows, weather);
+    const decision = buildDailyDecisionModel(
+      breakdown,
+      keyWindows,
+      riskFlags,
+      score,
+      weather,
+      bestShootableWindow,
+    );
     const watchableWindows = buildWatchableWindows(
       input.target,
       breakdown,
@@ -1802,7 +2077,7 @@ function buildDailyWeatherSummary(
   const precipitationPeriods = derivePrecipitationPeriods(dayHours, input.calendarBasis.timezone);
   const precipitationPeriodLabel =
     (precipitationAmount ?? 0) >= 0.3 && precipitationPeriods.affectedWindows.length === 0
-      ? "预计有降水，但时段不明确"
+      ? "预计有降水，但具体时段不明确，出发前需复核临近预报。"
       : precipitationPeriods.mainPrecipitationPeriodLabelZh;
 
   return {
@@ -1990,7 +2265,7 @@ export function derivePrecipitationPeriods(
 
   if (rainyHours.length === 0) {
     return {
-      mainPrecipitationPeriodLabelZh: "降水不明显",
+      mainPrecipitationPeriodLabelZh: "降水不明显，可作为备选窗口。",
       affectedWindows: [],
       rainTimingConfidence: "high",
     };
@@ -1999,12 +2274,7 @@ export function derivePrecipitationPeriods(
   const affectedWindows = [
     ...new Set(rainyHours.map((item) => precipitationWindowLabelForHour(item.localHour))),
   ];
-  const clusters: {
-    readonly startHour: number;
-    endHour: number;
-    maxScore: number;
-    readonly periodNames: Set<string>;
-  }[] = [];
+  const clusters: PrecipitationCluster[] = [];
 
   for (let index = 0; index < rainyHours.length; index += 1) {
     const item = rainyHours[index]!;
@@ -2033,10 +2303,11 @@ export function derivePrecipitationPeriods(
   const strongest = rainyHours.reduce((best, item) => (item.score > best.score ? item : best));
   const rainTimingConfidence: ForecastPrecipitationPeriodSummary["rainTimingConfidence"] =
     rainyHours.length >= 4 ? "high" : rainyHours.length >= 2 ? "medium" : "low";
-  const mainPrecipitationPeriodLabelZh =
-    clusters.length >= 3
-      ? "零星小雨，时段分散"
-      : `主要降水：${clusters.map(formatPrecipitationClusterLabel).join("、")}`;
+  const mainPrecipitationPeriodLabelZh = formatPrecipitationTimingZh(
+    clusters,
+    affectedWindows,
+    rainTimingConfidence,
+  );
 
   return {
     mainPrecipitationPeriodLabelZh,
@@ -2045,6 +2316,13 @@ export function derivePrecipitationPeriods(
     rainTimingConfidence,
   };
 }
+
+type PrecipitationCluster = {
+  readonly startHour: number;
+  endHour: number;
+  maxScore: number;
+  readonly periodNames: Set<string>;
+};
 
 function hourlyPrecipitationSignalScore(hour: NormalizedHourlyWeather): number {
   const amountMm = precipitationAmountMm(hour) ?? 0;
@@ -2088,19 +2366,63 @@ function precipitationWindowLabelForHour(hour: number): string {
 }
 
 function precipitationDayPeriodName(hour: number): string {
-  if (hour < 6 || hour >= 21) {
-    return "夜间";
+  if (hour < 5) {
+    return "凌晨";
   }
   if (hour < 11) {
     return "上午";
   }
   if (hour < 14) {
-    return "中午";
+    return "中午前后";
   }
-  if (hour < 18) {
+  if (hour < 17) {
     return "下午";
   }
-  return "傍晚";
+  if (hour < 20) {
+    return "傍晚";
+  }
+  return "夜间";
+}
+
+function formatPrecipitationTimingZh(
+  clusters: readonly PrecipitationCluster[],
+  affectedWindows: readonly string[],
+  confidence: ForecastPrecipitationPeriodSummary["rainTimingConfidence"],
+): string {
+  if (clusters.length === 0) {
+    return "预计有降水，但具体时段不明确，出发前需复核临近预报。";
+  }
+
+  const hasMorningWindow = affectedWindows.includes("清晨窗口");
+  const hasEveningWindow = affectedWindows.includes("傍晚窗口");
+  const hasDaytimeWindow = affectedWindows.includes("日间窗口");
+  const hasNightWindow = affectedWindows.includes("夜间窗口");
+
+  if (clusters.length >= 3 || confidence === "low" && clusters.length >= 2) {
+    return "降水时段分散，以零星小雨为主。";
+  }
+
+  const phrase = clusters.map(formatPrecipitationClusterLabel).join("，");
+  const periodNames = new Set(clusters.flatMap((cluster) => [...cluster.periodNames]));
+  const hasAfternoon = periodNames.has("下午") || periodNames.has("傍晚");
+
+  if (hasMorningWindow && hasNightWindow) {
+    return "夜间到上午有间歇小雨，建议把清晨窗口作为机动观察。";
+  }
+  if (hasMorningWindow) {
+    return `降水主要集中在${phrase}，清晨窗口可能受影响。`;
+  }
+  if (hasEveningWindow && hasAfternoon) {
+    return "午后到傍晚有降水干扰，日落窗口需现场复核。";
+  }
+  if (hasDaytimeWindow && clusters.length >= 2) {
+    return "白天多时段有小雨，外拍容易被打断。";
+  }
+  if (hasNightWindow && !hasMorningWindow) {
+    return `降水偏向${phrase}，夜间拍摄和返程安全需复核。`;
+  }
+
+  return `降水主要集中在${phrase}，拍摄窗口需现场复核。`;
 }
 
 function formatPrecipitationClusterLabel(cluster: {
@@ -2112,7 +2434,18 @@ function formatPrecipitationClusterLabel(cluster: {
   if (names.length === 1) {
     return names[0]!;
   }
-  return `${names[0]}至${names[names.length - 1]}`;
+  const start = names[0]!;
+  const end = names[names.length - 1]!;
+  if (start === "下午" && end === "傍晚") {
+    return "午后到傍晚";
+  }
+  if (start === "凌晨" && end === "上午") {
+    return "凌晨至上午";
+  }
+  if (start === "夜间" && end === "上午") {
+    return "夜间至上午";
+  }
+  return `${start}至${end}`;
 }
 
 function metricFromWindow(
@@ -2331,6 +2664,18 @@ function pickDailyWindows(
 
   return [...filtered]
     .sort((left, right) => {
+      const levelDelta = windowLevelRank(right.windowLevel) - windowLevelRank(left.windowLevel);
+      if (levelDelta !== 0) {
+        return levelDelta;
+      }
+
+      const recommendationDelta =
+        windowRecommendationRank(right.recommendationLevel) -
+        windowRecommendationRank(left.recommendationLevel);
+      if (recommendationDelta !== 0) {
+        return recommendationDelta;
+      }
+
       const rightScore = right.practicalScore ?? right.score;
       const leftScore = left.practicalScore ?? left.score;
       if (rightScore !== leftScore) {
@@ -2339,17 +2684,7 @@ function pickDailyWindows(
 
       return Date.parse(left.startTime) - Date.parse(right.startTime);
     })
-    .filter((window, _index, sorted) => {
-      if (target !== "general") {
-        return true;
-      }
-
-      const hasShootableWindow = sorted.some(
-        (candidate) => candidate.practicalKind !== "formation_signal",
-      );
-      return !hasShootableWindow || window.practicalKind !== "formation_signal";
-    })
-    .slice(0, target === "general" ? 3 : 2);
+    .slice(0, target === "general" ? 4 : 3);
 }
 
 type DailyDecisionModel = Pick<
@@ -2366,13 +2701,23 @@ type DailyDecisionModel = Pick<
 
 function pickBestShootableDailyWindow(
   keyWindows: readonly ForecastTimeWindow[],
+  weather: ForecastDailyWeatherSummary | undefined,
 ): ForecastTimeWindow | undefined {
-  return keyWindows.find(
-    (window) =>
-      window.practicalKind !== "formation_signal" &&
-      window.recommendationLevel !== "backup" &&
-      window.recommendationLevel !== "not_recommended",
-  );
+  const dailyRainRisk = weather?.precipitationRisk?.rainRiskLevel;
+  return keyWindows.find((window) => {
+    if (!isExecutableShootableWindow(window)) {
+      return false;
+    }
+    const windowRainRisk = window.precipitationRisk?.rainRiskLevel;
+    if (
+      (dailyRainRisk === "high" || dailyRainRisk === "severe") &&
+      windowRainRisk !== "none" &&
+      windowRainRisk !== "low"
+    ) {
+      return false;
+    }
+    return true;
+  });
 }
 
 function buildDailyDecisionModel(
@@ -2381,10 +2726,15 @@ function buildDailyDecisionModel(
   riskFlags: readonly ForecastRiskFlag[],
   score: number,
   weather: ForecastDailyWeatherSummary | undefined,
+  bestShootableWindow: ForecastTimeWindow | undefined,
 ): DailyDecisionModel {
   const bestWindowScore = maxOptional(
     keyWindows.map((window) => window.practicalScore ?? window.score),
   );
+  const bestExecutableScore =
+    bestShootableWindow !== undefined
+      ? bestShootableWindow.practicalScore ?? bestShootableWindow.score
+      : undefined;
   const subjectOpportunityScore = maxDefined([
     breakdown.cloudSea?.score,
     breakdown.sunriseGlow?.score,
@@ -2396,7 +2746,10 @@ function buildDailyDecisionModel(
     score,
   ]);
   const riskPenalty = dailyTripRiskPenalty(riskFlags, weather, breakdown);
-  const practicalTripScore = clampScore(subjectOpportunityScore - riskPenalty);
+  const practicalTripBase = bestShootableWindow
+    ? maxDefined([bestExecutableScore, score, subjectOpportunityScore * 0.82])
+    : Math.min(subjectOpportunityScore, 52);
+  const practicalTripScore = clampScore(practicalTripBase - riskPenalty);
   const observationSignalScore = nearbyObservationSignalScore(breakdown, keyWindows);
   const nearbyObservationScore = clampScore(
     Math.max(practicalTripScore, observationSignalScore - riskPenalty * 0.45),
@@ -2405,6 +2758,7 @@ function buildDailyDecisionModel(
     practicalTripScore,
     riskPenalty,
     subjectOpportunityScore,
+    bestShootableWindow,
   );
   const nearbyObservationRecommendation = nearbyObservationLabel(
     nearbyObservationScore,
@@ -2485,7 +2839,17 @@ function dedicatedTripLabel(
   practicalTripScore: number,
   riskPenalty: number,
   opportunityScore: number,
+  bestShootableWindow: ForecastTimeWindow | undefined,
 ): ForecastTripDecisionLabel {
+  if (!bestShootableWindow) {
+    if (opportunityScore >= 55 && riskPenalty >= 20) {
+      return "不建议专程前往";
+    }
+    if (opportunityScore >= 55 || practicalTripScore >= 42) {
+      return "仅作备选";
+    }
+    return "不建议专程前往";
+  }
   if (practicalTripScore >= 74 && riskPenalty < 20) {
     return "推荐专程前往";
   }
@@ -2572,15 +2936,15 @@ function buildWatchableWindows(
   const windows = keyWindows
     .filter(
       (window) =>
-        window.recommendationLevel !== "not_recommended" ||
-        window.practicalKind === "formation_signal" ||
-        (window.practicalScore ?? window.score) >= 34,
+        !isExecutableShootableWindow(window) &&
+        (window.windowLevel === "watchable" ||
+          window.practicalKind === "formation_signal" ||
+          window.suitableIfNearby === true ||
+          (window.practicalScore ?? window.score) >= 34),
     )
     .slice(0, 3)
     .map((window): ForecastWatchableWindow => {
       const recommendationLevel = window.recommendationLevel ?? "backup";
-      const suitableForDedicatedTrip =
-        recommendationLevel === "recommended" || recommendationLevel === "cautious";
       return {
         subject:
           window.subjectPriorityLabel ??
@@ -2588,14 +2952,12 @@ function buildWatchableWindows(
         target: window.target,
         startTime: window.startTime,
         endTime: window.endTime,
+        windowLevel: window.windowLevel ?? "watchable",
         recommendationLevel,
         reasonZh:
-          window.practicalNoteZh ??
-          (suitableForDedicatedTrip
-            ? "窗口具备可执行性，仍需出发前复核最新天气。"
-            : "可作为机动观察，不建议作为唯一目标。"),
-        suitableForDedicatedTrip,
-        suitableIfNearby: (window.practicalScore ?? window.score) >= 34,
+          window.copyReasonZh ?? window.practicalNoteZh ?? "可作为机动观察，不建议作为唯一目标。",
+        suitableForDedicatedTrip: false,
+        suitableIfNearby: window.suitableIfNearby ?? (window.practicalScore ?? window.score) >= 34,
       };
     });
 
@@ -2614,6 +2976,7 @@ function buildWatchableWindows(
     {
       subject,
       target,
+      windowLevel: "watchable",
       recommendationLevel: "backup",
       reasonZh:
         decision.nearbyObservationAdviceZh ??
@@ -2643,6 +3006,7 @@ function buildDailyShortAdvice(
     return "主要风险偏高，建议把该日作为备选并等待真实天气复核。";
   }
 
+  const bestShootableWindow = keyWindows.find(isExecutableShootableWindow);
   if (keyWindows.length === 0) {
     return "暂未形成明确高分窗口，建议继续观察后续数据。";
   }
@@ -2659,7 +3023,10 @@ function buildDailyShortAdvice(
     return score >= 65 ? "夜间窗口可纳入计划。" : "星空银河条件偏保守，建议准备夜景备选。";
   }
 
-  const bestWindow = keyWindows[0];
+  const bestWindow = bestShootableWindow ?? keyWindows[0];
+  if (!bestShootableWindow && target === "general") {
+    return "暂无高确定性拍摄窗口，若已在附近可观察云雾变化和短暂开口。";
+  }
   if (bestWindow?.practicalKind === "formation_signal") {
     return "夜间云海只算形成信号，不建议单独熬夜等待无光云海。";
   }
@@ -2878,7 +3245,7 @@ function buildPhotographyAdvice(
   bestWindows: readonly ForecastTimeWindow[],
 ): readonly string[] {
   const advice: string[] = [];
-  const bestWindow = bestWindows.find((window) => window.practicalKind !== "formation_signal");
+  const bestWindow = bestWindows.find(isExecutableShootableWindow);
 
   if (input.target === "cloud_sea" || input.target === "general") {
     advice.push(
@@ -2956,9 +3323,9 @@ function buildSummary(
   }
 
   if (input.target === "general") {
-    const bestWindow = bestWindows.find((window) => window.practicalKind !== "formation_signal");
+    const bestWindow = bestWindows.find(isExecutableShootableWindow);
     const bestWindowText = bestWindow
-      ? `最佳窗口优先按可执行性排序：${bestWindow.label}。`
+      ? `最佳窗口优先按可执行性排序：${bestWindow.subjectPriorityLabel ?? bestWindow.label}。`
       : "暂未形成明确可执行拍摄窗口。";
     return `${input.place.name}${targetPhrase}${scoreLabel}为 ${overallScore} 分，建议等级为“${recommendationLabel}”。${bestWindowText}云海 ${scores.cloudSea.score} 分，霞光最高 ${Math.max(scores.sunriseGlow.score, scores.sunsetGlow.score)} 分，通透度 ${scores.transparency.score} 分。`;
   }

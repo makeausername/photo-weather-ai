@@ -503,6 +503,8 @@ export type ForecastWindowRecommendationLevel =
   | "backup"
   | "not_recommended";
 
+export type ForecastWindowLevel = "watchable" | "shootable" | "best" | "blocked";
+
 export type ForecastTimeWindow = {
   readonly label: string;
   readonly date?: string;
@@ -514,6 +516,11 @@ export type ForecastTimeWindow = {
   readonly practicalScore?: number;
   readonly humanCostLevel?: ForecastWindowHumanCostLevel;
   readonly recommendationLevel?: ForecastWindowRecommendationLevel;
+  readonly windowLevel?: ForecastWindowLevel;
+  readonly executableForDedicatedTrip?: boolean;
+  readonly suitableIfNearby?: boolean;
+  readonly blockerReasons?: readonly string[];
+  readonly copyReasonZh?: string;
   readonly practicalKind?: "shooting_window" | "formation_signal";
   readonly lightPhase?:
     | "deep_night"
@@ -830,6 +837,7 @@ export type ForecastWatchableWindow = {
   readonly target: ForecastTarget;
   readonly startTime?: string;
   readonly endTime?: string;
+  readonly windowLevel?: ForecastWindowLevel;
   readonly recommendationLevel: ForecastWindowRecommendationLevel;
   readonly reasonZh: string;
   readonly suitableForDedicatedTrip: boolean;

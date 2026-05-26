@@ -320,21 +320,23 @@ console.log(`astroWindowAvailable: ${value(astroAnalysis.astroWindowAvailable)}`
 console.log(`astroShootable: ${value(astroAnalysis.astroShootable)}`);
 console.log(`astroWeatherBlockers: ${astroBlockers.length > 0 ? astroBlockers.join(" | ") : "无"}`);
 console.log(`bestWindowFullLabel: ${formatWindowLabel(firstWindow, timezone)}`);
-console.log(`bestWindow: ${value(firstWindow.label)} score=${number(firstWindow.score)} practical=${number(firstWindow.practicalScore)} condition=${number(firstWindow.conditionScore)} kind=${value(firstWindow.practicalKind)} light=${value(firstWindow.lightPhase)}`);
+console.log(`bestWindow: ${value(firstWindow.label)} score=${number(firstWindow.score)} practical=${number(firstWindow.practicalScore)} condition=${number(firstWindow.conditionScore)} kind=${value(firstWindow.practicalKind)} light=${value(firstWindow.lightPhase)} windowLevel=${value(firstWindow.windowLevel)} executable=${value(firstWindow.executableForDedicatedTrip)} nearby=${value(firstWindow.suitableIfNearby)}`);
 console.log(`generalBestSubject: ${value(firstWindow.subjectPriorityLabel || result.recommendationLabel)}`);
+console.log(`bestWindowCopyReason: ${value(firstWindow.copyReasonZh || firstWindow.practicalNoteZh)}`);
 console.log(`arrivalAdvice: ${value(firstArrival.recommendedArrivalLabel)} time=${value(firstArrival.recommendedArrivalTime)} setup=${number(firstArrival.setupBufferMinutes, "min")} warning=${value(firstArrival.warningZh, "无")}`);
 console.log(`recommendedArrivalFullLabel: ${firstArrival.recommendedArrivalTime ? formatArrivalLabel(firstArrival.recommendedArrivalTime, timezone) : "暂无明确到达时间"}`);
 console.log("topRankedWindows:");
 for (const window of bestWindows.slice(0, 5)) {
-  console.log(`- ${formatWindowLabel(window, timezone)} ${value(window.label)} level=${value(window.recommendationLevel)} practical=${number(window.practicalScore)} condition=${number(window.conditionScore)} blockers=${Array.isArray(window.weatherBlockers) ? window.weatherBlockers.join("|") || "none" : "none"}`);
+  const blockers = Array.isArray(window.blockerReasons) ? window.blockerReasons : window.weatherBlockers;
+  console.log(`- ${formatWindowLabel(window, timezone)} ${value(window.subjectPriorityLabel || window.label)} windowLevel=${value(window.windowLevel)} recommendationLevel=${value(window.recommendationLevel)} practical=${number(window.practicalScore)} condition=${number(window.conditionScore)} executable=${value(window.executableForDedicatedTrip)} nearby=${value(window.suitableIfNearby)} blockers=${Array.isArray(blockers) ? blockers.join("|") || "none" : "none"}`);
 }
 console.log(`dailyFirst: date=${value(firstDailySummary.date)} score=${number(firstDailySummary.score)} advice=${value(firstDailySummary.shortAdvice)}`);
 console.log(`dedicatedTripRecommendation: ${value(firstDailySummary.dedicatedTripRecommendation)}`);
 console.log(`nearbyObservationRecommendation: ${value(firstDailySummary.nearbyObservationRecommendation)}`);
 console.log(`dailyPracticalScores: opportunity=${number(firstDailySummary.weatherOpportunityScore)} riskPenalty=${number(firstDailySummary.riskPenalty)} practicalTrip=${number(firstDailySummary.practicalTripScore)} nearbyObservation=${number(firstDailySummary.nearbyObservationScore)}`);
 console.log(`mainPrecipitationPeriodLabelZh: ${value(firstDailySummary.mainPrecipitationPeriodLabelZh || firstDaily.mainPrecipitationPeriodLabelZh)}`);
-console.log(`watchableWindows: ${Array.isArray(firstDailySummary.watchableWindows) ? firstDailySummary.watchableWindows.map((window) => `${value(window.subject)}@${window.startTime && window.endTime ? formatWindowLabel(window, timezone) : "time-tbd"} level=${value(window.recommendationLevel)} nearby=${value(window.suitableIfNearby)}`).join(" | ") || "none" : "none"}`);
-console.log(`bestShootableWindow: ${firstDailySummary.bestShootableWindow ? `${formatWindowLabel(firstDailySummary.bestShootableWindow, timezone)} ${value(firstDailySummary.bestShootableWindow.subjectPriorityLabel || firstDailySummary.bestShootableWindow.label)} level=${value(firstDailySummary.bestShootableWindow.recommendationLevel)}` : "none"}`);
+console.log(`watchableWindows: ${Array.isArray(firstDailySummary.watchableWindows) ? firstDailySummary.watchableWindows.map((window) => `${value(window.subject)}@${window.startTime && window.endTime ? formatWindowLabel(window, timezone) : "time-tbd"} windowLevel=${value(window.windowLevel)} recommendationLevel=${value(window.recommendationLevel)} nearby=${value(window.suitableIfNearby)}`).join(" | ") || "none" : "none"}`);
+console.log(`bestShootableWindow: ${firstDailySummary.bestShootableWindow ? `${formatWindowLabel(firstDailySummary.bestShootableWindow, timezone)} ${value(firstDailySummary.bestShootableWindow.subjectPriorityLabel || firstDailySummary.bestShootableWindow.label)} windowLevel=${value(firstDailySummary.bestShootableWindow.windowLevel)} recommendationLevel=${value(firstDailySummary.bestShootableWindow.recommendationLevel)} executable=${value(firstDailySummary.bestShootableWindow.executableForDedicatedTrip)}` : "none"}`);
 console.log(`temperatureCorrectionSummary: rawMin=${number(rawDailyMin, "掳C")} correctedMin=${number(correctedDailyMin, "掳C")} rawMax=${number(rawDailyMax, "掳C")} correctedMax=${number(correctedDailyMax, "掳C")} reason=${value(tempAdjustment.correctionReason)}`);
 console.log(`clothingGuide: ${value(clothing.titleZh)} / ${value(clothing.summaryZh)}`);
 console.log(`clothingLayers: ${(clothing.layers || []).join("、") || "暂无"}`);

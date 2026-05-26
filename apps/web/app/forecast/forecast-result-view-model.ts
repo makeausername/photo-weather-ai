@@ -73,6 +73,12 @@ export type ForecastResultWindow = {
   readonly humanCostLevel?: ForecastWindowHumanCostLevel;
   readonly recommendationLevel?: ForecastWindowRecommendationLevel;
   readonly recommendationLevelLabel: string;
+  readonly windowLevel?: ForecastTimeWindow["windowLevel"];
+  readonly windowLevelLabel: string;
+  readonly executableForDedicatedTrip?: boolean;
+  readonly suitableIfNearby?: boolean;
+  readonly blockerReasons?: readonly string[];
+  readonly copyReasonZh?: string;
   readonly arrivalFullLabel?: string;
   readonly practicalKind?: ForecastTimeWindow["practicalKind"];
   readonly lightPhase?: ForecastTimeWindow["lightPhase"];
@@ -411,7 +417,7 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
   const mainRisk = firstRisk(result.riskFlags);
   const scoreCards = allScoreKeys.map((key) => result.scores[key]);
   const resultWindows = mapResultWindows(result.bestWindows, result.calendarBasis.timezone);
-  const bestWindow = resultWindows[0];
+  const bestWindow = resultWindows.find(isExecutableResultWindow);
 
   return {
     target: "general",
@@ -434,7 +440,7 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
         "bestWindow",
         "bestWindow",
         "最佳拍摄窗口",
-        bestWindow?.label ?? "暂无明确高分窗口",
+        bestWindow?.label ?? "暂无高确定性拍摄窗口",
         bestWindow?.fullTimeRangeLabel ?? "等待更多数据",
         "accent",
       ),
@@ -465,7 +471,7 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
             }`
           : bestWindow
             ? `${bestWindow.fullTimeRangeLabel}，预留取景和机位确认时间。`
-            : "暂无明确高分窗口。",
+            : "暂无高确定性拍摄窗口，若已在附近可观察云雾变化。",
         "accent",
       ),
     ],
@@ -892,14 +898,33 @@ function buildDailyItems(result: ForecastCalculationResult): readonly ForecastRe
     score: summary.score,
     recommendationLabel: summary.recommendationLabel,
     bestWindowLabel:
-      summary.keyWindows[0]?.label ??
+      summary.bestShootableWindow?.subjectPriorityLabel ??
+      summary.bestShootableWindow?.label ??
       (result.target === "cloud_sea"
         ? "暂无清晨云海窗口"
         : result.target === "glow"
           ? "暂无晨昏窗口"
           : result.target === "astro"
             ? "暂无夜间窗口"
-            : "暂无明确窗口"),
+            : "暂无高确定性拍摄窗口"),
+    bestShootableWindowLabel: summary.bestShootableWindow
+      ? `${summary.bestShootableWindow.subjectPriorityLabel ?? summary.bestShootableWindow.label} ${formatShootingWindowZh(summary.bestShootableWindow, result.calendarBasis.timezone, { style: "compact" })}`
+      : "暂无高确定性拍摄窗口",
+    watchableWindowLabel: summary.watchableWindows?.[0]
+      ? `${summary.watchableWindows[0].subject}${
+          summary.watchableWindows[0].startTime && summary.watchableWindows[0].endTime
+              ? ` ${formatShootingWindowZh(
+                  {
+                    startTime: summary.watchableWindows[0].startTime,
+                    endTime: summary.watchableWindows[0].endTime,
+                  },
+                  result.calendarBasis.timezone,
+                  { style: "compact" },
+              )}`
+            : ""
+        }`
+      : undefined,
+    mainPrecipitationPeriodLabel: summary.weather?.mainPrecipitationPeriodLabelZh,
     riskLabel:
       summary.riskFlags[0] !== undefined
         ? `${summary.riskFlags[0].label}：${riskLevelText(summary.riskFlags[0].level)}风险`
@@ -2244,6 +2269,12 @@ function mapResultWindows(
     humanCostLevel: window.humanCostLevel,
     recommendationLevel: window.recommendationLevel,
     recommendationLevelLabel: windowRecommendationLevelLabel(window.recommendationLevel),
+    windowLevel: window.windowLevel,
+    windowLevelLabel: windowLevelLabel(window.windowLevel),
+    executableForDedicatedTrip: window.executableForDedicatedTrip,
+    suitableIfNearby: window.suitableIfNearby,
+    blockerReasons: window.blockerReasons,
+    copyReasonZh: window.copyReasonZh,
     arrivalFullLabel: window.arrivalAdvice
       ? formatArrivalDeadlineZh(window.arrivalAdvice.recommendedArrivalTime, timezone)
       : undefined,
@@ -2260,6 +2291,13 @@ function mapResultWindows(
 }
 
 function displayWindowLabel(window: ForecastTimeWindow): string {
+  if (window.subjectPriorityLabel) {
+    if (window.target === "astro" && (window.weatherBlockers?.length ?? 0) > 0) {
+      return "天文窗口";
+    }
+    return window.subjectPriorityLabel;
+  }
+
   const labelWithoutTime = window.label
     .replace(/\s*\d{1,2}:\d{2}\s*[-–至到]\s*\d{1,2}:\d{2}\s*/g, "")
     .trim();
@@ -2291,26 +2329,65 @@ function windowRecommendationLevelLabel(
   return "谨慎参考";
 }
 
+function windowLevelLabel(level: ForecastTimeWindow["windowLevel"]): string {
+  if (level === "best") {
+    return "最佳拍摄";
+  }
+  if (level === "shootable") {
+    return "推荐拍摄";
+  }
+  if (level === "watchable") {
+    return "可观察";
+  }
+  if (level === "blocked") {
+    return "不建议窗口";
+  }
+  return "谨慎参考";
+}
+
+function isExecutableResultWindow(window: ForecastResultWindow): boolean {
+  const hasHierarchy =
+    window.windowLevel !== undefined || window.executableForDedicatedTrip !== undefined;
+  if (!hasHierarchy) {
+    return (
+      window.practicalKind !== "formation_signal" &&
+      window.recommendationLevel !== "backup" &&
+      window.recommendationLevel !== "not_recommended"
+    );
+  }
+  return (
+    window.executableForDedicatedTrip === true ||
+    (window.practicalKind !== "formation_signal" &&
+      (window.windowLevel === "best" || window.windowLevel === "shootable") &&
+      window.recommendationLevel !== "backup" &&
+      window.recommendationLevel !== "not_recommended")
+  );
+}
+
 function inferWindowModuleKey(window: ForecastTimeWindow): ForecastResultModuleKey {
-  if (window.label.startsWith("朝霞")) {
+  const subject = window.subjectPriorityLabel ?? window.label;
+  if (
+    window.target === "glow" &&
+    (window.lightPhase === "dawn" || window.lightPhase === "sunrise" || subject.includes("朝霞"))
+  ) {
     return "sunriseGlow";
   }
-  if (window.label.startsWith("晚霞")) {
+  if (
+    window.target === "glow" &&
+    (window.lightPhase === "sunset" ||
+      window.lightPhase === "blue_hour" ||
+      subject.includes("晚霞") ||
+      subject.includes("日落"))
+  ) {
     return "sunsetGlow";
   }
-  if (window.label.startsWith("云海")) {
+  if (window.target === "cloud_sea" || subject.startsWith("云海")) {
     return "cloudSea";
   }
-  if (window.label.startsWith("清晨云海")) {
-    return "cloudSea";
-  }
-  if (window.label.startsWith("云海形成")) {
-    return "cloudSea";
-  }
-  if (window.label.startsWith("银河") || window.label.startsWith("推荐银河")) {
+  if (window.target === "astro" && subject.includes("银河")) {
     return "milkyWay";
   }
-  if (window.label.startsWith("天文黑夜")) {
+  if (window.target === "astro") {
     return "astronomicalNight";
   }
   return "bestWindow";
@@ -2394,8 +2471,8 @@ function practicalSubjectScore(
   const window = result.bestWindows.find(
     (candidate) =>
       candidate.target === target &&
-      candidate.practicalKind !== "formation_signal" &&
-      candidate.label.includes(labelHint),
+      isExecutableForecastWindow(candidate) &&
+      forecastWindowMatchesSubject(candidate, labelHint),
   );
   if (window) {
     return window.practicalScore ?? window.score;
@@ -2422,6 +2499,53 @@ function practicalSubjectScore(
   }
 
   return 0;
+}
+
+function isExecutableForecastWindow(window: ForecastTimeWindow): boolean {
+  const hasHierarchy =
+    window.windowLevel !== undefined || window.executableForDedicatedTrip !== undefined;
+  if (!hasHierarchy) {
+    return (
+      window.practicalKind !== "formation_signal" &&
+      window.recommendationLevel !== "backup" &&
+      window.recommendationLevel !== "not_recommended"
+    );
+  }
+  return (
+    window.executableForDedicatedTrip === true ||
+    (window.practicalKind !== "formation_signal" &&
+      (window.windowLevel === "best" || window.windowLevel === "shootable") &&
+      window.recommendationLevel !== "backup" &&
+      window.recommendationLevel !== "not_recommended")
+  );
+}
+
+function forecastWindowMatchesSubject(window: ForecastTimeWindow, labelHint: string): boolean {
+  const subject = `${window.subjectPriorityLabel ?? ""} ${window.label}`;
+  if (window.target === "glow" && labelHint === "朝霞") {
+    return (
+      window.lightPhase === "dawn" ||
+      window.lightPhase === "sunrise" ||
+      subject.includes("朝霞") ||
+      subject.includes("日出")
+    );
+  }
+  if (window.target === "glow" && labelHint === "晚霞") {
+    return (
+      window.lightPhase === "sunset" ||
+      window.lightPhase === "blue_hour" ||
+      subject.includes("晚霞") ||
+      subject.includes("日落") ||
+      subject.includes("蓝调")
+    );
+  }
+  if (window.target === "astro" && labelHint === "银河") {
+    return subject.includes("银河");
+  }
+  if (window.target === "astro") {
+    return subject.includes("星空") || subject.includes("天文黑夜");
+  }
+  return subject.includes(labelHint);
 }
 
 function firstAstro(result: ForecastCalculationResult): AstroSummary | undefined {

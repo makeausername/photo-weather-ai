@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ForecastCalculationInput, ForecastQueryInput, NormalizedHourlyWeather } from "@photo-weather/shared";
-import { buildMockForecastInput, calculateForecast } from "../index.js";
+import {
+  buildMockForecastInput,
+  calculateForecast,
+  classifyPhotographyWindow,
+  derivePrecipitationPeriods,
+} from "../index.js";
 
 const fixedNow = "2026-05-20T00:00:00+08:00";
 const query: ForecastQueryInput = {
@@ -59,6 +64,111 @@ function localHour(time: string): number {
 }
 
 describe("general practical trip recommendation", () => {
+  it("classifies evening glow windows as sunset subjects instead of sunrise glow", () => {
+    const classification = classifyPhotographyWindow(
+      {
+        label: "朝霞峰值窗口 19:01-19:28",
+        date: "2026-05-20",
+        startTime: "2026-05-20T19:01:00+08:00",
+        endTime: "2026-05-20T19:28:00+08:00",
+        score: 78,
+        target: "glow",
+        recommendationLevel: "recommended",
+        practicalKind: "shooting_window",
+        practicalScore: 78,
+      },
+      {
+        date: "2026-05-20",
+        timezone: "Asia/Shanghai",
+        sunset: "2026-05-20T19:05:00+08:00",
+        civilDusk: "2026-05-20T19:36:00+08:00",
+      },
+      undefined,
+      "Asia/Shanghai",
+    );
+
+    expect(classification.subjectPriorityLabel).not.toContain("朝霞");
+    expect(["晚霞", "日落暖光", "日落后余晖", "蓝调转场"]).toContain(
+      classification.subjectPriorityLabel,
+    );
+    expect(classification.lightPhase).toBe("sunset");
+    expect(classification.executableForDedicatedTrip).toBe(true);
+  });
+
+  it("classifies morning cloud sea as shootable and deep-night cloud sea as formation only", () => {
+    const morning = classifyPhotographyWindow(
+      {
+        label: "清晨云海窗口 05:00-06:20",
+        date: "2026-05-20",
+        startTime: "2026-05-20T05:00:00+08:00",
+        endTime: "2026-05-20T06:20:00+08:00",
+        score: 72,
+        target: "cloud_sea",
+        recommendationLevel: "cautious",
+        practicalKind: "shooting_window",
+        practicalScore: 68,
+      },
+      {
+        date: "2026-05-20",
+        timezone: "Asia/Shanghai",
+        sunrise: "2026-05-20T05:12:00+08:00",
+        civilDawn: "2026-05-20T04:45:00+08:00",
+      },
+      undefined,
+      "Asia/Shanghai",
+    );
+    const deepNight = classifyPhotographyWindow(
+      {
+        label: "云海形成信号 01:00-03:00",
+        date: "2026-05-20",
+        startTime: "2026-05-20T01:00:00+08:00",
+        endTime: "2026-05-20T03:00:00+08:00",
+        score: 76,
+        target: "cloud_sea",
+        recommendationLevel: "backup",
+        practicalKind: "formation_signal",
+        practicalScore: 34,
+      },
+      undefined,
+      undefined,
+      "Asia/Shanghai",
+    );
+
+    expect(morning.subjectPriorityLabel).toBe("清晨云海");
+    expect(morning.windowLevel).toBe("shootable");
+    expect(deepNight.subjectPriorityLabel).toBe("云海形成信号");
+    expect(deepNight.windowLevel).toBe("watchable");
+    expect(deepNight.executableForDedicatedTrip).toBe(false);
+  });
+
+  it("keeps cross-midnight Milky Way windows in the night hierarchy", () => {
+    const classification = classifyPhotographyWindow(
+      {
+        label: "推荐银河窗口 22:45-03:45",
+        date: "2026-05-20",
+        startTime: "2026-05-20T22:45:00+08:00",
+        endTime: "2026-05-21T03:45:00+08:00",
+        score: 82,
+        target: "astro",
+        recommendationLevel: "recommended",
+        practicalKind: "shooting_window",
+        practicalScore: 74,
+      },
+      undefined,
+      {
+        date: "2026-05-20",
+        timezone: "Asia/Shanghai",
+        astronomicalNightStart: "2026-05-20T20:50:00+08:00",
+        astronomicalNightEnd: "2026-05-21T04:10:00+08:00",
+      },
+      "Asia/Shanghai",
+    );
+
+    expect(classification.subjectPriorityLabel).toBe("银河");
+    expect(classification.lightPhase).toBe("astronomical_night");
+    expect(classification.windowLevel).toBe("shootable");
+  });
+
   it("chooses a sunrise-linked cloud sea window over a stronger deep-night formation signal", () => {
     const input = withHourlyWeather(buildMockForecastInput(query, { now: fixedNow }), (hour) => {
       const hourValue = localHour(hour.time);
@@ -256,6 +366,8 @@ describe("general practical trip recommendation", () => {
       firstDaily.practicalTripScore ?? 0,
     );
     expect(firstDaily.shortAdvice).toContain("观察");
+    expect(firstDaily.bestShootableWindow).toBeUndefined();
+    expect(firstDaily.watchableWindows?.[0]?.suitableForDedicatedTrip).toBe(false);
   });
 
   it("penalizes rain overlapping a shootable window without over-penalizing later rain", () => {
@@ -329,4 +441,45 @@ describe("general practical trip recommendation", () => {
       (clearWindow!.practicalScore ?? 0) - 4,
     );
   });
+
+  it("formats grouped precipitation timing as natural shooting advice", () => {
+    const input = buildMockForecastInput(query, { now: fixedNow });
+    const rainyHours = input.hourlyWeather
+      .filter((hour) => localDateForTimeForTest(hour.time) === "2026-05-20")
+      .map((hour) => {
+        const hourValue = localHour(hour.time);
+        if (hourValue >= 1 && hourValue <= 8) {
+          return {
+            ...hour,
+            precipitationProbability: 62,
+            precipitation: 0.7,
+            precipitationAmountMm: 0.7,
+            rainAmountMm: 0.7,
+            weatherTextZh: "小雨",
+          };
+        }
+        return {
+          ...hour,
+          precipitationProbability: 0,
+          precipitation: 0,
+          precipitationAmountMm: 0,
+          rainAmountMm: 0,
+        };
+      });
+
+    const summary = derivePrecipitationPeriods(rainyHours, "Asia/Shanghai");
+
+    expect(summary.mainPrecipitationPeriodLabelZh).toContain("清晨窗口");
+    expect(summary.mainPrecipitationPeriodLabelZh).not.toContain("主要降水：");
+    expect(summary.mainPrecipitationPeriodLabelZh).not.toContain("、");
+  });
 });
+
+function localDateForTimeForTest(time: string): string {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(Date.parse(time)));
+}

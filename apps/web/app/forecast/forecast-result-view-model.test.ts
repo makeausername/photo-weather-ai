@@ -1551,6 +1551,120 @@ describe("forecast result target-aware view model", () => {
     );
   });
 
+  it("renders an evening glow window as sunset copy even if the raw label says sunrise glow", () => {
+    const base = resultForTarget("general");
+    const result: ForecastCalculationResult = {
+      ...base,
+      bestWindows: [
+        {
+          ...base.bestWindows[0]!,
+          label: "朝霞窗口 19:01 - 19:28",
+          date: "2026-05-20",
+          startTime: "2026-05-20T19:01:00+08:00",
+          endTime: "2026-05-20T19:28:00+08:00",
+          score: 76,
+          conditionScore: 80,
+          practicalScore: 76,
+          target: "glow",
+          practicalKind: "shooting_window",
+          lightPhase: "sunset",
+          recommendationLevel: "recommended",
+          windowLevel: "best",
+          executableForDedicatedTrip: true,
+          suitableIfNearby: true,
+          subjectPriorityLabel: "日落暖光",
+          copyReasonZh: "日落暖光窗口可执行，需提前观察西向云层开口和通透度。",
+        },
+      ],
+    };
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "idle",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+
+    expect(viewModel.bestWindows[0]?.moduleKey).toBe("sunsetGlow");
+    expect(viewModel.bestWindows[0]?.label).toBe("日落暖光");
+    expect(html).toContain("日落暖光");
+    expect(html).toContain("2026年5月20日 19:01–19:28");
+    expect(html).not.toContain("朝霞窗口 19:01");
+  });
+
+  it("does not promote a watchable-only signal into the primary best shooting window", () => {
+    const base = resultForTarget("general");
+    const result: ForecastCalculationResult = {
+      ...base,
+      overallScore: 48,
+      recommendationLabel: "谨慎参考",
+      bestWindows: [
+        {
+          ...base.bestWindows[0]!,
+          label: "云海形成信号 01:00 - 03:00",
+          date: "2026-05-20",
+          startTime: "2026-05-20T01:00:00+08:00",
+          endTime: "2026-05-20T03:00:00+08:00",
+          score: 38,
+          conditionScore: 82,
+          practicalScore: 38,
+          practicalKind: "formation_signal",
+          lightPhase: "deep_night",
+          recommendationLevel: "backup",
+          windowLevel: "watchable",
+          executableForDedicatedTrip: false,
+          suitableIfNearby: true,
+          subjectPriorityLabel: "云海形成信号",
+          copyReasonZh: "夜间云海只算形成信号，适合已在山上观察，不作为最佳可拍窗口。",
+        },
+      ],
+      dailySummaries: base.dailySummaries.map((summary, index) =>
+        index === 0
+          ? {
+              ...summary,
+              bestShootableWindow: undefined,
+              keyWindows: [],
+              watchableWindows: [
+                {
+                  subject: "云海形成信号",
+                  target: "cloud_sea",
+                  startTime: "2026-05-20T01:00:00+08:00",
+                  endTime: "2026-05-20T03:00:00+08:00",
+                  windowLevel: "watchable",
+                  recommendationLevel: "backup",
+                  reasonZh: "夜间云海只算形成信号，适合已在山上观察。",
+                  suitableForDedicatedTrip: false,
+                  suitableIfNearby: true,
+                },
+              ],
+            }
+          : summary,
+      ),
+    };
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const bestWindowCard = viewModel.primaryCards.find((card) => card.key === "bestWindow");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "idle",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+
+    expect(bestWindowCard?.value).toBe("暂无高确定性拍摄窗口");
+    expect(html).toContain("可观察");
+    expect(html).toContain("暂无高确定性拍摄窗口");
+  });
+
   it("does not render contradictory zero precipitation probability with large rain amount", () => {
     const result: ForecastCalculationResult = {
       ...resultForTarget("general"),
