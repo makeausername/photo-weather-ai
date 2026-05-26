@@ -259,6 +259,18 @@ describe("local astro diagnostics scripts", () => {
       "clothingRiskNoteZh:",
       "generalBestSubject:",
       "confidenceByTarget:",
+      "cloudSeaFormationScore:",
+      "cloudSeaShootableScore:",
+      "whiteoutRiskScore:",
+      "lightAlignedScore:",
+      "bestCloudSeaWindow:",
+      "watchableCloudSeaWindows:",
+      "terrainSupport:",
+      "rainSupportSignal:",
+      "activeRainDuringWindow:",
+      "postRainOpeningChance:",
+      "cloudSeaConfidence:",
+      "cloudSeaReasons:",
     ]) {
       expect(script).toContain(expected);
     }

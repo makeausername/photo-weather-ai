@@ -427,7 +427,10 @@ describe("general practical trip recommendation", () => {
       (window) => window.target === "cloud_sea" && window.practicalKind === "shooting_window",
     );
     const wetWindow = calculateForecast(rainDuringWindow).bestWindows.find(
-      (window) => window.target === "cloud_sea" && window.practicalKind === "shooting_window",
+      (window) =>
+        window.target === "cloud_sea" &&
+        window.practicalKind === "shooting_window" &&
+        window.precipitationRisk?.rainRiskLevel === "medium",
     );
     const laterRainWindow = calculateForecast(rainAfterWindow).bestWindows.find(
       (window) => window.target === "cloud_sea" && window.practicalKind === "shooting_window",

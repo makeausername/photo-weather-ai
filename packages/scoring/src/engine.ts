@@ -1008,7 +1008,12 @@ function applyPracticalTripScoring(
     windowLevel: classification.windowLevel,
     executableForDedicatedTrip: classification.executableForDedicatedTrip,
     suitableIfNearby: classification.suitableIfNearby,
-    blockerReasons: classification.blockerReasons,
+    blockerReasons: [
+      ...new Set([
+        ...classification.blockerReasons,
+        ...(preliminaryWindow.blockerReasons ?? []),
+      ]),
+    ],
     copyReasonZh: classification.copyReasonZh,
     practicalNoteZh: classification.copyReasonZh ?? preliminaryWindow.practicalNoteZh,
   };
@@ -1871,14 +1876,58 @@ function buildAstroWindowsFromAnalysis(
 function buildCloudSeaWindows(
   cloudSeaAnalysis: CloudSeaAnalysisResult,
 ): readonly ForecastTimeWindow[] {
-  return cloudSeaAnalysis.bestCloudSeaWindows.map((window) => ({
+  const mapWindow = (
+    window: CloudSeaAnalysisResult["bestCloudSeaWindows"][number],
+    fallbackLevel: ForecastWindowLevel,
+  ): ForecastTimeWindow => ({
     label: window.label,
     date: window.date,
     startTime: window.startTime,
     endTime: window.endTime,
-    score: window.score,
+    score: window.shootableScore ?? window.score,
+    conditionScore: window.formationScore ?? window.score,
+    practicalScore: window.shootableScore ?? window.score,
+    windowLevel:
+      window.whiteoutRiskScore !== undefined && window.whiteoutRiskScore >= 78
+        ? "blocked"
+        : fallbackLevel,
+    recommendationLevel:
+      window.whiteoutRiskScore !== undefined && window.whiteoutRiskScore >= 78
+        ? "not_recommended"
+        : fallbackLevel === "shootable"
+          ? "recommended"
+          : fallbackLevel === "watchable"
+            ? "cautious"
+            : "not_recommended",
+    executableForDedicatedTrip:
+      fallbackLevel === "shootable" &&
+      (window.whiteoutRiskScore ?? 0) < 70 &&
+      !(window.rainOpening?.activeRainDuringWindow ?? false),
+    suitableIfNearby:
+      fallbackLevel !== "blocked" ||
+      (window.formationScore ?? window.score) >= 55,
+    blockerReasons: [
+      ...((window.whiteoutRiskScore ?? 0) >= 70 ? ["白墙风险需现场复核"] : []),
+      ...(window.rainOpening?.activeRainDuringWindow ? ["降水或雾可能打断窗口"] : []),
+    ],
+    practicalNoteZh: window.noteZh,
     target: "cloud_sea",
-  }));
+  });
+  const windows = [
+    ...cloudSeaAnalysis.bestCloudSeaWindows.map((window) => mapWindow(window, "shootable")),
+    ...cloudSeaAnalysis.watchableCloudSeaWindows.map((window) => mapWindow(window, "watchable")),
+    ...cloudSeaAnalysis.notRecommendedCloudSeaWindows.map((window) => mapWindow(window, "blocked")),
+  ];
+  const seen = new Set<string>();
+
+  return windows.filter((window) => {
+    const key = `${window.startTime}-${window.endTime}-${window.label}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
 }
 
 function buildTargetDailyBreakdown(
@@ -1959,17 +2008,39 @@ function buildTargetDailyBreakdown(
           ),
       cloudSea: dailyCloudSea
         ? {
-            label: "清晨云海机会",
-            score: dailyCloudSea.opportunityScore,
-            detail: dailyCloudSea.keyReason,
+            label: "云海可拍机会",
+            score: dailyCloudSea.shootableScore ?? dailyCloudSea.travelScore,
+            detail: `形成 ${dailyCloudSea.labels?.formationOpportunity ?? "中"}，可拍 ${
+              dailyCloudSea.labels?.shootableOpportunity ?? "中"
+            }，白墙风险 ${dailyCloudSea.labels?.whiteoutRisk ?? "中"}。${
+              dailyCloudSea.keyReason
+            }`,
             window: cloudSeaWindow,
           }
         : metricFromWindow(
             cloudSeaWindow,
-            "清晨云海机会",
+            "云海可拍机会",
             "清晨湿度、低云、风速、露点差和地形落差共同影响云海形成。",
             scores.cloudSea.score,
           ),
+      cloudSeaFormation: dailyCloudSea
+        ? {
+            label: "云海形成机会",
+            score: dailyCloudSea.formationScore ?? dailyCloudSea.opportunityScore,
+            detail: dailyCloudSea.keyReason,
+            window: dailyCloudSea.bestWindow,
+          }
+        : undefined,
+      cloudSeaShootable: dailyCloudSea
+        ? {
+            label: "云海可拍机会",
+            score: dailyCloudSea.shootableScore ?? dailyCloudSea.travelScore,
+            detail:
+              dailyCloudSea.bestWindow.noteZh ??
+              "已结合可用光线、白墙风险、降水和通透度判断可拍性。",
+            window: dailyCloudSea.bestWindow,
+          }
+        : undefined,
       whiteoutRisk: dailyCloudSea
         ? {
             label: "白墙风险",
@@ -3351,7 +3422,7 @@ function buildSummary(
   const scoreLabel = input.weatherDataMode === "real" ? "评分" : "演示评分";
 
   if (input.target === "cloud_sea") {
-    return `${input.place.name}${targetPhrase}${scoreLabel}为 ${overallScore} 分，建议等级为“${recommendationLabel}”。云海机会 ${scores.cloudSea.score} 分，白墙风险 ${scores.whiteoutRisk.score} 分，清晨窗口需重点复核低云、能见度和风速。`;
+    return `${input.place.name}${targetPhrase}${scoreLabel}为 ${overallScore} 分，建议等级为“${recommendationLabel}”。云海形成机会 ${scores.cloudSea.score} 分，云海可拍机会 ${overallScore} 分，白墙风险 ${scores.whiteoutRisk.score} 分，清晨窗口需重点复核低云厚度、能见度和降水变化。`;
   }
 
   if (input.target === "general") {
@@ -3359,7 +3430,7 @@ function buildSummary(
     const bestWindowText = bestWindow
       ? `最佳窗口优先按可执行性排序：${bestWindow.subjectPriorityLabel ?? bestWindow.label}。`
       : "暂未形成明确可执行拍摄窗口。";
-    return `${input.place.name}${targetPhrase}${scoreLabel}为 ${overallScore} 分，建议等级为“${recommendationLabel}”。${bestWindowText}云海 ${scores.cloudSea.score} 分，霞光最高 ${Math.max(scores.sunriseGlow.score, scores.sunsetGlow.score)} 分，通透度 ${scores.transparency.score} 分。`;
+    return `${input.place.name}${targetPhrase}${scoreLabel}为 ${overallScore} 分，建议等级为“${recommendationLabel}”。${bestWindowText}云海形成 ${scores.cloudSea.score} 分，白墙风险 ${scores.whiteoutRisk.score} 分，霞光最高 ${Math.max(scores.sunriseGlow.score, scores.sunsetGlow.score)} 分，通透度 ${scores.transparency.score} 分。`;
   }
 
   return `${input.place.name}${targetPhrase}${scoreLabel}为 ${overallScore} 分，建议等级为“${recommendationLabel}”。云海 ${scores.cloudSea.score} 分，霞光最高 ${Math.max(scores.sunriseGlow.score, scores.sunsetGlow.score)} 分，通透度 ${scores.transparency.score} 分。`;

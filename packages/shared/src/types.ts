@@ -679,25 +679,81 @@ export type CloudSeaWindowPhase = "accumulation" | "observation" | "waiting" | "
 
 export type CloudSeaRecommendationLabel = "推荐重点关注" | "值得等待" | "谨慎参考" | "不建议专程";
 
+export type CloudSeaChanceLabel = "高" | "中" | "低";
+
+export type CloudSeaPostRainOpeningChance = "low" | "medium" | "high";
+
+export type CloudSeaTerrainSupport = {
+  readonly score: number;
+  readonly level: CloudSeaChanceLabel;
+  readonly selectedSpotElevationMeters?: number;
+  readonly nearbyValleyElevationMeters?: number;
+  readonly localReliefMeters?: number;
+  readonly providerElevationMeters?: number;
+  readonly terrainType: TerrainType;
+  readonly exposureType: ExposureType;
+  readonly confidence: CloudSeaConfidenceLevel;
+  readonly messageZh: string;
+};
+
+export type CloudSeaRainOpeningSignal = {
+  readonly rainSupportSignal: boolean;
+  readonly activeRainDuringWindow: boolean;
+  readonly postRainOpeningChance: CloudSeaPostRainOpeningChance;
+  readonly messageZh: string;
+};
+
+export type CloudSeaAssessmentLabels = {
+  readonly formationOpportunity: CloudSeaChanceLabel;
+  readonly shootableOpportunity: CloudSeaChanceLabel;
+  readonly whiteoutRisk: CloudSeaChanceLabel;
+  readonly bestWindowLabel: string;
+  readonly watchableWindowLabel?: string;
+  readonly notRecommendedWindowLabel?: string;
+};
+
+export type CloudSeaAssessment = {
+  readonly formationScore: number;
+  readonly shootableScore: number;
+  readonly whiteoutRiskScore: number;
+  readonly lightAlignedScore: number;
+  readonly confidence: number;
+  readonly labels: CloudSeaAssessmentLabels;
+};
+
 export type CloudSeaAnalysisWindow = {
   readonly label: string;
   readonly date?: string;
   readonly startTime: string;
   readonly endTime: string;
   readonly score: number;
+  readonly formationScore?: number;
+  readonly shootableScore?: number;
+  readonly whiteoutRiskScore?: number;
+  readonly lightAlignedScore?: number;
   readonly target: "cloud_sea";
   readonly phase: CloudSeaWindowPhase;
   readonly noteZh: string;
   readonly riskTag: string;
+  readonly rainOpening?: CloudSeaRainOpeningSignal;
 };
 
 export type DailyCloudSea = {
   readonly date: string;
   readonly dateLabelZh: string;
+  readonly formationScore?: number;
   readonly opportunityScore: number;
+  readonly shootableScore?: number;
   readonly whiteoutRiskScore: number;
+  readonly lightAlignedScore?: number;
+  readonly confidence?: number;
+  readonly labels?: CloudSeaAssessmentLabels;
   readonly travelScore: number;
   readonly bestWindow: CloudSeaAnalysisWindow;
+  readonly watchableWindow?: CloudSeaAnalysisWindow;
+  readonly notRecommendedWindow?: CloudSeaAnalysisWindow;
+  readonly rainOpening?: CloudSeaRainOpeningSignal;
+  readonly onSiteCheckpoints?: readonly string[];
   readonly recommendationLabel: CloudSeaRecommendationLabel;
   readonly keyReason: string;
   readonly riskNote: string;
@@ -729,14 +785,18 @@ export type CloudSeaBackupPlan = {
   readonly detail: string;
 };
 
-export type CloudSeaAnalysisResult = {
+export type CloudSeaAnalysisResult = CloudSeaAssessment & {
   readonly overallScore: number;
   readonly cloudSeaOpportunityScore: number;
-  readonly whiteoutRiskScore: number;
+  readonly terrainSupport: CloudSeaTerrainSupport;
+  readonly rainOpening: CloudSeaRainOpeningSignal;
   readonly travelScore: number;
   readonly recommendationLabel: CloudSeaRecommendationLabel;
   readonly confidenceLevel: CloudSeaConfidenceLevel;
+  readonly bestCloudSeaWindow?: CloudSeaAnalysisWindow;
   readonly bestCloudSeaWindows: readonly CloudSeaAnalysisWindow[];
+  readonly watchableCloudSeaWindows: readonly CloudSeaAnalysisWindow[];
+  readonly notRecommendedCloudSeaWindows: readonly CloudSeaAnalysisWindow[];
   readonly dailyCloudSea: readonly DailyCloudSea[];
   readonly weatherEvidence: readonly CloudSeaWeatherEvidenceItem[];
   readonly terrainEvidence: readonly CloudSeaTerrainEvidenceItem[];
@@ -1030,6 +1090,8 @@ export type TargetDailyBreakdown = {
   readonly sunriseGlow?: ForecastDailyMetric;
   readonly sunsetGlow?: ForecastDailyMetric;
   readonly cloudSea?: ForecastDailyMetric;
+  readonly cloudSeaFormation?: ForecastDailyMetric;
+  readonly cloudSeaShootable?: ForecastDailyMetric;
   readonly whiteoutRisk?: ForecastDailyMetric;
   readonly stars?: ForecastDailyMetric;
   readonly milkyWay?: ForecastDailyMetric;

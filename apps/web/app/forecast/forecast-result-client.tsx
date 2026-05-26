@@ -581,7 +581,16 @@ function CompactInfoCard({
 }
 
 function weatherStatusLabel(result: ForecastCalculationResult): string {
-  return result.weatherNoticeZh.replace(/^天气数据：/, "");
+  if (result.weatherDataMode === "real") {
+    return "已启用真实天气数据";
+  }
+  if (result.weatherDataMode === "fixture") {
+    return "样例天气数据";
+  }
+  if (result.weatherDataMode === "fallback") {
+    return "已回退演示天气数据";
+  }
+  return "演示天气数据";
 }
 
 function weatherModeBadge(result: ForecastCalculationResult): string {
@@ -1112,7 +1121,8 @@ function dailyOpportunityLine(
   }
 
   return [
-    scorePillText("云海", breakdown.cloudSea?.score),
+    scorePillText("云海形成", breakdown.cloudSeaFormation?.score ?? breakdown.cloudSea?.score),
+    scorePillText("云海可拍", breakdown.cloudSeaShootable?.score ?? breakdown.cloudSea?.score),
     scorePillText("白墙风险", breakdown.whiteoutRisk?.score),
     scorePillText("朝霞", breakdown.sunriseGlow?.score),
     scorePillText("晚霞", breakdown.sunsetGlow?.score),
@@ -2397,7 +2407,7 @@ function CloudSeaDailyTrend({
         <div>
           <h2 className="text-lg font-bold text-card-foreground">{title}</h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            按云海机会、白墙风险和清晨窗口排列，便于横向比较每天是否值得等待。
+            按云海形成、可拍机会、白墙风险和清晨窗口排列，便于横向比较每天是否值得等待。
           </p>
         </div>
         <Badge variant="muted">{forecastHorizonLabels[result.horizon]}</Badge>
@@ -2411,14 +2421,24 @@ function CloudSeaDailyTrend({
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="font-bold text-card-foreground">{item.dateLabel}</h3>
-                <Badge variant={item.cloudSeaScore >= 70 ? "default" : "accent"}>
-                  {item.cloudSeaScore} 分
+                <Badge variant={item.shootableScore >= 70 ? "default" : "accent"}>
+                  可拍 {item.shootableScore} 分
                 </Badge>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">{item.bestMorningWindow}</p>
+              {item.watchableWindow ? (
+                <p className="mt-1 text-xs text-muted-foreground">可观察：{item.watchableWindow}</p>
+              ) : null}
             </div>
             <dl className="grid gap-1 text-sm">
-              <CloudSeaInlineDefinition label="云海机会" value={item.cloudSeaLevel} />
+              <CloudSeaInlineDefinition
+                label="形成机会"
+                value={`${item.formationLevel}（${item.formationScore} 分）`}
+              />
+              <CloudSeaInlineDefinition
+                label="可拍机会"
+                value={`${item.shootableLevel}（${item.shootableScore} 分）`}
+              />
               <CloudSeaInlineDefinition
                 label="白墙风险"
                 value={`${item.whiteoutRiskLabel}（${item.whiteoutRiskScore} 分）`}
@@ -2428,7 +2448,10 @@ function CloudSeaDailyTrend({
               <span className="text-xs font-semibold text-muted-foreground">推荐动作</span>
               <Badge variant="muted">{item.recommendedAction}</Badge>
             </div>
-            <p className="text-sm leading-6 text-muted-foreground">{item.keyReason}</p>
+            <div className="grid gap-1 text-sm leading-6 text-muted-foreground">
+              <p>{item.keyReason}</p>
+              <p>现场复核：{item.onSiteCheckpoints.join("、") || "云雾上沿、能见度和降水变化"}</p>
+            </div>
           </article>
         ))}
       </div>
@@ -2902,6 +2925,14 @@ function ComprehensiveCoreDecisionCards({
       coreWindowDetail(result, bestWindow),
       "accent",
     ),
+    textCard(
+      "comprehensive-cloud-sea",
+      "cloudSea",
+      "云海 / 白墙",
+      `形成${result.cloudSeaAnalysis.labels.formationOpportunity} · 可拍${result.cloudSeaAnalysis.labels.shootableOpportunity} · 白墙${result.cloudSeaAnalysis.labels.whiteoutRisk}`,
+      `形成 ${result.cloudSeaAnalysis.formationScore} 分，可拍 ${result.cloudSeaAnalysis.shootableScore} 分，白墙风险 ${result.cloudSeaAnalysis.whiteoutRiskScore} 分。`,
+      result.cloudSeaAnalysis.labels.whiteoutRisk === "高" ? "danger" : "info",
+    ),
     scoreCard(
       "comprehensive-subject",
       bestSubject.key === "milkyWay" ? "milkyWay" : bestSubject.key,
@@ -3069,6 +3100,9 @@ function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCal
               (window) => window.date === summary.date && isExecutableClientWindow(window),
             );
           const risk = summary.riskFlags[0] ?? result.riskFlags[0];
+          const cloudSeaDay = result.cloudSeaAnalysis.dailyCloudSea.find(
+            (day) => day.date === summary.date,
+          );
 
           return (
             <Card key={summary.date} className="p-4 shadow-sm">
@@ -3115,6 +3149,22 @@ function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCal
                 <DailyDefinition label="可观察" value={dailyWatchableWindowText(summary)} />
                 <DailyDefinition label="最佳可拍" value={dailyBestShootableWindowText(summary)} />
                 <DailyDefinition
+                  label="云海机会"
+                  value={
+                    cloudSeaDay?.labels
+                      ? `形成${cloudSeaDay.labels.formationOpportunity} / 可拍${cloudSeaDay.labels.shootableOpportunity}`
+                      : "暂无"
+                  }
+                />
+                <DailyDefinition
+                  label="白墙风险"
+                  value={
+                    cloudSeaDay?.labels
+                      ? `${cloudSeaDay.labels.whiteoutRisk}（${cloudSeaDay.whiteoutRiskScore}分）`
+                      : "暂无"
+                  }
+                />
+                <DailyDefinition
                   label="风"
                   value={formatWindWithGust(
                     summary.weather?.windSpeed,
@@ -3142,6 +3192,18 @@ function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCal
                   ，低云 {formatPercentNumber(summary.weather?.cloudLow)}
                 </p>
                 <p>{dailyOpportunityLine(dayBreakdown)}</p>
+                <p>
+                  云海窗口：
+                  {cloudSeaDay?.labels?.bestWindowLabel ?? "暂无最佳云海窗口"}
+                  {cloudSeaDay?.labels?.watchableWindowLabel
+                    ? `；可观察 ${cloudSeaDay.labels?.watchableWindowLabel}`
+                    : ""}
+                </p>
+                <p>
+                  现场复核：
+                  {cloudSeaDay?.onSiteCheckpoints?.join("、") ??
+                    "低云上沿、能见度、降水和风速。"}
+                </p>
                 <p>
                   最佳：
                   {bestWindow
@@ -3908,6 +3970,39 @@ function buildSubjectBreakdownCards(
 ): readonly SubjectBreakdownCard[] {
   return subjectScoreOrder.map((key) => {
     const score = result.scores[key];
+    if (key === "cloudSea") {
+      const analysis = result.cloudSeaAnalysis;
+      const whiteoutLabel = analysis.labels.whiteoutRisk;
+
+      return {
+        key,
+        label: subjectLabels[key],
+        score: {
+          ...score,
+          score: analysis.shootableScore,
+          reasons: [
+            `云海形成 ${analysis.formationScore} 分，可拍 ${analysis.shootableScore} 分，白墙风险 ${analysis.whiteoutRiskScore} 分。`,
+          ],
+        },
+        priorityScore: practicalSubjectScoreFromCloudSea(result),
+        windowLabel: analysis.bestCloudSeaWindow
+          ? `最佳云海窗口：${formatWindow(
+              analysis.bestCloudSeaWindow.startTime,
+              analysis.bestCloudSeaWindow.endTime,
+            )}`
+          : analysis.labels.watchableWindowLabel ?? "暂无明确可拍云海窗口",
+        reason:
+          whiteoutLabel === "高"
+            ? `云海形成条件${analysis.labels.formationOpportunity}，但低云偏厚，白墙风险高；可拍机会${analysis.labels.shootableOpportunity}。`
+            : `云海形成条件${analysis.labels.formationOpportunity}，可拍机会${analysis.labels.shootableOpportunity}，白墙风险${whiteoutLabel}。`,
+        actionSuggestion:
+          whiteoutLabel === "高"
+            ? "若已在山上，可等待短暂开口；不建议为单一窗口专程奔赴。"
+            : analysis.shootableScore >= 70
+              ? "清晨有云海窗口，建议提前到达并观察云顶开口。"
+              : "有云海信号，但需把白墙、降水和能见度作为现场复核点。",
+      };
+    }
 
     return {
       key,
@@ -3960,6 +4055,16 @@ function subjectPriorityScore(
   }
 
   return Math.round((fallbackScore * 0.42 + (window.practicalScore ?? window.score) * 0.58) * 10) / 10;
+}
+
+function practicalSubjectScoreFromCloudSea(result: ForecastCalculationResult): number {
+  const window = bestWindowForSubject(result, "cloudSea");
+  const windowScore = window?.practicalScore ?? window?.score;
+  return Math.round(
+    ((windowScore ?? result.cloudSeaAnalysis.shootableScore) * 0.58 +
+      result.cloudSeaAnalysis.shootableScore * 0.42) *
+      10,
+  ) / 10;
 }
 
 function pickMainRisk(result: ForecastCalculationResult): ForecastResultSectionItem {

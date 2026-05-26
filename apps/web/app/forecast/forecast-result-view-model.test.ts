@@ -91,11 +91,61 @@ const baseResult: ForecastCalculationResult = {
   },
   cloudSeaAnalysis: {
     overallScore: 72,
+    formationScore: 82,
+    shootableScore: 72,
     cloudSeaOpportunityScore: 82,
     whiteoutRiskScore: 58,
+    lightAlignedScore: 94,
+    confidence: 76,
+    labels: {
+      formationOpportunity: "高",
+      shootableOpportunity: "高",
+      whiteoutRisk: "中",
+      bestWindowLabel: "清晨云海窗口 05:00 - 07:00",
+      watchableWindowLabel: "傍晚云海观察窗口 17:20 - 18:40",
+    },
+    terrainSupport: {
+      score: 90,
+      level: "高",
+      selectedSpotElevationMeters: 1860,
+      nearbyValleyElevationMeters: 980,
+      localReliefMeters: 1484,
+      providerElevationMeters: 1840,
+      terrainType: "summit",
+      exposureType: "exposed",
+      confidence: "medium",
+      messageZh: "机位高于周边谷地，高差和开阔度支持俯拍云海。",
+    },
+    rainOpening: {
+      rainSupportSignal: true,
+      activeRainDuringWindow: false,
+      postRainOpeningChance: "medium",
+      messageZh: "若雨势提前减弱，可机动观察云层流动和远山层次。",
+    },
     travelScore: 72,
     recommendationLabel: "值得等待",
     confidenceLevel: "medium",
+    bestCloudSeaWindow: {
+      label: "清晨云海窗口 05:00 - 07:00",
+      date: "2026-05-20",
+      startTime: "2026-05-20T05:00:00+08:00",
+      endTime: "2026-05-20T07:00:00+08:00",
+      score: 72,
+      formationScore: 82,
+      shootableScore: 72,
+      whiteoutRiskScore: 58,
+      lightAlignedScore: 94,
+      target: "cloud_sea",
+      phase: "observation",
+      noteZh: "清晨云海窗口值得等待，现场重点复核云雾上沿和能见度。",
+      riskTag: "白墙风险中",
+      rainOpening: {
+        rainSupportSignal: true,
+        activeRainDuringWindow: false,
+        postRainOpeningChance: "medium",
+        messageZh: "若雨势提前减弱，可机动观察云层流动和远山层次。",
+      },
+    },
     bestCloudSeaWindows: [
       {
         label: "清晨云海窗口 05:00 - 07:00",
@@ -103,6 +153,10 @@ const baseResult: ForecastCalculationResult = {
         startTime: "2026-05-20T05:00:00+08:00",
         endTime: "2026-05-20T07:00:00+08:00",
         score: 72,
+        formationScore: 82,
+        shootableScore: 72,
+        whiteoutRiskScore: 58,
+        lightAlignedScore: 94,
         target: "cloud_sea",
         phase: "observation",
         noteZh: "清晨云海信号可等待，现场重点复核云雾上沿和能见度。",
@@ -114,18 +168,51 @@ const baseResult: ForecastCalculationResult = {
         startTime: "2026-05-21T05:00:00+08:00",
         endTime: "2026-05-21T07:00:00+08:00",
         score: 70,
+        formationScore: 78,
+        shootableScore: 70,
+        whiteoutRiskScore: 55,
+        lightAlignedScore: 94,
         target: "cloud_sea",
         phase: "observation",
         noteZh: "清晨云海信号可等待，现场重点复核云雾上沿和能见度。",
         riskTag: "白墙风险中",
       },
     ],
+    watchableCloudSeaWindows: [
+      {
+        label: "傍晚云海观察窗口 17:20 - 18:40",
+        date: "2026-05-20",
+        startTime: "2026-05-20T17:20:00+08:00",
+        endTime: "2026-05-20T18:40:00+08:00",
+        score: 52,
+        formationScore: 70,
+        shootableScore: 52,
+        whiteoutRiskScore: 62,
+        lightAlignedScore: 78,
+        target: "cloud_sea",
+        phase: "waiting",
+        noteZh: "云海形成信号存在，但低云厚度和能见度限制可拍性，仅作观察。",
+        riskTag: "白墙风险中",
+      },
+    ],
+    notRecommendedCloudSeaWindows: [],
     dailyCloudSea: [
       {
         date: "2026-05-20",
         dateLabelZh: "2026年5月20日 星期三",
+        formationScore: 82,
         opportunityScore: 82,
+        shootableScore: 72,
         whiteoutRiskScore: 58,
+        lightAlignedScore: 94,
+        confidence: 76,
+        labels: {
+          formationOpportunity: "高",
+          shootableOpportunity: "高",
+          whiteoutRisk: "中",
+          bestWindowLabel: "清晨云海窗口 05:00 - 07:00",
+          watchableWindowLabel: "傍晚云海观察窗口 17:20 - 18:40",
+        },
         travelScore: 72,
         bestWindow: {
           label: "清晨云海窗口 05:00 - 07:00",
@@ -133,11 +220,22 @@ const baseResult: ForecastCalculationResult = {
           startTime: "2026-05-20T05:00:00+08:00",
           endTime: "2026-05-20T07:00:00+08:00",
           score: 72,
+          formationScore: 82,
+          shootableScore: 72,
+          whiteoutRiskScore: 58,
+          lightAlignedScore: 94,
           target: "cloud_sea",
           phase: "observation",
           noteZh: "清晨云海信号可等待，现场重点复核云雾上沿和能见度。",
           riskTag: "白墙风险中",
         },
+        rainOpening: {
+          rainSupportSignal: true,
+          activeRainDuringWindow: false,
+          postRainOpeningChance: "medium",
+          messageZh: "若雨势提前减弱，可机动观察云层流动和远山层次。",
+        },
+        onSiteCheckpoints: ["复核云雾上沿是否低于机位", "复核远山层次和能见度是否可用"],
         recommendationLabel: "值得等待",
         keyReason: "清晨湿度、低云和地形条件支持等待云海。",
         riskNote: "白墙风险中等，需要现场观察云雾上沿。",
@@ -145,8 +243,18 @@ const baseResult: ForecastCalculationResult = {
       {
         date: "2026-05-21",
         dateLabelZh: "2026年5月21日 星期四",
+        formationScore: 78,
         opportunityScore: 78,
+        shootableScore: 70,
         whiteoutRiskScore: 55,
+        lightAlignedScore: 94,
+        confidence: 76,
+        labels: {
+          formationOpportunity: "高",
+          shootableOpportunity: "高",
+          whiteoutRisk: "中",
+          bestWindowLabel: "清晨云海窗口 05:00 - 07:00",
+        },
         travelScore: 70,
         bestWindow: {
           label: "清晨云海窗口 05:00 - 07:00",
@@ -154,11 +262,22 @@ const baseResult: ForecastCalculationResult = {
           startTime: "2026-05-21T05:00:00+08:00",
           endTime: "2026-05-21T07:00:00+08:00",
           score: 70,
+          formationScore: 78,
+          shootableScore: 70,
+          whiteoutRiskScore: 55,
+          lightAlignedScore: 94,
           target: "cloud_sea",
           phase: "observation",
           noteZh: "清晨云海信号可等待，现场重点复核云雾上沿和能见度。",
           riskTag: "白墙风险中",
         },
+        rainOpening: {
+          rainSupportSignal: false,
+          activeRainDuringWindow: false,
+          postRainOpeningChance: "low",
+          messageZh: "降水对云海形成的支持不明显，仍以低云、湿度和能见度为主。",
+        },
+        onSiteCheckpoints: ["复核云雾上沿是否低于机位", "复核远山层次和能见度是否可用"],
         recommendationLabel: "值得等待",
         keyReason: "第二天清晨仍有云海观察窗口。",
         riskNote: "白墙风险中等，需要现场复核能见度。",
@@ -1318,6 +1437,7 @@ describe("forecast result target-aware view model", () => {
       "综合出片指数",
       "推荐等级",
       "最佳拍摄窗口",
+      "云海 / 白墙",
       "主要风险",
       "优先题材",
       "到达建议",
@@ -1406,7 +1526,8 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("0.2 mm");
     expect(html).toContain("3.4 m/s 东南风");
     expect(html).toContain("18 公里");
-    expect(html).toContain("云海 82分");
+    expect(html).toContain("云海形成 82分");
+    expect(html).toContain("云海可拍 82分");
     expect(html).toContain("白墙风险 58分");
     expect(html).toContain("朝霞 70分");
     expect(html).toContain("晚霞 74分");
@@ -2085,7 +2206,8 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.target).toBe("cloud_sea");
     expect(viewModel.cloudSea).toBeDefined();
     expect(viewModel.primaryCards.map((card) => card.label)).toEqual([
-      "云海机会",
+      "云海形成机会",
+      "云海可拍机会",
       "白墙风险",
       "最佳云海窗口",
       "推荐动作",
@@ -2112,14 +2234,17 @@ describe("forecast result target-aware view model", () => {
     const viewModel = buildCloudSeaForecastViewModel(resultForTarget("cloud_sea"));
 
     expect(viewModel.coreCards.map((card) => card.label)).toEqual([
-      "云海机会",
+      "云海形成机会",
+      "云海可拍机会",
       "白墙风险",
       "最佳云海窗口",
       "推荐动作",
     ]);
     expect(viewModel.coreCards.find((card) => card.label === "白墙风险")?.value).toBe("中");
-    expect(viewModel.cloudSeaVsWhiteout.cloudSeaDefinition).toContain("机位高于云雾层");
-    expect(viewModel.cloudSeaVsWhiteout.whiteoutDefinition).toContain("能见度下降");
+    expect(viewModel.cloudSeaVsWhiteout.cloudSeaDefinition).toContain("云海形成");
+    expect(viewModel.cloudSeaVsWhiteout.cloudSeaDefinition).toContain("可拍云海");
+    expect(viewModel.cloudSeaVsWhiteout.whiteoutDefinition).toContain("低云或雾层");
+    expect(viewModel.cloudSeaVsWhiteout.whiteoutDefinition).toContain("看不见远山层次");
     expect(viewModel.terrainEvidence.items.map((item) => item.label)).toEqual(
       expect.arrayContaining(["机位海拔", "周边 1km 最低海拔", "5km 高差", "云海地形潜力"]),
     );
@@ -2157,7 +2282,8 @@ describe("forecast result target-aware view model", () => {
       expect(html).not.toContain("老君山金顶");
       expect(html).not.toContain("三清山女神峰");
       expect(html).not.toContain("武功山金顶");
-      expect(html).toContain("云海机会");
+      expect(html).toContain("云海形成机会");
+      expect(html).toContain("云海可拍机会");
       expect(html).toContain("白墙风险");
       expect(html).toContain("最佳云海窗口");
       expect(html).toContain("推荐动作");
@@ -2167,7 +2293,7 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("气象依据");
       expect(html).toContain("出行建议");
       expect(html).toContain("备选拍摄方案");
-      expect(html).toContain("天气数据：演示数据");
+      expect(html).toContain("天气数据：演示天气数据");
       expect(html).toContain("地形数据：演示数据");
       expect(html).toContain("正式数据源启用后将显示对应来源与更新时间");
       expect(html).toContain("CloudSeaResultPage");
@@ -2355,7 +2481,7 @@ describe("forecast result target-aware view model", () => {
 
     try {
       const viewModel = buildCloudSeaForecastViewModel(resultForTarget("cloud_sea"));
-      expect(viewModel.coreCards.length).toBe(4);
+      expect(viewModel.coreCards.length).toBe(5);
       expect(fetchCalled).toBe(false);
     } finally {
       globalThis.fetch = fetchBackup;
@@ -2446,7 +2572,7 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("风险提示");
       expect(html).toContain("备选拍摄方案");
       expect(html).toContain("数据状态 / 数据缺失说明");
-      expect(html).toContain("天气数据：演示数据");
+      expect(html).toContain("天气数据：演示天气数据");
       expect(html).toContain("地形数据：演示数据");
       expect(html).toContain("天文数据：本地算法计算");
       expect(html).toContain("GlowResultPage");
@@ -2652,14 +2778,14 @@ describe("forecast result target-aware view model", () => {
   it("keeps data-source honesty in the shaped notice", () => {
     const viewModel = buildForecastResultViewModel(resultForTarget("astro"), "astro");
 
-    expect(viewModel.dataNotice).toContain("天气数据：演示数据");
+    expect(viewModel.dataNotice).toContain("天气数据：演示天气数据");
     expect(viewModel.dataNotice).toContain("地形信息当前使用演示地形数据");
     expect(viewModel.dataNotice).toContain("正式海拔与 DEM 数据接入后");
     expect(viewModel.dataNotice).toContain("天文数据：本地天文服务计算");
     expect(viewModel.dataNotice).toContain("当前结果基于演示天气数据生成");
   });
 
-  it("can show QWeather as the weather source when a real weather bundle is used", () => {
+  it("uses provider-neutral weather status when a real weather bundle is used", () => {
     const viewModel = buildForecastResultViewModel(
       {
         ...resultForTarget("glow"),
@@ -2672,7 +2798,8 @@ describe("forecast result target-aware view model", () => {
       "glow",
     );
 
-    expect(viewModel.dataNotice).toContain("天气数据：和风天气");
+    expect(viewModel.dataNotice).toContain("天气数据：已启用真实天气数据");
+    expect(viewModel.dataNotice).not.toContain("和风天气");
     expect(viewModel.dataNotice).not.toContain("演示天气数据生成");
   });
 
@@ -2690,7 +2817,8 @@ describe("forecast result target-aware view model", () => {
       "glow",
     );
 
-    expect(viewModel.dataNotice).toContain("天气数据：和风天气样例数据");
+    expect(viewModel.dataNotice).toContain("天气数据：样例天气数据");
+    expect(viewModel.dataNotice).not.toContain("和风天气样例数据");
     expect(viewModel.dataNotice).toContain(
       "当前天气源缺少低云/中云/高云分层数据，相关判断将降低置信度。",
     );

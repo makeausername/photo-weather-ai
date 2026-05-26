@@ -294,6 +294,20 @@ const transparencyGrade = firstValue(current.transparencyGrade, firstDaily.trans
 const astroAnalysis = result.astroAnalysis || {};
 const astroBlockers = Array.isArray(astroAnalysis.weatherBlockers) ? astroAnalysis.weatherBlockers : [];
 const timezone = result.calendarBasis?.timezone || "Asia/Shanghai";
+const cloudSeaAnalysis = result.cloudSeaAnalysis || {};
+const bestCloudSeaWindow =
+  cloudSeaAnalysis.bestCloudSeaWindow ||
+  (Array.isArray(cloudSeaAnalysis.bestCloudSeaWindows) ? cloudSeaAnalysis.bestCloudSeaWindows[0] : undefined) ||
+  {};
+const watchableCloudSeaWindows = Array.isArray(cloudSeaAnalysis.watchableCloudSeaWindows)
+  ? cloudSeaAnalysis.watchableCloudSeaWindows
+  : [];
+const terrainSupport = cloudSeaAnalysis.terrainSupport || {};
+const rainOpening = cloudSeaAnalysis.rainOpening || {};
+const cloudSeaReasons = [
+  ...(Array.isArray(cloudSeaAnalysis.opportunityReasons) ? cloudSeaAnalysis.opportunityReasons : []),
+  ...(Array.isArray(cloudSeaAnalysis.whiteoutReasons) ? cloudSeaAnalysis.whiteoutReasons : []),
+];
 console.log(`rawTemperature: ${number(rawTemp, "°C")}`);
 console.log(`elevationAdjustedTemperature: ${number(adjustedTemp, "°C")}`);
 console.log(`rawProviderDailyTemperature: min=${number(rawDailyMin, "°C")} max=${number(rawDailyMax, "°C")}`);
@@ -324,6 +338,18 @@ console.log(`rawVisibility: ${number(rawVisibility, "km")} transparencyGrade=${g
 console.log(`humidity: ${percent(current.humidity)} dewPointSpread=${number(firstNumber(current.dewPointSpread, firstDaily.dewPointSpread), "°C")}`);
 console.log(`cloud: total=${percent(firstNumber(current.cloudTotal, firstDaily.cloudTotal))} low=${percent(firstNumber(current.cloudLow, firstDaily.cloudLow))} mid=${percent(firstNumber(current.cloudMid, firstDaily.cloudMid))} high=${percent(firstNumber(current.cloudHigh, firstDaily.cloudHigh))}`);
 console.log(`cloudSeaChance: ${number(result.scores?.cloudSea?.score)} whiteoutRisk=${number(result.scores?.whiteoutRisk?.score)} cloudFogRisk=${value(current.cloudFogObstructionRisk || firstDaily.cloudFogObstructionRisk)}`);
+console.log(`cloudSeaFormationScore: ${number(cloudSeaAnalysis.formationScore ?? cloudSeaAnalysis.cloudSeaOpportunityScore)}`);
+console.log(`cloudSeaShootableScore: ${number(cloudSeaAnalysis.shootableScore ?? cloudSeaAnalysis.travelScore)}`);
+console.log(`whiteoutRiskScore: ${number(cloudSeaAnalysis.whiteoutRiskScore ?? result.scores?.whiteoutRisk?.score)}`);
+console.log(`lightAlignedScore: ${number(cloudSeaAnalysis.lightAlignedScore)}`);
+console.log(`bestCloudSeaWindow: ${bestCloudSeaWindow.startTime && bestCloudSeaWindow.endTime ? formatWindowLabel(bestCloudSeaWindow, timezone) : "暂无明确窗口"} label=${value(bestCloudSeaWindow.label)} score=${number(bestCloudSeaWindow.score)} formation=${number(bestCloudSeaWindow.formationScore)} shootable=${number(bestCloudSeaWindow.shootableScore)} whiteout=${number(bestCloudSeaWindow.whiteoutRiskScore)}`);
+console.log(`watchableCloudSeaWindows: ${watchableCloudSeaWindows.map((window) => `${formatWindowLabel(window, timezone)} score=${number(window.score)} risk=${value(window.riskTag)}`).join(" | ") || "none"}`);
+console.log(`terrainSupport: level=${value(terrainSupport.level)} score=${number(terrainSupport.score)} selected=${number(terrainSupport.selectedSpotElevationMeters, "m")} valley=${number(terrainSupport.nearbyValleyElevationMeters, "m")} relief=${number(terrainSupport.localReliefMeters, "m")} providerElevation=${number(terrainSupport.providerElevationMeters, "m")} type=${value(terrainSupport.terrainType)} exposure=${value(terrainSupport.exposureType)} confidence=${value(terrainSupport.confidence)} message=${value(terrainSupport.messageZh)}`);
+console.log(`rainSupportSignal: ${value(rainOpening.rainSupportSignal)}`);
+console.log(`activeRainDuringWindow: ${value(rainOpening.activeRainDuringWindow)}`);
+console.log(`postRainOpeningChance: ${value(rainOpening.postRainOpeningChance)}`);
+console.log(`cloudSeaConfidence: score=${number(cloudSeaAnalysis.confidence)} level=${value(cloudSeaAnalysis.confidenceLevel)}`);
+console.log(`cloudSeaReasons: ${cloudSeaReasons.slice(0, 8).join(" | ") || "暂无"}`);
 console.log(`astroConditionScore: ${number(astroAnalysis.astroConditionScore)}`);
 console.log(`astroPracticalScore: ${number(astroAnalysis.astroPracticalScore)}`);
 console.log(`astroWindowAvailable: ${value(astroAnalysis.astroWindowAvailable)}`);

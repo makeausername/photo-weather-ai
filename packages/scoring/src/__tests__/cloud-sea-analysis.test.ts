@@ -63,6 +63,25 @@ const lowTerrainAnalysis: TerrainAnalysisSummary = {
   honestyNoteZh: "地形信息当前使用演示地形数据，正式海拔与 DEM 数据接入后将提升判断。",
 };
 
+const unknownTerrainAnalysis: TerrainAnalysisSummary = {
+  ...lowTerrainAnalysis,
+  terrainProfile: {
+    ...lowTerrainAnalysis.terrainProfile,
+    elevationMeters: null,
+    elevationConfidence: "low",
+    terrainType: "unknown",
+    exposureType: "unknown",
+    nearbyValleyElevationMeters: null,
+    localReliefMeters: null,
+    locationElevation: 420,
+    elevationDiff5km: Number.NaN,
+    terrainCloudSeaPotential: "medium",
+    terrainNoteZh: "地形高差资料不足。",
+  },
+  isMock: false,
+  honestyNoteZh: "地形高差资料不足，云海判断按保守值处理。",
+};
+
 function baseInput(): ForecastCalculationInput {
   return buildMockForecastInput(query, { now: fixedNow });
 }
@@ -101,7 +120,7 @@ function withCloudSeaWeather(
   }));
 }
 
-describe("professional cloud sea analysis V1", () => {
+describe("professional cloud sea and whiteout analysis V2", () => {
   it("raises cloud sea opportunity when humidity is high and dew point spread is small", () => {
     const favorable = analyzeCloudSea(
       withCloudSeaWeather(baseInput(), {
@@ -117,7 +136,25 @@ describe("professional cloud sea analysis V1", () => {
     );
 
     expect(favorable.cloudSeaOpportunityScore).toBeGreaterThan(dry.cloudSeaOpportunityScore);
+    expect(favorable.formationScore).toBeGreaterThan(dry.formationScore);
     expect(favorable.opportunityReasons.join("")).toContain("露点差");
+  });
+
+  it("reduces formation when wind is too strong", () => {
+    const favorableWind = analyzeCloudSea(
+      withCloudSeaWeather(baseInput(), {
+        windSpeed: 3.2,
+        windGust: 5,
+      }),
+    );
+    const strongWind = analyzeCloudSea(
+      withCloudSeaWeather(baseInput(), {
+        windSpeed: 13,
+        windGust: 18,
+      }),
+    );
+
+    expect(strongWind.formationScore).toBeLessThan(favorableWind.formationScore);
   });
 
   it("increases whiteout risk under high low-cloud, high humidity, poor visibility, and near-calm wind", () => {
@@ -143,7 +180,26 @@ describe("professional cloud sea analysis V1", () => {
     );
 
     expect(highWhiteout.whiteoutRiskScore).toBeGreaterThan(controlled.whiteoutRiskScore);
+    expect(highWhiteout.whiteoutRiskScore).toBeGreaterThanOrEqual(78);
     expect(highWhiteout.whiteoutReasons.join("")).toContain("白墙");
+  });
+
+  it("allows high formation and high whiteout to coexist", () => {
+    const result = analyzeCloudSea(
+      withCloudSeaWeather(baseInput(), {
+        humidity: 98,
+        dewPoint: 9.6,
+        cloudLow: 96,
+        cloudTotal: 98,
+        visibility: 2.5,
+        windSpeed: 2.4,
+      }),
+    );
+
+    expect(result.formationScore).toBeGreaterThanOrEqual(65);
+    expect(result.whiteoutRiskScore).toBeGreaterThanOrEqual(78);
+    expect(result.shootableScore).toBeLessThan(result.formationScore);
+    expect(result.labels.whiteoutRisk).toBe("高");
   });
 
   it("reduces travel score when whiteout risk is high", () => {
@@ -170,6 +226,7 @@ describe("professional cloud sea analysis V1", () => {
 
     expect(highWhiteout.whiteoutRiskScore).toBeGreaterThan(balanced.whiteoutRiskScore);
     expect(highWhiteout.travelScore).toBeLessThan(balanced.travelScore);
+    expect(highWhiteout.shootableScore).toBeLessThan(highWhiteout.formationScore);
   });
 
   it("raises opportunity score when surrounding terrain has strong elevation difference", () => {
@@ -196,6 +253,32 @@ describe("professional cloud sea analysis V1", () => {
     expect(strongTerrain.cloudSeaOpportunityScore).toBeGreaterThan(
       weakTerrain.cloudSeaOpportunityScore,
     );
+    expect(strongTerrain.terrainSupport.score).toBeGreaterThan(weakTerrain.terrainSupport.score);
+  });
+
+  it("lowers confidence instead of faking precision when terrain is unknown", () => {
+    const result = analyzeCloudSea(
+      withCloudSeaWeather(
+        {
+          ...baseInput(),
+          terrainSummary: {
+            ...baseInput().terrainSummary,
+            ...unknownTerrainAnalysis.terrainProfile,
+            ...unknownTerrainAnalysis.horizonProfile,
+            dataSource: unknownTerrainAnalysis.dataSource,
+            dataSourceLabelZh: unknownTerrainAnalysis.dataSourceLabelZh,
+            isMock: unknownTerrainAnalysis.isMock,
+            honestyNoteZh: unknownTerrainAnalysis.honestyNoteZh,
+          },
+          terrainAnalysis: unknownTerrainAnalysis,
+        },
+        {},
+      ),
+    );
+
+    expect(result.terrainSupport.confidence).toBe("low");
+    expect(result.confidence).toBeLessThan(90);
+    expect(result.terrainSupport.messageZh).toContain("保守");
   });
 
   it("creates missing data notes and lowers confidence when low cloud data is missing", () => {
@@ -210,6 +293,62 @@ describe("professional cloud sea analysis V1", () => {
 
     expect(result.missingDataNotes).toContain("当前天气源缺少低云分层数据，云海判断置信度降低。");
     expect(result.confidenceLevel).not.toBe("high");
+  });
+
+  it("uses dawn and sunrise overlap to improve shootable score", () => {
+    const withLight = analyzeCloudSea(withCloudSeaWeather(baseInput(), {}));
+    const withoutSunrise = analyzeCloudSea({
+      ...withCloudSeaWeather(baseInput(), {}),
+      astroSummaries: baseInput().astroSummaries.map((summary) => ({
+        ...summary,
+        sunrise: undefined,
+        civilDawn: undefined,
+        civilDusk: undefined,
+      })),
+    });
+
+    expect(withLight.lightAlignedScore).toBeGreaterThan(withoutSunrise.lightAlignedScore);
+    expect(withLight.shootableScore).toBeGreaterThan(withoutSunrise.shootableScore);
+  });
+
+  it("reduces shootable score when rain is active during the key window", () => {
+    const dryWindow = analyzeCloudSea(withCloudSeaWeather(baseInput(), {}));
+    const activeRain = analyzeCloudSea(
+      withCloudSeaWeather(baseInput(), {
+        precipitationProbability: 78,
+        precipitation: 2.4,
+        weatherTextZh: "小雨有雾",
+      }),
+    );
+
+    expect(activeRain.rainOpening.activeRainDuringWindow).toBe(true);
+    expect(activeRain.shootableScore).toBeLessThan(dryWindow.shootableScore);
+  });
+
+  it("treats rain before the window as a possible post-rain opening", () => {
+    const input = withHourlyWeather(withCloudSeaWeather(baseInput(), {}), (hour) => {
+      const localHour = Number(hour.time.slice(11, 13));
+      if (localHour >= 2 && localHour <= 4) {
+        return {
+          ...hour,
+          precipitationProbability: 62,
+          precipitation: 0.4,
+          weatherTextZh: "小雨",
+        };
+      }
+
+      return {
+        ...hour,
+        precipitationProbability: 8,
+        precipitation: 0,
+        weatherTextZh: "多云",
+      };
+    });
+    const result = analyzeCloudSea(input);
+
+    expect(result.rainOpening.rainSupportSignal).toBe(true);
+    expect(["medium", "high"]).toContain(result.rainOpening.postRainOpeningChance);
+    expect(result.rainOpening.messageZh).toMatch(/开口|机动观察/);
   });
 
   it("creates multiple daily cloud sea entries for a 7 day horizon", () => {

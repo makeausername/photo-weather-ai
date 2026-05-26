@@ -76,12 +76,14 @@ describe("scenario module pages", () => {
     expect(html).not.toContain("热门云海机位");
     expect(html).not.toContain("机位参考");
     expect(html).toContain("云海判断需要看什么");
-    expect(html).toContain("云海机会");
+    expect(html).toContain("云海形成机会");
+    expect(html).toContain("云海可拍机会");
     expect(html).toContain("白墙风险");
     expect(html).toContain("最佳清晨窗口");
     expect(html).toContain("地形高差");
     expect(html).toContain("风速与稳定性");
-    expect(html).toContain("湿度、露点差、低云和地形高差共同影响云海形成。");
+    expect(html).toContain("湿度、露点差、低云、弱到中等风和地形高差共同影响云海形成。");
+    expect(html).toContain("可拍机会需要形成信号与清晨光线、能见度、通行和低白墙风险重叠。");
     expect(html).toContain("正式数据源启用后将显示对应来源与更新时间");
   });
 
@@ -138,7 +140,10 @@ describe("scenario module pages", () => {
     expect(searchPanelHtml).toContain("查看云海拍摄判断");
     expect(serialized).not.toContain("热门云海机位");
     expect(serialized).toContain("云海判断需要看什么");
-    expect(serialized).toContain("湿度、露点差、低云和地形高差共同影响云海形成。");
+    expect(serialized).toContain("湿度、露点差、低云、弱到中等风和地形高差共同影响云海形成。");
+    expect(serialized).toContain(
+      "可拍机会需要形成信号与清晨光线、能见度、通行和低白墙风险重叠。",
+    );
     expect(serialized).not.toContain("热门朝霞晚霞机位");
     expect(serialized).not.toContain("热门朝霞机位");
     expect(serialized).not.toContain("热门晚霞机位");
