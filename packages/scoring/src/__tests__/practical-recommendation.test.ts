@@ -206,6 +206,58 @@ describe("general practical trip recommendation", () => {
     expect(result.bestWindows[0]?.target).not.toBe("astro");
   });
 
+  it("separates dedicated trip and nearby observation under rain with cloud sea signal", () => {
+    const input = withHourlyWeather(buildMockForecastInput(query, { now: fixedNow }), (hour) => {
+      const hourValue = localHour(hour.time);
+      if (hourValue >= 4 && hourValue <= 8) {
+        return {
+          ...hour,
+          humidity: 94,
+          cloudTotal: 76,
+          cloudLow: 58,
+          visibility: 12,
+          windSpeed: 2,
+          dewPoint: hour.temperature - 1.1,
+          dewPointSpread: 1.1,
+          precipitationProbability: 78,
+          precipitation: 1.2,
+          precipitationAmountMm: 1.2,
+          rainAmountMm: 1.2,
+          weatherTextZh: "小雨有雾",
+        };
+      }
+      return {
+        ...hour,
+        precipitationProbability: 65,
+        precipitation: 0.5,
+        precipitationAmountMm: 0.5,
+        rainAmountMm: 0.5,
+        weatherTextZh: "小雨",
+      };
+    });
+
+    const result = calculateForecast({
+      ...input,
+      dailyWeather: input.dailyWeather.map((day) => ({
+        ...day,
+        precipitationProbability: 78,
+        precipitation: 16,
+        precipitationAmountMm: 16,
+        rainAmountMm: 16,
+        weatherSummary: "小雨有雾",
+        precipitationRisk: undefined,
+      })),
+    });
+    const firstDaily = result.dailySummaries[0]!;
+
+    expect(firstDaily.dedicatedTripRecommendation).toBe("不建议专程前往");
+    expect(firstDaily.nearbyObservationRecommendation).toBe("已在附近可观察");
+    expect(firstDaily.nearbyObservationScore ?? 0).toBeGreaterThan(
+      firstDaily.practicalTripScore ?? 0,
+    );
+    expect(firstDaily.shortAdvice).toContain("观察");
+  });
+
   it("penalizes rain overlapping a shootable window without over-penalizing later rain", () => {
     const baseInput = withHourlyWeather(buildMockForecastInput(query, { now: fixedNow }), (hour) => {
       const hourValue = localHour(hour.time);

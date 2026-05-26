@@ -9,6 +9,7 @@ import {
   forecastTargetLabels,
 } from "@photo-weather/shared";
 import {
+  buildDeepSeekForecastExplanationRequest,
   createRuleBasedForecastExplanation,
   isDeepSeekProviderError,
   type ForecastAiExplanation,
@@ -208,17 +209,28 @@ export function registerForecastRoutes(
       !runtimeDeepSeek.apiKeyPresent
     ) {
       if (runtimeDeepSeek?.realCallEnabled && !runtimeDeepSeek.apiKeyPresent) {
-        return reply.status(400).send({
+        return reply.send({
+          success: false,
+          errorCategory: "disabled",
+          messageZh: "请先填写 DeepSeek API Key。",
+          retryable: false,
           error: "provider_key_missing",
           message: "请先填写 DeepSeek API Key。",
         });
       }
 
-      return reply.status(409).send({
+      return reply.send({
+        success: false,
+        errorCategory: "disabled",
+        messageZh: "DeepSeek 智能解读未启用，确定性分析结果已保留。",
+        retryable: false,
         error: "ai_explanation_not_enabled",
         message: "DeepSeek 智能解读未启用，请先在后台启用 DeepSeek 服务商和真实调用。",
       });
     }
+
+    const promptSizeChars = estimateDeepSeekPromptSize(result, runtimeDeepSeek);
+    const startedAt = Date.now();
 
     try {
       const deepSeekProvider = await createRealDeepSeekProvider({
@@ -226,18 +238,52 @@ export function registerForecastRoutes(
         env,
         fetcher: globalThis.fetch,
       });
-      const explanation = await deepSeekProvider.generateForecastExplanation({
+      const retryResult = await generateDeepSeekExplanationWithRetry({
+        provider: deepSeekProvider,
         forecastResult: result,
+      });
+      request.log.info({
+        route: "/forecast/ai-explain",
+        model: runtimeDeepSeek.model,
+        timeoutMs: runtimeDeepSeek.timeoutMs,
+        promptSizeChars,
+        latencyMs: Date.now() - startedAt,
+        attempts: retryResult.attempts,
       });
 
       return reply.send({
-        explanation,
+        success: true,
+        explanation: retryResult.explanation,
+        diagnostics: {
+          model: runtimeDeepSeek.model,
+          timeoutMs: runtimeDeepSeek.timeoutMs,
+          promptSizeChars,
+          attempts: retryResult.attempts,
+        },
       });
     } catch (error) {
       const normalized = normalizeDeepSeekExplanationError(error);
-      return reply.status(normalized.statusCode).send({
+      request.log.warn({
+        route: "/forecast/ai-explain",
+        model: runtimeDeepSeek.model,
+        timeoutMs: runtimeDeepSeek.timeoutMs,
+        promptSizeChars,
+        latencyMs: Date.now() - startedAt,
+        errorCategory: normalized.errorCategory,
+      });
+      return reply.send({
+        success: false,
+        errorCategory: normalized.errorCategory,
+        messageZh: normalized.messageZh,
+        retryable: normalized.retryable,
         error: normalized.error,
         message: normalized.message,
+        diagnostics: {
+          model: runtimeDeepSeek.model,
+          timeoutMs: runtimeDeepSeek.timeoutMs,
+          promptSizeChars,
+          latencyMs: Date.now() - startedAt,
+        },
       });
     }
   });
@@ -454,11 +500,91 @@ async function readRuntimeDeepSeekConfigOrDisabled(options: {
   }
 }
 
+function estimateDeepSeekPromptSize(
+  result: ForecastCalculationResult,
+  runtimeDeepSeek: RuntimeDeepSeekConfig,
+): number {
+  try {
+    const request = buildDeepSeekForecastExplanationRequest(
+      { forecastResult: result },
+      {
+        baseUrl: runtimeDeepSeek.baseUrl,
+        defaultModel: runtimeDeepSeek.model,
+        temperature: runtimeDeepSeek.temperature,
+        maxTokens: runtimeDeepSeek.maxTokens,
+        responseFormat: runtimeDeepSeek.responseFormat,
+        thinkingEnabled: runtimeDeepSeek.thinkingEnabled,
+        reasoningEffort: runtimeDeepSeek.reasoningEffort,
+        jsonOutputEnabled: runtimeDeepSeek.jsonOutputEnabled,
+      },
+    );
+    return JSON.stringify(request.body.messages).length;
+  } catch {
+    return -1;
+  }
+}
+
+async function generateDeepSeekExplanationWithRetry(options: {
+  readonly provider: Awaited<ReturnType<typeof createRealDeepSeekProvider>>;
+  readonly forecastResult: ForecastCalculationResult;
+}): Promise<{ readonly explanation: ForecastAiExplanation; readonly attempts: number }> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      return {
+        explanation: await options.provider.generateForecastExplanation({
+          forecastResult: options.forecastResult,
+        }),
+        attempts: attempt,
+      };
+    } catch (error) {
+      lastError = error;
+      if (attempt >= 2 || !isRetryableDeepSeekInterpretationError(error)) {
+        throw error;
+      }
+      await delay(700);
+    }
+  }
+
+  throw lastError;
+}
+
+function isRetryableDeepSeekInterpretationError(error: unknown): boolean {
+  if (isDeepSeekProviderError(error)) {
+    return (
+      error.errorCategory === "timeout" ||
+      error.errorCategory === "network" ||
+      error.errorCategory === "provider_error" ||
+      error.errorCategory === "parse_error"
+    );
+  }
+
+  return isAbortOrTimeoutError(readErrorCause(error)) || isAbortOrTimeoutError(error);
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
 function normalizeDeepSeekExplanationError(error: unknown): {
   readonly statusCode: 503 | 504;
   readonly error: "ai_explanation_timeout" | "ai_explanation_unavailable";
   readonly message: string;
+  readonly errorCategory:
+    | "timeout"
+    | "provider_error"
+    | "parse_error"
+    | "network"
+    | "disabled"
+    | "unsupported"
+    | "invalid_key";
+  readonly messageZh: string;
+  readonly retryable: boolean;
+  readonly latencyMs?: number;
 } {
+  const providerError = isDeepSeekProviderError(error) ? error : undefined;
   if (
     (isDeepSeekProviderError(error) && error.errorCategory === "timeout") ||
     (isDeepSeekProviderError(error) && isAbortOrTimeoutError(error.cause)) ||
@@ -468,13 +594,39 @@ function normalizeDeepSeekExplanationError(error: unknown): {
     return {
       statusCode: 504,
       error: "ai_explanation_timeout",
+      errorCategory: "timeout",
+      messageZh: "DeepSeek 解读暂时超时，已保留确定性分析结果，可稍后重试。",
+      retryable: true,
+      latencyMs: providerError?.latencyMs,
       message: "DeepSeek 解读暂时超时，已保留确定性分析结果，可稍后重试。",
     };
   }
 
+  const providerCategory = providerError?.errorCategory;
+  const errorCategory =
+    providerCategory === "invalid_key" ||
+    providerCategory === "unsupported" ||
+    providerCategory === "parse_error" ||
+    providerCategory === "network" ||
+    providerCategory === "provider_error"
+      ? providerCategory
+      : "provider_error";
+  const retryable =
+    errorCategory === "network" ||
+    errorCategory === "provider_error" ||
+    errorCategory === "parse_error";
+  const messageZh =
+    errorCategory === "invalid_key"
+      ? "DeepSeek API Key 无效或权限不足，确定性分析结果已保留。"
+      : "DeepSeek 解读暂时不可用，已保留确定性分析结果，可稍后重试。";
+
   return {
     statusCode: 503,
     error: "ai_explanation_unavailable",
+    errorCategory,
+    messageZh,
+    retryable,
+    latencyMs: providerError?.latencyMs,
     message: "DeepSeek 解读暂时不可用，已保留确定性分析结果。",
   };
 }

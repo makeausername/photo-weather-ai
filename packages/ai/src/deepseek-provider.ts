@@ -79,7 +79,7 @@ const defaultBaseUrl = "https://api.deepseek.com";
 const defaultTemperature = 0.2;
 const defaultMaxTokens = 4000;
 const defaultTimeoutMs = 90000;
-const maxInterpretationPayloadChars = 12000;
+const maxInterpretationPayloadChars = 18000;
 
 export type DeepSeekProviderErrorOptions = {
   readonly errorCategory: ForecastWeatherSourceErrorCategory;
@@ -274,8 +274,6 @@ function compactSourceSummary(
   summary: ForecastCalculationResult["weatherSourceSummaries"][number],
 ) {
   return {
-    providerCode: summary.providerCode,
-    providerLabelZh: summary.providerLabelZh,
     dataMode: summary.dataMode,
     attempted: summary.attempted,
     success: summary.success,
@@ -341,7 +339,6 @@ export function buildDeepSeekForecastContext(result: ForecastCalculationResult) 
     place: {
       name: result.place.name,
       countryCode: result.place.countryCode,
-      coordinates: result.place.coordinates,
     },
     horizon: result.horizon,
     target: result.target,
@@ -435,8 +432,16 @@ export function buildDeepSeekForecastContext(result: ForecastCalculationResult) 
       dateLabelZh: summary.dateLabelZh,
       score: summary.score,
       recommendationLabel: summary.recommendationLabel,
+      dedicatedTripRecommendation: summary.dedicatedTripRecommendation,
+      nearbyObservationRecommendation: summary.nearbyObservationRecommendation,
+      practicalTripScore: summary.practicalTripScore,
+      nearbyObservationScore: summary.nearbyObservationScore,
       target: summary.target,
       keyWindows: takeItems(summary.keyWindows, 3).map(compactForecastWindow),
+      bestShootableWindow: summary.bestShootableWindow
+        ? compactForecastWindow(summary.bestShootableWindow)
+        : undefined,
+      watchableWindows: takeItems(summary.watchableWindows, 3),
       riskFlags: takeItems(summary.riskFlags, 4),
       shortAdvice: summary.shortAdvice,
       weather: summary.weather
@@ -446,6 +451,8 @@ export function buildDeepSeekForecastContext(result: ForecastCalculationResult) 
             tempMax: summary.weather.tempMax,
             precipitationProbability: summary.weather.precipitationProbability,
             precipitationAmountMm: summary.weather.precipitationAmountMm,
+            rainRiskLabelZh: summary.weather.precipitationRisk?.rainRiskLabelZh,
+            mainPrecipitationPeriodLabelZh: summary.weather.mainPrecipitationPeriodLabelZh,
             windSpeed: summary.weather.windSpeed,
             windGust: summary.weather.windGust,
             visibility: summary.weather.visibility,

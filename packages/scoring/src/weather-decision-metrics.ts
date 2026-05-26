@@ -44,9 +44,13 @@ type TransparencyWeatherInput = {
 const defaultLapseRateCelsiusPer100m = 0.6;
 const elevationCloseEnoughMeters = 300;
 const unknownProviderCorrectionBaseMeters = 900;
-const unknownProviderCorrectionRatio = 0.42;
+const unknownProviderDayCorrectionRatio = 0.35;
+const unknownProviderNightMinCorrectionRatio = 0.25;
 const maxUnknownProviderCoolingCelsius = 4;
-const maxVeryHighTerrainUnknownProviderCoolingCelsius = 5;
+const maxVeryHighTerrainUnknownProviderCoolingCelsius = 4.5;
+const maxUnknownProviderNightCoolingCelsius = 2.8;
+const maxVeryHighTerrainUnknownProviderNightCoolingCelsius = 3;
+type TemperatureCorrectionRole = "instant" | "daily_min" | "daily_max";
 
 export function precipitationAmountMm(
   weather:
@@ -328,6 +332,7 @@ function adjustHourlyTemperature(
     spotElevationMeters,
     providerElevationMeters: hour.providerElevationMeters,
     providerCode: hour.providerCode,
+    role: "instant",
     existing: hour.temperatureAdjustment,
   });
   if (!adjustment.correctionApplied) {
@@ -364,6 +369,7 @@ function adjustCurrentTemperature(
     spotElevationMeters,
     providerElevationMeters: weather.providerElevationMeters,
     providerCode: weather.providerCode,
+    role: "instant",
     existing: weather.temperatureAdjustment,
   });
   if (!adjustment.correctionApplied) {
@@ -392,13 +398,22 @@ function adjustDailyTemperature(
   day: NormalizedDailyWeather,
   spotElevationMeters: number,
 ): NormalizedDailyWeather {
-  const adjustment = buildTemperatureAdjustment((day.tempMin + day.tempMax) / 2, {
+  const minAdjustment = buildTemperatureAdjustment(day.tempMin, {
     spotElevationMeters,
     providerElevationMeters: day.providerElevationMeters,
     providerCode: day.providerCode,
+    role: "daily_min",
     existing: day.temperatureAdjustment,
   });
-  if (!adjustment.correctionApplied) {
+  const maxAdjustment = buildTemperatureAdjustment(day.tempMax, {
+    spotElevationMeters,
+    providerElevationMeters: day.providerElevationMeters,
+    providerCode: day.providerCode,
+    role: "daily_max",
+    existing: day.temperatureAdjustment,
+  });
+  const adjustment = maxAdjustment.correctionApplied ? maxAdjustment : minAdjustment;
+  if (!minAdjustment.correctionApplied && !maxAdjustment.correctionApplied) {
     return {
       ...day,
       rawTempMin: day.rawTempMin ?? day.tempMin,
@@ -422,10 +437,10 @@ function adjustDailyTemperature(
     ...day,
     rawTempMin: day.rawTempMin ?? day.tempMin,
     rawTempMax: day.rawTempMax ?? day.tempMax,
-    tempMin: round1(day.tempMin - adjustment.correctionCelsius),
-    tempMax: round1(day.tempMax - adjustment.correctionCelsius),
-    elevationAdjustedTempMin: round1(day.tempMin - adjustment.correctionCelsius),
-    elevationAdjustedTempMax: round1(day.tempMax - adjustment.correctionCelsius),
+    tempMin: round1(day.tempMin - minAdjustment.correctionCelsius),
+    tempMax: round1(day.tempMax - maxAdjustment.correctionCelsius),
+    elevationAdjustedTempMin: round1(day.tempMin - minAdjustment.correctionCelsius),
+    elevationAdjustedTempMax: round1(day.tempMax - maxAdjustment.correctionCelsius),
     temperatureAdjustment: {
       correctionApplied: adjustment.correctionApplied,
       correctionMeters: adjustment.correctionMeters,
@@ -446,6 +461,7 @@ function buildTemperatureAdjustment(
     readonly spotElevationMeters: number;
     readonly providerElevationMeters?: number;
     readonly providerCode?: string;
+    readonly role?: TemperatureCorrectionRole;
     readonly existing?: Partial<ElevationTemperatureAdjustment>;
   },
 ): ElevationTemperatureAdjustment {
@@ -524,16 +540,23 @@ function buildTemperatureAdjustment(
     0,
     input.spotElevationMeters - unknownProviderCorrectionBaseMeters,
   );
-  const maxCooling =
-    input.spotElevationMeters >= 2200
+  const isNightMin = input.role === "daily_min";
+  const maxCooling = isNightMin
+    ? input.spotElevationMeters >= 2200
+      ? maxVeryHighTerrainUnknownProviderNightCoolingCelsius
+      : maxUnknownProviderNightCoolingCelsius
+    : input.spotElevationMeters >= 2200
       ? maxVeryHighTerrainUnknownProviderCoolingCelsius
       : maxUnknownProviderCoolingCelsius;
+  const correctionRatio = isNightMin
+    ? unknownProviderNightMinCorrectionRatio
+    : unknownProviderDayCorrectionRatio;
   const correctionCelsius = Math.min(
     maxCooling,
     round1(
       (unknownDeltaMeters / 100) *
         defaultLapseRateCelsiusPer100m *
-        unknownProviderCorrectionRatio,
+        correctionRatio,
     ),
   );
   const correctionMeters =

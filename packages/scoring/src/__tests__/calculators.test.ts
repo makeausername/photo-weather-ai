@@ -271,6 +271,43 @@ describe("forecast score calculators", () => {
     expect(adjusted.hourlyWeather[0]?.temperature).toBeGreaterThanOrEqual(17);
   });
 
+  it("uses a lighter capped correction for unknown-provider night minimum temperature", () => {
+    const baseInput = buildMockForecastInput(baseQuery, { now: fixedNow });
+    const veryHighTerrain: TerrainAnalysisSummary = {
+      ...baseInput.terrainAnalysis,
+      terrainProfile: {
+        ...baseInput.terrainAnalysis.terrainProfile,
+        locationElevation: 2600,
+      },
+    };
+    const day = baseInput.dailyWeather[0]!;
+    const adjusted = applyMountainWeatherAdjustments({
+      hourlyWeather: [],
+      dailyWeather: [
+        {
+          ...day,
+          providerCode: "qweather",
+          providerElevationMeters: undefined,
+          tempMin: 8,
+          tempMax: 18,
+          rawTempMin: undefined,
+          rawTempMax: undefined,
+          elevationAdjustedTempMin: undefined,
+          elevationAdjustedTempMax: undefined,
+          temperatureAdjustment: undefined,
+        },
+      ],
+      terrainAnalysis: veryHighTerrain,
+    });
+    const adjustedDay = adjusted.dailyWeather[0]!;
+    const minCooling = 8 - adjustedDay.tempMin;
+    const maxCooling = 18 - adjustedDay.tempMax;
+
+    expect(minCooling).toBeLessThanOrEqual(3);
+    expect(maxCooling).toBeGreaterThan(minCooling);
+    expect(adjustedDay.tempMin).toBeGreaterThanOrEqual(5);
+  });
+
   it("leaves terrain-aware mock provider values close to the raw provider temperature", () => {
     const baseInput = buildMockForecastInput(baseQuery, { now: fixedNow });
     const adjusted = applyMountainWeatherAdjustments({

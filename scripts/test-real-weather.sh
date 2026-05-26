@@ -329,6 +329,13 @@ for (const window of bestWindows.slice(0, 5)) {
   console.log(`- ${formatWindowLabel(window, timezone)} ${value(window.label)} level=${value(window.recommendationLevel)} practical=${number(window.practicalScore)} condition=${number(window.conditionScore)} blockers=${Array.isArray(window.weatherBlockers) ? window.weatherBlockers.join("|") || "none" : "none"}`);
 }
 console.log(`dailyFirst: date=${value(firstDailySummary.date)} score=${number(firstDailySummary.score)} advice=${value(firstDailySummary.shortAdvice)}`);
+console.log(`dedicatedTripRecommendation: ${value(firstDailySummary.dedicatedTripRecommendation)}`);
+console.log(`nearbyObservationRecommendation: ${value(firstDailySummary.nearbyObservationRecommendation)}`);
+console.log(`dailyPracticalScores: opportunity=${number(firstDailySummary.weatherOpportunityScore)} riskPenalty=${number(firstDailySummary.riskPenalty)} practicalTrip=${number(firstDailySummary.practicalTripScore)} nearbyObservation=${number(firstDailySummary.nearbyObservationScore)}`);
+console.log(`mainPrecipitationPeriodLabelZh: ${value(firstDailySummary.mainPrecipitationPeriodLabelZh || firstDaily.mainPrecipitationPeriodLabelZh)}`);
+console.log(`watchableWindows: ${Array.isArray(firstDailySummary.watchableWindows) ? firstDailySummary.watchableWindows.map((window) => `${value(window.subject)}@${window.startTime && window.endTime ? formatWindowLabel(window, timezone) : "time-tbd"} level=${value(window.recommendationLevel)} nearby=${value(window.suitableIfNearby)}`).join(" | ") || "none" : "none"}`);
+console.log(`bestShootableWindow: ${firstDailySummary.bestShootableWindow ? `${formatWindowLabel(firstDailySummary.bestShootableWindow, timezone)} ${value(firstDailySummary.bestShootableWindow.subjectPriorityLabel || firstDailySummary.bestShootableWindow.label)} level=${value(firstDailySummary.bestShootableWindow.recommendationLevel)}` : "none"}`);
+console.log(`temperatureCorrectionSummary: rawMin=${number(rawDailyMin, "掳C")} correctedMin=${number(correctedDailyMin, "掳C")} rawMax=${number(rawDailyMax, "掳C")} correctedMax=${number(correctedDailyMax, "掳C")} reason=${value(tempAdjustment.correctionReason)}`);
 console.log(`clothingGuide: ${value(clothing.titleZh)} / ${value(clothing.summaryZh)}`);
 console.log(`clothingLayers: ${(clothing.layers || []).join("、") || "暂无"}`);
 console.log(`confidenceByTarget: ${JSON.stringify(fusion.confidenceByTarget || {})}`);

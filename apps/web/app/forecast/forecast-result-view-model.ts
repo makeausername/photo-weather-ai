@@ -105,7 +105,12 @@ export type ForecastResultDailyItem = {
   readonly dateLabel: string;
   readonly score: number;
   readonly recommendationLabel: string;
+  readonly dedicatedTripLabel?: string;
+  readonly nearbyObservationLabel?: string;
   readonly bestWindowLabel: string;
+  readonly bestShootableWindowLabel?: string;
+  readonly watchableWindowLabel?: string;
+  readonly mainPrecipitationPeriodLabel?: string;
   readonly riskLabel: string;
   readonly shortAdvice: string;
 };

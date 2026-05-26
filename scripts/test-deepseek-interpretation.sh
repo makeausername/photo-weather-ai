@@ -150,7 +150,15 @@ try {
 }
 
 const success = status >= 200 && status < 300 && Boolean(payload.explanation);
+const errorCategory = payload.errorCategory || payload.error || "none";
+const promptSizeChars = payload.diagnostics && typeof payload.diagnostics.promptSizeChars === "number"
+  ? payload.diagnostics.promptSizeChars
+  : "unknown";
+const timeoutMs = payload.diagnostics && typeof payload.diagnostics.timeoutMs === "number"
+  ? payload.diagnostics.timeoutMs
+  : "unknown";
 const message =
+  payload.messageZh ||
   payload.message ||
   payload.error ||
   (success ? "DeepSeek 解读生成成功。" : "DeepSeek 解读暂时不可用，已保留确定性分析结果。");
@@ -158,6 +166,9 @@ const message =
 console.log(`success: ${success}`);
 console.log(`statusCode: ${status}`);
 console.log(`latencyMs: ${latencyMs}`);
+console.log(`errorCategory: ${errorCategory}`);
+console.log(`timeoutMsFromResponse: ${timeoutMs}`);
+console.log(`promptSizeChars: ${promptSizeChars}`);
 console.log(`messageZh: ${message}`);
 NODE
 

@@ -565,12 +565,12 @@ describe("forecast query validation route", () => {
     expect(body.currentWeather).toMatchObject({
       providerCode: "qweather",
       rawTemperature: 13,
-      temperature: 10.6,
-      elevationAdjustedTemperature: 10.6,
-      feelsLike: 8.6,
+      temperature: 11,
+      elevationAdjustedTemperature: 11,
+      feelsLike: 9,
       temperatureAdjustment: expect.objectContaining({
         correctionApplied: true,
-        correctionCelsius: 2.4,
+        correctionCelsius: 2,
         providerElevationKnown: false,
         correctionReason: "unknown_provider_elevation_conservative",
       }),
@@ -1462,8 +1462,12 @@ describe("forecast query validation route", () => {
       payload: validPayload,
     });
 
-    expect(response.statusCode).toBe(400);
+    expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
+      success: false,
+      errorCategory: "disabled",
+      messageZh: "请先填写 DeepSeek API Key。",
+      retryable: false,
       error: "provider_key_missing",
       message: "请先填写 DeepSeek API Key。",
     });
@@ -1561,12 +1565,21 @@ describe("forecast query validation route", () => {
       payload: validPayload,
     });
 
-    expect(response.statusCode).toBe(504);
+    expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
+      success: false,
+      errorCategory: "timeout",
+      retryable: true,
       error: "ai_explanation_timeout",
-      message: "DeepSeek 解读暂时超时，已保留确定性分析结果，可稍后重试。",
+      messageZh: expect.stringContaining("DeepSeek"),
+      diagnostics: expect.objectContaining({
+        model: "deepseek-v4-pro",
+        timeoutMs: 60000,
+        promptSizeChars: expect.any(Number),
+      }),
+      message: expect.stringContaining("DeepSeek"),
     });
-    expect(fetchMock).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(response.body).not.toContain("deepseek-secret");
   });
 

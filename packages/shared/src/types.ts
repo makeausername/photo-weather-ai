@@ -813,6 +813,36 @@ export type ForecastDailyMetric = {
   readonly window?: ForecastTimeWindow;
 };
 
+export type ForecastTripDecisionLabel =
+  | "推荐专程前往"
+  | "谨慎前往"
+  | "谨慎参考"
+  | "不建议专程前往"
+  | "已在附近可观察"
+  | "可等云雾变化"
+  | "仅作备选"
+  | "等待转机";
+
+export type ForecastRainTimingConfidence = "high" | "medium" | "low" | "unknown";
+
+export type ForecastWatchableWindow = {
+  readonly subject: string;
+  readonly target: ForecastTarget;
+  readonly startTime?: string;
+  readonly endTime?: string;
+  readonly recommendationLevel: ForecastWindowRecommendationLevel;
+  readonly reasonZh: string;
+  readonly suitableForDedicatedTrip: boolean;
+  readonly suitableIfNearby: boolean;
+};
+
+export type ForecastPrecipitationPeriodSummary = {
+  readonly mainPrecipitationPeriodLabelZh: string;
+  readonly affectedWindows: readonly string[];
+  readonly maxRainRiskWindow?: string;
+  readonly rainTimingConfidence: ForecastRainTimingConfidence;
+};
+
 export type ForecastDailyWeatherSummary = {
   readonly weatherTextZh?: string;
   readonly tempMin?: number;
@@ -836,6 +866,10 @@ export type ForecastDailyWeatherSummary = {
   readonly snowAmountMm?: number;
   readonly precipitationType?: PrecipitationType;
   readonly precipitationRisk?: PhotographyPrecipitationRisk;
+  readonly mainPrecipitationPeriodLabelZh?: string;
+  readonly affectedPrecipitationWindows?: readonly string[];
+  readonly maxRainRiskWindow?: string;
+  readonly rainTimingConfidence?: ForecastRainTimingConfidence;
   readonly windSpeed?: number;
   readonly windGust?: number;
   readonly windDirection?: number;
@@ -862,6 +896,16 @@ export type ForecastDailySummary = {
   readonly target: ForecastTarget;
   readonly weather?: ForecastDailyWeatherSummary;
   readonly keyWindows: readonly ForecastTimeWindow[];
+  readonly bestShootableWindow?: ForecastTimeWindow;
+  readonly watchableWindows?: readonly ForecastWatchableWindow[];
+  readonly weatherOpportunityScore?: number;
+  readonly riskPenalty?: number;
+  readonly practicalTripScore?: number;
+  readonly nearbyObservationScore?: number;
+  readonly dedicatedTripRecommendation?: ForecastTripDecisionLabel;
+  readonly nearbyObservationRecommendation?: ForecastTripDecisionLabel;
+  readonly dedicatedTripAdviceZh?: string;
+  readonly nearbyObservationAdviceZh?: string;
   readonly riskFlags: readonly ForecastRiskFlag[];
   readonly shortAdvice: string;
 };

@@ -95,7 +95,7 @@ describe("AI providers", () => {
     expect(JSON.stringify(request.body)).toContain("Do not invent weather data.");
     expect(JSON.stringify(request.body)).toContain("computedForecastFacts");
     expect(JSON.stringify(request.body)).not.toContain("exampleJsonOutput");
-    expect(request.body.messages[1]?.content.length).toBeLessThanOrEqual(12000);
+    expect(request.body.messages[1]?.content.length).toBeLessThanOrEqual(18000);
     expect(JSON.stringify(request.body)).not.toContain("sk-");
   });
 
@@ -104,9 +104,10 @@ describe("AI providers", () => {
     const text = JSON.stringify(context);
 
     expect(context.providerSourceSummaries[0]).toMatchObject({
-      providerCode: "mock",
       success: true,
     });
+    expect(JSON.stringify(context.providerSourceSummaries[0])).not.toContain("providerCode");
+    expect(JSON.stringify(context.place)).not.toContain("coordinates");
     expect(text).toContain("All values are precomputed read-only facts");
     expect(text).not.toContain("weatherTimeline");
     expect(text.length).toBeLessThanOrEqual(9000);

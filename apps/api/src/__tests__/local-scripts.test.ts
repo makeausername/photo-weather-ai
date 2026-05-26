@@ -244,6 +244,13 @@ describe("local astro diagnostics scripts", () => {
       "bestWindowFullLabel:",
       "recommendedArrivalFullLabel:",
       "topRankedWindows:",
+      "dedicatedTripRecommendation:",
+      "nearbyObservationRecommendation:",
+      "mainPrecipitationPeriodLabelZh:",
+      "watchableWindows:",
+      "bestShootableWindow:",
+      "dailyPracticalScores:",
+      "temperatureCorrectionSummary:",
       "generalBestSubject:",
       "confidenceByTarget:",
     ]) {
@@ -255,5 +262,25 @@ describe("local astro diagnostics scripts", () => {
     expect(script).not.toMatch(/provider\.apiKey(?!Present)/);
     expect(script).not.toContain("process.env.QWEATHER");
     expect(script).not.toContain("process.env.METEOBLUE");
+  });
+
+  it("prints DeepSeek interpretation diagnostics without raw secrets", () => {
+    const script = readRepoFile("scripts/test-deepseek-interpretation.sh");
+
+    for (const expected of [
+      "model: ${config.model}",
+      "timeoutMs: ${config.timeoutMs}",
+      "deepseek-v4-pro",
+      "success:",
+      "errorCategory:",
+      "messageZh:",
+      "promptSizeChars:",
+    ]) {
+      expect(script).toContain(expected);
+    }
+
+    expect(script).toContain("No API keys or secrets will be printed.");
+    expect(script).toContain("apiKeyPresent");
+    expect(script).not.toContain("DEEPSEEK_API_KEY");
   });
 });

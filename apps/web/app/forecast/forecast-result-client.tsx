@@ -65,10 +65,16 @@ type ForecastAiExplanation = {
 };
 
 type AiExplainResponse = {
-  readonly explanation: ForecastAiExplanation;
+  readonly success?: boolean;
+  readonly explanation?: ForecastAiExplanation;
+  readonly errorCategory?: "timeout" | "provider_error" | "parse_error" | "network" | "disabled";
+  readonly messageZh?: string;
+  readonly message?: string;
+  readonly retryable?: boolean;
 };
 
 type ApiErrorPayload = {
+  readonly messageZh?: string;
   readonly message?: string;
   readonly error?: string;
 };
@@ -90,7 +96,7 @@ async function readApiErrorMessage(response: Response, fallback: string): Promis
 
   try {
     const payload = JSON.parse(text) as ApiErrorPayload;
-    return payload.message || payload.error || fallback;
+    return payload.messageZh || payload.message || payload.error || fallback;
   } catch {
     return fallback;
   }
@@ -186,6 +192,9 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
       }
 
       const data = (await response.json()) as AiExplainResponse;
+      if (data.success === false || !data.explanation) {
+        throw new Error(data.messageZh || data.message || "DeepSeek 解读暂时不可用，已保留确定性分析结果。");
+      }
       setAiExplanation(data.explanation);
       setAiStatus("ready");
     } catch (error) {
@@ -696,7 +705,59 @@ function auxiliaryDataNotice(result: ForecastCalculationResult): string {
   return "云层与能见度已纳入判断。";
 }
 
+function dailyDecisionBadgeVariant(label: string | undefined): BadgeVariant {
+  if (!label) {
+    return "muted";
+  }
+  if (label.includes("不建议")) {
+    return "danger";
+  }
+  if (label.includes("推荐")) {
+    return "default";
+  }
+  if (label.includes("谨慎") || label.includes("观察") || label.includes("等待")) {
+    return "accent";
+  }
+  return "muted";
+}
+
+function dailyWatchableWindowText(
+  summary: ForecastCalculationResult["dailySummaries"][number],
+): string {
+  const window = summary.watchableWindows?.[0];
+  if (!window) {
+    return "暂无明确可观察窗口";
+  }
+  if (window.startTime && window.endTime) {
+    return `${window.subject} ${formatWindow(window.startTime, window.endTime)}`;
+  }
+  return window.subject;
+}
+
+function dailyBestShootableWindowText(
+  summary: ForecastCalculationResult["dailySummaries"][number],
+): string {
+  const window = summary.bestShootableWindow;
+  if (!window) {
+    return "暂无真正可拍窗口";
+  }
+  return `${window.subjectPriorityLabel ?? window.label} ${formatWindow(
+    window.startTime,
+    window.endTime,
+  )}`;
+}
+
 function departureRecommendationLabel(result: ForecastCalculationResult): string {
+  const firstDailyDecision = result.target === "general" ? result.dailySummaries[0] : undefined;
+  if (firstDailyDecision?.dedicatedTripRecommendation === "不建议专程前往") {
+    return firstDailyDecision.nearbyObservationRecommendation === "已在附近可观察"
+      ? "已在附近可观察"
+      : "不建议专程前往";
+  }
+  if (firstDailyDecision?.dedicatedTripRecommendation) {
+    return firstDailyDecision.dedicatedTripRecommendation;
+  }
+
   if (result.recommendationLabel.includes("不建议") || result.overallScore < 45) {
     return "不建议前往";
   }
@@ -3009,6 +3070,14 @@ function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCal
                 <Badge variant={recommendationBadgeVariant(summary.recommendationLabel)}>
                   {normalizeRecommendationLabel(summary.recommendationLabel)}
                 </Badge>
+                {summary.dedicatedTripRecommendation ? (
+                  <Badge variant={dailyDecisionBadgeVariant(summary.dedicatedTripRecommendation)}>
+                    {summary.dedicatedTripRecommendation}
+                  </Badge>
+                ) : null}
+                {summary.nearbyObservationRecommendation ? (
+                  <Badge variant="accent">{summary.nearbyObservationRecommendation}</Badge>
+                ) : null}
                 <Badge variant="muted">
                   {dayBreakdown?.weatherSummary ?? summary.weather?.weatherTextZh ?? "天气待复核"}
                 </Badge>
@@ -3019,6 +3088,12 @@ function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCal
                   label={dailyPrecipitationLabel(summary.weather)}
                   value={precipitationDisplayValue(summary.weather)}
                 />
+                <DailyDefinition
+                  label="主要降水"
+                  value={summary.weather?.mainPrecipitationPeriodLabelZh ?? "时段待复核"}
+                />
+                <DailyDefinition label="可观察" value={dailyWatchableWindowText(summary)} />
+                <DailyDefinition label="最佳可拍" value={dailyBestShootableWindowText(summary)} />
                 <DailyDefinition
                   label="风"
                   value={formatWindWithGust(
@@ -3037,6 +3112,10 @@ function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCal
               </dl>
               <div className="mt-4 grid gap-2 text-xs leading-5 text-muted-foreground">
                 <p>{precipitationDisplayDetail(summary.weather)}</p>
+                <p>专程判断：{summary.dedicatedTripAdviceZh ?? summary.shortAdvice}</p>
+                {summary.nearbyObservationAdviceZh ? (
+                  <p>附近观察：{summary.nearbyObservationAdviceZh}</p>
+                ) : null}
                 <p>
                   能见度：
                   {formatKilometers(
