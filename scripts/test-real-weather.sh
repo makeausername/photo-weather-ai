@@ -123,6 +123,63 @@ function number(input, suffix = "") {
   return typeof input === "number" ? `${Math.round(input * 10) / 10}${suffix}` : "暂无";
 }
 
+function dateTimeParts(input, timezone) {
+  const timestamp = Date.parse(input);
+  if (!Number.isFinite(timestamp)) {
+    return undefined;
+  }
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    hourCycle: "h23",
+  }).formatToParts(new Date(timestamp));
+  const pick = (type) => parts.find((part) => part.type === type)?.value;
+  return {
+    year: Number(pick("year")),
+    month: Number(pick("month")),
+    day: Number(pick("day")),
+    hour: pick("hour"),
+    minute: pick("minute"),
+  };
+}
+
+function dateLabel(parts, style = "full") {
+  return style === "compact"
+    ? `${parts.month}月${parts.day}日`
+    : `${parts.year}年${parts.month}月${parts.day}日`;
+}
+
+function formatWindowLabel(window, timezone, style = "full") {
+  const start = dateTimeParts(window.startTime || window.start, timezone);
+  const end = dateTimeParts(window.endTime || window.end, timezone);
+  if (!start || !end || !start.hour || !end.hour) {
+    return "暂无明确窗口";
+  }
+  const sameDay = start.year === end.year && start.month === end.month && start.day === end.day;
+  const startClock = `${start.hour}:${start.minute}`;
+  const endClock = `${end.hour}:${end.minute}`;
+  if (sameDay) {
+    return `${dateLabel(start, style)} ${startClock}–${endClock}`;
+  }
+  const endDate =
+    start.year === end.year && style === "full"
+      ? `${end.month}月${end.day}日`
+      : dateLabel(end, start.year === end.year ? "compact" : "full");
+  return `${dateLabel(start, style)} ${startClock} – ${endDate} ${endClock}`;
+}
+
+function formatArrivalLabel(input, timezone) {
+  const parts = dateTimeParts(input, timezone);
+  return parts && parts.hour
+    ? `建议到达：${dateLabel(parts)} ${parts.hour}:${parts.minute} 前`
+    : "暂无明确到达时间";
+}
+
 const current = result.currentWeather || {};
 const dailySummaries = Array.isArray(result.dailySummaries) ? result.dailySummaries : [];
 const firstDailySummary = dailySummaries[0] || {};
@@ -231,6 +288,7 @@ const transparencyScore = firstNumber(current.photographyTransparencyScore, firs
 const transparencyGrade = firstValue(current.transparencyGrade, firstDaily.transparencyGrade);
 const astroAnalysis = result.astroAnalysis || {};
 const astroBlockers = Array.isArray(astroAnalysis.weatherBlockers) ? astroAnalysis.weatherBlockers : [];
+const timezone = result.calendarBasis?.timezone || "Asia/Shanghai";
 console.log(`rawTemperature: ${number(rawTemp, "°C")}`);
 console.log(`elevationAdjustedTemperature: ${number(adjustedTemp, "°C")}`);
 console.log(`rawProviderDailyTemperature: min=${number(rawDailyMin, "°C")} max=${number(rawDailyMax, "°C")}`);
@@ -258,10 +316,18 @@ console.log(`cloud: total=${percent(firstNumber(current.cloudTotal, firstDaily.c
 console.log(`cloudSeaChance: ${number(result.scores?.cloudSea?.score)} whiteoutRisk=${number(result.scores?.whiteoutRisk?.score)} cloudFogRisk=${value(current.cloudFogObstructionRisk || firstDaily.cloudFogObstructionRisk)}`);
 console.log(`astroConditionScore: ${number(astroAnalysis.astroConditionScore)}`);
 console.log(`astroPracticalScore: ${number(astroAnalysis.astroPracticalScore)}`);
+console.log(`astroWindowAvailable: ${value(astroAnalysis.astroWindowAvailable)}`);
+console.log(`astroShootable: ${value(astroAnalysis.astroShootable)}`);
 console.log(`astroWeatherBlockers: ${astroBlockers.length > 0 ? astroBlockers.join(" | ") : "无"}`);
+console.log(`bestWindowFullLabel: ${formatWindowLabel(firstWindow, timezone)}`);
 console.log(`bestWindow: ${value(firstWindow.label)} score=${number(firstWindow.score)} practical=${number(firstWindow.practicalScore)} condition=${number(firstWindow.conditionScore)} kind=${value(firstWindow.practicalKind)} light=${value(firstWindow.lightPhase)}`);
 console.log(`generalBestSubject: ${value(firstWindow.subjectPriorityLabel || result.recommendationLabel)}`);
 console.log(`arrivalAdvice: ${value(firstArrival.recommendedArrivalLabel)} time=${value(firstArrival.recommendedArrivalTime)} setup=${number(firstArrival.setupBufferMinutes, "min")} warning=${value(firstArrival.warningZh, "无")}`);
+console.log(`recommendedArrivalFullLabel: ${firstArrival.recommendedArrivalTime ? formatArrivalLabel(firstArrival.recommendedArrivalTime, timezone) : "暂无明确到达时间"}`);
+console.log("topRankedWindows:");
+for (const window of bestWindows.slice(0, 5)) {
+  console.log(`- ${formatWindowLabel(window, timezone)} ${value(window.label)} level=${value(window.recommendationLevel)} practical=${number(window.practicalScore)} condition=${number(window.conditionScore)} blockers=${Array.isArray(window.weatherBlockers) ? window.weatherBlockers.join("|") || "none" : "none"}`);
+}
 console.log(`dailyFirst: date=${value(firstDailySummary.date)} score=${number(firstDailySummary.score)} advice=${value(firstDailySummary.shortAdvice)}`);
 console.log(`clothingGuide: ${value(clothing.titleZh)} / ${value(clothing.summaryZh)}`);
 console.log(`clothingLayers: ${(clothing.layers || []).join("、") || "暂无"}`);

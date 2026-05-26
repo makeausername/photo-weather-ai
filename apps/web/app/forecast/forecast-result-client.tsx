@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
+  formatArrivalDeadlineZh,
+  formatShootingWindowZh,
   forecastHorizonLabels,
   forecastTargetLabels,
   type ForecastCalculationResult,
@@ -756,11 +758,14 @@ function arrivalAdviceValue(
   if (!window) {
     return "等待更新";
   }
+  if ("arrivalFullLabel" in window && window.arrivalFullLabel) {
+    return window.arrivalFullLabel;
+  }
   if (window.arrivalAdvice?.recommendedArrivalLabel) {
-    return window.arrivalAdvice.recommendedArrivalLabel;
+    return formatArrivalDeadlineZh(window.arrivalAdvice.recommendedArrivalTime);
   }
   const arrivalTime = shiftTime(window.startTime, -50);
-  return `${formatTime(arrivalTime)} 前到达`;
+  return formatArrivalDeadlineZh(arrivalTime);
 }
 
 function arrivalAdviceDetail(
@@ -775,9 +780,9 @@ function arrivalAdviceDetail(
     return `${arrivalAdviceValue(window)}。${window.arrivalAdvice.reasonZh}${warning}`;
   }
 
-  return `最佳窗口 ${formatWindow(window.startTime, window.endTime)}，建议 ${formatTime(
+  return `最佳窗口 ${formatWindow(window.startTime, window.endTime)}，${formatArrivalDeadlineZh(
     shiftTime(window.startTime, -50),
-  )} 前到达，完成取景、三脚架和防护准备。`;
+  )}，完成取景、三脚架和防护准备。`;
 }
 
 function averagePair(left: number | undefined, right: number | undefined): number | undefined {
@@ -2934,7 +2939,9 @@ function OpportunityWindowSection({
                 <Badge variant="default">{window.badgeLabel}</Badge>
                 <h3 className="font-semibold text-card-foreground">{window.label}</h3>
               </div>
-              <p className="mt-2 text-sm text-muted-foreground">{window.timeRangeLabel}</p>
+              <p className="mt-2 break-words text-sm font-semibold text-muted-foreground">
+                {window.fullTimeRangeLabel}
+              </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 min-[720px]:justify-end">
               <Badge variant={(window.practicalScore ?? window.score) >= 75 ? "default" : "accent"}>
@@ -2948,7 +2955,7 @@ function OpportunityWindowSection({
               ) : null}
               <Badge variant="muted">{windowRiskTag(result, window)}</Badge>
               <Badge variant={(window.practicalScore ?? window.score) >= 75 ? "success" : "info"}>
-                {windowActionLabel(window)}
+                {window.recommendationLevelLabel}
               </Badge>
             </div>
             {window.practicalNoteZh ? (
@@ -3044,7 +3051,7 @@ function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCal
                     ? `${bestWindow.label} ${formatWindow(bestWindow.startTime, bestWindow.endTime)}`
                     : "暂无明确高分窗口"}
                 </p>
-                <p>建议到达：{arrivalAdviceValue(bestWindow)}</p>
+                <p>{arrivalAdviceValue(bestWindow)}</p>
                 {bestWindow?.arrivalAdvice?.warningZh ? (
                   <p>提示：{bestWindow.arrivalAdvice.warningZh}</p>
                 ) : null}
@@ -3733,6 +3740,10 @@ function subjectPriorityScore(
   key: SubjectScoreKey,
   fallbackScore: number,
 ): number {
+  if ((key === "stars" || key === "milkyWay") && !result.astroAnalysis.astroShootable) {
+    return Math.min(result.astroAnalysis.astroPracticalScore, 34);
+  }
+
   const window = bestWindowForSubject(result, key);
   if (!window) {
     return fallbackScore;
@@ -3812,7 +3823,7 @@ function coreWindowValue(window: ForecastResultWindow | undefined): string {
     return "暂无明确高分窗口";
   }
 
-  return `${formatDateTime(window.startTime)} - ${formatTime(window.endTime)}`;
+  return window.fullTimeRangeLabel ?? formatShootingWindowZh(window);
 }
 
 function coreWindowDetail(
@@ -3838,6 +3849,12 @@ function coreWindowDetail(
 function subjectWindowLabel(result: ForecastCalculationResult, key: SubjectScoreKey): string {
   const window = bestWindowForSubject(result, key);
   if (window) {
+    if ((key === "milkyWay" || key === "stars") && (window.weatherBlockers?.length ?? 0) > 0) {
+      return `天文窗口：${formatWindow(window.startTime, window.endTime)}；${window.weatherBlockers?.[0]}，不建议作为唯一目标。`;
+    }
+    if (key === "milkyWay") {
+      return `银河可拍窗口：${formatWindow(window.startTime, window.endTime)}`;
+    }
     return formatWindow(window.startTime, window.endTime);
   }
 
@@ -4021,7 +4038,7 @@ function confidenceLabel(
 }
 
 function formatWindow(startTime: string, endTime: string): string {
-  return `${formatTime(startTime)} - ${formatTime(endTime)}`;
+  return formatShootingWindowZh({ startTime, endTime });
 }
 
 function formatTime(value: string): string {

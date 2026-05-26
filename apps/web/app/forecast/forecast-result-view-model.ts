@@ -1,4 +1,6 @@
 import {
+  formatArrivalDeadlineZh,
+  formatShootingWindowZh,
   forecastTargetLabels,
   type AstroAnalysisResult,
   type AstroEvidenceItem,
@@ -12,6 +14,8 @@ import {
   type ForecastScore,
   type ForecastTarget,
   type ForecastTimeWindow,
+  type ForecastWindowHumanCostLevel,
+  type ForecastWindowRecommendationLevel,
   type GlowAnalysisResult,
   type GlowBackupPlan,
   type GlowBestTarget,
@@ -57,6 +61,8 @@ export type ForecastResultWindow = {
   readonly label: string;
   readonly date?: string;
   readonly timeRangeLabel: string;
+  readonly fullTimeRangeLabel: string;
+  readonly compactTimeRangeLabel: string;
   readonly startTime: string;
   readonly endTime: string;
   readonly score: number;
@@ -64,6 +70,10 @@ export type ForecastResultWindow = {
   readonly badgeLabel: string;
   readonly conditionScore?: number;
   readonly practicalScore?: number;
+  readonly humanCostLevel?: ForecastWindowHumanCostLevel;
+  readonly recommendationLevel?: ForecastWindowRecommendationLevel;
+  readonly recommendationLevelLabel: string;
+  readonly arrivalFullLabel?: string;
   readonly practicalKind?: ForecastTimeWindow["practicalKind"];
   readonly lightPhase?: ForecastTimeWindow["lightPhase"];
   readonly practicalNoteZh?: string;
@@ -276,6 +286,7 @@ export type AstroDailyTrendItem = {
   readonly astroConditionScore: number;
   readonly astroPracticalScore: number;
   readonly astronomicalWindowAvailable: boolean;
+  readonly astroShootable: boolean;
   readonly weatherBlockers: readonly string[];
   readonly moonImpactLabel: string;
   readonly astronomicalNightLabel: string;
@@ -392,10 +403,10 @@ export function buildForecastResultViewModel(
 
 function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResultViewModel {
   const shellCopy = targetShellCopies.general;
-  const bestWindow = firstWindow(result.bestWindows);
   const mainRisk = firstRisk(result.riskFlags);
   const scoreCards = allScoreKeys.map((key) => result.scores[key]);
-  const resultWindows = mapResultWindows(result.bestWindows);
+  const resultWindows = mapResultWindows(result.bestWindows, result.calendarBasis.timezone);
+  const bestWindow = resultWindows[0];
 
   return {
     target: "general",
@@ -419,7 +430,7 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
         "bestWindow",
         "最佳拍摄窗口",
         bestWindow?.label ?? "暂无明确高分窗口",
-        bestWindow?.timeRangeLabel ?? "等待更多数据",
+        bestWindow?.fullTimeRangeLabel ?? "等待更多数据",
         "accent",
       ),
       textCard(
@@ -442,13 +453,13 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
         "arrivalAdvice",
         "recommendation",
         "到达建议",
-        bestWindow?.arrivalAdvice?.recommendedArrivalLabel ?? (bestWindow ? "窗口前到达" : "等待更新"),
+        bestWindow?.arrivalFullLabel ?? (bestWindow ? "窗口前到达" : "等待更新"),
         bestWindow?.arrivalAdvice
           ? `${bestWindow.arrivalAdvice.reasonZh}${
               bestWindow.arrivalAdvice.warningZh ? ` ${bestWindow.arrivalAdvice.warningZh}` : ""
             }`
           : bestWindow
-            ? `${bestWindow.timeRangeLabel}，预留取景和机位确认时间。`
+            ? `${bestWindow.fullTimeRangeLabel}，预留取景和机位确认时间。`
             : "暂无明确高分窗口。",
         "accent",
       ),
@@ -2113,6 +2124,7 @@ function mapDailyAstro(day: DailyAstro): AstroDailyTrendItem {
     astroConditionScore: day.astroConditionScore,
     astroPracticalScore: day.astroPracticalScore,
     astronomicalWindowAvailable: day.astronomicalWindowAvailable,
+    astroShootable: day.astroShootable,
     weatherBlockers: day.weatherBlockers,
     moonImpactLabel: moonImpactLevelLabel(day.moonImpactLevel),
     astronomicalNightLabel: day.astronomicalNightWindow
@@ -2122,7 +2134,9 @@ function mapDailyAstro(day: DailyAstro): AstroDailyTrendItem {
       ? formatAstroWindowValue(day.moonlessNightWindow)
       : "暂无明确窗口",
     recommendedMilkyWayLabel: day.recommendedMilkyWayWindow
-      ? formatAstroWindowValue(day.recommendedMilkyWayWindow)
+      ? day.astroShootable
+        ? `银河可拍窗口：${formatAstroWindowValue(day.recommendedMilkyWayWindow)}`
+        : `天文窗口：${formatAstroWindowValue(day.recommendedMilkyWayWindow)}；天气不支持专程拍摄`
       : "暂无推荐窗口",
     recommendationLabel: day.recommendationLabel,
     keyReason: day.keyReason,
@@ -2173,7 +2187,7 @@ function moonImpactLevelLabel(level: DailyAstro["moonImpactLevel"] | undefined):
 }
 
 function formatAstroWindowValue(window: Pick<AstroWindow, "start" | "end">): string {
-  return `${formatOptionalTime(window.start)} - ${formatOptionalTime(window.end)}`;
+  return formatShootingWindowZh({ startTime: window.start, endTime: window.end });
 }
 
 function windowTone(window: AstroWindow): ForecastResultCardTone {
@@ -2203,13 +2217,18 @@ function buildAstroWindows(result: ForecastCalculationResult): readonly Forecast
   return mapResultWindows(result.bestWindows.filter((window) => window.target === "astro"));
 }
 
-function mapResultWindows(windows: readonly ForecastTimeWindow[]): readonly ForecastResultWindow[] {
+function mapResultWindows(
+  windows: readonly ForecastTimeWindow[],
+  timezone = "Asia/Shanghai",
+): readonly ForecastResultWindow[] {
   return windows.map((window) => ({
     key: `${window.target}-${window.startTime}-${window.label}`,
     moduleKey: inferWindowModuleKey(window),
-    label: window.label,
+    label: displayWindowLabel(window),
     date: window.date,
-    timeRangeLabel: formatWindow(window.startTime, window.endTime),
+    timeRangeLabel: formatShootingWindowZh(window, timezone, { style: "compact" }),
+    fullTimeRangeLabel: formatShootingWindowZh(window, timezone),
+    compactTimeRangeLabel: formatShootingWindowZh(window, timezone, { style: "compact" }),
     startTime: window.startTime,
     endTime: window.endTime,
     score: window.score,
@@ -2217,6 +2236,12 @@ function mapResultWindows(windows: readonly ForecastTimeWindow[]): readonly Fore
     badgeLabel: forecastTargetLabels[window.target],
     conditionScore: window.conditionScore,
     practicalScore: window.practicalScore,
+    humanCostLevel: window.humanCostLevel,
+    recommendationLevel: window.recommendationLevel,
+    recommendationLevelLabel: windowRecommendationLevelLabel(window.recommendationLevel),
+    arrivalFullLabel: window.arrivalAdvice
+      ? formatArrivalDeadlineZh(window.arrivalAdvice.recommendedArrivalTime, timezone)
+      : undefined,
     practicalKind: window.practicalKind,
     lightPhase: window.lightPhase,
     practicalNoteZh: window.practicalNoteZh,
@@ -2227,6 +2252,38 @@ function mapResultWindows(windows: readonly ForecastTimeWindow[]): readonly Fore
     restWarningZh: window.restWarningZh,
     arrivalAdvice: window.arrivalAdvice,
   }));
+}
+
+function displayWindowLabel(window: ForecastTimeWindow): string {
+  const labelWithoutTime = window.label
+    .replace(/\s*\d{1,2}:\d{2}\s*[-–至到]\s*\d{1,2}:\d{2}\s*/g, "")
+    .trim();
+
+  if (window.target === "astro" && (window.weatherBlockers?.length ?? 0) > 0) {
+    return "天文窗口";
+  }
+  if (window.target === "astro" && labelWithoutTime.includes("银河")) {
+    return "银河可拍窗口";
+  }
+  return labelWithoutTime || window.label;
+}
+
+function windowRecommendationLevelLabel(
+  level: ForecastWindowRecommendationLevel | undefined,
+): string {
+  if (level === "recommended") {
+    return "推荐";
+  }
+  if (level === "cautious") {
+    return "谨慎参考";
+  }
+  if (level === "backup") {
+    return "仅作备选";
+  }
+  if (level === "not_recommended") {
+    return "不建议专程前往";
+  }
+  return "谨慎参考";
 }
 
 function inferWindowModuleKey(window: ForecastTimeWindow): ForecastResultModuleKey {
@@ -2252,21 +2309,6 @@ function inferWindowModuleKey(window: ForecastTimeWindow): ForecastResultModuleK
     return "astronomicalNight";
   }
   return "bestWindow";
-}
-
-function firstWindow(
-  windows: readonly ForecastTimeWindow[] | readonly ForecastResultWindow[],
-): ForecastResultWindow | undefined {
-  const first = windows[0];
-  if (!first) {
-    return undefined;
-  }
-
-  if ("timeRangeLabel" in first) {
-    return first;
-  }
-
-  return mapResultWindows([first])[0];
 }
 
 function firstRisk(risks: readonly ForecastRiskFlag[]): ForecastRiskFlag | undefined {
@@ -2352,6 +2394,10 @@ function practicalSubjectScore(
   );
   if (window) {
     return window.practicalScore ?? window.score;
+  }
+
+  if (target === "astro" && !result.astroAnalysis.astroShootable) {
+    return Math.min(result.astroAnalysis.astroPracticalScore, 34);
   }
 
   if (target === "cloud_sea") {
@@ -2590,7 +2636,7 @@ function formatOptionalWindow(startTime: string | undefined, endTime: string | u
 }
 
 function formatWindow(startTime: string, endTime: string): string {
-  return `${formatTime(startTime)} - ${formatTime(endTime)}`;
+  return formatShootingWindowZh({ startTime, endTime });
 }
 
 function formatTime(value: string): string {

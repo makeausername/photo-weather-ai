@@ -9,6 +9,8 @@ import {
   type ForecastDailyMetric,
   type ForecastDailySummary,
   type ForecastRecommendationLevel,
+  type ForecastWindowHumanCostLevel,
+  type ForecastWindowRecommendationLevel,
   type ForecastRiskFlag,
   type ForecastScore,
   type ForecastScoreLevel,
@@ -612,14 +614,26 @@ function buildBestWindows(
     .filter((window) => {
       const conditionScore = window.conditionScore ?? window.score;
       const practicalScore = window.practicalScore ?? window.score;
+      const hasAstroWeatherBlockers =
+        window.target === "astro" && (window.weatherBlockers?.length ?? 0) > 0;
       if (window.practicalKind === "formation_signal") {
         return conditionScore >= 55 && practicalScore >= 25;
+      }
+      if (hasAstroWeatherBlockers) {
+        return conditionScore >= 25;
       }
 
       return conditionScore >= 35 && practicalScore >= 35;
     })
     .sort((left, right) => {
       if (input.target === "general") {
+        const recommendationDelta =
+          windowRecommendationRank(right.recommendationLevel) -
+          windowRecommendationRank(left.recommendationLevel);
+        if (recommendationDelta !== 0) {
+          return recommendationDelta;
+        }
+
         const practicalDelta = (right.practicalScore ?? right.score) - (left.practicalScore ?? left.score);
         if (practicalDelta !== 0) {
           return practicalDelta;
@@ -642,7 +656,14 @@ function calculateGeneralPracticalTripScore(
   windows: readonly ForecastTimeWindow[],
 ): number {
   const bestShootableWindow =
-    windows.find((window) => window.practicalKind !== "formation_signal") ?? windows[0];
+    windows.find(
+      (window) =>
+        window.practicalKind !== "formation_signal" &&
+        window.recommendationLevel !== "not_recommended" &&
+        window.recommendationLevel !== "backup",
+    ) ??
+    windows.find((window) => window.practicalKind !== "formation_signal") ??
+    windows[0];
 
   if (bestShootableWindow) {
     return clampScore(bestShootableWindow.practicalScore ?? bestShootableWindow.score);
@@ -665,6 +686,8 @@ function applyPracticalTripScoring(
     score,
     conditionScore,
     practicalScore: practical.practicalScore,
+    humanCostLevel: practical.humanCostLevel,
+    recommendationLevel: practical.recommendationLevel,
     practicalKind: practical.practicalKind,
     lightPhase: practical.lightPhase,
     practicalNoteZh: practical.practicalNoteZh,
@@ -683,6 +706,8 @@ function evaluatePracticalWindow(
   riskFlags: readonly ForecastRiskFlag[],
 ): {
   readonly practicalScore: number;
+  readonly humanCostLevel: ForecastWindowHumanCostLevel;
+  readonly recommendationLevel: ForecastWindowRecommendationLevel;
   readonly practicalKind: PracticalWindowKind;
   readonly lightPhase: PracticalLightPhase;
   readonly practicalNoteZh: string;
@@ -706,6 +731,7 @@ function evaluatePracticalWindow(
   );
   const precipitationRisk = precipitationRiskForWindow(input, window);
   const riskPenalty = riskPenaltyForWindow(window, riskFlags, precipitationRisk);
+  const weatherBlockerPenalty = weatherBlockerPenaltyForWindow(window);
   const lightScore = lightAvailabilityScore(window, practicalKind, lightPhase);
   const subjectValueScore = subjectPracticalValueScore(window, practicalKind, lightPhase);
   const travelFeasibilityScore = travelFeasibilityForWindow(
@@ -721,7 +747,7 @@ function evaluatePracticalWindow(
     (lightPhase === "sunrise" || lightPhase === "dawn")
       ? 8
       : 0;
-  const practicalScore = clampScore(
+  const rawPracticalScore = clampScore(
     averageWeightedScore([
       { score: conditionScore, weight: 0.52 },
       { score: lightScore, weight: 0.2 },
@@ -732,9 +758,28 @@ function evaluatePracticalWindow(
       riskPenalty +
       sunriseLinkBonus,
   );
+  const practicalScore = clampAstroBlockedPracticalScore(
+    window,
+    clampScore(rawPracticalScore - weatherBlockerPenalty),
+  );
+  const humanCostLevel = humanCostLevelForWindow(
+    window,
+    practicalKind,
+    lightPhase,
+    arrivalAdvice,
+    input.calendarBasis.timezone,
+  );
+  const recommendationLevel = recommendationLevelForWindow(
+    window,
+    practicalKind,
+    practicalScore,
+    humanCostLevel,
+  );
 
   return {
     practicalScore,
+    humanCostLevel,
+    recommendationLevel,
     practicalKind,
     lightPhase,
     practicalNoteZh: practicalNoteForWindow(
@@ -1197,6 +1242,97 @@ function riskPenaltyForWindow(
   return Math.min(34, penalty + rainPenalty);
 }
 
+function weatherBlockerPenaltyForWindow(window: ForecastTimeWindow): number {
+  if (window.target !== "astro" || !window.weatherBlockers || window.weatherBlockers.length === 0) {
+    return 0;
+  }
+
+  const blockerText = window.weatherBlockers.join(" ");
+  const severeCloudBlocker =
+    /总云量|低云|降水|通透度|能见度|雾|雨|厚云|云层遮挡/.test(blockerText);
+  return Math.min(42, window.weatherBlockers.length * 8 + (severeCloudBlocker ? 14 : 0));
+}
+
+function clampAstroBlockedPracticalScore(
+  window: ForecastTimeWindow,
+  score: number,
+): number {
+  if (window.target !== "astro" || !window.weatherBlockers || window.weatherBlockers.length === 0) {
+    return score;
+  }
+
+  return Math.min(score, window.weatherBlockers.length >= 2 ? 32 : 42);
+}
+
+function humanCostLevelForWindow(
+  window: ForecastTimeWindow,
+  practicalKind: PracticalWindowKind,
+  lightPhase: PracticalLightPhase,
+  arrivalAdvice: PracticalArrivalAdvice,
+  timezone: string,
+): ForecastWindowHumanCostLevel {
+  if (practicalKind === "formation_signal") {
+    return "high";
+  }
+  if (window.target === "astro") {
+    return "high";
+  }
+
+  const arrivalHour = localHourFloat(arrivalAdvice.recommendedArrivalTime, timezone);
+  if (arrivalHour < 3 || lightPhase === "deep_night") {
+    return "high";
+  }
+  if (arrivalHour < 4.5 || lightPhase === "dawn") {
+    return "medium";
+  }
+  return "low";
+}
+
+function recommendationLevelForWindow(
+  window: ForecastTimeWindow,
+  practicalKind: PracticalWindowKind,
+  practicalScore: number,
+  humanCostLevel: ForecastWindowHumanCostLevel,
+): ForecastWindowRecommendationLevel {
+  if (window.target === "astro" && (window.weatherBlockers?.length ?? 0) > 0) {
+    return practicalScore >= 38 ? "backup" : "not_recommended";
+  }
+  if (practicalKind === "formation_signal") {
+    return practicalScore >= 42 ? "backup" : "not_recommended";
+  }
+  if (practicalScore >= 75 && humanCostLevel !== "high") {
+    return "recommended";
+  }
+  if (practicalScore >= 68 && window.target === "astro" && (window.weatherBlockers?.length ?? 0) === 0) {
+    return "recommended";
+  }
+  if (practicalScore >= 58) {
+    return "cautious";
+  }
+  if (practicalScore >= 40) {
+    return "backup";
+  }
+  return "not_recommended";
+}
+
+function windowRecommendationRank(
+  level: ForecastTimeWindow["recommendationLevel"],
+): number {
+  if (level === "recommended") {
+    return 4;
+  }
+  if (level === "cautious") {
+    return 3;
+  }
+  if (level === "backup") {
+    return 2;
+  }
+  if (level === "not_recommended") {
+    return 1;
+  }
+  return 0;
+}
+
 function lightAvailabilityScore(
   window: ForecastTimeWindow,
   practicalKind: PracticalWindowKind,
@@ -1293,6 +1429,10 @@ function practicalNoteForWindow(
 ): string {
   if (practicalKind === "formation_signal") {
     return "云海形成信号，不建议为无光云海单独熬夜；若已在山上，可提前观察云雾形成。";
+  }
+  if (window.target === "astro" && (window.weatherBlockers?.length ?? 0) > 0) {
+    const reason = window.weatherBlockers?.[0] ?? "云量、低云或降水条件不支持拍摄";
+    return `有天文窗口，但${reason}，暂不建议作为唯一目标。`;
   }
   if (
     precipitationRisk?.rainRiskLevel === "severe" ||

@@ -445,6 +445,8 @@ const baseResult: ForecastCalculationResult = {
     astroTravelScore: 70,
     recommendationLabel: "值得等待",
     confidenceLevel: "medium",
+    astroWindowAvailable: true,
+    astroShootable: true,
     bestAstroWindows: [
       {
         type: "recommended_milky_way",
@@ -482,6 +484,7 @@ const baseResult: ForecastCalculationResult = {
         astroConditionScore: 74,
         astroPracticalScore: 68,
         astronomicalWindowAvailable: true,
+        astroShootable: true,
         weatherBlockers: [],
         moonImpactLevel: "medium",
         astronomicalNightWindow: {
@@ -532,6 +535,7 @@ const baseResult: ForecastCalculationResult = {
         astroConditionScore: 76,
         astroPracticalScore: 72,
         astronomicalWindowAvailable: true,
+        astroShootable: true,
         weatherBlockers: [],
         moonImpactLevel: "medium",
         astronomicalNightWindow: {
@@ -1468,10 +1472,10 @@ describe("forecast result target-aware view model", () => {
       }),
     );
 
-    expect(html).toContain("03:30 前到达");
+    expect(html).toContain("建议到达：2026年5月20日 03:30 前");
     expect(html).toContain("预留上山、找机位和观察云雾变化时间");
     expect(html).toContain("时间偏早，建议前一晚到达附近或住山上");
-    expect(html).toContain("建议到达：03:30 前到达");
+    expect(html).not.toContain("建议到达：03:30 前到达");
     expect(html).toContain("备选题材：朝霞、通透层峦或雾景");
   });
 
@@ -1536,12 +1540,14 @@ describe("forecast result target-aware view model", () => {
       }),
     );
 
-    expect(html).toContain("清晨云海窗口 04:08 - 06:08");
-    expect(html).toContain("云海形成信号 01:00 - 03:00");
+    expect(html).toContain("清晨云海窗口");
+    expect(html).toContain("2026年5月20日 04:08–06:08");
+    expect(html).toContain("云海形成信号");
+    expect(html).toContain("2026年5月20日 01:00–03:00");
     expect(html).toContain("形成信号");
     expect(html).toContain("无光形成信号");
-    expect(html.indexOf("清晨云海窗口 04:08 - 06:08")).toBeLessThan(
-      html.indexOf("云海形成信号 01:00 - 03:00"),
+    expect(html.indexOf("2026年5月20日 04:08–06:08")).toBeLessThan(
+      html.indexOf("2026年5月20日 01:00–03:00"),
     );
   });
 
@@ -2226,7 +2232,9 @@ describe("forecast result target-aware view model", () => {
     );
     expect(viewModel.astro?.dailyTrend).toHaveLength(2);
     expect(viewModel.astro?.recommendedMilkyWayWindows).toHaveLength(2);
-    expect(viewModel.astro?.moonlessNightWindows[0]?.timeRangeLabel).toBe("22:35 - 03:48");
+    expect(viewModel.astro?.moonlessNightWindows[0]?.timeRangeLabel).toBe(
+      "2026年5月20日 22:35 – 5月21日 03:48",
+    );
     const moonSection = viewModel.detailSections.find((section) => section.key === "moon-phase");
     expect(moonSection?.items).toHaveLength(2);
     expect(JSON.stringify(moonSection)).toContain("农历日期");
@@ -2319,6 +2327,7 @@ describe("forecast result target-aware view model", () => {
             astroConditionScore: 72,
             astroPracticalScore: 66,
             astronomicalWindowAvailable: true,
+            astroShootable: true,
             weatherBlockers: [],
             moonImpactLevel: "medium",
             recommendationLabel: "值得等待",

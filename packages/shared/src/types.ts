@@ -495,6 +495,14 @@ export type ForecastScore = {
   readonly risks: readonly string[];
 };
 
+export type ForecastWindowHumanCostLevel = "low" | "medium" | "high";
+
+export type ForecastWindowRecommendationLevel =
+  | "recommended"
+  | "cautious"
+  | "backup"
+  | "not_recommended";
+
 export type ForecastTimeWindow = {
   readonly label: string;
   readonly date?: string;
@@ -504,6 +512,8 @@ export type ForecastTimeWindow = {
   readonly target: ForecastTarget;
   readonly conditionScore?: number;
   readonly practicalScore?: number;
+  readonly humanCostLevel?: ForecastWindowHumanCostLevel;
+  readonly recommendationLevel?: ForecastWindowRecommendationLevel;
   readonly practicalKind?: "shooting_window" | "formation_signal";
   readonly lightPhase?:
     | "deep_night"
@@ -737,6 +747,7 @@ export type DailyAstro = {
   readonly astroConditionScore: number;
   readonly astroPracticalScore: number;
   readonly astronomicalWindowAvailable: boolean;
+  readonly astroShootable: boolean;
   readonly weatherBlockers: readonly string[];
   readonly moonImpactLevel: MoonImpactLevel;
   readonly astronomicalNightWindow?: AstroWindow;
@@ -771,6 +782,8 @@ export type AstroAnalysisResult = {
   readonly astroTravelScore: number;
   readonly recommendationLabel: AstroRecommendationLabel;
   readonly confidenceLevel: AstroConfidenceLevel;
+  readonly astroWindowAvailable: boolean;
+  readonly astroShootable: boolean;
   readonly bestAstroWindows: readonly AstroWindow[];
   readonly dailyAstro: readonly DailyAstro[];
   readonly moonInfo?: MoonInfo;

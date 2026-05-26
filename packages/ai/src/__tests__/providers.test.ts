@@ -520,6 +520,8 @@ const forecastResultFixture: ForecastCalculationResult = {
     astroTravelScore: 52,
     recommendationLabel: "谨慎参考",
     confidenceLevel: "medium",
+    astroWindowAvailable: false,
+    astroShootable: false,
     bestAstroWindows: [],
     dailyAstro: [],
     moonlessNightWindows: [],

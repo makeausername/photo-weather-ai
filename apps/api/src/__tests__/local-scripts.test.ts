@@ -238,7 +238,12 @@ describe("local astro diagnostics scripts", () => {
       "precipitationRisk:",
       "astroConditionScore:",
       "astroPracticalScore:",
+      "astroWindowAvailable:",
+      "astroShootable:",
       "astroWeatherBlockers:",
+      "bestWindowFullLabel:",
+      "recommendedArrivalFullLabel:",
+      "topRankedWindows:",
       "generalBestSubject:",
       "confidenceByTarget:",
     ]) {

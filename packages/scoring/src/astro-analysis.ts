@@ -76,6 +76,8 @@ export function calculateAstroAnalysis(
     moonImpactScore,
   });
   const astroPracticalScore = calculateAstroPracticalScore(dailyAstro, weatherBlockers, scores);
+  const astroWindowAvailable = dailyAstro.some((day) => day.astronomicalWindowAvailable);
+  const astroShootable = dailyAstro.some((day) => day.astroShootable);
   const astroTravelScore = astroPracticalScore;
   const recommendationLabel = recommendationLabelForScore(astroTravelScore);
   const missingDataNotes = buildMissingDataNotes(input);
@@ -108,6 +110,8 @@ export function calculateAstroAnalysis(
     astroTravelScore,
     recommendationLabel,
     confidenceLevel,
+    astroWindowAvailable,
+    astroShootable,
     bestAstroWindows,
     dailyAstro,
     moonInfo: input.astroSummaries[0]?.moonInfo,
@@ -356,6 +360,11 @@ function buildDailyAstro(
       ]),
     );
     const astroPracticalScore = applyAstroWeatherBlockers(travelScore, weatherWindow);
+    const astroShootable =
+      Boolean(astronomicalNightWindow) &&
+      weatherBlockers.length === 0 &&
+      astroPracticalScore >= 58 &&
+      (Boolean(recommendedMilkyWayWindow) || Boolean(moonlessNightWindow));
 
     return {
       date,
@@ -366,6 +375,7 @@ function buildDailyAstro(
       astroConditionScore,
       astroPracticalScore,
       astronomicalWindowAvailable: Boolean(astronomicalNightWindow),
+      astroShootable,
       weatherBlockers,
       moonImpactLevel: moonImpact.level,
       astronomicalNightWindow,
@@ -718,8 +728,12 @@ function astroWeatherBlockerCap(weatherWindow: readonly NormalizedHourlyWeather[
 
   const totalCloud = averageHourly(weatherWindow, (hour) => hour.cloudTotal);
   const lowCloud = averageHourly(weatherWindow, (hour) => hour.cloudLow);
+  const midCloud = averageHourly(weatherWindow, (hour) => hour.cloudMid);
+  const highCloud = averageHourly(weatherWindow, (hour) => hour.cloudHigh);
   const visibility = averageHourly(weatherWindow, (hour) => hour.rawVisibilityKm ?? hour.visibility);
   const humidity = averageHourly(weatherWindow, (hour) => hour.humidity);
+  const dewPointSpread = averageHourly(weatherWindow, (hour) => hour.dewPointSpread);
+  const transparencyScore = averageHourly(weatherWindow, (hour) => hour.photographyTransparencyScore);
   const precipitationProbability = Math.max(
     ...weatherWindow.map((hour) => hour.precipitationProbability ?? 0),
     0,
@@ -737,26 +751,41 @@ function astroWeatherBlockerCap(weatherWindow: readonly NormalizedHourlyWeather[
   );
 
   let cap = 100;
-  if (totalCloud >= 70) {
-    cap = Math.min(cap, totalCloud >= 90 ? 20 : 32);
+  if (totalCloud >= 60) {
+    cap = Math.min(cap, totalCloud >= 80 ? 22 : 42);
   }
-  if (lowCloud >= 50) {
-    cap = Math.min(cap, lowCloud >= 75 ? 22 : 34);
+  if (lowCloud >= 30) {
+    cap = Math.min(cap, lowCloud >= 50 ? 22 : 38);
   }
-  if (precipitationAmount >= 0.3) {
-    cap = Math.min(cap, precipitationAmount >= 2 ? 24 : 34);
+  if (midCloud >= 60) {
+    cap = Math.min(cap, 48);
+  }
+  if (highCloud >= 80) {
+    cap = Math.min(cap, 54);
+  }
+  if (precipitationAmount > 0) {
+    cap = Math.min(cap, precipitationAmount >= 0.3 ? 26 : 34);
   }
   if (precipitationRisk === "medium" || precipitationRisk === "high" || precipitationRisk === "severe") {
-    cap = Math.min(cap, precipitationRisk === "medium" ? 38 : 24);
+    cap = Math.min(cap, precipitationRisk === "medium" ? 34 : 22);
   }
-  if (visibility > 0 && visibility < 10) {
-    cap = Math.min(cap, visibility < 5 ? 24 : 36);
+  if (typeof transparencyScore === "number" && Number.isFinite(transparencyScore) && transparencyScore < 45) {
+    cap = Math.min(cap, transparencyScore < 30 ? 24 : 34);
   }
-  if (humidity >= 92 && lowCloud >= 45) {
+  if (weatherWindow.some((hour) => hour.transparencyGrade === "poor")) {
     cap = Math.min(cap, 34);
   }
+  if (visibility > 0 && visibility < 15) {
+    cap = Math.min(cap, visibility < 8 ? 30 : 46);
+  }
+  if (humidity >= 90 && ((dewPointSpread > 0 && dewPointSpread <= 2.5) || lowCloud >= 30)) {
+    cap = Math.min(cap, 36);
+  }
+  if (weatherWindow.some((hour) => /雨|雪|雾|霾|阴|大部多云|浓云|厚云/.test(hour.weatherTextZh ?? ""))) {
+    cap = Math.min(cap, 30);
+  }
   if (textBlocked) {
-    cap = Math.min(cap, 32);
+    cap = Math.min(cap, 30);
   }
 
   return cap;
@@ -771,8 +800,12 @@ function astroWeatherBlockers(
 
   const totalCloud = averageHourly(weatherWindow, (hour) => hour.cloudTotal);
   const lowCloud = averageHourly(weatherWindow, (hour) => hour.cloudLow);
+  const midCloud = averageHourly(weatherWindow, (hour) => hour.cloudMid);
+  const highCloud = averageHourly(weatherWindow, (hour) => hour.cloudHigh);
   const visibility = averageHourly(weatherWindow, (hour) => hour.rawVisibilityKm ?? hour.visibility);
   const humidity = averageHourly(weatherWindow, (hour) => hour.humidity);
+  const dewPointSpread = averageHourly(weatherWindow, (hour) => hour.dewPointSpread);
+  const transparencyScore = averageHourly(weatherWindow, (hour) => hour.photographyTransparencyScore);
   const precipitationProbability = Math.max(
     ...weatherWindow.map((hour) => hour.precipitationProbability ?? 0),
     0,
@@ -786,6 +819,45 @@ function astroWeatherBlockers(
     amountMm: precipitationAmount,
   });
   const blockers: string[] = [];
+
+  if (totalCloud >= 60) {
+    blockers.push(
+      totalCloud >= 80
+        ? `总云量约 ${Math.round(totalCloud)}%，银河主体基本会被云层遮挡`
+        : `总云量约 ${Math.round(totalCloud)}%，星点和银河主体可拍性明显下降`,
+    );
+  }
+  if (lowCloud >= 30) {
+    blockers.push(
+      lowCloud >= 50
+        ? `低云约 ${Math.round(lowCloud)}%，近地平线和地景星空基本不支持拍摄`
+        : `低云约 ${Math.round(lowCloud)}%，会遮挡地景和低角度银河`,
+    );
+  }
+  if (midCloud >= 60) {
+    blockers.push(`中云约 ${Math.round(midCloud)}%，银河对比度和星点密度会明显下降`);
+  }
+  if (highCloud >= 80) {
+    blockers.push(`高云约 ${Math.round(highCloud)}%，银河反差不足，仅适合作为备选观察`);
+  }
+  if (precipitationAmount > 0) {
+    blockers.push(`窗口内预计降水 ${Math.round(precipitationAmount * 10) / 10}mm`);
+  }
+  if (typeof transparencyScore === "number" && Number.isFinite(transparencyScore) && transparencyScore < 45) {
+    blockers.push("摄影通透度偏差，银河暗部和远山层次不可靠");
+  }
+  if (weatherWindow.some((hour) => hour.transparencyGrade === "poor")) {
+    blockers.push("摄影通透度为差，不建议专程拍摄星空银河");
+  }
+  if (visibility > 0 && visibility < 15) {
+    blockers.push(`能见度约 ${Math.round(visibility)} 公里，夜空透明度不足`);
+  }
+  if (humidity >= 90 && ((dewPointSpread > 0 && dewPointSpread <= 2.5) || lowCloud >= 30)) {
+    blockers.push("湿度极高且露点差小，雾气和镜头结露风险高");
+  }
+  if (weatherWindow.some((hour) => /雨|雪|雾|霾|阴|大部多云|浓云|厚云/.test(hour.weatherTextZh ?? ""))) {
+    blockers.push("天气现象包含雨、雾或厚云信号");
+  }
 
   if (totalCloud >= 70) {
     blockers.push(`总云量约 ${Math.round(totalCloud)}%，星点和银河主体容易被遮挡`);
