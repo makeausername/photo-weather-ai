@@ -26,6 +26,28 @@ export type ViewDirection =
   | "all"
   | "unknown";
 
+export type HistoricalWeatherSourceProvider =
+  | "open_meteo_historical"
+  | "meteoblue_history"
+  | "manual"
+  | "imported";
+
+export type ForecastReplayTarget = "general" | "cloud_sea" | "glow" | "astro";
+
+export type ForecastReplayStatus = "pending" | "running" | "completed" | "failed";
+
+export type ObservedResult = "success" | "partial" | "fail" | "unknown";
+
+export type CalibrationLevel = "none" | "weak" | "medium" | "strong";
+
+export type WhiteoutLevel = "none" | "low" | "medium" | "high";
+
+export type TransparencyLevel = "poor" | "fair" | "good" | "excellent";
+
+export type RainImpactLevel = "none" | "low" | "medium" | "high";
+
+export type ObservedOutcomeSource = "admin_manual" | "user_feedback" | "imported";
+
 export type SettingValueType =
   | "string"
   | "number"
@@ -215,6 +237,130 @@ export type PhotoSpotRecord = {
   readonly location?: LocationRecord;
 };
 
+export type HistoricalWeatherSampleRecord = {
+  readonly id: string;
+  readonly spotId: string | null;
+  readonly locationKey: string;
+  readonly locationName: string;
+  readonly latitudeWgs84: number;
+  readonly longitudeWgs84: number;
+  readonly elevationMeters: number | null;
+  readonly sourceProvider: HistoricalWeatherSourceProvider;
+  readonly sampleTime: Date;
+  readonly timezone: string;
+  readonly temperature: number;
+  readonly humidity: number;
+  readonly dewPoint: number | null;
+  readonly windSpeed: number;
+  readonly windGust: number | null;
+  readonly windDirection: number | null;
+  readonly precipitationAmount: number;
+  readonly precipitationProbability: number | null;
+  readonly rainAmount: number | null;
+  readonly snowAmount: number | null;
+  readonly cloudTotal: number | null;
+  readonly cloudLow: number | null;
+  readonly cloudMid: number | null;
+  readonly cloudHigh: number | null;
+  readonly visibility: number | null;
+  readonly pressure: number | null;
+  readonly weatherCode: string | null;
+  readonly weatherText: string | null;
+  readonly rawJson?: JsonValue | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+};
+
+export type ForecastReplayRunRecord = {
+  readonly id: string;
+  readonly spotId: string | null;
+  readonly locationKey: string;
+  readonly locationName: string;
+  readonly dateStart: Date;
+  readonly dateEnd: Date;
+  readonly target: ForecastReplayTarget;
+  readonly modelVersion: string;
+  readonly ruleVersion: string;
+  readonly sourceProvider: HistoricalWeatherSourceProvider;
+  readonly status: ForecastReplayStatus;
+  readonly errorMessage: string | null;
+  readonly createdAt: Date;
+  readonly completedAt: Date | null;
+};
+
+export type ForecastReplayResultRecord = {
+  readonly id: string;
+  readonly replayRunId: string;
+  readonly spotId: string | null;
+  readonly locationKey: string;
+  readonly target: ForecastReplayTarget;
+  readonly forecastDate: Date;
+  readonly overallScore: number;
+  readonly recommendationLabel: string;
+  readonly dedicatedTripRecommendation: string | null;
+  readonly nearbyObservationRecommendation: string | null;
+  readonly bestWindowStart: Date | null;
+  readonly bestWindowEnd: Date | null;
+  readonly bestSubject: string | null;
+  readonly cloudSeaFormationScore: number | null;
+  readonly cloudSeaShootableScore: number | null;
+  readonly whiteoutRiskScore: number | null;
+  readonly sunriseGlowScore: number | null;
+  readonly sunsetGlowScore: number | null;
+  readonly astroPracticalScore: number | null;
+  readonly milkyWayPracticalScore: number | null;
+  readonly precipitationRiskLevel: string | null;
+  readonly transparencyGrade: string | null;
+  readonly confidenceLabel: string;
+  readonly predictedJson: JsonValue;
+  readonly createdAt: Date;
+};
+
+export type ObservedOutcomeRecord = {
+  readonly id: string;
+  readonly spotId: string | null;
+  readonly locationKey: string;
+  readonly locationName: string;
+  readonly target: ForecastReplayTarget;
+  readonly outcomeDate: Date;
+  readonly observationWindowStart: Date | null;
+  readonly observationWindowEnd: Date | null;
+  readonly observedResult: ObservedResult;
+  readonly cloudSeaLevel: CalibrationLevel | null;
+  readonly whiteoutLevel: WhiteoutLevel | null;
+  readonly sunriseGlowLevel: CalibrationLevel | null;
+  readonly sunsetGlowLevel: CalibrationLevel | null;
+  readonly astroVisibilityLevel: CalibrationLevel | null;
+  readonly transparencyLevel: TransparencyLevel | null;
+  readonly rainImpactLevel: RainImpactLevel | null;
+  readonly notes: string | null;
+  readonly photoEvidenceUrl: string | null;
+  readonly source: ObservedOutcomeSource;
+  readonly createdBy: string | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+};
+
+export type CalibrationStatsRecord = {
+  readonly id: string;
+  readonly spotId: string | null;
+  readonly locationKey: string;
+  readonly target: ForecastReplayTarget;
+  readonly ruleVersion: string;
+  readonly sampleCount: number;
+  readonly successCount: number;
+  readonly partialCount: number;
+  readonly failCount: number;
+  readonly hitRate: number;
+  readonly falsePositiveRate: number;
+  readonly falseNegativeRate: number;
+  readonly whiteoutFalsePositiveRate: number | null;
+  readonly bestWindowHitRate: number | null;
+  readonly recommendedTripHitRate: number | null;
+  readonly updatedAt: Date;
+  readonly summaryJson: JsonValue;
+};
+
 export type DatabaseClient = {
   readonly user?: {
     readonly findUnique: (args: any) => Promise<any>;
@@ -253,6 +399,40 @@ export type DatabaseClient = {
     readonly create: (args: any) => Promise<any>;
     readonly update: (args: any) => Promise<any>;
     readonly delete: (args: any) => Promise<any>;
+    readonly upsert: (args: any) => Promise<any>;
+  };
+  readonly historicalWeatherSample?: {
+    readonly findUnique: (args: any) => Promise<any>;
+    readonly findMany: (args?: any) => Promise<any[]>;
+    readonly create: (args: any) => Promise<any>;
+    readonly update: (args: any) => Promise<any>;
+    readonly upsert: (args: any) => Promise<any>;
+    readonly count: (args?: any) => Promise<number>;
+  };
+  readonly forecastReplayRun?: {
+    readonly findUnique: (args: any) => Promise<any>;
+    readonly findMany: (args?: any) => Promise<any[]>;
+    readonly create: (args: any) => Promise<any>;
+    readonly update: (args: any) => Promise<any>;
+  };
+  readonly forecastReplayResult?: {
+    readonly findUnique: (args: any) => Promise<any>;
+    readonly findMany: (args?: any) => Promise<any[]>;
+    readonly create: (args: any) => Promise<any>;
+    readonly createMany?: (args: any) => Promise<{ count: number }>;
+    readonly deleteMany?: (args: any) => Promise<{ count: number }>;
+    readonly count: (args?: any) => Promise<number>;
+  };
+  readonly observedOutcome?: {
+    readonly findUnique: (args: any) => Promise<any>;
+    readonly findMany: (args?: any) => Promise<any[]>;
+    readonly create: (args: any) => Promise<any>;
+    readonly update: (args: any) => Promise<any>;
+    readonly upsert: (args: any) => Promise<any>;
+  };
+  readonly calibrationStats?: {
+    readonly findUnique: (args: any) => Promise<any>;
+    readonly findMany: (args?: any) => Promise<any[]>;
     readonly upsert: (args: any) => Promise<any>;
   };
   readonly spotTag?: {

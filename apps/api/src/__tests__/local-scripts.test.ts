@@ -291,6 +291,36 @@ describe("local astro diagnostics scripts", () => {
     expect(script).not.toContain("process.env.METEOBLUE");
   });
 
+  it("wires historical calibration smoke testing without printing admin secrets", () => {
+    const packageJson = JSON.parse(readRepoFile("package.json")) as {
+      scripts: Record<string, string>;
+    };
+    const script = readRepoFile("scripts/test-historical-calibration.sh");
+
+    expect(packageJson.scripts["calibration:test"]).toBe(
+      "bash scripts/test-historical-calibration.sh",
+    );
+    for (const expected of [
+      "/admin/calibration/fetch-history",
+      "/admin/calibration/replay",
+      "/admin/calibration/replay-results",
+      "/admin/calibration/stats/rebuild",
+      "samples inserted:",
+      "replay results count:",
+      "predicted recommendations:",
+      "calibration stats:",
+      "No API keys or secrets will be printed.",
+      "spot-guangmingding",
+    ]) {
+      expect(script).toContain(expected);
+    }
+
+    expect(script).toContain("PHOTO_WEATHER_ADMIN_ACCESS_TOKEN");
+    expect(script).not.toContain("QWEATHER_API_KEY");
+    expect(script).not.toContain("METEOBLUE_API_KEY");
+    expect(script).not.toContain("DEEPSEEK_API_KEY");
+  });
+
   it("prints DeepSeek interpretation diagnostics without raw secrets", () => {
     const script = readRepoFile("scripts/test-deepseek-interpretation.sh");
 

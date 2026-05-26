@@ -316,6 +316,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     authConfig,
     geoProvider,
     resolveGeoProvider: resolveRuntimeGeoProvider,
+    terrainProvider: options.terrainProvider,
     env,
   });
 

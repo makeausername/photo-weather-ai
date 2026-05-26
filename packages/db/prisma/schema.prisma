@@ -61,6 +61,68 @@ enum ViewDirection {
   unknown
 }
 
+enum HistoricalWeatherSourceProvider {
+  open_meteo_historical
+  meteoblue_history
+  manual
+  imported
+}
+
+enum ForecastReplayTarget {
+  general
+  cloud_sea
+  glow
+  astro
+}
+
+enum ForecastReplayStatus {
+  pending
+  running
+  completed
+  failed
+}
+
+enum ObservedResult {
+  success
+  partial
+  fail
+  unknown
+}
+
+enum CalibrationLevel {
+  none
+  weak
+  medium
+  strong
+}
+
+enum WhiteoutLevel {
+  none
+  low
+  medium
+  high
+}
+
+enum TransparencyLevel {
+  poor
+  fair
+  good
+  excellent
+}
+
+enum RainImpactLevel {
+  none
+  low
+  medium
+  high
+}
+
+enum ObservedOutcomeSource {
+  admin_manual
+  user_feedback
+  imported
+}
+
 model User {
   id           String          @id @default(cuid())
   email        String          @unique
@@ -332,15 +394,15 @@ model PhotoSpotTag {
 }
 
 model SpotDirectionProfile {
-  id                  String    @id @default(cuid())
-  photoSpotId         String    @unique @map("photo_spot_id")
-  sunriseDirectionNote String?   @map("sunrise_direction_note")
-  sunsetDirectionNote  String?   @map("sunset_direction_note")
-  milkyWayDirectionNote String?  @map("milky_way_direction_note")
-  blockedDirectionsJson Json?    @map("blocked_directions_json")
-  createdAt           DateTime  @default(now()) @map("created_at")
-  updatedAt           DateTime  @updatedAt @map("updated_at")
-  photoSpot           PhotoSpot @relation(fields: [photoSpotId], references: [id], onDelete: Cascade)
+  id                    String    @id @default(cuid())
+  photoSpotId           String    @unique @map("photo_spot_id")
+  sunriseDirectionNote  String?   @map("sunrise_direction_note")
+  sunsetDirectionNote   String?   @map("sunset_direction_note")
+  milkyWayDirectionNote String?   @map("milky_way_direction_note")
+  blockedDirectionsJson Json?     @map("blocked_directions_json")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  photoSpot             PhotoSpot @relation(fields: [photoSpotId], references: [id], onDelete: Cascade)
 
   @@map("spot_direction_profiles")
 }
@@ -355,4 +417,156 @@ model SpotLightPollution {
   photoSpot          PhotoSpot @relation(fields: [photoSpotId], references: [id], onDelete: Cascade)
 
   @@map("spot_light_pollution")
+}
+
+model HistoricalWeatherSample {
+  id                       String                          @id @default(cuid())
+  spotId                   String?                         @map("spot_id")
+  locationKey              String                          @map("location_key")
+  locationName             String                          @map("location_name")
+  latitudeWgs84            Float                           @map("latitude_wgs84")
+  longitudeWgs84           Float                           @map("longitude_wgs84")
+  elevationMeters          Float?                          @map("elevation_meters")
+  sourceProvider           HistoricalWeatherSourceProvider @map("source_provider")
+  sampleTime               DateTime                        @map("sample_time")
+  timezone                 String
+  temperature              Float
+  humidity                 Float
+  dewPoint                 Float?                          @map("dew_point")
+  windSpeed                Float                           @map("wind_speed")
+  windGust                 Float?                          @map("wind_gust")
+  windDirection            Float?                          @map("wind_direction")
+  precipitationAmount      Float                           @default(0) @map("precipitation_amount")
+  precipitationProbability Float?                          @map("precipitation_probability")
+  rainAmount               Float?                          @map("rain_amount")
+  snowAmount               Float?                          @map("snow_amount")
+  cloudTotal               Float?                          @map("cloud_total")
+  cloudLow                 Float?                          @map("cloud_low")
+  cloudMid                 Float?                          @map("cloud_mid")
+  cloudHigh                Float?                          @map("cloud_high")
+  visibility               Float?
+  pressure                 Float?
+  weatherCode              String?                         @map("weather_code")
+  weatherText              String?                         @map("weather_text")
+  rawJson                  Json?                           @map("raw_json")
+  createdAt                DateTime                        @default(now()) @map("created_at")
+  updatedAt                DateTime                        @updatedAt @map("updated_at")
+
+  @@unique([locationKey, sourceProvider, sampleTime])
+  @@index([spotId])
+  @@index([locationKey, sampleTime])
+  @@index([sourceProvider, sampleTime])
+  @@map("historical_weather_samples")
+}
+
+model ForecastReplayRun {
+  id             String                          @id @default(cuid())
+  spotId         String?                         @map("spot_id")
+  locationKey    String                          @map("location_key")
+  locationName   String                          @map("location_name")
+  dateStart      DateTime                        @map("date_start") @db.Date
+  dateEnd        DateTime                        @map("date_end") @db.Date
+  target         ForecastReplayTarget
+  modelVersion   String                          @map("model_version")
+  ruleVersion    String                          @map("rule_version")
+  sourceProvider HistoricalWeatherSourceProvider @map("source_provider")
+  status         ForecastReplayStatus            @default(pending)
+  errorMessage   String?                         @map("error_message")
+  createdAt      DateTime                        @default(now()) @map("created_at")
+  completedAt    DateTime?                       @map("completed_at")
+  results        ForecastReplayResult[]
+
+  @@index([locationKey, target])
+  @@index([status])
+  @@index([createdAt])
+  @@map("forecast_replay_runs")
+}
+
+model ForecastReplayResult {
+  id                              String               @id @default(cuid())
+  replayRunId                     String               @map("replay_run_id")
+  spotId                          String?              @map("spot_id")
+  locationKey                     String               @map("location_key")
+  target                          ForecastReplayTarget
+  forecastDate                    DateTime             @map("forecast_date") @db.Date
+  overallScore                    Float                @map("overall_score")
+  recommendationLabel             String               @map("recommendation_label")
+  dedicatedTripRecommendation     String?              @map("dedicated_trip_recommendation")
+  nearbyObservationRecommendation String?              @map("nearby_observation_recommendation")
+  bestWindowStart                 DateTime?            @map("best_window_start")
+  bestWindowEnd                   DateTime?            @map("best_window_end")
+  bestSubject                     String?              @map("best_subject")
+  cloudSeaFormationScore          Float?               @map("cloud_sea_formation_score")
+  cloudSeaShootableScore          Float?               @map("cloud_sea_shootable_score")
+  whiteoutRiskScore               Float?               @map("whiteout_risk_score")
+  sunriseGlowScore                Float?               @map("sunrise_glow_score")
+  sunsetGlowScore                 Float?               @map("sunset_glow_score")
+  astroPracticalScore             Float?               @map("astro_practical_score")
+  milkyWayPracticalScore          Float?               @map("milky_way_practical_score")
+  precipitationRiskLevel          String?              @map("precipitation_risk_level")
+  transparencyGrade               String?              @map("transparency_grade")
+  confidenceLabel                 String               @map("confidence_label")
+  predictedJson                   Json                 @map("predicted_json")
+  createdAt                       DateTime             @default(now()) @map("created_at")
+  replayRun                       ForecastReplayRun    @relation(fields: [replayRunId], references: [id], onDelete: Cascade)
+
+  @@unique([replayRunId, forecastDate, target])
+  @@index([locationKey, target, forecastDate])
+  @@index([spotId])
+  @@map("forecast_replay_results")
+}
+
+model ObservedOutcome {
+  id                     String                @id @default(cuid())
+  spotId                 String?               @map("spot_id")
+  locationKey            String                @map("location_key")
+  locationName           String                @map("location_name")
+  target                 ForecastReplayTarget
+  outcomeDate            DateTime              @map("outcome_date") @db.Date
+  observationWindowStart DateTime?             @map("observation_window_start")
+  observationWindowEnd   DateTime?             @map("observation_window_end")
+  observedResult         ObservedResult        @map("observed_result")
+  cloudSeaLevel          CalibrationLevel?     @map("cloud_sea_level")
+  whiteoutLevel          WhiteoutLevel?        @map("whiteout_level")
+  sunriseGlowLevel       CalibrationLevel?     @map("sunrise_glow_level")
+  sunsetGlowLevel        CalibrationLevel?     @map("sunset_glow_level")
+  astroVisibilityLevel   CalibrationLevel?     @map("astro_visibility_level")
+  transparencyLevel      TransparencyLevel?    @map("transparency_level")
+  rainImpactLevel        RainImpactLevel?      @map("rain_impact_level")
+  notes                  String?
+  photoEvidenceUrl       String?               @map("photo_evidence_url")
+  source                 ObservedOutcomeSource @default(admin_manual)
+  createdBy              String?               @map("created_by")
+  createdAt              DateTime              @default(now()) @map("created_at")
+  updatedAt              DateTime              @updatedAt @map("updated_at")
+
+  @@unique([locationKey, target, outcomeDate])
+  @@index([spotId])
+  @@index([target, outcomeDate])
+  @@map("observed_outcomes")
+}
+
+model CalibrationStats {
+  id                        String               @id @default(cuid())
+  spotId                    String?              @map("spot_id")
+  locationKey               String               @map("location_key")
+  target                    ForecastReplayTarget
+  ruleVersion               String               @map("rule_version")
+  sampleCount               Int                  @default(0) @map("sample_count")
+  successCount              Int                  @default(0) @map("success_count")
+  partialCount              Int                  @default(0) @map("partial_count")
+  failCount                 Int                  @default(0) @map("fail_count")
+  hitRate                   Float                @default(0) @map("hit_rate")
+  falsePositiveRate         Float                @default(0) @map("false_positive_rate")
+  falseNegativeRate         Float                @default(0) @map("false_negative_rate")
+  whiteoutFalsePositiveRate Float?               @map("whiteout_false_positive_rate")
+  bestWindowHitRate         Float?               @map("best_window_hit_rate")
+  recommendedTripHitRate    Float?               @map("recommended_trip_hit_rate")
+  updatedAt                 DateTime             @updatedAt @map("updated_at")
+  summaryJson               Json                 @map("summary_json")
+
+  @@unique([locationKey, target, ruleVersion])
+  @@index([spotId])
+  @@index([target])
+  @@map("calibration_stats")
 }

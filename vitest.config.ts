@@ -14,6 +14,7 @@ export default defineConfig({
       "@photo-weather/ai": fromRoot("./packages/ai/src/index.ts"),
       "@photo-weather/astro": fromRoot("./packages/astro/src/index.ts"),
       "@photo-weather/billing": fromRoot("./packages/billing/src/index.ts"),
+      "@photo-weather/calibration": fromRoot("./packages/calibration/src/index.ts"),
       "@photo-weather/calendar": fromRoot("./packages/calendar/src/index.ts"),
       "@photo-weather/config": fromRoot("./packages/config/src/index.ts"),
       "@photo-weather/db": fromRoot("./packages/db/src/index.ts"),

@@ -20,6 +20,11 @@ export type FakeDatabaseState = {
   readonly roles: Map<string, any>;
   readonly locations: Map<string, any>;
   readonly photoSpots: Map<string, any>;
+  readonly historicalWeatherSamples: Map<string, any>;
+  readonly forecastReplayRuns: Map<string, any>;
+  readonly forecastReplayResults: Map<string, any>;
+  readonly observedOutcomes: Map<string, any>;
+  readonly calibrationStats: Map<string, any>;
 };
 
 function cloneJson(value: JsonValue): JsonValue {
@@ -92,6 +97,53 @@ function photoSpotWithLocation(photoSpot: any, locations: Map<string, any>) {
   };
 }
 
+function dateKey(value: Date | string): string {
+  return (value instanceof Date ? value : new Date(value)).toISOString().slice(0, 10);
+}
+
+function historicalSampleKey(input: {
+  readonly locationKey: string;
+  readonly sourceProvider: string;
+  readonly sampleTime: Date | string;
+}): string {
+  return `${input.locationKey}:${input.sourceProvider}:${new Date(input.sampleTime).toISOString()}`;
+}
+
+function replayResultKey(input: {
+  readonly replayRunId: string;
+  readonly forecastDate: Date | string;
+  readonly target: string;
+}): string {
+  return `${input.replayRunId}:${dateKey(input.forecastDate)}:${input.target}`;
+}
+
+function observedOutcomeKey(input: {
+  readonly locationKey: string;
+  readonly target: string;
+  readonly outcomeDate: Date | string;
+}): string {
+  return `${input.locationKey}:${input.target}:${dateKey(input.outcomeDate)}`;
+}
+
+function calibrationStatsKey(input: {
+  readonly locationKey: string;
+  readonly target: string;
+  readonly ruleVersion: string;
+}): string {
+  return `${input.locationKey}:${input.target}:${input.ruleVersion}`;
+}
+
+function inDateRange(
+  value: Date,
+  range: { readonly gte?: Date; readonly lte?: Date; readonly lt?: Date },
+) {
+  return (
+    (range.gte === undefined || value.getTime() >= new Date(range.gte).getTime()) &&
+    (range.lte === undefined || value.getTime() <= new Date(range.lte).getTime()) &&
+    (range.lt === undefined || value.getTime() < new Date(range.lt).getTime())
+  );
+}
+
 export async function createFakeDatabaseClient(): Promise<{
   readonly client: DatabaseClient;
   readonly state: FakeDatabaseState;
@@ -107,6 +159,11 @@ export async function createFakeDatabaseClient(): Promise<{
   const roles = createRoleGraph(seedData, now);
   const locations = new Map<string, any>();
   const photoSpots = new Map<string, any>();
+  const historicalWeatherSamples = new Map<string, any>();
+  const forecastReplayRuns = new Map<string, any>();
+  const forecastReplayResults = new Map<string, any>();
+  const observedOutcomes = new Map<string, any>();
+  const calibrationStats = new Map<string, any>();
 
   seedData.systemSettings.forEach((setting, index) => {
     settings.set(setting.key, {
@@ -194,6 +251,11 @@ export async function createFakeDatabaseClient(): Promise<{
     roles,
     locations,
     photoSpots,
+    historicalWeatherSamples,
+    forecastReplayRuns,
+    forecastReplayResults,
+    observedOutcomes,
+    calibrationStats,
   };
 
   const client: DatabaseClient = {
@@ -549,6 +611,241 @@ export async function createFakeDatabaseClient(): Promise<{
         };
         state.photoSpots.set(photoSpot.id, photoSpot);
         return photoSpot;
+      },
+    },
+    historicalWeatherSample: {
+      findUnique: async ({ where }: any) => {
+        const key = historicalSampleKey(where.locationKey_sourceProvider_sampleTime);
+        return state.historicalWeatherSamples.get(key) ?? null;
+      },
+      findMany: async ({ where }: any = {}) =>
+        [...state.historicalWeatherSamples.values()]
+          .filter(
+            (sample) =>
+              where?.locationKey === undefined || sample.locationKey === where.locationKey,
+          )
+          .filter(
+            (sample) =>
+              where?.sourceProvider === undefined || sample.sourceProvider === where.sourceProvider,
+          )
+          .filter((sample) =>
+            where?.sampleTime === undefined
+              ? true
+              : inDateRange(sample.sampleTime, where.sampleTime),
+          )
+          .sort((left, right) => left.sampleTime.getTime() - right.sampleTime.getTime()),
+      create: async ({ data }: any) => {
+        const sample = {
+          id: `historical-weather-${state.historicalWeatherSamples.size}`,
+          createdAt: now,
+          updatedAt: now,
+          ...data,
+        };
+        state.historicalWeatherSamples.set(historicalSampleKey(sample), sample);
+        return sample;
+      },
+      update: async ({ where, data }: any) => {
+        const key = historicalSampleKey(where.locationKey_sourceProvider_sampleTime);
+        const existing = state.historicalWeatherSamples.get(key);
+        if (!existing) {
+          throw new Error(`Missing historical weather sample ${key}`);
+        }
+        const next = { ...existing, ...data, updatedAt: now };
+        state.historicalWeatherSamples.set(key, next);
+        return next;
+      },
+      upsert: async ({ where, create, update }: any) => {
+        const key = historicalSampleKey(where.locationKey_sourceProvider_sampleTime);
+        const existing = state.historicalWeatherSamples.get(key);
+        if (existing) {
+          const next = { ...existing, ...update, updatedAt: now };
+          state.historicalWeatherSamples.set(key, next);
+          return next;
+        }
+        const sample = {
+          id: `historical-weather-${state.historicalWeatherSamples.size}`,
+          createdAt: now,
+          updatedAt: now,
+          ...create,
+        };
+        state.historicalWeatherSamples.set(key, sample);
+        return sample;
+      },
+      count: async ({ where }: any = {}) =>
+        (
+          await client.historicalWeatherSample!.findMany({
+            where,
+          })
+        ).length,
+    },
+    forecastReplayRun: {
+      findUnique: async ({ where }: any) => state.forecastReplayRuns.get(where.id) ?? null,
+      findMany: async ({ where }: any = {}) =>
+        [...state.forecastReplayRuns.values()]
+          .filter(
+            (run) => where?.locationKey === undefined || run.locationKey === where.locationKey,
+          )
+          .filter((run) => where?.target === undefined || run.target === where.target)
+          .filter((run) => where?.status === undefined || run.status === where.status)
+          .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime()),
+      create: async ({ data }: any) => {
+        const run = {
+          id: `forecast-replay-run-${state.forecastReplayRuns.size}`,
+          errorMessage: null,
+          completedAt: null,
+          createdAt: now,
+          ...data,
+        };
+        state.forecastReplayRuns.set(run.id, run);
+        return run;
+      },
+      update: async ({ where, data }: any) => {
+        const existing = state.forecastReplayRuns.get(where.id);
+        if (!existing) {
+          throw new Error(`Missing forecast replay run ${where.id}`);
+        }
+        const next = { ...existing, ...data };
+        state.forecastReplayRuns.set(where.id, next);
+        return next;
+      },
+    },
+    forecastReplayResult: {
+      findUnique: async ({ where }: any) => {
+        const key = replayResultKey(where.replayRunId_forecastDate_target);
+        return state.forecastReplayResults.get(key) ?? null;
+      },
+      findMany: async ({ where, take }: any = {}) =>
+        [...state.forecastReplayResults.values()]
+          .filter(
+            (result) =>
+              where?.locationKey === undefined || result.locationKey === where.locationKey,
+          )
+          .filter((result) => where?.target === undefined || result.target === where.target)
+          .filter(
+            (result) =>
+              where?.replayRunId === undefined || result.replayRunId === where.replayRunId,
+          )
+          .sort(
+            (left, right) =>
+              right.forecastDate.getTime() - left.forecastDate.getTime() ||
+              right.createdAt.getTime() - left.createdAt.getTime(),
+          )
+          .slice(0, take ?? Number.POSITIVE_INFINITY),
+      create: async ({ data }: any) => {
+        const result = {
+          id: `forecast-replay-result-${state.forecastReplayResults.size}`,
+          createdAt: now,
+          ...data,
+        };
+        state.forecastReplayResults.set(replayResultKey(result), result);
+        return result;
+      },
+      createMany: async ({ data }: any) => {
+        for (const item of data) {
+          await client.forecastReplayResult!.create({ data: item });
+        }
+        return { count: data.length };
+      },
+      deleteMany: async ({ where }: any) => {
+        const records = await client.forecastReplayResult!.findMany({ where });
+        for (const record of records) {
+          state.forecastReplayResults.delete(replayResultKey(record));
+        }
+        return { count: records.length };
+      },
+      count: async ({ where }: any = {}) =>
+        (
+          await client.forecastReplayResult!.findMany({
+            where,
+          })
+        ).length,
+    },
+    observedOutcome: {
+      findUnique: async ({ where }: any) => {
+        const key = observedOutcomeKey(where.locationKey_target_outcomeDate);
+        return state.observedOutcomes.get(key) ?? null;
+      },
+      findMany: async ({ where }: any = {}) =>
+        [...state.observedOutcomes.values()]
+          .filter(
+            (outcome) =>
+              where?.locationKey === undefined || outcome.locationKey === where.locationKey,
+          )
+          .filter((outcome) => where?.target === undefined || outcome.target === where.target)
+          .filter((outcome) =>
+            where?.outcomeDate === undefined
+              ? true
+              : inDateRange(outcome.outcomeDate, where.outcomeDate),
+          )
+          .sort((left, right) => right.outcomeDate.getTime() - left.outcomeDate.getTime()),
+      create: async ({ data }: any) => {
+        const outcome = {
+          id: `observed-outcome-${state.observedOutcomes.size}`,
+          createdAt: now,
+          updatedAt: now,
+          ...data,
+        };
+        state.observedOutcomes.set(observedOutcomeKey(outcome), outcome);
+        return outcome;
+      },
+      update: async ({ where, data }: any) => {
+        const key = observedOutcomeKey(where.locationKey_target_outcomeDate);
+        const existing = state.observedOutcomes.get(key);
+        if (!existing) {
+          throw new Error(`Missing observed outcome ${key}`);
+        }
+        const next = { ...existing, ...data, updatedAt: now };
+        state.observedOutcomes.set(key, next);
+        return next;
+      },
+      upsert: async ({ where, create, update }: any) => {
+        const key = observedOutcomeKey(where.locationKey_target_outcomeDate);
+        const existing = state.observedOutcomes.get(key);
+        if (existing) {
+          const next = { ...existing, ...update, updatedAt: now };
+          state.observedOutcomes.set(key, next);
+          return next;
+        }
+        const outcome = {
+          id: `observed-outcome-${state.observedOutcomes.size}`,
+          createdAt: now,
+          updatedAt: now,
+          ...create,
+        };
+        state.observedOutcomes.set(key, outcome);
+        return outcome;
+      },
+    },
+    calibrationStats: {
+      findUnique: async ({ where }: any) => {
+        const key = calibrationStatsKey(where.locationKey_target_ruleVersion);
+        return state.calibrationStats.get(key) ?? null;
+      },
+      findMany: async ({ where }: any = {}) =>
+        [...state.calibrationStats.values()]
+          .filter(
+            (stat) => where?.locationKey === undefined || stat.locationKey === where.locationKey,
+          )
+          .filter((stat) => where?.target === undefined || stat.target === where.target)
+          .filter(
+            (stat) => where?.ruleVersion === undefined || stat.ruleVersion === where.ruleVersion,
+          )
+          .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime()),
+      upsert: async ({ where, create, update }: any) => {
+        const key = calibrationStatsKey(where.locationKey_target_ruleVersion);
+        const existing = state.calibrationStats.get(key);
+        if (existing) {
+          const next = { ...existing, ...update, updatedAt: now };
+          state.calibrationStats.set(key, next);
+          return next;
+        }
+        const stat = {
+          id: `calibration-stats-${state.calibrationStats.size}`,
+          updatedAt: now,
+          ...create,
+        };
+        state.calibrationStats.set(key, stat);
+        return stat;
       },
     },
     spotTag: {

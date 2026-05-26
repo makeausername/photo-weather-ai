@@ -1595,7 +1595,9 @@ function resultWithBlockedAstro(
     },
   });
   const blockedAstroWindow = {
-    ...base.bestWindows.find((window) => window.target === "astro" && window.label.includes("银河"))!,
+    ...base.bestWindows.find(
+      (window) => window.target === "astro" && window.label.includes("银河"),
+    )!,
     score: 64,
     conditionScore: 70,
     practicalScore: 24,
@@ -2368,6 +2370,33 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("建议：建议");
     expect(html).not.toContain("夜间、上午");
     expect(html).not.toContain("朝霞 2026年5月20日 19:01");
+  });
+
+  it("shows a conservative historical calibration hint on the general result when enough samples exist", () => {
+    const result: ForecastCalculationResult = {
+      ...resultForTarget("general"),
+      calibrationHint: {
+        spotId: "spot-test",
+        locationKey: "spot:spot-test",
+        target: "general",
+        sampleCount: 18,
+        hitRate: 0.72,
+        falsePositiveRate: 0.28,
+        falseNegativeRate: 0.08,
+        confidenceAdjustment: -0.1,
+        cautionNoteZh: "历史误报偏高，本次建议谨慎参考。",
+        displayNoteZh: "历史校准：该机位同类条件命中率约 72%，历史误报偏高，本次建议谨慎参考。",
+      },
+    };
+
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const calibrationCard = viewModel.primaryCards.find(
+      (card) => card.key === "historical-calibration",
+    );
+
+    expect(calibrationCard?.value).toContain("72%");
+    expect(calibrationCard?.detail).toContain("历史校准");
+    expect(calibrationCard?.tone).toBe("accent");
   });
 
   it("keeps deterministic analysis visible when the optional DeepSeek interpretation times out", () => {

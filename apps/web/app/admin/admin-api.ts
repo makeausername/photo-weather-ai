@@ -119,6 +119,73 @@ export type AdminAuditLog = {
   readonly createdAt: string;
 };
 
+export type AdminCalibrationTarget = "general" | "cloud_sea" | "glow" | "astro";
+
+export type AdminForecastReplayResult = {
+  readonly id: string;
+  readonly replayRunId: string;
+  readonly spotId: string | null;
+  readonly locationKey: string;
+  readonly target: AdminCalibrationTarget;
+  readonly forecastDate: string;
+  readonly overallScore: number;
+  readonly recommendationLabel: string;
+  readonly dedicatedTripRecommendation: string | null;
+  readonly nearbyObservationRecommendation: string | null;
+  readonly bestWindowStart: string | null;
+  readonly bestWindowEnd: string | null;
+  readonly bestSubject: string | null;
+  readonly whiteoutRiskScore: number | null;
+  readonly precipitationRiskLevel: string | null;
+  readonly transparencyGrade: string | null;
+  readonly confidenceLabel: string;
+  readonly createdAt: string;
+};
+
+export type AdminObservedOutcome = {
+  readonly id: string;
+  readonly spotId: string | null;
+  readonly locationKey: string;
+  readonly locationName: string;
+  readonly target: AdminCalibrationTarget;
+  readonly outcomeDate: string;
+  readonly observationWindowStart: string | null;
+  readonly observationWindowEnd: string | null;
+  readonly observedResult: "success" | "partial" | "fail" | "unknown";
+  readonly cloudSeaLevel: "none" | "weak" | "medium" | "strong" | null;
+  readonly whiteoutLevel: "none" | "low" | "medium" | "high" | null;
+  readonly sunriseGlowLevel: "none" | "weak" | "medium" | "strong" | null;
+  readonly sunsetGlowLevel: "none" | "weak" | "medium" | "strong" | null;
+  readonly astroVisibilityLevel: "none" | "weak" | "medium" | "strong" | null;
+  readonly transparencyLevel: "poor" | "fair" | "good" | "excellent" | null;
+  readonly rainImpactLevel: "none" | "low" | "medium" | "high" | null;
+  readonly notes: string | null;
+  readonly photoEvidenceUrl: string | null;
+  readonly source: "admin_manual" | "user_feedback" | "imported";
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
+
+export type AdminCalibrationStats = {
+  readonly id: string;
+  readonly spotId: string | null;
+  readonly locationKey: string;
+  readonly target: AdminCalibrationTarget;
+  readonly ruleVersion: string;
+  readonly sampleCount: number;
+  readonly successCount: number;
+  readonly partialCount: number;
+  readonly failCount: number;
+  readonly hitRate: number;
+  readonly falsePositiveRate: number;
+  readonly falseNegativeRate: number;
+  readonly whiteoutFalsePositiveRate: number | null;
+  readonly bestWindowHitRate: number | null;
+  readonly recommendedTripHitRate: number | null;
+  readonly updatedAt: string;
+  readonly summaryJson: JsonValue;
+};
+
 export type MockConnectionTestResult = {
   readonly success: boolean;
   readonly providerCode?: string;

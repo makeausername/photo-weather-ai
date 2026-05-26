@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@photo-weather/ai": "workspace:*",
+    "@photo-weather/calibration": "workspace:*",
     "@photo-weather/calendar": "workspace:*",
     "@photo-weather/config": "workspace:*",
     "@photo-weather/db": "workspace:*",

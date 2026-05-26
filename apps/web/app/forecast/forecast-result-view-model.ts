@@ -452,6 +452,16 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
   const scoreCards = allScoreKeys.map((key) => result.scores[key]);
   const resultWindows = buildGeneralResultWindows(result);
   const bestWindow = resultWindows.find(isExecutableResultWindow);
+  const calibrationCard = result.calibrationHint
+    ? textCard(
+        "historical-calibration",
+        "recommendation",
+        "历史校准",
+        `${Math.round(result.calibrationHint.hitRate * 100)}% 命中率`,
+        result.calibrationHint.displayNoteZh,
+        result.calibrationHint.confidenceAdjustment < 0 ? "accent" : "info",
+      )
+    : null;
 
   return {
     target: "general",
@@ -470,6 +480,7 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
         "按云海、霞光、星空银河、通透度和风险综合判断。",
         "primary",
       ),
+      ...(calibrationCard ? [calibrationCard] : []),
       textCard(
         "bestWindow",
         "bestWindow",
@@ -938,7 +949,9 @@ export function buildAstroForecastViewModel(
         analysis.astroShootable ? "accent" : "muted",
       ),
     ],
-    dailyTrend: analysis.dailyAstro.map((day) => mapDailyAstro(day, analysis.milkyWayCandidateWindows)),
+    dailyTrend: analysis.dailyAstro.map((day) =>
+      mapDailyAstro(day, analysis.milkyWayCandidateWindows),
+    ),
     astronomicalNightWindows: mapAstroWindows(result, analysis.astronomicalNightWindows),
     moonlessNightWindows: mapAstroWindows(result, analysis.moonlessNightWindows),
     milkyWayCandidateWindows: mapAstroWindows(result, analysis.milkyWayCandidateWindows),
@@ -2592,7 +2605,8 @@ function mapDailyAstro(
   milkyWayCandidateWindows: readonly AstroWindow[],
 ): AstroDailyTrendItem {
   const galacticCenterWindow =
-    milkyWayCandidateWindows.find((window) => window.date === day.date) ?? day.recommendedMilkyWayWindow;
+    milkyWayCandidateWindows.find((window) => window.date === day.date) ??
+    day.recommendedMilkyWayWindow;
   const blockers = astroBlockerSummary(day.weatherBlockers);
   const precipitationBlocker = day.weatherBlockers.find((blocker) => /降水|雨|雪/.test(blocker));
 
@@ -2637,7 +2651,9 @@ function mapDailyAstro(
         ? `仅作备选窗口：${blockers}不支持专程拍摄`
         : "暂无推荐窗口",
     cloudConditionLabel:
-      day.weatherBlockers.length > 0 ? `${day.labels.cloudBlocker}：${blockers}` : day.labels.cloudBlocker,
+      day.weatherBlockers.length > 0
+        ? `${day.labels.cloudBlocker}：${blockers}`
+        : day.labels.cloudBlocker,
     precipitationRiskLabel: precipitationBlocker ?? "降水未构成主要阻断",
     nightShootingAdviceLabel: day.astroShootable
       ? "建议夜拍"
@@ -2670,7 +2686,11 @@ function astroBlockerSummary(blockers: readonly string[]): string {
     /露|结露|湿度/.test(text) ? "露水风险" : "",
   ].filter(Boolean);
 
-  return [...new Set(labels.length > 0 ? labels : blockers.map((blocker) => blocker.replace(/[。.]$/, "")))]
+  return [
+    ...new Set(
+      labels.length > 0 ? labels : blockers.map((blocker) => blocker.replace(/[。.]$/, "")),
+    ),
+  ]
     .slice(0, 3)
     .join("、");
 }

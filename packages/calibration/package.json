@@ -1,0 +1,26 @@
+{
+  "name": "@photo-weather/calibration",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@photo-weather/calendar": "workspace:*",
+    "@photo-weather/db": "workspace:*",
+    "@photo-weather/scoring": "workspace:*",
+    "@photo-weather/shared": "workspace:*",
+    "@photo-weather/terrain": "workspace:*"
+  }
+}

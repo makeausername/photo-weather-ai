@@ -1276,6 +1276,20 @@ export type ForecastCalculationResult = {
   readonly weatherProviderRuntimeSnapshot?: readonly ForecastProviderRuntimeSnapshot[];
   readonly astroDataSourceLabelZh: string;
   readonly astroCalculationBasis?: AstroCalculationBasis;
+  readonly calibrationHint?: ForecastCalibrationHint;
+};
+
+export type ForecastCalibrationHint = {
+  readonly spotId?: string | null;
+  readonly locationKey: string;
+  readonly target: ForecastTarget;
+  readonly sampleCount: number;
+  readonly hitRate: number;
+  readonly falsePositiveRate: number;
+  readonly falseNegativeRate: number;
+  readonly confidenceAdjustment: number;
+  readonly cautionNoteZh: string;
+  readonly displayNoteZh: string;
 };
 
 export type WeatherConfidenceLevel = "high" | "medium" | "low";

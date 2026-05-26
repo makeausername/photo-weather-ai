@@ -124,3 +124,7 @@
 - AI 解释默认手动触发，不作为每次查询的必需步骤。
 - 热门机位可预取和缓存，长尾地点按需查询。
 - API 成本、缓存命中率和用户价值必须进入后台运营监控。
+
+## Historical Calibration V1
+
+历史校准把预测结果、历史天气和真实观测标签连起来，用同一套 deterministic scoring rules 做历史回放，再统计命中率、误报率和漏报率。普通结果页只在样本量足够时显示保守提示，不展示 provider/debug 细节，也不让 AI 参与天气或评分计算。详细流程见 `docs/historical-calibration-v1.md`。

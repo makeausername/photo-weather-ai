@@ -30,11 +30,29 @@ import type { DatabaseClient, JsonValue, ProviderType } from "@photo-weather/db"
 import { MockGeoProvider, validateCoordinates } from "@photo-weather/geo";
 import type { GeoProvider } from "@photo-weather/geo";
 import {
+  buildCalibrationLocationKey,
+  calibrationTargets,
+  defaultCalibrationMinimumSampleCount,
+  deterministicRuleVersion,
+  historicalWeatherSourceProviders,
+  listCalibrationStats,
+  listForecastReplayResults,
+  listObservedOutcomes,
+  OpenMeteoHistoricalWeatherProvider,
+  observedResults,
+  rebuildCalibrationStats,
+  runHistoricalReplay,
+  storeHistoricalWeatherSamples,
+  upsertObservedOutcome,
+  type HistoricalWeatherProvider,
+} from "@photo-weather/calibration";
+import {
   maskQWeatherApiHost,
   MeteoblueClient,
   OpenMeteoClient,
   QWeatherClient,
 } from "@photo-weather/weather";
+import { MockTerrainProvider, type TerrainProvider } from "@photo-weather/terrain";
 import { z } from "zod";
 import type { AuthConfig } from "./auth-routes.js";
 import { requirePermission } from "./auth-routes.js";
@@ -244,11 +262,78 @@ const providerConnectionTestSchema = z
   })
   .optional();
 
+const dateOnlySchema = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "日期必须使用 YYYY-MM-DD。");
+
+const calibrationTargetSchema = z.enum(calibrationTargets);
+const historicalSourceProviderSchema = z.enum(historicalWeatherSourceProviders);
+
+const calibrationLocationSchema = z.object({
+  spotId: z.string().trim().min(1).optional(),
+  locationKey: z.string().trim().min(1).optional(),
+  locationName: z.string().trim().min(1).optional(),
+  latitudeWgs84: latitudeSchema.optional(),
+  longitudeWgs84: longitudeSchema.optional(),
+  elevationMeters: elevationSchema,
+});
+
+const calibrationFetchHistorySchema = calibrationLocationSchema.extend({
+  startDate: dateOnlySchema,
+  endDate: dateOnlySchema,
+  timezone: z.string().trim().min(1).optional().default("Asia/Shanghai"),
+  sourceProvider: historicalSourceProviderSchema.optional().default("open_meteo_historical"),
+});
+
+const calibrationReplaySchema = calibrationLocationSchema.extend({
+  startDate: dateOnlySchema,
+  endDate: dateOnlySchema,
+  target: calibrationTargetSchema,
+  timezone: z.string().trim().min(1).optional().default("Asia/Shanghai"),
+  sourceProvider: historicalSourceProviderSchema.optional().default("open_meteo_historical"),
+  ruleVersion: z.string().trim().min(1).optional().default(deterministicRuleVersion),
+});
+
+const observedOutcomePayloadSchema = calibrationLocationSchema.extend({
+  target: calibrationTargetSchema,
+  outcomeDate: dateOnlySchema,
+  observationWindowStart: z.string().datetime({ offset: true }).nullable().optional(),
+  observationWindowEnd: z.string().datetime({ offset: true }).nullable().optional(),
+  observedResult: z.enum(observedResults),
+  cloudSeaLevel: z.enum(["none", "weak", "medium", "strong"]).nullable().optional(),
+  whiteoutLevel: z.enum(["none", "low", "medium", "high"]).nullable().optional(),
+  sunriseGlowLevel: z.enum(["none", "weak", "medium", "strong"]).nullable().optional(),
+  sunsetGlowLevel: z.enum(["none", "weak", "medium", "strong"]).nullable().optional(),
+  astroVisibilityLevel: z.enum(["none", "weak", "medium", "strong"]).nullable().optional(),
+  transparencyLevel: z.enum(["poor", "fair", "good", "excellent"]).nullable().optional(),
+  rainImpactLevel: z.enum(["none", "low", "medium", "high"]).nullable().optional(),
+  notes: z.string().max(2000).nullable().optional(),
+  photoEvidenceUrl: z.string().url().nullable().optional(),
+  source: z.enum(["admin_manual", "user_feedback", "imported"]).optional().default("admin_manual"),
+});
+
+const calibrationStatsQuerySchema = z.object({
+  spotId: z.string().trim().min(1).optional(),
+  locationKey: z.string().trim().min(1).optional(),
+  target: calibrationTargetSchema.optional(),
+  ruleVersion: z.string().trim().min(1).optional(),
+});
+
+const calibrationReplayResultsQuerySchema = z.object({
+  spotId: z.string().trim().min(1).optional(),
+  locationKey: z.string().trim().min(1).optional(),
+  target: calibrationTargetSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+});
+
 export type AdminRoutesOptions = {
   readonly dbClient?: DatabaseClient;
   readonly authConfig: AuthConfig;
   readonly geoProvider?: GeoProvider;
   readonly resolveGeoProvider?: () => Promise<GeoProvider>;
+  readonly historicalWeatherProvider?: HistoricalWeatherProvider;
+  readonly terrainProvider?: TerrainProvider;
   readonly env?: NodeJS.ProcessEnv;
 };
 
@@ -397,8 +482,7 @@ function providerTestAuthFailureResponse(
 }
 
 function providerDiagnosticResponse(result: ProviderDiagnosticResult) {
-  const modeZh =
-    result.connectionMode === "real" ? result.modeLabelZh ?? "真实服务" : "模拟测试";
+  const modeZh = result.connectionMode === "real" ? result.modeLabelZh ?? "真实服务" : "模拟测试";
   const mode =
     result.connectionMode === "mock"
       ? result.providerCode === "deepseek"
@@ -454,6 +538,49 @@ function validateCoordinatePair(input: {
   return null;
 }
 
+async function resolveCalibrationLocation(
+  input: z.infer<typeof calibrationLocationSchema>,
+  client: DatabaseClient | undefined,
+) {
+  if (input.spotId) {
+    const spot = await getPhotoSpot(input.spotId, { client });
+    if (!spot) {
+      throw new Error("未找到用于历史校准的机位。");
+    }
+
+    return {
+      spotId: spot.id,
+      locationKey: buildCalibrationLocationKey({ spotId: spot.id }),
+      locationName: spot.name,
+      latitudeWgs84: spot.latitudeWgs84,
+      longitudeWgs84: spot.longitudeWgs84,
+      elevationMeters: spot.elevation,
+    };
+  }
+
+  if (
+    !input.locationName ||
+    typeof input.latitudeWgs84 !== "number" ||
+    typeof input.longitudeWgs84 !== "number"
+  ) {
+    throw new Error("请提供机位，或提供地点名称与 WGS84 坐标。");
+  }
+
+  return {
+    spotId: null,
+    locationKey:
+      input.locationKey ??
+      buildCalibrationLocationKey({
+        latitudeWgs84: input.latitudeWgs84,
+        longitudeWgs84: input.longitudeWgs84,
+      }),
+    locationName: input.locationName,
+    latitudeWgs84: input.latitudeWgs84,
+    longitudeWgs84: input.longitudeWgs84,
+    elevationMeters: input.elevationMeters ?? null,
+  };
+}
+
 export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOptions): void {
   const client = options.dbClient;
   const authConfig = options.authConfig;
@@ -461,6 +588,9 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
   const geoProvider = options.geoProvider ?? new MockGeoProvider();
   const resolveAdminGeoProvider =
     options.resolveGeoProvider ?? (() => Promise.resolve(geoProvider));
+  const historicalWeatherProvider =
+    options.historicalWeatherProvider ?? new OpenMeteoHistoricalWeatherProvider();
+  const calibrationTerrainProvider = options.terrainProvider ?? new MockTerrainProvider();
 
   app.get("/admin", async (request, reply) => {
     const auth = await requirePermission(request, reply, client, authConfig, "admin.manage");
@@ -474,6 +604,302 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       roles: auth.principal.roles,
       permissions: auth.principal.permissions,
     };
+  });
+
+  app.get("/admin/calibration", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "admin.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const [photoSpots, stats, recentResults, outcomes] = await Promise.all([
+      listPhotoSpots({ client }),
+      listCalibrationStats({ client }),
+      listForecastReplayResults({ client, limit: 50 }),
+      listObservedOutcomes({ client }),
+    ]);
+
+    return {
+      photoSpots,
+      targets: calibrationTargets,
+      minimumHintSampleCount: defaultCalibrationMinimumSampleCount,
+      stats,
+      recentResults,
+      outcomes,
+    };
+  });
+
+  app.post("/admin/calibration/fetch-history", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "admin.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedBody = calibrationFetchHistorySchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return sendZodError(reply, parsedBody.error);
+    }
+
+    if (env.NODE_ENV === "test" && !options.historicalWeatherProvider) {
+      return sendError(
+        reply,
+        409,
+        "real_history_fetch_disabled_in_tests",
+        "测试环境不会触发真实历史天气请求。",
+      );
+    }
+
+    if (parsedBody.data.sourceProvider !== "open_meteo_historical") {
+      return sendError(
+        reply,
+        400,
+        "historical_provider_unavailable",
+        "V1 仅支持 Open-Meteo 历史天气；meteoblue 历史接口保留为后续增强。",
+      );
+    }
+
+    try {
+      const location = await resolveCalibrationLocation(parsedBody.data, client);
+      const fetched = await historicalWeatherProvider.fetchHistoricalWeather({
+        ...location,
+        startDate: parsedBody.data.startDate,
+        endDate: parsedBody.data.endDate,
+        timezone: parsedBody.data.timezone,
+      });
+      const stored = await storeHistoricalWeatherSamples(fetched.samples, { client });
+
+      await createAuditLog(
+        {
+          actorUserId: auth.auditActorUserId,
+          action: "calibration.history.fetch",
+          targetType: "historical_weather_sample",
+          targetId: location.locationKey,
+          afterJson: toAuditJson({
+            locationKey: location.locationKey,
+            sourceProvider: fetched.sourceProvider,
+            startDate: parsedBody.data.startDate,
+            endDate: parsedBody.data.endDate,
+            insertedCount: stored.insertedCount,
+            skippedDuplicateCount: stored.skippedDuplicateCount,
+          }),
+          ipAddress: request.ip,
+          userAgent: request.headers["user-agent"] ?? null,
+        },
+        { client },
+      );
+
+      return {
+        location,
+        sourceProvider: fetched.sourceProvider,
+        insertedCount: stored.insertedCount,
+        skippedDuplicateCount: stored.skippedDuplicateCount,
+        sampleCount: fetched.samples.length,
+      };
+    } catch (error) {
+      return sendError(reply, 400, "calibration_history_fetch_failed", (error as Error).message);
+    }
+  });
+
+  app.post("/admin/calibration/replay", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "admin.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedBody = calibrationReplaySchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return sendZodError(reply, parsedBody.error);
+    }
+
+    try {
+      const location = await resolveCalibrationLocation(parsedBody.data, client);
+      const replay = await runHistoricalReplay(
+        {
+          ...location,
+          startDate: parsedBody.data.startDate,
+          endDate: parsedBody.data.endDate,
+          target: parsedBody.data.target,
+          sourceProvider: parsedBody.data.sourceProvider,
+          ruleVersion: parsedBody.data.ruleVersion,
+          timezone: parsedBody.data.timezone,
+        },
+        {
+          client,
+          terrainProvider: calibrationTerrainProvider,
+        },
+      );
+
+      await createAuditLog(
+        {
+          actorUserId: auth.auditActorUserId,
+          action: "calibration.replay.run",
+          targetType: "forecast_replay_run",
+          targetId: replay.run.id,
+          afterJson: toAuditJson({
+            locationKey: location.locationKey,
+            target: parsedBody.data.target,
+            startDate: parsedBody.data.startDate,
+            endDate: parsedBody.data.endDate,
+            resultCount: replay.resultCount,
+          }),
+          ipAddress: request.ip,
+          userAgent: request.headers["user-agent"] ?? null,
+        },
+        { client },
+      );
+
+      return replay;
+    } catch (error) {
+      return sendError(reply, 400, "calibration_replay_failed", (error as Error).message);
+    }
+  });
+
+  app.get("/admin/calibration/replay-results", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "admin.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedQuery = calibrationReplayResultsQuerySchema.safeParse(request.query);
+    if (!parsedQuery.success) {
+      return sendZodError(reply, parsedQuery.error);
+    }
+
+    const locationKey = parsedQuery.data.spotId
+      ? buildCalibrationLocationKey({ spotId: parsedQuery.data.spotId })
+      : parsedQuery.data.locationKey;
+    const [results, outcomes] = await Promise.all([
+      listForecastReplayResults({
+        client,
+        locationKey,
+        target: parsedQuery.data.target,
+        limit: parsedQuery.data.limit ?? 100,
+      }),
+      listObservedOutcomes({
+        client,
+        locationKey,
+        target: parsedQuery.data.target,
+      }),
+    ]);
+
+    return { results, outcomes };
+  });
+
+  app.post("/admin/calibration/outcomes", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "admin.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedBody = observedOutcomePayloadSchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return sendZodError(reply, parsedBody.error);
+    }
+
+    try {
+      const location = await resolveCalibrationLocation(parsedBody.data, client);
+      const outcome = await upsertObservedOutcome(
+        {
+          ...location,
+          target: parsedBody.data.target,
+          outcomeDate: parsedBody.data.outcomeDate,
+          observationWindowStart: parsedBody.data.observationWindowStart,
+          observationWindowEnd: parsedBody.data.observationWindowEnd,
+          observedResult: parsedBody.data.observedResult,
+          cloudSeaLevel: parsedBody.data.cloudSeaLevel,
+          whiteoutLevel: parsedBody.data.whiteoutLevel,
+          sunriseGlowLevel: parsedBody.data.sunriseGlowLevel,
+          sunsetGlowLevel: parsedBody.data.sunsetGlowLevel,
+          astroVisibilityLevel: parsedBody.data.astroVisibilityLevel,
+          transparencyLevel: parsedBody.data.transparencyLevel,
+          rainImpactLevel: parsedBody.data.rainImpactLevel,
+          notes: parsedBody.data.notes,
+          photoEvidenceUrl: parsedBody.data.photoEvidenceUrl,
+          source: parsedBody.data.source,
+          createdBy: auth.auditActorUserId,
+        },
+        { client },
+      );
+
+      await createAuditLog(
+        {
+          actorUserId: auth.auditActorUserId,
+          action: "calibration.outcome.upsert",
+          targetType: "observed_outcome",
+          targetId: outcome.id,
+          afterJson: toAuditJson(outcome),
+          ipAddress: request.ip,
+          userAgent: request.headers["user-agent"] ?? null,
+        },
+        { client },
+      );
+
+      return { outcome };
+    } catch (error) {
+      return sendError(reply, 400, "observed_outcome_update_failed", (error as Error).message);
+    }
+  });
+
+  app.get("/admin/calibration/stats", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "admin.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedQuery = calibrationStatsQuerySchema.safeParse(request.query);
+    if (!parsedQuery.success) {
+      return sendZodError(reply, parsedQuery.error);
+    }
+
+    const locationKey = parsedQuery.data.spotId
+      ? buildCalibrationLocationKey({ spotId: parsedQuery.data.spotId })
+      : parsedQuery.data.locationKey;
+    const stats = await listCalibrationStats({
+      client,
+      locationKey,
+      target: parsedQuery.data.target,
+      ruleVersion: parsedQuery.data.ruleVersion,
+    });
+
+    return { stats };
+  });
+
+  app.post("/admin/calibration/stats/rebuild", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "admin.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedBody = calibrationReplaySchema
+      .pick({
+        spotId: true,
+        locationKey: true,
+        locationName: true,
+        latitudeWgs84: true,
+        longitudeWgs84: true,
+        elevationMeters: true,
+        target: true,
+        ruleVersion: true,
+      })
+      .safeParse(request.body);
+    if (!parsedBody.success) {
+      return sendZodError(reply, parsedBody.error);
+    }
+
+    try {
+      const location = await resolveCalibrationLocation(parsedBody.data, client);
+      const stats = await rebuildCalibrationStats({
+        client,
+        locationKey: location.locationKey,
+        spotId: location.spotId,
+        target: parsedBody.data.target,
+        ruleVersion: parsedBody.data.ruleVersion,
+      });
+
+      return { stats };
+    } catch (error) {
+      return sendError(reply, 400, "calibration_stats_rebuild_failed", (error as Error).message);
+    }
   });
 
   app.get("/admin/settings", async (request, reply) => {

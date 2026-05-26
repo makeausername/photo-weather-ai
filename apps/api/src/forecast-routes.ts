@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from "fastify";
 import { buildForecastDateRange, forecastDateRangeErrorMessage } from "@photo-weather/calendar";
+import { buildCalibrationLocationKey, findCalibrationHint } from "@photo-weather/calibration";
 import {
   type ForecastCalculationResult,
   type ForecastQueryInput,
@@ -158,6 +159,7 @@ export function registerForecastRoutes(
       terrainProvider,
       astroServiceClient,
       astroServiceConfig,
+      options.dbClient,
       reply,
       request.log,
     );
@@ -192,6 +194,7 @@ export function registerForecastRoutes(
       terrainProvider,
       astroServiceClient,
       astroServiceConfig,
+      options.dbClient,
       reply,
       request.log,
     );
@@ -224,9 +227,10 @@ export function registerForecastRoutes(
         errorCategory: "disabled",
         messageZh: "基于确定性计算结果生成的简版解读。",
         retryable: false,
-        error: runtimeDeepSeek?.realCallEnabled && !runtimeDeepSeek.apiKeyPresent
-          ? "provider_key_missing"
-          : "ai_explanation_not_enabled",
+        error:
+          runtimeDeepSeek?.realCallEnabled && !runtimeDeepSeek.apiKeyPresent
+            ? "provider_key_missing"
+            : "ai_explanation_not_enabled",
         message: "基于确定性计算结果生成的简版解读。",
         diagnostics: {
           model: runtimeDeepSeek?.model ?? "deepseek-v4-pro",
@@ -355,11 +359,12 @@ async function calculateForecastResultOrReply(
   terrainProvider: TerrainProvider,
   astroServiceClient: AstroServiceClientLike,
   astroServiceConfig: AstroServiceConfig,
+  dbClient: DatabaseClient | undefined,
   reply: FastifyReply,
   logger: FastifyBaseLogger,
 ): Promise<ForecastCalculationResult | null> {
   try {
-    return await calculateForecastResult(
+    const result = await calculateForecastResult(
       query,
       requestOptions,
       weatherDataService,
@@ -367,6 +372,7 @@ async function calculateForecastResultOrReply(
       astroServiceClient,
       astroServiceConfig,
     );
+    return attachCalibrationHint(result, query, dbClient);
   } catch (error) {
     logForecastCalculationFailure({
       logger,
@@ -420,6 +426,33 @@ async function calculateForecastResultOrReply(
     }
 
     throw error;
+  }
+}
+
+async function attachCalibrationHint(
+  result: ForecastCalculationResult,
+  query: ForecastQueryInput,
+  dbClient: DatabaseClient | undefined,
+): Promise<ForecastCalculationResult> {
+  const locationKey = buildCalibrationLocationKey({
+    spotId: query.photoSpotId,
+    locationId: query.locationId,
+    latitudeWgs84: query.latitudeWgs84,
+    longitudeWgs84: query.longitudeWgs84,
+  });
+  if (locationKey === "unknown") {
+    return result;
+  }
+
+  try {
+    const hint = await findCalibrationHint({
+      client: dbClient,
+      locationKey,
+      target: query.target,
+    });
+    return hint ? { ...result, calibrationHint: hint } : result;
+  } catch {
+    return result;
   }
 }
 

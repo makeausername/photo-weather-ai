@@ -53,6 +53,9 @@ importers:
       '@photo-weather/calendar':
         specifier: workspace:*
         version: link:../../packages/calendar
+      '@photo-weather/calibration':
+        specifier: workspace:*
+        version: link:../../packages/calibration
       '@photo-weather/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -165,6 +168,24 @@ importers:
       lunar-typescript:
         specifier: ^1.8.6
         version: 1.8.6
+
+  packages/calibration:
+    dependencies:
+      '@photo-weather/calendar':
+        specifier: workspace:*
+        version: link:../calendar
+      '@photo-weather/db':
+        specifier: workspace:*
+        version: link:../db
+      '@photo-weather/scoring':
+        specifier: workspace:*
+        version: link:../scoring
+      '@photo-weather/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@photo-weather/terrain':
+        specifier: workspace:*
+        version: link:../terrain
 
   packages/config:
     dependencies:
