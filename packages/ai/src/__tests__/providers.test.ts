@@ -116,13 +116,40 @@ describe("AI providers", () => {
     expect(text.length).toBeLessThanOrEqual(9000);
   });
 
+  it("passes deterministic glow facts to DeepSeek without asking it to score glow", () => {
+    const context = buildDeepSeekForecastContext({
+      ...forecastResultFixture,
+      target: "glow",
+    });
+
+    expect(context.glowFacts).toMatchObject({
+      sunriseGlowScore: 75,
+      sunsetGlowScore: 62,
+      colorCarrierScore: 78,
+      lowCloudObstructionRisk: 38,
+      postRainOpeningChance: "low",
+      rainOverlap: {
+        sunrise: false,
+        sunset: false,
+      },
+    });
+    expect(context.targetAnalysis).toMatchObject({
+      target: "glow",
+      sunriseGlowScore: 75,
+      sunsetGlowScore: 62,
+      bestGlowWindow: expect.objectContaining({
+        labelZh: "朝霞峰值窗口",
+      }),
+    });
+    expect(JSON.stringify(context)).toContain("All values are precomputed deterministic facts");
+  });
+
   it("keeps DeepSeek context provider-neutral and omits raw temperature ranges", () => {
     const context = buildDeepSeekForecastContext({
       ...forecastResultFixture,
       dataNotice:
         "天气数据：和风天气；云层辅助：Open-Meteo；专业增强：meteoblue；地理服务：高德地图。",
-      weatherNoticeZh:
-        "天气数据：和风天气；云层辅助：Open-Meteo；专业增强：meteoblue。",
+      weatherNoticeZh: "天气数据：和风天气；云层辅助：Open-Meteo；专业增强：meteoblue。",
       weatherFusionSummary: {
         primarySource: "和风天气",
         auxiliarySources: ["Open-Meteo", "meteoblue"],

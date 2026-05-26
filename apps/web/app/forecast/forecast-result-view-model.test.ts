@@ -1458,6 +1458,8 @@ describe("forecast result target-aware view model", () => {
       "推荐等级",
       "最佳拍摄窗口",
       "云海 / 白墙",
+      "朝霞 / 晚霞机会",
+      "霞光窗口",
       "主要风险",
       "优先题材",
       "到达建议",
@@ -1558,6 +1560,122 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("优先关注清晨云海窗口");
     expect(html).not.toContain("建议：当天有可优先关注的拍摄窗口。");
     expect(html).not.toMatch(/(?:^|\s)(?:w|min-w)-\[(?:[1-9]\d{3,})px\]/);
+  });
+
+  it("shows separate deterministic sunrise and sunset glow facts on the general result page", () => {
+    const result = resultForTarget("general");
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "idle",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("朝霞机会 70 分");
+    expect(html).toContain("晚霞机会 74 分");
+    expect(html).toContain("色彩云条件好");
+    expect(html).toContain("低云遮挡风险低");
+    expect(html).toContain("主要可观察窗口");
+    expect(html).toContain("高确定性拍摄窗口");
+  });
+
+  it("keeps evening windows out of the sunrise card and morning windows out of the sunset card", () => {
+    const base = resultForTarget("general");
+    const result: ForecastCalculationResult = {
+      ...base,
+      bestWindows: [
+        {
+          ...base.bestWindows[2]!,
+          label: "朝霞峰值窗口 19:01 - 19:28",
+          startTime: "2026-05-20T19:01:00+08:00",
+          endTime: "2026-05-20T19:28:00+08:00",
+          target: "glow",
+          lightPhase: "blue_hour",
+          subjectPriorityLabel: "朝霞",
+          recommendationLevel: "recommended",
+          windowLevel: "best",
+          practicalScore: 76,
+        },
+        {
+          ...base.bestWindows[3]!,
+          label: "晚霞峰值窗口 04:30 - 06:15",
+          startTime: "2026-05-20T04:30:00+08:00",
+          endTime: "2026-05-20T06:15:00+08:00",
+          target: "glow",
+          lightPhase: "sunrise",
+          subjectPriorityLabel: "晚霞",
+          recommendationLevel: "recommended",
+          windowLevel: "shootable",
+          practicalScore: 72,
+        },
+      ],
+    };
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "idle",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+    const subjectSection = html.slice(
+      html.indexOf('data-testid="subject-breakdown"'),
+      html.indexOf('data-testid="opportunity-windows"'),
+    );
+    const sunriseCard = subjectSection.slice(
+      subjectSection.indexOf(">朝霞<"),
+      subjectSection.indexOf(">晚霞<"),
+    );
+    const sunsetCard = subjectSection.slice(subjectSection.indexOf(">晚霞<"));
+
+    expect(sunriseCard).not.toContain("19:01");
+    expect(sunriseCard).not.toContain("日落后余晖");
+    expect(sunsetCard).not.toContain("04:30");
+  });
+
+  it("shows sunrise and sunset rain overlap on daily cards", () => {
+    const base = resultForTarget("general");
+    const result: ForecastCalculationResult = {
+      ...base,
+      glowAnalysis: {
+        ...base.glowAnalysis,
+        dailyGlow: base.glowAnalysis.dailyGlow.map((day, index) =>
+          index === 0
+            ? {
+                ...day,
+                rainOverlapsSunriseWindow: true,
+                rainOverlapsSunsetWindow: false,
+                postRainOpeningChance: "medium",
+              }
+            : day,
+        ),
+      },
+    };
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "idle",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("降水主要影响日出窗口，朝霞不确定性较高");
+    expect(html).toContain("雨后若短暂开口，可转拍云雾层次和远山");
   });
 
   it("avoids impossible zero-probability precipitation copy when amount is present", () => {
@@ -2516,7 +2634,7 @@ describe("forecast result target-aware view model", () => {
       "朝霞机会",
       "晚霞机会",
       "最佳霞光窗口",
-      "主要遮挡风险 / 推荐动作",
+      "低云遮挡风险",
     ]);
     expect(viewModel.detailSections.map((section) => section.title)).toEqual(
       expect.arrayContaining([
@@ -2543,7 +2661,7 @@ describe("forecast result target-aware view model", () => {
       "朝霞机会",
       "晚霞机会",
       "最佳霞光窗口",
-      "主要遮挡风险 / 推荐动作",
+      "低云遮挡风险",
     ]);
     expect(viewModel.dailyTrend.map((item) => item.date)).toEqual(["2026-05-20", "2026-05-21"]);
     expect(viewModel.cloudLayerEvidence.map((item) => item.label)).toEqual(
@@ -2583,9 +2701,11 @@ describe("forecast result target-aware view model", () => {
       expect(html).not.toContain("热门晚霞机位");
       expect(html).toContain("朝霞机会");
       expect(html).toContain("晚霞机会");
-      expect(html).toContain("日出日落与晨昏窗口");
-      expect(html).toContain("云层结构判断");
+      expect(html).toContain("霞光拍摄窗口");
+      expect(html).toContain("光线窗口");
+      expect(html).toContain("云层结构");
       expect(html).toContain("低云遮挡风险");
+      expect(html).toContain("色彩云条件");
       expect(html).toContain("能见度与通透度");
       expect(html).toContain("地形遮挡参考");
       expect(html).toContain("拍摄建议");
@@ -2607,6 +2727,72 @@ describe("forecast result target-aware view model", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("labels glow window list as recommended, watchable, backup, and not recommended", () => {
+    const base = resultForTarget("glow");
+    const result: ForecastCalculationResult = {
+      ...base,
+      glowAnalysis: {
+        ...base.glowAnalysis,
+        bestGlowWindows: [
+          ...base.glowAnalysis.bestGlowWindows,
+          {
+            type: "morning_warm_light",
+            labelZh: "朝霞备选窗口",
+            date: "2026-05-21",
+            start: "2026-05-21T04:40:00+08:00",
+            end: "2026-05-21T05:20:00+08:00",
+            score: 48,
+            riskTags: ["色彩云偏弱"],
+            noteZh: "中高云不足，朝霞仅作备选。",
+          },
+        ],
+        watchableGlowWindows: [
+          {
+            type: "afterglow",
+            labelZh: "日落后余晖",
+            date: "2026-05-20",
+            start: "2026-05-20T19:02:00+08:00",
+            end: "2026-05-20T19:28:00+08:00",
+            score: 62,
+            lowCloudObstructionRisk: 62,
+            riskTags: ["低云偏多"],
+            noteZh: "低云偏多，需现场复核。",
+          },
+        ],
+        notRecommendedGlowWindows: [
+          {
+            type: "sunrise",
+            labelZh: "朝霞",
+            date: "2026-05-20",
+            start: "2026-05-20T04:30:00+08:00",
+            end: "2026-05-20T05:30:00+08:00",
+            score: 28,
+            rainOverlapsWindow: true,
+            lowCloudObstructionRisk: 82,
+            precipitationDisruptionRisk: 78,
+            riskTags: ["低云遮挡", "降水打断"],
+            noteZh: "低云遮挡和降水风险较高。",
+          },
+        ],
+      },
+    };
+    const viewModel = buildGlowForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(GlowResultPage, {
+        query: queryForTarget("glow"),
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(html).toContain("推荐拍摄");
+    expect(html).toContain("可观察");
+    expect(html).toContain("仅作备选");
+    expect(html).toContain("不建议");
+    expect(html).toContain("日落后余晖");
+    expect(html).toContain("低云遮挡和降水风险较高");
   });
 
   it("shows multiple daily glow entries for a 7d glow result", () => {

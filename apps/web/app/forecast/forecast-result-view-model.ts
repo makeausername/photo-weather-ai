@@ -259,6 +259,13 @@ export type GlowDailyTrendItem = {
   readonly dateLabel: string;
   readonly sunriseScore: number;
   readonly sunsetScore: number;
+  readonly sunriseWindowLabel: string;
+  readonly sunsetWindowLabel: string;
+  readonly cloudLayerLabel: string;
+  readonly rainOverlapLabel: string;
+  readonly postRainOpeningLabel: string;
+  readonly lowCloudRiskLabel: string;
+  readonly colorCarrierLabel: string;
   readonly bestWindowLabel: string;
   readonly bestTargetLabel: string;
   readonly recommendationLabel: GlowAnalysisResult["recommendationLabel"];
@@ -271,6 +278,7 @@ export type GlowWindowItem = {
   readonly type: GlowWindow["type"];
   readonly label: string;
   readonly timeRangeLabel: string;
+  readonly categoryLabel: string;
   readonly score: number;
   readonly riskTags: readonly string[];
   readonly note: string;
@@ -428,7 +436,7 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
   const shellCopy = targetShellCopies.general;
   const mainRisk = firstRisk(result.riskFlags);
   const scoreCards = allScoreKeys.map((key) => result.scores[key]);
-  const resultWindows = mapResultWindows(result.bestWindows, result.calendarBasis.timezone);
+  const resultWindows = buildGeneralResultWindows(result);
   const bestWindow = resultWindows.find(isExecutableResultWindow);
 
   return {
@@ -463,6 +471,22 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
         `形成${result.cloudSeaAnalysis.labels.formationOpportunity} / 可拍${result.cloudSeaAnalysis.labels.shootableOpportunity} / 白墙${result.cloudSeaAnalysis.labels.whiteoutRisk}`,
         `形成 ${result.cloudSeaAnalysis.formationScore} 分，可拍 ${result.cloudSeaAnalysis.shootableScore} 分，白墙风险 ${result.cloudSeaAnalysis.whiteoutRiskScore} 分。`,
         result.cloudSeaAnalysis.labels.whiteoutRisk === "高" ? "danger" : "info",
+      ),
+      textCard(
+        "glow-v2",
+        "sunsetGlow",
+        "朝霞 / 晚霞机会",
+        `朝霞${result.glowAnalysis.labels.sunriseGlowOpportunity} / 晚霞${result.glowAnalysis.labels.sunsetGlowOpportunity}`,
+        `朝霞 ${result.glowAnalysis.sunriseGlowScore} 分，晚霞 ${result.glowAnalysis.sunsetGlowScore} 分；色彩云条件${result.glowAnalysis.labels.colorCarrier}（${result.glowAnalysis.colorCarrierScore} 分），低云遮挡风险${result.glowAnalysis.labels.lowCloudObstruction}（${result.glowAnalysis.lowCloudObstructionRisk} 分）。${glowRainOverlapText(result.glowAnalysis)}`,
+        result.glowAnalysis.lowCloudObstructionRisk >= 70 ? "danger" : "accent",
+      ),
+      textCard(
+        "glow-observable-window",
+        "sunsetGlow",
+        "霞光窗口",
+        generalGlowWindowValue(result),
+        generalGlowWindowDetail(result),
+        result.glowAnalysis.bestGlowWindow ? "accent" : "muted",
       ),
       textCard(
         "mainRisk",
@@ -545,7 +569,11 @@ export function buildCloudSeaForecastViewModel(
         "云海可拍机会",
         `${analysis.shootableScore} 分`,
         `光线重叠 ${analysis.lightAlignedScore} 分，白墙风险和降水打断已扣减。`,
-        analysis.shootableScore >= 70 ? "primary" : analysis.shootableScore >= 45 ? "accent" : "muted",
+        analysis.shootableScore >= 70
+          ? "primary"
+          : analysis.shootableScore >= 45
+            ? "accent"
+            : "muted",
         analysis.shootableScore,
       ),
       scoreCard(
@@ -687,7 +715,7 @@ export function buildGlowForecastViewModel(
       textCard(
         "glow-main-action",
         "risk",
-        "主要遮挡风险 / 推荐动作",
+        "低云遮挡风险",
         `${lowCloudRiskLabel}（${analysis.lowCloudObstructionRisk} 分）`,
         recommendedAction,
         analysis.lowCloudObstructionRisk >= 70 ? "danger" : "info",
@@ -709,7 +737,7 @@ export function buildGlowForecastViewModel(
 function buildGlowViewModel(result: ForecastCalculationResult): ForecastResultViewModel {
   const shellCopy = targetShellCopies.glow;
   const glow = buildGlowForecastViewModel(result);
-  const glowWindows = result.bestWindows.filter((window) => window.target === "glow");
+  const glowWindows = buildGlowForecastWindows(result);
   const glowAdvice = buildGlowAdvice(result);
   const resultWindows = mapResultWindows(glowWindows);
 
@@ -1022,9 +1050,7 @@ function buildCloudSeaDailySections(
         )}`,
         detail: `${formatDailyMetricWindow(day.cloudSeaFormation)} ${formatDailyMetricWindow(
           day.cloudSeaShootable,
-        )} ${
-          day.weatherSummary ?? "天气摘要当前使用演示数据。"
-        }`.trim(),
+        )} ${day.weatherSummary ?? "天气摘要当前使用演示数据。"}`.trim(),
       })),
     },
     {
@@ -1645,37 +1671,77 @@ function buildGlowDailyTrend(
   result: ForecastCalculationResult,
   analysis: GlowAnalysisResult,
 ): readonly GlowDailyTrendItem[] {
-  return analysis.dailyGlow.map((day) => ({
-    key: day.date,
-    date: day.date,
-    dateLabel: day.dateLabelZh,
-    sunriseScore: day.sunriseScore,
-    sunsetScore: day.sunsetScore,
-    bestWindowLabel: day.bestWindow
-      ? `${day.bestWindow.labelZh} ${formatWindow(day.bestWindow.start, day.bestWindow.end)}`
-      : "暂无精确霞光窗口",
-    bestTargetLabel: glowBestTargetLabel(day.bestTarget),
-    recommendationLabel: day.recommendationLabel,
-    keyReason: day.keyReason,
-    riskNote: day.riskNote,
-  }));
+  return analysis.dailyGlow.map((day) => {
+    const sunriseWindow = glowWindowForDateAndPhase(analysis, day.date, "sunrise");
+    const sunsetWindow = glowWindowForDateAndPhase(analysis, day.date, "sunset");
+    const bestWindow = day.bestWindow ?? sunriseWindow ?? sunsetWindow;
+
+    return {
+      key: day.date,
+      date: day.date,
+      dateLabel: day.dateLabelZh,
+      sunriseScore: day.sunriseScore,
+      sunsetScore: day.sunsetScore,
+      sunriseWindowLabel: sunriseWindow
+        ? formatGlowWindowBrief(sunriseWindow)
+        : "暂无明确日出暖光窗口",
+      sunsetWindowLabel: sunsetWindow
+        ? formatGlowWindowBrief(sunsetWindow)
+        : "暂无明确日落暖光或余晖窗口",
+      cloudLayerLabel: `色彩云 ${day.labels?.colorCarrier ?? glowColorCarrierLabel(day.colorCarrierScore ?? analysis.colorCarrierScore)}（${day.colorCarrierScore ?? analysis.colorCarrierScore} 分）`,
+      rainOverlapLabel: dailyGlowRainOverlapLabel(day),
+      postRainOpeningLabel: glowPostRainOpeningLabel(
+        day.postRainOpeningChance ?? analysis.postRainOpeningChance,
+      ),
+      lowCloudRiskLabel: `${day.labels?.lowCloudObstruction ?? glowRiskLabel(day.lowCloudObstructionRisk ?? analysis.lowCloudObstructionRisk)}（${day.lowCloudObstructionRisk ?? analysis.lowCloudObstructionRisk} 分）`,
+      colorCarrierLabel: `${day.labels?.colorCarrier ?? glowColorCarrierLabel(day.colorCarrierScore ?? analysis.colorCarrierScore)}（${day.colorCarrierScore ?? analysis.colorCarrierScore} 分）`,
+      bestWindowLabel: bestWindow
+        ? `${bestWindow.labelZh} ${formatWindow(bestWindow.start, bestWindow.end)}`
+        : "暂无精确霞光窗口",
+      bestTargetLabel: glowBestTargetLabel(day.bestTarget),
+      recommendationLabel: day.recommendationLabel,
+      keyReason: day.keyReason,
+      riskNote: day.riskNote,
+    };
+  });
 }
 
 function buildGlowWindowItems(
   result: ForecastCalculationResult,
   analysis: GlowAnalysisResult,
 ): readonly GlowWindowItem[] {
-  return [...analysis.bestGlowWindows]
-    .sort((left, right) => Date.parse(left.start) - Date.parse(right.start))
-    .map((window) => ({
+  return [
+    ...analysis.bestGlowWindows.map((window, index) => ({
+      window,
+      categoryLabel: glowWindowCategoryLabel(window, index === 0 ? "best" : "best-list"),
+    })),
+    ...analysis.watchableGlowWindows.map((window) => ({
+      window,
+      categoryLabel: "可观察",
+    })),
+    ...analysis.notRecommendedGlowWindows.map((window) => ({
+      window,
+      categoryLabel: "不建议",
+    })),
+  ]
+    .sort((left, right) => Date.parse(left.window.start) - Date.parse(right.window.start))
+    .map(({ window, categoryLabel }) => ({
       key: `${window.type}-${window.start}-${window.labelZh}`,
       type: window.type,
       label: `${windowDateLabel(result, window.date)} ${window.labelZh}`,
       timeRangeLabel: formatWindow(window.start, window.end),
+      categoryLabel,
       score: window.score,
       riskTags: window.riskTags,
-      note: window.noteZh,
-      tone: window.score >= 75 ? "primary" : window.score >= 60 ? "accent" : "muted",
+      note: glowWindowNote(window),
+      tone:
+        categoryLabel === "不建议"
+          ? "danger"
+          : categoryLabel === "推荐拍摄"
+            ? "primary"
+            : categoryLabel === "可观察"
+              ? "accent"
+              : "muted",
     }));
 }
 
@@ -1736,6 +1802,276 @@ function glowRiskLabel(score: number): "低" | "中" | "高" {
   return "低";
 }
 
+function glowColorCarrierLabel(score: number): GlowAnalysisResult["labels"]["colorCarrier"] {
+  if (score >= 75) {
+    return "好";
+  }
+  if (score >= 55) {
+    return "一般";
+  }
+  return "差";
+}
+
+function glowPostRainOpeningLabel(
+  chance: GlowAnalysisResult["postRainOpeningChance"] | undefined,
+): string {
+  if (chance === "high") {
+    return "雨后开口机会高";
+  }
+  if (chance === "medium") {
+    return "雨后短暂开口可关注";
+  }
+  if (chance === "low") {
+    return "雨后开口机会低";
+  }
+  return "雨后开口待复核";
+}
+
+function glowRainOverlapText(analysis: GlowAnalysisResult): string {
+  if (analysis.rainOverlapsSunriseWindow && analysis.rainOverlapsSunsetWindow) {
+    return "降水同时影响日出和日落窗口。";
+  }
+  if (analysis.rainOverlapsSunriseWindow) {
+    return "降水主要影响清晨窗口，朝霞不确定性较高。";
+  }
+  if (analysis.rainOverlapsSunsetWindow) {
+    return "降水主要影响日落窗口，晚霞需要现场复核云层开口。";
+  }
+  return `降水对日出/日落窗口影响较小，${glowPostRainOpeningLabel(
+    analysis.postRainOpeningChance,
+  )}。`;
+}
+
+function generalGlowWindowValue(result: ForecastCalculationResult): string {
+  const best = result.glowAnalysis.bestGlowWindow ?? result.glowAnalysis.bestGlowWindows[0];
+  const watchable = result.glowAnalysis.watchableGlowWindows[0];
+  const window = best ?? watchable;
+
+  if (!window) {
+    return "暂无主要可观察窗口";
+  }
+
+  return `${windowDateLabel(result, window.date)} ${window.labelZh}`;
+}
+
+function generalGlowWindowDetail(result: ForecastCalculationResult): string {
+  const best = result.glowAnalysis.bestGlowWindow ?? result.glowAnalysis.bestGlowWindows[0];
+  const watchable = result.glowAnalysis.watchableGlowWindows[0];
+  const highConfidence =
+    result.glowAnalysis.bestGlowWindows.find(
+      (window) => (window.practicalScore ?? window.score) >= 75,
+    ) ?? result.glowAnalysis.bestGlowWindow;
+  const mainWindow = best ?? watchable;
+  const mainWindowText = mainWindow
+    ? `主要可观察窗口：${formatWindow(mainWindow.start, mainWindow.end)}，${glowWindowNote(
+        mainWindow,
+      )}`
+    : "主要可观察窗口：暂无。";
+  const highConfidenceText = highConfidence
+    ? `高确定性拍摄窗口：${windowDateLabel(result, highConfidence.date)} ${formatWindow(
+        highConfidence.start,
+        highConfidence.end,
+      )}。`
+    : "高确定性拍摄窗口：暂无。";
+
+  return `${mainWindowText}${highConfidenceText}${glowRainOverlapText(result.glowAnalysis)}`;
+}
+
+function buildGeneralResultWindows(
+  result: ForecastCalculationResult,
+): readonly ForecastResultWindow[] {
+  const nonGlowWindows = result.bestWindows.filter((window) => window.target !== "glow");
+  const glowWindows = buildGlowForecastWindows(result, false);
+  return mapResultWindows([...nonGlowWindows, ...glowWindows], result.calendarBasis.timezone);
+}
+
+function buildGlowForecastWindows(
+  result: ForecastCalculationResult,
+  includeAnalysisBestWhenMissing = true,
+): readonly ForecastTimeWindow[] {
+  const existingGlowWindows = result.bestWindows.filter((window) => window.target === "glow");
+  const shouldAddAnalysisBest =
+    (includeAnalysisBestWhenMissing && existingGlowWindows.length === 0) ||
+    existingGlowWindows.some(isExecutableForecastWindow);
+  const converted = [
+    ...existingGlowWindows,
+    ...(shouldAddAnalysisBest
+      ? result.glowAnalysis.bestGlowWindows.map((window, index) =>
+          glowWindowToForecastWindow(window, index === 0 ? "best" : "recommended"),
+        )
+      : []),
+    ...result.glowAnalysis.watchableGlowWindows.map((window) =>
+      glowWindowToForecastWindow(window, "watchable"),
+    ),
+    ...result.glowAnalysis.notRecommendedGlowWindows.map((window) =>
+      glowWindowToForecastWindow(window, "not-recommended"),
+    ),
+  ];
+
+  return dedupeForecastWindows(converted);
+}
+
+function dedupeForecastWindows(
+  windows: readonly ForecastTimeWindow[],
+): readonly ForecastTimeWindow[] {
+  const seen = new Set<string>();
+  const unique: ForecastTimeWindow[] = [];
+
+  for (const window of windows) {
+    const key = `${window.target}-${window.startTime}-${window.endTime}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(window);
+  }
+
+  return unique;
+}
+
+function glowWindowToForecastWindow(
+  window: GlowWindow,
+  priority: "best" | "recommended" | "watchable" | "not-recommended",
+): ForecastTimeWindow {
+  const windowLevel =
+    priority === "not-recommended"
+      ? "blocked"
+      : priority === "watchable"
+        ? "watchable"
+        : window.score >= 70
+          ? priority === "best"
+            ? "best"
+            : "shootable"
+          : "watchable";
+  const recommendationLevel: ForecastWindowRecommendationLevel =
+    windowLevel === "blocked"
+      ? "not_recommended"
+      : windowLevel === "watchable"
+        ? window.score >= 58
+          ? "cautious"
+          : "backup"
+        : window.score >= 70
+          ? "recommended"
+          : "cautious";
+
+  return {
+    label: window.labelZh,
+    date: window.date,
+    startTime: window.start,
+    endTime: window.end,
+    score: window.practicalScore ?? window.score,
+    target: "glow",
+    conditionScore: window.conditionScore ?? window.score,
+    practicalScore: window.practicalScore ?? window.score,
+    recommendationLevel,
+    windowLevel,
+    executableForDedicatedTrip: windowLevel === "best" || windowLevel === "shootable",
+    suitableIfNearby: windowLevel !== "blocked",
+    blockerReasons: window.riskTags,
+    copyReasonZh: glowWindowNote(window),
+    lightPhase: glowWindowLightPhase(window),
+    practicalNoteZh: glowWindowNote(window),
+    subjectPriorityLabel: window.labelZh,
+  };
+}
+
+function glowWindowLightPhase(window: GlowWindow): ForecastTimeWindow["lightPhase"] {
+  if (isMorningGlowWindow(window)) {
+    return window.type === "pre_dawn_glow" ? "dawn" : "sunrise";
+  }
+  if (window.type === "blue_hour_transition" || window.type === "afterglow") {
+    return "blue_hour";
+  }
+  return "sunset";
+}
+
+function glowWindowCategoryLabel(
+  window: GlowWindow,
+  source: "best" | "best-list" | "watchable" | "not-recommended",
+): "推荐拍摄" | "可观察" | "仅作备选" | "不建议" {
+  if (source === "not-recommended") {
+    return "不建议";
+  }
+  if (source === "watchable") {
+    return "可观察";
+  }
+  if ((window.practicalScore ?? window.score) >= 70) {
+    return "推荐拍摄";
+  }
+  if ((window.practicalScore ?? window.score) >= 55) {
+    return "可观察";
+  }
+  return "仅作备选";
+}
+
+function glowWindowNote(window: GlowWindow): string {
+  const rainText = window.rainOverlapsWindow
+    ? "降水与窗口重叠，需现场复核。"
+    : window.glowWindowRainRisk === "high"
+      ? "降水打断风险偏高。"
+      : "";
+  const postRainText =
+    window.postRainOpeningChance && window.postRainOpeningChance !== "low"
+      ? glowPostRainOpeningLabel(window.postRainOpeningChance)
+      : "";
+  return [window.noteZh, rainText, postRainText].filter(Boolean).join("");
+}
+
+function isMorningGlowWindow(window: Pick<GlowWindow, "type" | "start" | "labelZh">): boolean {
+  if (
+    window.type === "pre_dawn_glow" ||
+    window.type === "sunrise_core" ||
+    window.type === "morning_warm_light" ||
+    window.type === "sunrise"
+  ) {
+    return true;
+  }
+  if (
+    window.type === "sunset_warm_light" ||
+    window.type === "sunset_core" ||
+    window.type === "afterglow" ||
+    window.type === "sunset" ||
+    window.type === "blue_hour_transition"
+  ) {
+    return false;
+  }
+  const hourMatch = /T(\d{2})/.exec(window.start);
+  const hour = hourMatch ? Number(hourMatch[1]) : Number.NaN;
+  return Number.isFinite(hour) ? hour < 12 : window.labelZh.includes("朝霞");
+}
+
+function glowWindowForDateAndPhase(
+  analysis: GlowAnalysisResult,
+  date: string,
+  phase: "sunrise" | "sunset",
+): GlowWindow | undefined {
+  const windows = [
+    ...analysis.bestGlowWindows,
+    ...analysis.watchableGlowWindows,
+    ...analysis.notRecommendedGlowWindows,
+  ].filter((window) => window.date === date);
+  return windows.find((window) =>
+    phase === "sunrise" ? isMorningGlowWindow(window) : !isMorningGlowWindow(window),
+  );
+}
+
+function formatGlowWindowBrief(window: GlowWindow): string {
+  return `${window.labelZh} ${formatWindow(window.start, window.end)}`;
+}
+
+function dailyGlowRainOverlapLabel(day: GlowAnalysisResult["dailyGlow"][number]): string {
+  if (day.rainOverlapsSunriseWindow && day.rainOverlapsSunsetWindow) {
+    return "降水影响日出与日落窗口";
+  }
+  if (day.rainOverlapsSunriseWindow) {
+    return "降水主要影响清晨窗口";
+  }
+  if (day.rainOverlapsSunsetWindow) {
+    return "降水主要影响日落窗口";
+  }
+  return "降水与晨昏窗口重叠较少";
+}
+
 function listSection(
   key: string,
   title: string,
@@ -1790,10 +2126,7 @@ function buildCloudSeaDailyTrend(
         whiteoutRiskScore: whiteoutScore,
         bestMorningWindow: firstWindow?.timeRangeLabel ?? "暂无明确清晨窗口",
         watchableWindow: result.cloudSeaAnalysis.labels.watchableWindowLabel,
-        onSiteCheckpoints: [
-          "复核云雾上沿是否低于机位",
-          "复核远山层次和能见度是否可用",
-        ],
+        onSiteCheckpoints: ["复核云雾上沿是否低于机位", "复核远山层次和能见度是否可用"],
         keyReason: firstText(
           result.cloudSeaAnalysis.opportunityReasons,
           "当前云海窗口仍需等待更多天气信号。",
@@ -1815,9 +2148,12 @@ function buildCloudSeaDailyTrend(
       cloudSeaScore,
       cloudSeaLevel: scoreLevelText(scoreLevelFromScore(cloudSeaScore)),
       formationScore: day.formationScore ?? day.opportunityScore,
-      formationLevel: day.labels?.formationOpportunity ?? scoreLevelText(scoreLevelFromScore(day.opportunityScore)),
+      formationLevel:
+        day.labels?.formationOpportunity ??
+        scoreLevelText(scoreLevelFromScore(day.opportunityScore)),
       shootableScore: day.shootableScore ?? day.travelScore,
-      shootableLevel: day.labels?.shootableOpportunity ?? scoreLevelText(scoreLevelFromScore(day.travelScore)),
+      shootableLevel:
+        day.labels?.shootableOpportunity ?? scoreLevelText(scoreLevelFromScore(day.travelScore)),
       whiteoutRiskLabel: whiteoutRiskLabel(whiteoutScore),
       whiteoutRiskScore: whiteoutScore,
       bestMorningWindow: window
@@ -2103,7 +2439,9 @@ function whiteoutRiskLabel(score: number): "低" | "中" | "高" {
   return "低";
 }
 
-function postRainOpeningLabel(value: ForecastCalculationResult["cloudSeaAnalysis"]["rainOpening"]["postRainOpeningChance"]): string {
+function postRainOpeningLabel(
+  value: ForecastCalculationResult["cloudSeaAnalysis"]["rainOpening"]["postRainOpeningChance"],
+): string {
   if (value === "high") {
     return "高";
   }
@@ -2365,7 +2703,11 @@ function mapResultWindows(
 
 function displayWindowLabel(window: ForecastTimeWindow): string {
   const label = windowLabelText(window);
-  if (window.target === "astro" && label.includes("银河") && (window.weatherBlockers?.length ?? 0) === 0) {
+  if (
+    window.target === "astro" &&
+    label.includes("银河") &&
+    (window.weatherBlockers?.length ?? 0) === 0
+  ) {
     return "银河可拍窗口";
   }
   return label;
@@ -2379,7 +2721,7 @@ function windowRecommendationLevelLabel(
 
 function windowLevelLabel(level: ForecastTimeWindow["windowLevel"]): string {
   if (level === "best") {
-    return "最佳拍摄";
+    return "推荐拍摄";
   }
   if (level === "shootable") {
     return "推荐拍摄";
@@ -2388,9 +2730,9 @@ function windowLevelLabel(level: ForecastTimeWindow["windowLevel"]): string {
     return "可观察";
   }
   if (level === "blocked") {
-    return "不建议窗口";
+    return "不建议";
   }
-  return "谨慎参考";
+  return "仅作备选";
 }
 
 function isExecutableResultWindow(window: ForecastResultWindow): boolean {
@@ -2454,9 +2796,7 @@ function bestGeneralSubjectModuleKey(result: ForecastCalculationResult): Forecas
   return bestGeneralSubject(result)?.moduleKey ?? "recommendation";
 }
 
-function bestGeneralSubject(
-  result: ForecastCalculationResult,
-):
+function bestGeneralSubject(result: ForecastCalculationResult):
   | {
       readonly label: string;
       readonly moduleKey: ForecastResultModuleKey;

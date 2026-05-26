@@ -408,13 +408,7 @@ function compactTargetAnalysis(result: ForecastCalculationResult) {
   if (result.target === "glow") {
     return {
       target: result.target,
-      confidenceLevel: result.glowAnalysis.confidenceLevel,
-      sunriseGlowScore: result.glowAnalysis.sunriseGlowScore,
-      sunsetGlowScore: result.glowAnalysis.sunsetGlowScore,
-      lowCloudObstructionRisk: result.glowAnalysis.lowCloudObstructionRisk,
-      recommendationLabel: result.glowAnalysis.recommendationLabel,
-      bestWindows: takeItems(result.glowAnalysis.bestGlowWindows, 3),
-      missingDataNotes: takeTextItems(result.glowAnalysis.missingDataNotes, 4),
+      ...compactGlowAnalysis(result),
     };
   }
 
@@ -460,6 +454,66 @@ function compactCloudSeaAnalysisWindow(
     lightAlignedScore: window.lightAlignedScore,
     phase: window.phase,
     riskTag: window.riskTag,
+    noteZh: limitText(window.noteZh, 120),
+  };
+}
+
+function compactGlowAnalysis(result: ForecastCalculationResult) {
+  const timezone = result.calendarBasis.timezone;
+  const analysis = result.glowAnalysis;
+  const bestGlowWindow = analysis.bestGlowWindow ?? analysis.bestGlowWindows[0];
+
+  return {
+    confidenceLevel: analysis.confidenceLevel,
+    sunriseGlowScore: analysis.sunriseGlowScore,
+    sunsetGlowScore: analysis.sunsetGlowScore,
+    colorCarrierScore: analysis.colorCarrierScore,
+    lowCloudObstructionRisk: analysis.lowCloudObstructionRisk,
+    precipitationDisruptionRisk: analysis.precipitationDisruptionRisk,
+    visibilityColorQualityScore: analysis.visibilityColorQualityScore,
+    practicalGlowScore: analysis.practicalGlowScore,
+    recommendationLabel: analysis.recommendationLabel,
+    labels: analysis.labels,
+    bestGlowWindow: compactGlowWindow(bestGlowWindow, timezone),
+    watchableGlowWindow: compactGlowWindow(analysis.watchableGlowWindows[0], timezone),
+    rainOverlap: {
+      sunrise: analysis.rainOverlapsSunriseWindow,
+      sunset: analysis.rainOverlapsSunsetWindow,
+      windowRainRisk: analysis.glowWindowRainRisk,
+    },
+    postRainOpeningChance: analysis.postRainOpeningChance,
+    reasons: takeTextItems(analysis.opportunityReasons, 2, 100),
+    riskReasons: takeTextItems(analysis.riskReasons, 2, 100),
+  };
+}
+
+function compactGlowWindow(
+  window:
+    | ForecastCalculationResult["glowAnalysis"]["bestGlowWindow"]
+    | ForecastCalculationResult["glowAnalysis"]["bestGlowWindows"][number]
+    | undefined,
+  timezone: string,
+) {
+  if (!window) {
+    return null;
+  }
+
+  return {
+    type: window.type,
+    labelZh: window.labelZh,
+    date: window.date,
+    windowZh: formatShootingWindowZh({ startTime: window.start, endTime: window.end }, timezone),
+    score: window.score,
+    conditionScore: window.conditionScore,
+    practicalScore: window.practicalScore,
+    colorCarrierScore: window.colorCarrierScore,
+    lowCloudObstructionRisk: window.lowCloudObstructionRisk,
+    precipitationDisruptionRisk: window.precipitationDisruptionRisk,
+    visibilityColorQualityScore: window.visibilityColorQualityScore,
+    rainOverlapsWindow: window.rainOverlapsWindow,
+    postRainOpeningChance: window.postRainOpeningChance,
+    glowWindowRainRisk: window.glowWindowRainRisk,
+    riskTags: takeTextItems(window.riskTags, 3, 60),
     noteZh: limitText(window.noteZh, 120),
   };
 }
@@ -597,19 +651,24 @@ export function buildDeepSeekForecastContext(result: ForecastCalculationResult) 
         astroShootable: result.astroAnalysis.astroShootable,
         recommendationLabelZh: result.astroAnalysis.recommendationLabel,
         weatherBlockers: takeTextItems(result.astroAnalysis.weatherBlockers, 4),
-        recommendedMilkyWayWindows: takeItems(result.astroAnalysis.recommendedMilkyWayWindows, 2).map(
-          (window) => ({
-            labelZh: window.labelZh,
-            windowZh: formatShootingWindowZh(
-              { startTime: window.start, endTime: window.end },
-              timezone,
-            ),
-            score: window.score,
-            noteZh: window.noteZh,
-          }),
-        ),
+        recommendedMilkyWayWindows: takeItems(
+          result.astroAnalysis.recommendedMilkyWayWindows,
+          2,
+        ).map((window) => ({
+          labelZh: window.labelZh,
+          windowZh: formatShootingWindowZh(
+            { startTime: window.start, endTime: window.end },
+            timezone,
+          ),
+          score: window.score,
+          noteZh: window.noteZh,
+        })),
       },
     },
+    glowFacts:
+      result.target === "general" || result.target === "glow"
+        ? compactGlowAnalysis(result)
+        : undefined,
     terrainFacts: {
       dataSourceLabelZh: result.terrainAnalysis.dataSourceLabelZh,
       isMock: result.terrainAnalysis.isMock,
@@ -770,7 +829,19 @@ function compactDailyFact(
   };
 }
 
-function windowLabelZh(window: Pick<ForecastCalculationResult["bestWindows"][number], "label" | "target" | "startTime" | "endTime" | "subjectPriorityLabel" | "lightPhase" | "practicalKind" | "weatherBlockers">): string {
+function windowLabelZh(
+  window: Pick<
+    ForecastCalculationResult["bestWindows"][number],
+    | "label"
+    | "target"
+    | "startTime"
+    | "endTime"
+    | "subjectPriorityLabel"
+    | "lightPhase"
+    | "practicalKind"
+    | "weatherBlockers"
+  >,
+): string {
   const raw = stripWindowTime(window.subjectPriorityLabel ?? window.label);
   const hour = hourOf(window.startTime);
 
@@ -927,12 +998,15 @@ function formatWindValue(speed: number | null | undefined, gust?: number | null)
   if (typeof speed !== "number" || !Number.isFinite(speed)) {
     return "风力待复核";
   }
-  const gustText = typeof gust === "number" && Number.isFinite(gust) ? `，阵风 ${roundDisplay(gust)} m/s` : "";
+  const gustText =
+    typeof gust === "number" && Number.isFinite(gust) ? `，阵风 ${roundDisplay(gust)} m/s` : "";
   return `${roundDisplay(speed)} m/s${gustText}`;
 }
 
 function formatDistanceKm(value: number | null | undefined): string {
-  return typeof value === "number" && Number.isFinite(value) ? `${roundDisplay(value)} 公里` : "待复核";
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${roundDisplay(value)} 公里`
+    : "待复核";
 }
 
 function formatTransparencyValue(grade: string | undefined, score: number | undefined): string {
@@ -959,9 +1033,7 @@ function dailyMetricZh(
 }
 
 function stripWindowTime(text: string): string {
-  return text
-    .replace(/\s*\d{1,2}:\d{2}\s*[-–至到]\s*\d{1,2}:\d{2}\s*/g, "")
-    .trim();
+  return text.replace(/\s*\d{1,2}:\d{2}\s*[-–至到]\s*\d{1,2}:\d{2}\s*/g, "").trim();
 }
 
 function hourOf(value: string | undefined): number | undefined {
@@ -1137,10 +1209,7 @@ export function createRuleBasedForecastExplanation(
   const backupWindow = result.bestWindows.find((window) => window !== bestWindow);
   const bestDaily = bestDailySummaryForPlan(result, bestWindow);
   const dedicatedDecision = dedicatedTripDecisionZh(result, bestDaily);
-  const clothing = [
-    result.clothingGuide.summaryZh,
-    ...result.clothingGuide.layers.slice(0, 2),
-  ]
+  const clothing = [result.clothingGuide.summaryZh, ...result.clothingGuide.layers.slice(0, 2)]
     .filter(Boolean)
     .join(" ");
   const gear = [
@@ -1261,7 +1330,9 @@ function deterministicDayExplanation(
     temperatureZh: summary.weather
       ? formatTemperatureRange(summary.weather.tempMin, summary.weather.tempMax)
       : "温度待复核",
-    rainZh: summary.weather ? `${rainRiskSummaryZh(summary.weather)}；${rainTimingSummaryZh(summary.weather)}` : "降水待复核",
+    rainZh: summary.weather
+      ? `${rainRiskSummaryZh(summary.weather)}；${rainTimingSummaryZh(summary.weather)}`
+      : "降水待复核",
     cloudSeaZh: dailyMetricZh(breakdown?.cloudSea),
     glowZh: dailyMetricZh(breakdown?.sunriseGlow),
     sunsetGlowZh: dailyMetricZh(breakdown?.sunsetGlow),
@@ -1363,18 +1434,22 @@ function transparencyTrendSummary(result: ForecastCalculationResult): string {
   return `平均通透度约 ${Math.round(avg)} 分；湿度、低云和能见度会影响远山层次。`;
 }
 
-function scoreSentence(score: ForecastCalculationResult["scores"][keyof ForecastCalculationResult["scores"]]): string {
+function scoreSentence(
+  score: ForecastCalculationResult["scores"][keyof ForecastCalculationResult["scores"]],
+): string {
   return `${score.label} ${Math.round(score.score)} 分，${score.reasons[0] ?? "仍需现场复核"}`;
 }
 
 function bestSubjectFromScores(result: ForecastCalculationResult): string {
-  return [
-    result.scores.cloudSea,
-    result.scores.sunriseGlow,
-    result.scores.sunsetGlow,
-    result.scores.milkyWay,
-    result.scores.transparency,
-  ].sort((left, right) => right.score - left.score)[0]?.label ?? "综合题材";
+  return (
+    [
+      result.scores.cloudSea,
+      result.scores.sunriseGlow,
+      result.scores.sunsetGlow,
+      result.scores.milkyWay,
+      result.scores.transparency,
+    ].sort((left, right) => right.score - left.score)[0]?.label ?? "综合题材"
+  );
 }
 
 function dedicatedTripDecisionZh(

@@ -68,7 +68,9 @@ export function stripRepeatedCopyLabel(text: string | undefined, label: string):
 export function rainRiskText(weather: RainRiskWeather | undefined): RainRiskCopy {
   const amount = precipitationAmount(weather);
   const probability = displayedPrecipitationProbability(weather, amount);
-  const level = explicitRainRiskLevel(weather?.precipitationRisk) ?? precipitationRiskLevel(probability, amount);
+  const level =
+    explicitRainRiskLevel(weather?.precipitationRisk) ??
+    precipitationRiskLevel(probability, amount);
   const amountText = amount !== null && amount > 0 ? `预计 ${formatMillimeters(amount)}` : "";
   const probabilityText =
     typeof probability === "number" && Number.isFinite(probability)
@@ -103,9 +105,15 @@ export function rainTimingText(weather: RainRiskWeather | undefined): string {
   const raw = stripRepeatedCopyLabel(weather?.mainPrecipitationPeriodLabelZh, "主要降水");
   const natural = naturalRainPeriod(raw);
   const amount = precipitationAmount(weather);
-  const level = explicitRainRiskLevel(weather?.precipitationRisk) ?? precipitationRiskLevel(null, amount);
+  const level =
+    explicitRainRiskLevel(weather?.precipitationRisk) ?? precipitationRiskLevel(null, amount);
   const precipitationWord = precipitationTypeWord(weather);
-  const disruptionWord = weather?.precipitationType === "snow" ? "降雪" : weather?.precipitationType === "mixed" ? "雨雪" : "降水";
+  const disruptionWord =
+    weather?.precipitationType === "snow"
+      ? "降雪"
+      : weather?.precipitationType === "mixed"
+        ? "雨雪"
+        : "降水";
 
   if (!natural) {
     if (amount !== null && amount > 0) {
@@ -180,18 +188,18 @@ export function recommendationLevelText(
   level: ForecastWindowRecommendationLevel | undefined,
 ): string {
   if (level === "recommended") {
-    return "推荐执行";
+    return "推荐拍摄";
   }
   if (level === "cautious") {
-    return "谨慎参考";
+    return "可观察";
   }
   if (level === "backup") {
     return "仅作备选";
   }
   if (level === "not_recommended") {
-    return "不建议专程前往";
+    return "不建议";
   }
-  return "谨慎参考";
+  return "仅作备选";
 }
 
 export function dedicatedTripText(summary: DailySummary): string {
@@ -228,10 +236,9 @@ export function astroBlockedReasonText(
 
 export function clothingEquipmentAdvice(guide: ClothingGuide): readonly string[] {
   const clothing = [guide.summaryZh, ...guide.layers.slice(0, 2)].filter(Boolean).join(" ");
-  const equipment = [
-    ...guide.accessories.slice(0, 3),
-    ...guide.riskNotes.slice(0, 2),
-  ].filter(Boolean);
+  const equipment = [...guide.accessories.slice(0, 3), ...guide.riskNotes.slice(0, 2)].filter(
+    Boolean,
+  );
 
   return [
     clothing || guide.titleZh,
@@ -293,7 +300,10 @@ export function dailyCardActionSuggestion(options: {
     return "白墙风险偏高，不建议专程押云海；已在山上可观察低云上沿和风向变化。";
   }
 
-  return stripRepeatedCopyLabel(summary.shortAdvice, "建议") || "保留机位观察，把云层开口和通透度作为临场决策重点。";
+  return (
+    stripRepeatedCopyLabel(summary.shortAdvice, "建议") ||
+    "保留机位观察，把云层开口和通透度作为临场决策重点。"
+  );
 }
 
 export function watchableWindowText(
@@ -353,9 +363,7 @@ function naturalRainPeriod(raw: string): string {
 }
 
 function stripWindowTime(text: string): string {
-  return text
-    .replace(/\s*\d{1,2}:\d{2}\s*[-–至到]\s*\d{1,2}:\d{2}\s*/g, "")
-    .trim();
+  return text.replace(/\s*\d{1,2}:\d{2}\s*[-–至到]\s*\d{1,2}:\d{2}\s*/g, "").trim();
 }
 
 function hourOf(value: string | undefined): number | undefined {
