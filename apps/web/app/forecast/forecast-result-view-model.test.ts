@@ -40,6 +40,123 @@ function score(key: string, label: string, value: number): ForecastScore {
   };
 }
 
+type AstroAssessmentForTest = ForecastCalculationResult["astroAnalysis"]["assessment"];
+type DailyAstroForTest = ForecastCalculationResult["astroAnalysis"]["dailyAstro"][number];
+
+function astroAssessmentForTest(
+  overrides: Partial<AstroAssessmentForTest> = {},
+): AstroAssessmentForTest {
+  const { labels: labelOverrides, ...fieldOverrides } = overrides;
+  const labels = {
+    astronomicalWindow: "有",
+    starShootability: "中",
+    milkyWayShootability: "中",
+    moonlightImpact: "中",
+    cloudBlocker: "低",
+    dewRisk: "低",
+    windowRecommendation: "推荐银河窗口",
+    ...labelOverrides,
+  } satisfies AstroAssessmentForTest["labels"];
+
+  return {
+    astronomicalWindowScore: 74,
+    skyConditionScore: 72,
+    milkyWayGeometryScore: 70,
+    moonlightImpactScore: 38,
+    transparencyScore: 72,
+    dewRiskScore: 24,
+    practicalAstroScore: 68,
+    astroWindowAvailable: true,
+    astroShootable: true,
+    moonImpactLevel: "medium",
+    cloudBlockerLevel: "low",
+    dewRiskLevel: "low",
+    tripodWindRisk: "low",
+    astroWeatherBlockers: [],
+    moonImpactReasonsZh: ["月光影响中等。"],
+    gearAdviceZh: ["三脚架、头灯、备用电池和离线导航保持常备。"],
+    warmthAdviceZh: "夜间建议准备防风保暖层。",
+    ...fieldOverrides,
+    labels,
+  };
+}
+
+function astroAnalysisFieldsForTest(
+  assessment = astroAssessmentForTest(),
+): Pick<
+  ForecastCalculationResult["astroAnalysis"],
+  | "astronomicalWindowScore"
+  | "skyConditionScore"
+  | "milkyWayGeometryScore"
+  | "moonlightImpactScore"
+  | "dewRiskScore"
+  | "practicalAstroScore"
+  | "labels"
+  | "cloudBlockerLevel"
+  | "dewRiskLevel"
+  | "tripodWindRisk"
+  | "assessment"
+  | "recommendedMilkyWayWindow"
+  | "gearAdviceZh"
+  | "warmthAdviceZh"
+> {
+  return {
+    astronomicalWindowScore: assessment.astronomicalWindowScore,
+    skyConditionScore: assessment.skyConditionScore,
+    milkyWayGeometryScore: assessment.milkyWayGeometryScore,
+    moonlightImpactScore: assessment.moonlightImpactScore,
+    dewRiskScore: assessment.dewRiskScore,
+    practicalAstroScore: assessment.practicalAstroScore,
+    labels: assessment.labels,
+    cloudBlockerLevel: assessment.cloudBlockerLevel,
+    dewRiskLevel: assessment.dewRiskLevel,
+    tripodWindRisk: assessment.tripodWindRisk,
+    assessment,
+    recommendedMilkyWayWindow: assessment.recommendedMilkyWayWindow,
+    gearAdviceZh: assessment.gearAdviceZh,
+    warmthAdviceZh: assessment.warmthAdviceZh,
+  };
+}
+
+function dailyAstroFieldsForTest(
+  assessment = astroAssessmentForTest(),
+): Pick<
+  DailyAstroForTest,
+  | "astronomicalWindowScore"
+  | "skyConditionScore"
+  | "milkyWayGeometryScore"
+  | "moonlightImpactScore"
+  | "transparencyScore"
+  | "dewRiskScore"
+  | "practicalAstroScore"
+  | "astroWindowAvailable"
+  | "cloudBlockerLevel"
+  | "dewRiskLevel"
+  | "tripodWindRisk"
+  | "labels"
+  | "gearAdviceZh"
+  | "warmthAdviceZh"
+  | "assessment"
+> {
+  return {
+    astronomicalWindowScore: assessment.astronomicalWindowScore,
+    skyConditionScore: assessment.skyConditionScore,
+    milkyWayGeometryScore: assessment.milkyWayGeometryScore,
+    moonlightImpactScore: assessment.moonlightImpactScore,
+    transparencyScore: assessment.transparencyScore,
+    dewRiskScore: assessment.dewRiskScore,
+    practicalAstroScore: assessment.practicalAstroScore,
+    astroWindowAvailable: assessment.astroWindowAvailable,
+    cloudBlockerLevel: assessment.cloudBlockerLevel,
+    dewRiskLevel: assessment.dewRiskLevel,
+    tripodWindRisk: assessment.tripodWindRisk,
+    labels: assessment.labels,
+    gearAdviceZh: assessment.gearAdviceZh,
+    warmthAdviceZh: assessment.warmthAdviceZh,
+    assessment,
+  };
+}
+
 const baseResult: ForecastCalculationResult = {
   place: {
     id: "mock-place-huangshan",
@@ -579,6 +696,14 @@ const baseResult: ForecastCalculationResult = {
     milkyWayScore: 68,
     astroConditionScore: 74,
     astroPracticalScore: 68,
+    ...astroAnalysisFieldsForTest(
+      astroAssessmentForTest({
+        astronomicalWindowScore: 74,
+        skyConditionScore: 72,
+        milkyWayGeometryScore: 70,
+        practicalAstroScore: 68,
+      }),
+    ),
     moonImpactScore: 38,
     transparencyScore: 72,
     astroTravelScore: 70,
@@ -622,6 +747,14 @@ const baseResult: ForecastCalculationResult = {
         milkyWayScore: 68,
         astroConditionScore: 74,
         astroPracticalScore: 68,
+        ...dailyAstroFieldsForTest(
+          astroAssessmentForTest({
+            astronomicalWindowScore: 74,
+            skyConditionScore: 72,
+            milkyWayGeometryScore: 70,
+            practicalAstroScore: 68,
+          }),
+        ),
         astronomicalWindowAvailable: true,
         astroShootable: true,
         weatherBlockers: [],
@@ -673,6 +806,14 @@ const baseResult: ForecastCalculationResult = {
         milkyWayScore: 72,
         astroConditionScore: 76,
         astroPracticalScore: 72,
+        ...dailyAstroFieldsForTest(
+          astroAssessmentForTest({
+            astronomicalWindowScore: 76,
+            skyConditionScore: 74,
+            milkyWayGeometryScore: 72,
+            practicalAstroScore: 72,
+          }),
+        ),
         astronomicalWindowAvailable: true,
         astroShootable: true,
         weatherBlockers: [],
@@ -2887,6 +3028,9 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.bestWindows[0]?.moduleKey).toBe("astronomicalNight");
     expect(viewModel.bestWindows.map((window) => window.moduleKey)).toContain("milkyWay");
     expect(viewModel.bestWindows.map((window) => window.moduleKey)).not.toContain("cloudSea");
+    expect(JSON.stringify(viewModel.astro)).not.toMatch(
+      /QWeather|Open-Meteo|meteoblue|Amap|和风|高德/i,
+    );
     expect(viewModel.windowGroups.length).toBeGreaterThan(1);
   });
 
@@ -2963,6 +3107,14 @@ describe("forecast result target-aware view model", () => {
             milkyWayScore: 66,
             astroConditionScore: 72,
             astroPracticalScore: 66,
+            ...dailyAstroFieldsForTest(
+              astroAssessmentForTest({
+                astronomicalWindowScore: 72,
+                skyConditionScore: 68,
+                milkyWayGeometryScore: 66,
+                practicalAstroScore: 66,
+              }),
+            ),
             astronomicalWindowAvailable: true,
             astroShootable: true,
             weatherBlockers: [],

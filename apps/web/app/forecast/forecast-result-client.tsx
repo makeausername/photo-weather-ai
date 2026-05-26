@@ -1551,7 +1551,7 @@ function AstroDailyTrend({
         <div>
           <h2 className="text-lg font-bold text-card-foreground">每晚观星条件</h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            按每晚星空指数、银河指数、月光影响和主要窗口判断是否值得出发。
+            分开看天文窗口、天气可拍性、银河几何、月光、云量和露水风险。
           </p>
         </div>
         <Badge variant="muted">{forecastHorizonLabels[result.horizon]}</Badge>
@@ -1579,10 +1579,20 @@ function AstroDailyTrend({
                 value={item.astronomicalWindowAvailable ? "有" : "无"}
               />
               <AstroInlineDefinition label="天文条件" value={`${item.astroConditionScore} 分`} />
-              <AstroInlineDefinition label="星空可拍性" value={`${item.astroPracticalScore} 分`} />
+              <AstroInlineDefinition
+                label="星空可拍性"
+                value={`${item.starShootabilityLabel} / ${item.astroPracticalScore} 分`}
+              />
+              <AstroInlineDefinition
+                label="银河可拍性"
+                value={`${item.milkyWayShootabilityLabel} / ${item.milkyWayGeometryScore} 分`}
+              />
               <AstroInlineDefinition label="月光影响" value={item.moonImpactLabel} />
             </dl>
             <dl className="grid gap-1 text-sm">
+              <AstroInlineDefinition label="云量阻挡" value={item.cloudBlockerLabel} />
+              <AstroInlineDefinition label="露水风险" value={item.dewRiskLabel} />
+              <AstroInlineDefinition label="透明度" value={`${item.transparencyScore} 分`} />
               <AstroInlineDefinition label="天文黑夜" value={item.astronomicalNightLabel} />
               <AstroInlineDefinition label="无月黑夜" value={item.moonlessNightLabel} />
               <AstroInlineDefinition label="推荐银河窗口" value={item.recommendedMilkyWayLabel} />

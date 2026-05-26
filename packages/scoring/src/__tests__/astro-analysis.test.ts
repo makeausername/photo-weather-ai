@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AstroSummary, ForecastCalculationInput, NormalizedHourlyWeather } from "@photo-weather/shared";
+import type {
+  AstroSummary,
+  ForecastCalculationInput,
+  NormalizedHourlyWeather,
+} from "@photo-weather/shared";
 import {
   buildMockForecastInput,
   calculateAstroAnalysis,
@@ -134,7 +138,19 @@ describe("astro analysis", () => {
       milkyWayDirection: "东南方",
       milkyWayCalculationPrecision: "v1_approximate",
     };
-    const input = withSingleAstro(baseInput, brightMoonAstro);
+    const input = withHourlyWeather(withSingleAstro(baseInput, brightMoonAstro), (hour) => ({
+      ...hour,
+      cloudTotal: 12,
+      cloudLow: 4,
+      cloudMid: 8,
+      cloudHigh: 10,
+      humidity: 50,
+      visibility: 32,
+      precipitationProbability: 0,
+      precipitation: 0,
+      precipitationAmountMm: 0,
+      weatherTextZh: "晴",
+    }));
     const analysis = calculateAstroAnalysis(input, {
       starsScore: calculateStarsScore(input).score,
       milkyWayScore: calculateMilkyWayScore(input).score,
@@ -216,12 +232,18 @@ describe("astro analysis", () => {
     }));
     const result = calculateForecast(blocked);
 
+    expect(result.astroAnalysis.astroWindowAvailable).toBe(true);
+    expect(result.astroAnalysis.astroShootable).toBe(false);
     expect(result.astroAnalysis.astroConditionScore).toBeGreaterThan(
       result.astroAnalysis.astroPracticalScore,
+    );
+    expect(result.astroAnalysis.astronomicalWindowScore).toBeGreaterThan(
+      result.astroAnalysis.practicalAstroScore,
     );
     expect(result.astroAnalysis.astroPracticalScore).toBeLessThanOrEqual(34);
     expect(result.astroAnalysis.weatherBlockers.join("")).toContain("总云量");
     expect(result.astroAnalysis.travelRecommendations.join("")).toContain("不建议为此熬夜");
+    expect(result.astroAnalysis.recommendedMilkyWayWindows).toHaveLength(0);
   });
 
   it("blocks Milky Way recommendations when astronomical night overlaps rain", () => {
@@ -241,8 +263,14 @@ describe("astro analysis", () => {
     const result = calculateForecast(rainy);
 
     expect(result.astroAnalysis.astroPracticalScore).toBeLessThanOrEqual(34);
+    expect(result.astroAnalysis.astroShootable).toBe(false);
     expect(result.astroAnalysis.weatherBlockers.join("")).toContain("降水");
-    expect(result.bestWindows.find((window) => window.target === "astro")).toBeUndefined();
+    expect(result.astroAnalysis.recommendedMilkyWayWindows).toHaveLength(0);
+    expect(
+      result.bestWindows.some(
+        (window) => window.target === "astro" && window.executableForDedicatedTrip === true,
+      ),
+    ).toBe(false);
   });
 
   it("blocks favorable moon windows when low cloud is high", () => {
@@ -263,7 +291,10 @@ describe("astro analysis", () => {
 
     expect(result.astroAnalysis.astroConditionScore).toBeGreaterThan(50);
     expect(result.astroAnalysis.astroPracticalScore).toBeLessThanOrEqual(34);
+    expect(result.astroAnalysis.astroShootable).toBe(false);
     expect(result.astroAnalysis.weatherBlockers.join("")).toContain("低云");
+    expect(result.astroAnalysis.weatherBlockers.join("")).toContain("星空银河实际可见性较差");
+    expect(result.astroAnalysis.recommendedMilkyWayWindows).toHaveLength(0);
   });
 
   it("allows astro to score high when sky, moon, rain, and transparency are favorable", () => {
@@ -284,8 +315,125 @@ describe("astro analysis", () => {
     const result = calculateForecast(clear);
 
     expect(result.astroAnalysis.astroPracticalScore).toBeGreaterThanOrEqual(60);
+    expect(result.astroAnalysis.astroShootable).toBe(true);
+    expect(result.astroAnalysis.labels.windowRecommendation).toBe("推荐银河窗口");
     expect(result.astroAnalysis.weatherBlockers).toHaveLength(0);
     expect(result.bestWindows.some((window) => window.target === "astro")).toBe(true);
+    expect(result.astroAnalysis.travelRecommendations.join("")).toMatch(
+      /推荐银河窗口：2026年\d+月\d+日/,
+    );
+  });
+
+  it("reduces Milky Way recommendation when the moon is high and bright", () => {
+    const clearMoonless = withHourlyWeather(
+      withLowMoon(buildMockForecastInput(baseQuery, { now: fixedNow })),
+      (hour) => ({
+        ...hour,
+        cloudTotal: 8,
+        cloudLow: 2,
+        cloudMid: 4,
+        cloudHigh: 6,
+        humidity: 48,
+        visibility: 36,
+        precipitationProbability: 0,
+        precipitation: 0,
+        precipitationAmountMm: 0,
+        weatherTextZh: "晴",
+      }),
+    );
+    const brightMoon = {
+      ...clearMoonless,
+      astroSummaries: clearMoonless.astroSummaries.map((summary) => ({
+        ...summary,
+        moonIllumination: 0.88,
+        moonAltitudeByHour: Object.fromEntries(
+          Array.from({ length: 24 }, (_, hour) => [String(hour).padStart(2, "0"), 42]),
+        ),
+        moonInfo: {
+          ...summary.moonInfo,
+          moonIllumination: 0.88,
+          moonAltitudeByHour: Object.fromEntries(
+            Array.from({ length: 24 }, (_, hour) => [String(hour).padStart(2, "0"), 42]),
+          ),
+        },
+      })),
+    };
+    const clearResult = calculateForecast(clearMoonless);
+    const brightMoonResult = calculateForecast(brightMoon);
+
+    expect(brightMoonResult.astroAnalysis.moonlightImpactScore).toBeGreaterThanOrEqual(65);
+    expect(brightMoonResult.astroAnalysis.milkyWayScore).toBeLessThan(
+      clearResult.astroAnalysis.milkyWayScore,
+    );
+    expect(brightMoonResult.astroAnalysis.labels.milkyWayShootability).not.toBe("高");
+  });
+
+  it("marks dew risk high for humid, low-spread, low-wind astro windows", () => {
+    const baseInput = withLowMoon(buildMockForecastInput(baseQuery, { now: fixedNow }));
+    const humid = withHourlyWeather(baseInput, (hour) => ({
+      ...hour,
+      cloudTotal: 12,
+      cloudLow: 4,
+      cloudMid: 8,
+      cloudHigh: 10,
+      humidity: 94,
+      dewPointSpread: 1.2,
+      windSpeed: 0.8,
+      windGust: 1.4,
+      visibility: 26,
+      precipitationProbability: 0,
+      precipitation: 0,
+      precipitationAmountMm: 0,
+      weatherTextZh: "晴",
+    }));
+    const result = calculateForecast(humid);
+
+    expect(result.astroAnalysis.dewRiskLevel).toBe("high");
+    expect(result.astroAnalysis.dewRiskScore).toBeGreaterThanOrEqual(80);
+    expect(result.astroAnalysis.gearAdviceZh.join("")).toContain("镜头加热带");
+  });
+
+  it("does not let general recommendations choose astro when astro is not shootable", () => {
+    const baseInput = withLowMoon(
+      buildMockForecastInput({ ...baseQuery, target: "general" }, { now: fixedNow }),
+    );
+    const cloudy = withHourlyWeather(baseInput, (hour) => ({
+      ...hour,
+      cloudTotal: 90,
+      cloudLow: 60,
+      cloudMid: 72,
+      cloudHigh: 80,
+      humidity: 88,
+      visibility: 18,
+      precipitationProbability: 0,
+      precipitation: 0,
+      precipitationAmountMm: 0,
+      weatherTextZh: "阴",
+    }));
+    const result = calculateForecast(cloudy);
+
+    expect(result.astroAnalysis.astroWindowAvailable).toBe(true);
+    expect(result.astroAnalysis.astroShootable).toBe(false);
+    expect(
+      result.bestWindows.some(
+        (window) => window.target === "astro" && window.executableForDedicatedTrip === true,
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps normal astro analysis provider-neutral", () => {
+    const result = calculateForecast(
+      withLowMoon(buildMockForecastInput(baseQuery, { now: fixedNow })),
+    );
+    const publicAstroText = JSON.stringify({
+      labels: result.astroAnalysis.labels,
+      riskReasons: result.astroAnalysis.riskReasons,
+      opportunityReasons: result.astroAnalysis.opportunityReasons,
+      travelRecommendations: result.astroAnalysis.travelRecommendations,
+      dailyAstro: result.astroAnalysis.dailyAstro,
+    });
+
+    expect(publicAstroText).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风|高德/i);
   });
 
   it("does not call real external APIs for astro analysis", () => {

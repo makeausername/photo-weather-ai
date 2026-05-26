@@ -211,9 +211,13 @@ describe("mock forecast input builder", () => {
     expect(
       astroResult.bestWindows.filter((window) => window.label.startsWith("天文黑夜")).length,
     ).toBeGreaterThanOrEqual(7);
+    expect(astroResult.astroAnalysis.milkyWayCandidateWindows.length).toBeGreaterThan(1);
     expect(
-      astroResult.bestWindows.filter((window) => window.label.startsWith("推荐银河窗口")).length,
-    ).toBeGreaterThan(1);
+      astroResult.astroAnalysis.recommendedMilkyWayWindows.every((window) => {
+        const daily = astroResult.astroAnalysis.dailyAstro.find((day) => day.date === window.date);
+        return daily?.astroShootable === true && daily.weatherBlockers.length === 0;
+      }),
+    ).toBe(true);
     expect(
       astroResult.dailySummaries.filter((day) => day.keyWindows.length > 0).length,
     ).toBeGreaterThan(1);

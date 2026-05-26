@@ -74,13 +74,7 @@ export type TerrainType =
 
 export type ExposureType = "exposed" | "semi_exposed" | "sheltered" | "unknown";
 
-export type TerrainViewingDirection =
-  | "east"
-  | "west"
-  | "south"
-  | "north"
-  | "panoramic"
-  | "unknown";
+export type TerrainViewingDirection = "east" | "west" | "south" | "north" | "panoramic" | "unknown";
 
 export type SpotTerrainProfile = {
   readonly latitudeWgs84: number;
@@ -302,7 +296,10 @@ export type NormalizedDailyWeather = {
   readonly elevationAdjustedTempMax?: number;
   readonly temperatureAdjustment?: Omit<
     ElevationTemperatureAdjustment,
-    "rawTemperature" | "rawTemperatureC" | "elevationAdjustedTemperature" | "terrainAdjustedTemperatureC"
+    | "rawTemperature"
+    | "rawTemperatureC"
+    | "elevationAdjustedTemperature"
+    | "terrainAdjustedTemperatureC"
   >;
   readonly precipitationProbability: number | null;
   readonly precipitationProbabilityPercent?: number | null;
@@ -944,6 +941,24 @@ export type AstroRecommendationLabel = "推荐重点关注" | "值得等待" | "
 
 export type MoonImpactLevel = "low" | "medium" | "high";
 
+export type AstroRiskLevel = "low" | "medium" | "high";
+
+export type AstroShootabilityLabel = "高" | "中" | "低";
+
+export type AstroWindowPresenceLabel = "有" | "无";
+
+export type AstroWindowRecommendationLabel = "推荐银河窗口" | "仅作备选窗口" | "不建议窗口";
+
+export type AstroPhotographyLabels = {
+  readonly astronomicalWindow: AstroWindowPresenceLabel;
+  readonly starShootability: AstroShootabilityLabel;
+  readonly milkyWayShootability: AstroShootabilityLabel;
+  readonly moonlightImpact: AstroShootabilityLabel;
+  readonly cloudBlocker: AstroShootabilityLabel;
+  readonly dewRisk: AstroShootabilityLabel;
+  readonly windowRecommendation: AstroWindowRecommendationLabel;
+};
+
 export type AstroWindowType =
   | "astronomical_night"
   | "moonless_night"
@@ -980,16 +995,53 @@ export type DailyAstro = {
   readonly milkyWayScore: number;
   readonly astroConditionScore: number;
   readonly astroPracticalScore: number;
+  readonly astronomicalWindowScore: number;
+  readonly skyConditionScore: number;
+  readonly milkyWayGeometryScore: number;
+  readonly moonlightImpactScore: number;
+  readonly transparencyScore: number;
+  readonly dewRiskScore: number;
+  readonly practicalAstroScore: number;
   readonly astronomicalWindowAvailable: boolean;
+  readonly astroWindowAvailable: boolean;
   readonly astroShootable: boolean;
   readonly weatherBlockers: readonly string[];
   readonly moonImpactLevel: MoonImpactLevel;
+  readonly cloudBlockerLevel: AstroRiskLevel;
+  readonly dewRiskLevel: AstroRiskLevel;
+  readonly tripodWindRisk: AstroRiskLevel;
+  readonly labels: AstroPhotographyLabels;
+  readonly gearAdviceZh: readonly string[];
+  readonly warmthAdviceZh: string;
   readonly astronomicalNightWindow?: AstroWindow;
   readonly moonlessNightWindow?: AstroWindow;
   readonly recommendedMilkyWayWindow?: AstroWindow;
+  readonly assessment: AstroPhotographyAssessment;
   readonly recommendationLabel: AstroRecommendationLabel;
   readonly keyReason: string;
   readonly riskNote: string;
+};
+
+export type AstroPhotographyAssessment = {
+  readonly astronomicalWindowScore: number;
+  readonly skyConditionScore: number;
+  readonly milkyWayGeometryScore: number;
+  readonly moonlightImpactScore: number;
+  readonly transparencyScore: number;
+  readonly dewRiskScore: number;
+  readonly practicalAstroScore: number;
+  readonly astroWindowAvailable: boolean;
+  readonly astroShootable: boolean;
+  readonly labels: AstroPhotographyLabels;
+  readonly moonImpactLevel: MoonImpactLevel;
+  readonly cloudBlockerLevel: AstroRiskLevel;
+  readonly dewRiskLevel: AstroRiskLevel;
+  readonly tripodWindRisk: AstroRiskLevel;
+  readonly astroWeatherBlockers: readonly string[];
+  readonly recommendedMilkyWayWindow?: AstroWindow;
+  readonly moonImpactReasonsZh: readonly string[];
+  readonly gearAdviceZh: readonly string[];
+  readonly warmthAdviceZh: string;
 };
 
 export type AstroEvidenceItem = {
@@ -1011,13 +1063,27 @@ export type AstroAnalysisResult = {
   readonly milkyWayScore: number;
   readonly astroConditionScore: number;
   readonly astroPracticalScore: number;
+  readonly astronomicalWindowScore: number;
+  readonly skyConditionScore: number;
+  readonly milkyWayGeometryScore: number;
+  readonly moonlightImpactScore: number;
   readonly moonImpactScore: number;
   readonly transparencyScore: number;
+  readonly dewRiskScore: number;
+  readonly practicalAstroScore: number;
   readonly astroTravelScore: number;
   readonly recommendationLabel: AstroRecommendationLabel;
   readonly confidenceLevel: AstroConfidenceLevel;
   readonly astroWindowAvailable: boolean;
   readonly astroShootable: boolean;
+  readonly labels: AstroPhotographyLabels;
+  readonly cloudBlockerLevel: AstroRiskLevel;
+  readonly dewRiskLevel: AstroRiskLevel;
+  readonly tripodWindRisk: AstroRiskLevel;
+  readonly assessment: AstroPhotographyAssessment;
+  readonly recommendedMilkyWayWindow?: AstroWindow;
+  readonly gearAdviceZh: readonly string[];
+  readonly warmthAdviceZh: string;
   readonly bestAstroWindows: readonly AstroWindow[];
   readonly dailyAstro: readonly DailyAstro[];
   readonly moonInfo?: MoonInfo;

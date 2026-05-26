@@ -292,6 +292,7 @@ const rawVisibility = firstNumber(current.rawVisibilityKm, current.visibility, f
 const transparencyScore = firstNumber(current.photographyTransparencyScore, firstDaily.photographyTransparencyScore);
 const transparencyGrade = firstValue(current.transparencyGrade, firstDaily.transparencyGrade);
 const astroAnalysis = result.astroAnalysis || {};
+const astroAssessment = astroAnalysis.assessment || {};
 const astroBlockers = Array.isArray(astroAnalysis.weatherBlockers) ? astroAnalysis.weatherBlockers : [];
 const timezone = result.calendarBasis?.timezone || "Asia/Shanghai";
 const cloudSeaAnalysis = result.cloudSeaAnalysis || {};
@@ -372,11 +373,27 @@ console.log(`glowWindowRainRisk: ${value(glowAnalysis.glowWindowRainRisk)}`);
 console.log(`bestGlowWindow: ${bestGlowWindow.start && bestGlowWindow.end ? formatWindowLabel(bestGlowWindow, timezone) : "暂无高确定性霞光窗口"} label=${value(bestGlowWindow.labelZh)} score=${number(bestGlowWindow.score)} condition=${number(bestGlowWindow.conditionScore)} practical=${number(bestGlowWindow.practicalScore)} carrier=${number(bestGlowWindow.colorCarrierScore)} lowCloud=${number(bestGlowWindow.lowCloudObstructionRisk)} rain=${value(bestGlowWindow.glowWindowRainRisk)}`);
 console.log(`glowConfidence: score=${number(glowAnalysis.confidence)} level=${value(glowAnalysis.confidenceLevel)}`);
 console.log(`glowReasons: ${glowReasons.slice(0, 8).join(" | ") || "暂无"}`);
+const recommendedMilkyWayWindow =
+  astroAnalysis.recommendedMilkyWayWindow ||
+  astroAssessment.recommendedMilkyWayWindow ||
+  (Array.isArray(astroAnalysis.recommendedMilkyWayWindows) ? astroAnalysis.recommendedMilkyWayWindows[0] : undefined) ||
+  {};
+console.log(`astronomicalWindowScore: ${number(astroAnalysis.astronomicalWindowScore ?? astroAssessment.astronomicalWindowScore)}`);
+console.log(`skyConditionScore: ${number(astroAnalysis.skyConditionScore ?? astroAssessment.skyConditionScore)}`);
+console.log(`milkyWayGeometryScore: ${number(astroAnalysis.milkyWayGeometryScore ?? astroAssessment.milkyWayGeometryScore)}`);
+console.log(`moonlightImpactScore: ${number(astroAnalysis.moonlightImpactScore ?? astroAssessment.moonlightImpactScore)}`);
+console.log(`transparencyScore: ${number(astroAnalysis.transparencyScore ?? astroAssessment.transparencyScore)}`);
+console.log(`dewRiskScore: ${number(astroAnalysis.dewRiskScore ?? astroAssessment.dewRiskScore)}`);
+console.log(`practicalAstroScore: ${number(astroAnalysis.practicalAstroScore ?? astroAssessment.practicalAstroScore ?? astroAnalysis.astroPracticalScore)}`);
 console.log(`astroConditionScore: ${number(astroAnalysis.astroConditionScore)}`);
 console.log(`astroPracticalScore: ${number(astroAnalysis.astroPracticalScore)}`);
 console.log(`astroWindowAvailable: ${value(astroAnalysis.astroWindowAvailable)}`);
 console.log(`astroShootable: ${value(astroAnalysis.astroShootable)}`);
 console.log(`astroWeatherBlockers: ${astroBlockers.length > 0 ? astroBlockers.join(" | ") : "无"}`);
+console.log(`recommendedMilkyWayWindow: ${recommendedMilkyWayWindow.start || recommendedMilkyWayWindow.startTime ? formatWindowLabel(recommendedMilkyWayWindow, timezone) : "none"} direction=${value(recommendedMilkyWayWindow.directionZh)} score=${number(recommendedMilkyWayWindow.score)}`);
+console.log(`moonImpact: level=${value(astroAnalysis.labels?.moonlightImpact || astroAssessment.labels?.moonlightImpact)} score=${number(astroAnalysis.moonlightImpactScore ?? astroAnalysis.moonImpactScore ?? astroAssessment.moonlightImpactScore)} reasons=${Array.isArray(astroAssessment.moonImpactReasonsZh) ? astroAssessment.moonImpactReasonsZh.join(" | ") : "暂无"}`);
+console.log(`cloudBlockers: level=${value(astroAnalysis.labels?.cloudBlocker || astroAssessment.labels?.cloudBlocker)} blockers=${astroBlockers.length > 0 ? astroBlockers.join(" | ") : "无"}`);
+console.log(`dewRisk: level=${value(astroAnalysis.labels?.dewRisk || astroAssessment.labels?.dewRisk)} score=${number(astroAnalysis.dewRiskScore ?? astroAssessment.dewRiskScore)} gear=${Array.isArray(astroAnalysis.gearAdviceZh || astroAssessment.gearAdviceZh) ? (astroAnalysis.gearAdviceZh || astroAssessment.gearAdviceZh).join(" | ") : "暂无"}`);
 console.log(`bestWindowFullLabel: ${formatWindowLabel(firstWindow, timezone)}`);
 console.log(`bestWindow: ${value(firstWindow.label)} score=${number(firstWindow.score)} practical=${number(firstWindow.practicalScore)} condition=${number(firstWindow.conditionScore)} kind=${value(firstWindow.practicalKind)} light=${value(firstWindow.lightPhase)} windowLevel=${value(firstWindow.windowLevel)} executable=${value(firstWindow.executableForDedicatedTrip)} nearby=${value(firstWindow.suitableIfNearby)}`);
 console.log(`generalBestSubject: ${value(firstWindow.subjectPriorityLabel || result.recommendationLabel)}`);

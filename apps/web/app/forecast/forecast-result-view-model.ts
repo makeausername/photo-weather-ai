@@ -316,10 +316,19 @@ export type AstroDailyTrendItem = {
   readonly milkyWayScore: number;
   readonly astroConditionScore: number;
   readonly astroPracticalScore: number;
+  readonly skyConditionScore: number;
+  readonly milkyWayGeometryScore: number;
+  readonly transparencyScore: number;
+  readonly dewRiskScore: number;
   readonly astronomicalWindowAvailable: boolean;
   readonly astroShootable: boolean;
   readonly weatherBlockers: readonly string[];
   readonly moonImpactLabel: string;
+  readonly starShootabilityLabel: string;
+  readonly milkyWayShootabilityLabel: string;
+  readonly cloudBlockerLabel: string;
+  readonly dewRiskLabel: string;
+  readonly windowRecommendationLabel: string;
   readonly astronomicalNightLabel: string;
   readonly moonlessNightLabel: string;
   readonly recommendedMilkyWayLabel: string;
@@ -827,7 +836,6 @@ export function buildAstroForecastViewModel(
   const firstMoon = analysis.moonInfo ?? result.astroSummaries[0]?.moonInfo;
   const bestRecommendedWindow = analysis.recommendedMilkyWayWindows[0];
   const bestMoonlessWindow = analysis.moonlessNightWindows[0];
-  const moonImpactLabel = moonImpactLevelLabel(firstDaily?.moonImpactLevel);
   const moonImpactTone =
     firstDaily?.moonImpactLevel === "high"
       ? "danger"
@@ -851,50 +859,50 @@ export function buildAstroForecastViewModel(
         "astro-practical-score",
         "milkyWay",
         "星空可拍性",
-        `${analysis.astroPracticalScore}`,
+        `${analysis.practicalAstroScore}`,
         analysis.weatherBlockers.length > 0
           ? "天文窗口存在，但云量、低云、降水或透明度不支持作为主拍摄计划。"
           : "已同时叠加天文窗口、月光、云量、低云、降水和透明度。",
-        analysis.astroPracticalScore >= 60 ? "primary" : "danger",
-        analysis.astroPracticalScore,
+        analysis.practicalAstroScore >= 60 ? "primary" : "danger",
+        analysis.practicalAstroScore,
       ),
       scoreCard(
         "astro-condition-score",
         "astronomicalNight",
         "天文条件",
-        `${analysis.astroConditionScore}`,
+        `${analysis.astronomicalWindowScore}`,
         "只看天文黑夜、月光和银河可见时间，不等同于实际可拍性。",
         "info",
-        analysis.astroConditionScore,
+        analysis.astronomicalWindowScore,
       ),
       scoreCard(
         "astro-stars-score",
         "stars",
         "星空指数",
-        `${analysis.starsScore}`,
-        "按云量、分层云、能见度、湿度、降水和月光影响折算。",
+        `${analysis.skyConditionScore}`,
+        "按总云量、低云、中高云、能见度、降水和天气现象折算实际天空条件。",
         "primary",
-        analysis.starsScore,
+        analysis.skyConditionScore,
       ),
       scoreCard(
         "astro-milky-way-score",
         "milkyWay",
         "银河指数",
-        `${analysis.milkyWayScore}`,
-        "按推荐银河窗口、银心高度方向、月光、云量、透明度和遮挡风险折算。",
+        `${analysis.milkyWayGeometryScore}`,
+        "按银心高度、方向、窗口时长和银河方向地形遮挡折算。",
         "primary",
-        analysis.milkyWayScore,
+        analysis.milkyWayGeometryScore,
       ),
       scoreCard(
         "astro-moon-impact",
         "moon",
         "月光影响",
-        moonImpactLabel,
+        analysis.labels.moonlightImpact,
         `${firstMoon?.moonPhaseNameZh ?? "暂无月相"}，照明 ${formatPercent(
           firstMoon?.moonIllumination,
-        )}，影响分 ${analysis.moonImpactScore}。`,
+        )}，影响分 ${analysis.moonlightImpactScore}。`,
         moonImpactTone,
-        analysis.moonImpactScore,
+        analysis.moonlightImpactScore,
       ),
       textCard(
         "astro-best-window",
@@ -2564,10 +2572,19 @@ function mapDailyAstro(day: DailyAstro): AstroDailyTrendItem {
     milkyWayScore: day.milkyWayScore,
     astroConditionScore: day.astroConditionScore,
     astroPracticalScore: day.astroPracticalScore,
+    skyConditionScore: day.skyConditionScore,
+    milkyWayGeometryScore: day.milkyWayGeometryScore,
+    transparencyScore: day.transparencyScore,
+    dewRiskScore: day.dewRiskScore,
     astronomicalWindowAvailable: day.astronomicalWindowAvailable,
     astroShootable: day.astroShootable,
     weatherBlockers: day.weatherBlockers,
     moonImpactLabel: moonImpactLevelLabel(day.moonImpactLevel),
+    starShootabilityLabel: day.labels.starShootability,
+    milkyWayShootabilityLabel: day.labels.milkyWayShootability,
+    cloudBlockerLabel: day.labels.cloudBlocker,
+    dewRiskLabel: day.labels.dewRisk,
+    windowRecommendationLabel: day.labels.windowRecommendation,
     astronomicalNightLabel: day.astronomicalNightWindow
       ? formatAstroWindowValue(day.astronomicalNightWindow)
       : "暂无完整窗口",

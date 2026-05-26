@@ -511,7 +511,7 @@ describe("forecast score calculators", () => {
     expect(astroResult.scores.milkyWay.score).toBeGreaterThan(
       astroResult.scores.whiteoutRisk.score,
     );
-    expect(["不建议前往", "谨慎参考", "值得等待", "推荐前往"]).toContain(
+    expect(["不建议前往", "谨慎参考", "值得等待", "推荐前往", "推荐重点关注"]).toContain(
       astroResult.recommendationLabel,
     );
     expect(astroResult.summary).toContain("演示评分");
