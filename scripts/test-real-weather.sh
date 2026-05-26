@@ -232,6 +232,11 @@ function sourceLine(source) {
     source.errorCategory ? `error=${source.errorCategory}` : "",
     Array.isArray(source.extractedFields) ? `fields=${source.extractedFields.join(",")}` : "",
     Array.isArray(source.missingFields) ? `missing=${source.missingFields.join(",")}` : "",
+    typeof source.providerElevationMeters === "number" ? `providerElevationMeters=${source.providerElevationMeters}` : "",
+    typeof source.selectedSpotElevationMeters === "number" ? `selectedSpotElevationMeters=${source.selectedSpotElevationMeters}` : "",
+    typeof source.elevationDifferenceMeters === "number" ? `elevationDifferenceMeters=${source.elevationDifferenceMeters}` : "",
+    typeof source.terrainAdjustmentApplied === "boolean" ? `terrainAdjustmentApplied=${source.terrainAdjustmentApplied}` : "",
+    source.terrainAdjustmentReason ? `terrainAdjustmentReason=${source.terrainAdjustmentReason}` : "",
   ].filter(Boolean).join(" ");
   return `- ${value(source.providerLabelZh)} ${status} message=${value(source.messageZh || source.warningZh)}`;
 }
@@ -300,8 +305,11 @@ console.log(`temperatureCorrectionApplied: ${value(tempAdjustment.correctionAppl
 console.log(`temperatureCorrectionReason: ${value(tempAdjustment.correctionReason)}`);
 console.log(`temperatureCorrectionMeters: ${number(tempAdjustment.correctionMeters, "m")}`);
 console.log(`temperatureCorrectionCelsius: ${number(tempAdjustment.correctionCelsius, "°C")}`);
+console.log(`dayCorrectionRatio: ${value(tempAdjustment.dayCorrectionRatio)}`);
+console.log(`nightCorrectionRatio: ${value(tempAdjustment.nightCorrectionRatio)}`);
 console.log(`correctedTemperature: ${number(adjustedTemp, "°C")}`);
 console.log(`feelsLike: ${number(current.feelsLike, "°C")}`);
+console.log(`mountainFeelsLikeC: ${number(firstNumber(current.mountainFeelsLikeC, firstDaily.mountainFeelsLikeC), "°C")}`);
 console.log(`precipitationProbability: ${probabilityText(precipProbability)}`);
 console.log(`precipitationAmount: ${number(precipAmount, "mm")} type=${value(current.precipitationType || firstDaily.precipitationType)}`);
 console.log(`precipitationRisk: level=${value(precipRisk.rainRiskLevel)} label=${value(precipRisk.rainRiskLabelZh)} amount=${number(precipRisk.precipitationAmountMm, "mm")} probability=${probabilityText(precipRisk.precipitationProbabilityPercent)}`);
@@ -309,7 +317,9 @@ console.log(`precipitationAffectedWindows: ${Array.isArray(precipRisk.affectedWi
 console.log(`precipitationRecommendation: ${value(precipRisk.recommendationZh)}`);
 console.log(`rainAmount: ${number(firstNumber(current.rainAmountMm, firstDaily.rainAmountMm), "mm")}`);
 console.log(`snowAmount: ${number(firstNumber(current.snowAmountMm, firstDaily.snowAmountMm), "mm")}`);
-console.log(`wind: speed=${number(current.windSpeed, "m/s")} gust=${number(current.windGust, "m/s")} direction=${value(current.windDirection)} ridgeRisk=${value(current.exposedRidgeWindRisk || firstDaily.exposedRidgeWindRisk)}`);
+console.log(`wind: speed=${number(current.windSpeed, "m/s")} gust=${number(current.windGust, "m/s")} direction=${value(current.windDirection)} ridgeRisk=${value(current.exposedRidgeWindRisk || firstDaily.exposedRidgeWindRisk)} tripodStabilityRisk=${value(current.tripodStabilityRisk || firstDaily.tripodStabilityRisk)}`);
+console.log(`windChillNoteZh: ${value(current.windChillNoteZh || firstDaily.windChillNoteZh)}`);
+console.log(`clothingRiskNoteZh: ${value(current.clothingRiskNoteZh || firstDaily.clothingRiskNoteZh)}`);
 console.log(`rawVisibility: ${number(rawVisibility, "km")} transparencyGrade=${gradeZh(transparencyGrade)} transparencyScore=${number(transparencyScore)}`);
 console.log(`humidity: ${percent(current.humidity)} dewPointSpread=${number(firstNumber(current.dewPointSpread, firstDaily.dewPointSpread), "°C")}`);
 console.log(`cloud: total=${percent(firstNumber(current.cloudTotal, firstDaily.cloudTotal))} low=${percent(firstNumber(current.cloudLow, firstDaily.cloudLow))} mid=${percent(firstNumber(current.cloudMid, firstDaily.cloudMid))} high=${percent(firstNumber(current.cloudHigh, firstDaily.cloudHigh))}`);

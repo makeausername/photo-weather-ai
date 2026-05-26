@@ -1,5 +1,9 @@
 import { defaultTimezone, formatZonedIso, getNowInTimezone } from "@photo-weather/calendar";
-import type { NormalizedCurrentWeather, NormalizedHourlyWeather } from "@photo-weather/shared";
+import type {
+  NormalizedCurrentWeather,
+  NormalizedHourlyWeather,
+  WeatherProviderTerrainMetadata,
+} from "@photo-weather/shared";
 import type { WeatherProvider } from "./provider.js";
 import type {
   CurrentWeather,
@@ -34,6 +38,13 @@ export class WeatherDataService {
       );
     const missingFields = collectWeatherFields(hourly, daily, "missingFields");
     const sourceSummaryMetadata = getProviderSourceSummaryMetadata(this.provider, input);
+    const terrainMetadata = buildProviderTerrainMetadata({
+      providerCode: this.provider.source.providerCode,
+      hourly,
+      daily,
+      selectedSpotElevationMeters: input.elevationMeters,
+    });
+    const terrainSummaryMetadata = terrainSummaryFields(terrainMetadata);
 
     return {
       current,
@@ -58,6 +69,7 @@ export class WeatherDataService {
       noticeZh: `天气数据：${this.provider.source.providerLabelZh}`,
       missingFields,
       estimatedFields: collectWeatherFields(hourly, daily, "estimatedFields"),
+      terrainMetadata,
       sourceSummaries: [
         {
           ...successfulSourceSummary({
@@ -81,6 +93,7 @@ export class WeatherDataService {
               this.provider.source.providerLabelZh,
               sourceSummaryMetadata?.missingFields ?? missingFields,
             ),
+          ...terrainSummaryMetadata,
         },
       ],
     };
@@ -143,6 +156,7 @@ export class WeatherIntelligenceService {
       airQuality: usableBundles.find((bundle) => bundle.airQuality)?.airQuality,
       providerCode: primary.providerCode,
       providerLabelZh: primary.providerLabelZh,
+      terrainMetadata: primary.terrainMetadata,
       dataMode: usableBundles.some((bundle) => bundle.dataMode === "real")
         ? "real"
         : primary.dataMode,
@@ -348,6 +362,65 @@ function getProviderSourceSummaryMetadata(
   return (provider as SourceSummaryMetadataProvider).getSourceSummaryMetadata?.(input);
 }
 
+function buildProviderTerrainMetadata(input: {
+  readonly providerCode: WeatherDataBundle["providerCode"];
+  readonly hourly: readonly NormalizedHourlyWeather[];
+  readonly daily: WeatherDataBundle["daily"];
+  readonly selectedSpotElevationMeters?: number;
+}): WeatherProviderTerrainMetadata {
+  const providerElevationMeters =
+    firstFinite(input.hourly.map((hour) => hour.providerElevationMeters)) ??
+    firstFinite(input.daily.map((day) => day.providerElevationMeters));
+  const providerElevationKnown = providerElevationMeters !== undefined;
+  const selectedSpotElevationMeters = firstFinite([input.selectedSpotElevationMeters]);
+  const elevationDifferenceMeters =
+    providerElevationKnown && selectedSpotElevationMeters !== undefined
+      ? Math.round(selectedSpotElevationMeters - providerElevationMeters)
+      : undefined;
+
+  return {
+    providerCode: input.providerCode,
+    providerElevationMeters,
+    providerElevationSource: providerElevationKnown ? "provider_metadata" : undefined,
+    providerElevationKnown,
+    selectedSpotElevationMeters,
+    elevationDifferenceMeters,
+    terrainAdjustmentApplied: false,
+    terrainAdjustmentReason: providerElevationKnown
+      ? "provider_elevation_metadata_captured"
+      : "provider_elevation_unknown",
+  };
+}
+
+function terrainSummaryFields(metadata: WeatherProviderTerrainMetadata): Omit<
+  WeatherProviderTerrainMetadata,
+  "providerCode"
+> {
+  const {
+    providerElevationMeters,
+    providerElevationSource,
+    providerElevationKnown,
+    selectedSpotElevationMeters,
+    elevationDifferenceMeters,
+    terrainAdjustmentApplied,
+    terrainAdjustmentReason,
+    dayCorrectionRatio,
+    nightCorrectionRatio,
+  } = metadata;
+
+  return {
+    providerElevationMeters,
+    providerElevationSource,
+    providerElevationKnown,
+    selectedSpotElevationMeters,
+    elevationDifferenceMeters,
+    terrainAdjustmentApplied,
+    terrainAdjustmentReason,
+    dayCorrectionRatio,
+    nightCorrectionRatio,
+  };
+}
+
 function normalizeCurrentWeather(input: {
   readonly current: CurrentWeather;
   readonly firstHour?: NormalizedHourlyWeather;
@@ -407,7 +480,15 @@ function normalizeCurrentWeather(input: {
     transparencyGrade: input.firstHour?.transparencyGrade,
     cloudFogObstructionRisk: input.firstHour?.cloudFogObstructionRisk,
     exposedRidgeWindRisk: input.firstHour?.exposedRidgeWindRisk,
+    mountainFeelsLikeC: input.firstHour?.mountainFeelsLikeC,
+    tripodStabilityRisk: input.firstHour?.tripodStabilityRisk,
+    windChillNoteZh: input.firstHour?.windChillNoteZh,
+    clothingRiskNoteZh: input.firstHour?.clothingRiskNoteZh,
     providerElevationMeters: input.firstHour?.providerElevationMeters,
+    selectedSpotElevationMeters: input.firstHour?.selectedSpotElevationMeters,
+    elevationDifferenceMeters: input.firstHour?.elevationDifferenceMeters,
+    terrainAdjustmentApplied: input.firstHour?.terrainAdjustmentApplied,
+    terrainAdjustmentReason: input.firstHour?.terrainAdjustmentReason,
     weatherTextZh: input.current.summary,
     weatherCode: input.firstHour?.weatherCode ?? null,
     airQuality: input.airQuality
@@ -562,6 +643,13 @@ function sourceSummaryFromBundle(bundle: WeatherDataBundle): WeatherSourceSummar
   const existing = bundle.sourceSummaries?.find(
     (summary) => summary.providerCode === bundle.providerCode,
   );
+  const terrainMetadata =
+    bundle.terrainMetadata ??
+    buildProviderTerrainMetadata({
+      providerCode: bundle.providerCode,
+      hourly: bundle.hourly,
+      daily: bundle.daily,
+    });
 
   return {
     ...successfulSourceSummary({
@@ -573,6 +661,7 @@ function sourceSummaryFromBundle(bundle: WeatherDataBundle): WeatherSourceSummar
       missingFields: bundle.missingFields ?? [],
     }),
     ...existing,
+    ...terrainSummaryFields(terrainMetadata),
     success: existing?.success ?? true,
     attempted: existing?.attempted ?? true,
     enabled: existing?.enabled ?? true,
@@ -641,6 +730,10 @@ function collectWeatherFields(
   key: "missingFields" | "estimatedFields",
 ): readonly string[] {
   return [...new Set([...hourly, ...daily].flatMap((point) => point[key] ?? []))];
+}
+
+function firstFinite(values: readonly (number | undefined | null)[]): number | undefined {
+  return values.find((value): value is number => typeof value === "number" && Number.isFinite(value));
 }
 
 function generatedAt(input: WeatherRequestInput, fallback?: string): string {

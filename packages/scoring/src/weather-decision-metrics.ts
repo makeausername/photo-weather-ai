@@ -7,7 +7,11 @@ import type {
   PhotographyPrecipitationRisk,
   PrecipitationType,
   TerrainAnalysisSummary,
+  TerrainProfileSummary,
+  TerrainType,
+  ExposureType,
   TransparencyGrade,
+  TripodStabilityRisk,
 } from "@photo-weather/shared";
 import { clampScore } from "./helpers.js";
 
@@ -47,9 +51,10 @@ const unknownProviderCorrectionBaseMeters = 900;
 const unknownProviderDayCorrectionRatio = 0.35;
 const unknownProviderNightMinCorrectionRatio = 0.25;
 const maxUnknownProviderCoolingCelsius = 4;
-const maxVeryHighTerrainUnknownProviderCoolingCelsius = 4.5;
+const maxVeryHighTerrainUnknownProviderCoolingCelsius = 4;
 const maxUnknownProviderNightCoolingCelsius = 2.8;
 const maxVeryHighTerrainUnknownProviderNightCoolingCelsius = 3;
+const maxKnownProviderCoolingCelsius = 8;
 type TemperatureCorrectionRole = "instant" | "daily_min" | "daily_max";
 
 export function precipitationAmountMm(
@@ -281,14 +286,25 @@ export function exposedRidgeWindRisk(input: {
   readonly elevationMeters?: number;
   readonly windSpeed?: number | null;
   readonly windGust?: number | null;
+  readonly terrainType?: TerrainType;
+  readonly exposureType?: ExposureType;
 }): ExposedRidgeWindRisk {
   const wind = input.windSpeed ?? 0;
   const gust = input.windGust ?? wind;
   const isHighMountain = (input.elevationMeters ?? 0) >= 1200;
-  if (wind >= 8 || gust >= 12 || (isHighMountain && gust >= 10)) {
+  const isExposedRidge =
+    input.exposureType === "exposed" ||
+    input.terrainType === "summit" ||
+    input.terrainType === "ridge";
+  if (
+    wind >= 8 ||
+    gust >= 12 ||
+    (isHighMountain && gust >= 10) ||
+    (isExposedRidge && gust >= 9.5)
+  ) {
     return "high";
   }
-  if (wind >= 5 || gust >= 8 || (isHighMountain && wind >= 4)) {
+  if (wind >= 5 || gust >= 8 || (isHighMountain && wind >= 4) || (isExposedRidge && wind >= 3.5)) {
     return "medium";
   }
   return "low";
@@ -297,18 +313,19 @@ export function exposedRidgeWindRisk(input: {
 export function applyMountainWeatherAdjustments(
   input: WeatherAdjustmentInput,
 ): WeatherAdjustmentResult {
-  const elevationMeters = input.terrainAnalysis.terrainProfile.locationElevation;
+  const terrainProfile = input.terrainAnalysis.terrainProfile;
+  const elevationMeters = terrainProfile.locationElevation;
   const hourlyWeather = input.hourlyWeather.map((hour) =>
-    annotateDecisionWeather(adjustHourlyTemperature(hour, elevationMeters), elevationMeters),
+    annotateDecisionWeather(adjustHourlyTemperature(hour, elevationMeters), terrainProfile),
   );
   const currentWeather = input.currentWeather
     ? annotateDecisionCurrent(
         adjustCurrentTemperature(input.currentWeather, elevationMeters),
-        elevationMeters,
+        terrainProfile,
       )
     : undefined;
   const dailyWeather = input.dailyWeather.map((day) =>
-    annotateDecisionDaily(adjustDailyTemperature(day, elevationMeters), elevationMeters),
+    annotateDecisionDaily(adjustDailyTemperature(day, elevationMeters), terrainProfile),
   );
   const estimatedFields = hourlyWeather.some(
     (hour) => hour.temperatureAdjustment?.correctionApplied,
@@ -468,7 +485,12 @@ function buildTemperatureAdjustment(
   if (input.existing?.correctionApplied) {
     return {
       rawTemperature: input.existing.rawTemperature ?? rawTemperature,
+      rawTemperatureC: input.existing.rawTemperatureC ?? input.existing.rawTemperature ?? rawTemperature,
       elevationAdjustedTemperature: input.existing.elevationAdjustedTemperature ?? rawTemperature,
+      terrainAdjustedTemperatureC:
+        input.existing.terrainAdjustedTemperatureC ??
+        input.existing.elevationAdjustedTemperature ??
+        rawTemperature,
       correctionApplied: true,
       correctionMeters: input.existing.correctionMeters ?? 0,
       correctionCelsius: input.existing.correctionCelsius ?? 0,
@@ -479,6 +501,9 @@ function buildTemperatureAdjustment(
       providerElevationMeters: input.existing.providerElevationMeters,
       providerElevationKnown: input.existing.providerElevationKnown ?? false,
       correctionReason: input.existing.correctionReason ?? "existing_correction_preserved",
+      dayCorrectionRatio: input.existing.dayCorrectionRatio,
+      nightCorrectionRatio: input.existing.nightCorrectionRatio,
+      maxCoolingCelsius: input.existing.maxCoolingCelsius,
     };
   }
 
@@ -509,7 +534,10 @@ function buildTemperatureAdjustment(
     }
 
     const correctionMeters = Math.max(0, elevationDifference - elevationCloseEnoughMeters);
-    const correctionCelsius = round1((correctionMeters / 100) * defaultLapseRateCelsiusPer100m);
+    const correctionCelsius = Math.min(
+      maxKnownProviderCoolingCelsius,
+      round1((correctionMeters / 100) * defaultLapseRateCelsiusPer100m),
+    );
     return temperatureAdjustmentResult(rawTemperature, {
       spotElevationMeters: input.spotElevationMeters,
       providerElevationMeters,
@@ -517,6 +545,9 @@ function buildTemperatureAdjustment(
       correctionReason: "provider_elevation_delta_beyond_threshold",
       correctionMeters,
       correctionCelsius,
+      dayCorrectionRatio: 1,
+      nightCorrectionRatio: input.role === "daily_min" ? 1 : undefined,
+      maxCoolingCelsius: maxKnownProviderCoolingCelsius,
     });
   }
 
@@ -570,6 +601,9 @@ function buildTemperatureAdjustment(
     correctionReason: "unknown_provider_elevation_conservative",
     correctionMeters,
     correctionCelsius,
+    dayCorrectionRatio: unknownProviderDayCorrectionRatio,
+    nightCorrectionRatio: unknownProviderNightMinCorrectionRatio,
+    maxCoolingCelsius: maxCooling,
   });
 }
 
@@ -582,6 +616,9 @@ function temperatureAdjustmentResult(
     readonly correctionReason: ElevationTemperatureAdjustment["correctionReason"];
     readonly correctionMeters?: number;
     readonly correctionCelsius?: number;
+    readonly dayCorrectionRatio?: number;
+    readonly nightCorrectionRatio?: number;
+    readonly maxCoolingCelsius?: number;
   },
 ): ElevationTemperatureAdjustment {
   const correctionMeters = Math.max(0, Math.round(input.correctionMeters ?? 0));
@@ -590,7 +627,9 @@ function temperatureAdjustmentResult(
 
   return {
     rawTemperature,
+    rawTemperatureC: rawTemperature,
     elevationAdjustedTemperature: round1(rawTemperature - correctionCelsius),
+    terrainAdjustedTemperatureC: round1(rawTemperature - correctionCelsius),
     correctionApplied,
     correctionMeters,
     correctionCelsius,
@@ -599,6 +638,9 @@ function temperatureAdjustmentResult(
     providerElevationMeters: input.providerElevationMeters,
     providerElevationKnown: input.providerElevationKnown,
     correctionReason: input.correctionReason,
+    dayCorrectionRatio: input.dayCorrectionRatio,
+    nightCorrectionRatio: input.nightCorrectionRatio,
+    maxCoolingCelsius: input.maxCoolingCelsius,
   };
 }
 
@@ -608,14 +650,35 @@ function providerHasTerrainAwareDemoValues(providerCode: string): boolean {
 
 function annotateDecisionWeather(
   hour: NormalizedHourlyWeather,
-  elevationMeters: number,
+  terrainProfile: TerrainProfileSummary,
 ): NormalizedHourlyWeather {
   const transparencyScore = calculatePhotographyTransparencyScore(hour);
   const windRisk = exposedRidgeWindRisk({
-    elevationMeters,
+    elevationMeters: terrainProfile.locationElevation,
     windSpeed: hour.windSpeed,
     windGust: hour.windGust,
+    terrainType: terrainProfile.terrainType,
+    exposureType: terrainProfile.exposureType,
   });
+  const comfort = buildMountainComfortMetadata({
+    temperature: hour.temperature,
+    feelsLike: hour.feelsLike,
+    humidity: hour.humidity,
+    windSpeed: hour.windSpeed,
+    windGust: hour.windGust,
+    precipitationAmountMm: precipitationAmountMm(hour),
+    rainRiskLevel: precipitationRiskLevel({
+      probability: hour.precipitationProbability,
+      amountMm: precipitationAmountMm(hour),
+    }),
+    terrainProfile,
+    windRisk,
+  });
+  const providerElevation = hour.providerElevationMeters;
+  const elevationDifference =
+    typeof providerElevation === "number"
+      ? Math.round(terrainProfile.locationElevation - providerElevation)
+      : undefined;
 
   return {
     ...hour,
@@ -633,12 +696,21 @@ function annotateDecisionWeather(
     transparencyGrade: transparencyGradeFromScore(transparencyScore),
     cloudFogObstructionRisk: cloudFogRiskFromScore(transparencyScore, hour.cloudLow, hour.humidity),
     exposedRidgeWindRisk: windRisk,
+    mountainFeelsLikeC: comfort.mountainFeelsLikeC,
+    tripodStabilityRisk: comfort.tripodStabilityRisk,
+    windChillNoteZh: comfort.windChillNoteZh,
+    clothingRiskNoteZh: comfort.clothingRiskNoteZh,
+    selectedSpotElevationMeters: terrainProfile.locationElevation,
+    elevationDifferenceMeters: elevationDifference,
+    terrainAdjustmentApplied: hour.temperatureAdjustment?.correctionApplied ?? false,
+    terrainAdjustmentReason:
+      hour.temperatureAdjustment?.correctionReason ?? "temperature_adjustment_not_required",
   };
 }
 
 function annotateDecisionCurrent(
   weather: NormalizedCurrentWeather,
-  elevationMeters: number,
+  terrainProfile: TerrainProfileSummary,
 ): NormalizedCurrentWeather {
   const transparencyScore = calculatePhotographyTransparencyScore({
     visibility: weather.visibility ?? null,
@@ -653,6 +725,32 @@ function annotateDecisionCurrent(
     snowAmountMm: weather.snowAmountMm ?? null,
     precipitationProbability: weather.precipitationProbability ?? null,
   });
+  const windRisk = exposedRidgeWindRisk({
+    elevationMeters: terrainProfile.locationElevation,
+    windSpeed: weather.windSpeed,
+    windGust: weather.windGust,
+    terrainType: terrainProfile.terrainType,
+    exposureType: terrainProfile.exposureType,
+  });
+  const comfort = buildMountainComfortMetadata({
+    temperature: weather.temperature,
+    feelsLike: weather.feelsLike,
+    humidity: weather.humidity,
+    windSpeed: weather.windSpeed,
+    windGust: weather.windGust,
+    precipitationAmountMm: precipitationAmountMm(weather),
+    rainRiskLevel: precipitationRiskLevel({
+      probability: weather.precipitationProbability,
+      amountMm: precipitationAmountMm(weather),
+    }),
+    terrainProfile,
+    windRisk,
+  });
+  const elevationDifference =
+    typeof weather.providerElevationMeters === "number"
+      ? Math.round(terrainProfile.locationElevation - weather.providerElevationMeters)
+      : undefined;
+
   return {
     ...weather,
     precipitationAmountMm: precipitationAmountMm(weather),
@@ -671,17 +769,22 @@ function annotateDecisionCurrent(
       weather.cloudLow,
       weather.humidity,
     ),
-    exposedRidgeWindRisk: exposedRidgeWindRisk({
-      elevationMeters,
-      windSpeed: weather.windSpeed,
-      windGust: weather.windGust,
-    }),
+    exposedRidgeWindRisk: windRisk,
+    mountainFeelsLikeC: comfort.mountainFeelsLikeC,
+    tripodStabilityRisk: comfort.tripodStabilityRisk,
+    windChillNoteZh: comfort.windChillNoteZh,
+    clothingRiskNoteZh: comfort.clothingRiskNoteZh,
+    selectedSpotElevationMeters: terrainProfile.locationElevation,
+    elevationDifferenceMeters: elevationDifference,
+    terrainAdjustmentApplied: weather.temperatureAdjustment?.correctionApplied ?? false,
+    terrainAdjustmentReason:
+      weather.temperatureAdjustment?.correctionReason ?? "temperature_adjustment_not_required",
   };
 }
 
 function annotateDecisionDaily(
   day: NormalizedDailyWeather,
-  elevationMeters: number,
+  terrainProfile: TerrainProfileSummary,
 ): NormalizedDailyWeather {
   const transparencyScore =
     finiteNumber(day.photographyTransparencyScore) && day.photographyTransparencyScore > 0
@@ -697,6 +800,36 @@ function annotateDecisionDaily(
           precipitationAmountMm: day.precipitationAmountMm ?? day.precipitation ?? null,
           precipitationProbability: day.precipitationProbability,
         });
+  const windRisk = exposedRidgeWindRisk({
+    elevationMeters: terrainProfile.locationElevation,
+    windSpeed: day.windSpeed,
+    windGust: day.windGust,
+    terrainType: terrainProfile.terrainType,
+    exposureType: terrainProfile.exposureType,
+  });
+  const averageTemperature =
+    typeof day.tempMin === "number" && typeof day.tempMax === "number"
+      ? (day.tempMin + day.tempMax) / 2
+      : day.tempMax;
+  const comfort = buildMountainComfortMetadata({
+    temperature: averageTemperature,
+    humidity: day.humidity,
+    windSpeed: day.windSpeed,
+    windGust: day.windGust,
+    precipitationAmountMm: precipitationAmountMm(day),
+    rainRiskLevel: precipitationRiskLevel({
+      probability: day.precipitationProbability,
+      amountMm: precipitationAmountMm(day),
+    }),
+    terrainProfile,
+    windRisk,
+  });
+  const providerElevation = day.providerElevationMeters ?? day.temperatureAdjustment?.providerElevationMeters;
+  const elevationDifference =
+    typeof providerElevation === "number"
+      ? Math.round(terrainProfile.locationElevation - providerElevation)
+      : undefined;
+
   return {
     ...day,
     precipitationAmountMm: precipitationAmountMm(day),
@@ -711,11 +844,16 @@ function annotateDecisionDaily(
     photographyTransparencyScore: transparencyScore,
     transparencyGrade: transparencyGradeFromScore(transparencyScore),
     cloudFogObstructionRisk: cloudFogRiskFromScore(transparencyScore, day.cloudLow, day.humidity),
-    exposedRidgeWindRisk: exposedRidgeWindRisk({
-      elevationMeters,
-      windSpeed: day.windSpeed,
-      windGust: day.windGust,
-    }),
+    exposedRidgeWindRisk: windRisk,
+    mountainFeelsLikeC: comfort.mountainFeelsLikeC,
+    tripodStabilityRisk: comfort.tripodStabilityRisk,
+    windChillNoteZh: comfort.windChillNoteZh,
+    clothingRiskNoteZh: comfort.clothingRiskNoteZh,
+    selectedSpotElevationMeters: terrainProfile.locationElevation,
+    elevationDifferenceMeters: elevationDifference,
+    terrainAdjustmentApplied: day.temperatureAdjustment?.correctionApplied ?? false,
+    terrainAdjustmentReason:
+      day.temperatureAdjustment?.correctionReason ?? "temperature_adjustment_not_required",
   };
 }
 
@@ -731,6 +869,120 @@ function cloudFogRiskFromScore(
     return "medium";
   }
   return "low";
+}
+
+function buildMountainComfortMetadata(input: {
+  readonly temperature?: number | null;
+  readonly feelsLike?: number | null;
+  readonly humidity?: number | null;
+  readonly windSpeed?: number | null;
+  readonly windGust?: number | null;
+  readonly precipitationAmountMm?: number | null;
+  readonly rainRiskLevel: PrecipitationRiskLevel;
+  readonly terrainProfile: TerrainProfileSummary;
+  readonly windRisk: ExposedRidgeWindRisk;
+}): {
+  readonly mountainFeelsLikeC: number | null;
+  readonly tripodStabilityRisk: TripodStabilityRisk;
+  readonly windChillNoteZh: string;
+  readonly clothingRiskNoteZh: string;
+} {
+  const baseTemperature =
+    finiteNumber(input.feelsLike) && input.feelsLike !== null
+      ? input.feelsLike
+      : finiteNumber(input.temperature)
+        ? input.temperature
+        : null;
+  const wind = input.windSpeed ?? 0;
+  const gust = input.windGust ?? wind;
+  const isExposed =
+    input.terrainProfile.exposureType === "exposed" ||
+    input.terrainProfile.terrainType === "summit" ||
+    input.terrainProfile.terrainType === "ridge";
+  const wetPenalty =
+    input.rainRiskLevel === "high" || input.rainRiskLevel === "severe"
+      ? 1.4
+      : (input.precipitationAmountMm ?? 0) >= 0.3 || input.rainRiskLevel === "medium"
+        ? 0.8
+        : 0;
+  const humidityPenalty = (input.humidity ?? 0) >= 90 ? 0.7 : 0;
+  const windPenalty = isExposed ? Math.min(3.2, wind * 0.28 + gust * 0.08) : Math.min(2, wind * 0.2);
+  const mountainFeelsLikeC =
+    baseTemperature === null
+      ? null
+      : round1(baseTemperature - windPenalty - wetPenalty - humidityPenalty);
+  const tripodStabilityRisk = classifyTripodStabilityRisk({
+    windSpeed: wind,
+    windGust: gust,
+    isExposed,
+  });
+
+  return {
+    mountainFeelsLikeC,
+    tripodStabilityRisk,
+    windChillNoteZh: windChillNoteZh({
+      windRisk: input.windRisk,
+      tripodStabilityRisk,
+      mountainFeelsLikeC,
+      isExposed,
+    }),
+    clothingRiskNoteZh: clothingRiskNoteZh({
+      rainRiskLevel: input.rainRiskLevel,
+      humidity: input.humidity,
+      windRisk: input.windRisk,
+      isExposed,
+    }),
+  };
+}
+
+function classifyTripodStabilityRisk(input: {
+  readonly windSpeed: number;
+  readonly windGust: number;
+  readonly isExposed: boolean;
+}): TripodStabilityRisk {
+  if (input.windGust >= 14 || input.windSpeed >= 9 || (input.isExposed && input.windGust >= 11)) {
+    return "high";
+  }
+  if (input.windGust >= 9 || input.windSpeed >= 5 || (input.isExposed && input.windGust >= 7)) {
+    return "medium";
+  }
+  return "low";
+}
+
+function windChillNoteZh(input: {
+  readonly windRisk: ExposedRidgeWindRisk;
+  readonly tripodStabilityRisk: TripodStabilityRisk;
+  readonly mountainFeelsLikeC: number | null;
+  readonly isExposed: boolean;
+}): string {
+  if (input.windRisk === "high" || input.tripodStabilityRisk === "high") {
+    return "山脊风风险较高，三脚架和人员站位需留余量。";
+  }
+  if (input.mountainFeelsLikeC !== null && input.mountainFeelsLikeC <= 8) {
+    return "清晨和夜间体感偏凉，长时间等云层开口时要预留保暖层。";
+  }
+  if (input.isExposed && input.windRisk === "medium") {
+    return "机位较暴露，阵风会放大体感和三脚架晃动。";
+  }
+  return "山顶体感仍需结合现场风口位置复核。";
+}
+
+function clothingRiskNoteZh(input: {
+  readonly rainRiskLevel: PrecipitationRiskLevel;
+  readonly humidity?: number | null;
+  readonly windRisk: ExposedRidgeWindRisk;
+  readonly isExposed: boolean;
+}): string {
+  if (input.rainRiskLevel === "high" || input.rainRiskLevel === "severe") {
+    return "降水干扰明显，防水外层、镜头布和干燥备份袋优先级高。";
+  }
+  if ((input.humidity ?? 0) >= 88 && input.windRisk !== "low") {
+    return "高湿叠加山顶风，体感会比气温更冷，建议带防风外套。";
+  }
+  if (input.isExposed) {
+    return "暴露机位风感更强，建议按分层穿法准备。";
+  }
+  return "穿衣按山地分层准备，清晨和夜间保留防风层。";
 }
 
 function hourWindowLabel(time: string): string {

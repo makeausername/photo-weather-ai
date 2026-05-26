@@ -466,11 +466,11 @@ function WeatherEssentialsPanel({ result }: { readonly result: ForecastCalculati
         <CompactInfoCard
           title="气温与体感"
           badge={comfortLevelLabel(clothing.comfortLevel)}
-          value={mountainTemperatureValue(current, firstDay)}
-          detail={`${dailyTemperatureRangeText(firstDay)}，${temperatureActionText(
+          value={mountainTemperatureValue(current, firstDay, result)}
+          detail={`${dailyTemperatureRangeText(firstDay, result)}，${temperatureActionText(
             current,
             firstDay,
-          )}`}
+          )} ${terrainCorrectionUserNote(result, current, firstDay)}`}
         />
         <CompactInfoCard
           title="云层与能见度"
@@ -924,34 +924,85 @@ function averagePair(left: number | undefined, right: number | undefined): numbe
   return left ?? right;
 }
 
-function dailyTemperatureRangeText(
+function terrainCorrectionUserNote(
+  result: ForecastCalculationResult,
+  current: ForecastCalculationResult["currentWeather"] | undefined,
   weather: ForecastCalculationResult["dailySummaries"][number]["weather"] | undefined,
 ): string {
+  const terrainProfile = result.terrainAnalysis.terrainProfile;
+  const correctionApplied =
+    current?.terrainAdjustmentApplied ?? weather?.temperatureCorrectionApplied ?? false;
+  const correctionReason =
+    current?.terrainAdjustmentReason ?? weather?.temperatureCorrectionReason ?? "";
+  const windRisk = current?.exposedRidgeWindRisk ?? weather?.exposedRidgeWindRisk;
+  const tripodRisk = current?.tripodStabilityRisk ?? weather?.tripodStabilityRisk;
+  const lowConfidence = terrainProfile.elevationConfidence === "low";
+
+  if (lowConfidence) {
+    return "机位海拔资料不完整，山顶体感仅作参考。";
+  }
+  if (windRisk === "high" || tripodRisk === "high") {
+    return (
+      current?.windChillNoteZh ??
+      weather?.windChillNoteZh ??
+      "山脊风风险较高，三脚架和人员站位需留余量。"
+    );
+  }
+  if (correctionApplied) {
+    return "已结合机位海拔做轻量修正。";
+  }
+  if (
+    correctionReason === "provider_elevation_close_to_spot" ||
+    correctionReason === "provider_terrain_aware_no_extra_correction"
+  ) {
+    return "预报已接近机位海拔，未额外修正。";
+  }
+  return weather?.clothingRiskNoteZh ?? current?.clothingRiskNoteZh ?? "";
+}
+
+function dailyTemperatureRangeText(
+  weather: ForecastCalculationResult["dailySummaries"][number]["weather"] | undefined,
+  result?: ForecastCalculationResult,
+): string {
+  const prefix = terrainTemperaturePrefix(result);
   if (!weather) {
-    return "山顶估算温度：暂缺";
+    return `${prefix}：暂缺`;
   }
 
   const temperature =
     typeof weather.tempMin === "number" && typeof weather.tempMax === "number"
       ? `${Math.round(weather.tempMin)}-${Math.round(weather.tempMax)}°C`
       : formatTemperature(averagePair(weather.tempMin, weather.tempMax));
+  const feelsLikeMin = weather.mountainFeelsLikeMin ?? weather.feelsLikeMin;
+  const feelsLikeMax = weather.mountainFeelsLikeMax ?? weather.feelsLikeMax;
   const feelsLike =
-    typeof weather.feelsLikeMin === "number" && typeof weather.feelsLikeMax === "number"
-      ? `体感 ${Math.round(weather.feelsLikeMin)}-${Math.round(weather.feelsLikeMax)}°C`
-      : `体感 ${formatTemperature(averagePair(weather.feelsLikeMin, weather.feelsLikeMax))}`;
+    typeof feelsLikeMin === "number" && typeof feelsLikeMax === "number"
+      ? `山地体感 ${Math.round(feelsLikeMin)}-${Math.round(feelsLikeMax)}°C`
+      : `山地体感 ${formatTemperature(averagePair(feelsLikeMin, feelsLikeMax))}`;
 
-  return `山顶估算温度：${temperature}｜${feelsLike}｜${temperatureCorrectionText(weather)}`;
+  return `${prefix}：${temperature}｜${feelsLike}｜${temperatureCorrectionText(weather)}`;
 }
 
 function mountainTemperatureValue(
   current: ForecastCalculationResult["currentWeather"] | undefined,
   weather: ForecastCalculationResult["dailySummaries"][number]["weather"] | undefined,
+  result?: ForecastCalculationResult,
 ): string {
   const temperature = current?.temperature ?? averagePair(weather?.tempMin, weather?.tempMax);
-  const feelsLike = current?.feelsLike ?? averagePair(weather?.feelsLikeMin, weather?.feelsLikeMax);
-  return `山顶估算温度：${formatTemperature(
+  const feelsLike =
+    current?.mountainFeelsLikeC ??
+    current?.feelsLike ??
+    averagePair(weather?.mountainFeelsLikeMin, weather?.mountainFeelsLikeMax) ??
+    averagePair(weather?.feelsLikeMin, weather?.feelsLikeMax);
+  return `${terrainTemperaturePrefix(result)}：${formatTemperature(
     temperature,
-  )} / 体感 ${formatTemperature(feelsLike)}`;
+  )} / 山地体感 ${formatTemperature(feelsLike)}`;
+}
+
+function terrainTemperaturePrefix(result: ForecastCalculationResult | undefined): string {
+  return result?.terrainAnalysis?.terrainProfile?.elevationConfidence === "low"
+    ? "山顶参考温度"
+    : "山顶估算温度";
 }
 
 function temperatureCorrectionText(
@@ -3049,7 +3100,10 @@ function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCal
                 </Badge>
               </div>
               <dl className="mt-4 grid gap-2 text-sm">
-                <DailyDefinition label="温度" value={dailyTemperatureRangeText(summary.weather)} />
+                <DailyDefinition
+                  label="温度"
+                  value={dailyTemperatureRangeText(summary.weather, result)}
+                />
                 <DailyDefinition
                   label={dailyPrecipitationLabel(summary.weather)}
                   value={precipitationDisplayValue(summary.weather)}

@@ -11,14 +11,18 @@ describe("Prisma schema", () => {
     const prismaCliPath = require.resolve("prisma/build/index.js");
 
     expect(() => {
-      execFileSync(process.execPath, [prismaCliPath, "generate", "--schema", schemaPath], {
-        env: {
-          ...process.env,
-          DATABASE_URL:
-            "postgresql://photo_weather_ai:CHANGE_ME@127.0.0.1:15432/photo_weather_ai?schema=public",
+      execFileSync(
+        process.execPath,
+        [prismaCliPath, "generate", "--schema", schemaPath, "--no-engine"],
+        {
+          env: {
+            ...process.env,
+            DATABASE_URL:
+              "postgresql://photo_weather_ai:CHANGE_ME@127.0.0.1:15432/photo_weather_ai?schema=public",
+          },
+          stdio: "pipe",
         },
-        stdio: "pipe",
-      });
+      );
     }).not.toThrow();
   });
 });

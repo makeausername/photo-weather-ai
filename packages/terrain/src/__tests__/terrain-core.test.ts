@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   calculateElevationDiff,
+  buildSpotTerrainProfile,
   classifyHorizonObstruction,
   classifyTerrainCloudSeaPotential,
   getDirectionZhFromAzimuth,
   MockTerrainProvider,
   OpenMeteoElevationProvider,
+  TerrainElevationService,
   validateTerrainCoordinates,
 } from "../index.js";
 
@@ -54,8 +56,8 @@ describe("Terrain Core V1", () => {
       expect(firstProfile.locationElevation).toBe(spot.elevation);
       expect(firstProfile.minElevation5km).toBeLessThan(firstProfile.locationElevation);
       expect(firstProfile.elevationDiff5km).toBeGreaterThan(700);
-      expect(firstProfile.terrainNoteZh).toContain("演示地形数据");
-      expect(horizon.obstructionNoteZh).toContain("演示地形数据");
+      expect(firstProfile.terrainNoteZh).toContain("基础地形剖面");
+      expect(horizon.obstructionNoteZh).toContain("基础地形剖面");
       expect(horizon.blockedDirectionsZh.length).toBeGreaterThan(0);
     }
   });
@@ -118,5 +120,63 @@ describe("Terrain Core V1", () => {
     expect(fetchMock).not.toHaveBeenCalled();
 
     vi.unstubAllGlobals();
+  });
+
+  it("builds seeded terrain profiles for core mountain photo spots", () => {
+    const huangshan = buildSpotTerrainProfile({
+      locationName: "黄山光明顶",
+      coordinate: { latitude: 30.1328, longitude: 118.171, system: "wgs84" },
+    });
+    const laojunshan = buildSpotTerrainProfile({
+      locationName: "老君山金顶",
+      coordinate: { latitude: 33.7852, longitude: 111.6402, system: "wgs84" },
+    });
+
+    expect(huangshan).toMatchObject({
+      elevationMeters: 1860,
+      elevationSource: "manual",
+      elevationConfidence: "high",
+      terrainType: "summit",
+      exposureType: "exposed",
+      viewingDirection: "panoramic",
+    });
+    expect(laojunshan.elevationMeters).toBe(2190);
+    expect(laojunshan.localReliefMeters).toBeGreaterThan(1200);
+  });
+
+  it("does not invent precise elevation for unknown locations", async () => {
+    const input = {
+      locationName: "未知山口",
+      coordinate: { latitude: 31.2345, longitude: 119.9876, system: "wgs84" as const },
+    };
+    const profile = buildSpotTerrainProfile(input);
+    const elevation = await new TerrainElevationService().getElevationForLocation(input);
+
+    expect(profile.elevationMeters).toBeNull();
+    expect(profile.elevationSource).toBe("unknown");
+    expect(profile.elevationConfidence).toBe("low");
+    expect(elevation.elevationMeters).toBeUndefined();
+    expect(elevation.elevationConfidence).toBe("low");
+  });
+
+  it("uses manual elevation before optional provider enrichment", async () => {
+    const provider = {
+      getElevationForLocation: vi.fn(async () => ({
+        elevationMeters: 900,
+        elevationSource: "open_meteo" as const,
+        elevationConfidence: "medium" as const,
+      })),
+    };
+    const service = new TerrainElevationService(provider);
+    const result = await service.getElevationForLocation({
+      locationName: "手动机位",
+      coordinate: { latitude: 31.2345, longitude: 119.9876, system: "wgs84" },
+      elevationMeters: 1688,
+    });
+
+    expect(result.elevationMeters).toBe(1688);
+    expect(result.elevationSource).toBe("manual");
+    expect(result.elevationConfidence).toBe("medium");
+    expect(provider.getElevationForLocation).not.toHaveBeenCalled();
   });
 });

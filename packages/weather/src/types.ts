@@ -9,6 +9,7 @@ import type {
   ForecastProviderRuntimeSnapshot,
   ForecastTarget,
   WeatherFusionSummary,
+  WeatherProviderTerrainMetadata,
 } from "@photo-weather/shared";
 
 export type WeatherProviderCode = "mock" | "qweather" | "open_meteo" | "meteoblue";
@@ -113,6 +114,7 @@ export type WeatherDataBundle = {
   readonly confidenceByTarget?: WeatherConfidenceByTarget;
   readonly fusionSummary?: WeatherFusionSummary;
   readonly providerRuntimeSnapshot?: readonly ForecastProviderRuntimeSnapshot[];
+  readonly terrainMetadata?: WeatherProviderTerrainMetadata;
 };
 
 export type ForecastRequestOptions = {

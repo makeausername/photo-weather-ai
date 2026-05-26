@@ -318,6 +318,29 @@ function takeItems<T>(items: readonly T[] | undefined, count: number): readonly 
   return items?.slice(0, count) ?? [];
 }
 
+function takeTextItems(items: readonly string[] | undefined, count: number, maxLength = 120) {
+  return takeItems(items, count).map((item) => limitText(item, maxLength));
+}
+
+function compactRiskFlags(
+  flags: readonly ForecastCalculationResult["riskFlags"][number][] | undefined,
+  count: number,
+) {
+  return takeItems(flags, count).map((flag) => ({
+    key: flag.key,
+    label: flag.label,
+    level: flag.level,
+    description: limitText(flag.description, 120),
+  }));
+}
+
+function limitText<T extends string | undefined | null>(text: T, maxLength = 160): T {
+  if (typeof text !== "string" || text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength)}...` as T;
+}
+
 function compactScore(
   score: ForecastCalculationResult["scores"][keyof ForecastCalculationResult["scores"]],
 ) {
@@ -326,8 +349,8 @@ function compactScore(
     label: score.label,
     score: score.score,
     level: score.level,
-    reasons: takeItems(score.reasons, 3),
-    risks: takeItems(score.risks, 3),
+    reasons: takeTextItems(score.reasons, 2),
+    risks: takeTextItems(score.risks, 2),
   };
 }
 
@@ -339,8 +362,8 @@ function compactTargetAnalysis(result: ForecastCalculationResult) {
       opportunityScore: result.cloudSeaAnalysis.cloudSeaOpportunityScore,
       whiteoutRiskScore: result.cloudSeaAnalysis.whiteoutRiskScore,
       recommendationLabel: result.cloudSeaAnalysis.recommendationLabel,
-      bestWindows: takeItems(result.cloudSeaAnalysis.bestCloudSeaWindows, 4),
-      missingDataNotes: takeItems(result.cloudSeaAnalysis.missingDataNotes, 6),
+      bestWindows: takeItems(result.cloudSeaAnalysis.bestCloudSeaWindows, 3),
+      missingDataNotes: takeTextItems(result.cloudSeaAnalysis.missingDataNotes, 4),
     };
   }
 
@@ -352,8 +375,8 @@ function compactTargetAnalysis(result: ForecastCalculationResult) {
       sunsetGlowScore: result.glowAnalysis.sunsetGlowScore,
       lowCloudObstructionRisk: result.glowAnalysis.lowCloudObstructionRisk,
       recommendationLabel: result.glowAnalysis.recommendationLabel,
-      bestWindows: takeItems(result.glowAnalysis.bestGlowWindows, 4),
-      missingDataNotes: takeItems(result.glowAnalysis.missingDataNotes, 6),
+      bestWindows: takeItems(result.glowAnalysis.bestGlowWindows, 3),
+      missingDataNotes: takeTextItems(result.glowAnalysis.missingDataNotes, 4),
     };
   }
 
@@ -365,8 +388,8 @@ function compactTargetAnalysis(result: ForecastCalculationResult) {
       milkyWayScore: result.astroAnalysis.milkyWayScore,
       moonImpactScore: result.astroAnalysis.moonImpactScore,
       recommendationLabel: result.astroAnalysis.recommendationLabel,
-      bestWindows: takeItems(result.astroAnalysis.bestAstroWindows, 4),
-      missingDataNotes: takeItems(result.astroAnalysis.missingDataNotes, 6),
+      bestWindows: takeItems(result.astroAnalysis.bestAstroWindows, 3),
+      missingDataNotes: takeTextItems(result.astroAnalysis.missingDataNotes, 4),
     };
   }
 
@@ -379,7 +402,7 @@ function compactTargetAnalysis(result: ForecastCalculationResult) {
 
 export function buildDeepSeekForecastContext(result: ForecastCalculationResult) {
   const timezone = result.calendarBasis.timezone;
-  const dailyFacts = takeItems(result.dailySummaries, 5).map((summary) =>
+  const dailyFacts = takeItems(result.dailySummaries, 4).map((summary) =>
     compactDailyFact(result, summary, timezone),
   );
 
@@ -402,28 +425,29 @@ export function buildDeepSeekForecastContext(result: ForecastCalculationResult) 
       recommendationLevel: result.recommendationLevel,
       recommendationLabelZh: result.recommendationLabel,
       confidenceLabelZh: confidenceLabelZh(result.weatherFusionSummary?.confidenceLevel),
-      summaryZh: result.summary,
+      summaryZh: limitText(result.summary, 180),
     },
     topicScores: Object.values(result.scores).map(compactScore),
-    topRankedWindows: takeItems(result.bestWindows, 6).map((window) =>
+    topRankedWindows: takeItems(result.bestWindows, 4).map((window) =>
       compactForecastWindow(window, timezone),
     ),
-    riskFlags: takeItems(result.riskFlags, 8),
-    keyReasons: takeItems(result.keyReasons, 8),
-    deterministicActionSuggestions: takeItems(result.photographyAdvice, 6),
+    riskFlags: compactRiskFlags(result.riskFlags, 6),
+    keyReasons: takeTextItems(result.keyReasons, 6),
+    deterministicActionSuggestions: takeTextItems(result.photographyAdvice, 4, 150),
     clothingGuide: {
       titleZh: result.clothingGuide.titleZh,
-      summaryZh: result.clothingGuide.summaryZh,
+      summaryZh: limitText(result.clothingGuide.summaryZh, 180),
       comfortLevel: result.clothingGuide.comfortLevel,
-      layers: takeItems(result.clothingGuide.layers, 5),
-      accessories: takeItems(result.clothingGuide.accessories, 5),
-      riskNotes: takeItems(result.clothingGuide.riskNotes, 5),
+      layers: takeTextItems(result.clothingGuide.layers, 4),
+      accessories: takeTextItems(result.clothingGuide.accessories, 4),
+      riskNotes: takeTextItems(result.clothingGuide.riskNotes, 4, 150),
     },
     currentWeatherSummary: result.currentWeather
       ? {
           observedAt: result.currentWeather.observedAt,
           temperatureZh: formatTemperatureValue(result.currentWeather.temperature),
           feelsLikeZh: formatTemperatureValue(result.currentWeather.feelsLike),
+          mountainFeelsLikeZh: formatTemperatureValue(result.currentWeather.mountainFeelsLikeC),
           humidityPercent: result.currentWeather.humidity,
           dewPointZh: formatTemperatureValue(result.currentWeather.dewPoint),
           windZh: formatWindValue(result.currentWeather.windSpeed, result.currentWeather.windGust),
@@ -433,15 +457,19 @@ export function buildDeepSeekForecastContext(result: ForecastCalculationResult) 
           cloudMidPercent: result.currentWeather.cloudMid,
           cloudHighPercent: result.currentWeather.cloudHigh,
           rainRiskZh: rainRiskSummaryZh(result.currentWeather),
+          exposedRidgeWindRisk: result.currentWeather.exposedRidgeWindRisk,
+          tripodStabilityRisk: result.currentWeather.tripodStabilityRisk,
+          windChillNoteZh: result.currentWeather.windChillNoteZh,
+          clothingRiskNoteZh: result.currentWeather.clothingRiskNoteZh,
           weatherTextZh: result.currentWeather.weatherTextZh,
         }
       : null,
     sourceStatus: {
       dataMode: result.weatherDataMode,
       noticeZh: providerNeutralText(result.weatherNoticeZh),
-      missingFields: takeItems(result.weatherMissingFields, 12),
-      estimatedFields: takeItems(result.weatherEstimatedFields, 12),
-      missingDataNotes: providerNeutralItems(result.weatherMissingDataNotes, 6),
+      missingFields: takeItems(result.weatherMissingFields, 8),
+      estimatedFields: takeItems(result.weatherEstimatedFields, 8),
+      missingDataNotes: providerNeutralItems(result.weatherMissingDataNotes, 4),
       fusionConfidenceLevel: result.weatherFusionSummary?.confidenceLevel,
       conflictStatusZh: providerNeutralText(result.weatherFusionSummary?.conflictStatusZh),
       dataStatusZh: providerNeutralText(result.weatherFusionSummary?.dataStatusZh),
@@ -455,7 +483,7 @@ export function buildDeepSeekForecastContext(result: ForecastCalculationResult) 
             generatedAt: result.astroCalculationBasis.generatedAt,
           }
         : undefined,
-      summaries: takeItems(result.astroSummaries, 3).map((summary) => ({
+      summaries: takeItems(result.astroSummaries, 2).map((summary) => ({
         date: summary.date,
         sunrise: summary.sunrise,
         sunset: summary.sunset,
@@ -473,8 +501,8 @@ export function buildDeepSeekForecastContext(result: ForecastCalculationResult) 
         milkyWayScore: result.astroAnalysis.milkyWayScore,
         astroShootable: result.astroAnalysis.astroShootable,
         recommendationLabelZh: result.astroAnalysis.recommendationLabel,
-        weatherBlockers: takeItems(result.astroAnalysis.weatherBlockers, 6),
-        recommendedMilkyWayWindows: takeItems(result.astroAnalysis.recommendedMilkyWayWindows, 3).map(
+        weatherBlockers: takeTextItems(result.astroAnalysis.weatherBlockers, 4),
+        recommendedMilkyWayWindows: takeItems(result.astroAnalysis.recommendedMilkyWayWindows, 2).map(
           (window) => ({
             labelZh: window.labelZh,
             windowZh: formatShootingWindowZh(
@@ -491,14 +519,22 @@ export function buildDeepSeekForecastContext(result: ForecastCalculationResult) 
       dataSourceLabelZh: result.terrainAnalysis.dataSourceLabelZh,
       isMock: result.terrainAnalysis.isMock,
       locationElevation: result.terrainSummary.locationElevation,
+      elevationMeters: result.terrainSummary.elevationMeters,
+      elevationSource: result.terrainSummary.elevationSource,
+      elevationConfidence: result.terrainSummary.elevationConfidence,
+      terrainType: result.terrainSummary.terrainType,
+      exposureType: result.terrainSummary.exposureType,
+      viewingDirection: result.terrainSummary.viewingDirection,
+      nearbyValleyElevationMeters: result.terrainSummary.nearbyValleyElevationMeters,
+      localReliefMeters: result.terrainSummary.localReliefMeters,
       elevationDiff5km: result.terrainSummary.elevationDiff5km,
       terrainCloudSeaPotential: result.terrainSummary.terrainCloudSeaPotential,
-      terrainNoteZh: result.terrainSummary.terrainNoteZh,
-      obstructionNoteZh: result.terrainSummary.obstructionNoteZh,
+      terrainNoteZh: limitText(result.terrainSummary.terrainNoteZh, 160),
+      obstructionNoteZh: limitText(result.terrainSummary.obstructionNoteZh, 160),
     },
     targetAnalysis: compactTargetAnalysis(result),
     dailySummaries: dailyFacts,
-    dataNoticeZh: providerNeutralText(result.dataNotice),
+    dataNoticeZh: limitText(providerNeutralText(result.dataNotice), 220),
     isMock: result.isMock,
   };
 }
@@ -528,13 +564,13 @@ function compactForecastWindow(
             timezone,
           ),
           setupBufferMinutes: window.arrivalAdvice.setupBufferMinutes,
-          reasonZh: window.arrivalAdvice.reasonZh,
-          warningZh: window.arrivalAdvice.warningZh,
+          reasonZh: limitText(window.arrivalAdvice.reasonZh, 120),
+          warningZh: limitText(window.arrivalAdvice.warningZh, 120),
         }
       : undefined,
-    copyReasonZh: window.copyReasonZh ?? window.practicalNoteZh,
+    copyReasonZh: limitText(window.copyReasonZh ?? window.practicalNoteZh, 140),
     backupSubjectLabel: window.backupSubjectLabel,
-    weatherBlockers: takeItems(window.weatherBlockers, 4),
+    weatherBlockers: takeTextItems(window.weatherBlockers, 3),
     precipitationRiskZh: window.precipitationRisk
       ? `${window.precipitationRisk.rainRiskLabelZh}，${window.precipitationRisk.recommendationZh}`
       : undefined,
@@ -556,11 +592,11 @@ function compactDailyFact(
     recommendationLabelZh: summary.recommendationLabel,
     dedicatedTripRecommendationZh: summary.dedicatedTripRecommendation,
     nearbyObservationRecommendationZh: summary.nearbyObservationRecommendation,
-    dedicatedTripAdviceZh: summary.dedicatedTripAdviceZh,
-    nearbyObservationAdviceZh: summary.nearbyObservationAdviceZh,
-    deterministicActionZh: summary.shortAdvice,
+    dedicatedTripAdviceZh: limitText(summary.dedicatedTripAdviceZh, 140),
+    nearbyObservationAdviceZh: limitText(summary.nearbyObservationAdviceZh, 140),
+    deterministicActionZh: limitText(summary.shortAdvice, 140),
     bestShootableWindow: bestWindow ? compactForecastWindow(bestWindow, timezone) : null,
-    watchableWindows: takeItems(summary.watchableWindows, 3).map((window) => ({
+    watchableWindows: takeItems(summary.watchableWindows, 2).map((window) => ({
       subjectZh: windowLabelZh({
         label: window.subject,
         target: window.target,
@@ -574,11 +610,11 @@ function compactDailyFact(
               timezone,
             )
           : "暂无明确时间",
-      reasonZh: window.reasonZh,
+      reasonZh: limitText(window.reasonZh, 120),
       suitableForDedicatedTrip: window.suitableForDedicatedTrip,
       suitableIfNearby: window.suitableIfNearby,
     })),
-    riskFlags: takeItems(summary.riskFlags, 4),
+    riskFlags: compactRiskFlags(summary.riskFlags, 3),
     weather: summary.weather
       ? {
           weatherTextZh: summary.weather.weatherTextZh,
@@ -586,6 +622,19 @@ function compactDailyFact(
             summary.weather.tempMin,
             summary.weather.tempMax,
           ),
+          mountainFeelsLikeRangeZh: formatTemperatureRange(
+            summary.weather.mountainFeelsLikeMin,
+            summary.weather.mountainFeelsLikeMax,
+          ),
+          temperatureCorrection: {
+            selectedSpotElevationMeters: summary.weather.selectedSpotElevationMeters,
+            providerElevationMeters: summary.weather.providerElevationMeters,
+            providerElevationKnown: summary.weather.providerElevationKnown,
+            elevationDifferenceMeters: summary.weather.elevationDifferenceMeters,
+            correctionApplied: summary.weather.temperatureCorrectionApplied,
+            correctionCelsius: summary.weather.temperatureCorrectionCelsius,
+            correctionReason: summary.weather.temperatureCorrectionReason,
+          },
           rainRiskZh: rainRiskSummaryZh(summary.weather),
           rainTimingZh: rainTimingSummaryZh(summary.weather),
           windZh: formatWindValue(summary.weather.windSpeed, summary.weather.windGust),
@@ -596,6 +645,10 @@ function compactDailyFact(
             summary.weather.transparencyGrade,
             summary.weather.photographyTransparencyScore,
           ),
+          exposedRidgeWindRisk: summary.weather.exposedRidgeWindRisk,
+          tripodStabilityRisk: summary.weather.tripodStabilityRisk,
+          windChillNoteZh: summary.weather.windChillNoteZh,
+          clothingRiskNoteZh: summary.weather.clothingRiskNoteZh,
           cloudLowPercent: summary.weather.cloudLow,
           cloudMidPercent: summary.weather.cloudMid,
           cloudHighPercent: summary.weather.cloudHigh,
@@ -611,8 +664,8 @@ function compactDailyFact(
       milkyWayZh: dailyMetricZh(breakdown?.milkyWay),
       transparencyZh: dailyMetricZh(breakdown?.transparency),
     },
-    weatherSummaryZh: breakdown?.weatherSummary,
-    terrainSummaryZh: breakdown?.terrainSummary,
+    weatherSummaryZh: limitText(breakdown?.weatherSummary, 160),
+    terrainSummaryZh: limitText(breakdown?.terrainSummary, 160),
   };
 }
 
@@ -668,7 +721,7 @@ function providerNeutralItems(
   items: readonly string[] | undefined,
   count: number,
 ): readonly string[] {
-  return takeItems(items, count).map((item) => providerNeutralText(item) ?? item);
+  return takeItems(items, count).map((item) => limitText(providerNeutralText(item) ?? item));
 }
 
 type RainWeatherLike = {
@@ -801,7 +854,7 @@ function dailyMetricZh(
   if (!metric) {
     return "暂缺";
   }
-  return `${metric.label} ${Math.round(metric.score)} 分，${metric.detail}`;
+  return `${metric.label} ${Math.round(metric.score)} 分，${limitText(metric.detail, 100)}`;
 }
 
 function stripWindowTime(text: string): string {

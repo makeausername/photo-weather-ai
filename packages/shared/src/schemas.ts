@@ -124,6 +124,7 @@ const nullablePercentSchema = z.number().finite().min(0).max(100).nullable();
 const weatherFieldListSchema = z.array(z.string().trim().min(1)).optional();
 const precipitationTypeSchema = z.enum(["rain", "snow", "mixed", "none", "unknown"]);
 const ridgeWindRiskSchema = z.enum(["low", "medium", "high"]);
+const tripodStabilityRiskSchema = z.enum(["low", "medium", "high"]);
 const transparencyGradeSchema = z.enum(["excellent", "good", "fair", "poor"]);
 const cloudFogObstructionRiskSchema = z.enum(["low", "medium", "high"]);
 const precipitationRiskSchema = z.object({
@@ -143,13 +144,17 @@ const weatherFieldMetadataSchema = z
       estimated: z.boolean(),
       missingReason: z.string().trim().min(1).optional(),
       providerElevationMeters: z.number().finite().optional(),
+      selectedSpotElevationMeters: z.number().finite().optional(),
+      elevationDifferenceMeters: z.number().finite().optional(),
     }),
   )
   .optional();
 const hourlyTemperatureAdjustmentSchema = z
   .object({
     rawTemperature: z.number().finite(),
+    rawTemperatureC: z.number().finite().optional(),
     elevationAdjustedTemperature: z.number().finite(),
+    terrainAdjustedTemperatureC: z.number().finite().optional(),
     correctionApplied: z.boolean(),
     correctionMeters: z.number().finite().min(0),
     correctionCelsius: z.number().finite().min(0),
@@ -166,13 +171,18 @@ const hourlyTemperatureAdjustmentSchema = z
       "provider_elevation_higher_than_spot",
       "existing_correction_preserved",
     ]),
+    dayCorrectionRatio: z.number().finite().min(0).max(1).optional(),
+    nightCorrectionRatio: z.number().finite().min(0).max(1).optional(),
+    maxCoolingCelsius: z.number().finite().min(0).optional(),
   })
   .optional();
 const dailyTemperatureAdjustmentSchema = hourlyTemperatureAdjustmentSchema
   .unwrap()
   .omit({
     rawTemperature: true,
+    rawTemperatureC: true,
     elevationAdjustedTemperature: true,
+    terrainAdjustedTemperatureC: true,
   })
   .optional();
 
@@ -208,7 +218,15 @@ export const normalizedHourlyWeatherSchema = z.object({
   cloudMid: nullablePercentSchema,
   cloudHigh: nullablePercentSchema,
   exposedRidgeWindRisk: ridgeWindRiskSchema.optional(),
+  mountainFeelsLikeC: nullableFiniteNumberSchema.optional(),
+  tripodStabilityRisk: tripodStabilityRiskSchema.optional(),
+  windChillNoteZh: z.string().trim().min(1).optional(),
+  clothingRiskNoteZh: z.string().trim().min(1).optional(),
   providerElevationMeters: z.number().finite().optional(),
+  selectedSpotElevationMeters: z.number().finite().optional(),
+  elevationDifferenceMeters: z.number().finite().optional(),
+  terrainAdjustmentApplied: z.boolean().optional(),
+  terrainAdjustmentReason: z.string().trim().min(1).optional(),
   weatherCode: z.string().trim().min(1).nullable(),
   weatherTextZh: z.string().trim().min(1).nullable().optional(),
   providerCode: z.string().trim().min(1),
@@ -252,7 +270,15 @@ export const normalizedDailyWeatherSchema = z.object({
   cloudMid: nullablePercentSchema.optional(),
   cloudHigh: nullablePercentSchema.optional(),
   exposedRidgeWindRisk: ridgeWindRiskSchema.optional(),
+  mountainFeelsLikeC: nullableFiniteNumberSchema.optional(),
+  tripodStabilityRisk: tripodStabilityRiskSchema.optional(),
+  windChillNoteZh: z.string().trim().min(1).optional(),
+  clothingRiskNoteZh: z.string().trim().min(1).optional(),
   providerElevationMeters: z.number().finite().optional(),
+  selectedSpotElevationMeters: z.number().finite().optional(),
+  elevationDifferenceMeters: z.number().finite().optional(),
+  terrainAdjustmentApplied: z.boolean().optional(),
+  terrainAdjustmentReason: z.string().trim().min(1).optional(),
   weatherSummary: z.string().trim().min(1),
   cloudSummary: z.string().trim().min(1).optional(),
   sunrise: z.string().datetime({ offset: true }).optional(),

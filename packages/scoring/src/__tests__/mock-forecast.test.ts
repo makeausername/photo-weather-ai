@@ -83,7 +83,7 @@ describe("mock forecast input builder", () => {
     );
     expect(first.terrainAnalysis).toMatchObject({
       dataSource: "mock_terrain",
-      dataSourceLabelZh: "演示数据",
+      dataSourceLabelZh: "演示地形数据",
       terrainProfile: {
         locationElevation: 1860,
         terrainCloudSeaPotential: "high",

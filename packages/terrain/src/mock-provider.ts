@@ -6,6 +6,11 @@ import {
   getDirectionZhFromAzimuth,
   validateTerrainCoordinates,
 } from "./calculations.js";
+import {
+  buildSpotTerrainProfile,
+  resolveSeedTerrainProfile,
+  type TerrainProfileSeed,
+} from "./spot-terrain-profiles.js";
 import type {
   ElevationSample,
   HorizonProfile,
@@ -17,115 +22,28 @@ import type {
 } from "./types.js";
 
 const mockTerrainDataSource: TerrainDataSource = "mock_terrain";
-const mockTerrainDataSourceLabelZh = "演示数据";
+const mockTerrainDataSourceLabelZh = "演示地形数据";
 const mockTerrainHonestyNoteZh =
-  "地形信息当前使用演示地形数据，正式海拔与 DEM 数据接入后将用于提升云海和遮挡判断。";
-
-type MockTerrainSeed = {
-  readonly key: string;
-  readonly names: readonly string[];
-  readonly coordinate: TerrainCoordinate;
-  readonly locationElevation: number;
-  readonly minElevation1km: number;
-  readonly minElevation3km: number;
-  readonly minElevation5km: number;
-  readonly maxElevation5km: number;
-  readonly avgElevation5km: number;
-  readonly valleyDirectionZh: string;
-  readonly ridgeDirectionZh: string;
-  readonly sunriseHorizonAngle: number;
-  readonly sunsetHorizonAngle: number;
-  readonly milkyWayHorizonAngle: number;
-  readonly blockedDirectionsZh: readonly string[];
-  readonly weatherToneZh: string;
-};
-
-const mockTerrainSeeds: readonly MockTerrainSeed[] = [
-  {
-    key: "huangshan-guangmingding",
-    names: ["黄山光明顶", "黄山"],
-    coordinate: { latitude: 30.1328, longitude: 118.171, system: "wgs84" },
-    locationElevation: 1860,
-    minElevation1km: 980,
-    minElevation3km: 520,
-    minElevation5km: 380,
-    maxElevation5km: 1864,
-    avgElevation5km: 1125,
-    valleyDirectionZh: "东南",
-    ridgeDirectionZh: "西北-东南",
-    sunriseHorizonAngle: 4.8,
-    sunsetHorizonAngle: 5.5,
-    milkyWayHorizonAngle: 7.2,
-    blockedDirectionsZh: ["西北", "东北"],
-    weatherToneZh: "山顶与周边谷地高差明显，清晨低云若落在谷地更容易形成云海边界。",
-  },
-  {
-    key: "laojunshan-jinding",
-    names: ["老君山金顶", "老君山"],
-    coordinate: { latitude: 33.7852, longitude: 111.6402, system: "wgs84" },
-    locationElevation: 2190,
-    minElevation1km: 1280,
-    minElevation3km: 780,
-    minElevation5km: 560,
-    maxElevation5km: 2217,
-    avgElevation5km: 1390,
-    valleyDirectionZh: "西南",
-    ridgeDirectionZh: "西北-东南",
-    sunriseHorizonAngle: 6.2,
-    sunsetHorizonAngle: 7.4,
-    milkyWayHorizonAngle: 9.1,
-    blockedDirectionsZh: ["西南", "西北"],
-    weatherToneZh: "高海拔山脊与低处谷地落差较大，云海判断应同时关注强风和低云厚度。",
-  },
-  {
-    key: "sanqingshan-nvshenfeng",
-    names: ["三清山女神峰", "三清山"],
-    coordinate: { latitude: 28.9139, longitude: 118.0699, system: "wgs84" },
-    locationElevation: 1600,
-    minElevation1km: 870,
-    minElevation3km: 510,
-    minElevation5km: 410,
-    maxElevation5km: 1819,
-    avgElevation5km: 1040,
-    valleyDirectionZh: "东北",
-    ridgeDirectionZh: "南北向峰林",
-    sunriseHorizonAngle: 8.4,
-    sunsetHorizonAngle: 6.5,
-    milkyWayHorizonAngle: 10.8,
-    blockedDirectionsZh: ["东", "东北"],
-    weatherToneZh: "峰林遮挡和局部谷地并存，云海潜力较好，但视线方向更依赖具体机位。",
-  },
-  {
-    key: "wugongshan-jinding",
-    names: ["武功山金顶", "武功山"],
-    coordinate: { latitude: 27.4716, longitude: 114.1808, system: "wgs84" },
-    locationElevation: 1918,
-    minElevation1km: 1120,
-    minElevation3km: 720,
-    minElevation5km: 610,
-    maxElevation5km: 1918,
-    avgElevation5km: 1260,
-    valleyDirectionZh: "东南",
-    ridgeDirectionZh: "东北-西南",
-    sunriseHorizonAngle: 3.7,
-    sunsetHorizonAngle: 4.6,
-    milkyWayHorizonAngle: 5.9,
-    blockedDirectionsZh: ["北"],
-    weatherToneZh: "高山草甸视野较开阔，周边谷地高差可为云海和夜间地平线判断提供参考。",
-  },
-];
-
-const defaultSeed = mockTerrainSeeds[0]!;
+  "地形信息当前使用基础机位资料和演示地形剖面，正式 DEM 接入后会继续校准云海、白墙和地平线判断。";
 
 export function buildMockTerrainAnalysis(input: TerrainAnalysisInput): TerrainAnalysisResult {
   validateTerrainCoordinates(input.coordinate);
 
-  const seed = resolveSeed(input);
-  const terrainProfile = buildMockTerrainProfile(seed, input.coordinate);
-  const horizonProfile = buildMockHorizonProfile(seed, input);
+  const seed = resolveSeedTerrainProfile(input);
+  const spotProfile = buildSpotTerrainProfile(input);
+  const terrainProfile = seed
+    ? buildSeededTerrainProfile(seed, input)
+    : buildUnknownTerrainProfile(input);
+  const horizonProfile = seed ? buildSeededHorizonProfile(seed, input) : buildUnknownHorizonProfile();
 
   return {
-    terrainProfile,
+    terrainProfile: {
+      ...terrainProfile,
+      ...spotProfile,
+      locationElevation: terrainProfile.locationElevation,
+      elevationMeters: spotProfile.elevationMeters,
+      terrainNoteZh: terrainProfile.terrainNoteZh,
+    },
     horizonProfile,
     dataSource: mockTerrainDataSource,
     dataSourceLabelZh: mockTerrainDataSourceLabelZh,
@@ -137,11 +55,12 @@ export function buildMockTerrainAnalysis(input: TerrainAnalysisInput): TerrainAn
 export class MockTerrainProvider implements TerrainProvider {
   async getElevation(coordinate: TerrainCoordinate): Promise<ElevationSample> {
     validateTerrainCoordinates(coordinate);
-    const seed = resolveSeed({ coordinate, locationName: coordinate.name });
+    const seed = resolveSeedTerrainProfile({ coordinate, locationName: coordinate.name });
+    const elevation = seed?.elevationMeters;
 
     return {
       coordinate,
-      elevation: seed.locationElevation,
+      elevation: typeof elevation === "number" ? elevation : 0,
       distanceMeters: 0,
       dataSource: mockTerrainDataSource,
     };
@@ -162,32 +81,44 @@ export class MockTerrainProvider implements TerrainProvider {
   }
 }
 
-function buildMockTerrainProfile(
-  seed: MockTerrainSeed,
-  coordinate: TerrainCoordinate,
+function buildSeededTerrainProfile(
+  seed: TerrainProfileSeed,
+  input: TerrainAnalysisInput,
 ): TerrainProfile {
-  const elevationDiff5km = calculateElevationDiff(seed.maxElevation5km, seed.minElevation5km);
+  const coordinate = input.coordinate;
+  const elevation = input.elevationMeters ?? seed.elevationMeters ?? 0;
+  const minElevation5km = seed.nearbyValleyElevationMeters ?? seed.minElevation5km;
+  const maxElevation5km = Math.max(seed.maxElevation5km, elevation);
+  const elevationDiff5km = calculateElevationDiff(maxElevation5km, minElevation5km);
   const potential = classifyTerrainCloudSeaPotential({
     elevationDiff5km,
-    locationElevation: seed.locationElevation,
+    locationElevation: elevation,
   });
 
   return {
-    locationElevation: seed.locationElevation,
+    ...seed,
+    latitudeWgs84: coordinate.latitude,
+    longitudeWgs84: coordinate.longitude,
+    latitudeGcj02: input.latitudeGcj02 ?? seed.latitudeGcj02,
+    longitudeGcj02: input.longitudeGcj02 ?? seed.longitudeGcj02,
+    elevationMeters: elevation,
+    locationElevation: elevation,
     minElevation1km: seed.minElevation1km,
     minElevation3km: seed.minElevation3km,
-    minElevation5km: seed.minElevation5km,
-    maxElevation5km: seed.maxElevation5km,
+    minElevation5km,
+    maxElevation5km,
     avgElevation5km: seed.avgElevation5km,
     elevationDiff5km,
+    nearbyValleyElevationMeters: minElevation5km,
+    localReliefMeters: elevationDiff5km,
     valleyDirectionZh: seed.valleyDirectionZh,
     ridgeDirectionZh: seed.ridgeDirectionZh,
     terrainCloudSeaPotential: potential,
-    terrainNoteZh: `${seed.weatherToneZh} 当前使用演示地形数据，正式 DEM 接入后可进一步校准。`,
+    terrainNoteZh: `${seed.weatherToneZh} 当前为基础地形剖面，正式 DEM 接入后可进一步校准。`,
     samples: [
       {
         coordinate,
-        elevation: seed.locationElevation,
+        elevation,
         distanceMeters: 0,
         dataSource: mockTerrainDataSource,
       },
@@ -209,7 +140,7 @@ function buildMockTerrainProfile(
       },
       {
         coordinate: offsetCoordinate(coordinate, 0.031, -0.026),
-        elevation: seed.minElevation5km,
+        elevation: minElevation5km,
         distanceMeters: 5000,
         azimuth: 210,
         directionZh: "西南",
@@ -219,8 +150,40 @@ function buildMockTerrainProfile(
   };
 }
 
-function buildMockHorizonProfile(
-  seed: MockTerrainSeed,
+function buildUnknownTerrainProfile(input: TerrainAnalysisInput): TerrainProfile {
+  const spotProfile = buildSpotTerrainProfile(input);
+  const elevation = spotProfile.elevationMeters ?? 0;
+  const note =
+    spotProfile.elevationMeters === null
+      ? "机位海拔资料不完整，山顶体感仅作参考。"
+      : "仅有机位海拔，周边谷地高差、暴露度和遮挡仍需补充。";
+
+  return {
+    ...spotProfile,
+    locationElevation: elevation,
+    minElevation1km: elevation,
+    minElevation3km: elevation,
+    minElevation5km: elevation,
+    maxElevation5km: elevation,
+    avgElevation5km: elevation,
+    elevationDiff5km: 0,
+    nearbyValleyElevationMeters: null,
+    localReliefMeters: null,
+    terrainCloudSeaPotential: "low",
+    terrainNoteZh: note,
+    samples: [
+      {
+        coordinate: input.coordinate,
+        elevation,
+        distanceMeters: 0,
+        dataSource: mockTerrainDataSource,
+      },
+    ],
+  };
+}
+
+function buildSeededHorizonProfile(
+  seed: TerrainProfileSeed,
   input: TerrainAnalysisInput,
 ): HorizonProfile {
   const dynamicBlockedDirections = [
@@ -245,7 +208,14 @@ function buildMockHorizonProfile(
     sunsetHorizonAngle: seed.sunsetHorizonAngle,
     milkyWayHorizonAngle: seed.milkyWayHorizonAngle,
     blockedDirectionsZh,
-    obstructionNoteZh: `演示地形数据显示主要方向地平遮挡${obstructionText}，可作为日出日落和银河构图的辅助参考。`,
+    obstructionNoteZh: `基础地形剖面显示主要方向地平遮挡${obstructionText}，可作为日出日落和银河构图的辅助参考。`,
+  };
+}
+
+function buildUnknownHorizonProfile(): HorizonProfile {
+  return {
+    blockedDirectionsZh: [],
+    obstructionNoteZh: "当前缺少可靠地平线遮挡资料，日出、日落和银河方向需现场复核。",
   };
 }
 
@@ -259,41 +229,23 @@ function directionForAngle(azimuth: number | undefined, horizonAngle: number): s
 
 function buildSampleForCoordinate(coordinate: TerrainCoordinate, index: number): ElevationSample {
   validateTerrainCoordinates(coordinate);
-  const seed = resolveSeed({ coordinate, locationName: coordinate.name });
-  const elevationSteps = [
-    seed.locationElevation,
-    seed.minElevation1km,
-    seed.minElevation3km,
-    seed.minElevation5km,
-    seed.maxElevation5km,
-  ];
+  const seed = resolveSeedTerrainProfile({ coordinate, locationName: coordinate.name });
+  const elevations = seed
+    ? [
+        seed.elevationMeters ?? 0,
+        seed.minElevation1km,
+        seed.minElevation3km,
+        seed.minElevation5km,
+        seed.maxElevation5km,
+      ]
+    : [0];
 
   return {
     coordinate,
-    elevation: elevationSteps[index % elevationSteps.length]!,
+    elevation: elevations[index % elevations.length]!,
     distanceMeters: index * 1000,
     dataSource: mockTerrainDataSource,
   };
-}
-
-function resolveSeed(input: Pick<TerrainAnalysisInput, "coordinate" | "locationName">): MockTerrainSeed {
-  const normalizedName = input.locationName?.trim() ?? "";
-  if (normalizedName.length > 0) {
-    const byName = mockTerrainSeeds.find((seed) =>
-      seed.names.some((name) => normalizedName.includes(name) || name.includes(normalizedName)),
-    );
-    if (byName) {
-      return byName;
-    }
-  }
-
-  const byCoordinate = mockTerrainSeeds.find(
-    (seed) =>
-      Math.abs(seed.coordinate.latitude - input.coordinate.latitude) <= 0.08 &&
-      Math.abs(seed.coordinate.longitude - input.coordinate.longitude) <= 0.08,
-  );
-
-  return byCoordinate ?? defaultSeed;
 }
 
 function offsetCoordinate(

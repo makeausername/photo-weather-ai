@@ -50,6 +50,67 @@ export type PrecipitationType = "rain" | "snow" | "mixed" | "none" | "unknown";
 
 export type ExposedRidgeWindRisk = "low" | "medium" | "high";
 
+export type TripodStabilityRisk = "low" | "medium" | "high";
+
+export type ElevationSource =
+  | "manual"
+  | "provider_metadata"
+  | "dem"
+  | "amap"
+  | "open_meteo"
+  | "unknown";
+
+export type ElevationConfidence = "high" | "medium" | "low";
+
+export type TerrainType =
+  | "summit"
+  | "ridge"
+  | "mountain_platform"
+  | "slope"
+  | "valley"
+  | "lake"
+  | "city"
+  | "unknown";
+
+export type ExposureType = "exposed" | "semi_exposed" | "sheltered" | "unknown";
+
+export type TerrainViewingDirection =
+  | "east"
+  | "west"
+  | "south"
+  | "north"
+  | "panoramic"
+  | "unknown";
+
+export type SpotTerrainProfile = {
+  readonly latitudeWgs84: number;
+  readonly longitudeWgs84: number;
+  readonly latitudeGcj02?: number;
+  readonly longitudeGcj02?: number;
+  readonly elevationMeters: number | null;
+  readonly elevationSource: ElevationSource;
+  readonly elevationConfidence: ElevationConfidence;
+  readonly terrainType: TerrainType;
+  readonly exposureType: ExposureType;
+  readonly viewingDirection: TerrainViewingDirection;
+  readonly nearbyValleyElevationMeters?: number | null;
+  readonly localReliefMeters?: number | null;
+  readonly terrainNotesZh?: string;
+};
+
+export type WeatherProviderTerrainMetadata = {
+  readonly providerCode: string;
+  readonly providerElevationMeters?: number;
+  readonly providerElevationSource?: ElevationSource;
+  readonly providerElevationKnown: boolean;
+  readonly selectedSpotElevationMeters?: number;
+  readonly elevationDifferenceMeters?: number;
+  readonly terrainAdjustmentApplied: boolean;
+  readonly terrainAdjustmentReason: string;
+  readonly dayCorrectionRatio?: number;
+  readonly nightCorrectionRatio?: number;
+};
+
 export type TransparencyGrade = "excellent" | "good" | "fair" | "poor";
 
 export type CloudFogObstructionRisk = "low" | "medium" | "high";
@@ -61,6 +122,8 @@ export type NormalizedWeatherFieldMetadata = {
   readonly estimated: boolean;
   readonly missingReason?: string;
   readonly providerElevationMeters?: number;
+  readonly selectedSpotElevationMeters?: number;
+  readonly elevationDifferenceMeters?: number;
 };
 
 export type NormalizedWeatherFieldMetadataMap = Partial<
@@ -78,7 +141,9 @@ export type ElevationTemperatureCorrectionReason =
 
 export type ElevationTemperatureAdjustment = {
   readonly rawTemperature: number;
+  readonly rawTemperatureC?: number;
   readonly elevationAdjustedTemperature: number;
+  readonly terrainAdjustedTemperatureC?: number;
   readonly correctionApplied: boolean;
   readonly correctionMeters: number;
   readonly correctionCelsius: number;
@@ -87,6 +152,9 @@ export type ElevationTemperatureAdjustment = {
   readonly providerElevationMeters?: number;
   readonly providerElevationKnown: boolean;
   readonly correctionReason: ElevationTemperatureCorrectionReason;
+  readonly dayCorrectionRatio?: number;
+  readonly nightCorrectionRatio?: number;
+  readonly maxCoolingCelsius?: number;
 };
 
 export type PhotographyRainRiskLevel = "none" | "low" | "medium" | "high" | "severe";
@@ -146,7 +214,15 @@ export type NormalizedHourlyWeather = {
   readonly cloudMid: number | null;
   readonly cloudHigh: number | null;
   readonly exposedRidgeWindRisk?: ExposedRidgeWindRisk;
+  readonly mountainFeelsLikeC?: number | null;
+  readonly tripodStabilityRisk?: TripodStabilityRisk;
+  readonly windChillNoteZh?: string;
+  readonly clothingRiskNoteZh?: string;
   readonly providerElevationMeters?: number;
+  readonly selectedSpotElevationMeters?: number;
+  readonly elevationDifferenceMeters?: number;
+  readonly terrainAdjustmentApplied?: boolean;
+  readonly terrainAdjustmentReason?: string;
   readonly weatherCode: string | null;
   readonly weatherTextZh?: string | null;
   readonly providerCode: string;
@@ -194,7 +270,15 @@ export type NormalizedCurrentWeather = {
   readonly transparencyGrade?: TransparencyGrade;
   readonly cloudFogObstructionRisk?: CloudFogObstructionRisk;
   readonly exposedRidgeWindRisk?: ExposedRidgeWindRisk;
+  readonly mountainFeelsLikeC?: number | null;
+  readonly tripodStabilityRisk?: TripodStabilityRisk;
+  readonly windChillNoteZh?: string;
+  readonly clothingRiskNoteZh?: string;
   readonly providerElevationMeters?: number;
+  readonly selectedSpotElevationMeters?: number;
+  readonly elevationDifferenceMeters?: number;
+  readonly terrainAdjustmentApplied?: boolean;
+  readonly terrainAdjustmentReason?: string;
   readonly weatherTextZh?: string | null;
   readonly weatherCode?: string | null;
   readonly airQuality?: {
@@ -218,7 +302,7 @@ export type NormalizedDailyWeather = {
   readonly elevationAdjustedTempMax?: number;
   readonly temperatureAdjustment?: Omit<
     ElevationTemperatureAdjustment,
-    "rawTemperature" | "elevationAdjustedTemperature"
+    "rawTemperature" | "rawTemperatureC" | "elevationAdjustedTemperature" | "terrainAdjustedTemperatureC"
   >;
   readonly precipitationProbability: number | null;
   readonly precipitationProbabilityPercent?: number | null;
@@ -242,7 +326,15 @@ export type NormalizedDailyWeather = {
   readonly cloudMid?: number | null;
   readonly cloudHigh?: number | null;
   readonly exposedRidgeWindRisk?: ExposedRidgeWindRisk;
+  readonly mountainFeelsLikeC?: number | null;
+  readonly tripodStabilityRisk?: TripodStabilityRisk;
+  readonly windChillNoteZh?: string;
+  readonly clothingRiskNoteZh?: string;
   readonly providerElevationMeters?: number;
+  readonly selectedSpotElevationMeters?: number;
+  readonly elevationDifferenceMeters?: number;
+  readonly terrainAdjustmentApplied?: boolean;
+  readonly terrainAdjustmentReason?: string;
   readonly weatherSummary: string;
   readonly cloudSummary?: string;
   readonly sunrise?: string;
@@ -308,6 +400,15 @@ export type ForecastWeatherSourceSummary = {
   readonly extractedFields?: readonly string[];
   readonly topLevelKeys?: readonly string[];
   readonly packages?: readonly string[];
+  readonly providerElevationMeters?: number;
+  readonly providerElevationSource?: ElevationSource;
+  readonly providerElevationKnown?: boolean;
+  readonly selectedSpotElevationMeters?: number;
+  readonly elevationDifferenceMeters?: number;
+  readonly terrainAdjustmentApplied?: boolean;
+  readonly terrainAdjustmentReason?: string;
+  readonly dayCorrectionRatio?: number;
+  readonly nightCorrectionRatio?: number;
 };
 
 export type ForecastProviderRuntimeSnapshot = {
@@ -325,9 +426,9 @@ export type ForecastProviderRuntimeSnapshot = {
 
 export type TerrainCloudSeaPotential = "low" | "medium" | "high";
 
-export type TerrainDataSource = "mock_terrain" | "open_meteo_elevation";
+export type TerrainDataSource = "mock_terrain" | "open_meteo_elevation" | "manual" | "unknown";
 
-export type TerrainProfileSummary = {
+export type TerrainProfileSummary = SpotTerrainProfile & {
   readonly locationElevation: number;
   readonly minElevation1km: number;
   readonly minElevation3km: number;
@@ -865,8 +966,11 @@ export type ForecastDailyWeatherSummary = {
   readonly selectedSpotElevationMeters?: number;
   readonly providerElevationMeters?: number;
   readonly providerElevationKnown?: boolean;
+  readonly elevationDifferenceMeters?: number;
   readonly feelsLikeMin?: number;
   readonly feelsLikeMax?: number;
+  readonly mountainFeelsLikeMin?: number;
+  readonly mountainFeelsLikeMax?: number;
   readonly precipitationProbability?: number | null;
   readonly precipitation?: number;
   readonly precipitationAmountMm?: number;
@@ -888,6 +992,9 @@ export type ForecastDailyWeatherSummary = {
   readonly transparencyGrade?: TransparencyGrade;
   readonly cloudFogObstructionRisk?: CloudFogObstructionRisk;
   readonly exposedRidgeWindRisk?: ExposedRidgeWindRisk;
+  readonly tripodStabilityRisk?: TripodStabilityRisk;
+  readonly windChillNoteZh?: string;
+  readonly clothingRiskNoteZh?: string;
   readonly dewPointSpread?: number;
   readonly cloudTotal?: number;
   readonly cloudLow?: number;

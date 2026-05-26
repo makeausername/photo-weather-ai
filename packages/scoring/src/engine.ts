@@ -2114,8 +2114,18 @@ function buildDailyWeatherSummary(
       dayWeather?.temperatureAdjustment?.providerElevationKnown ??
       dayHours.find((hour) => hour.temperatureAdjustment)?.temperatureAdjustment
         ?.providerElevationKnown,
+    elevationDifferenceMeters:
+      dayWeather?.elevationDifferenceMeters ??
+      dayHours.find((hour) => typeof hour.elevationDifferenceMeters === "number")
+        ?.elevationDifferenceMeters,
     feelsLikeMin: minOptional(dayHours.map((hour) => hour.feelsLike ?? undefined)),
     feelsLikeMax: maxOptional(dayHours.map((hour) => hour.feelsLike ?? undefined)),
+    mountainFeelsLikeMin:
+      dayWeather?.mountainFeelsLikeC ??
+      minOptional(dayHours.map((hour) => hour.mountainFeelsLikeC ?? undefined)),
+    mountainFeelsLikeMax:
+      dayWeather?.mountainFeelsLikeC ??
+      maxOptional(dayHours.map((hour) => hour.mountainFeelsLikeC ?? undefined)),
     precipitationProbability,
     precipitation:
       dayWeather?.precipitation ?? dayWeather?.precipitationAmountMm ?? precipitationAmount,
@@ -2158,6 +2168,13 @@ function buildDailyWeatherSummary(
       ),
     cloudFogObstructionRisk: dayWeather?.cloudFogObstructionRisk ?? aggregateCloudFogRisk(dayHours),
     exposedRidgeWindRisk: dayWeather?.exposedRidgeWindRisk ?? aggregateRidgeWindRisk(dayHours),
+    tripodStabilityRisk: dayWeather?.tripodStabilityRisk ?? aggregateTripodStabilityRisk(dayHours),
+    windChillNoteZh:
+      dayWeather?.windChillNoteZh ??
+      dayHours.find((hour) => hour.windChillNoteZh)?.windChillNoteZh,
+    clothingRiskNoteZh:
+      dayWeather?.clothingRiskNoteZh ??
+      dayHours.find((hour) => hour.clothingRiskNoteZh)?.clothingRiskNoteZh,
     dewPointSpread: averageOptional(dayHours.map((hour) => hour.dewPointSpread ?? undefined)),
     cloudTotal: averageOptional(dayHours.map((hour) => hour.cloudTotal)),
     cloudLow: averageOptional(dayHours.map((hour) => hour.cloudLow ?? undefined)),
@@ -2207,6 +2224,21 @@ function aggregateRidgeWindRisk(
     return "high";
   }
   if (hours.some((hour) => hour.exposedRidgeWindRisk === "medium")) {
+    return "medium";
+  }
+  if (hours.length > 0) {
+    return "low";
+  }
+  return undefined;
+}
+
+function aggregateTripodStabilityRisk(
+  hours: readonly NormalizedHourlyWeather[],
+): ForecastDailyWeatherSummary["tripodStabilityRisk"] {
+  if (hours.some((hour) => hour.tripodStabilityRisk === "high")) {
+    return "high";
+  }
+  if (hours.some((hour) => hour.tripodStabilityRisk === "medium")) {
     return "medium";
   }
   if (hours.length > 0) {

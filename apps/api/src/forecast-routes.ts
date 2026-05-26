@@ -447,6 +447,9 @@ async function calculateForecastResult(
       ...coordinates,
       name: query.name,
     },
+    latitudeGcj02: query.latitudeGcj02,
+    longitudeGcj02: query.longitudeGcj02,
+    elevationMeters: requestOptions.elevationMeters ?? query.elevationMeters ?? null,
   };
   const [weatherDataBundle, terrainProfile, horizonProfile] = await Promise.all([
     weatherDataService.getWeatherDataBundle({

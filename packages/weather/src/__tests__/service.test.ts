@@ -228,6 +228,39 @@ describe("WeatherIntelligenceService", () => {
     });
     expect(JSON.stringify(bundle)).not.toContain("meteoblue-secret");
   });
+
+  it("carries provider elevation comparison metadata in source summaries", async () => {
+    const service = new WeatherIntelligenceService({
+      providers: [
+        new StaticProvider(
+          "meteoblue",
+          "meteoblue",
+          "real",
+          hour({ providerCode: "meteoblue", providerElevationMeters: 1840 }),
+        ),
+      ],
+    });
+
+    const bundle = await service.getWeatherDataBundle({
+      ...requestInput(),
+      elevationMeters: 1860,
+    });
+    const summary = bundle.sourceSummaries?.find((source) => source.providerCode === "meteoblue");
+
+    expect(bundle.terrainMetadata).toMatchObject({
+      providerElevationMeters: 1840,
+      providerElevationKnown: true,
+      selectedSpotElevationMeters: 1860,
+      elevationDifferenceMeters: 20,
+      terrainAdjustmentApplied: false,
+    });
+    expect(summary).toMatchObject({
+      providerElevationMeters: 1840,
+      selectedSpotElevationMeters: 1860,
+      elevationDifferenceMeters: 20,
+      terrainAdjustmentReason: "provider_elevation_metadata_captured",
+    });
+  });
 });
 
 function requestInput(): WeatherRequestInput {

@@ -29,6 +29,17 @@ const fixedNow = "2026-05-20T00:00:00+08:00";
 
 const lowTerrainAnalysis: TerrainAnalysisSummary = {
   terrainProfile: {
+    latitudeWgs84: 30,
+    longitudeWgs84: 118,
+    elevationMeters: 420,
+    elevationSource: "manual",
+    elevationConfidence: "medium",
+    terrainType: "slope",
+    exposureType: "semi_exposed",
+    viewingDirection: "panoramic",
+    nearbyValleyElevationMeters: 310,
+    localReliefMeters: 210,
+    terrainNotesZh: "低山测试地形。",
     locationElevation: 420,
     minElevation1km: 360,
     minElevation3km: 330,

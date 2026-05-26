@@ -300,11 +300,23 @@ function fuseCurrent(
     transparencyGrade: primary?.transparencyGrade ?? hour?.transparencyGrade,
     cloudFogObstructionRisk: primary?.cloudFogObstructionRisk ?? hour?.cloudFogObstructionRisk,
     exposedRidgeWindRisk: primary?.exposedRidgeWindRisk ?? hour?.exposedRidgeWindRisk,
+    mountainFeelsLikeC: primary?.mountainFeelsLikeC ?? hour?.mountainFeelsLikeC,
+    tripodStabilityRisk: primary?.tripodStabilityRisk ?? hour?.tripodStabilityRisk,
+    windChillNoteZh: primary?.windChillNoteZh ?? hour?.windChillNoteZh,
+    clothingRiskNoteZh: primary?.clothingRiskNoteZh ?? hour?.clothingRiskNoteZh,
     rawTemperature: primary?.rawTemperature ?? hour?.rawTemperature,
     elevationAdjustedTemperature:
       primary?.elevationAdjustedTemperature ?? hour?.elevationAdjustedTemperature,
     temperatureAdjustment: primary?.temperatureAdjustment ?? hour?.temperatureAdjustment,
     providerElevationMeters: primary?.providerElevationMeters ?? hour?.providerElevationMeters,
+    selectedSpotElevationMeters:
+      primary?.selectedSpotElevationMeters ?? hour?.selectedSpotElevationMeters,
+    elevationDifferenceMeters:
+      primary?.elevationDifferenceMeters ?? hour?.elevationDifferenceMeters,
+    terrainAdjustmentApplied:
+      primary?.terrainAdjustmentApplied ?? hour?.terrainAdjustmentApplied,
+    terrainAdjustmentReason:
+      primary?.terrainAdjustmentReason ?? hour?.terrainAdjustmentReason,
     weatherTextZh: primary?.weatherTextZh ?? hour?.weatherTextZh ?? null,
     weatherCode: primary?.weatherCode ?? hour?.weatherCode ?? null,
     airQuality: primary?.airQuality ?? null,
@@ -370,6 +382,8 @@ function fuseHourlyAt(
           ? "provider_field_missing"
           : undefined,
       providerElevationMeters: selected.providerElevationMeters,
+      selectedSpotElevationMeters: selected.selectedSpotElevationMeters,
+      elevationDifferenceMeters: selected.elevationDifferenceMeters,
     };
     if (selected.estimated) {
       estimatedFields.add(field);
@@ -414,6 +428,8 @@ function selectFieldValue(
   readonly providerLabelZh?: string;
   readonly estimated: boolean;
   readonly providerElevationMeters?: number;
+  readonly selectedSpotElevationMeters?: number;
+  readonly elevationDifferenceMeters?: number;
 } {
   const providerOrder = capabilityOrderForField(field);
   const sorted = [...candidates].sort(
@@ -432,6 +448,8 @@ function selectFieldValue(
       providerLabelZh: primaryHour.providerLabelZh,
       estimated: false,
       providerElevationMeters: primaryHour.providerElevationMeters,
+      selectedSpotElevationMeters: primaryHour.selectedSpotElevationMeters,
+      elevationDifferenceMeters: primaryHour.elevationDifferenceMeters,
     };
   }
 
@@ -441,6 +459,12 @@ function selectFieldValue(
     providerLabelZh: selected.bundle.providerLabelZh,
     estimated: selected.hour.estimatedFields?.includes(field) ?? false,
     providerElevationMeters: selected.hour.providerElevationMeters,
+    selectedSpotElevationMeters:
+      selected.hour.selectedSpotElevationMeters ??
+      selected.bundle.terrainMetadata?.selectedSpotElevationMeters,
+    elevationDifferenceMeters:
+      selected.hour.elevationDifferenceMeters ??
+      selected.bundle.terrainMetadata?.elevationDifferenceMeters,
   };
 }
 
@@ -576,6 +600,15 @@ function sourceSummary(bundle: WeatherDataBundle): WeatherSourceSummary {
     extractedFields: availableFields,
     missingFields,
     generatedAt: bundle.generatedAt,
+    providerElevationMeters: bundle.terrainMetadata?.providerElevationMeters,
+    providerElevationSource: bundle.terrainMetadata?.providerElevationSource,
+    providerElevationKnown: bundle.terrainMetadata?.providerElevationKnown,
+    selectedSpotElevationMeters: bundle.terrainMetadata?.selectedSpotElevationMeters,
+    elevationDifferenceMeters: bundle.terrainMetadata?.elevationDifferenceMeters,
+    terrainAdjustmentApplied: bundle.terrainMetadata?.terrainAdjustmentApplied,
+    terrainAdjustmentReason: bundle.terrainMetadata?.terrainAdjustmentReason,
+    dayCorrectionRatio: bundle.terrainMetadata?.dayCorrectionRatio,
+    nightCorrectionRatio: bundle.terrainMetadata?.nightCorrectionRatio,
     messageZh:
       bundle.providerCode === "meteoblue" && missingFields.length > 0
         ? "meteoblue 通过，部分字段缺失。"

@@ -4,6 +4,7 @@ import type {
   TerrainAnalysisSummary,
   TerrainDataSource,
   TerrainProfileSummary,
+  SpotTerrainProfile,
 } from "@photo-weather/shared";
 
 export type TerrainCoordinate = Coordinates & {
@@ -28,6 +29,10 @@ export type HorizonProfile = HorizonProfileSummary;
 export type TerrainAnalysisInput = {
   readonly coordinate: TerrainCoordinate;
   readonly locationName?: string;
+  readonly latitudeGcj02?: number;
+  readonly longitudeGcj02?: number;
+  readonly elevationMeters?: number | null;
+  readonly terrainProfile?: SpotTerrainProfile;
   readonly sunriseAzimuth?: number;
   readonly sunsetAzimuth?: number;
   readonly milkyWayAzimuth?: number;

@@ -46,6 +46,17 @@ const fixedNow = "2026-05-20T00:00:00+08:00";
 
 const lowTerrainAnalysis: TerrainAnalysisSummary = {
   terrainProfile: {
+    latitudeWgs84: 30,
+    longitudeWgs84: 118,
+    elevationMeters: 420,
+    elevationSource: "manual",
+    elevationConfidence: "medium",
+    terrainType: "slope",
+    exposureType: "semi_exposed",
+    viewingDirection: "panoramic",
+    nearbyValleyElevationMeters: 310,
+    localReliefMeters: 210,
+    terrainNotesZh: "低山测试地形。",
     locationElevation: 420,
     minElevation1km: 360,
     minElevation3km: 330,
@@ -271,6 +282,34 @@ describe("forecast score calculators", () => {
     expect(adjusted.hourlyWeather[0]?.temperature).toBeGreaterThanOrEqual(17);
   });
 
+  it("does not apply 8-10C cooling when provider elevation is unknown", () => {
+    const baseInput = buildMockForecastInput(baseQuery, { now: fixedNow });
+    const veryHighTerrain: TerrainAnalysisSummary = {
+      ...baseInput.terrainAnalysis,
+      terrainProfile: {
+        ...baseInput.terrainAnalysis.terrainProfile,
+        locationElevation: 3600,
+        elevationMeters: 3600,
+      },
+    };
+    const adjusted = applyMountainWeatherAdjustments({
+      hourlyWeather: [
+        {
+          ...baseInput.hourlyWeather[0]!,
+          providerCode: "qweather",
+          providerElevationMeters: undefined,
+          temperature: 20,
+        },
+      ],
+      dailyWeather: [],
+      terrainAnalysis: veryHighTerrain,
+    });
+
+    expect(adjusted.hourlyWeather[0]?.temperatureAdjustment?.correctionCelsius).toBeLessThanOrEqual(
+      4,
+    );
+  });
+
   it("uses a lighter capped correction for unknown-provider night minimum temperature", () => {
     const baseInput = buildMockForecastInput(baseQuery, { now: fixedNow });
     const veryHighTerrain: TerrainAnalysisSummary = {
@@ -356,6 +395,39 @@ describe("forecast score calculators", () => {
     expect(adjusted.hourlyWeather[0]?.temperature).toBeGreaterThan(14);
     expect(guide.comfortLevel).not.toBe("very_cold");
     expect(guide.summaryZh).not.toContain("0°C");
+  });
+
+  it("adds terrain-aware mountain feels-like and tripod risk without changing wind speed", () => {
+    const baseInput = buildMockForecastInput(baseQuery, { now: fixedNow });
+    const rawWindSpeed = 4.8;
+    const adjusted = applyMountainWeatherAdjustments({
+      hourlyWeather: [
+        {
+          ...baseInput.hourlyWeather[0]!,
+          windSpeed: rawWindSpeed,
+          windGust: 10.5,
+          humidity: 92,
+          precipitation: 1.2,
+          providerElevationMeters: baseInput.terrainAnalysis.terrainProfile.locationElevation,
+        },
+      ],
+      dailyWeather: [],
+      terrainAnalysis: {
+        ...baseInput.terrainAnalysis,
+        terrainProfile: {
+          ...baseInput.terrainAnalysis.terrainProfile,
+          terrainType: "ridge",
+          exposureType: "exposed",
+        },
+      },
+    });
+    const hour = adjusted.hourlyWeather[0]!;
+
+    expect(hour.windSpeed).toBe(rawWindSpeed);
+    expect(hour.exposedRidgeWindRisk).toBe("high");
+    expect(hour.tripodStabilityRisk).toBe("medium");
+    expect(hour.mountainFeelsLikeC).toBeLessThan(hour.feelsLike ?? hour.temperature);
+    expect(hour.clothingRiskNoteZh).toContain("防");
   });
 
   it("derives precipitation risk from amount when probability is unavailable", () => {
