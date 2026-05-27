@@ -504,7 +504,7 @@ function locationFromForecastContext(
   };
 }
 
-function buildGeneralForecastReturnUrl(query: ForecastQueryInput): string {
+export function buildGeneralForecastReturnUrl(query: ForecastQueryInput): string {
   const params = new URLSearchParams({
     name: query.name,
     source: query.source,
@@ -581,7 +581,9 @@ function parseLocationFromSearchParams(
     ),
     locationSource: cleanString(firstParam(searchParams?.locationSource)),
     elevationSource: normalizeElevationSource(firstParam(searchParams?.elevationSource)),
-    elevationConfidence: normalizeElevationConfidence(firstParam(searchParams?.elevationConfidence)),
+    elevationConfidence: normalizeElevationConfidence(
+      firstParam(searchParams?.elevationConfidence),
+    ),
     locationId: cleanString(firstParam(searchParams?.locationId)),
     photoSpotId: cleanString(firstParam(searchParams?.photoSpotId)),
   };
@@ -618,7 +620,11 @@ function hasSubjectDataForDate(
   date: string,
   target: SubjectDetailTarget,
 ): boolean {
-  if (result.bestWindows.some((window) => window.target === target && windowBelongsToDate(window, date))) {
+  if (
+    result.bestWindows.some(
+      (window) => window.target === target && windowBelongsToDate(window, date),
+    )
+  ) {
     return true;
   }
 
@@ -692,9 +698,7 @@ function isMorningWindow(window: ForecastCalculationResult["bestWindows"][number
   return subject.includes("朝霞") || subject.includes("日出");
 }
 
-function startDateTimeForSubjectContext(
-  context: SubjectDetailDeepLinkContext,
-): string | undefined {
+function startDateTimeForSubjectContext(context: SubjectDetailDeepLinkContext): string | undefined {
   const offset = offsetFromIsoDateTime(context.windowStart) ?? "+08:00";
   return isValidDateString(context.date) ? `${context.date}T00:00:00${offset}` : undefined;
 }
@@ -720,7 +724,9 @@ function normalizeSubject(value: string | undefined): SubjectDetailSubject | und
 }
 
 function normalizeForecastHorizon(value: string | undefined): ForecastHorizon | undefined {
-  return value && forecastHorizons.has(value as ForecastHorizon) ? (value as ForecastHorizon) : undefined;
+  return value && forecastHorizons.has(value as ForecastHorizon)
+    ? (value as ForecastHorizon)
+    : undefined;
 }
 
 function normalizeElevationSource(value: string | undefined): ElevationSource | undefined {

@@ -1790,6 +1790,19 @@ function countOccurrences(text: string, pattern: string): number {
   return text.split(pattern).length - 1;
 }
 
+function sectionBetween(html: string, startMarker: string, endMarker: string): string {
+  const start = html.indexOf(startMarker);
+  const end = html.indexOf(endMarker, start + startMarker.length);
+
+  return start >= 0 && end > start ? html.slice(start, end) : "";
+}
+
+function decodedHrefs(html: string): readonly string[] {
+  return [...html.matchAll(/href="([^"]+)"/g)].map((match) =>
+    (match[1] ?? "").replace(/&amp;/g, "&"),
+  );
+}
+
 describe("forecast result target-aware view model", () => {
   it("uses Simplified Chinese target labels", () => {
     expect(forecastTargetLabels).toMatchObject({
@@ -2037,9 +2050,7 @@ describe("forecast result target-aware view model", () => {
     };
     const result: ForecastCalculationResult = {
       ...baseResult,
-      keyReasons: [
-        "地形参考：机位海拔暂未确认，山地体感和云海判断仅作参考，周边高差暂未计算。",
-      ],
+      keyReasons: ["地形参考：机位海拔暂未确认，山地体感和云海判断仅作参考，周边高差暂未计算。"],
       terrainSummary: {
         ...baseResult.terrainSummary,
         ...unknownTerrain,
@@ -2179,6 +2190,105 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toMatch(/(?:^|\s)(?:w|min-w)-\[(?:[1-9]\d{3,})px\]/);
   });
 
+  it("renders exactly five compact subject summaries on the general opportunity section", () => {
+    const query = queryForTarget("general");
+    const result = resultForTarget("general");
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query,
+        result,
+        viewModel,
+        aiStatus: "idle",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        aiRetryable: false,
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+    const summarySection = sectionBetween(
+      html,
+      'data-testid="opportunity-windows"',
+      'data-testid="risk-section"',
+    );
+    const hrefs = decodedHrefs(summarySection);
+    const urls = hrefs.map((href) => new URL(href, "http://localhost:3000"));
+
+    expect(countOccurrences(summarySection, 'data-testid="general-subject-summary-card"')).toBe(5);
+    expect(
+      countOccurrences(summarySection, 'data-testid="general-subject-recommendation-badge"'),
+    ).toBe(5);
+    expect(
+      countOccurrences(summarySection, 'data-testid="general-subject-risk-badge"'),
+    ).toBeLessThanOrEqual(5);
+    expect(
+      countOccurrences(summarySection, 'data-testid="general-subject-recommended-window"'),
+    ).toBe(5);
+    expect(
+      countOccurrences(summarySection, 'data-testid="general-subject-backup-window"'),
+    ).toBeLessThanOrEqual(5);
+    expect(summarySection).toContain('data-subject="cloudSea"');
+    expect(summarySection).toContain('data-subject="sunriseGlow"');
+    expect(summarySection).toContain('data-subject="sunsetGlow"');
+    expect(summarySection).toContain('data-subject="stars"');
+    expect(summarySection).toContain('data-subject="milkyWay"');
+    expect(summarySection).toContain(">云海<");
+    expect(summarySection).toContain(">朝霞<");
+    expect(summarySection).toContain(">晚霞<");
+    expect(summarySection).toContain(">星空<");
+    expect(summarySection).toContain(">银河<");
+    expect(countOccurrences(summarySection, "机会指数")).toBe(5);
+    expect(summarySection).toContain("72%");
+    expect(summarySection).toContain("70%");
+    expect(summarySection).toContain("74%");
+    expect(summarySection).toContain("66%");
+    expect(summarySection).toContain("68%");
+    expect(summarySection).toContain("推荐窗口：</span>2026年5月20日 05:00–07:00");
+    expect(summarySection).toContain("推荐窗口：</span>2026年5月20日 04:30–06:15");
+    expect(summarySection).toContain("推荐窗口：</span>2026年5月20日 17:56–19:41");
+    expect(summarySection).toContain("推荐窗口：</span>2026年5月20日 20:24 – 5月21日 03:48");
+    expect(summarySection).toContain("查看云海详情");
+    expect(countOccurrences(summarySection, "查看霞光详情")).toBe(2);
+    expect(countOccurrences(summarySection, "查看星空详情")).toBe(2);
+    expect(summarySection).not.toContain("日落暖光");
+    expect(summarySection).not.toContain("日落后余晖");
+    expect(summarySection).not.toContain("雨后云雾");
+    expect(summarySection).not.toContain("月光地景");
+    expect(summarySection).not.toContain("云层纹理");
+    expect(summarySection).not.toContain("远山层次");
+    expect(summarySection).not.toContain("实用 ");
+    expect(summarySection).not.toContain("气象 ");
+    expect(summarySection).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风|高德/i);
+    expect(summarySection).not.toMatch(/api[_-]?key|secret|token|sk-/i);
+    expect(urls.map((url) => url.pathname)).toEqual([
+      "/cloud-sea",
+      "/glow",
+      "/glow",
+      "/astro",
+      "/astro",
+    ]);
+    expect(urls.map((url) => url.searchParams.get("subject"))).toEqual([
+      "cloud_sea",
+      "sunrise_glow",
+      "sunset_glow",
+      "astro",
+      "milky_way",
+    ]);
+    for (const url of urls) {
+      expect(url.searchParams.get("resultId")).toBe(createForecastResultContextId(query, result));
+      expect(url.searchParams.get("source")).toBe("general");
+      expect(url.searchParams.get("returnUrl")).toContain("/forecast?");
+      expect(url.searchParams.get("locationName")).toBe("黄山光明顶");
+      expect(url.searchParams.get("latWgs84")).toBe("30.13012");
+      expect(url.searchParams.get("lngWgs84")).toBe("118.16389");
+    }
+    expect(urls[0]!.searchParams.get("date")).toBe("2026-05-20");
+    expect(urls[0]!.searchParams.get("windowStart")).toBe("2026-05-20T05:00:00+08:00");
+    expect(urls[0]!.searchParams.get("windowEnd")).toBe("2026-05-20T07:00:00+08:00");
+    expect(urls[4]!.searchParams.get("windowStart")).toBe("2026-05-22T01:05:00+08:00");
+    expect(urls[4]!.searchParams.get("windowEnd")).toBe("2026-05-22T03:20:00+08:00");
+  });
+
   it("shows blocked astro reasons on the general result page without recommending Milky Way", () => {
     const result = resultWithBlockedAstro("general");
     const viewModel = buildForecastResultViewModel(result, "general");
@@ -2194,7 +2304,11 @@ describe("forecast result target-aware view model", () => {
         onGenerateAiExplanation: vi.fn(),
       }),
     );
-    const windowSection = html.slice(html.indexOf('data-testid="opportunity-windows"'));
+    const windowSection = sectionBetween(
+      html,
+      'data-testid="opportunity-windows"',
+      'data-testid="risk-section"',
+    );
     const dailySection = html.slice(
       html.indexOf('data-testid="daily-forecast-decision"'),
       html.indexOf('data-testid="opportunity-windows"'),
@@ -2205,8 +2319,14 @@ describe("forecast result target-aware view model", () => {
     expect(dailySection).not.toContain("银河可拍性");
     expect(dailySection).not.toContain("天文窗口存在，但低云偏多、降水干扰不支持拍摄");
     expect(dailySection).not.toContain("银河天文窗口 2026年5月");
-    expect(windowSection).toContain("不建议：银河天文窗口");
-    expect(windowSection).toContain("低云偏多、降水干扰，不建议专程夜拍");
+    expect(windowSection).toContain('data-subject="stars"');
+    expect(windowSection).toContain('data-subject="milkyWay"');
+    expect(windowSection).toContain("推荐窗口：</span>暂无高确定性窗口");
+    expect(windowSection).toContain("低云偏多、降水干扰");
+    expect(windowSection).toContain("云量或月光影响较大，不建议专程夜拍。");
+    expect(windowSection).toContain("天文窗口存在但天气不支持，仅作参考。");
+    expect(windowSection).not.toContain("银河天文窗口");
+    expect(windowSection).not.toContain("天文窗口存在，但低云偏多、降水干扰不支持拍摄");
     expect(html).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风|高德/i);
   });
 
@@ -2465,16 +2585,20 @@ describe("forecast result target-aware view model", () => {
         onGenerateAiExplanation: vi.fn(),
       }),
     );
-
-    expect(html).toContain("清晨云海");
-    expect(html).toContain("2026年5月20日 04:08–06:08");
-    expect(html).toContain("云雾变化");
-    expect(html).toContain("2026年5月20日 01:00–03:00");
-    expect(html).toContain("形成信号");
-    expect(html).toContain("无光形成信号");
-    expect(html.indexOf("2026年5月20日 04:08–06:08")).toBeLessThan(
-      html.indexOf("2026年5月20日 01:00–03:00"),
+    const summarySection = sectionBetween(
+      html,
+      'data-testid="opportunity-windows"',
+      'data-testid="risk-section"',
     );
+
+    expect(summarySection).toContain('data-subject="cloudSea"');
+    expect(summarySection).toContain(">云海<");
+    expect(summarySection).toContain("推荐窗口：</span>2026年5月20日 04:08–06:08");
+    expect(summarySection).toContain("备选窗口：</span>2026年5月21日 05:10–07:10");
+    expect(summarySection).not.toContain("云雾变化");
+    expect(summarySection).not.toContain("2026年5月20日 01:00–03:00");
+    expect(summarySection).not.toContain("形成信号");
+    expect(summarySection).not.toContain("无光形成信号");
   });
 
   it("renders an evening glow window as sunset copy even if the raw label says sunrise glow", () => {
@@ -2516,11 +2640,18 @@ describe("forecast result target-aware view model", () => {
         onGenerateAiExplanation: vi.fn(),
       }),
     );
+    const summarySection = sectionBetween(
+      html,
+      'data-testid="opportunity-windows"',
+      'data-testid="risk-section"',
+    );
 
     expect(viewModel.bestWindows[0]?.moduleKey).toBe("sunsetGlow");
     expect(viewModel.bestWindows[0]?.label).toBe("日落暖光");
-    expect(html).toContain("日落暖光");
-    expect(html).toContain("2026年5月20日 19:01–19:28");
+    expect(summarySection).toContain('data-subject="sunsetGlow"');
+    expect(summarySection).toContain(">晚霞<");
+    expect(summarySection).toContain("推荐窗口：</span>2026年5月20日 19:01–19:28");
+    expect(summarySection).not.toContain("日落暖光");
     expect(html).not.toContain("朝霞窗口 19:01");
   });
 

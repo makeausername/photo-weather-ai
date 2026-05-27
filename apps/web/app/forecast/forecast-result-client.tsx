@@ -53,9 +53,13 @@ import {
   windowLabelText,
 } from "./forecast-copy";
 import {
+  buildGeneralForecastReturnUrl,
   buildGeneralDailySubjectLinks,
+  buildSubjectDetailDeepLink,
   createForecastResultContextId,
   writeForecastResultContext,
+  type SubjectDetailSubject,
+  type SubjectDetailTarget,
 } from "./subject-detail-links";
 
 type ForecastResultClientProps = {
@@ -400,8 +404,7 @@ export function normalizeAiExplainResponse(
       parseSuccess,
       latencyMs: numericField(response, "latencyMs") ?? diagnostics?.latencyMs,
       model: readStringField(response, "model") ?? diagnostics?.model,
-      promptSizeChars:
-        numericField(response, "promptSizeChars") ?? diagnostics?.promptSizeChars,
+      promptSizeChars: numericField(response, "promptSizeChars") ?? diagnostics?.promptSizeChars,
     };
   }
 
@@ -459,7 +462,9 @@ function normalizeAiExplainThrownError(
   };
 }
 
-function extractAiExplanationFromResponse(response: AiExplainResponse): ForecastAiExplanation | null {
+function extractAiExplanationFromResponse(
+  response: AiExplainResponse,
+): ForecastAiExplanation | null {
   const candidates = [
     response.explanation,
     response.interpretation,
@@ -564,7 +569,9 @@ function completeForecastAiExplanationFromPartial(
     readStringField(value, "decisionZh") ??
     summaryText;
   const dayByDay = Array.isArray(value.dayByDay)
-    ? value.dayByDay.map(normalizeAiDay).filter((day): day is ForecastAiExplanation["dayByDay"][number] => Boolean(day))
+    ? value.dayByDay
+        .map(normalizeAiDay)
+        .filter((day): day is ForecastAiExplanation["dayByDay"][number] => Boolean(day))
     : [];
 
   return withAiExplanationMetadata(
@@ -593,8 +600,10 @@ function completeForecastAiExplanationFromPartial(
         trendSummaryZh: readStringField(weatherTrend, "trendSummaryZh") ?? summaryText,
         temperatureSummaryZh:
           readStringField(weatherTrend, "temperatureSummaryZh") ?? "温度以确定性天气卡片为准。",
-        rainSummaryZh: readStringField(weatherTrend, "rainSummaryZh") ?? "降水以确定性天气卡片为准。",
-        windSummaryZh: readStringField(weatherTrend, "windSummaryZh") ?? "风力以确定性天气卡片为准。",
+        rainSummaryZh:
+          readStringField(weatherTrend, "rainSummaryZh") ?? "降水以确定性天气卡片为准。",
+        windSummaryZh:
+          readStringField(weatherTrend, "windSummaryZh") ?? "风力以确定性天气卡片为准。",
         transparencySummaryZh:
           readStringField(weatherTrend, "transparencySummaryZh") ?? "通透度以确定性评分为准。",
       },
@@ -644,7 +653,8 @@ function completeForecastAiExplanationFromPartial(
         ifDedicatedTripZh:
           readStringField(finalAdvice, "ifDedicatedTripZh") ?? "专程出发前需等待临近预报复核。",
         nextCheckZh:
-          readStringField(finalAdvice, "nextCheckZh") ?? "下次重点复核短临降水、低云、能见度和阵风。",
+          readStringField(finalAdvice, "nextCheckZh") ??
+          "下次重点复核短临降水、低云、能见度和阵风。",
       },
       metadata: normalizeAiMetadata(value.metadata),
     },
@@ -695,7 +705,9 @@ function explanationFromSections(
 
   const textFor = (keywords: readonly string[], fallbackIndex: number) =>
     usableSections.find((section) => keywords.some((keyword) => section.title.includes(keyword)))
-      ?.text ?? usableSections[fallbackIndex]?.text ?? firstSection.text;
+      ?.text ??
+    usableSections[fallbackIndex]?.text ??
+    firstSection.text;
   const conclusion = textFor(["结论", "决策", "summary", "decision"], 0);
   const plan = textFor(["计划", "窗口", "plan", "window"], 1);
   const trend = textFor(["天气", "趋势", "trend", "weather"], 2);
@@ -865,7 +877,10 @@ function getDeterministicAiFallbackFromResult(
 ): ForecastAiExplanation | null {
   const explanation = (result as ForecastCalculationResultWithAi | null)?.aiExplanation;
   return isForecastAiExplanationLike(explanation)
-    ? withAiExplanationMetadata(explanation, explanation.metadata?.source ?? "deterministic_fallback")
+    ? withAiExplanationMetadata(
+        explanation,
+        explanation.metadata?.source ?? "deterministic_fallback",
+      )
     : null;
 }
 
@@ -1101,7 +1116,11 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
   }, [query, queryKey]);
 
   async function generateAiExplanation() {
-    if (!query || !result || !shouldStartAiExplanationRequest(aiStatus, aiRequestInFlightRef.current)) {
+    if (
+      !query ||
+      !result ||
+      !shouldStartAiExplanationRequest(aiStatus, aiRequestInFlightRef.current)
+    ) {
       return;
     }
 
@@ -2188,7 +2207,10 @@ function appendRiskTimeContext(detail: string, timeLabel: string | undefined): s
   return `${cleanDetail}。重点时段：${timeLabel}。`;
 }
 
-function fallbackRiskTimeLabel(result: ForecastCalculationResult, riskKey: string): string | undefined {
+function fallbackRiskTimeLabel(
+  result: ForecastCalculationResult,
+  riskKey: string,
+): string | undefined {
   if (riskKey === "whiteout") {
     const whiteoutDay = [...result.cloudSeaAnalysis.dailyCloudSea]
       .filter((day) => day.whiteoutRiskScore >= 50)
@@ -2227,7 +2249,9 @@ function fallbackRiskTimeLabel(result: ForecastCalculationResult, riskKey: strin
   if (riskKey === "visibility") {
     const visibilityDay = [...result.dailySummaries]
       .filter((summary) => typeof summary.weather?.visibility === "number")
-      .sort((left, right) => (left.weather?.visibility ?? 99) - (right.weather?.visibility ?? 99))[0];
+      .sort(
+        (left, right) => (left.weather?.visibility ?? 99) - (right.weather?.visibility ?? 99),
+      )[0];
     if (visibilityDay) {
       return formatDateBlockLabel(result, visibilityDay.date, "低能见度时段");
     }
@@ -4036,6 +4060,389 @@ const subjectLabels: Record<SubjectScoreKey, string> = {
   transparency: "通透 / 景别清晰度",
 };
 
+type GeneralSubjectKey = Exclude<SubjectScoreKey, "transparency">;
+
+type GeneralSubjectSummary = {
+  readonly key: GeneralSubjectKey;
+  readonly name: string;
+  readonly chanceText: string;
+  readonly recommendationLabel: GeneralSubjectRecommendationLabel;
+  readonly badgeVariant: BadgeVariant;
+  readonly riskBadge?: {
+    readonly label: string;
+    readonly variant: BadgeVariant;
+  };
+  readonly recommendedWindowText: string;
+  readonly backupWindowText?: string;
+  readonly blockerText?: string;
+  readonly action: string;
+  readonly linkLabel: string;
+  readonly href: string;
+};
+
+type GeneralSubjectRecommendationLabel = "推荐" | "可观察" | "谨慎参考" | "仅作备选" | "不建议";
+
+const generalSubjectOrder: readonly GeneralSubjectKey[] = [
+  "cloudSea",
+  "sunriseGlow",
+  "sunsetGlow",
+  "stars",
+  "milkyWay",
+];
+
+const generalSubjectLinkConfig: Record<
+  GeneralSubjectKey,
+  {
+    readonly target: SubjectDetailTarget;
+    readonly subject: SubjectDetailSubject;
+    readonly label: string;
+  }
+> = {
+  cloudSea: {
+    target: "cloud_sea",
+    subject: "cloud_sea",
+    label: "查看云海详情",
+  },
+  sunriseGlow: {
+    target: "glow",
+    subject: "sunrise_glow",
+    label: "查看霞光详情",
+  },
+  sunsetGlow: {
+    target: "glow",
+    subject: "sunset_glow",
+    label: "查看霞光详情",
+  },
+  stars: {
+    target: "astro",
+    subject: "astro",
+    label: "查看星空详情",
+  },
+  milkyWay: {
+    target: "astro",
+    subject: "milky_way",
+    label: "查看星空详情",
+  },
+};
+
+function buildGeneralSubjectSummaries(
+  query: ForecastQueryInput,
+  result: ForecastCalculationResult,
+): readonly GeneralSubjectSummary[] {
+  const cardsByKey = new Map(buildSubjectBreakdownCards(result).map((card) => [card.key, card]));
+  const resultContext = result as ForecastCalculationResultWithAi;
+  const resultId = resultContext.resultId ?? createForecastResultContextId(query, result);
+  const returnUrl = buildGeneralForecastReturnUrl(query);
+
+  return generalSubjectOrder.map((key) => {
+    const score = generalSubjectChanceScore(result, key, cardsByKey.get(key));
+    const subjectWindows = generalSubjectWindows(result, key);
+    const recommendedWindow = subjectWindows.find((window) =>
+      isRecommendedGeneralSubjectWindow(result, key, window),
+    );
+    const backupWindow = subjectWindows.find(
+      (window) => window !== recommendedWindow && isBackupGeneralSubjectWindow(result, key, window),
+    );
+    const linkWindow = recommendedWindow ?? backupWindow ?? subjectWindows[0];
+    const blocker = generalSubjectBlocker(result, key, linkWindow, score);
+    const recommendationLabel = generalSubjectRecommendationLabel(
+      score,
+      recommendedWindow,
+      backupWindow,
+      blocker,
+    );
+    const linkConfig = generalSubjectLinkConfig[key];
+
+    return {
+      key,
+      name: subjectLabels[key],
+      chanceText: formatGeneralChanceText(score),
+      recommendationLabel,
+      badgeVariant: generalSubjectBadgeVariant(recommendationLabel),
+      riskBadge:
+        blocker && recommendationLabel !== "推荐"
+          ? {
+              label: blocker,
+              variant: recommendationLabel === "不建议" ? "danger" : "warning",
+            }
+          : undefined,
+      recommendedWindowText: recommendedWindow
+        ? formatWindow(recommendedWindow.startTime, recommendedWindow.endTime)
+        : "暂无高确定性窗口",
+      backupWindowText: backupWindow
+        ? formatWindow(backupWindow.startTime, backupWindow.endTime)
+        : undefined,
+      blockerText: recommendedWindow ? undefined : blocker,
+      action: generalSubjectAction(key, recommendationLabel, blocker),
+      linkLabel: linkConfig.label,
+      href: buildSubjectDetailDeepLink({
+        query,
+        result,
+        resultId,
+        reportId: resultContext.reportId,
+        target: linkConfig.target,
+        subject: linkConfig.subject,
+        date: generalSubjectLinkDate(result, linkWindow),
+        window: linkWindow,
+        returnUrl,
+      }),
+    };
+  });
+}
+
+function generalSubjectChanceScore(
+  result: ForecastCalculationResult,
+  key: GeneralSubjectKey,
+  card: SubjectBreakdownCard | undefined,
+): number | undefined {
+  if (key === "cloudSea") {
+    return result.cloudSeaAnalysis.shootableScore;
+  }
+  if (key === "sunriseGlow") {
+    return result.glowAnalysis.sunriseGlowScore;
+  }
+  if (key === "sunsetGlow") {
+    return result.glowAnalysis.sunsetGlowScore;
+  }
+  if (key === "stars") {
+    return result.astroAnalysis.starsScore;
+  }
+  if (key === "milkyWay") {
+    return result.astroAnalysis.milkyWayScore;
+  }
+
+  return card?.score.score;
+}
+
+function formatGeneralChanceText(score: number | undefined): string {
+  if (typeof score !== "number" || !Number.isFinite(score)) {
+    return "暂无";
+  }
+
+  return `${Math.max(0, Math.min(100, Math.round(score)))}%`;
+}
+
+function generalSubjectWindows(
+  result: ForecastCalculationResult,
+  key: GeneralSubjectKey,
+): readonly ForecastCalculationResult["bestWindows"][number][] {
+  return [...result.bestWindows]
+    .filter((window) => matchesGeneralSubjectWindow(window, key))
+    .sort(
+      (left, right) =>
+        windowUsefulnessRank(right) - windowUsefulnessRank(left) ||
+        (right.practicalScore ?? right.score) - (left.practicalScore ?? left.score) ||
+        Date.parse(left.startTime) - Date.parse(right.startTime),
+    );
+}
+
+function matchesGeneralSubjectWindow(
+  window: ForecastCalculationResult["bestWindows"][number],
+  key: GeneralSubjectKey,
+): boolean {
+  const text = generalSubjectWindowSearchText(window);
+
+  if (key === "cloudSea") {
+    return window.target === "cloud_sea";
+  }
+  if (key === "sunriseGlow") {
+    return window.target === "glow" && isMorningForecastWindow(window);
+  }
+  if (key === "sunsetGlow") {
+    return window.target === "glow" && isEveningForecastWindow(window);
+  }
+  if (key === "milkyWay") {
+    return window.target === "astro" && (/银河/.test(text) || /milky\s*way/i.test(text));
+  }
+
+  return (
+    window.target === "astro" &&
+    !/银河|milky\s*way/i.test(text) &&
+    (/星空|星野|夜景星空|天文黑夜/.test(text) || window.target === "astro")
+  );
+}
+
+function generalSubjectWindowSearchText(
+  window: Pick<ForecastCalculationResult["bestWindows"][number], "label" | "subjectPriorityLabel">,
+): string {
+  return `${window.subjectPriorityLabel ?? ""} ${window.label}`;
+}
+
+function isRecommendedGeneralSubjectWindow(
+  result: ForecastCalculationResult,
+  key: GeneralSubjectKey,
+  window: ForecastCalculationResult["bestWindows"][number],
+): boolean {
+  if ((key === "stars" || key === "milkyWay") && !result.astroAnalysis.astroShootable) {
+    return false;
+  }
+
+  return isUsableClientWindow(window);
+}
+
+function isBackupGeneralSubjectWindow(
+  result: ForecastCalculationResult,
+  key: GeneralSubjectKey,
+  window: ForecastCalculationResult["bestWindows"][number],
+): boolean {
+  if ((key === "stars" || key === "milkyWay") && !result.astroAnalysis.astroShootable) {
+    return false;
+  }
+  if (window.windowLevel === "blocked" || window.recommendationLevel === "not_recommended") {
+    return false;
+  }
+
+  return (window.practicalScore ?? window.score) >= 45;
+}
+
+function generalSubjectRecommendationLabel(
+  score: number | undefined,
+  recommendedWindow: ForecastCalculationResult["bestWindows"][number] | undefined,
+  backupWindow: ForecastCalculationResult["bestWindows"][number] | undefined,
+  blocker: string | undefined,
+): GeneralSubjectRecommendationLabel {
+  const value = typeof score === "number" && Number.isFinite(score) ? score : 0;
+
+  if (recommendedWindow) {
+    return value >= 72 ? "推荐" : "可观察";
+  }
+  if (backupWindow) {
+    return "仅作备选";
+  }
+  if (value >= 55 && !blocker) {
+    return "可观察";
+  }
+  if (value >= 40) {
+    return "谨慎参考";
+  }
+  return "不建议";
+}
+
+function generalSubjectBadgeVariant(label: GeneralSubjectRecommendationLabel): BadgeVariant {
+  if (label === "推荐") {
+    return "default";
+  }
+  if (label === "可观察") {
+    return "accent";
+  }
+  if (label === "不建议") {
+    return "danger";
+  }
+  if (label === "谨慎参考") {
+    return "warning";
+  }
+  return "muted";
+}
+
+function generalSubjectBlocker(
+  result: ForecastCalculationResult,
+  key: GeneralSubjectKey,
+  window: ForecastCalculationResult["bestWindows"][number] | undefined,
+  score: number | undefined,
+): string | undefined {
+  if (key === "cloudSea") {
+    if (result.cloudSeaAnalysis.whiteoutRiskScore >= 65 || result.scores.whiteoutRisk.score >= 65) {
+      return "白墙风险";
+    }
+    if (window?.practicalKind === "formation_signal") {
+      return "无光形成信号";
+    }
+  }
+
+  if (key === "sunriseGlow" || key === "sunsetGlow") {
+    if (result.glowAnalysis.lowCloudObstructionRisk >= 65) {
+      return "低云遮挡";
+    }
+    if (
+      (key === "sunriseGlow" && result.glowAnalysis.rainOverlapsSunriseWindow) ||
+      (key === "sunsetGlow" && result.glowAnalysis.rainOverlapsSunsetWindow)
+    ) {
+      return "降水干扰";
+    }
+    if (result.scores.transparency.score < 55) {
+      return "通透偏弱";
+    }
+  }
+
+  if (key === "stars" || key === "milkyWay") {
+    const blockers = [
+      ...(window?.blockerReasons ?? []),
+      ...(window?.weatherBlockers ?? []),
+      ...result.astroAnalysis.weatherBlockers,
+    ];
+    if (blockers.length > 0) {
+      return astroWindowBlockerLabels(blockers).join("、");
+    }
+    if (!result.astroAnalysis.astroShootable) {
+      if (result.astroAnalysis.cloudBlockerLevel === "high") {
+        return "云量偏高";
+      }
+      if (result.astroAnalysis.labels.moonlightImpact === "高") {
+        return "月光影响";
+      }
+      return "天气不支持";
+    }
+  }
+
+  return typeof score === "number" && score < 45 ? "条件不足" : undefined;
+}
+
+function generalSubjectAction(
+  key: GeneralSubjectKey,
+  recommendationLabel: GeneralSubjectRecommendationLabel,
+  blocker: string | undefined,
+): string {
+  if (key === "cloudSea") {
+    if (recommendationLabel === "推荐" || recommendationLabel === "可观察") {
+      return "清晨重点关注，现场复核白墙风险。";
+    }
+    return blocker === "白墙风险"
+      ? "云海信号需降级，先确认云顶高度。"
+      : "云海信号不足，不建议只为单一窗口出发。";
+  }
+
+  if (key === "sunriseGlow") {
+    return recommendationLabel === "推荐" || recommendationLabel === "可观察"
+      ? "日出前完成构图，复核东方低云遮挡。"
+      : "可顺带观察，不建议作为唯一目标。";
+  }
+
+  if (key === "sunsetGlow") {
+    return recommendationLabel === "推荐" || recommendationLabel === "可观察"
+      ? "关注西向云层开口，日落前到位。"
+      : "保留日落前后机动，不押单一霞光。";
+  }
+
+  if (key === "stars") {
+    return recommendationLabel === "推荐" || recommendationLabel === "可观察"
+      ? "夜间可纳入计划，复核云量、月光和通行安全。"
+      : "云量或月光影响较大，不建议专程夜拍。";
+  }
+
+  return recommendationLabel === "推荐" || recommendationLabel === "可观察"
+    ? "银心方向可重点跟进，临近复核云量和月光。"
+    : "天文窗口存在但天气不支持，仅作参考。";
+}
+
+function generalSubjectLinkDate(
+  result: ForecastCalculationResult,
+  window: ForecastCalculationResult["bestWindows"][number] | undefined,
+): string {
+  return (
+    window?.date ??
+    dateFromIsoLike(window?.startTime) ??
+    result.calendarBasis.targetDates[0] ??
+    result.targetDates[0] ??
+    dateFromIsoLike(result.forecastStart) ??
+    "1970-01-01"
+  );
+}
+
+function dateFromIsoLike(value: string | undefined): string | undefined {
+  const date = value?.slice(0, 10);
+  return date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : undefined;
+}
+
 export function ComprehensiveForecastView({
   query,
   result,
@@ -4059,12 +4466,6 @@ export function ComprehensiveForecastView({
   const bestSubject = pickBestSubject(subjectCards);
   const mainRisk = pickMainRisk(result);
   const primaryBestWindow = viewModel.bestWindows.find(isExecutableDisplayWindow);
-  const sortedWindows = [...viewModel.bestWindows].sort(
-    (left, right) =>
-      windowDisplayCategoryRank(right) - windowDisplayCategoryRank(left) ||
-      (right.practicalScore ?? right.score) - (left.practicalScore ?? left.score) ||
-      Date.parse(left.startTime) - Date.parse(right.startTime),
-  );
 
   return (
     <section className="mx-auto grid w-full max-w-[1560px] gap-5">
@@ -4079,7 +4480,7 @@ export function ComprehensiveForecastView({
       {result.dailySummaries.length > 0 ? (
         <ComprehensiveMultiDaySummary query={query} result={result} />
       ) : null}
-      <OpportunityWindowSection result={result} windows={sortedWindows} />
+      <OpportunityWindowSection query={query} result={result} />
       <RiskDecisionSection result={result} mainRisk={mainRisk} />
       <ActionableAdviceSection result={result} bestSubject={bestSubject} mainRisk={mainRisk} />
       <AiExplanationPanel
@@ -4243,66 +4644,81 @@ function ComprehensiveCoreDecisionCards({
 }
 
 function OpportunityWindowSection({
+  query,
   result,
-  windows,
 }: {
+  readonly query: ForecastQueryInput;
   readonly result: ForecastCalculationResult;
-  readonly windows: readonly ForecastResultWindow[];
 }) {
+  const summaries = buildGeneralSubjectSummaries(query, result);
+
   return (
     <section className="grid gap-3" data-testid="opportunity-windows">
       <SectionHeading
         title="拍摄窗口与备选"
-        description="优先看可执行窗口，同时保留气象条件较好但时间成本较高的信号。"
-        badge="按实用性排序"
+        description="只汇总五类核心题材，快速判断哪个最值得拍。"
+        badge="五类题材"
       />
-      <ul className="mt-4 grid gap-3">
-        {windows.map((window) => (
-          <li
-            key={window.key}
-            className="grid gap-3 rounded-lg border border-border bg-card p-4 shadow-sm min-[720px]:grid-cols-[minmax(0,1fr)_auto] min-[720px]:items-center"
+      <div
+        className="mt-4 grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(210px,1fr))]"
+        data-testid="general-subject-summary-grid"
+      >
+        {summaries.map((summary) => (
+          <article
+            key={summary.key}
+            className="grid min-h-[260px] content-start gap-3 rounded-lg border border-border bg-card p-4 shadow-sm"
+            data-testid="general-subject-summary-card"
+            data-subject={summary.key}
           >
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={windowCategoryBadgeVariant(window)}>
-                  {windowDisplayCategory(window)}
-                </Badge>
-                <Badge variant="muted">{window.badgeLabel}</Badge>
-                <h3 className="font-semibold text-card-foreground">{window.label}</h3>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <h3 className="text-base font-bold text-card-foreground">{summary.name}</h3>
+              <div className="flex flex-wrap justify-end gap-1.5">
+                <span data-testid="general-subject-recommendation-badge">
+                  <Badge variant={summary.badgeVariant}>{summary.recommendationLabel}</Badge>
+                </span>
+                {summary.riskBadge ? (
+                  <span data-testid="general-subject-risk-badge">
+                    <Badge variant={summary.riskBadge.variant}>{summary.riskBadge.label}</Badge>
+                  </span>
+                ) : null}
               </div>
-              <p className="mt-2 break-words text-sm font-semibold text-muted-foreground">
-                {window.fullTimeRangeLabel}
-              </p>
-              <p className="mt-2 break-words text-sm leading-6 text-card-foreground">
-                {windowListSummary(result, window)}
-              </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2 min-[720px]:justify-end">
-              <Badge variant={(window.practicalScore ?? window.score) >= 75 ? "default" : "accent"}>
-                实用 {window.practicalScore ?? window.score} 分
-              </Badge>
-              {typeof window.conditionScore === "number" ? (
-                <Badge variant="muted">气象 {window.conditionScore} 分</Badge>
-              ) : null}
-              {window.practicalKind === "formation_signal" ? (
-                <Badge variant="warning">形成信号</Badge>
-              ) : null}
-              {window.suitableIfNearby && !window.executableForDedicatedTrip ? (
-                <Badge variant="muted">附近可观察</Badge>
-              ) : null}
-              <Badge variant="muted">{windowRiskTag(result, window)}</Badge>
-              <Badge variant={(window.practicalScore ?? window.score) >= 75 ? "success" : "info"}>
-                {window.recommendationLevelLabel}
-              </Badge>
+
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground">机会指数</p>
+              <p className="mt-1 text-2xl font-bold leading-8 text-primary">{summary.chanceText}</p>
             </div>
-            {window.copyReasonZh ?? window.practicalNoteZh ? (
-              <p className="text-xs leading-5 text-muted-foreground min-[720px]:col-span-2">
-                {window.copyReasonZh ?? window.practicalNoteZh}
+
+            <div className="grid gap-1.5 text-xs leading-5 text-muted-foreground">
+              <p data-testid="general-subject-recommended-window">
+                <span className="font-semibold text-card-foreground">推荐窗口：</span>
+                {summary.recommendedWindowText}
               </p>
-            ) : null}
-          </li>
+              {summary.backupWindowText ? (
+                <p data-testid="general-subject-backup-window">
+                  <span className="font-semibold text-card-foreground">备选窗口：</span>
+                  {summary.backupWindowText}
+                </p>
+              ) : null}
+              {summary.blockerText ? (
+                <p>
+                  <span className="font-semibold text-card-foreground">主要阻碍：</span>
+                  {summary.blockerText}
+                </p>
+              ) : null}
+            </div>
+
+            <p className="text-sm leading-6 text-card-foreground">
+              <span className="font-semibold">建议：</span>
+              {summary.action}
+            </p>
+
+            <a className="mt-auto text-sm font-semibold text-primary" href={summary.href}>
+              {summary.linkLabel}
+            </a>
+          </article>
         ))}
-      </ul>
+      </div>
     </section>
   );
 }
@@ -4355,65 +4771,65 @@ function ComprehensiveMultiDaySummary({
           return (
             <article key={summary.date} data-testid="daily-card">
               <Card className="grid h-full content-start gap-3 p-4 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className="font-bold text-card-foreground">{summary.dateLabelZh}</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {summary.lunarDateText ? `农历${summary.lunarDateText}` : "农历暂缺"}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-card-foreground">{summary.dateLabelZh}</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {summary.lunarDateText ? `农历${summary.lunarDateText}` : "农历暂缺"}
+                    </p>
+                  </div>
+                  <Badge variant={dailyDecisionBadgeVariant(decisionLabel)}>{decisionLabel}</Badge>
+                </div>
+                <p className="text-sm font-semibold leading-6 text-card-foreground">
+                  {dailyMainWeatherSummary(summary, dayBreakdown)}
+                </p>
+                <div className="grid gap-1.5 text-sm leading-6 text-muted-foreground">
+                  <p className="font-semibold text-card-foreground">
+                    {dailyCompactTemperatureRangeText(summary.weather, result)}
+                  </p>
+                  <p data-testid="daily-compact-weather-row">
+                    {dailyCompactWeatherRow(summary.weather, dayBreakdown)}
                   </p>
                 </div>
-                <Badge variant={dailyDecisionBadgeVariant(decisionLabel)}>{decisionLabel}</Badge>
-              </div>
-              <p className="text-sm font-semibold leading-6 text-card-foreground">
-                {dailyMainWeatherSummary(summary, dayBreakdown)}
-              </p>
-              <div className="grid gap-1.5 text-sm leading-6 text-muted-foreground">
-                <p className="font-semibold text-card-foreground">
-                  {dailyCompactTemperatureRangeText(summary.weather, result)}
-                </p>
-                <p data-testid="daily-compact-weather-row">
-                  {dailyCompactWeatherRow(summary.weather, dayBreakdown)}
-                </p>
-              </div>
-              <div
-                className="grid gap-1.5 border-y border-border py-3 text-sm leading-6"
-                data-testid="daily-priority-windows"
-              >
-                <p data-testid="daily-primary-window">
-                  <span className="font-semibold text-card-foreground">优先关注：</span>
-                  {primaryWindow
-                    ? `${windowLabelText(primaryWindow)} ${formatWindow(
-                        primaryWindow.startTime,
-                        primaryWindow.endTime,
-                      )}`
-                    : "暂无高确定性拍摄窗口"}
-                </p>
-                {backupWindowText ? (
-                  <p className="text-muted-foreground" data-testid="daily-backup-window">
-                    <span className="font-semibold text-card-foreground">备选观察：</span>
-                    {backupWindowText}
+                <div
+                  className="grid gap-1.5 border-y border-border py-3 text-sm leading-6"
+                  data-testid="daily-priority-windows"
+                >
+                  <p data-testid="daily-primary-window">
+                    <span className="font-semibold text-card-foreground">优先关注：</span>
+                    {primaryWindow
+                      ? `${windowLabelText(primaryWindow)} ${formatWindow(
+                          primaryWindow.startTime,
+                          primaryWindow.endTime,
+                        )}`
+                      : "暂无高确定性拍摄窗口"}
                   </p>
+                  {backupWindowText ? (
+                    <p className="text-muted-foreground" data-testid="daily-backup-window">
+                      <span className="font-semibold text-card-foreground">备选观察：</span>
+                      {backupWindowText}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="grid gap-2 text-sm leading-6">
+                  <p data-testid="daily-main-risk">
+                    <span className="font-semibold text-card-foreground">主要风险：</span>
+                    {mainRiskText}
+                  </p>
+                  <p className="text-card-foreground" data-testid="daily-action-suggestion">
+                    <span className="font-semibold">行动：</span>
+                    {actionSuggestion}
+                  </p>
+                </div>
+                {subjectLinks.length > 0 ? (
+                  <nav className="flex flex-wrap gap-x-3 gap-y-1 pt-1 text-xs font-semibold text-primary">
+                    {subjectLinks.map((link) => (
+                      <a key={link.target} href={link.href}>
+                        {link.label}
+                      </a>
+                    ))}
+                  </nav>
                 ) : null}
-              </div>
-              <div className="grid gap-2 text-sm leading-6">
-                <p data-testid="daily-main-risk">
-                  <span className="font-semibold text-card-foreground">主要风险：</span>
-                  {mainRiskText}
-                </p>
-                <p className="text-card-foreground" data-testid="daily-action-suggestion">
-                  <span className="font-semibold">行动：</span>
-                  {actionSuggestion}
-                </p>
-              </div>
-              {subjectLinks.length > 0 ? (
-                <nav className="flex flex-wrap gap-x-3 gap-y-1 pt-1 text-xs font-semibold text-primary">
-                  {subjectLinks.map((link) => (
-                    <a key={link.target} href={link.href}>
-                      {link.label}
-                    </a>
-                  ))}
-                </nav>
-              ) : null}
               </Card>
             </article>
           );
@@ -4452,7 +4868,10 @@ function dailyOverallDecisionLabel(summary: GeneralDailySummary): string {
   if (summary.recommendationLabel.includes("强推荐")) {
     return "强推荐专程";
   }
-  if (summary.recommendationLabel.includes("等待") || summary.recommendationLabel.includes("推荐")) {
+  if (
+    summary.recommendationLabel.includes("等待") ||
+    summary.recommendationLabel.includes("推荐")
+  ) {
     return "推荐安排";
   }
 
@@ -4622,14 +5041,13 @@ function dailyFallbackBackupObservation(
   }
 
   const glowDay = result.glowAnalysis.dailyGlow.find((day) => day.date === summary.date);
-  if (
-    glowDay?.postRainOpeningChance === "medium" ||
-    glowDay?.postRainOpeningChance === "high"
-  ) {
+  if (glowDay?.postRainOpeningChance === "medium" || glowDay?.postRainOpeningChance === "high") {
     return "日落后余晖";
   }
 
-  const cloudSeaDay = result.cloudSeaAnalysis.dailyCloudSea.find((day) => day.date === summary.date);
+  const cloudSeaDay = result.cloudSeaAnalysis.dailyCloudSea.find(
+    (day) => day.date === summary.date,
+  );
   if ((cloudSeaDay?.formationScore ?? 0) >= 50) {
     return "云雾变化";
   }
@@ -4648,7 +5066,9 @@ function dailyMainRiskText(
     return "降水干扰";
   }
 
-  const cloudSeaDay = result.cloudSeaAnalysis.dailyCloudSea.find((day) => day.date === summary.date);
+  const cloudSeaDay = result.cloudSeaAnalysis.dailyCloudSea.find(
+    (day) => day.date === summary.date,
+  );
   if ((cloudSeaDay?.whiteoutRiskScore ?? breakdown?.whiteoutRisk?.score ?? 0) >= 60) {
     return "白墙风险";
   }
@@ -4810,20 +5230,14 @@ function ActionableAdviceSection({
       />
       <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(250px,1fr))]">
         <AdviceBlock title="建议到达时间" items={[compactArrivalAdvice(bestWindow)]} />
-        <AdviceBlock
-          title="优先拍摄题材"
-          items={[compactSubjectAdvice(bestWindow, bestSubject)]}
-        />
+        <AdviceBlock title="优先拍摄题材" items={[compactSubjectAdvice(bestWindow, bestSubject)]} />
         <AdviceBlock title="备选方案" items={[backupPlan]} />
         <AdviceBlock title="风险提醒" items={[compactRiskAdvice(mainRisk)]} />
         <AdviceBlock
           title="穿衣与装备"
           items={[packingDetail(result.clothingGuide), packingMainValue(result.clothingGuide)]}
         />
-        <AdviceBlock
-          title="是否建议出发"
-          items={[compactDepartureAdvice(result)]}
-        />
+        <AdviceBlock title="是否建议出发" items={[compactDepartureAdvice(result)]} />
       </div>
     </section>
   );
@@ -5676,7 +6090,8 @@ function buildAstroSubjectBreakdownCard(
   const firstDaily = analysis.dailyAstro[0];
   const blockers = astroMainBlockers(result, firstDaily);
   const blockerText = blockers.join("、");
-  const recommendedWindow = analysis.recommendedMilkyWayWindow ?? analysis.recommendedMilkyWayWindows[0];
+  const recommendedWindow =
+    analysis.recommendedMilkyWayWindow ?? analysis.recommendedMilkyWayWindows[0];
   const candidateWindow = analysis.milkyWayCandidateWindows[0];
   const moonlessWindow = analysis.moonlessNightWindows[0];
   const astronomicalWindow = analysis.astronomicalNightWindows[0];
@@ -6198,20 +6613,6 @@ function windowDisplayCategory(
   return (window.practicalScore ?? window.score) >= 65 ? "可观察" : "仅作备选";
 }
 
-function windowDisplayCategoryRank(window: ForecastResultWindow): number {
-  const category = windowDisplayCategory(window);
-  if (category === "推荐拍摄") {
-    return 3;
-  }
-  if (category === "可观察") {
-    return 2;
-  }
-  if (category === "仅作备选") {
-    return 1;
-  }
-  return 0;
-}
-
 function windowCategoryBadgeVariant(window: ForecastResultWindow): BadgeVariant {
   return glowWindowCategoryBadge(windowDisplayCategory(window));
 }
@@ -6229,36 +6630,6 @@ function glowWindowCategoryBadge(category: string): BadgeVariant {
   return "muted";
 }
 
-function windowListSummary(
-  result: ForecastCalculationResult,
-  window: ForecastResultWindow,
-): string {
-  const category = windowDisplayCategory(window);
-  const reason =
-    window.target === "astro"
-      ? astroWindowListReason(window, category)
-      : window.copyReasonZh ?? window.practicalNoteZh ?? windowRiskTag(result, window);
-  return `${category}：${window.label}｜${window.fullTimeRangeLabel}｜${reason}`;
-}
-
-function astroWindowListReason(
-  window: ForecastResultWindow,
-  category: ReturnType<typeof windowDisplayCategory>,
-): string {
-  const blockers = [...(window.blockerReasons ?? []), ...(window.weatherBlockers ?? [])];
-  if (category === "推荐拍摄") {
-    return window.label.includes("银河")
-      ? "云量较低，月光影响小"
-      : (window.copyReasonZh ?? window.practicalNoteZh ?? "天文窗口和天气条件可用");
-  }
-
-  const blockerText =
-    blockers.length > 0
-      ? astroWindowBlockerLabels(blockers).join("、")
-      : "云量、低云或降水条件";
-  return `${blockerText}，不建议专程夜拍`;
-}
-
 function astroWindowBlockerLabels(blockers: readonly string[]): readonly string[] {
   const text = blockers.join(" ");
   const labels = [
@@ -6270,8 +6641,11 @@ function astroWindowBlockerLabels(blockers: readonly string[]): readonly string[
     /露|结露|湿度/.test(text) ? "露水风险" : "",
   ].filter(Boolean);
 
-  return [...new Set(labels.length > 0 ? labels : blockers.map((blocker) => blocker.replace(/[。.]$/, "")))]
-    .slice(0, 3);
+  return [
+    ...new Set(
+      labels.length > 0 ? labels : blockers.map((blocker) => blocker.replace(/[。.]$/, "")),
+    ),
+  ].slice(0, 3);
 }
 
 function windowActionLabel(window: ForecastResultWindow): string {
