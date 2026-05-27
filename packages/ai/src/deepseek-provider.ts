@@ -631,7 +631,7 @@ function windowLabelZh(
   }
 
   if (window.target === "cloud_sea" && window.practicalKind === "formation_signal") {
-    return "云海形成信号";
+    return "云雾变化";
   }
 
   return raw || window.label;
@@ -791,7 +791,10 @@ function dailyMetricZh(
 }
 
 function stripWindowTime(text: string): string {
-  return text.replace(/\s*\d{1,2}:\d{2}\s*[-–至到]\s*\d{1,2}:\d{2}\s*/g, "").trim();
+  return text
+    .replace(/\s*\d{1,2}:\d{2}\s*[-–至到]\s*\d{1,2}:\d{2}\s*/g, "")
+    .replace(/(?:观察)?窗口$/g, "")
+    .trim();
 }
 
 function hourOf(value: string | undefined): number | undefined {
@@ -890,7 +893,8 @@ function buildForecastExplanationUserPayload(
         summaryZh: "两到三句话总结天气大势和拍摄价值",
         recommendedDayZh: "最建议冲哪一天，必须包含具体日期和理由",
         recommendationLevelZh: "推荐等级",
-        whetherWorthDedicatedTripZh: "推荐专程前往/谨慎参考/不建议专程前往/已在附近可观察/仅作备选",
+        whetherWorthDedicatedTripZh:
+          "强推荐专程/推荐安排/谨慎参考/不建议专程前往/已在附近可观察/仅作备选",
         oneSentenceDecisionZh: "一句话出行决策",
       },
       bestPlan: {
@@ -1296,8 +1300,11 @@ function dedicatedTripDecisionZh(
   if (result.recommendationLabel.includes("谨慎")) {
     return "谨慎参考";
   }
-  if (result.overallScore >= 70) {
-    return "推荐专程前往";
+  if (result.overallScore >= 80) {
+    return "强推荐专程";
+  }
+  if (result.overallScore >= 62) {
+    return "推荐安排";
   }
   return "仅作备选";
 }

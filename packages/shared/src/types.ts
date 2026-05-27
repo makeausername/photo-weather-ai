@@ -1120,6 +1120,8 @@ export type ForecastDailyMetric = {
 };
 
 export type ForecastTripDecisionLabel =
+  | "强推荐专程"
+  | "推荐安排"
   | "推荐专程前往"
   | "谨慎前往"
   | "谨慎参考"

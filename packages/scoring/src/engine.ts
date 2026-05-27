@@ -135,7 +135,7 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
         ? glowAnalysis.recommendationLabel
         : input.target === "astro"
           ? astroAnalysis.recommendationLabel
-          : forecastRecommendationLabels[recommendationLevel];
+          : generalForecastRecommendationLabel(overallScore, bestWindows, riskFlags);
   const targetDailyBreakdown = buildTargetDailyBreakdown(
     input,
     scores,
@@ -639,8 +639,9 @@ export function classifyPhotographyWindow(
   const executableForDedicatedTrip =
     windowLevel === "shootable" &&
     practicalKind === "shooting_window" &&
-    (window.recommendationLevel === "recommended" || window.recommendationLevel === "cautious") &&
-    practicalScore >= 52;
+    window.recommendationLevel === "recommended" &&
+    practicalScore >= 72 &&
+    hasClearDedicatedTripSubject(window, lightPhase);
   const suitableIfNearby =
     windowLevel === "watchable" ||
     windowLevel === "shootable" ||
@@ -723,8 +724,8 @@ function classifiedSubjectPriorityLabel(
   lightPhase: PracticalLightPhase,
 ): string {
   if (window.target === "cloud_sea") {
-    if (practicalKind === "formation_signal" || lightPhase === "deep_night") {
-      return "云海形成信号";
+    if (!hasShootableCloudSeaSubject(window, practicalKind)) {
+      return cloudLayerAlternativeSubject(window, lightPhase);
     }
     if (lightPhase === "dawn" || lightPhase === "sunrise") {
       return "清晨云海";
@@ -765,6 +766,91 @@ function classifiedSubjectPriorityLabel(
     return "机动观察";
   }
   return "综合拍摄";
+}
+
+function hasShootableCloudSeaSubject(
+  window: ForecastTimeWindow,
+  practicalKind: PracticalWindowKind,
+): boolean {
+  if (window.target !== "cloud_sea" || practicalKind === "formation_signal") {
+    return false;
+  }
+
+  const formationScore = window.conditionScore ?? window.score;
+  const shootableScore = window.practicalScore ?? window.score;
+  const blockerText = [
+    ...(window.blockerReasons ?? []),
+    ...(window.weatherBlockers ?? []),
+    window.copyReasonZh,
+    window.practicalNoteZh,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const overwhelmingWhiteout = /白墙风险高|严重白墙|低云遮挡严重/.test(blockerText);
+
+  return (
+    formationScore >= 62 &&
+    shootableScore >= 58 &&
+    window.recommendationLevel !== "backup" &&
+    window.recommendationLevel !== "not_recommended" &&
+    window.windowLevel !== "watchable" &&
+    window.windowLevel !== "blocked" &&
+    !overwhelmingWhiteout
+  );
+}
+
+function hasClearDedicatedTripSubject(
+  window: ForecastTimeWindow,
+  lightPhase: PracticalLightPhase,
+): boolean {
+  if (window.target === "cloud_sea") {
+    return hasShootableCloudSeaSubject(window, window.practicalKind ?? "shooting_window");
+  }
+  if (window.target === "glow") {
+    return (
+      lightPhase === "dawn" ||
+      lightPhase === "sunrise" ||
+      lightPhase === "sunset" ||
+      lightPhase === "blue_hour"
+    );
+  }
+  if (window.target === "astro") {
+    return (window.weatherBlockers?.length ?? 0) === 0;
+  }
+  return false;
+}
+
+function cloudLayerAlternativeSubject(
+  window: ForecastTimeWindow,
+  lightPhase: PracticalLightPhase,
+): string {
+  const text = [
+    window.label,
+    window.copyReasonZh,
+    window.practicalNoteZh,
+    ...(window.blockerReasons ?? []),
+    ...(window.weatherBlockers ?? []),
+    window.precipitationRisk?.recommendationZh,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  if (/雨|降水|雨后|雨隙|短暂开口/.test(text)) {
+    return "雨后云雾";
+  }
+  if (/开口|云缝|通透/.test(text)) {
+    return "云层开口";
+  }
+  if (lightPhase === "sunset") {
+    return "日落暖光叠加云雾层次";
+  }
+  if (lightPhase === "blue_hour") {
+    return "日落后余晖";
+  }
+  if (lightPhase === "daytime") {
+    return "远山层次";
+  }
+  return "云雾变化";
 }
 
 function classifiedBackupSubjectLabel(
@@ -838,7 +924,7 @@ function classifiedWindowReasonZh(
   }
   if (windowLevel === "watchable") {
     if (window.practicalKind === "formation_signal") {
-      return "夜间云海只算形成信号，不建议为无光云海单独熬夜；若已在山上可观察云雾变化。";
+      return "夜间低云和雾气只算变化信号，不建议为无光窗口单独熬夜；若已在山上可观察云雾变化。";
     }
     const reason = blockerReasons[0];
     return reason
@@ -871,13 +957,29 @@ function windowLevelRank(level: ForecastWindowLevel | undefined): number {
 }
 
 function isExecutableShootableWindow(window: ForecastTimeWindow): boolean {
+  if (window.executableForDedicatedTrip !== undefined) {
+    return window.executableForDedicatedTrip;
+  }
+
   return (
-    window.executableForDedicatedTrip === true ||
-    (window.practicalKind !== "formation_signal" &&
-      (window.windowLevel === "shootable" || window.windowLevel === "best") &&
-      window.recommendationLevel !== "backup" &&
-      window.recommendationLevel !== "not_recommended")
+    window.practicalKind !== "formation_signal" &&
+    (window.windowLevel === "shootable" || window.windowLevel === "best") &&
+    window.recommendationLevel === "recommended" &&
+    (window.practicalScore ?? window.score) >= 72
   );
+}
+
+function isUsableShootableWindow(window: ForecastTimeWindow): boolean {
+  if (window.practicalKind === "formation_signal" || window.windowLevel === "blocked") {
+    return false;
+  }
+  if (window.recommendationLevel === "backup" || window.recommendationLevel === "not_recommended") {
+    return false;
+  }
+  if (window.windowLevel !== undefined && window.windowLevel !== "shootable" && window.windowLevel !== "best") {
+    return false;
+  }
+  return (window.practicalScore ?? window.score) >= 54;
 }
 
 function promoteBestWindowLevel(
@@ -983,6 +1085,58 @@ function calculateGeneralPracticalTripScore(
   return calculateOverallScore(scores, "general");
 }
 
+function generalForecastRecommendationLabel(
+  overallScore: number,
+  windows: readonly ForecastTimeWindow[],
+  riskFlags: readonly ForecastRiskFlag[],
+): string {
+  const highRisk = riskFlags.some((risk) => risk.level === "high");
+  const bestExecutableWindow = windows.find(isExecutableShootableWindow);
+  const bestShootableWindow = windows.find(
+    (window) =>
+      window.practicalKind !== "formation_signal" &&
+      (window.windowLevel === "shootable" || window.windowLevel === "best") &&
+      window.recommendationLevel !== "backup" &&
+      window.recommendationLevel !== "not_recommended",
+  );
+  const bestWatchableWindow = windows.find(
+    (window) =>
+      window.windowLevel === "watchable" ||
+      window.suitableIfNearby === true ||
+      window.recommendationLevel === "backup",
+  );
+
+  if (bestExecutableWindow) {
+    const practicalScore = bestExecutableWindow.practicalScore ?? bestExecutableWindow.score;
+    const conditionScore = bestExecutableWindow.conditionScore ?? bestExecutableWindow.score;
+    if (practicalScore >= 80 && conditionScore >= 66 && !highRisk) {
+      return "强推荐专程";
+    }
+    if (highRisk) {
+      return "谨慎参考";
+    }
+    return "推荐安排";
+  }
+
+  if (bestShootableWindow) {
+    return highRisk ? "谨慎参考" : "推荐安排";
+  }
+
+  if (bestWatchableWindow) {
+    const watchableScore = bestWatchableWindow.practicalScore ?? bestWatchableWindow.score;
+    if (watchableScore >= 45 || bestWatchableWindow.suitableIfNearby) {
+      return "已在附近可观察";
+    }
+    return "仅作备选";
+  }
+
+  if (overallScore >= 45) {
+    return "仅作备选";
+  }
+
+  return "不建议专程前往";
+}
+
 function applyPracticalTripScoring(
   input: ForecastCalculationInput,
   window: ForecastTimeWindow,
@@ -1049,7 +1203,7 @@ function evaluatePracticalWindow(
   readonly restWarningZh?: string;
   readonly arrivalAdvice: PracticalArrivalAdvice;
 } {
-  const practicalKind: PracticalWindowKind = window.label.includes("形成信号")
+  const practicalKind: PracticalWindowKind = /形成信号|云雾变化信号/.test(window.label)
     ? "formation_signal"
     : "shooting_window";
   const lightPhase = inferLightPhase(input, window, practicalKind);
@@ -1181,7 +1335,7 @@ function buildCloudSeaFormationSignalWindows(
 
     return [
       {
-        label: `云海形成信号 ${formatChineseTimeRange(clipped.startTime, clipped.endTime)}`,
+        label: `云雾变化信号 ${formatChineseTimeRange(clipped.startTime, clipped.endTime)}`,
         date,
         startTime: clipped.startTime,
         endTime: clipped.endTime,
@@ -1190,7 +1344,7 @@ function buildCloudSeaFormationSignalWindows(
         target: "cloud_sea" as const,
         practicalKind: "formation_signal" as const,
         lightPhase: "deep_night" as const,
-        practicalNoteZh: "夜间云雾条件可作为形成信号，缺少可用光线时不作为最佳拍摄窗口。",
+        practicalNoteZh: "夜间低云和雾气只作为变化信号，缺少可用光线时不作为最佳拍摄窗口。",
       },
     ];
   });
@@ -1413,7 +1567,7 @@ function arrivalReasonForWindow(
   lightPhase: PracticalLightPhase,
 ): string {
   if (practicalKind === "formation_signal") {
-    return "这是云海形成信号，不是有光拍摄窗口；若已在山上，可提前观察云雾上沿和风向变化。";
+    return "这是低云和雾气变化信号，不是有光拍摄窗口；若已在山上，可提前观察云雾上沿和风向变化。";
   }
   if (window.target === "cloud_sea") {
     return "预留上山、找机位和观察云雾变化时间，优先把云海与清晨光线叠加。";
@@ -1734,7 +1888,7 @@ function practicalNoteForWindow(
   precipitationRisk: ForecastTimeWindow["precipitationRisk"],
 ): string {
   if (practicalKind === "formation_signal") {
-    return "云海形成信号，不建议为无光云海单独熬夜；若已在山上，可提前观察云雾形成。";
+    return "低云和雾气变化信号，不建议为无光窗口单独熬夜；若已在山上，可提前观察云雾形成。";
   }
   if (window.target === "astro" && (window.weatherBlockers?.length ?? 0) > 0) {
     const reason = window.weatherBlockers?.[0] ?? "云量、低云或降水条件不支持拍摄";
@@ -2876,7 +3030,7 @@ function pickBestShootableDailyWindow(
 ): ForecastTimeWindow | undefined {
   const dailyRainRisk = weather?.precipitationRisk?.rainRiskLevel;
   return keyWindows.find((window) => {
-    if (!isExecutableShootableWindow(window)) {
+    if (!isUsableShootableWindow(window)) {
       return false;
     }
     const windowRainRisk = window.precipitationRisk?.rainRiskLevel;
@@ -3021,11 +3175,14 @@ function dedicatedTripLabel(
     }
     return "不建议专程前往";
   }
-  if (practicalTripScore >= 74 && riskPenalty < 20) {
-    return "推荐专程前往";
+  if (practicalTripScore >= 80 && riskPenalty < 16) {
+    return "强推荐专程";
   }
-  if (practicalTripScore >= 58 && riskPenalty < 32) {
-    return "谨慎前往";
+  if (practicalTripScore >= 64 && riskPenalty < 24) {
+    return "推荐安排";
+  }
+  if (practicalTripScore >= 54 && riskPenalty < 34) {
+    return "谨慎参考";
   }
   if (opportunityScore >= 55 && riskPenalty >= 28) {
     return "不建议专程前往";
@@ -3040,7 +3197,10 @@ function nearbyObservationLabel(
   nearbyObservationScore: number,
   dedicatedTripRecommendation: ForecastTripDecisionLabel,
 ): ForecastTripDecisionLabel | undefined {
-  if (dedicatedTripRecommendation === "推荐专程前往") {
+  if (
+    dedicatedTripRecommendation === "强推荐专程" ||
+    dedicatedTripRecommendation === "推荐安排"
+  ) {
     return undefined;
   }
   if (nearbyObservationScore >= 50) {
@@ -3061,10 +3221,13 @@ function dedicatedTripAdvice(
   opportunityScore: number,
   weather: ForecastDailyWeatherSummary | undefined,
 ): string {
-  if (label === "推荐专程前往") {
-    return "条件和风险匹配度较好，可按最佳窗口组织出发。";
+  if (label === "强推荐专程") {
+    return "主窗口清晰且风险可控，可围绕最佳窗口安排出发。";
   }
-  if (label === "谨慎前往") {
+  if (label === "推荐安排") {
+    return "条件适合安排拍摄，但不是高确定性爆发窗口。";
+  }
+  if (label === "谨慎参考" || label === "谨慎前往") {
     return weather?.mainPrecipitationPeriodLabelZh
       ? `${weather.mainPrecipitationPeriodLabelZh}，建议把最新降水和低云作为出发前复核重点。`
       : "具备拍摄机会，但仍需复核降水、低云和通行成本。";
@@ -3107,7 +3270,7 @@ function buildWatchableWindows(
   const windows = keyWindows
     .filter(
       (window) =>
-        !isExecutableShootableWindow(window) &&
+        !isUsableShootableWindow(window) &&
         (window.windowLevel === "watchable" ||
           window.practicalKind === "formation_signal" ||
           window.suitableIfNearby === true ||
@@ -3180,7 +3343,7 @@ function buildDailyShortAdvice(
     return "主要风险偏高，建议把该日作为备选并等待真实天气复核。";
   }
 
-  const bestShootableWindow = keyWindows.find(isExecutableShootableWindow);
+  const bestShootableWindow = keyWindows.find(isUsableShootableWindow);
   if (keyWindows.length === 0) {
     return "暂未形成明确高分窗口，建议继续观察后续数据。";
   }
@@ -3202,7 +3365,7 @@ function buildDailyShortAdvice(
     return "暂无高确定性拍摄窗口，若已在附近可观察云雾变化和短暂开口。";
   }
   if (bestWindow?.practicalKind === "formation_signal") {
-    return "夜间云海只算形成信号，不建议单独熬夜等待无光云海。";
+    return "夜间低云和雾气只算变化信号，不建议单独熬夜等待无光窗口。";
   }
   if (bestWindow?.arrivalAdvice?.warningZh) {
     return `${bestWindow.subjectPriorityLabel ?? "最佳窗口"}可关注，${bestWindow.arrivalAdvice.warningZh}`;
@@ -3621,12 +3784,15 @@ function buildPhotographyAdvice(
 ): readonly string[] {
   const advice: string[] = [];
   const bestWindow = bestWindows.find(isExecutableShootableWindow);
+  const strongCloudSeaWindow = bestWindows.find((window) =>
+    hasShootableCloudSeaSubject(window, window.practicalKind ?? "shooting_window"),
+  );
 
   if (input.target === "cloud_sea" || input.target === "general") {
     advice.push(
-      scores.cloudSea.score >= 65
-        ? "建议优先守清晨云海窗口，提前到达高点观察云雾上沿和风向变化。"
-        : "云海信号不算稳定，建议把朝霞、山脊层次或延时素材作为备选目标。",
+      strongCloudSeaWindow
+        ? `${strongCloudSeaWindow.subjectPriorityLabel ?? "清晨云海"}可纳入主计划，提前到达高点观察云雾上沿和白墙风险。`
+        : "低云和雾气信号不等于云海，建议优先观察云雾变化、远山层次或短暂开口。",
     );
   }
   if (input.target === "glow" || input.target === "general") {
@@ -3699,10 +3865,23 @@ function buildSummary(
 
   if (input.target === "general") {
     const bestWindow = bestWindows.find(isExecutableShootableWindow);
-    const bestWindowText = bestWindow
-      ? `最佳窗口优先按可执行性排序：${bestWindow.subjectPriorityLabel ?? bestWindow.label}。`
-      : "暂未形成明确可执行拍摄窗口。";
-    return `${input.place.name}${targetPhrase}${scoreLabel}为 ${overallScore} 分，建议等级为“${recommendationLabel}”。${bestWindowText}云海形成 ${scores.cloudSea.score} 分，白墙风险 ${scores.whiteoutRisk.score} 分，霞光最高 ${Math.max(scores.sunriseGlow.score, scores.sunsetGlow.score)} 分，通透度 ${scores.transparency.score} 分。`;
+    const watchableWindow = bestWindows.find(
+      (window) => window.windowLevel === "watchable" || window.suitableIfNearby,
+    );
+    const subject = bestWindow?.subjectPriorityLabel ?? watchableWindow?.subjectPriorityLabel;
+    const decisionText =
+      recommendationLabel === "强推荐专程"
+        ? `${subject ?? "主拍窗口"}清晰，风险可控，可围绕窗口组织出发。`
+        : recommendationLabel === "推荐安排"
+          ? `条件适合安排拍摄，但不是高确定性爆发窗口；优先关注${subject ?? "最佳可用窗口"}。`
+          : recommendationLabel === "谨慎参考"
+            ? "机会存在但不确定性较高，建议等待临近预报和现场云层复核。"
+            : recommendationLabel === "已在附近可观察"
+              ? `若已在附近，可观察${subject ?? "云雾变化和局部光线"}，不建议追加远途成本。`
+              : recommendationLabel === "仅作备选"
+                ? "暂无明确高确定性窗口，可作为机动观察日。"
+                : "暂无可靠可执行拍摄窗口，不建议专程前往。";
+    return `${input.place.name}${targetPhrase}${scoreLabel}为 ${overallScore} 分，${recommendationLabel}。${decisionText}`;
   }
 
   return `${input.place.name}${targetPhrase}${scoreLabel}为 ${overallScore} 分，建议等级为“${recommendationLabel}”。云海 ${scores.cloudSea.score} 分，霞光最高 ${Math.max(scores.sunriseGlow.score, scores.sunsetGlow.score)} 分，通透度 ${scores.transparency.score} 分。`;

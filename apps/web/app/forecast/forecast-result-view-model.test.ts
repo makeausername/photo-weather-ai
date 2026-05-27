@@ -1901,18 +1901,19 @@ describe("forecast result target-aware view model", () => {
       html.indexOf('data-testid="daily-forecast-decision"'),
       html.indexOf('data-testid="opportunity-windows"'),
     );
-    expect(dailySection).toContain("推荐专程前往");
+    expect(dailySection).toContain("推荐安排");
+    expect(dailySection).not.toContain("推荐专程前往");
     expect(dailySection).toContain("多云间晴");
     expect(dailySection).toContain("山顶估算温度：10–18°C");
     expect(dailySection).toContain("降水：低｜风：3.4m/s｜通透：较好");
     expect(dailySection).toContain("优先关注：");
-    expect(dailySection).toContain("清晨云海窗口 2026年5月20日 05:00–07:00");
+    expect(dailySection).toContain("清晨云海 2026年5月20日 05:00–07:00");
     expect(dailySection).toContain("备选观察：");
-    expect(dailySection).toContain("晚霞窗口 2026年5月20日 17:56–19:41");
+    expect(dailySection).toContain("晚霞 2026年5月20日 17:56–19:41");
     expect(dailySection).toContain("主要风险：");
     expect(dailySection).toContain("白墙风险");
     expect(dailySection).toContain("行动：");
-    expect(dailySection).toContain("清晨云海可优先安排，到场先复核云顶高度。");
+    expect(dailySection).toContain("清晨云海可优先安排，到场先复核云顶高度和白墙风险。");
     expect(dailySection).toContain("降水时段分散，优先等待雨后短暂开口。");
     expect(dailySection).not.toContain("云海形成 82分");
     expect(dailySection).not.toContain("云海可拍 82分");
@@ -2122,6 +2123,10 @@ describe("forecast result target-aware view model", () => {
               score: 74,
               conditionScore: 82,
               practicalScore: 74,
+              recommendationLevel: "recommended" as const,
+              windowLevel: "best" as const,
+              executableForDedicatedTrip: true,
+              suitableIfNearby: true,
               practicalKind: "shooting_window" as const,
               lightPhase: "sunrise" as const,
               practicalNoteZh: "适合守清晨云海，云雾变化与可用光线重叠。",
@@ -2170,6 +2175,10 @@ describe("forecast result target-aware view model", () => {
       score: 72,
       conditionScore: 68,
       practicalScore: 72,
+      recommendationLevel: "recommended" as const,
+      windowLevel: "best" as const,
+      executableForDedicatedTrip: true,
+      suitableIfNearby: true,
       practicalKind: "shooting_window" as const,
       lightPhase: "sunrise" as const,
       practicalNoteZh: "适合守清晨云海，云雾变化与可用光线重叠。",
@@ -2185,7 +2194,7 @@ describe("forecast result target-aware view model", () => {
     };
     const formationSignal = {
       ...base.bestWindows[0]!,
-      label: "云海形成信号 01:00 - 03:00",
+      label: "云雾变化信号 01:00 - 03:00",
       startTime: "2026-05-20T01:00:00+08:00",
       endTime: "2026-05-20T03:00:00+08:00",
       score: 31,
@@ -2193,15 +2202,15 @@ describe("forecast result target-aware view model", () => {
       practicalScore: 31,
       practicalKind: "formation_signal" as const,
       lightPhase: "deep_night" as const,
-      practicalNoteZh: "云海形成信号，不建议为无光云海单独熬夜。",
-      subjectPriorityLabel: "云海形成观察",
+      practicalNoteZh: "低云和雾气变化信号，不建议为无光窗口单独熬夜。",
+      subjectPriorityLabel: "云雾变化",
       backupSubjectLabel: "朝霞、通透层峦或雾景",
       arrivalAdvice: {
         recommendedArrivalTime: "2026-05-20T01:00:00+08:00",
         recommendedArrivalLabel: "若已在山上可观察",
         setupBufferMinutes: 0,
-        reasonZh: "这是云海形成信号，不是有光拍摄窗口。",
-        warningZh: "不建议为无光云海单独熬夜；若从山下出发，需评估交通和体力成本。",
+        reasonZh: "这是低云和雾气变化信号，不是有光拍摄窗口。",
+        warningZh: "不建议为无光窗口单独熬夜；若从山下出发，需评估交通和体力成本。",
       },
     };
     const result: ForecastCalculationResult = {
@@ -2222,9 +2231,9 @@ describe("forecast result target-aware view model", () => {
       }),
     );
 
-    expect(html).toContain("清晨云海窗口");
+    expect(html).toContain("清晨云海");
     expect(html).toContain("2026年5月20日 04:08–06:08");
-    expect(html).toContain("云海形成信号");
+    expect(html).toContain("云雾变化");
     expect(html).toContain("2026年5月20日 01:00–03:00");
     expect(html).toContain("形成信号");
     expect(html).toContain("无光形成信号");
@@ -2289,7 +2298,7 @@ describe("forecast result target-aware view model", () => {
       bestWindows: [
         {
           ...base.bestWindows[0]!,
-          label: "云海形成信号 01:00 - 03:00",
+          label: "云雾变化信号 01:00 - 03:00",
           date: "2026-05-20",
           startTime: "2026-05-20T01:00:00+08:00",
           endTime: "2026-05-20T03:00:00+08:00",
@@ -2302,7 +2311,7 @@ describe("forecast result target-aware view model", () => {
           windowLevel: "watchable",
           executableForDedicatedTrip: false,
           suitableIfNearby: true,
-          subjectPriorityLabel: "云海形成信号",
+          subjectPriorityLabel: "云雾变化",
           copyReasonZh: "夜间云海只算形成信号，适合已在山上观察，不作为最佳可拍窗口。",
         },
       ],
@@ -2314,7 +2323,7 @@ describe("forecast result target-aware view model", () => {
               keyWindows: [],
               watchableWindows: [
                 {
-                  subject: "云海形成信号",
+                  subject: "云雾变化",
                   target: "cloud_sea",
                   startTime: "2026-05-20T01:00:00+08:00",
                   endTime: "2026-05-20T03:00:00+08:00",

@@ -295,7 +295,7 @@ describe("AI providers", () => {
           date: "2026-05-21",
           dateLabelZh: "2026年5月21日 星期四",
           score: 91,
-          dedicatedTripRecommendation: "推荐专程前往",
+          dedicatedTripRecommendation: "强推荐专程",
           nearbyObservationRecommendation: "已在附近可观察",
           keyWindows: [laterWindow],
           bestShootableWindow: laterWindow,
@@ -319,10 +319,10 @@ describe("AI providers", () => {
     const explanation = createRuleBasedForecastExplanation(result);
 
     expect(explanation.conclusion.recommendedDayZh).toContain("2026年5月21日 星期四");
-    expect(explanation.conclusion.oneSentenceDecisionZh).toContain("推荐专程前往");
+    expect(explanation.conclusion.oneSentenceDecisionZh).toContain("强推荐专程");
     expect(explanation.bestPlan.bestDateZh).toBe("2026年5月21日 星期四");
     expect(explanation.bestPlan.bestWindowZh).toContain("2026年5月21日 05:20");
-    expect(explanation.finalAdvice.goNoGoZh).toContain("推荐专程前往");
+    expect(explanation.finalAdvice.goNoGoZh).toContain("强推荐专程");
     expect(explanation.bestPlan.bestDateZh).not.toBe("2026-05-21");
   });
 

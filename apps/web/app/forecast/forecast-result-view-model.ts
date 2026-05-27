@@ -2866,19 +2866,21 @@ function windowLevelLabel(level: ForecastTimeWindow["windowLevel"]): string {
 function isExecutableResultWindow(window: ForecastResultWindow): boolean {
   const hasHierarchy =
     window.windowLevel !== undefined || window.executableForDedicatedTrip !== undefined;
+  if (window.executableForDedicatedTrip !== undefined) {
+    return window.executableForDedicatedTrip;
+  }
   if (!hasHierarchy) {
     return (
       window.practicalKind !== "formation_signal" &&
-      window.recommendationLevel !== "backup" &&
-      window.recommendationLevel !== "not_recommended"
+      window.recommendationLevel === "recommended" &&
+      (window.practicalScore ?? window.score) >= 72
     );
   }
   return (
-    window.executableForDedicatedTrip === true ||
-    (window.practicalKind !== "formation_signal" &&
-      (window.windowLevel === "best" || window.windowLevel === "shootable") &&
-      window.recommendationLevel !== "backup" &&
-      window.recommendationLevel !== "not_recommended")
+    window.practicalKind !== "formation_signal" &&
+    (window.windowLevel === "best" || window.windowLevel === "shootable") &&
+    window.recommendationLevel === "recommended" &&
+    (window.practicalScore ?? window.score) >= 72
   );
 }
 

@@ -872,7 +872,7 @@ function dailyDecisionBadgeVariant(label: string | undefined): BadgeVariant {
   if (label.includes("不建议")) {
     return "danger";
   }
-  if (label.includes("推荐")) {
+  if (label.includes("强推荐") || label.includes("推荐安排")) {
     return "default";
   }
   if (label.includes("谨慎") || label.includes("观察") || label.includes("等待")) {
@@ -893,25 +893,31 @@ function departureRecommendationLabel(result: ForecastCalculationResult): string
   }
 
   if (result.recommendationLabel.includes("不建议") || result.overallScore < 45) {
-    return "不建议前往";
+    return "不建议专程前往";
   }
   if (result.recommendationLabel.includes("谨慎") || result.overallScore < 65) {
     return "谨慎参考";
   }
-  return "推荐前往";
+  if (result.recommendationLabel.includes("强推荐")) {
+    return "强推荐专程";
+  }
+  return "推荐安排";
 }
 
 function normalizeRecommendationLabel(label: string): string {
   if (label.includes("不建议")) {
-    return "不建议前往";
+    return "不建议专程前往";
   }
   if (label.includes("谨慎")) {
     return "谨慎参考";
   }
   if (label.includes("等待")) {
-    return "可等待转机";
+    return "推荐安排";
   }
-  return "推荐前往";
+  if (label.includes("强推荐")) {
+    return "强推荐专程";
+  }
+  return "推荐安排";
 }
 
 function recommendationBadgeVariant(label: string): BadgeVariant {
@@ -3515,8 +3521,11 @@ function dailyOverallDecisionLabel(summary: GeneralDailySummary): string {
   if (summary.recommendationLabel.includes("谨慎") || summary.score < 65) {
     return "谨慎参考";
   }
+  if (summary.recommendationLabel.includes("强推荐")) {
+    return "强推荐专程";
+  }
   if (summary.recommendationLabel.includes("等待") || summary.recommendationLabel.includes("推荐")) {
-    return "推荐专程前往";
+    return "推荐安排";
   }
 
   return normalizeRecommendationLabel(summary.recommendationLabel);
@@ -3639,7 +3648,7 @@ function isHighConfidenceDailyWindow(window: GeneralForecastWindow): boolean {
   if (isBlockedAstroWindow(window)) {
     return false;
   }
-  return isExecutableClientWindow(window);
+  return isUsableClientWindow(window);
 }
 
 function isBackupDailyWindow(window: GeneralForecastWindow): boolean {
@@ -3761,8 +3770,8 @@ function dailyCompactActionSuggestion(
   const subject = windowLabelText(primaryWindow);
   if (primaryWindow.target === "cloud_sea") {
     return dailyOverallDecisionLabel(summary).includes("不建议")
-      ? "若在附近，可守清晨云海；不建议只为单一窗口专程。"
-      : "清晨云海可优先安排，到场先复核云顶高度。";
+      ? `若在附近，可观察${subject}；不建议只为单一窗口专程。`
+      : `${subject}可优先安排，到场先复核云顶高度和白墙风险。`;
   }
 
   if (primaryWindow.target === "glow") {
@@ -5122,39 +5131,60 @@ function isExecutableClientWindow(
 ): boolean {
   const hasHierarchy =
     window.windowLevel !== undefined || window.executableForDedicatedTrip !== undefined;
+  if (window.executableForDedicatedTrip !== undefined) {
+    return window.executableForDedicatedTrip;
+  }
   if (!hasHierarchy) {
     return (
       window.practicalKind !== "formation_signal" &&
-      window.recommendationLevel !== "backup" &&
-      window.recommendationLevel !== "not_recommended"
+      window.recommendationLevel === "recommended" &&
+      (window.practicalScore ?? window.score) >= 72
     );
   }
   return (
-    window.executableForDedicatedTrip === true ||
-    (window.practicalKind !== "formation_signal" &&
-      (window.windowLevel === "best" || window.windowLevel === "shootable") &&
-      window.recommendationLevel !== "backup" &&
-      window.recommendationLevel !== "not_recommended")
+    window.practicalKind !== "formation_signal" &&
+    (window.windowLevel === "best" || window.windowLevel === "shootable") &&
+    window.recommendationLevel === "recommended" &&
+    (window.practicalScore ?? window.score) >= 72
   );
+}
+
+function isUsableClientWindow(window: ForecastCalculationResult["bestWindows"][number]): boolean {
+  if (window.practicalKind === "formation_signal" || window.windowLevel === "blocked") {
+    return false;
+  }
+  if (window.recommendationLevel === "backup" || window.recommendationLevel === "not_recommended") {
+    return false;
+  }
+  if (
+    window.windowLevel !== undefined &&
+    window.windowLevel !== "shootable" &&
+    window.windowLevel !== "best"
+  ) {
+    return false;
+  }
+  return (window.practicalScore ?? window.score) >= 54;
 }
 
 function isExecutableDisplayWindow(window: ForecastResultWindow): boolean {
   const hasHierarchy =
     window.windowLevel !== undefined || window.executableForDedicatedTrip !== undefined;
+  if (window.executableForDedicatedTrip !== undefined) {
+    return window.executableForDedicatedTrip;
+  }
   if (!hasHierarchy) {
     return (
       window.practicalKind !== "formation_signal" &&
-      window.recommendationLevel !== "backup" &&
-      window.recommendationLevel !== "not_recommended"
+      window.recommendationLevel === "recommended" &&
+      (window.practicalScore ?? window.score) >= 72
     );
   }
 
   return (
-    window.executableForDedicatedTrip === true ||
-    (window.practicalKind !== "formation_signal" &&
-      (window.windowLevel === "best" || window.windowLevel === "shootable") &&
-      window.recommendationLevel !== "backup" &&
-      window.recommendationLevel !== "not_recommended")
+    window.practicalKind !== "formation_signal" &&
+    (window.windowLevel === "best" || window.windowLevel === "shootable") &&
+    window.recommendationLevel === "recommended" &&
+    (window.practicalScore ?? window.score) >= 72
   );
 }
 
@@ -5228,10 +5258,9 @@ function windowDisplayCategory(
   if (
     window.windowLevel === "best" ||
     window.windowLevel === "shootable" ||
-    window.recommendationLevel === "recommended" ||
     window.executableForDedicatedTrip === true
   ) {
-    return "推荐拍摄";
+    return window.executableForDedicatedTrip === true ? "推荐拍摄" : "可观察";
   }
   if (window.windowLevel === "watchable" || window.recommendationLevel === "cautious") {
     return "可观察";

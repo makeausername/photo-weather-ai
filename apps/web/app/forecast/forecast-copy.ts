@@ -178,7 +178,7 @@ export function windowLabelText(window: WindowCopyLike | undefined): string {
   }
 
   if (window.target === "cloud_sea" && window.practicalKind === "formation_signal") {
-    return "云海形成信号";
+    return "云雾变化";
   }
 
   return raw || window.label;
@@ -363,7 +363,10 @@ function naturalRainPeriod(raw: string): string {
 }
 
 function stripWindowTime(text: string): string {
-  return text.replace(/\s*\d{1,2}:\d{2}\s*[-–至到]\s*\d{1,2}:\d{2}\s*/g, "").trim();
+  return text
+    .replace(/\s*\d{1,2}:\d{2}\s*[-–至到]\s*\d{1,2}:\d{2}\s*/g, "")
+    .replace(/(?:观察)?窗口$/g, "")
+    .trim();
 }
 
 function hourOf(value: string | undefined): number | undefined {

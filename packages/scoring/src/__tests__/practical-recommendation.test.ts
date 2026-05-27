@@ -119,7 +119,7 @@ describe("general practical trip recommendation", () => {
     );
     const deepNight = classifyPhotographyWindow(
       {
-        label: "云海形成信号 01:00-03:00",
+        label: "云雾变化信号 01:00-03:00",
         date: "2026-05-20",
         startTime: "2026-05-20T01:00:00+08:00",
         endTime: "2026-05-20T03:00:00+08:00",
@@ -136,9 +136,88 @@ describe("general practical trip recommendation", () => {
 
     expect(morning.subjectPriorityLabel).toBe("清晨云海");
     expect(morning.windowLevel).toBe("shootable");
-    expect(deepNight.subjectPriorityLabel).toBe("云海形成信号");
+    expect(deepNight.subjectPriorityLabel).toBe("云雾变化");
     expect(deepNight.windowLevel).toBe("watchable");
     expect(deepNight.executableForDedicatedTrip).toBe(false);
+  });
+
+  it("uses cloud and mist subjects when cloud sea is not shootable enough", () => {
+    const weakDawnCloud = classifyPhotographyWindow(
+      {
+        label: "清晨云海窗口 05:00-06:20",
+        date: "2026-05-20",
+        startTime: "2026-05-20T05:00:00+08:00",
+        endTime: "2026-05-20T06:20:00+08:00",
+        score: 44,
+        conditionScore: 78,
+        practicalScore: 44,
+        target: "cloud_sea",
+        recommendationLevel: "backup",
+        practicalKind: "shooting_window",
+        windowLevel: "watchable",
+      },
+      {
+        date: "2026-05-20",
+        timezone: "Asia/Shanghai",
+        sunrise: "2026-05-20T05:12:00+08:00",
+        civilDawn: "2026-05-20T04:45:00+08:00",
+      },
+      undefined,
+      "Asia/Shanghai",
+    );
+    const eveningLayer = classifyPhotographyWindow(
+      {
+        label: "傍晚云海观察窗口 18:00-19:20",
+        date: "2026-05-20",
+        startTime: "2026-05-20T18:00:00+08:00",
+        endTime: "2026-05-20T19:20:00+08:00",
+        score: 52,
+        conditionScore: 70,
+        practicalScore: 52,
+        target: "cloud_sea",
+        recommendationLevel: "backup",
+        practicalKind: "shooting_window",
+        windowLevel: "watchable",
+      },
+      {
+        date: "2026-05-20",
+        timezone: "Asia/Shanghai",
+        sunset: "2026-05-20T18:45:00+08:00",
+        civilDusk: "2026-05-20T19:14:00+08:00",
+      },
+      undefined,
+      "Asia/Shanghai",
+    );
+    const postRainLayer = classifyPhotographyWindow(
+      {
+        label: "清晨云海窗口 05:00-06:20",
+        date: "2026-05-20",
+        startTime: "2026-05-20T05:00:00+08:00",
+        endTime: "2026-05-20T06:20:00+08:00",
+        score: 48,
+        conditionScore: 74,
+        practicalScore: 48,
+        target: "cloud_sea",
+        recommendationLevel: "backup",
+        practicalKind: "shooting_window",
+        windowLevel: "watchable",
+        practicalNoteZh: "小雨结束后可等短暂开口。",
+      },
+      {
+        date: "2026-05-20",
+        timezone: "Asia/Shanghai",
+        sunrise: "2026-05-20T05:12:00+08:00",
+        civilDawn: "2026-05-20T04:45:00+08:00",
+      },
+      undefined,
+      "Asia/Shanghai",
+    );
+
+    expect(weakDawnCloud.subjectPriorityLabel).toBe("云雾变化");
+    expect(weakDawnCloud.subjectPriorityLabel).not.toContain("云海");
+    expect(eveningLayer.subjectPriorityLabel).toBe("日落暖光叠加云雾层次");
+    expect(eveningLayer.subjectPriorityLabel).not.toBe("傍晚云海");
+    expect(postRainLayer.subjectPriorityLabel).toBe("雨后云雾");
   });
 
   it("keeps cross-midnight Milky Way windows in the night hierarchy", () => {
@@ -221,7 +300,9 @@ describe("general practical trip recommendation", () => {
 
     const result = calculateForecast(input);
     const bestWindow = result.bestWindows[0];
-    const formationSignal = result.bestWindows.find((window) => window.label.includes("形成信号"));
+    const formationSignal = result.bestWindows.find((window) =>
+      window.label.includes("云雾变化信号"),
+    );
 
     expect(bestWindow?.label).toContain("清晨云海窗口");
     expect(bestWindow?.practicalKind).toBe("shooting_window");
@@ -229,7 +310,9 @@ describe("general practical trip recommendation", () => {
     expect(formationSignal).toBeDefined();
     expect(formationSignal?.practicalKind).toBe("formation_signal");
     expect(formationSignal?.conditionScore).toBeGreaterThan(formationSignal?.practicalScore ?? 0);
-    expect(formationSignal?.practicalNoteZh).toContain("不建议为无光云海单独熬夜");
+    expect(["云雾变化", "雨后云雾"]).toContain(formationSignal?.subjectPriorityLabel);
+    expect(formationSignal?.subjectPriorityLabel).not.toContain("云海");
+    expect(formationSignal?.practicalNoteZh).toContain("不建议为无光窗口单独熬夜");
   });
 
   it("keeps astro night windows valid while adding a rest and lodging note", () => {
@@ -368,6 +451,105 @@ describe("general practical trip recommendation", () => {
     expect(firstDaily.shortAdvice).toContain("观察");
     expect(firstDaily.bestShootableWindow).toBeUndefined();
     expect(firstDaily.watchableWindows?.[0]?.suitableForDedicatedTrip).toBe(false);
+  });
+
+  it("uses strong dedicated and arrangement labels instead of the legacy dedicated-trip copy", () => {
+    const strongInput = withHourlyWeather(
+      buildMockForecastInput(query, { now: fixedNow }),
+      (hour) => {
+        const hourValue = localHour(hour.time);
+        if (hourValue >= 4 && hourValue <= 7) {
+          return {
+            ...hour,
+            humidity: 92,
+            cloudTotal: 62,
+            cloudLow: 56,
+            cloudMid: 42,
+            cloudHigh: 30,
+            windSpeed: 2.2,
+            windGust: 3.4,
+            visibility: 18,
+            dewPoint: hour.temperature - 1.2,
+            dewPointSpread: 1.2,
+            precipitationProbability: 0,
+            precipitation: 0,
+            precipitationAmountMm: 0,
+            rainAmountMm: 0,
+            weatherTextZh: "晴间多云",
+          };
+        }
+        return {
+          ...hour,
+          precipitationProbability: 0,
+          precipitation: 0,
+          precipitationAmountMm: 0,
+          rainAmountMm: 0,
+        };
+      },
+    );
+    const result = calculateForecast({
+      ...strongInput,
+      dailyWeather: strongInput.dailyWeather.map((day) => ({
+        ...day,
+        precipitationProbability: 0,
+        precipitation: 0,
+        precipitationAmountMm: 0,
+        rainAmountMm: 0,
+        weatherSummary: "晴间多云",
+        precipitationRisk: undefined,
+      })),
+    });
+    const firstDaily = result.dailySummaries[0]!;
+
+    expect(result.recommendationLabel).toBe("强推荐专程");
+    expect(firstDaily.dedicatedTripRecommendation).toBe("强推荐专程");
+    expect(result.recommendationLabel).not.toBe("推荐专程前往");
+    expect(firstDaily.bestShootableWindow?.subjectPriorityLabel).toBe("清晨云海");
+    expect(firstDaily.bestShootableWindow?.executableForDedicatedTrip).toBe(true);
+  });
+
+  it("keeps usable but moderate windows at arrangement or cautious levels", () => {
+    const input = withHourlyWeather(buildMockForecastInput(query, { now: fixedNow }), (hour) => {
+      const hourValue = localHour(hour.time);
+      if (hourValue >= 4 && hourValue <= 7) {
+        return {
+          ...hour,
+          humidity: 82,
+          cloudTotal: 54,
+          cloudLow: 40,
+          cloudMid: 34,
+          cloudHigh: 28,
+          windSpeed: 3.4,
+          windGust: 5,
+          visibility: 18,
+          dewPoint: hour.temperature - 3,
+          dewPointSpread: 3,
+          precipitationProbability: 45,
+          precipitation: 0.4,
+          precipitationAmountMm: 0.4,
+          rainAmountMm: 0.4,
+          weatherTextZh: "多云间晴",
+        };
+      }
+      return hour;
+    });
+
+    const result = calculateForecast({
+      ...input,
+      dailyWeather: input.dailyWeather.map((day) => ({
+        ...day,
+        precipitationProbability: 45,
+        precipitation: 3,
+        precipitationAmountMm: 3,
+        rainAmountMm: 3,
+        weatherSummary: "多云间晴，有间歇小雨",
+        precipitationRisk: undefined,
+      })),
+    });
+    const firstDaily = result.dailySummaries[0]!;
+
+    expect(["推荐安排", "谨慎参考"]).toContain(firstDaily.dedicatedTripRecommendation);
+    expect(firstDaily.dedicatedTripRecommendation).not.toBe("推荐专程前往");
   });
 
   it("penalizes rain overlapping a shootable window without over-penalizing later rain", () => {
