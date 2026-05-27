@@ -490,10 +490,25 @@ describe("production deployment assets", () => {
     expect(script).toContain("model: ${config.model}");
     expect(script).toContain('config.model !== "deepseek-v4-pro"');
     expect(script).toContain("timeoutMs: ${config.timeoutMs}");
-    expect(script).toContain("${API_BASE_URL}/forecast/ai-explain");
+    expect(script).toContain("http://127.0.0.1:4000/forecast/ai-explain");
+    expect(script).toContain("timeout 130s");
+    expect(script).toContain("source:");
+    expect(script).toContain("parseSuccess:");
+    expect(script).toContain("fallbackSuccess:");
     expect(script).toContain("No API keys or secrets will be printed.");
     expect(script).not.toMatch(/echo .*API_KEY/);
     expect(script).not.toMatch(/console\.log\(.*apiKey[:=]/i);
+  });
+
+  it("keeps the placeholder worker alive and documents that interpretation does not depend on it", () => {
+    const workerSource = readRepoFile("apps/worker/src/index.ts");
+
+    expect(workerSource).toContain(
+      "Forecast interpretation runs synchronously in the api service",
+    );
+    expect(workerSource).toContain("worker is not required for /forecast/ai-explain");
+    expect(workerSource).toContain("setInterval");
+    expect(workerSource).toContain("idle heartbeat");
   });
 
   const bashCommand = resolveBashCommand();

@@ -1044,6 +1044,12 @@ export function createRuleBasedForecastExplanation(
   const backupWindow = result.bestWindows.find((window) => window !== bestWindow);
   const bestDaily = bestDailySummaryForPlan(result, bestWindow);
   const dedicatedDecision = dedicatedTripDecisionZh(result, bestDaily);
+  const topScoredSubject = bestSubjectFromScores(result, 0);
+  const primarySubject = bestWindow ? windowLabelZh(bestWindow) : topScoredSubject;
+  const backupSubject = bestSubjectFromScores(
+    result,
+    primarySubject.includes(topScoredSubject) ? 1 : 0,
+  );
   const clothing = [result.clothingGuide.summaryZh, ...result.clothingGuide.layers.slice(0, 2)]
     .filter(Boolean)
     .join(" ");
@@ -1066,7 +1072,7 @@ export function createRuleBasedForecastExplanation(
       oneSentenceDecisionZh: `${dedicatedDecision}；优先看${bestWindow ? `${windowLabelZh(bestWindow)} ${formatShootingWindowZh(bestWindow, timezone)}` : "后续天气更新"}。`,
     },
     bestPlan: {
-      primaryTargetZh: bestWindow ? windowLabelZh(bestWindow) : bestSubjectFromScores(result),
+      primaryTargetZh: primarySubject,
       bestDateZh: bestDaily?.dateLabelZh ?? bestWindow?.date ?? "日期待复核",
       bestWindowZh: bestWindow
         ? formatShootingWindowZh(bestWindow, timezone)
@@ -1082,8 +1088,8 @@ export function createRuleBasedForecastExplanation(
         result.keyReasons[0] ??
         "当前窗口在确定性评分中排序靠前。",
       backupPlanZh: backupWindow
-        ? `${windowLabelZh(backupWindow)} ${formatShootingWindowZh(backupWindow, timezone)}`
-        : "若主窗口不成立，转向近景、云层纹理或等待下一轮短临预报。",
+        ? `备用题材：${backupSubject}；备用窗口：${windowLabelZh(backupWindow)} ${formatShootingWindowZh(backupWindow, timezone)}`
+        : `备用题材：${backupSubject}；若主窗口不成立，转向近景、云层纹理或等待下一轮短临预报。`,
     },
     weatherTrend: {
       trendSummaryZh: forecastTrendSummary(result),
@@ -1105,7 +1111,7 @@ export function createRuleBasedForecastExplanation(
     riskAndGear: {
       keyRisks:
         result.riskFlags.length > 0
-          ? takeItems(result.riskFlags, 6).map((risk) => `${risk.label}：${risk.description}`)
+          ? takeItems(result.riskFlags, 6).map((risk) => formatRiskWithTime(risk, timezone))
           : ["暂无高等级风险，但山地天气仍需出发前复核。"],
       clothingZh: clothing || result.clothingGuide.titleZh,
       gearZh: gear || "建议带防风外套、防潮袋、头灯、备用电池和镜头布。",
@@ -1275,7 +1281,7 @@ function scoreSentence(
   return `${score.label} ${Math.round(score.score)} 分，${score.reasons[0] ?? "仍需现场复核"}`;
 }
 
-function bestSubjectFromScores(result: ForecastCalculationResult): string {
+function bestSubjectFromScores(result: ForecastCalculationResult, index = 0): string {
   return (
     [
       result.scores.cloudSea,
@@ -1283,8 +1289,20 @@ function bestSubjectFromScores(result: ForecastCalculationResult): string {
       result.scores.sunsetGlow,
       result.scores.milkyWay,
       result.scores.transparency,
-    ].sort((left, right) => right.score - left.score)[0]?.label ?? "综合题材"
+    ].sort((left, right) => right.score - left.score)[index]?.label ?? "综合题材"
   );
+}
+
+function formatRiskWithTime(
+  risk: ForecastCalculationResult["riskFlags"][number],
+  timezone: string,
+): string {
+  const timeWindow =
+    risk.timeWindowLabelZh ??
+    (risk.startTime && risk.endTime
+      ? formatShootingWindowZh({ startTime: risk.startTime, endTime: risk.endTime }, timezone)
+      : "出行前后");
+  return `${risk.label}（${timeWindow}）：${risk.description}`;
 }
 
 function dedicatedTripDecisionZh(

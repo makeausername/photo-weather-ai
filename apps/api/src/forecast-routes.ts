@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from "fastify";
 import { buildForecastDateRange, forecastDateRangeErrorMessage } from "@photo-weather/calendar";
 import { buildCalibrationLocationKey, findCalibrationHint } from "@photo-weather/calibration";
@@ -13,6 +14,7 @@ import {
 import {
   buildDeepSeekForecastExplanationRequest,
   createRuleBasedForecastExplanation,
+  DeepSeekProviderError,
   isDeepSeekProviderError,
   type DeepSeekInterpretationErrorCategory,
   type ForecastAiExplanation,
@@ -68,6 +70,19 @@ type ForecastCalculationWithAiResult = ForecastCalculationResult & {
   aiExplanation?: ForecastAiExplanation;
   aiExplanationError?: string;
 };
+
+type CachedDeepSeekForecastInterpretation = {
+  readonly interpretation: ForecastAiExplanation;
+  readonly model: string;
+  readonly promptSizeChars: number;
+  readonly createdAt: number;
+};
+
+const deepSeekForecastInterpretationCacheTtlMs = 1000 * 60 * 60;
+const deepSeekForecastInterpretationCache = new Map<
+  string,
+  CachedDeepSeekForecastInterpretation
+>();
 
 const missingWgs84CoordinateErrorMessage = "当前地点缺少有效 WGS84 坐标，无法计算星空银河窗口。";
 
@@ -196,7 +211,8 @@ export function registerForecastRoutes(
       return sendZodError(reply, parsedBody.error);
     }
 
-    const { useAiExplanation, timezone, startDateTime, ...query } = parsedBody.data;
+    const { useAiExplanation: _useAiExplanation, timezone, startDateTime, ...query } =
+      parsedBody.data;
     const result = await calculateForecastResultOrReply(
       query,
       { timezone, startDateTime },
@@ -213,16 +229,7 @@ export function registerForecastRoutes(
       return reply;
     }
 
-    if (!useAiExplanation) {
-      return reply.send(result);
-    }
-
-    const response: ForecastCalculationWithAiResult = {
-      ...result,
-      aiExplanation: createRuleBasedForecastExplanation(result),
-    };
-
-    return reply.send(response);
+    return reply.send(withDeterministicAiExplanation(result));
   });
 
   app.post("/forecast/ai-explain", async (request, reply) => {
@@ -277,6 +284,33 @@ export function registerForecastRoutes(
       );
     }
 
+    const cacheKey = createForecastInterpretationCacheKey(result);
+    const cachedInterpretation = readCachedDeepSeekForecastInterpretation(cacheKey);
+    if (cachedInterpretation) {
+      request.log.info({
+        route: "/forecast/ai-explain",
+        model: cachedInterpretation.model,
+        timeoutMs: runtimeDeepSeek.timeoutMs,
+        promptSizeChars: cachedInterpretation.promptSizeChars,
+        latencyMs: 0,
+        attempts: 0,
+        parseSuccess: true,
+        errorCategory: null,
+        cacheHit: true,
+      });
+
+      return reply.send(
+        buildAiExplainSuccessResponse({
+          interpretation: cachedInterpretation.interpretation,
+          runtimeDeepSeek,
+          latencyMs: 0,
+          promptSizeChars: cachedInterpretation.promptSizeChars,
+          attempts: 0,
+          cacheHit: true,
+        }),
+      );
+    }
+
     const startedAt = Date.now();
 
     try {
@@ -285,9 +319,21 @@ export function registerForecastRoutes(
         env,
         fetcher: globalThis.fetch,
       });
-      const retryResult = await generateDeepSeekExplanationWithRetry({
-        provider: deepSeekProvider,
-        forecastResult: result,
+      const retryResult = await withDeepSeekExplanationDeadline(
+        generateDeepSeekExplanationWithRetry({
+          provider: deepSeekProvider,
+          forecastResult: result,
+        }),
+        {
+          timeoutMs: runtimeDeepSeek.timeoutMs,
+          promptSizeChars,
+        },
+      );
+      writeCachedDeepSeekForecastInterpretation(cacheKey, {
+        interpretation: retryResult.explanation,
+        model: runtimeDeepSeek.model,
+        promptSizeChars,
+        createdAt: Date.now(),
       });
       request.log.info({
         route: "/forecast/ai-explain",
@@ -300,22 +346,16 @@ export function registerForecastRoutes(
         errorCategory: null,
       });
 
-      return reply.send({
-        success: true,
-        fallback: false,
-        explanation: retryResult.explanation,
-        retryable: false,
-        latencyMs: Date.now() - startedAt,
-        model: runtimeDeepSeek.model,
-        promptSizeChars,
-        diagnostics: {
-          model: runtimeDeepSeek.model,
-          timeoutMs: runtimeDeepSeek.timeoutMs,
+      return reply.send(
+        buildAiExplainSuccessResponse({
+          interpretation: retryResult.explanation,
+          runtimeDeepSeek,
+          latencyMs: Date.now() - startedAt,
           promptSizeChars,
           attempts: retryResult.attempts,
-          parseSuccess: true,
-        },
-      });
+          cacheHit: false,
+        }),
+      );
     } catch (error) {
       const normalized = normalizeDeepSeekExplanationError(error);
       const latencyMs = normalized.latencyMs ?? Date.now() - startedAt;
@@ -631,6 +671,47 @@ function estimateDeepSeekPromptSize(
   }
 }
 
+function withDeterministicAiExplanation(
+  result: ForecastCalculationResult,
+): ForecastCalculationWithAiResult {
+  return {
+    ...result,
+    aiExplanation: buildDeterministicFallbackInterpretation(result),
+  };
+}
+
+function buildAiExplainSuccessResponse(options: {
+  readonly interpretation: ForecastAiExplanation;
+  readonly runtimeDeepSeek: RuntimeDeepSeekConfig;
+  readonly latencyMs: number;
+  readonly promptSizeChars: number;
+  readonly attempts: number;
+  readonly cacheHit: boolean;
+}) {
+  return {
+    success: true,
+    source: "deepseek" as const,
+    model: options.runtimeDeepSeek.model,
+    interpretation: options.interpretation,
+    latencyMs: options.latencyMs,
+    promptSizeChars: options.promptSizeChars,
+    parseSuccess: true,
+    retryable: false,
+    cacheHit: options.cacheHit,
+    fallback: false,
+    explanation: options.interpretation,
+    diagnostics: {
+      model: options.runtimeDeepSeek.model,
+      timeoutMs: options.runtimeDeepSeek.timeoutMs,
+      promptSizeChars: options.promptSizeChars,
+      latencyMs: options.latencyMs,
+      attempts: options.attempts,
+      parseSuccess: true,
+      cacheHit: options.cacheHit,
+    },
+  };
+}
+
 function buildAiExplainFailureResponse(options: {
   readonly result: ForecastCalculationResult;
   readonly runtimeDeepSeek: RuntimeDeepSeekConfig | null;
@@ -639,22 +720,26 @@ function buildAiExplainFailureResponse(options: {
   readonly promptSizeChars: number;
   readonly attempts?: number;
 }) {
-  const fallback = safeRuleBasedForecastExplanation(options.result);
-  const messageZh = deepSeekInterpretationMessageZh(options.errorCategory, Boolean(fallback));
+  const fallback = buildDeterministicFallbackInterpretation(options.result);
+  const messageZh = deepSeekInterpretationMessageZh(options.errorCategory, true);
   const retryable = isRetryableDeepSeekErrorCategory(options.errorCategory);
   const model = options.runtimeDeepSeek?.model ?? "deepseek-v4-pro";
   const timeoutMs = options.runtimeDeepSeek?.timeoutMs ?? 90000;
 
   return {
     success: false,
-    fallback: Boolean(fallback),
-    ...(fallback ? { explanation: fallback } : {}),
+    source: "fallback" as const,
+    fallback: true,
+    fallbackInterpretation: fallback,
+    explanation: fallback,
+    interpretation: fallback,
     errorCategory: options.errorCategory,
     messageZh,
     retryable,
     latencyMs: options.latencyMs,
     model,
     promptSizeChars: options.promptSizeChars,
+    parseSuccess: false,
     error: legacyAiExplanationErrorCode(options.errorCategory),
     message: messageZh,
     diagnostics: {
@@ -664,20 +749,207 @@ function buildAiExplainFailureResponse(options: {
       latencyMs: options.latencyMs,
       attempts: options.attempts ?? 0,
       parseSuccess: false,
-      fallback: Boolean(fallback),
+      fallback: true,
       errorCategory: options.errorCategory,
     },
   };
 }
 
-function safeRuleBasedForecastExplanation(
+function buildDeterministicFallbackInterpretation(
   result: ForecastCalculationResult,
-): ForecastAiExplanation | null {
+): ForecastAiExplanation {
   try {
     return createRuleBasedForecastExplanation(result);
   } catch {
+    return createEmergencyForecastExplanation(result);
+  }
+}
+
+function createEmergencyForecastExplanation(result: ForecastCalculationResult): ForecastAiExplanation {
+  const bestWindow = result.bestWindows[0];
+  const bestDay = result.dailySummaries[0];
+  const primarySubject = bestSubjectLabel(result, 0);
+  const backupSubject = bestSubjectLabel(result, 1);
+  const mainRisk = result.riskFlags[0];
+  const riskWindow = mainRisk?.timeWindowLabelZh ?? "出行前后";
+  const weather = bestDay?.weather;
+
+  const dayByDay =
+    result.dailySummaries.length > 0
+      ? result.dailySummaries.slice(0, 5).map((day) => ({
+          dateZh: day.dateLabelZh,
+          recommendationZh: day.dedicatedTripRecommendation ?? day.recommendationLabel,
+          scoreZh: `综合 ${day.score} 分`,
+          temperatureZh: day.weather
+            ? `${Math.round(day.weather.tempMin ?? 0)}-${Math.round(day.weather.tempMax ?? 0)}°C`
+            : "温度待复核",
+          rainZh: day.weather?.mainPrecipitationPeriodLabelZh ?? "降水待复核",
+          cloudSeaZh: result.scores.cloudSea.label,
+          glowZh: result.scores.sunriseGlow.label,
+          sunsetGlowZh: result.scores.sunsetGlow.label,
+          astroZh: result.scores.milkyWay.label,
+          transparencyZh: result.scores.transparency.label,
+          bestWindowZh: day.bestShootableWindow
+            ? `${day.bestShootableWindow.label} ${day.bestShootableWindow.startTime} 至 ${day.bestShootableWindow.endTime}`
+            : "暂无高确定性拍摄窗口",
+          actionZh: day.shortAdvice,
+        }))
+      : [
+          {
+            dateZh: "当前结果",
+            recommendationZh: result.recommendationLabel,
+            scoreZh: `综合 ${result.overallScore} 分`,
+            temperatureZh: "温度待复核",
+            rainZh: "降水待复核",
+            cloudSeaZh: result.scores.cloudSea.label,
+            glowZh: result.scores.sunriseGlow.label,
+            sunsetGlowZh: result.scores.sunsetGlow.label,
+            astroZh: result.scores.milkyWay.label,
+            transparencyZh: result.scores.transparency.label,
+            bestWindowZh: bestWindow
+              ? `${bestWindow.label} ${bestWindow.startTime} 至 ${bestWindow.endTime}`
+              : "暂无高确定性拍摄窗口",
+            actionZh: result.photographyAdvice[0] ?? result.summary,
+          },
+        ];
+
+  return {
+    conclusion: {
+      titleZh: `${result.place.name}拍摄天气简版解读`,
+      summaryZh: result.summary,
+      recommendedDayZh: bestDay
+        ? `${bestDay.dateLabelZh}最值得关注，${bestDay.shortAdvice}`
+        : "暂未取得逐日摘要，请先参考综合评分与窗口列表。",
+      recommendationLevelZh: result.recommendationLabel,
+      whetherWorthDedicatedTripZh:
+        bestDay?.dedicatedTripRecommendation ?? result.recommendationLabel,
+      oneSentenceDecisionZh: `${result.recommendationLabel}，优先关注${bestWindow?.label ?? primarySubject}。`,
+    },
+    bestPlan: {
+      primaryTargetZh: primarySubject,
+      bestDateZh: bestDay?.dateLabelZh ?? bestWindow?.date ?? "日期待复核",
+      bestWindowZh: bestWindow
+        ? `${bestWindow.startTime} 至 ${bestWindow.endTime}`
+        : "暂无明确高确定性窗口",
+      recommendedArrivalZh: bestWindow?.arrivalAdvice?.recommendedArrivalLabel ?? "按主窗口提前到位",
+      whyThisWindowZh: bestWindow?.copyReasonZh ?? result.keyReasons[0] ?? result.summary,
+      backupPlanZh: `备用题材：${backupSubject}；若主窗口不成立，转向近景、云层纹理或等待下一轮短临预报。`,
+    },
+    weatherTrend: {
+      trendSummaryZh: result.summary,
+      temperatureSummaryZh: weather
+        ? `温度约 ${Math.round(weather.tempMin ?? 0)}-${Math.round(weather.tempMax ?? 0)}°C。`
+        : "温度需结合天气卡片复核。",
+      rainSummaryZh: weather?.mainPrecipitationPeriodLabelZh ?? "降水需结合天气卡片复核。",
+      windSummaryZh:
+        typeof weather?.windSpeed === "number"
+          ? `平均风速约 ${Math.round(weather.windSpeed)} m/s，阵风和山脊风需复核。`
+          : "风力需结合天气卡片复核。",
+      transparencySummaryZh: result.scores.transparency
+        ? `${result.scores.transparency.label} ${Math.round(result.scores.transparency.score)} 分。`
+        : "通透度需结合确定性评分复核。",
+    },
+    dayByDay,
+    subjectAdvice: {
+      cloudSeaZh: `${result.scores.cloudSea.label} ${Math.round(result.scores.cloudSea.score)} 分，白墙风险 ${Math.round(result.scores.whiteoutRisk.score)} 分。`,
+      sunriseGlowZh: `${result.scores.sunriseGlow.label} ${Math.round(result.scores.sunriseGlow.score)} 分，需复核日出前后低云遮挡。`,
+      sunsetGlowZh: `${result.scores.sunsetGlow.label} ${Math.round(result.scores.sunsetGlow.score)} 分，需复核西向云层开口。`,
+      astroMilkyWayZh: `${result.scores.milkyWay.label} ${Math.round(result.scores.milkyWay.score)} 分，云量、月光和通透度仍需复核。`,
+      transparencyZh: `${result.scores.transparency.label} ${Math.round(result.scores.transparency.score)} 分，远山层次和长焦细节按现场能见度确认。`,
+    },
+    riskAndGear: {
+      keyRisks: mainRisk
+        ? [`${mainRisk.label}（${riskWindow}）：${mainRisk.description}`]
+        : ["暂无高等级风险，但仍需出行前复核短临天气、道路和景区安全。"],
+      clothingZh: result.clothingGuide.summaryZh,
+      gearZh:
+        result.clothingGuide.accessories.slice(0, 3).join("、") ||
+        "建议携带三脚架、防潮袋、头灯、备用电池和防风外套。",
+      safetyZh: "保留撤离时间，遇到强风、雷雨、低能见度或道路风险时不要硬等窗口。",
+    },
+    finalAdvice: {
+      goNoGoZh: result.recommendationLabel,
+      ifAlreadyNearbyZh: bestDay?.nearbyObservationAdviceZh ?? "已在附近可短时观察云层开口。",
+      ifDedicatedTripZh:
+        bestDay?.dedicatedTripAdviceZh ?? "专程出发前需等待短临降水、低云和阵风复核。",
+      nextCheckZh: "下一次重点复核短临降水、低云高度、能见度、阵风和主窗口前后云层开口。",
+    },
+    metadata: {
+      source: "deterministic_fallback",
+      noteZh: "基于确定性计算结果生成的简版解读。",
+    },
+  };
+}
+
+function bestSubjectLabel(result: ForecastCalculationResult, index: number): string {
+  const rankedScores = [
+    result.scores.cloudSea,
+    result.scores.sunriseGlow,
+    result.scores.sunsetGlow,
+    result.scores.milkyWay,
+    result.scores.stars,
+    result.scores.transparency,
+  ].sort((left, right) => right.score - left.score);
+
+  return rankedScores[index]?.label ?? rankedScores[0]?.label ?? "综合题材";
+}
+
+function createForecastInterpretationCacheKey(result: ForecastCalculationResult): string {
+  const resultWithIds = result as ForecastCalculationResult & {
+    readonly resultId?: unknown;
+    readonly reportId?: unknown;
+  };
+  if (typeof resultWithIds.reportId === "string" && resultWithIds.reportId.trim()) {
+    return `report:${resultWithIds.reportId.trim()}`;
+  }
+  if (typeof resultWithIds.resultId === "string" && resultWithIds.resultId.trim()) {
+    return `result:${resultWithIds.resultId.trim()}`;
+  }
+
+  const stableSummary = {
+    location: {
+      id: result.place.id,
+      name: result.place.name,
+      latitude: roundCoordinateForCache(result.place.coordinates.latitude),
+      longitude: roundCoordinateForCache(result.place.coordinates.longitude),
+    },
+    horizon: result.horizon,
+    target: result.target,
+    summary: result.summary,
+    overallScore: result.overallScore,
+    recommendationLabel: result.recommendationLabel,
+    keyReasons: result.keyReasons.slice(0, 4),
+  };
+
+  return `hash:${createHash("sha256")
+    .update(JSON.stringify(stableSummary))
+    .digest("hex")
+    .slice(0, 32)}`;
+}
+
+function roundCoordinateForCache(value: number): number {
+  return Math.round(value * 100000) / 100000;
+}
+
+function readCachedDeepSeekForecastInterpretation(
+  cacheKey: string,
+): CachedDeepSeekForecastInterpretation | null {
+  const cached = deepSeekForecastInterpretationCache.get(cacheKey);
+  if (!cached) {
     return null;
   }
+  if (Date.now() - cached.createdAt > deepSeekForecastInterpretationCacheTtlMs) {
+    deepSeekForecastInterpretationCache.delete(cacheKey);
+    return null;
+  }
+  return cached;
+}
+
+function writeCachedDeepSeekForecastInterpretation(
+  cacheKey: string,
+  cached: CachedDeepSeekForecastInterpretation,
+): void {
+  deepSeekForecastInterpretationCache.set(cacheKey, cached);
 }
 
 function deepSeekInterpretationMessageZh(
@@ -756,10 +1028,41 @@ async function generateDeepSeekExplanationWithRetry(options: {
   throw lastError;
 }
 
+async function withDeepSeekExplanationDeadline<T>(
+  promise: Promise<T>,
+  options: {
+    readonly timeoutMs: number;
+    readonly promptSizeChars: number;
+  },
+): Promise<T> {
+  const boundedTimeoutMs = Math.min(options.timeoutMs + 5000, 125000);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(() => {
+          reject(
+            new DeepSeekProviderError({
+              errorCategory: "timeout",
+              messageZh: "DeepSeek 服务请求超时。",
+              promptSizeChars: options.promptSizeChars,
+            }),
+          );
+        }, boundedTimeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
 function isRetryableDeepSeekInterpretationError(error: unknown): boolean {
   if (isDeepSeekProviderError(error)) {
     return (
-      error.errorCategory === "timeout" ||
       error.errorCategory === "network_error" ||
       error.errorCategory === "upstream_429" ||
       error.errorCategory === "upstream_5xx"

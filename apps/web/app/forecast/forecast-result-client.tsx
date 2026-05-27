@@ -132,8 +132,10 @@ type ForecastAiExplanation = {
 
 type AiExplainResponse = {
   readonly success?: boolean;
+  readonly source?: "deepseek" | "fallback";
   readonly explanation?: ForecastAiExplanation;
   readonly interpretation?: unknown;
+  readonly fallbackInterpretation?: unknown;
   readonly sections?: unknown;
   readonly data?: unknown;
   readonly result?: unknown;
@@ -157,6 +159,7 @@ type AiExplainResponse = {
   readonly latencyMs?: number;
   readonly model?: string;
   readonly promptSizeChars?: number;
+  readonly parseSuccess?: boolean;
   readonly diagnostics?: {
     readonly model?: string;
     readonly timeoutMs?: number;
@@ -343,15 +346,31 @@ export function normalizeAiExplainResponse(
 ): NormalizedAiExplainOutcome {
   const response = isRecord(payload) ? (payload as AiExplainResponse) : {};
   const diagnostics = isRecord(response.diagnostics) ? response.diagnostics : undefined;
+  const directExplanation = extractAiExplanationFromResponse(response);
+  const explicitFallback =
+    normalizeFallbackAiExplanationCandidate(response.fallbackInterpretation) ??
+    (response.source === "fallback"
+      ? normalizeFallbackAiExplanationCandidate(response.interpretation)
+      : null) ??
+    (response.fallback === true
+      ? normalizeFallbackAiExplanationCandidate(response.explanation)
+      : null);
+  const fallbackExplanation = explicitFallback ?? deterministicFallback;
+  const invalidSuccessfulResponse = response.success === true && !directExplanation;
   const backendErrorCategory =
     normalizeAiErrorCategory(response.errorCategory) ??
     normalizeAiErrorCategory(diagnostics?.errorCategory) ??
+    (invalidSuccessfulResponse ? "parse_error" : undefined) ??
     "none";
-  const explanation =
-    extractAiExplanationFromResponse(response) ??
-    (response.success === false ? deterministicFallback : null);
+  const explanation = directExplanation ?? fallbackExplanation;
   const parseSuccess =
-    typeof diagnostics?.parseSuccess === "boolean" ? diagnostics.parseSuccess : undefined;
+    typeof response.parseSuccess === "boolean"
+      ? response.parseSuccess
+      : typeof diagnostics?.parseSuccess === "boolean"
+        ? diagnostics.parseSuccess
+        : invalidSuccessfulResponse
+          ? false
+          : undefined;
   const retryable =
     typeof response.retryable === "boolean"
       ? response.retryable
@@ -362,9 +381,12 @@ export function normalizeAiExplainResponse(
     publicAiExplanationMessage(backendErrorCategory);
 
   if (explanation) {
-    const isSuccessfulDeepSeek = response.success === true;
+    const isSuccessfulDeepSeek =
+      response.success === true &&
+      directExplanation !== null &&
+      directExplanation.metadata?.source !== "deterministic_fallback";
     const isDeterministicFallback =
-      response.success === false || explanation.metadata?.source === "deterministic_fallback";
+      !isSuccessfulDeepSeek || explanation.metadata?.source === "deterministic_fallback";
 
     return {
       status: "ready",
@@ -488,6 +510,11 @@ function normalizeForecastAiExplanationCandidate(value: unknown): ForecastAiExpl
   }
 
   return explanationFromSections(normalizeAiSections(value.sections ?? value));
+}
+
+function normalizeFallbackAiExplanationCandidate(value: unknown): ForecastAiExplanation | null {
+  const explanation = normalizeForecastAiExplanationCandidate(value);
+  return explanation ? forceAiExplanationMetadata(explanation, "deterministic_fallback") : null;
 }
 
 function isForecastAiExplanationLike(value: unknown): value is ForecastAiExplanation {
@@ -811,6 +838,19 @@ function withAiExplanationMetadata(
   };
 }
 
+function forceAiExplanationMetadata(
+  explanation: ForecastAiExplanation,
+  source: NonNullable<ForecastAiExplanation["metadata"]>["source"],
+): ForecastAiExplanation {
+  return {
+    ...explanation,
+    metadata: {
+      ...explanation.metadata,
+      source,
+    },
+  };
+}
+
 function normalizeAiMetadata(value: unknown): ForecastAiExplanation["metadata"] | undefined {
   if (!isRecord(value)) {
     return undefined;
@@ -1026,12 +1066,18 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
         const data = (await response.json()) as ForecastCalculationResult;
         writeForecastResultContext({ query: activeQuery, result: data });
         setResult(data);
+        const deterministicFallback = getDeterministicAiFallbackFromResult(data);
         const cachedAiExplanation = readCachedAiExplanation(
           createAiExplanationCacheKey({ query: activeQuery, result: data }),
         );
         if (cachedAiExplanation) {
           setAiExplanation(cachedAiExplanation);
           setAiStatus("ready");
+          setAiErrorMessage("");
+          setAiRetryable(false);
+        } else if (deterministicFallback) {
+          setAiExplanation(deterministicFallback);
+          setAiStatus("idle");
           setAiErrorMessage("");
           setAiRetryable(false);
         }
@@ -1088,6 +1134,9 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
     const timeout = setTimeout(() => controller.abort(), aiExplainFrontendTimeoutMs);
     aiAbortControllerRef.current = controller;
     aiRequestInFlightRef.current = true;
+    if (deterministicFallback) {
+      setAiExplanation(deterministicFallback);
+    }
     setAiStatus("loading");
     setAiErrorMessage("");
     setAiRetryable(false);
@@ -5133,10 +5182,11 @@ function AiExplanationPanel({
   readonly onGenerate: () => void;
 }) {
   const isFallback = explanation?.metadata?.source === "deterministic_fallback";
-  const hasCompletedExplanation = Boolean(explanation) && !retryable && status !== "loading";
+  const hasCompletedExplanation =
+    Boolean(explanation) && !isFallback && !retryable && status !== "loading";
   const buttonLabel =
     status === "loading"
-      ? "正在生成解读…"
+      ? "正在增强解读…"
       : retryable
         ? "重试 DeepSeek 解读"
         : hasCompletedExplanation

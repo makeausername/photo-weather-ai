@@ -336,13 +336,14 @@ describe("local astro diagnostics scripts", () => {
       "timeoutMs: ${config.timeoutMs}",
       "deepseek-v4-pro",
       "success:",
+      "source:",
       "parseSuccess:",
       "errorCategory:",
       "messageZh:",
       "promptSizeChars:",
       "retryable:",
       "latencyMs:",
-      "sectionKeys:",
+      "fallbackSuccess:",
     ]) {
       expect(script).toContain(expected);
     }
@@ -351,6 +352,8 @@ describe("local astro diagnostics scripts", () => {
     expect(script).toContain("apiKeyPresent");
     expect(script).toContain("api_node()");
     expect(script).toContain("compose exec -T api node");
+    expect(script).toContain("timeout 130s");
+    expect(script).toContain("print_timeout_result");
     expect(script).not.toContain('started_ms="$(node');
     expect(script).not.toContain('ended_ms="$(node');
     expect(script).not.toContain("node - \"$response_file\"");

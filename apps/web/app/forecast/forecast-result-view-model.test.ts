@@ -2790,9 +2790,38 @@ describe("forecast result target-aware view model", () => {
       }),
     );
 
-    expect(html).toContain("正在生成解读");
+    expect(html).toContain("正在增强解读");
     expect(html).toContain("disabled");
     expect(html).toContain("综合出片指数");
+  });
+
+  it("renders deterministic fallback from the forecast result before DeepSeek is clicked", () => {
+    const fallback = aiExplanationForTest(
+      "基于确定性计算结果生成的简版解读在页面加载后立即可见。",
+      "deterministic_fallback",
+    );
+    const result = {
+      ...resultForTarget("general"),
+      aiExplanation: fallback,
+    } as ForecastCalculationResult & { aiExplanation: ReturnType<typeof aiExplanationForTest> };
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "idle",
+        aiExplanation: fallback,
+        aiErrorMessage: "",
+        aiRetryable: false,
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("基于确定性计算结果生成的简版解读");
+    expect(html).toContain("生成智能解读");
+    expect(html).toContain("基于确定性计算结果生成的简版解读在页面加载后立即可见。");
+    expect(html).not.toContain("智能解读暂时不可用");
   });
 
   it("clears loading and renders a success=true interpretation response", () => {
@@ -2877,6 +2906,32 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("确定性简版解读在 DeepSeek 超时后仍然可见。");
     expect(html).toContain("重试 DeepSeek 解读");
     expect(html).toContain("综合出片指数");
+  });
+
+  it("keeps fallback visible when a success response has invalid interpretation data", () => {
+    const fallback = aiExplanationForTest(
+      "DeepSeek 返回无效结构时继续显示确定性简版解读。",
+      "deterministic_fallback",
+    );
+    const outcome = normalizeAiExplainResponse(
+      {
+        success: true,
+        source: "deepseek",
+        interpretation: {},
+        model: "deepseek-v4-pro",
+        parseSuccess: true,
+      },
+      fallback,
+    );
+
+    expect(outcome.status).toBe("ready");
+    expect(outcome.success).toBe(false);
+    expect(outcome.cacheable).toBe(false);
+    expect(outcome.errorCategory).toBe("parse_error");
+    expect(outcome.explanation?.metadata?.source).toBe("deterministic_fallback");
+    expect(outcome.explanation?.conclusion.oneSentenceDecisionZh).toContain(
+      "DeepSeek 返回无效结构时继续显示确定性简版解读。",
+    );
   });
 
   it("shows retry without hiding deterministic forecast content when no fallback is available", () => {

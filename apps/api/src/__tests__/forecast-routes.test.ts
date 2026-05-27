@@ -26,6 +26,72 @@ const validPayload = {
   photoSpotId: "spot-guangmingding",
 } as const;
 
+function buildDeepSeekExplanationContent(label: string) {
+  return {
+    conclusion: {
+      titleZh: "黄山光明顶拍摄天气解读",
+      summaryZh: `${label}：综合窗口已按确定性结果解读。`,
+      recommendedDayZh: "最建议关注 2026年5月20日清晨窗口。",
+      recommendationLevelZh: "值得等待",
+      whetherWorthDedicatedTripZh: "谨慎参考",
+      oneSentenceDecisionZh: `${label}：清晨窗口优先，专程出发前仍需复核短临天气。`,
+    },
+    bestPlan: {
+      primaryTargetZh: "清晨云海",
+      bestDateZh: "2026年5月20日",
+      bestWindowZh: "2026年5月20日 05:00-07:00",
+      recommendedArrivalZh: "建议 04:20 前到位",
+      whyThisWindowZh: "低云、湿度和地形组合更适合清晨观察。",
+      backupPlanZh: "备用题材：晚霞；若云海不成立，转向远山层次和云缝光。",
+    },
+    weatherTrend: {
+      trendSummaryZh: "云量偏多，等待短时开口。",
+      temperatureSummaryZh: "山顶估算温度约 10-18°C。",
+      rainSummaryZh: "降水风险偏低，仍需复核短临雷达。",
+      windSummaryZh: "风力可控，阵风需现场确认。",
+      transparencySummaryZh: "通透度中等，远山层次需现场复核。",
+    },
+    dayByDay: [
+      {
+        dateZh: "2026年5月20日",
+        recommendationZh: "清晨可重点观察。",
+        scoreZh: "综合 78 分",
+        temperatureZh: "10-18°C",
+        rainZh: "降水风险低",
+        cloudSeaZh: "云海机会较好",
+        glowZh: "朝霞可关注",
+        sunsetGlowZh: "晚霞备用",
+        astroZh: "星空不作为主目标",
+        transparencyZh: "通透度中等",
+        bestWindowZh: "05:00-07:00",
+        actionZh: "提前到位并复核低云高度。",
+      },
+    ],
+    subjectAdvice: {
+      cloudSeaZh: "云海为优先题材，注意白墙风险。",
+      sunriseGlowZh: "日出和朝霞可作为同窗口组合。",
+      sunsetGlowZh: "晚霞只作备用。",
+      astroMilkyWayZh: "不建议只为银河专程。",
+      transparencyZh: "通透度决定远山层次。",
+    },
+    riskAndGear: {
+      keyRisks: ["低云遮挡（清晨窗口）：可能压住主体视线。"],
+      clothingZh: "清晨偏凉，带防风保暖层。",
+      gearZh: "三脚架、防潮袋、头灯和备用电池。",
+      safetyZh: "保留撤离时间，不在强风和低能见度下硬等。",
+    },
+    finalAdvice: {
+      goNoGoZh: "谨慎参考，可近距离观察。",
+      ifAlreadyNearbyZh: "已在附近可短时等待清晨开口。",
+      ifDedicatedTripZh: "专程出发前等待短临复核。",
+      nextCheckZh: "复核降水、低云、能见度和阵风。",
+    },
+    metadata: {
+      source: "deepseek" as const,
+    },
+  };
+}
+
 function addOneDay(date: string): string {
   const [year, month, day] = date.split("-").map(Number);
   const next = new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, (day ?? 1) + 1));
@@ -415,6 +481,25 @@ describe("forecast query validation route", () => {
       },
     });
     expect(body.overallScore).toEqual(expect.any(Number));
+    expect(body.aiExplanation).toMatchObject({
+      metadata: expect.objectContaining({
+        source: "deterministic_fallback",
+      }),
+      conclusion: expect.objectContaining({
+        recommendedDayZh: expect.any(String),
+        whetherWorthDedicatedTripZh: expect.any(String),
+      }),
+      weatherTrend: expect.objectContaining({
+        temperatureSummaryZh: expect.any(String),
+        rainSummaryZh: expect.any(String),
+        windSummaryZh: expect.any(String),
+        transparencySummaryZh: expect.any(String),
+      }),
+      riskAndGear: expect.objectContaining({
+        clothingZh: expect.any(String),
+        gearZh: expect.any(String),
+      }),
+    });
     expect(body.cloudSeaAnalysis).toMatchObject({
       cloudSeaOpportunityScore: expect.any(Number),
       whiteoutRiskScore: expect.any(Number),
@@ -1535,7 +1620,13 @@ describe("forecast query validation route", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       success: false,
+      source: "fallback",
       fallback: true,
+      fallbackInterpretation: expect.objectContaining({
+        metadata: expect.objectContaining({
+          source: "deterministic_fallback",
+        }),
+      }),
       errorCategory: "missing_api_key",
       messageZh: expect.stringContaining("DeepSeek API Key 未配置"),
       retryable: false,
@@ -1543,6 +1634,7 @@ describe("forecast query validation route", () => {
       latencyMs: 0,
       model: "deepseek-v4-pro",
       promptSizeChars: expect.any(Number),
+      parseSuccess: false,
       explanation: expect.objectContaining({
         conclusion: expect.objectContaining({
           recommendedDayZh: expect.any(String),
@@ -1556,6 +1648,7 @@ describe("forecast query validation route", () => {
       }),
     });
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(response.body.length).toBeGreaterThan(2);
     expect(response.body).not.toContain("secretJson");
   });
 
@@ -1654,7 +1747,13 @@ describe("forecast query validation route", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       success: false,
+      source: "fallback",
       fallback: true,
+      fallbackInterpretation: expect.objectContaining({
+        metadata: expect.objectContaining({
+          source: "deterministic_fallback",
+        }),
+      }),
       errorCategory: "timeout",
       retryable: true,
       error: "ai_explanation_timeout",
@@ -1662,6 +1761,7 @@ describe("forecast query validation route", () => {
       latencyMs: expect.any(Number),
       model: "deepseek-v4-pro",
       promptSizeChars: expect.any(Number),
+      parseSuccess: false,
       explanation: expect.objectContaining({
         conclusion: expect.objectContaining({
           recommendedDayZh: expect.any(String),
@@ -1676,7 +1776,8 @@ describe("forecast query validation route", () => {
       }),
       message: expect.stringContaining("DeepSeek 请求超时"),
     });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(response.body.length).toBeGreaterThan(2);
     expect(response.body).not.toContain("deepseek-secret");
   });
 
@@ -1737,13 +1838,20 @@ describe("forecast query validation route", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       success: false,
+      source: "fallback",
       fallback: true,
+      fallbackInterpretation: expect.objectContaining({
+        metadata: expect.objectContaining({
+          source: "deterministic_fallback",
+        }),
+      }),
       errorCategory: "parse_error",
       messageZh: expect.stringContaining("DeepSeek 返回内容无法解析"),
       retryable: true,
       latencyMs: expect.any(Number),
       model: "deepseek-v4-pro",
       promptSizeChars: expect.any(Number),
+      parseSuccess: false,
       explanation: expect.objectContaining({
         conclusion: expect.objectContaining({
           recommendedDayZh: expect.any(String),
@@ -1758,6 +1866,103 @@ describe("forecast query validation route", () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(response.body).not.toContain("deepseek-secret");
+  });
+
+  it("caches successful DeepSeek interpretation by a stable forecast result key", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify(buildDeepSeekExplanationContent("缓存命中")),
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const provider = state.providers.get("ai:deepseek");
+    state.providers.set("ai:deepseek", {
+      ...provider,
+      enabled: true,
+      configJson: {
+        ...(provider.configJson ?? {}),
+        realCallEnabled: true,
+        model: "deepseek-v4-pro",
+      },
+      secretJson: {
+        apiKey: "deepseek-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "deep****cret",
+      },
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+      },
+      logger: false,
+    });
+
+    const firstResponse = await app.inject({
+      method: "POST",
+      url: "/forecast/ai-explain",
+      payload: {
+        ...validPayload,
+        photoSpotId: "spot-cache-test",
+      },
+    });
+    const secondResponse = await app.inject({
+      method: "POST",
+      url: "/forecast/ai-explain",
+      payload: {
+        ...validPayload,
+        photoSpotId: "spot-cache-test",
+      },
+    });
+
+    expect(firstResponse.statusCode).toBe(200);
+    expect(secondResponse.statusCode).toBe(200);
+    expect(firstResponse.json()).toMatchObject({
+      success: true,
+      source: "deepseek",
+      model: "deepseek-v4-pro",
+      parseSuccess: true,
+      cacheHit: false,
+      interpretation: expect.objectContaining({
+        conclusion: expect.objectContaining({
+          oneSentenceDecisionZh: expect.stringContaining("缓存命中"),
+        }),
+      }),
+    });
+    expect(secondResponse.json()).toMatchObject({
+      success: true,
+      source: "deepseek",
+      model: "deepseek-v4-pro",
+      parseSuccess: true,
+      cacheHit: true,
+      latencyMs: 0,
+      interpretation: expect.objectContaining({
+        conclusion: expect.objectContaining({
+          oneSentenceDecisionZh: expect.stringContaining("缓存命中"),
+        }),
+      }),
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(firstResponse.body).not.toContain("deepseek-secret");
+    expect(secondResponse.body).not.toContain("deepseek-secret");
   });
 
   it("rejects unsupported horizon and target for calculation", async () => {

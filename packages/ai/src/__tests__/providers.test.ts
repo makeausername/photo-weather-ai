@@ -322,6 +322,15 @@ describe("AI providers", () => {
     expect(explanation.conclusion.oneSentenceDecisionZh).toContain("强推荐专程");
     expect(explanation.bestPlan.bestDateZh).toBe("2026年5月21日 星期四");
     expect(explanation.bestPlan.bestWindowZh).toContain("2026年5月21日 05:20");
+    expect(explanation.bestPlan.primaryTargetZh).toContain("清晨云海");
+    expect(explanation.bestPlan.backupPlanZh).toContain("备用题材");
+    expect(explanation.weatherTrend.temperatureSummaryZh).toBeTruthy();
+    expect(explanation.weatherTrend.rainSummaryZh).toBeTruthy();
+    expect(explanation.weatherTrend.windSummaryZh).toBeTruthy();
+    expect(explanation.weatherTrend.transparencySummaryZh).toBeTruthy();
+    expect(explanation.riskAndGear.keyRisks[0]).toMatch(/（.+）：|暂无高等级风险/);
+    expect(explanation.riskAndGear.clothingZh).toBeTruthy();
+    expect(explanation.riskAndGear.gearZh).toBeTruthy();
     expect(explanation.finalAdvice.goNoGoZh).toContain("强推荐专程");
     expect(explanation.bestPlan.bestDateZh).not.toBe("2026-05-21");
   });
