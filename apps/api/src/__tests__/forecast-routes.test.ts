@@ -405,7 +405,7 @@ describe("forecast query validation route", () => {
     });
     expect(body.terrainAnalysis).toMatchObject({
       dataSource: "mock_terrain",
-      dataSourceLabelZh: "演示数据",
+      dataSourceLabelZh: "基础地形资料",
       terrainProfile: {
         locationElevation: 1860,
         terrainCloudSeaPotential: "high",
@@ -493,6 +493,68 @@ describe("forecast query validation route", () => {
     });
     expect(body.keyReasons.length).toBeGreaterThan(0);
     expect(body.photographyAdvice.length).toBeGreaterThan(0);
+  });
+
+  it("enriches a non-seeded selected location with mocked elevation during calculation", async () => {
+    const elevationProvider = {
+      getElevationForLocation: vi.fn(async () => ({
+        elevationMeters: 1326,
+        elevationSource: "open_meteo_elevation" as const,
+        elevationConfidence: "medium" as const,
+      })),
+    };
+    app = buildApiServer({
+      authConfig: testAuthConfig,
+      elevationProvider,
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        name: "非种子坐标测试点",
+        source: "amap",
+        latitudeGcj02: 30.2495,
+        longitudeGcj02: 120.1124,
+        latitudeWgs84: 30.2528,
+        longitudeWgs84: 120.1078,
+        elevationMeters: undefined,
+        elevationSource: undefined,
+        elevationConfidence: undefined,
+        locationId: undefined,
+        photoSpotId: undefined,
+      },
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(elevationProvider.getElevationForLocation).toHaveBeenCalledTimes(1);
+    expect(elevationProvider.getElevationForLocation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        locationName: "非种子坐标测试点",
+        coordinate: expect.objectContaining({
+          latitude: 30.2528,
+          longitude: 120.1078,
+          system: "wgs84",
+        }),
+      }),
+    );
+    expect(body.terrainAnalysis).toMatchObject({
+      dataSource: "open_meteo_elevation",
+      dataSourceLabelZh: "海拔已估算",
+      isMock: false,
+      terrainProfile: {
+        elevationMeters: 1326,
+        locationElevation: 1326,
+        elevationSource: "open_meteo_elevation",
+        elevationConfidence: "medium",
+        elevationDiff5km: null,
+      },
+    });
+    expect(body.keyReasons.join(" ")).toContain("机位海拔约 1326 米");
+    expect(body.keyReasons.join(" ")).toContain("周边高差暂未计算");
   });
 
   it("uses configured real weather providers through the server pipeline with mocked fetch", async () => {
@@ -903,11 +965,15 @@ describe("forecast query validation route", () => {
       body.bestWindows.filter((window: { label: string }) => window.label.startsWith("天文黑夜"))
         .length,
     ).toBeGreaterThan(1);
+    expect(body.astroAnalysis.milkyWayCandidateWindows.length).toBeGreaterThan(1);
     expect(
-      body.bestWindows.filter((window: { label: string }) =>
-        window.label.startsWith("推荐银河窗口"),
-      ).length,
-    ).toBeGreaterThanOrEqual(1);
+      body.astroAnalysis.recommendedMilkyWayWindows.every((window: { date: string }) => {
+        const daily = body.astroAnalysis.dailyAstro.find(
+          (day: { date: string }) => day.date === window.date,
+        );
+        return daily?.astroShootable === true && daily.weatherBlockers.length === 0;
+      }),
+    ).toBe(true);
     expect(body.astroDataSourceLabelZh).toBe("简化本地估算");
     expect(body.dataNotice).toContain("天文数据：简化本地估算");
   });

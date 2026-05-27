@@ -291,7 +291,10 @@ export function exposedRidgeWindRisk(input: {
 }): ExposedRidgeWindRisk {
   const wind = input.windSpeed ?? 0;
   const gust = input.windGust ?? wind;
-  const isHighMountain = (input.elevationMeters ?? 0) >= 1200;
+  const isHighMountain =
+    typeof input.elevationMeters === "number" &&
+    Number.isFinite(input.elevationMeters) &&
+    input.elevationMeters >= 1200;
   const isExposedRidge =
     input.exposureType === "exposed" ||
     input.terrainType === "summit" ||
@@ -314,18 +317,28 @@ export function applyMountainWeatherAdjustments(
   input: WeatherAdjustmentInput,
 ): WeatherAdjustmentResult {
   const terrainProfile = input.terrainAnalysis.terrainProfile;
-  const elevationMeters = terrainProfile.locationElevation;
+  const elevationMeters = finiteNumber(terrainProfile.locationElevation)
+    ? terrainProfile.locationElevation
+    : undefined;
   const hourlyWeather = input.hourlyWeather.map((hour) =>
-    annotateDecisionWeather(adjustHourlyTemperature(hour, elevationMeters), terrainProfile),
+    annotateDecisionWeather(
+      elevationMeters === undefined ? hour : adjustHourlyTemperature(hour, elevationMeters),
+      terrainProfile,
+    ),
   );
   const currentWeather = input.currentWeather
     ? annotateDecisionCurrent(
-        adjustCurrentTemperature(input.currentWeather, elevationMeters),
+        elevationMeters === undefined
+          ? input.currentWeather
+          : adjustCurrentTemperature(input.currentWeather, elevationMeters),
         terrainProfile,
       )
     : undefined;
   const dailyWeather = input.dailyWeather.map((day) =>
-    annotateDecisionDaily(adjustDailyTemperature(day, elevationMeters), terrainProfile),
+    annotateDecisionDaily(
+      elevationMeters === undefined ? day : adjustDailyTemperature(day, elevationMeters),
+      terrainProfile,
+    ),
   );
   const estimatedFields = hourlyWeather.some(
     (hour) => hour.temperatureAdjustment?.correctionApplied,
@@ -652,9 +665,12 @@ function annotateDecisionWeather(
   hour: NormalizedHourlyWeather,
   terrainProfile: TerrainProfileSummary,
 ): NormalizedHourlyWeather {
+  const selectedElevation = finiteNumber(terrainProfile.locationElevation)
+    ? terrainProfile.locationElevation
+    : undefined;
   const transparencyScore = calculatePhotographyTransparencyScore(hour);
   const windRisk = exposedRidgeWindRisk({
-    elevationMeters: terrainProfile.locationElevation,
+    elevationMeters: selectedElevation,
     windSpeed: hour.windSpeed,
     windGust: hour.windGust,
     terrainType: terrainProfile.terrainType,
@@ -676,8 +692,8 @@ function annotateDecisionWeather(
   });
   const providerElevation = hour.providerElevationMeters;
   const elevationDifference =
-    typeof providerElevation === "number"
-      ? Math.round(terrainProfile.locationElevation - providerElevation)
+    typeof providerElevation === "number" && selectedElevation !== undefined
+      ? Math.round(selectedElevation - providerElevation)
       : undefined;
 
   return {
@@ -700,7 +716,7 @@ function annotateDecisionWeather(
     tripodStabilityRisk: comfort.tripodStabilityRisk,
     windChillNoteZh: comfort.windChillNoteZh,
     clothingRiskNoteZh: comfort.clothingRiskNoteZh,
-    selectedSpotElevationMeters: terrainProfile.locationElevation,
+    selectedSpotElevationMeters: selectedElevation,
     elevationDifferenceMeters: elevationDifference,
     terrainAdjustmentApplied: hour.temperatureAdjustment?.correctionApplied ?? false,
     terrainAdjustmentReason:
@@ -712,6 +728,9 @@ function annotateDecisionCurrent(
   weather: NormalizedCurrentWeather,
   terrainProfile: TerrainProfileSummary,
 ): NormalizedCurrentWeather {
+  const selectedElevation = finiteNumber(terrainProfile.locationElevation)
+    ? terrainProfile.locationElevation
+    : undefined;
   const transparencyScore = calculatePhotographyTransparencyScore({
     visibility: weather.visibility ?? null,
     rawVisibilityKm: weather.rawVisibilityKm ?? weather.visibility ?? null,
@@ -726,7 +745,7 @@ function annotateDecisionCurrent(
     precipitationProbability: weather.precipitationProbability ?? null,
   });
   const windRisk = exposedRidgeWindRisk({
-    elevationMeters: terrainProfile.locationElevation,
+    elevationMeters: selectedElevation,
     windSpeed: weather.windSpeed,
     windGust: weather.windGust,
     terrainType: terrainProfile.terrainType,
@@ -747,8 +766,8 @@ function annotateDecisionCurrent(
     windRisk,
   });
   const elevationDifference =
-    typeof weather.providerElevationMeters === "number"
-      ? Math.round(terrainProfile.locationElevation - weather.providerElevationMeters)
+    typeof weather.providerElevationMeters === "number" && selectedElevation !== undefined
+      ? Math.round(selectedElevation - weather.providerElevationMeters)
       : undefined;
 
   return {
@@ -774,7 +793,7 @@ function annotateDecisionCurrent(
     tripodStabilityRisk: comfort.tripodStabilityRisk,
     windChillNoteZh: comfort.windChillNoteZh,
     clothingRiskNoteZh: comfort.clothingRiskNoteZh,
-    selectedSpotElevationMeters: terrainProfile.locationElevation,
+    selectedSpotElevationMeters: selectedElevation,
     elevationDifferenceMeters: elevationDifference,
     terrainAdjustmentApplied: weather.temperatureAdjustment?.correctionApplied ?? false,
     terrainAdjustmentReason:
@@ -786,6 +805,9 @@ function annotateDecisionDaily(
   day: NormalizedDailyWeather,
   terrainProfile: TerrainProfileSummary,
 ): NormalizedDailyWeather {
+  const selectedElevation = finiteNumber(terrainProfile.locationElevation)
+    ? terrainProfile.locationElevation
+    : undefined;
   const transparencyScore =
     finiteNumber(day.photographyTransparencyScore) && day.photographyTransparencyScore > 0
       ? day.photographyTransparencyScore
@@ -801,7 +823,7 @@ function annotateDecisionDaily(
           precipitationProbability: day.precipitationProbability,
         });
   const windRisk = exposedRidgeWindRisk({
-    elevationMeters: terrainProfile.locationElevation,
+    elevationMeters: selectedElevation,
     windSpeed: day.windSpeed,
     windGust: day.windGust,
     terrainType: terrainProfile.terrainType,
@@ -826,8 +848,8 @@ function annotateDecisionDaily(
   });
   const providerElevation = day.providerElevationMeters ?? day.temperatureAdjustment?.providerElevationMeters;
   const elevationDifference =
-    typeof providerElevation === "number"
-      ? Math.round(terrainProfile.locationElevation - providerElevation)
+    typeof providerElevation === "number" && selectedElevation !== undefined
+      ? Math.round(selectedElevation - providerElevation)
       : undefined;
 
   return {
@@ -849,7 +871,7 @@ function annotateDecisionDaily(
     tripodStabilityRisk: comfort.tripodStabilityRisk,
     windChillNoteZh: comfort.windChillNoteZh,
     clothingRiskNoteZh: comfort.clothingRiskNoteZh,
-    selectedSpotElevationMeters: terrainProfile.locationElevation,
+    selectedSpotElevationMeters: selectedElevation,
     elevationDifferenceMeters: elevationDifference,
     terrainAdjustmentApplied: day.temperatureAdjustment?.correctionApplied ?? false,
     terrainAdjustmentReason:

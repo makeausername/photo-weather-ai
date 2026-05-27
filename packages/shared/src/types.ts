@@ -58,6 +58,7 @@ export type ElevationSource =
   | "dem"
   | "amap"
   | "open_meteo"
+  | "open_meteo_elevation"
   | "unknown";
 
 export type ElevationConfidence = "high" | "medium" | "low";
@@ -171,7 +172,9 @@ export type ForecastQueryInput = {
   readonly longitudeWgs84: number;
   readonly horizon: ForecastHorizon;
   readonly target: ForecastTarget;
-  readonly elevationMeters?: number;
+  readonly elevationMeters?: number | null;
+  readonly elevationSource?: ElevationSource;
+  readonly elevationConfidence?: ElevationConfidence;
   readonly locationId?: string;
   readonly photoSpotId?: string;
 };
@@ -426,13 +429,13 @@ export type TerrainCloudSeaPotential = "low" | "medium" | "high";
 export type TerrainDataSource = "mock_terrain" | "open_meteo_elevation" | "manual" | "unknown";
 
 export type TerrainProfileSummary = SpotTerrainProfile & {
-  readonly locationElevation: number;
-  readonly minElevation1km: number;
-  readonly minElevation3km: number;
-  readonly minElevation5km: number;
-  readonly maxElevation5km: number;
-  readonly avgElevation5km: number;
-  readonly elevationDiff5km: number;
+  readonly locationElevation: number | null;
+  readonly minElevation1km: number | null;
+  readonly minElevation3km: number | null;
+  readonly minElevation5km: number | null;
+  readonly maxElevation5km: number | null;
+  readonly avgElevation5km: number | null;
+  readonly elevationDiff5km: number | null;
   readonly valleyDirectionZh?: string;
   readonly ridgeDirectionZh?: string;
   readonly terrainCloudSeaPotential: TerrainCloudSeaPotential;

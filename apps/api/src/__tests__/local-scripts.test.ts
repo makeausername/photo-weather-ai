@@ -231,6 +231,13 @@ describe("local astro diagnostics scripts", () => {
 
     for (const expected of [
       "rawTemperature:",
+      "locationName:",
+      "latitudeWgs84:",
+      "longitudeWgs84:",
+      "elevationMeters:",
+      "elevationSource:",
+      "elevationConfidence:",
+      "terrainProfile:",
       "providerElevationMeters:",
       "selectedSpotElevationMeters:",
       "elevationDifferenceMeters=",

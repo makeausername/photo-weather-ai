@@ -25,6 +25,7 @@ export type FakeDatabaseState = {
   readonly forecastReplayResults: Map<string, any>;
   readonly observedOutcomes: Map<string, any>;
   readonly calibrationStats: Map<string, any>;
+  readonly terrainElevationCache: Map<string, any>;
 };
 
 function cloneJson(value: JsonValue): JsonValue {
@@ -164,6 +165,7 @@ export async function createFakeDatabaseClient(): Promise<{
   const forecastReplayResults = new Map<string, any>();
   const observedOutcomes = new Map<string, any>();
   const calibrationStats = new Map<string, any>();
+  const terrainElevationCache = new Map<string, any>();
 
   seedData.systemSettings.forEach((setting, index) => {
     settings.set(setting.key, {
@@ -256,6 +258,7 @@ export async function createFakeDatabaseClient(): Promise<{
     forecastReplayResults,
     observedOutcomes,
     calibrationStats,
+    terrainElevationCache,
   };
 
   const client: DatabaseClient = {
@@ -846,6 +849,30 @@ export async function createFakeDatabaseClient(): Promise<{
         };
         state.calibrationStats.set(key, stat);
         return stat;
+      },
+    },
+    terrainElevationCache: {
+      findUnique: async ({ where }: any) => state.terrainElevationCache.get(where.cacheKey) ?? null,
+      upsert: async ({ where, create, update }: any) => {
+        const existing = state.terrainElevationCache.get(where.cacheKey);
+        if (existing) {
+          const next = {
+            ...existing,
+            ...update,
+            updatedAt: now,
+          };
+          state.terrainElevationCache.set(where.cacheKey, next);
+          return next;
+        }
+        const record = {
+          id: `terrain-elevation-${state.terrainElevationCache.size}`,
+          rawJson: null,
+          createdAt: now,
+          updatedAt: now,
+          ...create,
+        };
+        state.terrainElevationCache.set(where.cacheKey, record);
+        return record;
       },
     },
     spotTag: {

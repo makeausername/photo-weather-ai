@@ -40,6 +40,18 @@ export const forecastHorizonSchema = z.enum(["24h", "48h", "72h", "7d"]);
 
 export const forecastTargetSchema = z.enum(["general", "cloud_sea", "glow", "astro"]);
 
+export const elevationSourceSchema = z.enum([
+  "manual",
+  "provider_metadata",
+  "dem",
+  "amap",
+  "open_meteo",
+  "open_meteo_elevation",
+  "unknown",
+]);
+
+export const elevationConfidenceSchema = z.enum(["high", "medium", "low"]);
+
 const forecastTargetAliases: Readonly<Record<string, ForecastTarget>> = {
   general: "general",
   综合: "general",
@@ -114,7 +126,9 @@ export const forecastQueryInputSchema = z.object({
   longitudeWgs84: longitudeSchema,
   horizon: forecastHorizonSchema,
   target: forecastTargetSchema,
-  elevationMeters: z.number().finite().optional(),
+  elevationMeters: z.number().finite().nullable().optional(),
+  elevationSource: elevationSourceSchema.optional(),
+  elevationConfidence: elevationConfidenceSchema.optional(),
   locationId: z.string().trim().min(1).max(120).optional(),
   photoSpotId: z.string().trim().min(1).max(120).optional(),
 });

@@ -361,6 +361,20 @@ export type CalibrationStatsRecord = {
   readonly summaryJson: JsonValue;
 };
 
+export type TerrainElevationCacheRecord = {
+  readonly id: string;
+  readonly cacheKey: string;
+  readonly latitudeWgs84: number;
+  readonly longitudeWgs84: number;
+  readonly elevationMeters: number | null;
+  readonly elevationSource: string;
+  readonly elevationConfidence: string;
+  readonly expiresAt: Date;
+  readonly rawJson: JsonValue | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+};
+
 export type DatabaseClient = {
   readonly user?: {
     readonly findUnique: (args: any) => Promise<any>;
@@ -433,6 +447,10 @@ export type DatabaseClient = {
   readonly calibrationStats?: {
     readonly findUnique: (args: any) => Promise<any>;
     readonly findMany: (args?: any) => Promise<any[]>;
+    readonly upsert: (args: any) => Promise<any>;
+  };
+  readonly terrainElevationCache?: {
+    readonly findUnique: (args: any) => Promise<any>;
     readonly upsert: (args: any) => Promise<any>;
   };
   readonly spotTag?: {

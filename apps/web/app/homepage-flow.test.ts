@@ -84,6 +84,23 @@ const laojunshanPlace: PlaceSearchResult = {
   isVerified: false,
 };
 
+const amapNonSeededPlace: PlaceSearchResult = {
+  id: "amap:non-seeded-test",
+  name: "非种子坐标测试点",
+  address: "浙江省杭州市西湖区",
+  province: "浙江省",
+  city: "杭州市",
+  district: "西湖区",
+  source: "amap",
+  locationType: "scenic_area",
+  latitudeGcj02: 30.2495,
+  longitudeGcj02: 120.1124,
+  latitudeWgs84: 30.2528,
+  longitudeWgs84: 120.1078,
+  elevation: null,
+  isVerified: false,
+};
+
 const generalForecastQuery: ForecastQueryInput = {
   name: samplePlace.name,
   source: samplePlace.source,
@@ -209,6 +226,28 @@ describe("homepage forecast flow", () => {
     expect(url.searchParams.get("latGcj02")).toBe("33.7867");
     expect(url.searchParams.get("lngGcj02")).toBe("111.6462");
     expect(url.searchParams.get("photoSpotId")).toBe("spot-laojunshan-jinding");
+  });
+
+  it("keeps Amap selected locations WGS84-first and leaves elevation for server enrichment", () => {
+    const selectedLocation = selectedLocationFromSearchResult(amapNonSeededPlace);
+    const url = new URL(
+      buildForecastUrl(amapNonSeededPlace, homepageDefaultHorizon, homepageDefaultTarget),
+      "http://localhost:3000",
+    );
+
+    expect(selectedLocation).toMatchObject({
+      source: "amap",
+      latitudeWgs84: 30.2528,
+      longitudeWgs84: 120.1078,
+      elevationMeters: null,
+      elevationSource: "unknown",
+      elevationConfidence: "low",
+    });
+    expect(url.searchParams.get("latWgs84")).toBe("30.2528");
+    expect(url.searchParams.get("lngWgs84")).toBe("120.1078");
+    expect(url.searchParams.get("elevationMeters")).toBeNull();
+    expect(url.searchParams.get("elevationSource")).toBe("unknown");
+    expect(url.searchParams.get("elevationConfidence")).toBe("low");
   });
 
   it("shows a user-friendly empty condition overview before a location is selected", () => {

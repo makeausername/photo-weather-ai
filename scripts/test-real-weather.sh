@@ -39,6 +39,7 @@ API_BASE_URL="${API_BASE_URL%/}"
 
 FORECAST_HORIZON="${FORECAST_HORIZON:-48h}"
 FORECAST_TARGETS="${FORECAST_TARGETS:-general cloud_sea glow astro}"
+FORECAST_LOCATIONS="${FORECAST_LOCATIONS:-huangshan nonseeded}"
 
 payload_for_location() {
   case "$1" in
@@ -58,19 +59,17 @@ payload_for_location() {
 }
 JSON
       ;;
-    laojunshan)
+    nonseeded)
       cat <<JSON
 {
-  "name": "老君山金顶",
-  "source": "local_photo_spot",
-  "latitudeGcj02": 33.7867,
-  "longitudeGcj02": 111.6462,
-  "latitudeWgs84": 33.7852,
-  "longitudeWgs84": 111.6402,
-  "elevationMeters": 2217,
+  "name": "非种子坐标测试点",
+  "source": "amap",
+  "latitudeGcj02": 30.2495,
+  "longitudeGcj02": 120.1124,
+  "latitudeWgs84": 30.2528,
+  "longitudeWgs84": 120.1078,
   "horizon": "${FORECAST_HORIZON}",
-  "target": "__TARGET__",
-  "photoSpotId": "spot-laojunshan-jinding"
+  "target": "__TARGET__"
 }
 JSON
       ;;
@@ -110,6 +109,7 @@ print_result_summary() {
 const fs = require("fs");
 const result = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 const payload = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
+const terrainProfile = result.terrainAnalysis?.terrainProfile || {};
 
 function value(input, fallback = "暂无") {
   return input === undefined || input === null || input === "" ? fallback : input;
@@ -241,7 +241,23 @@ function sourceLine(source) {
   return `- ${value(source.providerLabelZh)} ${status} message=${value(source.messageZh || source.warningZh)}`;
 }
 
-console.log(`selectedLocation: ${payload.name} (${payload.source}) WGS84=${payload.latitudeWgs84},${payload.longitudeWgs84} elevation=${value(payload.elevationMeters)}`);
+console.log(`locationName: ${value(result.place?.name || payload.name)}`);
+console.log(`latitudeWgs84: ${value(result.calendarBasis?.wgs84Coordinates?.latitude ?? payload.latitudeWgs84)}`);
+console.log(`longitudeWgs84: ${value(result.calendarBasis?.wgs84Coordinates?.longitude ?? payload.longitudeWgs84)}`);
+console.log(`elevationMeters: ${value(terrainProfile.elevationMeters ?? terrainProfile.locationElevation)}`);
+console.log(`elevationSource: ${value(terrainProfile.elevationSource)}`);
+console.log(`elevationConfidence: ${value(terrainProfile.elevationConfidence)}`);
+console.log(`terrainProfile: ${JSON.stringify({
+  terrainType: terrainProfile.terrainType,
+  exposureType: terrainProfile.exposureType,
+  elevationMeters: terrainProfile.elevationMeters ?? terrainProfile.locationElevation ?? null,
+  elevationSource: terrainProfile.elevationSource ?? "unknown",
+  elevationConfidence: terrainProfile.elevationConfidence ?? "low",
+  nearbyValleyElevationMeters: terrainProfile.nearbyValleyElevationMeters ?? null,
+  localReliefMeters: terrainProfile.localReliefMeters ?? null,
+  elevationDiff5km: terrainProfile.elevationDiff5km ?? null,
+})}`);
+console.log(`selectedLocation: ${payload.name} (${payload.source}) WGS84=${payload.latitudeWgs84},${payload.longitudeWgs84} payloadElevation=${value(payload.elevationMeters)}`);
 console.log(`target: ${payload.target} horizon=${payload.horizon}`);
 console.log(`dataStatusZh: ${value(fusion.dataStatusZh || result.weatherNoticeZh || result.dataNotice)}`);
 console.log(`dataConfidence: ${value(fusion.confidenceLevel)}`);
@@ -426,11 +442,11 @@ NODE
 
 echo "Real weather smoke tests"
 echo "Endpoint: ${API_BASE_URL}/forecast/calculate"
-echo "Locations: 黄山光明顶, 老君山金顶"
+echo "Locations: 黄山光明顶, 非种子坐标测试点"
 echo "Targets: ${FORECAST_TARGETS}"
 echo "No API keys or secrets will be printed."
 
-for location in huangshan laojunshan; do
+for location in ${FORECAST_LOCATIONS}; do
   for target in ${FORECAST_TARGETS}; do
     payload_file="$(mktemp)"
     response_file="$(mktemp)"

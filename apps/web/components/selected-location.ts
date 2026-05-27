@@ -1,4 +1,10 @@
-import type { ForecastHorizon, ForecastTarget } from "@photo-weather/shared";
+import type {
+  ElevationConfidence,
+  ElevationSource,
+  ForecastHorizon,
+  ForecastTarget,
+  SpotTerrainProfile,
+} from "@photo-weather/shared";
 
 export type SelectedLocationSource = "local_photo_spot" | "amap" | "manual";
 
@@ -12,7 +18,10 @@ export type SelectedLocation = {
   readonly longitudeWgs84: number;
   readonly latitudeGcj02?: number;
   readonly longitudeGcj02?: number;
-  readonly elevationMeters?: number;
+  readonly elevationMeters?: number | null;
+  readonly elevationSource?: ElevationSource;
+  readonly elevationConfidence?: ElevationConfidence;
+  readonly terrainProfile?: SpotTerrainProfile;
   readonly province?: string;
   readonly city?: string;
   readonly district?: string;
@@ -38,12 +47,16 @@ type SearchResultLike = {
   readonly latitudeWgs84: number;
   readonly longitudeWgs84: number;
   readonly elevation: number | null;
+  readonly elevationSource?: ElevationSource;
+  readonly elevationConfidence?: ElevationConfidence;
   readonly isVerified: boolean;
 };
 
 export function selectedLocationFromSearchResult(result: SearchResultLike): SelectedLocation {
   const source = normalizeSelectedLocationSource(result);
   const area = [result.province, result.city, result.district].filter(Boolean).join(" / ");
+  const hasTrustedSearchElevation =
+    source !== "amap" && typeof result.elevation === "number" && Number.isFinite(result.elevation);
 
   return {
     id: result.id,
@@ -55,10 +68,13 @@ export function selectedLocationFromSearchResult(result: SearchResultLike): Sele
     longitudeWgs84: result.longitudeWgs84,
     latitudeGcj02: result.latitudeGcj02,
     longitudeGcj02: result.longitudeGcj02,
-    elevationMeters:
-      typeof result.elevation === "number" && Number.isFinite(result.elevation)
-        ? result.elevation
-        : undefined,
+    elevationMeters: hasTrustedSearchElevation ? result.elevation : null,
+    elevationSource: hasTrustedSearchElevation
+      ? result.elevationSource ?? selectedLocationElevationSource()
+      : "unknown",
+    elevationConfidence: hasTrustedSearchElevation
+      ? result.elevationConfidence ?? selectedLocationElevationConfidence(source, result.isVerified)
+      : "low",
     province: result.province ?? undefined,
     city: result.city ?? undefined,
     district: result.district ?? undefined,
@@ -101,6 +117,12 @@ export function buildForecastUrlFromSelectedLocation(
   if (typeof location.elevationMeters === "number" && Number.isFinite(location.elevationMeters)) {
     params.set("elevationMeters", String(location.elevationMeters));
   }
+  if (location.elevationSource) {
+    params.set("elevationSource", location.elevationSource);
+  }
+  if (location.elevationConfidence) {
+    params.set("elevationConfidence", location.elevationConfidence);
+  }
 
   return `/forecast?${params.toString()}`;
 }
@@ -118,6 +140,8 @@ export function buildForecastRequestPayload(
     latitudeWgs84: location.latitudeWgs84,
     longitudeWgs84: location.longitudeWgs84,
     elevationMeters: location.elevationMeters,
+    elevationSource: location.elevationSource,
+    elevationConfidence: location.elevationConfidence,
     horizon,
     target,
     locationId: location.locationId,
@@ -143,4 +167,18 @@ function coordinateSourceLabel(source: SelectedLocationSource): string {
     return "本地机位";
   }
   return "手动/本地地点";
+}
+
+function selectedLocationElevationSource(): ElevationSource {
+  return "manual";
+}
+
+function selectedLocationElevationConfidence(
+  source: SelectedLocationSource,
+  isVerified: boolean,
+): ElevationConfidence {
+  if (source === "amap") {
+    return "medium";
+  }
+  return isVerified ? "high" : "medium";
 }

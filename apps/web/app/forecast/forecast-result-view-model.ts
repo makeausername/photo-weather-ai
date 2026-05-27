@@ -1202,6 +1202,7 @@ function buildNightlyAstroConditionSection(
 
 function buildTerrainReferenceSection(result: ForecastCalculationResult): ForecastResultSection {
   const terrain = result.terrainAnalysis.terrainProfile;
+  const hasRelief = isMeaningfulNumber(terrain.elevationDiff5km);
 
   return {
     key: "terrain-reference",
@@ -1210,13 +1211,21 @@ function buildTerrainReferenceSection(result: ForecastCalculationResult): Foreca
     items: [
       {
         label: "机位海拔",
-        value: formatMeters(terrain.locationElevation),
-        detail: terrain.terrainNoteZh,
+        value: formatElevationValue(terrain.locationElevation),
+        detail:
+          terrain.locationElevation === null
+            ? "机位海拔暂未确认，山地体感和云海判断仅作参考。"
+            : terrain.terrainNoteZh,
       },
       {
         label: "周边海拔范围",
-        value: `${formatMeters(terrain.minElevation5km)} - ${formatMeters(terrain.maxElevation5km)}`,
-        detail: `5公里范围平均海拔约 ${formatMeters(terrain.avgElevation5km)}，用于云海与遮挡判断。`,
+        value:
+          isMeaningfulNumber(terrain.minElevation5km) && isMeaningfulNumber(terrain.maxElevation5km)
+            ? `${formatMeters(terrain.minElevation5km)} - ${formatMeters(terrain.maxElevation5km)}`
+            : "周边高差暂未计算",
+        detail: hasRelief
+          ? `5公里范围平均海拔约 ${formatMeters(terrain.avgElevation5km)}，用于云海与遮挡判断。`
+          : "暂未接入周边 DEM 剖面，云海和遮挡判断会按低置信度处理。",
       },
       {
         label: "山谷方向",
@@ -1229,6 +1238,9 @@ function buildTerrainReferenceSection(result: ForecastCalculationResult): Foreca
 
 function buildValleyElevationDiffSection(result: ForecastCalculationResult): ForecastResultSection {
   const terrain = result.terrainAnalysis.terrainProfile;
+  const reliefValue = isMeaningfulNumber(terrain.elevationDiff5km)
+    ? formatMeters(terrain.elevationDiff5km)
+    : "周边高差暂未计算";
 
   return {
     key: "valley-elevation-diff",
@@ -1247,8 +1259,10 @@ function buildValleyElevationDiffSection(result: ForecastCalculationResult): For
       },
       {
         label: "5公里高差",
-        value: formatMeters(terrain.elevationDiff5km),
-        detail: "高差越明显，清晨低云与山顶视角形成云海边界的地形基础通常越好。",
+        value: reliefValue,
+        detail: isMeaningfulNumber(terrain.elevationDiff5km)
+          ? "高差越明显，清晨低云与山顶视角形成云海边界的地形基础通常越好。"
+          : "周边高差暂未计算，不能按 0 米处理。",
       },
     ],
   };
@@ -1267,7 +1281,7 @@ function buildCloudSeaTerrainPotentialSection(
       {
         label: "潜力等级",
         value: terrainPotentialLabel(terrain.terrainCloudSeaPotential),
-        detail: "按机位海拔、周边5公里高差和山谷结构折算。",
+        detail: "按机位海拔、周边高差和山谷结构折算；缺少周边高差时按低置信度处理。",
       },
       {
         label: "评分影响",
@@ -1327,8 +1341,10 @@ function buildCompactTerrainSection(result: ForecastCalculationResult): Forecast
     items: [
       {
         label: "机位海拔",
-        value: formatMeters(terrain.locationElevation),
-        detail: `周边5公里高差约 ${formatMeters(terrain.elevationDiff5km)}。`,
+        value: formatElevationValue(terrain.locationElevation),
+        detail: isMeaningfulNumber(terrain.elevationDiff5km)
+          ? `周边5公里高差约 ${formatMeters(terrain.elevationDiff5km)}。`
+          : "周边高差暂未计算。",
       },
       {
         label: "云海地形潜力",
@@ -2235,8 +2251,11 @@ function buildCloudSeaVsWhiteout(result: ForecastCalculationResult): CloudSeaVsW
       {
         key: "location-elevation",
         label: "机位海拔",
-        value: formatMeters(terrain.locationElevation),
-        detail: "机位越高，越有机会站在云雾层之上观察山谷云海。",
+        value: formatElevationValue(terrain.locationElevation),
+        detail:
+          terrain.locationElevation === null
+            ? "机位海拔暂未确认，山地体感和云海判断仅作参考。"
+            : "机位越高，越有机会站在云雾层之上观察山谷云海。",
         tone: "primary",
       },
       {
@@ -3293,8 +3312,16 @@ function formatPercent(value: number | undefined): string {
   return `${Math.round(value * 100)}%`;
 }
 
-function formatMeters(value: number): string {
-  return Number.isFinite(value) ? `${Math.round(value)} 米` : "暂无数据";
+function formatElevationValue(value: number | null | undefined): string {
+  return isMeaningfulNumber(value) ? `约 ${Math.round(value)} 米` : "暂未确认";
+}
+
+function formatMeters(value: number | null | undefined): string {
+  return isMeaningfulNumber(value) ? `${Math.round(value)} 米` : "暂无数据";
+}
+
+function isMeaningfulNumber(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function formatAngle(value: number | undefined): string {

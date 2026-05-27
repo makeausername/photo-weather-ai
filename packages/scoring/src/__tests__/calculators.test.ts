@@ -176,6 +176,7 @@ describe("forecast score calculators", () => {
 
   it("uses provider elevation awareness for mountain temperature correction", () => {
     const baseInput = buildMockForecastInput(baseQuery, { now: fixedNow });
+    const selectedElevation = baseInput.terrainAnalysis.terrainProfile.locationElevation ?? 0;
     const lowElevationHour = {
       ...baseInput.hourlyWeather[0]!,
       temperature: 28,
@@ -208,7 +209,7 @@ describe("forecast score calculators", () => {
       hourlyWeather: [
         {
           ...lowElevationHour,
-          providerElevationMeters: baseInput.terrainAnalysis.terrainProfile.locationElevation - 30,
+          providerElevationMeters: selectedElevation - 30,
         },
       ],
       dailyWeather: [],
@@ -231,12 +232,13 @@ describe("forecast score calculators", () => {
 
   it("does not correct meteoblue values when provider height matches the selected spot", () => {
     const baseInput = buildMockForecastInput(baseQuery, { now: fixedNow });
+    const selectedElevation = baseInput.terrainAnalysis.terrainProfile.locationElevation ?? 0;
     const adjusted = applyMountainWeatherAdjustments({
       hourlyWeather: [
         {
           ...baseInput.hourlyWeather[0]!,
           providerCode: "meteoblue",
-          providerElevationMeters: baseInput.terrainAnalysis.terrainProfile.locationElevation,
+          providerElevationMeters: selectedElevation,
           temperature: 20,
         },
       ],
@@ -370,6 +372,7 @@ describe("forecast score calculators", () => {
 
   it("feeds clothing guidance from the adjusted mountain temperature without over-cooling", () => {
     const baseInput = buildMockForecastInput(baseQuery, { now: fixedNow });
+    const selectedElevation = baseInput.terrainAnalysis.terrainProfile.locationElevation ?? 0;
     const adjusted = applyMountainWeatherAdjustments({
       hourlyWeather: [
         {
@@ -386,7 +389,7 @@ describe("forecast score calculators", () => {
     });
     const guide = buildClothingGuide({
       hourlyWeather: adjusted.hourlyWeather,
-      elevationMeters: baseInput.terrainAnalysis.terrainProfile.locationElevation,
+      elevationMeters: selectedElevation,
       target: "general",
       timezone: "Asia/Shanghai",
       forecastStart: fixedNow,
@@ -399,6 +402,7 @@ describe("forecast score calculators", () => {
 
   it("adds terrain-aware mountain feels-like and tripod risk without changing wind speed", () => {
     const baseInput = buildMockForecastInput(baseQuery, { now: fixedNow });
+    const selectedElevation = baseInput.terrainAnalysis.terrainProfile.locationElevation ?? 0;
     const rawWindSpeed = 4.8;
     const adjusted = applyMountainWeatherAdjustments({
       hourlyWeather: [
@@ -408,7 +412,7 @@ describe("forecast score calculators", () => {
           windGust: 10.5,
           humidity: 92,
           precipitation: 1.2,
-          providerElevationMeters: baseInput.terrainAnalysis.terrainProfile.locationElevation,
+          providerElevationMeters: selectedElevation,
         },
       ],
       dailyWeather: [],

@@ -175,14 +175,18 @@ export function buildSpotTerrainProfile(input: TerrainAnalysisInput): SpotTerrai
   }
 
   const manualElevation = finiteElevation(input.elevationMeters);
+  const elevationSource =
+    input.elevationSource ?? (manualElevation === null ? "unknown" : "manual");
+  const elevationConfidence =
+    input.elevationConfidence ?? (manualElevation === null ? "low" : "medium");
   return {
     latitudeWgs84: input.coordinate.latitude,
     longitudeWgs84: input.coordinate.longitude,
     latitudeGcj02: finiteCoordinate(input.latitudeGcj02),
     longitudeGcj02: finiteCoordinate(input.longitudeGcj02),
     elevationMeters: manualElevation,
-    elevationSource: manualElevation === null ? "unknown" : "manual",
-    elevationConfidence: manualElevation === null ? "low" : "medium",
+    elevationSource,
+    elevationConfidence,
     terrainType: "unknown",
     exposureType: "unknown",
     viewingDirection: "unknown",

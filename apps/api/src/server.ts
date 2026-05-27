@@ -5,7 +5,7 @@ import { MockAIProvider } from "@photo-weather/ai";
 import { getPrismaClient, type DatabaseClient } from "@photo-weather/db";
 import { MockGeoProvider } from "@photo-weather/geo";
 import type { GeoProvider } from "@photo-weather/geo";
-import type { TerrainProvider } from "@photo-weather/terrain";
+import type { ElevationProvider, TerrainElevationService, TerrainProvider } from "@photo-weather/terrain";
 import { createWeatherProvider, type WeatherProvider } from "@photo-weather/weather";
 import { registerAdminRoutes } from "./admin-routes.js";
 import {
@@ -26,6 +26,8 @@ export type ApiServerOptions = {
   readonly geoProvider?: GeoProvider;
   readonly weatherProvider?: WeatherProvider;
   readonly terrainProvider?: TerrainProvider;
+  readonly elevationProvider?: ElevationProvider;
+  readonly elevationService?: TerrainElevationService;
   readonly astroServiceClient?: AstroServiceClientLike;
   readonly env?: NodeJS.ProcessEnv;
   readonly logger?: boolean;
@@ -304,6 +306,8 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     weatherProvider,
     weatherDataService,
     terrainProvider: options.terrainProvider,
+    elevationProvider: options.elevationProvider,
+    elevationService: options.elevationService,
     astroServiceClient: options.astroServiceClient,
     env,
   });

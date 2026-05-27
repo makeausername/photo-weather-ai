@@ -1779,6 +1779,67 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("当前天气或地形仍包含演示数据");
   });
 
+  it("does not render unknown terrain elevation or local relief as zero", () => {
+    const baseResult = resultForTarget("general");
+    const unknownTerrain = {
+      ...baseResult.terrainAnalysis.terrainProfile,
+      elevationMeters: null,
+      elevationSource: "unknown" as const,
+      elevationConfidence: "low" as const,
+      locationElevation: null,
+      minElevation1km: null,
+      minElevation3km: null,
+      minElevation5km: null,
+      maxElevation5km: null,
+      avgElevation5km: null,
+      elevationDiff5km: null,
+      nearbyValleyElevationMeters: null,
+      localReliefMeters: null,
+      terrainCloudSeaPotential: "low" as const,
+      terrainNoteZh: "机位海拔暂未确认，山地体感和云海判断仅作参考。",
+    };
+    const result: ForecastCalculationResult = {
+      ...baseResult,
+      keyReasons: [
+        "地形参考：机位海拔暂未确认，山地体感和云海判断仅作参考，周边高差暂未计算。",
+      ],
+      terrainSummary: {
+        ...baseResult.terrainSummary,
+        ...unknownTerrain,
+        dataSource: "unknown",
+        dataSourceLabelZh: "海拔暂未确认",
+        isMock: true,
+        honestyNoteZh: "机位海拔暂未确认，山地体感和云海判断仅作参考。",
+      },
+      terrainAnalysis: {
+        ...baseResult.terrainAnalysis,
+        terrainProfile: unknownTerrain,
+        dataSource: "unknown",
+        dataSourceLabelZh: "海拔暂未确认",
+        isMock: true,
+        honestyNoteZh: "机位海拔暂未确认，山地体感和云海判断仅作参考。",
+      },
+    };
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "idle",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("机位海拔暂未确认，山地体感和云海判断仅作参考");
+    expect(html).toContain("周边高差暂未计算");
+    expect(html).not.toContain("机位海拔约 0 米");
+    expect(html).not.toContain("5公里高差约 0 米");
+    expect(html).not.toContain(">0 米<");
+  });
+
   it("renders rich adaptive daily cards with weather and subject opportunities", () => {
     const result = resultForTarget("general");
     const viewModel = buildForecastResultViewModel(result, "general");

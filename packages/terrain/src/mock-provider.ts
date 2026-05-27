@@ -56,11 +56,11 @@ export class MockTerrainProvider implements TerrainProvider {
   async getElevation(coordinate: TerrainCoordinate): Promise<ElevationSample> {
     validateTerrainCoordinates(coordinate);
     const seed = resolveSeedTerrainProfile({ coordinate, locationName: coordinate.name });
-    const elevation = seed?.elevationMeters;
+    const elevation = seed?.elevationMeters ?? null;
 
     return {
       coordinate,
-      elevation: typeof elevation === "number" ? elevation : 0,
+      elevation,
       distanceMeters: 0,
       dataSource: mockTerrainDataSource,
     };
@@ -86,9 +86,10 @@ function buildSeededTerrainProfile(
   input: TerrainAnalysisInput,
 ): TerrainProfile {
   const coordinate = input.coordinate;
-  const elevation = input.elevationMeters ?? seed.elevationMeters ?? 0;
+  const elevation = input.elevationMeters ?? seed.elevationMeters ?? null;
   const minElevation5km = seed.nearbyValleyElevationMeters ?? seed.minElevation5km;
-  const maxElevation5km = Math.max(seed.maxElevation5km, elevation);
+  const maxElevation5km =
+    elevation === null ? seed.maxElevation5km : Math.max(seed.maxElevation5km, elevation);
   const elevationDiff5km = calculateElevationDiff(maxElevation5km, minElevation5km);
   const potential = classifyTerrainCloudSeaPotential({
     elevationDiff5km,
@@ -152,33 +153,36 @@ function buildSeededTerrainProfile(
 
 function buildUnknownTerrainProfile(input: TerrainAnalysisInput): TerrainProfile {
   const spotProfile = buildSpotTerrainProfile(input);
-  const elevation = spotProfile.elevationMeters ?? 0;
+  const elevation = spotProfile.elevationMeters;
   const note =
     spotProfile.elevationMeters === null
-      ? "机位海拔资料不完整，山顶体感仅作参考。"
+      ? "机位海拔暂未确认，山地体感和云海判断仅作参考。"
       : "仅有机位海拔，周边谷地高差、暴露度和遮挡仍需补充。";
 
   return {
     ...spotProfile,
     locationElevation: elevation,
-    minElevation1km: elevation,
-    minElevation3km: elevation,
-    minElevation5km: elevation,
-    maxElevation5km: elevation,
-    avgElevation5km: elevation,
-    elevationDiff5km: 0,
+    minElevation1km: null,
+    minElevation3km: null,
+    minElevation5km: null,
+    maxElevation5km: null,
+    avgElevation5km: null,
+    elevationDiff5km: null,
     nearbyValleyElevationMeters: null,
     localReliefMeters: null,
     terrainCloudSeaPotential: "low",
     terrainNoteZh: note,
-    samples: [
-      {
-        coordinate: input.coordinate,
-        elevation,
-        distanceMeters: 0,
-        dataSource: mockTerrainDataSource,
-      },
-    ],
+    samples:
+      elevation === null
+        ? []
+        : [
+            {
+              coordinate: input.coordinate,
+              elevation,
+              distanceMeters: 0,
+              dataSource: mockTerrainDataSource,
+            },
+          ],
   };
 }
 
@@ -232,13 +236,13 @@ function buildSampleForCoordinate(coordinate: TerrainCoordinate, index: number):
   const seed = resolveSeedTerrainProfile({ coordinate, locationName: coordinate.name });
   const elevations = seed
     ? [
-        seed.elevationMeters ?? 0,
+        seed.elevationMeters,
         seed.minElevation1km,
         seed.minElevation3km,
         seed.minElevation5km,
         seed.maxElevation5km,
       ]
-    : [0];
+    : [null];
 
   return {
     coordinate,

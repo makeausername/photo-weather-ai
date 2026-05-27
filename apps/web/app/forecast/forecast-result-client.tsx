@@ -4237,11 +4237,11 @@ function CalculationBasisPanel({ result }: { readonly result: ForecastCalculatio
         <SummaryItem label="坐标来源" value={basis.coordinateSource} />
         <SummaryItem
           label="机位海拔"
-          value={formatMeters(result.terrainAnalysis.terrainProfile.locationElevation)}
+          value={formatElevationValue(result.terrainAnalysis.terrainProfile.locationElevation)}
         />
         <SummaryItem
-          label="周边5公里高差"
-          value={formatMeters(result.terrainAnalysis.terrainProfile.elevationDiff5km)}
+          label="周边高差"
+          value={formatReliefValue(result.terrainAnalysis.terrainProfile.elevationDiff5km)}
         />
         <SummaryItem
           label="云海地形潜力"
@@ -5557,8 +5557,16 @@ function formatCoordinate(value: number): string {
   return Number.isFinite(value) ? value.toFixed(5) : "未提供";
 }
 
-function formatMeters(value: number): string {
-  return Number.isFinite(value) ? `${Math.round(value)} 米` : "暂无数据";
+function formatElevationValue(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `约 ${Math.round(value)} 米`
+    : "暂未确认";
+}
+
+function formatReliefValue(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `约 ${Math.round(value)} 米`
+    : "周边高差暂未计算";
 }
 
 function terrainPotentialLabel(

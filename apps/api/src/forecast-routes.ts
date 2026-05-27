@@ -3,6 +3,7 @@ import { buildForecastDateRange, forecastDateRangeErrorMessage } from "@photo-we
 import { buildCalibrationLocationKey, findCalibrationHint } from "@photo-weather/calibration";
 import {
   type ForecastCalculationResult,
+  type ElevationSource,
   type ForecastQueryInput,
   forecastHorizonLabels,
   normalizeForecastQueryInput,
@@ -17,7 +18,12 @@ import {
 } from "@photo-weather/ai";
 import type { DatabaseClient } from "@photo-weather/db";
 import { buildForecastInputFromWeatherBundle, calculateForecast } from "@photo-weather/scoring";
-import { MockTerrainProvider, type TerrainProvider } from "@photo-weather/terrain";
+import {
+  MockTerrainProvider,
+  type ElevationProvider,
+  type TerrainElevationService,
+  type TerrainProvider,
+} from "@photo-weather/terrain";
 import {
   createWeatherProvider,
   WeatherDataService,
@@ -44,12 +50,15 @@ import {
   type AstroServiceClientLike,
   type AstroServiceConfig,
 } from "./astro-service-client.js";
+import { createRuntimeElevationService } from "./elevation-service.js";
 
 export type ForecastRoutesOptions = {
   readonly dbClient?: DatabaseClient;
   readonly weatherProvider?: WeatherProvider;
   readonly weatherDataService?: WeatherDataServiceLike;
   readonly terrainProvider?: TerrainProvider;
+  readonly elevationProvider?: ElevationProvider;
+  readonly elevationService?: TerrainElevationService;
   readonly astroServiceClient?: AstroServiceClientLike;
   readonly env?: NodeJS.ProcessEnv;
 };
@@ -63,13 +72,12 @@ const missingWgs84CoordinateErrorMessage = "当前地点缺少有效 WGS84 坐�
 
 const forecastCalculateRequestSchema = forecastQueryInputSchema.extend({
   useAiExplanation: z.boolean().optional().default(false),
-  elevationMeters: z.number().finite().optional(),
+  elevationMeters: z.number().finite().nullable().optional(),
   timezone: z.string().trim().min(1).optional(),
   startDateTime: z.string().datetime({ offset: true }).optional(),
 });
 
 type ForecastCalculationOptions = {
-  readonly elevationMeters?: number;
   readonly timezone?: string;
   readonly startDateTime?: string;
 };
@@ -95,6 +103,36 @@ function sendZodError(reply: FastifyReply, error: ZodError): FastifyReply {
   });
 }
 
+function terrainAnalysisSourceFields(elevationSource: ElevationSource): Pick<
+  ForecastCalculationResult["terrainAnalysis"],
+  "dataSource" | "dataSourceLabelZh" | "isMock" | "honestyNoteZh"
+> {
+  if (elevationSource === "open_meteo_elevation" || elevationSource === "open_meteo") {
+    return {
+      dataSource: "open_meteo_elevation",
+      dataSourceLabelZh: "海拔已估算",
+      isMock: false,
+      honestyNoteZh: "机位海拔已通过公开海拔服务估算，周边高差与地平线遮挡仍需后续 DEM 数据补充。",
+    };
+  }
+
+  if (elevationSource === "manual" || elevationSource === "provider_metadata") {
+    return {
+      dataSource: "mock_terrain",
+      dataSourceLabelZh: "基础地形资料",
+      isMock: true,
+      honestyNoteZh: "机位海拔来自已维护资料；周边高差与地平线遮挡仍以演示地形或基础资料作参考。",
+    };
+  }
+
+  return {
+    dataSource: "unknown",
+    dataSourceLabelZh: "海拔暂未确认",
+    isMock: true,
+    honestyNoteZh: "机位海拔暂未确认，山地体感和云海判断仅作参考。",
+  };
+}
+
 export function registerForecastRoutes(
   app: FastifyInstance,
   options: ForecastRoutesOptions = {},
@@ -103,6 +141,13 @@ export function registerForecastRoutes(
   const weatherDataService = options.weatherDataService ?? new WeatherDataService(weatherProvider);
   const terrainProvider = options.terrainProvider ?? new MockTerrainProvider();
   const env = options.env ?? process.env;
+  const elevationService =
+    options.elevationService ??
+    createRuntimeElevationService({
+      dbClient: options.dbClient,
+      env,
+      provider: options.elevationProvider,
+    });
   const astroServiceConfig = resolveAstroServiceConfig(env);
   const astroServiceClient =
     options.astroServiceClient ??
@@ -150,13 +195,13 @@ export function registerForecastRoutes(
       return sendZodError(reply, parsedBody.error);
     }
 
-    const { useAiExplanation, elevationMeters, timezone, startDateTime, ...query } =
-      parsedBody.data;
+    const { useAiExplanation, timezone, startDateTime, ...query } = parsedBody.data;
     const result = await calculateForecastResultOrReply(
       query,
-      { elevationMeters, timezone, startDateTime },
+      { timezone, startDateTime },
       weatherDataService,
       terrainProvider,
+      elevationService,
       astroServiceClient,
       astroServiceConfig,
       options.dbClient,
@@ -192,6 +237,7 @@ export function registerForecastRoutes(
       {},
       weatherDataService,
       terrainProvider,
+      elevationService,
       astroServiceClient,
       astroServiceConfig,
       options.dbClient,
@@ -357,6 +403,7 @@ async function calculateForecastResultOrReply(
   requestOptions: ForecastCalculationOptions,
   weatherDataService: WeatherDataServiceLike,
   terrainProvider: TerrainProvider,
+  elevationService: TerrainElevationService,
   astroServiceClient: AstroServiceClientLike,
   astroServiceConfig: AstroServiceConfig,
   dbClient: DatabaseClient | undefined,
@@ -369,6 +416,7 @@ async function calculateForecastResultOrReply(
       requestOptions,
       weatherDataService,
       terrainProvider,
+      elevationService,
       astroServiceClient,
       astroServiceConfig,
     );
@@ -461,6 +509,7 @@ async function calculateForecastResult(
   requestOptions: ForecastCalculationOptions,
   weatherDataService: WeatherDataServiceLike,
   terrainProvider: TerrainProvider,
+  elevationService: TerrainElevationService,
   astroServiceClient: AstroServiceClientLike,
   astroServiceConfig: AstroServiceConfig,
 ): Promise<ForecastCalculationResult> {
@@ -482,12 +531,22 @@ async function calculateForecastResult(
     },
     latitudeGcj02: query.latitudeGcj02,
     longitudeGcj02: query.longitudeGcj02,
-    elevationMeters: requestOptions.elevationMeters ?? query.elevationMeters ?? null,
+    elevationMeters: query.elevationMeters ?? null,
+    elevationSource: query.elevationSource,
+    elevationConfidence: query.elevationConfidence,
+  };
+  const elevation = await elevationService.getElevationForLocation(terrainInput);
+  const enrichedTerrainInput = {
+    ...terrainInput,
+    elevationMeters: elevation.elevationMeters,
+    elevationSource: elevation.elevationSource,
+    elevationConfidence: elevation.elevationConfidence,
+    terrainProfile: elevation.terrainProfile,
   };
   const [weatherDataBundle, terrainProfile, horizonProfile] = await Promise.all([
     weatherDataService.getWeatherDataBundle({
       coordinates,
-      elevationMeters: requestOptions.elevationMeters ?? query.elevationMeters,
+      elevationMeters: elevation.elevationMeters ?? undefined,
       hours: forecastRange.horizonHours,
       days: forecastRange.targetDates.length,
       forecastStart: forecastRange.forecastStart,
@@ -496,17 +555,13 @@ async function calculateForecastResult(
       target: query.target,
       timezone: forecastRange.timezone,
     }),
-    terrainProvider.buildTerrainProfile(terrainInput),
-    terrainProvider.buildHorizonProfile(terrainInput),
+    terrainProvider.buildTerrainProfile(enrichedTerrainInput),
+    terrainProvider.buildHorizonProfile(enrichedTerrainInput),
   ]);
   const terrainAnalysis = {
     terrainProfile,
     horizonProfile,
-    dataSource: "mock_terrain" as const,
-    dataSourceLabelZh: "演示数据",
-    isMock: true,
-    honestyNoteZh:
-      "地形信息当前使用演示地形数据，正式海拔与 DEM 数据接入后将用于提升云海和遮挡判断。",
+    ...terrainAnalysisSourceFields(terrainProfile.elevationSource),
   };
   const calculationInput = buildForecastInputFromWeatherBundle(query, weatherDataBundle, {
     forecastRange,
@@ -524,7 +579,7 @@ async function calculateForecastResult(
   const serviceResponse = await astroServiceClient.calculate({
     latitudeWgs84: query.latitudeWgs84,
     longitudeWgs84: query.longitudeWgs84,
-    elevationMeters: requestOptions.elevationMeters ?? terrainProfile.locationElevation,
+    elevationMeters: terrainProfile.elevationMeters ?? undefined,
     timezone: requestOptions.timezone ?? "Asia/Shanghai",
     horizon: query.horizon,
     startDateTime: requestOptions.startDateTime ?? forecastRange.forecastStart,

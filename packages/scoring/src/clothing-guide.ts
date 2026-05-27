@@ -29,8 +29,11 @@ export function buildClothingGuide(input: ClothingGuideInput): ClothingGuide {
     probability: precipitationProbability,
     amountMm: precipitationAmount,
   });
-  const elevationMeters = input.elevationMeters ?? 0;
-  const isMountain = elevationMeters >= 1200;
+  const elevationMeters = input.elevationMeters;
+  const isMountain =
+    typeof elevationMeters === "number" &&
+    Number.isFinite(elevationMeters) &&
+    elevationMeters >= 1200;
   const isNightTarget =
     input.target === "astro" || isNightTime(input.forecastStart, input.timezone);
   const effectiveTemperature = round1(

@@ -1,5 +1,7 @@
 import type {
   Coordinates,
+  ElevationConfidence,
+  ElevationSource,
   HorizonProfileSummary,
   TerrainAnalysisSummary,
   TerrainDataSource,
@@ -13,7 +15,7 @@ export type TerrainCoordinate = Coordinates & {
 
 export type ElevationSample = {
   readonly coordinate: TerrainCoordinate;
-  readonly elevation: number;
+  readonly elevation: number | null;
   readonly distanceMeters?: number;
   readonly azimuth?: number;
   readonly directionZh?: string;
@@ -32,6 +34,8 @@ export type TerrainAnalysisInput = {
   readonly latitudeGcj02?: number;
   readonly longitudeGcj02?: number;
   readonly elevationMeters?: number | null;
+  readonly elevationSource?: ElevationSource;
+  readonly elevationConfidence?: ElevationConfidence;
   readonly terrainProfile?: SpotTerrainProfile;
   readonly sunriseAzimuth?: number;
   readonly sunsetAzimuth?: number;

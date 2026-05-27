@@ -75,7 +75,7 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
     buildClothingGuide({
       currentWeather: input.currentWeather,
       hourlyWeather: input.hourlyWeather,
-      elevationMeters: input.terrainAnalysis.terrainProfile.locationElevation,
+      elevationMeters: input.terrainAnalysis.terrainProfile.locationElevation ?? undefined,
       target: input.target,
       timezone: input.calendarBasis.timezone,
       forecastStart: input.calendarBasis.forecastStart,
@@ -1296,7 +1296,16 @@ function terrainFormationSignalScore(input: ForecastCalculationInput): number {
   const terrainPotential = input.terrainAnalysis.terrainProfile.terrainCloudSeaPotential;
   const diff = input.terrainAnalysis.terrainProfile.elevationDiff5km;
   const potentialScore = terrainPotential === "high" ? 88 : terrainPotential === "medium" ? 70 : 44;
-  const diffScore = diff >= 900 ? 88 : diff >= 550 ? 74 : diff >= 300 ? 58 : 38;
+  const diffScore =
+    typeof diff === "number" && Number.isFinite(diff)
+      ? diff >= 900
+        ? 88
+        : diff >= 550
+          ? 74
+          : diff >= 300
+            ? 58
+            : 38
+      : 38;
 
   return averageWeightedScore([
     { score: potentialScore, weight: 0.62 },
@@ -1805,8 +1814,12 @@ function windowOverlapsTime(
 function isMountainLandscapeSpot(input: ForecastCalculationInput): boolean {
   const profile = input.terrainAnalysis.terrainProfile;
   return (
-    profile.locationElevation >= 900 ||
-    profile.elevationDiff5km >= 500 ||
+    (typeof profile.locationElevation === "number" &&
+      Number.isFinite(profile.locationElevation) &&
+      profile.locationElevation >= 900) ||
+    (typeof profile.elevationDiff5km === "number" &&
+      Number.isFinite(profile.elevationDiff5km) &&
+      profile.elevationDiff5km >= 500) ||
     profile.terrainCloudSeaPotential === "high"
   );
 }
@@ -3370,12 +3383,31 @@ function buildKeyReasons(
   scores: ForecastCalculationResult["scores"],
 ): readonly string[] {
   return [
-    `地形参考：机位海拔约 ${Math.round(input.terrainAnalysis.terrainProfile.locationElevation)} 米，5公里高差约 ${Math.round(input.terrainAnalysis.terrainProfile.elevationDiff5km)} 米。`,
+    terrainReferenceReason(input.terrainAnalysis.terrainProfile),
     ...scores.cloudSea.reasons.slice(0, 1),
     ...scores.sunriseGlow.reasons.slice(0, 1),
     ...scores.transparency.reasons.slice(0, 1),
     ...scores.stars.reasons.slice(0, 1),
   ].slice(0, 5);
+}
+
+function terrainReferenceReason(
+  terrain: ForecastCalculationInput["terrainAnalysis"]["terrainProfile"],
+): string {
+  const elevation = finiteOptionalNumber(terrain.locationElevation);
+  const relief = finiteOptionalNumber(terrain.elevationDiff5km);
+  const elevationText =
+    elevation === undefined
+      ? "机位海拔暂未确认，山地体感和云海判断仅作参考"
+      : `机位海拔约 ${Math.round(elevation)} 米`;
+  const reliefText =
+    relief === undefined ? "周边高差暂未计算" : `5公里高差约 ${Math.round(relief)} 米`;
+
+  return `地形参考：${elevationText}，${reliefText}。`;
+}
+
+function finiteOptionalNumber(value: number | null | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function buildPhotographyAdvice(

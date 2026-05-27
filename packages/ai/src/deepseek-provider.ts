@@ -349,8 +349,8 @@ function compactScore(
     label: score.label,
     score: score.score,
     level: score.level,
-    reasons: takeTextItems(score.reasons, 2),
-    risks: takeTextItems(score.risks, 2),
+    reasons: takeTextItems(score.reasons, 1, 90),
+    risks: takeTextItems(score.risks, 1, 90),
   };
 }
 
@@ -551,7 +551,7 @@ function compactCloudSeaRainOpening(
 
 export function buildDeepSeekForecastContext(result: ForecastCalculationResult) {
   const timezone = result.calendarBasis.timezone;
-  const dailyFacts = takeItems(result.dailySummaries, 3).map((summary) =>
+  const dailyFacts = takeItems(result.dailySummaries, 2).map((summary) =>
     compactDailyFact(result, summary, timezone),
   );
 
@@ -577,19 +577,19 @@ export function buildDeepSeekForecastContext(result: ForecastCalculationResult) 
       summaryZh: limitText(result.summary, 180),
     },
     topicScores: Object.values(result.scores).map(compactScore),
-    topRankedWindows: takeItems(result.bestWindows, 3).map((window) =>
+    topRankedWindows: takeItems(result.bestWindows, 2).map((window) =>
       compactForecastWindow(window, timezone),
     ),
-    riskFlags: compactRiskFlags(result.riskFlags, 6),
-    keyReasons: takeTextItems(result.keyReasons, 6),
-    deterministicActionSuggestions: takeTextItems(result.photographyAdvice, 4, 150),
+    riskFlags: compactRiskFlags(result.riskFlags, 4),
+    keyReasons: takeTextItems(result.keyReasons, 4, 100),
+    deterministicActionSuggestions: takeTextItems(result.photographyAdvice, 3, 120),
     clothingGuide: {
       titleZh: result.clothingGuide.titleZh,
       summaryZh: limitText(result.clothingGuide.summaryZh, 180),
       comfortLevel: result.clothingGuide.comfortLevel,
       layers: takeTextItems(result.clothingGuide.layers, 4),
       accessories: takeTextItems(result.clothingGuide.accessories, 4),
-      riskNotes: takeTextItems(result.clothingGuide.riskNotes, 4, 150),
+      riskNotes: takeTextItems(result.clothingGuide.riskNotes, 3, 110),
     },
     currentWeatherSummary: result.currentWeather
       ? {
@@ -616,9 +616,9 @@ export function buildDeepSeekForecastContext(result: ForecastCalculationResult) 
     sourceStatus: {
       dataMode: result.weatherDataMode,
       noticeZh: providerNeutralText(result.weatherNoticeZh),
-      missingFields: takeItems(result.weatherMissingFields, 8),
-      estimatedFields: takeItems(result.weatherEstimatedFields, 8),
-      missingDataNotes: providerNeutralItems(result.weatherMissingDataNotes, 4),
+      missingFields: takeItems(result.weatherMissingFields, 5),
+      estimatedFields: takeItems(result.weatherEstimatedFields, 5),
+      missingDataNotes: providerNeutralItems(result.weatherMissingDataNotes, 3),
       fusionConfidenceLevel: result.weatherFusionSummary?.confidenceLevel,
       conflictStatusZh: providerNeutralText(result.weatherFusionSummary?.conflictStatusZh),
       dataStatusZh: providerNeutralText(result.weatherFusionSummary?.dataStatusZh),
@@ -669,8 +669,8 @@ export function buildDeepSeekForecastContext(result: ForecastCalculationResult) 
           labelZh: result.astroAnalysis.labels.dewRisk,
           score: result.astroAnalysis.dewRiskScore,
         },
-        gearAdviceZh: takeTextItems(result.astroAnalysis.gearAdviceZh, 4, 140),
-        warmthAdviceZh: limitText(result.astroAnalysis.warmthAdviceZh, 140),
+        gearAdviceZh: takeTextItems(result.astroAnalysis.gearAdviceZh, 3, 100),
+        warmthAdviceZh: limitText(result.astroAnalysis.warmthAdviceZh, 100),
       },
     },
     glowFacts:
@@ -691,12 +691,12 @@ export function buildDeepSeekForecastContext(result: ForecastCalculationResult) 
       localReliefMeters: result.terrainSummary.localReliefMeters,
       elevationDiff5km: result.terrainSummary.elevationDiff5km,
       terrainCloudSeaPotential: result.terrainSummary.terrainCloudSeaPotential,
-      terrainNoteZh: limitText(result.terrainSummary.terrainNoteZh, 160),
-      obstructionNoteZh: limitText(result.terrainSummary.obstructionNoteZh, 160),
+      terrainNoteZh: limitText(result.terrainSummary.terrainNoteZh, 90),
+      obstructionNoteZh: limitText(result.terrainSummary.obstructionNoteZh, 90),
     },
     targetAnalysis: compactTargetAnalysis(result),
     dailySummaries: dailyFacts,
-    dataNoticeZh: limitText(providerNeutralText(result.dataNotice), 220),
+    dataNoticeZh: limitText(providerNeutralText(result.dataNotice), 140),
     isMock: result.isMock,
   };
 }

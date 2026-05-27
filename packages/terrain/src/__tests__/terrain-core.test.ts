@@ -5,6 +5,7 @@ import {
   classifyHorizonObstruction,
   classifyTerrainCloudSeaPotential,
   getDirectionZhFromAzimuth,
+  InMemoryElevationCacheStore,
   MockTerrainProvider,
   OpenMeteoElevationProvider,
   TerrainElevationService,
@@ -54,6 +55,9 @@ describe("Terrain Core V1", () => {
 
       expect(firstProfile).toEqual(secondProfile);
       expect(firstProfile.locationElevation).toBe(spot.elevation);
+      if (firstProfile.locationElevation === null || firstProfile.minElevation5km === null) {
+        throw new Error("seeded terrain profile must include elevation and local valley data");
+      }
       expect(firstProfile.minElevation5km).toBeLessThan(firstProfile.locationElevation);
       expect(firstProfile.elevationDiff5km).toBeGreaterThan(700);
       expect(firstProfile.terrainNoteZh).toContain("基础地形剖面");
@@ -104,22 +108,30 @@ describe("Terrain Core V1", () => {
     ).toThrow("经度");
   });
 
-  it("does not call external APIs from the disabled future provider skeleton", async () => {
-    const fetchMock = vi.fn(() => {
-      throw new Error("terrain provider tests must not call network");
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    const provider = new OpenMeteoElevationProvider();
-
-    await expect(
-      provider.buildTerrainProfile({
-        locationName: "黄山光明顶",
-        coordinate: knownSpots[0].coordinate,
+  it("gets elevation for non-seeded WGS84 coordinates from a mocked Open-Meteo provider", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ elevation: [1326.4] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
       }),
-    ).rejects.toThrow("默认禁用");
-    expect(fetchMock).not.toHaveBeenCalled();
+    );
+    const provider = new OpenMeteoElevationProvider({ fetcher: fetchMock });
+    const service = new TerrainElevationService({ provider });
 
-    vi.unstubAllGlobals();
+    const result = await service.getElevationForWgs84(30.2528, 120.1078);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const fetchCalls = fetchMock.mock.calls as unknown as readonly [string | URL, RequestInit?][];
+    expect(String(fetchCalls[0]?.[0])).toContain("/v1/elevation");
+    expect(String(fetchCalls[0]?.[0])).toContain("latitude=30.2528");
+    expect(result.elevationMeters).toBe(1326);
+    expect(result.elevationSource).toBe("open_meteo_elevation");
+    expect(result.elevationConfidence).toBe("medium");
+    expect(result.terrainProfile).toMatchObject({
+      elevationMeters: 1326,
+      terrainType: "unknown",
+      exposureType: "unknown",
+    });
   });
 
   it("builds seeded terrain profiles for core mountain photo spots", () => {
@@ -155,7 +167,8 @@ describe("Terrain Core V1", () => {
     expect(profile.elevationMeters).toBeNull();
     expect(profile.elevationSource).toBe("unknown");
     expect(profile.elevationConfidence).toBe("low");
-    expect(elevation.elevationMeters).toBeUndefined();
+    expect(elevation.elevationMeters).toBeNull();
+    expect(elevation.elevationSource).toBe("unknown");
     expect(elevation.elevationConfidence).toBe("low");
   });
 
@@ -178,5 +191,76 @@ describe("Terrain Core V1", () => {
     expect(result.elevationSource).toBe("manual");
     expect(result.elevationConfidence).toBe("medium");
     expect(provider.getElevationForLocation).not.toHaveBeenCalled();
+  });
+
+  it("uses seeded photo spot elevation before provider lookup", async () => {
+    const provider = {
+      getElevationForLocation: vi.fn(async () => ({
+        elevationMeters: 900,
+        elevationSource: "open_meteo_elevation" as const,
+        elevationConfidence: "medium" as const,
+      })),
+    };
+    const service = new TerrainElevationService({ provider });
+    const result = await service.getElevationForLocation({
+      locationName: "黄山光明顶",
+      coordinate: knownSpots[0].coordinate,
+    });
+
+    expect(result.elevationMeters).toBe(1860);
+    expect(result.elevationSource).toBe("manual");
+    expect(result.elevationConfidence).toBe("high");
+    expect(provider.getElevationForLocation).not.toHaveBeenCalled();
+  });
+
+  it("returns null unknown when provider lookup fails instead of coercing to zero", async () => {
+    const provider = {
+      getElevationForLocation: vi.fn(async () => {
+        throw new Error("mock elevation outage");
+      }),
+    };
+    const service = new TerrainElevationService({ provider });
+    const result = await service.getElevationForWgs84(30.2528, 120.1078);
+
+    expect(provider.getElevationForLocation).toHaveBeenCalledTimes(1);
+    expect(result.elevationMeters).toBeNull();
+    expect(result.elevationSource).toBe("unknown");
+    expect(result.elevationConfidence).toBe("low");
+    expect(result.terrainProfile.elevationMeters).toBeNull();
+  });
+
+  it("treats provider-returned zero as real sea-level elevation", async () => {
+    const provider = {
+      getElevationForLocation: vi.fn(async () => ({
+        elevationMeters: 0,
+        elevationSource: "open_meteo_elevation" as const,
+        elevationConfidence: "medium" as const,
+      })),
+    };
+    const service = new TerrainElevationService({ provider });
+    const result = await service.getElevationForWgs84(22.25, 113.58);
+
+    expect(result.elevationMeters).toBe(0);
+    expect(result.elevationSource).toBe("open_meteo_elevation");
+    expect(result.terrainProfile.elevationMeters).toBe(0);
+  });
+
+  it("uses the rounded coordinate cache for repeated elevation lookups", async () => {
+    const provider = {
+      getElevationForLocation: vi.fn(async () => ({
+        elevationMeters: 1333,
+        elevationSource: "open_meteo_elevation" as const,
+        elevationConfidence: "medium" as const,
+      })),
+    };
+    const cacheStore = new InMemoryElevationCacheStore();
+    const service = new TerrainElevationService({ provider, cacheStore });
+
+    const first = await service.getElevationForWgs84(30.252801, 120.107804);
+    const second = await service.getElevationForWgs84(30.252802, 120.107803);
+
+    expect(first.elevationMeters).toBe(1333);
+    expect(second.elevationMeters).toBe(1333);
+    expect(provider.getElevationForLocation).toHaveBeenCalledTimes(1);
   });
 });

@@ -12,13 +12,28 @@ export function calculateElevationDiff(maxElevation: number, minElevation: numbe
 }
 
 export function classifyTerrainCloudSeaPotential(input: {
-  readonly elevationDiff5km: number;
-  readonly locationElevation?: number;
+  readonly elevationDiff5km: number | null | undefined;
+  readonly locationElevation?: number | null;
 }): TerrainCloudSeaPotential {
   const elevationDiff5km = input.elevationDiff5km;
-  const locationElevation = input.locationElevation ?? 0;
+  const locationElevation =
+    typeof input.locationElevation === "number" && Number.isFinite(input.locationElevation)
+      ? input.locationElevation
+      : null;
 
-  if (!Number.isFinite(elevationDiff5km) || elevationDiff5km < 0) {
+  if (
+    typeof elevationDiff5km !== "number" ||
+    !Number.isFinite(elevationDiff5km) ||
+    elevationDiff5km < 0
+  ) {
+    return "low";
+  }
+
+  if (locationElevation === null) {
+    return elevationDiff5km >= 650 ? "medium" : "low";
+  }
+
+  if (!Number.isFinite(locationElevation)) {
     throw new Error("周边5公里高差必须是非负有效数字。");
   }
 

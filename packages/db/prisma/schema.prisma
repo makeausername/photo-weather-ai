@@ -260,6 +260,23 @@ model ProviderConfig {
   @@map("provider_configs")
 }
 
+model TerrainElevationCache {
+  id                  String   @id @default(cuid())
+  cacheKey            String   @unique @map("cache_key")
+  latitudeWgs84       Float    @map("latitude_wgs84")
+  longitudeWgs84      Float    @map("longitude_wgs84")
+  elevationMeters     Float?   @map("elevation_meters")
+  elevationSource     String   @map("elevation_source")
+  elevationConfidence String   @map("elevation_confidence")
+  expiresAt           DateTime @map("expires_at")
+  rawJson             Json?    @map("raw_json")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@index([expiresAt])
+  @@map("terrain_elevation_cache")
+}
+
 model AdminAuditLog {
   id          String   @id @default(cuid())
   actorUserId String?  @map("actor_user_id")

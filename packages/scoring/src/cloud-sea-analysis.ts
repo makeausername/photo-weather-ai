@@ -950,6 +950,8 @@ function rainIntensity(stats: WindowStats): number {
 
 function buildTerrainSupport(input: ForecastCalculationInput): CloudSeaTerrainSupport {
   const terrain = input.terrainAnalysis.terrainProfile;
+  const locationElevation = finiteNumber(terrain.locationElevation);
+  const nearbyValleyElevation = finiteNumber(terrain.nearbyValleyElevationMeters);
   const providerElevationMeters =
     finiteNumber(input.currentWeather?.providerElevationMeters) ??
     input.hourlyWeather.map((hour) => finiteNumber(hour.providerElevationMeters)).find(isFiniteNumber) ??
@@ -957,11 +959,11 @@ function buildTerrainSupport(input: ForecastCalculationInput): CloudSeaTerrainSu
   const relief =
     finiteNumber(terrain.localReliefMeters) ??
     finiteNumber(terrain.elevationDiff5km) ??
-    (finiteNumber(terrain.locationElevation) !== undefined &&
-    finiteNumber(terrain.nearbyValleyElevationMeters) !== undefined
-      ? terrain.locationElevation - terrain.nearbyValleyElevationMeters!
+    (locationElevation !== undefined && nearbyValleyElevation !== undefined
+      ? locationElevation - nearbyValleyElevation
       : undefined);
-  const selectedSpotElevation = finiteNumber(terrain.elevationMeters) ?? terrain.locationElevation;
+  const selectedSpotElevation =
+    finiteNumber(terrain.elevationMeters) ?? finiteNumber(terrain.locationElevation);
   const reliefScore =
     relief === undefined
       ? 42
@@ -1026,7 +1028,7 @@ function buildTerrainSupport(input: ForecastCalculationInput): CloudSeaTerrainSu
     score,
     level,
     selectedSpotElevationMeters: selectedSpotElevation,
-    nearbyValleyElevationMeters: finiteNumber(terrain.nearbyValleyElevationMeters),
+    nearbyValleyElevationMeters: nearbyValleyElevation,
     localReliefMeters: relief,
     providerElevationMeters,
     terrainType: terrain.terrainType,
@@ -1052,7 +1054,7 @@ function buildMissingDataNotes(
   if (stats.visibility === undefined || stats.missingFields.includes("visibility")) {
     notes.push("当前天气源缺少能见度数据，白墙风险和通透度判断置信度降低。");
   }
-  if (!Number.isFinite(input.terrainAnalysis.terrainProfile.elevationDiff5km)) {
+  if (finiteNumber(input.terrainAnalysis.terrainProfile.elevationDiff5km) === undefined) {
     notes.push("当前地形数据缺少 5km 高差，云海地形潜力判断置信度降低。");
   }
   if (!sunriseKnown) {
@@ -1217,6 +1219,7 @@ function buildOpportunityReasons(
   stabilityBonus: number,
 ): readonly string[] {
   const terrain = input.terrainAnalysis.terrainProfile;
+  const elevationDiff = finiteNumber(terrain.elevationDiff5km);
   const reasons = [
     `云海形成条件 ${formationScore} 分：湿度约 ${formatPercent(
       stats.humidity,
@@ -1227,9 +1230,11 @@ function buildOpportunityReasons(
         )}，50%-90% 更支持云海形成；接近满低云时需同时看白墙风险。`
       : lowCloudMissingNote,
     `云海可拍条件 ${shootableScore} 分：光线重叠 ${lightAlignedScore} 分，白墙风险已单独扣减。`,
-    `5km 高差约 ${formatMeters(
-      terrain.elevationDiff5km,
-    )}，地形云海潜力和机位类型综合支持为${terrainSupport.level}。${terrainSupport.messageZh}`,
+    elevationDiff === undefined
+      ? `周边高差暂未计算，地形云海潜力按保守值处理。${terrainSupport.messageZh}`
+      : `5km 高差约 ${formatMeters(
+          elevationDiff,
+        )}，地形云海潜力和机位类型综合支持为${terrainSupport.level}。${terrainSupport.messageZh}`,
     `风速约 ${formatSpeed(stats.windSpeed)}，过弱易包顶，过强会吹散云雾层。`,
     `能见度约 ${formatKm(stats.visibility)}，用于区分可俯拍云海与白墙。`,
     rainOpening.messageZh,
@@ -1418,12 +1423,15 @@ function buildTerrainEvidence(
 ): CloudSeaAnalysisResult["terrainEvidence"] {
   const terrain = input.terrainAnalysis.terrainProfile;
   const potential = terrain.terrainCloudSeaPotential;
+  const elevationDiff = finiteNumber(terrain.elevationDiff5km);
   const diffEffect: CloudSeaEvidenceEffect =
-    terrain.elevationDiff5km >= 600
-      ? "positive"
-      : terrain.elevationDiff5km >= 300
-        ? "neutral"
-        : "negative";
+    elevationDiff === undefined
+      ? "negative"
+      : elevationDiff >= 600
+        ? "positive"
+        : elevationDiff >= 300
+          ? "neutral"
+          : "negative";
 
   return [
     {
@@ -1771,8 +1779,10 @@ function formatMillimeters(value: number | undefined): string {
   return value === undefined ? "暂无数据" : `${Number(value.toFixed(1))} mm`;
 }
 
-function formatMeters(value: number): string {
-  return Number.isFinite(value) ? `${Math.round(value)} m` : "暂无数据";
+function formatMeters(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${Math.round(value)} m`
+    : "暂无数据";
 }
 
 function formatWindDirection(value: number | undefined): string {
