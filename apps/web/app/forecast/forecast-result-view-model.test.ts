@@ -1704,6 +1704,10 @@ function queryForTarget(target: ForecastCalculationResult["target"]): ForecastQu
   };
 }
 
+function countOccurrences(text: string, pattern: string): number {
+  return text.split(pattern).length - 1;
+}
+
 describe("forecast result target-aware view model", () => {
   it("uses Simplified Chinese target labels", () => {
     expect(forecastTargetLabels).toMatchObject({
@@ -1768,6 +1772,9 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("题材拆解");
     expect(html).toContain("风险提醒");
     expect(html).toContain("重点时段：2026年5月20日 05:00–07:00");
+    expect(html).toContain("影响时段：");
+    expect(html).toContain("建议：");
+    expect(html).toContain("到场观察云顶高度，避免只守单一机位。");
     expect(html).toContain("出行建议");
     expect(html).not.toContain("数据来源");
     expect(html).not.toContain("计算与数据");
@@ -1843,7 +1850,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain(">0 米<");
   });
 
-  it("renders rich adaptive daily cards with weather and subject opportunities", () => {
+  it("renders simplified general daily cards with one primary and one backup window", () => {
     const result = resultForTarget("general");
     const viewModel = buildForecastResultViewModel(result, "general");
     const html = renderToStaticMarkup(
@@ -1861,6 +1868,13 @@ describe("forecast result target-aware view model", () => {
 
     expect(html).toContain('data-testid="daily-forecast-decision"');
     expect(html).toContain('data-testid="daily-cards-adaptive-grid"');
+    expect(countOccurrences(html, 'data-testid="daily-card"')).toBe(result.dailySummaries.length);
+    expect(countOccurrences(html, 'data-testid="daily-primary-window"')).toBe(
+      result.dailySummaries.length,
+    );
+    expect(countOccurrences(html, 'data-testid="daily-backup-window"')).toBeLessThanOrEqual(
+      result.dailySummaries.length,
+    );
     expect(html).toContain('data-testid="top-decision-cards"');
     expect(html).toContain('data-testid="near-term-weather"');
     expect(html).not.toContain('data-testid="subject-breakdown"');
@@ -1872,6 +1886,9 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("当前与近时段天气（2026年5月20日 00:00–06:00）");
     expect(html).toContain("当前实况：2026年5月20日 00:00");
     expect(html).toContain("近时段参考：2026年5月20日 00:00–06:00");
+    expect(html).toContain("查看云海详情");
+    expect(html).toContain("查看霞光详情");
+    expect(html).toContain("查看星空详情");
     const topDecisionCards = html.slice(
       html.indexOf('data-testid="top-decision-cards"'),
       html.indexOf('data-testid="near-term-weather"'),
@@ -1880,24 +1897,49 @@ describe("forecast result target-aware view model", () => {
     expect(topDecisionCards.indexOf("到达建议")).toBeLessThan(
       topDecisionCards.indexOf("云海 / 白墙"),
     );
+    const dailySection = html.slice(
+      html.indexOf('data-testid="daily-forecast-decision"'),
+      html.indexOf('data-testid="opportunity-windows"'),
+    );
+    expect(dailySection).toContain("推荐专程前往");
+    expect(dailySection).toContain("多云间晴");
+    expect(dailySection).toContain("山顶估算温度：10–18°C");
+    expect(dailySection).toContain("降水：低｜风：3.4m/s｜通透：较好");
+    expect(dailySection).toContain("优先关注：");
+    expect(dailySection).toContain("清晨云海窗口 2026年5月20日 05:00–07:00");
+    expect(dailySection).toContain("备选观察：");
+    expect(dailySection).toContain("晚霞窗口 2026年5月20日 17:56–19:41");
+    expect(dailySection).toContain("主要风险：");
+    expect(dailySection).toContain("白墙风险");
+    expect(dailySection).toContain("行动：");
+    expect(dailySection).toContain("清晨云海可优先安排，到场先复核云顶高度。");
+    expect(dailySection).toContain("降水时段分散，优先等待雨后短暂开口。");
+    expect(dailySection).not.toContain("云海形成 82分");
+    expect(dailySection).not.toContain("云海可拍 82分");
+    expect(dailySection).not.toContain("白墙风险 58分");
+    expect(dailySection).not.toContain("朝霞 70分");
+    expect(dailySection).not.toContain("晚霞 74分");
+    expect(dailySection).not.toContain("天文窗口 有");
+    expect(dailySection).not.toContain("星空可拍性");
+    expect(dailySection).not.toContain("银河可拍性");
+    expect(dailySection).not.toContain("是否建议夜拍");
+    expect(dailySection).not.toContain("专程判断：");
+    expect(dailySection).not.toContain("附近观察：");
+    expect(dailySection).not.toContain("专业判断");
+    expect(dailySection).not.toContain("星空银河：");
+    expect(dailySection).not.toContain("低云遮挡：");
+    expect(dailySection).not.toContain("雨后开口：");
+    expect(dailySection).not.toContain("现场复核：");
+    expect(dailySection).not.toContain("建议：当天有可优先关注的拍摄窗口。");
+    expect(countOccurrences(dailySection, "现场重点复核云层开口和通透度")).toBeLessThanOrEqual(1);
+    expect(countOccurrences(dailySection, "条件和风险匹配度较好")).toBe(0);
+    expect(countOccurrences(dailySection, "可按最佳窗口组织出发")).toBe(0);
     expect(html).toContain("山顶估算温度：10-18°C");
     expect(html).toContain("预报已接近机位海拔，未额外修正");
     expect(html).toContain("体感 7-16°C");
     expect(html).toContain("降水风险");
-    expect(html).toContain("0.2 mm");
-    expect(html).toContain("3.4 m/s 东南风");
+    expect(html).toContain("3.2 m/s 东南风");
     expect(html).toContain("18 公里");
-    expect(html).toContain("云海形成 82分");
-    expect(html).toContain("云海可拍 82分");
-    expect(html).toContain("白墙风险 58分");
-    expect(html).toContain("朝霞 70分");
-    expect(html).toContain("晚霞 74分");
-    expect(html).toContain("天文窗口 有");
-    expect(html).toContain("星空可拍性 66分");
-    expect(html).toContain("银河可拍性 68分");
-    expect(html).toContain("最佳窗口");
-    expect(html).toContain("优先关注清晨云海窗口");
-    expect(html).not.toContain("建议：当天有可优先关注的拍摄窗口。");
     expect(html).not.toMatch(/(?:^|\s)(?:w|min-w)-\[(?:[1-9]\d{3,})px\]/);
   });
 
@@ -1917,14 +1959,16 @@ describe("forecast result target-aware view model", () => {
       }),
     );
     const windowSection = html.slice(html.indexOf('data-testid="opportunity-windows"'));
+    const dailySection = html.slice(
+      html.indexOf('data-testid="daily-forecast-decision"'),
+      html.indexOf('data-testid="opportunity-windows"'),
+    );
 
     expect(html).not.toContain('data-testid="subject-breakdown"');
-    expect(html).toContain("天文窗口 有");
-    expect(html).toContain("星空可拍性");
-    expect(html).toContain("低（24分）");
-    expect(html).toContain("银河可拍性");
-    expect(html).toContain("低（62分）");
-    expect(html).toContain("天文窗口存在，但低云偏多、降水干扰不支持拍摄");
+    expect(dailySection).not.toContain("星空可拍性");
+    expect(dailySection).not.toContain("银河可拍性");
+    expect(dailySection).not.toContain("天文窗口存在，但低云偏多、降水干扰不支持拍摄");
+    expect(dailySection).not.toContain("银河天文窗口 2026年5月");
     expect(windowSection).toContain("不建议：银河天文窗口");
     expect(windowSection).toContain("低云偏多、降水干扰，不建议专程夜拍");
     expect(html).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风|高德/i);
@@ -1975,23 +2019,32 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain('data-testid="opportunity-windows"');
   });
 
-  it("shows sunrise and sunset rain overlap on daily cards", () => {
+  it("keeps rain-heavy daily cards compact", () => {
     const base = resultForTarget("general");
     const result: ForecastCalculationResult = {
       ...base,
-      glowAnalysis: {
-        ...base.glowAnalysis,
-        dailyGlow: base.glowAnalysis.dailyGlow.map((day, index) =>
-          index === 0
-            ? {
-                ...day,
-                rainOverlapsSunriseWindow: true,
-                rainOverlapsSunsetWindow: false,
-                postRainOpeningChance: "medium",
-              }
-            : day,
-        ),
-      },
+      dailySummaries: base.dailySummaries.map((summary, index) =>
+        index === 0
+          ? {
+              ...summary,
+              weather: {
+                ...summary.weather!,
+                weatherTextZh: "小雨转阴",
+                precipitationAmountMm: 6.8,
+                rainAmountMm: 6.8,
+                precipitationRisk: {
+                  precipitationProbabilityPercent: 72,
+                  precipitationAmountMm: 6.8,
+                  rainRiskLevel: "high",
+                  rainRiskLabelZh: "高",
+                  affectedWindows: ["夜间", "上午"],
+                  recommendationZh: "降水干扰明显，清晨窗口需要等待雨后短暂开口。",
+                },
+                mainPrecipitationPeriodLabelZh: "主要降水：夜间、上午",
+              },
+            }
+          : summary,
+      ),
     };
     const viewModel = buildForecastResultViewModel(result, "general");
     const html = renderToStaticMarkup(
@@ -2006,9 +2059,16 @@ describe("forecast result target-aware view model", () => {
         onGenerateAiExplanation: vi.fn(),
       }),
     );
+    const dailySection = html.slice(
+      html.indexOf('data-testid="daily-forecast-decision"'),
+      html.indexOf('data-testid="opportunity-windows"'),
+    );
 
-    expect(html).toContain("降水主要影响日出窗口，朝霞不确定性较高");
-    expect(html).toContain("雨后若短暂开口，可转拍云雾层次和远山");
+    expect(dailySection).toContain("小雨转阴");
+    expect(dailySection).toContain("降水：高");
+    expect(dailySection).toContain("降水干扰明显，优先等待雨后短暂开口。");
+    expect(dailySection).not.toContain("降水主要影响日出窗口，朝霞不确定性较高");
+    expect(dailySection).not.toContain("雨后若短暂开口，可转拍云雾层次和远山");
   });
 
   it("avoids impossible zero-probability precipitation copy when amount is present", () => {
@@ -2097,7 +2157,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("预留上山、找机位和观察云雾变化时间");
     expect(html).toContain("时间偏早，建议前一晚到达附近或住山上");
     expect(html).not.toContain("建议到达：03:30 前到达");
-    expect(html).toContain("备选题材：朝霞、通透层峦或雾景");
+    expect(html).toContain("备选方案");
   });
 
   it("labels no-light cloud sea as a formation signal instead of the top shootable window", () => {
@@ -2403,11 +2463,15 @@ describe("forecast result target-aware view model", () => {
         onGenerateAiExplanation: vi.fn(),
       }),
     );
+    const dailySection = html.slice(
+      html.indexOf('data-testid="daily-forecast-decision"'),
+      html.indexOf('data-testid="opportunity-windows"'),
+    );
 
     expect(html).toContain("降水风险");
-    expect(html).toContain("高，预计 18.8 mm");
-    expect(html).toContain("夜间至上午");
-    expect(html).toContain("日落后余晖");
+    expect(dailySection).toContain("降水：高");
+    expect(dailySection).toContain("日落后余晖");
+    expect(dailySection).toContain("降水干扰明显，优先等待雨后短暂开口。");
     expect(html).not.toContain("降水风险：降水风险");
     expect(html).not.toContain("主要降水：主要降水");
     expect(html).not.toContain("建议：建议");
