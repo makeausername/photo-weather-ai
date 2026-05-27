@@ -471,7 +471,6 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
     primarySummary: result.summary,
     recommendationLabel: result.recommendationLabel,
     primaryCards: [
-      scoreCard("overall", "overall", "综合出片指数", `${result.overallScore}`, "/ 100", "primary"),
       textCard(
         "recommendation",
         "recommendation",
@@ -487,6 +486,20 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
         "最佳拍摄窗口",
         bestWindow?.label ?? "暂无高确定性拍摄窗口",
         bestWindow?.fullTimeRangeLabel ?? "等待更多数据",
+        "accent",
+      ),
+      textCard(
+        "arrivalAdvice",
+        "recommendation",
+        "到达建议",
+        bestWindow?.arrivalFullLabel ?? (bestWindow ? "窗口前到达" : "等待更新"),
+        bestWindow?.arrivalAdvice
+          ? `${bestWindow.arrivalAdvice.reasonZh}${
+              bestWindow.arrivalAdvice.warningZh ? ` ${bestWindow.arrivalAdvice.warningZh}` : ""
+            }`
+          : bestWindow
+            ? `${bestWindow.fullTimeRangeLabel}，预留取景和机位确认时间。`
+            : "暂无高确定性拍摄窗口，若已在附近可观察云雾变化。",
         "accent",
       ),
       textCard(
@@ -528,20 +541,6 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
         bestGeneralSubjectLabel(result),
         "按云海、霞光、星空银河和通透度综合排序。",
         "info",
-      ),
-      textCard(
-        "arrivalAdvice",
-        "recommendation",
-        "到达建议",
-        bestWindow?.arrivalFullLabel ?? (bestWindow ? "窗口前到达" : "等待更新"),
-        bestWindow?.arrivalAdvice
-          ? `${bestWindow.arrivalAdvice.reasonZh}${
-              bestWindow.arrivalAdvice.warningZh ? ` ${bestWindow.arrivalAdvice.warningZh}` : ""
-            }`
-          : bestWindow
-            ? `${bestWindow.fullTimeRangeLabel}，预留取景和机位确认时间。`
-            : "暂无高确定性拍摄窗口，若已在附近可观察云雾变化。",
-        "accent",
       ),
     ],
     scoreCards,

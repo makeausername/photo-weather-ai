@@ -1718,15 +1718,14 @@ describe("forecast result target-aware view model", () => {
     const viewModel = buildForecastResultViewModel(resultForTarget("general"), "general");
 
     expect(viewModel.primaryCards.map((card) => card.label)).toEqual([
-      "综合出片指数",
       "推荐等级",
       "最佳拍摄窗口",
+      "到达建议",
       "云海 / 白墙",
       "朝霞 / 晚霞机会",
       "霞光窗口",
       "主要风险",
       "优先题材",
-      "到达建议",
     ]);
     expect(viewModel.scoreCards.map((card) => card.key)).toEqual([
       "sunriseGlow",
@@ -1763,10 +1762,12 @@ describe("forecast result target-aware view model", () => {
 
     expect(html).toContain("出行判断");
     expect(html).toContain("综合出片指数");
+    expect(html.match(/综合出片指数/g)?.length).toBe(1);
     expect(html).toContain("当前与近时段天气");
     expect(html).toContain("逐日拍摄判断");
-    expect(html).toContain("题材拆解");
+    expect(html).not.toContain("题材拆解");
     expect(html).toContain("风险提醒");
+    expect(html).toContain("重点时段：2026年5月20日 05:00–07:00");
     expect(html).toContain("出行建议");
     expect(html).not.toContain("数据来源");
     expect(html).not.toContain("计算与数据");
@@ -1862,13 +1863,23 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain('data-testid="daily-cards-adaptive-grid"');
     expect(html).toContain('data-testid="top-decision-cards"');
     expect(html).toContain('data-testid="near-term-weather"');
-    expect(html).toContain('data-testid="subject-breakdown"');
+    expect(html).not.toContain('data-testid="subject-breakdown"');
     expect(html).toContain('data-testid="action-plan"');
-    expect(html).toContain("repeat(auto-fit,minmax(210px,1fr))");
+    expect(html).toContain("xl:grid-cols-7");
     expect(html).toContain("repeat(auto-fit,minmax(220px,1fr))");
     expect(html).toContain("repeat(auto-fit,minmax(250px,1fr))");
-    expect(html).toContain("repeat(auto-fit,minmax(260px,1fr))");
     expect(html).toContain("repeat(auto-fit,minmax(300px,1fr))");
+    expect(html).toContain("当前与近时段天气（2026年5月20日 00:00–06:00）");
+    expect(html).toContain("当前实况：2026年5月20日 00:00");
+    expect(html).toContain("近时段参考：2026年5月20日 00:00–06:00");
+    const topDecisionCards = html.slice(
+      html.indexOf('data-testid="top-decision-cards"'),
+      html.indexOf('data-testid="near-term-weather"'),
+    );
+    expect(topDecisionCards).not.toContain("综合出片指数");
+    expect(topDecisionCards.indexOf("到达建议")).toBeLessThan(
+      topDecisionCards.indexOf("云海 / 白墙"),
+    );
     expect(html).toContain("山顶估算温度：10-18°C");
     expect(html).toContain("预报已接近机位海拔，未额外修正");
     expect(html).toContain("体感 7-16°C");
@@ -1905,20 +1916,15 @@ describe("forecast result target-aware view model", () => {
         onGenerateAiExplanation: vi.fn(),
       }),
     );
-    const subjectSection = html.slice(
-      html.indexOf('data-testid="subject-breakdown"'),
-      html.indexOf('data-testid="opportunity-windows"'),
-    );
     const windowSection = html.slice(html.indexOf('data-testid="opportunity-windows"'));
 
+    expect(html).not.toContain('data-testid="subject-breakdown"');
     expect(html).toContain("天文窗口 有");
     expect(html).toContain("星空可拍性");
     expect(html).toContain("低（24分）");
     expect(html).toContain("银河可拍性");
     expect(html).toContain("低（62分）");
     expect(html).toContain("天文窗口存在，但低云偏多、降水干扰不支持拍摄");
-    expect(subjectSection).toContain("银河方向和时间合适，但低云偏多、降水干扰");
-    expect(subjectSection).not.toContain("推荐银河窗口：");
     expect(windowSection).toContain("不建议：银河天文窗口");
     expect(windowSection).toContain("低云偏多、降水干扰，不建议专程夜拍");
     expect(html).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风|高德/i);
@@ -1948,37 +1954,8 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("高确定性拍摄窗口");
   });
 
-  it("keeps evening windows out of the sunrise card and morning windows out of the sunset card", () => {
-    const base = resultForTarget("general");
-    const result: ForecastCalculationResult = {
-      ...base,
-      bestWindows: [
-        {
-          ...base.bestWindows[2]!,
-          label: "朝霞峰值窗口 19:01 - 19:28",
-          startTime: "2026-05-20T19:01:00+08:00",
-          endTime: "2026-05-20T19:28:00+08:00",
-          target: "glow",
-          lightPhase: "blue_hour",
-          subjectPriorityLabel: "朝霞",
-          recommendationLevel: "recommended",
-          windowLevel: "best",
-          practicalScore: 76,
-        },
-        {
-          ...base.bestWindows[3]!,
-          label: "晚霞峰值窗口 04:30 - 06:15",
-          startTime: "2026-05-20T04:30:00+08:00",
-          endTime: "2026-05-20T06:15:00+08:00",
-          target: "glow",
-          lightPhase: "sunrise",
-          subjectPriorityLabel: "晚霞",
-          recommendationLevel: "recommended",
-          windowLevel: "shootable",
-          practicalScore: 72,
-        },
-      ],
-    };
+  it("omits the old subject breakdown grid from the general dashboard", () => {
+    const result = resultForTarget("general");
     const viewModel = buildForecastResultViewModel(result, "general");
     const html = renderToStaticMarkup(
       React.createElement(ComprehensiveForecastView, {
@@ -1992,19 +1969,10 @@ describe("forecast result target-aware view model", () => {
         onGenerateAiExplanation: vi.fn(),
       }),
     );
-    const subjectSection = html.slice(
-      html.indexOf('data-testid="subject-breakdown"'),
-      html.indexOf('data-testid="opportunity-windows"'),
-    );
-    const sunriseCard = subjectSection.slice(
-      subjectSection.indexOf(">朝霞<"),
-      subjectSection.indexOf(">晚霞<"),
-    );
-    const sunsetCard = subjectSection.slice(subjectSection.indexOf(">晚霞<"));
 
-    expect(sunriseCard).not.toContain("19:01");
-    expect(sunriseCard).not.toContain("日落后余晖");
-    expect(sunsetCard).not.toContain("04:30");
+    expect(html).not.toContain('data-testid="subject-breakdown"');
+    expect(html).not.toContain("题材拆解");
+    expect(html).toContain('data-testid="opportunity-windows"');
   });
 
   it("shows sunrise and sunset rain overlap on daily cards", () => {

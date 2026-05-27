@@ -653,6 +653,9 @@ export type ForecastRiskFlag = {
   readonly label: string;
   readonly level: ForecastRiskLevel;
   readonly description: string;
+  readonly startTime?: string;
+  readonly endTime?: string;
+  readonly timeWindowLabelZh?: string;
 };
 
 export type ForecastRecommendationLevel =

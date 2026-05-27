@@ -104,7 +104,7 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
     milkyWayScore: milkyWay.score,
     transparencyScore: transparency.score,
   });
-  const riskFlags = buildRiskFlags(input, whiteoutRisk);
+  const riskFlags = buildRiskFlags(input, whiteoutRisk, cloudSeaAnalysis);
   const bestWindows = buildBestWindows(
     input,
     cloudSeaAnalysis,
@@ -2701,6 +2701,12 @@ function buildDailyRiskFlags(
   const flags: ForecastRiskFlag[] = [];
   const dailyWeather = input.dailyWeather.find((day) => day.date === breakdown.date);
   const dayHours = hoursForDate(input.hourlyWeather, breakdown.date, input.calendarBasis.timezone);
+  const whiteoutTimeWindow = riskTimeWindowFromHours(dayHours, whiteoutRiskSignalScore, 55);
+  const precipitationTimeWindow = riskTimeWindowFromHours(
+    dayHours,
+    hourlyPrecipitationSignalScore,
+    45,
+  );
   const whiteoutRisk = breakdown.whiteoutRisk?.score ?? 0;
   const precipitationDecision =
     dailyWeather?.precipitationRisk ??
@@ -2724,6 +2730,10 @@ function buildDailyRiskFlags(
       label: "白墙风险",
       level: "high",
       description: "该日清晨低云、湿度和能见度组合显示白墙风险偏高。",
+      ...riskTimingOrBlockFields(
+        whiteoutTimeWindow,
+        formatRiskDateBlockZh(breakdown.date, "清晨窗口前后"),
+      ),
     });
   } else if (whiteoutRisk >= 50) {
     flags.push({
@@ -2731,6 +2741,10 @@ function buildDailyRiskFlags(
       label: "白墙风险",
       level: "medium",
       description: "该日清晨可能出现局部低云遮挡，需要现场复核云底高度。",
+      ...riskTimingOrBlockFields(
+        whiteoutTimeWindow,
+        formatRiskDateBlockZh(breakdown.date, "清晨窗口前后"),
+      ),
     });
   }
 
@@ -2744,6 +2758,13 @@ function buildDailyRiskFlags(
       label: "降水干扰",
       level: precipitationRisk === "high" || precipitationRisk === "severe" ? "high" : "medium",
       description: precipitationDecision.recommendationZh,
+      ...riskTimingOrBlockFields(
+        precipitationTimeWindow,
+        formatRiskDateBlockZh(
+          breakdown.date,
+          precipitationDecision.affectedWindows[0] ?? "当日降水时段",
+        ),
+      ),
     });
   }
 
@@ -3312,9 +3333,18 @@ function maxDefined(values: readonly (number | undefined)[]): number {
   return usableValues.length > 0 ? Math.max(...usableValues.map(clampScore)) : 0;
 }
 
+type RiskTimeWindow = {
+  readonly startTime: string;
+  readonly endTime: string;
+  readonly labelZh: string;
+  readonly maxScore: number;
+  readonly hourCount: number;
+};
+
 function buildRiskFlags(
   input: ForecastCalculationInput,
   whiteoutRisk: ForecastScore,
+  cloudSeaAnalysis: CloudSeaAnalysisResult,
 ): readonly ForecastRiskFlag[] {
   const flags: ForecastRiskFlag[] = [];
   const maxPrecipitationRisk = Math.max(
@@ -3331,6 +3361,20 @@ function buildRiskFlags(
     0,
   );
   const minVisibility = Math.min(...input.hourlyWeather.map((hour) => hour.visibility ?? 99), 99);
+  const whiteoutTimeWindow =
+    riskTimeWindowFromHours(input.hourlyWeather, whiteoutRiskSignalScore, 55) ??
+    riskTimeWindowFromAnalysisWindow(cloudSeaAnalysis.bestCloudSeaWindow);
+  const precipitationTimeWindow = riskTimeWindowFromHours(
+    input.hourlyWeather,
+    hourlyPrecipitationSignalScore,
+    45,
+  );
+  const windTimeWindow = riskTimeWindowFromHours(input.hourlyWeather, windRiskSignalScore, 11);
+  const visibilityTimeWindow = riskTimeWindowFromHours(
+    input.hourlyWeather,
+    visibilityRiskSignalScore,
+    35,
+  );
 
   if (whiteoutRisk.score >= 70) {
     flags.push({
@@ -3338,6 +3382,7 @@ function buildRiskFlags(
       label: "白墙风险",
       level: "high",
       description: "低云、湿度和能见度组合显示山顶被云雾包裹的概率偏高。",
+      ...riskTimingFields(whiteoutTimeWindow),
     });
   } else if (whiteoutRisk.score >= 50) {
     flags.push({
@@ -3345,6 +3390,7 @@ function buildRiskFlags(
       label: "白墙风险",
       level: "medium",
       description: "局部时段可能出现低云遮挡，需要现场观察云底变化。",
+      ...riskTimingFields(whiteoutTimeWindow),
     });
   }
 
@@ -3354,6 +3400,7 @@ function buildRiskFlags(
       label: "降水干扰",
       level: maxPrecipitationRisk >= 75 ? "high" : "medium",
       description: "部分时段存在降水概率或降水量信号，会影响器材防护、通行和画面通透度。",
+      ...riskTimingFields(precipitationTimeWindow),
     });
   }
 
@@ -3363,6 +3410,7 @@ function buildRiskFlags(
       label: "阵风偏强",
       level: maxWind >= 15 ? "high" : "medium",
       description: "山顶阵风偏强，三脚架稳定性和人员安全需要保守评估。",
+      ...riskTimingFields(windTimeWindow),
     });
   }
 
@@ -3372,10 +3420,165 @@ function buildRiskFlags(
       label: "能见度偏低",
       level: minVisibility <= 3 ? "high" : "medium",
       description: "最低能见度偏低，远景层次、云海边界和霞光细节可能受影响。",
+      ...riskTimingFields(visibilityTimeWindow),
     });
   }
 
   return flags;
+}
+
+function riskTimingFields(
+  window: RiskTimeWindow | undefined,
+): Pick<ForecastRiskFlag, "startTime" | "endTime" | "timeWindowLabelZh"> {
+  return window
+    ? {
+        startTime: window.startTime,
+        endTime: window.endTime,
+        timeWindowLabelZh: window.labelZh,
+      }
+    : {};
+}
+
+function riskTimingOrBlockFields(
+  window: RiskTimeWindow | undefined,
+  blockLabelZh: string,
+): Pick<ForecastRiskFlag, "startTime" | "endTime" | "timeWindowLabelZh"> {
+  return window ? riskTimingFields(window) : { timeWindowLabelZh: blockLabelZh };
+}
+
+function formatRiskDateBlockZh(date: string, blockLabelZh: string): string {
+  const parts = date.split("-").map((part) => Number(part));
+  const [year, month, day] = parts;
+  if (Number.isFinite(year) && Number.isFinite(month) && Number.isFinite(day)) {
+    return `${year}年${month}月${day}日 ${blockLabelZh}`;
+  }
+  return `${date} ${blockLabelZh}`;
+}
+
+function riskTimeWindowFromAnalysisWindow(
+  window: { readonly startTime: string; readonly endTime: string } | undefined,
+): RiskTimeWindow | undefined {
+  if (!window?.startTime || !window.endTime) {
+    return undefined;
+  }
+  return {
+    startTime: window.startTime,
+    endTime: window.endTime,
+    labelZh: formatChineseTimeRange(window.startTime, window.endTime),
+    maxScore: 0,
+    hourCount: 0,
+  };
+}
+
+function riskTimeWindowFromHours(
+  hours: readonly NormalizedHourlyWeather[],
+  scoreHour: (hour: NormalizedHourlyWeather) => number,
+  minimumScore: number,
+): RiskTimeWindow | undefined {
+  const candidates = hours
+    .map((hour) => ({
+      hour,
+      score: scoreHour(hour),
+      timestamp: Date.parse(hour.time),
+    }))
+    .filter(
+      (item) =>
+        item.score >= minimumScore &&
+        Number.isFinite(item.timestamp) &&
+        Number.isFinite(Date.parse(item.hour.time)),
+    )
+    .sort((left, right) => left.timestamp - right.timestamp);
+
+  if (candidates.length === 0) {
+    return undefined;
+  }
+
+  type RiskCluster = {
+    readonly startTime: string;
+    endTime: string;
+    maxScore: number;
+    hourCount: number;
+    lastTimestamp: number;
+  };
+
+  const clusters: RiskCluster[] = [];
+  for (const candidate of candidates) {
+    const previous = clusters.at(-1);
+    if (!previous || candidate.timestamp - previous.lastTimestamp > 2.25 * 60 * 60 * 1000) {
+      clusters.push({
+        startTime: candidate.hour.time,
+        endTime: candidate.hour.time,
+        maxScore: candidate.score,
+        hourCount: 1,
+        lastTimestamp: candidate.timestamp,
+      });
+      continue;
+    }
+
+    previous.endTime = candidate.hour.time;
+    previous.maxScore = Math.max(previous.maxScore, candidate.score);
+    previous.hourCount += 1;
+    previous.lastTimestamp = candidate.timestamp;
+  }
+
+  const strongest = clusters.reduce((best, cluster) => {
+    if (cluster.maxScore !== best.maxScore) {
+      return cluster.maxScore > best.maxScore ? cluster : best;
+    }
+    return cluster.hourCount > best.hourCount ? cluster : best;
+  }, clusters[0]!);
+  const endTime = shiftIsoHours(strongest.endTime, 1);
+
+  return {
+    startTime: strongest.startTime,
+    endTime,
+    labelZh: formatChineseTimeRange(strongest.startTime, endTime),
+    maxScore: strongest.maxScore,
+    hourCount: strongest.hourCount,
+  };
+}
+
+function shiftIsoHours(value: string, hours: number): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return value;
+  }
+  return new Date(timestamp + hours * 60 * 60 * 1000).toISOString();
+}
+
+function windRiskSignalScore(hour: NormalizedHourlyWeather): number {
+  return hour.windGust ?? hour.windSpeed;
+}
+
+function visibilityRiskSignalScore(hour: NormalizedHourlyWeather): number {
+  const visibility = hour.rawVisibilityKm ?? hour.visibility;
+  if (typeof visibility !== "number" || !Number.isFinite(visibility) || visibility > 6) {
+    return 0;
+  }
+  return clampScore(90 - visibility * 10);
+}
+
+function whiteoutRiskSignalScore(hour: NormalizedHourlyWeather): number {
+  if (hour.cloudFogObstructionRisk === "high") {
+    return 85;
+  }
+  if (hour.cloudFogObstructionRisk === "medium") {
+    return 62;
+  }
+
+  const cloudLow = hour.cloudLow ?? 0;
+  const visibility = hour.rawVisibilityKm ?? hour.visibility ?? 20;
+  const precipitation = precipitationRiskScore({
+    probability: hour.precipitationProbability,
+    amountMm: precipitationAmountMm(hour),
+  });
+
+  return averageWeightedScore([
+    { score: cloudLow, weight: 0.38 },
+    { score: hour.humidity, weight: 0.24 },
+    { score: clampScore(100 - visibility * 8), weight: 0.26 },
+    { score: precipitation, weight: 0.12 },
+  ]);
 }
 
 function buildKeyReasons(
