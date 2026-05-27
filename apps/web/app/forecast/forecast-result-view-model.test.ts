@@ -13,7 +13,14 @@ import {
   CloudSeaResultPage,
   GlowResultPage,
   SourceDiagnosticsPanel,
+  aiExplainFrontendTimeoutMs,
+  cacheAiExplanation,
+  createAiExplanationCacheKey,
+  deepSeekBackendTimeoutMaxMs,
+  normalizeAiExplainResponse,
   providerDiagnosticText,
+  readCachedAiExplanation,
+  shouldStartAiExplanationRequest,
 } from "./forecast-result-client";
 import {
   buildAstroForecastViewModel,
@@ -1710,6 +1717,75 @@ function queryForTarget(target: ForecastCalculationResult["target"]): ForecastQu
   };
 }
 
+function aiExplanationForTest(
+  decision = "DeepSeek 成功生成的拍摄结论。",
+  source: "deepseek" | "deterministic_fallback" = "deepseek",
+) {
+  return {
+    conclusion: {
+      titleZh: "拍摄天气解读",
+      summaryZh: "未来 48 小时以确定性天气和题材评分为准。",
+      recommendedDayZh: "优先关注第一天清晨。",
+      recommendationLevelZh: "值得等待",
+      whetherWorthDedicatedTripZh: "专程前需要临近复核。",
+      oneSentenceDecisionZh: decision,
+    },
+    bestPlan: {
+      primaryTargetZh: "云海与晨光",
+      bestDateZh: "2026 年 5 月 20 日",
+      bestWindowZh: "2026 年 5 月 20 日 05:00-07:00",
+      recommendedArrivalZh: "建议 04:20 前到位。",
+      whyThisWindowZh: "低云、湿度和光线窗口组合更值得观察。",
+      backupPlanZh: "若云层不开口，转拍远山层次。",
+    },
+    weatherTrend: {
+      trendSummaryZh: "云量偏多，需要等待短时开口。",
+      temperatureSummaryZh: "山顶清晨偏凉。",
+      rainSummaryZh: "降水风险较低。",
+      windSummaryZh: "风力可控。",
+      transparencySummaryZh: "通透度中等，需要现场复核。",
+    },
+    dayByDay: [
+      {
+        dateZh: "2026 年 5 月 20 日",
+        recommendationZh: "清晨优先观察。",
+        scoreZh: "综合 76 分",
+        temperatureZh: "10-18°C",
+        rainZh: "低风险",
+        cloudSeaZh: "云海机会较好",
+        glowZh: "朝霞可观察",
+        sunsetGlowZh: "晚霞备选",
+        astroZh: "星空需复核云量",
+        transparencyZh: "中等",
+        bestWindowZh: "05:00-07:00",
+        actionZh: "提前到位复核低云上沿。",
+      },
+    ],
+    subjectAdvice: {
+      cloudSeaZh: "云海机会较好，但要复核白墙风险。",
+      sunriseGlowZh: "朝霞可观察。",
+      sunsetGlowZh: "晚霞作为备选。",
+      astroMilkyWayZh: "星空银河需要复核云量和月光。",
+      transparencyZh: "通透度中等。",
+    },
+    riskAndGear: {
+      keyRisks: ["低云过厚会压住视野。"],
+      clothingZh: "准备防风外套。",
+      gearZh: "三脚架、防潮袋和备用电池。",
+      safetyZh: "保留撤离时间。",
+    },
+    finalAdvice: {
+      goNoGoZh: "可观察，专程需复核。",
+      ifAlreadyNearbyZh: "若已在附近，可以按窗口短时等待。",
+      ifDedicatedTripZh: "不建议只押单一题材专程。",
+      nextCheckZh: "复核短临降水、低云、能见度和阵风。",
+    },
+    metadata: {
+      source,
+    },
+  };
+}
+
 function countOccurrences(text: string, pattern: string): number {
   return text.split(pattern).length - 1;
 }
@@ -2717,6 +2793,165 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("正在生成解读");
     expect(html).toContain("disabled");
     expect(html).toContain("综合出片指数");
+  });
+
+  it("clears loading and renders a success=true interpretation response", () => {
+    const result = resultForTarget("general");
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const explanation = aiExplanationForTest("DeepSeek 成功返回后应立即展示这条结论。");
+    const outcome = normalizeAiExplainResponse({
+      success: true,
+      interpretation: explanation,
+      retryable: false,
+      model: "deepseek-v4-pro",
+      promptSizeChars: 11712,
+      latencyMs: 69883,
+      diagnostics: {
+        parseSuccess: true,
+        timeoutMs: 90000,
+      },
+    });
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: outcome.status,
+        aiExplanation: outcome.explanation,
+        aiErrorMessage: outcome.errorMessage,
+        aiRetryable: outcome.retryable,
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+
+    expect(outcome.status).toBe("ready");
+    expect(outcome.errorMessage).toBe("");
+    expect(outcome.cacheable).toBe(true);
+    expect(html).toContain("DeepSeek 成功返回后应立即展示这条结论。");
+    expect(html).not.toContain("正在生成解读");
+    expect(html).toContain("已生成智能解读");
+    expect(html).toContain("disabled");
+  });
+
+  it("keeps the frontend timeout longer than the configurable DeepSeek backend timeout", () => {
+    expect(deepSeekBackendTimeoutMaxMs).toBe(120000);
+    expect(aiExplainFrontendTimeoutMs).toBeGreaterThanOrEqual(120000);
+    expect(aiExplainFrontendTimeoutMs).toBeGreaterThanOrEqual(deepSeekBackendTimeoutMaxMs);
+  });
+
+  it("renders deterministic fallback when DeepSeek fails and keeps retry available", () => {
+    const result = resultForTarget("general");
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const fallback = aiExplanationForTest(
+      "确定性简版解读在 DeepSeek 超时后仍然可见。",
+      "deterministic_fallback",
+    );
+    const outcome = normalizeAiExplainResponse({
+      success: false,
+      fallback: true,
+      explanation: fallback,
+      errorCategory: "timeout",
+      retryable: true,
+      diagnostics: {
+        parseSuccess: false,
+        errorCategory: "timeout",
+        timeoutMs: 90000,
+      },
+    });
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: outcome.status,
+        aiExplanation: outcome.explanation,
+        aiErrorMessage: outcome.errorMessage,
+        aiRetryable: outcome.retryable,
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+
+    expect(outcome.status).toBe("ready");
+    expect(outcome.retryable).toBe(true);
+    expect(outcome.cacheable).toBe(false);
+    expect(html).toContain("确定性简版解读在 DeepSeek 超时后仍然可见。");
+    expect(html).toContain("重试 DeepSeek 解读");
+    expect(html).toContain("综合出片指数");
+  });
+
+  it("shows retry without hiding deterministic forecast content when no fallback is available", () => {
+    const result = resultForTarget("general");
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const outcome = normalizeAiExplainResponse({
+      success: false,
+      errorCategory: "network_error",
+      retryable: true,
+      diagnostics: {
+        parseSuccess: false,
+        errorCategory: "network_error",
+      },
+    });
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: outcome.status,
+        aiExplanation: outcome.explanation,
+        aiErrorMessage: outcome.errorMessage,
+        aiRetryable: outcome.retryable,
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+
+    expect(outcome.status).toBe("error");
+    expect(outcome.retryable).toBe(true);
+    expect(html).toContain("重试 DeepSeek 解读");
+    expect(html).toContain("智能解读暂时不可用");
+    expect(html).toContain("综合出片指数");
+  });
+
+  it("maps success=true sections responses into a renderable interpretation", () => {
+    const outcome = normalizeAiExplainResponse({
+      success: true,
+      sections: {
+        conclusion: {
+          titleZh: "一句话结论",
+          contentZh: "sections 字段也应被映射为可展示解读。",
+        },
+        weather: {
+          titleZh: "天气趋势",
+          contentZh: "云量偏多，等待短时开口。",
+        },
+      },
+      diagnostics: {
+        parseSuccess: true,
+      },
+    });
+
+    expect(outcome.status).toBe("ready");
+    expect(outcome.explanation?.conclusion.oneSentenceDecisionZh).toContain(
+      "sections 字段也应被映射为可展示解读。",
+    );
+  });
+
+  it("caches successful interpretation by stable forecast result key", () => {
+    const query = queryForTarget("general");
+    const result = resultForTarget("general");
+    const cacheKey = createAiExplanationCacheKey({ query, result });
+    const explanation = aiExplanationForTest("缓存命中的解读不需要重复请求 DeepSeek。");
+
+    cacheAiExplanation(cacheKey, explanation);
+
+    expect(readCachedAiExplanation(cacheKey)?.conclusion.oneSentenceDecisionZh).toBe(
+      "缓存命中的解读不需要重复请求 DeepSeek。",
+    );
+  });
+
+  it("prevents duplicate DeepSeek clicks while a request is running", () => {
+    expect(shouldStartAiExplanationRequest("loading", false)).toBe(false);
+    expect(shouldStartAiExplanationRequest("idle", true)).toBe(false);
+    expect(shouldStartAiExplanationRequest("idle", false)).toBe(true);
   });
 
   it("renders structured intelligent interpretation sections and deterministic fallback label", () => {

@@ -27,6 +27,10 @@ compose() {
   docker_cmd compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
+api_node() {
+  compose exec -T api node "$@"
+}
+
 read_env_value() {
   local name="$1"
   local file="$2"
@@ -89,7 +93,7 @@ API_BASE_URL="${API_BASE_URL%/}"
 echo "DeepSeek interpretation diagnostics"
 echo "No API keys or secrets will be printed."
 
-compose run --rm api node --input-type=module -e '
+api_node --input-type=module -e '
 const { readRuntimeDeepSeekConfig } = await import("./apps/api/dist/ai-provider.js");
 const config = await readRuntimeDeepSeekConfig();
 console.log(`providerEnabled: ${config.providerEnabled}`);
@@ -105,7 +109,7 @@ if (config.model !== "deepseek-v4-pro") {
 
 payload_file="$(mktemp)"
 response_file="$(mktemp)"
-started_ms="$(node -e 'console.log(Date.now())')"
+started_ms="$(api_node -e 'console.log(Date.now())')"
 
 cat >"$payload_file" <<'JSON'
 {
@@ -133,15 +137,17 @@ http_status="$(
     -w "%{http_code}" \
     "${API_BASE_URL}/forecast/ai-explain"
 )"
-ended_ms="$(node -e 'console.log(Date.now())')"
+ended_ms="$(api_node -e 'console.log(Date.now())')"
 latency_ms="$((ended_ms - started_ms))"
 
-node - "$response_file" "$http_status" "$latency_ms" <<'NODE'
-const fs = require("fs");
-const file = process.argv[2];
-const status = Number(process.argv[3]);
-const latencyMs = Number(process.argv[4]);
-const text = fs.readFileSync(file, "utf8");
+api_node --input-type=module -e '
+const chunks = [];
+for await (const chunk of process.stdin) {
+  chunks.push(Buffer.from(chunk));
+}
+const status = Number(process.argv[1]);
+const latencyMs = Number(process.argv[2]);
+const text = Buffer.concat(chunks).toString("utf8");
 let payload = {};
 try {
   payload = text ? JSON.parse(text) : {};
@@ -149,26 +155,36 @@ try {
   payload = {};
 }
 
-const success = status >= 200 && status < 300 && Boolean(payload.explanation);
-const deepSeekSuccess = success && payload.success === true && payload.fallback !== true;
-const errorCategory = payload.errorCategory || (payload.diagnostics && payload.diagnostics.errorCategory) || payload.error || "none";
-const model = payload.model || (payload.diagnostics && payload.diagnostics.model) || "unknown";
-const promptSizeChars = payload.diagnostics && typeof payload.diagnostics.promptSizeChars === "number"
-  ? payload.diagnostics.promptSizeChars
+const diagnostics = payload.diagnostics && typeof payload.diagnostics === "object"
+  ? payload.diagnostics
+  : {};
+const hasInterpretation = Boolean(payload.explanation || payload.interpretation || payload.sections);
+const deepSeekSuccess = status >= 200 && status < 300 && payload.success === true && payload.fallback !== true && hasInterpretation;
+const errorCategory = payload.errorCategory || diagnostics.errorCategory || payload.error || "none";
+const model = payload.model || diagnostics.model || "unknown";
+const promptSizeChars = typeof diagnostics.promptSizeChars === "number"
+  ? diagnostics.promptSizeChars
   : typeof payload.promptSizeChars === "number"
     ? payload.promptSizeChars
     : "unknown";
-const timeoutMs = payload.diagnostics && typeof payload.diagnostics.timeoutMs === "number"
-  ? payload.diagnostics.timeoutMs
+const timeoutMs = typeof diagnostics.timeoutMs === "number"
+  ? diagnostics.timeoutMs
+  : typeof payload.timeoutMs === "number"
+    ? payload.timeoutMs
+    : "unknown";
+const parseSuccess = typeof diagnostics.parseSuccess === "boolean"
+  ? diagnostics.parseSuccess
+  : typeof payload.parseSuccess === "boolean"
+    ? payload.parseSuccess
+    : "unknown";
+const retryable = typeof payload.retryable === "boolean"
+  ? payload.retryable
   : "unknown";
-const parseSuccess = payload.diagnostics && typeof payload.diagnostics.parseSuccess === "boolean"
-  ? payload.diagnostics.parseSuccess
-  : "unknown";
-const retryable = typeof payload.retryable === "boolean" ? payload.retryable : "unknown";
-const fallback = payload.fallback === true || Boolean(payload.diagnostics && payload.diagnostics.fallback);
+const fallback = payload.fallback === true || Boolean(diagnostics.fallback);
 const responseLatencyMs = typeof payload.latencyMs === "number" ? payload.latencyMs : latencyMs;
-const sectionKeys = payload.explanation && typeof payload.explanation === "object"
-  ? Object.keys(payload.explanation).filter((key) => key !== "metadata")
+const rendered = payload.explanation || payload.interpretation || payload.sections;
+const sectionKeys = rendered && typeof rendered === "object" && !Array.isArray(rendered)
+  ? Object.keys(rendered).filter((key) => key !== "metadata")
   : [];
 const message =
   payload.messageZh ||
@@ -180,6 +196,7 @@ console.log(`model: ${model}`);
 console.log(`promptSizeChars: ${promptSizeChars}`);
 console.log(`timeoutMs: ${timeoutMs}`);
 console.log(`success: ${deepSeekSuccess}`);
+console.log(`parseSuccess: ${parseSuccess}`);
 console.log(`errorCategory: ${errorCategory}`);
 console.log(`retryable: ${retryable}`);
 console.log(`latencyMs: ${responseLatencyMs}`);
@@ -187,10 +204,9 @@ if (deepSeekSuccess) {
   console.log(`sectionKeys: ${sectionKeys.join(",")}`);
 }
 console.log(`statusCode: ${status}`);
-console.log(`parseSuccess: ${parseSuccess}`);
 console.log(`fallback: ${fallback}`);
 console.log(`messageZh: ${message}`);
-NODE
+' "$http_status" "$latency_ms" < "$response_file"
 
 if [[ "$http_status" -lt 200 || "$http_status" -ge 300 ]]; then
   protect_file_excerpt "$response_file"

@@ -54,6 +54,7 @@ import {
 } from "./forecast-copy";
 import {
   buildGeneralDailySubjectLinks,
+  createForecastResultContextId,
   writeForecastResultContext,
 } from "./subject-detail-links";
 
@@ -132,6 +133,11 @@ type ForecastAiExplanation = {
 type AiExplainResponse = {
   readonly success?: boolean;
   readonly explanation?: ForecastAiExplanation;
+  readonly interpretation?: unknown;
+  readonly sections?: unknown;
+  readonly data?: unknown;
+  readonly result?: unknown;
+  readonly payload?: unknown;
   readonly fallback?: boolean;
   readonly errorCategory?:
     | "disabled"
@@ -151,6 +157,16 @@ type AiExplainResponse = {
   readonly latencyMs?: number;
   readonly model?: string;
   readonly promptSizeChars?: number;
+  readonly diagnostics?: {
+    readonly model?: string;
+    readonly timeoutMs?: number;
+    readonly promptSizeChars?: number;
+    readonly latencyMs?: number;
+    readonly attempts?: number;
+    readonly parseSuccess?: boolean;
+    readonly fallback?: boolean;
+    readonly errorCategory?: AiExplainErrorCategory;
+  };
 };
 
 type ApiErrorPayload = {
@@ -160,6 +176,41 @@ type ApiErrorPayload = {
 };
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+export const deepSeekBackendTimeoutMaxMs = 120_000;
+export const aiExplainFrontendTimeoutMs = 130_000;
+
+type AiExplainErrorCategory = NonNullable<AiExplainResponse["errorCategory"]>;
+
+type ForecastCalculationResultWithAi = ForecastCalculationResult & {
+  readonly aiExplanation?: ForecastAiExplanation | null;
+  readonly resultId?: string;
+  readonly reportId?: string;
+};
+
+type NormalizedAiExplainOutcome = {
+  readonly status: AiStatus;
+  readonly explanation: ForecastAiExplanation | null;
+  readonly errorMessage: string;
+  readonly retryable: boolean;
+  readonly success: boolean;
+  readonly cacheable: boolean;
+  readonly errorCategory: AiExplainErrorCategory | "none";
+  readonly backendErrorCategory: AiExplainErrorCategory | "none";
+  readonly parseSuccess?: boolean;
+  readonly latencyMs?: number;
+  readonly model?: string;
+  readonly promptSizeChars?: number;
+};
+
+type AiExplanationCacheRecord = {
+  readonly version: 1;
+  readonly createdAt: number;
+  readonly explanation: ForecastAiExplanation;
+};
+
+const aiExplanationCachePrefix = "photo_weather_forecast_ai_explanation:v1:";
+const aiExplanationCacheTtlMs = 1000 * 60 * 60;
+const aiExplanationMemoryCache = new Map<string, AiExplanationCacheRecord>();
 
 const scoreLevelLabels: Record<ForecastScoreLevel, string> = {
   poor: "较差",
@@ -182,6 +233,741 @@ async function readApiErrorMessage(response: Response, fallback: string): Promis
   }
 }
 
+async function readApiJsonPayload(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return {
+      message: text,
+    };
+  }
+}
+
+export function shouldStartAiExplanationRequest(status: AiStatus, inFlight: boolean): boolean {
+  return status !== "loading" && !inFlight;
+}
+
+export function createAiExplanationCacheKey({
+  query,
+  result,
+}: {
+  readonly query: ForecastQueryInput;
+  readonly result: ForecastCalculationResult;
+}): string {
+  const resultWithIds = result as ForecastCalculationResultWithAi;
+  const stableResultId =
+    readStringField(resultWithIds, "reportId") ??
+    readStringField(resultWithIds, "resultId") ??
+    createForecastResultContextId(query, result);
+  return `${aiExplanationCachePrefix}${stableResultId}`;
+}
+
+export function readCachedAiExplanation(cacheKey: string): ForecastAiExplanation | null {
+  const memoryRecord = aiExplanationMemoryCache.get(cacheKey);
+  if (isFreshAiExplanationCacheRecord(memoryRecord)) {
+    return memoryRecord.explanation;
+  }
+  if (memoryRecord) {
+    aiExplanationMemoryCache.delete(cacheKey);
+  }
+
+  const storage = browserSessionStorage();
+  if (!storage) {
+    return null;
+  }
+
+  try {
+    const raw = storage.getItem(cacheKey);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as Partial<AiExplanationCacheRecord>;
+    if (!isFreshAiExplanationCacheRecord(parsed)) {
+      storage.removeItem(cacheKey);
+      return null;
+    }
+    aiExplanationMemoryCache.set(cacheKey, parsed);
+    return parsed.explanation;
+  } catch {
+    return null;
+  }
+}
+
+export function cacheAiExplanation(cacheKey: string, explanation: ForecastAiExplanation): void {
+  const record: AiExplanationCacheRecord = {
+    version: 1,
+    createdAt: Date.now(),
+    explanation,
+  };
+  aiExplanationMemoryCache.set(cacheKey, record);
+
+  const storage = browserSessionStorage();
+  if (!storage) {
+    return;
+  }
+
+  try {
+    storage.setItem(cacheKey, JSON.stringify(record));
+  } catch {
+    // Cache is an optimization; keep the rendered result even when storage is unavailable.
+  }
+}
+
+function isFreshAiExplanationCacheRecord(
+  record: Partial<AiExplanationCacheRecord> | undefined,
+): record is AiExplanationCacheRecord {
+  return (
+    record?.version === 1 &&
+    typeof record.createdAt === "number" &&
+    Date.now() - record.createdAt <= aiExplanationCacheTtlMs &&
+    isForecastAiExplanationLike(record.explanation)
+  );
+}
+
+function browserSessionStorage(): Storage | null {
+  if (typeof window === "undefined" || !window.sessionStorage) {
+    return null;
+  }
+
+  return window.sessionStorage;
+}
+
+export function normalizeAiExplainResponse(
+  payload: unknown,
+  deterministicFallback: ForecastAiExplanation | null = null,
+): NormalizedAiExplainOutcome {
+  const response = isRecord(payload) ? (payload as AiExplainResponse) : {};
+  const diagnostics = isRecord(response.diagnostics) ? response.diagnostics : undefined;
+  const backendErrorCategory =
+    normalizeAiErrorCategory(response.errorCategory) ??
+    normalizeAiErrorCategory(diagnostics?.errorCategory) ??
+    "none";
+  const explanation =
+    extractAiExplanationFromResponse(response) ??
+    (response.success === false ? deterministicFallback : null);
+  const parseSuccess =
+    typeof diagnostics?.parseSuccess === "boolean" ? diagnostics.parseSuccess : undefined;
+  const retryable =
+    typeof response.retryable === "boolean"
+      ? response.retryable
+      : backendErrorCategory !== "none" && isRetryableAiExplainCategory(backendErrorCategory);
+  const message =
+    readStringField(response, "messageZh") ??
+    readStringField(response, "message") ??
+    publicAiExplanationMessage(backendErrorCategory);
+
+  if (explanation) {
+    const isSuccessfulDeepSeek = response.success === true;
+    const isDeterministicFallback =
+      response.success === false || explanation.metadata?.source === "deterministic_fallback";
+
+    return {
+      status: "ready",
+      explanation,
+      errorMessage: isSuccessfulDeepSeek ? "" : message,
+      retryable,
+      success: isSuccessfulDeepSeek,
+      cacheable: isSuccessfulDeepSeek && !isDeterministicFallback,
+      errorCategory: backendErrorCategory,
+      backendErrorCategory,
+      parseSuccess,
+      latencyMs: numericField(response, "latencyMs") ?? diagnostics?.latencyMs,
+      model: readStringField(response, "model") ?? diagnostics?.model,
+      promptSizeChars:
+        numericField(response, "promptSizeChars") ?? diagnostics?.promptSizeChars,
+    };
+  }
+
+  const category = backendErrorCategory === "none" ? "unknown" : backendErrorCategory;
+  return {
+    status: "error",
+    explanation: null,
+    errorMessage: normalizeAiExplanationErrorMessage(message),
+    retryable: retryable || isRetryableAiExplainCategory(category),
+    success: false,
+    cacheable: false,
+    errorCategory: category,
+    backendErrorCategory: category,
+    parseSuccess,
+    latencyMs: numericField(response, "latencyMs") ?? diagnostics?.latencyMs,
+    model: readStringField(response, "model") ?? diagnostics?.model,
+    promptSizeChars: numericField(response, "promptSizeChars") ?? diagnostics?.promptSizeChars,
+  };
+}
+
+function normalizeAiExplainThrownError(
+  error: unknown,
+  deterministicFallback: ForecastAiExplanation | null,
+  latencyMs: number,
+): NormalizedAiExplainOutcome {
+  const errorCategory: AiExplainErrorCategory = isAbortError(error) ? "timeout" : "network_error";
+  const message = publicAiExplanationMessage(errorCategory);
+
+  if (deterministicFallback) {
+    return {
+      status: "ready",
+      explanation: deterministicFallback,
+      errorMessage: message,
+      retryable: true,
+      success: false,
+      cacheable: false,
+      errorCategory,
+      backendErrorCategory: errorCategory,
+      parseSuccess: false,
+      latencyMs,
+    };
+  }
+
+  return {
+    status: "error",
+    explanation: null,
+    errorMessage: normalizeAiExplanationErrorMessage(message),
+    retryable: true,
+    success: false,
+    cacheable: false,
+    errorCategory,
+    backendErrorCategory: errorCategory,
+    parseSuccess: false,
+    latencyMs,
+  };
+}
+
+function extractAiExplanationFromResponse(response: AiExplainResponse): ForecastAiExplanation | null {
+  const candidates = [
+    response.explanation,
+    response.interpretation,
+    response.sections,
+    nestedField(response.data, "explanation"),
+    nestedField(response.data, "interpretation"),
+    nestedField(response.data, "sections"),
+    nestedField(response.result, "explanation"),
+    nestedField(response.result, "interpretation"),
+    nestedField(response.result, "sections"),
+    nestedField(response.payload, "explanation"),
+    nestedField(response.payload, "interpretation"),
+    nestedField(response.payload, "sections"),
+  ];
+
+  for (const candidate of candidates) {
+    const explanation = normalizeForecastAiExplanationCandidate(candidate);
+    if (explanation) {
+      return explanation;
+    }
+  }
+
+  return null;
+}
+
+function normalizeForecastAiExplanationCandidate(value: unknown): ForecastAiExplanation | null {
+  if (isForecastAiExplanationLike(value)) {
+    return withAiExplanationMetadata(value, value.metadata?.source ?? "deepseek");
+  }
+
+  if (!isRecord(value)) {
+    if (typeof value === "string" && value.trim()) {
+      return explanationFromSections([{ title: "智能解读", text: value.trim() }]);
+    }
+    return null;
+  }
+
+  const nested =
+    normalizeForecastAiExplanationCandidate(value.explanation) ??
+    normalizeForecastAiExplanationCandidate(value.interpretation);
+  if (nested) {
+    return nested;
+  }
+
+  const completed = completeForecastAiExplanationFromPartial(value);
+  if (completed) {
+    return completed;
+  }
+
+  return explanationFromSections(normalizeAiSections(value.sections ?? value));
+}
+
+function isForecastAiExplanationLike(value: unknown): value is ForecastAiExplanation {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    hasStringField(value.conclusion, "oneSentenceDecisionZh") &&
+    hasStringField(value.conclusion, "summaryZh") &&
+    hasStringField(value.bestPlan, "primaryTargetZh") &&
+    hasStringField(value.weatherTrend, "trendSummaryZh") &&
+    Array.isArray(value.dayByDay) &&
+    hasStringField(value.subjectAdvice, "cloudSeaZh") &&
+    hasStringField(value.riskAndGear, "clothingZh") &&
+    hasStringField(value.finalAdvice, "goNoGoZh")
+  );
+}
+
+function completeForecastAiExplanationFromPartial(
+  value: Record<string, unknown>,
+): ForecastAiExplanation | null {
+  const conclusion = recordField(value, "conclusion");
+  const bestPlan = recordField(value, "bestPlan");
+  const weatherTrend = recordField(value, "weatherTrend");
+  const subjectAdvice = recordField(value, "subjectAdvice");
+  const riskAndGear = recordField(value, "riskAndGear");
+  const finalAdvice = recordField(value, "finalAdvice");
+
+  if (!conclusion && !bestPlan && !weatherTrend && !subjectAdvice && !riskAndGear && !finalAdvice) {
+    return null;
+  }
+
+  const summaryText =
+    readStringField(conclusion, "summaryZh") ??
+    readStringField(conclusion, "contentZh") ??
+    readStringField(conclusion, "content") ??
+    readStringField(conclusion, "text") ??
+    readStringField(value, "summaryZh") ??
+    readStringField(value, "summary") ??
+    "已生成基于当前确定性结果的拍摄解读。";
+  const decisionText =
+    readStringField(conclusion, "oneSentenceDecisionZh") ??
+    readStringField(conclusion, "contentZh") ??
+    readStringField(conclusion, "content") ??
+    readStringField(conclusion, "text") ??
+    readStringField(value, "oneSentenceDecisionZh") ??
+    readStringField(value, "decisionZh") ??
+    summaryText;
+  const dayByDay = Array.isArray(value.dayByDay)
+    ? value.dayByDay.map(normalizeAiDay).filter((day): day is ForecastAiExplanation["dayByDay"][number] => Boolean(day))
+    : [];
+
+  return withAiExplanationMetadata(
+    {
+      conclusion: {
+        titleZh: readStringField(conclusion, "titleZh") ?? "智能解读",
+        summaryZh: summaryText,
+        recommendedDayZh: readStringField(conclusion, "recommendedDayZh") ?? "详见确定性逐日判断。",
+        recommendationLevelZh:
+          readStringField(conclusion, "recommendationLevelZh") ?? "以确定性评分为准",
+        whetherWorthDedicatedTripZh:
+          readStringField(conclusion, "whetherWorthDedicatedTripZh") ?? "需结合现场复核。",
+        oneSentenceDecisionZh: decisionText,
+      },
+      bestPlan: {
+        primaryTargetZh: readStringField(bestPlan, "primaryTargetZh") ?? "优先参考确定性推荐题材",
+        bestDateZh: readStringField(bestPlan, "bestDateZh") ?? "详见逐日建议",
+        bestWindowZh: readStringField(bestPlan, "bestWindowZh") ?? "详见时间窗口",
+        recommendedArrivalZh:
+          readStringField(bestPlan, "recommendedArrivalZh") ?? "建议按主窗口提前到位。",
+        whyThisWindowZh:
+          readStringField(bestPlan, "whyThisWindowZh") ?? "基于当前确定性天气、天文和地形结果。",
+        backupPlanZh: readStringField(bestPlan, "backupPlanZh") ?? "保留附近短时观察和备选题材。",
+      },
+      weatherTrend: {
+        trendSummaryZh: readStringField(weatherTrend, "trendSummaryZh") ?? summaryText,
+        temperatureSummaryZh:
+          readStringField(weatherTrend, "temperatureSummaryZh") ?? "温度以确定性天气卡片为准。",
+        rainSummaryZh: readStringField(weatherTrend, "rainSummaryZh") ?? "降水以确定性天气卡片为准。",
+        windSummaryZh: readStringField(weatherTrend, "windSummaryZh") ?? "风力以确定性天气卡片为准。",
+        transparencySummaryZh:
+          readStringField(weatherTrend, "transparencySummaryZh") ?? "通透度以确定性评分为准。",
+      },
+      dayByDay:
+        dayByDay.length > 0
+          ? dayByDay
+          : [
+              {
+                dateZh: "当前结果",
+                recommendationZh: decisionText,
+                scoreZh: "详见确定性评分",
+                temperatureZh: "详见天气卡片",
+                rainZh: "详见天气卡片",
+                cloudSeaZh: "详见题材判断",
+                glowZh: "详见题材判断",
+                sunsetGlowZh: "详见题材判断",
+                astroZh: "详见题材判断",
+                transparencyZh: "详见通透度评分",
+                bestWindowZh: "详见时间窗口",
+                actionZh: "按确定性结果复核现场条件。",
+              },
+            ],
+      subjectAdvice: {
+        cloudSeaZh: readStringField(subjectAdvice, "cloudSeaZh") ?? "云海判断以确定性结果为准。",
+        sunriseGlowZh:
+          readStringField(subjectAdvice, "sunriseGlowZh") ?? "朝霞判断以确定性结果为准。",
+        sunsetGlowZh:
+          readStringField(subjectAdvice, "sunsetGlowZh") ?? "晚霞判断以确定性结果为准。",
+        astroMilkyWayZh:
+          readStringField(subjectAdvice, "astroMilkyWayZh") ?? "星空银河判断以确定性结果为准。",
+        transparencyZh:
+          readStringField(subjectAdvice, "transparencyZh") ?? "通透度判断以确定性结果为准。",
+      },
+      riskAndGear: {
+        keyRisks:
+          stringArrayField(riskAndGear, "keyRisks").length > 0
+            ? stringArrayField(riskAndGear, "keyRisks")
+            : ["现场仍需复核短临天气、道路和安全条件。"],
+        clothingZh: readStringField(riskAndGear, "clothingZh") ?? "按确定性穿衣建议准备。",
+        gearZh: readStringField(riskAndGear, "gearZh") ?? "按确定性装备建议准备。",
+        safetyZh: readStringField(riskAndGear, "safetyZh") ?? "保留撤离时间，避免冒险等待。",
+      },
+      finalAdvice: {
+        goNoGoZh: readStringField(finalAdvice, "goNoGoZh") ?? decisionText,
+        ifAlreadyNearbyZh:
+          readStringField(finalAdvice, "ifAlreadyNearbyZh") ?? "若已在附近，可按窗口短时观察。",
+        ifDedicatedTripZh:
+          readStringField(finalAdvice, "ifDedicatedTripZh") ?? "专程出发前需等待临近预报复核。",
+        nextCheckZh:
+          readStringField(finalAdvice, "nextCheckZh") ?? "下次重点复核短临降水、低云、能见度和阵风。",
+      },
+      metadata: normalizeAiMetadata(value.metadata),
+    },
+    normalizeAiMetadata(value.metadata)?.source ?? "deepseek",
+  );
+}
+
+function normalizeAiDay(value: unknown): ForecastAiExplanation["dayByDay"][number] | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const recommendation =
+    readStringField(value, "recommendationZh") ??
+    readStringField(value, "summaryZh") ??
+    readStringField(value, "text");
+  if (!recommendation) {
+    return null;
+  }
+
+  return {
+    dateZh: readStringField(value, "dateZh") ?? readStringField(value, "date") ?? "当前日期",
+    recommendationZh: recommendation,
+    scoreZh: readStringField(value, "scoreZh") ?? "详见确定性评分",
+    temperatureZh: readStringField(value, "temperatureZh") ?? "详见天气卡片",
+    rainZh: readStringField(value, "rainZh") ?? "详见天气卡片",
+    cloudSeaZh: readStringField(value, "cloudSeaZh") ?? "详见云海判断",
+    glowZh: readStringField(value, "glowZh") ?? "详见朝霞判断",
+    sunsetGlowZh: readStringField(value, "sunsetGlowZh") ?? "详见晚霞判断",
+    astroZh: readStringField(value, "astroZh") ?? "详见星空银河判断",
+    transparencyZh: readStringField(value, "transparencyZh") ?? "详见通透度评分",
+    bestWindowZh: readStringField(value, "bestWindowZh") ?? "详见时间窗口",
+    actionZh: readStringField(value, "actionZh") ?? "按确定性结果复核现场条件。",
+  };
+}
+
+function explanationFromSections(
+  sections: readonly { readonly title: string; readonly text: string }[],
+): ForecastAiExplanation | null {
+  const usableSections = sections.filter((section) => section.text.trim().length > 0);
+  if (usableSections.length === 0) {
+    return null;
+  }
+
+  const firstSection = usableSections[0];
+  if (!firstSection) {
+    return null;
+  }
+
+  const textFor = (keywords: readonly string[], fallbackIndex: number) =>
+    usableSections.find((section) => keywords.some((keyword) => section.title.includes(keyword)))
+      ?.text ?? usableSections[fallbackIndex]?.text ?? firstSection.text;
+  const conclusion = textFor(["结论", "决策", "summary", "decision"], 0);
+  const plan = textFor(["计划", "窗口", "plan", "window"], 1);
+  const trend = textFor(["天气", "趋势", "trend", "weather"], 2);
+  const risk = textFor(["风险", "装备", "risk", "gear"], 3);
+  const finalAdvice = textFor(["建议", "行动", "advice", "action"], 4);
+
+  return {
+    conclusion: {
+      titleZh: firstSection.title || "智能解读",
+      summaryZh: conclusion,
+      recommendedDayZh: plan,
+      recommendationLevelZh: "以确定性评分为准",
+      whetherWorthDedicatedTripZh: finalAdvice,
+      oneSentenceDecisionZh: conclusion,
+    },
+    bestPlan: {
+      primaryTargetZh: "优先参考确定性推荐题材",
+      bestDateZh: plan,
+      bestWindowZh: plan,
+      recommendedArrivalZh: "按主窗口提前到位。",
+      whyThisWindowZh: trend,
+      backupPlanZh: "保留附近短时观察和备选题材。",
+    },
+    weatherTrend: {
+      trendSummaryZh: trend,
+      temperatureSummaryZh: trend,
+      rainSummaryZh: trend,
+      windSummaryZh: trend,
+      transparencySummaryZh: trend,
+    },
+    dayByDay: [
+      {
+        dateZh: "当前结果",
+        recommendationZh: conclusion,
+        scoreZh: "详见确定性评分",
+        temperatureZh: "详见天气卡片",
+        rainZh: "详见天气卡片",
+        cloudSeaZh: "详见题材判断",
+        glowZh: "详见题材判断",
+        sunsetGlowZh: "详见题材判断",
+        astroZh: "详见题材判断",
+        transparencyZh: "详见通透度评分",
+        bestWindowZh: plan,
+        actionZh: finalAdvice,
+      },
+    ],
+    subjectAdvice: {
+      cloudSeaZh: textFor(["云海", "cloud"], 0),
+      sunriseGlowZh: textFor(["朝霞", "sunrise"], 0),
+      sunsetGlowZh: textFor(["晚霞", "sunset"], 0),
+      astroMilkyWayZh: textFor(["星空", "银河", "astro", "milky"], 0),
+      transparencyZh: textFor(["通透", "transparency"], 0),
+    },
+    riskAndGear: {
+      keyRisks: [risk],
+      clothingZh: risk,
+      gearZh: risk,
+      safetyZh: risk,
+    },
+    finalAdvice: {
+      goNoGoZh: finalAdvice,
+      ifAlreadyNearbyZh: finalAdvice,
+      ifDedicatedTripZh: finalAdvice,
+      nextCheckZh: "下次重点复核短临降水、低云、能见度和阵风。",
+    },
+    metadata: {
+      source: "deepseek",
+      noteZh: "已兼容后端 sections 响应格式。",
+    },
+  };
+}
+
+function normalizeAiSections(
+  value: unknown,
+): readonly { readonly title: string; readonly text: string }[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => normalizeAiSection(item, `解读 ${index + 1}`));
+  }
+
+  if (!isRecord(value)) {
+    return typeof value === "string" ? [{ title: "智能解读", text: value }] : [];
+  }
+
+  return Object.entries(value).flatMap(([key, item]) => normalizeAiSection(item, key));
+}
+
+function normalizeAiSection(
+  value: unknown,
+  fallbackTitle: string,
+): readonly { readonly title: string; readonly text: string }[] {
+  if (typeof value === "string") {
+    return [{ title: fallbackTitle, text: value }];
+  }
+  if (Array.isArray(value)) {
+    const text = value.flatMap((item) => (typeof item === "string" ? [item] : [])).join("；");
+    return text ? [{ title: fallbackTitle, text }] : [];
+  }
+  if (!isRecord(value)) {
+    return [];
+  }
+
+  const nested = value.items ?? value.sections ?? value.list;
+  const nestedText = Array.isArray(nested)
+    ? nested.flatMap((item) => (typeof item === "string" ? [item] : [])).join("；")
+    : "";
+  const text =
+    readStringField(value, "contentZh") ??
+    readStringField(value, "content") ??
+    readStringField(value, "summaryZh") ??
+    readStringField(value, "summary") ??
+    readStringField(value, "body") ??
+    readStringField(value, "text") ??
+    readStringField(value, "value") ??
+    nestedText;
+  if (!text) {
+    return [];
+  }
+
+  return [
+    {
+      title:
+        readStringField(value, "titleZh") ??
+        readStringField(value, "title") ??
+        readStringField(value, "key") ??
+        fallbackTitle,
+      text,
+    },
+  ];
+}
+
+function withAiExplanationMetadata(
+  explanation: ForecastAiExplanation,
+  source: NonNullable<ForecastAiExplanation["metadata"]>["source"],
+): ForecastAiExplanation {
+  return {
+    ...explanation,
+    metadata: explanation.metadata ?? {
+      source,
+    },
+  };
+}
+
+function normalizeAiMetadata(value: unknown): ForecastAiExplanation["metadata"] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const source = value.source === "deterministic_fallback" ? "deterministic_fallback" : "deepseek";
+  const noteZh = readStringField(value, "noteZh");
+  return noteZh ? { source, noteZh } : { source };
+}
+
+function getDeterministicAiFallbackFromResult(
+  result: ForecastCalculationResult | null,
+): ForecastAiExplanation | null {
+  const explanation = (result as ForecastCalculationResultWithAi | null)?.aiExplanation;
+  return isForecastAiExplanationLike(explanation)
+    ? withAiExplanationMetadata(explanation, explanation.metadata?.source ?? "deterministic_fallback")
+    : null;
+}
+
+function applyAiExplainOutcome(
+  outcome: NormalizedAiExplainOutcome,
+  setters: {
+    readonly setAiExplanation: (value: ForecastAiExplanation | null) => void;
+    readonly setAiErrorMessage: (value: string) => void;
+    readonly setAiRetryable: (value: boolean) => void;
+    readonly setAiStatus: (value: AiStatus) => void;
+  },
+): void {
+  setters.setAiExplanation(outcome.explanation);
+  setters.setAiErrorMessage(outcome.errorMessage);
+  setters.setAiRetryable(outcome.retryable);
+  setters.setAiStatus(outcome.status);
+}
+
+function logAiExplanationClientEvent(
+  event: NormalizedAiExplainOutcome & {
+    readonly cacheHit?: boolean;
+    readonly frontendTimeoutMs?: number;
+  },
+): void {
+  const payload = {
+    route: "/forecast/ai-explain",
+    status: event.status,
+    success: event.success,
+    cacheHit: Boolean(event.cacheHit),
+    errorCategory: event.errorCategory,
+    backendErrorCategory: event.backendErrorCategory,
+    parseSuccess: event.parseSuccess,
+    retryable: event.retryable,
+    latencyMs: event.latencyMs,
+    model: event.model,
+    promptSizeChars: event.promptSizeChars,
+    frontendTimeoutMs: event.frontendTimeoutMs ?? aiExplainFrontendTimeoutMs,
+  };
+
+  if (event.status === "error" || event.errorCategory !== "none") {
+    console.warn("forecast_ai_explain_client", payload);
+    return;
+  }
+
+  console.info("forecast_ai_explain_client", payload);
+}
+
+function publicAiExplanationMessage(category: AiExplainErrorCategory | "none"): string {
+  if (category === "timeout") {
+    return "智能解读暂时超时，确定性判断结果仍可正常参考，可稍后重试。";
+  }
+  if (category === "missing_api_key" || category === "disabled") {
+    return "智能解读暂时未启用，确定性判断结果仍可正常参考。";
+  }
+  return "智能解读暂时不可用，确定性判断结果仍可正常参考，可稍后重试。";
+}
+
+function isRetryableAiExplainCategory(category: AiExplainErrorCategory | "none"): boolean {
+  return (
+    category === "timeout" ||
+    category === "network_error" ||
+    category === "upstream_429" ||
+    category === "upstream_5xx" ||
+    category === "parse_error" ||
+    category === "empty_response" ||
+    category === "unknown"
+  );
+}
+
+function normalizeAiErrorCategory(value: unknown): AiExplainErrorCategory | undefined {
+  return typeof value === "string" && aiExplainErrorCategories.has(value as AiExplainErrorCategory)
+    ? (value as AiExplainErrorCategory)
+    : undefined;
+}
+
+const aiExplainErrorCategories = new Set<AiExplainErrorCategory>([
+  "disabled",
+  "missing_api_key",
+  "timeout",
+  "network_error",
+  "upstream_401",
+  "upstream_429",
+  "upstream_5xx",
+  "parse_error",
+  "empty_response",
+  "prompt_too_large",
+  "unknown",
+]);
+
+function isAbortError(error: unknown): boolean {
+  return (
+    (error instanceof DOMException && error.name === "AbortError") ||
+    (error instanceof Error && error.name === "AbortError")
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function recordField(value: unknown, key: string): Record<string, unknown> | undefined {
+  const field = isRecord(value) ? value[key] : undefined;
+  return isRecord(field) ? field : undefined;
+}
+
+function nestedField(value: unknown, key: string): unknown {
+  return isRecord(value) ? value[key] : undefined;
+}
+
+function readStringField(value: unknown, key: string): string | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const field = value[key];
+  return typeof field === "string" && field.trim().length > 0 ? field.trim() : undefined;
+}
+
+function hasStringField(value: unknown, key: string): boolean {
+  return Boolean(readStringField(value, key));
+}
+
+function stringArrayField(value: unknown, key: string): readonly string[] {
+  if (!isRecord(value)) {
+    return [];
+  }
+  const field = value[key];
+  if (!Array.isArray(field)) {
+    return [];
+  }
+  return field.flatMap((item) =>
+    typeof item === "string" && item.trim().length > 0 ? [item.trim()] : [],
+  );
+}
+
+function numericField(value: unknown, key: string): number | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const field = value[key];
+  return typeof field === "number" && Number.isFinite(field) ? field : undefined;
+}
+
 export function ForecastResultClient({ query, invalidReason }: ForecastResultClientProps) {
   const [status, setStatus] = useState<LoadStatus>(query ? "loading" : "idle");
   const [result, setResult] = useState<ForecastCalculationResult | null>(null);
@@ -191,6 +977,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
   const [aiErrorMessage, setAiErrorMessage] = useState("");
   const [aiRetryable, setAiRetryable] = useState(false);
   const aiRequestInFlightRef = useRef(false);
+  const aiAbortControllerRef = useRef<AbortController | null>(null);
 
   const queryKey = useMemo(() => (query ? JSON.stringify(query) : ""), [query]);
   const shellCopy = getForecastResultPageShellCopy(query?.target ?? result?.target ?? "general");
@@ -208,6 +995,9 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
 
     const activeQuery = query;
     const controller = new AbortController();
+    aiAbortControllerRef.current?.abort();
+    aiAbortControllerRef.current = null;
+    aiRequestInFlightRef.current = false;
     setStatus("loading");
     setResult(null);
     setErrorMessage("");
@@ -236,6 +1026,15 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
         const data = (await response.json()) as ForecastCalculationResult;
         writeForecastResultContext({ query: activeQuery, result: data });
         setResult(data);
+        const cachedAiExplanation = readCachedAiExplanation(
+          createAiExplanationCacheKey({ query: activeQuery, result: data }),
+        );
+        if (cachedAiExplanation) {
+          setAiExplanation(cachedAiExplanation);
+          setAiStatus("ready");
+          setAiErrorMessage("");
+          setAiRetryable(false);
+        }
         setStatus("ready");
       } catch (error) {
         if ((error as Error).name === "AbortError") {
@@ -251,14 +1050,43 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
 
     return () => {
       controller.abort();
+      aiAbortControllerRef.current?.abort();
     };
   }, [query, queryKey]);
 
   async function generateAiExplanation() {
-    if (!query || !result || aiStatus === "loading" || aiRequestInFlightRef.current) {
+    if (!query || !result || !shouldStartAiExplanationRequest(aiStatus, aiRequestInFlightRef.current)) {
       return;
     }
 
+    const cacheKey = createAiExplanationCacheKey({ query, result });
+    const cachedAiExplanation = readCachedAiExplanation(cacheKey);
+    if (cachedAiExplanation) {
+      const cacheOutcome: NormalizedAiExplainOutcome = {
+        status: "ready",
+        explanation: cachedAiExplanation,
+        errorMessage: "",
+        retryable: false,
+        success: true,
+        cacheable: false,
+        errorCategory: "none",
+        backendErrorCategory: "none",
+      };
+      applyAiExplainOutcome(cacheOutcome, {
+        setAiExplanation,
+        setAiErrorMessage,
+        setAiRetryable,
+        setAiStatus,
+      });
+      logAiExplanationClientEvent({ ...cacheOutcome, cacheHit: true });
+      return;
+    }
+
+    const deterministicFallback = getDeterministicAiFallbackFromResult(result);
+    const controller = new AbortController();
+    const startedAt = Date.now();
+    const timeout = setTimeout(() => controller.abort(), aiExplainFrontendTimeoutMs);
+    aiAbortControllerRef.current = controller;
     aiRequestInFlightRef.current = true;
     setAiStatus("loading");
     setAiErrorMessage("");
@@ -270,34 +1098,62 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
           "Content-Type": "application/json",
         },
         body: JSON.stringify(query),
+        signal: controller.signal,
       });
 
       if (!response.ok) {
-        throw new Error(
-          await readApiErrorMessage(
-            response,
-            "智能解读暂时不可用，确定性判断结果仍可正常参考，可稍后重试。",
-          ),
+        const errorPayload = await readApiJsonPayload(response);
+        const outcome = normalizeAiExplainResponse(
+          {
+            success: false,
+            ...(isRecord(errorPayload)
+              ? errorPayload
+              : {
+                  messageZh: "智能解读暂时不可用，确定性判断结果仍可正常参考，可稍后重试。",
+                }),
+          },
+          deterministicFallback,
         );
+        applyAiExplainOutcome(outcome, {
+          setAiExplanation,
+          setAiErrorMessage,
+          setAiRetryable,
+          setAiStatus,
+        });
+        logAiExplanationClientEvent(outcome);
+        return;
       }
 
-      const data = (await response.json()) as AiExplainResponse;
-      if (!data.explanation) {
-        throw new Error(
-          data.messageZh ||
-            data.message ||
-            "智能解读暂时不可用，确定性判断结果仍可正常参考，可稍后重试。",
-        );
+      const data = await readApiJsonPayload(response);
+      const outcome = normalizeAiExplainResponse(data, deterministicFallback);
+      if (outcome.cacheable && outcome.explanation) {
+        cacheAiExplanation(cacheKey, outcome.explanation);
       }
-      setAiExplanation(data.explanation);
-      setAiErrorMessage(data.success === false ? data.messageZh || data.message || "" : "");
-      setAiRetryable(Boolean(data.retryable));
-      setAiStatus("ready");
+      applyAiExplainOutcome(outcome, {
+        setAiExplanation,
+        setAiErrorMessage,
+        setAiRetryable,
+        setAiStatus,
+      });
+      logAiExplanationClientEvent(outcome);
     } catch (error) {
-      setAiErrorMessage(normalizeAiExplanationErrorMessage((error as Error).message));
-      setAiRetryable(true);
-      setAiStatus("error");
+      const outcome = normalizeAiExplainThrownError(
+        error,
+        deterministicFallback,
+        Date.now() - startedAt,
+      );
+      applyAiExplainOutcome(outcome, {
+        setAiExplanation,
+        setAiErrorMessage,
+        setAiRetryable,
+        setAiStatus,
+      });
+      logAiExplanationClientEvent(outcome);
     } finally {
+      clearTimeout(timeout);
+      if (aiAbortControllerRef.current === controller) {
+        aiAbortControllerRef.current = null;
+      }
       aiRequestInFlightRef.current = false;
     }
   }
@@ -4277,13 +5133,14 @@ function AiExplanationPanel({
   readonly onGenerate: () => void;
 }) {
   const isFallback = explanation?.metadata?.source === "deterministic_fallback";
+  const hasCompletedExplanation = Boolean(explanation) && !retryable && status !== "loading";
   const buttonLabel =
     status === "loading"
       ? "正在生成解读…"
       : retryable
         ? "重试 DeepSeek 解读"
-        : explanation
-          ? "重新生成智能解读"
+        : hasCompletedExplanation
+          ? "已生成智能解读"
           : "生成智能解读";
 
   return (
@@ -4303,7 +5160,7 @@ function AiExplanationPanel({
       <Button
         className="mt-4 w-full"
         variant="secondary"
-        disabled={status === "loading"}
+        disabled={status === "loading" || hasCompletedExplanation}
         onClick={onGenerate}
       >
         {buttonLabel}
