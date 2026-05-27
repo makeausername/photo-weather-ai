@@ -150,29 +150,43 @@ try {
 }
 
 const success = status >= 200 && status < 300 && Boolean(payload.explanation);
-const errorCategory = payload.errorCategory || payload.error || "none";
+const deepSeekSuccess = success && payload.success === true && payload.fallback !== true;
+const errorCategory = payload.errorCategory || (payload.diagnostics && payload.diagnostics.errorCategory) || payload.error || "none";
+const model = payload.model || (payload.diagnostics && payload.diagnostics.model) || "unknown";
 const promptSizeChars = payload.diagnostics && typeof payload.diagnostics.promptSizeChars === "number"
   ? payload.diagnostics.promptSizeChars
-  : "unknown";
+  : typeof payload.promptSizeChars === "number"
+    ? payload.promptSizeChars
+    : "unknown";
 const timeoutMs = payload.diagnostics && typeof payload.diagnostics.timeoutMs === "number"
   ? payload.diagnostics.timeoutMs
   : "unknown";
 const parseSuccess = payload.diagnostics && typeof payload.diagnostics.parseSuccess === "boolean"
   ? payload.diagnostics.parseSuccess
   : "unknown";
+const retryable = typeof payload.retryable === "boolean" ? payload.retryable : "unknown";
 const fallback = payload.fallback === true || Boolean(payload.diagnostics && payload.diagnostics.fallback);
+const responseLatencyMs = typeof payload.latencyMs === "number" ? payload.latencyMs : latencyMs;
+const sectionKeys = payload.explanation && typeof payload.explanation === "object"
+  ? Object.keys(payload.explanation).filter((key) => key !== "metadata")
+  : [];
 const message =
   payload.messageZh ||
   payload.message ||
   payload.error ||
   (success ? "智能解读生成成功。" : "智能解读暂时不可用，确定性判断结果仍可正常参考。");
 
-console.log(`success: ${success}`);
-console.log(`statusCode: ${status}`);
-console.log(`latencyMs: ${latencyMs}`);
-console.log(`errorCategory: ${errorCategory}`);
-console.log(`timeoutMsFromResponse: ${timeoutMs}`);
+console.log(`model: ${model}`);
 console.log(`promptSizeChars: ${promptSizeChars}`);
+console.log(`timeoutMs: ${timeoutMs}`);
+console.log(`success: ${deepSeekSuccess}`);
+console.log(`errorCategory: ${errorCategory}`);
+console.log(`retryable: ${retryable}`);
+console.log(`latencyMs: ${responseLatencyMs}`);
+if (deepSeekSuccess) {
+  console.log(`sectionKeys: ${sectionKeys.join(",")}`);
+}
+console.log(`statusCode: ${status}`);
 console.log(`parseSuccess: ${parseSuccess}`);
 console.log(`fallback: ${fallback}`);
 console.log(`messageZh: ${message}`);

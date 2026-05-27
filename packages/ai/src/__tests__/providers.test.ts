@@ -106,10 +106,10 @@ describe("AI providers", () => {
     const context = buildDeepSeekForecastContext(forecastResultFixture);
     const text = JSON.stringify(context);
 
-    expect(context.sourceStatus).toMatchObject({
+    expect(context.dataStatus).toMatchObject({
       dataMode: "mock",
     });
-    expect(JSON.stringify(context.place)).not.toContain("coordinates");
+    expect(JSON.stringify(context.location)).not.toContain("coordinates");
     expect(text).toContain("All values are precomputed deterministic facts");
     expect(text).not.toContain("weatherTimeline");
     expect(text).not.toContain("providerCode");
@@ -200,27 +200,17 @@ describe("AI providers", () => {
     });
     const text = JSON.stringify(context);
 
-    expect(context.astroFacts.practicalStatus).toMatchObject({
-      astroWindowAvailable: true,
-      astroShootable: false,
-      practicalAstroScore: 24,
-      astroWeatherBlockers: ["低云偏多，星空银河实际可见性较差。", "降水干扰"],
-      dewRisk: {
-        level: "high",
-        labelZh: "高",
-      },
-      recommendedMilkyWayWindow: null,
-    });
-    expect(context.astroFacts.practicalStatus.galacticCenterWindow).toMatchObject({
-      labelZh: "银河候选窗口",
-      windowZh: "2026年5月22日 01:10–03:20",
-      directionZh: "东南至南方",
-    });
+    expect(context.topicScores).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "stars" }),
+        expect.objectContaining({ key: "milkyWay" }),
+      ]),
+    );
     expect(text).toContain("All values are precomputed deterministic facts");
     expect(text).not.toContain("和风天气");
     expect(text).not.toContain("Open-Meteo");
     expect(text).not.toContain("meteoblue");
-    expect(JSON.stringify(context.astroFacts)).not.toContain("dataSourceLabelZh");
+    expect(text).not.toContain("dataSourceLabelZh");
   });
 
   it("passes deterministic glow facts to DeepSeek without asking it to score glow", () => {
@@ -229,24 +219,19 @@ describe("AI providers", () => {
       target: "glow",
     });
 
-    expect(context.glowFacts).toMatchObject({
-      sunriseGlowScore: 75,
-      sunsetGlowScore: 62,
-      colorCarrierScore: 78,
-      lowCloudObstructionRisk: 38,
-      postRainOpeningChance: "low",
-      rainOverlap: {
-        sunrise: false,
-        sunset: false,
-      },
+    expect(context.topicScores).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "sunriseGlow", score: 75 }),
+        expect.objectContaining({ key: "sunsetGlow", score: 62 }),
+      ]),
+    );
+    expect(context.bestWindows[0]).toMatchObject({
+      labelZh: expect.any(String),
+      score: expect.any(Number),
     });
-    expect(context.targetAnalysis).toMatchObject({
-      target: "glow",
-      sunriseGlowScore: 75,
-      sunsetGlowScore: 62,
-      bestGlowWindow: expect.objectContaining({
-        labelZh: "朝霞峰值窗口",
-      }),
+    expect(context.dailySummaries[0]?.topicScores).toMatchObject({
+      sunriseGlowZh: expect.any(String),
+      sunsetGlowZh: expect.any(String),
     });
     expect(JSON.stringify(context)).toContain("All values are precomputed deterministic facts");
   });
@@ -441,6 +426,107 @@ describe("AI providers", () => {
     expect(explanation.metadata?.source).toBe("deepseek");
   });
 
+  it("extracts a JSON object from fenced DeepSeek output once before failing over", async () => {
+    const payload = {
+      ...createRuleBasedForecastExplanation(forecastResultFixture),
+      metadata: {
+        source: "deepseek" as const,
+      },
+    };
+    const fetcher = async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: `\`\`\`json\n${JSON.stringify(payload)}\n\`\`\``,
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
+    const provider = new DeepSeekProvider({
+      enabled: true,
+      realModeEnabled: true,
+      apiKey: "sk-test",
+      fetcher,
+    });
+
+    const explanation = await provider.generateForecastExplanation({
+      forecastResult: forecastResultFixture,
+    });
+
+    expect(explanation.metadata?.source).toBe("deepseek");
+    expect(explanation.conclusion.oneSentenceDecisionZh).toBe(
+      payload.conclusion.oneSentenceDecisionZh,
+    );
+  });
+
+  it("classifies empty DeepSeek content separately from JSON parse errors", async () => {
+    const fetcher = async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: "",
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
+    const provider = new DeepSeekProvider({
+      enabled: true,
+      realModeEnabled: true,
+      apiKey: "sk-test",
+      fetcher,
+    });
+
+    await expect(
+      provider.generateForecastExplanation({
+        forecastResult: forecastResultFixture,
+      }),
+    ).rejects.toMatchObject({
+      errorCategory: "empty_response",
+      messageZh: "DeepSeek 返回内容为空。",
+    });
+  });
+
+  it("rejects oversized prompts with a structured prompt_too_large error", () => {
+    const oversizedResult: ForecastCalculationResult = {
+      ...forecastResultFixture,
+      place: {
+        ...forecastResultFixture.place,
+        name: "超长地点".repeat(5000),
+      },
+    };
+
+    try {
+      buildDeepSeekForecastExplanationRequest({
+        forecastResult: oversizedResult,
+      });
+      throw new Error("expected prompt size guard to reject the request");
+    } catch (error) {
+      expect(isDeepSeekProviderError(error)).toBe(true);
+      expect(error).toMatchObject({
+        errorCategory: "prompt_too_large",
+        promptSizeChars: expect.any(Number),
+      });
+    }
+  });
+
   it("classifies DeepSeek timeout without exposing secrets", async () => {
     const fetcher = async () => {
       throw new DOMException("The operation was aborted.", "AbortError");
@@ -503,7 +589,7 @@ describe("AI providers", () => {
     });
 
     await expect(provider.testConnection()).rejects.toMatchObject({
-      errorCategory: "invalid_key",
+      errorCategory: "upstream_401",
       messageZh: "DeepSeek API Key 无效或权限不足。",
       statusCode: 401,
     });

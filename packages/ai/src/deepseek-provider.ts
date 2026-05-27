@@ -4,7 +4,6 @@ import {
   formatArrivalDeadlineZh,
   formatShootingWindowZh,
   normalizeDeepSeekModel,
-  type ForecastWeatherSourceErrorCategory,
   type DeepSeekReasoningEffort,
 } from "@photo-weather/shared";
 import type { DecisionCard, ForecastCalculationResult } from "@photo-weather/shared";
@@ -67,6 +66,7 @@ type DeepSeekChatResponse = {
 export type DeepSeekRequestPreview = {
   readonly url: string;
   readonly body: DeepSeekRequestBody;
+  readonly promptSizeChars: number;
 };
 
 export const missingDeepSeekApiKeyMessage = "请先填写 DeepSeek API Key。";
@@ -81,21 +81,37 @@ const defaultBaseUrl = "https://api.deepseek.com";
 const defaultTemperature = 0.2;
 const defaultMaxTokens = 4000;
 const defaultTimeoutMs = 90000;
-const maxInterpretationPayloadChars = 18000;
+const maxInterpretationPayloadChars = 12000;
+const absoluteMaxInterpretationPayloadChars = 18000;
+
+export type DeepSeekInterpretationErrorCategory =
+  | "disabled"
+  | "missing_api_key"
+  | "timeout"
+  | "network_error"
+  | "upstream_401"
+  | "upstream_429"
+  | "upstream_5xx"
+  | "parse_error"
+  | "empty_response"
+  | "prompt_too_large"
+  | "unknown";
 
 export type DeepSeekProviderErrorOptions = {
-  readonly errorCategory: ForecastWeatherSourceErrorCategory;
+  readonly errorCategory: DeepSeekInterpretationErrorCategory;
   readonly messageZh: string;
   readonly statusCode?: number;
   readonly latencyMs?: number;
+  readonly promptSizeChars?: number;
   readonly cause?: unknown;
 };
 
 export class DeepSeekProviderError extends Error {
-  readonly errorCategory: ForecastWeatherSourceErrorCategory;
+  readonly errorCategory: DeepSeekInterpretationErrorCategory;
   readonly messageZh: string;
   readonly statusCode?: number;
   readonly latencyMs?: number;
+  readonly promptSizeChars?: number;
   override readonly cause?: unknown;
 
   constructor(options: DeepSeekProviderErrorOptions) {
@@ -105,6 +121,7 @@ export class DeepSeekProviderError extends Error {
     this.messageZh = options.messageZh;
     this.statusCode = options.statusCode;
     this.latencyMs = options.latencyMs;
+    this.promptSizeChars = options.promptSizeChars;
     this.cause = options.cause;
   }
 }
@@ -264,8 +281,8 @@ function getMessageContent(response: DeepSeekChatResponse, latencyMs?: number): 
   const content = response.choices?.[0]?.message?.content;
   if (typeof content !== "string" || content.trim().length === 0) {
     throw deepSeekError({
-      errorCategory: "parse_error",
-      messageZh: "DeepSeek 返回格式异常。",
+      errorCategory: "empty_response",
+      messageZh: "DeepSeek 返回内容为空。",
       latencyMs,
     });
   }
@@ -286,7 +303,11 @@ function parseDeepSeekChatResponse(text: string, latencyMs: number): DeepSeekCha
   }
 }
 
-function normalizeDeepSeekRequestError(error: unknown, latencyMs: number): DeepSeekProviderError {
+function normalizeDeepSeekRequestError(
+  error: unknown,
+  latencyMs: number,
+  promptSizeChars?: number,
+): DeepSeekProviderError {
   if (isDeepSeekProviderError(error)) {
     return error;
   }
@@ -302,14 +323,16 @@ function normalizeDeepSeekRequestError(error: unknown, latencyMs: number): DeepS
       errorCategory: "timeout",
       messageZh: "DeepSeek 服务请求超时。",
       latencyMs,
+      promptSizeChars,
       cause: error,
     });
   }
 
   return deepSeekError({
-    errorCategory: "network",
+    errorCategory: "network_error",
     messageZh: "DeepSeek 网络不可用。",
     latencyMs,
+    promptSizeChars,
     cause: error,
   });
 }
@@ -354,383 +377,84 @@ function compactScore(
   };
 }
 
-function compactTargetAnalysis(result: ForecastCalculationResult) {
-  if (result.target === "cloud_sea") {
-    const timezone = result.calendarBasis.timezone;
-    const analysis = result.cloudSeaAnalysis;
+type DeepSeekForecastContextDetail = "standard" | "minimal";
 
-    return {
-      target: result.target,
-      confidenceLevel: analysis.confidenceLevel,
-      formationScore: analysis.formationScore,
-      shootableScore: analysis.shootableScore,
-      opportunityScore: analysis.cloudSeaOpportunityScore,
-      whiteoutRiskScore: analysis.whiteoutRiskScore,
-      lightAlignedScore: analysis.lightAlignedScore,
-      confidence: analysis.confidence,
-      labels: analysis.labels,
-      recommendationLabel: analysis.recommendationLabel,
-      terrainSupport: compactCloudSeaTerrainSupport(analysis.terrainSupport),
-      rainOpening: compactCloudSeaRainOpening(analysis.rainOpening),
-      bestWindow: compactCloudSeaAnalysisWindow(analysis.bestCloudSeaWindow, timezone),
-      watchableWindows: takeItems(analysis.watchableCloudSeaWindows, 2).map((window) =>
-        compactCloudSeaAnalysisWindow(window, timezone),
-      ),
-      notRecommendedWindows: takeItems(analysis.notRecommendedCloudSeaWindows, 2).map((window) =>
-        compactCloudSeaAnalysisWindow(window, timezone),
-      ),
-      dailySignals: takeItems(analysis.dailyCloudSea, 3).map((day) => ({
-        date: day.date,
-        dateZh: day.dateLabelZh,
-        formationScore: day.formationScore ?? day.opportunityScore,
-        shootableScore: day.shootableScore ?? day.travelScore,
-        whiteoutRiskScore: day.whiteoutRiskScore,
-        lightAlignedScore: day.lightAlignedScore,
-        confidence: day.confidence,
-        labels: day.labels,
-        rainOpening: compactCloudSeaRainOpening(day.rainOpening),
-        onSiteCheckpoints: takeTextItems(day.onSiteCheckpoints, 3, 80),
-        recommendationLabel: day.recommendationLabel,
-        keyReason: limitText(day.keyReason, 120),
-        riskNote: limitText(day.riskNote, 120),
-      })),
-      formationReasons: takeTextItems(analysis.opportunityReasons, 4, 120),
-      whiteoutReasons: takeTextItems(analysis.whiteoutReasons, 4, 120),
-      travelRecommendations: takeItems(analysis.travelRecommendations, 3).map((item) => ({
-        situation: item.situation,
-        action: limitText(item.action, 80),
-        detail: limitText(item.detail, 120),
-      })),
-      missingDataNotes: takeTextItems(analysis.missingDataNotes, 4, 120),
-    };
-  }
-
-  if (result.target === "glow") {
-    return {
-      target: result.target,
-      ...compactGlowAnalysis(result),
-    };
-  }
-
-  if (result.target === "astro") {
-    return {
-      target: result.target,
-      confidenceLevel: result.astroAnalysis.confidenceLevel,
-      starsScore: result.astroAnalysis.starsScore,
-      milkyWayScore: result.astroAnalysis.milkyWayScore,
-      moonImpactScore: result.astroAnalysis.moonImpactScore,
-      recommendationLabel: result.astroAnalysis.recommendationLabel,
-      bestWindows: takeItems(result.astroAnalysis.bestAstroWindows, 3),
-      missingDataNotes: takeTextItems(result.astroAnalysis.missingDataNotes, 4),
-    };
-  }
-
-  return {
-    target: result.target,
-    confidenceLevel: result.weatherFusionSummary?.confidenceLevel,
-    recommendationLabel: result.recommendationLabel,
-  };
-}
-
-function compactCloudSeaAnalysisWindow(
-  window:
-    | ForecastCalculationResult["cloudSeaAnalysis"]["bestCloudSeaWindow"]
-    | ForecastCalculationResult["cloudSeaAnalysis"]["bestCloudSeaWindows"][number]
-    | undefined,
-  timezone: string,
+export function buildDeepSeekForecastContext(
+  result: ForecastCalculationResult,
+  detail: DeepSeekForecastContextDetail = "standard",
 ) {
-  if (!window) {
-    return null;
-  }
-
-  return {
-    labelZh: window.label,
-    date: window.date,
-    windowZh: formatShootingWindowZh(window, timezone),
-    score: window.score,
-    formationScore: window.formationScore,
-    shootableScore: window.shootableScore,
-    whiteoutRiskScore: window.whiteoutRiskScore,
-    lightAlignedScore: window.lightAlignedScore,
-    phase: window.phase,
-    riskTag: window.riskTag,
-    noteZh: limitText(window.noteZh, 120),
-  };
-}
-
-function compactGlowAnalysis(result: ForecastCalculationResult) {
   const timezone = result.calendarBasis.timezone;
-  const analysis = result.glowAnalysis;
-  const bestGlowWindow = analysis.bestGlowWindow ?? analysis.bestGlowWindows[0];
-
-  return {
-    confidenceLevel: analysis.confidenceLevel,
-    sunriseGlowScore: analysis.sunriseGlowScore,
-    sunsetGlowScore: analysis.sunsetGlowScore,
-    colorCarrierScore: analysis.colorCarrierScore,
-    lowCloudObstructionRisk: analysis.lowCloudObstructionRisk,
-    precipitationDisruptionRisk: analysis.precipitationDisruptionRisk,
-    visibilityColorQualityScore: analysis.visibilityColorQualityScore,
-    practicalGlowScore: analysis.practicalGlowScore,
-    recommendationLabel: analysis.recommendationLabel,
-    labels: analysis.labels,
-    bestGlowWindow: compactGlowWindow(bestGlowWindow, timezone),
-    watchableGlowWindow: compactGlowWindow(analysis.watchableGlowWindows[0], timezone),
-    rainOverlap: {
-      sunrise: analysis.rainOverlapsSunriseWindow,
-      sunset: analysis.rainOverlapsSunsetWindow,
-      windowRainRisk: analysis.glowWindowRainRisk,
-    },
-    postRainOpeningChance: analysis.postRainOpeningChance,
-    reasons: takeTextItems(analysis.opportunityReasons, 2, 100),
-    riskReasons: takeTextItems(analysis.riskReasons, 2, 100),
-  };
-}
-
-function compactGlowWindow(
-  window:
-    | ForecastCalculationResult["glowAnalysis"]["bestGlowWindow"]
-    | ForecastCalculationResult["glowAnalysis"]["bestGlowWindows"][number]
-    | undefined,
-  timezone: string,
-) {
-  if (!window) {
-    return null;
-  }
-
-  return {
-    type: window.type,
-    labelZh: window.labelZh,
-    date: window.date,
-    windowZh: formatShootingWindowZh({ startTime: window.start, endTime: window.end }, timezone),
-    score: window.score,
-    conditionScore: window.conditionScore,
-    practicalScore: window.practicalScore,
-    colorCarrierScore: window.colorCarrierScore,
-    lowCloudObstructionRisk: window.lowCloudObstructionRisk,
-    precipitationDisruptionRisk: window.precipitationDisruptionRisk,
-    visibilityColorQualityScore: window.visibilityColorQualityScore,
-    rainOverlapsWindow: window.rainOverlapsWindow,
-    postRainOpeningChance: window.postRainOpeningChance,
-    glowWindowRainRisk: window.glowWindowRainRisk,
-    riskTags: takeTextItems(window.riskTags, 3, 60),
-    noteZh: limitText(window.noteZh, 120),
-  };
-}
-
-function compactCloudSeaTerrainSupport(
-  terrain: ForecastCalculationResult["cloudSeaAnalysis"]["terrainSupport"],
-) {
-  return {
-    score: terrain.score,
-    level: terrain.level,
-    selectedSpotElevationMeters: terrain.selectedSpotElevationMeters,
-    nearbyValleyElevationMeters: terrain.nearbyValleyElevationMeters,
-    localReliefMeters: terrain.localReliefMeters,
-    terrainType: terrain.terrainType,
-    exposureType: terrain.exposureType,
-    confidence: terrain.confidence,
-    messageZh: limitText(terrain.messageZh, 120),
-  };
-}
-
-function compactCloudSeaRainOpening(
-  signal: ForecastCalculationResult["cloudSeaAnalysis"]["rainOpening"] | undefined,
-) {
-  if (!signal) {
-    return undefined;
-  }
-
-  return {
-    rainSupportSignal: signal.rainSupportSignal,
-    activeRainDuringWindow: signal.activeRainDuringWindow,
-    postRainOpeningChance: signal.postRainOpeningChance,
-    messageZh: limitText(signal.messageZh, 120),
-  };
-}
-
-export function buildDeepSeekForecastContext(result: ForecastCalculationResult) {
-  const timezone = result.calendarBasis.timezone;
-  const dailyFacts = takeItems(result.dailySummaries, 2).map((summary) =>
+  const dailyLimit = detail === "minimal" ? 2 : 4;
+  const windowLimit = detail === "minimal" ? 1 : 3;
+  const bestWindow = result.bestWindows.find(isExecutableWindow) ?? result.bestWindows[0];
+  const bestDay = bestDailySummaryForPlan(result, bestWindow);
+  const dailyFacts = takeItems(result.dailySummaries, dailyLimit).map((summary) =>
     compactDailyFact(result, summary, timezone),
   );
 
   return {
-    contextVersion: "forecast-interpretation-v3",
+    contextVersion: "forecast-interpretation-v4",
     note: "All values are precomputed deterministic facts. Interpret only; do not calculate or invent.",
-    place: {
+    detail,
+    location: {
       name: result.place.name,
       countryCode: result.place.countryCode,
     },
-    forecastHorizon: {
+    horizon: {
       key: result.horizon,
       rangeZh: result.calendarBasis.forecastRangeLabel,
       timezone: result.calendarBasis.timezone,
       generatedAt: result.generatedAt,
     },
     target: result.target,
-    overallDecision: {
+    overall: {
       score: result.overallScore,
       recommendationLevel: result.recommendationLevel,
       recommendationLabelZh: result.recommendationLabel,
       confidenceLabelZh: confidenceLabelZh(result.weatherFusionSummary?.confidenceLevel),
       summaryZh: limitText(result.summary, 180),
     },
-    topicScores: Object.values(result.scores).map(compactScore),
-    topRankedWindows: takeItems(result.bestWindows, 2).map((window) =>
-      compactForecastWindow(window, timezone),
-    ),
-    riskFlags: compactRiskFlags(result.riskFlags, 4),
-    keyReasons: takeTextItems(result.keyReasons, 4, 100),
-    deterministicActionSuggestions: takeTextItems(result.photographyAdvice, 3, 120),
-    clothingGuide: {
-      titleZh: result.clothingGuide.titleZh,
-      summaryZh: limitText(result.clothingGuide.summaryZh, 180),
-      comfortLevel: result.clothingGuide.comfortLevel,
-      layers: takeTextItems(result.clothingGuide.layers, 4),
-      accessories: takeTextItems(result.clothingGuide.accessories, 4),
-      riskNotes: takeTextItems(result.clothingGuide.riskNotes, 3, 110),
-    },
-    currentWeatherSummary: result.currentWeather
+    bestDay: bestDay
       ? {
-          observedAt: result.currentWeather.observedAt,
-          temperatureZh: formatTemperatureValue(result.currentWeather.temperature),
-          feelsLikeZh: formatTemperatureValue(result.currentWeather.feelsLike),
-          mountainFeelsLikeZh: formatTemperatureValue(result.currentWeather.mountainFeelsLikeC),
-          humidityPercent: result.currentWeather.humidity,
-          dewPointZh: formatTemperatureValue(result.currentWeather.dewPoint),
-          windZh: formatWindValue(result.currentWeather.windSpeed, result.currentWeather.windGust),
-          visibilityZh: formatDistanceKm(result.currentWeather.visibility),
-          cloudTotalPercent: result.currentWeather.cloudTotal,
-          cloudLowPercent: result.currentWeather.cloudLow,
-          cloudMidPercent: result.currentWeather.cloudMid,
-          cloudHighPercent: result.currentWeather.cloudHigh,
-          rainRiskZh: rainRiskSummaryZh(result.currentWeather),
-          exposedRidgeWindRisk: result.currentWeather.exposedRidgeWindRisk,
-          tripodStabilityRisk: result.currentWeather.tripodStabilityRisk,
-          windChillNoteZh: result.currentWeather.windChillNoteZh,
-          clothingRiskNoteZh: result.currentWeather.clothingRiskNoteZh,
-          weatherTextZh: result.currentWeather.weatherTextZh,
+          date: bestDay.date,
+          dateZh: bestDay.dateLabelZh,
+          score: bestDay.score,
+          recommendationZh: bestDay.dedicatedTripRecommendation ?? bestDay.recommendationLabel,
+          bestWindowZh: bestDay.bestShootableWindow
+            ? formatShootingWindowZh(bestDay.bestShootableWindow, timezone)
+            : undefined,
+          actionZh: limitText(bestDay.shortAdvice, 140),
         }
       : null,
-    sourceStatus: {
-      dataMode: result.weatherDataMode,
-      noticeZh: providerNeutralText(result.weatherNoticeZh),
-      missingFields: takeItems(result.weatherMissingFields, 5),
-      estimatedFields: takeItems(result.weatherEstimatedFields, 5),
-      missingDataNotes: providerNeutralItems(result.weatherMissingDataNotes, 3),
-      fusionConfidenceLevel: result.weatherFusionSummary?.confidenceLevel,
-      conflictStatusZh: providerNeutralText(result.weatherFusionSummary?.conflictStatusZh),
-      dataStatusZh: providerNeutralText(result.weatherFusionSummary?.dataStatusZh),
-    },
-    astroFacts: {
-      summaries: takeItems(result.astroSummaries, 1).map((summary) => ({
-        date: summary.date,
-        astronomicalNightStart: summary.astronomicalNightStart,
-        astronomicalNightEnd: summary.astronomicalNightEnd,
-        moonrise: summary.moonrise,
-        moonset: summary.moonset,
-        moonIllumination: summary.moonIllumination,
-        milkyWayWindowStart: summary.milkyWayWindowStart,
-        milkyWayWindowEnd: summary.milkyWayWindowEnd,
-        milkyWayDirection: summary.milkyWayDirection,
-        milkyWayVisibilityLevel: summary.milkyWayVisibilityLevel,
-      })),
-      practicalStatus: {
-        astronomicalWindowScore: result.astroAnalysis.astronomicalWindowScore,
-        skyConditionScore: result.astroAnalysis.skyConditionScore,
-        milkyWayGeometryScore: result.astroAnalysis.milkyWayGeometryScore,
-        moonlightImpactScore: result.astroAnalysis.moonlightImpactScore,
-        transparencyScore: result.astroAnalysis.transparencyScore,
-        dewRiskScore: result.astroAnalysis.dewRiskScore,
-        practicalAstroScore: result.astroAnalysis.practicalAstroScore,
-        astroWindowAvailable: result.astroAnalysis.astroWindowAvailable,
-        astroShootable: result.astroAnalysis.astroShootable,
-        recommendationLabelZh: result.astroAnalysis.recommendationLabel,
-        astroWeatherBlockers: takeTextItems(result.astroAnalysis.weatherBlockers, 5),
-        astronomicalNight: compactAstroWindow(result.astroAnalysis.astronomicalNightWindows[0], timezone),
-        moonImpact: {
-          level: result.astroAnalysis.assessment.moonImpactLevel,
-          labelZh: result.astroAnalysis.labels.moonlightImpact,
-          reasonsZh: takeTextItems(result.astroAnalysis.assessment.moonImpactReasonsZh, 2),
-        },
-        moonlessWindow: compactAstroWindow(result.astroAnalysis.moonlessNightWindows[0], timezone),
-        galacticCenterWindow: compactAstroWindow(
-          result.astroAnalysis.milkyWayCandidateWindows[0],
-          timezone,
-        ),
-        recommendedMilkyWayWindow: compactAstroWindow(
-          result.astroAnalysis.recommendedMilkyWayWindow ??
-            result.astroAnalysis.recommendedMilkyWayWindows[0],
-          timezone,
-        ),
-        dewRisk: {
-          level: result.astroAnalysis.dewRiskLevel,
-          labelZh: result.astroAnalysis.labels.dewRisk,
-          score: result.astroAnalysis.dewRiskScore,
-        },
-        gearAdviceZh: takeTextItems(result.astroAnalysis.gearAdviceZh, 3, 100),
-        warmthAdviceZh: limitText(result.astroAnalysis.warmthAdviceZh, 100),
-      },
-    },
-    glowFacts:
-      result.target === "general" || result.target === "glow"
-        ? compactGlowAnalysis(result)
-        : undefined,
-    terrainFacts: {
-      dataSourceLabelZh: result.terrainAnalysis.dataSourceLabelZh,
-      isMock: result.terrainAnalysis.isMock,
-      locationElevation: result.terrainSummary.locationElevation,
-      elevationMeters: result.terrainSummary.elevationMeters,
-      elevationSource: result.terrainSummary.elevationSource,
-      elevationConfidence: result.terrainSummary.elevationConfidence,
-      terrainType: result.terrainSummary.terrainType,
-      exposureType: result.terrainSummary.exposureType,
-      viewingDirection: result.terrainSummary.viewingDirection,
-      nearbyValleyElevationMeters: result.terrainSummary.nearbyValleyElevationMeters,
-      localReliefMeters: result.terrainSummary.localReliefMeters,
-      elevationDiff5km: result.terrainSummary.elevationDiff5km,
-      terrainCloudSeaPotential: result.terrainSummary.terrainCloudSeaPotential,
-      terrainNoteZh: limitText(result.terrainSummary.terrainNoteZh, 90),
-      obstructionNoteZh: limitText(result.terrainSummary.obstructionNoteZh, 90),
-    },
-    targetAnalysis: compactTargetAnalysis(result),
+    bestWindows: takeItems(result.bestWindows, windowLimit).map((window) =>
+      compactForecastWindowBrief(window, timezone),
+    ),
     dailySummaries: dailyFacts,
-    dataNoticeZh: limitText(providerNeutralText(result.dataNotice), 140),
-    isMock: result.isMock,
-  };
-}
-
-function compactForecastWindow(
-  window: ForecastCalculationResult["bestWindows"][number],
-  timezone = "Asia/Shanghai",
-) {
-  return {
-    labelZh: windowLabelZh(window),
-    windowZh: formatShootingWindowZh(window, timezone),
-    score: window.score,
-    target: window.target,
-    conditionScore: window.conditionScore,
-    practicalScore: window.practicalScore,
-    practicalKind: window.practicalKind,
-    lightPhase: window.lightPhase,
-    subjectPriorityLabel: window.subjectPriorityLabel,
-    arrivalAdvice: window.arrivalAdvice
+    topicScores: Object.values(result.scores).map(compactScore),
+    risks: compactRiskFlags(result.riskFlags, detail === "minimal" ? 3 : 5),
+    keyReasons: takeTextItems(result.keyReasons, 4, 100),
+    deterministicActionSuggestions: takeTextItems(result.photographyAdvice, 3, 120),
+    clothingAndEquipment: {
+      summaryZh: limitText(result.clothingGuide.summaryZh, 160),
+      comfortLevel: result.clothingGuide.comfortLevel,
+      layers: takeTextItems(result.clothingGuide.layers, detail === "minimal" ? 2 : 4),
+      accessories: takeTextItems(result.clothingGuide.accessories, detail === "minimal" ? 2 : 4),
+      riskNotes: takeTextItems(result.clothingGuide.riskNotes, detail === "minimal" ? 2 : 3, 110),
+    },
+    dataStatus: {
+      dataMode: result.weatherDataMode,
+      isMock: result.isMock,
+      noticeZh: limitText(providerNeutralText(result.dataNotice), 140),
+    },
+    calibrationHint: result.calibrationHint
       ? {
-          recommendedArrivalLabel: window.arrivalAdvice.recommendedArrivalLabel,
-          recommendedArrivalZh: formatArrivalDeadlineZh(
-            window.arrivalAdvice.recommendedArrivalTime,
-            timezone,
-          ),
-          setupBufferMinutes: window.arrivalAdvice.setupBufferMinutes,
-          reasonZh: limitText(window.arrivalAdvice.reasonZh, 120),
-          warningZh: limitText(window.arrivalAdvice.warningZh, 120),
+          sampleCount: result.calibrationHint.sampleCount,
+          hitRate: result.calibrationHint.hitRate,
+          falsePositiveRate: result.calibrationHint.falsePositiveRate,
+          confidenceAdjustment: result.calibrationHint.confidenceAdjustment,
+          displayNoteZh: limitText(result.calibrationHint.displayNoteZh, 140),
+          cautionNoteZh: limitText(result.calibrationHint.cautionNoteZh, 140),
         }
-      : undefined,
-    copyReasonZh: limitText(window.copyReasonZh ?? window.practicalNoteZh, 140),
-    weatherBlockers: takeTextItems(window.weatherBlockers, 3),
-    precipitationRiskZh: window.precipitationRisk
-      ? `${window.precipitationRisk.rainRiskLabelZh}，${window.precipitationRisk.recommendationZh}`
       : undefined,
   };
 }
@@ -934,13 +658,6 @@ function providerNeutralText(text: string | undefined): string | undefined {
     .replace(/高德地图|Amap/g, "地理服务");
 }
 
-function providerNeutralItems(
-  items: readonly string[] | undefined,
-  count: number,
-): readonly string[] {
-  return takeItems(items, count).map((item) => limitText(providerNeutralText(item) ?? item));
-}
-
 type RainWeatherLike = {
   readonly precipitationProbability?: number | null;
   readonly precipitation?: number | null;
@@ -1035,10 +752,6 @@ function formatTemperatureRange(min: number | undefined, max: number | undefined
   return "温度待复核";
 }
 
-function formatTemperatureValue(value: number | null | undefined): string {
-  return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value)}°C` : "待复核";
-}
-
 function formatWindValue(speed: number | null | undefined, gust?: number | null): string {
   if (typeof speed !== "number" || !Number.isFinite(speed)) {
     return "风力待复核";
@@ -1094,44 +807,82 @@ function roundDisplay(value: number): string {
   return Number.isInteger(value) ? `${value}` : value.toFixed(1);
 }
 
+function parseJsonObjectWithExtraction(rawOutput: string): unknown {
+  try {
+    return JSON.parse(rawOutput);
+  } catch (firstError) {
+    const extracted = extractFirstJsonObject(rawOutput);
+    if (!extracted || extracted === rawOutput.trim()) {
+      throw firstError;
+    }
+    return JSON.parse(extracted);
+  }
+}
+
+function extractFirstJsonObject(rawOutput: string): string | null {
+  const text = rawOutput
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "");
+  const start = text.indexOf("{");
+  if (start < 0) {
+    return null;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) {
+      continue;
+    }
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return text.slice(start, index + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
 function assertInterpretationPayloadSize(content: string): string {
-  if (content.length <= maxInterpretationPayloadChars) {
+  if (content.length <= absoluteMaxInterpretationPayloadChars) {
     return content;
   }
 
   throw deepSeekError({
-    errorCategory: "unsupported",
-    messageZh: "DeepSeek 解读上下文过大，请稍后重试。",
+    errorCategory: "prompt_too_large",
+    messageZh: "DeepSeek 解读上下文过大，已停止发送请求。",
+    promptSizeChars: content.length,
   });
 }
 
-function buildJsonOnlySystemPrompt(): string {
-  return [
-    "你是面向中国风光摄影用户的拍摄天气解读助手。",
-    "只解释已经计算好的确定性结果，不得计算、覆盖或改写天气、天文、地形、坐标或评分数据。",
-    "不得编造天气数据，不得覆盖 deterministic scores，不得声称 mock weather 是真实 forecast。",
-    "输出简体中文。",
-    "必须只输出 json 对象，不要输出 Markdown、解释文字或代码块。",
-  ].join("\n");
+function buildPromptSizeChars(messages: readonly DeepSeekChatMessage[]): number {
+  return messages.reduce((sum, message) => sum + message.content.length, 0);
 }
 
-export function buildDeepSeekForecastExplanationRequest(
+function buildForecastExplanationUserPayload(
   input: ForecastExplanationInput,
-  options: Pick<
-    DeepSeekProviderOptions,
-    | "baseUrl"
-    | "defaultModel"
-    | "temperature"
-    | "maxTokens"
-    | "responseFormat"
-    | "thinkingEnabled"
-    | "reasoningEffort"
-    | "jsonOutputEnabled"
-  > = {},
-): DeepSeekRequestPreview {
-  const responseFormat = normalizeResponseFormat(options.responseFormat);
-  const jsonOutputEnabled = options.jsonOutputEnabled ?? responseFormat === "json_object";
-  const userPayload = {
+  detail: DeepSeekForecastContextDetail,
+) {
+  return {
     task: "请基于 computedForecastFacts 输出专业风光摄影决策解读 JSON。",
     outputSchema: {
       conclusion: {
@@ -1202,7 +953,7 @@ export function buildDeepSeekForecastExplanationRequest(
       "有天文窗口不代表能拍银河；如果云量、低云、降水或通透度不支持，必须明确不建议专程。",
       "重要窗口必须输出完整日期和时间，例如 2026年5月28日 04:07–06:07。",
       "每条建议必须绑定具体日期、窗口、题材或风险，不要泛泛而谈。",
-      "如果 isMock=true，必须明确这是演示数据解读，只适合体验分析流程和规划参考。",
+      "如果 dataStatus.isMock=true，必须明确这是演示数据解读，只适合体验分析流程和规划参考。",
       "输出 JSON only。",
     ],
     safetyRules: [
@@ -1215,20 +966,54 @@ export function buildDeepSeekForecastExplanationRequest(
       "Output json only.",
     ],
     userGoal: input.userGoal ?? null,
-    computedForecastFacts: buildDeepSeekForecastContext(input.forecastResult),
+    computedForecastFacts: buildDeepSeekForecastContext(input.forecastResult, detail),
   };
+}
+
+function buildJsonOnlySystemPrompt(): string {
+  return [
+    "你是面向中国风光摄影用户的拍摄天气解读助手。",
+    "只解释已经计算好的确定性结果，不得计算、覆盖或改写天气、天文、地形、坐标或评分数据。",
+    "不得编造天气数据，不得覆盖 deterministic scores，不得声称 mock weather 是真实 forecast。",
+    "输出简体中文。",
+    "必须只输出 json 对象，不要输出 Markdown、解释文字或代码块。",
+  ].join("\n");
+}
+
+export function buildDeepSeekForecastExplanationRequest(
+  input: ForecastExplanationInput,
+  options: Pick<
+    DeepSeekProviderOptions,
+    | "baseUrl"
+    | "defaultModel"
+    | "temperature"
+    | "maxTokens"
+    | "responseFormat"
+    | "thinkingEnabled"
+    | "reasoningEffort"
+    | "jsonOutputEnabled"
+  > = {},
+): DeepSeekRequestPreview {
+  const responseFormat = normalizeResponseFormat(options.responseFormat);
+  const jsonOutputEnabled = options.jsonOutputEnabled ?? responseFormat === "json_object";
+  let userContent = JSON.stringify(buildForecastExplanationUserPayload(input, "standard"));
+  if (userContent.length > maxInterpretationPayloadChars) {
+    userContent = JSON.stringify(buildForecastExplanationUserPayload(input, "minimal"));
+  }
+  userContent = assertInterpretationPayloadSize(userContent);
+  const messages: readonly DeepSeekChatMessage[] = [
+    {
+      role: "system",
+      content: buildJsonOnlySystemPrompt(),
+    },
+    {
+      role: "user",
+      content: userContent,
+    },
+  ];
   const body: DeepSeekRequestBody = {
     model: normalizeModel(options.defaultModel),
-    messages: [
-      {
-        role: "system",
-        content: buildJsonOnlySystemPrompt(),
-      },
-      {
-        role: "user",
-        content: assertInterpretationPayloadSize(JSON.stringify(userPayload)),
-      },
-    ],
+    messages,
     temperature: normalizeTemperature(options.temperature),
     max_tokens: normalizeMaxTokens(options.maxTokens),
     stream: false,
@@ -1243,6 +1028,7 @@ export function buildDeepSeekForecastExplanationRequest(
   return {
     url: `${normalizeBaseUrl(options.baseUrl)}/chat/completions`,
     body,
+    promptSizeChars: buildPromptSizeChars(messages),
   };
 }
 
@@ -1699,7 +1485,7 @@ export class DeepSeekProvider implements AIProvider {
 
   validateJsonOutput<T>(schema: z.ZodSchema<T>, rawOutput: string): T {
     try {
-      return schema.parse(JSON.parse(rawOutput));
+      return schema.parse(parseJsonObjectWithExtraction(rawOutput));
     } catch (error) {
       if (error instanceof SyntaxError) {
         throw deepSeekError({
@@ -1744,6 +1530,7 @@ export class DeepSeekProvider implements AIProvider {
     const request: DeepSeekRequestPreview = {
       url: `${this.baseUrl}/chat/completions`,
       body,
+      promptSizeChars: buildPromptSizeChars(messages),
     };
 
     return this.request(request);
@@ -1770,20 +1557,24 @@ export class DeepSeekProvider implements AIProvider {
 
       if (!response.ok) {
         throw deepSeekError({
-          errorCategory:
-            response.status === 401 || response.status === 403 ? "invalid_key" : "provider_error",
+          errorCategory: classifyDeepSeekHttpError(response.status),
           messageZh:
             response.status === 401 || response.status === 403
               ? "DeepSeek API Key 无效或权限不足。"
+              : response.status === 429
+                ? "DeepSeek 上游限流，请稍后重试。"
+                : response.status >= 500
+                  ? "DeepSeek 上游服务暂时不可用。"
               : `DeepSeek 服务请求失败，状态码 ${response.status}。`,
           statusCode: response.status,
           latencyMs,
+          promptSizeChars: request.promptSizeChars,
         });
       }
 
       return getMessageContent(parseDeepSeekChatResponse(text, latencyMs), latencyMs);
     } catch (error) {
-      throw normalizeDeepSeekRequestError(error, Date.now() - startedAt);
+      throw normalizeDeepSeekRequestError(error, Date.now() - startedAt, request.promptSizeChars);
     } finally {
       clearTimeout(timeout);
     }
@@ -1791,17 +1582,39 @@ export class DeepSeekProvider implements AIProvider {
 
   private getApiKey(): string {
     if (!this.realModeEnabled) {
-      throw new Error(deepSeekRealModeDisabledMessage);
+      throw deepSeekError({
+        errorCategory: "disabled",
+        messageZh: deepSeekRealModeDisabledMessage,
+      });
     }
 
     if (!this.enabled) {
-      throw new Error(deepSeekProviderDisabledMessage);
+      throw deepSeekError({
+        errorCategory: "disabled",
+        messageZh: deepSeekProviderDisabledMessage,
+      });
     }
 
     if (!this.apiKey) {
-      throw new Error(missingDeepSeekApiKeyMessage);
+      throw deepSeekError({
+        errorCategory: "missing_api_key",
+        messageZh: missingDeepSeekApiKeyMessage,
+      });
     }
 
     return this.apiKey;
   }
+}
+
+function classifyDeepSeekHttpError(status: number): DeepSeekInterpretationErrorCategory {
+  if (status === 401 || status === 403) {
+    return "upstream_401";
+  }
+  if (status === 429) {
+    return "upstream_429";
+  }
+  if (status >= 500) {
+    return "upstream_5xx";
+  }
+  return "unknown";
 }

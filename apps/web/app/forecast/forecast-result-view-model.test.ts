@@ -1756,6 +1756,7 @@ describe("forecast result target-aware view model", () => {
         aiStatus: "idle",
         aiExplanation: null,
         aiErrorMessage: "",
+        aiRetryable: false,
         onGenerateAiExplanation: vi.fn(),
       }),
     );
@@ -1829,6 +1830,7 @@ describe("forecast result target-aware view model", () => {
         aiStatus: "idle",
         aiExplanation: null,
         aiErrorMessage: "",
+        aiRetryable: false,
         onGenerateAiExplanation: vi.fn(),
       }),
     );
@@ -1851,6 +1853,7 @@ describe("forecast result target-aware view model", () => {
         aiStatus: "idle",
         aiExplanation: null,
         aiErrorMessage: "",
+        aiRetryable: false,
         onGenerateAiExplanation: vi.fn(),
       }),
     );
@@ -1898,6 +1901,7 @@ describe("forecast result target-aware view model", () => {
         aiStatus: "idle",
         aiExplanation: null,
         aiErrorMessage: "",
+        aiRetryable: false,
         onGenerateAiExplanation: vi.fn(),
       }),
     );
@@ -1931,6 +1935,7 @@ describe("forecast result target-aware view model", () => {
         aiStatus: "idle",
         aiExplanation: null,
         aiErrorMessage: "",
+        aiRetryable: false,
         onGenerateAiExplanation: vi.fn(),
       }),
     );
@@ -1983,6 +1988,7 @@ describe("forecast result target-aware view model", () => {
         aiStatus: "idle",
         aiExplanation: null,
         aiErrorMessage: "",
+        aiRetryable: false,
         onGenerateAiExplanation: vi.fn(),
       }),
     );
@@ -2028,6 +2034,7 @@ describe("forecast result target-aware view model", () => {
         aiStatus: "idle",
         aiExplanation: null,
         aiErrorMessage: "",
+        aiRetryable: false,
         onGenerateAiExplanation: vi.fn(),
       }),
     );
@@ -2065,6 +2072,7 @@ describe("forecast result target-aware view model", () => {
         aiStatus: "idle",
         aiExplanation: null,
         aiErrorMessage: "",
+        aiRetryable: false,
         onGenerateAiExplanation: vi.fn(),
       }),
     );
@@ -2112,6 +2120,7 @@ describe("forecast result target-aware view model", () => {
         aiStatus: "idle",
         aiExplanation: null,
         aiErrorMessage: "",
+        aiRetryable: false,
         onGenerateAiExplanation: vi.fn(),
       }),
     );
@@ -2180,6 +2189,7 @@ describe("forecast result target-aware view model", () => {
         aiStatus: "idle",
         aiExplanation: null,
         aiErrorMessage: "",
+        aiRetryable: false,
         onGenerateAiExplanation: vi.fn(),
       }),
     );
@@ -2230,6 +2240,7 @@ describe("forecast result target-aware view model", () => {
         aiStatus: "idle",
         aiExplanation: null,
         aiErrorMessage: "",
+        aiRetryable: false,
         onGenerateAiExplanation: vi.fn(),
       }),
     );
@@ -2300,6 +2311,7 @@ describe("forecast result target-aware view model", () => {
         aiStatus: "idle",
         aiExplanation: null,
         aiErrorMessage: "",
+        aiRetryable: false,
         onGenerateAiExplanation: vi.fn(),
       }),
     );
@@ -2347,6 +2359,7 @@ describe("forecast result target-aware view model", () => {
         aiStatus: "idle",
         aiExplanation: null,
         aiErrorMessage: "",
+        aiRetryable: false,
         onGenerateAiExplanation: vi.fn(),
       }),
     );
@@ -2418,6 +2431,7 @@ describe("forecast result target-aware view model", () => {
         aiStatus: "idle",
         aiExplanation: null,
         aiErrorMessage: "",
+        aiRetryable: false,
         onGenerateAiExplanation: vi.fn(),
       }),
     );
@@ -2471,15 +2485,38 @@ describe("forecast result target-aware view model", () => {
         aiStatus: "error",
         aiExplanation: null,
         aiErrorMessage: "智能解读暂时超时，确定性判断结果仍可正常参考，可稍后重试。",
+        aiRetryable: true,
         onGenerateAiExplanation: vi.fn(),
       }),
     );
 
     expect(html).toContain("智能解读暂时超时，确定性判断结果仍可正常参考，可稍后重试。");
+    expect(html).toContain("重试 DeepSeek 解读");
     expect(html).toContain("综合出片指数");
     expect(html).toContain("逐日拍摄判断");
     expect(html).toContain("出行建议");
     expect(html).not.toContain("分析失败");
+  });
+
+  it("disables the intelligent interpretation trigger while a request is loading", () => {
+    const result = resultForTarget("general");
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "loading",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        aiRetryable: false,
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("正在生成解读");
+    expect(html).toContain("disabled");
+    expect(html).toContain("综合出片指数");
   });
 
   it("renders structured intelligent interpretation sections and deterministic fallback label", () => {
@@ -2555,6 +2592,7 @@ describe("forecast result target-aware view model", () => {
           },
         },
         aiErrorMessage: "",
+        aiRetryable: false,
         onGenerateAiExplanation: vi.fn(),
       }),
     );

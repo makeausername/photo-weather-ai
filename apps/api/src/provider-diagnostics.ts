@@ -588,7 +588,7 @@ function classifyProviderDiagnosticError(
 
   if (isDeepSeekProviderError(error)) {
     return {
-      errorCategory: error.errorCategory,
+      errorCategory: mapDeepSeekDiagnosticErrorCategory(error.errorCategory),
       messageZh: sanitizeDiagnosticMessage(error.messageZh, secret),
       statusCode: error.statusCode,
       latencyMs: error.latencyMs,
@@ -608,6 +608,34 @@ function classifyProviderDiagnosticError(
     errorCategory: "provider_error",
     messageZh: sanitizeDiagnosticMessage(message || fallbackMessageZh, secret),
   };
+}
+
+function mapDeepSeekDiagnosticErrorCategory(
+  category: string,
+): ForecastWeatherSourceErrorCategory {
+  switch (category) {
+    case "disabled":
+      return "skipped";
+    case "missing_api_key":
+      return "missing_config";
+    case "timeout":
+      return "timeout";
+    case "network_error":
+      return "network";
+    case "upstream_401":
+      return "invalid_key";
+    case "upstream_429":
+    case "upstream_5xx":
+    case "unknown":
+      return "provider_error";
+    case "parse_error":
+    case "empty_response":
+      return "parse_error";
+    case "prompt_too_large":
+      return "unsupported";
+    default:
+      return "provider_error";
+  }
 }
 
 function sanitizeDiagnosticMessage(message: string, secret?: string): string {

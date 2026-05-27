@@ -14,6 +14,7 @@ import {
   buildDeepSeekForecastExplanationRequest,
   createRuleBasedForecastExplanation,
   isDeepSeekProviderError,
+  type DeepSeekInterpretationErrorCategory,
   type ForecastAiExplanation,
 } from "@photo-weather/ai";
 import type { DatabaseClient } from "@photo-weather/db";
@@ -251,44 +252,31 @@ export function registerForecastRoutes(
       dbClient: options.dbClient,
       env,
     });
+    const promptSizeChars = runtimeDeepSeek ? estimateDeepSeekPromptSize(result, runtimeDeepSeek) : 0;
+    const unavailableCategory = classifyRuntimeDeepSeekUnavailable(runtimeDeepSeek);
 
-    if (
-      !runtimeDeepSeek?.enabled ||
-      !runtimeDeepSeek.realCallEnabled ||
-      !runtimeDeepSeek.apiKeyPresent
-    ) {
+    if (!runtimeDeepSeek || unavailableCategory) {
       request.log.info({
         route: "/forecast/ai-explain",
         model: runtimeDeepSeek?.model ?? "deepseek-v4-pro",
         timeoutMs: runtimeDeepSeek?.timeoutMs ?? 90000,
-        promptSizeChars: -1,
+        promptSizeChars,
         latencyMs: 0,
         parseSuccess: false,
-        errorCategory: "disabled",
+        errorCategory: unavailableCategory ?? "disabled",
       });
-      return reply.send({
-        success: true,
-        fallback: true,
-        explanation: createRuleBasedForecastExplanation(result),
-        errorCategory: "disabled",
-        messageZh: "基于确定性计算结果生成的简版解读。",
-        retryable: false,
-        error:
-          runtimeDeepSeek?.realCallEnabled && !runtimeDeepSeek.apiKeyPresent
-            ? "provider_key_missing"
-            : "ai_explanation_not_enabled",
-        message: "基于确定性计算结果生成的简版解读。",
-        diagnostics: {
-          model: runtimeDeepSeek?.model ?? "deepseek-v4-pro",
-          timeoutMs: runtimeDeepSeek?.timeoutMs ?? 90000,
-          promptSizeChars: -1,
-          parseSuccess: false,
-          fallback: true,
-        },
-      });
+      return reply.send(
+        buildAiExplainFailureResponse({
+          result,
+          runtimeDeepSeek,
+          errorCategory: unavailableCategory ?? "disabled",
+          latencyMs: 0,
+          promptSizeChars,
+          attempts: 0,
+        }),
+      );
     }
 
-    const promptSizeChars = estimateDeepSeekPromptSize(result, runtimeDeepSeek);
     const startedAt = Date.now();
 
     try {
@@ -314,7 +302,12 @@ export function registerForecastRoutes(
 
       return reply.send({
         success: true,
+        fallback: false,
         explanation: retryResult.explanation,
+        retryable: false,
+        latencyMs: Date.now() - startedAt,
+        model: runtimeDeepSeek.model,
+        promptSizeChars,
         diagnostics: {
           model: runtimeDeepSeek.model,
           timeoutMs: runtimeDeepSeek.timeoutMs,
@@ -325,34 +318,27 @@ export function registerForecastRoutes(
       });
     } catch (error) {
       const normalized = normalizeDeepSeekExplanationError(error);
+      const latencyMs = normalized.latencyMs ?? Date.now() - startedAt;
+      const failurePromptSizeChars = normalized.promptSizeChars ?? promptSizeChars;
       request.log.warn({
         route: "/forecast/ai-explain",
         model: runtimeDeepSeek.model,
         timeoutMs: runtimeDeepSeek.timeoutMs,
-        promptSizeChars,
-        latencyMs: Date.now() - startedAt,
+        promptSizeChars: failurePromptSizeChars,
+        latencyMs,
         parseSuccess: false,
         errorCategory: normalized.errorCategory,
       });
-      return reply.send({
-        success: true,
-        fallback: true,
-        explanation: createRuleBasedForecastExplanation(result),
-        errorCategory: normalized.errorCategory,
-        messageZh: "基于确定性计算结果生成的简版解读。",
-        retryable: normalized.retryable,
-        error: normalized.error,
-        message: "基于确定性计算结果生成的简版解读。",
-        diagnostics: {
-          model: runtimeDeepSeek.model,
-          timeoutMs: runtimeDeepSeek.timeoutMs,
-          promptSizeChars,
-          latencyMs: Date.now() - startedAt,
-          parseSuccess: false,
-          fallback: true,
+      return reply.send(
+        buildAiExplainFailureResponse({
+          result,
+          runtimeDeepSeek,
           errorCategory: normalized.errorCategory,
-        },
-      });
+          latencyMs,
+          promptSizeChars: failurePromptSizeChars,
+          attempts: normalized.attempts,
+        }),
+      );
     }
   });
 
@@ -609,6 +595,18 @@ async function readRuntimeDeepSeekConfigOrDisabled(options: {
   }
 }
 
+function classifyRuntimeDeepSeekUnavailable(
+  runtimeDeepSeek: RuntimeDeepSeekConfig | null,
+): DeepSeekInterpretationErrorCategory | null {
+  if (!runtimeDeepSeek?.enabled || !runtimeDeepSeek.realCallEnabled) {
+    return "disabled";
+  }
+  if (!runtimeDeepSeek.apiKeyPresent) {
+    return "missing_api_key";
+  }
+  return null;
+}
+
 function estimateDeepSeekPromptSize(
   result: ForecastCalculationResult,
   runtimeDeepSeek: RuntimeDeepSeekConfig,
@@ -627,10 +625,110 @@ function estimateDeepSeekPromptSize(
         jsonOutputEnabled: runtimeDeepSeek.jsonOutputEnabled,
       },
     );
-    return JSON.stringify(request.body.messages).length;
+    return request.promptSizeChars;
   } catch {
     return -1;
   }
+}
+
+function buildAiExplainFailureResponse(options: {
+  readonly result: ForecastCalculationResult;
+  readonly runtimeDeepSeek: RuntimeDeepSeekConfig | null;
+  readonly errorCategory: DeepSeekInterpretationErrorCategory;
+  readonly latencyMs: number;
+  readonly promptSizeChars: number;
+  readonly attempts?: number;
+}) {
+  const fallback = safeRuleBasedForecastExplanation(options.result);
+  const messageZh = deepSeekInterpretationMessageZh(options.errorCategory, Boolean(fallback));
+  const retryable = isRetryableDeepSeekErrorCategory(options.errorCategory);
+  const model = options.runtimeDeepSeek?.model ?? "deepseek-v4-pro";
+  const timeoutMs = options.runtimeDeepSeek?.timeoutMs ?? 90000;
+
+  return {
+    success: false,
+    fallback: Boolean(fallback),
+    ...(fallback ? { explanation: fallback } : {}),
+    errorCategory: options.errorCategory,
+    messageZh,
+    retryable,
+    latencyMs: options.latencyMs,
+    model,
+    promptSizeChars: options.promptSizeChars,
+    error: legacyAiExplanationErrorCode(options.errorCategory),
+    message: messageZh,
+    diagnostics: {
+      model,
+      timeoutMs,
+      promptSizeChars: options.promptSizeChars,
+      latencyMs: options.latencyMs,
+      attempts: options.attempts ?? 0,
+      parseSuccess: false,
+      fallback: Boolean(fallback),
+      errorCategory: options.errorCategory,
+    },
+  };
+}
+
+function safeRuleBasedForecastExplanation(
+  result: ForecastCalculationResult,
+): ForecastAiExplanation | null {
+  try {
+    return createRuleBasedForecastExplanation(result);
+  } catch {
+    return null;
+  }
+}
+
+function deepSeekInterpretationMessageZh(
+  category: DeepSeekInterpretationErrorCategory,
+  fallbackAvailable: boolean,
+): string {
+  const suffix = fallbackAvailable
+    ? "已显示基于确定性计算结果生成的简版解读。"
+    : "确定性判断结果仍可正常参考，可稍后重试。";
+  switch (category) {
+    case "disabled":
+      return `DeepSeek 智能解读未启用，${suffix}`;
+    case "missing_api_key":
+      return `DeepSeek API Key 未配置，${suffix}`;
+    case "timeout":
+      return `DeepSeek 请求超时，${suffix}`;
+    case "network_error":
+      return `DeepSeek 网络请求失败，${suffix}`;
+    case "upstream_401":
+      return `DeepSeek API Key 无效或权限不足，${suffix}`;
+    case "upstream_429":
+      return `DeepSeek 上游限流，${suffix}`;
+    case "upstream_5xx":
+      return `DeepSeek 上游服务暂时不可用，${suffix}`;
+    case "parse_error":
+      return `DeepSeek 返回内容无法解析，${suffix}`;
+    case "empty_response":
+      return `DeepSeek 返回内容为空，${suffix}`;
+    case "prompt_too_large":
+      return `DeepSeek 解读上下文过大，${suffix}`;
+    case "unknown":
+      return `DeepSeek 解读暂时不可用，${suffix}`;
+  }
+}
+
+function isRetryableDeepSeekErrorCategory(category: DeepSeekInterpretationErrorCategory): boolean {
+  return (
+    category === "timeout" ||
+    category === "network_error" ||
+    category === "upstream_429" ||
+    category === "upstream_5xx" ||
+    category === "parse_error" ||
+    category === "empty_response" ||
+    category === "unknown"
+  );
+}
+
+function legacyAiExplanationErrorCode(
+  category: DeepSeekInterpretationErrorCategory,
+): "ai_explanation_timeout" | "ai_explanation_unavailable" {
+  return category === "timeout" ? "ai_explanation_timeout" : "ai_explanation_unavailable";
 }
 
 async function generateDeepSeekExplanationWithRetry(options: {
@@ -662,9 +760,9 @@ function isRetryableDeepSeekInterpretationError(error: unknown): boolean {
   if (isDeepSeekProviderError(error)) {
     return (
       error.errorCategory === "timeout" ||
-      error.errorCategory === "network" ||
-      error.errorCategory === "provider_error" ||
-      error.errorCategory === "parse_error"
+      error.errorCategory === "network_error" ||
+      error.errorCategory === "upstream_429" ||
+      error.errorCategory === "upstream_5xx"
     );
   }
 
@@ -681,17 +779,12 @@ function normalizeDeepSeekExplanationError(error: unknown): {
   readonly statusCode: 503 | 504;
   readonly error: "ai_explanation_timeout" | "ai_explanation_unavailable";
   readonly message: string;
-  readonly errorCategory:
-    | "timeout"
-    | "provider_error"
-    | "parse_error"
-    | "network"
-    | "disabled"
-    | "unsupported"
-    | "invalid_key";
+  readonly errorCategory: DeepSeekInterpretationErrorCategory;
   readonly messageZh: string;
   readonly retryable: boolean;
   readonly latencyMs?: number;
+  readonly promptSizeChars?: number;
+  readonly attempts?: number;
 } {
   const providerError = isDeepSeekProviderError(error) ? error : undefined;
   if (
@@ -707,25 +800,15 @@ function normalizeDeepSeekExplanationError(error: unknown): {
       messageZh: "DeepSeek 解读暂时超时，已保留确定性分析结果，可稍后重试。",
       retryable: true,
       latencyMs: providerError?.latencyMs,
+      promptSizeChars: providerError?.promptSizeChars,
       message: "DeepSeek 解读暂时超时，已保留确定性分析结果，可稍后重试。",
     };
   }
 
-  const providerCategory = providerError?.errorCategory;
-  const errorCategory =
-    providerCategory === "invalid_key" ||
-    providerCategory === "unsupported" ||
-    providerCategory === "parse_error" ||
-    providerCategory === "network" ||
-    providerCategory === "provider_error"
-      ? providerCategory
-      : "provider_error";
-  const retryable =
-    errorCategory === "network" ||
-    errorCategory === "provider_error" ||
-    errorCategory === "parse_error";
+  const errorCategory = providerError?.errorCategory ?? "unknown";
+  const retryable = isRetryableDeepSeekErrorCategory(errorCategory);
   const messageZh =
-    errorCategory === "invalid_key"
+    errorCategory === "upstream_401"
       ? "DeepSeek API Key 无效或权限不足，确定性分析结果已保留。"
       : "DeepSeek 解读暂时不可用，已保留确定性分析结果，可稍后重试。";
 
@@ -736,6 +819,7 @@ function normalizeDeepSeekExplanationError(error: unknown): {
     messageZh,
     retryable,
     latencyMs: providerError?.latencyMs,
+    promptSizeChars: providerError?.promptSizeChars,
     message: "DeepSeek 解读暂时不可用，已保留确定性分析结果。",
   };
 }

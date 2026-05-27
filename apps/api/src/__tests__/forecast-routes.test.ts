@@ -1534,12 +1534,15 @@ describe("forecast query validation route", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
-      success: true,
+      success: false,
       fallback: true,
-      errorCategory: "disabled",
-      messageZh: "基于确定性计算结果生成的简版解读。",
+      errorCategory: "missing_api_key",
+      messageZh: expect.stringContaining("DeepSeek API Key 未配置"),
       retryable: false,
-      error: "provider_key_missing",
+      error: "ai_explanation_unavailable",
+      latencyMs: 0,
+      model: "deepseek-v4-pro",
+      promptSizeChars: expect.any(Number),
       explanation: expect.objectContaining({
         conclusion: expect.objectContaining({
           recommendedDayZh: expect.any(String),
@@ -1549,6 +1552,7 @@ describe("forecast query validation route", () => {
         model: "deepseek-v4-pro",
         parseSuccess: false,
         fallback: true,
+        errorCategory: "missing_api_key",
       }),
     });
     expect(fetchMock).not.toHaveBeenCalled();
@@ -1649,12 +1653,15 @@ describe("forecast query validation route", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
-      success: true,
+      success: false,
       fallback: true,
       errorCategory: "timeout",
       retryable: true,
       error: "ai_explanation_timeout",
-      messageZh: "基于确定性计算结果生成的简版解读。",
+      messageZh: expect.stringContaining("DeepSeek 请求超时"),
+      latencyMs: expect.any(Number),
+      model: "deepseek-v4-pro",
+      promptSizeChars: expect.any(Number),
       explanation: expect.objectContaining({
         conclusion: expect.objectContaining({
           recommendedDayZh: expect.any(String),
@@ -1667,7 +1674,7 @@ describe("forecast query validation route", () => {
         parseSuccess: false,
         fallback: true,
       }),
-      message: "基于确定性计算结果生成的简版解读。",
+      message: expect.stringContaining("DeepSeek 请求超时"),
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(response.body).not.toContain("deepseek-secret");
@@ -1729,10 +1736,14 @@ describe("forecast query validation route", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
-      success: true,
+      success: false,
       fallback: true,
       errorCategory: "parse_error",
-      messageZh: "基于确定性计算结果生成的简版解读。",
+      messageZh: expect.stringContaining("DeepSeek 返回内容无法解析"),
+      retryable: true,
+      latencyMs: expect.any(Number),
+      model: "deepseek-v4-pro",
+      promptSizeChars: expect.any(Number),
       explanation: expect.objectContaining({
         conclusion: expect.objectContaining({
           recommendedDayZh: expect.any(String),
@@ -1745,7 +1756,7 @@ describe("forecast query validation route", () => {
         errorCategory: "parse_error",
       }),
     });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(response.body).not.toContain("deepseek-secret");
   });
 

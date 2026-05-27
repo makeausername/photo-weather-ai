@@ -339,6 +339,9 @@ describe("local astro diagnostics scripts", () => {
       "errorCategory:",
       "messageZh:",
       "promptSizeChars:",
+      "retryable:",
+      "latencyMs:",
+      "sectionKeys:",
     ]) {
       expect(script).toContain(expected);
     }

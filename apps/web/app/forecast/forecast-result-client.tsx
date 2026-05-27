@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   formatArrivalDeadlineZh,
@@ -135,16 +135,23 @@ type AiExplainResponse = {
   readonly explanation?: ForecastAiExplanation;
   readonly fallback?: boolean;
   readonly errorCategory?:
-    | "timeout"
-    | "provider_error"
-    | "parse_error"
-    | "network"
     | "disabled"
-    | "unsupported"
-    | "invalid_key";
+    | "missing_api_key"
+    | "timeout"
+    | "network_error"
+    | "upstream_401"
+    | "upstream_429"
+    | "upstream_5xx"
+    | "parse_error"
+    | "empty_response"
+    | "prompt_too_large"
+    | "unknown";
   readonly messageZh?: string;
   readonly message?: string;
   readonly retryable?: boolean;
+  readonly latencyMs?: number;
+  readonly model?: string;
+  readonly promptSizeChars?: number;
 };
 
 type ApiErrorPayload = {
@@ -183,6 +190,8 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
   const [aiStatus, setAiStatus] = useState<AiStatus>("idle");
   const [aiExplanation, setAiExplanation] = useState<ForecastAiExplanation | null>(null);
   const [aiErrorMessage, setAiErrorMessage] = useState("");
+  const [aiRetryable, setAiRetryable] = useState(false);
+  const aiRequestInFlightRef = useRef(false);
 
   const queryKey = useMemo(() => (query ? JSON.stringify(query) : ""), [query]);
   const shellCopy = getForecastResultPageShellCopy(query?.target ?? result?.target ?? "general");
@@ -205,6 +214,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
     setAiStatus("idle");
     setAiExplanation(null);
     setAiErrorMessage("");
+    setAiRetryable(false);
 
     async function calculateForecast() {
       try {
@@ -244,12 +254,14 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
   }, [query, queryKey]);
 
   async function generateAiExplanation() {
-    if (!query || !result || aiStatus === "loading") {
+    if (!query || !result || aiStatus === "loading" || aiRequestInFlightRef.current) {
       return;
     }
 
+    aiRequestInFlightRef.current = true;
     setAiStatus("loading");
     setAiErrorMessage("");
+    setAiRetryable(false);
     try {
       const response = await fetch(`${apiBaseUrl}/forecast/ai-explain`, {
         method: "POST",
@@ -269,7 +281,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
       }
 
       const data = (await response.json()) as AiExplainResponse;
-      if (data.success === false || !data.explanation) {
+      if (!data.explanation) {
         throw new Error(
           data.messageZh ||
             data.message ||
@@ -277,10 +289,15 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
         );
       }
       setAiExplanation(data.explanation);
+      setAiErrorMessage(data.success === false ? data.messageZh || data.message || "" : "");
+      setAiRetryable(Boolean(data.retryable));
       setAiStatus("ready");
     } catch (error) {
       setAiErrorMessage(normalizeAiExplanationErrorMessage((error as Error).message));
+      setAiRetryable(true);
       setAiStatus("error");
+    } finally {
+      aiRequestInFlightRef.current = false;
     }
   }
 
@@ -347,6 +364,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
           aiStatus={aiStatus}
           aiExplanation={aiExplanation}
           aiErrorMessage={aiErrorMessage}
+          aiRetryable={aiRetryable}
           onGenerateAiExplanation={generateAiExplanation}
         />
       ) : null}
@@ -1317,6 +1335,7 @@ function ForecastResultView({
   aiStatus,
   aiExplanation,
   aiErrorMessage,
+  aiRetryable,
   onGenerateAiExplanation,
 }: {
   readonly query: ForecastQueryInput;
@@ -1324,6 +1343,7 @@ function ForecastResultView({
   readonly aiStatus: AiStatus;
   readonly aiExplanation: ForecastAiExplanation | null;
   readonly aiErrorMessage: string;
+  readonly aiRetryable: boolean;
   readonly onGenerateAiExplanation: () => void;
 }) {
   const viewModel = useMemo(
@@ -1340,6 +1360,7 @@ function ForecastResultView({
         aiStatus={aiStatus}
         aiExplanation={aiExplanation}
         aiErrorMessage={aiErrorMessage}
+        aiRetryable={aiRetryable}
         onGenerateAiExplanation={onGenerateAiExplanation}
       />
     );
@@ -1415,6 +1436,7 @@ function ForecastResultView({
           status={aiStatus}
           explanation={aiExplanation}
           errorMessage={aiErrorMessage}
+          retryable={aiRetryable}
           onGenerate={onGenerateAiExplanation}
         />
         <SectionStack sections={viewModel.riskSections} />
@@ -3035,6 +3057,7 @@ export function ComprehensiveForecastView({
   aiStatus,
   aiExplanation,
   aiErrorMessage,
+  aiRetryable,
   onGenerateAiExplanation,
 }: {
   readonly query: ForecastQueryInput;
@@ -3043,6 +3066,7 @@ export function ComprehensiveForecastView({
   readonly aiStatus: AiStatus;
   readonly aiExplanation: ForecastAiExplanation | null;
   readonly aiErrorMessage: string;
+  readonly aiRetryable: boolean;
   readonly onGenerateAiExplanation: () => void;
 }) {
   const subjectCards = buildSubjectBreakdownCards(result);
@@ -3075,6 +3099,7 @@ export function ComprehensiveForecastView({
         status={aiStatus}
         explanation={aiExplanation}
         errorMessage={aiErrorMessage}
+        retryable={aiRetryable}
         onGenerate={onGenerateAiExplanation}
       />
     </section>
@@ -3970,14 +3995,24 @@ function AiExplanationPanel({
   status,
   explanation,
   errorMessage,
+  retryable,
   onGenerate,
 }: {
   readonly status: AiStatus;
   readonly explanation: ForecastAiExplanation | null;
   readonly errorMessage: string;
+  readonly retryable: boolean;
   readonly onGenerate: () => void;
 }) {
   const isFallback = explanation?.metadata?.source === "deterministic_fallback";
+  const buttonLabel =
+    status === "loading"
+      ? "正在生成解读…"
+      : retryable
+        ? "重试 DeepSeek 解读"
+        : explanation
+          ? "重新生成智能解读"
+          : "生成智能解读";
 
   return (
     <Card className="p-5 shadow-sm">
@@ -3999,12 +4034,12 @@ function AiExplanationPanel({
         disabled={status === "loading"}
         onClick={onGenerate}
       >
-        {status === "loading" ? "正在生成解读…" : explanation ? "重新生成智能解读" : "生成智能解读"}
+        {buttonLabel}
       </Button>
 
-      {status === "error" ? (
+      {errorMessage ? (
         <p className="mt-3 rounded-lg border border-warning/70 bg-muted px-3 py-2 text-sm leading-6 text-card-foreground">
-          {errorMessage || "智能解读暂时不可用，确定性判断结果仍可正常参考，可稍后重试。"}
+          {errorMessage}
         </p>
       ) : null}
 
