@@ -21,6 +21,12 @@ import {
   buildForecastResultViewModel,
   buildGlowForecastViewModel,
 } from "./forecast-result-view-model";
+import {
+  buildGeneralDailySubjectLinks,
+  buildSubjectDetailDeepLink,
+  createForecastResultContextId,
+  parseSubjectDetailSearchParams,
+} from "./subject-detail-links";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/forecast",
@@ -1718,6 +1724,152 @@ describe("forecast result target-aware view model", () => {
     });
   });
 
+  it("builds a cloud sea daily deep link with resultId, date, and window", () => {
+    const query = queryForTarget("general");
+    const result = resultForTarget("general");
+    const link = buildGeneralDailySubjectLinks({
+      query,
+      result,
+      date: "2026-05-20",
+    }).find((item) => item.target === "cloud_sea");
+    const url = new URL(link?.href ?? "", "http://localhost:3000");
+
+    expect(url.pathname).toBe("/cloud-sea");
+    expect(url.searchParams.get("resultId")).toBe(createForecastResultContextId(query, result));
+    expect(url.searchParams.get("target")).toBe("cloud_sea");
+    expect(url.searchParams.get("subject")).toBe("cloud_sea");
+    expect(url.searchParams.get("date")).toBe("2026-05-20");
+    expect(url.searchParams.get("windowStart")).toBe("2026-05-20T05:00:00+08:00");
+    expect(url.searchParams.get("windowEnd")).toBe("2026-05-20T07:00:00+08:00");
+    expect(url.searchParams.get("source")).toBe("general");
+    expect(url.searchParams.get("returnUrl")).toContain("/forecast?");
+  });
+
+  it("builds a glow daily deep link with subject, date, and window", () => {
+    const link = buildGeneralDailySubjectLinks({
+      query: queryForTarget("general"),
+      result: resultForTarget("general"),
+      date: "2026-05-20",
+    }).find((item) => item.target === "glow");
+    const url = new URL(link?.href ?? "", "http://localhost:3000");
+
+    expect(url.pathname).toBe("/glow");
+    expect(url.searchParams.get("target")).toBe("glow");
+    expect(url.searchParams.get("subject")).toBe("sunset_glow");
+    expect(url.searchParams.get("date")).toBe("2026-05-20");
+    expect(url.searchParams.get("windowStart")).toBe("2026-05-20T17:56:00+08:00");
+    expect(url.searchParams.get("windowEnd")).toBe("2026-05-20T19:41:00+08:00");
+  });
+
+  it("builds an astro daily deep link with Milky Way subject, date, and window", () => {
+    const link = buildGeneralDailySubjectLinks({
+      query: queryForTarget("general"),
+      result: resultForTarget("general"),
+      date: "2026-05-20",
+    }).find((item) => item.target === "astro");
+    const url = new URL(link?.href ?? "", "http://localhost:3000");
+
+    expect(url.pathname).toBe("/astro");
+    expect(url.searchParams.get("target")).toBe("astro");
+    expect(url.searchParams.get("subject")).toBe("milky_way");
+    expect(url.searchParams.get("date")).toBe("2026-05-20");
+    expect(url.searchParams.get("windowStart")).toBe("2026-05-21T01:10:00+08:00");
+    expect(url.searchParams.get("windowEnd")).toBe("2026-05-21T03:30:00+08:00");
+  });
+
+  it("includes location fallback params when resultId is missing", () => {
+    const query: ForecastQueryInput = {
+      ...queryForTarget("general"),
+      name: "武功山金顶",
+      source: "manual",
+      latitudeGcj02: 27.4721,
+      longitudeGcj02: 114.1532,
+      latitudeWgs84: 27.4695,
+      longitudeWgs84: 114.1488,
+      elevationMeters: 1918,
+      elevationSource: "manual",
+      elevationConfidence: "medium",
+      locationId: undefined,
+      photoSpotId: undefined,
+    };
+    const url = new URL(
+      buildSubjectDetailDeepLink({
+        query,
+        target: "astro",
+        subject: "milky_way",
+        date: "2026-05-20",
+        windowStart: "2026-05-20T21:00:00+08:00",
+        windowEnd: "2026-05-21T03:30:00+08:00",
+        returnUrl: "/forecast?target=general",
+      }),
+      "http://localhost:3000",
+    );
+
+    expect(url.searchParams.get("resultId")).toBeNull();
+    expect(url.searchParams.get("locationName")).toBe("武功山金顶");
+    expect(url.searchParams.get("lat")).toBe(String(query.latitudeWgs84));
+    expect(url.searchParams.get("lng")).toBe(String(query.longitudeWgs84));
+    expect(url.searchParams.get("latGcj02")).toBe(String(query.latitudeGcj02));
+    expect(url.searchParams.get("lngGcj02")).toBe(String(query.longitudeGcj02));
+    expect(url.searchParams.get("elevation")).toBe("1918");
+    expect(url.searchParams.get("horizon")).toBe(query.horizon);
+    expect(url.searchParams.get("returnUrl")).toBe("/forecast?target=general");
+  });
+
+  it("parses location fallback context and does not place secrets in the URL", () => {
+    const query: ForecastQueryInput = {
+      ...queryForTarget("general"),
+      name: "非种子搜索机位",
+      source: "manual",
+      latitudeGcj02: 31.3,
+      longitudeGcj02: 119.4,
+      latitudeWgs84: 31.295,
+      longitudeWgs84: 119.395,
+      elevationMeters: 632,
+      elevationSource: "open_meteo_elevation",
+      elevationConfidence: "medium",
+      locationId: undefined,
+      photoSpotId: undefined,
+    };
+    const href = buildSubjectDetailDeepLink({
+      query,
+      target: "cloud_sea",
+      subject: "cloud_sea",
+      date: "2026-05-20",
+      windowStart: "2026-05-20T05:00:00+08:00",
+      windowEnd: "2026-05-20T07:00:00+08:00",
+    });
+    const url = new URL(href, "http://localhost:3000");
+    const parsed = parseSubjectDetailSearchParams("cloud_sea", {
+      target: url.searchParams.get("target") ?? undefined,
+      subject: url.searchParams.get("subject") ?? undefined,
+      date: url.searchParams.get("date") ?? undefined,
+      windowStart: url.searchParams.get("windowStart") ?? undefined,
+      windowEnd: url.searchParams.get("windowEnd") ?? undefined,
+      source: url.searchParams.get("source") ?? undefined,
+      locationName: url.searchParams.get("locationName") ?? undefined,
+      lat: url.searchParams.get("lat") ?? undefined,
+      lng: url.searchParams.get("lng") ?? undefined,
+      elevation: url.searchParams.get("elevation") ?? undefined,
+      horizon: url.searchParams.get("horizon") ?? undefined,
+      locationSource: url.searchParams.get("locationSource") ?? undefined,
+      elevationSource: url.searchParams.get("elevationSource") ?? undefined,
+      elevationConfidence: url.searchParams.get("elevationConfidence") ?? undefined,
+    });
+
+    expect(parsed.kind).toBe("ready");
+    if (parsed.kind === "ready") {
+      expect(parsed.fallbackQuery).toMatchObject({
+        name: "非种子搜索机位",
+        latitudeWgs84: 31.295,
+        longitudeWgs84: 119.395,
+        elevationMeters: 632,
+        target: "cloud_sea",
+      });
+    }
+    expect(href).not.toMatch(/api[_-]?key|secret|token|password/i);
+  });
+
   it("keeps the general view as a complete dashboard", () => {
     const viewModel = buildForecastResultViewModel(resultForTarget("general"), "general");
 
@@ -1889,6 +2041,13 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("查看云海详情");
     expect(html).toContain("查看霞光详情");
     expect(html).toContain("查看星空详情");
+    expect(html).toContain('href="/cloud-sea?');
+    expect(html).toContain('href="/glow?');
+    expect(html).toContain('href="/astro?');
+    expect(html).toContain("source=general");
+    expect(html).not.toContain('href="/cloud-sea"');
+    expect(html).not.toContain('href="/glow"');
+    expect(html).not.toContain('href="/astro"');
     const topDecisionCards = html.slice(
       html.indexOf('data-testid="top-decision-cards"'),
       html.indexOf('data-testid="near-term-weather"'),

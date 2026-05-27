@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { PlaceSearchCard } from "../../components/place-search-card";
 import { PublicShell } from "../../components/public-shell";
+import { SubjectDetailDeepLinkClient } from "../../components/subject-detail-deep-link-client";
 import { Badge, Card } from "../../components/ui";
+import { parseSubjectDetailSearchParams } from "../forecast/subject-detail-links";
 
 export const metadata: Metadata = {
   title: "朝霞晚霞 - 逐光天气",
@@ -34,7 +36,16 @@ const glowLearningCards = [
   },
 ] as const;
 
-export default function GlowPage() {
+type GlowPageProps = {
+  readonly searchParams?: Record<string, string | readonly string[] | undefined>;
+};
+
+export default function GlowPage({ searchParams }: GlowPageProps) {
+  const parsed = parseSubjectDetailSearchParams("glow", searchParams ?? {});
+  if (parsed.kind !== "empty") {
+    return <SubjectDetailDeepLinkClient target="glow" parsed={parsed} />;
+  }
+
   return (
     <PublicShell contentClassName="grid gap-6 pb-14">
       <header className="border-b border-border pb-5">

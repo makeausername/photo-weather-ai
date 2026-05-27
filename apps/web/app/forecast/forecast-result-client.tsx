@@ -52,6 +52,10 @@ import {
   rainRiskText,
   windowLabelText,
 } from "./forecast-copy";
+import {
+  buildGeneralDailySubjectLinks,
+  writeForecastResultContext,
+} from "./subject-detail-links";
 
 type ForecastResultClientProps = {
   readonly query: ForecastQueryInput | null;
@@ -202,6 +206,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
       return;
     }
 
+    const activeQuery = query;
     const controller = new AbortController();
     setStatus("loading");
     setResult(null);
@@ -218,7 +223,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(query),
+          body: JSON.stringify(activeQuery),
           signal: controller.signal,
         });
 
@@ -229,6 +234,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
         }
 
         const data = (await response.json()) as ForecastCalculationResult;
+        writeForecastResultContext({ query: activeQuery, result: data });
         setResult(data);
         setStatus("ready");
       } catch (error) {
@@ -3165,7 +3171,9 @@ export function ComprehensiveForecastView({
         mainRisk={mainRisk}
       />
       <WeatherEssentialsPanel result={result} />
-      {result.dailySummaries.length > 0 ? <ComprehensiveMultiDaySummary result={result} /> : null}
+      {result.dailySummaries.length > 0 ? (
+        <ComprehensiveMultiDaySummary query={query} result={result} />
+      ) : null}
       <OpportunityWindowSection result={result} windows={sortedWindows} />
       <RiskDecisionSection result={result} mainRisk={mainRisk} />
       <ActionableAdviceSection result={result} bestSubject={bestSubject} mainRisk={mainRisk} />
@@ -3394,7 +3402,13 @@ function OpportunityWindowSection({
   );
 }
 
-function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCalculationResult }) {
+function ComprehensiveMultiDaySummary({
+  query,
+  result,
+}: {
+  readonly query: ForecastQueryInput;
+  readonly result: ForecastCalculationResult;
+}) {
   return (
     <section className="grid gap-3" data-testid="daily-forecast-decision">
       <SectionHeading
@@ -3427,6 +3441,11 @@ function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCal
             primaryWindow,
             backupWindow,
           );
+          const subjectLinks = buildGeneralDailySubjectLinks({
+            query,
+            result,
+            date: summary.date,
+          });
 
           return (
             <article key={summary.date} data-testid="daily-card">
@@ -3481,11 +3500,15 @@ function ComprehensiveMultiDaySummary({ result }: { readonly result: ForecastCal
                   {actionSuggestion}
                 </p>
               </div>
-              <nav className="flex flex-wrap gap-x-3 gap-y-1 pt-1 text-xs font-semibold text-primary">
-                <a href="/cloud-sea">查看云海详情</a>
-                <a href="/glow">查看霞光详情</a>
-                <a href="/astro">查看星空详情</a>
-              </nav>
+              {subjectLinks.length > 0 ? (
+                <nav className="flex flex-wrap gap-x-3 gap-y-1 pt-1 text-xs font-semibold text-primary">
+                  {subjectLinks.map((link) => (
+                    <a key={link.target} href={link.href}>
+                      {link.label}
+                    </a>
+                  ))}
+                </nav>
+              ) : null}
               </Card>
             </article>
           );

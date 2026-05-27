@@ -39,11 +39,47 @@ const samplePlace: PlaceSearchResult = {
   isVerified: false,
 };
 
+function subjectDeepLinkParams(
+  target: "cloud_sea" | "glow" | "astro",
+  overrides: Record<string, string> = {},
+): Record<string, string> {
+  return {
+    source: "general",
+    target,
+    subject:
+      target === "cloud_sea" ? "cloud_sea" : target === "glow" ? "sunset_glow" : "milky_way",
+    date: "2026-05-20",
+    windowStart:
+      target === "cloud_sea"
+        ? "2026-05-20T05:00:00+08:00"
+        : target === "glow"
+          ? "2026-05-20T17:56:00+08:00"
+          : "2026-05-21T01:10:00+08:00",
+    windowEnd:
+      target === "cloud_sea"
+        ? "2026-05-20T07:00:00+08:00"
+        : target === "glow"
+          ? "2026-05-20T19:41:00+08:00"
+          : "2026-05-21T03:30:00+08:00",
+    locationName: samplePlace.name,
+    lat: String(samplePlace.latitudeWgs84),
+    lng: String(samplePlace.longitudeWgs84),
+    latGcj02: String(samplePlace.latitudeGcj02),
+    lngGcj02: String(samplePlace.longitudeGcj02),
+    elevation: String(samplePlace.elevation),
+    timezone: "Asia/Shanghai",
+    horizon: target === "astro" ? "7d" : "48h",
+    locationSource: "local_photo_spot",
+    returnUrl: "/forecast?target=general",
+    ...overrides,
+  };
+}
+
 describe("scenario module pages", () => {
   it("keeps cloud-sea, glow, and astro pages importable with metadata", () => {
-    expect(CloudSeaPage()).toBeTruthy();
-    expect(GlowPage()).toBeTruthy();
-    expect(AstroPage()).toBeTruthy();
+    expect(CloudSeaPage({})).toBeTruthy();
+    expect(GlowPage({})).toBeTruthy();
+    expect(AstroPage({})).toBeTruthy();
     expect(cloudSeaMetadata.title).toBe("云海判断 - 逐光天气");
     expect(glowMetadata.title).toBe("朝霞晚霞 - 逐光天气");
     expect(astroMetadata.title).toBe("星空银河 - 逐光天气");
@@ -87,6 +123,23 @@ describe("scenario module pages", () => {
     expect(html).toContain("正式数据源启用后将显示对应来源与更新时间");
   });
 
+  it("cloud sea page reads General deep-link query params and preselects context", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaPage, {
+        searchParams: subjectDeepLinkParams("cloud_sea"),
+      }),
+    );
+
+    expect(html).toContain("来源：综合判断");
+    expect(html).toContain("地点：黄山光明顶");
+    expect(html).toContain("日期：2026-05-20");
+    expect(html).toContain("窗口：");
+    expect(html).toContain("05:00");
+    expect(html).toContain("返回综合判断");
+    expect(html).toContain('href="/forecast?target=general"');
+    expect(html).not.toContain("地点搜索与机位选择");
+  });
+
   it("renders the glow entry page without the popular spot placeholder", () => {
     const html = renderToStaticMarkup(React.createElement(GlowPage));
 
@@ -106,6 +159,21 @@ describe("scenario module pages", () => {
     expect(html).toContain("地形遮挡");
     expect(html).toContain("风与降水");
     expect(html).toContain("当前为体验模式，结果会使用演示天气数据生成");
+  });
+
+  it("glow page reads General deep-link query params and preselects context", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(GlowPage, {
+        searchParams: subjectDeepLinkParams("glow"),
+      }),
+    );
+
+    expect(html).toContain("来源：综合判断");
+    expect(html).toContain("地点：黄山光明顶");
+    expect(html).toContain("日期：2026-05-20");
+    expect(html).toContain("17:56");
+    expect(html).toContain("返回综合判断");
+    expect(html).not.toContain("朝霞晚霞判断需要看什么");
   });
 
   it("builds complete forecast query URLs for each scenario CTA", () => {
@@ -182,15 +250,46 @@ describe("scenario module pages", () => {
     expect(html).toContain("天文时间基于本地天文计算");
   });
 
+  it("astro page reads General deep-link query params and preselects context", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AstroPage, {
+        searchParams: subjectDeepLinkParams("astro"),
+      }),
+    );
+
+    expect(html).toContain("来源：综合判断");
+    expect(html).toContain("地点：黄山光明顶");
+    expect(html).toContain("日期：2026-05-20");
+    expect(html).toContain("01:10");
+    expect(html).toContain("返回综合判断");
+    expect(html).not.toContain("星空银河判断需要看什么");
+  });
+
+  it("shows a friendly fallback for incomplete subject deep-link params", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaPage, {
+        searchParams: {
+          source: "general",
+          target: "cloud_sea",
+          date: "2026-05-20",
+        },
+      }),
+    );
+
+    expect(html).toContain("未找到完整的综合判断上下文，请重新选择地点。");
+    expect(html).toContain("无法自动打开专项判断");
+    expect(html).toContain("重新选择地点");
+  });
+
   it("does not call external APIs while loading static scenario modules", () => {
     const fetchMock = vi.fn(() => {
       throw new Error("scenario pages should not call network during static load");
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    CloudSeaPage();
-    GlowPage();
-    AstroPage();
+    CloudSeaPage({});
+    GlowPage({});
+    AstroPage({});
     for (const config of scenarioPageConfigs) {
       buildForecastUrl(samplePlace, config.defaultHorizon, config.target);
     }
