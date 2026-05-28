@@ -616,13 +616,43 @@ describe("homepage forecast flow", () => {
     expect(pageHtml).toContain("老君山金顶");
   });
 
-  it("renders a current-location button with accessible copy", () => {
+  it("renders the current-location control as an embedded input icon button", () => {
     const html = renderToStaticMarkup(React.createElement(HomepageSearchPanel));
+    const wrapperIndex = html.indexOf('data-current-location-input-wrapper="true"');
+    const inputIndex = html.indexOf('aria-label="目的地"', wrapperIndex);
+    const buttonIndex = html.indexOf('data-current-location-button="true"', wrapperIndex);
 
+    expect(wrapperIndex).toBeGreaterThanOrEqual(0);
+    expect(inputIndex).toBeGreaterThan(wrapperIndex);
+    expect(buttonIndex).toBeGreaterThan(inputIndex);
     expect(html).toContain('aria-label="使用当前位置"');
     expect(html).toContain('title="使用当前位置"');
-    expect(html).toContain("定位");
+    expect(html).toContain("relative min-w-0 w-full");
+    expect(html).toContain("pr-12");
+    expect(html).toContain("absolute right-1.5 top-1/2");
+    expect(html).toContain("h-8 w-8");
+    expect(html).toContain('viewBox="0 0 24 24"');
+    expect(hasExactButton(html, "定位")).toBe(false);
+    expect(hasExactButton(html, "定位中")).toBe(false);
     expect(html).toContain("浏览器定位仅用于本次天气判断，不会公开显示。");
+  });
+
+  it("keeps manual search submit available with the embedded locator layout", () => {
+    const html = renderToStaticMarkup(React.createElement(HomepageSearchPanel));
+
+    expect(html).toMatch(/<button[^>]*type="submit"[^>]*>搜索地点<\/button>/);
+    expect(html).toContain('aria-label="目的地"');
+    expect(html).toContain('data-current-location-button="true"');
+  });
+
+  it("keeps the embedded current-location control compact on mobile", () => {
+    const html = renderToStaticMarkup(React.createElement(HomepageSearchPanel));
+
+    expect(html).toContain("relative min-w-0 w-full");
+    expect(html).toContain("absolute right-1.5 top-1/2");
+    expect(html).toContain("h-8 w-8");
+    expect(html).not.toContain("flex min-w-0 gap-2");
+    expect(html).not.toMatch(/w-\[(?:[1-9]\d{2,})px\]|min-w-\[(?:[1-9]\d{2,})px\]/);
   });
 
   it("maps unavailable and denied browser geolocation to friendly Chinese messages", async () => {

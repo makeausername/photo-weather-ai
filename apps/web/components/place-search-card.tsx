@@ -487,6 +487,8 @@ export function PlaceSearchCard({
   const showEmptyState = showSearchFeedback && status === "ready" && results.length === 0;
   const showQuickLocationSection =
     shouldRenderQuickLocations && (!activeSelectedLocation || isActivelySearching);
+  const isCurrentLocationLoading = currentLocationStatus === "loading";
+  const currentLocationButtonLabel = isCurrentLocationLoading ? "正在获取当前位置" : "使用当前位置";
 
   useEffect(() => {
     onForecastOptionsChange?.({ horizon, target: activeTarget });
@@ -732,30 +734,35 @@ export function PlaceSearchCard({
           handleSubmitSearch();
         }}
       >
-        <div className="flex min-w-0 gap-2">
+        <div
+          data-current-location-input-wrapper={enableCurrentLocation ? "true" : undefined}
+          className="relative min-w-0 w-full"
+        >
           <Input
             ref={inputRef}
             aria-label="目的地"
             value={query}
             onChange={(event) => handleQueryChange(event.target.value)}
             placeholder={searchPlaceholder}
-            className="h-9 flex-1 bg-card text-sm"
+            className={cn("h-9 bg-card text-sm", enableCurrentLocation && "pr-12")}
           />
           {enableCurrentLocation ? (
-            <Button
+            <button
               type="button"
-              variant="secondary"
-              size="sm"
-              aria-label="使用当前位置"
+              data-current-location-button="true"
+              aria-label={currentLocationButtonLabel}
               title="使用当前位置"
-              className="h-9 px-3"
-              disabled={currentLocationStatus === "loading"}
+              className={cn(
+                "absolute right-1.5 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-transparent text-primary transition hover:bg-secondary hover:text-[var(--primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent",
+                isCurrentLocationLoading && "bg-secondary text-primary",
+              )}
+              disabled={isCurrentLocationLoading}
               onClick={() => {
                 void handleUseCurrentLocation();
               }}
             >
-              {currentLocationStatus === "loading" ? "定位中" : "定位"}
-            </Button>
+              {isCurrentLocationLoading ? <CurrentLocationSpinner /> : <CurrentLocationIcon />}
+            </button>
           ) : null}
         </div>
         <Button type="submit" size="sm" className="h-9 w-full" disabled={status === "loading"}>
@@ -947,6 +954,35 @@ export function PlaceSearchCard({
         </Button>
       </div>
     </Card>
+  );
+}
+
+function CurrentLocationIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.8"
+      viewBox="0 0 24 24"
+    >
+      <circle cx="12" cy="12" r="3.25" />
+      <path d="M12 2.75v3.5M12 17.75v3.5M2.75 12h3.5M17.75 12h3.5" />
+      <circle cx="12" cy="12" r="8.25" />
+    </svg>
+  );
+}
+
+function CurrentLocationSpinner() {
+  return (
+    <span
+      aria-hidden="true"
+      data-current-location-spinner="true"
+      className="h-4 w-4 animate-spin rounded-full border-2 border-primary/25 border-t-primary"
+    />
   );
 }
 
