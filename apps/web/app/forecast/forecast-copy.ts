@@ -15,7 +15,16 @@ type TargetDailyBreakdown = ForecastCalculationResult["targetDailyBreakdown"][nu
 
 type RainRiskWeather = {
   readonly weatherTextZh?: string | null;
+  readonly weatherCode?: string | null;
+  readonly temperature?: number | null;
+  readonly terrainAdjustedTemperatureC?: number | null;
+  readonly mountainFeelsLikeC?: number | null;
+  readonly tempMin?: number | null;
+  readonly tempMax?: number | null;
+  readonly mountainFeelsLikeMin?: number | null;
+  readonly mountainFeelsLikeMax?: number | null;
   readonly precipitationProbability?: number | null;
+  readonly precipitationProbabilityPercent?: number | null;
   readonly precipitation?: number | null;
   readonly precipitationAmountMm?: number | null;
   readonly rainAmountMm?: number | null;
@@ -27,6 +36,8 @@ type RainRiskWeather = {
   readonly maxRainRiskWindow?: string;
   readonly rainTimingConfidence?: DailyWeather["rainTimingConfidence"];
 };
+
+type PrecipitationKind = "rain" | "snow" | "mixed" | "unknown" | "none";
 
 type WindowCopyLike = Pick<
   ForecastTimeWindow,
@@ -99,6 +110,27 @@ export function rainRiskText(weather: RainRiskWeather | undefined): RainRiskCopy
     timing,
     level,
   };
+}
+
+export function compactPrecipitationDisplayText(weather: RainRiskWeather | undefined): string {
+  const amount = precipitationAmount(weather);
+  const probability = displayedPrecipitationProbability(weather, amount);
+
+  if (typeof probability === "number" && Number.isFinite(probability)) {
+    return `${precipitationProbabilityLabel(weather, amount)}：${Math.round(probability)}%`;
+  }
+
+  if (amount !== null && amount > 0) {
+    const level = rainRiskText(weather).level;
+    const riskLevel = level === "无明显" || level === "待复核" ? "低" : level;
+    return `降水风险：${riskLevel}，预计 ${formatCompactMillimeters(amount)}`;
+  }
+
+  if (hasPrecipitationSignal(weather, amount)) {
+    return `${precipitationProbabilityLabel(weather, amount)}：暂无`;
+  }
+
+  return "降水不明显";
 }
 
 export function rainTimingText(weather: RainRiskWeather | undefined): string {
@@ -431,14 +463,23 @@ function displayedPrecipitationProbability(
   weather: RainRiskWeather | undefined,
   amount: number | null,
 ): number | null {
-  const probability = weather?.precipitationProbability;
-  if (typeof probability !== "number" || !Number.isFinite(probability)) {
-    return null;
+  const candidates = [
+    weather?.precipitationProbability,
+    weather?.precipitationProbabilityPercent,
+    weather?.precipitationRisk?.precipitationProbabilityPercent,
+  ];
+
+  for (const probability of candidates) {
+    if (typeof probability !== "number" || !Number.isFinite(probability)) {
+      continue;
+    }
+    if (amount !== null && amount >= 0.1 && probability <= 0) {
+      continue;
+    }
+    return probability;
   }
-  if (amount !== null && amount >= 0.1 && probability <= 0) {
-    return null;
-  }
-  return probability;
+
+  return null;
 }
 
 function precipitationAmount(weather: RainRiskWeather | undefined): number | null {
@@ -481,11 +522,187 @@ function precipitationTypeWord(weather: RainRiskWeather | undefined): string {
   return "小雨";
 }
 
+function precipitationProbabilityLabel(
+  weather: RainRiskWeather | undefined,
+  amount: number | null,
+): string {
+  const kind = inferPrecipitationKind(weather, amount);
+  if (kind === "snow") {
+    return "降雪概率";
+  }
+  if (kind === "rain") {
+    return "降雨概率";
+  }
+  if (kind === "mixed") {
+    return "雨雪概率";
+  }
+  return "降水概率";
+}
+
+function inferPrecipitationKind(
+  weather: RainRiskWeather | undefined,
+  amount: number | null,
+): PrecipitationKind {
+  if (!weather) {
+    return "none";
+  }
+
+  const hasRainAmount = positiveAmount(weather.rainAmountMm);
+  const hasSnowAmount = positiveAmount(weather.snowAmountMm);
+  const text = weather.weatherTextZh ?? "";
+  const hasMixedSignal = hasRainAmount && hasSnowAmount;
+  const hasMixedText = /雨夹雪|雨雪|冻雨|冰雨/.test(text);
+  const hasSnowSignal =
+    hasSnowAmount || weatherTextIndicatesSnow(text) || codeIndicatesSnow(weather.weatherCode);
+  const hasRainSignal =
+    hasRainAmount || weatherTextIndicatesRain(text) || codeIndicatesRain(weather.weatherCode);
+  const precipitationExists = hasPrecipitationSignal(weather, amount);
+
+  if (weather.precipitationType === "mixed" || hasMixedSignal || hasMixedText) {
+    return "mixed";
+  }
+  if (weather.precipitationType === "snow") {
+    return "snow";
+  }
+  if (weather.precipitationType === "rain") {
+    return "rain";
+  }
+  if (precipitationExists && isClearlyBelowFreezing(weather)) {
+    return "snow";
+  }
+  if (hasSnowSignal) {
+    return "snow";
+  }
+  if (hasRainSignal) {
+    return "rain";
+  }
+  if (weather.precipitationType === "none" && !precipitationExists) {
+    return "none";
+  }
+  return precipitationExists ? "unknown" : "none";
+}
+
+function hasPrecipitationSignal(
+  weather: RainRiskWeather | undefined,
+  amount: number | null,
+): boolean {
+  if (!weather) {
+    return false;
+  }
+  if (amount !== null && amount > 0) {
+    return true;
+  }
+  if (
+    weather.precipitationType === "rain" ||
+    weather.precipitationType === "snow" ||
+    weather.precipitationType === "mixed"
+  ) {
+    return true;
+  }
+  if (
+    weather.precipitationRisk &&
+    weather.precipitationRisk.rainRiskLevel !== "none" &&
+    weather.precipitationRisk.rainRiskLevel !== "low"
+  ) {
+    return true;
+  }
+  const text = weather.weatherTextZh ?? "";
+  return (
+    weatherTextIndicatesRain(text) ||
+    weatherTextIndicatesSnow(text) ||
+    codeIndicatesRain(weather.weatherCode) ||
+    codeIndicatesSnow(weather.weatherCode)
+  );
+}
+
+function weatherTextIndicatesRain(text: string): boolean {
+  return /雨|阵雨|雷暴|雷阵雨|毛毛雨|降雨/.test(text);
+}
+
+function weatherTextIndicatesSnow(text: string): boolean {
+  return /雪|霰|冰粒|降雪|暴风雪/.test(text);
+}
+
+function codeIndicatesRain(code: string | null | undefined): boolean {
+  const normalized = code?.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  if (/rain|drizzle|shower|thunderstorm/.test(normalized)) {
+    return true;
+  }
+  const numericCode = numericWeatherCode(normalized);
+  if (numericCode === null) {
+    return false;
+  }
+  return (
+    (numericCode >= 51 && numericCode <= 67) ||
+    (numericCode >= 80 && numericCode <= 82) ||
+    (numericCode >= 95 && numericCode <= 99) ||
+    (numericCode >= 300 && numericCode <= 399)
+  );
+}
+
+function codeIndicatesSnow(code: string | null | undefined): boolean {
+  const normalized = code?.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  if (/snow|sleet|blizzard|flurr/.test(normalized)) {
+    return true;
+  }
+  const numericCode = numericWeatherCode(normalized);
+  if (numericCode === null) {
+    return false;
+  }
+  return (
+    numericCode === 77 ||
+    (numericCode >= 71 && numericCode <= 75) ||
+    (numericCode >= 85 && numericCode <= 86) ||
+    (numericCode >= 400 && numericCode <= 499)
+  );
+}
+
+function numericWeatherCode(code: string): number | null {
+  const match = code.match(/\d+/);
+  if (!match) {
+    return null;
+  }
+  const value = Number(match[0]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function isClearlyBelowFreezing(weather: RainRiskWeather): boolean {
+  if (typeof weather.tempMax === "number" && Number.isFinite(weather.tempMax)) {
+    return weather.tempMax <= 0;
+  }
+  const temperatures = [
+    weather.terrainAdjustedTemperatureC,
+    weather.temperature,
+    weather.mountainFeelsLikeC,
+    weather.mountainFeelsLikeMax,
+    weather.mountainFeelsLikeMin,
+    weather.tempMin,
+  ].filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return temperatures.length > 0 && Math.max(...temperatures) <= 0;
+}
+
 function formatMillimeters(value: number | null | undefined): string {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return "待复核";
   }
   return `${roundDisplay(value)} mm`;
+}
+
+function formatCompactMillimeters(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "待复核";
+  }
+  return `${roundDisplay(value)}mm`;
+}
+
+function positiveAmount(value: number | null | undefined): boolean {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
 function roundDisplay(value: number): string {

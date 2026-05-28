@@ -49,6 +49,7 @@ import {
 import {
   astroBlockedReasonText,
   clothingEquipmentAdvice,
+  compactPrecipitationDisplayText,
   rainRiskText,
   windowLabelText,
 } from "./forecast-copy";
@@ -4907,15 +4908,10 @@ function dailyCompactWeatherRow(
   breakdown: GeneralDailyBreakdown | undefined,
 ): string {
   return [
-    `降水：${compactRainRiskLabel(weather)}`,
+    compactPrecipitationDisplayText(weather),
     `风：${formatCompactWindSpeed(weather?.windSpeed)}`,
     `通透：${compactTransparencyLabel(weather, breakdown)}`,
   ].join("｜");
-}
-
-function compactRainRiskLabel(weather: GeneralDailySummary["weather"] | undefined): string {
-  const level = rainRiskText(weather).level;
-  return level === "无明显" ? "低" : level;
 }
 
 function formatCompactWindSpeed(windSpeed: number | null | undefined): string {

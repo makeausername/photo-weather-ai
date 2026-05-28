@@ -2151,7 +2151,7 @@ describe("forecast result target-aware view model", () => {
     expect(dailySection).not.toContain("推荐专程前往");
     expect(dailySection).toContain("多云间晴");
     expect(dailySection).toContain("山顶估算温度：10–18°C");
-    expect(dailySection).toContain("降水：低｜风：3.4m/s｜通透：较好");
+    expect(dailySection).toContain("降水概率：18%｜风：3.4m/s｜通透：较好");
     expect(dailySection).toContain("优先关注：");
     expect(dailySection).toContain("清晨云海 2026年5月20日 05:00–07:00");
     expect(dailySection).toContain("备选观察：");
@@ -2386,8 +2386,10 @@ describe("forecast result target-aware view model", () => {
               weather: {
                 ...summary.weather!,
                 weatherTextZh: "小雨转阴",
+                precipitationProbability: 72,
                 precipitationAmountMm: 6.8,
                 rainAmountMm: 6.8,
+                precipitationType: "rain" as const,
                 precipitationRisk: {
                   precipitationProbabilityPercent: 72,
                   precipitationAmountMm: 6.8,
@@ -2421,10 +2423,147 @@ describe("forecast result target-aware view model", () => {
     );
 
     expect(dailySection).toContain("小雨转阴");
-    expect(dailySection).toContain("降水：高");
+    expect(dailySection).toContain("降雨概率：72%");
     expect(dailySection).toContain("降水干扰明显，优先等待雨后短暂开口。");
     expect(dailySection).not.toContain("降水主要影响日出窗口，朝霞不确定性较高");
     expect(dailySection).not.toContain("雨后若短暂开口，可转拍云雾层次和远山");
+  });
+
+  it("labels general daily precipitation probability by rain, snow, unknown, and missing probability state", () => {
+    const base = resultForTarget("general");
+    const template = base.dailySummaries[0]!;
+    const result: ForecastCalculationResult = {
+      ...base,
+      dailySummaries: [
+        {
+          ...template,
+          date: "2026-05-20",
+          dateLabelZh: "2026年5月20日 星期三",
+          weather: {
+            ...template.weather!,
+            weatherTextZh: "小雨",
+            precipitationProbability: 20,
+            precipitation: 0.6,
+            precipitationAmountMm: 0.6,
+            rainAmountMm: 0.6,
+            snowAmountMm: 0,
+            precipitationType: "rain" as const,
+            windSpeed: 2.8,
+            photographyTransparencyScore: 52,
+          },
+        },
+        {
+          ...template,
+          date: "2026-05-21",
+          dateLabelZh: "2026年5月21日 星期四",
+          weather: {
+            ...template.weather!,
+            weatherTextZh: "阴天",
+            tempMin: -5,
+            tempMax: -1,
+            precipitationProbability: 35,
+            precipitation: 1.2,
+            precipitationAmountMm: 1.2,
+            rainAmountMm: 0,
+            snowAmountMm: 0,
+            precipitationType: "unknown" as const,
+            windSpeed: 3.1,
+            photographyTransparencyScore: 42,
+          },
+        },
+        {
+          ...template,
+          date: "2026-05-22",
+          dateLabelZh: "2026年5月22日 星期五",
+          weather: {
+            ...template.weather!,
+            weatherTextZh: "阴天",
+            precipitationProbability: 20,
+            precipitation: 0.4,
+            precipitationAmountMm: 0.4,
+            precipitationType: "unknown" as const,
+            windSpeed: 2.4,
+            photographyTransparencyScore: 55,
+          },
+        },
+        {
+          ...template,
+          date: "2026-05-23",
+          dateLabelZh: "2026年5月23日 星期六",
+          weather: {
+            ...template.weather!,
+            weatherTextZh: "阵雨",
+            precipitationProbability: null,
+            precipitation: 0.8,
+            precipitationAmountMm: 0.8,
+            rainAmountMm: 0.8,
+            snowAmountMm: 0,
+            precipitationType: "rain" as const,
+            precipitationRisk: {
+              precipitationProbabilityPercent: null,
+              precipitationAmountMm: 0.8,
+              rainRiskLevel: "low",
+              rainRiskLabelZh: "低",
+              affectedWindows: ["下午"],
+              recommendationZh: "有少量降水信号，出发前复核短临预报。",
+            },
+            windSpeed: 2,
+            photographyTransparencyScore: 51,
+          },
+        },
+        {
+          ...template,
+          date: "2026-05-24",
+          dateLabelZh: "2026年5月24日 星期日",
+          weather: {
+            ...template.weather!,
+            weatherTextZh: "多云",
+            precipitationProbability: null,
+            precipitation: 0,
+            precipitationAmountMm: 0,
+            rainAmountMm: 0,
+            snowAmountMm: 0,
+            precipitationType: "none" as const,
+            precipitationRisk: {
+              precipitationProbabilityPercent: null,
+              precipitationAmountMm: 0,
+              rainRiskLevel: "none",
+              rainRiskLabelZh: "无明显",
+              affectedWindows: [],
+              recommendationZh: "降水不明显。",
+            },
+            windSpeed: 1.7,
+            photographyTransparencyScore: 56,
+          },
+        },
+      ],
+    };
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "idle",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        aiRetryable: false,
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+    const dailySection = html.slice(
+      html.indexOf('data-testid="daily-forecast-decision"'),
+      html.indexOf('data-testid="opportunity-windows"'),
+    );
+
+    expect(dailySection).toContain("降雨概率：20%｜风：2.8m/s｜通透：一般");
+    expect(dailySection).toContain("降雪概率：35%｜风：3.1m/s｜通透：较差");
+    expect(dailySection).toContain("降水概率：20%｜风：2.4m/s｜通透：一般");
+    expect(dailySection).toContain("降水风险：低，预计 0.8mm｜风：2m/s｜通透：一般");
+    expect(dailySection).toContain("降水不明显｜风：1.7m/s｜通透：一般");
+    expect(dailySection).not.toContain("降水概率：0%");
+    expect(dailySection).not.toContain("降雨概率：0%");
+    expect(dailySection).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风|高德/i);
   });
 
   it("avoids impossible zero-probability precipitation copy when amount is present", () => {
@@ -2809,8 +2948,10 @@ describe("forecast result target-aware view model", () => {
               },
               weather: {
                 ...summary.weather!,
+                precipitationProbability: 78,
                 precipitationAmountMm: 18.8,
                 rainAmountMm: 18.8,
+                precipitationType: "rain" as const,
                 precipitationRisk: {
                   precipitationProbabilityPercent: 78,
                   precipitationAmountMm: 18.8,
@@ -2844,7 +2985,7 @@ describe("forecast result target-aware view model", () => {
     );
 
     expect(html).toContain("降水风险");
-    expect(dailySection).toContain("降水：高");
+    expect(dailySection).toContain("降雨概率：78%");
     expect(dailySection).toContain("日落后余晖");
     expect(dailySection).toContain("降水干扰明显，优先等待雨后短暂开口。");
     expect(html).not.toContain("降水风险：降水风险");
