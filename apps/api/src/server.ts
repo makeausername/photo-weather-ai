@@ -5,7 +5,11 @@ import { MockAIProvider } from "@photo-weather/ai";
 import { getPrismaClient, type DatabaseClient } from "@photo-weather/db";
 import { MockGeoProvider } from "@photo-weather/geo";
 import type { GeoProvider } from "@photo-weather/geo";
-import type { ElevationProvider, TerrainElevationService, TerrainProvider } from "@photo-weather/terrain";
+import type {
+  ElevationProvider,
+  TerrainElevationService,
+  TerrainProvider,
+} from "@photo-weather/terrain";
 import { createWeatherProvider, type WeatherProvider } from "@photo-weather/weather";
 import { registerAdminRoutes } from "./admin-routes.js";
 import {
@@ -16,7 +20,7 @@ import {
 import type { AuthConfig } from "./auth-routes.js";
 import { loadAuthConfig, registerAuthRoutes } from "./auth-routes.js";
 import { registerForecastRoutes } from "./forecast-routes.js";
-import { resolveGeoProvider } from "./geo-provider.js";
+import { resolveGeoProvider, resolveReverseGeocodeProvider } from "./geo-provider.js";
 import { registerSearchRoutes } from "./search-routes.js";
 import { createRuntimeWeatherDataService } from "./weather-provider.js";
 
@@ -234,6 +238,12 @@ export function buildApiServer(options: ApiServerOptions = {}) {
       geoProvider: options.geoProvider,
       env,
     });
+  const resolveRuntimeReverseGeocodeProvider = () =>
+    resolveReverseGeocodeProvider({
+      dbClient: options.dbClient,
+      geoProvider: options.geoProvider,
+      env,
+    });
 
   app.addHook("onRequest", async (_request, reply) => {
     reply.header("Access-Control-Allow-Origin", "*");
@@ -314,6 +324,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
   registerSearchRoutes(app, {
     dbClient: options.dbClient,
     resolveGeoProvider: resolveRuntimeGeoProvider,
+    resolveReverseGeocodeProvider: resolveRuntimeReverseGeocodeProvider,
   });
   registerAdminRoutes(app, {
     dbClient: options.dbClient,

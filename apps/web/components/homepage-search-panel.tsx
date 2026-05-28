@@ -35,6 +35,8 @@ export function HomepageSearchPanel({
       showResultSourceBadges={false}
       selectedLocationDetailMode="compact"
       showSelectedLocationActions
+      showQuickLocations={false}
+      enableCurrentLocation
       selectedLocation={selectedLocation}
       onSelectedLocationChange={onSelectedLocationChange}
       onForecastOptionsChange={onForecastOptionsChange}

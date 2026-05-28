@@ -12,12 +12,15 @@ import HomePage from "./page";
 import { ForecastResultClient } from "./forecast/forecast-result-client";
 import {
   buildForecastUrl,
+  currentLocationErrorMessage,
+  currentLocationErrorMessages,
   buildStateAfterChangeLocation,
   buildStateAfterClearSelection,
   buildStateAfterSearchQueryInput,
   buildStateAfterSearchResultSelection,
   PlaceSearchErrorAlert,
   publicPlaceSearchUnavailableMessage,
+  requestBrowserCurrentCoordinates,
   sanitizePlaceSearchErrorMessage,
   shouldShowPlaceSearchResults,
   type PlaceSearchResult,
@@ -31,7 +34,12 @@ import {
   homepagePopularSpotToSelectedLocation,
   HomepageWorkbench,
 } from "../components/homepage-workbench";
-import { selectedLocationFromSearchResult } from "../components/selected-location";
+import {
+  buildForecastRequestPayload,
+  buildForecastUrlFromSelectedLocation,
+  selectedLocationFromBrowserGeolocation,
+  selectedLocationFromSearchResult,
+} from "../components/selected-location";
 import { SourceDiagnosticsPanel } from "./forecast/forecast-result-client";
 import {
   astroScenarioConfig,
@@ -248,6 +256,32 @@ describe("homepage forecast flow", () => {
     expect(url.searchParams.get("elevationMeters")).toBeNull();
     expect(url.searchParams.get("elevationSource")).toBe("unknown");
     expect(url.searchParams.get("elevationConfidence")).toBe("low");
+  });
+
+  it("keeps manual text-search locations working without a spot id", () => {
+    const manualPlace: PlaceSearchResult = {
+      ...amapNonSeededPlace,
+      id: "local-location:manual-non-seeded",
+      source: "local_location",
+      matchedPhotoSpotId: undefined,
+      matchedLocationId: "location-manual-non-seeded",
+    };
+    const selectedLocation = selectedLocationFromSearchResult(manualPlace);
+    const url = new URL(
+      buildForecastUrl(manualPlace, homepageDefaultHorizon, homepageDefaultTarget),
+      "http://localhost:3000",
+    );
+
+    expect(selectedLocation).toMatchObject({
+      source: "manual",
+      latitudeWgs84: 30.2528,
+      longitudeWgs84: 120.1078,
+      locationId: "location-manual-non-seeded",
+    });
+    expect(selectedLocation.photoSpotId).toBeUndefined();
+    expect(url.searchParams.get("source")).toBe("manual");
+    expect(url.searchParams.get("photoSpotId")).toBeNull();
+    expect(url.searchParams.get("locationId")).toBe("location-manual-non-seeded");
   });
 
   it("shows a user-friendly empty condition overview before a location is selected", () => {
@@ -568,6 +602,76 @@ describe("homepage forecast flow", () => {
     expect(hasExactButton(html, "星空银河")).toBe(false);
   });
 
+  it("removes the duplicated homepage quick spot section but keeps the lower selected spots", () => {
+    const panelHtml = renderToStaticMarkup(React.createElement(HomepageSearchPanel));
+    const pageHtml = renderToStaticMarkup(React.createElement(HomePage));
+
+    expect(panelHtml).not.toContain("常用机位");
+    expect(panelHtml).not.toContain("黄山光明顶");
+    expect(panelHtml).not.toContain("老君山金顶");
+    expect(panelHtml).not.toContain("三清山女神峰");
+    expect(panelHtml).not.toContain("武功山金顶");
+    expect(pageHtml).toContain("精选机位");
+    expect(pageHtml).toContain("黄山光明顶");
+    expect(pageHtml).toContain("老君山金顶");
+  });
+
+  it("renders a current-location button with accessible copy", () => {
+    const html = renderToStaticMarkup(React.createElement(HomepageSearchPanel));
+
+    expect(html).toContain('aria-label="使用当前位置"');
+    expect(html).toContain('title="使用当前位置"');
+    expect(html).toContain("定位");
+    expect(html).toContain("浏览器定位仅用于本次天气判断，不会公开显示。");
+  });
+
+  it("maps unavailable and denied browser geolocation to friendly Chinese messages", async () => {
+    await expect(requestBrowserCurrentCoordinates(undefined)).rejects.toThrow(
+      currentLocationErrorMessages.unavailable,
+    );
+
+    const deniedNavigator = {
+      geolocation: {
+        getCurrentPosition: vi.fn((_success: PositionCallback, error?: PositionErrorCallback) => {
+          error?.({ code: 1 } as GeolocationPositionError);
+        }),
+      },
+    };
+
+    await expect(requestBrowserCurrentCoordinates(deniedNavigator)).rejects.toThrow(
+      currentLocationErrorMessages.denied,
+    );
+    expect(currentLocationErrorMessage({ code: 3 } as GeolocationPositionError)).toBe(
+      currentLocationErrorMessages.timeout,
+    );
+    expect(currentLocationErrorMessage({ code: 2 } as GeolocationPositionError)).toBe(
+      currentLocationErrorMessages.generic,
+    );
+  });
+
+  it("reads browser geolocation success coordinates as WGS84", async () => {
+    const successNavigator = {
+      geolocation: {
+        getCurrentPosition: vi.fn((success: PositionCallback) => {
+          success({
+            coords: {
+              latitude: 31.2304,
+              longitude: 121.4737,
+              accuracy: 18,
+            },
+          } as GeolocationPosition);
+        }),
+      },
+    };
+
+    await expect(requestBrowserCurrentCoordinates(successNavigator)).resolves.toEqual({
+      latitudeWgs84: 31.2304,
+      longitudeWgs84: 121.4737,
+      accuracyMeters: 18,
+    });
+    expect(successNavigator.geolocation.getCurrentPosition).toHaveBeenCalled();
+  });
+
   it("keeps the forecast CTA guided until a location is selected", () => {
     const HomepageSearchPanelComponent = HomepageSearchPanel as React.ComponentType<
       NonNullable<Parameters<typeof HomepageSearchPanel>[0]>
@@ -599,6 +703,85 @@ describe("homepage forecast flow", () => {
     expect(selectedHtml).not.toContain("高德地图");
     expect(selectedHtml).not.toContain("Open-Meteo");
     expect(selectedHtml).not.toContain("meteoblue");
+  });
+
+  it("sets current location as a selected location and enables forecast generation", () => {
+    const currentLocation = selectedLocationFromBrowserGeolocation({
+      latitudeWgs84: 31.2304,
+      longitudeWgs84: 121.4737,
+      reverseGeocode: {
+        available: true,
+        name: "黄浦区",
+        address: "上海市黄浦区",
+        province: "上海市",
+        city: "上海市",
+        district: "黄浦区",
+        latitudeGcj02: 31.2285,
+        longitudeGcj02: 121.4782,
+      },
+    });
+    const HomepageSearchPanelComponent = HomepageSearchPanel as React.ComponentType<
+      NonNullable<Parameters<typeof HomepageSearchPanel>[0]>
+    >;
+    const html = renderToStaticMarkup(
+      React.createElement(HomepageSearchPanelComponent, { selectedLocation: currentLocation }),
+    );
+
+    expect(currentLocation).toMatchObject({
+      source: "browser_geolocation",
+      originalSource: "browser_geolocation",
+      displayName: "黄浦区",
+      latitudeWgs84: 31.2304,
+      longitudeWgs84: 121.4737,
+      coordinateSource: "浏览器定位 WGS84 坐标",
+      elevationMeters: null,
+      elevationSource: "unknown",
+      elevationConfidence: "low",
+    });
+    expect(html).toContain("当前定位");
+    expect(html).toContain("黄浦区");
+    expect(html).toContain("上海市 / 上海市 / 黄浦区");
+    expect(html).toContain("海拔将在生成判断时补全");
+    expect(html).toContain("生成拍摄判断");
+    expect(html).not.toContain("请先选择地点");
+  });
+
+  it("sends current-location forecasts with WGS84 coordinates and without a spot id", () => {
+    const currentLocation = selectedLocationFromBrowserGeolocation({
+      latitudeWgs84: 31.2304,
+      longitudeWgs84: 121.4737,
+    });
+    const payload = buildForecastRequestPayload(
+      currentLocation,
+      homepageDefaultHorizon,
+      homepageDefaultTarget,
+    );
+    const url = new URL(
+      buildForecastUrlFromSelectedLocation(
+        currentLocation,
+        homepageDefaultHorizon,
+        homepageDefaultTarget,
+      ),
+      "http://localhost:3000",
+    );
+
+    expect(payload).toMatchObject({
+      name: "当前位置",
+      source: "browser_geolocation",
+      coordinateSource: "browser_geolocation",
+      latitudeWgs84: 31.2304,
+      longitudeWgs84: 121.4737,
+      latitudeGcj02: 31.2304,
+      longitudeGcj02: 121.4737,
+      elevationMeters: null,
+      elevationSource: "unknown",
+      elevationConfidence: "low",
+      horizon: "48h",
+      target: "general",
+    });
+    expect(payload.photoSpotId).toBeUndefined();
+    expect(payload.locationId).toBeUndefined();
+    expect(url.searchParams.get("coordinateSource")).toBe("browser_geolocation");
   });
 
   it("collapses search results after selecting a search result", () => {
@@ -768,6 +951,13 @@ describe("homepage forecast flow", () => {
     expect(html).not.toMatch(
       /\bmock\b|\bfixture\b|\bdemo\b|本地模拟|不含真实预报|开发环境|调试|占位/i,
     );
+  });
+
+  it("does not expose provider keys or secret names from the homepage search UI", () => {
+    const html = renderToStaticMarkup(React.createElement(HomepageSearchPanel));
+
+    expect(html).not.toMatch(/api[_-]?key|secret|AMAP_|key=/i);
+    expect(html).not.toContain("高德 Web 服务 Key");
   });
 
   it("does not render raw Prisma details in the public place search error alert", () => {

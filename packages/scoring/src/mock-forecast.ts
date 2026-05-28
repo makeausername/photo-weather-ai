@@ -747,7 +747,7 @@ function buildCalculationBasis(
       latitude: query.latitudeWgs84,
       longitude: query.longitudeWgs84,
     },
-    coordinateSource: getCoordinateSourceLabel(query.source),
+    coordinateSource: getCoordinateSourceLabel(query.coordinateSource ?? query.source),
   };
 }
 
@@ -772,6 +772,8 @@ function getCoordinateSourceLabel(source: string): string {
       return "本地地点 WGS84 坐标";
     case "amap":
       return "高德地点转换后的 WGS84 坐标";
+    case "browser_geolocation":
+      return "浏览器定位 WGS84 坐标";
     case "mock":
       return "模拟地点 WGS84 坐标";
     default:

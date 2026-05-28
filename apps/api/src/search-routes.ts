@@ -34,13 +34,32 @@ export type PublicPlaceSearchResult = {
   readonly isVerified: boolean;
 };
 
+export type PublicReverseGeocodeResult = {
+  readonly available: boolean;
+  readonly name?: string;
+  readonly address?: string | null;
+  readonly province?: string | null;
+  readonly city?: string | null;
+  readonly district?: string | null;
+  readonly latitudeGcj02?: number;
+  readonly longitudeGcj02?: number;
+  readonly latitudeWgs84?: number;
+  readonly longitudeWgs84?: number;
+};
+
 export type SearchRoutesOptions = {
   readonly dbClient?: DatabaseClient;
   readonly resolveGeoProvider: () => Promise<GeoProvider>;
+  readonly resolveReverseGeocodeProvider?: () => Promise<GeoProvider | null>;
 };
 
 const searchPlacesQuerySchema = z.object({
   q: z.string().trim().min(1, "请输入搜索关键词。").max(80, "搜索关键词不能超过 80 个字符。"),
+});
+
+const reverseGeocodeQuerySchema = z.object({
+  lat: z.coerce.number().finite().min(-90).max(90),
+  lng: z.coerce.number().finite().min(-180).max(180),
 });
 
 function sendZodError(reply: FastifyReply, error: z.ZodError): FastifyReply {
@@ -171,12 +190,26 @@ function providerToSearchResult(place: GeoPlaceResult): PublicPlaceSearchResult 
   };
 }
 
+function providerToReverseGeocodeResult(
+  place: GeoPlaceResult,
+  address: string | undefined,
+): PublicReverseGeocodeResult {
+  return {
+    available: true,
+    name: place.name,
+    address: address ?? place.address ?? null,
+    province: place.province ?? null,
+    city: place.city ?? null,
+    district: place.district ?? null,
+    latitudeGcj02: place.latitudeGcj02,
+    longitudeGcj02: place.longitudeGcj02,
+    latitudeWgs84: place.latitudeWgs84,
+    longitudeWgs84: place.longitudeWgs84,
+  };
+}
+
 function identityKey(result: PublicPlaceSearchResult): string {
-  return [
-    result.name,
-    result.latitudeWgs84.toFixed(4),
-    result.longitudeWgs84.toFixed(4),
-  ].join(":");
+  return [result.name, result.latitudeWgs84.toFixed(4), result.longitudeWgs84.toFixed(4)].join(":");
 }
 
 function mergeResults(
@@ -199,6 +232,40 @@ function mergeResults(
 }
 
 export function registerSearchRoutes(app: FastifyInstance, options: SearchRoutesOptions): void {
+  app.get("/search/reverse-geocode", async (request, reply) => {
+    const parsedQuery = reverseGeocodeQuerySchema.safeParse(request.query);
+    if (!parsedQuery.success) {
+      return sendZodError(reply, parsedQuery.error);
+    }
+
+    const provider = options.resolveReverseGeocodeProvider
+      ? await options.resolveReverseGeocodeProvider()
+      : null;
+    if (!provider) {
+      return {
+        available: false,
+      } satisfies PublicReverseGeocodeResult;
+    }
+
+    try {
+      const result = await provider.reverseGeocode(
+        {
+          latitude: parsedQuery.data.lat,
+          longitude: parsedQuery.data.lng,
+          system: "wgs84",
+        },
+        { locale: "zh-CN" },
+      );
+
+      return providerToReverseGeocodeResult(result.place, result.formattedAddress);
+    } catch (error) {
+      request.log.warn({ err: error }, "Public reverse geocode unavailable");
+      return {
+        available: false,
+      } satisfies PublicReverseGeocodeResult;
+    }
+  });
+
   app.get("/search/places", async (request, reply) => {
     const parsedQuery = searchPlacesQuerySchema.safeParse(request.query);
     if (!parsedQuery.success) {

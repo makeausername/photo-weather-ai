@@ -186,6 +186,27 @@ export async function resolveGeoProvider(
   });
 }
 
+export async function resolveReverseGeocodeProvider(
+  options: GeoProviderRuntimeOptions = {},
+): Promise<GeoProvider | null> {
+  if (options.geoProvider) {
+    return options.geoProvider;
+  }
+
+  const config = await readRuntimeAmapConfig(options);
+  if (!config.providerEnabled || !config.realModeEnabled || !config.apiKey) {
+    return null;
+  }
+
+  return new AmapProvider({
+    enabled: true,
+    apiKey: config.apiKey,
+    baseUrl: config.baseUrl,
+    timeoutMs: config.timeoutMs,
+    retryCount: config.retryCount,
+  });
+}
+
 export async function createRealAmapProvider(
   options: Pick<GeoProviderRuntimeOptions, "dbClient" | "env"> = {},
 ): Promise<AmapProvider> {

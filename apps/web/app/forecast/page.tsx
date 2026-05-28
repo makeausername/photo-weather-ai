@@ -49,6 +49,7 @@ export default function ForecastPage({ searchParams }: ForecastPageProps) {
       ),
       latitudeWgs84,
       longitudeWgs84,
+      coordinateSource: firstParam(searchParams.coordinateSource),
       horizon: firstParam(searchParams.horizon),
       target: firstParam(searchParams.target),
       elevationMeters: parseOptionalNumberParam(firstParam(searchParams.elevationMeters)),

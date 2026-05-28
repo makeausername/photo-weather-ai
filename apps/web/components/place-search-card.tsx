@@ -5,7 +5,9 @@ import type { ForecastHorizon, ForecastTarget } from "@photo-weather/shared";
 import { forecastHorizonLabels, forecastTargetLabels } from "@photo-weather/shared";
 import {
   buildForecastUrlFromSelectedLocation,
+  selectedLocationFromBrowserGeolocation,
   selectedLocationFromSearchResult,
+  type BrowserGeolocationReverseResult,
   type SelectedLocation,
 } from "./selected-location";
 import { Badge, Button, Card, Input, cn } from "./ui";
@@ -42,6 +44,17 @@ type SearchErrorPayload = {
 };
 
 export type SearchStatus = "idle" | "loading" | "ready" | "error";
+export type CurrentLocationStatus = "idle" | "loading";
+
+export type BrowserCurrentCoordinates = {
+  readonly latitudeWgs84: number;
+  readonly longitudeWgs84: number;
+  readonly accuracyMeters?: number;
+};
+
+type BrowserNavigatorLike = {
+  readonly geolocation?: Pick<Geolocation, "getCurrentPosition">;
+};
 
 export type PlaceSearchVisibilityState = {
   readonly query: string;
@@ -80,6 +93,8 @@ type PlaceSearchCardProps = {
   readonly showResultSourceBadges?: boolean;
   readonly selectedLocationDetailMode?: "full" | "compact";
   readonly showSelectedLocationActions?: boolean;
+  readonly showQuickLocations?: boolean;
+  readonly enableCurrentLocation?: boolean;
   readonly selectedLocation?: SelectedLocation | null;
   readonly onSelectedLocationChange?: (location: SelectedLocation | null) => void;
   readonly onForecastOptionsChange?: (options: {
@@ -109,6 +124,17 @@ const unsafeSearchErrorPatterns: readonly RegExp[] = [
 ];
 
 const quickLocations = ["黄山光明顶", "老君山金顶", "三清山女神峰", "武功山金顶"] as const;
+
+const geolocationPermissionDeniedCode = 1;
+const geolocationPositionUnavailableCode = 2;
+const geolocationTimeoutCode = 3;
+
+export const currentLocationErrorMessages = {
+  unavailable: "当前浏览器不支持定位，请手动搜索地点。",
+  denied: "定位权限被拒绝，请手动搜索地点。",
+  timeout: "获取当前位置超时，请稍后重试或手动搜索。",
+  generic: "无法获取当前位置，请检查浏览器权限或网络。",
+} as const;
 
 export const horizonOptions: readonly ForecastHorizon[] = ["24h", "48h", "72h", "7d"];
 
@@ -249,6 +275,92 @@ async function readSearchErrorMessage(response: Response): Promise<string> {
   }
 }
 
+export function currentLocationErrorMessage(
+  error: Pick<GeolocationPositionError, "code"> | undefined,
+): string {
+  if (!error) {
+    return currentLocationErrorMessages.generic;
+  }
+
+  if (error.code === geolocationPermissionDeniedCode) {
+    return currentLocationErrorMessages.denied;
+  }
+  if (error.code === geolocationTimeoutCode) {
+    return currentLocationErrorMessages.timeout;
+  }
+  if (error.code === geolocationPositionUnavailableCode) {
+    return currentLocationErrorMessages.generic;
+  }
+
+  return currentLocationErrorMessages.generic;
+}
+
+export function requestBrowserCurrentCoordinates(
+  navigatorLike: BrowserNavigatorLike | undefined = typeof navigator !== "undefined"
+    ? navigator
+    : undefined,
+): Promise<BrowserCurrentCoordinates> {
+  if (!navigatorLike?.geolocation) {
+    return Promise.reject(new Error(currentLocationErrorMessages.unavailable));
+  }
+
+  return new Promise((resolve, reject) => {
+    navigatorLike.geolocation?.getCurrentPosition(
+      (position) => {
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
+        if (
+          !Number.isFinite(latitude) ||
+          latitude < -90 ||
+          latitude > 90 ||
+          !Number.isFinite(longitude) ||
+          longitude < -180 ||
+          longitude > 180
+        ) {
+          reject(new Error(currentLocationErrorMessages.generic));
+          return;
+        }
+
+        resolve({
+          latitudeWgs84: latitude,
+          longitudeWgs84: longitude,
+          accuracyMeters: Number.isFinite(position.coords.accuracy)
+            ? position.coords.accuracy
+            : undefined,
+        });
+      },
+      (error) => {
+        reject(new Error(currentLocationErrorMessage(error)));
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000,
+      },
+    );
+  });
+}
+
+async function reverseGeocodeCurrentLocation(
+  coordinates: BrowserCurrentCoordinates,
+): Promise<BrowserGeolocationReverseResult | null> {
+  try {
+    const params = new URLSearchParams({
+      lat: String(coordinates.latitudeWgs84),
+      lng: String(coordinates.longitudeWgs84),
+    });
+    const response = await fetch(`${apiBaseUrl}/search/reverse-geocode?${params.toString()}`);
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = (await response.json()) as BrowserGeolocationReverseResult;
+    return data.available === true ? data : null;
+  } catch {
+    return null;
+  }
+}
+
 export function buildForecastUrl(
   place: PlaceSearchResult,
   horizon: ForecastHorizon,
@@ -330,6 +442,8 @@ export function PlaceSearchCard({
   showResultSourceBadges = true,
   selectedLocationDetailMode = "full",
   showSelectedLocationActions = false,
+  showQuickLocations: shouldRenderQuickLocations = true,
+  enableCurrentLocation = false,
   selectedLocation,
   onSelectedLocationChange,
   onForecastOptionsChange,
@@ -342,16 +456,22 @@ export function PlaceSearchCard({
   const [errorMessage, setErrorMessage] = useState("");
   const [results, setResults] = useState<readonly PlaceSearchResult[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<PlaceSearchResult | null>(null);
+  const [browserSelectedLocation, setBrowserSelectedLocation] = useState<SelectedLocation | null>(
+    null,
+  );
   const [isActivelySearching, setIsActivelySearching] = useState(false);
   const [isCollapsedAfterSelection, setIsCollapsedAfterSelection] = useState(false);
   const [horizon, setHorizon] = useState<ForecastHorizon>(defaultHorizon);
   const [target, setTarget] = useState<ForecastTarget>(fixedTarget ?? defaultTarget);
+  const [currentLocationStatus, setCurrentLocationStatus] = useState<CurrentLocationStatus>("idle");
+  const [currentLocationError, setCurrentLocationError] = useState("");
 
   const trimmedQuery = query.trim();
   const activeTarget = fixedTarget ?? (showTargetSelector ? target : defaultTarget);
   const internalSelectedLocation = useMemo(
-    () => (selectedPlace ? selectedLocationFromSearchResult(selectedPlace) : null),
-    [selectedPlace],
+    () =>
+      selectedPlace ? selectedLocationFromSearchResult(selectedPlace) : browserSelectedLocation,
+    [browserSelectedLocation, selectedPlace],
   );
   const activeSelectedLocation =
     selectedLocation !== undefined ? selectedLocation : internalSelectedLocation;
@@ -365,7 +485,8 @@ export function PlaceSearchCard({
   const showSearchFeedback = shouldShowPlaceSearchFeedback(visibilityState);
   const showSearchResults = shouldShowPlaceSearchResults(visibilityState);
   const showEmptyState = showSearchFeedback && status === "ready" && results.length === 0;
-  const showQuickLocations = !activeSelectedLocation || isActivelySearching;
+  const showQuickLocationSection =
+    shouldRenderQuickLocations && (!activeSelectedLocation || isActivelySearching);
 
   useEffect(() => {
     onForecastOptionsChange?.({ horizon, target: activeTarget });
@@ -385,6 +506,7 @@ export function PlaceSearchCard({
 
   const clearSelection = useCallback(() => {
     setSelectedPlace(null);
+    setBrowserSelectedLocation(null);
     onSelectedLocationChange?.(null);
   }, [onSelectedLocationChange]);
 
@@ -489,6 +611,7 @@ export function PlaceSearchCard({
     (value: string) => {
       const nextState = buildStateAfterSearchQueryInput(value, activeSelectedLocation);
       setQuery(value);
+      setCurrentLocationError("");
       setIsActivelySearching(nextState.isActivelySearching);
       setIsCollapsedAfterSelection(nextState.isCollapsedAfterSelection);
 
@@ -509,13 +632,45 @@ export function PlaceSearchCard({
     (result: PlaceSearchResult) => {
       const nextState = buildStateAfterSearchResultSelection(result);
       setSelectedPlace(result);
+      setBrowserSelectedLocation(null);
       setQuery(nextState.query);
+      setCurrentLocationError("");
       setIsActivelySearching(nextState.isActivelySearching);
       setIsCollapsedAfterSelection(nextState.isCollapsedAfterSelection);
       onSelectedLocationChange?.(selectedLocationFromSearchResult(result));
     },
     [onSelectedLocationChange],
   );
+
+  const handleUseCurrentLocation = useCallback(async () => {
+    setCurrentLocationStatus("loading");
+    setCurrentLocationError("");
+    setStatus("idle");
+    setResults([]);
+    setErrorMessage("");
+
+    try {
+      const coordinates = await requestBrowserCurrentCoordinates();
+      const reverseGeocode = await reverseGeocodeCurrentLocation(coordinates);
+      const currentLocation = selectedLocationFromBrowserGeolocation({
+        ...coordinates,
+        reverseGeocode,
+      });
+
+      setSelectedPlace(null);
+      setBrowserSelectedLocation(currentLocation);
+      setQuery(currentLocation.displayName);
+      setIsActivelySearching(false);
+      setIsCollapsedAfterSelection(true);
+      onSelectedLocationChange?.(currentLocation);
+    } catch (error) {
+      setCurrentLocationError(
+        error instanceof Error ? error.message : currentLocationErrorMessages.generic,
+      );
+    } finally {
+      setCurrentLocationStatus("idle");
+    }
+  }, [onSelectedLocationChange]);
 
   const handleChangeLocation = useCallback(() => {
     const nextState = buildStateAfterChangeLocation(query, activeSelectedLocation);
@@ -527,6 +682,7 @@ export function PlaceSearchCard({
 
     setIsCollapsedAfterSelection(nextState.isCollapsedAfterSelection);
     setIsActivelySearching(nextState.isActivelySearching);
+    setCurrentLocationError("");
     window.setTimeout(() => inputRef.current?.focus(), 0);
 
     if (nextQuery.trim() && (status !== "ready" || results.length === 0)) {
@@ -542,6 +698,7 @@ export function PlaceSearchCard({
     setStatus("idle");
     setResults([]);
     setErrorMessage("");
+    setCurrentLocationError("");
     clearSelection();
     window.setTimeout(() => inputRef.current?.focus(), 0);
   }, [clearSelection]);
@@ -552,6 +709,7 @@ export function PlaceSearchCard({
       : "";
     const preserveSelection = Boolean(selectedName && trimmedQuery === selectedName);
 
+    setCurrentLocationError("");
     setIsCollapsedAfterSelection(false);
     setIsActivelySearching(trimmedQuery.length > 0);
     void searchPlaces(query, undefined, { preserveSelection });
@@ -574,20 +732,43 @@ export function PlaceSearchCard({
           handleSubmitSearch();
         }}
       >
-        <Input
-          ref={inputRef}
-          aria-label="目的地"
-          value={query}
-          onChange={(event) => handleQueryChange(event.target.value)}
-          placeholder={searchPlaceholder}
-          className="h-9 bg-card text-sm"
-        />
+        <div className="flex min-w-0 gap-2">
+          <Input
+            ref={inputRef}
+            aria-label="目的地"
+            value={query}
+            onChange={(event) => handleQueryChange(event.target.value)}
+            placeholder={searchPlaceholder}
+            className="h-9 flex-1 bg-card text-sm"
+          />
+          {enableCurrentLocation ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              aria-label="使用当前位置"
+              title="使用当前位置"
+              className="h-9 px-3"
+              disabled={currentLocationStatus === "loading"}
+              onClick={() => {
+                void handleUseCurrentLocation();
+              }}
+            >
+              {currentLocationStatus === "loading" ? "定位中" : "定位"}
+            </Button>
+          ) : null}
+        </div>
         <Button type="submit" size="sm" className="h-9 w-full" disabled={status === "loading"}>
           搜索地点
         </Button>
+        {enableCurrentLocation ? (
+          <p className="text-xs leading-5 text-muted-foreground">
+            浏览器定位仅用于本次天气判断，不会公开显示。
+          </p>
+        ) : null}
       </form>
 
-      {showQuickLocations ? (
+      {showQuickLocationSection ? (
         <div className="grid gap-2">
           <p className="text-xs font-semibold text-muted-foreground">常用机位</p>
           <PopularSpotChips onSelect={handleQueryChange} />
@@ -595,6 +776,14 @@ export function PlaceSearchCard({
       ) : null}
 
       <div aria-live="polite" className="grid gap-2">
+        {currentLocationStatus === "loading" ? (
+          <div className="rounded-lg border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
+            正在获取当前位置...
+          </div>
+        ) : null}
+
+        {currentLocationError ? <PlaceSearchErrorAlert message={currentLocationError} /> : null}
+
         {showSearchFeedback && status === "loading" ? (
           <div className="rounded-lg border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
             正在搜索地点...
@@ -656,11 +845,7 @@ export function PlaceSearchCard({
                 {activeSelectedLocation.displayName}
               </p>
             </div>
-            {activeSelectedLocation.photoSpotId ? (
-              <Badge variant="success" className="shrink-0">
-                已匹配机位
-              </Badge>
-            ) : null}
+            <SelectedLocationBadge location={activeSelectedLocation} />
           </div>
           {selectedLocationDetailMode === "compact" ? (
             <CompactSelectedLocationDetails
@@ -767,6 +952,10 @@ export function PlaceSearchCard({
 
 function formatSelectedLocationArea(location: SelectedLocation): string {
   const area = [location.province, location.city, location.district].filter(Boolean).join(" / ");
+  if (location.source === "browser_geolocation" && area) {
+    return area;
+  }
+
   return location.scenicArea ?? (area || "位置资料待补充");
 }
 
@@ -800,9 +989,11 @@ function CompactSelectedLocationDetails({
 }
 
 function formatSelectedLocationElevation(location: SelectedLocation): string {
-  return typeof location.elevationMeters === "number" && Number.isFinite(location.elevationMeters)
-    ? `${Math.round(location.elevationMeters)} 米`
-    : "";
+  if (typeof location.elevationMeters === "number" && Number.isFinite(location.elevationMeters)) {
+    return `${Math.round(location.elevationMeters)} 米`;
+  }
+
+  return location.source === "browser_geolocation" ? "海拔将在生成判断时补全" : "";
 }
 
 function formatSelectedLocationCoordinates(location: SelectedLocation): string {
@@ -812,4 +1003,24 @@ function formatSelectedLocationCoordinates(location: SelectedLocation): string {
       : "";
 
   return `${gcj02}WGS84：${formatCoordinate(location.latitudeWgs84)}, ${formatCoordinate(location.longitudeWgs84)}`;
+}
+
+function SelectedLocationBadge({ location }: { readonly location: SelectedLocation }) {
+  if (location.photoSpotId) {
+    return (
+      <Badge variant="success" className="shrink-0">
+        已匹配机位
+      </Badge>
+    );
+  }
+
+  if (location.source === "browser_geolocation") {
+    return (
+      <Badge variant="info" className="shrink-0">
+        当前定位
+      </Badge>
+    );
+  }
+
+  return null;
 }

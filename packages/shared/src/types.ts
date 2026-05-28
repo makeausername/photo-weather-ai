@@ -170,6 +170,7 @@ export type ForecastQueryInput = {
   readonly longitudeGcj02: number;
   readonly latitudeWgs84: number;
   readonly longitudeWgs84: number;
+  readonly coordinateSource?: string;
   readonly horizon: ForecastHorizon;
   readonly target: ForecastTarget;
   readonly elevationMeters?: number | null;
