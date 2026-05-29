@@ -5169,8 +5169,14 @@ function dailyMainRiskText(
 ): string {
   const weather = summary.weather;
   const rain = rainRiskText(weather);
-  if (rain.level === "中" || rain.level === "高" || rain.level === "严重") {
+  if (summary.rainOverlapsPriorityWindow) {
     return "降水干扰";
+  }
+  if (summary.rainNearPriorityWindow) {
+    return "窗口前降水";
+  }
+  if (rain.level === "中" || rain.level === "高" || rain.level === "严重") {
+    return summary.rainOverlapWindowLabelZh === "推荐窗口之后" ? "降水在窗口后" : "降水干扰";
   }
 
   const cloudSeaDay = result.cloudSeaAnalysis.dailyCloudSea.find(
@@ -5204,6 +5210,18 @@ function dailyCompactActionSuggestion(
   backupWindow: GeneralForecastWindow | undefined,
 ): string {
   const rain = rainRiskText(summary.weather);
+  const rainAffectsPrimary =
+    summary.rainOverlapsPriorityWindow === true || summary.rainNearPriorityWindow === true;
+  if (rainAffectsPrimary && summary.rainActionZh) {
+    return summary.rainActionZh;
+  }
+  if (
+    summary.rainOverlapWindowLabelZh === "推荐窗口之后" &&
+    (rain.level === "中" || rain.level === "高" || rain.level === "严重") &&
+    summary.rainActionZh
+  ) {
+    return summary.rainActionZh;
+  }
   if (rain.level === "高" || rain.level === "严重") {
     return "降水干扰明显，优先等待雨后短暂开口。";
   }

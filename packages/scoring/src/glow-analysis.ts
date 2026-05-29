@@ -87,8 +87,8 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
     .filter(
       (window) =>
         window.score < 42 ||
-        (window.lowCloudObstructionRisk ?? 0) >= 82 ||
-        (window.precipitationDisruptionRisk ?? 0) >= 76,
+        (window.lowCloudObstructionRisk ?? 0) >= 76 ||
+        (window.precipitationDisruptionRisk ?? 0) >= 70,
     )
     .sort((left, right) => {
       if (right.conditionScore !== left.conditionScore) {
@@ -120,7 +120,7 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
   );
   const postRainOpeningChance = strongestPostRainOpening(candidates);
   const glowWindowRainRisk = strongestRainRisk(candidates);
-  const glowTravelScore = calculateGlowTravelScore(
+  const rawGlowTravelScore = calculateGlowTravelScore(
     sunriseGlowScore,
     sunsetGlowScore,
     lowCloudObstructionRisk,
@@ -128,6 +128,10 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
     visibilityColorQualityScore,
     input,
   );
+  const glowTravelScore =
+    bestGlowWindows.length > 0
+      ? rawGlowTravelScore
+      : Math.min(rawGlowTravelScore, watchableGlowWindows.length > 0 ? 54 : 38);
   const missingDataNotes = buildGlowMissingDataNotes(input);
   const confidence = calculateGlowConfidenceScore(input, missingDataNotes);
   const labels = buildGlowLabels(
@@ -439,20 +443,20 @@ function scorePracticalGlowWindow(input: {
   readonly type: GlowWindowType;
 }): number {
   const lowCloudPenalty =
-    input.lowCloudRisk >= 90 ? 30 : input.lowCloudRisk >= 78 ? 20 : input.lowCloudRisk >= 65 ? 8 : 0;
+    input.lowCloudRisk >= 90 ? 34 : input.lowCloudRisk >= 78 ? 24 : input.lowCloudRisk >= 65 ? 12 : 0;
   const rainPenalty =
     input.precipitationDisruptionRisk >= 85
       ? 30
       : input.precipitationDisruptionRisk >= 70
-        ? 22
+        ? 24
         : input.precipitationDisruptionRisk >= 50
-          ? 10
+          ? 14
           : 0;
-  const activeRainPenalty = input.rainOverlapsWindow ? 12 : 0;
+  const activeRainPenalty = input.rainOverlapsWindow ? 16 : 0;
   const visibilityPenalty =
-    input.visibilityColorQualityScore < 35 ? 18 : input.visibilityColorQualityScore < 50 ? 9 : 0;
-  const carrierPenalty = input.colorCarrierScore < 35 ? 16 : input.colorCarrierScore < 50 ? 8 : 0;
-  const terrainPenalty = input.terrain < 45 ? 12 : input.terrain < 58 ? 6 : 0;
+    input.visibilityColorQualityScore < 35 ? 20 : input.visibilityColorQualityScore < 52 ? 11 : 0;
+  const carrierPenalty = input.colorCarrierScore < 35 ? 22 : input.colorCarrierScore < 55 ? 12 : 0;
+  const terrainPenalty = input.terrain < 45 ? 14 : input.terrain < 58 ? 7 : 0;
   const rainOpeningBonus =
     input.postRainOpeningChance === "high" ? 7 : input.postRainOpeningChance === "medium" ? 4 : 0;
   const blueHourPenalty = input.type === "blue_hour_transition" ? 12 : 0;
@@ -770,13 +774,13 @@ function isShootableGlowWindow(window: GlowCandidate): boolean {
   const terrainScore = window.terrainScore ?? 50;
 
   return (
-    window.score >= 55 &&
-    colorCarrierScore >= 45 &&
-    lowCloudRisk < 88 &&
-    precipitationRisk < 70 &&
-    visibilityScore >= 45 &&
-    terrainScore >= 40 &&
-    !(window.rainOverlapsWindow && precipitationRisk >= 45)
+    window.score >= 60 &&
+    colorCarrierScore >= 55 &&
+    lowCloudRisk < 76 &&
+    precipitationRisk < 58 &&
+    visibilityScore >= 52 &&
+    terrainScore >= 45 &&
+    !window.rainOverlapsWindow
   );
 }
 
@@ -846,17 +850,20 @@ function buildDailyGlow(
       .filter(
         (window) =>
           window.score < 42 ||
-          (window.lowCloudObstructionRisk ?? 0) >= 82 ||
-          (window.precipitationDisruptionRisk ?? 0) >= 76,
+          (window.lowCloudObstructionRisk ?? 0) >= 76 ||
+          (window.precipitationDisruptionRisk ?? 0) >= 70,
       )
       .sort(
         (left, right) =>
           (right.conditionScore ?? right.score) - (left.conditionScore ?? left.score),
       )[0];
-    const practicalScore =
+    const rawPracticalScore =
       bestWindow?.practicalScore ??
       watchableWindow?.practicalScore ??
       Math.max(sunriseScore, sunsetScore);
+    const practicalScore = bestWindow
+      ? rawPracticalScore
+      : Math.min(rawPracticalScore, watchableWindow ? 54 : 38);
     const colorCarrierScore = maxCandidateScore(dayWindows, (window) => window.colorCarrierScore, () => 0);
     const lowCloudObstructionRisk = maxCandidateScore(
       dayWindows,
@@ -1318,7 +1325,7 @@ function buildGlowWindowRiskTags(
   if (components.lowCloudRisk >= 70) {
     tags.push("低云遮挡");
   }
-  if (components.colorCarrierScore < 50) {
+  if (components.colorCarrierScore < 55) {
     tags.push("中高云不足");
   }
   if (components.visibilityColorQualityScore < 55) {
@@ -1353,6 +1360,12 @@ function buildGlowWindowNote(
   }
   if (components.postRainOpeningChance === "high") {
     return `${target}窗口前有降水结束信号，若现场出现云缝，可能形成短暂雨后霞光开口。`;
+  }
+  if (components.colorCarrierScore < 55) {
+    return `${target}窗口存在，但色彩云条件一般，建议按普通日出日落或可观察窗口处理。`;
+  }
+  if (components.visibilityColorQualityScore < 52) {
+    return `${target}窗口通透度偏弱，色彩和远景层次不稳定，仅作备选观察。`;
   }
   if (components.colorCarrierScore >= 70 && components.visibilityColorQualityScore >= 65) {
     return `${target}窗口中高云和通透度较可用，适合提前到位观察色彩发展。`;

@@ -304,6 +304,12 @@ export function dailyCardActionSuggestion(options: {
   const nearbyOnly =
     summary.dedicatedTripRecommendation === "不建议专程前往" &&
     summary.nearbyObservationRecommendation === "已在附近可观察";
+  const rainAffectsPriority =
+    summary.rainOverlapsPriorityWindow === true || summary.rainNearPriorityWindow === true;
+
+  if (rainAffectsPriority && summary.rainActionZh) {
+    return summary.rainActionZh;
+  }
 
   if (bestWindow) {
     const subject = windowLabelText(bestWindow);

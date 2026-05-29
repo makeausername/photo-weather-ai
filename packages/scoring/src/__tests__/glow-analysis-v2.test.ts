@@ -358,6 +358,57 @@ describe("glow analysis v2", () => {
     expect(analysis.labels.bestWindowLabel).toBe("暂无高确定性霞光窗口");
   });
 
+  it("does not recommend glow when only the sun time exists but carrier clouds are weak", () => {
+    const clearSky = patchAllWeather(favorableGlowInput(), {
+      cloudTotal: 4,
+      cloudLow: 2,
+      cloudMid: 0,
+      cloudHigh: 0,
+      visibility: 26,
+      photographyTransparencyScore: 82,
+      precipitation: 0,
+      precipitationAmountMm: 0,
+      precipitationProbability: 0,
+      weatherTextZh: "晴",
+    });
+
+    const analysis = calculateGlowAnalysis(clearSky);
+
+    expect(analysis.bestGlowWindows).toHaveLength(0);
+    expect(analysis.recommendationLabel).not.toBe("推荐重点关注");
+    expect(analysis.labels.bestWindowLabel).toBe("暂无高确定性霞光窗口");
+  });
+
+  it("downgrades sunset glow when rain overlaps the sunset window", () => {
+    const dry = favorableGlowInput();
+    const { sunset } = firstAstro(dry);
+    const rainySunset = patchWeatherRange(
+      dry,
+      shiftMinutes(sunset, -90),
+      shiftMinutes(sunset, 25),
+      activeRainPatch,
+    );
+
+    const analysis = calculateGlowAnalysis(rainySunset);
+
+    expect(analysis.rainOverlapsSunsetWindow).toBe(true);
+    expect(
+      analysis.bestGlowWindows.find(
+        (window) => window.date === firstAstro(dry).date && window.type.startsWith("sunset"),
+      ),
+    ).toBeUndefined();
+    expect(analysis.watchableGlowWindows.concat(analysis.notRecommendedGlowWindows).length).toBeGreaterThan(0);
+  });
+
+  it("can recommend glow when mid and high cloud support is strong and low cloud stays open", () => {
+    const analysis = calculateGlowAnalysis(favorableGlowInput());
+
+    expect(analysis.bestGlowWindows.length).toBeGreaterThan(0);
+    expect(analysis.colorCarrierScore).toBeGreaterThanOrEqual(55);
+    expect(analysis.lowCloudObstructionRisk).toBeLessThan(76);
+    expect(analysis.glowWindowRainRisk).toBe("low");
+  });
+
   it("allows a shootable evening glow window to become the best window", () => {
     const poorBase = patchAllWeather(favorableGlowInput(), {
       cloudTotal: 6,

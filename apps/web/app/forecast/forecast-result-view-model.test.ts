@@ -2191,6 +2191,49 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toMatch(/(?:^|\s)(?:w|min-w)-\[(?:[1-9]\d{3,})px\]/);
   });
 
+  it("uses concise rain-window action copy on general daily cards", () => {
+    const base = resultForTarget("general");
+    const result: ForecastCalculationResult = {
+      ...base,
+      dailySummaries: base.dailySummaries.map((summary, index) =>
+        index === 0
+          ? {
+              ...summary,
+              rainOverlapsPriorityWindow: true,
+              rainNearPriorityWindow: false,
+              rainOverlapWindowLabelZh: "日落窗口附近",
+              rainImpactOnRecommendation: "medium",
+              rainActionZh: "日落窗口附近有弱降水信号，晚霞判断需谨慎。",
+            }
+          : summary,
+      ),
+    };
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "idle",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        aiRetryable: false,
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+    const dailySection = html.slice(
+      html.indexOf('data-testid="daily-forecast-decision"'),
+      html.indexOf('data-testid="opportunity-windows"'),
+    );
+
+    expect(dailySection).toContain("主要风险：");
+    expect(dailySection).toContain("降水干扰");
+    expect(dailySection).toContain("行动：");
+    expect(dailySection).toContain("日落窗口附近有弱降水信号，晚霞判断需谨慎。");
+    expect(dailySection).not.toContain("云海形成 82分");
+    expect(dailySection).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风|高德/i);
+  });
+
   it("uses lowland wording for low-elevation general forecasts", () => {
     const base = resultForTarget("general");
     const cloudMistWindow: ForecastCalculationResult["bestWindows"][number] = {

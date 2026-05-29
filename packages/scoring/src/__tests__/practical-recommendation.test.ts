@@ -95,6 +95,35 @@ describe("general practical trip recommendation", () => {
     expect(classification.executableForDedicatedTrip).toBe(true);
   });
 
+  it("keeps ordinary sunset existence out of dedicated-trip glow recommendations", () => {
+    const classification = classifyPhotographyWindow(
+      {
+        label: "日落窗口存在 18:40-19:10",
+        date: "2026-05-20",
+        startTime: "2026-05-20T18:40:00+08:00",
+        endTime: "2026-05-20T19:10:00+08:00",
+        score: 58,
+        conditionScore: 56,
+        practicalScore: 58,
+        target: "glow",
+        recommendationLevel: "backup",
+        practicalKind: "shooting_window",
+      },
+      {
+        date: "2026-05-20",
+        timezone: "Asia/Shanghai",
+        sunset: "2026-05-20T19:05:00+08:00",
+        civilDusk: "2026-05-20T19:36:00+08:00",
+      },
+      undefined,
+      "Asia/Shanghai",
+    );
+
+    expect(classification.subjectPriorityLabel).toBe("普通日落");
+    expect(classification.executableForDedicatedTrip).toBe(false);
+    expect(classification.windowLevel).toBe("watchable");
+  });
+
   it("classifies morning cloud sea as shootable and deep-night cloud sea as formation only", () => {
     const morning = classifyPhotographyWindow(
       {
@@ -619,12 +648,76 @@ describe("general practical trip recommendation", () => {
     );
 
     expect(clearWindow?.practicalScore).toBeDefined();
+    expect(wetWindow?.rainOverlapsWindow).toBe(true);
+    expect(wetWindow?.rainImpactOnRecommendation).toBe("medium");
     expect(wetWindow?.precipitationRisk?.rainRiskLevel).toBe("medium");
     expect(wetWindow!.practicalScore ?? 0).toBeLessThan(clearWindow!.practicalScore ?? 0);
     expect(laterRainWindow?.precipitationRisk?.rainRiskLevel ?? "none").toBe("none");
+    expect(laterRainWindow?.rainOverlapsWindow).toBe(false);
+    expect(laterRainWindow?.rainNearWindow).toBe(false);
+    expect(laterRainWindow?.rainImpactOnRecommendation).toBe("none");
     expect(laterRainWindow!.practicalScore ?? 0).toBeGreaterThanOrEqual(
       (clearWindow!.practicalScore ?? 0) - 4,
     );
+  });
+
+  it("marks rain before the priority window as caution without treating later rain as overlap", () => {
+    const baseInput = withHourlyWeather(buildMockForecastInput(query, { now: fixedNow }), (hour) => {
+      const hourValue = localHour(hour.time);
+      if (hourValue >= 4 && hourValue <= 7) {
+        return {
+          ...hour,
+          humidity: 86,
+          cloudTotal: 56,
+          cloudLow: 40,
+          windSpeed: 2.4,
+          visibility: 18,
+          dewPointSpread: 2.6,
+          precipitationProbability: 0,
+          precipitation: 0,
+          precipitationAmountMm: 0,
+          rainAmountMm: 0,
+        };
+      }
+      return {
+        ...hour,
+        precipitationProbability: 0,
+        precipitation: 0,
+        precipitationAmountMm: 0,
+        rainAmountMm: 0,
+      };
+    });
+    const rainBeforeWindow = withHourlyWeather(baseInput, (hour) => {
+      const hourValue = localHour(hour.time);
+      if (hourValue >= 2 && hourValue <= 3) {
+        return {
+          ...hour,
+          precipitationProbability: 48,
+          precipitation: 0.6,
+          precipitationAmountMm: 0.6,
+          rainAmountMm: 0.6,
+          weatherTextZh: "小雨",
+        };
+      }
+      return hour;
+    });
+
+    const result = calculateForecast(rainBeforeWindow);
+    const priorityWindow = result.bestWindows.find(
+      (window) => window.target === "cloud_sea" && window.practicalKind === "shooting_window",
+    );
+    const firstDaily = result.dailySummaries[0]!;
+
+    expect(priorityWindow?.rainOverlapsWindow).toBe(false);
+    expect(priorityWindow?.rainNearWindow).toBe(true);
+    expect(priorityWindow?.rainImpactOnRecommendation).toBe("low");
+    expect(priorityWindow?.rainActionZh).toContain("推荐窗口前");
+    expect(firstDaily.keyWindows.some((window) => window.rainNearWindow)).toBe(true);
+    expect(
+      firstDaily.keyWindows.some((window) =>
+        window.rainActionZh?.includes("出发前需复核临近预报"),
+      ),
+    ).toBe(true);
   });
 
   it("formats grouped precipitation timing as natural shooting advice", () => {

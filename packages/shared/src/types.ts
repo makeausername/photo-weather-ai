@@ -615,6 +615,8 @@ export type ForecastWindowRecommendationLevel =
 
 export type ForecastWindowLevel = "watchable" | "shootable" | "best" | "blocked";
 
+export type RainImpactOnRecommendation = "none" | "low" | "medium" | "high";
+
 export type ForecastTimeWindow = {
   readonly label: string;
   readonly date?: string;
@@ -642,6 +644,12 @@ export type ForecastTimeWindow = {
     | "blue_hour";
   readonly practicalNoteZh?: string;
   readonly precipitationRisk?: PhotographyPrecipitationRisk;
+  readonly rainOverlapsWindow?: boolean;
+  readonly rainNearWindow?: boolean;
+  readonly rainAfterWindow?: boolean;
+  readonly rainOverlapWindowLabelZh?: string;
+  readonly rainImpactOnRecommendation?: RainImpactOnRecommendation;
+  readonly rainActionZh?: string;
   readonly weatherBlockers?: readonly string[];
   readonly subjectPriorityLabel?: string;
   readonly backupSubjectLabel?: string;
@@ -1231,6 +1239,11 @@ export type ForecastDailySummary = {
   readonly nearbyObservationRecommendation?: ForecastTripDecisionLabel;
   readonly dedicatedTripAdviceZh?: string;
   readonly nearbyObservationAdviceZh?: string;
+  readonly rainOverlapsPriorityWindow?: boolean;
+  readonly rainNearPriorityWindow?: boolean;
+  readonly rainOverlapWindowLabelZh?: string;
+  readonly rainImpactOnRecommendation?: RainImpactOnRecommendation;
+  readonly rainActionZh?: string;
   readonly riskFlags: readonly ForecastRiskFlag[];
   readonly shortAdvice: string;
 };
