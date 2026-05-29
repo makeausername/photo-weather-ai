@@ -27,6 +27,8 @@ import {
   type ForecastWatchableWindow,
   type GlowAnalysisResult,
   type NormalizedHourlyWeather,
+  type ProfessionalHourlyDataPoint,
+  type ProfessionalHourlyDataTimeBasis,
   type RainImpactOnRecommendation,
   type TargetDailyBreakdown,
 } from "@photo-weather/shared";
@@ -192,9 +194,135 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
     weatherMissingDataNotes: input.weatherMissingDataNotes,
     weatherFusionSummary: input.weatherFusionSummary,
     weatherProviderRuntimeSnapshot: input.weatherProviderRuntimeSnapshot,
+    professionalHourlyData: buildProfessionalHourlyData(input.hourlyWeather),
+    professionalHourlyDataTimeBasis: buildProfessionalHourlyDataTimeBasis(input),
     astroDataSourceLabelZh: input.astroDataSourceLabelZh,
     astroCalculationBasis: input.astroCalculationBasis,
   };
+}
+
+function buildProfessionalHourlyData(
+  hourlyWeather: readonly NormalizedHourlyWeather[],
+): readonly ProfessionalHourlyDataPoint[] {
+  return hourlyWeather.map((hour) => ({
+    time: hour.time,
+    weatherCode: safeProfessionalWeatherCode(hour.weatherCode),
+    weatherText: safeProfessionalWeatherText(hour),
+    cloudTotalPercent: finiteOrNull(hour.cloudTotal),
+    cloudHighPercent: finiteOrNull(hour.cloudHigh),
+    cloudMidPercent: finiteOrNull(hour.cloudMid),
+    cloudLowPercent: finiteOrNull(hour.cloudLow),
+    temperatureC: finiteOrNull(hour.temperature),
+    dewPointC: finiteOrNull(hour.dewPoint),
+    dewPointSpreadC: finiteOrNull(hour.dewPointSpread),
+    relativeHumidityPercent: finiteOrNull(hour.humidity),
+    precipitationAmountMm: finiteOrNull(hour.precipitationAmountMm ?? hour.precipitation),
+    precipitationProbabilityPercent: finiteOrNull(
+      hour.precipitationProbabilityPercent ?? hour.precipitationProbability,
+    ),
+    visibilityMeters:
+      typeof hour.visibility === "number" && Number.isFinite(hour.visibility)
+        ? Math.round(hour.visibility * 1000)
+        : null,
+    windSpeedMs: finiteOrNull(hour.windSpeed),
+    windDirectionDeg: finiteOrNull(hour.windDirection),
+  }));
+}
+
+function buildProfessionalHourlyDataTimeBasis(
+  input: ForecastCalculationInput,
+): ProfessionalHourlyDataTimeBasis | undefined {
+  const orderedTimes = input.hourlyWeather
+    .map((hour) => ({ value: hour.time, timestamp: Date.parse(hour.time) }))
+    .filter((time): time is { readonly value: string; readonly timestamp: number } =>
+      Number.isFinite(time.timestamp),
+    )
+    .sort((left, right) => left.timestamp - right.timestamp);
+
+  if (orderedTimes.length === 0) {
+    return undefined;
+  }
+
+  const stepMinutes = inferHourlyStepMinutes(orderedTimes.map((time) => time.timestamp));
+  const start = orderedTimes[0]!;
+  const last = orderedTimes.at(-1)!;
+  const endTimestamp = last.timestamp + stepMinutes * 60 * 1000;
+  const forecastStartMs = Date.parse(input.calendarBasis.forecastStart);
+  const forecastEndMs = Date.parse(input.calendarBasis.forecastEnd);
+  const hasForecastRange = Number.isFinite(forecastStartMs) && Number.isFinite(forecastEndMs);
+  const partialData =
+    hasHourlyGaps(
+      orderedTimes.map((time) => time.timestamp),
+      stepMinutes,
+    ) ||
+    (hasForecastRange &&
+      (start.timestamp > forecastStartMs + 60 * 1000 || endTimestamp < forecastEndMs - 60 * 1000));
+
+  return {
+    startTime: start.value,
+    endTime: new Date(endTimestamp).toISOString(),
+    stepMinutes,
+    timezone: input.calendarBasis.timezone,
+    partialData,
+    missingDataNoteZh: partialData ? "部分小时数据缺失，结果仅供复核。" : undefined,
+  };
+}
+
+function inferHourlyStepMinutes(timestamps: readonly number[]): number {
+  const differences = timestamps
+    .slice(1)
+    .map((timestamp, index) => Math.round((timestamp - timestamps[index]!) / 60000))
+    .filter((minutes) => Number.isFinite(minutes) && minutes > 0);
+
+  return differences[0] ?? 60;
+}
+
+function hasHourlyGaps(timestamps: readonly number[], stepMinutes: number): boolean {
+  if (timestamps.length <= 1) {
+    return false;
+  }
+
+  const toleranceMinutes = Math.max(1, Math.round(stepMinutes * 0.15));
+  return timestamps.slice(1).some((timestamp, index) => {
+    const previous = timestamps[index]!;
+    const differenceMinutes = Math.round((timestamp - previous) / 60000);
+    return Math.abs(differenceMinutes - stepMinutes) > toleranceMinutes;
+  });
+}
+
+function finiteOrNull(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function safeProfessionalWeatherCode(value: string | null | undefined): string | null {
+  const code = value?.trim();
+  if (!code) {
+    return null;
+  }
+  if (code === "mock-clear") {
+    return "clear";
+  }
+  if (code === "mock-partly-cloudy") {
+    return "partly_cloudy";
+  }
+  if (/meteoblue|open[-_ ]?meteo|qweather|hefeng|mock/i.test(code)) {
+    return null;
+  }
+  return code;
+}
+
+function safeProfessionalWeatherText(hour: NormalizedHourlyWeather): string | null {
+  const text = simplifyWeatherSummaryZh(hour.weatherTextZh);
+  if (text && !/meteoblue|open[-_ ]?meteo|qweather|和风天气|和风|provider/i.test(text)) {
+    return text;
+  }
+  if (hour.weatherCode === "mock-clear") {
+    return "晴";
+  }
+  if (hour.weatherCode === "mock-partly-cloudy") {
+    return "多云";
+  }
+  return null;
 }
 
 export function calculateSunriseGlowScore(input: ForecastCalculationInput): ForecastScore {
@@ -872,7 +1000,11 @@ function isHighValueGlowSubject(
 
   const conditionScore = window.conditionScore ?? window.score;
   const practicalScore = window.practicalScore ?? window.score;
-  const blockerText = [...(window.weatherBlockers ?? []), window.copyReasonZh, window.practicalNoteZh]
+  const blockerText = [
+    ...(window.weatherBlockers ?? []),
+    window.copyReasonZh,
+    window.practicalNoteZh,
+  ]
     .filter(Boolean)
     .join(" ");
 
@@ -1051,7 +1183,11 @@ function isUsableShootableWindow(window: ForecastTimeWindow): boolean {
   if (window.recommendationLevel === "backup" || window.recommendationLevel === "not_recommended") {
     return false;
   }
-  if (window.windowLevel !== undefined && window.windowLevel !== "shootable" && window.windowLevel !== "best") {
+  if (
+    window.windowLevel !== undefined &&
+    window.windowLevel !== "shootable" &&
+    window.windowLevel !== "best"
+  ) {
     return false;
   }
   return (window.practicalScore ?? window.score) >= 54;
@@ -1663,12 +1799,16 @@ function arrivalReasonForWindow(
   lightPhase: PracticalLightPhase,
 ): string {
   if (practicalKind === "formation_signal") {
-    return terrainModeUsesMountainSemantics(classifyTerrainMode(input.terrainAnalysis.terrainProfile))
+    return terrainModeUsesMountainSemantics(
+      classifyTerrainMode(input.terrainAnalysis.terrainProfile),
+    )
       ? "这是低云和雾气变化信号，不是有光拍摄窗口；若已在山上，可提前观察云雾上沿和风向变化。"
       : "这是低云和雾气变化信号，不是高确定性拍摄窗口；若已在附近，可观察通透度和云层开口。";
   }
   if (window.target === "cloud_sea") {
-    return terrainModeUsesMountainSemantics(classifyTerrainMode(input.terrainAnalysis.terrainProfile))
+    return terrainModeUsesMountainSemantics(
+      classifyTerrainMode(input.terrainAnalysis.terrainProfile),
+    )
       ? "预留上山、找机位和观察云雾变化时间，优先把云海与清晨光线叠加。"
       : "预留到达、找机位和观察雾气变化时间，优先把晨雾、云层开口与清晨光线叠加。";
   }
@@ -1841,10 +1981,14 @@ type RainSignalSummary = {
 };
 
 function rainSignalForHours(hours: readonly NormalizedHourlyWeather[]): RainSignalSummary {
-  const probability = maxOptional(hours.map((hour) => hour.precipitationProbability ?? undefined)) ?? null;
-  const amountMm = sumOptional(hours.map((hour) => precipitationAmountMm(hour) ?? undefined)) ?? null;
+  const probability =
+    maxOptional(hours.map((hour) => hour.precipitationProbability ?? undefined)) ?? null;
+  const amountMm =
+    sumOptional(hours.map((hour) => precipitationAmountMm(hour) ?? undefined)) ?? null;
   const score = maxOptional(hours.map(hourlyPrecipitationSignalScore)) ?? 0;
-  const hasTextSignal = hours.some((hour) => precipitationTextSignal(hour.weatherTextZh ?? undefined));
+  const hasTextSignal = hours.some((hour) =>
+    precipitationTextSignal(hour.weatherTextZh ?? undefined),
+  );
   const riskLevel = precipitationRiskLevel({ probability, amountMm });
   const hasSignal = riskLevel !== "none" || hasTextSignal || (amountMm ?? 0) > 0.05 || score >= 18;
 
@@ -2671,7 +2815,9 @@ function buildDailyWeatherSummary(
       : precipitationPeriods.mainPrecipitationPeriodLabelZh;
 
   return {
-    weatherTextZh: simplifyWeatherSummaryZh(dayWeather?.weatherSummary ?? firstWeatherText(dayHours)),
+    weatherTextZh: simplifyWeatherSummaryZh(
+      dayWeather?.weatherSummary ?? firstWeatherText(dayHours),
+    ),
     tempMin: dayWeather?.tempMin ?? minOptional(dayHours.map((hour) => hour.temperature)),
     tempMax: dayWeather?.tempMax ?? maxOptional(dayHours.map((hour) => hour.temperature)),
     rawTempMin: dayWeather?.rawTempMin ?? minOptional(dayHours.map((hour) => hour.rawTemperature)),
@@ -3569,10 +3715,8 @@ function dedicatedTripLabel(
     }
     return "不建议专程前往";
   }
-  const bestWindowPracticalScore =
-    bestShootableWindow.practicalScore ?? bestShootableWindow.score;
-  const bestWindowConditionScore =
-    bestShootableWindow.conditionScore ?? bestShootableWindow.score;
+  const bestWindowPracticalScore = bestShootableWindow.practicalScore ?? bestShootableWindow.score;
+  const bestWindowConditionScore = bestShootableWindow.conditionScore ?? bestShootableWindow.score;
   const rainImpact = bestShootableWindow.rainImpactOnRecommendation ?? "none";
   const canStronglyRecommend =
     bestShootableWindow.executableForDedicatedTrip === true &&
@@ -3614,10 +3758,7 @@ function nearbyObservationLabel(
   nearbyObservationScore: number,
   dedicatedTripRecommendation: ForecastTripDecisionLabel,
 ): ForecastTripDecisionLabel | undefined {
-  if (
-    dedicatedTripRecommendation === "强推荐专程" ||
-    dedicatedTripRecommendation === "推荐安排"
-  ) {
+  if (dedicatedTripRecommendation === "强推荐专程" || dedicatedTripRecommendation === "推荐安排") {
     return undefined;
   }
   if (nearbyObservationScore >= 50) {

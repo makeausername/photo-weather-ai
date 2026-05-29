@@ -242,6 +242,34 @@ export type NormalizedHourlyWeather = {
   readonly fieldMetadata?: NormalizedWeatherFieldMetadataMap;
 };
 
+export type ProfessionalHourlyDataPoint = {
+  readonly time: string;
+  readonly weatherCode: string | null;
+  readonly weatherText: string | null;
+  readonly cloudTotalPercent: number | null;
+  readonly cloudHighPercent: number | null;
+  readonly cloudMidPercent: number | null;
+  readonly cloudLowPercent: number | null;
+  readonly temperatureC: number | null;
+  readonly dewPointC: number | null;
+  readonly dewPointSpreadC: number | null;
+  readonly relativeHumidityPercent: number | null;
+  readonly precipitationAmountMm: number | null;
+  readonly precipitationProbabilityPercent: number | null;
+  readonly visibilityMeters: number | null;
+  readonly windSpeedMs: number | null;
+  readonly windDirectionDeg: number | null;
+};
+
+export type ProfessionalHourlyDataTimeBasis = {
+  readonly startTime: string;
+  readonly endTime: string;
+  readonly stepMinutes: number;
+  readonly timezone: string;
+  readonly partialData: boolean;
+  readonly missingDataNoteZh?: string;
+};
+
 export type NormalizedCurrentWeather = {
   readonly providerCode: string;
   readonly providerLabelZh: string;
@@ -1306,6 +1334,8 @@ export type ForecastCalculationResult = {
   readonly weatherMissingDataNotes: readonly string[];
   readonly weatherFusionSummary?: WeatherFusionSummary;
   readonly weatherProviderRuntimeSnapshot?: readonly ForecastProviderRuntimeSnapshot[];
+  readonly professionalHourlyData?: readonly ProfessionalHourlyDataPoint[];
+  readonly professionalHourlyDataTimeBasis?: ProfessionalHourlyDataTimeBasis;
   readonly astroDataSourceLabelZh: string;
   readonly astroCalculationBasis?: AstroCalculationBasis;
   readonly calibrationHint?: ForecastCalibrationHint;

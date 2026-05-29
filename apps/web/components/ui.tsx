@@ -1,6 +1,7 @@
 import { forwardRef } from "react";
 import type {
   ButtonHTMLAttributes,
+  HTMLAttributes,
   InputHTMLAttributes,
   ReactNode,
   SelectHTMLAttributes,
@@ -106,14 +107,16 @@ export function Select({ className, ...props }: SelectProps) {
   );
 }
 
-type CardProps = {
+type CardProps = HTMLAttributes<HTMLElement> & {
   readonly children: ReactNode;
-  readonly className?: string;
 };
 
-export function Card({ children, className }: CardProps) {
+export function Card({ children, className, ...props }: CardProps) {
   return (
-    <section className={cn("rounded-lg border border-border bg-card shadow-sm", className)}>
+    <section
+      className={cn("rounded-lg border border-border bg-card shadow-sm", className)}
+      {...props}
+    >
       {children}
     </section>
   );

@@ -509,6 +509,42 @@ describe("forecast query validation route", () => {
     expect(body.forecastStart).toBe(body.calendarBasis.forecastStart);
     expect(body.forecastEnd).toBe(body.calendarBasis.forecastEnd);
     expect(body.targetDates).toEqual(body.calendarBasis.targetDates);
+    expect(body.professionalHourlyDataTimeBasis).toMatchObject({
+      timezone: "Asia/Shanghai",
+      stepMinutes: 60,
+      partialData: false,
+    });
+    expect(body.professionalHourlyData).toHaveLength(48);
+    expect(body.professionalHourlyData[0]).toMatchObject({
+      time: expect.any(String),
+      weatherText: expect.any(String),
+      cloudTotalPercent: expect.any(Number),
+      cloudHighPercent: expect.any(Number),
+      cloudMidPercent: expect.any(Number),
+      cloudLowPercent: expect.any(Number),
+      temperatureC: expect.any(Number),
+      dewPointC: expect.any(Number),
+      dewPointSpreadC: expect.any(Number),
+      relativeHumidityPercent: expect.any(Number),
+      precipitationAmountMm: expect.any(Number),
+      precipitationProbabilityPercent: expect.any(Number),
+      visibilityMeters: expect.any(Number),
+      windSpeedMs: expect.any(Number),
+      windDirectionDeg: expect.any(Number),
+    });
+    expect(Object.keys(body.professionalHourlyData[0])).not.toEqual(
+      expect.arrayContaining([
+        "providerCode",
+        "providerLabelZh",
+        "fieldMetadata",
+        "sourceNotes",
+        "missingFields",
+        "estimatedFields",
+      ]),
+    );
+    expect(JSON.stringify(body.professionalHourlyData)).not.toMatch(
+      /qweather|open[-_ ]?meteo|meteoblue|api[_-]?key|secret|token/i,
+    );
     expect(body.scores).toMatchObject({
       sunriseGlow: {
         label: "朝霞",
@@ -1920,24 +1956,25 @@ describe("forecast query validation route", () => {
   });
 
   it("falls back to deterministic interpretation when DeepSeek JSON parsing fails", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          choices: [
-            {
-              message: {
-                content: "{not-json",
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: "{not-json",
+                },
               },
+            ],
+          }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
             },
-          ],
-        }),
-        {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json",
           },
-        },
-      ),
+        ),
     );
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
@@ -2007,24 +2044,25 @@ describe("forecast query validation route", () => {
   });
 
   it("caches successful DeepSeek interpretation by a stable forecast result key", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          choices: [
-            {
-              message: {
-                content: JSON.stringify(buildDeepSeekExplanationContent("缓存命中")),
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify(buildDeepSeekExplanationContent("缓存命中")),
+                },
               },
+            ],
+          }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
             },
-          ],
-        }),
-        {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json",
           },
-        },
-      ),
+        ),
     );
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();

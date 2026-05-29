@@ -2026,14 +2026,14 @@ function mountainTemperatureValue(
   const temperature = current?.temperature ?? averagePair(weather?.tempMin, weather?.tempMax);
   const feelsLike =
     resultUsesMountainSemantics(result) || terrainModeForResult(result) === "hill"
-      ? (current?.mountainFeelsLikeC ??
+      ? current?.mountainFeelsLikeC ??
         current?.feelsLike ??
         averagePair(weather?.mountainFeelsLikeMin, weather?.mountainFeelsLikeMax) ??
-        averagePair(weather?.feelsLikeMin, weather?.feelsLikeMax))
-      : (current?.feelsLike ??
+        averagePair(weather?.feelsLikeMin, weather?.feelsLikeMax)
+      : current?.feelsLike ??
         averagePair(weather?.feelsLikeMin, weather?.feelsLikeMax) ??
         current?.mountainFeelsLikeC ??
-        averagePair(weather?.mountainFeelsLikeMin, weather?.mountainFeelsLikeMax));
+        averagePair(weather?.mountainFeelsLikeMin, weather?.mountainFeelsLikeMax);
   const feelsLikeLabel = resultUsesMountainSemantics(result)
     ? "山地体感"
     : terrainModeForResult(result) === "hill"
@@ -2545,6 +2545,7 @@ export function CloudSeaResultPage({
           <CloudSeaHeroConclusion hero={viewModel.hero} result={result} />
           <CloudSeaMetricCards cards={viewModel.coreCards} />
           <CloudSeaTimelineSection windows={viewModel.cloudSeaWindows} />
+          <CloudSeaProfessionalHourlyDataPanel result={result} />
           <CloudSeaDailyTrend result={result} items={viewModel.dailyTrend} />
           <CloudSeaReasoningSection items={viewModel.reasoningItems} />
           {viewModel.dataCaution ? <CloudSeaInlineCaution text={viewModel.dataCaution} /> : null}
@@ -3814,11 +3815,7 @@ function CloudSeaMetricCards({ cards }: { readonly cards: readonly ForecastResul
   );
 }
 
-function CloudSeaTimelineSection({
-  windows,
-}: {
-  readonly windows: readonly CloudSeaWindowItem[];
-}) {
+function CloudSeaTimelineSection({ windows }: { readonly windows: readonly CloudSeaWindowItem[] }) {
   return (
     <Card className="CloudSeaTimeline cloud-sea-timeline p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3871,6 +3868,647 @@ function CloudSeaTimelineSection({
   );
 }
 
+type ProfessionalHourlyFilterMode = "all" | "cloudSea" | "morning" | "risk";
+type ProfessionalHourlyRow = NonNullable<
+  ForecastCalculationResult["professionalHourlyData"]
+>[number];
+type CloudSeaAnalysisWindowLike =
+  ForecastCalculationResult["cloudSeaAnalysis"]["bestCloudSeaWindows"][number];
+
+const professionalHourlyFilters: readonly {
+  readonly mode: ProfessionalHourlyFilterMode;
+  readonly label: string;
+}[] = [
+  { mode: "all", label: "全部小时" },
+  { mode: "cloudSea", label: "只看云海窗口" },
+  { mode: "morning", label: "只看清晨窗口" },
+  { mode: "risk", label: "只看有风险时段" },
+];
+
+function CloudSeaProfessionalHourlyDataPanel({
+  result,
+}: {
+  readonly result: ForecastCalculationResult;
+}) {
+  const rows = result.professionalHourlyData ?? [];
+  const basis = result.professionalHourlyDataTimeBasis;
+  const [expanded, setExpanded] = useState(true);
+  const [filterMode, setFilterMode] = useState<ProfessionalHourlyFilterMode>(() =>
+    defaultProfessionalHourlyFilter(result),
+  );
+
+  useEffect(() => {
+    setFilterMode(defaultProfessionalHourlyFilter(result));
+  }, [result.forecastStart, result.forecastEnd, result.generatedAt]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 899px)");
+    const syncExpandedState = () => {
+      setExpanded(!mediaQuery.matches);
+    };
+
+    syncExpandedState();
+    mediaQuery.addEventListener("change", syncExpandedState);
+    return () => {
+      mediaQuery.removeEventListener("change", syncExpandedState);
+    };
+  }, []);
+
+  const filteredRows = useMemo(
+    () => filterProfessionalHourlyRows(rows, result, filterMode),
+    [filterMode, result, rows],
+  );
+
+  if (!basis || rows.length === 0 || !basis.startTime || !basis.endTime) {
+    return null;
+  }
+
+  const timeStepLabel = basis.stepMinutes === 60 ? "逐小时" : `${basis.stepMinutes} 分钟`;
+  const activeFilterLabel =
+    professionalHourlyFilters.find((filter) => filter.mode === filterMode)?.label ?? "全部小时";
+
+  return (
+    <Card
+      className="CloudSeaProfessionalHourlyData cloud-sea-professional-hourly-data p-4 shadow-sm"
+      data-cloud-sea-section="CloudSeaProfessionalHourlyData"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-bold text-card-foreground">专业小时数据</h2>
+            <Badge variant="accent">专业参考</Badge>
+          </div>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
+            低云、中云、高云、湿度、露点、降水、能见度和风速用于人工复核云海形成与白墙风险。
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            setExpanded((current) => !current);
+          }}
+        >
+          {expanded ? "收起专业数据" : "展开专业数据"}
+        </Button>
+      </div>
+
+      <div
+        className={cn("mt-4 grid gap-3", !expanded && "hidden")}
+        data-professional-hourly-expanded={expanded ? "true" : "false"}
+      >
+        <dl className="grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground min-[760px]:grid-cols-3">
+          <CompactDefinition
+            label="有效时间"
+            value={`${formatFullDateTimeForTimezone(
+              basis.startTime,
+              basis.timezone,
+            )} – ${formatFullDateTimeForTimezone(basis.endTime, basis.timezone)}`}
+          />
+          <CompactDefinition label="时间步长" value={timeStepLabel} />
+          <CompactDefinition label="时区" value={basis.timezone} />
+        </dl>
+        {basis.partialData ? (
+          <p className="rounded-lg border border-warning/40 bg-accent/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
+            {basis.missingDataNoteZh ?? "部分小时数据缺失，结果仅供复核。"}
+          </p>
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap gap-2" role="group" aria-label="专业小时数据筛选">
+            {professionalHourlyFilters.map((filter) => (
+              <button
+                key={filter.mode}
+                type="button"
+                className={cn(
+                  "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                  filterMode === filter.mode
+                    ? "border-primary bg-secondary text-secondary-foreground"
+                    : "border-border bg-card text-muted-foreground hover:border-primary hover:text-foreground",
+                )}
+                onClick={() => {
+                  setFilterMode(filter.mode);
+                }}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+          {filterMode !== "all" ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setFilterMode("all");
+              }}
+            >
+              查看全部小时
+            </Button>
+          ) : null}
+        </div>
+        <p className="text-xs leading-5 text-muted-foreground">
+          当前筛选：{activeFilterLabel}，显示 {filteredRows.length} / {rows.length}{" "}
+          小时。专业数据用于复核云海形成、白墙风险和雨后开口。最终出行仍需结合临近预报和现场观测。
+        </p>
+
+        <div
+          className="max-w-full overflow-x-auto rounded-lg border border-border bg-card"
+          data-cloud-sea-professional-table-scroll="true"
+        >
+          <table className="w-full min-w-[1280px] border-collapse text-left text-[12px] leading-5">
+            <thead className="bg-muted text-xs text-muted-foreground">
+              <tr>
+                {[
+                  "日期",
+                  "时间",
+                  "天气",
+                  "云海信号",
+                  "总云量 %",
+                  "高云量 %",
+                  "中云量 %",
+                  "低云量 %",
+                  "气温 °C",
+                  "露点 °C",
+                  "露点差 °C",
+                  "湿度 %",
+                  "降水 mm / 降水概率 %",
+                  "能见度 km",
+                  "风速 m/s",
+                  "风向",
+                ].map((label, index) => (
+                  <th
+                    key={label}
+                    scope="col"
+                    className={cn(
+                      "whitespace-nowrap border-b border-border px-2 py-2 font-semibold",
+                      index === 0 && "sticky left-0 z-20 bg-muted",
+                    )}
+                  >
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRows.length > 0 ? (
+                filteredRows.map((row) => (
+                  <CloudSeaProfessionalHourlyRow
+                    key={row.time}
+                    row={row}
+                    result={result}
+                    timezone={basis.timezone}
+                  />
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan={16}
+                    className="border-t border-border px-3 py-4 text-center text-sm text-muted-foreground"
+                  >
+                    当前筛选下暂无小时数据，可查看全部小时复核完整预报。
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function CloudSeaProfessionalHourlyRow({
+  row,
+  result,
+  timezone,
+}: {
+  readonly row: ProfessionalHourlyRow;
+  readonly result: ForecastCalculationResult;
+  readonly timezone: string;
+}) {
+  const signal = professionalHourlySignal(result, row);
+  const weatherText = providerNeutralProfessionalWeatherText(row.weatherText) ?? "—";
+  const weatherGlyph = weatherGlyphForProfessionalHour(row, weatherText);
+
+  return (
+    <tr className="odd:bg-card even:bg-muted/35" data-professional-hourly-row={row.time}>
+      <ProfessionalHourlyCell
+        cell="date"
+        className="sticky left-0 z-10 bg-inherit font-semibold text-card-foreground"
+      >
+        {formatProfessionalDate(row.time, timezone)}
+      </ProfessionalHourlyCell>
+      <ProfessionalHourlyCell cell="time" className="font-semibold text-card-foreground">
+        {formatProfessionalTime(row.time, timezone)}
+      </ProfessionalHourlyCell>
+      <ProfessionalHourlyCell cell="weather">
+        <span className="inline-flex items-center gap-1.5">
+          {weatherGlyph ? (
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded border border-border bg-muted text-[11px] font-bold text-primary">
+              {weatherGlyph}
+            </span>
+          ) : null}
+          <span>{weatherText}</span>
+        </span>
+      </ProfessionalHourlyCell>
+      <ProfessionalHourlyCell cell="signal">
+        <Badge variant={professionalSignalBadgeVariant(signal)}>{signal}</Badge>
+      </ProfessionalHourlyCell>
+      <ProfessionalHourlyCell
+        cell="cloud-total"
+        className={professionalHourlyToneClass(row.cloudTotalPercent, "cloud-total")}
+      >
+        {formatProfessionalPercent(row.cloudTotalPercent)}
+      </ProfessionalHourlyCell>
+      <ProfessionalHourlyCell cell="cloud-high">
+        {formatProfessionalPercent(row.cloudHighPercent)}
+      </ProfessionalHourlyCell>
+      <ProfessionalHourlyCell cell="cloud-mid">
+        {formatProfessionalPercent(row.cloudMidPercent)}
+      </ProfessionalHourlyCell>
+      <ProfessionalHourlyCell
+        cell="cloud-low"
+        className={professionalHourlyToneClass(row.cloudLowPercent, "cloud-low")}
+      >
+        {formatProfessionalPercent(row.cloudLowPercent)}
+      </ProfessionalHourlyCell>
+      <ProfessionalHourlyCell cell="temperature">
+        {formatProfessionalTemperature(row.temperatureC)}
+      </ProfessionalHourlyCell>
+      <ProfessionalHourlyCell cell="dew-point">
+        {formatProfessionalTemperature(row.dewPointC)}
+      </ProfessionalHourlyCell>
+      <ProfessionalHourlyCell
+        cell="dew-point-spread"
+        className={professionalHourlyToneClass(row.dewPointSpreadC, "dew-point-spread")}
+      >
+        {formatProfessionalTemperatureDelta(row.dewPointSpreadC)}
+      </ProfessionalHourlyCell>
+      <ProfessionalHourlyCell
+        cell="humidity"
+        className={professionalHourlyToneClass(row.relativeHumidityPercent, "humidity")}
+      >
+        {formatProfessionalPercent(row.relativeHumidityPercent)}
+      </ProfessionalHourlyCell>
+      <ProfessionalHourlyCell
+        cell="precipitation"
+        className={
+          professionalHourlyHasPrecipitation(row)
+            ? "bg-accent/10 font-semibold text-accent"
+            : undefined
+        }
+      >
+        {formatProfessionalPrecipitation(row)}
+      </ProfessionalHourlyCell>
+      <ProfessionalHourlyCell
+        cell="visibility"
+        className={professionalHourlyToneClass(row.visibilityMeters, "visibility")}
+      >
+        {formatProfessionalVisibility(row.visibilityMeters)}
+      </ProfessionalHourlyCell>
+      <ProfessionalHourlyCell
+        cell="wind-speed"
+        className={professionalHourlyToneClass(row.windSpeedMs, "wind-speed")}
+      >
+        {formatProfessionalWindSpeed(row.windSpeedMs)}
+      </ProfessionalHourlyCell>
+      <ProfessionalHourlyCell cell="wind-direction">
+        {formatProfessionalWindDirection(row.windDirectionDeg)}
+      </ProfessionalHourlyCell>
+    </tr>
+  );
+}
+
+function ProfessionalHourlyCell({
+  cell,
+  className,
+  children,
+}: {
+  readonly cell: string;
+  readonly className?: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <td
+      className={cn("whitespace-nowrap border-t border-border px-2 py-1.5 align-middle", className)}
+      data-professional-hourly-cell={cell}
+    >
+      {children}
+    </td>
+  );
+}
+
+function defaultProfessionalHourlyFilter(
+  result: ForecastCalculationResult,
+): ProfessionalHourlyFilterMode {
+  return professionalHourlyFocusWindows(result).length > 0 ? "cloudSea" : "morning";
+}
+
+function filterProfessionalHourlyRows(
+  rows: readonly ProfessionalHourlyRow[],
+  result: ForecastCalculationResult,
+  mode: ProfessionalHourlyFilterMode,
+): readonly ProfessionalHourlyRow[] {
+  if (mode === "all") {
+    return rows;
+  }
+
+  if (mode === "cloudSea") {
+    const focusWindows = professionalHourlyFocusWindows(result);
+    return rows.filter((row) =>
+      focusWindows.some((window) => professionalHourInWindow(row, window, 3)),
+    );
+  }
+
+  if (mode === "morning") {
+    return rows.filter((row) => {
+      const hour = hourFromIsoLike(row.time);
+      return hour !== undefined && hour >= 4 && hour <= 9;
+    });
+  }
+
+  return rows.filter(
+    (row) =>
+      professionalHourlyHasRisk(row) ||
+      result.cloudSeaAnalysis.notRecommendedCloudSeaWindows.some((window) =>
+        professionalHourInWindow(row, window, 1),
+      ),
+  );
+}
+
+function professionalHourlyFocusWindows(
+  result: ForecastCalculationResult,
+): readonly CloudSeaAnalysisWindowLike[] {
+  const primary =
+    result.cloudSeaAnalysis.bestCloudSeaWindow ??
+    result.cloudSeaAnalysis.bestCloudSeaWindows[0] ??
+    result.cloudSeaAnalysis.watchableCloudSeaWindows[0];
+
+  return primary ? [primary] : [];
+}
+
+function professionalHourInWindow(
+  row: ProfessionalHourlyRow,
+  window: CloudSeaAnalysisWindowLike,
+  paddingHours: number,
+): boolean {
+  const hourTime = Date.parse(row.time);
+  const startTime = Date.parse(window.startTime);
+  const endTime = Date.parse(window.endTime);
+  if (!Number.isFinite(hourTime) || !Number.isFinite(startTime) || !Number.isFinite(endTime)) {
+    return false;
+  }
+
+  const paddingMs = paddingHours * 60 * 60 * 1000;
+  return hourTime >= startTime - paddingMs && hourTime <= endTime + paddingMs;
+}
+
+function professionalHourlySignal(
+  result: ForecastCalculationResult,
+  row: ProfessionalHourlyRow,
+): "形成信号" | "可拍窗口" | "白墙风险" | "雨后开口" | "普通" {
+  if (
+    result.cloudSeaAnalysis.notRecommendedCloudSeaWindows.some((window) =>
+      professionalHourInWindow(row, window, 0),
+    )
+  ) {
+    return "白墙风险";
+  }
+  if (
+    result.cloudSeaAnalysis.bestCloudSeaWindows.some((window) =>
+      professionalHourInWindow(row, window, 0),
+    )
+  ) {
+    return "可拍窗口";
+  }
+  if (
+    result.cloudSeaAnalysis.watchableCloudSeaWindows.some((window) =>
+      professionalHourInWindow(row, window, 0),
+    )
+  ) {
+    return "形成信号";
+  }
+  if (
+    professionalHourlyHasPrecipitation(row) &&
+    result.cloudSeaAnalysis.rainOpening.rainSupportSignal
+  ) {
+    return "雨后开口";
+  }
+  if (professionalHourlyHasRisk(row)) {
+    return "白墙风险";
+  }
+  return "普通";
+}
+
+function professionalSignalBadgeVariant(signal: ReturnType<typeof professionalHourlySignal>) {
+  if (signal === "白墙风险") {
+    return "danger" as const;
+  }
+  if (signal === "雨后开口") {
+    return "accent" as const;
+  }
+  if (signal === "可拍窗口") {
+    return "default" as const;
+  }
+  if (signal === "形成信号") {
+    return "info" as const;
+  }
+  return "muted" as const;
+}
+
+function professionalHourlyHasRisk(row: ProfessionalHourlyRow): boolean {
+  return (
+    (isFiniteNumber(row.cloudLowPercent) && row.cloudLowPercent >= 85) ||
+    (isFiniteNumber(row.relativeHumidityPercent) && row.relativeHumidityPercent >= 95) ||
+    (isFiniteNumber(row.dewPointSpreadC) && row.dewPointSpreadC <= 2) ||
+    professionalHourlyHasPrecipitation(row) ||
+    (isFiniteNumber(row.precipitationProbabilityPercent) &&
+      row.precipitationProbabilityPercent >= 60) ||
+    (isFiniteNumber(row.visibilityMeters) && row.visibilityMeters <= 3000) ||
+    (isFiniteNumber(row.windSpeedMs) && row.windSpeedMs >= 9)
+  );
+}
+
+function professionalHourlyHasPrecipitation(row: ProfessionalHourlyRow): boolean {
+  return isFiniteNumber(row.precipitationAmountMm) && row.precipitationAmountMm > 0;
+}
+
+function professionalHourlyToneClass(
+  value: number | null | undefined,
+  field:
+    | "cloud-total"
+    | "cloud-low"
+    | "dew-point-spread"
+    | "humidity"
+    | "visibility"
+    | "wind-speed",
+): string | undefined {
+  if (!isFiniteNumber(value)) {
+    return undefined;
+  }
+
+  if (field === "cloud-low" && value >= 75) {
+    return "bg-primary/10 font-semibold text-primary";
+  }
+  if (field === "cloud-total" && value >= 90) {
+    return "bg-accent/10 font-semibold text-accent";
+  }
+  if (field === "humidity" && value >= 90) {
+    return "bg-primary/10 font-semibold text-primary";
+  }
+  if (field === "dew-point-spread" && value <= 2) {
+    return "bg-accent/10 font-semibold text-accent";
+  }
+  if (field === "visibility" && value <= 3000) {
+    return "bg-danger/10 font-semibold text-danger";
+  }
+  if (field === "visibility" && value <= 8000) {
+    return "bg-accent/10 font-semibold text-accent";
+  }
+  if (field === "wind-speed" && value >= 9) {
+    return "bg-danger/10 font-semibold text-danger";
+  }
+  if (field === "wind-speed" && value >= 6) {
+    return "bg-accent/10 font-semibold text-accent";
+  }
+
+  return undefined;
+}
+
+function weatherGlyphForProfessionalHour(
+  row: ProfessionalHourlyRow,
+  displayText: string,
+): string | null {
+  const text = displayText === "—" ? "" : displayText;
+  if (text.includes("雪")) {
+    return "雪";
+  }
+  if (text.includes("雨")) {
+    return "雨";
+  }
+  if (text.includes("雾")) {
+    return "雾";
+  }
+  if (text.includes("阴")) {
+    return "阴";
+  }
+  if (text.includes("晴")) {
+    return "晴";
+  }
+  if (text.includes("云")) {
+    return "云";
+  }
+  if (row.weatherCode === "clear") {
+    return "晴";
+  }
+  if (row.weatherCode === "partly_cloudy") {
+    return "云";
+  }
+  return null;
+}
+
+function providerNeutralProfessionalWeatherText(value: string | null | undefined): string | null {
+  const text = value?.trim();
+  if (!text || /meteoblue|open[-_ ]?meteo|qweather|和风天气|和风|provider/i.test(text)) {
+    return null;
+  }
+  return text;
+}
+
+function formatProfessionalPercent(value: number | null | undefined): string {
+  return isFiniteNumber(value) ? `${Math.round(value)}%` : "—";
+}
+
+function formatProfessionalTemperature(value: number | null | undefined): string {
+  return isFiniteNumber(value) ? `${roundDisplay(value)}°C` : "—";
+}
+
+function formatProfessionalTemperatureDelta(value: number | null | undefined): string {
+  return isFiniteNumber(value) ? `${roundDisplay(value)}°C` : "—";
+}
+
+function formatProfessionalPrecipitation(row: ProfessionalHourlyRow): string {
+  const amount = isFiniteNumber(row.precipitationAmountMm)
+    ? `${roundDisplay(row.precipitationAmountMm)} mm`
+    : "—";
+  const probability = isFiniteNumber(row.precipitationProbabilityPercent)
+    ? `${Math.round(row.precipitationProbabilityPercent)}%`
+    : "—";
+
+  return amount === "—" && probability === "—" ? "—" : `${amount} / ${probability}`;
+}
+
+function formatProfessionalVisibility(value: number | null | undefined): string {
+  return isFiniteNumber(value) ? `${roundDisplay(value / 1000)} km` : "—";
+}
+
+function formatProfessionalWindSpeed(value: number | null | undefined): string {
+  return isFiniteNumber(value) ? `${roundDisplay(value)} m/s` : "—";
+}
+
+function formatProfessionalWindDirection(value: number | null | undefined): string {
+  return isFiniteNumber(value) ? windDirectionLabel(value) : "—";
+}
+
+function formatProfessionalDate(value: string, timezone: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: timezone,
+    month: "numeric",
+    day: "numeric",
+  }).format(new Date(timestamp));
+}
+
+function formatProfessionalTime(value: string, timezone: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(timestamp));
+}
+
+function formatFullDateTimeForTimezone(value: string, timezone: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return value;
+  }
+
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(timestamp));
+  const valueFor = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value;
+  const year = valueFor("year");
+  const month = valueFor("month");
+  const day = valueFor("day");
+  const hour = valueFor("hour");
+  const minute = valueFor("minute");
+
+  return year && month && day && hour && minute
+    ? `${year}年${month}月${day}日 ${hour}:${minute}`
+    : value;
+}
+
+function isFiniteNumber(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
 function CloudSeaDailyTrend({
   result,
   items,
@@ -3904,7 +4542,9 @@ function CloudSeaDailyTrend({
                   {item.recommendedAction}
                 </Badge>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">最佳窗口：{item.bestMorningWindow}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                最佳窗口：{item.bestMorningWindow}
+              </p>
             </div>
             <dl className="grid gap-1 text-sm">
               <CloudSeaInlineDefinition
@@ -3938,11 +4578,7 @@ function CloudSeaDailyTrend({
   );
 }
 
-function CloudSeaReasoningSection({
-  items,
-}: {
-  readonly items: readonly CloudSeaReasoningItem[];
-}) {
+function CloudSeaReasoningSection({ items }: { readonly items: readonly CloudSeaReasoningItem[] }) {
   return (
     <Card className="CloudSeaReasoning cloud-sea-reasoning p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -5385,7 +6021,9 @@ function ActionableAdviceSection({
     ? `若主窗口不成立，优先转向${bestWindow.backupSubjectLabel}。`
     : backupSubjects.length > 0
       ? `若${subjectDisplayLabel(result, bestSubject.key)}不成立，优先转向${backupSubjects
-          .map((subject) => `${subjectDisplayLabel(result, subject.key)}（${subject.score.score} 分）`)
+          .map(
+            (subject) => `${subjectDisplayLabel(result, subject.key)}（${subject.score.score} 分）`,
+          )
           .join("或")}。`
       : "如果主目标不成立，保留现场光线、云层纹理和地景构图作为备选。";
 
@@ -6132,16 +6770,14 @@ function buildSubjectBreakdownCards(
             )}`
           : analysis.labels.watchableWindowLabel ??
             (usesMountainSemantics ? "暂无明确可拍云海窗口" : "暂无明确云雾观察窗口"),
-        reason:
-          !usesMountainSemantics
-            ? `低海拔地形不按高山云海判断；当前云雾信号${analysis.labels.formationOpportunity}，低云遮挡${whiteoutLabel}。`
-            : whiteoutLabel === "高"
+        reason: !usesMountainSemantics
+          ? `低海拔地形不按高山云海判断；当前云雾信号${analysis.labels.formationOpportunity}，低云遮挡${whiteoutLabel}。`
+          : whiteoutLabel === "高"
             ? `云海形成条件${analysis.labels.formationOpportunity}，但低云偏厚，白墙风险高；可拍机会${analysis.labels.shootableOpportunity}。`
             : `云海形成条件${analysis.labels.formationOpportunity}，可拍机会${analysis.labels.shootableOpportunity}，白墙风险${whiteoutLabel}。`,
-        actionSuggestion:
-          !usesMountainSemantics
-            ? "关注晨雾、云层开口和远景通透，不建议按高山云海逻辑判断。"
-            : whiteoutLabel === "高"
+        actionSuggestion: !usesMountainSemantics
+          ? "关注晨雾、云层开口和远景通透，不建议按高山云海逻辑判断。"
+          : whiteoutLabel === "高"
             ? "若已在山上，可等待短暂开口；不建议为单一窗口专程奔赴。"
             : analysis.shootableScore >= 70
               ? "清晨有云海窗口，建议提前到达并观察云顶开口。"

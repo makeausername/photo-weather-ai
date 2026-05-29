@@ -1580,6 +1580,54 @@ function resultForTarget(target: ForecastCalculationResult["target"]): ForecastC
   };
 }
 
+type ProfessionalHourlyDataForTest = NonNullable<
+  ForecastCalculationResult["professionalHourlyData"]
+>;
+type ProfessionalHourlyRowForTest = ProfessionalHourlyDataForTest[number];
+
+function professionalHourlyDataForTest(
+  overrides: Partial<ProfessionalHourlyRowForTest> = {},
+): ProfessionalHourlyDataForTest {
+  return Array.from({ length: 15 }, (_, hour) => ({
+    time: `2026-05-20T${String(hour).padStart(2, "0")}:00:00+08:00`,
+    weatherCode: hour < 8 ? "partly_cloudy" : "clear",
+    weatherText: hour < 8 ? "多云" : "晴",
+    cloudTotalPercent: hour >= 4 && hour <= 7 ? 88 : 42,
+    cloudHighPercent: hour >= 4 && hour <= 7 ? 28 : 18,
+    cloudMidPercent: hour >= 4 && hour <= 7 ? 46 : 24,
+    cloudLowPercent: hour >= 4 && hour <= 7 ? 82 : 22,
+    temperatureC: 10 + hour * 0.4,
+    dewPointC: 8 + hour * 0.35,
+    dewPointSpreadC: hour >= 4 && hour <= 7 ? 1.6 : 5.2,
+    relativeHumidityPercent: hour >= 4 && hour <= 7 ? 94 : 68,
+    precipitationAmountMm: hour === 3 ? 0.8 : 0,
+    precipitationProbabilityPercent: hour === 3 ? 55 : 12,
+    visibilityMeters: hour >= 4 && hour <= 7 ? 4500 : 18000,
+    windSpeedMs: hour >= 4 && hour <= 7 ? 3.4 : 5.6,
+    windDirectionDeg: 135,
+    ...overrides,
+  }));
+}
+
+function resultWithProfessionalHourlyData(
+  overrides: Partial<ForecastCalculationResult> = {},
+): ForecastCalculationResult {
+  const hourly = professionalHourlyDataForTest();
+  return {
+    ...resultForTarget("cloud_sea"),
+    professionalHourlyData: hourly,
+    professionalHourlyDataTimeBasis: {
+      startTime: "2026-05-20T00:00:00+08:00",
+      endTime: "2026-05-20T15:00:00+08:00",
+      stepMinutes: 60,
+      timezone: "Asia/Shanghai",
+      partialData: true,
+      missingDataNoteZh: "部分小时数据缺失，结果仅供复核。",
+    },
+    ...overrides,
+  };
+}
+
 function resultWithBlockedAstro(
   target: ForecastCalculationResult["target"] = "general",
 ): ForecastCalculationResult {
@@ -2381,11 +2429,12 @@ describe("forecast result target-aware view model", () => {
           riskNote: "低云遮挡风险中等，需要现场观察雾气厚度和能见度。",
         })),
         whiteoutReasons: ["低云遮挡风险中等，需要现场观察雾气厚度和能见度。"],
-        opportunityReasons: [
-          "低云/晨雾条件 44 分：低海拔地形不按高山云海判断。",
-        ],
+        opportunityReasons: ["低云/晨雾条件 44 分：低海拔地形不按高山云海判断。"],
       },
-      bestWindows: [cloudMistWindow, ...base.bestWindows.filter((window) => window.target !== "cloud_sea")],
+      bestWindows: [
+        cloudMistWindow,
+        ...base.bestWindows.filter((window) => window.target !== "cloud_sea"),
+      ],
       dailySummaries: base.dailySummaries.map((summary) => ({
         ...summary,
         weather: summary.weather
@@ -3853,7 +3902,9 @@ describe("forecast result target-aware view model", () => {
       "白墙风险",
       "雨后开口机会",
     ]);
-    expect(viewModel.coreCards.find((card) => card.label === "白墙风险")?.value).toBe("中（58 分）");
+    expect(viewModel.coreCards.find((card) => card.label === "白墙风险")?.value).toBe(
+      "中（58 分）",
+    );
     expect(viewModel.hero.title).toBe("黄山光明顶 云海判断");
     expect(viewModel.hero.bestWindowLabel).toContain("05:00");
     expect(viewModel.hero.arrivalLabel).toContain("03:30");
@@ -3959,9 +4010,7 @@ describe("forecast result target-aware view model", () => {
       expect(html.indexOf("CloudSeaHeroConclusion")).toBeLessThan(
         html.indexOf("CloudSeaCoreMetrics"),
       );
-      expect(html.indexOf("CloudSeaCoreMetrics")).toBeLessThan(
-        html.indexOf("CloudSeaTimeline"),
-      );
+      expect(html.indexOf("CloudSeaCoreMetrics")).toBeLessThan(html.indexOf("CloudSeaTimeline"));
       expect(html.indexOf("CloudSeaTimeline")).toBeLessThan(html.indexOf("CloudSeaDailyTrend"));
       expect(html.indexOf("CloudSeaDailyTrend")).toBeLessThan(html.indexOf("判断依据"));
 
@@ -3977,6 +4026,128 @@ describe("forecast result target-aware view model", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("renders professional hourly data after the cloud sea timeline with focused rows", () => {
+    const result = resultWithProfessionalHourlyData();
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(html).toContain("CloudSeaHeroConclusion");
+    expect(html).toContain("CloudSeaCoreMetrics");
+    expect(html).toContain("CloudSeaTimeline");
+    expect(html).toContain("CloudSeaProfessionalHourlyData");
+    expect(html).toContain("专业小时数据");
+    expect(html).toContain("专业参考");
+    expect(html).toContain(
+      "低云、中云、高云、湿度、露点、降水、能见度和风速用于人工复核云海形成与白墙风险。",
+    );
+    expect(html).toContain("有效时间");
+    expect(html).toContain("2026年5月20日");
+    expect(html).toContain("时间步长");
+    expect(html).toContain("逐小时");
+    expect(html).toContain("时区");
+    expect(html).toContain("Asia/Shanghai");
+    expect(html).toContain("部分小时数据缺失，结果仅供复核。");
+    expect(html).toContain("全部小时");
+    expect(html).toContain("只看云海窗口");
+    expect(html).toContain("只看清晨窗口");
+    expect(html).toContain("只看有风险时段");
+    expect(html).toContain("查看全部小时");
+    expect(html).toContain("当前筛选：只看云海窗口");
+    expect(html).toContain("总云量 %");
+    expect(html).toContain("高云量 %");
+    expect(html).toContain("中云量 %");
+    expect(html).toContain("低云量 %");
+    expect(html).toContain("气温 °C");
+    expect(html).toContain("露点 °C");
+    expect(html).toContain("露点差 °C");
+    expect(html).toContain("湿度 %");
+    expect(html).toContain("降水 mm / 降水概率 %");
+    expect(html).toContain("能见度 km");
+    expect(html).toContain("风速 m/s");
+    expect(html).toContain("风向");
+    expect(html).toContain("云海信号");
+    expect(html).toContain("可拍窗口");
+    expect(html).toContain('data-professional-hourly-row="2026-05-20T05:00:00+08:00"');
+    expect(html).not.toContain('data-professional-hourly-row="2026-05-20T13:00:00+08:00"');
+    expect(html).toContain("max-w-full overflow-x-auto");
+    expect(html).toContain("min-w-[1280px]");
+    expect(html).toContain("sticky left-0");
+    expect(html).not.toContain("meteoblue");
+    expect(html).not.toContain("Open-Meteo");
+    expect(html).not.toContain("和风天气");
+
+    expect(html.indexOf("CloudSeaTimeline")).toBeLessThan(
+      html.indexOf("CloudSeaProfessionalHourlyData"),
+    );
+    expect(html.indexOf("CloudSeaProfessionalHourlyData")).toBeLessThan(
+      html.indexOf("CloudSeaDailyTrend"),
+    );
+  });
+
+  it("renders missing professional hourly values as dashes without converting them to zero", () => {
+    const hourly = professionalHourlyDataForTest({
+      weatherText: "meteoblue 专业预报",
+      weatherCode: null,
+      cloudHighPercent: null,
+      cloudMidPercent: null,
+      cloudLowPercent: null,
+      dewPointC: null,
+      dewPointSpreadC: null,
+      precipitationAmountMm: 0,
+      precipitationProbabilityPercent: null,
+      visibilityMeters: null,
+      windSpeedMs: null,
+      windDirectionDeg: null,
+    });
+    const result = resultWithProfessionalHourlyData({
+      professionalHourlyData: hourly,
+    });
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(html).not.toContain("meteoblue");
+    expect(html).toMatch(/data-professional-hourly-cell="weather">[\s\S]*?<span>—<\/span>/);
+    expect(html).toMatch(/data-professional-hourly-cell="cloud-low">—<\/td>/);
+    expect(html).toMatch(/data-professional-hourly-cell="dew-point">—<\/td>/);
+    expect(html).toMatch(/data-professional-hourly-cell="dew-point-spread">—<\/td>/);
+    expect(html).toMatch(/data-professional-hourly-cell="visibility">—<\/td>/);
+    expect(html).toMatch(/data-professional-hourly-cell="wind-speed">—<\/td>/);
+    expect(html).toMatch(/data-professional-hourly-cell="wind-direction">—<\/td>/);
+    expect(html).toContain("0 mm / —");
+  });
+
+  it("does not render the professional hourly table without a valid time basis", () => {
+    const result = resultWithProfessionalHourlyData({
+      professionalHourlyDataTimeBasis: undefined,
+    });
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(html).not.toContain("专业小时数据");
+    expect(html).not.toContain("CloudSeaProfessionalHourlyData");
+    expect(html).toContain("CloudSeaHeroConclusion");
+    expect(html).toContain("CloudSeaCoreMetrics");
+    expect(html).toContain("CloudSeaTimeline");
   });
 
   it("does not prioritize astro or Milky Way modules in the specialized cloud sea model", () => {
