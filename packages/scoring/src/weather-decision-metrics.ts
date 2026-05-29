@@ -372,11 +372,15 @@ function adjustHourlyTemperature(
     role: "instant",
     existing: hour.temperatureAdjustment,
   });
+  const adjustedDewPointSpread = finiteNumber(hour.dewPoint)
+    ? round1(adjustment.elevationAdjustedTemperature - hour.dewPoint)
+    : hour.dewPointSpread;
   if (!adjustment.correctionApplied) {
     return {
       ...hour,
       rawTemperature: hour.rawTemperature ?? adjustment.rawTemperature,
       elevationAdjustedTemperature: adjustment.elevationAdjustedTemperature,
+      dewPointSpread: adjustedDewPointSpread,
       temperatureAdjustment: adjustment,
     };
   }
@@ -389,6 +393,7 @@ function adjustHourlyTemperature(
     feelsLike: finiteNumber(hour.feelsLike)
       ? round1(hour.feelsLike - adjustment.correctionCelsius)
       : hour.feelsLike,
+    dewPointSpread: adjustedDewPointSpread,
     temperatureAdjustment: adjustment,
     estimatedFields: unique([...(hour.estimatedFields ?? []), "temperatureElevationCorrection"]),
     sourceNotes: unique([

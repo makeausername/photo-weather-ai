@@ -3926,6 +3926,8 @@ function CloudSeaProfessionalHourlyDataPanel({
   const timeStepLabel = basis.stepMinutes === 60 ? "逐小时" : `${basis.stepMinutes} 分钟`;
   const activeFilterLabel =
     professionalHourlyFilters.find((filter) => filter.mode === filterMode)?.label ?? "全部小时";
+  const missingHeaderNote = professionalHourlyMissingHeaderNote(rows, basis);
+  const temperatureColumnLabel = professionalTemperatureColumnLabel(rows, basis);
 
   return (
     <Card
@@ -3968,6 +3970,17 @@ function CloudSeaProfessionalHourlyDataPanel({
           />
           <CompactDefinition label="时间步长" value={timeStepLabel} />
           <CompactDefinition label="时区" value={basis.timezone} />
+          <CompactDefinition
+            label="温度口径"
+            value={professionalTemperatureBasisLabel(basis.temperatureBasis)}
+          />
+          <CompactDefinition
+            label="云量口径"
+            value={professionalCloudLayerBasisLabel(basis.cloudLayerBasis)}
+          />
+          {missingHeaderNote ? (
+            <CompactDefinition label="缺失说明" value={missingHeaderNote} />
+          ) : null}
         </dl>
         {basis.partialData ? (
           <p className="rounded-lg border border-warning/40 bg-accent/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
@@ -4029,7 +4042,7 @@ function CloudSeaProfessionalHourlyDataPanel({
                   "高云量 %",
                   "中云量 %",
                   "低云量 %",
-                  "气温 °C",
+                  temperatureColumnLabel,
                   "露点 °C",
                   "露点差 °C",
                   "湿度 %",
@@ -4057,7 +4070,6 @@ function CloudSeaProfessionalHourlyDataPanel({
                   <CloudSeaProfessionalHourlyRow
                     key={row.time}
                     row={row}
-                    result={result}
                     timezone={basis.timezone}
                   />
                 ))
@@ -4081,14 +4093,12 @@ function CloudSeaProfessionalHourlyDataPanel({
 
 function CloudSeaProfessionalHourlyRow({
   row,
-  result,
   timezone,
 }: {
   readonly row: ProfessionalHourlyRow;
-  readonly result: ForecastCalculationResult;
   readonly timezone: string;
 }) {
-  const signal = professionalHourlySignal(result, row);
+  const signal = row.cloudSeaSignal;
   const weatherText = providerNeutralProfessionalWeatherText(row.weatherText) ?? "—";
   const weatherGlyph = weatherGlyphForProfessionalHour(row, weatherText);
 
@@ -4098,10 +4108,10 @@ function CloudSeaProfessionalHourlyRow({
         cell="date"
         className="sticky left-0 z-10 bg-inherit font-semibold text-card-foreground"
       >
-        {formatProfessionalDate(row.time, timezone)}
+        {row.dateLabel || formatProfessionalDate(row.time, timezone)}
       </ProfessionalHourlyCell>
       <ProfessionalHourlyCell cell="time" className="font-semibold text-card-foreground">
-        {formatProfessionalTime(row.time, timezone)}
+        {row.timeLabel || formatProfessionalTime(row.time, timezone)}
       </ProfessionalHourlyCell>
       <ProfessionalHourlyCell cell="weather">
         <span className="inline-flex items-center gap-1.5">
@@ -4134,8 +4144,8 @@ function CloudSeaProfessionalHourlyRow({
       >
         {formatProfessionalPercent(row.cloudLowPercent)}
       </ProfessionalHourlyCell>
-      <ProfessionalHourlyCell cell="temperature">
-        {formatProfessionalTemperature(row.temperatureC)}
+      <ProfessionalHourlyCell cell="temperature" dataBasis={row.temperatureBasis}>
+        {formatProfessionalTemperature(row.displayedTemperatureC)}
       </ProfessionalHourlyCell>
       <ProfessionalHourlyCell cell="dew-point">
         {formatProfessionalTemperature(row.dewPointC)}
@@ -4181,12 +4191,83 @@ function CloudSeaProfessionalHourlyRow({
   );
 }
 
+function professionalTemperatureBasisLabel(
+  basis: NonNullable<
+    ForecastCalculationResult["professionalHourlyDataTimeBasis"]
+  >["temperatureBasis"],
+): string {
+  if (basis === "terrain_adjusted") {
+    return "机位海拔修正后";
+  }
+  if (basis === "raw_grid") {
+    return "原始格点，未做机位修正";
+  }
+  return "暂无";
+}
+
+function professionalCloudLayerBasisLabel(
+  basis: NonNullable<
+    ForecastCalculationResult["professionalHourlyDataTimeBasis"]
+  >["cloudLayerBasis"],
+): string {
+  if (basis === "explicit_layers") {
+    return "总云量 + 低/中/高云分层";
+  }
+  if (basis === "total_only") {
+    return "仅总云量，缺少低/中/高云分层";
+  }
+  if (basis === "partial_layers") {
+    return "部分云层字段缺失";
+  }
+  return "暂无";
+}
+
+function professionalTemperatureColumnLabel(
+  rows: readonly ProfessionalHourlyRow[],
+  basis: NonNullable<ForecastCalculationResult["professionalHourlyDataTimeBasis"]>,
+): string {
+  const rowBasis = rows.find((row) => row.temperatureBasis === "terrain_adjusted")
+    ?.temperatureBasis;
+  const effectiveBasis = rowBasis ?? basis.temperatureBasis;
+  if (effectiveBasis === "terrain_adjusted") {
+    return "机位估算温度 °C";
+  }
+  if (effectiveBasis === "raw_grid") {
+    return "原始格点温度 °C";
+  }
+  return "温度 °C";
+}
+
+function professionalHourlyMissingHeaderNote(
+  rows: readonly ProfessionalHourlyRow[],
+  basis: NonNullable<ForecastCalculationResult["professionalHourlyDataTimeBasis"]>,
+): string | null {
+  const hasTotalOnly = rows.some((row) => row.cloudLayerBasis === "total_only");
+  if (hasTotalOnly) {
+    return "低/中/高云分层缺失时以 — 显示，不用总云量回填。";
+  }
+  const hasPartialLayers = rows.some((row) => row.cloudLayerBasis === "partial_layers");
+  if (hasPartialLayers) {
+    return "部分小时缺少云层字段，缺失值以 — 显示。";
+  }
+  const hasRawTemperature = rows.some((row) => row.temperatureBasis === "raw_grid");
+  if (hasRawTemperature && basis.temperatureBasis !== "terrain_adjusted") {
+    return "温度为原始格点值，未代表机位海拔修正。";
+  }
+  if (basis.partialData && basis.missingDataNoteZh) {
+    return basis.missingDataNoteZh;
+  }
+  return null;
+}
+
 function ProfessionalHourlyCell({
   cell,
+  dataBasis,
   className,
   children,
 }: {
   readonly cell: string;
+  readonly dataBasis?: string;
   readonly className?: string;
   readonly children: ReactNode;
 }) {
@@ -4194,6 +4275,7 @@ function ProfessionalHourlyCell({
     <td
       className={cn("whitespace-nowrap border-t border-border px-2 py-1.5 align-middle", className)}
       data-professional-hourly-cell={cell}
+      data-professional-hourly-basis={dataBasis}
     >
       {children}
     </td>
@@ -4231,6 +4313,8 @@ function filterProfessionalHourlyRows(
 
   return rows.filter(
     (row) =>
+      row.cloudSeaSignal === "白墙风险" ||
+      row.cloudSeaSignal === "需复核" ||
       professionalHourlyHasRisk(row) ||
       result.cloudSeaAnalysis.notRecommendedCloudSeaWindows.some((window) =>
         professionalHourInWindow(row, window, 1),
@@ -4265,44 +4349,7 @@ function professionalHourInWindow(
   return hourTime >= startTime - paddingMs && hourTime <= endTime + paddingMs;
 }
 
-function professionalHourlySignal(
-  result: ForecastCalculationResult,
-  row: ProfessionalHourlyRow,
-): "形成信号" | "可拍窗口" | "白墙风险" | "雨后开口" | "普通" {
-  if (
-    result.cloudSeaAnalysis.notRecommendedCloudSeaWindows.some((window) =>
-      professionalHourInWindow(row, window, 0),
-    )
-  ) {
-    return "白墙风险";
-  }
-  if (
-    result.cloudSeaAnalysis.bestCloudSeaWindows.some((window) =>
-      professionalHourInWindow(row, window, 0),
-    )
-  ) {
-    return "可拍窗口";
-  }
-  if (
-    result.cloudSeaAnalysis.watchableCloudSeaWindows.some((window) =>
-      professionalHourInWindow(row, window, 0),
-    )
-  ) {
-    return "形成信号";
-  }
-  if (
-    professionalHourlyHasPrecipitation(row) &&
-    result.cloudSeaAnalysis.rainOpening.rainSupportSignal
-  ) {
-    return "雨后开口";
-  }
-  if (professionalHourlyHasRisk(row)) {
-    return "白墙风险";
-  }
-  return "普通";
-}
-
-function professionalSignalBadgeVariant(signal: ReturnType<typeof professionalHourlySignal>) {
+function professionalSignalBadgeVariant(signal: ProfessionalHourlyRow["cloudSeaSignal"]) {
   if (signal === "白墙风险") {
     return "danger" as const;
   }
@@ -4315,15 +4362,16 @@ function professionalSignalBadgeVariant(signal: ReturnType<typeof professionalHo
   if (signal === "形成信号") {
     return "info" as const;
   }
+  if (signal === "需复核") {
+    return "warning" as const;
+  }
   return "muted" as const;
 }
 
 function professionalHourlyHasRisk(row: ProfessionalHourlyRow): boolean {
   return (
-    (isFiniteNumber(row.cloudLowPercent) && row.cloudLowPercent >= 85) ||
-    (isFiniteNumber(row.relativeHumidityPercent) && row.relativeHumidityPercent >= 95) ||
-    (isFiniteNumber(row.dewPointSpreadC) && row.dewPointSpreadC <= 2) ||
-    professionalHourlyHasPrecipitation(row) ||
+    (professionalHourlyHasPrecipitation(row) &&
+      (!isFiniteNumber(row.cloudLowPercent) || row.cloudLowPercent >= 50)) ||
     (isFiniteNumber(row.precipitationProbabilityPercent) &&
       row.precipitationProbabilityPercent >= 60) ||
     (isFiniteNumber(row.visibilityMeters) && row.visibilityMeters <= 3000) ||

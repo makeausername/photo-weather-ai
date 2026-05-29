@@ -242,15 +242,48 @@ export type NormalizedHourlyWeather = {
   readonly fieldMetadata?: NormalizedWeatherFieldMetadataMap;
 };
 
+export type ProfessionalHourlyTemperatureBasis = "terrain_adjusted" | "raw_grid" | "unknown";
+
+export type ProfessionalHourlyCloudLayerBasis =
+  | "explicit_layers"
+  | "partial_layers"
+  | "total_only"
+  | "unknown";
+
+export type ProfessionalHourlyCloudSeaSignal =
+  | "可拍窗口"
+  | "白墙风险"
+  | "形成信号"
+  | "雨后开口"
+  | "普通"
+  | "需复核";
+
+export type ProfessionalHourlyCloudSeaSignalLevel =
+  | "positive"
+  | "watch"
+  | "risk"
+  | "review"
+  | "neutral";
+
 export type ProfessionalHourlyDataPoint = {
   readonly time: string;
+  readonly dateLabel: string;
+  readonly timeLabel: string;
   readonly weatherCode: string | null;
   readonly weatherText: string | null;
+  readonly cloudSeaSignal: ProfessionalHourlyCloudSeaSignal;
+  readonly cloudSeaSignalLevel?: ProfessionalHourlyCloudSeaSignalLevel;
   readonly cloudTotalPercent: number | null;
   readonly cloudHighPercent: number | null;
   readonly cloudMidPercent: number | null;
   readonly cloudLowPercent: number | null;
-  readonly temperatureC: number | null;
+  readonly cloudLayerBasis: ProfessionalHourlyCloudLayerBasis;
+  readonly rawTemperatureC: number | null;
+  readonly terrainAdjustedTemperatureC: number | null;
+  readonly displayedTemperatureC: number | null;
+  readonly temperatureBasis: ProfessionalHourlyTemperatureBasis;
+  readonly temperatureAdjustmentC: number | null;
+  readonly temperatureBasisNoteZh: string;
   readonly dewPointC: number | null;
   readonly dewPointSpreadC: number | null;
   readonly relativeHumidityPercent: number | null;
@@ -259,6 +292,8 @@ export type ProfessionalHourlyDataPoint = {
   readonly visibilityMeters: number | null;
   readonly windSpeedMs: number | null;
   readonly windDirectionDeg: number | null;
+  readonly missingFields?: readonly string[];
+  readonly notesZh?: readonly string[];
 };
 
 export type ProfessionalHourlyDataTimeBasis = {
@@ -266,6 +301,10 @@ export type ProfessionalHourlyDataTimeBasis = {
   readonly endTime: string;
   readonly stepMinutes: number;
   readonly timezone: string;
+  readonly temperatureBasis: ProfessionalHourlyTemperatureBasis;
+  readonly temperatureBasisNoteZh: string;
+  readonly cloudLayerBasis: ProfessionalHourlyCloudLayerBasis;
+  readonly cloudLayerBasisNoteZh: string;
   readonly partialData: boolean;
   readonly missingDataNoteZh?: string;
 };

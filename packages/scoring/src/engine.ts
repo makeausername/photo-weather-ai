@@ -27,8 +27,12 @@ import {
   type ForecastWatchableWindow,
   type GlowAnalysisResult,
   type NormalizedHourlyWeather,
+  type ProfessionalHourlyCloudLayerBasis,
+  type ProfessionalHourlyCloudSeaSignal,
+  type ProfessionalHourlyCloudSeaSignalLevel,
   type ProfessionalHourlyDataPoint,
   type ProfessionalHourlyDataTimeBasis,
+  type ProfessionalHourlyTemperatureBasis,
   type RainImpactOnRecommendation,
   type TargetDailyBreakdown,
 } from "@photo-weather/shared";
@@ -194,7 +198,7 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
     weatherMissingDataNotes: input.weatherMissingDataNotes,
     weatherFusionSummary: input.weatherFusionSummary,
     weatherProviderRuntimeSnapshot: input.weatherProviderRuntimeSnapshot,
-    professionalHourlyData: buildProfessionalHourlyData(input.hourlyWeather),
+    professionalHourlyData: buildProfessionalHourlyData(input, cloudSeaAnalysis),
     professionalHourlyDataTimeBasis: buildProfessionalHourlyDataTimeBasis(input),
     astroDataSourceLabelZh: input.astroDataSourceLabelZh,
     astroCalculationBasis: input.astroCalculationBasis,
@@ -202,31 +206,93 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
 }
 
 function buildProfessionalHourlyData(
-  hourlyWeather: readonly NormalizedHourlyWeather[],
+  input: ForecastCalculationInput,
+  cloudSeaAnalysis: CloudSeaAnalysisResult,
 ): readonly ProfessionalHourlyDataPoint[] {
-  return hourlyWeather.map((hour) => ({
-    time: hour.time,
-    weatherCode: safeProfessionalWeatherCode(hour.weatherCode),
-    weatherText: safeProfessionalWeatherText(hour),
-    cloudTotalPercent: finiteOrNull(hour.cloudTotal),
-    cloudHighPercent: finiteOrNull(hour.cloudHigh),
-    cloudMidPercent: finiteOrNull(hour.cloudMid),
-    cloudLowPercent: finiteOrNull(hour.cloudLow),
-    temperatureC: finiteOrNull(hour.temperature),
-    dewPointC: finiteOrNull(hour.dewPoint),
-    dewPointSpreadC: finiteOrNull(hour.dewPointSpread),
-    relativeHumidityPercent: finiteOrNull(hour.humidity),
-    precipitationAmountMm: finiteOrNull(hour.precipitationAmountMm ?? hour.precipitation),
-    precipitationProbabilityPercent: finiteOrNull(
+  return input.hourlyWeather.map((hour, index, hours) => {
+    const temperature = professionalTemperatureProfile(hour);
+    const cloudLayers = professionalCloudLayerProfile(hour);
+    const dewPointC = finiteOrNull(hour.dewPoint);
+    const dewPointSpreadC =
+      temperature.displayedTemperatureC !== null && dewPointC !== null
+        ? round1(temperature.displayedTemperatureC - dewPointC)
+        : null;
+    const precipitationAmountMm = finiteOrNull(hour.precipitationAmountMm ?? hour.precipitation);
+    const precipitationProbabilityPercent = finiteOrNull(
       hour.precipitationProbabilityPercent ?? hour.precipitationProbability,
-    ),
-    visibilityMeters:
+    );
+    const visibilityMeters =
       typeof hour.visibility === "number" && Number.isFinite(hour.visibility)
         ? Math.round(hour.visibility * 1000)
-        : null,
-    windSpeedMs: finiteOrNull(hour.windSpeed),
-    windDirectionDeg: finiteOrNull(hour.windDirection),
-  }));
+        : null;
+    const missingFields = professionalHourlyMissingFields(hour, cloudLayers, temperature, {
+      dewPointC,
+      dewPointSpreadC,
+      precipitationAmountMm,
+      precipitationProbabilityPercent,
+      visibilityMeters,
+    });
+    const notesZh = professionalHourlyNotes(hour, cloudLayers, temperature, dewPointSpreadC);
+    const rowForSignal = {
+      time: hour.time,
+      weatherText: safeProfessionalWeatherText(hour),
+      cloudTotalPercent: cloudLayers.cloudTotalPercent,
+      cloudHighPercent: cloudLayers.cloudHighPercent,
+      cloudMidPercent: cloudLayers.cloudMidPercent,
+      cloudLowPercent: cloudLayers.cloudLowPercent,
+      cloudLayerBasis: cloudLayers.cloudLayerBasis,
+      dewPointSpreadC,
+      relativeHumidityPercent: finiteOrNull(hour.humidity),
+      precipitationAmountMm,
+      precipitationProbabilityPercent,
+      visibilityMeters,
+      windSpeedMs: finiteOrNull(hour.windSpeed),
+      missingFields,
+    };
+    const signal = professionalHourlySignalForPayload({
+      row: rowForSignal,
+      previousRow:
+        index > 0
+          ? {
+              precipitationAmountMm: finiteOrNull(
+                hours[index - 1]?.precipitationAmountMm ?? hours[index - 1]?.precipitation,
+              ),
+            }
+          : undefined,
+      cloudSeaAnalysis,
+    });
+
+    return {
+      time: hour.time,
+      dateLabel: formatProfessionalDateLabel(hour.time, input.calendarBasis.timezone),
+      timeLabel: formatProfessionalTimeLabel(hour.time, input.calendarBasis.timezone),
+      weatherCode: safeProfessionalWeatherCode(hour.weatherCode),
+      weatherText: rowForSignal.weatherText,
+      cloudSeaSignal: signal.label,
+      cloudSeaSignalLevel: signal.level,
+      cloudTotalPercent: cloudLayers.cloudTotalPercent,
+      cloudHighPercent: cloudLayers.cloudHighPercent,
+      cloudMidPercent: cloudLayers.cloudMidPercent,
+      cloudLowPercent: cloudLayers.cloudLowPercent,
+      cloudLayerBasis: cloudLayers.cloudLayerBasis,
+      rawTemperatureC: temperature.rawTemperatureC,
+      terrainAdjustedTemperatureC: temperature.terrainAdjustedTemperatureC,
+      displayedTemperatureC: temperature.displayedTemperatureC,
+      temperatureBasis: temperature.temperatureBasis,
+      temperatureAdjustmentC: temperature.temperatureAdjustmentC,
+      temperatureBasisNoteZh: temperature.temperatureBasisNoteZh,
+      dewPointC,
+      dewPointSpreadC,
+      relativeHumidityPercent: rowForSignal.relativeHumidityPercent,
+      precipitationAmountMm,
+      precipitationProbabilityPercent,
+      visibilityMeters,
+      windSpeedMs: rowForSignal.windSpeedMs,
+      windDirectionDeg: finiteOrNull(hour.windDirection),
+      missingFields: missingFields.length > 0 ? missingFields : undefined,
+      notesZh: notesZh.length > 0 ? notesZh : undefined,
+    };
+  });
 }
 
 function buildProfessionalHourlyDataTimeBasis(
@@ -263,6 +329,10 @@ function buildProfessionalHourlyDataTimeBasis(
     endTime: new Date(endTimestamp).toISOString(),
     stepMinutes,
     timezone: input.calendarBasis.timezone,
+    temperatureBasis: aggregateProfessionalTemperatureBasis(input.hourlyWeather),
+    temperatureBasisNoteZh: aggregateProfessionalTemperatureBasisNote(input.hourlyWeather),
+    cloudLayerBasis: aggregateProfessionalCloudLayerBasis(input.hourlyWeather),
+    cloudLayerBasisNoteZh: aggregateProfessionalCloudLayerBasisNote(input.hourlyWeather),
     partialData,
     missingDataNoteZh: partialData ? "部分小时数据缺失，结果仅供复核。" : undefined,
   };
@@ -292,6 +362,474 @@ function hasHourlyGaps(timestamps: readonly number[], stepMinutes: number): bool
 
 function finiteOrNull(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function uniqueStrings(values: readonly (string | null | undefined)[]): readonly string[] {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))];
+}
+
+function professionalTemperatureProfile(hour: NormalizedHourlyWeather): {
+  readonly rawTemperatureC: number | null;
+  readonly terrainAdjustedTemperatureC: number | null;
+  readonly displayedTemperatureC: number | null;
+  readonly temperatureBasis: ProfessionalHourlyTemperatureBasis;
+  readonly temperatureAdjustmentC: number | null;
+  readonly temperatureBasisNoteZh: string;
+} {
+  const adjustment = hour.temperatureAdjustment;
+  const rawTemperatureC = finiteOrNull(
+    hour.rawTemperature ?? adjustment?.rawTemperatureC ?? adjustment?.rawTemperature ?? hour.temperature,
+  );
+  const hasTerrainAdjustedBasis =
+    adjustment !== undefined &&
+    (adjustment.correctionApplied ||
+      adjustment.correctionReason === "provider_elevation_delta_beyond_threshold" ||
+      adjustment.correctionReason === "provider_elevation_close_to_spot" ||
+      adjustment.correctionReason === "provider_terrain_aware_no_extra_correction" ||
+      adjustment.correctionReason === "existing_correction_preserved");
+  const terrainAdjustedTemperatureC = hasTerrainAdjustedBasis
+    ? finiteOrNull(
+        adjustment.terrainAdjustedTemperatureC ??
+          hour.elevationAdjustedTemperature ??
+          hour.temperature,
+      )
+    : null;
+
+  if (terrainAdjustedTemperatureC !== null) {
+    return {
+      rawTemperatureC,
+      terrainAdjustedTemperatureC,
+      displayedTemperatureC: terrainAdjustedTemperatureC,
+      temperatureBasis: "terrain_adjusted",
+      temperatureAdjustmentC: finiteOrNull(adjustment?.correctionCelsius),
+      temperatureBasisNoteZh: professionalTemperatureBasisNote(adjustment),
+    };
+  }
+
+  if (rawTemperatureC !== null) {
+    return {
+      rawTemperatureC,
+      terrainAdjustedTemperatureC: null,
+      displayedTemperatureC: rawTemperatureC,
+      temperatureBasis: "raw_grid",
+      temperatureAdjustmentC: null,
+      temperatureBasisNoteZh: "原始格点温度，未做机位海拔修正。",
+    };
+  }
+
+  return {
+    rawTemperatureC: null,
+    terrainAdjustedTemperatureC: null,
+    displayedTemperatureC: null,
+    temperatureBasis: "unknown",
+    temperatureAdjustmentC: null,
+    temperatureBasisNoteZh: "暂无可用温度数据。",
+  };
+}
+
+function professionalTemperatureBasisNote(
+  adjustment: NormalizedHourlyWeather["temperatureAdjustment"],
+): string {
+  if (!adjustment) {
+    return "暂无温度修正说明。";
+  }
+  if (adjustment.correctionApplied) {
+    return "已按机位海拔估算温度。";
+  }
+  if (adjustment.correctionReason === "provider_elevation_close_to_spot") {
+    return "预报格点海拔接近机位，按机位口径显示。";
+  }
+  if (adjustment.correctionReason === "provider_terrain_aware_no_extra_correction") {
+    return "来源已接近地形口径，未额外修正。";
+  }
+  if (adjustment.correctionReason === "existing_correction_preserved") {
+    return "保留上游已提供的机位温度修正。";
+  }
+  return "已按机位温度口径显示。";
+}
+
+function explicitProfessionalCloudLayer(
+  hour: NormalizedHourlyWeather,
+  field: "cloudLow" | "cloudMid" | "cloudHigh",
+): number | null {
+  const isEstimated =
+    hour.estimatedFields?.includes(field) || hour.fieldMetadata?.[field]?.estimated === true;
+  if (isEstimated) {
+    return null;
+  }
+  return finiteOrNull(hour[field]);
+}
+
+function professionalCloudLayerProfile(hour: NormalizedHourlyWeather): {
+  readonly cloudTotalPercent: number | null;
+  readonly cloudHighPercent: number | null;
+  readonly cloudMidPercent: number | null;
+  readonly cloudLowPercent: number | null;
+  readonly cloudLayerBasis: ProfessionalHourlyCloudLayerBasis;
+} {
+  const cloudTotalPercent = finiteOrNull(hour.cloudTotal);
+  const cloudHighPercent = explicitProfessionalCloudLayer(hour, "cloudHigh");
+  const cloudMidPercent = explicitProfessionalCloudLayer(hour, "cloudMid");
+  const cloudLowPercent = explicitProfessionalCloudLayer(hour, "cloudLow");
+  const layerValues = [cloudHighPercent, cloudMidPercent, cloudLowPercent];
+  const presentLayerCount = layerValues.filter((value) => value !== null).length;
+  const cloudLayerBasis =
+    presentLayerCount === 3
+      ? "explicit_layers"
+      : presentLayerCount > 0
+        ? "partial_layers"
+        : cloudTotalPercent !== null
+          ? "total_only"
+          : "unknown";
+
+  return {
+    cloudTotalPercent,
+    cloudHighPercent,
+    cloudMidPercent,
+    cloudLowPercent,
+    cloudLayerBasis,
+  };
+}
+
+function professionalHourlyMissingFields(
+  hour: NormalizedHourlyWeather,
+  cloudLayers: ReturnType<typeof professionalCloudLayerProfile>,
+  temperature: ReturnType<typeof professionalTemperatureProfile>,
+  values: {
+    readonly dewPointC: number | null;
+    readonly dewPointSpreadC: number | null;
+    readonly precipitationAmountMm: number | null;
+    readonly precipitationProbabilityPercent: number | null;
+    readonly visibilityMeters: number | null;
+  },
+): readonly string[] {
+  return uniqueStrings([
+    ...(hour.missingFields ?? []),
+    cloudLayers.cloudTotalPercent === null ? "cloudTotal" : undefined,
+    cloudLayers.cloudHighPercent === null ? "cloudHigh" : undefined,
+    cloudLayers.cloudMidPercent === null ? "cloudMid" : undefined,
+    cloudLayers.cloudLowPercent === null ? "cloudLow" : undefined,
+    temperature.displayedTemperatureC === null ? "temperature" : undefined,
+    values.dewPointC === null ? "dewPoint" : undefined,
+    values.dewPointSpreadC === null ? "dewPointSpread" : undefined,
+    values.precipitationAmountMm === null ? "precipitation" : undefined,
+    values.precipitationProbabilityPercent === null ? "precipitationProbability" : undefined,
+    values.visibilityMeters === null ? "visibility" : undefined,
+  ]);
+}
+
+function professionalHourlyNotes(
+  hour: NormalizedHourlyWeather,
+  cloudLayers: ReturnType<typeof professionalCloudLayerProfile>,
+  temperature: ReturnType<typeof professionalTemperatureProfile>,
+  dewPointSpreadC: number | null,
+): readonly string[] {
+  return uniqueStrings([
+    temperature.temperatureBasis === "raw_grid"
+      ? "温度为原始格点值，未作为机位海拔修正温度展示。"
+      : undefined,
+    cloudLayers.cloudLayerBasis === "total_only"
+      ? "仅有总云量，低/中/高云分层缺失。"
+      : undefined,
+    cloudLayers.cloudLayerBasis === "partial_layers" ? "部分云层字段缺失。" : undefined,
+    dewPointSpreadC !== null && dewPointSpreadC < 0
+      ? "露点差为负，温度或露点数据需人工复核。"
+      : undefined,
+    hour.estimatedFields?.some((field) => ["cloudLow", "cloudMid", "cloudHigh"].includes(field))
+      ? "云层分层存在估算字段，专业表不使用总云量回填。"
+      : undefined,
+  ]);
+}
+
+type ProfessionalHourlySignalInput = {
+  readonly time: string;
+  readonly weatherText: string | null;
+  readonly cloudTotalPercent: number | null;
+  readonly cloudHighPercent: number | null;
+  readonly cloudMidPercent: number | null;
+  readonly cloudLowPercent: number | null;
+  readonly cloudLayerBasis: ProfessionalHourlyCloudLayerBasis;
+  readonly dewPointSpreadC: number | null;
+  readonly relativeHumidityPercent: number | null;
+  readonly precipitationAmountMm: number | null;
+  readonly precipitationProbabilityPercent: number | null;
+  readonly visibilityMeters: number | null;
+  readonly windSpeedMs: number | null;
+  readonly missingFields: readonly string[];
+};
+
+function professionalHourlySignalForPayload(options: {
+  readonly row: ProfessionalHourlySignalInput;
+  readonly previousRow?: {
+    readonly precipitationAmountMm: number | null;
+  };
+  readonly cloudSeaAnalysis: CloudSeaAnalysisResult;
+}): {
+  readonly label: ProfessionalHourlyCloudSeaSignal;
+  readonly level: ProfessionalHourlyCloudSeaSignalLevel;
+} {
+  const { row, cloudSeaAnalysis } = options;
+  const whiteout = professionalHourlyWhiteoutAssessment(row);
+  const inBestWindow = professionalHourInAnalysisWindows(
+    row.time,
+    cloudSeaAnalysis.bestCloudSeaWindows,
+  );
+  const inWatchableWindow = professionalHourInAnalysisWindows(
+    row.time,
+    cloudSeaAnalysis.watchableCloudSeaWindows,
+  );
+  const inBlockedWindow = professionalHourInAnalysisWindows(
+    row.time,
+    cloudSeaAnalysis.notRecommendedCloudSeaWindows,
+  );
+  const rainOpening = professionalHourlyRainOpeningSignal({
+    row,
+    previousRow: options.previousRow,
+    rainSupportSignal: cloudSeaAnalysis.rainOpening.rainSupportSignal,
+  });
+  const formationLikely = professionalHourlyFormationLikely(row) || inWatchableWindow;
+
+  if (whiteout === "high" || (whiteout === "medium" && inBlockedWindow)) {
+    return { label: "白墙风险", level: "risk" };
+  }
+  if (whiteout === "review") {
+    return { label: "需复核", level: "review" };
+  }
+  if (inBestWindow && whiteout === "low") {
+    return { label: "可拍窗口", level: "positive" };
+  }
+  if (rainOpening && whiteout !== "medium") {
+    return { label: "雨后开口", level: "watch" };
+  }
+  if (whiteout === "medium") {
+    return { label: "需复核", level: "review" };
+  }
+  if (formationLikely) {
+    return { label: "形成信号", level: "watch" };
+  }
+  if (row.cloudLayerBasis === "total_only" || row.cloudLayerBasis === "unknown") {
+    return { label: "需复核", level: "review" };
+  }
+  return { label: "普通", level: "neutral" };
+}
+
+function professionalHourlyWhiteoutAssessment(
+  row: ProfessionalHourlySignalInput,
+): "high" | "medium" | "review" | "low" {
+  const lowCloud = row.cloudLowPercent;
+  const humidity = row.relativeHumidityPercent;
+  const dewPointSpread = row.dewPointSpreadC;
+  const visibilityMeters = row.visibilityMeters;
+  const fogOrMist = professionalWeatherTextHasFogOrMist(row.weatherText);
+  const lowCloudMissing =
+    lowCloud === null ||
+    row.missingFields.includes("cloudLow") ||
+    row.cloudLayerBasis === "total_only" ||
+    row.cloudLayerBasis === "unknown";
+  const humidityHigh = humidity !== null && humidity >= 90;
+  const humidityMedium = humidity !== null && humidity >= 85;
+  const spreadSmall = dewPointSpread !== null && dewPointSpread <= 3;
+  const spreadMedium = dewPointSpread !== null && dewPointSpread <= 4;
+  const visibilityPoor = visibilityMeters !== null && visibilityMeters <= 3000;
+  const visibilityModerate = visibilityMeters !== null && visibilityMeters <= 8000;
+  const visibilityGood = visibilityMeters !== null && visibilityMeters > 10000;
+
+  if (lowCloudMissing) {
+    if (fogOrMist && humidityHigh && visibilityPoor && (dewPointSpread === null || spreadMedium)) {
+      return "high";
+    }
+    if (
+      fogOrMist ||
+      humidityHigh ||
+      spreadSmall ||
+      (row.cloudTotalPercent !== null && row.cloudTotalPercent >= 85)
+    ) {
+      return "review";
+    }
+    return "low";
+  }
+
+  if (
+    lowCloud >= 75 &&
+    humidityHigh &&
+    spreadSmall &&
+    (visibilityMeters === null || visibilityModerate)
+  ) {
+    return "high";
+  }
+
+  if (
+    fogOrMist &&
+    humidityHigh &&
+    spreadMedium &&
+    (lowCloud >= 60 || visibilityPoor)
+  ) {
+    return "high";
+  }
+
+  if (
+    lowCloud >= 60 &&
+    humidityMedium &&
+    spreadMedium &&
+    !visibilityGood &&
+    (visibilityMeters === null || visibilityModerate)
+  ) {
+    return "medium";
+  }
+
+  if (lowCloud >= 50 && humidityMedium && visibilityPoor) {
+    return "medium";
+  }
+
+  return "low";
+}
+
+function professionalHourlyFormationLikely(row: ProfessionalHourlySignalInput): boolean {
+  if (row.cloudLowPercent === null) {
+    return false;
+  }
+  const lowCloudFormationBand = row.cloudLowPercent >= 35 && row.cloudLowPercent <= 74;
+  const humiditySupport =
+    row.relativeHumidityPercent !== null && row.relativeHumidityPercent >= 82;
+  const dewPointSupport = row.dewPointSpreadC !== null && row.dewPointSpreadC <= 5;
+  const windSupport = row.windSpeedMs === null || row.windSpeedMs <= 6;
+  const rainNotActive = !professionalHourlyHasPayloadPrecipitation(row);
+  return lowCloudFormationBand && humiditySupport && dewPointSupport && windSupport && rainNotActive;
+}
+
+function professionalHourlyRainOpeningSignal(options: {
+  readonly row: ProfessionalHourlySignalInput;
+  readonly previousRow?: {
+    readonly precipitationAmountMm: number | null;
+  };
+  readonly rainSupportSignal: boolean;
+}): boolean {
+  if (!options.rainSupportSignal) {
+    return false;
+  }
+  const recentRain =
+    professionalHourlyHasPayloadPrecipitation(options.row) ||
+    (options.previousRow?.precipitationAmountMm !== null &&
+      options.previousRow?.precipitationAmountMm !== undefined &&
+      options.previousRow.precipitationAmountMm > 0);
+  const supportiveCloud =
+    (options.row.cloudLowPercent !== null && options.row.cloudLowPercent >= 35) ||
+    professionalWeatherTextHasFogOrMist(options.row.weatherText);
+  const notTooWet =
+    options.row.precipitationAmountMm === null || options.row.precipitationAmountMm <= 0.3;
+  return recentRain && supportiveCloud && notTooWet;
+}
+
+function professionalHourlyHasPayloadPrecipitation(row: ProfessionalHourlySignalInput): boolean {
+  return row.precipitationAmountMm !== null && row.precipitationAmountMm > 0;
+}
+
+function professionalWeatherTextHasFogOrMist(value: string | null | undefined): boolean {
+  return /雾|霾|fog|mist/i.test(value ?? "");
+}
+
+function professionalHourInAnalysisWindows(
+  time: string,
+  windows: readonly Pick<ForecastTimeWindow, "startTime" | "endTime">[],
+): boolean {
+  const timestamp = Date.parse(time);
+  if (!Number.isFinite(timestamp)) {
+    return false;
+  }
+  return windows.some((window) => {
+    const start = Date.parse(window.startTime);
+    const end = Date.parse(window.endTime);
+    return Number.isFinite(start) && Number.isFinite(end) && timestamp >= start && timestamp <= end;
+  });
+}
+
+function aggregateProfessionalTemperatureBasis(
+  hourlyWeather: readonly NormalizedHourlyWeather[],
+): ProfessionalHourlyTemperatureBasis {
+  const rowBases = hourlyWeather.map((hour) => professionalTemperatureProfile(hour).temperatureBasis);
+  if (rowBases.some((basis) => basis === "terrain_adjusted")) {
+    return "terrain_adjusted";
+  }
+  if (rowBases.some((basis) => basis === "raw_grid")) {
+    return "raw_grid";
+  }
+  return "unknown";
+}
+
+function aggregateProfessionalTemperatureBasisNote(
+  hourlyWeather: readonly NormalizedHourlyWeather[],
+): string {
+  const rowBases = hourlyWeather.map((hour) => professionalTemperatureProfile(hour).temperatureBasis);
+  if (rowBases.some((basis) => basis === "terrain_adjusted")) {
+    return rowBases.some((basis) => basis !== "terrain_adjusted")
+      ? "温度口径：机位海拔修正后；部分小时仍需复核原始格点或缺失值。"
+      : "温度口径：机位海拔修正后";
+  }
+  if (rowBases.some((basis) => basis === "raw_grid")) {
+    return "温度口径：原始格点，未做机位修正";
+  }
+  return "温度口径：暂无";
+}
+
+function aggregateProfessionalCloudLayerBasis(
+  hourlyWeather: readonly NormalizedHourlyWeather[],
+): ProfessionalHourlyCloudLayerBasis {
+  const rowBases = hourlyWeather.map((hour) => professionalCloudLayerProfile(hour).cloudLayerBasis);
+  if (rowBases.length === 0 || rowBases.every((basis) => basis === "unknown")) {
+    return "unknown";
+  }
+  if (rowBases.every((basis) => basis === "explicit_layers")) {
+    return "explicit_layers";
+  }
+  if (rowBases.every((basis) => basis === "total_only")) {
+    return "total_only";
+  }
+  return "partial_layers";
+}
+
+function aggregateProfessionalCloudLayerBasisNote(
+  hourlyWeather: readonly NormalizedHourlyWeather[],
+): string {
+  const basis = aggregateProfessionalCloudLayerBasis(hourlyWeather);
+  if (basis === "explicit_layers") {
+    return "云量口径：总云量 + 低/中/高云分层";
+  }
+  if (basis === "total_only") {
+    return "云量口径：仅总云量，缺少低/中/高云分层";
+  }
+  if (basis === "partial_layers") {
+    return "云量口径：部分云层字段缺失";
+  }
+  return "云量口径：暂无";
+}
+
+function formatProfessionalDateLabel(value: string, timezone: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: timezone,
+    month: "numeric",
+    day: "numeric",
+  }).format(new Date(timestamp));
+}
+
+function formatProfessionalTimeLabel(value: string, timezone: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(timestamp));
 }
 
 function safeProfessionalWeatherCode(value: string | null | undefined): string | null {

@@ -305,6 +305,127 @@ describe("forecast score calculators", () => {
     });
   });
 
+  it("uses terrain-adjusted temperature and matching dew point spread in professional hourly data", () => {
+    const baseInput = buildMockForecastInput({ ...baseQuery, target: "cloud_sea" }, { now: fixedNow });
+    const rawHour: NormalizedHourlyWeather = {
+      ...baseInput.hourlyWeather[0]!,
+      providerCode: "qweather",
+      providerElevationMeters: 600,
+      temperature: 24,
+      rawTemperature: undefined,
+      elevationAdjustedTemperature: undefined,
+      temperatureAdjustment: undefined,
+      dewPoint: 12,
+      dewPointSpread: 12,
+      cloudLow: 42,
+      cloudMid: 38,
+      cloudHigh: 28,
+      missingFields: [],
+      estimatedFields: [],
+    };
+    const adjusted = applyMountainWeatherAdjustments({
+      hourlyWeather: [rawHour],
+      dailyWeather: [],
+      terrainAnalysis: baseInput.terrainAnalysis,
+    });
+    const result = calculateForecast({
+      ...baseInput,
+      hourlyWeather: adjusted.hourlyWeather,
+      dailyWeather: [],
+    });
+    const row = result.professionalHourlyData?.[0];
+
+    expect(row).toMatchObject({
+      rawTemperatureC: 24,
+      temperatureBasis: "terrain_adjusted",
+      cloudLayerBasis: "explicit_layers",
+    });
+    expect(row?.terrainAdjustedTemperatureC).toBeLessThan(24);
+    expect(row?.displayedTemperatureC).toBe(row?.terrainAdjustedTemperatureC);
+    expect(row?.dewPointSpreadC).toBeCloseTo((row?.displayedTemperatureC ?? 0) - 12, 5);
+    expect(result.professionalHourlyDataTimeBasis?.temperatureBasis).toBe("terrain_adjusted");
+  });
+
+  it("keeps missing professional cloud layers empty instead of filling them from total cloud", () => {
+    const baseInput = buildMockForecastInput({ ...baseQuery, target: "cloud_sea" }, { now: fixedNow });
+    const result = calculateForecast(
+      withHourlyWeather(baseInput, (hour) => ({
+        ...hour,
+        cloudTotal: 96,
+        cloudLow: null,
+        cloudMid: null,
+        cloudHigh: null,
+        humidity: 100,
+        dewPoint: hour.temperature - 1,
+        dewPointSpread: 1,
+        visibility: 18,
+        missingFields: ["cloudLow", "cloudMid", "cloudHigh"],
+      })),
+    );
+    const row = result.professionalHourlyData?.[0];
+
+    expect(row).toMatchObject({
+      cloudTotalPercent: 96,
+      cloudLowPercent: null,
+      cloudMidPercent: null,
+      cloudHighPercent: null,
+      cloudLayerBasis: "total_only",
+      cloudSeaSignal: "需复核",
+    });
+    expect(row?.cloudSeaSignal).not.toBe("白墙风险");
+    expect(result.professionalHourlyDataTimeBasis?.cloudLayerBasis).toBe("total_only");
+  });
+
+  it("requires low-cloud evidence before professional hourly whiteout labels", () => {
+    const baseInput = buildMockForecastInput({ ...baseQuery, target: "cloud_sea" }, { now: fixedNow });
+    const humidityOnly = calculateForecast(
+      withHourlyWeather(baseInput, (hour) => ({
+        ...hour,
+        cloudTotal: 45,
+        cloudLow: 20,
+        cloudMid: 20,
+        cloudHigh: 20,
+        humidity: 100,
+        dewPoint: hour.temperature - 6,
+        dewPointSpread: 6,
+        visibility: 20,
+        missingFields: [],
+      })),
+    );
+    const totalCloudOnly = calculateForecast(
+      withHourlyWeather(baseInput, (hour) => ({
+        ...hour,
+        cloudTotal: 98,
+        cloudLow: 20,
+        cloudMid: 20,
+        cloudHigh: 20,
+        humidity: 65,
+        dewPoint: hour.temperature - 8,
+        dewPointSpread: 8,
+        visibility: 20,
+        missingFields: [],
+      })),
+    );
+    const strongWhiteout = calculateForecast(
+      withHourlyWeather(baseInput, (hour) => ({
+        ...hour,
+        cloudTotal: 94,
+        cloudLow: 82,
+        cloudMid: 35,
+        cloudHigh: 25,
+        humidity: 94,
+        dewPoint: hour.temperature - 2,
+        dewPointSpread: 2,
+        visibility: 4,
+        missingFields: [],
+      })),
+    );
+
+    expect(humidityOnly.professionalHourlyData?.[0]?.cloudSeaSignal).not.toBe("白墙风险");
+    expect(totalCloudOnly.professionalHourlyData?.[0]?.cloudSeaSignal).not.toBe("白墙风险");
+    expect(strongWhiteout.professionalHourlyData?.[0]?.cloudSeaSignal).toBe("白墙风险");
+  });
+
   it("caps unknown-provider high mountain correction instead of applying a full lapse rate", () => {
     const baseInput = buildMockForecastInput(baseQuery, { now: fixedNow });
     const veryHighTerrain: TerrainAnalysisSummary = {

@@ -512,17 +512,26 @@ describe("forecast query validation route", () => {
     expect(body.professionalHourlyDataTimeBasis).toMatchObject({
       timezone: "Asia/Shanghai",
       stepMinutes: 60,
+      temperatureBasis: expect.stringMatching(/terrain_adjusted|raw_grid|unknown/),
+      cloudLayerBasis: expect.stringMatching(/explicit_layers|partial_layers|total_only|unknown/),
       partialData: false,
     });
     expect(body.professionalHourlyData).toHaveLength(48);
     expect(body.professionalHourlyData[0]).toMatchObject({
       time: expect.any(String),
+      dateLabel: expect.any(String),
+      timeLabel: expect.any(String),
       weatherText: expect.any(String),
+      cloudSeaSignal: expect.stringMatching(/可拍窗口|白墙风险|形成信号|雨后开口|普通|需复核/),
       cloudTotalPercent: expect.any(Number),
       cloudHighPercent: expect.any(Number),
       cloudMidPercent: expect.any(Number),
       cloudLowPercent: expect.any(Number),
-      temperatureC: expect.any(Number),
+      rawTemperatureC: expect.any(Number),
+      displayedTemperatureC: expect.any(Number),
+      temperatureBasis: expect.stringMatching(/terrain_adjusted|raw_grid|unknown/),
+      temperatureBasisNoteZh: expect.any(String),
+      cloudLayerBasis: expect.stringMatching(/explicit_layers|partial_layers|total_only|unknown/),
       dewPointC: expect.any(Number),
       dewPointSpreadC: expect.any(Number),
       relativeHumidityPercent: expect.any(Number),
@@ -538,8 +547,8 @@ describe("forecast query validation route", () => {
         "providerLabelZh",
         "fieldMetadata",
         "sourceNotes",
-        "missingFields",
         "estimatedFields",
+        "temperatureC",
       ]),
     );
     expect(JSON.stringify(body.professionalHourlyData)).not.toMatch(

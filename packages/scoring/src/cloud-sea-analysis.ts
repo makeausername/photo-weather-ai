@@ -736,10 +736,10 @@ function buildWindowStats(
     ),
     humidity: averageOptional(weatherWindow, (hour) => hour.humidity),
     dewPointSpread: averageOptional(weatherWindow, (hour) =>
-      typeof hour.dewPointSpread === "number"
-        ? hour.dewPointSpread
-        : typeof hour.dewPoint === "number"
-          ? hour.temperature - hour.dewPoint
+      typeof hour.dewPoint === "number"
+        ? hour.temperature - hour.dewPoint
+        : typeof hour.dewPointSpread === "number"
+          ? hour.dewPointSpread
           : undefined,
     ),
     windSpeed: averageOptional(weatherWindow, (hour) => hour.windSpeed),

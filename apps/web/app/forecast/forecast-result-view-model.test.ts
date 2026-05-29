@@ -1590,13 +1590,23 @@ function professionalHourlyDataForTest(
 ): ProfessionalHourlyDataForTest {
   return Array.from({ length: 15 }, (_, hour) => ({
     time: `2026-05-20T${String(hour).padStart(2, "0")}:00:00+08:00`,
+    dateLabel: "5月20日",
+    timeLabel: `${String(hour).padStart(2, "0")}:00`,
     weatherCode: hour < 8 ? "partly_cloudy" : "clear",
     weatherText: hour < 8 ? "多云" : "晴",
+    cloudSeaSignal: hour >= 4 && hour <= 7 ? "可拍窗口" : "普通",
+    cloudSeaSignalLevel: hour >= 4 && hour <= 7 ? "positive" : "neutral",
     cloudTotalPercent: hour >= 4 && hour <= 7 ? 88 : 42,
     cloudHighPercent: hour >= 4 && hour <= 7 ? 28 : 18,
     cloudMidPercent: hour >= 4 && hour <= 7 ? 46 : 24,
     cloudLowPercent: hour >= 4 && hour <= 7 ? 82 : 22,
-    temperatureC: 10 + hour * 0.4,
+    cloudLayerBasis: "explicit_layers",
+    rawTemperatureC: 15 + hour * 0.4,
+    terrainAdjustedTemperatureC: 10 + hour * 0.4,
+    displayedTemperatureC: 10 + hour * 0.4,
+    temperatureBasis: "terrain_adjusted",
+    temperatureAdjustmentC: 5,
+    temperatureBasisNoteZh: "已按机位海拔估算温度。",
     dewPointC: 8 + hour * 0.35,
     dewPointSpreadC: hour >= 4 && hour <= 7 ? 1.6 : 5.2,
     relativeHumidityPercent: hour >= 4 && hour <= 7 ? 94 : 68,
@@ -1621,6 +1631,10 @@ function resultWithProfessionalHourlyData(
       endTime: "2026-05-20T15:00:00+08:00",
       stepMinutes: 60,
       timezone: "Asia/Shanghai",
+      temperatureBasis: "terrain_adjusted",
+      temperatureBasisNoteZh: "温度口径：机位海拔修正后",
+      cloudLayerBasis: "explicit_layers",
+      cloudLayerBasisNoteZh: "云量口径：总云量 + 低/中/高云分层",
       partialData: true,
       missingDataNoteZh: "部分小时数据缺失，结果仅供复核。",
     },
@@ -4054,6 +4068,11 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("逐小时");
     expect(html).toContain("时区");
     expect(html).toContain("Asia/Shanghai");
+    expect(html).toContain("温度口径");
+    expect(html).toContain("机位海拔修正后");
+    expect(html).toContain("云量口径");
+    expect(html).toContain("总云量 + 低/中/高云分层");
+    expect(html).toContain("缺失说明");
     expect(html).toContain("部分小时数据缺失，结果仅供复核。");
     expect(html).toContain("全部小时");
     expect(html).toContain("只看云海窗口");
@@ -4065,7 +4084,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("高云量 %");
     expect(html).toContain("中云量 %");
     expect(html).toContain("低云量 %");
-    expect(html).toContain("气温 °C");
+    expect(html).toContain("机位估算温度 °C");
     expect(html).toContain("露点 °C");
     expect(html).toContain("露点差 °C");
     expect(html).toContain("湿度 %");
@@ -4075,6 +4094,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("风向");
     expect(html).toContain("云海信号");
     expect(html).toContain("可拍窗口");
+    expect(html).not.toContain("原始格点温度 °C");
     expect(html).toContain('data-professional-hourly-row="2026-05-20T05:00:00+08:00"');
     expect(html).not.toContain('data-professional-hourly-row="2026-05-20T13:00:00+08:00"');
     expect(html).toContain("max-w-full overflow-x-auto");
@@ -4099,6 +4119,7 @@ describe("forecast result target-aware view model", () => {
       cloudHighPercent: null,
       cloudMidPercent: null,
       cloudLowPercent: null,
+      cloudLayerBasis: "total_only",
       dewPointC: null,
       dewPointSpreadC: null,
       precipitationAmountMm: 0,
@@ -4122,12 +4143,66 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("meteoblue");
     expect(html).toMatch(/data-professional-hourly-cell="weather">[\s\S]*?<span>—<\/span>/);
     expect(html).toMatch(/data-professional-hourly-cell="cloud-low">—<\/td>/);
+    expect(html).toMatch(/data-professional-hourly-cell="cloud-mid">—<\/td>/);
+    expect(html).toMatch(/data-professional-hourly-cell="cloud-high">—<\/td>/);
     expect(html).toMatch(/data-professional-hourly-cell="dew-point">—<\/td>/);
     expect(html).toMatch(/data-professional-hourly-cell="dew-point-spread">—<\/td>/);
     expect(html).toMatch(/data-professional-hourly-cell="visibility">—<\/td>/);
     expect(html).toMatch(/data-professional-hourly-cell="wind-speed">—<\/td>/);
     expect(html).toMatch(/data-professional-hourly-cell="wind-direction">—<\/td>/);
     expect(html).toContain("0 mm / —");
+    expect(html).toContain("低/中/高云分层缺失时以 — 显示，不用总云量回填。");
+  });
+
+  it("shows raw grid temperature basis and review signal when layer data is insufficient", () => {
+    const hourly = professionalHourlyDataForTest({
+      cloudSeaSignal: "需复核",
+      cloudSeaSignalLevel: "review",
+      cloudTotalPercent: 96,
+      cloudHighPercent: null,
+      cloudMidPercent: null,
+      cloudLowPercent: null,
+      cloudLayerBasis: "total_only",
+      rawTemperatureC: 27,
+      terrainAdjustedTemperatureC: null,
+      displayedTemperatureC: 27,
+      temperatureBasis: "raw_grid",
+      temperatureAdjustmentC: null,
+      temperatureBasisNoteZh: "原始格点温度，未做机位海拔修正。",
+      relativeHumidityPercent: 100,
+      dewPointC: 26,
+      dewPointSpreadC: 1,
+    });
+    const result = resultWithProfessionalHourlyData({
+      professionalHourlyData: hourly,
+      professionalHourlyDataTimeBasis: {
+        startTime: "2026-05-20T00:00:00+08:00",
+        endTime: "2026-05-20T15:00:00+08:00",
+        stepMinutes: 60,
+        timezone: "Asia/Shanghai",
+        temperatureBasis: "raw_grid",
+        temperatureBasisNoteZh: "温度口径：原始格点，未做机位修正",
+        cloudLayerBasis: "total_only",
+        cloudLayerBasisNoteZh: "云量口径：仅总云量，缺少低/中/高云分层",
+        partialData: false,
+      },
+    });
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(html).toContain("温度口径");
+    expect(html).toContain("原始格点，未做机位修正");
+    expect(html).toContain("云量口径");
+    expect(html).toContain("仅总云量，缺少低/中/高云分层");
+    expect(html).toContain("原始格点温度 °C");
+    expect(html).toContain("需复核");
+    expect(html).not.toContain("白墙风险</span>");
   });
 
   it("does not render the professional hourly table without a valid time basis", () => {
