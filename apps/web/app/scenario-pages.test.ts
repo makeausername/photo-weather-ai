@@ -1,8 +1,17 @@
 import * as React from "react";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { ScenarioSearchPanel } from "../components/scenario-module-page";
+import { HomepageSearchPanel } from "../components/homepage-search-panel";
+import { LocationSearchInput } from "../components/location-search-input";
 import { buildForecastUrl, type PlaceSearchResult } from "../components/place-search-card";
+import {
+  buildForecastRequestPayload,
+  buildForecastUrlFromSelectedLocation,
+  selectedLocationFromBrowserGeolocation,
+} from "../components/selected-location";
 import AstroPage, { metadata as astroMetadata } from "./astro/page";
 import CloudSeaPage, { metadata as cloudSeaMetadata } from "./cloud-sea/page";
 import GlowPage, { metadata as glowMetadata } from "./glow/page";
@@ -38,6 +47,10 @@ const samplePlace: PlaceSearchResult = {
   elevation: 1860,
   isVerified: false,
 };
+
+function hasExactButton(html: string, label: string): boolean {
+  return new RegExp(`<button[^>]*>\\s*${label}\\s*</button>`).test(html);
+}
 
 function subjectDeepLinkParams(
   target: "cloud_sea" | "glow" | "astro",
@@ -121,6 +134,142 @@ describe("scenario module pages", () => {
     expect(html).toContain("湿度、露点差、低云、弱到中等风和地形高差共同影响云海形成。");
     expect(html).toContain("可拍机会需要形成信号与清晨光线、能见度、通行和低白墙风险重叠。");
     expect(html).toContain("正式数据源启用后将显示对应来源与更新时间");
+  });
+
+  it("reuses the shared current-location input on homepage and cloud sea", () => {
+    const homepageHtml = renderToStaticMarkup(React.createElement(HomepageSearchPanel));
+    const cloudSeaHtml = renderToStaticMarkup(React.createElement(CloudSeaPage));
+    const sharedInputHtml = renderToStaticMarkup(
+      React.createElement(LocationSearchInput, {
+        value: "",
+        placeholder: "输入地点",
+        onInputChange: vi.fn(),
+        onSearch: vi.fn(),
+        onUseCurrentLocation: vi.fn(),
+      }),
+    );
+
+    for (const html of [homepageHtml, cloudSeaHtml, sharedInputHtml]) {
+      expect(html).toContain('data-location-search-input="true"');
+      expect(html).toContain('data-current-location-input-wrapper="true"');
+      expect(html).toContain('data-current-location-button="true"');
+      expect(html).toContain('aria-label="使用当前位置"');
+      expect(html).toContain('title="使用当前位置"');
+      expect(html).toContain("relative min-w-0 w-full");
+      expect(html).toContain("pr-12");
+      expect(html).toContain("absolute right-1.5 top-1/2");
+      expect(html).toContain("h-8 w-8");
+      expect(html).toContain('viewBox="0 0 24 24"');
+    }
+  });
+
+  it("renders the cloud sea locator icon inside the input without a visible text button", () => {
+    const html = renderToStaticMarkup(React.createElement(CloudSeaPage));
+    const wrapperIndex = html.indexOf('data-current-location-input-wrapper="true"');
+    const inputIndex = html.indexOf('aria-label="目的地"', wrapperIndex);
+    const buttonIndex = html.indexOf('data-current-location-button="true"', wrapperIndex);
+
+    expect(wrapperIndex).toBeGreaterThanOrEqual(0);
+    expect(inputIndex).toBeGreaterThan(wrapperIndex);
+    expect(buttonIndex).toBeGreaterThan(inputIndex);
+    expect(html).toContain("浏览器定位仅用于本次云海判断，不会公开显示。");
+    expect(hasExactButton(html, "定位")).toBe(false);
+    expect(hasExactButton(html, "定位中")).toBe(false);
+    expect(html).not.toMatch(/api[_-]?key|secret|AMAP_|key=/i);
+  });
+
+  it("keeps cloud sea manual search and seeded spot chips available", () => {
+    const html = renderToStaticMarkup(React.createElement(CloudSeaPage));
+
+    expect(html).toMatch(/<button[^>]*type="submit"[^>]*>搜索地点<\/button>/);
+    expect(html).toContain('aria-label="目的地"');
+    expect(html).toContain("常用机位");
+    expect(html).toContain("黄山光明顶");
+    expect(html).toContain("老君山金顶");
+    expect(html).toContain("查看云海拍摄判断");
+  });
+
+  it("shows browser current location as a compact cloud sea selection that enables the CTA", () => {
+    const currentLocation = selectedLocationFromBrowserGeolocation({
+      latitudeWgs84: 31.2304,
+      longitudeWgs84: 121.4737,
+      reverseGeocode: {
+        available: true,
+        name: "黄浦区",
+        address: "上海市黄浦区",
+        province: "上海市",
+        city: "上海市",
+        district: "黄浦区",
+        latitudeGcj02: 31.2285,
+        longitudeGcj02: 121.4782,
+      },
+    });
+    const html = renderToStaticMarkup(
+      React.createElement(ScenarioSearchPanel, {
+        config: cloudSeaScenarioConfig,
+        selectedLocation: currentLocation,
+      }),
+    );
+
+    expect(html).toContain("当前定位");
+    expect(html).toContain("黄浦区");
+    expect(html).toContain("上海市 / 上海市 / 黄浦区");
+    expect(html).toContain("判断范围");
+    expect(html).toContain("未来48小时");
+    expect(html).toContain("海拔将在生成判断时补全");
+    expect(html).toContain("坐标信息");
+    expect(html).toContain("查看云海拍摄判断");
+    expect(html).not.toContain('disabled="">查看云海拍摄判断</button>');
+  });
+
+  it("builds cloud sea current-location requests with WGS84 coordinates and no spot id", () => {
+    const currentLocation = selectedLocationFromBrowserGeolocation({
+      latitudeWgs84: 31.2304,
+      longitudeWgs84: 121.4737,
+    });
+    const payload = buildForecastRequestPayload(currentLocation, "48h", "cloud_sea", {
+      timezone: "Asia/Shanghai",
+    });
+    const url = new URL(
+      buildForecastUrlFromSelectedLocation(currentLocation, "48h", "cloud_sea", {
+        timezone: "Asia/Shanghai",
+      }),
+      "http://localhost:3000",
+    );
+
+    expect(payload).toMatchObject({
+      name: "当前位置",
+      source: "browser_geolocation",
+      coordinateSource: "browser_geolocation",
+      latitudeWgs84: 31.2304,
+      longitudeWgs84: 121.4737,
+      horizon: "48h",
+      target: "cloud_sea",
+      timezone: "Asia/Shanghai",
+    });
+    expect(payload.photoSpotId).toBeUndefined();
+    expect(url.searchParams.get("target")).toBe("cloud_sea");
+    expect(url.searchParams.get("coordinateSource")).toBe("browser_geolocation");
+    expect(url.searchParams.get("latWgs84")).toBe("31.2304");
+    expect(url.searchParams.get("lngWgs84")).toBe("121.4737");
+    expect(url.searchParams.get("timezone")).toBe("Asia/Shanghai");
+    expect(url.searchParams.get("photoSpotId")).toBeNull();
+  });
+
+  it("keeps locator button styling out of cloud sea page-specific files", () => {
+    const scenarioSource = readFileSync(
+      fileURLToPath(new URL("../components/scenario-module-page.tsx", import.meta.url)),
+      "utf8",
+    );
+    const cloudSeaPageSource = readFileSync(
+      fileURLToPath(new URL("./cloud-sea/page.tsx", import.meta.url)),
+      "utf8",
+    );
+
+    expect(scenarioSource).not.toContain("data-current-location-button");
+    expect(scenarioSource).not.toContain("absolute right-1.5 top-1/2");
+    expect(cloudSeaPageSource).not.toContain("data-current-location-button");
+    expect(cloudSeaPageSource).not.toContain("absolute right-1.5 top-1/2");
   });
 
   it("cloud sea page reads General deep-link query params and preselects context", () => {

@@ -10,7 +10,8 @@ import {
   type BrowserGeolocationReverseResult,
   type SelectedLocation,
 } from "./selected-location";
-import { Badge, Button, Card, Input, cn } from "./ui";
+import { LocationSearchInput } from "./location-search-input";
+import { Badge, Button, Card, cn } from "./ui";
 
 export type PlaceResultSource = "local_location" | "local_photo_spot" | "amap" | "mock";
 
@@ -93,8 +94,10 @@ type PlaceSearchCardProps = {
   readonly showResultSourceBadges?: boolean;
   readonly selectedLocationDetailMode?: "full" | "compact";
   readonly showSelectedLocationActions?: boolean;
+  readonly showSelectedLocationHorizon?: boolean;
   readonly showQuickLocations?: boolean;
   readonly enableCurrentLocation?: boolean;
+  readonly currentLocationPrivacyHint?: string;
   readonly selectedLocation?: SelectedLocation | null;
   readonly onSelectedLocationChange?: (location: SelectedLocation | null) => void;
   readonly onForecastOptionsChange?: (options: {
@@ -442,8 +445,10 @@ export function PlaceSearchCard({
   showResultSourceBadges = true,
   selectedLocationDetailMode = "full",
   showSelectedLocationActions = false,
+  showSelectedLocationHorizon = false,
   showQuickLocations: shouldRenderQuickLocations = true,
   enableCurrentLocation = false,
+  currentLocationPrivacyHint = "浏览器定位仅用于本次天气判断，不会公开显示。",
   selectedLocation,
   onSelectedLocationChange,
   onForecastOptionsChange,
@@ -488,7 +493,6 @@ export function PlaceSearchCard({
   const showQuickLocationSection =
     shouldRenderQuickLocations && (!activeSelectedLocation || isActivelySearching);
   const isCurrentLocationLoading = currentLocationStatus === "loading";
-  const currentLocationButtonLabel = isCurrentLocationLoading ? "正在获取当前位置" : "使用当前位置";
 
   useEffect(() => {
     onForecastOptionsChange?.({ horizon, target: activeTarget });
@@ -734,44 +738,20 @@ export function PlaceSearchCard({
           handleSubmitSearch();
         }}
       >
-        <div
-          data-current-location-input-wrapper={enableCurrentLocation ? "true" : undefined}
-          className="relative min-w-0 w-full"
-        >
-          <Input
-            ref={inputRef}
-            aria-label="目的地"
-            value={query}
-            onChange={(event) => handleQueryChange(event.target.value)}
-            placeholder={searchPlaceholder}
-            className={cn("h-9 bg-card text-sm", enableCurrentLocation && "pr-12")}
-          />
-          {enableCurrentLocation ? (
-            <button
-              type="button"
-              data-current-location-button="true"
-              aria-label={currentLocationButtonLabel}
-              title="使用当前位置"
-              className={cn(
-                "absolute right-1.5 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-transparent text-primary transition hover:bg-secondary hover:text-[var(--primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent",
-                isCurrentLocationLoading && "bg-secondary text-primary",
-              )}
-              disabled={isCurrentLocationLoading}
-              onClick={() => {
-                void handleUseCurrentLocation();
-              }}
-            >
-              {isCurrentLocationLoading ? <CurrentLocationSpinner /> : <CurrentLocationIcon />}
-            </button>
-          ) : null}
-        </div>
+        <LocationSearchInput
+          inputRef={inputRef}
+          value={query}
+          placeholder={searchPlaceholder}
+          onInputChange={handleQueryChange}
+          onSearch={handleSubmitSearch}
+          onUseCurrentLocation={enableCurrentLocation ? handleUseCurrentLocation : undefined}
+          loading={isCurrentLocationLoading}
+        />
         <Button type="submit" size="sm" className="h-9 w-full" disabled={status === "loading"}>
           搜索地点
         </Button>
-        {enableCurrentLocation ? (
-          <p className="text-xs leading-5 text-muted-foreground">
-            浏览器定位仅用于本次天气判断，不会公开显示。
-          </p>
+        {enableCurrentLocation && currentLocationPrivacyHint ? (
+          <p className="text-xs leading-5 text-muted-foreground">{currentLocationPrivacyHint}</p>
         ) : null}
       </form>
 
@@ -857,6 +837,7 @@ export function PlaceSearchCard({
           {selectedLocationDetailMode === "compact" ? (
             <CompactSelectedLocationDetails
               location={activeSelectedLocation}
+              horizonLabel={showSelectedLocationHorizon ? forecastHorizonLabels[horizon] : undefined}
               coordinateText={
                 selectedPlace && activeSelectedLocation.id === selectedPlace.id
                   ? selectedCoordinateText
@@ -957,35 +938,6 @@ export function PlaceSearchCard({
   );
 }
 
-function CurrentLocationIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="h-4 w-4"
-      fill="none"
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth="1.8"
-      viewBox="0 0 24 24"
-    >
-      <circle cx="12" cy="12" r="3.25" />
-      <path d="M12 2.75v3.5M12 17.75v3.5M2.75 12h3.5M17.75 12h3.5" />
-      <circle cx="12" cy="12" r="8.25" />
-    </svg>
-  );
-}
-
-function CurrentLocationSpinner() {
-  return (
-    <span
-      aria-hidden="true"
-      data-current-location-spinner="true"
-      className="h-4 w-4 animate-spin rounded-full border-2 border-primary/25 border-t-primary"
-    />
-  );
-}
-
 function formatSelectedLocationArea(location: SelectedLocation): string {
   const area = [location.province, location.city, location.district].filter(Boolean).join(" / ");
   if (location.source === "browser_geolocation" && area) {
@@ -997,9 +949,11 @@ function formatSelectedLocationArea(location: SelectedLocation): string {
 
 function CompactSelectedLocationDetails({
   location,
+  horizonLabel,
   coordinateText,
 }: {
   readonly location: SelectedLocation;
+  readonly horizonLabel?: string;
   readonly coordinateText: string;
 }) {
   const elevationText = formatSelectedLocationElevation(location);
@@ -1014,6 +968,12 @@ function CompactSelectedLocationDetails({
         <div>
           <p className="font-semibold text-card-foreground">海拔</p>
           <p>{elevationText}</p>
+        </div>
+      ) : null}
+      {horizonLabel ? (
+        <div>
+          <p className="font-semibold text-card-foreground">判断范围</p>
+          <p>{horizonLabel}</p>
         </div>
       ) : null}
       <details className="rounded-md border border-border bg-card px-3 py-2">

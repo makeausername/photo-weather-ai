@@ -8,6 +8,7 @@ import {
   homepageDefaultTarget,
   homepageTargetHelperText,
 } from "../components/homepage-search-panel";
+import { CurrentLocationButton } from "../components/location-search-input";
 import HomePage from "./page";
 import { ForecastResultClient } from "./forecast/forecast-result-client";
 import {
@@ -667,9 +668,19 @@ describe("homepage forecast flow", () => {
         }),
       },
     };
+    const timeoutNavigator = {
+      geolocation: {
+        getCurrentPosition: vi.fn((_success: PositionCallback, error?: PositionErrorCallback) => {
+          error?.({ code: 3 } as GeolocationPositionError);
+        }),
+      },
+    };
 
     await expect(requestBrowserCurrentCoordinates(deniedNavigator)).rejects.toThrow(
       currentLocationErrorMessages.denied,
+    );
+    await expect(requestBrowserCurrentCoordinates(timeoutNavigator)).rejects.toThrow(
+      currentLocationErrorMessages.timeout,
     );
     expect(currentLocationErrorMessage({ code: 3 } as GeolocationPositionError)).toBe(
       currentLocationErrorMessages.timeout,
@@ -700,6 +711,24 @@ describe("homepage forecast flow", () => {
       accuracyMeters: 18,
     });
     expect(successNavigator.geolocation.getCurrentPosition).toHaveBeenCalled();
+  });
+
+  it("renders shared current-location loading and disabled states", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CurrentLocationButton, {
+        loading: true,
+        disabled: true,
+        onClick: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('aria-label="使用当前位置"');
+    expect(html).toContain('title="使用当前位置"');
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('data-current-location-spinner="true"');
+    expect(html).toContain("bg-secondary text-primary");
+    expect(html).toContain("disabled");
+    expect(hasExactButton(html, "定位")).toBe(false);
   });
 
   it("keeps the forecast CTA guided until a location is selected", () => {

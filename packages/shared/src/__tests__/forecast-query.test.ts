@@ -25,8 +25,15 @@ describe("forecast query schema", () => {
       forecastQueryInputSchema.parse({
         ...validForecastQuery,
         elevationMeters: 1860,
+        timezone: "Asia/Shanghai",
       }).elevationMeters,
     ).toBe(1860);
+    expect(
+      forecastQueryInputSchema.parse({
+        ...validForecastQuery,
+        timezone: "Asia/Shanghai",
+      }).timezone,
+    ).toBe("Asia/Shanghai");
   });
 
   it("rejects unsupported forecast horizons and targets", () => {

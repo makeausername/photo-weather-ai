@@ -52,6 +52,7 @@ export default function ForecastPage({ searchParams }: ForecastPageProps) {
       coordinateSource: firstParam(searchParams.coordinateSource),
       horizon: firstParam(searchParams.horizon),
       target: firstParam(searchParams.target),
+      timezone: firstParam(searchParams.timezone),
       elevationMeters: parseOptionalNumberParam(firstParam(searchParams.elevationMeters)),
       elevationSource: firstParam(searchParams.elevationSource),
       elevationConfidence: firstParam(searchParams.elevationConfidence),

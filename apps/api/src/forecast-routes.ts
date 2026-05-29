@@ -239,10 +239,11 @@ export function registerForecastRoutes(
     if (!parsedBody.success) {
       return sendZodError(reply, parsedBody.error);
     }
+    const { timezone, ...query } = parsedBody.data;
 
     const result = await calculateForecastResultOrReply(
-      parsedBody.data,
-      {},
+      query,
+      { timezone },
       weatherDataService,
       terrainProvider,
       elevationService,
@@ -543,7 +544,9 @@ async function calculateForecastResult(
     throw new Error(astroServiceUrlMissingMessage);
   }
 
-  const forecastRange = buildForecastDateRange(query.horizon);
+  const forecastRange = buildForecastDateRange(query.horizon, {
+    timezone: requestOptions.timezone,
+  });
   const coordinates = {
     latitude: query.latitudeWgs84,
     longitude: query.longitudeWgs84,

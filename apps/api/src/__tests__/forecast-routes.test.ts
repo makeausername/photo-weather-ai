@@ -642,6 +642,68 @@ describe("forecast query validation route", () => {
     expect(body.keyReasons.join(" ")).toContain("周边高差暂未计算");
   });
 
+  it("calculates cloud sea from browser geolocation without requiring a spot id", async () => {
+    const elevationProvider = {
+      getElevationForLocation: vi.fn(async () => ({
+        elevationMeters: 58,
+        elevationSource: "open_meteo_elevation" as const,
+        elevationConfidence: "medium" as const,
+      })),
+    };
+    app = buildApiServer({
+      authConfig: testAuthConfig,
+      elevationProvider,
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        name: "当前位置",
+        source: "browser_geolocation",
+        coordinateSource: "browser_geolocation",
+        latitudeGcj02: 31.2304,
+        longitudeGcj02: 121.4737,
+        latitudeWgs84: 31.2304,
+        longitudeWgs84: 121.4737,
+        horizon: "48h",
+        target: "cloud_sea",
+        timezone: "Asia/Shanghai",
+      },
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(elevationProvider.getElevationForLocation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        locationName: "当前位置",
+        coordinate: expect.objectContaining({
+          latitude: 31.2304,
+          longitude: 121.4737,
+          system: "wgs84",
+        }),
+        elevationMeters: null,
+        elevationSource: undefined,
+        elevationConfidence: undefined,
+      }),
+    );
+    expect(body.target).toBe("cloud_sea");
+    expect(body.calendarBasis).toMatchObject({
+      timezone: "Asia/Shanghai",
+      coordinateSource: "浏览器定位 WGS84 坐标",
+      wgs84Coordinates: {
+        latitude: 31.2304,
+        longitude: 121.4737,
+      },
+    });
+    expect(body.terrainAnalysis.terrainProfile).toMatchObject({
+      elevationMeters: 58,
+      elevationSource: "open_meteo_elevation",
+      elevationConfidence: "medium",
+    });
+  });
+
   it("uses configured real weather providers through the server pipeline with mocked fetch", async () => {
     const { client, state } = await createFakeDatabaseClient();
     configureRealWeatherProviders(state);

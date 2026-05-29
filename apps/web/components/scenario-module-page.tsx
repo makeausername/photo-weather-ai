@@ -2,6 +2,7 @@ import type { ForecastHorizon, ForecastTarget } from "@photo-weather/shared";
 import { forecastHorizonLabels, forecastTargetLabels } from "@photo-weather/shared";
 import { PlaceSearchCard } from "./place-search-card";
 import { PublicShell } from "./public-shell";
+import type { SelectedLocation } from "./selected-location";
 import { Badge, Card, cn } from "./ui";
 
 type PopularScenarioSpot = {
@@ -249,7 +250,22 @@ function ScenarioLearningGrid({
   );
 }
 
-export function ScenarioSearchPanel({ config }: { readonly config: ScenarioPageConfig }) {
+export function ScenarioSearchPanel({
+  config,
+  selectedLocation,
+  onSelectedLocationChange,
+  onForecastOptionsChange,
+}: {
+  readonly config: ScenarioPageConfig;
+  readonly selectedLocation?: SelectedLocation | null;
+  readonly onSelectedLocationChange?: (location: SelectedLocation | null) => void;
+  readonly onForecastOptionsChange?: (options: {
+    readonly horizon: ForecastHorizon;
+    readonly target: ForecastTarget;
+  }) => void;
+}) {
+  const enableCloudSeaCurrentLocation = config.target === "cloud_sea";
+
   return (
     <aside className="grid content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]">
       <PlaceSearchCard
@@ -259,6 +275,18 @@ export function ScenarioSearchPanel({ config }: { readonly config: ScenarioPageC
         defaultHorizon={config.defaultHorizon}
         fixedTarget={config.target}
         ctaLabel={config.ctaLabel}
+        selectedLocationDetailMode={enableCloudSeaCurrentLocation ? "compact" : "full"}
+        showSelectedLocationActions={enableCloudSeaCurrentLocation}
+        showSelectedLocationHorizon={enableCloudSeaCurrentLocation}
+        enableCurrentLocation={enableCloudSeaCurrentLocation}
+        currentLocationPrivacyHint={
+          enableCloudSeaCurrentLocation
+            ? "浏览器定位仅用于本次云海判断，不会公开显示。"
+            : undefined
+        }
+        selectedLocation={selectedLocation}
+        onSelectedLocationChange={onSelectedLocationChange}
+        onForecastOptionsChange={onForecastOptionsChange}
       />
     </aside>
   );

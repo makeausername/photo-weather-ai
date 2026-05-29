@@ -145,6 +145,7 @@ export function buildForecastUrlFromSelectedLocation(
   location: SelectedLocation,
   horizon: ForecastHorizon,
   target: ForecastTarget,
+  options: { readonly timezone?: string } = {},
 ): string {
   const params = new URLSearchParams({
     name: location.name,
@@ -161,6 +162,7 @@ export function buildForecastUrlFromSelectedLocation(
     horizon,
     target,
   });
+  const timezone = options.timezone ?? resolveBrowserTimezone();
 
   if (location.locationId) {
     params.set("locationId", location.locationId);
@@ -179,6 +181,9 @@ export function buildForecastUrlFromSelectedLocation(
   if (location.elevationConfidence) {
     params.set("elevationConfidence", location.elevationConfidence);
   }
+  if (timezone) {
+    params.set("timezone", timezone);
+  }
 
   return `/forecast?${params.toString()}`;
 }
@@ -187,7 +192,10 @@ export function buildForecastRequestPayload(
   location: SelectedLocation,
   horizon: ForecastHorizon,
   target: ForecastTarget,
+  options: { readonly timezone?: string } = {},
 ) {
+  const timezone = options.timezone ?? resolveBrowserTimezone();
+
   return {
     name: location.name,
     source: location.source,
@@ -201,9 +209,18 @@ export function buildForecastRequestPayload(
     elevationConfidence: location.elevationConfidence,
     horizon,
     target,
+    timezone,
     locationId: location.locationId,
     photoSpotId: location.photoSpotId,
   };
+}
+
+export function resolveBrowserTimezone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizeSelectedLocationSource(result: SearchResultLike): SelectedLocationSource {

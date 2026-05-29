@@ -181,6 +181,7 @@ export type ForecastQueryInput = {
   readonly coordinateSource?: string;
   readonly horizon: ForecastHorizon;
   readonly target: ForecastTarget;
+  readonly timezone?: string;
   readonly elevationMeters?: number | null;
   readonly elevationSource?: ElevationSource;
   readonly elevationConfidence?: ElevationConfidence;
