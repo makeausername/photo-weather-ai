@@ -41,6 +41,10 @@ export const scenarioDataNotice =
   "当前为体验模式，天气与地形结果使用演示数据生成；正式数据源启用后将显示对应来源与更新时间。";
 
 export function ScenarioModulePage({ config }: { readonly config: ScenarioPageConfig }) {
+  if (config.target === "cloud_sea") {
+    return <CloudSeaScenarioEntryPage config={config} />;
+  }
+
   return (
     <PublicShell contentClassName="grid gap-6 pb-14">
       <header className="flex flex-col justify-between gap-4 border-b border-border pb-5 min-[900px]:flex-row min-[900px]:items-end">
@@ -55,7 +59,7 @@ export function ScenarioModulePage({ config }: { readonly config: ScenarioPageCo
         </div>
         <div className="grid gap-2 rounded-lg border border-border bg-card px-4 py-3 text-sm shadow-sm min-[900px]:min-w-[300px]">
           <div className="flex items-center justify-between gap-3">
-            <span className="font-semibold text-card-foreground">页面预设</span>
+            <span className="font-semibold text-card-foreground">专题设置</span>
             <Badge variant="accent">{forecastTargetLabels[config.target]}</Badge>
           </div>
           <p className="text-xs leading-5 text-muted-foreground">
@@ -70,6 +74,54 @@ export function ScenarioModulePage({ config }: { readonly config: ScenarioPageCo
         ) : (
           <ScenarioStandardPageContent config={config} />
         )}
+      </section>
+    </PublicShell>
+  );
+}
+
+function CloudSeaScenarioEntryPage({ config }: { readonly config: ScenarioPageConfig }) {
+  return (
+    <PublicShell contentClassName="grid gap-6 pb-14">
+      <header className="border-b border-border pb-5">
+        <div className="max-w-4xl">
+          <Badge variant="default">风光摄影出行判断工具</Badge>
+          <h1 className="mt-3 text-[32px] font-bold leading-tight tracking-normal text-foreground sm:text-[36px]">
+            {config.title}
+          </h1>
+          <p className="mt-3 text-[15px] leading-7 text-muted-foreground sm:text-base">
+            {config.subtitle}
+          </p>
+        </div>
+      </header>
+
+      <section className="grid gap-5 min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(340px,24vw,410px)_minmax(0,1fr)] min-[1200px]:items-start">
+        <ScenarioSearchPanel config={config} />
+        <div className="grid min-w-0 gap-4">
+          <Card className="p-5 shadow-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="muted">生成后查看</Badge>
+              <Badge variant="accent">{forecastHorizonLabels[config.defaultHorizon]}</Badge>
+            </div>
+            <h2 className="mt-3 text-xl font-bold text-card-foreground">云海拍摄决策</h2>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {[
+                "有没有云海机会",
+                "能不能拍",
+                "会不会白墙",
+                "几点到、几点守",
+                "白墙时怎么转拍",
+                "是否值得专程去",
+              ].map((item) => (
+                <div key={item} className="rounded-lg border border-border bg-muted px-3 py-2">
+                  <p className="text-sm font-semibold text-card-foreground">{item}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
+          <p className="rounded-lg border border-warning bg-muted px-3 py-2 text-sm leading-6 text-muted-foreground">
+            部分地形或云层数据仍需结合临近预报复核。
+          </p>
+        </div>
       </section>
     </PublicShell>
   );

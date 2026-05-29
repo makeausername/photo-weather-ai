@@ -166,7 +166,12 @@ export function SubjectDetailDeepLinkClient({
       ) : null}
 
       {state.status === "ready" ? (
-        <SubjectResultContent target={target} query={state.query} result={state.result} />
+        <SubjectResultContent
+          target={target}
+          query={state.query}
+          result={state.result}
+          context={context}
+        />
       ) : null}
     </PublicShell>
   );
@@ -176,10 +181,12 @@ function SubjectResultContent({
   target,
   query,
   result,
+  context,
 }: {
   readonly target: SubjectDetailTarget;
   readonly query: ForecastQueryInput;
   readonly result: ForecastCalculationResult;
+  readonly context?: Partial<SubjectDetailDeepLinkContext>;
 }) {
   const subjectQuery = useMemo(
     () => ({
@@ -194,7 +201,14 @@ function SubjectResultContent({
   );
 
   if (target === "cloud_sea" && viewModel.cloudSea) {
-    return <CloudSeaResultPage query={subjectQuery} result={result} viewModel={viewModel.cloudSea} />;
+    return (
+      <CloudSeaResultPage
+        query={subjectQuery}
+        result={result}
+        viewModel={viewModel.cloudSea}
+        returnUrl={context?.source === "general" ? (context.returnUrl ?? "/") : undefined}
+      />
+    );
   }
 
   if (target === "glow" && viewModel.glow) {
@@ -232,7 +246,7 @@ function GeneralSourceContextBar({
     <Card className="p-3 shadow-sm">
       <div className="flex flex-col gap-3 min-[860px]:flex-row min-[860px]:items-center min-[860px]:justify-between">
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-sm">
-          <Badge variant="default">来源：综合判断</Badge>
+          <Badge variant="default">来自综合判断</Badge>
           <span className="break-words text-card-foreground">地点：{locationName}</span>
           <span className="text-muted-foreground">日期：{date}</span>
           <span className="text-muted-foreground">窗口：{windowLabel}</span>

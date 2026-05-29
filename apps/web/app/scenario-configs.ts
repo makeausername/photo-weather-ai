@@ -6,7 +6,7 @@ export const cloudSeaScenarioConfig = {
   target: "cloud_sea",
   defaultHorizon: "48h",
   ctaLabel: "查看云海拍摄判断",
-  focusTitle: "云海判断重点",
+  focusTitle: "云海拍摄决策",
   focusDescription:
     "云海判断优先看水汽是否足够、低云是否处在合适高度、山谷高差是否能形成观测优势，以及风速是否会快速打散云雾。",
   focusItems: [
@@ -23,14 +23,15 @@ export const cloudSeaScenarioConfig = {
     "雨后开口信号",
     "山谷高差参考",
   ],
-  infoTitle: "白墙风险说明",
+  infoTitle: "现场复核提示",
   infoItems: [
     "低云过厚且湿度过高时，山顶可能直接被云雾包裹。",
     "高云海形成信号不等于高可拍机会，仍需看光线、能见度和降水是否打断窗口。",
     "风速偏大时云雾层容易被打散，窗口可能很短。",
-    "当前为体验模式，天气与地形结果使用演示数据生成；正式数据源启用后将显示对应来源与更新时间。",
+    "部分地形或云层数据仍需结合临近预报复核。",
   ],
-  learningTitle: "云海判断需要看什么",
+  learningTitle: "云海结果如何复核",
+  learningBadgeLabel: "复核要素",
   learningItems: [
     {
       title: "云海形成机会",

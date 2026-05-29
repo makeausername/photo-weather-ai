@@ -881,12 +881,12 @@ export function PlaceSearchCard({
 
         {fixedTarget ? (
           <div className="rounded-lg border border-border bg-muted p-3">
-            <p className="text-xs font-semibold text-muted-foreground">固定分析目标</p>
+            <p className="text-xs font-semibold text-muted-foreground">分析题材</p>
             <p className="mt-1 text-sm font-bold text-card-foreground">
               {forecastTargetLabels[fixedTarget]}
             </p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              当前页面已固定题材，结果页会按该题材排序窗口和评分。
+              本页专注当前题材，结果页会优先呈现对应窗口和风险。
             </p>
           </div>
         ) : showTargetSelector ? (

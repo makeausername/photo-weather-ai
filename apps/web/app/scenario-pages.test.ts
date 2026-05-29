@@ -119,21 +119,25 @@ describe("scenario module pages", () => {
     });
   });
 
-  it("renders the cloud-sea entry page without the popular spot placeholder", () => {
+  it("renders the cloud-sea entry page as a search-first decision entry", () => {
     const html = renderToStaticMarkup(React.createElement(CloudSeaPage));
 
     expect(html).not.toContain("热门云海机位");
     expect(html).not.toContain("机位参考");
-    expect(html).toContain("云海判断需要看什么");
-    expect(html).toContain("云海形成机会");
-    expect(html).toContain("云海可拍机会");
-    expect(html).toContain("白墙风险");
-    expect(html).toContain("最佳清晨窗口");
-    expect(html).toContain("地形高差");
-    expect(html).toContain("风速与稳定性");
-    expect(html).toContain("湿度、露点差、低云、弱到中等风和地形高差共同影响云海形成。");
-    expect(html).toContain("可拍机会需要形成信号与清晨光线、能见度、通行和低白墙风险重叠。");
-    expect(html).toContain("正式数据源启用后将显示对应来源与更新时间");
+    expect(html).not.toContain("页面预设");
+    expect(html).not.toContain("体验模式");
+    expect(html).not.toContain("数据提醒");
+    expect(html).not.toContain("固定分析目标");
+    expect(html).not.toContain("云海判断重点");
+    expect(html).not.toContain("白墙风险说明");
+    expect(html).not.toContain("判断指标");
+    expect(html).toContain("地点搜索与机位选择");
+    expect(html).toContain("云海拍摄决策");
+    expect(html).toContain("有没有云海机会");
+    expect(html).toContain("会不会白墙");
+    expect(html).toContain("几点到、几点守");
+    expect(html).toContain("是否值得专程去");
+    expect(html).toContain("部分地形或云层数据仍需结合临近预报复核。");
   });
 
   it("reuses the shared current-location input on homepage and cloud sea", () => {
@@ -279,7 +283,7 @@ describe("scenario module pages", () => {
       }),
     );
 
-    expect(html).toContain("来源：综合判断");
+    expect(html).toContain("来自综合判断");
     expect(html).toContain("地点：黄山光明顶");
     expect(html).toContain("日期：2026-05-20");
     expect(html).toContain("窗口：");
@@ -298,7 +302,7 @@ describe("scenario module pages", () => {
     expect(html).toContain("地点搜索与机位选择");
     expect(html).toContain("常用机位");
     expect(html).toContain("预报范围选择");
-    expect(html).toContain("固定分析目标");
+    expect(html).toContain("分析题材");
     expect(html).toContain("查看朝霞晚霞判断");
     expect(html).toContain("朝霞晚霞判断需要看什么");
     expect(html).toContain("日出日落时间");
@@ -317,7 +321,7 @@ describe("scenario module pages", () => {
       }),
     );
 
-    expect(html).toContain("来源：综合判断");
+    expect(html).toContain("来自综合判断");
     expect(html).toContain("地点：黄山光明顶");
     expect(html).toContain("日期：2026-05-20");
     expect(html).toContain("17:56");
@@ -355,8 +359,11 @@ describe("scenario module pages", () => {
     expect(searchPanelHtml).toContain("地点搜索与机位选择");
     expect(searchPanelHtml).toContain("预报范围选择");
     expect(searchPanelHtml).toContain("查看云海拍摄判断");
+    expect(searchPanelHtml).toContain("分析题材");
     expect(serialized).not.toContain("热门云海机位");
-    expect(serialized).toContain("云海判断需要看什么");
+    expect(serialized).toContain("云海结果如何复核");
+    expect(serialized).not.toContain("云海判断重点");
+    expect(serialized).not.toContain("白墙风险说明");
     expect(serialized).toContain("湿度、露点差、低云、弱到中等风和地形高差共同影响云海形成。");
     expect(serialized).toContain(
       "可拍机会需要形成信号与清晨光线、能见度、通行和低白墙风险重叠。",
@@ -371,7 +378,7 @@ describe("scenario module pages", () => {
     expect(serialized).toContain("天文黑夜");
     expect(serialized).toContain("无月黑夜");
     expect(serialized).toContain("光污染与地形");
-    expect(serialized).toContain("天气与地形结果使用演示数据生成");
+    expect(serialized).toContain("部分地形或云层数据仍需结合临近预报复核。");
     expect(serialized).not.toMatch(/coming soon|placeholder|todo|mock|fixture/i);
     expect(serialized).not.toContain("模块准备中");
     expect(serialized).not.toContain("本地模拟");
@@ -387,7 +394,7 @@ describe("scenario module pages", () => {
     expect(html).toContain("地点搜索与机位选择");
     expect(html).toContain("常用机位");
     expect(html).toContain("预报范围选择");
-    expect(html).toContain("固定分析目标");
+    expect(html).toContain("分析题材");
     expect(html).toContain("查看星空银河判断");
     expect(html).toContain("星空银河判断需要看什么");
     expect(html).toContain("天文黑夜");
@@ -406,7 +413,7 @@ describe("scenario module pages", () => {
       }),
     );
 
-    expect(html).toContain("来源：综合判断");
+    expect(html).toContain("来自综合判断");
     expect(html).toContain("地点：黄山光明顶");
     expect(html).toContain("日期：2026-05-20");
     expect(html).toContain("01:10");

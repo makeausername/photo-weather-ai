@@ -3824,8 +3824,7 @@ describe("forecast result target-aware view model", () => {
       "云海形成机会",
       "云海可拍机会",
       "白墙风险",
-      "最佳云海窗口",
-      "推荐动作",
+      "雨后开口机会",
     ]);
     expect(viewModel.primaryCards.map((card) => card.moduleKey)).not.toContain("stars");
     expect(viewModel.primaryCards.map((card) => card.moduleKey)).not.toContain("milkyWay");
@@ -3845,35 +3844,42 @@ describe("forecast result target-aware view model", () => {
     );
   });
 
-  it("builds a specialized cloud sea view model with separated whiteout, terrain, weather, and travel modules", () => {
+  it("builds a specialized cloud sea view model with hero, metrics, timeline, reasoning, and actions", () => {
     const viewModel = buildCloudSeaForecastViewModel(resultForTarget("cloud_sea"));
 
     expect(viewModel.coreCards.map((card) => card.label)).toEqual([
       "云海形成机会",
       "云海可拍机会",
       "白墙风险",
-      "最佳云海窗口",
-      "推荐动作",
+      "雨后开口机会",
     ]);
-    expect(viewModel.coreCards.find((card) => card.label === "白墙风险")?.value).toBe("中");
-    expect(viewModel.cloudSeaVsWhiteout.cloudSeaDefinition).toContain("云海形成");
-    expect(viewModel.cloudSeaVsWhiteout.cloudSeaDefinition).toContain("可拍云海");
-    expect(viewModel.cloudSeaVsWhiteout.whiteoutDefinition).toContain("低云或雾层");
-    expect(viewModel.cloudSeaVsWhiteout.whiteoutDefinition).toContain("看不见远山层次");
-    expect(viewModel.terrainEvidence.items.map((item) => item.label)).toEqual(
-      expect.arrayContaining(["机位海拔", "周边 1km 最低海拔", "5km 高差", "云海地形潜力"]),
-    );
-    expect(viewModel.weatherEvidence.map((item) => item.label)).toEqual(
-      expect.arrayContaining(["湿度", "露点差", "风速", "风向", "能见度", "降水", "低云"]),
-    );
-    expect(viewModel.travelRecommendations.map((item) => item.situation)).toEqual([
-      "已在山上",
-      "周边短途",
-      "远途专程",
+    expect(viewModel.coreCards.find((card) => card.label === "白墙风险")?.value).toBe("中（58 分）");
+    expect(viewModel.hero.title).toBe("黄山光明顶 云海判断");
+    expect(viewModel.hero.bestWindowLabel).toContain("05:00");
+    expect(viewModel.hero.arrivalLabel).toContain("03:30");
+    expect(viewModel.cloudSeaWindows.length).toBeGreaterThan(0);
+    expect(viewModel.cloudSeaWindows[0]).toMatchObject({
+      label: "最佳云海窗口",
+      cloudSeaChance: expect.any(String),
+      whiteoutRisk: expect.any(String),
+      rainInterference: expect.any(String),
+      actionSuggestion: expect.any(String),
+    });
+    expect(viewModel.reasoningItems.map((item) => item.label)).toEqual([
+      "湿度与露点差",
+      "低云与能见度",
+      "风速与云雾稳定性",
+      "降水与雨后开口",
+      "地形与高差",
+      "白墙风险",
     ]);
-    expect(viewModel.backupPlans.map((plan) => plan.condition)).toEqual(
-      expect.arrayContaining(["白墙时", "无云海但通透", "低云过厚", "风大"]),
-    );
+    expect(viewModel.actionPlan.map((item) => item.label)).toEqual([
+      "建议到达时间",
+      "主守窗口",
+      "备选方案",
+      "装备提醒",
+      "现场复核点",
+    ]);
   });
 
   it("renders the cloud sea result without the entry-page popular spots placeholder", () => {
@@ -3900,50 +3906,67 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("云海形成机会");
       expect(html).toContain("云海可拍机会");
       expect(html).toContain("白墙风险");
-      expect(html).toContain("最佳云海窗口");
-      expect(html).toContain("推荐动作");
-      expect(html).toContain("逐日云海趋势");
-      expect(html).toContain("云海 vs 白墙判断");
-      expect(html).toContain("地形依据");
-      expect(html).toContain("气象依据");
-      expect(html).toContain("出行建议");
-      expect(html).toContain("备选拍摄方案");
-      expect(html).toContain("天气数据：演示天气数据");
-      expect(html).toContain("地形数据：演示数据");
-      expect(html).toContain("正式数据源启用后将显示对应来源与更新时间");
+      expect(html).toContain("雨后开口机会");
+      expect(html).toContain("黄山光明顶 云海判断");
+      expect(html).toContain("建议到达");
+      expect(html).toContain("云海时间轴");
+      expect(html).toContain("每日云海判断");
+      expect(html).toContain("判断依据");
+      expect(html).toContain("行动方案");
+      expect(html).toContain("风险摘要");
+      expect(html).toContain("建议到达时间");
+      expect(html).toContain("主守窗口");
+      expect(html).toContain("备选方案");
+      expect(html).toContain("装备提醒");
+      expect(html).toContain("现场复核点");
+      expect(html).toContain("查看朝霞晚霞");
+      expect(html).toContain("查看星空银河");
+      expect(html).not.toContain("页面预设");
+      expect(html).not.toContain("体验模式");
+      expect(html).not.toContain("数据提醒");
+      expect(html).not.toContain("固定分析目标");
+      expect(html).not.toContain("云海 vs 白墙判断");
+      expect(html).not.toContain("地形依据");
+      expect(html).not.toContain("气象依据");
+      expect(html).not.toContain("天气数据：演示天气数据");
+      expect(html).not.toContain("地形数据：演示数据");
+      expect(html).not.toContain("正式数据源启用后将显示对应来源与更新时间");
+      expect(html).not.toContain("meteoblue");
+      expect(html).not.toContain("Open-Meteo");
+      expect(html).not.toContain("和风天气");
       expect(html).toContain("CloudSeaResultPage");
-      expect(html).toContain("CloudSeaCoreDecision");
+      expect(html).toContain("CloudSeaHeroConclusion");
+      expect(html).toContain("CloudSeaCoreMetrics");
+      expect(html).toContain("CloudSeaTimeline");
       expect(html).toContain("CloudSeaDailyTrend");
-      expect(html).toContain("CloudSeaWhiteoutSection");
-      expect(html).toContain("CloudSeaTerrainEvidence");
-      expect(html).toContain("CloudSeaWeatherEvidence");
+      expect(html).toContain("CloudSeaReasoning");
       expect(html).toContain("CloudSeaStackedLayout");
-      expect(html).toContain("CloudSeaActionGrid");
+      expect(html).toContain("CloudSeaActionSummary");
       expect(html).not.toContain("CloudSeaAdviceRail");
       expect(html).not.toContain("cloud-sea-advice-rail");
       expect(html).not.toContain("CloudSeaFullWidthDetails");
       expect(html).not.toContain("cloud-sea-full-width-details");
-      expect(html).not.toContain("<aside");
       expect(html).not.toMatch(/cloud-sea-(placeholder|spacer|empty)/i);
       expect(html).not.toMatch(/\bmin-h-/);
       expect(html).not.toContain("row-span");
       expect(html).not.toContain("min-[1024px]:col-span-4");
-      expect(html.indexOf("逐日云海趋势")).toBeLessThan(html.indexOf("云海 vs 白墙判断"));
-      expect(html.indexOf("云海 vs 白墙判断")).toBeLessThan(html.indexOf("云海时间窗口"));
-      expect(html.indexOf("云海时间窗口")).toBeLessThan(html.indexOf("地形依据"));
-      expect(html.indexOf("地形依据")).toBeLessThan(html.indexOf("气象依据"));
-      expect(html.indexOf("气象依据")).toBeLessThan(html.indexOf("CloudSeaActionGrid"));
+      expect(html.indexOf("CloudSeaHeroConclusion")).toBeLessThan(
+        html.indexOf("CloudSeaCoreMetrics"),
+      );
+      expect(html.indexOf("CloudSeaCoreMetrics")).toBeLessThan(
+        html.indexOf("CloudSeaTimeline"),
+      );
+      expect(html.indexOf("CloudSeaTimeline")).toBeLessThan(html.indexOf("CloudSeaDailyTrend"));
+      expect(html.indexOf("CloudSeaDailyTrend")).toBeLessThan(html.indexOf("判断依据"));
 
-      const actionGridIndex = html.indexOf("CloudSeaActionGrid");
-      const travelAdviceIndex = html.indexOf("出行建议", actionGridIndex);
-      const riskSummaryIndex = html.indexOf("风险提示", actionGridIndex);
-      const backupPlanIndex = html.indexOf("备选拍摄方案", actionGridIndex);
-      const dataStatusIndex = html.indexOf("数据状态", actionGridIndex);
+      const actionSummaryIndex = html.indexOf("CloudSeaActionSummary");
+      const actionPlanIndex = html.indexOf("行动方案", actionSummaryIndex);
+      const riskSummaryIndex = html.indexOf("风险摘要", actionSummaryIndex);
+      const navigationIndex = html.indexOf("继续查看", actionSummaryIndex);
 
-      expect(travelAdviceIndex).toBeGreaterThan(actionGridIndex);
-      expect(travelAdviceIndex).toBeLessThan(riskSummaryIndex);
-      expect(riskSummaryIndex).toBeLessThan(backupPlanIndex);
-      expect(backupPlanIndex).toBeLessThan(dataStatusIndex);
+      expect(actionPlanIndex).toBeGreaterThan(actionSummaryIndex);
+      expect(actionPlanIndex).toBeLessThan(riskSummaryIndex);
+      expect(riskSummaryIndex).toBeLessThan(navigationIndex);
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
@@ -4077,6 +4100,7 @@ describe("forecast result target-aware view model", () => {
     });
 
     expect(viewModel.dataNotice).toContain("当前天气源缺少低云分层数据，云海判断置信度会降低。");
+    expect(viewModel.dataCaution).toBe("部分地形或云层数据仍需结合临近预报复核。");
     expect(
       viewModel.weatherEvidence.some(
         (item) =>
@@ -4096,7 +4120,7 @@ describe("forecast result target-aware view model", () => {
 
     try {
       const viewModel = buildCloudSeaForecastViewModel(resultForTarget("cloud_sea"));
-      expect(viewModel.coreCards.length).toBe(5);
+      expect(viewModel.coreCards.length).toBe(4);
       expect(fetchCalled).toBe(false);
     } finally {
       globalThis.fetch = fetchBackup;
