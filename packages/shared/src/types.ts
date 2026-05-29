@@ -77,6 +77,14 @@ export type ExposureType = "exposed" | "semi_exposed" | "sheltered" | "unknown";
 
 export type TerrainViewingDirection = "east" | "west" | "south" | "north" | "panoramic" | "unknown";
 
+export type TerrainMode =
+  | "high_mountain"
+  | "mountain"
+  | "hill"
+  | "lowland"
+  | "urban_or_plain"
+  | "unknown";
+
 export type SpotTerrainProfile = {
   readonly latitudeWgs84: number;
   readonly longitudeWgs84: number;
@@ -690,6 +698,7 @@ export type CloudSeaPostRainOpeningChance = "low" | "medium" | "high";
 export type CloudSeaTerrainSupport = {
   readonly score: number;
   readonly level: CloudSeaChanceLabel;
+  readonly terrainMode: TerrainMode;
   readonly selectedSpotElevationMeters?: number;
   readonly nearbyValleyElevationMeters?: number;
   readonly localReliefMeters?: number;

@@ -145,7 +145,7 @@ function terrainAnalysisSourceFields(elevationSource: ElevationSource): Pick<
     dataSource: "unknown",
     dataSourceLabelZh: "海拔暂未确认",
     isMock: true,
-    honestyNoteZh: "机位海拔暂未确认，山地体感和云海判断仅作参考。",
+    honestyNoteZh: "海拔资料暂未确认，体感仅作参考。",
   };
 }
 

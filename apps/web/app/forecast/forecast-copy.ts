@@ -1,6 +1,7 @@
 import {
   formatArrivalDeadlineZh,
   formatShootingWindowZh,
+  simplifyWeatherSummaryZh,
   type ClothingGuide,
   type ForecastCalculationResult,
   type ForecastTimeWindow,
@@ -182,7 +183,9 @@ export function windowLabelText(window: WindowCopyLike | undefined): string {
     return "暂无高确定性拍摄窗口";
   }
 
-  const raw = stripWindowTime(window.subjectPriorityLabel ?? window.label);
+  const raw = stripWindowTime(
+    window.subjectPriorityLabel ?? window.label ?? fallbackWindowLabel(window.target),
+  );
   const startHour = hourOf(window.startTime);
 
   if (window.target === "glow") {
@@ -212,8 +215,14 @@ export function windowLabelText(window: WindowCopyLike | undefined): string {
   if (window.target === "cloud_sea" && window.practicalKind === "formation_signal") {
     return "云雾变化";
   }
+  if (window.target === "cloud_sea" && /晨雾|低云|云层变化/.test(raw)) {
+    if (/开口|变化/.test(raw)) {
+      return "晨雾或云层变化";
+    }
+    return "晨雾/低云";
+  }
 
-  return raw || window.label;
+  return raw || window.label || fallbackWindowLabel(window.target);
 }
 
 export function recommendationLevelText(
@@ -372,14 +381,27 @@ export function bestShootableWindowText(
 
 function watchableWindowLabel(window: ForecastWatchableWindow): string {
   return windowLabelText({
-    label: window.subject,
-    subjectPriorityLabel: window.subject,
+    label: window.subject ?? fallbackWindowLabel(window.target),
+    subjectPriorityLabel: window.subject ?? fallbackWindowLabel(window.target),
     target: window.target,
     startTime: window.startTime ?? "",
     endTime: window.endTime ?? "",
     recommendationLevel: window.recommendationLevel,
     windowLevel: window.windowLevel,
   });
+}
+
+function fallbackWindowLabel(target: ForecastTimeWindow["target"]): string {
+  if (target === "cloud_sea") {
+    return "云雾变化";
+  }
+  if (target === "glow") {
+    return "晨昏光线";
+  }
+  if (target === "astro") {
+    return "天文窗口";
+  }
+  return "拍摄窗口";
 }
 
 function naturalRainPeriod(raw: string): string {
@@ -394,11 +416,12 @@ function naturalRainPeriod(raw: string): string {
     .trim();
 }
 
-function stripWindowTime(text: string): string {
+function stripWindowTime(text: string | undefined): string {
   return text
+    ?.trim()
     .replace(/\s*\d{1,2}:\d{2}\s*[-–至到]\s*\d{1,2}:\d{2}\s*/g, "")
     .replace(/(?:观察)?窗口$/g, "")
-    .trim();
+    .trim() ?? "";
 }
 
 function hourOf(value: string | undefined): number | undefined {
@@ -549,7 +572,7 @@ function inferPrecipitationKind(
 
   const hasRainAmount = positiveAmount(weather.rainAmountMm);
   const hasSnowAmount = positiveAmount(weather.snowAmountMm);
-  const text = weather.weatherTextZh ?? "";
+  const text = simplifyWeatherSummaryZh(weather.weatherTextZh) ?? "";
   const hasMixedSignal = hasRainAmount && hasSnowAmount;
   const hasMixedText = /雨夹雪|雨雪|冻雨|冰雨/.test(text);
   const hasSnowSignal =

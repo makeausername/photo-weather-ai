@@ -798,6 +798,7 @@ const forecastResultFixture: ForecastCalculationResult = {
     terrainSupport: {
       score: 90,
       level: "高",
+      terrainMode: "high_mountain",
       selectedSpotElevationMeters: 1860,
       nearbyValleyElevationMeters: 980,
       localReliefMeters: 1484,

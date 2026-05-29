@@ -213,6 +213,33 @@ describe("Terrain Core V1", () => {
     expect(provider.getElevationForLocation).not.toHaveBeenCalled();
   });
 
+  it("does not attach summit metadata when a broad seed match has conflicting low elevation", async () => {
+    const service = new TerrainElevationService();
+    const result = await service.getElevationForLocation({
+      locationName: "黄山市区低海拔机位",
+      coordinate: { latitude: 30.1328, longitude: 118.171, system: "wgs84" },
+      elevationMeters: 142,
+      elevationSource: "manual",
+      elevationConfidence: "medium",
+    });
+    const provider = new MockTerrainProvider();
+    const profile = await provider.buildTerrainProfile({
+      locationName: "黄山市区低海拔机位",
+      coordinate: { latitude: 30.1328, longitude: 118.171, system: "wgs84" },
+      elevationMeters: result.elevationMeters,
+      elevationSource: result.elevationSource,
+      elevationConfidence: result.elevationConfidence,
+      terrainProfile: result.terrainProfile,
+    });
+
+    expect(result.elevationMeters).toBe(142);
+    expect(result.terrainProfile.terrainType).toBe("unknown");
+    expect(result.terrainProfile.localReliefMeters).toBeNull();
+    expect(profile.locationElevation).toBe(142);
+    expect(profile.terrainType).toBe("unknown");
+    expect(profile.localReliefMeters).toBeNull();
+  });
+
   it("returns null unknown when provider lookup fails instead of coercing to zero", async () => {
     const provider = {
       getElevationForLocation: vi.fn(async () => {

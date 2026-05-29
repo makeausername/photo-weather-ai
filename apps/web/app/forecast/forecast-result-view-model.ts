@@ -1213,7 +1213,7 @@ function buildTerrainReferenceSection(result: ForecastCalculationResult): Foreca
         value: formatElevationValue(terrain.locationElevation),
         detail:
           terrain.locationElevation === null
-            ? "机位海拔暂未确认，山地体感和云海判断仅作参考。"
+            ? "海拔资料暂未确认，体感仅作参考。"
             : terrain.terrainNoteZh,
       },
       {
@@ -2253,7 +2253,7 @@ function buildCloudSeaVsWhiteout(result: ForecastCalculationResult): CloudSeaVsW
         value: formatElevationValue(terrain.locationElevation),
         detail:
           terrain.locationElevation === null
-            ? "机位海拔暂未确认，山地体感和云海判断仅作参考。"
+            ? "海拔资料暂未确认，体感仅作参考。"
             : "机位越高，越有机会站在云雾层之上观察山谷云海。",
         tone: "primary",
       },

@@ -237,6 +237,7 @@ const baseResult: ForecastCalculationResult = {
     terrainSupport: {
       score: 90,
       level: "高",
+      terrainMode: "high_mountain",
       selectedSpotElevationMeters: 1860,
       nearbyValleyElevationMeters: 980,
       localReliefMeters: 1484,
@@ -2046,18 +2047,18 @@ describe("forecast result target-aware view model", () => {
       nearbyValleyElevationMeters: null,
       localReliefMeters: null,
       terrainCloudSeaPotential: "low" as const,
-      terrainNoteZh: "机位海拔暂未确认，山地体感和云海判断仅作参考。",
+      terrainNoteZh: "海拔资料暂未确认，体感仅作参考。",
     };
     const result: ForecastCalculationResult = {
       ...baseResult,
-      keyReasons: ["地形参考：机位海拔暂未确认，山地体感和云海判断仅作参考，周边高差暂未计算。"],
+      keyReasons: ["地形参考：机位海拔暂未确认，体感仅作参考，周边高差暂未计算。"],
       terrainSummary: {
         ...baseResult.terrainSummary,
         ...unknownTerrain,
         dataSource: "unknown",
         dataSourceLabelZh: "海拔暂未确认",
         isMock: true,
-        honestyNoteZh: "机位海拔暂未确认，山地体感和云海判断仅作参考。",
+        honestyNoteZh: "海拔资料暂未确认，体感仅作参考。",
       },
       terrainAnalysis: {
         ...baseResult.terrainAnalysis,
@@ -2065,7 +2066,7 @@ describe("forecast result target-aware view model", () => {
         dataSource: "unknown",
         dataSourceLabelZh: "海拔暂未确认",
         isMock: true,
-        honestyNoteZh: "机位海拔暂未确认，山地体感和云海判断仅作参考。",
+        honestyNoteZh: "海拔资料暂未确认，体感仅作参考。",
       },
     };
     const viewModel = buildForecastResultViewModel(result, "general");
@@ -2082,7 +2083,7 @@ describe("forecast result target-aware view model", () => {
       }),
     );
 
-    expect(html).toContain("机位海拔暂未确认，山地体感和云海判断仅作参考");
+    expect(html).toContain("海拔资料暂未确认，体感仅作参考");
     expect(html).toContain("周边高差暂未计算");
     expect(html).not.toContain("机位海拔约 0 米");
     expect(html).not.toContain("5公里高差约 0 米");
@@ -2188,6 +2189,253 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("3.2 m/s 东南风");
     expect(html).toContain("18 公里");
     expect(html).not.toMatch(/(?:^|\s)(?:w|min-w)-\[(?:[1-9]\d{3,})px\]/);
+  });
+
+  it("uses lowland wording for low-elevation general forecasts", () => {
+    const base = resultForTarget("general");
+    const cloudMistWindow: ForecastCalculationResult["bestWindows"][number] = {
+      ...base.bestWindows[0]!,
+      label: "晨雾或云层变化 05:00 - 07:00",
+      score: 38,
+      conditionScore: 44,
+      practicalScore: 38,
+      windowLevel: "watchable",
+      recommendationLevel: "cautious",
+      executableForDedicatedTrip: false,
+      suitableIfNearby: true,
+      subjectPriorityLabel: "晨雾或云层变化",
+      blockerReasons: ["低云遮挡需现场复核"],
+      practicalNoteZh: "晨雾或低云变化可顺带观察，但地形不支持按高山云海专程判断。",
+      target: "cloud_sea",
+    };
+    const cloudMistAnalysisWindow: ForecastCalculationResult["cloudSeaAnalysis"]["watchableCloudSeaWindows"][number] =
+      {
+        label: "晨雾或云层变化 05:00 - 07:00",
+        date: "2026-05-20",
+        startTime: cloudMistWindow.startTime,
+        endTime: cloudMistWindow.endTime,
+        score: 38,
+        formationScore: 44,
+        shootableScore: 38,
+        whiteoutRiskScore: 62,
+        lightAlignedScore: 72,
+        target: "cloud_sea",
+        phase: "observation",
+        noteZh: "晨雾或低云变化可顺带观察，但地形不支持按高山云海专程判断。",
+        riskTag: "低云遮挡中",
+        rainOpening: base.cloudSeaAnalysis.rainOpening,
+      };
+    const cloudMistWatchableWindow: NonNullable<
+      ForecastCalculationResult["dailySummaries"][number]["watchableWindows"]
+    >[number] = {
+      subject: "晨雾或云层变化",
+      target: "cloud_sea",
+      startTime: cloudMistWindow.startTime,
+      endTime: cloudMistWindow.endTime,
+      windowLevel: "watchable",
+      recommendationLevel: "cautious",
+      reasonZh: "晨雾或低云变化可顺带观察，但地形不支持按高山云海专程判断。",
+      suitableForDedicatedTrip: false,
+      suitableIfNearby: true,
+    };
+    const lowlandProfile = {
+      ...base.terrainAnalysis.terrainProfile,
+      elevationMeters: 142,
+      elevationSource: "manual" as const,
+      elevationConfidence: "medium" as const,
+      terrainType: "unknown" as const,
+      exposureType: "unknown" as const,
+      viewingDirection: "unknown" as const,
+      nearbyValleyElevationMeters: null,
+      localReliefMeters: null,
+      terrainNotesZh: "仅有机位海拔，周边谷地和暴露度仍需补充。",
+      locationElevation: 142,
+      minElevation1km: null,
+      minElevation3km: null,
+      minElevation5km: null,
+      maxElevation5km: null,
+      avgElevation5km: null,
+      elevationDiff5km: null,
+      valleyDirectionZh: undefined,
+      ridgeDirectionZh: undefined,
+      terrainCloudSeaPotential: "low" as const,
+      terrainNoteZh: "低海拔且缺少有效周边高差，不按高山云海判断。",
+    };
+    const result: ForecastCalculationResult = {
+      ...base,
+      scores: {
+        ...base.scores,
+        cloudSea: score("cloudSea", "晨雾/低云", 42),
+        whiteoutRisk: score("whiteoutRisk", "低云遮挡", 62),
+      },
+      currentWeather: {
+        ...base.currentWeather!,
+        temperature: 24,
+        feelsLike: 25,
+        mountainFeelsLikeC: 25,
+        selectedSpotElevationMeters: 142,
+        providerElevationMeters: 142,
+        elevationDifferenceMeters: 0,
+        terrainAdjustmentApplied: false,
+        terrainAdjustmentReason: "provider_elevation_close_to_spot",
+        windChillNoteZh: "体感仍需结合现场风口和遮挡条件复核。",
+        clothingRiskNoteZh: "穿衣按清晨体感准备，保留轻量防风层。",
+      },
+      terrainSummary: {
+        ...base.terrainSummary,
+        ...lowlandProfile,
+        honestyNoteZh: "仅采用该地点海拔，周边高差未确认，不按高山机位判断。",
+      },
+      terrainAnalysis: {
+        ...base.terrainAnalysis,
+        terrainProfile: lowlandProfile,
+        honestyNoteZh: "仅采用该地点海拔，周边高差未确认，不按高山机位判断。",
+      },
+      cloudSeaAnalysis: {
+        ...base.cloudSeaAnalysis,
+        overallScore: 38,
+        formationScore: 44,
+        shootableScore: 38,
+        cloudSeaOpportunityScore: 44,
+        whiteoutRiskScore: 62,
+        labels: {
+          formationOpportunity: "低",
+          shootableOpportunity: "低",
+          whiteoutRisk: "中",
+          bestWindowLabel: "暂无明确云雾观察窗口",
+          watchableWindowLabel: "晨雾或云层变化 05:00 - 07:00",
+        },
+        terrainSupport: {
+          score: 20,
+          level: "低",
+          terrainMode: "lowland",
+          selectedSpotElevationMeters: 142,
+          terrainType: "unknown",
+          exposureType: "unknown",
+          confidence: "low",
+          messageZh: "低海拔且缺少有效周边高差，不按高山云海判断。",
+        },
+        bestCloudSeaWindow: undefined,
+        bestCloudSeaWindows: [],
+        watchableCloudSeaWindows: [cloudMistAnalysisWindow],
+        notRecommendedCloudSeaWindows: [],
+        dailyCloudSea: base.cloudSeaAnalysis.dailyCloudSea.map((day) => ({
+          ...day,
+          formationScore: 44,
+          opportunityScore: 44,
+          shootableScore: 38,
+          whiteoutRiskScore: 62,
+          labels: {
+            formationOpportunity: "低",
+            shootableOpportunity: "低",
+            whiteoutRisk: "中",
+            bestWindowLabel: "暂无明确云雾观察窗口",
+            watchableWindowLabel: "晨雾或云层变化 05:00 - 07:00",
+          },
+          bestWindow: cloudMistAnalysisWindow,
+          watchableWindow: cloudMistAnalysisWindow,
+          keyReason: "低云/晨雾条件存在，但缺少高差支撑，按云层变化和通透度处理。",
+          riskNote: "低云遮挡风险中等，需要现场观察雾气厚度和能见度。",
+        })),
+        whiteoutReasons: ["低云遮挡风险中等，需要现场观察雾气厚度和能见度。"],
+        opportunityReasons: [
+          "低云/晨雾条件 44 分：低海拔地形不按高山云海判断。",
+        ],
+      },
+      bestWindows: [cloudMistWindow, ...base.bestWindows.filter((window) => window.target !== "cloud_sea")],
+      dailySummaries: base.dailySummaries.map((summary) => ({
+        ...summary,
+        weather: summary.weather
+          ? {
+              ...summary.weather,
+              weatherTextZh: summary.weather.weatherTextZh === "多云间晴" ? "多云转多云" : "阴转阴",
+              tempMin: 16,
+              tempMax: 30,
+              temperatureCorrectionApplied: false,
+              temperatureCorrectionReason: "provider_elevation_close_to_spot",
+              selectedSpotElevationMeters: 142,
+              providerElevationMeters: 142,
+              providerElevationKnown: true,
+              feelsLikeMin: 17,
+              feelsLikeMax: 31,
+              mountainFeelsLikeMin: undefined,
+              mountainFeelsLikeMax: undefined,
+            }
+          : summary.weather,
+        bestShootableWindow: summary.date === "2026-05-20" ? cloudMistWindow : undefined,
+        watchableWindows: [cloudMistWatchableWindow],
+        riskFlags: [
+          {
+            key: "low_cloud",
+            label: "低云遮挡",
+            level: "medium",
+            description: "低云或雾气可能影响通透度。",
+          },
+        ],
+      })),
+      targetDailyBreakdown: base.targetDailyBreakdown.map((day) => ({
+        ...day,
+        cloudSea: {
+          label: "晨雾/低云观察",
+          score: 38,
+          detail: "云雾信号低，云层开口低，低云遮挡中。",
+          window: cloudMistWindow,
+        },
+        whiteoutRisk: {
+          label: "低云遮挡",
+          score: 62,
+          detail: "低云、雾气和能见度组合需要出行前复核。",
+          window: cloudMistWindow,
+        },
+      })),
+      riskFlags: [
+        {
+          key: "low_cloud",
+          label: "低云遮挡",
+          level: "medium",
+          description: "低云或雾气可能影响通透度。",
+        },
+      ],
+      keyReasons: ["地形参考：机位海拔约 142 米，周边高差暂未计算。"],
+    };
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "idle",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        aiRetryable: false,
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+    const topDecisionCards = html.slice(
+      html.indexOf('data-testid="top-decision-cards"'),
+      html.indexOf('data-testid="near-term-weather"'),
+    );
+    const dailySection = html.slice(
+      html.indexOf('data-testid="daily-forecast-decision"'),
+      html.indexOf('data-testid="opportunity-windows"'),
+    );
+
+    expect(topDecisionCards).toContain("晨雾 / 低云");
+    expect(topDecisionCards).not.toContain("云海 / 白墙");
+    expect(topDecisionCards).not.toContain("山顶");
+    expect(topDecisionCards).not.toContain("白墙");
+    expect(dailySection).toContain("多云");
+    expect(dailySection).toContain("机位估算温度：16–30°C");
+    expect(dailySection).toContain("晨雾或云层变化 2026年5月20日 05:00–07:00");
+    expect(dailySection).toContain("低云遮挡");
+    expect(dailySection).toContain("关注晨雾、云层开口或日落光线，不建议按高山云海逻辑判断。");
+    expect(dailySection).not.toContain("山顶估算温度");
+    expect(dailySection).not.toContain("清晨云海");
+    expect(dailySection).not.toContain("山脊风风险");
+    expect(dailySection).not.toContain("白墙风险");
+    expect(html).toContain("机位估算温度：24°C / 体感温度 25°C");
+    expect(html).toContain("预报接近该地点海拔，未额外修正");
+    expect(html).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风|高德/i);
   });
 
   it("renders exactly five compact subject summaries on the general opportunity section", () => {

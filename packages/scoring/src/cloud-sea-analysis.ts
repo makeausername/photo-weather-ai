@@ -13,6 +13,12 @@ import type {
   NormalizedHourlyWeather,
   TerrainCloudSeaPotential,
 } from "@photo-weather/shared";
+import {
+  classifyTerrainMode,
+  terrainModeAllowsDefaultCloudSea,
+  terrainModeUsesLowlandSemantics,
+  terrainModeUsesMountainSemantics,
+} from "@photo-weather/shared";
 import { defaultTimezone, formatZonedIso } from "@photo-weather/calendar";
 import { addHours, averageWeightedScore, clampScore, formatChineseTimeRange } from "./helpers.js";
 import {
@@ -78,6 +84,7 @@ type WindowEvaluation = {
   readonly confidencePenalty: number;
   readonly stabilityBonus: number;
   readonly terrainBonus: number;
+  readonly terrainSupport: CloudSeaTerrainSupport;
 };
 
 export function analyzeCloudSea(input: ForecastCalculationInput): CloudSeaAnalysisResult {
@@ -99,7 +106,7 @@ export function analyzeCloudSea(input: ForecastCalculationInput): CloudSeaAnalys
     .map((date) => buildDailyCloudSeaForDate(input, date, evaluations))
     .filter((day): day is DailyCloudSea => day !== undefined);
   const bestCloudSeaWindows = evaluations
-    .filter((evaluation) => evaluation.shootableScore >= 58 && evaluation.whiteoutRiskScore < 78)
+    .filter(isBestCloudSeaEvaluation)
     .map((evaluation) => evaluation.window)
     .sort((left, right) => {
       if (right.score !== left.score) {
@@ -109,22 +116,11 @@ export function analyzeCloudSea(input: ForecastCalculationInput): CloudSeaAnalys
       return Date.parse(left.startTime) - Date.parse(right.startTime);
     });
   const watchableCloudSeaWindows = evaluations
-    .filter(
-      (evaluation) =>
-        evaluation.formationScore >= 55 &&
-        evaluation.shootableScore >= 32 &&
-        evaluation.shootableScore < 58,
-    )
+    .filter(isWatchableCloudSeaEvaluation)
     .map((evaluation) => evaluation.window)
     .sort((left, right) => Date.parse(left.startTime) - Date.parse(right.startTime));
   const notRecommendedCloudSeaWindows = evaluations
-    .filter(
-      (evaluation) =>
-        evaluation.formationScore >= 50 &&
-        (evaluation.shootableScore < 32 ||
-          evaluation.whiteoutRiskScore >= 78 ||
-          evaluation.rainOpening.activeRainDuringWindow),
-    )
+    .filter(isNotRecommendedCloudSeaEvaluation)
     .map((evaluation) => evaluation.window)
     .sort((left, right) => Date.parse(left.startTime) - Date.parse(right.startTime));
   const missingDataNotes = uniqueStrings(
@@ -219,6 +215,58 @@ export function cloudSeaRecommendationLevel(score: number): ForecastRecommendati
   return "not_recommended";
 }
 
+function isBestCloudSeaEvaluation(evaluation: WindowEvaluation): boolean {
+  const mode = evaluation.terrainSupport.terrainMode;
+  if (terrainModeUsesLowlandSemantics(mode)) {
+    return false;
+  }
+  if (mode === "hill") {
+    return (
+      evaluation.formationScore >= 68 &&
+      evaluation.shootableScore >= 64 &&
+      evaluation.whiteoutRiskScore < 65 &&
+      evaluation.confidence >= 55
+    );
+  }
+  return evaluation.shootableScore >= 58 && evaluation.whiteoutRiskScore < 78;
+}
+
+function isWatchableCloudSeaEvaluation(evaluation: WindowEvaluation): boolean {
+  const mode = evaluation.terrainSupport.terrainMode;
+  if (terrainModeUsesLowlandSemantics(mode)) {
+    return (
+      evaluation.formationScore >= 42 &&
+      evaluation.shootableScore >= 24 &&
+      evaluation.whiteoutRiskScore < 82
+    );
+  }
+  if (mode === "hill") {
+    return (
+      evaluation.formationScore >= 58 &&
+      evaluation.shootableScore >= 34 &&
+      evaluation.shootableScore < 64
+    );
+  }
+  return (
+    evaluation.formationScore >= 55 &&
+    evaluation.shootableScore >= 32 &&
+    evaluation.shootableScore < 58
+  );
+}
+
+function isNotRecommendedCloudSeaEvaluation(evaluation: WindowEvaluation): boolean {
+  const mode = evaluation.terrainSupport.terrainMode;
+  if (terrainModeUsesLowlandSemantics(mode)) {
+    return evaluation.formationScore >= 36 && !isWatchableCloudSeaEvaluation(evaluation);
+  }
+  return (
+    evaluation.formationScore >= 50 &&
+    (evaluation.shootableScore < 32 ||
+      evaluation.whiteoutRiskScore >= 78 ||
+      evaluation.rainOpening.activeRainDuringWindow)
+  );
+}
+
 function evaluateCloudSeaDate(
   input: ForecastCalculationInput,
   date: string,
@@ -267,7 +315,11 @@ function evaluateCloudSeaCandidate(
       )
     : undefined;
   const terrainSupport = buildTerrainSupport(input);
-  const formationScore = calculateCloudSeaFormationScore(stats, terrainSupport.score, candidate.kind);
+  const rawFormationScore = calculateCloudSeaFormationScore(
+    stats,
+    terrainSupport.score,
+    candidate.kind,
+  );
   const whiteoutRiskScore = calculateWhiteoutRiskScore(stats, terrainSupport);
   const rainOpening = buildRainOpeningSignal(stats, accumulationStats, dissipationStats);
   const terrainBonus = terrainTravelBonus(terrainSupport.score);
@@ -277,8 +329,8 @@ function evaluateCloudSeaCandidate(
     dissipationStats,
     terrainSupport.score,
   );
-  const shootableScore = calculateShootableScore(
-    formationScore,
+  const rawShootableScore = calculateShootableScore(
+    rawFormationScore,
     whiteoutRiskScore,
     candidate.lightAlignedScore,
     terrainBonus,
@@ -286,12 +338,23 @@ function evaluateCloudSeaCandidate(
     rainOpening,
     stats,
   );
+  const formationScore = applyTerrainModeFormationCap(rawFormationScore, terrainSupport);
+  const shootableScore = applyTerrainModeShootableCap(
+    rawShootableScore,
+    formationScore,
+    terrainSupport,
+  );
   const missingDataNotes = buildMissingDataNotes(input, stats, candidate.sunriseKnown);
   const confidencePenaltyValue = confidencePenalty(input, stats, candidate.sunriseKnown, terrainSupport);
   const confidence = clampScore(100 - confidencePenaltyValue);
-  const riskTag =
-    whiteoutRiskScore >= 70 ? "白墙风险高" : whiteoutRiskScore >= 45 ? "白墙风险中" : "白墙风险低";
-  const noteZh = buildWindowNoteZh(formationScore, shootableScore, whiteoutRiskScore, rainOpening);
+  const riskTag = cloudObstructionRiskTag(whiteoutRiskScore, terrainSupport);
+  const noteZh = buildWindowNoteZh(
+    formationScore,
+    shootableScore,
+    whiteoutRiskScore,
+    rainOpening,
+    terrainSupport,
+  );
 
   return {
     date: candidate.date,
@@ -305,7 +368,7 @@ function evaluateCloudSeaCandidate(
     rainOpening,
     travelScore: shootableScore,
     window: {
-      label: `${candidate.label} ${formatChineseTimeRange(
+      label: `${candidateLabelForTerrain(candidate, terrainSupport)} ${formatChineseTimeRange(
         candidate.observation.startTime,
         candidate.observation.endTime,
       )}`,
@@ -339,6 +402,7 @@ function evaluateCloudSeaCandidate(
     confidencePenalty: confidencePenaltyValue,
     stabilityBonus,
     terrainBonus,
+    terrainSupport,
   };
 }
 
@@ -454,6 +518,86 @@ function calculateShootableScore(
       stabilityBonus +
       openingBonus,
   );
+}
+
+function applyTerrainModeFormationCap(
+  score: number,
+  terrainSupport: CloudSeaTerrainSupport,
+): number {
+  const mode = terrainSupport.terrainMode;
+  if (mode === "urban_or_plain" || mode === "lowland") {
+    return Math.min(score, terrainSupport.confidence === "low" ? 40 : 48);
+  }
+  if (mode === "unknown") {
+    return Math.min(score, 42);
+  }
+  if (mode === "hill") {
+    return Math.min(score, 76);
+  }
+  return score;
+}
+
+function applyTerrainModeShootableCap(
+  score: number,
+  formationScore: number,
+  terrainSupport: CloudSeaTerrainSupport,
+): number {
+  const mode = terrainSupport.terrainMode;
+  if (mode === "urban_or_plain" || mode === "lowland") {
+    return Math.min(score, formationScore, terrainSupport.confidence === "low" ? 32 : 42);
+  }
+  if (mode === "unknown") {
+    return Math.min(score, formationScore, 34);
+  }
+  if (mode === "hill" && formationScore < 68) {
+    return Math.min(score, 56);
+  }
+  return score;
+}
+
+function candidateLabelForTerrain(
+  candidate: CandidateWindows,
+  terrainSupport: CloudSeaTerrainSupport,
+): string {
+  const mode = terrainSupport.terrainMode;
+  if (terrainModeAllowsDefaultCloudSea(mode)) {
+    return candidate.label;
+  }
+  if (mode === "hill") {
+    if (candidate.kind === "morning") {
+      return "清晨云雾观察";
+    }
+    if (candidate.kind === "evening") {
+      return "傍晚云雾层次";
+    }
+    return "云雾变化观察";
+  }
+  if (candidate.kind === "morning") {
+    return "晨雾或云层变化";
+  }
+  if (candidate.kind === "evening") {
+    return "云层开口观察";
+  }
+  return "低云与通透观察";
+}
+
+function cloudObstructionRiskTag(
+  whiteoutRiskScore: number,
+  terrainSupport: CloudSeaTerrainSupport,
+): string {
+  if (terrainModeUsesMountainSemantics(terrainSupport.terrainMode)) {
+    return whiteoutRiskScore >= 70
+      ? "白墙风险高"
+      : whiteoutRiskScore >= 45
+        ? "白墙风险中"
+        : "白墙风险低";
+  }
+
+  return whiteoutRiskScore >= 70
+    ? "低云遮挡高"
+    : whiteoutRiskScore >= 45
+      ? "低云遮挡中"
+      : "低云遮挡低";
 }
 
 function buildCandidateWindows(
@@ -964,6 +1108,7 @@ function buildTerrainSupport(input: ForecastCalculationInput): CloudSeaTerrainSu
       : undefined);
   const selectedSpotElevation =
     finiteNumber(terrain.elevationMeters) ?? finiteNumber(terrain.locationElevation);
+  const terrainMode = classifyTerrainMode(terrain);
   const reliefScore =
     relief === undefined
       ? 42
@@ -1002,31 +1147,29 @@ function buildTerrainSupport(input: ForecastCalculationInput): CloudSeaTerrainSu
       : terrain.terrainCloudSeaPotential === "medium"
         ? 66
         : 34;
-  const score = averageWeightedScore([
+  const rawScore = averageWeightedScore([
     { score: reliefScore, weight: 0.42 },
     { score: terrainTypeScore, weight: 0.24 },
     { score: exposureScore, weight: 0.12 },
     { score: potentialScore, weight: 0.22 },
   ]);
+  const score = terrainModeAdjustedSupportScore(rawScore, terrainMode);
   const confidence: CloudSeaTerrainSupport["confidence"] =
-    relief === undefined || terrain.terrainType === "unknown" || terrain.elevationConfidence === "low"
+    terrainMode === "unknown" ||
+    relief === undefined ||
+    terrain.terrainType === "unknown" ||
+    terrain.elevationConfidence === "low"
       ? "low"
       : input.terrainAnalysis.isMock || terrain.elevationConfidence === "medium"
         ? "medium"
         : "high";
   const level = chanceLabel(score);
-  const messageZh =
-    relief === undefined
-      ? "地形高差资料不足，云海观察潜力按保守值处理。"
-      : level === "高"
-        ? "机位高于周边谷地，高差和开阔度支持俯拍云海。"
-        : level === "中"
-          ? "具备一定山谷高差，可作为云雾观察基础。"
-          : "周边高差或机位类型不利于俯拍完整云海。";
+  const messageZh = terrainSupportMessageZh(terrainMode, relief, level);
 
   return {
     score,
     level,
+    terrainMode,
     selectedSpotElevationMeters: selectedSpotElevation,
     nearbyValleyElevationMeters: nearbyValleyElevation,
     localReliefMeters: relief,
@@ -1036,6 +1179,42 @@ function buildTerrainSupport(input: ForecastCalculationInput): CloudSeaTerrainSu
     confidence,
     messageZh,
   };
+}
+
+function terrainModeAdjustedSupportScore(score: number, terrainMode: CloudSeaTerrainSupport["terrainMode"]): number {
+  if (terrainMode === "urban_or_plain" || terrainMode === "lowland") {
+    return Math.min(score, 20);
+  }
+  if (terrainMode === "unknown") {
+    return Math.min(score, 30);
+  }
+  if (terrainMode === "hill") {
+    return Math.min(score, 58);
+  }
+  return score;
+}
+
+function terrainSupportMessageZh(
+  terrainMode: CloudSeaTerrainSupport["terrainMode"],
+  relief: number | undefined,
+  level: CloudSeaTerrainSupport["level"],
+): string {
+  if (terrainMode === "urban_or_plain" || terrainMode === "lowland") {
+    return "低海拔且缺少有效周边高差，不按高山云海判断；更适合关注晨雾、低云和远景通透。";
+  }
+  if (terrainMode === "unknown" || relief === undefined) {
+    return "地形高差资料不足，云雾观察潜力按低置信度保守处理。";
+  }
+  if (terrainMode === "hill") {
+    return "丘陵地形需要更明确的低云、湿度、地形高差和光线开口，才建议按云海观察。";
+  }
+  if (level === "高") {
+    return "机位高于周边谷地，高差和开阔度支持俯拍云海。";
+  }
+  if (level === "中") {
+    return "具备一定山谷高差，可作为云雾观察基础。";
+  }
+  return "周边高差或机位类型不利于俯拍完整云海。";
 }
 
 function buildMissingDataNotes(
@@ -1220,16 +1399,19 @@ function buildOpportunityReasons(
 ): readonly string[] {
   const terrain = input.terrainAnalysis.terrainProfile;
   const elevationDiff = finiteNumber(terrain.elevationDiff5km);
+  const usesMountain = terrainModeAllowsDefaultCloudSea(terrainSupport.terrainMode);
+  const formationLabel = usesMountain ? "云海形成条件" : "低云/晨雾条件";
+  const shootableLabel = usesMountain ? "云海可拍条件" : "云雾观察条件";
   const reasons = [
-    `云海形成条件 ${formationScore} 分：湿度约 ${formatPercent(
+    `${formationLabel} ${formationScore} 分：湿度约 ${formatPercent(
       stats.humidity,
     )}，露点差约 ${formatDegree(stats.dewPointSpread)}，用于判断水汽是否接近凝结。`,
     stats.hasLowCloud
       ? `低云约 ${formatPercent(
           stats.cloudLow,
-        )}，50%-90% 更支持云海形成；接近满低云时需同时看白墙风险。`
+        )}，50%-90% 更支持云雾形成；接近满低云时需同时看遮挡风险。`
       : lowCloudMissingNote,
-    `云海可拍条件 ${shootableScore} 分：光线重叠 ${lightAlignedScore} 分，白墙风险已单独扣减。`,
+    `${shootableLabel} ${shootableScore} 分：光线重叠 ${lightAlignedScore} 分，低云遮挡风险已单独扣减。`,
     elevationDiff === undefined
       ? `周边高差暂未计算，地形云海潜力按保守值处理。${terrainSupport.messageZh}`
       : `5km 高差约 ${formatMeters(
@@ -1255,25 +1437,46 @@ function buildWhiteoutReasons(
   whiteoutRiskScore: number,
   terrainSupport: CloudSeaTerrainSupport,
 ): readonly string[] {
+  const usesMountain = terrainModeUsesMountainSemantics(terrainSupport.terrainMode);
   const reasons = [
     stats.hasLowCloud
-      ? `低云约 ${formatPercent(stats.cloudLow)}，低云过厚或抬升到机位高度时会增加白墙风险。`
-      : "低云分层缺失，当前只能用湿度、能见度和总云量弱判断白墙风险。",
+      ? usesMountain
+        ? `低云约 ${formatPercent(stats.cloudLow)}，低云过厚或抬升到机位高度时会增加白墙风险。`
+        : `低云约 ${formatPercent(stats.cloudLow)}，低云过厚时会增加遮挡、雾气和通透度下降风险。`
+      : usesMountain
+        ? "低云分层缺失，当前只能用湿度、能见度和总云量弱判断白墙风险。"
+        : "低云分层缺失，当前只能用湿度、能见度和总云量弱判断低云遮挡。",
     `湿度约 ${formatPercent(stats.humidity)}，露点差约 ${formatDegree(
       stats.dewPointSpread,
     )}，能见度约 ${formatKm(stats.visibility)}。`,
     `风速约 ${formatSpeed(stats.windSpeed)}，近静风更容易让雾包住机位。`,
     terrainSupport.confidence === "low"
-      ? "地形高差或机位类型资料不足，低云偏厚时按更保守的白墙风险处理。"
-      : "当前未提供云底高度，不伪造云层相对机位高度，仍需现场复核云雾上沿。",
+      ? usesMountain
+        ? "地形高差或机位类型资料不足，低云偏厚时按更保守的白墙风险处理。"
+        : "地形高差或机位类型资料不足，低云偏厚时按更保守的遮挡风险处理。"
+      : usesMountain
+        ? "当前未提供云底高度，不伪造云层相对机位高度，仍需现场复核云雾上沿。"
+        : "当前未提供云底高度，不伪造云层相对机位高度，仍需现场复核雾气和能见度。",
   ];
 
   if (whiteoutRiskScore >= 70) {
-    reasons.unshift("白墙风险偏高，机位可能被低云或雾包裹，远山层次和云海边界会明显下降。");
+    reasons.unshift(
+      usesMountain
+        ? "白墙风险偏高，机位可能被低云或雾包裹，远山层次和云海边界会明显下降。"
+        : "低云或雾气遮挡偏高，远景层次和通透观察会明显下降。",
+    );
   } else if (whiteoutRiskScore >= 45) {
-    reasons.unshift("白墙风险中等，需要现场观察云雾上沿是否低于机位。");
+    reasons.unshift(
+      usesMountain
+        ? "白墙风险中等，需要现场观察云雾上沿是否低于机位。"
+        : "低云遮挡风险中等，需要现场观察雾气厚度和能见度。",
+    );
   } else {
-    reasons.unshift("白墙风险较低，仍需在日出前后复核能见度。");
+    reasons.unshift(
+      usesMountain
+        ? "白墙风险较低，仍需在日出前后复核能见度。"
+        : "低云遮挡风险较低，仍需在日出前后复核能见度。",
+    );
   }
 
   return reasons;
@@ -1284,7 +1487,20 @@ function buildWindowNoteZh(
   shootableScore: number,
   whiteoutRiskScore: number,
   rainOpening: CloudSeaRainOpeningSignal,
+  terrainSupport: CloudSeaTerrainSupport,
 ): string {
+  if (terrainModeUsesLowlandSemantics(terrainSupport.terrainMode)) {
+    if (shootableScore >= 38) {
+      return "晨雾或低云变化可顺带观察，但地形不支持按高山云海专程判断。";
+    }
+    if (formationScore >= 42) {
+      return "低云与湿度有雾气信号，但缺少高差支撑，优先按云层变化和通透度处理。";
+    }
+    return "地形与天气信号都不足，不建议按云海逻辑安排。";
+  }
+  if (terrainSupport.terrainMode === "hill" && shootableScore < 64) {
+    return "丘陵地形需要更强低云、湿度和光线开口，当前仅作云雾观察。";
+  }
   if (formationScore >= 70 && whiteoutRiskScore >= 70) {
     return `云海形成条件较强，但低云偏厚，白墙风险较高。${rainOpening.messageZh}`;
   }
@@ -1306,11 +1522,18 @@ function buildAssessmentLabels(
   watchableWindow: CloudSeaAnalysisWindow | undefined,
   notRecommendedWindow: CloudSeaAnalysisWindow | undefined,
 ): CloudSeaAnalysisResult["labels"] {
+  const usesMountainSemantics = terrainModeUsesMountainSemantics(
+    evaluation.terrainSupport.terrainMode,
+  );
   return {
     formationOpportunity: chanceLabel(evaluation.formationScore),
     shootableOpportunity: chanceLabel(evaluation.shootableScore),
     whiteoutRisk: chanceLabel(evaluation.whiteoutRiskScore),
-    bestWindowLabel: bestWindow ? bestWindow.label : "暂无最佳云海窗口",
+    bestWindowLabel: bestWindow
+      ? bestWindow.label
+      : usesMountainSemantics
+        ? "暂无最佳云海窗口"
+        : "暂无明确云雾观察窗口",
     watchableWindowLabel: watchableWindow ? watchableWindow.label : undefined,
     notRecommendedWindowLabel: notRecommendedWindow
       ? `${notRecommendedWindow.label}：${notRecommendedWindow.riskTag}`
@@ -1601,18 +1824,24 @@ function buildFallbackEvaluation(input: ForecastCalculationInput): WindowEvaluat
     endTime: input.calendarBasis.forecastEnd,
   };
   const stats = buildWindowStats(input, input.hourlyWeather.slice(0, 6));
-  const formationScore = calculateCloudSeaFormationScore(stats, terrainSupport.score, "morning");
+  const rawFormationScore = calculateCloudSeaFormationScore(stats, terrainSupport.score, "morning");
   const whiteoutRiskScore = calculateWhiteoutRiskScore(stats, terrainSupport);
   const rainOpening = buildRainOpeningSignal(stats, undefined, undefined);
   const lightAlignedScore = 72;
-  const shootableScore = calculateShootableScore(
-    formationScore,
+  const rawShootableScore = calculateShootableScore(
+    rawFormationScore,
     whiteoutRiskScore,
     lightAlignedScore,
     0,
     -4,
     rainOpening,
     stats,
+  );
+  const formationScore = applyTerrainModeFormationCap(rawFormationScore, terrainSupport);
+  const shootableScore = applyTerrainModeShootableCap(
+    rawShootableScore,
+    formationScore,
+    terrainSupport,
   );
   const missingDataNotes = buildMissingDataNotes(input, stats, false);
   const confidencePenaltyValue = confidencePenalty(input, stats, false, terrainSupport);
@@ -1630,7 +1859,17 @@ function buildFallbackEvaluation(input: ForecastCalculationInput): WindowEvaluat
     rainOpening,
     travelScore: shootableScore,
     window: {
-      label: `清晨云海窗口 ${formatChineseTimeRange(observation.startTime, observation.endTime)}`,
+      label: `${candidateLabelForTerrain(
+        {
+          date,
+          kind: "morning",
+          label: "清晨云海窗口",
+          sunriseKnown: false,
+          lightAlignedScore,
+          observation,
+        },
+        terrainSupport,
+      )} ${formatChineseTimeRange(observation.startTime, observation.endTime)}`,
       date,
       startTime: observation.startTime,
       endTime: observation.endTime,
@@ -1641,8 +1880,17 @@ function buildFallbackEvaluation(input: ForecastCalculationInput): WindowEvaluat
       lightAlignedScore,
       target: "cloud_sea",
       phase: "observation",
-      noteZh: "缺少完整清晨候选窗口，当前结果仅作低置信度参考。",
-      riskTag: whiteoutRiskScore >= 70 ? "白墙风险高" : "置信度较低",
+      noteZh: buildWindowNoteZh(
+        formationScore,
+        shootableScore,
+        whiteoutRiskScore,
+        rainOpening,
+        terrainSupport,
+      ),
+      riskTag:
+        whiteoutRiskScore >= 70
+          ? cloudObstructionRiskTag(whiteoutRiskScore, terrainSupport)
+          : "置信度较低",
       rainOpening,
     },
     stats,
@@ -1661,6 +1909,7 @@ function buildFallbackEvaluation(input: ForecastCalculationInput): WindowEvaluat
     confidencePenalty: confidencePenaltyValue,
     stabilityBonus: -4,
     terrainBonus: 0,
+    terrainSupport,
   };
 }
 

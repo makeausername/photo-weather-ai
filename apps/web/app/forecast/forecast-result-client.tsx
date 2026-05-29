@@ -3,10 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
+  classifyTerrainMode,
   formatArrivalDeadlineZh,
   formatShootingWindowZh,
   forecastHorizonLabels,
   forecastTargetLabels,
+  simplifyWeatherSummaryZh,
+  terrainModeUsesLowlandSemantics,
+  terrainModeUsesMountainSemantics,
   type AstroWindow,
   type ForecastCalculationResult,
   type ForecastQueryInput,
@@ -1409,6 +1413,7 @@ function WeatherEssentialsPanel({ result }: { readonly result: ForecastCalculati
           detail={`${dailyTemperatureRangeText(firstDay, result)}，${temperatureActionText(
             current,
             firstDay,
+            result,
           )} ${terrainCorrectionUserNote(result, current, firstDay)}`}
         />
         <CompactInfoCard
@@ -1930,12 +1935,26 @@ function averagePair(left: number | undefined, right: number | undefined): numbe
   return left ?? right;
 }
 
+function terrainModeForResult(result: ForecastCalculationResult | undefined) {
+  return classifyTerrainMode(result?.terrainAnalysis?.terrainProfile ?? {});
+}
+
+function resultUsesMountainSemantics(result: ForecastCalculationResult | undefined): boolean {
+  return terrainModeUsesMountainSemantics(terrainModeForResult(result));
+}
+
+function resultUsesLowlandSemantics(result: ForecastCalculationResult | undefined): boolean {
+  return terrainModeUsesLowlandSemantics(terrainModeForResult(result));
+}
+
 function terrainCorrectionUserNote(
   result: ForecastCalculationResult,
   current: ForecastCalculationResult["currentWeather"] | undefined,
   weather: ForecastCalculationResult["dailySummaries"][number]["weather"] | undefined,
 ): string {
   const terrainProfile = result.terrainAnalysis.terrainProfile;
+  const usesMountainSemantics = resultUsesMountainSemantics(result);
+  const usesLowlandSemantics = resultUsesLowlandSemantics(result);
   const correctionApplied =
     current?.terrainAdjustmentApplied ?? weather?.temperatureCorrectionApplied ?? false;
   const correctionReason =
@@ -1945,14 +1964,19 @@ function terrainCorrectionUserNote(
   const lowConfidence = terrainProfile.elevationConfidence === "low";
 
   if (lowConfidence) {
-    return "机位海拔资料不完整，山顶体感仅作参考。";
+    return "海拔资料暂未确认，体感仅作参考。";
   }
   if (windRisk === "high" || tripodRisk === "high") {
     return (
       current?.windChillNoteZh ??
       weather?.windChillNoteZh ??
-      "山脊风风险较高，三脚架和人员站位需留余量。"
+      (usesMountainSemantics
+        ? "山脊风风险较高，三脚架和人员站位需留余量。"
+        : "阵风影响较明显，三脚架和人员站位需留余量。")
     );
+  }
+  if (usesLowlandSemantics) {
+    return "预报接近该地点海拔，未额外修正。";
   }
   if (correctionApplied) {
     return "已结合机位海拔做轻量修正。";
@@ -1981,12 +2005,17 @@ function dailyTemperatureRangeText(
       : formatTemperature(averagePair(weather.tempMin, weather.tempMax));
   const feelsLikeMin = weather.mountainFeelsLikeMin ?? weather.feelsLikeMin;
   const feelsLikeMax = weather.mountainFeelsLikeMax ?? weather.feelsLikeMax;
+  const feelsLikeLabel = resultUsesMountainSemantics(result)
+    ? "山地体感"
+    : terrainModeForResult(result) === "hill"
+      ? "山地/丘陵体感"
+      : "体感温度";
   const feelsLike =
     typeof feelsLikeMin === "number" && typeof feelsLikeMax === "number"
-      ? `山地体感 ${Math.round(feelsLikeMin)}-${Math.round(feelsLikeMax)}°C`
-      : `山地体感 ${formatTemperature(averagePair(feelsLikeMin, feelsLikeMax))}`;
+      ? `${feelsLikeLabel} ${Math.round(feelsLikeMin)}-${Math.round(feelsLikeMax)}°C`
+      : `${feelsLikeLabel} ${formatTemperature(averagePair(feelsLikeMin, feelsLikeMax))}`;
 
-  return `${prefix}：${temperature}｜${feelsLike}｜${temperatureCorrectionText(weather)}`;
+  return `${prefix}：${temperature}｜${feelsLike}｜${temperatureCorrectionText(weather, result)}`;
 }
 
 function mountainTemperatureValue(
@@ -1996,26 +2025,43 @@ function mountainTemperatureValue(
 ): string {
   const temperature = current?.temperature ?? averagePair(weather?.tempMin, weather?.tempMax);
   const feelsLike =
-    current?.mountainFeelsLikeC ??
-    current?.feelsLike ??
-    averagePair(weather?.mountainFeelsLikeMin, weather?.mountainFeelsLikeMax) ??
-    averagePair(weather?.feelsLikeMin, weather?.feelsLikeMax);
+    resultUsesMountainSemantics(result) || terrainModeForResult(result) === "hill"
+      ? (current?.mountainFeelsLikeC ??
+        current?.feelsLike ??
+        averagePair(weather?.mountainFeelsLikeMin, weather?.mountainFeelsLikeMax) ??
+        averagePair(weather?.feelsLikeMin, weather?.feelsLikeMax))
+      : (current?.feelsLike ??
+        averagePair(weather?.feelsLikeMin, weather?.feelsLikeMax) ??
+        current?.mountainFeelsLikeC ??
+        averagePair(weather?.mountainFeelsLikeMin, weather?.mountainFeelsLikeMax));
+  const feelsLikeLabel = resultUsesMountainSemantics(result)
+    ? "山地体感"
+    : terrainModeForResult(result) === "hill"
+      ? "山地/丘陵体感"
+      : "体感温度";
   return `${terrainTemperaturePrefix(result)}：${formatTemperature(
     temperature,
-  )} / 山地体感 ${formatTemperature(feelsLike)}`;
+  )} / ${feelsLikeLabel} ${formatTemperature(feelsLike)}`;
 }
 
 function terrainTemperaturePrefix(result: ForecastCalculationResult | undefined): string {
-  return result?.terrainAnalysis?.terrainProfile?.elevationConfidence === "low"
-    ? "山顶参考温度"
-    : "山顶估算温度";
+  if (resultUsesMountainSemantics(result)) {
+    return result?.terrainAnalysis?.terrainProfile?.elevationConfidence === "low"
+      ? "山顶参考温度"
+      : "山顶估算温度";
+  }
+  return "机位估算温度";
 }
 
 function temperatureCorrectionText(
   weather: ForecastCalculationResult["dailySummaries"][number]["weather"] | undefined,
+  result?: ForecastCalculationResult,
 ): string {
   if (!weather) {
     return "温度修正待复核";
+  }
+  if (resultUsesLowlandSemantics(result)) {
+    return "预报接近该地点海拔，未额外修正";
   }
   if (weather.temperatureCorrectionApplied) {
     return "已结合机位海拔做轻量修正";
@@ -2032,6 +2078,7 @@ function temperatureCorrectionText(
 function temperatureActionText(
   current: ForecastCalculationResult["currentWeather"] | undefined,
   weather: ForecastCalculationResult["dailySummaries"][number]["weather"] | undefined,
+  result?: ForecastCalculationResult,
 ): string {
   const feelsLike = current?.feelsLike ?? averagePair(weather?.feelsLikeMin, weather?.feelsLikeMax);
   if (typeof feelsLike === "number" && feelsLike <= 5) {
@@ -2040,12 +2087,16 @@ function temperatureActionText(
   if (typeof feelsLike === "number" && feelsLike >= 28) {
     return "体感偏热，注意补水和遮阳。";
   }
-  return "按分层穿法准备，山顶体感仍需现场复核。";
+  return resultUsesMountainSemantics(result)
+    ? "按分层穿法准备，山顶体感仍需现场复核。"
+    : "按清晨体感准备，现场复核风口、湿度和遮挡。";
 }
 
 function cloudVisibilityActionText(result: ForecastCalculationResult): string {
   if (result.scores.whiteoutRisk.score >= 70) {
-    return "白墙风险偏高，先观察云雾上沿。";
+    return resultUsesMountainSemantics(result)
+      ? "白墙风险偏高，先观察云雾上沿。"
+      : "低云或雾气影响偏高，先观察通透度。";
   }
   if (result.scores.transparency.score >= 70) {
     return "通透度较好，适合安排远景层次。";
@@ -2078,7 +2129,9 @@ function windPrecipitationActionText(result: ForecastCalculationResult): string 
     return "降水干扰需优先规避。";
   }
   if (windRisk) {
-    return "注意三脚架稳定和山顶风寒。";
+    return resultUsesMountainSemantics(result)
+      ? "注意三脚架稳定和山顶风寒。"
+      : "注意阵风影响和三脚架稳定。";
   }
   return "风雨对拍摄干扰相对可控。";
 }
@@ -2088,7 +2141,7 @@ function dewPointActionText(value: number | null | undefined): string {
     return "露点差暂缺，雾气和结露需现场复核。";
   }
   if (value <= 2) {
-    return "露点差很小，雾气、结露和云海变化会更敏感。";
+    return "露点差很小，雾气、结露和云雾变化会更敏感。";
   }
   if (value <= 5) {
     return "露点差偏小，清晨云雾变化值得关注。";
@@ -2118,14 +2171,17 @@ function buildRiskDecisionItems(
   const explicitRisks = result.riskFlags.map((risk) => riskDecisionFromFlag(result, risk));
   const riskItems =
     explicitRisks.length > 0 ? explicitRisks : [riskDecisionFromSection(result, mainRisk)];
+  const usesMountainSemantics = resultUsesMountainSemantics(result);
   const whiteoutItem =
     result.scores.whiteoutRisk.score >= 60
       ? [
           {
-            label: "白墙风险",
+            label: usesMountainSemantics ? "白墙风险" : "低云遮挡",
             levelLabel: result.scores.whiteoutRisk.score >= 75 ? "高风险" : "中风险",
             timeWindow: fallbackRiskTimeLabel(result, "whiteout") ?? "清晨窗口前后",
-            action: "到场观察云顶高度，避免只守单一机位。",
+            action: usesMountainSemantics
+              ? "到场观察云顶高度，避免只守单一机位。"
+              : "关注雾气厚度、低云遮挡和通透度变化。",
           },
         ]
       : [];
@@ -2141,7 +2197,7 @@ function riskDecisionFromFlag(
     label: risk.label,
     levelLabel: `${riskLevelText(risk.level)}风险`,
     timeWindow: risk.timeWindowLabelZh ?? fallbackRiskTimeLabel(result, risk.key) ?? "出行前复核",
-    action: riskActionText(risk.key, risk.description),
+    action: riskActionText(result, risk.key, risk.description),
   };
 }
 
@@ -2157,15 +2213,19 @@ function riskDecisionFromSection(
   };
 }
 
-function riskActionText(key: string, detail: string): string {
+function riskActionText(result: ForecastCalculationResult, key: string, detail: string): string {
   if (key === "precipitation") {
     return "防水收纳，清晨窗口需复核临近预报。";
   }
-  if (key === "whiteout") {
-    return "到场观察云顶高度，避免只守单一机位。";
+  if (key === "whiteout" || key === "low_cloud") {
+    return resultUsesMountainSemantics(result)
+      ? "到场观察云顶高度，避免只守单一机位。"
+      : "关注雾气厚度、低云遮挡和通透度变化。";
   }
   if (key === "wind") {
-    return "三脚架加重，山脊位置留安全余量。";
+    return resultUsesMountainSemantics(result)
+      ? "三脚架加重，山脊位置留安全余量。"
+      : "三脚架加重，空旷位置留安全余量。";
   }
   if (key === "visibility") {
     return "优先准备中近景构图，远景层次现场再定。";
@@ -2212,7 +2272,7 @@ function fallbackRiskTimeLabel(
   result: ForecastCalculationResult,
   riskKey: string,
 ): string | undefined {
-  if (riskKey === "whiteout") {
+  if (riskKey === "whiteout" || riskKey === "low_cloud") {
     const whiteoutDay = [...result.cloudSeaAnalysis.dailyCloudSea]
       .filter((day) => day.whiteoutRiskScore >= 50)
       .sort((left, right) => right.whiteoutRiskScore - left.whiteoutRiskScore)[0];
@@ -4156,7 +4216,7 @@ function buildGeneralSubjectSummaries(
 
     return {
       key,
-      name: subjectLabels[key],
+      name: subjectDisplayLabel(result, key),
       chanceText: formatGeneralChanceText(score),
       recommendationLabel,
       badgeVariant: generalSubjectBadgeVariant(recommendationLabel),
@@ -4174,8 +4234,8 @@ function buildGeneralSubjectSummaries(
         ? formatWindow(backupWindow.startTime, backupWindow.endTime)
         : undefined,
       blockerText: recommendedWindow ? undefined : blocker,
-      action: generalSubjectAction(key, recommendationLabel, blocker),
-      linkLabel: linkConfig.label,
+      action: generalSubjectAction(result, key, recommendationLabel, blocker),
+      linkLabel: subjectLinkLabel(result, key, linkConfig.label),
       href: buildSubjectDetailDeepLink({
         query,
         result,
@@ -4189,6 +4249,24 @@ function buildGeneralSubjectSummaries(
       }),
     };
   });
+}
+
+function subjectDisplayLabel(result: ForecastCalculationResult, key: SubjectScoreKey): string {
+  if (key === "cloudSea" && !resultUsesMountainSemantics(result)) {
+    return "晨雾 / 低云";
+  }
+  return subjectLabels[key];
+}
+
+function subjectLinkLabel(
+  result: ForecastCalculationResult,
+  key: GeneralSubjectKey,
+  fallback: string,
+): string {
+  if (key === "cloudSea" && !resultUsesMountainSemantics(result)) {
+    return "查看云雾详情";
+  }
+  return fallback;
 }
 
 function generalSubjectChanceScore(
@@ -4343,7 +4421,7 @@ function generalSubjectBlocker(
 ): string | undefined {
   if (key === "cloudSea") {
     if (result.cloudSeaAnalysis.whiteoutRiskScore >= 65 || result.scores.whiteoutRisk.score >= 65) {
-      return "白墙风险";
+      return resultUsesMountainSemantics(result) ? "白墙风险" : "低云遮挡";
     }
     if (window?.practicalKind === "formation_signal") {
       return "无光形成信号";
@@ -4389,11 +4467,15 @@ function generalSubjectBlocker(
 }
 
 function generalSubjectAction(
+  result: ForecastCalculationResult,
   key: GeneralSubjectKey,
   recommendationLabel: GeneralSubjectRecommendationLabel,
   blocker: string | undefined,
 ): string {
   if (key === "cloudSea") {
+    if (!resultUsesMountainSemantics(result)) {
+      return "关注晨雾、云层开口或远景层次，不建议按高山云海逻辑判断。";
+    }
     if (recommendationLabel === "推荐" || recommendationLabel === "可观察") {
       return "清晨重点关注，现场复核白墙风险。";
     }
@@ -4597,14 +4679,7 @@ function ComprehensiveCoreDecisionCards({
       arrivalAdviceDetail(bestWindow),
       result.overallScore >= 65 ? "primary" : "accent",
     ),
-    textCard(
-      "comprehensive-cloud-sea",
-      "cloudSea",
-      "云海 / 白墙",
-      `形成${result.cloudSeaAnalysis.labels.formationOpportunity} · 可拍${result.cloudSeaAnalysis.labels.shootableOpportunity} · 白墙${result.cloudSeaAnalysis.labels.whiteoutRisk}`,
-      `形成 ${result.cloudSeaAnalysis.formationScore} 分，可拍 ${result.cloudSeaAnalysis.shootableScore} 分，白墙风险 ${result.cloudSeaAnalysis.whiteoutRiskScore} 分。`,
-      result.cloudSeaAnalysis.labels.whiteoutRisk === "高" ? "danger" : "info",
-    ),
+    generalCloudMistCard(result),
     textCard(
       "comprehensive-glow-v2",
       "sunsetGlow",
@@ -4617,7 +4692,7 @@ function ComprehensiveCoreDecisionCards({
       "comprehensive-subject",
       bestSubject.key === "milkyWay" ? "milkyWay" : bestSubject.key,
       "最佳题材",
-      subjectLabels[bestSubject.key],
+      subjectDisplayLabel(result, bestSubject.key),
       userFacingResultText(`${bestSubject.score.score} 分，${bestSubject.reason}`),
       "info",
       bestSubject.score.score,
@@ -4641,6 +4716,28 @@ function ComprehensiveCoreDecisionCards({
         <PrimaryResultCard key={card.key} card={card} />
       ))}
     </section>
+  );
+}
+
+function generalCloudMistCard(result: ForecastCalculationResult): ForecastResultCard {
+  if (!resultUsesMountainSemantics(result)) {
+    return textCard(
+      "comprehensive-cloud-mist",
+      "cloudSea",
+      "晨雾 / 低云",
+      `云雾信号${result.cloudSeaAnalysis.labels.formationOpportunity} · 通透风险${result.cloudSeaAnalysis.labels.whiteoutRisk}`,
+      `低云/雾气 ${result.cloudSeaAnalysis.formationScore} 分，云层开口 ${result.cloudSeaAnalysis.shootableScore} 分，低云遮挡 ${result.cloudSeaAnalysis.whiteoutRiskScore} 分。`,
+      result.cloudSeaAnalysis.labels.whiteoutRisk === "高" ? "danger" : "info",
+    );
+  }
+
+  return textCard(
+    "comprehensive-cloud-sea",
+    "cloudSea",
+    "云海 / 白墙",
+    `形成${result.cloudSeaAnalysis.labels.formationOpportunity} · 可拍${result.cloudSeaAnalysis.labels.shootableOpportunity} · 白墙${result.cloudSeaAnalysis.labels.whiteoutRisk}`,
+    `形成 ${result.cloudSeaAnalysis.formationScore} 分，可拍 ${result.cloudSeaAnalysis.shootableScore} 分，白墙风险 ${result.cloudSeaAnalysis.whiteoutRiskScore} 分。`,
+    result.cloudSeaAnalysis.labels.whiteoutRisk === "高" ? "danger" : "info",
   );
 }
 
@@ -4883,7 +4980,9 @@ function dailyMainWeatherSummary(
   summary: GeneralDailySummary,
   breakdown: GeneralDailyBreakdown | undefined,
 ): string {
-  const source = summary.weather?.weatherTextZh ?? breakdown?.weatherSummary ?? "天气待复核";
+  const source =
+    simplifyWeatherSummaryZh(summary.weather?.weatherTextZh ?? breakdown?.weatherSummary) ??
+    "天气待复核";
   return compactSentence(source, 24);
 }
 
@@ -4935,12 +5034,14 @@ function dailyPrimaryWindow(
   if (
     summary.bestShootableWindow &&
     windowBelongsToDate(summary.bestShootableWindow, summary.date) &&
-    isHighConfidenceDailyWindow(summary.bestShootableWindow)
+    isHighConfidenceDailyWindow(result, summary.bestShootableWindow)
   ) {
     return summary.bestShootableWindow;
   }
 
-  return sortedDailyWindows(result, summary.date).find(isHighConfidenceDailyWindow);
+  return sortedDailyWindows(result, summary.date).find((window) =>
+    isHighConfidenceDailyWindow(result, window),
+  );
 }
 
 function dailyBackupWindow(
@@ -4987,9 +5088,19 @@ function sameDailyWindow(
   );
 }
 
-function isHighConfidenceDailyWindow(window: GeneralForecastWindow): boolean {
+function isHighConfidenceDailyWindow(
+  result: ForecastCalculationResult,
+  window: GeneralForecastWindow,
+): boolean {
   if (isBlockedAstroWindow(window)) {
     return false;
+  }
+  if (!resultUsesMountainSemantics(result) && window.target === "cloud_sea") {
+    return (
+      window.windowLevel === "watchable" &&
+      window.recommendationLevel !== "not_recommended" &&
+      (window.practicalScore ?? window.score) >= 25
+    );
   }
   return isUsableClientWindow(window);
 }
@@ -5066,7 +5177,7 @@ function dailyMainRiskText(
     (day) => day.date === summary.date,
   );
   if ((cloudSeaDay?.whiteoutRiskScore ?? breakdown?.whiteoutRisk?.score ?? 0) >= 60) {
-    return "白墙风险";
+    return resultUsesMountainSemantics(result) ? "白墙风险" : "低云遮挡";
   }
 
   if ((weather?.cloudLow ?? 0) >= 70) {
@@ -5101,8 +5212,10 @@ function dailyCompactActionSuggestion(
   }
 
   const mainRisk = dailyMainRiskText(result, summary, breakdown);
-  if (mainRisk === "白墙风险" && !primaryWindow) {
-    return "白墙风险偏高，到场先看云顶高度，避免只守单一机位。";
+  if ((mainRisk === "白墙风险" || mainRisk === "低云遮挡") && !primaryWindow) {
+    return resultUsesMountainSemantics(result)
+      ? "白墙风险偏高，到场先看云顶高度，避免只守单一机位。"
+      : "低云或雾气影响偏高，优先观察通透度和云层开口。";
   }
 
   if (!primaryWindow) {
@@ -5113,6 +5226,9 @@ function dailyCompactActionSuggestion(
 
   const subject = windowLabelText(primaryWindow);
   if (primaryWindow.target === "cloud_sea") {
+    if (!resultUsesMountainSemantics(result)) {
+      return "关注晨雾、云层开口或日落光线，不建议按高山云海逻辑判断。";
+    }
     return dailyOverallDecisionLabel(summary).includes("不建议")
       ? `若在附近，可观察${subject}；不建议只为单一窗口专程。`
       : `${subject}可优先安排，到场先复核云顶高度和白墙风险。`;
@@ -5212,8 +5328,8 @@ function ActionableAdviceSection({
   const backupPlan = bestWindow?.backupSubjectLabel
     ? `若主窗口不成立，优先转向${bestWindow.backupSubjectLabel}。`
     : backupSubjects.length > 0
-      ? `若${subjectLabels[bestSubject.key]}不成立，优先转向${backupSubjects
-          .map((subject) => `${subjectLabels[subject.key]}（${subject.score.score} 分）`)
+      ? `若${subjectDisplayLabel(result, bestSubject.key)}不成立，优先转向${backupSubjects
+          .map((subject) => `${subjectDisplayLabel(result, subject.key)}（${subject.score.score} 分）`)
           .join("或")}。`
       : "如果主目标不成立，保留现场光线、云层纹理和地景构图作为备选。";
 
@@ -5226,7 +5342,10 @@ function ActionableAdviceSection({
       />
       <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(250px,1fr))]">
         <AdviceBlock title="建议到达时间" items={[compactArrivalAdvice(bestWindow)]} />
-        <AdviceBlock title="优先拍摄题材" items={[compactSubjectAdvice(bestWindow, bestSubject)]} />
+        <AdviceBlock
+          title="优先拍摄题材"
+          items={[compactSubjectAdvice(result, bestWindow, bestSubject)]}
+        />
         <AdviceBlock title="备选方案" items={[backupPlan]} />
         <AdviceBlock title="风险提醒" items={[compactRiskAdvice(mainRisk)]} />
         <AdviceBlock
@@ -5257,10 +5376,11 @@ function compactArrivalAdvice(
 }
 
 function compactSubjectAdvice(
+  result: ForecastCalculationResult,
   window: ForecastResultWindow | ForecastCalculationResult["bestWindows"][number] | undefined,
   subject: SubjectBreakdownCard,
 ): string {
-  const label = window ? windowLabelText(window) : subjectLabels[subject.key];
+  const label = window ? windowLabelText(window) : subjectDisplayLabel(result, subject.key);
   return `${label}优先；${subject.score.score} 分，${firstSentence(subject.actionSuggestion)}`;
 }
 
@@ -5934,30 +6054,38 @@ function buildSubjectBreakdownCards(
     if (key === "cloudSea") {
       const analysis = result.cloudSeaAnalysis;
       const whiteoutLabel = analysis.labels.whiteoutRisk;
+      const usesMountainSemantics = resultUsesMountainSemantics(result);
 
       return {
         key,
-        label: subjectLabels[key],
+        label: subjectDisplayLabel(result, key),
         score: {
           ...score,
           score: analysis.shootableScore,
           reasons: [
-            `云海形成 ${analysis.formationScore} 分，可拍 ${analysis.shootableScore} 分，白墙风险 ${analysis.whiteoutRiskScore} 分。`,
+            usesMountainSemantics
+              ? `云海形成 ${analysis.formationScore} 分，可拍 ${analysis.shootableScore} 分，白墙风险 ${analysis.whiteoutRiskScore} 分。`
+              : `低云/雾气 ${analysis.formationScore} 分，云层开口 ${analysis.shootableScore} 分，遮挡风险 ${analysis.whiteoutRiskScore} 分。`,
           ],
         },
         priorityScore: practicalSubjectScoreFromCloudSea(result),
         windowLabel: analysis.bestCloudSeaWindow
-          ? `最佳云海窗口：${formatWindow(
+          ? `${usesMountainSemantics ? "最佳云海窗口" : "云雾观察窗口"}：${formatWindow(
               analysis.bestCloudSeaWindow.startTime,
               analysis.bestCloudSeaWindow.endTime,
             )}`
-          : analysis.labels.watchableWindowLabel ?? "暂无明确可拍云海窗口",
+          : analysis.labels.watchableWindowLabel ??
+            (usesMountainSemantics ? "暂无明确可拍云海窗口" : "暂无明确云雾观察窗口"),
         reason:
-          whiteoutLabel === "高"
+          !usesMountainSemantics
+            ? `低海拔地形不按高山云海判断；当前云雾信号${analysis.labels.formationOpportunity}，低云遮挡${whiteoutLabel}。`
+            : whiteoutLabel === "高"
             ? `云海形成条件${analysis.labels.formationOpportunity}，但低云偏厚，白墙风险高；可拍机会${analysis.labels.shootableOpportunity}。`
             : `云海形成条件${analysis.labels.formationOpportunity}，可拍机会${analysis.labels.shootableOpportunity}，白墙风险${whiteoutLabel}。`,
         actionSuggestion:
-          whiteoutLabel === "高"
+          !usesMountainSemantics
+            ? "关注晨雾、云层开口和远景通透，不建议按高山云海逻辑判断。"
+            : whiteoutLabel === "高"
             ? "若已在山上，可等待短暂开口；不建议为单一窗口专程奔赴。"
             : analysis.shootableScore >= 70
               ? "清晨有云海窗口，建议提前到达并观察云顶开口。"
@@ -6267,13 +6395,16 @@ function pickMainRisk(result: ForecastCalculationResult): ForecastResultSectionI
   }
 
   if (result.scores.whiteoutRisk.score >= 65) {
+    const usesMountainSemantics = resultUsesMountainSemantics(result);
     return {
-      label: "白墙风险",
+      label: usesMountainSemantics ? "白墙风险" : "低云遮挡",
       value: "中风险",
       detail: appendRiskTimeContext(
         firstText(
           [...result.scores.whiteoutRisk.risks, ...result.scores.whiteoutRisk.reasons],
-          "低云、湿度和能见度组合需要出行前复核。",
+          usesMountainSemantics
+            ? "低云、湿度和能见度组合需要出行前复核。"
+            : "低云、雾气和能见度组合需要出行前复核。",
         ),
         fallbackRiskTimeLabel(result, "whiteout"),
       ),
@@ -6562,7 +6693,7 @@ function windowRiskTag(result: ForecastCalculationResult, window: ForecastResult
     return "作息成本高";
   }
   if (window.target === "cloud_sea" && result.scores.whiteoutRisk.score >= 65) {
-    return "白墙需复核";
+    return resultUsesMountainSemantics(result) ? "白墙需复核" : "低云遮挡需复核";
   }
   if (window.target === "glow" && result.scores.transparency.score < 60) {
     return "通透度偏弱";

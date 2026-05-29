@@ -1,4 +1,8 @@
-import type { NormalizedDailyWeather, NormalizedHourlyWeather } from "@photo-weather/shared";
+import {
+  formatWeatherTransitionZh,
+  type NormalizedDailyWeather,
+  type NormalizedHourlyWeather,
+} from "@photo-weather/shared";
 import { qweatherDailyFixture, qweatherHourlyFixture } from "./fixture-data.js";
 import {
   kmhToMetersPerSecond,
@@ -183,7 +187,7 @@ export class QWeatherProvider implements WeatherProvider {
         const textNight = toText(record.textNight);
         const precipitationProbability = nullablePercent(record.pop);
         const precipitation = nullableRounded(record.precip);
-        const weatherSummary = textNight ? `${textDay}转${textNight}` : textDay;
+        const weatherSummary = formatWeatherTransitionZh(textDay, textNight);
 
         return {
           date,

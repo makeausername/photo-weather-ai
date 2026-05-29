@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type {
-  ForecastCalculationInput,
-  ForecastQueryInput,
-  ForecastScore,
-  NormalizedHourlyWeather,
-  TerrainAnalysisSummary,
+import {
+  classifyTerrainMode,
+  type ForecastCalculationInput,
+  type ForecastQueryInput,
+  type ForecastScore,
+  type NormalizedHourlyWeather,
+  type TerrainAnalysisSummary,
 } from "@photo-weather/shared";
 import type { WeatherDataBundle } from "@photo-weather/weather";
 import {
@@ -110,6 +111,56 @@ describe("forecast score calculators", () => {
     expectForecastScore(calculateStarsScore(input), "星空");
     expectForecastScore(calculateMilkyWayScore(input), "银河");
     expectForecastScore(calculateTransparencyScore(input), "通透度");
+  });
+
+  it("uses lowland terrain semantics for low-elevation ordinary locations", () => {
+    const lowlandInput = buildMockForecastInput(
+      {
+        ...baseQuery,
+        name: "黄山市区低海拔机位",
+        locationId: "location-lowland-142m",
+        photoSpotId: undefined,
+        elevationMeters: 142,
+        elevationSource: "manual",
+        elevationConfidence: "medium",
+      },
+      { now: fixedNow },
+    );
+    const result = calculateForecast(lowlandInput);
+    const windowText = result.bestWindows
+      .map((window) => `${window.label} ${window.subjectPriorityLabel ?? ""}`)
+      .join(" ");
+    const riskText = result.riskFlags
+      .map((risk) => `${risk.label} ${risk.description}`)
+      .join(" ");
+    const adviceText = result.photographyAdvice.join(" ");
+
+    expect(classifyTerrainMode(lowlandInput.terrainAnalysis.terrainProfile)).toBe("lowland");
+    expect(result.scores.cloudSea.label).toBe("晨雾/低云");
+    expect(result.scores.whiteoutRisk.label).toBe("低云遮挡");
+    expect(windowText).not.toContain("清晨云海");
+    expect(windowText).toMatch(/晨雾|云层|云雾|低云/);
+    expect(riskText).not.toContain("山脊风风险");
+    expect(riskText).not.toContain("白墙风险");
+    expect(adviceText).toContain("晨雾");
+    expect(adviceText).not.toContain("高点");
+    expect(adviceText).not.toContain("白墙风险");
+    expect(result.dailySummaries.some((summary) => summary.weather?.temperatureCorrectionApplied)).toBe(
+      false,
+    );
+  });
+
+  it("keeps high mountain seed spots on mountain cloud-sea semantics", () => {
+    const input = buildMockForecastInput(baseQuery, { now: fixedNow });
+    const result = calculateForecast(input);
+    const windowText = result.bestWindows
+      .map((window) => `${window.label} ${window.subjectPriorityLabel ?? ""}`)
+      .join(" ");
+
+    expect(classifyTerrainMode(input.terrainAnalysis.terrainProfile)).toBe("high_mountain");
+    expect(result.scores.cloudSea.label).toBe("云海");
+    expect(result.scores.whiteoutRisk.label).toBe("白墙风险");
+    expect(windowText).toContain("清晨云海");
   });
 
   it("keeps whiteout risk separate from cloud sea opportunity", () => {

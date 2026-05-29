@@ -3,7 +3,10 @@ import type {
   ElevationSource,
   SpotTerrainProfile,
 } from "@photo-weather/shared";
-import { buildSpotTerrainProfile } from "./spot-terrain-profiles.js";
+import {
+  buildSpotTerrainProfile,
+  terrainSeedMatchesElevation,
+} from "./spot-terrain-profiles.js";
 import type { TerrainAnalysisInput } from "./types.js";
 
 const defaultKnownElevationTtlMs = 30 * 24 * 60 * 60 * 1000;
@@ -206,29 +209,44 @@ function buildResult(input: {
   readonly elevationConfidence: ElevationConfidence;
   readonly reasonZh: string;
 }): ElevationEnrichmentResult {
+  const baseProfile = terrainSeedMatchesElevation(input.baseProfile, input.elevationMeters)
+    ? input.baseProfile
+    : stripIncompatibleSeedTerrain(input.baseProfile);
   return {
     elevationMeters: input.elevationMeters,
     elevationSource: input.elevationSource,
     elevationConfidence: input.elevationConfidence,
     terrainProfile: {
-      ...input.baseProfile,
+      ...baseProfile,
       latitudeWgs84: input.input.coordinate.latitude,
       longitudeWgs84: input.input.coordinate.longitude,
-      latitudeGcj02: input.input.latitudeGcj02 ?? input.baseProfile.latitudeGcj02,
-      longitudeGcj02: input.input.longitudeGcj02 ?? input.baseProfile.longitudeGcj02,
+      latitudeGcj02: input.input.latitudeGcj02 ?? baseProfile.latitudeGcj02,
+      longitudeGcj02: input.input.longitudeGcj02 ?? baseProfile.longitudeGcj02,
       elevationMeters: input.elevationMeters,
       elevationSource: input.elevationSource,
       elevationConfidence: input.elevationConfidence,
-      terrainType: input.baseProfile.terrainType ?? "unknown",
-      exposureType: input.baseProfile.exposureType ?? "unknown",
-      viewingDirection: input.baseProfile.viewingDirection ?? "unknown",
+      terrainType: baseProfile.terrainType ?? "unknown",
+      exposureType: baseProfile.exposureType ?? "unknown",
+      viewingDirection: baseProfile.viewingDirection ?? "unknown",
       terrainNotesZh:
         input.elevationMeters === null
-          ? "机位海拔暂未确认，山地体感和云海判断仅作参考。"
-          : input.baseProfile.terrainNotesZh ?? "仅有机位海拔，周边地形仍需补充。",
+          ? "海拔资料暂未确认，体感仅作参考。"
+          : baseProfile.terrainNotesZh ?? "仅有机位海拔，周边地形仍需补充。",
     },
     cacheKey: input.cacheKey,
     reasonZh: input.reasonZh,
+  };
+}
+
+function stripIncompatibleSeedTerrain(profile: SpotTerrainProfile): SpotTerrainProfile {
+  return {
+    ...profile,
+    terrainType: "unknown",
+    exposureType: "unknown",
+    viewingDirection: "unknown",
+    nearbyValleyElevationMeters: null,
+    localReliefMeters: null,
+    terrainNotesZh: "仅采用该地点海拔，周边高差未确认，不按高山机位判断。",
   };
 }
 

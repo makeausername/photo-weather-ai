@@ -170,7 +170,7 @@ export function buildSpotTerrainProfile(input: TerrainAnalysisInput): SpotTerrai
   }
 
   const seed = resolveSeedTerrainProfile(input);
-  if (seed) {
+  if (seed && terrainSeedMatchesElevation(seed, input.elevationMeters)) {
     return pickSpotTerrainProfile(seed);
   }
 
@@ -194,9 +194,23 @@ export function buildSpotTerrainProfile(input: TerrainAnalysisInput): SpotTerrai
     localReliefMeters: null,
     terrainNotesZh:
       manualElevation === null
-        ? "机位海拔资料不完整，山顶体感仅作参考。"
+        ? "海拔资料暂未确认，体感仅作参考。"
         : "仅有机位海拔，周边谷地和暴露度仍需补充。",
   };
+}
+
+export function terrainSeedMatchesElevation(
+  seed: Pick<SpotTerrainProfile, "elevationMeters">,
+  elevationMeters: number | null | undefined,
+): boolean {
+  const inputElevation = finiteElevation(elevationMeters);
+  const seedElevation = finiteElevation(seed.elevationMeters);
+  if (inputElevation === null || seedElevation === null) {
+    return true;
+  }
+
+  const toleranceMeters = Math.max(300, seedElevation * 0.2);
+  return Math.abs(inputElevation - seedElevation) <= toleranceMeters;
 }
 
 export function pickSpotTerrainProfile(profile: SpotTerrainProfile): SpotTerrainProfile {

@@ -272,6 +272,9 @@ export function buildForecastInputFromNormalizedWeather(
         ...place.coordinates,
         name: query.name,
       },
+      elevationMeters: query.elevationMeters ?? null,
+      elevationSource: query.elevationSource,
+      elevationConfidence: query.elevationConfidence,
     });
   const initialCurrentWeather =
     weather.currentWeather ??

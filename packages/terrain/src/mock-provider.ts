@@ -9,6 +9,7 @@ import {
 import {
   buildSpotTerrainProfile,
   resolveSeedTerrainProfile,
+  terrainSeedMatchesElevation,
   type TerrainProfileSeed,
 } from "./spot-terrain-profiles.js";
 import type {
@@ -29,8 +30,12 @@ const mockTerrainHonestyNoteZh =
 export function buildMockTerrainAnalysis(input: TerrainAnalysisInput): TerrainAnalysisResult {
   validateTerrainCoordinates(input.coordinate);
 
-  const seed = resolveSeedTerrainProfile(input);
   const spotProfile = buildSpotTerrainProfile(input);
+  const resolvedSeed = resolveSeedTerrainProfile(input);
+  const seed =
+    resolvedSeed && terrainSeedMatchesElevation(resolvedSeed, spotProfile.elevationMeters)
+      ? resolvedSeed
+      : undefined;
   const terrainProfile = seed
     ? buildSeededTerrainProfile(seed, input)
     : buildUnknownTerrainProfile(input);
@@ -156,7 +161,7 @@ function buildUnknownTerrainProfile(input: TerrainAnalysisInput): TerrainProfile
   const elevation = spotProfile.elevationMeters;
   const note =
     spotProfile.elevationMeters === null
-      ? "机位海拔暂未确认，山地体感和云海判断仅作参考。"
+      ? "海拔资料暂未确认，体感仅作参考。"
       : "仅有机位海拔，周边谷地高差、暴露度和遮挡仍需补充。";
 
   return {

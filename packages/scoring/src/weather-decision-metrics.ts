@@ -1,17 +1,21 @@
-import type {
-  ElevationTemperatureAdjustment,
-  ExposedRidgeWindRisk,
-  NormalizedCurrentWeather,
-  NormalizedDailyWeather,
-  NormalizedHourlyWeather,
-  PhotographyPrecipitationRisk,
-  PrecipitationType,
-  TerrainAnalysisSummary,
-  TerrainProfileSummary,
-  TerrainType,
-  ExposureType,
-  TransparencyGrade,
-  TripodStabilityRisk,
+import {
+  classifyTerrainMode,
+  simplifyWeatherSummaryZh,
+  terrainModeUsesLowlandSemantics,
+  terrainModeUsesMountainSemantics,
+  type ElevationTemperatureAdjustment,
+  type ExposedRidgeWindRisk,
+  type NormalizedCurrentWeather,
+  type NormalizedDailyWeather,
+  type NormalizedHourlyWeather,
+  type PhotographyPrecipitationRisk,
+  type PrecipitationType,
+  type TerrainAnalysisSummary,
+  type TerrainProfileSummary,
+  type TerrainType,
+  type ExposureType,
+  type TransparencyGrade,
+  type TripodStabilityRisk,
 } from "@photo-weather/shared";
 import { clampScore } from "./helpers.js";
 
@@ -211,7 +215,7 @@ function precipitationRecommendationZh(input: {
     input.probability === null && input.amount !== null
       ? "降水概率暂无，按预计降水量判断风险。"
       : "";
-  const weatherText = input.weatherTextZh ? `${input.weatherTextZh}，` : "";
+  const weatherText = input.weatherTextZh ? `${simplifyWeatherSummaryZh(input.weatherTextZh)}，` : "";
   const affectedText =
     input.affectedWindows.length > 0
       ? `可能影响${input.affectedWindows.join("、")}。`
@@ -320,23 +324,26 @@ export function applyMountainWeatherAdjustments(
   const elevationMeters = finiteNumber(terrainProfile.locationElevation)
     ? terrainProfile.locationElevation
     : undefined;
+  const terrainMode = classifyTerrainMode(terrainProfile);
+  const shouldApplyElevationCooling =
+    elevationMeters !== undefined && !terrainModeUsesLowlandSemantics(terrainMode);
   const hourlyWeather = input.hourlyWeather.map((hour) =>
     annotateDecisionWeather(
-      elevationMeters === undefined ? hour : adjustHourlyTemperature(hour, elevationMeters),
+      shouldApplyElevationCooling ? adjustHourlyTemperature(hour, elevationMeters) : hour,
       terrainProfile,
     ),
   );
   const currentWeather = input.currentWeather
     ? annotateDecisionCurrent(
-        elevationMeters === undefined
-          ? input.currentWeather
-          : adjustCurrentTemperature(input.currentWeather, elevationMeters),
+        shouldApplyElevationCooling
+          ? adjustCurrentTemperature(input.currentWeather, elevationMeters)
+          : input.currentWeather,
         terrainProfile,
       )
     : undefined;
   const dailyWeather = input.dailyWeather.map((day) =>
     annotateDecisionDaily(
-      elevationMeters === undefined ? day : adjustDailyTemperature(day, elevationMeters),
+      shouldApplyElevationCooling ? adjustDailyTemperature(day, elevationMeters) : day,
       terrainProfile,
     ),
   );
@@ -921,6 +928,8 @@ function buildMountainComfortMetadata(input: {
     input.terrainProfile.exposureType === "exposed" ||
     input.terrainProfile.terrainType === "summit" ||
     input.terrainProfile.terrainType === "ridge";
+  const terrainMode = classifyTerrainMode(input.terrainProfile);
+  const usesMountainSemantics = terrainModeUsesMountainSemantics(terrainMode);
   const wetPenalty =
     input.rainRiskLevel === "high" || input.rainRiskLevel === "severe"
       ? 1.4
@@ -928,7 +937,11 @@ function buildMountainComfortMetadata(input: {
         ? 0.8
         : 0;
   const humidityPenalty = (input.humidity ?? 0) >= 90 ? 0.7 : 0;
-  const windPenalty = isExposed ? Math.min(3.2, wind * 0.28 + gust * 0.08) : Math.min(2, wind * 0.2);
+  const windPenalty = usesMountainSemantics
+    ? isExposed
+      ? Math.min(3.2, wind * 0.28 + gust * 0.08)
+      : Math.min(2, wind * 0.2)
+    : Math.min(1.2, wind * 0.12 + gust * 0.04);
   const mountainFeelsLikeC =
     baseTemperature === null
       ? null
@@ -947,12 +960,14 @@ function buildMountainComfortMetadata(input: {
       tripodStabilityRisk,
       mountainFeelsLikeC,
       isExposed,
+      usesMountainSemantics,
     }),
     clothingRiskNoteZh: clothingRiskNoteZh({
       rainRiskLevel: input.rainRiskLevel,
       humidity: input.humidity,
       windRisk: input.windRisk,
       isExposed,
+      usesMountainSemantics,
     }),
   };
 }
@@ -976,17 +991,24 @@ function windChillNoteZh(input: {
   readonly tripodStabilityRisk: TripodStabilityRisk;
   readonly mountainFeelsLikeC: number | null;
   readonly isExposed: boolean;
+  readonly usesMountainSemantics: boolean;
 }): string {
   if (input.windRisk === "high" || input.tripodStabilityRisk === "high") {
-    return "山脊风风险较高，三脚架和人员站位需留余量。";
+    return input.usesMountainSemantics
+      ? "山脊风风险较高，三脚架和人员站位需留余量。"
+      : "阵风影响较明显，三脚架稳定和人员站位需留余量。";
   }
   if (input.mountainFeelsLikeC !== null && input.mountainFeelsLikeC <= 8) {
-    return "清晨和夜间体感偏凉，长时间等云层开口时要预留保暖层。";
+    return input.usesMountainSemantics
+      ? "清晨和夜间体感偏凉，长时间等云层开口时要预留保暖层。"
+      : "清晨和夜间体感偏凉，长时间等待云层开口时要预留保暖层。";
   }
   if (input.isExposed && input.windRisk === "medium") {
     return "机位较暴露，阵风会放大体感和三脚架晃动。";
   }
-  return "山顶体感仍需结合现场风口位置复核。";
+  return input.usesMountainSemantics
+    ? "山顶体感仍需结合现场风口位置复核。"
+    : "体感仍需结合现场风口和遮挡条件复核。";
 }
 
 function clothingRiskNoteZh(input: {
@@ -994,17 +1016,22 @@ function clothingRiskNoteZh(input: {
   readonly humidity?: number | null;
   readonly windRisk: ExposedRidgeWindRisk;
   readonly isExposed: boolean;
+  readonly usesMountainSemantics: boolean;
 }): string {
   if (input.rainRiskLevel === "high" || input.rainRiskLevel === "severe") {
     return "降水干扰明显，防水外层、镜头布和干燥备份袋优先级高。";
   }
   if ((input.humidity ?? 0) >= 88 && input.windRisk !== "low") {
-    return "高湿叠加山顶风，体感会比气温更冷，建议带防风外套。";
+    return input.usesMountainSemantics
+      ? "高湿叠加山顶风，体感会比气温更冷，建议带防风外套。"
+      : "高湿叠加阵风，体感会比气温更冷，建议带防风外套。";
   }
   if (input.isExposed) {
     return "暴露机位风感更强，建议按分层穿法准备。";
   }
-  return "穿衣按山地分层准备，清晨和夜间保留防风层。";
+  return input.usesMountainSemantics
+    ? "穿衣按山地分层准备，清晨和夜间保留防风层。"
+    : "穿衣按清晨体感准备，保留轻量防风层。";
 }
 
 function hourWindowLabel(time: string): string {
