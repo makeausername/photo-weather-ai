@@ -30,32 +30,46 @@ export const cloudSeaScenarioConfig = {
     "风速偏大时云雾层容易被打散，窗口可能很短。",
     "部分地形或云层数据仍需结合临近预报复核。",
   ],
-  learningTitle: "云海结果如何复核",
-  learningBadgeLabel: "复核要素",
+  learningTitle: "云海判断需要关注什么",
+  learningDescription:
+    "选择地点后，系统会结合水汽、低云、地形、风速、光线窗口和降水时段判断云海形成、可拍机会与白墙风险。",
+  learningBadgeLabel: "判断参考",
   learningItems: [
     {
-      title: "云海形成机会",
-      description: "湿度、露点差、低云、弱到中等风和地形高差共同影响云海形成。",
+      title: "水汽是否足够",
+      tag: "核心指标",
+      description:
+        "湿度、露点差和降水前后决定云雾能不能形成。湿度高、露点差小，更容易出现低云或雾气。",
     },
     {
-      title: "云海可拍机会",
-      description: "可拍机会需要形成信号与清晨光线、能见度、通行和低白墙风险重叠。",
+      title: "低云是否在合适高度",
+      tag: "白墙判断",
+      description:
+        "云在脚下是云海，云在身上是白墙，云在头上多半只是阴天。低云高度与机位海拔的关系很关键。",
     },
     {
-      title: "白墙风险",
-      description: "低云过厚、能见度过低时，机位可能被云雾包裹。",
+      title: "机位是否高于云层",
+      tag: "地形优势",
+      description:
+        "高山、山脊和观景台更容易看到云海；低海拔地点更多表现为晨雾、低云或通透变化。",
     },
     {
-      title: "最佳清晨窗口",
-      description: "云海通常重点关注日出前后窗口。",
+      title: "风速是否合适",
+      tag: "层次变化",
+      description:
+        "风太小容易闷成白墙，风太大云雾容易被吹散。适中风速更利于云雾流动和层次变化。",
     },
     {
-      title: "地形高差",
-      description: "高机位和山谷高差越明显，越利于俯拍云海。",
+      title: "是否有光线窗口",
+      tag: "出片窗口",
+      description:
+        "清晨日出前后最值得守。夜间云海形成不等于能出片，是否有光线和开口同样重要。",
     },
     {
-      title: "风速与稳定性",
-      description: "风太大容易打散云层，风太弱可能增加白墙风险。",
+      title: "是否存在雨后开口",
+      tag: "雨后开口",
+      description:
+        "降水刚结束后可能出现短暂云雾层次；但拍摄窗口正在下雨时，通透、器材和出片稳定性都会下降。",
     },
   ],
 } satisfies ScenarioPageConfig;

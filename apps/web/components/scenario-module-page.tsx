@@ -15,6 +15,7 @@ type PopularScenarioSpot = {
 type ScenarioLearningItem = {
   readonly title: string;
   readonly description: string;
+  readonly tag?: string;
 };
 
 export type ScenarioPageConfig = {
@@ -32,6 +33,7 @@ export type ScenarioPageConfig = {
   readonly popularTitle?: string;
   readonly popularSpots?: readonly PopularScenarioSpot[];
   readonly learningTitle?: string;
+  readonly learningDescription?: string;
   readonly learningBadgeLabel?: string;
   readonly learningItems?: readonly ScenarioLearningItem[];
   readonly dataNotice?: string;
@@ -96,34 +98,61 @@ function CloudSeaScenarioEntryPage({ config }: { readonly config: ScenarioPageCo
 
       <section className="grid gap-5 min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(340px,24vw,410px)_minmax(0,1fr)] min-[1200px]:items-start">
         <ScenarioSearchPanel config={config} />
-        <div className="grid min-w-0 gap-4">
-          <Card className="p-5 shadow-sm">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="muted">生成后查看</Badge>
-              <Badge variant="accent">{forecastHorizonLabels[config.defaultHorizon]}</Badge>
-            </div>
-            <h2 className="mt-3 text-xl font-bold text-card-foreground">云海拍摄决策</h2>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              {[
-                "有没有云海机会",
-                "能不能拍",
-                "会不会白墙",
-                "几点到、几点守",
-                "白墙时怎么转拍",
-                "是否值得专程去",
-              ].map((item) => (
-                <div key={item} className="rounded-lg border border-border bg-muted px-3 py-2">
-                  <p className="text-sm font-semibold text-card-foreground">{item}</p>
-                </div>
-              ))}
-            </div>
-          </Card>
-          <p className="rounded-lg border border-warning bg-muted px-3 py-2 text-sm leading-6 text-muted-foreground">
-            部分地形或云层数据仍需结合临近预报复核。
-          </p>
-        </div>
+        <CloudSeaKnowledgeGuide config={config} />
       </section>
     </PublicShell>
+  );
+}
+
+function CloudSeaKnowledgeGuide({ config }: { readonly config: ScenarioPageConfig }) {
+  const items = config.learningItems ?? [];
+
+  return (
+    <section className="grid min-w-0 gap-4" data-cloud-sea-pre-result="knowledge-guide">
+      <div className="rounded-lg border border-border bg-card p-5 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="accent">{config.learningBadgeLabel ?? "判断参考"}</Badge>
+          <Badge variant="muted">{forecastHorizonLabels[config.defaultHorizon]}</Badge>
+        </div>
+        <h2 className="mt-3 text-xl font-bold leading-tight text-card-foreground">
+          {config.learningTitle ?? "云海判断需要关注什么"}
+        </h2>
+        <p className="mt-3 max-w-4xl text-sm leading-6 text-muted-foreground sm:text-[15px] sm:leading-7">
+          {config.learningDescription ??
+            "选择地点后，系统会结合水汽、低云、地形、风速、光线窗口和降水时段判断云海形成、可拍机会与白墙风险。"}
+        </p>
+      </div>
+
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {items.map((item, index) => (
+          <article
+            key={item.title}
+            className="grid min-w-0 content-start gap-3 overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm"
+            data-cloud-sea-knowledge-card="true"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <span
+                className={cn(
+                  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold",
+                  index % 2 === 0
+                    ? "border-primary bg-secondary text-primary"
+                    : "border-accent bg-card text-accent",
+                )}
+              >
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              {item.tag ? (
+                <Badge variant={index % 2 === 0 ? "muted" : "accent"}>{item.tag}</Badge>
+              ) : null}
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-base font-bold leading-6 text-card-foreground">{item.title}</h3>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.description}</p>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -293,6 +322,7 @@ function ScenarioLearningGrid({
                 {String(index + 1).padStart(2, "0")}
               </span>
               <h3 className="text-base font-bold text-card-foreground">{item.title}</h3>
+              {item.tag ? <Badge variant="muted">{item.tag}</Badge> : null}
             </div>
             <p className="text-sm leading-6 text-muted-foreground">{item.description}</p>
           </Card>

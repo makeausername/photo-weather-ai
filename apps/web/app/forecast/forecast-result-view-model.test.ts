@@ -3903,6 +3903,12 @@ describe("forecast result target-aware view model", () => {
       expect(html).not.toContain("老君山金顶");
       expect(html).not.toContain("三清山女神峰");
       expect(html).not.toContain("武功山金顶");
+      expect(html).not.toContain("有没有云海机会");
+      expect(html).not.toContain("能不能拍");
+      expect(html).not.toContain("会不会白墙");
+      expect(html).not.toContain("几点到、几点守");
+      expect(html).not.toContain("白墙时怎么转拍");
+      expect(html).not.toContain("是否值得专程去");
       expect(html).toContain("云海形成机会");
       expect(html).toContain("云海可拍机会");
       expect(html).toContain("白墙风险");

@@ -52,6 +52,10 @@ function hasExactButton(html: string, label: string): boolean {
   return new RegExp(`<button[^>]*>\\s*${label}\\s*</button>`).test(html);
 }
 
+function countOccurrences(value: string, needle: string): number {
+  return value.split(needle).length - 1;
+}
+
 function subjectDeepLinkParams(
   target: "cloud_sea" | "glow" | "astro",
   overrides: Record<string, string> = {},
@@ -121,6 +125,14 @@ describe("scenario module pages", () => {
 
   it("renders the cloud-sea entry page as a search-first decision entry", () => {
     const html = renderToStaticMarkup(React.createElement(CloudSeaPage));
+    const oldPlaceholderLabels = [
+      "有没有云海机会",
+      "能不能拍",
+      "会不会白墙",
+      "几点到、几点守",
+      "白墙时怎么转拍",
+      "是否值得专程去",
+    ];
 
     expect(html).not.toContain("热门云海机位");
     expect(html).not.toContain("机位参考");
@@ -132,12 +144,38 @@ describe("scenario module pages", () => {
     expect(html).not.toContain("白墙风险说明");
     expect(html).not.toContain("判断指标");
     expect(html).toContain("地点搜索与机位选择");
-    expect(html).toContain("云海拍摄决策");
-    expect(html).toContain("有没有云海机会");
-    expect(html).toContain("会不会白墙");
-    expect(html).toContain("几点到、几点守");
-    expect(html).toContain("是否值得专程去");
-    expect(html).toContain("部分地形或云层数据仍需结合临近预报复核。");
+    expect(html).toContain('data-cloud-sea-pre-result="knowledge-guide"');
+    expect(html).toContain("云海判断需要关注什么");
+    expect(html).toContain(
+      "选择地点后，系统会结合水汽、低云、地形、风速、光线窗口和降水时段判断云海形成、可拍机会与白墙风险。",
+    );
+    expect(countOccurrences(html, 'data-cloud-sea-knowledge-card="true"')).toBe(6);
+    expect(html).toContain("水汽是否足够");
+    expect(html).toContain("低云是否在合适高度");
+    expect(html).toContain("机位是否高于云层");
+    expect(html).toContain("风速是否合适");
+    expect(html).toContain("是否有光线窗口");
+    expect(html).toContain("是否存在雨后开口");
+    expect(html).toContain("核心指标");
+    expect(html).toContain("白墙判断");
+    expect(html).toContain("出片窗口");
+    for (const label of oldPlaceholderLabels) {
+      expect(html).not.toContain(label);
+    }
+    expect(html).not.toContain("云海拍摄决策");
+    expect(html).not.toMatch(/api[_-]?key|secret|AMAP_|key=/i);
+  });
+
+  it("keeps the cloud sea knowledge cards responsive without mobile overflow classes", () => {
+    const html = renderToStaticMarkup(React.createElement(CloudSeaPage));
+    const guideStart = html.indexOf('data-cloud-sea-pre-result="knowledge-guide"');
+    const guideHtml = html.slice(guideStart);
+
+    expect(guideStart).toBeGreaterThanOrEqual(0);
+    expect(guideHtml).toContain("grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3");
+    expect(guideHtml).toContain("grid min-w-0 content-start gap-3");
+    expect(guideHtml).not.toMatch(/min-w-\[[^\]]+\]/);
+    expect(guideHtml).not.toContain("overflow-x");
   });
 
   it("reuses the shared current-location input on homepage and cloud sea", () => {
@@ -361,12 +399,17 @@ describe("scenario module pages", () => {
     expect(searchPanelHtml).toContain("查看云海拍摄判断");
     expect(searchPanelHtml).toContain("分析题材");
     expect(serialized).not.toContain("热门云海机位");
-    expect(serialized).toContain("云海结果如何复核");
+    expect(serialized).toContain("云海判断需要关注什么");
     expect(serialized).not.toContain("云海判断重点");
     expect(serialized).not.toContain("白墙风险说明");
-    expect(serialized).toContain("湿度、露点差、低云、弱到中等风和地形高差共同影响云海形成。");
     expect(serialized).toContain(
-      "可拍机会需要形成信号与清晨光线、能见度、通行和低白墙风险重叠。",
+      "选择地点后，系统会结合水汽、低云、地形、风速、光线窗口和降水时段判断云海形成、可拍机会与白墙风险。",
+    );
+    expect(serialized).toContain(
+      "湿度、露点差和降水前后决定云雾能不能形成。湿度高、露点差小，更容易出现低云或雾气。",
+    );
+    expect(serialized).toContain(
+      "云在脚下是云海，云在身上是白墙，云在头上多半只是阴天。低云高度与机位海拔的关系很关键。",
     );
     expect(serialized).not.toContain("热门朝霞晚霞机位");
     expect(serialized).not.toContain("热门朝霞机位");
