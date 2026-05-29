@@ -629,10 +629,7 @@ export function buildCloudSeaForecastViewModel(
         "whiteoutRisk",
         "白墙风险",
         `${whiteoutLabel}（${analysis.whiteoutRiskScore} 分）`,
-        `${analysis.whiteoutRiskScore} 分。${firstText(
-          analysis.whiteoutReasons,
-          "数值越高，机位被低云或雾包裹的风险越高。",
-        )}`,
+        firstText(analysis.whiteoutReasons, "低云或雾包住机位时，云海会转为白墙。"),
         whiteoutLabel === "高" ? "danger" : whiteoutLabel === "中" ? "accent" : "info",
         analysis.whiteoutRiskScore,
       ),
@@ -2191,7 +2188,7 @@ function buildCloudSeaHeroConclusion(
     : windows[0];
   const bestWindowLabel = bestWindow
     ? formatWindow(bestWindow.startTime, bestWindow.endTime)
-    : (mappedWindow?.timeRangeLabel ?? "暂无明确云海窗口");
+    : mappedWindow?.timeRangeLabel ?? "暂无明确云海窗口";
 
   return {
     title: `${result.place.name} 云海判断`,
@@ -2240,7 +2237,9 @@ function buildCloudSeaDailyTrend(
           "当前云海窗口仍需等待更多天气信号。",
         ),
         recommendedAction: result.cloudSeaAnalysis.recommendationLabel,
-        actionSuggestion: cloudSeaDailyActionSuggestion(result.cloudSeaAnalysis.recommendationLabel),
+        actionSuggestion: cloudSeaDailyActionSuggestion(
+          result.cloudSeaAnalysis.recommendationLabel,
+        ),
       },
     ];
   }
@@ -2333,7 +2332,9 @@ function buildCloudSeaWindowItems(
   ];
 
   if (items.length > 0) {
-    return [...items].sort((left, right) => left.timeRangeLabel.localeCompare(right.timeRangeLabel));
+    return [...items].sort((left, right) =>
+      left.timeRangeLabel.localeCompare(right.timeRangeLabel),
+    );
   }
 
   return windows.map((window) => ({
@@ -2376,13 +2377,19 @@ function cloudSeaWindowItem(
     actionSuggestion: cloudSeaTimelineActionSuggestion(
       window.shootableScore ?? window.score,
       window.whiteoutRiskScore ?? 0,
-      window.phase === "observation" ? "shootable" : window.phase === "waiting" ? "watchable" : undefined,
+      window.phase === "observation"
+        ? "shootable"
+        : window.phase === "waiting"
+          ? "watchable"
+          : undefined,
     ),
     tone,
   };
 }
 
-function buildCloudSeaReasoningItems(result: ForecastCalculationResult): readonly CloudSeaReasoningItem[] {
+function buildCloudSeaReasoningItems(
+  result: ForecastCalculationResult,
+): readonly CloudSeaReasoningItem[] {
   const analysis = result.cloudSeaAnalysis;
   const humidity = cloudSeaWeatherEvidence(result, "湿度");
   const dewPoint = cloudSeaWeatherEvidence(result, "露点差");
@@ -2397,7 +2404,10 @@ function buildCloudSeaReasoningItems(result: ForecastCalculationResult): readonl
       key: "humidity-dew-point",
       label: "湿度与露点差",
       value: joinKnownValues([humidity?.value, dewPoint?.value]),
-      detail: joinKnownDetails([humidity?.noteZh, dewPoint?.noteZh], "水汽和露点差数据不足，需临近预报复核。"),
+      detail: joinKnownDetails(
+        [humidity?.noteZh, dewPoint?.noteZh],
+        "水汽和露点差数据不足，需临近预报复核。",
+      ),
       tone: analysis.formationScore >= 65 ? "primary" : "accent",
     },
     {
@@ -2432,7 +2442,10 @@ function buildCloudSeaReasoningItems(result: ForecastCalculationResult): readonl
     {
       key: "terrain-relief",
       label: "地形与高差",
-      value: relief !== null && relief !== undefined ? `${Math.round(relief)} 米` : analysis.terrainSupport.level,
+      value:
+        relief !== null && relief !== undefined
+          ? `${Math.round(relief)} 米`
+          : analysis.terrainSupport.level,
       detail: analysis.terrainSupport.messageZh,
       tone: analysis.terrainSupport.level === "高" ? "primary" : "muted",
     },
@@ -2441,7 +2454,12 @@ function buildCloudSeaReasoningItems(result: ForecastCalculationResult): readonl
       label: "白墙风险",
       value: `${whiteoutRiskLabel(analysis.whiteoutRiskScore)}（${analysis.whiteoutRiskScore} 分）`,
       detail: firstText(analysis.whiteoutReasons, "低云接近机位时可能遮挡视野。"),
-      tone: analysis.whiteoutRiskScore >= 70 ? "danger" : analysis.whiteoutRiskScore >= 45 ? "accent" : "info",
+      tone:
+        analysis.whiteoutRiskScore >= 70
+          ? "danger"
+          : analysis.whiteoutRiskScore >= 45
+            ? "accent"
+            : "info",
     },
   ];
 }
@@ -2460,7 +2478,7 @@ function buildCloudSeaActionPlan(
     : windows[0];
   const mainWindowLabel = bestWindow
     ? formatWindow(bestWindow.startTime, bestWindow.endTime)
-    : (mappedWindow?.timeRangeLabel ?? "需临近预报复核");
+    : mappedWindow?.timeRangeLabel ?? "需临近预报复核";
   const backupPlan = analysis.backupPlans[0];
   const checkpoints = cloudSeaVerificationPoints(result);
 
@@ -2478,16 +2496,16 @@ function buildCloudSeaActionPlan(
       key: "main-window",
       label: "主守窗口",
       value: mainWindowLabel,
-      detail: bestWindow?.noteZh ?? firstText(analysis.opportunityReasons, "优先守清晨云海信号最明确的时段。"),
+      detail:
+        bestWindow?.noteZh ??
+        firstText(analysis.opportunityReasons, "优先守清晨云海信号最明确的时段。"),
       tone: analysis.shootableScore >= 70 ? "primary" : "accent",
     },
     {
       key: "backup",
       label: "备选方案",
       value: backupPlan?.action ?? "转拍近景和云雾流动",
-      detail:
-        backupPlan?.detail ??
-        "若白墙压顶，转拍近景、云雾流动、树影和山体层次。",
+      detail: backupPlan?.detail ?? "若白墙压顶，转拍近景、云雾流动、树影和山体层次。",
       tone: "muted",
     },
     {
@@ -2708,7 +2726,9 @@ function cloudSeaGearAdvice(result: ForecastCalculationResult): string {
   return `防潮、防滑，准备镜头布和备用保暖层。${humidity ? `湿度参考 ${humidity}，` : ""}${rain}`;
 }
 
-function cloudSeaConfidenceLabel(level: ForecastCalculationResult["cloudSeaAnalysis"]["confidenceLevel"]): string {
+function cloudSeaConfidenceLabel(
+  level: ForecastCalculationResult["cloudSeaAnalysis"]["confidenceLevel"],
+): string {
   if (level === "high") {
     return "高";
   }
@@ -3338,7 +3358,9 @@ function textCard(
 }
 
 function calibrationHintValue(
-  confidenceAdjustment: NonNullable<ForecastCalculationResult["calibrationHint"]>["confidenceAdjustment"],
+  confidenceAdjustment: NonNullable<
+    ForecastCalculationResult["calibrationHint"]
+  >["confidenceAdjustment"],
 ): string {
   if (confidenceAdjustment === "moderate_down") {
     return "建议降置信度";

@@ -3984,16 +3984,29 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("每日云海判断");
       expect(html).toContain("判断依据");
       expect(html).toContain("行动方案");
-      expect(html).toContain("风险摘要");
+      expect(html).toContain("风险与复核");
       expect(html).toContain("建议到达时间");
       expect(html).toContain("主守窗口");
       expect(html).toContain("备选方案");
       expect(html).toContain("装备提醒");
       expect(html).toContain("现场复核点");
-      expect(html).toContain("查看朝霞晚霞");
-      expect(html).toContain("查看星空银河");
+      expect(html).toContain('data-place-search-card-mode="result-compact"');
+      expect(html).toContain('data-selected-location-summary="result-compact"');
+      expect(html).toContain("当前地点");
+      expect(html).toContain("预报范围");
+      expect(html).toContain("更换地点");
+      expect(html).toContain("重新判断");
+      expect(html).toContain("坐标信息");
+      expect(html).not.toContain('data-selected-location-card="true"');
+      expect(html).not.toContain("已选地点");
+      expect(html).not.toContain("所在地");
+      expect(html).not.toContain("判断范围");
+      expect(html).not.toContain("查看朝霞晚霞");
+      expect(html).not.toContain("查看星空银河");
+      expect(html).not.toContain("相关题材");
       expect(html).not.toContain("页面预设");
       expect(html).not.toContain("体验模式");
+      expect(html).not.toContain("体验参考");
       expect(html).not.toContain("数据提醒");
       expect(html).not.toContain("固定分析目标");
       expect(html).not.toContain("云海 vs 白墙判断");
@@ -4008,11 +4021,18 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("CloudSeaResultPage");
       expect(html).toContain("CloudSeaHeroConclusion");
       expect(html).toContain("CloudSeaCoreMetrics");
+      expect(countOccurrences(html, 'data-cloud-sea-metric-card="true"')).toBe(4);
+      expect(html).toContain("min-[900px]:grid-cols-[clamp(260px,22vw,320px)_minmax(0,1fr)]");
+      expect(html).toContain("cloud-sea-result-stack grid min-w-0 gap-5");
+      expect(html).not.toContain(
+        "min-[1200px]:grid-cols-[clamp(320px,23vw,380px)_minmax(0,1fr)_clamp(300px,22vw,360px)]",
+      );
       expect(html).toContain("CloudSeaTimeline");
       expect(html).toContain("CloudSeaDailyTrend");
       expect(html).toContain("CloudSeaReasoning");
       expect(html).toContain("CloudSeaStackedLayout");
-      expect(html).toContain("CloudSeaActionSummary");
+      expect(html).not.toContain("CloudSeaActionSummary");
+      expect(html).not.toContain("CloudSeaNavigation");
       expect(html).not.toContain("CloudSeaAdviceRail");
       expect(html).not.toContain("cloud-sea-advice-rail");
       expect(html).not.toContain("CloudSeaFullWidthDetails");
@@ -4025,17 +4045,16 @@ describe("forecast result target-aware view model", () => {
         html.indexOf("CloudSeaCoreMetrics"),
       );
       expect(html.indexOf("CloudSeaCoreMetrics")).toBeLessThan(html.indexOf("CloudSeaTimeline"));
-      expect(html.indexOf("CloudSeaTimeline")).toBeLessThan(html.indexOf("CloudSeaDailyTrend"));
+      const professionalHourlyIndex = html.indexOf("CloudSeaProfessionalHourlyData");
+      if (professionalHourlyIndex >= 0) {
+        expect(html.indexOf("CloudSeaTimeline")).toBeLessThan(professionalHourlyIndex);
+        expect(professionalHourlyIndex).toBeLessThan(html.indexOf("CloudSeaDailyTrend"));
+      } else {
+        expect(html.indexOf("CloudSeaTimeline")).toBeLessThan(html.indexOf("CloudSeaDailyTrend"));
+      }
       expect(html.indexOf("CloudSeaDailyTrend")).toBeLessThan(html.indexOf("判断依据"));
-
-      const actionSummaryIndex = html.indexOf("CloudSeaActionSummary");
-      const actionPlanIndex = html.indexOf("行动方案", actionSummaryIndex);
-      const riskSummaryIndex = html.indexOf("风险摘要", actionSummaryIndex);
-      const navigationIndex = html.indexOf("继续查看", actionSummaryIndex);
-
-      expect(actionPlanIndex).toBeGreaterThan(actionSummaryIndex);
-      expect(actionPlanIndex).toBeLessThan(riskSummaryIndex);
-      expect(riskSummaryIndex).toBeLessThan(navigationIndex);
+      expect(html.indexOf("判断依据")).toBeLessThan(html.indexOf("行动方案"));
+      expect(html.indexOf("行动方案")).toBeLessThan(html.indexOf("风险与复核"));
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
@@ -4059,6 +4078,9 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("CloudSeaProfessionalHourlyData");
     expect(html).toContain("专业小时数据");
     expect(html).toContain("专业参考");
+    expect(html).toContain('data-professional-hourly-expanded="false"');
+    expect(html).toContain('data-cloud-sea-hourly-preview="true"');
+    expect(html).toContain("默认聚焦云海窗口附近小时");
     expect(html).toContain(
       "低云、中云、高云、湿度、露点、降水、能见度和风速用于人工复核云海形成与白墙风险。",
     );
@@ -4079,6 +4101,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("只看清晨窗口");
     expect(html).toContain("只看有风险时段");
     expect(html).toContain("查看全部小时");
+    expect(html).not.toContain("展开专业数据");
     expect(html).toContain("当前筛选：只看云海窗口");
     expect(html).toContain("总云量 %");
     expect(html).toContain("高云量 %");
@@ -4110,6 +4133,25 @@ describe("forecast result target-aware view model", () => {
     expect(html.indexOf("CloudSeaProfessionalHourlyData")).toBeLessThan(
       html.indexOf("CloudSeaDailyTrend"),
     );
+  });
+
+  it("keeps the General Forecast return path without unrelated cloud sea subject links", () => {
+    const result = resultForTarget("cloud_sea");
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result,
+        viewModel,
+        returnUrl: "/forecast?target=general",
+      }),
+    );
+
+    expect(html).toContain('href="/forecast?target=general"');
+    expect(html).toContain("返回综合判断");
+    expect(html).not.toContain("查看朝霞晚霞");
+    expect(html).not.toContain("查看星空银河");
+    expect(html).not.toContain("相关题材");
   });
 
   it("renders missing professional hourly values as dashes without converting them to zero", () => {
