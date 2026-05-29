@@ -94,6 +94,7 @@ enum CalibrationLevel {
   weak
   medium
   strong
+  unknown
 }
 
 enum WhiteoutLevel {
@@ -101,6 +102,7 @@ enum WhiteoutLevel {
   low
   medium
   high
+  unknown
 }
 
 enum TransparencyLevel {
@@ -108,6 +110,7 @@ enum TransparencyLevel {
   fair
   good
   excellent
+  unknown
 }
 
 enum RainImpactLevel {
@@ -115,6 +118,7 @@ enum RainImpactLevel {
   low
   medium
   high
+  unknown
 }
 
 enum ObservedOutcomeSource {
@@ -541,8 +545,10 @@ model ForecastReplayResult {
 model ObservedOutcome {
   id                     String                @id @default(cuid())
   spotId                 String?               @map("spot_id")
-  locationKey            String                @map("location_key")
+  locationKey            String?               @map("location_key")
   locationName           String                @map("location_name")
+  latitudeWgs84          Float?                @map("latitude_wgs84")
+  longitudeWgs84         Float?                @map("longitude_wgs84")
   target                 ForecastReplayTarget
   outcomeDate            DateTime              @map("outcome_date") @db.Date
   observationWindowStart DateTime?             @map("observation_window_start")
@@ -553,6 +559,7 @@ model ObservedOutcome {
   sunriseGlowLevel       CalibrationLevel?     @map("sunrise_glow_level")
   sunsetGlowLevel        CalibrationLevel?     @map("sunset_glow_level")
   astroVisibilityLevel   CalibrationLevel?     @map("astro_visibility_level")
+  milkyWayVisibilityLevel CalibrationLevel?    @map("milky_way_visibility_level")
   transparencyLevel      TransparencyLevel?    @map("transparency_level")
   rainImpactLevel        RainImpactLevel?      @map("rain_impact_level")
   notes                  String?
@@ -572,12 +579,20 @@ model CalibrationStats {
   id                        String               @id @default(cuid())
   spotId                    String?              @map("spot_id")
   locationKey               String               @map("location_key")
+  locationName              String               @map("location_name")
   target                    ForecastReplayTarget
-  ruleVersion               String               @map("rule_version")
+  ruleVersion               String?              @map("rule_version")
   sampleCount               Int                  @default(0) @map("sample_count")
+  labeledCount              Int                  @default(0) @map("labeled_count")
   successCount              Int                  @default(0) @map("success_count")
   partialCount              Int                  @default(0) @map("partial_count")
   failCount                 Int                  @default(0) @map("fail_count")
+  hitCount                  Int                  @default(0) @map("hit_count")
+  partialHitCount           Int                  @default(0) @map("partial_hit_count")
+  falsePositiveCount        Int                  @default(0) @map("false_positive_count")
+  falseNegativeCount        Int                  @default(0) @map("false_negative_count")
+  truePositiveCount         Int                  @default(0) @map("true_positive_count")
+  trueNegativeCount         Int                  @default(0) @map("true_negative_count")
   hitRate                   Float                @default(0) @map("hit_rate")
   falsePositiveRate         Float                @default(0) @map("false_positive_rate")
   falseNegativeRate         Float                @default(0) @map("false_negative_rate")

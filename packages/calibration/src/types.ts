@@ -37,6 +37,38 @@ export const observedResults = [
   "unknown",
 ] as const satisfies readonly ObservedResult[];
 
+export const calibrationStrengthLevels = [
+  "none",
+  "weak",
+  "medium",
+  "strong",
+  "unknown",
+] as const satisfies readonly CalibrationLevel[];
+
+export const whiteoutLevels = [
+  "none",
+  "low",
+  "medium",
+  "high",
+  "unknown",
+] as const satisfies readonly WhiteoutLevel[];
+
+export const transparencyLevels = [
+  "poor",
+  "fair",
+  "good",
+  "excellent",
+  "unknown",
+] as const satisfies readonly TransparencyLevel[];
+
+export const rainImpactLevels = [
+  "none",
+  "low",
+  "medium",
+  "high",
+  "unknown",
+] as const satisfies readonly RainImpactLevel[];
+
 export type {
   CalibrationLevel,
   CalibrationStatsRecord,
@@ -165,6 +197,7 @@ export type ObservedOutcomeInput = CalibrationLocation & {
   readonly sunriseGlowLevel?: CalibrationLevel | null;
   readonly sunsetGlowLevel?: CalibrationLevel | null;
   readonly astroVisibilityLevel?: CalibrationLevel | null;
+  readonly milkyWayVisibilityLevel?: CalibrationLevel | null;
   readonly transparencyLevel?: TransparencyLevel | null;
   readonly rainImpactLevel?: RainImpactLevel | null;
   readonly notes?: string | null;
@@ -179,15 +212,19 @@ export type CalibrationComparisonClass =
   | "false_positive"
   | "false_negative"
   | "partial_match"
-  | "unlabeled";
+  | "unlabeled"
+  | "unknown";
 
 export type CalibrationComparison = {
   readonly replayResultId: string;
   readonly outcomeId?: string;
   readonly forecastDate: string;
   readonly target: ForecastReplayTarget;
-  readonly predictedClass: "dedicated" | "cautious" | "nearby" | "not_recommended";
+  readonly predictedClass: "recommended" | "cautious" | "nearby" | "not_recommended";
   readonly observedResult?: ObservedResult;
+  readonly matchStatus: CalibrationComparisonClass;
+  readonly matchScore: number;
+  readonly mismatchReasons: readonly string[];
   readonly classification: CalibrationComparisonClass;
   readonly mismatchReason?: string;
 };
@@ -195,12 +232,20 @@ export type CalibrationComparison = {
 export type CalibrationStatsInput = {
   readonly spotId?: string | null;
   readonly locationKey: string;
+  readonly locationName: string;
   readonly target: ForecastReplayTarget;
-  readonly ruleVersion: string;
+  readonly ruleVersion?: string | null;
   readonly sampleCount: number;
+  readonly labeledCount: number;
   readonly successCount: number;
   readonly partialCount: number;
   readonly failCount: number;
+  readonly hitCount: number;
+  readonly partialHitCount: number;
+  readonly falsePositiveCount: number;
+  readonly falseNegativeCount: number;
+  readonly truePositiveCount: number;
+  readonly trueNegativeCount: number;
   readonly hitRate: number;
   readonly falsePositiveRate: number;
   readonly falseNegativeRate: number;
@@ -215,10 +260,11 @@ export type CalibrationHint = {
   readonly locationKey: string;
   readonly target: ForecastReplayTarget;
   readonly sampleCount: number;
+  readonly labeledCount: number;
   readonly hitRate: number;
   readonly falsePositiveRate: number;
   readonly falseNegativeRate: number;
-  readonly confidenceAdjustment: number;
+  readonly confidenceAdjustment: "none" | "slight_down" | "moderate_down" | "slight_up";
   readonly cautionNoteZh: string;
   readonly displayNoteZh: string;
 };

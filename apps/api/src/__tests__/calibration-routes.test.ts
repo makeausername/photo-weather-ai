@@ -91,6 +91,7 @@ describe("admin calibration routes", () => {
         sunriseGlowLevel: "weak",
         sunsetGlowLevel: "none",
         astroVisibilityLevel: "none",
+        milkyWayVisibilityLevel: "unknown",
         transparencyLevel: "good",
         rainImpactLevel: "none",
         notes: "现场有可拍云层。",
@@ -112,6 +113,77 @@ describe("admin calibration routes", () => {
     expect(resultsResponse.statusCode).toBe(200);
     expect(resultsResponse.json().results).toHaveLength(1);
     expect(resultsResponse.json().outcomes).toHaveLength(1);
+    expect(resultsResponse.json().comparisons[0]).toMatchObject({
+      matchStatus: expect.stringMatching(/true_positive|partial_match|false_negative/),
+    });
+
+    const outcomeId = outcomeResponse.json().outcome.id;
+    const updateResponse = await app.inject({
+      method: "PUT",
+      url: `/admin/calibration/outcomes/${outcomeId}`,
+      headers: adminAuthorizationHeader(),
+      payload: {
+        spotId: spot.id,
+        target: "general",
+        outcomeDate: "2026-05-01",
+        observedResult: "partial",
+        cloudSeaLevel: "unknown",
+        whiteoutLevel: "unknown",
+        sunriseGlowLevel: "unknown",
+        sunsetGlowLevel: "unknown",
+        astroVisibilityLevel: "unknown",
+        milkyWayVisibilityLevel: "unknown",
+        transparencyLevel: "unknown",
+        rainImpactLevel: "unknown",
+        notes: null,
+      },
+    });
+
+    expect(updateResponse.statusCode).toBe(200);
+    expect(updateResponse.json().outcome).toMatchObject({
+      id: outcomeId,
+      observedResult: "partial",
+      milkyWayVisibilityLevel: "unknown",
+    });
+
+    const statsResponse = await app.inject({
+      method: "POST",
+      url: "/admin/calibration/stats/recompute",
+      headers: adminAuthorizationHeader(),
+      payload: {
+        spotId: spot.id,
+        target: "general",
+      },
+    });
+
+    expect(statsResponse.statusCode).toBe(200);
+    expect(statsResponse.json().stats).toMatchObject({
+      sampleCount: 1,
+      labeledCount: 1,
+      partialCount: 1,
+    });
+  });
+
+  it("validates observed outcome enum values", async () => {
+    const { client } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/calibration/outcomes",
+      headers: adminAuthorizationHeader(),
+      payload: {
+        spotId: "photo-spot-0",
+        target: "general",
+        outcomeDate: "2026-05-01",
+        observedResult: "great",
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      error: "validation_error",
+    });
   });
 });
 

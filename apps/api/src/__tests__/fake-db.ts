@@ -711,6 +711,12 @@ export async function createFakeDatabaseClient(): Promise<{
         state.forecastReplayRuns.set(where.id, next);
         return next;
       },
+      count: async ({ where }: any = {}) =>
+        (
+          await client.forecastReplayRun!.findMany({
+            where,
+          })
+        ).length,
     },
     forecastReplayResult: {
       findUnique: async ({ where }: any) => {
@@ -792,13 +798,16 @@ export async function createFakeDatabaseClient(): Promise<{
         return outcome;
       },
       update: async ({ where, data }: any) => {
-        const key = observedOutcomeKey(where.locationKey_target_outcomeDate);
-        const existing = state.observedOutcomes.get(key);
-        if (!existing) {
+        const key = where.id
+          ? [...state.observedOutcomes.entries()].find(([, outcome]) => outcome.id === where.id)?.[0]
+          : observedOutcomeKey(where.locationKey_target_outcomeDate);
+        const existing = key ? state.observedOutcomes.get(key) : null;
+        if (!key || !existing) {
           throw new Error(`Missing observed outcome ${key}`);
         }
         const next = { ...existing, ...data, updatedAt: now };
-        state.observedOutcomes.set(key, next);
+        state.observedOutcomes.delete(key);
+        state.observedOutcomes.set(observedOutcomeKey(next), next);
         return next;
       },
       upsert: async ({ where, create, update }: any) => {
@@ -818,6 +827,12 @@ export async function createFakeDatabaseClient(): Promise<{
         state.observedOutcomes.set(key, outcome);
         return outcome;
       },
+      count: async ({ where }: any = {}) =>
+        (
+          await client.observedOutcome!.findMany({
+            where,
+          })
+        ).length,
     },
     calibrationStats: {
       findUnique: async ({ where }: any) => {

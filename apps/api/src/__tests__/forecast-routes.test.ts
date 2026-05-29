@@ -1120,6 +1120,82 @@ describe("forecast query validation route", () => {
     });
   });
 
+  it("attaches a safe calibration hint for general forecast when enough labels exist", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("real network calls are disabled in forecast tests");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    state.calibrationStats.set("spot:photo-spot-0:general:deterministic_rules_v1", {
+      id: "calibration-stats-general",
+      spotId: "photo-spot-0",
+      locationKey: "spot:photo-spot-0",
+      locationName: "测试机位",
+      target: "general",
+      ruleVersion: "deterministic_rules_v1",
+      sampleCount: 12,
+      labeledCount: 12,
+      successCount: 8,
+      partialCount: 2,
+      failCount: 2,
+      hitCount: 8,
+      partialHitCount: 2,
+      falsePositiveCount: 1,
+      falseNegativeCount: 0,
+      truePositiveCount: 6,
+      trueNegativeCount: 2,
+      hitRate: 0.75,
+      falsePositiveRate: 0.083,
+      falseNegativeRate: 0,
+      whiteoutFalsePositiveRate: 0,
+      bestWindowHitRate: 0.7,
+      recommendedTripHitRate: 0.8,
+      updatedAt: new Date("2026-05-01T00:00:00.000Z"),
+      summaryJson: {},
+    });
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        target: "general",
+        photoSpotId: "photo-spot-0",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().calibrationHint).toMatchObject({
+      confidenceAdjustment: "slight_up",
+      displayNoteZh: expect.stringContaining("历史校准"),
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps general forecast working when calibration stats are missing", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("real network calls are disabled in forecast tests");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        target: "general",
+        photoSpotId: "photo-spot-without-stats",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().calibrationHint).toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("normalizes supported astro target aliases before calling astro-service", async () => {
     const calculateMock = vi.fn((input: AstroServiceCalculateInput) =>
       Promise.resolve(buildAstroServiceResponse(input)),

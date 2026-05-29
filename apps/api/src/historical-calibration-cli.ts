@@ -2,15 +2,20 @@ import { pathToFileURL } from "node:url";
 import { disconnectPrismaClient, getPrismaClient, type DatabaseClient } from "@photo-weather/db";
 import {
   buildCalibrationLocationKey,
+  buildCalibrationHint,
+  compareReplayResultWithOutcome,
+  computeCalibrationStats,
   deterministicRuleVersion,
   OpenMeteoHistoricalWeatherProvider,
   runHistoricalReplay,
   saveHistoricalWeatherSamples,
   normalizeOpenMeteoHistoricalWeather,
+  upsertObservedOutcome,
   type ForecastReplayTarget,
   type HistoricalWeatherFetchInput,
   type HistoricalWeatherProvider,
   type HistoricalWeatherRawResponse,
+  type ObservedResult,
 } from "@photo-weather/calibration";
 
 type HistoricalCalibrationCliOptions = {
@@ -124,7 +129,8 @@ export async function runHistoricalCalibrationCli(
 ): Promise<number> {
   let ownsClient = false;
   try {
-    const options = parseHistoricalCalibrationArgs(argv, dependencies.env);
+    const runtimeEnv = dependencies.env ?? process.env;
+    const options = parseHistoricalCalibrationArgs(argv, runtimeEnv);
     const dbClient =
       dependencies.dbClient ?? ((await getPrismaClient()) as unknown as DatabaseClient);
     ownsClient = !dependencies.dbClient;
@@ -189,12 +195,61 @@ export async function runHistoricalCalibrationCli(
         { client: dbClient },
       );
       output(`target: ${target}`);
-      output(`replay run id: ${replay.run.id}`);
-      output(`replay results count: ${replay.resultCount}`);
+      output(`replayRunId=${replay.run.id}`);
+      output(`replayResultsCount=${replay.resultCount}`);
       output("daily recommendations:");
       for (const result of replay.results) {
         output(formatReplayResultLine(result));
       }
+      const firstResult = replay.results[0];
+      if (!firstResult) {
+        output("observedOutcomeId=n/a");
+        output("matchStatus=unlabeled");
+        output("labeledCount=0");
+        output("hitRate=0");
+        output("falsePositiveRate=0");
+        output("falseNegativeRate=0");
+        output("calibrationHint=历史样本较少，当前仍以实时判断为主。");
+        continue;
+      }
+
+      const outcome = await upsertObservedOutcome(
+        {
+          ...location,
+          target,
+          outcomeDate: firstResult.forecastDate.toISOString().slice(0, 10),
+          observedResult: readObservedResult(runtimeEnv.CALIBRATION_OBSERVED_RESULT),
+          cloudSeaLevel: "unknown",
+          whiteoutLevel: "unknown",
+          sunriseGlowLevel: "unknown",
+          sunsetGlowLevel: "unknown",
+          astroVisibilityLevel: "unknown",
+          milkyWayVisibilityLevel: "unknown",
+          transparencyLevel: "unknown",
+          rainImpactLevel: "unknown",
+          notes: "服务器历史校准 smoke test 创建的人工标注样例，请按真实观测覆盖。",
+          source: "admin_manual",
+        },
+        { client: dbClient },
+      );
+      const comparison = compareReplayResultWithOutcome(firstResult, outcome);
+      const stats = await computeCalibrationStats({
+        client: dbClient,
+        locationKey,
+        locationName: location.locationName,
+        spotId: location.spotId,
+        target,
+        ruleVersion: deterministicRuleVersion,
+      });
+      const hint = buildCalibrationHint(stats);
+
+      output(`observedOutcomeId=${outcome.id}`);
+      output(`matchStatus=${comparison.matchStatus}`);
+      output(`labeledCount=${stats.labeledCount}`);
+      output(`hitRate=${stats.hitRate}`);
+      output(`falsePositiveRate=${stats.falsePositiveRate}`);
+      output(`falseNegativeRate=${stats.falseNegativeRate}`);
+      output(`calibrationHint=${hint?.displayNoteZh ?? "历史样本较少，当前仍以实时判断为主。"}`);
     }
 
     return 0;
@@ -306,6 +361,13 @@ function readRequiredNumber(value: string, name: string): number {
 
 function readBoolean(value: string | undefined): boolean {
   return value === "1" || value === "true" || value === "yes";
+}
+
+function readObservedResult(value: string | undefined): ObservedResult {
+  if (value === "success" || value === "partial" || value === "fail" || value === "unknown") {
+    return value;
+  }
+  return "partial";
 }
 
 function parseDate(value: string): Date {

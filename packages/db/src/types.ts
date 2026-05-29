@@ -38,13 +38,13 @@ export type ForecastReplayStatus = "pending" | "running" | "completed" | "failed
 
 export type ObservedResult = "success" | "partial" | "fail" | "unknown";
 
-export type CalibrationLevel = "none" | "weak" | "medium" | "strong";
+export type CalibrationLevel = "none" | "weak" | "medium" | "strong" | "unknown";
 
-export type WhiteoutLevel = "none" | "low" | "medium" | "high";
+export type WhiteoutLevel = "none" | "low" | "medium" | "high" | "unknown";
 
-export type TransparencyLevel = "poor" | "fair" | "good" | "excellent";
+export type TransparencyLevel = "poor" | "fair" | "good" | "excellent" | "unknown";
 
-export type RainImpactLevel = "none" | "low" | "medium" | "high";
+export type RainImpactLevel = "none" | "low" | "medium" | "high" | "unknown";
 
 export type ObservedOutcomeSource = "admin_manual" | "user_feedback" | "imported";
 
@@ -323,8 +323,10 @@ export type ForecastReplayResultRecord = {
 export type ObservedOutcomeRecord = {
   readonly id: string;
   readonly spotId: string | null;
-  readonly locationKey: string;
+  readonly locationKey: string | null;
   readonly locationName: string;
+  readonly latitudeWgs84: number | null;
+  readonly longitudeWgs84: number | null;
   readonly target: ForecastReplayTarget;
   readonly outcomeDate: Date;
   readonly observationWindowStart: Date | null;
@@ -335,6 +337,7 @@ export type ObservedOutcomeRecord = {
   readonly sunriseGlowLevel: CalibrationLevel | null;
   readonly sunsetGlowLevel: CalibrationLevel | null;
   readonly astroVisibilityLevel: CalibrationLevel | null;
+  readonly milkyWayVisibilityLevel: CalibrationLevel | null;
   readonly transparencyLevel: TransparencyLevel | null;
   readonly rainImpactLevel: RainImpactLevel | null;
   readonly notes: string | null;
@@ -349,12 +352,20 @@ export type CalibrationStatsRecord = {
   readonly id: string;
   readonly spotId: string | null;
   readonly locationKey: string;
+  readonly locationName: string;
   readonly target: ForecastReplayTarget;
-  readonly ruleVersion: string;
+  readonly ruleVersion: string | null;
   readonly sampleCount: number;
+  readonly labeledCount: number;
   readonly successCount: number;
   readonly partialCount: number;
   readonly failCount: number;
+  readonly hitCount: number;
+  readonly partialHitCount: number;
+  readonly falsePositiveCount: number;
+  readonly falseNegativeCount: number;
+  readonly truePositiveCount: number;
+  readonly trueNegativeCount: number;
   readonly hitRate: number;
   readonly falsePositiveRate: number;
   readonly falseNegativeRate: number;
@@ -432,6 +443,7 @@ export type DatabaseClient = {
     readonly findMany: (args?: any) => Promise<any[]>;
     readonly create: (args: any) => Promise<any>;
     readonly update: (args: any) => Promise<any>;
+    readonly count?: (args?: any) => Promise<number>;
   };
   readonly forecastReplayResult?: {
     readonly findUnique: (args: any) => Promise<any>;
@@ -447,11 +459,13 @@ export type DatabaseClient = {
     readonly create: (args: any) => Promise<any>;
     readonly update: (args: any) => Promise<any>;
     readonly upsert: (args: any) => Promise<any>;
+    readonly count?: (args?: any) => Promise<number>;
   };
   readonly calibrationStats?: {
     readonly findUnique: (args: any) => Promise<any>;
     readonly findMany: (args?: any) => Promise<any[]>;
     readonly upsert: (args: any) => Promise<any>;
+    readonly count?: (args?: any) => Promise<number>;
   };
   readonly terrainElevationCache?: {
     readonly findUnique: (args: any) => Promise<any>;

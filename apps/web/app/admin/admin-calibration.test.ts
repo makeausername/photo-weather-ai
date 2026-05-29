@@ -24,9 +24,10 @@ describe("admin calibration UI", () => {
 
     expect(html).toContain("校准概览");
     expect(html).toContain("拉取历史天气");
-    expect(html).toContain("执行规则回放");
+    expect(html).toContain("运行历史回放");
     expect(html).toContain("回放结果");
     expect(html).toContain("观测标注");
+    expect(html).toContain("银河可见");
     expect(html).toContain("校准统计");
     expect(html).not.toMatch(/api[_-]?key|secret/i);
   });

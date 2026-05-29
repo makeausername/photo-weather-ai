@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import type { DatabaseClient } from "@photo-weather/db";
+import type { DatabaseClient, ForecastReplayResultRecord, ObservedOutcomeRecord } from "@photo-weather/db";
 import {
   buildCalibrationHint,
   buildOpenMeteoHistoricalWeatherUrl,
+  classifyPrediction,
+  compareReplayResultWithOutcome,
   compareReplayResultsWithOutcomes,
   createForecastReplayResults,
   createForecastReplayRun,
@@ -224,10 +226,124 @@ describe("Historical Calibration V1", () => {
     });
 
     expect(stats.sampleCount).toBe(10);
+    expect(stats.labeledCount).toBe(10);
     expect(stats.falsePositiveRate).toBe(0.1);
     expect(stats.partialCount).toBe(1);
-    expect(buildCalibrationHint({ ...stats, sampleCount: 9 })).toBeNull();
+    expect(buildCalibrationHint({ ...stats, labeledCount: 9 })).toBeNull();
     expect(buildCalibrationHint(stats)?.displayNoteZh).toContain("历史校准");
+  });
+
+  it("creates and updates observed outcomes with unknown subject labels and optional fields", async () => {
+    const { client } = createMemoryClient();
+
+    const created = await upsertObservedOutcome(
+      {
+        ...location,
+        target: "astro",
+        outcomeDate: "2026-05-01",
+        observedResult: "partial",
+        astroVisibilityLevel: "unknown",
+        milkyWayVisibilityLevel: "unknown",
+      },
+      { client },
+    );
+    const updated = await upsertObservedOutcome(
+      {
+        ...location,
+        target: "astro",
+        outcomeDate: "2026-05-01",
+        observedResult: "success",
+        astroVisibilityLevel: "strong",
+        milkyWayVisibilityLevel: "medium",
+      },
+      { client },
+    );
+
+    expect(created.id).toBe(updated.id);
+    expect(updated.observedResult).toBe("success");
+    expect(updated.milkyWayVisibilityLevel).toBe("medium");
+    expect(updated.notes).toBeNull();
+  });
+
+  it("maps replay predictions to observed outcomes with deterministic match scores", () => {
+    const base = buildReplayResults("run-test", 1)[0];
+    if (!base) {
+      throw new Error("expected replay result fixture");
+    }
+    const result: ForecastReplayResultRecord = {
+      id: "result-test",
+      replayRunId: base.replayRunId,
+      spotId: base.spotId ?? null,
+      locationKey: base.locationKey,
+      locationName: base.locationName,
+      target: base.target,
+      forecastDate: new Date(`${base.forecastDate}T00:00:00.000Z`),
+      overallScore: base.overallScore ?? null,
+      recommendationLabel: base.recommendationLabel ?? null,
+      dedicatedTripRecommendation: base.dedicatedTripRecommendation ?? null,
+      nearbyObservationRecommendation: base.nearbyObservationRecommendation ?? null,
+      bestWindowStart: null,
+      bestWindowEnd: null,
+      bestSubject: null,
+      cloudSeaFormationScore: null,
+      cloudSeaShootableScore: null,
+      whiteoutRiskScore: null,
+      sunriseGlowScore: null,
+      sunsetGlowScore: null,
+      astroPracticalScore: null,
+      milkyWayPracticalScore: null,
+      precipitationRiskLevel: null,
+      transparencyGrade: null,
+      confidenceLabel: "high",
+      predictedJson: base.predictedJson,
+      createdAt: new Date("2026-05-01T00:00:00.000Z"),
+    };
+    const outcome: ObservedOutcomeRecord = {
+      id: "outcome-test",
+      createdAt: new Date("2026-05-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-05-01T00:00:00.000Z"),
+      spotId: location.spotId,
+      locationKey: location.locationKey,
+      locationName: location.locationName,
+      latitudeWgs84: location.latitudeWgs84,
+      longitudeWgs84: location.longitudeWgs84,
+      target: "general" as const,
+      outcomeDate: new Date("2026-05-01T00:00:00.000Z"),
+      observationWindowStart: null,
+      observationWindowEnd: null,
+      observedResult: "success" as const,
+      cloudSeaLevel: null,
+      whiteoutLevel: null,
+      sunriseGlowLevel: null,
+      sunsetGlowLevel: null,
+      astroVisibilityLevel: null,
+      milkyWayVisibilityLevel: null,
+      transparencyLevel: null,
+      rainImpactLevel: null,
+      notes: null,
+      photoEvidenceUrl: null,
+      source: "admin_manual" as const,
+      createdBy: null,
+    };
+
+    expect(compareReplayResultWithOutcome(result, outcome).matchStatus).toBe("true_positive");
+    expect(
+      compareReplayResultWithOutcome(result, { ...outcome, observedResult: "fail" }).matchStatus,
+    ).toBe("false_positive");
+    expect(
+      compareReplayResultWithOutcome(
+        { ...result, overallScore: 20, recommendationLabel: "不建议专程前往" },
+        { ...outcome, observedResult: "fail" },
+      ).matchStatus,
+    ).toBe("true_negative");
+    expect(
+      compareReplayResultWithOutcome(
+        { ...result, overallScore: 20, recommendationLabel: "不建议专程前往" },
+        outcome,
+      ).matchStatus,
+    ).toBe("false_negative");
+    expect(classifyPrediction("cautious", "partial", "general")).toBe("partial_match");
+    expect(compareReplayResultWithOutcome(result, null).matchStatus).toBe("unlabeled");
   });
 });
 
@@ -299,6 +415,7 @@ function buildReplayResults(runId: string, days: number): readonly ForecastRepla
     confidenceLabel: "high",
     whiteoutRiskScore: index === 0 ? 20 : 70,
     predictedJson: {
+      ruleVersion: deterministicRuleVersion,
       recommendationLevel: index === 9 ? "not_recommended" : "recommended",
     },
   }));

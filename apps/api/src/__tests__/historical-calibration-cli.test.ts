@@ -63,7 +63,11 @@ describe("historical calibration CLI", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(output.join("\n")).toContain("provider: open_meteo_historical (mocked)");
     expect(output.join("\n")).toContain("samples inserted/updated/skipped:");
-    expect(output.join("\n")).toContain("replay results count: 1");
+    expect(output.join("\n")).toContain("replayResultsCount=1");
+    expect(output.join("\n")).toContain("observedOutcomeId=");
+    expect(output.join("\n")).toContain("matchStatus=");
+    expect(output.join("\n")).toContain("labeledCount=");
+    expect(output.join("\n")).toContain("calibrationHint=");
     expect(output.join("\n")).not.toContain("QWEATHER_API_KEY");
     expect(output.join("\n")).not.toContain("METEOBLUE_API_KEY");
     expect(output.join("\n")).not.toContain("DEEPSEEK_API_KEY");

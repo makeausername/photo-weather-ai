@@ -3294,12 +3294,13 @@ describe("forecast result target-aware view model", () => {
         locationKey: "spot:spot-test",
         target: "general",
         sampleCount: 18,
+        labeledCount: 18,
         hitRate: 0.72,
         falsePositiveRate: 0.28,
         falseNegativeRate: 0.08,
-        confidenceAdjustment: -0.1,
-        cautionNoteZh: "历史误报偏高，本次建议谨慎参考。",
-        displayNoteZh: "历史校准：该机位同类条件命中率约 72%，历史误报偏高，本次建议谨慎参考。",
+        confidenceAdjustment: "slight_down",
+        cautionNoteZh: "该机位历史回放存在偏乐观情况，本次建议谨慎参考。",
+        displayNoteZh: "历史校准：该机位历史回放存在偏乐观情况，本次建议谨慎参考。",
       },
     };
 
@@ -3308,7 +3309,7 @@ describe("forecast result target-aware view model", () => {
       (card) => card.key === "historical-calibration",
     );
 
-    expect(calibrationCard?.value).toContain("72%");
+    expect(calibrationCard?.value).toBe("谨慎参考");
     expect(calibrationCard?.detail).toContain("历史校准");
     expect(calibrationCard?.tone).toBe("accent");
   });

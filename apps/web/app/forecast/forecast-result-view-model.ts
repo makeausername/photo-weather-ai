@@ -457,9 +457,12 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
         "historical-calibration",
         "recommendation",
         "历史校准",
-        `${Math.round(result.calibrationHint.hitRate * 100)}% 命中率`,
+        calibrationHintValue(result.calibrationHint.confidenceAdjustment),
         result.calibrationHint.displayNoteZh,
-        result.calibrationHint.confidenceAdjustment < 0 ? "accent" : "info",
+        result.calibrationHint.confidenceAdjustment === "slight_down" ||
+          result.calibrationHint.confidenceAdjustment === "moderate_down"
+          ? "accent"
+          : "info",
       )
     : null;
 
@@ -3102,6 +3105,21 @@ function textCard(
     detail,
     tone,
   };
+}
+
+function calibrationHintValue(
+  confidenceAdjustment: NonNullable<ForecastCalculationResult["calibrationHint"]>["confidenceAdjustment"],
+): string {
+  if (confidenceAdjustment === "moderate_down") {
+    return "建议降置信度";
+  }
+  if (confidenceAdjustment === "slight_down") {
+    return "谨慎参考";
+  }
+  if (confidenceAdjustment === "slight_up") {
+    return "历史较稳定";
+  }
+  return "辅助参考";
 }
 
 function riskItem(risk: ForecastRiskFlag): ForecastResultSectionItem {

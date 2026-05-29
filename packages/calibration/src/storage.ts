@@ -267,6 +267,21 @@ export async function upsertObservedOutcome(
   return normalizeObservedOutcome(record);
 }
 
+export async function updateObservedOutcome(
+  id: string,
+  input: ObservedOutcomeInput,
+  options: ClientOptions = {},
+): Promise<ObservedOutcomeRecord> {
+  const client = await resolveClient(options.client);
+  const delegate = requireDelegate(client.observedOutcome, "observedOutcome");
+  const record = await delegate.update({
+    where: { id },
+    data: observedOutcomeData(input),
+  });
+
+  return normalizeObservedOutcome(record);
+}
+
 export async function listObservedOutcomes(
   options: ListObservedOutcomeOptions = {},
 ): Promise<ObservedOutcomeRecord[]> {
@@ -298,12 +313,13 @@ export async function upsertCalibrationStats(
   const client = await resolveClient(options.client);
   const delegate = requireDelegate(client.calibrationStats, "calibrationStats");
   const data = calibrationStatsData(input);
+  const ruleVersion = input.ruleVersion ?? "unknown";
   const record = await delegate.upsert({
     where: {
       locationKey_target_ruleVersion: {
         locationKey: input.locationKey,
         target: input.target,
-        ruleVersion: input.ruleVersion,
+        ruleVersion,
       },
     },
     create: data,
@@ -330,6 +346,33 @@ export async function listCalibrationStats(
   return records.map(normalizeCalibrationStats);
 }
 
+export async function getCalibrationOverviewCounts(
+  options: ClientOptions = {},
+): Promise<{
+  readonly totalReplayRuns: number;
+  readonly totalHistoricalSamples: number;
+  readonly totalObservedOutcomes: number;
+}> {
+  const client = await resolveClient(options.client);
+  const historicalWeatherSample = requireDelegate(
+    client.historicalWeatherSample,
+    "historicalWeatherSample",
+  );
+  const forecastReplayRun = requireDelegate(client.forecastReplayRun, "forecastReplayRun");
+  const observedOutcome = requireDelegate(client.observedOutcome, "observedOutcome");
+  const [totalReplayRuns, totalHistoricalSamples, totalObservedOutcomes] = await Promise.all([
+    countDelegate(forecastReplayRun),
+    countDelegate(historicalWeatherSample),
+    countDelegate(observedOutcome),
+  ]);
+
+  return {
+    totalReplayRuns,
+    totalHistoricalSamples,
+    totalObservedOutcomes,
+  };
+}
+
 async function resolveClient(client?: DatabaseClient): Promise<DatabaseClient> {
   return client ?? ((await getPrismaClient()) as unknown as DatabaseClient);
 }
@@ -339,6 +382,16 @@ function requireDelegate<T>(delegate: T | undefined, name: string): T {
     throw new Error(`Database client is missing the ${name} delegate.`);
   }
   return delegate;
+}
+
+async function countDelegate(delegate: {
+  readonly count?: (args?: any) => Promise<number>;
+  readonly findMany: (args?: any) => Promise<any[]>;
+}): Promise<number> {
+  if (delegate.count) {
+    return delegate.count();
+  }
+  return (await delegate.findMany()).length;
 }
 
 function historicalWeatherSampleData(input: HistoricalWeatherSampleInput) {
@@ -457,6 +510,8 @@ function observedOutcomeData(input: ObservedOutcomeInput) {
     spotId: input.spotId ?? null,
     locationKey: input.locationKey,
     locationName: input.locationName,
+    latitudeWgs84: input.latitudeWgs84 ?? null,
+    longitudeWgs84: input.longitudeWgs84 ?? null,
     target: input.target,
     outcomeDate: dateOnly(input.outcomeDate),
     observationWindowStart: input.observationWindowStart
@@ -469,6 +524,7 @@ function observedOutcomeData(input: ObservedOutcomeInput) {
     sunriseGlowLevel: input.sunriseGlowLevel ?? null,
     sunsetGlowLevel: input.sunsetGlowLevel ?? null,
     astroVisibilityLevel: input.astroVisibilityLevel ?? null,
+    milkyWayVisibilityLevel: input.milkyWayVisibilityLevel ?? null,
     transparencyLevel: input.transparencyLevel ?? null,
     rainImpactLevel: input.rainImpactLevel ?? null,
     notes: input.notes ?? null,
@@ -479,15 +535,24 @@ function observedOutcomeData(input: ObservedOutcomeInput) {
 }
 
 function calibrationStatsData(input: CalibrationStatsInput) {
+  const ruleVersion = input.ruleVersion ?? "unknown";
   return {
     spotId: input.spotId ?? null,
     locationKey: input.locationKey,
+    locationName: input.locationName,
     target: input.target,
-    ruleVersion: input.ruleVersion,
+    ruleVersion,
     sampleCount: input.sampleCount,
+    labeledCount: input.labeledCount,
     successCount: input.successCount,
     partialCount: input.partialCount,
     failCount: input.failCount,
+    hitCount: input.hitCount,
+    partialHitCount: input.partialHitCount,
+    falsePositiveCount: input.falsePositiveCount,
+    falseNegativeCount: input.falseNegativeCount,
+    truePositiveCount: input.truePositiveCount,
+    trueNegativeCount: input.trueNegativeCount,
     hitRate: input.hitRate,
     falsePositiveRate: input.falsePositiveRate,
     falseNegativeRate: input.falseNegativeRate,
@@ -503,7 +568,7 @@ function normalizeHistoricalWeatherSample(record: any): HistoricalWeatherSampleR
     id: record.id,
     spotId: record.spotId ?? null,
     locationKey: record.locationKey,
-    locationName: record.locationName,
+    locationName: record.locationName ?? record.locationKey ?? "",
     latitudeWgs84: record.latitudeWgs84,
     longitudeWgs84: record.longitudeWgs84,
     elevationMeters: record.elevationMeters ?? null,
@@ -539,7 +604,7 @@ function normalizeForecastReplayRun(record: any): ForecastReplayRunRecord {
     id: record.id,
     spotId: record.spotId ?? null,
     locationKey: record.locationKey,
-    locationName: record.locationName,
+    locationName: record.locationName ?? record.locationKey ?? "",
     latitudeWgs84: record.latitudeWgs84,
     longitudeWgs84: record.longitudeWgs84,
     elevationMeters: record.elevationMeters ?? null,
@@ -562,7 +627,7 @@ function normalizeForecastReplayResult(record: any): ForecastReplayResultRecord 
     replayRunId: record.replayRunId,
     spotId: record.spotId ?? null,
     locationKey: record.locationKey,
-    locationName: record.locationName,
+    locationName: record.locationName ?? record.locationKey,
     target: record.target,
     forecastDate: toDate(record.forecastDate),
     overallScore: record.overallScore ?? null,
@@ -591,8 +656,10 @@ function normalizeObservedOutcome(record: any): ObservedOutcomeRecord {
   return {
     id: record.id,
     spotId: record.spotId ?? null,
-    locationKey: record.locationKey,
-    locationName: record.locationName,
+    locationKey: record.locationKey ?? null,
+    locationName: record.locationName ?? record.locationKey,
+    latitudeWgs84: record.latitudeWgs84 ?? null,
+    longitudeWgs84: record.longitudeWgs84 ?? null,
     target: record.target,
     outcomeDate: toDate(record.outcomeDate),
     observationWindowStart: record.observationWindowStart
@@ -605,6 +672,7 @@ function normalizeObservedOutcome(record: any): ObservedOutcomeRecord {
     sunriseGlowLevel: record.sunriseGlowLevel ?? null,
     sunsetGlowLevel: record.sunsetGlowLevel ?? null,
     astroVisibilityLevel: record.astroVisibilityLevel ?? null,
+    milkyWayVisibilityLevel: record.milkyWayVisibilityLevel ?? null,
     transparencyLevel: record.transparencyLevel ?? null,
     rainImpactLevel: record.rainImpactLevel ?? null,
     notes: record.notes ?? null,
@@ -621,12 +689,20 @@ function normalizeCalibrationStats(record: any): CalibrationStatsRecord {
     id: record.id,
     spotId: record.spotId ?? null,
     locationKey: record.locationKey,
+    locationName: record.locationName ?? record.locationKey,
     target: record.target,
-    ruleVersion: record.ruleVersion,
+    ruleVersion: record.ruleVersion ?? null,
     sampleCount: record.sampleCount,
+    labeledCount: record.labeledCount ?? 0,
     successCount: record.successCount,
     partialCount: record.partialCount,
     failCount: record.failCount,
+    hitCount: record.hitCount ?? 0,
+    partialHitCount: record.partialHitCount ?? 0,
+    falsePositiveCount: record.falsePositiveCount ?? 0,
+    falseNegativeCount: record.falseNegativeCount ?? 0,
+    truePositiveCount: record.truePositiveCount ?? 0,
+    trueNegativeCount: record.trueNegativeCount ?? 0,
     hitRate: record.hitRate,
     falsePositiveRate: record.falsePositiveRate,
     falseNegativeRate: record.falseNegativeRate,

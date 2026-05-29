@@ -47,6 +47,7 @@ CALIBRATION_START_DATE="${CALIBRATION_START_DATE:-2026-05-01}"
 CALIBRATION_END_DATE="${CALIBRATION_END_DATE:-2026-05-02}"
 CALIBRATION_TIMEZONE="${CALIBRATION_TIMEZONE:-Asia/Shanghai}"
 CALIBRATION_TARGETS="${CALIBRATION_TARGETS:-general}"
+CALIBRATION_OBSERVED_RESULT="${CALIBRATION_OBSERVED_RESULT:-partial}"
 CALIBRATION_SOURCE_PROVIDER="open_meteo_historical"
 
 echo "Historical calibration smoke test"
@@ -54,6 +55,7 @@ echo "provider: ${CALIBRATION_SOURCE_PROVIDER}"
 echo "location: ${CALIBRATION_LOCATION_NAME} ${CALIBRATION_LATITUDE_WGS84},${CALIBRATION_LONGITUDE_WGS84}"
 echo "date range: ${CALIBRATION_START_DATE} to ${CALIBRATION_END_DATE}"
 echo "targets: ${CALIBRATION_TARGETS}"
+echo "observed result label: ${CALIBRATION_OBSERVED_RESULT}"
 echo "No API keys or secrets will be printed."
 
 args=(
@@ -85,4 +87,4 @@ if [[ -n "${CALIBRATION_LOCATION_KEY:-}" ]]; then
   args+=("--location-key" "${CALIBRATION_LOCATION_KEY}")
 fi
 
-compose run --rm api pnpm --filter @photo-weather/api calibration:test -- "${args[@]}"
+compose run --rm -e CALIBRATION_OBSERVED_RESULT="${CALIBRATION_OBSERVED_RESULT}" api pnpm --filter @photo-weather/api calibration:test -- "${args[@]}"

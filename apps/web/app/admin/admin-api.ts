@@ -143,23 +143,45 @@ export type AdminForecastReplayResult = {
   readonly createdAt: string;
 };
 
+export type AdminCalibrationComparison = {
+  readonly replayResultId: string;
+  readonly outcomeId?: string;
+  readonly forecastDate: string;
+  readonly target: AdminCalibrationTarget;
+  readonly predictedClass: "recommended" | "cautious" | "nearby" | "not_recommended";
+  readonly observedResult?: "success" | "partial" | "fail" | "unknown";
+  readonly matchStatus:
+    | "true_positive"
+    | "true_negative"
+    | "false_positive"
+    | "false_negative"
+    | "partial_match"
+    | "unlabeled"
+    | "unknown";
+  readonly matchScore: number;
+  readonly mismatchReasons: readonly string[];
+};
+
 export type AdminObservedOutcome = {
   readonly id: string;
   readonly spotId: string | null;
-  readonly locationKey: string;
+  readonly locationKey: string | null;
   readonly locationName: string;
+  readonly latitudeWgs84: number | null;
+  readonly longitudeWgs84: number | null;
   readonly target: AdminCalibrationTarget;
   readonly outcomeDate: string;
   readonly observationWindowStart: string | null;
   readonly observationWindowEnd: string | null;
   readonly observedResult: "success" | "partial" | "fail" | "unknown";
-  readonly cloudSeaLevel: "none" | "weak" | "medium" | "strong" | null;
-  readonly whiteoutLevel: "none" | "low" | "medium" | "high" | null;
-  readonly sunriseGlowLevel: "none" | "weak" | "medium" | "strong" | null;
-  readonly sunsetGlowLevel: "none" | "weak" | "medium" | "strong" | null;
-  readonly astroVisibilityLevel: "none" | "weak" | "medium" | "strong" | null;
-  readonly transparencyLevel: "poor" | "fair" | "good" | "excellent" | null;
-  readonly rainImpactLevel: "none" | "low" | "medium" | "high" | null;
+  readonly cloudSeaLevel: "none" | "weak" | "medium" | "strong" | "unknown" | null;
+  readonly whiteoutLevel: "none" | "low" | "medium" | "high" | "unknown" | null;
+  readonly sunriseGlowLevel: "none" | "weak" | "medium" | "strong" | "unknown" | null;
+  readonly sunsetGlowLevel: "none" | "weak" | "medium" | "strong" | "unknown" | null;
+  readonly astroVisibilityLevel: "none" | "weak" | "medium" | "strong" | "unknown" | null;
+  readonly milkyWayVisibilityLevel: "none" | "weak" | "medium" | "strong" | "unknown" | null;
+  readonly transparencyLevel: "poor" | "fair" | "good" | "excellent" | "unknown" | null;
+  readonly rainImpactLevel: "none" | "low" | "medium" | "high" | "unknown" | null;
   readonly notes: string | null;
   readonly photoEvidenceUrl: string | null;
   readonly source: "admin_manual" | "user_feedback" | "imported";
@@ -171,12 +193,20 @@ export type AdminCalibrationStats = {
   readonly id: string;
   readonly spotId: string | null;
   readonly locationKey: string;
+  readonly locationName: string;
   readonly target: AdminCalibrationTarget;
-  readonly ruleVersion: string;
+  readonly ruleVersion: string | null;
   readonly sampleCount: number;
+  readonly labeledCount: number;
   readonly successCount: number;
   readonly partialCount: number;
   readonly failCount: number;
+  readonly hitCount: number;
+  readonly partialHitCount: number;
+  readonly falsePositiveCount: number;
+  readonly falseNegativeCount: number;
+  readonly truePositiveCount: number;
+  readonly trueNegativeCount: number;
   readonly hitRate: number;
   readonly falsePositiveRate: number;
   readonly falseNegativeRate: number;

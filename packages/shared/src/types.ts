@@ -1315,10 +1315,11 @@ export type ForecastCalibrationHint = {
   readonly locationKey: string;
   readonly target: ForecastTarget;
   readonly sampleCount: number;
+  readonly labeledCount: number;
   readonly hitRate: number;
   readonly falsePositiveRate: number;
   readonly falseNegativeRate: number;
-  readonly confidenceAdjustment: number;
+  readonly confidenceAdjustment: "none" | "slight_down" | "moderate_down" | "slight_up";
   readonly cautionNoteZh: string;
   readonly displayNoteZh: string;
 };

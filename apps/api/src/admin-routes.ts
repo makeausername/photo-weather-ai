@@ -31,20 +31,27 @@ import { MockGeoProvider, validateCoordinates } from "@photo-weather/geo";
 import type { GeoProvider } from "@photo-weather/geo";
 import {
   buildCalibrationLocationKey,
+  calibrationStrengthLevels,
   calibrationTargets,
+  compareReplayResultsWithOutcomes,
   defaultCalibrationMinimumSampleCount,
   deterministicRuleVersion,
+  getCalibrationOverviewCounts,
   historicalWeatherSourceProviders,
   listCalibrationStats,
   listForecastReplayResults,
   listObservedOutcomes,
   OpenMeteoHistoricalWeatherProvider,
   observedResults,
+  rainImpactLevels,
   rebuildCalibrationStats,
   runHistoricalReplay,
   saveHistoricalWeatherSamples,
   fetchAndNormalizeHistoricalWeather,
+  transparencyLevels,
+  updateObservedOutcome,
   upsertObservedOutcome,
+  whiteoutLevels,
   type HistoricalWeatherProvider,
 } from "@photo-weather/calibration";
 import {
@@ -303,13 +310,14 @@ const observedOutcomePayloadSchema = calibrationLocationSchema.extend({
   observationWindowStart: z.string().datetime({ offset: true }).nullable().optional(),
   observationWindowEnd: z.string().datetime({ offset: true }).nullable().optional(),
   observedResult: z.enum(observedResults),
-  cloudSeaLevel: z.enum(["none", "weak", "medium", "strong"]).nullable().optional(),
-  whiteoutLevel: z.enum(["none", "low", "medium", "high"]).nullable().optional(),
-  sunriseGlowLevel: z.enum(["none", "weak", "medium", "strong"]).nullable().optional(),
-  sunsetGlowLevel: z.enum(["none", "weak", "medium", "strong"]).nullable().optional(),
-  astroVisibilityLevel: z.enum(["none", "weak", "medium", "strong"]).nullable().optional(),
-  transparencyLevel: z.enum(["poor", "fair", "good", "excellent"]).nullable().optional(),
-  rainImpactLevel: z.enum(["none", "low", "medium", "high"]).nullable().optional(),
+  cloudSeaLevel: z.enum(calibrationStrengthLevels).nullable().optional(),
+  whiteoutLevel: z.enum(whiteoutLevels).nullable().optional(),
+  sunriseGlowLevel: z.enum(calibrationStrengthLevels).nullable().optional(),
+  sunsetGlowLevel: z.enum(calibrationStrengthLevels).nullable().optional(),
+  astroVisibilityLevel: z.enum(calibrationStrengthLevels).nullable().optional(),
+  milkyWayVisibilityLevel: z.enum(calibrationStrengthLevels).nullable().optional(),
+  transparencyLevel: z.enum(transparencyLevels).nullable().optional(),
+  rainImpactLevel: z.enum(rainImpactLevels).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
   photoEvidenceUrl: z.string().url().nullable().optional(),
   source: z.enum(["admin_manual", "user_feedback", "imported"]).optional().default("admin_manual"),
@@ -614,14 +622,41 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       return reply;
     }
 
-    const [photoSpots, stats, recentResults, outcomes] = await Promise.all([
+    const [photoSpots, stats, recentResults, outcomes, overview] = await Promise.all([
       listPhotoSpots({ client }),
       listCalibrationStats({ client }),
       listForecastReplayResults({ client, limit: 50 }),
       listObservedOutcomes({ client }),
+      getCalibrationOverviewCounts({ client }),
     ]);
 
     return {
+      overview,
+      photoSpots,
+      targets: calibrationTargets,
+      minimumHintSampleCount: defaultCalibrationMinimumSampleCount,
+      stats,
+      recentResults,
+      outcomes,
+    };
+  });
+
+  app.get("/admin/calibration/overview", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "admin.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const [photoSpots, stats, recentResults, outcomes, overview] = await Promise.all([
+      listPhotoSpots({ client }),
+      listCalibrationStats({ client }),
+      listForecastReplayResults({ client, limit: 50 }),
+      listObservedOutcomes({ client }),
+      getCalibrationOverviewCounts({ client }),
+    ]);
+
+    return {
+      overview,
       photoSpots,
       targets: calibrationTargets,
       minimumHintSampleCount: defaultCalibrationMinimumSampleCount,
@@ -789,7 +824,11 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       }),
     ]);
 
-    return { results, outcomes };
+    return {
+      results,
+      outcomes,
+      comparisons: compareReplayResultsWithOutcomes(results, outcomes),
+    };
   });
 
   app.post("/admin/calibration/outcomes", async (request, reply) => {
@@ -818,6 +857,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
           sunriseGlowLevel: parsedBody.data.sunriseGlowLevel,
           sunsetGlowLevel: parsedBody.data.sunsetGlowLevel,
           astroVisibilityLevel: parsedBody.data.astroVisibilityLevel,
+          milkyWayVisibilityLevel: parsedBody.data.milkyWayVisibilityLevel,
           transparencyLevel: parsedBody.data.transparencyLevel,
           rainImpactLevel: parsedBody.data.rainImpactLevel,
           notes: parsedBody.data.notes,
@@ -832,6 +872,63 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
         {
           actorUserId: auth.auditActorUserId,
           action: "calibration.outcome.upsert",
+          targetType: "observed_outcome",
+          targetId: outcome.id,
+          afterJson: toAuditJson(outcome),
+          ipAddress: request.ip,
+          userAgent: request.headers["user-agent"] ?? null,
+        },
+        { client },
+      );
+
+      return { outcome };
+    } catch (error) {
+      return sendError(reply, 400, "observed_outcome_update_failed", (error as Error).message);
+    }
+  });
+
+  app.put<{ Params: { id: string } }>("/admin/calibration/outcomes/:id", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "admin.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedBody = observedOutcomePayloadSchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return sendZodError(reply, parsedBody.error);
+    }
+
+    try {
+      const location = await resolveCalibrationLocation(parsedBody.data, client);
+      const outcome = await updateObservedOutcome(
+        request.params.id,
+        {
+          ...location,
+          target: parsedBody.data.target,
+          outcomeDate: parsedBody.data.outcomeDate,
+          observationWindowStart: parsedBody.data.observationWindowStart,
+          observationWindowEnd: parsedBody.data.observationWindowEnd,
+          observedResult: parsedBody.data.observedResult,
+          cloudSeaLevel: parsedBody.data.cloudSeaLevel,
+          whiteoutLevel: parsedBody.data.whiteoutLevel,
+          sunriseGlowLevel: parsedBody.data.sunriseGlowLevel,
+          sunsetGlowLevel: parsedBody.data.sunsetGlowLevel,
+          astroVisibilityLevel: parsedBody.data.astroVisibilityLevel,
+          milkyWayVisibilityLevel: parsedBody.data.milkyWayVisibilityLevel,
+          transparencyLevel: parsedBody.data.transparencyLevel,
+          rainImpactLevel: parsedBody.data.rainImpactLevel,
+          notes: parsedBody.data.notes,
+          photoEvidenceUrl: parsedBody.data.photoEvidenceUrl,
+          source: parsedBody.data.source,
+          createdBy: auth.auditActorUserId,
+        },
+        { client },
+      );
+
+      await createAuditLog(
+        {
+          actorUserId: auth.auditActorUserId,
+          action: "calibration.outcome.update",
           targetType: "observed_outcome",
           targetId: outcome.id,
           afterJson: toAuditJson(outcome),
@@ -898,6 +995,46 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       const stats = await rebuildCalibrationStats({
         client,
         locationKey: location.locationKey,
+        locationName: location.locationName,
+        spotId: location.spotId,
+        target: parsedBody.data.target,
+        ruleVersion: parsedBody.data.ruleVersion,
+      });
+
+      return { stats };
+    } catch (error) {
+      return sendError(reply, 400, "calibration_stats_rebuild_failed", (error as Error).message);
+    }
+  });
+
+  app.post("/admin/calibration/stats/recompute", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "admin.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedBody = calibrationReplaySchema
+      .pick({
+        spotId: true,
+        locationKey: true,
+        locationName: true,
+        latitudeWgs84: true,
+        longitudeWgs84: true,
+        elevationMeters: true,
+        target: true,
+        ruleVersion: true,
+      })
+      .safeParse(request.body);
+    if (!parsedBody.success) {
+      return sendZodError(reply, parsedBody.error);
+    }
+
+    try {
+      const location = await resolveCalibrationLocation(parsedBody.data, client);
+      const stats = await rebuildCalibrationStats({
+        client,
+        locationKey: location.locationKey,
+        locationName: location.locationName,
         spotId: location.spotId,
         target: parsedBody.data.target,
         ruleVersion: parsedBody.data.ruleVersion,
