@@ -67,22 +67,22 @@ export type HistoricalWeatherSampleInput = CalibrationLocation & {
   readonly sourceProvider: HistoricalWeatherSourceProvider;
   readonly sampleTime: Date;
   readonly timezone: string;
-  readonly temperature: number;
-  readonly humidity: number;
-  readonly dewPoint?: number | null;
-  readonly windSpeed: number;
-  readonly windGust?: number | null;
-  readonly windDirection?: number | null;
-  readonly precipitationAmount?: number | null;
-  readonly precipitationProbability?: number | null;
-  readonly rainAmount?: number | null;
-  readonly snowAmount?: number | null;
-  readonly cloudTotal?: number | null;
-  readonly cloudLow?: number | null;
-  readonly cloudMid?: number | null;
-  readonly cloudHigh?: number | null;
-  readonly visibility?: number | null;
-  readonly pressure?: number | null;
+  readonly temperatureC?: number | null;
+  readonly relativeHumidityPercent?: number | null;
+  readonly dewPointC?: number | null;
+  readonly windSpeedMs?: number | null;
+  readonly windGustMs?: number | null;
+  readonly windDirectionDeg?: number | null;
+  readonly precipitationAmountMm?: number | null;
+  readonly precipitationProbabilityPercent?: number | null;
+  readonly rainAmountMm?: number | null;
+  readonly snowAmountMm?: number | null;
+  readonly cloudTotalPercent?: number | null;
+  readonly cloudLowPercent?: number | null;
+  readonly cloudMidPercent?: number | null;
+  readonly cloudHighPercent?: number | null;
+  readonly visibilityMeters?: number | null;
+  readonly pressureMslHpa?: number | null;
   readonly weatherCode?: string | null;
   readonly weatherText?: string | null;
   readonly rawJson?: JsonValue | null;
@@ -100,16 +100,28 @@ export type HistoricalWeatherFetchResult = {
   readonly requestedUrl?: string;
 };
 
+export type HistoricalWeatherRawResponse = {
+  readonly sourceProvider: HistoricalWeatherSourceProvider;
+  readonly response: unknown;
+  readonly requestedUrl?: string;
+};
+
 export type HistoricalWeatherProvider = {
-  fetchHistoricalWeather(input: HistoricalWeatherFetchInput): Promise<HistoricalWeatherFetchResult>;
+  fetchHourlyHistoricalWeather(
+    input: HistoricalWeatherFetchInput,
+  ): Promise<HistoricalWeatherRawResponse>;
+  normalizeHistoricalWeather(
+    response: HistoricalWeatherRawResponse | unknown,
+    input: HistoricalWeatherFetchInput,
+  ): readonly HistoricalWeatherSampleInput[];
 };
 
 export type ForecastReplayRunInput = CalibrationLocation & {
   readonly dateStart: string;
   readonly dateEnd: string;
   readonly target: ForecastReplayTarget;
-  readonly modelVersion: string;
-  readonly ruleVersion: string;
+  readonly modelVersion?: string | null;
+  readonly ruleVersion?: string | null;
   readonly sourceProvider: HistoricalWeatherSourceProvider;
   readonly status?: ForecastReplayStatus;
   readonly errorMessage?: string | null;
@@ -119,10 +131,11 @@ export type ForecastReplayResultInput = {
   readonly replayRunId: string;
   readonly spotId?: string | null;
   readonly locationKey: string;
+  readonly locationName: string;
   readonly target: ForecastReplayTarget;
   readonly forecastDate: string;
-  readonly overallScore: number;
-  readonly recommendationLabel: string;
+  readonly overallScore?: number | null;
+  readonly recommendationLabel?: string | null;
   readonly dedicatedTripRecommendation?: string | null;
   readonly nearbyObservationRecommendation?: string | null;
   readonly bestWindowStart?: string | null;
@@ -137,7 +150,7 @@ export type ForecastReplayResultInput = {
   readonly milkyWayPracticalScore?: number | null;
   readonly precipitationRiskLevel?: string | null;
   readonly transparencyGrade?: string | null;
-  readonly confidenceLabel: string;
+  readonly confidenceLabel?: string | null;
   readonly predictedJson: JsonValue;
 };
 
@@ -214,6 +227,7 @@ export type HistoricalReplayInput = CalibrationLocation & {
   readonly startDate: string;
   readonly endDate: string;
   readonly target: ForecastReplayTarget;
+  readonly fetch?: boolean;
   readonly sourceProvider?: HistoricalWeatherSourceProvider;
   readonly modelVersion?: string;
   readonly ruleVersion?: string;
@@ -228,6 +242,8 @@ export type HistoricalReplayOutput = {
 
 export type StoredHistoricalWeatherResult = {
   readonly insertedCount: number;
+  readonly updatedCount: number;
+  readonly skippedCount: number;
   readonly skippedDuplicateCount: number;
   readonly samples: readonly HistoricalWeatherSampleRecord[];
 };

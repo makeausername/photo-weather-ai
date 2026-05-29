@@ -303,29 +303,34 @@ describe("local astro diagnostics scripts", () => {
       scripts: Record<string, string>;
     };
     const script = readRepoFile("scripts/test-historical-calibration.sh");
+    const cli = readRepoFile("apps/api/src/historical-calibration-cli.ts");
+    const apiPackageJson = JSON.parse(readRepoFile("apps/api/package.json")) as {
+      scripts: Record<string, string>;
+    };
+    const combined = `${script}\n${cli}`;
 
     expect(packageJson.scripts["calibration:test"]).toBe(
       "bash scripts/test-historical-calibration.sh",
     );
+    expect(apiPackageJson.scripts["calibration:test"]).toBe(
+      "node dist/historical-calibration-cli.js",
+    );
     for (const expected of [
-      "/admin/calibration/fetch-history",
-      "/admin/calibration/replay",
-      "/admin/calibration/replay-results",
-      "/admin/calibration/stats/rebuild",
-      "samples inserted:",
+      "docker compose --env-file",
+      "pnpm --filter @photo-weather/api calibration:test",
+      "open_meteo_historical",
+      "samples inserted/updated/skipped:",
       "replay results count:",
-      "predicted recommendations:",
-      "calibration stats:",
+      "daily recommendations:",
       "No API keys or secrets will be printed.",
-      "spot-guangmingding",
+      "黄山光明顶",
     ]) {
-      expect(script).toContain(expected);
+      expect(combined).toContain(expected);
     }
 
-    expect(script).toContain("PHOTO_WEATHER_ADMIN_ACCESS_TOKEN");
-    expect(script).not.toContain("QWEATHER_API_KEY");
-    expect(script).not.toContain("METEOBLUE_API_KEY");
-    expect(script).not.toContain("DEEPSEEK_API_KEY");
+    expect(combined).not.toContain("QWEATHER_API_KEY");
+    expect(combined).not.toContain("METEOBLUE_API_KEY");
+    expect(combined).not.toContain("DEEPSEEK_API_KEY");
   });
 
   it("prints DeepSeek interpretation diagnostics without raw secrets", () => {
@@ -356,7 +361,7 @@ describe("local astro diagnostics scripts", () => {
     expect(script).toContain("print_timeout_result");
     expect(script).not.toContain('started_ms="$(node');
     expect(script).not.toContain('ended_ms="$(node');
-    expect(script).not.toContain("node - \"$response_file\"");
+    expect(script).not.toContain('node - "$response_file"');
     expect(script).not.toContain("DEEPSEEK_API_KEY");
   });
 });

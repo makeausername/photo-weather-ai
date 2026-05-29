@@ -42,7 +42,8 @@ import {
   observedResults,
   rebuildCalibrationStats,
   runHistoricalReplay,
-  storeHistoricalWeatherSamples,
+  saveHistoricalWeatherSamples,
+  fetchAndNormalizeHistoricalWeather,
   upsertObservedOutcome,
   type HistoricalWeatherProvider,
 } from "@photo-weather/calibration";
@@ -293,6 +294,7 @@ const calibrationReplaySchema = calibrationLocationSchema.extend({
   timezone: z.string().trim().min(1).optional().default("Asia/Shanghai"),
   sourceProvider: historicalSourceProviderSchema.optional().default("open_meteo_historical"),
   ruleVersion: z.string().trim().min(1).optional().default(deterministicRuleVersion),
+  fetch: z.boolean().optional().default(false),
 });
 
 const observedOutcomePayloadSchema = calibrationLocationSchema.extend({
@@ -660,13 +662,13 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
 
     try {
       const location = await resolveCalibrationLocation(parsedBody.data, client);
-      const fetched = await historicalWeatherProvider.fetchHistoricalWeather({
+      const fetched = await fetchAndNormalizeHistoricalWeather(historicalWeatherProvider, {
         ...location,
         startDate: parsedBody.data.startDate,
         endDate: parsedBody.data.endDate,
         timezone: parsedBody.data.timezone,
       });
-      const stored = await storeHistoricalWeatherSamples(fetched.samples, { client });
+      const stored = await saveHistoricalWeatherSamples(fetched.samples, { client });
 
       await createAuditLog(
         {
@@ -680,7 +682,8 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
             startDate: parsedBody.data.startDate,
             endDate: parsedBody.data.endDate,
             insertedCount: stored.insertedCount,
-            skippedDuplicateCount: stored.skippedDuplicateCount,
+            updatedCount: stored.updatedCount,
+            skippedCount: stored.skippedCount,
           }),
           ipAddress: request.ip,
           userAgent: request.headers["user-agent"] ?? null,
@@ -692,6 +695,8 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
         location,
         sourceProvider: fetched.sourceProvider,
         insertedCount: stored.insertedCount,
+        updatedCount: stored.updatedCount,
+        skippedCount: stored.skippedCount,
         skippedDuplicateCount: stored.skippedDuplicateCount,
         sampleCount: fetched.samples.length,
       };
@@ -722,10 +727,12 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
           sourceProvider: parsedBody.data.sourceProvider,
           ruleVersion: parsedBody.data.ruleVersion,
           timezone: parsedBody.data.timezone,
+          fetch: Boolean(parsedBody.data.fetch),
         },
         {
           client,
           terrainProvider: calibrationTerrainProvider,
+          historicalWeatherProvider,
         },
       );
 

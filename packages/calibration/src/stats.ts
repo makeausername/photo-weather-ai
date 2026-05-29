@@ -218,10 +218,11 @@ export function predictedRecommendationClass(
   if (nearby.includes("附近") || nearby.includes("观察") || nearby.includes("可观察")) {
     return "nearby";
   }
-  if (result.overallScore >= 78) {
+  const overallScore = result.overallScore ?? 0;
+  if (overallScore >= 78) {
     return "dedicated";
   }
-  if (result.overallScore >= 45) {
+  if (overallScore >= 45) {
     return "cautious";
   }
   return "not_recommended";

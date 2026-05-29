@@ -13,14 +13,17 @@ import type { TerrainProvider } from "@photo-weather/terrain";
 import {
   createForecastReplayResults,
   createForecastReplayRun,
+  saveHistoricalWeatherSamples,
   listHistoricalWeatherSamples,
   updateForecastReplayRunStatus,
 } from "./storage.js";
+import { fetchAndNormalizeHistoricalWeather } from "./historical-provider.js";
 import type {
   ForecastReplayResultInput,
   ForecastReplayRunRecord,
   HistoricalReplayInput,
   HistoricalReplayOutput,
+  HistoricalWeatherProvider,
   HistoricalWeatherSampleRecord,
 } from "./types.js";
 
@@ -30,6 +33,7 @@ export const deterministicRuleVersion = "deterministic_rules_v1";
 export type HistoricalReplayServiceOptions = {
   readonly client?: DatabaseClient;
   readonly terrainProvider?: TerrainProvider;
+  readonly historicalWeatherProvider?: HistoricalWeatherProvider;
 };
 
 export async function runHistoricalReplay(
@@ -53,13 +57,30 @@ export async function runHistoricalReplay(
   );
 
   try {
-    const samples = await listHistoricalWeatherSamples({
+    let samples = await listHistoricalWeatherSamples({
       client: options.client,
       locationKey: input.locationKey,
       startDate: input.startDate,
       endDate: input.endDate,
       sourceProvider,
     });
+    if (samples.length === 0 && input.fetch) {
+      if (!options.historicalWeatherProvider) {
+        throw new Error("Historical replay fetch was requested but no provider was configured.");
+      }
+      const fetched = await fetchAndNormalizeHistoricalWeather(options.historicalWeatherProvider, {
+        ...input,
+        timezone: input.timezone ?? defaultTimezone,
+      });
+      await saveHistoricalWeatherSamples(fetched.samples, { client: options.client });
+      samples = await listHistoricalWeatherSamples({
+        client: options.client,
+        locationKey: input.locationKey,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        sourceProvider,
+      });
+    }
     if (samples.length === 0) {
       throw new Error("No historical weather samples are available for this replay range.");
     }
@@ -154,52 +175,72 @@ function historySampleToHourlyWeather(
 ): NormalizedHourlyWeather {
   const missingFields: string[] = [];
   const estimatedFields: string[] = [];
-  const cloudTotal = sample.cloudTotal ?? 50;
-  const visibility = sample.visibility ?? null;
+  const temperature = sample.temperatureC ?? 0;
+  const humidity = sample.relativeHumidityPercent ?? 75;
+  const windSpeed = sample.windSpeedMs ?? 0;
+  const precipitationAmount = sample.precipitationAmountMm ?? null;
+  const cloudTotal = sample.cloudTotalPercent ?? 50;
+  const visibilityKm =
+    typeof sample.visibilityMeters === "number" ? round1(sample.visibilityMeters / 1000) : null;
 
-  if (sample.cloudTotal === null) {
+  if (sample.temperatureC === null) {
+    missingFields.push("temperatureC");
+    estimatedFields.push("temperatureC");
+  }
+  if (sample.relativeHumidityPercent === null) {
+    missingFields.push("relativeHumidityPercent");
+    estimatedFields.push("relativeHumidityPercent");
+  }
+  if (sample.windSpeedMs === null) {
+    missingFields.push("windSpeedMs");
+    estimatedFields.push("windSpeedMs");
+  }
+  if (sample.precipitationAmountMm === null) {
+    missingFields.push("precipitationAmountMm");
+  }
+  if (sample.cloudTotalPercent === null) {
     estimatedFields.push("cloudTotal");
   }
-  if (sample.cloudLow === null) {
+  if (sample.cloudLowPercent === null) {
     missingFields.push("cloudLow");
   }
-  if (sample.cloudMid === null) {
+  if (sample.cloudMidPercent === null) {
     missingFields.push("cloudMid");
   }
-  if (sample.cloudHigh === null) {
+  if (sample.cloudHighPercent === null) {
     missingFields.push("cloudHigh");
   }
-  if (sample.visibility === null) {
+  if (sample.visibilityMeters === null) {
     missingFields.push("visibility");
   }
-  if (sample.precipitationProbability === null) {
+  if (sample.precipitationProbabilityPercent === null) {
     missingFields.push("precipitationProbability");
   }
 
   return {
     time: sample.sampleTime.toISOString(),
-    temperature: sample.temperature,
+    temperature,
     feelsLike: null,
-    humidity: sample.humidity,
-    dewPointSpread: sample.dewPoint === null ? null : round1(sample.temperature - sample.dewPoint),
-    pressure: sample.pressure,
-    windSpeed: sample.windSpeed,
-    windGust: sample.windGust,
-    windDirection: sample.windDirection,
-    precipitationProbability: sample.precipitationProbability,
-    precipitationProbabilityPercent: sample.precipitationProbability,
-    precipitation: sample.precipitationAmount,
-    precipitationAmountMm: sample.precipitationAmount,
-    rainAmountMm: sample.rainAmount,
-    snowAmountMm: sample.snowAmount,
+    humidity,
+    dewPointSpread: sample.dewPointC === null ? null : round1(temperature - sample.dewPointC),
+    pressure: sample.pressureMslHpa,
+    windSpeed,
+    windGust: sample.windGustMs,
+    windDirection: sample.windDirectionDeg,
+    precipitationProbability: sample.precipitationProbabilityPercent,
+    precipitationProbabilityPercent: sample.precipitationProbabilityPercent,
+    precipitation: precipitationAmount,
+    precipitationAmountMm: precipitationAmount,
+    rainAmountMm: sample.rainAmountMm,
+    snowAmountMm: sample.snowAmountMm,
     precipitationType: inferPrecipitationType(sample),
-    visibility,
-    rawVisibilityKm: visibility,
-    dewPoint: sample.dewPoint,
+    visibility: visibilityKm,
+    rawVisibilityKm: visibilityKm,
+    dewPoint: sample.dewPointC,
     cloudTotal,
-    cloudLow: sample.cloudLow,
-    cloudMid: sample.cloudMid,
-    cloudHigh: sample.cloudHigh,
+    cloudLow: sample.cloudLowPercent,
+    cloudMid: sample.cloudMidPercent,
+    cloudHigh: sample.cloudHighPercent,
     weatherCode: sample.weatherCode,
     weatherTextZh: sample.weatherText,
     providerCode: sample.sourceProvider,
@@ -223,23 +264,32 @@ function buildDailyWeatherFromSamples(
   return [...byDate.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([date, daySamples]) => {
-      const precipitationAmount = sum(daySamples.map((sample) => sample.precipitationAmount));
-      const rainAmount = sumOptional(daySamples.map((sample) => sample.rainAmount));
-      const snowAmount = sumOptional(daySamples.map((sample) => sample.snowAmount));
-      const precipitationProbability = maxOptional(
-        daySamples.map((sample) => sample.precipitationProbability),
+      const precipitationAmount = sumOptional(
+        daySamples.map((sample) => sample.precipitationAmountMm),
       );
-      const cloudTotal = averageOptional(daySamples.map((sample) => sample.cloudTotal));
-      const cloudLow = averageOptional(daySamples.map((sample) => sample.cloudLow));
-      const cloudMid = averageOptional(daySamples.map((sample) => sample.cloudMid));
-      const cloudHigh = averageOptional(daySamples.map((sample) => sample.cloudHigh));
-      const visibility = averageOptional(daySamples.map((sample) => sample.visibility));
+      const rainAmount = sumOptional(daySamples.map((sample) => sample.rainAmountMm));
+      const snowAmount = sumOptional(daySamples.map((sample) => sample.snowAmountMm));
+      const precipitationProbability = maxOptional(
+        daySamples.map((sample) => sample.precipitationProbabilityPercent),
+      );
+      const cloudTotal = averageOptional(daySamples.map((sample) => sample.cloudTotalPercent));
+      const cloudLow = averageOptional(daySamples.map((sample) => sample.cloudLowPercent));
+      const cloudMid = averageOptional(daySamples.map((sample) => sample.cloudMidPercent));
+      const cloudHigh = averageOptional(daySamples.map((sample) => sample.cloudHighPercent));
+      const visibilityMeters = averageOptional(daySamples.map((sample) => sample.visibilityMeters));
+      const visibility =
+        typeof visibilityMeters === "number" ? round1(visibilityMeters / 1000) : null;
       const firstText = daySamples.find((sample) => sample.weatherText)?.weatherText;
+      const temperatures = daySamples.map((sample) => sample.temperatureC).filter(isNumber);
+      const humidities = daySamples
+        .map((sample) => sample.relativeHumidityPercent)
+        .filter(isNumber);
+      const windSpeeds = daySamples.map((sample) => sample.windSpeedMs).filter(isNumber);
 
       return {
         date,
-        tempMin: min(daySamples.map((sample) => sample.temperature)),
-        tempMax: max(daySamples.map((sample) => sample.temperature)),
+        tempMin: temperatures.length > 0 ? min(temperatures) : 0,
+        tempMax: temperatures.length > 0 ? max(temperatures) : 0,
         precipitationProbability,
         precipitationProbabilityPercent: precipitationProbability,
         precipitation: precipitationAmount,
@@ -249,12 +299,12 @@ function buildDailyWeatherFromSamples(
         precipitationType: inferDailyPrecipitationType({
           rainAmount,
           snowAmount,
-          precipitationAmount,
+          precipitationAmount: precipitationAmount ?? 0,
         }),
-        windSpeed: average(daySamples.map((sample) => sample.windSpeed)),
-        windGust: maxOptional(daySamples.map((sample) => sample.windGust)),
-        windDirection: averageOptional(daySamples.map((sample) => sample.windDirection)),
-        humidity: average(daySamples.map((sample) => sample.humidity)),
+        windSpeed: windSpeeds.length > 0 ? average(windSpeeds) : 0,
+        windGust: maxOptional(daySamples.map((sample) => sample.windGustMs)),
+        windDirection: averageOptional(daySamples.map((sample) => sample.windDirectionDeg)),
+        humidity: humidities.length > 0 ? average(humidities) : 75,
         visibility,
         rawVisibilityKm: visibility,
         cloudTotal,
@@ -271,6 +321,9 @@ function buildDailyWeatherFromSamples(
           cloudMid,
           cloudHigh,
           visibility,
+          hasTemperature: temperatures.length > 0,
+          hasHumidity: humidities.length > 0,
+          hasWindSpeed: windSpeeds.length > 0,
         }),
       };
     });
@@ -327,7 +380,8 @@ function buildReplayResultInputs(options: {
     return {
       replayRunId: options.run.id,
       spotId: options.run.spotId,
-      locationKey: options.run.locationKey,
+      locationKey: options.run.locationKey ?? "",
+      locationName: options.run.locationName,
       target: options.run.target,
       forecastDate: dailySummary.date,
       overallScore: dailySummary.score,
@@ -463,8 +517,14 @@ function collectDailyMissingFields(input: {
   readonly cloudMid: number | null | undefined;
   readonly cloudHigh: number | null | undefined;
   readonly visibility: number | null | undefined;
+  readonly hasTemperature: boolean;
+  readonly hasHumidity: boolean;
+  readonly hasWindSpeed: boolean;
 }): readonly string[] | undefined {
   const fields = [
+    input.hasTemperature ? null : "temperatureC",
+    input.hasHumidity ? null : "relativeHumidityPercent",
+    input.hasWindSpeed ? null : "windSpeedMs",
     input.precipitationProbability === null || input.precipitationProbability === undefined
       ? "precipitationProbability"
       : null,
@@ -478,12 +538,15 @@ function collectDailyMissingFields(input: {
 }
 
 function inferPrecipitationType(
-  sample: Pick<HistoricalWeatherSampleRecord, "rainAmount" | "snowAmount" | "precipitationAmount">,
+  sample: Pick<
+    HistoricalWeatherSampleRecord,
+    "rainAmountMm" | "snowAmountMm" | "precipitationAmountMm"
+  >,
 ): "none" | "rain" | "snow" | "mixed" {
   return inferDailyPrecipitationType({
-    rainAmount: sample.rainAmount,
-    snowAmount: sample.snowAmount,
-    precipitationAmount: sample.precipitationAmount,
+    rainAmount: sample.rainAmountMm,
+    snowAmount: sample.snowAmountMm,
+    precipitationAmount: sample.precipitationAmountMm ?? 0,
   });
 }
 
@@ -515,6 +578,10 @@ function average(values: readonly number[]): number {
 function averageOptional(values: readonly (number | null)[]): number | null {
   const usable = values.filter((value): value is number => typeof value === "number");
   return usable.length > 0 ? average(usable) : null;
+}
+
+function isNumber(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function sum(values: readonly number[]): number {

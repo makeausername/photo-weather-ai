@@ -137,7 +137,7 @@ function matchStatus(result: AdminForecastReplayResult, outcome?: AdminObservedO
   if (!outcome || outcome.observedResult === "unknown") {
     return "未标注";
   }
-  const predictedPositive = result.overallScore >= 45;
+  const predictedPositive = (result.overallScore ?? 0) >= 45;
   if (predictedPositive && outcome.observedResult === "fail") {
     return "误报";
   }
@@ -446,7 +446,7 @@ export function AdminCalibrationClient() {
                       <td className="px-4 py-3">
                         <div className="font-semibold">{result.recommendationLabel}</div>
                         <div className="text-xs text-muted-foreground">
-                          {Math.round(result.overallScore)} 分
+                          {Math.round(result.overallScore ?? 0)} 分
                         </div>
                       </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">

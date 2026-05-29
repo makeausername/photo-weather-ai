@@ -10,7 +10,7 @@ import {
   normalizeOpenMeteoHistoricalWeather,
   rebuildCalibrationStats,
   runHistoricalReplay,
-  storeHistoricalWeatherSamples,
+  saveHistoricalWeatherSamples,
   upsertObservedOutcome,
 } from "../index.js";
 import type { ForecastReplayResultInput, HistoricalWeatherSampleInput } from "../types.js";
@@ -46,14 +46,15 @@ describe("Historical Calibration V1", () => {
 
     expect(hourly).toContain("temperature_2m");
     expect(hourly).toContain("cloud_cover_low");
+    expect(hourly).toContain("visibility");
     expect(hourly).toContain("wind_gusts_10m");
-    expect(hourly).not.toContain("visibility");
     expect(hourly).not.toContain("precipitation_probability");
+    expect(url.toString()).not.toMatch(/api[_-]?key|secret|token/i);
   });
 
   it("normalizes Open-Meteo historical hourly samples and tolerates optional missing fields", () => {
     const samples = normalizeOpenMeteoHistoricalWeather(
-      openMeteoFixture({ includeOptional: false }),
+      openMeteoFixture({ includeOptional: false, includeProbability: false }),
       {
         ...location,
         startDate: "2026-05-01",
@@ -66,11 +67,12 @@ describe("Historical Calibration V1", () => {
     expect(samples[0]).toMatchObject({
       locationKey: "spot:spot-test",
       sourceProvider: "open_meteo_historical",
-      temperature: 12,
-      humidity: 88,
-      precipitationAmount: 0.2,
-      cloudLow: null,
-      visibility: null,
+      temperatureC: 12,
+      relativeHumidityPercent: 88,
+      precipitationAmountMm: 0.2,
+      precipitationProbabilityPercent: null,
+      cloudLowPercent: null,
+      visibilityMeters: null,
     });
   });
 
@@ -83,12 +85,36 @@ describe("Historical Calibration V1", () => {
       timezone: "Asia/Shanghai",
     });
 
-    const first = await storeHistoricalWeatherSamples(samples, { client });
-    const second = await storeHistoricalWeatherSamples(samples, { client });
+    const first = await saveHistoricalWeatherSamples(samples, { client });
+    const second = await saveHistoricalWeatherSamples(samples, { client });
 
     expect(first.insertedCount).toBe(2);
     expect(second.insertedCount).toBe(0);
+    expect(second.updatedCount).toBe(0);
+    expect(second.skippedCount).toBe(2);
     expect(second.skippedDuplicateCount).toBe(2);
+  });
+
+  it("updates changed duplicate historical samples without creating another row", async () => {
+    const { client, state } = createMemoryClient();
+    const [sample] = normalizeOpenMeteoHistoricalWeather(openMeteoFixture(), {
+      ...location,
+      startDate: "2026-05-01",
+      endDate: "2026-05-01",
+      timezone: "Asia/Shanghai",
+    });
+    if (!sample) {
+      throw new Error("expected fixture sample");
+    }
+
+    await saveHistoricalWeatherSamples([sample], { client });
+    const updated = await saveHistoricalWeatherSamples([{ ...sample, temperatureC: 14 }], {
+      client,
+    });
+
+    expect(updated.updatedCount).toBe(1);
+    expect(state.historicalWeatherSamples.size).toBe(1);
+    expect([...state.historicalWeatherSamples.values()][0]?.temperatureC).toBe(14);
   });
 
   it("replays deterministic scoring from stored historical samples without DeepSeek or forecast providers", async () => {
@@ -97,7 +123,7 @@ describe("Historical Calibration V1", () => {
       throw new Error("replay must not call network");
     });
     vi.stubGlobal("fetch", fetchSpy);
-    await storeHistoricalWeatherSamples(buildHourlySamples(24, "2026-05-01"), { client });
+    await saveHistoricalWeatherSamples(buildHourlySamples(24, "2026-05-01"), { client });
 
     const replay = await runHistoricalReplay(
       {
@@ -115,6 +141,37 @@ describe("Historical Calibration V1", () => {
     });
     expect(fetchSpy).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
+  });
+
+  it("replays with missing historical fields marked as lower confidence instead of crashing", async () => {
+    const { client } = createMemoryClient();
+    await saveHistoricalWeatherSamples(
+      buildHourlySamples(24, "2026-05-01").map((sample, index) =>
+        index === 0
+          ? {
+              ...sample,
+              temperatureC: null,
+              relativeHumidityPercent: null,
+              windSpeedMs: null,
+              precipitationProbabilityPercent: null,
+            }
+          : sample,
+      ),
+      { client },
+    );
+
+    const replay = await runHistoricalReplay(
+      {
+        ...location,
+        startDate: "2026-05-01",
+        endDate: "2026-05-01",
+        target: "general",
+      },
+      { client },
+    );
+
+    expect(replay.results).toHaveLength(1);
+    expect(replay.results[0]?.confidenceLabel).toBe("medium");
   });
 
   it("classifies outcomes, computes stats, and gates low-sample calibration hints", async () => {
@@ -174,8 +231,11 @@ describe("Historical Calibration V1", () => {
   });
 });
 
-function openMeteoFixture(options: { readonly includeOptional?: boolean } = {}) {
+function openMeteoFixture(
+  options: { readonly includeOptional?: boolean; readonly includeProbability?: boolean } = {},
+) {
   const includeOptional = options.includeOptional ?? true;
+  const includeProbability = options.includeProbability ?? true;
   return {
     timezone: "Asia/Shanghai",
     utc_offset_seconds: 28800,
@@ -185,7 +245,7 @@ function openMeteoFixture(options: { readonly includeOptional?: boolean } = {}) 
       temperature_2m: [12, 11.5],
       relative_humidity_2m: [88, 91],
       dew_point_2m: [9, 9.5],
-      precipitation_probability: [20, 30],
+      precipitation_probability: includeProbability ? [20, 30] : undefined,
       precipitation: [0.2, 0],
       rain: [0.2, 0],
       snowfall: [0, 0],
@@ -209,18 +269,18 @@ function buildHourlySamples(hours: number, date: string): readonly HistoricalWea
     sourceProvider: "open_meteo_historical",
     sampleTime: new Date(`${date}T${String(index).padStart(2, "0")}:00:00+08:00`),
     timezone: "Asia/Shanghai",
-    temperature: 12 + Math.sin(index / 24) * 4,
-    humidity: index < 8 ? 88 : 70,
-    dewPoint: 8,
-    windSpeed: 3,
-    precipitationAmount: index === 14 ? 0.4 : 0,
-    precipitationProbability: index === 14 ? 60 : 15,
-    cloudTotal: index < 8 ? 68 : 42,
-    cloudLow: index < 8 ? 50 : 24,
-    cloudMid: 35,
-    cloudHigh: 45,
-    visibility: 18,
-    pressure: 810,
+    temperatureC: 12 + Math.sin(index / 24) * 4,
+    relativeHumidityPercent: index < 8 ? 88 : 70,
+    dewPointC: 8,
+    windSpeedMs: 3,
+    precipitationAmountMm: index === 14 ? 0.4 : 0,
+    precipitationProbabilityPercent: index === 14 ? 60 : 15,
+    cloudTotalPercent: index < 8 ? 68 : 42,
+    cloudLowPercent: index < 8 ? 50 : 24,
+    cloudMidPercent: 35,
+    cloudHighPercent: 45,
+    visibilityMeters: 18000,
+    pressureMslHpa: 810,
     weatherCode: "3",
     weatherText: "多云",
   }));
@@ -231,6 +291,7 @@ function buildReplayResults(runId: string, days: number): readonly ForecastRepla
     replayRunId: runId,
     spotId: location.spotId,
     locationKey: location.locationKey,
+    locationName: location.locationName,
     target: "general",
     forecastDate: `2026-05-${String(index + 1).padStart(2, "0")}`,
     overallScore: index === 9 ? 38 : 82,
@@ -279,8 +340,15 @@ function createMemoryClient(): { readonly client: DatabaseClient; readonly state
         state.historicalWeatherSamples.set(historyKey(record), record);
         return record;
       },
-      update: async () => {
-        throw new Error("not used");
+      update: async ({ where, data }: any) => {
+        const key = historyKey(where.locationKey_sourceProvider_sampleTime);
+        const existing = state.historicalWeatherSamples.get(key);
+        if (!existing) {
+          throw new Error(`missing historical sample ${key}`);
+        }
+        const record = { ...existing, ...data, updatedAt: now };
+        state.historicalWeatherSamples.set(key, record);
+        return record;
       },
       upsert: async () => {
         throw new Error("not used");

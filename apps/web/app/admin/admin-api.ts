@@ -125,11 +125,12 @@ export type AdminForecastReplayResult = {
   readonly id: string;
   readonly replayRunId: string;
   readonly spotId: string | null;
-  readonly locationKey: string;
+  readonly locationKey: string | null;
+  readonly locationName: string;
   readonly target: AdminCalibrationTarget;
   readonly forecastDate: string;
-  readonly overallScore: number;
-  readonly recommendationLabel: string;
+  readonly overallScore: number | null;
+  readonly recommendationLabel: string | null;
   readonly dedicatedTripRecommendation: string | null;
   readonly nearbyObservationRecommendation: string | null;
   readonly bestWindowStart: string | null;
@@ -138,7 +139,7 @@ export type AdminForecastReplayResult = {
   readonly whiteoutRiskScore: number | null;
   readonly precipitationRiskLevel: string | null;
   readonly transparencyGrade: string | null;
-  readonly confidenceLabel: string;
+  readonly confidenceLabel: string | null;
   readonly createdAt: string;
 };
 

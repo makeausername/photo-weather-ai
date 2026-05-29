@@ -3,6 +3,7 @@ import type { JsonValue } from "@photo-weather/db";
 import type {
   HistoricalWeatherFetchInput,
   HistoricalWeatherFetchResult,
+  HistoricalWeatherRawResponse,
   HistoricalWeatherProvider,
   HistoricalWeatherSampleInput,
 } from "./types.js";
@@ -27,6 +28,7 @@ const historicalHourlyFields = [
   "cloud_cover_low",
   "cloud_cover_mid",
   "cloud_cover_high",
+  "visibility",
   "wind_speed_10m",
   "wind_gusts_10m",
   "wind_direction_10m",
@@ -45,9 +47,9 @@ export class OpenMeteoHistoricalWeatherProvider implements HistoricalWeatherProv
     this.timeoutMs = options.timeoutMs ?? 30_000;
   }
 
-  async fetchHistoricalWeather(
+  async fetchHourlyHistoricalWeather(
     input: HistoricalWeatherFetchInput,
-  ): Promise<HistoricalWeatherFetchResult> {
+  ): Promise<HistoricalWeatherRawResponse> {
     const requestedUrl = buildOpenMeteoHistoricalWeatherUrl(this.endpoint, input);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -62,15 +64,32 @@ export class OpenMeteoHistoricalWeatherProvider implements HistoricalWeatherProv
         throw new Error(`Open-Meteo historical request failed with HTTP ${response.status}.`);
       }
 
-      const body = parseJsonBody(text);
       return {
         sourceProvider: openMeteoHistoricalProviderCode,
         requestedUrl,
-        samples: normalizeOpenMeteoHistoricalWeather(body, input),
+        response: parseJsonBody(text),
       };
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  normalizeHistoricalWeather(
+    response: HistoricalWeatherRawResponse | unknown,
+    input: HistoricalWeatherFetchInput,
+  ): readonly HistoricalWeatherSampleInput[] {
+    return normalizeOpenMeteoHistoricalWeather(extractRawResponseBody(response), input);
+  }
+
+  async fetchHistoricalWeather(
+    input: HistoricalWeatherFetchInput,
+  ): Promise<HistoricalWeatherFetchResult> {
+    const raw = await this.fetchHourlyHistoricalWeather(input);
+    return {
+      sourceProvider: raw.sourceProvider,
+      requestedUrl: raw.requestedUrl,
+      samples: this.normalizeHistoricalWeather(raw, input),
+    };
   }
 }
 
@@ -107,11 +126,11 @@ export function normalizeOpenMeteoHistoricalWeather(
     const sampleTime = normalizeOpenMeteoTime(times[index], offsetSeconds);
     const temperature = numberAt(hourly, "temperature_2m", index);
     const humidity = numberAt(hourly, "relative_humidity_2m", index);
-    if (!sampleTime || temperature === undefined || humidity === undefined) {
+    if (!sampleTime) {
       continue;
     }
 
-    const precipitation = numberAt(hourly, "precipitation", index) ?? 0;
+    const precipitation = numberAt(hourly, "precipitation", index);
     const weatherCode = text(at(hourly, "weather_code", index));
     samples.push({
       spotId: input.spotId ?? null,
@@ -123,24 +142,24 @@ export function normalizeOpenMeteoHistoricalWeather(
       sourceProvider: openMeteoHistoricalProviderCode,
       sampleTime,
       timezone,
-      temperature: round1(temperature),
-      humidity: clampPercent(humidity),
-      dewPoint: nullableRound(numberAt(hourly, "dew_point_2m", index)),
-      windSpeed: nullableRound(numberAt(hourly, "wind_speed_10m", index)) ?? 0,
-      windGust: nullableRound(numberAt(hourly, "wind_gusts_10m", index)),
-      windDirection: nullableRound(numberAt(hourly, "wind_direction_10m", index), 0),
-      precipitationAmount: nullableRound(precipitation) ?? 0,
-      precipitationProbability: nullablePercent(
+      temperatureC: nullableRound(temperature),
+      relativeHumidityPercent: nullablePercent(humidity),
+      dewPointC: nullableRound(numberAt(hourly, "dew_point_2m", index)),
+      windSpeedMs: nullableRound(numberAt(hourly, "wind_speed_10m", index)),
+      windGustMs: nullableRound(numberAt(hourly, "wind_gusts_10m", index)),
+      windDirectionDeg: nullableRound(numberAt(hourly, "wind_direction_10m", index), 0),
+      precipitationAmountMm: nullableRound(precipitation),
+      precipitationProbabilityPercent: nullablePercent(
         numberAt(hourly, "precipitation_probability", index),
       ),
-      rainAmount: nullableRound(numberAt(hourly, "rain", index)),
-      snowAmount: nullableRound(numberAt(hourly, "snowfall", index)),
-      cloudTotal: nullablePercent(numberAt(hourly, "cloud_cover", index)),
-      cloudLow: nullablePercent(numberAt(hourly, "cloud_cover_low", index)),
-      cloudMid: nullablePercent(numberAt(hourly, "cloud_cover_mid", index)),
-      cloudHigh: nullablePercent(numberAt(hourly, "cloud_cover_high", index)),
-      visibility: metersToKilometers(numberAt(hourly, "visibility", index)),
-      pressure: nullableRound(numberAt(hourly, "pressure_msl", index)),
+      rainAmountMm: nullableRound(numberAt(hourly, "rain", index)),
+      snowAmountMm: nullableRound(numberAt(hourly, "snowfall", index)),
+      cloudTotalPercent: nullablePercent(numberAt(hourly, "cloud_cover", index)),
+      cloudLowPercent: nullablePercent(numberAt(hourly, "cloud_cover_low", index)),
+      cloudMidPercent: nullablePercent(numberAt(hourly, "cloud_cover_mid", index)),
+      cloudHighPercent: nullablePercent(numberAt(hourly, "cloud_cover_high", index)),
+      visibilityMeters: nullableRound(numberAt(hourly, "visibility", index), 0),
+      pressureMslHpa: nullableRound(numberAt(hourly, "pressure_msl", index)),
       weatherCode,
       weatherText: describeOpenMeteoWeatherCode(weatherCode),
       rawJson: compactJson({
@@ -167,6 +186,30 @@ export function normalizeOpenMeteoHistoricalWeather(
   }
 
   return samples;
+}
+
+export function fetchAndNormalizeHistoricalWeather(
+  provider: HistoricalWeatherProvider,
+  input: HistoricalWeatherFetchInput,
+): Promise<HistoricalWeatherFetchResult> {
+  return provider.fetchHourlyHistoricalWeather(input).then((raw) => ({
+    sourceProvider: raw.sourceProvider,
+    requestedUrl: raw.requestedUrl,
+    samples: provider.normalizeHistoricalWeather(raw, input),
+  }));
+}
+
+function extractRawResponseBody(response: HistoricalWeatherRawResponse | unknown): unknown {
+  if (
+    typeof response === "object" &&
+    response !== null &&
+    "response" in response &&
+    "sourceProvider" in response
+  ) {
+    return (response as HistoricalWeatherRawResponse).response;
+  }
+
+  return response;
 }
 
 function normalizeArchiveEndpoint(endpoint: string): string {
@@ -261,17 +304,6 @@ function nullablePercent(value: number | undefined): number | null {
 
 function nullableRound(value: number | undefined, digits = 1): number | null {
   return value === undefined ? null : round(value, digits);
-}
-
-function metersToKilometers(value: number | undefined): number | null {
-  if (value === undefined) {
-    return null;
-  }
-  return round1(value / 1000);
-}
-
-function round1(value: number): number {
-  return round(value, 1);
 }
 
 function round(value: number, digits: number): number {
