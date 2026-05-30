@@ -69,9 +69,9 @@ import {
   ActionPlanGrid,
   CurrentWeatherCards,
   DailyDecisionList,
-  ForecastDecisionPageShell,
-  ForecastErrorState,
-  ForecastLoadingState,
+  DecisionErrorTemplate,
+  DecisionLoadingTemplate,
+  DecisionResultTemplate,
   ForecastMetricCard,
   ForecastMetricGrid,
   ForecastResultHeader,
@@ -1038,10 +1038,12 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
   });
   const isCloudSeaFlow = activeTarget === "cloud_sea";
   const usesSpecializedResultHeader =
-    isCloudSeaFlow && query
-      ? true
-      : (activeTarget === "general" || activeTarget === "glow" || activeTarget === "astro") &&
-        result !== null;
+    result !== null &&
+    (activeTarget === "general" ||
+      activeTarget === "cloud_sea" ||
+      activeTarget === "glow" ||
+      activeTarget === "astro");
+  const changeLocationPath = isCloudSeaFlow ? "/cloud-sea" : "/#analysis";
 
   useEffect(() => {
     if (!query) {
@@ -1231,7 +1233,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
               variant="secondary"
               size="sm"
               onClick={() => {
-                window.location.assign("/#analysis");
+                window.location.assign(changeLocationPath);
               }}
             >
               重新选择地点
@@ -1269,12 +1271,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
         isCloudSeaFlow ? (
           <CloudSeaErrorDashboard query={query} message={errorMessage} />
         ) : (
-          <DashboardFrame query={query}>
-            <Card className="border-danger p-5 shadow-sm">
-              <h2 className="text-lg font-bold text-danger">分析失败</h2>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">{errorMessage}</p>
-            </Card>
-          </DashboardFrame>
+          <ErrorDashboard query={query} message={errorMessage} />
         )
       ) : null}
 
@@ -1312,23 +1309,41 @@ function DashboardFrame({
 
 function LoadingDashboard({ query }: { readonly query: ForecastQueryInput }) {
   return (
-    <DashboardFrame query={query}>
-      <Card className="p-5 shadow-sm">
-        <div className="flex items-center gap-3 text-sm font-semibold text-card-foreground">
-          <span className="h-2.5 w-2.5 rounded-full bg-primary" />
-          正在生成拍摄天气分析...
-        </div>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          正在结合天气条件、天文窗口和地形特征生成出行判断。
-        </p>
-      </Card>
-      <Card className="p-5 shadow-sm">
-        <h2 className="text-lg font-bold text-card-foreground">分析基础</h2>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          页面会优先呈现是否值得去、什么时候到、拍什么和需要规避的风险。
-        </p>
-      </Card>
-    </DashboardFrame>
+    <DecisionLoadingTemplate
+      target="general"
+      context={decisionContextFromQuery(query)}
+      loading={{
+        message: "正在生成拍摄天气分析...",
+        description: "正在结合天气条件、天文窗口和地形特征生成出行判断。",
+      }}
+      info={{
+        title: "分析基础",
+        description: "页面会优先呈现是否值得去、什么时候到、拍什么和需要规避的风险。",
+      }}
+    />
+  );
+}
+
+function ErrorDashboard({
+  query,
+  message,
+}: {
+  readonly query: ForecastQueryInput;
+  readonly message: string;
+}) {
+  return (
+    <DecisionErrorTemplate
+      target="general"
+      context={decisionContextFromQuery(query)}
+      error={{
+        message: "分析失败",
+        description: message,
+      }}
+      info={{
+        title: "分析基础",
+        description: "页面会优先呈现是否值得去、什么时候到、拍什么和需要规避的风险。",
+      }}
+    />
   );
 }
 
@@ -1340,24 +1355,34 @@ export function CloudSeaLoadingDashboard({
   const horizonLabel = cloudSeaProgressHorizonLabel(context);
 
   return (
-    <ForecastDecisionPageShell
+    <DecisionLoadingTemplate
       target="cloud_sea"
-      dataCloudSeaPageMode="loading"
-      dataTestId="cloud-sea-shared-loading-shell"
-    >
-      <ForecastLoadingState
-        target="cloud_sea"
-        badges={[
+      context={{
+        titleLabel: "地点 / 查询",
+        title: context.name,
+        details: [
+          { label: "预报范围", value: horizonLabel },
+          { label: "分析目标", value: "云海" },
+        ],
+      }}
+      loading={{
+        badges: [
           { label: "云海", variant: "default" },
           { label: horizonLabel, variant: "muted" },
-        ]}
-        title="云海拍摄判断"
-        message="正在生成云海拍摄判断..."
-        description="正在结合天气、地形、云层和光线窗口生成判断。"
-        dataCloudSeaLoading="full-width"
-        dataCloudSeaPageMode="loading"
-      />
-    </ForecastDecisionPageShell>
+        ],
+        title: "云海拍摄判断",
+        message: "正在生成云海拍摄判断...",
+        description: "正在结合天气、地形、云层和光线窗口生成判断。",
+      }}
+      info={{
+        title: "云海判断基础",
+        description:
+          "页面会把云海形成、可拍机会、白墙风险、雨后开口和现场复核动作放在同一套判断结构里。",
+        badge: { label: "云海 / 白墙 / 雨后开口", variant: "accent" },
+      }}
+      dataCloudSeaPageMode="loading"
+      dataCloudSeaLoading="shared-template"
+    />
   );
 }
 
@@ -1371,21 +1396,18 @@ export function CloudSeaErrorDashboard({
   const horizonLabel = cloudSeaProgressHorizonLabel(query);
 
   return (
-    <ForecastDecisionPageShell
+    <DecisionErrorTemplate
       target="cloud_sea"
-      dataCloudSeaPageMode="error"
-      dataTestId="cloud-sea-shared-error-shell"
-    >
-      <ForecastErrorState
-        target="cloud_sea"
-        badges={[
+      context={decisionContextFromQuery(query)}
+      error={{
+        badges: [
           { label: "云海", variant: "danger" },
           { label: horizonLabel, variant: "muted" },
-        ]}
-        title="云海拍摄判断"
-        message="云海判断生成失败"
-        description={message}
-        actions={
+        ],
+        title: "云海拍摄判断",
+        message: "云海判断生成失败",
+        description: message,
+        actions: (
           <>
             <Button
               type="button"
@@ -1408,16 +1430,33 @@ export function CloudSeaErrorDashboard({
               重新判断
             </Button>
           </>
-        }
-        dataCloudSeaError="full-width"
-        dataCloudSeaPageMode="error"
-      />
-    </ForecastDecisionPageShell>
+        ),
+      }}
+      info={{
+        title: "云海判断基础",
+        description:
+          "页面会把云海形成、可拍机会、白墙风险、雨后开口和现场复核动作放在同一套判断结构里。",
+        badge: { label: "云海 / 白墙 / 雨后开口", variant: "accent" },
+      }}
+      dataCloudSeaPageMode="error"
+      dataCloudSeaError="shared-template"
+    />
   );
 }
 
 function cloudSeaProgressHorizonLabel(context: CloudSeaProgressContext): string {
   return context.horizon ? forecastHorizonLabels[context.horizon] : "时间范围待确认";
+}
+
+function decisionContextFromQuery(query: ForecastQueryInput) {
+  return {
+    titleLabel: "地点 / 查询",
+    title: query.name,
+    details: [
+      { label: "预报范围", value: forecastHorizonLabels[query.horizon] },
+      { label: "分析目标", value: forecastTargetLabels[query.target] },
+    ],
+  };
 }
 
 function QuerySummaryPanel({ query }: { readonly query: ForecastQueryInput }) {
@@ -2608,7 +2647,7 @@ export function CloudSeaResultPage({
   readonly returnUrl?: string;
 }) {
   return (
-    <ForecastDecisionPageShell
+    <DecisionResultTemplate
       target="cloud_sea"
       className="CloudSeaResultPage cloud-sea-result-page grid gap-5"
       dataCloudSeaSection="CloudSeaResultPage"
@@ -2632,7 +2671,7 @@ export function CloudSeaResultPage({
         {viewModel.dataCaution ? <CloudSeaInlineCaution text={viewModel.dataCaution} /> : null}
         {returnUrl ? <CloudSeaReturnLink href={returnUrl} /> : null}
       </main>
-    </ForecastDecisionPageShell>
+    </DecisionResultTemplate>
   );
 }
 
@@ -4264,6 +4303,7 @@ function CloudSeaProfessionalHourlyDataPanel({
     <Card
       className="CloudSeaProfessionalHourlyData cloud-sea-professional-hourly-data p-4 shadow-sm"
       data-cloud-sea-section="CloudSeaProfessionalHourlyData"
+      data-testid="professional-hourly-data"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
@@ -5652,7 +5692,7 @@ export function ComprehensiveForecastView({
   const primaryBestWindow = viewModel.bestWindows.find(isExecutableDisplayWindow);
 
   return (
-    <ForecastDecisionPageShell target="general">
+    <DecisionResultTemplate target="general">
       <ComprehensiveContextBar query={query} result={result} />
       <ComprehensiveCoreDecisionCards
         result={result}
@@ -5674,7 +5714,7 @@ export function ComprehensiveForecastView({
         retryable={aiRetryable}
         onGenerate={onGenerateAiExplanation}
       />
-    </ForecastDecisionPageShell>
+    </DecisionResultTemplate>
   );
 }
 

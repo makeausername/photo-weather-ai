@@ -58,8 +58,409 @@ export function ResultDashboardShell({
   );
 }
 
-export function ForecastDecisionPageShell(props: ResultDashboardShellProps) {
+export function DecisionPageShell(props: ResultDashboardShellProps) {
   return <ResultDashboardShell {...props} />;
+}
+
+export function ForecastDecisionPageShell(props: ResultDashboardShellProps) {
+  return <DecisionPageShell {...props} />;
+}
+
+type DecisionDetail = {
+  readonly label: string;
+  readonly value: string;
+};
+
+type DecisionContextCardProps = {
+  readonly target: ForecastTarget;
+  readonly titleLabel: string;
+  readonly title: string;
+  readonly details: readonly DecisionDetail[];
+  readonly className?: string;
+  readonly action?: ReactNode;
+  readonly dataTestId?: string;
+};
+
+export function DecisionContextCard({
+  target,
+  titleLabel,
+  title,
+  details,
+  className,
+  action,
+  dataTestId = "decision-context-card",
+}: DecisionContextCardProps) {
+  return (
+    <Card
+      className={cn(className, "grid gap-4 p-4 shadow-sm")}
+      data-decision-context-card="true"
+      data-result-target={target}
+      data-testid={dataTestId}
+    >
+      <div>
+        <p className="text-xs font-bold text-primary">{titleLabel}</p>
+        <h2 className="mt-2 break-words text-2xl font-bold leading-tight text-card-foreground">
+          {title}
+        </h2>
+      </div>
+
+      {details.length > 0 ? (
+        <dl className="grid gap-3 text-sm">
+          {details.map((detail) => (
+            <DecisionDefinitionItem key={detail.label} label={detail.label} value={detail.value} />
+          ))}
+        </dl>
+      ) : null}
+      {action ? <div>{action}</div> : null}
+    </Card>
+  );
+}
+
+type DecisionLoadingCardProps = {
+  readonly target: ForecastTarget;
+  readonly badges?: readonly { readonly label: string; readonly variant: BadgeVariant }[];
+  readonly title?: string;
+  readonly message: string;
+  readonly description?: string;
+  readonly details?: readonly DecisionDetail[];
+  readonly action?: ReactNode;
+  readonly className?: string;
+  readonly dataCloudSeaPageMode?: string;
+  readonly dataCloudSeaLoading?: string;
+};
+
+export function DecisionLoadingCard({
+  target,
+  badges = [],
+  title,
+  message,
+  description,
+  details,
+  action,
+  className,
+  dataCloudSeaPageMode,
+  dataCloudSeaLoading,
+}: DecisionLoadingCardProps) {
+  return (
+    <Card
+      className={cn(className, "p-5 shadow-sm")}
+      data-decision-loading-card="true"
+      data-forecast-loading-card="true"
+      data-result-page-state-card="loading"
+      data-result-target={target}
+      {...dataProps({
+        dataCloudSeaPageMode,
+        dataCloudSeaLoading,
+        dataTestId: "decision-loading-card",
+      })}
+    >
+      {badges.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {badges.map((badge) => (
+            <Badge key={badge.label} variant={badge.variant}>
+              {badge.label}
+            </Badge>
+          ))}
+        </div>
+      ) : null}
+      {title ? (
+        <h1 className="mt-3 text-2xl font-bold leading-tight text-card-foreground sm:text-[28px]">
+          {title}
+        </h1>
+      ) : null}
+      <div
+        className={cn(
+          "flex items-center gap-3 text-sm font-semibold text-card-foreground",
+          title || badges.length > 0 ? "mt-4" : "",
+        )}
+      >
+        <span className="h-2.5 w-2.5 rounded-full bg-primary" />
+        {message}
+      </div>
+      {description ? (
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
+      ) : null}
+      {details && details.length > 0 ? (
+        <dl className="mt-4 grid gap-2 rounded-lg border border-border bg-muted p-3 text-sm min-[720px]:grid-cols-2">
+          {details.map((detail) => (
+            <DecisionCompactDefinition
+              key={detail.label}
+              label={detail.label}
+              value={detail.value}
+            />
+          ))}
+        </dl>
+      ) : null}
+      {action ? <div className="mt-4">{action}</div> : null}
+    </Card>
+  );
+}
+
+type DecisionInfoCardProps = {
+  readonly target: ForecastTarget;
+  readonly title: string;
+  readonly description: string;
+  readonly badge?: { readonly label: string; readonly variant: BadgeVariant };
+  readonly details?: readonly DecisionDetail[];
+  readonly className?: string;
+  readonly dataTestId?: string;
+};
+
+export function DecisionInfoCard({
+  target,
+  title,
+  description,
+  badge,
+  details,
+  className,
+  dataTestId = "decision-info-card",
+}: DecisionInfoCardProps) {
+  return (
+    <Card
+      className={cn(className, "p-5 shadow-sm")}
+      data-decision-info-card="true"
+      data-result-target={target}
+      data-testid={dataTestId}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <h2 className="text-lg font-bold text-card-foreground">{title}</h2>
+        {badge ? <Badge variant={badge.variant}>{badge.label}</Badge> : null}
+      </div>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+      {details && details.length > 0 ? (
+        <dl className="mt-4 grid gap-2 text-sm">
+          {details.map((detail) => (
+            <DecisionDefinitionItem key={detail.label} label={detail.label} value={detail.value} />
+          ))}
+        </dl>
+      ) : null}
+    </Card>
+  );
+}
+
+type DecisionErrorCardProps = {
+  readonly target: ForecastTarget;
+  readonly badges?: readonly { readonly label: string; readonly variant: BadgeVariant }[];
+  readonly title?: string;
+  readonly message: string;
+  readonly description?: string;
+  readonly details?: readonly DecisionDetail[];
+  readonly actions?: ReactNode;
+  readonly className?: string;
+  readonly dataCloudSeaPageMode?: string;
+  readonly dataCloudSeaError?: string;
+};
+
+export function DecisionErrorCard({
+  target,
+  badges = [],
+  title,
+  message,
+  description,
+  details,
+  actions,
+  className,
+  dataCloudSeaPageMode,
+  dataCloudSeaError,
+}: DecisionErrorCardProps) {
+  return (
+    <Card
+      className={cn(className, "border-danger p-5 shadow-sm")}
+      data-decision-error-card="true"
+      data-forecast-error-card="true"
+      data-result-page-state-card="error"
+      data-result-target={target}
+      {...dataProps({
+        dataCloudSeaPageMode,
+        dataCloudSeaError,
+        dataTestId: "decision-error-card",
+      })}
+    >
+      {badges.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {badges.map((badge) => (
+            <Badge key={badge.label} variant={badge.variant}>
+              {badge.label}
+            </Badge>
+          ))}
+        </div>
+      ) : null}
+      {title ? (
+        <h1 className="mt-3 text-2xl font-bold leading-tight text-card-foreground sm:text-[28px]">
+          {title}
+        </h1>
+      ) : null}
+      <h2 className={cn("text-lg font-bold text-danger", title || badges.length > 0 ? "mt-4" : "")}>
+        {message}
+      </h2>
+      {description ? (
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
+      ) : null}
+      {details && details.length > 0 ? (
+        <dl className="mt-4 grid gap-2 rounded-lg border border-border bg-muted p-3 text-sm min-[720px]:grid-cols-2">
+          {details.map((detail) => (
+            <DecisionCompactDefinition
+              key={detail.label}
+              label={detail.label}
+              value={detail.value}
+            />
+          ))}
+        </dl>
+      ) : null}
+      {actions ? <div className="mt-4 flex flex-wrap gap-2">{actions}</div> : null}
+    </Card>
+  );
+}
+
+type DecisionContextTemplateProps = Omit<DecisionContextCardProps, "target">;
+type DecisionLoadingTemplateCardProps = Omit<DecisionLoadingCardProps, "target">;
+type DecisionInfoTemplateCardProps = Omit<DecisionInfoCardProps, "target">;
+type DecisionErrorTemplateCardProps = Omit<DecisionErrorCardProps, "target">;
+
+type DecisionLoadingTemplateProps = {
+  readonly target: ForecastTarget;
+  readonly context: DecisionContextTemplateProps;
+  readonly loading: DecisionLoadingTemplateCardProps;
+  readonly info: DecisionInfoTemplateCardProps;
+  readonly className?: string;
+  readonly dataCloudSeaPageMode?: string;
+  readonly dataCloudSeaLoading?: string;
+};
+
+export function DecisionLoadingTemplate({
+  target,
+  context,
+  loading,
+  info,
+  className,
+  dataCloudSeaPageMode,
+  dataCloudSeaLoading,
+}: DecisionLoadingTemplateProps) {
+  return (
+    <DecisionPageShell
+      target={target}
+      className={className}
+      dataCloudSeaPageMode={dataCloudSeaPageMode}
+    >
+      <section
+        className="grid gap-5 min-[900px]:grid-cols-[clamp(300px,32vw,360px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(320px,23vw,380px)_minmax(0,1fr)_clamp(320px,23vw,380px)] min-[1200px]:items-start"
+        data-decision-loading-template="true"
+        data-forecast-loading-state="true"
+        data-result-page-state="loading"
+        data-result-target={target}
+        {...dataProps({
+          dataCloudSeaPageMode,
+          dataCloudSeaLoading,
+          dataTestId: "decision-loading-template",
+        })}
+      >
+        <aside className="grid content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]">
+          <DecisionContextCard {...context} target={target} />
+        </aside>
+        <div className="grid gap-5 min-[1200px]:contents">
+          <DecisionLoadingCard
+            {...loading}
+            target={target}
+            dataCloudSeaPageMode={dataCloudSeaPageMode}
+            dataCloudSeaLoading={dataCloudSeaLoading}
+          />
+          <DecisionInfoCard {...info} target={target} />
+        </div>
+      </section>
+    </DecisionPageShell>
+  );
+}
+
+type DecisionErrorTemplateProps = {
+  readonly target: ForecastTarget;
+  readonly context: DecisionContextTemplateProps;
+  readonly error: DecisionErrorTemplateCardProps;
+  readonly info?: DecisionInfoTemplateCardProps;
+  readonly className?: string;
+  readonly dataCloudSeaPageMode?: string;
+  readonly dataCloudSeaError?: string;
+};
+
+export function DecisionErrorTemplate({
+  target,
+  context,
+  error,
+  info,
+  className,
+  dataCloudSeaPageMode,
+  dataCloudSeaError,
+}: DecisionErrorTemplateProps) {
+  return (
+    <DecisionPageShell
+      target={target}
+      className={className}
+      dataCloudSeaPageMode={dataCloudSeaPageMode}
+    >
+      <section
+        className="grid gap-5 min-[900px]:grid-cols-[clamp(300px,32vw,360px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(320px,23vw,380px)_minmax(0,1fr)_clamp(320px,23vw,380px)] min-[1200px]:items-start"
+        data-decision-error-template="true"
+        data-forecast-error-state="true"
+        data-result-page-state="error"
+        data-result-target={target}
+        {...dataProps({
+          dataCloudSeaPageMode,
+          dataCloudSeaError,
+          dataTestId: "decision-error-template",
+        })}
+      >
+        <aside className="grid content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]">
+          <DecisionContextCard {...context} target={target} />
+        </aside>
+        <div className="grid gap-5 min-[1200px]:contents">
+          <DecisionErrorCard
+            {...error}
+            target={target}
+            dataCloudSeaPageMode={dataCloudSeaPageMode}
+            dataCloudSeaError={dataCloudSeaError}
+          />
+          {info ? <DecisionInfoCard {...info} target={target} /> : null}
+        </div>
+      </section>
+    </DecisionPageShell>
+  );
+}
+
+export function DecisionResultTemplate({
+  target,
+  children,
+  className,
+  dataCloudSeaSection,
+  dataCloudSeaPageMode,
+}: ResultDashboardShellProps) {
+  return (
+    <DecisionPageShell
+      target={target}
+      className={className}
+      dataCloudSeaSection={dataCloudSeaSection}
+      dataCloudSeaPageMode={dataCloudSeaPageMode}
+      dataTestId="decision-result-template"
+    >
+      {children}
+    </DecisionPageShell>
+  );
+}
+
+function DecisionDefinitionItem({ label, value }: DecisionDetail) {
+  return (
+    <div className="rounded-lg border border-border bg-muted p-3">
+      <dt className="text-xs font-semibold text-muted-foreground">{label}</dt>
+      <dd className="mt-1 break-words font-bold text-card-foreground">{value}</dd>
+    </div>
+  );
+}
+
+function DecisionCompactDefinition({ label, value }: DecisionDetail) {
+  return (
+    <div>
+      <dt className="text-xs font-semibold text-muted-foreground">{label}</dt>
+      <dd className="mt-1 break-words font-semibold text-card-foreground">{value}</dd>
+    </div>
+  );
 }
 
 type ResultHeaderRowProps = {
@@ -134,6 +535,7 @@ type ResultScoreCardProps = {
   readonly summary: string;
   readonly className?: string;
   readonly dataCloudSeaSection?: string;
+  readonly dataTestId?: string;
 };
 
 export function ResultScoreCard({
@@ -145,6 +547,7 @@ export function ResultScoreCard({
   summary,
   className,
   dataCloudSeaSection,
+  dataTestId = "decision-score-card",
 }: ResultScoreCardProps) {
   const safeScore = Number.isFinite(score) ? Math.min(100, Math.max(0, Math.round(score))) : 0;
 
@@ -154,7 +557,7 @@ export function ResultScoreCard({
       data-forecast-score-card="true"
       data-result-score-card="true"
       data-result-target={target}
-      {...dataProps({ dataCloudSeaSection })}
+      {...dataProps({ dataCloudSeaSection, dataTestId })}
     >
       <div>
         <p className="text-xs font-semibold text-muted-foreground">{label}</p>

@@ -369,7 +369,13 @@ describe("scenario module pages", () => {
     expect(html).toContain("返回综合判断");
     expect(html).toContain('href="/forecast?target=general"');
     expect(html).toContain('data-cloud-sea-page-mode="loading"');
-    expect(html).toContain('data-cloud-sea-loading="full-width"');
+    expect(html).toContain('data-testid="decision-loading-template"');
+    expect(html).toContain('data-testid="decision-context-card"');
+    expect(html).toContain('data-cloud-sea-loading="shared-template"');
+    expect(html).not.toContain('data-cloud-sea-loading="full-width"');
+    expect(html).toContain("地点 / 查询");
+    expect(html).toContain("预报范围");
+    expect(html).toContain("分析目标");
     expect(html).toContain("云海拍摄判断");
     expect(html).not.toContain("地点搜索与机位选择");
     expect(html).not.toContain("坐标信息");

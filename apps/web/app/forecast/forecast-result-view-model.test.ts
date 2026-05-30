@@ -2092,9 +2092,11 @@ describe("forecast result target-aware view model", () => {
     );
 
     expect(html).toContain('data-forecast-decision-page-shell="true"');
+    expect(html).toContain('data-testid="decision-result-template"');
     expect(html).toContain('data-forecast-result-header="true"');
     expect(html).toContain('data-forecast-result-summary-card="true"');
     expect(html).toContain('data-forecast-score-card="true"');
+    expect(html).toContain('data-testid="decision-score-card"');
     expect(html).toContain('data-forecast-metric-grid="true"');
     expect(html).toContain('data-forecast-current-weather-cards="true"');
     expect(html).toContain('data-forecast-daily-decision-list="true"');
@@ -4036,30 +4038,53 @@ describe("forecast result target-aware view model", () => {
     expect(resolveForecastPageMode({ query, status: "error", hasResult: false })).toBe("error");
   });
 
-  it("renders Cloud Sea loading as a full-width page without the left query/sidebar panel", () => {
+  it("renders General Forecast loading with the shared DecisionLoadingTemplate", () => {
+    const query = queryForTarget("general");
+    const html = renderToStaticMarkup(React.createElement(ForecastResultClient, { query }));
+
+    expect(html).toContain('data-testid="decision-loading-template"');
+    expect(html).toContain('data-testid="decision-context-card"');
+    expect(html).toContain('data-testid="decision-loading-card"');
+    expect(html).toContain('data-testid="decision-info-card"');
+    expect(html).toContain('data-forecast-decision-page-shell="true"');
+    expect(html).toContain('data-forecast-loading-state="true"');
+    expect(html).toContain('data-result-page-state="loading"');
+    expect(html).toContain('data-result-target="general"');
+    expect(html).toContain("地点 / 查询");
+    expect(html).toContain("黄山光明顶");
+    expect(html).toContain("预报范围");
+    expect(html).toContain("分析目标");
+    expect(html).toContain("综合判断");
+    expect(html).toContain("正在生成拍摄天气分析");
+    expect(html).toContain("分析基础");
+  });
+
+  it("renders Cloud Sea loading with the same shared DecisionLoadingTemplate and context card", () => {
     const query = queryForTarget("cloud_sea");
     const html = renderToStaticMarkup(React.createElement(ForecastResultClient, { query }));
 
     expect(html).toContain('data-cloud-sea-page-mode="loading"');
+    expect(html).toContain('data-testid="decision-loading-template"');
+    expect(html).toContain('data-testid="decision-context-card"');
+    expect(html).toContain('data-testid="decision-loading-card"');
+    expect(html).toContain('data-testid="decision-info-card"');
     expect(html).toContain('data-forecast-decision-page-shell="true"');
     expect(html).toContain('data-forecast-loading-state="true"');
     expect(html).toContain('data-result-page-state="loading"');
     expect(html).toContain('data-result-target="cloud_sea"');
-    expect(html).toContain('data-cloud-sea-loading="full-width"');
+    expect(html).toContain('data-cloud-sea-loading="shared-template"');
+    expect(html).not.toContain('data-cloud-sea-loading="full-width"');
     expect(html).not.toContain('data-cloud-sea-loading-card="true"');
+    expect(html).toContain("<aside");
+    expect(html).toContain("首页");
     expect(html).toContain("云海拍摄判断");
     expect(html).toContain("正在生成云海拍摄判断");
-    expect(html).not.toContain("<aside");
-    expect(html).not.toContain("地点 / 查询");
-    expect(html).not.toContain("地点与预报范围");
-    expect(html).not.toContain("当前位置");
-    expect(html).not.toContain("当前地点");
-    expect(html).not.toContain("已选地点");
-    expect(html).not.toContain("所在地点");
-    expect(html).not.toContain("黄山光明顶");
-    expect(html).not.toContain("地点</dt>");
-    expect(html).not.toContain("时间范围</dt>");
-    expect(html).not.toContain("预报范围");
+    expect(html).toContain("云海判断基础");
+    expect(html).toContain("地点 / 查询");
+    expect(html).toContain("黄山光明顶");
+    expect(html).toContain("预报范围");
+    expect(html).toContain("分析目标");
+    expect(html).toContain("云海");
     expect(html).not.toContain("坐标信息");
     expect(html).not.toContain("WGS84");
     expect(html).not.toContain("GCJ-02");
@@ -4071,7 +4096,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("118.16389");
   });
 
-  it("keeps the exported Cloud Sea loading card free of sidebar and coordinate output", () => {
+  it("keeps the exported Cloud Sea loading dashboard on the shared template without coordinate output", () => {
     const html = renderToStaticMarkup(
       React.createElement(CloudSeaLoadingDashboard, {
         context: queryForTarget("cloud_sea"),
@@ -4079,24 +4104,30 @@ describe("forecast result target-aware view model", () => {
     );
 
     expect(html).toContain('data-cloud-sea-page-mode="loading"');
+    expect(html).toContain('data-testid="decision-loading-template"');
+    expect(html).toContain('data-testid="decision-context-card"');
+    expect(html).toContain('data-testid="decision-loading-card"');
+    expect(html).toContain('data-testid="decision-info-card"');
     expect(html).toContain('data-forecast-decision-page-shell="true"');
     expect(html).toContain('data-forecast-loading-state="true"');
     expect(html).toContain('data-result-page-state="loading"');
     expect(html).toContain('data-result-target="cloud_sea"');
+    expect(html).toContain('data-cloud-sea-loading="shared-template"');
+    expect(html).not.toContain('data-cloud-sea-loading="full-width"');
     expect(html).not.toContain('data-cloud-sea-loading-card="true"');
     expect(html).not.toContain("重新选择地点");
-    expect(html).not.toContain("黄山光明顶");
-    expect(html).not.toContain("地点</dt>");
-    expect(html).not.toContain("时间范围</dt>");
-    expect(html).not.toContain("<aside");
-    expect(html).not.toContain("地点 / 查询");
+    expect(html).toContain("<aside");
+    expect(html).toContain("黄山光明顶");
+    expect(html).toContain("地点 / 查询");
+    expect(html).toContain("预报范围");
+    expect(html).toContain("分析目标");
     expect(html).not.toContain("坐标信息");
     expect(html).not.toContain("WGS84");
     expect(html).not.toContain("latitude");
     expect(html).not.toContain("longitude");
   });
 
-  it("renders Cloud Sea error as a full-width retry card without the left sidebar", () => {
+  it("renders Cloud Sea error with the shared decision error template", () => {
     const html = renderToStaticMarkup(
       React.createElement(CloudSeaErrorDashboard, {
         query: queryForTarget("cloud_sea"),
@@ -4105,24 +4136,26 @@ describe("forecast result target-aware view model", () => {
     );
 
     expect(html).toContain('data-cloud-sea-page-mode="error"');
+    expect(html).toContain('data-testid="decision-error-template"');
+    expect(html).toContain('data-testid="decision-context-card"');
+    expect(html).toContain('data-testid="decision-error-card"');
+    expect(html).toContain('data-testid="decision-info-card"');
     expect(html).toContain('data-forecast-decision-page-shell="true"');
     expect(html).toContain('data-forecast-error-state="true"');
     expect(html).toContain('data-result-page-state="error"');
     expect(html).toContain('data-result-target="cloud_sea"');
-    expect(html).toContain('data-cloud-sea-error="full-width"');
+    expect(html).toContain('data-cloud-sea-error="shared-template"');
+    expect(html).not.toContain('data-cloud-sea-error="full-width"');
     expect(html).not.toContain('data-cloud-sea-error-card="true"');
     expect(html).toContain("云海判断生成失败");
     expect(html).toContain("网络暂时不可用。");
     expect(html).toContain("重新选择地点");
     expect(html).toContain("重新判断");
-    expect(html).not.toContain("<aside");
-    expect(html).not.toContain("地点 / 查询");
-    expect(html).not.toContain("地点与预报范围");
-    expect(html).not.toContain("当前地点");
-    expect(html).not.toContain("地点</dt>");
-    expect(html).not.toContain("时间范围</dt>");
-    expect(html).not.toContain("黄山光明顶");
-    expect(html).not.toContain("预报范围");
+    expect(html).toContain("<aside");
+    expect(html).toContain("地点 / 查询");
+    expect(html).toContain("黄山光明顶");
+    expect(html).toContain("预报范围");
+    expect(html).toContain("分析目标");
     expect(html).not.toContain("坐标信息");
     expect(html).not.toContain("WGS84");
     expect(html).not.toContain("GCJ-02");
@@ -4132,7 +4165,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("118.16389");
   });
 
-  it("renders the cloud sea result as a full-width dashboard without the entry-page search/sidebar", () => {
+  it("renders the cloud sea result through the shared DecisionResultTemplate without entry-page search/sidebar", () => {
     const result = resultForTarget("cloud_sea");
     const viewModel = buildCloudSeaForecastViewModel(result);
     const fetchMock = vi.fn(() => {
@@ -4219,6 +4252,8 @@ describe("forecast result target-aware view model", () => {
       expect(html).not.toContain("Open-Meteo");
       expect(html).not.toContain("和风天气");
       expect(html).toContain("CloudSeaResultPage");
+      expect(html).toContain('data-testid="decision-result-template"');
+      expect(html).toContain('data-testid="decision-score-card"');
       expect(html).toContain('data-forecast-decision-page-shell="true"');
       expect(html).toContain('data-result-dashboard-shell="true"');
       expect(html).toContain('data-result-target="cloud_sea"');
@@ -4323,6 +4358,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("CloudSeaCoreMetrics");
     expect(html).toContain("CloudSeaTimeline");
     expect(html).toContain("CloudSeaProfessionalHourlyData");
+    expect(html).toContain('data-testid="professional-hourly-data"');
     expect(html).toContain("专业小时数据");
     expect(html).toContain("专业参考");
     expect(html).toContain('data-professional-hourly-expanded="true"');
