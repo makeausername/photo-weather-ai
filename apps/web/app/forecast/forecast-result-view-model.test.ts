@@ -3947,7 +3947,7 @@ describe("forecast result target-aware view model", () => {
     ]);
   });
 
-  it("renders the cloud sea result without the entry-page popular spots placeholder", () => {
+  it("renders the cloud sea result as a full-width dashboard without the entry-page search/sidebar", () => {
     const result = resultForTarget("cloud_sea");
     const viewModel = buildCloudSeaForecastViewModel(result);
     const fetchMock = vi.fn(() => {
@@ -3987,12 +3987,15 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("备选方案");
       expect(html).toContain("装备提醒");
       expect(html).toContain("现场复核点");
-      expect(html).toContain('data-place-search-card-mode="result-compact"');
-      expect(html).toContain('data-selected-location-summary="result-compact"');
-      expect(html).toContain("当前地点");
-      expect(html).toContain("预报范围");
-      expect(html).toContain("更换地点");
+      expect(html).not.toContain('data-cloud-sea-section="CloudSeaSearchPanel"');
+      expect(html).not.toContain('data-place-search-card-mode="result-compact"');
+      expect(html).not.toContain('data-selected-location-summary="result-compact"');
+      expect(html).not.toContain("地点与预报范围");
+      expect(html).not.toContain("当前地点");
+      expect(html).not.toContain("更换地点");
+      expect(html).toContain("重新选择地点");
       expect(html).toContain("重新判断");
+      expect(html.indexOf("重新判断")).toBeGreaterThan(html.indexOf("CloudSeaHeroConclusion"));
       expect(html).not.toContain("坐标信息");
       expect(html).not.toContain("WGS84");
       expect(html).not.toContain("GCJ-02");
@@ -4007,6 +4010,8 @@ describe("forecast result target-aware view model", () => {
       expect(html).not.toContain("118.171");
       expect(html).not.toMatch(/\b\d{1,2}\.\d{3,}[NS]?,\s*\d{2,3}\.\d{3,}[EW]?\b/i);
       expect(html).not.toContain('data-selected-location-card="true"');
+      expect(html).not.toContain("<aside");
+      expect(html).not.toContain("PlaceSearchCard");
       expect(html).not.toContain("已选地点");
       expect(html).not.toContain("所在地");
       expect(html).not.toContain("判断范围");
@@ -4031,6 +4036,8 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("CloudSeaTopResultHeader");
       expect(html).toContain("CloudSeaHeroConclusion");
       expect(html).toContain("CloudSeaScoreCard");
+      expect(countOccurrences(html, "CloudSeaHeroConclusion")).toBe(1);
+      expect(countOccurrences(html, 'data-cloud-sea-section="CloudSeaScoreCard"')).toBe(1);
       expect(html).toContain("CloudSeaCoreMetrics");
       expect(html).toContain("云海可拍指数");
       expect(html).toContain("/ 100");
@@ -4040,11 +4047,11 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("云海形成 / 可拍机会");
       expect(html).toContain("主要风险");
       expect(countOccurrences(html, 'data-cloud-sea-metric-card="true"')).toBe(6);
-      expect(html).toContain("min-[900px]:grid-cols-[clamp(260px,22vw,320px)_minmax(0,1fr)]");
+      expect(html).not.toContain("min-[900px]:grid-cols-[clamp(260px,22vw,320px)_minmax(0,1fr)]");
+      expect(html).toContain("min-[880px]:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]");
       expect(html).toContain(
-        "min-[880px]:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]",
+        "CloudSeaStackedLayout cloud-sea-result-stack grid w-full min-w-0 gap-5",
       );
-      expect(html).toContain("cloud-sea-result-stack grid min-w-0 gap-5");
       expect(html).not.toContain(
         "min-[1200px]:grid-cols-[clamp(320px,23vw,380px)_minmax(0,1fr)_clamp(300px,22vw,360px)]",
       );

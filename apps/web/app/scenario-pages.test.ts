@@ -231,6 +231,20 @@ describe("scenario module pages", () => {
     expect(html).toContain("查看云海拍摄判断");
   });
 
+  it("renders the cloud sea pre-result location search panel without result dashboard chrome", () => {
+    const html = renderToStaticMarkup(React.createElement(CloudSeaPage));
+
+    expect(html).toContain("地点搜索与机位选择");
+    expect(html).toContain("预报范围选择");
+    expect(html).toContain('aria-label="目的地"');
+    expect(html).toContain('data-current-location-button="true"');
+    expect(html).toContain("查看云海拍摄判断");
+    expect(html).not.toContain("CloudSeaResultPage");
+    expect(html).not.toContain("CloudSeaTopResultHeader");
+    expect(html).not.toContain("CloudSeaScoreCard");
+    expect(html).not.toContain("专业小时数据");
+  });
+
   it("shows browser current location as a compact cloud sea selection that enables the CTA", () => {
     const currentLocation = selectedLocationFromBrowserGeolocation({
       latitudeWgs84: 31.2304,

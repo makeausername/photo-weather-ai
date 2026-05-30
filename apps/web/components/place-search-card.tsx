@@ -92,7 +92,7 @@ type PlaceSearchCardProps = {
   readonly ctaLabel?: string;
   readonly ctaDisabledLabel?: string;
   readonly showResultSourceBadges?: boolean;
-  readonly selectedLocationDetailMode?: "full" | "compact" | "result";
+  readonly selectedLocationDetailMode?: "full" | "compact";
   readonly showSelectedLocationActions?: boolean;
   readonly showSelectedLocationHorizon?: boolean;
   readonly showQuickLocations?: boolean;
@@ -731,22 +731,6 @@ export function PlaceSearchCard({
     );
   }, [activeSelectedLocation, activeTarget, horizon]);
 
-  if (selectedLocationDetailMode === "result" && activeSelectedLocation && !isActivelySearching) {
-    return (
-      <Card
-        className={cn("grid min-w-0 gap-3 p-4 shadow-sm", className)}
-        data-place-search-card-mode="result-compact"
-      >
-        <ResultSelectedLocationSummary
-          location={activeSelectedLocation}
-          horizon={horizon}
-          onChangeLocation={handleChangeLocation}
-          onRunForecast={handleRunForecast}
-        />
-      </Card>
-    );
-  }
-
   return (
     <Card className={cn("grid min-w-0 gap-4 p-4 shadow-sm", className)}>
       <div className="flex items-start justify-between gap-3">
@@ -860,7 +844,7 @@ export function PlaceSearchCard({
             </div>
             <SelectedLocationBadge location={activeSelectedLocation} />
           </div>
-          {selectedLocationDetailMode === "compact" || selectedLocationDetailMode === "result" ? (
+          {selectedLocationDetailMode === "compact" ? (
             <CompactSelectedLocationDetails
               location={activeSelectedLocation}
               horizonLabel={
@@ -1000,45 +984,6 @@ function CompactSelectedLocationDetails({
         <summary className="cursor-pointer font-semibold text-card-foreground">坐标信息</summary>
         <p className="mt-2 break-words">{coordinateText}</p>
       </details>
-    </div>
-  );
-}
-
-function ResultSelectedLocationSummary({
-  location,
-  horizon,
-  onChangeLocation,
-  onRunForecast,
-}: {
-  readonly location: SelectedLocation;
-  readonly horizon: ForecastHorizon;
-  readonly onChangeLocation: () => void;
-  readonly onRunForecast: () => void;
-}) {
-  return (
-    <div data-selected-location-summary="result-compact" className="grid gap-3">
-      <div className="min-w-0 rounded-lg border border-border bg-muted px-3 py-3">
-        <p className="text-xs font-semibold text-muted-foreground">当前地点</p>
-        <p className="mt-1 break-words text-base font-bold text-card-foreground">
-          {location.displayName}
-        </p>
-      </div>
-
-      <div className="rounded-lg border border-border bg-card px-3 py-3">
-        <p className="text-xs font-semibold text-muted-foreground">预报范围</p>
-        <p className="mt-1 text-sm font-bold text-card-foreground">
-          {forecastHorizonLabels[horizon]}
-        </p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2">
-        <Button type="button" variant="secondary" size="sm" onClick={onChangeLocation}>
-          更换地点
-        </Button>
-        <Button type="button" size="sm" onClick={onRunForecast}>
-          重新判断
-        </Button>
-      </div>
     </div>
   );
 }

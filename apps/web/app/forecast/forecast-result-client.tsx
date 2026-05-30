@@ -22,8 +22,6 @@ import {
 } from "@photo-weather/shared";
 import { PublicShell } from "../../components/public-shell";
 import { MoonPhaseCalendar } from "../../components/moon-phase-calendar";
-import { PlaceSearchCard } from "../../components/place-search-card";
-import type { SelectedLocation, SelectedLocationSource } from "../../components/selected-location";
 import { Badge, Button, Card, cn } from "../../components/ui";
 import {
   buildForecastResultViewModel,
@@ -2535,31 +2533,27 @@ export function CloudSeaResultPage({
       className="CloudSeaResultPage cloud-sea-result-page grid gap-5"
       data-cloud-sea-section="CloudSeaResultPage"
     >
-      <div className="grid gap-5 min-[900px]:grid-cols-[clamp(260px,22vw,320px)_minmax(0,1fr)] min-[900px]:items-start">
-        <CloudSeaResultSearchPanel query={query} />
-
-        <main
-          className="cloud-sea-result-stack grid min-w-0 gap-5"
-          data-cloud-sea-section="CloudSeaStackedLayout"
-        >
-          <CloudSeaTopResultHeader hero={viewModel.hero} result={result} />
-          <CloudSeaMetricCards
-            hero={viewModel.hero}
-            result={result}
-            cards={viewModel.coreCards}
-            riskSummary={viewModel.riskSummary}
-          />
-          <CloudSeaNearTermWeatherSection result={result} />
-          <CloudSeaTimelineSection windows={viewModel.cloudSeaWindows} />
-          <CloudSeaProfessionalHourlyDataPanel result={result} />
-          <CloudSeaDailyTrend result={result} items={viewModel.dailyTrend} />
-          <CloudSeaReasoningSection items={viewModel.reasoningItems} />
-          <CloudSeaActionPlanSection items={viewModel.actionPlan} />
-          <CloudSeaRiskSummarySection riskSummary={viewModel.riskSummary} />
-          {viewModel.dataCaution ? <CloudSeaInlineCaution text={viewModel.dataCaution} /> : null}
-          {returnUrl ? <CloudSeaReturnLink href={returnUrl} /> : null}
-        </main>
-      </div>
+      <main
+        className="CloudSeaStackedLayout cloud-sea-result-stack grid w-full min-w-0 gap-5"
+        data-cloud-sea-section="CloudSeaStackedLayout"
+      >
+        <CloudSeaTopResultHeader query={query} hero={viewModel.hero} result={result} />
+        <CloudSeaMetricCards
+          hero={viewModel.hero}
+          result={result}
+          cards={viewModel.coreCards}
+          riskSummary={viewModel.riskSummary}
+        />
+        <CloudSeaNearTermWeatherSection result={result} />
+        <CloudSeaTimelineSection windows={viewModel.cloudSeaWindows} />
+        <CloudSeaProfessionalHourlyDataPanel result={result} />
+        <CloudSeaDailyTrend result={result} items={viewModel.dailyTrend} />
+        <CloudSeaReasoningSection items={viewModel.reasoningItems} />
+        <CloudSeaActionPlanSection items={viewModel.actionPlan} />
+        <CloudSeaRiskSummarySection riskSummary={viewModel.riskSummary} />
+        {viewModel.dataCaution ? <CloudSeaInlineCaution text={viewModel.dataCaution} /> : null}
+        {returnUrl ? <CloudSeaReturnLink href={returnUrl} /> : null}
+      </main>
     </section>
   );
 }
@@ -3678,73 +3672,12 @@ function GlowInlineDefinition({
   );
 }
 
-function CloudSeaResultSearchPanel({ query }: { readonly query: ForecastQueryInput }) {
-  const [selectedLocation, setSelectedLocation] = useState<SelectedLocation | null>(() =>
-    selectedLocationFromForecastQuery(query),
-  );
-
-  return (
-    <aside
-      className="grid content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]"
-      data-cloud-sea-section="CloudSeaSearchPanel"
-    >
-      <PlaceSearchCard
-        title="地点与预报范围"
-        description="更换地点或范围后重新生成云海判断。"
-        badgeLabel="云海判断"
-        defaultHorizon={query.horizon}
-        fixedTarget="cloud_sea"
-        ctaLabel="重新判断"
-        selectedLocationDetailMode="result"
-        showSelectedLocationActions
-        showSelectedLocationHorizon
-        enableCurrentLocation
-        currentLocationPrivacyHint="浏览器定位仅用于本次云海判断，不会公开显示。"
-        selectedLocation={selectedLocation}
-        onSelectedLocationChange={setSelectedLocation}
-        showResultSourceBadges={false}
-      />
-    </aside>
-  );
-}
-
-function selectedLocationFromForecastQuery(query: ForecastQueryInput): SelectedLocation {
-  return {
-    id: `forecast-query:${query.latitudeWgs84},${query.longitudeWgs84}`,
-    name: query.name,
-    displayName: query.name,
-    source: selectedLocationSourceFromQuery(query.source),
-    originalSource: query.source,
-    latitudeWgs84: query.latitudeWgs84,
-    longitudeWgs84: query.longitudeWgs84,
-    latitudeGcj02: query.latitudeGcj02,
-    longitudeGcj02: query.longitudeGcj02,
-    elevationMeters: query.elevationMeters,
-    elevationSource: query.elevationSource,
-    elevationConfidence: query.elevationConfidence,
-    dataStatus: "pending",
-    coordinateSource: query.coordinateSource ?? "查询坐标",
-    locationId: query.locationId,
-    photoSpotId: query.photoSpotId,
-  };
-}
-
-function selectedLocationSourceFromQuery(source: string): SelectedLocationSource {
-  if (
-    source === "local_photo_spot" ||
-    source === "amap" ||
-    source === "manual" ||
-    source === "browser_geolocation"
-  ) {
-    return source;
-  }
-  return "manual";
-}
-
 function CloudSeaTopResultHeader({
+  query,
   hero,
   result,
 }: {
+  readonly query: ForecastQueryInput;
   readonly hero: CloudSeaHeroConclusionView;
   readonly result: ForecastCalculationResult;
 }) {
@@ -3753,41 +3686,110 @@ function CloudSeaTopResultHeader({
       className="CloudSeaTopResultHeader grid gap-4 min-[880px]:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] min-[880px]:items-stretch"
       data-cloud-sea-section="CloudSeaTopResultHeader"
     >
-      <CloudSeaHeroConclusion hero={hero} result={result} />
+      <CloudSeaHeroConclusion query={query} hero={hero} result={result} />
       <CloudSeaScoreCard hero={hero} result={result} />
     </header>
   );
 }
 
 function CloudSeaHeroConclusion({
+  query,
   hero,
   result,
 }: {
+  readonly query: ForecastQueryInput;
   readonly hero: CloudSeaHeroConclusionView;
   readonly result: ForecastCalculationResult;
 }) {
   return (
     <Card className="CloudSeaHeroConclusion cloud-sea-hero-conclusion h-full p-5 shadow-sm">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="default">云海判断</Badge>
-          <Badge variant={cloudSeaDataBadgeVariant(result)}>{cloudSeaDataBadgeLabel(result)}</Badge>
-          <Badge variant="muted">{forecastHorizonLabels[result.horizon]}</Badge>
+      <div className="flex h-full min-w-0 flex-col justify-between gap-5">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="default">云海判断</Badge>
+            <Badge variant={cloudSeaDataBadgeVariant(result)}>
+              {cloudSeaDataBadgeLabel(result)}
+            </Badge>
+            <Badge variant="muted">{forecastHorizonLabels[result.horizon]}</Badge>
+          </div>
+          <h1 className="mt-3 break-words text-2xl font-bold leading-tight text-foreground sm:text-[28px]">
+            {hero.title}
+          </h1>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
+            {hero.conclusion}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2 text-xs leading-5 text-muted-foreground">
+            <span>预报范围：{hero.forecastRangeLabel}</span>
+            <span>生成时间：{formatDateTime(result.generatedAt)}</span>
+            <span>当前置信度：{hero.confidenceLabel}</span>
+          </div>
         </div>
-        <h1 className="mt-3 break-words text-2xl font-bold leading-tight text-foreground sm:text-[28px]">
-          {hero.title}
-        </h1>
-        <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
-          {hero.conclusion}
-        </p>
-        <div className="mt-4 flex flex-wrap gap-2 text-xs leading-5 text-muted-foreground">
-          <span>预报范围：{hero.forecastRangeLabel}</span>
-          <span>生成时间：{formatDateTime(result.generatedAt)}</span>
-          <span>当前置信度：{hero.confidenceLabel}</span>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              window.location.assign("/cloud-sea");
+            }}
+          >
+            重新选择地点
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              window.location.assign(buildForecastUrlFromForecastQuery(query));
+            }}
+          >
+            重新判断
+          </Button>
         </div>
       </div>
     </Card>
   );
+}
+
+function buildForecastUrlFromForecastQuery(query: ForecastQueryInput): string {
+  const params = new URLSearchParams({
+    name: query.name,
+    source: query.source,
+    lat: String(query.latitudeGcj02 ?? query.latitudeWgs84),
+    lng: String(query.longitudeGcj02 ?? query.longitudeWgs84),
+    latGcj02: String(query.latitudeGcj02 ?? query.latitudeWgs84),
+    lngGcj02: String(query.longitudeGcj02 ?? query.longitudeWgs84),
+    latWgs84: String(query.latitudeWgs84),
+    lngWgs84: String(query.longitudeWgs84),
+    latitudeWgs84: String(query.latitudeWgs84),
+    longitudeWgs84: String(query.longitudeWgs84),
+    horizon: query.horizon,
+    target: query.target,
+  });
+
+  setOptionalForecastQueryParam(params, "coordinateSource", query.coordinateSource);
+  setOptionalForecastQueryParam(params, "timezone", query.timezone);
+  setOptionalForecastQueryParam(params, "elevationMeters", query.elevationMeters);
+  setOptionalForecastQueryParam(params, "elevationSource", query.elevationSource);
+  setOptionalForecastQueryParam(params, "elevationConfidence", query.elevationConfidence);
+  setOptionalForecastQueryParam(params, "locationId", query.locationId);
+  setOptionalForecastQueryParam(params, "photoSpotId", query.photoSpotId);
+
+  return `/forecast?${params.toString()}`;
+}
+
+function setOptionalForecastQueryParam(
+  params: URLSearchParams,
+  key: string,
+  value: string | number | null | undefined,
+) {
+  if (value === undefined || value === null) {
+    return;
+  }
+  const normalized = String(value).trim();
+  if (normalized.length > 0) {
+    params.set(key, normalized);
+  }
 }
 
 function CloudSeaScoreCard({
@@ -3913,7 +3915,10 @@ function cloudSeaDecisionCards(
         shootable?.value ?? result.cloudSeaAnalysis.labels.shootableOpportunity
       }`,
       `${result.cloudSeaAnalysis.formationScore} 分 / ${result.cloudSeaAnalysis.shootableScore} 分。${userFacingResultText(
-        firstText(result.cloudSeaAnalysis.opportunityReasons, "低云、湿度、露点差、风速和地形共同决定云海机会。"),
+        firstText(
+          result.cloudSeaAnalysis.opportunityReasons,
+          "低云、湿度、露点差、风速和地形共同决定云海机会。",
+        ),
       )}`,
       result.cloudSeaAnalysis.shootableScore >= 65 ? "primary" : "accent",
       result.cloudSeaAnalysis.shootableScore,
@@ -3939,7 +3944,11 @@ function cloudSeaDecisionCards(
       "主要风险",
       mainRisk.label,
       mainRisk.detail || riskSummary[0]?.detail || "出行前复核最新天气、道路和景区开放信息。",
-      mainRisk.value?.includes("高") ? "danger" : mainRisk.value?.includes("中") ? "accent" : "muted",
+      mainRisk.value?.includes("高")
+        ? "danger"
+        : mainRisk.value?.includes("中")
+          ? "accent"
+          : "muted",
     ),
   ];
 }
@@ -3977,7 +3986,11 @@ function clampScorePercent(value: number): number {
   return Math.min(100, Math.max(0, Math.round(value)));
 }
 
-function CloudSeaNearTermWeatherSection({ result }: { readonly result: ForecastCalculationResult }) {
+function CloudSeaNearTermWeatherSection({
+  result,
+}: {
+  readonly result: ForecastCalculationResult;
+}) {
   const current = result.currentWeather;
   const clothing = result.clothingGuide;
   const firstDay = result.dailySummaries[0]?.weather;
