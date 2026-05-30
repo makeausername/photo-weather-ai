@@ -3974,10 +3974,7 @@ describe("forecast result target-aware view model", () => {
       expect(html).not.toContain("几点到、几点守");
       expect(html).not.toContain("白墙时怎么转拍");
       expect(html).not.toContain("是否值得专程去");
-      expect(html).toContain("云海形成机会");
-      expect(html).toContain("云海可拍机会");
       expect(html).toContain("白墙风险");
-      expect(html).toContain("雨后开口机会");
       expect(html).toContain("黄山光明顶 云海判断");
       expect(html).toContain("建议到达");
       expect(html).toContain("云海时间轴");
@@ -3996,7 +3993,19 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("预报范围");
       expect(html).toContain("更换地点");
       expect(html).toContain("重新判断");
-      expect(html).toContain("坐标信息");
+      expect(html).not.toContain("坐标信息");
+      expect(html).not.toContain("WGS84");
+      expect(html).not.toContain("GCJ-02");
+      expect(html).not.toContain("GCJ02");
+      expect(html).not.toContain("经度");
+      expect(html).not.toContain("纬度");
+      expect(html).not.toContain("latitude");
+      expect(html).not.toContain("longitude");
+      expect(html).not.toContain("30.13012");
+      expect(html).not.toContain("118.16389");
+      expect(html).not.toContain("30.1328");
+      expect(html).not.toContain("118.171");
+      expect(html).not.toMatch(/\b\d{1,2}\.\d{3,}[NS]?,\s*\d{2,3}\.\d{3,}[EW]?\b/i);
       expect(html).not.toContain('data-selected-location-card="true"');
       expect(html).not.toContain("已选地点");
       expect(html).not.toContain("所在地");
@@ -4019,14 +4028,33 @@ describe("forecast result target-aware view model", () => {
       expect(html).not.toContain("Open-Meteo");
       expect(html).not.toContain("和风天气");
       expect(html).toContain("CloudSeaResultPage");
+      expect(html).toContain("CloudSeaTopResultHeader");
       expect(html).toContain("CloudSeaHeroConclusion");
+      expect(html).toContain("CloudSeaScoreCard");
       expect(html).toContain("CloudSeaCoreMetrics");
-      expect(countOccurrences(html, 'data-cloud-sea-metric-card="true"')).toBe(4);
+      expect(html).toContain("云海可拍指数");
+      expect(html).toContain("/ 100");
+      expect(html).toContain("地形参考：机位海拔约 1860 米");
+      expect(html).toContain("推荐等级");
+      expect(html).toContain("最佳云海窗口");
+      expect(html).toContain("云海形成 / 可拍机会");
+      expect(html).toContain("主要风险");
+      expect(countOccurrences(html, 'data-cloud-sea-metric-card="true"')).toBe(6);
       expect(html).toContain("min-[900px]:grid-cols-[clamp(260px,22vw,320px)_minmax(0,1fr)]");
+      expect(html).toContain(
+        "min-[880px]:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]",
+      );
       expect(html).toContain("cloud-sea-result-stack grid min-w-0 gap-5");
       expect(html).not.toContain(
         "min-[1200px]:grid-cols-[clamp(320px,23vw,380px)_minmax(0,1fr)_clamp(300px,22vw,360px)]",
       );
+      expect(html).toContain("CloudSeaNearTermWeather");
+      expect(html).toContain("当前与近时段天气（2026年5月20日 00:00–06:00）");
+      expect(html).toContain("气温与体感");
+      expect(html).toContain("云层与能见度");
+      expect(html).toContain("风与降水");
+      expect(html).toContain("湿度与露点");
+      expect(html).toContain("穿衣与装备");
       expect(html).toContain("CloudSeaTimeline");
       expect(html).toContain("CloudSeaDailyTrend");
       expect(html).toContain("CloudSeaReasoning");
@@ -4044,7 +4072,12 @@ describe("forecast result target-aware view model", () => {
       expect(html.indexOf("CloudSeaHeroConclusion")).toBeLessThan(
         html.indexOf("CloudSeaCoreMetrics"),
       );
-      expect(html.indexOf("CloudSeaCoreMetrics")).toBeLessThan(html.indexOf("CloudSeaTimeline"));
+      expect(html.indexOf("CloudSeaCoreMetrics")).toBeLessThan(
+        html.indexOf("CloudSeaNearTermWeather"),
+      );
+      expect(html.indexOf("CloudSeaNearTermWeather")).toBeLessThan(
+        html.indexOf("CloudSeaTimeline"),
+      );
       const professionalHourlyIndex = html.indexOf("CloudSeaProfessionalHourlyData");
       if (professionalHourlyIndex >= 0) {
         expect(html.indexOf("CloudSeaTimeline")).toBeLessThan(professionalHourlyIndex);
