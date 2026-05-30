@@ -65,6 +65,20 @@ import {
   type SubjectDetailSubject,
   type SubjectDetailTarget,
 } from "./subject-detail-links";
+import {
+  ActionPlanGrid,
+  CurrentWeatherSection,
+  DailyDecisionSection,
+  JudgmentBasisGrid,
+  ResultDashboardShell,
+  ResultHeaderRow,
+  ResultHeaderSummaryCard,
+  ResultMetricCard,
+  ResultMetricGrid,
+  ResultPageErrorState,
+  ResultPageLoadingState,
+  ResultScoreCard,
+} from "./result-dashboard-components";
 
 type ForecastResultClientProps = {
   readonly query: ForecastQueryInput | null;
@@ -1326,43 +1340,35 @@ export function CloudSeaLoadingDashboard({
   const horizonLabel = cloudSeaProgressHorizonLabel(context);
 
   return (
-    <section
-      className="grid w-full min-w-0 gap-5"
-      data-cloud-sea-loading="full-width"
-      data-cloud-sea-page-mode="loading"
-    >
-      <Card className="p-5 shadow-sm" data-cloud-sea-loading-card="true">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="default">云海</Badge>
-          <Badge variant="muted">{horizonLabel}</Badge>
-        </div>
-        <h1 className="mt-3 text-2xl font-bold leading-tight text-card-foreground sm:text-[28px]">
-          云海拍摄判断
-        </h1>
-        <div className="mt-4 flex items-center gap-3 text-sm font-semibold text-card-foreground">
-          <span className="h-2.5 w-2.5 rounded-full bg-primary" />
-          正在生成云海拍摄判断...
-        </div>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-          正在结合天气、地形、云层和光线窗口生成判断。
-        </p>
-        <dl className="mt-4 grid gap-2 rounded-lg border border-border bg-muted p-3 text-sm min-[720px]:grid-cols-2">
-          <CompactDefinition label="地点" value={context.name} />
-          <CompactDefinition label="时间范围" value={horizonLabel} />
-        </dl>
+    <ResultPageLoadingState
+      target="cloud_sea"
+      badges={[
+        { label: "云海", variant: "default" },
+        { label: horizonLabel, variant: "muted" },
+      ]}
+      title="云海拍摄判断"
+      message="正在生成云海拍摄判断..."
+      description="正在结合天气、地形、云层和光线窗口生成判断。"
+      details={[
+        { label: "地点", value: context.name },
+        { label: "时间范围", value: horizonLabel },
+      ]}
+      action={
         <Button
           type="button"
           variant="secondary"
           size="sm"
-          className="mt-4"
           onClick={() => {
             window.location.assign("/cloud-sea");
           }}
         >
           重新选择地点
         </Button>
-      </Card>
-    </section>
+      }
+      dataCloudSeaLoading="full-width"
+      dataCloudSeaPageMode="loading"
+      dataCloudSeaLoadingCard="true"
+    />
   );
 }
 
@@ -1376,26 +1382,21 @@ export function CloudSeaErrorDashboard({
   const horizonLabel = cloudSeaProgressHorizonLabel(query);
 
   return (
-    <section
-      className="grid w-full min-w-0 gap-5"
-      data-cloud-sea-error="full-width"
-      data-cloud-sea-page-mode="error"
-    >
-      <Card className="border-danger p-5 shadow-sm" data-cloud-sea-error-card="true">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="danger">云海</Badge>
-          <Badge variant="muted">{horizonLabel}</Badge>
-        </div>
-        <h1 className="mt-3 text-2xl font-bold leading-tight text-card-foreground sm:text-[28px]">
-          云海拍摄判断
-        </h1>
-        <h2 className="mt-4 text-lg font-bold text-danger">云海判断生成失败</h2>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{message}</p>
-        <dl className="mt-4 grid gap-2 rounded-lg border border-border bg-muted p-3 text-sm min-[720px]:grid-cols-2">
-          <CompactDefinition label="地点" value={query.name} />
-          <CompactDefinition label="时间范围" value={horizonLabel} />
-        </dl>
-        <div className="mt-4 flex flex-wrap gap-2">
+    <ResultPageErrorState
+      target="cloud_sea"
+      badges={[
+        { label: "云海", variant: "danger" },
+        { label: horizonLabel, variant: "muted" },
+      ]}
+      title="云海拍摄判断"
+      message="云海判断生成失败"
+      description={message}
+      details={[
+        { label: "地点", value: query.name },
+        { label: "时间范围", value: horizonLabel },
+      ]}
+      actions={
+        <>
           <Button
             type="button"
             variant="secondary"
@@ -1416,9 +1417,12 @@ export function CloudSeaErrorDashboard({
           >
             重新判断
           </Button>
-        </div>
-      </Card>
-    </section>
+        </>
+      }
+      dataCloudSeaError="full-width"
+      dataCloudSeaPageMode="error"
+      dataCloudSeaErrorCard="true"
+    />
   );
 }
 
@@ -1483,7 +1487,7 @@ function WeatherEssentialsPanel({ result }: { readonly result: ForecastCalculati
   const timeContext = buildNearTermWeatherTimeContext(result);
 
   return (
-    <section className="grid gap-3" data-testid="near-term-weather">
+    <CurrentWeatherSection target="general" dataTestId="near-term-weather">
       <SectionHeading
         title={`当前与近时段天气（${timeContext.sectionWindowLabel}）`}
         description={timeContext.description}
@@ -1541,7 +1545,7 @@ function WeatherEssentialsPanel({ result }: { readonly result: ForecastCalculati
           detail={packingDetail(clothing)}
         />
       </div>
-    </section>
+    </CurrentWeatherSection>
   );
 }
 
@@ -2614,10 +2618,11 @@ export function CloudSeaResultPage({
   readonly returnUrl?: string;
 }) {
   return (
-    <section
+    <ResultDashboardShell
+      target="cloud_sea"
       className="CloudSeaResultPage cloud-sea-result-page grid gap-5"
-      data-cloud-sea-section="CloudSeaResultPage"
-      data-cloud-sea-page-mode="result"
+      dataCloudSeaSection="CloudSeaResultPage"
+      dataCloudSeaPageMode="result"
     >
       <main
         className="CloudSeaStackedLayout cloud-sea-result-stack grid w-full min-w-0 gap-5"
@@ -2640,7 +2645,7 @@ export function CloudSeaResultPage({
         {viewModel.dataCaution ? <CloudSeaInlineCaution text={viewModel.dataCaution} /> : null}
         {returnUrl ? <CloudSeaReturnLink href={returnUrl} /> : null}
       </main>
-    </section>
+    </ResultDashboardShell>
   );
 }
 
@@ -3768,13 +3773,14 @@ function CloudSeaTopResultHeader({
   readonly result: ForecastCalculationResult;
 }) {
   return (
-    <header
+    <ResultHeaderRow
+      target="cloud_sea"
       className="CloudSeaTopResultHeader grid gap-4 min-[880px]:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] min-[880px]:items-stretch"
-      data-cloud-sea-section="CloudSeaTopResultHeader"
+      dataCloudSeaSection="CloudSeaTopResultHeader"
     >
       <CloudSeaHeroConclusion query={query} hero={hero} result={result} />
       <CloudSeaScoreCard hero={hero} result={result} />
-    </header>
+    </ResultHeaderRow>
   );
 }
 
@@ -3788,7 +3794,10 @@ function CloudSeaHeroConclusion({
   readonly result: ForecastCalculationResult;
 }) {
   return (
-    <Card className="CloudSeaHeroConclusion cloud-sea-hero-conclusion h-full p-5 shadow-sm">
+    <ResultHeaderSummaryCard
+      target="cloud_sea"
+      className="CloudSeaHeroConclusion cloud-sea-hero-conclusion h-full p-5 shadow-sm"
+    >
       <div className="flex h-full min-w-0 flex-col justify-between gap-5">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -3833,7 +3842,7 @@ function CloudSeaHeroConclusion({
           </Button>
         </div>
       </div>
-    </Card>
+    </ResultHeaderSummaryCard>
   );
 }
 
@@ -3888,29 +3897,16 @@ function CloudSeaScoreCard({
   const score = clampScorePercent(result.cloudSeaAnalysis.shootableScore);
 
   return (
-    <Card
+    <ResultScoreCard
+      target="cloud_sea"
       className="CloudSeaScoreCard grid h-full content-between gap-4 p-5 shadow-sm"
-      data-cloud-sea-section="CloudSeaScoreCard"
-    >
-      <div>
-        <p className="text-xs font-semibold text-muted-foreground">云海可拍指数</p>
-        <div className="mt-2 flex items-end gap-2">
-          <span className="text-5xl font-bold leading-none text-primary">{score}</span>
-          <span className="pb-1 text-sm font-semibold text-muted-foreground">/ 100</span>
-        </div>
-        <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
-          <div className="h-full rounded-full bg-primary" style={{ width: `${score}%` }} />
-        </div>
-      </div>
-      <div className="grid gap-2">
-        <Badge variant={recommendationBadgeVariant(hero.recommendationLabel)}>
-          {hero.recommendationLabel}
-        </Badge>
-        <p className="text-sm font-semibold leading-6 text-card-foreground">
-          {cloudSeaTerrainSummary(result)}
-        </p>
-      </div>
-    </Card>
+      dataCloudSeaSection="CloudSeaScoreCard"
+      label="云海可拍指数"
+      score={score}
+      badgeLabel={hero.recommendationLabel}
+      badgeVariant={recommendationBadgeVariant(hero.recommendationLabel)}
+      summary={cloudSeaTerrainSummary(result)}
+    />
   );
 }
 
@@ -3944,16 +3940,17 @@ function CloudSeaMetricCards({
   const decisionCards = cloudSeaDecisionCards(hero, result, cards, riskSummary);
 
   return (
-    <section
+    <ResultMetricGrid
+      target="cloud_sea"
       className="cloud-sea-core-metrics grid items-stretch gap-3 sm:grid-cols-2 min-[1180px]:grid-cols-3"
-      data-cloud-sea-section="CloudSeaCoreMetrics"
+      dataCloudSeaSection="CloudSeaCoreMetrics"
     >
       {decisionCards.map((card) => (
-        <div key={card.key} className="h-full" data-cloud-sea-metric-card="true">
+        <ResultMetricCard key={card.key} target="cloud_sea" dataCloudSeaMetricCard>
           <PrimaryResultCard card={card} />
-        </div>
+        </ResultMetricCard>
       ))}
-    </section>
+    </ResultMetricGrid>
   );
 }
 
@@ -4084,10 +4081,11 @@ function CloudSeaNearTermWeatherSection({
   const auxiliaryNotice = cloudSeaAuxiliaryDataNotice(result);
 
   return (
-    <section
+    <CurrentWeatherSection
+      target="cloud_sea"
       className="CloudSeaNearTermWeather grid gap-3"
-      data-cloud-sea-section="CloudSeaNearTermWeather"
-      data-testid="cloud-sea-near-term-weather"
+      dataCloudSeaSection="CloudSeaNearTermWeather"
+      dataTestId="cloud-sea-near-term-weather"
     >
       <SectionHeading
         title={`当前与近时段天气（${timeContext.sectionWindowLabel}）`}
@@ -4146,7 +4144,7 @@ function CloudSeaNearTermWeatherSection({
           detail={packingDetail(clothing)}
         />
       </div>
-    </section>
+    </CurrentWeatherSection>
   );
 }
 
@@ -5062,7 +5060,10 @@ function CloudSeaReasoningSection({ items }: { readonly items: readonly CloudSea
         <h2 className="text-lg font-bold text-card-foreground">判断依据</h2>
         <Badge variant="muted">当前结果</Badge>
       </div>
-      <div className="mt-4 grid gap-3 min-[760px]:grid-cols-2 min-[1180px]:grid-cols-3">
+      <JudgmentBasisGrid
+        target="cloud_sea"
+        className="mt-4 grid gap-3 min-[760px]:grid-cols-2 min-[1180px]:grid-cols-3"
+      >
         {items.map((item) => (
           <article
             key={item.key}
@@ -5075,7 +5076,7 @@ function CloudSeaReasoningSection({ items }: { readonly items: readonly CloudSea
             <p className="text-sm leading-6 text-muted-foreground">{firstSentence(item.detail)}</p>
           </article>
         ))}
-      </div>
+      </JudgmentBasisGrid>
     </Card>
   );
 }
@@ -5099,7 +5100,10 @@ function CloudSeaActionPlanSection({
         <h2 className="text-lg font-bold text-card-foreground">行动方案</h2>
         <Badge variant="muted">到达 / 主守 / 备选</Badge>
       </div>
-      <div className="mt-4 grid gap-3 min-[760px]:grid-cols-2 min-[1280px]:grid-cols-5">
+      <ActionPlanGrid
+        target="cloud_sea"
+        className="mt-4 grid gap-3 min-[760px]:grid-cols-2 min-[1280px]:grid-cols-5"
+      >
         {items.map((item) => (
           <article
             key={item.key}
@@ -5112,7 +5116,7 @@ function CloudSeaActionPlanSection({
             <p className="text-sm leading-6 text-muted-foreground">{firstSentence(item.detail)}</p>
           </article>
         ))}
-      </div>
+      </ActionPlanGrid>
     </Card>
   );
 }
@@ -5655,7 +5659,7 @@ export function ComprehensiveForecastView({
   const primaryBestWindow = viewModel.bestWindows.find(isExecutableDisplayWindow);
 
   return (
-    <section className="mx-auto grid w-full max-w-[1560px] gap-5">
+    <ResultDashboardShell target="general">
       <ComprehensiveContextBar query={query} result={result} />
       <ComprehensiveCoreDecisionCards
         result={result}
@@ -5677,7 +5681,7 @@ export function ComprehensiveForecastView({
         retryable={aiRetryable}
         onGenerate={onGenerateAiExplanation}
       />
-    </section>
+    </ResultDashboardShell>
   );
 }
 
@@ -5689,8 +5693,11 @@ function ComprehensiveContextBar({
   readonly result: ForecastCalculationResult;
 }) {
   return (
-    <header className="grid gap-4 min-[880px]:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] min-[880px]:items-stretch">
-      <div className="min-w-0 rounded-lg border border-border bg-card p-5 shadow-sm">
+    <ResultHeaderRow target="general">
+      <ResultHeaderSummaryCard
+        target="general"
+        className="min-w-0 rounded-lg border border-border bg-card"
+      >
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="default">出行判断</Badge>
           <Badge variant={dataReadinessBadgeVariant(result)}>{weatherReadinessLabel(result)}</Badge>
@@ -5717,33 +5724,16 @@ function ComprehensiveContextBar({
         >
           重新选择地点
         </Button>
-      </div>
-      <Card className="grid content-between gap-4 p-5 shadow-sm">
-        <div>
-          <p className="text-xs font-semibold text-muted-foreground">综合出片指数</p>
-          <div className="mt-2 flex items-end gap-2">
-            <span className="text-5xl font-bold leading-none text-primary">
-              {result.overallScore}
-            </span>
-            <span className="pb-1 text-sm font-semibold text-muted-foreground">/ 100</span>
-          </div>
-          <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-primary"
-              style={{ width: `${result.overallScore}%` }}
-            />
-          </div>
-        </div>
-        <div className="grid gap-2">
-          <Badge variant={recommendationBadgeVariant(result.recommendationLabel)}>
-            {departureRecommendationLabel(result)}
-          </Badge>
-          <p className="text-sm font-semibold leading-6 text-card-foreground">
-            {userFacingResultText(primaryReasonSentence(result))}
-          </p>
-        </div>
-      </Card>
-    </header>
+      </ResultHeaderSummaryCard>
+      <ResultScoreCard
+        target="general"
+        label="综合出片指数"
+        score={result.overallScore}
+        badgeLabel={departureRecommendationLabel(result)}
+        badgeVariant={recommendationBadgeVariant(result.recommendationLabel)}
+        summary={userFacingResultText(primaryReasonSentence(result))}
+      />
+    </ResultHeaderRow>
   );
 }
 
@@ -5812,14 +5802,17 @@ function ComprehensiveCoreDecisionCards({
   ];
 
   return (
-    <section
+    <ResultMetricGrid
+      target="general"
       className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7"
-      data-testid="top-decision-cards"
+      dataTestId="top-decision-cards"
     >
       {cards.map((card) => (
-        <PrimaryResultCard key={card.key} card={card} />
+        <ResultMetricCard key={card.key} target="general">
+          <PrimaryResultCard card={card} />
+        </ResultMetricCard>
       ))}
-    </section>
+    </ResultMetricGrid>
   );
 }
 
@@ -5933,7 +5926,7 @@ function ComprehensiveMultiDaySummary({
   readonly result: ForecastCalculationResult;
 }) {
   return (
-    <section className="grid gap-3" data-testid="daily-forecast-decision">
+    <DailyDecisionSection target="general" dataTestId="daily-forecast-decision">
       <SectionHeading
         title="逐日拍摄判断"
         description="按天保留出发判断、关键天气、优先窗口和下一步动作。"
@@ -6037,7 +6030,7 @@ function ComprehensiveMultiDaySummary({
           );
         })}
       </div>
-    </section>
+    </DailyDecisionSection>
   );
 }
 
@@ -6407,7 +6400,10 @@ function RiskDecisionSection({
         description="只保留会影响出发、机位等待和器材保护的风险。"
         badge={riskItems.length > 0 ? `${riskItems.length} 项需关注` : "风险可控"}
       />
-      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))]">
+      <JudgmentBasisGrid
+        target="general"
+        className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))]"
+      >
         {riskItems.map((item) => (
           <Card key={item.label} className="p-4 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -6428,7 +6424,7 @@ function RiskDecisionSection({
             </div>
           </Card>
         ))}
-      </div>
+      </JudgmentBasisGrid>
     </section>
   );
 }
@@ -6464,7 +6460,10 @@ function ActionableAdviceSection({
         description="只保留到达、题材、备选、风险、装备和是否出发六类动作。"
         badge={departureRecommendationLabel(result)}
       />
-      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(250px,1fr))]">
+      <ActionPlanGrid
+        target="general"
+        className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(250px,1fr))]"
+      >
         <AdviceBlock title="建议到达时间" items={[compactArrivalAdvice(bestWindow)]} />
         <AdviceBlock
           title="优先拍摄题材"
@@ -6477,7 +6476,7 @@ function ActionableAdviceSection({
           items={[packingDetail(result.clothingGuide), packingMainValue(result.clothingGuide)]}
         />
         <AdviceBlock title="是否建议出发" items={[compactDepartureAdvice(result)]} />
-      </div>
+      </ActionPlanGrid>
     </section>
   );
 }

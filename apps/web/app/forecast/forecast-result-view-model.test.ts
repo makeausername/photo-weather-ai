@@ -2193,6 +2193,15 @@ describe("forecast result target-aware view model", () => {
 
     expect(html).toContain('data-testid="daily-forecast-decision"');
     expect(html).toContain('data-testid="daily-cards-adaptive-grid"');
+    expect(html).toContain('data-result-dashboard-shell="true"');
+    expect(html).toContain('data-result-target="general"');
+    expect(html).toContain('data-result-header-summary-card="true"');
+    expect(html).toContain('data-result-score-card="true"');
+    expect(html).toContain('data-result-metric-grid="true"');
+    expect(countOccurrences(html, 'data-result-metric-card="true"')).toBe(7);
+    expect(html).toContain('data-result-current-weather-section="true"');
+    expect(html).toContain('data-result-daily-section="true"');
+    expect(html).toContain('data-result-action-plan-grid="true"');
     expect(countOccurrences(html, 'data-testid="daily-card"')).toBe(result.dailySummaries.length);
     expect(countOccurrences(html, 'data-testid="daily-primary-window"')).toBe(
       result.dailySummaries.length,
@@ -4025,6 +4034,8 @@ describe("forecast result target-aware view model", () => {
     const html = renderToStaticMarkup(React.createElement(ForecastResultClient, { query }));
 
     expect(html).toContain('data-cloud-sea-page-mode="loading"');
+    expect(html).toContain('data-result-page-state="loading"');
+    expect(html).toContain('data-result-target="cloud_sea"');
     expect(html).toContain('data-cloud-sea-loading="full-width"');
     expect(html).toContain('data-cloud-sea-loading-card="true"');
     expect(html).toContain("云海拍摄判断");
@@ -4058,6 +4069,8 @@ describe("forecast result target-aware view model", () => {
     );
 
     expect(html).toContain('data-cloud-sea-page-mode="loading"');
+    expect(html).toContain('data-result-page-state="loading"');
+    expect(html).toContain('data-result-target="cloud_sea"');
     expect(html).toContain("重新选择地点");
     expect(html).not.toContain("<aside");
     expect(html).not.toContain("地点 / 查询");
@@ -4076,6 +4089,8 @@ describe("forecast result target-aware view model", () => {
     );
 
     expect(html).toContain('data-cloud-sea-page-mode="error"');
+    expect(html).toContain('data-result-page-state="error"');
+    expect(html).toContain('data-result-target="cloud_sea"');
     expect(html).toContain('data-cloud-sea-error="full-width"');
     expect(html).toContain("云海判断生成失败");
     expect(html).toContain("网络暂时不可用。");
@@ -4182,12 +4197,19 @@ describe("forecast result target-aware view model", () => {
       expect(html).not.toContain("Open-Meteo");
       expect(html).not.toContain("和风天气");
       expect(html).toContain("CloudSeaResultPage");
+      expect(html).toContain('data-result-dashboard-shell="true"');
+      expect(html).toContain('data-result-target="cloud_sea"');
+      expect(html).toContain('data-result-header-row="true"');
+      expect(html).toContain('data-result-header-summary-card="true"');
+      expect(html).toContain('data-result-score-card="true"');
       expect(html).toContain("CloudSeaTopResultHeader");
       expect(html).toContain("CloudSeaHeroConclusion");
       expect(html).toContain("CloudSeaScoreCard");
       expect(countOccurrences(html, "CloudSeaHeroConclusion")).toBe(1);
       expect(countOccurrences(html, 'data-cloud-sea-section="CloudSeaScoreCard"')).toBe(1);
       expect(html).toContain("CloudSeaCoreMetrics");
+      expect(html).toContain('data-result-metric-grid="true"');
+      expect(countOccurrences(html, 'data-result-metric-card="true"')).toBe(6);
       expect(html).toContain("云海可拍指数");
       expect(html).toContain("/ 100");
       expect(html).toContain("地形参考：机位海拔约 1860 米");
@@ -4205,6 +4227,7 @@ describe("forecast result target-aware view model", () => {
         "min-[1200px]:grid-cols-[clamp(320px,23vw,380px)_minmax(0,1fr)_clamp(300px,22vw,360px)]",
       );
       expect(html).toContain("CloudSeaNearTermWeather");
+      expect(html).toContain('data-result-current-weather-section="true"');
       expect(html).toContain("当前与近时段天气（2026年5月20日 00:00–06:00）");
       expect(html).toContain("气温与体感");
       expect(html).toContain("云层与能见度");
@@ -4214,6 +4237,8 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("CloudSeaTimeline");
       expect(html).toContain("CloudSeaDailyTrend");
       expect(html).toContain("CloudSeaReasoning");
+      expect(html).toContain('data-result-judgment-basis-grid="true"');
+      expect(html).toContain('data-result-action-plan-grid="true"');
       expect(html).toContain("CloudSeaStackedLayout");
       expect(html).not.toContain("智能解读");
       expect(html).not.toContain("生成智能解读");
