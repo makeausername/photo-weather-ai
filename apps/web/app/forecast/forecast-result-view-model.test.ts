@@ -8,6 +8,7 @@ import {
   type ForecastScore,
 } from "@photo-weather/shared";
 import {
+  AiExplanationPanel,
   ComprehensiveForecastView,
   AstroResultPage,
   CloudSeaResultPage,
@@ -41,6 +42,24 @@ vi.mock("next/navigation", () => ({
 
 const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
+
+function firstOnClickHandler(node: React.ReactNode): (() => void) | null {
+  if (!React.isValidElement<{ children?: React.ReactNode; onClick?: () => void }>(node)) {
+    return null;
+  }
+  if (typeof node.props.onClick === "function") {
+    return node.props.onClick;
+  }
+
+  for (const child of React.Children.toArray(node.props.children)) {
+    const handler = firstOnClickHandler(child);
+    if (handler) {
+      return handler;
+    }
+  }
+
+  return null;
+}
 
 function score(key: string, label: string, value: number): ForecastScore {
   return {
@@ -3377,7 +3396,7 @@ describe("forecast result target-aware view model", () => {
     expect(calibrationCard?.tone).toBe("accent");
   });
 
-  it("keeps deterministic analysis visible when the optional DeepSeek interpretation times out", () => {
+  it("keeps deterministic forecast content visible when optional intelligent interpretation fails", () => {
     const result = resultForTarget("general");
     const viewModel = buildForecastResultViewModel(result, "general");
     const html = renderToStaticMarkup(
@@ -3387,14 +3406,14 @@ describe("forecast result target-aware view model", () => {
         viewModel,
         aiStatus: "error",
         aiExplanation: null,
-        aiErrorMessage: "智能解读暂时超时，确定性判断结果仍可正常参考，可稍后重试。",
+        aiErrorMessage: "智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。",
         aiRetryable: true,
         onGenerateAiExplanation: vi.fn(),
       }),
     );
 
-    expect(html).toContain("智能解读暂时超时，确定性判断结果仍可正常参考，可稍后重试。");
-    expect(html).toContain("重试 DeepSeek 解读");
+    expect(html).toContain("智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。");
+    expect(html).toContain("重试智能解读");
     expect(html).toContain("综合出片指数");
     expect(html).toContain("逐日拍摄判断");
     expect(html).toContain("出行建议");
@@ -3417,12 +3436,12 @@ describe("forecast result target-aware view model", () => {
       }),
     );
 
-    expect(html).toContain("正在增强解读");
+    expect(html).toContain("正在生成智能解读...");
     expect(html).toContain("disabled");
     expect(html).toContain("综合出片指数");
   });
 
-  it("renders deterministic fallback from the forecast result before DeepSeek is clicked", () => {
+  it("does not render deterministic fallback from the forecast result before AI is clicked", () => {
     const fallback = aiExplanationForTest(
       "基于确定性计算结果生成的简版解读在页面加载后立即可见。",
       "deterministic_fallback",
@@ -3432,6 +3451,7 @@ describe("forecast result target-aware view model", () => {
       aiExplanation: fallback,
     } as ForecastCalculationResult & { aiExplanation: ReturnType<typeof aiExplanationForTest> };
     const viewModel = buildForecastResultViewModel(result, "general");
+    const onGenerateAiExplanation = vi.fn();
     const html = renderToStaticMarkup(
       React.createElement(ComprehensiveForecastView, {
         query: queryForTarget("general"),
@@ -3441,14 +3461,39 @@ describe("forecast result target-aware view model", () => {
         aiExplanation: fallback,
         aiErrorMessage: "",
         aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
+        onGenerateAiExplanation,
       }),
     );
 
-    expect(html).toContain("基于确定性计算结果生成的简版解读");
+    expect(html).toContain("智能解读");
+    expect(html).toContain("可手动生成更自然的摄影建议，当前判断结果不依赖 AI。");
     expect(html).toContain("生成智能解读");
-    expect(html).toContain("基于确定性计算结果生成的简版解读在页面加载后立即可见。");
+    expect(html).not.toContain("确定性简版");
+    expect(html).not.toContain("基于确定性计算结果生成的简版解读");
+    expect(html).not.toContain("基于确定性计算结果生成的简版解读在页面加载后立即可见。");
+    expect(html).not.toContain("一句话结论");
+    expect(html).not.toContain("最建议关注");
+    expect(onGenerateAiExplanation).not.toHaveBeenCalled();
     expect(html).not.toContain("智能解读暂时不可用");
+  });
+
+  it("calls the manual intelligent interpretation handler only from the generate button", () => {
+    const onGenerate = vi.fn();
+    const element = AiExplanationPanel({
+      status: "idle",
+      explanation: null,
+      errorMessage: "",
+      retryable: false,
+      onGenerate,
+    });
+    const onClick = firstOnClickHandler(element);
+
+    expect(onGenerate).not.toHaveBeenCalled();
+    expect(onClick).not.toBeNull();
+
+    onClick?.();
+
+    expect(onGenerate).toHaveBeenCalledTimes(1);
   });
 
   it("clears loading and renders a success=true interpretation response", () => {
@@ -3495,7 +3540,7 @@ describe("forecast result target-aware view model", () => {
     expect(aiExplainFrontendTimeoutMs).toBeGreaterThanOrEqual(deepSeekBackendTimeoutMaxMs);
   });
 
-  it("renders deterministic fallback when DeepSeek fails and keeps retry available", () => {
+  it("renders a compact error when DeepSeek fails and does not show deterministic fallback sections", () => {
     const result = resultForTarget("general");
     const viewModel = buildForecastResultViewModel(result, "general");
     const fallback = aiExplanationForTest(
@@ -3527,15 +3572,26 @@ describe("forecast result target-aware view model", () => {
       }),
     );
 
-    expect(outcome.status).toBe("ready");
+    expect(outcome.status).toBe("error");
+    expect(outcome.explanation).toBeNull();
     expect(outcome.retryable).toBe(true);
     expect(outcome.cacheable).toBe(false);
-    expect(html).toContain("确定性简版解读在 DeepSeek 超时后仍然可见。");
-    expect(html).toContain("重试 DeepSeek 解读");
+    expect(html).toContain("智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。");
+    expect(html).toContain("重试智能解读");
+    expect(html).not.toContain("确定性简版解读在 DeepSeek 超时后仍然可见。");
+    expect(html).not.toContain("确定性简版");
+    expect(html).not.toContain("基于确定性计算结果生成的简版解读");
+    expect(html).not.toContain("一句话结论");
+    expect(html).not.toContain("最建议关注");
+    expect(html).not.toContain("天气大势");
+    expect(html).not.toContain("逐日建议");
+    expect(html).not.toContain("题材判断");
+    expect(html).not.toContain("风险与装备");
+    expect(html).not.toContain("最终建议");
     expect(html).toContain("综合出片指数");
   });
 
-  it("keeps fallback visible when a success response has invalid interpretation data", () => {
+  it("ignores fallback when a success response has invalid interpretation data", () => {
     const fallback = aiExplanationForTest(
       "DeepSeek 返回无效结构时继续显示确定性简版解读。",
       "deterministic_fallback",
@@ -3551,13 +3607,13 @@ describe("forecast result target-aware view model", () => {
       fallback,
     );
 
-    expect(outcome.status).toBe("ready");
+    expect(outcome.status).toBe("error");
     expect(outcome.success).toBe(false);
     expect(outcome.cacheable).toBe(false);
     expect(outcome.errorCategory).toBe("parse_error");
-    expect(outcome.explanation?.metadata?.source).toBe("deterministic_fallback");
-    expect(outcome.explanation?.conclusion.oneSentenceDecisionZh).toContain(
-      "DeepSeek 返回无效结构时继续显示确定性简版解读。",
+    expect(outcome.explanation).toBeNull();
+    expect(outcome.errorMessage).toBe(
+      "智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。",
     );
   });
 
@@ -3588,8 +3644,8 @@ describe("forecast result target-aware view model", () => {
 
     expect(outcome.status).toBe("error");
     expect(outcome.retryable).toBe(true);
-    expect(html).toContain("重试 DeepSeek 解读");
-    expect(html).toContain("智能解读暂时不可用");
+    expect(html).toContain("重试智能解读");
+    expect(html).toContain("智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。");
     expect(html).toContain("综合出片指数");
   });
 
@@ -3636,7 +3692,7 @@ describe("forecast result target-aware view model", () => {
     expect(shouldStartAiExplanationRequest("idle", false)).toBe(true);
   });
 
-  it("renders structured intelligent interpretation sections and deterministic fallback label", () => {
+  it("renders structured intelligent interpretation sections after a successful AI response", () => {
     const result = resultForTarget("general");
     const viewModel = buildForecastResultViewModel(result, "general");
     const html = renderToStaticMarkup(
@@ -3705,7 +3761,7 @@ describe("forecast result target-aware view model", () => {
             nextCheckZh: "复核短临降水、低云和阵风。",
           },
           metadata: {
-            source: "deterministic_fallback",
+            source: "deepseek",
           },
         },
         aiErrorMessage: "",
@@ -3721,7 +3777,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("题材判断");
     expect(html).toContain("风险与装备");
     expect(html).toContain("最终建议");
-    expect(html).toContain("确定性简版");
+    expect(html).not.toContain("确定性简版");
     expect(html).toContain("2026年5月20日 05:00–07:00");
   });
 
@@ -4066,6 +4122,9 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("CloudSeaDailyTrend");
       expect(html).toContain("CloudSeaReasoning");
       expect(html).toContain("CloudSeaStackedLayout");
+      expect(html).not.toContain("智能解读");
+      expect(html).not.toContain("生成智能解读");
+      expect(html).not.toContain("确定性简版");
       expect(html).not.toContain("CloudSeaActionSummary");
       expect(html).not.toContain("CloudSeaNavigation");
       expect(html).not.toContain("CloudSeaAdviceRail");

@@ -335,7 +335,7 @@ function isFreshAiExplanationCacheRecord(
     record?.version === 1 &&
     typeof record.createdAt === "number" &&
     Date.now() - record.createdAt <= aiExplanationCacheTtlMs &&
-    isForecastAiExplanationLike(record.explanation)
+    isDisplayableAiExplanation(record.explanation)
   );
 }
 
@@ -349,27 +349,20 @@ function browserSessionStorage(): Storage | null {
 
 export function normalizeAiExplainResponse(
   payload: unknown,
-  deterministicFallback: ForecastAiExplanation | null = null,
+  _deterministicFallback: ForecastAiExplanation | null = null,
 ): NormalizedAiExplainOutcome {
   const response = isRecord(payload) ? (payload as AiExplainResponse) : {};
   const diagnostics = isRecord(response.diagnostics) ? response.diagnostics : undefined;
-  const directExplanation = extractAiExplanationFromResponse(response);
-  const explicitFallback =
-    normalizeFallbackAiExplanationCandidate(response.fallbackInterpretation) ??
-    (response.source === "fallback"
-      ? normalizeFallbackAiExplanationCandidate(response.interpretation)
-      : null) ??
-    (response.fallback === true
-      ? normalizeFallbackAiExplanationCandidate(response.explanation)
-      : null);
-  const fallbackExplanation = explicitFallback ?? deterministicFallback;
+  const directExplanationCandidate = extractAiExplanationFromResponse(response);
+  const directExplanation = isDisplayableAiExplanation(directExplanationCandidate)
+    ? directExplanationCandidate
+    : null;
   const invalidSuccessfulResponse = response.success === true && !directExplanation;
   const backendErrorCategory =
     normalizeAiErrorCategory(response.errorCategory) ??
     normalizeAiErrorCategory(diagnostics?.errorCategory) ??
     (invalidSuccessfulResponse ? "parse_error" : undefined) ??
     "none";
-  const explanation = directExplanation ?? fallbackExplanation;
   const parseSuccess =
     typeof response.parseSuccess === "boolean"
       ? response.parseSuccess
@@ -387,21 +380,14 @@ export function normalizeAiExplainResponse(
     readStringField(response, "message") ??
     publicAiExplanationMessage(backendErrorCategory);
 
-  if (explanation) {
-    const isSuccessfulDeepSeek =
-      response.success === true &&
-      directExplanation !== null &&
-      directExplanation.metadata?.source !== "deterministic_fallback";
-    const isDeterministicFallback =
-      !isSuccessfulDeepSeek || explanation.metadata?.source === "deterministic_fallback";
-
+  if (response.success === true && directExplanation) {
     return {
       status: "ready",
-      explanation,
-      errorMessage: isSuccessfulDeepSeek ? "" : message,
-      retryable,
-      success: isSuccessfulDeepSeek,
-      cacheable: isSuccessfulDeepSeek && !isDeterministicFallback,
+      explanation: directExplanation,
+      errorMessage: "",
+      retryable: false,
+      success: true,
+      cacheable: true,
       errorCategory: backendErrorCategory,
       backendErrorCategory,
       parseSuccess,
@@ -430,26 +416,10 @@ export function normalizeAiExplainResponse(
 
 function normalizeAiExplainThrownError(
   error: unknown,
-  deterministicFallback: ForecastAiExplanation | null,
   latencyMs: number,
 ): NormalizedAiExplainOutcome {
   const errorCategory: AiExplainErrorCategory = isAbortError(error) ? "timeout" : "network_error";
   const message = publicAiExplanationMessage(errorCategory);
-
-  if (deterministicFallback) {
-    return {
-      status: "ready",
-      explanation: deterministicFallback,
-      errorMessage: message,
-      retryable: true,
-      success: false,
-      cacheable: false,
-      errorCategory,
-      backendErrorCategory: errorCategory,
-      parseSuccess: false,
-      latencyMs,
-    };
-  }
 
   return {
     status: "error",
@@ -520,11 +490,6 @@ function normalizeForecastAiExplanationCandidate(value: unknown): ForecastAiExpl
   return explanationFromSections(normalizeAiSections(value.sections ?? value));
 }
 
-function normalizeFallbackAiExplanationCandidate(value: unknown): ForecastAiExplanation | null {
-  const explanation = normalizeForecastAiExplanationCandidate(value);
-  return explanation ? forceAiExplanationMetadata(explanation, "deterministic_fallback") : null;
-}
-
 function isForecastAiExplanationLike(value: unknown): value is ForecastAiExplanation {
   if (!isRecord(value)) {
     return false;
@@ -538,6 +503,16 @@ function isForecastAiExplanationLike(value: unknown): value is ForecastAiExplana
     hasStringField(value.subjectAdvice, "cloudSeaZh") &&
     hasStringField(value.riskAndGear, "clothingZh") &&
     hasStringField(value.finalAdvice, "goNoGoZh")
+  );
+}
+
+function isDisplayableAiExplanation(
+  explanation: ForecastAiExplanation | null | undefined,
+): explanation is ForecastAiExplanation {
+  return Boolean(
+    explanation &&
+      isForecastAiExplanationLike(explanation) &&
+      explanation.metadata?.source !== "deterministic_fallback",
   );
 }
 
@@ -853,19 +828,6 @@ function withAiExplanationMetadata(
   };
 }
 
-function forceAiExplanationMetadata(
-  explanation: ForecastAiExplanation,
-  source: NonNullable<ForecastAiExplanation["metadata"]>["source"],
-): ForecastAiExplanation {
-  return {
-    ...explanation,
-    metadata: {
-      ...explanation.metadata,
-      source,
-    },
-  };
-}
-
 function normalizeAiMetadata(value: unknown): ForecastAiExplanation["metadata"] | undefined {
   if (!isRecord(value)) {
     return undefined;
@@ -873,18 +835,6 @@ function normalizeAiMetadata(value: unknown): ForecastAiExplanation["metadata"] 
   const source = value.source === "deterministic_fallback" ? "deterministic_fallback" : "deepseek";
   const noteZh = readStringField(value, "noteZh");
   return noteZh ? { source, noteZh } : { source };
-}
-
-function getDeterministicAiFallbackFromResult(
-  result: ForecastCalculationResult | null,
-): ForecastAiExplanation | null {
-  const explanation = (result as ForecastCalculationResultWithAi | null)?.aiExplanation;
-  return isForecastAiExplanationLike(explanation)
-    ? withAiExplanationMetadata(
-        explanation,
-        explanation.metadata?.source ?? "deterministic_fallback",
-      )
-    : null;
 }
 
 function applyAiExplainOutcome(
@@ -932,13 +882,8 @@ function logAiExplanationClientEvent(
 }
 
 function publicAiExplanationMessage(category: AiExplainErrorCategory | "none"): string {
-  if (category === "timeout") {
-    return "智能解读暂时超时，确定性判断结果仍可正常参考，可稍后重试。";
-  }
-  if (category === "missing_api_key" || category === "disabled") {
-    return "智能解读暂时未启用，确定性判断结果仍可正常参考。";
-  }
-  return "智能解读暂时不可用，确定性判断结果仍可正常参考，可稍后重试。";
+  void category;
+  return "智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。";
 }
 
 function isRetryableAiExplainCategory(category: AiExplainErrorCategory | "none"): boolean {
@@ -1084,18 +1029,12 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
         const data = (await response.json()) as ForecastCalculationResult;
         writeForecastResultContext({ query: activeQuery, result: data });
         setResult(data);
-        const deterministicFallback = getDeterministicAiFallbackFromResult(data);
         const cachedAiExplanation = readCachedAiExplanation(
           createAiExplanationCacheKey({ query: activeQuery, result: data }),
         );
         if (cachedAiExplanation) {
           setAiExplanation(cachedAiExplanation);
           setAiStatus("ready");
-          setAiErrorMessage("");
-          setAiRetryable(false);
-        } else if (deterministicFallback) {
-          setAiExplanation(deterministicFallback);
-          setAiStatus("idle");
           setAiErrorMessage("");
           setAiRetryable(false);
         }
@@ -1150,15 +1089,12 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
       return;
     }
 
-    const deterministicFallback = getDeterministicAiFallbackFromResult(result);
     const controller = new AbortController();
     const startedAt = Date.now();
     const timeout = setTimeout(() => controller.abort(), aiExplainFrontendTimeoutMs);
     aiAbortControllerRef.current = controller;
     aiRequestInFlightRef.current = true;
-    if (deterministicFallback) {
-      setAiExplanation(deterministicFallback);
-    }
+    setAiExplanation(null);
     setAiStatus("loading");
     setAiErrorMessage("");
     setAiRetryable(false);
@@ -1180,10 +1116,9 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
             ...(isRecord(errorPayload)
               ? errorPayload
               : {
-                  messageZh: "智能解读暂时不可用，确定性判断结果仍可正常参考，可稍后重试。",
+                  messageZh: "智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。",
                 }),
           },
-          deterministicFallback,
         );
         applyAiExplainOutcome(outcome, {
           setAiExplanation,
@@ -1196,7 +1131,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
       }
 
       const data = await readApiJsonPayload(response);
-      const outcome = normalizeAiExplainResponse(data, deterministicFallback);
+      const outcome = normalizeAiExplainResponse(data);
       if (outcome.cacheable && outcome.explanation) {
         cacheAiExplanation(cacheKey, outcome.explanation);
       }
@@ -1208,11 +1143,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
       });
       logAiExplanationClientEvent(outcome);
     } catch (error) {
-      const outcome = normalizeAiExplainThrownError(
-        error,
-        deterministicFallback,
-        Date.now() - startedAt,
-      );
+      const outcome = normalizeAiExplainThrownError(error, Date.now() - startedAt);
       applyAiExplainOutcome(outcome, {
         setAiExplanation,
         setAiErrorMessage,
@@ -2381,10 +2312,8 @@ function formatAstroWindowForUi(window: AstroWindowLike): string {
 }
 
 function normalizeAiExplanationErrorMessage(message: string | undefined): string {
-  if (message?.toLowerCase().includes("timeout") || message?.includes("超时")) {
-    return "智能解读暂时超时，确定性判断结果仍可正常参考，可稍后重试。";
-  }
-  return "智能解读暂时不可用，确定性判断结果仍可正常参考，可稍后重试。";
+  void message;
+  return "智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。";
 }
 
 function InvalidQueryCard({ message }: { readonly message?: string }) {
@@ -6736,7 +6665,7 @@ function MockWarningCard({
   );
 }
 
-function AiExplanationPanel({
+export function AiExplanationPanel({
   status,
   explanation,
   errorMessage,
@@ -6749,40 +6678,35 @@ function AiExplanationPanel({
   readonly retryable: boolean;
   readonly onGenerate: () => void;
 }) {
-  const isFallback = explanation?.metadata?.source === "deterministic_fallback";
-  const hasCompletedExplanation =
-    Boolean(explanation) && !isFallback && !retryable && status !== "loading";
+  const visibleExplanation = isDisplayableAiExplanation(explanation) ? explanation : null;
+  const hasCompletedExplanation = Boolean(visibleExplanation) && !retryable && status !== "loading";
   const buttonLabel =
     status === "loading"
-      ? "正在增强解读…"
+      ? "正在生成智能解读..."
       : retryable
-        ? "重试 DeepSeek 解读"
+        ? "重试智能解读"
         : hasCompletedExplanation
           ? "已生成智能解读"
           : "生成智能解读";
 
   return (
-    <Card className="p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+    <Card className="p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-[220px] flex-1">
           <h2 className="text-lg font-bold text-card-foreground">智能解读</h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            仅解释当前确定性结果，不重新计算天气、天文或地形。
+            可手动生成更自然的摄影建议，当前判断结果不依赖 AI。
           </p>
         </div>
-        <Badge variant={isFallback ? "accent" : "muted"}>
-          {isFallback ? "确定性简版" : "手动触发"}
-        </Badge>
+        <Button
+          className="min-w-[132px] shrink-0"
+          variant="secondary"
+          disabled={status === "loading" || hasCompletedExplanation}
+          onClick={onGenerate}
+        >
+          {buttonLabel}
+        </Button>
       </div>
-
-      <Button
-        className="mt-4 w-full"
-        variant="secondary"
-        disabled={status === "loading" || hasCompletedExplanation}
-        onClick={onGenerate}
-      >
-        {buttonLabel}
-      </Button>
 
       {errorMessage ? (
         <p className="mt-3 rounded-lg border border-warning/70 bg-muted px-3 py-2 text-sm leading-6 text-card-foreground">
@@ -6790,69 +6714,64 @@ function AiExplanationPanel({
         </p>
       ) : null}
 
-      {explanation ? (
+      {visibleExplanation ? (
         <div className="mt-4 grid gap-3">
-          {isFallback ? (
-            <p className="rounded-lg border border-border bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground">
-              基于确定性计算结果生成的简版解读。
-            </p>
-          ) : null}
           <AiTextSection title="一句话结论">
             <p className="text-base font-semibold leading-7 text-card-foreground">
-              {explanation.conclusion.oneSentenceDecisionZh}
+              {visibleExplanation.conclusion.oneSentenceDecisionZh}
             </p>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              {explanation.conclusion.summaryZh}
+              {visibleExplanation.conclusion.summaryZh}
             </p>
           </AiTextSection>
           <AiDefinitionGrid
             title="最建议关注"
             items={[
-              ["最建议冲哪一天", explanation.conclusion.recommendedDayZh],
-              ["是否推荐", explanation.conclusion.whetherWorthDedicatedTripZh],
-              ["主目标", explanation.bestPlan.primaryTargetZh],
-              ["建议到达", explanation.bestPlan.recommendedArrivalZh],
-              ["建议窗口", explanation.bestPlan.bestWindowZh],
-              ["备选窗口", explanation.bestPlan.backupPlanZh],
+              ["最建议冲哪一天", visibleExplanation.conclusion.recommendedDayZh],
+              ["是否推荐", visibleExplanation.conclusion.whetherWorthDedicatedTripZh],
+              ["主目标", visibleExplanation.bestPlan.primaryTargetZh],
+              ["建议到达", visibleExplanation.bestPlan.recommendedArrivalZh],
+              ["建议窗口", visibleExplanation.bestPlan.bestWindowZh],
+              ["备选窗口", visibleExplanation.bestPlan.backupPlanZh],
             ]}
           />
           <AiDefinitionGrid
             title="天气大势"
             items={[
-              ["趋势", explanation.weatherTrend.trendSummaryZh],
-              ["温度", explanation.weatherTrend.temperatureSummaryZh],
-              ["降水", explanation.weatherTrend.rainSummaryZh],
-              ["风", explanation.weatherTrend.windSummaryZh],
-              ["通透度", explanation.weatherTrend.transparencySummaryZh],
+              ["趋势", visibleExplanation.weatherTrend.trendSummaryZh],
+              ["温度", visibleExplanation.weatherTrend.temperatureSummaryZh],
+              ["降水", visibleExplanation.weatherTrend.rainSummaryZh],
+              ["风", visibleExplanation.weatherTrend.windSummaryZh],
+              ["通透度", visibleExplanation.weatherTrend.transparencySummaryZh],
             ]}
           />
-          <AiDayByDaySection days={explanation.dayByDay} />
+          <AiDayByDaySection days={visibleExplanation.dayByDay} />
           <AiDefinitionGrid
             title="题材判断"
             items={[
-              ["云海", explanation.subjectAdvice.cloudSeaZh],
-              ["日出 / 朝霞", explanation.subjectAdvice.sunriseGlowZh],
-              ["日落 / 晚霞", explanation.subjectAdvice.sunsetGlowZh],
-              ["星空 / 银河", explanation.subjectAdvice.astroMilkyWayZh],
-              ["通透度", explanation.subjectAdvice.transparencyZh],
+              ["云海", visibleExplanation.subjectAdvice.cloudSeaZh],
+              ["日出 / 朝霞", visibleExplanation.subjectAdvice.sunriseGlowZh],
+              ["日落 / 晚霞", visibleExplanation.subjectAdvice.sunsetGlowZh],
+              ["星空 / 银河", visibleExplanation.subjectAdvice.astroMilkyWayZh],
+              ["通透度", visibleExplanation.subjectAdvice.transparencyZh],
             ]}
           />
-          <AiListSection title="风险与装备" items={explanation.riskAndGear.keyRisks} />
+          <AiListSection title="风险与装备" items={visibleExplanation.riskAndGear.keyRisks} />
           <AiDefinitionGrid
             title="风险与装备建议"
             items={[
-              ["穿衣", explanation.riskAndGear.clothingZh],
-              ["装备", explanation.riskAndGear.gearZh],
-              ["安全", explanation.riskAndGear.safetyZh],
+              ["穿衣", visibleExplanation.riskAndGear.clothingZh],
+              ["装备", visibleExplanation.riskAndGear.gearZh],
+              ["安全", visibleExplanation.riskAndGear.safetyZh],
             ]}
           />
           <AiDefinitionGrid
             title="最终建议"
             items={[
-              ["去不去", explanation.finalAdvice.goNoGoZh],
-              ["已在附近", explanation.finalAdvice.ifAlreadyNearbyZh],
-              ["专程出发", explanation.finalAdvice.ifDedicatedTripZh],
-              ["下次复核", explanation.finalAdvice.nextCheckZh],
+              ["去不去", visibleExplanation.finalAdvice.goNoGoZh],
+              ["已在附近", visibleExplanation.finalAdvice.ifAlreadyNearbyZh],
+              ["专程出发", visibleExplanation.finalAdvice.ifDedicatedTripZh],
+              ["下次复核", visibleExplanation.finalAdvice.nextCheckZh],
             ]}
           />
         </div>
