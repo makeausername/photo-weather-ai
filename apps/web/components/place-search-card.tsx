@@ -96,6 +96,7 @@ type PlaceSearchCardProps = {
   readonly showSelectedLocationActions?: boolean;
   readonly showSelectedLocationHorizon?: boolean;
   readonly showQuickLocations?: boolean;
+  readonly showForecastSectionDivider?: boolean;
   readonly enableCurrentLocation?: boolean;
   readonly currentLocationPrivacyHint?: string;
   readonly selectedLocation?: SelectedLocation | null;
@@ -447,6 +448,7 @@ export function PlaceSearchCard({
   showSelectedLocationActions = false,
   showSelectedLocationHorizon = false,
   showQuickLocations: shouldRenderQuickLocations = true,
+  showForecastSectionDivider = true,
   enableCurrentLocation = false,
   currentLocationPrivacyHint = "浏览器定位仅用于本次天气判断，不会公开显示。",
   selectedLocation,
@@ -732,7 +734,10 @@ export function PlaceSearchCard({
   }, [activeSelectedLocation, activeTarget, horizon]);
 
   return (
-    <Card className={cn("grid min-w-0 gap-4 p-4 shadow-sm", className)}>
+    <Card
+      data-place-search-card="true"
+      className={cn("grid min-w-0 gap-4 p-4 shadow-sm", className)}
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-bold text-card-foreground">{title}</p>
@@ -766,7 +771,7 @@ export function PlaceSearchCard({
       </form>
 
       {showQuickLocationSection ? (
-        <div className="grid gap-2">
+        <div data-quick-location-section="true" className="grid gap-2">
           <p className="text-xs font-semibold text-muted-foreground">常用机位</p>
           <PopularSpotChips onSelect={handleQueryChange} />
         </div>
@@ -885,7 +890,13 @@ export function PlaceSearchCard({
         </div>
       ) : null}
 
-      <div data-forecast-range-section="true" className="grid gap-3 border-t border-border pt-4">
+      <div
+        data-forecast-range-section="true"
+        className={cn(
+          "grid gap-3",
+          showForecastSectionDivider && "border-t border-border pt-4",
+        )}
+      >
         <div className="grid gap-2">
           <p className="text-sm font-semibold text-card-foreground">{horizonLabel}</p>
           <HorizonSelector value={horizon} onChange={setHorizon} />

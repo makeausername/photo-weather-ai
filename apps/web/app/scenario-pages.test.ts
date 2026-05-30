@@ -56,6 +56,16 @@ function countOccurrences(value: string, needle: string): number {
   return value.split(needle).length - 1;
 }
 
+const cloudSeaQuickSpotLabels = ["黄山光明顶", "老君山金顶", "三清山女神峰", "武功山金顶"] as const;
+
+function extractPlaceSearchCardHtml(html: string): string {
+  const cardStart = html.indexOf('data-place-search-card="true"');
+  expect(cardStart).toBeGreaterThanOrEqual(0);
+
+  const guideStart = html.indexOf('data-cloud-sea-pre-result="knowledge-guide"', cardStart);
+  return html.slice(cardStart, guideStart === -1 ? undefined : guideStart);
+}
+
 function subjectDeepLinkParams(
   target: "cloud_sea" | "glow" | "astro",
   overrides: Record<string, string> = {},
@@ -220,15 +230,29 @@ describe("scenario module pages", () => {
     expect(html).not.toMatch(/api[_-]?key|secret|AMAP_|key=/i);
   });
 
-  it("keeps cloud sea manual search and seeded spot chips available", () => {
+  it("removes cloud sea quick spots while keeping search controls available", () => {
     const html = renderToStaticMarkup(React.createElement(CloudSeaPage));
+    const searchCardHtml = extractPlaceSearchCardHtml(html);
 
-    expect(html).toMatch(/<button[^>]*type="submit"[^>]*>搜索地点<\/button>/);
-    expect(html).toContain('aria-label="目的地"');
-    expect(html).toContain("常用机位");
-    expect(html).toContain("黄山光明顶");
-    expect(html).toContain("老君山金顶");
-    expect(html).toContain("查看云海拍摄判断");
+    expect(searchCardHtml).toMatch(/<button[^>]*type="submit"[^>]*>搜索地点<\/button>/);
+    expect(searchCardHtml).toContain('aria-label="目的地"');
+    expect(searchCardHtml).toContain('data-current-location-button="true"');
+    expect(searchCardHtml).toContain("浏览器定位仅用于本次云海判断，不会公开显示。");
+    expect(searchCardHtml).toContain("预报范围选择");
+    expect(searchCardHtml).toContain("未来24小时");
+    expect(searchCardHtml).toContain("未来48小时");
+    expect(searchCardHtml).toContain("未来72小时");
+    expect(searchCardHtml).toContain("未来7天");
+    expect(searchCardHtml).toContain("分析题材");
+    expect(searchCardHtml).toContain("云海");
+    expect(searchCardHtml).toContain("查看云海拍摄判断");
+    expect(searchCardHtml).not.toContain('data-quick-location-section="true"');
+    expect(searchCardHtml).not.toContain("常用机位");
+    expect(searchCardHtml).not.toContain("border-t border-border pt-4");
+    for (const label of cloudSeaQuickSpotLabels) {
+      expect(searchCardHtml).not.toContain(label);
+      expect(hasExactButton(searchCardHtml, label)).toBe(false);
+    }
   });
 
   it("renders the cloud sea pre-result location search panel without result dashboard chrome", () => {

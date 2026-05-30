@@ -346,7 +346,7 @@ export function ScenarioSearchPanel({
     readonly target: ForecastTarget;
   }) => void;
 }) {
-  const enableCloudSeaCurrentLocation = config.target === "cloud_sea";
+  const isCloudSeaSearchPanel = config.target === "cloud_sea";
 
   return (
     <aside className="grid content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]">
@@ -357,12 +357,14 @@ export function ScenarioSearchPanel({
         defaultHorizon={config.defaultHorizon}
         fixedTarget={config.target}
         ctaLabel={config.ctaLabel}
-        selectedLocationDetailMode={enableCloudSeaCurrentLocation ? "compact" : "full"}
-        showSelectedLocationActions={enableCloudSeaCurrentLocation}
-        showSelectedLocationHorizon={enableCloudSeaCurrentLocation}
-        enableCurrentLocation={enableCloudSeaCurrentLocation}
+        selectedLocationDetailMode={isCloudSeaSearchPanel ? "compact" : "full"}
+        showSelectedLocationActions={isCloudSeaSearchPanel}
+        showSelectedLocationHorizon={isCloudSeaSearchPanel}
+        showQuickLocations={!isCloudSeaSearchPanel}
+        showForecastSectionDivider={!isCloudSeaSearchPanel}
+        enableCurrentLocation={isCloudSeaSearchPanel}
         currentLocationPrivacyHint={
-          enableCloudSeaCurrentLocation
+          isCloudSeaSearchPanel
             ? "浏览器定位仅用于本次云海判断，不会公开显示。"
             : undefined
         }
