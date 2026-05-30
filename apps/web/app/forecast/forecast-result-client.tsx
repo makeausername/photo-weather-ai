@@ -3901,7 +3901,7 @@ function CloudSeaProfessionalHourlyDataPanel({
 }) {
   const rows = result.professionalHourlyData ?? [];
   const basis = result.professionalHourlyDataTimeBasis;
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const [filterMode, setFilterMode] = useState<ProfessionalHourlyFilterMode>(() =>
     defaultProfessionalHourlyFilter(result),
   );
@@ -3923,6 +3923,7 @@ function CloudSeaProfessionalHourlyDataPanel({
   const activeFilterLabel =
     professionalHourlyFilters.find((filter) => filter.mode === filterMode)?.label ?? "全部小时";
   const missingHeaderNote = professionalHourlyMissingHeaderNote(rows, basis);
+  const incompleteFieldNote = professionalHourlyIncompleteFieldNote(rows, basis);
   const temperatureColumnLabel = professionalTemperatureColumnLabel(rows, basis);
 
   return (
@@ -3980,9 +3981,9 @@ function CloudSeaProfessionalHourlyDataPanel({
           <CompactDefinition label="缺失说明" value={missingHeaderNote} />
         ) : null}
       </dl>
-      {basis.partialData ? (
+      {incompleteFieldNote && incompleteFieldNote !== missingHeaderNote ? (
         <p className="mt-3 rounded-lg border border-warning/40 bg-accent/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
-          {basis.missingDataNoteZh ?? "部分小时数据缺失，结果仅供复核。"}
+          {incompleteFieldNote}
         </p>
       ) : null}
 
@@ -4245,7 +4246,7 @@ function professionalTemperatureBasisLabel(
     return "机位海拔修正后";
   }
   if (basis === "raw_grid") {
-    return "原始格点，未做机位修正";
+    return "原始格点";
   }
   return "暂无";
 }
@@ -4259,10 +4260,10 @@ function professionalCloudLayerBasisLabel(
     return "总云量 + 低/中/高云分层";
   }
   if (basis === "total_only") {
-    return "仅总云量，缺少低/中/高云分层";
+    return "仅总云量";
   }
   if (basis === "partial_layers") {
-    return "部分云层字段缺失";
+    return "部分字段缺失";
   }
   return "暂无";
 }
@@ -4284,6 +4285,8 @@ function professionalTemperatureColumnLabel(
   return "温度 °C";
 }
 
+const professionalHourlyIncompleteFieldNoteText = "部分小时字段缺失，缺失值以 “—” 显示。";
+
 function professionalHourlyMissingHeaderNote(
   rows: readonly ProfessionalHourlyRow[],
   basis: NonNullable<ForecastCalculationResult["professionalHourlyDataTimeBasis"]>,
@@ -4294,16 +4297,45 @@ function professionalHourlyMissingHeaderNote(
   }
   const hasPartialLayers = rows.some((row) => row.cloudLayerBasis === "partial_layers");
   if (hasPartialLayers) {
-    return "部分小时缺少云层字段，缺失值以 — 显示。";
+    return professionalHourlyIncompleteFieldNoteText;
   }
   const hasRawTemperature = rows.some((row) => row.temperatureBasis === "raw_grid");
   if (hasRawTemperature && basis.temperatureBasis !== "terrain_adjusted") {
     return "温度为原始格点值，未代表机位海拔修正。";
   }
-  if (basis.partialData && basis.missingDataNoteZh) {
-    return basis.missingDataNoteZh;
+  if (basis.partialData) {
+    return professionalHourlyIncompleteFieldNoteText;
   }
   return null;
+}
+
+function professionalHourlyIncompleteFieldNote(
+  rows: readonly ProfessionalHourlyRow[],
+  basis: NonNullable<ForecastCalculationResult["professionalHourlyDataTimeBasis"]>,
+): string | null {
+  if (basis.partialData || rows.some(professionalHourlyRowHasIncompleteFields)) {
+    return professionalHourlyIncompleteFieldNoteText;
+  }
+  return null;
+}
+
+function professionalHourlyRowHasIncompleteFields(row: ProfessionalHourlyRow): boolean {
+  return (
+    (row.missingFields?.length ?? 0) > 0 ||
+    row.cloudTotalPercent === null ||
+    row.cloudHighPercent === null ||
+    row.cloudMidPercent === null ||
+    row.cloudLowPercent === null ||
+    row.displayedTemperatureC === null ||
+    row.dewPointC === null ||
+    row.dewPointSpreadC === null ||
+    row.relativeHumidityPercent === null ||
+    row.precipitationAmountMm === null ||
+    row.precipitationProbabilityPercent === null ||
+    row.visibilityMeters === null ||
+    row.windSpeedMs === null ||
+    row.windDirectionDeg === null
+  );
 }
 
 function ProfessionalHourlyCell({

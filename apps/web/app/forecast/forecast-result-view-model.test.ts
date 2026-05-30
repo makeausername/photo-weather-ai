@@ -4061,7 +4061,7 @@ describe("forecast result target-aware view model", () => {
     }
   });
 
-  it("renders professional hourly data after the cloud sea timeline with focused rows", () => {
+  it("renders professional hourly data after the cloud sea timeline as a visible focused table", () => {
     const result = resultWithProfessionalHourlyData();
     const viewModel = buildCloudSeaForecastViewModel(result);
     const html = renderToStaticMarkup(
@@ -4078,9 +4078,9 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("CloudSeaProfessionalHourlyData");
     expect(html).toContain("专业小时数据");
     expect(html).toContain("专业参考");
-    expect(html).toContain('data-professional-hourly-expanded="false"');
-    expect(html).toContain('data-cloud-sea-hourly-preview="true"');
-    expect(html).toContain("默认聚焦云海窗口附近小时");
+    expect(html).toContain('data-professional-hourly-expanded="true"');
+    expect(html).not.toContain('data-cloud-sea-hourly-preview="true"');
+    expect(html).not.toContain("mt-4 grid gap-3 hidden");
     expect(html).toContain(
       "低云、中云、高云、湿度、露点、降水、能见度和风速用于人工复核云海形成与白墙风险。",
     );
@@ -4095,7 +4095,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("云量口径");
     expect(html).toContain("总云量 + 低/中/高云分层");
     expect(html).toContain("缺失说明");
-    expect(html).toContain("部分小时数据缺失，结果仅供复核。");
+    expect(html).toContain("部分小时字段缺失，缺失值以 “—” 显示。");
     expect(html).toContain("全部小时");
     expect(html).toContain("只看云海窗口");
     expect(html).toContain("只看清晨窗口");
@@ -4133,6 +4133,7 @@ describe("forecast result target-aware view model", () => {
     expect(html.indexOf("CloudSeaProfessionalHourlyData")).toBeLessThan(
       html.indexOf("CloudSeaDailyTrend"),
     );
+    expect(html.indexOf("专业小时数据")).toBeLessThan(html.indexOf("每日云海判断"));
   });
 
   it("keeps the General Forecast return path without unrelated cloud sea subject links", () => {
@@ -4184,9 +4185,13 @@ describe("forecast result target-aware view model", () => {
 
     expect(html).not.toContain("meteoblue");
     expect(html).toMatch(/data-professional-hourly-cell="weather">[\s\S]*?<span>—<\/span>/);
+    expect(html).toMatch(/data-professional-hourly-cell="cloud-total"[^>]*>88%<\/td>/);
     expect(html).toMatch(/data-professional-hourly-cell="cloud-low">—<\/td>/);
     expect(html).toMatch(/data-professional-hourly-cell="cloud-mid">—<\/td>/);
     expect(html).toMatch(/data-professional-hourly-cell="cloud-high">—<\/td>/);
+    expect(html).not.toMatch(/data-professional-hourly-cell="cloud-low"[^>]*>(88|42)%<\/td>/);
+    expect(html).not.toMatch(/data-professional-hourly-cell="cloud-mid"[^>]*>(88|42)%<\/td>/);
+    expect(html).not.toMatch(/data-professional-hourly-cell="cloud-high"[^>]*>(88|42)%<\/td>/);
     expect(html).toMatch(/data-professional-hourly-cell="dew-point">—<\/td>/);
     expect(html).toMatch(/data-professional-hourly-cell="dew-point-spread">—<\/td>/);
     expect(html).toMatch(/data-professional-hourly-cell="visibility">—<\/td>/);
@@ -4194,6 +4199,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toMatch(/data-professional-hourly-cell="wind-direction">—<\/td>/);
     expect(html).toContain("0 mm / —");
     expect(html).toContain("低/中/高云分层缺失时以 — 显示，不用总云量回填。");
+    expect(html).toContain("部分小时字段缺失，缺失值以 “—” 显示。");
   });
 
   it("shows raw grid temperature basis and review signal when layer data is insufficient", () => {
@@ -4239,9 +4245,9 @@ describe("forecast result target-aware view model", () => {
     );
 
     expect(html).toContain("温度口径");
-    expect(html).toContain("原始格点，未做机位修正");
+    expect(html).toContain("原始格点");
     expect(html).toContain("云量口径");
-    expect(html).toContain("仅总云量，缺少低/中/高云分层");
+    expect(html).toContain("仅总云量");
     expect(html).toContain("原始格点温度 °C");
     expect(html).toContain("需复核");
     expect(html).not.toContain("白墙风险</span>");
