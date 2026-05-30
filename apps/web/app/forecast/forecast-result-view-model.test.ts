@@ -11,7 +11,10 @@ import {
   AiExplanationPanel,
   ComprehensiveForecastView,
   AstroResultPage,
+  CloudSeaErrorDashboard,
+  CloudSeaLoadingDashboard,
   CloudSeaResultPage,
+  ForecastResultClient,
   GlowResultPage,
   SourceDiagnosticsPanel,
   aiExplainFrontendTimeoutMs,
@@ -21,6 +24,7 @@ import {
   normalizeAiExplainResponse,
   providerDiagnosticText,
   readCachedAiExplanation,
+  resolveForecastPageMode,
   shouldStartAiExplanationRequest,
 } from "./forecast-result-client";
 import {
@@ -4003,6 +4007,94 @@ describe("forecast result target-aware view model", () => {
     ]);
   });
 
+  it("resolves the Cloud Sea forecast page into explicit search, loading, result, and error modes", () => {
+    const query = queryForTarget("cloud_sea");
+
+    expect(resolveForecastPageMode({ query: null, status: "idle", hasResult: false })).toBe(
+      "search",
+    );
+    expect(resolveForecastPageMode({ query, status: "loading", hasResult: false })).toBe(
+      "loading",
+    );
+    expect(resolveForecastPageMode({ query, status: "ready", hasResult: true })).toBe("result");
+    expect(resolveForecastPageMode({ query, status: "error", hasResult: false })).toBe("error");
+  });
+
+  it("renders Cloud Sea loading as a full-width page without the left query/sidebar panel", () => {
+    const query = queryForTarget("cloud_sea");
+    const html = renderToStaticMarkup(React.createElement(ForecastResultClient, { query }));
+
+    expect(html).toContain('data-cloud-sea-page-mode="loading"');
+    expect(html).toContain('data-cloud-sea-loading="full-width"');
+    expect(html).toContain('data-cloud-sea-loading-card="true"');
+    expect(html).toContain("云海拍摄判断");
+    expect(html).toContain("正在生成云海拍摄判断");
+    expect(html).toContain("黄山光明顶");
+    expect(html).toContain("未来48小时");
+    expect(html).not.toContain("<aside");
+    expect(html).not.toContain("地点 / 查询");
+    expect(html).not.toContain("地点与预报范围");
+    expect(html).not.toContain("当前位置");
+    expect(html).not.toContain("当前地点");
+    expect(html).not.toContain("已选地点");
+    expect(html).not.toContain("所在地点");
+    expect(html).not.toContain("预报范围");
+    expect(html).not.toContain("坐标信息");
+    expect(html).not.toContain("WGS84");
+    expect(html).not.toContain("GCJ-02");
+    expect(html).not.toContain("经度");
+    expect(html).not.toContain("纬度");
+    expect(html).not.toContain("latitude");
+    expect(html).not.toContain("longitude");
+    expect(html).not.toContain("30.13012");
+    expect(html).not.toContain("118.16389");
+  });
+
+  it("keeps the exported Cloud Sea loading card free of sidebar and coordinate output", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaLoadingDashboard, {
+        context: queryForTarget("cloud_sea"),
+      }),
+    );
+
+    expect(html).toContain('data-cloud-sea-page-mode="loading"');
+    expect(html).toContain("重新选择地点");
+    expect(html).not.toContain("<aside");
+    expect(html).not.toContain("地点 / 查询");
+    expect(html).not.toContain("坐标信息");
+    expect(html).not.toContain("WGS84");
+    expect(html).not.toContain("latitude");
+    expect(html).not.toContain("longitude");
+  });
+
+  it("renders Cloud Sea error as a full-width retry card without the left sidebar", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaErrorDashboard, {
+        query: queryForTarget("cloud_sea"),
+        message: "网络暂时不可用。",
+      }),
+    );
+
+    expect(html).toContain('data-cloud-sea-page-mode="error"');
+    expect(html).toContain('data-cloud-sea-error="full-width"');
+    expect(html).toContain("云海判断生成失败");
+    expect(html).toContain("网络暂时不可用。");
+    expect(html).toContain("重新选择地点");
+    expect(html).toContain("重新判断");
+    expect(html).not.toContain("<aside");
+    expect(html).not.toContain("地点 / 查询");
+    expect(html).not.toContain("地点与预报范围");
+    expect(html).not.toContain("当前地点");
+    expect(html).not.toContain("预报范围");
+    expect(html).not.toContain("坐标信息");
+    expect(html).not.toContain("WGS84");
+    expect(html).not.toContain("GCJ-02");
+    expect(html).not.toContain("经度");
+    expect(html).not.toContain("纬度");
+    expect(html).not.toContain("30.13012");
+    expect(html).not.toContain("118.16389");
+  });
+
   it("renders the cloud sea result as a full-width dashboard without the entry-page search/sidebar", () => {
     const result = resultForTarget("cloud_sea");
     const viewModel = buildCloudSeaForecastViewModel(result);
@@ -4049,6 +4141,7 @@ describe("forecast result target-aware view model", () => {
       expect(html).not.toContain("地点与预报范围");
       expect(html).not.toContain("当前地点");
       expect(html).not.toContain("更换地点");
+      expect(html).not.toContain("预报范围");
       expect(html).toContain("重新选择地点");
       expect(html).toContain("重新判断");
       expect(html.indexOf("重新判断")).toBeGreaterThan(html.indexOf("CloudSeaHeroConclusion"));

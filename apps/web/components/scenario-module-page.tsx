@@ -82,6 +82,8 @@ export function ScenarioModulePage({ config }: { readonly config: ScenarioPageCo
 }
 
 function CloudSeaScenarioEntryPage({ config }: { readonly config: ScenarioPageConfig }) {
+  const pageMode = "search";
+
   return (
     <PublicShell contentClassName="grid gap-6 pb-14">
       <header className="border-b border-border pb-5">
@@ -96,8 +98,11 @@ function CloudSeaScenarioEntryPage({ config }: { readonly config: ScenarioPageCo
         </div>
       </header>
 
-      <section className="grid gap-5 min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(340px,24vw,410px)_minmax(0,1fr)] min-[1200px]:items-start">
-        <ScenarioSearchPanel config={config} />
+      <section
+        className="grid gap-5 min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(340px,24vw,410px)_minmax(0,1fr)] min-[1200px]:items-start"
+        data-cloud-sea-page-mode={pageMode}
+      >
+        {pageMode === "search" ? <ScenarioSearchPanel config={config} /> : null}
         <CloudSeaKnowledgeGuide config={config} />
       </section>
     </PublicShell>
@@ -349,7 +354,10 @@ export function ScenarioSearchPanel({
   const isCloudSeaSearchPanel = config.target === "cloud_sea";
 
   return (
-    <aside className="grid content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]">
+    <aside
+      className="grid content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]"
+      data-cloud-sea-section={isCloudSeaSearchPanel ? "CloudSeaSearchPanel" : undefined}
+    >
       <PlaceSearchCard
         title="地点搜索与机位选择"
         description="选择景区、城市或具体机位后进入对应题材判断。"

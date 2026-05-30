@@ -153,6 +153,8 @@ describe("scenario module pages", () => {
     expect(html).not.toContain("云海判断重点");
     expect(html).not.toContain("白墙风险说明");
     expect(html).not.toContain("判断指标");
+    expect(html).toContain('data-cloud-sea-page-mode="search"');
+    expect(html).toContain('data-cloud-sea-section="CloudSeaSearchPanel"');
     expect(html).toContain("地点搜索与机位选择");
     expect(html).toContain('data-cloud-sea-pre-result="knowledge-guide"');
     expect(html).toContain("云海判断需要关注什么");
@@ -366,7 +368,17 @@ describe("scenario module pages", () => {
     expect(html).toContain("05:00");
     expect(html).toContain("返回综合判断");
     expect(html).toContain('href="/forecast?target=general"');
+    expect(html).toContain('data-cloud-sea-page-mode="loading"');
+    expect(html).toContain('data-cloud-sea-loading="full-width"');
+    expect(html).toContain("云海拍摄判断");
     expect(html).not.toContain("地点搜索与机位选择");
+    expect(html).not.toContain("坐标信息");
+    expect(html).not.toContain("WGS84");
+    expect(html).not.toContain("GCJ-02");
+    expect(html).not.toContain("经度");
+    expect(html).not.toContain("纬度");
+    expect(html).not.toContain("30.1328");
+    expect(html).not.toContain("118.171");
   });
 
   it("renders the glow entry page without the popular spot placeholder", () => {

@@ -9,8 +9,11 @@ import type {
 import { forecastHorizonLabels } from "@photo-weather/shared";
 import {
   AstroResultPage,
+  CloudSeaErrorDashboard,
+  CloudSeaLoadingDashboard,
   CloudSeaResultPage,
   GlowResultPage,
+  type CloudSeaProgressContext,
 } from "../app/forecast/forecast-result-client";
 import { buildForecastResultViewModel } from "../app/forecast/forecast-result-view-model";
 import {
@@ -70,6 +73,8 @@ export function SubjectDetailDeepLinkClient({
   const [state, setState] = useState<LoadState>(initialState);
   const context =
     parsed.kind === "ready" ? parsed.context : parsed.kind === "invalid" ? parsed.context : undefined;
+  const cloudSeaFallbackQuery =
+    target === "cloud_sea" && parsed.kind === "ready" ? parsed.fallbackQuery : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -150,19 +155,27 @@ export function SubjectDetailDeepLinkClient({
       {context ? <GeneralSourceContextBar context={context} query={queryForContext(state)} /> : null}
 
       {state.status === "loading" ? (
-        <Card className="p-5 shadow-sm">
-          <div className="flex items-center gap-3 text-sm font-semibold text-card-foreground">
-            <span className="h-2.5 w-2.5 rounded-full bg-primary" />
-            正在读取综合判断上下文...
-          </div>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            页面会优先复用综合判断结果；如果本地上下文不可用，将使用链接中的地点和日期重新生成专项判断。
-          </p>
-        </Card>
+        target === "cloud_sea" ? (
+          <CloudSeaLoadingDashboard context={cloudSeaProgressContext(parsed, context)} />
+        ) : (
+          <Card className="p-5 shadow-sm">
+            <div className="flex items-center gap-3 text-sm font-semibold text-card-foreground">
+              <span className="h-2.5 w-2.5 rounded-full bg-primary" />
+              正在读取综合判断上下文...
+            </div>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              页面会优先复用综合判断结果；如果本地上下文不可用，将使用链接中的地点和日期重新生成专项判断。
+            </p>
+          </Card>
+        )
       ) : null}
 
       {state.status === "invalid" || state.status === "error" ? (
-        <SubjectContextFallbackCard message={state.message} target={target} />
+        state.status === "error" && cloudSeaFallbackQuery ? (
+          <CloudSeaErrorDashboard query={cloudSeaFallbackQuery} message={state.message} />
+        ) : (
+          <SubjectContextFallbackCard message={state.message} target={target} />
+        )
       ) : null}
 
       {state.status === "ready" ? (
@@ -175,6 +188,20 @@ export function SubjectDetailDeepLinkClient({
       ) : null}
     </PublicShell>
   );
+}
+
+function cloudSeaProgressContext(
+  parsed: SubjectDetailDeepLinkParseResult,
+  context: Partial<SubjectDetailDeepLinkContext> | undefined,
+): CloudSeaProgressContext {
+  if (parsed.kind === "ready" && parsed.fallbackQuery) {
+    return parsed.fallbackQuery;
+  }
+
+  return {
+    name: context?.location?.locationName ?? "地点待确认",
+    horizon: context?.horizon,
+  };
 }
 
 function SubjectResultContent({

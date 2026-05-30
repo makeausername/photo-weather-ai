@@ -13,6 +13,7 @@ import {
   terrainModeUsesMountainSemantics,
   type AstroWindow,
   type ForecastCalculationResult,
+  type ForecastHorizon,
   type ForecastQueryInput,
   type ForecastRiskFlag,
   type ForecastScore,
@@ -70,9 +71,16 @@ type ForecastResultClientProps = {
   readonly invalidReason?: string;
 };
 
-type LoadStatus = "idle" | "loading" | "ready" | "error";
+export type LoadStatus = "idle" | "loading" | "ready" | "error";
 
 type AiStatus = "idle" | "loading" | "ready" | "error";
+
+export type ForecastPageMode = "search" | "loading" | "result" | "error";
+
+export type CloudSeaProgressContext = {
+  readonly name: string;
+  readonly horizon?: ForecastHorizon;
+};
 
 type ForecastAiExplanation = {
   readonly conclusion: {
@@ -971,6 +979,30 @@ function numericField(value: unknown, key: string): number | undefined {
   return typeof field === "number" && Number.isFinite(field) ? field : undefined;
 }
 
+export function resolveForecastPageMode({
+  query,
+  status,
+  hasResult,
+}: {
+  readonly query: ForecastQueryInput | null;
+  readonly status: LoadStatus;
+  readonly hasResult: boolean;
+}): ForecastPageMode {
+  if (!query) {
+    return "search";
+  }
+  if (status === "loading") {
+    return "loading";
+  }
+  if (status === "error") {
+    return "error";
+  }
+  if (hasResult || status === "ready") {
+    return "result";
+  }
+  return "search";
+}
+
 export function ForecastResultClient({ query, invalidReason }: ForecastResultClientProps) {
   const [status, setStatus] = useState<LoadStatus>(query ? "loading" : "idle");
   const [result, setResult] = useState<ForecastCalculationResult | null>(null);
@@ -983,13 +1015,19 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
   const aiAbortControllerRef = useRef<AbortController | null>(null);
 
   const queryKey = useMemo(() => (query ? JSON.stringify(query) : ""), [query]);
-  const shellCopy = getForecastResultPageShellCopy(query?.target ?? result?.target ?? "general");
+  const activeTarget = query?.target ?? result?.target ?? "general";
+  const shellCopy = getForecastResultPageShellCopy(activeTarget);
+  const pageMode = resolveForecastPageMode({
+    query,
+    status,
+    hasResult: result !== null,
+  });
+  const isCloudSeaFlow = activeTarget === "cloud_sea";
   const usesSpecializedResultHeader =
-    (query?.target === "general" ||
-      query?.target === "cloud_sea" ||
-      query?.target === "glow" ||
-      query?.target === "astro") &&
-    result !== null;
+    isCloudSeaFlow && query
+      ? true
+      : (activeTarget === "general" || activeTarget === "glow" || activeTarget === "astro") &&
+        result !== null;
 
   useEffect(() => {
     if (!query) {
@@ -1205,18 +1243,28 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
 
       {!query ? <InvalidQueryCard message={invalidReason} /> : null}
 
-      {query && status === "loading" ? <LoadingDashboard query={query} /> : null}
-
-      {query && status === "error" ? (
-        <DashboardFrame query={query}>
-          <Card className="border-danger p-5 shadow-sm">
-            <h2 className="text-lg font-bold text-danger">分析失败</h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{errorMessage}</p>
-          </Card>
-        </DashboardFrame>
+      {query && pageMode === "loading" ? (
+        isCloudSeaFlow ? (
+          <CloudSeaLoadingDashboard context={query} />
+        ) : (
+          <LoadingDashboard query={query} />
+        )
       ) : null}
 
-      {query && result ? (
+      {query && pageMode === "error" ? (
+        isCloudSeaFlow ? (
+          <CloudSeaErrorDashboard query={query} message={errorMessage} />
+        ) : (
+          <DashboardFrame query={query}>
+            <Card className="border-danger p-5 shadow-sm">
+              <h2 className="text-lg font-bold text-danger">分析失败</h2>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">{errorMessage}</p>
+            </Card>
+          </DashboardFrame>
+        )
+      ) : null}
+
+      {query && result && pageMode === "result" ? (
         <ForecastResultView
           query={query}
           result={result}
@@ -1268,6 +1316,114 @@ function LoadingDashboard({ query }: { readonly query: ForecastQueryInput }) {
       </Card>
     </DashboardFrame>
   );
+}
+
+export function CloudSeaLoadingDashboard({
+  context,
+}: {
+  readonly context: CloudSeaProgressContext;
+}) {
+  const horizonLabel = cloudSeaProgressHorizonLabel(context);
+
+  return (
+    <section
+      className="grid w-full min-w-0 gap-5"
+      data-cloud-sea-loading="full-width"
+      data-cloud-sea-page-mode="loading"
+    >
+      <Card className="p-5 shadow-sm" data-cloud-sea-loading-card="true">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="default">云海</Badge>
+          <Badge variant="muted">{horizonLabel}</Badge>
+        </div>
+        <h1 className="mt-3 text-2xl font-bold leading-tight text-card-foreground sm:text-[28px]">
+          云海拍摄判断
+        </h1>
+        <div className="mt-4 flex items-center gap-3 text-sm font-semibold text-card-foreground">
+          <span className="h-2.5 w-2.5 rounded-full bg-primary" />
+          正在生成云海拍摄判断...
+        </div>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+          正在结合天气、地形、云层和光线窗口生成判断。
+        </p>
+        <dl className="mt-4 grid gap-2 rounded-lg border border-border bg-muted p-3 text-sm min-[720px]:grid-cols-2">
+          <CompactDefinition label="地点" value={context.name} />
+          <CompactDefinition label="时间范围" value={horizonLabel} />
+        </dl>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="mt-4"
+          onClick={() => {
+            window.location.assign("/cloud-sea");
+          }}
+        >
+          重新选择地点
+        </Button>
+      </Card>
+    </section>
+  );
+}
+
+export function CloudSeaErrorDashboard({
+  query,
+  message,
+}: {
+  readonly query: ForecastQueryInput;
+  readonly message: string;
+}) {
+  const horizonLabel = cloudSeaProgressHorizonLabel(query);
+
+  return (
+    <section
+      className="grid w-full min-w-0 gap-5"
+      data-cloud-sea-error="full-width"
+      data-cloud-sea-page-mode="error"
+    >
+      <Card className="border-danger p-5 shadow-sm" data-cloud-sea-error-card="true">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="danger">云海</Badge>
+          <Badge variant="muted">{horizonLabel}</Badge>
+        </div>
+        <h1 className="mt-3 text-2xl font-bold leading-tight text-card-foreground sm:text-[28px]">
+          云海拍摄判断
+        </h1>
+        <h2 className="mt-4 text-lg font-bold text-danger">云海判断生成失败</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{message}</p>
+        <dl className="mt-4 grid gap-2 rounded-lg border border-border bg-muted p-3 text-sm min-[720px]:grid-cols-2">
+          <CompactDefinition label="地点" value={query.name} />
+          <CompactDefinition label="时间范围" value={horizonLabel} />
+        </dl>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              window.location.assign("/cloud-sea");
+            }}
+          >
+            重新选择地点
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              window.location.assign(buildForecastUrlFromForecastQuery(query));
+            }}
+          >
+            重新判断
+          </Button>
+        </div>
+      </Card>
+    </section>
+  );
+}
+
+function cloudSeaProgressHorizonLabel(context: CloudSeaProgressContext): string {
+  return context.horizon ? forecastHorizonLabels[context.horizon] : "时间范围待确认";
 }
 
 function QuerySummaryPanel({ query }: { readonly query: ForecastQueryInput }) {
@@ -2461,6 +2617,7 @@ export function CloudSeaResultPage({
     <section
       className="CloudSeaResultPage cloud-sea-result-page grid gap-5"
       data-cloud-sea-section="CloudSeaResultPage"
+      data-cloud-sea-page-mode="result"
     >
       <main
         className="CloudSeaStackedLayout cloud-sea-result-stack grid w-full min-w-0 gap-5"
@@ -3648,7 +3805,7 @@ function CloudSeaHeroConclusion({
             {hero.conclusion}
           </p>
           <div className="mt-4 flex flex-wrap gap-2 text-xs leading-5 text-muted-foreground">
-            <span>预报范围：{hero.forecastRangeLabel}</span>
+            <span>时间范围：{hero.forecastRangeLabel}</span>
             <span>生成时间：{formatDateTime(result.generatedAt)}</span>
             <span>当前置信度：{hero.confidenceLabel}</span>
           </div>
