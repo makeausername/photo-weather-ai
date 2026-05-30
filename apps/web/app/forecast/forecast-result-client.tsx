@@ -67,17 +67,17 @@ import {
 } from "./subject-detail-links";
 import {
   ActionPlanGrid,
-  CurrentWeatherSection,
-  DailyDecisionSection,
+  CurrentWeatherCards,
+  DailyDecisionList,
+  ForecastDecisionPageShell,
+  ForecastErrorState,
+  ForecastLoadingState,
+  ForecastMetricCard,
+  ForecastMetricGrid,
+  ForecastResultHeader,
+  ForecastResultSummaryCard,
+  ForecastScoreCard,
   JudgmentBasisGrid,
-  ResultDashboardShell,
-  ResultHeaderRow,
-  ResultHeaderSummaryCard,
-  ResultMetricCard,
-  ResultMetricGrid,
-  ResultPageErrorState,
-  ResultPageLoadingState,
-  ResultScoreCard,
 } from "./result-dashboard-components";
 
 type ForecastResultClientProps = {
@@ -1340,35 +1340,24 @@ export function CloudSeaLoadingDashboard({
   const horizonLabel = cloudSeaProgressHorizonLabel(context);
 
   return (
-    <ResultPageLoadingState
+    <ForecastDecisionPageShell
       target="cloud_sea"
-      badges={[
-        { label: "云海", variant: "default" },
-        { label: horizonLabel, variant: "muted" },
-      ]}
-      title="云海拍摄判断"
-      message="正在生成云海拍摄判断..."
-      description="正在结合天气、地形、云层和光线窗口生成判断。"
-      details={[
-        { label: "地点", value: context.name },
-        { label: "时间范围", value: horizonLabel },
-      ]}
-      action={
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={() => {
-            window.location.assign("/cloud-sea");
-          }}
-        >
-          重新选择地点
-        </Button>
-      }
-      dataCloudSeaLoading="full-width"
       dataCloudSeaPageMode="loading"
-      dataCloudSeaLoadingCard="true"
-    />
+      dataTestId="cloud-sea-shared-loading-shell"
+    >
+      <ForecastLoadingState
+        target="cloud_sea"
+        badges={[
+          { label: "云海", variant: "default" },
+          { label: horizonLabel, variant: "muted" },
+        ]}
+        title="云海拍摄判断"
+        message="正在生成云海拍摄判断..."
+        description="正在结合天气、地形、云层和光线窗口生成判断。"
+        dataCloudSeaLoading="full-width"
+        dataCloudSeaPageMode="loading"
+      />
+    </ForecastDecisionPageShell>
   );
 }
 
@@ -1382,47 +1371,48 @@ export function CloudSeaErrorDashboard({
   const horizonLabel = cloudSeaProgressHorizonLabel(query);
 
   return (
-    <ResultPageErrorState
+    <ForecastDecisionPageShell
       target="cloud_sea"
-      badges={[
-        { label: "云海", variant: "danger" },
-        { label: horizonLabel, variant: "muted" },
-      ]}
-      title="云海拍摄判断"
-      message="云海判断生成失败"
-      description={message}
-      details={[
-        { label: "地点", value: query.name },
-        { label: "时间范围", value: horizonLabel },
-      ]}
-      actions={
-        <>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              window.location.assign("/cloud-sea");
-            }}
-          >
-            重新选择地点
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              window.location.assign(buildForecastUrlFromForecastQuery(query));
-            }}
-          >
-            重新判断
-          </Button>
-        </>
-      }
-      dataCloudSeaError="full-width"
       dataCloudSeaPageMode="error"
-      dataCloudSeaErrorCard="true"
-    />
+      dataTestId="cloud-sea-shared-error-shell"
+    >
+      <ForecastErrorState
+        target="cloud_sea"
+        badges={[
+          { label: "云海", variant: "danger" },
+          { label: horizonLabel, variant: "muted" },
+        ]}
+        title="云海拍摄判断"
+        message="云海判断生成失败"
+        description={message}
+        actions={
+          <>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                window.location.assign("/cloud-sea");
+              }}
+            >
+              重新选择地点
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                window.location.assign(buildForecastUrlFromForecastQuery(query));
+              }}
+            >
+              重新判断
+            </Button>
+          </>
+        }
+        dataCloudSeaError="full-width"
+        dataCloudSeaPageMode="error"
+      />
+    </ForecastDecisionPageShell>
   );
 }
 
@@ -1487,7 +1477,7 @@ function WeatherEssentialsPanel({ result }: { readonly result: ForecastCalculati
   const timeContext = buildNearTermWeatherTimeContext(result);
 
   return (
-    <CurrentWeatherSection target="general" dataTestId="near-term-weather">
+    <CurrentWeatherCards target="general" dataTestId="near-term-weather">
       <SectionHeading
         title={`当前与近时段天气（${timeContext.sectionWindowLabel}）`}
         description={timeContext.description}
@@ -1545,7 +1535,7 @@ function WeatherEssentialsPanel({ result }: { readonly result: ForecastCalculati
           detail={packingDetail(clothing)}
         />
       </div>
-    </CurrentWeatherSection>
+    </CurrentWeatherCards>
   );
 }
 
@@ -2618,16 +2608,13 @@ export function CloudSeaResultPage({
   readonly returnUrl?: string;
 }) {
   return (
-    <ResultDashboardShell
+    <ForecastDecisionPageShell
       target="cloud_sea"
       className="CloudSeaResultPage cloud-sea-result-page grid gap-5"
       dataCloudSeaSection="CloudSeaResultPage"
       dataCloudSeaPageMode="result"
     >
-      <main
-        className="CloudSeaStackedLayout cloud-sea-result-stack grid w-full min-w-0 gap-5"
-        data-cloud-sea-section="CloudSeaStackedLayout"
-      >
+      <main className="grid w-full min-w-0 gap-5" data-forecast-decision-layout="stacked">
         <CloudSeaTopResultHeader query={query} hero={viewModel.hero} result={result} />
         <CloudSeaMetricCards
           hero={viewModel.hero}
@@ -2645,7 +2632,7 @@ export function CloudSeaResultPage({
         {viewModel.dataCaution ? <CloudSeaInlineCaution text={viewModel.dataCaution} /> : null}
         {returnUrl ? <CloudSeaReturnLink href={returnUrl} /> : null}
       </main>
-    </ResultDashboardShell>
+    </ForecastDecisionPageShell>
   );
 }
 
@@ -3773,14 +3760,14 @@ function CloudSeaTopResultHeader({
   readonly result: ForecastCalculationResult;
 }) {
   return (
-    <ResultHeaderRow
+    <ForecastResultHeader
       target="cloud_sea"
       className="CloudSeaTopResultHeader grid gap-4 min-[880px]:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] min-[880px]:items-stretch"
       dataCloudSeaSection="CloudSeaTopResultHeader"
     >
       <CloudSeaHeroConclusion query={query} hero={hero} result={result} />
       <CloudSeaScoreCard hero={hero} result={result} />
-    </ResultHeaderRow>
+    </ForecastResultHeader>
   );
 }
 
@@ -3794,7 +3781,7 @@ function CloudSeaHeroConclusion({
   readonly result: ForecastCalculationResult;
 }) {
   return (
-    <ResultHeaderSummaryCard
+    <ForecastResultSummaryCard
       target="cloud_sea"
       className="CloudSeaHeroConclusion cloud-sea-hero-conclusion h-full p-5 shadow-sm"
     >
@@ -3842,7 +3829,7 @@ function CloudSeaHeroConclusion({
           </Button>
         </div>
       </div>
-    </ResultHeaderSummaryCard>
+    </ForecastResultSummaryCard>
   );
 }
 
@@ -3897,7 +3884,7 @@ function CloudSeaScoreCard({
   const score = clampScorePercent(result.cloudSeaAnalysis.shootableScore);
 
   return (
-    <ResultScoreCard
+    <ForecastScoreCard
       target="cloud_sea"
       className="CloudSeaScoreCard grid h-full content-between gap-4 p-5 shadow-sm"
       dataCloudSeaSection="CloudSeaScoreCard"
@@ -3940,17 +3927,17 @@ function CloudSeaMetricCards({
   const decisionCards = cloudSeaDecisionCards(hero, result, cards, riskSummary);
 
   return (
-    <ResultMetricGrid
+    <ForecastMetricGrid
       target="cloud_sea"
       className="cloud-sea-core-metrics grid items-stretch gap-3 sm:grid-cols-2 min-[1180px]:grid-cols-3"
       dataCloudSeaSection="CloudSeaCoreMetrics"
     >
       {decisionCards.map((card) => (
-        <ResultMetricCard key={card.key} target="cloud_sea" dataCloudSeaMetricCard>
+        <ForecastMetricCard key={card.key} target="cloud_sea" dataCloudSeaMetricCard>
           <PrimaryResultCard card={card} />
-        </ResultMetricCard>
+        </ForecastMetricCard>
       ))}
-    </ResultMetricGrid>
+    </ForecastMetricGrid>
   );
 }
 
@@ -4081,7 +4068,7 @@ function CloudSeaNearTermWeatherSection({
   const auxiliaryNotice = cloudSeaAuxiliaryDataNotice(result);
 
   return (
-    <CurrentWeatherSection
+    <CurrentWeatherCards
       target="cloud_sea"
       className="CloudSeaNearTermWeather grid gap-3"
       dataCloudSeaSection="CloudSeaNearTermWeather"
@@ -4144,7 +4131,7 @@ function CloudSeaNearTermWeatherSection({
           detail={packingDetail(clothing)}
         />
       </div>
-    </CurrentWeatherSection>
+    </CurrentWeatherCards>
   );
 }
 
@@ -4992,55 +4979,61 @@ function CloudSeaDailyTrend({
   const title = result.calendarBasis.horizonHours <= 24 ? "未来24小时云海判断" : "每日云海判断";
 
   return (
-    <Card className="CloudSeaDailyTrend cloud-sea-daily-trend p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-bold text-card-foreground">{title}</h2>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            每天只保留云海形成、可拍、白墙、最佳窗口和雨后开口信号。
-          </p>
+    <DailyDecisionList
+      target="cloud_sea"
+      dataCloudSeaSection="CloudSeaDailyTrend"
+      dataTestId="cloud-sea-daily-decision"
+    >
+      <Card className="CloudSeaDailyTrend cloud-sea-daily-trend p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-card-foreground">{title}</h2>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              每天只保留云海形成、可拍、白墙、最佳窗口和雨后开口信号。
+            </p>
+          </div>
+          <Badge variant="muted">{forecastHorizonLabels[result.horizon]}</Badge>
         </div>
-        <Badge variant="muted">{forecastHorizonLabels[result.horizon]}</Badge>
-      </div>
-      <div className="mt-4 grid gap-2">
-        {items.map((item) => (
-          <article
-            key={item.key}
-            className="grid gap-3 rounded-lg border border-border bg-muted p-3 min-[900px]:grid-cols-[minmax(150px,0.8fr)_minmax(175px,1fr)_minmax(210px,1.2fr)_minmax(0,1.3fr)] min-[900px]:items-start"
-          >
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="font-bold text-card-foreground">{item.dateLabel}</h3>
-                <Badge variant={item.recommendedAction === "不建议专程" ? "warning" : "default"}>
-                  {item.recommendedAction}
-                </Badge>
+        <div className="mt-4 grid gap-2">
+          {items.map((item) => (
+            <article
+              key={item.key}
+              className="grid gap-3 rounded-lg border border-border bg-muted p-3 min-[900px]:grid-cols-[minmax(150px,0.8fr)_minmax(175px,1fr)_minmax(210px,1.2fr)_minmax(0,1.3fr)] min-[900px]:items-start"
+            >
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="font-bold text-card-foreground">{item.dateLabel}</h3>
+                  <Badge variant={item.recommendedAction === "不建议专程" ? "warning" : "default"}>
+                    {item.recommendedAction}
+                  </Badge>
+                </div>
               </div>
-            </div>
-            <dl className="grid gap-1 text-sm">
-              <CloudSeaInlineDefinition label="最佳窗口" value={item.bestMorningWindow} />
-              <CloudSeaInlineDefinition label="雨后开口" value={item.rainOpeningLabel} />
-            </dl>
-            <div className="grid gap-2 min-[520px]:grid-cols-3 min-[900px]:grid-cols-1 min-[1180px]:grid-cols-3">
-              <CloudSeaDailyStat
-                label="形成"
-                value={`${item.formationLevel} ${item.formationScore}分`}
-              />
-              <CloudSeaDailyStat
-                label="可拍"
-                value={`${item.shootableLevel} ${item.shootableScore}分`}
-              />
-              <CloudSeaDailyStat
-                label="白墙"
-                value={`${item.whiteoutRiskLabel} ${item.whiteoutRiskScore}分`}
-              />
-            </div>
-            <div className="grid gap-1 text-sm leading-6 text-muted-foreground">
-              <p>{item.actionSuggestion}</p>
-            </div>
-          </article>
-        ))}
-      </div>
-    </Card>
+              <dl className="grid gap-1 text-sm">
+                <CloudSeaInlineDefinition label="最佳窗口" value={item.bestMorningWindow} />
+                <CloudSeaInlineDefinition label="雨后开口" value={item.rainOpeningLabel} />
+              </dl>
+              <div className="grid gap-2 min-[520px]:grid-cols-3 min-[900px]:grid-cols-1 min-[1180px]:grid-cols-3">
+                <CloudSeaDailyStat
+                  label="形成"
+                  value={`${item.formationLevel} ${item.formationScore}分`}
+                />
+                <CloudSeaDailyStat
+                  label="可拍"
+                  value={`${item.shootableLevel} ${item.shootableScore}分`}
+                />
+                <CloudSeaDailyStat
+                  label="白墙"
+                  value={`${item.whiteoutRiskLabel} ${item.whiteoutRiskScore}分`}
+                />
+              </div>
+              <div className="grid gap-1 text-sm leading-6 text-muted-foreground">
+                <p>{item.actionSuggestion}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </Card>
+    </DailyDecisionList>
   );
 }
 
@@ -5659,7 +5652,7 @@ export function ComprehensiveForecastView({
   const primaryBestWindow = viewModel.bestWindows.find(isExecutableDisplayWindow);
 
   return (
-    <ResultDashboardShell target="general">
+    <ForecastDecisionPageShell target="general">
       <ComprehensiveContextBar query={query} result={result} />
       <ComprehensiveCoreDecisionCards
         result={result}
@@ -5681,7 +5674,7 @@ export function ComprehensiveForecastView({
         retryable={aiRetryable}
         onGenerate={onGenerateAiExplanation}
       />
-    </ResultDashboardShell>
+    </ForecastDecisionPageShell>
   );
 }
 
@@ -5693,8 +5686,8 @@ function ComprehensiveContextBar({
   readonly result: ForecastCalculationResult;
 }) {
   return (
-    <ResultHeaderRow target="general">
-      <ResultHeaderSummaryCard
+    <ForecastResultHeader target="general">
+      <ForecastResultSummaryCard
         target="general"
         className="min-w-0 rounded-lg border border-border bg-card"
       >
@@ -5724,8 +5717,8 @@ function ComprehensiveContextBar({
         >
           重新选择地点
         </Button>
-      </ResultHeaderSummaryCard>
-      <ResultScoreCard
+      </ForecastResultSummaryCard>
+      <ForecastScoreCard
         target="general"
         label="综合出片指数"
         score={result.overallScore}
@@ -5733,7 +5726,7 @@ function ComprehensiveContextBar({
         badgeVariant={recommendationBadgeVariant(result.recommendationLabel)}
         summary={userFacingResultText(primaryReasonSentence(result))}
       />
-    </ResultHeaderRow>
+    </ForecastResultHeader>
   );
 }
 
@@ -5802,17 +5795,17 @@ function ComprehensiveCoreDecisionCards({
   ];
 
   return (
-    <ResultMetricGrid
+    <ForecastMetricGrid
       target="general"
       className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7"
       dataTestId="top-decision-cards"
     >
       {cards.map((card) => (
-        <ResultMetricCard key={card.key} target="general">
+        <ForecastMetricCard key={card.key} target="general">
           <PrimaryResultCard card={card} />
-        </ResultMetricCard>
+        </ForecastMetricCard>
       ))}
-    </ResultMetricGrid>
+    </ForecastMetricGrid>
   );
 }
 
@@ -5926,7 +5919,7 @@ function ComprehensiveMultiDaySummary({
   readonly result: ForecastCalculationResult;
 }) {
   return (
-    <DailyDecisionSection target="general" dataTestId="daily-forecast-decision">
+    <DailyDecisionList target="general" dataTestId="daily-forecast-decision">
       <SectionHeading
         title="逐日拍摄判断"
         description="按天保留出发判断、关键天气、优先窗口和下一步动作。"
@@ -6030,7 +6023,7 @@ function ComprehensiveMultiDaySummary({
           );
         })}
       </div>
-    </DailyDecisionSection>
+    </DailyDecisionList>
   );
 }
 

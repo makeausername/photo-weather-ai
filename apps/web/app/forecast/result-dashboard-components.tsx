@@ -9,8 +9,6 @@ type ResultDashboardDataProps = {
   readonly dataCloudSeaPageMode?: string;
   readonly dataCloudSeaLoading?: string;
   readonly dataCloudSeaError?: string;
-  readonly dataCloudSeaLoadingCard?: string;
-  readonly dataCloudSeaErrorCard?: string;
   readonly dataTestId?: string;
 };
 
@@ -19,8 +17,6 @@ function dataProps({
   dataCloudSeaPageMode,
   dataCloudSeaLoading,
   dataCloudSeaError,
-  dataCloudSeaLoadingCard,
-  dataCloudSeaErrorCard,
   dataTestId,
 }: ResultDashboardDataProps) {
   return {
@@ -28,11 +24,18 @@ function dataProps({
     "data-cloud-sea-page-mode": dataCloudSeaPageMode,
     "data-cloud-sea-loading": dataCloudSeaLoading,
     "data-cloud-sea-error": dataCloudSeaError,
-    "data-cloud-sea-loading-card": dataCloudSeaLoadingCard,
-    "data-cloud-sea-error-card": dataCloudSeaErrorCard,
     "data-testid": dataTestId,
   };
 }
+
+type ResultDashboardShellProps = {
+  readonly target: ForecastTarget;
+  readonly children: ReactNode;
+  readonly className?: string;
+  readonly dataCloudSeaSection?: string;
+  readonly dataCloudSeaPageMode?: string;
+  readonly dataTestId?: string;
+};
 
 export function ResultDashboardShell({
   target,
@@ -41,17 +44,11 @@ export function ResultDashboardShell({
   dataCloudSeaSection,
   dataCloudSeaPageMode,
   dataTestId,
-}: {
-  readonly target: ForecastTarget;
-  readonly children: ReactNode;
-  readonly className?: string;
-  readonly dataCloudSeaSection?: string;
-  readonly dataCloudSeaPageMode?: string;
-  readonly dataTestId?: string;
-}) {
+}: ResultDashboardShellProps) {
   return (
     <section
       className={cn(className, "mx-auto grid w-full max-w-[1560px] gap-5")}
+      data-forecast-decision-page-shell="true"
       data-result-dashboard-shell="true"
       data-result-target={target}
       {...dataProps({ dataCloudSeaSection, dataCloudSeaPageMode, dataTestId })}
@@ -61,23 +58,30 @@ export function ResultDashboardShell({
   );
 }
 
+export function ForecastDecisionPageShell(props: ResultDashboardShellProps) {
+  return <ResultDashboardShell {...props} />;
+}
+
+type ResultHeaderRowProps = {
+  readonly target: ForecastTarget;
+  readonly children: ReactNode;
+  readonly className?: string;
+  readonly dataCloudSeaSection?: string;
+};
+
 export function ResultHeaderRow({
   target,
   children,
   className,
   dataCloudSeaSection,
-}: {
-  readonly target: ForecastTarget;
-  readonly children: ReactNode;
-  readonly className?: string;
-  readonly dataCloudSeaSection?: string;
-}) {
+}: ResultHeaderRowProps) {
   return (
     <header
       className={cn(
         className,
         "grid gap-4 min-[880px]:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] min-[880px]:items-stretch",
       )}
+      data-forecast-result-header="true"
       data-result-header-row="true"
       data-result-target={target}
       {...dataProps({ dataCloudSeaSection })}
@@ -87,20 +91,27 @@ export function ResultHeaderRow({
   );
 }
 
+export function ForecastResultHeader(props: ResultHeaderRowProps) {
+  return <ResultHeaderRow {...props} />;
+}
+
+type ResultHeaderSummaryCardProps = {
+  readonly target: ForecastTarget;
+  readonly children: ReactNode;
+  readonly className?: string;
+  readonly dataCloudSeaSection?: string;
+};
+
 export function ResultHeaderSummaryCard({
   target,
   children,
   className,
   dataCloudSeaSection,
-}: {
-  readonly target: ForecastTarget;
-  readonly children: ReactNode;
-  readonly className?: string;
-  readonly dataCloudSeaSection?: string;
-}) {
+}: ResultHeaderSummaryCardProps) {
   return (
     <Card
       className={cn(className, "h-full p-5 shadow-sm")}
+      data-forecast-result-summary-card="true"
       data-result-header-summary-card="true"
       data-result-target={target}
       {...dataProps({ dataCloudSeaSection })}
@@ -109,6 +120,21 @@ export function ResultHeaderSummaryCard({
     </Card>
   );
 }
+
+export function ForecastResultSummaryCard(props: ResultHeaderSummaryCardProps) {
+  return <ResultHeaderSummaryCard {...props} />;
+}
+
+type ResultScoreCardProps = {
+  readonly target: ForecastTarget;
+  readonly label: string;
+  readonly score: number;
+  readonly badgeLabel: string;
+  readonly badgeVariant: BadgeVariant;
+  readonly summary: string;
+  readonly className?: string;
+  readonly dataCloudSeaSection?: string;
+};
 
 export function ResultScoreCard({
   target,
@@ -119,21 +145,13 @@ export function ResultScoreCard({
   summary,
   className,
   dataCloudSeaSection,
-}: {
-  readonly target: ForecastTarget;
-  readonly label: string;
-  readonly score: number;
-  readonly badgeLabel: string;
-  readonly badgeVariant: BadgeVariant;
-  readonly summary: string;
-  readonly className?: string;
-  readonly dataCloudSeaSection?: string;
-}) {
+}: ResultScoreCardProps) {
   const safeScore = Number.isFinite(score) ? Math.min(100, Math.max(0, Math.round(score))) : 0;
 
   return (
     <Card
       className={cn(className, "grid h-full content-between gap-4 p-5 shadow-sm")}
+      data-forecast-score-card="true"
       data-result-score-card="true"
       data-result-target={target}
       {...dataProps({ dataCloudSeaSection })}
@@ -156,22 +174,29 @@ export function ResultScoreCard({
   );
 }
 
+export function ForecastScoreCard(props: ResultScoreCardProps) {
+  return <ResultScoreCard {...props} />;
+}
+
+type ResultMetricGridProps = {
+  readonly target: ForecastTarget;
+  readonly children: ReactNode;
+  readonly className?: string;
+  readonly dataCloudSeaSection?: string;
+  readonly dataTestId?: string;
+};
+
 export function ResultMetricGrid({
   target,
   children,
   className,
   dataCloudSeaSection,
   dataTestId,
-}: {
-  readonly target: ForecastTarget;
-  readonly children: ReactNode;
-  readonly className?: string;
-  readonly dataCloudSeaSection?: string;
-  readonly dataTestId?: string;
-}) {
+}: ResultMetricGridProps) {
   return (
     <section
       className={cn(className, "grid items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-3")}
+      data-forecast-metric-grid="true"
       data-result-metric-grid="true"
       data-result-target={target}
       {...dataProps({ dataCloudSeaSection, dataTestId })}
@@ -181,20 +206,27 @@ export function ResultMetricGrid({
   );
 }
 
+export function ForecastMetricGrid(props: ResultMetricGridProps) {
+  return <ResultMetricGrid {...props} />;
+}
+
+type ResultMetricCardProps = {
+  readonly target: ForecastTarget;
+  readonly children: ReactNode;
+  readonly className?: string;
+  readonly dataCloudSeaMetricCard?: boolean;
+};
+
 export function ResultMetricCard({
   target,
   children,
   className,
   dataCloudSeaMetricCard,
-}: {
-  readonly target: ForecastTarget;
-  readonly children: ReactNode;
-  readonly className?: string;
-  readonly dataCloudSeaMetricCard?: boolean;
-}) {
+}: ResultMetricCardProps) {
   return (
     <div
       className={cn(className, "h-full")}
+      data-forecast-metric-card="true"
       data-result-metric-card="true"
       data-result-target={target}
       data-cloud-sea-metric-card={dataCloudSeaMetricCard ? "true" : undefined}
@@ -204,22 +236,29 @@ export function ResultMetricCard({
   );
 }
 
+export function ForecastMetricCard(props: ResultMetricCardProps) {
+  return <ResultMetricCard {...props} />;
+}
+
+type DailyDecisionSectionProps = {
+  readonly target: ForecastTarget;
+  readonly children: ReactNode;
+  readonly className?: string;
+  readonly dataCloudSeaSection?: string;
+  readonly dataTestId?: string;
+};
+
 export function DailyDecisionSection({
   target,
   children,
   className,
   dataCloudSeaSection,
   dataTestId,
-}: {
-  readonly target: ForecastTarget;
-  readonly children: ReactNode;
-  readonly className?: string;
-  readonly dataCloudSeaSection?: string;
-  readonly dataTestId?: string;
-}) {
+}: DailyDecisionSectionProps) {
   return (
     <section
       className={cn(className, "grid gap-3")}
+      data-forecast-daily-decision-list="true"
       data-result-daily-section="true"
       data-result-target={target}
       {...dataProps({ dataCloudSeaSection, dataTestId })}
@@ -229,22 +268,29 @@ export function DailyDecisionSection({
   );
 }
 
+export function DailyDecisionList(props: DailyDecisionSectionProps) {
+  return <DailyDecisionSection {...props} />;
+}
+
+type CurrentWeatherSectionProps = {
+  readonly target: ForecastTarget;
+  readonly children: ReactNode;
+  readonly className?: string;
+  readonly dataCloudSeaSection?: string;
+  readonly dataTestId?: string;
+};
+
 export function CurrentWeatherSection({
   target,
   children,
   className,
   dataCloudSeaSection,
   dataTestId,
-}: {
-  readonly target: ForecastTarget;
-  readonly children: ReactNode;
-  readonly className?: string;
-  readonly dataCloudSeaSection?: string;
-  readonly dataTestId?: string;
-}) {
+}: CurrentWeatherSectionProps) {
   return (
     <section
       className={cn(className, "grid gap-3")}
+      data-forecast-current-weather-cards="true"
       data-result-current-weather-section="true"
       data-result-target={target}
       {...dataProps({ dataCloudSeaSection, dataTestId })}
@@ -252,6 +298,10 @@ export function CurrentWeatherSection({
       {children}
     </section>
   );
+}
+
+export function CurrentWeatherCards(props: CurrentWeatherSectionProps) {
+  return <CurrentWeatherSection {...props} />;
 }
 
 export function JudgmentBasisGrid({
@@ -294,6 +344,19 @@ export function ActionPlanGrid({
   );
 }
 
+type ResultPageLoadingStateProps = {
+  readonly target: ForecastTarget;
+  readonly badges: readonly { readonly label: string; readonly variant: BadgeVariant }[];
+  readonly title: string;
+  readonly message: string;
+  readonly description?: string;
+  readonly details?: readonly { readonly label: string; readonly value: string }[];
+  readonly action?: ReactNode;
+  readonly className?: string;
+  readonly dataCloudSeaPageMode?: string;
+  readonly dataCloudSeaLoading?: string;
+};
+
 export function ResultPageLoadingState({
   target,
   badges,
@@ -305,31 +368,19 @@ export function ResultPageLoadingState({
   className,
   dataCloudSeaPageMode,
   dataCloudSeaLoading,
-  dataCloudSeaLoadingCard,
-}: {
-  readonly target: ForecastTarget;
-  readonly badges: readonly { readonly label: string; readonly variant: BadgeVariant }[];
-  readonly title: string;
-  readonly message: string;
-  readonly description?: string;
-  readonly details?: readonly { readonly label: string; readonly value: string }[];
-  readonly action?: ReactNode;
-  readonly className?: string;
-  readonly dataCloudSeaPageMode?: string;
-  readonly dataCloudSeaLoading?: string;
-  readonly dataCloudSeaLoadingCard?: string;
-}) {
+}: ResultPageLoadingStateProps) {
   return (
     <section
       className={cn(className, "grid w-full min-w-0 gap-5")}
+      data-forecast-loading-state="true"
       data-result-page-state="loading"
       data-result-target={target}
       {...dataProps({ dataCloudSeaPageMode, dataCloudSeaLoading })}
     >
       <Card
         className="p-5 shadow-sm"
+        data-forecast-loading-card="true"
         data-result-page-state-card="loading"
-        {...dataProps({ dataCloudSeaLoadingCard })}
       >
         <div className="flex flex-wrap items-center gap-2">
           {badges.map((badge) => (
@@ -366,6 +417,23 @@ export function ResultPageLoadingState({
   );
 }
 
+export function ForecastLoadingState(props: ResultPageLoadingStateProps) {
+  return <ResultPageLoadingState {...props} />;
+}
+
+type ResultPageErrorStateProps = {
+  readonly target: ForecastTarget;
+  readonly badges: readonly { readonly label: string; readonly variant: BadgeVariant }[];
+  readonly title: string;
+  readonly message: string;
+  readonly description?: string;
+  readonly details?: readonly { readonly label: string; readonly value: string }[];
+  readonly actions?: ReactNode;
+  readonly className?: string;
+  readonly dataCloudSeaPageMode?: string;
+  readonly dataCloudSeaError?: string;
+};
+
 export function ResultPageErrorState({
   target,
   badges,
@@ -377,31 +445,19 @@ export function ResultPageErrorState({
   className,
   dataCloudSeaPageMode,
   dataCloudSeaError,
-  dataCloudSeaErrorCard,
-}: {
-  readonly target: ForecastTarget;
-  readonly badges: readonly { readonly label: string; readonly variant: BadgeVariant }[];
-  readonly title: string;
-  readonly message: string;
-  readonly description?: string;
-  readonly details?: readonly { readonly label: string; readonly value: string }[];
-  readonly actions?: ReactNode;
-  readonly className?: string;
-  readonly dataCloudSeaPageMode?: string;
-  readonly dataCloudSeaError?: string;
-  readonly dataCloudSeaErrorCard?: string;
-}) {
+}: ResultPageErrorStateProps) {
   return (
     <section
       className={cn(className, "grid w-full min-w-0 gap-5")}
+      data-forecast-error-state="true"
       data-result-page-state="error"
       data-result-target={target}
       {...dataProps({ dataCloudSeaPageMode, dataCloudSeaError })}
     >
       <Card
         className="border-danger p-5 shadow-sm"
+        data-forecast-error-card="true"
         data-result-page-state-card="error"
-        {...dataProps({ dataCloudSeaErrorCard })}
       >
         <div className="flex flex-wrap items-center gap-2">
           {badges.map((badge) => (
@@ -433,4 +489,8 @@ export function ResultPageErrorState({
       </Card>
     </section>
   );
+}
+
+export function ForecastErrorState(props: ResultPageErrorStateProps) {
+  return <ResultPageErrorState {...props} />;
 }
