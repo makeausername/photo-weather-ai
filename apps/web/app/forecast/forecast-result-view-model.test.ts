@@ -11,9 +11,9 @@ import {
   AiExplanationPanel,
   ComprehensiveForecastView,
   AstroResultPage,
-  CloudSeaErrorDashboard,
-  CloudSeaLoadingDashboard,
   CloudSeaResultPage,
+  ForecastDecisionErrorState,
+  ForecastDecisionLoadingState,
   ForecastResultClient,
   GlowResultPage,
   SourceDiagnosticsPanel,
@@ -4075,7 +4075,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain('data-cloud-sea-loading="shared-template"');
     expect(html).not.toContain('data-cloud-sea-loading="full-width"');
     expect(html).not.toContain('data-cloud-sea-loading-card="true"');
-    expect(html).toContain("<aside");
+    expect(html).not.toContain("<aside");
     expect(html).toContain("首页");
     expect(html).toContain("云海拍摄判断");
     expect(html).toContain("正在生成云海拍摄判断");
@@ -4096,9 +4096,10 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("118.16389");
   });
 
-  it("keeps the exported Cloud Sea loading dashboard on the shared template without coordinate output", () => {
+  it("keeps the generic decision loading state on the shared Cloud Sea template without coordinate output", () => {
     const html = renderToStaticMarkup(
-      React.createElement(CloudSeaLoadingDashboard, {
+      React.createElement(ForecastDecisionLoadingState, {
+        target: "cloud_sea",
         context: queryForTarget("cloud_sea"),
       }),
     );
@@ -4116,7 +4117,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain('data-cloud-sea-loading="full-width"');
     expect(html).not.toContain('data-cloud-sea-loading-card="true"');
     expect(html).not.toContain("重新选择地点");
-    expect(html).toContain("<aside");
+    expect(html).not.toContain("<aside");
     expect(html).toContain("黄山光明顶");
     expect(html).toContain("地点 / 查询");
     expect(html).toContain("预报范围");
@@ -4129,7 +4130,8 @@ describe("forecast result target-aware view model", () => {
 
   it("renders Cloud Sea error with the shared decision error template", () => {
     const html = renderToStaticMarkup(
-      React.createElement(CloudSeaErrorDashboard, {
+      React.createElement(ForecastDecisionErrorState, {
+        target: "cloud_sea",
         query: queryForTarget("cloud_sea"),
         message: "网络暂时不可用。",
       }),
@@ -4151,7 +4153,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("网络暂时不可用。");
     expect(html).toContain("重新选择地点");
     expect(html).toContain("重新判断");
-    expect(html).toContain("<aside");
+    expect(html).not.toContain("<aside");
     expect(html).toContain("地点 / 查询");
     expect(html).toContain("黄山光明顶");
     expect(html).toContain("预报范围");

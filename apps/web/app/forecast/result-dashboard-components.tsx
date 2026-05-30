@@ -354,9 +354,12 @@ export function DecisionLoadingTemplate({
           dataTestId: "decision-loading-template",
         })}
       >
-        <aside className="grid content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]">
+        <div
+          className="grid content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]"
+          data-decision-context-region="true"
+        >
           <DecisionContextCard {...context} target={target} />
-        </aside>
+        </div>
         <div className="grid gap-5 min-[1200px]:contents">
           <DecisionLoadingCard
             {...loading}
@@ -408,9 +411,12 @@ export function DecisionErrorTemplate({
           dataTestId: "decision-error-template",
         })}
       >
-        <aside className="grid content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]">
+        <div
+          className="grid content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]"
+          data-decision-context-region="true"
+        >
           <DecisionContextCard {...context} target={target} />
-        </aside>
+        </div>
         <div className="grid gap-5 min-[1200px]:contents">
           <DecisionErrorCard
             {...error}
@@ -745,155 +751,4 @@ export function ActionPlanGrid({
       {children}
     </div>
   );
-}
-
-type ResultPageLoadingStateProps = {
-  readonly target: ForecastTarget;
-  readonly badges: readonly { readonly label: string; readonly variant: BadgeVariant }[];
-  readonly title: string;
-  readonly message: string;
-  readonly description?: string;
-  readonly details?: readonly { readonly label: string; readonly value: string }[];
-  readonly action?: ReactNode;
-  readonly className?: string;
-  readonly dataCloudSeaPageMode?: string;
-  readonly dataCloudSeaLoading?: string;
-};
-
-export function ResultPageLoadingState({
-  target,
-  badges,
-  title,
-  message,
-  description,
-  details,
-  action,
-  className,
-  dataCloudSeaPageMode,
-  dataCloudSeaLoading,
-}: ResultPageLoadingStateProps) {
-  return (
-    <section
-      className={cn(className, "grid w-full min-w-0 gap-5")}
-      data-forecast-loading-state="true"
-      data-result-page-state="loading"
-      data-result-target={target}
-      {...dataProps({ dataCloudSeaPageMode, dataCloudSeaLoading })}
-    >
-      <Card
-        className="p-5 shadow-sm"
-        data-forecast-loading-card="true"
-        data-result-page-state-card="loading"
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          {badges.map((badge) => (
-            <Badge key={badge.label} variant={badge.variant}>
-              {badge.label}
-            </Badge>
-          ))}
-        </div>
-        <h1 className="mt-3 text-2xl font-bold leading-tight text-card-foreground sm:text-[28px]">
-          {title}
-        </h1>
-        <div className="mt-4 flex items-center gap-3 text-sm font-semibold text-card-foreground">
-          <span className="h-2.5 w-2.5 rounded-full bg-primary" />
-          {message}
-        </div>
-        {description ? (
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
-        ) : null}
-        {details && details.length > 0 ? (
-          <dl className="mt-4 grid gap-2 rounded-lg border border-border bg-muted p-3 text-sm min-[720px]:grid-cols-2">
-            {details.map((detail) => (
-              <div key={detail.label}>
-                <dt className="text-xs font-semibold text-muted-foreground">{detail.label}</dt>
-                <dd className="mt-1 break-words font-semibold text-card-foreground">
-                  {detail.value}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        ) : null}
-        {action ? <div className="mt-4">{action}</div> : null}
-      </Card>
-    </section>
-  );
-}
-
-export function ForecastLoadingState(props: ResultPageLoadingStateProps) {
-  return <ResultPageLoadingState {...props} />;
-}
-
-type ResultPageErrorStateProps = {
-  readonly target: ForecastTarget;
-  readonly badges: readonly { readonly label: string; readonly variant: BadgeVariant }[];
-  readonly title: string;
-  readonly message: string;
-  readonly description?: string;
-  readonly details?: readonly { readonly label: string; readonly value: string }[];
-  readonly actions?: ReactNode;
-  readonly className?: string;
-  readonly dataCloudSeaPageMode?: string;
-  readonly dataCloudSeaError?: string;
-};
-
-export function ResultPageErrorState({
-  target,
-  badges,
-  title,
-  message,
-  description,
-  details,
-  actions,
-  className,
-  dataCloudSeaPageMode,
-  dataCloudSeaError,
-}: ResultPageErrorStateProps) {
-  return (
-    <section
-      className={cn(className, "grid w-full min-w-0 gap-5")}
-      data-forecast-error-state="true"
-      data-result-page-state="error"
-      data-result-target={target}
-      {...dataProps({ dataCloudSeaPageMode, dataCloudSeaError })}
-    >
-      <Card
-        className="border-danger p-5 shadow-sm"
-        data-forecast-error-card="true"
-        data-result-page-state-card="error"
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          {badges.map((badge) => (
-            <Badge key={badge.label} variant={badge.variant}>
-              {badge.label}
-            </Badge>
-          ))}
-        </div>
-        <h1 className="mt-3 text-2xl font-bold leading-tight text-card-foreground sm:text-[28px]">
-          {title}
-        </h1>
-        <h2 className="mt-4 text-lg font-bold text-danger">{message}</h2>
-        {description ? (
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
-        ) : null}
-        {details && details.length > 0 ? (
-          <dl className="mt-4 grid gap-2 rounded-lg border border-border bg-muted p-3 text-sm min-[720px]:grid-cols-2">
-            {details.map((detail) => (
-              <div key={detail.label}>
-                <dt className="text-xs font-semibold text-muted-foreground">{detail.label}</dt>
-                <dd className="mt-1 break-words font-semibold text-card-foreground">
-                  {detail.value}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        ) : null}
-        {actions ? <div className="mt-4 flex flex-wrap gap-2">{actions}</div> : null}
-      </Card>
-    </section>
-  );
-}
-
-export function ForecastErrorState(props: ResultPageErrorStateProps) {
-  return <ResultPageErrorState {...props} />;
 }

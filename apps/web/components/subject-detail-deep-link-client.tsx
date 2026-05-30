@@ -9,11 +9,11 @@ import type {
 import { forecastHorizonLabels } from "@photo-weather/shared";
 import {
   AstroResultPage,
-  CloudSeaErrorDashboard,
-  CloudSeaLoadingDashboard,
   CloudSeaResultPage,
+  ForecastDecisionErrorState,
+  ForecastDecisionLoadingState,
   GlowResultPage,
-  type CloudSeaProgressContext,
+  type DecisionProgressContext,
 } from "../app/forecast/forecast-result-client";
 import { buildForecastResultViewModel } from "../app/forecast/forecast-result-view-model";
 import {
@@ -156,7 +156,10 @@ export function SubjectDetailDeepLinkClient({
 
       {state.status === "loading" ? (
         target === "cloud_sea" ? (
-          <CloudSeaLoadingDashboard context={cloudSeaProgressContext(parsed, context)} />
+          <ForecastDecisionLoadingState
+            target="cloud_sea"
+            context={cloudSeaProgressContext(parsed, context)}
+          />
         ) : (
           <Card className="p-5 shadow-sm">
             <div className="flex items-center gap-3 text-sm font-semibold text-card-foreground">
@@ -172,7 +175,11 @@ export function SubjectDetailDeepLinkClient({
 
       {state.status === "invalid" || state.status === "error" ? (
         state.status === "error" && cloudSeaFallbackQuery ? (
-          <CloudSeaErrorDashboard query={cloudSeaFallbackQuery} message={state.message} />
+          <ForecastDecisionErrorState
+            target="cloud_sea"
+            query={cloudSeaFallbackQuery}
+            message={state.message}
+          />
         ) : (
           <SubjectContextFallbackCard message={state.message} target={target} />
         )
@@ -193,7 +200,7 @@ export function SubjectDetailDeepLinkClient({
 function cloudSeaProgressContext(
   parsed: SubjectDetailDeepLinkParseResult,
   context: Partial<SubjectDetailDeepLinkContext> | undefined,
-): CloudSeaProgressContext {
+): DecisionProgressContext {
   if (parsed.kind === "ready" && parsed.fallbackQuery) {
     return parsed.fallbackQuery;
   }

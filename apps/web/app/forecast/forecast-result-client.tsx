@@ -91,10 +91,13 @@ type AiStatus = "idle" | "loading" | "ready" | "error";
 
 export type ForecastPageMode = "search" | "loading" | "result" | "error";
 
-export type CloudSeaProgressContext = {
+export type DecisionProgressContext = {
   readonly name: string;
   readonly horizon?: ForecastHorizon;
+  readonly target?: ForecastQueryInput["target"];
 };
+
+type DecisionTemplateTarget = "general" | "cloud_sea";
 
 type ForecastAiExplanation = {
   readonly conclusion: {
@@ -1260,19 +1263,18 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
       {!query ? <InvalidQueryCard message={invalidReason} /> : null}
 
       {query && pageMode === "loading" ? (
-        isCloudSeaFlow ? (
-          <CloudSeaLoadingDashboard context={query} />
-        ) : (
-          <LoadingDashboard query={query} />
-        )
+        <ForecastDecisionLoadingState
+          target={isCloudSeaFlow ? "cloud_sea" : "general"}
+          context={query}
+        />
       ) : null}
 
       {query && pageMode === "error" ? (
-        isCloudSeaFlow ? (
-          <CloudSeaErrorDashboard query={query} message={errorMessage} />
-        ) : (
-          <ErrorDashboard query={query} message={errorMessage} />
-        )
+        <ForecastDecisionErrorState
+          target={isCloudSeaFlow ? "cloud_sea" : "general"}
+          query={query}
+          message={errorMessage}
+        />
       ) : null}
 
       {query && result && pageMode === "result" ? (
@@ -1307,11 +1309,40 @@ function DashboardFrame({
   );
 }
 
-function LoadingDashboard({ query }: { readonly query: ForecastQueryInput }) {
+export function ForecastDecisionLoadingState({
+  target,
+  context,
+}: {
+  readonly target: DecisionTemplateTarget;
+  readonly context: DecisionProgressContext;
+}) {
+  const horizonLabel = decisionProgressHorizonLabel(context);
+
+  if (target === "cloud_sea") {
+    return (
+      <DecisionLoadingTemplate
+        target="cloud_sea"
+        context={decisionContextFromProgressContext("cloud_sea", context)}
+        loading={{
+          badges: [
+            { label: "云海", variant: "default" },
+            { label: horizonLabel, variant: "muted" },
+          ],
+          title: "云海拍摄判断",
+          message: "正在生成云海拍摄判断...",
+          description: "正在结合天气、地形、云层和光线窗口生成判断。",
+        }}
+        info={cloudSeaDecisionInfoCard()}
+        dataCloudSeaPageMode="loading"
+        dataCloudSeaLoading="shared-template"
+      />
+    );
+  }
+
   return (
     <DecisionLoadingTemplate
       target="general"
-      context={decisionContextFromQuery(query)}
+      context={decisionContextFromProgressContext("general", context)}
       loading={{
         message: "正在生成拍摄天气分析...",
         description: "正在结合天气条件、天文窗口和地形特征生成出行判断。",
@@ -1324,13 +1355,62 @@ function LoadingDashboard({ query }: { readonly query: ForecastQueryInput }) {
   );
 }
 
-function ErrorDashboard({
+export function ForecastDecisionErrorState({
+  target,
   query,
   message,
 }: {
+  readonly target: DecisionTemplateTarget;
   readonly query: ForecastQueryInput;
   readonly message: string;
 }) {
+  const horizonLabel = decisionProgressHorizonLabel(query);
+
+  if (target === "cloud_sea") {
+    return (
+      <DecisionErrorTemplate
+        target="cloud_sea"
+        context={decisionContextFromQuery(query)}
+        error={{
+          badges: [
+            { label: "云海", variant: "danger" },
+            { label: horizonLabel, variant: "muted" },
+          ],
+          title: "云海拍摄判断",
+          message: "云海判断生成失败",
+          description: message,
+          actions: (
+            <>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  window.location.assign("/cloud-sea");
+                }}
+              >
+                重新选择地点
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  window.location.assign(buildForecastUrlFromForecastQuery(query));
+                }}
+              >
+                重新判断
+              </Button>
+            </>
+          ),
+        }}
+        info={cloudSeaDecisionInfoCard()}
+        dataCloudSeaPageMode="error"
+        dataCloudSeaError="shared-template"
+      />
+    );
+  }
+
   return (
     <DecisionErrorTemplate
       target="general"
@@ -1347,115 +1427,41 @@ function ErrorDashboard({
   );
 }
 
-export function CloudSeaLoadingDashboard({
-  context,
-}: {
-  readonly context: CloudSeaProgressContext;
-}) {
-  const horizonLabel = cloudSeaProgressHorizonLabel(context);
-
-  return (
-    <DecisionLoadingTemplate
-      target="cloud_sea"
-      context={{
-        titleLabel: "地点 / 查询",
-        title: context.name,
-        details: [
-          { label: "预报范围", value: horizonLabel },
-          { label: "分析目标", value: "云海" },
-        ],
-      }}
-      loading={{
-        badges: [
-          { label: "云海", variant: "default" },
-          { label: horizonLabel, variant: "muted" },
-        ],
-        title: "云海拍摄判断",
-        message: "正在生成云海拍摄判断...",
-        description: "正在结合天气、地形、云层和光线窗口生成判断。",
-      }}
-      info={{
-        title: "云海判断基础",
-        description:
-          "页面会把云海形成、可拍机会、白墙风险、雨后开口和现场复核动作放在同一套判断结构里。",
-        badge: { label: "云海 / 白墙 / 雨后开口", variant: "accent" },
-      }}
-      dataCloudSeaPageMode="loading"
-      dataCloudSeaLoading="shared-template"
-    />
-  );
-}
-
-export function CloudSeaErrorDashboard({
-  query,
-  message,
-}: {
-  readonly query: ForecastQueryInput;
-  readonly message: string;
-}) {
-  const horizonLabel = cloudSeaProgressHorizonLabel(query);
-
-  return (
-    <DecisionErrorTemplate
-      target="cloud_sea"
-      context={decisionContextFromQuery(query)}
-      error={{
-        badges: [
-          { label: "云海", variant: "danger" },
-          { label: horizonLabel, variant: "muted" },
-        ],
-        title: "云海拍摄判断",
-        message: "云海判断生成失败",
-        description: message,
-        actions: (
-          <>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                window.location.assign("/cloud-sea");
-              }}
-            >
-              重新选择地点
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                window.location.assign(buildForecastUrlFromForecastQuery(query));
-              }}
-            >
-              重新判断
-            </Button>
-          </>
-        ),
-      }}
-      info={{
-        title: "云海判断基础",
-        description:
-          "页面会把云海形成、可拍机会、白墙风险、雨后开口和现场复核动作放在同一套判断结构里。",
-        badge: { label: "云海 / 白墙 / 雨后开口", variant: "accent" },
-      }}
-      dataCloudSeaPageMode="error"
-      dataCloudSeaError="shared-template"
-    />
-  );
-}
-
-function cloudSeaProgressHorizonLabel(context: CloudSeaProgressContext): string {
+function decisionProgressHorizonLabel(context: DecisionProgressContext): string {
   return context.horizon ? forecastHorizonLabels[context.horizon] : "时间范围待确认";
 }
 
-function decisionContextFromQuery(query: ForecastQueryInput) {
+function decisionContextFromProgressContext(
+  target: DecisionTemplateTarget,
+  context: DecisionProgressContext,
+) {
   return {
     titleLabel: "地点 / 查询",
-    title: query.name,
+    title: context.name,
     details: [
-      { label: "预报范围", value: forecastHorizonLabels[query.horizon] },
-      { label: "分析目标", value: forecastTargetLabels[query.target] },
+      { label: "预报范围", value: decisionProgressHorizonLabel(context) },
+      {
+        label: "分析目标",
+        value: target === "cloud_sea" ? "云海" : forecastTargetLabels[context.target ?? target],
+      },
     ],
+  };
+}
+
+function decisionContextFromQuery(query: ForecastQueryInput) {
+  return decisionContextFromProgressContext(query.target === "cloud_sea" ? "cloud_sea" : "general", {
+    name: query.name,
+    horizon: query.horizon,
+    target: query.target,
+  });
+}
+
+function cloudSeaDecisionInfoCard() {
+  return {
+    title: "云海判断基础",
+    description:
+      "页面会把云海形成、可拍机会、白墙风险、雨后开口和现场复核动作放在同一套判断结构里。",
+    badge: { label: "云海 / 白墙 / 雨后开口", variant: "accent" as const },
   };
 }
 
