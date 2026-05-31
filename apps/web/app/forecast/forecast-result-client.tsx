@@ -2749,10 +2749,12 @@ export function CloudSeaResultPage({
         />
         <CloudSeaReasoningSection items={viewModel.reasoningItems} />
         <CloudSeaActionPlanSection items={viewModel.actionPlan} />
-        <ForecastAiInterpretationSection query={query} result={result} />
         <CloudSeaRiskSummarySection riskSummary={viewModel.riskSummary} />
         {viewModel.dataCaution ? <CloudSeaInlineCaution text={viewModel.dataCaution} /> : null}
         {returnUrl ? <CloudSeaReturnLink href={returnUrl} /> : null}
+        <section className="mt-1 sm:mt-2" data-cloud-sea-section="CloudSeaAiInterpretation">
+          <ForecastAiInterpretationSection query={query} result={result} />
+        </section>
       </main>
     </DecisionResultTemplate>
   );

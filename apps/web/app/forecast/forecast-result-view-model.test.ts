@@ -2012,6 +2012,18 @@ function sectionBetween(html: string, startMarker: string, endMarker: string): s
   return start >= 0 && end > start ? html.slice(start, end) : "";
 }
 
+function expectMarkersInOrder(html: string, markers: readonly string[]): void {
+  let previousIndex = -1;
+  for (const marker of markers) {
+    const index = html.indexOf(marker);
+    expect(index, `Expected marker "${marker}" to be rendered`).toBeGreaterThanOrEqual(0);
+    expect(index, `Expected marker "${marker}" to render after the previous marker`).toBeGreaterThan(
+      previousIndex,
+    );
+    previousIndex = index;
+  }
+}
+
 function decodedHrefs(html: string): readonly string[] {
   return [...html.matchAll(/href="([^"]+)"/g)].map((match) =>
     (match[1] ?? "").replace(/&amp;/g, "&"),
@@ -4597,6 +4609,7 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain('data-result-judgment-basis-grid="true"');
       expect(html).toContain('data-result-action-plan-grid="true"');
       expect(html).not.toContain("CloudSeaStackedLayout");
+      expect(html).toContain('data-cloud-sea-section="CloudSeaAiInterpretation"');
       expect(html).toContain("智能解读");
       expect(html).toContain("可手动生成更自然的摄影建议，当前判断结果不依赖 AI。");
       expect(html).toContain("生成智能解读");
@@ -4634,8 +4647,91 @@ describe("forecast result target-aware view model", () => {
       expect(html.indexOf("CloudSeaDailyTrend")).toBeLessThan(html.indexOf("判断依据"));
       expect(html.indexOf("判断依据")).toBeLessThan(html.indexOf("行动方案"));
       expect(html.indexOf("行动方案")).toBeLessThan(html.indexOf("风险与复核"));
-      expect(html.indexOf("行动方案")).toBeLessThan(html.indexOf("智能解读"));
-      expect(html.indexOf("智能解读")).toBeLessThan(html.indexOf("风险与复核"));
+      expect(html.indexOf("风险与复核")).toBeLessThan(html.indexOf("智能解读"));
+      expectMarkersInOrder(html, [
+        "CloudSeaHeroConclusion",
+        "CloudSeaCoreMetrics",
+        "CloudSeaNearTermWeather",
+        "CloudSeaWindowCards",
+        "CloudSeaDailyTrend",
+        "判断依据",
+        "行动方案",
+        "风险与复核",
+        "CloudSeaAiInterpretation",
+        "智能解读",
+      ]);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("places Cloud Sea intelligent interpretation after deterministic result sections", () => {
+    const base = resultWithProfessionalHourlyData();
+    const context = agreementContext();
+    const result: ForecastCalculationResult = {
+      ...base,
+      weatherDataMode: "real",
+      weatherFusionSummary: weatherFusionSummaryWithAgreement(context),
+      cloudSeaAnalysis: {
+        ...base.cloudSeaAnalysis,
+        confidenceLevel: "high",
+      },
+    };
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const fetchMock = vi.fn(() => {
+      throw new Error("cloud sea AI interpretation should not auto-run on result render");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      const html = renderToStaticMarkup(
+        React.createElement(CloudSeaResultPage, {
+          query: queryForTarget("cloud_sea"),
+          result,
+          viewModel,
+          returnUrl: "/forecast?target=general",
+        }),
+      );
+      const aiIndex = html.indexOf("智能解读");
+      const dataCaution = viewModel.dataCaution ?? "";
+      const afterAiSection = html.slice(aiIndex);
+
+      expect(aiIndex).toBeGreaterThanOrEqual(0);
+      expect(html).toContain("生成智能解读");
+      expect(html).toContain("专业小时数据");
+      expect(html).toContain("总云量 %");
+      expect(html).toContain("高云量 %");
+      expect(html).toContain("中云量 %");
+      expect(html).toContain("低云量 %");
+      expect(html).toContain("多源一致性");
+      expect(dataCaution).toContain("低云分歧较大");
+      expectMarkersInOrder(html, [
+        "CloudSeaTopResultHeader",
+        "CloudSeaCoreMetrics",
+        "CloudSeaNearTermWeather",
+        "CloudSeaWindowCards",
+        "CloudSeaProfessionalHourlyData",
+        "专业小时数据",
+        "CloudSeaDailyTrend",
+        "每日云海判断",
+        "判断依据",
+        "行动方案",
+        "风险与复核",
+        "返回综合判断",
+        "CloudSeaAiInterpretation",
+        "智能解读",
+      ]);
+      expect(html.indexOf("CloudSeaMultiSourceAgreement")).toBeLessThan(aiIndex);
+      expect(html.indexOf("多源一致性")).toBeLessThan(aiIndex);
+      expect(html.indexOf(dataCaution)).toBeLessThan(aiIndex);
+      expect(afterAiSection).not.toContain("专业小时数据");
+      expect(afterAiSection).not.toContain("每日云海判断");
+      expect(afterAiSection).not.toContain("判断依据");
+      expect(afterAiSection).not.toContain("行动方案");
+      expect(afterAiSection).not.toContain("风险与复核");
+      expect(afterAiSection).not.toContain("多源一致性");
+      expect(afterAiSection).not.toContain("返回综合判断");
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
