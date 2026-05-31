@@ -4279,12 +4279,13 @@ type CloudSeaWindowCardData = {
 function cloudSeaWindowCategoryDefinitions(
   terrainContext: CloudSeaTerrainContext,
 ): readonly CloudSeaWindowCategoryDefinition[] {
-  const labels = terrainContext.vocabulary.windowCategories;
+  const labels = terrainContext.windowCategoryLabels;
+  const categories = terrainContext.vocabulary.windowCategories;
   return [
-    { key: "sunrise", ...labels.sunrise },
-    { key: "sunset", ...labels.sunset },
-    { key: "lit", ...labels.lit },
-    { key: "lowLight", ...labels.lowLight },
+    { key: "sunrise", ...categories.sunrise, title: labels.sunrise },
+    { key: "sunset", ...categories.sunset, title: labels.sunset },
+    { key: "lit", ...categories.lit, title: labels.daylight },
+    { key: "lowLight", ...categories.lowLight, title: labels.noLight },
   ];
 }
 
@@ -4308,6 +4309,14 @@ function CloudSeaWindowCardsSection({
         description={terrainContext.vocabulary.windowSectionDescription}
         badge={terrainContext.vocabulary.windowSectionBadge}
       />
+      {terrainContext.windowSectionNoteZh ? (
+        <p
+          className="mt-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-5 text-muted-foreground"
+          data-testid="cloud-sea-window-terrain-note"
+        >
+          {terrainContext.windowSectionNoteZh}
+        </p>
+      ) : null}
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map((card) => (
           <article
@@ -4408,7 +4417,7 @@ function cloudSeaWindowCategoryCard(
   return {
     key: definition.key,
     title: definition.title,
-    badgeLabel: cloudSeaWindowCategoryBadgeLabel(definition.key, primary),
+    badgeLabel: cloudSeaWindowCategoryBadgeLabel(definition.key, primary, terrainContext),
     badgeVariant: cloudSeaWindowCategoryBadgeVariant(definition.key, primary),
     chanceText: primary.cloudSeaChance,
     scoreText: `${primary.score} 分`,
@@ -4510,7 +4519,20 @@ function localHourFromIso(value: string): number | undefined {
 function cloudSeaWindowCategoryBadgeLabel(
   category: CloudSeaWindowCategoryKey,
   item: CloudSeaWindowItem,
+  terrainContext: CloudSeaTerrainContext,
 ): string {
+  if (terrainContext.shouldDowngradeCloudSeaWording) {
+    if (category === "lowLight") {
+      return "仅作备选";
+    }
+    if (item.score >= 70) {
+      return "可观察";
+    }
+    if (item.score >= 50) {
+      return "顺带观察";
+    }
+    return "谨慎参考";
+  }
   if (category === "lowLight") {
     return "低光观察";
   }
@@ -4565,10 +4587,20 @@ function cloudSeaWindowCardAction(
   item: CloudSeaWindowItem,
   terrainContext: CloudSeaTerrainContext,
 ): string {
+  if (terrainContext.shouldDowngradeCloudSeaWording) {
+    if (category === "sunrise") {
+      return "观察近地雾气和低云是否贴地，重点看晨雾边界、远山层次和通透度。";
+    }
+    if (category === "sunset") {
+      return "观察层云变化和云层开口，可转向霞光参考、远山层次或云层纹理。";
+    }
+    if (category === "lit") {
+      return "复核低云是否贴地，观察云层开口和通透度，可转向霞光或云层纹理。";
+    }
+    return "仅作夜间低云、雾气层次或现场观察，不作为正常明亮风光主窗口。";
+  }
   if (category === "lowLight") {
-    return terrainContext.shouldDowngradeCloudSeaWording
-      ? "仅作雾气层次、夜景氛围或现场观察，不作为正常明亮风光主窗口。"
-      : "仅作氛围、剪影、层次或现场观察，不作为正常明亮风光主窗口。";
+    return "仅作氛围、剪影、层次或现场观察，不作为正常明亮风光主窗口。";
   }
   return item.actionSuggestion;
 }

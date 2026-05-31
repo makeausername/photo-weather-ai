@@ -33,7 +33,10 @@ import {
   buildForecastResultViewModel,
   buildGlowForecastViewModel,
 } from "./forecast-result-view-model";
-import { buildCloudSeaTerrainContext } from "./cloud-sea-terrain-context";
+import {
+  buildCloudSeaTerrainContext,
+  cloudSeaTerrainRecommendationLabel,
+} from "./cloud-sea-terrain-context";
 import {
   buildGeneralDailySubjectLinks,
   buildSubjectDetailDeepLink,
@@ -4127,11 +4130,47 @@ describe("forecast result target-aware view model", () => {
     expect(lowland.shouldDowngradeCloudSeaWording).toBe(true);
     expect(lowland.terrainNoteZh).toContain("当前按低海拔低云/晨雾参考处理");
     expect(lowland.vocabulary.windowCategories.sunrise.title).toBe("日出低云 / 晨雾");
+    expect(lowland.windowCategoryLabels).toEqual({
+      sunrise: "日出低云 / 晨雾",
+      sunset: "日落层云",
+      daylight: "有光云层",
+      noLight: "夜间低云 / 雾气",
+    });
+    expect(lowland.windowSectionNoteZh).toBe(
+      "当前机位海拔较低或周边高差不足，本区块按低云、晨雾、层云和通透观察处理，不按高山云海判断。",
+    );
+    expect(lowland.forbiddenStrongRecommendation).toBe(true);
+    expect(lowland.recommendationCeiling).toBe("recommend_observation");
+    expect(lowland.preferredVocabulary).toEqual([
+      "低云",
+      "晨雾",
+      "层云",
+      "云层变化",
+      "通透",
+      "霞光参考",
+      "远山层次",
+    ]);
+    expect(
+      cloudSeaTerrainRecommendationLabel("强推荐专程", lowland, {
+        score: 68,
+        hasWindow: true,
+      }),
+    ).toBe("可观察");
 
     expect(highMountain.terrainClass).toBe("high_mountain");
     expect(highMountain.isClassicCloudSeaEligible).toBe(true);
     expect(highMountain.shouldDowngradeCloudSeaWording).toBe(false);
     expect(highMountain.vocabulary.windowCategories.sunrise.title).toBe("日出云海");
+    expect(highMountain.windowCategoryLabels).toEqual({
+      sunrise: "日出云海",
+      sunset: "日落云海",
+      daylight: "有光云海",
+      noLight: "无光云海",
+    });
+    expect(highMountain.windowSectionNoteZh).toBeUndefined();
+    expect(highMountain.forbiddenStrongRecommendation).toBe(false);
+    expect(highMountain.recommendationCeiling).toBe("classic_cloud_sea");
+    expect(highMountain.preferredVocabulary).toContain("云海形成");
   });
 
   it("downgrades low-elevation Cloud Sea result wording while keeping professional hourly data visible", () => {
@@ -4143,6 +4182,11 @@ describe("forecast result target-aware view model", () => {
         result,
         viewModel,
       }),
+    );
+    const windowSection = sectionBetween(
+      html,
+      "CloudSeaWindowCards",
+      "CloudSeaProfessionalHourlyData",
     );
 
     expect(viewModel.terrainContext.shouldDowngradeCloudSeaWording).toBe(true);
@@ -4160,14 +4204,28 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("低云/晨雾参考");
     expect(html).toContain("地形参考：机位海拔约 142 米，周边高差暂未计算");
     expect(html).toContain("不按高山云海判断");
+    expect(windowSection).toContain("云海窗口与备选");
+    expect(windowSection).toContain(
+      "当前机位海拔较低或周边高差不足，本区块按低云、晨雾、层云和通透观察处理，不按高山云海判断。",
+    );
     expect(html).toContain("晨雾");
     expect(html).toContain("低云");
     expect(html).toContain("云层变化");
     expect(html).toContain("通透");
-    expect(html).toContain("日出低云 / 晨雾");
-    expect(html).toContain("日落层云");
-    expect(html).toContain("有光云层");
-    expect(html).toContain("夜间低云 / 雾气");
+    expect(windowSection).toContain("日出低云 / 晨雾");
+    expect(windowSection).toContain("日落层云");
+    expect(windowSection).toContain("有光云层");
+    expect(windowSection).toContain("夜间低云 / 雾气");
+    expect(windowSection).toContain("可观察");
+    expect(windowSection).toContain("顺带观察");
+    expect(windowSection).toContain("观察近地雾气");
+    expect(windowSection).toContain("复核低云是否贴地");
+    expect(windowSection).toContain("霞光参考");
+    expect(windowSection).not.toContain("日出云海");
+    expect(windowSection).not.toContain("日落云海");
+    expect(windowSection).not.toContain("有光云海");
+    expect(windowSection).not.toContain("无光云海");
+    expect(windowSection).not.toContain("优先守拍");
     expect(html).toContain("低云遮挡风险");
     expect(html).toContain("复核近地雾气");
     expect(html).toContain("远山层次和通透度");

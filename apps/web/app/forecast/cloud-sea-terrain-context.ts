@@ -33,6 +33,15 @@ export type CloudSeaWindowCategoryCopy = {
   readonly noWindowAction: string;
 };
 
+export type CloudSeaWindowCategoryLabels = {
+  readonly sunrise: string;
+  readonly sunset: string;
+  readonly daylight: string;
+  readonly noLight: string;
+};
+
+export type CloudSeaRecommendationCeiling = "classic_cloud_sea" | "recommend_observation";
+
 export type CloudSeaTerrainVocabulary = {
   readonly heroTitleSuffix: string;
   readonly heroBadgeLabel: string;
@@ -74,6 +83,11 @@ export type CloudSeaTerrainContext = {
   readonly nearbyValleyElevationMeters?: number;
   readonly terrainType?: string;
   readonly terrainNoteZh: string;
+  readonly windowSectionNoteZh?: string;
+  readonly windowCategoryLabels: CloudSeaWindowCategoryLabels;
+  readonly forbiddenStrongRecommendation: boolean;
+  readonly recommendationCeiling: CloudSeaRecommendationCeiling;
+  readonly preferredVocabulary: readonly string[];
   readonly vocabulary: CloudSeaTerrainVocabulary;
 };
 
@@ -138,7 +152,7 @@ const downgradedCloudSeaVocabulary: CloudSeaTerrainVocabulary = {
   obstructionRiskLabel: "低云遮挡风险",
   bestWindowMetricLabel: "最佳观察窗口",
   formationShootableMetricLabel: "低云/晨雾 / 可观察机会",
-  windowSectionTitle: "低云与晨雾窗口",
+  windowSectionTitle: "云海窗口与备选",
   windowSectionDescription: "按时段与光线条件归纳低云、晨雾、云层变化和通透度参考。",
   windowSectionBadge: "云层观察",
   windowCategories: {
@@ -176,6 +190,27 @@ const downgradedCloudSeaVocabulary: CloudSeaTerrainVocabulary = {
   professionalCloudSeaFilterLabel: "只看低云窗口",
   professionalUsageText: "专业数据用于复核低云、晨雾、云层变化、遮挡风险和雨后开口。",
 };
+
+const classicCloudSeaPreferredVocabulary = [
+  "云海窗口",
+  "云海形成",
+  "云海可拍",
+  "白墙风险",
+  "主守窗口",
+] as const;
+
+const downgradedCloudSeaPreferredVocabulary = [
+  "低云",
+  "晨雾",
+  "层云",
+  "云层变化",
+  "通透",
+  "霞光参考",
+  "远山层次",
+] as const;
+
+const downgradedWindowSectionNoteZh =
+  "当前机位海拔较低或周边高差不足，本区块按低云、晨雾、层云和通透观察处理，不按高山云海判断。";
 
 export function buildCloudSeaTerrainContextFromResult(
   result: ForecastCalculationResult,
@@ -238,6 +273,9 @@ export function buildCloudSeaTerrainContext(
       terrainMode === "lowland" ||
       terrainMode === "urban_or_plain" ||
       terrainMode === "unknown");
+  const vocabulary = shouldDowngradeCloudSeaWording
+    ? downgradedCloudSeaVocabulary
+    : classicCloudSeaVocabulary;
 
   return {
     terrainClass: terrainClassForContext({
@@ -259,9 +297,18 @@ export function buildCloudSeaTerrainContext(
       isClassicCloudSeaEligible,
       shouldDowngradeCloudSeaWording,
     }),
-    vocabulary: shouldDowngradeCloudSeaWording
-      ? downgradedCloudSeaVocabulary
-      : classicCloudSeaVocabulary,
+    windowSectionNoteZh: shouldDowngradeCloudSeaWording
+      ? downgradedWindowSectionNoteZh
+      : undefined,
+    windowCategoryLabels: windowCategoryLabelsFromVocabulary(vocabulary),
+    forbiddenStrongRecommendation: shouldDowngradeCloudSeaWording,
+    recommendationCeiling: shouldDowngradeCloudSeaWording
+      ? "recommend_observation"
+      : "classic_cloud_sea",
+    preferredVocabulary: shouldDowngradeCloudSeaWording
+      ? downgradedCloudSeaPreferredVocabulary
+      : classicCloudSeaPreferredVocabulary,
+    vocabulary,
   };
 }
 
@@ -311,9 +358,20 @@ export function cloudSeaTerrainRecommendationLabel(
     return "谨慎参考";
   }
   if (options.score !== undefined && options.score < 70) {
-    return "可顺带观察";
+    return "可观察";
   }
   return "推荐观察";
+}
+
+function windowCategoryLabelsFromVocabulary(
+  vocabulary: CloudSeaTerrainVocabulary,
+): CloudSeaWindowCategoryLabels {
+  return {
+    sunrise: vocabulary.windowCategories.sunrise.title,
+    sunset: vocabulary.windowCategories.sunset.title,
+    daylight: vocabulary.windowCategories.lit.title,
+    noLight: vocabulary.windowCategories.lowLight.title,
+  };
 }
 
 function terrainClassForContext(input: {

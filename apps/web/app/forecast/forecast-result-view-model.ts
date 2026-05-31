@@ -251,6 +251,7 @@ export type CloudSeaActionLabel =
   | "推荐重点关注"
   | "值得等待"
   | "推荐观察"
+  | "可观察"
   | "可顺带观察"
   | "已在附近可观察"
   | "谨慎参考"
@@ -2946,8 +2947,12 @@ function cloudSeaDailyActionSuggestion(
     return "低云分层缺失，先复核临近预报中的低云高度和能见度，再决定是否等待。";
   }
   if (terrainContext.shouldDowngradeCloudSeaWording) {
-    if (displayAction === "推荐观察" || displayAction === "可顺带观察") {
-      return "复核近地雾气、低云是否贴地、远山层次和通透度，不建议只为云海专程前往。";
+    if (
+      displayAction === "推荐观察" ||
+      displayAction === "可观察" ||
+      displayAction === "可顺带观察"
+    ) {
+      return "复核近地雾气、低云是否贴地、远山层次和通透度，不建议只为低云或晨雾专程前往。";
     }
     if (displayAction === "谨慎参考" || displayAction === "已在附近可观察") {
       return "若已在附近，可短时观察晨雾、低云和云层开口。";
