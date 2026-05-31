@@ -2668,7 +2668,7 @@ export function CloudSeaResultPage({
           riskSummary={viewModel.riskSummary}
         />
         <CloudSeaNearTermWeatherSection result={result} />
-        <CloudSeaTimelineSection windows={viewModel.cloudSeaWindows} />
+        <CloudSeaWindowCardsSection windows={viewModel.cloudSeaWindows} />
         <CloudSeaProfessionalHourlyDataPanel result={result} />
         <CloudSeaDailyTrend result={result} items={viewModel.dailyTrend} />
         <CloudSeaReasoningSection items={viewModel.reasoningItems} />
@@ -4190,58 +4190,109 @@ function cloudSeaAuxiliaryDataNotice(result: ForecastCalculationResult): string 
   return "云层与能见度已纳入判断。";
 }
 
-function CloudSeaTimelineSection({ windows }: { readonly windows: readonly CloudSeaWindowItem[] }) {
+type CloudSeaWindowCategoryKey = "sunrise" | "sunset" | "lit" | "lowLight";
+
+type CloudSeaWindowCategoryDefinition = {
+  readonly key: CloudSeaWindowCategoryKey;
+  readonly title: string;
+  readonly noWindowIssue: string;
+  readonly noWindowAction: string;
+};
+
+type CloudSeaWindowCardData = {
+  readonly key: CloudSeaWindowCategoryKey;
+  readonly title: string;
+  readonly badgeLabel: string;
+  readonly badgeVariant: BadgeVariant;
+  readonly chanceText: string;
+  readonly scoreText: string;
+  readonly scoreTone: ForecastResultCardTone;
+  readonly primaryWindow: string;
+  readonly backupWindow: string;
+  readonly mainIssue: string;
+  readonly action: string;
+};
+
+const cloudSeaWindowCategoryDefinitions: readonly CloudSeaWindowCategoryDefinition[] = [
+  {
+    key: "sunrise",
+    title: "日出云海",
+    noWindowIssue: "当前窗口数据未给出日出前后可用云海窗口。",
+    noWindowAction: "不建议只为日出云海专程等待，可顺带观察低云上沿和能见度。",
+  },
+  {
+    key: "sunset",
+    title: "日落云海",
+    noWindowIssue: "当前窗口数据未给出日落或余晖附近可用云海窗口。",
+    noWindowAction: "保留日落前后机动观察，不建议押单一云海窗口。",
+  },
+  {
+    key: "lit",
+    title: "有光云海",
+    noWindowIssue: "当前窗口数据缺少与自然光重叠的明确云海窗口。",
+    noWindowAction: "等待临近预报更新，优先复核低云高度、开口和通透度。",
+  },
+  {
+    key: "lowLight",
+    title: "无光云海",
+    noWindowIssue: "当前窗口数据未给出夜间或低光云海形成窗口。",
+    noWindowAction: "不建议专程夜守；若已在山上，可作为氛围、剪影或层次观察。",
+  },
+];
+
+function CloudSeaWindowCardsSection({ windows }: { readonly windows: readonly CloudSeaWindowItem[] }) {
+  const cards = buildCloudSeaWindowCardData(windows);
+
   return (
-    <Card className="CloudSeaTimeline cloud-sea-timeline p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-lg font-bold text-card-foreground">云海时间轴</h2>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            聚焦云海信号、白墙风险、雨后开口和到场动作。
-          </p>
-        </div>
-        <Badge variant="muted">云雾 / 白墙 / 行动</Badge>
+    <section
+      className="CloudSeaWindowCards cloud-sea-window-cards grid gap-3"
+      data-cloud-sea-section="CloudSeaWindowCards"
+      data-testid="cloud-sea-window-cards-section"
+    >
+      <SectionHeading
+        title="云海窗口与备选"
+        description="按时段与光线条件归纳云海窗口，快速判断哪一类云海更值得守拍。"
+        badge="云海窗口"
+      />
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {cards.map((card) => (
+          <article
+            key={card.key}
+            className="grid h-full content-start gap-3 rounded-lg border border-border bg-card p-4 shadow-sm"
+            data-testid="cloud-sea-window-category-card"
+            data-cloud-sea-window-category={card.key}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <h3 className="text-base font-bold text-card-foreground">{card.title}</h3>
+              <Badge variant={card.badgeVariant}>{card.badgeLabel}</Badge>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground">机会指数 / 概率评分</p>
+              <p className={cn("mt-1 text-2xl font-bold leading-8", cardToneText(card.scoreTone))}>
+                {card.scoreText}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">{card.chanceText}</p>
+            </div>
+
+            <dl className="grid gap-1.5 text-xs leading-5 text-muted-foreground">
+              <CloudSeaWindowCardLine label="推荐窗口" value={card.primaryWindow} />
+              <CloudSeaWindowCardLine label="备选窗口" value={card.backupWindow} />
+              <CloudSeaWindowCardLine label="主要限制" value={card.mainIssue} />
+            </dl>
+
+            <p className="text-sm leading-6 text-card-foreground">
+              <span className="font-semibold">建议：</span>
+              {card.action}
+            </p>
+          </article>
+        ))}
       </div>
-      {windows.length > 0 ? (
-        <div className="mt-4 grid gap-3">
-          {windows.map((window) => (
-            <article
-              key={window.key}
-              className="grid gap-3 rounded-lg border border-border bg-muted p-3 min-[900px]:grid-cols-[minmax(145px,0.8fr)_minmax(130px,0.7fr)_minmax(130px,0.7fr)_minmax(145px,0.8fr)_minmax(0,1.4fr)] min-[900px]:items-start"
-            >
-              <div className="min-w-0">
-                <p className="text-sm font-bold text-card-foreground">{window.timeRangeLabel}</p>
-                <p className="mt-1 text-xs font-semibold text-accent">
-                  {window.label} · {window.score} 分
-                </p>
-              </div>
-              <CloudSeaTimelineField label="云海信号" value={window.cloudSeaChance} />
-              <CloudSeaTimelineField label="白墙风险" value={window.whiteoutRisk} />
-              <CloudSeaTimelineField label="雨后开口" value={window.rainInterference} />
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={badgeVariantForTone(window.tone)}>{window.riskTag}</Badge>
-                </div>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  {window.actionSuggestion}
-                </p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  {firstSentence(window.note)}
-                </p>
-              </div>
-            </article>
-          ))}
-        </div>
-      ) : (
-        <p className="mt-4 rounded-lg border border-warning bg-muted p-3 text-sm leading-6 text-muted-foreground">
-          暂无完整小时级云海时间轴，建议查看临近预报。
-        </p>
-      )}
-    </Card>
+    </section>
   );
 }
 
-function CloudSeaTimelineField({
+function CloudSeaWindowCardLine({
   label,
   value,
 }: {
@@ -4249,11 +4300,208 @@ function CloudSeaTimelineField({
   readonly value: string;
 }) {
   return (
-    <div className="min-w-0">
-      <p className="text-xs font-semibold text-muted-foreground">{label}</p>
-      <p className="mt-1 break-words text-sm font-bold text-card-foreground">{value}</p>
+    <div>
+      <dt className="inline font-semibold text-card-foreground">{label}：</dt>
+      <dd className="inline break-words">{value}</dd>
     </div>
   );
+}
+
+function buildCloudSeaWindowCardData(
+  windows: readonly CloudSeaWindowItem[],
+): readonly CloudSeaWindowCardData[] {
+  const sortedWindows = [...windows].sort(compareCloudSeaWindowPriority);
+
+  return cloudSeaWindowCategoryDefinitions.map((definition) => {
+    const candidates = sortedWindows.filter((item) =>
+      cloudSeaWindowMatchesCategory(item, definition.key),
+    );
+    return cloudSeaWindowCategoryCard(definition, candidates);
+  });
+}
+
+function cloudSeaWindowCategoryCard(
+  definition: CloudSeaWindowCategoryDefinition,
+  candidates: readonly CloudSeaWindowItem[],
+): CloudSeaWindowCardData {
+  const primary = candidates[0];
+  const backup = candidates.find((candidate) => candidate.key !== primary?.key);
+
+  if (!primary) {
+    return {
+      key: definition.key,
+      title: definition.title,
+      badgeLabel: "暂无明确窗口",
+      badgeVariant: "warning",
+      chanceText: "暂无明确评分",
+      scoreText: "暂无评分",
+      scoreTone: "muted",
+      primaryWindow: "暂无明确窗口",
+      backupWindow: "等待下一次预报更新",
+      mainIssue: definition.noWindowIssue,
+      action: definition.noWindowAction,
+    };
+  }
+
+  return {
+    key: definition.key,
+    title: definition.title,
+    badgeLabel: cloudSeaWindowCategoryBadgeLabel(definition.key, primary),
+    badgeVariant: cloudSeaWindowCategoryBadgeVariant(definition.key, primary),
+    chanceText: primary.cloudSeaChance,
+    scoreText: `${primary.score} 分`,
+    scoreTone: cloudSeaWindowCardTone(definition.key, primary),
+    primaryWindow: primary.timeRangeLabel,
+    backupWindow: backup?.timeRangeLabel ?? "暂无数据支撑的备选窗口",
+    mainIssue: cloudSeaWindowMainIssue(definition.key, primary),
+    action: cloudSeaWindowCardAction(definition.key, primary),
+  };
+}
+
+function compareCloudSeaWindowPriority(
+  left: CloudSeaWindowItem,
+  right: CloudSeaWindowItem,
+): number {
+  if (right.score !== left.score) {
+    return right.score - left.score;
+  }
+  return left.startTime.localeCompare(right.startTime);
+}
+
+function cloudSeaWindowMatchesCategory(
+  item: CloudSeaWindowItem,
+  category: CloudSeaWindowCategoryKey,
+): boolean {
+  if (category === "sunrise") {
+    return isSunriseCloudSeaWindow(item);
+  }
+  if (category === "sunset") {
+    return isSunsetCloudSeaWindow(item);
+  }
+  if (category === "lowLight") {
+    return isLowLightCloudSeaWindow(item);
+  }
+  return isLitCloudSeaWindow(item);
+}
+
+function isSunriseCloudSeaWindow(item: CloudSeaWindowItem): boolean {
+  const text = cloudSeaWindowSearchText(item);
+  const startHour = localHourFromIso(item.startTime);
+  return (
+    item.lightPhase === "dawn" ||
+    item.lightPhase === "sunrise" ||
+    /清晨|早晨|晨光|日出|朝霞/.test(text) ||
+    (startHour !== undefined && startHour >= 4 && startHour < 9)
+  );
+}
+
+function isSunsetCloudSeaWindow(item: CloudSeaWindowItem): boolean {
+  const text = cloudSeaWindowSearchText(item);
+  const startHour = localHourFromIso(item.startTime);
+  return (
+    item.lightPhase === "sunset" ||
+    item.lightPhase === "blue_hour" ||
+    /傍晚|黄昏|日落|晚霞|余晖/.test(text) ||
+    (startHour !== undefined && startHour >= 16 && startHour < 20.5)
+  );
+}
+
+function isLowLightCloudSeaWindow(item: CloudSeaWindowItem): boolean {
+  const text = cloudSeaWindowSearchText(item);
+  const startHour = localHourFromIso(item.startTime);
+  return (
+    item.lightPhase === "deep_night" ||
+    item.lightPhase === "astronomical_night" ||
+    /夜间|凌晨|无光|低光|深夜/.test(text) ||
+    (startHour !== undefined && (startHour < 4 || startHour >= 20.5))
+  );
+}
+
+function isLitCloudSeaWindow(item: CloudSeaWindowItem): boolean {
+  const startHour = localHourFromIso(item.startTime);
+  return (
+    !isLowLightCloudSeaWindow(item) &&
+    (item.lightPhase === "dawn" ||
+      item.lightPhase === "sunrise" ||
+      item.lightPhase === "daytime" ||
+      item.lightPhase === "sunset" ||
+      item.lightPhase === "blue_hour" ||
+      isSunriseCloudSeaWindow(item) ||
+      isSunsetCloudSeaWindow(item) ||
+      (startHour !== undefined && startHour >= 4 && startHour < 20.5))
+  );
+}
+
+function cloudSeaWindowSearchText(item: CloudSeaWindowItem): string {
+  return `${item.label} ${item.timeRangeLabel} ${item.note} ${item.riskTag}`;
+}
+
+function localHourFromIso(value: string): number | undefined {
+  const match = /T(\d{2}):(\d{2})/.exec(value);
+  if (!match) {
+    return undefined;
+  }
+  return Number(match[1]) + Number(match[2]) / 60;
+}
+
+function cloudSeaWindowCategoryBadgeLabel(
+  category: CloudSeaWindowCategoryKey,
+  item: CloudSeaWindowItem,
+): string {
+  if (category === "lowLight") {
+    return "低光观察";
+  }
+  if (item.score >= 70) {
+    return "优先守拍";
+  }
+  if (item.score >= 50) {
+    return "可作备选";
+  }
+  return "谨慎观察";
+}
+
+function cloudSeaWindowCategoryBadgeVariant(
+  category: CloudSeaWindowCategoryKey,
+  item: CloudSeaWindowItem,
+): BadgeVariant {
+  if (category === "lowLight" || item.score < 55 || item.tone === "danger") {
+    return "warning";
+  }
+  if (item.score >= 70) {
+    return "default";
+  }
+  return "accent";
+}
+
+function cloudSeaWindowCardTone(
+  category: CloudSeaWindowCategoryKey,
+  item: CloudSeaWindowItem,
+): ForecastResultCardTone {
+  if (category === "lowLight" || item.score < 55) {
+    return "accent";
+  }
+  return item.score >= 70 ? "primary" : "accent";
+}
+
+function cloudSeaWindowMainIssue(
+  category: CloudSeaWindowCategoryKey,
+  item: CloudSeaWindowItem,
+): string {
+  const basis = `白墙风险：${item.whiteoutRisk}；雨后开口：${item.rainInterference}。`;
+  if (category === "lowLight") {
+    return `${basis}光线不足，不适合作为常规明亮风光主窗口。`;
+  }
+  return basis;
+}
+
+function cloudSeaWindowCardAction(
+  category: CloudSeaWindowCategoryKey,
+  item: CloudSeaWindowItem,
+): string {
+  if (category === "lowLight") {
+    return "仅作氛围、剪影、层次或现场观察，不作为正常明亮风光主窗口。";
+  }
+  return item.actionSuggestion;
 }
 
 type ProfessionalHourlyFilterMode = "all" | "cloudSea" | "morning" | "risk";

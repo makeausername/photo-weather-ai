@@ -3987,7 +3987,7 @@ describe("forecast result target-aware view model", () => {
     );
   });
 
-  it("builds a specialized cloud sea view model with hero, metrics, timeline, reasoning, and actions", () => {
+  it("builds a specialized cloud sea view model with hero, metrics, window data, reasoning, and actions", () => {
     const viewModel = buildCloudSeaForecastViewModel(resultForTarget("cloud_sea"));
 
     expect(viewModel.coreCards.map((card) => card.label)).toEqual([
@@ -4005,6 +4005,8 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.cloudSeaWindows.length).toBeGreaterThan(0);
     expect(viewModel.cloudSeaWindows[0]).toMatchObject({
       label: "最佳云海窗口",
+      startTime: "2026-05-20T05:00:00+08:00",
+      endTime: "2026-05-20T07:00:00+08:00",
       cloudSeaChance: expect.any(String),
       whiteoutRisk: expect.any(String),
       rainInterference: expect.any(String),
@@ -4197,7 +4199,23 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("白墙风险");
       expect(html).toContain("黄山光明顶 云海判断");
       expect(html).toContain("建议到达");
-      expect(html).toContain("云海时间轴");
+      expect(html).toContain("云海窗口与备选");
+      expect(html).toContain("按时段与光线条件归纳云海窗口，快速判断哪一类云海更值得守拍。");
+      expect(html).toContain("云海窗口");
+      expect(html).toContain("日出云海");
+      expect(html).toContain("日落云海");
+      expect(html).toContain("有光云海");
+      expect(html).toContain("无光云海");
+      expect(countOccurrences(html, 'data-testid="cloud-sea-window-category-card"')).toBe(4);
+      expect(countOccurrences(html, "机会指数 / 概率评分")).toBe(4);
+      expect(countOccurrences(html, "推荐窗口：</dt>")).toBe(4);
+      expect(countOccurrences(html, "备选窗口：</dt>")).toBe(4);
+      expect(countOccurrences(html, "主要限制：</dt>")).toBe(4);
+      expect(countOccurrences(html, "建议：</span>")).toBe(4);
+      expect(html).toContain("05:00");
+      expect(html).toContain("17:20");
+      expect(html).not.toContain("云海时间轴");
+      expect(html).not.toContain("聚焦云海信号、白墙风险、雨后开口和到场动作。");
       expect(html).toContain("每日云海判断");
       expect(html).toContain("判断依据");
       expect(html).toContain("行动方案");
@@ -4299,7 +4317,7 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("风与降水");
       expect(html).toContain("湿度与露点");
       expect(html).toContain("穿衣与装备");
-      expect(html).toContain("CloudSeaTimeline");
+      expect(html).toContain("CloudSeaWindowCards");
       expect(html).toContain("CloudSeaDailyTrend");
       expect(html).toContain('data-forecast-daily-decision-list="true"');
       expect(html).toContain('data-result-daily-section="true"');
@@ -4317,6 +4335,7 @@ describe("forecast result target-aware view model", () => {
       expect(html).not.toContain("CloudSeaFullWidthDetails");
       expect(html).not.toContain("cloud-sea-full-width-details");
       expect(html).not.toMatch(/cloud-sea-(placeholder|spacer|empty)/i);
+      expect(html).not.toContain("CloudSeaTimeline");
       expect(html).not.toMatch(/\bmin-h-/);
       expect(html).not.toContain("row-span");
       expect(html).not.toContain("min-[1024px]:col-span-4");
@@ -4327,14 +4346,14 @@ describe("forecast result target-aware view model", () => {
         html.indexOf("CloudSeaNearTermWeather"),
       );
       expect(html.indexOf("CloudSeaNearTermWeather")).toBeLessThan(
-        html.indexOf("CloudSeaTimeline"),
+        html.indexOf("CloudSeaWindowCards"),
       );
       const professionalHourlyIndex = html.indexOf("CloudSeaProfessionalHourlyData");
       if (professionalHourlyIndex >= 0) {
-        expect(html.indexOf("CloudSeaTimeline")).toBeLessThan(professionalHourlyIndex);
+        expect(html.indexOf("CloudSeaWindowCards")).toBeLessThan(professionalHourlyIndex);
         expect(professionalHourlyIndex).toBeLessThan(html.indexOf("CloudSeaDailyTrend"));
       } else {
-        expect(html.indexOf("CloudSeaTimeline")).toBeLessThan(html.indexOf("CloudSeaDailyTrend"));
+        expect(html.indexOf("CloudSeaWindowCards")).toBeLessThan(html.indexOf("CloudSeaDailyTrend"));
       }
       expect(html.indexOf("CloudSeaDailyTrend")).toBeLessThan(html.indexOf("判断依据"));
       expect(html.indexOf("判断依据")).toBeLessThan(html.indexOf("行动方案"));
@@ -4345,7 +4364,50 @@ describe("forecast result target-aware view model", () => {
     }
   });
 
-  it("renders professional hourly data after the cloud sea timeline as a visible focused table", () => {
+  it("renders complete weak cloud sea window cards when window data is missing", () => {
+    const base = resultForTarget("cloud_sea");
+    const result: ForecastCalculationResult = {
+      ...base,
+      bestWindows: base.bestWindows.filter((window) => window.target !== "cloud_sea"),
+      cloudSeaAnalysis: {
+        ...base.cloudSeaAnalysis,
+        bestCloudSeaWindows: [],
+        watchableCloudSeaWindows: [],
+        notRecommendedCloudSeaWindows: [],
+      },
+    };
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result,
+        viewModel,
+      }),
+    );
+    const section = sectionBetween(html, "CloudSeaWindowCards", "CloudSeaDailyTrend");
+
+    expect(viewModel.cloudSeaWindows).toHaveLength(0);
+    expect(section).toContain("云海窗口与备选");
+    expect(countOccurrences(section, 'data-testid="cloud-sea-window-category-card"')).toBe(4);
+    expect(section).toContain("日出云海");
+    expect(section).toContain("日落云海");
+    expect(section).toContain("有光云海");
+    expect(section).toContain("无光云海");
+    expect(countOccurrences(section, "机会指数 / 概率评分")).toBe(4);
+    expect(countOccurrences(section, "暂无明确评分")).toBe(4);
+    expect(countOccurrences(section, "推荐窗口：</dt>")).toBe(4);
+    expect(countOccurrences(section, "备选窗口：</dt>")).toBe(4);
+    expect(countOccurrences(section, "主要限制：</dt>")).toBe(4);
+    expect(countOccurrences(section, "建议：</span>")).toBe(4);
+    expect(countOccurrences(section, "暂无明确窗口")).toBeGreaterThanOrEqual(4);
+    expect(countOccurrences(section, "等待下一次预报更新")).toBe(4);
+    expect(section).toContain("当前窗口数据未给出日出前后可用云海窗口。");
+    expect(section).toContain("当前窗口数据未给出夜间或低光云海形成窗口。");
+    expect(html).not.toContain("云海时间轴");
+    expect(html).not.toContain("CloudSeaTimeline");
+  });
+
+  it("renders professional hourly data after the cloud sea window cards as a visible focused table", () => {
     const result = resultWithProfessionalHourlyData();
     const viewModel = buildCloudSeaForecastViewModel(result);
     const html = renderToStaticMarkup(
@@ -4358,7 +4420,7 @@ describe("forecast result target-aware view model", () => {
 
     expect(html).toContain("CloudSeaHeroConclusion");
     expect(html).toContain("CloudSeaCoreMetrics");
-    expect(html).toContain("CloudSeaTimeline");
+    expect(html).toContain("CloudSeaWindowCards");
     expect(html).toContain("CloudSeaProfessionalHourlyData");
     expect(html).toContain('data-testid="professional-hourly-data"');
     expect(html).toContain("专业小时数据");
@@ -4412,7 +4474,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("Open-Meteo");
     expect(html).not.toContain("和风天气");
 
-    expect(html.indexOf("CloudSeaTimeline")).toBeLessThan(
+    expect(html.indexOf("CloudSeaWindowCards")).toBeLessThan(
       html.indexOf("CloudSeaProfessionalHourlyData"),
     );
     expect(html.indexOf("CloudSeaProfessionalHourlyData")).toBeLessThan(
@@ -4555,7 +4617,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("CloudSeaProfessionalHourlyData");
     expect(html).toContain("CloudSeaHeroConclusion");
     expect(html).toContain("CloudSeaCoreMetrics");
-    expect(html).toContain("CloudSeaTimeline");
+    expect(html).toContain("CloudSeaWindowCards");
   });
 
   it("does not prioritize astro or Milky Way modules in the specialized cloud sea model", () => {

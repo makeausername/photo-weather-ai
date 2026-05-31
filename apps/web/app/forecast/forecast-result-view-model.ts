@@ -220,6 +220,9 @@ export type CloudSeaWeatherEvidenceItem = {
 export type CloudSeaWindowItem = {
   readonly key: string;
   readonly label: string;
+  readonly date?: string;
+  readonly startTime: string;
+  readonly endTime: string;
   readonly timeRangeLabel: string;
   readonly score: number;
   readonly note: string;
@@ -230,6 +233,8 @@ export type CloudSeaWindowItem = {
   readonly windVisibilityNote: string;
   readonly actionSuggestion: string;
   readonly tone: ForecastResultCardTone;
+  readonly lightPhase?: ForecastResultWindow["lightPhase"];
+  readonly windowLevel?: ForecastResultWindow["windowLevel"];
 };
 
 export type CloudSeaActionLabel = "推荐重点关注" | "值得等待" | "谨慎参考" | "不建议专程";
@@ -2340,6 +2345,9 @@ function buildCloudSeaWindowItems(
   return windows.map((window) => ({
     key: `cloud-sea-result-window-${window.startTime}`,
     label: "云海观察窗口",
+    date: window.date,
+    startTime: window.startTime,
+    endTime: window.endTime,
     timeRangeLabel: window.timeRangeLabel,
     score: window.score,
     note: window.copyReasonZh ?? "当前窗口仍需结合临近预报复核低云高度和能见度。",
@@ -2354,6 +2362,8 @@ function buildCloudSeaWindowItems(
       window.windowLevel,
     ),
     tone: result.cloudSeaAnalysis.labels.whiteoutRisk === "高" ? "danger" : "accent",
+    lightPhase: window.lightPhase,
+    windowLevel: window.windowLevel,
   }));
 }
 
@@ -2366,6 +2376,9 @@ function cloudSeaWindowItem(
   return {
     key: `${prefix}-${window.startTime}`,
     label,
+    date: window.date,
+    startTime: window.startTime,
+    endTime: window.endTime,
     timeRangeLabel: formatWindow(window.startTime, window.endTime),
     score: window.shootableScore ?? window.score,
     note: window.noteZh,
