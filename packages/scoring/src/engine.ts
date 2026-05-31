@@ -1,4 +1,5 @@
 import {
+  buildCloudLayerCompletenessContext,
   classifyTerrainMode,
   forecastRecommendationLabels,
   simplifyWeatherSummaryZh,
@@ -382,7 +383,10 @@ function professionalTemperatureProfile(hour: NormalizedHourlyWeather): {
 } {
   const adjustment = hour.temperatureAdjustment;
   const rawTemperatureC = finiteOrNull(
-    hour.rawTemperature ?? adjustment?.rawTemperatureC ?? adjustment?.rawTemperature ?? hour.temperature,
+    hour.rawTemperature ??
+      adjustment?.rawTemperatureC ??
+      adjustment?.rawTemperature ??
+      hour.temperature,
   );
   const hasTerrainAdjustedBasis =
     adjustment !== undefined &&
@@ -532,9 +536,7 @@ function professionalHourlyNotes(
     temperature.temperatureBasis === "raw_grid"
       ? "温度为原始格点值，未作为机位海拔修正温度展示。"
       : undefined,
-    cloudLayers.cloudLayerBasis === "total_only"
-      ? "仅有总云量，低/中/高云分层缺失。"
-      : undefined,
+    cloudLayers.cloudLayerBasis === "total_only" ? "仅有总云量，低/中/高云分层缺失。" : undefined,
     cloudLayers.cloudLayerBasis === "partial_layers" ? "部分云层字段缺失。" : undefined,
     dewPointSpreadC !== null && dewPointSpreadC < 0
       ? "露点差为负，温度或露点数据需人工复核。"
@@ -592,6 +594,22 @@ function professionalHourlySignalForPayload(options: {
     rainSupportSignal: cloudSeaAnalysis.rainOpening.rainSupportSignal,
   });
   const formationLikely = professionalHourlyFormationLikely(row) || inWatchableWindow;
+  const cloudLayerCompleteness = buildCloudLayerCompletenessContext([row]);
+  const hasWindowSignal = inBestWindow || inWatchableWindow || inBlockedWindow;
+  const significantTotalCloud = row.cloudTotalPercent !== null && row.cloudTotalPercent >= 70;
+
+  if (cloudLayerCompleteness.shouldPreferNeedsReviewSignal) {
+    if (
+      hasWindowSignal ||
+      significantTotalCloud ||
+      whiteout === "review" ||
+      rainOpening ||
+      formationLikely
+    ) {
+      return { label: "需复核", level: "review" };
+    }
+    return { label: "普通", level: "neutral" };
+  }
 
   if (whiteout === "high" || (whiteout === "medium" && inBlockedWindow)) {
     return { label: "白墙风险", level: "risk" };
@@ -640,7 +658,7 @@ function professionalHourlyWhiteoutAssessment(
 
   if (lowCloudMissing) {
     if (fogOrMist && humidityHigh && visibilityPoor && (dewPointSpread === null || spreadMedium)) {
-      return "high";
+      return "review";
     }
     if (
       fogOrMist ||
@@ -662,12 +680,7 @@ function professionalHourlyWhiteoutAssessment(
     return "high";
   }
 
-  if (
-    fogOrMist &&
-    humidityHigh &&
-    spreadMedium &&
-    (lowCloud >= 60 || visibilityPoor)
-  ) {
+  if (fogOrMist && humidityHigh && spreadMedium && (lowCloud >= 60 || visibilityPoor)) {
     return "high";
   }
 
@@ -693,12 +706,13 @@ function professionalHourlyFormationLikely(row: ProfessionalHourlySignalInput): 
     return false;
   }
   const lowCloudFormationBand = row.cloudLowPercent >= 35 && row.cloudLowPercent <= 74;
-  const humiditySupport =
-    row.relativeHumidityPercent !== null && row.relativeHumidityPercent >= 82;
+  const humiditySupport = row.relativeHumidityPercent !== null && row.relativeHumidityPercent >= 82;
   const dewPointSupport = row.dewPointSpreadC !== null && row.dewPointSpreadC <= 5;
   const windSupport = row.windSpeedMs === null || row.windSpeedMs <= 6;
   const rainNotActive = !professionalHourlyHasPayloadPrecipitation(row);
-  return lowCloudFormationBand && humiditySupport && dewPointSupport && windSupport && rainNotActive;
+  return (
+    lowCloudFormationBand && humiditySupport && dewPointSupport && windSupport && rainNotActive
+  );
 }
 
 function professionalHourlyRainOpeningSignal(options: {
@@ -750,7 +764,9 @@ function professionalHourInAnalysisWindows(
 function aggregateProfessionalTemperatureBasis(
   hourlyWeather: readonly NormalizedHourlyWeather[],
 ): ProfessionalHourlyTemperatureBasis {
-  const rowBases = hourlyWeather.map((hour) => professionalTemperatureProfile(hour).temperatureBasis);
+  const rowBases = hourlyWeather.map(
+    (hour) => professionalTemperatureProfile(hour).temperatureBasis,
+  );
   if (rowBases.some((basis) => basis === "terrain_adjusted")) {
     return "terrain_adjusted";
   }
@@ -763,7 +779,9 @@ function aggregateProfessionalTemperatureBasis(
 function aggregateProfessionalTemperatureBasisNote(
   hourlyWeather: readonly NormalizedHourlyWeather[],
 ): string {
-  const rowBases = hourlyWeather.map((hour) => professionalTemperatureProfile(hour).temperatureBasis);
+  const rowBases = hourlyWeather.map(
+    (hour) => professionalTemperatureProfile(hour).temperatureBasis,
+  );
   if (rowBases.some((basis) => basis === "terrain_adjusted")) {
     return rowBases.some((basis) => basis !== "terrain_adjusted")
       ? "温度口径：机位海拔修正后；部分小时仍需复核原始格点或缺失值。"
@@ -778,31 +796,27 @@ function aggregateProfessionalTemperatureBasisNote(
 function aggregateProfessionalCloudLayerBasis(
   hourlyWeather: readonly NormalizedHourlyWeather[],
 ): ProfessionalHourlyCloudLayerBasis {
-  const rowBases = hourlyWeather.map((hour) => professionalCloudLayerProfile(hour).cloudLayerBasis);
-  if (rowBases.length === 0 || rowBases.every((basis) => basis === "unknown")) {
-    return "unknown";
-  }
-  if (rowBases.every((basis) => basis === "explicit_layers")) {
-    return "explicit_layers";
-  }
-  if (rowBases.every((basis) => basis === "total_only")) {
-    return "total_only";
-  }
-  return "partial_layers";
+  return buildCloudLayerCompletenessContext(hourlyWeather.map(professionalCloudLayerProfile))
+    .cloudLayerBasis;
 }
 
 function aggregateProfessionalCloudLayerBasisNote(
   hourlyWeather: readonly NormalizedHourlyWeather[],
 ): string {
-  const basis = aggregateProfessionalCloudLayerBasis(hourlyWeather);
-  if (basis === "explicit_layers") {
+  const context = buildCloudLayerCompletenessContext(
+    hourlyWeather.map(professionalCloudLayerProfile),
+  );
+  if (context.layerCompletenessLevel === "complete") {
     return "云量口径：总云量 + 低/中/高云分层";
   }
-  if (basis === "total_only") {
+  if (context.cloudLayerBasis === "total_only") {
     return "云量口径：仅总云量，缺少低/中/高云分层";
   }
-  if (basis === "partial_layers") {
-    return "云量口径：部分云层字段缺失";
+  if (context.layerCompletenessLevel === "weak") {
+    return "云量口径：较多时段缺少低/中/高云分层";
+  }
+  if (context.cloudLayerBasis === "partial_layers") {
+    return "云量口径：部分时段缺少低/中/高云分层";
   }
   return "云量口径：暂无";
 }

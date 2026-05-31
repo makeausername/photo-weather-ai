@@ -4093,6 +4093,7 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.reasoningItems.map((item) => item.label)).toEqual([
       "湿度与露点差",
       "低云与能见度",
+      "云量分层完整性",
       "风速与云雾稳定性",
       "降水与雨后开口",
       "地形与高差",
@@ -4715,7 +4716,8 @@ describe("forecast result target-aware view model", () => {
     expect(html).toMatch(/data-professional-hourly-cell="wind-direction">—<\/td>/);
     expect(html).toContain("0 mm / —");
     expect(html).toContain("低/中/高云分层缺失时以 — 显示，不用总云量回填。");
-    expect(html).toContain("部分小时字段缺失，缺失值以 “—” 显示。");
+    expect(html).toContain("当前时段仅有总云量，缺少低/中/高云分层");
+    expect(html).toContain("不使用总云量回填");
   });
 
   it("shows raw grid temperature basis and review signal when layer data is insufficient", () => {
@@ -4763,10 +4765,73 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("温度口径");
     expect(html).toContain("原始格点");
     expect(html).toContain("云量口径");
-    expect(html).toContain("仅总云量");
+    expect(html).toContain("仅总云量，缺少低/中/高云分层");
     expect(html).toContain("原始格点温度 °C");
     expect(html).toContain("需复核");
     expect(html).not.toContain("白墙风险</span>");
+  });
+
+  it("downgrades cloud sea UI confidence when professional cloud layers are total-only", () => {
+    const hourly = professionalHourlyDataForTest({
+      cloudSeaSignal: "可拍窗口",
+      cloudSeaSignalLevel: "positive",
+      cloudTotalPercent: 96,
+      cloudHighPercent: null,
+      cloudMidPercent: null,
+      cloudLowPercent: null,
+      cloudLayerBasis: "total_only",
+      missingFields: ["cloudHigh", "cloudMid", "cloudLow"],
+    });
+    const result = resultWithProfessionalHourlyData({
+      professionalHourlyData: hourly,
+      professionalHourlyDataTimeBasis: {
+        startTime: "2026-05-20T00:00:00+08:00",
+        endTime: "2026-05-20T15:00:00+08:00",
+        stepMinutes: 60,
+        timezone: "Asia/Shanghai",
+        temperatureBasis: "terrain_adjusted",
+        temperatureBasisNoteZh: "温度口径：机位海拔修正后",
+        cloudLayerBasis: "total_only",
+        cloudLayerBasisNoteZh: "云量口径：仅总云量，缺少低/中/高云分层",
+        partialData: false,
+      },
+    });
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result,
+        viewModel,
+      }),
+    );
+    const professionalSection = sectionBetween(
+      html,
+      "CloudSeaProfessionalHourlyData",
+      "CloudSeaDailyTrend",
+    );
+
+    expect(viewModel.cloudLayerCompleteness).toMatchObject({
+      cloudLayerBasis: "total_only",
+      layerCompletenessLevel: "missing",
+      shouldPreferNeedsReviewSignal: true,
+    });
+    expect(viewModel.hero.confidenceLabel).toBe("低（分层云量不足）");
+    expect(viewModel.reasoningItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "云量分层完整性",
+          value: "仅总云量",
+        }),
+      ]),
+    );
+    expect(viewModel.dailyTrend.some((item) => item.layerCompletenessNote)).toBe(true);
+    expect(viewModel.cloudSeaWindows.some((item) => item.layerCompletenessNote)).toBe(true);
+    expect(html).toContain("云量分层完整性");
+    expect(html).toContain("低云分层缺失，窗口置信度降低");
+    expect(html).toContain("当日仅有总云量，缺少低/中/高云分层");
+    expect(professionalSection).toMatch(/data-professional-hourly-cell="signal"[\s\S]*?需复核/);
+    expect(professionalSection).not.toContain("可拍窗口</span>");
+    expect(html).not.toContain("查看全部小时查看全部小时");
   });
 
   it("does not render the professional hourly table without a valid time basis", () => {

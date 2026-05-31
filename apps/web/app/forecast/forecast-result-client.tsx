@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
+  buildCloudLayerCompletenessContext,
   classifyTerrainMode,
   formatArrivalDeadlineZh,
   formatShootingWindowZh,
   forecastHorizonLabels,
   forecastTargetLabels,
+  type CloudLayerCompletenessContext,
   simplifyWeatherSummaryZh,
   terrainModeUsesLowlandSemantics,
   terrainModeUsesMountainSemantics,
@@ -4271,6 +4273,7 @@ type CloudSeaWindowCardData = {
   readonly backupWindow: string;
   readonly mainIssue: string;
   readonly action: string;
+  readonly cautionNote?: string;
 };
 
 function cloudSeaWindowCategoryDefinitions(
@@ -4336,6 +4339,11 @@ function CloudSeaWindowCardsSection({
               <span className="font-semibold">建议：</span>
               {card.action}
             </p>
+            {card.cautionNote ? (
+              <p className="rounded-md border border-warning/40 bg-accent/10 px-2 py-1 text-xs leading-5 text-muted-foreground">
+                {card.cautionNote}
+              </p>
+            ) : null}
           </article>
         ))}
       </div>
@@ -4393,6 +4401,7 @@ function cloudSeaWindowCategoryCard(
       backupWindow: "等待下一次预报更新",
       mainIssue: definition.noWindowIssue,
       action: definition.noWindowAction,
+      cautionNote: undefined,
     };
   }
 
@@ -4408,6 +4417,7 @@ function cloudSeaWindowCategoryCard(
     backupWindow: backup?.timeRangeLabel ?? "暂无数据支撑的备选窗口",
     mainIssue: cloudSeaWindowMainIssue(definition.key, primary, terrainContext),
     action: cloudSeaWindowCardAction(definition.key, primary, terrainContext),
+    cautionNote: primary.layerCompletenessNote,
   };
 }
 
@@ -4617,8 +4627,17 @@ function CloudSeaProfessionalHourlyDataPanel({
   const professionalHourlyFilters = professionalHourlyFiltersForContext(terrainContext);
   const activeFilterLabel =
     professionalHourlyFilters.find((filter) => filter.mode === filterMode)?.label ?? "全部小时";
-  const missingHeaderNote = professionalHourlyMissingHeaderNote(rows, basis);
-  const incompleteFieldNote = professionalHourlyIncompleteFieldNote(rows, basis);
+  const cloudLayerCompleteness = buildCloudLayerCompletenessContext(rows);
+  const missingHeaderNote = professionalHourlyMissingHeaderNote(
+    rows,
+    basis,
+    cloudLayerCompleteness,
+  );
+  const incompleteFieldNote = professionalHourlyIncompleteFieldNote(
+    rows,
+    basis,
+    cloudLayerCompleteness,
+  );
   const temperatureColumnLabel = professionalTemperatureColumnLabel(rows, basis);
 
   return (
@@ -4665,7 +4684,7 @@ function CloudSeaProfessionalHourlyDataPanel({
         />
         <CompactDefinition
           label="云量口径"
-          value={professionalCloudLayerBasisLabel(basis.cloudLayerBasis)}
+          value={professionalCloudLayerBasisLabel(cloudLayerCompleteness)}
         />
         {missingHeaderNote ? (
           <CompactDefinition label="缺失说明" value={missingHeaderNote} />
@@ -4784,7 +4803,7 @@ function CloudSeaProfessionalHourlyRow({
   readonly row: ProfessionalHourlyRow;
   readonly timezone: string;
 }) {
-  const signal = row.cloudSeaSignal;
+  const signal = professionalHourlyDisplaySignal(row);
   const weatherText = providerNeutralProfessionalWeatherText(row.weatherText) ?? "—";
   const weatherGlyph = weatherGlyphForProfessionalHour(row, weatherText);
 
@@ -4895,8 +4914,10 @@ function CloudSeaHourlyFocusPreview({
                 <p className="text-sm font-bold text-card-foreground">
                   {row.timeLabel || formatProfessionalTime(row.time, timezone)}
                 </p>
-                <Badge variant={professionalSignalBadgeVariant(row.cloudSeaSignal)}>
-                  {row.cloudSeaSignal}
+                <Badge
+                  variant={professionalSignalBadgeVariant(professionalHourlyDisplaySignal(row))}
+                >
+                  {professionalHourlyDisplaySignal(row)}
                 </Badge>
               </div>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -4930,19 +4951,18 @@ function professionalTemperatureBasisLabel(
   return "暂无";
 }
 
-function professionalCloudLayerBasisLabel(
-  basis: NonNullable<
-    ForecastCalculationResult["professionalHourlyDataTimeBasis"]
-  >["cloudLayerBasis"],
-): string {
-  if (basis === "explicit_layers") {
+function professionalCloudLayerBasisLabel(context: CloudLayerCompletenessContext): string {
+  if (context.layerCompletenessLevel === "complete") {
     return "总云量 + 低/中/高云分层";
   }
-  if (basis === "total_only") {
-    return "仅总云量";
+  if (context.cloudLayerBasis === "total_only") {
+    return "仅总云量，缺少低/中/高云分层";
   }
-  if (basis === "partial_layers") {
-    return "部分字段缺失";
+  if (context.layerCompletenessLevel === "weak") {
+    return "较多时段缺少低/中/高云分层";
+  }
+  if (context.cloudLayerBasis === "partial_layers") {
+    return "部分时段缺少低/中/高云分层";
   }
   return "暂无";
 }
@@ -4969,14 +4989,10 @@ const professionalHourlyIncompleteFieldNoteText = "部分小时字段缺失，�
 function professionalHourlyMissingHeaderNote(
   rows: readonly ProfessionalHourlyRow[],
   basis: NonNullable<ForecastCalculationResult["professionalHourlyDataTimeBasis"]>,
+  cloudLayerCompleteness: CloudLayerCompletenessContext,
 ): string | null {
-  const hasTotalOnly = rows.some((row) => row.cloudLayerBasis === "total_only");
-  if (hasTotalOnly) {
+  if (cloudLayerCompleteness.layerCompletenessLevel !== "complete") {
     return "低/中/高云分层缺失时以 — 显示，不用总云量回填。";
-  }
-  const hasPartialLayers = rows.some((row) => row.cloudLayerBasis === "partial_layers");
-  if (hasPartialLayers) {
-    return professionalHourlyIncompleteFieldNoteText;
   }
   const hasRawTemperature = rows.some((row) => row.temperatureBasis === "raw_grid");
   if (hasRawTemperature && basis.temperatureBasis !== "terrain_adjusted") {
@@ -4991,7 +5007,11 @@ function professionalHourlyMissingHeaderNote(
 function professionalHourlyIncompleteFieldNote(
   rows: readonly ProfessionalHourlyRow[],
   basis: NonNullable<ForecastCalculationResult["professionalHourlyDataTimeBasis"]>,
+  cloudLayerCompleteness: CloudLayerCompletenessContext,
 ): string | null {
+  if (cloudLayerCompleteness.layerCompletenessLevel !== "complete") {
+    return cloudLayerCompleteness.professionalNoteZh;
+  }
   if (basis.partialData || rows.some(professionalHourlyRowHasIncompleteFields)) {
     return professionalHourlyIncompleteFieldNoteText;
   }
@@ -5070,8 +5090,8 @@ function filterProfessionalHourlyRows(
 
   return rows.filter(
     (row) =>
-      row.cloudSeaSignal === "白墙风险" ||
-      row.cloudSeaSignal === "需复核" ||
+      professionalHourlyDisplaySignal(row) === "白墙风险" ||
+      professionalHourlyDisplaySignal(row) === "需复核" ||
       professionalHourlyHasRisk(row) ||
       result.cloudSeaAnalysis.notRecommendedCloudSeaWindows.some((window) =>
         professionalHourInWindow(row, window, 1),
@@ -5123,6 +5143,25 @@ function professionalSignalBadgeVariant(signal: ProfessionalHourlyRow["cloudSeaS
     return "warning" as const;
   }
   return "muted" as const;
+}
+
+function professionalHourlyDisplaySignal(
+  row: ProfessionalHourlyRow,
+): ProfessionalHourlyRow["cloudSeaSignal"] {
+  const cloudLayerCompleteness = buildCloudLayerCompletenessContext([row]);
+  if (!cloudLayerCompleteness.shouldPreferNeedsReviewSignal) {
+    return row.cloudSeaSignal;
+  }
+
+  const strongOrRelevantSignal =
+    row.cloudSeaSignal === "可拍窗口" ||
+    row.cloudSeaSignal === "白墙风险" ||
+    row.cloudSeaSignal === "形成信号" ||
+    row.cloudSeaSignal === "雨后开口" ||
+    row.cloudSeaSignal === "需复核";
+  const significantTotalCloud = row.cloudTotalPercent !== null && row.cloudTotalPercent >= 70;
+
+  return strongOrRelevantSignal || significantTotalCloud ? "需复核" : "普通";
 }
 
 function professionalHourlyHasRisk(row: ProfessionalHourlyRow): boolean {
@@ -5381,6 +5420,11 @@ function CloudSeaDailyTrend({
               </div>
               <div className="grid gap-1 text-sm leading-6 text-muted-foreground">
                 <p>{item.actionSuggestion}</p>
+                {item.layerCompletenessNote ? (
+                  <p className="rounded-md border border-warning/40 bg-accent/10 px-2 py-1 text-xs leading-5">
+                    {item.layerCompletenessNote}
+                  </p>
+                ) : null}
               </div>
             </article>
           ))}
