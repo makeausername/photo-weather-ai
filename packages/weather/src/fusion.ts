@@ -17,6 +17,7 @@ import type {
   WeatherProviderCode,
   WeatherSourceSummary,
 } from "./types.js";
+import { buildMultiSourceAgreementContext } from "./disagreement.js";
 
 export type WeatherFusionInput = {
   readonly providerBundles: readonly WeatherDataBundle[];
@@ -89,6 +90,14 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
     ...new Set(usableBundles.flatMap((bundle) => bundle.hourly.map((hour) => hour.time))),
   ].sort();
   const conflictFlags = detectConflicts(usableBundles);
+  const multiSourceAgreementContext = buildMultiSourceAgreementContext({
+    providerBundles: usableBundles,
+    target: input.target,
+    targetWindow: {
+      startTime: input.forecastStart,
+      endTime: input.forecastEnd,
+    },
+  });
   const fusedHourly = hourlyTimes
     .map((time) => fuseHourlyAt(time, usableBundles, primaryBundle))
     .filter((hour): hour is NormalizedHourlyWeather => hour !== null);
@@ -147,6 +156,7 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
       dataStatusZh,
       sourceSummaries,
       missingDataNotes,
+      multiSourceAgreementContext,
     },
   };
 }
@@ -232,6 +242,10 @@ function emptyFusionResult(): WeatherFusionResult {
       conflictStatusZh: "无明显冲突",
       dataStatusZh: "天气数据：演示数据",
       sourceSummaries: [],
+      multiSourceAgreementContext: buildMultiSourceAgreementContext({
+        providerBundles: [],
+        target: "general",
+      }),
       missingDataNotes: ["没有可用于融合的天气源。"],
     },
   };
@@ -313,10 +327,8 @@ function fuseCurrent(
       primary?.selectedSpotElevationMeters ?? hour?.selectedSpotElevationMeters,
     elevationDifferenceMeters:
       primary?.elevationDifferenceMeters ?? hour?.elevationDifferenceMeters,
-    terrainAdjustmentApplied:
-      primary?.terrainAdjustmentApplied ?? hour?.terrainAdjustmentApplied,
-    terrainAdjustmentReason:
-      primary?.terrainAdjustmentReason ?? hour?.terrainAdjustmentReason,
+    terrainAdjustmentApplied: primary?.terrainAdjustmentApplied ?? hour?.terrainAdjustmentApplied,
+    terrainAdjustmentReason: primary?.terrainAdjustmentReason ?? hour?.terrainAdjustmentReason,
     weatherTextZh: primary?.weatherTextZh ?? hour?.weatherTextZh ?? null,
     weatherCode: primary?.weatherCode ?? hour?.weatherCode ?? null,
     airQuality: primary?.airQuality ?? null,

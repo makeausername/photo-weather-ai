@@ -12,6 +12,7 @@ import {
   type DailyAstro,
   type ForecastCalculationResult,
   type ForecastDailyMetric,
+  type ForecastMultiSourceAgreementContext,
   type ForecastRiskFlag,
   type ForecastScore,
   type ForecastTarget,
@@ -296,6 +297,7 @@ export type CloudSeaForecastViewModel = {
   readonly riskSummary: readonly ForecastResultSectionItem[];
   readonly backupPlans: readonly CloudSeaBackupPlan[];
   readonly cloudLayerCompleteness: CloudLayerCompletenessContext;
+  readonly multiSourceAgreementContext: ForecastMultiSourceAgreementContext | null;
   readonly missingDataNotes: readonly string[];
   readonly dataCaution: string | null;
   readonly dataNotice: string;
@@ -624,6 +626,8 @@ export function buildCloudSeaForecastViewModel(
     result.bestWindows.filter((window) => window.target === "cloud_sea"),
   );
   const cloudLayerCompleteness = buildCloudLayerCompletenessContext(result.professionalHourlyData);
+  const multiSourceAgreementContext =
+    result.weatherFusionSummary?.multiSourceAgreementContext ?? null;
   const whiteoutLabel = whiteoutRiskLabel(analysis.whiteoutRiskScore);
   const dataNotice = buildCloudSeaDataNotice(result);
   const vocabulary = terrainContext.vocabulary;
@@ -635,6 +639,7 @@ export function buildCloudSeaForecastViewModel(
       cloudSeaWindows,
       terrainContext,
       cloudLayerCompleteness,
+      multiSourceAgreementContext,
     ),
     coreCards: [
       scoreCard(
@@ -701,8 +706,13 @@ export function buildCloudSeaForecastViewModel(
     riskSummary: buildCloudSeaRiskSummary(result, terrainContext),
     backupPlans: buildCloudSeaBackupPlans(result, terrainContext),
     cloudLayerCompleteness,
+    multiSourceAgreementContext,
     missingDataNotes: analysis.missingDataNotes,
-    dataCaution: buildCloudSeaDataCaution(result, cloudLayerCompleteness),
+    dataCaution: buildCloudSeaDataCaution(
+      result,
+      cloudLayerCompleteness,
+      multiSourceAgreementContext,
+    ),
     dataNotice,
   };
 }
@@ -2231,6 +2241,7 @@ function buildCloudSeaHeroConclusion(
   windows: readonly ForecastResultWindow[],
   terrainContext: CloudSeaTerrainContext,
   cloudLayerCompleteness: CloudLayerCompletenessContext,
+  multiSourceAgreementContext: ForecastMultiSourceAgreementContext | null,
 ): CloudSeaHeroConclusionView {
   const analysis = result.cloudSeaAnalysis;
   const bestWindow = analysis.bestCloudSeaWindow;
@@ -2257,6 +2268,7 @@ function buildCloudSeaHeroConclusion(
     confidenceLabel: cloudSeaConfidenceLabel(
       result.cloudSeaAnalysis.confidenceLevel,
       cloudLayerCompleteness,
+      multiSourceAgreementContext,
     ),
   };
 }
@@ -3203,7 +3215,13 @@ function joinKnownDetails(values: readonly (string | undefined)[], fallback: str
 function buildCloudSeaDataCaution(
   result: ForecastCalculationResult,
   cloudLayerCompleteness: CloudLayerCompletenessContext,
+  multiSourceAgreementContext?: ForecastMultiSourceAgreementContext | null,
 ): string | null {
+  if (multiSourceAgreementContext?.shouldShowReviewWarning) {
+    return (
+      multiSourceAgreementContext.keyWarningsZh[0] ?? "多源判断存在分歧，出行前需结合临近预报复核。"
+    );
+  }
   if (
     result.cloudSeaAnalysis.missingDataNotes.length > 0 ||
     cloudLayerCompleteness.shouldReduceCloudSeaConfidence ||
@@ -3247,6 +3265,7 @@ function cloudSeaGearAdvice(
 function cloudSeaConfidenceLabel(
   level: ForecastCalculationResult["cloudSeaAnalysis"]["confidenceLevel"],
   cloudLayerCompleteness?: CloudLayerCompletenessContext,
+  multiSourceAgreementContext?: ForecastMultiSourceAgreementContext | null,
 ): string {
   if (
     cloudLayerCompleteness &&
@@ -3257,6 +3276,9 @@ function cloudSeaConfidenceLabel(
   }
   if (cloudLayerCompleteness?.shouldPreferNeedsReviewSignal) {
     return `${level === "high" ? "中" : level === "medium" ? "中" : "低"}（低云需复核）`;
+  }
+  if (multiSourceAgreementContext?.shouldLowerConfidence) {
+    return level === "high" ? "中（多源分歧需复核）" : "低（多源分歧需复核）";
   }
   if (level === "high") {
     return "高";

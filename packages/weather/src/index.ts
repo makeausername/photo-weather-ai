@@ -1,4 +1,5 @@
 export * from "./factory.js";
+export * from "./disagreement.js";
 export * from "./fusion.js";
 export * from "./meteoblue-provider.js";
 export * from "./mock-provider.js";

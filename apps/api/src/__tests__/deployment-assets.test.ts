@@ -477,6 +477,15 @@ describe("production deployment assets", () => {
     expect(script).toContain("meteobluePartial:");
     expect(script).toContain("deepSeekInterpretationStatus:");
     expect(script).toContain("dataConfidence:");
+    expect(script).toContain("agreementLevel:");
+    expect(script).toContain("disagreementLevel:");
+    expect(script).toContain("cloudTotalDisagreement:");
+    expect(script).toContain("cloudLowDisagreement:");
+    expect(script).toContain("cloudMidHighDisagreement:");
+    expect(script).toContain("precipitationDisagreement:");
+    expect(script).toContain("temperatureDisagreement:");
+    expect(script).toContain("agreementUserSummaryZh:");
+    expect(script).toContain("agreementShouldLowerConfidence:");
     expect(script).toContain("cacheHit:");
     expect(script).not.toContain(
       "/admin/providers/${providerType}/${providerCode}/test-connection",
@@ -503,9 +512,7 @@ describe("production deployment assets", () => {
   it("keeps the placeholder worker alive and documents that interpretation does not depend on it", () => {
     const workerSource = readRepoFile("apps/worker/src/index.ts");
 
-    expect(workerSource).toContain(
-      "Forecast interpretation runs synchronously in the api service",
-    );
+    expect(workerSource).toContain("Forecast interpretation runs synchronously in the api service");
     expect(workerSource).toContain("worker is not required for /forecast/ai-explain");
     expect(workerSource).toContain("setInterval");
     expect(workerSource).toContain("idle heartbeat");

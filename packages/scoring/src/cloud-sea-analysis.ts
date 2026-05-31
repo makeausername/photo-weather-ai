@@ -160,7 +160,10 @@ export function analyzeCloudSea(input: ForecastCalculationInput): CloudSeaAnalys
     terrainEvidence: buildTerrainEvidence(input),
     whiteoutReasons: bestEvaluation.whiteoutReasons,
     opportunityReasons: bestEvaluation.opportunityReasons,
-    travelRecommendations: buildTravelRecommendations(bestEvaluation.shootableScore, bestEvaluation),
+    travelRecommendations: buildTravelRecommendations(
+      bestEvaluation.shootableScore,
+      bestEvaluation,
+    ),
     backupPlans: [
       {
         condition: "白墙时",
@@ -288,7 +291,11 @@ function evaluateCloudSeaCandidate(
     candidate.observation.startTime,
     candidate.observation.endTime,
   );
-  const fallbackHours = hoursForDate(input.hourlyWeather, candidate.date, input.calendarBasis.timezone);
+  const fallbackHours = hoursForDate(
+    input.hourlyWeather,
+    candidate.date,
+    input.calendarBasis.timezone,
+  );
   const weatherWindow = observationHours.length > 0 ? observationHours : fallbackHours;
   if (weatherWindow.length === 0) {
     return undefined;
@@ -316,11 +323,7 @@ function evaluateCloudSeaCandidate(
       )
     : undefined;
   const terrainSupport = buildTerrainSupport(input);
-  const rawFormationScore = calculateCloudSeaFormationScore(
-    stats,
-    terrainSupport,
-    candidate.kind,
-  );
+  const rawFormationScore = calculateCloudSeaFormationScore(stats, terrainSupport, candidate.kind);
   const whiteoutRiskScore = calculateWhiteoutRiskScore(stats, terrainSupport);
   const rainOpening = buildRainOpeningSignal(stats, accumulationStats, dissipationStats);
   const terrainBonus = terrainTravelBonus(terrainSupport.score);
@@ -346,7 +349,12 @@ function evaluateCloudSeaCandidate(
     terrainSupport,
   );
   const missingDataNotes = buildMissingDataNotes(input, stats, candidate.sunriseKnown);
-  const confidencePenaltyValue = confidencePenalty(input, stats, candidate.sunriseKnown, terrainSupport);
+  const confidencePenaltyValue = confidencePenalty(
+    input,
+    stats,
+    candidate.sunriseKnown,
+    terrainSupport,
+  );
   const confidence = clampScore(100 - confidencePenaltyValue);
   const riskTag = cloudObstructionRiskTag(whiteoutRiskScore, terrainSupport);
   const noteZh = buildWindowNoteZh(
@@ -384,7 +392,8 @@ function evaluateCloudSeaCandidate(
       whiteoutRiskScore,
       lightAlignedScore: candidate.lightAlignedScore,
       target: "cloud_sea",
-      phase: shootableScore >= 50 ? "observation" : formationScore >= 55 ? "waiting" : "observation",
+      phase:
+        shootableScore >= 50 ? "observation" : formationScore >= 55 ? "waiting" : "observation",
       noteZh,
       riskTag,
       rainOpening,
@@ -482,9 +491,7 @@ function calculateWhiteoutRiskScore(
     { score: terrainUncertaintyRisk, weight: 0.01 },
   ]);
   const strongWhiteoutSignals = [
-    (stats.cloudLow ?? 0) >= 85 &&
-      (stats.visibility ?? 99) <= 8 &&
-      (stats.humidity ?? 0) >= 90,
+    (stats.cloudLow ?? 0) >= 85 && (stats.visibility ?? 99) <= 8 && (stats.humidity ?? 0) >= 90,
     (stats.cloudLow ?? 0) >= 95 && (stats.dewPointSpread ?? 99) <= 2,
     activeRainOrFog(stats) && (stats.cloudLow ?? 0) >= 75 && (stats.humidity ?? 0) >= 88,
   ];
@@ -529,7 +536,10 @@ function calculateShootableScore(
       { score: formationScore, weight: 0.5 },
       { score: lightAlignedScore, weight: 0.24 },
       { score: 100 - whiteoutRiskScore, weight: 0.2 },
-      { score: stats.transparencyScore ?? visibilityOpportunityScore(stats.visibility), weight: 0.06 },
+      {
+        score: stats.transparencyScore ?? visibilityOpportunityScore(stats.visibility),
+        weight: 0.06,
+      },
     ]) -
       whiteoutPenalty -
       activeRainPenalty -
@@ -656,11 +666,21 @@ function buildCandidateWindows(
       lightAlignedScore: sunriseKnown ? 96 : 82,
       accumulation: sunrise
         ? clipWindow(addHours(sunrise, -3), addHours(sunrise, -1), forecastStart, forecastEnd)
-        : clipWindow(`${date}T02:30:00+08:00`, `${date}T04:30:00+08:00`, forecastStart, forecastEnd),
+        : clipWindow(
+            `${date}T02:30:00+08:00`,
+            `${date}T04:30:00+08:00`,
+            forecastStart,
+            forecastEnd,
+          ),
       observation: morningObservation,
       dissipation: sunrise
         ? clipWindow(addHours(sunrise, 1.5), addHours(sunrise, 3), forecastStart, forecastEnd)
-        : clipWindow(`${date}T07:30:00+08:00`, `${date}T09:30:00+08:00`, forecastStart, forecastEnd),
+        : clipWindow(
+            `${date}T07:30:00+08:00`,
+            `${date}T09:30:00+08:00`,
+            forecastStart,
+            forecastEnd,
+          ),
     });
   }
 
@@ -678,9 +698,19 @@ function buildCandidateWindows(
         label: "傍晚云海观察窗口",
         sunriseKnown,
         lightAlignedScore: 78,
-        accumulation: clipWindow(addHours(sunset, -3), addHours(sunset, -1.25), forecastStart, forecastEnd),
+        accumulation: clipWindow(
+          addHours(sunset, -3),
+          addHours(sunset, -1.25),
+          forecastStart,
+          forecastEnd,
+        ),
         observation: eveningObservation,
-        dissipation: clipWindow(civilDusk ?? addHours(sunset, 1), addHours(sunset, 2), forecastStart, forecastEnd),
+        dissipation: clipWindow(
+          civilDusk ?? addHours(sunset, 1),
+          addHours(sunset, 2),
+          forecastStart,
+          forecastEnd,
+        ),
       });
     }
   }
@@ -784,14 +814,18 @@ function buildWindowStats(
       weatherWindow.map((hour) => hour.precipitationProbability ?? undefined),
     ),
     precipitation: averageOptional(weatherWindow, (hour) => precipitationAmountMm(hour)),
-    precipitationSum: sumOptional(weatherWindow.map((hour) => precipitationAmountMm(hour) ?? undefined)),
+    precipitationSum: sumOptional(
+      weatherWindow.map((hour) => precipitationAmountMm(hour) ?? undefined),
+    ),
     cloudTotal: averageOptional(weatherWindow, (hour) => hour.cloudTotal),
     cloudLow: averageOptional(weatherWindow, (hour) => hour.cloudLow),
     cloudMid: averageOptional(weatherWindow, (hour) => hour.cloudMid),
     cloudHigh: averageOptional(weatherWindow, (hour) => hour.cloudHigh),
     transparencyScore: averageOptional(weatherWindow, (hour) => hour.photographyTransparencyScore),
     pressure: averageOptional(weatherWindow, (hour) => hour.pressure),
-    weatherTexts: uniqueStrings(weatherWindow.flatMap((hour) => (hour.weatherTextZh ? [hour.weatherTextZh] : []))),
+    weatherTexts: uniqueStrings(
+      weatherWindow.flatMap((hour) => (hour.weatherTextZh ? [hour.weatherTextZh] : [])),
+    ),
     hasLowCloud,
     lowCloudEstimated,
     missingFields,
@@ -836,7 +870,8 @@ function cloudLayerRolesForStats(
     visibilityKm: stats.visibility,
     windSpeedMs: stats.windSpeed,
     precipitationAmountMm: stats.precipitationSum ?? stats.precipitation,
-    precipitationProbabilityPercent: stats.precipitationProbabilityMax ?? stats.precipitationProbability,
+    precipitationProbabilityPercent:
+      stats.precipitationProbabilityMax ?? stats.precipitationProbability,
     terrainMode: terrainSupport.terrainMode,
     terrainScore: terrainSupport.score,
     lightPhase,
@@ -1175,7 +1210,9 @@ function buildTerrainSupport(input: ForecastCalculationInput): CloudSeaTerrainSu
   const nearbyValleyElevation = finiteNumber(terrain.nearbyValleyElevationMeters);
   const providerElevationMeters =
     finiteNumber(input.currentWeather?.providerElevationMeters) ??
-    input.hourlyWeather.map((hour) => finiteNumber(hour.providerElevationMeters)).find(isFiniteNumber) ??
+    input.hourlyWeather
+      .map((hour) => finiteNumber(hour.providerElevationMeters))
+      .find(isFiniteNumber) ??
     input.dailyWeather.map((day) => finiteNumber(day.providerElevationMeters)).find(isFiniteNumber);
   const relief =
     finiteNumber(terrain.localReliefMeters) ??
@@ -1258,7 +1295,10 @@ function buildTerrainSupport(input: ForecastCalculationInput): CloudSeaTerrainSu
   };
 }
 
-function terrainModeAdjustedSupportScore(score: number, terrainMode: CloudSeaTerrainSupport["terrainMode"]): number {
+function terrainModeAdjustedSupportScore(
+  score: number,
+  terrainMode: CloudSeaTerrainSupport["terrainMode"],
+): number {
   if (terrainMode === "urban_or_plain" || terrainMode === "lowland") {
     return Math.min(score, 20);
   }
@@ -1349,6 +1389,9 @@ function confidencePenalty(
   if (input.weatherDataMode === "mock") {
     penalty += 15;
   } else if (input.weatherDataMode === "fixture") {
+    penalty += 10;
+  }
+  if (input.weatherFusionSummary?.multiSourceAgreementContext?.shouldLowerConfidence) {
     penalty += 10;
   }
   if (!sunriseKnown) {
@@ -1444,10 +1487,7 @@ function buildDailyCloudSeaForDate(
 }
 
 function buildOnSiteCheckpoints(evaluation: WindowEvaluation): readonly string[] {
-  const checkpoints = [
-    "复核云雾上沿是否低于机位",
-    "复核远山层次和能见度是否可用",
-  ];
+  const checkpoints = ["复核云雾上沿是否低于机位", "复核远山层次和能见度是否可用"];
 
   if (evaluation.whiteoutRiskScore >= 60) {
     checkpoints.push("重点观察低云是否包顶形成白墙");
@@ -2061,9 +2101,7 @@ function maxOptional(values: readonly (number | undefined)[]): number | undefine
 
 function sumOptional(values: readonly (number | undefined)[]): number | undefined {
   const finiteValues = values.filter((value): value is number => isFiniteNumber(value));
-  return finiteValues.length > 0
-    ? finiteValues.reduce((sum, value) => sum + value, 0)
-    : undefined;
+  return finiteValues.length > 0 ? finiteValues.reduce((sum, value) => sum + value, 0) : undefined;
 }
 
 function averageDirection(hourlyWeather: readonly NormalizedHourlyWeather[]): number | undefined {

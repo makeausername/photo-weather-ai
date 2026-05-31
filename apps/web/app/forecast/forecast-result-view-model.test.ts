@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   forecastTargetLabels,
   type ForecastCalculationResult,
+  type ForecastMultiSourceAgreementContext,
   type ForecastQueryInput,
   type ForecastScore,
 } from "@photo-weather/shared";
@@ -1665,6 +1666,53 @@ function resultWithProfessionalHourlyData(
       partialData: true,
       missingDataNoteZh: "部分小时数据缺失，结果仅供复核。",
     },
+    ...overrides,
+  };
+}
+
+function weatherFusionSummaryWithAgreement(
+  context: ForecastMultiSourceAgreementContext,
+): NonNullable<ForecastCalculationResult["weatherFusionSummary"]> {
+  return {
+    primarySource: "主天气源",
+    auxiliarySources: ["辅助云层源"],
+    professionalSourceStatus: "专业增强源可用",
+    confidenceLevel: "medium",
+    confidenceByTarget: {
+      cloud_sea: 0.62,
+      glow: 0.68,
+      astro: 0.64,
+      general: 0.7,
+    },
+    conflictStatusZh: context.disagreementLevel === "none" ? "无明显冲突" : "存在差异，请谨慎参考",
+    dataStatusZh: "天气数据：真实数据源",
+    multiSourceAgreementContext: context,
+  };
+}
+
+function agreementContext(
+  overrides: Partial<ForecastMultiSourceAgreementContext> = {},
+): ForecastMultiSourceAgreementContext {
+  return {
+    agreementLevel: "low",
+    disagreementLevel: "high",
+    fieldDisagreements: [
+      {
+        field: "cloudLow",
+        level: "high",
+        range: 45,
+        min: 18,
+        max: 63,
+        unit: "pct",
+        sourcesAvailable: 2,
+        messageZh: "低云多源差值约 45 个百分点，云海形成与白墙风险需结合临近预报复核。",
+      },
+    ],
+    keyWarningsZh: ["低云分歧较大，云海与白墙判断需结合临近预报复核。"],
+    userSummaryZh: "多源低云判断分歧较大，云海形成与白墙风险需结合临近预报复核。",
+    professionalSummaryZh: "低云多源差值约 45 个百分点，云海形成与白墙风险需结合临近预报复核。",
+    shouldLowerConfidence: true,
+    shouldShowReviewWarning: true,
     ...overrides,
   };
 }
@@ -3968,7 +4016,7 @@ describe("forecast result target-aware view model", () => {
   it("renders meteoblue partial success as usable data with medium confidence", () => {
     const result = {
       ...resultForTarget("general"),
-      weatherDataMode: "real",
+      weatherDataMode: "real" as const,
       weatherFusionSummary: {
         primarySource: "和风天气",
         auxiliarySources: ["Open-Meteo", "meteoblue"],
@@ -4709,6 +4757,125 @@ describe("forecast result target-aware view model", () => {
       html.indexOf("CloudSeaDailyTrend"),
     );
     expect(html.indexOf("专业小时数据")).toBeLessThan(html.indexOf("每日云海判断"));
+  });
+
+  it("renders compact multi-source low-cloud disagreement without provider names or coordinates", () => {
+    const base = resultWithProfessionalHourlyData();
+    const context = agreementContext();
+    const result = {
+      ...base,
+      weatherDataMode: "real" as const,
+      weatherFusionSummary: weatherFusionSummaryWithAgreement(context),
+      cloudSeaAnalysis: {
+        ...base.cloudSeaAnalysis,
+        confidenceLevel: "high" as const,
+      },
+    };
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result,
+        viewModel,
+      }),
+    );
+    const agreementSection = sectionBetween(
+      html,
+      "CloudSeaMultiSourceAgreement",
+      "CloudSeaDailyTrend",
+    );
+
+    expect(viewModel.multiSourceAgreementContext).toMatchObject({
+      disagreementLevel: "high",
+      shouldLowerConfidence: true,
+    });
+    expect(viewModel.hero.confidenceLabel).toBe("中（多源分歧需复核）");
+    expect(viewModel.dataCaution).toContain("低云分歧较大");
+    expect(html).toContain("CloudSeaProfessionalHourlyData");
+    expect(html).toContain("CloudSeaMultiSourceAgreement");
+    expect(html).toContain("多源一致性");
+    expect(html).toContain("存在明显分歧");
+    expect(html).toContain("已降低置信度");
+    expect(agreementSection).toContain("低云分歧较大");
+    expect(agreementSection).toContain("低云多源差值约 45 个百分点");
+    expect(agreementSection).toContain("降水分歧");
+    expect(html).not.toContain("QWeather");
+    expect(html).not.toContain("qweather");
+    expect(html).not.toContain("Open-Meteo");
+    expect(html).not.toContain("meteoblue");
+    expect(html).not.toContain("和风天气");
+    expect(html).not.toMatch(/latitude|longitude|WGS84|经度|纬度/i);
+    expect(html.indexOf("CloudSeaProfessionalHourlyData")).toBeLessThan(
+      html.indexOf("CloudSeaMultiSourceAgreement"),
+    );
+    expect(html.indexOf("CloudSeaMultiSourceAgreement")).toBeLessThan(
+      html.indexOf("CloudSeaDailyTrend"),
+    );
+  });
+
+  it("renders mid/high multi-source disagreement as glow or texture related without lowering cloud sea confidence", () => {
+    const base = resultWithProfessionalHourlyData();
+    const context = agreementContext({
+      fieldDisagreements: [
+        {
+          field: "cloudMid",
+          level: "high",
+          range: 56,
+          min: 18,
+          max: 74,
+          unit: "pct",
+          sourcesAvailable: 2,
+          messageZh: "中云多源差值约 56 个百分点，更多影响霞光和云层纹理判断。",
+        },
+        {
+          field: "cloudHigh",
+          level: "high",
+          range: 62,
+          min: 20,
+          max: 82,
+          unit: "pct",
+          sourcesAvailable: 2,
+          messageZh: "高云多源差值约 62 个百分点，更多影响霞光和云层纹理判断。",
+        },
+      ],
+      keyWarningsZh: ["中高云分歧较大，更多影响霞光和云层纹理判断。"],
+      userSummaryZh: "中高云判断存在分歧，更多影响霞光和云层纹理，对云海结论影响有限。",
+      professionalSummaryZh: "中高云多源分歧较大，主要影响霞光和云层纹理，不作为云海强降级依据。",
+      shouldLowerConfidence: false,
+      shouldShowReviewWarning: true,
+    });
+    const result = {
+      ...base,
+      weatherDataMode: "real" as const,
+      weatherFusionSummary: weatherFusionSummaryWithAgreement(context),
+      cloudSeaAnalysis: {
+        ...base.cloudSeaAnalysis,
+        confidenceLevel: "high" as const,
+      },
+    };
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result,
+        viewModel,
+      }),
+    );
+    const agreementSection = sectionBetween(
+      html,
+      "CloudSeaMultiSourceAgreement",
+      "CloudSeaDailyTrend",
+    );
+
+    expect(viewModel.hero.confidenceLabel).toBe("高");
+    expect(agreementSection).toContain("中高云分歧较大");
+    expect(agreementSection).toContain("偏霞光参考");
+    expect(agreementSection).toContain("更多影响霞光和云层纹理");
+    expect(agreementSection).not.toContain("已降低置信度");
+    expect(html).toContain("CloudSeaProfessionalHourlyData");
+    expect(html).not.toContain("Open-Meteo");
+    expect(html).not.toContain("meteoblue");
+    expect(html).not.toContain("QWeather");
   });
 
   it("renders mid/high cloud only rows as glow or texture reference, not cloud sea", () => {

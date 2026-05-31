@@ -44,6 +44,17 @@ describe("weather source fusion", () => {
     );
     expect(result.confidenceByField.cloudTotal).toBeLessThan(0.7);
     expect(result.confidenceByTarget.astro).toBeLessThan(0.75);
+    expect(result.summary.multiSourceAgreementContext).toMatchObject({
+      agreementLevel: "low",
+      disagreementLevel: "high",
+      shouldShowReviewWarning: true,
+    });
+    expect(result.summary.multiSourceAgreementContext?.fieldDisagreements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "cloudTotal", level: "high" }),
+        expect.objectContaining({ field: "visibility", level: "high" }),
+      ]),
+    );
     expect(result.summary.conflictStatusZh).toContain("差异");
   });
 

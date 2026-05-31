@@ -1398,6 +1398,32 @@ export type ForecastCalibrationHint = {
 
 export type WeatherConfidenceLevel = "high" | "medium" | "low";
 
+export type ForecastAgreementLevel = "high" | "medium" | "low" | "unknown";
+
+export type ForecastDisagreementLevel = "none" | "low" | "medium" | "high" | "unknown";
+
+export type ForecastFieldDisagreement = {
+  readonly field: string;
+  readonly level: ForecastDisagreementLevel;
+  readonly range: number | null;
+  readonly min?: number;
+  readonly max?: number;
+  readonly unit?: string;
+  readonly sourcesAvailable: number;
+  readonly messageZh: string;
+};
+
+export type ForecastMultiSourceAgreementContext = {
+  readonly agreementLevel: ForecastAgreementLevel;
+  readonly disagreementLevel: ForecastDisagreementLevel;
+  readonly fieldDisagreements: readonly ForecastFieldDisagreement[];
+  readonly keyWarningsZh: readonly string[];
+  readonly userSummaryZh: string;
+  readonly professionalSummaryZh: string;
+  readonly shouldLowerConfidence: boolean;
+  readonly shouldShowReviewWarning: boolean;
+};
+
 export type WeatherFusionSummary = {
   readonly primarySource: string;
   readonly auxiliarySources: readonly string[];
@@ -1408,6 +1434,7 @@ export type WeatherFusionSummary = {
   readonly dataStatusZh: string;
   readonly sourceSummaries?: readonly ForecastWeatherSourceSummary[];
   readonly missingDataNotes?: readonly string[];
+  readonly multiSourceAgreementContext?: ForecastMultiSourceAgreementContext;
 };
 
 export type ForecastCalendarDayInfo = {

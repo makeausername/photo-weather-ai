@@ -188,6 +188,8 @@ const bestWindows = Array.isArray(result.bestWindows) ? result.bestWindows : [];
 const firstWindow = bestWindows[0] || {};
 const firstArrival = firstWindow.arrivalAdvice || {};
 const fusion = result.weatherFusionSummary || {};
+const agreement = fusion.multiSourceAgreementContext || {};
+const agreementFields = Array.isArray(agreement.fieldDisagreements) ? agreement.fieldDisagreements : [];
 const clothing = result.clothingGuide || {};
 const sources = Array.isArray(result.weatherSourceSummaries) ? result.weatherSourceSummaries : [];
 const runtimeSnapshot = Array.isArray(result.weatherProviderRuntimeSnapshot) ? result.weatherProviderRuntimeSnapshot : [];
@@ -216,6 +218,23 @@ function probabilityText(input) {
 
 function precipitationAmount(input) {
   return firstNumber(input.precipitationAmountMm, input.precipitation, input.rainAmountMm, input.snowAmountMm);
+}
+
+function disagreementRank(level) {
+  return { high: 4, medium: 3, low: 2, unknown: 1, none: 0 }[level] || 0;
+}
+
+function fieldDisagreementSummary(...fields) {
+  const item = agreementFields
+    .filter((entry) => fields.includes(entry.field))
+    .sort((left, right) => disagreementRank(right.level) - disagreementRank(left.level))[0];
+  if (!item) {
+    return "none";
+  }
+  const range = typeof item.range === "number" ? ` range=${item.range}${item.unit ? ` ${item.unit}` : ""}` : "";
+  const sources = typeof item.sourcesAvailable === "number" ? ` sources=${item.sourcesAvailable}` : "";
+  const message = item.messageZh ? ` message=${item.messageZh}` : "";
+  return `level=${value(item.level)}${range}${sources}${message}`;
 }
 
 function sourceLine(source) {
@@ -261,6 +280,15 @@ console.log(`selectedLocation: ${payload.name} (${payload.source}) WGS84=${paylo
 console.log(`target: ${payload.target} horizon=${payload.horizon}`);
 console.log(`dataStatusZh: ${value(fusion.dataStatusZh || result.weatherNoticeZh || result.dataNotice)}`);
 console.log(`dataConfidence: ${value(fusion.confidenceLevel)}`);
+console.log(`agreementLevel: ${value(agreement.agreementLevel)}`);
+console.log(`disagreementLevel: ${value(agreement.disagreementLevel)}`);
+console.log(`cloudTotalDisagreement: ${fieldDisagreementSummary("cloudTotal")}`);
+console.log(`cloudLowDisagreement: ${fieldDisagreementSummary("cloudLow")}`);
+console.log(`cloudMidHighDisagreement: ${fieldDisagreementSummary("cloudMid", "cloudHigh")}`);
+console.log(`precipitationDisagreement: ${fieldDisagreementSummary("precipitationAmountMm", "precipitationProbability")}`);
+console.log(`temperatureDisagreement: ${fieldDisagreementSummary("temperature")}`);
+console.log(`agreementUserSummaryZh: ${value(agreement.userSummaryZh)}`);
+console.log(`agreementShouldLowerConfidence: ${value(agreement.shouldLowerConfidence)}`);
 console.log(`meteoblueAttempted: ${value(meteoblue.attempted)}`);
 console.log(`meteoblueSuccess: ${value(meteoblue.success)}`);
 console.log(`meteobluePartial: ${value(meteoblue.partial)}`);

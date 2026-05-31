@@ -16,6 +16,7 @@ import {
   type AstroWindow,
   type ForecastCalculationResult,
   type ForecastHorizon,
+  type ForecastMultiSourceAgreementContext,
   type ForecastQueryInput,
   type ForecastRiskFlag,
   type ForecastScore,
@@ -2686,6 +2687,7 @@ export function CloudSeaResultPage({
           result={result}
           terrainContext={viewModel.terrainContext}
         />
+        <CloudSeaMultiSourceAgreementCard context={viewModel.multiSourceAgreementContext} />
         <CloudSeaDailyTrend
           result={result}
           items={viewModel.dailyTrend}
@@ -4847,6 +4849,209 @@ function CloudSeaProfessionalHourlyDataPanel({
       </div>
     </Card>
   );
+}
+
+function CloudSeaMultiSourceAgreementCard({
+  context,
+}: {
+  readonly context: ForecastMultiSourceAgreementContext | null;
+}) {
+  if (!context) {
+    return null;
+  }
+
+  const statusLabel = multiSourceAgreementStatusLabel(context);
+  const notes = multiSourceAgreementNotes(context);
+
+  return (
+    <Card
+      className="CloudSeaMultiSourceAgreement cloud-sea-multi-source-agreement p-4 shadow-sm"
+      data-cloud-sea-section="CloudSeaMultiSourceAgreement"
+      data-testid="cloud-sea-multi-source-agreement"
+      data-agreement-level={context.agreementLevel}
+      data-disagreement-level={context.disagreementLevel}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-bold text-card-foreground">多源一致性</h2>
+            <Badge variant={multiSourceAgreementBadgeVariant(context)}>{statusLabel}</Badge>
+          </div>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
+            {context.userSummaryZh}
+          </p>
+        </div>
+        {context.shouldLowerConfidence ? (
+          <Badge variant="warning">已降低置信度</Badge>
+        ) : context.shouldShowReviewWarning ? (
+          <Badge variant="muted">需临近复核</Badge>
+        ) : null}
+      </div>
+
+      <div className="mt-3 grid gap-3 min-[760px]:grid-cols-[minmax(0,1fr)_minmax(240px,340px)]">
+        <div className="grid gap-2">
+          {notes.length > 0 ? (
+            notes.map((note) => (
+              <p
+                key={note}
+                className="rounded-lg border border-border bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground"
+              >
+                {note}
+              </p>
+            ))
+          ) : (
+            <p className="rounded-lg border border-border bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground">
+              {context.professionalSummaryZh}
+            </p>
+          )}
+        </div>
+        <dl className="grid content-start gap-2 rounded-lg border border-border bg-card p-3 text-xs leading-5 text-muted-foreground">
+          <CompactDefinition label="低云分歧" value={multiSourceFieldStatus(context, "cloudLow")} />
+          <CompactDefinition
+            label="总云分歧"
+            value={multiSourceFieldStatus(context, "cloudTotal")}
+          />
+          <CompactDefinition label="中高云分歧" value={multiSourceMidHighStatus(context)} />
+          <CompactDefinition label="降水分歧" value={multiSourcePrecipitationStatus(context)} />
+        </dl>
+      </div>
+    </Card>
+  );
+}
+
+function multiSourceAgreementStatusLabel(context: ForecastMultiSourceAgreementContext): string {
+  if (context.agreementLevel === "unknown" || context.disagreementLevel === "unknown") {
+    return "数据源不足";
+  }
+  if (context.disagreementLevel === "high") {
+    return "存在明显分歧";
+  }
+  if (context.disagreementLevel === "medium" || context.disagreementLevel === "low") {
+    return "存在轻微分歧";
+  }
+  return "多源较一致";
+}
+
+function multiSourceAgreementBadgeVariant(
+  context: ForecastMultiSourceAgreementContext,
+): BadgeVariant {
+  if (context.disagreementLevel === "high") {
+    return "warning";
+  }
+  if (context.disagreementLevel === "unknown" || context.agreementLevel === "unknown") {
+    return "muted";
+  }
+  if (context.disagreementLevel === "medium" || context.disagreementLevel === "low") {
+    return "accent";
+  }
+  return "success";
+}
+
+function multiSourceAgreementNotes(
+  context: ForecastMultiSourceAgreementContext,
+): readonly string[] {
+  const warnings = context.keyWarningsZh.slice(0, 2);
+  const fieldNotes = context.fieldDisagreements
+    .filter((field) => field.field !== "sourceAvailability")
+    .filter((field) => field.level !== "none")
+    .filter((field) => field.messageZh.length > 0)
+    .map((field) => field.messageZh)
+    .slice(0, 3);
+  return [...new Set([...warnings, ...fieldNotes])].slice(0, 4);
+}
+
+function multiSourceFieldStatus(
+  context: ForecastMultiSourceAgreementContext,
+  field: string,
+): string {
+  const item = context.fieldDisagreements.find((entry) => entry.field === field);
+  if (!item) {
+    return context.disagreementLevel === "unknown" ? "数据不足" : "暂无明显分歧";
+  }
+  if (item.level === "unknown") {
+    return "单源参考";
+  }
+  return multiSourceDisagreementLevelLabel(item.level);
+}
+
+function multiSourceMidHighStatus(context: ForecastMultiSourceAgreementContext): string {
+  const mid = context.fieldDisagreements.find((entry) => entry.field === "cloudMid");
+  const high = context.fieldDisagreements.find((entry) => entry.field === "cloudHigh");
+  const strongest = [mid, high]
+    .filter((entry): entry is ForecastMultiSourceAgreementContext["fieldDisagreements"][number] =>
+      Boolean(entry),
+    )
+    .sort(
+      (left, right) =>
+        multiSourceDisagreementRank(right.level) - multiSourceDisagreementRank(left.level),
+    )[0];
+  if (!strongest) {
+    return context.disagreementLevel === "unknown" ? "数据不足" : "暂无明显分歧";
+  }
+  if (strongest.level === "unknown") {
+    return "单源参考";
+  }
+  return `${multiSourceDisagreementLevelLabel(strongest.level)}，偏霞光参考`;
+}
+
+function multiSourcePrecipitationStatus(context: ForecastMultiSourceAgreementContext): string {
+  const amount = context.fieldDisagreements.find(
+    (entry) => entry.field === "precipitationAmountMm",
+  );
+  const probability = context.fieldDisagreements.find(
+    (entry) => entry.field === "precipitationProbability",
+  );
+  const strongest = [amount, probability]
+    .filter((entry): entry is ForecastMultiSourceAgreementContext["fieldDisagreements"][number] =>
+      Boolean(entry),
+    )
+    .sort(
+      (left, right) =>
+        multiSourceDisagreementRank(right.level) - multiSourceDisagreementRank(left.level),
+    )[0];
+  if (!strongest) {
+    return context.disagreementLevel === "unknown" ? "数据不足" : "暂无明显分歧";
+  }
+  if (strongest.level === "unknown") {
+    return "单源参考";
+  }
+  return multiSourceDisagreementLevelLabel(strongest.level);
+}
+
+function multiSourceDisagreementLevelLabel(
+  level: ForecastMultiSourceAgreementContext["disagreementLevel"],
+): string {
+  if (level === "high") {
+    return "高";
+  }
+  if (level === "medium") {
+    return "中";
+  }
+  if (level === "low") {
+    return "低";
+  }
+  if (level === "unknown") {
+    return "数据不足";
+  }
+  return "无";
+}
+
+function multiSourceDisagreementRank(
+  level: ForecastMultiSourceAgreementContext["disagreementLevel"],
+): number {
+  if (level === "high") {
+    return 4;
+  }
+  if (level === "medium") {
+    return 3;
+  }
+  if (level === "low") {
+    return 2;
+  }
+  if (level === "unknown") {
+    return 1;
+  }
+  return 0;
 }
 
 function CloudSeaProfessionalHourlyRow({
