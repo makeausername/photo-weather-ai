@@ -2276,6 +2276,11 @@ function buildCloudSeaDailyTrend(
     const cloudSeaScore = result.cloudSeaAnalysis.shootableScore;
     const whiteoutScore = result.cloudSeaAnalysis.whiteoutRiskScore;
     const layerContext = buildCloudLayerCompletenessContext(result.professionalHourlyData);
+    const layerRoleNote = cloudLayerDailyRoleNote(
+      result,
+      result.targetDates[0] ?? result.forecastStart.slice(0, 10),
+      terrainContext,
+    );
 
     return [
       {
@@ -2294,15 +2299,17 @@ function buildCloudSeaDailyTrend(
         watchableWindow: result.cloudSeaAnalysis.labels.watchableWindowLabel,
         rainOpeningLabel: cloudSeaRainOpeningSummary(result.cloudSeaAnalysis.rainOpening),
         onSiteCheckpoints: cloudSeaVerificationPoints(result, terrainContext),
-        keyReason: cloudSeaTerrainAwareText(
-          firstText(
-            result.cloudSeaAnalysis.opportunityReasons,
-            terrainContext.shouldDowngradeCloudSeaWording
-              ? "当前低云/晨雾参考仍需等待更多天气信号。"
-              : "当前云海窗口仍需等待更多天气信号。",
+        keyReason:
+          layerRoleNote ??
+          cloudSeaTerrainAwareText(
+            firstText(
+              result.cloudSeaAnalysis.opportunityReasons,
+              terrainContext.shouldDowngradeCloudSeaWording
+                ? "当前低云/晨雾参考仍需等待更多天气信号。"
+                : "当前云海窗口仍需等待更多天气信号。",
+            ),
+            terrainContext,
           ),
-          terrainContext,
-        ),
         recommendedAction: cloudSeaDailyRecommendationLabel(
           result.cloudSeaAnalysis.recommendationLabel,
           cloudSeaScore,
@@ -2310,14 +2317,16 @@ function buildCloudSeaDailyTrend(
           terrainContext,
           layerContext,
         ),
-        actionSuggestion: cloudSeaDailyActionSuggestion(
-          result.cloudSeaAnalysis.recommendationLabel,
-          terrainContext,
-          cloudSeaScore,
-          Boolean(firstWindow),
-          layerContext,
-        ),
-        layerCompletenessNote: cloudLayerDailyNote(layerContext),
+        actionSuggestion:
+          layerRoleNote ??
+          cloudSeaDailyActionSuggestion(
+            result.cloudSeaAnalysis.recommendationLabel,
+            terrainContext,
+            cloudSeaScore,
+            Boolean(firstWindow),
+            layerContext,
+          ),
+        layerCompletenessNote: layerRoleNote ?? cloudLayerDailyNote(layerContext),
       },
     ];
   }
@@ -2327,6 +2336,7 @@ function buildCloudSeaDailyTrend(
     const whiteoutScore = day.whiteoutRiskScore;
     const window = windows.find((candidate) => candidate.date === day.date);
     const layerContext = cloudLayerCompletenessContextForDate(result, day.date);
+    const layerRoleNote = cloudLayerDailyRoleNote(result, day.date, terrainContext);
 
     return {
       key: `cloud-sea-day-${day.date}`,
@@ -2355,7 +2365,7 @@ function buildCloudSeaDailyTrend(
       onSiteCheckpoints: (day.onSiteCheckpoints ?? []).map((item) =>
         cloudSeaTerrainAwareText(item, terrainContext),
       ),
-      keyReason: cloudSeaTerrainAwareText(day.keyReason, terrainContext),
+      keyReason: layerRoleNote ?? cloudSeaTerrainAwareText(day.keyReason, terrainContext),
       recommendedAction: cloudSeaDailyRecommendationLabel(
         day.recommendationLabel,
         cloudSeaScore,
@@ -2363,14 +2373,16 @@ function buildCloudSeaDailyTrend(
         terrainContext,
         layerContext,
       ),
-      actionSuggestion: cloudSeaDailyActionSuggestion(
-        day.recommendationLabel,
-        terrainContext,
-        cloudSeaScore,
-        Boolean(window ?? day.bestWindow),
-        layerContext,
-      ),
-      layerCompletenessNote: cloudLayerDailyNote(layerContext),
+      actionSuggestion:
+        layerRoleNote ??
+        cloudSeaDailyActionSuggestion(
+          day.recommendationLabel,
+          terrainContext,
+          cloudSeaScore,
+          Boolean(window ?? day.bestWindow),
+          layerContext,
+        ),
+      layerCompletenessNote: layerRoleNote ?? cloudLayerDailyNote(layerContext),
     };
   });
 }
@@ -2484,9 +2496,11 @@ function buildCloudSeaWindowItems(
       window.windowLevel,
       terrainContext,
     ),
-    layerCompletenessNote: cloudLayerWindowNote(
-      cloudLayerCompletenessContextForWindow(result, window.startTime, window.endTime),
-    ),
+    layerCompletenessNote:
+      cloudLayerWindowRoleNote(result, window.startTime, window.endTime, terrainContext) ??
+      cloudLayerWindowNote(
+        cloudLayerCompletenessContextForWindow(result, window.startTime, window.endTime),
+      ),
     tone: result.cloudSeaAnalysis.labels.whiteoutRisk === "高" ? "danger" : "accent",
     lightPhase: window.lightPhase,
     windowLevel: window.windowLevel,
@@ -2533,7 +2547,9 @@ function cloudSeaWindowItem(
           : undefined,
       terrainContext,
     ),
-    layerCompletenessNote: cloudLayerWindowNote(layerContext),
+    layerCompletenessNote:
+      cloudLayerWindowRoleNote(result, window.startTime, window.endTime, terrainContext) ??
+      cloudLayerWindowNote(layerContext),
     tone,
   };
 }
@@ -2551,6 +2567,7 @@ function buildCloudSeaReasoningItems(
   const wind = cloudSeaWeatherEvidence(result, "风速");
   const precipitation = cloudSeaWeatherEvidence(result, "降水");
   const relief = result.terrainAnalysis.terrainProfile.localReliefMeters;
+  const cloudLayerRoleItem = buildCloudLayerRoleReasoningItem(result, terrainContext);
 
   return [
     {
@@ -2586,6 +2603,7 @@ function buildCloudSeaReasoningItems(
       detail: cloudLayerCompleteness.userNoteZh,
       tone: cloudLayerCompletenessTone(cloudLayerCompleteness),
     },
+    ...(cloudLayerRoleItem ? [cloudLayerRoleItem] : []),
     {
       key: "wind-stability",
       label: "风速与云雾稳定性",
@@ -2633,6 +2651,33 @@ function buildCloudSeaReasoningItems(
             : "info",
     },
   ];
+}
+
+function buildCloudLayerRoleReasoningItem(
+  result: ForecastCalculationResult,
+  terrainContext: CloudSeaTerrainContext,
+): CloudSeaReasoningItem | null {
+  const rows = result.professionalHourlyData ?? [];
+  const redirectedRows = rows.filter(
+    (row) =>
+      (row.cloudSeaSignal === "霞光参考" || row.cloudSeaSignal === "云层纹理") &&
+      (!isMeaningfulNumber(row.cloudLowPercent) || row.cloudLowPercent < 35),
+  );
+
+  if (redirectedRows.length === 0) {
+    return null;
+  }
+
+  const hasGlowReference = redirectedRows.some((row) => row.cloudSeaSignal === "霞光参考");
+  return {
+    key: "cloud-layer-role-separation",
+    label: "中高云角色",
+    value: hasGlowReference ? "霞光/纹理参考" : "云层纹理参考",
+    detail: terrainContext.shouldDowngradeCloudSeaWording
+      ? "中高云更适合观察霞光或云层纹理，低云信号不足时不按云海判断。"
+      : "中高云较多时更偏向霞光或云层纹理参考；低云信号不足，不直接作为云海依据。",
+    tone: "info",
+  };
 }
 
 function buildCloudSeaActionPlan(
@@ -3023,6 +3068,27 @@ function cloudLayerCompletenessContextForDate(
     : buildCloudLayerCompletenessContext(result.professionalHourlyData);
 }
 
+function cloudLayerDailyRoleNote(
+  result: ForecastCalculationResult,
+  date: string,
+  terrainContext: CloudSeaTerrainContext,
+): string | undefined {
+  const redirectedRows = (result.professionalHourlyData ?? []).filter(
+    (row) =>
+      row.time.startsWith(`${date}T`) &&
+      (row.cloudSeaSignal === "霞光参考" || row.cloudSeaSignal === "云层纹理") &&
+      (!isMeaningfulNumber(row.cloudLowPercent) || row.cloudLowPercent < 35),
+  );
+
+  if (redirectedRows.length === 0) {
+    return undefined;
+  }
+
+  return terrainContext.shouldDowngradeCloudSeaWording
+    ? "中高云更适合观察霞光或云层纹理，不按云海判断。"
+    : "云海信号偏弱，中高云对霞光更有参考价值。";
+}
+
 function cloudLayerCompletenessContextForWindow(
   result: ForecastCalculationResult,
   startTime: string,
@@ -3044,6 +3110,36 @@ function cloudLayerCompletenessContextForWindow(
   return rows.length > 0
     ? buildCloudLayerCompletenessContext(rows)
     : buildCloudLayerCompletenessContext(result.professionalHourlyData);
+}
+
+function cloudLayerWindowRoleNote(
+  result: ForecastCalculationResult,
+  startTime: string,
+  endTime: string,
+  terrainContext: CloudSeaTerrainContext,
+): string | undefined {
+  const start = Date.parse(startTime);
+  const end = Date.parse(endTime);
+  const redirectedRows = (result.professionalHourlyData ?? []).filter((row) => {
+    const time = Date.parse(row.time);
+    return (
+      Number.isFinite(time) &&
+      Number.isFinite(start) &&
+      Number.isFinite(end) &&
+      time >= start &&
+      time <= end &&
+      (row.cloudSeaSignal === "霞光参考" || row.cloudSeaSignal === "云层纹理") &&
+      (!isMeaningfulNumber(row.cloudLowPercent) || row.cloudLowPercent < 35)
+    );
+  });
+
+  if (redirectedRows.length === 0) {
+    return undefined;
+  }
+
+  return terrainContext.shouldDowngradeCloudSeaWording
+    ? "中高云更适合观察霞光或云层纹理，不按云海判断。"
+    : "云海信号不足，中高云可作为霞光参考。";
 }
 
 function cloudLayerDailyNote(context: CloudLayerCompletenessContext): string | undefined {

@@ -46,6 +46,7 @@ import {
   getWeatherWindowAroundTime,
 } from "./helpers.js";
 import { analyzeCloudSea, cloudSeaRecommendationLevel } from "./cloud-sea-analysis.js";
+import { classifyCloudLayerRoles } from "./cloud-layer-roles.js";
 import { calculateAstroAnalysis } from "./astro-analysis.js";
 import { buildClothingGuide } from "./clothing-guide.js";
 import { buildGlowForecastScore, calculateGlowAnalysis } from "./glow-analysis.js";
@@ -248,6 +249,7 @@ function buildProfessionalHourlyData(
       precipitationProbabilityPercent,
       visibilityMeters,
       windSpeedMs: finiteOrNull(hour.windSpeed),
+      localHour: getHourInTimezone(hour.time, input.calendarBasis.timezone),
       missingFields,
     };
     const signal = professionalHourlySignalForPayload({
@@ -561,6 +563,7 @@ type ProfessionalHourlySignalInput = {
   readonly precipitationProbabilityPercent: number | null;
   readonly visibilityMeters: number | null;
   readonly windSpeedMs: number | null;
+  readonly localHour?: number;
   readonly missingFields: readonly string[];
 };
 
@@ -576,6 +579,22 @@ function professionalHourlySignalForPayload(options: {
 } {
   const { row, cloudSeaAnalysis } = options;
   const whiteout = professionalHourlyWhiteoutAssessment(row);
+  const layerRoles = classifyCloudLayerRoles({
+    cloudTotalPercent: row.cloudTotalPercent,
+    cloudHighPercent: row.cloudHighPercent,
+    cloudMidPercent: row.cloudMidPercent,
+    cloudLowPercent: row.cloudLowPercent,
+    cloudLayerBasis: row.cloudLayerBasis,
+    relativeHumidityPercent: row.relativeHumidityPercent,
+    dewPointSpreadC: row.dewPointSpreadC,
+    visibilityMeters: row.visibilityMeters,
+    windSpeedMs: row.windSpeedMs,
+    precipitationAmountMm: row.precipitationAmountMm,
+    precipitationProbabilityPercent: row.precipitationProbabilityPercent,
+    terrainMode: cloudSeaAnalysis.terrainSupport.terrainMode,
+    terrainScore: cloudSeaAnalysis.terrainSupport.score,
+    localHour: row.localHour,
+  });
   const inBestWindow = professionalHourInAnalysisWindows(
     row.time,
     cloudSeaAnalysis.bestCloudSeaWindows,
@@ -597,6 +616,11 @@ function professionalHourlySignalForPayload(options: {
   const cloudLayerCompleteness = buildCloudLayerCompletenessContext([row]);
   const hasWindowSignal = inBestWindow || inWatchableWindow || inBlockedWindow;
   const significantTotalCloud = row.cloudTotalPercent !== null && row.cloudTotalPercent >= 70;
+  const cloudSeaLayerSupported =
+    layerRoles.cloudSeaLayerSignal === "strong" || layerRoles.cloudSeaLayerSignal === "medium";
+  const whiteoutLayerHigh = layerRoles.whiteoutLayerSignal === "high" || whiteout === "high";
+  const whiteoutLayerMedium =
+    layerRoles.whiteoutLayerSignal === "medium" || whiteout === "medium";
 
   if (cloudLayerCompleteness.shouldPreferNeedsReviewSignal) {
     if (
@@ -611,22 +635,31 @@ function professionalHourlySignalForPayload(options: {
     return { label: "普通", level: "neutral" };
   }
 
-  if (whiteout === "high" || (whiteout === "medium" && inBlockedWindow)) {
+  if (layerRoles.primaryCloudRole === "needs_review") {
+    return { label: "需复核", level: "review" };
+  }
+  if (layerRoles.primaryCloudRole === "glow_reference") {
+    return { label: "霞光参考", level: "watch" };
+  }
+  if (layerRoles.primaryCloudRole === "texture") {
+    return { label: "云层纹理", level: "neutral" };
+  }
+  if (whiteoutLayerHigh || (whiteoutLayerMedium && inBlockedWindow)) {
     return { label: "白墙风险", level: "risk" };
   }
   if (whiteout === "review") {
     return { label: "需复核", level: "review" };
   }
-  if (inBestWindow && whiteout === "low") {
+  if (inBestWindow && cloudSeaLayerSupported && whiteout === "low") {
     return { label: "可拍窗口", level: "positive" };
   }
-  if (rainOpening && whiteout !== "medium") {
+  if (rainOpening && cloudSeaLayerSupported && !whiteoutLayerMedium) {
     return { label: "雨后开口", level: "watch" };
   }
-  if (whiteout === "medium") {
+  if (whiteoutLayerMedium) {
     return { label: "需复核", level: "review" };
   }
-  if (formationLikely) {
+  if (formationLikely || cloudSeaLayerSupported) {
     return { label: "形成信号", level: "watch" };
   }
   if (row.cloudLayerBasis === "total_only" || row.cloudLayerBasis === "unknown") {

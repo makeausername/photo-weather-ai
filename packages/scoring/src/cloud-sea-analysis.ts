@@ -21,6 +21,7 @@ import {
 } from "@photo-weather/shared";
 import { defaultTimezone, formatZonedIso } from "@photo-weather/calendar";
 import { addHours, averageWeightedScore, clampScore, formatChineseTimeRange } from "./helpers.js";
+import { classifyCloudLayerRoles, type CloudLayerRoleContext } from "./cloud-layer-roles.js";
 import {
   precipitationAmountMm,
   precipitationRiskScore as weatherPrecipitationRiskScore,
@@ -317,7 +318,7 @@ function evaluateCloudSeaCandidate(
   const terrainSupport = buildTerrainSupport(input);
   const rawFormationScore = calculateCloudSeaFormationScore(
     stats,
-    terrainSupport.score,
+    terrainSupport,
     candidate.kind,
   );
   const whiteoutRiskScore = calculateWhiteoutRiskScore(stats, terrainSupport);
@@ -354,6 +355,8 @@ function evaluateCloudSeaCandidate(
     whiteoutRiskScore,
     rainOpening,
     terrainSupport,
+    stats,
+    candidate.lightAlignedScore,
   );
 
   return {
@@ -408,12 +411,26 @@ function evaluateCloudSeaCandidate(
 
 function calculateCloudSeaFormationScore(
   stats: WindowStats,
-  terrainScore: number,
+  terrainSupport: CloudSeaTerrainSupport,
   kind: CandidateWindows["kind"],
 ): number {
   const timeBonus = kind === "morning" ? 6 : kind === "daytime" ? -7 : 0;
+  const rawScore = clampScore(
+    calculateCloudSeaOpportunityScore(stats, terrainSupport.score) + timeBonus,
+  );
+  const layerRoles = cloudLayerRolesForStats(stats, terrainSupport);
 
-  return clampScore(calculateCloudSeaOpportunityScore(stats, terrainScore) + timeBonus);
+  if (!hasExplicitLowCloudEvidence(stats)) {
+    return Math.min(rawScore, stats.lowCloudEstimated ? 48 : 44);
+  }
+  if (layerRoles.cloudSeaLayerSignal === "none") {
+    return Math.min(rawScore, 42);
+  }
+  if (layerRoles.cloudSeaLayerSignal === "weak") {
+    return Math.min(rawScore, 52);
+  }
+
+  return rawScore;
 }
 
 function calculateCloudSeaOpportunityScore(stats: WindowStats, terrainScore: number): number {
@@ -444,7 +461,9 @@ function calculateWhiteoutRiskScore(
   const humidityRisk = humidityWhiteoutRiskScore(stats.humidity);
   const visibilityRisk = visibilityWhiteoutRiskScore(stats.visibility);
   const windRisk = windWhiteoutRiskScore(stats.windSpeed);
-  const cloudTotalRisk = cloudTotalWhiteoutRiskScore(stats.cloudTotal);
+  const cloudTotalRisk = hasExplicitLowCloudEvidence(stats)
+    ? cloudTotalWhiteoutRiskScore(stats.cloudTotal)
+    : 35;
   const precipitationRisk = precipitationRiskScore(stats);
   const dewPointRisk = dewPointSpreadWhiteoutRiskScore(stats.dewPointSpread);
   const textRisk = weatherTextWhiteoutRiskScore(stats);
@@ -470,7 +489,8 @@ function calculateWhiteoutRiskScore(
     activeRainOrFog(stats) && (stats.cloudLow ?? 0) >= 75 && (stats.humidity ?? 0) >= 88,
   ];
 
-  return strongWhiteoutSignals.some(Boolean) ? Math.max(weighted, 78) : weighted;
+  const score = strongWhiteoutSignals.some(Boolean) ? Math.max(weighted, 78) : weighted;
+  return hasExplicitLowCloudEvidence(stats) ? score : Math.min(score, 54);
 }
 
 function calculateShootableScore(
@@ -542,17 +562,27 @@ function applyTerrainModeShootableCap(
   formationScore: number,
   terrainSupport: CloudSeaTerrainSupport,
 ): number {
+  const formationCappedScore =
+    formationScore < 45
+      ? Math.min(score, formationScore + 8)
+      : formationScore < 55
+        ? Math.min(score, 54)
+        : score;
   const mode = terrainSupport.terrainMode;
   if (mode === "urban_or_plain" || mode === "lowland") {
-    return Math.min(score, formationScore, terrainSupport.confidence === "low" ? 32 : 42);
+    return Math.min(
+      formationCappedScore,
+      formationScore,
+      terrainSupport.confidence === "low" ? 32 : 42,
+    );
   }
   if (mode === "unknown") {
-    return Math.min(score, formationScore, 34);
+    return Math.min(formationCappedScore, formationScore, 34);
   }
   if (mode === "hill" && formationScore < 68) {
-    return Math.min(score, 56);
+    return Math.min(formationCappedScore, 56);
   }
-  return score;
+  return formationCappedScore;
 }
 
 function candidateLabelForTerrain(
@@ -769,6 +799,50 @@ function buildWindowStats(
   };
 }
 
+function hasExplicitLowCloudEvidence(stats: WindowStats): boolean {
+  return (
+    stats.hasLowCloud &&
+    !stats.lowCloudEstimated &&
+    stats.cloudLow !== undefined &&
+    !stats.missingFields.includes("cloudLow")
+  );
+}
+
+function cloudLayerRolesForStats(
+  stats: WindowStats,
+  terrainSupport: CloudSeaTerrainSupport,
+  lightAlignedScore?: number,
+): CloudLayerRoleContext {
+  const explicitLowCloud = hasExplicitLowCloudEvidence(stats);
+  const lightPhase =
+    lightAlignedScore !== undefined && lightAlignedScore >= 82
+      ? ("sunrise" as const)
+      : lightAlignedScore !== undefined && lightAlignedScore >= 68
+        ? ("sunset" as const)
+        : undefined;
+
+  return classifyCloudLayerRoles({
+    cloudTotalPercent: stats.cloudTotal,
+    cloudHighPercent: stats.cloudHigh,
+    cloudMidPercent: stats.cloudMid,
+    cloudLowPercent: explicitLowCloud ? stats.cloudLow : null,
+    cloudLayerBasis: explicitLowCloud
+      ? "partial_layers"
+      : stats.cloudTotal !== undefined
+        ? "total_only"
+        : "unknown",
+    relativeHumidityPercent: stats.humidity,
+    dewPointSpreadC: stats.dewPointSpread,
+    visibilityKm: stats.visibility,
+    windSpeedMs: stats.windSpeed,
+    precipitationAmountMm: stats.precipitationSum ?? stats.precipitation,
+    precipitationProbabilityPercent: stats.precipitationProbabilityMax ?? stats.precipitationProbability,
+    terrainMode: terrainSupport.terrainMode,
+    terrainScore: terrainSupport.score,
+    lightPhase,
+  });
+}
+
 function humidityScore(humidity: number | undefined): number {
   if (humidity === undefined) {
     return 48;
@@ -804,9 +878,10 @@ function dewPointSpreadScore(spread: number | undefined): number {
 function lowCloudOpportunityScore(stats: WindowStats): number {
   const lowCloud = stats.cloudLow;
   if (lowCloud === undefined) {
-    return stats.lowCloudEstimated && stats.cloudTotal !== undefined
-      ? clampScore(42 + Math.min(stats.cloudTotal, 80) * 0.35)
-      : 45;
+    return 34;
+  }
+  if (stats.lowCloudEstimated) {
+    return Math.min(48, clampScore(22 + lowCloud * 0.55));
   }
   if (lowCloud >= 50 && lowCloud <= 90) {
     return 92;
@@ -883,8 +958,10 @@ function precipitationOpportunityScore(stats: WindowStats): number {
 function lowCloudWhiteoutRiskScore(stats: WindowStats): number {
   const lowCloud = stats.cloudLow;
   if (lowCloud === undefined) {
-    const proxy = stats.cloudTotal === undefined ? 45 : clampScore(stats.cloudTotal * 0.55);
-    return stats.lowCloudEstimated ? proxy : clampScore(proxy - 8);
+    return 28;
+  }
+  if (stats.lowCloudEstimated) {
+    return Math.min(42, clampScore(18 + lowCloud * 0.35));
   }
   if (lowCloud > 90) {
     return 96;
@@ -1224,7 +1301,7 @@ function buildMissingDataNotes(
 ): readonly string[] {
   const notes: string[] = [];
 
-  if (!stats.hasLowCloud || stats.missingFields.includes("cloudLow")) {
+  if (!hasExplicitLowCloudEvidence(stats) || stats.missingFields.includes("cloudLow")) {
     notes.push(lowCloudMissingNote);
   }
   if (stats.dewPointSpread === undefined || stats.missingFields.includes("dewPoint")) {
@@ -1257,7 +1334,7 @@ function confidencePenalty(
 ): number {
   let penalty = 0;
 
-  if (!stats.hasLowCloud || stats.missingFields.includes("cloudLow")) {
+  if (!hasExplicitLowCloudEvidence(stats) || stats.missingFields.includes("cloudLow")) {
     penalty += 25;
   }
   if (stats.dewPointSpread === undefined || stats.missingFields.includes("dewPoint")) {
@@ -1402,11 +1479,19 @@ function buildOpportunityReasons(
   const usesMountain = terrainModeAllowsDefaultCloudSea(terrainSupport.terrainMode);
   const formationLabel = usesMountain ? "云海形成条件" : "低云/晨雾条件";
   const shootableLabel = usesMountain ? "云海可拍条件" : "云雾观察条件";
+  const layerRoles = cloudLayerRolesForStats(stats, terrainSupport, lightAlignedScore);
+  const layerRoleNote =
+    layerRoles.primaryCloudRole === "glow_reference" ||
+    layerRoles.primaryCloudRole === "texture" ||
+    layerRoles.primaryCloudRole === "needs_review"
+      ? layerRoles.noteZh
+      : undefined;
   const reasons = [
+    layerRoleNote,
     `${formationLabel} ${formationScore} 分：湿度约 ${formatPercent(
       stats.humidity,
     )}，露点差约 ${formatDegree(stats.dewPointSpread)}，用于判断水汽是否接近凝结。`,
-    stats.hasLowCloud
+    hasExplicitLowCloudEvidence(stats)
       ? `低云约 ${formatPercent(
           stats.cloudLow,
         )}，50%-90% 更支持云雾形成；接近满低云时需同时看遮挡风险。`
@@ -1420,7 +1505,7 @@ function buildOpportunityReasons(
     `风速约 ${formatSpeed(stats.windSpeed)}，过弱易包顶，过强会吹散云雾层。`,
     `能见度约 ${formatKm(stats.visibility)}，用于区分可俯拍云海与白墙。`,
     rainOpening.messageZh,
-  ];
+  ].filter((reason): reason is string => Boolean(reason));
 
   if (stabilityBonus > 0) {
     reasons.push("夜间积累与日出后消散风险组合较稳定，清晨等待价值上调。");
@@ -1439,13 +1524,13 @@ function buildWhiteoutReasons(
 ): readonly string[] {
   const usesMountain = terrainModeUsesMountainSemantics(terrainSupport.terrainMode);
   const reasons = [
-    stats.hasLowCloud
+    hasExplicitLowCloudEvidence(stats)
       ? usesMountain
         ? `低云约 ${formatPercent(stats.cloudLow)}，低云过厚或抬升到机位高度时会增加白墙风险。`
         : `低云约 ${formatPercent(stats.cloudLow)}，低云过厚时会增加遮挡、雾气和通透度下降风险。`
       : usesMountain
-        ? "低云分层缺失，当前只能用湿度、能见度和总云量弱判断白墙风险。"
-        : "低云分层缺失，当前只能用湿度、能见度和总云量弱判断低云遮挡。",
+        ? "低云分层缺失，当前不使用总云量推断白墙风险，只能给出复核提示。"
+        : "低云分层缺失，当前不使用总云量推断低云遮挡，只能给出复核提示。",
     `湿度约 ${formatPercent(stats.humidity)}，露点差约 ${formatDegree(
       stats.dewPointSpread,
     )}，能见度约 ${formatKm(stats.visibility)}。`,
@@ -1488,7 +1573,17 @@ function buildWindowNoteZh(
   whiteoutRiskScore: number,
   rainOpening: CloudSeaRainOpeningSignal,
   terrainSupport: CloudSeaTerrainSupport,
+  stats: WindowStats,
+  lightAlignedScore: number,
 ): string {
+  const layerRoles = cloudLayerRolesForStats(stats, terrainSupport, lightAlignedScore);
+  if (
+    layerRoles.primaryCloudRole === "glow_reference" ||
+    layerRoles.primaryCloudRole === "texture" ||
+    layerRoles.primaryCloudRole === "needs_review"
+  ) {
+    return layerRoles.noteZh;
+  }
   if (terrainModeUsesLowlandSemantics(terrainSupport.terrainMode)) {
     if (shootableScore >= 38) {
       return "晨雾或低云变化可顺带观察，但地形不支持按高山云海专程判断。";
@@ -1619,16 +1714,16 @@ function buildWeatherEvidence(stats: WindowStats): CloudSeaAnalysisResult["weath
     },
     {
       label: "低云",
-      value: stats.hasLowCloud ? formatPercent(stats.cloudLow) : "分层缺失",
+      value: hasExplicitLowCloudEvidence(stats) ? formatPercent(stats.cloudLow) : "分层缺失",
       effect:
-        !stats.hasLowCloud || stats.cloudLow === undefined
+        !hasExplicitLowCloudEvidence(stats) || stats.cloudLow === undefined
           ? "risk"
           : stats.cloudLow > 80
             ? "risk"
             : stats.cloudLow >= 30
               ? "positive"
               : "neutral",
-      noteZh: stats.hasLowCloud
+      noteZh: hasExplicitLowCloudEvidence(stats)
         ? "低云适中更接近云海；低云过厚并包住机位时更接近白墙。"
         : lowCloudMissingNote,
     },
@@ -1824,7 +1919,7 @@ function buildFallbackEvaluation(input: ForecastCalculationInput): WindowEvaluat
     endTime: input.calendarBasis.forecastEnd,
   };
   const stats = buildWindowStats(input, input.hourlyWeather.slice(0, 6));
-  const rawFormationScore = calculateCloudSeaFormationScore(stats, terrainSupport.score, "morning");
+  const rawFormationScore = calculateCloudSeaFormationScore(stats, terrainSupport, "morning");
   const whiteoutRiskScore = calculateWhiteoutRiskScore(stats, terrainSupport);
   const rainOpening = buildRainOpeningSignal(stats, undefined, undefined);
   const lightAlignedScore = 72;
@@ -1886,6 +1981,8 @@ function buildFallbackEvaluation(input: ForecastCalculationInput): WindowEvaluat
         whiteoutRiskScore,
         rainOpening,
         terrainSupport,
+        stats,
+        lightAlignedScore,
       ),
       riskTag:
         whiteoutRiskScore >= 70

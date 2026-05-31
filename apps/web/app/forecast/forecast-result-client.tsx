@@ -4521,6 +4521,9 @@ function cloudSeaWindowCategoryBadgeLabel(
   item: CloudSeaWindowItem,
   terrainContext: CloudSeaTerrainContext,
 ): string {
+  if (cloudSeaWindowHasLayerRoleRedirect(item)) {
+    return terrainContext.shouldDowngradeCloudSeaWording ? "霞光/纹理参考" : "云海信号不足";
+  }
   if (terrainContext.shouldDowngradeCloudSeaWording) {
     if (category === "lowLight") {
       return "仅作备选";
@@ -4549,6 +4552,9 @@ function cloudSeaWindowCategoryBadgeVariant(
   category: CloudSeaWindowCategoryKey,
   item: CloudSeaWindowItem,
 ): BadgeVariant {
+  if (cloudSeaWindowHasLayerRoleRedirect(item)) {
+    return "warning";
+  }
   if (category === "lowLight" || item.score < 55 || item.tone === "danger") {
     return "warning";
   }
@@ -4562,6 +4568,9 @@ function cloudSeaWindowCardTone(
   category: CloudSeaWindowCategoryKey,
   item: CloudSeaWindowItem,
 ): ForecastResultCardTone {
+  if (cloudSeaWindowHasLayerRoleRedirect(item)) {
+    return "accent";
+  }
   if (category === "lowLight" || item.score < 55) {
     return "accent";
   }
@@ -4576,6 +4585,9 @@ function cloudSeaWindowMainIssue(
   const basis = terrainContext.shouldDowngradeCloudSeaWording
     ? `低云遮挡：${item.whiteoutRisk}；雨后开口：${item.rainInterference}。`
     : `白墙风险：${item.whiteoutRisk}；雨后开口：${item.rainInterference}。`;
+  if (cloudSeaWindowHasLayerRoleRedirect(item)) {
+    return item.layerCompletenessNote ?? basis;
+  }
   if (category === "lowLight") {
     return `${basis}光线不足，不适合作为常规明亮风光主窗口。`;
   }
@@ -4587,6 +4599,11 @@ function cloudSeaWindowCardAction(
   item: CloudSeaWindowItem,
   terrainContext: CloudSeaTerrainContext,
 ): string {
+  if (cloudSeaWindowHasLayerRoleRedirect(item)) {
+    return terrainContext.shouldDowngradeCloudSeaWording
+      ? "中高云更适合观察霞光或云层纹理，不按云海判断。"
+      : "云海信号不足，中高云可作为霞光参考。";
+  }
   if (terrainContext.shouldDowngradeCloudSeaWording) {
     if (category === "sunrise") {
       return "观察近地雾气和低云是否贴地，重点看晨雾边界、远山层次和通透度。";
@@ -4603,6 +4620,10 @@ function cloudSeaWindowCardAction(
     return "仅作氛围、剪影、层次或现场观察，不作为正常明亮风光主窗口。";
   }
   return item.actionSuggestion;
+}
+
+function cloudSeaWindowHasLayerRoleRedirect(item: CloudSeaWindowItem): boolean {
+  return /中高云|霞光|云层纹理/.test(item.layerCompletenessNote ?? "");
 }
 
 type ProfessionalHourlyFilterMode = "all" | "cloudSea" | "morning" | "risk";
@@ -5171,6 +5192,12 @@ function professionalSignalBadgeVariant(signal: ProfessionalHourlyRow["cloudSeaS
   if (signal === "形成信号") {
     return "info" as const;
   }
+  if (signal === "霞光参考") {
+    return "accent" as const;
+  }
+  if (signal === "云层纹理") {
+    return "info" as const;
+  }
   if (signal === "需复核") {
     return "warning" as const;
   }
@@ -5190,6 +5217,8 @@ function professionalHourlyDisplaySignal(
     row.cloudSeaSignal === "白墙风险" ||
     row.cloudSeaSignal === "形成信号" ||
     row.cloudSeaSignal === "雨后开口" ||
+    row.cloudSeaSignal === "霞光参考" ||
+    row.cloudSeaSignal === "云层纹理" ||
     row.cloudSeaSignal === "需复核";
   const significantTotalCloud = row.cloudTotalPercent !== null && row.cloudTotalPercent >= 70;
 

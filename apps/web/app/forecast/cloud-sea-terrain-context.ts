@@ -136,7 +136,7 @@ const classicCloudSeaVocabulary: CloudSeaTerrainVocabulary = {
   dailyBestWindowLabel: "最佳窗口",
   dailyObstructionStatLabel: "白墙",
   professionalDescription:
-    "低云、中云、高云、湿度、露点、降水、能见度和风速用于人工复核云海形成与白墙风险。",
+    "低云、湿度、露点、降水、能见度和风速用于复核云海形成与白墙风险；中高云主要作为霞光载体和云层纹理参考。",
   professionalSignalColumnLabel: "云海信号",
   professionalCloudSeaFilterLabel: "只看云海窗口",
   professionalUsageText: "专业数据用于复核云海形成、白墙风险和雨后开口。",
@@ -185,7 +185,7 @@ const downgradedCloudSeaVocabulary: CloudSeaTerrainVocabulary = {
   dailyBestWindowLabel: "观察窗口",
   dailyObstructionStatLabel: "遮挡",
   professionalDescription:
-    "低云、中云、高云、湿度、露点、降水、能见度和风速用于人工复核低云、晨雾与遮挡风险。",
+    "低云、湿度、露点、降水、能见度和风速用于复核低云、晨雾与遮挡风险；中高云主要作为霞光参考和云层纹理。",
   professionalSignalColumnLabel: "低云信号",
   professionalCloudSeaFilterLabel: "只看低云窗口",
   professionalUsageText: "专业数据用于复核低云、晨雾、云层变化、遮挡风险和雨后开口。",

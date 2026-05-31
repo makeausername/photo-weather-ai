@@ -255,6 +255,8 @@ export type ProfessionalHourlyCloudSeaSignal =
   | "白墙风险"
   | "形成信号"
   | "雨后开口"
+  | "霞光参考"
+  | "云层纹理"
   | "普通"
   | "需复核";
 

@@ -522,7 +522,9 @@ describe("forecast query validation route", () => {
       dateLabel: expect.any(String),
       timeLabel: expect.any(String),
       weatherText: expect.any(String),
-      cloudSeaSignal: expect.stringMatching(/可拍窗口|白墙风险|形成信号|雨后开口|普通|需复核/),
+      cloudSeaSignal: expect.stringMatching(
+        /可拍窗口|白墙风险|形成信号|雨后开口|霞光参考|云层纹理|普通|需复核/,
+      ),
       cloudTotalPercent: expect.any(Number),
       cloudHighPercent: expect.any(Number),
       cloudMidPercent: expect.any(Number),

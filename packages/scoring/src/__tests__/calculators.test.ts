@@ -426,6 +426,68 @@ describe("forecast score calculators", () => {
     expect(strongWhiteout.professionalHourlyData?.[0]?.cloudSeaSignal).toBe("白墙风险");
   });
 
+  it("does not turn high cloud alone into cloud sea windows or professional cloud sea labels", () => {
+    const baseInput = buildMockForecastInput({ ...baseQuery, target: "cloud_sea" }, { now: fixedNow });
+    const result = calculateForecast(
+      withHourlyWeather(baseInput, (hour) => ({
+        ...hour,
+        cloudTotal: 92,
+        cloudLow: 12,
+        cloudMid: 24,
+        cloudHigh: 88,
+        humidity: 62,
+        dewPoint: hour.temperature - 8,
+        dewPointSpread: 8,
+        visibility: 22,
+        windSpeed: 4,
+        precipitation: 0,
+        precipitationAmountMm: 0,
+        precipitationProbability: 8,
+        missingFields: [],
+        estimatedFields: [],
+      })),
+    );
+    const signals = new Set(result.professionalHourlyData?.map((row) => row.cloudSeaSignal));
+
+    expect(result.cloudSeaAnalysis.bestCloudSeaWindows).toHaveLength(0);
+    expect(result.cloudSeaAnalysis.watchableCloudSeaWindows).toHaveLength(0);
+    expect(signals.has("云层纹理") || signals.has("霞光参考")).toBe(true);
+    expect(signals).not.toContain("可拍窗口");
+    expect(signals).not.toContain("形成信号");
+    expect(signals).not.toContain("白墙风险");
+  });
+
+  it("does not turn mid cloud alone into cloud sea windows or professional cloud sea labels", () => {
+    const baseInput = buildMockForecastInput({ ...baseQuery, target: "cloud_sea" }, { now: fixedNow });
+    const result = calculateForecast(
+      withHourlyWeather(baseInput, (hour) => ({
+        ...hour,
+        cloudTotal: 88,
+        cloudLow: 15,
+        cloudMid: 84,
+        cloudHigh: 28,
+        humidity: 64,
+        dewPoint: hour.temperature - 7,
+        dewPointSpread: 7,
+        visibility: 20,
+        windSpeed: 3,
+        precipitation: 0,
+        precipitationAmountMm: 0,
+        precipitationProbability: 10,
+        missingFields: [],
+        estimatedFields: [],
+      })),
+    );
+    const signals = new Set(result.professionalHourlyData?.map((row) => row.cloudSeaSignal));
+
+    expect(result.cloudSeaAnalysis.bestCloudSeaWindows).toHaveLength(0);
+    expect(result.cloudSeaAnalysis.watchableCloudSeaWindows).toHaveLength(0);
+    expect(signals.has("云层纹理") || signals.has("霞光参考")).toBe(true);
+    expect(signals).not.toContain("可拍窗口");
+    expect(signals).not.toContain("形成信号");
+    expect(signals).not.toContain("白墙风险");
+  });
+
   it("caps unknown-provider high mountain correction instead of applying a full lapse rate", () => {
     const baseInput = buildMockForecastInput(baseQuery, { now: fixedNow });
     const veryHighTerrain: TerrainAnalysisSummary = {

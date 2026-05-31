@@ -4655,7 +4655,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain('data-cloud-sea-hourly-preview="true"');
     expect(html).not.toContain("mt-4 grid gap-3 hidden");
     expect(html).toContain(
-      "低云、中云、高云、湿度、露点、降水、能见度和风速用于人工复核云海形成与白墙风险。",
+      "低云、湿度、露点、降水、能见度和风速用于复核云海形成与白墙风险；中高云主要作为霞光载体和云层纹理参考。",
     );
     expect(html).toContain("有效时间");
     expect(html).toContain("2026年5月20日");
@@ -4709,6 +4709,57 @@ describe("forecast result target-aware view model", () => {
       html.indexOf("CloudSeaDailyTrend"),
     );
     expect(html.indexOf("专业小时数据")).toBeLessThan(html.indexOf("每日云海判断"));
+  });
+
+  it("renders mid/high cloud only rows as glow or texture reference, not cloud sea", () => {
+    const hourly = professionalHourlyDataForTest().map((row, index) => ({
+      ...row,
+      cloudSeaSignal: index >= 4 && index <= 7 ? ("霞光参考" as const) : ("云层纹理" as const),
+      cloudSeaSignalLevel: index >= 4 && index <= 7 ? ("watch" as const) : ("neutral" as const),
+      cloudTotalPercent: 92,
+      cloudHighPercent: 86,
+      cloudMidPercent: 74,
+      cloudLowPercent: 12,
+      dewPointSpreadC: 7,
+      relativeHumidityPercent: 62,
+      visibilityMeters: 22000,
+      windSpeedMs: 4,
+    }));
+    const result = resultWithProfessionalHourlyData({
+      professionalHourlyData: hourly,
+    });
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result,
+        viewModel,
+      }),
+    );
+    const professionalSection = sectionBetween(
+      html,
+      "CloudSeaProfessionalHourlyData",
+      "CloudSeaDailyTrend",
+    );
+
+    expect(viewModel.reasoningItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "中高云角色",
+          value: "霞光/纹理参考",
+        }),
+      ]),
+    );
+    expect(viewModel.dailyTrend.some((item) => item.layerCompletenessNote?.includes("霞光"))).toBe(
+      true,
+    );
+    expect(html).toContain("中高云角色");
+    expect(html).toContain("低云信号不足，不直接作为云海依据");
+    expect(professionalSection).toContain("霞光参考");
+    expect(professionalSection).toContain("云层纹理");
+    expect(professionalSection).not.toContain("可拍窗口</span>");
+    expect(professionalSection).not.toContain("形成信号</span>");
+    expect(professionalSection).not.toContain("白墙风险</span>");
   });
 
   it("keeps the General Forecast return path without unrelated cloud sea subject links", () => {
