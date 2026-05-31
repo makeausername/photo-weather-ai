@@ -65,6 +65,7 @@ import {
   type SubjectDetailSubject,
   type SubjectDetailTarget,
 } from "./subject-detail-links";
+import { cloudSeaTerrainAwareText, type CloudSeaTerrainContext } from "./cloud-sea-terrain-context";
 import {
   ActionPlanGrid,
   CurrentWeatherCards,
@@ -1167,16 +1168,14 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
 
       if (!response.ok) {
         const errorPayload = await readApiJsonPayload(response);
-        const outcome = normalizeAiExplainResponse(
-          {
-            success: false,
-            ...(isRecord(errorPayload)
-              ? errorPayload
-              : {
-                  messageZh: "智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。",
-                }),
-          },
-        );
+        const outcome = normalizeAiExplainResponse({
+          success: false,
+          ...(isRecord(errorPayload)
+            ? errorPayload
+            : {
+                messageZh: "智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。",
+              }),
+        });
         applyAiExplainOutcome(outcome, {
           setAiExplanation,
           setAiErrorMessage,
@@ -1449,11 +1448,14 @@ function decisionContextFromProgressContext(
 }
 
 function decisionContextFromQuery(query: ForecastQueryInput) {
-  return decisionContextFromProgressContext(query.target === "cloud_sea" ? "cloud_sea" : "general", {
-    name: query.name,
-    horizon: query.horizon,
-    target: query.target,
-  });
+  return decisionContextFromProgressContext(
+    query.target === "cloud_sea" ? "cloud_sea" : "general",
+    {
+      name: query.name,
+      horizon: query.horizon,
+      target: query.target,
+    },
+  );
 }
 
 function cloudSeaDecisionInfoCard() {
@@ -2660,17 +2662,33 @@ export function CloudSeaResultPage({
       dataCloudSeaPageMode="result"
     >
       <main className="grid w-full min-w-0 gap-5" data-forecast-decision-layout="stacked">
-        <CloudSeaTopResultHeader query={query} hero={viewModel.hero} result={result} />
+        <CloudSeaTopResultHeader
+          query={query}
+          hero={viewModel.hero}
+          result={result}
+          terrainContext={viewModel.terrainContext}
+        />
         <CloudSeaMetricCards
           hero={viewModel.hero}
           result={result}
           cards={viewModel.coreCards}
           riskSummary={viewModel.riskSummary}
+          terrainContext={viewModel.terrainContext}
         />
-        <CloudSeaNearTermWeatherSection result={result} />
-        <CloudSeaWindowCardsSection windows={viewModel.cloudSeaWindows} />
-        <CloudSeaProfessionalHourlyDataPanel result={result} />
-        <CloudSeaDailyTrend result={result} items={viewModel.dailyTrend} />
+        <CloudSeaNearTermWeatherSection result={result} terrainContext={viewModel.terrainContext} />
+        <CloudSeaWindowCardsSection
+          windows={viewModel.cloudSeaWindows}
+          terrainContext={viewModel.terrainContext}
+        />
+        <CloudSeaProfessionalHourlyDataPanel
+          result={result}
+          terrainContext={viewModel.terrainContext}
+        />
+        <CloudSeaDailyTrend
+          result={result}
+          items={viewModel.dailyTrend}
+          terrainContext={viewModel.terrainContext}
+        />
         <CloudSeaReasoningSection items={viewModel.reasoningItems} />
         <CloudSeaActionPlanSection items={viewModel.actionPlan} />
         <CloudSeaRiskSummarySection riskSummary={viewModel.riskSummary} />
@@ -3799,10 +3817,12 @@ function CloudSeaTopResultHeader({
   query,
   hero,
   result,
+  terrainContext,
 }: {
   readonly query: ForecastQueryInput;
   readonly hero: CloudSeaHeroConclusionView;
   readonly result: ForecastCalculationResult;
+  readonly terrainContext: CloudSeaTerrainContext;
 }) {
   return (
     <ForecastResultHeader
@@ -3810,8 +3830,13 @@ function CloudSeaTopResultHeader({
       className="CloudSeaTopResultHeader grid gap-4 min-[880px]:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] min-[880px]:items-stretch"
       dataCloudSeaSection="CloudSeaTopResultHeader"
     >
-      <CloudSeaHeroConclusion query={query} hero={hero} result={result} />
-      <CloudSeaScoreCard hero={hero} result={result} />
+      <CloudSeaHeroConclusion
+        query={query}
+        hero={hero}
+        result={result}
+        terrainContext={terrainContext}
+      />
+      <CloudSeaScoreCard hero={hero} result={result} terrainContext={terrainContext} />
     </ForecastResultHeader>
   );
 }
@@ -3820,10 +3845,12 @@ function CloudSeaHeroConclusion({
   query,
   hero,
   result,
+  terrainContext,
 }: {
   readonly query: ForecastQueryInput;
   readonly hero: CloudSeaHeroConclusionView;
   readonly result: ForecastCalculationResult;
+  readonly terrainContext: CloudSeaTerrainContext;
 }) {
   return (
     <ForecastResultSummaryCard
@@ -3833,7 +3860,7 @@ function CloudSeaHeroConclusion({
       <div className="flex h-full min-w-0 flex-col justify-between gap-5">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="default">云海判断</Badge>
+            <Badge variant="default">{terrainContext.vocabulary.heroBadgeLabel}</Badge>
             <Badge variant={cloudSeaDataBadgeVariant(result)}>
               {cloudSeaDataBadgeLabel(result)}
             </Badge>
@@ -3922,9 +3949,11 @@ function setOptionalForecastQueryParam(
 function CloudSeaScoreCard({
   hero,
   result,
+  terrainContext,
 }: {
   readonly hero: CloudSeaHeroConclusionView;
   readonly result: ForecastCalculationResult;
+  readonly terrainContext: CloudSeaTerrainContext;
 }) {
   const score = clampScorePercent(result.cloudSeaAnalysis.shootableScore);
 
@@ -3933,11 +3962,11 @@ function CloudSeaScoreCard({
       target="cloud_sea"
       className="CloudSeaScoreCard grid h-full content-between gap-4 p-5 shadow-sm"
       dataCloudSeaSection="CloudSeaScoreCard"
-      label="云海可拍指数"
+      label={terrainContext.vocabulary.scoreCardLabel}
       score={score}
       badgeLabel={hero.recommendationLabel}
       badgeVariant={recommendationBadgeVariant(hero.recommendationLabel)}
-      summary={cloudSeaTerrainSummary(result)}
+      summary={cloudSeaTerrainSummary(result, terrainContext)}
     />
   );
 }
@@ -3963,13 +3992,15 @@ function CloudSeaMetricCards({
   result,
   cards,
   riskSummary,
+  terrainContext,
 }: {
   readonly hero: CloudSeaHeroConclusionView;
   readonly result: ForecastCalculationResult;
   readonly cards: readonly ForecastResultCard[];
   readonly riskSummary: readonly ForecastResultSectionItem[];
+  readonly terrainContext: CloudSeaTerrainContext;
 }) {
-  const decisionCards = cloudSeaDecisionCards(hero, result, cards, riskSummary);
+  const decisionCards = cloudSeaDecisionCards(hero, result, cards, riskSummary, terrainContext);
 
   return (
     <ForecastMetricGrid
@@ -3991,11 +4022,13 @@ function cloudSeaDecisionCards(
   result: ForecastCalculationResult,
   cards: readonly ForecastResultCard[],
   riskSummary: readonly ForecastResultSectionItem[],
+  terrainContext: CloudSeaTerrainContext,
 ): readonly ForecastResultCard[] {
   const mainRisk = pickMainRisk(result);
   const formation = cards.find((card) => card.key.includes("formation")) ?? cards[0];
   const shootable = cards.find((card) => card.key.includes("shootable")) ?? cards[1];
   const whiteout = cards.find((card) => card.moduleKey === "whiteoutRisk") ?? cards[2];
+  const vocabulary = terrainContext.vocabulary;
 
   return [
     textCard(
@@ -4009,9 +4042,11 @@ function cloudSeaDecisionCards(
     textCard(
       "cloud-sea-best-window",
       "bestWindow",
-      "最佳云海窗口",
+      vocabulary.bestWindowMetricLabel,
       hero.bestWindowLabel,
-      "优先以主窗口安排到场和构图，临近出发前复核低云高度、能见度和降水。",
+      terrainContext.shouldDowngradeCloudSeaWording
+        ? "按低云、晨雾、云层开口和通透度安排顺带观察，临近出发前复核近地雾气。"
+        : "优先以主窗口安排到场和构图，临近出发前复核低云高度、能见度和降水。",
       "accent",
     ),
     textCard(
@@ -4019,20 +4054,27 @@ function cloudSeaDecisionCards(
       "recommendation",
       "建议到达",
       hero.arrivalLabel,
-      "到达后先观察云顶高度、低云厚度和远山层次，再决定是否继续守远景机位。",
+      terrainContext.shouldDowngradeCloudSeaWording
+        ? "到达后先观察近地雾气、低云是否贴地、远山层次和通透度。"
+        : "到达后先观察云顶高度、低云厚度和远山层次，再决定是否继续守远景机位。",
       result.cloudSeaAnalysis.shootableScore >= 65 ? "primary" : "accent",
     ),
     scoreCard(
       "cloud-sea-formation-shootable",
       "cloudSea",
-      "云海形成 / 可拍机会",
+      vocabulary.formationShootableMetricLabel,
       `${formation?.value ?? result.cloudSeaAnalysis.labels.formationOpportunity} / ${
         shootable?.value ?? result.cloudSeaAnalysis.labels.shootableOpportunity
       }`,
       `${result.cloudSeaAnalysis.formationScore} 分 / ${result.cloudSeaAnalysis.shootableScore} 分。${userFacingResultText(
-        firstText(
-          result.cloudSeaAnalysis.opportunityReasons,
-          "低云、湿度、露点差、风速和地形共同决定云海机会。",
+        cloudSeaTerrainAwareText(
+          firstText(
+            result.cloudSeaAnalysis.opportunityReasons,
+            terrainContext.shouldDowngradeCloudSeaWording
+              ? "低云、晨雾、云层开口、湿度、露点差、风速和地形共同决定观察参考。"
+              : "低云、湿度、露点差、风速和地形共同决定云海机会。",
+          ),
+          terrainContext,
         ),
       )}`,
       result.cloudSeaAnalysis.shootableScore >= 65 ? "primary" : "accent",
@@ -4041,10 +4083,13 @@ function cloudSeaDecisionCards(
     scoreCard(
       "cloud-sea-whiteout-risk",
       "whiteoutRisk",
-      "白墙风险",
+      vocabulary.obstructionRiskLabel,
       whiteout?.value ?? result.cloudSeaAnalysis.labels.whiteoutRisk,
       userFacingResultText(
-        firstText(result.cloudSeaAnalysis.whiteoutReasons, "低云接近机位时可能遮挡视野。"),
+        cloudSeaTerrainAwareText(
+          firstText(result.cloudSeaAnalysis.whiteoutReasons, "低云接近机位时可能遮挡视野。"),
+          terrainContext,
+        ),
       ),
       result.cloudSeaAnalysis.whiteoutRiskScore >= 70
         ? "danger"
@@ -4078,7 +4123,16 @@ function cloudSeaRecommendationTone(label: string): ForecastResultCardTone {
   return "primary";
 }
 
-function cloudSeaTerrainSummary(result: ForecastCalculationResult): string {
+function cloudSeaTerrainSummary(
+  result: ForecastCalculationResult,
+  terrainContext: CloudSeaTerrainContext,
+): string {
+  if (
+    terrainContext.shouldDowngradeCloudSeaWording ||
+    terrainContext.elevationMeters === undefined
+  ) {
+    return terrainContext.terrainNoteZh;
+  }
   const profile = result.terrainAnalysis.terrainProfile;
   const support = result.cloudSeaAnalysis.terrainSupport;
   const elevation =
@@ -4103,8 +4157,10 @@ function clampScorePercent(value: number): number {
 
 function CloudSeaNearTermWeatherSection({
   result,
+  terrainContext,
 }: {
   readonly result: ForecastCalculationResult;
+  readonly terrainContext: CloudSeaTerrainContext;
 }) {
   const current = result.currentWeather;
   const clothing = result.clothingGuide;
@@ -4121,7 +4177,11 @@ function CloudSeaNearTermWeatherSection({
     >
       <SectionHeading
         title={`当前与近时段天气（${timeContext.sectionWindowLabel}）`}
-        description={`${timeContext.currentBasisLabel}；${timeContext.nearTermBasisLabel}。以下指标只按这个时间范围解释，用于复核云海、白墙、降水和现场装备。`}
+        description={`${timeContext.currentBasisLabel}；${timeContext.nearTermBasisLabel}。以下指标只按这个时间范围解释，用于复核${
+          terrainContext.shouldDowngradeCloudSeaWording
+            ? "低云、晨雾、低云遮挡、降水和现场装备"
+            : "云海、白墙、降水和现场装备"
+        }。`}
         badge={cloudSeaDataBadgeLabel(result)}
       />
       <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
@@ -4213,35 +4273,26 @@ type CloudSeaWindowCardData = {
   readonly action: string;
 };
 
-const cloudSeaWindowCategoryDefinitions: readonly CloudSeaWindowCategoryDefinition[] = [
-  {
-    key: "sunrise",
-    title: "日出云海",
-    noWindowIssue: "当前窗口数据未给出日出前后可用云海窗口。",
-    noWindowAction: "不建议只为日出云海专程等待，可顺带观察低云上沿和能见度。",
-  },
-  {
-    key: "sunset",
-    title: "日落云海",
-    noWindowIssue: "当前窗口数据未给出日落或余晖附近可用云海窗口。",
-    noWindowAction: "保留日落前后机动观察，不建议押单一云海窗口。",
-  },
-  {
-    key: "lit",
-    title: "有光云海",
-    noWindowIssue: "当前窗口数据缺少与自然光重叠的明确云海窗口。",
-    noWindowAction: "等待临近预报更新，优先复核低云高度、开口和通透度。",
-  },
-  {
-    key: "lowLight",
-    title: "无光云海",
-    noWindowIssue: "当前窗口数据未给出夜间或低光云海形成窗口。",
-    noWindowAction: "不建议专程夜守；若已在山上，可作为氛围、剪影或层次观察。",
-  },
-];
+function cloudSeaWindowCategoryDefinitions(
+  terrainContext: CloudSeaTerrainContext,
+): readonly CloudSeaWindowCategoryDefinition[] {
+  const labels = terrainContext.vocabulary.windowCategories;
+  return [
+    { key: "sunrise", ...labels.sunrise },
+    { key: "sunset", ...labels.sunset },
+    { key: "lit", ...labels.lit },
+    { key: "lowLight", ...labels.lowLight },
+  ];
+}
 
-function CloudSeaWindowCardsSection({ windows }: { readonly windows: readonly CloudSeaWindowItem[] }) {
-  const cards = buildCloudSeaWindowCardData(windows);
+function CloudSeaWindowCardsSection({
+  windows,
+  terrainContext,
+}: {
+  readonly windows: readonly CloudSeaWindowItem[];
+  readonly terrainContext: CloudSeaTerrainContext;
+}) {
+  const cards = buildCloudSeaWindowCardData(windows, terrainContext);
 
   return (
     <section
@@ -4250,9 +4301,9 @@ function CloudSeaWindowCardsSection({ windows }: { readonly windows: readonly Cl
       data-testid="cloud-sea-window-cards-section"
     >
       <SectionHeading
-        title="云海窗口与备选"
-        description="按时段与光线条件归纳云海窗口，快速判断哪一类云海更值得守拍。"
-        badge="云海窗口"
+        title={terrainContext.vocabulary.windowSectionTitle}
+        description={terrainContext.vocabulary.windowSectionDescription}
+        badge={terrainContext.vocabulary.windowSectionBadge}
       />
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map((card) => (
@@ -4309,20 +4360,22 @@ function CloudSeaWindowCardLine({
 
 function buildCloudSeaWindowCardData(
   windows: readonly CloudSeaWindowItem[],
+  terrainContext: CloudSeaTerrainContext,
 ): readonly CloudSeaWindowCardData[] {
   const sortedWindows = [...windows].sort(compareCloudSeaWindowPriority);
 
-  return cloudSeaWindowCategoryDefinitions.map((definition) => {
+  return cloudSeaWindowCategoryDefinitions(terrainContext).map((definition) => {
     const candidates = sortedWindows.filter((item) =>
       cloudSeaWindowMatchesCategory(item, definition.key),
     );
-    return cloudSeaWindowCategoryCard(definition, candidates);
+    return cloudSeaWindowCategoryCard(definition, candidates, terrainContext);
   });
 }
 
 function cloudSeaWindowCategoryCard(
   definition: CloudSeaWindowCategoryDefinition,
   candidates: readonly CloudSeaWindowItem[],
+  terrainContext: CloudSeaTerrainContext,
 ): CloudSeaWindowCardData {
   const primary = candidates[0];
   const backup = candidates.find((candidate) => candidate.key !== primary?.key);
@@ -4353,8 +4406,8 @@ function cloudSeaWindowCategoryCard(
     scoreTone: cloudSeaWindowCardTone(definition.key, primary),
     primaryWindow: primary.timeRangeLabel,
     backupWindow: backup?.timeRangeLabel ?? "暂无数据支撑的备选窗口",
-    mainIssue: cloudSeaWindowMainIssue(definition.key, primary),
-    action: cloudSeaWindowCardAction(definition.key, primary),
+    mainIssue: cloudSeaWindowMainIssue(definition.key, primary, terrainContext),
+    action: cloudSeaWindowCardAction(definition.key, primary, terrainContext),
   };
 }
 
@@ -4486,8 +4539,11 @@ function cloudSeaWindowCardTone(
 function cloudSeaWindowMainIssue(
   category: CloudSeaWindowCategoryKey,
   item: CloudSeaWindowItem,
+  terrainContext: CloudSeaTerrainContext,
 ): string {
-  const basis = `白墙风险：${item.whiteoutRisk}；雨后开口：${item.rainInterference}。`;
+  const basis = terrainContext.shouldDowngradeCloudSeaWording
+    ? `低云遮挡：${item.whiteoutRisk}；雨后开口：${item.rainInterference}。`
+    : `白墙风险：${item.whiteoutRisk}；雨后开口：${item.rainInterference}。`;
   if (category === "lowLight") {
     return `${basis}光线不足，不适合作为常规明亮风光主窗口。`;
   }
@@ -4497,9 +4553,12 @@ function cloudSeaWindowMainIssue(
 function cloudSeaWindowCardAction(
   category: CloudSeaWindowCategoryKey,
   item: CloudSeaWindowItem,
+  terrainContext: CloudSeaTerrainContext,
 ): string {
   if (category === "lowLight") {
-    return "仅作氛围、剪影、层次或现场观察，不作为正常明亮风光主窗口。";
+    return terrainContext.shouldDowngradeCloudSeaWording
+      ? "仅作雾气层次、夜景氛围或现场观察，不作为正常明亮风光主窗口。"
+      : "仅作氛围、剪影、层次或现场观察，不作为正常明亮风光主窗口。";
   }
   return item.actionSuggestion;
 }
@@ -4511,20 +4570,28 @@ type ProfessionalHourlyRow = NonNullable<
 type CloudSeaAnalysisWindowLike =
   ForecastCalculationResult["cloudSeaAnalysis"]["bestCloudSeaWindows"][number];
 
-const professionalHourlyFilters: readonly {
+type ProfessionalHourlyFilterDefinition = {
   readonly mode: ProfessionalHourlyFilterMode;
   readonly label: string;
-}[] = [
-  { mode: "all", label: "全部小时" },
-  { mode: "cloudSea", label: "只看云海窗口" },
-  { mode: "morning", label: "只看清晨窗口" },
-  { mode: "risk", label: "只看有风险时段" },
-];
+};
+
+function professionalHourlyFiltersForContext(
+  terrainContext: CloudSeaTerrainContext,
+): readonly ProfessionalHourlyFilterDefinition[] {
+  return [
+    { mode: "all", label: "全部小时" },
+    { mode: "cloudSea", label: terrainContext.vocabulary.professionalCloudSeaFilterLabel },
+    { mode: "morning", label: "只看清晨窗口" },
+    { mode: "risk", label: "只看有风险时段" },
+  ];
+}
 
 function CloudSeaProfessionalHourlyDataPanel({
   result,
+  terrainContext,
 }: {
   readonly result: ForecastCalculationResult;
+  readonly terrainContext: CloudSeaTerrainContext;
 }) {
   const rows = result.professionalHourlyData ?? [];
   const basis = result.professionalHourlyDataTimeBasis;
@@ -4547,6 +4614,7 @@ function CloudSeaProfessionalHourlyDataPanel({
   }
 
   const timeStepLabel = basis.stepMinutes === 60 ? "逐小时" : `${basis.stepMinutes} 分钟`;
+  const professionalHourlyFilters = professionalHourlyFiltersForContext(terrainContext);
   const activeFilterLabel =
     professionalHourlyFilters.find((filter) => filter.mode === filterMode)?.label ?? "全部小时";
   const missingHeaderNote = professionalHourlyMissingHeaderNote(rows, basis);
@@ -4566,7 +4634,7 @@ function CloudSeaProfessionalHourlyDataPanel({
             <Badge variant="accent">专业参考</Badge>
           </div>
           <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
-            低云、中云、高云、湿度、露点、降水、能见度和风速用于人工复核云海形成与白墙风险。
+            {terrainContext.vocabulary.professionalDescription}
           </p>
         </div>
         <Button
@@ -4639,8 +4707,9 @@ function CloudSeaProfessionalHourlyDataPanel({
           </div>
         </div>
         <p className="text-xs leading-5 text-muted-foreground">
-          当前筛选：{activeFilterLabel}，显示 {filteredRows.length} / {rows.length}{" "}
-          小时。专业数据用于复核云海形成、白墙风险和雨后开口。最终出行仍需结合临近预报和现场观测。
+          当前筛选：{activeFilterLabel}，显示 {filteredRows.length} / {rows.length} 小时。
+          {terrainContext.vocabulary.professionalUsageText}
+          最终出行仍需结合临近预报和现场观测。
         </p>
 
         <div
@@ -4654,7 +4723,7 @@ function CloudSeaProfessionalHourlyDataPanel({
                   "日期",
                   "时间",
                   "天气",
-                  "云海信号",
+                  terrainContext.vocabulary.professionalSignalColumnLabel,
                   "总云量 %",
                   "高云量 %",
                   "中云量 %",
@@ -5248,11 +5317,16 @@ function isFiniteNumber(value: number | null | undefined): value is number {
 function CloudSeaDailyTrend({
   result,
   items,
+  terrainContext,
 }: {
   readonly result: ForecastCalculationResult;
   readonly items: readonly CloudSeaDailyTrendItem[];
+  readonly terrainContext: CloudSeaTerrainContext;
 }) {
-  const title = result.calendarBasis.horizonHours <= 24 ? "未来24小时云海判断" : "每日云海判断";
+  const title =
+    result.calendarBasis.horizonHours <= 24
+      ? `未来24小时${terrainContext.vocabulary.subjectLabel}判断`
+      : `每日${terrainContext.vocabulary.subjectLabel}判断`;
 
   return (
     <DailyDecisionList
@@ -5265,7 +5339,7 @@ function CloudSeaDailyTrend({
           <div>
             <h2 className="text-lg font-bold text-card-foreground">{title}</h2>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              每天只保留云海形成、可拍、白墙、最佳窗口和雨后开口信号。
+              {terrainContext.vocabulary.dailyDescription}
             </p>
           </div>
           <Badge variant="muted">{forecastHorizonLabels[result.horizon]}</Badge>
@@ -5285,7 +5359,10 @@ function CloudSeaDailyTrend({
                 </div>
               </div>
               <dl className="grid gap-1 text-sm">
-                <CloudSeaInlineDefinition label="最佳窗口" value={item.bestMorningWindow} />
+                <CloudSeaInlineDefinition
+                  label={terrainContext.vocabulary.dailyBestWindowLabel}
+                  value={item.bestMorningWindow}
+                />
                 <CloudSeaInlineDefinition label="雨后开口" value={item.rainOpeningLabel} />
               </dl>
               <div className="grid gap-2 min-[520px]:grid-cols-3 min-[900px]:grid-cols-1 min-[1180px]:grid-cols-3">
@@ -5298,7 +5375,7 @@ function CloudSeaDailyTrend({
                   value={`${item.shootableLevel} ${item.shootableScore}分`}
                 />
                 <CloudSeaDailyStat
-                  label="白墙"
+                  label={terrainContext.vocabulary.dailyObstructionStatLabel}
                   value={`${item.whiteoutRiskLabel} ${item.whiteoutRiskScore}分`}
                 />
               </div>
@@ -5396,7 +5473,10 @@ function CloudSeaRiskSummarySection({
   readonly riskSummary: readonly ForecastResultSectionItem[];
 }) {
   const focusedRiskSummary = riskSummary.filter(
-    (item) => !["云海形成机会", "云海可拍机会", "雨后开口"].includes(item.label),
+    (item) =>
+      !["云海形成机会", "云海可拍机会", "低云/晨雾信号", "云层可观察机会", "雨后开口"].includes(
+        item.label,
+      ),
   );
 
   return (

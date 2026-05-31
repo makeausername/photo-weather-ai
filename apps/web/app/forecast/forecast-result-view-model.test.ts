@@ -33,6 +33,7 @@ import {
   buildForecastResultViewModel,
   buildGlowForecastViewModel,
 } from "./forecast-result-view-model";
+import { buildCloudSeaTerrainContext } from "./cloud-sea-terrain-context";
 import {
   buildGeneralDailySubjectLinks,
   buildSubjectDetailDeepLink,
@@ -1662,6 +1663,83 @@ function resultWithProfessionalHourlyData(
       missingDataNoteZh: "部分小时数据缺失，结果仅供复核。",
     },
     ...overrides,
+  };
+}
+
+function lowElevationCloudSeaResultForTest(): ForecastCalculationResult {
+  const base = resultWithProfessionalHourlyData();
+  const lowlandProfile = {
+    ...base.terrainAnalysis.terrainProfile,
+    elevationMeters: 142,
+    elevationSource: "manual" as const,
+    elevationConfidence: "medium" as const,
+    terrainType: "unknown" as const,
+    exposureType: "unknown" as const,
+    viewingDirection: "unknown" as const,
+    nearbyValleyElevationMeters: null,
+    localReliefMeters: null,
+    terrainNotesZh: "仅有机位海拔，周边谷地和暴露度仍需补充。",
+    locationElevation: 142,
+    minElevation1km: null,
+    minElevation3km: null,
+    minElevation5km: null,
+    maxElevation5km: null,
+    avgElevation5km: null,
+    elevationDiff5km: null,
+    valleyDirectionZh: undefined,
+    ridgeDirectionZh: undefined,
+    terrainCloudSeaPotential: "low" as const,
+    terrainNoteZh: "低海拔且缺少有效周边高差，不按高山云海判断。",
+  };
+
+  return {
+    ...base,
+    place: {
+      ...base.place,
+      id: "mock-place-oujiang-lowland",
+      name: "瓯江河畔",
+    },
+    scores: {
+      ...base.scores,
+      cloudSea: score("cloudSea", "云海", 82),
+      whiteoutRisk: score("whiteoutRisk", "白墙风险", 58),
+    },
+    terrainSummary: {
+      ...base.terrainSummary,
+      ...lowlandProfile,
+      honestyNoteZh: "仅采用该地点海拔，周边高差未确认，不按高山机位判断。",
+    },
+    terrainAnalysis: {
+      ...base.terrainAnalysis,
+      terrainProfile: lowlandProfile,
+      honestyNoteZh: "仅采用该地点海拔，周边高差未确认，不按高山机位判断。",
+    },
+    cloudSeaAnalysis: {
+      ...base.cloudSeaAnalysis,
+      recommendationLabel: "推荐重点关注",
+      terrainSupport: {
+        ...base.cloudSeaAnalysis.terrainSupport,
+        score: 20,
+        level: "低",
+        terrainMode: "lowland",
+        selectedSpotElevationMeters: 142,
+        nearbyValleyElevationMeters: undefined,
+        localReliefMeters: undefined,
+        terrainType: "unknown",
+        exposureType: "unknown",
+        confidence: "low",
+        messageZh: "低海拔且缺少有效周边高差，不按高山云海判断。",
+      },
+    },
+    riskFlags: [
+      {
+        key: "whiteout",
+        label: "白墙风险",
+        level: "medium",
+        description: "局部时段可能出现低云遮挡。",
+      },
+    ],
+    keyReasons: ["地形参考：机位海拔约 142 米，周边高差暂未计算。"],
   };
 }
 
@@ -4029,6 +4107,93 @@ describe("forecast result target-aware view model", () => {
     ]);
   });
 
+  it("classifies Cloud Sea terrain semantics from elevation and surrounding relief", () => {
+    const lowland = buildCloudSeaTerrainContext({
+      elevationMeters: 142,
+      surroundingReliefMeters: null,
+      terrainType: "unknown",
+      terrainConfidence: "low",
+    });
+    const highMountain = buildCloudSeaTerrainContext({
+      elevationMeters: 1800,
+      surroundingReliefMeters: 900,
+      terrainType: "summit",
+      terrainConfidence: "high",
+    });
+
+    expect(lowland.terrainClass).toBe("low_elevation");
+    expect(lowland.isClassicCloudSeaEligible).toBe(false);
+    expect(lowland.shouldDowngradeCloudSeaWording).toBe(true);
+    expect(lowland.terrainNoteZh).toContain("当前按低海拔低云/晨雾参考处理");
+    expect(lowland.vocabulary.windowCategories.sunrise.title).toBe("日出低云 / 晨雾");
+
+    expect(highMountain.terrainClass).toBe("high_mountain");
+    expect(highMountain.isClassicCloudSeaEligible).toBe(true);
+    expect(highMountain.shouldDowngradeCloudSeaWording).toBe(false);
+    expect(highMountain.vocabulary.windowCategories.sunrise.title).toBe("日出云海");
+  });
+
+  it("downgrades low-elevation Cloud Sea result wording while keeping professional hourly data visible", () => {
+    const result = lowElevationCloudSeaResultForTest();
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(viewModel.terrainContext.shouldDowngradeCloudSeaWording).toBe(true);
+    expect(viewModel.hero.title).toBe("瓯江河畔 低云/晨雾参考");
+    expect(viewModel.hero.recommendationLabel).toBe("推荐观察");
+    expect(viewModel.coreCards.map((card) => card.label)).toEqual([
+      "低云/晨雾信号",
+      "云层可观察机会",
+      "低云遮挡风险",
+      "雨后开口机会",
+    ]);
+    expect(viewModel.actionPlan.map((item) => item.label)).toContain("观察窗口");
+    expect(viewModel.dailyTrend.map((item) => item.recommendedAction)).toContain("推荐观察");
+
+    expect(html).toContain("低云/晨雾参考");
+    expect(html).toContain("地形参考：机位海拔约 142 米，周边高差暂未计算");
+    expect(html).toContain("不按高山云海判断");
+    expect(html).toContain("晨雾");
+    expect(html).toContain("低云");
+    expect(html).toContain("云层变化");
+    expect(html).toContain("通透");
+    expect(html).toContain("日出低云 / 晨雾");
+    expect(html).toContain("日落层云");
+    expect(html).toContain("有光云层");
+    expect(html).toContain("夜间低云 / 雾气");
+    expect(html).toContain("低云遮挡风险");
+    expect(html).toContain("复核近地雾气");
+    expect(html).toContain("远山层次和通透度");
+    expect(html).not.toContain("推荐专程云海");
+    expect(html).not.toContain("强推荐专程云海");
+    expect(html).not.toContain("推荐安排");
+    expect(html).not.toContain("高山云海窗口");
+    expect(html).not.toContain("山顶云海");
+    expect(html).not.toContain("云海主守");
+    expect(html).not.toContain("主守云海");
+
+    expect(html).toContain("专业小时数据");
+    expect(html).toContain("低云信号");
+    expect(html).toContain("总云量 %");
+    expect(html).toContain("高云量 %");
+    expect(html).toContain("中云量 %");
+    expect(html).toContain("低云量 %");
+    expect(html).toContain('data-professional-hourly-expanded="true"');
+    expect(html).not.toContain("坐标信息");
+    expect(html).not.toContain("WGS84");
+    expect(html).not.toContain("GCJ-02");
+    expect(html).not.toContain("经度");
+    expect(html).not.toContain("纬度");
+    expect(html).not.toContain("latitude");
+    expect(html).not.toContain("longitude");
+  });
+
   it("resolves the Cloud Sea forecast page into explicit search, loading, result, and error modes", () => {
     const query = queryForTarget("cloud_sea");
 
@@ -4353,7 +4518,9 @@ describe("forecast result target-aware view model", () => {
         expect(html.indexOf("CloudSeaWindowCards")).toBeLessThan(professionalHourlyIndex);
         expect(professionalHourlyIndex).toBeLessThan(html.indexOf("CloudSeaDailyTrend"));
       } else {
-        expect(html.indexOf("CloudSeaWindowCards")).toBeLessThan(html.indexOf("CloudSeaDailyTrend"));
+        expect(html.indexOf("CloudSeaWindowCards")).toBeLessThan(
+          html.indexOf("CloudSeaDailyTrend"),
+        );
       }
       expect(html.indexOf("CloudSeaDailyTrend")).toBeLessThan(html.indexOf("判断依据"));
       expect(html.indexOf("判断依据")).toBeLessThan(html.indexOf("行动方案"));
