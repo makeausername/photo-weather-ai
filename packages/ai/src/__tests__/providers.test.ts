@@ -2,6 +2,7 @@ import { decisionCardSchema } from "@photo-weather/shared";
 import { describe, expect, it } from "vitest";
 import type { ForecastCalculationResult } from "@photo-weather/shared";
 import {
+  buildCloudSeaAiExplainPayload,
   buildDeepSeekForecastContext,
   buildDeepSeekForecastExplanationRequest,
   createRuleBasedForecastExplanation,
@@ -94,6 +95,10 @@ describe("AI providers", () => {
       stream: false,
     });
     expect(JSON.stringify(request.body)).toContain("Do not invent weather data.");
+    expect(JSON.stringify(request.body)).toContain("cloudSeaAiExplainPayload");
+    expect(JSON.stringify(request.body)).toContain(
+      "Do not recompute or invent weather, cloud, cloud-sea, terrain, astronomy, score, risk, or window data.",
+    );
     expect(JSON.stringify(request.body)).toContain("computedForecastFacts");
     expect(JSON.stringify(request.body)).toContain("最建议冲哪一天");
     expect(JSON.stringify(request.body)).toContain("日落后余晖");
@@ -114,6 +119,63 @@ describe("AI providers", () => {
     expect(text).not.toContain("weatherTimeline");
     expect(text).not.toContain("providerCode");
     expect(text.length).toBeLessThanOrEqual(9000);
+  });
+
+  it("builds a Cloud Sea AI payload from deterministic facts without coordinates or provider names", () => {
+    const payload = buildCloudSeaAiExplainPayload({
+      ...forecastResultFixture,
+      dataNotice:
+        "天气数据：和风天气；云层辅助：Open-Meteo；专业增强：meteoblue；地理服务：高德地图。",
+      weatherNoticeZh:
+        "天气数据：和风天气；云层辅助：Open-Meteo；专业增强：meteoblue。",
+      weatherMissingDataNotes: ["Open-Meteo 云层辅助字段部分缺失"],
+      weatherFusionSummary: {
+        primarySource: "QWeather",
+        auxiliarySources: ["Open-Meteo", "meteoblue"],
+        professionalSourceStatus: "meteoblue 通过",
+        confidenceLevel: "medium",
+        conflictStatusZh: "QWeather 与 meteoblue 有低云分歧",
+        dataStatusZh: "QWeather / Open-Meteo / meteoblue",
+        multiSourceAgreementContext: {
+          agreementLevel: "medium",
+          disagreementLevel: "medium",
+          fieldDisagreements: [
+            {
+              field: "cloudLow",
+              level: "medium",
+              range: null,
+              sourcesAvailable: 2,
+              messageZh: "QWeather 与 meteoblue 低云判断存在分歧。",
+            },
+          ],
+          keyWarningsZh: ["meteoblue 低云分歧需要复核"],
+          userSummaryZh: "Open-Meteo 与 meteoblue 存在云层分歧。",
+          professionalSummaryZh: "QWeather / Open-Meteo / meteoblue 多源对照。",
+          shouldLowerConfidence: true,
+          shouldShowReviewWarning: true,
+        },
+      },
+    });
+    const text = JSON.stringify(payload);
+
+    expect(payload.target).toBe("cloud_sea");
+    expect(payload.deterministicOnly).toBe(true);
+    expect(payload.scoreAndRecommendation.cloudSeaScore).toBe(
+      forecastResultFixture.cloudSeaAnalysis.shootableScore,
+    );
+    expect(payload.professionalHourlySummary).toHaveProperty("focusedRows");
+    expect(payload.cloudLayerCompletenessSummary).toHaveProperty("layerCompletenessLevel");
+    expect(payload.multiSourceAgreementSummary).toMatchObject({
+      agreementLevel: "medium",
+      shouldLowerConfidence: true,
+    });
+    expect(text).toContain("Do not recompute weather");
+    expect(text).not.toMatch(/latitude|longitude|coordinates|WGS84|GCJ-02/i);
+    expect(text).not.toContain("QWeather");
+    expect(text).not.toContain("Open-Meteo");
+    expect(text).not.toContain("meteoblue");
+    expect(text).not.toContain("和风天气");
+    expect(text).not.toContain("高德地图");
   });
 
   it("passes deterministic astro V2 facts to DeepSeek without provider names", () => {

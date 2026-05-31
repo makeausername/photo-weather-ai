@@ -1024,99 +1024,52 @@ export function resolveForecastPageMode({
   return "search";
 }
 
-export function ForecastResultClient({ query, invalidReason }: ForecastResultClientProps) {
-  const [status, setStatus] = useState<LoadStatus>(query ? "loading" : "idle");
-  const [result, setResult] = useState<ForecastCalculationResult | null>(null);
-  const [errorMessage, setErrorMessage] = useState("");
+type ForecastAiInterpretationState = {
+  readonly status: AiStatus;
+  readonly explanation: ForecastAiExplanation | null;
+  readonly errorMessage: string;
+  readonly retryable: boolean;
+  readonly generate: () => void;
+};
+
+function useForecastAiInterpretation(
+  query: ForecastQueryInput | null,
+  result: ForecastCalculationResult | null,
+): ForecastAiInterpretationState {
   const [aiStatus, setAiStatus] = useState<AiStatus>("idle");
   const [aiExplanation, setAiExplanation] = useState<ForecastAiExplanation | null>(null);
   const [aiErrorMessage, setAiErrorMessage] = useState("");
   const [aiRetryable, setAiRetryable] = useState(false);
   const aiRequestInFlightRef = useRef(false);
   const aiAbortControllerRef = useRef<AbortController | null>(null);
-
-  const queryKey = useMemo(() => (query ? JSON.stringify(query) : ""), [query]);
-  const activeTarget = query?.target ?? result?.target ?? "general";
-  const shellCopy = getForecastResultPageShellCopy(activeTarget);
-  const pageMode = resolveForecastPageMode({
-    query,
-    status,
-    hasResult: result !== null,
-  });
-  const isCloudSeaFlow = activeTarget === "cloud_sea";
-  const usesSpecializedResultHeader =
-    result !== null &&
-    (activeTarget === "general" ||
-      activeTarget === "cloud_sea" ||
-      activeTarget === "glow" ||
-      activeTarget === "astro");
-  const changeLocationPath = isCloudSeaFlow ? "/cloud-sea" : "/#analysis";
+  const cacheKey = useMemo(
+    () => (query && result ? createAiExplanationCacheKey({ query, result }) : ""),
+    [query, result],
+  );
 
   useEffect(() => {
-    if (!query) {
-      return;
-    }
-
-    const activeQuery = query;
-    const controller = new AbortController();
     aiAbortControllerRef.current?.abort();
     aiAbortControllerRef.current = null;
     aiRequestInFlightRef.current = false;
-    setStatus("loading");
-    setResult(null);
-    setErrorMessage("");
     setAiStatus("idle");
     setAiExplanation(null);
     setAiErrorMessage("");
     setAiRetryable(false);
 
-    async function calculateForecast() {
-      try {
-        const response = await fetch(`${apiBaseUrl}/forecast/calculate`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(activeQuery),
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          throw new Error(
-            await readApiErrorMessage(response, "拍摄天气分析暂时不可用，请稍后重试。"),
-          );
-        }
-
-        const data = (await response.json()) as ForecastCalculationResult;
-        writeForecastResultContext({ query: activeQuery, result: data });
-        setResult(data);
-        const cachedAiExplanation = readCachedAiExplanation(
-          createAiExplanationCacheKey({ query: activeQuery, result: data }),
-        );
-        if (cachedAiExplanation) {
-          setAiExplanation(cachedAiExplanation);
-          setAiStatus("ready");
-          setAiErrorMessage("");
-          setAiRetryable(false);
-        }
-        setStatus("ready");
-      } catch (error) {
-        if ((error as Error).name === "AbortError") {
-          return;
-        }
-
-        setErrorMessage((error as Error).message || "拍摄天气分析暂时不可用，请稍后重试。");
-        setStatus("error");
-      }
+    if (!cacheKey) {
+      return;
     }
 
-    void calculateForecast();
+    const cachedAiExplanation = readCachedAiExplanation(cacheKey);
+    if (cachedAiExplanation) {
+      setAiExplanation(cachedAiExplanation);
+      setAiStatus("ready");
+    }
 
     return () => {
-      controller.abort();
       aiAbortControllerRef.current?.abort();
     };
-  }, [query, queryKey]);
+  }, [cacheKey]);
 
   async function generateAiExplanation() {
     if (
@@ -1127,8 +1080,8 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
       return;
     }
 
-    const cacheKey = createAiExplanationCacheKey({ query, result });
-    const cachedAiExplanation = readCachedAiExplanation(cacheKey);
+    const currentCacheKey = createAiExplanationCacheKey({ query, result });
+    const cachedAiExplanation = readCachedAiExplanation(currentCacheKey);
     if (cachedAiExplanation) {
       const cacheOutcome: NormalizedAiExplainOutcome = {
         status: "ready",
@@ -1176,7 +1129,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
           ...(isRecord(errorPayload)
             ? errorPayload
             : {
-                messageZh: "智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。",
+                messageZh: publicAiExplanationMessage("unknown"),
               }),
         });
         applyAiExplainOutcome(outcome, {
@@ -1192,7 +1145,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
       const data = await readApiJsonPayload(response);
       const outcome = normalizeAiExplainResponse(data);
       if (outcome.cacheable && outcome.explanation) {
-        cacheAiExplanation(cacheKey, outcome.explanation);
+        cacheAiExplanation(currentCacheKey, outcome.explanation);
       }
       applyAiExplainOutcome(outcome, {
         setAiExplanation,
@@ -1218,6 +1171,107 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
       aiRequestInFlightRef.current = false;
     }
   }
+
+  return {
+    status: aiStatus,
+    explanation: aiExplanation,
+    errorMessage: aiErrorMessage,
+    retryable: aiRetryable,
+    generate: generateAiExplanation,
+  };
+}
+
+export function ForecastAiInterpretationSection({
+  query,
+  result,
+}: {
+  readonly query: ForecastQueryInput;
+  readonly result: ForecastCalculationResult;
+}) {
+  const aiInterpretation = useForecastAiInterpretation(query, result);
+
+  return (
+    <AiExplanationPanel
+      status={aiInterpretation.status}
+      explanation={aiInterpretation.explanation}
+      errorMessage={aiInterpretation.errorMessage}
+      retryable={aiInterpretation.retryable}
+      onGenerate={aiInterpretation.generate}
+    />
+  );
+}
+
+export function ForecastResultClient({ query, invalidReason }: ForecastResultClientProps) {
+  const [status, setStatus] = useState<LoadStatus>(query ? "loading" : "idle");
+  const [result, setResult] = useState<ForecastCalculationResult | null>(null);
+  const [errorMessage, setErrorMessage] = useState("");
+  const aiInterpretation = useForecastAiInterpretation(query, result);
+
+  const queryKey = useMemo(() => (query ? JSON.stringify(query) : ""), [query]);
+  const activeTarget = query?.target ?? result?.target ?? "general";
+  const shellCopy = getForecastResultPageShellCopy(activeTarget);
+  const pageMode = resolveForecastPageMode({
+    query,
+    status,
+    hasResult: result !== null,
+  });
+  const isCloudSeaFlow = activeTarget === "cloud_sea";
+  const usesSpecializedResultHeader =
+    result !== null &&
+    (activeTarget === "general" ||
+      activeTarget === "cloud_sea" ||
+      activeTarget === "glow" ||
+      activeTarget === "astro");
+  const changeLocationPath = isCloudSeaFlow ? "/cloud-sea" : "/#analysis";
+
+  useEffect(() => {
+    if (!query) {
+      return;
+    }
+
+    const activeQuery = query;
+    const controller = new AbortController();
+    setStatus("loading");
+    setResult(null);
+    setErrorMessage("");
+
+    async function calculateForecast() {
+      try {
+        const response = await fetch(`${apiBaseUrl}/forecast/calculate`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(activeQuery),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            await readApiErrorMessage(response, "拍摄天气分析暂时不可用，请稍后重试。"),
+          );
+        }
+
+        const data = (await response.json()) as ForecastCalculationResult;
+        writeForecastResultContext({ query: activeQuery, result: data });
+        setResult(data);
+        setStatus("ready");
+      } catch (error) {
+        if ((error as Error).name === "AbortError") {
+          return;
+        }
+
+        setErrorMessage((error as Error).message || "拍摄天气分析暂时不可用，请稍后重试。");
+        setStatus("error");
+      }
+    }
+
+    void calculateForecast();
+
+    return () => {
+      controller.abort();
+    };
+  }, [query, queryKey]);
 
   return (
     <PublicShell contentClassName="grid gap-5 pb-14">
@@ -1283,11 +1337,11 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
         <ForecastResultView
           query={query}
           result={result}
-          aiStatus={aiStatus}
-          aiExplanation={aiExplanation}
-          aiErrorMessage={aiErrorMessage}
-          aiRetryable={aiRetryable}
-          onGenerateAiExplanation={generateAiExplanation}
+          aiStatus={aiInterpretation.status}
+          aiExplanation={aiInterpretation.explanation}
+          aiErrorMessage={aiInterpretation.errorMessage}
+          aiRetryable={aiInterpretation.retryable}
+          onGenerateAiExplanation={aiInterpretation.generate}
         />
       ) : null}
     </PublicShell>
@@ -2695,6 +2749,7 @@ export function CloudSeaResultPage({
         />
         <CloudSeaReasoningSection items={viewModel.reasoningItems} />
         <CloudSeaActionPlanSection items={viewModel.actionPlan} />
+        <ForecastAiInterpretationSection query={query} result={result} />
         <CloudSeaRiskSummarySection riskSummary={viewModel.riskSummary} />
         {viewModel.dataCaution ? <CloudSeaInlineCaution text={viewModel.dataCaution} /> : null}
         {returnUrl ? <CloudSeaReturnLink href={returnUrl} /> : null}

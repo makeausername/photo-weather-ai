@@ -1,8 +1,10 @@
 import {
+  buildCloudLayerCompletenessContext,
   decisionCardSchema,
   deepSeekResponseFormat,
   formatArrivalDeadlineZh,
   formatShootingWindowZh,
+  forecastHorizonLabels,
   normalizeDeepSeekModel,
   type DeepSeekReasoningEffort,
 } from "@photo-weather/shared";
@@ -377,7 +379,7 @@ function compactScore(
   };
 }
 
-type DeepSeekForecastContextDetail = "standard" | "minimal";
+export type DeepSeekForecastContextDetail = "standard" | "minimal";
 
 export function buildDeepSeekForecastContext(
   result: ForecastCalculationResult,
@@ -446,6 +448,8 @@ export function buildDeepSeekForecastContext(
       isMock: result.isMock,
       noticeZh: limitText(providerNeutralText(result.dataNotice), 140),
     },
+    cloudSeaAiExplainPayload:
+      result.target === "cloud_sea" ? buildCloudSeaAiExplainPayload(result, detail) : undefined,
     calibrationHint: result.calibrationHint
       ? {
           sampleCount: result.calibrationHint.sampleCount,
@@ -456,6 +460,252 @@ export function buildDeepSeekForecastContext(
           cautionNoteZh: limitText(result.calibrationHint.cautionNoteZh, 140),
         }
       : undefined,
+  };
+}
+
+export function buildCloudSeaAiExplainPayload(
+  result: ForecastCalculationResult,
+  detail: DeepSeekForecastContextDetail = "standard",
+) {
+  const timezone = result.calendarBasis.timezone;
+  const analysis = result.cloudSeaAnalysis;
+  const bestAnalysisWindow =
+    analysis.bestCloudSeaWindow ??
+    analysis.bestCloudSeaWindows[0] ??
+    analysis.watchableCloudSeaWindows[0] ??
+    analysis.notRecommendedCloudSeaWindows[0];
+  const bestForecastWindow =
+    result.bestWindows.find((window) => window.target === "cloud_sea" && isExecutableWindow(window)) ??
+    result.bestWindows.find((window) => window.target === "cloud_sea");
+  const professionalRows = result.professionalHourlyData ?? [];
+  const focusedRows = professionalHourlyRowsForAiPayload(professionalRows, detail);
+  const cloudLayerCompleteness = buildCloudLayerCompletenessContext(professionalRows);
+  const agreement = result.weatherFusionSummary?.multiSourceAgreementContext;
+
+  return {
+    contextVersion: "cloud-sea-ai-explain-v1",
+    target: "cloud_sea",
+    deterministicOnly: true,
+    instruction:
+      "Explain and organize only the deterministic Cloud Sea result. Do not recompute weather, cloud layers, terrain, astronomy, score, recommendation, risks, or windows.",
+    locationName: result.place.name,
+    horizon: {
+      key: result.horizon,
+      labelZh: forecastHorizonLabels[result.horizon],
+      forecastRange: result.calendarBasis.forecastRangeLabel,
+    },
+    scoreAndRecommendation: {
+      overallScore: result.overallScore,
+      cloudSeaScore: analysis.shootableScore,
+      formationScore: analysis.formationScore,
+      whiteoutRiskScore: analysis.whiteoutRiskScore,
+      recommendationLevel: result.recommendationLevel,
+      recommendationLabelZh: result.recommendationLabel,
+      cloudSeaRecommendationZh: analysis.recommendationLabel,
+      summaryZh: limitText(result.summary, 180),
+    },
+    bestWindow: bestAnalysisWindow
+      ? compactCloudSeaAnalysisWindow(bestAnalysisWindow, timezone)
+      : null,
+    bestForecastWindow: bestForecastWindow
+      ? compactForecastWindowBrief(bestForecastWindow, timezone)
+      : null,
+    arrivalSuggestionZh: bestForecastWindow?.arrivalAdvice
+      ? formatArrivalDeadlineZh(bestForecastWindow.arrivalAdvice.recommendedArrivalTime, timezone)
+      : bestAnalysisWindow
+        ? `建议在 ${formatShootingWindowZh(
+            { startTime: bestAnalysisWindow.startTime, endTime: bestAnalysisWindow.endTime },
+            timezone,
+          )} 前完成到位、构图和现场复核。`
+        : "暂无明确到达时间，出发前优先复核临近云层和能见度。",
+    terrainContext: {
+      terrainMode: analysis.terrainSupport.terrainMode,
+      terrainType: result.terrainSummary.terrainType,
+      exposureType: result.terrainSummary.exposureType,
+      supportScore: analysis.terrainSupport.score,
+      supportLevel: analysis.terrainSupport.level,
+      confidenceLevel: analysis.terrainSupport.confidence,
+      messageZh: limitText(providerNeutralText(analysis.terrainSupport.messageZh), 160),
+      lowElevationDowngradeContext: ["lowland", "urban_or_plain", "hill"].includes(
+        analysis.terrainSupport.terrainMode,
+      )
+        ? "Treat as lowland/plain observation unless deterministic terrain context clearly supports mountain cloud-sea wording."
+        : undefined,
+    },
+    cloudSeaWindowCards: {
+      best: takeItems(analysis.bestCloudSeaWindows, detail === "minimal" ? 1 : 2).map((window) =>
+        compactCloudSeaAnalysisWindow(window, timezone),
+      ),
+      watchable: takeItems(analysis.watchableCloudSeaWindows, detail === "minimal" ? 1 : 2).map(
+        (window) => compactCloudSeaAnalysisWindow(window, timezone),
+      ),
+      notRecommended: takeItems(analysis.notRecommendedCloudSeaWindows, 1).map((window) =>
+        compactCloudSeaAnalysisWindow(window, timezone),
+      ),
+    },
+    dailyCloudSeaSummary: takeItems(analysis.dailyCloudSea, detail === "minimal" ? 2 : 4).map(
+      (day) => ({
+        date: day.date,
+        dateZh: day.dateLabelZh,
+        recommendationZh: day.recommendationLabel,
+        travelScore: day.travelScore,
+        formationScore: day.formationScore,
+        shootableScore: day.shootableScore,
+        whiteoutRiskScore: day.whiteoutRiskScore,
+        bestWindow: compactCloudSeaAnalysisWindow(day.bestWindow, timezone),
+        keyReasonZh: limitText(day.keyReason, 120),
+        riskNoteZh: limitText(day.riskNote, 120),
+        onSiteCheckpoints: takeTextItems(day.onSiteCheckpoints, 3, 100),
+      }),
+    ),
+    professionalHourlySummary: {
+      rowCount: professionalRows.length,
+      timeBasis: result.professionalHourlyDataTimeBasis
+        ? {
+            startTime: result.professionalHourlyDataTimeBasis.startTime,
+            endTime: result.professionalHourlyDataTimeBasis.endTime,
+            stepMinutes: result.professionalHourlyDataTimeBasis.stepMinutes,
+            partialData: result.professionalHourlyDataTimeBasis.partialData,
+            cloudLayerBasis: result.professionalHourlyDataTimeBasis.cloudLayerBasis,
+            cloudLayerBasisNoteZh: limitText(
+              providerNeutralText(result.professionalHourlyDataTimeBasis.cloudLayerBasisNoteZh),
+              120,
+            ),
+            missingDataNoteZh: limitText(
+              providerNeutralText(result.professionalHourlyDataTimeBasis.missingDataNoteZh),
+              120,
+            ),
+          }
+        : null,
+      signalCounts: countProfessionalHourlySignals(professionalRows),
+      focusedRows: focusedRows.map(compactProfessionalHourlyRowForAi),
+    },
+    cloudLayerCompletenessSummary: {
+      cloudLayerBasis: cloudLayerCompleteness.cloudLayerBasis,
+      layerCompletenessLevel: cloudLayerCompleteness.layerCompletenessLevel,
+      cautionLevel: cloudLayerCompleteness.cautionLevel,
+      totalHoursCount: cloudLayerCompleteness.totalHoursCount,
+      completeLayerHoursCount: cloudLayerCompleteness.completeLayerHoursCount,
+      missingLayerHoursCount: cloudLayerCompleteness.missingLayerHoursCount,
+      lowLayerMissingHoursCount: cloudLayerCompleteness.lowLayerMissingHoursCount,
+      missingLayerFields: cloudLayerCompleteness.missingLayerFields,
+      userNoteZh: limitText(cloudLayerCompleteness.userNoteZh, 140),
+      professionalNoteZh: limitText(cloudLayerCompleteness.professionalNoteZh, 140),
+    },
+    multiSourceAgreementSummary: agreement
+      ? {
+          agreementLevel: agreement.agreementLevel,
+          disagreementLevel: agreement.disagreementLevel,
+          shouldLowerConfidence: agreement.shouldLowerConfidence,
+          shouldShowReviewWarning: agreement.shouldShowReviewWarning,
+          userSummaryZh: limitText(providerNeutralText(agreement.userSummaryZh), 140),
+          professionalSummaryZh: limitText(providerNeutralText(agreement.professionalSummaryZh), 140),
+          keyWarningsZh: takeTextItems(
+            agreement.keyWarningsZh.map((item) => providerNeutralText(item) ?? item),
+            3,
+            100,
+          ),
+          fieldDisagreements: takeItems(agreement.fieldDisagreements, 4).map((item) => ({
+            field: item.field,
+            level: item.level,
+            messageZh: limitText(providerNeutralText(item.messageZh), 120),
+          })),
+        }
+      : null,
+    risks: {
+      whiteoutReasons: takeTextItems(analysis.whiteoutReasons, 4, 100),
+      missingDataNotes: takeTextItems(
+        analysis.missingDataNotes.map((item) => providerNeutralText(item) ?? item),
+        4,
+        100,
+      ),
+      riskFlags: compactRiskFlags(result.riskFlags, 4),
+    },
+    actionPlan: {
+      travelRecommendations: takeItems(analysis.travelRecommendations, 3).map((item) => ({
+        situation: item.situation,
+        action: limitText(item.action, 90),
+        detail: limitText(item.detail, 120),
+      })),
+      backupPlans: takeItems(analysis.backupPlans, 3).map((item) => ({
+        condition: limitText(item.condition, 90),
+        action: limitText(item.action, 90),
+        detail: limitText(item.detail, 120),
+      })),
+      deterministicAdvice: takeTextItems(result.photographyAdvice, 3, 120),
+    },
+  };
+}
+
+function compactCloudSeaAnalysisWindow(
+  window: ForecastCalculationResult["cloudSeaAnalysis"]["bestCloudSeaWindows"][number],
+  timezone: string,
+) {
+  return {
+    labelZh: window.label,
+    date: window.date,
+    windowZh: formatShootingWindowZh(
+      { startTime: window.startTime, endTime: window.endTime },
+      timezone,
+    ),
+    score: window.score,
+    formationScore: window.formationScore,
+    shootableScore: window.shootableScore,
+    whiteoutRiskScore: window.whiteoutRiskScore,
+    phase: window.phase,
+    noteZh: limitText(window.noteZh, 120),
+    riskTag: limitText(window.riskTag, 80),
+    rainOpeningZh: limitText(window.rainOpening?.messageZh, 100),
+  };
+}
+
+function professionalHourlyRowsForAiPayload(
+  rows: NonNullable<ForecastCalculationResult["professionalHourlyData"]>,
+  detail: DeepSeekForecastContextDetail,
+) {
+  const limit = detail === "minimal" ? 4 : 6;
+  const focused = rows.filter((row) =>
+    ["可拍窗口", "白墙风险", "形成信号", "雨后开口", "需复核"].includes(row.cloudSeaSignal),
+  );
+  return takeItems(focused.length > 0 ? focused : rows, limit);
+}
+
+function countProfessionalHourlySignals(
+  rows: NonNullable<ForecastCalculationResult["professionalHourlyData"]>,
+): Record<string, number> {
+  return rows.reduce<Record<string, number>>((counts, row) => {
+    counts[row.cloudSeaSignal] = (counts[row.cloudSeaSignal] ?? 0) + 1;
+    return counts;
+  }, {});
+}
+
+function compactProfessionalHourlyRowForAi(
+  row: NonNullable<ForecastCalculationResult["professionalHourlyData"]>[number],
+) {
+  return {
+    dateLabel: row.dateLabel,
+    timeLabel: row.timeLabel,
+    cloudSeaSignal: row.cloudSeaSignal,
+    cloudSeaSignalLevel: row.cloudSeaSignalLevel,
+    weatherTextZh: providerNeutralText(row.weatherText ?? undefined),
+    cloudTotalPercent: row.cloudTotalPercent,
+    cloudHighPercent: row.cloudHighPercent,
+    cloudMidPercent: row.cloudMidPercent,
+    cloudLowPercent: row.cloudLowPercent,
+    cloudLayerBasis: row.cloudLayerBasis,
+    displayedTemperatureC: row.displayedTemperatureC,
+    dewPointSpreadC: row.dewPointSpreadC,
+    relativeHumidityPercent: row.relativeHumidityPercent,
+    precipitationAmountMm: row.precipitationAmountMm,
+    precipitationProbabilityPercent: row.precipitationProbabilityPercent,
+    visibilityMeters: row.visibilityMeters,
+    windSpeedMs: row.windSpeedMs,
+    missingFields: takeItems(row.missingFields, 5),
+    notesZh: takeTextItems(
+      row.notesZh?.map((item) => providerNeutralText(item) ?? item),
+      2,
+      80,
+    ),
   };
 }
 
@@ -949,6 +1199,8 @@ function buildForecastExplanationUserPayload(
       },
     },
     constraints: [
+      "If target is cloud_sea, use cloudSeaAiExplainPayload as deterministic context only; do not invent cloud layers, cloud-sea windows, whiteout risk, arrival advice, or professional hourly values.",
+      "For cloud_sea output, focus on practical photography guidance: one-sentence conclusion, best window, cloud sea/low cloud/morning fog judgment, whiteout risk, arrival and waiting plan, on-site checks, gear, and backup plan.",
       "只解释 computedForecastFacts 中已有的确定性事实。",
       "不要计算、推断或改写天气、天文、地形、坐标、评分和服务商结果。",
       "不要生成输入中没有的小时级天气、天文窗口或分数。",
@@ -964,6 +1216,7 @@ function buildForecastExplanationUserPayload(
       "Do not invent weather data.",
       "Do not recompute astronomy.",
       "Do not recompute coordinates.",
+      "Do not recompute or invent weather, cloud, cloud-sea, terrain, astronomy, score, risk, or window data.",
       "Do not override deterministic scores.",
       "Do not claim mock weather is real forecast.",
       "Output Simplified Chinese.",
@@ -976,6 +1229,7 @@ function buildForecastExplanationUserPayload(
 
 function buildJsonOnlySystemPrompt(): string {
   return [
+    "You are only allowed to explain and organize deterministic forecast results. Never recompute or invent weather, cloud, cloud-sea, terrain, astronomy, score, recommendation, risk, or window data.",
     "你是面向中国风光摄影用户的拍摄天气解读助手。",
     "只解释已经计算好的确定性结果，不得计算、覆盖或改写天气、天文、地形、坐标或评分数据。",
     "不得编造天气数据，不得覆盖 deterministic scores，不得声称 mock weather 是真实 forecast。",

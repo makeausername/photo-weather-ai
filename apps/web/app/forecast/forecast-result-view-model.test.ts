@@ -4597,9 +4597,11 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain('data-result-judgment-basis-grid="true"');
       expect(html).toContain('data-result-action-plan-grid="true"');
       expect(html).not.toContain("CloudSeaStackedLayout");
-      expect(html).not.toContain("智能解读");
-      expect(html).not.toContain("生成智能解读");
+      expect(html).toContain("智能解读");
+      expect(html).toContain("可手动生成更自然的摄影建议，当前判断结果不依赖 AI。");
+      expect(html).toContain("生成智能解读");
       expect(html).not.toContain("确定性简版");
+      expect(html).not.toContain("基于确定性计算结果生成的简版解读");
       expect(html).not.toContain("CloudSeaActionSummary");
       expect(html).not.toContain("CloudSeaNavigation");
       expect(html).not.toContain("CloudSeaAdviceRail");
@@ -4632,6 +4634,8 @@ describe("forecast result target-aware view model", () => {
       expect(html.indexOf("CloudSeaDailyTrend")).toBeLessThan(html.indexOf("判断依据"));
       expect(html.indexOf("判断依据")).toBeLessThan(html.indexOf("行动方案"));
       expect(html.indexOf("行动方案")).toBeLessThan(html.indexOf("风险与复核"));
+      expect(html.indexOf("行动方案")).toBeLessThan(html.indexOf("智能解读"));
+      expect(html.indexOf("智能解读")).toBeLessThan(html.indexOf("风险与复核"));
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
