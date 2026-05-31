@@ -4447,9 +4447,11 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("只看云海窗口");
     expect(html).toContain("只看清晨窗口");
     expect(html).toContain("只看有风险时段");
-    expect(html).toContain("查看全部小时");
+    expect(html).not.toContain("查看全部小时");
+    expect(html.match(/全部小时/g) ?? []).toHaveLength(1);
     expect(html).not.toContain("展开专业数据");
     expect(html).toContain("当前筛选：只看云海窗口");
+    expect(html).toContain("显示 9 / 15 小时");
     expect(html).toContain("总云量 %");
     expect(html).toContain("高云量 %");
     expect(html).toContain("中云量 %");

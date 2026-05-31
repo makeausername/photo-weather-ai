@@ -4574,16 +4574,10 @@ function CloudSeaProfessionalHourlyDataPanel({
           variant="secondary"
           size="sm"
           onClick={() => {
-            if (expanded) {
-              setExpanded(false);
-              setFilterMode(defaultProfessionalHourlyFilter(result));
-              return;
-            }
-            setFilterMode("all");
-            setExpanded(true);
+            setExpanded((current) => !current);
           }}
         >
-          {expanded ? "收起小时表" : "查看全部小时"}
+          {expanded ? "收起小时表" : "展开小时表"}
         </Button>
       </div>
 
@@ -4643,18 +4637,6 @@ function CloudSeaProfessionalHourlyDataPanel({
               </button>
             ))}
           </div>
-          {filterMode !== "all" ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setFilterMode("all");
-              }}
-            >
-              查看全部小时
-            </Button>
-          ) : null}
         </div>
         <p className="text-xs leading-5 text-muted-foreground">
           当前筛选：{activeFilterLabel}，显示 {filteredRows.length} / {rows.length}{" "}
@@ -4714,7 +4696,7 @@ function CloudSeaProfessionalHourlyDataPanel({
                     colSpan={16}
                     className="border-t border-border px-3 py-4 text-center text-sm text-muted-foreground"
                   >
-                    当前筛选下暂无小时数据，可查看全部小时复核完整预报。
+                    当前筛选下暂无小时数据，请切换上方筛选复核完整预报。
                   </td>
                 </tr>
               )}
