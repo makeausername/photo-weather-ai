@@ -3,6 +3,10 @@ import {
   type CloudLayerCompletenessContext,
 } from "./cloud-layer-completeness.js";
 import {
+  buildCloudSeaCloudBasisConsistencyContext,
+  type CloudSeaCloudBasisConsistencyContext,
+} from "./cloud-sea-cloud-basis-consistency.js";
+import {
   buildCloudSeaWeatherVariableConsistencyContext,
   type CloudSeaWeatherVariableConsistencyContext,
 } from "./cloud-sea-weather-variable-consistency.js";
@@ -46,6 +50,7 @@ export type CloudSeaRecommendationGuardInput = {
   readonly lowCloudSignalSupported?: boolean | null;
   readonly mainTargetZh?: string;
   readonly bestWindowLabelZh?: string;
+  readonly cloudBasisConsistencyContext?: CloudSeaCloudBasisConsistencyContext | null;
   readonly weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext | null;
 };
 
@@ -109,6 +114,7 @@ export function buildCloudSeaRecommendationGuard(
   const terrainDowngraded = Boolean(input.terrainContext?.shouldDowngradeCloudSeaWording);
   const layerCompleteness = input.cloudLayerCompletenessContext;
   const agreement = input.multiSourceAgreementContext;
+  const cloudBasis = input.cloudBasisConsistencyContext;
   const weatherConsistency = input.weatherVariableConsistencyContext;
   const blockedStrongRecommendationReasons: string[] = [];
   const consistencyWarnings: string[] = [];
@@ -144,6 +150,26 @@ export function buildCloudSeaRecommendationGuard(
     ceiling = minRecommendationLevel(ceiling, "cautious_reference");
     blockedStrongRecommendationReasons.push("低云分层不足，需复核");
     consistencyWarnings.push("缺少低云分层，避免确认云海或白墙结论");
+  }
+
+  if (
+    cloudBasis?.cloudBasisLevel === "mixed_basis" ||
+    cloudBasis?.cloudBasisLevel === "total_only" ||
+    (cloudBasis?.cloudBasisLevel === "partial_layers" && cloudBasis.shouldLowerCloudSeaConfidence)
+  ) {
+    ceiling = minRecommendationLevel(ceiling, "cautious_reference");
+    if (cloudBasis.cloudBasisLevel === "mixed_basis") {
+      blockedStrongRecommendationReasons.push("云量口径不一致，需临近复核");
+      consistencyWarnings.push(cloudBasis.userSummaryZh);
+    } else if (cloudBasis.cloudBasisLevel === "total_only") {
+      blockedStrongRecommendationReasons.push("低云分层不足，不能强推云海");
+      consistencyWarnings.push(cloudBasis.userSummaryZh);
+    } else {
+      blockedStrongRecommendationReasons.push("分层云量不完整，需临近复核");
+      consistencyWarnings.push(cloudBasis.userSummaryZh);
+    }
+  } else if (cloudBasis?.shouldAvoidStrictLayerInterpretation) {
+    consistencyWarnings.push(cloudBasis.userSummaryZh);
   }
 
   const lowOrPrecipDisagreement = hasHighLowCloudOrPrecipitationDisagreement(agreement);
@@ -211,7 +237,11 @@ export function buildCloudSeaRecommendationGuard(
       finalLevel === "recommended_arrangement" || finalLevel === "strong_special_trip",
     maxAllowedRecommendationStrength: ceiling,
     recommendationCeiling: ceiling,
-    reasonZh: reasonForFinalLevel(finalLevel, blockedStrongRecommendationReasons, terrainDowngraded),
+    reasonZh: reasonForFinalLevel(
+      finalLevel,
+      blockedStrongRecommendationReasons,
+      terrainDowngraded,
+    ),
     actionVerbZh: finalRecommendationLabel,
     departureAdviceZh,
     actionPlanLabels: {
@@ -269,6 +299,16 @@ export function buildCloudSeaRecommendationGuardForResult(
     cloudLayerCompletenessContext,
     multiSourceAgreementContext,
   });
+  const cloudBasisConsistencyContext = buildCloudSeaCloudBasisConsistencyContext({
+    hourlyRows: result.professionalHourlyData,
+    cloudLayerCompletenessContext,
+    focusedWindow: bestWindow
+      ? {
+          startTime: bestWindow.startTime,
+          endTime: bestWindow.endTime,
+        }
+      : null,
+  });
 
   return buildCloudSeaRecommendationGuard({
     cloudSeaScore: overrides.cloudSeaScore ?? result.scores.cloudSea.score,
@@ -284,12 +324,14 @@ export function buildCloudSeaRecommendationGuardForResult(
     },
     cloudLayerCompletenessContext,
     multiSourceAgreementContext,
+    cloudBasisConsistencyContext,
     weatherVariableConsistencyContext,
     bestWindow,
     hasWindow: overrides.hasWindow ?? Boolean(bestWindow),
     risks: result.riskFlags,
     lowCloudSignalSupported:
-      cloudLayerCompletenessContext.hasLowCloudLayer && (overrides.formationScore ?? analysis.formationScore) >= 55,
+      cloudLayerCompletenessContext.hasLowCloudLayer &&
+      (overrides.formationScore ?? analysis.formationScore) >= 55,
     mainTargetZh: "清晨云海",
     bestWindowLabelZh: bestWindow?.label,
   });
@@ -471,7 +513,10 @@ function departureAdviceForLevel(
   }计划专程，出发前仍需复核临近预报和现场条件。`;
 }
 
-function dailyActionForLevel(level: CloudSeaGuardRecommendationLevel, terrainDowngraded: boolean): string {
+function dailyActionForLevel(
+  level: CloudSeaGuardRecommendationLevel,
+  terrainDowngraded: boolean,
+): string {
   if (level === "do_not_go_special") {
     return "当前证据不足，不建议专程，等待下一次预报更新。";
   }
@@ -492,7 +537,10 @@ function dailyActionForLevel(level: CloudSeaGuardRecommendationLevel, terrainDow
   return "强推荐专程仅在地形、低云分层、窗口和风险都通过时使用。";
 }
 
-function windowActionForLevel(level: CloudSeaGuardRecommendationLevel, terrainDowngraded: boolean): string {
+function windowActionForLevel(
+  level: CloudSeaGuardRecommendationLevel,
+  terrainDowngraded: boolean,
+): string {
   if (level === "do_not_go_special") {
     return "不建议专程等待该窗口，可作为备选观察或等待下一次预报更新。";
   }

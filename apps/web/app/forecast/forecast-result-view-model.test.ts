@@ -2113,9 +2113,10 @@ function expectMarkersInOrder(html: string, markers: readonly string[]): void {
   for (const marker of markers) {
     const index = html.indexOf(marker);
     expect(index, `Expected marker "${marker}" to be rendered`).toBeGreaterThanOrEqual(0);
-    expect(index, `Expected marker "${marker}" to render after the previous marker`).toBeGreaterThan(
-      previousIndex,
-    );
+    expect(
+      index,
+      `Expected marker "${marker}" to render after the previous marker`,
+    ).toBeGreaterThan(previousIndex);
     previousIndex = index;
   }
 }
@@ -4252,7 +4253,7 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.reasoningItems.map((item) => item.label)).toEqual([
       "湿度与露点差",
       "低云与能见度",
-      "云量分层完整性",
+      "云量口径一致性",
       "风速与云雾稳定性",
       "降水与雨后开口",
       "地形与高差",
@@ -4444,9 +4445,7 @@ describe("forecast result target-aware view model", () => {
     expect(actionPlan).toContain("不建议专程");
     expect(actionPlan).toContain("当前云海证据不足");
     expect(windowSection).toContain("不建议专程");
-    expect(viewModel.cloudSeaWindows.map((item) => item.label).join(" ")).toContain(
-      "备选观察窗口",
-    );
+    expect(viewModel.cloudSeaWindows.map((item) => item.label).join(" ")).toContain("备选观察窗口");
     expect(html).not.toContain("强推荐专程");
     expect(html).not.toContain("推荐专程云海");
     expect(html).not.toContain("云海主守");
@@ -4469,9 +4468,7 @@ describe("forecast result target-aware view model", () => {
       "observe_if_nearby",
     );
     expect(viewModel.hero.recommendationLabel).toBe("推荐观察");
-    expect(viewModel.actionPlan.find((item) => item.key === "departure")?.value).toBe(
-      "推荐观察",
-    );
+    expect(viewModel.actionPlan.find((item) => item.key === "departure")?.value).toBe("推荐观察");
     expect(actionPlan).toContain("推荐观察");
     expect(dailySection).toContain("推荐观察");
     expect(html).toContain("低云/晨雾参考窗口");
@@ -5026,6 +5023,65 @@ describe("forecast result target-aware view model", () => {
     expect(html.indexOf("专业小时数据")).toBeLessThan(html.indexOf("每日云海判断"));
   });
 
+  it("shows generic cloud-basis mismatch notes and downgrades cloud sea confidence", () => {
+    const hourly = professionalHourlyDataForTest().map((row, index) =>
+      index >= 4 && index <= 7
+        ? {
+            ...row,
+            cloudSeaSignal: "可拍窗口" as const,
+            cloudSeaSignalLevel: "positive" as const,
+            cloudTotalPercent: 20,
+            cloudHighPercent: 18,
+            cloudMidPercent: 24,
+            cloudLowPercent: 70,
+            cloudLayerBasis: "explicit_layers" as const,
+          }
+        : row,
+    );
+    const result = resultWithProfessionalHourlyData({
+      professionalHourlyData: hourly,
+    });
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result,
+        viewModel,
+      }),
+    );
+    const professionalSection = sectionBetween(
+      html,
+      "CloudSeaProfessionalHourlyData",
+      "CloudSeaDailyTrend",
+    );
+
+    expect(viewModel.cloudBasisConsistency).toMatchObject({
+      cloudBasisLevel: "mixed_basis",
+      shouldLowerCloudSeaConfidence: true,
+      mismatchHoursCount: 4,
+    });
+    expect(viewModel.hero.confidenceLabel).toBe("低（云量口径需复核）");
+    expect(viewModel.recommendationGuard.finalRecommendationLabel).toBe("谨慎参考");
+    expect(viewModel.reasoningItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "云量口径一致性",
+          value: "口径差异",
+        }),
+      ]),
+    );
+    expect(html).toContain("总云量与分层云量存在口径差异");
+    expect(html).toContain("分层云量仅作趋势复核");
+    expect(html).toContain("云量口径不一致，需临近复核");
+    expect(professionalSection).toContain("总云量 %");
+    expect(professionalSection).toContain("高云量 %");
+    expect(professionalSection).toContain("中云量 %");
+    expect(professionalSection).toContain("低云量 %");
+    expect(professionalSection).toContain("口径需复核");
+    expect(professionalSection).toMatch(/data-professional-hourly-cell="signal"[\s\S]*?需复核/);
+    expect(professionalSection).not.toContain("可拍窗口</span>");
+  });
+
   it("renders a compact data consistency note and caps strong copy for generic variable conflicts", () => {
     const result = genericCloudSeaConsistencyResult(
       professionalHourlyDataForTest({
@@ -5354,8 +5410,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toMatch(/data-professional-hourly-cell="wind-speed">—<\/td>/);
     expect(html).toMatch(/data-professional-hourly-cell="wind-direction">—<\/td>/);
     expect(html).toContain("0 mm / —");
-    expect(html).toContain("低/中/高云分层缺失时以 — 显示，不用总云量回填。");
-    expect(html).toContain("当前时段仅有总云量，缺少低/中/高云分层");
+    expect(html).toContain("当前仅有总云量，缺少低/中/高云分层");
     expect(html).toContain("不使用总云量回填");
   });
 
@@ -5454,20 +5509,20 @@ describe("forecast result target-aware view model", () => {
       layerCompletenessLevel: "missing",
       shouldPreferNeedsReviewSignal: true,
     });
-    expect(viewModel.hero.confidenceLabel).toBe("低（分层云量不足）");
+    expect(viewModel.hero.confidenceLabel).toBe("低（云量口径需复核）");
     expect(viewModel.reasoningItems).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          label: "云量分层完整性",
+          label: "云量口径一致性",
           value: "仅总云量",
         }),
       ]),
     );
     expect(viewModel.dailyTrend.some((item) => item.layerCompletenessNote)).toBe(true);
     expect(viewModel.cloudSeaWindows.some((item) => item.layerCompletenessNote)).toBe(true);
-    expect(html).toContain("云量分层完整性");
-    expect(html).toContain("低云分层缺失，窗口置信度降低");
-    expect(html).toContain("当日仅有总云量，缺少低/中/高云分层");
+    expect(html).toContain("云量口径一致性");
+    expect(html).toContain("低云分层缺失，不能强推云海");
+    expect(html).toContain("当日仅总云量，低云分层缺失，不能强推云海");
     expect(professionalSection).toMatch(/data-professional-hourly-cell="signal"[\s\S]*?需复核/);
     expect(professionalSection).not.toContain("可拍窗口</span>");
     expect(html).not.toContain("查看全部小时查看全部小时");

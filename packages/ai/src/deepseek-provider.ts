@@ -1,5 +1,6 @@
 import {
   buildCloudLayerCompletenessContext,
+  buildCloudSeaCloudBasisConsistencyContext,
   buildCloudSeaRecommendationGuardForResult,
   buildCloudSeaWeatherVariableConsistencyContext,
   decisionCardSchema,
@@ -482,11 +483,22 @@ export function buildCloudSeaAiExplainPayload(
     analysis.watchableCloudSeaWindows[0] ??
     analysis.notRecommendedCloudSeaWindows[0];
   const bestForecastWindow =
-    result.bestWindows.find((window) => window.target === "cloud_sea" && isExecutableWindow(window)) ??
-    result.bestWindows.find((window) => window.target === "cloud_sea");
+    result.bestWindows.find(
+      (window) => window.target === "cloud_sea" && isExecutableWindow(window),
+    ) ?? result.bestWindows.find((window) => window.target === "cloud_sea");
   const professionalRows = result.professionalHourlyData ?? [];
   const focusedRows = professionalHourlyRowsForAiPayload(professionalRows, detail);
   const cloudLayerCompleteness = buildCloudLayerCompletenessContext(professionalRows);
+  const cloudBasisConsistency = buildCloudSeaCloudBasisConsistencyContext({
+    hourlyRows: professionalRows,
+    cloudLayerCompletenessContext: cloudLayerCompleteness,
+    focusedWindow: bestAnalysisWindow
+      ? {
+          startTime: bestAnalysisWindow.startTime,
+          endTime: bestAnalysisWindow.endTime,
+        }
+      : null,
+  });
   const agreement = result.weatherFusionSummary?.multiSourceAgreementContext;
   const weatherVariableConsistency = buildCloudSeaWeatherVariableConsistencyContext({
     elevationMeters:
@@ -512,7 +524,7 @@ export function buildCloudSeaAiExplainPayload(
     target: "cloud_sea",
     deterministicOnly: true,
     instruction:
-      "Explain and organize only the deterministic Cloud Sea result. Do not recompute weather, cloud layers, terrain, astronomy, score, recommendation, risks, or windows.",
+      "Explain deterministic Cloud Sea facts only. Do not recompute facts, infer low/mid/high cloud from total cloud, or treat mixed-basis cloud data as high-confidence evidence.",
     locationName: result.place.name,
     horizon: {
       key: result.horizon,
@@ -538,8 +550,7 @@ export function buildCloudSeaAiExplainPayload(
       finalRecommendationLabelZh: recommendationGuard.finalRecommendationLabel,
       reasonZh: recommendationGuard.reasonZh,
       departureAdviceZh: recommendationGuard.departureAdviceZh,
-      blockedStrongRecommendationReasons:
-        recommendationGuard.blockedStrongRecommendationReasons,
+      blockedStrongRecommendationReasons: recommendationGuard.blockedStrongRecommendationReasons,
       consistencyWarnings: recommendationGuard.consistencyWarnings,
       windowRecommendation: recommendationGuard.normalizedWindowRecommendation,
       dailyRecommendation: recommendationGuard.normalizedDailyRecommendation,
@@ -640,6 +651,14 @@ export function buildCloudSeaAiExplainPayload(
       userNoteZh: limitText(cloudLayerCompleteness.userNoteZh, 140),
       professionalNoteZh: limitText(cloudLayerCompleteness.professionalNoteZh, 140),
     },
+    cloudBasisConsistencySummary: {
+      cloudBasisLevel: cloudBasisConsistency.cloudBasisLevel,
+      professionalSummaryZh: limitText(
+        providerNeutralText(cloudBasisConsistency.professionalSummaryZh),
+        140,
+      ),
+      shouldLowerCloudSeaConfidence: cloudBasisConsistency.shouldLowerCloudSeaConfidence,
+    },
     weatherVariableConsistencySummary: {
       consistencyLevel: weatherVariableConsistency.consistencyLevel,
       temperatureBasisStatus: weatherVariableConsistency.temperatureBasisStatus,
@@ -670,7 +689,10 @@ export function buildCloudSeaAiExplainPayload(
           shouldLowerConfidence: agreement.shouldLowerConfidence,
           shouldShowReviewWarning: agreement.shouldShowReviewWarning,
           userSummaryZh: limitText(providerNeutralText(agreement.userSummaryZh), 140),
-          professionalSummaryZh: limitText(providerNeutralText(agreement.professionalSummaryZh), 140),
+          professionalSummaryZh: limitText(
+            providerNeutralText(agreement.professionalSummaryZh),
+            140,
+          ),
           keyWarningsZh: takeTextItems(
             agreement.keyWarningsZh.map((item) => providerNeutralText(item) ?? item),
             3,
@@ -781,7 +803,9 @@ function compactProfessionalHourlyRowForAi(
 }
 
 function compactAstroWindow(
-  window: ForecastCalculationResult["astroAnalysis"]["recommendedMilkyWayWindows"][number] | undefined,
+  window:
+    | ForecastCalculationResult["astroAnalysis"]["recommendedMilkyWayWindows"][number]
+    | undefined,
   timezone = "Asia/Shanghai",
 ) {
   if (!window) {
@@ -883,7 +907,7 @@ function compactDailyFact(
           cloudLowPercent: summary.weather.cloudLow,
           cloudMidPercent: summary.weather.cloudMid,
           cloudHighPercent: summary.weather.cloudHigh,
-      dewPointSpread: summary.weather.dewPointSpread,
+          dewPointSpread: summary.weather.dewPointSpread,
         }
       : null,
     astro: dailyAstro
@@ -1285,6 +1309,8 @@ function buildForecastExplanationUserPayload(
     ],
     safetyRules: [
       "Do not invent weather data.",
+      "Do not infer low cloud, mid cloud, or high cloud from total cloud.",
+      "Do not treat mixed-basis cloud data as high-confidence cloud sea evidence.",
       "Do not recompute astronomy.",
       "Do not recompute coordinates.",
       "Do not recompute or invent weather, cloud, cloud-sea, terrain, astronomy, score, risk, or window data.",
@@ -1924,7 +1950,7 @@ export class DeepSeekProvider implements AIProvider {
                 ? "DeepSeek 上游限流，请稍后重试。"
                 : response.status >= 500
                   ? "DeepSeek 上游服务暂时不可用。"
-              : `DeepSeek 服务请求失败，状态码 ${response.status}。`,
+                  : `DeepSeek 服务请求失败，状态码 ${response.status}。`,
           statusCode: response.status,
           latencyMs,
           promptSizeChars: request.promptSizeChars,

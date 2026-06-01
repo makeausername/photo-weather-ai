@@ -1,8 +1,10 @@
 import {
   buildCloudLayerCompletenessContext,
+  buildCloudSeaCloudBasisConsistencyContext,
   buildCloudSeaRecommendationGuard,
   buildCloudSeaWeatherVariableConsistencyContext,
   type CloudLayerCompletenessContext,
+  type CloudSeaCloudBasisConsistencyContext,
   type CloudSeaRecommendationGuardOutput,
   type CloudSeaWeatherVariableConsistencyContext,
   type ForecastCalculationResult,
@@ -18,6 +20,7 @@ import {
 export type CloudSeaRuleContext = {
   readonly terrainContext: CloudSeaTerrainContext;
   readonly cloudLayerCompletenessContext: CloudLayerCompletenessContext;
+  readonly cloudBasisConsistencyContext: CloudSeaCloudBasisConsistencyContext;
   readonly cloudLayerRoleContext: CloudSeaCloudLayerRoleContext;
   readonly weatherVariableConsistencyContext: CloudSeaWeatherVariableConsistencyContext;
   readonly precipitationSignalContext: CloudSeaPrecipitationSignalContext;
@@ -67,6 +70,7 @@ export type CloudSeaRecommendationGuardForRuleOptions = {
   readonly hasWindow?: boolean;
   readonly bestWindowLabelZh?: string;
   readonly lowCloudSignalSupported?: boolean;
+  readonly cloudBasisConsistencyContext?: CloudSeaCloudBasisConsistencyContext;
   readonly weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext;
 };
 
@@ -86,6 +90,10 @@ export function buildCloudSeaRuleContext(result: ForecastCalculationResult): Clo
   const cloudLayerCompletenessContext = buildCloudLayerCompletenessContext(
     result.professionalHourlyData,
   );
+  const cloudBasisConsistencyContext = buildCloudSeaCloudBasisConsistencyContext({
+    hourlyRows: result.professionalHourlyData,
+    cloudLayerCompletenessContext,
+  });
   const multiSourceAgreementContext =
     result.weatherFusionSummary?.multiSourceAgreementContext ?? null;
   const weatherVariableConsistencyContext = buildCloudSeaWeatherVariableConsistencyContext({
@@ -107,6 +115,7 @@ export function buildCloudSeaRuleContext(result: ForecastCalculationResult): Clo
     terrainContext,
     {
       cloudLayerCompleteness: cloudLayerCompletenessContext,
+      cloudBasisConsistencyContext,
       multiSourceAgreementContext,
       weatherVariableConsistencyContext,
     },
@@ -115,6 +124,7 @@ export function buildCloudSeaRuleContext(result: ForecastCalculationResult): Clo
   return {
     terrainContext,
     cloudLayerCompletenessContext,
+    cloudBasisConsistencyContext,
     cloudLayerRoleContext: buildCloudLayerRoleContext(result.professionalHourlyData),
     weatherVariableConsistencyContext,
     precipitationSignalContext: buildPrecipitationSignalContext(result.professionalHourlyData),
@@ -141,13 +151,15 @@ export function buildCloudSeaRecommendationGuardForRuleContext(
     shootabilityScore: options.shootabilityScore ?? analysis.shootableScore,
     formationScore,
     whiteoutRiskScore: options.whiteoutRiskScore ?? analysis.whiteoutRiskScore,
-    proposedRecommendationLabel: options.proposedRecommendationLabel ?? analysis.recommendationLabel,
+    proposedRecommendationLabel:
+      options.proposedRecommendationLabel ?? analysis.recommendationLabel,
     terrainContext: {
       shouldDowngradeCloudSeaWording: terrainContext.shouldDowngradeCloudSeaWording,
       isClassicCloudSeaEligible: terrainContext.isClassicCloudSeaEligible,
       terrainClass: terrainContext.terrainClass,
     },
     cloudLayerCompletenessContext: options.cloudLayerCompleteness,
+    cloudBasisConsistencyContext: options.cloudBasisConsistencyContext,
     multiSourceAgreementContext:
       options.multiSourceAgreementContext ??
       result.weatherFusionSummary?.multiSourceAgreementContext ??
@@ -235,17 +247,21 @@ function countSignals(
 }
 
 function dominantCloudLayerRole(
-  counts: Omit<CloudSeaCloudLayerRoleContext, "dominantRole" | "noteZh" | "redirectedMidHighHoursCount">,
+  counts: Omit<
+    CloudSeaCloudLayerRoleContext,
+    "dominantRole" | "noteZh" | "redirectedMidHighHoursCount"
+  >,
 ): CloudSeaCloudLayerRoleContext["dominantRole"] {
-  const candidates: readonly (readonly [CloudSeaCloudLayerRoleContext["dominantRole"], number])[] = [
-    ["cloud_sea", counts.cloudSeaHoursCount],
-    ["whiteout", counts.whiteoutRiskHoursCount],
-    ["formation", counts.formationSignalHoursCount],
-    ["rain_opening", counts.rainOpeningHoursCount],
-    ["needs_review", counts.needsReviewHoursCount],
-    ["glow_reference", counts.glowReferenceHoursCount],
-    ["texture", counts.textureHoursCount],
-  ];
+  const candidates: readonly (readonly [CloudSeaCloudLayerRoleContext["dominantRole"], number])[] =
+    [
+      ["cloud_sea", counts.cloudSeaHoursCount],
+      ["whiteout", counts.whiteoutRiskHoursCount],
+      ["formation", counts.formationSignalHoursCount],
+      ["rain_opening", counts.rainOpeningHoursCount],
+      ["needs_review", counts.needsReviewHoursCount],
+      ["glow_reference", counts.glowReferenceHoursCount],
+      ["texture", counts.textureHoursCount],
+    ];
   const best = [...candidates].sort((left, right) => {
     if (right[1] !== left[1]) {
       return right[1] - left[1];

@@ -1,6 +1,7 @@
 import type {
   CloudSeaAnalysisResult,
   CloudSeaAnalysisWindow,
+  CloudSeaCloudBasisConsistencyContext,
   CloudSeaConfidenceLevel,
   CloudSeaEvidenceEffect,
   CloudSeaRainOpeningSignal,
@@ -14,6 +15,7 @@ import type {
   TerrainCloudSeaPotential,
 } from "@photo-weather/shared";
 import {
+  buildCloudSeaCloudBasisConsistencyContext,
   classifyTerrainMode,
   terrainModeAllowsDefaultCloudSea,
   terrainModeUsesLowlandSemantics,
@@ -62,6 +64,7 @@ type WindowStats = {
   readonly weatherTexts: readonly string[];
   readonly hasLowCloud: boolean;
   readonly lowCloudEstimated: boolean;
+  readonly cloudBasisContext: CloudSeaCloudBasisConsistencyContext;
   readonly missingFields: readonly string[];
   readonly estimatedFields: readonly string[];
 };
@@ -439,7 +442,7 @@ function calculateCloudSeaFormationScore(
     return Math.min(rawScore, 52);
   }
 
-  return rawScore;
+  return applyCloudBasisFormationCap(rawScore, stats.cloudBasisContext);
 }
 
 function calculateCloudSeaOpportunityScore(stats: WindowStats, terrainScore: number): number {
@@ -531,7 +534,7 @@ function calculateShootableScore(
         ? 2
         : 0;
 
-  return clampScore(
+  const rawScore = clampScore(
     averageWeightedScore([
       { score: formationScore, weight: 0.5 },
       { score: lightAlignedScore, weight: 0.24 },
@@ -548,6 +551,45 @@ function calculateShootableScore(
       stabilityBonus +
       openingBonus,
   );
+  return applyCloudBasisShootableCap(rawScore, stats.cloudBasisContext);
+}
+
+function applyCloudBasisFormationCap(
+  score: number,
+  cloudBasis: CloudSeaCloudBasisConsistencyContext,
+): number {
+  if (cloudBasis.cloudBasisLevel === "mixed_basis") {
+    return Math.min(score, 54);
+  }
+  if (cloudBasis.cloudBasisLevel === "minor_mismatch") {
+    return Math.min(score, 68);
+  }
+  if (cloudBasis.cloudBasisLevel === "partial_layers" && cloudBasis.shouldLowerCloudSeaConfidence) {
+    return Math.min(score, 58);
+  }
+  if (cloudBasis.cloudBasisLevel === "total_only") {
+    return Math.min(score, 44);
+  }
+  return score;
+}
+
+function applyCloudBasisShootableCap(
+  score: number,
+  cloudBasis: CloudSeaCloudBasisConsistencyContext,
+): number {
+  if (cloudBasis.cloudBasisLevel === "mixed_basis") {
+    return Math.min(score, 54);
+  }
+  if (cloudBasis.cloudBasisLevel === "minor_mismatch") {
+    return Math.min(score, 68);
+  }
+  if (cloudBasis.cloudBasisLevel === "partial_layers" && cloudBasis.shouldLowerCloudSeaConfidence) {
+    return Math.min(score, 58);
+  }
+  if (cloudBasis.cloudBasisLevel === "total_only") {
+    return Math.min(score, 44);
+  }
+  return score;
 }
 
 function applyTerrainModeFormationCap(
@@ -784,6 +826,9 @@ function buildWindowStats(
   ]);
   const hasLowCloud = weatherWindow.some((hour) => isFiniteNumber(hour.cloudLow));
   const lowCloudEstimated = estimatedFields.includes("cloudLow");
+  const cloudBasisContext = buildCloudSeaCloudBasisConsistencyContext({
+    hourlyRows: weatherWindow.map(cloudBasisRowFromHourlyWeather),
+  });
 
   return {
     temperature: averageOptional(weatherWindow, (hour) => hour.temperature),
@@ -828,9 +873,31 @@ function buildWindowStats(
     ),
     hasLowCloud,
     lowCloudEstimated,
+    cloudBasisContext,
     missingFields,
     estimatedFields,
   };
+}
+
+function cloudBasisRowFromHourlyWeather(hour: NormalizedHourlyWeather) {
+  return {
+    time: hour.time,
+    cloudTotalPercent: finiteNumber(hour.cloudTotal) ?? null,
+    cloudHighPercent: explicitCloudLayerForBasis(hour, "cloudHigh"),
+    cloudMidPercent: explicitCloudLayerForBasis(hour, "cloudMid"),
+    cloudLowPercent: explicitCloudLayerForBasis(hour, "cloudLow"),
+    missingFields: hour.missingFields,
+  };
+}
+
+function explicitCloudLayerForBasis(
+  hour: NormalizedHourlyWeather,
+  field: "cloudHigh" | "cloudMid" | "cloudLow",
+): number | null {
+  if (hour.estimatedFields?.includes(field) || hour.fieldMetadata?.[field]?.estimated === true) {
+    return null;
+  }
+  return finiteNumber(hour[field]) ?? null;
 }
 
 function hasExplicitLowCloudEvidence(stats: WindowStats): boolean {
@@ -1344,6 +1411,11 @@ function buildMissingDataNotes(
   if (!hasExplicitLowCloudEvidence(stats) || stats.missingFields.includes("cloudLow")) {
     notes.push(lowCloudMissingNote);
   }
+  if (stats.cloudBasisContext.shouldLowerCloudSeaConfidence) {
+    notes.push(stats.cloudBasisContext.userSummaryZh);
+  } else if (stats.cloudBasisContext.shouldAvoidStrictLayerInterpretation) {
+    notes.push(stats.cloudBasisContext.userSummaryZh);
+  }
   if (stats.dewPointSpread === undefined || stats.missingFields.includes("dewPoint")) {
     notes.push("当前天气源缺少露点数据，湿度与凝结条件判断置信度降低。");
   }
@@ -1382,6 +1454,11 @@ function confidencePenalty(
   }
   if (stats.visibility === undefined || stats.missingFields.includes("visibility")) {
     penalty += 15;
+  }
+  if (stats.cloudBasisContext.shouldLowerCloudSeaConfidence) {
+    penalty += 15;
+  } else if (stats.cloudBasisContext.cloudBasisLevel === "minor_mismatch") {
+    penalty += 5;
   }
   if (terrainSupport.confidence === "low") {
     penalty += 18;
@@ -1526,7 +1603,9 @@ function buildOpportunityReasons(
     layerRoles.primaryCloudRole === "needs_review"
       ? layerRoles.noteZh
       : undefined;
+  const cloudBasisNote = cloudBasisOpportunityNote(stats.cloudBasisContext);
   const reasons = [
+    cloudBasisNote,
     layerRoleNote,
     `${formationLabel} ${formationScore} 分：湿度约 ${formatPercent(
       stats.humidity,
@@ -1564,6 +1643,7 @@ function buildWhiteoutReasons(
 ): readonly string[] {
   const usesMountain = terrainModeUsesMountainSemantics(terrainSupport.terrainMode);
   const reasons = [
+    cloudBasisWhiteoutNote(stats.cloudBasisContext, usesMountain),
     hasExplicitLowCloudEvidence(stats)
       ? usesMountain
         ? `低云约 ${formatPercent(stats.cloudLow)}，低云过厚或抬升到机位高度时会增加白墙风险。`
@@ -1582,7 +1662,7 @@ function buildWhiteoutReasons(
       : usesMountain
         ? "当前未提供云底高度，不伪造云层相对机位高度，仍需现场复核云雾上沿。"
         : "当前未提供云底高度，不伪造云层相对机位高度，仍需现场复核雾气和能见度。",
-  ];
+  ].filter((reason): reason is string => Boolean(reason));
 
   if (whiteoutRiskScore >= 70) {
     reasons.unshift(
@@ -1617,6 +1697,10 @@ function buildWindowNoteZh(
   lightAlignedScore: number,
 ): string {
   const layerRoles = cloudLayerRolesForStats(stats, terrainSupport, lightAlignedScore);
+  const cloudBasisNote = cloudBasisWindowNote(stats.cloudBasisContext);
+  if (cloudBasisNote) {
+    return cloudBasisNote;
+  }
   if (
     layerRoles.primaryCloudRole === "glow_reference" ||
     layerRoles.primaryCloudRole === "texture" ||
@@ -1649,6 +1733,57 @@ function buildWindowNoteZh(
     return "低云与湿度支持云雾形成，但能见度、降水或光线条件限制可拍性，仅作观察。";
   }
   return "云海形成信号偏弱，不建议为单一窗口专程奔赴。";
+}
+
+function cloudBasisOpportunityNote(
+  context: CloudSeaCloudBasisConsistencyContext,
+): string | undefined {
+  if (context.cloudBasisLevel === "mixed_basis") {
+    return "云量口径不一致，分层云量仅作趋势复核，云海形成仍以低云、地形和临近预报复核为主。";
+  }
+  if (context.cloudBasisLevel === "total_only") {
+    return "仅总云量，低云分层缺失，不能用总云量推断云海形成。";
+  }
+  if (context.cloudBasisLevel === "partial_layers" && context.shouldLowerCloudSeaConfidence) {
+    return "分层云量不完整，低云和白墙判断需临近预报复核。";
+  }
+  if (context.cloudBasisLevel === "minor_mismatch") {
+    return "少数时段总云量略低于分层云量，分层趋势需轻度复核。";
+  }
+  return undefined;
+}
+
+function cloudBasisWhiteoutNote(
+  context: CloudSeaCloudBasisConsistencyContext,
+  usesMountain: boolean,
+): string | undefined {
+  if (context.cloudBasisLevel === "mixed_basis") {
+    return usesMountain
+      ? "总云量与分层云量口径不一致，白墙风险不按单一分层高值直接确认。"
+      : "总云量与分层云量口径不一致，低云遮挡不按单一分层高值直接确认。";
+  }
+  if (context.cloudBasisLevel === "total_only") {
+    return usesMountain
+      ? "仅总云量不足以判断白墙风险，需复核低云分层和现场能见度。"
+      : "仅总云量不足以判断低云遮挡，需复核低云分层和现场能见度。";
+  }
+  return undefined;
+}
+
+function cloudBasisWindowNote(context: CloudSeaCloudBasisConsistencyContext): string | undefined {
+  if (context.cloudBasisLevel === "mixed_basis") {
+    return "总云与分层云存在差异，不建议作为高确定性窗口，需临近复核低云和能见度。";
+  }
+  if (context.cloudBasisLevel === "total_only") {
+    return "仅总云量，低云分层缺失，需复核后再判断云海和白墙风险。";
+  }
+  if (context.cloudBasisLevel === "partial_layers" && context.shouldLowerCloudSeaConfidence) {
+    return "分层云量不完整，低云判断需临近复核，窗口仅作备选。";
+  }
+  if (context.cloudBasisLevel === "minor_mismatch") {
+    return "云量口径需轻度复核，窗口不作为高确定性结论。";
+  }
+  return undefined;
 }
 
 function buildAssessmentLabels(

@@ -1,4 +1,8 @@
 import type { CloudLayerCompletenessContext } from "./cloud-layer-completeness.js";
+import {
+  buildCloudSeaCloudBasisConsistencyContext,
+  type CloudSeaCloudBasisConsistencyContext,
+} from "./cloud-sea-cloud-basis-consistency.js";
 import type {
   ForecastMultiSourceAgreementContext,
   ProfessionalHourlyCloudLayerBasis,
@@ -8,23 +12,11 @@ import type {
   TerrainType,
 } from "./types.js";
 
-export type CloudSeaWeatherVariableConsistencyLevel =
-  | "good"
-  | "watch"
-  | "conflict"
-  | "unknown";
+export type CloudSeaWeatherVariableConsistencyLevel = "good" | "watch" | "conflict" | "unknown";
 
-export type CloudSeaTemperatureBasisStatus =
-  | "terrain_adjusted"
-  | "raw_grid"
-  | "mixed"
-  | "unknown";
+export type CloudSeaTemperatureBasisStatus = "terrain_adjusted" | "raw_grid" | "mixed" | "unknown";
 
-export type CloudSeaHumidityDewPointStatus =
-  | "consistent"
-  | "watch"
-  | "conflict"
-  | "unknown";
+export type CloudSeaHumidityDewPointStatus = "consistent" | "watch" | "conflict" | "unknown";
 
 export type CloudSeaPrecipitationSignalStatus =
   | "none"
@@ -36,6 +28,7 @@ export type CloudSeaPrecipitationSignalStatus =
 
 export type CloudSeaCloudBasisStatus =
   | "consistent"
+  | "minor_mismatch"
   | "mixed_basis"
   | "partial_layers"
   | "total_only"
@@ -161,6 +154,7 @@ type PrecipitationEvaluation = {
 type CloudBasisEvaluation = {
   readonly status: CloudSeaCloudBasisStatus;
   readonly warning: CloudSeaWeatherVariableConsistencyWarning | null;
+  readonly context: CloudSeaCloudBasisConsistencyContext;
 };
 
 const highMountainTerrainModes = new Set(["high_mountain", "mountain"]);
@@ -171,10 +165,7 @@ export function buildCloudSeaWeatherVariableConsistencyContext(
   input: CloudSeaWeatherVariableConsistencyInput = {},
 ): CloudSeaWeatherVariableConsistencyContext {
   const rows = rowsForFocusedWindow(input.hourlyRows, input.focusedWindow);
-  const snapshots = [
-    ...rows.map(snapshotFromProfessionalRow),
-    ...optionalSnapshotFromInput(input),
-  ];
+  const snapshots = [...rows.map(snapshotFromProfessionalRow), ...optionalSnapshotFromInput(input)];
   const highMountainLike = isHighMountainLike(input);
   const temperature = evaluateTemperatureBasis(snapshots, highMountainLike);
   const humidity = evaluateHumidityDewPoint(snapshots);
@@ -214,11 +205,15 @@ export function buildCloudSeaWeatherVariableConsistencyContext(
     consistencyLevel === "conflict" ||
     humidity.status === "conflict" ||
     cloudBasis.status === "mixed_basis" ||
+    cloudBasis.status === "total_only" ||
+    cloudBasis.context.shouldLowerCloudSeaConfidence ||
     temperature.hasConflict;
   const shouldAvoidStrongWording =
     consistencyLevel === "conflict" ||
     humidity.status !== "consistent" ||
     cloudBasis.status === "mixed_basis" ||
+    cloudBasis.status === "total_only" ||
+    cloudBasis.context.shouldAvoidStrictLayerInterpretation ||
     temperature.hasConflict;
   const userSummaryZh = buildUserSummaryZh(consistencyLevel, warningsZh);
   const professionalSummaryZh = buildProfessionalSummaryZh({
@@ -243,8 +238,7 @@ export function buildCloudSeaWeatherVariableConsistencyContext(
     shouldLowerConfidence,
     shouldAvoidStrongWording,
     shouldDowngradePrecipitationWording: precipitation.shouldDowngradePrecipitationWording,
-    shouldPreferTerrainAdjustedTemperature:
-      temperature.shouldPreferTerrainAdjustedTemperature,
+    shouldPreferTerrainAdjustedTemperature: temperature.shouldPreferTerrainAdjustedTemperature,
     warningsZh,
     userSummaryZh,
     professionalSummaryZh,
@@ -346,7 +340,9 @@ function evaluateTemperatureBasis(
   const hasTerrainAdjusted = temperatureRows.some((snapshot) =>
     isFiniteNumber(snapshot.terrainAdjustedTemperatureC),
   );
-  const hasRawGrid = temperatureRows.some((snapshot) => isFiniteNumber(snapshot.rawGridTemperatureC));
+  const hasRawGrid = temperatureRows.some((snapshot) =>
+    isFiniteNumber(snapshot.rawGridTemperatureC),
+  );
   const maxDelta = maxFinite(
     temperatureRows.map((snapshot) =>
       isFiniteNumber(snapshot.rawGridTemperatureC) &&
@@ -373,7 +369,8 @@ function evaluateTemperatureBasis(
         : hasRawGrid
           ? "raw_grid"
           : "unknown";
-  const hasWatch = highMountainLike && hasTerrainAdjusted && isFiniteNumber(maxDelta) && maxDelta >= 3;
+  const hasWatch =
+    highMountainLike && hasTerrainAdjusted && isFiniteNumber(maxDelta) && maxDelta >= 3;
   const hasConflict = rawGridDrivesHighMountainDisplay && isFiniteNumber(maxDelta) && maxDelta >= 5;
 
   return {
@@ -467,9 +464,7 @@ function evaluateHumidityDewPoint(
       (row.humidity <= 60 && row.spread <= 1.5),
   );
   const watchRows = vaporRows.filter(
-    (row) =>
-      (row.humidity >= 95 && row.spread > 3) ||
-      (row.humidity <= 60 && row.spread <= 1.5),
+    (row) => (row.humidity >= 95 && row.spread > 3) || (row.humidity <= 60 && row.spread <= 1.5),
   );
 
   if (conflictRows.length > 0) {
@@ -592,86 +587,78 @@ function evaluateCloudBasis(
   completeness: CloudLayerCompletenessContext | null | undefined,
   agreement: ForecastMultiSourceAgreementContext | null | undefined,
 ): CloudBasisEvaluation {
-  const cloudRows = snapshots.filter((snapshot) =>
-    [
-      snapshot.cloudTotalPercent,
-      snapshot.cloudLowPercent,
-      snapshot.cloudMidPercent,
-      snapshot.cloudHighPercent,
-    ].some(isFiniteNumber),
-  );
   const basisValues = uniqueText(
     snapshots
       .map((snapshot) => snapshot.cloudLayerBasis)
       .filter((basis): basis is ProfessionalHourlyCloudLayerBasis => Boolean(basis)),
   );
-  const mismatchRows = cloudRows.filter((snapshot) => cloudLayerTotalMismatch(snapshot));
   const mixedSourceDisagreement = hasHighCloudBasisDisagreement(agreement);
+  const context = buildCloudSeaCloudBasisConsistencyContext({
+    hourlyRows: snapshots,
+    cloudLayerCompletenessContext: completeness,
+  });
 
-  if (mismatchRows.length > 0 || basisValues.length > 1 || mixedSourceDisagreement) {
+  if (
+    context.cloudBasisLevel === "mixed_basis" ||
+    basisValues.length > 1 ||
+    mixedSourceDisagreement
+  ) {
     return {
       status: "mixed_basis",
+      context,
       warning: {
         key: "cloud_layer_total_mismatch",
         level: mixedSourceDisagreement ? "high" : "medium",
-        affectedHoursCount: Math.max(1, mismatchRows.length),
-        messageZh:
-          "总云量与分层云量可能存在口径差异，云海判断仍以低云、地形和临近复核为主。",
+        affectedHoursCount: Math.max(1, context.mismatchHoursCount),
+        messageZh: context.professionalSummaryZh,
       },
     };
   }
 
-  if (completeness?.cloudLayerBasis === "total_only") {
+  if (context.cloudBasisLevel === "minor_mismatch") {
+    return {
+      status: "minor_mismatch",
+      context,
+      warning: {
+        key: "cloud_layer_total_mismatch",
+        level: "low",
+        affectedHoursCount: Math.max(1, context.mismatchHoursCount),
+        messageZh: context.professionalSummaryZh,
+      },
+    };
+  }
+
+  if (context.cloudBasisLevel === "total_only") {
     return {
       status: "total_only",
+      context,
       warning: {
         key: "cloud_layer_total_mismatch",
         level: "medium",
-        affectedHoursCount: Math.max(1, completeness.totalHoursCount),
-        messageZh:
-          "当前仅有总云量，低/中/高云分层缺失时以 — 显示，不用总云量回填。",
+        affectedHoursCount: Math.max(1, context.totalHoursCount),
+        messageZh: context.professionalSummaryZh,
       },
     };
   }
 
-  if (
-    completeness &&
-    (completeness.cloudLayerBasis === "partial_layers" ||
-      completeness.layerCompletenessLevel === "partial" ||
-      completeness.layerCompletenessLevel === "weak")
-  ) {
+  if (context.cloudBasisLevel === "partial_layers") {
     return {
       status: "partial_layers",
+      context,
       warning: {
         key: "cloud_layer_total_mismatch",
-        level: completeness.layerCompletenessLevel === "weak" ? "medium" : "low",
-        affectedHoursCount: Math.max(1, completeness.missingLayerHoursCount),
-        messageZh:
-          "部分时段缺少低/中/高云分层，云海与白墙判断需结合临近预报复核。",
+        level: context.shouldLowerCloudSeaConfidence ? "medium" : "low",
+        affectedHoursCount: Math.max(1, context.missingLayerHoursCount),
+        messageZh: context.professionalSummaryZh,
       },
     };
   }
 
-  if (cloudRows.length === 0 && completeness?.cloudLayerBasis !== "explicit_layers") {
-    return { status: "unknown", warning: null };
+  if (context.cloudBasisLevel === "unknown") {
+    return { status: "unknown", warning: null, context };
   }
 
-  return { status: "consistent", warning: null };
-}
-
-function cloudLayerTotalMismatch(snapshot: WeatherVariableSnapshot): boolean {
-  if (!isFiniteNumber(snapshot.cloudTotalPercent)) {
-    return false;
-  }
-  const layerValues = [
-    snapshot.cloudHighPercent,
-    snapshot.cloudMidPercent,
-    snapshot.cloudLowPercent,
-  ].filter(isFiniteNumber);
-  if (layerValues.length === 0) {
-    return false;
-  }
-  return Math.max(...layerValues) > snapshot.cloudTotalPercent + 15;
+  return { status: "consistent", warning: null, context };
 }
 
 function hasHighCloudBasisDisagreement(
@@ -758,7 +745,10 @@ function warningForWindStatus(
   return {
     key: "wind_strength",
     level: "medium",
-    affectedHoursCount: Math.max(1, snapshots.filter((snapshot) => (snapshot.windSpeedMs ?? 0) >= 8).length),
+    affectedHoursCount: Math.max(
+      1,
+      snapshots.filter((snapshot) => (snapshot.windSpeedMs ?? 0) >= 8).length,
+    ),
     messageZh: "风速偏强，需复核云雾稳定性、保暖和三脚架稳定。",
   };
 }
@@ -792,6 +782,7 @@ function classifyConsistencyLevel(input: {
     input.humidityStatus === "watch" ||
     input.precipitationStatus === "probability_only" ||
     input.precipitationStatus === "light_disturbance" ||
+    input.cloudBasisStatus === "minor_mismatch" ||
     input.cloudBasisStatus === "mixed_basis" ||
     input.cloudBasisStatus === "partial_layers" ||
     input.cloudBasisStatus === "total_only" ||
@@ -866,8 +857,7 @@ function buildProfessionalSummaryZh(input: {
     `能见度 ${input.visibilityStatus}`,
     `风 ${input.windStatus}`,
   ].join("；");
-  const warningText =
-    input.warningsZh.length > 0 ? `；${input.warningsZh.join("；")}` : "";
+  const warningText = input.warningsZh.length > 0 ? `；${input.warningsZh.join("；")}` : "";
   return `变量一致性 ${input.consistencyLevel}：${statusText}${warningText}`;
 }
 
@@ -903,7 +893,10 @@ function combineWarnings(
       byKey.set(warning.key, warning);
       continue;
     }
-    if (existing.level === warning.level && warning.affectedHoursCount > existing.affectedHoursCount) {
+    if (
+      existing.level === warning.level &&
+      warning.affectedHoursCount > existing.affectedHoursCount
+    ) {
       byKey.set(warning.key, warning);
     }
   }

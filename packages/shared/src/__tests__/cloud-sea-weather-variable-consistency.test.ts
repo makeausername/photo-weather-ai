@@ -77,9 +77,7 @@ describe("buildCloudSeaWeatherVariableConsistencyContext", () => {
     expect(context.temperatureBasisStatus).toBe("mixed");
     expect(context.consistencyLevel).toBe("conflict");
     expect(context.shouldPreferTerrainAdjustedTemperature).toBe(true);
-    expect(context.warnings.map((warning) => warning.key)).toContain(
-      "terrain_temperature_delta",
-    );
+    expect(context.warnings.map((warning) => warning.key)).toContain("terrain_temperature_delta");
     expect(context.warningsZh.join(" ")).toContain("机位估算温度");
   });
 
@@ -111,9 +109,7 @@ describe("buildCloudSeaWeatherVariableConsistencyContext", () => {
       ],
     });
 
-    expect(genericPrecipProbabilityOnlyCase.precipitationSignalStatus).toBe(
-      "probability_only",
-    );
+    expect(genericPrecipProbabilityOnlyCase.precipitationSignalStatus).toBe("probability_only");
     expect(genericPrecipProbabilityOnlyCase.consistencyLevel).toBe("watch");
     expect(genericPrecipProbabilityOnlyCase.shouldDowngradePrecipitationWording).toBe(true);
     expect(genericPrecipProbabilityOnlyCase.warningsZh.join(" ")).toContain("不宜直接按强降水处理");
@@ -208,7 +204,7 @@ describe("buildCloudSeaWeatherVariableConsistencyContext", () => {
     });
 
     expect(context.cloudBasisStatus).toBe("total_only");
-    expect(context.warningsZh.join(" ")).toContain("不用总云量回填");
+    expect(context.warningsZh.join(" ")).toContain("不使用总云量回填");
     expect(context.professionalSummaryZh).not.toContain("低云 0");
   });
 });

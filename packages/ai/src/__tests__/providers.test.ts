@@ -99,6 +99,12 @@ describe("AI providers", () => {
     expect(JSON.stringify(request.body)).toContain(
       "Do not recompute or invent weather, cloud, cloud-sea, terrain, astronomy, score, risk, or window data.",
     );
+    expect(JSON.stringify(request.body)).toContain(
+      "Do not infer low cloud, mid cloud, or high cloud from total cloud.",
+    );
+    expect(JSON.stringify(request.body)).toContain(
+      "Do not treat mixed-basis cloud data as high-confidence cloud sea evidence.",
+    );
     expect(JSON.stringify(request.body)).toContain("computedForecastFacts");
     expect(JSON.stringify(request.body)).toContain("最建议冲哪一天");
     expect(JSON.stringify(request.body)).toContain("日落后余晖");
@@ -126,8 +132,7 @@ describe("AI providers", () => {
       ...forecastResultFixture,
       dataNotice:
         "天气数据：和风天气；云层辅助：Open-Meteo；专业增强：meteoblue；地理服务：高德地图。",
-      weatherNoticeZh:
-        "天气数据：和风天气；云层辅助：Open-Meteo；专业增强：meteoblue。",
+      weatherNoticeZh: "天气数据：和风天气；云层辅助：Open-Meteo；专业增强：meteoblue。",
       weatherMissingDataNotes: ["Open-Meteo 云层辅助字段部分缺失"],
       weatherFusionSummary: {
         primarySource: "QWeather",
@@ -165,11 +170,17 @@ describe("AI providers", () => {
     );
     expect(payload.professionalHourlySummary).toHaveProperty("focusedRows");
     expect(payload.cloudLayerCompletenessSummary).toHaveProperty("layerCompletenessLevel");
+    expect(payload.cloudBasisConsistencySummary).toMatchObject({
+      cloudBasisLevel: expect.any(String),
+      professionalSummaryZh: expect.any(String),
+      shouldLowerCloudSeaConfidence: expect.any(Boolean),
+    });
     expect(payload.multiSourceAgreementSummary).toMatchObject({
       agreementLevel: "medium",
       shouldLowerConfidence: true,
     });
-    expect(text).toContain("Do not recompute weather");
+    expect(text).toContain("Do not recompute facts");
+    expect(text).toContain("infer low/mid/high cloud from total cloud");
     expect(text).not.toMatch(/latitude|longitude|coordinates|WGS84|GCJ-02/i);
     expect(text).not.toContain("QWeather");
     expect(text).not.toContain("Open-Meteo");

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCloudLayerCompletenessContext } from "../cloud-layer-completeness.js";
+import { buildCloudSeaCloudBasisConsistencyContext } from "../cloud-sea-cloud-basis-consistency.js";
 import {
   buildCloudSeaRecommendationGuard,
   type CloudSeaRecommendationGuardInput,
@@ -58,10 +59,7 @@ function guard(overrides: Partial<CloudSeaRecommendationGuardInput> = {}) {
   });
 }
 
-function agreement(
-  field: string,
-  messageZh: string,
-): ForecastMultiSourceAgreementContext {
+function agreement(field: string, messageZh: string): ForecastMultiSourceAgreementContext {
   return {
     agreementLevel: "low",
     disagreementLevel: "high",
@@ -115,9 +113,7 @@ describe("buildCloudSeaRecommendationGuard", () => {
     expect(result.finalRecommendationLabel).toBe("推荐观察");
     expect(result.isSpecialTripRecommended).toBe(false);
     expect(result.maxAllowedRecommendationStrength).toBe("observe_if_nearby");
-    expect(result.blockedStrongRecommendationReasons).toContain(
-      "低海拔地点不按高山云海判断",
-    );
+    expect(result.blockedStrongRecommendationReasons).toContain("低海拔地点不按高山云海判断");
   });
 
   it("blocks strong recommendations when low cloud layers are missing", () => {
@@ -133,20 +129,38 @@ describe("buildCloudSeaRecommendationGuard", () => {
     expect(result.consistencyWarnings.join(" ")).toContain("缺少低云分层");
   });
 
+  it("caps strong recommendations when total cloud is far lower than layer cloud", () => {
+    const cloudBasisConsistencyContext = buildCloudSeaCloudBasisConsistencyContext([
+      {
+        time: "2026-05-20T05:00:00+08:00",
+        cloudTotalPercent: 20,
+        cloudLowPercent: 70,
+        cloudMidPercent: 24,
+        cloudHighPercent: 18,
+        cloudLayerBasis: "explicit_layers",
+      },
+    ]);
+    const result = guard({
+      cloudBasisConsistencyContext,
+      proposedRecommendationLabel: "强推荐专程",
+    });
+
+    expect(cloudBasisConsistencyContext.cloudBasisLevel).toBe("mixed_basis");
+    expect(result.finalRecommendationLevel).toBe("cautious_reference");
+    expect(result.isSpecialTripRecommended).toBe(false);
+    expect(result.blockedStrongRecommendationReasons).toContain("云量口径不一致，需临近复核");
+    expect(result.consistencyWarnings.join(" ")).toContain("云量口径不一致");
+  });
+
   it("blocks strong recommendations when low cloud disagreement is high", () => {
     const result = guard({
-      multiSourceAgreementContext: agreement(
-        "cloudLow",
-        "多源低云判断分歧较大，需临近复核。",
-      ),
+      multiSourceAgreementContext: agreement("cloudLow", "多源低云判断分歧较大，需临近复核。"),
       proposedRecommendationLabel: "强推荐专程",
     });
 
     expect(result.finalRecommendationLevel).toBe("cautious_reference");
     expect(result.finalRecommendationLabel).toBe("谨慎参考");
-    expect(result.blockedStrongRecommendationReasons).toContain(
-      "多源低云或降水判断分歧较大",
-    );
+    expect(result.blockedStrongRecommendationReasons).toContain("多源低云或降水判断分歧较大");
   });
 
   it("allows strong recommendation for high mountain high score with complete low cloud evidence", () => {
@@ -202,9 +216,7 @@ describe("buildCloudSeaRecommendationGuard", () => {
 
     expect(result.finalRecommendationLevel).toBe("cautious_reference");
     expect(result.isSpecialTripRecommended).toBe(false);
-    expect(result.blockedStrongRecommendationReasons).toContain(
-      "关键天气变量存在冲突，需临近复核",
-    );
+    expect(result.blockedStrongRecommendationReasons).toContain("关键天气变量存在冲突，需临近复核");
   });
 
   it("keeps high probability near-zero precipitation as review copy without capping the whole result", () => {

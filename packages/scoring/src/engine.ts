@@ -1,5 +1,6 @@
 import {
   buildCloudLayerCompletenessContext,
+  buildCloudSeaCloudBasisConsistencyContext,
   classifyTerrainMode,
   forecastRecommendationLabels,
   simplifyWeatherSummaryZh,
@@ -534,9 +535,18 @@ function professionalHourlyNotes(
   temperature: ReturnType<typeof professionalTemperatureProfile>,
   dewPointSpreadC: number | null,
 ): readonly string[] {
+  const cloudBasis = buildCloudSeaCloudBasisConsistencyContext([
+    {
+      ...cloudLayers,
+      missingFields: professionalHourlyMissingCloudLayerFields(cloudLayers),
+    },
+  ]);
   return uniqueStrings([
     temperature.temperatureBasis === "raw_grid"
       ? "温度为原始格点值，未作为机位海拔修正温度展示。"
+      : undefined,
+    cloudBasis.hasTotalLessThanAnyLayer
+      ? "云量口径需复核：总云量低于分层云量，分层云量仅作趋势参考。"
       : undefined,
     cloudLayers.cloudLayerBasis === "total_only" ? "仅有总云量，低/中/高云分层缺失。" : undefined,
     cloudLayers.cloudLayerBasis === "partial_layers" ? "部分云层字段缺失。" : undefined,
@@ -546,6 +556,17 @@ function professionalHourlyNotes(
     hour.estimatedFields?.some((field) => ["cloudLow", "cloudMid", "cloudHigh"].includes(field))
       ? "云层分层存在估算字段，专业表不使用总云量回填。"
       : undefined,
+  ]);
+}
+
+function professionalHourlyMissingCloudLayerFields(
+  cloudLayers: ReturnType<typeof professionalCloudLayerProfile>,
+): readonly string[] {
+  return uniqueStrings([
+    cloudLayers.cloudTotalPercent === null ? "cloudTotal" : undefined,
+    cloudLayers.cloudHighPercent === null ? "cloudHigh" : undefined,
+    cloudLayers.cloudMidPercent === null ? "cloudMid" : undefined,
+    cloudLayers.cloudLowPercent === null ? "cloudLow" : undefined,
   ]);
 }
 
@@ -614,13 +635,13 @@ function professionalHourlySignalForPayload(options: {
   });
   const formationLikely = professionalHourlyFormationLikely(row) || inWatchableWindow;
   const cloudLayerCompleteness = buildCloudLayerCompletenessContext([row]);
+  const cloudBasisConsistency = buildCloudSeaCloudBasisConsistencyContext([row]);
   const hasWindowSignal = inBestWindow || inWatchableWindow || inBlockedWindow;
   const significantTotalCloud = row.cloudTotalPercent !== null && row.cloudTotalPercent >= 70;
   const cloudSeaLayerSupported =
     layerRoles.cloudSeaLayerSignal === "strong" || layerRoles.cloudSeaLayerSignal === "medium";
   const whiteoutLayerHigh = layerRoles.whiteoutLayerSignal === "high" || whiteout === "high";
-  const whiteoutLayerMedium =
-    layerRoles.whiteoutLayerSignal === "medium" || whiteout === "medium";
+  const whiteoutLayerMedium = layerRoles.whiteoutLayerSignal === "medium" || whiteout === "medium";
 
   if (cloudLayerCompleteness.shouldPreferNeedsReviewSignal) {
     if (
@@ -633,6 +654,18 @@ function professionalHourlySignalForPayload(options: {
       return { label: "需复核", level: "review" };
     }
     return { label: "普通", level: "neutral" };
+  }
+
+  if (cloudBasisConsistency.hasTotalLessThanAnyLayer) {
+    if (
+      hasWindowSignal ||
+      cloudSeaLayerSupported ||
+      whiteoutLayerHigh ||
+      whiteoutLayerMedium ||
+      formationLikely
+    ) {
+      return { label: "需复核", level: "review" };
+    }
   }
 
   if (layerRoles.primaryCloudRole === "needs_review") {
@@ -839,6 +872,13 @@ function aggregateProfessionalCloudLayerBasisNote(
   const context = buildCloudLayerCompletenessContext(
     hourlyWeather.map(professionalCloudLayerProfile),
   );
+  const cloudBasis = buildCloudSeaCloudBasisConsistencyContext({
+    hourlyRows: hourlyWeather.map(professionalCloudLayerProfile),
+    cloudLayerCompletenessContext: context,
+  });
+  if (cloudBasis.cloudBasisLevel !== "consistent" && cloudBasis.cloudBasisLevel !== "unknown") {
+    return cloudBasis.professionalSummaryZh;
+  }
   if (context.layerCompletenessLevel === "complete") {
     return "云量口径：总云量 + 低/中/高云分层";
   }
@@ -2170,7 +2210,10 @@ function calculateCloudSeaFormationSignalScore(
   input: ForecastCalculationInput,
   hour: NormalizedHourlyWeather,
 ): number {
-  const lowCloud = hour.cloudLow ?? Math.min(90, hour.cloudTotal * 0.75);
+  const lowCloud =
+    hour.estimatedFields?.includes("cloudLow") || hour.fieldMetadata?.cloudLow?.estimated === true
+      ? undefined
+      : finiteOptionalNumber(hour.cloudLow);
   const precipitationScore =
     100 -
     precipitationRiskScore({
@@ -2180,7 +2223,7 @@ function calculateCloudSeaFormationSignalScore(
   const visibility = hour.visibility ?? hour.rawVisibilityKm ?? 8;
   const terrainScore = terrainFormationSignalScore(input);
 
-  return averageWeightedScore([
+  const score = averageWeightedScore([
     { score: humidityFormationScore(hour.humidity), weight: 0.24 },
     { score: dewPointSpreadFormationScore(hour.dewPointSpread), weight: 0.2 },
     { score: lowCloudFormationScore(lowCloud), weight: 0.18 },
@@ -2189,6 +2232,8 @@ function calculateCloudSeaFormationSignalScore(
     { score: terrainScore, weight: 0.1 },
     { score: precipitationScore, weight: 0.04 },
   ]);
+
+  return lowCloud === undefined ? Math.min(score, 48) : score;
 }
 
 function humidityFormationScore(humidity: number): number {
@@ -2223,7 +2268,10 @@ function dewPointSpreadFormationScore(dewPointSpread: number | null | undefined)
   return 32;
 }
 
-function lowCloudFormationScore(lowCloud: number): number {
+function lowCloudFormationScore(lowCloud: number | undefined): number {
+  if (lowCloud === undefined) {
+    return 34;
+  }
   if (lowCloud >= 38 && lowCloud <= 72) {
     return 90;
   }

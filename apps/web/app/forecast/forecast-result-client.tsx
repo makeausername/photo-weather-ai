@@ -4,12 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   buildCloudLayerCompletenessContext,
+  buildCloudSeaCloudBasisConsistencyContext,
   classifyTerrainMode,
   formatArrivalDeadlineZh,
   formatShootingWindowZh,
   forecastHorizonLabels,
   forecastTargetLabels,
   type CloudLayerCompletenessContext,
+  type CloudSeaCloudBasisConsistencyContext,
   type CloudSeaWeatherVariableConsistencyContext,
   simplifyWeatherSummaryZh,
   terrainModeUsesLowlandSemantics,
@@ -2303,7 +2305,11 @@ function temperatureConsistencyNote(
 function cloudBasisConsistencyNote(
   context: CloudSeaWeatherVariableConsistencyContext | undefined,
 ): string {
-  if (!context || context.cloudBasisStatus === "consistent" || context.cloudBasisStatus === "unknown") {
+  if (
+    !context ||
+    context.cloudBasisStatus === "consistent" ||
+    context.cloudBasisStatus === "unknown"
+  ) {
     return "";
   }
   if (context.cloudBasisStatus === "total_only") {
@@ -2393,8 +2399,7 @@ function hasTemperatureBasisWarning(
   context: CloudSeaWeatherVariableConsistencyContext | undefined,
 ): boolean {
   return (
-    context?.temperatureBasisStatus === "mixed" ||
-    context?.temperatureBasisStatus === "raw_grid"
+    context?.temperatureBasisStatus === "mixed" || context?.temperatureBasisStatus === "raw_grid"
   );
 }
 
@@ -2794,7 +2799,9 @@ export function CloudSeaResultPage({
         <CloudSeaNearTermWeatherSection
           result={result}
           terrainContext={viewModel.terrainContext}
-          weatherVariableConsistencyContext={viewModel.ruleContext.weatherVariableConsistencyContext}
+          weatherVariableConsistencyContext={
+            viewModel.ruleContext.weatherVariableConsistencyContext
+          }
         />
         <CloudSeaWindowCardsSection
           windows={viewModel.cloudSeaWindows}
@@ -4359,10 +4366,7 @@ function CloudSeaNearTermWeatherSection({
           value={precipitationDisplayValue(current ?? firstDay)}
           detail={`${precipitationDisplayDetail(
             current ?? firstDay,
-          )}。${windPrecipitationActionText(
-            result,
-            weatherVariableConsistencyContext,
-          )}`}
+          )}。${windPrecipitationActionText(result, weatherVariableConsistencyContext)}`}
         />
         <CompactInfoCard
           title="湿度与露点"
@@ -4841,15 +4845,21 @@ function CloudSeaProfessionalHourlyDataPanel({
   const activeFilterLabel =
     professionalHourlyFilters.find((filter) => filter.mode === filterMode)?.label ?? "全部小时";
   const cloudLayerCompleteness = buildCloudLayerCompletenessContext(rows);
+  const cloudBasisConsistency = buildCloudSeaCloudBasisConsistencyContext({
+    hourlyRows: rows,
+    cloudLayerCompletenessContext: cloudLayerCompleteness,
+  });
   const missingHeaderNote = professionalHourlyMissingHeaderNote(
     rows,
     basis,
     cloudLayerCompleteness,
+    cloudBasisConsistency,
   );
   const incompleteFieldNote = professionalHourlyIncompleteFieldNote(
     rows,
     basis,
     cloudLayerCompleteness,
+    cloudBasisConsistency,
   );
   const temperatureColumnLabel = professionalTemperatureColumnLabel(rows, basis);
 
@@ -4897,7 +4907,7 @@ function CloudSeaProfessionalHourlyDataPanel({
         />
         <CompactDefinition
           label="云量口径"
-          value={professionalCloudLayerBasisLabel(cloudLayerCompleteness)}
+          value={professionalCloudBasisLabel(cloudBasisConsistency, cloudLayerCompleteness)}
         />
         {missingHeaderNote ? (
           <CompactDefinition label="缺失说明" value={missingHeaderNote} />
@@ -4989,6 +4999,7 @@ function CloudSeaProfessionalHourlyDataPanel({
                     key={row.time}
                     row={row}
                     timezone={basis.timezone}
+                    cloudBasisRowNote={cloudBasisConsistency.rowNotesByHour?.[row.time]}
                   />
                 ))
               ) : (
@@ -5215,9 +5226,11 @@ function multiSourceDisagreementRank(
 function CloudSeaProfessionalHourlyRow({
   row,
   timezone,
+  cloudBasisRowNote,
 }: {
   readonly row: ProfessionalHourlyRow;
   readonly timezone: string;
+  readonly cloudBasisRowNote?: string;
 }) {
   const signal = professionalHourlyDisplaySignal(row);
   const weatherText = providerNeutralProfessionalWeatherText(row.weatherText) ?? "—";
@@ -5251,7 +5264,10 @@ function CloudSeaProfessionalHourlyRow({
         cell="cloud-total"
         className={professionalHourlyToneClass(row.cloudTotalPercent, "cloud-total")}
       >
-        {formatProfessionalPercent(row.cloudTotalPercent)}
+        <ProfessionalCloudValue
+          value={formatProfessionalPercent(row.cloudTotalPercent)}
+          note={cloudBasisRowNote}
+        />
       </ProfessionalHourlyCell>
       <ProfessionalHourlyCell cell="cloud-high">
         {formatProfessionalPercent(row.cloudHighPercent)}
@@ -5353,6 +5369,26 @@ function CloudSeaHourlyFocusPreview({
   );
 }
 
+function ProfessionalCloudValue({
+  value,
+  note,
+}: {
+  readonly value: string;
+  readonly note?: string;
+}) {
+  if (!note) {
+    return <>{value}</>;
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span>{value}</span>
+      <span className="rounded border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
+        {note}
+      </span>
+    </span>
+  );
+}
+
 function professionalTemperatureBasisLabel(
   basis: NonNullable<
     ForecastCalculationResult["professionalHourlyDataTimeBasis"]
@@ -5367,18 +5403,30 @@ function professionalTemperatureBasisLabel(
   return "暂无";
 }
 
-function professionalCloudLayerBasisLabel(context: CloudLayerCompletenessContext): string {
-  if (context.layerCompletenessLevel === "complete") {
-    return "总云量 + 低/中/高云分层";
+function professionalCloudBasisLabel(
+  context: CloudSeaCloudBasisConsistencyContext,
+  cloudLayerCompleteness: CloudLayerCompletenessContext,
+): string {
+  if (context.cloudBasisLevel === "mixed_basis") {
+    return "总云量与分层云量口径差异";
   }
-  if (context.cloudLayerBasis === "total_only") {
+  if (context.cloudBasisLevel === "minor_mismatch") {
+    return "总云量与分层云量需轻度复核";
+  }
+  if (context.cloudBasisLevel === "total_only") {
     return "仅总云量，缺少低/中/高云分层";
   }
-  if (context.layerCompletenessLevel === "weak") {
+  if (
+    context.cloudBasisLevel === "partial_layers" &&
+    cloudLayerCompleteness.layerCompletenessLevel === "weak"
+  ) {
     return "较多时段缺少低/中/高云分层";
   }
-  if (context.cloudLayerBasis === "partial_layers") {
+  if (context.cloudBasisLevel === "partial_layers") {
     return "部分时段缺少低/中/高云分层";
+  }
+  if (context.cloudBasisLevel === "consistent") {
+    return "总云量 + 低/中/高云分层口径较一致";
   }
   return "暂无";
 }
@@ -5407,7 +5455,11 @@ function professionalHourlyMissingHeaderNote(
   rows: readonly ProfessionalHourlyRow[],
   basis: NonNullable<ForecastCalculationResult["professionalHourlyDataTimeBasis"]>,
   cloudLayerCompleteness: CloudLayerCompletenessContext,
+  cloudBasisConsistency: CloudSeaCloudBasisConsistencyContext,
 ): string | null {
+  if (shouldShowCloudBasisProfessionalNote(cloudBasisConsistency)) {
+    return professionalCloudBasisNote(cloudBasisConsistency);
+  }
   if (cloudLayerCompleteness.layerCompletenessLevel !== "complete") {
     return "低/中/高云分层缺失时以 — 显示，不用总云量回填。";
   }
@@ -5425,7 +5477,11 @@ function professionalHourlyIncompleteFieldNote(
   rows: readonly ProfessionalHourlyRow[],
   basis: NonNullable<ForecastCalculationResult["professionalHourlyDataTimeBasis"]>,
   cloudLayerCompleteness: CloudLayerCompletenessContext,
+  cloudBasisConsistency: CloudSeaCloudBasisConsistencyContext,
 ): string | null {
+  if (shouldShowCloudBasisProfessionalNote(cloudBasisConsistency)) {
+    return professionalCloudBasisNote(cloudBasisConsistency);
+  }
   if (cloudLayerCompleteness.layerCompletenessLevel !== "complete") {
     return cloudLayerCompleteness.professionalNoteZh;
   }
@@ -5433,6 +5489,22 @@ function professionalHourlyIncompleteFieldNote(
     return professionalHourlyIncompleteFieldNoteText;
   }
   return null;
+}
+
+function shouldShowCloudBasisProfessionalNote(
+  context: CloudSeaCloudBasisConsistencyContext,
+): boolean {
+  return context.cloudBasisLevel !== "consistent" && context.cloudBasisLevel !== "unknown";
+}
+
+function professionalCloudBasisNote(context: CloudSeaCloudBasisConsistencyContext): string {
+  if (context.cloudBasisLevel === "total_only" || context.cloudBasisLevel === "partial_layers") {
+    const missingnessNote = "缺失值以 — 显示，不使用总云量回填。";
+    return context.professionalSummaryZh.includes("不使用总云量回填")
+      ? context.professionalSummaryZh
+      : `${context.professionalSummaryZh} ${missingnessNote}`;
+  }
+  return context.professionalSummaryZh;
 }
 
 function professionalHourlyRowHasIncompleteFields(row: ProfessionalHourlyRow): boolean {
@@ -5572,9 +5644,7 @@ function professionalHourlyDisplaySignal(
   row: ProfessionalHourlyRow,
 ): ProfessionalHourlyRow["cloudSeaSignal"] {
   const cloudLayerCompleteness = buildCloudLayerCompletenessContext([row]);
-  if (!cloudLayerCompleteness.shouldPreferNeedsReviewSignal) {
-    return row.cloudSeaSignal;
-  }
+  const cloudBasisConsistency = buildCloudSeaCloudBasisConsistencyContext([row]);
 
   const strongOrRelevantSignal =
     row.cloudSeaSignal === "可拍窗口" ||
@@ -5585,6 +5655,17 @@ function professionalHourlyDisplaySignal(
     row.cloudSeaSignal === "云层纹理" ||
     row.cloudSeaSignal === "需复核";
   const significantTotalCloud = row.cloudTotalPercent !== null && row.cloudTotalPercent >= 70;
+
+  if (
+    cloudBasisConsistency.hasTotalLessThanAnyLayer &&
+    (strongOrRelevantSignal || significantTotalCloud)
+  ) {
+    return "需复核";
+  }
+
+  if (!cloudLayerCompleteness.shouldPreferNeedsReviewSignal) {
+    return row.cloudSeaSignal;
+  }
 
   return strongOrRelevantSignal || significantTotalCloud ? "需复核" : "普通";
 }
