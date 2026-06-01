@@ -11,15 +11,18 @@ const cloudSeaRuleFiles = [
   "apps/web/app/forecast/forecast-result-view-model.ts",
   "packages/shared/src/cloud-sea-recommendation-guard.ts",
   "packages/shared/src/cloud-sea-weather-variable-consistency.ts",
+  "packages/shared/src/cloud-sea-cloud-basis-consistency.ts",
   "packages/shared/src/cloud-layer-completeness.ts",
   "packages/scoring/src/cloud-sea-analysis.ts",
   "packages/scoring/src/cloud-layer-roles.ts",
   "packages/scoring/src/engine.ts",
+  "packages/weather/src/disagreement.ts",
 ] as const;
 
 const forbiddenLocationConditionPatterns = [
   /includes\(\s*["'`]黄山/,
   /includes\(\s*["'`]光明顶/,
+  /includes\(\s*["'`]玉京峰/,
   /includes\(\s*["'`]黄山光明顶/,
   /includes\(\s*["'`]黄山风景区/,
   /includes\(\s*["'`]瓯江/,
@@ -30,6 +33,7 @@ const forbiddenLocationConditionPatterns = [
   /includes\(\s*["'`]武功山/,
   /===\s*["'`]黄山/,
   /===\s*["'`]光明顶/,
+  /===\s*["'`]玉京峰/,
   /===\s*["'`]黄山光明顶/,
   /===\s*["'`]黄山风景区/,
   /===\s*["'`]瓯江/,
