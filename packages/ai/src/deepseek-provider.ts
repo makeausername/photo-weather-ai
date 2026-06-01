@@ -1,6 +1,7 @@
 import {
   buildCloudLayerCompletenessContext,
   buildCloudSeaRecommendationGuardForResult,
+  buildCloudSeaWeatherVariableConsistencyContext,
   decisionCardSchema,
   deepSeekResponseFormat,
   formatArrivalDeadlineZh,
@@ -487,6 +488,23 @@ export function buildCloudSeaAiExplainPayload(
   const focusedRows = professionalHourlyRowsForAiPayload(professionalRows, detail);
   const cloudLayerCompleteness = buildCloudLayerCompletenessContext(professionalRows);
   const agreement = result.weatherFusionSummary?.multiSourceAgreementContext;
+  const weatherVariableConsistency = buildCloudSeaWeatherVariableConsistencyContext({
+    elevationMeters:
+      result.terrainAnalysis.terrainProfile.locationElevation ??
+      result.terrainAnalysis.terrainProfile.elevationMeters ??
+      result.cloudSeaAnalysis.terrainSupport.selectedSpotElevationMeters,
+    surroundingReliefMeters:
+      result.terrainAnalysis.terrainProfile.localReliefMeters ??
+      result.terrainAnalysis.terrainProfile.elevationDiff5km ??
+      result.cloudSeaAnalysis.terrainSupport.localReliefMeters,
+    terrainMode: result.cloudSeaAnalysis.terrainSupport.terrainMode,
+    terrainType:
+      result.terrainAnalysis.terrainProfile.terrainType ??
+      result.cloudSeaAnalysis.terrainSupport.terrainType,
+    hourlyRows: professionalRows,
+    cloudLayerCompletenessContext: cloudLayerCompleteness,
+    multiSourceAgreementContext: agreement,
+  });
   const recommendationGuard = buildCloudSeaRecommendationGuardForResult(result);
 
   return {
@@ -621,6 +639,29 @@ export function buildCloudSeaAiExplainPayload(
       missingLayerFields: cloudLayerCompleteness.missingLayerFields,
       userNoteZh: limitText(cloudLayerCompleteness.userNoteZh, 140),
       professionalNoteZh: limitText(cloudLayerCompleteness.professionalNoteZh, 140),
+    },
+    weatherVariableConsistencySummary: {
+      consistencyLevel: weatherVariableConsistency.consistencyLevel,
+      temperatureBasisStatus: weatherVariableConsistency.temperatureBasisStatus,
+      humidityDewPointStatus: weatherVariableConsistency.humidityDewPointStatus,
+      precipitationSignalStatus: weatherVariableConsistency.precipitationSignalStatus,
+      cloudBasisStatus: weatherVariableConsistency.cloudBasisStatus,
+      visibilityStatus: weatherVariableConsistency.visibilityStatus,
+      windStatus: weatherVariableConsistency.windStatus,
+      shouldLowerConfidence: weatherVariableConsistency.shouldLowerConfidence,
+      shouldAvoidStrongWording: weatherVariableConsistency.shouldAvoidStrongWording,
+      shouldDowngradePrecipitationWording:
+        weatherVariableConsistency.shouldDowngradePrecipitationWording,
+      userSummaryZh: limitText(providerNeutralText(weatherVariableConsistency.userSummaryZh), 140),
+      professionalSummaryZh: limitText(
+        providerNeutralText(weatherVariableConsistency.professionalSummaryZh),
+        180,
+      ),
+      warningsZh: takeTextItems(
+        weatherVariableConsistency.warningsZh.map((item) => providerNeutralText(item) ?? item),
+        4,
+        120,
+      ),
     },
     multiSourceAgreementSummary: agreement
       ? {

@@ -39,16 +39,6 @@ const genericLowElevationSpot: GenericCloudSeaFixture = {
   terrainScore: 28,
 };
 
-const genericUnknownTerrainSpot: GenericCloudSeaFixture = {
-  name: "genericUnknownTerrainSpot",
-  elevationMeters: null,
-  reliefMeters: null,
-  valleyElevationMeters: null,
-  terrainType: "unknown",
-  terrainMode: "unknown",
-  terrainScore: 34,
-};
-
 const completeLayerRows: readonly ProfessionalHourlyDataPoint[] = [
   professionalHourlyRow({
     time: "2026-05-20T05:00:00+08:00",
@@ -141,7 +131,7 @@ describe("buildCloudSeaRuleContext", () => {
 
   it("flags weather-variable contradictions from field relationships", () => {
     const context = buildCloudSeaRuleContext(
-      cloudSeaResultForFixture(genericUnknownTerrainSpot, {
+      cloudSeaResultForFixture(genericHighMountainSpot, {
         rows: [
           professionalHourlyRow({
             relativeHumidityPercent: 98,
@@ -157,6 +147,7 @@ describe("buildCloudSeaRuleContext", () => {
       }),
     );
 
+    expect(context.weatherVariableConsistencyContext.consistencyLevel).toBe("conflict");
     expect(context.weatherVariableConsistencyContext.hasContradictions).toBe(true);
     expect(context.weatherVariableConsistencyContext.warnings.map((warning) => warning.key)).toEqual(
       expect.arrayContaining([
@@ -167,6 +158,9 @@ describe("buildCloudSeaRuleContext", () => {
       ]),
     );
     expect(context.precipitationSignalContext.highProbabilityTraceAmount).toBe(true);
+    expect(context.recommendationGuardContext.finalRecommendationLevel).toBe(
+      "cautious_reference",
+    );
   });
 
   it("separates mid/high-cloud glow texture from low-cloud cloud-sea evidence", () => {

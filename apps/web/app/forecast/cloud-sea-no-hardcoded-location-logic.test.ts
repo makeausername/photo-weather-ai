@@ -10,6 +10,7 @@ const cloudSeaRuleFiles = [
   "apps/web/app/forecast/cloud-sea-terrain-context.ts",
   "apps/web/app/forecast/forecast-result-view-model.ts",
   "packages/shared/src/cloud-sea-recommendation-guard.ts",
+  "packages/shared/src/cloud-sea-weather-variable-consistency.ts",
   "packages/shared/src/cloud-layer-completeness.ts",
   "packages/scoring/src/cloud-sea-analysis.ts",
   "packages/scoring/src/cloud-layer-roles.ts",

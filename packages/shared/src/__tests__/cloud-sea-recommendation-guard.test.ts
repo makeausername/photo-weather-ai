@@ -4,6 +4,7 @@ import {
   buildCloudSeaRecommendationGuard,
   type CloudSeaRecommendationGuardInput,
 } from "../cloud-sea-recommendation-guard.js";
+import { buildCloudSeaWeatherVariableConsistencyContext } from "../cloud-sea-weather-variable-consistency.js";
 import type { ForecastMultiSourceAgreementContext } from "../types.js";
 
 const completeLayers = buildCloudLayerCompletenessContext([
@@ -188,5 +189,37 @@ describe("buildCloudSeaRecommendationGuard", () => {
     expect(result.finalRecommendationLevel).toBe("cautious_reference");
     expect(result.finalRecommendationLabel).toBe("谨慎参考");
     expect(result.blockedStrongRecommendationReasons).toContain("低云信号不足");
+  });
+
+  it("blocks strong recommendations when generic weather variables conflict", () => {
+    const result = guard({
+      proposedRecommendationLabel: "强推荐专程",
+      weatherVariableConsistencyContext: buildCloudSeaWeatherVariableConsistencyContext({
+        humidityPercent: 100,
+        dewPointSpreadC: 7,
+      }),
+    });
+
+    expect(result.finalRecommendationLevel).toBe("cautious_reference");
+    expect(result.isSpecialTripRecommended).toBe(false);
+    expect(result.blockedStrongRecommendationReasons).toContain(
+      "关键天气变量存在冲突，需临近复核",
+    );
+  });
+
+  it("keeps high probability near-zero precipitation as review copy without capping the whole result", () => {
+    const result = guard({
+      proposedRecommendationLabel: "强推荐专程",
+      weatherVariableConsistencyContext: buildCloudSeaWeatherVariableConsistencyContext({
+        precipitationProbabilityPercent: 78,
+        precipitationAmountMm: 0,
+      }),
+    });
+
+    expect(result.finalRecommendationLevel).toBe("strong_special_trip");
+    expect(result.consistencyWarnings.join(" ")).toContain("降水概率和雨量需分开解读");
+    expect(result.blockedStrongRecommendationReasons).not.toContain(
+      "关键天气变量存在冲突，需临近复核",
+    );
   });
 });

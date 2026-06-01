@@ -2,6 +2,10 @@ import {
   buildCloudLayerCompletenessContext,
   type CloudLayerCompletenessContext,
 } from "./cloud-layer-completeness.js";
+import {
+  buildCloudSeaWeatherVariableConsistencyContext,
+  type CloudSeaWeatherVariableConsistencyContext,
+} from "./cloud-sea-weather-variable-consistency.js";
 import type {
   CloudSeaAnalysisResult,
   ForecastCalculationResult,
@@ -42,6 +46,7 @@ export type CloudSeaRecommendationGuardInput = {
   readonly lowCloudSignalSupported?: boolean | null;
   readonly mainTargetZh?: string;
   readonly bestWindowLabelZh?: string;
+  readonly weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext | null;
 };
 
 export type CloudSeaRecommendationGuardOutput = {
@@ -104,6 +109,7 @@ export function buildCloudSeaRecommendationGuard(
   const terrainDowngraded = Boolean(input.terrainContext?.shouldDowngradeCloudSeaWording);
   const layerCompleteness = input.cloudLayerCompletenessContext;
   const agreement = input.multiSourceAgreementContext;
+  const weatherConsistency = input.weatherVariableConsistencyContext;
   const blockedStrongRecommendationReasons: string[] = [];
   const consistencyWarnings: string[] = [];
 
@@ -152,6 +158,18 @@ export function buildCloudSeaRecommendationGuard(
   if (input.lowCloudSignalSupported === false) {
     ceiling = minRecommendationLevel(ceiling, "cautious_reference");
     blockedStrongRecommendationReasons.push("低云信号不足");
+  }
+
+  if (weatherConsistency?.consistencyLevel === "conflict") {
+    ceiling = minRecommendationLevel(ceiling, "cautious_reference");
+    blockedStrongRecommendationReasons.push("关键天气变量存在冲突，需临近复核");
+    consistencyWarnings.push(weatherConsistency.userSummaryZh);
+  } else if (weatherConsistency?.shouldAvoidStrongWording) {
+    consistencyWarnings.push(weatherConsistency.userSummaryZh);
+  }
+
+  if (weatherConsistency?.shouldDowngradePrecipitationWording) {
+    consistencyWarnings.push("降水概率和雨量需分开解读，避免按强降水直接处理");
   }
 
   if ((input.whiteoutRiskScore ?? 0) >= 70) {
@@ -232,6 +250,25 @@ export function buildCloudSeaRecommendationGuardForResult(
   const cloudLayerCompletenessContext = buildCloudLayerCompletenessContext(
     result.professionalHourlyData,
   );
+  const multiSourceAgreementContext =
+    result.weatherFusionSummary?.multiSourceAgreementContext ?? null;
+  const weatherVariableConsistencyContext = buildCloudSeaWeatherVariableConsistencyContext({
+    elevationMeters:
+      result.terrainAnalysis.terrainProfile.locationElevation ??
+      result.terrainAnalysis.terrainProfile.elevationMeters ??
+      result.cloudSeaAnalysis.terrainSupport.selectedSpotElevationMeters,
+    surroundingReliefMeters:
+      result.terrainAnalysis.terrainProfile.localReliefMeters ??
+      result.terrainAnalysis.terrainProfile.elevationDiff5km ??
+      result.cloudSeaAnalysis.terrainSupport.localReliefMeters,
+    terrainMode: result.cloudSeaAnalysis.terrainSupport.terrainMode,
+    terrainType:
+      result.terrainAnalysis.terrainProfile.terrainType ??
+      result.cloudSeaAnalysis.terrainSupport.terrainType,
+    hourlyRows: result.professionalHourlyData,
+    cloudLayerCompletenessContext,
+    multiSourceAgreementContext,
+  });
 
   return buildCloudSeaRecommendationGuard({
     cloudSeaScore: overrides.cloudSeaScore ?? result.scores.cloudSea.score,
@@ -246,7 +283,8 @@ export function buildCloudSeaRecommendationGuardForResult(
       terrainClass: analysis.terrainSupport.terrainMode,
     },
     cloudLayerCompletenessContext,
-    multiSourceAgreementContext: result.weatherFusionSummary?.multiSourceAgreementContext ?? null,
+    multiSourceAgreementContext,
+    weatherVariableConsistencyContext,
     bestWindow,
     hasWindow: overrides.hasWindow ?? Boolean(bestWindow),
     risks: result.riskFlags,

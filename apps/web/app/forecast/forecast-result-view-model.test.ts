@@ -1670,6 +1670,31 @@ function resultWithProfessionalHourlyData(
   };
 }
 
+function genericCloudSeaConsistencyResult(
+  rows: ProfessionalHourlyDataForTest,
+): ForecastCalculationResult {
+  const result = resultWithProfessionalHourlyData({
+    professionalHourlyData: rows,
+  });
+  return {
+    ...result,
+    place: {
+      ...result.place,
+      id: "generic-high-mountain-spot",
+      name: "genericHighMountainSpot",
+      adminArea: "genericAdminArea",
+      locality: "genericLocality",
+    },
+    summary: "genericHighMountainSpot synthetic cloud sea result.",
+    recommendationLabel: "值得等待",
+    cloudSeaAnalysis: {
+      ...result.cloudSeaAnalysis,
+      shootableScore: 82,
+      recommendationLabel: "推荐重点关注",
+    },
+  };
+}
+
 function weatherFusionSummaryWithAgreement(
   context: ForecastMultiSourceAgreementContext,
 ): NonNullable<ForecastCalculationResult["weatherFusionSummary"]> {
@@ -4999,6 +5024,102 @@ describe("forecast result target-aware view model", () => {
       html.indexOf("CloudSeaDailyTrend"),
     );
     expect(html.indexOf("专业小时数据")).toBeLessThan(html.indexOf("每日云海判断"));
+  });
+
+  it("renders a compact data consistency note and caps strong copy for generic variable conflicts", () => {
+    const result = genericCloudSeaConsistencyResult(
+      professionalHourlyDataForTest({
+        relativeHumidityPercent: 100,
+        dewPointSpreadC: 7,
+      }),
+    );
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result,
+        viewModel,
+      }),
+    );
+    const reasoningSection = sectionBetween(html, "CloudSeaReasoning", "CloudSeaActionPlan");
+
+    expect(viewModel.ruleContext.weatherVariableConsistencyContext.consistencyLevel).toBe(
+      "conflict",
+    );
+    expect(viewModel.recommendationGuard.finalRecommendationLabel).toBe("谨慎参考");
+    expect(viewModel.hero.confidenceLabel).toContain("变量需复核");
+    expect(reasoningSection).toContain("数据一致性");
+    expect(reasoningSection).toContain("湿度与露点差需结合临近预报复核");
+    expect(reasoningSection).toContain("不宜仅凭湿度判断云海或白墙");
+    expect(html).toContain("变量复核");
+    expect(html).toContain("关键天气变量存在冲突，需临近复核");
+    expect(html).not.toContain("强推荐专程云海");
+    expect(html).not.toMatch(/latitude|longitude|WGS84|GCJ-02|经度|纬度/i);
+    expect(html).not.toContain("meteoblue");
+    expect(html).not.toContain("Open-Meteo");
+    expect(html).not.toContain("和风天气");
+  });
+
+  it("renders high precipitation probability with near-zero amount as local disturbance instead of strong rain", () => {
+    const result = genericCloudSeaConsistencyResult(
+      professionalHourlyDataForTest({
+        precipitationProbabilityPercent: 78,
+        precipitationAmountMm: 0,
+      }),
+    );
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result,
+        viewModel,
+      }),
+    );
+    const actionPlan = sectionBetween(html, "CloudSeaActionPlan", "CloudSeaRiskSummary");
+
+    expect(viewModel.ruleContext.weatherVariableConsistencyContext.precipitationSignalStatus).toBe(
+      "probability_only",
+    );
+    expect(viewModel.recommendationGuard.finalRecommendationLabel).toBe("强推荐专程");
+    expect(html).toContain("更像局地短时扰动");
+    expect(html).toContain("不宜直接按强降水处理");
+    expect(actionPlan).toContain("准备防潮和轻量防雨");
+    expect(html).not.toContain("强降水干扰");
+    expect(html).toContain("专业小时数据");
+    expect(html).toContain("总云量 %");
+    expect(html).toContain("高云量 %");
+    expect(html).toContain("中云量 %");
+    expect(html).toContain("低云量 %");
+  });
+
+  it("shows generic high-mountain temperature basis advice while preserving raw professional data", () => {
+    const result = genericCloudSeaConsistencyResult(
+      professionalHourlyDataForTest({
+        rawTemperatureC: 29,
+        terrainAdjustedTemperatureC: 20,
+        displayedTemperatureC: 29,
+        temperatureBasis: "raw_grid",
+        temperatureBasisNoteZh: "原始格点温度。",
+      }),
+    );
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(viewModel.ruleContext.weatherVariableConsistencyContext.temperatureBasisStatus).toBe(
+      "mixed",
+    );
+    expect(html).toContain("高山机位优先参考机位海拔修正温度");
+    expect(html).toContain("原始格点温度可能偏暖");
+    expect(html).toContain("高山体感可能更冷，建议按机位修正温度准备");
+    expect(html).toContain("专业小时数据");
+    expect(html).toContain("原始格点温度 °C");
+    expect(html).toContain("露点差 °C");
   });
 
   it("renders compact multi-source low-cloud disagreement without provider names or coordinates", () => {

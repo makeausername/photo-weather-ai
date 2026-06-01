@@ -1,8 +1,10 @@
 import {
   buildCloudLayerCompletenessContext,
   buildCloudSeaRecommendationGuard,
+  buildCloudSeaWeatherVariableConsistencyContext,
   type CloudLayerCompletenessContext,
   type CloudSeaRecommendationGuardOutput,
+  type CloudSeaWeatherVariableConsistencyContext,
   type ForecastCalculationResult,
   type ForecastMultiSourceAgreementContext,
   type ProfessionalHourlyCloudSeaSignal,
@@ -44,26 +46,6 @@ export type CloudSeaCloudLayerRoleContext = {
   readonly noteZh: string;
 };
 
-export type CloudSeaWeatherVariableConsistencyWarningKey =
-  | "humidity_dew_point_spread"
-  | "precip_probability_trace_amount"
-  | "terrain_temperature_delta"
-  | "cloud_layer_total_mismatch";
-
-export type CloudSeaWeatherVariableConsistencyWarning = {
-  readonly key: CloudSeaWeatherVariableConsistencyWarningKey;
-  readonly level: "low" | "medium" | "high";
-  readonly messageZh: string;
-  readonly affectedHoursCount: number;
-};
-
-export type CloudSeaWeatherVariableConsistencyContext = {
-  readonly warnings: readonly CloudSeaWeatherVariableConsistencyWarning[];
-  readonly hasContradictions: boolean;
-  readonly cautionLevel: "none" | "low" | "medium" | "high";
-  readonly summaryZh: string;
-};
-
 export type CloudSeaPrecipitationSignalContext = {
   readonly maxProbabilityPercent: number | null;
   readonly maxAmountMm: number | null;
@@ -85,6 +67,7 @@ export type CloudSeaRecommendationGuardForRuleOptions = {
   readonly hasWindow?: boolean;
   readonly bestWindowLabelZh?: string;
   readonly lowCloudSignalSupported?: boolean;
+  readonly weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext;
 };
 
 const signalRoleRank: Record<CloudSeaCloudLayerRoleContext["dominantRole"], number> = {
@@ -105,12 +88,27 @@ export function buildCloudSeaRuleContext(result: ForecastCalculationResult): Clo
   );
   const multiSourceAgreementContext =
     result.weatherFusionSummary?.multiSourceAgreementContext ?? null;
+  const weatherVariableConsistencyContext = buildCloudSeaWeatherVariableConsistencyContext({
+    elevationMeters: terrainContext.elevationMeters,
+    surroundingReliefMeters: terrainContext.surroundingReliefMeters,
+    terrainContext: {
+      elevationMeters: terrainContext.elevationMeters,
+      surroundingReliefMeters: terrainContext.surroundingReliefMeters,
+      terrainClass: terrainContext.terrainClass,
+      terrainMode: result.cloudSeaAnalysis.terrainSupport.terrainMode,
+      terrainType: terrainContext.terrainType,
+    },
+    hourlyRows: result.professionalHourlyData,
+    cloudLayerCompletenessContext,
+    multiSourceAgreementContext,
+  });
   const recommendationGuardContext = buildCloudSeaRecommendationGuardForRuleContext(
     result,
     terrainContext,
     {
       cloudLayerCompleteness: cloudLayerCompletenessContext,
       multiSourceAgreementContext,
+      weatherVariableConsistencyContext,
     },
   );
 
@@ -118,9 +116,7 @@ export function buildCloudSeaRuleContext(result: ForecastCalculationResult): Clo
     terrainContext,
     cloudLayerCompletenessContext,
     cloudLayerRoleContext: buildCloudLayerRoleContext(result.professionalHourlyData),
-    weatherVariableConsistencyContext: buildWeatherVariableConsistencyContext(
-      result.professionalHourlyData,
-    ),
+    weatherVariableConsistencyContext,
     precipitationSignalContext: buildPrecipitationSignalContext(result.professionalHourlyData),
     multiSourceAgreementContext,
     recommendationGuardContext,
@@ -156,6 +152,7 @@ export function buildCloudSeaRecommendationGuardForRuleContext(
       options.multiSourceAgreementContext ??
       result.weatherFusionSummary?.multiSourceAgreementContext ??
       null,
+    weatherVariableConsistencyContext: options.weatherVariableConsistencyContext,
     bestWindow: bestWindow ?? null,
     hasWindow: options.hasWindow ?? Boolean(bestWindow),
     risks: result.riskFlags,
@@ -192,68 +189,6 @@ function buildCloudLayerRoleContext(
     redirectedMidHighHoursCount,
     dominantRole,
     noteZh: cloudLayerRoleNoteZh(dominantRole, redirectedMidHighHoursCount),
-  };
-}
-
-function buildWeatherVariableConsistencyContext(
-  rows: readonly ProfessionalHourlyDataPoint[] | null | undefined,
-): CloudSeaWeatherVariableConsistencyContext {
-  const hourlyRows = rows ?? [];
-  const warnings = [
-    warningForCount(
-      "humidity_dew_point_spread",
-      hourlyRows.filter(
-        (row) =>
-          (row.relativeHumidityPercent ?? 0) >= 95 && (row.dewPointSpreadC ?? 0) >= 6,
-      ).length,
-      "湿度接近饱和但露点差仍偏大，需复核湿度或露点来源。",
-    ),
-    warningForCount(
-      "precip_probability_trace_amount",
-      hourlyRows.filter(
-        (row) =>
-          (row.precipitationProbabilityPercent ?? 0) >= 70 &&
-          (row.precipitationAmountMm ?? 0) <= 0.1,
-      ).length,
-      "降水概率较高但小时降水量接近 0，需结合临近雷达或短临预报复核。",
-    ),
-    warningForCount(
-      "terrain_temperature_delta",
-      hourlyRows.filter(
-        (row) =>
-          isFiniteNumber(row.rawTemperatureC) &&
-          isFiniteNumber(row.terrainAdjustedTemperatureC) &&
-          Math.abs(row.rawTemperatureC - row.terrainAdjustedTemperatureC) >= 8,
-      ).length,
-      "原始格点温度与地形修正温度差异较大，需留意海拔修正影响。",
-    ),
-    warningForCount(
-      "cloud_layer_total_mismatch",
-      hourlyRows.filter((row) => {
-        if (!isFiniteNumber(row.cloudTotalPercent)) {
-          return false;
-        }
-        const layerMax = Math.max(
-          row.cloudHighPercent ?? Number.NEGATIVE_INFINITY,
-          row.cloudMidPercent ?? Number.NEGATIVE_INFINITY,
-          row.cloudLowPercent ?? Number.NEGATIVE_INFINITY,
-        );
-        return Number.isFinite(layerMax) && layerMax > row.cloudTotalPercent + 15;
-      }).length,
-      "总云量与分层云量关系异常，云层角色需按低置信度复核。",
-    ),
-  ].filter(
-    (warning): warning is CloudSeaWeatherVariableConsistencyWarning => warning !== null,
-  );
-
-  return {
-    warnings,
-    hasContradictions: warnings.length > 0,
-    cautionLevel: consistencyCautionLevel(warnings),
-    summaryZh:
-      warnings.length > 0
-        ? warnings[0]!.messageZh
-        : "核心天气变量关系未发现明显矛盾。",
   };
 }
 
@@ -338,34 +273,6 @@ function cloudLayerRoleNoteZh(
     return "关键云层字段不足，云海与白墙判断需临近复核。";
   }
   return "云层角色未形成单一强信号，按保守观察处理。";
-}
-
-function warningForCount(
-  key: CloudSeaWeatherVariableConsistencyWarningKey,
-  affectedHoursCount: number,
-  messageZh: string,
-): CloudSeaWeatherVariableConsistencyWarning | null {
-  if (affectedHoursCount <= 0) {
-    return null;
-  }
-  return {
-    key,
-    affectedHoursCount,
-    level: affectedHoursCount >= 3 ? "high" : "medium",
-    messageZh,
-  };
-}
-
-function consistencyCautionLevel(
-  warnings: readonly CloudSeaWeatherVariableConsistencyWarning[],
-): CloudSeaWeatherVariableConsistencyContext["cautionLevel"] {
-  if (warnings.some((warning) => warning.level === "high")) {
-    return "high";
-  }
-  if (warnings.length > 0) {
-    return "medium";
-  }
-  return "none";
 }
 
 function precipitationSignalMessageZh(input: {

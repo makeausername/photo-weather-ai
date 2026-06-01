@@ -10,6 +10,7 @@ import {
   forecastHorizonLabels,
   forecastTargetLabels,
   type CloudLayerCompletenessContext,
+  type CloudSeaWeatherVariableConsistencyContext,
   simplifyWeatherSummaryZh,
   terrainModeUsesLowlandSemantics,
   terrainModeUsesMountainSemantics,
@@ -2287,6 +2288,30 @@ function cloudVisibilityActionText(result: ForecastCalculationResult): string {
   return "通透度一般，保留近景和云层纹理备选。";
 }
 
+function temperatureConsistencyNote(
+  context: CloudSeaWeatherVariableConsistencyContext | undefined,
+): string {
+  if (!context || !hasTemperatureBasisWarning(context)) {
+    return "";
+  }
+  if (context.temperatureBasisStatus === "mixed" || context.temperatureBasisStatus === "raw_grid") {
+    return "高山机位优先参考机位海拔修正温度，原始格点温度可能偏暖。";
+  }
+  return "高山机位优先参考机位海拔修正温度。";
+}
+
+function cloudBasisConsistencyNote(
+  context: CloudSeaWeatherVariableConsistencyContext | undefined,
+): string {
+  if (!context || context.cloudBasisStatus === "consistent" || context.cloudBasisStatus === "unknown") {
+    return "";
+  }
+  if (context.cloudBasisStatus === "total_only") {
+    return "当前仅有总云量，低/中/高云分层缺失时以 — 显示，不用总云量回填。";
+  }
+  return "总云量与分层云量需按口径差异复核。";
+}
+
 function precipitationDisplayValue(
   weather:
     | ForecastCalculationResult["dailySummaries"][number]["weather"]
@@ -2305,7 +2330,13 @@ function precipitationDisplayDetail(
   return rainRiskText(weather).detail;
 }
 
-function windPrecipitationActionText(result: ForecastCalculationResult): string {
+function windPrecipitationActionText(
+  result: ForecastCalculationResult,
+  weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext,
+): string {
+  if (weatherVariableConsistencyContext?.shouldDowngradePrecipitationWording) {
+    return "降水概率和雨量分开判断，准备防潮和轻量防雨，关注局地短时小雨。";
+  }
   const rainRisk = result.riskFlags.find((risk) => risk.key === "precipitation");
   const windRisk = result.riskFlags.find((risk) => risk.key === "wind");
   if (rainRisk) {
@@ -2319,7 +2350,13 @@ function windPrecipitationActionText(result: ForecastCalculationResult): string 
   return "风雨对拍摄干扰相对可控。";
 }
 
-function dewPointActionText(value: number | null | undefined): string {
+function dewPointActionText(
+  value: number | null | undefined,
+  weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext,
+): string {
+  if (weatherVariableConsistencyContext?.humidityDewPointStatus === "conflict") {
+    return "水汽指标存在口径差异，湿度与露点差需结合临近预报复核，不宜仅凭湿度判断云海。";
+  }
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return "露点差暂缺，雾气和结露需现场复核。";
   }
@@ -2336,8 +2373,29 @@ function packingMainValue(guide: ForecastCalculationResult["clothingGuide"]): st
   return clothingEquipmentAdvice(guide)[1] ?? guide.titleZh;
 }
 
-function packingDetail(guide: ForecastCalculationResult["clothingGuide"]): string {
-  return clothingEquipmentAdvice(guide)[0] ?? guide.summaryZh;
+function packingDetail(
+  guide: ForecastCalculationResult["clothingGuide"],
+  weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext,
+): string {
+  const base = clothingEquipmentAdvice(guide)[0] ?? guide.summaryZh;
+  const extra = [
+    hasTemperatureBasisWarning(weatherVariableConsistencyContext)
+      ? "高山体感可能更冷，按机位修正温度准备。"
+      : undefined,
+    weatherVariableConsistencyContext?.shouldDowngradePrecipitationWording
+      ? "降水按局地短时扰动准备轻量防雨。"
+      : undefined,
+  ].filter((item): item is string => Boolean(item));
+  return extra.length > 0 ? `${base}${extra.join("")}` : base;
+}
+
+function hasTemperatureBasisWarning(
+  context: CloudSeaWeatherVariableConsistencyContext | undefined,
+): boolean {
+  return (
+    context?.temperatureBasisStatus === "mixed" ||
+    context?.temperatureBasisStatus === "raw_grid"
+  );
 }
 
 type RiskDecisionItem = {
@@ -2733,7 +2791,11 @@ export function CloudSeaResultPage({
           riskSummary={viewModel.riskSummary}
           terrainContext={viewModel.terrainContext}
         />
-        <CloudSeaNearTermWeatherSection result={result} terrainContext={viewModel.terrainContext} />
+        <CloudSeaNearTermWeatherSection
+          result={result}
+          terrainContext={viewModel.terrainContext}
+          weatherVariableConsistencyContext={viewModel.ruleContext.weatherVariableConsistencyContext}
+        />
         <CloudSeaWindowCardsSection
           windows={viewModel.cloudSeaWindows}
           terrainContext={viewModel.terrainContext}
@@ -4228,9 +4290,11 @@ function clampScorePercent(value: number): number {
 function CloudSeaNearTermWeatherSection({
   result,
   terrainContext,
+  weatherVariableConsistencyContext,
 }: {
   readonly result: ForecastCalculationResult;
   readonly terrainContext: CloudSeaTerrainContext;
+  readonly weatherVariableConsistencyContext: CloudSeaWeatherVariableConsistencyContext;
 }) {
   const current = result.currentWeather;
   const clothing = result.clothingGuide;
@@ -4264,7 +4328,9 @@ function CloudSeaNearTermWeatherSection({
             current,
             firstDay,
             result,
-          )} ${terrainCorrectionUserNote(result, current, firstDay)}`}
+          )} ${terrainCorrectionUserNote(result, current, firstDay)} ${temperatureConsistencyNote(
+            weatherVariableConsistencyContext,
+          )}`}
         />
         <CompactInfoCard
           title="云层与能见度"
@@ -4278,7 +4344,9 @@ function CloudSeaNearTermWeatherSection({
               firstDay?.visibility,
           )}，低云 ${formatPercentNumber(
             current?.cloudLow ?? firstDay?.cloudLow,
-          )}。${cloudVisibilityActionText(result)}`}
+          )}。${cloudVisibilityActionText(result)} ${cloudBasisConsistencyNote(
+            weatherVariableConsistencyContext,
+          )}`}
         />
         <CompactInfoCard
           title="风与降水"
@@ -4289,21 +4357,29 @@ function CloudSeaNearTermWeatherSection({
             current?.windGust ?? firstDay?.windGust,
           )}
           value={precipitationDisplayValue(current ?? firstDay)}
-          detail={`${precipitationDisplayDetail(current ?? firstDay)}。${windPrecipitationActionText(result)}`}
+          detail={`${precipitationDisplayDetail(
+            current ?? firstDay,
+          )}。${windPrecipitationActionText(
+            result,
+            weatherVariableConsistencyContext,
+          )}`}
         />
         <CompactInfoCard
           title="湿度与露点"
           timeBasis={timeContext.nearTermBasisLabel}
           badge={`湿度 ${formatPercentNumber(current?.humidity ?? firstDay?.humidity)}`}
           value={`露点差 ${formatTemperatureDelta(current?.dewPointSpread ?? firstDay?.dewPointSpread)}`}
-          detail={`${dewPointActionText(current?.dewPointSpread ?? firstDay?.dewPointSpread)} ${auxiliaryNotice}`}
+          detail={`${dewPointActionText(
+            current?.dewPointSpread ?? firstDay?.dewPointSpread,
+            weatherVariableConsistencyContext,
+          )} ${auxiliaryNotice}`}
         />
         <CompactInfoCard
           title="穿衣与装备"
           timeBasis={timeContext.tripBasisLabel}
           badge={clothing.titleZh}
           value={packingMainValue(clothing)}
-          detail={packingDetail(clothing)}
+          detail={packingDetail(clothing, weatherVariableConsistencyContext)}
         />
       </div>
     </CurrentWeatherCards>
@@ -5311,15 +5387,16 @@ function professionalTemperatureColumnLabel(
   rows: readonly ProfessionalHourlyRow[],
   basis: NonNullable<ForecastCalculationResult["professionalHourlyDataTimeBasis"]>,
 ): string {
-  const rowBasis = rows.find(
-    (row) => row.temperatureBasis === "terrain_adjusted",
-  )?.temperatureBasis;
-  const effectiveBasis = rowBasis ?? basis.temperatureBasis;
-  if (effectiveBasis === "terrain_adjusted") {
+  const hasTerrainAdjustedRows = rows.some((row) => row.temperatureBasis === "terrain_adjusted");
+  const hasRawGridRows = rows.some((row) => row.temperatureBasis === "raw_grid");
+  if (hasTerrainAdjustedRows) {
     return "机位估算温度 °C";
   }
-  if (effectiveBasis === "raw_grid") {
+  if (hasRawGridRows || basis.temperatureBasis === "raw_grid") {
     return "原始格点温度 °C";
+  }
+  if (basis.temperatureBasis === "terrain_adjusted") {
+    return "机位估算温度 °C";
   }
   return "温度 °C";
 }
@@ -5811,7 +5888,11 @@ function CloudSeaReasoningSection({ items }: { readonly items: readonly CloudSea
               <h3 className="font-semibold text-card-foreground">{item.label}</h3>
               <Badge variant={badgeVariantForTone(item.tone)}>{item.value}</Badge>
             </div>
-            <p className="text-sm leading-6 text-muted-foreground">{firstSentence(item.detail)}</p>
+            <p className="text-sm leading-6 text-muted-foreground">
+              {item.key === "weather-variable-consistency"
+                ? item.detail
+                : firstSentence(item.detail)}
+            </p>
           </article>
         ))}
       </JudgmentBasisGrid>
