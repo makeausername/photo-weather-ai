@@ -1,5 +1,6 @@
 import {
   buildCloudLayerCompletenessContext,
+  buildCloudSeaRecommendationGuardForResult,
   decisionCardSchema,
   deepSeekResponseFormat,
   formatArrivalDeadlineZh,
@@ -390,6 +391,8 @@ export function buildDeepSeekForecastContext(
   const windowLimit = detail === "minimal" ? 1 : 3;
   const bestWindow = result.bestWindows.find(isExecutableWindow) ?? result.bestWindows[0];
   const bestDay = bestDailySummaryForPlan(result, bestWindow);
+  const cloudSeaGuard =
+    result.target === "cloud_sea" ? buildCloudSeaRecommendationGuardForResult(result) : null;
   const dailyFacts = takeItems(result.dailySummaries, dailyLimit).map((summary) =>
     compactDailyFact(result, summary, timezone),
   );
@@ -412,7 +415,7 @@ export function buildDeepSeekForecastContext(
     overall: {
       score: result.overallScore,
       recommendationLevel: result.recommendationLevel,
-      recommendationLabelZh: result.recommendationLabel,
+      recommendationLabelZh: cloudSeaGuard?.finalRecommendationLabel ?? result.recommendationLabel,
       confidenceLabelZh: confidenceLabelZh(result.weatherFusionSummary?.confidenceLevel),
       summaryZh: limitText(result.summary, 180),
     },
@@ -421,7 +424,10 @@ export function buildDeepSeekForecastContext(
           date: bestDay.date,
           dateZh: bestDay.dateLabelZh,
           score: bestDay.score,
-          recommendationZh: bestDay.dedicatedTripRecommendation ?? bestDay.recommendationLabel,
+          recommendationZh:
+            cloudSeaGuard?.finalRecommendationLabel ??
+            bestDay.dedicatedTripRecommendation ??
+            bestDay.recommendationLabel,
           bestWindowZh: bestDay.bestShootableWindow
             ? formatShootingWindowZh(bestDay.bestShootableWindow, timezone)
             : undefined,
@@ -481,9 +487,10 @@ export function buildCloudSeaAiExplainPayload(
   const focusedRows = professionalHourlyRowsForAiPayload(professionalRows, detail);
   const cloudLayerCompleteness = buildCloudLayerCompletenessContext(professionalRows);
   const agreement = result.weatherFusionSummary?.multiSourceAgreementContext;
+  const recommendationGuard = buildCloudSeaRecommendationGuardForResult(result);
 
   return {
-    contextVersion: "cloud-sea-ai-explain-v1",
+    contextVersion: "cloud-sea-ai-explain-v2",
     target: "cloud_sea",
     deterministicOnly: true,
     instruction:
@@ -500,9 +507,24 @@ export function buildCloudSeaAiExplainPayload(
       formationScore: analysis.formationScore,
       whiteoutRiskScore: analysis.whiteoutRiskScore,
       recommendationLevel: result.recommendationLevel,
-      recommendationLabelZh: result.recommendationLabel,
-      cloudSeaRecommendationZh: analysis.recommendationLabel,
+      recommendationLabelZh: recommendationGuard.finalRecommendationLabel,
+      cloudSeaRecommendationZh: recommendationGuard.finalRecommendationLabel,
+      rawRecommendationLabelZh: result.recommendationLabel,
+      rawCloudSeaRecommendationZh: analysis.recommendationLabel,
+      isSpecialTripRecommended: recommendationGuard.isSpecialTripRecommended,
+      maxAllowedRecommendationStrength: recommendationGuard.maxAllowedRecommendationStrength,
       summaryZh: limitText(result.summary, 180),
+    },
+    recommendationConsistencyGuard: {
+      finalRecommendationLevel: recommendationGuard.finalRecommendationLevel,
+      finalRecommendationLabelZh: recommendationGuard.finalRecommendationLabel,
+      reasonZh: recommendationGuard.reasonZh,
+      departureAdviceZh: recommendationGuard.departureAdviceZh,
+      blockedStrongRecommendationReasons:
+        recommendationGuard.blockedStrongRecommendationReasons,
+      consistencyWarnings: recommendationGuard.consistencyWarnings,
+      windowRecommendation: recommendationGuard.normalizedWindowRecommendation,
+      dailyRecommendation: recommendationGuard.normalizedDailyRecommendation,
     },
     bestWindow: bestAnalysisWindow
       ? compactCloudSeaAnalysisWindow(bestAnalysisWindow, timezone)
@@ -547,7 +569,15 @@ export function buildCloudSeaAiExplainPayload(
       (day) => ({
         date: day.date,
         dateZh: day.dateLabelZh,
-        recommendationZh: day.recommendationLabel,
+        recommendationZh: buildCloudSeaRecommendationGuardForResult(result, {
+          cloudSeaScore: day.shootableScore ?? day.travelScore,
+          shootabilityScore: day.shootableScore ?? day.travelScore,
+          formationScore: day.formationScore ?? day.opportunityScore,
+          whiteoutRiskScore: day.whiteoutRiskScore,
+          proposedRecommendationLabel: day.recommendationLabel,
+          bestWindow: day.bestWindow,
+          hasWindow: true,
+        }).finalRecommendationLabel,
         travelScore: day.travelScore,
         formationScore: day.formationScore,
         shootableScore: day.shootableScore,
@@ -1297,6 +1327,8 @@ export function createRuleBasedForecastExplanation(
   const bestWindow = result.bestWindows.find(isExecutableWindow) ?? result.bestWindows[0];
   const backupWindow = result.bestWindows.find((window) => window !== bestWindow);
   const bestDaily = bestDailySummaryForPlan(result, bestWindow);
+  const cloudSeaGuard =
+    result.target === "cloud_sea" ? buildCloudSeaRecommendationGuardForResult(result) : null;
   const dedicatedDecision = dedicatedTripDecisionZh(result, bestDaily);
   const topScoredSubject = bestSubjectFromScores(result, 0);
   const primarySubject = bestWindow ? windowLabelZh(bestWindow) : topScoredSubject;
@@ -1321,7 +1353,7 @@ export function createRuleBasedForecastExplanation(
       recommendedDayZh: bestDaily
         ? `最值得关注的是 ${bestDaily.dateLabelZh}，${bestDaily.bestShootableWindow ? `${windowLabelZh(bestDaily.bestShootableWindow)} ${formatShootingWindowZh(bestDaily.bestShootableWindow, timezone)}` : bestDaily.shortAdvice}`
         : "暂无足够逐日数据，先参考确定性评分和窗口列表。",
-      recommendationLevelZh: result.recommendationLabel,
+      recommendationLevelZh: cloudSeaGuard?.finalRecommendationLabel ?? result.recommendationLabel,
       whetherWorthDedicatedTripZh: dedicatedDecision,
       oneSentenceDecisionZh: `${dedicatedDecision}；优先看${bestWindow ? `${windowLabelZh(bestWindow)} ${formatShootingWindowZh(bestWindow, timezone)}` : "后续天气更新"}。`,
     },
@@ -1374,11 +1406,15 @@ export function createRuleBasedForecastExplanation(
         "山地机位保留撤离时间，遇到强风、雷雨、低能见度或道路风险时不要硬等窗口。",
     },
     finalAdvice: {
-      goNoGoZh: `${dedicatedDecision}。${result.keyReasons[0] ?? result.summary}`,
+      goNoGoZh: cloudSeaGuard
+        ? `${cloudSeaGuard.finalRecommendationLabel}。${cloudSeaGuard.reasonZh}`
+        : `${dedicatedDecision}。${result.keyReasons[0] ?? result.summary}`,
       ifAlreadyNearbyZh: nearbyDecisionZh(result, bestDaily),
-      ifDedicatedTripZh: dedicatedDecision.includes("推荐")
-        ? "可以把主窗口作为计划核心，但出发前仍要复核短临降水、低云和风。"
-        : "不建议只为单一窗口远途出发，除非还有住宿、机位和备选题材支撑。",
+      ifDedicatedTripZh:
+        cloudSeaGuard?.departureAdviceZh ??
+        (dedicatedDecision.includes("推荐")
+          ? "可以把主窗口作为计划核心，但出发前仍要复核短临降水、低云和风。"
+          : "不建议只为单一窗口远途出发，除非还有住宿、机位和备选题材支撑。"),
       nextCheckZh: "下次重点复核短临降水、低云高度、能见度、阵风和主窗口前后云层开口。",
     },
     metadata: {
@@ -1563,6 +1599,9 @@ function dedicatedTripDecisionZh(
   result: ForecastCalculationResult,
   day: ForecastCalculationResult["dailySummaries"][number] | undefined,
 ): string {
+  if (result.target === "cloud_sea") {
+    return buildCloudSeaRecommendationGuardForResult(result).finalRecommendationLabel;
+  }
   if (day?.dedicatedTripRecommendation) {
     return day.dedicatedTripRecommendation;
   }

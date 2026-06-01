@@ -1,9 +1,11 @@
 import {
   buildCloudLayerCompletenessContext,
+  buildCloudSeaRecommendationGuard,
   formatArrivalDeadlineZh,
   formatShootingWindowZh,
   forecastTargetLabels,
   type CloudLayerCompletenessContext,
+  type CloudSeaRecommendationGuardOutput,
   type AstroAnalysisResult,
   type AstroEvidenceItem,
   type AstroSummary,
@@ -35,7 +37,6 @@ import {
 import {
   buildCloudSeaTerrainContextFromResult,
   cloudSeaTerrainAwareText,
-  cloudSeaTerrainRecommendationLabel,
   type CloudSeaTerrainContext,
 } from "./cloud-sea-terrain-context";
 
@@ -235,6 +236,7 @@ export type CloudSeaWindowItem = {
   readonly endTime: string;
   readonly timeRangeLabel: string;
   readonly score: number;
+  readonly recommendationLabel: string;
   readonly note: string;
   readonly riskTag: string;
   readonly cloudSeaChance: string;
@@ -249,11 +251,14 @@ export type CloudSeaWindowItem = {
 };
 
 export type CloudSeaActionLabel =
+  | "强推荐专程"
+  | "推荐安排"
   | "推荐重点关注"
   | "值得等待"
   | "推荐观察"
   | "可观察"
   | "可顺带观察"
+  | "顺带观察"
   | "已在附近可观察"
   | "谨慎参考"
   | "不建议专程"
@@ -282,6 +287,7 @@ export type CloudSeaActionPlanItem = {
 
 export type CloudSeaForecastViewModel = {
   readonly terrainContext: CloudSeaTerrainContext;
+  readonly recommendationGuard: CloudSeaRecommendationGuardOutput;
   readonly hero: CloudSeaHeroConclusionView;
   readonly coreCards: readonly ForecastResultCard[];
   readonly dailyTrend: readonly CloudSeaDailyTrendItem[];
@@ -628,18 +634,24 @@ export function buildCloudSeaForecastViewModel(
   const cloudLayerCompleteness = buildCloudLayerCompletenessContext(result.professionalHourlyData);
   const multiSourceAgreementContext =
     result.weatherFusionSummary?.multiSourceAgreementContext ?? null;
+  const recommendationGuard = buildCloudSeaRecommendationGuardForView(result, terrainContext, {
+    cloudLayerCompleteness,
+    multiSourceAgreementContext,
+  });
   const whiteoutLabel = whiteoutRiskLabel(analysis.whiteoutRiskScore);
   const dataNotice = buildCloudSeaDataNotice(result);
   const vocabulary = terrainContext.vocabulary;
 
   return {
     terrainContext,
+    recommendationGuard,
     hero: buildCloudSeaHeroConclusion(
       result,
       cloudSeaWindows,
       terrainContext,
       cloudLayerCompleteness,
       multiSourceAgreementContext,
+      recommendationGuard,
     ),
     coreCards: [
       scoreCard(
@@ -699,9 +711,14 @@ export function buildCloudSeaForecastViewModel(
     dailyTrend: buildCloudSeaDailyTrend(result, cloudSeaWindows, terrainContext),
     terrainEvidence: buildCloudSeaTerrainEvidence(result, terrainContext),
     weatherEvidence: buildCloudSeaWeatherEvidence(result, terrainContext),
-    cloudSeaWindows: buildCloudSeaWindowItems(result, cloudSeaWindows, terrainContext),
+    cloudSeaWindows: buildCloudSeaWindowItems(
+      result,
+      cloudSeaWindows,
+      terrainContext,
+      recommendationGuard,
+    ),
     reasoningItems: buildCloudSeaReasoningItems(result, terrainContext, cloudLayerCompleteness),
-    actionPlan: buildCloudSeaActionPlan(result, cloudSeaWindows, terrainContext),
+    actionPlan: buildCloudSeaActionPlan(result, cloudSeaWindows, terrainContext, recommendationGuard),
     travelRecommendations: buildCloudSeaTravelRecommendations(result, terrainContext),
     riskSummary: buildCloudSeaRiskSummary(result, terrainContext),
     backupPlans: buildCloudSeaBackupPlans(result, terrainContext),
@@ -712,9 +729,59 @@ export function buildCloudSeaForecastViewModel(
       result,
       cloudLayerCompleteness,
       multiSourceAgreementContext,
+      recommendationGuard,
     ),
     dataNotice,
   };
+}
+
+function buildCloudSeaRecommendationGuardForView(
+  result: ForecastCalculationResult,
+  terrainContext: CloudSeaTerrainContext,
+  options: {
+    readonly cloudLayerCompleteness: CloudLayerCompletenessContext;
+    readonly multiSourceAgreementContext?: ForecastMultiSourceAgreementContext | null;
+    readonly cloudSeaScore?: number;
+    readonly shootabilityScore?: number;
+    readonly formationScore?: number;
+    readonly whiteoutRiskScore?: number;
+    readonly proposedRecommendationLabel?: string;
+    readonly bestWindow?: ForecastCalculationResult["cloudSeaAnalysis"]["bestCloudSeaWindow"];
+    readonly hasWindow?: boolean;
+    readonly bestWindowLabelZh?: string;
+  },
+): CloudSeaRecommendationGuardOutput {
+  const analysis = result.cloudSeaAnalysis;
+  const bestWindow =
+    options.bestWindow ??
+    analysis.bestCloudSeaWindow ??
+    analysis.bestCloudSeaWindows[0] ??
+    analysis.watchableCloudSeaWindows[0];
+  const formationScore = options.formationScore ?? analysis.formationScore;
+
+  return buildCloudSeaRecommendationGuard({
+    cloudSeaScore: options.cloudSeaScore ?? result.scores.cloudSea.score,
+    shootabilityScore: options.shootabilityScore ?? analysis.shootableScore,
+    formationScore,
+    whiteoutRiskScore: options.whiteoutRiskScore ?? analysis.whiteoutRiskScore,
+    proposedRecommendationLabel: options.proposedRecommendationLabel ?? analysis.recommendationLabel,
+    terrainContext: {
+      shouldDowngradeCloudSeaWording: terrainContext.shouldDowngradeCloudSeaWording,
+      isClassicCloudSeaEligible: terrainContext.isClassicCloudSeaEligible,
+      terrainClass: terrainContext.terrainClass,
+    },
+    cloudLayerCompletenessContext: options.cloudLayerCompleteness,
+    multiSourceAgreementContext:
+      options.multiSourceAgreementContext ??
+      result.weatherFusionSummary?.multiSourceAgreementContext ??
+      null,
+    bestWindow: bestWindow ?? null,
+    hasWindow: options.hasWindow ?? Boolean(bestWindow),
+    risks: result.riskFlags,
+    lowCloudSignalSupported: options.cloudLayerCompleteness.hasLowCloudLayer && formationScore >= 55,
+    mainTargetZh: terrainContext.shouldDowngradeCloudSeaWording ? "低云/晨雾" : "清晨云海",
+    bestWindowLabelZh: options.bestWindowLabelZh ?? bestWindow?.label,
+  });
 }
 
 function buildCloudSeaViewModel(result: ForecastCalculationResult): ForecastResultViewModel {
@@ -2242,6 +2309,7 @@ function buildCloudSeaHeroConclusion(
   terrainContext: CloudSeaTerrainContext,
   cloudLayerCompleteness: CloudLayerCompletenessContext,
   multiSourceAgreementContext: ForecastMultiSourceAgreementContext | null,
+  recommendationGuard: CloudSeaRecommendationGuardOutput,
 ): CloudSeaHeroConclusionView {
   const analysis = result.cloudSeaAnalysis;
   const bestWindow = analysis.bestCloudSeaWindow;
@@ -2252,7 +2320,7 @@ function buildCloudSeaHeroConclusion(
       )
     : windows[0];
   const bestWindowLabel = bestWindow
-    ? formatWindow(bestWindow.startTime, bestWindow.endTime)
+    ? recommendationGuard.normalizedWindowRecommendation.windowLabel
     : mappedWindow?.timeRangeLabel ??
       (terrainContext.shouldDowngradeCloudSeaWording
         ? "暂无明确低云/晨雾窗口"
@@ -2261,10 +2329,10 @@ function buildCloudSeaHeroConclusion(
   return {
     title: `${result.place.name} ${terrainContext.vocabulary.heroTitleSuffix}`,
     forecastRangeLabel: result.calendarBasis.forecastRangeLabel,
-    recommendationLabel: cloudSeaDecisionLabel(result, terrainContext),
+    recommendationLabel: recommendationGuard.finalRecommendationLabel,
     bestWindowLabel,
     arrivalLabel: cloudSeaArrivalLabel(result, bestWindow, mappedWindow),
-    conclusion: cloudSeaConclusion(result, terrainContext),
+    conclusion: cloudSeaConclusion(result, terrainContext, recommendationGuard),
     confidenceLabel: cloudSeaConfidenceLabel(
       result.cloudSeaAnalysis.confidenceLevel,
       cloudLayerCompleteness,
@@ -2288,6 +2356,17 @@ function buildCloudSeaDailyTrend(
     const cloudSeaScore = result.cloudSeaAnalysis.shootableScore;
     const whiteoutScore = result.cloudSeaAnalysis.whiteoutRiskScore;
     const layerContext = buildCloudLayerCompletenessContext(result.professionalHourlyData);
+    const dailyGuard = buildCloudSeaRecommendationGuardForView(result, terrainContext, {
+      cloudLayerCompleteness: layerContext,
+      multiSourceAgreementContext: result.weatherFusionSummary?.multiSourceAgreementContext,
+      cloudSeaScore,
+      shootabilityScore: result.cloudSeaAnalysis.shootableScore,
+      formationScore: result.cloudSeaAnalysis.formationScore,
+      proposedRecommendationLabel: result.cloudSeaAnalysis.recommendationLabel,
+      bestWindow: result.cloudSeaAnalysis.bestCloudSeaWindow,
+      hasWindow: Boolean(firstWindow ?? result.cloudSeaAnalysis.bestCloudSeaWindow),
+      bestWindowLabelZh: firstWindow?.label ?? result.cloudSeaAnalysis.bestCloudSeaWindow?.label,
+    });
     const layerRoleNote = cloudLayerDailyRoleNote(
       result,
       result.targetDates[0] ?? result.forecastStart.slice(0, 10),
@@ -2322,22 +2401,10 @@ function buildCloudSeaDailyTrend(
             ),
             terrainContext,
           ),
-        recommendedAction: cloudSeaDailyRecommendationLabel(
-          result.cloudSeaAnalysis.recommendationLabel,
-          cloudSeaScore,
-          Boolean(firstWindow),
-          terrainContext,
-          layerContext,
-        ),
+        recommendedAction: dailyGuard.normalizedDailyRecommendation.label as CloudSeaActionLabel,
         actionSuggestion:
           layerRoleNote ??
-          cloudSeaDailyActionSuggestion(
-            result.cloudSeaAnalysis.recommendationLabel,
-            terrainContext,
-            cloudSeaScore,
-            Boolean(firstWindow),
-            layerContext,
-          ),
+          dailyGuard.normalizedDailyRecommendation.actionSuggestionZh,
         layerCompletenessNote: layerRoleNote ?? cloudLayerDailyNote(layerContext),
       },
     ];
@@ -2348,6 +2415,18 @@ function buildCloudSeaDailyTrend(
     const whiteoutScore = day.whiteoutRiskScore;
     const window = windows.find((candidate) => candidate.date === day.date);
     const layerContext = cloudLayerCompletenessContextForDate(result, day.date);
+    const dailyGuard = buildCloudSeaRecommendationGuardForView(result, terrainContext, {
+      cloudLayerCompleteness: layerContext,
+      multiSourceAgreementContext: result.weatherFusionSummary?.multiSourceAgreementContext,
+      cloudSeaScore,
+      shootabilityScore: day.shootableScore ?? day.travelScore,
+      formationScore: day.formationScore ?? day.opportunityScore,
+      whiteoutRiskScore: day.whiteoutRiskScore,
+      proposedRecommendationLabel: day.recommendationLabel,
+      bestWindow: day.bestWindow,
+      hasWindow: Boolean(window ?? day.bestWindow),
+      bestWindowLabelZh: window?.label ?? day.bestWindow.label,
+    });
     const layerRoleNote = cloudLayerDailyRoleNote(result, day.date, terrainContext);
 
     return {
@@ -2378,22 +2457,10 @@ function buildCloudSeaDailyTrend(
         cloudSeaTerrainAwareText(item, terrainContext),
       ),
       keyReason: layerRoleNote ?? cloudSeaTerrainAwareText(day.keyReason, terrainContext),
-      recommendedAction: cloudSeaDailyRecommendationLabel(
-        day.recommendationLabel,
-        cloudSeaScore,
-        Boolean(window ?? day.bestWindow),
-        terrainContext,
-        layerContext,
-      ),
+      recommendedAction: dailyGuard.normalizedDailyRecommendation.label as CloudSeaActionLabel,
       actionSuggestion:
         layerRoleNote ??
-        cloudSeaDailyActionSuggestion(
-          day.recommendationLabel,
-          terrainContext,
-          cloudSeaScore,
-          Boolean(window ?? day.bestWindow),
-          layerContext,
-        ),
+        dailyGuard.normalizedDailyRecommendation.actionSuggestionZh,
       layerCompletenessNote: layerRoleNote ?? cloudLayerDailyNote(layerContext),
     };
   });
@@ -2440,6 +2507,7 @@ function buildCloudSeaWindowItems(
   result: ForecastCalculationResult,
   windows: readonly ForecastResultWindow[],
   terrainContext: CloudSeaTerrainContext,
+  recommendationGuard: CloudSeaRecommendationGuardOutput,
 ): readonly CloudSeaWindowItem[] {
   const analysis = result.cloudSeaAnalysis;
   const vocabulary = terrainContext.vocabulary;
@@ -2447,7 +2515,7 @@ function buildCloudSeaWindowItems(
     ...analysis.bestCloudSeaWindows.map((window) =>
       cloudSeaWindowItem(
         "best",
-        vocabulary.bestTimelineWindowLabel,
+        recommendationGuard.normalizedWindowRecommendation.windowLabel,
         window,
         "primary" as const,
         terrainContext,
@@ -2490,13 +2558,18 @@ function buildCloudSeaWindowItems(
     endTime: window.endTime,
     timeRangeLabel: window.timeRangeLabel,
     score: window.score,
-    note: cloudSeaTerrainAwareText(
-      window.copyReasonZh ??
-        (terrainContext.shouldDowngradeCloudSeaWording
-          ? "当前窗口仍需结合临近预报复核近地雾气、低云和通透度。"
-          : "当前窗口仍需结合临近预报复核低云高度和能见度。"),
-      terrainContext,
-    ),
+    recommendationLabel: recommendationGuard.finalRecommendationLabel,
+    note:
+      recommendationGuard.finalRecommendationLevel === "strong_special_trip" ||
+      recommendationGuard.finalRecommendationLevel === "recommended_arrangement"
+        ? cloudSeaTerrainAwareText(
+            window.copyReasonZh ??
+              (terrainContext.shouldDowngradeCloudSeaWording
+                ? "当前窗口仍需结合临近预报复核近地雾气、低云和通透度。"
+                : "当前窗口仍需结合临近预报复核低云高度和能见度。"),
+            terrainContext,
+          )
+        : `${recommendationGuard.reasonZh}。${recommendationGuard.normalizedWindowRecommendation.actionSuggestionZh}`,
     riskTag: cloudSeaTerrainAwareText(cloudSeaWindowRiskTag(result, window.score), terrainContext),
     cloudSeaChance: scoreLevelText(scoreLevelFromScore(window.score)),
     whiteoutRisk: result.cloudSeaAnalysis.labels.whiteoutRisk,
@@ -2507,6 +2580,7 @@ function buildCloudSeaWindowItems(
       result.cloudSeaAnalysis.whiteoutRiskScore,
       window.windowLevel,
       terrainContext,
+      recommendationGuard,
     ),
     layerCompletenessNote:
       cloudLayerWindowRoleNote(result, window.startTime, window.endTime, terrainContext) ??
@@ -2533,15 +2607,40 @@ function cloudSeaWindowItem(
     window.endTime,
   );
 
+  const windowGuard = buildCloudSeaRecommendationGuardForView(result, terrainContext, {
+    cloudLayerCompleteness: layerContext,
+    multiSourceAgreementContext: result.weatherFusionSummary?.multiSourceAgreementContext,
+    cloudSeaScore: window.shootableScore ?? window.score,
+    shootabilityScore: window.shootableScore ?? window.score,
+    formationScore: window.formationScore ?? window.score,
+    whiteoutRiskScore: window.whiteoutRiskScore ?? result.cloudSeaAnalysis.whiteoutRiskScore,
+    proposedRecommendationLabel:
+      prefix === "best"
+        ? result.cloudSeaAnalysis.recommendationLabel
+        : prefix === "watch"
+          ? "谨慎参考"
+          : "不建议专程",
+    bestWindow: window,
+    hasWindow: true,
+    bestWindowLabelZh: label,
+  });
+  const guardedWindowNote =
+    windowGuard.finalRecommendationLevel === "strong_special_trip" ||
+    windowGuard.finalRecommendationLevel === "recommended_arrangement"
+      ? cloudSeaTerrainAwareText(window.noteZh, terrainContext)
+      : `${windowGuard.reasonZh}。${windowGuard.normalizedWindowRecommendation.actionSuggestionZh}`;
+
   return {
     key: `${prefix}-${window.startTime}`,
-    label,
+    label:
+      prefix === "best" ? windowGuard.normalizedWindowRecommendation.windowLabel : label,
     date: window.date,
     startTime: window.startTime,
     endTime: window.endTime,
     timeRangeLabel: formatWindow(window.startTime, window.endTime),
     score: window.shootableScore ?? window.score,
-    note: cloudSeaTerrainAwareText(window.noteZh, terrainContext),
+    recommendationLabel: windowGuard.finalRecommendationLabel,
+    note: guardedWindowNote,
     riskTag: cloudSeaTerrainAwareText(window.riskTag, terrainContext),
     cloudSeaChance: scoreLevelText(scoreLevelFromScore(window.formationScore ?? window.score)),
     whiteoutRisk: whiteoutRiskLabel(window.whiteoutRiskScore ?? 0),
@@ -2558,6 +2657,7 @@ function cloudSeaWindowItem(
           ? "watchable"
           : undefined,
       terrainContext,
+      windowGuard,
     ),
     layerCompletenessNote:
       cloudLayerWindowRoleNote(result, window.startTime, window.endTime, terrainContext) ??
@@ -2696,6 +2796,7 @@ function buildCloudSeaActionPlan(
   result: ForecastCalculationResult,
   windows: readonly ForecastResultWindow[],
   terrainContext: CloudSeaTerrainContext,
+  recommendationGuard: CloudSeaRecommendationGuardOutput,
 ): readonly CloudSeaActionPlanItem[] {
   const analysis = result.cloudSeaAnalysis;
   const bestWindow = analysis.bestCloudSeaWindow;
@@ -2705,13 +2806,17 @@ function buildCloudSeaActionPlan(
           window.startTime === bestWindow.startTime && window.endTime === bestWindow.endTime,
       )
     : windows[0];
-  const mainWindowLabel = bestWindow
-    ? formatWindow(bestWindow.startTime, bestWindow.endTime)
-    : mappedWindow?.timeRangeLabel ?? "需临近预报复核";
   const backupPlan = analysis.backupPlans[0];
   const checkpoints = cloudSeaVerificationPoints(result, terrainContext);
 
   return [
+    {
+      key: "departure",
+      label: "是否建议出发",
+      value: recommendationGuard.actionPlanLabels.departure,
+      detail: recommendationGuard.departureAdviceZh,
+      tone: recommendationGuard.finalRecommendationTone,
+    },
     {
       key: "arrival",
       label: "建议到达时间",
@@ -2728,18 +2833,9 @@ function buildCloudSeaActionPlan(
     {
       key: "main-window",
       label: terrainContext.shouldDowngradeCloudSeaWording ? "观察窗口" : "主守窗口",
-      value: mainWindowLabel,
-      detail: cloudSeaTerrainAwareText(
-        bestWindow?.noteZh ??
-          firstText(
-            analysis.opportunityReasons,
-            terrainContext.shouldDowngradeCloudSeaWording
-              ? "优先关注清晨低云、晨雾和通透度更明确的时段。"
-              : "优先守清晨云海信号最明确的时段。",
-          ),
-        terrainContext,
-      ),
-      tone: analysis.shootableScore >= 70 ? "primary" : "accent",
+      value: recommendationGuard.actionPlanLabels.mainWindow,
+      detail: recommendationGuard.normalizedWindowRecommendation.actionSuggestionZh,
+      tone: recommendationGuard.finalRecommendationTone,
     },
     {
       key: "backup",
@@ -2855,32 +2951,6 @@ function buildCloudSeaBackupPlans(
   }));
 }
 
-function cloudSeaDecisionLabel(
-  result: ForecastCalculationResult,
-  terrainContext: CloudSeaTerrainContext,
-): string {
-  const analysis = result.cloudSeaAnalysis;
-  if (terrainContext.shouldDowngradeCloudSeaWording) {
-    return cloudSeaTerrainRecommendationLabel(analysis.recommendationLabel, terrainContext, {
-      score: analysis.shootableScore,
-      hasWindow: Boolean(analysis.bestCloudSeaWindow ?? analysis.watchableCloudSeaWindows[0]),
-    });
-  }
-  if (analysis.recommendationLabel === "不建议专程") {
-    return "不建议专程";
-  }
-  if (!analysis.bestCloudSeaWindow || analysis.shootableScore < 45) {
-    return "仅作备选";
-  }
-  if (analysis.recommendationLabel === "谨慎参考") {
-    return "谨慎参考";
-  }
-  if (analysis.shootableScore >= 70 && analysis.whiteoutRiskScore < 65) {
-    return "推荐安排";
-  }
-  return "已在附近可观察";
-}
-
 function cloudSeaArrivalLabel(
   result: ForecastCalculationResult,
   bestWindow: ForecastCalculationResult["cloudSeaAnalysis"]["bestCloudSeaWindow"],
@@ -2901,9 +2971,26 @@ function cloudSeaArrivalLabel(
 function cloudSeaConclusion(
   result: ForecastCalculationResult,
   terrainContext: CloudSeaTerrainContext,
+  recommendationGuard: CloudSeaRecommendationGuardOutput,
 ): string {
   const analysis = result.cloudSeaAnalysis;
   const whiteout = whiteoutRiskLabel(analysis.whiteoutRiskScore);
+
+  if (
+    recommendationGuard.finalRecommendationLevel === "do_not_go_special" ||
+    recommendationGuard.finalRecommendationLevel === "backup_only"
+  ) {
+    return recommendationGuard.departureAdviceZh;
+  }
+  if (
+    recommendationGuard.finalRecommendationLevel === "cautious_reference" ||
+    recommendationGuard.finalRecommendationLevel === "observe_if_nearby"
+  ) {
+    return `${recommendationGuard.reasonZh}，${recommendationGuard.departureAdviceZh}`;
+  }
+  if (recommendationGuard.finalRecommendationLevel === "strong_special_trip") {
+    return recommendationGuard.departureAdviceZh;
+  }
 
   if (terrainContext.shouldDowngradeCloudSeaWording) {
     if (!analysis.bestCloudSeaWindow || analysis.formationScore < 45) {
@@ -2949,88 +3036,16 @@ function cloudSeaRainOpeningSummary(
   return rainOpening.rainSupportSignal ? `雨后开口${opening}` : `开口${opening}`;
 }
 
-function cloudSeaDailyRecommendationLabel(
-  action: CloudSeaActionLabel,
-  score: number,
-  hasWindow: boolean,
-  terrainContext: CloudSeaTerrainContext,
-  cloudLayerCompleteness?: CloudLayerCompletenessContext,
-): CloudSeaActionLabel {
-  const terrainAwareAction = cloudSeaTerrainRecommendationLabel(action, terrainContext, {
-    score,
-    hasWindow,
-  }) as CloudSeaActionLabel;
-
-  if (
-    cloudLayerCompleteness &&
-    (cloudLayerCompleteness.layerCompletenessLevel === "weak" ||
-      cloudLayerCompleteness.layerCompletenessLevel === "missing")
-  ) {
-    return "谨慎参考";
-  }
-
-  if (
-    cloudLayerCompleteness?.shouldPreferNeedsReviewSignal &&
-    (terrainAwareAction === "推荐重点关注" || terrainAwareAction === "值得等待")
-  ) {
-    return "推荐观察";
-  }
-
-  return terrainAwareAction;
-}
-
-function cloudSeaDailyActionSuggestion(
-  action: CloudSeaActionLabel,
-  terrainContext: CloudSeaTerrainContext,
-  score?: number,
-  hasWindow = true,
-  cloudLayerCompleteness?: CloudLayerCompletenessContext,
-): string {
-  const displayAction = cloudSeaDailyRecommendationLabel(
-    action,
-    score ?? 0,
-    hasWindow,
-    terrainContext,
-    cloudLayerCompleteness,
-  );
-  if (
-    cloudLayerCompleteness &&
-    (cloudLayerCompleteness.layerCompletenessLevel === "weak" ||
-      cloudLayerCompleteness.layerCompletenessLevel === "missing")
-  ) {
-    return "分层云量不足，先结合临近预报复核低云高度、白墙风险和窗口开口。";
-  }
-  if (cloudLayerCompleteness?.shouldPreferNeedsReviewSignal) {
-    return "低云分层缺失，先复核临近预报中的低云高度和能见度，再决定是否等待。";
-  }
-  if (terrainContext.shouldDowngradeCloudSeaWording) {
-    if (
-      displayAction === "推荐观察" ||
-      displayAction === "可观察" ||
-      displayAction === "可顺带观察"
-    ) {
-      return "复核近地雾气、低云是否贴地、远山层次和通透度，不建议只为低云或晨雾专程前往。";
-    }
-    if (displayAction === "谨慎参考" || displayAction === "已在附近可观察") {
-      return "若已在附近，可短时观察晨雾、低云和云层开口。";
-    }
-    return "不建议专程，只作为顺路低云/晨雾和通透度备选参考。";
-  }
-  if (action === "推荐重点关注" || action === "值得等待") {
-    return "优先守清晨窗口，到场先复核低云高度。";
-  }
-  if (action === "谨慎参考") {
-    return "若已在附近，可短时观察云顶高度和远山层次。";
-  }
-  return "不建议专程，只作为顺路备选观察。";
-}
-
 function cloudSeaTimelineActionSuggestion(
   score: number,
   whiteoutRiskScore: number,
   windowLevel: ForecastResultWindow["windowLevel"],
   terrainContext: CloudSeaTerrainContext,
+  recommendationGuard?: CloudSeaRecommendationGuardOutput,
 ): string {
+  if (recommendationGuard) {
+    return recommendationGuard.normalizedWindowRecommendation.actionSuggestionZh;
+  }
   if (terrainContext.shouldDowngradeCloudSeaWording) {
     if (whiteoutRiskScore >= 70 || windowLevel === "blocked") {
       return "若低云贴地或雾气过厚，转向霞光、云层纹理、近景氛围和通透参考。";
@@ -3216,7 +3231,14 @@ function buildCloudSeaDataCaution(
   result: ForecastCalculationResult,
   cloudLayerCompleteness: CloudLayerCompletenessContext,
   multiSourceAgreementContext?: ForecastMultiSourceAgreementContext | null,
+  recommendationGuard?: CloudSeaRecommendationGuardOutput,
 ): string | null {
+  const guardWarning =
+    recommendationGuard?.consistencyWarnings[0] ??
+    recommendationGuard?.blockedStrongRecommendationReasons[0];
+  if (guardWarning) {
+    return guardWarning;
+  }
   if (multiSourceAgreementContext?.shouldShowReviewWarning) {
     return (
       multiSourceAgreementContext.keyWarningsZh[0] ?? "多源判断存在分歧，出行前需结合临近预报复核。"

@@ -2727,6 +2727,7 @@ export function CloudSeaResultPage({
         />
         <CloudSeaMetricCards
           hero={viewModel.hero}
+          recommendationGuard={viewModel.recommendationGuard}
           result={result}
           cards={viewModel.coreCards}
           riskSummary={viewModel.riskSummary}
@@ -4050,18 +4051,27 @@ function cloudSeaDataBadgeVariant(result: ForecastCalculationResult): "success" 
 
 function CloudSeaMetricCards({
   hero,
+  recommendationGuard,
   result,
   cards,
   riskSummary,
   terrainContext,
 }: {
   readonly hero: CloudSeaHeroConclusionView;
+  readonly recommendationGuard: CloudSeaForecastViewModel["recommendationGuard"];
   readonly result: ForecastCalculationResult;
   readonly cards: readonly ForecastResultCard[];
   readonly riskSummary: readonly ForecastResultSectionItem[];
   readonly terrainContext: CloudSeaTerrainContext;
 }) {
-  const decisionCards = cloudSeaDecisionCards(hero, result, cards, riskSummary, terrainContext);
+  const decisionCards = cloudSeaDecisionCards(
+    hero,
+    recommendationGuard,
+    result,
+    cards,
+    riskSummary,
+    terrainContext,
+  );
 
   return (
     <ForecastMetricGrid
@@ -4080,6 +4090,7 @@ function CloudSeaMetricCards({
 
 function cloudSeaDecisionCards(
   hero: CloudSeaHeroConclusionView,
+  recommendationGuard: CloudSeaForecastViewModel["recommendationGuard"],
   result: ForecastCalculationResult,
   cards: readonly ForecastResultCard[],
   riskSummary: readonly ForecastResultSectionItem[],
@@ -4103,11 +4114,9 @@ function cloudSeaDecisionCards(
     textCard(
       "cloud-sea-best-window",
       "bestWindow",
-      vocabulary.bestWindowMetricLabel,
+      recommendationGuard.normalizedWindowRecommendation.metricLabel,
       hero.bestWindowLabel,
-      terrainContext.shouldDowngradeCloudSeaWording
-        ? "按低云、晨雾、云层开口和通透度安排顺带观察，临近出发前复核近地雾气。"
-        : "优先以主窗口安排到场和构图，临近出发前复核低云高度、能见度和降水。",
+      recommendationGuard.normalizedWindowRecommendation.actionSuggestionZh,
       "accent",
     ),
     textCard(
@@ -4118,7 +4127,7 @@ function cloudSeaDecisionCards(
       terrainContext.shouldDowngradeCloudSeaWording
         ? "到达后先观察近地雾气、低云是否贴地、远山层次和通透度。"
         : "到达后先观察云顶高度、低云厚度和远山层次，再决定是否继续守远景机位。",
-      result.cloudSeaAnalysis.shootableScore >= 65 ? "primary" : "accent",
+      recommendationGuard.finalRecommendationTone,
     ),
     scoreCard(
       "cloud-sea-formation-shootable",
@@ -4598,6 +4607,14 @@ function cloudSeaWindowCategoryBadgeLabel(
   if (category === "lowLight") {
     return "低光观察";
   }
+  if (
+    item.recommendationLabel === "不建议专程" ||
+    item.recommendationLabel === "仅作备选" ||
+    item.recommendationLabel === "谨慎参考" ||
+    item.recommendationLabel.includes("观察")
+  ) {
+    return item.recommendationLabel;
+  }
   if (item.score >= 70) {
     return "优先守拍";
   }
@@ -4628,6 +4645,14 @@ function cloudSeaWindowCardTone(
   item: CloudSeaWindowItem,
 ): ForecastResultCardTone {
   if (cloudSeaWindowHasLayerRoleRedirect(item)) {
+    return "accent";
+  }
+  if (
+    item.recommendationLabel === "不建议专程" ||
+    item.recommendationLabel === "仅作备选" ||
+    item.recommendationLabel === "谨慎参考" ||
+    item.recommendationLabel.includes("观察")
+  ) {
     return "accent";
   }
   if (category === "lowLight" || item.score < 55) {
@@ -5811,11 +5836,11 @@ function CloudSeaActionPlanSection({
     <Card className="CloudSeaActionPlan cloud-sea-action-plan p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-card-foreground">行动方案</h2>
-        <Badge variant="muted">到达 / 主守 / 备选</Badge>
+        <Badge variant="muted">是否出发 / 到达 / 主守 / 备选</Badge>
       </div>
       <ActionPlanGrid
         target="cloud_sea"
-        className="mt-4 grid gap-3 min-[760px]:grid-cols-2 min-[1280px]:grid-cols-5"
+        className="mt-4 grid gap-3 min-[760px]:grid-cols-2 min-[1280px]:grid-cols-6"
       >
         {items.map((item) => (
           <article

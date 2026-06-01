@@ -1794,6 +1794,77 @@ function lowElevationCloudSeaResultForTest(): ForecastCalculationResult {
   };
 }
 
+function contradictoryLowScoreCloudSeaResultForTest(): ForecastCalculationResult {
+  const base = resultWithProfessionalHourlyData();
+  const weakWindow = {
+    ...base.cloudSeaAnalysis.bestCloudSeaWindow!,
+    score: 32,
+    formationScore: 36,
+    shootableScore: 32,
+    whiteoutRiskScore: 42,
+    noteZh: "强推荐专程云海窗口。",
+    riskTag: "低云信号弱",
+  };
+
+  return {
+    ...base,
+    overallScore: 32,
+    recommendationLabel: "强推荐专程",
+    scores: {
+      ...base.scores,
+      cloudSea: score("cloudSea", "云海", 32),
+      whiteoutRisk: score("whiteoutRisk", "白墙风险", 42),
+    },
+    cloudSeaAnalysis: {
+      ...base.cloudSeaAnalysis,
+      overallScore: 32,
+      formationScore: 36,
+      shootableScore: 32,
+      cloudSeaOpportunityScore: 36,
+      whiteoutRiskScore: 42,
+      travelScore: 32,
+      recommendationLabel: "推荐重点关注",
+      bestCloudSeaWindow: weakWindow,
+      bestCloudSeaWindows: [weakWindow],
+      watchableCloudSeaWindows: [],
+      notRecommendedCloudSeaWindows: [
+        {
+          ...weakWindow,
+          phase: "waiting",
+          noteZh: "低云信号弱，不建议专程。",
+        },
+      ],
+      dailyCloudSea: base.cloudSeaAnalysis.dailyCloudSea.map((day) => ({
+        ...day,
+        formationScore: 36,
+        opportunityScore: 36,
+        shootableScore: 32,
+        travelScore: 32,
+        whiteoutRiskScore: 42,
+        recommendationLabel: "推荐重点关注",
+        bestWindow: weakWindow,
+        watchableWindow: undefined,
+        keyReason: "低云信号弱，不能强推荐专程。",
+      })),
+    },
+    bestWindows: base.bestWindows.map((window) =>
+      window.target === "cloud_sea"
+        ? {
+            ...window,
+            score: 32,
+            conditionScore: 36,
+            practicalScore: 32,
+            recommendationLevel: "recommended",
+            windowLevel: "best",
+            executableForDedicatedTrip: true,
+            subjectPriorityLabel: "强推荐专程云海",
+            copyReasonZh: "强推荐专程云海窗口。",
+          }
+        : window,
+    ),
+  };
+}
+
 function resultWithBlockedAstro(
   target: ForecastCalculationResult["target"] = "general",
 ): ForecastCalculationResult {
@@ -4145,7 +4216,7 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.hero.arrivalLabel).toContain("03:30");
     expect(viewModel.cloudSeaWindows.length).toBeGreaterThan(0);
     expect(viewModel.cloudSeaWindows[0]).toMatchObject({
-      label: "最佳云海窗口",
+      label: "云层变化参考窗口 05:00 - 07:00",
       startTime: "2026-05-20T05:00:00+08:00",
       endTime: "2026-05-20T07:00:00+08:00",
       cloudSeaChance: expect.any(String),
@@ -4163,6 +4234,7 @@ describe("forecast result target-aware view model", () => {
       "白墙风险",
     ]);
     expect(viewModel.actionPlan.map((item) => item.label)).toEqual([
+      "是否建议出发",
       "建议到达时间",
       "主守窗口",
       "备选方案",
@@ -4287,7 +4359,7 @@ describe("forecast result target-aware view model", () => {
     expect(windowSection).not.toContain("无光云海");
     expect(windowSection).not.toContain("优先守拍");
     expect(html).toContain("低云遮挡风险");
-    expect(html).toContain("复核近地雾气");
+    expect(html).toContain("观察近地雾气");
     expect(html).toContain("远山层次和通透度");
     expect(html).not.toContain("推荐专程云海");
     expect(html).not.toContain("强推荐专程云海");
@@ -4311,6 +4383,76 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("纬度");
     expect(html).not.toContain("latitude");
     expect(html).not.toContain("longitude");
+  });
+
+  it("keeps a 32 score Cloud Sea result from rendering strong recommendation copy", () => {
+    const result = contradictoryLowScoreCloudSeaResultForTest();
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result,
+        viewModel,
+      }),
+    );
+    const actionPlan = sectionBetween(html, "CloudSeaActionPlan", "CloudSeaRiskSummary");
+    const windowSection = sectionBetween(
+      html,
+      "CloudSeaWindowCards",
+      "CloudSeaProfessionalHourlyData",
+    );
+
+    expect(viewModel.recommendationGuard.finalRecommendationLabel).toBe("不建议专程");
+    expect(viewModel.hero.recommendationLabel).toBe("不建议专程");
+    expect(viewModel.hero.bestWindowLabel).toContain("备选观察窗口");
+    expect(viewModel.actionPlan.find((item) => item.key === "departure")).toMatchObject({
+      label: "是否建议出发",
+      value: "不建议专程",
+    });
+    expect(viewModel.dailyTrend.every((item) => item.recommendedAction === "不建议专程")).toBe(
+      true,
+    );
+    expect(
+      viewModel.cloudSeaWindows.every((item) => item.recommendationLabel === "不建议专程"),
+    ).toBe(true);
+    expect(actionPlan).toContain("是否建议出发");
+    expect(actionPlan).toContain("不建议专程");
+    expect(actionPlan).toContain("当前云海证据不足");
+    expect(windowSection).toContain("不建议专程");
+    expect(viewModel.cloudSeaWindows.map((item) => item.label).join(" ")).toContain(
+      "备选观察窗口",
+    );
+    expect(html).not.toContain("强推荐专程");
+    expect(html).not.toContain("推荐专程云海");
+    expect(html).not.toContain("云海主守");
+  });
+
+  it("keeps Cloud Sea action plan, daily cards, and window cards under the low-elevation cap", () => {
+    const result = lowElevationCloudSeaResultForTest();
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result,
+        viewModel,
+      }),
+    );
+    const actionPlan = sectionBetween(html, "CloudSeaActionPlan", "CloudSeaRiskSummary");
+    const dailySection = sectionBetween(html, "CloudSeaDailyTrend", "CloudSeaReasoning");
+
+    expect(viewModel.recommendationGuard.maxAllowedRecommendationStrength).toBe(
+      "observe_if_nearby",
+    );
+    expect(viewModel.hero.recommendationLabel).toBe("推荐观察");
+    expect(viewModel.actionPlan.find((item) => item.key === "departure")?.value).toBe(
+      "推荐观察",
+    );
+    expect(actionPlan).toContain("推荐观察");
+    expect(dailySection).toContain("推荐观察");
+    expect(html).toContain("低云/晨雾参考窗口");
+    expect(html).not.toContain("强推荐专程");
+    expect(html).not.toContain("推荐专程云海");
+    expect(html).not.toContain("云海主守");
   });
 
   it("resolves the Cloud Sea forecast page into explicit search, loading, result, and error modes", () => {
@@ -4581,7 +4723,7 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("/ 100");
       expect(html).toContain("地形参考：机位海拔约 1860 米");
       expect(html).toContain("推荐等级");
-      expect(html).toContain("最佳云海窗口");
+      expect(html).toContain("云层变化参考窗口");
       expect(html).toContain("云海形成 / 可拍机会");
       expect(html).toContain("主要风险");
       expect(countOccurrences(html, 'data-cloud-sea-metric-card="true"')).toBe(6);
@@ -5357,7 +5499,7 @@ describe("forecast result target-aware view model", () => {
     });
 
     expect(viewModel.dataNotice).toContain("当前天气源缺少低云分层数据，云海判断置信度会降低。");
-    expect(viewModel.dataCaution).toBe("部分地形或云层数据仍需结合临近预报复核。");
+    expect(viewModel.dataCaution).toBe("云层分层不足，需临近复核");
     expect(
       viewModel.weatherEvidence.some(
         (item) =>
