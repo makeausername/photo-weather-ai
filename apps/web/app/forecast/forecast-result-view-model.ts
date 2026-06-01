@@ -1,6 +1,5 @@
 import {
   buildCloudLayerCompletenessContext,
-  buildCloudSeaRecommendationGuard,
   formatArrivalDeadlineZh,
   formatShootingWindowZh,
   forecastTargetLabels,
@@ -35,10 +34,14 @@ import {
   windowLabelText,
 } from "./forecast-copy";
 import {
-  buildCloudSeaTerrainContextFromResult,
   cloudSeaTerrainAwareText,
   type CloudSeaTerrainContext,
 } from "./cloud-sea-terrain-context";
+import {
+  buildCloudSeaRecommendationGuardForRuleContext,
+  buildCloudSeaRuleContext,
+  type CloudSeaRuleContext,
+} from "./cloud-sea-rule-context";
 
 export type ForecastResultModuleKey =
   | "overall"
@@ -286,6 +289,7 @@ export type CloudSeaActionPlanItem = {
 };
 
 export type CloudSeaForecastViewModel = {
+  readonly ruleContext: CloudSeaRuleContext;
   readonly terrainContext: CloudSeaTerrainContext;
   readonly recommendationGuard: CloudSeaRecommendationGuardOutput;
   readonly hero: CloudSeaHeroConclusionView;
@@ -627,22 +631,20 @@ export function buildCloudSeaForecastViewModel(
   result: ForecastCalculationResult,
 ): CloudSeaForecastViewModel {
   const analysis = result.cloudSeaAnalysis;
-  const terrainContext = buildCloudSeaTerrainContextFromResult(result);
+  const ruleContext = buildCloudSeaRuleContext(result);
+  const terrainContext = ruleContext.terrainContext;
   const cloudSeaWindows = mapResultWindows(
     result.bestWindows.filter((window) => window.target === "cloud_sea"),
   );
-  const cloudLayerCompleteness = buildCloudLayerCompletenessContext(result.professionalHourlyData);
-  const multiSourceAgreementContext =
-    result.weatherFusionSummary?.multiSourceAgreementContext ?? null;
-  const recommendationGuard = buildCloudSeaRecommendationGuardForView(result, terrainContext, {
-    cloudLayerCompleteness,
-    multiSourceAgreementContext,
-  });
+  const cloudLayerCompleteness = ruleContext.cloudLayerCompletenessContext;
+  const multiSourceAgreementContext = ruleContext.multiSourceAgreementContext;
+  const recommendationGuard = ruleContext.recommendationGuardContext;
   const whiteoutLabel = whiteoutRiskLabel(analysis.whiteoutRiskScore);
   const dataNotice = buildCloudSeaDataNotice(result);
   const vocabulary = terrainContext.vocabulary;
 
   return {
+    ruleContext,
     terrainContext,
     recommendationGuard,
     hero: buildCloudSeaHeroConclusion(
@@ -733,55 +735,6 @@ export function buildCloudSeaForecastViewModel(
     ),
     dataNotice,
   };
-}
-
-function buildCloudSeaRecommendationGuardForView(
-  result: ForecastCalculationResult,
-  terrainContext: CloudSeaTerrainContext,
-  options: {
-    readonly cloudLayerCompleteness: CloudLayerCompletenessContext;
-    readonly multiSourceAgreementContext?: ForecastMultiSourceAgreementContext | null;
-    readonly cloudSeaScore?: number;
-    readonly shootabilityScore?: number;
-    readonly formationScore?: number;
-    readonly whiteoutRiskScore?: number;
-    readonly proposedRecommendationLabel?: string;
-    readonly bestWindow?: ForecastCalculationResult["cloudSeaAnalysis"]["bestCloudSeaWindow"];
-    readonly hasWindow?: boolean;
-    readonly bestWindowLabelZh?: string;
-  },
-): CloudSeaRecommendationGuardOutput {
-  const analysis = result.cloudSeaAnalysis;
-  const bestWindow =
-    options.bestWindow ??
-    analysis.bestCloudSeaWindow ??
-    analysis.bestCloudSeaWindows[0] ??
-    analysis.watchableCloudSeaWindows[0];
-  const formationScore = options.formationScore ?? analysis.formationScore;
-
-  return buildCloudSeaRecommendationGuard({
-    cloudSeaScore: options.cloudSeaScore ?? result.scores.cloudSea.score,
-    shootabilityScore: options.shootabilityScore ?? analysis.shootableScore,
-    formationScore,
-    whiteoutRiskScore: options.whiteoutRiskScore ?? analysis.whiteoutRiskScore,
-    proposedRecommendationLabel: options.proposedRecommendationLabel ?? analysis.recommendationLabel,
-    terrainContext: {
-      shouldDowngradeCloudSeaWording: terrainContext.shouldDowngradeCloudSeaWording,
-      isClassicCloudSeaEligible: terrainContext.isClassicCloudSeaEligible,
-      terrainClass: terrainContext.terrainClass,
-    },
-    cloudLayerCompletenessContext: options.cloudLayerCompleteness,
-    multiSourceAgreementContext:
-      options.multiSourceAgreementContext ??
-      result.weatherFusionSummary?.multiSourceAgreementContext ??
-      null,
-    bestWindow: bestWindow ?? null,
-    hasWindow: options.hasWindow ?? Boolean(bestWindow),
-    risks: result.riskFlags,
-    lowCloudSignalSupported: options.cloudLayerCompleteness.hasLowCloudLayer && formationScore >= 55,
-    mainTargetZh: terrainContext.shouldDowngradeCloudSeaWording ? "低云/晨雾" : "清晨云海",
-    bestWindowLabelZh: options.bestWindowLabelZh ?? bestWindow?.label,
-  });
 }
 
 function buildCloudSeaViewModel(result: ForecastCalculationResult): ForecastResultViewModel {
@@ -2356,7 +2309,7 @@ function buildCloudSeaDailyTrend(
     const cloudSeaScore = result.cloudSeaAnalysis.shootableScore;
     const whiteoutScore = result.cloudSeaAnalysis.whiteoutRiskScore;
     const layerContext = buildCloudLayerCompletenessContext(result.professionalHourlyData);
-    const dailyGuard = buildCloudSeaRecommendationGuardForView(result, terrainContext, {
+    const dailyGuard = buildCloudSeaRecommendationGuardForRuleContext(result, terrainContext, {
       cloudLayerCompleteness: layerContext,
       multiSourceAgreementContext: result.weatherFusionSummary?.multiSourceAgreementContext,
       cloudSeaScore,
@@ -2415,7 +2368,7 @@ function buildCloudSeaDailyTrend(
     const whiteoutScore = day.whiteoutRiskScore;
     const window = windows.find((candidate) => candidate.date === day.date);
     const layerContext = cloudLayerCompletenessContextForDate(result, day.date);
-    const dailyGuard = buildCloudSeaRecommendationGuardForView(result, terrainContext, {
+    const dailyGuard = buildCloudSeaRecommendationGuardForRuleContext(result, terrainContext, {
       cloudLayerCompleteness: layerContext,
       multiSourceAgreementContext: result.weatherFusionSummary?.multiSourceAgreementContext,
       cloudSeaScore,
@@ -2607,7 +2560,7 @@ function cloudSeaWindowItem(
     window.endTime,
   );
 
-  const windowGuard = buildCloudSeaRecommendationGuardForView(result, terrainContext, {
+  const windowGuard = buildCloudSeaRecommendationGuardForRuleContext(result, terrainContext, {
     cloudLayerCompleteness: layerContext,
     multiSourceAgreementContext: result.weatherFusionSummary?.multiSourceAgreementContext,
     cloudSeaScore: window.shootableScore ?? window.score,

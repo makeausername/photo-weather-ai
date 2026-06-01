@@ -13,7 +13,7 @@ import {
 } from "../index.js";
 
 const query: ForecastQueryInput = {
-  name: "黄山光明顶",
+  name: "genericHighMountainSpot",
   source: "local_photo_spot",
   latitudeGcj02: 30.13254,
   longitudeGcj02: 118.16876,
@@ -21,8 +21,8 @@ const query: ForecastQueryInput = {
   longitudeWgs84: 118.16389,
   horizon: "48h",
   target: "cloud_sea",
-  locationId: "location-huangshan",
-  photoSpotId: "spot-guangmingding",
+  locationId: "location-generic-high-mountain",
+  photoSpotId: "spot-generic-high-mountain",
 };
 
 const fixedNow = "2026-05-20T00:00:00+08:00";
