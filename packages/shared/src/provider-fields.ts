@@ -409,6 +409,14 @@ export const providerFieldPresets = [
         advanced: true,
       },
       {
+        key: "iconModel",
+        label: "ICON 云层模型",
+        target: "configJson",
+        placeholder: "icon_global",
+        defaultValue: "icon_global",
+        advanced: true,
+      },
+      {
         key: "timezone",
         label: "时区",
         target: "configJson",

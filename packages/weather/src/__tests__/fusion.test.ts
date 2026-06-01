@@ -108,6 +108,105 @@ describe("weather source fusion", () => {
     expect(result.confidenceByTarget.general).toBeGreaterThanOrEqual(0.55);
   });
 
+  it("prefers same-source Open-Meteo ICON cloud fields for Cloud Sea professional data", () => {
+    const result = fuseWeatherSources({
+      providerBundles: [
+        bundle(
+          "qweather",
+          "鍜岄澶╂皵",
+          hour({
+            providerCode: "qweather",
+            cloudTotal: 88,
+            cloudLow: null,
+            cloudMid: null,
+            cloudHigh: null,
+            missingFields: ["cloudLow", "cloudMid", "cloudHigh"],
+          }),
+        ),
+        bundle(
+          "open_meteo",
+          "云层分层辅助",
+          hour({
+            providerCode: "open_meteo",
+            providerLabelZh: "云层分层辅助",
+            cloudTotal: 55,
+            cloudLow: 24,
+            cloudMid: 38,
+            cloudHigh: 48,
+          }),
+        ),
+      ],
+      target: "cloud_sea",
+      location: { name: "generic mountain", coordinates },
+      forecastStart: "2026-05-22T00:00:00+08:00",
+      forecastEnd: "2026-05-23T00:00:00+08:00",
+    });
+
+    expect(result.fusedHourly[0]).toMatchObject({
+      cloudTotal: 55,
+      cloudLow: 24,
+      cloudMid: 38,
+      cloudHigh: 48,
+    });
+    for (const field of ["cloudTotal", "cloudLow", "cloudMid", "cloudHigh"] as const) {
+      expect(result.fusedHourly[0]?.fieldMetadata?.[field]).toMatchObject({
+        providerCode: "open_meteo",
+        estimated: false,
+      });
+    }
+  });
+
+  it("keeps missing ICON layer values null instead of backfilling them from total cloud", () => {
+    const result = fuseWeatherSources({
+      providerBundles: [
+        bundle(
+          "qweather",
+          "鍜岄澶╂皵",
+          hour({
+            providerCode: "qweather",
+            cloudTotal: 92,
+            cloudLow: null,
+            cloudMid: null,
+            cloudHigh: null,
+            missingFields: ["cloudLow", "cloudMid", "cloudHigh"],
+          }),
+        ),
+        bundle(
+          "open_meteo",
+          "云层分层辅助",
+          hour({
+            providerCode: "open_meteo",
+            providerLabelZh: "云层分层辅助",
+            cloudTotal: 62,
+            cloudLow: null,
+            cloudMid: 36,
+            cloudHigh: null,
+            missingFields: ["cloudLow", "cloudHigh"],
+          }),
+        ),
+      ],
+      target: "cloud_sea",
+      location: { name: "generic mountain", coordinates },
+      forecastStart: "2026-05-22T00:00:00+08:00",
+      forecastEnd: "2026-05-23T00:00:00+08:00",
+    });
+
+    expect(result.fusedHourly[0]).toMatchObject({
+      cloudTotal: 62,
+      cloudLow: null,
+      cloudMid: 36,
+      cloudHigh: null,
+    });
+    expect(result.fusedHourly[0]?.missingFields).toEqual(
+      expect.arrayContaining(["cloudLow", "cloudHigh"]),
+    );
+    expect(result.fusedHourly[0]?.fieldMetadata?.cloudLow).toMatchObject({
+      providerCode: "open_meteo",
+      value: null,
+      missingReason: "provider_field_missing",
+    });
+  });
+
   it("keeps target-specific field priorities explicit", () => {
     expect(targetPriorityFields("cloud_sea")).toEqual(
       expect.arrayContaining(["humidity", "dewPointSpread", "cloudLow", "terrain.elevationDiff"]),

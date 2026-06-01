@@ -488,6 +488,17 @@ export type ForecastWeatherSourceSummary = {
   readonly terrainAdjustmentReason?: string;
   readonly dayCorrectionRatio?: number;
   readonly nightCorrectionRatio?: number;
+  readonly sourceFamily?: string;
+  readonly modelFamily?: string;
+  readonly modelName?: string;
+  readonly basis?: string;
+  readonly requestedForecastHours?: number;
+  readonly returnedHours?: number;
+  readonly timezone?: string;
+  readonly elevationBasis?: string;
+  readonly parserVersion?: string;
+  readonly diagnosticStatus?: string;
+  readonly fallbackRequestUsed?: boolean;
 };
 
 export type ForecastProviderRuntimeSnapshot = {
@@ -500,6 +511,8 @@ export type ForecastProviderRuntimeSnapshot = {
   readonly endpoint?: string;
   readonly packages?: readonly string[];
   readonly parserVersion?: string;
+  readonly modelFamily?: string;
+  readonly modelName?: string;
   readonly configUpdatedAt?: string;
 };
 

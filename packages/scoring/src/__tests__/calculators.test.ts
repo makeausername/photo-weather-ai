@@ -807,6 +807,33 @@ describe("forecast score calculators", () => {
     );
   });
 
+  it("keeps professional hourly cloud-layer gaps null instead of filling from total cloud", () => {
+    const baseInput = buildMockForecastInput(
+      { ...baseQuery, target: "cloud_sea" },
+      { now: fixedNow },
+    );
+    const input = withHourlyWeather(baseInput, (hour) => ({
+      ...hour,
+      cloudTotal: 62,
+      cloudLow: null,
+      cloudMid: 36,
+      cloudHigh: null,
+      missingFields: [...new Set([...(hour.missingFields ?? []), "cloudLow", "cloudHigh"])],
+    }));
+
+    const result = calculateForecast(input);
+    const row = result.professionalHourlyData?.[0];
+
+    expect(row).toMatchObject({
+      cloudTotalPercent: 62,
+      cloudLowPercent: null,
+      cloudMidPercent: 36,
+      cloudHighPercent: null,
+      cloudLayerBasis: "partial_layers",
+    });
+    expect(row?.missingFields).toEqual(expect.arrayContaining(["cloudLow", "cloudHigh"]));
+  });
+
   it("uses cloud layer fields when available for glow scoring", () => {
     const baseInput = buildMockForecastInput({ ...baseQuery, target: "glow" }, { now: fixedNow });
     const layered = withHourlyWeather(baseInput, (hour) => ({

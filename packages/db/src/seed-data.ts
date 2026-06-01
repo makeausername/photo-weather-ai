@@ -405,6 +405,7 @@ const providerConfigs = [
       baseUrl: "https://api.open-meteo.com/v1",
       customerEndpoint: "https://customer-api.open-meteo.com",
       defaultModel: "forecast",
+      iconModel: "icon_global",
       timezone: "Asia/Shanghai",
       timeoutMs: 10000,
       retryCount: 1,

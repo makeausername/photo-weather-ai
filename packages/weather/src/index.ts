@@ -3,6 +3,7 @@ export * from "./disagreement.js";
 export * from "./fusion.js";
 export * from "./meteoblue-provider.js";
 export * from "./mock-provider.js";
+export * from "./open-meteo-icon-cloud-layer-provider.js";
 export * from "./open-meteo-client.js";
 export * from "./open-meteo-provider.js";
 export * from "./provider.js";

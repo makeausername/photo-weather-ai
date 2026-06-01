@@ -9,9 +9,11 @@ import {
   normalizeQWeatherApiHost,
   MeteoblueClient,
   MeteoblueRealProvider,
-  OpenMeteoClient,
+  OpenMeteoIconCloudLayerClient,
+  OpenMeteoIconCloudLayerProvider,
+  openMeteoIconCloudLayerDefaultModel,
+  openMeteoIconCloudLayerParserVersion,
   OpenMeteoProvider,
-  OpenMeteoRealProvider,
   QWeatherClient,
   QWeatherProvider,
   QWeatherRealProvider,
@@ -85,6 +87,7 @@ export type ResolvedOpenMeteoRuntimeConfig = {
   readonly customerEndpoint?: string;
   readonly defaultModel: string;
   readonly modelPreference?: string;
+  readonly iconModel: string;
   readonly timezone: string;
   readonly timeoutMs: number;
   readonly retryCount: number;
@@ -202,6 +205,22 @@ function readEnvNumber(value: string | undefined): number | undefined {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function readEnvBoolean(value: string | undefined): boolean | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "true") {
+    return true;
+  }
+  if (normalized === "false") {
+    return false;
+  }
+
+  return undefined;
 }
 
 function clampInteger(
@@ -417,7 +436,7 @@ export function resolveOpenMeteoRuntimeConfig(
   const endpoint = mode === "customer" ? customerEndpoint : openMeteoFreeEndpoint;
 
   return {
-    enabled: provider?.enabled ?? false,
+    enabled: provider?.enabled ?? readEnvBoolean(env.OPEN_METEO_ENABLED) ?? false,
     realCallEnabled,
     priority: provider?.priority ?? 0,
     configUpdatedAt: provider?.updatedAt.toISOString(),
@@ -436,6 +455,10 @@ export function resolveOpenMeteoRuntimeConfig(
       openMeteoDefaultModel,
     modelPreference:
       readString(configJson.modelPreference) ?? readEnvString(env.OPEN_METEO_MODEL_PREFERENCE),
+    iconModel:
+      readString(configJson.iconModel) ??
+      readEnvString(env.OPEN_METEO_ICON_MODEL) ??
+      openMeteoIconCloudLayerDefaultModel,
     timezone:
       readString(configJson.timezone) ?? readEnvString(env.OPEN_METEO_TIMEZONE) ?? "Asia/Shanghai",
     timeoutMs: clampInteger(
@@ -543,6 +566,7 @@ export function normalizeOpenMeteoAdminConfigJson(
     mode,
     baseUrl: readString(current.baseUrl) ?? openMeteoDefaultBaseUrl,
     defaultModel: readString(current.defaultModel) ?? openMeteoDefaultModel,
+    iconModel: readString(current.iconModel) ?? openMeteoIconCloudLayerDefaultModel,
     timezone: readString(current.timezone) ?? "Asia/Shanghai",
     timeoutMs: clampInteger(readNumber(current.timeoutMs), weatherDefaultTimeoutMs, 1000, 30000),
     retryCount: clampInteger(readNumber(current.retryCount), weatherDefaultRetryCount, 0, 5),
@@ -705,15 +729,15 @@ async function resolveRuntimeWeatherProviders(
       openMeteo.realCallEnabled && openMeteo.mode === "customer" && !openMeteo.apiKey;
     if (openMeteo.realCallEnabled && !customerModeMissingKey) {
       providers.push(
-        new OpenMeteoRealProvider({
-          client: new OpenMeteoClient({
-            endpoint: openMeteo.endpoint,
+        new OpenMeteoIconCloudLayerProvider({
+          client: new OpenMeteoIconCloudLayerClient({
+            endpoint: openMeteo.mode === "customer" ? openMeteo.endpoint : openMeteo.baseUrl,
             mode: openMeteo.mode,
             apiKey: openMeteo.apiKey,
             timezone: openMeteo.timezone,
             timeoutMs: openMeteo.timeoutMs,
             retryCount: openMeteo.retryCount,
-            modelPreference: openMeteo.modelPreference,
+            modelName: openMeteo.modelPreference ?? openMeteo.iconModel,
           }),
         }),
       );
@@ -781,6 +805,9 @@ function buildRuntimeSnapshot(
       apiKeyPresent: openMeteo.apiKeyPresent,
       endpoint: openMeteo.endpoint,
       baseUrl: openMeteo.baseUrl,
+      parserVersion: openMeteoIconCloudLayerParserVersion,
+      modelFamily: "icon",
+      modelName: openMeteo.modelPreference ?? openMeteo.iconModel,
       configUpdatedAt: openMeteo.configUpdatedAt,
     },
     {
@@ -808,6 +835,8 @@ function buildRuntimeCacheNamespace(snapshot: readonly ForecastProviderRuntimeSn
       endpoint: provider.endpoint,
       packages: provider.packages,
       parserVersion: provider.parserVersion,
+      modelFamily: provider.modelFamily,
+      modelName: provider.modelName,
       configUpdatedAt: provider.configUpdatedAt,
     })),
   );

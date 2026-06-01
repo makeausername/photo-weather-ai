@@ -23,6 +23,17 @@ export type WeatherProviderErrorOptions = {
       | "packages"
       | "statusCode"
       | "latencyMs"
+      | "sourceFamily"
+      | "modelFamily"
+      | "modelName"
+      | "basis"
+      | "requestedForecastHours"
+      | "returnedHours"
+      | "timezone"
+      | "elevationBasis"
+      | "parserVersion"
+      | "diagnosticStatus"
+      | "fallbackRequestUsed"
     >
   >;
   readonly cause?: unknown;

@@ -99,7 +99,7 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
     },
   });
   const fusedHourly = hourlyTimes
-    .map((time) => fuseHourlyAt(time, usableBundles, primaryBundle))
+    .map((time) => fuseHourlyAt(time, usableBundles, primaryBundle, input.target))
     .filter((hour): hour is NormalizedHourlyWeather => hour !== null);
   const fusedDaily = fuseDailyByDate(usableBundles, primaryBundle);
   const sourceSummaries = usableBundles.map(sourceSummary);
@@ -355,6 +355,7 @@ function fuseHourlyAt(
   time: string,
   bundles: readonly WeatherDataBundle[],
   primaryBundle: WeatherDataBundle,
+  target: ForecastTarget,
 ): NormalizedHourlyWeather | null {
   const candidates = bundles
     .map((bundle) => ({
@@ -378,9 +379,12 @@ function fuseHourlyAt(
   const fieldMetadata: NormalizedWeatherFieldMetadataMap = {
     ...(primaryHour.fieldMetadata ?? {}),
   };
+  const preferredCloudGroup = selectPreferredCloudLayerGroup(candidates, target);
 
   for (const field of numericFields) {
-    const selected = selectFieldValue(field, candidates, primaryHour);
+    const selected = isCloudLayerGroupField(field) && preferredCloudGroup
+      ? selectCloudLayerGroupField(field, preferredCloudGroup)
+      : selectFieldValue(field, candidates, primaryHour);
     if (selected.value !== undefined) {
       next[field] = selected.value;
     }
@@ -424,6 +428,88 @@ function fuseHourlyAt(
     missingFields: [...missingFields],
     estimatedFields: estimatedFields.size > 0 ? [...estimatedFields] : undefined,
     fieldMetadata,
+  };
+}
+
+type HourlyCandidate = {
+  readonly bundle: WeatherDataBundle;
+  readonly hour: NormalizedHourlyWeather;
+};
+
+function isCloudLayerGroupField(
+  field: (typeof numericFields)[number],
+): field is "cloudTotal" | "cloudLow" | "cloudMid" | "cloudHigh" {
+  return (
+    field === "cloudTotal" ||
+    field === "cloudLow" ||
+    field === "cloudMid" ||
+    field === "cloudHigh"
+  );
+}
+
+function selectPreferredCloudLayerGroup(
+  candidates: readonly HourlyCandidate[],
+  _target: ForecastTarget,
+): HourlyCandidate | undefined {
+  const openMeteoCandidates = candidates.filter(
+    (candidate) => candidate.bundle.providerCode === "open_meteo",
+  );
+  const completeOpenMeteo = openMeteoCandidates.find((candidate) =>
+    hasCompleteCloudLayerGroup(candidate.hour),
+  );
+  if (completeOpenMeteo) {
+    return completeOpenMeteo;
+  }
+
+  const partialOpenMeteo = openMeteoCandidates.find((candidate) =>
+    hasUsableNumber(candidate.hour.cloudTotal),
+  );
+  if (partialOpenMeteo) {
+    return partialOpenMeteo;
+  }
+
+  return candidates.find((candidate) => hasCompleteCloudLayerGroup(candidate.hour));
+}
+
+function hasCompleteCloudLayerGroup(hour: NormalizedHourlyWeather): boolean {
+  return (
+    hasUsableNumber(hour.cloudTotal) &&
+    hasUsableNumber(hour.cloudLow) &&
+    hasUsableNumber(hour.cloudMid) &&
+    hasUsableNumber(hour.cloudHigh)
+  );
+}
+
+function hasUsableNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function selectCloudLayerGroupField(
+  field: "cloudTotal" | "cloudLow" | "cloudMid" | "cloudHigh",
+  candidate: HourlyCandidate,
+): {
+  readonly value: number | null | undefined;
+  readonly providerCode: string;
+  readonly providerLabelZh?: string;
+  readonly estimated: boolean;
+  readonly providerElevationMeters?: number;
+  readonly selectedSpotElevationMeters?: number;
+  readonly elevationDifferenceMeters?: number;
+} {
+  const value = candidate.hour[field] ?? null;
+
+  return {
+    value,
+    providerCode: candidate.bundle.providerCode,
+    providerLabelZh: candidate.bundle.providerLabelZh,
+    estimated: candidate.hour.estimatedFields?.includes(field) ?? false,
+    providerElevationMeters: candidate.hour.providerElevationMeters,
+    selectedSpotElevationMeters:
+      candidate.hour.selectedSpotElevationMeters ??
+      candidate.bundle.terrainMetadata?.selectedSpotElevationMeters,
+    elevationDifferenceMeters:
+      candidate.hour.elevationDifferenceMeters ??
+      candidate.bundle.terrainMetadata?.elevationDifferenceMeters,
   };
 }
 
@@ -839,7 +925,7 @@ function buildDataStatus(
   const cloudAuxiliary = bundles.some(
     (bundle) => bundle.providerCode === "open_meteo" && bundle.dataMode === "real",
   )
-    ? "；云层辅助：Open-Meteo"
+    ? "；云层分层辅助可用"
     : "";
   const confidenceLabel =
     confidenceLevel === "high" ? "高" : confidenceLevel === "medium" ? "中" : "低";
