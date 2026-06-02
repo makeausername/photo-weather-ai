@@ -16,6 +16,7 @@ export type WeatherProviderErrorOptions = {
   readonly sourceSummaryMetadata?: Partial<
     Pick<
       ForecastWeatherSourceSummary,
+      | "providerId"
       | "availableFields"
       | "extractedFields"
       | "missingFields"

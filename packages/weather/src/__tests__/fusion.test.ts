@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { NormalizedHourlyWeather } from "@photo-weather/shared";
-import { fuseWeatherSources, targetPriorityFields, type WeatherDataBundle } from "../index";
+import {
+  fuseWeatherSources,
+  openMeteoForecastCloudLayerProviderName,
+  openMeteoIconCloudLayerProviderName,
+  targetPriorityFields,
+  type WeatherDataBundle,
+  type WeatherSourceSummary,
+} from "../index";
 
 const coordinates = {
   latitude: 30.1328,
@@ -154,6 +161,91 @@ describe("weather source fusion", () => {
         estimated: false,
       });
     }
+    expect(result.summary.cloudLayerCoverage?.fieldCoverageSummary).toMatchObject({
+      totalHours: 1,
+      cloudLowCoverage: 1,
+      cloudMidCoverage: 1,
+      cloudHighCoverage: 1,
+    });
+    expect(result.summary.cloudLayerCoverage?.missingFieldSummary).not.toEqual(
+      expect.arrayContaining([expect.stringContaining("cloudLow")]),
+    );
+    expect(result.confidenceByField.cloudLow).toBeGreaterThan(0.45);
+  });
+
+  it("fills missing ICON layer fields from Open-Meteo Forecast best-match same fields only", () => {
+    const result = fuseWeatherSources({
+      providerBundles: [
+        bundle(
+          "open_meteo",
+          "云层分层辅助",
+          hour({
+            providerCode: "open_meteo",
+            providerLabelZh: "云层分层辅助",
+            cloudTotal: 62,
+            cloudLow: null,
+            cloudMid: 36,
+            cloudHigh: null,
+            missingFields: ["cloudLow", "cloudHigh"],
+          }),
+          {
+            providerId: openMeteoIconCloudLayerProviderName,
+            modelFamily: "icon",
+            modelName: "icon_global",
+          },
+        ),
+        bundle(
+          "open_meteo",
+          "云层分层补全",
+          hour({
+            providerCode: "open_meteo",
+            providerLabelZh: "云层分层补全",
+            cloudTotal: 58,
+            cloudLow: 22,
+            cloudMid: 40,
+            cloudHigh: 51,
+          }),
+          {
+            providerId: openMeteoForecastCloudLayerProviderName,
+            modelFamily: "best_match",
+            modelName: "best_match",
+          },
+        ),
+      ],
+      target: "cloud_sea",
+      location: { name: "generic mountain", coordinates },
+      forecastStart: "2026-05-22T00:00:00+08:00",
+      forecastEnd: "2026-05-23T00:00:00+08:00",
+    });
+
+    expect(result.fusedHourly[0]).toMatchObject({
+      cloudTotal: 62,
+      cloudLow: 22,
+      cloudMid: 36,
+      cloudHigh: 51,
+    });
+    expect(result.fusedHourly[0]?.fieldMetadata?.cloudTotal).toMatchObject({
+      sourceId: openMeteoIconCloudLayerProviderName,
+      basis: "total_cloud",
+    });
+    expect(result.fusedHourly[0]?.fieldMetadata?.cloudLow).toMatchObject({
+      sourceId: openMeteoForecastCloudLayerProviderName,
+      basis: "fallback_same_field",
+      value: 22,
+    });
+    expect(result.fusedHourly[0]?.fieldMetadata?.cloudHigh).toMatchObject({
+      sourceId: openMeteoForecastCloudLayerProviderName,
+      basis: "fallback_same_field",
+      value: 51,
+    });
+    expect(result.summary.cloudLayerCoverage?.fallbackSourcesUsed).toContain(
+      openMeteoForecastCloudLayerProviderName,
+    );
+    expect(result.summary.cloudLayerCoverage?.fieldCoverageSummary).toMatchObject({
+      cloudLowCoverage: 1,
+      cloudMidCoverage: 1,
+      cloudHighCoverage: 1,
+    });
   });
 
   it("keeps missing ICON layer values null instead of backfilling them from total cloud", () => {
@@ -205,6 +297,12 @@ describe("weather source fusion", () => {
       value: null,
       missingReason: "provider_field_missing",
     });
+    expect(result.confidenceByField.cloudLow).toBeLessThanOrEqual(0.45);
+    expect(result.summary.cloudLayerCoverage?.fieldCoverageSummary).toMatchObject({
+      cloudLowCoverage: 0,
+      cloudMidCoverage: 1,
+      cloudHighCoverage: 0,
+    });
   });
 
   it("keeps target-specific field priorities explicit", () => {
@@ -224,6 +322,7 @@ function bundle(
   providerCode: "qweather" | "open_meteo",
   providerLabelZh: string,
   hourly: NormalizedHourlyWeather,
+  sourceSummaryOverrides: Partial<WeatherSourceSummary> = {},
 ): WeatherDataBundle {
   return {
     hourly: [hourly],
@@ -236,6 +335,24 @@ function bundle(
     noticeZh: `天气数据：${providerLabelZh}`,
     missingFields: hourly.missingFields ?? [],
     estimatedFields: hourly.estimatedFields ?? [],
+    sourceSummaries: [
+      {
+        providerCode,
+        providerLabelZh,
+        dataMode: "fixture",
+        enabled: true,
+        realCallEnabled: false,
+        attempted: true,
+        success: true,
+        status: "available",
+        availableFields: [],
+        missingFields: hourly.missingFields ?? [],
+        cacheHit: false,
+        generatedAt: "2026-05-22T00:00:00+08:00",
+        messageZh: `${providerLabelZh} available`,
+        ...sourceSummaryOverrides,
+      },
+    ],
   };
 }
 

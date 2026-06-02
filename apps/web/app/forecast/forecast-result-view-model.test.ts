@@ -5414,6 +5414,59 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("不使用总云量回填");
   });
 
+  it("shows the compact cloud-layer coverage note in the professional table", () => {
+    const result = resultWithProfessionalHourlyData({
+      professionalHourlyDataTimeBasis: {
+        startTime: "2026-05-20T00:00:00+08:00",
+        endTime: "2026-05-20T15:00:00+08:00",
+        stepMinutes: 60,
+        timezone: "Asia/Shanghai",
+        temperatureBasis: "terrain_adjusted",
+        temperatureBasisNoteZh: "温度口径：机位海拔修正后",
+        cloudLayerBasis: "explicit_layers",
+        cloudLayerBasisNoteZh: "分层云量覆盖较完整",
+        partialData: false,
+        fieldCoverageSummary: {
+          totalHours: 15,
+          totalCloudCoverage: 15,
+          cloudLowCoverage: 15,
+          cloudMidCoverage: 15,
+          cloudHighCoverage: 15,
+          temperatureCoverage: 15,
+          terrainAdjustedTemperatureCoverage: 15,
+          dewPointCoverage: 15,
+          dewPointSpreadCoverage: 15,
+          humidityCoverage: 15,
+          precipitationAmountCoverage: 15,
+          precipitationProbabilityCoverage: 15,
+          visibilityCoverage: 15,
+          windSpeedCoverage: 15,
+          windDirectionCoverage: 15,
+          weatherCodeCoverage: 15,
+        },
+        providerCoverageSummary: [],
+        selectedPrimaryCloudLayerSource: "open_meteo_icon",
+        fallbackSourcesUsed: [],
+        missingFieldSummary: [],
+        userFacingCoverageNoteZh: "分层云量覆盖较完整，覆盖率：低云 15/15，中云 15/15，高云 15/15。",
+        professionalCoverageNoteZh:
+          "分层云量覆盖较完整，覆盖率：低云 15/15，中云 15/15，高云 15/15；可用于复核云海、白墙和开口风险。",
+      },
+    });
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(html).toContain("cloud-layer-coverage-note");
+    expect(html).toContain("低云 15/15");
+    expect(html).not.toContain("open_meteo_icon");
+  });
+
   it("shows raw grid temperature basis and review signal when layer data is insufficient", () => {
     const hourly = professionalHourlyDataForTest({
       cloudSeaSignal: "需复核",

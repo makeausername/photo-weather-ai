@@ -18,7 +18,11 @@ export const cloudSeaProductionRuleFiles = [
   "packages/scoring/src/cloud-sea-analysis.ts",
   "packages/scoring/src/cloud-layer-roles.ts",
   "packages/scoring/src/engine.ts",
+  "packages/weather/src/cloud-layer-coverage-resolver.ts",
   "packages/weather/src/disagreement.ts",
+  "packages/weather/src/fusion.ts",
+  "packages/weather/src/open-meteo-forecast-cloud-layer-provider.ts",
+  "packages/weather/src/open-meteo-icon-cloud-layer-provider.ts",
 ];
 
 const forbiddenLocationNames = [

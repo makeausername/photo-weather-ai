@@ -298,6 +298,30 @@ describe("local astro diagnostics scripts", () => {
     expect(script).not.toContain("process.env.METEOBLUE");
   });
 
+  it("prints cloud-layer coverage diagnostics without raw provider secrets", () => {
+    const iconScript = readRepoFile("scripts/test-open-meteo-icon-cloud-layers.sh");
+    const coverageScript = readRepoFile("scripts/test-cloud-layer-coverage.sh");
+    const combined = `${iconScript}\n${coverageScript}`;
+
+    for (const expected of [
+      "forecast_hours",
+      "cloud_cover_low",
+      "cloud_cover_mid",
+      "cloud_cover_high",
+      "fieldCoverageSummary",
+      "providerCoverageSummary",
+      "firstLastRows",
+      "layerCoverageAtLeast90",
+      "skipped_no_key",
+    ]) {
+      expect(combined).toContain(expected);
+    }
+
+    expect(combined).toContain("No API keys or raw provider JSON are printed.");
+    expect(combined).not.toContain("console.log(process.env.METEOBLUE_API_KEY");
+    expect(combined).not.toContain("console.log(process.env.OPEN_METEO_API_KEY");
+  });
+
   it("wires historical calibration smoke testing without printing admin secrets", () => {
     const packageJson = JSON.parse(readRepoFile("package.json")) as {
       scripts: Record<string, string>;

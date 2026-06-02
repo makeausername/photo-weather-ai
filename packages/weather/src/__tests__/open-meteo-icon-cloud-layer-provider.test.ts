@@ -1,9 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   buildOpenMeteoIconCloudLayerUrl,
+  buildOpenMeteoForecastCloudLayerUrl,
   normalizeOpenMeteoIconCloudLayers,
+  openMeteoForecastCloudLayerProviderName,
   OpenMeteoIconCloudLayerClient,
+  openMeteoIconCloudLayerProviderName,
   OpenMeteoIconCloudLayerProvider,
+  OpenMeteoForecastCloudLayerClient,
+  OpenMeteoForecastCloudLayerProvider,
   WeatherIntelligenceService,
   type WeatherRequestInput,
 } from "../index";
@@ -84,6 +89,46 @@ describe("OpenMeteoIconCloudLayerProvider", () => {
     expect(url.searchParams.get("forecast_hours")).toBe("72");
   });
 
+  it("builds a standard Open-Meteo Forecast fallback URL without a fixed ICON model", () => {
+    const url = new URL(
+      buildOpenMeteoForecastCloudLayerUrl(
+        {
+          endpoint: "https://api.open-meteo.com/v1",
+          mode: "free",
+          timezone: "Asia/Shanghai",
+          timeoutMs: 1000,
+          retryCount: 0,
+        },
+        {
+          coordinates,
+          elevationMeters: 1860,
+          forecastHours: 48,
+          timezone: "Asia/Shanghai",
+        },
+      ),
+    );
+
+    expect(url.origin).toBe("https://api.open-meteo.com");
+    expect(url.pathname).toBe("/v1/forecast");
+    expect(url.searchParams.get("models")).toBeNull();
+    expect(url.searchParams.get("forecast_hours")).toBe("72");
+    expect(url.searchParams.get("timezone")).toBe("Asia/Shanghai");
+    expect(url.searchParams.get("elevation")).toBe("1860");
+    expect(url.searchParams.get("wind_speed_unit")).toBe("ms");
+    expect(url.searchParams.get("precipitation_unit")).toBe("mm");
+    expect(url.searchParams.get("hourly")?.split(",")).toEqual(
+      expect.arrayContaining([
+        "cloud_cover",
+        "cloud_cover_low",
+        "cloud_cover_mid",
+        "cloud_cover_high",
+        "dew_point_2m",
+        "precipitation_probability",
+        "visibility",
+      ]),
+    );
+  });
+
   it("normalizes same-source total, low, mid, and high cloud layers without filling gaps", () => {
     const [complete, partial] = normalizeOpenMeteoIconCloudLayers(payload({ hours: 2 }));
 
@@ -156,6 +201,134 @@ describe("OpenMeteoIconCloudLayerProvider", () => {
       ]),
     );
   });
+
+  it("uses the standard Forecast provider as a safe coverage fallback when ICON is incomplete", async () => {
+    const iconFetcher = vi.fn(async () => new Response(JSON.stringify(payload({ hours: 72 }))));
+    const forecastFetcher = vi.fn(async () => {
+      const body = payload({ hours: 72 }) as unknown as {
+        hourly: {
+          cloud_cover_low: unknown[];
+          cloud_cover_mid: unknown[];
+          cloud_cover_high: unknown[];
+        };
+      };
+      body.hourly.cloud_cover_low = Array.from({ length: 72 }, () => 22);
+      body.hourly.cloud_cover_mid = Array.from({ length: 72 }, () => 40);
+      body.hourly.cloud_cover_high = Array.from({ length: 72 }, () => 51);
+      return new Response(JSON.stringify(body));
+    });
+    const iconProvider = new OpenMeteoIconCloudLayerProvider({
+      client: new OpenMeteoIconCloudLayerClient({
+        endpoint: "https://api.open-meteo.com",
+        timeoutMs: 1000,
+        retryCount: 0,
+        fetcher: iconFetcher,
+      }),
+    });
+    const forecastProvider = new OpenMeteoForecastCloudLayerProvider({
+      client: new OpenMeteoForecastCloudLayerClient({
+        endpoint: "https://api.open-meteo.com",
+        timeoutMs: 1000,
+        retryCount: 0,
+        fetcher: forecastFetcher,
+      }),
+    });
+    const service = new WeatherIntelligenceService({
+      providers: [iconProvider, forecastProvider],
+    });
+
+    const bundle = await service.getWeatherDataBundle(requestInput());
+
+    expect(iconFetcher).toHaveBeenCalled();
+    expect(forecastFetcher).toHaveBeenCalled();
+    expect(bundle.hourly).toHaveLength(72);
+    expect(bundle.hourly[1]).toMatchObject({
+      cloudLow: 22,
+      cloudMid: 40,
+      cloudHigh: 51,
+    });
+    expect(bundle.hourly[1]?.fieldMetadata?.cloudLow).toMatchObject({
+      basis: "fallback_same_field",
+    });
+    expect(bundle.fusionSummary?.cloudLayerCoverage?.fieldCoverageSummary).toMatchObject({
+      totalHours: 72,
+      cloudLowCoverage: 72,
+      cloudMidCoverage: 72,
+      cloudHighCoverage: 72,
+    });
+  });
+
+  it("records failed ICON coverage diagnostics while best-match fallback keeps data usable", async () => {
+    const iconFetcher = vi.fn(
+      async () => new Response(JSON.stringify({ reason: "ICON unavailable" }), { status: 503 }),
+    );
+    const forecastFetcher = vi.fn(async () => {
+      const body = payload({ hours: 72 }) as unknown as {
+        hourly: {
+          cloud_cover_low: unknown[];
+          cloud_cover_mid: unknown[];
+          cloud_cover_high: unknown[];
+        };
+      };
+      body.hourly.cloud_cover_low = Array.from({ length: 72 }, () => 22);
+      body.hourly.cloud_cover_mid = Array.from({ length: 72 }, () => 40);
+      body.hourly.cloud_cover_high = Array.from({ length: 72 }, () => 51);
+      return new Response(JSON.stringify(body));
+    });
+    const service = new WeatherIntelligenceService({
+      providers: [
+        new OpenMeteoIconCloudLayerProvider({
+          client: new OpenMeteoIconCloudLayerClient({
+            endpoint: "https://api.open-meteo.com",
+            timeoutMs: 1000,
+            retryCount: 0,
+            fetcher: iconFetcher,
+          }),
+        }),
+        new OpenMeteoForecastCloudLayerProvider({
+          client: new OpenMeteoForecastCloudLayerClient({
+            endpoint: "https://api.open-meteo.com",
+            timeoutMs: 1000,
+            retryCount: 0,
+            fetcher: forecastFetcher,
+          }),
+        }),
+      ],
+    });
+
+    const bundle = await service.getWeatherDataBundle(requestInput());
+
+    expect(bundle.dataMode).toBe("real");
+    expect(bundle.hourly).toHaveLength(72);
+    expect(bundle.sourceSummaries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          providerId: openMeteoIconCloudLayerProviderName,
+          status: "failed",
+          success: false,
+        }),
+      ]),
+    );
+    expect(bundle.fusionSummary?.cloudLayerCoverage?.providerCoverageSummary).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          providerId: openMeteoForecastCloudLayerProviderName,
+          returnedHours: 72,
+          cloudLowHours: 72,
+          cloudMidHours: 72,
+          cloudHighHours: 72,
+        }),
+        expect.objectContaining({
+          providerId: openMeteoIconCloudLayerProviderName,
+          returnedHours: 0,
+          cloudLowHours: 0,
+          cloudMidHours: 0,
+          cloudHighHours: 0,
+          error: expect.any(String),
+        }),
+      ]),
+    );
+  });
 });
 
 function requestInput(): WeatherRequestInput {
@@ -172,30 +345,33 @@ function requestInput(): WeatherRequestInput {
 }
 
 function payload(options: { readonly hours: number }) {
-  const time = Array.from({ length: options.hours }, (_, index) =>
-    `2026-05-20T${String(index).padStart(2, "0")}:00`,
-  );
+  const time = Array.from({ length: options.hours }, (_, index) => {
+    const value = new Date(Date.UTC(2026, 4, 20, index));
+    const date = value.toISOString().slice(0, 10);
+    const hour = String(value.getUTCHours()).padStart(2, "0");
+    return `${date}T${hour}:00`;
+  });
 
   return {
     utc_offset_seconds: 28800,
     elevation: 1850,
     hourly: {
       time,
-      temperature_2m: [12, 13],
-      relative_humidity_2m: [84, 86],
-      dew_point_2m: [10, 11],
-      cloud_cover: [55, 60],
-      cloud_cover_low: [24, null],
-      cloud_cover_mid: [38, 40],
-      cloud_cover_high: [48, null],
-      precipitation: [0, 0],
-      precipitation_probability: [12, 16],
-      visibility: [22000, 18000],
-      wind_speed_10m: [4.5, 5.2],
-      wind_direction_10m: [125, 128],
-      wind_gusts_10m: [8.1, 8.8],
-      weather_code: [2, 3],
-      pressure_msl: [1008, 1007],
+      temperature_2m: time.map((_, index) => 12 + (index % 6)),
+      relative_humidity_2m: time.map((_, index) => (index === 1 ? 86 : 84)),
+      dew_point_2m: time.map((_, index) => (index === 1 ? 11 : 10)),
+      cloud_cover: time.map((_, index) => (index === 1 ? 60 : 55)),
+      cloud_cover_low: time.map((_, index) => (index === 1 ? null : 24)),
+      cloud_cover_mid: time.map((_, index) => (index === 1 ? 40 : 38)),
+      cloud_cover_high: time.map((_, index) => (index === 1 ? null : 48)),
+      precipitation: time.map(() => 0),
+      precipitation_probability: time.map((_, index) => (index === 1 ? 16 : 12)),
+      visibility: time.map((_, index) => (index === 1 ? 18000 : 22000)),
+      wind_speed_10m: time.map((_, index) => (index === 1 ? 5.2 : 4.5)),
+      wind_direction_10m: time.map((_, index) => (index === 1 ? 128 : 125)),
+      wind_gusts_10m: time.map((_, index) => (index === 1 ? 8.8 : 8.1)),
+      weather_code: time.map((_, index) => (index === 1 ? 3 : 2)),
+      pressure_msl: time.map((_, index) => (index === 1 ? 1007 : 1008)),
     },
   };
 }

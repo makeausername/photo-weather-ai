@@ -1,7 +1,9 @@
 import { defaultTimezone, formatZonedIso, getNowInTimezone } from "@photo-weather/calendar";
 import type {
+  CloudLayerProviderCoverageSummary,
   NormalizedCurrentWeather,
   NormalizedHourlyWeather,
+  WeatherFusionSummary,
   WeatherProviderTerrainMetadata,
 } from "@photo-weather/shared";
 import type { WeatherProvider } from "./provider.js";
@@ -146,6 +148,10 @@ export class WeatherIntelligenceService {
     const primary =
       usableBundles.find((bundle) => bundle.providerCode === fusion.recommendedPrimarySource) ??
       usableBundles[0]!;
+    const fusionSummary = appendFailedCloudLayerProviderCoverage(
+      fusion.summary,
+      failedSourceSummaries,
+    );
 
     return {
       current: primary.current,
@@ -181,7 +187,7 @@ export class WeatherIntelligenceService {
       confidenceByField: fusion.confidenceByField,
       confidenceByTarget: fusion.confidenceByTarget,
       fusionSummary: {
-        ...fusion.summary,
+        ...fusionSummary,
         sourceSummaries: [...fusion.sourceSummaries, ...failedSourceSummaries],
         missingDataNotes: [
           ...fusion.missingDataNotes,
@@ -293,7 +299,7 @@ export class WeatherIntelligenceService {
     input: WeatherRequestInput,
   ): Promise<WeatherDataBundle> {
     const key = buildWeatherCacheKey({
-      provider: provider.source.providerCode,
+      provider: `${provider.source.providerCode}:${provider.source.displayName}`,
       coordinates: input.coordinates,
       horizon: input.horizon ?? horizonFromHours(input.hours),
       forecastStart: input.forecastStart ?? generatedAt(input),
@@ -341,6 +347,76 @@ export class WeatherIntelligenceService {
       throw error;
     }
   }
+}
+
+function appendFailedCloudLayerProviderCoverage(
+  summary: WeatherFusionSummary,
+  failedSourceSummaries: readonly WeatherSourceSummary[],
+): WeatherFusionSummary {
+  if (!summary.cloudLayerCoverage || failedSourceSummaries.length === 0) {
+    return summary;
+  }
+
+  const existingKeys = new Set(
+    summary.cloudLayerCoverage.providerCoverageSummary.map(providerCoverageKey),
+  );
+  const failedCoverage = failedSourceSummaries
+    .map(failedSourceSummaryToProviderCoverage)
+    .filter((coverage) => {
+      const key = providerCoverageKey(coverage);
+      if (existingKeys.has(key)) {
+        return false;
+      }
+      existingKeys.add(key);
+      return true;
+    });
+
+  if (failedCoverage.length === 0) {
+    return summary;
+  }
+
+  return {
+    ...summary,
+    cloudLayerCoverage: {
+      ...summary.cloudLayerCoverage,
+      providerCoverageSummary: [
+        ...summary.cloudLayerCoverage.providerCoverageSummary,
+        ...failedCoverage,
+      ],
+    },
+  };
+}
+
+function failedSourceSummaryToProviderCoverage(
+  summary: WeatherSourceSummary,
+): CloudLayerProviderCoverageSummary {
+  return {
+    providerId: summary.providerId ?? providerCoverageFallbackId(summary),
+    providerCode: summary.providerCode,
+    modelName: summary.modelName,
+    returnedHours: summary.returnedHours ?? 0,
+    cloudTotalHours: summary.cloudTotalHours ?? 0,
+    cloudLowHours: summary.cloudLowHours ?? 0,
+    cloudMidHours: summary.cloudMidHours ?? 0,
+    cloudHighHours: summary.cloudHighHours ?? 0,
+    dewPointHours: summary.dewPointHours ?? 0,
+    visibilityHours: summary.visibilityHours ?? 0,
+    precipitationProbabilityHours: summary.precipitationProbabilityHours ?? 0,
+    error: summary.warningZh ?? summary.messageZh,
+  };
+}
+
+function providerCoverageKey(
+  coverage: Pick<CloudLayerProviderCoverageSummary, "providerId" | "providerCode" | "modelName">,
+): string {
+  return coverage.providerId || providerCoverageFallbackId(coverage);
+}
+
+function providerCoverageFallbackId(input: {
+  readonly providerCode: string;
+  readonly modelName?: string;
+}): string {
+  return input.modelName ? `${input.providerCode}:${input.modelName}` : input.providerCode;
 }
 
 export function createWeatherDataService(
@@ -511,6 +587,7 @@ function failedSourceSummary(provider: WeatherProvider, errorInput: unknown): We
     ? errorInput.sourceSummaryMetadata
     : undefined;
   return {
+    providerId: sourceSummaryMetadata?.providerId,
     providerCode: provider.source.providerCode,
     providerLabelZh: provider.source.providerLabelZh,
     dataMode: provider.source.mode,

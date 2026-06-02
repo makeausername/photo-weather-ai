@@ -327,6 +327,7 @@ function buildProfessionalHourlyDataTimeBasis(
     ) ||
     (hasForecastRange &&
       (start.timestamp > forecastStartMs + 60 * 1000 || endTimestamp < forecastEndMs - 60 * 1000));
+  const cloudLayerCoverage = input.weatherFusionSummary?.cloudLayerCoverage;
 
   return {
     startTime: start.value,
@@ -336,8 +337,17 @@ function buildProfessionalHourlyDataTimeBasis(
     temperatureBasis: aggregateProfessionalTemperatureBasis(input.hourlyWeather),
     temperatureBasisNoteZh: aggregateProfessionalTemperatureBasisNote(input.hourlyWeather),
     cloudLayerBasis: aggregateProfessionalCloudLayerBasis(input.hourlyWeather),
-    cloudLayerBasisNoteZh: aggregateProfessionalCloudLayerBasisNote(input.hourlyWeather),
+    cloudLayerBasisNoteZh:
+      cloudLayerCoverage?.professionalCoverageNoteZh ??
+      aggregateProfessionalCloudLayerBasisNote(input.hourlyWeather),
     partialData,
+    fieldCoverageSummary: cloudLayerCoverage?.fieldCoverageSummary,
+    providerCoverageSummary: cloudLayerCoverage?.providerCoverageSummary,
+    selectedPrimaryCloudLayerSource: cloudLayerCoverage?.selectedPrimaryCloudLayerSource,
+    fallbackSourcesUsed: cloudLayerCoverage?.fallbackSourcesUsed,
+    missingFieldSummary: cloudLayerCoverage?.missingFieldSummary,
+    userFacingCoverageNoteZh: cloudLayerCoverage?.userFacingCoverageNoteZh,
+    professionalCoverageNoteZh: cloudLayerCoverage?.professionalCoverageNoteZh,
     missingDataNoteZh: partialData ? "部分小时数据缺失，结果仅供复核。" : undefined,
   };
 }

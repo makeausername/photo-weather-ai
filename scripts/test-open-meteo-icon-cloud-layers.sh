@@ -85,6 +85,12 @@ function sampleRows(hourly, indexes) {
   }));
 }
 
+function count(values) {
+  return Array.isArray(values)
+    ? values.filter((value) => typeof value === "number" && Number.isFinite(value)).length
+    : 0;
+}
+
 let failures = 0;
 
 for (const point of coordinates) {
@@ -108,6 +114,11 @@ for (const point of coordinates) {
     const hourly = body.hourly || {};
     const times = Array.isArray(hourly.time) ? hourly.time : [];
     console.log(`returnedHours: ${times.length}`);
+    const lowCoverage = count(hourly.cloud_cover_low);
+    const midCoverage = count(hourly.cloud_cover_mid);
+    const highCoverage = count(hourly.cloud_cover_high);
+    console.log(`coverage: total=${count(hourly.cloud_cover)}/${times.length} low=${lowCoverage}/${times.length} mid=${midCoverage}/${times.length} high=${highCoverage}/${times.length}`);
+    console.log(`layerCoverageAtLeast90: ${Math.min(lowCoverage, midCoverage, highCoverage) / Math.max(1, times.length) >= 0.9 ? "yes" : "no"}`);
     for (const field of requiredFields) {
       console.log(`${field}: ${Array.isArray(hourly[field]) ? "available" : "missing"}`);
     }

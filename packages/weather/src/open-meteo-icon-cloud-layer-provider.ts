@@ -387,6 +387,7 @@ export class OpenMeteoIconCloudLayerProvider implements WeatherProvider {
     }
 
     return {
+      providerId: openMeteoIconCloudLayerProviderName,
       sourceFamily: metadata.sourceFamily,
       modelFamily: metadata.modelFamily,
       modelName: metadata.modelName,
@@ -675,6 +676,7 @@ function openMeteoIconError(
     providerLabelZh: source.providerLabelZh,
     dataMode: source.mode,
     sourceSummaryMetadata: {
+      providerId: openMeteoIconCloudLayerProviderName,
       availableFields: [],
       extractedFields: [],
       missingFields: ["cloudTotal", "cloudLow", "cloudMid", "cloudHigh"],
@@ -848,22 +850,26 @@ function cloudLayerFieldMetadata(input: {
       : undefined;
 
   return {
-    cloudTotal: fieldMetadata(input.cloudTotal, input, elevationDifferenceMeters),
-    cloudLow: fieldMetadata(input.cloudLow, input, elevationDifferenceMeters),
-    cloudMid: fieldMetadata(input.cloudMid, input, elevationDifferenceMeters),
-    cloudHigh: fieldMetadata(input.cloudHigh, input, elevationDifferenceMeters),
+    cloudTotal: fieldMetadata(input.cloudTotal, "total_cloud", input, elevationDifferenceMeters),
+    cloudLow: fieldMetadata(input.cloudLow, "explicit_layer", input, elevationDifferenceMeters),
+    cloudMid: fieldMetadata(input.cloudMid, "explicit_layer", input, elevationDifferenceMeters),
+    cloudHigh: fieldMetadata(input.cloudHigh, "explicit_layer", input, elevationDifferenceMeters),
   };
 }
 
 function fieldMetadata(
   value: number | null,
+  basis: "explicit_layer" | "total_cloud",
   input: { readonly providerElevationMeters?: number; readonly selectedSpotElevationMeters?: number },
   elevationDifferenceMeters?: number,
 ) {
   return {
     value,
     providerCode: source.providerCode,
+    sourceId: openMeteoIconCloudLayerProviderName,
     providerLabelZh: source.providerLabelZh,
+    modelName: openMeteoIconCloudLayerDefaultModel,
+    basis: value === null ? ("missing" as const) : basis,
     estimated: false,
     missingReason: value === null ? "provider_field_missing" : undefined,
     providerElevationMeters: input.providerElevationMeters,

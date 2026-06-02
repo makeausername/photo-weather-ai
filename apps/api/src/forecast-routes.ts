@@ -447,6 +447,7 @@ async function calculateForecastResultOrReply(
       astroServiceClient,
       astroServiceConfig,
     );
+    logCloudSeaCoverageDiagnostics(logger, result);
     return attachCalibrationHint(result, query, dbClient);
   } catch (error) {
     logForecastCalculationFailure({
@@ -1178,6 +1179,58 @@ function logForecastCalculationStart(options: {
       locationName: normalizedQuery.locationName ?? rawQuery.locationName,
     },
     "Forecast calculation started",
+  );
+}
+
+function logCloudSeaCoverageDiagnostics(
+  logger: FastifyBaseLogger,
+  result: ForecastCalculationResult,
+): void {
+  if (result.target !== "cloud_sea") {
+    return;
+  }
+  const basis = result.professionalHourlyDataTimeBasis;
+  const coverage = basis?.fieldCoverageSummary;
+  if (!basis || !coverage) {
+    logger.info(
+      {
+        route: "/forecast/calculate",
+        target: result.target,
+        requestedForecastHours: result.calendarBasis.horizonHours,
+        professionalHourlyRows: result.professionalHourlyData?.length ?? 0,
+        cloudLayerCoverage: "unavailable",
+      },
+      "Cloud Sea cloud-layer coverage diagnostics",
+    );
+    return;
+  }
+
+  logger.info(
+    {
+      route: "/forecast/calculate",
+      target: result.target,
+      requestedForecastHours: result.calendarBasis.horizonHours,
+      professionalHourlyRows: result.professionalHourlyData?.length ?? 0,
+      selectedPrimaryCloudLayerSource: basis.selectedPrimaryCloudLayerSource,
+      fallbackSourcesUsed: basis.fallbackSourcesUsed ?? [],
+      returnedHoursByProvider: (basis.providerCoverageSummary ?? []).map((provider) => ({
+        providerId: provider.providerId,
+        providerCode: provider.providerCode,
+        modelName: provider.modelName,
+        returnedHours: provider.returnedHours,
+        cloudTotalHours: provider.cloudTotalHours,
+        cloudLowHours: provider.cloudLowHours,
+        cloudMidHours: provider.cloudMidHours,
+        cloudHighHours: provider.cloudHighHours,
+        dewPointHours: provider.dewPointHours,
+        visibilityHours: provider.visibilityHours,
+        precipitationProbabilityHours: provider.precipitationProbabilityHours,
+        error: provider.error,
+      })),
+      fieldCoverage: coverage,
+      missingFieldSummary: basis.missingFieldSummary ?? [],
+    },
+    "Cloud Sea cloud-layer coverage diagnostics",
   );
 }
 

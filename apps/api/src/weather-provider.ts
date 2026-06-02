@@ -13,6 +13,8 @@ import {
   OpenMeteoIconCloudLayerProvider,
   openMeteoIconCloudLayerDefaultModel,
   openMeteoIconCloudLayerParserVersion,
+  OpenMeteoForecastCloudLayerClient,
+  OpenMeteoForecastCloudLayerProvider,
   OpenMeteoProvider,
   QWeatherClient,
   QWeatherProvider,
@@ -741,6 +743,18 @@ async function resolveRuntimeWeatherProviders(
           }),
         }),
       );
+      providers.push(
+        new OpenMeteoForecastCloudLayerProvider({
+          client: new OpenMeteoForecastCloudLayerClient({
+            endpoint: openMeteo.mode === "customer" ? openMeteo.endpoint : openMeteo.baseUrl,
+            mode: openMeteo.mode,
+            apiKey: openMeteo.apiKey,
+            timezone: openMeteo.timezone,
+            timeoutMs: openMeteo.timeoutMs,
+            retryCount: openMeteo.retryCount,
+          }),
+        }),
+      );
     } else if (!openMeteo.realCallEnabled) {
       providers.push(new OpenMeteoProvider());
     } else {
@@ -915,11 +929,16 @@ function mergeSourceSummaries(
 ): readonly WeatherSourceSummary[] {
   const byCode = new Map<string, WeatherSourceSummary>();
   for (const summary of summaries) {
-    const existing = byCode.get(summary.providerCode);
+    const key = sourceSummaryMergeKey(summary);
+    const existing = byCode.get(key);
     if (!existing || (summary.attempted && !existing.attempted)) {
-      byCode.set(summary.providerCode, summary);
+      byCode.set(key, summary);
     }
   }
 
   return [...byCode.values()];
+}
+
+function sourceSummaryMergeKey(summary: WeatherSourceSummary): string {
+  return summary.providerId ?? `${summary.providerCode}:${summary.modelName ?? "default"}`;
 }

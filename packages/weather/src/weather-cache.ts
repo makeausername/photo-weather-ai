@@ -1,10 +1,9 @@
 import type { Coordinates, ForecastHorizon, ForecastTarget } from "@photo-weather/shared";
-import type { WeatherProviderCode } from "./types.js";
 
 export type WeatherCachePurpose = "current" | "hourly" | "daily" | "alerts" | "fusion";
 
 export type WeatherCacheKeyInput = {
-  readonly provider: WeatherProviderCode | "fusion";
+  readonly provider: string;
   readonly coordinates: Coordinates;
   readonly horizon: ForecastHorizon;
   readonly forecastStart: string;

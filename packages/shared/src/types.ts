@@ -121,7 +121,10 @@ export type CloudFogObstructionRisk = "low" | "medium" | "high";
 export type NormalizedWeatherFieldMetadata = {
   readonly value?: string | number | boolean | null;
   readonly providerCode: string;
+  readonly sourceId?: string;
   readonly providerLabelZh?: string;
+  readonly modelName?: string;
+  readonly basis?: "explicit_layer" | "total_cloud" | "fallback_same_field" | "missing";
   readonly estimated: boolean;
   readonly missingReason?: string;
   readonly providerElevationMeters?: number;
@@ -309,6 +312,13 @@ export type ProfessionalHourlyDataTimeBasis = {
   readonly cloudLayerBasisNoteZh: string;
   readonly partialData: boolean;
   readonly missingDataNoteZh?: string;
+  readonly fieldCoverageSummary?: CloudLayerFieldCoverageSummary;
+  readonly providerCoverageSummary?: readonly CloudLayerProviderCoverageSummary[];
+  readonly selectedPrimaryCloudLayerSource?: string;
+  readonly fallbackSourcesUsed?: readonly string[];
+  readonly missingFieldSummary?: readonly string[];
+  readonly userFacingCoverageNoteZh?: string;
+  readonly professionalCoverageNoteZh?: string;
 };
 
 export type NormalizedCurrentWeather = {
@@ -458,6 +468,7 @@ export type ForecastWeatherSourceErrorCategory =
   | "skipped";
 
 export type ForecastWeatherSourceSummary = {
+  readonly providerId?: string;
   readonly providerCode: string;
   readonly providerLabelZh: string;
   readonly dataMode: WeatherDataMode;
@@ -494,6 +505,13 @@ export type ForecastWeatherSourceSummary = {
   readonly basis?: string;
   readonly requestedForecastHours?: number;
   readonly returnedHours?: number;
+  readonly cloudTotalHours?: number;
+  readonly cloudLowHours?: number;
+  readonly cloudMidHours?: number;
+  readonly cloudHighHours?: number;
+  readonly dewPointHours?: number;
+  readonly visibilityHours?: number;
+  readonly precipitationProbabilityHours?: number;
   readonly timezone?: string;
   readonly elevationBasis?: string;
   readonly parserVersion?: string;
@@ -1448,6 +1466,52 @@ export type WeatherFusionSummary = {
   readonly sourceSummaries?: readonly ForecastWeatherSourceSummary[];
   readonly missingDataNotes?: readonly string[];
   readonly multiSourceAgreementContext?: ForecastMultiSourceAgreementContext;
+  readonly cloudLayerCoverage?: CloudLayerCoverageSummary;
+};
+
+export type CloudLayerFieldCoverageSummary = {
+  readonly totalHours: number;
+  readonly totalCloudCoverage: number;
+  readonly cloudLowCoverage: number;
+  readonly cloudMidCoverage: number;
+  readonly cloudHighCoverage: number;
+  readonly temperatureCoverage: number;
+  readonly terrainAdjustedTemperatureCoverage: number;
+  readonly dewPointCoverage: number;
+  readonly dewPointSpreadCoverage: number;
+  readonly humidityCoverage: number;
+  readonly precipitationAmountCoverage: number;
+  readonly precipitationProbabilityCoverage: number;
+  readonly visibilityCoverage: number;
+  readonly windSpeedCoverage: number;
+  readonly windDirectionCoverage: number;
+  readonly weatherCodeCoverage: number;
+};
+
+export type CloudLayerProviderCoverageSummary = {
+  readonly providerId: string;
+  readonly providerCode: string;
+  readonly modelName?: string;
+  readonly returnedHours: number;
+  readonly cloudTotalHours: number;
+  readonly cloudLowHours: number;
+  readonly cloudMidHours: number;
+  readonly cloudHighHours: number;
+  readonly dewPointHours: number;
+  readonly visibilityHours: number;
+  readonly precipitationProbabilityHours: number;
+  readonly error?: string;
+};
+
+export type CloudLayerCoverageSummary = {
+  readonly totalHours: number;
+  readonly fieldCoverageSummary: CloudLayerFieldCoverageSummary;
+  readonly providerCoverageSummary: readonly CloudLayerProviderCoverageSummary[];
+  readonly selectedPrimaryCloudLayerSource?: string;
+  readonly fallbackSourcesUsed: readonly string[];
+  readonly missingFieldSummary: readonly string[];
+  readonly userFacingCoverageNoteZh: string;
+  readonly professionalCoverageNoteZh: string;
 };
 
 export type ForecastCalendarDayInfo = {

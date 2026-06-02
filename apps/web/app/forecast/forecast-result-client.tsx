@@ -4861,6 +4861,7 @@ function CloudSeaProfessionalHourlyDataPanel({
     cloudLayerCompleteness,
     cloudBasisConsistency,
   );
+  const coverageNote = basis.professionalCoverageNoteZh ?? basis.userFacingCoverageNoteZh;
   const temperatureColumnLabel = professionalTemperatureColumnLabel(rows, basis);
 
   return (
@@ -4909,10 +4910,31 @@ function CloudSeaProfessionalHourlyDataPanel({
           label="云量口径"
           value={professionalCloudBasisLabel(cloudBasisConsistency, cloudLayerCompleteness)}
         />
+        {basis.fieldCoverageSummary ? (
+          <CompactDefinition
+            label="分层覆盖"
+            value={professionalCloudCoverageLabel(basis.fieldCoverageSummary)}
+          />
+        ) : null}
         {missingHeaderNote ? (
           <CompactDefinition label="缺失说明" value={missingHeaderNote} />
         ) : null}
       </dl>
+      {coverageNote &&
+      coverageNote !== missingHeaderNote &&
+      coverageNote !== incompleteFieldNote ? (
+        <p
+          className={cn(
+            "mt-3 rounded-lg border px-3 py-2 text-xs leading-5 text-muted-foreground",
+            cloudLayerCompleteness.layerCompletenessLevel === "complete"
+              ? "border-border bg-muted"
+              : "border-warning/40 bg-accent/10",
+          )}
+          data-testid="cloud-layer-coverage-note"
+        >
+          {coverageNote}
+        </p>
+      ) : null}
       {incompleteFieldNote && incompleteFieldNote !== missingHeaderNote ? (
         <p className="mt-3 rounded-lg border border-warning/40 bg-accent/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
           {incompleteFieldNote}
@@ -5429,6 +5451,14 @@ function professionalCloudBasisLabel(
     return "总云量 + 低/中/高云分层口径较一致";
   }
   return "暂无";
+}
+
+function professionalCloudCoverageLabel(
+  summary: NonNullable<
+    NonNullable<ForecastCalculationResult["professionalHourlyDataTimeBasis"]>["fieldCoverageSummary"]
+  >,
+): string {
+  return `低云 ${summary.cloudLowCoverage}/${summary.totalHours}，中云 ${summary.cloudMidCoverage}/${summary.totalHours}，高云 ${summary.cloudHighCoverage}/${summary.totalHours}`;
 }
 
 function professionalTemperatureColumnLabel(

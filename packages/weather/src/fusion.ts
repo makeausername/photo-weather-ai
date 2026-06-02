@@ -1,4 +1,6 @@
 import type {
+  CloudLayerCoverageSummary,
+  CloudLayerFieldCoverageSummary,
   Coordinates,
   ForecastTarget,
   NormalizedCurrentWeather,
@@ -18,6 +20,10 @@ import type {
   WeatherSourceSummary,
 } from "./types.js";
 import { buildMultiSourceAgreementContext } from "./disagreement.js";
+import {
+  annotateSourceSummaryWithCloudLayerCoverage,
+  resolveCloudLayerHourlyCoverage,
+} from "./cloud-layer-coverage-resolver.js";
 
 export type WeatherFusionInput = {
   readonly providerBundles: readonly WeatherDataBundle[];
@@ -98,18 +104,36 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
       endTime: input.forecastEnd,
     },
   });
-  const fusedHourly = hourlyTimes
+  const baseFusedHourly = hourlyTimes
     .map((time) => fuseHourlyAt(time, usableBundles, primaryBundle, input.target))
     .filter((hour): hour is NormalizedHourlyWeather => hour !== null);
+  const cloudLayerCoverage = resolveCloudLayerHourlyCoverage({
+    providerBundles: usableBundles,
+    baseHourlyRows: baseFusedHourly,
+    forecastHours: expectedForecastHours(input, baseFusedHourly.length),
+    timezone: timezoneFromWeather(input.forecastStart),
+  });
+  const fusedHourly = cloudLayerCoverage.hourlyRows;
   const fusedDaily = fuseDailyByDate(usableBundles, primaryBundle);
-  const sourceSummaries = usableBundles.map(sourceSummary);
-  const confidenceByField = buildConfidenceByField(usableBundles, conflictFlags);
+  const sourceSummaries = annotateSourceSummariesWithCoverage(
+    usableBundles.map(sourceSummary),
+    cloudLayerCoverage,
+  );
+  const confidenceByField = applyCloudLayerCoverageConfidence(
+    buildConfidenceByField(usableBundles, conflictFlags),
+    cloudLayerCoverage.fieldCoverageSummary,
+  );
   const confidenceByTarget = applyProviderConfidenceFloor(
     buildConfidenceByTarget(confidenceByField, conflictFlags, input.terrainSummary),
     usableBundles,
     conflictFlags,
   );
-  const missingDataNotes = buildMissingDataNotes(confidenceByField, sourceSummaries);
+  const missingDataNotes = [
+    ...new Set([
+      ...buildMissingDataNotes(confidenceByField, sourceSummaries),
+      ...coverageMissingDataNotes(cloudLayerCoverage),
+    ]),
+  ];
   const recommendedPrimarySource = primaryBundle.providerCode;
   const confidenceLevel = confidenceLevelFromScore(confidenceByTarget[input.target]);
   const dataStatusZh = buildDataStatus(usableBundles, confidenceLevel);
@@ -157,6 +181,7 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
       sourceSummaries,
       missingDataNotes,
       multiSourceAgreementContext,
+      cloudLayerCoverage,
     },
   };
 }
@@ -249,6 +274,72 @@ function emptyFusionResult(): WeatherFusionResult {
       missingDataNotes: ["没有可用于融合的天气源。"],
     },
   };
+}
+
+function expectedForecastHours(input: WeatherFusionInput, fallback: number): number {
+  const start = Date.parse(input.forecastStart);
+  const end = Date.parse(input.forecastEnd);
+  if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
+    return Math.max(1, Math.round((end - start) / (60 * 60 * 1000)));
+  }
+  return Math.max(1, fallback);
+}
+
+function timezoneFromWeather(_forecastStart: string): string {
+  return "Asia/Shanghai";
+}
+
+function annotateSourceSummariesWithCoverage(
+  summaries: readonly WeatherSourceSummary[],
+  coverage: CloudLayerCoverageSummary,
+): readonly WeatherSourceSummary[] {
+  return summaries.map((summary) =>
+    annotateSourceSummaryWithCloudLayerCoverage(
+      summary,
+      coverage.providerCoverageSummary.find(
+        (providerCoverage) =>
+          providerCoverage.providerId === summary.providerId ||
+          (providerCoverage.providerCode === summary.providerCode &&
+            providerCoverage.modelName === summary.modelName) ||
+          (providerCoverage.providerCode === summary.providerCode && !summary.modelName),
+      ),
+    ),
+  );
+}
+
+function applyCloudLayerCoverageConfidence(
+  confidence: WeatherConfidenceByField,
+  coverage: CloudLayerFieldCoverageSummary,
+): WeatherConfidenceByField {
+  const totalHours = Math.max(1, coverage.totalHours);
+  return {
+    ...confidence,
+    cloudTotal: applyCoveragePenalty(confidence.cloudTotal, coverage.totalCloudCoverage / totalHours),
+    cloudLow: applyCoveragePenalty(confidence.cloudLow, coverage.cloudLowCoverage / totalHours),
+    cloudMid: applyCoveragePenalty(confidence.cloudMid, coverage.cloudMidCoverage / totalHours),
+    cloudHigh: applyCoveragePenalty(confidence.cloudHigh, coverage.cloudHighCoverage / totalHours),
+  };
+}
+
+function applyCoveragePenalty(confidence: number, coverageRatio: number): number {
+  if (coverageRatio >= 0.9) {
+    return confidence;
+  }
+  if (coverageRatio < 0.7) {
+    return Math.min(confidence, 0.45);
+  }
+  return Math.min(confidence, 0.65);
+}
+
+function coverageMissingDataNotes(coverage: CloudLayerCoverageSummary): readonly string[] {
+  const totalHours = Math.max(1, coverage.fieldCoverageSummary.totalHours);
+  const layerRatio =
+    Math.min(
+      coverage.fieldCoverageSummary.cloudLowCoverage,
+      coverage.fieldCoverageSummary.cloudMidCoverage,
+      coverage.fieldCoverageSummary.cloudHighCoverage,
+    ) / totalHours;
+  return layerRatio < 0.9 ? [coverage.userFacingCoverageNoteZh] : [];
 }
 
 function fuseCurrent(
