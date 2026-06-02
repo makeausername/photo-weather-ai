@@ -100,6 +100,58 @@ function withHourlyWeather(
   };
 }
 
+function cloudSeaInputWithFullDayRows(
+  generatedAt: string,
+  horizon: ForecastQueryInput["horizon"],
+  rowCount: number,
+): ForecastCalculationInput {
+  const input = buildMockForecastInput(
+    { ...baseQuery, target: "cloud_sea", horizon },
+    { now: generatedAt },
+  );
+  const date = generatedAt.slice(0, 10);
+  const template = input.hourlyWeather[0]!;
+  const hourlyWeather = Array.from({ length: rowCount }, (_, index) => ({
+    ...template,
+    time: offsetHour(`${date}T00:00:00+08:00`, index),
+    humidity: 88,
+    cloudTotal: 72,
+    cloudLow: 48,
+    cloudMid: 36,
+    cloudHigh: 24,
+    windSpeed: 1.8,
+    visibility: 18,
+    dewPoint: template.temperature - 1.8,
+    missingFields: [],
+    estimatedFields: [],
+  }));
+
+  return {
+    ...input,
+    hourlyWeather,
+  };
+}
+
+function offsetHour(start: string, index: number): string {
+  const offset = start.slice(-6);
+  const offsetMinutes = offsetToMinutes(offset);
+  const timestamp = Date.parse(start) + index * 60 * 60 * 1000;
+  const local = new Date(timestamp + offsetMinutes * 60 * 1000);
+  return `${local.getUTCFullYear()}-${pad2(local.getUTCMonth() + 1)}-${pad2(
+    local.getUTCDate(),
+  )}T${pad2(local.getUTCHours())}:00:00${offset}`;
+}
+
+function offsetToMinutes(offset: string): number {
+  const sign = offset.startsWith("-") ? -1 : 1;
+  const [hours, minutes] = offset.slice(1).split(":").map(Number);
+  return sign * ((hours ?? 0) * 60 + (minutes ?? 0));
+}
+
+function pad2(value: number): string {
+  return value.toString().padStart(2, "0");
+}
+
 describe("forecast score calculators", () => {
   it("calculates each major photography score with Chinese labels", () => {
     const input = buildMockForecastInput(baseQuery, { now: fixedNow });
@@ -832,6 +884,78 @@ describe("forecast score calculators", () => {
       cloudLayerBasis: "partial_layers",
     });
     expect(row?.missingFields).toEqual(expect.arrayContaining(["cloudLow", "cloudHigh"]));
+  });
+
+  it("anchors Cloud Sea future24 professional rows to the next forecast hour", () => {
+    const input = cloudSeaInputWithFullDayRows("2026-06-02T08:28:00+08:00", "24h", 36);
+    const result = calculateForecast(input);
+    const rows = result.professionalHourlyData ?? [];
+
+    expect(rows).toHaveLength(24);
+    expect(rows[0]?.time).toBe("2026-06-02T09:00:00+08:00");
+    expect(rows.at(-1)?.time).toBe("2026-06-03T08:00:00+08:00");
+    expect(rows.some((row) => row.time <= "2026-06-02T08:00:00+08:00")).toBe(false);
+    expect(result.professionalHourlyDataTimeBasis).toMatchObject({
+      startTime: "2026-06-02T09:00:00+08:00",
+      endTime: "2026-06-03T08:00:00+08:00",
+      anchorStartLocal: "2026-06-02T09:00:00+08:00",
+      anchorEndLocal: "2026-06-03T08:00:00+08:00",
+      requestedHours: 24,
+      partialData: false,
+      fieldCoverageSummary: expect.objectContaining({ totalHours: 24 }),
+    });
+  });
+
+  it("anchors late-night Cloud Sea future24 rows to next-day midnight", () => {
+    const input = cloudSeaInputWithFullDayRows("2026-06-02T23:20:00+08:00", "24h", 48);
+    const result = calculateForecast(input);
+
+    expect(result.professionalHourlyData?.[0]?.time).toBe("2026-06-03T00:00:00+08:00");
+    expect(result.professionalHourlyData?.at(-1)?.time).toBe("2026-06-03T23:00:00+08:00");
+  });
+
+  it("clips Cloud Sea future48 and future72 rows to future-only horizon counts", () => {
+    const future48 = calculateForecast(
+      cloudSeaInputWithFullDayRows("2026-06-02T08:28:00+08:00", "48h", 84),
+    );
+    const future72 = calculateForecast(
+      cloudSeaInputWithFullDayRows("2026-06-02T08:28:00+08:00", "72h", 108),
+    );
+
+    expect(future48.professionalHourlyData).toHaveLength(48);
+    expect(future48.professionalHourlyData?.[0]?.time).toBe("2026-06-02T09:00:00+08:00");
+    expect(future72.professionalHourlyData).toHaveLength(72);
+    expect(future72.professionalHourlyData?.[0]?.time).toBe("2026-06-02T09:00:00+08:00");
+  });
+
+  it("does not build Cloud Sea best windows from rows before the resolved anchor", () => {
+    const input = cloudSeaInputWithFullDayRows("2026-06-02T08:28:00+08:00", "24h", 36);
+    const result = calculateForecast(input);
+    const anchorStart = Date.parse(result.professionalHourlyDataTimeBasis?.anchorStartLocal ?? "");
+    const windowStarts = [
+      result.cloudSeaAnalysis.bestCloudSeaWindow,
+      ...result.cloudSeaAnalysis.bestCloudSeaWindows,
+      ...result.cloudSeaAnalysis.watchableCloudSeaWindows,
+      ...result.bestWindows.filter((window) => window.target === "cloud_sea"),
+    ]
+      .map((window) => Date.parse(window?.startTime ?? ""))
+      .filter(Number.isFinite);
+
+    expect(windowStarts.length).toBeGreaterThan(0);
+    expect(windowStarts.every((start) => start >= anchorStart)).toBe(true);
+  });
+
+  it("marks partial future coverage without backfilling past Cloud Sea rows", () => {
+    const input = cloudSeaInputWithFullDayRows("2026-06-02T08:28:00+08:00", "24h", 18);
+    const result = calculateForecast(input);
+
+    expect(result.professionalHourlyData).toHaveLength(9);
+    expect(result.professionalHourlyData?.[0]?.time).toBe("2026-06-02T09:00:00+08:00");
+    expect(result.professionalHourlyDataTimeBasis).toMatchObject({
+      requestedHours: 24,
+      partialData: true,
+      missingDataNoteZh: "当前数据源返回的未来小时数不足，已展示可用未来时段。",
+    });
   });
 
   it("uses cloud layer fields when available for glow scoring", () => {

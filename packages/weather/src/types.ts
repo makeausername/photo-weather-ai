@@ -124,6 +124,7 @@ export type ForecastRequestOptions = {
   readonly horizon?: ForecastHorizon;
   readonly forecastStart?: string;
   readonly forecastEnd?: string;
+  readonly forecastWindowAnchorStart?: string;
   readonly targetDates?: readonly string[];
   readonly target?: ForecastTarget;
   readonly timezone?: string;

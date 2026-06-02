@@ -5498,7 +5498,7 @@ function professionalHourlyMissingHeaderNote(
     return "温度为原始格点值，未代表机位海拔修正。";
   }
   if (basis.partialData) {
-    return professionalHourlyIncompleteFieldNoteText;
+    return professionalHourlyPartialDataNote(rows, basis);
   }
   return null;
 }
@@ -5516,9 +5516,23 @@ function professionalHourlyIncompleteFieldNote(
     return cloudLayerCompleteness.professionalNoteZh;
   }
   if (basis.partialData || rows.some(professionalHourlyRowHasIncompleteFields)) {
-    return professionalHourlyIncompleteFieldNoteText;
+    return professionalHourlyPartialDataNote(rows, basis);
   }
   return null;
+}
+
+function professionalHourlyPartialDataNote(
+  rows: readonly ProfessionalHourlyRow[],
+  basis: NonNullable<ForecastCalculationResult["professionalHourlyDataTimeBasis"]>,
+): string {
+  if (
+    typeof basis.requestedHours === "number" &&
+    rows.length < basis.requestedHours &&
+    basis.missingDataNoteZh
+  ) {
+    return basis.missingDataNoteZh;
+  }
+  return professionalHourlyIncompleteFieldNoteText;
 }
 
 function shouldShowCloudBasisProfessionalNote(

@@ -306,6 +306,13 @@ export type ProfessionalHourlyDataTimeBasis = {
   readonly endTime: string;
   readonly stepMinutes: number;
   readonly timezone: string;
+  readonly generatedAtLocal?: string;
+  readonly anchorStartLocal?: string;
+  readonly anchorEndLocal?: string;
+  readonly requestedHours?: number;
+  readonly displayLabel?: string;
+  readonly isFutureOnly?: boolean;
+  readonly anchorRule?: string;
   readonly temperatureBasis: ProfessionalHourlyTemperatureBasis;
   readonly temperatureBasisNoteZh: string;
   readonly cloudLayerBasis: ProfessionalHourlyCloudLayerBasis;

@@ -7,6 +7,7 @@ export type WeatherCacheKeyInput = {
   readonly coordinates: Coordinates;
   readonly horizon: ForecastHorizon;
   readonly forecastStart: string;
+  readonly forecastWindowAnchorStart?: string;
   readonly target?: ForecastTarget;
   readonly purpose: WeatherCachePurpose;
   readonly runtimeSignature?: string;
@@ -31,6 +32,7 @@ export function buildWeatherCacheKey(input: WeatherCacheKeyInput): string {
     input.coordinates.longitude,
   )}`;
   const startBucket = bucketForecastStart(input.forecastStart);
+  const anchorBucket = bucketForecastStart(input.forecastWindowAnchorStart ?? input.forecastStart);
 
   return [
     input.provider,
@@ -38,7 +40,8 @@ export function buildWeatherCacheKey(input: WeatherCacheKeyInput): string {
     input.runtimeSignature ?? "runtime:any",
     coordinateKey,
     input.horizon,
-    startBucket,
+    `generated:${startBucket}`,
+    `anchor:${anchorBucket}`,
     input.target ?? "any",
   ].join("|");
 }

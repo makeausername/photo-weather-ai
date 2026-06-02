@@ -303,6 +303,7 @@ export class WeatherIntelligenceService {
       coordinates: input.coordinates,
       horizon: input.horizon ?? horizonFromHours(input.hours),
       forecastStart: input.forecastStart ?? generatedAt(input),
+      forecastWindowAnchorStart: input.forecastWindowAnchorStart,
       target: input.target,
       purpose: "fusion",
       runtimeSignature: this.options.cacheNamespace,

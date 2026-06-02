@@ -486,7 +486,10 @@ export function buildCloudSeaAiExplainPayload(
     result.bestWindows.find(
       (window) => window.target === "cloud_sea" && isExecutableWindow(window),
     ) ?? result.bestWindows.find((window) => window.target === "cloud_sea");
-  const professionalRows = result.professionalHourlyData ?? [];
+  const professionalRows = professionalHourlyRowsAtOrAfterAnchor(
+    result.professionalHourlyData ?? [],
+    result.professionalHourlyDataTimeBasis?.anchorStartLocal,
+  );
   const focusedRows = professionalHourlyRowsForAiPayload(professionalRows, detail);
   const cloudLayerCompleteness = buildCloudLayerCompletenessContext(professionalRows);
   const cloudBasisConsistency = buildCloudSeaCloudBasisConsistencyContext({
@@ -619,23 +622,10 @@ export function buildCloudSeaAiExplainPayload(
     ),
     professionalHourlySummary: {
       rowCount: professionalRows.length,
-      timeBasis: result.professionalHourlyDataTimeBasis
-        ? {
-            startTime: result.professionalHourlyDataTimeBasis.startTime,
-            endTime: result.professionalHourlyDataTimeBasis.endTime,
-            stepMinutes: result.professionalHourlyDataTimeBasis.stepMinutes,
-            partialData: result.professionalHourlyDataTimeBasis.partialData,
-            cloudLayerBasis: result.professionalHourlyDataTimeBasis.cloudLayerBasis,
-            cloudLayerBasisNoteZh: limitText(
-              providerNeutralText(result.professionalHourlyDataTimeBasis.cloudLayerBasisNoteZh),
-              120,
-            ),
-            missingDataNoteZh: limitText(
-              providerNeutralText(result.professionalHourlyDataTimeBasis.missingDataNoteZh),
-              120,
-            ),
-          }
-        : null,
+      timeBasis: compactProfessionalHourlyTimeBasisForAi(
+        result.professionalHourlyDataTimeBasis,
+        detail,
+      ),
       signalCounts: countProfessionalHourlySignals(professionalRows),
       focusedRows: focusedRows.map(compactProfessionalHourlyRowForAi),
     },
@@ -730,6 +720,40 @@ export function buildCloudSeaAiExplainPayload(
   };
 }
 
+function compactProfessionalHourlyTimeBasisForAi(
+  basis: ForecastCalculationResult["professionalHourlyDataTimeBasis"],
+  detail: DeepSeekForecastContextDetail,
+) {
+  if (!basis) {
+    return null;
+  }
+
+  const compactBasis = {
+    startTime: basis.startTime,
+    endTime: basis.endTime,
+    stepMinutes: basis.stepMinutes,
+    anchorStartLocal: basis.anchorStartLocal,
+    anchorEndLocal: basis.anchorEndLocal,
+    requestedHours: basis.requestedHours,
+    partialData: basis.partialData,
+    cloudLayerBasis: basis.cloudLayerBasis,
+  };
+
+  if (detail === "minimal") {
+    return compactBasis;
+  }
+
+  return {
+    ...compactBasis,
+    generatedAtLocal: basis.generatedAtLocal,
+    displayLabel: basis.displayLabel,
+    isFutureOnly: basis.isFutureOnly,
+    anchorRule: basis.anchorRule,
+    cloudLayerBasisNoteZh: limitText(providerNeutralText(basis.cloudLayerBasisNoteZh), 120),
+    missingDataNoteZh: limitText(providerNeutralText(basis.missingDataNoteZh), 120),
+  };
+}
+
 function compactCloudSeaAnalysisWindow(
   window: ForecastCalculationResult["cloudSeaAnalysis"]["bestCloudSeaWindows"][number],
   timezone: string,
@@ -761,6 +785,21 @@ function professionalHourlyRowsForAiPayload(
     ["可拍窗口", "白墙风险", "形成信号", "雨后开口", "需复核"].includes(row.cloudSeaSignal),
   );
   return takeItems(focused.length > 0 ? focused : rows, limit);
+}
+
+function professionalHourlyRowsAtOrAfterAnchor(
+  rows: NonNullable<ForecastCalculationResult["professionalHourlyData"]>,
+  anchorStart: string | undefined,
+) {
+  const anchorMs = Date.parse(anchorStart ?? "");
+  if (!Number.isFinite(anchorMs)) {
+    return rows;
+  }
+
+  return rows.filter((row) => {
+    const rowMs = Date.parse(row.time);
+    return Number.isFinite(rowMs) && rowMs >= anchorMs;
+  });
 }
 
 function countProfessionalHourlySignals(

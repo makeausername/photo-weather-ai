@@ -112,6 +112,30 @@ describe("WeatherIntelligenceService", () => {
     );
   });
 
+  it("separates cached provider bundles by forecast window anchor", async () => {
+    const cache = new InMemoryWeatherCache();
+    const first = await new WeatherIntelligenceService({
+      providers: [new StaticProvider("meteoblue", "meteoblue", "real", hour({ temperature: 8 }))],
+      cache,
+      cacheNamespace: "runtime-v1",
+    }).getWeatherDataBundle({
+      ...requestInput(),
+      forecastWindowAnchorStart: "2026-05-20T09:00:00+08:00",
+    });
+
+    const second = await new WeatherIntelligenceService({
+      providers: [new StaticProvider("meteoblue", "meteoblue", "real", hour({ temperature: 18 }))],
+      cache,
+      cacheNamespace: "runtime-v1",
+    }).getWeatherDataBundle({
+      ...requestInput(),
+      forecastWindowAnchorStart: "2026-05-20T10:00:00+08:00",
+    });
+
+    expect(first.currentWeather?.temperature).toBe(8);
+    expect(second.currentWeather?.temperature).toBe(18);
+  });
+
   it("keeps confidence usable when QWeather and Open-Meteo pass but meteoblue parse fails", async () => {
     const service = new WeatherIntelligenceService({
       providers: [

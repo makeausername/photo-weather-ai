@@ -189,6 +189,47 @@ describe("AI providers", () => {
     expect(text).not.toContain("高德地图");
   });
 
+  it("does not include professional hourly rows before the forecast anchor in Cloud Sea AI payload", () => {
+    const payload = buildCloudSeaAiExplainPayload({
+      ...forecastResultFixture,
+      horizon: "24h",
+      forecastStart: "2026-06-02T09:00:00+08:00",
+      forecastEnd: "2026-06-03T09:00:00+08:00",
+      generatedAt: "2026-06-02T08:28:00+08:00",
+      professionalHourlyData: [
+        professionalHourlyRow("2026-06-02T00:00:00+08:00"),
+        professionalHourlyRow("2026-06-02T08:00:00+08:00"),
+        professionalHourlyRow("2026-06-02T09:00:00+08:00"),
+        professionalHourlyRow("2026-06-02T10:00:00+08:00"),
+      ],
+      professionalHourlyDataTimeBasis: {
+        startTime: "2026-06-02T09:00:00+08:00",
+        endTime: "2026-06-03T08:00:00+08:00",
+        stepMinutes: 60,
+        timezone: "Asia/Shanghai",
+        generatedAtLocal: "2026-06-02T08:28:00+08:00",
+        anchorStartLocal: "2026-06-02T09:00:00+08:00",
+        anchorEndLocal: "2026-06-03T08:00:00+08:00",
+        requestedHours: 24,
+        displayLabel: "未来24小时",
+        isFutureOnly: true,
+        anchorRule: "future_hour_ceil_to_next_hour",
+        temperatureBasis: "raw_grid",
+        temperatureBasisNoteZh: "raw",
+        cloudLayerBasis: "explicit_layers",
+        cloudLayerBasisNoteZh: "layers",
+        partialData: false,
+      },
+    });
+    const text = JSON.stringify(payload.professionalHourlySummary.focusedRows);
+
+    expect(payload.professionalHourlySummary.rowCount).toBe(2);
+    expect(text).toContain("09:00");
+    expect(text).toContain("10:00");
+    expect(text).not.toContain("00:00");
+    expect(text).not.toContain("08:00");
+  });
+
   it("passes deterministic astro V2 facts to DeepSeek without provider names", () => {
     const astroWindow = {
       type: "milky_way_candidate" as const,
@@ -749,6 +790,39 @@ describe("AI providers", () => {
     expect(parsed.bestPlan.backupPlanZh).toBe("改拍近景。");
   });
 });
+
+function professionalHourlyRow(
+  time: string,
+): NonNullable<ForecastCalculationResult["professionalHourlyData"]>[number] {
+  return {
+    time,
+    dateLabel: time.slice(0, 10),
+    timeLabel: time.slice(11, 16),
+    weatherCode: "cloudy",
+    weatherText: "cloudy",
+    cloudSeaSignal: "形成信号",
+    cloudSeaSignalLevel: "watch",
+    cloudTotalPercent: 72,
+    cloudHighPercent: 24,
+    cloudMidPercent: 36,
+    cloudLowPercent: 48,
+    cloudLayerBasis: "explicit_layers",
+    rawTemperatureC: 16,
+    terrainAdjustedTemperatureC: null,
+    displayedTemperatureC: 16,
+    temperatureBasis: "raw_grid",
+    temperatureAdjustmentC: null,
+    temperatureBasisNoteZh: "raw",
+    dewPointC: 14,
+    dewPointSpreadC: 2,
+    relativeHumidityPercent: 88,
+    precipitationAmountMm: 0,
+    precipitationProbabilityPercent: 10,
+    visibilityMeters: 18000,
+    windSpeedMs: 1.8,
+    windDirectionDeg: 120,
+  };
+}
 
 const forecastResultFixture: ForecastCalculationResult = {
   place: {

@@ -53,7 +53,9 @@ export class MockWeatherProvider implements WeatherProvider {
   async getHourlyForecast(input: WeatherRequestInput): Promise<readonly NormalizedHourlyWeather[]> {
     const timezone = input.timezone ?? defaultTimezone;
     const forecastStart =
-      input.forecastStart ?? formatZonedIso(getNowInTimezone(timezone), timezone);
+      input.forecastWindowAnchorStart ??
+      input.forecastStart ??
+      formatZonedIso(getNowInTimezone(timezone), timezone);
     const hours = resolveForecastHours(input);
 
     return this.normalizeHourlyWeather(

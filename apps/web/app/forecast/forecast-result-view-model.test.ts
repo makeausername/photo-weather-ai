@@ -5612,6 +5612,40 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.weatherEvidence.map((item) => item.label)).not.toContain("月相");
   });
 
+  it("does not use Cloud Sea windows before the professional forecast anchor in cards or action plan", () => {
+    const result = {
+      ...resultForTarget("cloud_sea"),
+      forecastStart: "2026-05-20T09:00:00+08:00",
+      generatedAt: "2026-05-20T08:28:00+08:00",
+      professionalHourlyDataTimeBasis: {
+        startTime: "2026-05-20T09:00:00+08:00",
+        endTime: "2026-05-21T08:00:00+08:00",
+        stepMinutes: 60,
+        timezone: "Asia/Shanghai",
+        generatedAtLocal: "2026-05-20T08:28:00+08:00",
+        anchorStartLocal: "2026-05-20T09:00:00+08:00",
+        anchorEndLocal: "2026-05-21T08:00:00+08:00",
+        requestedHours: 24,
+        displayLabel: "未来24小时",
+        isFutureOnly: true,
+        anchorRule: "future_hour_ceil_to_next_hour",
+        temperatureBasis: "terrain_adjusted",
+        temperatureBasisNoteZh: "test",
+        cloudLayerBasis: "explicit_layers",
+        cloudLayerBasisNoteZh: "test",
+        partialData: false,
+      },
+    } satisfies ForecastCalculationResult;
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const actionText = viewModel.actionPlan
+      .map((item) => `${item.value} ${item.detail}`)
+      .join(" ");
+
+    expect(actionText).not.toContain("2026年5月20日 03:30");
+    expect(actionText).not.toContain("2026年5月20日 05:00");
+    expect(actionText).not.toContain("2026年5月20日 07:00");
+  });
+
   it("shows multiple daily cloud sea entries for a 7d cloud sea result", () => {
     const sevenDayResult: ForecastCalculationResult = {
       ...resultForTarget("cloud_sea"),

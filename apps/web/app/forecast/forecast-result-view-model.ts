@@ -635,7 +635,10 @@ export function buildCloudSeaForecastViewModel(
   const ruleContext = buildCloudSeaRuleContext(result);
   const terrainContext = ruleContext.terrainContext;
   const cloudSeaWindows = mapResultWindows(
-    result.bestWindows.filter((window) => window.target === "cloud_sea"),
+    result.bestWindows.filter(
+      (window) =>
+        window.target === "cloud_sea" && forecastWindowStartsAtOrAfterAnchor(result, window),
+    ),
   );
   const cloudLayerCompleteness = ruleContext.cloudLayerCompletenessContext;
   const cloudBasisConsistency = ruleContext.cloudBasisConsistencyContext;
@@ -2288,6 +2291,23 @@ function listSection(
   };
 }
 
+function forecastWindowStartsAtOrAfterAnchor(
+  result: ForecastCalculationResult,
+  window: { readonly startTime?: string } | undefined,
+): boolean {
+  if (!window?.startTime) {
+    return false;
+  }
+  const anchorMs = Date.parse(
+    result.professionalHourlyDataTimeBasis?.anchorStartLocal ?? result.forecastStart,
+  );
+  const startMs = Date.parse(window.startTime);
+  if (!Number.isFinite(anchorMs)) {
+    return Number.isFinite(startMs);
+  }
+  return Number.isFinite(startMs) && startMs >= anchorMs;
+}
+
 function buildCloudSeaHeroConclusion(
   result: ForecastCalculationResult,
   windows: readonly ForecastResultWindow[],
@@ -2299,7 +2319,9 @@ function buildCloudSeaHeroConclusion(
   weatherVariableConsistencyContext: CloudSeaWeatherVariableConsistencyContext,
 ): CloudSeaHeroConclusionView {
   const analysis = result.cloudSeaAnalysis;
-  const bestWindow = analysis.bestCloudSeaWindow;
+  const bestWindow = forecastWindowStartsAtOrAfterAnchor(result, analysis.bestCloudSeaWindow)
+    ? analysis.bestCloudSeaWindow
+    : undefined;
   const mappedWindow = bestWindow
     ? windows.find(
         (window) =>
@@ -2904,7 +2926,9 @@ function buildCloudSeaActionPlan(
   weatherVariableConsistencyContext: CloudSeaWeatherVariableConsistencyContext,
 ): readonly CloudSeaActionPlanItem[] {
   const analysis = result.cloudSeaAnalysis;
-  const bestWindow = analysis.bestCloudSeaWindow;
+  const bestWindow = forecastWindowStartsAtOrAfterAnchor(result, analysis.bestCloudSeaWindow)
+    ? analysis.bestCloudSeaWindow
+    : undefined;
   const mappedWindow = bestWindow
     ? windows.find(
         (window) =>
@@ -2942,7 +2966,7 @@ function buildCloudSeaActionPlan(
     {
       key: "main-window",
       label: terrainContext.shouldDowngradeCloudSeaWording ? "观察窗口" : "主守窗口",
-      value: recommendationGuard.actionPlanLabels.mainWindow,
+      value: bestWindow ? recommendationGuard.actionPlanLabels.mainWindow : "需临近预报复核",
       detail: recommendationGuard.normalizedWindowRecommendation.actionSuggestionZh,
       tone: recommendationGuard.finalRecommendationTone,
     },

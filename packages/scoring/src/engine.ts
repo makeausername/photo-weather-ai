@@ -11,8 +11,10 @@ import {
   type AstroWindow,
   type CloudSeaAnalysisResult,
   type ForecastCalculationInput,
+  type ForecastCalendarDayInfo,
   type ForecastDailyWeatherSummary,
   type ForecastCalculationResult,
+  type CloudLayerFieldCoverageSummary,
   type ForecastDailyMetric,
   type ForecastDailySummary,
   type ForecastPrecipitationPeriodSummary,
@@ -38,7 +40,18 @@ import {
   type RainImpactOnRecommendation,
   type TargetDailyBreakdown,
 } from "@photo-weather/shared";
-import { defaultTimezone, formatZonedIso, getHourInTimezone } from "@photo-weather/calendar";
+import {
+  defaultTimezone,
+  filterRowsToForecastWindow,
+  formatChineseDate,
+  formatChineseDateTime,
+  formatChineseDateTimeRange,
+  formatZonedIso,
+  getChineseCalendarInfo,
+  getForecastTargetDates,
+  getHourInTimezone,
+  resolveForecastWindowRange,
+} from "@photo-weather/calendar";
 import {
   averageHourly,
   averageWeightedScore,
@@ -84,25 +97,27 @@ type ScoredForecastWindow = {
 };
 
 export function calculateForecast(input: ForecastCalculationInput): ForecastCalculationResult {
+  const calculationInput = applyCloudSeaForecastWindowAnchor(input);
   const clothingGuide =
-    input.clothingGuide ??
+    calculationInput.clothingGuide ??
     buildClothingGuide({
-      currentWeather: input.currentWeather,
-      hourlyWeather: input.hourlyWeather,
-      elevationMeters: input.terrainAnalysis.terrainProfile.locationElevation ?? undefined,
-      target: input.target,
-      timezone: input.calendarBasis.timezone,
-      forecastStart: input.calendarBasis.forecastStart,
+      currentWeather: calculationInput.currentWeather,
+      hourlyWeather: calculationInput.hourlyWeather,
+      elevationMeters:
+        calculationInput.terrainAnalysis.terrainProfile.locationElevation ?? undefined,
+      target: calculationInput.target,
+      timezone: calculationInput.calendarBasis.timezone,
+      forecastStart: calculationInput.calendarBasis.forecastStart,
     });
-  const cloudSeaAnalysis = analyzeCloudSea(input);
-  const glowAnalysis = calculateGlowAnalysis(input);
+  const cloudSeaAnalysis = analyzeCloudSea(calculationInput);
+  const glowAnalysis = calculateGlowAnalysis(calculationInput);
   const sunriseGlow = buildGlowForecastScore(glowAnalysis, "sunrise");
   const sunsetGlow = buildGlowForecastScore(glowAnalysis, "sunset");
-  const cloudSea = calculateCloudSeaScore(input, cloudSeaAnalysis);
-  const whiteoutRisk = calculateWhiteoutRiskScore(input, cloudSeaAnalysis);
-  const stars = calculateStarsScore(input);
-  const milkyWay = calculateMilkyWayScore(input);
-  const transparency = calculateTransparencyScore(input);
+  const cloudSea = calculateCloudSeaScore(calculationInput, cloudSeaAnalysis);
+  const whiteoutRisk = calculateWhiteoutRiskScore(calculationInput, cloudSeaAnalysis);
+  const stars = calculateStarsScore(calculationInput);
+  const milkyWay = calculateMilkyWayScore(calculationInput);
+  const transparency = calculateTransparencyScore(calculationInput);
 
   const scores = {
     sunriseGlow,
@@ -113,14 +128,14 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
     milkyWay,
     transparency,
   };
-  const astroAnalysis = calculateAstroAnalysis(input, {
+  const astroAnalysis = calculateAstroAnalysis(calculationInput, {
     starsScore: stars.score,
     milkyWayScore: milkyWay.score,
     transparencyScore: transparency.score,
   });
-  const riskFlags = buildRiskFlags(input, whiteoutRisk, cloudSeaAnalysis);
+  const riskFlags = buildRiskFlags(calculationInput, whiteoutRisk, cloudSeaAnalysis);
   const bestWindows = buildBestWindows(
-    input,
+    calculationInput,
     cloudSeaAnalysis,
     glowAnalysis,
     astroAnalysis,
@@ -151,60 +166,121 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
           ? astroAnalysis.recommendationLabel
           : generalForecastRecommendationLabel(overallScore, bestWindows, riskFlags);
   const targetDailyBreakdown = buildTargetDailyBreakdown(
-    input,
+    calculationInput,
     scores,
     bestWindows,
     cloudSeaAnalysis,
     glowAnalysis,
     astroAnalysis,
   );
-  const dailySummaries = buildDailySummaries(input, targetDailyBreakdown, bestWindows);
+  const dailySummaries = buildDailySummaries(calculationInput, targetDailyBreakdown, bestWindows);
 
   return {
-    place: input.place,
-    horizon: input.horizon,
-    target: input.target,
-    forecastStart: input.calendarBasis.forecastStart,
-    forecastEnd: input.calendarBasis.forecastEnd,
-    targetDates: input.calendarBasis.targetDates,
-    calendarBasis: input.calendarBasis,
+    place: calculationInput.place,
+    horizon: calculationInput.horizon,
+    target: calculationInput.target,
+    forecastStart: calculationInput.calendarBasis.forecastStart,
+    forecastEnd: calculationInput.calendarBasis.forecastEnd,
+    targetDates: calculationInput.calendarBasis.targetDates,
+    calendarBasis: calculationInput.calendarBasis,
     overallScore,
     recommendationLevel,
     recommendationLabel,
-    summary: buildSummary(input, overallScore, recommendationLabel, scores, bestWindows),
+    summary: buildSummary(
+      calculationInput,
+      overallScore,
+      recommendationLabel,
+      scores,
+      bestWindows,
+    ),
     scores,
     cloudSeaAnalysis,
     glowAnalysis,
     astroAnalysis,
-    terrainSummary: input.terrainSummary,
-    terrainAnalysis: input.terrainAnalysis,
-    astroSummaries: input.astroSummaries,
+    terrainSummary: calculationInput.terrainSummary,
+    terrainAnalysis: calculationInput.terrainAnalysis,
+    astroSummaries: calculationInput.astroSummaries,
     dailySummaries,
     targetDailyBreakdown,
     bestWindows,
     riskFlags,
-    keyReasons: buildKeyReasons(input, scores),
-    photographyAdvice: buildPhotographyAdvice(input, scores, riskFlags, bestWindows),
-    dataNotice: buildDataNotice(input),
-    isMock: input.isMock,
-    dataSourceLabel: input.dataSourceLabel,
-    generatedAt: input.generatedAt,
-    currentWeather: input.currentWeather,
+    keyReasons: buildKeyReasons(calculationInput, scores),
+    photographyAdvice: buildPhotographyAdvice(calculationInput, scores, riskFlags, bestWindows),
+    dataNotice: buildDataNotice(calculationInput),
+    isMock: calculationInput.isMock,
+    dataSourceLabel: calculationInput.dataSourceLabel,
+    generatedAt: calculationInput.generatedAt,
+    currentWeather: calculationInput.currentWeather,
     clothingGuide,
-    weatherProviderCode: input.weatherProviderCode,
-    weatherProviderLabelZh: input.weatherProviderLabelZh,
-    weatherDataMode: input.weatherDataMode,
-    weatherNoticeZh: input.weatherNoticeZh,
-    weatherMissingFields: input.weatherMissingFields,
-    weatherEstimatedFields: input.weatherEstimatedFields,
-    weatherSourceSummaries: input.weatherSourceSummaries,
-    weatherMissingDataNotes: input.weatherMissingDataNotes,
-    weatherFusionSummary: input.weatherFusionSummary,
-    weatherProviderRuntimeSnapshot: input.weatherProviderRuntimeSnapshot,
-    professionalHourlyData: buildProfessionalHourlyData(input, cloudSeaAnalysis),
-    professionalHourlyDataTimeBasis: buildProfessionalHourlyDataTimeBasis(input),
-    astroDataSourceLabelZh: input.astroDataSourceLabelZh,
-    astroCalculationBasis: input.astroCalculationBasis,
+    weatherProviderCode: calculationInput.weatherProviderCode,
+    weatherProviderLabelZh: calculationInput.weatherProviderLabelZh,
+    weatherDataMode: calculationInput.weatherDataMode,
+    weatherNoticeZh: calculationInput.weatherNoticeZh,
+    weatherMissingFields: calculationInput.weatherMissingFields,
+    weatherEstimatedFields: calculationInput.weatherEstimatedFields,
+    weatherSourceSummaries: calculationInput.weatherSourceSummaries,
+    weatherMissingDataNotes: calculationInput.weatherMissingDataNotes,
+    weatherFusionSummary: calculationInput.weatherFusionSummary,
+    weatherProviderRuntimeSnapshot: calculationInput.weatherProviderRuntimeSnapshot,
+    professionalHourlyData: buildProfessionalHourlyData(calculationInput, cloudSeaAnalysis),
+    professionalHourlyDataTimeBasis: buildProfessionalHourlyDataTimeBasis(calculationInput),
+    astroDataSourceLabelZh: calculationInput.astroDataSourceLabelZh,
+    astroCalculationBasis: calculationInput.astroCalculationBasis,
+  };
+}
+
+function applyCloudSeaForecastWindowAnchor(
+  input: ForecastCalculationInput,
+): ForecastCalculationInput {
+  if (input.target !== "cloud_sea") {
+    return input;
+  }
+
+  const range = resolveForecastWindowRange({
+    generatedAt: input.generatedAt || input.calendarBasis.forecastStart,
+    timezone: input.calendarBasis.timezone,
+    horizon: input.horizon,
+    requestedForecastHours: input.calendarBasis.horizonHours,
+  });
+  const hourlyWeather = filterRowsToForecastWindow(input.hourlyWeather, range, (hour) => hour.time);
+  const targetDates = getForecastTargetDates(
+    range.anchorStartLocal,
+    range.anchorEndExclusiveLocal,
+    range.timezone,
+  );
+
+  return {
+    ...input,
+    calendarBasis: {
+      ...input.calendarBasis,
+      forecastStart: range.anchorStartLocal,
+      forecastEnd: range.anchorEndExclusiveLocal,
+      forecastStartLabel: formatChineseDateTime(range.anchorStartLocal, range.timezone),
+      forecastEndLabel: formatChineseDateTime(range.anchorEndLocal, range.timezone),
+      forecastRangeLabel: formatChineseDateTimeRange(
+        range.anchorStartLocal,
+        range.anchorEndLocal,
+        range.timezone,
+      ),
+      targetDates,
+      targetDateLabels: targetDates.map((date) => formatChineseDate(date, range.timezone)),
+      horizonHours: range.requestedHours,
+      timezone: range.timezone,
+      calendarDays: targetDates.map((date) => buildCalendarDayInfo(date, range.timezone)),
+    },
+    hourlyWeather,
+  };
+}
+
+function buildCalendarDayInfo(date: string, timezone: string): ForecastCalendarDayInfo {
+  const calendarInfo = getChineseCalendarInfo(date, timezone);
+  return {
+    date,
+    dateLabel: formatChineseDate(date, timezone),
+    lunarDateText: calendarInfo.lunarDateText,
+    solarTerm: calendarInfo.solarTerm,
+    ganzhiYear: calendarInfo.ganzhiYear,
+    zodiac: calendarInfo.zodiac,
   };
 }
 
@@ -302,6 +378,12 @@ function buildProfessionalHourlyData(
 function buildProfessionalHourlyDataTimeBasis(
   input: ForecastCalculationInput,
 ): ProfessionalHourlyDataTimeBasis | undefined {
+  const forecastWindowRange = resolveForecastWindowRange({
+    generatedAt: input.generatedAt || input.calendarBasis.forecastStart,
+    timezone: input.calendarBasis.timezone,
+    horizon: input.horizon,
+    requestedForecastHours: input.calendarBasis.horizonHours,
+  });
   const orderedTimes = input.hourlyWeather
     .map((hour) => ({ value: hour.time, timestamp: Date.parse(hour.time) }))
     .filter((time): time is { readonly value: string; readonly timestamp: number } =>
@@ -317,8 +399,8 @@ function buildProfessionalHourlyDataTimeBasis(
   const start = orderedTimes[0]!;
   const last = orderedTimes.at(-1)!;
   const endTimestamp = last.timestamp + stepMinutes * 60 * 1000;
-  const forecastStartMs = Date.parse(input.calendarBasis.forecastStart);
-  const forecastEndMs = Date.parse(input.calendarBasis.forecastEnd);
+  const forecastStartMs = Date.parse(forecastWindowRange.anchorStartLocal);
+  const forecastEndMs = Date.parse(forecastWindowRange.anchorEndExclusiveLocal);
   const hasForecastRange = Number.isFinite(forecastStartMs) && Number.isFinite(forecastEndMs);
   const partialData =
     hasHourlyGaps(
@@ -328,12 +410,21 @@ function buildProfessionalHourlyDataTimeBasis(
     (hasForecastRange &&
       (start.timestamp > forecastStartMs + 60 * 1000 || endTimestamp < forecastEndMs - 60 * 1000));
   const cloudLayerCoverage = input.weatherFusionSummary?.cloudLayerCoverage;
+  const fieldCoverageSummary = buildProfessionalFieldCoverageSummary(input.hourlyWeather);
+  const missingFieldSummary = buildProfessionalMissingFieldSummary(fieldCoverageSummary);
 
   return {
     startTime: start.value,
-    endTime: new Date(endTimestamp).toISOString(),
+    endTime: last.value,
     stepMinutes,
     timezone: input.calendarBasis.timezone,
+    generatedAtLocal: forecastWindowRange.generatedAtLocal,
+    anchorStartLocal: forecastWindowRange.anchorStartLocal,
+    anchorEndLocal: forecastWindowRange.anchorEndLocal,
+    requestedHours: forecastWindowRange.requestedHours,
+    displayLabel: forecastWindowRange.displayLabel,
+    isFutureOnly: forecastWindowRange.isFutureOnly,
+    anchorRule: forecastWindowRange.anchorRule,
     temperatureBasis: aggregateProfessionalTemperatureBasis(input.hourlyWeather),
     temperatureBasisNoteZh: aggregateProfessionalTemperatureBasisNote(input.hourlyWeather),
     cloudLayerBasis: aggregateProfessionalCloudLayerBasis(input.hourlyWeather),
@@ -341,15 +432,77 @@ function buildProfessionalHourlyDataTimeBasis(
       cloudLayerCoverage?.professionalCoverageNoteZh ??
       aggregateProfessionalCloudLayerBasisNote(input.hourlyWeather),
     partialData,
-    fieldCoverageSummary: cloudLayerCoverage?.fieldCoverageSummary,
+    fieldCoverageSummary,
     providerCoverageSummary: cloudLayerCoverage?.providerCoverageSummary,
     selectedPrimaryCloudLayerSource: cloudLayerCoverage?.selectedPrimaryCloudLayerSource,
     fallbackSourcesUsed: cloudLayerCoverage?.fallbackSourcesUsed,
-    missingFieldSummary: cloudLayerCoverage?.missingFieldSummary,
+    missingFieldSummary,
     userFacingCoverageNoteZh: cloudLayerCoverage?.userFacingCoverageNoteZh,
     professionalCoverageNoteZh: cloudLayerCoverage?.professionalCoverageNoteZh,
-    missingDataNoteZh: partialData ? "部分小时数据缺失，结果仅供复核。" : undefined,
+    missingDataNoteZh: partialData
+      ? "当前数据源返回的未来小时数不足，已展示可用未来时段。"
+      : undefined,
   };
+}
+
+function buildProfessionalFieldCoverageSummary(
+  hourlyWeather: readonly NormalizedHourlyWeather[],
+): CloudLayerFieldCoverageSummary {
+  return {
+    totalHours: hourlyWeather.length,
+    totalCloudCoverage: countFinite(hourlyWeather, (hour) => hour.cloudTotal),
+    cloudLowCoverage: countFinite(hourlyWeather, (hour) => explicitProfessionalCloudLayer(hour, "cloudLow")),
+    cloudMidCoverage: countFinite(hourlyWeather, (hour) => explicitProfessionalCloudLayer(hour, "cloudMid")),
+    cloudHighCoverage: countFinite(hourlyWeather, (hour) => explicitProfessionalCloudLayer(hour, "cloudHigh")),
+    temperatureCoverage: countFinite(hourlyWeather, (hour) => professionalTemperatureProfile(hour).displayedTemperatureC),
+    terrainAdjustedTemperatureCoverage: countFinite(
+      hourlyWeather,
+      (hour) => professionalTemperatureProfile(hour).terrainAdjustedTemperatureC,
+    ),
+    dewPointCoverage: countFinite(hourlyWeather, (hour) => hour.dewPoint),
+    dewPointSpreadCoverage: countFinite(hourlyWeather, (hour) => hour.dewPointSpread),
+    humidityCoverage: countFinite(hourlyWeather, (hour) => hour.humidity),
+    precipitationAmountCoverage: countFinite(
+      hourlyWeather,
+      (hour) => hour.precipitationAmountMm ?? hour.precipitation,
+    ),
+    precipitationProbabilityCoverage: countFinite(
+      hourlyWeather,
+      (hour) => hour.precipitationProbabilityPercent ?? hour.precipitationProbability,
+    ),
+    visibilityCoverage: countFinite(hourlyWeather, (hour) => hour.rawVisibilityKm ?? hour.visibility),
+    windSpeedCoverage: countFinite(hourlyWeather, (hour) => hour.windSpeed),
+    windDirectionCoverage: countFinite(hourlyWeather, (hour) => hour.windDirection),
+    weatherCodeCoverage: hourlyWeather.filter(
+      (hour) => Boolean(hour.weatherCode) || Boolean(hour.weatherTextZh),
+    ).length,
+  };
+}
+
+function buildProfessionalMissingFieldSummary(
+  summary: CloudLayerFieldCoverageSummary,
+): readonly string[] {
+  const fields = [
+    "totalCloudCoverage",
+    "cloudLowCoverage",
+    "cloudMidCoverage",
+    "cloudHighCoverage",
+    "temperatureCoverage",
+    "terrainAdjustedTemperatureCoverage",
+    "dewPointCoverage",
+    "dewPointSpreadCoverage",
+    "humidityCoverage",
+    "precipitationAmountCoverage",
+    "precipitationProbabilityCoverage",
+    "visibilityCoverage",
+    "windSpeedCoverage",
+    "windDirectionCoverage",
+    "weatherCodeCoverage",
+  ] as const satisfies readonly (keyof Omit<CloudLayerFieldCoverageSummary, "totalHours">)[];
+
+  return fields
+    .filter((field) => summary[field] < summary.totalHours)
+    .map((field) => `${field}:${summary[field]}/${summary.totalHours}`);
 }
 
 function inferHourlyStepMinutes(timestamps: readonly number[]): number {
@@ -376,6 +529,13 @@ function hasHourlyGaps(timestamps: readonly number[], stepMinutes: number): bool
 
 function finiteOrNull(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function countFinite<T>(
+  rows: readonly T[],
+  select: (row: T) => number | null | undefined,
+): number {
+  return rows.filter((row) => finiteOrNull(select(row)) !== null).length;
 }
 
 function round1(value: number): number {

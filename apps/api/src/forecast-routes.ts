@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from "fastify";
-import { buildForecastDateRange, forecastDateRangeErrorMessage } from "@photo-weather/calendar";
+import {
+  bufferedForecastRequestHours,
+  buildForecastDateRange,
+  forecastDateRangeErrorMessage,
+  resolveForecastWindowRange,
+} from "@photo-weather/calendar";
 import { buildCalibrationLocationKey, findCalibrationHint } from "@photo-weather/calibration";
 import {
   type ForecastCalculationResult,
@@ -392,6 +397,13 @@ export function registerForecastRoutes(
 
     app.get("/debug/weather-fusion", async () => {
       const forecastRange = buildForecastDateRange("24h");
+      const forecastWindowAnchor = resolveForecastWindowRange({
+        generatedAt: forecastRange.forecastStart,
+        timezone: forecastRange.timezone,
+        horizon: "24h",
+        requestedForecastHours: forecastRange.horizonHours,
+      });
+      const forecastRequestHours = bufferedForecastRequestHours("24h");
       const bundle = await weatherDataService.getWeatherDataBundle({
         coordinates: {
           latitude: 30.1328,
@@ -399,10 +411,11 @@ export function registerForecastRoutes(
           system: "wgs84",
         },
         horizon: "24h",
-        hours: forecastRange.horizonHours,
-        days: forecastRange.targetDates.length,
+        hours: forecastRequestHours,
+        days: Math.max(forecastRange.targetDates.length, Math.ceil(forecastRequestHours / 24)),
         forecastStart: forecastRange.forecastStart,
         forecastEnd: forecastRange.forecastEnd,
+        forecastWindowAnchorStart: forecastWindowAnchor.anchorStartLocal,
         targetDates: forecastRange.targetDates,
         target: "cloud_sea",
         timezone: forecastRange.timezone,
@@ -548,6 +561,13 @@ async function calculateForecastResult(
   const forecastRange = buildForecastDateRange(query.horizon, {
     timezone: requestOptions.timezone,
   });
+  const forecastWindowAnchor = resolveForecastWindowRange({
+    generatedAt: forecastRange.forecastStart,
+    timezone: forecastRange.timezone,
+    horizon: query.horizon,
+    requestedForecastHours: forecastRange.horizonHours,
+  });
+  const forecastRequestHours = bufferedForecastRequestHours(query.horizon);
   const coordinates = {
     latitude: query.latitudeWgs84,
     longitude: query.longitudeWgs84,
@@ -577,10 +597,12 @@ async function calculateForecastResult(
     weatherDataService.getWeatherDataBundle({
       coordinates,
       elevationMeters: elevation.elevationMeters ?? undefined,
-      hours: forecastRange.horizonHours,
-      days: forecastRange.targetDates.length,
+      horizon: query.horizon,
+      hours: forecastRequestHours,
+      days: Math.max(forecastRange.targetDates.length, Math.ceil(forecastRequestHours / 24)),
       forecastStart: forecastRange.forecastStart,
       forecastEnd: forecastRange.forecastEnd,
+      forecastWindowAnchorStart: forecastWindowAnchor.anchorStartLocal,
       targetDates: forecastRange.targetDates,
       target: query.target,
       timezone: forecastRange.timezone,
@@ -919,6 +941,9 @@ function createForecastInterpretationCacheKey(result: ForecastCalculationResult)
     },
     horizon: result.horizon,
     target: result.target,
+    forecastWindowAnchorStart:
+      result.professionalHourlyDataTimeBasis?.anchorStartLocal ?? result.forecastStart,
+    forecastGeneratedAtBucket: bucketForecastGeneratedAt(result.generatedAt),
     summary: result.summary,
     overallScore: result.overallScore,
     recommendationLabel: result.recommendationLabel,
@@ -933,6 +958,15 @@ function createForecastInterpretationCacheKey(result: ForecastCalculationResult)
 
 function roundCoordinateForCache(value: number): number {
   return Math.round(value * 100000) / 100000;
+}
+
+function bucketForecastGeneratedAt(value: string): string {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) {
+    return value.slice(0, 13);
+  }
+  date.setMinutes(0, 0, 0);
+  return date.toISOString();
 }
 
 function readCachedDeepSeekForecastInterpretation(
