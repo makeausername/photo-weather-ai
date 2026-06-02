@@ -5,6 +5,7 @@ import type {
   NormalizedCurrentWeather,
   NormalizedHourlyWeather,
 } from "@photo-weather/shared";
+import { buildTerrainTemperatureBasisContext } from "@photo-weather/shared";
 import { getHourInTimezone } from "@photo-weather/calendar";
 import { precipitationAmountMm, precipitationRiskLevel } from "./weather-decision-metrics.js";
 
@@ -12,6 +13,9 @@ export type ClothingGuideInput = {
   readonly currentWeather?: NormalizedCurrentWeather;
   readonly hourlyWeather: readonly NormalizedHourlyWeather[];
   readonly elevationMeters?: number;
+  readonly surroundingReliefMeters?: number;
+  readonly terrainType?: string | null;
+  readonly terrainMode?: string | null;
   readonly target: ForecastTarget;
   readonly timezone: string;
   readonly forecastStart: string;
@@ -19,7 +23,39 @@ export type ClothingGuideInput = {
 
 export function buildClothingGuide(input: ClothingGuideInput): ClothingGuide {
   const reference = selectReferenceWeather(input);
-  const temperature = reference?.feelsLike ?? reference?.temperature ?? 18;
+  const referenceTime = hourlyReferenceTime(reference);
+  const temperatureBasis = buildTerrainTemperatureBasisContext({
+    rawGridTemperatureC: reference?.rawTemperature ?? reference?.temperature,
+    terrainAdjustedTemperatureC:
+      reference?.temperatureAdjustment?.terrainAdjustedTemperatureC ??
+      reference?.elevationAdjustedTemperature,
+    displayedTemperatureC: reference?.temperature,
+    providerTemperatureC: reference?.temperature,
+    elevationMeters: input.elevationMeters,
+    modelElevationMeters:
+      reference?.temperatureAdjustment?.providerElevationMeters ??
+      reference?.providerElevationMeters,
+    surroundingReliefMeters: input.surroundingReliefMeters,
+    terrainType: input.terrainType,
+    terrainMode: input.terrainMode,
+    terrainConfidence:
+      reference?.temperatureAdjustment?.providerElevationKnown === false ? "low" : undefined,
+    windSpeedMs: reference?.windSpeed,
+    windGustMs: reference?.windGust,
+    humidityPercent: reference?.humidity,
+    forecastHour: referenceTime ? getHourInTimezone(referenceTime, input.timezone) : undefined,
+  });
+  const referenceFeelsLike =
+    typeof reference?.feelsLike === "number" && Number.isFinite(reference.feelsLike)
+      ? reference.feelsLike
+      : undefined;
+  const selectedTemperature = temperatureBasis.displayTemperatureC ?? reference?.temperature;
+  const temperature =
+    selectedTemperature !== null &&
+    selectedTemperature !== undefined &&
+    referenceFeelsLike !== undefined
+      ? Math.min(selectedTemperature, referenceFeelsLike)
+      : selectedTemperature ?? referenceFeelsLike ?? 18;
   const windSpeed = reference?.windSpeed ?? 0;
   const windGust = reference?.windGust ?? windSpeed;
   const humidity = reference?.humidity ?? 60;
@@ -29,11 +65,7 @@ export function buildClothingGuide(input: ClothingGuideInput): ClothingGuide {
     probability: precipitationProbability,
     amountMm: precipitationAmount,
   });
-  const elevationMeters = input.elevationMeters;
-  const isMountain =
-    typeof elevationMeters === "number" &&
-    Number.isFinite(elevationMeters) &&
-    elevationMeters >= 1200;
+  const isMountain = temperatureBasis.isHighMountainTemperatureSensitive;
   const isNightTarget =
     input.target === "astro" || isNightTime(input.forecastStart, input.timezone);
   const effectiveTemperature = round1(
@@ -69,13 +101,14 @@ export function buildClothingGuide(input: ClothingGuideInput): ClothingGuide {
     windGust,
     isMountain,
     effectiveTemperature,
+    temperatureBasisAdvice: temperatureBasis.clothingAdviceModifierZh,
   });
 
   return {
     titleZh: titleForComfort(comfortLevel, input.target),
     summaryZh: `参考体感约 ${Math.round(effectiveTemperature)}°C，风速约 ${round1(
       windSpeed,
-    )} m/s，${precipitationSummary(precipitationProbability, precipitationAmount)}。${summarySuffix(
+    )} m/s，${precipitationSummary(precipitationProbability, precipitationAmount)}。${temperatureBasis.clothingAdviceModifierZh}${summarySuffix(
       comfortLevel,
       input.target,
     )}`,
@@ -84,6 +117,17 @@ export function buildClothingGuide(input: ClothingGuideInput): ClothingGuide {
     riskNotes,
     comfortLevel,
   };
+}
+
+function hourlyReferenceTime(
+  reference:
+    | (NormalizedCurrentWeather & {
+        readonly precipitationProbability?: number | null;
+      })
+    | NormalizedHourlyWeather
+    | undefined,
+): string | undefined {
+  return reference && "time" in reference ? reference.time : undefined;
 }
 
 function selectReferenceWeather(input: ClothingGuideInput):
@@ -225,6 +269,7 @@ function buildRiskNotes(input: {
   readonly windGust: number;
   readonly isMountain: boolean;
   readonly effectiveTemperature: number;
+  readonly temperatureBasisAdvice: string;
 }): readonly string[] {
   const notes: string[] = [];
 
@@ -245,6 +290,9 @@ function buildRiskNotes(input: {
   }
   if (input.isMountain) {
     notes.push("高海拔机位早晚温差更明显，返程层也要保留。");
+  }
+  if (input.temperatureBasisAdvice) {
+    notes.push(input.temperatureBasisAdvice);
   }
 
   return notes;

@@ -245,7 +245,13 @@ export type NormalizedHourlyWeather = {
   readonly fieldMetadata?: NormalizedWeatherFieldMetadataMap;
 };
 
-export type ProfessionalHourlyTemperatureBasis = "terrain_adjusted" | "raw_grid" | "unknown";
+export type ProfessionalHourlyTemperatureBasis =
+  | "terrain_adjusted"
+  | "terrain_adjusted_lapse_estimate"
+  | "raw_grid"
+  | "provider_point"
+  | "mixed"
+  | "unknown";
 
 export type ProfessionalHourlyCloudLayerBasis =
   | "explicit_layers"

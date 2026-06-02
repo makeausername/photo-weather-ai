@@ -169,6 +169,11 @@ describe("AI providers", () => {
       forecastResultFixture.cloudSeaAnalysis.shootableScore,
     );
     expect(payload.professionalHourlySummary).toHaveProperty("focusedRows");
+    expect(payload.professionalHourlySummary).toHaveProperty("temperatureBasis");
+    expect(payload.professionalHourlySummary.temperatureBasis).toHaveProperty("temperatureBasis");
+    expect(payload.professionalHourlySummary.temperatureBasis).toHaveProperty(
+      "displayTemperatureC",
+    );
     expect(payload.cloudLayerCompletenessSummary).toHaveProperty("layerCompletenessLevel");
     expect(payload.cloudBasisConsistencySummary).toMatchObject({
       cloudBasisLevel: expect.any(String),
@@ -180,6 +185,7 @@ describe("AI providers", () => {
       shouldLowerConfidence: true,
     });
     expect(text).toContain("Do not recompute facts");
+    expect(text).toContain("invent temperature correction");
     expect(text).toContain("infer low/mid/high cloud from total cloud");
     expect(text).not.toMatch(/latitude|longitude|coordinates|WGS84|GCJ-02/i);
     expect(text).not.toContain("QWeather");

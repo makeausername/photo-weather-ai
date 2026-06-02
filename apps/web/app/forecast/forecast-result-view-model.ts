@@ -2992,7 +2992,10 @@ function buildCloudSeaActionPlan(
     {
       key: "gear",
       label: "装备提醒",
-      value: "防潮 / 防滑 / 镜头布",
+      value: weatherVariableConsistencyContext.temperatureBasisContext
+        .isHighMountainTemperatureSensitive
+        ? "防风 / 防潮 / 轻保暖"
+        : "防潮 / 防滑 / 镜头布",
       detail: cloudSeaGearAdvice(result, terrainContext, weatherVariableConsistencyContext),
       tone: "info",
     },
@@ -3519,6 +3522,9 @@ function buildCloudSeaDataCaution(
   ) {
     return "部分地形或云层数据仍需结合临近预报复核。";
   }
+  if (weatherVariableConsistencyContext?.temperatureBasisContext.shouldShowTemperatureBasisNote) {
+    return weatherVariableConsistencyContext.temperatureBasisContext.userNoteZh;
+  }
   return null;
 }
 
@@ -3554,20 +3560,23 @@ function cloudSeaGearAdvice(
       ? "主窗口有降水干扰，注意防水收纳。"
       : "清晨湿度高，注意镜头结露。";
   const temperature = hasTemperatureBasisWarning(weatherVariableConsistencyContext)
-    ? "高山体感可能更冷，建议按机位修正温度准备。"
+    ? `${weatherVariableConsistencyContext?.temperatureBasisContext.clothingAdviceModifierZh ?? "高山体感可能更冷，建议按机位修正温度准备。"}${weatherVariableConsistencyContext?.temperatureBasisContext.actionAdviceModifierZh ?? ""}`
     : "";
   const vapor =
     weatherVariableConsistencyContext?.humidityDewPointStatus === "conflict"
       ? "水汽指标需现场复核，不宜仅凭湿度判断云海。"
       : "";
-  const prioritizedAdvice = [temperature, rain, vapor].filter(Boolean).join("");
+  const prioritizedAdvice = [rain, temperature, vapor]
+    .filter(Boolean)
+    .map(withoutEndingPunctuation)
+    .join("；");
   const baseAdvice = terrainContext.shouldDowngradeCloudSeaWording
     ? `防潮、防滑，准备镜头布和轻量防风层。${
         humidity ? `湿度参考 ${humidity}，` : ""
       }复核低云、雾气和通透度后再决定是否等待。`
     : `防潮、防滑，准备镜头布和备用保暖层。${humidity ? `湿度参考 ${humidity}，` : ""}`;
   if (prioritizedAdvice) {
-    return `${prioritizedAdvice}${baseAdvice}`;
+    return `${prioritizedAdvice}。${baseAdvice}`;
   }
   if (terrainContext.shouldDowngradeCloudSeaWording) {
     return `防潮、防滑，准备镜头布和轻量防风层。${
@@ -3575,6 +3584,10 @@ function cloudSeaGearAdvice(
     }复核低云、雾气和通透度后再决定是否等待。`;
   }
   return `防潮、防滑，准备镜头布和备用保暖层。${humidity ? `湿度参考 ${humidity}，` : ""}${rain}`;
+}
+
+function withoutEndingPunctuation(value: string): string {
+  return value.replace(/[。.!！]+$/u, "");
 }
 
 function weatherVariableConsistencyActionChecks(
@@ -3590,7 +3603,9 @@ function weatherVariableConsistencyActionChecks(
     context.cloudBasisStatus !== "consistent" && context.cloudBasisStatus !== "unknown"
       ? "复核低/中/高云分层"
       : undefined,
-    hasTemperatureBasisWarning(context) ? "按机位修正温度准备保暖" : undefined,
+    hasTemperatureBasisWarning(context)
+      ? context.temperatureBasisContext.actionAdviceModifierZh || "按机位修正温度准备保暖"
+      : undefined,
   ].filter((item): item is string => Boolean(item));
 }
 
@@ -3598,7 +3613,12 @@ function hasTemperatureBasisWarning(
   context: CloudSeaWeatherVariableConsistencyContext | undefined,
 ): boolean {
   return (
-    context?.temperatureBasisStatus === "mixed" || context?.temperatureBasisStatus === "raw_grid"
+    context?.shouldLowerComfortEquipmentConfidence === true ||
+    context?.temperatureBasisContext.shouldShowTemperatureBasisNote === true ||
+    context?.temperatureBasisStatus === "mixed" ||
+    context?.temperatureBasisStatus === "raw_grid" ||
+    context?.temperatureBasisStatus === "provider_point" ||
+    context?.temperatureBasisStatus === "unknown"
   );
 }
 

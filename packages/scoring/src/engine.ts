@@ -1,6 +1,7 @@
 import {
   buildCloudLayerCompletenessContext,
   buildCloudSeaCloudBasisConsistencyContext,
+  buildTerrainTemperatureBasisContext,
   classifyTerrainMode,
   forecastRecommendationLabels,
   simplifyWeatherSummaryZh,
@@ -105,6 +106,12 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
       hourlyWeather: calculationInput.hourlyWeather,
       elevationMeters:
         calculationInput.terrainAnalysis.terrainProfile.locationElevation ?? undefined,
+      surroundingReliefMeters:
+        calculationInput.terrainAnalysis.terrainProfile.localReliefMeters ??
+        calculationInput.terrainAnalysis.terrainProfile.elevationDiff5km ??
+        undefined,
+      terrainType: calculationInput.terrainAnalysis.terrainProfile.terrainType,
+      terrainMode: classifyTerrainMode(calculationInput.terrainAnalysis.terrainProfile),
       target: calculationInput.target,
       timezone: calculationInput.calendarBasis.timezone,
       forecastStart: calculationInput.calendarBasis.forecastStart,
@@ -289,7 +296,7 @@ function buildProfessionalHourlyData(
   cloudSeaAnalysis: CloudSeaAnalysisResult,
 ): readonly ProfessionalHourlyDataPoint[] {
   return input.hourlyWeather.map((hour, index, hours) => {
-    const temperature = professionalTemperatureProfile(hour);
+    const temperature = professionalTemperatureProfile(hour, input);
     const cloudLayers = professionalCloudLayerProfile(hour);
     const dewPointC = finiteOrNull(hour.dewPoint);
     const dewPointSpreadC =
@@ -410,7 +417,7 @@ function buildProfessionalHourlyDataTimeBasis(
     (hasForecastRange &&
       (start.timestamp > forecastStartMs + 60 * 1000 || endTimestamp < forecastEndMs - 60 * 1000));
   const cloudLayerCoverage = input.weatherFusionSummary?.cloudLayerCoverage;
-  const fieldCoverageSummary = buildProfessionalFieldCoverageSummary(input.hourlyWeather);
+  const fieldCoverageSummary = buildProfessionalFieldCoverageSummary(input.hourlyWeather, input);
   const missingFieldSummary = buildProfessionalMissingFieldSummary(fieldCoverageSummary);
 
   return {
@@ -425,8 +432,8 @@ function buildProfessionalHourlyDataTimeBasis(
     displayLabel: forecastWindowRange.displayLabel,
     isFutureOnly: forecastWindowRange.isFutureOnly,
     anchorRule: forecastWindowRange.anchorRule,
-    temperatureBasis: aggregateProfessionalTemperatureBasis(input.hourlyWeather),
-    temperatureBasisNoteZh: aggregateProfessionalTemperatureBasisNote(input.hourlyWeather),
+    temperatureBasis: aggregateProfessionalTemperatureBasis(input.hourlyWeather, input),
+    temperatureBasisNoteZh: aggregateProfessionalTemperatureBasisNote(input.hourlyWeather, input),
     cloudLayerBasis: aggregateProfessionalCloudLayerBasis(input.hourlyWeather),
     cloudLayerBasisNoteZh:
       cloudLayerCoverage?.professionalCoverageNoteZh ??
@@ -447,6 +454,7 @@ function buildProfessionalHourlyDataTimeBasis(
 
 function buildProfessionalFieldCoverageSummary(
   hourlyWeather: readonly NormalizedHourlyWeather[],
+  input: ForecastCalculationInput,
 ): CloudLayerFieldCoverageSummary {
   return {
     totalHours: hourlyWeather.length,
@@ -454,10 +462,13 @@ function buildProfessionalFieldCoverageSummary(
     cloudLowCoverage: countFinite(hourlyWeather, (hour) => explicitProfessionalCloudLayer(hour, "cloudLow")),
     cloudMidCoverage: countFinite(hourlyWeather, (hour) => explicitProfessionalCloudLayer(hour, "cloudMid")),
     cloudHighCoverage: countFinite(hourlyWeather, (hour) => explicitProfessionalCloudLayer(hour, "cloudHigh")),
-    temperatureCoverage: countFinite(hourlyWeather, (hour) => professionalTemperatureProfile(hour).displayedTemperatureC),
+    temperatureCoverage: countFinite(
+      hourlyWeather,
+      (hour) => professionalTemperatureProfile(hour, input).displayedTemperatureC,
+    ),
     terrainAdjustedTemperatureCoverage: countFinite(
       hourlyWeather,
-      (hour) => professionalTemperatureProfile(hour).terrainAdjustedTemperatureC,
+      (hour) => professionalTemperatureProfile(hour, input).terrainAdjustedTemperatureC,
     ),
     dewPointCoverage: countFinite(hourlyWeather, (hour) => hour.dewPoint),
     dewPointSpreadCoverage: countFinite(hourlyWeather, (hour) => hour.dewPointSpread),
@@ -546,7 +557,10 @@ function uniqueStrings(values: readonly (string | null | undefined)[]): readonly
   return [...new Set(values.filter((value): value is string => Boolean(value)))];
 }
 
-function professionalTemperatureProfile(hour: NormalizedHourlyWeather): {
+function professionalTemperatureProfile(
+  hour: NormalizedHourlyWeather,
+  input?: ForecastCalculationInput,
+): {
   readonly rawTemperatureC: number | null;
   readonly terrainAdjustedTemperatureC: number | null;
   readonly displayedTemperatureC: number | null;
@@ -575,58 +589,76 @@ function professionalTemperatureProfile(hour: NormalizedHourlyWeather): {
           hour.temperature,
       )
     : null;
-
-  if (terrainAdjustedTemperatureC !== null) {
-    return {
-      rawTemperatureC,
-      terrainAdjustedTemperatureC,
-      displayedTemperatureC: terrainAdjustedTemperatureC,
-      temperatureBasis: "terrain_adjusted",
-      temperatureAdjustmentC: finiteOrNull(adjustment?.correctionCelsius),
-      temperatureBasisNoteZh: professionalTemperatureBasisNote(adjustment),
-    };
-  }
-
-  if (rawTemperatureC !== null) {
-    return {
-      rawTemperatureC,
-      terrainAdjustedTemperatureC: null,
-      displayedTemperatureC: rawTemperatureC,
-      temperatureBasis: "raw_grid",
-      temperatureAdjustmentC: null,
-      temperatureBasisNoteZh: "原始格点温度，未做机位海拔修正。",
-    };
-  }
+  const basisContext = buildTerrainTemperatureBasisContext({
+    rawGridTemperatureC: rawTemperatureC,
+    terrainAdjustedTemperatureC,
+    displayedTemperatureC: hour.temperature,
+    providerTemperatureC: hour.temperature,
+    ...professionalTemperatureTerrainInput(hour, input),
+  });
 
   return {
-    rawTemperatureC: null,
-    terrainAdjustedTemperatureC: null,
-    displayedTemperatureC: null,
-    temperatureBasis: "unknown",
-    temperatureAdjustmentC: null,
-    temperatureBasisNoteZh: "暂无可用温度数据。",
+    rawTemperatureC: basisContext.rawGridTemperatureC,
+    terrainAdjustedTemperatureC: basisContext.terrainAdjustedTemperatureC,
+    displayedTemperatureC: basisContext.displayTemperatureC,
+    temperatureBasis: basisContext.temperatureBasis,
+    temperatureAdjustmentC: professionalTemperatureAdjustmentC(
+      adjustment,
+      basisContext.rawGridTemperatureC,
+      basisContext.terrainAdjustedTemperatureC,
+    ),
+    temperatureBasisNoteZh: basisContext.professionalNoteZh,
   };
 }
 
-function professionalTemperatureBasisNote(
+function professionalTemperatureTerrainInput(
+  hour: NormalizedHourlyWeather,
+  input: ForecastCalculationInput | undefined,
+) {
+  const profile = input?.terrainAnalysis.terrainProfile;
+  const elevationMeters =
+    finiteOrNull(hour.temperatureAdjustment?.selectedSpotElevationMeters) ??
+    finiteOrNull(hour.selectedSpotElevationMeters) ??
+    finiteOrNull(profile?.locationElevation) ??
+    finiteOrNull(profile?.elevationMeters);
+  const modelElevationMeters =
+    finiteOrNull(hour.temperatureAdjustment?.providerElevationMeters) ??
+    finiteOrNull(hour.providerElevationMeters);
+  const surroundingReliefMeters =
+    finiteOrNull(profile?.localReliefMeters) ?? finiteOrNull(profile?.elevationDiff5km);
+  const terrainMode = profile ? classifyTerrainMode(profile) : undefined;
+
+  return {
+    elevationMeters,
+    modelElevationMeters,
+    surroundingReliefMeters,
+    terrainType: profile?.terrainType,
+    terrainMode,
+    terrainConfidence: profile?.elevationConfidence,
+    windSpeedMs: hour.windSpeed,
+    windGustMs: hour.windGust,
+    humidityPercent: hour.humidity,
+    forecastHour: input ? getHourInTimezone(hour.time, input.calendarBasis.timezone) : undefined,
+    timezone: input?.calendarBasis.timezone,
+    lapseRateCPerKm: hour.temperatureAdjustment?.lapseRateCelsiusPer100m
+      ? hour.temperatureAdjustment.lapseRateCelsiusPer100m * 10
+      : undefined,
+  };
+}
+
+function professionalTemperatureAdjustmentC(
   adjustment: NormalizedHourlyWeather["temperatureAdjustment"],
-): string {
-  if (!adjustment) {
-    return "暂无温度修正说明。";
+  rawTemperatureC: number | null,
+  terrainAdjustedTemperatureC: number | null,
+): number | null {
+  const explicitCorrection = finiteOrNull(adjustment?.correctionCelsius);
+  if (explicitCorrection !== null) {
+    return explicitCorrection;
   }
-  if (adjustment.correctionApplied) {
-    return "已按机位海拔估算温度。";
+  if (rawTemperatureC !== null && terrainAdjustedTemperatureC !== null) {
+    return round1(rawTemperatureC - terrainAdjustedTemperatureC);
   }
-  if (adjustment.correctionReason === "provider_elevation_close_to_spot") {
-    return "预报格点海拔接近机位，按机位口径显示。";
-  }
-  if (adjustment.correctionReason === "provider_terrain_aware_no_extra_correction") {
-    return "来源已接近地形口径，未额外修正。";
-  }
-  if (adjustment.correctionReason === "existing_correction_preserved") {
-    return "保留上游已提供的机位温度修正。";
-  }
-  return "已按机位温度口径显示。";
+  return null;
 }
 
 function explicitProfessionalCloudLayer(
@@ -712,9 +744,7 @@ function professionalHourlyNotes(
     },
   ]);
   return uniqueStrings([
-    temperature.temperatureBasis === "raw_grid"
-      ? "温度为原始格点值，未作为机位海拔修正温度展示。"
-      : undefined,
+    professionalTemperatureRowNote(temperature),
     cloudBasis.hasTotalLessThanAnyLayer
       ? "云量口径需复核：总云量低于分层云量，分层云量仅作趋势参考。"
       : undefined,
@@ -727,6 +757,24 @@ function professionalHourlyNotes(
       ? "云层分层存在估算字段，专业表不使用总云量回填。"
       : undefined,
   ]);
+}
+
+function professionalTemperatureRowNote(
+  temperature: ReturnType<typeof professionalTemperatureProfile>,
+): string | undefined {
+  if (temperature.temperatureBasis === "raw_grid") {
+    return "当前仅有原始格点温度，高山机位体感需谨慎参考。";
+  }
+  if (temperature.temperatureBasis === "provider_point") {
+    return "当前仅有来源点位温度，未确认机位海拔修正。";
+  }
+  if (temperature.temperatureBasis === "mixed") {
+    return "原始格点温度与机位估算温度存在差异，穿衣和体感以机位估算温度为准。";
+  }
+  if (temperature.temperatureBasis === "terrain_adjusted_lapse_estimate") {
+    return "温度按机位与模型海拔差做确定性递减率估算。";
+  }
+  return undefined;
 }
 
 function professionalHourlyMissingCloudLayerFields(
@@ -999,32 +1047,52 @@ function professionalHourInAnalysisWindows(
 
 function aggregateProfessionalTemperatureBasis(
   hourlyWeather: readonly NormalizedHourlyWeather[],
+  input: ForecastCalculationInput,
 ): ProfessionalHourlyTemperatureBasis {
   const rowBases = hourlyWeather.map(
-    (hour) => professionalTemperatureProfile(hour).temperatureBasis,
+    (hour) => professionalTemperatureProfile(hour, input).temperatureBasis,
   );
+  if (rowBases.some((basis) => basis === "mixed")) {
+    return "mixed";
+  }
   if (rowBases.some((basis) => basis === "terrain_adjusted")) {
     return "terrain_adjusted";
   }
+  if (rowBases.some((basis) => basis === "terrain_adjusted_lapse_estimate")) {
+    return "terrain_adjusted_lapse_estimate";
+  }
   if (rowBases.some((basis) => basis === "raw_grid")) {
     return "raw_grid";
+  }
+  if (rowBases.some((basis) => basis === "provider_point")) {
+    return "provider_point";
   }
   return "unknown";
 }
 
 function aggregateProfessionalTemperatureBasisNote(
   hourlyWeather: readonly NormalizedHourlyWeather[],
+  input: ForecastCalculationInput,
 ): string {
   const rowBases = hourlyWeather.map(
-    (hour) => professionalTemperatureProfile(hour).temperatureBasis,
+    (hour) => professionalTemperatureProfile(hour, input).temperatureBasis,
   );
+  if (rowBases.some((basis) => basis === "mixed")) {
+    return "温度口径：部分小时原始格点与机位估算温度差异较大，用户体感和穿衣以机位估算温度为准。";
+  }
   if (rowBases.some((basis) => basis === "terrain_adjusted")) {
     return rowBases.some((basis) => basis !== "terrain_adjusted")
       ? "温度口径：机位海拔修正后；部分小时仍需复核原始格点或缺失值。"
       : "温度口径：机位海拔修正后";
   }
+  if (rowBases.some((basis) => basis === "terrain_adjusted_lapse_estimate")) {
+    return "温度口径：按机位与模型海拔差做递减率估算。";
+  }
   if (rowBases.some((basis) => basis === "raw_grid")) {
     return "温度口径：原始格点，未做机位修正";
+  }
+  if (rowBases.some((basis) => basis === "provider_point")) {
+    return "温度口径：来源点位温度，未确认机位海拔修正";
   }
   return "温度口径：暂无";
 }

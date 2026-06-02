@@ -7,7 +7,6 @@ import {
   deepSeekResponseFormat,
   formatArrivalDeadlineZh,
   formatShootingWindowZh,
-  forecastHorizonLabels,
   normalizeDeepSeekModel,
   type DeepSeekReasoningEffort,
 } from "@photo-weather/shared";
@@ -527,11 +526,10 @@ export function buildCloudSeaAiExplainPayload(
     target: "cloud_sea",
     deterministicOnly: true,
     instruction:
-      "Explain deterministic Cloud Sea facts only. Do not recompute facts, infer low/mid/high cloud from total cloud, or treat mixed-basis cloud data as high-confidence evidence.",
+      "Explain deterministic Cloud Sea facts only. Do not recompute facts, infer low/mid/high cloud from total cloud, invent temperature correction, or override the selected deterministic temperature basis.",
     locationName: result.place.name,
     horizon: {
       key: result.horizon,
-      labelZh: forecastHorizonLabels[result.horizon],
       forecastRange: result.calendarBasis.forecastRangeLabel,
     },
     scoreAndRecommendation: {
@@ -541,22 +539,19 @@ export function buildCloudSeaAiExplainPayload(
       whiteoutRiskScore: analysis.whiteoutRiskScore,
       recommendationLevel: result.recommendationLevel,
       recommendationLabelZh: recommendationGuard.finalRecommendationLabel,
-      cloudSeaRecommendationZh: recommendationGuard.finalRecommendationLabel,
-      rawRecommendationLabelZh: result.recommendationLabel,
-      rawCloudSeaRecommendationZh: analysis.recommendationLabel,
-      isSpecialTripRecommended: recommendationGuard.isSpecialTripRecommended,
       maxAllowedRecommendationStrength: recommendationGuard.maxAllowedRecommendationStrength,
-      summaryZh: limitText(result.summary, 180),
     },
     recommendationConsistencyGuard: {
       finalRecommendationLevel: recommendationGuard.finalRecommendationLevel,
       finalRecommendationLabelZh: recommendationGuard.finalRecommendationLabel,
       reasonZh: recommendationGuard.reasonZh,
       departureAdviceZh: recommendationGuard.departureAdviceZh,
-      blockedStrongRecommendationReasons: recommendationGuard.blockedStrongRecommendationReasons,
-      consistencyWarnings: recommendationGuard.consistencyWarnings,
-      windowRecommendation: recommendationGuard.normalizedWindowRecommendation,
-      dailyRecommendation: recommendationGuard.normalizedDailyRecommendation,
+      blockedStrongRecommendationReasons: takeTextItems(
+        recommendationGuard.blockedStrongRecommendationReasons,
+        3,
+        90,
+      ),
+      consistencyWarnings: takeTextItems(recommendationGuard.consistencyWarnings, 3, 90),
     },
     bestWindow: bestAnalysisWindow
       ? compactCloudSeaAnalysisWindow(bestAnalysisWindow, timezone)
@@ -626,6 +621,7 @@ export function buildCloudSeaAiExplainPayload(
         result.professionalHourlyDataTimeBasis,
         detail,
       ),
+      temperatureBasis: compactTemperatureBasisForAi(weatherVariableConsistency),
       signalCounts: countProfessionalHourlySignals(professionalRows),
       focusedRows: focusedRows.map(compactProfessionalHourlyRowForAi),
     },
@@ -754,6 +750,21 @@ function compactProfessionalHourlyTimeBasisForAi(
   };
 }
 
+function compactTemperatureBasisForAi(
+  weatherVariableConsistency: ReturnType<typeof buildCloudSeaWeatherVariableConsistencyContext>,
+) {
+  const context = weatherVariableConsistency.temperatureBasisContext;
+  return {
+    temperatureBasis: context.temperatureBasis,
+    displayTemperatureC: context.displayTemperatureC,
+    displayTemperatureRangeC: context.displayTemperatureRangeC,
+    rawGridTemperatureC: context.rawGridTemperatureC,
+    terrainAdjustedTemperatureC: context.terrainAdjustedTemperatureC,
+    userNoteZh: limitText(providerNeutralText(context.userNoteZh), 90),
+    professionalNoteZh: limitText(providerNeutralText(context.professionalNoteZh), 110),
+  };
+}
+
 function compactCloudSeaAnalysisWindow(
   window: ForecastCalculationResult["cloudSeaAnalysis"]["bestCloudSeaWindows"][number],
   timezone: string,
@@ -778,9 +789,9 @@ function compactCloudSeaAnalysisWindow(
 
 function professionalHourlyRowsForAiPayload(
   rows: NonNullable<ForecastCalculationResult["professionalHourlyData"]>,
-  detail: DeepSeekForecastContextDetail,
+  _detail: DeepSeekForecastContextDetail,
 ) {
-  const limit = detail === "minimal" ? 4 : 6;
+  const limit = 4;
   const focused = rows.filter((row) =>
     ["可拍窗口", "白墙风险", "形成信号", "雨后开口", "需复核"].includes(row.cloudSeaSignal),
   );
@@ -1334,6 +1345,7 @@ function buildForecastExplanationUserPayload(
     },
     constraints: [
       "If target is cloud_sea, use cloudSeaAiExplainPayload as deterministic context only; do not invent cloud layers, cloud-sea windows, whiteout risk, arrival advice, or professional hourly values.",
+      "For cloud_sea temperature, explain only the provided temperatureBasis/displayTemperatureC/rawGridTemperatureC/terrainAdjustedTemperatureC and notes; do not invent a new correction or override deterministic temperature.",
       "For cloud_sea output, focus on practical photography guidance: one-sentence conclusion, best window, cloud sea/low cloud/morning fog judgment, whiteout risk, arrival and waiting plan, on-site checks, gear, and backup plan.",
       "只解释 computedForecastFacts 中已有的确定性事实。",
       "不要计算、推断或改写天气、天文、地形、坐标、评分和服务商结果。",
@@ -1348,6 +1360,7 @@ function buildForecastExplanationUserPayload(
     ],
     safetyRules: [
       "Do not invent weather data.",
+      "Do not invent or override temperature correction.",
       "Do not infer low cloud, mid cloud, or high cloud from total cloud.",
       "Do not treat mixed-basis cloud data as high-confidence cloud sea evidence.",
       "Do not recompute astronomy.",

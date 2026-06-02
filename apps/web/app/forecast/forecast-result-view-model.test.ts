@@ -4256,6 +4256,7 @@ describe("forecast result target-aware view model", () => {
       "云量口径一致性",
       "风速与云雾稳定性",
       "降水与雨后开口",
+      "数据一致性",
       "地形与高差",
       "白墙风险",
     ]);
@@ -4994,6 +4995,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("高云量 %");
     expect(html).toContain("中云量 %");
     expect(html).toContain("低云量 %");
+    expect(html).toContain("原始格点温度 °C");
     expect(html).toContain("机位估算温度 °C");
     expect(html).toContain("露点 °C");
     expect(html).toContain("露点差 °C");
@@ -5004,7 +5006,6 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("风向");
     expect(html).toContain("云海信号");
     expect(html).toContain("可拍窗口");
-    expect(html).not.toContain("原始格点温度 °C");
     expect(html).toContain('data-professional-hourly-row="2026-05-20T05:00:00+08:00"');
     expect(html).not.toContain('data-professional-hourly-row="2026-05-20T13:00:00+08:00"');
     expect(html).toContain("max-w-full overflow-x-auto");
@@ -5170,12 +5171,14 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.ruleContext.weatherVariableConsistencyContext.temperatureBasisStatus).toBe(
       "mixed",
     );
-    expect(html).toContain("高山机位优先参考机位海拔修正温度");
-    expect(html).toContain("原始格点温度可能偏暖");
-    expect(html).toContain("高山体感可能更冷，建议按机位修正温度准备");
+    expect(html).toContain("机位估算温度");
+    expect(html).toContain("高山机位与周边格点温度差异较大");
+    expect(html).toContain("高山体感可能低于城市/低海拔预报");
     expect(html).toContain("专业小时数据");
     expect(html).toContain("原始格点温度 °C");
+    expect(html).toContain("机位估算温度 °C");
     expect(html).toContain("露点差 °C");
+    expect(html).not.toMatch(/latitude|longitude|WGS84|GCJ-02|经度|纬度/i);
   });
 
   it("renders compact multi-source low-cloud disagreement without provider names or coordinates", () => {

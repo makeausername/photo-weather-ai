@@ -2179,8 +2179,9 @@ function terrainCorrectionUserNote(
 function dailyTemperatureRangeText(
   weather: ForecastCalculationResult["dailySummaries"][number]["weather"] | undefined,
   result?: ForecastCalculationResult,
+  weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext,
 ): string {
-  const prefix = terrainTemperaturePrefix(result);
+  const prefix = terrainTemperaturePrefix(result, weatherVariableConsistencyContext);
   if (!weather) {
     return `${prefix}：暂缺`;
   }
@@ -2208,9 +2209,16 @@ function mountainTemperatureValue(
   current: ForecastCalculationResult["currentWeather"] | undefined,
   weather: ForecastCalculationResult["dailySummaries"][number]["weather"] | undefined,
   result?: ForecastCalculationResult,
+  weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext,
 ): string {
-  const temperature = current?.temperature ?? averagePair(weather?.tempMin, weather?.tempMax);
-  const feelsLike =
+  const basisContext = weatherVariableConsistencyContext?.temperatureBasisContext;
+  const basisTemperature =
+    basisContext?.isHighMountainTemperatureSensitive === true
+      ? basisContext.displayTemperatureC
+      : null;
+  const temperature =
+    basisTemperature ?? current?.temperature ?? averagePair(weather?.tempMin, weather?.tempMax);
+  const fallbackFeelsLike =
     resultUsesMountainSemantics(result) || terrainModeForResult(result) === "hill"
       ? current?.mountainFeelsLikeC ??
         current?.feelsLike ??
@@ -2220,17 +2228,36 @@ function mountainTemperatureValue(
         averagePair(weather?.feelsLikeMin, weather?.feelsLikeMax) ??
         current?.mountainFeelsLikeC ??
         averagePair(weather?.mountainFeelsLikeMin, weather?.mountainFeelsLikeMax);
+  const feelsLike =
+    basisContext?.isHighMountainTemperatureSensitive === true &&
+    basisContext.bodyFeelTemperatureC !== null
+      ? basisContext.bodyFeelTemperatureC
+      : fallbackFeelsLike;
   const feelsLikeLabel = resultUsesMountainSemantics(result)
     ? "山地体感"
     : terrainModeForResult(result) === "hill"
       ? "山地/丘陵体感"
       : "体感温度";
-  return `${terrainTemperaturePrefix(result)}：${formatTemperature(
+  return `${terrainTemperaturePrefix(result, weatherVariableConsistencyContext)}：${formatTemperature(
     temperature,
   )} / ${feelsLikeLabel} ${formatTemperature(feelsLike)}`;
 }
 
-function terrainTemperaturePrefix(result: ForecastCalculationResult | undefined): string {
+function terrainTemperaturePrefix(
+  result: ForecastCalculationResult | undefined,
+  weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext,
+): string {
+  const basisContext = weatherVariableConsistencyContext?.temperatureBasisContext;
+  if (basisContext?.isHighMountainTemperatureSensitive) {
+    if (
+      basisContext.temperatureBasis === "raw_grid" ||
+      basisContext.temperatureBasis === "provider_point" ||
+      basisContext.temperatureBasis === "unknown"
+    ) {
+      return "原始格点温度";
+    }
+    return "机位估算温度";
+  }
   if (resultUsesMountainSemantics(result)) {
     return result?.terrainAnalysis?.terrainProfile?.elevationConfidence === "low"
       ? "山顶参考温度"
@@ -2265,7 +2292,14 @@ function temperatureActionText(
   current: ForecastCalculationResult["currentWeather"] | undefined,
   weather: ForecastCalculationResult["dailySummaries"][number]["weather"] | undefined,
   result?: ForecastCalculationResult,
+  weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext,
 ): string {
+  if (hasTemperatureBasisWarning(weatherVariableConsistencyContext)) {
+    return (
+      weatherVariableConsistencyContext?.temperatureBasisContext.actionAdviceModifierZh ||
+      "高山机位体感需临近复核，按更冷一档准备。"
+    );
+  }
   const feelsLike = current?.feelsLike ?? averagePair(weather?.feelsLikeMin, weather?.feelsLikeMax);
   if (typeof feelsLike === "number" && feelsLike <= 5) {
     return "风寒感明显，提前加保暖层。";
@@ -2296,10 +2330,7 @@ function temperatureConsistencyNote(
   if (!context || !hasTemperatureBasisWarning(context)) {
     return "";
   }
-  if (context.temperatureBasisStatus === "mixed" || context.temperatureBasisStatus === "raw_grid") {
-    return "高山机位优先参考机位海拔修正温度，原始格点温度可能偏暖。";
-  }
-  return "高山机位优先参考机位海拔修正温度。";
+  return context.temperatureBasisContext.userNoteZh;
 }
 
 function cloudBasisConsistencyNote(
@@ -2386,7 +2417,8 @@ function packingDetail(
   const base = clothingEquipmentAdvice(guide)[0] ?? guide.summaryZh;
   const extra = [
     hasTemperatureBasisWarning(weatherVariableConsistencyContext)
-      ? "高山体感可能更冷，按机位修正温度准备。"
+      ? weatherVariableConsistencyContext?.temperatureBasisContext.clothingAdviceModifierZh ||
+        "高山体感可能更冷，按机位修正温度准备。"
       : undefined,
     weatherVariableConsistencyContext?.shouldDowngradePrecipitationWording
       ? "降水按局地短时扰动准备轻量防雨。"
@@ -2399,7 +2431,12 @@ function hasTemperatureBasisWarning(
   context: CloudSeaWeatherVariableConsistencyContext | undefined,
 ): boolean {
   return (
-    context?.temperatureBasisStatus === "mixed" || context?.temperatureBasisStatus === "raw_grid"
+    context?.shouldLowerComfortEquipmentConfidence === true ||
+    context?.temperatureBasisContext.shouldShowTemperatureBasisNote === true ||
+    context?.temperatureBasisStatus === "mixed" ||
+    context?.temperatureBasisStatus === "raw_grid" ||
+    context?.temperatureBasisStatus === "provider_point" ||
+    context?.temperatureBasisStatus === "unknown"
   );
 }
 
@@ -4330,11 +4367,21 @@ function CloudSeaNearTermWeatherSection({
           title="气温与体感"
           timeBasis={timeContext.currentBasisLabel}
           badge={comfortLevelLabel(clothing.comfortLevel)}
-          value={mountainTemperatureValue(current, firstDay, result)}
-          detail={`${dailyTemperatureRangeText(firstDay, result)}，${temperatureActionText(
+          value={mountainTemperatureValue(
             current,
             firstDay,
             result,
+            weatherVariableConsistencyContext,
+          )}
+          detail={`${dailyTemperatureRangeText(
+            firstDay,
+            result,
+            weatherVariableConsistencyContext,
+          )}，${temperatureActionText(
+            current,
+            firstDay,
+            result,
+            weatherVariableConsistencyContext,
           )} ${terrainCorrectionUserNote(result, current, firstDay)} ${temperatureConsistencyNote(
             weatherVariableConsistencyContext,
           )}`}
@@ -4862,7 +4909,8 @@ function CloudSeaProfessionalHourlyDataPanel({
     cloudBasisConsistency,
   );
   const coverageNote = basis.professionalCoverageNoteZh ?? basis.userFacingCoverageNoteZh;
-  const temperatureColumnLabel = professionalTemperatureColumnLabel(rows, basis);
+  const temperatureColumnLabels = professionalTemperatureColumnLabels(rows, basis);
+  const showRawTemperatureColumn = temperatureColumnLabels.length > 1;
 
   return (
     <Card
@@ -4992,7 +5040,7 @@ function CloudSeaProfessionalHourlyDataPanel({
                   "高云量 %",
                   "中云量 %",
                   "低云量 %",
-                  temperatureColumnLabel,
+                  ...temperatureColumnLabels,
                   "露点 °C",
                   "露点差 °C",
                   "湿度 %",
@@ -5022,12 +5070,13 @@ function CloudSeaProfessionalHourlyDataPanel({
                     row={row}
                     timezone={basis.timezone}
                     cloudBasisRowNote={cloudBasisConsistency.rowNotesByHour?.[row.time]}
+                    showRawTemperatureColumn={showRawTemperatureColumn}
                   />
                 ))
               ) : (
                 <tr>
                   <td
-                    colSpan={16}
+                    colSpan={15 + temperatureColumnLabels.length}
                     className="border-t border-border px-3 py-4 text-center text-sm text-muted-foreground"
                   >
                     当前筛选下暂无小时数据，请切换上方筛选复核完整预报。
@@ -5249,10 +5298,12 @@ function CloudSeaProfessionalHourlyRow({
   row,
   timezone,
   cloudBasisRowNote,
+  showRawTemperatureColumn,
 }: {
   readonly row: ProfessionalHourlyRow;
   readonly timezone: string;
   readonly cloudBasisRowNote?: string;
+  readonly showRawTemperatureColumn: boolean;
 }) {
   const signal = professionalHourlyDisplaySignal(row);
   const weatherText = providerNeutralProfessionalWeatherText(row.weatherText) ?? "—";
@@ -5303,6 +5354,11 @@ function CloudSeaProfessionalHourlyRow({
       >
         {formatProfessionalPercent(row.cloudLowPercent)}
       </ProfessionalHourlyCell>
+      {showRawTemperatureColumn ? (
+        <ProfessionalHourlyCell cell="raw-temperature" dataBasis="raw_grid">
+          {formatProfessionalTemperature(row.rawTemperatureC)}
+        </ProfessionalHourlyCell>
+      ) : null}
       <ProfessionalHourlyCell cell="temperature" dataBasis={row.temperatureBasis}>
         {formatProfessionalTemperature(row.displayedTemperatureC)}
       </ProfessionalHourlyCell>
@@ -5416,11 +5472,20 @@ function professionalTemperatureBasisLabel(
     ForecastCalculationResult["professionalHourlyDataTimeBasis"]
   >["temperatureBasis"],
 ): string {
+  if (basis === "mixed") {
+    return "原始格点 / 机位估算需对照";
+  }
   if (basis === "terrain_adjusted") {
     return "机位海拔修正后";
   }
+  if (basis === "terrain_adjusted_lapse_estimate") {
+    return "递减率机位估算";
+  }
   if (basis === "raw_grid") {
     return "原始格点";
+  }
+  if (basis === "provider_point") {
+    return "来源点位";
   }
   return "暂无";
 }
@@ -5461,22 +5526,34 @@ function professionalCloudCoverageLabel(
   return `低云 ${summary.cloudLowCoverage}/${summary.totalHours}，中云 ${summary.cloudMidCoverage}/${summary.totalHours}，高云 ${summary.cloudHighCoverage}/${summary.totalHours}`;
 }
 
-function professionalTemperatureColumnLabel(
+function professionalTemperatureColumnLabels(
   rows: readonly ProfessionalHourlyRow[],
   basis: NonNullable<ForecastCalculationResult["professionalHourlyDataTimeBasis"]>,
-): string {
-  const hasTerrainAdjustedRows = rows.some((row) => row.temperatureBasis === "terrain_adjusted");
+): readonly string[] {
+  const hasRawRows = rows.some((row) => row.rawTemperatureC !== null);
+  const hasTerrainAdjustedRows = rows.some((row) => row.terrainAdjustedTemperatureC !== null);
   const hasRawGridRows = rows.some((row) => row.temperatureBasis === "raw_grid");
+  const hasProviderRows = rows.some((row) => row.temperatureBasis === "provider_point");
+  if (hasRawRows && hasTerrainAdjustedRows) {
+    return ["原始格点温度 °C", "机位估算温度 °C"];
+  }
   if (hasTerrainAdjustedRows) {
-    return "机位估算温度 °C";
+    return ["机位估算温度 °C"];
   }
   if (hasRawGridRows || basis.temperatureBasis === "raw_grid") {
-    return "原始格点温度 °C";
+    return ["原始格点温度 °C"];
   }
-  if (basis.temperatureBasis === "terrain_adjusted") {
-    return "机位估算温度 °C";
+  if (hasProviderRows || basis.temperatureBasis === "provider_point") {
+    return ["来源点温度 °C"];
   }
-  return "温度 °C";
+  if (
+    basis.temperatureBasis === "terrain_adjusted" ||
+    basis.temperatureBasis === "terrain_adjusted_lapse_estimate" ||
+    basis.temperatureBasis === "mixed"
+  ) {
+    return ["机位估算温度 °C"];
+  }
+  return ["温度 °C"];
 }
 
 const professionalHourlyIncompleteFieldNoteText = "部分小时字段缺失，缺失值以 “—” 显示。";
@@ -5494,8 +5571,22 @@ function professionalHourlyMissingHeaderNote(
     return "低/中/高云分层缺失时以 — 显示，不用总云量回填。";
   }
   const hasRawTemperature = rows.some((row) => row.temperatureBasis === "raw_grid");
+  const hasProviderTemperature = rows.some((row) => row.temperatureBasis === "provider_point");
+  const hasLapseEstimate = rows.some(
+    (row) => row.temperatureBasis === "terrain_adjusted_lapse_estimate",
+  );
+  const hasMixedTemperature = rows.some((row) => row.temperatureBasis === "mixed");
+  if (hasMixedTemperature) {
+    return "原始格点温度与机位估算温度同时保留；高山体感和穿衣建议以机位估算温度为准。";
+  }
+  if (hasLapseEstimate) {
+    return "当前温度按机位与模型海拔差做确定性递减率估算，需结合临近预报复核。";
+  }
   if (hasRawTemperature && basis.temperatureBasis !== "terrain_adjusted") {
-    return "温度为原始格点值，未代表机位海拔修正。";
+    return "当前仅有原始格点温度，高山机位体感需谨慎参考。";
+  }
+  if (hasProviderTemperature && basis.temperatureBasis !== "terrain_adjusted") {
+    return "当前仅有来源点位温度，未确认机位海拔修正。";
   }
   if (basis.partialData) {
     return professionalHourlyPartialDataNote(rows, basis);

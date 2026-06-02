@@ -6,6 +6,7 @@ export * from "./cloud-sea-recommendation-guard.js";
 export * from "./provider-fields.js";
 export * from "./schemas.js";
 export * from "./terrain-mode.js";
+export * from "./terrain-temperature-basis.js";
 export * from "./types.js";
 export * from "./window-format.js";
 export * from "./weather-text.js";

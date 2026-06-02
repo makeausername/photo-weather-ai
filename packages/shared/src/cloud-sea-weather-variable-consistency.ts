@@ -3,6 +3,11 @@ import {
   buildCloudSeaCloudBasisConsistencyContext,
   type CloudSeaCloudBasisConsistencyContext,
 } from "./cloud-sea-cloud-basis-consistency.js";
+import {
+  buildTerrainTemperatureBasisContext,
+  type TerrainTemperatureBasis,
+  type TerrainTemperatureBasisContext,
+} from "./terrain-temperature-basis.js";
 import type {
   ForecastMultiSourceAgreementContext,
   ProfessionalHourlyCloudLayerBasis,
@@ -14,7 +19,7 @@ import type {
 
 export type CloudSeaWeatherVariableConsistencyLevel = "good" | "watch" | "conflict" | "unknown";
 
-export type CloudSeaTemperatureBasisStatus = "terrain_adjusted" | "raw_grid" | "mixed" | "unknown";
+export type CloudSeaTemperatureBasisStatus = TerrainTemperatureBasis;
 
 export type CloudSeaHumidityDewPointStatus = "consistent" | "watch" | "conflict" | "unknown";
 
@@ -61,7 +66,9 @@ export type CloudSeaWeatherVariableConsistencyContext = {
   readonly cloudBasisStatus: CloudSeaCloudBasisStatus;
   readonly visibilityStatus: CloudSeaVisibilityStatus;
   readonly windStatus: CloudSeaWindStatus;
+  readonly temperatureBasisContext: TerrainTemperatureBasisContext;
   readonly shouldLowerConfidence: boolean;
+  readonly shouldLowerComfortEquipmentConfidence: boolean;
   readonly shouldAvoidStrongWording: boolean;
   readonly shouldDowngradePrecipitationWording: boolean;
   readonly shouldPreferTerrainAdjustedTemperature: boolean;
@@ -100,6 +107,7 @@ export type CloudSeaWeatherVariableConsistencyInput = {
     readonly terrainClass?: string | null;
     readonly terrainMode?: TerrainMode | string | null;
     readonly terrainType?: TerrainType | string | null;
+    readonly isClassicCloudSeaEligible?: boolean | null;
   } | null;
   readonly surroundingReliefMeters?: number | null;
   readonly terrainMode?: TerrainMode | string | null;
@@ -135,6 +143,8 @@ type WeatherVariableSnapshot = {
 type TemperatureEvaluation = {
   readonly status: CloudSeaTemperatureBasisStatus;
   readonly shouldPreferTerrainAdjustedTemperature: boolean;
+  readonly shouldLowerComfortEquipmentConfidence: boolean;
+  readonly basisContext: TerrainTemperatureBasisContext;
   readonly warning: CloudSeaWeatherVariableConsistencyWarning | null;
   readonly hasConflict: boolean;
   readonly hasWatch: boolean;
@@ -157,17 +167,21 @@ type CloudBasisEvaluation = {
   readonly context: CloudSeaCloudBasisConsistencyContext;
 };
 
-const highMountainTerrainModes = new Set(["high_mountain", "mountain"]);
-const highMountainTerrainClasses = new Set(["high_mountain", "mountain"]);
-const highReliefTerrainTypes = new Set(["summit", "ridge", "mountain_platform"]);
-
 export function buildCloudSeaWeatherVariableConsistencyContext(
   input: CloudSeaWeatherVariableConsistencyInput = {},
 ): CloudSeaWeatherVariableConsistencyContext {
   const rows = rowsForFocusedWindow(input.hourlyRows, input.focusedWindow);
   const snapshots = [...rows.map(snapshotFromProfessionalRow), ...optionalSnapshotFromInput(input)];
   const highMountainLike = isHighMountainLike(input);
-  const temperature = evaluateTemperatureBasis(snapshots, highMountainLike);
+  const temperatureBasisContext = buildAggregateTerrainTemperatureBasisContext(
+    input,
+    snapshots,
+  );
+  const temperature = evaluateTemperatureBasis(
+    snapshots,
+    highMountainLike,
+    temperatureBasisContext,
+  );
   const humidity = evaluateHumidityDewPoint(snapshots);
   const precipitation = evaluatePrecipitationSignal(snapshots);
   const cloudBasis = evaluateCloudBasis(
@@ -208,6 +222,8 @@ export function buildCloudSeaWeatherVariableConsistencyContext(
     cloudBasis.status === "total_only" ||
     cloudBasis.context.shouldLowerCloudSeaConfidence ||
     temperature.hasConflict;
+  const shouldLowerComfortEquipmentConfidence =
+    temperature.shouldLowerComfortEquipmentConfidence || temperature.hasConflict;
   const shouldAvoidStrongWording =
     consistencyLevel === "conflict" ||
     humidity.status !== "consistent" ||
@@ -235,7 +251,9 @@ export function buildCloudSeaWeatherVariableConsistencyContext(
     cloudBasisStatus: cloudBasis.status,
     visibilityStatus,
     windStatus,
+    temperatureBasisContext: temperature.basisContext,
     shouldLowerConfidence,
+    shouldLowerComfortEquipmentConfidence,
     shouldAvoidStrongWording,
     shouldDowngradePrecipitationWording: precipitation.shouldDowngradePrecipitationWording,
     shouldPreferTerrainAdjustedTemperature: temperature.shouldPreferTerrainAdjustedTemperature,
@@ -316,9 +334,63 @@ function optionalSnapshotFromInput(
   return snapshotHasAnyValue(snapshot) ? [snapshot] : [];
 }
 
+function buildAggregateTerrainTemperatureBasisContext(
+  input: CloudSeaWeatherVariableConsistencyInput,
+  snapshots: readonly WeatherVariableSnapshot[],
+): TerrainTemperatureBasisContext {
+  const representative =
+    snapshots
+      .filter(
+        (snapshot) =>
+          isFiniteNumber(snapshot.rawGridTemperatureC) ||
+          isFiniteNumber(snapshot.terrainAdjustedTemperatureC) ||
+          isFiniteNumber(snapshot.displayedTemperatureC) ||
+          isFiniteNumber(snapshot.temperatureC),
+      )
+      .sort(
+        (left, right) => temperatureSnapshotDelta(right) - temperatureSnapshotDelta(left),
+      )[0] ?? {};
+  const elevationMeters =
+    finiteNumber(input.elevationMeters) ?? finiteNumber(input.terrainContext?.elevationMeters);
+  const surroundingReliefMeters =
+    finiteNumber(input.surroundingReliefMeters) ??
+    finiteNumber(input.terrainContext?.surroundingReliefMeters);
+  const terrainType = input.terrainType ?? input.terrainContext?.terrainType;
+  const terrainMode = input.terrainMode ?? input.terrainContext?.terrainMode;
+
+  return buildTerrainTemperatureBasisContext({
+    rawGridTemperatureC: representative.rawGridTemperatureC ?? input.rawGridTemperatureC,
+    terrainAdjustedTemperatureC:
+      representative.terrainAdjustedTemperatureC ?? input.terrainAdjustedTemperatureC,
+    displayedTemperatureC: representative.displayedTemperatureC ?? input.displayedTemperatureC,
+    providerTemperatureC: representative.temperatureC ?? input.temperatureC,
+    elevationMeters,
+    surroundingReliefMeters,
+    terrainType,
+    terrainMode,
+    terrainClass: input.terrainContext?.terrainClass,
+    isClassicCloudSeaEligible: input.terrainContext?.isClassicCloudSeaEligible,
+    windSpeedMs: maxFinite(snapshots.map((snapshot) => snapshot.windSpeedMs)) ?? input.windSpeedMs,
+    windGustMs: maxFinite(snapshots.map((snapshot) => snapshot.windGustMs)) ?? input.windGustMs,
+    humidityPercent:
+      maxFinite(snapshots.map((snapshot) => snapshot.humidityPercent)) ?? input.humidityPercent,
+  });
+}
+
+function temperatureSnapshotDelta(snapshot: WeatherVariableSnapshot): number {
+  if (
+    isFiniteNumber(snapshot.rawGridTemperatureC) &&
+    isFiniteNumber(snapshot.terrainAdjustedTemperatureC)
+  ) {
+    return Math.abs(snapshot.rawGridTemperatureC - snapshot.terrainAdjustedTemperatureC);
+  }
+  return 0;
+}
+
 function evaluateTemperatureBasis(
   snapshots: readonly WeatherVariableSnapshot[],
   highMountainLike: boolean,
+  basisContext: TerrainTemperatureBasisContext,
 ): TemperatureEvaluation {
   const temperatureRows = snapshots.filter(
     (snapshot) =>
@@ -331,9 +403,19 @@ function evaluateTemperatureBasis(
     return {
       status: "unknown",
       shouldPreferTerrainAdjustedTemperature: false,
-      warning: null,
+      shouldLowerComfortEquipmentConfidence: highMountainLike,
+      basisContext,
+      warning:
+        highMountainLike && basisContext.shouldShowTemperatureBasisNote
+          ? {
+              key: "terrain_temperature_delta",
+              level: "medium",
+              affectedHoursCount: 0,
+              messageZh: basisContext.userNoteZh,
+            }
+          : null,
       hasConflict: false,
-      hasWatch: false,
+      hasWatch: highMountainLike,
     };
   }
 
@@ -342,6 +424,9 @@ function evaluateTemperatureBasis(
   );
   const hasRawGrid = temperatureRows.some((snapshot) =>
     isFiniteNumber(snapshot.rawGridTemperatureC),
+  );
+  const hasProviderPoint = temperatureRows.some(
+    (snapshot) => snapshot.temperatureBasis === "provider_point",
   );
   const maxDelta = maxFinite(
     temperatureRows.map((snapshot) =>
@@ -365,17 +450,33 @@ function evaluateTemperatureBasis(
     mixedBasis || rawGridDrivesHighMountainDisplay
       ? "mixed"
       : hasTerrainAdjusted && terrainAdjustedLikeCount > 0
-        ? "terrain_adjusted"
+        ? temperatureRows.some((snapshot) => snapshot.temperatureBasis === "terrain_adjusted_lapse_estimate")
+          ? "terrain_adjusted_lapse_estimate"
+          : "terrain_adjusted"
         : hasRawGrid
           ? "raw_grid"
-          : "unknown";
+          : hasProviderPoint
+            ? "provider_point"
+            : "unknown";
   const hasWatch =
-    highMountainLike && hasTerrainAdjusted && isFiniteNumber(maxDelta) && maxDelta >= 3;
+    (highMountainLike && hasTerrainAdjusted && isFiniteNumber(maxDelta) && maxDelta >= 3) ||
+    (highMountainLike && !hasTerrainAdjusted && (hasRawGrid || hasProviderPoint));
   const hasConflict = rawGridDrivesHighMountainDisplay && isFiniteNumber(maxDelta) && maxDelta >= 5;
+  const shouldLowerComfortEquipmentConfidence =
+    highMountainLike &&
+    (status === "mixed" ||
+      status === "raw_grid" ||
+      status === "provider_point" ||
+      status === "unknown" ||
+      basisContext.confidenceLevel === "low" ||
+      basisContext.confidenceLevel === "unknown");
 
   return {
     status,
-    shouldPreferTerrainAdjustedTemperature: highMountainLike && hasTerrainAdjusted,
+    shouldPreferTerrainAdjustedTemperature:
+      highMountainLike && (hasTerrainAdjusted || basisContext.shouldPreferTerrainAdjustedTemperature),
+    shouldLowerComfortEquipmentConfidence,
+    basisContext,
     warning:
       hasWatch || hasConflict
         ? {
@@ -384,7 +485,7 @@ function evaluateTemperatureBasis(
             affectedHoursCount: countTemperatureDeltaRows(temperatureRows, hasConflict ? 5 : 3),
             messageZh: hasConflict
               ? "原始格点温度可能偏暖，穿衣和体感建议以机位估算温度为准。"
-              : "高山机位优先参考机位海拔修正温度。",
+              : basisContext.professionalNoteZh,
           }
         : null,
     hasConflict,
@@ -393,7 +494,7 @@ function evaluateTemperatureBasis(
 }
 
 function rowDisplaysRawGridTemperature(snapshot: WeatherVariableSnapshot): boolean {
-  if (snapshot.temperatureBasis === "raw_grid") {
+  if (snapshot.temperatureBasis === "raw_grid" || snapshot.temperatureBasis === "provider_point") {
     return true;
   }
   if (
@@ -410,7 +511,10 @@ function rowDisplaysRawGridTemperature(snapshot: WeatherVariableSnapshot): boole
 }
 
 function rowDisplaysTerrainAdjustedTemperature(snapshot: WeatherVariableSnapshot): boolean {
-  if (snapshot.temperatureBasis === "terrain_adjusted") {
+  if (
+    snapshot.temperatureBasis === "terrain_adjusted" ||
+    snapshot.temperatureBasis === "terrain_adjusted_lapse_estimate"
+  ) {
     return true;
   }
   if (
@@ -795,22 +899,17 @@ function classifyConsistencyLevel(input: {
 }
 
 function isHighMountainLike(input: CloudSeaWeatherVariableConsistencyInput): boolean {
-  const elevation =
-    finiteNumber(input.elevationMeters) ?? finiteNumber(input.terrainContext?.elevationMeters);
-  const relief =
-    finiteNumber(input.surroundingReliefMeters) ??
-    finiteNumber(input.terrainContext?.surroundingReliefMeters);
-  const terrainMode = input.terrainMode ?? input.terrainContext?.terrainMode;
-  const terrainType = input.terrainType ?? input.terrainContext?.terrainType;
-  const terrainClass = input.terrainContext?.terrainClass;
-
-  return (
-    (isFiniteNumber(elevation) && elevation >= 800) ||
-    (isFiniteNumber(relief) && relief >= 500) ||
-    (typeof terrainMode === "string" && highMountainTerrainModes.has(terrainMode)) ||
-    (typeof terrainType === "string" && highReliefTerrainTypes.has(terrainType)) ||
-    (typeof terrainClass === "string" && highMountainTerrainClasses.has(terrainClass))
-  );
+  return buildTerrainTemperatureBasisContext({
+    elevationMeters:
+      finiteNumber(input.elevationMeters) ?? finiteNumber(input.terrainContext?.elevationMeters),
+    surroundingReliefMeters:
+      finiteNumber(input.surroundingReliefMeters) ??
+      finiteNumber(input.terrainContext?.surroundingReliefMeters),
+    terrainMode: input.terrainMode ?? input.terrainContext?.terrainMode,
+    terrainType: input.terrainType ?? input.terrainContext?.terrainType,
+    terrainClass: input.terrainContext?.terrainClass,
+    isClassicCloudSeaEligible: input.terrainContext?.isClassicCloudSeaEligible,
+  }).isHighMountainTemperatureSensitive;
 }
 
 function dewPointSpreadForSnapshot(snapshot: WeatherVariableSnapshot): number | undefined {

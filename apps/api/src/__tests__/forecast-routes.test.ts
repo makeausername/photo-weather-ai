@@ -512,7 +512,9 @@ describe("forecast query validation route", () => {
     expect(body.professionalHourlyDataTimeBasis).toMatchObject({
       timezone: "Asia/Shanghai",
       stepMinutes: 60,
-      temperatureBasis: expect.stringMatching(/terrain_adjusted|raw_grid|unknown/),
+      temperatureBasis: expect.stringMatching(
+        /terrain_adjusted|terrain_adjusted_lapse_estimate|raw_grid|provider_point|mixed|unknown/,
+      ),
       cloudLayerBasis: expect.stringMatching(/explicit_layers|partial_layers|total_only|unknown/),
       partialData: false,
     });
@@ -531,7 +533,9 @@ describe("forecast query validation route", () => {
       cloudLowPercent: expect.any(Number),
       rawTemperatureC: expect.any(Number),
       displayedTemperatureC: expect.any(Number),
-      temperatureBasis: expect.stringMatching(/terrain_adjusted|raw_grid|unknown/),
+      temperatureBasis: expect.stringMatching(
+        /terrain_adjusted|terrain_adjusted_lapse_estimate|raw_grid|provider_point|mixed|unknown/,
+      ),
       temperatureBasisNoteZh: expect.any(String),
       cloudLayerBasis: expect.stringMatching(/explicit_layers|partial_layers|total_only|unknown/),
       dewPointC: expect.any(Number),

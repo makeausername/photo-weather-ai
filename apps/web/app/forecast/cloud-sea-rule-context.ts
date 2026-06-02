@@ -105,6 +105,7 @@ export function buildCloudSeaRuleContext(result: ForecastCalculationResult): Clo
       terrainClass: terrainContext.terrainClass,
       terrainMode: result.cloudSeaAnalysis.terrainSupport.terrainMode,
       terrainType: terrainContext.terrainType,
+      isClassicCloudSeaEligible: terrainContext.isClassicCloudSeaEligible,
     },
     hourlyRows: result.professionalHourlyData,
     cloudLayerCompletenessContext,
