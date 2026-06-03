@@ -50,6 +50,10 @@ import {
   buildCloudSeaDisplayTemperatureContext,
   type CloudSeaDisplayTemperatureContext,
 } from "./cloud-sea-display-temperature";
+import {
+  buildCloudSeaDisplayData,
+  type CloudSeaDisplayData,
+} from "./cloud-sea-display-data";
 
 export type ForecastResultModuleKey =
   | "overall"
@@ -299,6 +303,7 @@ export type CloudSeaActionPlanItem = {
 };
 
 export type CloudSeaForecastViewModel = {
+  readonly displayData: CloudSeaDisplayData;
   readonly ruleContext: CloudSeaRuleContext;
   readonly terrainContext: CloudSeaTerrainContext;
   readonly displayTemperatureContext: CloudSeaDisplayTemperatureContext;
@@ -696,140 +701,185 @@ export function buildCloudSeaForecastViewModel(
     bestWindow: explanationBestWindow,
     recommendationGuardContext: recommendationGuard,
   });
+  const hero = buildCloudSeaHeroConclusion(
+    result,
+    cloudSeaWindows,
+    terrainContext,
+    cloudLayerCompleteness,
+    cloudBasisConsistency,
+    multiSourceAgreementContext,
+    recommendationGuard,
+    weatherVariableConsistencyContext,
+    recommendationExplanation,
+  );
+  const coreCards = [
+    scoreCard(
+      "cloud-sea-formation",
+      "cloudSea",
+      vocabulary.formationCardLabel,
+      `${analysis.labels.formationOpportunity}（${analysis.formationScore} 分）`,
+      cloudSeaTerrainAwareText(
+        firstText(analysis.opportunityReasons, "按湿度、低云、风速、露点差和地形落差判断。"),
+        terrainContext,
+      ),
+      "primary",
+      analysis.formationScore,
+    ),
+    scoreCard(
+      "cloud-sea-shootable",
+      "cloudSea",
+      vocabulary.shootableCardLabel,
+      `${analysis.labels.shootableOpportunity}（${analysis.shootableScore} 分）`,
+      terrainContext.shouldDowngradeCloudSeaWording
+        ? `光线重叠 ${analysis.lightAlignedScore} 分，低云遮挡和降水打断已扣减。`
+        : `光线重叠 ${analysis.lightAlignedScore} 分，白墙风险和降水打断已扣减。`,
+      analysis.shootableScore >= 70
+        ? "primary"
+        : analysis.shootableScore >= 45
+          ? "accent"
+          : "muted",
+      analysis.shootableScore,
+    ),
+    scoreCard(
+      "cloud-sea-whiteout",
+      "whiteoutRisk",
+      vocabulary.obstructionRiskLabel,
+      `${whiteoutLabel}（${analysis.whiteoutRiskScore} 分）`,
+      cloudSeaTerrainAwareText(
+        firstText(analysis.whiteoutReasons, "低云或雾包住机位时，云海会转为白墙。"),
+        terrainContext,
+      ),
+      whiteoutLabel === "高" ? "danger" : whiteoutLabel === "中" ? "accent" : "info",
+      analysis.whiteoutRiskScore,
+    ),
+    textCard(
+      "cloud-sea-rain-opening",
+      "recommendation",
+      "雨后开口机会",
+      postRainOpeningLabel(analysis.rainOpening.postRainOpeningChance),
+      analysis.rainOpening.messageZh,
+      analysis.rainOpening.activeRainDuringWindow
+        ? "danger"
+        : analysis.rainOpening.postRainOpeningChance === "high"
+          ? "primary"
+          : analysis.rainOpening.postRainOpeningChance === "medium"
+            ? "accent"
+            : "muted",
+    ),
+  ];
+  const dailyTrend = buildCloudSeaDailyTrend(
+    result,
+    cloudSeaWindows,
+    terrainContext,
+    weatherVariableConsistencyContext,
+    cloudBasisConsistency,
+    precipitationSignalContext,
+  );
+  const weatherEvidence = buildCloudSeaWeatherEvidence(
+    result,
+    terrainContext,
+    precipitationSignalContext,
+  );
+  const cloudSeaWindowItems = buildCloudSeaWindowItems(
+    result,
+    cloudSeaWindows,
+    terrainContext,
+    recommendationGuard,
+    weatherVariableConsistencyContext,
+    cloudBasisConsistency,
+    precipitationSignalContext,
+    recommendationExplanation,
+  );
+  const reasoningItems = buildCloudSeaReasoningItems(
+    result,
+    terrainContext,
+    cloudLayerCompleteness,
+    cloudBasisConsistency,
+    weatherVariableConsistencyContext,
+    recommendationGuard,
+    recommendationExplanation,
+  );
+  const actionPlan = buildCloudSeaActionPlan(
+    result,
+    cloudSeaWindows,
+    terrainContext,
+    recommendationGuard,
+    displayTemperatureContext,
+    weatherVariableConsistencyContext,
+    precipitationSignalContext,
+    recommendationExplanation,
+  );
+  const riskSummary = buildCloudSeaRiskSummary(
+    result,
+    terrainContext,
+    weatherVariableConsistencyContext,
+    precipitationSignalContext,
+  );
+  const recommendationCards = buildCloudSeaRecommendationCards({
+    result,
+    hero,
+    recommendationGuard,
+    recommendationExplanation,
+    coreCards,
+    riskSummary,
+    terrainContext,
+  });
+  const scoreCardSummary = cloudSeaScoreCardSummary(
+    result.cloudSeaAnalysis.shootableScore,
+    hero.recommendationLabel,
+    recommendationExplanation,
+    terrainContext,
+  );
+  const dataCaution = buildCloudSeaDataCaution(
+    result,
+    cloudLayerCompleteness,
+    cloudBasisConsistency,
+    multiSourceAgreementContext,
+    terrainContext,
+    recommendationGuard,
+    weatherVariableConsistencyContext,
+  );
+  const displayData = buildCloudSeaDisplayData({
+    result,
+    ruleContext,
+    terrainContext,
+    displayTemperatureContext,
+    recommendationGuard,
+    recommendationExplanation,
+    header: hero,
+    scoreCardSummary,
+    recommendationCards,
+    cloudSeaWindowCards: cloudSeaWindowItems,
+    dailyJudgment: dailyTrend,
+    judgmentBasis: reasoningItems,
+    actionPlan,
+    riskReview: riskSummary,
+  });
 
   return {
+    displayData,
     ruleContext,
     terrainContext,
     displayTemperatureContext,
     precipitationSignal: precipitationSignalContext,
     recommendationGuard,
     recommendationExplanation,
-    hero: buildCloudSeaHeroConclusion(
-      result,
-      cloudSeaWindows,
-      terrainContext,
-      cloudLayerCompleteness,
-      cloudBasisConsistency,
-      multiSourceAgreementContext,
-      recommendationGuard,
-      weatherVariableConsistencyContext,
-      recommendationExplanation,
-    ),
-    coreCards: [
-      scoreCard(
-        "cloud-sea-formation",
-        "cloudSea",
-        vocabulary.formationCardLabel,
-        `${analysis.labels.formationOpportunity}（${analysis.formationScore} 分）`,
-        cloudSeaTerrainAwareText(
-          firstText(analysis.opportunityReasons, "按湿度、低云、风速、露点差和地形落差判断。"),
-          terrainContext,
-        ),
-        "primary",
-        analysis.formationScore,
-      ),
-      scoreCard(
-        "cloud-sea-shootable",
-        "cloudSea",
-        vocabulary.shootableCardLabel,
-        `${analysis.labels.shootableOpportunity}（${analysis.shootableScore} 分）`,
-        terrainContext.shouldDowngradeCloudSeaWording
-          ? `光线重叠 ${analysis.lightAlignedScore} 分，低云遮挡和降水打断已扣减。`
-          : `光线重叠 ${analysis.lightAlignedScore} 分，白墙风险和降水打断已扣减。`,
-        analysis.shootableScore >= 70
-          ? "primary"
-          : analysis.shootableScore >= 45
-            ? "accent"
-            : "muted",
-        analysis.shootableScore,
-      ),
-      scoreCard(
-        "cloud-sea-whiteout",
-        "whiteoutRisk",
-        vocabulary.obstructionRiskLabel,
-        `${whiteoutLabel}（${analysis.whiteoutRiskScore} 分）`,
-        cloudSeaTerrainAwareText(
-          firstText(analysis.whiteoutReasons, "低云或雾包住机位时，云海会转为白墙。"),
-          terrainContext,
-        ),
-        whiteoutLabel === "高" ? "danger" : whiteoutLabel === "中" ? "accent" : "info",
-        analysis.whiteoutRiskScore,
-      ),
-      textCard(
-        "cloud-sea-rain-opening",
-        "recommendation",
-        "雨后开口机会",
-        postRainOpeningLabel(analysis.rainOpening.postRainOpeningChance),
-        analysis.rainOpening.messageZh,
-        analysis.rainOpening.activeRainDuringWindow
-          ? "danger"
-          : analysis.rainOpening.postRainOpeningChance === "high"
-            ? "primary"
-            : analysis.rainOpening.postRainOpeningChance === "medium"
-              ? "accent"
-              : "muted",
-      ),
-    ],
-    dailyTrend: buildCloudSeaDailyTrend(
-      result,
-      cloudSeaWindows,
-      terrainContext,
-      weatherVariableConsistencyContext,
-      cloudBasisConsistency,
-      precipitationSignalContext,
-    ),
+    hero,
+    coreCards,
+    dailyTrend,
     terrainEvidence: buildCloudSeaTerrainEvidence(result, terrainContext),
-    weatherEvidence: buildCloudSeaWeatherEvidence(result, terrainContext, precipitationSignalContext),
-    cloudSeaWindows: buildCloudSeaWindowItems(
-      result,
-      cloudSeaWindows,
-      terrainContext,
-      recommendationGuard,
-      weatherVariableConsistencyContext,
-      cloudBasisConsistency,
-      precipitationSignalContext,
-      recommendationExplanation,
-    ),
-    reasoningItems: buildCloudSeaReasoningItems(
-      result,
-      terrainContext,
-      cloudLayerCompleteness,
-      cloudBasisConsistency,
-      weatherVariableConsistencyContext,
-      recommendationGuard,
-      recommendationExplanation,
-    ),
-    actionPlan: buildCloudSeaActionPlan(
-      result,
-      cloudSeaWindows,
-      terrainContext,
-      recommendationGuard,
-      displayTemperatureContext,
-      weatherVariableConsistencyContext,
-      precipitationSignalContext,
-      recommendationExplanation,
-    ),
+    weatherEvidence,
+    cloudSeaWindows: cloudSeaWindowItems,
+    reasoningItems,
+    actionPlan,
     travelRecommendations: buildCloudSeaTravelRecommendations(result, terrainContext),
-    riskSummary: buildCloudSeaRiskSummary(
-      result,
-      terrainContext,
-      weatherVariableConsistencyContext,
-      precipitationSignalContext,
-    ),
+    riskSummary,
     backupPlans: buildCloudSeaBackupPlans(result, terrainContext),
     cloudLayerCompleteness,
     cloudBasisConsistency,
     multiSourceAgreementContext,
     missingDataNotes: analysis.missingDataNotes,
-    dataCaution: buildCloudSeaDataCaution(
-      result,
-      cloudLayerCompleteness,
-      cloudBasisConsistency,
-      multiSourceAgreementContext,
-      terrainContext,
-      recommendationGuard,
-      weatherVariableConsistencyContext,
-    ),
+    dataCaution,
     dataNotice,
   };
 }
@@ -898,6 +948,159 @@ function buildCloudSeaDisplayTemperatureContextForResult(
     humidityPercent: current?.humidity ?? dailyWeather?.humidity,
     sourceTemperatureBasis: temperatureBasisContext.temperatureBasis,
   });
+}
+
+function buildCloudSeaRecommendationCards({
+  result,
+  hero,
+  recommendationGuard,
+  recommendationExplanation,
+  coreCards,
+  riskSummary,
+  terrainContext,
+}: {
+  readonly result: ForecastCalculationResult;
+  readonly hero: CloudSeaHeroConclusionView;
+  readonly recommendationGuard: CloudSeaRecommendationGuardOutput;
+  readonly recommendationExplanation: CloudSeaRecommendationExplanation;
+  readonly coreCards: readonly ForecastResultCard[];
+  readonly riskSummary: readonly ForecastResultSectionItem[];
+  readonly terrainContext: CloudSeaTerrainContext;
+}): readonly ForecastResultCard[] {
+  const formation = coreCards.find((card) => card.key.includes("formation")) ?? coreCards[0];
+  const shootable = coreCards.find((card) => card.key.includes("shootable")) ?? coreCards[1];
+  const whiteout = coreCards.find((card) => card.moduleKey === "whiteoutRisk") ?? coreCards[2];
+  const mainRisk = cloudSeaMainRiskFromSummary(riskSummary);
+  const vocabulary = terrainContext.vocabulary;
+
+  return [
+    textCard(
+      "cloud-sea-recommendation",
+      "recommendation",
+      "推荐等级",
+      hero.recommendationLabel,
+      firstDisplaySentence(recommendationExplanation.oneLineConclusionZh),
+      cloudSeaRecommendationTone(hero.recommendationLabel),
+    ),
+    textCard(
+      "cloud-sea-best-window",
+      "bestWindow",
+      recommendationGuard.normalizedWindowRecommendation.metricLabel,
+      hero.bestWindowLabel,
+      firstDisplaySentence(recommendationExplanation.actionSummaryZh),
+      "accent",
+    ),
+    textCard(
+      "cloud-sea-arrival",
+      "recommendation",
+      "建议到达",
+      hero.arrivalLabel,
+      terrainContext.shouldDowngradeCloudSeaWording
+        ? "窗口前到位，先看低云是否贴地、远山层次和通透度。"
+        : "窗口前到位，先看云顶高度、低云厚度和远山层次。",
+      recommendationGuard.finalRecommendationTone,
+    ),
+    scoreCard(
+      "cloud-sea-formation-shootable",
+      "cloudSea",
+      vocabulary.formationShootableMetricLabel,
+      `${formation?.value ?? result.cloudSeaAnalysis.labels.formationOpportunity} / ${
+        shootable?.value ?? result.cloudSeaAnalysis.labels.shootableOpportunity
+      }`,
+      `形成 ${result.cloudSeaAnalysis.formationScore} 分，可拍 ${
+        result.cloudSeaAnalysis.shootableScore
+      } 分。${cloudSeaTerrainAwareText(
+        firstText(
+          result.cloudSeaAnalysis.opportunityReasons,
+          terrainContext.shouldDowngradeCloudSeaWording
+            ? "低云、晨雾、云层开口、湿度、露点差、风速和地形共同决定观察参考。"
+            : "低云、湿度、露点差、风速和地形共同决定云海机会。",
+        ),
+        terrainContext,
+      )}`,
+      result.cloudSeaAnalysis.shootableScore >= 65 ? "primary" : "accent",
+      result.cloudSeaAnalysis.shootableScore,
+    ),
+    scoreCard(
+      "cloud-sea-whiteout-risk",
+      "whiteoutRisk",
+      vocabulary.obstructionRiskLabel,
+      whiteout?.value ?? result.cloudSeaAnalysis.labels.whiteoutRisk,
+      cloudSeaTerrainAwareText(
+        firstText(result.cloudSeaAnalysis.whiteoutReasons, "低云接近机位时可能遮挡视野。"),
+        terrainContext,
+      ),
+      result.cloudSeaAnalysis.whiteoutRiskScore >= 70
+        ? "danger"
+        : result.cloudSeaAnalysis.whiteoutRiskScore >= 45
+          ? "accent"
+          : "info",
+      result.cloudSeaAnalysis.whiteoutRiskScore,
+    ),
+    textCard(
+      "cloud-sea-main-risk",
+      "risk",
+      "主要风险",
+      mainRisk.label,
+      mainRisk.detail || "出行前复核最新天气、道路和景区开放信息。",
+      mainRisk.value?.includes("高")
+        ? "danger"
+        : mainRisk.value?.includes("中")
+          ? "accent"
+          : "muted",
+    ),
+  ];
+}
+
+function cloudSeaScoreCardSummary(
+  score: number,
+  recommendationLabel: string,
+  recommendationExplanation: CloudSeaRecommendationExplanation,
+  terrainContext: CloudSeaTerrainContext,
+): string {
+  if (score >= 70 && !recommendationLabel.includes("强推荐")) {
+    return terrainContext.shouldDowngradeCloudSeaWording
+      ? "低云和晨雾信号较好，但窗口稳定性和现场通透度仍需复核。"
+      : "云层条件较好，但窗口稳定性和现场云顶高度仍需复核。";
+  }
+  return firstDisplaySentence(recommendationExplanation.scoreReasonZh);
+}
+
+function cloudSeaMainRiskFromSummary(
+  riskSummary: readonly ForecastResultSectionItem[],
+): ForecastResultSectionItem {
+  return (
+    riskSummary.find(
+      (item) =>
+        ![
+          "云海形成机会",
+          "云海可拍机会",
+          "低云/晨雾信号",
+          "云层可观察机会",
+          "雨后开口",
+          "降水概率",
+          "预计雨量",
+        ].includes(item.label),
+    ) ??
+    riskSummary[0] ?? {
+      label: "主要风险",
+      detail: "出行前复核最新天气、道路和景区开放信息。",
+    }
+  );
+}
+
+function cloudSeaRecommendationTone(label: string): ForecastResultCardTone {
+  if (label.includes("不建议")) {
+    return "danger";
+  }
+  if (label.includes("谨慎") || label.includes("备选") || label.includes("观察")) {
+    return "accent";
+  }
+  return "primary";
+}
+
+function firstDisplaySentence(value: string): string {
+  return value.split(/[。！？]/)[0]?.trim() || value;
 }
 
 function firstFiniteNumber(values: readonly (number | null | undefined)[]): number | undefined {

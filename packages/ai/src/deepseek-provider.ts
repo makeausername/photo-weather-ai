@@ -549,6 +549,10 @@ export function buildCloudSeaAiExplainPayload(
     bestWindow: bestAnalysisWindow ?? null,
     recommendationGuardContext: recommendationGuard,
   });
+  const temperatureBasisContext = compactTemperatureBasisForAi(weatherVariableConsistency);
+  const nearTermRows = takeItems(professionalRows, 6);
+  const nearTermPrecipitationSummary = summarizeProfessionalHourlyPrecipitation(nearTermRows);
+  const nearTermCloudSummary = summarizeProfessionalHourlyCloudLayers(nearTermRows);
 
   return {
     contextVersion: "cloud-sea-ai-explain-v2",
@@ -573,24 +577,38 @@ export function buildCloudSeaAiExplainPayload(
     recommendationConsistencyGuard: {
       finalRecommendationLevel: recommendationGuard.finalRecommendationLevel,
       finalRecommendationLabelZh: recommendationGuard.finalRecommendationLabel,
-      reasonZh: recommendationGuard.reasonZh,
-      departureAdviceZh: recommendationGuard.departureAdviceZh,
+      reasonZh: limitText(providerNeutralText(recommendationGuard.reasonZh), 120),
+      departureAdviceZh: limitText(providerNeutralText(recommendationGuard.departureAdviceZh), 120),
       blockedStrongRecommendationReasons: takeTextItems(
         recommendationGuard.blockedStrongRecommendationReasons,
-        3,
-        90,
+        2,
+        70,
       ),
-      consistencyWarnings: takeTextItems(recommendationGuard.consistencyWarnings, 3, 90),
+      consistencyWarnings: takeTextItems(recommendationGuard.consistencyWarnings, 2, 70),
     },
     recommendationExplanation: {
-      oneLineConclusionZh: limitText(providerNeutralText(recommendationExplanation.oneLineConclusionZh), 160),
-      whyNotStrongerZh: limitText(providerNeutralText(recommendationExplanation.whyNotStrongerZh), 160),
+      oneLineConclusionZh: limitText(providerNeutralText(recommendationExplanation.oneLineConclusionZh), 120),
+      whyNotStrongerZh: limitText(providerNeutralText(recommendationExplanation.whyNotStrongerZh), 120),
       confidenceExplanationZh: limitText(
         providerNeutralText(recommendationExplanation.confidenceExplanationZh),
-        160,
+        120,
       ),
-      reviewPointsZh: takeTextItems(recommendationExplanation.reviewPointsZh, 5, 40),
-      actionSummaryZh: limitText(providerNeutralText(recommendationExplanation.actionSummaryZh), 160),
+      reviewPointsZh: takeTextItems(recommendationExplanation.reviewPointsZh, 3, 36),
+      actionSummaryZh: limitText(providerNeutralText(recommendationExplanation.actionSummaryZh), 120),
+    },
+    displayDataAlignment: {
+      sourceAlignmentStatus: "normalized",
+      anchorStart:
+        result.professionalHourlyDataTimeBasis?.anchorStartLocal ??
+        result.professionalHourlyDataTimeBasis?.startTime ??
+        result.forecastStart,
+      normalizedHourlyRowCount: professionalRows.length,
+      nearTermRowCount: nearTermRows.length,
+    },
+    displayTemperatureContext: {
+      temperatureBasis: temperatureBasisContext.temperatureBasis,
+      displayTemperatureC: temperatureBasisContext.displayTemperatureC,
+      terrainAdjustedTemperatureC: temperatureBasisContext.terrainAdjustedTemperatureC,
     },
     precipitationSignalSummary: {
       precipitationSignalLevel: precipitationSignal.precipitationSignalLevel,
@@ -602,8 +620,19 @@ export function buildCloudSeaAiExplainPayload(
       affectsArrivalWindow: precipitationSignal.affectsArrivalWindow,
       shouldDowngradeWindow: precipitationSignal.shouldDowngradeWindow,
       shouldAvoidStrongRainWording: precipitationSignal.shouldAvoidStrongRainWording,
-      userSummaryZh: limitText(providerNeutralText(precipitationSignal.userSummaryZh), 140),
-      actionAdviceZh: limitText(providerNeutralText(precipitationSignal.actionAdviceZh), 120),
+      userSummaryZh: limitText(providerNeutralText(precipitationSignal.userSummaryZh), 100),
+      actionAdviceZh: limitText(providerNeutralText(precipitationSignal.actionAdviceZh), 90),
+    },
+    precipitationSignalContext: {
+      precipitationSignalType: precipitationSignal.precipitationSignalType,
+      precipitationImpactLevel: precipitationSignal.precipitationImpactLevel,
+      maxProbabilityPercent: precipitationSignal.maxProbabilityPercent,
+      maxAmountMm: precipitationSignal.maxAmountMm,
+      nearTermProbabilityPercent: nearTermPrecipitationSummary.probabilityPercent,
+      nearTermAmountMm: nearTermPrecipitationSummary.amountMm,
+      riskLabelZh: precipitationSignal.riskLabelZh,
+      userSummaryZh: limitText(providerNeutralText(precipitationSignal.userSummaryZh), 80),
+      shouldDowngradeWindow: precipitationSignal.shouldDowngradeWindow,
     },
     bestWindow: bestAnalysisWindow
       ? compactCloudSeaAnalysisWindow(bestAnalysisWindow, timezone)
@@ -626,11 +655,11 @@ export function buildCloudSeaAiExplainPayload(
       supportScore: analysis.terrainSupport.score,
       supportLevel: analysis.terrainSupport.level,
       confidenceLevel: analysis.terrainSupport.confidence,
-      messageZh: limitText(providerNeutralText(analysis.terrainSupport.messageZh), 160),
+      messageZh: limitText(providerNeutralText(analysis.terrainSupport.messageZh), 120),
       lowElevationDowngradeContext: ["lowland", "urban_or_plain", "hill"].includes(
         analysis.terrainSupport.terrainMode,
       )
-        ? "Treat as lowland/plain observation unless deterministic terrain context clearly supports mountain cloud-sea wording."
+        ? "Use lowland/plain wording unless terrain evidence supports cloud-sea wording."
         : undefined,
     },
     cloudSeaWindowCards: {
@@ -644,7 +673,7 @@ export function buildCloudSeaAiExplainPayload(
         compactCloudSeaAnalysisWindow(window, timezone),
       ),
     },
-    dailyCloudSeaSummary: takeItems(analysis.dailyCloudSea, detail === "minimal" ? 2 : 4).map(
+    dailyCloudSeaSummary: takeItems(analysis.dailyCloudSea, detail === "minimal" ? 1 : 3).map(
       (day) => ({
         date: day.date,
         dateZh: day.dateLabelZh,
@@ -662,9 +691,9 @@ export function buildCloudSeaAiExplainPayload(
         shootableScore: day.shootableScore,
         whiteoutRiskScore: day.whiteoutRiskScore,
         bestWindow: compactCloudSeaAnalysisWindow(day.bestWindow, timezone),
-        keyReasonZh: limitText(day.keyReason, 120),
-        riskNoteZh: limitText(day.riskNote, 120),
-        onSiteCheckpoints: takeTextItems(day.onSiteCheckpoints, 3, 100),
+        keyReasonZh: limitText(day.keyReason, 90),
+        riskNoteZh: limitText(day.riskNote, 90),
+        onSiteCheckpoints: takeTextItems(day.onSiteCheckpoints, 2, 70),
       }),
     ),
     professionalHourlySummary: {
@@ -673,9 +702,15 @@ export function buildCloudSeaAiExplainPayload(
         result.professionalHourlyDataTimeBasis,
         detail,
       ),
-      temperatureBasis: compactTemperatureBasisForAi(weatherVariableConsistency),
+      temperatureBasis: temperatureBasisContext,
       signalCounts: countProfessionalHourlySignals(professionalRows),
       focusedRows: focusedRows.map(compactProfessionalHourlyRowForAi),
+    },
+    cloudLayerCoverageContext: {
+      layerCompletenessLevel: cloudLayerCompleteness.layerCompletenessLevel,
+      nearTermCloudLowPercent: nearTermCloudSummary.cloudLowPercent,
+      nearTermCloudMidPercent: nearTermCloudSummary.cloudMidPercent,
+      nearTermCloudHighPercent: nearTermCloudSummary.cloudHighPercent,
     },
     cloudLayerCompletenessSummary: {
       cloudLayerBasis: cloudLayerCompleteness.cloudLayerBasis,
@@ -686,14 +721,14 @@ export function buildCloudSeaAiExplainPayload(
       missingLayerHoursCount: cloudLayerCompleteness.missingLayerHoursCount,
       lowLayerMissingHoursCount: cloudLayerCompleteness.lowLayerMissingHoursCount,
       missingLayerFields: cloudLayerCompleteness.missingLayerFields,
-      userNoteZh: limitText(cloudLayerCompleteness.userNoteZh, 140),
-      professionalNoteZh: limitText(cloudLayerCompleteness.professionalNoteZh, 140),
+      userNoteZh: limitText(cloudLayerCompleteness.userNoteZh, 100),
+      professionalNoteZh: limitText(cloudLayerCompleteness.professionalNoteZh, 100),
     },
     cloudBasisConsistencySummary: {
       cloudBasisLevel: cloudBasisConsistency.cloudBasisLevel,
       professionalSummaryZh: limitText(
         providerNeutralText(cloudBasisConsistency.professionalSummaryZh),
-        140,
+        100,
       ),
       shouldLowerCloudSeaConfidence: cloudBasisConsistency.shouldLowerCloudSeaConfidence,
     },
@@ -709,15 +744,15 @@ export function buildCloudSeaAiExplainPayload(
       shouldAvoidStrongWording: weatherVariableConsistency.shouldAvoidStrongWording,
       shouldDowngradePrecipitationWording:
         weatherVariableConsistency.shouldDowngradePrecipitationWording,
-      userSummaryZh: limitText(providerNeutralText(weatherVariableConsistency.userSummaryZh), 140),
+      userSummaryZh: limitText(providerNeutralText(weatherVariableConsistency.userSummaryZh), 100),
       professionalSummaryZh: limitText(
         providerNeutralText(weatherVariableConsistency.professionalSummaryZh),
-        180,
+        120,
       ),
       warningsZh: takeTextItems(
         weatherVariableConsistency.warningsZh.map((item) => providerNeutralText(item) ?? item),
-        4,
-        120,
+        3,
+        90,
       ),
     },
     multiSourceAgreementSummary: agreement
@@ -729,41 +764,50 @@ export function buildCloudSeaAiExplainPayload(
           userSummaryZh: limitText(providerNeutralText(agreement.userSummaryZh), 140),
           professionalSummaryZh: limitText(
             providerNeutralText(agreement.professionalSummaryZh),
-            140,
+            100,
           ),
           keyWarningsZh: takeTextItems(
             agreement.keyWarningsZh.map((item) => providerNeutralText(item) ?? item),
-            3,
-            100,
+            2,
+            80,
           ),
-          fieldDisagreements: takeItems(agreement.fieldDisagreements, 4).map((item) => ({
+          fieldDisagreements: takeItems(agreement.fieldDisagreements, 2).map((item) => ({
             field: item.field,
             level: item.level,
-            messageZh: limitText(providerNeutralText(item.messageZh), 120),
+            messageZh: limitText(providerNeutralText(item.messageZh), 80),
           })),
         }
       : null,
     risks: {
-      whiteoutReasons: takeTextItems(analysis.whiteoutReasons, 4, 100),
+      whiteoutReasons: takeTextItems(analysis.whiteoutReasons, 3, 80),
       missingDataNotes: takeTextItems(
         analysis.missingDataNotes.map((item) => providerNeutralText(item) ?? item),
-        4,
-        100,
+        3,
+        80,
       ),
       riskFlags: compactRiskFlags(result.riskFlags, 4),
     },
     actionPlan: {
-      travelRecommendations: takeItems(analysis.travelRecommendations, 3).map((item) => ({
+      finalRecommendationZh: recommendationGuard.finalRecommendationLabel,
+      explanationActionSummaryZh: limitText(
+        providerNeutralText(recommendationExplanation.actionSummaryZh),
+        120,
+      ),
+      travelRecommendations: takeItems(analysis.travelRecommendations, 1).map((item) => ({
         situation: item.situation,
-        action: limitText(item.action, 90),
-        detail: limitText(item.detail, 120),
+        action: limitText(item.action, 70),
+        detail: limitText(item.detail, 80),
       })),
-      backupPlans: takeItems(analysis.backupPlans, 3).map((item) => ({
-        condition: limitText(item.condition, 90),
-        action: limitText(item.action, 90),
-        detail: limitText(item.detail, 120),
+      backupPlans: takeItems(analysis.backupPlans, 1).map((item) => ({
+        condition: limitText(item.condition, 70),
+        action: limitText(item.action, 70),
+        detail: limitText(item.detail, 80),
       })),
-      deterministicAdvice: takeTextItems(result.photographyAdvice, 3, 120),
+      deterministicAdvice: takeTextItems(result.photographyAdvice, 1, 90),
+    },
+    riskReview: {
+      precipitationRiskZh: limitText(providerNeutralText(precipitationSignal.userSummaryZh), 90),
+      cloudBasisRiskZh: limitText(providerNeutralText(cloudBasisConsistency.userSummaryZh), 90),
     },
   };
 }
@@ -817,6 +861,40 @@ function compactTemperatureBasisForAi(
   };
 }
 
+function summarizeProfessionalHourlyPrecipitation(
+  rows: readonly (NonNullable<ForecastCalculationResult["professionalHourlyData"]>[number])[],
+) {
+  const amountValues = rows
+    .map((row) => row.precipitationAmountMm)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const probabilityValues = rows
+    .map((row) => row.precipitationProbabilityPercent)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+
+  return {
+    amountMm: amountValues.length > 0 ? Math.round(Math.max(...amountValues) * 10) / 10 : null,
+    probabilityPercent:
+      probabilityValues.length > 0 ? Math.round(Math.max(...probabilityValues)) : null,
+  };
+}
+
+function summarizeProfessionalHourlyCloudLayers(
+  rows: readonly (NonNullable<ForecastCalculationResult["professionalHourlyData"]>[number])[],
+) {
+  return {
+    cloudLowPercent: maxNullableNumber(rows.map((row) => row.cloudLowPercent)),
+    cloudMidPercent: maxNullableNumber(rows.map((row) => row.cloudMidPercent)),
+    cloudHighPercent: maxNullableNumber(rows.map((row) => row.cloudHighPercent)),
+  };
+}
+
+function maxNullableNumber(values: readonly (number | null | undefined)[]): number | null {
+  const finiteValues = values.filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  );
+  return finiteValues.length > 0 ? Math.round(Math.max(...finiteValues) * 10) / 10 : null;
+}
+
 function compactCloudSeaAnalysisWindow(
   window: ForecastCalculationResult["cloudSeaAnalysis"]["bestCloudSeaWindows"][number],
   timezone: string,
@@ -843,7 +921,7 @@ function professionalHourlyRowsForAiPayload(
   rows: NonNullable<ForecastCalculationResult["professionalHourlyData"]>,
   detail: DeepSeekForecastContextDetail,
 ) {
-  const limit = detail === "minimal" ? 2 : 4;
+  const limit = detail === "minimal" ? 1 : 2;
   const focused = rows.filter((row) =>
     ["可拍窗口", "白墙风险", "形成信号", "雨后开口", "需复核"].includes(row.cloudSeaSignal),
   );

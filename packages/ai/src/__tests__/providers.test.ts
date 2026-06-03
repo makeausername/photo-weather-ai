@@ -174,6 +174,28 @@ describe("AI providers", () => {
     expect(payload.professionalHourlySummary.temperatureBasis).toHaveProperty(
       "displayTemperatureC",
     );
+    expect(payload.displayDataAlignment).toMatchObject({
+      sourceAlignmentStatus: "normalized",
+      normalizedHourlyRowCount: expect.any(Number),
+      nearTermRowCount: expect.any(Number),
+    });
+    expect(payload.displayTemperatureContext).toHaveProperty("displayTemperatureC");
+    expect(payload.precipitationSignalContext).toMatchObject({
+      precipitationSignalType: expect.any(String),
+      userSummaryZh: expect.any(String),
+    });
+    expect(payload.precipitationSignalContext).toHaveProperty("maxAmountMm");
+    expect(payload.precipitationSignalContext).toHaveProperty("nearTermAmountMm");
+    expect(payload.cloudLayerCoverageContext).toMatchObject({
+      layerCompletenessLevel: expect.any(String),
+    });
+    expect(payload.cloudLayerCoverageContext).toHaveProperty("nearTermCloudLowPercent");
+    expect(payload.actionPlan).toMatchObject({
+      finalRecommendationZh: expect.any(String),
+      explanationActionSummaryZh: expect.any(String),
+    });
+    expect(payload.riskReview).toHaveProperty("precipitationRiskZh");
+    expect(payload.riskReview).toHaveProperty("cloudBasisRiskZh");
     expect(payload.cloudLayerCompletenessSummary).toHaveProperty("layerCompletenessLevel");
     expect(payload.cloudBasisConsistencySummary).toMatchObject({
       cloudBasisLevel: expect.any(String),

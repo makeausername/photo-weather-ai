@@ -329,7 +329,14 @@ describe("Cloud Sea result page final regression QA", () => {
     );
 
     expect(viewModel.displayTemperatureContext.basis).toBe("terrain_adjusted");
+    expect(viewModel.displayData.displayDataMeta.temperatureBasis).toBe("terrain_adjusted");
+    expect(viewModel.displayData.aiInterpretationPayload.displayTemperatureContext.basis).toBe(
+      "terrain_adjusted",
+    );
     expect(viewModel.displayTemperatureContext.displayTemperatureC).toBe(18);
+    expect(
+      viewModel.displayData.aiInterpretationPayload.displayTemperatureContext.displayTemperatureC,
+    ).toBe(18);
     expect(nearTermSection).toContain("机位估算温度");
     expect(nearTermSection).toContain("18°C");
     expect(nearTermSection).toMatch(/山地体感\s*16°C/);
@@ -342,6 +349,57 @@ describe("Cloud Sea result page final regression QA", () => {
     expect(professionalSection).toContain("原始格点气温 °C");
     expect(professionalSection).toContain("机位估算气温 °C");
     expect(professionalSection).toContain("30°C");
+  });
+
+  it("keeps near-term precipitation aligned with professional hourly rows instead of stale current zero", () => {
+    const fixture = cloudSeaRegressionFixture("genericMeaningfulRainNearWindowCase");
+    const result = {
+      ...fixture.result,
+      currentWeather: fixture.result.currentWeather
+        ? {
+            ...fixture.result.currentWeather,
+            precipitation: 0,
+            precipitationAmountMm: 0,
+            rainAmountMm: 0,
+            precipitationProbability: 0,
+            precipitationProbabilityPercent: 0,
+          }
+        : fixture.result.currentWeather,
+      professionalHourlyData: fixture.result.professionalHourlyData?.map((row, index) =>
+        index === 0
+          ? {
+              ...row,
+              precipitationAmountMm: 1.2,
+              precipitationProbabilityPercent: 72,
+            }
+          : row,
+      ),
+    };
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: fixture.query,
+        result,
+        viewModel,
+        returnUrl: "/forecast?target=general",
+      }),
+    );
+    const nearTermSection = sectionBetween(html, "CloudSeaNearTermWeather", "CloudSeaWindowCards");
+    const precipitationCard =
+      viewModel.displayData.currentNearTermWeather.cards.find(
+        (card) => card.key === "wind_precipitation",
+      ) ?? null;
+
+    expect(precipitationCard?.value).toContain("1.2 mm");
+    expect(precipitationCard?.detail).toContain("可计量降水");
+    expect(nearTermSection).toContain("1.2 mm");
+    expect(nearTermSection).not.toContain("预计雨量 0 mm");
+    expect(viewModel.displayData.displayDataMeta.staleFieldWarnings).toContain(
+      "near-term precipitation display ignored stale zero current-weather amount",
+    );
+    expect(
+      viewModel.displayData.aiInterpretationPayload.professionalHourlySummary.precipitationAmountMm,
+    ).toBe(1.2);
   });
 
   it("labels high-mountain raw-only temperature as raw grid reference with a warning", () => {
@@ -381,12 +439,29 @@ describe("Cloud Sea result page final regression QA", () => {
     );
     const nearTermSource = source.slice(
       source.indexOf("function CloudSeaNearTermWeatherSection"),
-      source.indexOf("function cloudSeaAuxiliaryDataNotice"),
+      source.indexOf("type CloudSeaWindowCategoryKey"),
     );
 
-    expect(nearTermSource).toContain("displayTemperatureContext");
+    expect(nearTermSource).toContain("CloudSeaCurrentNearTermWeatherDisplay");
+    expect(nearTermSource).toContain("display.cards.map");
     expect(nearTermSource).not.toMatch(
       /rawGridTemperatureC|rawTemperatureC|current\?\.temperature|weather\.tempMin|weather\.tempMax/,
+    );
+  });
+
+  it("keeps Cloud Sea result UI on displayData instead of direct raw result paths", () => {
+    const source = readFileSync(
+      resolve(repoRoot, "apps/web/app/forecast/forecast-result-client.tsx"),
+      "utf8",
+    );
+    const resultPageSource = source.slice(
+      source.indexOf("export function CloudSeaResultPage"),
+      source.indexOf("export function GlowResultPage"),
+    );
+
+    expect(resultPageSource).toContain("viewModel.displayData");
+    expect(resultPageSource).not.toMatch(
+      /result\.professionalHourlyData|result\.currentWeather|rawGridTemperatureC|providerTemperatureC|result\.cloudSeaAnalysis\.(formationScore|shootableScore|whiteoutRiskScore)|result\.dailySummaries/,
     );
   });
 
@@ -421,6 +496,14 @@ describe("Cloud Sea result page final regression QA", () => {
     );
 
     expect(viewModel.cloudBasisConsistency.cloudBasisLevel).toBe("mixed_basis");
+    expect(
+      viewModel.displayData.currentNearTermWeather.cards.find(
+        (card) => card.key === "cloud_visibility",
+      )?.value,
+    ).toContain("低云 70%");
+    expect(
+      viewModel.displayData.aiInterpretationPayload.professionalHourlySummary.cloudLowPercent,
+    ).toBe(70);
     expect(viewModel.recommendationGuard.finalRecommendationLevel).toBe("cautious_reference");
     expect(professionalSection).toMatch(/data-professional-hourly-cell="cloud-total"[\s\S]*?20%/);
     expect(professionalSection).toMatch(/data-professional-hourly-cell="cloud-low"[^>]*>70%/);
@@ -437,6 +520,14 @@ describe("Cloud Sea result page final regression QA", () => {
     const actionSection = sectionBetween(html, "CloudSeaActionPlan", "CloudSeaRiskSummary");
 
     expect(viewModel.recommendationGuard.finalRecommendationLevel).toBe("cautious_reference");
+    expect(viewModel.displayData.recommendationCards[0]?.value).toBe(
+      viewModel.recommendationGuard.finalRecommendationLabel,
+    );
+    expect(viewModel.displayData.aiInterpretationPayload.finalRecommendation.label).toBe(
+      viewModel.recommendationGuard.finalRecommendationLabel,
+    );
+    expect(viewModel.displayData.actionPlan).toBe(viewModel.actionPlan);
+    expect(viewModel.displayData.riskReview).toBe(viewModel.riskSummary);
     expect(viewModel.recommendationExplanation.whyNotStrongerZh).toContain("评分较高");
     expect(viewModel.recommendationExplanation.whyNotStrongerZh).toContain("云量口径");
     expect(html).toContain(viewModel.recommendationExplanation.oneLineConclusionZh);

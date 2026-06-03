@@ -8,6 +8,8 @@ import {
 } from "@photo-weather/calendar";
 import { buildCalibrationLocationKey, findCalibrationHint } from "@photo-weather/calibration";
 import {
+  buildCloudLayerCompletenessContext,
+  buildCloudSeaPrecipitationSignalContext,
   buildTerrainTemperatureBasisContext,
   type ForecastCalculationResult,
   type ElevationSource,
@@ -1239,6 +1241,7 @@ function logCloudSeaCoverageDiagnostics(
       },
       "Cloud Sea cloud-layer coverage diagnostics",
     );
+    logCloudSeaDisplayAlignmentDiagnostics(logger, result, temperatureDiagnostics);
     return;
   }
 
@@ -1269,6 +1272,94 @@ function logCloudSeaCoverageDiagnostics(
       temperatureDiagnostics,
     },
     "Cloud Sea cloud-layer coverage diagnostics",
+  );
+  logCloudSeaDisplayAlignmentDiagnostics(logger, result, temperatureDiagnostics);
+}
+
+function logCloudSeaDisplayAlignmentDiagnostics(
+  logger: FastifyBaseLogger,
+  result: ForecastCalculationResult,
+  temperatureDiagnostics = cloudSeaTemperatureDiagnostics(result),
+): void {
+  if (result.target !== "cloud_sea") {
+    return;
+  }
+  const rows = result.professionalHourlyData ?? [];
+  const basis = result.professionalHourlyDataTimeBasis;
+  const anchorStart = firstValidDiagnosticTime(
+    basis?.anchorStartLocal,
+    basis?.startTime,
+    result.forecastStart,
+    result.generatedAt,
+  );
+  const anchorEnd = nearTermDiagnosticWindowEnd(
+    anchorStart,
+    basis?.anchorEndLocal ?? basis?.endTime ?? result.forecastEnd,
+  );
+  const normalizedRows = professionalRowsAtOrAfter(rows, anchorStart);
+  const nearTermRows = professionalRowsForRange(rows, anchorStart, anchorEnd);
+  const cloudLayerCoverage = buildCloudLayerCompletenessContext(rows);
+  const bestWindow =
+    result.cloudSeaAnalysis.bestCloudSeaWindow ??
+    result.cloudSeaAnalysis.bestCloudSeaWindows[0] ??
+    result.cloudSeaAnalysis.watchableCloudSeaWindows[0] ??
+    null;
+  const precipitationSignal = buildCloudSeaPrecipitationSignalContext({
+    hourlyRows: rows,
+    focusedWindow: bestWindow
+      ? {
+          startTime: bestWindow.startTime,
+          endTime: bestWindow.endTime,
+        }
+      : null,
+    bestWindow,
+    terrainContext: {
+      elevationMeters:
+        result.terrainAnalysis.terrainProfile.locationElevation ??
+        result.terrainAnalysis.terrainProfile.elevationMeters ??
+        result.cloudSeaAnalysis.terrainSupport.selectedSpotElevationMeters,
+      surroundingReliefMeters:
+        result.terrainAnalysis.terrainProfile.localReliefMeters ??
+        result.terrainAnalysis.terrainProfile.elevationDiff5km ??
+        result.cloudSeaAnalysis.terrainSupport.localReliefMeters,
+      terrainMode: result.cloudSeaAnalysis.terrainSupport.terrainMode,
+      terrainType:
+        result.terrainAnalysis.terrainProfile.terrainType ??
+        result.cloudSeaAnalysis.terrainSupport.terrainType,
+    },
+    cloudLayerCompletenessContext: cloudLayerCoverage,
+  });
+
+  logger.info(
+    {
+      route: "/forecast/calculate",
+      target: result.target,
+      displayDataBuilt: true,
+      normalizedHourlyRows: normalizedRows.length,
+      nearTermRange: {
+        anchorStart,
+        anchorEnd,
+        rowCount: nearTermRows.length,
+      },
+      temperatureBasis: temperatureDiagnostics.temperatureBasis,
+      precipitationSignalType: precipitationSignal.precipitationSignalType,
+      cloudLayerCoverageCounts: {
+        totalHours: cloudLayerCoverage.totalHoursCount,
+        completeLayerHours: cloudLayerCoverage.completeLayerHoursCount,
+        missingLayerHours: cloudLayerCoverage.missingLayerHoursCount,
+        lowLayerMissingHours: cloudLayerCoverage.lowLayerMissingHoursCount,
+      },
+      avoidedLegacyFieldPaths: [
+        "currentWeather.precipitationAmountMm",
+        "currentWeather.cloudLow/cloudMid/cloudHigh",
+        "rawGridTemperatureC as main display temperature",
+      ],
+      missingDisplayInputs:
+        rows.length === 0
+          ? ["professionalHourlyData"]
+          : cloudLayerCoverage.missingLayerFields.slice(0, 4),
+    },
+    "Cloud Sea display data alignment diagnostics",
   );
 }
 
@@ -1362,6 +1453,58 @@ function averageDiagnosticNumbers(
     return Math.round(((left + right) / 2) * 10) / 10;
   }
   return undefined;
+}
+
+function firstValidDiagnosticTime(...values: readonly (string | undefined)[]): string {
+  return values.find((value) => value !== undefined && Number.isFinite(Date.parse(value))) ?? "";
+}
+
+function nearTermDiagnosticWindowEnd(startTime: string, forecastEnd: string): string {
+  const startTimestamp = Date.parse(startTime);
+  const forecastEndTimestamp = Date.parse(forecastEnd);
+  if (!Number.isFinite(startTimestamp)) {
+    return forecastEnd;
+  }
+  const sixHoursLater = new Date(startTimestamp + 6 * 60 * 60 * 1000).toISOString();
+  const sixHoursLaterTimestamp = Date.parse(sixHoursLater);
+  if (
+    Number.isFinite(forecastEndTimestamp) &&
+    Number.isFinite(sixHoursLaterTimestamp) &&
+    forecastEndTimestamp > startTimestamp
+  ) {
+    return new Date(Math.min(forecastEndTimestamp, sixHoursLaterTimestamp)).toISOString();
+  }
+  return sixHoursLater;
+}
+
+function professionalRowsAtOrAfter(
+  rows: NonNullable<ForecastCalculationResult["professionalHourlyData"]>,
+  anchorStart: string,
+): NonNullable<ForecastCalculationResult["professionalHourlyData"]> {
+  const anchorMs = Date.parse(anchorStart);
+  if (!Number.isFinite(anchorMs)) {
+    return rows;
+  }
+  return rows.filter((row) => {
+    const rowMs = Date.parse(row.time);
+    return Number.isFinite(rowMs) && rowMs >= anchorMs;
+  });
+}
+
+function professionalRowsForRange(
+  rows: NonNullable<ForecastCalculationResult["professionalHourlyData"]>,
+  start: string,
+  end: string,
+): NonNullable<ForecastCalculationResult["professionalHourlyData"]> {
+  const startMs = Date.parse(start);
+  const endMs = Date.parse(end);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
+    return [];
+  }
+  return rows.filter((row) => {
+    const rowMs = Date.parse(row.time);
+    return Number.isFinite(rowMs) && rowMs >= startMs && rowMs <= endMs;
+  });
 }
 
 function logForecastCalculationFailure(options: {

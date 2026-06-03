@@ -4863,10 +4863,16 @@ describe("forecast result target-aware view model", () => {
       const aiIndex = html.indexOf("智能解读");
       const dataCaution = viewModel.dataCaution ?? "";
       const afterAiSection = html.slice(aiIndex);
+      const professionalHourlySection = sectionBetween(
+        html,
+        "CloudSeaProfessionalHourlyData",
+        "CloudSeaDailyTrend",
+      );
 
       expect(aiIndex).toBeGreaterThanOrEqual(0);
       expect(html).toContain("生成智能解读");
       expect(html).toContain("专业小时数据");
+      expect(professionalHourlySection).toContain("专业小时数据");
       expect(html).toContain("总云量 %");
       expect(html).toContain("高云量 %");
       expect(html).toContain("中云量 %");
@@ -4879,7 +4885,6 @@ describe("forecast result target-aware view model", () => {
         "CloudSeaNearTermWeather",
         "CloudSeaWindowCards",
         "CloudSeaProfessionalHourlyData",
-        "专业小时数据",
         "CloudSeaDailyTrend",
         "每日云海判断",
         "判断依据",
@@ -5601,8 +5606,8 @@ describe("forecast result target-aware view model", () => {
       }),
     );
 
-    expect(html).not.toContain("专业小时数据");
     expect(html).not.toContain("CloudSeaProfessionalHourlyData");
+    expect(html).not.toContain('data-testid="professional-hourly-data"');
     expect(html).toContain("CloudSeaHeroConclusion");
     expect(html).toContain("CloudSeaCoreMetrics");
     expect(html).toContain("CloudSeaWindowCards");
