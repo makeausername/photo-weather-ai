@@ -189,6 +189,25 @@ describe("AI providers", () => {
       userSummaryZh: expect.any(String),
       actionAdviceZh: expect.any(String),
     });
+    const recommendationExplanation = payload.recommendationExplanation;
+    expect(recommendationExplanation).toBeDefined();
+    if (!recommendationExplanation) {
+      throw new Error("Expected cloud sea recommendation explanation payload.");
+    }
+    expect(recommendationExplanation).toMatchObject({
+      oneLineConclusionZh: expect.any(String),
+      whyNotStrongerZh: expect.any(String),
+      confidenceExplanationZh: expect.any(String),
+      reviewPointsZh: expect.any(Array),
+      actionSummaryZh: expect.any(String),
+    });
+    expect(recommendationExplanation.oneLineConclusionZh).toContain("云");
+    const actionSummaryZh = recommendationExplanation.actionSummaryZh;
+    expect(actionSummaryZh).toEqual(expect.any(String));
+    if (typeof actionSummaryZh !== "string") {
+      throw new Error("Expected cloud sea action summary text.");
+    }
+    expect(actionSummaryZh.length).toBeGreaterThan(0);
     expect(payload.weatherVariableConsistencySummary).toHaveProperty("precipitationSignalStatus");
     expect(payload.multiSourceAgreementSummary).toMatchObject({
       agreementLevel: "medium",

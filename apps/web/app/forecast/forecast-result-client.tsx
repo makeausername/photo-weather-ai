@@ -2870,12 +2870,14 @@ export function CloudSeaResultPage({
         <CloudSeaTopResultHeader
           query={query}
           hero={viewModel.hero}
+          recommendationExplanation={viewModel.recommendationExplanation}
           result={result}
           terrainContext={viewModel.terrainContext}
         />
         <CloudSeaMetricCards
           hero={viewModel.hero}
           recommendationGuard={viewModel.recommendationGuard}
+          recommendationExplanation={viewModel.recommendationExplanation}
           result={result}
           cards={viewModel.coreCards}
           riskSummary={viewModel.riskSummary}
@@ -4033,11 +4035,13 @@ function GlowInlineDefinition({
 function CloudSeaTopResultHeader({
   query,
   hero,
+  recommendationExplanation,
   result,
   terrainContext,
 }: {
   readonly query: ForecastQueryInput;
   readonly hero: CloudSeaHeroConclusionView;
+  readonly recommendationExplanation: CloudSeaForecastViewModel["recommendationExplanation"];
   readonly result: ForecastCalculationResult;
   readonly terrainContext: CloudSeaTerrainContext;
 }) {
@@ -4053,7 +4057,12 @@ function CloudSeaTopResultHeader({
         result={result}
         terrainContext={terrainContext}
       />
-      <CloudSeaScoreCard hero={hero} result={result} terrainContext={terrainContext} />
+      <CloudSeaScoreCard
+        hero={hero}
+        recommendationExplanation={recommendationExplanation}
+        result={result}
+        terrainContext={terrainContext}
+      />
     </ForecastResultHeader>
   );
 }
@@ -4165,10 +4174,12 @@ function setOptionalForecastQueryParam(
 
 function CloudSeaScoreCard({
   hero,
+  recommendationExplanation,
   result,
   terrainContext,
 }: {
   readonly hero: CloudSeaHeroConclusionView;
+  readonly recommendationExplanation: CloudSeaForecastViewModel["recommendationExplanation"];
   readonly result: ForecastCalculationResult;
   readonly terrainContext: CloudSeaTerrainContext;
 }) {
@@ -4183,7 +4194,7 @@ function CloudSeaScoreCard({
       score={score}
       badgeLabel={hero.recommendationLabel}
       badgeVariant={recommendationBadgeVariant(hero.recommendationLabel)}
-      summary={cloudSeaTerrainSummary(result, terrainContext)}
+      summary={`${recommendationExplanation.scoreReasonZh} ${recommendationExplanation.cautionReasonZh}`}
     />
   );
 }
@@ -4207,6 +4218,7 @@ function cloudSeaDataBadgeVariant(result: ForecastCalculationResult): "success" 
 function CloudSeaMetricCards({
   hero,
   recommendationGuard,
+  recommendationExplanation,
   result,
   cards,
   riskSummary,
@@ -4214,6 +4226,7 @@ function CloudSeaMetricCards({
 }: {
   readonly hero: CloudSeaHeroConclusionView;
   readonly recommendationGuard: CloudSeaForecastViewModel["recommendationGuard"];
+  readonly recommendationExplanation: CloudSeaForecastViewModel["recommendationExplanation"];
   readonly result: ForecastCalculationResult;
   readonly cards: readonly ForecastResultCard[];
   readonly riskSummary: readonly ForecastResultSectionItem[];
@@ -4222,6 +4235,7 @@ function CloudSeaMetricCards({
   const decisionCards = cloudSeaDecisionCards(
     hero,
     recommendationGuard,
+    recommendationExplanation,
     result,
     cards,
     riskSummary,
@@ -4246,6 +4260,7 @@ function CloudSeaMetricCards({
 function cloudSeaDecisionCards(
   hero: CloudSeaHeroConclusionView,
   recommendationGuard: CloudSeaForecastViewModel["recommendationGuard"],
+  recommendationExplanation: CloudSeaForecastViewModel["recommendationExplanation"],
   result: ForecastCalculationResult,
   cards: readonly ForecastResultCard[],
   riskSummary: readonly ForecastResultSectionItem[],
@@ -4263,7 +4278,7 @@ function cloudSeaDecisionCards(
       "recommendation",
       "推荐等级",
       hero.recommendationLabel,
-      hero.conclusion,
+      recommendationExplanation.userFacingSummaryZh,
       cloudSeaRecommendationTone(hero.recommendationLabel),
     ),
     textCard(
@@ -4271,7 +4286,7 @@ function cloudSeaDecisionCards(
       "bestWindow",
       recommendationGuard.normalizedWindowRecommendation.metricLabel,
       hero.bestWindowLabel,
-      recommendationGuard.normalizedWindowRecommendation.actionSuggestionZh,
+      recommendationExplanation.actionSummaryZh,
       "accent",
     ),
     textCard(
@@ -4348,7 +4363,7 @@ function cloudSeaRecommendationTone(label: string): ForecastResultCardTone {
   return "primary";
 }
 
-function cloudSeaTerrainSummary(
+function _cloudSeaTerrainSummary(
   result: ForecastCalculationResult,
   terrainContext: CloudSeaTerrainContext,
 ): string {
@@ -4522,6 +4537,7 @@ type CloudSeaWindowCardData = {
   readonly scoreTone: ForecastResultCardTone;
   readonly primaryWindow: string;
   readonly backupWindow: string;
+  readonly labelReason: string;
   readonly mainIssue: string;
   readonly action: string;
   readonly cautionNote?: string;
@@ -4587,6 +4603,7 @@ function CloudSeaWindowCardsSection({
                 {card.scoreText}
               </p>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">{card.chanceText}</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">{card.labelReason}</p>
             </div>
 
             <dl className="grid gap-1.5 text-xs leading-5 text-muted-foreground">
@@ -4659,6 +4676,7 @@ function cloudSeaWindowCategoryCard(
       scoreTone: "muted",
       primaryWindow: "暂无明确窗口",
       backupWindow: "等待下一次预报更新",
+      labelReason: definition.noWindowIssue,
       mainIssue: definition.noWindowIssue,
       action: definition.noWindowAction,
       cautionNote: undefined,
@@ -4675,6 +4693,7 @@ function cloudSeaWindowCategoryCard(
     scoreTone: cloudSeaWindowCardTone(definition.key, primary),
     primaryWindow: primary.timeRangeLabel,
     backupWindow: backup?.timeRangeLabel ?? "暂无数据支撑的备选窗口",
+    labelReason: primary.labelReason,
     mainIssue: cloudSeaWindowMainIssue(definition.key, primary, terrainContext),
     action: cloudSeaWindowCardAction(definition.key, primary, terrainContext),
     cautionNote: primary.layerCompletenessNote,
@@ -6116,6 +6135,7 @@ function CloudSeaDailyTrend({
                 />
               </div>
               <div className="grid gap-1 text-sm leading-6 text-muted-foreground">
+                {item.decisionReason ? <p>{firstSentence(item.decisionReason)}</p> : null}
                 <p>{item.actionSuggestion}</p>
                 {item.layerCompletenessNote ? (
                   <p className="rounded-md border border-warning/40 bg-accent/10 px-2 py-1 text-xs leading-5">
@@ -6161,7 +6181,8 @@ function CloudSeaReasoningSection({ items }: { readonly items: readonly CloudSea
               <Badge variant={badgeVariantForTone(item.tone)}>{item.value}</Badge>
             </div>
             <p className="text-sm leading-6 text-muted-foreground">
-              {item.key === "weather-variable-consistency"
+              {item.key === "weather-variable-consistency" ||
+              item.key === "score-recommendation-separation"
                 ? item.detail
                 : firstSentence(item.detail)}
             </p>
@@ -6204,7 +6225,7 @@ function CloudSeaActionPlanSection({
               <h3 className="text-sm font-bold text-card-foreground">{item.label}</h3>
               <Badge variant={badgeVariantForTone(item.tone)}>{item.value}</Badge>
             </div>
-            <p className="text-sm leading-6 text-muted-foreground">{firstSentence(item.detail)}</p>
+            <p className="text-sm leading-6 text-muted-foreground">{item.detail}</p>
           </article>
         ))}
       </ActionPlanGrid>

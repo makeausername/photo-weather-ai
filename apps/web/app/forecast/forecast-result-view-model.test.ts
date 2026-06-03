@@ -4251,6 +4251,7 @@ describe("forecast result target-aware view model", () => {
       actionSuggestion: expect.any(String),
     });
     expect(viewModel.reasoningItems.map((item) => item.label)).toEqual([
+      "评分与推荐",
       "湿度与露点差",
       "低云与能见度",
       "云量口径一致性",

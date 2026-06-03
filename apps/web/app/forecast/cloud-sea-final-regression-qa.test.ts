@@ -347,6 +347,34 @@ describe("Cloud Sea result page final regression QA", () => {
     expect(professionalSection).not.toContain("可拍窗口</span>");
   });
 
+  it("renders centralized recommendation explanation across summary, cards, windows, daily, and action plan", () => {
+    const { html, viewModel } = renderCloudSeaFixture(
+      cloudSeaRegressionFixture("genericCloudBasisMismatchCase"),
+    );
+    const firstDaily = viewModel.dailyTrend[0];
+    const firstWindow = viewModel.cloudSeaWindows[0];
+    const actionSection = sectionBetween(html, "CloudSeaActionPlan", "CloudSeaRiskSummary");
+
+    expect(viewModel.recommendationGuard.finalRecommendationLevel).toBe("cautious_reference");
+    expect(viewModel.recommendationExplanation.whyNotStrongerZh).toContain("评分较高");
+    expect(viewModel.recommendationExplanation.whyNotStrongerZh).toContain("云量口径");
+    expect(html).toContain(viewModel.recommendationExplanation.oneLineConclusionZh);
+    expect(html).toContain(viewModel.recommendationExplanation.scoreReasonZh);
+    expect(html).toContain("评分代表云层机会");
+    expect(html).toContain(viewModel.recommendationExplanation.actionSummaryZh);
+    expect(actionSection).toContain("复核重点");
+    expect(firstDaily?.decisionReason).toBeTruthy();
+    expect(html).toContain(firstSentenceForTest(firstDaily?.decisionReason ?? ""));
+    expect(firstWindow?.labelReason).toBeTruthy();
+    expect(html).toContain(firstWindow?.labelReason ?? "");
+    expect(html).toContain('data-testid="professional-hourly-data"');
+    expect(html).toContain("总云量 %");
+    expect(html).toContain("高云量 %");
+    expect(html).toContain("中云量 %");
+    expect(html).toContain("低云量 %");
+    expect(html).not.toMatch(/latitude|longitude|WGS84|GCJ-02|经度|纬度/i);
+  });
+
   it("keeps low-elevation, low-score, mid/high-only, and unknown-terrain cases free of strong trip copy", () => {
     const cappedCases: readonly CloudSeaRegressionFixtureName[] = [
       "genericLowElevationWeakCloudSeaCase",
@@ -507,6 +535,12 @@ function sectionAfter(html: string, marker: string): string {
   const start = html.indexOf(marker);
   expect(start).toBeGreaterThanOrEqual(0);
   return html.slice(start);
+}
+
+function firstSentenceForTest(value: string): string {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^[^。！？；?!;]+[。！？；?!;]?/);
+  return (match?.[0] ?? trimmed).replace(/[。！？；?!;]?$/, "。");
 }
 
 function expectMarkersInOrder(html: string, markers: readonly string[]) {

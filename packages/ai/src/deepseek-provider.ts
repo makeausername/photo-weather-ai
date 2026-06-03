@@ -1,6 +1,7 @@
 import {
   buildCloudLayerCompletenessContext,
   buildCloudSeaCloudBasisConsistencyContext,
+  buildCloudSeaRecommendationExplanation,
   buildCloudSeaRecommendationGuardForResult,
   buildCloudSeaWeatherVariableConsistencyContext,
   decisionCardSchema,
@@ -527,6 +528,27 @@ export function buildCloudSeaAiExplainPayload(
   });
   const precipitationSignal = weatherVariableConsistency.precipitationSignalContext;
   const recommendationGuard = buildCloudSeaRecommendationGuardForResult(result);
+  const recommendationExplanation = buildCloudSeaRecommendationExplanation({
+    finalRecommendationLabel: recommendationGuard.finalRecommendationLabel,
+    cloudSeaScore: analysis.shootableScore,
+    formationScore: analysis.formationScore,
+    shootabilityScore: analysis.shootableScore,
+    whiteoutRiskScore: analysis.whiteoutRiskScore,
+    terrainContext: {
+      shouldDowngradeCloudSeaWording: ["lowland", "urban_or_plain", "unknown"].includes(
+        analysis.terrainSupport.terrainMode,
+      ),
+      terrainClass: analysis.terrainSupport.terrainMode,
+      terrainNoteZh: analysis.terrainSupport.messageZh,
+    },
+    cloudLayerCoverageContext: cloudLayerCompleteness,
+    cloudBasisConsistencyContext: cloudBasisConsistency,
+    weatherVariableConsistencyContext: weatherVariableConsistency,
+    precipitationSignalContext: precipitationSignal,
+    multiSourceAgreementContext: agreement ?? null,
+    bestWindow: bestAnalysisWindow ?? null,
+    recommendationGuardContext: recommendationGuard,
+  });
 
   return {
     contextVersion: "cloud-sea-ai-explain-v2",
@@ -559,6 +581,16 @@ export function buildCloudSeaAiExplainPayload(
         90,
       ),
       consistencyWarnings: takeTextItems(recommendationGuard.consistencyWarnings, 3, 90),
+    },
+    recommendationExplanation: {
+      oneLineConclusionZh: limitText(providerNeutralText(recommendationExplanation.oneLineConclusionZh), 160),
+      whyNotStrongerZh: limitText(providerNeutralText(recommendationExplanation.whyNotStrongerZh), 160),
+      confidenceExplanationZh: limitText(
+        providerNeutralText(recommendationExplanation.confidenceExplanationZh),
+        160,
+      ),
+      reviewPointsZh: takeTextItems(recommendationExplanation.reviewPointsZh, 5, 40),
+      actionSummaryZh: limitText(providerNeutralText(recommendationExplanation.actionSummaryZh), 160),
     },
     precipitationSignalSummary: {
       precipitationSignalLevel: precipitationSignal.precipitationSignalLevel,
@@ -1365,6 +1397,7 @@ function buildForecastExplanationUserPayload(
     },
     constraints: [
       "If target is cloud_sea, use cloudSeaAiExplainPayload as deterministic context only; do not invent cloud layers, cloud-sea windows, whiteout risk, arrival advice, or professional hourly values.",
+      "For cloud_sea recommendation wording, use cloudSeaAiExplainPayload.recommendationExplanation as the deterministic reason source; do not invent why-not-stronger or review reasons.",
       "For cloud_sea temperature, explain only the provided temperatureBasis/displayTemperatureC/rawGridTemperatureC/terrainAdjustedTemperatureC and notes; do not invent a new correction or override deterministic temperature.",
       "For cloud_sea output, focus on practical photography guidance: one-sentence conclusion, best window, cloud sea/low cloud/morning fog judgment, whiteout risk, arrival and waiting plan, on-site checks, gear, and backup plan.",
       "只解释 computedForecastFacts 中已有的确定性事实。",
@@ -1468,6 +1501,28 @@ export function createRuleBasedForecastExplanation(
   const bestDaily = bestDailySummaryForPlan(result, bestWindow);
   const cloudSeaGuard =
     result.target === "cloud_sea" ? buildCloudSeaRecommendationGuardForResult(result) : null;
+  const cloudSeaExplanation = cloudSeaGuard
+    ? buildCloudSeaRecommendationExplanation({
+        finalRecommendationLabel: cloudSeaGuard.finalRecommendationLabel,
+        cloudSeaScore: result.cloudSeaAnalysis.shootableScore,
+        formationScore: result.cloudSeaAnalysis.formationScore,
+        shootabilityScore: result.cloudSeaAnalysis.shootableScore,
+        whiteoutRiskScore: result.cloudSeaAnalysis.whiteoutRiskScore,
+        terrainContext: {
+          shouldDowngradeCloudSeaWording: ["lowland", "urban_or_plain", "unknown"].includes(
+            result.cloudSeaAnalysis.terrainSupport.terrainMode,
+          ),
+          terrainClass: result.cloudSeaAnalysis.terrainSupport.terrainMode,
+          terrainNoteZh: result.cloudSeaAnalysis.terrainSupport.messageZh,
+        },
+        bestWindow:
+          result.cloudSeaAnalysis.bestCloudSeaWindow ??
+          result.cloudSeaAnalysis.bestCloudSeaWindows[0] ??
+          result.cloudSeaAnalysis.watchableCloudSeaWindows[0] ??
+          null,
+        recommendationGuardContext: cloudSeaGuard,
+      })
+    : null;
   const dedicatedDecision = dedicatedTripDecisionZh(result, bestDaily);
   const topScoredSubject = bestSubjectFromScores(result, 0);
   const primarySubject = bestWindow ? windowLabelZh(bestWindow) : topScoredSubject;
@@ -1493,8 +1548,8 @@ export function createRuleBasedForecastExplanation(
         ? `最值得关注的是 ${bestDaily.dateLabelZh}，${bestDaily.bestShootableWindow ? `${windowLabelZh(bestDaily.bestShootableWindow)} ${formatShootingWindowZh(bestDaily.bestShootableWindow, timezone)}` : bestDaily.shortAdvice}`
         : "暂无足够逐日数据，先参考确定性评分和窗口列表。",
       recommendationLevelZh: cloudSeaGuard?.finalRecommendationLabel ?? result.recommendationLabel,
-      whetherWorthDedicatedTripZh: dedicatedDecision,
-      oneSentenceDecisionZh: `${dedicatedDecision}；优先看${bestWindow ? `${windowLabelZh(bestWindow)} ${formatShootingWindowZh(bestWindow, timezone)}` : "后续天气更新"}。`,
+      whetherWorthDedicatedTripZh: cloudSeaExplanation?.actionSummaryZh ?? dedicatedDecision,
+      oneSentenceDecisionZh: `${cloudSeaExplanation?.oneLineConclusionZh ?? dedicatedDecision}；优先看${bestWindow ? `${windowLabelZh(bestWindow)} ${formatShootingWindowZh(bestWindow, timezone)}` : "后续天气更新"}。`,
     },
     bestPlan: {
       primaryTargetZh: primarySubject,
@@ -1527,7 +1582,9 @@ export function createRuleBasedForecastExplanation(
       deterministicDayExplanation(result, summary, timezone),
     ),
     subjectAdvice: {
-      cloudSeaZh: `${scoreSentence(result.scores.cloudSea)} 白墙风险 ${result.scores.whiteoutRisk.score} 分，重点复核低云厚度、湿度、风和能见度。`,
+      cloudSeaZh:
+        cloudSeaExplanation?.professionalSummaryZh ??
+        `${scoreSentence(result.scores.cloudSea)} 白墙风险 ${result.scores.whiteoutRisk.score} 分，重点复核低云厚度、湿度、风和能见度。`,
       sunriseGlowZh: `${scoreSentence(result.scores.sunriseGlow)} 日出前后需要看东方低云遮挡和中高云承载色彩。`,
       sunsetGlowZh: `${scoreSentence(result.scores.sunsetGlow)} 傍晚必须区分日落暖光、晚霞和日落后余晖，现场看西向云层开口。`,
       astroMilkyWayZh: astroAdviceZh(result),
@@ -1546,15 +1603,18 @@ export function createRuleBasedForecastExplanation(
     },
     finalAdvice: {
       goNoGoZh: cloudSeaGuard
-        ? `${cloudSeaGuard.finalRecommendationLabel}。${cloudSeaGuard.reasonZh}`
+        ? `${cloudSeaGuard.finalRecommendationLabel}。${cloudSeaExplanation?.userFacingSummaryZh ?? cloudSeaGuard.reasonZh}`
         : `${dedicatedDecision}。${result.keyReasons[0] ?? result.summary}`,
       ifAlreadyNearbyZh: nearbyDecisionZh(result, bestDaily),
       ifDedicatedTripZh:
+        cloudSeaExplanation?.actionSummaryZh ??
         cloudSeaGuard?.departureAdviceZh ??
         (dedicatedDecision.includes("推荐")
           ? "可以把主窗口作为计划核心，但出发前仍要复核短临降水、低云和风。"
           : "不建议只为单一窗口远途出发，除非还有住宿、机位和备选题材支撑。"),
-      nextCheckZh: "下次重点复核短临降水、低云高度、能见度、阵风和主窗口前后云层开口。",
+      nextCheckZh: cloudSeaExplanation
+        ? `下次重点复核${cloudSeaExplanation.reviewPointsZh.slice(0, 4).join("、")}。`
+        : "下次重点复核短临降水、低云高度、能见度、阵风和主窗口前后云层开口。",
     },
     metadata: {
       source: "deterministic_fallback",
