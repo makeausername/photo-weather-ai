@@ -157,7 +157,8 @@ describe("buildCloudSeaRuleContext", () => {
         "cloud_layer_total_mismatch",
       ]),
     );
-    expect(context.precipitationSignalContext.highProbabilityTraceAmount).toBe(true);
+    expect(context.precipitationSignalContext.precipitationSignalType).toBe("probability_only");
+    expect(context.precipitationSignalContext.shouldAvoidStrongRainWording).toBe(true);
     expect(context.recommendationGuardContext.finalRecommendationLevel).toBe(
       "cautious_reference",
     );

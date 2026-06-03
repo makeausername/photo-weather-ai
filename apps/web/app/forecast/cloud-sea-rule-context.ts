@@ -1,10 +1,12 @@
 import {
   buildCloudLayerCompletenessContext,
   buildCloudSeaCloudBasisConsistencyContext,
+  buildCloudSeaPrecipitationSignalContext,
   buildCloudSeaRecommendationGuard,
   buildCloudSeaWeatherVariableConsistencyContext,
   type CloudLayerCompletenessContext,
   type CloudSeaCloudBasisConsistencyContext,
+  type CloudSeaPrecipitationSignalContext,
   type CloudSeaRecommendationGuardOutput,
   type CloudSeaWeatherVariableConsistencyContext,
   type ForecastCalculationResult,
@@ -49,15 +51,6 @@ export type CloudSeaCloudLayerRoleContext = {
   readonly noteZh: string;
 };
 
-export type CloudSeaPrecipitationSignalContext = {
-  readonly maxProbabilityPercent: number | null;
-  readonly maxAmountMm: number | null;
-  readonly activePrecipitation: boolean;
-  readonly highProbabilityTraceAmount: boolean;
-  readonly cautionLevel: "none" | "low" | "medium" | "high";
-  readonly messageZh: string;
-};
-
 export type CloudSeaRecommendationGuardForRuleOptions = {
   readonly cloudLayerCompleteness: CloudLayerCompletenessContext;
   readonly multiSourceAgreementContext?: ForecastMultiSourceAgreementContext | null;
@@ -72,6 +65,7 @@ export type CloudSeaRecommendationGuardForRuleOptions = {
   readonly lowCloudSignalSupported?: boolean;
   readonly cloudBasisConsistencyContext?: CloudSeaCloudBasisConsistencyContext;
   readonly weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext;
+  readonly precipitationSignalContext?: CloudSeaPrecipitationSignalContext;
 };
 
 const signalRoleRank: Record<CloudSeaCloudLayerRoleContext["dominantRole"], number> = {
@@ -96,6 +90,28 @@ export function buildCloudSeaRuleContext(result: ForecastCalculationResult): Clo
   });
   const multiSourceAgreementContext =
     result.weatherFusionSummary?.multiSourceAgreementContext ?? null;
+  const bestWindow =
+    result.cloudSeaAnalysis.bestCloudSeaWindow ??
+    result.cloudSeaAnalysis.bestCloudSeaWindows[0] ??
+    result.cloudSeaAnalysis.watchableCloudSeaWindows[0] ??
+    null;
+  const precipitationSignalContext = buildCloudSeaPrecipitationSignalContext({
+    hourlyRows: result.professionalHourlyData,
+    focusedWindow: bestWindow
+      ? {
+          startTime: bestWindow.startTime,
+          endTime: bestWindow.endTime,
+        }
+      : null,
+    bestWindow,
+    terrainContext: {
+      elevationMeters: terrainContext.elevationMeters,
+      surroundingReliefMeters: terrainContext.surroundingReliefMeters,
+      terrainMode: result.cloudSeaAnalysis.terrainSupport.terrainMode,
+      terrainType: terrainContext.terrainType,
+    },
+    cloudLayerCompletenessContext,
+  });
   const weatherVariableConsistencyContext = buildCloudSeaWeatherVariableConsistencyContext({
     elevationMeters: terrainContext.elevationMeters,
     surroundingReliefMeters: terrainContext.surroundingReliefMeters,
@@ -108,8 +124,15 @@ export function buildCloudSeaRuleContext(result: ForecastCalculationResult): Clo
       isClassicCloudSeaEligible: terrainContext.isClassicCloudSeaEligible,
     },
     hourlyRows: result.professionalHourlyData,
+    focusedWindow: bestWindow
+      ? {
+          startTime: bestWindow.startTime,
+          endTime: bestWindow.endTime,
+        }
+      : null,
     cloudLayerCompletenessContext,
     multiSourceAgreementContext,
+    precipitationSignalContext,
   });
   const recommendationGuardContext = buildCloudSeaRecommendationGuardForRuleContext(
     result,
@@ -119,6 +142,7 @@ export function buildCloudSeaRuleContext(result: ForecastCalculationResult): Clo
       cloudBasisConsistencyContext,
       multiSourceAgreementContext,
       weatherVariableConsistencyContext,
+      precipitationSignalContext,
     },
   );
 
@@ -128,7 +152,7 @@ export function buildCloudSeaRuleContext(result: ForecastCalculationResult): Clo
     cloudBasisConsistencyContext,
     cloudLayerRoleContext: buildCloudLayerRoleContext(result.professionalHourlyData),
     weatherVariableConsistencyContext,
-    precipitationSignalContext: buildPrecipitationSignalContext(result.professionalHourlyData),
+    precipitationSignalContext,
     multiSourceAgreementContext,
     recommendationGuardContext,
   };
@@ -166,6 +190,9 @@ export function buildCloudSeaRecommendationGuardForRuleContext(
       result.weatherFusionSummary?.multiSourceAgreementContext ??
       null,
     weatherVariableConsistencyContext: options.weatherVariableConsistencyContext,
+    precipitationSignalContext:
+      options.precipitationSignalContext ??
+      options.weatherVariableConsistencyContext?.precipitationSignalContext,
     bestWindow: bestWindow ?? null,
     hasWindow: options.hasWindow ?? Boolean(bestWindow),
     risks: result.riskFlags,
@@ -202,41 +229,6 @@ function buildCloudLayerRoleContext(
     redirectedMidHighHoursCount,
     dominantRole,
     noteZh: cloudLayerRoleNoteZh(dominantRole, redirectedMidHighHoursCount),
-  };
-}
-
-function buildPrecipitationSignalContext(
-  rows: readonly ProfessionalHourlyDataPoint[] | null | undefined,
-): CloudSeaPrecipitationSignalContext {
-  const hourlyRows = rows ?? [];
-  const maxProbabilityPercent = maxFinite(
-    hourlyRows.map((row) => row.precipitationProbabilityPercent),
-  );
-  const maxAmountMm = maxFinite(hourlyRows.map((row) => row.precipitationAmountMm));
-  const activePrecipitation = (maxAmountMm ?? 0) >= 0.3 || (maxProbabilityPercent ?? 0) >= 60;
-  const highProbabilityTraceAmount =
-    (maxProbabilityPercent ?? 0) >= 70 && (maxAmountMm ?? 0) <= 0.1;
-  const cautionLevel =
-    (maxAmountMm ?? 0) >= 1
-      ? "high"
-      : activePrecipitation || highProbabilityTraceAmount
-        ? "medium"
-        : (maxProbabilityPercent ?? 0) >= 40
-          ? "low"
-          : "none";
-
-  return {
-    maxProbabilityPercent: maxProbabilityPercent ?? null,
-    maxAmountMm: maxAmountMm ?? null,
-    activePrecipitation,
-    highProbabilityTraceAmount,
-    cautionLevel,
-    messageZh: precipitationSignalMessageZh({
-      maxProbabilityPercent,
-      maxAmountMm,
-      activePrecipitation,
-      highProbabilityTraceAmount,
-    }),
   };
 }
 
@@ -290,29 +282,6 @@ function cloudLayerRoleNoteZh(
     return "关键云层字段不足，云海与白墙判断需临近复核。";
   }
   return "云层角色未形成单一强信号，按保守观察处理。";
-}
-
-function precipitationSignalMessageZh(input: {
-  readonly maxProbabilityPercent?: number;
-  readonly maxAmountMm?: number;
-  readonly activePrecipitation: boolean;
-  readonly highProbabilityTraceAmount: boolean;
-}): string {
-  if (input.highProbabilityTraceAmount) {
-    return "降水概率高但量级接近 0，出发前需结合短临预报复核。";
-  }
-  if (input.activePrecipitation) {
-    return "窗口附近存在降水信号，需复核雨后开口和低云遮挡。";
-  }
-  if (input.maxProbabilityPercent !== undefined || input.maxAmountMm !== undefined) {
-    return "降水信号暂未构成主要阻断。";
-  }
-  return "降水字段不足，需临近预报复核。";
-}
-
-function maxFinite(values: readonly (number | null | undefined)[]): number | undefined {
-  const finiteValues = values.filter(isFiniteNumber);
-  return finiteValues.length > 0 ? Math.max(...finiteValues) : undefined;
 }
 
 function isFiniteNumber(value: number | null | undefined): value is number {

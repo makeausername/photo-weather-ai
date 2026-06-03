@@ -17,6 +17,13 @@ export type CloudSeaRegressionFixtureName =
   | "genericMidHighCloudOnlyCase"
   | "genericPrecipProbabilityOnlyCase"
   | "genericMeaningfulPrecipitationCase"
+  | "genericProbabilityOnlyTraceRainCase"
+  | "genericLightShowerNearWindowCase"
+  | "genericMeaningfulRainNearWindowCase"
+  | "genericHeavyRainCase"
+  | "genericRainOutsideWindowCase"
+  | "genericMissingAmountWithProbabilityCase"
+  | "genericAmountWithoutProbabilityCase"
   | "genericHumidityDewPointConflictCase"
   | "genericLowScoreContradictionCase"
   | "genericUnknownTerrainCase";
@@ -186,7 +193,7 @@ export const cloudSeaRegressionFixtures: Record<
   genericMeaningfulPrecipitationCase: makeFixture("genericMeaningfulPrecipitationCase", {
     rows: completeCloudSeaRows({
       precipitationProbabilityPercent: 76,
-      precipitationAmountMm: 1.6,
+      precipitationAmountMm: 0.5,
     }),
     cloudSeaScore: 72,
     formationScore: 78,
@@ -207,6 +214,102 @@ export const cloudSeaRegressionFixtures: Record<
         description: "关键窗口附近有可计量降水，出发前需要复核短临雷达和道路湿滑风险。",
       },
     ],
+  }),
+  genericProbabilityOnlyTraceRainCase: makeFixture("genericProbabilityOnlyTraceRainCase", {
+    rows: completeCloudSeaRows({
+      precipitationProbabilityPercent: 82,
+      precipitationAmountMm: 0.05,
+    }),
+    cloudSeaScore: 84,
+    formationScore: 86,
+    shootableScore: 82,
+    whiteoutRiskScore: 24,
+    recommendationLabel: "推荐重点关注",
+  }),
+  genericLightShowerNearWindowCase: makeFixture("genericLightShowerNearWindowCase", {
+    rows: completeCloudSeaRows({
+      precipitationProbabilityPercent: 70,
+      precipitationAmountMm: 0.25,
+    }),
+    cloudSeaScore: 78,
+    formationScore: 80,
+    shootableScore: 74,
+    whiteoutRiskScore: 30,
+    recommendationLabel: "推荐安排",
+  }),
+  genericMeaningfulRainNearWindowCase: makeFixture("genericMeaningfulRainNearWindowCase", {
+    rows: completeCloudSeaRows({
+      precipitationProbabilityPercent: 72,
+      precipitationAmountMm: 0.5,
+    }),
+    cloudSeaScore: 72,
+    formationScore: 78,
+    shootableScore: 66,
+    whiteoutRiskScore: 36,
+    recommendationLabel: "推荐安排",
+    rainOpening: {
+      rainSupportSignal: false,
+      activeRainDuringWindow: true,
+      postRainOpeningChance: "low",
+      messageZh: "主窗口附近存在可计量降水，需按真实雨量准备防水并考虑降级。",
+    },
+  }),
+  genericHeavyRainCase: makeFixture("genericHeavyRainCase", {
+    rows: completeCloudSeaRows({
+      precipitationProbabilityPercent: 86,
+      precipitationAmountMm: 3,
+    }),
+    cloudSeaScore: 70,
+    formationScore: 78,
+    shootableScore: 62,
+    whiteoutRiskScore: 42,
+    recommendationLabel: "推荐安排",
+    rainOpening: {
+      rainSupportSignal: false,
+      activeRainDuringWindow: true,
+      postRainOpeningChance: "low",
+      messageZh: "主窗口附近存在强降水风险，需优先复核通行安全。",
+    },
+  }),
+  genericRainOutsideWindowCase: makeFixture("genericRainOutsideWindowCase", {
+    rows: [
+      professionalHourlyRow({
+        time: "2026-05-20T14:00:00+08:00",
+        timeLabel: "14:00",
+        precipitationProbabilityPercent: 86,
+        precipitationAmountMm: 3,
+      }),
+    ],
+    cloudSeaScore: 84,
+    formationScore: 86,
+    shootableScore: 82,
+    whiteoutRiskScore: 24,
+    recommendationLabel: "推荐重点关注",
+  }),
+  genericMissingAmountWithProbabilityCase: makeFixture(
+    "genericMissingAmountWithProbabilityCase",
+    {
+      rows: completeCloudSeaRows({
+        precipitationProbabilityPercent: 78,
+        precipitationAmountMm: null,
+      }),
+      cloudSeaScore: 78,
+      formationScore: 80,
+      shootableScore: 74,
+      whiteoutRiskScore: 30,
+      recommendationLabel: "推荐安排",
+    },
+  ),
+  genericAmountWithoutProbabilityCase: makeFixture("genericAmountWithoutProbabilityCase", {
+    rows: completeCloudSeaRows({
+      precipitationProbabilityPercent: null,
+      precipitationAmountMm: 1.2,
+    }),
+    cloudSeaScore: 72,
+    formationScore: 78,
+    shootableScore: 66,
+    whiteoutRiskScore: 36,
+    recommendationLabel: "推荐安排",
   }),
   genericHumidityDewPointConflictCase: makeFixture("genericHumidityDewPointConflictCase", {
     rows: completeCloudSeaRows({

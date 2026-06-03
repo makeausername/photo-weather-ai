@@ -4,6 +4,10 @@ import {
   type CloudSeaCloudBasisConsistencyContext,
 } from "./cloud-sea-cloud-basis-consistency.js";
 import {
+  buildCloudSeaPrecipitationSignalContext,
+  type CloudSeaPrecipitationSignalContext,
+} from "./cloud-sea-precipitation-signal.js";
+import {
   buildTerrainTemperatureBasisContext,
   type TerrainTemperatureBasis,
   type TerrainTemperatureBasisContext,
@@ -66,6 +70,7 @@ export type CloudSeaWeatherVariableConsistencyContext = {
   readonly cloudBasisStatus: CloudSeaCloudBasisStatus;
   readonly visibilityStatus: CloudSeaVisibilityStatus;
   readonly windStatus: CloudSeaWindStatus;
+  readonly precipitationSignalContext: CloudSeaPrecipitationSignalContext;
   readonly temperatureBasisContext: TerrainTemperatureBasisContext;
   readonly shouldLowerConfidence: boolean;
   readonly shouldLowerComfortEquipmentConfidence: boolean;
@@ -101,6 +106,7 @@ export type CloudSeaWeatherVariableConsistencyInput = {
   readonly cloudHighPercent?: number | null;
   readonly cloudLayerCompletenessContext?: CloudLayerCompletenessContext | null;
   readonly multiSourceAgreementContext?: ForecastMultiSourceAgreementContext | null;
+  readonly precipitationSignalContext?: CloudSeaPrecipitationSignalContext | null;
   readonly terrainContext?: {
     readonly elevationMeters?: number | null;
     readonly surroundingReliefMeters?: number | null;
@@ -183,7 +189,23 @@ export function buildCloudSeaWeatherVariableConsistencyContext(
     temperatureBasisContext,
   );
   const humidity = evaluateHumidityDewPoint(snapshots);
-  const precipitation = evaluatePrecipitationSignal(snapshots);
+  const precipitationSignalContext =
+    input.precipitationSignalContext ??
+    buildCloudSeaPrecipitationSignalContext({
+      precipitationAmountMm: input.precipitationAmountMm,
+      precipitationProbabilityPercent: input.precipitationProbabilityPercent,
+      hourlyRows: input.hourlyRows,
+      focusedWindow: input.focusedWindow,
+      terrainContext: input.terrainContext,
+      windSpeedMs:
+        maxFinite(snapshots.map((snapshot) => snapshot.windGustMs)) ??
+        maxFinite(snapshots.map((snapshot) => snapshot.windSpeedMs)) ??
+        input.windGustMs ??
+        input.windSpeedMs,
+      visibilityKm: minFinite(snapshots.map((snapshot) => snapshot.visibilityKm)) ?? input.visibilityKm,
+      cloudLayerCompletenessContext: input.cloudLayerCompletenessContext,
+    });
+  const precipitation = evaluatePrecipitationSignal(precipitationSignalContext);
   const cloudBasis = evaluateCloudBasis(
     snapshots,
     input.cloudLayerCompletenessContext,
@@ -251,6 +273,7 @@ export function buildCloudSeaWeatherVariableConsistencyContext(
     cloudBasisStatus: cloudBasis.status,
     visibilityStatus,
     windStatus,
+    precipitationSignalContext,
     temperatureBasisContext: temperature.basisContext,
     shouldLowerConfidence,
     shouldLowerComfortEquipmentConfidence,
@@ -599,91 +622,85 @@ function evaluateHumidityDewPoint(
 }
 
 function evaluatePrecipitationSignal(
-  snapshots: readonly WeatherVariableSnapshot[],
+  context: CloudSeaPrecipitationSignalContext,
 ): PrecipitationEvaluation {
-  const maxProbabilityPercent = maxFinite(
-    snapshots.map((snapshot) => snapshot.precipitationProbabilityPercent),
-  );
-  const maxAmountMm = maxFinite(snapshots.map((snapshot) => snapshot.precipitationAmountMm));
+  const lowProbabilityHighAmountConflict =
+    context.hasProbabilityData &&
+    (context.maxProbabilityPercent ?? 0) <= 10 &&
+    (context.maxAmountMm ?? 0) >= 3;
 
-  if (!isFiniteNumber(maxProbabilityPercent) && !isFiniteNumber(maxAmountMm)) {
-    return {
-      status: "unknown",
-      shouldDowngradePrecipitationWording: false,
-      warning: null,
-    };
-  }
-
-  if ((maxAmountMm ?? 0) >= 3 && (maxProbabilityPercent ?? 100) <= 10) {
+  if (lowProbabilityHighAmountConflict) {
     return {
       status: "conflict",
       shouldDowngradePrecipitationWording: true,
       warning: {
         key: "precip_probability_trace_amount",
         level: "high",
-        affectedHoursCount: countPrecipitationRows(snapshots, 10, 3),
+        affectedHoursCount: Math.max(1, context.affectedHoursCount),
         messageZh: "降水概率与雨量级别存在冲突，需临近预报复核后再判断降水影响。",
       },
     };
   }
 
-  if ((maxAmountMm ?? 0) >= 1) {
+  if (context.precipitationSignalType === "unknown") {
     return {
-      status: "meaningful_precipitation",
+      status: "unknown",
+      shouldDowngradePrecipitationWording: context.shouldAvoidStrongRainWording,
+      warning: null,
+    };
+  }
+
+  if (context.precipitationSignalType === "none") {
+    return {
+      status: "none",
       shouldDowngradePrecipitationWording: false,
       warning: null,
     };
   }
 
-  if ((maxProbabilityPercent ?? 0) >= 60 && (maxAmountMm ?? 0) <= 0.2) {
-    const probabilityOnly = (maxAmountMm ?? 0) <= 0.05;
+  if (
+    context.precipitationSignalType === "meaningful_rain" ||
+    context.precipitationSignalType === "sustained_rain"
+  ) {
     return {
-      status: probabilityOnly ? "probability_only" : "light_disturbance",
+      status: "meaningful_precipitation",
+      shouldDowngradePrecipitationWording: context.shouldAvoidStrongRainWording,
+      warning: context.shouldDowngradeWindow
+        ? {
+            key: "precip_probability_trace_amount",
+            level: context.precipitationSignalType === "sustained_rain" ? "high" : "medium",
+            affectedHoursCount: Math.max(1, context.affectedHoursCount),
+            messageZh: context.userSummaryZh,
+          }
+        : null,
+    };
+  }
+
+  if (context.precipitationSignalType === "probability_only") {
+    return {
+      status: "probability_only",
       shouldDowngradePrecipitationWording: true,
       warning: {
         key: "precip_probability_trace_amount",
         level: "medium",
-        affectedHoursCount: countProbabilityOnlyRows(snapshots),
-        messageZh: probabilityOnly
-          ? "降水概率较高但雨量很小，更像局地短时扰动信号，不宜直接按强降水处理。"
-          : "降水概率偏高但雨量较小，出行前需复核短临预报。",
+        affectedHoursCount: Math.max(1, context.affectedHoursCount),
+        messageZh: `${context.userSummaryZh} 不宜直接按强降水处理。`,
       },
     };
   }
 
-  if ((maxAmountMm ?? 0) > 0.05 || (maxProbabilityPercent ?? 0) >= 40) {
-    return {
-      status: "light_disturbance",
-      shouldDowngradePrecipitationWording: true,
-      warning: null,
-    };
-  }
-
   return {
-    status: "none",
-    shouldDowngradePrecipitationWording: false,
-    warning: null,
+    status: "light_disturbance",
+    shouldDowngradePrecipitationWording: true,
+    warning: context.precipitationImpactLevel === "medium"
+      ? {
+          key: "precip_probability_trace_amount",
+          level: "low",
+          affectedHoursCount: Math.max(1, context.affectedHoursCount),
+          messageZh: context.userSummaryZh,
+        }
+      : null,
   };
-}
-
-function countPrecipitationRows(
-  snapshots: readonly WeatherVariableSnapshot[],
-  maxProbabilityThreshold: number,
-  minAmountThreshold: number,
-): number {
-  return snapshots.filter(
-    (snapshot) =>
-      (snapshot.precipitationProbabilityPercent ?? 100) <= maxProbabilityThreshold &&
-      (snapshot.precipitationAmountMm ?? 0) >= minAmountThreshold,
-  ).length;
-}
-
-function countProbabilityOnlyRows(snapshots: readonly WeatherVariableSnapshot[]): number {
-  return snapshots.filter(
-    (snapshot) =>
-      (snapshot.precipitationProbabilityPercent ?? 0) >= 60 &&
-      (snapshot.precipitationAmountMm ?? 0) <= 0.2,
-  ).length;
 }
 
 function evaluateCloudBasis(

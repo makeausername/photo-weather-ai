@@ -5138,6 +5138,8 @@ describe("forecast result target-aware view model", () => {
       "probability_only",
     );
     expect(viewModel.recommendationGuard.finalRecommendationLabel).toBe("强推荐专程");
+    expect(html).toContain("降水概率 78%");
+    expect(html).toContain("预计雨量 0 mm");
     expect(html).toContain("更像局地短时扰动");
     expect(html).toContain("不宜直接按强降水处理");
     expect(actionPlan).toContain("准备防潮和轻量防雨");

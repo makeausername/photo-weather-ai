@@ -6,6 +6,7 @@ import {
   buildCloudSeaCloudBasisConsistencyContext,
   type CloudSeaCloudBasisConsistencyContext,
 } from "./cloud-sea-cloud-basis-consistency.js";
+import type { CloudSeaPrecipitationSignalContext } from "./cloud-sea-precipitation-signal.js";
 import {
   buildCloudSeaWeatherVariableConsistencyContext,
   type CloudSeaWeatherVariableConsistencyContext,
@@ -52,6 +53,7 @@ export type CloudSeaRecommendationGuardInput = {
   readonly bestWindowLabelZh?: string;
   readonly cloudBasisConsistencyContext?: CloudSeaCloudBasisConsistencyContext | null;
   readonly weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext | null;
+  readonly precipitationSignalContext?: CloudSeaPrecipitationSignalContext | null;
 };
 
 export type CloudSeaRecommendationGuardOutput = {
@@ -116,6 +118,8 @@ export function buildCloudSeaRecommendationGuard(
   const agreement = input.multiSourceAgreementContext;
   const cloudBasis = input.cloudBasisConsistencyContext;
   const weatherConsistency = input.weatherVariableConsistencyContext;
+  const precipitationSignal =
+    input.precipitationSignalContext ?? weatherConsistency?.precipitationSignalContext ?? null;
   const blockedStrongRecommendationReasons: string[] = [];
   const consistencyWarnings: string[] = [];
 
@@ -195,7 +199,32 @@ export function buildCloudSeaRecommendationGuard(
   }
 
   if (weatherConsistency?.shouldDowngradePrecipitationWording) {
-    consistencyWarnings.push("降水概率和雨量需分开解读，避免按强降水直接处理");
+    consistencyWarnings.push(
+      precipitationSignal?.userSummaryZh ?? "降水概率和雨量需分开解读，避免按强降水直接处理",
+    );
+  }
+
+  if (precipitationSignal) {
+    if (
+      precipitationSignal.shouldDowngradeWindow &&
+      precipitationSignal.precipitationSignalType === "sustained_rain"
+    ) {
+      ceiling = minRecommendationLevel(ceiling, "backup_only");
+      blockedStrongRecommendationReasons.push("主窗口受明显降水影响，需优先评估通行和安全");
+      consistencyWarnings.push(precipitationSignal.userSummaryZh);
+    } else if (
+      precipitationSignal.shouldDowngradeWindow &&
+      precipitationSignal.precipitationSignalType === "meaningful_rain"
+    ) {
+      ceiling = minRecommendationLevel(ceiling, "cautious_reference");
+      blockedStrongRecommendationReasons.push("主窗口受降水影响，建议转为备选");
+      consistencyWarnings.push(precipitationSignal.userSummaryZh);
+    } else if (
+      precipitationSignal.precipitationSignalType !== "none" &&
+      precipitationSignal.precipitationSignalType !== "unknown"
+    ) {
+      consistencyWarnings.push(precipitationSignal.userSummaryZh);
+    }
   }
 
   if ((input.whiteoutRiskScore ?? 0) >= 70) {
@@ -296,6 +325,12 @@ export function buildCloudSeaRecommendationGuardForResult(
       result.terrainAnalysis.terrainProfile.terrainType ??
       result.cloudSeaAnalysis.terrainSupport.terrainType,
     hourlyRows: result.professionalHourlyData,
+    focusedWindow: bestWindow
+      ? {
+          startTime: bestWindow.startTime,
+          endTime: bestWindow.endTime,
+        }
+      : null,
     cloudLayerCompletenessContext,
     multiSourceAgreementContext,
   });

@@ -39,6 +39,13 @@ const requiredFixtureNames: readonly CloudSeaRegressionFixtureName[] = [
   "genericMidHighCloudOnlyCase",
   "genericPrecipProbabilityOnlyCase",
   "genericMeaningfulPrecipitationCase",
+  "genericProbabilityOnlyTraceRainCase",
+  "genericLightShowerNearWindowCase",
+  "genericMeaningfulRainNearWindowCase",
+  "genericHeavyRainCase",
+  "genericRainOutsideWindowCase",
+  "genericMissingAmountWithProbabilityCase",
+  "genericAmountWithoutProbabilityCase",
   "genericHumidityDewPointConflictCase",
   "genericLowScoreContradictionCase",
   "genericUnknownTerrainCase",
@@ -170,6 +177,46 @@ describe("Cloud Sea helper-level final regression QA", () => {
     ).toBe("strong_special_trip");
     expect(meaningfulContext.precipitationSignalStatus).toBe("meaningful_precipitation");
     expect(meaningfulContext.shouldDowngradePrecipitationWording).toBe(false);
+  });
+
+  it("calibrates generic precipitation amount and window overlap before capping recommendations", () => {
+    const trace = buildCloudSeaRuleContext(
+      cloudSeaRegressionFixture("genericProbabilityOnlyTraceRainCase").result,
+    );
+    const light = buildCloudSeaRuleContext(
+      cloudSeaRegressionFixture("genericLightShowerNearWindowCase").result,
+    );
+    const meaningful = buildCloudSeaRuleContext(
+      cloudSeaRegressionFixture("genericMeaningfulRainNearWindowCase").result,
+    );
+    const heavy = buildCloudSeaRuleContext(cloudSeaRegressionFixture("genericHeavyRainCase").result);
+    const outside = buildCloudSeaRuleContext(
+      cloudSeaRegressionFixture("genericRainOutsideWindowCase").result,
+    );
+
+    expect(trace.precipitationSignalContext.precipitationSignalType).toBe("light_disturbance");
+    expect(trace.precipitationSignalContext.shouldAvoidStrongRainWording).toBe(true);
+    expect(trace.recommendationGuardContext.finalRecommendationLevel).toBe("strong_special_trip");
+
+    expect(light.precipitationSignalContext.precipitationSignalType).toBe("short_shower");
+    expect(light.precipitationSignalContext.riskLabelZh).toBe("短时小雨");
+    expect(light.precipitationSignalContext.shouldAvoidStrongRainWording).toBe(true);
+
+    expect(meaningful.precipitationSignalContext.precipitationSignalType).toBe("meaningful_rain");
+    expect(meaningful.precipitationSignalContext.shouldDowngradeWindow).toBe(true);
+    expect(meaningful.recommendationGuardContext.finalRecommendationLevel).toBe(
+      "cautious_reference",
+    );
+
+    expect(heavy.precipitationSignalContext.precipitationSignalType).toBe("sustained_rain");
+    expect(heavy.recommendationGuardContext.finalRecommendationLevel).toBe("backup_only");
+
+    expect(outside.precipitationSignalContext.precipitationSignalType).toBe("sustained_rain");
+    expect(outside.precipitationSignalContext.affectsMainWindow).toBe(false);
+    expect(outside.precipitationSignalContext.shouldDowngradeWindow).toBe(false);
+    expect(outside.recommendationGuardContext.finalRecommendationLevel).toBe(
+      "strong_special_trip",
+    );
   });
 
   it("treats humidity and dew-point conflicts as review-only water-vapor evidence", () => {

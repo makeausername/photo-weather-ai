@@ -180,12 +180,24 @@ describe("AI providers", () => {
       professionalSummaryZh: expect.any(String),
       shouldLowerCloudSeaConfidence: expect.any(Boolean),
     });
+    expect(payload.precipitationSignalSummary).toMatchObject({
+      precipitationSignalLevel: expect.any(String),
+      precipitationSignalType: expect.any(String),
+      probabilityClass: expect.any(String),
+      amountClass: expect.any(String),
+      affectsMainWindow: expect.any(Boolean),
+      userSummaryZh: expect.any(String),
+      actionAdviceZh: expect.any(String),
+    });
+    expect(payload.weatherVariableConsistencySummary).toHaveProperty("precipitationSignalStatus");
     expect(payload.multiSourceAgreementSummary).toMatchObject({
       agreementLevel: "medium",
       shouldLowerConfidence: true,
     });
     expect(text).toContain("Do not recompute facts");
     expect(text).toContain("invent temperature correction");
+    expect(text).toContain("invent rain amount");
+    expect(text).toContain("trace amount");
     expect(text).toContain("infer low/mid/high cloud from total cloud");
     expect(text).not.toMatch(/latitude|longitude|coordinates|WGS84|GCJ-02/i);
     expect(text).not.toContain("QWeather");

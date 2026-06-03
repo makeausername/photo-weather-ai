@@ -2354,8 +2354,21 @@ function precipitationDisplayValue(
     | ForecastCalculationResult["dailySummaries"][number]["weather"]
     | ForecastCalculationResult["currentWeather"]
     | undefined,
+  precipitationSignalContext?: CloudSeaForecastViewModel["precipitationSignal"],
 ): string {
-  return rainRiskText(weather).value;
+  const amount =
+    weather?.precipitationAmountMm ??
+    weather?.precipitation ??
+    weather?.rainAmountMm ??
+    precipitationSignalContext?.maxAmountMm;
+  const probability =
+    normalizePrecipitationProbabilityPercent(
+      (weather && "precipitationProbabilityPercent" in weather
+        ? weather.precipitationProbabilityPercent
+        : undefined) ?? weather?.precipitationProbability,
+      amount,
+    ) ?? precipitationSignalContext?.maxProbabilityPercent;
+  return `降水概率 ${formatPercentNumber(probability)} / 预计雨量 ${formatPrecipitationAmount(amount)}`;
 }
 
 function precipitationDisplayDetail(
@@ -2363,14 +2376,29 @@ function precipitationDisplayDetail(
     | ForecastCalculationResult["dailySummaries"][number]["weather"]
     | ForecastCalculationResult["currentWeather"]
     | undefined,
+  precipitationSignalContext?: CloudSeaForecastViewModel["precipitationSignal"],
 ): string {
+  if (precipitationSignalContext) {
+    return precipitationSignalContext.userSummaryZh;
+  }
   return rainRiskText(weather).detail;
 }
 
 function windPrecipitationActionText(
   result: ForecastCalculationResult,
   weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext,
+  precipitationSignalContext?: CloudSeaForecastViewModel["precipitationSignal"],
 ): string {
+  if (precipitationSignalContext?.shouldDowngradeWindow) {
+    return precipitationSignalContext.actionAdviceZh;
+  }
+  if (
+    precipitationSignalContext &&
+    precipitationSignalContext.precipitationSignalType !== "none" &&
+    precipitationSignalContext.precipitationSignalType !== "unknown"
+  ) {
+    return precipitationSignalContext.actionAdviceZh;
+  }
   if (weatherVariableConsistencyContext?.shouldDowngradePrecipitationWording) {
     return "降水概率和雨量分开判断，准备防潮和轻量防雨，关注局地短时小雨。";
   }
@@ -2385,6 +2413,26 @@ function windPrecipitationActionText(
       : "注意阵风影响和三脚架稳定。";
   }
   return "风雨对拍摄干扰相对可控。";
+}
+
+function normalizePrecipitationProbabilityPercent(
+  value: number | null | undefined,
+  amount?: number | null,
+): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  if (typeof amount === "number" && Number.isFinite(amount) && amount > 0 && value <= 0) {
+    return undefined;
+  }
+  return value > 0 && value <= 1 ? value * 100 : value;
+}
+
+function formatPrecipitationAmount(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "缺测";
+  }
+  return `${Math.round(value * 10) / 10} mm`;
 }
 
 function dewPointActionText(
@@ -2836,6 +2884,7 @@ export function CloudSeaResultPage({
         <CloudSeaNearTermWeatherSection
           result={result}
           terrainContext={viewModel.terrainContext}
+          precipitationSignalContext={viewModel.precipitationSignal}
           weatherVariableConsistencyContext={
             viewModel.ruleContext.weatherVariableConsistencyContext
           }
@@ -4334,10 +4383,12 @@ function clampScorePercent(value: number): number {
 function CloudSeaNearTermWeatherSection({
   result,
   terrainContext,
+  precipitationSignalContext,
   weatherVariableConsistencyContext,
 }: {
   readonly result: ForecastCalculationResult;
   readonly terrainContext: CloudSeaTerrainContext;
+  readonly precipitationSignalContext: CloudSeaForecastViewModel["precipitationSignal"];
   readonly weatherVariableConsistencyContext: CloudSeaWeatherVariableConsistencyContext;
 }) {
   const current = result.currentWeather;
@@ -4410,10 +4461,15 @@ function CloudSeaNearTermWeatherSection({
             current?.windDirection ?? firstDay?.windDirection,
             current?.windGust ?? firstDay?.windGust,
           )}
-          value={precipitationDisplayValue(current ?? firstDay)}
+          value={precipitationDisplayValue(current ?? firstDay, precipitationSignalContext)}
           detail={`${precipitationDisplayDetail(
             current ?? firstDay,
-          )}。${windPrecipitationActionText(result, weatherVariableConsistencyContext)}`}
+            precipitationSignalContext,
+          )}。${windPrecipitationActionText(
+            result,
+            weatherVariableConsistencyContext,
+            precipitationSignalContext,
+          )}`}
         />
         <CompactInfoCard
           title="湿度与露点"
@@ -6175,7 +6231,7 @@ function CloudSeaRiskSummarySection({
         <Badge variant="muted">白墙 / 降水 / 通行</Badge>
       </div>
       <div className="mt-3 grid gap-3 min-[760px]:grid-cols-2 min-[1180px]:grid-cols-3">
-        {focusedRiskSummary.slice(0, 6).map((item, index) => (
+        {focusedRiskSummary.slice(0, 8).map((item, index) => (
           <article
             key={`${item.label}-${index}`}
             className="grid content-start gap-2 rounded-lg border border-border bg-muted p-3"

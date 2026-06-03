@@ -516,9 +516,16 @@ export function buildCloudSeaAiExplainPayload(
       result.terrainAnalysis.terrainProfile.terrainType ??
       result.cloudSeaAnalysis.terrainSupport.terrainType,
     hourlyRows: professionalRows,
+    focusedWindow: bestAnalysisWindow
+      ? {
+          startTime: bestAnalysisWindow.startTime,
+          endTime: bestAnalysisWindow.endTime,
+        }
+      : null,
     cloudLayerCompletenessContext: cloudLayerCompleteness,
     multiSourceAgreementContext: agreement,
   });
+  const precipitationSignal = weatherVariableConsistency.precipitationSignalContext;
   const recommendationGuard = buildCloudSeaRecommendationGuardForResult(result);
 
   return {
@@ -526,7 +533,7 @@ export function buildCloudSeaAiExplainPayload(
     target: "cloud_sea",
     deterministicOnly: true,
     instruction:
-      "Explain deterministic Cloud Sea facts only. Do not recompute facts, infer low/mid/high cloud from total cloud, invent temperature correction, or override the selected deterministic temperature basis.",
+      "Explain deterministic Cloud Sea facts only. Do not recompute facts, infer low/mid/high cloud from total cloud, invent temperature correction, invent rain amount, or override the selected deterministic temperature and precipitation signal basis. Do not convert high precipitation probability with trace amount into strong rain.",
     locationName: result.place.name,
     horizon: {
       key: result.horizon,
@@ -552,6 +559,19 @@ export function buildCloudSeaAiExplainPayload(
         90,
       ),
       consistencyWarnings: takeTextItems(recommendationGuard.consistencyWarnings, 3, 90),
+    },
+    precipitationSignalSummary: {
+      precipitationSignalLevel: precipitationSignal.precipitationSignalLevel,
+      precipitationSignalType: precipitationSignal.precipitationSignalType,
+      precipitationImpactLevel: precipitationSignal.precipitationImpactLevel,
+      probabilityClass: precipitationSignal.probabilityClass,
+      amountClass: precipitationSignal.amountClass,
+      affectsMainWindow: precipitationSignal.affectsMainWindow,
+      affectsArrivalWindow: precipitationSignal.affectsArrivalWindow,
+      shouldDowngradeWindow: precipitationSignal.shouldDowngradeWindow,
+      shouldAvoidStrongRainWording: precipitationSignal.shouldAvoidStrongRainWording,
+      userSummaryZh: limitText(providerNeutralText(precipitationSignal.userSummaryZh), 140),
+      actionAdviceZh: limitText(providerNeutralText(precipitationSignal.actionAdviceZh), 120),
     },
     bestWindow: bestAnalysisWindow
       ? compactCloudSeaAnalysisWindow(bestAnalysisWindow, timezone)
@@ -789,9 +809,9 @@ function compactCloudSeaAnalysisWindow(
 
 function professionalHourlyRowsForAiPayload(
   rows: NonNullable<ForecastCalculationResult["professionalHourlyData"]>,
-  _detail: DeepSeekForecastContextDetail,
+  detail: DeepSeekForecastContextDetail,
 ) {
-  const limit = 4;
+  const limit = detail === "minimal" ? 2 : 4;
   const focused = rows.filter((row) =>
     ["可拍窗口", "白墙风险", "形成信号", "雨后开口", "需复核"].includes(row.cloudSeaSignal),
   );

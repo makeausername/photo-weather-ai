@@ -229,9 +229,23 @@ describe("buildCloudSeaRecommendationGuard", () => {
     });
 
     expect(result.finalRecommendationLevel).toBe("strong_special_trip");
-    expect(result.consistencyWarnings.join(" ")).toContain("降水概率和雨量需分开解读");
+    expect(result.consistencyWarnings.join(" ")).toContain("雨量很小");
     expect(result.blockedStrongRecommendationReasons).not.toContain(
       "关键天气变量存在冲突，需临近复核",
     );
+  });
+
+  it("caps recommendations when generic meaningful rain affects the main signal", () => {
+    const result = guard({
+      proposedRecommendationLabel: "强推荐专程",
+      weatherVariableConsistencyContext: buildCloudSeaWeatherVariableConsistencyContext({
+        precipitationProbabilityPercent: 72,
+        precipitationAmountMm: 1.5,
+      }),
+    });
+
+    expect(result.finalRecommendationLevel).toBe("cautious_reference");
+    expect(result.blockedStrongRecommendationReasons).toContain("主窗口受降水影响，建议转为备选");
+    expect(result.consistencyWarnings.join(" ")).toContain("可计量降水");
   });
 });
