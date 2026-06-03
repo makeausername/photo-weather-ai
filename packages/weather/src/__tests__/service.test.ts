@@ -136,6 +136,30 @@ describe("WeatherIntelligenceService", () => {
     expect(second.currentWeather?.temperature).toBe(18);
   });
 
+  it("separates cached provider bundles by timezone", async () => {
+    const cache = new InMemoryWeatherCache();
+    const first = await new WeatherIntelligenceService({
+      providers: [new StaticProvider("meteoblue", "meteoblue", "real", hour({ temperature: 8 }))],
+      cache,
+      cacheNamespace: "runtime-v1",
+    }).getWeatherDataBundle({
+      ...requestInput(),
+      timezone: "Asia/Shanghai",
+    });
+
+    const second = await new WeatherIntelligenceService({
+      providers: [new StaticProvider("meteoblue", "meteoblue", "real", hour({ temperature: 18 }))],
+      cache,
+      cacheNamespace: "runtime-v1",
+    }).getWeatherDataBundle({
+      ...requestInput(),
+      timezone: "Asia/Tokyo",
+    });
+
+    expect(first.currentWeather?.temperature).toBe(8);
+    expect(second.currentWeather?.temperature).toBe(18);
+  });
+
   it("keeps confidence usable when QWeather and Open-Meteo pass but meteoblue parse fails", async () => {
     const service = new WeatherIntelligenceService({
       providers: [

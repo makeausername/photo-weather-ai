@@ -89,6 +89,9 @@ importers:
       '@photo-weather/astro':
         specifier: workspace:*
         version: link:../../packages/astro
+      '@photo-weather/calendar':
+        specifier: workspace:*
+        version: link:../../packages/calendar
       '@photo-weather/config':
         specifier: workspace:*
         version: link:../../packages/config

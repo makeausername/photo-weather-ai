@@ -891,7 +891,7 @@ function buildCloudSeaDisplayTemperatureContextForResult(
 ): CloudSeaDisplayTemperatureContext {
   const current = result.currentWeather;
   const dailyWeather = result.dailySummaries[0]?.weather;
-  const firstProfessionalHour = result.professionalHourlyData?.[0];
+  const firstProfessionalHour = firstRollingProfessionalHour(result);
   const cameraElevationMeters = firstFiniteNumber([
     terrainContext.elevationMeters,
     result.cloudSeaAnalysis.terrainSupport.selectedSpotElevationMeters,
@@ -907,14 +907,14 @@ function buildCloudSeaDisplayTemperatureContextForResult(
     dailyWeather?.providerElevationMeters,
   ]);
   const rawGridTemperatureC = firstFiniteNumber([
-    temperatureBasisContext.rawGridTemperatureC,
     firstProfessionalHour?.rawTemperatureC,
+    temperatureBasisContext.rawGridTemperatureC,
     current?.rawTemperature,
     averageNumbers(dailyWeather?.rawTempMin, dailyWeather?.rawTempMax),
   ]);
   const terrainAdjustedTemperatureC = firstFiniteNumber([
-    temperatureBasisContext.terrainAdjustedTemperatureC,
     firstProfessionalHour?.terrainAdjustedTemperatureC,
+    temperatureBasisContext.terrainAdjustedTemperatureC,
     current?.elevationAdjustedTemperature,
     averageNumbers(dailyWeather?.elevationAdjustedTempMin, dailyWeather?.elevationAdjustedTempMax),
   ]);
@@ -925,8 +925,8 @@ function buildCloudSeaDisplayTemperatureContextForResult(
     terrainAdjustedTemperatureC,
     providerTemperatureC: current?.temperature,
     displayedTemperatureC:
-      temperatureBasisContext.displayTemperatureC ??
       firstProfessionalHour?.displayedTemperatureC ??
+      temperatureBasisContext.displayTemperatureC ??
       current?.temperature,
     displayTemperatureRangeC: [dailyWeather?.tempMin, dailyWeather?.tempMax],
     bodyFeelTemperatureC: current?.mountainFeelsLikeC ?? current?.feelsLike,
@@ -946,8 +946,29 @@ function buildCloudSeaDisplayTemperatureContextForResult(
     windSpeedMs: current?.windSpeed ?? dailyWeather?.windSpeed,
     windGustMs: current?.windGust ?? dailyWeather?.windGust,
     humidityPercent: current?.humidity ?? dailyWeather?.humidity,
-    sourceTemperatureBasis: temperatureBasisContext.temperatureBasis,
+    sourceTemperatureBasis: firstProfessionalHour?.temperatureBasis ?? temperatureBasisContext.temperatureBasis,
   });
+}
+
+function firstRollingProfessionalHour(
+  result: ForecastCalculationResult,
+): NonNullable<ForecastCalculationResult["professionalHourlyData"]>[number] | undefined {
+  const rows = result.professionalHourlyData ?? [];
+  const anchorMs = Date.parse(
+    result.professionalHourlyDataTimeBasis?.anchorStartLocal ?? result.forecastStart,
+  );
+  if (!Number.isFinite(anchorMs)) {
+    return rows[0];
+  }
+  return rows
+    .map((row) => ({ row, timestamp: Date.parse(row.time) }))
+    .filter(
+      (entry): entry is {
+        readonly row: NonNullable<ForecastCalculationResult["professionalHourlyData"]>[number];
+        readonly timestamp: number;
+      } => Number.isFinite(entry.timestamp) && entry.timestamp >= anchorMs,
+    )
+    .sort((left, right) => left.timestamp - right.timestamp)[0]?.row;
 }
 
 function buildCloudSeaRecommendationCards({

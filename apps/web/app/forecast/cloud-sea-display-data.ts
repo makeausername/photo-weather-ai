@@ -1,6 +1,7 @@
 import {
   buildCloudLayerCompletenessContext,
   buildCloudSeaCloudBasisConsistencyContext,
+  buildCloudSeaPrecipitationSignalContext,
   forecastHorizonLabels,
   type CloudLayerCompletenessContext,
   type CloudSeaCloudBasisConsistencyContext,
@@ -14,6 +15,11 @@ import {
   type ProfessionalHourlyDataPoint,
   type ProfessionalHourlyDataTimeBasis,
 } from "@photo-weather/shared";
+import {
+  filterRowsToForecastWindow,
+  resolveRollingForecastHorizon,
+  type ForecastWindowAnchor,
+} from "@photo-weather/calendar";
 import type { CloudSeaDisplayTemperatureContext } from "./cloud-sea-display-temperature";
 import type { CloudSeaRuleContext } from "./cloud-sea-rule-context";
 import type { CloudSeaTerrainContext } from "./cloud-sea-terrain-context";
@@ -156,6 +162,12 @@ export type CloudSeaDisplayDataMeta = {
   readonly horizon: ForecastHorizon;
   readonly anchorStart: string;
   readonly anchorEnd: string;
+  readonly expectedRowCount: number;
+  readonly actualRowCount: number;
+  readonly firstRowTime: string | null;
+  readonly lastRowTime: string | null;
+  readonly isRollingFutureRange: boolean;
+  readonly displayRangeZh: string;
   readonly normalizedHourlyRowCount: number;
   readonly cloudLayerCoverageSummary: string;
   readonly temperatureBasis: CloudSeaDisplayTemperatureContext["basis"];
@@ -202,24 +214,28 @@ export function buildCloudSeaDisplayData(
 ): CloudSeaDisplayData {
   const rows = input.result.professionalHourlyData ?? [];
   const timeBasis = input.result.professionalHourlyDataTimeBasis ?? null;
-  const anchorStart = firstValidTime(
-    timeBasis?.anchorStartLocal,
-    timeBasis?.startTime,
-    input.result.forecastStart,
-    input.result.generatedAt,
+  const horizonWindow = resolveCloudSeaDisplayHorizon(input.result, rows);
+  const displayRows = filterRowsToForecastWindow(rows, horizonWindow, (row) => row.time);
+  const nearTermRows = displayRows.slice(0, 6);
+  const nearTermEnd = nearTermRows.at(-1)?.time ?? fallbackNearTermEnd(horizonWindow.anchorStartLocal);
+  const displayTimeBasis = buildDisplayProfessionalHourlyTimeBasis(
+    timeBasis,
+    horizonWindow,
+    displayRows,
   );
-  const anchorEnd = nearTermWindowEnd(anchorStart, timeBasis?.anchorEndLocal ?? timeBasis?.endTime ?? input.result.forecastEnd);
-  const normalizedRows = rowsAtOrAfter(rows, anchorStart);
-  const nearTermRows = rowsForRange(rows, anchorStart, anchorEnd);
-  const currentNearTermRows = nearTermRows.length > 0 ? nearTermRows : normalizedRows.slice(0, 6);
-  const cloudLayerCompleteness = buildCloudLayerCompletenessContext(rows);
+  const cloudLayerCompleteness = buildCloudLayerCompletenessContext(displayRows);
   const cloudBasisConsistency = buildCloudSeaCloudBasisConsistencyContext({
-    hourlyRows: rows,
+    hourlyRows: displayRows,
     cloudLayerCompletenessContext: cloudLayerCompleteness,
   });
+  const displayPrecipitationSignalContext = buildDisplayPrecipitationSignalContext({
+    input,
+    rows: displayRows,
+    cloudLayerCompleteness,
+  });
   const professionalHourlyData: CloudSeaProfessionalHourlyDisplayData = {
-    rows,
-    timeBasis,
+    rows: displayRows,
+    timeBasis: displayTimeBasis,
     cloudLayerCompleteness,
     cloudBasisConsistency,
     focusWindows: cloudSeaFocusWindows(input.result),
@@ -229,24 +245,21 @@ export function buildCloudSeaDisplayData(
     result: input.result,
     terrainContext: input.terrainContext,
     displayTemperatureContext: input.displayTemperatureContext,
-    precipitationSignalContext: input.ruleContext.precipitationSignalContext,
+    precipitationSignalContext: displayPrecipitationSignalContext,
     weatherVariableConsistencyContext: input.ruleContext.weatherVariableConsistencyContext,
     cloudLayerCompleteness,
     cloudBasisConsistency,
-    anchorStart,
-    anchorEnd,
-    rows: currentNearTermRows,
+    anchorStart: horizonWindow.anchorStartLocal,
+    anchorEnd: nearTermEnd,
+    rows: nearTermRows,
   });
   const displayDataMeta = buildDisplayDataMeta({
     result: input.result,
-    timeBasis,
-    rows,
-    normalizedRows,
-    currentNearTermRows,
-    anchorStart,
-    anchorEnd,
+    horizonWindow,
+    displayRows,
+    nearTermRows,
     displayTemperatureContext: input.displayTemperatureContext,
-    precipitationSignalContext: input.ruleContext.precipitationSignalContext,
+    precipitationSignalContext: displayPrecipitationSignalContext,
     cloudLayerCompleteness,
     cloudBasisConsistency,
   });
@@ -281,9 +294,111 @@ export function buildCloudSeaDisplayData(
       currentNearTermWeather,
       cloudLayerCompleteness,
       displayDataMeta,
+      precipitationSignalContext: displayPrecipitationSignalContext,
     }),
     displayDataMeta,
   };
+}
+
+function fallbackNearTermEnd(anchorStartLocal: string): string {
+  const startMs = Date.parse(anchorStartLocal);
+  if (!Number.isFinite(startMs)) {
+    return anchorStartLocal;
+  }
+  return new Date(startMs + 5 * 60 * 60 * 1000).toISOString();
+}
+
+function resolveCloudSeaDisplayHorizon(
+  result: ForecastCalculationResult,
+  rows: readonly ProfessionalHourlyDataPoint[],
+): ForecastWindowAnchor {
+  const timeBasis = result.professionalHourlyDataTimeBasis;
+  return resolveRollingForecastHorizon({
+    generatedAt: timeBasis?.generatedAtLocal ?? result.generatedAt ?? result.forecastStart,
+    timezone: timeBasis?.timezone ?? result.calendarBasis.timezone,
+    horizon: result.horizon,
+    requestedForecastHours:
+      timeBasis?.expectedRowCount ?? timeBasis?.requestedHours ?? result.calendarBasis.horizonHours,
+    providerRows: rows,
+    selectProviderRowTime: (row) => (row as ProfessionalHourlyDataPoint).time,
+  });
+}
+
+function buildDisplayProfessionalHourlyTimeBasis(
+  timeBasis: ProfessionalHourlyDataTimeBasis | null,
+  horizonWindow: ForecastWindowAnchor,
+  rows: readonly ProfessionalHourlyDataPoint[],
+): ProfessionalHourlyDataTimeBasis | null {
+  if (!timeBasis) {
+    return null;
+  }
+
+  const firstRow = rows[0];
+  const lastRow = rows.at(-1);
+  const partialData = timeBasis.partialData || rows.length < horizonWindow.expectedRowCount;
+  const shortCoverageNote =
+    rows.length < horizonWindow.expectedRowCount
+      ? "当前数据源返回的未来小时数不足，已展示可用未来时段。"
+      : null;
+
+  return {
+    ...timeBasis,
+    startTime: firstRow?.time ?? horizonWindow.anchorStartLocal,
+    endTime: lastRow?.time ?? horizonWindow.anchorEndLocal,
+    timezone: horizonWindow.timezone,
+    generatedAtLocal: horizonWindow.generatedAtLocal,
+    anchorStartLocal: horizonWindow.anchorStartLocal,
+    anchorEndLocal: horizonWindow.anchorEndLocal,
+    horizonHours: horizonWindow.horizonHours,
+    expectedRowCount: horizonWindow.expectedRowCount,
+    requestedHours: horizonWindow.requestedHours,
+    rule: horizonWindow.rule,
+    displayLabel: horizonWindow.displayLabel,
+    displayRangeZh: horizonWindow.displayRangeZh,
+    isFutureOnly: horizonWindow.isFutureOnly,
+    anchorRule: horizonWindow.anchorRule,
+    debugMeta: horizonWindow.debugMeta,
+    partialData,
+    missingDataNoteZh: shortCoverageNote ?? timeBasis.missingDataNoteZh,
+    professionalCoverageNoteZh: timeBasis.professionalCoverageNoteZh ?? shortCoverageNote ?? undefined,
+    fieldCoverageSummary: timeBasis.fieldCoverageSummary
+      ? {
+          ...timeBasis.fieldCoverageSummary,
+          totalHours: rows.length,
+        }
+      : timeBasis.fieldCoverageSummary,
+  };
+}
+
+function buildDisplayPrecipitationSignalContext(input: {
+  readonly input: BuildCloudSeaDisplayDataInput;
+  readonly rows: readonly ProfessionalHourlyDataPoint[];
+  readonly cloudLayerCompleteness: CloudLayerCompletenessContext;
+}): CloudSeaPrecipitationSignalContext {
+  const result = input.input.result;
+  const bestWindow =
+    result.cloudSeaAnalysis.bestCloudSeaWindow ??
+    result.cloudSeaAnalysis.bestCloudSeaWindows[0] ??
+    result.cloudSeaAnalysis.watchableCloudSeaWindows[0] ??
+    null;
+
+  return buildCloudSeaPrecipitationSignalContext({
+    hourlyRows: input.rows,
+    focusedWindow: bestWindow
+      ? {
+          startTime: bestWindow.startTime,
+          endTime: bestWindow.endTime,
+        }
+      : null,
+    bestWindow,
+    terrainContext: {
+      elevationMeters: input.input.terrainContext.elevationMeters,
+      surroundingReliefMeters: input.input.terrainContext.surroundingReliefMeters,
+      terrainMode: result.cloudSeaAnalysis.terrainSupport.terrainMode,
+      terrainType: input.input.terrainContext.terrainType,
+    },
+    cloudLayerCompletenessContext: input.cloudLayerCompleteness,
+  });
 }
 
 function buildCurrentNearTermWeatherDisplay(input: {
@@ -396,19 +511,16 @@ function buildCurrentNearTermWeatherDisplay(input: {
 
 function buildDisplayDataMeta(input: {
   readonly result: ForecastCalculationResult;
-  readonly timeBasis: ProfessionalHourlyDataTimeBasis | null;
-  readonly rows: readonly ProfessionalHourlyDataPoint[];
-  readonly normalizedRows: readonly ProfessionalHourlyDataPoint[];
-  readonly currentNearTermRows: readonly ProfessionalHourlyDataPoint[];
-  readonly anchorStart: string;
-  readonly anchorEnd: string;
+  readonly horizonWindow: ForecastWindowAnchor;
+  readonly displayRows: readonly ProfessionalHourlyDataPoint[];
+  readonly nearTermRows: readonly ProfessionalHourlyDataPoint[];
   readonly displayTemperatureContext: CloudSeaDisplayTemperatureContext;
   readonly precipitationSignalContext: CloudSeaPrecipitationSignalContext;
   readonly cloudLayerCompleteness: CloudLayerCompletenessContext;
   readonly cloudBasisConsistency: CloudSeaCloudBasisConsistencyContext;
 }): CloudSeaDisplayDataMeta {
   const precipitationSummary = precipitationSummaryForRows(
-    input.currentNearTermRows,
+    input.nearTermRows,
     input.precipitationSignalContext,
   );
   const staleWarnings = buildStaleFieldWarnings({
@@ -420,18 +532,26 @@ function buildDisplayDataMeta(input: {
 
   return {
     generatedAt: input.result.generatedAt,
-    timezone: input.timeBasis?.timezone ?? input.result.calendarBasis.timezone,
+    timezone: input.horizonWindow.timezone,
     horizon: input.result.horizon,
-    anchorStart: input.anchorStart,
-    anchorEnd: input.anchorEnd,
-    normalizedHourlyRowCount: input.normalizedRows.length,
+    anchorStart: input.horizonWindow.anchorStartLocal,
+    anchorEnd: input.horizonWindow.anchorEndLocal,
+    expectedRowCount: input.horizonWindow.expectedRowCount,
+    actualRowCount: input.displayRows.length,
+    firstRowTime: input.displayRows[0]?.time ?? null,
+    lastRowTime: input.displayRows.at(-1)?.time ?? null,
+    isRollingFutureRange: input.horizonWindow.rule === "rolling_future_hours",
+    displayRangeZh: input.horizonWindow.displayRangeZh,
+    normalizedHourlyRowCount: input.displayRows.length,
     cloudLayerCoverageSummary: cloudLayerCoverageSummary(input.cloudLayerCompleteness),
     temperatureBasis: input.displayTemperatureContext.basis,
     precipitationSignalType: input.precipitationSignalContext.precipitationSignalType,
     sourceAlignmentStatus:
-      input.rows.length === 0
+      input.displayRows.length === 0
         ? "missing_hourly_rows"
-        : staleWarnings.length > 0 || input.cloudBasisConsistency.shouldLowerCloudSeaConfidence
+        : input.displayRows.length < input.horizonWindow.expectedRowCount ||
+            staleWarnings.length > 0 ||
+            input.cloudBasisConsistency.shouldLowerCloudSeaConfidence
           ? "partial"
           : "aligned",
     staleFieldWarnings: staleWarnings,
@@ -443,11 +563,12 @@ function buildAiInterpretationDisplayPayload(input: {
   readonly currentNearTermWeather: CloudSeaCurrentNearTermWeatherDisplay;
   readonly cloudLayerCompleteness: CloudLayerCompletenessContext;
   readonly displayDataMeta: CloudSeaDisplayDataMeta;
+  readonly precipitationSignalContext: CloudSeaPrecipitationSignalContext;
 }): CloudSeaAiInterpretationDisplayPayload {
   const cloudSummary = cloudLayerSummary(input.currentNearTermWeather.rows);
   const precipitationSummary = precipitationSummaryForRows(
     input.currentNearTermWeather.rows,
-    input.input.ruleContext.precipitationSignalContext,
+    input.precipitationSignalContext,
   );
   return {
     finalRecommendation: {
@@ -471,17 +592,16 @@ function buildAiInterpretationDisplayPayload(input: {
       clothingAdviceZh: input.input.displayTemperatureContext.clothingAdviceZh,
     },
     precipitationSignalContext: {
-      precipitationSignalType: input.input.ruleContext.precipitationSignalContext.precipitationSignalType,
+      precipitationSignalType: input.precipitationSignalContext.precipitationSignalType,
       precipitationImpactLevel:
-        input.input.ruleContext.precipitationSignalContext.precipitationImpactLevel,
-      maxProbabilityPercent:
-        input.input.ruleContext.precipitationSignalContext.maxProbabilityPercent,
-      maxAmountMm: input.input.ruleContext.precipitationSignalContext.maxAmountMm,
-      riskLabelZh: input.input.ruleContext.precipitationSignalContext.riskLabelZh,
-      userSummaryZh: input.input.ruleContext.precipitationSignalContext.userSummaryZh,
-      actionAdviceZh: input.input.ruleContext.precipitationSignalContext.actionAdviceZh,
+        input.precipitationSignalContext.precipitationImpactLevel,
+      maxProbabilityPercent: input.precipitationSignalContext.maxProbabilityPercent,
+      maxAmountMm: input.precipitationSignalContext.maxAmountMm,
+      riskLabelZh: input.precipitationSignalContext.riskLabelZh,
+      userSummaryZh: input.precipitationSignalContext.userSummaryZh,
+      actionAdviceZh: input.precipitationSignalContext.actionAdviceZh,
       shouldDowngradeWindow:
-        input.input.ruleContext.precipitationSignalContext.shouldDowngradeWindow,
+        input.precipitationSignalContext.shouldDowngradeWindow,
     },
     cloudLayerCoverageContext: {
       cloudLayerBasis: input.cloudLayerCompleteness.cloudLayerBasis,
@@ -523,58 +643,6 @@ function compactWindow(window: CloudSeaProfessionalHourlyWindow): CloudSeaProfes
     endTime: window.endTime,
     label: window.label,
   };
-}
-
-function rowsAtOrAfter(
-  rows: readonly ProfessionalHourlyDataPoint[],
-  anchorStart: string,
-): readonly ProfessionalHourlyDataPoint[] {
-  const anchorMs = Date.parse(anchorStart);
-  if (!Number.isFinite(anchorMs)) {
-    return rows;
-  }
-  return rows.filter((row) => {
-    const rowMs = Date.parse(row.time);
-    return Number.isFinite(rowMs) && rowMs >= anchorMs;
-  });
-}
-
-function rowsForRange(
-  rows: readonly ProfessionalHourlyDataPoint[],
-  start: string,
-  end: string,
-): readonly ProfessionalHourlyDataPoint[] {
-  const startMs = Date.parse(start);
-  const endMs = Date.parse(end);
-  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
-    return [];
-  }
-  return rows.filter((row) => {
-    const rowMs = Date.parse(row.time);
-    return Number.isFinite(rowMs) && rowMs >= startMs && rowMs <= endMs;
-  });
-}
-
-function nearTermWindowEnd(startTime: string, forecastEnd: string): string {
-  const startTimestamp = Date.parse(startTime);
-  const forecastEndTimestamp = Date.parse(forecastEnd);
-  if (!Number.isFinite(startTimestamp)) {
-    return forecastEnd;
-  }
-  const sixHoursLater = new Date(startTimestamp + 6 * 60 * 60 * 1000).toISOString();
-  const sixHoursLaterTimestamp = Date.parse(sixHoursLater);
-  if (
-    Number.isFinite(forecastEndTimestamp) &&
-    Number.isFinite(sixHoursLaterTimestamp) &&
-    forecastEndTimestamp > startTimestamp
-  ) {
-    return new Date(Math.min(forecastEndTimestamp, sixHoursLaterTimestamp)).toISOString();
-  }
-  return sixHoursLater;
-}
-
-function firstValidTime(...values: readonly (string | undefined)[]): string {
-  return values.find((value) => value !== undefined && Number.isFinite(Date.parse(value))) ?? "";
 }
 
 function cloudLayerSummary(rows: readonly ProfessionalHourlyDataPoint[]) {

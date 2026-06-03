@@ -5421,6 +5421,9 @@ function professionalHourlyMissingHeaderNote(
   cloudLayerCompleteness: CloudLayerCompletenessContext,
   cloudBasisConsistency: CloudSeaCloudBasisConsistencyContext,
 ): string | null {
+  if (basis.partialData || rows.some(professionalHourlyRowHasIncompleteFields)) {
+    return professionalHourlyPartialDataNote(rows, basis);
+  }
   if (shouldShowCloudBasisProfessionalNote(cloudBasisConsistency)) {
     return professionalCloudBasisNote(cloudBasisConsistency);
   }
@@ -5445,9 +5448,6 @@ function professionalHourlyMissingHeaderNote(
   if (hasProviderTemperature && basis.temperatureBasis !== "terrain_adjusted") {
     return "当前仅有来源点位温度，未确认机位海拔修正。";
   }
-  if (basis.partialData) {
-    return professionalHourlyPartialDataNote(rows, basis);
-  }
   return null;
 }
 
@@ -5457,14 +5457,14 @@ function professionalHourlyIncompleteFieldNote(
   cloudLayerCompleteness: CloudLayerCompletenessContext,
   cloudBasisConsistency: CloudSeaCloudBasisConsistencyContext,
 ): string | null {
+  if (basis.partialData || rows.some(professionalHourlyRowHasIncompleteFields)) {
+    return professionalHourlyPartialDataNote(rows, basis);
+  }
   if (shouldShowCloudBasisProfessionalNote(cloudBasisConsistency)) {
     return professionalCloudBasisNote(cloudBasisConsistency);
   }
   if (cloudLayerCompleteness.layerCompletenessLevel !== "complete") {
     return cloudLayerCompleteness.professionalNoteZh;
-  }
-  if (basis.partialData || rows.some(professionalHourlyRowHasIncompleteFields)) {
-    return professionalHourlyPartialDataNote(rows, basis);
   }
   return null;
 }
@@ -5473,6 +5473,9 @@ function professionalHourlyPartialDataNote(
   rows: readonly ProfessionalHourlyRow[],
   basis: NonNullable<ForecastCalculationResult["professionalHourlyDataTimeBasis"]>,
 ): string {
+  if (rows.some(professionalHourlyRowHasIncompleteFields)) {
+    return professionalHourlyIncompleteFieldNoteText;
+  }
   if (
     typeof basis.requestedHours === "number" &&
     rows.length < basis.requestedHours &&

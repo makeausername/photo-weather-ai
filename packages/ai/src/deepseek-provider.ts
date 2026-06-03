@@ -489,6 +489,8 @@ export function buildCloudSeaAiExplainPayload(
   const professionalRows = professionalHourlyRowsAtOrAfterAnchor(
     result.professionalHourlyData ?? [],
     result.professionalHourlyDataTimeBasis?.anchorStartLocal,
+    result.professionalHourlyDataTimeBasis?.expectedRowCount ??
+      result.professionalHourlyDataTimeBasis?.requestedHours,
   );
   const focusedRows = professionalHourlyRowsForAiPayload(professionalRows, detail);
   const cloudLayerCompleteness = buildCloudLayerCompletenessContext(professionalRows);
@@ -931,16 +933,26 @@ function professionalHourlyRowsForAiPayload(
 function professionalHourlyRowsAtOrAfterAnchor(
   rows: NonNullable<ForecastCalculationResult["professionalHourlyData"]>,
   anchorStart: string | undefined,
+  expectedRowCount: number | undefined,
 ) {
   const anchorMs = Date.parse(anchorStart ?? "");
+  const rowLimit =
+    typeof expectedRowCount === "number" && Number.isFinite(expectedRowCount) && expectedRowCount > 0
+      ? Math.round(expectedRowCount)
+      : rows.length;
   if (!Number.isFinite(anchorMs)) {
-    return rows;
+    return rows.slice(0, rowLimit);
   }
 
-  return rows.filter((row) => {
-    const rowMs = Date.parse(row.time);
-    return Number.isFinite(rowMs) && rowMs >= anchorMs;
-  });
+  return rows
+    .map((row) => ({ row, timestamp: Date.parse(row.time) }))
+    .filter(
+      (entry): entry is { readonly row: (typeof rows)[number]; readonly timestamp: number } =>
+        Number.isFinite(entry.timestamp) && entry.timestamp >= anchorMs,
+    )
+    .sort((left, right) => left.timestamp - right.timestamp)
+    .slice(0, rowLimit)
+    .map((entry) => entry.row);
 }
 
 function countProfessionalHourlySignals(

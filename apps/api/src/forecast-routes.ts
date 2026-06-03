@@ -944,9 +944,19 @@ function createForecastInterpretationCacheKey(result: ForecastCalculationResult)
     },
     horizon: result.horizon,
     target: result.target,
+    timezone: result.professionalHourlyDataTimeBasis?.timezone ?? result.calendarBasis.timezone,
     forecastWindowAnchorStart:
       result.professionalHourlyDataTimeBasis?.anchorStartLocal ?? result.forecastStart,
+    forecastWindowAnchorEnd:
+      result.professionalHourlyDataTimeBasis?.anchorEndLocal ?? result.forecastEnd,
+    expectedRowCount:
+      result.professionalHourlyDataTimeBasis?.expectedRowCount ??
+      result.professionalHourlyDataTimeBasis?.requestedHours ??
+      result.calendarBasis.horizonHours,
     forecastGeneratedAtBucket: bucketForecastGeneratedAt(result.generatedAt),
+    weatherProviderCode: result.weatherProviderCode,
+    weatherDataMode: result.weatherDataMode,
+    weatherSourceVersion: result.weatherFusionSummary?.professionalSourceStatus,
     summary: result.summary,
     overallScore: result.overallScore,
     recommendationLabel: result.recommendationLabel,
@@ -1292,20 +1302,28 @@ function logCloudSeaDisplayAlignmentDiagnostics(
     result.forecastStart,
     result.generatedAt,
   );
-  const anchorEnd = nearTermDiagnosticWindowEnd(
-    anchorStart,
-    basis?.anchorEndLocal ?? basis?.endTime ?? result.forecastEnd,
+  const anchorEnd = basis?.anchorEndLocal ?? basis?.endTime ?? result.forecastEnd;
+  const expectedRowCount = normalizedDiagnosticRowCount(
+    basis?.expectedRowCount ?? basis?.requestedHours ?? result.calendarBasis.horizonHours,
   );
-  const normalizedRows = professionalRowsAtOrAfter(rows, anchorStart);
-  const nearTermRows = professionalRowsForRange(rows, anchorStart, anchorEnd);
-  const cloudLayerCoverage = buildCloudLayerCompletenessContext(rows);
+  const normalizedRows = professionalRowsAtOrAfter(rows, anchorStart).slice(0, expectedRowCount);
+  const nearTermRows = normalizedRows.slice(0, 6);
+  const nearTermEnd = nearTermRows.at(-1)?.time ?? nearTermDiagnosticWindowEnd(anchorStart, anchorEnd);
+  const cloudLayerCoverage = buildCloudLayerCompletenessContext(normalizedRows);
+  const sourceAlignmentStatus =
+    normalizedRows.length === 0
+      ? "missing_hourly_rows"
+      : normalizedRows.length < expectedRowCount ||
+          cloudLayerCoverage.layerCompletenessLevel !== "complete"
+        ? "partial"
+        : "aligned";
   const bestWindow =
     result.cloudSeaAnalysis.bestCloudSeaWindow ??
     result.cloudSeaAnalysis.bestCloudSeaWindows[0] ??
     result.cloudSeaAnalysis.watchableCloudSeaWindows[0] ??
     null;
   const precipitationSignal = buildCloudSeaPrecipitationSignalContext({
-    hourlyRows: rows,
+    hourlyRows: normalizedRows,
     focusedWindow: bestWindow
       ? {
           startTime: bestWindow.startTime,
@@ -1335,10 +1353,20 @@ function logCloudSeaDisplayAlignmentDiagnostics(
       route: "/forecast/calculate",
       target: result.target,
       displayDataBuilt: true,
+      horizon: result.horizon,
+      timezone: basis?.timezone ?? result.calendarBasis.timezone,
+      anchorStart,
+      anchorEnd,
+      expectedRowCount,
+      actualRowCount: normalizedRows.length,
+      firstRowTime: normalizedRows[0]?.time ?? null,
+      lastRowTime: normalizedRows.at(-1)?.time ?? null,
+      isRollingFutureRange: basis?.rule === "rolling_future_hours" || basis?.isFutureOnly === true,
+      sourceAlignmentStatus,
       normalizedHourlyRows: normalizedRows.length,
       nearTermRange: {
         anchorStart,
-        anchorEnd,
+        anchorEnd: nearTermEnd,
         rowCount: nearTermRows.length,
       },
       temperatureBasis: temperatureDiagnostics.temperatureBasis,
@@ -1355,7 +1383,7 @@ function logCloudSeaDisplayAlignmentDiagnostics(
         "rawGridTemperatureC as main display temperature",
       ],
       missingDisplayInputs:
-        rows.length === 0
+        normalizedRows.length === 0
           ? ["professionalHourlyData"]
           : cloudLayerCoverage.missingLayerFields.slice(0, 4),
     },
@@ -1477,6 +1505,12 @@ function nearTermDiagnosticWindowEnd(startTime: string, forecastEnd: string): st
   return sixHoursLater;
 }
 
+function normalizedDiagnosticRowCount(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.round(value)
+    : 24;
+}
+
 function professionalRowsAtOrAfter(
   rows: NonNullable<ForecastCalculationResult["professionalHourlyData"]>,
   anchorStart: string,
@@ -1485,26 +1519,16 @@ function professionalRowsAtOrAfter(
   if (!Number.isFinite(anchorMs)) {
     return rows;
   }
-  return rows.filter((row) => {
-    const rowMs = Date.parse(row.time);
-    return Number.isFinite(rowMs) && rowMs >= anchorMs;
-  });
-}
-
-function professionalRowsForRange(
-  rows: NonNullable<ForecastCalculationResult["professionalHourlyData"]>,
-  start: string,
-  end: string,
-): NonNullable<ForecastCalculationResult["professionalHourlyData"]> {
-  const startMs = Date.parse(start);
-  const endMs = Date.parse(end);
-  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
-    return [];
-  }
-  return rows.filter((row) => {
-    const rowMs = Date.parse(row.time);
-    return Number.isFinite(rowMs) && rowMs >= startMs && rowMs <= endMs;
-  });
+  return rows
+    .map((row) => ({ row, timestamp: Date.parse(row.time) }))
+    .filter(
+      (entry): entry is {
+        readonly row: NonNullable<ForecastCalculationResult["professionalHourlyData"]>[number];
+        readonly timestamp: number;
+      } => Number.isFinite(entry.timestamp) && entry.timestamp >= anchorMs,
+    )
+    .sort((left, right) => left.timestamp - right.timestamp)
+    .map((entry) => entry.row);
 }
 
 function logForecastCalculationFailure(options: {

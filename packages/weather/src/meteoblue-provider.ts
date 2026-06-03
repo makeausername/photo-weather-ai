@@ -914,6 +914,8 @@ export class MeteoblueRealProvider implements WeatherProvider {
       latitude: input.coordinates.latitude,
       longitude: input.coordinates.longitude,
       elevationMeters: input.elevationMeters ?? this.options.elevationMeters,
+      horizon: input.horizon,
+      forecastWindowAnchorStart: input.forecastWindowAnchorStart,
       timezone: input.timezone ?? this.options.timezone,
     });
   }

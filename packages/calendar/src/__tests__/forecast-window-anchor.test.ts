@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   filterRowsToForecastWindow,
   resolveForecastWindowRange,
+  resolveRollingForecastHorizon,
 } from "../forecast-window-anchor.js";
 
 type HourRow = {
@@ -9,6 +10,28 @@ type HourRow = {
 };
 
 describe("forecast window anchor", () => {
+  it("resolves future24 as 24 rolling hours across midnight", () => {
+    const range = resolveRollingForecastHorizon({
+      generatedAt: "2026-06-02T16:20:00+08:00",
+      timezone: "Asia/Shanghai",
+      horizon: "24h",
+    });
+    const rows = hourlyRows("2026-06-02T00:00:00+08:00", 72);
+    const filtered = filterRowsToForecastWindow(rows, range, (row) => row.time);
+
+    expect(range).toMatchObject({
+      rule: "rolling_future_hours",
+      anchorStartLocal: "2026-06-02T17:00:00+08:00",
+      anchorEndLocal: "2026-06-03T16:00:00+08:00",
+      horizonHours: 24,
+      expectedRowCount: 24,
+    });
+    expect(filtered).toHaveLength(24);
+    expect(filtered[0]?.time).toBe("2026-06-02T17:00:00+08:00");
+    expect(filtered.at(-1)?.time).toBe("2026-06-03T16:00:00+08:00");
+    expect(filtered.some((row) => row.time.endsWith("23:00:00+08:00"))).toBe(true);
+  });
+
   it("starts future24 from the next forecast hour for an 08:28 generation time", () => {
     const range = resolveForecastWindowRange({
       generatedAt: "2026-06-02T08:28:00+08:00",
@@ -22,6 +45,8 @@ describe("forecast window anchor", () => {
       generatedAtLocal: "2026-06-02T08:28:00+08:00",
       anchorStartLocal: "2026-06-02T09:00:00+08:00",
       anchorEndLocal: "2026-06-03T08:00:00+08:00",
+      rule: "rolling_future_hours",
+      expectedRowCount: 24,
       requestedHours: 24,
       isFutureOnly: true,
       anchorRule: "future_hour_ceil_to_next_hour",
@@ -34,13 +59,18 @@ describe("forecast window anchor", () => {
 
   it("rolls a late-night generated forecast to next-day midnight", () => {
     const range = resolveForecastWindowRange({
-      generatedAt: "2026-06-02T23:20:00+08:00",
+      generatedAt: "2026-06-02T23:40:00+08:00",
       timezone: "Asia/Shanghai",
       horizon: "24h",
     });
+    const rows = hourlyRows("2026-06-02T00:00:00+08:00", 72);
+    const filtered = filterRowsToForecastWindow(rows, range, (row) => row.time);
 
     expect(range.anchorStartLocal).toBe("2026-06-03T00:00:00+08:00");
     expect(range.anchorEndLocal).toBe("2026-06-03T23:00:00+08:00");
+    expect(filtered).toHaveLength(24);
+    expect(filtered[0]?.time).toBe("2026-06-03T00:00:00+08:00");
+    expect(filtered.at(-1)?.time).toBe("2026-06-03T23:00:00+08:00");
   });
 
   it("keeps the current full hour but never includes earlier same-day rows", () => {
@@ -55,6 +85,32 @@ describe("forecast window anchor", () => {
     expect(range.anchorStartLocal).toBe("2026-06-02T08:00:00+08:00");
     expect(filtered[0]?.time).toBe("2026-06-02T08:00:00+08:00");
     expect(filtered.some((row) => row.time < "2026-06-02T08:00:00+08:00")).toBe(false);
+  });
+
+  it("keeps an exact-hour anchor when no provider rows are available", () => {
+    const range = resolveRollingForecastHorizon({
+      generatedAt: "2026-06-02T08:00:00+08:00",
+      timezone: "Asia/Shanghai",
+      horizon: "24h",
+      providerRows: [],
+      selectProviderRowTime: (row) => (row as HourRow).time,
+    });
+
+    expect(range.anchorStartLocal).toBe("2026-06-02T08:00:00+08:00");
+    expect(range.debugMeta.anchorStartSource).toBe("current_hour");
+  });
+
+  it("moves an exact-hour anchor forward when provider rows start after the current hour", () => {
+    const range = resolveRollingForecastHorizon({
+      generatedAt: "2026-06-02T08:00:00+08:00",
+      timezone: "Asia/Shanghai",
+      horizon: "24h",
+      providerRows: hourlyRows("2026-06-02T09:00:00+08:00", 24),
+      selectProviderRowTime: (row) => (row as HourRow).time,
+    });
+
+    expect(range.anchorStartLocal).toBe("2026-06-02T09:00:00+08:00");
+    expect(range.debugMeta.anchorStartSource).toBe("next_full_hour");
   });
 
   it("normalizes provider UTC rows before filtering", () => {
@@ -94,8 +150,40 @@ describe("forecast window anchor", () => {
 
     expect(future48).toHaveLength(48);
     expect(future48[0]?.time).toBe("2026-06-02T09:00:00+08:00");
+    expect(future48.at(-1)?.time).toBe("2026-06-04T08:00:00+08:00");
     expect(future72).toHaveLength(72);
     expect(future72[0]?.time).toBe("2026-06-02T09:00:00+08:00");
+    expect(future72.at(-1)?.time).toBe("2026-06-05T08:00:00+08:00");
+  });
+
+  it("crosses a year boundary without a calendar-day clamp", () => {
+    const range = resolveRollingForecastHorizon({
+      generatedAt: "2026-12-31T23:20:00+08:00",
+      timezone: "Asia/Shanghai",
+      horizon: "24h",
+    });
+    const rows = hourlyRows("2026-12-31T00:00:00+08:00", 72);
+    const filtered = filterRowsToForecastWindow(rows, range, (row) => row.time);
+
+    expect(range.anchorStartLocal).toBe("2027-01-01T00:00:00+08:00");
+    expect(range.anchorEndLocal).toBe("2027-01-01T23:00:00+08:00");
+    expect(filtered).toHaveLength(24);
+    expect(filtered[0]?.time).toBe("2027-01-01T00:00:00+08:00");
+    expect(filtered.at(-1)?.time).toBe("2027-01-01T23:00:00+08:00");
+  });
+
+  it("excludes all provider rows before the rolling future anchor", () => {
+    const range = resolveRollingForecastHorizon({
+      generatedAt: "2026-06-02T10:26:00+08:00",
+      timezone: "Asia/Shanghai",
+      horizon: "24h",
+    });
+    const rows = hourlyRows("2026-06-02T00:00:00+08:00", 36);
+    const filtered = filterRowsToForecastWindow(rows, range, (row) => row.time);
+
+    expect(range.anchorStartLocal).toBe("2026-06-02T11:00:00+08:00");
+    expect(filtered[0]?.time).toBe("2026-06-02T11:00:00+08:00");
+    expect(filtered.some((row) => row.time < "2026-06-02T11:00:00+08:00")).toBe(false);
   });
 });
 

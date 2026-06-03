@@ -8,6 +8,7 @@ export type WeatherCacheKeyInput = {
   readonly horizon: ForecastHorizon;
   readonly forecastStart: string;
   readonly forecastWindowAnchorStart?: string;
+  readonly timezone?: string;
   readonly target?: ForecastTarget;
   readonly purpose: WeatherCachePurpose;
   readonly runtimeSignature?: string;
@@ -40,6 +41,7 @@ export function buildWeatherCacheKey(input: WeatherCacheKeyInput): string {
     input.runtimeSignature ?? "runtime:any",
     coordinateKey,
     input.horizon,
+    input.timezone ?? "timezone:any",
     `generated:${startBucket}`,
     `anchor:${anchorBucket}`,
     input.target ?? "any",

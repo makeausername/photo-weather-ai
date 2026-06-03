@@ -4,17 +4,29 @@ import { addHours, format } from "date-fns";
 export type ForecastWindowHorizon = "24h" | "48h" | "72h" | "7d";
 
 export type ForecastWindowAnchorRule = "future_hour_ceil_to_next_hour";
+export type RollingForecastHorizonRule = "rolling_future_hours";
 
 export type ForecastWindowAnchor = {
+  readonly horizon: ForecastWindowHorizon;
   readonly timezone: string;
   readonly generatedAtLocal: string;
   readonly anchorStartLocal: string;
   readonly anchorEndLocal: string;
   readonly anchorEndExclusiveLocal: string;
+  readonly horizonHours: number;
+  readonly expectedRowCount: number;
   readonly requestedHours: number;
+  readonly rule: RollingForecastHorizonRule;
   readonly displayLabel: string;
+  readonly displayRangeZh: string;
   readonly isFutureOnly: boolean;
   readonly anchorRule: ForecastWindowAnchorRule;
+  readonly debugMeta: {
+    readonly allowCurrentHour: boolean;
+    readonly providerRowsSupplied: boolean;
+    readonly providerRowCount: number;
+    readonly anchorStartSource: "current_hour" | "next_full_hour";
+  };
 };
 
 export type ForecastWindowAnchorInput = {
@@ -23,6 +35,9 @@ export type ForecastWindowAnchorInput = {
   readonly timezone?: string;
   readonly horizon: ForecastWindowHorizon;
   readonly requestedForecastHours?: number;
+  readonly providerRows?: readonly unknown[];
+  readonly selectProviderRowTime?: (row: unknown) => string | null | undefined;
+  readonly allowCurrentHour?: boolean;
 };
 
 const defaultForecastTimezone = "Asia/Shanghai";
@@ -60,27 +75,49 @@ export function bufferedForecastRequestHours(horizon: ForecastWindowHorizon): nu
   }
 }
 
-export function resolveForecastWindowRange(input: ForecastWindowAnchorInput): ForecastWindowAnchor {
+export function resolveRollingForecastHorizon(
+  input: ForecastWindowAnchorInput,
+): ForecastWindowAnchor {
   const timezone = normalizeTimezone(input.timezone);
   const generatedAt = toValidDate(input.generatedAt ?? input.now ?? new Date());
   const requestedHours = normalizedRequestedHours(
     input.requestedForecastHours ?? forecastWindowHoursForHorizon(input.horizon),
   );
-  const anchorStart = ceilToNextForecastHour(generatedAt, timezone);
+  const anchorStartResolution = resolveAnchorStart(generatedAt, timezone, input);
+  const anchorStart = anchorStartResolution.anchorStart;
   const anchorEnd = addHours(anchorStart, Math.max(0, requestedHours - 1));
   const anchorEndExclusive = addHours(anchorStart, requestedHours);
+  const generatedAtLocal = formatZonedIsoLocal(generatedAt, timezone);
+  const anchorStartLocal = formatZonedIsoLocal(anchorStart, timezone);
+  const anchorEndLocal = formatZonedIsoLocal(anchorEnd, timezone);
+  const anchorEndExclusiveLocal = formatZonedIsoLocal(anchorEndExclusive, timezone);
 
   return {
+    horizon: input.horizon,
     timezone,
-    generatedAtLocal: formatZonedIsoLocal(generatedAt, timezone),
-    anchorStartLocal: formatZonedIsoLocal(anchorStart, timezone),
-    anchorEndLocal: formatZonedIsoLocal(anchorEnd, timezone),
-    anchorEndExclusiveLocal: formatZonedIsoLocal(anchorEndExclusive, timezone),
+    generatedAtLocal,
+    anchorStartLocal,
+    anchorEndLocal,
+    anchorEndExclusiveLocal,
+    horizonHours: requestedHours,
+    expectedRowCount: requestedHours,
     requestedHours,
+    rule: "rolling_future_hours",
     displayLabel: horizonDisplayLabels[input.horizon],
+    displayRangeZh: formatDisplayRangeZh(anchorStart, anchorEnd, timezone),
     isFutureOnly: true,
     anchorRule: "future_hour_ceil_to_next_hour",
+    debugMeta: {
+      allowCurrentHour: input.allowCurrentHour !== false,
+      providerRowsSupplied: input.providerRows !== undefined,
+      providerRowCount: input.providerRows?.length ?? 0,
+      anchorStartSource: anchorStartResolution.source,
+    },
   };
+}
+
+export function resolveForecastWindowRange(input: ForecastWindowAnchorInput): ForecastWindowAnchor {
+  return resolveRollingForecastHorizon(input);
 }
 
 export function filterRowsToForecastWindow<TRow>(
@@ -89,8 +126,7 @@ export function filterRowsToForecastWindow<TRow>(
   selectTime: (row: TRow) => string | null | undefined,
 ): readonly TRow[] {
   const startMs = Date.parse(range.anchorStartLocal);
-  const endExclusiveMs = Date.parse(range.anchorEndExclusiveLocal);
-  if (!Number.isFinite(startMs) || !Number.isFinite(endExclusiveMs) || endExclusiveMs <= startMs) {
+  if (!Number.isFinite(startMs)) {
     return [];
   }
 
@@ -99,15 +135,18 @@ export function filterRowsToForecastWindow<TRow>(
     .filter(
       (entry): entry is { readonly row: TRow; readonly timestamp: number } =>
         Number.isFinite(entry.timestamp) &&
-        entry.timestamp >= startMs &&
-        entry.timestamp < endExclusiveMs,
+        entry.timestamp >= startMs,
     )
     .sort((left, right) => left.timestamp - right.timestamp)
-    .slice(0, range.requestedHours)
+    .slice(0, range.expectedRowCount)
     .map((entry) => entry.row);
 }
 
-function ceilToNextForecastHour(date: Date, timezone: string): Date {
+function resolveAnchorStart(
+  date: Date,
+  timezone: string,
+  input: Pick<ForecastWindowAnchorInput, "allowCurrentHour" | "providerRows" | "selectProviderRowTime">,
+): { readonly anchorStart: Date; readonly source: ForecastWindowAnchor["debugMeta"]["anchorStartSource"] } {
   const zoned = TZDate.tz(timezone, date);
   const floored = TZDate.tz(
     timezone,
@@ -124,7 +163,22 @@ function ceilToNextForecastHour(date: Date, timezone: string): Date {
     zoned.getSeconds() === 0 &&
     zoned.getMilliseconds() === 0;
 
-  return isExactHour ? floored : addHours(floored, 1);
+  if (!isExactHour || input.allowCurrentHour === false) {
+    return { anchorStart: addHours(floored, 1), source: "next_full_hour" };
+  }
+
+  if (input.providerRows !== undefined && input.providerRows.length > 0 && input.selectProviderRowTime) {
+    const currentHourMs = floored.getTime();
+    const hasCurrentProviderRow = input.providerRows.some((row) => {
+      const timestamp = Date.parse(input.selectProviderRowTime?.(row) ?? "");
+      return Number.isFinite(timestamp) && timestamp === currentHourMs;
+    });
+    if (!hasCurrentProviderRow) {
+      return { anchorStart: addHours(floored, 1), source: "next_full_hour" };
+    }
+  }
+
+  return { anchorStart: floored, source: "current_hour" };
 }
 
 function normalizedRequestedHours(value: number): number {
@@ -152,6 +206,12 @@ function formatZonedIsoLocal(date: Date, timezone: string): string {
   });
   const offset = tzOffset(timezone, date);
   return `${localDateTime}${formatOffset(offset)}`;
+}
+
+function formatDisplayRangeZh(start: Date, end: Date, timezone: string): string {
+  const startText = format(start, "yyyy年M月d日 HH:mm", { in: tz(timezone) });
+  const endText = format(end, "yyyy年M月d日 HH:mm", { in: tz(timezone) });
+  return `${startText} 至 ${endText}`;
 }
 
 function formatOffset(offsetMinutes: number): string {

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@photo-weather/astro": "workspace:*",
+    "@photo-weather/calendar": "workspace:*",
     "@photo-weather/config": "workspace:*",
     "@photo-weather/shared": "workspace:*",
     "next": "14.2.3",

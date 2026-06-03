@@ -81,11 +81,12 @@ const signalRoleRank: Record<CloudSeaCloudLayerRoleContext["dominantRole"], numb
 
 export function buildCloudSeaRuleContext(result: ForecastCalculationResult): CloudSeaRuleContext {
   const terrainContext = buildCloudSeaTerrainContextFromResult(result);
+  const professionalHourlyRows = rollingProfessionalHourlyRowsForResult(result);
   const cloudLayerCompletenessContext = buildCloudLayerCompletenessContext(
-    result.professionalHourlyData,
+    professionalHourlyRows,
   );
   const cloudBasisConsistencyContext = buildCloudSeaCloudBasisConsistencyContext({
-    hourlyRows: result.professionalHourlyData,
+    hourlyRows: professionalHourlyRows,
     cloudLayerCompletenessContext,
   });
   const multiSourceAgreementContext =
@@ -96,7 +97,7 @@ export function buildCloudSeaRuleContext(result: ForecastCalculationResult): Clo
     result.cloudSeaAnalysis.watchableCloudSeaWindows[0] ??
     null;
   const precipitationSignalContext = buildCloudSeaPrecipitationSignalContext({
-    hourlyRows: result.professionalHourlyData,
+    hourlyRows: professionalHourlyRows,
     focusedWindow: bestWindow
       ? {
           startTime: bestWindow.startTime,
@@ -123,7 +124,7 @@ export function buildCloudSeaRuleContext(result: ForecastCalculationResult): Clo
       terrainType: terrainContext.terrainType,
       isClassicCloudSeaEligible: terrainContext.isClassicCloudSeaEligible,
     },
-    hourlyRows: result.professionalHourlyData,
+    hourlyRows: professionalHourlyRows,
     focusedWindow: bestWindow
       ? {
           startTime: bestWindow.startTime,
@@ -150,12 +151,46 @@ export function buildCloudSeaRuleContext(result: ForecastCalculationResult): Clo
     terrainContext,
     cloudLayerCompletenessContext,
     cloudBasisConsistencyContext,
-    cloudLayerRoleContext: buildCloudLayerRoleContext(result.professionalHourlyData),
+    cloudLayerRoleContext: buildCloudLayerRoleContext(professionalHourlyRows),
     weatherVariableConsistencyContext,
     precipitationSignalContext,
     multiSourceAgreementContext,
     recommendationGuardContext,
   };
+}
+
+function rollingProfessionalHourlyRowsForResult(
+  result: ForecastCalculationResult,
+): readonly ProfessionalHourlyDataPoint[] {
+  const rows = result.professionalHourlyData ?? [];
+  const anchorMs = Date.parse(
+    result.professionalHourlyDataTimeBasis?.anchorStartLocal ?? result.forecastStart,
+  );
+  const expectedRowCount =
+    normalizedRowCount(
+      result.professionalHourlyDataTimeBasis?.expectedRowCount ??
+        result.professionalHourlyDataTimeBasis?.requestedHours ??
+        result.calendarBasis?.horizonHours,
+    ) ?? rows.length;
+  if (!Number.isFinite(anchorMs)) {
+    return rows.slice(0, expectedRowCount);
+  }
+
+  return rows
+    .map((row) => ({ row, timestamp: Date.parse(row.time) }))
+    .filter(
+      (entry): entry is { readonly row: ProfessionalHourlyDataPoint; readonly timestamp: number } =>
+        Number.isFinite(entry.timestamp) && entry.timestamp >= anchorMs,
+    )
+    .sort((left, right) => left.timestamp - right.timestamp)
+    .slice(0, expectedRowCount)
+    .map((entry) => entry.row);
+}
+
+function normalizedRowCount(value: number | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.round(value)
+    : undefined;
 }
 
 export function buildCloudSeaRecommendationGuardForRuleContext(

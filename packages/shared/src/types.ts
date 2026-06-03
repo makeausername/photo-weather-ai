@@ -315,10 +315,20 @@ export type ProfessionalHourlyDataTimeBasis = {
   readonly generatedAtLocal?: string;
   readonly anchorStartLocal?: string;
   readonly anchorEndLocal?: string;
+  readonly horizonHours?: number;
+  readonly expectedRowCount?: number;
   readonly requestedHours?: number;
+  readonly rule?: string;
   readonly displayLabel?: string;
+  readonly displayRangeZh?: string;
   readonly isFutureOnly?: boolean;
   readonly anchorRule?: string;
+  readonly debugMeta?: {
+    readonly allowCurrentHour?: boolean;
+    readonly providerRowsSupplied?: boolean;
+    readonly providerRowCount?: number;
+    readonly anchorStartSource?: string;
+  };
   readonly temperatureBasis: ProfessionalHourlyTemperatureBasis;
   readonly temperatureBasisNoteZh: string;
   readonly cloudLayerBasis: ProfessionalHourlyCloudLayerBasis;

@@ -395,6 +395,8 @@ export class OpenMeteoForecastCloudLayerProvider implements WeatherProvider {
       longitude: input.coordinates.longitude,
       elevationMeters: input.elevationMeters,
       hours: requestedForecastHours(input.hours),
+      horizon: input.horizon,
+      forecastWindowAnchorStart: input.forecastWindowAnchorStart,
       timezone: input.timezone,
     });
   }

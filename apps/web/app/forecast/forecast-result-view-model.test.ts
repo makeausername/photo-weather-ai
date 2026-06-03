@@ -4762,7 +4762,7 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("CloudSeaNearTermWeather");
       expect(html).toContain('data-forecast-current-weather-cards="true"');
       expect(html).toContain('data-result-current-weather-section="true"');
-      expect(html).toContain("当前与近时段天气（2026年5月20日 00:00–06:00）");
+      expect(html).toContain("当前与近时段天气（2026年5月20日 00:00–05:00）");
       expect(html).toContain("气温与体感");
       expect(html).toContain("云层与能见度");
       expect(html).toContain("风与降水");
@@ -4988,7 +4988,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("云量口径");
     expect(html).toContain("总云量 + 低/中/高云分层");
     expect(html).toContain("缺失说明");
-    expect(html).toContain("部分小时字段缺失，缺失值以 “—” 显示。");
+    expect(html).toContain("当前数据源返回的未来小时数不足，已展示可用未来时段。");
     expect(html).toContain("全部小时");
     expect(html).toContain("只看云海窗口");
     expect(html).toContain("只看清晨窗口");
