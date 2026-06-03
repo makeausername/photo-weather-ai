@@ -96,7 +96,7 @@ export function buildCloudSeaRecommendationExplanation(
     finalLabel,
   });
   const scoreRecommendationDivider =
-    "评分代表云层机会；推荐等级会额外考虑降水、地形、数据完整性、窗口稳定性和出行成本。";
+    "评分看云层机会，推荐还会考虑降水、地形、数据完整性和出行成本。";
   const whyNotStrongerZh = buildWhyNotStronger({
     finalLevel,
     finalLabel,
@@ -133,11 +133,9 @@ export function buildCloudSeaRecommendationExplanation(
     subjectLabel,
     actionSummaryZh,
   });
-  const userFacingSummaryZh = uniqueText([
-    oneLineConclusionZh,
-    scoreRecommendationDivider,
-    whyNotStrongerZh,
-  ]).join(" ");
+  const userFacingSummaryZh = uniqueText([oneLineConclusionZh, scoreRecommendationDivider]).join(
+    " ",
+  );
 
   return {
     oneLineConclusionZh,
@@ -278,12 +276,12 @@ function buildScoreReason(input: {
   readonly subjectLabel: string;
 }): string {
   if (input.score >= 70) {
-    return `${input.subjectLabel}评分较高，主要来自云层形成和可拍窗口信号；形成 ${input.formationScore} 分，可拍 ${input.shootabilityScore} 分。`;
+    return `${input.subjectLabel}评分较高：形成 ${input.formationScore} 分，可拍 ${input.shootabilityScore} 分。`;
   }
   if (input.score >= 45) {
-    return `${input.subjectLabel}有一定信号，但形成 ${input.formationScore} 分、可拍 ${input.shootabilityScore} 分仍未达到高确定性窗口。`;
+    return `${input.subjectLabel}有一定信号：形成 ${input.formationScore} 分，可拍 ${input.shootabilityScore} 分。`;
   }
-  return `${input.subjectLabel}核心证据不足，形成 ${input.formationScore} 分、可拍 ${input.shootabilityScore} 分都不适合作为专程依据。`;
+  return `${input.subjectLabel}核心证据不足：形成 ${input.formationScore} 分，可拍 ${input.shootabilityScore} 分。`;
 }
 
 function buildCautionReason(input: {
@@ -294,16 +292,16 @@ function buildCautionReason(input: {
   readonly finalLabel: string;
 }): string {
   if (input.finalLevel === "do_not_go_special") {
-    return `${input.subjectLabel}证据不足，${input.primaryBlocker}，不建议专程。`;
+    return `${input.subjectLabel}证据不足，不建议专程。`;
   }
   if (input.finalLevel === "backup_only") {
-    return `${input.subjectLabel}可作为备选观察，但${input.primaryBlocker}，不建议只为该窗口专程。`;
+    return `${input.subjectLabel}可作为备选观察，但${input.primaryBlocker}。`;
   }
   if (input.finalLevel === "cautious_reference" || input.finalLevel === "observe_if_nearby") {
-    return `${input.subjectLabel}机会存在，但${input.primaryBlocker}，因此为${input.finalLabel}。`;
+    return `${input.primaryBlocker}，按${input.finalLabel}处理。`;
   }
   if (input.blockers.length > 0) {
-    return `主窗口可安排，但${input.primaryBlocker}，需要出发前复核。`;
+    return `主窗口可安排，出发前复核${input.primaryBlocker}。`;
   }
   return `地形、云层、窗口和风险条件支持${input.finalLabel}。`;
 }
@@ -316,7 +314,7 @@ function buildWhyNotStronger(input: {
   readonly subjectLabel: string;
 }): string {
   if (strongRecommendationLevels.has(input.finalLevel)) {
-    return "当前未被关键 guard 阻断，但仍需按短临预报和现场条件复核。";
+    return "当前没有关键阻断，但仍需按短临预报和现场条件复核。";
   }
   const reason = input.blockers[0] ?? "窗口稳定性和出行成本仍需复核";
   if (input.score >= 70) {
@@ -360,13 +358,13 @@ function buildConfidenceExplanation(input: {
     return "置信度降低：低/中/高云分层不足，不能把总云量当作云海证据。";
   }
   if (input.input.cloudBasisConsistencyContext?.shouldLowerCloudSeaConfidence) {
-    return "云量口径不一致，需临近复核：云量口径、分层覆盖或低云数据不完整，需要临近复核。";
+    return "云量口径或分层覆盖不完整，置信度需下调。";
   }
   if (input.input.multiSourceAgreementContext?.shouldLowerConfidence) {
     return "置信度降低：多源低云或降水判断存在分歧。";
   }
   if (input.input.weatherVariableConsistencyContext?.shouldLowerConfidence) {
-    return "关键天气变量存在冲突，需临近复核：温湿度、露点差或降水变量需要统一口径后再判断。";
+    return "温湿度、露点差或降水变量存在口径差异，需统一口径后再判断。";
   }
   if (arrangementRecommendationLevels.has(input.finalLevel) && input.blockers.length === 0) {
     return `置信度较高：${input.subjectLabel}形成、可拍窗口和主要风险没有出现明显冲突。`;
@@ -405,19 +403,23 @@ function buildOneLineConclusion(input: {
   readonly actionSummaryZh: string;
 }): string {
   if (input.finalLevel === "do_not_go_special" || input.score < 40) {
-    return `${input.subjectLabel}核心证据不足，建议等待下一次预报更新，或转向通透、层云、霞光等备选题材。`;
+    return `${input.subjectLabel}核心证据不足，不建议专程等待。`;
   }
   if (input.finalLevel === "backup_only") {
-    return `${input.subjectLabel}有一定信号，但${input.primaryBlocker}，适合作为备选观察，不建议只为${input.subjectLabel}专程。`;
+    return input.subjectLabel === "云海"
+      ? "云层有一定信号，但证据不够稳定，适合作为备选观察。"
+      : "低云和晨雾有一定信号，但证据不够稳定，适合作为顺带观察。";
   }
   if (
     input.score >= 70 &&
     !strongRecommendationLevels.has(input.finalLevel)
   ) {
-    return `${input.subjectLabel}云层条件较好，主窗口值得关注；但${input.primaryBlocker}，因此建议${input.finalLabel}，不直接强推专程。`;
+    return input.subjectLabel === "云海"
+      ? "云层条件较好，但窗口稳定性和现场云顶高度仍需复核，因此不直接强推专程。"
+      : "低云和晨雾信号较好，但窗口稳定性和现场通透度仍需复核，因此不建议专程。";
   }
   if (input.finalLevel === "cautious_reference" || input.finalLevel === "observe_if_nearby") {
-    return `${input.subjectLabel}机会存在，但${input.primaryBlocker}，建议${input.finalLabel}并等待临近复核。`;
+    return `${input.subjectLabel}机会存在，但${input.primaryBlocker}，建议${input.finalLabel}。`;
   }
   return `${input.subjectLabel}条件支持${input.finalLabel}；${input.actionSummaryZh}`;
 }

@@ -2260,8 +2260,8 @@ function terrainTemperaturePrefix(
   }
   if (resultUsesMountainSemantics(result)) {
     return result?.terrainAnalysis?.terrainProfile?.elevationConfidence === "low"
-      ? "山顶参考温度"
-      : "山顶估算温度";
+      ? "机位参考温度"
+      : "机位估算温度";
   }
   return "机位估算温度";
 }
@@ -2907,7 +2907,10 @@ export function CloudSeaResultPage({
         />
         <CloudSeaReasoningSection items={viewModel.reasoningItems} />
         <CloudSeaActionPlanSection items={viewModel.actionPlan} />
-        <CloudSeaRiskSummarySection riskSummary={viewModel.riskSummary} />
+        <CloudSeaRiskSummarySection
+          riskSummary={viewModel.riskSummary}
+          terrainContext={viewModel.terrainContext}
+        />
         {viewModel.dataCaution ? <CloudSeaInlineCaution text={viewModel.dataCaution} /> : null}
         {returnUrl ? <CloudSeaReturnLink href={returnUrl} /> : null}
         <section className="mt-1 sm:mt-2" data-cloud-sea-section="CloudSeaAiInterpretation">
@@ -4194,9 +4197,28 @@ function CloudSeaScoreCard({
       score={score}
       badgeLabel={hero.recommendationLabel}
       badgeVariant={recommendationBadgeVariant(hero.recommendationLabel)}
-      summary={`${recommendationExplanation.scoreReasonZh} ${recommendationExplanation.cautionReasonZh}`}
+      summary={cloudSeaScoreCardSummary(
+        score,
+        hero.recommendationLabel,
+        recommendationExplanation,
+        terrainContext,
+      )}
     />
   );
+}
+
+function cloudSeaScoreCardSummary(
+  score: number,
+  recommendationLabel: string,
+  recommendationExplanation: CloudSeaForecastViewModel["recommendationExplanation"],
+  terrainContext: CloudSeaTerrainContext,
+): string {
+  if (score >= 70 && !recommendationLabel.includes("强推荐")) {
+    return terrainContext.shouldDowngradeCloudSeaWording
+      ? "低云和晨雾信号较好，但窗口稳定性和现场通透度仍需复核。"
+      : "云层条件较好，但窗口稳定性和现场云顶高度仍需复核。";
+  }
+  return firstSentence(recommendationExplanation.scoreReasonZh);
 }
 
 function cloudSeaDataBadgeLabel(result: ForecastCalculationResult): string {
@@ -4278,7 +4300,7 @@ function cloudSeaDecisionCards(
       "recommendation",
       "推荐等级",
       hero.recommendationLabel,
-      recommendationExplanation.userFacingSummaryZh,
+      firstSentence(recommendationExplanation.oneLineConclusionZh),
       cloudSeaRecommendationTone(hero.recommendationLabel),
     ),
     textCard(
@@ -4286,7 +4308,7 @@ function cloudSeaDecisionCards(
       "bestWindow",
       recommendationGuard.normalizedWindowRecommendation.metricLabel,
       hero.bestWindowLabel,
-      recommendationExplanation.actionSummaryZh,
+      firstSentence(recommendationExplanation.actionSummaryZh),
       "accent",
     ),
     textCard(
@@ -4295,8 +4317,8 @@ function cloudSeaDecisionCards(
       "建议到达",
       hero.arrivalLabel,
       terrainContext.shouldDowngradeCloudSeaWording
-        ? "到达后先观察近地雾气、低云是否贴地、远山层次和通透度。"
-        : "到达后先观察云顶高度、低云厚度和远山层次，再决定是否继续守远景机位。",
+        ? "窗口前到位，先看低云是否贴地、远山层次和通透度。"
+        : "窗口前到位，先看云顶高度、低云厚度和远山层次。",
       recommendationGuard.finalRecommendationTone,
     ),
     scoreCard(
@@ -4306,7 +4328,7 @@ function cloudSeaDecisionCards(
       `${formation?.value ?? result.cloudSeaAnalysis.labels.formationOpportunity} / ${
         shootable?.value ?? result.cloudSeaAnalysis.labels.shootableOpportunity
       }`,
-      `${result.cloudSeaAnalysis.formationScore} 分 / ${result.cloudSeaAnalysis.shootableScore} 分。${userFacingResultText(
+      `形成 ${result.cloudSeaAnalysis.formationScore} 分，可拍 ${result.cloudSeaAnalysis.shootableScore} 分。${userFacingResultText(
         cloudSeaTerrainAwareText(
           firstText(
             result.cloudSeaAnalysis.opportunityReasons,
@@ -4598,7 +4620,7 @@ function CloudSeaWindowCardsSection({
             </div>
 
             <div>
-              <p className="text-xs font-semibold text-muted-foreground">机会指数 / 概率评分</p>
+              <p className="text-xs font-semibold text-muted-foreground">机会指数</p>
               <p className={cn("mt-1 text-2xl font-bold leading-8", cardToneText(card.scoreTone))}>
                 {card.scoreText}
               </p>
@@ -4607,13 +4629,16 @@ function CloudSeaWindowCardsSection({
             </div>
 
             <dl className="grid gap-1.5 text-xs leading-5 text-muted-foreground">
-              <CloudSeaWindowCardLine label="推荐窗口" value={card.primaryWindow} />
+              <CloudSeaWindowCardLine
+                label={terrainContext.shouldDowngradeCloudSeaWording ? "观察窗口" : "主窗口"}
+                value={card.primaryWindow}
+              />
               <CloudSeaWindowCardLine label="备选窗口" value={card.backupWindow} />
               <CloudSeaWindowCardLine label="主要限制" value={card.mainIssue} />
             </dl>
 
             <p className="text-sm leading-6 text-card-foreground">
-              <span className="font-semibold">建议：</span>
+              <span className="font-semibold">行动：</span>
               {card.action}
             </p>
             {card.cautionNote ? (
@@ -4689,15 +4714,24 @@ function cloudSeaWindowCategoryCard(
     badgeLabel: cloudSeaWindowCategoryBadgeLabel(definition.key, primary, terrainContext),
     badgeVariant: cloudSeaWindowCategoryBadgeVariant(definition.key, primary),
     chanceText: primary.cloudSeaChance,
-    scoreText: `${primary.score} 分`,
-    scoreTone: cloudSeaWindowCardTone(definition.key, primary),
-    primaryWindow: primary.timeRangeLabel,
-    backupWindow: backup?.timeRangeLabel ?? "暂无数据支撑的备选窗口",
-    labelReason: primary.labelReason,
-    mainIssue: cloudSeaWindowMainIssue(definition.key, primary, terrainContext),
-    action: cloudSeaWindowCardAction(definition.key, primary, terrainContext),
-    cautionNote: primary.layerCompletenessNote,
-  };
+      scoreText: `${primary.score} 分`,
+      scoreTone: cloudSeaWindowCardTone(definition.key, primary),
+      primaryWindow: primary.timeRangeLabel,
+      backupWindow: backup?.timeRangeLabel ?? "暂无备选窗口",
+      labelReason: compactCloudSeaWindowReason(primary.labelReason),
+      mainIssue: cloudSeaWindowMainIssue(definition.key, primary, terrainContext),
+      action: cloudSeaWindowCardAction(definition.key, primary, terrainContext),
+      cautionNote: cloudSeaWindowHasLayerRoleRedirect(primary)
+        ? primary.layerCompletenessNote
+        : undefined,
+    };
+  }
+
+function compactCloudSeaWindowReason(value: string): string {
+  const compact = firstSentence(value)
+    .replace("评分看云层机会，推荐还会考虑降水、地形、数据完整性和出行成本。", "")
+    .trim();
+  return compact || "按当前推荐等级处理。";
 }
 
 function compareCloudSeaWindowPriority(
@@ -4875,7 +4909,7 @@ function cloudSeaWindowMainIssue(
     return item.layerCompletenessNote ?? basis;
   }
   if (category === "lowLight") {
-    return `${basis}光线不足，不适合作为常规明亮风光主窗口。`;
+    return `${basis}光线不足，不作明亮风光主窗口。`;
   }
   return basis;
 }
@@ -5096,7 +5130,6 @@ function CloudSeaProfessionalHourlyDataPanel({
         <p className="text-xs leading-5 text-muted-foreground">
           当前筛选：{activeFilterLabel}，显示 {filteredRows.length} / {rows.length} 小时。
           {terrainContext.vocabulary.professionalUsageText}
-          最终出行仍需结合临近预报和现场观测。
         </p>
 
         <div
@@ -5560,7 +5593,7 @@ function professionalTemperatureBasisLabel(
     return "原始格点";
   }
   if (basis === "provider_point") {
-    return "来源点位";
+    return "预报点位";
   }
   return "暂无";
 }
@@ -5610,25 +5643,25 @@ function professionalTemperatureColumnLabels(
   const hasRawGridRows = rows.some((row) => row.temperatureBasis === "raw_grid");
   const hasProviderRows = rows.some((row) => row.temperatureBasis === "provider_point");
   if (hasRawRows && hasTerrainAdjustedRows) {
-    return ["原始格点温度 °C", "机位估算温度 °C"];
+    return ["原始格点气温 °C", "机位估算气温 °C"];
   }
   if (hasTerrainAdjustedRows) {
-    return ["机位估算温度 °C"];
+    return ["机位估算气温 °C"];
   }
   if (hasRawGridRows || basis.temperatureBasis === "raw_grid") {
-    return ["原始格点温度 °C"];
+    return ["原始格点气温 °C"];
   }
   if (hasProviderRows || basis.temperatureBasis === "provider_point") {
-    return ["来源点温度 °C"];
+    return ["预报点气温 °C"];
   }
   if (
     basis.temperatureBasis === "terrain_adjusted" ||
     basis.temperatureBasis === "terrain_adjusted_lapse_estimate" ||
     basis.temperatureBasis === "mixed"
   ) {
-    return ["机位估算温度 °C"];
+    return ["机位估算气温 °C"];
   }
-  return ["温度 °C"];
+  return ["气温 °C"];
 }
 
 const professionalHourlyIncompleteFieldNoteText = "部分小时字段缺失，缺失值以 “—” 显示。";
@@ -5655,7 +5688,7 @@ function professionalHourlyMissingHeaderNote(
     return "原始格点温度与机位估算温度同时保留；高山体感和穿衣建议以机位估算温度为准。";
   }
   if (hasLapseEstimate) {
-    return "当前温度按机位与模型海拔差做确定性递减率估算，需结合临近预报复核。";
+    return "当前温度按机位与模型海拔差估算，需结合临近预报复核。";
   }
   if (hasRawTemperature && basis.temperatureBasis !== "terrain_adjusted") {
     return "当前仅有原始格点温度，高山机位体感需谨慎参考。";
@@ -6122,11 +6155,11 @@ function CloudSeaDailyTrend({
               </dl>
               <div className="grid gap-2 min-[520px]:grid-cols-3 min-[900px]:grid-cols-1 min-[1180px]:grid-cols-3">
                 <CloudSeaDailyStat
-                  label="形成"
+                  label={terrainContext.shouldDowngradeCloudSeaWording ? "信号" : "形成"}
                   value={`${item.formationLevel} ${item.formationScore}分`}
                 />
                 <CloudSeaDailyStat
-                  label="可拍"
+                  label={terrainContext.shouldDowngradeCloudSeaWording ? "可观察" : "可拍"}
                   value={`${item.shootableLevel} ${item.shootableScore}分`}
                 />
                 <CloudSeaDailyStat
@@ -6181,10 +6214,7 @@ function CloudSeaReasoningSection({ items }: { readonly items: readonly CloudSea
               <Badge variant={badgeVariantForTone(item.tone)}>{item.value}</Badge>
             </div>
             <p className="text-sm leading-6 text-muted-foreground">
-              {item.key === "weather-variable-consistency" ||
-              item.key === "score-recommendation-separation"
-                ? item.detail
-                : firstSentence(item.detail)}
+              {item.key === "weather-variable-consistency" ? item.detail : firstSentence(item.detail)}
             </p>
           </article>
         ))}
@@ -6225,7 +6255,7 @@ function CloudSeaActionPlanSection({
               <h3 className="text-sm font-bold text-card-foreground">{item.label}</h3>
               <Badge variant={badgeVariantForTone(item.tone)}>{item.value}</Badge>
             </div>
-            <p className="text-sm leading-6 text-muted-foreground">{item.detail}</p>
+              <p className="text-sm leading-6 text-muted-foreground">{firstSentence(item.detail)}</p>
           </article>
         ))}
       </ActionPlanGrid>
@@ -6235,8 +6265,10 @@ function CloudSeaActionPlanSection({
 
 function CloudSeaRiskSummarySection({
   riskSummary,
+  terrainContext,
 }: {
   readonly riskSummary: readonly ForecastResultSectionItem[];
+  readonly terrainContext: CloudSeaTerrainContext;
 }) {
   const focusedRiskSummary = riskSummary.filter(
     (item) =>
@@ -6249,7 +6281,9 @@ function CloudSeaRiskSummarySection({
     <Card className="CloudSeaRiskSummary cloud-sea-risk-summary p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-card-foreground">风险与复核</h2>
-        <Badge variant="muted">白墙 / 降水 / 通行</Badge>
+        <Badge variant="muted">
+          {terrainContext.shouldDowngradeCloudSeaWording ? "低云遮挡" : "白墙"} / 降水 / 通行
+        </Badge>
       </div>
       <div className="mt-3 grid gap-3 min-[760px]:grid-cols-2 min-[1180px]:grid-cols-3">
         {focusedRiskSummary.slice(0, 8).map((item, index) => (

@@ -436,7 +436,7 @@ function minRecommendationLevel(
 
 function labelForLevel(
   level: CloudSeaGuardRecommendationLevel,
-  context: { readonly score: number; readonly terrainDowngraded: boolean },
+  _context: { readonly score: number; readonly terrainDowngraded: boolean },
 ): string {
   if (level === "do_not_go_special") {
     return "不建议专程";
@@ -448,9 +448,6 @@ function labelForLevel(
     return "谨慎参考";
   }
   if (level === "observe_if_nearby") {
-    if (context.terrainDowngraded) {
-      return context.score >= 70 ? "推荐观察" : "顺带观察";
-    }
     return "已在附近可观察";
   }
   if (level === "recommended_arrangement") {

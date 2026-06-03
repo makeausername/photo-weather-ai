@@ -1524,6 +1524,11 @@ export function createRuleBasedForecastExplanation(
       })
     : null;
   const dedicatedDecision = dedicatedTripDecisionZh(result, bestDaily);
+  const recommendationLevelZh = cloudSeaGuard?.finalRecommendationLabel ?? result.recommendationLabel;
+  const oneSentenceDecisionBase =
+    cloudSeaExplanation && !cloudSeaExplanation.oneLineConclusionZh.includes(recommendationLevelZh)
+      ? `${recommendationLevelZh}：${cloudSeaExplanation.oneLineConclusionZh}`
+      : cloudSeaExplanation?.oneLineConclusionZh ?? dedicatedDecision;
   const topScoredSubject = bestSubjectFromScores(result, 0);
   const primarySubject = bestWindow ? windowLabelZh(bestWindow) : topScoredSubject;
   const backupSubject = bestSubjectFromScores(
@@ -1547,9 +1552,9 @@ export function createRuleBasedForecastExplanation(
       recommendedDayZh: bestDaily
         ? `最值得关注的是 ${bestDaily.dateLabelZh}，${bestDaily.bestShootableWindow ? `${windowLabelZh(bestDaily.bestShootableWindow)} ${formatShootingWindowZh(bestDaily.bestShootableWindow, timezone)}` : bestDaily.shortAdvice}`
         : "暂无足够逐日数据，先参考确定性评分和窗口列表。",
-      recommendationLevelZh: cloudSeaGuard?.finalRecommendationLabel ?? result.recommendationLabel,
+      recommendationLevelZh,
       whetherWorthDedicatedTripZh: cloudSeaExplanation?.actionSummaryZh ?? dedicatedDecision,
-      oneSentenceDecisionZh: `${cloudSeaExplanation?.oneLineConclusionZh ?? dedicatedDecision}；优先看${bestWindow ? `${windowLabelZh(bestWindow)} ${formatShootingWindowZh(bestWindow, timezone)}` : "后续天气更新"}。`,
+      oneSentenceDecisionZh: `${oneSentenceDecisionBase}；优先看${bestWindow ? `${windowLabelZh(bestWindow)} ${formatShootingWindowZh(bestWindow, timezone)}` : "后续天气更新"}。`,
     },
     bestPlan: {
       primaryTargetZh: primarySubject,

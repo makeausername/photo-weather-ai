@@ -2494,7 +2494,7 @@ describe("forecast result target-aware view model", () => {
     expect(dailySection).toContain("推荐安排");
     expect(dailySection).not.toContain("推荐专程前往");
     expect(dailySection).toContain("多云间晴");
-    expect(dailySection).toContain("山顶估算温度：10–18°C");
+    expect(dailySection).toContain("机位估算温度：10–18°C");
     expect(dailySection).toContain("降水概率：18%｜风：3.4m/s｜通透：较好");
     expect(dailySection).toContain("优先关注：");
     expect(dailySection).toContain("清晨云海 2026年5月20日 05:00–07:00");
@@ -2525,7 +2525,7 @@ describe("forecast result target-aware view model", () => {
     expect(countOccurrences(dailySection, "现场重点复核云层开口和通透度")).toBeLessThanOrEqual(1);
     expect(countOccurrences(dailySection, "条件和风险匹配度较好")).toBe(0);
     expect(countOccurrences(dailySection, "可按最佳窗口组织出发")).toBe(0);
-    expect(html).toContain("山顶估算温度：10-18°C");
+    expect(html).toContain("机位估算温度：10-18°C");
     expect(html).toContain("预报已接近机位海拔，未额外修正");
     expect(html).toContain("体感 7-16°C");
     expect(html).toContain("降水风险");
@@ -4297,7 +4297,7 @@ describe("forecast result target-aware view model", () => {
       noLight: "夜间低云 / 雾气",
     });
     expect(lowland.windowSectionNoteZh).toBe(
-      "当前机位海拔较低或周边高差不足，本区块按低云、晨雾、层云和通透观察处理，不按高山云海判断。",
+      "当前地形更适合顺带观察，本区块按低云、晨雾、层云和通透参考处理。",
     );
     expect(lowland.forbiddenStrongRecommendation).toBe(true);
     expect(lowland.recommendationCeiling).toBe("recommend_observation");
@@ -4315,7 +4315,7 @@ describe("forecast result target-aware view model", () => {
         score: 68,
         hasWindow: true,
       }),
-    ).toBe("可观察");
+    ).toBe("已在附近可观察");
 
     expect(highMountain.terrainClass).toBe("high_mountain");
     expect(highMountain.isClassicCloudSeaEligible).toBe(true);
@@ -4351,7 +4351,7 @@ describe("forecast result target-aware view model", () => {
 
     expect(viewModel.terrainContext.shouldDowngradeCloudSeaWording).toBe(true);
     expect(viewModel.hero.title).toBe("瓯江河畔 低云/晨雾参考");
-    expect(viewModel.hero.recommendationLabel).toBe("推荐观察");
+    expect(viewModel.hero.recommendationLabel).toBe("已在附近可观察");
     expect(viewModel.coreCards.map((card) => card.label)).toEqual([
       "低云/晨雾信号",
       "云层可观察机会",
@@ -4359,14 +4359,13 @@ describe("forecast result target-aware view model", () => {
       "雨后开口机会",
     ]);
     expect(viewModel.actionPlan.map((item) => item.label)).toContain("观察窗口");
-    expect(viewModel.dailyTrend.map((item) => item.recommendedAction)).toContain("推荐观察");
+    expect(viewModel.dailyTrend.map((item) => item.recommendedAction)).toContain("已在附近可观察");
 
     expect(html).toContain("低云/晨雾参考");
     expect(html).toContain("地形参考：机位海拔约 142 米，周边高差暂未计算");
-    expect(html).toContain("不按高山云海判断");
-    expect(windowSection).toContain("云海窗口与备选");
+    expect(windowSection).toContain("低云观察与备选");
     expect(windowSection).toContain(
-      "当前机位海拔较低或周边高差不足，本区块按低云、晨雾、层云和通透观察处理，不按高山云海判断。",
+      "当前地形更适合顺带观察，本区块按低云、晨雾、层云和通透参考处理。",
     );
     expect(html).toContain("晨雾");
     expect(html).toContain("低云");
@@ -4376,7 +4375,7 @@ describe("forecast result target-aware view model", () => {
     expect(windowSection).toContain("日落层云");
     expect(windowSection).toContain("有光云层");
     expect(windowSection).toContain("夜间低云 / 雾气");
-    expect(windowSection).toContain("可观察");
+    expect(windowSection).toContain("已在附近可观察");
     expect(windowSection).toContain("顺带观察");
     expect(windowSection).toContain("观察近地雾气");
     expect(windowSection).toContain("复核低云是否贴地");
@@ -4469,10 +4468,12 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.recommendationGuard.maxAllowedRecommendationStrength).toBe(
       "observe_if_nearby",
     );
-    expect(viewModel.hero.recommendationLabel).toBe("推荐观察");
-    expect(viewModel.actionPlan.find((item) => item.key === "departure")?.value).toBe("推荐观察");
-    expect(actionPlan).toContain("推荐观察");
-    expect(dailySection).toContain("推荐观察");
+    expect(viewModel.hero.recommendationLabel).toBe("已在附近可观察");
+    expect(viewModel.actionPlan.find((item) => item.key === "departure")?.value).toBe(
+      "已在附近可观察",
+    );
+    expect(actionPlan).toContain("已在附近可观察");
+    expect(dailySection).toContain("已在附近可观察");
     expect(html).toContain("低云/晨雾参考窗口");
     expect(html).not.toContain("强推荐专程");
     expect(html).not.toContain("推荐专程云海");
@@ -4650,18 +4651,18 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("黄山光明顶 云海判断");
       expect(html).toContain("建议到达");
       expect(html).toContain("云海窗口与备选");
-      expect(html).toContain("按时段与光线条件归纳云海窗口，快速判断哪一类云海更值得守拍。");
+      expect(html).toContain("按光线和时段归纳主窗口与备选窗口，快速判断哪一类云海更值得守拍。");
       expect(html).toContain("云海窗口");
       expect(html).toContain("日出云海");
       expect(html).toContain("日落云海");
       expect(html).toContain("有光云海");
       expect(html).toContain("无光云海");
       expect(countOccurrences(html, 'data-testid="cloud-sea-window-category-card"')).toBe(4);
-      expect(countOccurrences(html, "机会指数 / 概率评分")).toBe(4);
-      expect(countOccurrences(html, "推荐窗口：</dt>")).toBe(4);
+      expect(countOccurrences(html, "机会指数")).toBe(4);
+      expect(countOccurrences(html, "主窗口：</dt>")).toBe(4);
       expect(countOccurrences(html, "备选窗口：</dt>")).toBe(4);
       expect(countOccurrences(html, "主要限制：</dt>")).toBe(4);
-      expect(countOccurrences(html, "建议：</span>")).toBe(4);
+      expect(countOccurrences(html, "行动：</span>")).toBe(4);
       expect(html).toContain("05:00");
       expect(html).toContain("17:20");
       expect(html).not.toContain("云海时间轴");
@@ -4933,12 +4934,12 @@ describe("forecast result target-aware view model", () => {
     expect(section).toContain("日落云海");
     expect(section).toContain("有光云海");
     expect(section).toContain("无光云海");
-    expect(countOccurrences(section, "机会指数 / 概率评分")).toBe(4);
+    expect(countOccurrences(section, "机会指数")).toBe(4);
     expect(countOccurrences(section, "暂无明确评分")).toBe(4);
-    expect(countOccurrences(section, "推荐窗口：</dt>")).toBe(4);
+    expect(countOccurrences(section, "主窗口：</dt>")).toBe(4);
     expect(countOccurrences(section, "备选窗口：</dt>")).toBe(4);
     expect(countOccurrences(section, "主要限制：</dt>")).toBe(4);
-    expect(countOccurrences(section, "建议：</span>")).toBe(4);
+    expect(countOccurrences(section, "行动：</span>")).toBe(4);
     expect(countOccurrences(section, "暂无明确窗口")).toBeGreaterThanOrEqual(4);
     expect(countOccurrences(section, "等待下一次预报更新")).toBe(4);
     expect(section).toContain("当前窗口数据未给出日出前后可用云海窗口。");
@@ -4969,7 +4970,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain('data-cloud-sea-hourly-preview="true"');
     expect(html).not.toContain("mt-4 grid gap-3 hidden");
     expect(html).toContain(
-      "低云、湿度、露点、降水、能见度和风速用于复核云海形成与白墙风险；中高云主要作为霞光载体和云层纹理参考。",
+      "低云、湿度、露点、降水、能见度和风速用于复核云海形成与白墙；中高云主要作为霞光和云层纹理参考。",
     );
     expect(html).toContain("有效时间");
     expect(html).toContain("2026年5月20日");
@@ -4996,8 +4997,8 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("高云量 %");
     expect(html).toContain("中云量 %");
     expect(html).toContain("低云量 %");
-    expect(html).toContain("原始格点温度 °C");
-    expect(html).toContain("机位估算温度 °C");
+    expect(html).toContain("原始格点气温 °C");
+    expect(html).toContain("机位估算气温 °C");
     expect(html).toContain("露点 °C");
     expect(html).toContain("露点差 °C");
     expect(html).toContain("湿度 %");
@@ -5074,7 +5075,7 @@ describe("forecast result target-aware view model", () => {
     );
     expect(html).toContain("总云量与分层云量存在口径差异");
     expect(html).toContain("分层云量仅作趋势复核");
-    expect(html).toContain("云量口径不一致，需临近复核");
+    expect(html).toContain("当前置信度：低（云量口径需复核）");
     expect(professionalSection).toContain("总云量 %");
     expect(professionalSection).toContain("高云量 %");
     expect(professionalSection).toContain("中云量 %");
@@ -5110,7 +5111,7 @@ describe("forecast result target-aware view model", () => {
     expect(reasoningSection).toContain("湿度与露点差需结合临近预报复核");
     expect(reasoningSection).toContain("不宜仅凭湿度判断云海或白墙");
     expect(html).toContain("变量复核");
-    expect(html).toContain("关键天气变量存在冲突，需临近复核");
+    expect(html).toContain("水汽指标存在口径差异");
     expect(html).not.toContain("强推荐专程云海");
     expect(html).not.toMatch(/latitude|longitude|WGS84|GCJ-02|经度|纬度/i);
     expect(html).not.toContain("meteoblue");
@@ -5178,8 +5179,8 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("高山机位与周边格点温度差异较大");
     expect(html).toContain("高山体感可能低于城市/低海拔预报");
     expect(html).toContain("专业小时数据");
-    expect(html).toContain("原始格点温度 °C");
-    expect(html).toContain("机位估算温度 °C");
+    expect(html).toContain("原始格点气温 °C");
+    expect(html).toContain("机位估算气温 °C");
     expect(html).toContain("露点差 °C");
     expect(html).not.toMatch(/latitude|longitude|WGS84|GCJ-02|经度|纬度/i);
   });
@@ -5519,7 +5520,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("原始格点");
     expect(html).toContain("云量口径");
     expect(html).toContain("仅总云量，缺少低/中/高云分层");
-    expect(html).toContain("原始格点温度 °C");
+    expect(html).toContain("原始格点气温 °C");
     expect(html).toContain("需复核");
     expect(html).not.toContain("白墙风险</span>");
   });

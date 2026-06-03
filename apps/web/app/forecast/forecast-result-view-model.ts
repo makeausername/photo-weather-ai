@@ -814,6 +814,7 @@ export function buildCloudSeaForecastViewModel(
       cloudLayerCompleteness,
       cloudBasisConsistency,
       multiSourceAgreementContext,
+      terrainContext,
       recommendationGuard,
       weatherVariableConsistencyContext,
     ),
@@ -2913,9 +2914,8 @@ function buildCloudSeaReasoningItems(
       label: "评分与推荐",
       value: recommendationGuard.finalRecommendationLabel,
       detail: [
-        recommendationExplanation.userFacingSummaryZh,
+        recommendationExplanation.oneLineConclusionZh,
         recommendationExplanation.confidenceExplanationZh,
-        recommendationExplanation.whyStillWorthWatchingZh,
       ].join(" "),
       tone: recommendationGuard.finalRecommendationTone,
     },
@@ -3130,7 +3130,9 @@ function buildCloudSeaActionPlan(
       key: "departure",
       label: "是否建议出发",
       value: recommendationGuard.actionPlanLabels.departure,
-      detail: `${recommendationExplanation.actionSummaryZh} ${recommendationExplanation.cautionReasonZh} 复核重点：${reviewPoints.slice(0, 3).join("、")}。`,
+      detail: `${recommendationExplanation.actionSummaryZh} 复核：${reviewPoints
+        .slice(0, 3)
+        .join("、")}。`,
       tone: recommendationGuard.finalRecommendationTone,
     },
     {
@@ -3262,14 +3264,18 @@ function buildCloudSeaRiskSummary(
       label: "降水概率",
       value: formatNullableProbability(precipitationSignalContext.maxProbabilityPercent),
       detail: precipitationSignalContext.hasProbabilityData
-        ? `概率等级 ${precipitationSignalContext.probabilityClass}，需与预计雨量分开解读。`
+        ? `概率${precipitationProbabilityClassLabel(
+            precipitationSignalContext.probabilityClass,
+          )}，需与预计雨量分开判断。`
         : "降水概率缺测，不用 0% 代替，需临近预报复核。",
     },
     {
       label: "预计雨量",
       value: formatNullableAmount(precipitationSignalContext.maxAmountMm),
       detail: precipitationSignalContext.hasAmountData
-        ? `雨量等级 ${precipitationSignalContext.amountClass}，按主窗口及前 2 小时合计/逐小时信号综合判断。`
+        ? `雨量${precipitationAmountClassLabel(
+            precipitationSignalContext.amountClass,
+          )}，按主窗口及前 2 小时综合判断。`
         : "雨量数据不足，不从降水概率反推雨量。",
     },
     {
@@ -3522,6 +3528,44 @@ function formatNullableAmount(value: number | null | undefined): string {
     return "缺测";
   }
   return `${Math.round(value * 10) / 10} mm`;
+}
+
+function precipitationProbabilityClassLabel(value: string): string {
+  if (value === "very_high") {
+    return "很高";
+  }
+  if (value === "high") {
+    return "偏高";
+  }
+  if (value === "medium") {
+    return "中等";
+  }
+  if (value === "low") {
+    return "偏低";
+  }
+  if (value === "none") {
+    return "很低";
+  }
+  return "待复核";
+}
+
+function precipitationAmountClassLabel(value: string): string {
+  if (value === "heavy") {
+    return "明显";
+  }
+  if (value === "moderate") {
+    return "可计量";
+  }
+  if (value === "light") {
+    return "偏小";
+  }
+  if (value === "trace") {
+    return "很小";
+  }
+  if (value === "none") {
+    return "不明显";
+  }
+  return "待复核";
 }
 
 function cloudSeaTimelineActionSuggestion(
@@ -3843,6 +3887,7 @@ function buildCloudSeaDataCaution(
   cloudLayerCompleteness: CloudLayerCompletenessContext,
   cloudBasisConsistency: CloudSeaCloudBasisConsistencyContext,
   multiSourceAgreementContext?: ForecastMultiSourceAgreementContext | null,
+  terrainContext?: CloudSeaTerrainContext,
   recommendationGuard?: CloudSeaRecommendationGuardOutput,
   weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext,
 ): string | null {
@@ -3853,7 +3898,7 @@ function buildCloudSeaDataCaution(
     recommendationGuard?.consistencyWarnings[0] ??
     recommendationGuard?.blockedStrongRecommendationReasons[0];
   if (guardWarning) {
-    return guardWarning;
+    return terrainContext ? cloudSeaTerrainAwareText(guardWarning, terrainContext) : guardWarning;
   }
   if (cloudBasisConsistency.shouldLowerCloudSeaConfidence) {
     return cloudBasisConsistency.userSummaryZh;
@@ -3885,7 +3930,7 @@ function cloudSeaVerificationPoints(
 ): readonly string[] {
   const fallback = terrainContext.shouldDowngradeCloudSeaWording
     ? ["复核近地雾气", "观察低云是否贴地", "观察远山层次和通透度", "有中高云时转向霞光或云层纹理"]
-    : ["云层是否低于机位", "远山层次是否打开", "风向是否推动云雾上涌"];
+    : ["云顶高度是否低于机位", "远山层次是否打开", "风向是否推动云雾上涌"];
 
   const consistencyChecks = weatherVariableConsistencyActionChecks(
     weatherVariableConsistencyContext,

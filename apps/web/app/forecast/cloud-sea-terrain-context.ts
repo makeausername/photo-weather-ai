@@ -104,7 +104,7 @@ const classicCloudSeaVocabulary: CloudSeaTerrainVocabulary = {
   bestWindowMetricLabel: "最佳云海窗口",
   formationShootableMetricLabel: "云海形成 / 可拍机会",
   windowSectionTitle: "云海窗口与备选",
-  windowSectionDescription: "按时段与光线条件归纳云海窗口，快速判断哪一类云海更值得守拍。",
+  windowSectionDescription: "按光线和时段归纳主窗口与备选窗口，快速判断哪一类云海更值得守拍。",
   windowSectionBadge: "云海窗口",
   windowCategories: {
     sunrise: {
@@ -132,14 +132,14 @@ const classicCloudSeaVocabulary: CloudSeaTerrainVocabulary = {
   watchTimelineWindowLabel: "可观察窗口",
   avoidTimelineWindowLabel: "不建议窗口",
   genericWindowLabel: "云海观察窗口",
-  dailyDescription: "每天只保留云海形成、可拍、白墙、最佳窗口和雨后开口信号。",
+  dailyDescription: "每天只保留云海形成、可拍、白墙、主窗口和雨后开口。",
   dailyBestWindowLabel: "最佳窗口",
   dailyObstructionStatLabel: "白墙",
   professionalDescription:
-    "低云、湿度、露点、降水、能见度和风速用于复核云海形成与白墙风险；中高云主要作为霞光载体和云层纹理参考。",
+    "低云、湿度、露点、降水、能见度和风速用于复核云海形成与白墙；中高云主要作为霞光和云层纹理参考。",
   professionalSignalColumnLabel: "云海信号",
   professionalCloudSeaFilterLabel: "只看云海窗口",
-  professionalUsageText: "专业数据用于复核云海形成、白墙风险和雨后开口。",
+  professionalUsageText: "用于核对主窗口、白墙和雨后开口。",
 };
 
 const downgradedCloudSeaVocabulary: CloudSeaTerrainVocabulary = {
@@ -152,8 +152,8 @@ const downgradedCloudSeaVocabulary: CloudSeaTerrainVocabulary = {
   obstructionRiskLabel: "低云遮挡风险",
   bestWindowMetricLabel: "最佳观察窗口",
   formationShootableMetricLabel: "低云/晨雾 / 可观察机会",
-  windowSectionTitle: "云海窗口与备选",
-  windowSectionDescription: "按时段与光线条件归纳低云、晨雾、云层变化和通透度参考。",
+  windowSectionTitle: "低云观察与备选",
+  windowSectionDescription: "按时段归纳低云、晨雾、云层变化和通透参考。",
   windowSectionBadge: "云层观察",
   windowCategories: {
     sunrise: {
@@ -181,14 +181,14 @@ const downgradedCloudSeaVocabulary: CloudSeaTerrainVocabulary = {
   watchTimelineWindowLabel: "可顺带观察窗口",
   avoidTimelineWindowLabel: "不建议专程窗口",
   genericWindowLabel: "低云/晨雾观察窗口",
-  dailyDescription: "每天只保留低云、晨雾、云层变化、遮挡风险、最佳观察窗口和雨后开口参考。",
+  dailyDescription: "每天只保留低云、晨雾、云层变化、遮挡风险、观察窗口和雨后开口。",
   dailyBestWindowLabel: "观察窗口",
   dailyObstructionStatLabel: "遮挡",
   professionalDescription:
-    "低云、湿度、露点、降水、能见度和风速用于复核低云、晨雾与遮挡风险；中高云主要作为霞光参考和云层纹理。",
+    "低云、湿度、露点、降水、能见度和风速用于复核低云、晨雾与遮挡；中高云主要作为霞光和云层纹理参考。",
   professionalSignalColumnLabel: "低云信号",
   professionalCloudSeaFilterLabel: "只看低云窗口",
-  professionalUsageText: "专业数据用于复核低云、晨雾、云层变化、遮挡风险和雨后开口。",
+  professionalUsageText: "用于核对低云、晨雾、遮挡和雨后开口。",
 };
 
 const classicCloudSeaPreferredVocabulary = [
@@ -210,7 +210,7 @@ const downgradedCloudSeaPreferredVocabulary = [
 ] as const;
 
 const downgradedWindowSectionNoteZh =
-  "当前机位海拔较低或周边高差不足，本区块按低云、晨雾、层云和通透观察处理，不按高山云海判断。";
+  "当前地形更适合顺带观察，本区块按低云、晨雾、层云和通透参考处理。";
 
 export function buildCloudSeaTerrainContextFromResult(
   result: ForecastCalculationResult,
@@ -318,7 +318,7 @@ export function cloudSeaTerrainAwareText(text: string, context: CloudSeaTerrainC
   }
 
   return text
-    .replace(/强推荐专程云海|推荐专程云海|专程云海/g, "推荐观察")
+    .replace(/强推荐专程云海|推荐专程云海|专程云海/g, "已在附近可观察")
     .replace(/高山云海|山顶云海|山谷云海/g, "低云/晨雾")
     .replace(/云海主守|主守云海/g, "云层变化观察")
     .replace(/清晨云海/g, "清晨低云/晨雾")
@@ -358,9 +358,9 @@ export function cloudSeaTerrainRecommendationLabel(
     return "谨慎参考";
   }
   if (options.score !== undefined && options.score < 70) {
-    return "可观察";
+    return "已在附近可观察";
   }
-  return "推荐观察";
+  return "已在附近可观察";
 }
 
 function windowCategoryLabelsFromVocabulary(
@@ -406,7 +406,9 @@ function terrainNoteZh(input: {
   readonly shouldDowngradeCloudSeaWording: boolean;
 }): string {
   if (input.elevation === undefined) {
-    return "地形参考：地形数据不足，云海判断需结合现场高差复核。";
+    return input.shouldDowngradeCloudSeaWording
+      ? "地形参考：地形数据不足，先按低云、晨雾和通透参考处理。"
+      : "地形参考：地形数据不足，云顶高度和周边高差需现场复核。";
   }
 
   if (input.shouldDowngradeCloudSeaWording) {
@@ -414,7 +416,7 @@ function terrainNoteZh(input: {
     if (input.surroundingRelief === undefined) {
       return `地形参考：${elevationText}，周边高差暂未计算，当前按低海拔低云/晨雾参考处理。`;
     }
-    return `地形参考：${elevationText}，周边高差不足，不按高山云海判断。`;
+    return `地形参考：${elevationText}，周边高差不足，当前按低云/晨雾和通透参考处理。`;
   }
 
   const elevationText = `机位海拔约 ${Math.round(input.elevation)} 米`;

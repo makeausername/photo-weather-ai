@@ -110,7 +110,7 @@ describe("buildCloudSeaRecommendationGuard", () => {
     });
 
     expect(result.finalRecommendationLevel).toBe("observe_if_nearby");
-    expect(result.finalRecommendationLabel).toBe("推荐观察");
+    expect(result.finalRecommendationLabel).toBe("已在附近可观察");
     expect(result.isSpecialTripRecommended).toBe(false);
     expect(result.maxAllowedRecommendationStrength).toBe("observe_if_nearby");
     expect(result.blockedStrongRecommendationReasons).toContain("低海拔地点不按高山云海判断");

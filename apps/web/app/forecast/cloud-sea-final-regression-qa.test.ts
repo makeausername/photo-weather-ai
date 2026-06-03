@@ -359,14 +359,14 @@ describe("Cloud Sea result page final regression QA", () => {
     expect(viewModel.recommendationExplanation.whyNotStrongerZh).toContain("评分较高");
     expect(viewModel.recommendationExplanation.whyNotStrongerZh).toContain("云量口径");
     expect(html).toContain(viewModel.recommendationExplanation.oneLineConclusionZh);
-    expect(html).toContain(viewModel.recommendationExplanation.scoreReasonZh);
-    expect(html).toContain("评分代表云层机会");
+    expect(viewModel.recommendationExplanation.scoreReasonZh).toContain("评分较高");
+    expect(viewModel.recommendationExplanation.userFacingSummaryZh).toContain("评分看云层机会");
     expect(html).toContain(viewModel.recommendationExplanation.actionSummaryZh);
-    expect(actionSection).toContain("复核重点");
+    expect(actionSection).toContain("出发前必须复核");
     expect(firstDaily?.decisionReason).toBeTruthy();
     expect(html).toContain(firstSentenceForTest(firstDaily?.decisionReason ?? ""));
     expect(firstWindow?.labelReason).toBeTruthy();
-    expect(html).toContain(firstWindow?.labelReason ?? "");
+    expect(html).toContain(firstSentenceForTest(firstWindow?.labelReason ?? ""));
     expect(html).toContain('data-testid="professional-hourly-data"');
     expect(html).toContain("总云量 %");
     expect(html).toContain("高云量 %");
@@ -394,6 +394,15 @@ describe("Cloud Sea result page final regression QA", () => {
   });
 
   it("keeps recommendation labels consistent across summary, cards, daily trend, windows, and action plan", () => {
+    const allowedRecommendationLabels = new Set([
+      "强推荐专程",
+      "推荐安排",
+      "谨慎参考",
+      "已在附近可观察",
+      "仅作备选",
+      "不建议专程",
+    ]);
+
     for (const fixture of allCloudSeaRegressionFixtures) {
       const { viewModel } = renderCloudSeaFixture(fixture);
       const departure = viewModel.actionPlan.find((item) => item.key === "departure");
@@ -414,6 +423,98 @@ describe("Cloud Sea result page final regression QA", () => {
 
         expect(labels).not.toMatch(/强推荐专程|推荐安排|推荐专程云海|云海主守/);
       }
+
+      const recommendationLabels = [
+        viewModel.hero.recommendationLabel,
+        ...viewModel.dailyTrend.map((item) => item.recommendedAction),
+        ...viewModel.cloudSeaWindows.map((item) => item.recommendationLabel),
+        departure?.value,
+      ].filter((label): label is string => Boolean(label));
+
+      for (const label of recommendationLabels) {
+        expect(allowedRecommendationLabels.has(label), label).toBe(true);
+      }
+    }
+  });
+
+  it("keeps final Cloud Sea copy free of developer/demo/fallback wording and coordinates", () => {
+    const forbiddenPatterns = [
+      /页面预设|体验模式|演示数据|数据提醒|开发测试/,
+      /确定性简版|基于确定性计算结果生成的简版解读|兜底解读/,
+      /\bguard\b/i,
+      /raw JSON|API key|provider/i,
+      /latitude|longitude|WGS84|GCJ-02|经度|纬度/i,
+    ];
+
+    for (const fixtureName of uiCases) {
+      const { html } = renderCloudSeaFixture(cloudSeaRegressionFixture(fixtureName));
+
+      for (const pattern of forbiddenPatterns) {
+        expect(html).not.toMatch(pattern);
+      }
+    }
+  });
+
+  it("keeps repeated Cloud Sea caution phrases from becoming mechanical", () => {
+    const repeatedPhrases = [
+      "云顶高度需复核",
+      "分层云量不完整，低云判断需临近复核",
+      "低云分层缺失，不能强推云海",
+      "不建议只为该窗口专程",
+    ];
+
+    for (const fixtureName of uiCases) {
+      const { html } = renderCloudSeaFixture(cloudSeaRegressionFixture(fixtureName));
+
+      for (const phrase of repeatedPhrases) {
+        expect(countOccurrences(html, phrase), phrase).toBeLessThanOrEqual(2);
+      }
+    }
+  });
+
+  it("keeps low-elevation wording downgraded while high-mountain wording remains available", () => {
+    const low = renderCloudSeaFixture(cloudSeaRegressionFixture("genericLowElevationWeakCloudSeaCase"));
+    const high = renderCloudSeaFixture(cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase"));
+
+    expect(low.viewModel.terrainContext.shouldDowngradeCloudSeaWording).toBe(true);
+    expect(low.html).toContain("低云观察与备选");
+    expect(low.html).toContain("低云");
+    expect(low.html).toContain("晨雾");
+    expect(low.html).toContain("通透");
+    expect(low.html).not.toMatch(
+      /高山云海|山顶云海|云海主守|推荐专程云海|强推荐专程云海|云海窗口与备选/,
+    );
+
+    expect(high.viewModel.terrainContext.shouldDowngradeCloudSeaWording).toBe(false);
+    expect(high.html).toContain("云海形成");
+    expect(high.html).toContain("云海可拍");
+    expect(high.html).toContain("白墙风险");
+  });
+
+  it("keeps professional hourly table columns visible after copy polish", () => {
+    const { html } = renderCloudSeaFixture(cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase"));
+    const professionalSection = sectionBetween(
+      html,
+      "CloudSeaProfessionalHourlyData",
+      "CloudSeaDailyTrend",
+    );
+
+    for (const header of [
+      "专业小时数据",
+      "总云量 %",
+      "高云量 %",
+      "中云量 %",
+      "低云量 %",
+      "气温",
+      "露点 °C",
+      "露点差 °C",
+      "湿度 %",
+      "降水 mm / 降水概率 %",
+      "能见度 km",
+      "风速 m/s",
+      "风向",
+    ]) {
+      expect(professionalSection).toContain(header);
     }
   });
 
@@ -550,6 +651,13 @@ function expectMarkersInOrder(html: string, markers: readonly string[]) {
     expect(current, marker).toBeGreaterThan(previous);
     previous = current;
   }
+}
+
+function countOccurrences(value: string, needle: string): number {
+  if (!needle) {
+    return 0;
+  }
+  return value.split(needle).length - 1;
 }
 
 function firstOnClickHandler(node: React.ReactNode): (() => void) | null {

@@ -92,7 +92,7 @@ describe("buildCloudSeaRuleContext", () => {
     expect(context.recommendationGuardContext.finalRecommendationLevel).toBe(
       "observe_if_nearby",
     );
-    expect(context.recommendationGuardContext.finalRecommendationLabel).toBe("推荐观察");
+    expect(context.recommendationGuardContext.finalRecommendationLabel).toBe("已在附近可观察");
     expect(context.recommendationGuardContext.isSpecialTripRecommended).toBe(false);
     expect(context.recommendationGuardContext.blockedStrongRecommendationReasons).toContain(
       "低海拔地点不按高山云海判断",

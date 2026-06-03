@@ -171,7 +171,7 @@ describe("buildCloudSeaRecommendationExplanation", () => {
     expect(genericHighScoreCautiousCase.oneLineConclusionZh).toContain("云层条件较好");
     expect(genericHighScoreCautiousCase.whyNotStrongerZh).toContain("评分较高");
     expect(genericHighScoreCautiousCase.whyNotStrongerZh).toContain("未直接强推");
-    expect(genericHighScoreCautiousCase.userFacingSummaryZh).toContain("评分代表云层机会");
+    expect(genericHighScoreCautiousCase.userFacingSummaryZh).toContain("评分看云层机会");
   });
 
   it("genericMediumScoreBackupCase explains backup-only recommendation", () => {
@@ -197,7 +197,7 @@ describe("buildCloudSeaRecommendationExplanation", () => {
     });
 
     expect(genericLowScoreNoSpecialTripCase.oneLineConclusionZh).toContain("核心证据不足");
-    expect(genericLowScoreNoSpecialTripCase.oneLineConclusionZh).toContain("等待下一次预报更新");
+    expect(genericLowScoreNoSpecialTripCase.oneLineConclusionZh).toContain("不建议专程等待");
     expect(genericLowScoreNoSpecialTripCase.actionSummaryZh).toContain("转向通透、层云、霞光");
   });
 
@@ -256,7 +256,7 @@ describe("buildCloudSeaRecommendationExplanation", () => {
     });
 
     expect(genericStrongRecommendationCase.oneLineConclusionZh).toContain("强推荐专程");
-    expect(genericStrongRecommendationCase.whyNotStrongerZh).toContain("未被关键 guard 阻断");
+    expect(genericStrongRecommendationCase.whyNotStrongerZh).toContain("没有关键阻断");
     expect(genericStrongRecommendationCase.confidenceExplanationZh).toContain("置信度较高");
   });
 });
