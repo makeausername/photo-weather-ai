@@ -11,6 +11,9 @@ import type {
 
 export type CloudSeaRegressionFixtureName =
   | "genericHighMountainGoodCloudSeaCase"
+  | "genericHighMountainWarmGridCoolCameraCase"
+  | "genericHighMountainRawOnlyCase"
+  | "genericLowElevationNoCorrectionCase"
   | "genericLowElevationWeakCloudSeaCase"
   | "genericMissingLayerDataCase"
   | "genericCloudBasisMismatchCase"
@@ -116,6 +119,87 @@ export const cloudSeaRegressionFixtures: Record<
     whiteoutRiskScore: 22,
     recommendationLabel: "推荐重点关注",
     rows: completeCloudSeaRows(),
+  }),
+  genericHighMountainWarmGridCoolCameraCase: makeFixture(
+    "genericHighMountainWarmGridCoolCameraCase",
+    {
+      terrain: {
+        elevationMeters: 1860,
+        surroundingReliefMeters: 1400,
+        nearbyValleyElevationMeters: 620,
+        terrainMode: "high_mountain",
+        terrainType: "summit",
+        terrainScore: 92,
+        terrainConfidence: "high",
+      },
+      cloudSeaScore: 88,
+      formationScore: 90,
+      shootableScore: 84,
+      whiteoutRiskScore: 24,
+      recommendationLabel: "推荐重点关注",
+      rows: completeCloudSeaRows({
+        rawTemperatureC: 30,
+        terrainAdjustedTemperatureC: 18,
+        displayedTemperatureC: 30,
+        temperatureBasis: "terrain_adjusted",
+        temperatureAdjustmentC: -12,
+        temperatureBasisNoteZh: "原始格点与机位估算温度差异较大，用户显示以机位估算温度为准。",
+        relativeHumidityPercent: 92,
+        windSpeedMs: 4.8,
+      }),
+    },
+  ),
+  genericHighMountainRawOnlyCase: makeFixture("genericHighMountainRawOnlyCase", {
+    terrain: {
+      elevationMeters: 1600,
+      surroundingReliefMeters: 820,
+      nearbyValleyElevationMeters: 700,
+      terrainMode: "high_mountain",
+      terrainType: "ridge",
+      terrainScore: 84,
+      terrainConfidence: "medium",
+    },
+    cloudSeaScore: 78,
+    formationScore: 80,
+    shootableScore: 70,
+    whiteoutRiskScore: 34,
+    rows: completeCloudSeaRows({
+      rawTemperatureC: 29,
+      terrainAdjustedTemperatureC: null,
+      displayedTemperatureC: 29,
+      temperatureBasis: "raw_grid",
+      temperatureAdjustmentC: null,
+      temperatureBasisNoteZh: "原始格点温度，未确认机位海拔修正。",
+    }),
+  }),
+  genericLowElevationNoCorrectionCase: makeFixture("genericLowElevationNoCorrectionCase", {
+    terrain: {
+      ...genericLowElevationTerrain,
+      elevationMeters: 100,
+      surroundingReliefMeters: 40,
+      terrainConfidence: "high",
+    },
+    cloudSeaScore: 52,
+    formationScore: 42,
+    shootableScore: 46,
+    whiteoutRiskScore: 18,
+    recommendationLabel: "谨慎参考",
+    rows: completeCloudSeaRows({
+      rawTemperatureC: 29,
+      terrainAdjustedTemperatureC: null,
+      displayedTemperatureC: 29,
+      temperatureBasis: "raw_grid",
+      temperatureAdjustmentC: null,
+      temperatureBasisNoteZh: "低海拔格点温度，未触发高山修正。",
+      cloudTotalPercent: 42,
+      cloudLowPercent: 16,
+      relativeHumidityPercent: 72,
+      dewPointSpreadC: 7,
+      visibilityMeters: 20000,
+      cloudSeaSignal: "普通",
+      cloudSeaSignalLevel: "neutral",
+    }),
+    bestWindows: [cloudSeaWindow({ score: 48, shootableScore: 46, formationScore: 42 })],
   }),
   genericLowElevationWeakCloudSeaCase: makeFixture("genericLowElevationWeakCloudSeaCase", {
     terrain: genericLowElevationTerrain,
@@ -620,8 +704,8 @@ function makeFixture(
       endTime: rows.at(-1)?.time ?? "2026-05-20T07:00:00+08:00",
       stepMinutes: 60,
       timezone,
-      temperatureBasis: "terrain_adjusted",
-      temperatureBasisNoteZh: "机位海拔修正温度",
+      temperatureBasis: rows[0]?.temperatureBasis ?? "unknown",
+      temperatureBasisNoteZh: rows[0]?.temperatureBasisNoteZh ?? "温度口径待复核",
       cloudLayerBasis: rows.some((row) => row.cloudLayerBasis === "total_only")
         ? "total_only"
         : "explicit_layers",

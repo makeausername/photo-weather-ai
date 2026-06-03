@@ -8,6 +8,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", ".
 const cloudSeaRuleFiles = [
   "apps/web/app/forecast/cloud-sea-rule-context.ts",
   "apps/web/app/forecast/cloud-sea-terrain-context.ts",
+  "apps/web/app/forecast/cloud-sea-display-temperature.ts",
   "apps/web/app/forecast/forecast-result-view-model.ts",
   "packages/shared/src/cloud-sea-recommendation-guard.ts",
   "packages/shared/src/cloud-sea-weather-variable-consistency.ts",

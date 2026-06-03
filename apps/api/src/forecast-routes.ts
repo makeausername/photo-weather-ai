@@ -8,6 +8,7 @@ import {
 } from "@photo-weather/calendar";
 import { buildCalibrationLocationKey, findCalibrationHint } from "@photo-weather/calibration";
 import {
+  buildTerrainTemperatureBasisContext,
   type ForecastCalculationResult,
   type ElevationSource,
   type ForecastQueryInput,
@@ -1225,6 +1226,7 @@ function logCloudSeaCoverageDiagnostics(
   }
   const basis = result.professionalHourlyDataTimeBasis;
   const coverage = basis?.fieldCoverageSummary;
+  const temperatureDiagnostics = cloudSeaTemperatureDiagnostics(result);
   if (!basis || !coverage) {
     logger.info(
       {
@@ -1233,6 +1235,7 @@ function logCloudSeaCoverageDiagnostics(
         requestedForecastHours: result.calendarBasis.horizonHours,
         professionalHourlyRows: result.professionalHourlyData?.length ?? 0,
         cloudLayerCoverage: "unavailable",
+        temperatureDiagnostics,
       },
       "Cloud Sea cloud-layer coverage diagnostics",
     );
@@ -1263,9 +1266,102 @@ function logCloudSeaCoverageDiagnostics(
       })),
       fieldCoverage: coverage,
       missingFieldSummary: basis.missingFieldSummary ?? [],
+      temperatureDiagnostics,
     },
     "Cloud Sea cloud-layer coverage diagnostics",
   );
+}
+
+function cloudSeaTemperatureDiagnostics(result: ForecastCalculationResult): {
+  readonly temperatureBasis: string;
+  readonly rawGridTemperaturePresent: boolean;
+  readonly terrainAdjustedTemperaturePresent: boolean;
+  readonly displayTemperatureC: number | null;
+  readonly cameraElevationMeters: number | null;
+  readonly modelElevationMeters: number | null;
+  readonly temperatureDifferenceLevel: string;
+} {
+  const current = result.currentWeather;
+  const dailyWeather = result.dailySummaries[0]?.weather;
+  const firstProfessionalHour = result.professionalHourlyData?.[0];
+  const cameraElevationMeters = firstDiagnosticNumber([
+    result.cloudSeaAnalysis.terrainSupport.selectedSpotElevationMeters,
+    current?.temperatureAdjustment?.selectedSpotElevationMeters,
+    current?.selectedSpotElevationMeters,
+    dailyWeather?.selectedSpotElevationMeters,
+    result.terrainAnalysis.terrainProfile.locationElevation,
+    result.terrainAnalysis.terrainProfile.elevationMeters,
+  ]);
+  const modelElevationMeters = firstDiagnosticNumber([
+    current?.temperatureAdjustment?.providerElevationMeters,
+    current?.providerElevationMeters,
+    dailyWeather?.providerElevationMeters,
+  ]);
+  const rawGridTemperatureC = firstDiagnosticNumber([
+    firstProfessionalHour?.rawTemperatureC,
+    current?.rawTemperature,
+    averageDiagnosticNumbers(dailyWeather?.rawTempMin, dailyWeather?.rawTempMax),
+  ]);
+  const terrainAdjustedTemperatureC = firstDiagnosticNumber([
+    firstProfessionalHour?.terrainAdjustedTemperatureC,
+    current?.elevationAdjustedTemperature,
+    averageDiagnosticNumbers(
+      dailyWeather?.elevationAdjustedTempMin,
+      dailyWeather?.elevationAdjustedTempMax,
+    ),
+  ]);
+  const context = buildTerrainTemperatureBasisContext({
+    rawGridTemperatureC,
+    terrainAdjustedTemperatureC,
+    displayedTemperatureC:
+      firstProfessionalHour?.displayedTemperatureC ?? current?.temperature,
+    providerTemperatureC: current?.temperature,
+    elevationMeters: cameraElevationMeters,
+    modelElevationMeters,
+    surroundingReliefMeters:
+      result.cloudSeaAnalysis.terrainSupport.localReliefMeters ??
+      result.terrainAnalysis.terrainProfile.localReliefMeters ??
+      result.terrainAnalysis.terrainProfile.elevationDiff5km,
+    terrainType:
+      result.cloudSeaAnalysis.terrainSupport.terrainType ??
+      result.terrainAnalysis.terrainProfile.terrainType,
+    terrainMode: result.cloudSeaAnalysis.terrainSupport.terrainMode,
+    isClassicCloudSeaEligible:
+      result.cloudSeaAnalysis.terrainSupport.terrainMode === "high_mountain" ||
+      result.terrainAnalysis.terrainProfile.terrainCloudSeaPotential === "high",
+    windSpeedMs: current?.windSpeed ?? dailyWeather?.windSpeed,
+    windGustMs: current?.windGust ?? dailyWeather?.windGust,
+    humidityPercent: current?.humidity ?? dailyWeather?.humidity,
+  });
+
+  return {
+    temperatureBasis: context.temperatureBasis,
+    rawGridTemperaturePresent: context.rawGridTemperatureC !== null,
+    terrainAdjustedTemperaturePresent: context.terrainAdjustedTemperatureC !== null,
+    displayTemperatureC: context.displayTemperatureC,
+    cameraElevationMeters: cameraElevationMeters ?? null,
+    modelElevationMeters: modelElevationMeters ?? null,
+    temperatureDifferenceLevel: context.differenceLevel,
+  };
+}
+
+function firstDiagnosticNumber(values: readonly (number | null | undefined)[]): number | undefined {
+  return values.find((value): value is number => typeof value === "number" && Number.isFinite(value));
+}
+
+function averageDiagnosticNumbers(
+  left: number | null | undefined,
+  right: number | null | undefined,
+): number | undefined {
+  if (
+    typeof left === "number" &&
+    Number.isFinite(left) &&
+    typeof right === "number" &&
+    Number.isFinite(right)
+  ) {
+    return Math.round(((left + right) / 2) * 10) / 10;
+  }
+  return undefined;
 }
 
 function logForecastCalculationFailure(options: {

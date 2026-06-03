@@ -117,4 +117,24 @@ describe("buildTerrainTemperatureBasisContext", () => {
     expect(context.lapseRateCPerKm).toBe(DEFAULT_MOUNTAIN_LAPSE_RATE_C_PER_KM);
     expect(context.professionalNoteZh).toContain("递减率");
   });
+
+  it("does not apply lapse fallback when the model elevation is too close or higher", () => {
+    const closeElevation = buildTerrainTemperatureBasisContext({
+      ...genericHighMountainNoAdjustedTemperatureCase,
+      rawGridTemperatureC: 24,
+      modelElevationMeters: 1570,
+      elevationMeters: 1700,
+    });
+    const higherModel = buildTerrainTemperatureBasisContext({
+      ...genericHighMountainNoAdjustedTemperatureCase,
+      rawGridTemperatureC: 24,
+      modelElevationMeters: 1800,
+      elevationMeters: 1700,
+    });
+
+    expect(closeElevation.temperatureBasis).toBe("raw_grid");
+    expect(closeElevation.terrainAdjustedTemperatureC).toBeNull();
+    expect(higherModel.temperatureBasis).toBe("raw_grid");
+    expect(higherModel.terrainAdjustedTemperatureC).toBeNull();
+  });
 });

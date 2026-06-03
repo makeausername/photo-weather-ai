@@ -2180,7 +2180,18 @@ function dailyTemperatureRangeText(
   weather: ForecastCalculationResult["dailySummaries"][number]["weather"] | undefined,
   result?: ForecastCalculationResult,
   weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext,
+  displayTemperatureContext?: CloudSeaForecastViewModel["displayTemperatureContext"],
 ): string {
+  if (displayTemperatureContext) {
+    const rangeText = formatTemperatureRange(displayTemperatureContext.displayTemperatureRangeC);
+    const feelsLikeText = displayTemperatureContext.bodyFeelRangeC
+      ? `${displayTemperatureContext.isHighMountainTemperatureSensitive ? "山地体感" : "体感温度"} ${formatTemperatureRange(
+          displayTemperatureContext.bodyFeelRangeC,
+        )}`
+      : "高山体感需复核";
+    return `${displayTemperatureContext.userTemperatureTitleZh}：${rangeText}｜${feelsLikeText}｜${displayTemperatureContext.basisLabelZh}`;
+  }
+
   const prefix = terrainTemperaturePrefix(result, weatherVariableConsistencyContext);
   if (!weather) {
     return `${prefix}：暂缺`;
@@ -2210,7 +2221,20 @@ function mountainTemperatureValue(
   weather: ForecastCalculationResult["dailySummaries"][number]["weather"] | undefined,
   result?: ForecastCalculationResult,
   weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext,
+  displayTemperatureContext?: CloudSeaForecastViewModel["displayTemperatureContext"],
 ): string {
+  if (displayTemperatureContext) {
+    const feelsLike =
+      displayTemperatureContext.bodyFeelTemperatureC === null
+        ? "高山体感需复核"
+        : `${
+            displayTemperatureContext.isHighMountainTemperatureSensitive ? "山地体感" : "体感温度"
+          } ${formatTemperature(displayTemperatureContext.bodyFeelTemperatureC)}`;
+    return `${displayTemperatureContext.userTemperatureTitleZh}：${formatTemperature(
+      displayTemperatureContext.displayTemperatureC,
+    )} / ${feelsLike}`;
+  }
+
   const basisContext = weatherVariableConsistencyContext?.temperatureBasisContext;
   const basisTemperature =
     basisContext?.isHighMountainTemperatureSensitive === true
@@ -2293,7 +2317,24 @@ function temperatureActionText(
   weather: ForecastCalculationResult["dailySummaries"][number]["weather"] | undefined,
   result?: ForecastCalculationResult,
   weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext,
+  displayTemperatureContext?: CloudSeaForecastViewModel["displayTemperatureContext"],
 ): string {
+  if (displayTemperatureContext) {
+    if (displayTemperatureContext.basis === "raw_grid_with_warning") {
+      return displayTemperatureContext.clothingAdviceZh;
+    }
+    const feelsLike =
+      displayTemperatureContext.bodyFeelTemperatureC ??
+      displayTemperatureContext.displayTemperatureC;
+    if (typeof feelsLike === "number" && feelsLike <= 5) {
+      return "风寒感明显，提前加保暖层。";
+    }
+    if (typeof feelsLike === "number" && feelsLike >= 28) {
+      return "体感偏热，注意补水和遮阳。";
+    }
+    return displayTemperatureContext.clothingAdviceZh;
+  }
+
   if (hasTemperatureBasisWarning(weatherVariableConsistencyContext)) {
     return (
       weatherVariableConsistencyContext?.temperatureBasisContext.actionAdviceModifierZh ||
@@ -2322,15 +2363,6 @@ function cloudVisibilityActionText(result: ForecastCalculationResult): string {
     return "通透度较好，适合安排远景层次。";
   }
   return "通透度一般，保留近景和云层纹理备选。";
-}
-
-function temperatureConsistencyNote(
-  context: CloudSeaWeatherVariableConsistencyContext | undefined,
-): string {
-  if (!context || !hasTemperatureBasisWarning(context)) {
-    return "";
-  }
-  return context.temperatureBasisContext.userNoteZh;
 }
 
 function cloudBasisConsistencyNote(
@@ -2454,20 +2486,33 @@ function dewPointActionText(
   return "露点差相对拉开，云雾突变概率较低。";
 }
 
-function packingMainValue(guide: ForecastCalculationResult["clothingGuide"]): string {
+function packingMainValue(
+  guide: ForecastCalculationResult["clothingGuide"],
+  displayTemperatureContext?: CloudSeaForecastViewModel["displayTemperatureContext"],
+): string {
+  if (
+    displayTemperatureContext &&
+    (displayTemperatureContext.isHighMountainTemperatureSensitive ||
+      displayTemperatureContext.basis === "raw_grid_with_warning")
+  ) {
+    return displayTemperatureContext.equipmentAdviceZh;
+  }
   return clothingEquipmentAdvice(guide)[1] ?? guide.titleZh;
 }
 
 function packingDetail(
   guide: ForecastCalculationResult["clothingGuide"],
   weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext,
+  displayTemperatureContext?: CloudSeaForecastViewModel["displayTemperatureContext"],
 ): string {
   const base = clothingEquipmentAdvice(guide)[0] ?? guide.summaryZh;
   const extra = [
-    hasTemperatureBasisWarning(weatherVariableConsistencyContext)
-      ? weatherVariableConsistencyContext?.temperatureBasisContext.clothingAdviceModifierZh ||
-        "高山体感可能更冷，按机位修正温度准备。"
-      : undefined,
+    displayTemperatureContext
+      ? displayTemperatureContext.clothingAdviceZh
+      : hasTemperatureBasisWarning(weatherVariableConsistencyContext)
+        ? weatherVariableConsistencyContext?.temperatureBasisContext.clothingAdviceModifierZh ||
+          "高山体感可能更冷，按机位修正温度准备。"
+        : undefined,
     weatherVariableConsistencyContext?.shouldDowngradePrecipitationWording
       ? "降水按局地短时扰动准备轻量防雨。"
       : undefined,
@@ -2886,6 +2931,7 @@ export function CloudSeaResultPage({
         <CloudSeaNearTermWeatherSection
           result={result}
           terrainContext={viewModel.terrainContext}
+          displayTemperatureContext={viewModel.displayTemperatureContext}
           precipitationSignalContext={viewModel.precipitationSignal}
           weatherVariableConsistencyContext={
             viewModel.ruleContext.weatherVariableConsistencyContext
@@ -4420,11 +4466,13 @@ function clampScorePercent(value: number): number {
 function CloudSeaNearTermWeatherSection({
   result,
   terrainContext,
+  displayTemperatureContext,
   precipitationSignalContext,
   weatherVariableConsistencyContext,
 }: {
   readonly result: ForecastCalculationResult;
   readonly terrainContext: CloudSeaTerrainContext;
+  readonly displayTemperatureContext: CloudSeaForecastViewModel["displayTemperatureContext"];
   readonly precipitationSignalContext: CloudSeaForecastViewModel["precipitationSignal"];
   readonly weatherVariableConsistencyContext: CloudSeaWeatherVariableConsistencyContext;
 }) {
@@ -4460,19 +4508,20 @@ function CloudSeaNearTermWeatherSection({
             firstDay,
             result,
             weatherVariableConsistencyContext,
+            displayTemperatureContext,
           )}
           detail={`${dailyTemperatureRangeText(
             firstDay,
             result,
             weatherVariableConsistencyContext,
+            displayTemperatureContext,
           )}，${temperatureActionText(
             current,
             firstDay,
             result,
             weatherVariableConsistencyContext,
-          )} ${terrainCorrectionUserNote(result, current, firstDay)} ${temperatureConsistencyNote(
-            weatherVariableConsistencyContext,
-          )}`}
+            displayTemperatureContext,
+          )} ${displayTemperatureContext.warningZh}`}
         />
         <CompactInfoCard
           title="云层与能见度"
@@ -4522,8 +4571,12 @@ function CloudSeaNearTermWeatherSection({
           title="穿衣与装备"
           timeBasis={timeContext.tripBasisLabel}
           badge={clothing.titleZh}
-          value={packingMainValue(clothing)}
-          detail={packingDetail(clothing, weatherVariableConsistencyContext)}
+          value={packingMainValue(clothing, displayTemperatureContext)}
+          detail={packingDetail(
+            clothing,
+            weatherVariableConsistencyContext,
+            displayTemperatureContext,
+          )}
         />
       </div>
     </CurrentWeatherCards>
@@ -9318,6 +9371,16 @@ function formatTime(value: string): string {
 
 function formatTemperature(value: number | null | undefined): string {
   return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value)}°C` : "暂无";
+}
+
+function formatTemperatureRange(range: readonly [number, number] | null | undefined): string {
+  if (!range) {
+    return "暂无";
+  }
+  const [low, high] = range;
+  return Math.round(low) === Math.round(high)
+    ? `${Math.round(low)}°C`
+    : `${Math.round(low)}-${Math.round(high)}°C`;
 }
 
 function formatKilometers(value: number | null | undefined): string {

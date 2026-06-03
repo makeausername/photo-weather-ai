@@ -1,6 +1,7 @@
 import type { TerrainMode, TerrainType } from "./types.js";
 
 export const DEFAULT_MOUNTAIN_LAPSE_RATE_C_PER_KM = 6.5;
+const meaningfulElevationDifferenceMeters = 150;
 
 export type TerrainTemperatureBasis =
   | "terrain_adjusted"
@@ -87,7 +88,9 @@ export function buildTerrainTemperatureBasisContext(
     directTerrainAdjustedTemperatureC === undefined &&
     rawGridTemperatureC !== undefined &&
     elevationMeters !== undefined &&
-    modelElevationMeters !== undefined
+    modelElevationMeters !== undefined &&
+    elevationMeters > modelElevationMeters &&
+    elevationMeters - modelElevationMeters >= meaningfulElevationDifferenceMeters
       ? round1(rawGridTemperatureC - ((elevationMeters - modelElevationMeters) / 1000) * lapseRateCPerKm)
       : undefined;
   const selectedTerrainAdjustedTemperatureC =

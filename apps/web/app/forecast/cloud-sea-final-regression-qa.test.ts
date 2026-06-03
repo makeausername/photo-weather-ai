@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -30,9 +33,13 @@ vi.mock("next/navigation", () => ({
 
 const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 
 const requiredFixtureNames: readonly CloudSeaRegressionFixtureName[] = [
   "genericHighMountainGoodCloudSeaCase",
+  "genericHighMountainWarmGridCoolCameraCase",
+  "genericHighMountainRawOnlyCase",
+  "genericLowElevationNoCorrectionCase",
   "genericLowElevationWeakCloudSeaCase",
   "genericMissingLayerDataCase",
   "genericCloudBasisMismatchCase",
@@ -307,6 +314,80 @@ describe("Cloud Sea result page final regression QA", () => {
       "CloudSeaRiskSummary",
       "CloudSeaAiInterpretation",
     ]);
+  });
+
+  it("uses adjusted high-mountain display temperature instead of warm raw grid values", () => {
+    const { html, viewModel } = renderCloudSeaFixture(
+      cloudSeaRegressionFixture("genericHighMountainWarmGridCoolCameraCase"),
+    );
+    const nearTermSection = sectionBetween(html, "CloudSeaNearTermWeather", "CloudSeaWindowCards");
+    const actionSection = sectionBetween(html, "CloudSeaActionPlan", "CloudSeaRiskSummary");
+    const professionalSection = sectionBetween(
+      html,
+      "CloudSeaProfessionalHourlyData",
+      "CloudSeaDailyTrend",
+    );
+
+    expect(viewModel.displayTemperatureContext.basis).toBe("terrain_adjusted");
+    expect(viewModel.displayTemperatureContext.displayTemperatureC).toBe(18);
+    expect(nearTermSection).toContain("机位估算温度");
+    expect(nearTermSection).toContain("18°C");
+    expect(nearTermSection).toMatch(/山地体感\s*16°C/);
+    expect(nearTermSection).not.toContain("30°C");
+    expect(nearTermSection).not.toContain("山顶估算温度");
+    expect(nearTermSection).not.toContain("山地体感 29°C");
+    expect(nearTermSection).not.toContain("山地体感 30°C");
+    expect(actionSection).toContain("防风 / 防潮 / 轻保暖");
+    expect(actionSection).not.toContain("30°C");
+    expect(professionalSection).toContain("原始格点气温 °C");
+    expect(professionalSection).toContain("机位估算气温 °C");
+    expect(professionalSection).toContain("30°C");
+  });
+
+  it("labels high-mountain raw-only temperature as raw grid reference with a warning", () => {
+    const { html, viewModel } = renderCloudSeaFixture(
+      cloudSeaRegressionFixture("genericHighMountainRawOnlyCase"),
+    );
+    const nearTermSection = sectionBetween(html, "CloudSeaNearTermWeather", "CloudSeaWindowCards");
+
+    expect(viewModel.displayTemperatureContext.basis).toBe("raw_grid_with_warning");
+    expect(viewModel.displayTemperatureContext.isUserFacingTemperatureReliable).toBe(false);
+    expect(nearTermSection).toContain("原始格点温度，仅供参考");
+    expect(nearTermSection).toContain("29°C");
+    expect(nearTermSection).toContain("高山机位体感可能更冷");
+    expect(nearTermSection).not.toContain("山顶估算温度");
+    expect(nearTermSection).not.toMatch(/机位估算温度：29°C/);
+  });
+
+  it("leaves low-elevation raw temperatures uncorrected without high-mountain warning", () => {
+    const { html, viewModel } = renderCloudSeaFixture(
+      cloudSeaRegressionFixture("genericLowElevationNoCorrectionCase"),
+    );
+    const nearTermSection = sectionBetween(html, "CloudSeaNearTermWeather", "CloudSeaWindowCards");
+
+    expect(viewModel.displayTemperatureContext.basis).toBe("provider_point");
+    expect(viewModel.displayTemperatureContext.isHighMountainTemperatureSensitive).toBe(false);
+    expect(viewModel.displayTemperatureContext.displayTemperatureC).toBe(29);
+    expect(nearTermSection).toContain("29°C");
+    expect(nearTermSection).not.toContain("原始格点温度，仅供参考");
+    expect(nearTermSection).not.toContain("高山机位体感可能更冷");
+    expect(nearTermSection).not.toContain("高山体感需复核");
+  });
+
+  it("keeps Cloud Sea user-facing cards on the display temperature context", () => {
+    const source = readFileSync(
+      resolve(repoRoot, "apps/web/app/forecast/forecast-result-client.tsx"),
+      "utf8",
+    );
+    const nearTermSource = source.slice(
+      source.indexOf("function CloudSeaNearTermWeatherSection"),
+      source.indexOf("function cloudSeaAuxiliaryDataNotice"),
+    );
+
+    expect(nearTermSource).toContain("displayTemperatureContext");
+    expect(nearTermSource).not.toMatch(
+      /rawGridTemperatureC|rawTemperatureC|current\?\.temperature|weather\.tempMin|weather\.tempMax/,
+    );
   });
 
   it("keeps missing layer values as dashes and never fills them from total cloud", () => {

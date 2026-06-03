@@ -46,6 +46,10 @@ import {
   buildCloudSeaRuleContext,
   type CloudSeaRuleContext,
 } from "./cloud-sea-rule-context";
+import {
+  buildCloudSeaDisplayTemperatureContext,
+  type CloudSeaDisplayTemperatureContext,
+} from "./cloud-sea-display-temperature";
 
 export type ForecastResultModuleKey =
   | "overall"
@@ -297,6 +301,7 @@ export type CloudSeaActionPlanItem = {
 export type CloudSeaForecastViewModel = {
   readonly ruleContext: CloudSeaRuleContext;
   readonly terrainContext: CloudSeaTerrainContext;
+  readonly displayTemperatureContext: CloudSeaDisplayTemperatureContext;
   readonly precipitationSignal: CloudSeaPrecipitationSignalContext;
   readonly recommendationGuard: CloudSeaRecommendationGuardOutput;
   readonly recommendationExplanation: CloudSeaRecommendationExplanation;
@@ -652,6 +657,11 @@ export function buildCloudSeaForecastViewModel(
   const cloudBasisConsistency = ruleContext.cloudBasisConsistencyContext;
   const multiSourceAgreementContext = ruleContext.multiSourceAgreementContext;
   const weatherVariableConsistencyContext = ruleContext.weatherVariableConsistencyContext;
+  const displayTemperatureContext = buildCloudSeaDisplayTemperatureContextForResult(
+    result,
+    terrainContext,
+    weatherVariableConsistencyContext.temperatureBasisContext,
+  );
   const precipitationSignalContext = ruleContext.precipitationSignalContext;
   const recommendationGuard = ruleContext.recommendationGuardContext;
   const whiteoutLabel = whiteoutRiskLabel(analysis.whiteoutRiskScore);
@@ -690,6 +700,7 @@ export function buildCloudSeaForecastViewModel(
   return {
     ruleContext,
     terrainContext,
+    displayTemperatureContext,
     precipitationSignal: precipitationSignalContext,
     recommendationGuard,
     recommendationExplanation,
@@ -793,6 +804,7 @@ export function buildCloudSeaForecastViewModel(
       cloudSeaWindows,
       terrainContext,
       recommendationGuard,
+      displayTemperatureContext,
       weatherVariableConsistencyContext,
       precipitationSignalContext,
       recommendationExplanation,
@@ -820,6 +832,86 @@ export function buildCloudSeaForecastViewModel(
     ),
     dataNotice,
   };
+}
+
+function buildCloudSeaDisplayTemperatureContextForResult(
+  result: ForecastCalculationResult,
+  terrainContext: CloudSeaTerrainContext,
+  temperatureBasisContext: CloudSeaWeatherVariableConsistencyContext["temperatureBasisContext"],
+): CloudSeaDisplayTemperatureContext {
+  const current = result.currentWeather;
+  const dailyWeather = result.dailySummaries[0]?.weather;
+  const firstProfessionalHour = result.professionalHourlyData?.[0];
+  const cameraElevationMeters = firstFiniteNumber([
+    terrainContext.elevationMeters,
+    result.cloudSeaAnalysis.terrainSupport.selectedSpotElevationMeters,
+    current?.temperatureAdjustment?.selectedSpotElevationMeters,
+    current?.selectedSpotElevationMeters,
+    dailyWeather?.selectedSpotElevationMeters,
+    result.terrainAnalysis.terrainProfile.locationElevation,
+    result.terrainAnalysis.terrainProfile.elevationMeters,
+  ]);
+  const modelElevationMeters = firstFiniteNumber([
+    current?.temperatureAdjustment?.providerElevationMeters,
+    current?.providerElevationMeters,
+    dailyWeather?.providerElevationMeters,
+  ]);
+  const rawGridTemperatureC = firstFiniteNumber([
+    temperatureBasisContext.rawGridTemperatureC,
+    firstProfessionalHour?.rawTemperatureC,
+    current?.rawTemperature,
+    averageNumbers(dailyWeather?.rawTempMin, dailyWeather?.rawTempMax),
+  ]);
+  const terrainAdjustedTemperatureC = firstFiniteNumber([
+    temperatureBasisContext.terrainAdjustedTemperatureC,
+    firstProfessionalHour?.terrainAdjustedTemperatureC,
+    current?.elevationAdjustedTemperature,
+    averageNumbers(dailyWeather?.elevationAdjustedTempMin, dailyWeather?.elevationAdjustedTempMax),
+  ]);
+
+  return buildCloudSeaDisplayTemperatureContext({
+    temperatureBasisContext,
+    rawGridTemperatureC,
+    terrainAdjustedTemperatureC,
+    providerTemperatureC: current?.temperature,
+    displayedTemperatureC:
+      temperatureBasisContext.displayTemperatureC ??
+      firstProfessionalHour?.displayedTemperatureC ??
+      current?.temperature,
+    displayTemperatureRangeC: [dailyWeather?.tempMin, dailyWeather?.tempMax],
+    bodyFeelTemperatureC: current?.mountainFeelsLikeC ?? current?.feelsLike,
+    bodyFeelRangeC: [
+      dailyWeather?.mountainFeelsLikeMin ?? dailyWeather?.feelsLikeMin,
+      dailyWeather?.mountainFeelsLikeMax ?? dailyWeather?.feelsLikeMax,
+    ],
+    cameraElevationMeters,
+    modelElevationMeters,
+    surroundingReliefMeters:
+      terrainContext.surroundingReliefMeters ??
+      result.cloudSeaAnalysis.terrainSupport.localReliefMeters,
+    terrainType: terrainContext.terrainType,
+    terrainMode: result.cloudSeaAnalysis.terrainSupport.terrainMode,
+    terrainClass: terrainContext.terrainClass,
+    isClassicCloudSeaEligible: terrainContext.isClassicCloudSeaEligible,
+    windSpeedMs: current?.windSpeed ?? dailyWeather?.windSpeed,
+    windGustMs: current?.windGust ?? dailyWeather?.windGust,
+    humidityPercent: current?.humidity ?? dailyWeather?.humidity,
+    sourceTemperatureBasis: temperatureBasisContext.temperatureBasis,
+  });
+}
+
+function firstFiniteNumber(values: readonly (number | null | undefined)[]): number | undefined {
+  return values.find((value): value is number => typeof value === "number" && Number.isFinite(value));
+}
+
+function averageNumbers(
+  left: number | null | undefined,
+  right: number | null | undefined,
+): number | undefined {
+  if (typeof left === "number" && Number.isFinite(left) && typeof right === "number" && Number.isFinite(right)) {
+    return Math.round(((left + right) / 2) * 10) / 10;
+  }
+  return undefined;
 }
 
 function buildCloudSeaViewModel(result: ForecastCalculationResult): ForecastResultViewModel {
@@ -3100,6 +3192,7 @@ function buildCloudSeaActionPlan(
   windows: readonly ForecastResultWindow[],
   terrainContext: CloudSeaTerrainContext,
   recommendationGuard: CloudSeaRecommendationGuardOutput,
+  displayTemperatureContext: CloudSeaDisplayTemperatureContext,
   weatherVariableConsistencyContext: CloudSeaWeatherVariableConsistencyContext,
   precipitationSignalContext: CloudSeaPrecipitationSignalContext,
   recommendationExplanation: CloudSeaRecommendationExplanation,
@@ -3179,13 +3272,11 @@ function buildCloudSeaActionPlan(
     {
       key: "gear",
       label: "装备提醒",
-      value: weatherVariableConsistencyContext.temperatureBasisContext
-        .isHighMountainTemperatureSensitive
-        ? "防风 / 防潮 / 轻保暖"
-        : "防潮 / 防滑 / 镜头布",
+      value: displayTemperatureContext.equipmentAdviceZh,
       detail: cloudSeaGearAdvice(
         result,
         terrainContext,
+        displayTemperatureContext,
         weatherVariableConsistencyContext,
         precipitationSignalContext,
       ),
@@ -3947,6 +4038,7 @@ function cloudSeaVerificationPoints(
 function cloudSeaGearAdvice(
   result: ForecastCalculationResult,
   terrainContext: CloudSeaTerrainContext,
+  displayTemperatureContext: CloudSeaDisplayTemperatureContext,
   weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext,
   precipitationSignalContext?: CloudSeaPrecipitationSignalContext,
 ): string {
@@ -3956,9 +4048,11 @@ function cloudSeaGearAdvice(
     precipitationSignalContext === undefined
       ? "清晨湿度高，注意镜头结露。"
       : precipitationSignalContext.equipmentAdviceZh;
-  const temperature = hasTemperatureBasisWarning(weatherVariableConsistencyContext)
-    ? `${weatherVariableConsistencyContext?.temperatureBasisContext.clothingAdviceModifierZh ?? "高山体感可能更冷，建议按机位修正温度准备。"}${weatherVariableConsistencyContext?.temperatureBasisContext.actionAdviceModifierZh ?? ""}`
-    : "";
+  const temperature =
+    (displayTemperatureContext.warningZh ||
+      displayTemperatureContext.isHighMountainTemperatureSensitive)
+      ? displayTemperatureContext.clothingAdviceZh
+      : "";
   const vapor =
     weatherVariableConsistencyContext?.humidityDewPointStatus === "conflict"
       ? "水汽指标需现场复核，不宜仅凭湿度判断云海。"
