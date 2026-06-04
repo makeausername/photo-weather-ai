@@ -5,7 +5,6 @@ import { buildSeedData } from "./seed-data.js";
 import { safeUser } from "./auth.js";
 import {
   hashPassword,
-  minimumAdminPasswordLength,
   validateAdminPassword,
   verifyPassword,
 } from "./passwords.js";
@@ -42,6 +41,8 @@ export type CreateAdminEnv = {
   readonly [key: string]: string | undefined;
   readonly ADMIN_EMAIL?: string;
   readonly ADMIN_PASSWORD?: string;
+  readonly ADMIN_INITIAL_PASSWORD?: string;
+  readonly ADMIN_INITIAL_PASSWORD_B64?: string;
   readonly ADMIN_DISPLAY_NAME?: string;
 };
 
@@ -49,6 +50,8 @@ export type VerifyAdminEnv = {
   readonly [key: string]: string | undefined;
   readonly ADMIN_EMAIL?: string;
   readonly ADMIN_PASSWORD?: string;
+  readonly ADMIN_INITIAL_PASSWORD?: string;
+  readonly ADMIN_INITIAL_PASSWORD_B64?: string;
 };
 
 export type AdminVerificationErrorCode =
@@ -106,19 +109,43 @@ function normalizeDisplayName(displayName: string | null | undefined): string | 
 }
 
 function assertAdminPassword(password: string): void {
-  if (!password) {
-    throw new Error("管理员密码不能为空。");
+  validateAdminPassword(password);
+}
+
+function decodeAdminInitialPasswordB64(encodedPassword: string): string {
+  const normalized = encodedPassword.trim();
+  const compact = normalized.replace(/=+$/, "");
+  if (
+    !normalized ||
+    normalized.length % 4 === 1 ||
+    !/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)
+  ) {
+    throw new Error("ADMIN_INITIAL_PASSWORD_B64 不是有效的 base64 编码。");
   }
 
-  try {
-    validateAdminPassword(password);
-  } catch {
-    throw new Error(`管理员密码至少需要 ${minimumAdminPasswordLength} 个字符。`);
+  const decodedPassword = Buffer.from(normalized, "base64").toString("utf8");
+  const encodedAgain = Buffer.from(decodedPassword, "utf8").toString("base64").replace(/=+$/, "");
+  if (encodedAgain !== compact) {
+    throw new Error("ADMIN_INITIAL_PASSWORD_B64 不是有效的 base64 编码。");
   }
+
+  return decodedPassword;
+}
+
+function resolveAdminPassword(source: CreateAdminEnv | VerifyAdminEnv): string | undefined {
+  if (source.ADMIN_INITIAL_PASSWORD_B64?.trim()) {
+    return decodeAdminInitialPasswordB64(source.ADMIN_INITIAL_PASSWORD_B64);
+  }
+
+  if (source.ADMIN_PASSWORD !== undefined) {
+    return source.ADMIN_PASSWORD;
+  }
+
+  return source.ADMIN_INITIAL_PASSWORD;
 }
 
 function hasCompleteAdminEnv(source: CreateAdminEnv): boolean {
-  return Boolean(source.ADMIN_EMAIL?.trim()) && Boolean(source.ADMIN_PASSWORD);
+  return Boolean(source.ADMIN_EMAIL?.trim()) && Boolean(resolveAdminPassword(source));
 }
 
 function isInteractiveTty(): boolean {
@@ -191,10 +218,12 @@ async function promptHidden(label: string): Promise<string> {
 
 export function readCreateAdminEnv(source: CreateAdminEnv = process.env): CreateAdminInput {
   const email = source.ADMIN_EMAIL?.trim();
-  const password = source.ADMIN_PASSWORD ?? "";
+  const password = resolveAdminPassword(source) ?? "";
 
   if (!email || !password) {
-    throw new Error("缺少 ADMIN_EMAIL 或 ADMIN_PASSWORD，无法在非交互环境创建管理员。");
+    throw new Error(
+      "缺少 ADMIN_EMAIL 以及 ADMIN_INITIAL_PASSWORD_B64、ADMIN_PASSWORD 或 ADMIN_INITIAL_PASSWORD，无法在非交互环境创建管理员。",
+    );
   }
 
   return {
@@ -212,7 +241,9 @@ export async function readCreateAdminInput(
   }
 
   if (!isInteractiveTty()) {
-    throw new Error("缺少 ADMIN_EMAIL 或 ADMIN_PASSWORD，无法在非交互环境创建管理员。");
+    throw new Error(
+      "缺少 ADMIN_EMAIL 以及 ADMIN_INITIAL_PASSWORD_B64、ADMIN_PASSWORD 或 ADMIN_INITIAL_PASSWORD，无法在非交互环境创建管理员。",
+    );
   }
 
   let email = "";
@@ -421,7 +452,7 @@ export function readVerifyAdminEnv(source: VerifyAdminEnv = process.env): Verify
 
   return {
     email,
-    password: source.ADMIN_PASSWORD,
+    password: resolveAdminPassword(source),
   };
 }
 

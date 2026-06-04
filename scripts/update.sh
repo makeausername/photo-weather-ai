@@ -5,8 +5,12 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE=".env.production"
 COMPOSE_FILE="docker-compose.prod.yml"
+INSTALLER_INPUT_LIB="${SCRIPT_DIR}/lib/installer-input.sh"
 
 cd "${PROJECT_ROOT}"
+
+# shellcheck source=scripts/lib/installer-input.sh
+. "${INSTALLER_INPUT_LIB}"
 
 if [[ "$(id -u)" -eq 0 ]]; then
   SUDO=""
@@ -151,22 +155,30 @@ run_migrations() {
 }
 
 create_and_verify_admin() {
-  if [[ -z "${ADMIN_EMAIL:-}" || -z "${ADMIN_PASSWORD:-}" ]]; then
-    echo "ADMIN_EMAIL 或 ADMIN_PASSWORD 未配置，跳过管理员账号更新。"
+  if [[ -z "${ADMIN_EMAIL:-}" ]]; then
+    echo "ADMIN_EMAIL 未配置，跳过管理员账号更新。"
     return
   fi
 
+  if ! prepare_admin_password_b64_from_env; then
+    echo "ADMIN_INITIAL_PASSWORD_B64、ADMIN_PASSWORD 或 ADMIN_INITIAL_PASSWORD 未配置，跳过管理员账号更新。"
+    return
+  fi
+
+  ADMIN_DISPLAY_NAME="${ADMIN_DISPLAY_NAME:-Super Admin}"
+  export ADMIN_EMAIL ADMIN_INITIAL_PASSWORD_B64 ADMIN_DISPLAY_NAME
+
   echo "Creating or updating admin account..."
   compose run --rm \
-    -e ADMIN_EMAIL="${ADMIN_EMAIL}" \
-    -e ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
-    -e ADMIN_DISPLAY_NAME="${ADMIN_DISPLAY_NAME:-Super Admin}" \
+    -e ADMIN_EMAIL \
+    -e ADMIN_INITIAL_PASSWORD_B64 \
+    -e ADMIN_DISPLAY_NAME \
     api pnpm create-admin
 
   echo "Verifying admin account..."
   compose run --rm \
-    -e ADMIN_EMAIL="${ADMIN_EMAIL}" \
-    -e ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
+    -e ADMIN_EMAIL \
+    -e ADMIN_INITIAL_PASSWORD_B64 \
     api pnpm verify-admin
 }
 

@@ -4,6 +4,8 @@ import {
   hasPermission,
   hashPassword,
   hashUserPassword,
+  readCreateAdminEnv,
+  readVerifyAdminEnv,
   safeUser,
   verifySuperAdmin,
   verifyPassword,
@@ -112,7 +114,7 @@ function createAdminScriptClient(): {
 
 describe("admin auth helpers", () => {
   it("hashes and verifies passwords without storing plain text", async () => {
-    const password = "CorrectHorseBattery99";
+    const password = "CorrectHorseBattery99!";
     const passwordHash = await hashPassword(password);
 
     expect(passwordHash).not.toBe(password);
@@ -158,7 +160,7 @@ describe("admin auth helpers", () => {
 
     const result = await createOrUpdateSuperAdmin({
       email: "ADMIN@EXAMPLE.COM",
-      password: "CorrectHorseBattery99",
+      password: "CorrectHorseBattery99!",
       displayName: "Owner",
       client,
     });
@@ -172,7 +174,7 @@ describe("admin auth helpers", () => {
         displayName: "Owner",
       },
     });
-    expect([...state.users.values()][0].passwordHash).not.toBe("CorrectHorseBattery99");
+    expect([...state.users.values()][0].passwordHash).not.toBe("CorrectHorseBattery99!");
     expect(state.assignments).toEqual([
       {
         userId: "user-0",
@@ -183,7 +185,7 @@ describe("admin auth helpers", () => {
 
   it("create-admin output does not print the password", async () => {
     const { client } = createAdminScriptClient();
-    const password = "CorrectHorseBattery99";
+    const password = "CorrectHorseBattery99!";
     const result = await createOrUpdateSuperAdmin({
       email: "admin@example.com",
       password,
@@ -193,18 +195,65 @@ describe("admin auth helpers", () => {
     expect(formatCreateAdminResult(result).join("\n")).not.toContain(password);
   });
 
+  it("reads base64 admin initial passwords before legacy raw password env vars", () => {
+    const encodedPassword = Buffer.from("CorrectHorseBattery99!", "utf8").toString("base64");
+
+    expect(
+      readCreateAdminEnv({
+        ADMIN_EMAIL: "ADMIN@EXAMPLE.COM",
+        ADMIN_INITIAL_PASSWORD_B64: encodedPassword,
+        ADMIN_PASSWORD: "WrongHorseBattery99!",
+        ADMIN_DISPLAY_NAME: "Owner",
+      }),
+    ).toMatchObject({
+      email: "ADMIN@EXAMPLE.COM",
+      password: "CorrectHorseBattery99!",
+      displayName: "Owner",
+    });
+
+    expect(
+      readVerifyAdminEnv({
+        ADMIN_EMAIL: "admin@example.com",
+        ADMIN_INITIAL_PASSWORD_B64: encodedPassword,
+      }),
+    ).toMatchObject({
+      email: "admin@example.com",
+      password: "CorrectHorseBattery99!",
+    });
+  });
+
+  it("keeps legacy raw admin password env vars compatible", () => {
+    expect(
+      readCreateAdminEnv({
+        ADMIN_EMAIL: "admin@example.com",
+        ADMIN_INITIAL_PASSWORD: "LegacyHorseBattery99!",
+      }),
+    ).toMatchObject({
+      password: "LegacyHorseBattery99!",
+    });
+
+    expect(
+      readVerifyAdminEnv({
+        ADMIN_EMAIL: "admin@example.com",
+        ADMIN_PASSWORD: "LegacyHorseBattery99!",
+      }),
+    ).toMatchObject({
+      password: "LegacyHorseBattery99!",
+    });
+  });
+
   it("create-admin updates an existing admin password and keeps the login verifier compatible", async () => {
     const { client, state } = createAdminScriptClient();
     await createOrUpdateSuperAdmin({
       email: "admin@example.com",
-      password: "CorrectHorseBattery99",
+      password: "CorrectHorseBattery99!",
       displayName: "Owner",
       client,
     });
 
     const result = await createOrUpdateSuperAdmin({
       email: "ADMIN@EXAMPLE.COM",
-      password: "UpdatedHorseBattery99",
+      password: "UpdatedHorseBattery99!",
       displayName: "Operator",
       client,
     });
@@ -219,15 +268,15 @@ describe("admin auth helpers", () => {
         status: "active",
       },
     });
-    expect(await verifyPassword("CorrectHorseBattery99", user.passwordHash)).toBe(false);
-    expect(await verifyPassword("UpdatedHorseBattery99", user.passwordHash)).toBe(true);
+    expect(await verifyPassword("CorrectHorseBattery99!", user.passwordHash)).toBe(false);
+    expect(await verifyPassword("UpdatedHorseBattery99!", user.passwordHash)).toBe(true);
   });
 
   it("create-admin re-enables an existing disabled admin account", async () => {
     const { client, state } = createAdminScriptClient();
     await createOrUpdateSuperAdmin({
       email: "admin@example.com",
-      password: "CorrectHorseBattery99",
+      password: "CorrectHorseBattery99!",
       client,
     });
     const user = [...state.users.values()][0];
@@ -238,7 +287,7 @@ describe("admin auth helpers", () => {
 
     const result = await createOrUpdateSuperAdmin({
       email: "admin@example.com",
-      password: "UpdatedHorseBattery99",
+      password: "UpdatedHorseBattery99!",
       client,
     });
 
@@ -254,14 +303,14 @@ describe("admin auth helpers", () => {
     const { client } = createAdminScriptClient();
     await createOrUpdateSuperAdmin({
       email: "admin@example.com",
-      password: "CorrectHorseBattery99",
+      password: "CorrectHorseBattery99!",
       client,
     });
 
     await expect(
       verifySuperAdmin({
         email: "admin@example.com",
-        password: "CorrectHorseBattery99",
+        password: "CorrectHorseBattery99!",
         client,
       }),
     ).resolves.toMatchObject({
@@ -277,14 +326,14 @@ describe("admin auth helpers", () => {
     const { client } = createAdminScriptClient();
     await createOrUpdateSuperAdmin({
       email: "admin@example.com",
-      password: "CorrectHorseBattery99",
+      password: "CorrectHorseBattery99!",
       client,
     });
 
     await expect(
       verifySuperAdmin({
         email: "admin@example.com",
-        password: "WrongHorseBattery99",
+        password: "WrongHorseBattery99!",
         client,
       }),
     ).rejects.toThrow("管理员密码校验失败");
@@ -294,7 +343,7 @@ describe("admin auth helpers", () => {
     const { client, state } = createAdminScriptClient();
     await createOrUpdateSuperAdmin({
       email: "admin@example.com",
-      password: "CorrectHorseBattery99",
+      password: "CorrectHorseBattery99!",
       client,
     });
     const user = [...state.users.values()][0];
@@ -306,7 +355,7 @@ describe("admin auth helpers", () => {
     await expect(
       verifySuperAdmin({
         email: "admin@example.com",
-        password: "CorrectHorseBattery99",
+        password: "CorrectHorseBattery99!",
         client,
       }),
     ).rejects.toThrow("管理员角色缺失");

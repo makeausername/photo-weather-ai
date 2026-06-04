@@ -4,8 +4,12 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE=".env.production"
+INSTALLER_INPUT_LIB="${SCRIPT_DIR}/lib/installer-input.sh"
 
 cd "${PROJECT_ROOT}"
+
+# shellcheck source=scripts/lib/installer-input.sh
+. "${INSTALLER_INPUT_LIB}"
 
 trim() {
   local value="$1"
@@ -34,14 +38,6 @@ prompt_required() {
     fi
     echo "此项不能为空。"
   done
-}
-
-prompt_secret() {
-  local label="$1"
-  local value=""
-  read -r -s -p "${label}: " value
-  echo
-  printf '%s' "${value}"
 }
 
 json_escape() {
@@ -91,7 +87,7 @@ if ! command -v curl >/dev/null 2>&1; then
 fi
 
 ADMIN_EMAIL="${ADMIN_EMAIL:-}"
-ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
+ADMIN_PASSWORD="$(resolve_admin_password_from_env 2>/dev/null || true)"
 
 if [[ -z "${ADMIN_EMAIL}" ]]; then
   ADMIN_EMAIL="$(prompt_required "请输入管理员邮箱")"

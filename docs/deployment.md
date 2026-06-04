@@ -53,6 +53,8 @@ It writes matching values to:
 
 Custom database passwords are URL-encoded with `python3 urllib.parse.quote` before `DATABASE_URL` is written. If `python3` is unavailable, leave the DB password blank so the installer generates a URL-safe password, use only URL-safe password characters, or install `python3` before using a custom password with reserved URL characters. The installer prints `POSTGRES_DB`, `POSTGRES_USER`, and a masked `DATABASE_URL`; it never prints `POSTGRES_PASSWORD`.
 
+管理员密码支持常见强密码符号；交互输入不会回显；请避免在命令行明文传入密码。安装器要求管理员密码至少 12 位，并包含大小写字母、数字和特殊字符。新生成的 `.env.production` 使用 `ADMIN_INITIAL_PASSWORD_B64` 保存初始管理员密码，`create-admin` / `verify-admin` 仍兼容既有的 `ADMIN_PASSWORD` 和 `ADMIN_INITIAL_PASSWORD`。
+
 Logs are written to `deploy/install.log`. For streamed command output:
 
 ```bash
@@ -108,22 +110,13 @@ Use this when `/admin/login` says `邮箱或密码不正确。` or when an opera
 bash scripts/reset-admin.sh
 ```
 
-The script loads `.env.production`, asks for the admin email and a hidden password twice, runs:
+The script loads `.env.production`, asks for the admin email and a hidden password twice, updates `.env.production` with `ADMIN_INITIAL_PASSWORD_B64`, then runs admin bootstrap and verification without printing the password:
 
 ```bash
-docker compose --env-file .env.production -f docker-compose.prod.yml run --rm \
-  -e ADMIN_EMAIL=admin@example.com \
-  -e ADMIN_PASSWORD=hidden \
-  -e ADMIN_DISPLAY_NAME="Super Admin" \
-  api pnpm create-admin
-
-docker compose --env-file .env.production -f docker-compose.prod.yml run --rm \
-  -e ADMIN_EMAIL=admin@example.com \
-  -e ADMIN_PASSWORD=hidden \
-  api pnpm verify-admin
+bash scripts/reset-admin.sh
 ```
 
-It never prints the password or password hash.
+It never prints the password, base64 value, or password hash.
 
 ## Check Production Login
 
@@ -138,6 +131,8 @@ You can also provide credentials non-interactively:
 ```bash
 ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='hidden' bash scripts/check-login.sh
 ```
+
+Passing a password through shell env may be saved in shell history or process logs. Prefer the interactive hidden prompt.
 
 The script calls `https://DOMAIN/api/auth/login` by default and prints only `登录验证成功` or `登录验证失败`.
 
@@ -231,7 +226,7 @@ Production scripts always load `.env.production` through `--env-file`. Docker Co
 - no standalone secret/password lines
 - no multiline values
 
-The installer writes secrets through a safe env writer and uses URL-safe generated secrets for PostgreSQL, Redis, JWT, and generated admin passwords. It also runs:
+The installer writes secrets through a safe env writer and uses URL-safe generated secrets for PostgreSQL, Redis, and JWT. Admin initial passwords are stored as `ADMIN_INITIAL_PASSWORD_B64` so strong password symbols do not break dotenv parsing. It also runs:
 
 ```bash
 bash scripts/check-env-production.sh

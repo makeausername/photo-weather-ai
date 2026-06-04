@@ -23,7 +23,7 @@ describe("auth routes", () => {
       url: "/auth/login",
       payload: {
         email: "admin@example.com",
-        password: "CorrectHorseBattery99",
+        password: "CorrectHorseBattery99!",
       },
     });
 
@@ -115,7 +115,7 @@ describe("auth routes", () => {
       url: "/auth/login",
       payload: {
         email: "user@example.com",
-        password: "CorrectHorseBattery99",
+        password: "CorrectHorseBattery99!",
       },
     });
 
@@ -176,7 +176,7 @@ describe("auth routes", () => {
       url: "/auth/login",
       payload: {
         email: "admin@example.com",
-        password: "CorrectHorseBattery99",
+        password: "CorrectHorseBattery99!",
       },
     });
 

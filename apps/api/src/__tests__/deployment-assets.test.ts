@@ -23,8 +23,11 @@ const productionScripts = [
 
 const bashScripts = [
   ...productionScripts,
+  "scripts/install-cn.sh",
   "scripts/check-env-production.sh",
   "scripts/check-login.sh",
+  "scripts/lib/installer-input.sh",
+  "scripts/test-installer-password.sh",
 ] as const;
 
 function readRepoFile(relativePath: string): string {
@@ -123,7 +126,7 @@ describe("production deployment assets", () => {
       "REDIS_URL=",
       "JWT_SECRET=JWT_SECRET_PLACEHOLDER",
       "ADMIN_EMAIL=ADMIN_EMAIL_PLACEHOLDER",
-      "ADMIN_PASSWORD=ADMIN_PASSWORD_PLACEHOLDER",
+      "ADMIN_INITIAL_PASSWORD_B64=ADMIN_INITIAL_PASSWORD_B64_PLACEHOLDER",
       "ADMIN_DISPLAY_NAME=ADMIN_DISPLAY_NAME_PLACEHOLDER",
       "ENABLE_ASTRO_SERVICE=true",
       "ASTRO_SERVICE_URL=http://astro-service:4100",
@@ -223,6 +226,7 @@ describe("production deployment assets", () => {
 
   it("writes production env files through a safe KEY=VALUE helper", () => {
     const installer = readRepoFile("scripts/install.sh");
+    const inputHelper = readRepoFile("scripts/lib/installer-input.sh");
     const renderEnv = installer.slice(
       installer.indexOf("render_env_file()"),
       installer.indexOf("update_env_admin_lines()"),
@@ -235,18 +239,25 @@ describe("production deployment assets", () => {
     expect(installer).toContain('printf \'%s=%s\\n\' "${key}" "$(escape_env_value "${value}")"');
     expect(installer).toContain("openssl rand -hex 32 | tr -d '\\r\\n'");
     expect(installer).toContain("od -An -N32 -tx1 /dev/urandom | tr -d ' \\r\\n'");
-    expect(installer).toContain("validate_admin_password_for_env()");
-    expect(installer).toContain(
-      "管理员密码包含暂不支持的特殊字符，请使用字母、数字和 . _ @ # % + = -。",
-    );
+    expect(installer).toContain('INSTALLER_INPUT_LIB="${SCRIPT_DIR}/lib/installer-input.sh"');
+    expect(installer).toContain("validate_admin_password_strength");
+    expect(installer).toContain("ADMIN_INITIAL_PASSWORD_B64");
+    expect(inputHelper).toContain("管理员密码至少 12 位，需包含大小写字母、数字和特殊字符；支持常见强密码符号。");
+    expect(installer).not.toContain("validate_admin_password_for_env");
+    expect(installer).not.toMatch(/A-Za-z0-9\._@#%[+]?[=]?-/);
     expect(installer).toContain("第三方服务 Key 建议部署完成后在后台管理中配置");
     expect(installer).not.toContain("write_env_line");
     expect(installer).not.toContain("dotenv_quote");
     expect(renderEnv).not.toMatch(
-      /printf\s+['"]%s\\n['"].*\$\{(?:POSTGRES_PASSWORD|REDIS_PASSWORD|JWT_SECRET|ADMIN_PASSWORD)\}/,
+      /printf\s+['"]%s\\n['"].*\$\{(?:POSTGRES_PASSWORD|REDIS_PASSWORD|JWT_SECRET|ADMIN_PASSWORD|ADMIN_INITIAL_PASSWORD_B64)\}/,
     );
 
-    for (const key of ["POSTGRES_PASSWORD", "REDIS_PASSWORD", "JWT_SECRET", "ADMIN_PASSWORD"]) {
+    for (const key of [
+      "POSTGRES_PASSWORD",
+      "REDIS_PASSWORD",
+      "JWT_SECRET",
+      "ADMIN_INITIAL_PASSWORD_B64",
+    ]) {
       expect(renderEnv).toContain(`${key}) write_env_var "\${key}" "\${${key}}"`);
     }
   });
@@ -594,15 +605,21 @@ describe("production deployment assets", () => {
     expect(resetAdmin).toContain("管理员密码已重置。");
     expect(resetAdmin).toContain("后台地址：https://${DOMAIN:-}/admin/login");
     expect(resetAdmin).toContain("密码：已隐藏");
+    expect(resetAdmin).toContain('INSTALLER_INPUT_LIB="${SCRIPT_DIR}/lib/installer-input.sh"');
+    expect(resetAdmin).toContain("prompt_password_twice");
+    expect(resetAdmin).toContain("ADMIN_INITIAL_PASSWORD_B64");
     expect(resetAdmin).toContain("api pnpm create-admin");
     expect(resetAdmin).toContain("api pnpm verify-admin");
     expect(resetAdmin).not.toMatch(/echo .*ADMIN_PASSWORD/);
+    expect(resetAdmin).not.toMatch(/read\s+-r\s+-s\s+-p/);
     expect(resetAdmin).not.toContain("密码：${ADMIN_PASSWORD}");
 
     const checkLogin = readRepoFile("scripts/check-login.sh");
     expect(checkLogin).toContain("登录验证成功");
     expect(checkLogin).toContain("登录验证失败");
     expect(checkLogin).toContain("/auth/login");
+    expect(checkLogin).toContain("resolve_admin_password_from_env");
     expect(checkLogin).not.toMatch(/echo .*ADMIN_PASSWORD/);
+    expect(checkLogin).not.toMatch(/read\s+-r\s+-s\s+-p/);
   });
 });

@@ -9,6 +9,7 @@ CADDY_TEMPLATE="${PROJECT_ROOT}/deploy/Caddyfile.template"
 CADDY_FILE="${PROJECT_ROOT}/deploy/Caddyfile"
 ENV_TEMPLATE="${PROJECT_ROOT}/deploy/env.production.template"
 CHECK_ENV_SCRIPT="${SCRIPT_DIR}/check-env-production.sh"
+INSTALLER_INPUT_LIB="${SCRIPT_DIR}/lib/installer-input.sh"
 COMPOSE_PROJECT_NAME_DEFAULT="photo-weather-ai"
 EPHEMERIS_DOWNLOAD_SKIPPED=0
 
@@ -79,6 +80,9 @@ warn() {
 error_message() {
   printf '%sERROR%s %s\n' "${COLOR_RED}" "${COLOR_RESET}" "$1"
 }
+
+# shellcheck source=scripts/lib/installer-input.sh
+. "${INSTALLER_INPUT_LIB}"
 
 show_log_tail() {
   if [[ -f "${INSTALL_LOG}" ]]; then
@@ -277,14 +281,6 @@ prompt_optional() {
   trim "${value}"
 }
 
-prompt_secret() {
-  local label="$1"
-  local value=""
-  read -r -s -p "${label}: " value
-  echo
-  printf '%s' "${value}"
-}
-
 ask_yes_no() {
   local label="$1"
   local default_value="${2:-y}"
@@ -470,11 +466,6 @@ validate_db_password_for_env() {
   [[ "${value}" =~ ^[A-Za-z0-9._@%+=-]{8,128}$ ]]
 }
 
-validate_admin_password_for_env() {
-  local value="$1"
-  [[ "${value}" =~ ^[A-Za-z0-9._@#%+=-]{8,128}$ ]]
-}
-
 set_database_config() {
   local input_db_name="$1"
   local input_db_user="$2"
@@ -599,7 +590,7 @@ render_env_file() {
         REDIS_URL) write_env_var "${key}" "${redis_url}" >> "${tmp_file}" ;;
         JWT_SECRET) write_env_var "${key}" "${JWT_SECRET}" >> "${tmp_file}" ;;
         ADMIN_EMAIL) write_env_var "${key}" "${ADMIN_EMAIL}" >> "${tmp_file}" ;;
-        ADMIN_PASSWORD) write_env_var "${key}" "${ADMIN_PASSWORD}" >> "${tmp_file}" ;;
+        ADMIN_INITIAL_PASSWORD_B64) write_env_var "${key}" "${ADMIN_INITIAL_PASSWORD_B64}" >> "${tmp_file}" ;;
         ADMIN_DISPLAY_NAME) write_env_var "${key}" "${ADMIN_DISPLAY_NAME}" >> "${tmp_file}" ;;
         QWEATHER_API_KEY) write_env_var "${key}" "${QWEATHER_API_KEY}" >> "${tmp_file}" ;;
         QWEATHER_API_HOST) write_env_var "${key}" "${QWEATHER_API_HOST}" >> "${tmp_file}" ;;
@@ -628,7 +619,7 @@ render_env_file() {
 update_env_admin_lines() {
   local tmp_file="${ENV_FILE}.tmp"
   local saw_admin_email=0
-  local saw_admin_password=0
+  local saw_admin_password_b64=0
   local saw_admin_display_name=0
 
   : > "${tmp_file}"
@@ -637,9 +628,11 @@ update_env_admin_lines() {
     if [[ "${line}" =~ ^ADMIN_EMAIL= ]]; then
       write_env_var "ADMIN_EMAIL" "${ADMIN_EMAIL}" >> "${tmp_file}"
       saw_admin_email=1
-    elif [[ "${line}" =~ ^ADMIN_PASSWORD= ]]; then
-      write_env_var "ADMIN_PASSWORD" "${ADMIN_PASSWORD}" >> "${tmp_file}"
-      saw_admin_password=1
+    elif [[ "${line}" =~ ^ADMIN_INITIAL_PASSWORD_B64= ]]; then
+      write_env_var "ADMIN_INITIAL_PASSWORD_B64" "${ADMIN_INITIAL_PASSWORD_B64}" >> "${tmp_file}"
+      saw_admin_password_b64=1
+    elif [[ "${line}" =~ ^ADMIN_PASSWORD= || "${line}" =~ ^ADMIN_INITIAL_PASSWORD= ]]; then
+      continue
     elif [[ "${line}" =~ ^ADMIN_DISPLAY_NAME= ]]; then
       write_env_var "ADMIN_DISPLAY_NAME" "${ADMIN_DISPLAY_NAME}" >> "${tmp_file}"
       saw_admin_display_name=1
@@ -651,8 +644,8 @@ update_env_admin_lines() {
   if [[ "${saw_admin_email}" == "0" ]]; then
     write_env_var "ADMIN_EMAIL" "${ADMIN_EMAIL}" >> "${tmp_file}"
   fi
-  if [[ "${saw_admin_password}" == "0" ]]; then
-    write_env_var "ADMIN_PASSWORD" "${ADMIN_PASSWORD}" >> "${tmp_file}"
+  if [[ "${saw_admin_password_b64}" == "0" ]]; then
+    write_env_var "ADMIN_INITIAL_PASSWORD_B64" "${ADMIN_INITIAL_PASSWORD_B64}" >> "${tmp_file}"
   fi
   if [[ "${saw_admin_display_name}" == "0" ]]; then
     write_env_var "ADMIN_DISPLAY_NAME" "${ADMIN_DISPLAY_NAME}" >> "${tmp_file}"
@@ -1114,28 +1107,30 @@ run_migrations() {
 collect_admin_configuration() {
   local default_email="${1:-${ADMIN_EMAIL:-}}"
   local default_display_name="${2:-${ADMIN_DISPLAY_NAME:-Super Admin}}"
+  local env_password=""
 
   section 4 "管理员账号"
   ADMIN_EMAIL="$(prompt_required "请输入管理员邮箱" "${default_email}")"
 
-  while true; do
-    ADMIN_PASSWORD="$(prompt_secret "请输入管理员密码")"
-    local confirm_password
-    confirm_password="$(prompt_secret "请再次输入管理员密码")"
-    if [[ -z "${ADMIN_PASSWORD}" ]]; then
-      warn "管理员密码不能为空。"
-      continue
+  if env_password="$(resolve_admin_password_from_env 2>/dev/null)"; then
+    if [[ -n "${ADMIN_PASSWORD:-}" || -n "${ADMIN_INITIAL_PASSWORD:-}" ]]; then
+      warn "检测到通过环境变量传入管理员密码，命令行环境可能被 shell 历史记录保存；推荐使用交互式隐藏输入。"
     fi
-    if [[ "${ADMIN_PASSWORD}" != "${confirm_password}" ]]; then
-      warn "两次输入的管理员密码不一致，请重新输入。"
-      continue
+    if ! validate_admin_password_strength "${env_password}"; then
+      error_message "管理员密码校验失败。"
+      exit 1
     fi
-    if ! validate_admin_password_for_env "${ADMIN_PASSWORD}"; then
-      warn "管理员密码包含暂不支持的特殊字符，请使用字母、数字和 . _ @ # % + = -。"
-      continue
+    ADMIN_PASSWORD="${env_password}"
+  else
+    if [[ -n "${ADMIN_INITIAL_PASSWORD_B64:-}" ]]; then
+      error_message "ADMIN_INITIAL_PASSWORD_B64 不是有效的 base64 编码。"
+      exit 1
     fi
-    break
-  done
+    ADMIN_PASSWORD="$(prompt_password_twice "请输入管理员密码" "请再次输入管理员密码")"
+  fi
+
+  ADMIN_INITIAL_PASSWORD_B64="$(admin_password_to_b64 "${ADMIN_PASSWORD}")"
+  export ADMIN_INITIAL_PASSWORD_B64
 
   ADMIN_DISPLAY_NAME="$(prompt_required "请输入管理员显示名称" "${default_display_name}")"
 }
@@ -1177,7 +1172,7 @@ collect_configuration() {
     ok "已自动生成 JWT 密钥。"
   fi
 
-  collect_admin_configuration "" "Super Admin"
+  collect_admin_configuration "${ADMIN_EMAIL:-}" "Super Admin"
 
   section 5 "第三方服务配置"
   AMAP_API_KEY=""
@@ -1254,19 +1249,29 @@ build_production_images() {
   done
 }
 
-create_admin_account() {
-  run_logged "创建或更新管理员账号" compose run --rm \
-    -e ADMIN_EMAIL="${ADMIN_EMAIL}" \
-    -e ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
-    -e ADMIN_DISPLAY_NAME="${ADMIN_DISPLAY_NAME}" \
+compose_run_create_admin() {
+  export ADMIN_EMAIL ADMIN_INITIAL_PASSWORD_B64 ADMIN_DISPLAY_NAME
+  compose run --rm \
+    -e ADMIN_EMAIL \
+    -e ADMIN_INITIAL_PASSWORD_B64 \
+    -e ADMIN_DISPLAY_NAME \
     api pnpm create-admin
 }
 
+compose_run_verify_admin() {
+  export ADMIN_EMAIL ADMIN_INITIAL_PASSWORD_B64
+  compose run --rm \
+    -e ADMIN_EMAIL \
+    -e ADMIN_INITIAL_PASSWORD_B64 \
+    api pnpm verify-admin
+}
+
+create_admin_account() {
+  run_logged "创建或更新管理员账号" compose_run_create_admin
+}
+
 verify_admin_account() {
-  if run_logged_allow_fail "验证管理员账号" compose run --rm \
-    -e ADMIN_EMAIL="${ADMIN_EMAIL}" \
-    -e ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
-    api pnpm verify-admin; then
+  if run_logged_allow_fail "验证管理员账号" compose_run_verify_admin; then
     ok "管理员账号验证通过。"
     return
   fi
@@ -1356,8 +1361,25 @@ main() {
         if [[ -z "${DOMAIN}" ]]; then
           fail_install "现有 .env.production 未定义 DOMAIN。"
         fi
-        collect_admin_configuration "${ADMIN_EMAIL:-}" "${ADMIN_DISPLAY_NAME:-Super Admin}"
-        update_env_admin_lines
+        if [[ -n "${ADMIN_INITIAL_PASSWORD_B64:-}" ]] && ! resolve_admin_password_from_env >/dev/null 2>&1; then
+          fail_install "ADMIN_INITIAL_PASSWORD_B64 不是有效的 base64 编码。"
+        fi
+        if resolve_admin_password_from_env >/dev/null 2>&1; then
+          if ask_yes_no "是否重置管理员账号凭据" "n"; then
+            ADMIN_PASSWORD=""
+            ADMIN_INITIAL_PASSWORD=""
+            ADMIN_INITIAL_PASSWORD_B64=""
+            collect_admin_configuration "${ADMIN_EMAIL:-}" "${ADMIN_DISPLAY_NAME:-Super Admin}"
+            update_env_admin_lines
+          else
+            prepare_admin_password_b64_from_env
+            ok "复用现有管理员凭据。"
+          fi
+        else
+          warn ".env.production 缺少可用于管理员创建与验证的密码配置，需要重新设置管理员凭据。"
+          collect_admin_configuration "${ADMIN_EMAIL:-}" "${ADMIN_DISPLAY_NAME:-Super Admin}"
+          update_env_admin_lines
+        fi
         check_env_file
         load_env_file
         load_existing_database_config
@@ -1383,6 +1405,9 @@ main() {
   check_env_file
   load_env_file
   load_existing_database_config
+  if ! prepare_admin_password_b64_from_env; then
+    fail_install ".env.production 缺少有效的管理员初始密码配置。"
+  fi
   print_database_config_summary
   ensure_caddyfile
   print_deployment_summary
