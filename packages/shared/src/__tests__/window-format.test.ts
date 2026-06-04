@@ -1,50 +1,54 @@
 import { describe, expect, it } from "vitest";
-import { formatArrivalDeadlineZh, formatShootingWindowZh } from "../window-format.js";
+import {
+  formatArrivalDeadlineZh,
+  formatForecastWindowZh,
+  formatShootingWindowZh,
+} from "../window-format.js";
 
 describe("shooting window zh formatter", () => {
-  it("formats same-day windows with full date", () => {
+  it("formats same-day windows with full date and weekday", () => {
     expect(
       formatShootingWindowZh({
-        startTime: "2026-05-27T03:14:00+08:00",
-        endTime: "2026-05-27T03:45:00+08:00",
+        startTime: "2026-05-08T04:38:00+08:00",
+        endTime: "2026-05-08T06:35:00+08:00",
       }),
-    ).toBe("2026年5月27日 03:14–03:45");
+    ).toBe("2026年5月8日 周五 04:38-06:35");
   });
 
   it("formats cross-midnight windows with both dates", () => {
     expect(
-      formatShootingWindowZh({
-        startTime: "2026-05-26T22:45:00+08:00",
-        endTime: "2026-05-27T03:45:00+08:00",
-      }),
-    ).toBe("2026年5月26日 22:45 – 5月27日 03:45");
+      formatForecastWindowZh(
+        "2026-05-08T23:30:00+08:00",
+        "2026-05-09T01:10:00+08:00",
+      ),
+    ).toBe("2026年5月8日 周五 23:30 - 5月9日 周六 01:10");
   });
 
   it("keeps both years when the window crosses a year boundary", () => {
     expect(
-      formatShootingWindowZh({
-        startTime: "2026-12-31T22:45:00+08:00",
-        endTime: "2027-01-01T03:45:00+08:00",
-      }),
-    ).toBe("2026年12月31日 22:45 – 2027年1月1日 03:45");
+      formatForecastWindowZh(
+        "2026-12-31T23:30:00+08:00",
+        "2027-01-01T01:10:00+08:00",
+      ),
+    ).toBe("2026年12月31日 周四 23:30 - 2027年1月1日 周五 01:10");
   });
 
   it("supports compact date labels without dropping the date", () => {
     expect(
       formatShootingWindowZh(
         {
-          startTime: "2026-05-27T03:14:00+08:00",
-          endTime: "2026-05-27T03:45:00+08:00",
+          startTime: "2026-05-08T04:38:00+08:00",
+          endTime: "2026-05-08T06:35:00+08:00",
         },
         "Asia/Shanghai",
         { style: "compact" },
       ),
-    ).toBe("5月27日 03:14–03:45");
+    ).toBe("5月8日 周五 04:38-06:35");
   });
 
-  it("formats previous-day arrival deadlines with date", () => {
-    expect(formatArrivalDeadlineZh("2026-05-26T21:15:00+08:00")).toBe(
-      "建议到达：2026年5月26日 21:15 前",
+  it("formats previous-day arrival deadlines with date and weekday", () => {
+    expect(formatArrivalDeadlineZh("2026-05-07T21:15:00+08:00")).toBe(
+      "建议到达：2026年5月7日 周四 21:15 前",
     );
   });
 

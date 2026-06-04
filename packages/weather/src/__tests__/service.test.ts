@@ -136,6 +136,48 @@ describe("WeatherIntelligenceService", () => {
     expect(second.currentWeather?.temperature).toBe(18);
   });
 
+  it("separates cached provider bundles by rolling coverage inputs", async () => {
+    const cache = new InMemoryWeatherCache();
+    const first = await new WeatherIntelligenceService({
+      providers: [new StaticProvider("open_meteo", "Open-Meteo", "real", hour({ temperature: 8 }))],
+      cache,
+      cacheNamespace: "runtime-v1",
+    }).getWeatherDataBundle({
+      ...requestInput(),
+      horizon: "48h",
+      forecastWindowAnchorStart: "2026-06-04T09:00:00+08:00",
+      forecastWindowAnchorEnd: "2026-06-06T08:00:00+08:00",
+      expectedRowCount: 48,
+      providerCoverageVersion: "rolling-provider-coverage-v2",
+      hours: 48,
+      days: 2,
+      providerRequestStartLocal: "2026-06-04T00:00:00+08:00",
+      providerRequestEndLocal: "2026-06-05T23:00:00+08:00",
+      providerCoverageRule: "forecast_days_calendar_coverage",
+    });
+
+    const second = await new WeatherIntelligenceService({
+      providers: [new StaticProvider("open_meteo", "Open-Meteo", "real", hour({ temperature: 18 }))],
+      cache,
+      cacheNamespace: "runtime-v1",
+    }).getWeatherDataBundle({
+      ...requestInput(),
+      horizon: "48h",
+      forecastWindowAnchorStart: "2026-06-04T09:00:00+08:00",
+      forecastWindowAnchorEnd: "2026-06-06T08:00:00+08:00",
+      expectedRowCount: 48,
+      providerCoverageVersion: "rolling-provider-coverage-v2",
+      hours: 54,
+      days: 3,
+      providerRequestStartLocal: "2026-06-04T00:00:00+08:00",
+      providerRequestEndLocal: "2026-06-06T23:00:00+08:00",
+      providerCoverageRule: "forecast_hours_with_buffer",
+    });
+
+    expect(first.currentWeather?.temperature).toBe(8);
+    expect(second.currentWeather?.temperature).toBe(18);
+  });
+
   it("separates cached provider bundles by timezone", async () => {
     const cache = new InMemoryWeatherCache();
     const first = await new WeatherIntelligenceService({

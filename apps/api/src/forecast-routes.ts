@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from "fastify";
 import {
-  bufferedForecastRequestHours,
   buildForecastDateRange,
   forecastDateRangeErrorMessage,
   resolveForecastWindowRange,
+  resolveRollingHorizonProviderRequest,
+  rollingHorizonProviderCoverageVersion,
 } from "@photo-weather/calendar";
 import { buildCalibrationLocationKey, findCalibrationHint } from "@photo-weather/calibration";
 import {
@@ -406,7 +407,17 @@ export function registerForecastRoutes(
         horizon: "24h",
         requestedForecastHours: forecastRange.horizonHours,
       });
-      const forecastRequestHours = bufferedForecastRequestHours("24h");
+      const providerCoveragePlan = resolveRollingHorizonProviderRequest({
+        generatedAt: forecastRange.forecastStart,
+        timezone: forecastRange.timezone,
+        horizon: "24h",
+        providerType: "mixed",
+        providerCapabilities: {
+          supportsForecastHours: true,
+          supportsForecastDays: true,
+          startsAtLocalMidnight: true,
+        },
+      });
       const bundle = await weatherDataService.getWeatherDataBundle({
         coordinates: {
           latitude: 30.1328,
@@ -414,11 +425,17 @@ export function registerForecastRoutes(
           system: "wgs84",
         },
         horizon: "24h",
-        hours: forecastRequestHours,
-        days: Math.max(forecastRange.targetDates.length, Math.ceil(forecastRequestHours / 24)),
+        hours: providerCoveragePlan.recommendedRequestHours,
+        days: providerCoveragePlan.requiredForecastDays,
         forecastStart: forecastRange.forecastStart,
         forecastEnd: forecastRange.forecastEnd,
         forecastWindowAnchorStart: forecastWindowAnchor.anchorStartLocal,
+        forecastWindowAnchorEnd: providerCoveragePlan.anchorEndLocal,
+        expectedRowCount: providerCoveragePlan.expectedRowCount,
+        providerCoverageVersion: rollingHorizonProviderCoverageVersion,
+        providerRequestStartLocal: providerCoveragePlan.requestStartLocal,
+        providerRequestEndLocal: providerCoveragePlan.requestEndLocal,
+        providerCoverageRule: providerCoveragePlan.coverageRule,
         targetDates: forecastRange.targetDates,
         target: "cloud_sea",
         timezone: forecastRange.timezone,
@@ -563,6 +580,7 @@ async function calculateForecastResult(
 
   const forecastRange = buildForecastDateRange(query.horizon, {
     timezone: requestOptions.timezone,
+    now: requestOptions.startDateTime,
   });
   const forecastWindowAnchor = resolveForecastWindowRange({
     generatedAt: forecastRange.forecastStart,
@@ -570,7 +588,17 @@ async function calculateForecastResult(
     horizon: query.horizon,
     requestedForecastHours: forecastRange.horizonHours,
   });
-  const forecastRequestHours = bufferedForecastRequestHours(query.horizon);
+  const providerCoveragePlan = resolveRollingHorizonProviderRequest({
+    generatedAt: forecastRange.forecastStart,
+    timezone: forecastRange.timezone,
+    horizon: query.horizon,
+    providerType: "mixed",
+    providerCapabilities: {
+      supportsForecastHours: true,
+      supportsForecastDays: true,
+      startsAtLocalMidnight: true,
+    },
+  });
   const coordinates = {
     latitude: query.latitudeWgs84,
     longitude: query.longitudeWgs84,
@@ -601,11 +629,17 @@ async function calculateForecastResult(
       coordinates,
       elevationMeters: elevation.elevationMeters ?? undefined,
       horizon: query.horizon,
-      hours: forecastRequestHours,
-      days: Math.max(forecastRange.targetDates.length, Math.ceil(forecastRequestHours / 24)),
+      hours: providerCoveragePlan.recommendedRequestHours,
+      days: providerCoveragePlan.requiredForecastDays,
       forecastStart: forecastRange.forecastStart,
       forecastEnd: forecastRange.forecastEnd,
       forecastWindowAnchorStart: forecastWindowAnchor.anchorStartLocal,
+      forecastWindowAnchorEnd: providerCoveragePlan.anchorEndLocal,
+      expectedRowCount: providerCoveragePlan.expectedRowCount,
+      providerCoverageVersion: rollingHorizonProviderCoverageVersion,
+      providerRequestStartLocal: providerCoveragePlan.requestStartLocal,
+      providerRequestEndLocal: providerCoveragePlan.requestEndLocal,
+      providerCoverageRule: providerCoveragePlan.coverageRule,
       targetDates: forecastRange.targetDates,
       target: query.target,
       timezone: forecastRange.timezone,
@@ -1245,6 +1279,9 @@ function logCloudSeaCoverageDiagnostics(
         route: "/forecast/calculate",
         target: result.target,
         requestedForecastHours: result.calendarBasis.horizonHours,
+        minRequestHours: basis?.minRequestHours,
+        recommendedRequestHours: basis?.recommendedRequestHours,
+        requiredForecastDays: basis?.requiredForecastDays,
         professionalHourlyRows: result.professionalHourlyData?.length ?? 0,
         cloudLayerCoverage: "unavailable",
         temperatureDiagnostics,
@@ -1260,6 +1297,13 @@ function logCloudSeaCoverageDiagnostics(
       route: "/forecast/calculate",
       target: result.target,
       requestedForecastHours: result.calendarBasis.horizonHours,
+      minRequestHours: basis.minRequestHours,
+      recommendedRequestHours: basis.recommendedRequestHours,
+      requiredForecastDays: basis.requiredForecastDays,
+      requestStartLocal: basis.requestStartLocal,
+      requestEndLocal: basis.requestEndLocal,
+      providerCoverageVersion: basis.providerCoverageVersion,
+      coverageRule: basis.coverageRule,
       professionalHourlyRows: result.professionalHourlyData?.length ?? 0,
       selectedPrimaryCloudLayerSource: basis.selectedPrimaryCloudLayerSource,
       fallbackSourcesUsed: basis.fallbackSourcesUsed ?? [],
@@ -1358,10 +1402,14 @@ function logCloudSeaDisplayAlignmentDiagnostics(
       anchorStart,
       anchorEnd,
       expectedRowCount,
+      minRequestHours: basis?.minRequestHours,
+      recommendedRequestHours: basis?.recommendedRequestHours,
+      requiredForecastDays: basis?.requiredForecastDays,
       actualRowCount: normalizedRows.length,
       firstRowTime: normalizedRows[0]?.time ?? null,
       lastRowTime: normalizedRows.at(-1)?.time ?? null,
       isRollingFutureRange: basis?.rule === "rolling_future_hours" || basis?.isFutureOnly === true,
+      coverageComplete: normalizedRows.length >= expectedRowCount,
       sourceAlignmentStatus,
       normalizedHourlyRows: normalizedRows.length,
       nearTermRange: {

@@ -8,6 +8,14 @@ export type WeatherCacheKeyInput = {
   readonly horizon: ForecastHorizon;
   readonly forecastStart: string;
   readonly forecastWindowAnchorStart?: string;
+  readonly forecastWindowAnchorEnd?: string;
+  readonly expectedRowCount?: number;
+  readonly providerCoverageVersion?: string;
+  readonly requestHours?: number;
+  readonly requestDays?: number;
+  readonly providerRequestStartLocal?: string;
+  readonly providerRequestEndLocal?: string;
+  readonly providerCoverageRule?: string;
   readonly timezone?: string;
   readonly target?: ForecastTarget;
   readonly purpose: WeatherCachePurpose;
@@ -44,6 +52,14 @@ export function buildWeatherCacheKey(input: WeatherCacheKeyInput): string {
     input.timezone ?? "timezone:any",
     `generated:${startBucket}`,
     `anchor:${anchorBucket}`,
+    `anchorEnd:${bucketForecastStart(input.forecastWindowAnchorEnd ?? input.forecastStart)}`,
+    `expected:${input.expectedRowCount ?? "any"}`,
+    `coverage:${input.providerCoverageVersion ?? "legacy"}`,
+    `requestHours:${input.requestHours ?? "any"}`,
+    `requestDays:${input.requestDays ?? "any"}`,
+    `requestStart:${input.providerRequestStartLocal ?? "any"}`,
+    `requestEnd:${input.providerRequestEndLocal ?? "any"}`,
+    `coverageRule:${input.providerCoverageRule ?? "any"}`,
     input.target ?? "any",
   ].join("|");
 }

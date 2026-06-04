@@ -101,6 +101,9 @@ export function buildOpenMeteoForecastUrl(
     "forecast_days",
     String(clampDays(request.days ?? daysFromHours(request.hours))),
   );
+  if (request.hours !== undefined) {
+    url.searchParams.set("forecast_hours", String(clampHours(request.hours)));
+  }
 
   if (options.modelPreference) {
     url.searchParams.set("models", options.modelPreference);
@@ -261,6 +264,10 @@ function daysFromHours(hours: number | undefined): number {
 
 function clampDays(days: number): number {
   return Math.min(16, Math.max(1, Math.round(days)));
+}
+
+function clampHours(hours: number): number {
+  return Math.min(240, Math.max(1, Math.round(hours)));
 }
 
 function formatCoordinate(value: number): string {

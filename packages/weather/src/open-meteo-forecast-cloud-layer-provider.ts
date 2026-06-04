@@ -261,7 +261,7 @@ export class OpenMeteoForecastCloudLayerProvider implements WeatherProvider {
         elevationMeters: input.elevationMeters,
         forecastHours: input.hours,
       })
-        .slice(0, responseHours(input.hours))
+        .slice(0, responseHoursForRequest(input))
         .map(markOpenMeteoForecastHour);
     } catch (error) {
       throw openMeteoForecastError({
@@ -397,6 +397,9 @@ export class OpenMeteoForecastCloudLayerProvider implements WeatherProvider {
       hours: requestedForecastHours(input.hours),
       horizon: input.horizon,
       forecastWindowAnchorStart: input.forecastWindowAnchorStart,
+      forecastWindowAnchorEnd: input.forecastWindowAnchorEnd,
+      expectedRowCount: input.expectedRowCount,
+      providerCoverageVersion: input.providerCoverageVersion,
       timezone: input.timezone,
     });
   }
@@ -525,7 +528,7 @@ function requestedForecastHours(value: number | undefined): number {
     return openMeteoIconCloudLayerMinimumForecastHours;
   }
 
-  return Math.min(240, Math.max(openMeteoIconCloudLayerMinimumForecastHours, Math.round(value)));
+  return Math.min(240, Math.max(1, Math.round(value)));
 }
 
 function responseHours(value: number | undefined): number {
@@ -534,6 +537,15 @@ function responseHours(value: number | undefined): number {
   }
 
   return Math.min(240, Math.max(1, Math.round(value)));
+}
+
+function responseHoursForRequest(input: Pick<WeatherRequestInput, "hours" | "days">): number {
+  const requestedDayHours =
+    typeof input.days === "number" && Number.isFinite(input.days) && input.days > 0
+      ? Math.round(input.days) * 24
+      : 0;
+
+  return Math.min(240, Math.max(responseHours(input.hours), requestedDayHours));
 }
 
 function daysFromHours(hours: number): number {

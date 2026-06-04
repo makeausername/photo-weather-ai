@@ -11,6 +11,7 @@ export type ShootingWindowFormatOptions = {
   readonly style?: ShootingWindowDateTimeFormat;
   readonly missingText?: string;
   readonly invalidText?: string;
+  readonly includeWeekday?: boolean;
 };
 
 const defaultTimezone = "Asia/Shanghai";
@@ -21,6 +22,7 @@ type DateTimeParts = {
   readonly year: number;
   readonly month: number;
   readonly day: number;
+  readonly weekday: string;
   readonly hour: string;
   readonly minute: string;
 };
@@ -35,6 +37,7 @@ export function formatShootingWindowZh(
   const missingText = options.missingText ?? defaultMissingWindowText;
   const invalidText = options.invalidText ?? defaultInvalidWindowText;
   const style = options.style ?? "full";
+  const includeWeekday = options.includeWeekday ?? true;
 
   if (!startValue || !endValue) {
     return missingText;
@@ -51,20 +54,35 @@ export function formatShootingWindowZh(
   const endClock = `${end.hour}:${end.minute}`;
 
   if (sameDay) {
-    return `${formatDateZh(start, style)} ${startClock}–${endClock}`;
+    return `${formatDateZh(start, style, includeWeekday)} ${startClock}-${endClock}`;
   }
 
-  return `${formatDateZh(start, style)} ${startClock} – ${formatRangeEndDateZh(
+  return `${formatDateZh(start, style, includeWeekday)} ${startClock} - ${formatRangeEndDateZh(
     start,
     end,
     style,
+    includeWeekday,
   )} ${endClock}`;
+}
+
+export function formatForecastWindowZh(
+  start: string | undefined,
+  end: string | undefined,
+  timezone = defaultTimezone,
+  options: ShootingWindowFormatOptions = {},
+): string {
+  return formatShootingWindowZh({ startTime: start, endTime: end }, timezone, options);
 }
 
 export function formatArrivalDeadlineZh(
   value: string | undefined,
   timezone = defaultTimezone,
-  options: { readonly prefix?: string; readonly missingText?: string; readonly style?: ShootingWindowDateTimeFormat } = {},
+  options: {
+    readonly prefix?: string;
+    readonly missingText?: string;
+    readonly style?: ShootingWindowDateTimeFormat;
+    readonly includeWeekday?: boolean;
+  } = {},
 ): string {
   const missingText = options.missingText ?? "暂无明确到达时间";
   if (!value) {
@@ -77,7 +95,11 @@ export function formatArrivalDeadlineZh(
   }
 
   const prefix = options.prefix ?? "建议到达：";
-  return `${prefix}${formatDateZh(parts, options.style ?? "full")} ${parts.hour}:${parts.minute} 前`;
+  return `${prefix}${formatDateZh(
+    parts,
+    options.style ?? "full",
+    options.includeWeekday ?? true,
+  )} ${parts.hour}:${parts.minute} 前`;
 }
 
 function dateTimeParts(value: string, timezone: string): DateTimeParts | undefined {
@@ -91,6 +113,7 @@ function dateTimeParts(value: string, timezone: string): DateTimeParts | undefin
     year: "numeric",
     month: "numeric",
     day: "numeric",
+    weekday: "short",
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -102,10 +125,18 @@ function dateTimeParts(value: string, timezone: string): DateTimeParts | undefin
   const year = Number(valueFor("year"));
   const month = Number(valueFor("month"));
   const day = Number(valueFor("day"));
+  const weekday = valueFor("weekday");
   const hour = valueFor("hour");
   const minute = valueFor("minute");
 
-  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day) || !hour || !minute) {
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !weekday ||
+    !hour ||
+    !minute
+  ) {
     return undefined;
   }
 
@@ -113,31 +144,39 @@ function dateTimeParts(value: string, timezone: string): DateTimeParts | undefin
     year,
     month,
     day,
+    weekday,
     hour,
     minute,
   };
 }
 
-function formatDateZh(parts: DateTimeParts, style: ShootingWindowDateTimeFormat): string {
+function formatDateZh(
+  parts: DateTimeParts,
+  style: ShootingWindowDateTimeFormat,
+  includeWeekday: boolean,
+): string {
+  const weekday = includeWeekday ? ` ${parts.weekday}` : "";
   if (style === "compact") {
-    return `${parts.month}月${parts.day}日`;
+    return `${parts.month}月${parts.day}日${weekday}`;
   }
 
-  return `${parts.year}年${parts.month}月${parts.day}日`;
+  return `${parts.year}年${parts.month}月${parts.day}日${weekday}`;
 }
 
 function formatRangeEndDateZh(
   start: DateTimeParts,
   end: DateTimeParts,
   style: ShootingWindowDateTimeFormat,
+  includeWeekday: boolean,
 ): string {
+  const weekday = includeWeekday ? ` ${end.weekday}` : "";
   if (style === "full" && start.year !== end.year) {
-    return `${end.year}年${end.month}月${end.day}日`;
+    return `${end.year}年${end.month}月${end.day}日${weekday}`;
   }
 
   if (style === "compact" && start.year !== end.year) {
-    return `${end.year}年${end.month}月${end.day}日`;
+    return `${end.year}年${end.month}月${end.day}日${weekday}`;
   }
 
-  return `${end.month}月${end.day}日`;
+  return `${end.month}月${end.day}日${weekday}`;
 }

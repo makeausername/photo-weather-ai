@@ -1,3 +1,4 @@
+import * as React from "react";
 import type { ReactNode } from "react";
 import type { ForecastTarget } from "@photo-weather/shared";
 import { Badge, Card, cn } from "../../components/ui";

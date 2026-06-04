@@ -34,6 +34,7 @@ export type WeatherFusionInput = {
   };
   readonly forecastStart: string;
   readonly forecastEnd: string;
+  readonly requestedForecastHours?: number;
   readonly terrainSummary?: TerrainProfileSummary;
   readonly astroSummary?: unknown;
 };
@@ -279,10 +280,14 @@ function emptyFusionResult(): WeatherFusionResult {
 function expectedForecastHours(input: WeatherFusionInput, fallback: number): number {
   const start = Date.parse(input.forecastStart);
   const end = Date.parse(input.forecastEnd);
+  const requested =
+    typeof input.requestedForecastHours === "number" && Number.isFinite(input.requestedForecastHours)
+      ? Math.round(input.requestedForecastHours)
+      : 0;
   if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
-    return Math.max(1, Math.round((end - start) / (60 * 60 * 1000)));
+    return Math.max(1, requested, Math.round((end - start) / (60 * 60 * 1000)));
   }
-  return Math.max(1, fallback);
+  return Math.max(1, requested, fallback);
 }
 
 function timezoneFromWeather(_forecastStart: string): string {

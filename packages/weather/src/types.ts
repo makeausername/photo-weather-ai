@@ -8,6 +8,7 @@ import type {
   ForecastHorizon,
   ForecastProviderRuntimeSnapshot,
   ForecastTarget,
+  RollingProviderCoverageDiagnostics,
   WeatherFusionSummary,
   WeatherProviderTerrainMetadata,
 } from "@photo-weather/shared";
@@ -115,6 +116,7 @@ export type WeatherDataBundle = {
   readonly fusionSummary?: WeatherFusionSummary;
   readonly providerRuntimeSnapshot?: readonly ForecastProviderRuntimeSnapshot[];
   readonly terrainMetadata?: WeatherProviderTerrainMetadata;
+  readonly rollingProviderCoverage?: RollingProviderCoverageDiagnostics;
 };
 
 export type ForecastRequestOptions = {
@@ -125,6 +127,12 @@ export type ForecastRequestOptions = {
   readonly forecastStart?: string;
   readonly forecastEnd?: string;
   readonly forecastWindowAnchorStart?: string;
+  readonly forecastWindowAnchorEnd?: string;
+  readonly expectedRowCount?: number;
+  readonly providerCoverageVersion?: string;
+  readonly providerRequestStartLocal?: string;
+  readonly providerRequestEndLocal?: string;
+  readonly providerCoverageRule?: string;
   readonly targetDates?: readonly string[];
   readonly target?: ForecastTarget;
   readonly timezone?: string;

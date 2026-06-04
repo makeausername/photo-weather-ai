@@ -221,15 +221,26 @@ function resolveTargetDates(
 }
 
 function resolveForecastHours(options: WeatherRequestInput): number {
+  const requestedHours =
+    typeof options.hours === "number" && Number.isFinite(options.hours) && options.hours > 0
+      ? Math.round(options.hours)
+      : 6;
+  const requestedDayHours =
+    typeof options.days === "number" && Number.isFinite(options.days) && options.days > 0
+      ? Math.round(options.days) * 24
+      : 0;
+  const requestedCoverageHours = Math.max(requestedHours, requestedDayHours);
+
   if (options.forecastStart && options.forecastEnd) {
     const startMs = Date.parse(options.forecastStart);
     const endMs = Date.parse(options.forecastEnd);
     if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs) {
-      return Math.min(Math.max(Math.ceil((endMs - startMs) / (60 * 60 * 1000)), 1), 168);
+      const forecastRangeHours = Math.ceil((endMs - startMs) / (60 * 60 * 1000));
+      return Math.min(Math.max(forecastRangeHours, requestedCoverageHours, 1), 168);
     }
   }
 
-  return Math.min(Math.max(options.hours ?? 6, 1), 168);
+  return Math.min(Math.max(requestedCoverageHours, 1), 168);
 }
 
 function round1(value: number): number {

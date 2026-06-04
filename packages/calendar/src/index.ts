@@ -3,6 +3,7 @@ import { zhCN } from "date-fns/locale/zh-CN";
 import { TZDate, tz, tzOffset } from "@date-fns/tz";
 import { Solar } from "lunar-typescript";
 export * from "./forecast-window-anchor.js";
+export * from "./rolling-horizon-provider-coverage.js";
 
 export const defaultTimezone = "Asia/Shanghai";
 

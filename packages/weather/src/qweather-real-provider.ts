@@ -70,10 +70,11 @@ export class QWeatherRealProvider implements WeatherProvider {
 
   async getHourlyForecast(input: WeatherRequestInput): Promise<readonly NormalizedHourlyWeather[]> {
     const location = formatQWeatherLocation(input.coordinates);
-    const result = await this.options.client.fetchWeatherHourly(location, input.hours ?? 24);
+    const hours = Math.min(Math.max(requestedHourlyResponseHours(input), 1), 168);
+    const result = await this.options.client.fetchWeatherHourly(location, hours);
     return this.normalizer
       .normalizeHourlyWeather(result.body)
-      .slice(0, Math.min(Math.max(input.hours ?? 24, 1), 168))
+      .slice(0, hours)
       .map((hour) => ({
         ...hour,
         providerLabelZh: source.providerLabelZh,
@@ -134,4 +135,16 @@ export class QWeatherRealProvider implements WeatherProvider {
       noticeZh: "天气数据：和风天气",
     };
   }
+}
+
+function requestedHourlyResponseHours(input: WeatherRequestInput): number {
+  const requestedHours =
+    typeof input.hours === "number" && Number.isFinite(input.hours) && input.hours > 0
+      ? Math.round(input.hours)
+      : 24;
+  const requestedDayHours =
+    typeof input.days === "number" && Number.isFinite(input.days) && input.days > 0
+      ? Math.round(input.days) * 24
+      : 0;
+  return Math.max(requestedHours, requestedDayHours);
 }

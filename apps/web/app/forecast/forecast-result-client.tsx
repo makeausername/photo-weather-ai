@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
@@ -4769,6 +4770,19 @@ function CloudSeaProfessionalHourlyDataPanel({
   const coverageNote = basis.professionalCoverageNoteZh ?? basis.userFacingCoverageNoteZh;
   const temperatureColumnLabels = professionalTemperatureColumnLabels(rows, basis);
   const showRawTemperatureColumn = temperatureColumnLabels.length > 1;
+  const expectedRowCount = basis.expectedRowCount ?? basis.requestedHours ?? rows.length;
+  const coverageComplete = rows.length >= expectedRowCount;
+  const targetRangeLabel = `${formatFullDateTimeForTimezone(
+    basis.anchorStartLocal ?? basis.startTime,
+    basis.timezone,
+  )} - ${formatFullDateTimeForTimezone(
+    basis.anchorEndLocal ?? basis.endTime,
+    basis.timezone,
+  )}`;
+  const actualRangeLabel = `${formatFullDateTimeForTimezone(
+    rows[0]?.time ?? basis.startTime,
+    basis.timezone,
+  )} - ${formatFullDateTimeForTimezone(rows.at(-1)?.time ?? basis.endTime, basis.timezone)}`;
 
   return (
     <Card
@@ -4799,6 +4813,11 @@ function CloudSeaProfessionalHourlyDataPanel({
       </div>
 
       <dl className="mt-4 grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground min-[760px]:grid-cols-4">
+        <CompactDefinition label="目标有效时间" value={targetRangeLabel} />
+        <CompactDefinition label="覆盖率" value={`${rows.length} / ${expectedRowCount} 小时`} />
+        {!coverageComplete ? (
+          <CompactDefinition label="实际显示" value={actualRangeLabel} />
+        ) : null}
         <CompactDefinition
           label="有效时间"
           value={`${formatFullDateTimeForTimezone(
@@ -4877,8 +4896,8 @@ function CloudSeaProfessionalHourlyDataPanel({
           </div>
         </div>
         <p className="text-xs leading-5 text-muted-foreground">
-          当前筛选：{activeFilterLabel}，显示 {filteredRows.length} / {rows.length} 小时。
-          {terrainContext.vocabulary.professionalUsageText}
+          当前筛选：{activeFilterLabel}，筛选 {filteredRows.length} / {rows.length} 小时；覆盖{" "}
+          {rows.length} / {expectedRowCount} 小时。{terrainContext.vocabulary.professionalUsageText}
         </p>
 
         <div

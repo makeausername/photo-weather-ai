@@ -2,6 +2,7 @@ import {
   buildCloudLayerCompletenessContext,
   buildCloudSeaCloudBasisConsistencyContext,
   buildCloudSeaPrecipitationSignalContext,
+  formatForecastWindowZh,
   forecastHorizonLabels,
   type CloudLayerCompletenessContext,
   type CloudSeaCloudBasisConsistencyContext,
@@ -352,6 +353,13 @@ function buildDisplayProfessionalHourlyTimeBasis(
     horizonHours: horizonWindow.horizonHours,
     expectedRowCount: horizonWindow.expectedRowCount,
     requestedHours: horizonWindow.requestedHours,
+    minRequestHours: timeBasis.minRequestHours,
+    recommendedRequestHours: timeBasis.recommendedRequestHours,
+    requiredForecastDays: timeBasis.requiredForecastDays,
+    requestStartLocal: timeBasis.requestStartLocal,
+    requestEndLocal: timeBasis.requestEndLocal,
+    providerCoverageVersion: timeBasis.providerCoverageVersion,
+    coverageRule: timeBasis.coverageRule,
     rule: horizonWindow.rule,
     displayLabel: horizonWindow.displayLabel,
     displayRangeZh: horizonWindow.displayRangeZh,
@@ -852,25 +860,10 @@ function clampScorePercent(value: number): number {
 }
 
 function formatWindowRange(start: string, end: string, timezone: string): string {
-  if (!start || !end) {
-    return "暂无明确时间范围";
-  }
-  const startParts = localDateTimeParts(start, timezone);
-  const endParts = localDateTimeParts(end, timezone);
-
-  if (!startParts || !endParts) {
-    return `${formatDateTime(start, timezone)} – ${formatDateTime(end, timezone)}`;
-  }
-
-  if (
-    startParts.year === endParts.year &&
-    startParts.month === endParts.month &&
-    startParts.day === endParts.day
-  ) {
-    return `${startParts.year}年${startParts.month}月${startParts.day}日 ${startParts.hour}:${startParts.minute}–${endParts.hour}:${endParts.minute}`;
-  }
-
-  return `${formatFullLocalDateTime(startParts)} – ${formatFullLocalDateTime(endParts)}`;
+  return formatForecastWindowZh(start, end, timezone, {
+    missingText: "暂无明确时间范围",
+    invalidText: "时间待确认",
+  });
 }
 
 function formatDateTime(value: string, timezone: string): string {
@@ -886,47 +879,6 @@ function formatDateTime(value: string, timezone: string): string {
     minute: "2-digit",
     hour12: false,
   }).format(new Date(timestamp));
-}
-
-function localDateTimeParts(
-  value: string,
-  timezone: string,
-): {
-  readonly year: number;
-  readonly month: number;
-  readonly day: number;
-  readonly hour: string;
-  readonly minute: string;
-} | null {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
-    return null;
-  }
-  const parts = new Intl.DateTimeFormat("zh-CN", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(new Date(timestamp));
-  const valueByType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  const year = Number(valueByType.year);
-  const month = Number(valueByType.month);
-  const day = Number(valueByType.day);
-  const hour = valueByType.hour ?? "00";
-  const minute = valueByType.minute ?? "00";
-
-  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
-    return null;
-  }
-
-  return { year, month, day, hour, minute };
-}
-
-function formatFullLocalDateTime(parts: NonNullable<ReturnType<typeof localDateTimeParts>>): string {
-  return `${parts.year}年${parts.month}月${parts.day}日 ${parts.hour}:${parts.minute}`;
 }
 
 function formatTemperature(value: number | null | undefined): string {

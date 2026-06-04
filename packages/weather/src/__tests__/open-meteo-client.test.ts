@@ -24,6 +24,8 @@ describe("OpenMeteoClient", () => {
     expect(url.pathname).toBe("/v1/forecast");
     expect(url.searchParams.get("apikey")).toBeNull();
     expect(url.searchParams.get("timezone")).toBe("Asia/Shanghai");
+    expect(url.searchParams.get("forecast_hours")).toBe("24");
+    expect(url.searchParams.get("forecast_days")).toBe("1");
     expect(url.searchParams.get("hourly")).toContain("cloud_cover_low");
     expect(url.searchParams.get("hourly")).not.toContain("apparent_temperature");
     expect(url.searchParams.get("current")).toBe(
@@ -49,7 +51,24 @@ describe("OpenMeteoClient", () => {
     expect(url.pathname).toBe("/v1/forecast");
     expect(url.searchParams.get("apikey")).toBe("open-meteo-secret");
     expect(url.searchParams.get("models")).toBe("best_match");
+    expect(url.searchParams.get("forecast_hours")).toBe("48");
     expect(url.searchParams.get("forecast_days")).toBe("2");
+  });
+
+  it("allows rolling future48 day-based coverage to request three forecast days", () => {
+    const url = new URL(
+      buildOpenMeteoForecastUrl(
+        {
+          endpoint: "https://api.open-meteo.com",
+          mode: "free",
+          timezone: "Asia/Shanghai",
+        },
+        { coordinates, hours: 54, days: 3 },
+      ),
+    );
+
+    expect(url.searchParams.get("forecast_hours")).toBe("54");
+    expect(url.searchParams.get("forecast_days")).toBe("3");
   });
 
   it("uses mocked fetch for connection tests", async () => {

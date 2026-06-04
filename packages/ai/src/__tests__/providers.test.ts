@@ -179,6 +179,10 @@ describe("AI providers", () => {
       normalizedHourlyRowCount: expect.any(Number),
       nearTermRowCount: expect.any(Number),
     });
+    expect(payload.bestWindow?.windowZh).toBe("2026年5月21日 周四 05:00-07:00");
+    expect(payload.cloudSeaWindowCards.best[0]?.windowZh).toBe(
+      "2026年5月21日 周四 05:00-07:00",
+    );
     expect(payload.displayTemperatureContext).toHaveProperty("displayTemperatureC");
     expect(payload.precipitationSignalContext).toMatchObject({
       precipitationSignalType: expect.any(String),
@@ -494,7 +498,7 @@ describe("AI providers", () => {
     expect(explanation.conclusion.recommendedDayZh).toContain("2026年5月21日 星期四");
     expect(explanation.conclusion.oneSentenceDecisionZh).toContain("谨慎参考");
     expect(explanation.bestPlan.bestDateZh).toBe("2026年5月21日 星期四");
-    expect(explanation.bestPlan.bestWindowZh).toContain("2026年5月21日 05:20");
+    expect(explanation.bestPlan.bestWindowZh).toContain("2026年5月21日 周四 05:20");
     expect(explanation.bestPlan.primaryTargetZh).toContain("清晨云海");
     expect(explanation.bestPlan.backupPlanZh).toContain("备用题材");
     expect(explanation.weatherTrend.temperatureSummaryZh).toBeTruthy();

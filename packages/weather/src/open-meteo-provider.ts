@@ -69,7 +69,7 @@ export class OpenMeteoProvider implements WeatherProvider {
   }
 
   async getHourlyForecast(input: WeatherRequestInput): Promise<readonly NormalizedHourlyWeather[]> {
-    const hours = Math.min(Math.max(input.hours ?? 24, 1), 168);
+    const hours = Math.min(Math.max(requestedHourlyResponseHours(input), 1), 168);
     return this.normalizeHourlyWeather(this.forecastFixture).slice(0, hours);
   }
 
@@ -325,7 +325,7 @@ export class OpenMeteoRealProvider implements WeatherProvider {
 
   async getHourlyForecast(input: WeatherRequestInput): Promise<readonly NormalizedHourlyWeather[]> {
     const body = await this.fetchForecast(input);
-    const hours = Math.min(Math.max(input.hours ?? 24, 1), 168);
+    const hours = Math.min(Math.max(requestedHourlyResponseHours(input), 1), 168);
     try {
       return this.normalizer.normalizeHourlyWeather(body).slice(0, hours).map(toRealHourly);
     } catch (error) {
@@ -385,6 +385,10 @@ export class OpenMeteoRealProvider implements WeatherProvider {
       hours: input.hours,
       days: input.days,
       timezone: input.timezone,
+      forecastWindowAnchorStart: input.forecastWindowAnchorStart,
+      forecastWindowAnchorEnd: input.forecastWindowAnchorEnd,
+      expectedRowCount: input.expectedRowCount,
+      providerCoverageVersion: input.providerCoverageVersion,
     });
     const existing = this.forecastRequests.get(key);
     if (existing) {
@@ -406,6 +410,18 @@ function openMeteoParseError(messageZh: string, cause?: unknown): WeatherProvide
     messageZh,
     cause,
   });
+}
+
+function requestedHourlyResponseHours(input: WeatherRequestInput): number {
+  const requestedHours =
+    typeof input.hours === "number" && Number.isFinite(input.hours) && input.hours > 0
+      ? Math.round(input.hours)
+      : 24;
+  const requestedDayHours =
+    typeof input.days === "number" && Number.isFinite(input.days) && input.days > 0
+      ? Math.round(input.days) * 24
+      : 0;
+  return Math.max(requestedHours, requestedDayHours);
 }
 
 function toRealHourly(hour: NormalizedHourlyWeather): NormalizedHourlyWeather {

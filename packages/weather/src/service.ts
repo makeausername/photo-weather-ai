@@ -3,6 +3,7 @@ import type {
   CloudLayerProviderCoverageSummary,
   NormalizedCurrentWeather,
   NormalizedHourlyWeather,
+  RollingProviderCoverageDiagnostics,
   WeatherFusionSummary,
   WeatherProviderTerrainMetadata,
 } from "@photo-weather/shared";
@@ -98,6 +99,7 @@ export class WeatherDataService {
           ...terrainSummaryMetadata,
         },
       ],
+      rollingProviderCoverage: buildRollingProviderCoverageDiagnostics(input),
     };
   }
 }
@@ -144,6 +146,7 @@ export class WeatherIntelligenceService {
       forecastStart: input.forecastStart ?? usableBundles[0]!.generatedAt,
       forecastEnd:
         input.forecastEnd ?? usableBundles[0]!.forecastEnd ?? usableBundles[0]!.generatedAt,
+      requestedForecastHours: requestedForecastHoursForMerge(input),
     });
     const primary =
       usableBundles.find((bundle) => bundle.providerCode === fusion.recommendedPrimarySource) ??
@@ -196,6 +199,7 @@ export class WeatherIntelligenceService {
           ),
         ],
       },
+      rollingProviderCoverage: buildRollingProviderCoverageDiagnostics(input),
     };
   }
 
@@ -291,6 +295,7 @@ export class WeatherIntelligenceService {
         sourceSummaries: [...failedSourceSummaries, fallbackSummary],
         missingDataNotes: warningNotes,
       },
+      rollingProviderCoverage: buildRollingProviderCoverageDiagnostics(input),
     };
   }
 
@@ -304,6 +309,14 @@ export class WeatherIntelligenceService {
       horizon: input.horizon ?? horizonFromHours(input.hours),
       forecastStart: input.forecastStart ?? generatedAt(input),
       forecastWindowAnchorStart: input.forecastWindowAnchorStart,
+      forecastWindowAnchorEnd: input.forecastWindowAnchorEnd,
+      expectedRowCount: input.expectedRowCount,
+      providerCoverageVersion: input.providerCoverageVersion,
+      requestHours: input.hours,
+      requestDays: input.days,
+      providerRequestStartLocal: input.providerRequestStartLocal,
+      providerRequestEndLocal: input.providerRequestEndLocal,
+      providerCoverageRule: input.providerCoverageRule,
       timezone: input.timezone,
       target: input.target,
       purpose: "fusion",
@@ -349,6 +362,47 @@ export class WeatherIntelligenceService {
       throw error;
     }
   }
+}
+
+function buildRollingProviderCoverageDiagnostics(
+  input: WeatherRequestInput,
+): RollingProviderCoverageDiagnostics | undefined {
+  if (
+    !input.providerCoverageVersion ||
+    !input.forecastWindowAnchorStart ||
+    !input.forecastWindowAnchorEnd ||
+    !input.providerRequestStartLocal ||
+    !input.providerRequestEndLocal ||
+    !input.providerCoverageRule ||
+    !input.hours ||
+    !input.days ||
+    !input.expectedRowCount
+  ) {
+    return undefined;
+  }
+
+  return {
+    version: input.providerCoverageVersion,
+    minRequestHours: input.expectedRowCount,
+    recommendedRequestHours: Math.round(input.hours),
+    requiredForecastDays: Math.round(input.days),
+    requestStartLocal: input.providerRequestStartLocal,
+    requestEndLocal: input.providerRequestEndLocal,
+    coverageRule: input.providerCoverageRule,
+  };
+}
+
+function requestedForecastHoursForMerge(input: WeatherRequestInput): number | undefined {
+  const hourCount =
+    typeof input.hours === "number" && Number.isFinite(input.hours) && input.hours > 0
+      ? Math.round(input.hours)
+      : undefined;
+  const dayHourCount =
+    typeof input.days === "number" && Number.isFinite(input.days) && input.days > 0
+      ? Math.round(input.days) * 24
+      : undefined;
+  const values = [hourCount, dayHourCount].filter((value): value is number => value !== undefined);
+  return values.length > 0 ? Math.max(...values) : undefined;
 }
 
 function appendFailedCloudLayerProviderCoverage(

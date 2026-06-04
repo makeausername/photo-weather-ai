@@ -20,7 +20,7 @@ const coordinates = {
 } as const;
 
 describe("OpenMeteoIconCloudLayerProvider", () => {
-  it("builds a public ICON cloud-layer URL with 72h, timezone, elevation, and explicit units", () => {
+  it("builds a public ICON cloud-layer URL with default 72h, timezone, elevation, and explicit units", () => {
     const url = new URL(
       buildOpenMeteoIconCloudLayerUrl(
         {
@@ -34,7 +34,6 @@ describe("OpenMeteoIconCloudLayerProvider", () => {
         {
           coordinates,
           elevationMeters: 1860,
-          forecastHours: 48,
           timezone: "Asia/Shanghai",
         },
       ),
@@ -44,6 +43,7 @@ describe("OpenMeteoIconCloudLayerProvider", () => {
     expect(url.pathname).toBe("/v1/forecast");
     expect(url.searchParams.get("apikey")).toBeNull();
     expect(url.searchParams.get("forecast_hours")).toBe("72");
+    expect(url.searchParams.get("forecast_days")).toBe("3");
     expect(url.searchParams.get("timezone")).toBe("Asia/Shanghai");
     expect(url.searchParams.get("elevation")).toBe("1860");
     expect(url.searchParams.get("temperature_unit")).toBe("celsius");
@@ -89,7 +89,7 @@ describe("OpenMeteoIconCloudLayerProvider", () => {
     expect(url.searchParams.get("forecast_hours")).toBe("72");
   });
 
-  it("builds a standard Open-Meteo Forecast fallback URL without a fixed ICON model", () => {
+  it("builds a standard Open-Meteo Forecast fallback URL with explicit rolling hours", () => {
     const url = new URL(
       buildOpenMeteoForecastCloudLayerUrl(
         {
@@ -102,7 +102,7 @@ describe("OpenMeteoIconCloudLayerProvider", () => {
         {
           coordinates,
           elevationMeters: 1860,
-          forecastHours: 48,
+          forecastHours: 54,
           timezone: "Asia/Shanghai",
         },
       ),
@@ -111,7 +111,8 @@ describe("OpenMeteoIconCloudLayerProvider", () => {
     expect(url.origin).toBe("https://api.open-meteo.com");
     expect(url.pathname).toBe("/v1/forecast");
     expect(url.searchParams.get("models")).toBeNull();
-    expect(url.searchParams.get("forecast_hours")).toBe("72");
+    expect(url.searchParams.get("forecast_hours")).toBe("54");
+    expect(url.searchParams.get("forecast_days")).toBe("3");
     expect(url.searchParams.get("timezone")).toBe("Asia/Shanghai");
     expect(url.searchParams.get("elevation")).toBe("1860");
     expect(url.searchParams.get("wind_speed_unit")).toBe("ms");

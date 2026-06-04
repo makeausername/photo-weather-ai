@@ -100,19 +100,37 @@ function addOneDay(date: string): string {
   ).padStart(2, "0")}`;
 }
 
-function isoHour(index: number): string {
-  return new Date(Date.UTC(2026, 4, 20, index, 0, 0)).toISOString().replace(".000Z", "+08:00");
+function isoHourFrom(start: string, index: number): string {
+  const offset = start.slice(-6);
+  const offsetMinutes = offsetToMinutes(offset);
+  const date = new Date(Date.parse(start) + index * 60 * 60 * 1000);
+  const local = new Date(date.getTime() + offsetMinutes * 60 * 1000);
+  return `${local.getUTCFullYear()}-${pad2(local.getUTCMonth() + 1)}-${pad2(
+    local.getUTCDate(),
+  )}T${pad2(local.getUTCHours())}:00:00${offset}`;
 }
 
-function dateForIndex(index: number): string {
-  return new Date(Date.UTC(2026, 4, 20 + index, 0, 0, 0)).toISOString().slice(0, 10);
+function offsetToMinutes(offset: string): number {
+  const sign = offset.startsWith("-") ? -1 : 1;
+  const [hours, minutes] = offset.slice(1).split(":").map(Number);
+  return sign * ((hours ?? 0) * 60 + (minutes ?? 0));
 }
 
-function buildQWeatherHourlyPayload() {
+function pad2(value: number): string {
+  return value.toString().padStart(2, "0");
+}
+
+function dateForIndex(index: number, start = "2026-05-20T00:00:00+08:00"): string {
+  return isoHourFrom(start, index * 24).slice(0, 10);
+}
+
+function buildQWeatherHourlyPayload(options: { readonly start?: string; readonly hours?: number } = {}) {
+  const start = options.start ?? "2026-05-20T00:00:00+08:00";
+  const hours = options.hours ?? 48;
   return {
     code: "200",
-    hourly: Array.from({ length: 48 }, (_, index) => ({
-      fxTime: isoHour(index),
+    hourly: Array.from({ length: hours }, (_, index) => ({
+      fxTime: isoHourFrom(start, index),
       temp: String(12 + (index % 6)),
       feelsLike: String(10 + (index % 5)),
       humidity: "82",
@@ -131,11 +149,13 @@ function buildQWeatherHourlyPayload() {
   };
 }
 
-function buildQWeatherDailyPayload() {
+function buildQWeatherDailyPayload(options: { readonly start?: string; readonly days?: number } = {}) {
+  const start = options.start ?? "2026-05-20T00:00:00+08:00";
+  const days = options.days ?? 3;
   return {
     code: "200",
-    daily: Array.from({ length: 3 }, (_, index) => ({
-      fxDate: dateForIndex(index),
+    daily: Array.from({ length: days }, (_, index) => ({
+      fxDate: dateForIndex(index, start),
       tempMin: "8",
       tempMax: "18",
       pop: "20",
@@ -147,9 +167,12 @@ function buildQWeatherDailyPayload() {
   };
 }
 
-function buildOpenMeteoPayload() {
-  const times = Array.from({ length: 48 }, (_, index) => isoHour(index).slice(0, 16));
-  const dates = Array.from({ length: 3 }, (_, index) => dateForIndex(index));
+function buildOpenMeteoPayload(options: { readonly start?: string; readonly hours?: number; readonly days?: number } = {}) {
+  const start = options.start ?? "2026-05-20T00:00:00+08:00";
+  const hours = options.hours ?? 48;
+  const days = options.days ?? 3;
+  const times = Array.from({ length: hours }, (_, index) => isoHourFrom(start, index).slice(0, 16));
+  const dates = Array.from({ length: days }, (_, index) => dateForIndex(index, start));
 
   return {
     utc_offset_seconds: 28800,
@@ -190,9 +213,12 @@ function buildOpenMeteoPayload() {
   };
 }
 
-function buildMeteobluePayload() {
-  const times = Array.from({ length: 48 }, (_, index) => isoHour(index));
-  const dates = Array.from({ length: 3 }, (_, index) => dateForIndex(index));
+function buildMeteobluePayload(options: { readonly start?: string; readonly hours?: number; readonly days?: number } = {}) {
+  const start = options.start ?? "2026-05-20T00:00:00+08:00";
+  const hours = options.hours ?? 48;
+  const days = options.days ?? 3;
+  const times = Array.from({ length: hours }, (_, index) => isoHourFrom(start, index));
+  const dates = Array.from({ length: days }, (_, index) => dateForIndex(index, start));
 
   return {
     metadata: { name: "basic-1h_clouds-1h" },
@@ -901,6 +927,125 @@ describe("forecast query validation route", () => {
       visibility: expect.any(Number),
     });
     expect(body.clothingGuide.titleZh).toEqual(expect.any(String));
+    expect(JSON.stringify(body)).not.toContain("qweather-secret");
+    expect(JSON.stringify(body)).not.toContain("meteoblue-secret");
+  });
+
+  it("requests buffered provider coverage before clipping future48 Cloud Sea display rows", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    configureRealWeatherProviders(state);
+    const rollingStart = "2026-06-04T00:00:00+08:00";
+    const requestedUrls: string[] = [];
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url.includes("qweather.example/v7/weather/now")) {
+        return new Response(
+          JSON.stringify({
+            code: "200",
+            now: {
+              obsTime: "2026-06-04T08:22:00+08:00",
+              temp: "13",
+              feelsLike: "11",
+              icon: "101",
+              text: "多云",
+              wind360: "120",
+              windSpeed: "9",
+              humidity: "82",
+              pressure: "1008",
+              vis: "22",
+              cloud: "52",
+              dew: "10",
+            },
+          }),
+        );
+      }
+      if (url.includes("qweather.example/v7/weather/")) {
+        return new Response(
+          JSON.stringify(
+            url.includes("/7d") || url.includes("/15d")
+              ? buildQWeatherDailyPayload({ start: rollingStart, days: 3 })
+              : buildQWeatherHourlyPayload({ start: rollingStart, hours: 72 }),
+          ),
+        );
+      }
+      if (url.includes("api.open-meteo.com/v1/forecast")) {
+        return new Response(
+          JSON.stringify(buildOpenMeteoPayload({ start: rollingStart, hours: 72, days: 3 })),
+        );
+      }
+      if (url.includes("my.meteoblue.com/packages/basic-1h_clouds-1h")) {
+        return new Response(
+          JSON.stringify(buildMeteobluePayload({ start: rollingStart, hours: 72, days: 3 })),
+        );
+      }
+
+      throw new Error(`unexpected test URL: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+        ENABLE_ASTRO_SERVICE: "false",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        target: "cloud_sea",
+        horizon: "48h",
+        timezone: "Asia/Shanghai",
+        startDateTime: "2026-06-04T08:22:00+08:00",
+      },
+    });
+    const body = response.json();
+    const openMeteoUrl = requestedUrls.find((url) => {
+      if (!url.includes("api.open-meteo.com/v1/forecast")) {
+        return false;
+      }
+      const params = new URL(url).searchParams;
+      return params.get("forecast_hours") === "54" && params.get("forecast_days") === "3";
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(openMeteoUrl).toBeDefined();
+    const openMeteoParams = new URL(openMeteoUrl!).searchParams;
+    expect(openMeteoParams.get("forecast_hours")).toBe("54");
+    expect(openMeteoParams.get("forecast_days")).toBe("3");
+    expect(requestedUrls).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("qweather.example/v7/weather/72h"),
+        expect.stringContaining("qweather.example/v7/weather/7d"),
+      ]),
+    );
+    expect(body.professionalHourlyData).toHaveLength(48);
+    expect(body.professionalHourlyData[0]).toMatchObject({
+      time: "2026-06-04T09:00:00+08:00",
+    });
+    expect(body.professionalHourlyData.at(-1)).toMatchObject({
+      time: "2026-06-06T08:00:00+08:00",
+    });
+    expect(body.professionalHourlyDataTimeBasis).toMatchObject({
+      anchorStartLocal: "2026-06-04T09:00:00+08:00",
+      anchorEndLocal: "2026-06-06T08:00:00+08:00",
+      expectedRowCount: 48,
+      requestedHours: 48,
+      minRequestHours: 48,
+      recommendedRequestHours: 54,
+      requiredForecastDays: 3,
+      requestStartLocal: "2026-06-04T00:00:00+08:00",
+      requestEndLocal: "2026-06-06T23:00:00+08:00",
+      providerCoverageVersion: "rolling-provider-coverage-v2",
+      coverageRule: "forecast_hours_with_buffer",
+      partialData: false,
+    });
     expect(JSON.stringify(body)).not.toContain("qweather-secret");
     expect(JSON.stringify(body)).not.toContain("meteoblue-secret");
   });

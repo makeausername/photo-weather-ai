@@ -1,12 +1,17 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import * as React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { ForecastCalculationResult, ProfessionalHourlyDataPoint } from "@photo-weather/shared";
 import { cloudSeaRegressionFixture } from "./__tests__/fixtures/cloudSeaRegressionFixtures";
+import { CloudSeaResultPage } from "./forecast-result-client";
 import { buildCloudSeaForecastViewModel } from "./forecast-result-view-model";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
+const testGlobal = globalThis as typeof globalThis & { React: typeof React };
+testGlobal.React = React;
 
 describe("Cloud Sea display data rolling horizon", () => {
   it("aligns professional table, near-term cards, temperature context, and AI payload to the same rolling rows", () => {
@@ -70,6 +75,57 @@ describe("Cloud Sea display data rolling horizon", () => {
     expect(panelSource).toContain("const rows = data.rows");
     expect(panelSource).not.toMatch(/row\.date|currentDate|isSameDay|23:00/);
     expect(panelSource).not.toMatch(/startsWith\(\s*`\$\{date\}T`/);
+  });
+
+  it("keeps future48 provider-short coverage as 39 of 48 display hours", () => {
+    const fixture = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
+    const baseRow = fixture.result.professionalHourlyData?.[0];
+    if (!baseRow) {
+      throw new Error("Cloud Sea regression fixture must include professional hourly rows.");
+    }
+    const rows = hourlyRowsFrom(baseRow, "2026-06-04T09:00:00+08:00", 39);
+    const result = future48RollingResult(fixture.result, rows);
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const display = viewModel.displayData;
+
+    expect(display.professionalHourlyData.rows).toHaveLength(39);
+    expect(display.professionalHourlyData.rows[0]?.time).toBe("2026-06-04T09:00:00+08:00");
+    expect(display.professionalHourlyData.rows.at(-1)?.time).toBe("2026-06-05T23:00:00+08:00");
+    expect(display.professionalHourlyData.timeBasis).toMatchObject({
+      anchorStartLocal: "2026-06-04T09:00:00+08:00",
+      anchorEndLocal: "2026-06-06T08:00:00+08:00",
+      expectedRowCount: 48,
+      requestedHours: 48,
+      recommendedRequestHours: 54,
+      requiredForecastDays: 3,
+      partialData: true,
+    });
+    expect(display.displayDataMeta).toMatchObject({
+      horizon: "48h",
+      anchorStart: "2026-06-04T09:00:00+08:00",
+      anchorEnd: "2026-06-06T08:00:00+08:00",
+      expectedRowCount: 48,
+      actualRowCount: 39,
+      firstRowTime: "2026-06-04T09:00:00+08:00",
+      lastRowTime: "2026-06-05T23:00:00+08:00",
+      sourceAlignmentStatus: "partial",
+    });
+
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: {
+          ...fixture.query,
+          horizon: "48h",
+        },
+        result,
+        viewModel,
+      }),
+    );
+    expect(html).toContain("覆盖率");
+    expect(html).toContain("39 / 48 小时");
+    expect(html).not.toContain("39 / 39 小时");
+    expect(html).toContain("2026年6月4日 09:00");
+    expect(html).toContain("2026年6月6日 08:00");
   });
 });
 
@@ -159,6 +215,79 @@ function rollingRows(baseRow: ProfessionalHourlyDataPoint): readonly Professiona
       cloudLowPercent: isAnchor ? 78 : 5,
       visibilityMeters: isAnchor ? 5000 : 20000,
       windSpeedMs: isAnchor ? 3.4 : 1.2,
+    };
+  });
+}
+
+function future48RollingResult(
+  result: ForecastCalculationResult,
+  rows: readonly ProfessionalHourlyDataPoint[],
+): ForecastCalculationResult {
+  return {
+    ...result,
+    horizon: "48h",
+    generatedAt: "2026-06-04T08:22:00+08:00",
+    forecastStart: "2026-06-04T08:22:00+08:00",
+    forecastEnd: "2026-06-06T08:22:00+08:00",
+    targetDates: ["2026-06-04", "2026-06-05", "2026-06-06"],
+    calendarBasis: {
+      ...result.calendarBasis,
+      forecastStart: "2026-06-04T08:22:00+08:00",
+      forecastEnd: "2026-06-06T08:22:00+08:00",
+      targetDates: ["2026-06-04", "2026-06-05", "2026-06-06"],
+      horizonHours: 48,
+      timezone: "Asia/Shanghai",
+    },
+    professionalHourlyData: rows,
+    professionalHourlyDataTimeBasis: {
+      ...(result.professionalHourlyDataTimeBasis ?? {
+        stepMinutes: 60,
+        timezone: "Asia/Shanghai",
+        temperatureBasis: "terrain_adjusted" as const,
+        temperatureBasisNoteZh: "synthetic terrain-adjusted temperature",
+        cloudLayerBasis: "explicit_layers" as const,
+        cloudLayerBasisNoteZh: "synthetic explicit cloud layers",
+        partialData: true,
+      }),
+      startTime: rows[0]?.time ?? "2026-06-04T09:00:00+08:00",
+      endTime: rows.at(-1)?.time ?? "2026-06-05T23:00:00+08:00",
+      stepMinutes: 60,
+      timezone: "Asia/Shanghai",
+      generatedAtLocal: "2026-06-04T08:22:00+08:00",
+      anchorStartLocal: "2026-06-04T09:00:00+08:00",
+      anchorEndLocal: "2026-06-06T08:00:00+08:00",
+      horizonHours: 48,
+      expectedRowCount: 48,
+      requestedHours: 48,
+      minRequestHours: 48,
+      recommendedRequestHours: 54,
+      requiredForecastDays: 3,
+      requestStartLocal: "2026-06-04T00:00:00+08:00",
+      requestEndLocal: "2026-06-06T23:00:00+08:00",
+      providerCoverageVersion: "rolling-provider-coverage-v2",
+      coverageRule: "forecast_hours_with_buffer",
+      rule: "rolling_future_hours",
+      displayLabel: "未来48小时",
+      displayRangeZh: "2026年6月4日 09:00 至 2026年6月6日 08:00",
+      isFutureOnly: true,
+      anchorRule: "future_hour_ceil_to_next_hour",
+      partialData: true,
+    },
+  };
+}
+
+function hourlyRowsFrom(
+  baseRow: ProfessionalHourlyDataPoint,
+  start: string,
+  length: number,
+): readonly ProfessionalHourlyDataPoint[] {
+  return Array.from({ length }, (_, index) => {
+    const time = formatOffsetHour(start, index);
+    return {
+      ...baseRow,
+      time,
+      dateLabel: time.slice(5, 10),
+      timeLabel: time.slice(11, 16),
     };
   });
 }

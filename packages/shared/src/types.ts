@@ -48,6 +48,16 @@ export type WeatherDataMode = "mock" | "demo" | "fixture" | "fallback" | "real";
 
 export type PrecipitationType = "rain" | "snow" | "mixed" | "none" | "unknown";
 
+export type RollingProviderCoverageDiagnostics = {
+  readonly version: string;
+  readonly minRequestHours: number;
+  readonly recommendedRequestHours: number;
+  readonly requiredForecastDays: number;
+  readonly requestStartLocal: string;
+  readonly requestEndLocal: string;
+  readonly coverageRule: string;
+};
+
 export type ExposedRidgeWindRisk = "low" | "medium" | "high";
 
 export type TripodStabilityRisk = "low" | "medium" | "high";
@@ -318,6 +328,13 @@ export type ProfessionalHourlyDataTimeBasis = {
   readonly horizonHours?: number;
   readonly expectedRowCount?: number;
   readonly requestedHours?: number;
+  readonly minRequestHours?: number;
+  readonly recommendedRequestHours?: number;
+  readonly requiredForecastDays?: number;
+  readonly requestStartLocal?: string;
+  readonly requestEndLocal?: string;
+  readonly providerCoverageVersion?: string;
+  readonly coverageRule?: string;
   readonly rule?: string;
   readonly displayLabel?: string;
   readonly displayRangeZh?: string;
@@ -713,6 +730,7 @@ export type ForecastCalculationInput = {
   readonly weatherMissingDataNotes: readonly string[];
   readonly weatherFusionSummary?: WeatherFusionSummary;
   readonly weatherProviderRuntimeSnapshot?: readonly ForecastProviderRuntimeSnapshot[];
+  readonly rollingProviderCoverage?: RollingProviderCoverageDiagnostics;
   readonly astroDataSourceLabelZh: string;
   readonly astroCalculationBasis?: AstroCalculationBasis;
   readonly astroWindowBundle?: AstroWindowBundle;

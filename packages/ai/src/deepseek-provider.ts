@@ -604,6 +604,14 @@ export function buildCloudSeaAiExplainPayload(
         result.professionalHourlyDataTimeBasis?.anchorStartLocal ??
         result.professionalHourlyDataTimeBasis?.startTime ??
         result.forecastStart,
+      anchorEnd:
+        result.professionalHourlyDataTimeBasis?.anchorEndLocal ??
+        result.professionalHourlyDataTimeBasis?.endTime ??
+        result.forecastEnd,
+      expectedRowCount:
+        result.professionalHourlyDataTimeBasis?.expectedRowCount ??
+        result.professionalHourlyDataTimeBasis?.requestedHours ??
+        result.calendarBasis.horizonHours,
       normalizedHourlyRowCount: professionalRows.length,
       nearTermRowCount: nearTermRows.length,
     },
@@ -828,7 +836,13 @@ function compactProfessionalHourlyTimeBasisForAi(
     stepMinutes: basis.stepMinutes,
     anchorStartLocal: basis.anchorStartLocal,
     anchorEndLocal: basis.anchorEndLocal,
+    expectedRowCount: basis.expectedRowCount,
     requestedHours: basis.requestedHours,
+    recommendedRequestHours: basis.recommendedRequestHours,
+    requiredForecastDays: basis.requiredForecastDays,
+    providerCoverageVersion: basis.providerCoverageVersion,
+    coverageRule: basis.coverageRule,
+    displayRangeZh: basis.displayRangeZh,
     partialData: basis.partialData,
     cloudLayerBasis: basis.cloudLayerBasis,
   };

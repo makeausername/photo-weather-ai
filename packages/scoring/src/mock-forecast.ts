@@ -87,6 +87,7 @@ export type NormalizedForecastInputOptions = {
   readonly weatherMissingDataNotes?: readonly string[];
   readonly weatherFusionSummary?: WeatherFusionSummary;
   readonly weatherProviderRuntimeSnapshot?: readonly ForecastProviderRuntimeSnapshot[];
+  readonly rollingProviderCoverage?: ForecastCalculationInput["rollingProviderCoverage"];
 };
 
 export type ForecastInputBuildOptions = {
@@ -231,6 +232,7 @@ export function buildForecastInputFromWeatherBundle(
       weatherMissingDataNotes: weatherBundle.missingDataNotes ?? [],
       weatherFusionSummary: weatherBundle.fusionSummary,
       weatherProviderRuntimeSnapshot: weatherBundle.providerRuntimeSnapshot,
+      rollingProviderCoverage: weatherBundle.rollingProviderCoverage,
     },
     options,
   );
@@ -328,6 +330,7 @@ export function buildForecastInputFromNormalizedWeather(
     weatherMissingDataNotes: weather.weatherMissingDataNotes ?? [],
     weatherFusionSummary: weather.weatherFusionSummary,
     weatherProviderRuntimeSnapshot: weather.weatherProviderRuntimeSnapshot,
+    rollingProviderCoverage: weather.rollingProviderCoverage,
     astroDataSourceLabelZh:
       options.astroDataSourceLabelZh ??
       (query.target === "astro" ? "简化本地估算" : "本地算法计算"),
