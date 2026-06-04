@@ -4,7 +4,12 @@ import { fileURLToPath } from "node:url";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { ForecastCalculationResult, ProfessionalHourlyDataPoint } from "@photo-weather/shared";
+import {
+  formatArrivalDeadlineZh,
+  formatForecastWindowZh,
+  type ForecastCalculationResult,
+  type ProfessionalHourlyDataPoint,
+} from "@photo-weather/shared";
 import { cloudSeaRegressionFixture } from "./__tests__/fixtures/cloudSeaRegressionFixtures";
 import { CloudSeaResultPage } from "./forecast-result-client";
 import { buildCloudSeaForecastViewModel } from "./forecast-result-view-model";
@@ -14,6 +19,67 @@ const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
 
 describe("Cloud Sea display data rolling horizon", () => {
+  it("renders Cloud Sea important windows with full date labels in cards, daily judgment, action plan, and AI payload", () => {
+    const fixture = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
+    const result = cloudSeaImportantWindowResult(fixture.result);
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: fixture.query,
+        result,
+        viewModel,
+      }),
+    );
+    const expectedWindow = formatForecastWindowZh(
+      "2026-06-05T04:38:00+08:00",
+      "2026-06-05T06:35:00+08:00",
+      "Asia/Shanghai",
+    );
+    const expectedArrival = formatArrivalDeadlineZh("2026-06-05T03:08:00+08:00", "Asia/Shanghai");
+    const expectedBackup = formatForecastWindowZh(
+      "2026-06-05T08:10:00+08:00",
+      "2026-06-05T09:20:00+08:00",
+      "Asia/Shanghai",
+    );
+    const bestCard = viewModel.displayData.recommendationCards.find(
+      (card) => card.key === "cloud-sea-best-window",
+    );
+    const arrivalCard = viewModel.displayData.recommendationCards.find(
+      (card) => card.key === "cloud-sea-arrival",
+    );
+    const mainAction = viewModel.displayData.actionPlan.find((item) => item.key === "main-window");
+    const arrivalAction = viewModel.displayData.actionPlan.find((item) => item.key === "arrival");
+    const backupAction = viewModel.displayData.actionPlan.find((item) => item.key === "backup");
+
+    expect(viewModel.displayData.importantWindows.bestWindow.displayLabelZh).toBe(expectedWindow);
+    expect(viewModel.displayData.importantWindows.arrival.displayLabelZh).toBe(expectedArrival);
+    expect(viewModel.displayData.importantWindows.mainWindow.displayLabelZh).toBe(expectedWindow);
+    expect(viewModel.displayData.importantWindows.backupWindow.displayLabelZh).toBe(expectedBackup);
+    expect(viewModel.displayData.header.bestWindowLabel).toBe(expectedWindow);
+    expect(bestCard?.value).toBe(expectedWindow);
+    expect(arrivalCard?.value).toBe(expectedArrival);
+    expect(viewModel.displayData.cloudSeaWindowCards[0]?.displayLabelZh).toBe(expectedWindow);
+    expect(viewModel.displayData.dailyJudgment[0]?.bestMorningWindow).toBe(expectedWindow);
+    expect(mainAction?.value).toBe(expectedWindow);
+    expect(arrivalAction?.value).toBe(expectedArrival);
+    expect(backupAction?.value).toBe(expectedBackup);
+    expect(viewModel.displayData.riskReview.find((item) => item.label === "影响时段")?.value).toBe(
+      expectedWindow,
+    );
+    expect(
+      viewModel.displayData.aiInterpretationPayload.actionPlan.find(
+        (item) => item.key === "main-window",
+      )?.value,
+    ).toBe(expectedWindow);
+    expect(
+      viewModel.displayData.aiInterpretationPayload.precipitationSignalContext.mainTimeRangeZh,
+    ).toBe(expectedWindow);
+    expect(html).toContain(expectedWindow);
+    expect(html).toContain(expectedArrival);
+    expect(html).toContain(expectedBackup);
+    expect(html).not.toMatch(/>\s*04:38-06:35\s*</);
+  });
+
   it("aligns professional table, near-term cards, temperature context, and AI payload to the same rolling rows", () => {
     const fixture = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
     const baseRow = fixture.result.professionalHourlyData?.[0];
@@ -128,6 +194,70 @@ describe("Cloud Sea display data rolling horizon", () => {
     expect(html).toContain("2026年6月6日 08:00");
   });
 });
+
+function cloudSeaImportantWindowResult(
+  result: ForecastCalculationResult,
+): ForecastCalculationResult {
+  const bestWindow = {
+    ...result.cloudSeaAnalysis.bestCloudSeaWindow!,
+    label: "generic Cloud Sea window 04:38 - 06:35",
+    date: "2026-06-05",
+    startTime: "2026-06-05T04:38:00+08:00",
+    endTime: "2026-06-05T06:35:00+08:00",
+  };
+  const backupWindow = {
+    ...bestWindow,
+    label: "generic backup Cloud Sea window 08:10 - 09:20",
+    startTime: "2026-06-05T08:10:00+08:00",
+    endTime: "2026-06-05T09:20:00+08:00",
+    score: 62,
+    shootableScore: 62,
+    formationScore: 70,
+    phase: "waiting" as const,
+  };
+  const forecastWindow = {
+    ...result.bestWindows[0]!,
+    label: bestWindow.label,
+    date: bestWindow.date,
+    startTime: bestWindow.startTime,
+    endTime: bestWindow.endTime,
+    arrivalAdvice: {
+      ...result.bestWindows[0]!.arrivalAdvice!,
+      recommendedArrivalTime: "2026-06-05T03:08:00+08:00",
+      recommendedArrivalLabel: "03:08 前到达",
+    },
+  };
+
+  return {
+    ...result,
+    forecastStart: "2026-06-04T08:00:00+08:00",
+    forecastEnd: "2026-06-06T08:00:00+08:00",
+    targetDates: ["2026-06-05"],
+    calendarBasis: {
+      ...result.calendarBasis,
+      forecastStart: "2026-06-04T08:00:00+08:00",
+      forecastEnd: "2026-06-06T08:00:00+08:00",
+      targetDates: ["2026-06-05"],
+      timezone: "Asia/Shanghai",
+    },
+    cloudSeaAnalysis: {
+      ...result.cloudSeaAnalysis,
+      bestCloudSeaWindow: bestWindow,
+      bestCloudSeaWindows: [bestWindow],
+      watchableCloudSeaWindows: [backupWindow],
+      dailyCloudSea: [
+        {
+          ...result.cloudSeaAnalysis.dailyCloudSea[0]!,
+          date: "2026-06-05",
+          dateLabelZh: "2026年6月5日 周五",
+          bestWindow,
+          watchableWindow: backupWindow,
+        },
+      ],
+    },
+    bestWindows: [forecastWindow],
+  };
+}
 
 function rollingResult(
   result: ForecastCalculationResult,

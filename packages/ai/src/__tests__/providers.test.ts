@@ -180,9 +180,14 @@ describe("AI providers", () => {
       nearTermRowCount: expect.any(Number),
     });
     expect(payload.bestWindow?.windowZh).toBe("2026年5月21日 周四 05:00-07:00");
-    expect(payload.cloudSeaWindowCards.best[0]?.windowZh).toBe(
+    expect(payload.cloudSeaWindowCards.best[0]?.windowZh).toBe("2026年5月21日 周四 05:00-07:00");
+    expect(payload.precipitationSignalSummary.mainTimeRangeZh).toBe(
       "2026年5月21日 周四 05:00-07:00",
     );
+    expect(payload.precipitationSignalContext.mainTimeRangeZh).toBe(
+      "2026年5月21日 周四 05:00-07:00",
+    );
+    expect(text).not.toMatch(/主窗口：05:00-07:00/);
     expect(payload.displayTemperatureContext).toHaveProperty("displayTemperatureC");
     expect(payload.precipitationSignalContext).toMatchObject({
       precipitationSignalType: expect.any(String),

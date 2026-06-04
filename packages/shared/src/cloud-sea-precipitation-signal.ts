@@ -1,4 +1,5 @@
 import type { ProfessionalHourlyDataPoint, TerrainMode, TerrainType } from "./types.js";
+import { formatForecastWindowZh } from "./window-format.js";
 
 export type CloudSeaPrecipitationSignalLevel =
   | "none"
@@ -45,6 +46,7 @@ export type CloudSeaPrecipitationSignalInput = {
   readonly precipitationAmountMm?: number | null;
   readonly precipitationProbabilityPercent?: number | null;
   readonly hourlyRows?: readonly ProfessionalHourlyDataPoint[] | null;
+  readonly timezone?: string | null;
   readonly focusedWindow?: CloudSeaPrecipitationSignalWindow | null;
   readonly bestWindow?: CloudSeaPrecipitationSignalWindow | null;
   readonly arrivalWindow?: CloudSeaPrecipitationSignalWindow | null;
@@ -88,12 +90,7 @@ export type CloudSeaPrecipitationSignalContext = {
   readonly affectedHoursCount: number;
   readonly hasProbabilityData: boolean;
   readonly hasAmountData: boolean;
-  readonly amountBasis:
-    | "focused_window"
-    | "expanded_window"
-    | "all_rows"
-    | "direct_input"
-    | "none";
+  readonly amountBasis: "focused_window" | "expanded_window" | "all_rows" | "direct_input" | "none";
 };
 
 type PrecipitationSnapshot = {
@@ -193,8 +190,7 @@ export function buildCloudSeaPrecipitationSignalContext(
   const affectsEquipment =
     precipitationSignalType !== "none" && precipitationSignalType !== "unknown";
   const affectsRoadSafety =
-    (precipitationSignalType === "sustained_rain" &&
-      (affectsMainWindow || affectsArrivalWindow)) ||
+    (precipitationSignalType === "sustained_rain" && (affectsMainWindow || affectsArrivalWindow)) ||
     (precipitationSignalType === "meaningful_rain" &&
       (affectsMainWindow || affectsArrivalWindow) &&
       (isStrongWind(input.windSpeedMs) || isPoorVisibility(input.visibilityKm)));
@@ -207,7 +203,7 @@ export function buildCloudSeaPrecipitationSignalContext(
     amountClass === "unknown" ||
     precipitationImpactLevel === "low" ||
     precipitationImpactLevel === "unknown";
-  const mainTimeRangeZh = formatMainTimeRange(mainWindow);
+  const mainTimeRangeZh = formatMainTimeRange(mainWindow, input.timezone);
   const copy = buildSignalCopy({
     precipitationSignalType,
     precipitationSignalLevel,
@@ -339,9 +335,7 @@ function summarizeSnapshots(rows: readonly PrecipitationSnapshot[]): Precipitati
   };
 }
 
-function classifyProbability(
-  value: number | undefined,
-): CloudSeaPrecipitationProbabilityClass {
+function classifyProbability(value: number | undefined): CloudSeaPrecipitationProbabilityClass {
   if (!isFiniteNumber(value)) {
     return "unknown";
   }
@@ -555,14 +549,10 @@ function buildSignalCopy(input: {
     };
   }
 
-  if (
-    input.precipitationSignalType === "probability_only" ||
-    input.amountClass === "trace"
-  ) {
+  if (input.precipitationSignalType === "probability_only" || input.amountClass === "trace") {
     return {
       riskLabelZh: "局地扰动",
-      userSummaryZh:
-        "降水概率偏高但雨量很小，更像局地短时扰动信号，主要影响器材防护和窗口稳定性。",
+      userSummaryZh: "降水概率偏高但雨量很小，更像局地短时扰动信号，主要影响器材防护和窗口稳定性。",
       professionalSummaryZh,
       actionAdviceZh: "出发前复核雷达和短临预报，不因概率信号直接否定窗口。",
       equipmentAdviceZh: "准备防潮和轻量防雨。",
@@ -599,8 +589,7 @@ function buildSignalCopy(input: {
   }
 
   return {
-    riskLabelZh:
-      input.precipitationImpactLevel === "high" ? "强降水风险" : "明显降水风险",
+    riskLabelZh: input.precipitationImpactLevel === "high" ? "强降水风险" : "明显降水风险",
     userSummaryZh: input.shouldDowngradeWindow
       ? "降水风险较高，需优先评估通行安全和器材防护。"
       : "存在较强降水信号，但当前不直接覆盖主窗口，需作为通行和装备背景风险复核。",
@@ -674,24 +663,15 @@ function expandWindowBefore(
 
 function formatMainTimeRange(
   window: NormalizedSignalWindow | null,
+  timezone: string | null | undefined,
 ): string {
   if (!window) {
     return "主窗口待定";
   }
-  return `${formatTimeZh(window.startTime)}-${formatTimeZh(window.endTime)}`;
-}
-
-function formatTimeZh(value: string): string {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
-    return value;
-  }
-  return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(timestamp));
+  return formatForecastWindowZh(window.startTime, window.endTime, timezone ?? "Asia/Shanghai", {
+    missingText: "主窗口待定",
+    invalidText: "时间待确认",
+  });
 }
 
 function isStrongWind(value: number | null | undefined): boolean {

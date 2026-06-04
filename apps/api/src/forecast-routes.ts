@@ -88,10 +88,7 @@ type CachedDeepSeekForecastInterpretation = {
 };
 
 const deepSeekForecastInterpretationCacheTtlMs = 1000 * 60 * 60;
-const deepSeekForecastInterpretationCache = new Map<
-  string,
-  CachedDeepSeekForecastInterpretation
->();
+const deepSeekForecastInterpretationCache = new Map<string, CachedDeepSeekForecastInterpretation>();
 
 const missingWgs84CoordinateErrorMessage = "当前地点缺少有效 WGS84 坐标，无法计算星空银河窗口。";
 
@@ -128,7 +125,9 @@ function sendZodError(reply: FastifyReply, error: ZodError): FastifyReply {
   });
 }
 
-function terrainAnalysisSourceFields(elevationSource: ElevationSource): Pick<
+function terrainAnalysisSourceFields(
+  elevationSource: ElevationSource,
+): Pick<
   ForecastCalculationResult["terrainAnalysis"],
   "dataSource" | "dataSourceLabelZh" | "isMock" | "honestyNoteZh"
 > {
@@ -220,8 +219,12 @@ export function registerForecastRoutes(
       return sendZodError(reply, parsedBody.error);
     }
 
-    const { useAiExplanation: _useAiExplanation, timezone, startDateTime, ...query } =
-      parsedBody.data;
+    const {
+      useAiExplanation: _useAiExplanation,
+      timezone,
+      startDateTime,
+      ...query
+    } = parsedBody.data;
     const result = await calculateForecastResultOrReply(
       query,
       { timezone, startDateTime },
@@ -269,7 +272,9 @@ export function registerForecastRoutes(
       dbClient: options.dbClient,
       env,
     });
-    const promptSizeChars = runtimeDeepSeek ? estimateDeepSeekPromptSize(result, runtimeDeepSeek) : 0;
+    const promptSizeChars = runtimeDeepSeek
+      ? estimateDeepSeekPromptSize(result, runtimeDeepSeek)
+      : 0;
     const unavailableCategory = classifyRuntimeDeepSeekUnavailable(runtimeDeepSeek);
 
     if (!runtimeDeepSeek || unavailableCategory) {
@@ -828,7 +833,9 @@ function buildDeterministicFallbackInterpretation(
   }
 }
 
-function createEmergencyForecastExplanation(result: ForecastCalculationResult): ForecastAiExplanation {
+function createEmergencyForecastExplanation(
+  result: ForecastCalculationResult,
+): ForecastAiExplanation {
   const bestWindow = result.bestWindows[0];
   const bestDay = result.dailySummaries[0];
   const primarySubject = bestSubjectLabel(result, 0);
@@ -894,7 +901,8 @@ function createEmergencyForecastExplanation(result: ForecastCalculationResult): 
       bestWindowZh: bestWindow
         ? `${bestWindow.startTime} 至 ${bestWindow.endTime}`
         : "暂无明确高确定性窗口",
-      recommendedArrivalZh: bestWindow?.arrivalAdvice?.recommendedArrivalLabel ?? "按主窗口提前到位",
+      recommendedArrivalZh:
+        bestWindow?.arrivalAdvice?.recommendedArrivalLabel ?? "按主窗口提前到位",
       whyThisWindowZh: bestWindow?.copyReasonZh ?? result.keyReasons[0] ?? result.summary,
       backupPlanZh: `备用题材：${backupSubject}；若主窗口不成立，转向近景、云层纹理或等待下一轮短临预报。`,
     },
@@ -1352,7 +1360,8 @@ function logCloudSeaDisplayAlignmentDiagnostics(
   );
   const normalizedRows = professionalRowsAtOrAfter(rows, anchorStart).slice(0, expectedRowCount);
   const nearTermRows = normalizedRows.slice(0, 6);
-  const nearTermEnd = nearTermRows.at(-1)?.time ?? nearTermDiagnosticWindowEnd(anchorStart, anchorEnd);
+  const nearTermEnd =
+    nearTermRows.at(-1)?.time ?? nearTermDiagnosticWindowEnd(anchorStart, anchorEnd);
   const cloudLayerCoverage = buildCloudLayerCompletenessContext(normalizedRows);
   const sourceAlignmentStatus =
     normalizedRows.length === 0
@@ -1368,6 +1377,7 @@ function logCloudSeaDisplayAlignmentDiagnostics(
     null;
   const precipitationSignal = buildCloudSeaPrecipitationSignalContext({
     hourlyRows: normalizedRows,
+    timezone: result.calendarBasis.timezone,
     focusedWindow: bestWindow
       ? {
           startTime: bestWindow.startTime,
@@ -1480,8 +1490,7 @@ function cloudSeaTemperatureDiagnostics(result: ForecastCalculationResult): {
   const context = buildTerrainTemperatureBasisContext({
     rawGridTemperatureC,
     terrainAdjustedTemperatureC,
-    displayedTemperatureC:
-      firstProfessionalHour?.displayedTemperatureC ?? current?.temperature,
+    displayedTemperatureC: firstProfessionalHour?.displayedTemperatureC ?? current?.temperature,
     providerTemperatureC: current?.temperature,
     elevationMeters: cameraElevationMeters,
     modelElevationMeters,
@@ -1513,7 +1522,9 @@ function cloudSeaTemperatureDiagnostics(result: ForecastCalculationResult): {
 }
 
 function firstDiagnosticNumber(values: readonly (number | null | undefined)[]): number | undefined {
-  return values.find((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return values.find(
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  );
 }
 
 function averageDiagnosticNumbers(
@@ -1554,9 +1565,7 @@ function nearTermDiagnosticWindowEnd(startTime: string, forecastEnd: string): st
 }
 
 function normalizedDiagnosticRowCount(value: number | undefined): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0
-    ? Math.round(value)
-    : 24;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : 24;
 }
 
 function professionalRowsAtOrAfter(
@@ -1570,7 +1579,9 @@ function professionalRowsAtOrAfter(
   return rows
     .map((row) => ({ row, timestamp: Date.parse(row.time) }))
     .filter(
-      (entry): entry is {
+      (
+        entry,
+      ): entry is {
         readonly row: NonNullable<ForecastCalculationResult["professionalHourlyData"]>[number];
         readonly timestamp: number;
       } => Number.isFinite(entry.timestamp) && entry.timestamp >= anchorMs,

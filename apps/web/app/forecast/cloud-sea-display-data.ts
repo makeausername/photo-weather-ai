@@ -2,6 +2,7 @@ import {
   buildCloudLayerCompletenessContext,
   buildCloudSeaCloudBasisConsistencyContext,
   buildCloudSeaPrecipitationSignalContext,
+  formatArrivalDeadlineZh,
   formatForecastWindowZh,
   forecastHorizonLabels,
   type CloudLayerCompletenessContext,
@@ -9,6 +10,7 @@ import {
   type CloudSeaPrecipitationSignalContext,
   type CloudSeaRecommendationExplanation,
   type CloudSeaRecommendationGuardOutput,
+  type CloudSeaAnalysisWindow,
   type CloudSeaWeatherVariableConsistencyContext,
   type ForecastCalculationResult,
   type ForecastHorizon,
@@ -60,7 +62,12 @@ export type CloudSeaDisplayScoreCard = {
 };
 
 export type CloudSeaNearTermWeatherDisplayCard = {
-  readonly key: "temperature" | "cloud_visibility" | "wind_precipitation" | "humidity_dew_point" | "gear";
+  readonly key:
+    | "temperature"
+    | "cloud_visibility"
+    | "wind_precipitation"
+    | "humidity_dew_point"
+    | "gear";
   readonly title: string;
   readonly timeBasis: string;
   readonly badge: string;
@@ -126,6 +133,7 @@ export type CloudSeaAiInterpretationDisplayPayload = {
     | "precipitationImpactLevel"
     | "maxProbabilityPercent"
     | "maxAmountMm"
+    | "mainTimeRangeZh"
     | "riskLabelZh"
     | "userSummaryZh"
     | "actionAdviceZh"
@@ -157,6 +165,26 @@ export type CloudSeaAiInterpretationDisplayPayload = {
   readonly riskReview: readonly ForecastResultSectionItem[];
 };
 
+export type CloudSeaImportantWindowDisplay = {
+  readonly displayLabelZh: string;
+  readonly startTime: string | null;
+  readonly endTime: string | null;
+  readonly hasWindow: boolean;
+};
+
+export type CloudSeaArrivalDisplay = {
+  readonly displayLabelZh: string;
+  readonly arrivalTime: string | null;
+  readonly hasArrivalTime: boolean;
+};
+
+export type CloudSeaImportantWindowDisplayData = {
+  readonly bestWindow: CloudSeaImportantWindowDisplay;
+  readonly arrival: CloudSeaArrivalDisplay;
+  readonly mainWindow: CloudSeaImportantWindowDisplay;
+  readonly backupWindow: CloudSeaImportantWindowDisplay;
+};
+
 export type CloudSeaDisplayDataMeta = {
   readonly generatedAt: string;
   readonly timezone: string;
@@ -182,6 +210,7 @@ export type CloudSeaDisplayData = {
   readonly scoreCard: CloudSeaDisplayScoreCard;
   readonly recommendationCards: readonly ForecastResultCard[];
   readonly currentNearTermWeather: CloudSeaCurrentNearTermWeatherDisplay;
+  readonly importantWindows: CloudSeaImportantWindowDisplayData;
   readonly cloudSeaWindowCards: readonly CloudSeaWindowItem[];
   readonly professionalHourlyData: CloudSeaProfessionalHourlyDisplayData;
   readonly dailyJudgment: readonly CloudSeaDailyTrendItem[];
@@ -218,7 +247,8 @@ export function buildCloudSeaDisplayData(
   const horizonWindow = resolveCloudSeaDisplayHorizon(input.result, rows);
   const displayRows = filterRowsToForecastWindow(rows, horizonWindow, (row) => row.time);
   const nearTermRows = displayRows.slice(0, 6);
-  const nearTermEnd = nearTermRows.at(-1)?.time ?? fallbackNearTermEnd(horizonWindow.anchorStartLocal);
+  const nearTermEnd =
+    nearTermRows.at(-1)?.time ?? fallbackNearTermEnd(horizonWindow.anchorStartLocal);
   const displayTimeBasis = buildDisplayProfessionalHourlyTimeBasis(
     timeBasis,
     horizonWindow,
@@ -264,15 +294,26 @@ export function buildCloudSeaDisplayData(
     cloudLayerCompleteness,
     cloudBasisConsistency,
   });
+  const importantWindows = buildImportantWindowDisplayData(input);
+  const recommendationCards = applyImportantWindowRecommendationLabels(
+    input.recommendationCards,
+    importantWindows,
+  );
+  const actionPlan = applyImportantWindowActionLabels(input.actionPlan, importantWindows);
 
   return {
     header: {
       ...input.header,
+      bestWindowLabel: importantWindows.bestWindow.displayLabelZh,
+      arrivalLabel: importantWindows.arrival.displayLabelZh,
       heroBadgeLabel: input.terrainContext.vocabulary.heroBadgeLabel,
       dataBadgeLabel: cloudSeaDataBadgeLabel(input.result),
       dataBadgeVariant: cloudSeaDataBadgeVariant(input.result),
       horizonLabel: forecastHorizonLabels[input.result.horizon],
-      generatedAtLabel: formatDateTime(input.result.generatedAt, input.result.calendarBasis.timezone),
+      generatedAtLabel: formatDateTime(
+        input.result.generatedAt,
+        input.result.calendarBasis.timezone,
+      ),
     },
     scoreCard: {
       label: input.terrainContext.vocabulary.scoreCardLabel,
@@ -281,13 +322,14 @@ export function buildCloudSeaDisplayData(
       badgeVariant: recommendationBadgeVariant(input.header.recommendationLabel),
       summary: input.scoreCardSummary,
     },
-    recommendationCards: input.recommendationCards,
+    recommendationCards,
     currentNearTermWeather,
+    importantWindows,
     cloudSeaWindowCards: input.cloudSeaWindowCards,
     professionalHourlyData,
     dailyJudgment: input.dailyJudgment,
     judgmentBasis: input.judgmentBasis,
-    actionPlan: input.actionPlan,
+    actionPlan,
     riskReview: input.riskReview,
     multiSourceConsistency: input.ruleContext.multiSourceAgreementContext,
     aiInterpretationPayload: buildAiInterpretationDisplayPayload({
@@ -296,9 +338,220 @@ export function buildCloudSeaDisplayData(
       cloudLayerCompleteness,
       displayDataMeta,
       precipitationSignalContext: displayPrecipitationSignalContext,
+      actionPlan,
+      riskReview: input.riskReview,
     }),
     displayDataMeta,
   };
+}
+
+type CloudSeaDisplayWindowSource = {
+  readonly startTime?: string | null;
+  readonly endTime?: string | null;
+  readonly displayLabelZh?: string | null;
+};
+
+function buildImportantWindowDisplayData(
+  input: BuildCloudSeaDisplayDataInput,
+): CloudSeaImportantWindowDisplayData {
+  const timezone = input.result.calendarBasis.timezone;
+  const bestSource = firstDisplayWindowAtOrAfterAnchor(input.result);
+  const bestCard = bestSource
+    ? input.cloudSeaWindowCards.find((window) => sameWindowTime(window, bestSource))
+    : undefined;
+  const bestWindow = formatImportantWindowDisplay(
+    bestCard ?? bestSource,
+    timezone,
+    input.terrainContext.shouldDowngradeCloudSeaWording
+      ? "暂无明确低云/晨雾窗口"
+      : "暂无明确云海窗口",
+  );
+  const forecastBestWindow = bestSource
+    ? input.result.bestWindows.find((window) => sameWindowTime(window, bestSource))
+    : undefined;
+  const arrivalTime =
+    forecastBestWindow?.arrivalAdvice?.recommendedArrivalTime ??
+    (bestSource?.startTime ? shiftDisplayTime(bestSource.startTime, -90) : null);
+  const backupSource =
+    input.cloudSeaWindowCards.find(
+      (window) =>
+        windowStartsAtOrAfterAnchor(input.result, window) &&
+        (!bestSource || !sameWindowTime(window, bestSource)),
+    ) ?? firstDisplayWindowAtOrAfterAnchor(input.result, bestSource);
+
+  return {
+    bestWindow,
+    arrival: formatArrivalDisplay(arrivalTime, timezone),
+    mainWindow: bestWindow,
+    backupWindow: formatImportantWindowDisplay(backupSource, timezone, "暂无备选窗口"),
+  };
+}
+
+function applyImportantWindowRecommendationLabels(
+  cards: readonly ForecastResultCard[],
+  importantWindows: CloudSeaImportantWindowDisplayData,
+): readonly ForecastResultCard[] {
+  let changed = false;
+  const normalized = cards.map((card) => {
+    if (card.key === "cloud-sea-best-window") {
+      if (card.value === importantWindows.bestWindow.displayLabelZh) {
+        return card;
+      }
+      changed = true;
+      return {
+        ...card,
+        value: importantWindows.bestWindow.displayLabelZh,
+      };
+    }
+    if (card.key === "cloud-sea-arrival") {
+      if (card.value === importantWindows.arrival.displayLabelZh) {
+        return card;
+      }
+      changed = true;
+      return {
+        ...card,
+        value: importantWindows.arrival.displayLabelZh,
+      };
+    }
+    return card;
+  });
+  return changed ? normalized : cards;
+}
+
+function applyImportantWindowActionLabels(
+  items: readonly CloudSeaActionPlanItem[],
+  importantWindows: CloudSeaImportantWindowDisplayData,
+): readonly CloudSeaActionPlanItem[] {
+  let changed = false;
+  const normalized = items.map((item) => {
+    if (item.key === "arrival") {
+      if (item.value === importantWindows.arrival.displayLabelZh) {
+        return item;
+      }
+      changed = true;
+      return {
+        ...item,
+        value: importantWindows.arrival.displayLabelZh,
+      };
+    }
+    if (item.key === "main-window") {
+      if (item.value === importantWindows.mainWindow.displayLabelZh) {
+        return item;
+      }
+      changed = true;
+      return {
+        ...item,
+        value: importantWindows.mainWindow.displayLabelZh,
+      };
+    }
+    if (item.key === "backup" && importantWindows.backupWindow.hasWindow) {
+      if (item.value === importantWindows.backupWindow.displayLabelZh) {
+        return item;
+      }
+      changed = true;
+      return {
+        ...item,
+        value: importantWindows.backupWindow.displayLabelZh,
+      };
+    }
+    return item;
+  });
+  return changed ? normalized : items;
+}
+
+function firstDisplayWindowAtOrAfterAnchor(
+  result: ForecastCalculationResult,
+  excludedWindow?: CloudSeaDisplayWindowSource | null,
+): CloudSeaDisplayWindowSource | null {
+  const candidates = [
+    result.cloudSeaAnalysis.bestCloudSeaWindow,
+    ...result.cloudSeaAnalysis.bestCloudSeaWindows,
+    ...result.cloudSeaAnalysis.watchableCloudSeaWindows,
+    ...result.cloudSeaAnalysis.notRecommendedCloudSeaWindows,
+  ].filter((window): window is CloudSeaAnalysisWindow => Boolean(window));
+  return (
+    candidates.find(
+      (window) =>
+        windowStartsAtOrAfterAnchor(result, window) &&
+        (!excludedWindow || !sameWindowTime(window, excludedWindow)),
+    ) ?? null
+  );
+}
+
+function formatImportantWindowDisplay(
+  window: CloudSeaDisplayWindowSource | null | undefined,
+  timezone: string,
+  fallback: string,
+): CloudSeaImportantWindowDisplay {
+  if (!window?.startTime || !window.endTime) {
+    return {
+      displayLabelZh: fallback,
+      startTime: null,
+      endTime: null,
+      hasWindow: false,
+    };
+  }
+  return {
+    displayLabelZh:
+      window.displayLabelZh ??
+      formatForecastWindowZh(window.startTime, window.endTime, timezone, {
+        missingText: fallback,
+        invalidText: "时间待确认",
+      }),
+    startTime: window.startTime,
+    endTime: window.endTime,
+    hasWindow: true,
+  };
+}
+
+function formatArrivalDisplay(
+  arrivalTime: string | null | undefined,
+  timezone: string,
+): CloudSeaArrivalDisplay {
+  return {
+    displayLabelZh: formatArrivalDeadlineZh(arrivalTime ?? undefined, timezone, {
+      missingText: "暂无明确到达时间",
+    }),
+    arrivalTime: arrivalTime ?? null,
+    hasArrivalTime: Boolean(arrivalTime),
+  };
+}
+
+function sameWindowTime(
+  left: CloudSeaDisplayWindowSource,
+  right: CloudSeaDisplayWindowSource,
+): boolean {
+  return Boolean(
+    left.startTime &&
+      left.endTime &&
+      left.startTime === right.startTime &&
+      left.endTime === right.endTime,
+  );
+}
+
+function windowStartsAtOrAfterAnchor(
+  result: ForecastCalculationResult,
+  window: CloudSeaDisplayWindowSource | null | undefined,
+): boolean {
+  if (!window?.startTime) {
+    return false;
+  }
+  const anchorMs = Date.parse(
+    result.professionalHourlyDataTimeBasis?.anchorStartLocal ?? result.forecastStart,
+  );
+  const startMs = Date.parse(window.startTime);
+  if (!Number.isFinite(anchorMs)) {
+    return Number.isFinite(startMs);
+  }
+  return Number.isFinite(startMs) && startMs >= anchorMs;
+}
+
+function shiftDisplayTime(value: string, minutes: number): string | null {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return null;
+  }
+  return new Date(timestamp + minutes * 60 * 1000).toISOString();
 }
 
 function fallbackNearTermEnd(anchorStartLocal: string): string {
@@ -368,7 +621,8 @@ function buildDisplayProfessionalHourlyTimeBasis(
     debugMeta: horizonWindow.debugMeta,
     partialData,
     missingDataNoteZh: shortCoverageNote ?? timeBasis.missingDataNoteZh,
-    professionalCoverageNoteZh: timeBasis.professionalCoverageNoteZh ?? shortCoverageNote ?? undefined,
+    professionalCoverageNoteZh:
+      timeBasis.professionalCoverageNoteZh ?? shortCoverageNote ?? undefined,
     fieldCoverageSummary: timeBasis.fieldCoverageSummary
       ? {
           ...timeBasis.fieldCoverageSummary,
@@ -392,6 +646,7 @@ function buildDisplayPrecipitationSignalContext(input: {
 
   return buildCloudSeaPrecipitationSignalContext({
     hourlyRows: input.rows,
+    timezone: result.calendarBasis.timezone,
     focusedWindow: bestWindow
       ? {
           startTime: bestWindow.startTime,
@@ -421,7 +676,11 @@ function buildCurrentNearTermWeatherDisplay(input: {
   readonly anchorEnd: string;
   readonly rows: readonly ProfessionalHourlyDataPoint[];
 }): CloudSeaCurrentNearTermWeatherDisplay {
-  const sectionWindowLabel = formatWindowRange(input.anchorStart, input.anchorEnd, input.result.calendarBasis.timezone);
+  const sectionWindowLabel = formatWindowRange(
+    input.anchorStart,
+    input.anchorEnd,
+    input.result.calendarBasis.timezone,
+  );
   const currentBasisLabel = input.result.currentWeather?.observedAt
     ? `当前实况：${formatDateTime(input.result.currentWeather.observedAt, input.result.calendarBasis.timezone)}`
     : "当前参考：使用预报窗口锚点";
@@ -572,6 +831,8 @@ function buildAiInterpretationDisplayPayload(input: {
   readonly cloudLayerCompleteness: CloudLayerCompletenessContext;
   readonly displayDataMeta: CloudSeaDisplayDataMeta;
   readonly precipitationSignalContext: CloudSeaPrecipitationSignalContext;
+  readonly actionPlan: readonly CloudSeaActionPlanItem[];
+  readonly riskReview: readonly ForecastResultSectionItem[];
 }): CloudSeaAiInterpretationDisplayPayload {
   const cloudSummary = cloudLayerSummary(input.currentNearTermWeather.rows);
   const precipitationSummary = precipitationSummaryForRows(
@@ -601,15 +862,14 @@ function buildAiInterpretationDisplayPayload(input: {
     },
     precipitationSignalContext: {
       precipitationSignalType: input.precipitationSignalContext.precipitationSignalType,
-      precipitationImpactLevel:
-        input.precipitationSignalContext.precipitationImpactLevel,
+      precipitationImpactLevel: input.precipitationSignalContext.precipitationImpactLevel,
       maxProbabilityPercent: input.precipitationSignalContext.maxProbabilityPercent,
       maxAmountMm: input.precipitationSignalContext.maxAmountMm,
+      mainTimeRangeZh: input.precipitationSignalContext.mainTimeRangeZh,
       riskLabelZh: input.precipitationSignalContext.riskLabelZh,
       userSummaryZh: input.precipitationSignalContext.userSummaryZh,
       actionAdviceZh: input.precipitationSignalContext.actionAdviceZh,
-      shouldDowngradeWindow:
-        input.precipitationSignalContext.shouldDowngradeWindow,
+      shouldDowngradeWindow: input.precipitationSignalContext.shouldDowngradeWindow,
     },
     cloudLayerCoverageContext: {
       cloudLayerBasis: input.cloudLayerCompleteness.cloudLayerBasis,
@@ -632,12 +892,14 @@ function buildAiInterpretationDisplayPayload(input: {
       cloudHighPercent: cloudSummary.cloudHighPercent,
       visibilityMeters: cloudSummary.visibilityMeters,
     },
-    actionPlan: input.input.actionPlan,
-    riskReview: input.input.riskReview,
+    actionPlan: input.actionPlan,
+    riskReview: input.riskReview,
   };
 }
 
-function cloudSeaFocusWindows(result: ForecastCalculationResult): readonly CloudSeaProfessionalHourlyWindow[] {
+function cloudSeaFocusWindows(
+  result: ForecastCalculationResult,
+): readonly CloudSeaProfessionalHourlyWindow[] {
   const primary =
     result.cloudSeaAnalysis.bestCloudSeaWindow ??
     result.cloudSeaAnalysis.bestCloudSeaWindows[0] ??
@@ -683,7 +945,9 @@ function precipitationSummaryForRows(
   };
 }
 
-function windSummaryForRows(rows: readonly ProfessionalHourlyDataPoint[]): { readonly text: string } {
+function windSummaryForRows(rows: readonly ProfessionalHourlyDataPoint[]): {
+  readonly text: string;
+} {
   const speed = maxNumber(rows.map((row) => row.windSpeedMs));
   const direction = rows.find((row) => isFiniteNumber(row.windDirectionDeg))?.windDirectionDeg;
   const directionText = isFiniteNumber(direction) ? windDirectionLabel(direction) : "";

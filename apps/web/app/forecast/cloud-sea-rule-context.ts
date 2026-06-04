@@ -81,10 +81,12 @@ const signalRoleRank: Record<CloudSeaCloudLayerRoleContext["dominantRole"], numb
 
 export function buildCloudSeaRuleContext(result: ForecastCalculationResult): CloudSeaRuleContext {
   const terrainContext = buildCloudSeaTerrainContextFromResult(result);
+  const timezone =
+    result.calendarBasis?.timezone ??
+    result.professionalHourlyDataTimeBasis?.timezone ??
+    "Asia/Shanghai";
   const professionalHourlyRows = rollingProfessionalHourlyRowsForResult(result);
-  const cloudLayerCompletenessContext = buildCloudLayerCompletenessContext(
-    professionalHourlyRows,
-  );
+  const cloudLayerCompletenessContext = buildCloudLayerCompletenessContext(professionalHourlyRows);
   const cloudBasisConsistencyContext = buildCloudSeaCloudBasisConsistencyContext({
     hourlyRows: professionalHourlyRows,
     cloudLayerCompletenessContext,
@@ -98,6 +100,7 @@ export function buildCloudSeaRuleContext(result: ForecastCalculationResult): Clo
     null;
   const precipitationSignalContext = buildCloudSeaPrecipitationSignalContext({
     hourlyRows: professionalHourlyRows,
+    timezone,
     focusedWindow: bestWindow
       ? {
           startTime: bestWindow.startTime,
@@ -116,6 +119,7 @@ export function buildCloudSeaRuleContext(result: ForecastCalculationResult): Clo
   const weatherVariableConsistencyContext = buildCloudSeaWeatherVariableConsistencyContext({
     elevationMeters: terrainContext.elevationMeters,
     surroundingReliefMeters: terrainContext.surroundingReliefMeters,
+    timezone,
     terrainContext: {
       elevationMeters: terrainContext.elevationMeters,
       surroundingReliefMeters: terrainContext.surroundingReliefMeters,

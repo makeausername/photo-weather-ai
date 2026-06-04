@@ -2902,10 +2902,7 @@ export function CloudSeaResultPage({
       dataCloudSeaPageMode="result"
     >
       <main className="grid w-full min-w-0 gap-5" data-forecast-decision-layout="stacked">
-        <CloudSeaTopResultHeader
-          query={query}
-          displayData={viewModel.displayData}
-        />
+        <CloudSeaTopResultHeader query={query} displayData={viewModel.displayData} />
         <CloudSeaMetricCards cards={viewModel.displayData.recommendationCards} />
         <CloudSeaNearTermWeatherSection display={viewModel.displayData.currentNearTermWeather} />
         <CloudSeaWindowCardsSection
@@ -4065,10 +4062,7 @@ function CloudSeaTopResultHeader({
       className="CloudSeaTopResultHeader grid gap-4 min-[880px]:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] min-[880px]:items-stretch"
       dataCloudSeaSection="CloudSeaTopResultHeader"
     >
-      <CloudSeaHeroConclusion
-        query={query}
-        header={displayData.header}
-      />
+      <CloudSeaHeroConclusion query={query} header={displayData.header} />
       <CloudSeaScoreCard scoreCard={displayData.scoreCard} />
     </ForecastResultHeader>
   );
@@ -4192,11 +4186,7 @@ function CloudSeaScoreCard({
   );
 }
 
-function CloudSeaMetricCards({
-  cards,
-}: {
-  readonly cards: readonly ForecastResultCard[];
-}) {
+function CloudSeaMetricCards({ cards }: { readonly cards: readonly ForecastResultCard[] }) {
   return (
     <ForecastMetricGrid
       target="cloud_sea"
@@ -4445,18 +4435,18 @@ function cloudSeaWindowCategoryCard(
     badgeLabel: cloudSeaWindowCategoryBadgeLabel(definition.key, primary, terrainContext),
     badgeVariant: cloudSeaWindowCategoryBadgeVariant(definition.key, primary),
     chanceText: primary.cloudSeaChance,
-      scoreText: `${primary.score} 分`,
-      scoreTone: cloudSeaWindowCardTone(definition.key, primary),
-      primaryWindow: primary.timeRangeLabel,
-      backupWindow: backup?.timeRangeLabel ?? "暂无备选窗口",
-      labelReason: compactCloudSeaWindowReason(primary.labelReason),
-      mainIssue: cloudSeaWindowMainIssue(definition.key, primary, terrainContext),
-      action: cloudSeaWindowCardAction(definition.key, primary, terrainContext),
-      cautionNote: cloudSeaWindowHasLayerRoleRedirect(primary)
-        ? primary.layerCompletenessNote
-        : undefined,
-    };
-  }
+    scoreText: `${primary.score} 分`,
+    scoreTone: cloudSeaWindowCardTone(definition.key, primary),
+    primaryWindow: primary.displayLabelZh,
+    backupWindow: backup?.displayLabelZh ?? "暂无备选窗口",
+    labelReason: compactCloudSeaWindowReason(primary.labelReason),
+    mainIssue: cloudSeaWindowMainIssue(definition.key, primary, terrainContext),
+    action: cloudSeaWindowCardAction(definition.key, primary, terrainContext),
+    cautionNote: cloudSeaWindowHasLayerRoleRedirect(primary)
+      ? primary.layerCompletenessNote
+      : undefined,
+  };
+}
 
 function compactCloudSeaWindowReason(value: string): string {
   const compact = firstSentence(value)
@@ -4540,7 +4530,7 @@ function isLitCloudSeaWindow(item: CloudSeaWindowItem): boolean {
 }
 
 function cloudSeaWindowSearchText(item: CloudSeaWindowItem): string {
-  return `${item.label} ${item.timeRangeLabel} ${item.note} ${item.riskTag}`;
+  return `${item.label} ${item.displayLabelZh} ${item.note} ${item.riskTag}`;
 }
 
 function localHourFromIso(value: string): number | undefined {
@@ -4775,10 +4765,7 @@ function CloudSeaProfessionalHourlyDataPanel({
   const targetRangeLabel = `${formatFullDateTimeForTimezone(
     basis.anchorStartLocal ?? basis.startTime,
     basis.timezone,
-  )} - ${formatFullDateTimeForTimezone(
-    basis.anchorEndLocal ?? basis.endTime,
-    basis.timezone,
-  )}`;
+  )} - ${formatFullDateTimeForTimezone(basis.anchorEndLocal ?? basis.endTime, basis.timezone)}`;
   const actualRangeLabel = `${formatFullDateTimeForTimezone(
     rows[0]?.time ?? basis.startTime,
     basis.timezone,
@@ -4815,9 +4802,7 @@ function CloudSeaProfessionalHourlyDataPanel({
       <dl className="mt-4 grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground min-[760px]:grid-cols-4">
         <CompactDefinition label="目标有效时间" value={targetRangeLabel} />
         <CompactDefinition label="覆盖率" value={`${rows.length} / ${expectedRowCount} 小时`} />
-        {!coverageComplete ? (
-          <CompactDefinition label="实际显示" value={actualRangeLabel} />
-        ) : null}
+        {!coverageComplete ? <CompactDefinition label="实际显示" value={actualRangeLabel} /> : null}
         <CompactDefinition
           label="有效时间"
           value={`${formatFullDateTimeForTimezone(
@@ -5396,7 +5381,9 @@ function professionalCloudBasisLabel(
 
 function professionalCloudCoverageLabel(
   summary: NonNullable<
-    NonNullable<ForecastCalculationResult["professionalHourlyDataTimeBasis"]>["fieldCoverageSummary"]
+    NonNullable<
+      ForecastCalculationResult["professionalHourlyDataTimeBasis"]
+    >["fieldCoverageSummary"]
   >,
 ): string {
   return `低云 ${summary.cloudLowCoverage}/${summary.totalHours}，中云 ${summary.cloudMidCoverage}/${summary.totalHours}，高云 ${summary.cloudHighCoverage}/${summary.totalHours}`;
@@ -5596,9 +5583,7 @@ function filterProfessionalHourlyRows(
       professionalHourlyDisplaySignal(row) === "白墙风险" ||
       professionalHourlyDisplaySignal(row) === "需复核" ||
       professionalHourlyHasRisk(row) ||
-      data.riskWindows.some((window) =>
-        professionalHourInWindow(row, window, 1),
-      ),
+      data.riskWindows.some((window) => professionalHourInWindow(row, window, 1)),
   );
 }
 
@@ -5980,7 +5965,9 @@ function CloudSeaReasoningSection({ items }: { readonly items: readonly CloudSea
               <Badge variant={badgeVariantForTone(item.tone)}>{item.value}</Badge>
             </div>
             <p className="text-sm leading-6 text-muted-foreground">
-              {item.key === "weather-variable-consistency" ? item.detail : firstSentence(item.detail)}
+              {item.key === "weather-variable-consistency"
+                ? item.detail
+                : firstSentence(item.detail)}
             </p>
           </article>
         ))}
@@ -6021,7 +6008,7 @@ function CloudSeaActionPlanSection({
               <h3 className="text-sm font-bold text-card-foreground">{item.label}</h3>
               <Badge variant={badgeVariantForTone(item.tone)}>{item.value}</Badge>
             </div>
-              <p className="text-sm leading-6 text-muted-foreground">{firstSentence(item.detail)}</p>
+            <p className="text-sm leading-6 text-muted-foreground">{firstSentence(item.detail)}</p>
           </article>
         ))}
       </ActionPlanGrid>

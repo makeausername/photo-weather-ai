@@ -50,10 +50,7 @@ import {
   buildCloudSeaDisplayTemperatureContext,
   type CloudSeaDisplayTemperatureContext,
 } from "./cloud-sea-display-temperature";
-import {
-  buildCloudSeaDisplayData,
-  type CloudSeaDisplayData,
-} from "./cloud-sea-display-data";
+import { buildCloudSeaDisplayData, type CloudSeaDisplayData } from "./cloud-sea-display-data";
 
 export type ForecastResultModuleKey =
   | "overall"
@@ -250,6 +247,7 @@ export type CloudSeaWindowItem = {
   readonly date?: string;
   readonly startTime: string;
   readonly endTime: string;
+  readonly displayLabelZh: string;
   readonly timeRangeLabel: string;
   readonly score: number;
   readonly recommendationLabel: string;
@@ -657,6 +655,7 @@ export function buildCloudSeaForecastViewModel(
       (window) =>
         window.target === "cloud_sea" && forecastWindowStartsAtOrAfterAnchor(result, window),
     ),
+    result.calendarBasis.timezone,
   );
   const cloudLayerCompleteness = ruleContext.cloudLayerCompletenessContext;
   const cloudBasisConsistency = ruleContext.cloudBasisConsistencyContext;
@@ -946,7 +945,8 @@ function buildCloudSeaDisplayTemperatureContextForResult(
     windSpeedMs: current?.windSpeed ?? dailyWeather?.windSpeed,
     windGustMs: current?.windGust ?? dailyWeather?.windGust,
     humidityPercent: current?.humidity ?? dailyWeather?.humidity,
-    sourceTemperatureBasis: firstProfessionalHour?.temperatureBasis ?? temperatureBasisContext.temperatureBasis,
+    sourceTemperatureBasis:
+      firstProfessionalHour?.temperatureBasis ?? temperatureBasisContext.temperatureBasis,
   });
 }
 
@@ -963,7 +963,9 @@ function firstRollingProfessionalHour(
   return rows
     .map((row) => ({ row, timestamp: Date.parse(row.time) }))
     .filter(
-      (entry): entry is {
+      (
+        entry,
+      ): entry is {
         readonly row: NonNullable<ForecastCalculationResult["professionalHourlyData"]>[number];
         readonly timestamp: number;
       } => Number.isFinite(entry.timestamp) && entry.timestamp >= anchorMs,
@@ -1125,14 +1127,21 @@ function firstDisplaySentence(value: string): string {
 }
 
 function firstFiniteNumber(values: readonly (number | null | undefined)[]): number | undefined {
-  return values.find((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return values.find(
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  );
 }
 
 function averageNumbers(
   left: number | null | undefined,
   right: number | null | undefined,
 ): number | undefined {
-  if (typeof left === "number" && Number.isFinite(left) && typeof right === "number" && Number.isFinite(right)) {
+  if (
+    typeof left === "number" &&
+    Number.isFinite(left) &&
+    typeof right === "number" &&
+    Number.isFinite(right)
+  ) {
     return Math.round(((left + right) / 2) * 10) / 10;
   }
   return undefined;
@@ -1144,6 +1153,7 @@ function buildCloudSeaViewModel(result: ForecastCalculationResult): ForecastResu
   const cloudSeaAdvice = buildCloudSeaAdvice(result);
   const cloudSeaWindows = mapResultWindows(
     result.bestWindows.filter((window) => window.target === "cloud_sea"),
+    result.calendarBasis.timezone,
   );
 
   return {
@@ -2696,8 +2706,11 @@ function buildCloudSeaHeroConclusion(
       )
     : windows[0];
   const bestWindowLabel = bestWindow
-    ? recommendationGuard.normalizedWindowRecommendation.windowLabel
-    : mappedWindow?.timeRangeLabel ??
+    ? `${recommendationGuard.normalizedWindowRecommendation.windowLabel}：${
+        mappedWindow?.fullTimeRangeLabel ??
+        formatWindow(bestWindow.startTime, bestWindow.endTime, result.calendarBasis.timezone)
+      }`
+    : mappedWindow?.fullTimeRangeLabel ??
       (terrainContext.shouldDowngradeCloudSeaWording
         ? "暂无明确低云/晨雾窗口"
         : "暂无明确云海窗口");
@@ -2792,7 +2805,7 @@ function buildCloudSeaDailyTrend(
         shootableLevel: result.cloudSeaAnalysis.labels.shootableOpportunity,
         whiteoutRiskLabel: whiteoutRiskLabel(whiteoutScore),
         whiteoutRiskScore: whiteoutScore,
-        bestMorningWindow: firstWindow?.timeRangeLabel ?? "暂无明确清晨窗口",
+        bestMorningWindow: firstWindow?.fullTimeRangeLabel ?? "暂无明确清晨窗口",
         watchableWindow: result.cloudSeaAnalysis.labels.watchableWindowLabel,
         rainOpeningLabel: precipitationSignalContext.riskLabelZh,
         onSiteCheckpoints: cloudSeaVerificationPoints(result, terrainContext),
@@ -2888,10 +2901,18 @@ function buildCloudSeaDailyTrend(
       whiteoutRiskLabel: whiteoutRiskLabel(whiteoutScore),
       whiteoutRiskScore: whiteoutScore,
       bestMorningWindow: window
-        ? formatWindow(window.startTime, window.endTime)
-        : formatWindow(day.bestWindow.startTime, day.bestWindow.endTime),
+        ? window.fullTimeRangeLabel
+        : formatWindow(
+            day.bestWindow.startTime,
+            day.bestWindow.endTime,
+            result.calendarBasis.timezone,
+          ),
       watchableWindow: day.watchableWindow
-        ? formatWindow(day.watchableWindow.startTime, day.watchableWindow.endTime)
+        ? formatWindow(
+            day.watchableWindow.startTime,
+            day.watchableWindow.endTime,
+            result.calendarBasis.timezone,
+          )
         : undefined,
       rainOpeningLabel: dailyPrecipitationSignal.riskLabelZh,
       onSiteCheckpoints: (day.onSiteCheckpoints ?? []).map((item) =>
@@ -2950,7 +2971,8 @@ function buildCloudSeaWeatherEvidence(
         : item.label === "低云" && hasMissingLowCloudLayer(result)
           ? "分层缺失"
           : item.value,
-    trend: item.label === "降水" ? precipitationSignalContext.riskLabelZh : effectLabel(item.effect),
+    trend:
+      item.label === "降水" ? precipitationSignalContext.riskLabelZh : effectLabel(item.effect),
     effect:
       item.label === "降水"
         ? precipitationSignalContext.userSummaryZh
@@ -3022,9 +3044,7 @@ function buildCloudSeaWindowItems(
   ];
 
   if (items.length > 0) {
-    return [...items].sort((left, right) =>
-      left.timeRangeLabel.localeCompare(right.timeRangeLabel),
-    );
+    return [...items].sort((left, right) => left.startTime.localeCompare(right.startTime));
   }
 
   return windows.map((window) => {
@@ -3045,7 +3065,8 @@ function buildCloudSeaWindowItems(
       date: window.date,
       startTime: window.startTime,
       endTime: window.endTime,
-      timeRangeLabel: window.timeRangeLabel,
+      displayLabelZh: window.fullTimeRangeLabel,
+      timeRangeLabel: window.fullTimeRangeLabel,
       score: window.score,
       recommendationLabel: recommendationGuard.finalRecommendationLabel,
       labelReason: recommendationExplanation.cautionReasonZh,
@@ -3159,6 +3180,11 @@ function cloudSeaWindowItem(
     windowGuard.finalRecommendationLevel === "recommended_arrangement"
       ? cloudSeaTerrainAwareText(window.noteZh, terrainContext)
       : `${windowGuard.reasonZh}。${windowGuard.normalizedWindowRecommendation.actionSuggestionZh}`;
+  const displayLabelZh = formatWindow(
+    window.startTime,
+    window.endTime,
+    result.calendarBasis.timezone,
+  );
 
   return {
     key: `${prefix}-${window.startTime}`,
@@ -3166,13 +3192,18 @@ function cloudSeaWindowItem(
     date: window.date,
     startTime: window.startTime,
     endTime: window.endTime,
-    timeRangeLabel: formatWindow(window.startTime, window.endTime),
+    displayLabelZh,
+    timeRangeLabel: displayLabelZh,
     score: window.shootableScore ?? window.score,
     recommendationLabel: windowGuard.finalRecommendationLabel,
     labelReason: windowExplanation.cautionReasonZh,
     note: guardedWindowNote,
     riskTag: cloudSeaTerrainAwareText(
-      cloudSeaWindowRiskTag(result, window.shootableScore ?? window.score, windowPrecipitationSignal),
+      cloudSeaWindowRiskTag(
+        result,
+        window.shootableScore ?? window.score,
+        windowPrecipitationSignal,
+      ),
       terrainContext,
     ),
     cloudSeaChance: scoreLevelText(scoreLevelFromScore(window.formationScore ?? window.score)),
@@ -3297,10 +3328,7 @@ function buildCloudSeaReasoningItems(
       value: precipitation
         ? `${cloudSeaPrecipitationValue(precipitationSignalContext)} / ${precipitationSignalContext.riskLabelZh}`
         : precipitationSignalContext.riskLabelZh,
-      detail: cloudSeaTerrainAwareText(
-        precipitationSignalContext.userSummaryZh,
-        terrainContext,
-      ),
+      detail: cloudSeaTerrainAwareText(precipitationSignalContext.userSummaryZh, terrainContext),
       tone: precipitationSignalTone(precipitationSignalContext),
     },
     ...(consistencyItem ? [consistencyItem] : []),
@@ -3432,6 +3460,37 @@ function buildCloudSeaActionPlan(
       )
     : windows[0];
   const backupPlan = analysis.backupPlans[0];
+  const timezone = result.calendarBasis.timezone;
+  const mainWindowDisplayLabel = bestWindow
+    ? mappedWindow?.fullTimeRangeLabel ??
+      formatWindow(bestWindow.startTime, bestWindow.endTime, timezone)
+    : null;
+  const backupWindow = [
+    ...analysis.bestCloudSeaWindows,
+    ...analysis.watchableCloudSeaWindows,
+    ...analysis.notRecommendedCloudSeaWindows,
+  ].find(
+    (window) =>
+      forecastWindowStartsAtOrAfterAnchor(result, window) &&
+      (!bestWindow ||
+        window.startTime !== bestWindow.startTime ||
+        window.endTime !== bestWindow.endTime),
+  );
+  const backupWindowDisplayLabel = backupWindow
+    ? formatWindow(backupWindow.startTime, backupWindow.endTime, timezone)
+    : null;
+  const backupAction = cloudSeaTerrainAwareText(
+    backupPlan?.action ??
+      (terrainContext.shouldDowngradeCloudSeaWording ? "转向霞光或云层纹理" : "转拍近景和云雾流动"),
+    terrainContext,
+  );
+  const backupDetail = cloudSeaTerrainAwareText(
+    backupPlan?.detail ??
+      (terrainContext.shouldDowngradeCloudSeaWording
+        ? "若低云贴地或通透不足，转向霞光、云层纹理、远山层次和近景氛围。"
+        : "若白墙压顶，转拍近景、云雾流动、树影和山体层次。"),
+    terrainContext,
+  );
   const checkpoints = cloudSeaVerificationPoints(
     result,
     terrainContext,
@@ -3468,7 +3527,7 @@ function buildCloudSeaActionPlan(
     {
       key: "main-window",
       label: terrainContext.shouldDowngradeCloudSeaWording ? "观察窗口" : "主守窗口",
-      value: bestWindow ? recommendationGuard.actionPlanLabels.mainWindow : "需临近预报复核",
+      value: mainWindowDisplayLabel ?? "需临近预报复核",
       detail: precipitationSignalContext.shouldDowngradeWindow
         ? precipitationSignalContext.actionAdviceZh
         : `${recommendationExplanation.actionSummaryZh}${precipitationSignalContext.precipitationSignalType !== "none" ? ` ${precipitationSignalContext.actionAdviceZh}` : ""}`,
@@ -3477,20 +3536,8 @@ function buildCloudSeaActionPlan(
     {
       key: "backup",
       label: "备选方案",
-      value: cloudSeaTerrainAwareText(
-        backupPlan?.action ??
-          (terrainContext.shouldDowngradeCloudSeaWording
-            ? "转向霞光或云层纹理"
-            : "转拍近景和云雾流动"),
-        terrainContext,
-      ),
-      detail: cloudSeaTerrainAwareText(
-        backupPlan?.detail ??
-          (terrainContext.shouldDowngradeCloudSeaWording
-            ? "若低云贴地或通透不足，转向霞光、云层纹理、远山层次和近景氛围。"
-            : "若白墙压顶，转拍近景、云雾流动、树影和山体层次。"),
-        terrainContext,
-      ),
+      value: backupWindowDisplayLabel ?? backupAction,
+      detail: backupWindowDisplayLabel ? `${backupAction}。${backupDetail}` : backupDetail,
       tone: "muted",
     },
     {
@@ -3736,6 +3783,7 @@ function cloudSeaPrecipitationSignalContextForWindow(
 ): CloudSeaPrecipitationSignalContext {
   return buildCloudSeaPrecipitationSignalContext({
     hourlyRows: result.professionalHourlyData,
+    timezone: result.calendarBasis.timezone,
     focusedWindow: {
       startTime: window.startTime,
       endTime: window.endTime,
@@ -3760,7 +3808,9 @@ function cloudSeaPrecipitationSignalContextForWindow(
         result.terrainAnalysis.terrainProfile.terrainType ??
         result.cloudSeaAnalysis.terrainSupport.terrainType,
     },
-    cloudLayerCompletenessContext: buildCloudLayerCompletenessContext(result.professionalHourlyData),
+    cloudLayerCompletenessContext: buildCloudLayerCompletenessContext(
+      result.professionalHourlyData,
+    ),
   });
 }
 
@@ -4273,8 +4323,8 @@ function cloudSeaGearAdvice(
       ? "清晨湿度高，注意镜头结露。"
       : precipitationSignalContext.equipmentAdviceZh;
   const temperature =
-    (displayTemperatureContext.warningZh ||
-      displayTemperatureContext.isHighMountainTemperatureSensitive)
+    displayTemperatureContext.warningZh ||
+    displayTemperatureContext.isHighMountainTemperatureSensitive
       ? displayTemperatureContext.clothingAdviceZh
       : "";
   const vapor =
@@ -4321,9 +4371,7 @@ function weatherVariableConsistencyActionChecks(
         ? "复核短临雨量、雷达和道路湿滑"
         : "复核短临降水量而非只看概率"
       : undefined,
-    context &&
-    context.cloudBasisStatus !== "consistent" &&
-    context.cloudBasisStatus !== "unknown"
+    context && context.cloudBasisStatus !== "consistent" && context.cloudBasisStatus !== "unknown"
       ? "复核低/中/高云分层"
       : undefined,
     context && hasTemperatureBasisWarning(context)
@@ -5225,8 +5273,8 @@ function formatOptionalWindow(startTime: string | undefined, endTime: string | u
   return startTime && endTime ? formatWindow(startTime, endTime) : "暂无数据";
 }
 
-function formatWindow(startTime: string, endTime: string): string {
-  return formatShootingWindowZh({ startTime, endTime });
+function formatWindow(startTime: string, endTime: string, timezone = "Asia/Shanghai"): string {
+  return formatShootingWindowZh({ startTime, endTime }, timezone);
 }
 
 function formatTime(value: string): string {

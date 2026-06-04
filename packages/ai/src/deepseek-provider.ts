@@ -510,6 +510,7 @@ export function buildCloudSeaAiExplainPayload(
       result.terrainAnalysis.terrainProfile.locationElevation ??
       result.terrainAnalysis.terrainProfile.elevationMeters ??
       result.cloudSeaAnalysis.terrainSupport.selectedSpotElevationMeters,
+    timezone,
     surroundingReliefMeters:
       result.terrainAnalysis.terrainProfile.localReliefMeters ??
       result.terrainAnalysis.terrainProfile.elevationDiff5km ??
@@ -589,14 +590,23 @@ export function buildCloudSeaAiExplainPayload(
       consistencyWarnings: takeTextItems(recommendationGuard.consistencyWarnings, 2, 70),
     },
     recommendationExplanation: {
-      oneLineConclusionZh: limitText(providerNeutralText(recommendationExplanation.oneLineConclusionZh), 120),
-      whyNotStrongerZh: limitText(providerNeutralText(recommendationExplanation.whyNotStrongerZh), 120),
+      oneLineConclusionZh: limitText(
+        providerNeutralText(recommendationExplanation.oneLineConclusionZh),
+        120,
+      ),
+      whyNotStrongerZh: limitText(
+        providerNeutralText(recommendationExplanation.whyNotStrongerZh),
+        120,
+      ),
       confidenceExplanationZh: limitText(
         providerNeutralText(recommendationExplanation.confidenceExplanationZh),
         120,
       ),
       reviewPointsZh: takeTextItems(recommendationExplanation.reviewPointsZh, 3, 36),
-      actionSummaryZh: limitText(providerNeutralText(recommendationExplanation.actionSummaryZh), 120),
+      actionSummaryZh: limitText(
+        providerNeutralText(recommendationExplanation.actionSummaryZh),
+        120,
+      ),
     },
     displayDataAlignment: {
       sourceAlignmentStatus: "normalized",
@@ -630,6 +640,7 @@ export function buildCloudSeaAiExplainPayload(
       affectsArrivalWindow: precipitationSignal.affectsArrivalWindow,
       shouldDowngradeWindow: precipitationSignal.shouldDowngradeWindow,
       shouldAvoidStrongRainWording: precipitationSignal.shouldAvoidStrongRainWording,
+      mainTimeRangeZh: precipitationSignal.mainTimeRangeZh,
       userSummaryZh: limitText(providerNeutralText(precipitationSignal.userSummaryZh), 100),
       actionAdviceZh: limitText(providerNeutralText(precipitationSignal.actionAdviceZh), 90),
     },
@@ -638,6 +649,7 @@ export function buildCloudSeaAiExplainPayload(
       precipitationImpactLevel: precipitationSignal.precipitationImpactLevel,
       maxProbabilityPercent: precipitationSignal.maxProbabilityPercent,
       maxAmountMm: precipitationSignal.maxAmountMm,
+      mainTimeRangeZh: precipitationSignal.mainTimeRangeZh,
       nearTermProbabilityPercent: nearTermPrecipitationSummary.probabilityPercent,
       nearTermAmountMm: nearTermPrecipitationSummary.amountMm,
       riskLabelZh: precipitationSignal.riskLabelZh,
@@ -878,7 +890,7 @@ function compactTemperatureBasisForAi(
 }
 
 function summarizeProfessionalHourlyPrecipitation(
-  rows: readonly (NonNullable<ForecastCalculationResult["professionalHourlyData"]>[number])[],
+  rows: readonly NonNullable<ForecastCalculationResult["professionalHourlyData"]>[number][],
 ) {
   const amountValues = rows
     .map((row) => row.precipitationAmountMm)
@@ -895,7 +907,7 @@ function summarizeProfessionalHourlyPrecipitation(
 }
 
 function summarizeProfessionalHourlyCloudLayers(
-  rows: readonly (NonNullable<ForecastCalculationResult["professionalHourlyData"]>[number])[],
+  rows: readonly NonNullable<ForecastCalculationResult["professionalHourlyData"]>[number][],
 ) {
   return {
     cloudLowPercent: maxNullableNumber(rows.map((row) => row.cloudLowPercent)),
@@ -951,7 +963,9 @@ function professionalHourlyRowsAtOrAfterAnchor(
 ) {
   const anchorMs = Date.parse(anchorStart ?? "");
   const rowLimit =
-    typeof expectedRowCount === "number" && Number.isFinite(expectedRowCount) && expectedRowCount > 0
+    typeof expectedRowCount === "number" &&
+    Number.isFinite(expectedRowCount) &&
+    expectedRowCount > 0
       ? Math.round(expectedRowCount)
       : rows.length;
   if (!Number.isFinite(anchorMs)) {
@@ -1628,7 +1642,8 @@ export function createRuleBasedForecastExplanation(
       })
     : null;
   const dedicatedDecision = dedicatedTripDecisionZh(result, bestDaily);
-  const recommendationLevelZh = cloudSeaGuard?.finalRecommendationLabel ?? result.recommendationLabel;
+  const recommendationLevelZh =
+    cloudSeaGuard?.finalRecommendationLabel ?? result.recommendationLabel;
   const oneSentenceDecisionBase =
     cloudSeaExplanation && !cloudSeaExplanation.oneLineConclusionZh.includes(recommendationLevelZh)
       ? `${recommendationLevelZh}：${cloudSeaExplanation.oneLineConclusionZh}`

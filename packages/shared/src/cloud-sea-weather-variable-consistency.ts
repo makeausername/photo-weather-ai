@@ -97,6 +97,7 @@ export type CloudSeaWeatherVariableConsistencyInput = {
   readonly dewPointSpreadC?: number | null;
   readonly precipitationAmountMm?: number | null;
   readonly precipitationProbabilityPercent?: number | null;
+  readonly timezone?: string | null;
   readonly visibilityKm?: number | null;
   readonly windSpeedMs?: number | null;
   readonly windGustMs?: number | null;
@@ -179,10 +180,7 @@ export function buildCloudSeaWeatherVariableConsistencyContext(
   const rows = rowsForFocusedWindow(input.hourlyRows, input.focusedWindow);
   const snapshots = [...rows.map(snapshotFromProfessionalRow), ...optionalSnapshotFromInput(input)];
   const highMountainLike = isHighMountainLike(input);
-  const temperatureBasisContext = buildAggregateTerrainTemperatureBasisContext(
-    input,
-    snapshots,
-  );
+  const temperatureBasisContext = buildAggregateTerrainTemperatureBasisContext(input, snapshots);
   const temperature = evaluateTemperatureBasis(
     snapshots,
     highMountainLike,
@@ -195,6 +193,7 @@ export function buildCloudSeaWeatherVariableConsistencyContext(
       precipitationAmountMm: input.precipitationAmountMm,
       precipitationProbabilityPercent: input.precipitationProbabilityPercent,
       hourlyRows: input.hourlyRows,
+      timezone: input.timezone,
       focusedWindow: input.focusedWindow,
       terrainContext: input.terrainContext,
       windSpeedMs:
@@ -202,7 +201,8 @@ export function buildCloudSeaWeatherVariableConsistencyContext(
         maxFinite(snapshots.map((snapshot) => snapshot.windSpeedMs)) ??
         input.windGustMs ??
         input.windSpeedMs,
-      visibilityKm: minFinite(snapshots.map((snapshot) => snapshot.visibilityKm)) ?? input.visibilityKm,
+      visibilityKm:
+        minFinite(snapshots.map((snapshot) => snapshot.visibilityKm)) ?? input.visibilityKm,
       cloudLayerCompletenessContext: input.cloudLayerCompletenessContext,
     });
   const precipitation = evaluatePrecipitationSignal(precipitationSignalContext);
@@ -370,9 +370,8 @@ function buildAggregateTerrainTemperatureBasisContext(
           isFiniteNumber(snapshot.displayedTemperatureC) ||
           isFiniteNumber(snapshot.temperatureC),
       )
-      .sort(
-        (left, right) => temperatureSnapshotDelta(right) - temperatureSnapshotDelta(left),
-      )[0] ?? {};
+      .sort((left, right) => temperatureSnapshotDelta(right) - temperatureSnapshotDelta(left))[0] ??
+    {};
   const elevationMeters =
     finiteNumber(input.elevationMeters) ?? finiteNumber(input.terrainContext?.elevationMeters);
   const surroundingReliefMeters =
@@ -473,7 +472,9 @@ function evaluateTemperatureBasis(
     mixedBasis || rawGridDrivesHighMountainDisplay
       ? "mixed"
       : hasTerrainAdjusted && terrainAdjustedLikeCount > 0
-        ? temperatureRows.some((snapshot) => snapshot.temperatureBasis === "terrain_adjusted_lapse_estimate")
+        ? temperatureRows.some(
+            (snapshot) => snapshot.temperatureBasis === "terrain_adjusted_lapse_estimate",
+          )
           ? "terrain_adjusted_lapse_estimate"
           : "terrain_adjusted"
         : hasRawGrid
@@ -497,7 +498,8 @@ function evaluateTemperatureBasis(
   return {
     status,
     shouldPreferTerrainAdjustedTemperature:
-      highMountainLike && (hasTerrainAdjusted || basisContext.shouldPreferTerrainAdjustedTemperature),
+      highMountainLike &&
+      (hasTerrainAdjusted || basisContext.shouldPreferTerrainAdjustedTemperature),
     shouldLowerComfortEquipmentConfidence,
     basisContext,
     warning:
@@ -692,14 +694,15 @@ function evaluatePrecipitationSignal(
   return {
     status: "light_disturbance",
     shouldDowngradePrecipitationWording: true,
-    warning: context.precipitationImpactLevel === "medium"
-      ? {
-          key: "precip_probability_trace_amount",
-          level: "low",
-          affectedHoursCount: Math.max(1, context.affectedHoursCount),
-          messageZh: context.userSummaryZh,
-        }
-      : null,
+    warning:
+      context.precipitationImpactLevel === "medium"
+        ? {
+            key: "precip_probability_trace_amount",
+            level: "low",
+            affectedHoursCount: Math.max(1, context.affectedHoursCount),
+            messageZh: context.userSummaryZh,
+          }
+        : null,
   };
 }
 
