@@ -245,6 +245,18 @@ describe("AI providers", () => {
     });
     expect(payload.precipitationSignalContext).toHaveProperty("maxAmountMm");
     expect(payload.precipitationSignalContext).toHaveProperty("nearTermAmountMm");
+    expect(payload.windowRiskContext).toMatchObject({
+      windowRainImpact: expect.any(Object),
+      preWindowRainImpact: expect.any(Object),
+      duringWindowRainImpact: expect.any(Object),
+      postWindowRainImpact: expect.any(Object),
+      windowOpeningConfidence: expect.any(String),
+      whiteoutReviewLevel: expect.any(String),
+      scoreCapReasons: expect.any(Array),
+      actionAdviceZh: expect.any(String),
+    });
+    expect(payload.windowRiskContext.duringWindowRainImpact).toHaveProperty("timing");
+    expect(payload.windowRiskContext).toHaveProperty("displayTemperatureBasis");
     expect(payload.cloudLayerCoverageContext).toMatchObject({
       layerCompletenessLevel: expect.any(String),
     });
@@ -297,6 +309,7 @@ describe("AI providers", () => {
     expect(text).toContain("Do not recompute facts");
     expect(text).toContain("invent temperature correction");
     expect(text).toContain("invent rain amount");
+    expect(text).toContain("window-centered risk reasons");
     expect(text).toContain("trace amount");
     expect(text).toContain("infer low/mid/high cloud from total cloud");
     expect(text).not.toMatch(/latitude|longitude|coordinates|WGS84|GCJ-02/i);

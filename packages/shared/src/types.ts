@@ -845,6 +845,65 @@ export type CloudSeaChanceLabel = "高" | "中" | "低";
 
 export type CloudSeaScoreBand = "excellent" | "good" | "fair" | "backup" | "poor";
 
+export type CloudSeaWindowPrecipitationTiming =
+  | "none"
+  | "pre_window"
+  | "during_window"
+  | "post_window"
+  | "outside_window"
+  | "unknown";
+
+export type CloudSeaWindowRainImpactLevel = "none" | "trace" | "low" | "medium" | "high" | "unknown";
+
+export type CloudSeaWindowRainImpact = {
+  readonly timing: CloudSeaWindowPrecipitationTiming;
+  readonly impactLevel: CloudSeaWindowRainImpactLevel;
+  readonly riskLabelZh: string;
+  readonly summaryZh: string;
+  readonly actionAdviceZh: string;
+  readonly equipmentAdviceZh: string;
+  readonly maxProbabilityPercent: number | null;
+  readonly maxAmountMm: number | null;
+  readonly maxHourlyAmountMm: number | null;
+  readonly totalAmountMm: number | null;
+  readonly affectedHoursCount: number;
+  readonly shouldCapScore: boolean;
+  readonly scoreCap: number | null;
+};
+
+export type CloudSeaWhiteoutReviewLevel = "low" | "low_to_medium" | "medium" | "high";
+
+export type CloudSeaTemperaturePreparationLevel =
+  | "normal"
+  | "cool"
+  | "cold"
+  | "severe_cold"
+  | "unknown";
+
+export type CloudSeaWindowRiskContext = {
+  readonly windowRainImpact: CloudSeaWindowRainImpact;
+  readonly preWindowRainImpact: CloudSeaWindowRainImpact;
+  readonly duringWindowRainImpact: CloudSeaWindowRainImpact;
+  readonly postWindowRainImpact: CloudSeaWindowRainImpact;
+  readonly outsideWindowRainImpact: CloudSeaWindowRainImpact;
+  readonly windowOpeningConfidence: CloudSeaConfidenceLevel;
+  readonly windowOpeningConfidenceLabelZh: string;
+  readonly openingConfidenceReasonZh: string;
+  readonly cloudTopReviewNeed: boolean;
+  readonly whiteoutReviewLevel: CloudSeaWhiteoutReviewLevel;
+  readonly whiteoutReviewLabelZh: string;
+  readonly temperaturePreparationLevel: CloudSeaTemperaturePreparationLevel;
+  readonly temperaturePreparationLabelZh: string;
+  readonly displayTemperatureBasis: string;
+  readonly scoreCapReasons: readonly string[];
+  readonly limitingFactorZh: string | null;
+  readonly windowCenteredSummaryZh: string;
+  readonly precipitationWindowSummaryZh: string;
+  readonly whiteoutWindowSummaryZh: string;
+  readonly actionAdviceZh: string;
+  readonly equipmentAdviceZh: string;
+};
+
 export type CloudSeaScoreCalibrationContext = {
   readonly rawFormationScore: number;
   readonly rawShootabilityScore: number;
@@ -863,6 +922,7 @@ export type CloudSeaScoreCalibrationContext = {
   readonly shouldBlockStrongRecommendation: boolean;
   readonly shouldDowngradeToCautious: boolean;
   readonly shouldDowngradeToBackup: boolean;
+  readonly windowRiskContext?: CloudSeaWindowRiskContext;
 };
 
 export type CloudSeaPostRainOpeningChance = "low" | "medium" | "high";
@@ -922,6 +982,7 @@ export type CloudSeaAnalysisWindow = {
   readonly riskTag: string;
   readonly rainOpening?: CloudSeaRainOpeningSignal;
   readonly scoreCalibration?: CloudSeaScoreCalibrationContext;
+  readonly windowRiskContext?: CloudSeaWindowRiskContext;
 };
 
 export type DailyCloudSea = {
@@ -940,6 +1001,7 @@ export type DailyCloudSea = {
   readonly notRecommendedWindow?: CloudSeaAnalysisWindow;
   readonly rainOpening?: CloudSeaRainOpeningSignal;
   readonly scoreCalibration?: CloudSeaScoreCalibrationContext;
+  readonly windowRiskContext?: CloudSeaWindowRiskContext;
   readonly onSiteCheckpoints?: readonly string[];
   readonly recommendationLabel: CloudSeaRecommendationLabel;
   readonly keyReason: string;
@@ -978,6 +1040,7 @@ export type CloudSeaAnalysisResult = CloudSeaAssessment & {
   readonly terrainSupport: CloudSeaTerrainSupport;
   readonly rainOpening: CloudSeaRainOpeningSignal;
   readonly scoreCalibration: CloudSeaScoreCalibrationContext;
+  readonly windowRiskContext?: CloudSeaWindowRiskContext;
   readonly travelScore: number;
   readonly recommendationLabel: CloudSeaRecommendationLabel;
   readonly confidenceLevel: CloudSeaConfidenceLevel;

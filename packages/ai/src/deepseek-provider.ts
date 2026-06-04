@@ -4,6 +4,7 @@ import {
   buildCloudSeaRecommendationExplanation,
   buildCloudSeaRecommendationGuardForResult,
   buildCloudSeaWeatherVariableConsistencyContext,
+  buildCloudSeaWindowCenteredRiskContext,
   decisionCardSchema,
   deepSeekResponseFormat,
   formatArrivalDeadlineZh,
@@ -382,6 +383,16 @@ function compactScore(
   };
 }
 
+function compactTopicScoresForAi(result: ForecastCalculationResult) {
+  const scores = Object.values(result.scores);
+  if (result.target !== "cloud_sea") {
+    return scores.map(compactScore);
+  }
+  const preferredKeys = new Set(["cloudSea", "whiteoutRisk", "stars", "milkyWay"]);
+  const selected = scores.filter((score) => preferredKeys.has(score.key)).slice(0, 4);
+  return (selected.length > 0 ? selected : scores.slice(0, 4)).map(compactScore);
+}
+
 export type DeepSeekForecastContextDetail = "standard" | "minimal";
 
 export function buildDeepSeekForecastContext(
@@ -389,8 +400,9 @@ export function buildDeepSeekForecastContext(
   detail: DeepSeekForecastContextDetail = "standard",
 ) {
   const timezone = result.calendarBasis.timezone;
-  const dailyLimit = detail === "minimal" ? 2 : 4;
-  const windowLimit = detail === "minimal" ? 1 : 3;
+  const isCloudSeaTarget = result.target === "cloud_sea";
+  const dailyLimit = detail === "minimal" || isCloudSeaTarget ? 2 : 4;
+  const windowLimit = detail === "minimal" || isCloudSeaTarget ? 1 : 3;
   const bestWindow = result.bestWindows.find(isExecutableWindow) ?? result.bestWindows[0];
   const bestDay = bestDailySummaryForPlan(result, bestWindow);
   const cloudSeaGuard =
@@ -440,16 +452,27 @@ export function buildDeepSeekForecastContext(
       compactForecastWindowBrief(window, timezone),
     ),
     dailySummaries: dailyFacts,
-    topicScores: Object.values(result.scores).map(compactScore),
-    risks: compactRiskFlags(result.riskFlags, detail === "minimal" ? 3 : 5),
-    keyReasons: takeTextItems(result.keyReasons, 4, 100),
-    deterministicActionSuggestions: takeTextItems(result.photographyAdvice, 3, 120),
+    topicScores: compactTopicScoresForAi(result),
+    risks: compactRiskFlags(result.riskFlags, detail === "minimal" || isCloudSeaTarget ? 3 : 5),
+    keyReasons: takeTextItems(result.keyReasons, isCloudSeaTarget ? 2 : 4, 90),
+    deterministicActionSuggestions: takeTextItems(
+      result.photographyAdvice,
+      isCloudSeaTarget ? 2 : 3,
+      100,
+    ),
     clothingAndEquipment: {
-      summaryZh: limitText(result.clothingGuide.summaryZh, 160),
+      summaryZh: limitText(result.clothingGuide.summaryZh, isCloudSeaTarget ? 100 : 160),
       comfortLevel: result.clothingGuide.comfortLevel,
-      layers: takeTextItems(result.clothingGuide.layers, detail === "minimal" ? 2 : 4),
-      accessories: takeTextItems(result.clothingGuide.accessories, detail === "minimal" ? 2 : 4),
-      riskNotes: takeTextItems(result.clothingGuide.riskNotes, detail === "minimal" ? 2 : 3, 110),
+      layers: takeTextItems(result.clothingGuide.layers, detail === "minimal" || isCloudSeaTarget ? 2 : 4),
+      accessories: takeTextItems(
+        result.clothingGuide.accessories,
+        detail === "minimal" || isCloudSeaTarget ? 2 : 4,
+      ),
+      riskNotes: takeTextItems(
+        result.clothingGuide.riskNotes,
+        detail === "minimal" || isCloudSeaTarget ? 2 : 3,
+        90,
+      ),
     },
     dataStatus: {
       dataMode: result.weatherDataMode,
@@ -457,7 +480,7 @@ export function buildDeepSeekForecastContext(
       noticeZh: limitText(providerNeutralText(result.dataNotice), 140),
     },
     cloudSeaAiExplainPayload:
-      result.target === "cloud_sea" ? buildCloudSeaAiExplainPayload(result, detail) : undefined,
+      result.target === "cloud_sea" ? buildCloudSeaAiExplainPayloadForContext(result) : undefined,
     calibrationHint: result.calibrationHint
       ? {
           sampleCount: result.calibrationHint.sampleCount,
@@ -468,6 +491,31 @@ export function buildDeepSeekForecastContext(
           cautionNoteZh: limitText(result.calibrationHint.cautionNoteZh, 140),
         }
       : undefined,
+  };
+}
+
+function buildCloudSeaAiExplainPayloadForContext(result: ForecastCalculationResult) {
+  const payload = buildCloudSeaAiExplainPayload(result, "minimal");
+  return {
+    contextVersion: payload.contextVersion,
+    target: payload.target,
+    deterministicOnly: payload.deterministicOnly,
+    instruction:
+      "Explain deterministic Cloud Sea facts only; keep window-centered risk reasons.",
+    scoreAndRecommendation: payload.scoreAndRecommendation,
+    scoreCalibration: {
+      finalCloudSeaScore: payload.scoreCalibration.finalCloudSeaScore,
+      capApplied: payload.scoreCalibration.capApplied,
+      capReasons: takeTextItems(payload.scoreCalibration.capReasons, 2, 60),
+    },
+    recommendationExplanation: payload.recommendationExplanation,
+    precipitationSignalSummary: payload.precipitationSignalSummary,
+    windowRiskContext: payload.windowRiskContext,
+    cloudLayerCoverageContext: payload.cloudLayerCoverageContext,
+    professionalHourlySummary: {
+      rowCount: payload.professionalHourlySummary.rowCount,
+      focusedRows: takeItems(payload.professionalHourlySummary.focusedRows, 1),
+    },
   };
 }
 
@@ -563,7 +611,7 @@ export function buildCloudSeaAiExplainPayload(
     target: "cloud_sea",
     deterministicOnly: true,
     instruction:
-      "Explain deterministic Cloud Sea facts only. Do not recompute facts, infer low/mid/high cloud from total cloud, invent temperature correction, invent rain amount, or override the selected deterministic temperature and precipitation signal basis. Do not convert high precipitation probability with trace amount into strong rain.",
+      "Explain deterministic Cloud Sea facts only. Do not recompute facts, infer low/mid/high cloud from total cloud, invent temperature correction, invent rain amount, override the selected deterministic temperature and precipitation signal basis, or change the window-centered risk reasons. Do not convert high precipitation probability with trace amount into strong rain.",
     locationName: result.place.name,
     horizon: {
       key: result.horizon,
@@ -666,6 +714,46 @@ export function buildCloudSeaAiExplainPayload(
       userSummaryZh: limitText(providerNeutralText(precipitationSignal.userSummaryZh), 80),
       shouldDowngradeWindow: precipitationSignal.shouldDowngradeWindow,
     },
+    windowRiskContext: compactCloudSeaWindowRiskContext(
+      analysis.windowRiskContext ??
+        buildCloudSeaWindowCenteredRiskContext({
+          normalizedHourlyRows: professionalRows,
+          bestWindow: bestAnalysisWindow ?? null,
+          mainWindow: bestAnalysisWindow ?? null,
+          forecastWindowRange: {
+            startTime:
+              result.professionalHourlyDataTimeBasis?.anchorStartLocal ?? result.forecastStart,
+            endTime: result.professionalHourlyDataTimeBasis?.anchorEndLocal ?? result.forecastEnd,
+          },
+          precipitationSignalContext: precipitationSignal,
+          cloudLayerCoverageContext: cloudLayerCompleteness,
+          cloudBasisConsistencyContext: cloudBasisConsistency,
+          displayTemperatureContext: {
+            displayTemperatureC: temperatureBasisContext.displayTemperatureC,
+            terrainAdjustedTemperatureC: temperatureBasisContext.terrainAdjustedTemperatureC,
+            basis: temperatureBasisContext.temperatureBasis,
+          },
+          terrainContext: {
+            terrainMode: analysis.terrainSupport.terrainMode,
+            terrainType:
+              result.terrainAnalysis.terrainProfile.terrainType ??
+              analysis.terrainSupport.terrainType,
+            elevationMeters:
+              result.terrainAnalysis.terrainProfile.locationElevation ??
+              result.terrainAnalysis.terrainProfile.elevationMeters ??
+              analysis.terrainSupport.selectedSpotElevationMeters,
+            surroundingReliefMeters:
+              result.terrainAnalysis.terrainProfile.localReliefMeters ??
+              result.terrainAnalysis.terrainProfile.elevationDiff5km ??
+              analysis.terrainSupport.localReliefMeters,
+            confidence: analysis.terrainSupport.confidence,
+          },
+          whiteoutRiskContext: {
+            whiteoutRiskScore: analysis.whiteoutRiskScore,
+          },
+          timezone,
+        }),
+    ),
     bestWindow: bestAnalysisWindow
       ? compactCloudSeaAnalysisWindow(bestAnalysisWindow, timezone)
       : null,
@@ -695,17 +783,17 @@ export function buildCloudSeaAiExplainPayload(
         : undefined,
     },
     cloudSeaWindowCards: {
-      best: takeItems(analysis.bestCloudSeaWindows, detail === "minimal" ? 1 : 2).map((window) =>
+      best: takeItems(analysis.bestCloudSeaWindows, 1).map((window) =>
         compactCloudSeaAnalysisWindow(window, timezone),
       ),
-      watchable: takeItems(analysis.watchableCloudSeaWindows, detail === "minimal" ? 1 : 2).map(
+      watchable: takeItems(analysis.watchableCloudSeaWindows, 1).map(
         (window) => compactCloudSeaAnalysisWindow(window, timezone),
       ),
       notRecommended: takeItems(analysis.notRecommendedCloudSeaWindows, 1).map((window) =>
         compactCloudSeaAnalysisWindow(window, timezone),
       ),
     },
-    dailyCloudSeaSummary: takeItems(analysis.dailyCloudSea, detail === "minimal" ? 1 : 3).map(
+    dailyCloudSeaSummary: takeItems(analysis.dailyCloudSea, detail === "minimal" ? 1 : 2).map(
       (day) => ({
         date: day.date,
         dateZh: day.dateLabelZh,
@@ -949,9 +1037,53 @@ function compactCloudSeaAnalysisWindow(
     shootableScore: window.shootableScore,
     whiteoutRiskScore: window.whiteoutRiskScore,
     phase: window.phase,
-    noteZh: limitText(window.noteZh, 120),
-    riskTag: limitText(window.riskTag, 80),
-    rainOpeningZh: limitText(window.rainOpening?.messageZh, 100),
+    noteZh: limitText(window.noteZh, 80),
+    riskTag: limitText(window.riskTag, 60),
+    rainOpeningZh: limitText(window.rainOpening?.messageZh, 70),
+  };
+}
+
+function compactCloudSeaWindowRiskContext(
+  context: NonNullable<ForecastCalculationResult["cloudSeaAnalysis"]["windowRiskContext"]>,
+) {
+  return {
+    windowRainImpact: compactRainImpact(context.windowRainImpact),
+    preWindowRainImpact: compactRainImpact(context.preWindowRainImpact),
+    duringWindowRainImpact: compactRainImpact(context.duringWindowRainImpact),
+    postWindowRainImpact: compactRainImpact(context.postWindowRainImpact),
+    windowOpeningConfidence: context.windowOpeningConfidence,
+    windowOpeningConfidenceLabelZh: context.windowOpeningConfidenceLabelZh,
+    cloudTopReviewNeed: context.cloudTopReviewNeed,
+    whiteoutReviewLevel: context.whiteoutReviewLevel,
+    whiteoutReviewLabelZh: context.whiteoutReviewLabelZh,
+    temperaturePreparationLevel: context.temperaturePreparationLevel,
+    displayTemperatureBasis: context.displayTemperatureBasis,
+    scoreCapReasons: takeTextItems(context.scoreCapReasons, 3, 70),
+    precipitationWindowSummaryZh: limitText(
+      providerNeutralText(context.precipitationWindowSummaryZh),
+      100,
+    ),
+    whiteoutWindowSummaryZh: limitText(providerNeutralText(context.whiteoutWindowSummaryZh), 80),
+    actionAdviceZh: limitText(providerNeutralText(context.actionAdviceZh), 80),
+    equipmentAdviceZh: limitText(providerNeutralText(context.equipmentAdviceZh), 70),
+  };
+}
+
+function compactRainImpact(
+  impact: NonNullable<
+    ForecastCalculationResult["cloudSeaAnalysis"]["windowRiskContext"]
+  >["windowRainImpact"],
+) {
+  return {
+    timing: impact.timing,
+    impactLevel: impact.impactLevel,
+    riskLabelZh: impact.riskLabelZh,
+    maxProbabilityPercent: impact.maxProbabilityPercent,
+    maxAmountMm: impact.maxAmountMm,
+    totalAmountMm: impact.totalAmountMm,
+    shouldCapScore: impact.shouldCapScore,
+    scoreCap: impact.scoreCap,
+    summaryZh: limitText(providerNeutralText(impact.summaryZh), 50),
   };
 }
 

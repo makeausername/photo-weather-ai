@@ -7,6 +7,8 @@ import type {
   CloudSeaConfidenceLevel,
   CloudSeaScoreBand,
   CloudSeaScoreCalibrationContext,
+  CloudSeaWindowRainImpactLevel,
+  CloudSeaWindowRiskContext,
   ForecastMultiSourceAgreementContext,
   ProfessionalHourlyCloudLayerBasis,
   TerrainMode,
@@ -29,8 +31,18 @@ export type CloudSeaScoreCalibrationHourlyRow = {
   readonly lowCloudPercent?: number | null;
   readonly visibilityKm?: number | null;
   readonly visibilityMeters?: number | null;
+  readonly relativeHumidityPercent?: number | null;
+  readonly humidityPercent?: number | null;
+  readonly humidity?: number | null;
+  readonly dewPointSpreadC?: number | null;
+  readonly dewPointSpread?: number | null;
   readonly precipitationAmountMm?: number | null;
   readonly precipitationProbabilityPercent?: number | null;
+  readonly rawTemperatureC?: number | null;
+  readonly terrainAdjustedTemperatureC?: number | null;
+  readonly displayedTemperatureC?: number | null;
+  readonly bodyFeelTemperatureC?: number | null;
+  readonly temperatureBasis?: string | null;
   readonly cloudLayerBasis?: ProfessionalHourlyCloudLayerBasis;
 };
 
@@ -62,6 +74,7 @@ export type CloudSeaScoreCalibrationInput = {
   readonly normalizedHourlyRows?: readonly CloudSeaScoreCalibrationHourlyRow[] | null;
   readonly cloudWindowRows?: readonly CloudSeaScoreCalibrationHourlyRow[] | null;
   readonly recommendationGuardContext?: CloudSeaRecommendationGuardOutput | null;
+  readonly windowRiskContext?: CloudSeaWindowRiskContext | null;
 };
 
 type CloudLayerWindowStats = {
@@ -125,8 +138,16 @@ export function buildCloudSeaScoreCalibrationContext(
   const strongOpeningEvidence = hasStrongOpeningEvidence(input, layerStats);
   const openingUncertain =
     !strongOpeningEvidence ||
+    input.windowRiskContext?.windowOpeningConfidence !== "high" ||
     input.recommendationGuardContext?.shouldShowCaution === true ||
     input.weatherVariableConsistencyContext?.shouldAvoidStrongWording === true;
+
+  if (input.windowRiskContext?.windowOpeningConfidence === "medium") {
+    applyCap(86, "主窗口开口稳定性中等，最终分数上限 86。");
+  }
+  if (input.windowRiskContext?.windowOpeningConfidence === "low") {
+    applyCap(75, "主窗口开口稳定性偏低，最终分数上限 75。");
+  }
 
   if (layerStats.thickMultiLayerOvercast && openingUncertain) {
     applyCap(82, "厚实多层云覆盖下开口稳定性不足，最终分数不按近满分处理。");
@@ -150,6 +171,12 @@ export function buildCloudSeaScoreCalibrationContext(
   if (precipitationCapsWindow(input, "strong")) {
     applyCap(64, "主窗口存在较强或持续降水，不支持强推荐。");
   }
+  if (input.windowRiskContext?.duringWindowRainImpact.impactLevel === "medium") {
+    applyCap(72, "主窗口受可计量降水影响，最终分数上限 72。");
+  }
+  if (input.windowRiskContext?.duringWindowRainImpact.impactLevel === "high") {
+    applyCap(64, "主窗口受较强或持续降水影响，最终分数上限 64。");
+  }
 
   if (input.whiteoutRiskScore >= 78) {
     applyCap(68, "低云或雾可能包顶形成白墙，云海可拍性受限。");
@@ -157,6 +184,12 @@ export function buildCloudSeaScoreCalibrationContext(
     applyCap(72, "白墙风险偏高，需复核低云高度和能见度。");
   } else if (input.whiteoutRiskScore >= 58) {
     applyCap(82, "白墙风险达到中等，不能仅凭形成信号强推。");
+  }
+  if (input.windowRiskContext?.whiteoutReviewLevel === "medium") {
+    applyCap(78, "主窗口白墙风险中等，需复核云顶高度，可拍分数上限 78。");
+  }
+  if (input.windowRiskContext?.whiteoutReviewLevel === "high") {
+    applyCap(70, "主窗口白墙风险偏高，云顶高度和能见度未确认前分数上限 70。");
   }
 
   if (isPoorVisibility(layerStats)) {
@@ -199,6 +232,9 @@ export function buildCloudSeaScoreCalibrationContext(
   const majorUncertaintyCount = majorUncertaintyFlags(input, layerStats).length;
   if (majorUncertaintyCount >= 3) {
     applyCap(72, "多个主要不确定因素同时存在，最终分数按谨慎上限处理。");
+  }
+  if (input.windowRiskContext?.scoreCapReasons.some((reason) => reason.includes("多个中等不确定性"))) {
+    applyCap(78, "多个中等不确定性叠加，最终分数上限 78。");
   }
 
   if (calibratedFormationScore < 55) {
@@ -264,6 +300,7 @@ export function buildCloudSeaScoreCalibrationContext(
     shouldBlockStrongRecommendation,
     shouldDowngradeToCautious,
     shouldDowngradeToBackup,
+    windowRiskContext: input.windowRiskContext ?? undefined,
   };
 }
 
@@ -344,6 +381,16 @@ function precipitationCapsWindow(
   input: CloudSeaScoreCalibrationInput,
   level: "light" | "meaningful" | "strong",
 ): boolean {
+  const duringImpact = input.windowRiskContext?.duringWindowRainImpact.impactLevel;
+  if (duringImpact) {
+    if (level === "strong") {
+      return duringImpact === "high";
+    }
+    if (level === "meaningful") {
+      return isRainImpactAtLeast(duringImpact, "medium");
+    }
+    return isRainImpactAtLeast(duringImpact, "trace");
+  }
   const signal = input.precipitationSignalContext;
   if (!signal) {
     return false;
@@ -378,6 +425,12 @@ function majorUncertaintyFlags(
   }
   if (input.whiteoutRiskScore >= 70) {
     flags.push("whiteout");
+  }
+  if (input.windowRiskContext?.windowOpeningConfidence === "low") {
+    flags.push("opening");
+  }
+  if (input.windowRiskContext?.whiteoutReviewLevel === "medium" || input.windowRiskContext?.whiteoutReviewLevel === "high") {
+    flags.push("window_whiteout");
   }
   if (isPoorVisibility(layerStats)) {
     flags.push("visibility");
@@ -416,6 +469,8 @@ function calibratedConfidenceLevel(
     input.cloudLayerCoverageContext?.layerCompletenessLevel === "missing" ||
     input.cloudBasisConsistencyContext?.cloudBasisLevel === "mixed_basis" ||
     input.cloudBasisConsistencyContext?.cloudBasisLevel === "total_only" ||
+    input.windowRiskContext?.windowOpeningConfidence === "low" ||
+    input.windowRiskContext?.whiteoutReviewLevel === "high" ||
     input.multiSourceAgreementContext?.shouldLowerConfidence ||
     input.weatherVariableConsistencyContext?.consistencyLevel === "conflict"
   ) {
@@ -425,6 +480,32 @@ function calibratedConfidenceLevel(
     return "medium";
   }
   return base;
+}
+
+function isRainImpactAtLeast(
+  actual: CloudSeaWindowRainImpactLevel,
+  expected: CloudSeaWindowRainImpactLevel,
+): boolean {
+  return rainImpactRank(actual) >= rainImpactRank(expected);
+}
+
+function rainImpactRank(level: CloudSeaWindowRainImpactLevel): number {
+  if (level === "high") {
+    return 5;
+  }
+  if (level === "medium") {
+    return 4;
+  }
+  if (level === "low") {
+    return 3;
+  }
+  if (level === "trace") {
+    return 2;
+  }
+  if (level === "unknown") {
+    return 1;
+  }
+  return 0;
 }
 
 function confidenceFromScore(score: number | null | undefined): CloudSeaConfidenceLevel {

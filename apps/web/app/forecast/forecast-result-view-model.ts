@@ -3,6 +3,7 @@ import {
   buildCloudSeaCloudBasisConsistencyContext,
   buildCloudSeaPrecipitationSignalContext,
   buildCloudSeaRecommendationExplanation,
+  buildCloudSeaWindowCenteredRiskContext,
   formatArrivalDeadlineZh,
   formatShootingWindowZh,
   forecastTargetLabels,
@@ -12,6 +13,7 @@ import {
   type CloudSeaRecommendationExplanation,
   type CloudSeaRecommendationGuardOutput,
   type CloudSeaScoreCalibrationContext,
+  type CloudSeaWindowRiskContext,
   type CloudSeaWeatherVariableConsistencyContext,
   type AstroAnalysisResult,
   type AstroEvidenceItem,
@@ -306,6 +308,7 @@ export type CloudSeaForecastViewModel = {
   readonly ruleContext: CloudSeaRuleContext;
   readonly terrainContext: CloudSeaTerrainContext;
   readonly displayTemperatureContext: CloudSeaDisplayTemperatureContext;
+  readonly windowRiskContext?: CloudSeaWindowRiskContext;
   readonly precipitationSignal: CloudSeaPrecipitationSignalContext;
   readonly recommendationGuard: CloudSeaRecommendationGuardOutput;
   readonly recommendationExplanation: CloudSeaRecommendationExplanation;
@@ -681,6 +684,15 @@ export function buildCloudSeaForecastViewModel(
         analysis.watchableCloudSeaWindows.find((window) =>
           forecastWindowStartsAtOrAfterAnchor(result, window),
         )) ?? null;
+  const windowRiskContext = resolveCloudSeaWindowRiskContextForViewModel({
+    result,
+    bestWindow: explanationBestWindow,
+    precipitationSignalContext,
+    cloudLayerCompleteness,
+    cloudBasisConsistency,
+    displayTemperatureContext,
+    terrainContext,
+  });
   const recommendationExplanation = buildCloudSeaRecommendationExplanation({
     finalRecommendationLabel: recommendationGuard.finalRecommendationLabel,
     cloudSeaScore: analysis.scoreCalibration.finalCloudSeaScore,
@@ -711,6 +723,7 @@ export function buildCloudSeaForecastViewModel(
     recommendationGuard,
     weatherVariableConsistencyContext,
     recommendationExplanation,
+    windowRiskContext,
   );
   const shootableCardDetail =
     analysis.scoreCalibration.capApplied || analysis.scoreCalibration.capReasons.length > 0
@@ -793,6 +806,7 @@ export function buildCloudSeaForecastViewModel(
     cloudBasisConsistency,
     precipitationSignalContext,
     recommendationExplanation,
+    windowRiskContext,
   );
   const reasoningItems = buildCloudSeaReasoningItems(
     result,
@@ -802,6 +816,7 @@ export function buildCloudSeaForecastViewModel(
     weatherVariableConsistencyContext,
     recommendationGuard,
     recommendationExplanation,
+    windowRiskContext,
   );
   const actionPlan = buildCloudSeaActionPlan(
     result,
@@ -812,12 +827,14 @@ export function buildCloudSeaForecastViewModel(
     weatherVariableConsistencyContext,
     precipitationSignalContext,
     recommendationExplanation,
+    windowRiskContext,
   );
   const riskSummary = buildCloudSeaRiskSummary(
     result,
     terrainContext,
     weatherVariableConsistencyContext,
     precipitationSignalContext,
+    windowRiskContext,
   );
   const recommendationCards = buildCloudSeaRecommendationCards({
     result,
@@ -851,6 +868,7 @@ export function buildCloudSeaForecastViewModel(
     displayTemperatureContext,
     recommendationGuard,
     recommendationExplanation,
+    windowRiskContext,
     header: hero,
     scoreCardSummary,
     recommendationCards,
@@ -866,6 +884,7 @@ export function buildCloudSeaForecastViewModel(
     ruleContext,
     terrainContext,
     displayTemperatureContext,
+    windowRiskContext,
     precipitationSignal: precipitationSignalContext,
     recommendationGuard,
     recommendationExplanation,
@@ -953,6 +972,68 @@ function buildCloudSeaDisplayTemperatureContextForResult(
     humidityPercent: current?.humidity ?? dailyWeather?.humidity,
     sourceTemperatureBasis:
       firstProfessionalHour?.temperatureBasis ?? temperatureBasisContext.temperatureBasis,
+  });
+}
+
+function resolveCloudSeaWindowRiskContextForViewModel(input: {
+  readonly result: ForecastCalculationResult;
+  readonly bestWindow?: { readonly startTime?: string | null; readonly endTime?: string | null } | null;
+  readonly precipitationSignalContext: CloudSeaPrecipitationSignalContext;
+  readonly cloudLayerCompleteness: CloudLayerCompletenessContext;
+  readonly cloudBasisConsistency: CloudSeaCloudBasisConsistencyContext;
+  readonly displayTemperatureContext: CloudSeaDisplayTemperatureContext;
+  readonly terrainContext: CloudSeaTerrainContext;
+}): CloudSeaWindowRiskContext | undefined {
+  const analysis = input.result.cloudSeaAnalysis;
+  const existing = analysis.windowRiskContext ?? analysis.scoreCalibration.windowRiskContext;
+  if (existing) {
+    return existing;
+  }
+
+  const rows = input.result.professionalHourlyData ?? [];
+  const mainWindow =
+    input.bestWindow ??
+    analysis.bestCloudSeaWindow ??
+    analysis.bestCloudSeaWindows[0] ??
+    analysis.watchableCloudSeaWindows[0] ??
+    null;
+  if (rows.length === 0 && !mainWindow) {
+    return undefined;
+  }
+
+  return buildCloudSeaWindowCenteredRiskContext({
+    normalizedHourlyRows: rows,
+    bestWindow: mainWindow,
+    mainWindow,
+    backupWindows: [...analysis.bestCloudSeaWindows, ...analysis.watchableCloudSeaWindows],
+    forecastWindowRange: {
+      startTime:
+        input.result.professionalHourlyDataTimeBasis?.anchorStartLocal ??
+        input.result.forecastStart,
+      endTime:
+        input.result.professionalHourlyDataTimeBasis?.anchorEndLocal ?? input.result.forecastEnd,
+    },
+    precipitationSignalContext: input.precipitationSignalContext,
+    cloudLayerCoverageContext: input.cloudLayerCompleteness,
+    cloudBasisConsistencyContext: input.cloudBasisConsistency,
+    displayTemperatureContext: {
+      displayTemperatureC: input.displayTemperatureContext.displayTemperatureC,
+      bodyFeelTemperatureC: input.displayTemperatureContext.bodyFeelTemperatureC,
+      terrainAdjustedTemperatureC: input.displayTemperatureContext.terrainAdjustedTemperatureC,
+      rawTemperatureC: input.displayTemperatureContext.rawGridTemperatureC,
+      basis: input.displayTemperatureContext.basis,
+    },
+    terrainContext: {
+      elevationMeters: input.terrainContext.elevationMeters,
+      surroundingReliefMeters: input.terrainContext.surroundingReliefMeters,
+      terrainMode: analysis.terrainSupport.terrainMode,
+      terrainType: input.terrainContext.terrainType,
+      confidence: analysis.terrainSupport.confidence,
+    },
+    whiteoutRiskContext: {
+      whiteoutRiskScore: analysis.whiteoutRiskScore,
+    },
+    timezone: input.result.calendarBasis.timezone,
   });
 }
 
@@ -2712,6 +2793,7 @@ function buildCloudSeaHeroConclusion(
   recommendationGuard: CloudSeaRecommendationGuardOutput,
   weatherVariableConsistencyContext: CloudSeaWeatherVariableConsistencyContext,
   recommendationExplanation: CloudSeaRecommendationExplanation,
+  windowRiskContext?: CloudSeaWindowRiskContext,
 ): CloudSeaHeroConclusionView {
   const analysis = result.cloudSeaAnalysis;
   const bestWindow = forecastWindowStartsAtOrAfterAnchor(result, analysis.bestCloudSeaWindow)
@@ -2739,7 +2821,7 @@ function buildCloudSeaHeroConclusion(
     recommendationLabel: recommendationGuard.finalRecommendationLabel,
     bestWindowLabel,
     arrivalLabel: cloudSeaArrivalLabel(result, bestWindow, mappedWindow),
-    conclusion: recommendationExplanation.oneLineConclusionZh,
+    conclusion: windowRiskContext?.windowCenteredSummaryZh ?? recommendationExplanation.oneLineConclusionZh,
     confidenceLabel: cloudSeaConfidenceLabel(
       result.cloudSeaAnalysis.confidenceLevel,
       cloudLayerCompleteness,
@@ -3038,6 +3120,7 @@ function buildCloudSeaWindowItems(
   cloudBasisConsistencyContext: CloudSeaCloudBasisConsistencyContext,
   precipitationSignalContext: CloudSeaPrecipitationSignalContext,
   recommendationExplanation: CloudSeaRecommendationExplanation,
+  windowRiskContext?: CloudSeaWindowRiskContext,
 ): readonly CloudSeaWindowItem[] {
   const analysis = result.cloudSeaAnalysis;
   const vocabulary = terrainContext.vocabulary;
@@ -3052,6 +3135,7 @@ function buildCloudSeaWindowItems(
         result,
         weatherVariableConsistencyContext,
         precipitationSignalContext,
+        window.windowRiskContext ?? windowRiskContext,
       ),
     ),
     ...analysis.watchableCloudSeaWindows.map((window) =>
@@ -3064,6 +3148,7 @@ function buildCloudSeaWindowItems(
         result,
         weatherVariableConsistencyContext,
         precipitationSignalContext,
+        window.windowRiskContext ?? windowRiskContext,
       ),
     ),
     ...analysis.notRecommendedCloudSeaWindows.map((window) =>
@@ -3076,6 +3161,7 @@ function buildCloudSeaWindowItems(
         result,
         weatherVariableConsistencyContext,
         precipitationSignalContext,
+        window.windowRiskContext ?? windowRiskContext,
       ),
     ),
   ];
@@ -3124,7 +3210,8 @@ function buildCloudSeaWindowItems(
       ),
       cloudSeaChance: scoreLevelText(scoreLevelFromScore(window.score)),
       whiteoutRisk: result.cloudSeaAnalysis.labels.whiteoutRisk,
-      rainInterference: windowPrecipitationSignal.riskLabelZh,
+      rainInterference:
+        windowRiskContext?.precipitationWindowSummaryZh ?? windowPrecipitationSignal.riskLabelZh,
       windVisibilityNote: cloudSeaWindVisibilityNote(result),
       actionSuggestion: cloudSeaTimelineActionSuggestion(
         window.score,
@@ -3156,6 +3243,7 @@ function cloudSeaWindowItem(
   result: ForecastCalculationResult,
   weatherVariableConsistencyContext: CloudSeaWeatherVariableConsistencyContext,
   precipitationSignalContext: CloudSeaPrecipitationSignalContext,
+  windowRiskContext?: CloudSeaWindowRiskContext,
 ): CloudSeaWindowItem {
   const layerContext = cloudLayerCompletenessContextForWindow(
     result,
@@ -3178,7 +3266,9 @@ function cloudSeaWindowItem(
     scoreCalibration?.calibratedFormationScore ?? window.formationScore ?? window.score;
   const resolvedShootabilityScore =
     scoreCalibration?.calibratedShootabilityScore ?? window.shootableScore ?? window.score;
-  const limitingFactor = scoreCalibration?.capReasons[0];
+  const limitingFactor =
+    windowRiskContext?.limitingFactorZh ??
+    scoreCalibration?.capReasons[0];
 
   const windowGuard = buildCloudSeaRecommendationGuardForRuleContext(result, terrainContext, {
     cloudLayerCompleteness: layerContext,
@@ -3221,7 +3311,7 @@ function cloudSeaWindowItem(
     recommendationGuardContext: windowGuard,
   });
   const guardedWindowNote =
-    scoreCalibration?.capApplied || limitingFactor
+    scoreCalibration?.capApplied || scoreCalibration?.capReasons.length
       ? scoreCalibration.recommendationExplanationZh
       : windowGuard.finalRecommendationLevel === "strong_special_trip" ||
     windowGuard.finalRecommendationLevel === "recommended_arrangement"
@@ -3257,7 +3347,8 @@ function cloudSeaWindowItem(
       scoreLevelFromScore(resolvedFormationScore),
     )} / 可拍 ${scoreLevelText(scoreLevelFromScore(resolvedCloudSeaScore))}`,
     whiteoutRisk: whiteoutRiskLabel(window.whiteoutRiskScore ?? 0),
-    rainInterference: windowPrecipitationSignal.riskLabelZh,
+    rainInterference:
+      windowRiskContext?.precipitationWindowSummaryZh ?? windowPrecipitationSignal.riskLabelZh,
     windVisibilityNote: terrainContext.shouldDowngradeCloudSeaWording
       ? "风速、能见度、近地雾气和低云厚度需在到场前复核。"
       : "风速、能见度和低云厚度需在到场前复核。",
@@ -3290,6 +3381,7 @@ function buildCloudSeaReasoningItems(
   weatherVariableConsistencyContext: CloudSeaWeatherVariableConsistencyContext,
   recommendationGuard: CloudSeaRecommendationGuardOutput,
   recommendationExplanation: CloudSeaRecommendationExplanation,
+  windowRiskContext?: CloudSeaWindowRiskContext,
 ): readonly CloudSeaReasoningItem[] {
   const analysis = result.cloudSeaAnalysis;
   const humidity = cloudSeaWeatherEvidence(result, "湿度");
@@ -3378,7 +3470,11 @@ function buildCloudSeaReasoningItems(
       value: precipitation
         ? `${cloudSeaPrecipitationValue(precipitationSignalContext)} / ${precipitationSignalContext.riskLabelZh}`
         : precipitationSignalContext.riskLabelZh,
-      detail: cloudSeaTerrainAwareText(precipitationSignalContext.userSummaryZh, terrainContext),
+      detail: cloudSeaTerrainAwareText(
+        windowRiskContext?.precipitationWindowSummaryZh ??
+          precipitationSignalContext.userSummaryZh,
+        terrainContext,
+      ),
       tone: precipitationSignalTone(precipitationSignalContext),
     },
     ...(consistencyItem ? [consistencyItem] : []),
@@ -3395,13 +3491,16 @@ function buildCloudSeaReasoningItems(
     {
       key: "whiteout",
       label: terrainContext.vocabulary.obstructionRiskLabel,
-      value: `${whiteoutRiskLabel(analysis.whiteoutRiskScore)}（${analysis.whiteoutRiskScore} 分）`,
+      value: windowRiskContext
+        ? `${windowRiskContext.whiteoutReviewLabelZh}（${analysis.whiteoutRiskScore} 分）`
+        : `${whiteoutRiskLabel(analysis.whiteoutRiskScore)}（${analysis.whiteoutRiskScore} 分）`,
       detail: cloudSeaTerrainAwareText(
-        whiteoutConsistencyDetail(
-          analysis.whiteoutRiskScore,
-          weatherVariableConsistencyContext,
-          firstText(analysis.whiteoutReasons, "低云接近机位时可能遮挡视野。"),
-        ),
+        windowRiskContext?.whiteoutWindowSummaryZh ??
+          whiteoutConsistencyDetail(
+            analysis.whiteoutRiskScore,
+            weatherVariableConsistencyContext,
+            firstText(analysis.whiteoutReasons, "低云接近机位时可能遮挡视野。"),
+          ),
         terrainContext,
       ),
       tone:
@@ -3498,6 +3597,7 @@ function buildCloudSeaActionPlan(
   weatherVariableConsistencyContext: CloudSeaWeatherVariableConsistencyContext,
   precipitationSignalContext: CloudSeaPrecipitationSignalContext,
   recommendationExplanation: CloudSeaRecommendationExplanation,
+  windowRiskContext?: CloudSeaWindowRiskContext,
 ): readonly CloudSeaActionPlanItem[] {
   const analysis = result.cloudSeaAnalysis;
   const bestWindow = forecastWindowStartsAtOrAfterAnchor(result, analysis.bestCloudSeaWindow)
@@ -3556,9 +3656,13 @@ function buildCloudSeaActionPlan(
       ? `${calibration.recommendationExplanationZh} 可准备，但出发前必须复核云顶高度、降水和开口。复核：${reviewPoints
           .slice(0, 3)
           .join("、")}。`
-      : `${recommendationExplanation.actionSummaryZh} 复核：${reviewPoints
-          .slice(0, 3)
-          .join("、")}。`;
+      : `${recommendationExplanation.actionSummaryZh}${
+          windowRiskContext
+            ? ` ${windowRiskContext.actionAdviceZh}`
+            : precipitationSignalContext.precipitationSignalType !== "none"
+              ? ` ${precipitationSignalContext.actionAdviceZh}`
+              : ""
+        } 复核：${reviewPoints.slice(0, 3).join("、")}。`;
 
   return [
     {
@@ -3585,9 +3689,11 @@ function buildCloudSeaActionPlan(
       key: "main-window",
       label: terrainContext.shouldDowngradeCloudSeaWording ? "观察窗口" : "主守窗口",
       value: mainWindowDisplayLabel ?? "需临近预报复核",
-      detail: precipitationSignalContext.shouldDowngradeWindow
-        ? precipitationSignalContext.actionAdviceZh
-        : `${recommendationExplanation.actionSummaryZh}${precipitationSignalContext.precipitationSignalType !== "none" ? ` ${precipitationSignalContext.actionAdviceZh}` : ""}`,
+      detail:
+        windowRiskContext?.actionAdviceZh ??
+        (precipitationSignalContext.shouldDowngradeWindow
+          ? precipitationSignalContext.actionAdviceZh
+          : `${recommendationExplanation.actionSummaryZh}${precipitationSignalContext.precipitationSignalType !== "none" ? ` ${precipitationSignalContext.actionAdviceZh}` : ""}`),
       tone: recommendationGuard.finalRecommendationTone,
     },
     {
@@ -3607,6 +3713,7 @@ function buildCloudSeaActionPlan(
         displayTemperatureContext,
         weatherVariableConsistencyContext,
         precipitationSignalContext,
+        windowRiskContext,
       ),
       tone: "info",
     },
@@ -3642,6 +3749,7 @@ function buildCloudSeaRiskSummary(
   terrainContext: CloudSeaTerrainContext,
   weatherVariableConsistencyContext: CloudSeaWeatherVariableConsistencyContext,
   precipitationSignalContext: CloudSeaPrecipitationSignalContext,
+  windowRiskContext?: CloudSeaWindowRiskContext,
 ): readonly ForecastResultSectionItem[] {
   const vocabulary = terrainContext.vocabulary;
   const scoreCalibration = result.cloudSeaAnalysis.scoreCalibration;
@@ -3679,9 +3787,11 @@ function buildCloudSeaRiskSummary(
       ),
     },
     {
-      label: "雨后开口",
-      value: precipitationSignalContext.riskLabelZh,
-      detail: precipitationSignalContext.userSummaryZh,
+      label: "窗口降水影响",
+      value: windowRiskContext?.windowRainImpact.riskLabelZh ?? precipitationSignalContext.riskLabelZh,
+      detail:
+        windowRiskContext?.precipitationWindowSummaryZh ??
+        precipitationSignalContext.userSummaryZh,
     },
     {
       label: "降水概率",
@@ -3704,21 +3814,22 @@ function buildCloudSeaRiskSummary(
     {
       label: "影响时段",
       value: precipitationSignalContext.mainTimeRangeZh,
-      detail: precipitationSignalContext.affectsMainWindow
-        ? "降水信号与主窗口重叠，需按窗口稳定性复核。"
-        : precipitationSignalContext.affectsArrivalWindow
-          ? "降水主要影响到达或提前准备时段，需关注通行和器材防护。"
-          : "降水主要不在主窗口内，作为背景风险复核，不直接否定窗口。",
+      detail:
+        windowRiskContext?.precipitationWindowSummaryZh ??
+        (precipitationSignalContext.affectsMainWindow
+          ? "降水信号与主窗口重叠，需按窗口稳定性复核。"
+          : precipitationSignalContext.affectsArrivalWindow
+            ? "降水主要影响到达或提前准备时段，需关注通行和器材防护。"
+            : "降水主要不在主窗口内，作为背景风险复核，不直接否定窗口。"),
     },
     {
       label: "拍摄窗口影响",
-      value: precipitationSignalContext.shouldDowngradeWindow ? "需降级" : "不直接否定",
-      detail: precipitationSignalContext.actionAdviceZh,
-    },
-    {
-      label: "器材/通行影响",
-      value: precipitationSignalContext.affectsRoadSafety ? "通行需评估" : "器材防护",
-      detail: precipitationSignalContext.equipmentAdviceZh,
+      value:
+        windowRiskContext?.duringWindowRainImpact.shouldCapScore ||
+        precipitationSignalContext.shouldDowngradeWindow
+          ? "需降级"
+          : "不直接否定",
+      detail: windowRiskContext?.actionAdviceZh ?? precipitationSignalContext.actionAdviceZh,
     },
     ...(weatherVariableConsistencyContext.warningsZh.length > 0
       ? [
@@ -3729,6 +3840,25 @@ function buildCloudSeaRiskSummary(
           },
         ]
       : []),
+    ...(windowRiskContext
+      ? [
+          {
+            label: "开口置信度",
+            value: windowRiskContext.windowOpeningConfidenceLabelZh,
+            detail: windowRiskContext.openingConfidenceReasonZh,
+          },
+          {
+            label: "白墙复核",
+            value: windowRiskContext.whiteoutReviewLabelZh,
+            detail: windowRiskContext.whiteoutWindowSummaryZh,
+          },
+        ]
+      : []),
+    {
+      label: "器材/通行影响",
+      value: precipitationSignalContext.affectsRoadSafety ? "通行需评估" : "器材防护",
+      detail: precipitationSignalContext.equipmentAdviceZh,
+    },
     ...result.riskFlags.map((risk) =>
       riskItem({
         ...risk,
@@ -4376,11 +4506,14 @@ function cloudSeaGearAdvice(
   displayTemperatureContext: CloudSeaDisplayTemperatureContext,
   weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext,
   precipitationSignalContext?: CloudSeaPrecipitationSignalContext,
+  windowRiskContext?: CloudSeaWindowRiskContext,
 ): string {
   const humidity = cloudSeaWeatherEvidence(result, "湿度")?.value;
-  const rain =
-    precipitationSignalContext?.precipitationSignalType === "none" ||
-    precipitationSignalContext === undefined
+  const windowRainEquipmentAdvice = cloudSeaWindowRainEquipmentAdvice(windowRiskContext);
+  const rain = windowRainEquipmentAdvice
+    ? windowRainEquipmentAdvice
+    : precipitationSignalContext?.precipitationSignalType === "none" ||
+        precipitationSignalContext === undefined
       ? "清晨湿度高，注意镜头结露。"
       : precipitationSignalContext.equipmentAdviceZh;
   const temperature =
@@ -4410,6 +4543,22 @@ function cloudSeaGearAdvice(
     }复核低云、雾气和通透度后再决定是否等待。`;
   }
   return `防潮、防滑，准备镜头布和备用保暖层。${humidity ? `湿度参考 ${humidity}，` : ""}${rain}`;
+}
+
+function cloudSeaWindowRainEquipmentAdvice(
+  windowRiskContext: CloudSeaWindowRiskContext | undefined,
+): string | undefined {
+  if (!windowRiskContext) {
+    return undefined;
+  }
+  const impact = [
+    windowRiskContext.duringWindowRainImpact,
+    windowRiskContext.preWindowRainImpact,
+    windowRiskContext.postWindowRainImpact,
+    windowRiskContext.outsideWindowRainImpact,
+    windowRiskContext.windowRainImpact,
+  ].find((item) => item.impactLevel !== "none" && item.impactLevel !== "unknown");
+  return impact?.equipmentAdviceZh ?? windowRiskContext.equipmentAdviceZh;
 }
 
 function withoutEndingPunctuation(value: string): string {

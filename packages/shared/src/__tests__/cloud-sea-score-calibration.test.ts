@@ -6,6 +6,7 @@ import {
   type CloudSeaScoreCalibrationHourlyRow,
   type CloudSeaScoreCalibrationInput,
 } from "../cloud-sea-score-calibration.js";
+import { buildCloudSeaWindowCenteredRiskContext } from "../cloud-sea-window-risk-context.js";
 import type { ForecastMultiSourceAgreementContext } from "../types.js";
 
 const focusedWindow = {
@@ -43,6 +44,29 @@ function calibration(
   rows: readonly CloudSeaScoreCalibrationHourlyRow[],
   overrides: Partial<CloudSeaScoreCalibrationInput> = {},
 ) {
+  const precipitationSignalContext =
+    overrides.precipitationSignalContext ?? precipitationSignal(rows);
+  const cloudLayerCoverageContext =
+    overrides.cloudLayerCoverageContext ?? buildCloudLayerCompletenessContext(rows);
+  const windowRiskContext =
+    overrides.windowRiskContext ??
+    buildCloudSeaWindowCenteredRiskContext({
+      normalizedHourlyRows: rows,
+      bestWindow: overrides.bestWindow ?? focusedWindow,
+      mainWindow: overrides.bestWindow ?? focusedWindow,
+      precipitationSignalContext,
+      cloudLayerCoverageContext,
+      terrainContext: {
+        terrainMode: "high_mountain",
+        terrainType: "summit",
+        elevationMeters: 1800,
+        surroundingReliefMeters: 900,
+        confidence: "high",
+      },
+      whiteoutRiskContext: {
+        whiteoutRiskScore: overrides.whiteoutRiskScore ?? 42,
+      },
+    });
   return buildCloudSeaScoreCalibrationContext({
     rawFormationScore: 92,
     rawShootabilityScore: 91,
@@ -55,14 +79,15 @@ function calibration(
     cloudWindowRows: rows,
     normalizedHourlyRows: rows,
     bestWindow: focusedWindow,
-    cloudLayerCoverageContext: buildCloudLayerCompletenessContext(rows),
-    precipitationSignalContext: precipitationSignal(rows),
+    cloudLayerCoverageContext,
+    precipitationSignalContext,
     terrainContext: {
       score: 86,
       terrainMode: "high_mountain",
       terrainType: "summit",
       confidence: "high",
     },
+    windowRiskContext,
     ...overrides,
   });
 }
@@ -177,5 +202,49 @@ describe("buildCloudSeaScoreCalibrationContext", () => {
     expect(second.finalCloudSeaScore).toBe(first.finalCloudSeaScore);
     expect(second.capReasons).toEqual(first.capReasons);
     expect(second.recommendationExplanationZh).toBe(first.recommendationExplanationZh);
+  });
+
+  it("does not cap shootability for trace rain before the recommended window", () => {
+    const result = calibration([
+      row({
+        time: "2026-06-05T03:00:00+08:00",
+        precipitationAmountMm: 0.2,
+        precipitationProbabilityPercent: 25,
+      }),
+      row({
+        time: "2026-06-05T05:00:00+08:00",
+        precipitationAmountMm: 0,
+        precipitationProbabilityPercent: 8,
+      }),
+      row({
+        time: "2026-06-05T06:00:00+08:00",
+        precipitationAmountMm: 0,
+        precipitationProbabilityPercent: 6,
+      }),
+    ]);
+
+    expect(result.windowRiskContext?.preWindowRainImpact.timing).toBe("pre_window");
+    expect(result.windowRiskContext?.duringWindowRainImpact.impactLevel).toBe("none");
+    expect(result.finalCloudSeaScore).toBeGreaterThan(72);
+    expect(result.capReasons.join("")).not.toContain("主窗口受可计量降水");
+  });
+
+  it("caps shootability when meaningful rain overlaps the recommended window", () => {
+    const result = calibration([
+      row({
+        time: "2026-06-05T05:00:00+08:00",
+        precipitationAmountMm: 0.8,
+        precipitationProbabilityPercent: 75,
+      }),
+      row({
+        time: "2026-06-05T06:00:00+08:00",
+        precipitationAmountMm: 0.7,
+        precipitationProbabilityPercent: 72,
+      }),
+    ]);
+
+    expect(result.windowRiskContext?.duringWindowRainImpact.timing).toBe("during_window");
+    expect(result.finalCloudSeaScore).toBeLessThanOrEqual(72);
+    expect(result.capReasons.join("")).toContain("主窗口受可计量降水");
   });
 });

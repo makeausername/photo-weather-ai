@@ -4554,7 +4554,7 @@ function cloudSeaWindowCategoryBadgeLabel(
       return "仅作备选";
     }
     if (item.score >= 70) {
-      return "可观察";
+      return "已在附近可观察";
     }
     if (item.score >= 50) {
       return "顺带观察";
@@ -4624,8 +4624,8 @@ function cloudSeaWindowMainIssue(
   terrainContext: CloudSeaTerrainContext,
 ): string {
   const basis = terrainContext.shouldDowngradeCloudSeaWording
-    ? `低云遮挡：${item.whiteoutRisk}；雨后开口：${item.rainInterference}。`
-    : `白墙风险：${item.whiteoutRisk}；雨后开口：${item.rainInterference}。`;
+    ? `低云遮挡：${item.whiteoutRisk}；降水：${item.rainInterference}。`
+    : `白墙风险：${item.whiteoutRisk}；降水：${item.rainInterference}。`;
   if (cloudSeaWindowHasLayerRoleRedirect(item)) {
     return item.layerCompletenessNote ?? basis;
   }

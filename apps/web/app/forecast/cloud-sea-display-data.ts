@@ -2,6 +2,7 @@ import {
   buildCloudLayerCompletenessContext,
   buildCloudSeaCloudBasisConsistencyContext,
   buildCloudSeaPrecipitationSignalContext,
+  buildCloudSeaWindowCenteredRiskContext,
   formatArrivalDeadlineZh,
   formatForecastWindowZh,
   forecastHorizonLabels,
@@ -12,6 +13,7 @@ import {
   type CloudSeaRecommendationGuardOutput,
   type CloudSeaAnalysisWindow,
   type CloudSeaScoreCalibrationContext,
+  type CloudSeaWindowRiskContext,
   type CloudSeaWeatherVariableConsistencyContext,
   type ForecastCalculationResult,
   type ForecastHorizon,
@@ -140,6 +142,24 @@ export type CloudSeaAiInterpretationDisplayPayload = {
     | "actionAdviceZh"
     | "shouldDowngradeWindow"
   >;
+  readonly windowRiskContext: Pick<
+    CloudSeaWindowRiskContext,
+    | "windowRainImpact"
+    | "preWindowRainImpact"
+    | "duringWindowRainImpact"
+    | "postWindowRainImpact"
+    | "windowOpeningConfidence"
+    | "windowOpeningConfidenceLabelZh"
+    | "cloudTopReviewNeed"
+    | "whiteoutReviewLevel"
+    | "whiteoutReviewLabelZh"
+    | "temperaturePreparationLevel"
+    | "scoreCapReasons"
+    | "precipitationWindowSummaryZh"
+    | "whiteoutWindowSummaryZh"
+    | "actionAdviceZh"
+    | "equipmentAdviceZh"
+  >;
   readonly cloudLayerCoverageContext: Pick<
     CloudLayerCompletenessContext,
     | "cloudLayerBasis"
@@ -230,6 +250,7 @@ export type CloudSeaDisplayData = {
   readonly currentNearTermWeather: CloudSeaCurrentNearTermWeatherDisplay;
   readonly importantWindows: CloudSeaImportantWindowDisplayData;
   readonly cloudSeaWindowCards: readonly CloudSeaWindowItem[];
+  readonly windowRiskContext: CloudSeaWindowRiskContext;
   readonly professionalHourlyData: CloudSeaProfessionalHourlyDisplayData;
   readonly dailyJudgment: readonly CloudSeaDailyTrendItem[];
   readonly judgmentBasis: readonly CloudSeaReasoningItem[];
@@ -245,6 +266,7 @@ export type BuildCloudSeaDisplayDataInput = {
   readonly ruleContext: CloudSeaRuleContext;
   readonly terrainContext: CloudSeaTerrainContext;
   readonly displayTemperatureContext: CloudSeaDisplayTemperatureContext;
+  readonly windowRiskContext?: CloudSeaWindowRiskContext;
   readonly recommendationGuard: CloudSeaRecommendationGuardOutput;
   readonly recommendationExplanation: CloudSeaRecommendationExplanation;
   readonly header: CloudSeaHeroConclusionView;
@@ -282,6 +304,16 @@ export function buildCloudSeaDisplayData(
     rows: displayRows,
     cloudLayerCompleteness,
   });
+  const windowRiskContext =
+    input.windowRiskContext ??
+    buildDisplayWindowRiskContext({
+      input,
+      rows: displayRows,
+      precipitationSignalContext: displayPrecipitationSignalContext,
+      cloudLayerCompleteness,
+      cloudBasisConsistency,
+      horizonWindow,
+    });
   const professionalHourlyData: CloudSeaProfessionalHourlyDisplayData = {
     rows: displayRows,
     timeBasis: displayTimeBasis,
@@ -295,6 +327,7 @@ export function buildCloudSeaDisplayData(
     terrainContext: input.terrainContext,
     displayTemperatureContext: input.displayTemperatureContext,
     precipitationSignalContext: displayPrecipitationSignalContext,
+    windowRiskContext,
     weatherVariableConsistencyContext: input.ruleContext.weatherVariableConsistencyContext,
     cloudLayerCompleteness,
     cloudBasisConsistency,
@@ -317,7 +350,10 @@ export function buildCloudSeaDisplayData(
     input.recommendationCards,
     importantWindows,
   );
-  const actionPlan = applyImportantWindowActionLabels(input.actionPlan, importantWindows);
+  const actionPlan = applyWindowRiskActionLabels(
+    applyImportantWindowActionLabels(input.actionPlan, importantWindows),
+    windowRiskContext,
+  );
 
   return {
     header: {
@@ -344,6 +380,7 @@ export function buildCloudSeaDisplayData(
     currentNearTermWeather,
     importantWindows,
     cloudSeaWindowCards: input.cloudSeaWindowCards,
+    windowRiskContext,
     professionalHourlyData,
     dailyJudgment: input.dailyJudgment,
     judgmentBasis: input.judgmentBasis,
@@ -356,6 +393,7 @@ export function buildCloudSeaDisplayData(
       cloudLayerCompleteness,
       displayDataMeta,
       precipitationSignalContext: displayPrecipitationSignalContext,
+      windowRiskContext,
       actionPlan,
       riskReview: input.riskReview,
     }),
@@ -475,6 +513,81 @@ function applyImportantWindowActionLabels(
     return item;
   });
   return changed ? normalized : items;
+}
+
+function applyWindowRiskActionLabels(
+  items: readonly CloudSeaActionPlanItem[],
+  windowRiskContext: CloudSeaWindowRiskContext,
+): readonly CloudSeaActionPlanItem[] {
+  let changed = false;
+  const normalized = items.map((item) => {
+    if (item.key === "main-window") {
+      if (item.detail === windowRiskContext.actionAdviceZh) {
+        return item;
+      }
+      changed = true;
+      return {
+        ...item,
+        detail: windowRiskContext.actionAdviceZh,
+      };
+    }
+    return item;
+  });
+  return changed ? normalized : items;
+}
+
+function buildDisplayWindowRiskContext(input: {
+  readonly input: BuildCloudSeaDisplayDataInput;
+  readonly rows: readonly ProfessionalHourlyDataPoint[];
+  readonly precipitationSignalContext: CloudSeaPrecipitationSignalContext;
+  readonly cloudLayerCompleteness: CloudLayerCompletenessContext;
+  readonly cloudBasisConsistency: CloudSeaCloudBasisConsistencyContext;
+  readonly horizonWindow: ForecastWindowAnchor;
+}): CloudSeaWindowRiskContext {
+  const result = input.input.result;
+  const bestWindow =
+    result.cloudSeaAnalysis.bestCloudSeaWindow ??
+    result.cloudSeaAnalysis.bestCloudSeaWindows[0] ??
+    result.cloudSeaAnalysis.watchableCloudSeaWindows[0] ??
+    null;
+
+  if (input.rows.length === 0 && result.cloudSeaAnalysis.windowRiskContext) {
+    return result.cloudSeaAnalysis.windowRiskContext;
+  }
+
+  return buildCloudSeaWindowCenteredRiskContext({
+    normalizedHourlyRows: input.rows,
+    bestWindow,
+    mainWindow: bestWindow,
+    backupWindows: [
+      ...result.cloudSeaAnalysis.bestCloudSeaWindows,
+      ...result.cloudSeaAnalysis.watchableCloudSeaWindows,
+    ],
+    forecastWindowRange: {
+      startTime: input.horizonWindow.anchorStartLocal,
+      endTime: input.horizonWindow.anchorEndLocal,
+    },
+    precipitationSignalContext: input.precipitationSignalContext,
+    cloudLayerCoverageContext: input.cloudLayerCompleteness,
+    cloudBasisConsistencyContext: input.cloudBasisConsistency,
+    displayTemperatureContext: {
+      displayTemperatureC: input.input.displayTemperatureContext.displayTemperatureC,
+      bodyFeelTemperatureC: input.input.displayTemperatureContext.bodyFeelTemperatureC,
+      terrainAdjustedTemperatureC: input.input.displayTemperatureContext.terrainAdjustedTemperatureC,
+      basis: input.input.displayTemperatureContext.basis,
+    },
+    terrainContext: {
+      elevationMeters: input.input.terrainContext.elevationMeters,
+      surroundingReliefMeters: input.input.terrainContext.surroundingReliefMeters,
+      terrainMode: result.cloudSeaAnalysis.terrainSupport.terrainMode,
+      terrainType: input.input.terrainContext.terrainType,
+      confidence: result.cloudSeaAnalysis.terrainSupport.confidence,
+    },
+    whiteoutRiskContext: {
+      whiteoutRiskScore: result.cloudSeaAnalysis.whiteoutRiskScore,
+    },
+    timezone: result.calendarBasis.timezone,
+  });
 }
 
 function firstDisplayWindowAtOrAfterAnchor(
@@ -687,6 +800,7 @@ function buildCurrentNearTermWeatherDisplay(input: {
   readonly terrainContext: CloudSeaTerrainContext;
   readonly displayTemperatureContext: CloudSeaDisplayTemperatureContext;
   readonly precipitationSignalContext: CloudSeaPrecipitationSignalContext;
+  readonly windowRiskContext: CloudSeaWindowRiskContext;
   readonly weatherVariableConsistencyContext: CloudSeaWeatherVariableConsistencyContext;
   readonly cloudLayerCompleteness: CloudLayerCompletenessContext;
   readonly cloudBasisConsistency: CloudSeaCloudBasisConsistencyContext;
@@ -763,7 +877,7 @@ function buildCurrentNearTermWeatherDisplay(input: {
         value: `降水概率 ${formatPercent(
           precipitationSummary.probabilityPercent,
         )} / 预计雨量 ${formatAmount(precipitationSummary.amountMm)}`,
-        detail: `${input.precipitationSignalContext.userSummaryZh} ${input.precipitationSignalContext.actionAdviceZh}`,
+        detail: `${input.windowRiskContext.precipitationWindowSummaryZh} ${input.windowRiskContext.actionAdviceZh}`,
       },
       {
         key: "humidity_dew_point",
@@ -786,6 +900,7 @@ function buildCurrentNearTermWeatherDisplay(input: {
         detail: gearDisplayAdvice(
           input.displayTemperatureContext,
           input.precipitationSignalContext,
+          input.windowRiskContext,
           input.weatherVariableConsistencyContext,
           input.result,
         ),
@@ -849,6 +964,7 @@ function buildAiInterpretationDisplayPayload(input: {
   readonly cloudLayerCompleteness: CloudLayerCompletenessContext;
   readonly displayDataMeta: CloudSeaDisplayDataMeta;
   readonly precipitationSignalContext: CloudSeaPrecipitationSignalContext;
+  readonly windowRiskContext: CloudSeaWindowRiskContext;
   readonly actionPlan: readonly CloudSeaActionPlanItem[];
   readonly riskReview: readonly ForecastResultSectionItem[];
 }): CloudSeaAiInterpretationDisplayPayload {
@@ -889,6 +1005,23 @@ function buildAiInterpretationDisplayPayload(input: {
       userSummaryZh: input.precipitationSignalContext.userSummaryZh,
       actionAdviceZh: input.precipitationSignalContext.actionAdviceZh,
       shouldDowngradeWindow: input.precipitationSignalContext.shouldDowngradeWindow,
+    },
+    windowRiskContext: {
+      windowRainImpact: input.windowRiskContext.windowRainImpact,
+      preWindowRainImpact: input.windowRiskContext.preWindowRainImpact,
+      duringWindowRainImpact: input.windowRiskContext.duringWindowRainImpact,
+      postWindowRainImpact: input.windowRiskContext.postWindowRainImpact,
+      windowOpeningConfidence: input.windowRiskContext.windowOpeningConfidence,
+      windowOpeningConfidenceLabelZh: input.windowRiskContext.windowOpeningConfidenceLabelZh,
+      cloudTopReviewNeed: input.windowRiskContext.cloudTopReviewNeed,
+      whiteoutReviewLevel: input.windowRiskContext.whiteoutReviewLevel,
+      whiteoutReviewLabelZh: input.windowRiskContext.whiteoutReviewLabelZh,
+      temperaturePreparationLevel: input.windowRiskContext.temperaturePreparationLevel,
+      scoreCapReasons: input.windowRiskContext.scoreCapReasons,
+      precipitationWindowSummaryZh: input.windowRiskContext.precipitationWindowSummaryZh,
+      whiteoutWindowSummaryZh: input.windowRiskContext.whiteoutWindowSummaryZh,
+      actionAdviceZh: input.windowRiskContext.actionAdviceZh,
+      equipmentAdviceZh: input.windowRiskContext.equipmentAdviceZh,
     },
     cloudLayerCoverageContext: {
       cloudLayerBasis: input.cloudLayerCompleteness.cloudLayerBasis,
@@ -1044,13 +1177,14 @@ function dewPointDisplayAdvice(
 function gearDisplayAdvice(
   temperature: CloudSeaDisplayTemperatureContext,
   precipitation: CloudSeaPrecipitationSignalContext,
+  windowRiskContext: CloudSeaWindowRiskContext,
   variables: CloudSeaWeatherVariableConsistencyContext,
   result: ForecastCalculationResult,
 ): string {
   const base = result.clothingGuide.summaryZh;
   const rain =
     precipitation.affectsEquipment || variables.shouldDowngradePrecipitationWording
-      ? ` ${precipitation.equipmentAdviceZh}`
+      ? ` ${windowRiskContext.equipmentAdviceZh}`
       : "";
   return `${base} ${temperature.clothingAdviceZh}${rain}`.trim();
 }
