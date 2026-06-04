@@ -158,7 +158,7 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
           : calculateGeneralPracticalTripScore(scores, bestWindows);
   const recommendationLevel =
     input.target === "cloud_sea"
-      ? cloudSeaRecommendationLevel(cloudSeaAnalysis.travelScore)
+      ? cloudSeaRecommendationLevelFromCalibration(cloudSeaAnalysis)
       : input.target === "glow"
         ? classifyRecommendationLevel(glowAnalysis.glowTravelScore)
         : input.target === "astro"
@@ -1217,13 +1217,33 @@ export function calculateCloudSeaScore(
   return makeScore(
     "cloudSea",
     label,
-    analysis.cloudSeaOpportunityScore,
-    analysis.opportunityReasons,
+    analysis.scoreCalibration.finalCloudSeaScore,
     [
+      analysis.scoreCalibration.scoreExplanationZh,
+      analysis.scoreCalibration.recommendationExplanationZh,
+      ...analysis.opportunityReasons,
+    ],
+    [
+      ...analysis.scoreCalibration.capReasons,
       ...analysis.missingDataNotes.filter((note) => note.includes("低云") || note.includes("露点")),
       ...analysis.whiteoutReasons.filter((reason) => reason.includes("白墙")).slice(0, 1),
     ],
   );
+}
+
+function cloudSeaRecommendationLevelFromCalibration(
+  analysis: CloudSeaAnalysisResult,
+): ForecastRecommendationLevel {
+  if (analysis.scoreCalibration.finalCloudSeaScore < 40) {
+    return "not_recommended";
+  }
+  if (
+    analysis.scoreCalibration.shouldDowngradeToCautious ||
+    analysis.scoreCalibration.shouldDowngradeToBackup
+  ) {
+    return "cautious";
+  }
+  return cloudSeaRecommendationLevel(analysis.travelScore);
 }
 
 export function calculateWhiteoutRiskScore(
@@ -3408,7 +3428,13 @@ function buildCloudSeaWindows(
         ? "blocked"
         : fallbackLevel,
     recommendationLevel:
-      window.whiteoutRiskScore !== undefined && window.whiteoutRiskScore >= 78
+      window.scoreCalibration?.finalCloudSeaScore !== undefined &&
+      window.scoreCalibration.finalCloudSeaScore < 40
+        ? "not_recommended"
+        : window.scoreCalibration?.shouldDowngradeToCautious ||
+            window.scoreCalibration?.shouldDowngradeToBackup
+          ? "cautious"
+          : window.whiteoutRiskScore !== undefined && window.whiteoutRiskScore >= 78
         ? "not_recommended"
         : fallbackLevel === "shootable"
           ? "recommended"
@@ -3419,9 +3445,11 @@ function buildCloudSeaWindows(
       fallbackLevel === "shootable" &&
       usesMountainSemantics &&
       (window.whiteoutRiskScore ?? 0) < 70 &&
-      !(window.rainOpening?.activeRainDuringWindow ?? false),
+      !(window.rainOpening?.activeRainDuringWindow ?? false) &&
+      window.scoreCalibration?.shouldBlockStrongRecommendation !== true,
     suitableIfNearby: fallbackLevel !== "blocked" || (window.formationScore ?? window.score) >= 55,
     blockerReasons: [
+      ...(window.scoreCalibration?.capReasons ?? []),
       ...((window.whiteoutRiskScore ?? 0) >= 70
         ? [usesMountainSemantics ? "白墙风险需现场复核" : "低云遮挡需现场复核"]
         : []),

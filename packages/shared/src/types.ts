@@ -843,6 +843,28 @@ export type CloudSeaRecommendationLabel = "推荐重点关注" | "值得等待" 
 
 export type CloudSeaChanceLabel = "高" | "中" | "低";
 
+export type CloudSeaScoreBand = "excellent" | "good" | "fair" | "backup" | "poor";
+
+export type CloudSeaScoreCalibrationContext = {
+  readonly rawFormationScore: number;
+  readonly rawShootabilityScore: number;
+  readonly calibratedFormationScore: number;
+  readonly calibratedShootabilityScore: number;
+  readonly finalCloudSeaScore: number;
+  readonly scoreBand: CloudSeaScoreBand;
+  readonly confidenceLevel: CloudSeaConfidenceLevel;
+  readonly capApplied: boolean;
+  readonly capReasons: readonly string[];
+  readonly positiveFactorsZh: readonly string[];
+  readonly negativeFactorsZh: readonly string[];
+  readonly scoreExplanationZh: string;
+  readonly recommendationExplanationZh: string;
+  readonly finalRecommendationLabel: string;
+  readonly shouldBlockStrongRecommendation: boolean;
+  readonly shouldDowngradeToCautious: boolean;
+  readonly shouldDowngradeToBackup: boolean;
+};
+
 export type CloudSeaPostRainOpeningChance = "low" | "medium" | "high";
 
 export type CloudSeaTerrainSupport = {
@@ -899,6 +921,7 @@ export type CloudSeaAnalysisWindow = {
   readonly noteZh: string;
   readonly riskTag: string;
   readonly rainOpening?: CloudSeaRainOpeningSignal;
+  readonly scoreCalibration?: CloudSeaScoreCalibrationContext;
 };
 
 export type DailyCloudSea = {
@@ -916,6 +939,7 @@ export type DailyCloudSea = {
   readonly watchableWindow?: CloudSeaAnalysisWindow;
   readonly notRecommendedWindow?: CloudSeaAnalysisWindow;
   readonly rainOpening?: CloudSeaRainOpeningSignal;
+  readonly scoreCalibration?: CloudSeaScoreCalibrationContext;
   readonly onSiteCheckpoints?: readonly string[];
   readonly recommendationLabel: CloudSeaRecommendationLabel;
   readonly keyReason: string;
@@ -953,6 +977,7 @@ export type CloudSeaAnalysisResult = CloudSeaAssessment & {
   readonly cloudSeaOpportunityScore: number;
   readonly terrainSupport: CloudSeaTerrainSupport;
   readonly rainOpening: CloudSeaRainOpeningSignal;
+  readonly scoreCalibration: CloudSeaScoreCalibrationContext;
   readonly travelScore: number;
   readonly recommendationLabel: CloudSeaRecommendationLabel;
   readonly confidenceLevel: CloudSeaConfidenceLevel;

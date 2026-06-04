@@ -530,12 +530,13 @@ export function buildCloudSeaAiExplainPayload(
     multiSourceAgreementContext: agreement,
   });
   const precipitationSignal = weatherVariableConsistency.precipitationSignalContext;
+  const scoreCalibration = analysis.scoreCalibration;
   const recommendationGuard = buildCloudSeaRecommendationGuardForResult(result);
   const recommendationExplanation = buildCloudSeaRecommendationExplanation({
     finalRecommendationLabel: recommendationGuard.finalRecommendationLabel,
-    cloudSeaScore: analysis.shootableScore,
+    cloudSeaScore: scoreCalibration.finalCloudSeaScore,
     formationScore: analysis.formationScore,
-    shootabilityScore: analysis.shootableScore,
+    shootabilityScore: scoreCalibration.calibratedShootabilityScore,
     whiteoutRiskScore: analysis.whiteoutRiskScore,
     terrainContext: {
       shouldDowngradeCloudSeaWording: ["lowland", "urban_or_plain", "unknown"].includes(
@@ -570,12 +571,21 @@ export function buildCloudSeaAiExplainPayload(
     },
     scoreAndRecommendation: {
       overallScore: result.overallScore,
-      cloudSeaScore: analysis.shootableScore,
+      cloudSeaScore: scoreCalibration.finalCloudSeaScore,
       formationScore: analysis.formationScore,
       whiteoutRiskScore: analysis.whiteoutRiskScore,
       recommendationLevel: result.recommendationLevel,
       recommendationLabelZh: recommendationGuard.finalRecommendationLabel,
       maxAllowedRecommendationStrength: recommendationGuard.maxAllowedRecommendationStrength,
+    },
+    scoreCalibration: {
+      rawFormationScore: scoreCalibration.rawFormationScore,
+      calibratedShootabilityScore: scoreCalibration.calibratedShootabilityScore,
+      finalCloudSeaScore: scoreCalibration.finalCloudSeaScore,
+      capApplied: scoreCalibration.capApplied,
+      capReasons: takeTextItems(scoreCalibration.capReasons, 5, 100),
+      shouldDowngradeToCautious: scoreCalibration.shouldDowngradeToCautious,
+      shouldDowngradeToBackup: scoreCalibration.shouldDowngradeToBackup,
     },
     recommendationConsistencyGuard: {
       finalRecommendationLevel: recommendationGuard.finalRecommendationLevel,
@@ -1622,9 +1632,10 @@ export function createRuleBasedForecastExplanation(
   const cloudSeaExplanation = cloudSeaGuard
     ? buildCloudSeaRecommendationExplanation({
         finalRecommendationLabel: cloudSeaGuard.finalRecommendationLabel,
-        cloudSeaScore: result.cloudSeaAnalysis.shootableScore,
+        cloudSeaScore: result.cloudSeaAnalysis.scoreCalibration.finalCloudSeaScore,
         formationScore: result.cloudSeaAnalysis.formationScore,
-        shootabilityScore: result.cloudSeaAnalysis.shootableScore,
+        shootabilityScore:
+          result.cloudSeaAnalysis.scoreCalibration.calibratedShootabilityScore,
         whiteoutRiskScore: result.cloudSeaAnalysis.whiteoutRiskScore,
         terrainContext: {
           shouldDowngradeCloudSeaWording: ["lowland", "urban_or_plain", "unknown"].includes(

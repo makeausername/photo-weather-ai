@@ -157,6 +157,31 @@ describe("professional cloud sea and whiteout analysis V2", () => {
     expect(strongWind.formationScore).toBeLessThan(favorableWind.formationScore);
   });
 
+  it("caps thick overcast with rain and poor visibility instead of strong-recommending it", () => {
+    const result = analyzeCloudSea(
+      withCloudSeaWeather(baseInput(), {
+        humidity: 97,
+        dewPoint: 9.3,
+        cloudTotal: 98,
+        cloudLow: 82,
+        cloudMid: 88,
+        cloudHigh: 90,
+        visibility: 2.4,
+        precipitation: 1.2,
+        precipitationProbability: 72,
+        windSpeed: 2.2,
+        windGust: 4,
+      }),
+    );
+
+    expect(result.formationScore).toBeGreaterThanOrEqual(70);
+    expect(result.scoreCalibration.finalCloudSeaScore).toBeLessThanOrEqual(70);
+    expect(result.scoreCalibration.capApplied).toBe(true);
+    expect(result.scoreCalibration.capReasons.join(" ")).toContain("厚实多层云");
+    expect(result.scoreCalibration.capReasons.join(" ")).toContain("能见度");
+    expect(result.recommendationLabel).not.toContain("强推荐");
+  });
+
   it("increases whiteout risk under high low-cloud, high humidity, poor visibility, and near-calm wind", () => {
     const highWhiteout = analyzeCloudSea(
       withCloudSeaWeather(baseInput(), {

@@ -11,6 +11,7 @@ import {
   type CloudSeaRecommendationExplanation,
   type CloudSeaRecommendationGuardOutput,
   type CloudSeaAnalysisWindow,
+  type CloudSeaScoreCalibrationContext,
   type CloudSeaWeatherVariableConsistencyContext,
   type ForecastCalculationResult,
   type ForecastHorizon,
@@ -148,6 +149,23 @@ export type CloudSeaAiInterpretationDisplayPayload = {
     | "missingLayerHoursCount"
     | "lowLayerMissingHoursCount"
     | "userNoteZh"
+  >;
+  readonly scoreCalibration: Pick<
+    CloudSeaScoreCalibrationContext,
+    | "rawFormationScore"
+    | "rawShootabilityScore"
+    | "calibratedFormationScore"
+    | "calibratedShootabilityScore"
+    | "finalCloudSeaScore"
+    | "scoreBand"
+    | "confidenceLevel"
+    | "capApplied"
+    | "capReasons"
+    | "scoreExplanationZh"
+    | "recommendationExplanationZh"
+    | "shouldBlockStrongRecommendation"
+    | "shouldDowngradeToCautious"
+    | "shouldDowngradeToBackup"
   >;
   readonly professionalHourlySummary: {
     readonly rowCount: number;
@@ -839,6 +857,7 @@ function buildAiInterpretationDisplayPayload(input: {
     input.currentNearTermWeather.rows,
     input.precipitationSignalContext,
   );
+  const scoreCalibration = input.input.result.cloudSeaAnalysis.scoreCalibration;
   return {
     finalRecommendation: {
       label: input.input.recommendationGuard.finalRecommendationLabel,
@@ -879,6 +898,22 @@ function buildAiInterpretationDisplayPayload(input: {
       missingLayerHoursCount: input.cloudLayerCompleteness.missingLayerHoursCount,
       lowLayerMissingHoursCount: input.cloudLayerCompleteness.lowLayerMissingHoursCount,
       userNoteZh: input.cloudLayerCompleteness.userNoteZh,
+    },
+    scoreCalibration: {
+      rawFormationScore: scoreCalibration.rawFormationScore,
+      rawShootabilityScore: scoreCalibration.rawShootabilityScore,
+      calibratedFormationScore: scoreCalibration.calibratedFormationScore,
+      calibratedShootabilityScore: scoreCalibration.calibratedShootabilityScore,
+      finalCloudSeaScore: scoreCalibration.finalCloudSeaScore,
+      scoreBand: scoreCalibration.scoreBand,
+      confidenceLevel: scoreCalibration.confidenceLevel,
+      capApplied: scoreCalibration.capApplied,
+      capReasons: scoreCalibration.capReasons,
+      scoreExplanationZh: scoreCalibration.scoreExplanationZh,
+      recommendationExplanationZh: scoreCalibration.recommendationExplanationZh,
+      shouldBlockStrongRecommendation: scoreCalibration.shouldBlockStrongRecommendation,
+      shouldDowngradeToCautious: scoreCalibration.shouldDowngradeToCautious,
+      shouldDowngradeToBackup: scoreCalibration.shouldDowngradeToBackup,
     },
     professionalHourlySummary: {
       rowCount: input.displayDataMeta.normalizedHourlyRowCount,

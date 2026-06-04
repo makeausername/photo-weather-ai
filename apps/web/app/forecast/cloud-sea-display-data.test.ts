@@ -19,6 +19,88 @@ const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
 
 describe("Cloud Sea display data rolling horizon", () => {
+  it("surfaces score calibration caps in score card, window card, action plan, and AI payload", () => {
+    const fixture = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
+    const capReason = "厚实多层云覆盖下开口稳定性不足，最终分数不按近满分处理。";
+    const capPhrase = "厚实多层云覆盖下开口稳定性不足，最终分数不按近满分处理";
+    const scoreCalibration: ForecastCalculationResult["cloudSeaAnalysis"]["scoreCalibration"] = {
+      ...fixture.result.cloudSeaAnalysis.scoreCalibration,
+      rawFormationScore: 92,
+      rawShootabilityScore: 90,
+      calibratedFormationScore: 84,
+      calibratedShootabilityScore: 65,
+      finalCloudSeaScore: 65,
+      scoreBand: "fair",
+      confidenceLevel: "medium",
+      capApplied: true,
+      capReasons: [capReason],
+      negativeFactorsZh: [capReason],
+      scoreExplanationZh: `形成 92 -> 84 分，可拍 90 -> 65 分，最终 65 分。限制因素：${capReason}`,
+      recommendationExplanationZh: `云海形成条件较好，但${capReason.replace(
+        /。$/,
+        "",
+      )}，因此谨慎参考。`,
+      finalRecommendationLabel: "谨慎参考",
+      shouldBlockStrongRecommendation: true,
+      shouldDowngradeToCautious: true,
+      shouldDowngradeToBackup: false,
+    };
+    const bestWindow = {
+      ...fixture.result.cloudSeaAnalysis.bestCloudSeaWindow!,
+      score: 65,
+      formationScore: 84,
+      shootableScore: 65,
+      scoreCalibration,
+    };
+    const result: ForecastCalculationResult = {
+      ...fixture.result,
+      overallScore: 65,
+      recommendationLevel: "cautious",
+      cloudSeaAnalysis: {
+        ...fixture.result.cloudSeaAnalysis,
+        overallScore: 65,
+        formationScore: 84,
+        shootableScore: 65,
+        travelScore: 65,
+        recommendationLabel: "谨慎参考",
+        scoreCalibration,
+        bestCloudSeaWindow: bestWindow,
+        bestCloudSeaWindows: [bestWindow],
+        dailyCloudSea: fixture.result.cloudSeaAnalysis.dailyCloudSea.map((day) => ({
+          ...day,
+          formationScore: 84,
+          shootableScore: 65,
+          travelScore: 65,
+          recommendationLabel: "谨慎参考",
+          scoreCalibration,
+          bestWindow,
+        })),
+      },
+    };
+
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const display = viewModel.displayData;
+
+    expect(display.scoreCard.score).toBe(65);
+    expect(display.scoreCard.summary).toContain(capPhrase);
+    expect(display.cloudSeaWindowCards[0]?.score).toBe(65);
+    expect(display.cloudSeaWindowCards[0]?.labelReason).toContain(capReason);
+    expect(display.cloudSeaWindowCards[0]?.cloudSeaChance).toContain("形成");
+    expect(display.cloudSeaWindowCards[0]?.cloudSeaChance).toContain("可拍");
+    expect(display.dailyJudgment[0]?.decisionReason).toContain(capPhrase);
+    expect(display.actionPlan.find((item) => item.key === "departure")?.detail).toContain(
+      "出发前必须复核云顶高度、降水和开口",
+    );
+    expect(display.aiInterpretationPayload.scoreCalibration).toMatchObject({
+      rawFormationScore: 92,
+      calibratedShootabilityScore: 65,
+      finalCloudSeaScore: 65,
+      capApplied: true,
+      capReasons: [capReason],
+      shouldDowngradeToCautious: true,
+    });
+  });
+
   it("renders Cloud Sea important windows with full date labels in cards, daily judgment, action plan, and AI payload", () => {
     const fixture = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
     const result = cloudSeaImportantWindowResult(fixture.result);

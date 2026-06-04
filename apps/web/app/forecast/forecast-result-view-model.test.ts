@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
   forecastTargetLabels,
+  type CloudSeaScoreCalibrationContext,
   type ForecastCalculationResult,
   type ForecastMultiSourceAgreementContext,
   type ForecastQueryInput,
@@ -78,6 +79,45 @@ function score(key: string, label: string, value: number): ForecastScore {
     level: value >= 80 ? "excellent" : value >= 65 ? "good" : value >= 45 ? "fair" : "poor",
     reasons: [`${label}判断依据`],
     risks: [`${label}风险提示`],
+  };
+}
+
+function cloudSeaScoreCalibrationForTest(
+  overrides: Partial<CloudSeaScoreCalibrationContext> = {},
+): CloudSeaScoreCalibrationContext {
+  const rawFormationScore = overrides.rawFormationScore ?? overrides.calibratedFormationScore ?? 82;
+  const rawShootabilityScore =
+    overrides.rawShootabilityScore ?? overrides.calibratedShootabilityScore ?? 72;
+  const calibratedFormationScore =
+    overrides.calibratedFormationScore ?? rawFormationScore;
+  const calibratedShootabilityScore =
+    overrides.calibratedShootabilityScore ??
+    overrides.finalCloudSeaScore ??
+    rawShootabilityScore;
+  const finalCloudSeaScore = overrides.finalCloudSeaScore ?? calibratedShootabilityScore;
+
+  return {
+    rawFormationScore,
+    rawShootabilityScore,
+    calibratedFormationScore,
+    calibratedShootabilityScore,
+    finalCloudSeaScore,
+    scoreBand: overrides.scoreBand ?? "good",
+    confidenceLevel: overrides.confidenceLevel ?? "high",
+    capApplied: overrides.capApplied ?? false,
+    capReasons: overrides.capReasons ?? [],
+    positiveFactorsZh: overrides.positiveFactorsZh ?? ["低云、水汽和地形信号支持云海形成。"],
+    negativeFactorsZh: overrides.negativeFactorsZh ?? [],
+    scoreExplanationZh:
+      overrides.scoreExplanationZh ??
+      `形成 ${rawFormationScore} -> ${calibratedFormationScore} 分，可拍 ${rawShootabilityScore} -> ${calibratedShootabilityScore} 分，最终 ${finalCloudSeaScore} 分。`,
+    recommendationExplanationZh:
+      overrides.recommendationExplanationZh ??
+      "形成、开口、能见度和风险信号支持当前推荐，但出发前仍需复核临近天气。",
+    finalRecommendationLabel: overrides.finalRecommendationLabel ?? "推荐安排",
+    shouldBlockStrongRecommendation: overrides.shouldBlockStrongRecommendation ?? false,
+    shouldDowngradeToCautious: overrides.shouldDowngradeToCautious ?? false,
+    shouldDowngradeToBackup: overrides.shouldDowngradeToBackup ?? false,
   };
 }
 
@@ -255,6 +295,7 @@ const baseResult: ForecastCalculationResult = {
     whiteoutRiskScore: 58,
     lightAlignedScore: 94,
     confidence: 76,
+    scoreCalibration: cloudSeaScoreCalibrationForTest(),
     labels: {
       formationOpportunity: "高",
       shootableOpportunity: "高",

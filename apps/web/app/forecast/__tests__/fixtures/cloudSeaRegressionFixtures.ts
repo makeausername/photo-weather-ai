@@ -1,4 +1,5 @@
 import type {
+  CloudSeaScoreCalibrationContext,
   ForecastCalculationResult,
   ForecastMultiSourceAgreementContext,
   ForecastQueryInput,
@@ -55,6 +56,7 @@ type CloudSeaFixtureOverrides = {
   readonly formationScore?: number;
   readonly shootableScore?: number;
   readonly whiteoutRiskScore?: number;
+  readonly scoreCalibration?: CloudSeaScoreCalibrationContext;
   readonly recommendationLabel?: string;
   readonly bestWindow?: ForecastCalculationResult["cloudSeaAnalysis"]["bestCloudSeaWindow"];
   readonly bestWindows?: readonly ForecastCalculationResult["cloudSeaAnalysis"]["bestCloudSeaWindows"][number][];
@@ -74,6 +76,66 @@ const timezone = "Asia/Shanghai";
 const forecastStart = "2026-05-20T00:00:00+08:00";
 const forecastEnd = "2026-05-22T00:00:00+08:00";
 const generatedAt = "2026-05-19T22:15:00+08:00";
+
+function cloudSeaScoreCalibration(
+  input: {
+    readonly formationScore: number;
+    readonly shootableScore: number;
+    readonly confidenceLevel: CloudSeaScoreCalibrationContext["confidenceLevel"];
+    readonly recommendationLabel: string;
+  },
+  overrides: Partial<CloudSeaScoreCalibrationContext> = {},
+): CloudSeaScoreCalibrationContext {
+  const rawFormationScore = overrides.rawFormationScore ?? input.formationScore;
+  const rawShootabilityScore = overrides.rawShootabilityScore ?? input.shootableScore;
+  const calibratedFormationScore =
+    overrides.calibratedFormationScore ?? input.formationScore;
+  const calibratedShootabilityScore =
+    overrides.calibratedShootabilityScore ??
+    overrides.finalCloudSeaScore ??
+    input.shootableScore;
+  const finalCloudSeaScore = overrides.finalCloudSeaScore ?? calibratedShootabilityScore;
+
+  return {
+    rawFormationScore,
+    rawShootabilityScore,
+    calibratedFormationScore,
+    calibratedShootabilityScore,
+    finalCloudSeaScore,
+    scoreBand: overrides.scoreBand ?? scoreBand(finalCloudSeaScore),
+    confidenceLevel: overrides.confidenceLevel ?? input.confidenceLevel,
+    capApplied: overrides.capApplied ?? false,
+    capReasons: overrides.capReasons ?? [],
+    positiveFactorsZh: overrides.positiveFactorsZh ?? ["低云、水汽和地形信号支持云海形成。"],
+    negativeFactorsZh: overrides.negativeFactorsZh ?? [],
+    scoreExplanationZh:
+      overrides.scoreExplanationZh ??
+      `形成 ${rawFormationScore} -> ${calibratedFormationScore} 分，可拍 ${rawShootabilityScore} -> ${calibratedShootabilityScore} 分，最终 ${finalCloudSeaScore} 分。`,
+    recommendationExplanationZh:
+      overrides.recommendationExplanationZh ??
+      "形成、开口、能见度和风险信号支持当前推荐，但出发前仍需复核临近天气。",
+    finalRecommendationLabel: overrides.finalRecommendationLabel ?? input.recommendationLabel,
+    shouldBlockStrongRecommendation: overrides.shouldBlockStrongRecommendation ?? false,
+    shouldDowngradeToCautious: overrides.shouldDowngradeToCautious ?? false,
+    shouldDowngradeToBackup: overrides.shouldDowngradeToBackup ?? false,
+  };
+}
+
+function scoreBand(score: number): CloudSeaScoreCalibrationContext["scoreBand"] {
+  if (score >= 86) {
+    return "excellent";
+  }
+  if (score >= 70) {
+    return "good";
+  }
+  if (score >= 55) {
+    return "fair";
+  }
+  if (score >= 40) {
+    return "backup";
+  }
+  return "poor";
+}
 
 const genericHighMountainTerrain: GenericTerrainInput = {
   placeName: "genericHighMountainSpot",
@@ -457,6 +519,15 @@ function makeFixture(
   const shootableScore = overrides.shootableScore ?? 80;
   const whiteoutRiskScore = overrides.whiteoutRiskScore ?? 28;
   const recommendationLabel = overrides.recommendationLabel ?? "推荐重点关注";
+  const confidenceLevel = terrain.terrainConfidence === "high" ? "high" : "medium";
+  const scoreCalibration =
+    overrides.scoreCalibration ??
+    cloudSeaScoreCalibration({
+      formationScore,
+      shootableScore,
+      confidenceLevel,
+      recommendationLabel,
+    });
   const rainOpening =
     overrides.rainOpening ??
     ({
@@ -472,6 +543,7 @@ function makeFixture(
       formationScore,
       shootableScore,
       whiteoutRiskScore,
+      scoreCalibration,
       rainOpening,
     });
   const bestWindows = overrides.bestWindows ?? [bestWindow];
@@ -485,6 +557,12 @@ function makeFixture(
       formationScore: Math.max(45, formationScore - 10),
       shootableScore: Math.max(40, shootableScore - 14),
       whiteoutRiskScore: Math.min(68, whiteoutRiskScore + 10),
+      scoreCalibration: cloudSeaScoreCalibration({
+        formationScore: Math.max(45, formationScore - 10),
+        shootableScore: Math.max(40, shootableScore - 14),
+        confidenceLevel,
+        recommendationLabel,
+      }),
       phase: "waiting",
       noteZh: "傍晚窗口仅作观察备选，现场复核云层开口和通透度。",
       riskTag: "备选观察",
@@ -551,6 +629,7 @@ function makeFixture(
       whiteoutRiskScore,
       lightAlignedScore: 82,
       confidence: 78,
+      scoreCalibration,
       labels: {
         formationOpportunity: chanceLabel(formationScore),
         shootableOpportunity: chanceLabel(shootableScore),
@@ -576,7 +655,7 @@ function makeFixture(
       rainOpening,
       travelScore: shootableScore,
       recommendationLabel,
-      confidenceLevel: terrain.terrainConfidence === "high" ? "high" : "medium",
+      confidenceLevel,
       bestCloudSeaWindow: bestWindow,
       bestCloudSeaWindows: bestWindows,
       watchableCloudSeaWindows: watchableWindows,
@@ -591,6 +670,7 @@ function makeFixture(
           whiteoutRiskScore,
           lightAlignedScore: 82,
           confidence: 78,
+          scoreCalibration,
           labels: {
             formationOpportunity: chanceLabel(formationScore),
             shootableOpportunity: chanceLabel(shootableScore),

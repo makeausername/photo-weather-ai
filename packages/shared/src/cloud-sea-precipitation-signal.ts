@@ -1,4 +1,4 @@
-import type { ProfessionalHourlyDataPoint, TerrainMode, TerrainType } from "./types.js";
+import type { TerrainMode, TerrainType } from "./types.js";
 import { formatForecastWindowZh } from "./window-format.js";
 
 export type CloudSeaPrecipitationSignalLevel =
@@ -42,10 +42,18 @@ export type CloudSeaPrecipitationSignalWindow = {
   readonly label?: string | null;
 };
 
+export type CloudSeaPrecipitationHourlyRow = {
+  readonly time?: string | null;
+  readonly precipitationAmountMm?: number | null;
+  readonly precipitationProbabilityPercent?: number | null;
+  readonly windSpeedMs?: number | null;
+  readonly visibilityMeters?: number | null;
+};
+
 export type CloudSeaPrecipitationSignalInput = {
   readonly precipitationAmountMm?: number | null;
   readonly precipitationProbabilityPercent?: number | null;
-  readonly hourlyRows?: readonly ProfessionalHourlyDataPoint[] | null;
+  readonly hourlyRows?: readonly CloudSeaPrecipitationHourlyRow[] | null;
   readonly timezone?: string | null;
   readonly focusedWindow?: CloudSeaPrecipitationSignalWindow | null;
   readonly bestWindow?: CloudSeaPrecipitationSignalWindow | null;
@@ -251,9 +259,9 @@ export function buildCloudSeaPrecipitationSignalContext(
   };
 }
 
-function snapshotFromHourlyRow(row: ProfessionalHourlyDataPoint): PrecipitationSnapshot {
+function snapshotFromHourlyRow(row: CloudSeaPrecipitationHourlyRow): PrecipitationSnapshot {
   return {
-    time: row.time,
+    time: row.time ?? undefined,
     precipitationAmountMm: finiteNumber(row.precipitationAmountMm),
     precipitationProbabilityPercent: finiteNumber(row.precipitationProbabilityPercent),
     windSpeedMs: finiteNumber(row.windSpeedMs),
