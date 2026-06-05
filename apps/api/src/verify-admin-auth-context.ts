@@ -28,6 +28,25 @@ function roleMatchesAdmin(role: unknown): boolean {
   );
 }
 
+function roleHasNormalizedShape(role: unknown): boolean {
+  if (!role || typeof role !== "object") {
+    return false;
+  }
+
+  const candidate = role as {
+    readonly code?: unknown;
+    readonly name?: unknown;
+    readonly displayName?: unknown;
+  };
+  return (
+    typeof candidate.code === "string" &&
+    candidate.code.trim().length > 0 &&
+    typeof candidate.name === "string" &&
+    candidate.name.trim().length > 0 &&
+    (typeof candidate.displayName === "string" || candidate.displayName === null)
+  );
+}
+
 async function main(): Promise<void> {
   const input = readVerifyAdminEnv();
   if (!input.password) {
@@ -73,6 +92,10 @@ async function main(): Promise<void> {
       throw new Error("Admin auth route did not return the admin role.");
     }
 
+    if (!loginBody.roles?.some((role) => roleMatchesAdmin(role) && roleHasNormalizedShape(role))) {
+      throw new Error("Admin auth route did not return normalized role code/name/displayName.");
+    }
+
     const meResponse = await app.inject({
       method: "GET",
       url: "/auth/me",
@@ -81,8 +104,16 @@ async function main(): Promise<void> {
       },
     });
 
-    if (meResponse.statusCode !== 200 || meResponse.json().isAdmin !== true) {
+    const meBody = meResponse.json() as {
+      readonly isAdmin?: boolean;
+      readonly roles?: readonly unknown[];
+    };
+    if (meResponse.statusCode !== 200 || meBody.isAdmin !== true) {
       throw new Error("Authenticated /auth/me did not recognize the admin role.");
+    }
+
+    if (!meBody.roles?.some((role) => roleMatchesAdmin(role) && roleHasNormalizedShape(role))) {
+      throw new Error("Authenticated /auth/me did not return normalized role code/name/displayName.");
     }
 
     console.log("OK admin auth route recognizes admin role.");

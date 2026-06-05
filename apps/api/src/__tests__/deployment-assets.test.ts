@@ -635,6 +635,8 @@ describe("production deployment assets", () => {
       "public.user_roles",
       "roles WHERE code = 'admin'",
       "role_permissions",
+      "REQUIRED_ADMIN_PERMISSION_CODES",
+      "admin.manage",
       "verify-admin-auth",
       "prepare_admin_password_b64_from_env",
     ]) {

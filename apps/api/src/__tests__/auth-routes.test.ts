@@ -39,6 +39,7 @@ describe("auth routes", () => {
     expect(body.roles).toEqual([
       expect.objectContaining({
         code: "admin",
+        displayName: expect.any(String),
         id: expect.any(String),
         name: expect.any(String),
       }),
@@ -250,6 +251,7 @@ describe("auth routes", () => {
       roles: [
         expect.objectContaining({
           code: "admin",
+          displayName: expect.any(String),
           name: expect.any(String),
         }),
       ],
@@ -300,6 +302,34 @@ describe("auth routes", () => {
     expect(response.statusCode).toBe(403);
     expect(response.json()).toMatchObject({
       error: "missing_permission",
+    });
+  });
+
+  it("allows admin APIs for an admin role code even if permission rows are not loaded", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const adminRole = state.roles.get("admin");
+    if (!adminRole) {
+      throw new Error("Expected fake admin role.");
+    }
+    state.roles.set("admin", {
+      ...adminRole,
+      permissions: [],
+    });
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      ok: true,
+      user: {
+        id: "admin-user",
+      },
+      roleCodes: ["admin"],
     });
   });
 });

@@ -400,6 +400,14 @@ export type TerrainElevationCacheRecord = {
 };
 
 export type DatabaseClient = {
+  readonly $transaction?: <TResult>(
+    operation: (client: DatabaseClient) => Promise<TResult>,
+  ) => Promise<TResult>;
+  readonly $executeRawUnsafe?: (query: string, ...values: readonly unknown[]) => Promise<number>;
+  readonly $queryRawUnsafe?: <TResult = unknown>(
+    query: string,
+    ...values: readonly unknown[]
+  ) => Promise<TResult>;
   readonly user?: {
     readonly findUnique: (args: any) => Promise<any>;
     readonly create: (args: any) => Promise<any>;

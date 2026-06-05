@@ -150,13 +150,38 @@ resolve_admin_password_from_env() {
     return
   fi
 
-  if [[ -n "${ADMIN_PASSWORD:-}" ]]; then
-    printf '%s' "${ADMIN_PASSWORD}"
+  if [[ -n "${ADMIN_PASSWORD_B64:-}" ]]; then
+    decode_base64_secret "${ADMIN_PASSWORD_B64}"
+    return
+  fi
+
+  if [[ -n "${INITIAL_ADMIN_PASSWORD_B64:-}" ]]; then
+    decode_base64_secret "${INITIAL_ADMIN_PASSWORD_B64}"
+    return
+  fi
+
+  if [[ -n "${SUPER_ADMIN_PASSWORD_B64:-}" ]]; then
+    decode_base64_secret "${SUPER_ADMIN_PASSWORD_B64}"
     return
   fi
 
   if [[ -n "${ADMIN_INITIAL_PASSWORD:-}" ]]; then
     printf '%s' "${ADMIN_INITIAL_PASSWORD}"
+    return
+  fi
+
+  if [[ -n "${ADMIN_PASSWORD:-}" ]]; then
+    printf '%s' "${ADMIN_PASSWORD}"
+    return
+  fi
+
+  if [[ -n "${INITIAL_ADMIN_PASSWORD:-}" ]]; then
+    printf '%s' "${INITIAL_ADMIN_PASSWORD}"
+    return
+  fi
+
+  if [[ -n "${SUPER_ADMIN_PASSWORD:-}" ]]; then
+    printf '%s' "${SUPER_ADMIN_PASSWORD}"
     return
   fi
 
@@ -172,4 +197,3 @@ prepare_admin_password_b64_from_env() {
   ADMIN_INITIAL_PASSWORD_B64="$(admin_password_to_b64 "${password}")"
   export ADMIN_INITIAL_PASSWORD_B64
 }
-

@@ -6,6 +6,16 @@ PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE=".env.production"
 COMPOSE_FILE="docker-compose.prod.yml"
 INSTALLER_INPUT_LIB="${SCRIPT_DIR}/lib/installer-input.sh"
+REQUIRED_ADMIN_PERMISSION_CODES=(
+  admin.manage
+  settings.manage
+  providers.manage
+  users.manage
+  locations.manage
+  photo_spots.manage
+  audit.read
+  usage.read
+)
 
 cd "${PROJECT_ROOT}"
 
@@ -74,6 +84,10 @@ set -a
 set +a
 
 if [[ -z "${ADMIN_EMAIL:-}" ]]; then
+  ADMIN_EMAIL="${SUPER_ADMIN_EMAIL:-}"
+fi
+
+if [[ -z "${ADMIN_EMAIL:-}" ]]; then
   fail "ADMIN_EMAIL is not configured."
 fi
 
@@ -118,6 +132,30 @@ if [[ "$(table_exists "permissions")" == "1" ]]; then
     if [[ "${ADMIN_ROLE_PERMISSION_COUNT}" -lt "${PERMISSION_COUNT}" ]]; then
       fail "Admin role is missing permission bindings."
     fi
+    for permission_code in "${REQUIRED_ADMIN_PERMISSION_CODES[@]}"; do
+      PERMISSION_EXISTS="$(
+        run_psql \
+          -v permission_code="${permission_code}" \
+          -c "SELECT COUNT(*) FROM public.permissions WHERE code = :'permission_code';"
+      )"
+      if [[ "${PERMISSION_EXISTS}" == "0" ]]; then
+        continue
+      fi
+
+      PERMISSION_BOUND="$(
+        run_psql \
+          -v admin_role_id="${ADMIN_ROLE_ID}" \
+          -v permission_code="${permission_code}" \
+          -c "SELECT COUNT(*)
+                FROM public.role_permissions rp
+                JOIN public.permissions p ON p.id = rp.permission_id
+               WHERE rp.role_id = :'admin_role_id'
+                 AND p.code = :'permission_code';"
+      )"
+      if [[ "${PERMISSION_BOUND}" == "0" ]]; then
+        fail "Admin role is missing required permission ${permission_code}."
+      fi
+    done
     ok "Admin role permission bindings are present."
   fi
 else

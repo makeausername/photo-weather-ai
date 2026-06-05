@@ -74,6 +74,35 @@ assert_file_contains() {
   pass
 }
 
+expect_env_password_alias() {
+  local label="$1"
+  local key="$2"
+  local password="$3"
+  local encoded=""
+  local resolved=""
+
+  unset ADMIN_INITIAL_PASSWORD_B64 ADMIN_PASSWORD_B64 INITIAL_ADMIN_PASSWORD_B64 SUPER_ADMIN_PASSWORD_B64
+  unset ADMIN_INITIAL_PASSWORD ADMIN_PASSWORD INITIAL_ADMIN_PASSWORD SUPER_ADMIN_PASSWORD
+
+  case "${key}" in
+    *B64)
+      encoded="$(admin_password_to_b64 "${password}")"
+      printf -v "${key}" '%s' "${encoded}"
+      ;;
+    *)
+      printf -v "${key}" '%s' "${password}"
+      ;;
+  esac
+  export "${key}"
+
+  resolved="$(resolve_admin_password_from_env)" || fail "${label} should resolve"
+  if [[ "${resolved}" != "${password}" ]]; then
+    fail "${label} resolved the wrong password"
+  fi
+
+  pass
+}
+
 expect_accepts "broad shell symbols" 'Aa123456!@#$%^&*'
 expect_accepts "brackets punctuation and pipe" 'Aa123456[]{};:,.?/|~'
 expect_accepts "quotes backtick plus minus equals underscore" $'Aa123456"\'`+-=_'
@@ -86,6 +115,10 @@ expect_rejects "missing digit" 'Aaabcdefghij!'
 expect_rejects "missing special" 'Aa1234567890'
 expect_rejects "newline control character" $'Aa123456789!\n'
 expect_rejects "tab control character" $'Aa123456789!\t'
+
+expect_env_password_alias "ADMIN_PASSWORD_B64 alias" "ADMIN_PASSWORD_B64" "AliasHorseBattery99!"
+expect_env_password_alias "INITIAL_ADMIN_PASSWORD alias" "INITIAL_ADMIN_PASSWORD" "AliasHorseBattery99!"
+expect_env_password_alias "SUPER_ADMIN_PASSWORD_B64 alias" "SUPER_ADMIN_PASSWORD_B64" "AliasHorseBattery99!"
 
 for file in scripts/install.sh scripts/install-cn.sh scripts/reset-admin.sh scripts/check-login.sh; do
   assert_file_not_matches "${file}" 'read[[:space:]]+-r[[:space:]]+-s[[:space:]]+-p|read[[:space:]]+-s[[:space:]]+-p|read[[:space:]]+-rsp'

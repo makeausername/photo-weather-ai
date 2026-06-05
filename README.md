@@ -465,12 +465,19 @@ ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='change-Me-12345!' corepack pnpm ve
 脚本读取：
 
 - `ADMIN_EMAIL`
+- `SUPER_ADMIN_EMAIL`（旧部署别名）
 - `ADMIN_INITIAL_PASSWORD_B64`
+- `ADMIN_PASSWORD_B64`
+- `INITIAL_ADMIN_PASSWORD_B64`
+- `SUPER_ADMIN_PASSWORD_B64`
 - `ADMIN_INITIAL_PASSWORD`
 - `ADMIN_PASSWORD`
+- `INITIAL_ADMIN_PASSWORD`
+- `SUPER_ADMIN_PASSWORD`
 - `ADMIN_DISPLAY_NAME`
+- `ADMIN_NAME` / `SUPER_ADMIN_DISPLAY_NAME`（旧部署别名）
 
-`bootstrap:admin` 是幂等的：账号不存在时创建账号，账号已存在时会在提供初始密码时更新密码、启用账号并确保 `admin` 角色、`user_roles` 绑定和权限绑定存在。密码会先 bcrypt 哈希再写入数据库，不会明文打印。生产环境可使用 `bash scripts/reset-admin.sh` 重置管理员密码，并用 `bash scripts/verify-admin-bootstrap.sh` 和 `bash scripts/check-login.sh` 验证角色与登录。上线前设置至少 32 字符的强 `JWT_SECRET`。
+`bootstrap:admin` 是幂等的：账号不存在时创建账号，账号已存在时会在提供初始密码时更新密码、启用账号并确保 `admin` 角色、`user_roles` 绑定和权限绑定存在。权限表存在时会补齐 canonical admin permissions；权限表不存在时不会让 bootstrap 失败，但验证脚本会清楚输出跳过原因。密码会先 bcrypt 哈希再写入数据库，不会明文打印。生产环境可使用 `bash scripts/reset-admin.sh` 重置管理员密码，并用 `bash scripts/verify-admin-bootstrap.sh` 和 `bash scripts/check-login.sh` 验证角色、权限、`/auth/me` 角色序列化和登录。上线前设置至少 32 字符的强 `JWT_SECRET`。
 
 ## 后台 API
 
@@ -525,7 +532,7 @@ GET   /admin/audit-logs
 - 地点和 mock 地理搜索：`locations.manage`
 - 机位：`photo_spots.manage`
 - 审计日志：`audit.read`
-- `/admin` 状态：`admin.manage`
+- `/admin` 状态：`code=admin` 或 `admin.manage`
 
 服务商测试连接默认仍为模拟测试，不调用真实外部服务。高德地图、DeepSeek、和风天气、Open-Meteo 和 meteoblue 都支持管理员手动真实测试：必须同时满足后台服务商已启用、后台“启用真实调用”已打开、必要凭据或模式配置已保存，并由管理员点击“测试连接”。和风天气还必须填写 API Host；Open-Meteo 商业客户模式必须填写 API Key；meteoblue 当前只启用后台 Forecast API 测试，不自动加入 forecast 计算流程。自动化测试强制模拟测试。若旧数据库记录缺少 `realCallEnabled` 字段，才会读取环境变量作为兜底。
 
@@ -553,7 +560,7 @@ GET   /admin/audit-logs
 /forecast
 ```
 
-后台控制台已同步 Product UI redesign V4 的自然色和紧凑布局整理。公开导航不展示顶层“管理后台”按钮；后台入口只在已确认具备 `admin.manage` 权限的账户菜单或账户中心中显示：
+后台控制台已同步 Product UI redesign V4 的自然色和紧凑布局整理。公开导航不展示顶层“管理后台”按钮；后台入口只在已确认具备 `code=admin` / `super_admin` 角色或 `admin.manage` 权限的账户菜单或账户中心中显示：
 
 - 左侧导航：控制台、系统设置、服务商配置、地点管理、机位管理、审计日志。
 - 顶部标题区：当前页面标题、描述、当前管理员名称、主题切换、单一返回前台入口、退出。

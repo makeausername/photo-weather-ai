@@ -23,6 +23,7 @@ function createAdminScriptClient(): {
     readonly permissions: Map<string, any>;
     readonly userRoles: Map<string, any>;
     readonly rolePermissions: Map<string, any>;
+    readonly transactions: { count: number };
   };
 } {
   const now = new Date("2026-01-01T00:00:00.000Z");
@@ -31,6 +32,7 @@ function createAdminScriptClient(): {
   const permissions = new Map<string, any>();
   const userRoles = new Map<string, any>();
   const rolePermissions = new Map<string, any>();
+  const transactions = { count: 0 };
 
   function roleWithPermissions(role: any) {
     if (!role) {
@@ -63,6 +65,43 @@ function createAdminScriptClient(): {
   }
 
   const client: DatabaseClient = {
+    $transaction: async (operation) => {
+      transactions.count += 1;
+      return operation(client);
+    },
+    $queryRawUnsafe: async <TResult = unknown>() => {
+      if ([...roles.values()].some((role) => role.code === "admin")) {
+        return [] as unknown as TResult;
+      }
+
+      return [...roles.values()]
+        .filter((role) => !String(role.code ?? "").trim())
+        .filter((role) =>
+          ["admin", "administrator", "管理员", "超级管理员"].includes(
+            String(role.name ?? "").trim().toLowerCase(),
+          ),
+        )
+        .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+        .slice(0, 1)
+        .map((role) => ({ id: role.id })) as unknown as TResult;
+    },
+    $executeRawUnsafe: async (_query, ...values) => {
+      const [code, name, description, roleId] = values;
+      const role = [...roles.values()].find((candidate) => candidate.id === roleId);
+      if (!role) {
+        return 0;
+      }
+
+      roles.delete(role.code);
+      roles.set(String(code), {
+        ...role,
+        code,
+        name,
+        description: role.description ?? description,
+        updatedAt: now,
+      });
+      return 1;
+    },
     user: {
       findUnique: async ({ where }: any) => {
         const user =
@@ -208,7 +247,7 @@ function createAdminScriptClient(): {
 
   return {
     client,
-    state: { users, roles, permissions, userRoles, rolePermissions },
+    state: { users, roles, permissions, userRoles, rolePermissions, transactions },
   };
 }
 
@@ -292,6 +331,7 @@ describe("admin auth helpers", () => {
       roleId: state.roles.get("admin")?.id,
     });
     expect(state.rolePermissions.size).toBe(state.permissions.size);
+    expect(state.transactions.count).toBe(1);
   });
 
   it("create-admin output does not print the password", async () => {
@@ -377,6 +417,37 @@ describe("admin auth helpers", () => {
       expect.objectContaining({
         userId: "existing-admin",
         roleId: "role-existing-admin",
+      }),
+    ]);
+  });
+
+  it("bootstrap repairs a legacy admin role with a blank code when safe", async () => {
+    const { client, state } = createAdminScriptClient();
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    state.roles.set("", {
+      id: "role-legacy-admin",
+      code: "",
+      name: "Administrator",
+      description: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await createOrUpdateAdmin({
+      email: "admin@example.com",
+      password: "CorrectHorseBattery99!",
+      client,
+    });
+
+    expect(state.roles.get("admin")).toMatchObject({
+      id: "role-legacy-admin",
+      code: "admin",
+      name: "admin",
+    });
+    expect(state.roles.has("")).toBe(false);
+    expect([...state.userRoles.values()]).toEqual([
+      expect.objectContaining({
+        roleId: "role-legacy-admin",
       }),
     ]);
   });
@@ -469,6 +540,32 @@ describe("admin auth helpers", () => {
       }),
     ).toMatchObject({
       password: "InitialHorseBattery99!",
+    });
+  });
+
+  it("keeps legacy super-admin and initial-admin env aliases compatible", () => {
+    const encodedPassword = Buffer.from("AliasHorseBattery99!", "utf8").toString("base64");
+
+    expect(
+      readCreateAdminEnv({
+        SUPER_ADMIN_EMAIL: "OWNER@EXAMPLE.COM",
+        ADMIN_PASSWORD_B64: encodedPassword,
+        ADMIN_NAME: "Owner",
+      }),
+    ).toMatchObject({
+      email: "OWNER@EXAMPLE.COM",
+      password: "AliasHorseBattery99!",
+      displayName: "Owner",
+    });
+
+    expect(
+      readVerifyAdminEnv({
+        SUPER_ADMIN_EMAIL: "owner@example.com",
+        INITIAL_ADMIN_PASSWORD: "AliasHorseBattery99!",
+      }),
+    ).toMatchObject({
+      email: "owner@example.com",
+      password: "AliasHorseBattery99!",
     });
   });
 
@@ -596,6 +693,31 @@ describe("admin auth helpers", () => {
       client,
     });
     state.rolePermissions.clear();
+
+    await expect(
+      verifyAdminBootstrap({
+        email: "admin@example.com",
+        password: "CorrectHorseBattery99!",
+        client,
+      }),
+    ).rejects.toThrow("管理员权限绑定缺失");
+  });
+
+  it("verify-admin fails when one required permission binding is missing", async () => {
+    const { client, state } = createAdminScriptClient();
+    await createOrUpdateAdmin({
+      email: "admin@example.com",
+      password: "CorrectHorseBattery99!",
+      client,
+    });
+    const providersPermission = state.permissions.get("providers.manage");
+    const missingBinding = [...state.rolePermissions.entries()].find(
+      ([, rolePermission]) => rolePermission.permissionId === providersPermission?.id,
+    );
+    if (!missingBinding) {
+      throw new Error("Expected providers.manage binding to exist.");
+    }
+    state.rolePermissions.delete(missingBinding[0]);
 
     await expect(
       verifyAdminBootstrap({

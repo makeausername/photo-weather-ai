@@ -265,7 +265,11 @@ export async function authenticateRequest(
 }
 
 function hasPermission(principal: AuthenticatedPrincipal, permission: string): boolean {
-  return principal.permissions.includes(permission);
+  return (
+    principal.permissions.includes(permission) ||
+    (requiredAdminPermissions.includes(permission as (typeof requiredAdminPermissions)[number]) &&
+      principalHasAdminRole(principal))
+  );
 }
 
 function isAdminPrincipal(principal: AuthenticatedPrincipal): boolean {

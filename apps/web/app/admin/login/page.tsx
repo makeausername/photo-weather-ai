@@ -6,7 +6,7 @@ import { useState } from "react";
 import { sanitizeAuthErrorMessage } from "../../../components/auth-errors";
 import { ThemeToggle } from "../../../components/theme-toggle";
 import { Button, Card, FormField, Input } from "../../../components/ui";
-import { clearAdminSession, loginAdmin } from "../admin-api";
+import { clearAdminSession, loginAdmin, sessionHasAdminAccess } from "../admin-api";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -22,7 +22,7 @@ export default function AdminLoginPage() {
 
     try {
       const session = await loginAdmin(email, password);
-      if (!session.permissions.includes("admin.manage")) {
+      if (!sessionHasAdminAccess(session)) {
         clearAdminSession();
         setStatus("当前账号没有后台访问权限。");
         return;

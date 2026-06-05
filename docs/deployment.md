@@ -53,7 +53,7 @@ It writes matching values to:
 
 Custom database passwords are URL-encoded with `python3 urllib.parse.quote` before `DATABASE_URL` is written. If `python3` is unavailable, leave the DB password blank so the installer generates a URL-safe password, use only URL-safe password characters, or install `python3` before using a custom password with reserved URL characters. The installer prints `POSTGRES_DB`, `POSTGRES_USER`, and a masked `DATABASE_URL`; it never prints `POSTGRES_PASSWORD`.
 
-管理员密码支持常见强密码符号；交互输入不会回显；请避免在命令行明文传入密码。安装器要求管理员密码至少 12 位，并包含大小写字母、数字和特殊字符。新生成的 `.env.production` 使用 `ADMIN_INITIAL_PASSWORD_B64` 保存初始管理员密码，`bootstrap:admin` / `verify-admin-bootstrap.sh` 仍兼容既有的 `ADMIN_INITIAL_PASSWORD` 和 `ADMIN_PASSWORD`。
+管理员密码支持常见强密码符号；交互输入不会回显；请避免在命令行明文传入密码。安装器要求管理员密码至少 12 位，并包含大小写字母、数字和特殊字符。新生成的 `.env.production` 使用 `ADMIN_INITIAL_PASSWORD_B64` 保存初始管理员密码，`bootstrap:admin` / `verify-admin-bootstrap.sh` 仍兼容既有的 `ADMIN_INITIAL_PASSWORD`、`ADMIN_PASSWORD`、`ADMIN_PASSWORD_B64`、`INITIAL_ADMIN_PASSWORD(_B64)`、`SUPER_ADMIN_EMAIL` 和 `SUPER_ADMIN_PASSWORD(_B64)`。
 
 Logs are written to `deploy/install.log`. For streamed command output:
 
@@ -69,7 +69,7 @@ Final output includes:
 - `Password: hidden`
 - `Reset admin: bash scripts/reset-admin.sh`
 
-After a successful install, logging in with the admin email should show `用户角色：管理员` on `/account`, show the `管理后台` entry in the account menu/account page, and allow `/admin`.
+After a successful install, logging in with the admin email should show `用户角色：管理员` on `/account`, show the `管理后台` entry in the account menu/account page, and allow `/admin`. `/admin` access is based on normalized role data (`code=admin`) or the canonical `admin.manage` permission, never on a specific email address.
 
 ## Local Ephemeris File
 
@@ -266,7 +266,7 @@ bash scripts/test-real-weather.sh
 ## Troubleshooting
 
 - `邮箱或密码不正确。`: run `bash scripts/reset-admin.sh`, then `bash scripts/check-login.sh`. The admin command updates existing users; it does not skip password rotation when the user already exists.
-- `用户角色：暂无数据` or the `管理后台` entry is missing after admin login: run `bash scripts/verify-admin-bootstrap.sh`. It verifies `users`, `roles.code = admin`, `user_roles`, `role_permissions`, and auth-route admin recognition without printing secrets. If it fails, run `docker compose --env-file .env.production -f docker-compose.prod.yml run --rm api pnpm bootstrap:admin`, then rerun the verification script.
+- `用户角色：暂无数据` or the `管理后台` entry is missing after admin login: run `bash scripts/verify-admin-bootstrap.sh`. It verifies `users`, `roles.code = admin`, `user_roles`, canonical `role_permissions`, and auth-route role serialization (`code` / `name` / `displayName`) without printing secrets. If it fails, run `docker compose --env-file .env.production -f docker-compose.prod.yml run --rm api pnpm bootstrap:admin`, then rerun the verification script.
 - `登录服务暂时不可用，请稍后重试或联系管理员。`: run `bash scripts/status.sh`, then inspect API logs with `docker compose --env-file .env.production -f docker-compose.prod.yml logs -f api`. The UI intentionally hides Prisma, PostgreSQL hostnames, SQL details, and stack traces.
 - Compose `unexpected character` while reading `.env.production`: the env file has an invalid line, usually a standalone generated secret or an unescaped value. Run `bash scripts/check-env-production.sh`; then rerun `bash scripts/install.sh` and choose to back up/regenerate the broken file.
 - Astro health has `ephemerisAvailable=false`: run `bash scripts/download-ephemeris.sh`. If it remains false, check `EPHEMERIS_PATH=/app/data/de421.bsp`, inspect `docker compose --env-file .env.production -f docker-compose.prod.yml exec astro-service ls -lh /app/data/de421.bsp`, and fix file permissions.
