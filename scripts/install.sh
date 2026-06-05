@@ -12,6 +12,13 @@ CHECK_ENV_SCRIPT="${SCRIPT_DIR}/check-env-production.sh"
 INSTALLER_INPUT_LIB="${SCRIPT_DIR}/lib/installer-input.sh"
 COMPOSE_PROJECT_NAME_DEFAULT="photo-weather-ai"
 EPHEMERIS_DOWNLOAD_SKIPPED=0
+INSTALL_REGION="${INSTALL_REGION:-${PHOTO_WEATHER_INSTALL_MODE:-global}}"
+APT_MIRROR="${APT_MIRROR:-}"
+PIP_INDEX_URL="${PIP_INDEX_URL:-}"
+DOCKER_REGISTRY_MIRRORS="${DOCKER_REGISTRY_MIRRORS:-}"
+DOCKER_INSTALL_METHOD="${DOCKER_INSTALL_METHOD:-auto}"
+DOCKER_INSTALL_METHOD_USED="not-run"
+APT_LOCK_TIMEOUT_SECONDS="${APT_LOCK_TIMEOUT_SECONDS:-300}"
 
 cd "${PROJECT_ROOT}"
 
@@ -242,6 +249,56 @@ trim() {
   value="${value#"${value%%[![:space:]]*}"}"
   value="${value%"${value##*[![:space:]]}"}"
   printf '%s' "${value}"
+}
+
+normalize_install_settings() {
+  INSTALL_REGION="$(trim "${INSTALL_REGION}")"
+  INSTALL_REGION="${INSTALL_REGION,,}"
+  case "${INSTALL_REGION}" in
+    cn|china) INSTALL_REGION="cn" ;;
+    global|"") INSTALL_REGION="global" ;;
+    *)
+      fail_install "INSTALL_REGION must be cn or global."
+      ;;
+  esac
+
+  DOCKER_INSTALL_METHOD="$(trim "${DOCKER_INSTALL_METHOD}")"
+  DOCKER_INSTALL_METHOD="${DOCKER_INSTALL_METHOD,,}"
+  case "${DOCKER_INSTALL_METHOD}" in
+    auto|ubuntu|official) ;;
+    offical) DOCKER_INSTALL_METHOD="official" ;;
+    *)
+      fail_install "DOCKER_INSTALL_METHOD must be auto, ubuntu, or official."
+      ;;
+  esac
+
+  APT_MIRROR="$(trim "${APT_MIRROR}")"
+  APT_MIRROR="${APT_MIRROR%/}"
+  PIP_INDEX_URL="$(trim "${PIP_INDEX_URL}")"
+  DOCKER_REGISTRY_MIRRORS="$(trim "${DOCKER_REGISTRY_MIRRORS}")"
+  APT_LOCK_TIMEOUT_SECONDS="$(trim "${APT_LOCK_TIMEOUT_SECONDS}")"
+  if [[ ! "${APT_LOCK_TIMEOUT_SECONDS}" =~ ^[0-9]+$ || "${APT_LOCK_TIMEOUT_SECONDS}" -lt 30 ]]; then
+    fail_install "APT_LOCK_TIMEOUT_SECONDS must be a number >= 30."
+  fi
+}
+
+print_install_setting() {
+  local key="$1"
+  local value="$2"
+  if [[ -z "${value}" ]]; then
+    value="(empty)"
+  fi
+  printf '%s=%s\n' "${key}" "${value}"
+}
+
+log_install_settings() {
+  printf '\n### Installer settings\n' >> "${INSTALL_LOG}"
+  print_install_setting "INSTALL_REGION" "${INSTALL_REGION}" >> "${INSTALL_LOG}"
+  print_install_setting "DOCKER_INSTALL_METHOD" "${DOCKER_INSTALL_METHOD}" >> "${INSTALL_LOG}"
+  print_install_setting "APT_MIRROR" "${APT_MIRROR}" >> "${INSTALL_LOG}"
+  print_install_setting "PIP_INDEX_URL" "${PIP_INDEX_URL}" >> "${INSTALL_LOG}"
+  print_install_setting "DOCKER_REGISTRY_MIRRORS" "${DOCKER_REGISTRY_MIRRORS}" >> "${INSTALL_LOG}"
+  print_install_setting "APT_LOCK_TIMEOUT_SECONDS" "${APT_LOCK_TIMEOUT_SECONDS}" >> "${INSTALL_LOG}"
 }
 
 prompt_required() {
@@ -592,6 +649,7 @@ render_env_file() {
         ADMIN_EMAIL) write_env_var "${key}" "${ADMIN_EMAIL}" >> "${tmp_file}" ;;
         ADMIN_INITIAL_PASSWORD_B64) write_env_var "${key}" "${ADMIN_INITIAL_PASSWORD_B64}" >> "${tmp_file}" ;;
         ADMIN_DISPLAY_NAME) write_env_var "${key}" "${ADMIN_DISPLAY_NAME}" >> "${tmp_file}" ;;
+        PIP_INDEX_URL) write_env_var "${key}" "${PIP_INDEX_URL}" >> "${tmp_file}" ;;
         QWEATHER_API_KEY) write_env_var "${key}" "${QWEATHER_API_KEY}" >> "${tmp_file}" ;;
         QWEATHER_API_HOST) write_env_var "${key}" "${QWEATHER_API_HOST}" >> "${tmp_file}" ;;
         AMAP_API_KEY) write_env_var "${key}" "${AMAP_API_KEY}" >> "${tmp_file}" ;;
@@ -691,6 +749,46 @@ postgres_volume_name() {
   printf '%s_postgres_data' "$(compose_project_name)"
 }
 
+is_ignored_apt_lock_process_args() {
+  local args="$1"
+  [[ "${args}" == *"unattended-upgrade-shutdown --wait-for-signal"* ]]
+}
+
+process_args_for_pid() {
+  local pid="$1"
+  ps -p "${pid}" -o args= 2>/dev/null || true
+}
+
+print_real_apt_lock_process_table() {
+  local saw_blocker=0
+  local saw_ignored=0
+  local pid ppid comm args
+
+  while read -r pid ppid comm args; do
+    if [[ -z "${pid:-}" ]]; then
+      continue
+    fi
+    case "${comm:-} ${args:-}" in
+      *apt*|*apt-get*|*dpkg*|*unattended-upgr*) ;;
+      *) continue ;;
+    esac
+    if is_ignored_apt_lock_process_args "${args:-}"; then
+      saw_ignored=1
+      printf 'ignored non-blocking process: %s %s %s %s\n' "${pid}" "${ppid}" "${comm}" "${args}"
+      continue
+    fi
+    saw_blocker=1
+    printf '%s %s %s %s\n' "${pid}" "${ppid}" "${comm}" "${args}"
+  done < <(ps -eo pid=,ppid=,comm=,args=)
+
+  if [[ "${saw_blocker}" == "0" ]]; then
+    echo "No real apt/dpkg blocker is running."
+  fi
+  if [[ "${saw_ignored}" == "1" ]]; then
+    echo "unattended-upgrade-shutdown --wait-for-signal is informational and will not block this installer."
+  fi
+}
+
 apt_lock_held() {
   local lock_paths=(
     /var/lib/dpkg/lock-frontend
@@ -699,19 +797,28 @@ apt_lock_held() {
     /var/cache/apt/archives/lock
   )
 
-  if command -v fuser >/dev/null 2>&1; then
+  if command -v fuser >/dev/null 2>&1 && command -v ps >/dev/null 2>&1; then
+    local pids raw_pid pid args
     for lock_path in "${lock_paths[@]}"; do
-      if run_sudo fuser "${lock_path}" >/dev/null 2>&1; then
+      pids="$(run_sudo fuser "${lock_path}" 2>/dev/null || true)"
+      for raw_pid in ${pids}; do
+        pid="${raw_pid//[^0-9]/}"
+        if [[ -z "${pid}" ]]; then
+          continue
+        fi
+        args="$(process_args_for_pid "${pid}")"
+        if is_ignored_apt_lock_process_args "${args}"; then
+          continue
+        fi
         return 0
-      fi
+      done
     done
   fi
 
   if command -v pgrep >/dev/null 2>&1; then
     if pgrep -x apt >/dev/null 2>&1 ||
       pgrep -x apt-get >/dev/null 2>&1 ||
-      pgrep -x dpkg >/dev/null 2>&1 ||
-      pgrep -x unattended-upgr >/dev/null 2>&1; then
+      pgrep -x dpkg >/dev/null 2>&1; then
       return 0
     fi
   fi
@@ -722,20 +829,20 @@ apt_lock_held() {
 print_apt_lock_processes() {
   echo "当前 apt/dpkg 相关进程："
   if command -v ps >/dev/null 2>&1; then
-    ps -eo pid,ppid,comm,args | grep -E "apt|apt-get|dpkg|unattended-upgr" | grep -v grep || true
+    print_real_apt_lock_process_table
   else
     echo "当前系统缺少 ps，无法列出阻塞进程。"
   fi
 }
 
 wait_for_apt_lock() {
-  local max_seconds=300
+  local max_seconds="${APT_LOCK_TIMEOUT_SECONDS}"
   local elapsed=0
 
   while apt_lock_held; do
     if [[ "${elapsed}" -ge "${max_seconds}" ]]; then
       print_apt_lock_processes
-      fail_install "系统软件包管理器被占用超过 5 分钟，请稍后重试或检查 apt/dpkg 进程。"
+      fail_install "系统软件包管理器被占用超过 ${max_seconds} 秒，请稍后重试或检查 apt/dpkg 进程。"
     fi
 
     warn "系统软件包管理器被占用，等待 10 秒后重试。"
@@ -766,6 +873,28 @@ run_apt_step() {
   fail_install "${label}"
 }
 
+run_apt_step_allow_fail() {
+  local display_command="$1"
+  local label="$2"
+  shift 2
+
+  echo "当前命令：${display_command}"
+  wait_for_apt_lock
+
+  if run_logged_with_heartbeat "${label}" "Docker 安装仍在进行，请稍候..." "$@"; then
+    ok "${label}"
+    return 0
+  fi
+
+  if apt_lock_held; then
+    print_apt_lock_processes
+    return 2
+  fi
+
+  warn "${label} failed. See deploy/install.log."
+  return 1
+}
+
 docker_cli_available() {
   command -v docker >/dev/null 2>&1 && docker --version >/dev/null 2>&1
 }
@@ -786,52 +915,294 @@ docker_install_needed_label() {
   fi
 }
 
-install_docker_packages() {
+installer_os_id() {
   if [[ ! -r /etc/os-release ]]; then
     echo "This installer targets Ubuntu/Debian servers."
-    exit 1
+    return 1
   fi
 
   # shellcheck disable=SC1091
   . /etc/os-release
   case "${ID}" in
-    ubuntu|debian) ;;
+    ubuntu|debian) printf '%s' "${ID}" ;;
     *)
       echo "Unsupported distribution: ${ID}. Use Ubuntu 22.04/24.04 or Debian."
-      exit 1
+      return 1
       ;;
   esac
+}
+
+installer_os_codename() {
+  # shellcheck disable=SC1091
+  . /etc/os-release
+  printf '%s' "${VERSION_CODENAME:-}"
+}
+
+configure_apt_mirror_if_requested() {
+  if [[ -z "${APT_MIRROR}" ]]; then
+    return
+  fi
+
+  local os_id codename components keyring source_file backup_dir tmp_file source_path
+  os_id="$(installer_os_id)" || return 1
+  codename="$(installer_os_codename)"
+  if [[ -z "${codename}" ]]; then
+    echo "APT_MIRROR is set but VERSION_CODENAME is unavailable."
+    return 1
+  fi
+
+  backup_dir="/etc/apt/photo-weather-ai-backups/$(date +%Y%m%d-%H%M%S)"
+  run_logged "Prepare APT mirror backup directory" run_sudo install -d -m 0755 "${backup_dir}"
+
+  for source_path in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list.d/debian.sources; do
+    if [[ -f "${source_path}" ]]; then
+      run_logged "Back up APT source $(basename "${source_path}")" run_sudo cp "${source_path}" "${backup_dir}/$(basename "${source_path}").backup"
+    fi
+  done
+
+  case "${os_id}" in
+    ubuntu)
+      components="main restricted universe multiverse"
+      keyring="/usr/share/keyrings/ubuntu-archive-keyring.gpg"
+      ;;
+    debian)
+      components="main contrib non-free non-free-firmware"
+      keyring="/usr/share/keyrings/debian-archive-keyring.gpg"
+      ;;
+    *) return 1 ;;
+  esac
+
+  tmp_file="$(mktemp)"
+  {
+    printf 'Types: deb\n'
+    printf 'URIs: %s\n' "${APT_MIRROR}"
+    printf 'Suites: %s %s-updates %s-backports %s-security\n' "${codename}" "${codename}" "${codename}" "${codename}"
+    printf 'Components: %s\n' "${components}"
+    if [[ -f "${keyring}" ]]; then
+      printf 'Signed-By: %s\n' "${keyring}"
+    fi
+  } > "${tmp_file}"
+
+  source_file="/etc/apt/sources.list.d/photo-weather-ai-mirror.sources"
+  run_logged "Write APT mirror source" run_sudo install -m 0644 "${tmp_file}" "${source_file}"
+  rm -f "${tmp_file}"
+
+  if [[ "${INSTALL_REGION}" == "cn" ]]; then
+    for source_path in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list.d/debian.sources; do
+      if [[ -f "${source_path}" ]]; then
+        run_logged "Disable default APT source $(basename "${source_path}")" run_sudo mv "${source_path}" "${backup_dir}/$(basename "${source_path}").disabled"
+      fi
+    done
+  fi
+
+  echo "APT mirror configured: ${APT_MIRROR}" | tee -a "${INSTALL_LOG}"
+}
+
+install_docker_from_official_repo() {
+  local os_id codename
+  os_id="$(installer_os_id)" || return 1
+  codename="$(installer_os_codename)"
+  if [[ -z "${codename}" ]]; then
+    echo "official Docker repository failed: VERSION_CODENAME is unavailable" | tee -a "${INSTALL_LOG}"
+    return 1
+  fi
 
   export DEBIAN_FRONTEND=noninteractive
 
   echo "正在安装 Docker，请稍候..."
+  echo "Installing Docker from the official Docker repository..."
   wait_for_apt_lock
-  run_apt_step "apt-get update" "更新系统软件包索引" run_sudo apt-get update
-  run_apt_step "apt-get install -y ca-certificates curl gnupg" "安装 Docker 仓库依赖" run_sudo apt-get install -y ca-certificates curl gnupg
-  run_logged "创建 Docker apt keyring 目录" run_sudo install -m 0755 -d /etc/apt/keyrings
+  run_apt_step_allow_fail "apt-get update" "Update system package index" run_sudo apt-get update || return 1
+  run_apt_step_allow_fail "apt-get install -y ca-certificates curl gnupg" "Install Docker repository dependencies" run_sudo apt-get install -y ca-certificates curl gnupg || return 1
+  run_logged "Create Docker apt keyring directory" run_sudo install -m 0755 -d /etc/apt/keyrings
 
   if [[ ! -f /etc/apt/keyrings/docker.gpg ]]; then
-    echo "当前命令：curl https://download.docker.com/linux/${ID}/gpg"
-    printf '\n### 下载 Docker apt GPG key\n' >> "${INSTALL_LOG}"
-    if ! curl -fsSL "https://download.docker.com/linux/${ID}/gpg" | run_sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg >> "${INSTALL_LOG}" 2>&1; then
-      fail_install "下载 Docker apt GPG key"
+    echo "Current command: curl https://download.docker.com/linux/${os_id}/gpg"
+    printf '\n### Download Docker apt GPG key\n' >> "${INSTALL_LOG}"
+    if ! curl -fsSL "https://download.docker.com/linux/${os_id}/gpg" | run_sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg >> "${INSTALL_LOG}" 2>&1; then
+      echo "official Docker repository failed: Docker apt GPG download" | tee -a "${INSTALL_LOG}"
+      return 1
     fi
-    run_logged "设置 Docker apt GPG key 权限" run_sudo chmod a+r /etc/apt/keyrings/docker.gpg
+    run_logged "Set Docker apt GPG key permissions" run_sudo chmod a+r /etc/apt/keyrings/docker.gpg
   fi
 
-  local codename="${VERSION_CODENAME:-}"
-  if [[ -z "${codename}" ]]; then
-    codename="$(. /etc/os-release && printf '%s' "${VERSION_CODENAME}")"
-  fi
-
-  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${ID} ${codename} stable" \
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${os_id} ${codename} stable" \
     | run_sudo tee /etc/apt/sources.list.d/docker.list >> "${INSTALL_LOG}" >/dev/null
 
-  run_apt_step "apt-get update" "更新 Docker 软件包索引" run_sudo apt-get update
-  run_apt_step "apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin" "安装 Docker Engine 与 Compose 插件" run_sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  run_apt_step_allow_fail "apt-get update" "Update Docker package index" run_sudo apt-get update || return 1
+  run_apt_step_allow_fail "apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin" "Install Docker Engine and Compose plugin" run_sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || return 1
+  DOCKER_INSTALL_METHOD_USED="official"
+}
+
+install_ubuntu_compose_v2_package() {
+  local package
+  if docker_compose_available; then
+    return 0
+  fi
+
+  for package in docker-compose-v2 docker-compose-plugin; do
+    if apt-cache show "${package}" >/dev/null 2>&1; then
+      if run_apt_step_allow_fail "apt-get install -y ${package}" "Install Docker Compose v2 package ${package}" run_sudo apt-get install -y "${package}"; then
+        return 0
+      fi
+    fi
+  done
+
+  if docker_compose_available; then
+    return 0
+  fi
+
+  return 1
+}
+
+install_docker_from_ubuntu_packages() {
+  installer_os_id >/dev/null || return 1
+  export DEBIAN_FRONTEND=noninteractive
+
+  configure_apt_mirror_if_requested || return 1
+  echo "正在安装 Docker，请稍候..."
+  echo "Installing Docker from Ubuntu/Debian packages: docker.io + Compose v2..."
+  run_apt_step "apt-get update" "Update system package index" run_sudo apt-get update
+  run_apt_step "apt-get install -y ca-certificates curl gnupg docker.io" "Install docker.io package" run_sudo apt-get install -y ca-certificates curl gnupg docker.io
+  if ! install_ubuntu_compose_v2_package; then
+    fail_install "Docker Compose v2 package is unavailable. Try DOCKER_INSTALL_METHOD=official on a network that can reach download.docker.com."
+  fi
+  DOCKER_INSTALL_METHOD_USED="ubuntu"
+}
+
+install_docker_packages() {
+  case "${DOCKER_INSTALL_METHOD}" in
+    ubuntu)
+      install_docker_from_ubuntu_packages
+      ;;
+    official)
+      install_docker_from_official_repo || fail_install "official Docker repository failed."
+      ;;
+    auto)
+      if install_docker_from_official_repo; then
+        return
+      fi
+      echo "official Docker repository failed; falling back to Ubuntu docker.io + Compose v2 packages" | tee -a "${INSTALL_LOG}"
+      install_docker_from_ubuntu_packages
+      ;;
+  esac
+}
+
+write_docker_daemon_json_with_mirrors() {
+  local daemon_json="$1"
+  local mirrors="$2"
+  local tmp_file
+  tmp_file="$(mktemp)"
+
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "${daemon_json}" "${mirrors}" > "${tmp_file}" <<'PY'
+import json
+import os
+import re
+import sys
+
+daemon_path = sys.argv[1]
+raw_mirrors = sys.argv[2]
+mirrors = [item.strip() for item in re.split(r"[\s,]+", raw_mirrors) if item.strip()]
+if not mirrors:
+    raise SystemExit("No Docker registry mirrors were provided.")
+
+data = {}
+if os.path.exists(daemon_path) and os.path.getsize(daemon_path) > 0:
+    with open(daemon_path, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+if not isinstance(data, dict):
+    raise SystemExit("Docker daemon.json must contain a JSON object.")
+
+existing = data.get("registry-mirrors", [])
+if not isinstance(existing, list):
+    existing = []
+
+merged = []
+for value in [*mirrors, *existing]:
+    if isinstance(value, str) and value and value not in merged:
+        merged.append(value)
+
+data["registry-mirrors"] = merged
+json.dump(data, sys.stdout, ensure_ascii=False, indent=2)
+sys.stdout.write("\n")
+PY
+  else
+    if [[ -s "${daemon_json}" ]]; then
+      rm -f "${tmp_file}"
+      fail_install "python3 is required to preserve existing /etc/docker/daemon.json settings."
+    fi
+    local mirror_json=""
+    local mirror
+    for mirror in ${mirrors//,/ }; do
+      if [[ -z "${mirror_json}" ]]; then
+        mirror_json="\"${mirror}\""
+      else
+        mirror_json="${mirror_json}, \"${mirror}\""
+      fi
+    done
+    printf '{\n  "registry-mirrors": [%s]\n}\n' "${mirror_json}" > "${tmp_file}"
+  fi
+
+  run_sudo install -m 0644 "${tmp_file}" "${daemon_json}"
+  rm -f "${tmp_file}"
+}
+
+restart_docker_service() {
+  if command -v systemctl >/dev/null 2>&1; then
+    run_logged "Restart Docker after registry mirror update" run_sudo systemctl restart docker
+  elif command -v service >/dev/null 2>&1; then
+    run_logged "Restart Docker after registry mirror update" run_sudo service docker restart
+  else
+    warn "Cannot find systemctl or service; restart Docker manually after daemon.json update."
+  fi
+}
+
+configure_docker_registry_mirrors() {
+  if [[ -z "${DOCKER_REGISTRY_MIRRORS}" ]]; then
+    return
+  fi
+
+  local daemon_dir="/etc/docker"
+  local daemon_json="${daemon_dir}/daemon.json"
+  local backup_path="${daemon_json}.backup-$(date +%Y%m%d-%H%M%S)"
+
+  run_logged "Prepare Docker daemon directory" run_sudo install -d -m 0755 "${daemon_dir}"
+  if [[ -f "${daemon_json}" ]]; then
+    run_logged "Back up Docker daemon.json" run_sudo cp "${daemon_json}" "${backup_path}"
+    echo "Docker daemon.json backup: ${backup_path}" | tee -a "${INSTALL_LOG}"
+  fi
+
+  write_docker_daemon_json_with_mirrors "${daemon_json}" "${DOCKER_REGISTRY_MIRRORS}"
+  echo "Docker registry mirrors configured: ${DOCKER_REGISTRY_MIRRORS}" | tee -a "${INSTALL_LOG}"
+  restart_docker_service
+  run_logged "Verify Docker registry mirror configuration" docker_cmd info
+}
+
+verify_docker_installation() {
+  if ! docker_cli_available; then
+    fail_install "Docker verification failed: docker --version is unavailable."
+  fi
+  if ! docker_compose_available; then
+    fail_install "Docker verification failed: docker compose version is unavailable."
+  fi
+
+  docker --version | tee -a "${INSTALL_LOG}"
+  docker compose version | tee -a "${INSTALL_LOG}"
+  print_install_setting "DOCKER_INSTALL_METHOD_USED" "${DOCKER_INSTALL_METHOD_USED}" >> "${INSTALL_LOG}"
 }
 
 ensure_docker() {
+  if ! docker_install_needed; then
+    DOCKER_INSTALL_METHOD_USED="existing"
+    docker --version
+    docker compose version
+    ok "Docker already installed; skipping Docker installation."
+    configure_docker_registry_mirrors
+    verify_docker_installation
+    return
+  fi
+
   local needs_install=0
 
   if docker_cli_available; then
@@ -860,6 +1231,9 @@ ensure_docker() {
     run_logged "设置 Docker 开机自启" run_sudo systemctl enable docker
     run_logged "启动 Docker 服务" run_sudo systemctl start docker
   fi
+
+  configure_docker_registry_mirrors
+  verify_docker_installation
 
   if ! docker --version >> "${INSTALL_LOG}" 2>&1 || ! docker_cmd compose version >> "${INSTALL_LOG}" 2>&1; then
     fail_install "Docker 安装失败，请查看 deploy/install.log"
@@ -1211,6 +1585,11 @@ print_deployment_summary() {
     "$(provider_enabled_label "${DEEPSEEK_API_KEY:-}")" \
     "$(provider_enabled_label "${OPEN_METEO_API_KEY:-}")"
   printf '需要安装 Docker：%s\n' "$(docker_install_needed_label)"
+  printf 'Install region: %s\n' "${INSTALL_REGION}"
+  printf 'Requested Docker install method: %s\n' "${DOCKER_INSTALL_METHOD}"
+  printf 'APT mirror: %s\n' "${APT_MIRROR:-none}"
+  printf 'PIP index URL: %s\n' "${PIP_INDEX_URL:-none}"
+  printf 'Docker registry mirrors: %s\n' "${DOCKER_REGISTRY_MIRRORS:-none}"
   echo "密码与 API Key 均已隐藏。"
 }
 
@@ -1318,6 +1697,8 @@ check_https_after_start() {
 }
 
 main() {
+  normalize_install_settings
+  log_install_settings
   title
   section 1 "环境检查"
   local should_render_env=0
@@ -1431,6 +1812,9 @@ main() {
   echo "Status: bash scripts/status.sh"
   echo "Update: bash scripts/update.sh"
   echo "Backup: bash scripts/backup.sh"
+  echo "Docker install method used: ${DOCKER_INSTALL_METHOD_USED}"
 }
 
-main "$@"
+if [[ "${PHOTO_WEATHER_INSTALLER_SOURCE_ONLY:-0}" != "1" ]]; then
+  main "$@"
+fi

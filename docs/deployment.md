@@ -19,6 +19,14 @@ If RAM is below 4 GB and swap is below 4 GB, the installer offers to create a sa
 bash scripts/install.sh
 ```
 
+For mainland China servers, prefer:
+
+```bash
+bash scripts/install-cn.sh
+```
+
+`scripts/install-cn.sh` is a thin wrapper over the same installer. It defaults to `INSTALL_REGION=cn`, `DOCKER_INSTALL_METHOD=ubuntu`, a China-friendly APT mirror, a China-friendly pip index for the astro-service image build, and Docker registry mirrors. A fresh China server does not need manual Docker pre-installation.
+
 The installer runs these sections:
 
 1. 环境检查
@@ -38,6 +46,18 @@ The installer runs these sections:
 
 The installer writes `.env.production` and `deploy/Caddyfile`, installs Docker only when Docker or the Compose plugin is missing, validates Compose config, builds images sequentially, starts PostgreSQL/Redis/astro-service, downloads the local JPL ephemeris file when accepted, runs database preflight, then runs migrations and seed data. After that it creates or updates the admin account through `pnpm bootstrap:admin`, verifies the `admin` role, `user_roles`, `role_permissions`, and auth-route recognition through `bash scripts/verify-admin-bootstrap.sh`, then starts the full stack.
 
+Docker installation behavior is controlled by environment variables:
+
+- `INSTALL_REGION=global|cn`
+- `DOCKER_INSTALL_METHOD=auto|official|ubuntu`
+- `APT_MIRROR=https://...`
+- `PIP_INDEX_URL=https://...`
+- `DOCKER_REGISTRY_MIRRORS=https://mirror-a,https://mirror-b`
+
+`DOCKER_INSTALL_METHOD=official` uses the official Docker repository. `ubuntu` installs `docker.io` plus a Compose v2 package from Ubuntu/Debian packages. `auto` tries the official repository first and, if the official Docker repository or GPG download fails, logs `official Docker repository failed` and falls back to `docker.io` plus Compose v2 packages. After any path, the installer verifies `docker --version` and `docker compose version` before continuing.
+
+When `DOCKER_REGISTRY_MIRRORS` is set, the installer backs up `/etc/docker/daemon.json`, merges `registry-mirrors` without removing unrelated daemon settings, restarts Docker, and verifies with `docker info`.
+
 During database configuration the installer uses one source of truth:
 
 - `DB_NAME`, default `photo_weather_ai`
@@ -55,7 +75,7 @@ Custom database passwords are URL-encoded with `python3 urllib.parse.quote` befo
 
 管理员密码支持常见强密码符号；交互输入不会回显；请避免在命令行明文传入密码。安装器要求管理员密码至少 12 位，并包含大小写字母、数字和特殊字符。新生成的 `.env.production` 使用 `ADMIN_INITIAL_PASSWORD_B64` 保存初始管理员密码，`bootstrap:admin` / `verify-admin-bootstrap.sh` 仍兼容既有的 `ADMIN_INITIAL_PASSWORD`、`ADMIN_PASSWORD`、`ADMIN_PASSWORD_B64`、`INITIAL_ADMIN_PASSWORD(_B64)`、`SUPER_ADMIN_EMAIL` 和 `SUPER_ADMIN_PASSWORD(_B64)`。
 
-Logs are written to `deploy/install.log`. For streamed command output:
+Logs are written to `deploy/install.log`. The log includes the installer region, Docker install method, APT mirror, pip index, Docker registry mirrors, Docker version, Compose version, and the final Docker method used. Secrets remain masked. For streamed command output:
 
 ```bash
 bash scripts/install.sh --verbose
@@ -271,7 +291,7 @@ bash scripts/test-real-weather.sh
 - Compose `unexpected character` while reading `.env.production`: the env file has an invalid line, usually a standalone generated secret or an unescaped value. Run `bash scripts/check-env-production.sh`; then rerun `bash scripts/install.sh` and choose to back up/regenerate the broken file.
 - Astro health has `ephemerisAvailable=false`: run `bash scripts/download-ephemeris.sh`. If it remains false, check `EPHEMERIS_PATH=/app/data/de421.bsp`, inspect `docker compose --env-file .env.production -f docker-compose.prod.yml exec astro-service ls -lh /app/data/de421.bsp`, and fix file permissions.
 - Prisma `P1000` or database authentication failure: likely `.env.production` no longer matches an old PostgreSQL volume. For test reinstall, use `bash scripts/reset-prod-db.sh`. For real data, run `bash scripts/backup.sh` first and repair credentials inside PostgreSQL or restore the matching `.env.production`.
-- Docker installation waits on apt/dpkg: the installer waits up to 5 minutes and prints blocking processes. It never deletes apt lock files.
+- Docker installation waits on apt/dpkg: the installer waits up to `APT_LOCK_TIMEOUT_SECONDS` seconds, prints the real blocking apt/dpkg process list, ignores `unattended-upgrade-shutdown --wait-for-signal`, and never deletes apt lock files.
 - Docker build fails on a small server: enable the offered 4 GB swap file or move the build to a larger machine.
 - Caddy certificate failure: confirm DNS and ports `80`/`443`, then run `bash scripts/status.sh`.
 - Web cannot call API: confirm `.env.production` has `NEXT_PUBLIC_API_BASE_URL=https://your-domain/api`, rebuild with `bash scripts/update.sh`, and check `https://your-domain/api/health`.

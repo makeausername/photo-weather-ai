@@ -5,6 +5,7 @@ ENV PYTHONUNBUFFERED=1
 ENV EPHEMERIS_PATH=/app/data/de421.bsp
 
 WORKDIR /app/apps/astro-service
+ARG PIP_INDEX_URL=""
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
@@ -12,7 +13,11 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY apps/astro-service/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN if [ -n "$PIP_INDEX_URL" ]; then \
+    pip install --no-cache-dir -i "$PIP_INDEX_URL" -r requirements.txt; \
+  else \
+    pip install --no-cache-dir -r requirements.txt; \
+  fi
 
 COPY apps/astro-service/app ./app
 COPY apps/astro-service/scripts ./scripts

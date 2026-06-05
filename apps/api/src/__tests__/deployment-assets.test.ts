@@ -28,6 +28,7 @@ const bashScripts = [
   "scripts/check-env-production.sh",
   "scripts/check-login.sh",
   "scripts/lib/installer-input.sh",
+  "scripts/test-installer-bootstrap.sh",
   "scripts/test-installer-password.sh",
 ] as const;
 
@@ -132,6 +133,7 @@ describe("production deployment assets", () => {
       "ENABLE_ASTRO_SERVICE=true",
       "ASTRO_SERVICE_URL=http://astro-service:4100",
       "ASTRO_SERVICE_TIMEOUT_MS=45000",
+      "PIP_INDEX_URL=",
       "QWEATHER_API_KEY=",
       "QWEATHER_API_HOST=",
       "AMAP_API_KEY=",
@@ -174,7 +176,9 @@ describe("production deployment assets", () => {
     }
 
     expect(readRepoFile("apps/astro-service/Dockerfile")).toContain("EXPOSE 4100");
+    expect(readRepoFile("apps/astro-service/Dockerfile")).toContain('ARG PIP_INDEX_URL=""');
     expect(readRepoFile("apps/astro-service/Dockerfile")).toContain("pip install --no-cache-dir");
+    expect(readRepoFile("docker-compose.prod.yml")).toContain("PIP_INDEX_URL: ${PIP_INDEX_URL:-}");
     expect(readRepoFile("apps/astro-service/Dockerfile")).toContain(
       "ENV EPHEMERIS_PATH=/app/data/de421.bsp",
     );
@@ -387,6 +391,52 @@ describe("production deployment assets", () => {
 
     expect(installer).not.toContain("备份数据库后继续");
     expect(installer).not.toContain("确认开始部署？输入 YES 继续");
+  });
+
+  it("supports China Docker bootstrap defaults and safe fallback behavior", () => {
+    const installer = readRepoFile("scripts/install.sh");
+    const installCn = readRepoFile("scripts/install-cn.sh");
+
+    for (const expected of [
+      'INSTALL_REGION="${INSTALL_REGION:-${PHOTO_WEATHER_INSTALL_MODE:-global}}"',
+      'DOCKER_INSTALL_METHOD="${DOCKER_INSTALL_METHOD:-auto}"',
+      "is_ignored_apt_lock_process_args()",
+      "unattended-upgrade-shutdown --wait-for-signal",
+      'local max_seconds="${APT_LOCK_TIMEOUT_SECONDS}"',
+      "No real apt/dpkg blocker is running.",
+      "if ! docker_install_needed; then",
+      'DOCKER_INSTALL_METHOD_USED="existing"',
+      "Docker already installed; skipping Docker installation.",
+      "install_docker_from_official_repo()",
+      "install_docker_from_ubuntu_packages()",
+      "docker.io",
+      "docker-compose-v2",
+      "docker-compose-plugin",
+      "official Docker repository failed: Docker apt GPG download",
+      "official Docker repository failed; falling back to Ubuntu docker.io + Compose v2 packages",
+      "configure_docker_registry_mirrors()",
+      "Back up Docker daemon.json",
+      'run_logged "Back up Docker daemon.json" run_sudo cp "${daemon_json}" "${backup_path}"',
+      '"registry-mirrors"',
+      "Verify Docker registry mirror configuration",
+      "Docker install method used:",
+      "PIP_INDEX_URL",
+    ]) {
+      expect(installer).toContain(expected);
+    }
+
+    expect(installCn).toContain('export INSTALL_REGION="${INSTALL_REGION:-cn}"');
+    expect(installCn).toContain('export DOCKER_INSTALL_METHOD="${DOCKER_INSTALL_METHOD:-ubuntu}"');
+    expect(installCn).toContain("https://mirrors.tuna.tsinghua.edu.cn/ubuntu");
+    expect(installCn).toContain("https://pypi.tuna.tsinghua.edu.cn/simple");
+    for (const mirror of [
+      "https://docker.1ms.run",
+      "https://docker.m.daocloud.io",
+      "https://dockerproxy.com",
+      "https://mirror.baidubce.com",
+    ]) {
+      expect(installCn).toContain(mirror);
+    }
   });
 
   it("runs layered database preflight before migrations", () => {
