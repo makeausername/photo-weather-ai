@@ -1,7 +1,9 @@
 import {
   clearAdminSession,
   getStoredAdminTokens,
+  sessionHasAdminAccess,
   storeAdminSession,
+  type AccountRole,
   type AdminAuthSession,
   type SafeAccountProfile,
   type SafeAdminUser,
@@ -11,7 +13,8 @@ import { loginServiceUnavailableMessage, sanitizeAuthErrorMessage } from "./auth
 export type PublicAccountSession = {
   readonly user: SafeAdminUser;
   readonly profile: SafeAccountProfile | null;
-  readonly roles: readonly string[];
+  readonly roles: readonly AccountRole[];
+  readonly roleCodes?: readonly string[];
   readonly permissions: readonly string[];
   readonly isAdmin: boolean;
 };
@@ -28,19 +31,14 @@ export function shouldShowAdminEntry(
   session:
     | {
         readonly isAdmin?: boolean;
-        readonly roles?: readonly string[];
+        readonly roles?: readonly AccountRole[];
+        readonly roleCodes?: readonly string[];
         readonly permissions?: readonly string[];
       }
     | null
     | undefined,
 ): boolean {
-  const roles = new Set(session?.roles ?? []);
-  return (
-    Boolean(session?.isAdmin) ||
-    Boolean(session?.permissions?.includes("admin.manage")) ||
-    roles.has("admin") ||
-    roles.has("super_admin")
-  );
+  return sessionHasAdminAccess(session);
 }
 
 async function readPublicApiError(response: Response, fallback: string): Promise<string> {

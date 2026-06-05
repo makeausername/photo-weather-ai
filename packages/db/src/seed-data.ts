@@ -168,21 +168,14 @@ const permissions = [
   },
 ] as const satisfies readonly PermissionSeed[];
 
-const adminPermissionCodes = [
-  "admin.manage",
-  "locations.manage",
-  "photo_spots.manage",
-  "audit.read",
-] as const;
-
 const rolePermissions = [
   ...permissions.map((permission) => ({
     roleCode: "super_admin",
     permissionCode: permission.code,
   })),
-  ...adminPermissionCodes.map((permissionCode) => ({
+  ...permissions.map((permission) => ({
     roleCode: "admin",
-    permissionCode,
+    permissionCode: permission.code,
   })),
 ] satisfies readonly RolePermissionSeed[];
 

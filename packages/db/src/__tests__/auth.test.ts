@@ -1,4 +1,5 @@
 import {
+  createOrUpdateAdmin,
   createOrUpdateSuperAdmin,
   formatCreateAdminResult,
   hasPermission,
@@ -7,6 +8,7 @@ import {
   readCreateAdminEnv,
   readVerifyAdminEnv,
   safeUser,
+  verifyAdminBootstrap,
   verifySuperAdmin,
   verifyPassword,
 } from "../index.js";
@@ -15,34 +17,64 @@ import { describe, expect, it } from "vitest";
 
 function createAdminScriptClient(): {
   readonly client: DatabaseClient;
-  readonly state: { readonly users: Map<string, any>; readonly assignments: any[] };
+  readonly state: {
+    readonly users: Map<string, any>;
+    readonly roles: Map<string, any>;
+    readonly permissions: Map<string, any>;
+    readonly userRoles: Map<string, any>;
+    readonly rolePermissions: Map<string, any>;
+  };
 } {
   const now = new Date("2026-01-01T00:00:00.000Z");
   const users = new Map<string, any>();
-  const assignments: any[] = [];
-  const superAdminRole = {
-    id: "role-super-admin",
-    code: "super_admin",
-    name: "Super administrator",
-    description: "Full operator access.",
-    createdAt: now,
-    updatedAt: now,
-  };
+  const roles = new Map<string, any>();
+  const permissions = new Map<string, any>();
+  const userRoles = new Map<string, any>();
+  const rolePermissions = new Map<string, any>();
+
+  function roleWithPermissions(role: any) {
+    if (!role) {
+      return null;
+    }
+
+    return {
+      ...role,
+      permissions: [...rolePermissions.values()]
+        .filter((rolePermission) => rolePermission.roleId === role.id)
+        .map((rolePermission) => ({
+          permission: [...permissions.values()].find(
+            (permission) => permission.id === rolePermission.permissionId,
+          ),
+        })),
+    };
+  }
+
+  function userWithRoles(user: any) {
+    return {
+      ...user,
+      roles: [...userRoles.values()]
+        .filter((userRole) => userRole.userId === user.id)
+        .map((userRole) => ({
+          role: roleWithPermissions(
+            [...roles.values()].find((role) => role.id === userRole.roleId),
+          ),
+        })),
+    };
+  }
 
   const client: DatabaseClient = {
     user: {
       findUnique: async ({ where }: any) => {
-        if (where.id) {
-          return users.get(where.id) ?? null;
-        }
-
-        return [...users.values()].find((user) => user.email === where.email) ?? null;
+        const user =
+          where.id !== undefined
+            ? users.get(where.id)
+            : [...users.values()].find((candidate) => candidate.email === where.email);
+        return user ? userWithRoles(user) : null;
       },
       create: async ({ data }: any) => {
         const user = {
           id: `user-${users.size}`,
           phone: null,
-          roleCodes: [],
           createdAt: now,
           updatedAt: now,
           lastLoginAt: null,
@@ -67,17 +99,85 @@ function createAdminScriptClient(): {
       },
     },
     role: {
-      findUnique: async ({ where }: any) => (where.code === "super_admin" ? superAdminRole : null),
-      upsert: async () => superAdminRole,
+      findUnique: async ({ where }: any) => roles.get(where.code) ?? null,
+      upsert: async ({ where, create, update }: any) => {
+        const existing = roles.get(where.code);
+        if (existing) {
+          const next = {
+            ...existing,
+            ...update,
+            updatedAt: now,
+          };
+          roles.set(where.code, next);
+          return next;
+        }
+
+        const role = {
+          id: `role-${roles.size}`,
+          createdAt: now,
+          updatedAt: now,
+          ...create,
+        };
+        roles.set(role.code, role);
+        return role;
+      },
     },
     userRole: {
       upsert: async ({ create }: any) => {
-        assignments.push(create);
-        const user = users.get(create.userId);
-        if (user && !user.roleCodes.includes(superAdminRole.code)) {
-          user.roleCodes.push(superAdminRole.code);
+        const key = `${create.userId}:${create.roleId}`;
+        const existing = userRoles.get(key);
+        if (existing) {
+          return existing;
         }
-        return { id: "user-role", ...create };
+
+        const userRole = {
+          id: `user-role-${userRoles.size}`,
+          ...create,
+        };
+        userRoles.set(key, userRole);
+        return userRole;
+      },
+    },
+    permission: {
+      findUnique: async ({ where }: any) => permissions.get(where.code) ?? null,
+      findMany: async () => [...permissions.values()],
+      upsert: async ({ where, create, update }: any) => {
+        const existing = permissions.get(where.code);
+        if (existing) {
+          const next = {
+            ...existing,
+            ...update,
+            updatedAt: now,
+          };
+          permissions.set(where.code, next);
+          return next;
+        }
+
+        const permission = {
+          id: `permission-${permissions.size}`,
+          createdAt: now,
+          updatedAt: now,
+          ...create,
+        };
+        permissions.set(permission.code, permission);
+        return permission;
+      },
+    },
+    rolePermission: {
+      findMany: async () => [...rolePermissions.values()],
+      upsert: async ({ create }: any) => {
+        const key = `${create.roleId}:${create.permissionId}`;
+        const existing = rolePermissions.get(key);
+        if (existing) {
+          return existing;
+        }
+
+        const rolePermission = {
+          id: `role-permission-${rolePermissions.size}`,
+          ...create,
+        };
+        rolePermissions.set(key, rolePermission);
+        return rolePermission;
       },
     },
     systemSetting: {
@@ -108,7 +208,7 @@ function createAdminScriptClient(): {
 
   return {
     client,
-    state: { users, assignments },
+    state: { users, roles, permissions, userRoles, rolePermissions },
   };
 }
 
@@ -155,10 +255,15 @@ describe("admin auth helpers", () => {
     expect(hasPermission({ permissions: ["settings.manage"] }, "providers.manage")).toBe(false);
   });
 
-  it("create-admin helper creates a super admin and assigns the role", async () => {
+  it("keeps legacy super-admin helper names as bootstrap aliases", () => {
+    expect(createOrUpdateSuperAdmin).toBe(createOrUpdateAdmin);
+    expect(verifySuperAdmin).toBe(verifyAdminBootstrap);
+  });
+
+  it("bootstrap helper creates an admin role with code and assigns permissions", async () => {
     const { client, state } = createAdminScriptClient();
 
-    const result = await createOrUpdateSuperAdmin({
+    const result = await createOrUpdateAdmin({
       email: "ADMIN@EXAMPLE.COM",
       password: "CorrectHorseBattery99!",
       displayName: "Owner",
@@ -169,30 +274,145 @@ describe("admin auth helpers", () => {
       created: true,
       passwordUpdated: true,
       roleAssigned: true,
+      roleCode: "admin",
       user: {
         email: "admin@example.com",
         displayName: "Owner",
       },
     });
     expect([...state.users.values()][0].passwordHash).not.toBe("CorrectHorseBattery99!");
-    expect(state.assignments).toEqual([
-      {
-        userId: "user-0",
-        roleId: "role-super-admin",
-      },
-    ]);
+    expect(state.roles.get("admin")).toMatchObject({
+      code: "admin",
+      name: "admin",
+      description: "Administrator",
+    });
+    expect(state.userRoles.size).toBe(1);
+    expect([...state.userRoles.values()][0]).toMatchObject({
+      userId: "user-0",
+      roleId: state.roles.get("admin")?.id,
+    });
+    expect(state.rolePermissions.size).toBe(state.permissions.size);
   });
 
   it("create-admin output does not print the password", async () => {
     const { client } = createAdminScriptClient();
     const password = "CorrectHorseBattery99!";
-    const result = await createOrUpdateSuperAdmin({
+    const result = await createOrUpdateAdmin({
       email: "admin@example.com",
       password,
       client,
     });
 
     expect(formatCreateAdminResult(result).join("\n")).not.toContain(password);
+    expect(formatCreateAdminResult(result).join("\n")).not.toContain(
+      Buffer.from(password, "utf8").toString("base64"),
+    );
+  });
+
+  it("bootstrap repairs an existing admin user that has no role", async () => {
+    const { client, state } = createAdminScriptClient();
+    state.users.set("existing-admin", {
+      id: "existing-admin",
+      email: "admin@example.com",
+      phone: null,
+      passwordHash: await hashPassword("CorrectHorseBattery99!"),
+      displayName: "Existing Admin",
+      status: "active",
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      lastLoginAt: null,
+    });
+
+    const result = await createOrUpdateAdmin({
+      email: "admin@example.com",
+      client,
+    });
+
+    expect(result).toMatchObject({
+      created: false,
+      passwordUpdated: false,
+      roleAssigned: true,
+      roleCode: "admin",
+    });
+    expect(state.userRoles.size).toBe(1);
+    await expect(verifyAdminBootstrap({ email: "admin@example.com", client })).resolves.toMatchObject({
+      roles: ["admin"],
+    });
+  });
+
+  it("bootstrap repairs an existing admin role without a user binding", async () => {
+    const { client, state } = createAdminScriptClient();
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    state.roles.set("admin", {
+      id: "role-existing-admin",
+      code: "admin",
+      name: "legacy admin",
+      description: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    state.users.set("existing-admin", {
+      id: "existing-admin",
+      email: "admin@example.com",
+      phone: null,
+      passwordHash: await hashPassword("CorrectHorseBattery99!"),
+      displayName: "Existing Admin",
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+      lastLoginAt: null,
+    });
+
+    await createOrUpdateAdmin({
+      email: "admin@example.com",
+      client,
+    });
+
+    expect(state.roles.get("admin")).toMatchObject({
+      code: "admin",
+      name: "admin",
+      description: "Administrator",
+    });
+    expect([...state.userRoles.values()]).toEqual([
+      expect.objectContaining({
+        userId: "existing-admin",
+        roleId: "role-existing-admin",
+      }),
+    ]);
+  });
+
+  it("bootstrap is idempotent and does not duplicate roles or bindings", async () => {
+    const { client, state } = createAdminScriptClient();
+    await createOrUpdateAdmin({
+      email: "admin@example.com",
+      password: "CorrectHorseBattery99!",
+      client,
+    });
+
+    const user = [...state.users.values()][0];
+    const originalPasswordHash = user.passwordHash;
+    const before = {
+      users: state.users.size,
+      roles: state.roles.size,
+      permissions: state.permissions.size,
+      userRoles: state.userRoles.size,
+      rolePermissions: state.rolePermissions.size,
+    };
+
+    const result = await createOrUpdateAdmin({
+      email: "admin@example.com",
+      client,
+    });
+
+    expect(result.passwordUpdated).toBe(false);
+    expect([...state.users.values()][0].passwordHash).toBe(originalPasswordHash);
+    expect({
+      users: state.users.size,
+      roles: state.roles.size,
+      permissions: state.permissions.size,
+      userRoles: state.userRoles.size,
+      rolePermissions: state.rolePermissions.size,
+    }).toEqual(before);
   });
 
   it("reads base64 admin initial passwords before legacy raw password env vars", () => {
@@ -240,18 +460,28 @@ describe("admin auth helpers", () => {
     ).toMatchObject({
       password: "LegacyHorseBattery99!",
     });
+
+    expect(
+      readCreateAdminEnv({
+        ADMIN_EMAIL: "admin@example.com",
+        ADMIN_INITIAL_PASSWORD: "InitialHorseBattery99!",
+        ADMIN_PASSWORD: "WrongHorseBattery99!",
+      }),
+    ).toMatchObject({
+      password: "InitialHorseBattery99!",
+    });
   });
 
   it("create-admin updates an existing admin password and keeps the login verifier compatible", async () => {
     const { client, state } = createAdminScriptClient();
-    await createOrUpdateSuperAdmin({
+    await createOrUpdateAdmin({
       email: "admin@example.com",
       password: "CorrectHorseBattery99!",
       displayName: "Owner",
       client,
     });
 
-    const result = await createOrUpdateSuperAdmin({
+    const result = await createOrUpdateAdmin({
       email: "ADMIN@EXAMPLE.COM",
       password: "UpdatedHorseBattery99!",
       displayName: "Operator",
@@ -274,7 +504,7 @@ describe("admin auth helpers", () => {
 
   it("create-admin re-enables an existing disabled admin account", async () => {
     const { client, state } = createAdminScriptClient();
-    await createOrUpdateSuperAdmin({
+    await createOrUpdateAdmin({
       email: "admin@example.com",
       password: "CorrectHorseBattery99!",
       client,
@@ -285,7 +515,7 @@ describe("admin auth helpers", () => {
       status: "disabled",
     });
 
-    const result = await createOrUpdateSuperAdmin({
+    const result = await createOrUpdateAdmin({
       email: "admin@example.com",
       password: "UpdatedHorseBattery99!",
       client,
@@ -301,14 +531,14 @@ describe("admin auth helpers", () => {
 
   it("verify-admin succeeds with the correct password", async () => {
     const { client } = createAdminScriptClient();
-    await createOrUpdateSuperAdmin({
+    await createOrUpdateAdmin({
       email: "admin@example.com",
       password: "CorrectHorseBattery99!",
       client,
     });
 
     await expect(
-      verifySuperAdmin({
+      verifyAdminBootstrap({
         email: "admin@example.com",
         password: "CorrectHorseBattery99!",
         client,
@@ -317,21 +547,22 @@ describe("admin auth helpers", () => {
       user: {
         email: "admin@example.com",
       },
-      roles: ["super_admin"],
+      roles: ["admin"],
+      permissions: expect.arrayContaining(["admin.manage"]),
       passwordChecked: true,
     });
   });
 
   it("verify-admin fails with the wrong password", async () => {
     const { client } = createAdminScriptClient();
-    await createOrUpdateSuperAdmin({
+    await createOrUpdateAdmin({
       email: "admin@example.com",
       password: "CorrectHorseBattery99!",
       client,
     });
 
     await expect(
-      verifySuperAdmin({
+      verifyAdminBootstrap({
         email: "admin@example.com",
         password: "WrongHorseBattery99!",
         client,
@@ -341,23 +572,37 @@ describe("admin auth helpers", () => {
 
   it("verify-admin fails when the admin role is missing", async () => {
     const { client, state } = createAdminScriptClient();
-    await createOrUpdateSuperAdmin({
+    await createOrUpdateAdmin({
       email: "admin@example.com",
       password: "CorrectHorseBattery99!",
       client,
     });
-    const user = [...state.users.values()][0];
-    state.users.set(user.id, {
-      ...user,
-      roleCodes: [],
-    });
+    state.userRoles.clear();
 
     await expect(
-      verifySuperAdmin({
+      verifyAdminBootstrap({
         email: "admin@example.com",
         password: "CorrectHorseBattery99!",
         client,
       }),
     ).rejects.toThrow("管理员角色缺失");
+  });
+
+  it("verify-admin fails when permission bindings are missing", async () => {
+    const { client, state } = createAdminScriptClient();
+    await createOrUpdateAdmin({
+      email: "admin@example.com",
+      password: "CorrectHorseBattery99!",
+      client,
+    });
+    state.rolePermissions.clear();
+
+    await expect(
+      verifyAdminBootstrap({
+        email: "admin@example.com",
+        password: "CorrectHorseBattery99!",
+        client,
+      }),
+    ).rejects.toThrow("管理员权限绑定缺失");
   });
 });

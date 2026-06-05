@@ -10,6 +10,9 @@ export {
   getUserAuthContextById,
   hashRefreshToken,
   hasPermission,
+  adminRoleCodes,
+  isAdminRoleLike,
+  principalHasAdminRole,
   requiredAdminPermissions,
   revokeUserSessionByRefreshToken,
   safeUser,
@@ -33,6 +36,7 @@ export {
 } from "./constants.js";
 export {
   AdminVerificationError,
+  createOrUpdateAdmin,
   createOrUpdateSuperAdmin,
   formatCreateAdminResult,
   formatVerifyAdminResult,
@@ -40,6 +44,7 @@ export {
   readVerifyAdminEnv,
   runCreateAdminFromEnv,
   runVerifyAdminFromEnv,
+  verifyAdminBootstrap,
   verifySuperAdmin,
 } from "./create-admin.js";
 export {
@@ -109,6 +114,7 @@ export type {
   ProviderConfigRecord,
   ProviderType,
   RainImpactLevel,
+  SafeRole,
   SafeProviderConfig,
   SafeSystemSetting,
   SafeUser,

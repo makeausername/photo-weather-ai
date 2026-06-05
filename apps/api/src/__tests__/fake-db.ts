@@ -224,7 +224,7 @@ export async function createFakeDatabaseClient(): Promise<{
     passwordHash: await hashPassword("CorrectHorseBattery99!"),
     displayName: "Test Admin",
     status: "active",
-    roleCodes: ["super_admin"],
+    roleCodes: ["admin"],
     createdAt: now,
     updatedAt: now,
     lastLoginAt: null,

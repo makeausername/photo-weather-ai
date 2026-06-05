@@ -16,6 +16,7 @@ const productionScripts = [
   "scripts/reset-prod-db.sh",
   "scripts/reset-admin.sh",
   "scripts/resume-install.sh",
+  "scripts/verify-admin-bootstrap.sh",
   "scripts/download-ephemeris.sh",
   "scripts/test-providers.sh",
   "scripts/test-deepseek-interpretation.sh",
@@ -375,9 +376,9 @@ describe("production deployment assets", () => {
       "需要安装 Docker",
       "deploy/install.log",
       "--verbose",
-      "pnpm create-admin",
-      "pnpm verify-admin",
-      "管理员账号验证失败，部署未完成。",
+      "pnpm bootstrap:admin",
+      "verify-admin-bootstrap.sh",
+      "管理员账号、角色或权限验证失败，部署未完成。",
       "可执行 bash scripts/reset-admin.sh 重新设置管理员密码。",
       "Reset admin: bash scripts/reset-admin.sh",
     ]) {
@@ -608,8 +609,8 @@ describe("production deployment assets", () => {
     expect(resetAdmin).toContain('INSTALLER_INPUT_LIB="${SCRIPT_DIR}/lib/installer-input.sh"');
     expect(resetAdmin).toContain("prompt_password_twice");
     expect(resetAdmin).toContain("ADMIN_INITIAL_PASSWORD_B64");
-    expect(resetAdmin).toContain("api pnpm create-admin");
-    expect(resetAdmin).toContain("api pnpm verify-admin");
+    expect(resetAdmin).toContain("api pnpm bootstrap:admin");
+    expect(resetAdmin).toContain("verify-admin-bootstrap.sh");
     expect(resetAdmin).not.toMatch(/echo .*ADMIN_PASSWORD/);
     expect(resetAdmin).not.toMatch(/read\s+-r\s+-s\s+-p/);
     expect(resetAdmin).not.toContain("密码：${ADMIN_PASSWORD}");
@@ -621,5 +622,26 @@ describe("production deployment assets", () => {
     expect(checkLogin).toContain("resolve_admin_password_from_env");
     expect(checkLogin).not.toMatch(/echo .*ADMIN_PASSWORD/);
     expect(checkLogin).not.toMatch(/read\s+-r\s+-s\s+-p/);
+  });
+
+  it("ships the admin bootstrap verification helper without printing secrets", () => {
+    const script = readRepoFile("scripts/verify-admin-bootstrap.sh");
+
+    for (const expected of [
+      'ENV_FILE=".env.production"',
+      'COMPOSE_FILE="docker-compose.prod.yml"',
+      "public.users",
+      "public.roles",
+      "public.user_roles",
+      "roles WHERE code = 'admin'",
+      "role_permissions",
+      "verify-admin-auth",
+      "prepare_admin_password_b64_from_env",
+    ]) {
+      expect(script).toContain(expected);
+    }
+
+    expect(script).not.toMatch(/echo .*ADMIN_INITIAL_PASSWORD_B64/);
+    expect(script).not.toMatch(/echo .*ADMIN_PASSWORD/);
   });
 });

@@ -23,6 +23,7 @@
     "db:push": "pnpm --filter @photo-weather/db db:push",
     "db:seed": "pnpm --filter @photo-weather/db db:seed",
     "db:studio": "pnpm --filter @photo-weather/db db:studio",
+    "bootstrap:admin": "pnpm --filter @photo-weather/db bootstrap:admin",
     "create-admin": "pnpm --filter @photo-weather/db create-admin",
     "verify-admin": "pnpm --filter @photo-weather/db verify-admin",
     "lint": "eslint . --ext .js,.cjs,.mjs,.ts,.tsx --max-warnings=0",

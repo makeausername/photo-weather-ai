@@ -1249,34 +1249,26 @@ build_production_images() {
   done
 }
 
-compose_run_create_admin() {
+compose_run_bootstrap_admin() {
   export ADMIN_EMAIL ADMIN_INITIAL_PASSWORD_B64 ADMIN_DISPLAY_NAME
   compose run --rm \
     -e ADMIN_EMAIL \
     -e ADMIN_INITIAL_PASSWORD_B64 \
     -e ADMIN_DISPLAY_NAME \
-    api pnpm create-admin
-}
-
-compose_run_verify_admin() {
-  export ADMIN_EMAIL ADMIN_INITIAL_PASSWORD_B64
-  compose run --rm \
-    -e ADMIN_EMAIL \
-    -e ADMIN_INITIAL_PASSWORD_B64 \
-    api pnpm verify-admin
+    api pnpm bootstrap:admin
 }
 
 create_admin_account() {
-  run_logged "创建或更新管理员账号" compose_run_create_admin
+  run_logged "创建或更新管理员账号" compose_run_bootstrap_admin
 }
 
 verify_admin_account() {
-  if run_logged_allow_fail "验证管理员账号" compose_run_verify_admin; then
+  if run_logged_allow_fail "验证管理员角色与权限" bash "${SCRIPT_DIR}/verify-admin-bootstrap.sh"; then
     ok "管理员账号验证通过。"
     return
   fi
 
-  echo "管理员账号验证失败，部署未完成。"
+  echo "管理员账号、角色或权限验证失败，部署未完成。"
   echo "可执行 bash scripts/reset-admin.sh 重新设置管理员密码。"
   show_log_tail
   exit 1

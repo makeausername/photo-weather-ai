@@ -424,6 +424,7 @@ corepack pnpm db:migrate
 corepack pnpm db:push
 corepack pnpm db:seed
 corepack pnpm db:studio
+corepack pnpm bootstrap:admin
 corepack pnpm create-admin
 ```
 
@@ -450,12 +451,12 @@ Seed data 包含未核验的中国风光摄影示例地点与机位：
 
 ## 首个管理员
 
-先执行数据库迁移和 seed，再创建超级管理员：
+先执行数据库迁移和 seed，再创建首个管理员：
 
 ```bash
 corepack pnpm db:migrate
 corepack pnpm db:seed
-ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='change-Me-12345!' ADMIN_DISPLAY_NAME="超级管理员" corepack pnpm create-admin
+ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='change-Me-12345!' ADMIN_DISPLAY_NAME="管理员" corepack pnpm bootstrap:admin
 ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='change-Me-12345!' corepack pnpm verify-admin
 ```
 
@@ -465,11 +466,11 @@ ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='change-Me-12345!' corepack pnpm ve
 
 - `ADMIN_EMAIL`
 - `ADMIN_INITIAL_PASSWORD_B64`
-- `ADMIN_PASSWORD`
 - `ADMIN_INITIAL_PASSWORD`
+- `ADMIN_PASSWORD`
 - `ADMIN_DISPLAY_NAME`
 
-`create-admin` 是幂等的：账号不存在时创建账号，账号已存在时会更新密码、启用账号并确保 `super_admin` 角色存在。密码会先 bcrypt 哈希再写入数据库，不会明文打印。生产环境可使用 `bash scripts/reset-admin.sh` 重置管理员密码，并用 `bash scripts/check-login.sh` 验证登录。上线前设置至少 32 字符的强 `JWT_SECRET`。
+`bootstrap:admin` 是幂等的：账号不存在时创建账号，账号已存在时会在提供初始密码时更新密码、启用账号并确保 `admin` 角色、`user_roles` 绑定和权限绑定存在。密码会先 bcrypt 哈希再写入数据库，不会明文打印。生产环境可使用 `bash scripts/reset-admin.sh` 重置管理员密码，并用 `bash scripts/verify-admin-bootstrap.sh` 和 `bash scripts/check-login.sh` 验证角色与登录。上线前设置至少 32 字符的强 `JWT_SECRET`。
 
 ## 后台 API
 

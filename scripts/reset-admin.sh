@@ -114,15 +114,11 @@ compose_run_create_admin() {
     -e ADMIN_EMAIL \
     -e ADMIN_INITIAL_PASSWORD_B64 \
     -e ADMIN_DISPLAY_NAME \
-    api pnpm create-admin
+    api pnpm bootstrap:admin
 }
 
 compose_run_verify_admin() {
-  export ADMIN_EMAIL ADMIN_INITIAL_PASSWORD_B64
-  compose run --rm \
-    -e ADMIN_EMAIL \
-    -e ADMIN_INITIAL_PASSWORD_B64 \
-    api pnpm verify-admin
+  bash "${SCRIPT_DIR}/verify-admin-bootstrap.sh"
 }
 
 update_admin_env_file

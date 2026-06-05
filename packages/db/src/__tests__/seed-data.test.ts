@@ -23,12 +23,10 @@ describe("database seed data", () => {
         roleCode: "super_admin",
         permissionCode: permission.code,
       })),
-      ...["admin.manage", "locations.manage", "photo_spots.manage", "audit.read"].map(
-        (permissionCode) => ({
-          roleCode: "admin",
-          permissionCode,
-        }),
-      ),
+      ...first.permissions.map((permission) => ({
+        roleCode: "admin",
+        permissionCode: permission.code,
+      })),
     ]);
   });
 

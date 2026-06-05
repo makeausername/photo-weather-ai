@@ -9,6 +9,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test-provider": "node dist/provider-diagnostics-cli.js",
     "calibration:test": "node dist/historical-calibration-cli.js",
+    "verify-admin-auth": "node dist/verify-admin-auth-context.js",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {

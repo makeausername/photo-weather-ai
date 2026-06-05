@@ -12,7 +12,12 @@ import {
 } from "../../components/auth-errors";
 import { publicHeaderActionLabels, publicHeaderNavLabels } from "../../components/public-header";
 import AccountPage, { metadata as accountMetadata } from "./page";
-import { accountCenterSectionLabels, UnauthenticatedAccountPrompt } from "./account-center-client";
+import {
+  accountCenterSectionLabels,
+  formatAccountRoleLabels,
+  UnauthenticatedAccountPrompt,
+} from "./account-center-client";
+import { sessionHasAdminAccess } from "../admin/admin-api";
 import AdminLoginPage from "../admin/login/page";
 import LoginPage, { metadata as loginMetadata } from "../login/page";
 import { publicLoginFormLabels } from "../login/login-form";
@@ -44,12 +49,50 @@ describe("public account navigation", () => {
 
   it("shows admin entry for admin role, super admin role, or manage permission only", () => {
     expect(shouldShowAdminEntry({ roles: ["admin"], permissions: [] })).toBe(true);
+    expect(
+      shouldShowAdminEntry({
+        roles: [{ id: "role-admin", code: "admin", name: "admin", displayName: "管理员" }],
+        permissions: [],
+      }),
+    ).toBe(true);
+    expect(
+      shouldShowAdminEntry({
+        roles: [{ id: "role-admin", code: "ADMIN", name: "ADMIN" }],
+        permissions: [],
+      }),
+    ).toBe(true);
     expect(shouldShowAdminEntry({ roles: ["super_admin"], permissions: [] })).toBe(true);
     expect(shouldShowAdminEntry({ roles: ["user"], permissions: ["admin.manage"] })).toBe(true);
     expect(shouldShowAdminEntry({ roles: ["user"], permissions: ["locations.manage"] })).toBe(
       false,
     );
     expect(shouldShowAdminEntry(null)).toBe(false);
+  });
+
+  it("formats structured admin roles for the account page", () => {
+    expect(
+      formatAccountRoleLabels([
+        { id: "role-admin", code: "admin", name: "admin", displayName: "管理员" },
+      ]),
+    ).toBe("管理员");
+    expect(formatAccountRoleLabels([], ["admin"])).toBe("管理员");
+    expect(formatAccountRoleLabels([], [])).toBe("暂无数据");
+  });
+
+  it("allows /admin access only for admin role data or admin permission", () => {
+    expect(
+      sessionHasAdminAccess({
+        roles: [{ id: "role-admin", code: "admin", name: "admin" }],
+        permissions: [],
+      }),
+    ).toBe(true);
+    expect(
+      sessionHasAdminAccess({
+        roles: [{ id: "role-user", code: "user", name: "user" }],
+        permissions: [],
+      }),
+    ).toBe(false);
+    expect(sessionHasAdminAccess({ roles: [], permissions: ["admin.manage"] })).toBe(true);
   });
 });
 

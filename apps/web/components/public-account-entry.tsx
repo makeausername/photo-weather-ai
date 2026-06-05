@@ -89,7 +89,7 @@ export function PublicAccountEntry({ onNavigate }: PublicAccountEntryProps) {
           <AccountMenuLink href="/account#queries" label="我的查询" onNavigate={handleNavigate} />
           <AccountMenuLink href="/account#favorites" label="收藏机位" onNavigate={handleNavigate} />
           {showAdminEntry ? (
-            <AccountMenuLink href="/admin" label="管理后台" onNavigate={handleNavigate} />
+            <AccountMenuLink href="/admin" label="管理后台入口" onNavigate={handleNavigate} />
           ) : null}
           <button
             type="button"

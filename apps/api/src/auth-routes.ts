@@ -10,6 +10,7 @@ import {
   getUserAuthContextByEmail,
   getUserAuthContextById,
   hashRefreshToken,
+  principalHasAdminRole,
   requiredAdminPermissions,
   revokeUserSessionByRefreshToken,
   touchUserLastLogin,
@@ -224,7 +225,16 @@ function createDevBypassContext(): AuthenticatedRequestContext {
         lastLoginAt: null,
       },
       profile: null,
-      roles: ["super_admin"],
+      roles: [
+        {
+          id: "role-admin-auth-bypass",
+          code: "admin",
+          name: "admin",
+          displayName: "管理员",
+          description: "Local admin auth bypass.",
+        },
+      ],
+      roleCodes: ["admin"],
       permissions: [...requiredAdminPermissions],
     },
     auditActorUserId: null,
@@ -261,8 +271,7 @@ function hasPermission(principal: AuthenticatedPrincipal, permission: string): b
 function isAdminPrincipal(principal: AuthenticatedPrincipal): boolean {
   return (
     principal.permissions.includes("admin.manage") ||
-    principal.roles.includes("admin") ||
-    principal.roles.includes("super_admin")
+    principalHasAdminRole(principal)
   );
 }
 
@@ -323,6 +332,7 @@ function authResponse(
     user: principal.user,
     profile: principal.profile,
     roles: principal.roles,
+    roleCodes: principal.roleCodes,
     permissions: principal.permissions,
     isAdmin: isAdminPrincipal(principal),
   };
@@ -333,6 +343,7 @@ function publicPrincipalResponse(principal: AuthenticatedPrincipal) {
     user: principal.user,
     profile: principal.profile,
     roles: principal.roles,
+    roleCodes: principal.roleCodes,
     permissions: principal.permissions,
     isAdmin: isAdminPrincipal(principal),
   };

@@ -124,6 +124,14 @@ export type RoleRecord = {
   readonly description: string | null;
 };
 
+export type SafeRole = {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly displayName: string | null;
+  readonly description: string | null;
+};
+
 export type PermissionRecord = {
   readonly id: string;
   readonly code: string;
@@ -134,7 +142,8 @@ export type PermissionRecord = {
 export type AuthenticatedPrincipal = {
   readonly user: SafeUser;
   readonly profile: SafeUserProfile | null;
-  readonly roles: readonly string[];
+  readonly roles: readonly SafeRole[];
+  readonly roleCodes: readonly string[];
   readonly permissions: readonly string[];
 };
 
@@ -492,8 +501,10 @@ export type DatabaseClient = {
   readonly permission?: {
     readonly upsert: (args: any) => Promise<any>;
     readonly findUnique: (args: any) => Promise<any>;
+    readonly findMany?: (args?: any) => Promise<any[]>;
   };
   readonly rolePermission?: {
     readonly upsert: (args: any) => Promise<any>;
+    readonly findMany?: (args?: any) => Promise<any[]>;
   };
 };

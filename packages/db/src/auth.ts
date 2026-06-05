@@ -5,6 +5,7 @@ import { hashUserPassword } from "./passwords.js";
 import type {
   AuthenticatedPrincipal,
   DatabaseClient,
+  SafeRole,
   SafeUserProfile,
   SafeUser,
   UserRecord,
@@ -21,6 +22,9 @@ export const requiredAdminPermissions = [
   "audit.read",
   "usage.read",
 ] as const;
+
+export const adminRoleCodes = ["admin", "super_admin"] as const;
+const adminRoleCodeSet = new Set<string>(adminRoleCodes);
 
 async function resolveClient(client?: DatabaseClient): Promise<DatabaseClient> {
   return client ?? ((await getPrismaClient()) as unknown as DatabaseClient);
@@ -93,23 +97,67 @@ export function safeUserProfile(record: any): SafeUserProfile | null {
   };
 }
 
+function normalizeRole(record: any): SafeRole | null {
+  const code = typeof record?.code === "string" ? record.code.trim() : "";
+  const name = typeof record?.name === "string" ? record.name.trim() : "";
+  if (!code && !name) {
+    return null;
+  }
+
+  const displayName =
+    typeof record?.displayName === "string"
+      ? record.displayName
+      : typeof record?.display_name === "string"
+        ? record.display_name
+        : name || null;
+
+  return {
+    id: String(record?.id ?? (code || name)),
+    code: code || name,
+    name: name || code,
+    displayName,
+    description: typeof record?.description === "string" ? record.description : null,
+  };
+}
+
+export function isAdminRoleLike(role: SafeRole | string | null | undefined): boolean {
+  const values =
+    typeof role === "string"
+      ? [role]
+      : [role?.code, role?.name].filter((value): value is string => typeof value === "string");
+
+  return values.some((value) => adminRoleCodeSet.has(value.trim().toLowerCase()));
+}
+
+export function principalHasAdminRole(
+  principal: Pick<AuthenticatedPrincipal, "roles" | "roleCodes">,
+): boolean {
+  return (
+    principal.roleCodes.some((roleCode) => isAdminRoleLike(roleCode)) ||
+    principal.roles.some((role) => isAdminRoleLike(role))
+  );
+}
+
 function normalizePrincipal(record: any): AuthenticatedPrincipal | null {
   if (!record || record.status !== "active") {
     return null;
   }
 
-  const roles = new Set<string>();
+  const roleMap = new Map<string, SafeRole>();
+  const roleCodes = new Set<string>();
   const permissions = new Set<string>();
 
   for (const userRole of record.roles ?? []) {
-    const role = userRole.role;
-    if (!role?.code) {
+    const role = normalizeRole(userRole.role ?? userRole);
+    if (!role) {
       continue;
     }
 
-    roles.add(role.code);
+    const roleKey = role.id || role.code || role.name;
+    roleMap.set(roleKey, role);
+    roleCodes.add(role.code);
 
-    for (const rolePermission of role.permissions ?? []) {
+    for (const rolePermission of (userRole.role ?? userRole).permissions ?? []) {
       const permission = rolePermission.permission;
       if (permission?.code) {
         permissions.add(permission.code);
@@ -120,7 +168,8 @@ function normalizePrincipal(record: any): AuthenticatedPrincipal | null {
   return {
     user: safeUser(record),
     profile: safeUserProfile(record.profile),
-    roles: [...roles].sort(),
+    roles: [...roleMap.values()].sort((left, right) => left.code.localeCompare(right.code)),
+    roleCodes: [...roleCodes].sort(),
     permissions: [...permissions].sort(),
   };
 }

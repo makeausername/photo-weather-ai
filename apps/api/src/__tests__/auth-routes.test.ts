@@ -36,7 +36,14 @@ describe("auth routes", () => {
       email: "admin@example.com",
       displayName: "Test Admin",
     });
-    expect(body.roles).toContain("super_admin");
+    expect(body.roles).toEqual([
+      expect.objectContaining({
+        code: "admin",
+        id: expect.any(String),
+        name: expect.any(String),
+      }),
+    ]);
+    expect(body.roleCodes).toContain("admin");
     expect(body.permissions).toContain("admin.manage");
     expect(response.body).not.toContain("passwordHash");
     expect(state.sessions.size).toBeGreaterThan(1);
@@ -67,7 +74,12 @@ describe("auth routes", () => {
         displayName: "逐光用户",
         status: "active",
       },
-      roles: ["user"],
+      roles: [
+        expect.objectContaining({
+          code: "user",
+        }),
+      ],
+      roleCodes: ["user"],
       permissions: [],
       isAdmin: false,
     });
@@ -127,7 +139,12 @@ describe("auth routes", () => {
         id: "plain-user",
         email: "user@example.com",
       },
-      roles: ["user"],
+      roles: [
+        expect.objectContaining({
+          code: "user",
+        }),
+      ],
+      roleCodes: ["user"],
       permissions: [],
       isAdmin: false,
     });
@@ -230,7 +247,13 @@ describe("auth routes", () => {
         id: "admin-user",
         email: "admin@example.com",
       },
-      roles: ["super_admin"],
+      roles: [
+        expect.objectContaining({
+          code: "admin",
+          name: expect.any(String),
+        }),
+      ],
+      roleCodes: ["admin"],
       isAdmin: true,
     });
     expect(response.body).not.toContain("passwordHash");
@@ -252,7 +275,12 @@ describe("auth routes", () => {
         id: "plain-user",
         email: "user@example.com",
       },
-      roles: ["user"],
+      roles: [
+        expect.objectContaining({
+          code: "user",
+        }),
+      ],
+      roleCodes: ["user"],
       permissions: [],
       isAdmin: false,
     });

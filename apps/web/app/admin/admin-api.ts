@@ -276,12 +276,24 @@ export type SafeAccountProfile = {
   readonly updatedAt: string;
 };
 
+export type AccountRole =
+  | string
+  | {
+      readonly id?: string;
+      readonly code?: string | null;
+      readonly name?: string | null;
+      readonly displayName?: string | null;
+      readonly display_name?: string | null;
+      readonly description?: string | null;
+    };
+
 export type AdminAuthSession = {
   readonly accessToken: string;
   readonly refreshToken: string;
   readonly user: SafeAdminUser;
   readonly profile: SafeAccountProfile | null;
-  readonly roles: readonly string[];
+  readonly roles: readonly AccountRole[];
+  readonly roleCodes?: readonly string[];
   readonly permissions: readonly string[];
   readonly isAdmin: boolean;
 };
@@ -340,6 +352,45 @@ function redirectToLogin(): void {
 
   const returnTo = `${window.location.pathname}${window.location.search}`;
   window.location.href = `/admin/login?returnTo=${encodeURIComponent(returnTo)}`;
+}
+
+function roleValueMatchesAdmin(value: unknown): boolean {
+  return (
+    typeof value === "string" &&
+    ["admin", "super_admin"].includes(value.trim().toLowerCase())
+  );
+}
+
+export function sessionHasAdminAccess(
+  session:
+    | {
+        readonly isAdmin?: boolean;
+        readonly roles?: readonly AccountRole[];
+        readonly roleCodes?: readonly string[];
+        readonly permissions?: readonly string[];
+      }
+    | null
+    | undefined,
+): boolean {
+  if (!session) {
+    return false;
+  }
+
+  if (session.isAdmin === true || session.permissions?.includes("admin.manage")) {
+    return true;
+  }
+
+  if (session.roleCodes?.some(roleValueMatchesAdmin)) {
+    return true;
+  }
+
+  return Boolean(
+    session.roles?.some((role) =>
+      typeof role === "string"
+        ? roleValueMatchesAdmin(role)
+        : roleValueMatchesAdmin(role.code) || roleValueMatchesAdmin(role.name),
+    ),
+  );
 }
 
 function formatAdminApiError(errorText: string, status: number): string {

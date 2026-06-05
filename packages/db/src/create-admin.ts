@@ -12,7 +12,7 @@ import type { DatabaseClient, SafeUser } from "./types.js";
 
 export type CreateAdminInput = {
   readonly email: string;
-  readonly password: string;
+  readonly password?: string;
   readonly displayName?: string | null;
   readonly client?: DatabaseClient;
 };
@@ -22,6 +22,9 @@ export type CreateAdminResult = {
   readonly created: boolean;
   readonly passwordUpdated: boolean;
   readonly roleAssigned: boolean;
+  readonly roleCode: "admin";
+  readonly permissionsAssigned: number;
+  readonly permissionWarning?: string;
   readonly activated: boolean;
 };
 
@@ -34,6 +37,7 @@ export type VerifyAdminInput = {
 export type VerifyAdminResult = {
   readonly user: SafeUser;
   readonly roles: readonly string[];
+  readonly permissions: readonly string[];
   readonly passwordChecked: boolean;
 };
 
@@ -57,6 +61,7 @@ export type VerifyAdminEnv = {
 export type AdminVerificationErrorCode =
   | "admin_not_found"
   | "admin_role_missing"
+  | "admin_permissions_missing"
   | "admin_password_failed"
   | "admin_disabled";
 
@@ -69,13 +74,17 @@ export class AdminVerificationError extends Error {
 const adminVerificationMessages: Record<AdminVerificationErrorCode, string> = {
   admin_not_found: "管理员账号不存在",
   admin_role_missing: "管理员角色缺失",
+  admin_permissions_missing: "管理员权限绑定缺失",
   admin_password_failed: "管理员密码校验失败",
   admin_disabled: "管理员账号未启用",
 };
 
 const adminEmailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const superAdminRoleCode = "super_admin";
-const adminRoleCodes = new Set(["admin", superAdminRoleCode]);
+const adminRoleCode = "admin";
+const legacySuperAdminRoleCode = "super_admin";
+const adminRoleCodes = new Set([adminRoleCode, adminRoleCode.toUpperCase(), legacySuperAdminRoleCode]);
+const adminRoleName = "admin";
+const adminRoleDescription = "Administrator";
 
 async function resolveClient(client?: DatabaseClient): Promise<DatabaseClient> {
   return client ?? ((await getPrismaClient()) as unknown as DatabaseClient);
@@ -137,11 +146,11 @@ function resolveAdminPassword(source: CreateAdminEnv | VerifyAdminEnv): string |
     return decodeAdminInitialPasswordB64(source.ADMIN_INITIAL_PASSWORD_B64);
   }
 
-  if (source.ADMIN_PASSWORD !== undefined) {
-    return source.ADMIN_PASSWORD;
+  if (source.ADMIN_INITIAL_PASSWORD !== undefined) {
+    return source.ADMIN_INITIAL_PASSWORD;
   }
 
-  return source.ADMIN_INITIAL_PASSWORD;
+  return source.ADMIN_PASSWORD;
 }
 
 function hasCompleteAdminEnv(source: CreateAdminEnv): boolean {
@@ -222,7 +231,7 @@ export function readCreateAdminEnv(source: CreateAdminEnv = process.env): Create
 
   if (!email || !password) {
     throw new Error(
-      "缺少 ADMIN_EMAIL 以及 ADMIN_INITIAL_PASSWORD_B64、ADMIN_PASSWORD 或 ADMIN_INITIAL_PASSWORD，无法在非交互环境创建管理员。",
+      "缺少 ADMIN_EMAIL 以及 ADMIN_INITIAL_PASSWORD_B64、ADMIN_INITIAL_PASSWORD 或 ADMIN_PASSWORD，无法在非交互环境创建管理员。",
     );
   }
 
@@ -242,7 +251,7 @@ export async function readCreateAdminInput(
 
   if (!isInteractiveTty()) {
     throw new Error(
-      "缺少 ADMIN_EMAIL 以及 ADMIN_INITIAL_PASSWORD_B64、ADMIN_PASSWORD 或 ADMIN_INITIAL_PASSWORD，无法在非交互环境创建管理员。",
+      "缺少 ADMIN_EMAIL 以及 ADMIN_INITIAL_PASSWORD_B64、ADMIN_INITIAL_PASSWORD 或 ADMIN_PASSWORD，无法在非交互环境创建管理员。",
     );
   }
 
@@ -278,58 +287,111 @@ export async function readCreateAdminInput(
   throw new Error("管理员密码不能为空。");
 }
 
-async function ensureSuperAdminRole(client: DatabaseClient): Promise<any> {
-  const roleDelegate = requireDelegate<NonNullable<DatabaseClient["role"]>>(client, "role", "role");
+type PermissionBindingResult = {
+  readonly role: any;
+  readonly permissionsAssigned: number;
+  readonly warning?: string;
+};
+
+async function listPermissions(client: DatabaseClient): Promise<any[]> {
+  if (!client.permission) {
+    return [];
+  }
+
+  if (client.permission.findMany) {
+    return client.permission.findMany();
+  }
+
   const seedData = buildSeedData();
-  const roleSeed =
-    seedData.roles.find((role) => role.code === superAdminRoleCode) ??
-    ({
-      code: superAdminRoleCode,
-      name: "超级管理员",
-      description: "自托管系统的完整管理权限。",
-    } as const);
-
-  const role = await roleDelegate.upsert({
-    where: { code: roleSeed.code },
-    create: {
-      code: roleSeed.code,
-      name: roleSeed.name,
-      description: roleSeed.description,
-    },
-    update: {
-      name: roleSeed.name,
-      description: roleSeed.description,
-    },
-  });
-
-  if (client.permission && client.rolePermission) {
-    for (const permission of seedData.permissions) {
-      const permissionRecord = await client.permission.upsert({
+  const permissions: any[] = [];
+  for (const permission of seedData.permissions) {
+    permissions.push(
+      await client.permission.upsert({
         where: { code: permission.code },
         create: permission,
         update: {
           name: permission.name,
           description: permission.description,
         },
-      });
-
-      await client.rolePermission.upsert({
-        where: {
-          roleId_permissionId: {
-            roleId: role.id,
-            permissionId: permissionRecord.id,
-          },
-        },
-        create: {
-          roleId: role.id,
-          permissionId: permissionRecord.id,
-        },
-        update: {},
-      });
-    }
+      }),
+    );
   }
 
-  return role;
+  return permissions;
+}
+
+async function ensureSeedPermissions(client: DatabaseClient): Promise<void> {
+  if (!client.permission) {
+    return;
+  }
+
+  const seedData = buildSeedData();
+  for (const permission of seedData.permissions) {
+    await client.permission.upsert({
+      where: { code: permission.code },
+      create: permission,
+      update: {
+        name: permission.name,
+        description: permission.description,
+      },
+    });
+  }
+}
+
+async function ensureAdminRole(client: DatabaseClient): Promise<PermissionBindingResult> {
+  const roleDelegate = requireDelegate<NonNullable<DatabaseClient["role"]>>(client, "role", "role");
+
+  const role = await roleDelegate.upsert({
+    where: { code: adminRoleCode },
+    create: {
+      code: adminRoleCode,
+      name: adminRoleName,
+      description: adminRoleDescription,
+    },
+    update: {
+      name: adminRoleName,
+      description: adminRoleDescription,
+    },
+  });
+
+  if (!client.permission || !client.rolePermission) {
+    return {
+      role,
+      permissionsAssigned: 0,
+      warning: "Permission tables are not available; admin role was assigned without permission bindings.",
+    };
+  }
+
+  await ensureSeedPermissions(client);
+  const permissions = await listPermissions(client);
+  if (permissions.length === 0) {
+    return {
+      role,
+      permissionsAssigned: 0,
+      warning: "Permission tables are empty; admin role was assigned without permission bindings.",
+    };
+  }
+
+  for (const permission of permissions) {
+    await client.rolePermission.upsert({
+      where: {
+        roleId_permissionId: {
+          roleId: role.id,
+          permissionId: permission.id,
+        },
+      },
+      create: {
+        roleId: role.id,
+        permissionId: permission.id,
+      },
+      update: {},
+    });
+  }
+
+  return {
+    role,
+    permissionsAssigned: permissions.length,
+  };
 }
 
 function extractRoleCodes(user: any): readonly string[] {
@@ -342,13 +404,31 @@ function extractRoleCodes(user: any): readonly string[] {
   }
 
   for (const userRole of user?.roles ?? []) {
-    const roleCode = userRole?.role?.code ?? userRole?.code;
-    if (typeof roleCode === "string") {
-      roleCodes.add(roleCode);
+    const role = userRole?.role ?? userRole;
+    for (const value of [role?.code, role?.name]) {
+      if (typeof value === "string") {
+        roleCodes.add(value);
+      }
     }
   }
 
   return [...roleCodes].sort();
+}
+
+function extractPermissionCodes(user: any): readonly string[] {
+  const permissionCodes = new Set<string>();
+
+  for (const userRole of user?.roles ?? []) {
+    const role = userRole?.role ?? userRole;
+    for (const rolePermission of role?.permissions ?? []) {
+      const permissionCode = rolePermission?.permission?.code ?? rolePermission?.code;
+      if (typeof permissionCode === "string") {
+        permissionCodes.add(permissionCode);
+      }
+    }
+  }
+
+  return [...permissionCodes].sort();
 }
 
 async function findAdminUserByEmail(client: DatabaseClient, email: string): Promise<any | null> {
@@ -358,18 +438,26 @@ async function findAdminUserByEmail(client: DatabaseClient, email: string): Prom
     include: {
       roles: {
         include: {
-          role: true,
+          role: {
+            include: {
+              permissions: {
+                include: {
+                  permission: true,
+                },
+              },
+            },
+          },
         },
       },
     },
   });
 }
 
-export async function createOrUpdateSuperAdmin(
-  input: CreateAdminInput,
-): Promise<CreateAdminResult> {
+export async function createOrUpdateAdmin(input: CreateAdminInput): Promise<CreateAdminResult> {
   const email = normalizeAdminEmail(input.email);
-  assertAdminPassword(input.password);
+  if (input.password !== undefined) {
+    assertAdminPassword(input.password);
+  }
 
   const client = await resolveClient(input.client);
   const userDelegate = requireDelegate<NonNullable<DatabaseClient["user"]>>(client, "user", "user");
@@ -379,21 +467,25 @@ export async function createOrUpdateSuperAdmin(
     "userRole",
   );
 
-  const superAdminRole = await ensureSuperAdminRole(client);
+  const adminRole = await ensureAdminRole(client);
   const existingUser = await findAdminUserByEmail(client, email);
   const displayName = normalizeDisplayName(input.displayName);
-  const passwordHash = await hashPassword(input.password);
+  const passwordHash = input.password ? await hashPassword(input.password) : undefined;
 
   let user = existingUser;
   let created = false;
   let activated = false;
 
   if (!existingUser) {
+    if (!passwordHash) {
+      throw new Error("管理员账号不存在，必须提供初始密码才能创建。");
+    }
+
     user = await userDelegate.create({
       data: {
         email,
         passwordHash,
-        displayName: displayName ?? "Super Admin",
+        displayName: displayName ?? "Admin",
         status: "active",
       },
     });
@@ -404,7 +496,7 @@ export async function createOrUpdateSuperAdmin(
     user = await userDelegate.update({
       where: { id: existingUser.id },
       data: {
-        passwordHash,
+        ...(passwordHash ? { passwordHash } : {}),
         ...(displayName ? { displayName } : {}),
         status: "active",
       },
@@ -415,12 +507,12 @@ export async function createOrUpdateSuperAdmin(
     where: {
       userId_roleId: {
         userId: user.id,
-        roleId: superAdminRole.id,
+        roleId: adminRole.role.id,
       },
     },
     create: {
       userId: user.id,
-      roleId: superAdminRole.id,
+      roleId: adminRole.role.id,
     },
     update: {},
   });
@@ -428,20 +520,30 @@ export async function createOrUpdateSuperAdmin(
   return {
     user: safeUser(user),
     created,
-    passwordUpdated: true,
+    passwordUpdated: Boolean(passwordHash),
     roleAssigned: true,
+    roleCode: adminRoleCode,
+    permissionsAssigned: adminRole.permissionsAssigned,
+    ...(adminRole.warning ? { permissionWarning: adminRole.warning } : {}),
     activated,
   };
 }
 
+export const createOrUpdateSuperAdmin = createOrUpdateAdmin;
+
 export function formatCreateAdminResult(result: CreateAdminResult): readonly string[] {
-  return [`管理员账号已创建或更新：${result.user.email}`];
+  return [
+    `管理员账号已创建或更新：${result.user.email}`,
+    `管理员角色：${result.roleCode}`,
+    `管理员权限绑定数：${result.permissionsAssigned}`,
+    ...(result.permissionWarning ? [`WARNING ${result.permissionWarning}`] : []),
+  ];
 }
 
 export async function runCreateAdminFromEnv(
   source: CreateAdminEnv = process.env,
 ): Promise<CreateAdminResult> {
-  return createOrUpdateSuperAdmin(readCreateAdminEnv(source));
+  return createOrUpdateAdmin(readCreateAdminEnv(source));
 }
 
 export function readVerifyAdminEnv(source: VerifyAdminEnv = process.env): VerifyAdminInput {
@@ -456,10 +558,15 @@ export function readVerifyAdminEnv(source: VerifyAdminEnv = process.env): Verify
   };
 }
 
-export async function verifySuperAdmin(input: VerifyAdminInput): Promise<VerifyAdminResult> {
+function isAdminRoleValue(value: string): boolean {
+  return adminRoleCodes.has(value.trim()) || adminRoleCodes.has(value.trim().toLowerCase());
+}
+
+export async function verifyAdminBootstrap(input: VerifyAdminInput): Promise<VerifyAdminResult> {
   const email = normalizeAdminEmail(input.email);
   const client = await resolveClient(input.client);
   const user = await findAdminUserByEmail(client, email);
+  const roleDelegate = requireDelegate<NonNullable<DatabaseClient["role"]>>(client, "role", "role");
 
   if (!user) {
     throw new AdminVerificationError("admin_not_found");
@@ -470,8 +577,18 @@ export async function verifySuperAdmin(input: VerifyAdminInput): Promise<VerifyA
   }
 
   const roles = extractRoleCodes(user);
-  if (!roles.some((roleCode) => adminRoleCodes.has(roleCode))) {
+  const permissions = extractPermissionCodes(user);
+  const adminRole = await roleDelegate.findUnique({ where: { code: adminRoleCode } });
+  const hasAdminBinding = user.roles?.some((userRole: any) => userRole?.role?.code === adminRoleCode);
+  if (!adminRole || !hasAdminBinding || !roles.some((roleCode) => isAdminRoleValue(roleCode))) {
     throw new AdminVerificationError("admin_role_missing");
+  }
+
+  if (client.permission?.findMany) {
+    const permissionRecords = await client.permission.findMany();
+    if (permissionRecords.length > 0 && permissions.length === 0) {
+      throw new AdminVerificationError("admin_permissions_missing");
+    }
   }
 
   if (input.password) {
@@ -484,22 +601,29 @@ export async function verifySuperAdmin(input: VerifyAdminInput): Promise<VerifyA
   return {
     user: safeUser(user),
     roles,
+    permissions,
     passwordChecked: Boolean(input.password),
   };
 }
 
+export const verifySuperAdmin = verifyAdminBootstrap;
+
 export function formatVerifyAdminResult(result: VerifyAdminResult): readonly string[] {
-  return [`管理员账号验证通过：${result.user.email}`];
+  return [
+    `管理员账号验证通过：${result.user.email}`,
+    `管理员角色：${result.roles.join(", ")}`,
+    `管理员权限数：${result.permissions.length}`,
+  ];
 }
 
 export async function runVerifyAdminFromEnv(
   source: VerifyAdminEnv = process.env,
 ): Promise<VerifyAdminResult> {
-  return verifySuperAdmin(readVerifyAdminEnv(source));
+  return verifyAdminBootstrap(readVerifyAdminEnv(source));
 }
 
 async function main(): Promise<void> {
-  const result = await createOrUpdateSuperAdmin(await readCreateAdminInput());
+  const result = await createOrUpdateAdmin(await readCreateAdminInput());
   for (const line of formatCreateAdminResult(result)) {
     console.log(line);
   }

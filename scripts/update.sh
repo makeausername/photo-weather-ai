@@ -173,13 +173,10 @@ create_and_verify_admin() {
     -e ADMIN_EMAIL \
     -e ADMIN_INITIAL_PASSWORD_B64 \
     -e ADMIN_DISPLAY_NAME \
-    api pnpm create-admin
+    api pnpm bootstrap:admin
 
-  echo "Verifying admin account..."
-  compose run --rm \
-    -e ADMIN_EMAIL \
-    -e ADMIN_INITIAL_PASSWORD_B64 \
-    api pnpm verify-admin
+  echo "Verifying admin role and permissions..."
+  bash "${SCRIPT_DIR}/verify-admin-bootstrap.sh"
 }
 
 if [[ ! -f "${ENV_FILE}" ]]; then

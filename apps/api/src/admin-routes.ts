@@ -612,6 +612,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       ok: true,
       user: auth.principal.user,
       roles: auth.principal.roles,
+      roleCodes: auth.principal.roleCodes,
       permissions: auth.principal.permissions,
     };
   });

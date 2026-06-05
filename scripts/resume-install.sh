@@ -198,12 +198,9 @@ create_and_verify_admin() {
     -e ADMIN_EMAIL \
     -e ADMIN_INITIAL_PASSWORD_B64 \
     -e ADMIN_DISPLAY_NAME \
-    api pnpm create-admin
+    api pnpm bootstrap:admin
 
-  run_logged "验证管理员账号" compose run --rm \
-    -e ADMIN_EMAIL \
-    -e ADMIN_INITIAL_PASSWORD_B64 \
-    api pnpm verify-admin
+  run_logged "验证管理员角色与权限" bash "${SCRIPT_DIR}/verify-admin-bootstrap.sh"
 }
 
 ensure_ephemeris_available() {

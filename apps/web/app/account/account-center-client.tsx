@@ -9,6 +9,7 @@ import {
   shouldShowAdminEntry,
   type PublicAccountSession,
 } from "../../components/account-session";
+import type { AccountRole } from "../admin/admin-api";
 import { Badge, Button, Card, cn } from "../../components/ui";
 
 type LoadState = "loading" | "ready";
@@ -167,7 +168,7 @@ function AuthenticatedAccountCenter({
 }
 
 function AccountOverview({ session }: { readonly session: PublicAccountSession }) {
-  const roleText = formatRoles(session.roles);
+  const roleText = formatAccountRoleLabels(session.roles, session.roleCodes);
   const statusText = formatStatus(session.user.status);
 
   return (
@@ -289,7 +290,7 @@ function AdminAccessCard() {
         href="/admin"
         className="mt-4 inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
       >
-        进入管理后台
+        管理后台入口
       </Link>
     </Card>
   );
@@ -311,12 +312,48 @@ function AccountField({ label, value }: { readonly label: string; readonly value
   );
 }
 
-function formatRoles(roles: readonly string[]): string {
-  if (roles.length === 0) {
+function roleCodeOf(role: AccountRole): string | null {
+  if (typeof role === "string") {
+    return role;
+  }
+
+  return role.code ?? role.name ?? null;
+}
+
+function roleDisplayText(role: AccountRole): string {
+  if (typeof role === "string") {
+    return roleLabels[role] ?? roleLabels[role.toLowerCase()] ?? role;
+  }
+
+  const code = role.code ?? undefined;
+  const codeLabel = code ? (roleLabels[code] ?? roleLabels[code.toLowerCase()]) : undefined;
+  if (codeLabel) {
+    return codeLabel;
+  }
+
+  return role.displayName ?? role.display_name ?? role.name ?? code ?? "自定义角色";
+}
+
+export function formatAccountRoleLabels(
+  roles: readonly AccountRole[],
+  roleCodes: readonly string[] = [],
+): string {
+  if (roles.length === 0 && roleCodes.length === 0) {
     return emptyValue;
   }
 
-  return roles.map((role) => roleLabels[role] ?? "自定义角色").join("、");
+  const values = new Map<string, string>();
+  for (const role of roles) {
+    const key = roleCodeOf(role) ?? roleDisplayText(role);
+    values.set(key, roleDisplayText(role));
+  }
+  for (const roleCode of roleCodes) {
+    if (!values.has(roleCode)) {
+      values.set(roleCode, roleLabels[roleCode] ?? roleCode);
+    }
+  }
+
+  return [...values.values()].join("、");
 }
 
 function formatStatus(status: string | null): string {

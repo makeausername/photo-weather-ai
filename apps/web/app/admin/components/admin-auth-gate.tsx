@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
-import { getCurrentAdmin, getStoredAdminTokens } from "../admin-api";
+import { getCurrentAdmin, getStoredAdminTokens, sessionHasAdminAccess } from "../admin-api";
 
 type AdminAuthGateProps = {
   readonly children: ReactNode;
@@ -34,7 +34,7 @@ export function AdminAuthGate({ children }: AdminAuthGateProps) {
           return;
         }
 
-        if (!session.permissions.includes("admin.manage")) {
+        if (!sessionHasAdminAccess(session)) {
           router.replace("/admin/login");
           return;
         }

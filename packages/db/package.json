@@ -18,6 +18,7 @@
     "db:push": "prisma db push --schema prisma/schema.prisma",
     "db:seed": "tsx src/seed.ts",
     "db:studio": "prisma studio --schema prisma/schema.prisma",
+    "bootstrap:admin": "tsx src/bootstrap-admin.ts",
     "create-admin": "tsx src/create-admin.ts",
     "verify-admin": "tsx src/verify-admin.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
