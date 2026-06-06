@@ -9,5 +9,6 @@ export DOCKER_INSTALL_METHOD="${DOCKER_INSTALL_METHOD:-ubuntu}"
 export APT_MIRROR="${APT_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/ubuntu}"
 export PIP_INDEX_URL="${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}"
 export DOCKER_REGISTRY_MIRRORS="${DOCKER_REGISTRY_MIRRORS:-https://docker.1ms.run,https://docker.m.daocloud.io,https://dockerproxy.com,https://mirror.baidubce.com}"
+export EPHEMERIS_URLS="${EPHEMERIS_URLS:-https://datacenter.stix.i4ds.net/pub/spice/latest/kernels/spk/de421.bsp,https://p2sadev.esac.esa.int/p2sa-files/spice/swap/kernels/spk/de421.bsp}"
 
 exec bash "${SCRIPT_DIR}/install.sh" "$@"

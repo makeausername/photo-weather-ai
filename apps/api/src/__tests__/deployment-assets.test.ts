@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,6 +39,14 @@ function readRepoFile(relativePath: string): string {
 function bashPath(relativePath: string): string {
   const resolved = path.join(root, relativePath);
   return process.platform === "win32" ? resolved.replace(/\\/g, "/") : resolved;
+}
+
+function bashAbsolutePath(resolvedPath: string): string {
+  return process.platform === "win32" ? resolvedPath.replace(/\\/g, "/") : resolvedPath;
+}
+
+function quoteBash(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 function commandAvailable(command: string, args: readonly string[]): boolean {
@@ -134,6 +142,8 @@ describe("production deployment assets", () => {
       "ASTRO_SERVICE_URL=http://astro-service:4100",
       "ASTRO_SERVICE_TIMEOUT_MS=45000",
       "PIP_INDEX_URL=",
+      "EPHEMERIS_LOCAL_FILE=",
+      "EPHEMERIS_URLS=",
       "QWEATHER_API_KEY=",
       "QWEATHER_API_HOST=",
       "AMAP_API_KEY=",
@@ -155,6 +165,8 @@ describe("production deployment assets", () => {
       ".env.production",
       "deploy/Caddyfile",
       "deploy/generated/",
+      "deploy/assets/*.bsp",
+      "deploy/ephemeris/*.bsp",
       ".runtime/",
       "backups/",
       "apps/astro-service/.venv/",
@@ -344,7 +356,7 @@ describe("production deployment assets", () => {
       'section 12 "管理员创建与验证"',
       'section 13 "HTTPS 与健康检查"',
       'section 14 "完成"',
-      "需要下载本地天文星历文件 de421.bsp",
+      "需要准备本地天文星历文件 de421.bsp",
       'bash "${SCRIPT_DIR}/download-ephemeris.sh"',
       "未安装 de421.bsp，无法完成生产部署",
       "检测到已有 PostgreSQL 数据卷",
@@ -428,6 +440,9 @@ describe("production deployment assets", () => {
 
     expect(installCn).toContain('export INSTALL_REGION="${INSTALL_REGION:-cn}"');
     expect(installCn).toContain('export DOCKER_INSTALL_METHOD="${DOCKER_INSTALL_METHOD:-ubuntu}"');
+    expect(installCn).toContain('export EPHEMERIS_URLS="${EPHEMERIS_URLS:-');
+    expect(installCn).toContain("https://datacenter.stix.i4ds.net/pub/spice/latest/kernels/spk/de421.bsp");
+    expect(installCn).toContain("https://p2sadev.esac.esa.int/p2sa-files/spice/swap/kernels/spk/de421.bsp");
     expect(installCn).toContain("https://mirrors.tuna.tsinghua.edu.cn/ubuntu");
     expect(installCn).toContain("https://pypi.tuna.tsinghua.edu.cn/simple");
     for (const mirror of [
@@ -504,16 +519,51 @@ describe("production deployment assets", () => {
     const status = readRepoFile("scripts/status.sh");
     const resume = readRepoFile("scripts/resume-install.sh");
 
+    expect(script).toContain('EPHEMERIS_LOCAL_FILE="${EPHEMERIS_LOCAL_FILE:-}"');
+    expect(script).toContain('EPHEMERIS_URLS="${EPHEMERIS_URLS:-}"');
     expect(script).toContain('EPHEMERIS_URL="${EPHEMERIS_URL:-}"');
     expect(script).toContain("DEFAULT_EPHEMERIS_URLS=(");
+    expect(script).toContain(
+      "https://datacenter.stix.i4ds.net/pub/spice/latest/kernels/spk/de421.bsp",
+    );
+    expect(script).toContain(
+      "https://p2sadev.esac.esa.int/p2sa-files/spice/swap/kernels/spk/de421.bsp",
+    );
     expect(script).toContain("https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/de421.bsp");
     expect(script).toContain(
-      "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de421.bsp",
+      "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/a_old_versions/de421.bsp",
     );
+    const defaultUrlsBlock = script.slice(
+      script.indexOf("DEFAULT_EPHEMERIS_URLS=("),
+      script.indexOf("EPHEMERIS_URL_CANDIDATES=()"),
+    );
+    const defaultUrls = Array.from(defaultUrlsBlock.matchAll(/"([^"]+de421\.bsp)"/g), (match) => {
+      const url = match[1];
+      if (!url) {
+        throw new Error("Missing ephemeris URL capture");
+      }
+      return url;
+    });
+    expect(defaultUrls.length).toBeGreaterThan(2);
+    expect(defaultUrls.some((url) => !url.includes("jpl.nasa.gov"))).toBe(true);
+    expect(defaultUrls[defaultUrls.length - 1]).toBe(
+      "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/a_old_versions/de421.bsp",
+    );
+    expect(script).toContain("REPO_LOCAL_EPHEMERIS_CANDIDATES=(");
+    expect(script).toContain("${PROJECT_ROOT}/deploy/assets/de421.bsp");
+    expect(script).toContain("${PROJECT_ROOT}/apps/astro-service/data/de421.bsp");
+    expect(script).toContain("try_repo_local_ephemeris");
+    expect(script).toContain("try_user_local_ephemeris");
+    expect(script).toContain("try_existing_host_ephemeris");
+    expect(script).toContain('add_ephemeris_url_list "${EPHEMERIS_URLS}"');
     expect(script).toContain('add_ephemeris_url_candidate "${EPHEMERIS_URL}"');
+    expect(script).toContain("mask_ephemeris_url_for_log");
     expect(script).toContain('CONTAINER_EPHEMERIS_PATH="/app/data/de421.bsp"');
     expect(script).toContain("MIN_EPHEMERIS_BYTES=$((10 * 1024 * 1024))");
+    expect(script).toContain("de421.bsp is required for core astronomy features");
+    expect(script).toContain("verify_host_ephemeris_file");
     expect(script).toContain("download_ephemeris_url");
+    expect(script).toContain("download_ephemeris_from_urls");
     expect(script).toContain("verify_container_ephemeris_file");
     expect(script).toContain(
       'compose cp "${EPHEMERIS_FILE}" "astro-service:${CONTAINER_EPHEMERIS_PATH}"',
@@ -523,11 +573,24 @@ describe("production deployment assets", () => {
     expect(script).toContain("http://astro-service:4100/health");
     expect(script).toContain("ephemerisAvailable !== true");
     expect(script).toContain("body.ephemerisPath !== '${CONTAINER_EPHEMERIS_PATH}'");
+    expect(script).toContain("PHOTO_WEATHER_EPHEMERIS_SOURCE_ONLY");
+    const acquisitionFlow = script.slice(script.indexOf("download_ephemeris()"));
+    expect(acquisitionFlow.indexOf("try_repo_local_ephemeris")).toBeLessThan(
+      acquisitionFlow.indexOf("try_user_local_ephemeris"),
+    );
+    expect(acquisitionFlow.indexOf("try_user_local_ephemeris")).toBeLessThan(
+      acquisitionFlow.indexOf("try_existing_host_ephemeris"),
+    );
+    expect(acquisitionFlow.indexOf("try_existing_host_ephemeris")).toBeLessThan(
+      acquisitionFlow.indexOf("download_ephemeris_from_urls"),
+    );
     expect(installer).toContain('section 9 "天文星历文件检查"');
     expect(installer).toContain("download_required_ephemeris");
     expect(installer).toContain("download-ephemeris.sh");
     expect(installer).toContain("输入 n 取消安装");
-    expect(installer).toContain("de421.bsp 下载、写入或健康检查失败，安装已停止");
+    expect(installer).toContain("de421.bsp 获取、写入或健康检查失败，安装已停止");
+    expect(installer).toContain("EPHEMERIS_LOCAL_FILE");
+    expect(installer).toContain("EPHEMERIS_URLS");
     expect(installer).not.toContain("EPHEMERIS_DOWNLOAD_SKIPPED");
     expect(installer).not.toContain("已跳过天文星历文件下载");
     expect(resume).toContain("ensure_ephemeris_available");
@@ -622,6 +685,138 @@ describe("production deployment assets", () => {
 
     for (const script of bashScripts) {
       execFileSync(bashCommand, ["-n", bashPath(script)], { cwd: root, stdio: "pipe" });
+    }
+  });
+
+  bashIt("prefers a repo-local de421.bsp before any network download", () => {
+    if (!bashCommand) {
+      throw new Error("bash is not available");
+    }
+
+    const tempDir = mkdtempSync(path.join(os.tmpdir(), "photo-weather-ephemeris-"));
+    try {
+      const sourceDir = path.join(tempDir, "repo-local");
+      const outputDir = path.join(tempDir, "out");
+      mkdirSync(sourceDir, { recursive: true });
+      const sourceFile = path.join(sourceDir, "de421.bsp");
+      writeFileSync(sourceFile, Buffer.alloc(10 * 1024 * 1024 + 1));
+
+      const command = [
+        "set -euo pipefail",
+        "export PHOTO_WEATHER_EPHEMERIS_SOURCE_ONLY=1",
+        `source ${quoteBash(bashPath("scripts/download-ephemeris.sh"))}`,
+        `EPHEMERIS_DIR=${quoteBash(bashAbsolutePath(outputDir))}`,
+        'EPHEMERIS_FILE="${EPHEMERIS_DIR}/de421.bsp"',
+        `REPO_LOCAL_EPHEMERIS_CANDIDATES=(${quoteBash(bashAbsolutePath(sourceFile))})`,
+        "EPHEMERIS_LOCAL_FILE=",
+        "EPHEMERIS_URLS=",
+        "EPHEMERIS_URL=",
+        "download_tool_available() { echo network-not-allowed; return 1; }",
+        "download_ephemeris_url() { echo network-called; return 1; }",
+        "download_ephemeris",
+      ].join("\n");
+
+      const output = execFileSync(bashCommand, ["-lc", command], {
+        cwd: root,
+        encoding: "utf8",
+        stdio: "pipe",
+      });
+
+      expect(output).toContain("来源：repo-local");
+      expect(output).not.toContain("network-called");
+      expect(output).not.toContain("network-not-allowed");
+      expect(existsSync(path.join(outputDir, "de421.bsp"))).toBe(true);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  bashIt("accepts EPHEMERIS_LOCAL_FILE before URL sources", () => {
+    if (!bashCommand) {
+      throw new Error("bash is not available");
+    }
+
+    const tempDir = mkdtempSync(path.join(os.tmpdir(), "photo-weather-ephemeris-"));
+    try {
+      const sourceDir = path.join(tempDir, "operator");
+      const outputDir = path.join(tempDir, "out");
+      mkdirSync(sourceDir, { recursive: true });
+      const sourceFile = path.join(sourceDir, "de421.bsp");
+      writeFileSync(sourceFile, Buffer.alloc(10 * 1024 * 1024 + 1));
+
+      const command = [
+        "set -euo pipefail",
+        "export PHOTO_WEATHER_EPHEMERIS_SOURCE_ONLY=1",
+        `source ${quoteBash(bashPath("scripts/download-ephemeris.sh"))}`,
+        `EPHEMERIS_DIR=${quoteBash(bashAbsolutePath(outputDir))}`,
+        'EPHEMERIS_FILE="${EPHEMERIS_DIR}/de421.bsp"',
+        "REPO_LOCAL_EPHEMERIS_CANDIDATES=()",
+        `EPHEMERIS_LOCAL_FILE=${quoteBash(bashAbsolutePath(sourceFile))}`,
+        "EPHEMERIS_URLS=https://network.example/de421.bsp",
+        "download_ephemeris_url() { echo network-called; return 1; }",
+        "download_ephemeris",
+      ].join("\n");
+
+      const output = execFileSync(bashCommand, ["-lc", command], {
+        cwd: root,
+        encoding: "utf8",
+        stdio: "pipe",
+      });
+
+      expect(output).toContain("来源：EPHEMERIS_LOCAL_FILE");
+      expect(output).not.toContain("network-called");
+      expect(existsSync(path.join(outputDir, "de421.bsp"))).toBe(true);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  bashIt("parses EPHEMERIS_URLS and continues across failed URL sources", () => {
+    if (!bashCommand) {
+      throw new Error("bash is not available");
+    }
+
+    const tempDir = mkdtempSync(path.join(os.tmpdir(), "photo-weather-ephemeris-"));
+    try {
+      const outputDir = path.join(tempDir, "out");
+      const command = [
+        "set -euo pipefail",
+        "export PHOTO_WEATHER_EPHEMERIS_SOURCE_ONLY=1",
+        `source ${quoteBash(bashPath("scripts/download-ephemeris.sh"))}`,
+        `EPHEMERIS_DIR=${quoteBash(bashAbsolutePath(outputDir))}`,
+        'EPHEMERIS_FILE="${EPHEMERIS_DIR}/de421.bsp"',
+        "REPO_LOCAL_EPHEMERIS_CANDIDATES=()",
+        "EPHEMERIS_LOCAL_FILE=",
+        "EPHEMERIS_URLS=$'https://first.example/de421.bsp,\\nhttps://second.example/de421.bsp'",
+        "EPHEMERIS_URL=https://legacy.example/de421.bsp",
+        "DEFAULT_EPHEMERIS_URLS=(https://default.example/de421.bsp)",
+        "download_tool_available() { return 0; }",
+        'download_ephemeris_url() { echo "mock-download:$1"; return 1; }',
+        "download_ephemeris",
+      ].join("\n");
+
+      let failed = false;
+      let output = "";
+      try {
+        execFileSync(bashCommand, ["-lc", command], {
+          cwd: root,
+          encoding: "utf8",
+          stdio: "pipe",
+        });
+      } catch (caught) {
+        failed = true;
+        const error = caught as { stdout?: string; stderr?: string };
+        output = `${error.stdout ?? ""}${error.stderr ?? ""}`;
+      }
+
+      expect(failed).toBe(true);
+      expect(output).toContain("mock-download:https://first.example/de421.bsp");
+      expect(output).toContain("mock-download:https://second.example/de421.bsp");
+      expect(output).toContain("mock-download:https://legacy.example/de421.bsp");
+      expect(output).toContain("mock-download:https://default.example/de421.bsp");
+      expect(output).toContain("de421.bsp is required for core astronomy features");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
     }
   });
 

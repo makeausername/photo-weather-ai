@@ -25,7 +25,7 @@ For mainland China servers, prefer:
 bash scripts/install-cn.sh
 ```
 
-`scripts/install-cn.sh` is a thin wrapper over the same installer. It defaults to `INSTALL_REGION=cn`, `DOCKER_INSTALL_METHOD=ubuntu`, a China-friendly APT mirror, a China-friendly pip index for the astro-service image build, and Docker registry mirrors. A fresh China server does not need manual Docker pre-installation.
+`scripts/install-cn.sh` is a thin wrapper over the same installer. It defaults to `INSTALL_REGION=cn`, `DOCKER_INSTALL_METHOD=ubuntu`, a China-friendly APT mirror, a China-friendly pip index for the astro-service image build, Docker registry mirrors, and non-NAIF ephemeris mirror candidates through `EPHEMERIS_URLS`. A fresh China server does not need manual Docker pre-installation.
 
 The installer runs these sections:
 
@@ -44,7 +44,7 @@ The installer runs these sections:
 13. HTTPS 与健康检查
 14. 完成
 
-The installer writes `.env.production` and `deploy/Caddyfile`, installs Docker only when Docker or the Compose plugin is missing, validates Compose config, builds images sequentially, starts PostgreSQL/Redis/astro-service, downloads and verifies the local JPL ephemeris file, runs database preflight, then runs migrations and seed data. After that it creates or updates the admin account through `pnpm bootstrap:admin`, verifies the `admin` role, `user_roles`, `role_permissions`, and auth-route recognition through `bash scripts/verify-admin-bootstrap.sh`, then starts the full stack. If ephemeris download/verification or database migration fails, installation stops before admin bootstrap and before the full stack is started.
+The installer writes `.env.production` and `deploy/Caddyfile`, installs Docker only when Docker or the Compose plugin is missing, validates Compose config, builds images sequentially, starts PostgreSQL/Redis/astro-service, obtains and verifies the mandatory `de421.bsp` ephemeris file, runs database preflight, then runs migrations and seed data. After that it creates or updates the admin account through `pnpm bootstrap:admin`, verifies the `admin` role, `user_roles`, `role_permissions`, and auth-route recognition through `bash scripts/verify-admin-bootstrap.sh`, then starts the full stack. If ephemeris acquisition/verification or database migration fails, installation stops before admin bootstrap and before the full stack is started.
 
 Docker installation behavior is controlled by environment variables:
 
@@ -53,6 +53,8 @@ Docker installation behavior is controlled by environment variables:
 - `APT_MIRROR=https://...`
 - `PIP_INDEX_URL=https://...`
 - `DOCKER_REGISTRY_MIRRORS=https://mirror-a,https://mirror-b`
+- `EPHEMERIS_LOCAL_FILE=/path/to/de421.bsp`
+- `EPHEMERIS_URLS=https://mirror-a/de421.bsp,https://mirror-b/de421.bsp`
 
 `DOCKER_INSTALL_METHOD=official` uses the official Docker repository. `ubuntu` installs `docker.io` plus a Compose v2 package from Ubuntu/Debian packages. `auto` tries the official repository first and, if the official Docker repository or GPG download fails, logs `official Docker repository failed` and falls back to `docker.io` plus Compose v2 packages. After any path, the installer verifies `docker --version` and `docker compose version` before continuing.
 
@@ -101,16 +103,35 @@ Accurate moon phase, moonrise/moonset, astronomical night, and Milky Way windows
 The installer prompts:
 
 ```text
-需要下载本地天文星历文件 de421.bsp，用于精确计算月相、月出月落和银河窗口。直接回车下载，输入 n 取消安装:
+需要准备本地天文星历文件 de421.bsp，用于精确计算月相、月出月落和银河窗口；可使用仓库内文件、本地文件或多个下载来源。直接回车继续，输入 n 取消安装:
 ```
 
-Direct Enter downloads by default. If the operator cancels, or if the file cannot be downloaded, written to `/app/data/de421.bsp`, size-verified, and confirmed by astro-service health, the installer stops instead of starting the full stack.
+Direct Enter continues ephemeris acquisition by default. If the operator cancels, or if the file cannot be found locally, downloaded, written to `/app/data/de421.bsp`, size-verified, and confirmed by astro-service health, the installer stops instead of starting the full stack. The file is mandatory for astronomy features; missing `de421.bsp` is not treated as an optional or skipped step.
 
-`scripts/download-ephemeris.sh` tries multiple JPL/NAIF sources. To use an internal mirror or another verified `de421.bsp` source, set `EPHEMERIS_URL`:
+`scripts/download-ephemeris.sh` uses this source priority:
+
+1. Repo-local bundled files when present and larger than 10 MB:
+   `deploy/assets/de421.bsp`, then `apps/astro-service/data/de421.bsp`.
+2. `EPHEMERIS_LOCAL_FILE=/path/to/de421.bsp`, when set and larger than 10 MB.
+3. Existing host cache at `deploy/ephemeris/de421.bsp`, when valid.
+4. `EPHEMERIS_URLS`, with comma-separated or newline-separated URLs tried in order.
+5. Backward-compatible `EPHEMERIS_URL`, then the built-in default URL list.
+
+The built-in default URL list includes non-NAIF public mirror candidates first, then official JPL/NAIF URLs as fallback sources. `naif.jpl.nasa.gov` is no longer the only source.
+
+To provide a local file:
 
 ```bash
-EPHEMERIS_URL=https://example.com/path/to/de421.bsp bash scripts/download-ephemeris.sh
+EPHEMERIS_LOCAL_FILE=/path/to/de421.bsp bash scripts/install.sh
 ```
+
+To use internal mirrors or other verified `de421.bsp` sources, set `EPHEMERIS_URLS`:
+
+```bash
+EPHEMERIS_URLS="https://mirror-a.example.com/de421.bsp,https://mirror-b.example.com/de421.bsp" bash scripts/download-ephemeris.sh
+```
+
+`EPHEMERIS_URL` remains accepted for older automation, but `EPHEMERIS_URLS` is preferred because it lets the script continue to the next source when one URL times out.
 
 Manual fix:
 
@@ -118,7 +139,7 @@ Manual fix:
 bash scripts/download-ephemeris.sh
 ```
 
-The script writes the file to the `astro_data` volume, restarts astro-service/API/web when available, and checks astro-service health from inside the app network.
+The script writes the file to the `astro_data` volume at `/app/data/de421.bsp`, verifies both the host file and the container file are larger than 10 MB, restarts astro-service/API/web when available, and checks astro-service health from inside the app network.
 
 After installation, `GET http://astro-service:4100/health` from inside the app network should include:
 
@@ -296,7 +317,7 @@ bash scripts/test-real-weather.sh
 - `用户角色：暂无数据` or the `管理后台` entry is missing after admin login: run `bash scripts/verify-admin-bootstrap.sh`. It verifies `users`, `roles.code = admin`, `user_roles`, canonical `role_permissions`, and auth-route role serialization (`code` / `name` / `displayName`) without printing secrets. If it fails, run `docker compose --env-file .env.production -f docker-compose.prod.yml run --rm api pnpm bootstrap:admin`, then rerun the verification script.
 - `登录服务暂时不可用，请稍后重试或联系管理员。`: run `bash scripts/status.sh`, then inspect API logs with `docker compose --env-file .env.production -f docker-compose.prod.yml logs -f api`. The UI intentionally hides Prisma, PostgreSQL hostnames, SQL details, and stack traces.
 - Compose `unexpected character` while reading `.env.production`: the env file has an invalid line, usually a standalone generated secret or an unescaped value. Run `bash scripts/check-env-production.sh`; then rerun `bash scripts/install.sh` and choose to back up/regenerate the broken file.
-- Astro health has `ephemerisAvailable=false`: run `bash scripts/download-ephemeris.sh`. If it remains false, check `EPHEMERIS_PATH=/app/data/de421.bsp`, inspect `docker compose --env-file .env.production -f docker-compose.prod.yml exec astro-service ls -lh /app/data/de421.bsp`, and fix file permissions.
+- Astro health has `ephemerisAvailable=false`: run `bash scripts/download-ephemeris.sh`. If the server cannot reach public mirrors, place a verified file at `deploy/assets/de421.bsp` or run with `EPHEMERIS_LOCAL_FILE=/path/to/de421.bsp`. If it remains false, check `EPHEMERIS_PATH=/app/data/de421.bsp`, inspect `docker compose --env-file .env.production -f docker-compose.prod.yml exec astro-service ls -lh /app/data/de421.bsp`, and fix file permissions.
 - Prisma `P1000` or database authentication failure: likely `.env.production` no longer matches an old PostgreSQL volume. For test reinstall, use `bash scripts/reset-prod-db.sh`. For real data, run `bash scripts/backup.sh` first and repair credentials inside PostgreSQL or restore the matching `.env.production`.
 - Docker installation waits on apt/dpkg: the installer waits up to `APT_LOCK_TIMEOUT_SECONDS` seconds, prints the real blocking apt/dpkg process list, ignores `unattended-upgrade-shutdown --wait-for-signal`, and never deletes apt lock files.
 - Docker build fails on a small server: enable the offered 4 GB swap file or move the build to a larger machine.

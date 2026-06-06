@@ -33,7 +33,7 @@ python scripts/fetch_ephemeris.py
 $env:EPHEMERIS_PATH = (Resolve-Path .\data\de421.bsp).Path
 ```
 
-星历会缓存到 `apps/astro-service/data/de421.bsp`。该文件较大，不提交到仓库。生产部署使用 `bash scripts/download-ephemeris.sh` 下载并写入 Docker 持久化卷 `/app/data/de421.bsp`；如服务器无法访问默认 JPL/NAIF 来源，可设置 `EPHEMERIS_URL` 指向可访问的 `de421.bsp` 镜像后重试。
+星历会缓存到 `apps/astro-service/data/de421.bsp`。该文件较大，不提交到仓库。生产部署使用 `bash scripts/download-ephemeris.sh` 将星历写入 Docker 持久化卷 `/app/data/de421.bsp`；脚本会优先使用仓库内 `deploy/assets/de421.bsp` 或 `apps/astro-service/data/de421.bsp`，也支持 `EPHEMERIS_LOCAL_FILE=/path/to/de421.bsp`。如服务器无法访问默认来源，可设置逗号或换行分隔的 `EPHEMERIS_URLS`，脚本会按顺序尝试多个镜像，并把官方 JPL/NAIF 地址作为 fallback。
 
 ## 启动
 

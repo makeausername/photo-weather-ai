@@ -14,6 +14,9 @@ COMPOSE_PROJECT_NAME_DEFAULT="photo-weather-ai"
 INSTALL_REGION="${INSTALL_REGION:-${PHOTO_WEATHER_INSTALL_MODE:-global}}"
 APT_MIRROR="${APT_MIRROR:-}"
 PIP_INDEX_URL="${PIP_INDEX_URL:-}"
+EPHEMERIS_LOCAL_FILE="${EPHEMERIS_LOCAL_FILE:-}"
+EPHEMERIS_URLS="${EPHEMERIS_URLS:-}"
+EPHEMERIS_URL="${EPHEMERIS_URL:-}"
 DOCKER_REGISTRY_MIRRORS="${DOCKER_REGISTRY_MIRRORS:-}"
 DOCKER_INSTALL_METHOD="${DOCKER_INSTALL_METHOD:-auto}"
 DOCKER_INSTALL_METHOD_USED="not-run"
@@ -649,6 +652,8 @@ render_env_file() {
         ADMIN_INITIAL_PASSWORD_B64) write_env_var "${key}" "${ADMIN_INITIAL_PASSWORD_B64}" >> "${tmp_file}" ;;
         ADMIN_DISPLAY_NAME) write_env_var "${key}" "${ADMIN_DISPLAY_NAME}" >> "${tmp_file}" ;;
         PIP_INDEX_URL) write_env_var "${key}" "${PIP_INDEX_URL}" >> "${tmp_file}" ;;
+        EPHEMERIS_LOCAL_FILE) write_env_var "${key}" "${EPHEMERIS_LOCAL_FILE}" >> "${tmp_file}" ;;
+        EPHEMERIS_URLS) write_env_var "${key}" "${EPHEMERIS_URLS}" >> "${tmp_file}" ;;
         QWEATHER_API_KEY) write_env_var "${key}" "${QWEATHER_API_KEY}" >> "${tmp_file}" ;;
         QWEATHER_API_HOST) write_env_var "${key}" "${QWEATHER_API_HOST}" >> "${tmp_file}" ;;
         AMAP_API_KEY) write_env_var "${key}" "${AMAP_API_KEY}" >> "${tmp_file}" ;;
@@ -1600,8 +1605,8 @@ confirm_deployment() {
 }
 
 download_required_ephemeris() {
-  if ! confirm_continue "需要下载本地天文星历文件 de421.bsp，用于精确计算月相、月出月落和银河窗口。" "直接回车下载，输入 n 取消安装:"; then
-    fail_install "未安装 de421.bsp，无法完成生产部署。可设置 EPHEMERIS_URL 后重新运行安装器。"
+  if ! confirm_continue "需要准备本地天文星历文件 de421.bsp，用于精确计算月相、月出月落和银河窗口；可使用仓库内文件、本地文件或多个下载来源。" "直接回车继续，输入 n 取消安装:"; then
+    fail_install "未安装 de421.bsp，无法完成生产部署。可设置 EPHEMERIS_LOCAL_FILE 或 EPHEMERIS_URLS 后重新运行安装器。"
   fi
 
   if run_logged_with_heartbeat \
@@ -1612,7 +1617,7 @@ download_required_ephemeris() {
     return
   fi
 
-  fail_install "de421.bsp 下载、写入或健康检查失败，安装已停止。可设置 EPHEMERIS_URL 后重试。"
+  fail_install "de421.bsp 获取、写入或健康检查失败，安装已停止。可设置 EPHEMERIS_LOCAL_FILE 或 EPHEMERIS_URLS 后重试。"
 }
 
 compose_service_exists() {

@@ -9,6 +9,8 @@ logs/
 .env.production
 deploy/Caddyfile
 deploy/generated/
+deploy/assets/*.bsp
+deploy/ephemeris/*.bsp
 .runtime/
 backups/
 apps/astro-service/data/*.bsp
