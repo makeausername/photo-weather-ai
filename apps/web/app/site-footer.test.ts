@@ -14,32 +14,41 @@ testGlobal.React = React;
 
 describe("SiteFooter", () => {
   it("renders the project footer copy and ICP filing link", () => {
-    expect(siteConfig.legal.icpNumber).toBe("沪ICP备2025140939号-3");
+    expect(siteConfig.legal.icpNumber).toBe("\u6caaICP\u59072025140939\u53f7-3");
+    expect(siteConfig.legal.icpUrl).toBe("https://beian.miit.gov.cn");
 
     const html = renderToStaticMarkup(React.createElement(SiteFooter));
 
-    expect(html).toContain("逐光天气");
-    expect(html).toContain("把天气预报翻译成风光摄影出行窗口");
-    expect(html).toContain("云层 · 光线 · 地形 · 风险 · 窗口期");
-    expect(html).toContain("综合判断");
-    expect(html).toContain("云海");
-    expect(html).toContain("朝霞晚霞");
-    expect(html).toContain("星空银河");
-    expect(html).toContain("机位库");
-    expect(html).toContain("定价");
-    expect(html).toContain(
-      "结果仅供摄影出行参考，山地、夜间、恶劣天气请以官方预警和现场安全为准。",
-    );
-    expect(html).toContain("隐私政策");
-    expect(html).toContain("服务条款");
-    expect(html).toContain("免责声明");
-    expect(html).toContain("帮助与联系");
-    expect(html).toContain("© 2026 逐光天气");
+    expect(html).toContain(siteConfig.brand.name);
+    expect(html).toContain(siteConfig.brand.tagline);
+    expect(html).toContain(siteConfig.brand.shortTagline);
+    for (const keyword of siteConfig.footer.horizonText.split(" · ")) {
+      expect(html).toContain(keyword);
+    }
+    for (const link of siteConfig.footer.mainNavigation) {
+      expect(html).toContain(link.label);
+      expect(html).toContain(`href="${link.href}"`);
+    }
+    expect(html).toContain(siteConfig.footer.disclaimer);
+    for (const link of siteConfig.footer.legalNavigation) {
+      expect(html).toContain(link.label);
+      expect(html).toContain(`href="${link.href}"`);
+    }
+    expect(html).toContain(siteConfig.footer.copyright);
     expect(html).toContain(siteConfig.legal.icpNumber);
     expect(html).toContain(`href="${siteConfig.legal.icpUrl}"`);
     expect(html).toContain('target="_blank"');
     expect(html).toContain('rel="noopener noreferrer"');
-    expect(html).not.toContain("管理后台");
+    expect(html).not.toContain("\u7ba1\u7406\u540e\u53f0");
+  });
+
+  it("uses a dark polished footer treatment aligned to the public page container", () => {
+    const html = renderToStaticMarkup(React.createElement(SiteFooter));
+
+    expect(html).toContain("bg-[#071614]");
+    expect(html).toContain("max-w-[1560px]");
+    expect(html).toContain("border-y border-[#f8e7be]/12");
+    expect(html).toContain("justify-center");
   });
 
   it("is mounted by the public shell in server-rendered markup", () => {
