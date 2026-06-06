@@ -345,7 +345,8 @@ describe("production deployment assets", () => {
       'section 13 "HTTPS 与健康检查"',
       'section 14 "完成"',
       "需要下载本地天文星历文件 de421.bsp",
-      "bash scripts/download-ephemeris.sh",
+      'bash "${SCRIPT_DIR}/download-ephemeris.sh"',
+      "未安装 de421.bsp，无法完成生产部署",
       "检测到已有 PostgreSQL 数据卷",
       "PostgreSQL 首次初始化后的用户名和密码不会因为修改 .env.production 自动改变",
       "1. 保留现有数据并停止安装",
@@ -461,6 +462,15 @@ describe("production deployment assets", () => {
     expect(bootstrap.indexOf("preflight_database_connection")).toBeLessThan(
       bootstrap.indexOf("run_migrations"),
     );
+    expect(bootstrap.indexOf("run_migrations")).toBeLessThan(
+      bootstrap.indexOf("create_admin_account"),
+    );
+
+    const runMigrations = installer.slice(
+      installer.indexOf("run_migrations()"),
+      installer.indexOf("collect_admin_configuration()"),
+    );
+    expect(runMigrations).toContain('fail_install "数据库迁移失败。"');
   });
 
   it("keeps resume/update database preflight aligned with the installer", () => {
@@ -494,9 +504,17 @@ describe("production deployment assets", () => {
     const status = readRepoFile("scripts/status.sh");
     const resume = readRepoFile("scripts/resume-install.sh");
 
+    expect(script).toContain('EPHEMERIS_URL="${EPHEMERIS_URL:-}"');
+    expect(script).toContain("DEFAULT_EPHEMERIS_URLS=(");
     expect(script).toContain("https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/de421.bsp");
+    expect(script).toContain(
+      "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de421.bsp",
+    );
+    expect(script).toContain('add_ephemeris_url_candidate "${EPHEMERIS_URL}"');
     expect(script).toContain('CONTAINER_EPHEMERIS_PATH="/app/data/de421.bsp"');
     expect(script).toContain("MIN_EPHEMERIS_BYTES=$((10 * 1024 * 1024))");
+    expect(script).toContain("download_ephemeris_url");
+    expect(script).toContain("verify_container_ephemeris_file");
     expect(script).toContain(
       'compose cp "${EPHEMERIS_FILE}" "astro-service:${CONTAINER_EPHEMERIS_PATH}"',
     );
@@ -506,12 +524,26 @@ describe("production deployment assets", () => {
     expect(script).toContain("ephemerisAvailable !== true");
     expect(script).toContain("body.ephemerisPath !== '${CONTAINER_EPHEMERIS_PATH}'");
     expect(installer).toContain('section 9 "天文星历文件检查"');
+    expect(installer).toContain("download_required_ephemeris");
     expect(installer).toContain("download-ephemeris.sh");
+    expect(installer).toContain("输入 n 取消安装");
+    expect(installer).toContain("de421.bsp 下载、写入或健康检查失败，安装已停止");
+    expect(installer).not.toContain("EPHEMERIS_DOWNLOAD_SKIPPED");
+    expect(installer).not.toContain("已跳过天文星历文件下载");
     expect(resume).toContain("ensure_ephemeris_available");
     expect(resume).toContain('bash "${SCRIPT_DIR}/download-ephemeris.sh"');
     expect(status).toContain("ephemerisAvailable");
     expect(status).toContain("ephemerisPath");
     expect(status).toContain("星历文件缺失，请执行 bash scripts/download-ephemeris.sh");
+  });
+
+  it("keeps the admin bootstrap role guard migration free of ambiguous id references", () => {
+    const migration = readRepoFile(
+      "packages/db/prisma/migrations/0008_admin_bootstrap_role_guard/migration.sql",
+    );
+
+    expect(migration).toContain('REGEXP_REPLACE("roles"."id"::text');
+    expect(migration).not.toContain('REGEXP_REPLACE("id"');
   });
 
   it("ships the production provider diagnostics script without printing secrets", () => {

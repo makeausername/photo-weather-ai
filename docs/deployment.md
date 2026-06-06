@@ -44,7 +44,7 @@ The installer runs these sections:
 13. HTTPS 与健康检查
 14. 完成
 
-The installer writes `.env.production` and `deploy/Caddyfile`, installs Docker only when Docker or the Compose plugin is missing, validates Compose config, builds images sequentially, starts PostgreSQL/Redis/astro-service, downloads the local JPL ephemeris file when accepted, runs database preflight, then runs migrations and seed data. After that it creates or updates the admin account through `pnpm bootstrap:admin`, verifies the `admin` role, `user_roles`, `role_permissions`, and auth-route recognition through `bash scripts/verify-admin-bootstrap.sh`, then starts the full stack.
+The installer writes `.env.production` and `deploy/Caddyfile`, installs Docker only when Docker or the Compose plugin is missing, validates Compose config, builds images sequentially, starts PostgreSQL/Redis/astro-service, downloads and verifies the local JPL ephemeris file, runs database preflight, then runs migrations and seed data. After that it creates or updates the admin account through `pnpm bootstrap:admin`, verifies the `admin` role, `user_roles`, `role_permissions`, and auth-route recognition through `bash scripts/verify-admin-bootstrap.sh`, then starts the full stack. If ephemeris download/verification or database migration fails, installation stops before admin bootstrap and before the full stack is started.
 
 Docker installation behavior is controlled by environment variables:
 
@@ -101,17 +101,24 @@ Accurate moon phase, moonrise/moonset, astronomical night, and Milky Way windows
 The installer prompts:
 
 ```text
-需要下载本地天文星历文件 de421.bsp，用于精确计算月相、月出月落和银河窗口。直接回车下载，输入 n 跳过:
+需要下载本地天文星历文件 de421.bsp，用于精确计算月相、月出月落和银河窗口。直接回车下载，输入 n 取消安装:
 ```
 
-Direct Enter downloads by default. If skipped, precise astro calculations stay unavailable until the file is installed.
+Direct Enter downloads by default. If the operator cancels, or if the file cannot be downloaded, written to `/app/data/de421.bsp`, size-verified, and confirmed by astro-service health, the installer stops instead of starting the full stack.
+
+`scripts/download-ephemeris.sh` tries multiple JPL/NAIF sources. To use an internal mirror or another verified `de421.bsp` source, set `EPHEMERIS_URL`:
+
+```bash
+EPHEMERIS_URL=https://example.com/path/to/de421.bsp bash scripts/download-ephemeris.sh
+```
 
 Manual fix:
 
 ```bash
 bash scripts/download-ephemeris.sh
-docker compose --env-file .env.production -f docker-compose.prod.yml restart astro-service api web
 ```
+
+The script writes the file to the `astro_data` volume, restarts astro-service/API/web when available, and checks astro-service health from inside the app network.
 
 After installation, `GET http://astro-service:4100/health` from inside the app network should include:
 

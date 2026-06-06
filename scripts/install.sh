@@ -11,7 +11,6 @@ ENV_TEMPLATE="${PROJECT_ROOT}/deploy/env.production.template"
 CHECK_ENV_SCRIPT="${SCRIPT_DIR}/check-env-production.sh"
 INSTALLER_INPUT_LIB="${SCRIPT_DIR}/lib/installer-input.sh"
 COMPOSE_PROJECT_NAME_DEFAULT="photo-weather-ai"
-EPHEMERIS_DOWNLOAD_SKIPPED=0
 INSTALL_REGION="${INSTALL_REGION:-${PHOTO_WEATHER_INSTALL_MODE:-global}}"
 APT_MIRROR="${APT_MIRROR:-}"
 PIP_INDEX_URL="${PIP_INDEX_URL:-}"
@@ -1600,18 +1599,20 @@ confirm_deployment() {
   fi
 }
 
-download_ephemeris_if_requested() {
-  if confirm_continue "需要下载本地天文星历文件 de421.bsp，用于精确计算月相、月出月落和银河窗口。" "直接回车下载，输入 n 跳过:"; then
-    run_logged_with_heartbeat \
-      "下载并安装天文星历文件" \
-      "de421.bsp 下载或写入仍在进行，请稍候..." \
-      bash "${SCRIPT_DIR}/download-ephemeris.sh"
+download_required_ephemeris() {
+  if ! confirm_continue "需要下载本地天文星历文件 de421.bsp，用于精确计算月相、月出月落和银河窗口。" "直接回车下载，输入 n 取消安装:"; then
+    fail_install "未安装 de421.bsp，无法完成生产部署。可设置 EPHEMERIS_URL 后重新运行安装器。"
+  fi
+
+  if run_logged_with_heartbeat \
+    "下载并安装天文星历文件" \
+    "de421.bsp 下载或写入仍在进行，请稍候..." \
+    bash "${SCRIPT_DIR}/download-ephemeris.sh"; then
     ok "天文星历文件检查通过。"
     return
   fi
 
-  EPHEMERIS_DOWNLOAD_SKIPPED=1
-  warn "已跳过天文星历文件下载。星空银河精确计算不可用，稍后执行 bash scripts/download-ephemeris.sh。"
+  fail_install "de421.bsp 下载、写入或健康检查失败，安装已停止。可设置 EPHEMERIS_URL 后重试。"
 }
 
 compose_service_exists() {
@@ -1662,7 +1663,7 @@ bootstrap_stack() {
   run_logged "启动数据库、Redis 和星历服务" compose up -d postgres redis astro-service
 
   section 9 "天文星历文件检查"
-  download_ephemeris_if_requested
+  download_required_ephemeris
 
   section 10 "数据库连接预检"
   preflight_database_connection
@@ -1805,9 +1806,6 @@ main() {
   echo "Admin login: https://${DOMAIN}/admin/login"
   echo "Admin email: ${ADMIN_EMAIL}"
   echo "Password: hidden"
-  if [[ "${EPHEMERIS_DOWNLOAD_SKIPPED}" == "1" ]]; then
-    echo "星空银河精确计算不可用，稍后执行 bash scripts/download-ephemeris.sh。"
-  fi
   echo "Reset admin: bash scripts/reset-admin.sh"
   echo "Status: bash scripts/status.sh"
   echo "Update: bash scripts/update.sh"

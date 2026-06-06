@@ -54,11 +54,11 @@ BEGIN
     END IF;
 
     UPDATE "roles"
-       SET "code" = 'role_' || REGEXP_REPLACE("id", '[^A-Za-z0-9]+', '_', 'g')
+       SET "code" = 'role_' || REGEXP_REPLACE("roles"."id"::text, '[^A-Za-z0-9]+', '_', 'g')
      WHERE NULLIF(BTRIM(COALESCE("code", '')), '') IS NULL;
 
     UPDATE "roles"
-       SET "code" = 'role_' || REGEXP_REPLACE("id", '[^A-Za-z0-9]+', '_', 'g')
+       SET "code" = 'role_' || REGEXP_REPLACE("roles"."id"::text, '[^A-Za-z0-9]+', '_', 'g')
       FROM (
         SELECT "id",
                ROW_NUMBER() OVER (
