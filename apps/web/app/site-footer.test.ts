@@ -21,10 +21,9 @@ describe("SiteFooter", () => {
 
     expect(html).toContain(siteConfig.brand.name);
     expect(html).toContain(siteConfig.brand.tagline);
-    expect(html).toContain(siteConfig.brand.shortTagline);
-    for (const keyword of siteConfig.footer.horizonText.split(" · ")) {
-      expect(html).toContain(keyword);
-    }
+    expect(html).toContain(siteConfig.footer.description);
+    expect(html).toContain(siteConfig.footer.primaryNavigationTitle);
+    expect(html).toContain(siteConfig.footer.legalNavigationTitle);
     for (const link of siteConfig.footer.mainNavigation) {
       expect(html).toContain(link.label);
       expect(html).toContain(`href="${link.href}"`);
@@ -40,15 +39,22 @@ describe("SiteFooter", () => {
     expect(html).toContain('target="_blank"');
     expect(html).toContain('rel="noopener noreferrer"');
     expect(html).not.toContain("\u7ba1\u7406\u540e\u53f0");
+    expect(html).not.toContain("\u8d26\u6237");
+    expect(html.toLowerCase()).not.toContain("/admin");
+    expect(html.toLowerCase()).not.toContain("/account");
   });
 
-  it("uses a dark polished footer treatment aligned to the public page container", () => {
+  it("uses a light design-system footer treatment aligned to the public page container", () => {
     const html = renderToStaticMarkup(React.createElement(SiteFooter));
 
-    expect(html).toContain("bg-[#071614]");
+    expect(html).toContain("border-t border-border bg-card");
     expect(html).toContain("max-w-[1560px]");
-    expect(html).toContain("border-y border-[#f8e7be]/12");
+    expect(html).toContain("bg-muted/70");
+    expect(html).toContain("sm:grid-cols-2");
+    expect(html).toContain("focus-visible:ring-2 focus-visible:ring-ring");
     expect(html).toContain("justify-center");
+    expect(html).not.toContain("bg-[#071614]");
+    expect(html).not.toContain("rgb(7_22_20)");
   });
 
   it("is mounted by the public shell in server-rendered markup", () => {
