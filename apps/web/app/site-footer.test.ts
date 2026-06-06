@@ -22,17 +22,11 @@ describe("SiteFooter", () => {
     expect(html).toContain(siteConfig.brand.name);
     expect(html).toContain(siteConfig.brand.tagline);
     expect(html).toContain(siteConfig.footer.description);
-    expect(html).toContain(siteConfig.footer.primaryNavigationTitle);
-    expect(html).toContain(siteConfig.footer.legalNavigationTitle);
-    for (const link of siteConfig.footer.mainNavigation) {
+    for (const link of siteConfig.footer.navigation) {
       expect(html).toContain(link.label);
       expect(html).toContain(`href="${link.href}"`);
     }
     expect(html).toContain(siteConfig.footer.disclaimer);
-    for (const link of siteConfig.footer.legalNavigation) {
-      expect(html).toContain(link.label);
-      expect(html).toContain(`href="${link.href}"`);
-    }
     expect(html).toContain(siteConfig.footer.copyright);
     expect(html).toContain(siteConfig.legal.icpNumber);
     expect(html).toContain(`href="${siteConfig.legal.icpUrl}"`);
@@ -42,19 +36,26 @@ describe("SiteFooter", () => {
     expect(html).not.toContain("\u8d26\u6237");
     expect(html.toLowerCase()).not.toContain("/admin");
     expect(html.toLowerCase()).not.toContain("/account");
+    expect(html).not.toContain("用户中心");
+    expect(html).not.toContain("帮助与联系");
+    expect(html).not.toContain("隐私政策");
+    expect(html).not.toContain("服务条款");
+    expect(html).not.toContain("免责声明");
   });
 
   it("uses a light design-system footer treatment aligned to the public page container", () => {
     const html = renderToStaticMarkup(React.createElement(SiteFooter));
 
-    expect(html).toContain("border-t border-border bg-card");
+    expect(html).toContain("border-t border-[#DDD4C4] bg-[#F7F4EC]");
     expect(html).toContain("max-w-[1560px]");
-    expect(html).toContain("bg-muted/70");
-    expect(html).toContain("sm:grid-cols-2");
-    expect(html).toContain("focus-visible:ring-2 focus-visible:ring-ring");
-    expect(html).toContain("justify-center");
+    expect(html).toContain("border-y border-[#DDD4C4]");
+    expect(html).toContain("text-[#66736D]");
+    expect(html).toContain("focus-visible:ring-2 focus-visible:ring-[#A9C7B8]");
+    expect(html).toContain("flex flex-wrap items-center");
+    expect(html).toContain("min-[900px]:justify-end");
     expect(html).not.toContain("bg-[#071614]");
     expect(html).not.toContain("rgb(7_22_20)");
+    expect(html).not.toContain("bg-muted/70");
   });
 
   it("is mounted by the public shell in server-rendered markup", () => {
