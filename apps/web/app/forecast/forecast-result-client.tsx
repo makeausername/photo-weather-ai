@@ -112,6 +112,30 @@ export type DecisionProgressContext = {
 
 type DecisionTemplateTarget = "general" | "cloud_sea";
 
+type NormalizedAiExplanationSection = {
+  readonly title: string;
+  readonly text: string;
+};
+
+export type NormalizedAiExplanationContent = {
+  readonly hasContent: boolean;
+  readonly title?: string;
+  readonly summaryText?: string;
+  readonly conclusion?: string;
+  readonly reasons: readonly string[];
+  readonly suggestions: readonly string[];
+  readonly risks: readonly string[];
+  readonly sections: readonly NormalizedAiExplanationSection[];
+};
+
+const emptyAiExplanationContent: NormalizedAiExplanationContent = {
+  hasContent: false,
+  reasons: [],
+  suggestions: [],
+  risks: [],
+  sections: [],
+};
+
 type ForecastAiExplanation = {
   readonly conclusion: {
     readonly titleZh: string;
@@ -173,6 +197,8 @@ type ForecastAiExplanation = {
   readonly reasons?: readonly string[];
   readonly suggestions?: readonly string[];
   readonly risks?: readonly string[];
+  readonly displayContent?: NormalizedAiExplanationContent;
+  readonly displayOnly?: boolean;
   readonly metadata?: {
     readonly source: "deepseek" | "deterministic_fallback";
     readonly noteZh?: string;
@@ -452,11 +478,13 @@ export function normalizeAiExplainResponse(
   const meta = isRecord(response.meta)
     ? (response.meta as NonNullable<AiExplainResponse["meta"]>)
     : undefined;
-  const successSignal = response.ok === true || response.success === true;
+  const successSignal = hasAiExplainSuccessSignal(response);
+  const displayContent = normalizeAiExplanationContent(response);
   const directExplanationCandidate = extractAiExplanationFromResponse(response);
-  const directExplanation = isDisplayableAiExplanation(directExplanationCandidate)
-    ? directExplanationCandidate
-    : null;
+  const directExplanation = normalizeDisplayableAiExplanation(
+    directExplanationCandidate,
+    displayContent,
+  );
   const invalidSuccessfulResponse = successSignal && !directExplanation;
   const backendErrorCategory =
     normalizeAiErrorCategory(response.errorCategory) ??
@@ -480,12 +508,11 @@ export function normalizeAiExplainResponse(
       : frontendErrorCategory
         ? false
         : backendErrorCategory !== "none" && isRetryableAiExplainCategory(backendErrorCategory);
-  const message =
-    frontendErrorCategory
-      ? publicAiExplanationMessage(frontendErrorCategory)
-      : readStringField(response, "messageZh") ??
-        readStringField(response, "message") ??
-        publicAiExplanationMessage(backendErrorCategory);
+  const message = frontendErrorCategory
+    ? publicAiExplanationMessage(frontendErrorCategory)
+    : readStringField(response, "messageZh") ??
+      readStringField(response, "message") ??
+      publicAiExplanationMessage(backendErrorCategory);
 
   if (successSignal && directExplanation) {
     return {
@@ -549,6 +576,52 @@ function normalizeAiExplainThrownError(
   };
 }
 
+function hasAiExplainSuccessSignal(response: AiExplainResponse): boolean {
+  return (
+    !hasAiExplainFailureSignal(response) &&
+    (readAiExplainBooleanField(response, "ok") === true ||
+      readAiExplainBooleanField(response, "success") === true)
+  );
+}
+
+function hasAiExplainFailureSignal(response: AiExplainResponse): boolean {
+  return (
+    readAiExplainBooleanField(response, "ok") === false ||
+    readAiExplainBooleanField(response, "success") === false
+  );
+}
+
+function readAiExplainBooleanField(
+  response: AiExplainResponse,
+  key: "ok" | "success",
+): boolean | undefined {
+  return (
+    booleanField(response, key) ??
+    booleanField(response.data, key) ??
+    booleanField(response.result, key) ??
+    booleanField(response.payload, key)
+  );
+}
+
+function normalizeDisplayableAiExplanation(
+  explanation: ForecastAiExplanation | null,
+  displayContent: NormalizedAiExplanationContent,
+): ForecastAiExplanation | null {
+  if (explanation?.metadata?.source === "deterministic_fallback") {
+    return null;
+  }
+
+  if (isDisplayableAiExplanation(explanation)) {
+    return withAiExplanationDisplayContent(explanation, displayContent);
+  }
+
+  if (displayContent.hasContent) {
+    return explanationFromDisplayContent(displayContent);
+  }
+
+  return null;
+}
+
 function extractAiExplanationFromResponse(
   response: AiExplainResponse,
 ): ForecastAiExplanation | null {
@@ -560,6 +633,7 @@ function extractAiExplanationFromResponse(
     response.text,
     response.content,
     response.data,
+    response.result,
     response.payload,
     nestedField(response.data, "explanation"),
     nestedField(response.data, "interpretation"),
@@ -593,12 +667,20 @@ function extractAiExplanationFromResponse(
 
 function normalizeForecastAiExplanationCandidate(value: unknown): ForecastAiExplanation | null {
   if (isForecastAiExplanationLike(value)) {
-    return withAiExplanationMetadata(value, value.metadata?.source ?? "deepseek");
+    return withAiExplanationDisplayContent(
+      withAiExplanationMetadata(value, value.metadata?.source ?? "deepseek"),
+      normalizeAiExplanationContent(value),
+    );
   }
 
   if (!isRecord(value)) {
     if (typeof value === "string" && value.trim()) {
-      return explanationFromSections([{ title: "智能解读", text: value.trim() }]);
+      return explanationFromDisplayContent({
+        ...emptyAiExplanationContent,
+        hasContent: true,
+        summaryText: value.trim(),
+        sections: [{ title: "智能解读", text: value.trim() }],
+      });
     }
     return null;
   }
@@ -610,12 +692,17 @@ function normalizeForecastAiExplanationCandidate(value: unknown): ForecastAiExpl
     return nested;
   }
 
+  const displayContent = normalizeAiExplanationContent(value);
+  if (displayContent.hasContent) {
+    return explanationFromDisplayContent(displayContent, normalizeAiMetadata(value.metadata));
+  }
+
   const completed = completeForecastAiExplanationFromPartial(value);
   if (completed) {
     return completed;
   }
 
-  return explanationFromSections(normalizeAiSections(value.sections ?? value));
+  return explanationFromSections(normalizeAiContentSections(value.sections ?? value));
 }
 
 function isForecastAiExplanationLike(value: unknown): value is ForecastAiExplanation {
@@ -639,9 +726,375 @@ function isDisplayableAiExplanation(
 ): explanation is ForecastAiExplanation {
   return Boolean(
     explanation &&
-      isForecastAiExplanationLike(explanation) &&
+      (isForecastAiExplanationLike(explanation) ||
+        normalizeAiExplanationContent(explanation).hasContent) &&
       explanation.metadata?.source !== "deterministic_fallback",
   );
+}
+
+type AiExplanationContentAccumulator = {
+  title?: string;
+  summaryText?: string;
+  conclusion?: string;
+  reasons: string[];
+  suggestions: string[];
+  risks: string[];
+  sections: NormalizedAiExplanationSection[];
+};
+
+export function normalizeAiExplanationContent(payload: unknown): NormalizedAiExplanationContent {
+  const accumulator: AiExplanationContentAccumulator = {
+    reasons: [],
+    suggestions: [],
+    risks: [],
+    sections: [],
+  };
+
+  collectAiExplanationContent(payload, accumulator, 0, false);
+
+  const title = cleanAiContentText(accumulator.title);
+  const summaryText = cleanAiContentText(accumulator.summaryText);
+  const conclusion = cleanAiContentText(accumulator.conclusion);
+  const reasons = uniqueAiTextArray(accumulator.reasons);
+  const suggestions = uniqueAiTextArray(accumulator.suggestions);
+  const risks = uniqueAiTextArray(accumulator.risks);
+  const sections = uniqueAiSections(accumulator.sections);
+  const hasContent = Boolean(
+    summaryText ||
+      conclusion ||
+      reasons.length > 0 ||
+      suggestions.length > 0 ||
+      risks.length > 0 ||
+      sections.length > 0,
+  );
+
+  if (!hasContent) {
+    return emptyAiExplanationContent;
+  }
+
+  return {
+    hasContent: true,
+    ...(title ? { title } : {}),
+    ...(summaryText ? { summaryText } : {}),
+    ...(conclusion ? { conclusion } : {}),
+    reasons,
+    suggestions,
+    risks,
+    sections,
+  };
+}
+
+function collectAiExplanationContent(
+  value: unknown,
+  accumulator: AiExplanationContentAccumulator,
+  depth: number,
+  allowObjectSections: boolean,
+): void {
+  if (depth > 5) {
+    return;
+  }
+
+  if (typeof value === "string") {
+    addAiText(accumulator, "summaryText", value);
+    addAiSection(accumulator, "智能解读", value);
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    addAiSections(accumulator, normalizeAiSections(value));
+    return;
+  }
+
+  if (!isRecord(value)) {
+    return;
+  }
+
+  const displayContent = normalizeExistingAiDisplayContent(value.displayContent);
+  if (displayContent.hasContent) {
+    mergeAiExplanationContent(accumulator, displayContent);
+  }
+
+  if (isForecastAiExplanationLike(value)) {
+    addAiText(accumulator, "title", readStringField(value.conclusion, "titleZh"));
+    addAiText(accumulator, "conclusion", value.conclusion.oneSentenceDecisionZh);
+    addAiText(accumulator, "summaryText", value.summaryText ?? value.conclusion.summaryZh);
+    addAiArray(accumulator.reasons, value.reasons);
+    addAiArray(accumulator.suggestions, value.suggestions);
+    addAiArray(accumulator.risks, value.risks);
+    addAiText(accumulator.reasons, undefined, value.bestPlan.whyThisWindowZh);
+    addAiText(accumulator.reasons, undefined, value.weatherTrend.trendSummaryZh);
+    addAiText(accumulator.suggestions, undefined, value.finalAdvice.goNoGoZh);
+    addAiText(accumulator.suggestions, undefined, value.bestPlan.backupPlanZh);
+    addAiArray(accumulator.risks, value.riskAndGear.keyRisks);
+  }
+
+  addAiText(
+    accumulator,
+    "title",
+    readStringField(value, "titleZh") ?? readStringField(value, "title"),
+  );
+  addAiText(
+    accumulator,
+    "summaryText",
+    readStringField(value, "summaryText") ??
+      readStringField(value, "summaryZh") ??
+      readStringField(value, "summary") ??
+      readStringField(value, "content") ??
+      readStringField(value, "text"),
+  );
+  if (allowObjectSections) {
+    addAiSection(
+      accumulator,
+      readStringField(value, "titleZh") ?? readStringField(value, "title") ?? "智能解读",
+      readStringField(value, "content") ?? readStringField(value, "text"),
+    );
+  }
+  addAiText(
+    accumulator,
+    "conclusion",
+    readStringField(value, "oneSentenceDecisionZh") ??
+      readStringField(value, "oneSentenceDecision") ??
+      readStringField(value, "decisionZh") ??
+      readStringField(value, "decision"),
+  );
+  addAiArray(accumulator.reasons, stringArrayField(value, "reasons"));
+  addAiArray(accumulator.reasons, stringArrayField(value, "reasoning"));
+  addAiArray(accumulator.suggestions, stringArrayField(value, "suggestions"));
+  addAiArray(accumulator.suggestions, stringArrayField(value, "advice"));
+  addAiArray(accumulator.risks, stringArrayField(value, "risks"));
+
+  collectConclusionContent(value.conclusion, accumulator);
+  collectPlanContent(recordField(value, "bestPlan"), accumulator);
+  collectRiskContent(recordField(value, "riskAndGear"), accumulator);
+  collectFinalAdviceContent(recordField(value, "finalAdvice"), accumulator);
+
+  const sectionsValue = nestedField(value, "sections");
+  if (sectionsValue !== undefined) {
+    addAiSections(accumulator, normalizeAiSections(sectionsValue));
+  }
+
+  collectAiExplanationContent(nestedField(value, "explanation"), accumulator, depth + 1, true);
+  collectAiExplanationContent(nestedField(value, "interpretation"), accumulator, depth + 1, true);
+  collectAiExplanationContent(nestedField(value, "data"), accumulator, depth + 1, false);
+  collectAiExplanationContent(nestedField(value, "result"), accumulator, depth + 1, false);
+  collectAiExplanationContent(nestedField(value, "payload"), accumulator, depth + 1, false);
+
+  if (allowObjectSections) {
+    addAiSections(accumulator, normalizeAiContentSections(value));
+  }
+}
+
+function collectConclusionContent(
+  value: unknown,
+  accumulator: AiExplanationContentAccumulator,
+): void {
+  if (typeof value === "string") {
+    addAiText(accumulator, "conclusion", value);
+    return;
+  }
+
+  if (!isRecord(value)) {
+    return;
+  }
+
+  addAiText(
+    accumulator,
+    "title",
+    readStringField(value, "titleZh") ?? readStringField(value, "title"),
+  );
+  addAiText(
+    accumulator,
+    "conclusion",
+    readStringField(value, "oneSentenceDecisionZh") ??
+      readStringField(value, "oneSentenceDecision") ??
+      readStringField(value, "conclusion") ??
+      readStringField(value, "decisionZh") ??
+      readStringField(value, "decision") ??
+      readStringField(value, "contentZh") ??
+      readStringField(value, "content") ??
+      readStringField(value, "text"),
+  );
+  addAiText(
+    accumulator,
+    "summaryText",
+    readStringField(value, "summaryText") ??
+      readStringField(value, "summaryZh") ??
+      readStringField(value, "summary"),
+  );
+}
+
+function collectPlanContent(
+  value: Record<string, unknown> | undefined,
+  accumulator: AiExplanationContentAccumulator,
+): void {
+  if (!value) {
+    return;
+  }
+
+  addAiText(accumulator.suggestions, undefined, readStringField(value, "whyThisWindowZh"));
+  addAiText(accumulator.suggestions, undefined, readStringField(value, "backupPlanZh"));
+  addAiText(accumulator.suggestions, undefined, readStringField(value, "recommendedArrivalZh"));
+}
+
+function collectRiskContent(
+  value: Record<string, unknown> | undefined,
+  accumulator: AiExplanationContentAccumulator,
+): void {
+  if (!value) {
+    return;
+  }
+
+  addAiArray(accumulator.risks, stringArrayField(value, "keyRisks"));
+  addAiText(accumulator.risks, undefined, readStringField(value, "safetyZh"));
+}
+
+function collectFinalAdviceContent(
+  value: Record<string, unknown> | undefined,
+  accumulator: AiExplanationContentAccumulator,
+): void {
+  if (!value) {
+    return;
+  }
+
+  addAiText(accumulator.suggestions, undefined, readStringField(value, "goNoGoZh"));
+  addAiText(accumulator.suggestions, undefined, readStringField(value, "ifAlreadyNearbyZh"));
+  addAiText(accumulator.suggestions, undefined, readStringField(value, "ifDedicatedTripZh"));
+  addAiText(accumulator.suggestions, undefined, readStringField(value, "nextCheckZh"));
+}
+
+function normalizeExistingAiDisplayContent(value: unknown): NormalizedAiExplanationContent {
+  if (!isRecord(value) || value.hasContent !== true) {
+    return emptyAiExplanationContent;
+  }
+
+  const sections = Array.isArray(value.sections)
+    ? value.sections.flatMap((section) => normalizeAiSection(section, "智能解读"))
+    : [];
+  const title = readStringField(value, "title");
+  const summaryText = readStringField(value, "summaryText");
+  const conclusion = readStringField(value, "conclusion");
+  const reasons = stringArrayField(value, "reasons");
+  const suggestions = stringArrayField(value, "suggestions");
+  const risks = stringArrayField(value, "risks");
+  const hasContent = Boolean(
+    summaryText ||
+      conclusion ||
+      reasons.length > 0 ||
+      suggestions.length > 0 ||
+      risks.length > 0 ||
+      sections.length > 0,
+  );
+  const content: NormalizedAiExplanationContent = {
+    hasContent,
+    ...(title ? { title } : {}),
+    ...(summaryText ? { summaryText } : {}),
+    ...(conclusion ? { conclusion } : {}),
+    reasons,
+    suggestions,
+    risks,
+    sections,
+  };
+  return content.hasContent ? content : emptyAiExplanationContent;
+}
+
+function mergeAiExplanationContent(
+  accumulator: AiExplanationContentAccumulator,
+  content: NormalizedAiExplanationContent,
+): void {
+  addAiText(accumulator, "title", content.title);
+  addAiText(accumulator, "summaryText", content.summaryText);
+  addAiText(accumulator, "conclusion", content.conclusion);
+  addAiArray(accumulator.reasons, content.reasons);
+  addAiArray(accumulator.suggestions, content.suggestions);
+  addAiArray(accumulator.risks, content.risks);
+  addAiSections(accumulator, content.sections);
+}
+
+function addAiText(
+  target: AiExplanationContentAccumulator | string[],
+  key: "title" | "summaryText" | "conclusion" | undefined,
+  value: unknown,
+): void {
+  const text = cleanAiContentText(value);
+  if (!text) {
+    return;
+  }
+
+  if (Array.isArray(target)) {
+    target.push(text);
+    return;
+  }
+
+  if (key && !target[key]) {
+    target[key] = text;
+  }
+}
+
+function addAiArray(target: string[], values: readonly string[] | undefined): void {
+  if (!values) {
+    return;
+  }
+
+  for (const value of values) {
+    addAiText(target, undefined, value);
+  }
+}
+
+function addAiSections(
+  accumulator: AiExplanationContentAccumulator,
+  sections: readonly NormalizedAiExplanationSection[],
+): void {
+  for (const section of sections) {
+    addAiSection(accumulator, section.title, section.text);
+  }
+}
+
+function addAiSection(
+  accumulator: AiExplanationContentAccumulator,
+  title: unknown,
+  text: unknown,
+): void {
+  const cleanTitle = cleanAiContentText(title) ?? "智能解读";
+  const cleanText = cleanAiContentText(text);
+  if (!cleanText) {
+    return;
+  }
+
+  accumulator.sections.push({
+    title: cleanTitle,
+    text: cleanText,
+  });
+}
+
+function cleanAiContentText(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function uniqueAiTextArray(values: readonly string[]): readonly string[] {
+  return Array.from(new Set(values.map(cleanAiContentText).filter(Boolean) as string[]));
+}
+
+function uniqueAiSections(
+  sections: readonly NormalizedAiExplanationSection[],
+): readonly NormalizedAiExplanationSection[] {
+  const seen = new Set<string>();
+  const unique: NormalizedAiExplanationSection[] = [];
+
+  for (const section of sections) {
+    const title = cleanAiContentText(section.title) ?? "智能解读";
+    const text = cleanAiContentText(section.text);
+    if (!text) {
+      continue;
+    }
+    const key = `${title}\u0000${text}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push({ title, text });
+  }
+
+  return unique;
 }
 
 function completeForecastAiExplanationFromPartial(
@@ -653,6 +1106,7 @@ function completeForecastAiExplanationFromPartial(
   const subjectAdvice = recordField(value, "subjectAdvice");
   const riskAndGear = recordField(value, "riskAndGear");
   const finalAdvice = recordField(value, "finalAdvice");
+  const displayContent = normalizeAiExplanationContent(value);
 
   if (!conclusion && !bestPlan && !weatherTrend && !subjectAdvice && !riskAndGear && !finalAdvice) {
     return null;
@@ -660,9 +1114,14 @@ function completeForecastAiExplanationFromPartial(
 
   const summaryText =
     readStringField(conclusion, "summaryZh") ??
+    readStringField(conclusion, "summaryText") ??
+    readStringField(conclusion, "summary") ??
+    readStringField(conclusion, "conclusion") ??
     readStringField(conclusion, "contentZh") ??
     readStringField(conclusion, "content") ??
     readStringField(conclusion, "text") ??
+    displayContent.summaryText ??
+    displayContent.conclusion ??
     readStringField(value, "summaryText") ??
     readStringField(value, "summaryZh") ??
     readStringField(value, "summary") ??
@@ -671,9 +1130,15 @@ function completeForecastAiExplanationFromPartial(
     "已生成基于当前确定性结果的拍摄解读。";
   const decisionText =
     readStringField(conclusion, "oneSentenceDecisionZh") ??
+    readStringField(conclusion, "oneSentenceDecision") ??
+    readStringField(conclusion, "conclusion") ??
+    readStringField(conclusion, "decisionZh") ??
+    readStringField(conclusion, "decision") ??
     readStringField(conclusion, "contentZh") ??
     readStringField(conclusion, "content") ??
     readStringField(conclusion, "text") ??
+    displayContent.conclusion ??
+    displayContent.summaryText ??
     readStringField(value, "oneSentenceDecisionZh") ??
     readStringField(value, "decisionZh") ??
     summaryText;
@@ -765,6 +1230,11 @@ function completeForecastAiExplanationFromPartial(
           readStringField(finalAdvice, "nextCheckZh") ??
           "下次重点复核短临降水、低云、能见度和阵风。",
       },
+      summaryText,
+      reasons: displayContent.reasons,
+      suggestions: displayContent.suggestions,
+      risks: displayContent.risks,
+      ...(displayContent.hasContent ? { displayContent } : {}),
       metadata: normalizeAiMetadata(value.metadata),
     },
     normalizeAiMetadata(value.metadata)?.source ?? "deepseek",
@@ -889,6 +1359,95 @@ function explanationFromSections(
   };
 }
 
+function explanationFromDisplayContent(
+  content: NormalizedAiExplanationContent,
+  metadata?: ForecastAiExplanation["metadata"],
+): ForecastAiExplanation | null {
+  if (!content.hasContent) {
+    return null;
+  }
+
+  const primaryText =
+    content.conclusion ?? content.summaryText ?? content.sections[0]?.text ?? "已生成智能解读。";
+  const summaryText = content.summaryText ?? content.conclusion ?? primaryText;
+  const firstSuggestion =
+    content.suggestions[0] ??
+    content.sections.find((section) => section.title.includes("建议"))?.text;
+  const firstRisk =
+    content.risks[0] ?? content.sections.find((section) => section.title.includes("风险"))?.text;
+
+  return {
+    conclusion: {
+      titleZh: content.title ?? "智能解读",
+      summaryZh: summaryText,
+      recommendedDayZh: firstSuggestion ?? "详见确定性逐日判断。",
+      recommendationLevelZh: "以确定性评分为准",
+      whetherWorthDedicatedTripZh: firstSuggestion ?? "需结合现场复核。",
+      oneSentenceDecisionZh: primaryText,
+    },
+    bestPlan: {
+      primaryTargetZh: firstSuggestion ?? "优先参考确定性推荐题材",
+      bestDateZh: "详见逐日建议",
+      bestWindowZh: firstSuggestion ?? "详见时间窗口",
+      recommendedArrivalZh: firstSuggestion ?? "建议按主窗口提前到位。",
+      whyThisWindowZh: content.reasons[0] ?? summaryText,
+      backupPlanZh: firstSuggestion ?? "保留附近短时观察和备选题材。",
+    },
+    weatherTrend: {
+      trendSummaryZh: content.reasons[0] ?? summaryText,
+      temperatureSummaryZh: "温度以确定性天气卡片为准。",
+      rainSummaryZh: "降水以确定性天气卡片为准。",
+      windSummaryZh: "风力以确定性天气卡片为准。",
+      transparencySummaryZh: "通透度以确定性评分为准。",
+    },
+    dayByDay: [
+      {
+        dateZh: "当前结果",
+        recommendationZh: primaryText,
+        scoreZh: "详见确定性评分",
+        temperatureZh: "详见天气卡片",
+        rainZh: "详见天气卡片",
+        cloudSeaZh: "详见题材判断",
+        glowZh: "详见题材判断",
+        sunsetGlowZh: "详见题材判断",
+        astroZh: "详见题材判断",
+        transparencyZh: "详见通透度评分",
+        bestWindowZh: firstSuggestion ?? "详见时间窗口",
+        actionZh: firstSuggestion ?? "按确定性结果复核现场条件。",
+      },
+    ],
+    subjectAdvice: {
+      cloudSeaZh: content.reasons[0] ?? summaryText,
+      sunriseGlowZh: content.reasons[0] ?? summaryText,
+      sunsetGlowZh: content.reasons[0] ?? summaryText,
+      astroMilkyWayZh: content.reasons[0] ?? summaryText,
+      transparencyZh: content.reasons[0] ?? summaryText,
+    },
+    riskAndGear: {
+      keyRisks: content.risks.length > 0 ? content.risks : firstRisk ? [firstRisk] : [],
+      clothingZh: firstRisk ?? "按确定性穿衣建议准备。",
+      gearZh: firstRisk ?? "按确定性装备建议准备。",
+      safetyZh: firstRisk ?? "保留撤离时间，避免冒险等待。",
+    },
+    finalAdvice: {
+      goNoGoZh: firstSuggestion ?? primaryText,
+      ifAlreadyNearbyZh: firstSuggestion ?? "若已在附近，可按窗口短时观察。",
+      ifDedicatedTripZh: firstSuggestion ?? "专程出发前需等待临近预报复核。",
+      nextCheckZh: firstSuggestion ?? "下次重点复核短临降水、低云、能见度和阵风。",
+    },
+    summaryText,
+    reasons: content.reasons,
+    suggestions: content.suggestions,
+    risks: content.risks,
+    displayContent: content,
+    displayOnly: true,
+    metadata: metadata ?? {
+      source: "deepseek",
+      noteZh: "已兼容后端智能解读响应格式。",
+    },
+  };
+}
+
 function normalizeAiSections(
   value: unknown,
 ): readonly { readonly title: string; readonly text: string }[] {
@@ -902,6 +1461,73 @@ function normalizeAiSections(
 
   return Object.entries(value).flatMap(([key, item]) => normalizeAiSection(item, key));
 }
+
+function normalizeAiContentSections(
+  value: unknown,
+): readonly { readonly title: string; readonly text: string }[] {
+  if (!isRecord(value)) {
+    return normalizeAiSections(value);
+  }
+
+  return Object.entries(value)
+    .filter(([key]) => !aiDisplayContentIgnoredKeys.has(key))
+    .flatMap(([key, item]) => normalizeAiSection(item, key));
+}
+
+const aiDisplayContentIgnoredKeys = new Set([
+  "advice",
+  "attempts",
+  "bestPlan",
+  "cacheHit",
+  "conclusion",
+  "content",
+  "data",
+  "dayByDay",
+  "diagnostics",
+  "displayContent",
+  "error",
+  "errorCategory",
+  "explanation",
+  "fallback",
+  "fallbackInterpretation",
+  "fallbackUsed",
+  "finalAdvice",
+  "interpretation",
+  "latencyMs",
+  "message",
+  "messageZh",
+  "meta",
+  "metadata",
+  "model",
+  "ok",
+  "outputMode",
+  "parseStrategy",
+  "parseSuccess",
+  "payload",
+  "promptSizeChars",
+  "providerCode",
+  "rawResponseSizeChars",
+  "reasoning",
+  "reasons",
+  "responseSizeChars",
+  "result",
+  "retryable",
+  "riskAndGear",
+  "risks",
+  "sections",
+  "source",
+  "subjectAdvice",
+  "success",
+  "suggestions",
+  "summary",
+  "summaryText",
+  "summaryZh",
+  "text",
+  "timeoutMs",
+  "title",
+  "titleZh",
+  "weatherTrend",
+]);
 
 function normalizeAiSection(
   value: unknown,
@@ -957,6 +1583,31 @@ function withAiExplanationMetadata(
       source,
     },
   };
+}
+
+function withAiExplanationDisplayContent(
+  explanation: ForecastAiExplanation,
+  content: NormalizedAiExplanationContent,
+): ForecastAiExplanation {
+  if (!content.hasContent) {
+    return explanation;
+  }
+
+  return {
+    ...explanation,
+    summaryText: explanation.summaryText ?? content.summaryText ?? content.conclusion,
+    reasons: mergeAiTextArrays(explanation.reasons, content.reasons),
+    suggestions: mergeAiTextArrays(explanation.suggestions, content.suggestions),
+    risks: mergeAiTextArrays(explanation.risks, content.risks),
+    displayContent: content,
+  };
+}
+
+function mergeAiTextArrays(
+  existing: readonly string[] | undefined,
+  incoming: readonly string[],
+): readonly string[] {
+  return uniqueAiTextArray([...(existing ?? []), ...incoming]);
 }
 
 function normalizeAiMetadata(value: unknown): ForecastAiExplanation["metadata"] | undefined {
@@ -1028,6 +1679,13 @@ function logAiExplanationClientEvent(
     frontendTimeoutMs: event.frontendTimeoutMs ?? aiExplainFrontendTimeoutMs,
   };
 
+  if (event.errorCategory === "frontend_contract_error" && event.backendErrorCategory === "none") {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("forecast_ai_explain_client", payload);
+    }
+    return;
+  }
+
   if (event.status === "error" || event.errorCategory !== "none") {
     console.warn("forecast_ai_explain_client", payload);
     return;
@@ -1038,7 +1696,7 @@ function logAiExplanationClientEvent(
 
 function publicAiExplanationMessage(category: AiExplainErrorCategory | "none"): string {
   if (category === "frontend_contract_error") {
-    return "智能解读响应格式需更新，当前确定性判断结果仍可正常参考。";
+    return "智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。";
   }
   return "智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。";
 }
@@ -1102,6 +1760,26 @@ function recordField(value: unknown, key: string): Record<string, unknown> | und
 
 function nestedField(value: unknown, key: string): unknown {
   return isRecord(value) ? value[key] : undefined;
+}
+
+function booleanField(value: unknown, key: string): boolean | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const field = value[key];
+  if (typeof field === "boolean") {
+    return field;
+  }
+  if (typeof field === "string") {
+    const normalized = field.trim().toLowerCase();
+    if (normalized === "true") {
+      return true;
+    }
+    if (normalized === "false") {
+      return false;
+    }
+  }
+  return undefined;
 }
 
 function readStringField(value: unknown, key: string): string | undefined {
@@ -7865,6 +8543,18 @@ export function AiExplanationPanel({
   readonly onGenerate: () => void;
 }) {
   const visibleExplanation = isDisplayableAiExplanation(explanation) ? explanation : null;
+  const visibleContent = visibleExplanation
+    ? visibleExplanation.displayContent ?? normalizeAiExplanationContent(visibleExplanation)
+    : emptyAiExplanationContent;
+  const shouldRenderDisplayOnlyContent = visibleExplanation?.displayOnly === true;
+  const shouldRenderSupplementalGroups = Boolean(
+    !shouldRenderDisplayOnlyContent &&
+      visibleContent.hasContent &&
+      ((visibleExplanation?.reasons?.length ?? 0) > 0 ||
+        (visibleExplanation?.suggestions?.length ?? 0) > 0 ||
+        (visibleExplanation?.risks?.length ?? 0) > 0 ||
+        visibleContent.sections.length > 0),
+  );
   const hasCompletedExplanation = Boolean(visibleExplanation) && !retryable && status !== "loading";
   const helperText =
     status === "loading"
@@ -7912,67 +8602,118 @@ export function AiExplanationPanel({
 
       {visibleExplanation ? (
         <div className="mt-4 grid gap-3">
-          <AiTextSection title="一句话结论">
-            <p className="text-base font-semibold leading-7 text-card-foreground">
-              {visibleExplanation.conclusion.oneSentenceDecisionZh}
-            </p>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              {visibleExplanation.conclusion.summaryZh}
-            </p>
-          </AiTextSection>
-          <AiDefinitionGrid
-            title="最建议关注"
-            items={[
-              ["最建议冲哪一天", visibleExplanation.conclusion.recommendedDayZh],
-              ["是否推荐", visibleExplanation.conclusion.whetherWorthDedicatedTripZh],
-              ["主目标", visibleExplanation.bestPlan.primaryTargetZh],
-              ["建议到达", visibleExplanation.bestPlan.recommendedArrivalZh],
-              ["建议窗口", visibleExplanation.bestPlan.bestWindowZh],
-              ["备选窗口", visibleExplanation.bestPlan.backupPlanZh],
-            ]}
-          />
-          <AiDefinitionGrid
-            title="天气大势"
-            items={[
-              ["趋势", visibleExplanation.weatherTrend.trendSummaryZh],
-              ["温度", visibleExplanation.weatherTrend.temperatureSummaryZh],
-              ["降水", visibleExplanation.weatherTrend.rainSummaryZh],
-              ["风", visibleExplanation.weatherTrend.windSummaryZh],
-              ["通透度", visibleExplanation.weatherTrend.transparencySummaryZh],
-            ]}
-          />
-          <AiDayByDaySection days={visibleExplanation.dayByDay} />
-          <AiDefinitionGrid
-            title="题材判断"
-            items={[
-              ["云海", visibleExplanation.subjectAdvice.cloudSeaZh],
-              ["日出 / 朝霞", visibleExplanation.subjectAdvice.sunriseGlowZh],
-              ["日落 / 晚霞", visibleExplanation.subjectAdvice.sunsetGlowZh],
-              ["星空 / 银河", visibleExplanation.subjectAdvice.astroMilkyWayZh],
-              ["通透度", visibleExplanation.subjectAdvice.transparencyZh],
-            ]}
-          />
-          <AiListSection title="风险与装备" items={visibleExplanation.riskAndGear.keyRisks} />
-          <AiDefinitionGrid
-            title="风险与装备建议"
-            items={[
-              ["穿衣", visibleExplanation.riskAndGear.clothingZh],
-              ["装备", visibleExplanation.riskAndGear.gearZh],
-              ["安全", visibleExplanation.riskAndGear.safetyZh],
-            ]}
-          />
-          <AiDefinitionGrid
-            title="最终建议"
-            items={[
-              ["去不去", visibleExplanation.finalAdvice.goNoGoZh],
-              ["已在附近", visibleExplanation.finalAdvice.ifAlreadyNearbyZh],
-              ["专程出发", visibleExplanation.finalAdvice.ifDedicatedTripZh],
-              ["下次复核", visibleExplanation.finalAdvice.nextCheckZh],
-            ]}
-          />
+          {shouldRenderDisplayOnlyContent ? (
+            <AiDisplayContentSections content={visibleContent} showSummary />
+          ) : (
+            <>
+              <AiTextSection title="一句话结论">
+                <p className="text-base font-semibold leading-7 text-card-foreground">
+                  {visibleExplanation.conclusion.oneSentenceDecisionZh}
+                </p>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  {visibleExplanation.conclusion.summaryZh}
+                </p>
+              </AiTextSection>
+              <AiDefinitionGrid
+                title="最建议关注"
+                items={[
+                  ["最建议冲哪一天", visibleExplanation.conclusion.recommendedDayZh],
+                  ["是否推荐", visibleExplanation.conclusion.whetherWorthDedicatedTripZh],
+                  ["主目标", visibleExplanation.bestPlan.primaryTargetZh],
+                  ["建议到达", visibleExplanation.bestPlan.recommendedArrivalZh],
+                  ["建议窗口", visibleExplanation.bestPlan.bestWindowZh],
+                  ["备选窗口", visibleExplanation.bestPlan.backupPlanZh],
+                ]}
+              />
+              <AiDefinitionGrid
+                title="天气大势"
+                items={[
+                  ["趋势", visibleExplanation.weatherTrend.trendSummaryZh],
+                  ["温度", visibleExplanation.weatherTrend.temperatureSummaryZh],
+                  ["降水", visibleExplanation.weatherTrend.rainSummaryZh],
+                  ["风", visibleExplanation.weatherTrend.windSummaryZh],
+                  ["通透度", visibleExplanation.weatherTrend.transparencySummaryZh],
+                ]}
+              />
+              <AiDayByDaySection days={visibleExplanation.dayByDay} />
+              <AiDefinitionGrid
+                title="题材判断"
+                items={[
+                  ["云海", visibleExplanation.subjectAdvice.cloudSeaZh],
+                  ["日出 / 朝霞", visibleExplanation.subjectAdvice.sunriseGlowZh],
+                  ["日落 / 晚霞", visibleExplanation.subjectAdvice.sunsetGlowZh],
+                  ["星空 / 银河", visibleExplanation.subjectAdvice.astroMilkyWayZh],
+                  ["通透度", visibleExplanation.subjectAdvice.transparencyZh],
+                ]}
+              />
+              <AiListSection title="风险与装备" items={visibleExplanation.riskAndGear.keyRisks} />
+              <AiDefinitionGrid
+                title="风险与装备建议"
+                items={[
+                  ["穿衣", visibleExplanation.riskAndGear.clothingZh],
+                  ["装备", visibleExplanation.riskAndGear.gearZh],
+                  ["安全", visibleExplanation.riskAndGear.safetyZh],
+                ]}
+              />
+              <AiDefinitionGrid
+                title="最终建议"
+                items={[
+                  ["去不去", visibleExplanation.finalAdvice.goNoGoZh],
+                  ["已在附近", visibleExplanation.finalAdvice.ifAlreadyNearbyZh],
+                  ["专程出发", visibleExplanation.finalAdvice.ifDedicatedTripZh],
+                  ["下次复核", visibleExplanation.finalAdvice.nextCheckZh],
+                ]}
+              />
+              {shouldRenderSupplementalGroups ? (
+                <AiDisplayContentSections content={visibleContent} showSummary={false} />
+              ) : null}
+            </>
+          )}
         </div>
       ) : null}
     </Card>
+  );
+}
+
+function AiDisplayContentSections({
+  content,
+  showSummary,
+}: {
+  readonly content: NormalizedAiExplanationContent;
+  readonly showSummary: boolean;
+}) {
+  const primaryText = content.conclusion ?? content.summaryText;
+  const secondaryText =
+    content.conclusion && content.summaryText && content.summaryText !== content.conclusion
+      ? content.summaryText
+      : undefined;
+  const supplementalSections = content.sections.filter(
+    (section) => section.text !== primaryText && section.text !== secondaryText,
+  );
+
+  return (
+    <>
+      {showSummary && primaryText ? (
+        <AiTextSection title={content.title ?? "一句话结论"}>
+          <p className="text-base font-semibold leading-7 text-card-foreground">{primaryText}</p>
+          {secondaryText ? (
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{secondaryText}</p>
+          ) : null}
+        </AiTextSection>
+      ) : null}
+      {content.reasons.length > 0 ? (
+        <AiListSection title="判断依据" items={content.reasons} />
+      ) : null}
+      {content.suggestions.length > 0 ? (
+        <AiListSection title="行动建议" items={content.suggestions} />
+      ) : null}
+      {content.risks.length > 0 ? <AiListSection title="风险与复核" items={content.risks} /> : null}
+      {supplementalSections.map((section) => (
+        <AiTextSection key={`${section.title}-${section.text}`} title={section.title}>
+          <p className="text-sm leading-6 text-muted-foreground">{section.text}</p>
+        </AiTextSection>
+      ))}
+    </>
   );
 }
 

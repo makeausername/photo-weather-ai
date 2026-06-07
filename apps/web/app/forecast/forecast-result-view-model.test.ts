@@ -23,6 +23,7 @@ import {
   cacheAiExplanation,
   createAiExplanationCacheKey,
   deepSeekBackendTimeoutMaxMs,
+  normalizeAiExplanationContent,
   normalizeAiExplainResponse,
   providerDiagnosticText,
   readCachedAiExplanation,
@@ -2135,6 +2136,18 @@ function aiExplanationForTest(
   };
 }
 
+function renderAiPanelFromOutcome(outcome: ReturnType<typeof normalizeAiExplainResponse>): string {
+  return renderToStaticMarkup(
+    React.createElement(AiExplanationPanel, {
+      status: outcome.status,
+      explanation: outcome.explanation,
+      errorMessage: outcome.errorMessage,
+      retryable: outcome.retryable,
+      onGenerate: vi.fn(),
+    }),
+  );
+}
+
 function countOccurrences(text: string, pattern: string): number {
   return text.split(pattern).length - 1;
 }
@@ -3872,7 +3885,7 @@ describe("forecast result target-aware view model", () => {
     expect(outcome.status).toBe("ready");
     expect(outcome.errorMessage).toBe("");
     expect(outcome.model).toBe("deepseek-v4-pro");
-    expect(outcome.explanation?.conclusion.summaryZh).toContain("清晨窗口");
+    expect(outcome.explanation?.conclusion.oneSentenceDecisionZh).toContain("清晨窗口");
     expect(html).toContain("清晨窗口可作为主计划");
     expect(html).toContain("低云、湿度和地形信号集中在清晨");
     expect(html).not.toContain("智能解读暂时不可用");
@@ -3895,6 +3908,101 @@ describe("forecast result target-aware view model", () => {
     expect(outcome.errorMessage).toBe("");
     expect(outcome.explanation?.conclusion.summaryZh).toContain("只有 summaryText");
     expect(outcome.explanation?.metadata?.source).toBe("deepseek");
+  });
+
+  it("normalizes displayable AI explanation fields without requiring the legacy full shape", () => {
+    const content = normalizeAiExplanationContent({
+      success: true,
+      explanation: {
+        title: "AI 判断",
+        conclusion: "结构化结论应被识别。",
+        summaryText: "结构化摘要应被识别。",
+        reasons: ["结构化原因"],
+        suggestions: ["结构化建议"],
+        risks: ["结构化风险"],
+      },
+      result: {
+        explanation: {
+          text: "result.explanation 也应被识别。",
+        },
+      },
+      model: "deepseek-v4-pro",
+      parseSuccess: true,
+    });
+
+    expect(content).toMatchObject({
+      hasContent: true,
+      title: "AI 判断",
+      conclusion: "结构化结论应被识别。",
+      summaryText: "结构化摘要应被识别。",
+      reasons: ["结构化原因"],
+      suggestions: ["结构化建议"],
+      risks: ["结构化风险"],
+    });
+    expect(content.sections.map((section) => section.text)).toContain(
+      "result.explanation 也应被识别。",
+    );
+  });
+
+  it("renders success=true explanation.summaryText responses without unavailable state", () => {
+    const outcome = normalizeAiExplainResponse({
+      success: true,
+      explanation: {
+        summaryText: "explanation.summaryText 应直接展示。",
+      },
+      parseSuccess: true,
+      model: "deepseek-v4-pro",
+    });
+    const html = renderAiPanelFromOutcome(outcome);
+
+    expect(outcome.status).toBe("ready");
+    expect(html).toContain("explanation.summaryText 应直接展示。");
+    expect(html).not.toContain("智能解读暂时不可用");
+  });
+
+  it("renders success=true content and text fallback responses", () => {
+    const contentOutcome = normalizeAiExplainResponse({
+      success: true,
+      content: "content 字段应作为智能解读展示。",
+      parseSuccess: true,
+    });
+    const textOutcome = normalizeAiExplainResponse({
+      ok: true,
+      text: "text 字段应作为智能解读展示。",
+      parseSuccess: true,
+    });
+
+    expect(renderAiPanelFromOutcome(contentOutcome)).toContain("content 字段应作为智能解读展示。");
+    expect(renderAiPanelFromOutcome(textOutcome)).toContain("text 字段应作为智能解读展示。");
+    expect(contentOutcome.status).toBe("ready");
+    expect(textOutcome.status).toBe("ready");
+  });
+
+  it("renders success=true result.explanation responses without unavailable state", () => {
+    const outcome = normalizeAiExplainResponse({
+      success: true,
+      result: {
+        explanation: {
+          conclusion: "result.explanation 结论应直接展示。",
+          reasons: ["result.explanation 原因应展示。"],
+          suggestions: ["result.explanation 建议应展示。"],
+          risks: ["result.explanation 风险应展示。"],
+        },
+      },
+      parseSuccess: true,
+      model: "deepseek-v4-pro",
+    });
+    const html = renderAiPanelFromOutcome(outcome);
+
+    expect(outcome.status).toBe("ready");
+    expect(html).toContain("result.explanation 结论应直接展示。");
+    expect(html).toContain("判断依据");
+    expect(html).toContain("result.explanation 原因应展示。");
+    expect(html).toContain("行动建议");
+    expect(html).toContain("result.explanation 建议应展示。");
+    expect(html).toContain("风险与复核");
+    expect(html).toContain("result.explanation 风险应展示。");
+    expect(html).not.toContain("智能解读暂时不可用");
   });
 
   it("keeps the frontend timeout longer than the configurable DeepSeek backend timeout", () => {
@@ -3977,7 +4085,7 @@ describe("forecast result target-aware view model", () => {
     expect(outcome.backendErrorCategory).toBe("none");
     expect(outcome.explanation).toBeNull();
     expect(outcome.errorMessage).toBe(
-      "智能解读响应格式需更新，当前确定性判断结果仍可正常参考。",
+      "智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。",
     );
   });
 
