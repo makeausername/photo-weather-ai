@@ -37,6 +37,8 @@ print_timeout_result() {
   echo "success: false"
   echo "source: fallback"
   echo "parseSuccess: false"
+  echo "parseStrategy: failed"
+  echo "rawResponseSizeChars: 0"
   echo "latencyMs: $((REQUEST_TIMEOUT_SECONDS * 1000))"
   echo "errorCategory: timeout"
   echo "retryable: true"
@@ -161,6 +163,13 @@ const parseSuccess =
     : typeof diagnostics.parseSuccess === "boolean"
       ? diagnostics.parseSuccess
       : false;
+const parseStrategy = body.parseStrategy || diagnostics.parseStrategy || "failed";
+const rawResponseSizeChars =
+  typeof body.rawResponseSizeChars === "number"
+    ? body.rawResponseSizeChars
+    : typeof diagnostics.rawResponseSizeChars === "number"
+      ? diagnostics.rawResponseSizeChars
+      : 0;
 const retryable = typeof body.retryable === "boolean" ? body.retryable : false;
 const errorCategory =
   body.errorCategory ||
@@ -177,6 +186,8 @@ console.log(`promptSizeChars: ${promptSizeChars}`);
 console.log(`success: ${deepSeekSuccess}`);
 console.log(`source: ${source}`);
 console.log(`parseSuccess: ${parseSuccess}`);
+console.log(`parseStrategy: ${parseStrategy}`);
+console.log(`rawResponseSizeChars: ${rawResponseSizeChars}`);
 console.log(`latencyMs: ${responseLatencyMs}`);
 console.log(`errorCategory: ${errorCategory}`);
 console.log(`retryable: ${retryable}`);
@@ -280,6 +291,13 @@ const parseSuccess =
     : typeof diagnostics.parseSuccess === "boolean"
       ? diagnostics.parseSuccess
       : false;
+const parseStrategy = body.parseStrategy || diagnostics.parseStrategy || "failed";
+const rawResponseSizeChars =
+  typeof body.rawResponseSizeChars === "number"
+    ? body.rawResponseSizeChars
+    : typeof diagnostics.rawResponseSizeChars === "number"
+      ? diagnostics.rawResponseSizeChars
+      : 0;
 const retryable = typeof body.retryable === "boolean" ? body.retryable : false;
 const errorCategory =
   body.errorCategory ||
@@ -296,6 +314,8 @@ console.log(`promptSizeChars: ${promptSizeChars}`);
 console.log(`success: ${deepSeekSuccess}`);
 console.log(`source: ${source}`);
 console.log(`parseSuccess: ${parseSuccess}`);
+console.log(`parseStrategy: ${parseStrategy}`);
+console.log(`rawResponseSizeChars: ${rawResponseSizeChars}`);
 console.log(`latencyMs: ${responseLatencyMs}`);
 console.log(`errorCategory: ${errorCategory}`);
 console.log(`retryable: ${retryable}`);

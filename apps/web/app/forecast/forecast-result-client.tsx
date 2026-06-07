@@ -172,6 +172,14 @@ type ForecastAiExplanation = {
   readonly metadata?: {
     readonly source: "deepseek" | "deterministic_fallback";
     readonly noteZh?: string;
+    readonly parseStrategy?:
+      | "strict_json"
+      | "fenced_json"
+      | "extracted_json"
+      | "plain_text_fallback"
+      | "failed";
+    readonly fallbackUsed?: boolean;
+    readonly rawResponseSizeChars?: number;
   };
 };
 
@@ -210,6 +218,14 @@ type AiExplainResponse = {
   readonly model?: string;
   readonly promptSizeChars?: number;
   readonly parseSuccess?: boolean;
+  readonly parseStrategy?:
+    | "strict_json"
+    | "fenced_json"
+    | "extracted_json"
+    | "plain_text_fallback"
+    | "failed";
+  readonly fallbackUsed?: boolean;
+  readonly rawResponseSizeChars?: number;
   readonly diagnostics?: {
     readonly model?: string;
     readonly timeoutMs?: number;
@@ -217,6 +233,14 @@ type AiExplainResponse = {
     readonly latencyMs?: number;
     readonly attempts?: number;
     readonly parseSuccess?: boolean;
+    readonly parseStrategy?:
+      | "strict_json"
+      | "fenced_json"
+      | "extracted_json"
+      | "plain_text_fallback"
+      | "failed";
+    readonly fallbackUsed?: boolean;
+    readonly rawResponseSizeChars?: number;
     readonly fallback?: boolean;
     readonly errorCategory?: AiExplainErrorCategory;
   };
@@ -877,7 +901,31 @@ function normalizeAiMetadata(value: unknown): ForecastAiExplanation["metadata"] 
   }
   const source = value.source === "deterministic_fallback" ? "deterministic_fallback" : "deepseek";
   const noteZh = readStringField(value, "noteZh");
-  return noteZh ? { source, noteZh } : { source };
+  const parseStrategy = normalizeAiParseStrategy(value.parseStrategy);
+  const fallbackUsed = typeof value.fallbackUsed === "boolean" ? value.fallbackUsed : undefined;
+  const rawResponseSizeChars =
+    typeof value.rawResponseSizeChars === "number" && Number.isFinite(value.rawResponseSizeChars)
+      ? value.rawResponseSizeChars
+      : undefined;
+  return {
+    source,
+    ...(noteZh ? { noteZh } : {}),
+    ...(parseStrategy ? { parseStrategy } : {}),
+    ...(typeof fallbackUsed === "boolean" ? { fallbackUsed } : {}),
+    ...(typeof rawResponseSizeChars === "number" ? { rawResponseSizeChars } : {}),
+  };
+}
+
+function normalizeAiParseStrategy(
+  value: unknown,
+): NonNullable<ForecastAiExplanation["metadata"]>["parseStrategy"] | undefined {
+  return value === "strict_json" ||
+    value === "fenced_json" ||
+    value === "extracted_json" ||
+    value === "plain_text_fallback" ||
+    value === "failed"
+    ? value
+    : undefined;
 }
 
 function applyAiExplainOutcome(

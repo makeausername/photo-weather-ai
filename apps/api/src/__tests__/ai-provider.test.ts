@@ -131,6 +131,21 @@ describe("DeepSeek runtime resolver", () => {
       analysisMode: "professional",
       model: "deepseek-v4-pro",
     });
+
+    const staleFlashLikeModel = ["deepseek-v4", "flash"].join("-");
+    const normalized = resolveDeepSeekRuntimeConfig(
+      {
+        ...baseProvider,
+        configJson: {
+          model: staleFlashLikeModel,
+        },
+      },
+      {
+        NODE_ENV: "development",
+      },
+    );
+    expect(normalized.model).toBe("deepseek-v4-pro");
+    expect(JSON.stringify(normalized)).not.toContain("flash");
   });
 
   it("uses admin config before env fallback", () => {

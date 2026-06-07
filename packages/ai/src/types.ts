@@ -25,6 +25,13 @@ export type DecisionCardInput = {
   readonly score?: number;
 };
 
+export type ForecastAiExplanationParseStrategy =
+  | "strict_json"
+  | "fenced_json"
+  | "extracted_json"
+  | "plain_text_fallback"
+  | "failed";
+
 export type ForecastAiExplanation = {
   readonly conclusion: {
     readonly titleZh: string;
@@ -85,6 +92,9 @@ export type ForecastAiExplanation = {
   readonly metadata?: {
     readonly source: "deepseek" | "deterministic_fallback";
     readonly noteZh?: string;
+    readonly parseStrategy?: ForecastAiExplanationParseStrategy;
+    readonly fallbackUsed?: boolean;
+    readonly rawResponseSizeChars?: number;
   };
 };
 

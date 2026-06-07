@@ -371,6 +371,8 @@ describe("local astro diagnostics scripts", () => {
       "success:",
       "source:",
       "parseSuccess:",
+      "parseStrategy:",
+      "rawResponseSizeChars:",
       "errorCategory:",
       "messageZh:",
       "promptSizeChars:",

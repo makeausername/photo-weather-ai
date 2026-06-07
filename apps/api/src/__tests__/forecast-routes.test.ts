@@ -124,7 +124,9 @@ function dateForIndex(index: number, start = "2026-05-20T00:00:00+08:00"): strin
   return isoHourFrom(start, index * 24).slice(0, 10);
 }
 
-function buildQWeatherHourlyPayload(options: { readonly start?: string; readonly hours?: number } = {}) {
+function buildQWeatherHourlyPayload(
+  options: { readonly start?: string; readonly hours?: number } = {},
+) {
   const start = options.start ?? "2026-05-20T00:00:00+08:00";
   const hours = options.hours ?? 48;
   return {
@@ -149,7 +151,9 @@ function buildQWeatherHourlyPayload(options: { readonly start?: string; readonly
   };
 }
 
-function buildQWeatherDailyPayload(options: { readonly start?: string; readonly days?: number } = {}) {
+function buildQWeatherDailyPayload(
+  options: { readonly start?: string; readonly days?: number } = {},
+) {
   const start = options.start ?? "2026-05-20T00:00:00+08:00";
   const days = options.days ?? 3;
   return {
@@ -167,7 +171,9 @@ function buildQWeatherDailyPayload(options: { readonly start?: string; readonly 
   };
 }
 
-function buildOpenMeteoPayload(options: { readonly start?: string; readonly hours?: number; readonly days?: number } = {}) {
+function buildOpenMeteoPayload(
+  options: { readonly start?: string; readonly hours?: number; readonly days?: number } = {},
+) {
   const start = options.start ?? "2026-05-20T00:00:00+08:00";
   const hours = options.hours ?? 48;
   const days = options.days ?? 3;
@@ -213,7 +219,9 @@ function buildOpenMeteoPayload(options: { readonly start?: string; readonly hour
   };
 }
 
-function buildMeteobluePayload(options: { readonly start?: string; readonly hours?: number; readonly days?: number } = {}) {
+function buildMeteobluePayload(
+  options: { readonly start?: string; readonly hours?: number; readonly days?: number } = {},
+) {
   const start = options.start ?? "2026-05-20T00:00:00+08:00";
   const hours = options.hours ?? 48;
   const days = options.days ?? 3;
@@ -2181,6 +2189,97 @@ describe("forecast query validation route", () => {
     expect(response.body).not.toContain("deepseek-secret");
   });
 
+  it("returns useful plain DeepSeek text as a successful fallback interpretation", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content:
+                    "\u7ed3\u8bba\uff1a\u6e05\u6668\u7a97\u53e3\u53ef\u4f5c\u4e3a\u4e3b\u8ba1\u5212\uff0c\u4f46\u4e0d\u8981\u53ea\u4e3a\u5355\u4e00\u4fe1\u53f7\u4e13\u7a0b\u3002\n\u7406\u7531\uff1a\u4f4e\u4e91\u3001\u6e7f\u5ea6\u548c\u5730\u5f62\u4fe1\u53f7\u66f4\u96c6\u4e2d\uff0c\u4ecd\u9700\u77ed\u4e34\u590d\u6838\u3002\n\u5efa\u8bae\uff1a\u6309\u4e3b\u7a97\u53e3\u63d0\u524d\u5230\u4f4d\uff0c\u5931\u8d25\u65f6\u6539\u62cd\u8fd1\u666f\u3002\n\u98ce\u9669\uff1a\u77ed\u4e34\u964d\u6c34\u3001\u767d\u5899\u548c\u9635\u98ce\u4ecd\u9700\u73b0\u573a\u590d\u6838\u3002",
+                },
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+            },
+          },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const provider = state.providers.get("ai:deepseek");
+    state.providers.set("ai:deepseek", {
+      ...provider,
+      enabled: true,
+      configJson: {
+        ...(provider.configJson ?? {}),
+        realCallEnabled: true,
+        model: "deepseek-v4-pro",
+      },
+      secretJson: {
+        apiKey: "deepseek-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "deep****cret",
+      },
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/ai-explain",
+      payload: {
+        ...validPayload,
+        photoSpotId: "spot-plain-text-fallback",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: true,
+      source: "deepseek",
+      fallback: false,
+      model: "deepseek-v4-pro",
+      parseSuccess: false,
+      parseStrategy: "plain_text_fallback",
+      fallbackUsed: true,
+      rawResponseSizeChars: expect.any(Number),
+      interpretation: expect.objectContaining({
+        metadata: expect.objectContaining({
+          source: "deepseek",
+          parseStrategy: "plain_text_fallback",
+          fallbackUsed: true,
+        }),
+        conclusion: expect.objectContaining({
+          summaryZh: expect.stringContaining("\u6e05\u6668\u7a97\u53e3"),
+        }),
+      }),
+      diagnostics: expect.objectContaining({
+        model: "deepseek-v4-pro",
+        parseSuccess: false,
+        parseStrategy: "plain_text_fallback",
+        fallbackUsed: true,
+        rawResponseSizeChars: expect.any(Number),
+      }),
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(response.body).not.toContain("deepseek-secret");
+  });
+
   it("falls back to deterministic interpretation when DeepSeek JSON parsing fails", async () => {
     const fetchMock = vi.fn(
       async () =>
@@ -2253,6 +2352,8 @@ describe("forecast query validation route", () => {
       model: "deepseek-v4-pro",
       promptSizeChars: expect.any(Number),
       parseSuccess: false,
+      parseStrategy: "failed",
+      rawResponseSizeChars: expect.any(Number),
       explanation: expect.objectContaining({
         conclusion: expect.objectContaining({
           recommendedDayZh: expect.any(String),
@@ -2261,8 +2362,10 @@ describe("forecast query validation route", () => {
       diagnostics: expect.objectContaining({
         model: "deepseek-v4-pro",
         parseSuccess: false,
+        parseStrategy: "failed",
         fallback: true,
         errorCategory: "provider_parse_error",
+        rawResponseSizeChars: expect.any(Number),
       }),
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);

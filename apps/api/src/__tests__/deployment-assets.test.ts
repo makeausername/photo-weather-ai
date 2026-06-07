@@ -259,7 +259,9 @@ describe("production deployment assets", () => {
     expect(installer).toContain('INSTALLER_INPUT_LIB="${SCRIPT_DIR}/lib/installer-input.sh"');
     expect(installer).toContain("validate_admin_password_strength");
     expect(installer).toContain("ADMIN_INITIAL_PASSWORD_B64");
-    expect(inputHelper).toContain("管理员密码至少 12 位，需包含大小写字母、数字和特殊字符；支持常见强密码符号。");
+    expect(inputHelper).toContain(
+      "管理员密码至少 12 位，需包含大小写字母、数字和特殊字符；支持常见强密码符号。",
+    );
     expect(installer).not.toContain("validate_admin_password_for_env");
     expect(installer).not.toMatch(/A-Za-z0-9\._@#%[+]?[=]?-/);
     expect(installer).toContain("第三方服务 Key 建议部署完成后在后台管理中配置");
@@ -441,8 +443,12 @@ describe("production deployment assets", () => {
     expect(installCn).toContain('export INSTALL_REGION="${INSTALL_REGION:-cn}"');
     expect(installCn).toContain('export DOCKER_INSTALL_METHOD="${DOCKER_INSTALL_METHOD:-ubuntu}"');
     expect(installCn).toContain('export EPHEMERIS_URLS="${EPHEMERIS_URLS:-');
-    expect(installCn).toContain("https://datacenter.stix.i4ds.net/pub/spice/latest/kernels/spk/de421.bsp");
-    expect(installCn).toContain("https://p2sadev.esac.esa.int/p2sa-files/spice/swap/kernels/spk/de421.bsp");
+    expect(installCn).toContain(
+      "https://datacenter.stix.i4ds.net/pub/spice/latest/kernels/spk/de421.bsp",
+    );
+    expect(installCn).toContain(
+      "https://p2sadev.esac.esa.int/p2sa-files/spice/swap/kernels/spk/de421.bsp",
+    );
     expect(installCn).toContain("https://mirrors.tuna.tsinghua.edu.cn/ubuntu");
     expect(installCn).toContain("https://pypi.tuna.tsinghua.edu.cn/simple");
     for (const mirror of [
@@ -660,6 +666,8 @@ describe("production deployment assets", () => {
     expect(script).toContain("timeout 130s");
     expect(script).toContain("source:");
     expect(script).toContain("parseSuccess:");
+    expect(script).toContain("parseStrategy:");
+    expect(script).toContain("rawResponseSizeChars:");
     expect(script).toContain("fallbackSuccess:");
     expect(script).toContain("No API keys or secrets will be printed.");
     expect(script).not.toMatch(/echo .*API_KEY/);

@@ -27,6 +27,7 @@ import {
   isDeepSeekProviderError,
   type DeepSeekInterpretationErrorCategory,
   type ForecastAiExplanation,
+  type ForecastAiExplanationParseStrategy,
 } from "@photo-weather/ai";
 import type { DatabaseClient } from "@photo-weather/db";
 import { buildForecastInputFromWeatherBundle, calculateForecast } from "@photo-weather/scoring";
@@ -288,8 +289,10 @@ export function registerForecastRoutes(
         latencyMs: 0,
         success: false,
         parseSuccess: false,
+        parseStrategy: "failed",
         errorCategory: unavailableCategory ?? "provider_disabled",
         responseSizeChars: 0,
+        rawResponseSizeChars: 0,
       });
       return reply.send(
         buildAiExplainFailureResponse({
@@ -316,9 +319,14 @@ export function registerForecastRoutes(
         latencyMs: 0,
         attempts: 0,
         success: true,
-        parseSuccess: true,
+        parseSuccess: aiExplanationParseSuccess(cachedInterpretation.interpretation),
+        parseStrategy: aiExplanationParseStrategy(cachedInterpretation.interpretation),
+        fallbackUsed: aiExplanationFallbackUsed(cachedInterpretation.interpretation),
         errorCategory: null,
         responseSizeChars: safeResponseSizeChars(cachedInterpretation.interpretation),
+        rawResponseSizeChars: aiExplanationRawResponseSizeChars(
+          cachedInterpretation.interpretation,
+        ),
         cacheHit: true,
       });
 
@@ -368,9 +376,12 @@ export function registerForecastRoutes(
         latencyMs: Date.now() - startedAt,
         attempts: retryResult.attempts,
         success: true,
-        parseSuccess: true,
+        parseSuccess: aiExplanationParseSuccess(retryResult.explanation),
+        parseStrategy: aiExplanationParseStrategy(retryResult.explanation),
+        fallbackUsed: aiExplanationFallbackUsed(retryResult.explanation),
         errorCategory: null,
         responseSizeChars: safeResponseSizeChars(retryResult.explanation),
+        rawResponseSizeChars: aiExplanationRawResponseSizeChars(retryResult.explanation),
       });
 
       return reply.send(
@@ -397,8 +408,10 @@ export function registerForecastRoutes(
         latencyMs,
         success: false,
         parseSuccess: false,
+        parseStrategy: normalized.parseStrategy,
         errorCategory: normalized.errorCategory,
         responseSizeChars: normalized.responseSizeChars,
+        rawResponseSizeChars: normalized.responseSizeChars ?? 0,
       });
       return reply.send(
         buildAiExplainFailureResponse({
@@ -409,6 +422,8 @@ export function registerForecastRoutes(
           latencyMs,
           promptSizeChars: failurePromptSizeChars,
           attempts: normalized.attempts,
+          rawResponseSizeChars: normalized.responseSizeChars ?? 0,
+          parseStrategy: normalized.parseStrategy,
         }),
       );
     }
@@ -775,6 +790,10 @@ function buildAiExplainSuccessResponse(options: {
   readonly cacheHit: boolean;
 }) {
   const responseSizeChars = safeResponseSizeChars(options.interpretation);
+  const parseStrategy = aiExplanationParseStrategy(options.interpretation);
+  const parseSuccess = aiExplanationParseSuccess(options.interpretation);
+  const fallbackUsed = aiExplanationFallbackUsed(options.interpretation);
+  const rawResponseSizeChars = aiExplanationRawResponseSizeChars(options.interpretation);
   return {
     success: true,
     source: "deepseek" as const,
@@ -784,7 +803,10 @@ function buildAiExplainSuccessResponse(options: {
     promptSizeChars: options.promptSizeChars,
     outputMode: deepSeekOutputMode(options.runtimeDeepSeek),
     responseSizeChars,
-    parseSuccess: true,
+    rawResponseSizeChars,
+    parseSuccess,
+    parseStrategy,
+    fallbackUsed,
     retryable: false,
     cacheHit: options.cacheHit,
     fallback: false,
@@ -796,8 +818,11 @@ function buildAiExplainSuccessResponse(options: {
       outputMode: deepSeekOutputMode(options.runtimeDeepSeek),
       latencyMs: options.latencyMs,
       attempts: options.attempts,
-      parseSuccess: true,
+      parseSuccess,
+      parseStrategy,
       responseSizeChars,
+      rawResponseSizeChars,
+      fallbackUsed,
       cacheHit: options.cacheHit,
     },
   };
@@ -811,14 +836,20 @@ function buildAiExplainFailureResponse(options: {
   readonly latencyMs: number;
   readonly promptSizeChars: number;
   readonly attempts?: number;
+  readonly rawResponseSizeChars?: number;
+  readonly parseStrategy?: ForecastAiExplanationParseStrategy;
 }) {
   const fallback = buildDeterministicFallbackInterpretation(options.result);
   const messageZh = deepSeekInterpretationMessageZh(options.errorCategory, true);
   const retryable = options.retryable ?? isRetryableDeepSeekErrorCategory(options.errorCategory);
   const model = options.runtimeDeepSeek?.model ?? "deepseek-v4-pro";
   const timeoutMs = options.runtimeDeepSeek?.timeoutMs ?? 120000;
-  const outputMode = options.runtimeDeepSeek ? deepSeekOutputMode(options.runtimeDeepSeek) : "unavailable";
+  const outputMode = options.runtimeDeepSeek
+    ? deepSeekOutputMode(options.runtimeDeepSeek)
+    : "unavailable";
   const responseSizeChars = safeResponseSizeChars(fallback);
+  const rawResponseSizeChars = options.rawResponseSizeChars ?? 0;
+  const parseStrategy = options.parseStrategy ?? "failed";
 
   return {
     success: false,
@@ -835,7 +866,9 @@ function buildAiExplainFailureResponse(options: {
     promptSizeChars: options.promptSizeChars,
     outputMode,
     responseSizeChars,
+    rawResponseSizeChars,
     parseSuccess: false,
+    parseStrategy,
     error: legacyAiExplanationErrorCode(options.errorCategory),
     message: messageZh,
     diagnostics: {
@@ -846,7 +879,9 @@ function buildAiExplainFailureResponse(options: {
       latencyMs: options.latencyMs,
       attempts: options.attempts ?? 0,
       parseSuccess: false,
+      parseStrategy,
       responseSizeChars,
+      rawResponseSizeChars,
       fallback: true,
       errorCategory: options.errorCategory,
     },
@@ -865,6 +900,27 @@ function safeResponseSizeChars(value: unknown): number {
   } catch {
     return 0;
   }
+}
+
+function aiExplanationParseStrategy(
+  interpretation: ForecastAiExplanation,
+): ForecastAiExplanationParseStrategy {
+  return interpretation.metadata?.parseStrategy ?? "strict_json";
+}
+
+function aiExplanationFallbackUsed(interpretation: ForecastAiExplanation): boolean {
+  return (
+    interpretation.metadata?.fallbackUsed === true ||
+    aiExplanationParseStrategy(interpretation) === "plain_text_fallback"
+  );
+}
+
+function aiExplanationParseSuccess(interpretation: ForecastAiExplanation): boolean {
+  return aiExplanationParseStrategy(interpretation) !== "plain_text_fallback";
+}
+
+function aiExplanationRawResponseSizeChars(interpretation: ForecastAiExplanation): number {
+  return interpretation.metadata?.rawResponseSizeChars ?? safeResponseSizeChars(interpretation);
 }
 
 function buildDeterministicFallbackInterpretation(
@@ -1223,6 +1279,7 @@ function normalizeDeepSeekExplanationError(error: unknown): {
   readonly latencyMs?: number;
   readonly promptSizeChars?: number;
   readonly responseSizeChars?: number;
+  readonly parseStrategy: ForecastAiExplanationParseStrategy;
   readonly attempts?: number;
 } {
   const providerError = isDeepSeekProviderError(error) ? error : undefined;
@@ -1241,6 +1298,7 @@ function normalizeDeepSeekExplanationError(error: unknown): {
       latencyMs: providerError?.latencyMs,
       promptSizeChars: providerError?.promptSizeChars,
       responseSizeChars: providerError?.responseSizeChars,
+      parseStrategy: providerError?.parseStrategy ?? "failed",
       message: "DeepSeek 解读暂时超时，已保留确定性分析结果，可稍后重试。",
     };
   }
@@ -1264,6 +1322,7 @@ function normalizeDeepSeekExplanationError(error: unknown): {
     latencyMs: providerError?.latencyMs,
     promptSizeChars: providerError?.promptSizeChars,
     responseSizeChars: providerError?.responseSizeChars,
+    parseStrategy: providerError?.parseStrategy ?? "failed",
     message: "DeepSeek 解读暂时不可用，已保留确定性分析结果。",
   };
 }

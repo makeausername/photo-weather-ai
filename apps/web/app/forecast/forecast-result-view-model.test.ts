@@ -88,12 +88,9 @@ function cloudSeaScoreCalibrationForTest(
   const rawFormationScore = overrides.rawFormationScore ?? overrides.calibratedFormationScore ?? 82;
   const rawShootabilityScore =
     overrides.rawShootabilityScore ?? overrides.calibratedShootabilityScore ?? 72;
-  const calibratedFormationScore =
-    overrides.calibratedFormationScore ?? rawFormationScore;
+  const calibratedFormationScore = overrides.calibratedFormationScore ?? rawFormationScore;
   const calibratedShootabilityScore =
-    overrides.calibratedShootabilityScore ??
-    overrides.finalCloudSeaScore ??
-    rawShootabilityScore;
+    overrides.calibratedShootabilityScore ?? overrides.finalCloudSeaScore ?? rawShootabilityScore;
   const finalCloudSeaScore = overrides.finalCloudSeaScore ?? calibratedShootabilityScore;
 
   return {
@@ -2922,7 +2919,9 @@ describe("forecast result target-aware view model", () => {
     expect(summarySection).toContain("推荐窗口：</span>2026年5月20日 周三 05:00-07:00");
     expect(summarySection).toContain("推荐窗口：</span>2026年5月20日 周三 04:30-06:15");
     expect(summarySection).toContain("推荐窗口：</span>2026年5月20日 周三 17:56-19:41");
-    expect(summarySection).toContain("推荐窗口：</span>2026年5月20日 周三 20:24 - 5月21日 周四 03:48");
+    expect(summarySection).toContain(
+      "推荐窗口：</span>2026年5月20日 周三 20:24 - 5月21日 周四 03:48",
+    );
     expect(summarySection).toContain("查看云海详情");
     expect(countOccurrences(summarySection, "查看霞光详情")).toBe(2);
     expect(countOccurrences(summarySection, "查看星空详情")).toBe(2);
@@ -3992,6 +3991,42 @@ describe("forecast result target-aware view model", () => {
     expect(outcome.explanation?.conclusion.oneSentenceDecisionZh).toContain(
       "sections 字段也应被映射为可展示解读。",
     );
+  });
+
+  it("renders successful plain-text fallback without unavailable state", () => {
+    const result = resultForTarget("general");
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const outcome = normalizeAiExplainResponse({
+      success: true,
+      interpretation:
+        "\u7ed3\u8bba\uff1a\u6e05\u6668\u7a97\u53e3\u53ef\u4f5c\u4e3a\u4e3b\u8ba1\u5212\uff0c\u4f46\u4e0d\u8981\u53ea\u4e3a\u5355\u4e00\u4fe1\u53f7\u4e13\u7a0b\u3002",
+      parseSuccess: false,
+      parseStrategy: "plain_text_fallback",
+      diagnostics: {
+        parseSuccess: false,
+        parseStrategy: "plain_text_fallback",
+      },
+    });
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: outcome.status,
+        aiExplanation: outcome.explanation,
+        aiErrorMessage: outcome.errorMessage,
+        aiRetryable: outcome.retryable,
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+
+    expect(outcome.status).toBe("ready");
+    expect(outcome.success).toBe(true);
+    expect(outcome.parseSuccess).toBe(false);
+    expect(outcome.errorMessage).toBe("");
+    expect(outcome.explanation?.conclusion.summaryZh).toContain("\u6e05\u6668\u7a97\u53e3");
+    expect(html).toContain("\u6e05\u6668\u7a97\u53e3");
+    expect(html).not.toContain("鏅鸿兘瑙ｈ鏆傛椂涓嶅彲鐢?");
   });
 
   it("caches successful interpretation by stable forecast result key", () => {
@@ -5519,7 +5554,8 @@ describe("forecast result target-aware view model", () => {
         selectedPrimaryCloudLayerSource: "open_meteo_icon",
         fallbackSourcesUsed: [],
         missingFieldSummary: [],
-        userFacingCoverageNoteZh: "分层云量覆盖较完整，覆盖率：低云 15/15，中云 15/15，高云 15/15。",
+        userFacingCoverageNoteZh:
+          "分层云量覆盖较完整，覆盖率：低云 15/15，中云 15/15，高云 15/15。",
         professionalCoverageNoteZh:
           "分层云量覆盖较完整，覆盖率：低云 15/15，中云 15/15，高云 15/15；可用于复核云海、白墙和开口风险。",
       },
@@ -5708,9 +5744,7 @@ describe("forecast result target-aware view model", () => {
       },
     } satisfies ForecastCalculationResult;
     const viewModel = buildCloudSeaForecastViewModel(result);
-    const actionText = viewModel.actionPlan
-      .map((item) => `${item.value} ${item.detail}`)
-      .join(" ");
+    const actionText = viewModel.actionPlan.map((item) => `${item.value} ${item.detail}`).join(" ");
 
     expect(actionText).not.toContain("2026年5月20日 03:30");
     expect(actionText).not.toContain("2026年5月20日 05:00");
