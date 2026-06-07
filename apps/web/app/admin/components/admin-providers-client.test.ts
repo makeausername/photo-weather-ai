@@ -63,7 +63,7 @@ describe("admin provider console source", () => {
       'baseUrl: "https://my.meteoblue.com"',
       'packages: ["basic-1h", "clouds-1h"]',
       'model: "deepseek-v4-pro"',
-      "timeoutMs: 90000",
+      "timeoutMs: 120000",
     ]) {
       expect(source).toContain(snippet);
     }

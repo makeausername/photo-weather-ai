@@ -31,6 +31,7 @@ export type ResolvedDeepSeekRuntimeConfig = {
   readonly responseFormat: "json_object";
   readonly temperature: number;
   readonly maxTokens: number;
+  readonly promptMaxChars: number;
   readonly thinkingEnabled: boolean;
   readonly reasoningEffort: DeepSeekReasoningEffort;
   readonly timeoutMs: number;
@@ -46,7 +47,8 @@ export type RuntimeDeepSeekConfig = ResolvedDeepSeekRuntimeConfig & {
 };
 
 const defaultDeepSeekBaseUrl = "https://api.deepseek.com";
-const defaultDeepSeekTimeoutMs = 90000;
+const defaultDeepSeekTimeoutMs = 120000;
+const defaultDeepSeekPromptMaxChars = 6000;
 
 function isJsonObject(value: JsonValue | null | undefined): value is Record<string, JsonValue> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -93,6 +95,15 @@ function readNumber(value: JsonValue | undefined): number | undefined {
   }
 
   return undefined;
+}
+
+function readEnvNumber(value: string | undefined): number | undefined {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function clampNumber(
@@ -216,12 +227,19 @@ export function resolveDeepSeekRuntimeConfig(
       128,
       8192,
     ),
+    promptMaxChars: clampInteger(
+      readNumber(configJson.promptMaxChars) ??
+        readEnvNumber(env.DEEPSEEK_AI_EXPLAIN_PROMPT_MAX_CHARS),
+      defaultDeepSeekPromptMaxChars,
+      3000,
+      6000,
+    ),
     thinkingEnabled,
     reasoningEffort,
     timeoutMs: clampInteger(
       readNumber(configJson.timeoutMs),
       defaultDeepSeekTimeoutMs,
-      60000,
+      120000,
       120000,
     ),
     modeLabelZh: modeDefaults.modeLabelZh,
@@ -255,10 +273,21 @@ export function normalizeDeepSeekAdminConfigJson(
     responseFormat: deepSeekResponseFormat,
     temperature: clampNumber(readNumber(current.temperature), modeDefaults.temperature, 0, 2),
     maxTokens: clampInteger(readNumber(current.maxTokens), modeDefaults.maxTokens, 128, 8192),
+    promptMaxChars: clampInteger(
+      readNumber(current.promptMaxChars),
+      defaultDeepSeekPromptMaxChars,
+      3000,
+      6000,
+    ),
     thinkingEnabled,
     reasoningEffort,
     modelPolicyNoteZh: "当前项目固定使用 deepseek-v4-pro。",
-    timeoutMs: clampInteger(readNumber(current.timeoutMs), defaultDeepSeekTimeoutMs, 60000, 120000),
+    timeoutMs: clampInteger(
+      readNumber(current.timeoutMs),
+      defaultDeepSeekTimeoutMs,
+      120000,
+      120000,
+    ),
   };
 }
 
@@ -295,6 +324,7 @@ export async function createRealDeepSeekProvider(
     defaultModel: config.model,
     temperature: config.temperature,
     maxTokens: config.maxTokens,
+    promptMaxChars: config.promptMaxChars,
     responseFormat: config.responseFormat,
     thinkingEnabled: config.thinkingEnabled,
     reasoningEffort: config.reasoningEffort,

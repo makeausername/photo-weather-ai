@@ -3812,7 +3812,7 @@ describe("forecast result target-aware view model", () => {
       latencyMs: 69883,
       diagnostics: {
         parseSuccess: true,
-        timeoutMs: 90000,
+        timeoutMs: 120000,
       },
     });
     const html = renderToStaticMarkup(
@@ -3859,7 +3859,7 @@ describe("forecast result target-aware view model", () => {
       diagnostics: {
         parseSuccess: false,
         errorCategory: "timeout",
-        timeoutMs: 90000,
+        timeoutMs: 120000,
       },
     });
     const html = renderToStaticMarkup(
@@ -3913,11 +3913,29 @@ describe("forecast result target-aware view model", () => {
     expect(outcome.status).toBe("error");
     expect(outcome.success).toBe(false);
     expect(outcome.cacheable).toBe(false);
-    expect(outcome.errorCategory).toBe("parse_error");
+    expect(outcome.errorCategory).toBe("provider_parse_error");
     expect(outcome.explanation).toBeNull();
     expect(outcome.errorMessage).toBe(
       "智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。",
     );
+  });
+
+  it("honors backend retryable false for DeepSeek provider HTTP failures", () => {
+    const outcome = normalizeAiExplainResponse({
+      success: false,
+      errorCategory: "provider_http_error",
+      retryable: false,
+      messageZh: "DeepSeek API Key invalid.",
+      diagnostics: {
+        parseSuccess: false,
+        errorCategory: "provider_http_error",
+      },
+    });
+
+    expect(outcome.status).toBe("error");
+    expect(outcome.retryable).toBe(false);
+    expect(outcome.errorCategory).toBe("provider_http_error");
+    expect(outcome.errorMessage).not.toContain("API Key");
   });
 
   it("shows retry without hiding deterministic forecast content when no fallback is available", () => {

@@ -136,22 +136,19 @@ describe("AI providers", () => {
       },
       stream: false,
     });
-    expect(JSON.stringify(request.body)).toContain("Do not invent weather data.");
-    expect(JSON.stringify(request.body)).toContain("cloudSeaAiExplainPayload");
+    expect(JSON.stringify(request.body)).toContain("short_practical_json");
     expect(JSON.stringify(request.body)).toContain(
-      "Do not recompute or invent weather, cloud, cloud-sea, terrain, astronomy, score, risk, or window data.",
+      "Do not calculate, invent, or override weather, terrain, astronomy, coordinates, scores, risks, or windows.",
     );
     expect(JSON.stringify(request.body)).toContain(
-      "Do not infer low cloud, mid cloud, or high cloud from total cloud.",
-    );
-    expect(JSON.stringify(request.body)).toContain(
-      "Do not treat mixed-basis cloud data as high-confidence cloud sea evidence.",
+      "Do not infer low/mid/high cloud layers from total cloud.",
     );
     expect(JSON.stringify(request.body)).toContain("computedForecastFacts");
-    expect(JSON.stringify(request.body)).toContain("最建议冲哪一天");
-    expect(JSON.stringify(request.body)).toContain("日落后余晖");
+    expect(JSON.stringify(request.body)).toContain("forecast-interpretation-lean-v1");
     expect(JSON.stringify(request.body)).not.toContain("exampleJsonOutput");
-    expect(request.body.messages[1]?.content.length).toBeLessThanOrEqual(18000);
+    expect(JSON.stringify(request.body)).not.toContain("professionalHourlyData");
+    expect(JSON.stringify(request.body)).not.toContain("weatherTimeline");
+    expect(request.promptSizeChars).toBeLessThanOrEqual(6000);
     expect(JSON.stringify(request.body)).not.toContain("sk-");
   });
 
@@ -753,7 +750,7 @@ describe("AI providers", () => {
         forecastResult: forecastResultFixture,
       }),
     ).rejects.toMatchObject({
-      errorCategory: "empty_response",
+      errorCategory: "provider_invalid_response",
       messageZh: "DeepSeek 返回内容为空。",
     });
   });
@@ -768,9 +765,14 @@ describe("AI providers", () => {
     };
 
     try {
-      buildDeepSeekForecastExplanationRequest({
-        forecastResult: oversizedResult,
-      });
+      buildDeepSeekForecastExplanationRequest(
+        {
+          forecastResult: oversizedResult,
+        },
+        {
+          promptMaxChars: 3000,
+        },
+      );
       throw new Error("expected prompt size guard to reject the request");
     } catch (error) {
       expect(isDeepSeekProviderError(error)).toBe(true);
@@ -843,7 +845,7 @@ describe("AI providers", () => {
     });
 
     await expect(provider.testConnection()).rejects.toMatchObject({
-      errorCategory: "upstream_401",
+      errorCategory: "provider_http_error",
       messageZh: "DeepSeek API Key 无效或权限不足。",
       statusCode: 401,
     });

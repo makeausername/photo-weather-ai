@@ -42,10 +42,11 @@ describe("DeepSeek runtime resolver", () => {
       model: "deepseek-v4-pro",
       responseFormat: "json_object",
       temperature: 0.2,
-      maxTokens: 6000,
-      thinkingEnabled: true,
-      reasoningEffort: "medium",
-      timeoutMs: 90000,
+      maxTokens: 1200,
+      promptMaxChars: 6000,
+      thinkingEnabled: false,
+      reasoningEffort: "none",
+      timeoutMs: 120000,
       modeLabelZh: "专业模式",
     });
     expect(JSON.stringify(config)).not.toContain("sk-test");
@@ -70,9 +71,10 @@ describe("DeepSeek runtime resolver", () => {
       apiKeyPresent: true,
       analysisMode: "professional",
       model: "deepseek-v4-pro",
-      maxTokens: 6000,
-      thinkingEnabled: true,
-      reasoningEffort: "medium",
+      maxTokens: 1200,
+      promptMaxChars: 6000,
+      thinkingEnabled: false,
+      reasoningEffort: "none",
       modeLabelZh: "专业模式",
     });
     expect(JSON.stringify(config)).not.toContain("sk-env");
@@ -169,10 +171,11 @@ describe("DeepSeek runtime resolver", () => {
       baseUrl: "https://api.deepseek.com",
       responseFormat: "json_object",
       temperature: 0.2,
-      maxTokens: 6000,
-      thinkingEnabled: true,
-      reasoningEffort: "medium",
-      timeoutMs: 90000,
+      maxTokens: 1200,
+      promptMaxChars: 6000,
+      thinkingEnabled: false,
+      reasoningEffort: "none",
+      timeoutMs: 120000,
       modelPolicyNoteZh: "当前项目固定使用 deepseek-v4-pro。",
     });
   });

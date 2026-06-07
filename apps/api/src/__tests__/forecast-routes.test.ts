@@ -1961,7 +1961,7 @@ describe("forecast query validation route", () => {
           source: "deterministic_fallback",
         }),
       }),
-      errorCategory: "missing_api_key",
+      errorCategory: "config_missing",
       messageZh: expect.stringContaining("DeepSeek API Key 未配置"),
       retryable: false,
       error: "ai_explanation_unavailable",
@@ -1978,7 +1978,7 @@ describe("forecast query validation route", () => {
         model: "deepseek-v4-pro",
         parseSuccess: false,
         fallback: true,
-        errorCategory: "missing_api_key",
+        errorCategory: "config_missing",
       }),
     });
     expect(fetchMock).not.toHaveBeenCalled();
@@ -2103,7 +2103,7 @@ describe("forecast query validation route", () => {
       }),
       diagnostics: expect.objectContaining({
         model: "deepseek-v4-pro",
-        timeoutMs: 60000,
+        timeoutMs: 120000,
         promptSizeChars: expect.any(Number),
         parseSuccess: false,
         fallback: true,
@@ -2112,6 +2112,72 @@ describe("forecast query validation route", () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(response.body.length).toBeGreaterThan(2);
+    expect(response.body).not.toContain("deepseek-secret");
+  });
+
+  it("reports DeepSeek upstream auth failures as non-retryable fallback", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const provider = state.providers.get("ai:deepseek");
+    state.providers.set("ai:deepseek", {
+      ...provider,
+      enabled: true,
+      configJson: {
+        ...(provider.configJson ?? {}),
+        realCallEnabled: true,
+        model: "deepseek-v4-pro",
+      },
+      secretJson: {
+        apiKey: "deepseek-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "deep****cret",
+      },
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/ai-explain",
+      payload: validPayload,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: false,
+      source: "fallback",
+      fallback: true,
+      errorCategory: "provider_http_error",
+      messageZh: expect.stringContaining("API Key"),
+      retryable: false,
+      error: "ai_explanation_unavailable",
+      model: "deepseek-v4-pro",
+      parseSuccess: false,
+      diagnostics: expect.objectContaining({
+        model: "deepseek-v4-pro",
+        parseSuccess: false,
+        fallback: true,
+        errorCategory: "provider_http_error",
+      }),
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(response.body).not.toContain("deepseek-secret");
   });
 
@@ -2180,7 +2246,7 @@ describe("forecast query validation route", () => {
           source: "deterministic_fallback",
         }),
       }),
-      errorCategory: "parse_error",
+      errorCategory: "provider_parse_error",
       messageZh: expect.stringContaining("DeepSeek 返回内容无法解析"),
       retryable: true,
       latencyMs: expect.any(Number),
@@ -2196,7 +2262,7 @@ describe("forecast query validation route", () => {
         model: "deepseek-v4-pro",
         parseSuccess: false,
         fallback: true,
-        errorCategory: "parse_error",
+        errorCategory: "provider_parse_error",
       }),
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);

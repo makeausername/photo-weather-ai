@@ -293,9 +293,10 @@ describe("admin config routes", () => {
         model: "deepseek-v4-pro",
         responseFormat: "json_object",
         temperature: 0.2,
-        maxTokens: 6000,
-        thinkingEnabled: true,
-        reasoningEffort: "medium",
+        maxTokens: 1200,
+        promptMaxChars: 6000,
+        thinkingEnabled: false,
+        reasoningEffort: "none",
       },
       maskedSecretJson: {
         apiKey: "sk-r****cret",
@@ -1189,13 +1190,14 @@ describe("admin config routes", () => {
         Authorization: "Bearer deepseek-real-secret",
       });
       expect(String(init?.body)).not.toContain("deepseek-real-secret");
-      expect(JSON.parse(String(init?.body))).toMatchObject({
+      const requestBody = JSON.parse(String(init?.body));
+      expect(requestBody).toMatchObject({
         model: "deepseek-v4-pro",
         response_format: {
           type: "json_object",
         },
-        reasoning_effort: "medium",
       });
+      expect(requestBody).not.toHaveProperty("reasoning_effort");
 
       return new Response(
         JSON.stringify({
@@ -1227,9 +1229,10 @@ describe("admin config routes", () => {
         ...(deepSeekProvider.configJson ?? {}),
         realCallEnabled: true,
         analysisMode: "professional",
-        maxTokens: 6000,
-        thinkingEnabled: true,
-        reasoningEffort: "medium",
+        maxTokens: 1200,
+        promptMaxChars: 6000,
+        thinkingEnabled: false,
+        reasoningEffort: "none",
       },
       secretJson: {
         apiKey: "deepseek-real-secret",

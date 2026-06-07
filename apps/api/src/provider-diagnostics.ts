@@ -588,7 +588,7 @@ function classifyProviderDiagnosticError(
 
   if (isDeepSeekProviderError(error)) {
     return {
-      errorCategory: mapDeepSeekDiagnosticErrorCategory(error.errorCategory),
+      errorCategory: mapDeepSeekDiagnosticErrorCategory(error.errorCategory, error.statusCode),
       messageZh: sanitizeDiagnosticMessage(error.messageZh, secret),
       statusCode: error.statusCode,
       latencyMs: error.latencyMs,
@@ -612,24 +612,23 @@ function classifyProviderDiagnosticError(
 
 function mapDeepSeekDiagnosticErrorCategory(
   category: string,
+  statusCode?: number,
 ): ForecastWeatherSourceErrorCategory {
   switch (category) {
-    case "disabled":
+    case "provider_disabled":
       return "skipped";
-    case "missing_api_key":
+    case "config_missing":
       return "missing_config";
     case "timeout":
       return "timeout";
     case "network_error":
       return "network";
-    case "upstream_401":
-      return "invalid_key";
-    case "upstream_429":
-    case "upstream_5xx":
+    case "provider_http_error":
+      return statusCode === 401 || statusCode === 403 ? "invalid_key" : "provider_error";
     case "unknown":
       return "provider_error";
-    case "parse_error":
-    case "empty_response":
+    case "provider_invalid_response":
+    case "provider_parse_error":
       return "parse_error";
     case "prompt_too_large":
       return "unsupported";

@@ -53,7 +53,13 @@ describe("provider field presets", () => {
         expect.objectContaining({
           key: "timeoutMs",
           target: "configJson",
-          defaultValue: 90000,
+          defaultValue: 120000,
+          advanced: true,
+        }),
+        expect.objectContaining({
+          key: "promptMaxChars",
+          target: "configJson",
+          defaultValue: 6000,
           advanced: true,
         }),
       ]),
@@ -125,9 +131,9 @@ describe("provider field presets", () => {
   it("maps DeepSeek modes and legacy models to v4 pro runtime defaults", () => {
     expect(getDeepSeekModeRuntimeDefaults("professional")).toMatchObject({
       model: "deepseek-v4-pro",
-      maxTokens: 6000,
-      thinkingEnabled: true,
-      reasoningEffort: "medium",
+      maxTokens: 1200,
+      thinkingEnabled: false,
+      reasoningEffort: "none",
     });
     expect(normalizeDeepSeekAnalysisMode(undefined, "deepseek-chat")).toBe("professional");
     expect(normalizeDeepSeekAnalysisMode(undefined, "deepseek-reasoner")).toBe("professional");

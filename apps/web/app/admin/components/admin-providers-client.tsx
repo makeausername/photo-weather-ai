@@ -171,7 +171,7 @@ const providerConfigDefaults: Partial<Record<string, Record<string, JsonValue>>>
   deepseek: {
     baseUrl: "https://api.deepseek.com",
     model: "deepseek-v4-pro",
-    timeoutMs: 90000,
+    timeoutMs: 120000,
   },
 };
 

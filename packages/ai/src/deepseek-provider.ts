@@ -36,6 +36,7 @@ export type DeepSeekProviderOptions = {
   readonly mode?: "disabled" | "mock" | "real";
   readonly temperature?: number;
   readonly maxTokens?: number;
+  readonly promptMaxChars?: number;
   readonly responseFormat?: "json_object";
   readonly thinkingEnabled?: boolean;
   readonly reasoningEffort?: DeepSeekReasoningEffort;
@@ -73,6 +74,7 @@ export type DeepSeekRequestPreview = {
   readonly url: string;
   readonly body: DeepSeekRequestBody;
   readonly promptSizeChars: number;
+  readonly outputMode: "json_object" | "text_with_json_fallback";
 };
 
 export const missingDeepSeekApiKeyMessage = "请先填写 DeepSeek API Key。";
@@ -85,21 +87,19 @@ const deepSeekProviderDisabledMessage =
 
 const defaultBaseUrl = "https://api.deepseek.com";
 const defaultTemperature = 0.2;
-const defaultMaxTokens = 4000;
-const defaultTimeoutMs = 90000;
-const maxInterpretationPayloadChars = 12000;
-const absoluteMaxInterpretationPayloadChars = 18000;
+const defaultMaxTokens = 1200;
+const defaultTimeoutMs = 120000;
+const targetInterpretationPromptChars = 4000;
+const defaultInterpretationPromptMaxChars = 6000;
 
 export type DeepSeekInterpretationErrorCategory =
-  | "disabled"
-  | "missing_api_key"
+  | "provider_disabled"
+  | "config_missing"
   | "timeout"
   | "network_error"
-  | "upstream_401"
-  | "upstream_429"
-  | "upstream_5xx"
-  | "parse_error"
-  | "empty_response"
+  | "provider_http_error"
+  | "provider_invalid_response"
+  | "provider_parse_error"
   | "prompt_too_large"
   | "unknown";
 
@@ -109,6 +109,7 @@ export type DeepSeekProviderErrorOptions = {
   readonly statusCode?: number;
   readonly latencyMs?: number;
   readonly promptSizeChars?: number;
+  readonly responseSizeChars?: number;
   readonly cause?: unknown;
 };
 
@@ -118,6 +119,7 @@ export class DeepSeekProviderError extends Error {
   readonly statusCode?: number;
   readonly latencyMs?: number;
   readonly promptSizeChars?: number;
+  readonly responseSizeChars?: number;
   override readonly cause?: unknown;
 
   constructor(options: DeepSeekProviderErrorOptions) {
@@ -128,6 +130,7 @@ export class DeepSeekProviderError extends Error {
     this.statusCode = options.statusCode;
     this.latencyMs = options.latencyMs;
     this.promptSizeChars = options.promptSizeChars;
+    this.responseSizeChars = options.responseSizeChars;
     this.cause = options.cause;
   }
 }
@@ -241,12 +244,20 @@ function normalizeMaxTokens(value: number | undefined, fallback = defaultMaxToke
   return Math.min(8192, Math.max(1, Math.round(value)));
 }
 
+function normalizePromptMaxChars(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return defaultInterpretationPromptMaxChars;
+  }
+
+  return Math.min(6000, Math.max(3000, Math.round(value)));
+}
+
 function normalizeTimeoutMs(value: number | undefined): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return defaultTimeoutMs;
   }
 
-  return Math.min(120000, Math.max(60000, Math.round(value)));
+  return Math.min(120000, Math.max(120000, Math.round(value)));
 }
 
 function normalizeResponseFormat(value: "json_object" | undefined): "json_object" {
@@ -283,13 +294,18 @@ function deepSeekError(options: DeepSeekProviderErrorOptions): DeepSeekProviderE
   return new DeepSeekProviderError(options);
 }
 
-function getMessageContent(response: DeepSeekChatResponse, latencyMs?: number): string {
+function getMessageContent(
+  response: DeepSeekChatResponse,
+  latencyMs?: number,
+  responseSizeChars?: number,
+): string {
   const content = response.choices?.[0]?.message?.content;
   if (typeof content !== "string" || content.trim().length === 0) {
     throw deepSeekError({
-      errorCategory: "empty_response",
+      errorCategory: "provider_invalid_response",
       messageZh: "DeepSeek 返回内容为空。",
       latencyMs,
+      responseSizeChars,
     });
   }
 
@@ -301,9 +317,10 @@ function parseDeepSeekChatResponse(text: string, latencyMs: number): DeepSeekCha
     return JSON.parse(text) as DeepSeekChatResponse;
   } catch (error) {
     throw deepSeekError({
-      errorCategory: "parse_error",
+      errorCategory: "provider_invalid_response",
       messageZh: "DeepSeek 返回格式异常。",
       latencyMs,
+      responseSizeChars: text.length,
       cause: error,
     });
   }
@@ -393,7 +410,7 @@ function compactTopicScoresForAi(result: ForecastCalculationResult) {
   return (selected.length > 0 ? selected : scores.slice(0, 4)).map(compactScore);
 }
 
-export type DeepSeekForecastContextDetail = "standard" | "minimal";
+export type DeepSeekForecastContextDetail = "standard" | "minimal" | "budget";
 
 export function buildDeepSeekForecastContext(
   result: ForecastCalculationResult,
@@ -1572,8 +1589,11 @@ function extractFirstJsonObject(rawOutput: string): string | null {
   return null;
 }
 
-function assertInterpretationPayloadSize(content: string): string {
-  if (content.length <= absoluteMaxInterpretationPayloadChars) {
+function assertInterpretationPayloadSize(
+  content: string,
+  promptMaxChars = defaultInterpretationPromptMaxChars,
+): string {
+  if (content.length <= promptMaxChars) {
     return content;
   }
 
@@ -1588,7 +1608,297 @@ function buildPromptSizeChars(messages: readonly DeepSeekChatMessage[]): number 
   return messages.reduce((sum, message) => sum + message.content.length, 0);
 }
 
+function assertInterpretationMessagesSize(
+  messages: readonly DeepSeekChatMessage[],
+  promptMaxChars: number,
+): void {
+  const promptSizeChars = buildPromptSizeChars(messages);
+  if (promptSizeChars <= promptMaxChars) {
+    return;
+  }
+
+  throw deepSeekError({
+    errorCategory: "prompt_too_large",
+    messageZh: "DeepSeek prompt is too large; request was not sent.",
+    promptSizeChars,
+  });
+}
+
 function buildForecastExplanationUserPayload(
+  input: ForecastExplanationInput,
+  detail: DeepSeekForecastContextDetail,
+) {
+  return {
+    task: "Explain deterministic photo-weather forecast facts in concise Simplified Chinese.",
+    outputMode: "short_practical_json",
+    outputLength: "600-900 Chinese characters total. No Markdown.",
+    requiredKeys: {
+      conclusion: [
+        "titleZh",
+        "summaryZh",
+        "recommendedDayZh",
+        "recommendationLevelZh",
+        "whetherWorthDedicatedTripZh",
+        "oneSentenceDecisionZh",
+      ],
+      bestPlan: [
+        "primaryTargetZh",
+        "bestDateZh",
+        "bestWindowZh",
+        "recommendedArrivalZh",
+        "whyThisWindowZh",
+        "backupPlanZh",
+      ],
+      weatherTrend: [
+        "trendSummaryZh",
+        "temperatureSummaryZh",
+        "rainSummaryZh",
+        "windSummaryZh",
+        "transparencySummaryZh",
+      ],
+      dayByDay: "1 item in budget mode, 1-2 items otherwise",
+      subjectAdvice: [
+        "cloudSeaZh",
+        "sunriseGlowZh",
+        "sunsetGlowZh",
+        "astroMilkyWayZh",
+        "transparencyZh",
+      ],
+      riskAndGear: ["keyRisks", "clothingZh", "gearZh", "safetyZh"],
+      finalAdvice: ["goNoGoZh", "ifAlreadyNearbyZh", "ifDedicatedTripZh", "nextCheckZh"],
+    },
+    constraints: [
+      "Use only computedForecastFacts. Do not calculate, invent, or override weather, terrain, astronomy, coordinates, scores, risks, or windows.",
+      "If a fact is missing, say it needs a near-term recheck. Do not fill unknown values.",
+      "Do not infer low/mid/high cloud layers from total cloud.",
+      "If dataStatus.isMock=true, clearly call it demo data.",
+      "Return JSON only when possible; plain structured Chinese text is acceptable if JSON mode fails.",
+    ],
+    userGoal: input.userGoal ?? null,
+    computedForecastFacts: buildDeepSeekForecastPromptFacts(input.forecastResult, detail),
+  };
+}
+
+function buildDeepSeekForecastPromptFacts(
+  result: ForecastCalculationResult,
+  detail: DeepSeekForecastContextDetail,
+) {
+  const timezone = result.calendarBasis.timezone;
+  const bestWindow = result.bestWindows.find(isExecutableWindow) ?? result.bestWindows[0];
+  const bestDay = bestDailySummaryForPlan(result, bestWindow);
+  const cloudSeaGuard =
+    result.target === "cloud_sea" ? buildCloudSeaRecommendationGuardForResult(result) : null;
+  const dailyLimit = detail === "budget" ? 1 : 2;
+  const riskLimit = detail === "budget" ? 2 : 3;
+  const textLimit = detail === "budget" ? 70 : 110;
+
+  return {
+    contextVersion: "forecast-interpretation-lean-v1",
+    deterministicOnly: true,
+    location: {
+      name: limitText(result.place.name, 80),
+      countryCode: result.place.countryCode,
+      coordinateSystem: result.place.coordinates.system,
+    },
+    target: result.target,
+    horizon: {
+      key: result.horizon,
+      rangeZh: result.calendarBasis.forecastRangeLabel,
+      timezone,
+      generatedAt: result.generatedAt,
+    },
+    overall: {
+      score: result.overallScore,
+      recommendationLevel: result.recommendationLevel,
+      recommendationLabelZh: cloudSeaGuard?.finalRecommendationLabel ?? result.recommendationLabel,
+      summaryZh: limitText(result.summary, textLimit),
+    },
+    bestDay: bestDay
+      ? {
+          date: bestDay.date,
+          dateZh: bestDay.dateLabelZh,
+          score: bestDay.score,
+          recommendationZh:
+            cloudSeaGuard?.finalRecommendationLabel ??
+            bestDay.dedicatedTripRecommendation ??
+            bestDay.recommendationLabel,
+          actionZh: limitText(bestDay.shortAdvice, textLimit),
+        }
+      : null,
+    keyWindows: takeItems(result.bestWindows, detail === "budget" ? 1 : 2).map((window) =>
+      compactPromptWindow(window, timezone, textLimit),
+    ),
+    keyRisks: compactRiskFlags(result.riskFlags, riskLimit).map((risk) => ({
+      label: risk.label,
+      level: risk.level,
+      description: limitText(risk.description, textLimit),
+    })),
+    keyReasons: takeTextItems(result.keyReasons, detail === "budget" ? 2 : 3, textLimit),
+    deterministicSuggestions: takeTextItems(
+      result.photographyAdvice,
+      detail === "budget" ? 1 : 2,
+      textLimit,
+    ),
+    daily: takeItems(result.dailySummaries, dailyLimit).map((summary) =>
+      compactPromptDailyFact(result, summary, timezone, textLimit),
+    ),
+    topicScores: [
+      result.scores.cloudSea,
+      result.scores.sunriseGlow,
+      result.scores.sunsetGlow,
+      result.scores.stars,
+      result.scores.milkyWay,
+      result.scores.transparency,
+    ].map(compactPromptScore),
+    terrain: {
+      terrainType: result.terrainAnalysis.terrainProfile.terrainType,
+      terrainMode: result.cloudSeaAnalysis.terrainSupport.terrainMode,
+      elevationMeters:
+        result.terrainAnalysis.terrainProfile.locationElevation ??
+        result.terrainAnalysis.terrainProfile.elevationMeters ??
+        result.cloudSeaAnalysis.terrainSupport.selectedSpotElevationMeters,
+      localReliefMeters:
+        result.terrainAnalysis.terrainProfile.localReliefMeters ??
+        result.terrainAnalysis.terrainProfile.elevationDiff5km ??
+        result.cloudSeaAnalysis.terrainSupport.localReliefMeters,
+    },
+    cloudSea:
+      result.target === "cloud_sea"
+        ? compactCloudSeaPromptFacts(result, timezone, textLimit)
+        : undefined,
+    astro: {
+      astroShootable: result.astroAnalysis.astroShootable,
+      weatherBlockers: takeTextItems(result.astroAnalysis.weatherBlockers, 2, textLimit),
+    },
+    clothingAndEquipment: {
+      summaryZh: limitText(result.clothingGuide.summaryZh, textLimit),
+      layers: takeTextItems(result.clothingGuide.layers, detail === "budget" ? 1 : 2, 60),
+      accessories: takeTextItems(result.clothingGuide.accessories, detail === "budget" ? 1 : 2, 60),
+      riskNotes: takeTextItems(result.clothingGuide.riskNotes, detail === "budget" ? 1 : 2, 60),
+    },
+    dataStatus: {
+      dataMode: result.weatherDataMode,
+      isMock: result.isMock,
+      noticeZh: limitText(providerNeutralText(result.dataNotice), textLimit),
+    },
+  };
+}
+
+function compactPromptScore(
+  score: ForecastCalculationResult["scores"][keyof ForecastCalculationResult["scores"]],
+) {
+  return {
+    key: score.key,
+    label: score.label,
+    score: score.score,
+    level: score.level,
+  };
+}
+
+function compactPromptWindow(
+  window: ForecastCalculationResult["bestWindows"][number],
+  timezone: string,
+  textLimit: number,
+) {
+  return {
+    labelZh: windowLabelZh(window),
+    date: window.date,
+    windowZh: formatShootingWindowZh(window, timezone),
+    target: window.target,
+    score: window.score,
+    practicalScore: window.practicalScore,
+    practicalKind: window.practicalKind,
+    lightPhase: window.lightPhase,
+    reasonZh: limitText(window.copyReasonZh ?? window.practicalNoteZh, textLimit),
+    weatherBlockers: takeTextItems(window.weatherBlockers, 2, textLimit),
+  };
+}
+
+function compactPromptDailyFact(
+  result: ForecastCalculationResult,
+  summary: ForecastCalculationResult["dailySummaries"][number],
+  timezone: string,
+  textLimit: number,
+) {
+  const breakdown = result.targetDailyBreakdown.find((item) => item.date === summary.date);
+  const bestWindow = summary.bestShootableWindow ?? summary.keyWindows.find(isExecutableWindow);
+
+  return {
+    date: summary.date,
+    dateZh: summary.dateLabelZh,
+    score: summary.score,
+    recommendationZh: summary.dedicatedTripRecommendation ?? summary.recommendationLabel,
+    bestWindow: bestWindow ? compactPromptWindow(bestWindow, timezone, textLimit) : null,
+    actionZh: limitText(summary.shortAdvice, textLimit),
+    weather: summary.weather
+      ? {
+          textZh: summary.weather.weatherTextZh,
+          temperatureRangeZh: formatTemperatureRange(summary.weather.tempMin, summary.weather.tempMax),
+          rainRiskZh: rainRiskSummaryZh(summary.weather),
+          windZh: formatWindValue(summary.weather.windSpeed, summary.weather.windGust),
+          visibilityZh: formatDistanceKm(
+            summary.weather.rawVisibilityKm ?? summary.weather.visibility,
+          ),
+          transparencyZh: formatTransparencyValue(
+            summary.weather.transparencyGrade,
+            summary.weather.photographyTransparencyScore,
+          ),
+          cloudLowPercent: summary.weather.cloudLow,
+          cloudMidPercent: summary.weather.cloudMid,
+          cloudHighPercent: summary.weather.cloudHigh,
+        }
+      : null,
+    subjectScoresZh: {
+      cloudSea: dailyMetricZh(breakdown?.cloudSea),
+      sunriseGlow: dailyMetricZh(breakdown?.sunriseGlow),
+      sunsetGlow: dailyMetricZh(breakdown?.sunsetGlow),
+      stars: dailyMetricZh(breakdown?.stars),
+      milkyWay: dailyMetricZh(breakdown?.milkyWay),
+      transparency: dailyMetricZh(breakdown?.transparency),
+    },
+  };
+}
+
+function compactCloudSeaPromptFacts(
+  result: ForecastCalculationResult,
+  timezone: string,
+  textLimit: number,
+) {
+  const analysis = result.cloudSeaAnalysis;
+  const bestWindow =
+    analysis.bestCloudSeaWindow ??
+    analysis.bestCloudSeaWindows[0] ??
+    analysis.watchableCloudSeaWindows[0] ??
+    analysis.notRecommendedCloudSeaWindows[0];
+  const guard = buildCloudSeaRecommendationGuardForResult(result);
+
+  return {
+    recommendationZh: guard.finalRecommendationLabel,
+    score: analysis.scoreCalibration.finalCloudSeaScore,
+    formationScore: analysis.formationScore,
+    shootableScore: analysis.shootableScore,
+    calibratedShootabilityScore: analysis.scoreCalibration.calibratedShootabilityScore,
+    whiteoutRiskScore: analysis.whiteoutRiskScore,
+    terrainMode: analysis.terrainSupport.terrainMode,
+    terrainType: analysis.terrainSupport.terrainType,
+    terrainNoteZh: limitText(analysis.terrainSupport.messageZh, textLimit),
+    bestWindow: bestWindow
+      ? {
+          labelZh: bestWindow.label,
+          windowZh: formatShootingWindowZh(bestWindow, timezone),
+          score: bestWindow.score,
+          phase: bestWindow.phase,
+          riskTag: bestWindow.riskTag,
+          noteZh: limitText(bestWindow.noteZh, textLimit),
+        }
+      : null,
+    opportunityReasons: takeTextItems(analysis.opportunityReasons, 2, textLimit),
+    whiteoutReasons: takeTextItems(analysis.whiteoutReasons, 2, textLimit),
+    missingDataNotes: takeTextItems(analysis.missingDataNotes, 2, textLimit),
+  };
+}
+
+function _buildLegacyForecastExplanationUserPayload(
   input: ForecastExplanationInput,
   detail: DeepSeekForecastContextDetail,
 ) {
@@ -1708,6 +2018,7 @@ export function buildDeepSeekForecastExplanationRequest(
     | "defaultModel"
     | "temperature"
     | "maxTokens"
+    | "promptMaxChars"
     | "responseFormat"
     | "thinkingEnabled"
     | "reasoningEffort"
@@ -1716,12 +2027,9 @@ export function buildDeepSeekForecastExplanationRequest(
 ): DeepSeekRequestPreview {
   const responseFormat = normalizeResponseFormat(options.responseFormat);
   const jsonOutputEnabled = options.jsonOutputEnabled ?? responseFormat === "json_object";
-  let userContent = JSON.stringify(buildForecastExplanationUserPayload(input, "standard"));
-  if (userContent.length > maxInterpretationPayloadChars) {
-    userContent = JSON.stringify(buildForecastExplanationUserPayload(input, "minimal"));
-  }
-  userContent = assertInterpretationPayloadSize(userContent);
-  const messages: readonly DeepSeekChatMessage[] = [
+  const promptMaxChars = normalizePromptMaxChars(options.promptMaxChars);
+  let userContent = JSON.stringify(buildForecastExplanationUserPayload(input, "minimal"));
+  let messages: readonly DeepSeekChatMessage[] = [
     {
       role: "system",
       content: buildJsonOnlySystemPrompt(),
@@ -1731,6 +2039,21 @@ export function buildDeepSeekForecastExplanationRequest(
       content: userContent,
     },
   ];
+  if (buildPromptSizeChars(messages) > targetInterpretationPromptChars) {
+    userContent = JSON.stringify(buildForecastExplanationUserPayload(input, "budget"));
+    messages = [
+      {
+        role: "system",
+        content: buildJsonOnlySystemPrompt(),
+      },
+      {
+        role: "user",
+        content: userContent,
+      },
+    ];
+  }
+  assertInterpretationPayloadSize(userContent, promptMaxChars);
+  assertInterpretationMessagesSize(messages, promptMaxChars);
   const body: DeepSeekRequestBody = {
     model: normalizeModel(options.defaultModel),
     messages,
@@ -1749,6 +2072,7 @@ export function buildDeepSeekForecastExplanationRequest(
     url: `${normalizeBaseUrl(options.baseUrl)}/chat/completions`,
     body,
     promptSizeChars: buildPromptSizeChars(messages),
+    outputMode: jsonOutputEnabled ? "json_object" : "text_with_json_fallback",
   };
 }
 
@@ -2111,6 +2435,89 @@ function formatPercent(value: number | null | undefined): string {
   return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value)}%` : "待复核";
 }
 
+function looksLikeJsonAttempt(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed.startsWith("{") || trimmed.startsWith("[") || trimmed.startsWith("```json");
+}
+
+function createPlainTextForecastExplanation(
+  text: string,
+  result: ForecastCalculationResult,
+): ForecastAiExplanation {
+  const fallback = createRuleBasedForecastExplanation(result);
+  const sections = splitPlainTextSections(text);
+  const allText = limitText(text.trim(), 900);
+  const conclusion = sections[0] ?? allText;
+  const why = sections[1] ?? fallback.bestPlan.whyThisWindowZh;
+  const advice = sections[2] ?? fallback.finalAdvice.goNoGoZh;
+  const risk = sections[3] ?? fallback.riskAndGear.keyRisks[0] ?? fallback.finalAdvice.nextCheckZh;
+
+  return {
+    ...fallback,
+    conclusion: {
+      ...fallback.conclusion,
+      summaryZh: conclusion,
+      oneSentenceDecisionZh: firstPlainTextSentence(conclusion),
+    },
+    bestPlan: {
+      ...fallback.bestPlan,
+      whyThisWindowZh: why,
+      backupPlanZh: advice,
+    },
+    weatherTrend: {
+      ...fallback.weatherTrend,
+      trendSummaryZh: why,
+    },
+    riskAndGear: {
+      ...fallback.riskAndGear,
+      keyRisks: [risk],
+      safetyZh: risk,
+    },
+    finalAdvice: {
+      ...fallback.finalAdvice,
+      goNoGoZh: advice,
+      nextCheckZh: risk,
+    },
+    metadata: {
+      source: "deepseek",
+      noteZh: "Plain text response normalized by API.",
+    },
+  };
+}
+
+function splitPlainTextSections(text: string): readonly string[] {
+  const lines = text
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const sections: string[] = [];
+  let current: string[] = [];
+
+  for (const line of lines) {
+    const normalizedHeading = line.replace(/^#+\s*/, "").replace(/[:：]$/, "").trim();
+    const isHeading = normalizedHeading.length <= 12 && current.length > 0;
+    if (isHeading) {
+      sections.push(limitText(current.join(" "), 260));
+      current = [];
+      continue;
+    }
+    current.push(line.replace(/^[-*]\s*/, ""));
+  }
+
+  if (current.length > 0) {
+    sections.push(limitText(current.join(" "), 260));
+  }
+
+  return sections.length > 0 ? sections : [limitText(text.trim(), 260)];
+}
+
+function firstPlainTextSentence(text: string): string {
+  const trimmed = text.trim();
+  const sentence = trimmed.split(/[。！？!?]/)[0]?.trim();
+  return sentence ? limitText(sentence, 120) : limitText(trimmed, 120);
+}
+
 export class DeepSeekProvider implements AIProvider {
   private readonly delegate: MockAIProvider;
   private readonly fetcher: DeepSeekFetch;
@@ -2121,6 +2528,7 @@ export class DeepSeekProvider implements AIProvider {
   readonly defaultModel: string;
   readonly temperature: number;
   readonly maxTokens: number;
+  readonly promptMaxChars: number;
   readonly responseFormat: "json_object";
   readonly thinkingEnabled: boolean;
   readonly reasoningEffort: DeepSeekReasoningEffort;
@@ -2133,6 +2541,7 @@ export class DeepSeekProvider implements AIProvider {
     this.defaultModel = normalizeModel(options.defaultModel);
     this.temperature = normalizeTemperature(options.temperature);
     this.maxTokens = normalizeMaxTokens(options.maxTokens);
+    this.promptMaxChars = normalizePromptMaxChars(options.promptMaxChars);
     this.responseFormat = normalizeResponseFormat(options.responseFormat);
     this.thinkingEnabled = options.thinkingEnabled ?? false;
     this.reasoningEffort = normalizeReasoningEffort(options.reasoningEffort);
@@ -2222,14 +2631,27 @@ export class DeepSeekProvider implements AIProvider {
       defaultModel: this.defaultModel,
       temperature: this.temperature,
       maxTokens: this.maxTokens,
+      promptMaxChars: this.promptMaxChars,
       responseFormat: this.responseFormat,
       thinkingEnabled: this.thinkingEnabled,
       reasoningEffort: this.reasoningEffort,
       jsonOutputEnabled: this.jsonOutputEnabled,
     });
-    const parsed = await this.request(request);
-
-    const explanation = this.validateJsonOutput(forecastAiExplanationSchema, parsed);
+    const rawOutput = await this.request(request);
+    let explanation: ForecastAiExplanation;
+    try {
+      explanation = this.validateJsonOutput(forecastAiExplanationSchema, rawOutput);
+    } catch (error) {
+      if (
+        isDeepSeekProviderError(error) &&
+        error.errorCategory === "provider_parse_error" &&
+        !looksLikeJsonAttempt(rawOutput)
+      ) {
+        explanation = createPlainTextForecastExplanation(rawOutput, input.forecastResult);
+      } else {
+        throw error;
+      }
+    }
     return {
       ...explanation,
       metadata: explanation.metadata ?? {
@@ -2273,14 +2695,14 @@ export class DeepSeekProvider implements AIProvider {
     } catch (error) {
       if (error instanceof SyntaxError) {
         throw deepSeekError({
-          errorCategory: "parse_error",
+          errorCategory: "provider_parse_error",
           messageZh: "DeepSeek 返回格式异常。",
           cause: error,
         });
       }
       if (error instanceof z.ZodError) {
         throw deepSeekError({
-          errorCategory: "parse_error",
+          errorCategory: "provider_parse_error",
           messageZh: "DeepSeek 返回结构不符合解读要求。",
           cause: error,
         });
@@ -2315,6 +2737,7 @@ export class DeepSeekProvider implements AIProvider {
       url: `${this.baseUrl}/chat/completions`,
       body,
       promptSizeChars: buildPromptSizeChars(messages),
+      outputMode: this.jsonOutputEnabled ? "json_object" : "text_with_json_fallback",
     };
 
     return this.request(request);
@@ -2353,10 +2776,11 @@ export class DeepSeekProvider implements AIProvider {
           statusCode: response.status,
           latencyMs,
           promptSizeChars: request.promptSizeChars,
+          responseSizeChars: text.length,
         });
       }
 
-      return getMessageContent(parseDeepSeekChatResponse(text, latencyMs), latencyMs);
+      return getMessageContent(parseDeepSeekChatResponse(text, latencyMs), latencyMs, text.length);
     } catch (error) {
       throw normalizeDeepSeekRequestError(error, Date.now() - startedAt, request.promptSizeChars);
     } finally {
@@ -2367,21 +2791,21 @@ export class DeepSeekProvider implements AIProvider {
   private getApiKey(): string {
     if (!this.realModeEnabled) {
       throw deepSeekError({
-        errorCategory: "disabled",
+        errorCategory: "provider_disabled",
         messageZh: deepSeekRealModeDisabledMessage,
       });
     }
 
     if (!this.enabled) {
       throw deepSeekError({
-        errorCategory: "disabled",
+        errorCategory: "provider_disabled",
         messageZh: deepSeekProviderDisabledMessage,
       });
     }
 
     if (!this.apiKey) {
       throw deepSeekError({
-        errorCategory: "missing_api_key",
+        errorCategory: "config_missing",
         messageZh: missingDeepSeekApiKeyMessage,
       });
     }
@@ -2391,14 +2815,5 @@ export class DeepSeekProvider implements AIProvider {
 }
 
 function classifyDeepSeekHttpError(status: number): DeepSeekInterpretationErrorCategory {
-  if (status === 401 || status === 403) {
-    return "upstream_401";
-  }
-  if (status === 429) {
-    return "upstream_429";
-  }
-  if (status >= 500) {
-    return "upstream_5xx";
-  }
-  return "unknown";
+  return status >= 400 ? "provider_http_error" : "unknown";
 }

@@ -187,17 +187,22 @@ type AiExplainResponse = {
   readonly payload?: unknown;
   readonly fallback?: boolean;
   readonly errorCategory?:
-    | "disabled"
-    | "missing_api_key"
+    | "provider_disabled"
+    | "config_missing"
     | "timeout"
     | "network_error"
+    | "provider_http_error"
+    | "provider_invalid_response"
+    | "provider_parse_error"
+    | "prompt_too_large"
+    | "unknown"
+    | "disabled"
+    | "missing_api_key"
     | "upstream_401"
     | "upstream_429"
     | "upstream_5xx"
     | "parse_error"
-    | "empty_response"
-    | "prompt_too_large"
-    | "unknown";
+    | "empty_response";
   readonly messageZh?: string;
   readonly message?: string;
   readonly retryable?: boolean;
@@ -399,7 +404,7 @@ export function normalizeAiExplainResponse(
   const backendErrorCategory =
     normalizeAiErrorCategory(response.errorCategory) ??
     normalizeAiErrorCategory(diagnostics?.errorCategory) ??
-    (invalidSuccessfulResponse ? "parse_error" : undefined) ??
+    (invalidSuccessfulResponse ? "provider_parse_error" : undefined) ??
     "none";
   const parseSuccess =
     typeof response.parseSuccess === "boolean"
@@ -440,7 +445,7 @@ export function normalizeAiExplainResponse(
     status: "error",
     explanation: null,
     errorMessage: normalizeAiExplanationErrorMessage(message),
-    retryable: retryable || isRetryableAiExplainCategory(category),
+    retryable,
     success: false,
     cacheable: false,
     errorCategory: category,
@@ -928,6 +933,9 @@ function isRetryableAiExplainCategory(category: AiExplainErrorCategory | "none")
   return (
     category === "timeout" ||
     category === "network_error" ||
+    category === "provider_http_error" ||
+    category === "provider_invalid_response" ||
+    category === "provider_parse_error" ||
     category === "upstream_429" ||
     category === "upstream_5xx" ||
     category === "parse_error" ||
@@ -945,8 +953,13 @@ function normalizeAiErrorCategory(value: unknown): AiExplainErrorCategory | unde
 const aiExplainErrorCategories = new Set<AiExplainErrorCategory>([
   "disabled",
   "missing_api_key",
+  "provider_disabled",
+  "config_missing",
   "timeout",
   "network_error",
+  "provider_http_error",
+  "provider_invalid_response",
+  "provider_parse_error",
   "upstream_401",
   "upstream_429",
   "upstream_5xx",
@@ -7738,6 +7751,10 @@ export function AiExplanationPanel({
 }) {
   const visibleExplanation = isDisplayableAiExplanation(explanation) ? explanation : null;
   const hasCompletedExplanation = Boolean(visibleExplanation) && !retryable && status !== "loading";
+  const helperText =
+    status === "loading"
+      ? "DeepSeek V4 Pro 解读可能需要约 1-2 分钟，当前确定性判断结果仍可正常参考。"
+      : "可手动生成更自然的摄影建议，当前判断结果不依赖 AI。";
   const buttonLabel =
     status === "loading"
       ? "正在生成智能解读..."
@@ -7765,6 +7782,12 @@ export function AiExplanationPanel({
           {buttonLabel}
         </Button>
       </div>
+
+      {status === "loading" ? (
+        <p className="mt-3 rounded-lg border border-border bg-muted px-3 py-2 text-sm leading-6 text-card-foreground">
+          {helperText}
+        </p>
+      ) : null}
 
       {errorMessage ? (
         <p className="mt-3 rounded-lg border border-warning/70 bg-muted px-3 py-2 text-sm leading-6 text-card-foreground">
