@@ -41,8 +41,8 @@ describe("public account navigation", () => {
       "机位库",
       "定价",
     ]);
-    expect(publicHeaderActionLabels).toContain("账户");
-    expect(publicHeaderActionLabels).toContain("开始分析");
+    expect(publicHeaderActionLabels).toEqual(["账户"]);
+    expect(publicHeaderActionLabels).not.toContain("开始分析");
     expect([...publicHeaderNavLabels, ...publicHeaderActionLabels]).not.toContain("管理后台");
     expect([...publicHeaderNavLabels, ...publicHeaderActionLabels]).not.toContain("登录");
   });

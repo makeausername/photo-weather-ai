@@ -7,7 +7,7 @@ import { PublicAccountEntry } from "./public-account-entry";
 import { ThemeToggle } from "./theme-toggle";
 import { cn } from "./ui";
 
-export const publicHeaderActionLabels = ["账户", "开始分析"] as const;
+export const publicHeaderActionLabels = ["账户"] as const;
 
 const navLinks = [
   { href: "/", label: "首页" },
@@ -55,13 +55,18 @@ function NavLink({
   );
 }
 
-export function PublicHeader() {
+type PublicHeaderProps = {
+  readonly initialMenuOpen?: boolean;
+};
+
+export function PublicHeader(props?: PublicHeaderProps) {
+  const { initialMenuOpen = false } = props ?? {};
   const pathname = usePathname();
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(initialMenuOpen);
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-card/92 backdrop-blur-xl">
-      <nav className="flex w-full items-center gap-4 px-[clamp(24px,4vw,72px)] py-3 min-[1200px]:grid min-[1200px]:grid-cols-[minmax(250px,auto)_minmax(0,1fr)_auto]">
+      <nav className="flex w-full items-center gap-4 px-[clamp(24px,4vw,72px)] py-3 min-[1200px]:grid min-[1200px]:grid-cols-[minmax(220px,1fr)_auto_minmax(220px,1fr)]">
         <Link
           href="/"
           className="flex min-w-0 shrink-0 items-center gap-3"
@@ -88,12 +93,6 @@ export function PublicHeader() {
         <div className="hidden shrink-0 items-center justify-end gap-2 min-[1200px]:flex">
           <ThemeToggle compact />
           <PublicAccountEntry />
-          <Link
-            href="/#analysis"
-            className="inline-flex h-8 items-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
-          >
-            开始分析
-          </Link>
         </div>
 
         <button
@@ -124,13 +123,6 @@ export function PublicHeader() {
             <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
               <ThemeToggle compact />
               <PublicAccountEntry onNavigate={() => setMenuOpen(false)} />
-              <Link
-                href="/#analysis"
-                onClick={() => setMenuOpen(false)}
-                className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:bg-[var(--primary-hover)]"
-              >
-                开始分析
-              </Link>
             </div>
           </div>
         </div>
