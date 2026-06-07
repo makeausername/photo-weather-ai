@@ -3836,6 +3836,67 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("disabled");
   });
 
+  it("renders ok=true strict_json explanation content with simple frontend fields", () => {
+    const result = resultForTarget("general");
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const outcome = normalizeAiExplainResponse({
+      ok: true,
+      explanation: {
+        conclusion: "清晨窗口可作为主计划，专程出发前仍需复核短临低云。",
+        summaryText: "严格 JSON 摘要也应直接展示。",
+        reasons: ["低云、湿度和地形信号集中在清晨。"],
+        suggestions: ["按主窗口提前到位，失败时转拍远山层次。"],
+        risks: ["短临降水和白墙仍需现场复核。"],
+      },
+      meta: {
+        providerCode: "deepseek",
+        model: "deepseek-v4-pro",
+        parseSuccess: true,
+        parseStrategy: "strict_json",
+        fallbackUsed: false,
+      },
+    });
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: outcome.status,
+        aiExplanation: outcome.explanation,
+        aiErrorMessage: outcome.errorMessage,
+        aiRetryable: outcome.retryable,
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+
+    expect(outcome.status).toBe("ready");
+    expect(outcome.errorMessage).toBe("");
+    expect(outcome.model).toBe("deepseek-v4-pro");
+    expect(outcome.explanation?.conclusion.summaryZh).toContain("清晨窗口");
+    expect(html).toContain("清晨窗口可作为主计划");
+    expect(html).toContain("低云、湿度和地形信号集中在清晨");
+    expect(html).not.toContain("智能解读暂时不可用");
+  });
+
+  it("renders ok=true summaryText-only responses without unavailable state", () => {
+    const outcome = normalizeAiExplainResponse({
+      ok: true,
+      summaryText: "只有 summaryText 时也必须展示智能解读内容。",
+      meta: {
+        providerCode: "deepseek",
+        model: "deepseek-v4-pro",
+        parseSuccess: true,
+        parseStrategy: "strict_json",
+        fallbackUsed: false,
+      },
+    });
+
+    expect(outcome.status).toBe("ready");
+    expect(outcome.errorMessage).toBe("");
+    expect(outcome.explanation?.conclusion.summaryZh).toContain("只有 summaryText");
+    expect(outcome.explanation?.metadata?.source).toBe("deepseek");
+  });
+
   it("keeps the frontend timeout longer than the configurable DeepSeek backend timeout", () => {
     expect(deepSeekBackendTimeoutMaxMs).toBe(120000);
     expect(aiExplainFrontendTimeoutMs).toBeGreaterThanOrEqual(120000);
@@ -3912,10 +3973,11 @@ describe("forecast result target-aware view model", () => {
     expect(outcome.status).toBe("error");
     expect(outcome.success).toBe(false);
     expect(outcome.cacheable).toBe(false);
-    expect(outcome.errorCategory).toBe("provider_parse_error");
+    expect(outcome.errorCategory).toBe("frontend_contract_error");
+    expect(outcome.backendErrorCategory).toBe("none");
     expect(outcome.explanation).toBeNull();
     expect(outcome.errorMessage).toBe(
-      "智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。",
+      "智能解读响应格式需更新，当前确定性判断结果仍可正常参考。",
     );
   });
 
@@ -3997,6 +4059,7 @@ describe("forecast result target-aware view model", () => {
     const result = resultForTarget("general");
     const viewModel = buildForecastResultViewModel(result, "general");
     const outcome = normalizeAiExplainResponse({
+      ok: true,
       success: true,
       interpretation:
         "\u7ed3\u8bba\uff1a\u6e05\u6668\u7a97\u53e3\u53ef\u4f5c\u4e3a\u4e3b\u8ba1\u5212\uff0c\u4f46\u4e0d\u8981\u53ea\u4e3a\u5355\u4e00\u4fe1\u53f7\u4e13\u7a0b\u3002",

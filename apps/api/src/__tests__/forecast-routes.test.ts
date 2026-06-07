@@ -2250,6 +2250,7 @@ describe("forecast query validation route", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
+      ok: true,
       success: true,
       source: "deepseek",
       fallback: false,
@@ -2258,7 +2259,12 @@ describe("forecast query validation route", () => {
       parseStrategy: "plain_text_fallback",
       fallbackUsed: true,
       rawResponseSizeChars: expect.any(Number),
+      summaryText: expect.stringContaining("\u6e05\u6668\u7a97\u53e3"),
+      explanation: expect.objectContaining({
+        summaryText: expect.stringContaining("\u6e05\u6668\u7a97\u53e3"),
+      }),
       interpretation: expect.objectContaining({
+        summaryText: expect.stringContaining("\u6e05\u6668\u7a97\u53e3"),
         metadata: expect.objectContaining({
           source: "deepseek",
           parseStrategy: "plain_text_fallback",
@@ -2268,7 +2274,14 @@ describe("forecast query validation route", () => {
           summaryZh: expect.stringContaining("\u6e05\u6668\u7a97\u53e3"),
         }),
       }),
+      meta: expect.objectContaining({
+        providerCode: "deepseek",
+        model: "deepseek-v4-pro",
+        parseStrategy: "plain_text_fallback",
+        fallbackUsed: true,
+      }),
       diagnostics: expect.objectContaining({
+        providerCode: "deepseek",
         model: "deepseek-v4-pro",
         parseSuccess: false,
         parseStrategy: "plain_text_fallback",
@@ -2276,6 +2289,110 @@ describe("forecast query validation route", () => {
         rawResponseSizeChars: expect.any(Number),
       }),
     });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(response.body).not.toContain("deepseek-secret");
+  });
+
+  it("returns a frontend-friendly success contract for strict JSON explanation content", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    summaryText: "严格 JSON 摘要可直接展示。",
+                    conclusion: "清晨窗口可以作为主计划，但仍需复核短临低云。",
+                    reasons: ["低云、湿度和地形信号集中在清晨。"],
+                    suggestions: ["按主窗口提前到位，失败时转拍远山层次。"],
+                    risks: ["短临降水和白墙仍需现场复核。"],
+                  }),
+                },
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+            },
+          },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const provider = state.providers.get("ai:deepseek");
+    state.providers.set("ai:deepseek", {
+      ...provider,
+      enabled: true,
+      configJson: {
+        ...(provider.configJson ?? {}),
+        realCallEnabled: true,
+        model: "deepseek-v4-pro",
+      },
+      secretJson: {
+        apiKey: "deepseek-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "deep****cret",
+      },
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/ai-explain",
+      payload: {
+        ...validPayload,
+        photoSpotId: "spot-strict-json-contract",
+      },
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body).toMatchObject({
+      ok: true,
+      success: true,
+      source: "deepseek",
+      fallback: false,
+      model: "deepseek-v4-pro",
+      parseSuccess: true,
+      parseStrategy: "strict_json",
+      fallbackUsed: false,
+      summaryText: expect.stringContaining("严格 JSON"),
+      explanation: expect.objectContaining({
+        summaryText: expect.stringContaining("严格 JSON"),
+        reasons: expect.arrayContaining(["低云、湿度和地形信号集中在清晨。"]),
+        suggestions: expect.arrayContaining(["按主窗口提前到位，失败时转拍远山层次。"]),
+        risks: expect.arrayContaining(["短临降水和白墙仍需现场复核。"]),
+        metadata: expect.objectContaining({
+          source: "deepseek",
+          parseStrategy: "strict_json",
+          fallbackUsed: false,
+        }),
+      }),
+      meta: expect.objectContaining({
+        providerCode: "deepseek",
+        model: "deepseek-v4-pro",
+        parseStrategy: "strict_json",
+        fallbackUsed: false,
+      }),
+      diagnostics: expect.objectContaining({
+        providerCode: "deepseek",
+        model: "deepseek-v4-pro",
+        parseStrategy: "strict_json",
+      }),
+    });
+    expect(body).not.toHaveProperty("scores");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(response.body).not.toContain("deepseek-secret");
   });
@@ -2441,18 +2558,30 @@ describe("forecast query validation route", () => {
     expect(firstResponse.statusCode).toBe(200);
     expect(secondResponse.statusCode).toBe(200);
     expect(firstResponse.json()).toMatchObject({
+      ok: true,
       success: true,
       source: "deepseek",
       model: "deepseek-v4-pro",
       parseSuccess: true,
       cacheHit: false,
+      summaryText: expect.stringContaining("缓存命中"),
+      explanation: expect.objectContaining({
+        summaryText: expect.stringContaining("缓存命中"),
+      }),
       interpretation: expect.objectContaining({
+        summaryText: expect.stringContaining("缓存命中"),
         conclusion: expect.objectContaining({
           oneSentenceDecisionZh: expect.stringContaining("缓存命中"),
         }),
       }),
+      meta: expect.objectContaining({
+        providerCode: "deepseek",
+        model: "deepseek-v4-pro",
+        parseStrategy: "strict_json",
+      }),
     });
     expect(secondResponse.json()).toMatchObject({
+      ok: true,
       success: true,
       source: "deepseek",
       model: "deepseek-v4-pro",
@@ -2460,9 +2589,15 @@ describe("forecast query validation route", () => {
       cacheHit: true,
       latencyMs: 0,
       interpretation: expect.objectContaining({
+        summaryText: expect.stringContaining("缓存命中"),
         conclusion: expect.objectContaining({
           oneSentenceDecisionZh: expect.stringContaining("缓存命中"),
         }),
+      }),
+      meta: expect.objectContaining({
+        providerCode: "deepseek",
+        model: "deepseek-v4-pro",
+        cacheHit: true,
       }),
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);

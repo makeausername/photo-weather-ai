@@ -169,6 +169,10 @@ type ForecastAiExplanation = {
     readonly ifDedicatedTripZh: string;
     readonly nextCheckZh: string;
   };
+  readonly summaryText?: string;
+  readonly reasons?: readonly string[];
+  readonly suggestions?: readonly string[];
+  readonly risks?: readonly string[];
   readonly metadata?: {
     readonly source: "deepseek" | "deterministic_fallback";
     readonly noteZh?: string;
@@ -184,17 +188,22 @@ type ForecastAiExplanation = {
 };
 
 type AiExplainResponse = {
+  readonly ok?: boolean;
   readonly success?: boolean;
   readonly source?: "deepseek" | "fallback";
-  readonly explanation?: ForecastAiExplanation;
+  readonly explanation?: unknown;
   readonly interpretation?: unknown;
   readonly fallbackInterpretation?: unknown;
   readonly sections?: unknown;
   readonly data?: unknown;
   readonly result?: unknown;
   readonly payload?: unknown;
+  readonly summaryText?: string;
+  readonly text?: string;
+  readonly content?: string;
   readonly fallback?: boolean;
   readonly errorCategory?:
+    | "frontend_contract_error"
     | "provider_disabled"
     | "config_missing"
     | "timeout"
@@ -227,6 +236,7 @@ type AiExplainResponse = {
   readonly fallbackUsed?: boolean;
   readonly rawResponseSizeChars?: number;
   readonly diagnostics?: {
+    readonly providerCode?: string;
     readonly model?: string;
     readonly timeoutMs?: number;
     readonly promptSizeChars?: number;
@@ -242,6 +252,25 @@ type AiExplainResponse = {
     readonly fallbackUsed?: boolean;
     readonly rawResponseSizeChars?: number;
     readonly fallback?: boolean;
+    readonly errorCategory?: AiExplainErrorCategory;
+  };
+  readonly meta?: {
+    readonly providerCode?: string;
+    readonly model?: string;
+    readonly timeoutMs?: number;
+    readonly promptSizeChars?: number;
+    readonly latencyMs?: number;
+    readonly attempts?: number;
+    readonly parseSuccess?: boolean;
+    readonly parseStrategy?:
+      | "strict_json"
+      | "fenced_json"
+      | "extracted_json"
+      | "plain_text_fallback"
+      | "failed";
+    readonly fallbackUsed?: boolean;
+    readonly rawResponseSizeChars?: number;
+    readonly cacheHit?: boolean;
     readonly errorCategory?: AiExplainErrorCategory;
   };
 };
@@ -420,34 +449,45 @@ export function normalizeAiExplainResponse(
 ): NormalizedAiExplainOutcome {
   const response = isRecord(payload) ? (payload as AiExplainResponse) : {};
   const diagnostics = isRecord(response.diagnostics) ? response.diagnostics : undefined;
+  const meta = isRecord(response.meta)
+    ? (response.meta as NonNullable<AiExplainResponse["meta"]>)
+    : undefined;
+  const successSignal = response.ok === true || response.success === true;
   const directExplanationCandidate = extractAiExplanationFromResponse(response);
   const directExplanation = isDisplayableAiExplanation(directExplanationCandidate)
     ? directExplanationCandidate
     : null;
-  const invalidSuccessfulResponse = response.success === true && !directExplanation;
+  const invalidSuccessfulResponse = successSignal && !directExplanation;
   const backendErrorCategory =
     normalizeAiErrorCategory(response.errorCategory) ??
     normalizeAiErrorCategory(diagnostics?.errorCategory) ??
-    (invalidSuccessfulResponse ? "provider_parse_error" : undefined) ??
+    normalizeAiErrorCategory(meta?.errorCategory) ??
     "none";
+  const frontendErrorCategory = invalidSuccessfulResponse ? "frontend_contract_error" : undefined;
   const parseSuccess =
     typeof response.parseSuccess === "boolean"
       ? response.parseSuccess
       : typeof diagnostics?.parseSuccess === "boolean"
         ? diagnostics.parseSuccess
-        : invalidSuccessfulResponse
-          ? false
-          : undefined;
+        : typeof meta?.parseSuccess === "boolean"
+          ? meta.parseSuccess
+          : invalidSuccessfulResponse
+            ? false
+            : undefined;
   const retryable =
     typeof response.retryable === "boolean"
       ? response.retryable
-      : backendErrorCategory !== "none" && isRetryableAiExplainCategory(backendErrorCategory);
+      : frontendErrorCategory
+        ? false
+        : backendErrorCategory !== "none" && isRetryableAiExplainCategory(backendErrorCategory);
   const message =
-    readStringField(response, "messageZh") ??
-    readStringField(response, "message") ??
-    publicAiExplanationMessage(backendErrorCategory);
+    frontendErrorCategory
+      ? publicAiExplanationMessage(frontendErrorCategory)
+      : readStringField(response, "messageZh") ??
+        readStringField(response, "message") ??
+        publicAiExplanationMessage(backendErrorCategory);
 
-  if (response.success === true && directExplanation) {
+  if (successSignal && directExplanation) {
     return {
       status: "ready",
       explanation: directExplanation,
@@ -458,13 +498,17 @@ export function normalizeAiExplainResponse(
       errorCategory: backendErrorCategory,
       backendErrorCategory,
       parseSuccess,
-      latencyMs: numericField(response, "latencyMs") ?? diagnostics?.latencyMs,
-      model: readStringField(response, "model") ?? diagnostics?.model,
-      promptSizeChars: numericField(response, "promptSizeChars") ?? diagnostics?.promptSizeChars,
+      latencyMs: numericField(response, "latencyMs") ?? diagnostics?.latencyMs ?? meta?.latencyMs,
+      model: readStringField(response, "model") ?? diagnostics?.model ?? meta?.model,
+      promptSizeChars:
+        numericField(response, "promptSizeChars") ??
+        diagnostics?.promptSizeChars ??
+        meta?.promptSizeChars,
     };
   }
 
-  const category = backendErrorCategory === "none" ? "unknown" : backendErrorCategory;
+  const category =
+    frontendErrorCategory ?? (backendErrorCategory === "none" ? "unknown" : backendErrorCategory);
   return {
     status: "error",
     explanation: null,
@@ -473,11 +517,14 @@ export function normalizeAiExplainResponse(
     success: false,
     cacheable: false,
     errorCategory: category,
-    backendErrorCategory: category,
+    backendErrorCategory,
     parseSuccess,
-    latencyMs: numericField(response, "latencyMs") ?? diagnostics?.latencyMs,
-    model: readStringField(response, "model") ?? diagnostics?.model,
-    promptSizeChars: numericField(response, "promptSizeChars") ?? diagnostics?.promptSizeChars,
+    latencyMs: numericField(response, "latencyMs") ?? diagnostics?.latencyMs ?? meta?.latencyMs,
+    model: readStringField(response, "model") ?? diagnostics?.model ?? meta?.model,
+    promptSizeChars:
+      numericField(response, "promptSizeChars") ??
+      diagnostics?.promptSizeChars ??
+      meta?.promptSizeChars,
   };
 }
 
@@ -509,15 +556,29 @@ function extractAiExplanationFromResponse(
     response.explanation,
     response.interpretation,
     response.sections,
+    response.summaryText,
+    response.text,
+    response.content,
+    response.data,
+    response.payload,
     nestedField(response.data, "explanation"),
     nestedField(response.data, "interpretation"),
     nestedField(response.data, "sections"),
+    nestedField(response.data, "summaryText"),
+    nestedField(response.data, "text"),
+    nestedField(response.data, "content"),
     nestedField(response.result, "explanation"),
     nestedField(response.result, "interpretation"),
     nestedField(response.result, "sections"),
+    nestedField(response.result, "summaryText"),
+    nestedField(response.result, "text"),
+    nestedField(response.result, "content"),
     nestedField(response.payload, "explanation"),
     nestedField(response.payload, "interpretation"),
     nestedField(response.payload, "sections"),
+    nestedField(response.payload, "summaryText"),
+    nestedField(response.payload, "text"),
+    nestedField(response.payload, "content"),
   ];
 
   for (const candidate of candidates) {
@@ -602,8 +663,11 @@ function completeForecastAiExplanationFromPartial(
     readStringField(conclusion, "contentZh") ??
     readStringField(conclusion, "content") ??
     readStringField(conclusion, "text") ??
+    readStringField(value, "summaryText") ??
     readStringField(value, "summaryZh") ??
     readStringField(value, "summary") ??
+    readStringField(value, "text") ??
+    readStringField(value, "content") ??
     "已生成基于当前确定性结果的拍摄解读。";
   const decisionText =
     readStringField(conclusion, "oneSentenceDecisionZh") ??
@@ -753,11 +817,11 @@ function explanationFromSections(
       ?.text ??
     usableSections[fallbackIndex]?.text ??
     firstSection.text;
-  const conclusion = textFor(["结论", "决策", "summary", "decision"], 0);
-  const plan = textFor(["计划", "窗口", "plan", "window"], 1);
-  const trend = textFor(["天气", "趋势", "trend", "weather"], 2);
+  const conclusion = textFor(["结论", "决策", "summary", "decision", "conclusion"], 0);
+  const plan = textFor(["计划", "窗口", "plan", "window", "suggestion", "advice"], 1);
+  const trend = textFor(["天气", "趋势", "trend", "weather", "reason"], 2);
   const risk = textFor(["风险", "装备", "risk", "gear"], 3);
-  const finalAdvice = textFor(["建议", "行动", "advice", "action"], 4);
+  const finalAdvice = textFor(["建议", "行动", "advice", "action", "suggestion"], 4);
 
   return {
     conclusion: {
@@ -973,7 +1037,9 @@ function logAiExplanationClientEvent(
 }
 
 function publicAiExplanationMessage(category: AiExplainErrorCategory | "none"): string {
-  void category;
+  if (category === "frontend_contract_error") {
+    return "智能解读响应格式需更新，当前确定性判断结果仍可正常参考。";
+  }
   return "智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。";
 }
 
@@ -999,6 +1065,7 @@ function normalizeAiErrorCategory(value: unknown): AiExplainErrorCategory | unde
 }
 
 const aiExplainErrorCategories = new Set<AiExplainErrorCategory>([
+  "frontend_contract_error",
   "disabled",
   "missing_api_key",
   "provider_disabled",

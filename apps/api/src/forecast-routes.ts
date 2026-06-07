@@ -88,6 +88,13 @@ type CachedDeepSeekForecastInterpretation = {
   readonly createdAt: number;
 };
 
+type DisplayableAiExplanation = ForecastAiExplanation & {
+  readonly summaryText: string;
+  readonly reasons: readonly string[];
+  readonly suggestions: readonly string[];
+  readonly risks: readonly string[];
+};
+
 const deepSeekForecastInterpretationCacheTtlMs = 1000 * 60 * 60;
 const deepSeekForecastInterpretationCache = new Map<string, CachedDeepSeekForecastInterpretation>();
 
@@ -794,11 +801,29 @@ function buildAiExplainSuccessResponse(options: {
   const parseSuccess = aiExplanationParseSuccess(options.interpretation);
   const fallbackUsed = aiExplanationFallbackUsed(options.interpretation);
   const rawResponseSizeChars = aiExplanationRawResponseSizeChars(options.interpretation);
+  const explanation = withAiExplanationDisplayFields(options.interpretation);
+  const meta = {
+    providerCode: "deepseek" as const,
+    model: options.runtimeDeepSeek.model,
+    timeoutMs: options.runtimeDeepSeek.timeoutMs,
+    promptSizeChars: options.promptSizeChars,
+    latencyMs: options.latencyMs,
+    attempts: options.attempts,
+    parseSuccess,
+    parseStrategy,
+    fallbackUsed,
+    rawResponseSizeChars,
+    cacheHit: options.cacheHit,
+  };
   return {
+    ok: true,
     success: true,
     source: "deepseek" as const,
     model: options.runtimeDeepSeek.model,
-    interpretation: options.interpretation,
+    explanation,
+    interpretation: explanation,
+    summaryText: explanation.summaryText,
+    meta,
     latencyMs: options.latencyMs,
     promptSizeChars: options.promptSizeChars,
     outputMode: deepSeekOutputMode(options.runtimeDeepSeek),
@@ -810,8 +835,8 @@ function buildAiExplainSuccessResponse(options: {
     retryable: false,
     cacheHit: options.cacheHit,
     fallback: false,
-    explanation: options.interpretation,
     diagnostics: {
+      providerCode: "deepseek",
       model: options.runtimeDeepSeek.model,
       timeoutMs: options.runtimeDeepSeek.timeoutMs,
       promptSizeChars: options.promptSizeChars,
@@ -852,6 +877,7 @@ function buildAiExplainFailureResponse(options: {
   const parseStrategy = options.parseStrategy ?? "failed";
 
   return {
+    ok: false,
     success: false,
     source: "fallback" as const,
     fallback: true,
@@ -869,9 +895,23 @@ function buildAiExplainFailureResponse(options: {
     rawResponseSizeChars,
     parseSuccess: false,
     parseStrategy,
+    meta: {
+      providerCode: "deepseek" as const,
+      model,
+      timeoutMs,
+      promptSizeChars: options.promptSizeChars,
+      latencyMs: options.latencyMs,
+      attempts: options.attempts ?? 0,
+      parseSuccess: false,
+      parseStrategy,
+      fallbackUsed: true,
+      rawResponseSizeChars,
+      errorCategory: options.errorCategory,
+    },
     error: legacyAiExplanationErrorCode(options.errorCategory),
     message: messageZh,
     diagnostics: {
+      providerCode: "deepseek",
       model,
       timeoutMs,
       promptSizeChars: options.promptSizeChars,
@@ -921,6 +961,48 @@ function aiExplanationParseSuccess(interpretation: ForecastAiExplanation): boole
 
 function aiExplanationRawResponseSizeChars(interpretation: ForecastAiExplanation): number {
   return interpretation.metadata?.rawResponseSizeChars ?? safeResponseSizeChars(interpretation);
+}
+
+function withAiExplanationDisplayFields(
+  interpretation: ForecastAiExplanation,
+): DisplayableAiExplanation {
+  const summaryText =
+    firstDisplayableAiText([
+      interpretation.conclusion.oneSentenceDecisionZh,
+      interpretation.conclusion.summaryZh,
+      interpretation.bestPlan.whyThisWindowZh,
+      interpretation.finalAdvice.goNoGoZh,
+    ]) ?? "已生成基于当前确定性结果的智能解读。";
+  return {
+    ...interpretation,
+    summaryText,
+    reasons: nonEmptyAiTextArray([
+      interpretation.bestPlan.whyThisWindowZh,
+      interpretation.weatherTrend.trendSummaryZh,
+    ]),
+    suggestions: nonEmptyAiTextArray([
+      interpretation.finalAdvice.goNoGoZh,
+      interpretation.bestPlan.backupPlanZh,
+      interpretation.finalAdvice.nextCheckZh,
+    ]),
+    risks: nonEmptyAiTextArray(interpretation.riskAndGear.keyRisks),
+  };
+}
+
+function firstDisplayableAiText(values: readonly (string | null | undefined)[]): string | undefined {
+  return values.map(cleanAiDisplayText).find((value): value is string => Boolean(value));
+}
+
+function nonEmptyAiTextArray(values: readonly (string | null | undefined)[]): readonly string[] {
+  return values.map(cleanAiDisplayText).filter((value): value is string => Boolean(value));
+}
+
+function cleanAiDisplayText(value: string | null | undefined): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function buildDeterministicFallbackInterpretation(
