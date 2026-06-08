@@ -7,6 +7,7 @@ export * from "./cloud-sea-score-calibration.js";
 export * from "./cloud-sea-window-risk-context.js";
 export * from "./cloud-sea-recommendation-guard.js";
 export * from "./cloud-sea-recommendation-explanation.js";
+export * from "./glow-display.js";
 export * from "./provider-fields.js";
 export * from "./schemas.js";
 export * from "./terrain-mode.js";

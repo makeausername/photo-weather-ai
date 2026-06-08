@@ -7,6 +7,8 @@ import {
   formatArrivalDeadlineZh,
   formatShootingWindowZh,
   forecastTargetLabels,
+  glowDisplayRecommendationForScore,
+  glowScoreToDisplayProbabilityPercent,
   type CloudLayerCompletenessContext,
   type CloudSeaCloudBasisConsistencyContext,
   type CloudSeaPrecipitationSignalContext,
@@ -34,6 +36,7 @@ import {
   type GlowAerosolAssessment,
   type GlowBackupPlan,
   type GlowBestTarget,
+  type GlowDisplayRecommendation,
   type GlowEvidenceItem,
   type GlowTerrainObstructionAssessment,
   type GlowWindow,
@@ -388,6 +391,46 @@ export type GlowEvidenceViewItem = {
   readonly tone: ForecastResultCardTone;
 };
 
+export type GlowOpportunityPhase = "sunrise" | "sunset";
+
+export type GlowPrimaryOpportunity = {
+  readonly key: GlowOpportunityPhase;
+  readonly title: "朝霞" | "晚霞";
+  readonly probabilityPercent: number;
+  readonly bestWindow: string;
+  readonly recommendation: GlowDisplayRecommendation;
+  readonly conciseReason: string;
+  readonly secondaryTimingHint: string;
+  readonly tone: ForecastResultCardTone;
+};
+
+export type GlowOverallRecommendation = {
+  readonly preferredTarget: "朝霞" | "晚霞" | "朝霞晚霞" | "暂不专程";
+  readonly preferredWindow: string;
+  readonly preferredProbabilityPercent: number;
+  readonly recommendation: GlowDisplayRecommendation;
+  readonly arrivalAdvice: string;
+  readonly conciseReason: string;
+  readonly mainRisk: string;
+  readonly backupPlan: string;
+  readonly tone: ForecastResultCardTone;
+};
+
+export type GlowDailyOpportunity = {
+  readonly key: string;
+  readonly date: string;
+  readonly dateLabel: string;
+  readonly sunriseGlowProbabilityPercent: number;
+  readonly sunriseBestWindow: string;
+  readonly sunsetGlowProbabilityPercent: number;
+  readonly sunsetBestWindow: string;
+  readonly preferredTarget: "朝霞" | "晚霞" | "朝霞晚霞" | "暂不专程";
+  readonly preferredWindow: string;
+  readonly preferredProbabilityPercent: number;
+  readonly recommendation: GlowDisplayRecommendation;
+  readonly conciseReason: string;
+};
+
 export type GlowSunWindowCard = {
   readonly key: string;
   readonly date: string;
@@ -428,6 +471,20 @@ export type GlowTerrainObstructionCard = {
 };
 
 export type GlowForecastViewModel = {
+  readonly sunriseGlowProbabilityPercent: number;
+  readonly sunsetGlowProbabilityPercent: number;
+  readonly sunriseBestWindow: string;
+  readonly sunsetBestWindow: string;
+  readonly sunriseRecommendation: GlowDisplayRecommendation;
+  readonly sunsetRecommendation: GlowDisplayRecommendation;
+  readonly preferredTarget: GlowOverallRecommendation["preferredTarget"];
+  readonly preferredWindow: string;
+  readonly preferredProbabilityPercent: number;
+  readonly conciseReason: string;
+  readonly primaryOpportunities: readonly GlowPrimaryOpportunity[];
+  readonly overallRecommendation: GlowOverallRecommendation;
+  readonly dailyOpportunities: readonly GlowDailyOpportunity[];
+  readonly professionalEvidence: readonly GlowEvidenceViewItem[];
   readonly coreCards: readonly ForecastResultCard[];
   readonly dailyTrend: readonly GlowDailyTrendItem[];
   readonly glowWindows: readonly GlowWindowItem[];
@@ -1367,12 +1424,39 @@ export function buildGlowForecastViewModel(
   });
   const aerosolCard = buildGlowAerosolCard(analysis.aerosolAssessment);
   const terrainObstructionCards = buildGlowTerrainObstructionCards(result, analysis);
+  const primaryOpportunities = buildGlowPrimaryOpportunities(result, analysis);
+  const overallRecommendation = buildGlowOverallRecommendation(
+    result,
+    analysis,
+    primaryOpportunities,
+  );
+  const dailyOpportunities = buildGlowDailyOpportunities(result, analysis);
+  const professionalEvidence = buildGlowProfessionalEvidence(
+    result,
+    analysis,
+    aerosolCard,
+    terrainObstructionCards,
+  );
   const recommendedAction = firstText(
     analysis.travelRecommendations,
     "建议结合朝霞、晚霞和现场云层变化灵活安排。",
   );
 
   return {
+    sunriseGlowProbabilityPercent: primaryOpportunities[0]?.probabilityPercent ?? 0,
+    sunsetGlowProbabilityPercent: primaryOpportunities[1]?.probabilityPercent ?? 0,
+    sunriseBestWindow: primaryOpportunities[0]?.bestWindow ?? "暂无明确最佳时间",
+    sunsetBestWindow: primaryOpportunities[1]?.bestWindow ?? "暂无明确最佳时间",
+    sunriseRecommendation: primaryOpportunities[0]?.recommendation ?? "不建议专程前往",
+    sunsetRecommendation: primaryOpportunities[1]?.recommendation ?? "不建议专程前往",
+    preferredTarget: overallRecommendation.preferredTarget,
+    preferredWindow: overallRecommendation.preferredWindow,
+    preferredProbabilityPercent: overallRecommendation.preferredProbabilityPercent,
+    conciseReason: overallRecommendation.conciseReason,
+    primaryOpportunities,
+    overallRecommendation,
+    dailyOpportunities,
+    professionalEvidence,
     coreCards: [
       scoreCard(
         "glow-sunrise-opportunity",
@@ -1455,6 +1539,311 @@ export function buildGlowForecastViewModel(
     missingDataNotes: analysis.missingDataNotes,
     dataNotice: buildGlowDataNotice(result),
   };
+}
+
+function buildGlowPrimaryOpportunities(
+  result: ForecastCalculationResult,
+  analysis: GlowAnalysisResult,
+): readonly GlowPrimaryOpportunity[] {
+  return [
+    buildGlowPrimaryOpportunity(result, analysis, "sunrise"),
+    buildGlowPrimaryOpportunity(result, analysis, "sunset"),
+  ];
+}
+
+function buildGlowPrimaryOpportunity(
+  result: ForecastCalculationResult,
+  analysis: GlowAnalysisResult,
+  phase: GlowOpportunityPhase,
+): GlowPrimaryOpportunity {
+  const score = phase === "sunrise" ? analysis.sunriseGlowScore : analysis.sunsetGlowScore;
+  const window = glowWindowForPhase(analysis, phase);
+  const recommendation = glowDisplayRecommendationForScore(score);
+
+  return {
+    key: phase,
+    title: phase === "sunrise" ? "朝霞" : "晚霞",
+    probabilityPercent: glowScoreToDisplayProbabilityPercent(score),
+    bestWindow: formatGlowWindowForPublic(result, window, "暂无明确最佳时间"),
+    recommendation,
+    conciseReason: glowConciseReasonForPhase(result, analysis, phase, window),
+    secondaryTimingHint: glowArrivalHint(result, window),
+    tone: glowDisplayTone(recommendation),
+  };
+}
+
+function buildGlowOverallRecommendation(
+  result: ForecastCalculationResult,
+  analysis: GlowAnalysisResult,
+  opportunities: readonly GlowPrimaryOpportunity[],
+): GlowOverallRecommendation {
+  const sunrise = opportunities.find((item) => item.key === "sunrise");
+  const sunset = opportunities.find((item) => item.key === "sunset");
+  const preferredPhase =
+    analysis.sunriseGlowScore >= analysis.sunsetGlowScore ? "sunrise" : "sunset";
+  const preferredOpportunity =
+    opportunities.find((item) => item.key === preferredPhase) ?? sunset ?? sunrise;
+  const bestWindow =
+    analysis.bestGlowWindow ??
+    analysis.bestGlowWindows[0] ??
+    glowWindowForPhase(analysis, preferredPhase);
+  const recommendation = glowDisplayRecommendationForScore(analysis.glowTravelScore);
+  const preferredTarget = glowPreferredTargetLabel(
+    analysis.dailyGlow[0]?.bestTarget ?? (preferredPhase === "sunrise" ? "sunrise" : "sunset"),
+    recommendation,
+  );
+  const backupPlan = analysis.backupPlans[0]
+    ? `${analysis.backupPlans[0].condition}：${analysis.backupPlans[0].action}`
+    : "若霞光不足，转拍远山层次、云缝光或通透地景。";
+  const mainRisk = firstText(
+    analysis.riskReasons,
+    firstText(result.riskFlags.map((risk) => risk.description), "主要风险较低，仍需临近复核。"),
+  );
+
+  return {
+    preferredTarget,
+    preferredWindow: formatGlowWindowForPublic(result, bestWindow, "暂无明确最佳时间"),
+    preferredProbabilityPercent: preferredOpportunity?.probabilityPercent ?? 0,
+    recommendation,
+    arrivalAdvice: glowArrivalHint(result, bestWindow),
+    conciseReason: compactGlowDisplayText(
+      preferredOpportunity?.conciseReason ?? firstText(analysis.opportunityReasons, result.summary),
+    ),
+    mainRisk: compactGlowDisplayText(mainRisk),
+    backupPlan: compactGlowDisplayText(backupPlan),
+    tone: glowDisplayTone(recommendation),
+  };
+}
+
+function buildGlowDailyOpportunities(
+  result: ForecastCalculationResult,
+  analysis: GlowAnalysisResult,
+): readonly GlowDailyOpportunity[] {
+  return analysis.dailyGlow.map((day) => {
+    const sunriseWindow = glowWindowForDateAndPhase(analysis, day.date, "sunrise");
+    const sunsetWindow = glowWindowForDateAndPhase(analysis, day.date, "sunset");
+    const preferredWindow =
+      day.bestWindow ??
+      (day.sunriseScore >= day.sunsetScore ? sunriseWindow : sunsetWindow) ??
+      sunriseWindow ??
+      sunsetWindow;
+    const recommendation = glowDisplayRecommendationForScore(
+      day.practicalScore ?? Math.max(day.sunriseScore, day.sunsetScore),
+    );
+
+    return {
+      key: day.date,
+      date: day.date,
+      dateLabel: day.dateLabelZh,
+      sunriseGlowProbabilityPercent: glowScoreToDisplayProbabilityPercent(day.sunriseScore),
+      sunriseBestWindow: formatGlowWindowForPublic(result, sunriseWindow, "暂无明确朝霞时间"),
+      sunsetGlowProbabilityPercent: glowScoreToDisplayProbabilityPercent(day.sunsetScore),
+      sunsetBestWindow: formatGlowWindowForPublic(result, sunsetWindow, "暂无明确晚霞时间"),
+      preferredTarget: glowPreferredTargetLabel(day.bestTarget, recommendation),
+      preferredWindow: formatGlowWindowForPublic(result, preferredWindow, "暂无明确最佳时间"),
+      preferredProbabilityPercent: glowScoreToDisplayProbabilityPercent(
+        Math.max(day.sunriseScore, day.sunsetScore),
+      ),
+      recommendation,
+      conciseReason: compactGlowDisplayText(day.keyReason),
+    };
+  });
+}
+
+function buildGlowProfessionalEvidence(
+  result: ForecastCalculationResult,
+  analysis: GlowAnalysisResult,
+  aerosolCard: GlowAerosolCard,
+  terrainObstructionCards: readonly GlowTerrainObstructionCard[],
+): readonly GlowEvidenceViewItem[] {
+  const terrainValue =
+    terrainObstructionCards.length > 0
+      ? terrainObstructionCards.map((card) => `${card.title}${card.statusLabel}`).join(" / ")
+      : "数据不足";
+  const summaryItems: readonly GlowEvidenceViewItem[] = [
+    {
+      key: "glow-evidence-color-carrier",
+      label: "中高云条件",
+      value: glowColorCarrierLabel(analysis.colorCarrierScore),
+      detail:
+        analysis.colorCarrierScore >= 65
+          ? "中高云可作为霞光色彩载体。"
+          : "色彩载体偏弱，可能只有局部暖色。",
+      tone: analysis.colorCarrierScore >= 65 ? "accent" : "info",
+    },
+    {
+      key: "glow-evidence-low-cloud",
+      label: "低云遮挡",
+      value: glowRiskLabel(analysis.lowCloudObstructionRisk),
+      detail:
+        analysis.lowCloudObstructionRisk >= 70
+          ? "低云可能遮挡太阳方向。"
+          : "低云暂未成为主要阻断项。",
+      tone: analysis.lowCloudObstructionRisk >= 70 ? "danger" : "info",
+    },
+    {
+      key: "glow-evidence-transparency",
+      label: "通透度",
+      value: `${Math.round(analysis.visibilityColorQualityScore)} 分`,
+      detail:
+        analysis.visibilityColorQualityScore >= 65
+          ? "能见度和湿度对色彩、远山层次较友好。"
+          : "通透度一般，色彩和层次需要现场复核。",
+      tone: analysis.visibilityColorQualityScore >= 65 ? "accent" : "info",
+    },
+    {
+      key: "glow-evidence-precipitation",
+      label: "降水风险",
+      value: glowRiskLabel(analysis.precipitationDisruptionRisk),
+      detail: glowRainOverlapText(analysis),
+      tone: analysis.precipitationDisruptionRisk >= 70 ? "danger" : "info",
+    },
+    {
+      key: "glow-evidence-terrain",
+      label: "地形遮挡",
+      value: terrainValue,
+      detail:
+        terrainObstructionCards.length > 0
+          ? "方向性地形剖面仅用于日出/日落方向遮挡参考。"
+          : "地形遮挡数据不足，需现场确认太阳方向。",
+      tone: terrainObstructionCards.some((card) => card.tone === "danger") ? "danger" : "muted",
+    },
+  ];
+  const detailedItems: readonly GlowEvidenceViewItem[] = [
+    ...mapGlowEvidence(analysis.cloudLayerEvidence),
+    ...mapGlowEvidence(analysis.visibilityEvidence),
+    {
+      key: aerosolCard.key,
+      label: "气溶胶/透明度",
+      value: aerosolCard.stateLabel,
+      detail: aerosolCard.detail,
+      tone: aerosolCard.tone,
+    },
+    ...terrainObstructionCards.map((card) => ({
+      key: card.key,
+      label: card.title,
+      value: card.statusLabel,
+      detail: card.detail,
+      tone: card.tone,
+    })),
+    ...result.riskFlags.slice(0, 2).map((risk) => ({
+      key: `glow-risk-${risk.key}`,
+      label: risk.label,
+      value: riskLevelText(risk.level),
+      detail: risk.description,
+      tone: risk.level === "high" ? "danger" : ("info" as ForecastResultCardTone),
+    })),
+  ];
+
+  return uniqueGlowEvidenceItems([...summaryItems, ...detailedItems]);
+}
+
+function uniqueGlowEvidenceItems(
+  items: readonly GlowEvidenceViewItem[],
+): readonly GlowEvidenceViewItem[] {
+  const seen = new Set<string>();
+  const unique: GlowEvidenceViewItem[] = [];
+  for (const item of items) {
+    const key = `${item.label}-${item.value}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(item);
+  }
+  return unique;
+}
+
+function glowWindowForPhase(
+  analysis: GlowAnalysisResult,
+  phase: GlowOpportunityPhase,
+): GlowWindow | undefined {
+  const windows = [
+    analysis.bestGlowWindow,
+    ...analysis.bestGlowWindows,
+    ...analysis.watchableGlowWindows,
+    ...analysis.notRecommendedGlowWindows,
+  ].filter((window): window is GlowWindow => Boolean(window));
+  return windows.find((window) =>
+    phase === "sunrise" ? isMorningGlowWindow(window) : !isMorningGlowWindow(window),
+  );
+}
+
+function formatGlowWindowForPublic(
+  result: ForecastCalculationResult,
+  window: GlowWindow | undefined,
+  fallback: string,
+): string {
+  if (!window) {
+    return fallback;
+  }
+  return `${windowDateLabel(result, window.date)} ${formatWindow(
+    window.start,
+    window.end,
+    result.calendarBasis.timezone,
+  )}`;
+}
+
+function glowArrivalHint(
+  result: ForecastCalculationResult,
+  window: GlowWindow | undefined,
+): string {
+  if (!window) {
+    return "建议临近更新后再决定到达时间";
+  }
+  const arrivalTime = addHoursInTimezone(window.start, -0.75, result.calendarBasis.timezone);
+  return `建议 ${formatTime(arrivalTime, result.calendarBasis.timezone)} 前到达`;
+}
+
+function glowConciseReasonForPhase(
+  result: ForecastCalculationResult,
+  analysis: GlowAnalysisResult,
+  phase: GlowOpportunityPhase,
+  window: GlowWindow | undefined,
+): string {
+  const score = phase === "sunrise" ? result.scores.sunriseGlow : result.scores.sunsetGlow;
+  const rainText =
+    phase === "sunrise" && analysis.rainOverlapsSunriseWindow
+      ? "清晨窗口有降水干扰。"
+      : phase === "sunset" && analysis.rainOverlapsSunsetWindow
+        ? "日落窗口有降水干扰。"
+        : "";
+  return compactGlowDisplayText(
+    [window?.noteZh, firstText(score.reasons, ""), rainText].filter(Boolean).join(""),
+  );
+}
+
+function glowPreferredTargetLabel(
+  target: GlowBestTarget,
+  recommendation: GlowDisplayRecommendation,
+): GlowOverallRecommendation["preferredTarget"] {
+  if (recommendation === "不建议专程前往" || target === "none") {
+    return "暂不专程";
+  }
+  if (target === "both") {
+    return "朝霞晚霞";
+  }
+  return target === "sunrise" ? "朝霞" : "晚霞";
+}
+
+function glowDisplayTone(recommendation: GlowDisplayRecommendation): ForecastResultCardTone {
+  if (recommendation === "推荐前往") {
+    return "primary";
+  }
+  if (recommendation === "可以关注") {
+    return "accent";
+  }
+  if (recommendation === "仅作备选") {
+    return "info";
+  }
+  return "danger";
+}
+
+function compactGlowDisplayText(text: string): string {
+  const trimmed = text.trim();
+  const firstSentence = trimmed.split(/[。；;]/).find((part) => part.trim().length > 0)?.trim();
+  const value = firstSentence ? `${firstSentence}。` : trimmed;
+  return value.length > 82 ? `${value.slice(0, 80)}...` : value;
 }
 
 function buildGlowViewModel(result: ForecastCalculationResult): ForecastResultViewModel {
@@ -5913,14 +6302,14 @@ function formatWindow(startTime: string, endTime: string, timezone = "Asia/Shang
   return formatShootingWindowZh({ startTime, endTime }, timezone);
 }
 
-function formatTime(value: string): string {
+function formatTime(value: string, timezone = "Asia/Shanghai"): string {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) {
     return value;
   }
 
   return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
+    timeZone: timezone,
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,

@@ -276,49 +276,50 @@ describe("AI providers", () => {
     expect(payload.targetCode).toBe("glow");
     expect(payload.targetSubjectZh).toBe("朝霞晚霞");
     expect(payload.preferredVisibleSectionsZh).toEqual([
-      "出片结论",
-      "最佳窗口解读",
-      "云层与通透分析",
-      "拍摄执行建议",
-      "风险与备选方案",
+      "是否值得去",
+      "最佳时间",
+      "为什么",
+      "怎么拍",
+      "备选方案",
     ]);
-    expect(payload.promptPrioritiesZh?.join("")).toContain("朝霞、晚霞");
-    expect(payload.constraints.join("")).toContain("Do not change sunrise glow score");
-    expect(glow?.scoreAndRecommendation).toMatchObject({
-      sunriseGlowScore: 75,
-      sunriseGlowStatusZh: "高",
-      sunsetGlowScore: 62,
-      sunsetGlowStatusZh: "中",
+    expect(payload.promptPrioritiesZh?.join("")).toContain("是否值得去");
+    expect(payload.constraints.join("")).toContain("Do not change sunrise/sunset glow probability");
+    expect(glow?.primaryDecision).toMatchObject({
+      preferredTargetZh: "朝霞",
+      preferredProbabilityPercent: 73,
+      recommendationZh: expect.any(String),
+      recommendedArrivalZh: expect.stringContaining("建议"),
     });
-    expect(glow?.sunEvents.sunrise).toMatchObject({
+    expect(glow?.sunriseGlow).toMatchObject({
+      probabilityPercent: 73,
+      recommendationZh: "可以关注",
+    });
+    expect(glow?.sunsetGlow).toMatchObject({
+      probabilityPercent: 58,
+      recommendationZh: "仅作备选",
+    });
+    expect(glow?.sunriseGlow.sunEvent).toMatchObject({
       eventTime: "2026-05-21T05:14:00+08:00",
       solarAzimuthDegrees: 72,
     });
-    expect(glow?.sunEvents.sunset).toMatchObject({
+    expect(glow?.sunsetGlow.sunEvent).toMatchObject({
       eventTime: "2026-05-21T18:57:00+08:00",
       solarAzimuthDegrees: 286,
     });
-    expect(glow?.bestWindows.sunrise?.windowZh).toContain("2026年5月21日");
-    expect(glow?.bestWindows.sunset?.windowZh).toContain("2026年5月21日");
-    expect(glow?.cloudLayerSummary).toMatchObject({
-      totalCloud: expect.objectContaining({ value: "58%" }),
-      lowCloud: expect.objectContaining({ value: "32%" }),
-      midCloud: expect.objectContaining({ value: "45%" }),
-      highCloud: expect.objectContaining({ value: "52%" }),
+    expect(glow?.sunriseGlow.bestWindow?.windowZh).toContain("2026年5月21日");
+    expect(glow?.sunsetGlow.bestWindow?.windowZh).toContain("2026年5月21日");
+    expect(glow?.whyThisJudgment.map((item) => item.labelZh)).toEqual(
+      expect.arrayContaining(["中高云条件", "低云遮挡", "降水风险", "通透度"]),
+    );
+    expect(glow?.professionalHourlySummary).toMatchObject({
+      rowCount: expect.any(Number),
+      focusedRowCount: expect.any(Number),
     });
-    expect(glow?.aerosol).toMatchObject({
-      available: true,
-      aerosolOpticalDepth550: 0.12,
-      pm25: 18,
-      dust: 8,
-    });
-    expect(glow?.terrainObstruction).toMatchObject({
-      available: true,
-      assessments: [expect.objectContaining({ solarClearanceDegrees: 1.2 })],
-    });
+    expect(JSON.stringify(glow?.professionalHourlySummary)).not.toContain("focusedRows");
     expect(glow?.actionPlan.travelAdviceZh.join("")).toContain("日出前 40-60 分钟");
     expect(text).toContain("deterministic sunriseGlowScore");
     expect(text).not.toContain("professionalHourlyData");
+    expect(text).not.toContain("focusedRows");
     expect(text).not.toContain("weatherTimeline");
     expect(text).not.toMatch(/api[_-]?key|secret|sk-/i);
     expect(request.promptSizeChars).toBeLessThanOrEqual(6000);
@@ -347,22 +348,21 @@ describe("AI providers", () => {
       },
       "minimal",
     );
-    const aerosolText = JSON.stringify(payload.aerosol);
-    const terrainText = JSON.stringify(payload.terrainObstruction);
+    const text = JSON.stringify(payload);
 
-    expect(payload.aerosol).toMatchObject({
-      available: false,
-      evidenceZh: expect.stringContaining("气溶胶证据不足"),
+    expect(payload.primaryDecision).toMatchObject({
+      preferredTargetZh: expect.any(String),
+      preferredProbabilityPercent: expect.any(Number),
+      recommendationZh: expect.any(String),
     });
-    expect(aerosolText).not.toContain("aerosolOpticalDepth550");
-    expect(aerosolText).not.toContain("pm25");
-    expect(aerosolText).not.toContain("dust");
-    expect(payload.terrainObstruction).toMatchObject({
-      available: false,
-      noteZh: expect.stringContaining("自然地形方向性遮挡数据不可用"),
-    });
-    expect(terrainText).not.toContain("solarClearanceDegrees");
-    expect(terrainText).not.toContain("solarAzimuthDegrees");
+    expect(payload.whyThisJudgment.map((item) => item.labelZh)).toEqual(
+      expect.arrayContaining(["中高云条件", "低云遮挡"]),
+    );
+    expect(text).not.toContain("aerosolOpticalDepth550");
+    expect(text).not.toContain("pm25");
+    expect(text).not.toContain("dust");
+    expect(text).not.toContain("solarClearanceDegrees");
+    expect(text).not.toContain("solarAzimuthDegrees");
   });
 
   it("builds a compact computed-facts-only DeepSeek context", () => {

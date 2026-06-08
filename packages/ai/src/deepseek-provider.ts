@@ -9,6 +9,8 @@ import {
   deepSeekResponseFormat,
   formatArrivalDeadlineZh,
   formatShootingWindowZh,
+  glowDisplayRecommendationForScore,
+  glowScoreToDisplayProbabilityPercent,
   normalizeDeepSeekModel,
   type DeepSeekReasoningEffort,
 } from "@photo-weather/shared";
@@ -112,25 +114,23 @@ export const forecastAiTargetConfigs = {
     targetCode: "glow",
     subjectZh: "朝霞晚霞",
     task: "Explain deterministic sunrise and sunset glow photography forecast facts in concise Simplified Chinese.",
-    outputLength: "500-700 Chinese characters total. No Markdown.",
+    outputLength: "420-650 Chinese characters total. No Markdown.",
     visibleSectionsZh: [
-      "出片结论",
-      "最佳窗口解读",
-      "云层与通透分析",
-      "拍摄执行建议",
-      "风险与备选方案",
+      "是否值得去",
+      "最佳时间",
+      "为什么",
+      "怎么拍",
+      "备选方案",
     ],
     promptPrioritiesZh: [
-      "先判断朝霞、晚霞、两者都值得尝试还是都不建议，并明确优先级。",
-      "说明最好的本地时间窗口和建议提前到达时间。",
-      "区分低云、中云、高云分别是在帮助承载色彩还是限制太阳方向。",
-      "说明地形地平遮挡只来自自然地形方向性数据；不可推断建筑或树木遮挡。",
-      "说明气溶胶只在有实际 AOD/PM/沙尘证据时解释，且高气溶胶不总是更好。",
-      "给出推荐朝向、前景/主体策略、失败时的备选窗口或备选题材。",
+      "先回答是否值得去，并明确优先朝霞、晚霞、两者都关注还是不建议专程。",
+      "使用已给出的预测概率、最佳本地时间和建议到达时间，不要重算。",
+      "只解释一个主要原因、一个主要风险和一个备选方案。",
+      "不要重复完整云层、气溶胶、地形或小时天气报告。",
     ],
     constraints: [
-      "For glow, deterministic sunriseGlowScore, sunsetGlowScore, best windows, sunrise/sunset times, and recommendation are authoritative facts.",
-      "Do not change sunrise glow score, sunset glow score, best window, sunrise time, sunset time, cloud values, aerosol values, terrain obstruction details, or deterministic recommendation.",
+      "For glow, deterministic probability, sunriseGlowScore, sunsetGlowScore, best windows, sunrise/sunset times, and recommendation are authoritative facts.",
+      "Do not change sunrise glow probability, sunset glow probability, sunrise glow score, sunset glow score, best window, sunrise time, sunset time, cloud values, aerosol values, terrain obstruction details, or deterministic recommendation.",
       "Do not recompute glow suitability. Explain why the deterministic result is practical or risky.",
       "If aerosol data are unavailable, say aerosol evidence is insufficient and rely only on visibility and humidity as supporting observations.",
       "If terrain-horizon data are unavailable, say natural-terrain obstruction detail is unavailable; do not infer local obstruction.",
@@ -464,6 +464,13 @@ function takeTextItems(items: readonly string[] | undefined, count: number, maxL
   return takeItems(items, count).map((item) => limitText(item, maxLength));
 }
 
+function firstText(items: readonly (string | undefined | null)[], fallback: string): string {
+  return (
+    items.find((item): item is string => typeof item === "string" && item.trim().length > 0) ??
+    fallback
+  );
+}
+
 function compactRiskFlags(
   flags: readonly ForecastCalculationResult["riskFlags"][number][] | undefined,
   count: number,
@@ -645,14 +652,14 @@ function buildGlowAiExplainPayloadForContext(result: ForecastCalculationResult) 
     target: payload.target,
     targetCode: payload.targetCode,
     deterministicOnly: payload.deterministicOnly,
-    instruction: "Explain deterministic sunrise and sunset glow facts only; keep scores and windows authoritative.",
-    scoreAndRecommendation: payload.scoreAndRecommendation,
-    sunEvents: payload.sunEvents,
-    bestWindows: payload.bestWindows,
-    cloudLayerSummary: payload.cloudLayerSummary,
-    atmosphereSummary: payload.atmosphereSummary,
-    aerosol: payload.aerosol,
-    terrainObstruction: payload.terrainObstruction,
+    instruction:
+      "Explain deterministic sunrise and sunset glow facts only; keep probability, scores, windows, and recommendation authoritative.",
+    primaryDecision: payload.primaryDecision,
+    sunriseGlow: payload.sunriseGlow,
+    sunsetGlow: payload.sunsetGlow,
+    deterministicAuthority: payload.deterministicAuthority,
+    whyThisJudgment: payload.whyThisJudgment,
+    professionalHourlySummary: payload.professionalHourlySummary,
     actionPlan: payload.actionPlan,
   };
 }
@@ -1094,19 +1101,25 @@ export function buildGlowAiExplainPayload(
   const sunsetWindow = glowWindowForPhase(analysis, "sunset");
   const precipitationSummary = summarizeProfessionalHourlyPrecipitation(focusedRows);
   const maxWindSpeedMs = maxNullableNumber(focusedRows.map((row) => row.windSpeedMs));
-  const maxHumidityPercent = maxNullableNumber(
-    focusedRows.map((row) => row.relativeHumidityPercent),
-  );
-  const minDewPointSpreadC = minNullableNumber(focusedRows.map((row) => row.dewPointSpreadC));
-  const agreement = result.weatherFusionSummary?.multiSourceAgreementContext;
+  const preferredPhase =
+    analysis.sunriseGlowScore >= analysis.sunsetGlowScore ? "sunrise" : "sunset";
+  const preferredWindow =
+    bestWindow ?? (preferredPhase === "sunrise" ? sunriseWindow : sunsetWindow);
+  const preferredProbability =
+    preferredPhase === "sunrise"
+      ? glowScoreToDisplayProbabilityPercent(analysis.sunriseGlowScore)
+      : glowScoreToDisplayProbabilityPercent(analysis.sunsetGlowScore);
+  const preferredTargetZh =
+    preferredPhase === "sunrise" ? "朝霞" : preferredPhase === "sunset" ? "晚霞" : "霞光";
+  const backupPlan = analysis.backupPlans[0];
 
   return {
-    contextVersion: "glow-ai-explain-v1",
+    contextVersion: "glow-ai-explain-v2",
     target: "glow",
     targetCode: "glow",
     deterministicOnly: true,
     instruction:
-      "Explain deterministic sunrise/sunset glow facts only. Do not recompute or change glow scores, windows, sun times, cloud values, aerosol values, terrain obstruction, or the deterministic recommendation.",
+      "Explain deterministic sunrise/sunset glow facts only. Use probability, best local time, go/no-go recommendation, one main reason, one main risk, and one backup plan. Do not recompute or change probability, scores, windows, sun times, cloud values, aerosol values, terrain obstruction, or the deterministic recommendation.",
     locationName: limitText(result.place.name, 80),
     horizon: {
       key: result.horizon,
@@ -1114,128 +1127,115 @@ export function buildGlowAiExplainPayload(
       timezone,
       targetDates: takeItems(result.targetDates, isBudget ? 1 : detail === "minimal" ? 2 : 4),
     },
-    scoreAndRecommendation: {
+    primaryDecision: {
+      preferredTargetZh,
+      preferredProbabilityPercent: preferredProbability,
+      preferredWindowZh: preferredWindow
+        ? formatGlowWindowForAiDisplay(preferredWindow, timezone)
+        : "暂无明确最佳时间",
+      recommendedArrivalZh: preferredWindow
+        ? recommendedGlowArrivalZh(preferredWindow, timezone)
+        : "临近更新后再决定到达时间",
+      recommendationZh: glowDisplayRecommendationForScore(analysis.glowTravelScore),
+      mainReasonZh: limitText(
+        firstText(
+          [preferredWindow?.noteZh, ...analysis.opportunityReasons],
+          "霞光机会由中高云、低云遮挡、降水和通透度共同决定。",
+        ),
+        textLimit,
+      ),
+      mainRiskZh: limitText(firstText(analysis.riskReasons, "主要风险较低，仍需临近复核。"), textLimit),
+      backupPlanZh: backupPlan
+        ? limitText(`${backupPlan.condition}：${backupPlan.action}`, textLimit)
+        : "若霞光不足，转拍远山层次、云缝光或通透地景。",
+    },
+    sunriseGlow: {
+      probabilityPercent: glowScoreToDisplayProbabilityPercent(analysis.sunriseGlowScore),
+      recommendationZh: glowDisplayRecommendationForScore(analysis.sunriseGlowScore),
+      bestWindow: compactGlowWindowForAi(sunriseWindow, timezone, textLimit, detail),
+      sunEvent: compactGlowSunEvent(result, "sunrise", sunriseWindow, timezone, textLimit, detail),
+    },
+    sunsetGlow: {
+      probabilityPercent: glowScoreToDisplayProbabilityPercent(analysis.sunsetGlowScore),
+      recommendationZh: glowDisplayRecommendationForScore(analysis.sunsetGlowScore),
+      bestWindow: compactGlowWindowForAi(sunsetWindow, timezone, textLimit, detail),
+      sunEvent: compactGlowSunEvent(result, "sunset", sunsetWindow, timezone, textLimit, detail),
+    },
+    deterministicAuthority: {
       sunriseGlowScore: analysis.sunriseGlowScore,
-      sunriseGlowStatusZh: analysis.labels.sunriseGlowOpportunity,
       sunsetGlowScore: analysis.sunsetGlowScore,
-      sunsetGlowStatusZh: analysis.labels.sunsetGlowOpportunity,
-      recommendationLabelZh: analysis.recommendationLabel,
+      glowTravelScore: analysis.glowTravelScore,
+      recommendationLabelZh: glowDisplayRecommendationForScore(analysis.glowTravelScore),
       confidenceLevel: analysis.confidenceLevel,
-      colorCarrierScore: analysis.colorCarrierScore,
-      lowCloudObstructionRisk: analysis.lowCloudObstructionRisk,
-      lowCloudObstructionStatusZh: analysis.labels.lowCloudObstruction,
-      visibilityColorQualityScore: analysis.visibilityColorQualityScore,
-      precipitationDisruptionRisk: analysis.precipitationDisruptionRisk,
-      rainOverlapsSunriseWindow: analysis.rainOverlapsSunriseWindow,
-      rainOverlapsSunsetWindow: analysis.rainOverlapsSunsetWindow,
-      ...(isBudget
-        ? {}
-        : {
-            practicalGlowScore: analysis.practicalGlowScore,
-            glowTravelScore: analysis.glowTravelScore,
-            colorCarrierStatusZh: analysis.labels.colorCarrier,
-            postRainOpeningChance: analysis.postRainOpeningChance,
-            glowWindowRainRisk: analysis.glowWindowRainRisk,
-          }),
+      noteZh:
+        "These raw deterministic scores and mapped probabilities are authoritative; AI must not change them.",
     },
-    sunEvents: {
-      sunrise: compactGlowSunEvent(result, "sunrise", sunriseWindow, timezone, textLimit, detail),
-      sunset: compactGlowSunEvent(result, "sunset", sunsetWindow, timezone, textLimit, detail),
-    },
-    bestWindows: {
-      overall: compactGlowWindowForAi(bestWindow, timezone, textLimit, detail),
-      sunrise: compactGlowWindowForAi(sunriseWindow, timezone, textLimit, detail),
-      sunset: compactGlowWindowForAi(sunsetWindow, timezone, textLimit, detail),
-      backups: takeItems(
-        [
-          ...analysis.watchableGlowWindows,
-          ...analysis.notRecommendedGlowWindows,
-          ...analysis.bestGlowWindows.filter((window) => window !== bestWindow),
-        ],
-        isBudget ? 0 : detail === "minimal" ? 1 : 2,
-      ).map((window) => compactGlowWindowForAi(window, timezone, textLimit, detail)),
-    },
-    cloudLayerSummary: {
-      totalCloud: compactGlowEvidenceByLabel(analysis.cloudLayerEvidence, "总云量", textLimit),
-      lowCloud: compactGlowEvidenceByLabel(analysis.cloudLayerEvidence, "低云", textLimit),
-      midCloud: compactGlowEvidenceByLabel(analysis.cloudLayerEvidence, "中云", textLimit),
-      highCloud: compactGlowEvidenceByLabel(analysis.cloudLayerEvidence, "高云", textLimit),
-      cautionZh:
-        "Do not infer low/mid/high cloud from total cloud. Use only these explicit layer facts.",
-    },
-    atmosphereSummary: {
-      visibility: compactGlowEvidenceByLabel(analysis.visibilityEvidence, "能见度", textLimit),
-      humidity: compactGlowEvidenceByLabel(analysis.visibilityEvidence, "湿度", textLimit),
-      maxHumidityPercent,
-      minDewPointSpreadC,
-      precipitationRisk: {
-        maxProbabilityPercent: precipitationSummary.probabilityPercent,
-        maxAmountMm: precipitationSummary.amountMm,
-        sunriseOverlap: analysis.rainOverlapsSunriseWindow,
-        sunsetOverlap: analysis.rainOverlapsSunsetWindow,
-      },
-      windRisk: {
-        maxWindSpeedMs,
-        runtimeRiskZh: limitText(
-          result.riskFlags.find((risk) => risk.key === "wind")?.description,
+    whyThisJudgment: [
+      {
+        labelZh: "中高云条件",
+        valueZh: analysis.labels.colorCarrier,
+        detailZh: limitText(
+          compactGlowEvidenceByLabel(analysis.cloudLayerEvidence, "中云", textLimit)?.noteZh ??
+            compactGlowEvidenceByLabel(analysis.cloudLayerEvidence, "高云", textLimit)?.noteZh,
           textLimit,
         ),
       },
-      focusedHourlySummary: {
-        rowCount: professionalRows.length,
-        focusedRows: focusedRows.map((row) => compactGlowProfessionalHourlyRowForAi(row, detail)),
+      {
+        labelZh: "低云遮挡",
+        valueZh: analysis.labels.lowCloudObstruction,
+        detailZh: limitText(
+          compactGlowEvidenceByLabel(analysis.cloudLayerEvidence, "低云", textLimit)?.noteZh,
+          textLimit,
+        ),
       },
+      {
+        labelZh: "降水风险",
+        valueZh: analysis.glowWindowRainRisk,
+        detailZh: limitText(
+          analysis.rainOverlapsSunriseWindow || analysis.rainOverlapsSunsetWindow
+            ? "降水与朝霞或晚霞窗口存在重叠，需要临近复核。"
+            : "降水与主要晨昏窗口重叠较少。",
+          textLimit,
+        ),
+      },
+      {
+        labelZh: "通透度",
+        valueZh: `${Math.round(analysis.visibilityColorQualityScore)} 分`,
+        detailZh: limitText(
+          compactGlowEvidenceByLabel(analysis.visibilityEvidence, "能见度", textLimit)?.noteZh,
+          textLimit,
+        ),
+      },
+    ],
+    professionalHourlySummary: {
+      rowCount: professionalRows.length,
+      focusedRowCount: focusedRows.length,
+      precipitationProbabilityPercent: precipitationSummary.probabilityPercent,
+      precipitationAmountMm: precipitationSummary.amountMm,
+      maxWindSpeedMs,
     },
-    aerosol: compactGlowAerosolForAi(analysis, textLimit, detail),
-    terrainObstruction: compactGlowTerrainObstructionForAi(analysis, textLimit, detail),
-    confidenceAndAgreement: isBudget
-      ? undefined
-      : agreement
-        ? {
-            agreementLevel: agreement.agreementLevel,
-            disagreementLevel: agreement.disagreementLevel,
-            shouldLowerConfidence: agreement.shouldLowerConfidence,
-            userSummaryZh: limitText(providerNeutralText(agreement.userSummaryZh), textLimit),
-            keyWarningsZh: takeTextItems(
-              agreement.keyWarningsZh.map((item) => providerNeutralText(item) ?? item),
-              2,
-              textLimit,
-            ),
-          }
-        : {
-            confidenceLabelZh: confidenceLabelZh(result.weatherFusionSummary?.confidenceLevel),
-          },
-    deterministicRisks: takeTextItems(
-      analysis.riskReasons,
-      isBudget ? 1 : detail === "minimal" ? 2 : 3,
-      textLimit,
-    ),
-    deterministicReasons: takeTextItems(
-      analysis.opportunityReasons,
-      isBudget ? 1 : detail === "minimal" ? 2 : 3,
-      textLimit,
-    ),
     actionPlan: {
-      recommendationLabelZh: analysis.recommendationLabel,
+      recommendationLabelZh: glowDisplayRecommendationForScore(analysis.glowTravelScore),
       travelAdviceZh: takeTextItems(
         analysis.travelRecommendations.map((item) => providerNeutralText(item) ?? item),
-        isBudget ? 1 : detail === "minimal" ? 2 : 4,
+        isBudget ? 1 : detail === "minimal" ? 1 : 2,
         textLimit,
       ),
-      backupPlans: takeItems(analysis.backupPlans, isBudget ? 0 : detail === "minimal" ? 1 : 2).map((plan) => ({
+      backupPlans: takeItems(analysis.backupPlans, isBudget ? 1 : 1).map((plan) => ({
         condition: limitText(plan.condition, 50),
         action: limitText(plan.action, 60),
         detail: limitText(plan.detail, textLimit),
       })),
-      deterministicAdvice: takeTextItems(result.photographyAdvice, isBudget ? 1 : 2, textLimit),
     },
     dailyGlowSummary: takeItems(analysis.dailyGlow, isBudget ? 0 : detail === "minimal" ? 1 : 2).map((day) => ({
       date: day.date,
       dateZh: day.dateLabelZh,
-      sunriseScore: day.sunriseScore,
-      sunsetScore: day.sunsetScore,
+      sunriseProbabilityPercent: glowScoreToDisplayProbabilityPercent(day.sunriseScore),
+      sunsetProbabilityPercent: glowScoreToDisplayProbabilityPercent(day.sunsetScore),
       bestTarget: day.bestTarget,
-      recommendationLabelZh: day.recommendationLabel,
+      recommendationLabelZh: glowDisplayRecommendationForScore(
+        day.practicalScore ?? Math.max(day.sunriseScore, day.sunsetScore),
+      ),
       bestWindow: compactGlowWindowForAi(day.bestWindow, timezone, textLimit, detail),
       keyReasonZh: limitText(day.keyReason, textLimit),
       riskNoteZh: limitText(day.riskNote, textLimit),
@@ -1319,6 +1319,40 @@ function compactGlowWindowForAi(
     riskTags: takeTextItems(window.riskTags, 3, 50),
     noteZh: limitText(window.noteZh, textLimit),
   };
+}
+
+function formatGlowWindowForAiDisplay(
+  window:
+    | ForecastCalculationResult["glowAnalysis"]["bestGlowWindows"][number]
+    | ForecastCalculationResult["glowAnalysis"]["watchableGlowWindows"][number]
+    | ForecastCalculationResult["glowAnalysis"]["notRecommendedGlowWindows"][number],
+  timezone: string,
+): string {
+  return `${window.labelZh} ${formatShootingWindowZh(
+    { startTime: window.start, endTime: window.end },
+    timezone,
+  )}`;
+}
+
+function recommendedGlowArrivalZh(
+  window:
+    | ForecastCalculationResult["glowAnalysis"]["bestGlowWindows"][number]
+    | ForecastCalculationResult["glowAnalysis"]["watchableGlowWindows"][number]
+    | ForecastCalculationResult["glowAnalysis"]["notRecommendedGlowWindows"][number],
+  timezone: string,
+): string {
+  const startMs = Date.parse(window.start);
+  if (!Number.isFinite(startMs)) {
+    return "建议提前 45 分钟到达";
+  }
+  const arrival = new Date(startMs - 45 * 60 * 1000);
+  const time = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(arrival);
+  return `建议 ${time} 前到达`;
 }
 
 function compactGlowSunEvent(
@@ -1417,89 +1451,6 @@ function compactGlowEvidenceByLabel(
   };
 }
 
-function compactGlowAerosolForAi(
-  analysis: ForecastCalculationResult["glowAnalysis"],
-  textLimit: number,
-  detail: DeepSeekForecastContextDetail = "standard",
-) {
-  const assessment = analysis.aerosolAssessment;
-  const hasActualAerosolData =
-    assessment.availability !== "unavailable" &&
-    [assessment.aerosolOpticalDepth550, assessment.pm25, assessment.pm10, assessment.dust].some(
-      (value) => typeof value === "number" && Number.isFinite(value),
-    );
-
-  if (!hasActualAerosolData) {
-    return {
-      available: false,
-      availability: assessment.availability,
-      confidence: assessment.confidence,
-      evidenceZh:
-        "气溶胶证据不足；只能把能见度、湿度和云层作为辅助观察，不提供 AOD、PM 或沙尘结论。",
-      noteZh: limitText(assessment.noteZh, textLimit),
-    };
-  }
-
-  return {
-    available: true,
-    availability: assessment.availability,
-    confidence: assessment.confidence,
-    state: assessment.state,
-    stateLabelZh: assessment.stateLabelZh,
-    implicationZh: limitText(assessment.implicationZh, textLimit),
-    cautionZh: "颗粒物可能帮助暖色散射，也可能降低反差和直射光；不要把更高气溶胶直接等同为更好霞光。",
-    scoreImpact: assessment.scoreImpact,
-    aerosolScore: assessment.aerosolScore,
-    aerosolOpticalDepth550: assessment.aerosolOpticalDepth550,
-    pm25: assessment.pm25,
-    pm10: assessment.pm10,
-    dust: assessment.dust,
-    visibilityKm: assessment.visibilityKm,
-    validTime: assessment.validTime,
-    sourceResolution: assessment.sourceResolution,
-    evidence: takeItems(analysis.aerosolEvidence, detail === "budget" ? 1 : 2).map((item) => ({
-      label: item.label,
-      value: item.value,
-      effect: item.effect,
-      noteZh: limitText(item.noteZh, textLimit),
-    })),
-  };
-}
-
-function compactGlowTerrainObstructionForAi(
-  analysis: ForecastCalculationResult["glowAnalysis"],
-  textLimit: number,
-  detail: DeepSeekForecastContextDetail = "standard",
-) {
-  const availableAssessments = analysis.terrainObstructionAssessments.filter(
-    (assessment) => assessment.dataAvailable,
-  );
-  if (availableAssessments.length === 0) {
-    return {
-      available: false,
-      noteZh:
-        "自然地形方向性遮挡数据不可用；不得推断本地遮挡，也不包含建筑或树木遮挡。",
-    };
-  }
-
-  return {
-    available: true,
-    assessments: takeItems(availableAssessments, detail === "budget" ? 1 : 2).map((assessment) => ({
-      phase: assessment.phase,
-      date: assessment.date,
-      solarAzimuthDegrees: assessment.solarAzimuthDegrees,
-      solarElevationDegrees: assessment.solarElevationDegrees,
-      terrainHorizonAngleDegrees: assessment.terrainHorizonAngleDegrees,
-      solarClearanceDegrees: assessment.solarClearanceDegrees,
-      obstructionStatus: assessment.obstructionStatus,
-      confidence: assessment.confidence,
-      labelZh: assessment.labelZh,
-      noteZh: limitText(assessment.noteZh, textLimit),
-    })),
-    cautionZh: "太阳盘受自然地形遮挡不等于彩云潜力完全消失；仍需结合云层位置和低角度散射解释。",
-  };
-}
-
 function professionalHourlyRowsForGlowPayload(
   result: ForecastCalculationResult,
   rows: readonly NonNullable<ForecastCalculationResult["professionalHourlyData"]>[number][],
@@ -1515,42 +1466,6 @@ function professionalHourlyRowsForGlowPayload(
     windows.some((window) => isTimeWithinRange(row.time, window.start, window.end)),
   );
   return takeItems(focused.length > 0 ? focused : rows, limit);
-}
-
-function compactGlowProfessionalHourlyRowForAi(
-  row: NonNullable<ForecastCalculationResult["professionalHourlyData"]>[number],
-  detail: DeepSeekForecastContextDetail,
-) {
-  if (detail === "budget") {
-    return {
-      time: row.time,
-      cloudTotalPercent: row.cloudTotalPercent,
-      cloudHighPercent: row.cloudHighPercent,
-      cloudMidPercent: row.cloudMidPercent,
-      cloudLowPercent: row.cloudLowPercent,
-      relativeHumidityPercent: row.relativeHumidityPercent,
-      dewPointSpreadC: row.dewPointSpreadC,
-      precipitationAmountMm: row.precipitationAmountMm,
-      precipitationProbabilityPercent: row.precipitationProbabilityPercent,
-      visibilityMeters: row.visibilityMeters,
-    };
-  }
-
-  return {
-    time: row.time,
-    timeLabel: row.timeLabel,
-    cloudTotalPercent: row.cloudTotalPercent,
-    cloudHighPercent: row.cloudHighPercent,
-    cloudMidPercent: row.cloudMidPercent,
-    cloudLowPercent: row.cloudLowPercent,
-    cloudLayerBasis: row.cloudLayerBasis,
-    relativeHumidityPercent: row.relativeHumidityPercent,
-    dewPointSpreadC: row.dewPointSpreadC,
-    precipitationAmountMm: row.precipitationAmountMm,
-    precipitationProbabilityPercent: row.precipitationProbabilityPercent,
-    visibilityMeters: row.visibilityMeters,
-    windSpeedMs: row.windSpeedMs,
-  };
 }
 
 function compactProfessionalHourlyTimeBasisForAi(
@@ -1640,13 +1555,6 @@ function maxNullableNumber(values: readonly (number | null | undefined)[]): numb
     (value): value is number => typeof value === "number" && Number.isFinite(value),
   );
   return finiteValues.length > 0 ? Math.round(Math.max(...finiteValues) * 10) / 10 : null;
-}
-
-function minNullableNumber(values: readonly (number | null | undefined)[]): number | null {
-  const finiteValues = values.filter(
-    (value): value is number => typeof value === "number" && Number.isFinite(value),
-  );
-  return finiteValues.length > 0 ? Math.round(Math.min(...finiteValues) * 10) / 10 : null;
 }
 
 function isTimeWithinRange(value: string, start: string, end: string): boolean {
@@ -2302,7 +2210,7 @@ function buildForecastExplanationUserPayload(
     preferredVisibleSectionsZh: targetConfig?.visibleSectionsZh ?? null,
     promptPrioritiesZh:
       isGlowBudget
-        ? ["朝霞、晚霞 priority; best local window; key cloud/rain/terrain/aerosol risks."]
+        ? ["是否值得去；朝霞/晚霞概率；最佳本地时间；到达时间；主因、主风险和备选方案。"]
         : targetConfig?.promptPrioritiesZh ?? null,
     requiredKeys:
       input.forecastResult.target === "glow"
@@ -2317,9 +2225,9 @@ function buildForecastExplanationUserPayload(
                 "whyThisWindowZh",
                 "backupPlanZh",
               ],
-              weatherTrend: ["trendSummaryZh", "rainSummaryZh", "transparencySummaryZh"],
-              subjectAdvice: ["sunriseGlowZh", "sunsetGlowZh", "transparencyZh"],
-              riskAndGear: ["keyRisks", "gearZh", "safetyZh"],
+              weatherTrend: ["trendSummaryZh", "rainSummaryZh"],
+              subjectAdvice: ["sunriseGlowZh", "sunsetGlowZh"],
+              riskAndGear: ["keyRisks", "gearZh"],
               finalAdvice: ["goNoGoZh", "ifDedicatedTripZh", "nextCheckZh"],
             }
         : {
@@ -2360,7 +2268,7 @@ function buildForecastExplanationUserPayload(
     constraints: isGlowBudget
       ? [
           "Use only computedForecastFacts; missing facts need recheck, never filling.",
-          "Do not change sunrise glow score, sunset glow score, deterministic sunriseGlowScore/sunsetGlowScore, windows, sun times, cloud/aerosol/terrain values, or recommendation; do not recompute or use cloud-sea wording.",
+          "Do not change sunrise/sunset glow probability, deterministic sunriseGlowScore/sunsetGlowScore, windows, sun times, cloud/aerosol/terrain values, or recommendation; do not recompute or use cloud-sea wording.",
         ]
       : [...baseConstraints, ...(targetConfig?.constraints ?? [])],
     userGoal: input.userGoal ?? null,
@@ -2485,7 +2393,6 @@ function buildDeepSeekGlowPromptFacts(
 ) {
   const timezone = result.calendarBasis.timezone;
   const targetConfig = forecastAiTargetConfigFor(result.target);
-  const bestWindow = result.bestWindows.find(isExecutableWindow) ?? result.bestWindows[0];
   const textLimit = detail === "budget" ? 60 : 90;
 
   return {
@@ -2504,24 +2411,6 @@ function buildDeepSeekGlowPromptFacts(
       timezone,
       generatedAt: result.generatedAt,
     },
-    overall: {
-      score: result.overallScore,
-      recommendationLevel: result.recommendationLevel,
-      recommendationLabelZh: result.recommendationLabel,
-      summaryZh: limitText(result.summary, textLimit),
-    },
-    keyWindows: bestWindow ? [compactPromptWindow(bestWindow, timezone, textLimit)] : [],
-    keyRisks: compactRiskFlags(result.riskFlags, detail === "budget" ? 1 : 2).map((risk) => ({
-      label: risk.label,
-      level: risk.level,
-      description: limitText(risk.description, textLimit),
-    })),
-    keyReasons: takeTextItems(result.keyReasons, detail === "budget" ? 1 : 2, textLimit),
-    deterministicSuggestions: takeTextItems(
-      result.photographyAdvice,
-      detail === "budget" ? 1 : 2,
-      textLimit,
-    ),
     glow: buildGlowAiExplainPayload(result, detail),
     dataStatus: {
       dataMode: result.weatherDataMode,
