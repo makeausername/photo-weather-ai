@@ -8,8 +8,10 @@ import {
   buildCloudSeaAiExplainPayload,
   buildDeepSeekForecastContext,
   buildDeepSeekForecastExplanationRequest,
+  buildGlowAiExplainPayload,
   createRuleBasedForecastExplanation,
   DeepSeekProvider,
+  forecastAiTargetConfigs,
   forecastAiExplanationSchema,
   isDeepSeekProviderError,
   MockAIProvider,
@@ -26,6 +28,56 @@ const place = {
     system: "wgs84" as const,
   },
 };
+
+type ForecastExplanationRequestUserPayload = {
+  readonly targetCode: string;
+  readonly targetSubjectZh?: string | null;
+  readonly preferredVisibleSectionsZh?: readonly string[] | null;
+  readonly promptPrioritiesZh?: readonly string[] | null;
+  readonly constraints: readonly string[];
+  readonly computedForecastFacts: {
+    readonly targetCode: string;
+    readonly cloudSea?: Record<string, unknown>;
+    readonly glow?: ReturnType<typeof buildGlowAiExplainPayload>;
+  };
+};
+
+function readForecastExplanationUserPayload(
+  request: ReturnType<typeof buildDeepSeekForecastExplanationRequest>,
+): ForecastExplanationRequestUserPayload {
+  const userMessage = request.body.messages.find((message) => message.role === "user");
+  expect(userMessage).toBeTruthy();
+  return JSON.parse(userMessage?.content ?? "{}") as ForecastExplanationRequestUserPayload;
+}
+
+function astroSummaryForGlowTest(): ForecastCalculationResult["astroSummaries"][number] {
+  const moonInfo = {
+    moonPhase: 0.22,
+    moonPhaseNameZh: "娥眉月",
+    moonIllumination: 0.31,
+    waxingOrWaning: "waxing" as const,
+    lunarDateText: "四月初五",
+    calculationNoteZh: "月相基于本地天文算法计算。",
+  };
+  return {
+    date: "2026-05-21",
+    timezone: "Asia/Shanghai",
+    sunrise: "2026-05-21T05:14:00+08:00",
+    sunset: "2026-05-21T18:57:00+08:00",
+    solarNoon: "2026-05-21T12:05:00+08:00",
+    sunriseAzimuth: 72,
+    sunsetAzimuth: 286,
+    civilDawn: "2026-05-21T04:49:00+08:00",
+    civilDusk: "2026-05-21T19:22:00+08:00",
+    moonPhase: moonInfo.moonPhase,
+    moonPhaseNameZh: moonInfo.moonPhaseNameZh,
+    moonIllumination: moonInfo.moonIllumination,
+    waxingOrWaning: moonInfo.waxingOrWaning,
+    lunarDateText: moonInfo.lunarDateText,
+    calculationNoteZh: moonInfo.calculationNoteZh,
+    moonInfo,
+  };
+}
 
 function cloudSeaScoreCalibrationForTest(
   overrides: Partial<CloudSeaScoreCalibrationContext> = {},
@@ -147,6 +199,170 @@ describe("AI providers", () => {
     expect(JSON.stringify(request.body)).not.toContain("weatherTimeline");
     expect(request.promptSizeChars).toBeLessThanOrEqual(6000);
     expect(JSON.stringify(request.body)).not.toContain("sk-");
+  });
+
+  it("passes cloud-sea through the shared target configuration and request payload", () => {
+    const request = buildDeepSeekForecastExplanationRequest({
+      forecastResult: forecastResultFixture,
+    });
+    const payload = readForecastExplanationUserPayload(request);
+
+    expect(forecastAiTargetConfigs.cloud_sea.targetCode).toBe("cloud_sea");
+    expect(payload.targetCode).toBe("cloud_sea");
+    expect(payload.targetSubjectZh).toBe("云海");
+    expect(payload.computedForecastFacts.targetCode).toBe("cloud_sea");
+    expect(payload.computedForecastFacts.cloudSea?.recommendationZh).toBeTypeOf("string");
+    expect(payload.computedForecastFacts.glow).toBeUndefined();
+    expect(request.body.model).toBe("deepseek-v4-pro");
+  });
+
+  it("builds a glow-specific DeepSeek prompt from concise deterministic facts", () => {
+    const sunriseWindow = forecastResultFixture.glowAnalysis.bestGlowWindows[0];
+    if (!sunriseWindow) {
+      throw new Error("forecast fixture must include a sunrise glow window");
+    }
+    const sunsetWindow = {
+      ...sunriseWindow,
+      type: "sunset" as const,
+      labelZh: "晚霞峰值窗口",
+      start: "2026-05-21T17:55:00+08:00",
+      end: "2026-05-21T19:18:00+08:00",
+      score: 62,
+      noteZh: "晚霞窗口可作为备选，重点看西向中高云是否保留色彩载体。",
+    };
+    const request = buildDeepSeekForecastExplanationRequest({
+      forecastResult: {
+        ...forecastResultFixture,
+        target: "glow",
+        astroSummaries: [astroSummaryForGlowTest()],
+        glowAnalysis: {
+          ...forecastResultFixture.glowAnalysis,
+          bestGlowWindows: [sunriseWindow, sunsetWindow],
+          cloudLayerEvidence: [
+            {
+              label: "总云量",
+              value: "58%",
+              effect: "positive",
+              noteZh: "总云量 20%-75% 通常更容易形成可用霞光层次。",
+            },
+            {
+              label: "低云",
+              value: "32%",
+              effect: "neutral",
+              noteZh: "低云可能遮挡太阳方向，需要现场复核地平线是否留有缝隙。",
+            },
+            {
+              label: "中云",
+              value: "45%",
+              effect: "positive",
+              noteZh: "适量中云可承载霞光色彩。",
+            },
+            {
+              label: "高云",
+              value: "52%",
+              effect: "positive",
+              noteZh: "高云是霞光色彩的重要载体。",
+            },
+          ],
+        },
+      },
+    });
+    const payload = readForecastExplanationUserPayload(request);
+    const glow = payload.computedForecastFacts.glow;
+    const text = JSON.stringify(request.body);
+
+    expect(forecastAiTargetConfigs.glow.targetCode).toBe("glow");
+    expect(request.body.model).toBe("deepseek-v4-pro");
+    expect(payload.targetCode).toBe("glow");
+    expect(payload.targetSubjectZh).toBe("朝霞晚霞");
+    expect(payload.preferredVisibleSectionsZh).toEqual([
+      "出片结论",
+      "最佳窗口解读",
+      "云层与通透分析",
+      "拍摄执行建议",
+      "风险与备选方案",
+    ]);
+    expect(payload.promptPrioritiesZh?.join("")).toContain("朝霞、晚霞");
+    expect(payload.constraints.join("")).toContain("Do not change sunrise glow score");
+    expect(glow?.scoreAndRecommendation).toMatchObject({
+      sunriseGlowScore: 75,
+      sunriseGlowStatusZh: "高",
+      sunsetGlowScore: 62,
+      sunsetGlowStatusZh: "中",
+    });
+    expect(glow?.sunEvents.sunrise).toMatchObject({
+      eventTime: "2026-05-21T05:14:00+08:00",
+      solarAzimuthDegrees: 72,
+    });
+    expect(glow?.sunEvents.sunset).toMatchObject({
+      eventTime: "2026-05-21T18:57:00+08:00",
+      solarAzimuthDegrees: 286,
+    });
+    expect(glow?.bestWindows.sunrise?.windowZh).toContain("2026年5月21日");
+    expect(glow?.bestWindows.sunset?.windowZh).toContain("2026年5月21日");
+    expect(glow?.cloudLayerSummary).toMatchObject({
+      totalCloud: expect.objectContaining({ value: "58%" }),
+      lowCloud: expect.objectContaining({ value: "32%" }),
+      midCloud: expect.objectContaining({ value: "45%" }),
+      highCloud: expect.objectContaining({ value: "52%" }),
+    });
+    expect(glow?.aerosol).toMatchObject({
+      available: true,
+      aerosolOpticalDepth550: 0.12,
+      pm25: 18,
+      dust: 8,
+    });
+    expect(glow?.terrainObstruction).toMatchObject({
+      available: true,
+      assessments: [expect.objectContaining({ solarClearanceDegrees: 1.2 })],
+    });
+    expect(glow?.actionPlan.travelAdviceZh.join("")).toContain("日出前 40-60 分钟");
+    expect(text).toContain("deterministic sunriseGlowScore");
+    expect(text).not.toContain("professionalHourlyData");
+    expect(text).not.toContain("weatherTimeline");
+    expect(text).not.toMatch(/api[_-]?key|secret|sk-/i);
+    expect(request.promptSizeChars).toBeLessThanOrEqual(6000);
+  });
+
+  it("omits glow aerosol and terrain numeric details when those deterministic facts are unavailable", () => {
+    const payload = buildGlowAiExplainPayload(
+      {
+        ...forecastResultFixture,
+        target: "glow",
+        glowAnalysis: {
+          ...forecastResultFixture.glowAnalysis,
+          aerosolAssessment: {
+            availability: "unavailable",
+            confidence: "low",
+            state: "unavailable",
+            stateLabelZh: "暂无可靠数据",
+            implicationZh: "气溶胶证据不足，不能判断颗粒物对霞光散射的影响。",
+            noteZh: "当前无 AOD、PM 或沙尘参考。",
+            scoreImpact: 0,
+          },
+          aerosolEvidence: [],
+          terrainObstructionAssessments: [],
+          terrainObstructionEvidence: [],
+        },
+      },
+      "minimal",
+    );
+    const aerosolText = JSON.stringify(payload.aerosol);
+    const terrainText = JSON.stringify(payload.terrainObstruction);
+
+    expect(payload.aerosol).toMatchObject({
+      available: false,
+      evidenceZh: expect.stringContaining("气溶胶证据不足"),
+    });
+    expect(aerosolText).not.toContain("aerosolOpticalDepth550");
+    expect(aerosolText).not.toContain("pm25");
+    expect(aerosolText).not.toContain("dust");
+    expect(payload.terrainObstruction).toMatchObject({
+      available: false,
+      noteZh: expect.stringContaining("自然地形方向性遮挡数据不可用"),
+    });
+    expect(terrainText).not.toContain("solarClearanceDegrees");
+    expect(terrainText).not.toContain("solarAzimuthDegrees");
   });
 
   it("builds a compact computed-facts-only DeepSeek context", () => {

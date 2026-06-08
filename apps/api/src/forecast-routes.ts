@@ -288,6 +288,7 @@ export function registerForecastRoutes(
     if (!runtimeDeepSeek || unavailableCategory) {
       request.log.info({
         route: "/forecast/ai-explain",
+        targetCode: result.target,
         providerCode: "deepseek",
         model: runtimeDeepSeek?.model ?? "deepseek-v4-pro",
         timeoutMs: runtimeDeepSeek?.timeoutMs ?? 120000,
@@ -318,6 +319,7 @@ export function registerForecastRoutes(
     if (cachedInterpretation) {
       request.log.info({
         route: "/forecast/ai-explain",
+        targetCode: result.target,
         providerCode: "deepseek",
         model: cachedInterpretation.model,
         timeoutMs: runtimeDeepSeek.timeoutMs,
@@ -341,6 +343,7 @@ export function registerForecastRoutes(
         buildAiExplainSuccessResponse({
           interpretation: cachedInterpretation.interpretation,
           runtimeDeepSeek,
+          targetCode: result.target,
           latencyMs: 0,
           promptSizeChars: cachedInterpretation.promptSizeChars,
           attempts: 0,
@@ -375,6 +378,7 @@ export function registerForecastRoutes(
       });
       request.log.info({
         route: "/forecast/ai-explain",
+        targetCode: result.target,
         providerCode: "deepseek",
         model: runtimeDeepSeek.model,
         timeoutMs: runtimeDeepSeek.timeoutMs,
@@ -395,6 +399,7 @@ export function registerForecastRoutes(
         buildAiExplainSuccessResponse({
           interpretation: retryResult.explanation,
           runtimeDeepSeek,
+          targetCode: result.target,
           latencyMs: Date.now() - startedAt,
           promptSizeChars,
           attempts: retryResult.attempts,
@@ -407,6 +412,7 @@ export function registerForecastRoutes(
       const failurePromptSizeChars = normalized.promptSizeChars ?? promptSizeChars;
       request.log.warn({
         route: "/forecast/ai-explain",
+        targetCode: result.target,
         providerCode: "deepseek",
         model: runtimeDeepSeek.model,
         timeoutMs: runtimeDeepSeek.timeoutMs,
@@ -791,6 +797,7 @@ function withDeterministicAiExplanation(
 function buildAiExplainSuccessResponse(options: {
   readonly interpretation: ForecastAiExplanation;
   readonly runtimeDeepSeek: RuntimeDeepSeekConfig;
+  readonly targetCode: ForecastCalculationResult["target"];
   readonly latencyMs: number;
   readonly promptSizeChars: number;
   readonly attempts: number;
@@ -803,6 +810,7 @@ function buildAiExplainSuccessResponse(options: {
   const rawResponseSizeChars = aiExplanationRawResponseSizeChars(options.interpretation);
   const explanation = withAiExplanationDisplayFields(options.interpretation);
   const meta = {
+    targetCode: options.targetCode,
     providerCode: "deepseek" as const,
     model: options.runtimeDeepSeek.model,
     timeoutMs: options.runtimeDeepSeek.timeoutMs,
@@ -819,6 +827,7 @@ function buildAiExplainSuccessResponse(options: {
     ok: true,
     success: true,
     source: "deepseek" as const,
+    targetCode: options.targetCode,
     model: options.runtimeDeepSeek.model,
     explanation,
     interpretation: explanation,
@@ -836,6 +845,7 @@ function buildAiExplainSuccessResponse(options: {
     cacheHit: options.cacheHit,
     fallback: false,
     diagnostics: {
+      targetCode: options.targetCode,
       providerCode: "deepseek",
       model: options.runtimeDeepSeek.model,
       timeoutMs: options.runtimeDeepSeek.timeoutMs,
@@ -880,6 +890,7 @@ function buildAiExplainFailureResponse(options: {
     ok: false,
     success: false,
     source: "fallback" as const,
+    targetCode: options.result.target,
     fallback: true,
     fallbackInterpretation: fallback,
     explanation: fallback,
@@ -896,6 +907,7 @@ function buildAiExplainFailureResponse(options: {
     parseSuccess: false,
     parseStrategy,
     meta: {
+      targetCode: options.result.target,
       providerCode: "deepseek" as const,
       model,
       timeoutMs,
@@ -911,6 +923,7 @@ function buildAiExplainFailureResponse(options: {
     error: legacyAiExplanationErrorCode(options.errorCategory),
     message: messageZh,
     diagnostics: {
+      targetCode: options.result.target,
       providerCode: "deepseek",
       model,
       timeoutMs,

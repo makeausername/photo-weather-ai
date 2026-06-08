@@ -220,6 +220,7 @@ type ForecastAiExplanation = {
 type AiExplainResponse = {
   readonly ok?: boolean;
   readonly success?: boolean;
+  readonly targetCode?: ForecastQueryInput["target"];
   readonly source?: "deepseek" | "fallback";
   readonly explanation?: unknown;
   readonly interpretation?: unknown;
@@ -266,6 +267,7 @@ type AiExplainResponse = {
   readonly fallbackUsed?: boolean;
   readonly rawResponseSizeChars?: number;
   readonly diagnostics?: {
+    readonly targetCode?: ForecastQueryInput["target"];
     readonly providerCode?: string;
     readonly model?: string;
     readonly timeoutMs?: number;
@@ -285,6 +287,7 @@ type AiExplainResponse = {
     readonly errorCategory?: AiExplainErrorCategory;
   };
   readonly meta?: {
+    readonly targetCode?: ForecastQueryInput["target"];
     readonly providerCode?: string;
     readonly model?: string;
     readonly timeoutMs?: number;
@@ -1666,10 +1669,12 @@ function logAiExplanationClientEvent(
   event: NormalizedAiExplainOutcome & {
     readonly cacheHit?: boolean;
     readonly frontendTimeoutMs?: number;
+    readonly targetCode?: ForecastQueryInput["target"];
   },
 ): void {
   const payload = {
     route: "/forecast/ai-explain",
+    targetCode: event.targetCode,
     status: event.status,
     success: event.success,
     cacheHit: Boolean(event.cacheHit),
@@ -1918,7 +1923,7 @@ function useForecastAiInterpretation(
         setAiRetryable,
         setAiStatus,
       });
-      logAiExplanationClientEvent({ ...cacheOutcome, cacheHit: true });
+      logAiExplanationClientEvent({ ...cacheOutcome, cacheHit: true, targetCode: query.target });
       return;
     }
 
@@ -1957,7 +1962,7 @@ function useForecastAiInterpretation(
           setAiRetryable,
           setAiStatus,
         });
-        logAiExplanationClientEvent(outcome);
+        logAiExplanationClientEvent({ ...outcome, targetCode: query.target });
         return;
       }
 
@@ -1972,7 +1977,7 @@ function useForecastAiInterpretation(
         setAiRetryable,
         setAiStatus,
       });
-      logAiExplanationClientEvent(outcome);
+      logAiExplanationClientEvent({ ...outcome, targetCode: query.target });
     } catch (error) {
       const outcome = normalizeAiExplainThrownError(error, Date.now() - startedAt);
       applyAiExplainOutcome(outcome, {
@@ -1981,7 +1986,7 @@ function useForecastAiInterpretation(
         setAiRetryable,
         setAiStatus,
       });
-      logAiExplanationClientEvent(outcome);
+      logAiExplanationClientEvent({ ...outcome, targetCode: query.target });
     } finally {
       clearTimeout(timeout);
       if (aiAbortControllerRef.current === controller) {
@@ -3790,6 +3795,13 @@ export function GlowResultPage({
           config={glowProfessionalHourlySectionConfig}
         />
         <GlowFinalDecisionSection result={result} viewModel={viewModel} />
+        <section
+          className="mt-1 sm:mt-2"
+          data-glow-section="GlowAiInterpretation"
+          data-ai-interpretation-target="glow"
+        >
+          <ForecastAiInterpretationSection query={query} result={result} />
+        </section>
       </main>
     </DecisionResultTemplate>
   );

@@ -78,6 +78,74 @@ export type DeepSeekRequestPreview = {
   readonly outputMode: "json_object" | "text_with_json_fallback";
 };
 
+export type ForecastAiInterpretationTargetCode = "cloud_sea" | "glow";
+
+type ForecastAiTargetConfig = {
+  readonly targetCode: ForecastAiInterpretationTargetCode;
+  readonly subjectZh: string;
+  readonly task: string;
+  readonly outputLength: string;
+  readonly visibleSectionsZh: readonly string[];
+  readonly promptPrioritiesZh: readonly string[];
+  readonly constraints: readonly string[];
+};
+
+export const forecastAiTargetConfigs = {
+  cloud_sea: {
+    targetCode: "cloud_sea",
+    subjectZh: "云海",
+    task: "Explain deterministic Cloud Sea photo-weather forecast facts in concise Simplified Chinese.",
+    outputLength: "600-900 Chinese characters total. No Markdown.",
+    visibleSectionsZh: ["一句话结论", "最建议关注", "天气大势", "题材判断", "风险与装备", "最终建议"],
+    promptPrioritiesZh: [
+      "解释云海形成、可拍窗口、白墙风险、到达与等待策略。",
+      "低海拔或地形证据不足时使用低云/晨雾等保守说法。",
+      "不得把总云量推断成低云、中云或高云分层。",
+    ],
+    constraints: [
+      "For cloud_sea, keep the current deterministic cloud-sea recommendation authoritative.",
+      "Do not invent cloud layer values, whiteout risk, cloud-sea windows, arrival advice, or professional hourly values.",
+      "Explain temperature, precipitation, cloud basis, and window risk only from provided deterministic facts.",
+    ],
+  },
+  glow: {
+    targetCode: "glow",
+    subjectZh: "朝霞晚霞",
+    task: "Explain deterministic sunrise and sunset glow photography forecast facts in concise Simplified Chinese.",
+    outputLength: "500-700 Chinese characters total. No Markdown.",
+    visibleSectionsZh: [
+      "出片结论",
+      "最佳窗口解读",
+      "云层与通透分析",
+      "拍摄执行建议",
+      "风险与备选方案",
+    ],
+    promptPrioritiesZh: [
+      "先判断朝霞、晚霞、两者都值得尝试还是都不建议，并明确优先级。",
+      "说明最好的本地时间窗口和建议提前到达时间。",
+      "区分低云、中云、高云分别是在帮助承载色彩还是限制太阳方向。",
+      "说明地形地平遮挡只来自自然地形方向性数据；不可推断建筑或树木遮挡。",
+      "说明气溶胶只在有实际 AOD/PM/沙尘证据时解释，且高气溶胶不总是更好。",
+      "给出推荐朝向、前景/主体策略、失败时的备选窗口或备选题材。",
+    ],
+    constraints: [
+      "For glow, deterministic sunriseGlowScore, sunsetGlowScore, best windows, sunrise/sunset times, and recommendation are authoritative facts.",
+      "Do not change sunrise glow score, sunset glow score, best window, sunrise time, sunset time, cloud values, aerosol values, terrain obstruction details, or deterministic recommendation.",
+      "Do not recompute glow suitability. Explain why the deterministic result is practical or risky.",
+      "If aerosol data are unavailable, say aerosol evidence is insufficient and rely only on visibility and humidity as supporting observations.",
+      "If terrain-horizon data are unavailable, say natural-terrain obstruction detail is unavailable; do not infer local obstruction.",
+      "Terrain blocking the direct solar disk must not be described as eliminating all colored-cloud potential.",
+      "Do not use cloud-sea wording as the primary subject.",
+    ],
+  },
+} satisfies Record<ForecastAiInterpretationTargetCode, ForecastAiTargetConfig>;
+
+function forecastAiTargetConfigFor(
+  target: ForecastCalculationResult["target"],
+): ForecastAiTargetConfig | undefined {
+  return target === "cloud_sea" || target === "glow" ? forecastAiTargetConfigs[target] : undefined;
+}
+
 type JsonParseStrategy = Extract<
   ForecastAiExplanationParseStrategy,
   "strict_json" | "fenced_json" | "extracted_json"
@@ -446,8 +514,10 @@ export function buildDeepSeekForecastContext(
 ) {
   const timezone = result.calendarBasis.timezone;
   const isCloudSeaTarget = result.target === "cloud_sea";
-  const dailyLimit = detail === "minimal" || isCloudSeaTarget ? 2 : 4;
-  const windowLimit = detail === "minimal" || isCloudSeaTarget ? 1 : 3;
+  const isGlowTarget = result.target === "glow";
+  const isCompactTarget = isCloudSeaTarget || isGlowTarget;
+  const dailyLimit = detail === "minimal" || isCompactTarget ? 2 : 4;
+  const windowLimit = detail === "minimal" || isCompactTarget ? 1 : 3;
   const bestWindow = result.bestWindows.find(isExecutableWindow) ?? result.bestWindows[0];
   const bestDay = bestDailySummaryForPlan(result, bestWindow);
   const cloudSeaGuard =
@@ -529,6 +599,8 @@ export function buildDeepSeekForecastContext(
     },
     cloudSeaAiExplainPayload:
       result.target === "cloud_sea" ? buildCloudSeaAiExplainPayloadForContext(result) : undefined,
+    glowAiExplainPayload:
+      result.target === "glow" ? buildGlowAiExplainPayloadForContext(result) : undefined,
     calibrationHint: result.calibrationHint
       ? {
           sampleCount: result.calibrationHint.sampleCount,
@@ -563,6 +635,25 @@ function buildCloudSeaAiExplainPayloadForContext(result: ForecastCalculationResu
       rowCount: payload.professionalHourlySummary.rowCount,
       focusedRows: takeItems(payload.professionalHourlySummary.focusedRows, 1),
     },
+  };
+}
+
+function buildGlowAiExplainPayloadForContext(result: ForecastCalculationResult) {
+  const payload = buildGlowAiExplainPayload(result, "minimal");
+  return {
+    contextVersion: payload.contextVersion,
+    target: payload.target,
+    targetCode: payload.targetCode,
+    deterministicOnly: payload.deterministicOnly,
+    instruction: "Explain deterministic sunrise and sunset glow facts only; keep scores and windows authoritative.",
+    scoreAndRecommendation: payload.scoreAndRecommendation,
+    sunEvents: payload.sunEvents,
+    bestWindows: payload.bestWindows,
+    cloudLayerSummary: payload.cloudLayerSummary,
+    atmosphereSummary: payload.atmosphereSummary,
+    aerosol: payload.aerosol,
+    terrainObstruction: payload.terrainObstruction,
+    actionPlan: payload.actionPlan,
   };
 }
 
@@ -979,6 +1070,489 @@ export function buildCloudSeaAiExplainPayload(
   };
 }
 
+export function buildGlowAiExplainPayload(
+  result: ForecastCalculationResult,
+  detail: DeepSeekForecastContextDetail = "standard",
+) {
+  const timezone = result.calendarBasis.timezone;
+  const isBudget = detail === "budget";
+  const textLimit = isBudget ? 55 : detail === "minimal" ? 70 : 110;
+  const analysis = result.glowAnalysis;
+  const professionalRows = professionalHourlyRowsAtOrAfterAnchor(
+    result.professionalHourlyData ?? [],
+    result.professionalHourlyDataTimeBasis?.anchorStartLocal,
+    result.professionalHourlyDataTimeBasis?.expectedRowCount ??
+      result.professionalHourlyDataTimeBasis?.requestedHours,
+  );
+  const focusedRows = professionalHourlyRowsForGlowPayload(result, professionalRows, detail);
+  const bestWindow =
+    analysis.bestGlowWindow ??
+    analysis.bestGlowWindows[0] ??
+    analysis.watchableGlowWindows[0] ??
+    analysis.notRecommendedGlowWindows[0];
+  const sunriseWindow = glowWindowForPhase(analysis, "sunrise");
+  const sunsetWindow = glowWindowForPhase(analysis, "sunset");
+  const precipitationSummary = summarizeProfessionalHourlyPrecipitation(focusedRows);
+  const maxWindSpeedMs = maxNullableNumber(focusedRows.map((row) => row.windSpeedMs));
+  const maxHumidityPercent = maxNullableNumber(
+    focusedRows.map((row) => row.relativeHumidityPercent),
+  );
+  const minDewPointSpreadC = minNullableNumber(focusedRows.map((row) => row.dewPointSpreadC));
+  const agreement = result.weatherFusionSummary?.multiSourceAgreementContext;
+
+  return {
+    contextVersion: "glow-ai-explain-v1",
+    target: "glow",
+    targetCode: "glow",
+    deterministicOnly: true,
+    instruction:
+      "Explain deterministic sunrise/sunset glow facts only. Do not recompute or change glow scores, windows, sun times, cloud values, aerosol values, terrain obstruction, or the deterministic recommendation.",
+    locationName: limitText(result.place.name, 80),
+    horizon: {
+      key: result.horizon,
+      forecastRange: result.calendarBasis.forecastRangeLabel,
+      timezone,
+      targetDates: takeItems(result.targetDates, isBudget ? 1 : detail === "minimal" ? 2 : 4),
+    },
+    scoreAndRecommendation: {
+      sunriseGlowScore: analysis.sunriseGlowScore,
+      sunriseGlowStatusZh: analysis.labels.sunriseGlowOpportunity,
+      sunsetGlowScore: analysis.sunsetGlowScore,
+      sunsetGlowStatusZh: analysis.labels.sunsetGlowOpportunity,
+      recommendationLabelZh: analysis.recommendationLabel,
+      confidenceLevel: analysis.confidenceLevel,
+      colorCarrierScore: analysis.colorCarrierScore,
+      lowCloudObstructionRisk: analysis.lowCloudObstructionRisk,
+      lowCloudObstructionStatusZh: analysis.labels.lowCloudObstruction,
+      visibilityColorQualityScore: analysis.visibilityColorQualityScore,
+      precipitationDisruptionRisk: analysis.precipitationDisruptionRisk,
+      rainOverlapsSunriseWindow: analysis.rainOverlapsSunriseWindow,
+      rainOverlapsSunsetWindow: analysis.rainOverlapsSunsetWindow,
+      ...(isBudget
+        ? {}
+        : {
+            practicalGlowScore: analysis.practicalGlowScore,
+            glowTravelScore: analysis.glowTravelScore,
+            colorCarrierStatusZh: analysis.labels.colorCarrier,
+            postRainOpeningChance: analysis.postRainOpeningChance,
+            glowWindowRainRisk: analysis.glowWindowRainRisk,
+          }),
+    },
+    sunEvents: {
+      sunrise: compactGlowSunEvent(result, "sunrise", sunriseWindow, timezone, textLimit, detail),
+      sunset: compactGlowSunEvent(result, "sunset", sunsetWindow, timezone, textLimit, detail),
+    },
+    bestWindows: {
+      overall: compactGlowWindowForAi(bestWindow, timezone, textLimit, detail),
+      sunrise: compactGlowWindowForAi(sunriseWindow, timezone, textLimit, detail),
+      sunset: compactGlowWindowForAi(sunsetWindow, timezone, textLimit, detail),
+      backups: takeItems(
+        [
+          ...analysis.watchableGlowWindows,
+          ...analysis.notRecommendedGlowWindows,
+          ...analysis.bestGlowWindows.filter((window) => window !== bestWindow),
+        ],
+        isBudget ? 0 : detail === "minimal" ? 1 : 2,
+      ).map((window) => compactGlowWindowForAi(window, timezone, textLimit, detail)),
+    },
+    cloudLayerSummary: {
+      totalCloud: compactGlowEvidenceByLabel(analysis.cloudLayerEvidence, "总云量", textLimit),
+      lowCloud: compactGlowEvidenceByLabel(analysis.cloudLayerEvidence, "低云", textLimit),
+      midCloud: compactGlowEvidenceByLabel(analysis.cloudLayerEvidence, "中云", textLimit),
+      highCloud: compactGlowEvidenceByLabel(analysis.cloudLayerEvidence, "高云", textLimit),
+      cautionZh:
+        "Do not infer low/mid/high cloud from total cloud. Use only these explicit layer facts.",
+    },
+    atmosphereSummary: {
+      visibility: compactGlowEvidenceByLabel(analysis.visibilityEvidence, "能见度", textLimit),
+      humidity: compactGlowEvidenceByLabel(analysis.visibilityEvidence, "湿度", textLimit),
+      maxHumidityPercent,
+      minDewPointSpreadC,
+      precipitationRisk: {
+        maxProbabilityPercent: precipitationSummary.probabilityPercent,
+        maxAmountMm: precipitationSummary.amountMm,
+        sunriseOverlap: analysis.rainOverlapsSunriseWindow,
+        sunsetOverlap: analysis.rainOverlapsSunsetWindow,
+      },
+      windRisk: {
+        maxWindSpeedMs,
+        runtimeRiskZh: limitText(
+          result.riskFlags.find((risk) => risk.key === "wind")?.description,
+          textLimit,
+        ),
+      },
+      focusedHourlySummary: {
+        rowCount: professionalRows.length,
+        focusedRows: focusedRows.map((row) => compactGlowProfessionalHourlyRowForAi(row, detail)),
+      },
+    },
+    aerosol: compactGlowAerosolForAi(analysis, textLimit, detail),
+    terrainObstruction: compactGlowTerrainObstructionForAi(analysis, textLimit, detail),
+    confidenceAndAgreement: isBudget
+      ? undefined
+      : agreement
+        ? {
+            agreementLevel: agreement.agreementLevel,
+            disagreementLevel: agreement.disagreementLevel,
+            shouldLowerConfidence: agreement.shouldLowerConfidence,
+            userSummaryZh: limitText(providerNeutralText(agreement.userSummaryZh), textLimit),
+            keyWarningsZh: takeTextItems(
+              agreement.keyWarningsZh.map((item) => providerNeutralText(item) ?? item),
+              2,
+              textLimit,
+            ),
+          }
+        : {
+            confidenceLabelZh: confidenceLabelZh(result.weatherFusionSummary?.confidenceLevel),
+          },
+    deterministicRisks: takeTextItems(
+      analysis.riskReasons,
+      isBudget ? 1 : detail === "minimal" ? 2 : 3,
+      textLimit,
+    ),
+    deterministicReasons: takeTextItems(
+      analysis.opportunityReasons,
+      isBudget ? 1 : detail === "minimal" ? 2 : 3,
+      textLimit,
+    ),
+    actionPlan: {
+      recommendationLabelZh: analysis.recommendationLabel,
+      travelAdviceZh: takeTextItems(
+        analysis.travelRecommendations.map((item) => providerNeutralText(item) ?? item),
+        isBudget ? 1 : detail === "minimal" ? 2 : 4,
+        textLimit,
+      ),
+      backupPlans: takeItems(analysis.backupPlans, isBudget ? 0 : detail === "minimal" ? 1 : 2).map((plan) => ({
+        condition: limitText(plan.condition, 50),
+        action: limitText(plan.action, 60),
+        detail: limitText(plan.detail, textLimit),
+      })),
+      deterministicAdvice: takeTextItems(result.photographyAdvice, isBudget ? 1 : 2, textLimit),
+    },
+    dailyGlowSummary: takeItems(analysis.dailyGlow, isBudget ? 0 : detail === "minimal" ? 1 : 2).map((day) => ({
+      date: day.date,
+      dateZh: day.dateLabelZh,
+      sunriseScore: day.sunriseScore,
+      sunsetScore: day.sunsetScore,
+      bestTarget: day.bestTarget,
+      recommendationLabelZh: day.recommendationLabel,
+      bestWindow: compactGlowWindowForAi(day.bestWindow, timezone, textLimit, detail),
+      keyReasonZh: limitText(day.keyReason, textLimit),
+      riskNoteZh: limitText(day.riskNote, textLimit),
+    })),
+    missingDataNotes: takeTextItems(analysis.missingDataNotes, isBudget ? 1 : 3, textLimit),
+  };
+}
+
+function glowWindowForPhase(
+  analysis: ForecastCalculationResult["glowAnalysis"],
+  phase: "sunrise" | "sunset",
+) {
+  const windows = [
+    analysis.bestGlowWindow,
+    ...analysis.bestGlowWindows,
+    ...analysis.watchableGlowWindows,
+    ...analysis.notRecommendedGlowWindows,
+  ].filter((window): window is NonNullable<typeof window> => Boolean(window));
+  return windows.find((window) => glowWindowPhase(window) === phase);
+}
+
+function glowWindowPhase(
+  window: Pick<ForecastCalculationResult["glowAnalysis"]["bestGlowWindows"][number], "type" | "start">,
+): "sunrise" | "sunset" {
+  if (["pre_dawn_glow", "sunrise_core", "morning_warm_light", "sunrise"].includes(window.type)) {
+    return "sunrise";
+  }
+  if (
+    ["sunset_warm_light", "sunset_core", "afterglow", "blue_hour_transition", "sunset"].includes(
+      window.type,
+    )
+  ) {
+    return "sunset";
+  }
+  const hour = hourOf(window.start);
+  return typeof hour === "number" && hour < 12 ? "sunrise" : "sunset";
+}
+
+function compactGlowWindowForAi(
+  window:
+    | ForecastCalculationResult["glowAnalysis"]["bestGlowWindows"][number]
+    | ForecastCalculationResult["glowAnalysis"]["watchableGlowWindows"][number]
+    | ForecastCalculationResult["glowAnalysis"]["notRecommendedGlowWindows"][number]
+    | undefined,
+  timezone: string,
+  textLimit: number,
+  detail: DeepSeekForecastContextDetail = "standard",
+) {
+  if (!window) {
+    return null;
+  }
+  if (detail === "budget") {
+    return {
+      type: window.type,
+      phase: glowWindowPhase(window),
+      labelZh: window.labelZh,
+      date: window.date,
+      windowZh: formatShootingWindowZh({ startTime: window.start, endTime: window.end }, timezone),
+      score: window.score,
+      rainOverlapsWindow: window.rainOverlapsWindow,
+      riskTags: takeTextItems(window.riskTags, 2, 40),
+      noteZh: limitText(window.noteZh, textLimit),
+    };
+  }
+  return {
+    type: window.type,
+    phase: glowWindowPhase(window),
+    labelZh: window.labelZh,
+    date: window.date,
+    windowZh: formatShootingWindowZh({ startTime: window.start, endTime: window.end }, timezone),
+    score: window.score,
+    colorCarrierScore: window.colorCarrierScore,
+    lowCloudObstructionRisk: window.lowCloudObstructionRisk,
+    precipitationDisruptionRisk: window.precipitationDisruptionRisk,
+    visibilityColorQualityScore: window.visibilityColorQualityScore,
+    aerosolScore: window.aerosolScore,
+    terrainScore: window.terrainScore,
+    rainOverlapsWindow: window.rainOverlapsWindow,
+    postRainOpeningChance: window.postRainOpeningChance,
+    glowWindowRainRisk: window.glowWindowRainRisk,
+    riskTags: takeTextItems(window.riskTags, 3, 50),
+    noteZh: limitText(window.noteZh, textLimit),
+  };
+}
+
+function compactGlowSunEvent(
+  result: ForecastCalculationResult,
+  phase: "sunrise" | "sunset",
+  window:
+    | ForecastCalculationResult["glowAnalysis"]["bestGlowWindows"][number]
+    | ForecastCalculationResult["glowAnalysis"]["watchableGlowWindows"][number]
+    | ForecastCalculationResult["glowAnalysis"]["notRecommendedGlowWindows"][number]
+    | undefined,
+  timezone: string,
+  textLimit: number,
+  detail: DeepSeekForecastContextDetail,
+) {
+  const astro = astroSummaryForGlowPhase(result, phase, window?.date);
+  const eventTime = phase === "sunrise" ? astro?.sunrise : astro?.sunset;
+  const civilStart = phase === "sunrise" ? astro?.civilDawn : astro?.sunset;
+  const civilEnd = phase === "sunrise" ? astro?.sunrise : astro?.civilDusk;
+  const solarAzimuthDegrees = phase === "sunrise" ? astro?.sunriseAzimuth : astro?.sunsetAzimuth;
+
+  return {
+    score:
+      phase === "sunrise"
+        ? result.glowAnalysis.sunriseGlowScore
+        : result.glowAnalysis.sunsetGlowScore,
+    statusZh:
+      phase === "sunrise"
+        ? result.glowAnalysis.labels.sunriseGlowOpportunity
+        : result.glowAnalysis.labels.sunsetGlowOpportunity,
+    eventTime,
+    civilTwilightWindowZh:
+      civilStart && civilEnd
+        ? formatShootingWindowZh({ startTime: civilStart, endTime: civilEnd }, timezone)
+        : undefined,
+    solarAzimuthDegrees,
+    bestWindow: detail === "budget" ? undefined : compactGlowWindowForAi(window, timezone, textLimit, detail),
+    arrivalPreparationZh: glowArrivalPreparationZh(result, phase, window, timezone, textLimit),
+  };
+}
+
+function astroSummaryForGlowPhase(
+  result: ForecastCalculationResult,
+  phase: "sunrise" | "sunset",
+  date: string | undefined,
+) {
+  const withDate = date
+    ? result.astroSummaries.find((summary) => summary.date === date)
+    : undefined;
+  return (
+    withDate ??
+    result.astroSummaries.find((summary) => (phase === "sunrise" ? summary.sunrise : summary.sunset))
+  );
+}
+
+function glowArrivalPreparationZh(
+  result: ForecastCalculationResult,
+  phase: "sunrise" | "sunset",
+  window:
+    | ForecastCalculationResult["glowAnalysis"]["bestGlowWindows"][number]
+    | ForecastCalculationResult["glowAnalysis"]["watchableGlowWindows"][number]
+    | ForecastCalculationResult["glowAnalysis"]["notRecommendedGlowWindows"][number]
+    | undefined,
+  timezone: string,
+  textLimit: number,
+): string {
+  const keyword = phase === "sunrise" ? /(朝霞|日出)/ : /(晚霞|日落|余晖)/;
+  const deterministicAdvice = result.glowAnalysis.travelRecommendations.find((item) =>
+    keyword.test(item),
+  );
+  if (deterministicAdvice) {
+    return limitText(deterministicAdvice, textLimit);
+  }
+  if (window) {
+    return `按 ${formatShootingWindowZh(
+      { startTime: window.start, endTime: window.end },
+      timezone,
+    )} 提前完成到位、构图和安全复核。`;
+  }
+  return "暂无明确到达时间，出发前优先复核日出/日落窗口、云层和降水。";
+}
+
+function compactGlowEvidenceByLabel(
+  items: readonly ForecastCalculationResult["glowAnalysis"]["cloudLayerEvidence"][number][],
+  label: string,
+  textLimit: number,
+) {
+  const item = items.find((entry) => entry.label.includes(label));
+  if (!item) {
+    return null;
+  }
+  return {
+    label: item.label,
+    value: item.value,
+    effect: item.effect,
+    noteZh: limitText(item.noteZh, textLimit),
+  };
+}
+
+function compactGlowAerosolForAi(
+  analysis: ForecastCalculationResult["glowAnalysis"],
+  textLimit: number,
+  detail: DeepSeekForecastContextDetail = "standard",
+) {
+  const assessment = analysis.aerosolAssessment;
+  const hasActualAerosolData =
+    assessment.availability !== "unavailable" &&
+    [assessment.aerosolOpticalDepth550, assessment.pm25, assessment.pm10, assessment.dust].some(
+      (value) => typeof value === "number" && Number.isFinite(value),
+    );
+
+  if (!hasActualAerosolData) {
+    return {
+      available: false,
+      availability: assessment.availability,
+      confidence: assessment.confidence,
+      evidenceZh:
+        "气溶胶证据不足；只能把能见度、湿度和云层作为辅助观察，不提供 AOD、PM 或沙尘结论。",
+      noteZh: limitText(assessment.noteZh, textLimit),
+    };
+  }
+
+  return {
+    available: true,
+    availability: assessment.availability,
+    confidence: assessment.confidence,
+    state: assessment.state,
+    stateLabelZh: assessment.stateLabelZh,
+    implicationZh: limitText(assessment.implicationZh, textLimit),
+    cautionZh: "颗粒物可能帮助暖色散射，也可能降低反差和直射光；不要把更高气溶胶直接等同为更好霞光。",
+    scoreImpact: assessment.scoreImpact,
+    aerosolScore: assessment.aerosolScore,
+    aerosolOpticalDepth550: assessment.aerosolOpticalDepth550,
+    pm25: assessment.pm25,
+    pm10: assessment.pm10,
+    dust: assessment.dust,
+    visibilityKm: assessment.visibilityKm,
+    validTime: assessment.validTime,
+    sourceResolution: assessment.sourceResolution,
+    evidence: takeItems(analysis.aerosolEvidence, detail === "budget" ? 1 : 2).map((item) => ({
+      label: item.label,
+      value: item.value,
+      effect: item.effect,
+      noteZh: limitText(item.noteZh, textLimit),
+    })),
+  };
+}
+
+function compactGlowTerrainObstructionForAi(
+  analysis: ForecastCalculationResult["glowAnalysis"],
+  textLimit: number,
+  detail: DeepSeekForecastContextDetail = "standard",
+) {
+  const availableAssessments = analysis.terrainObstructionAssessments.filter(
+    (assessment) => assessment.dataAvailable,
+  );
+  if (availableAssessments.length === 0) {
+    return {
+      available: false,
+      noteZh:
+        "自然地形方向性遮挡数据不可用；不得推断本地遮挡，也不包含建筑或树木遮挡。",
+    };
+  }
+
+  return {
+    available: true,
+    assessments: takeItems(availableAssessments, detail === "budget" ? 1 : 2).map((assessment) => ({
+      phase: assessment.phase,
+      date: assessment.date,
+      solarAzimuthDegrees: assessment.solarAzimuthDegrees,
+      solarElevationDegrees: assessment.solarElevationDegrees,
+      terrainHorizonAngleDegrees: assessment.terrainHorizonAngleDegrees,
+      solarClearanceDegrees: assessment.solarClearanceDegrees,
+      obstructionStatus: assessment.obstructionStatus,
+      confidence: assessment.confidence,
+      labelZh: assessment.labelZh,
+      noteZh: limitText(assessment.noteZh, textLimit),
+    })),
+    cautionZh: "太阳盘受自然地形遮挡不等于彩云潜力完全消失；仍需结合云层位置和低角度散射解释。",
+  };
+}
+
+function professionalHourlyRowsForGlowPayload(
+  result: ForecastCalculationResult,
+  rows: readonly NonNullable<ForecastCalculationResult["professionalHourlyData"]>[number][],
+  detail: DeepSeekForecastContextDetail,
+) {
+  const limit = detail === "budget" ? 1 : detail === "minimal" ? 2 : 3;
+  const windows = [
+    result.glowAnalysis.bestGlowWindow,
+    ...result.glowAnalysis.bestGlowWindows,
+    ...result.glowAnalysis.watchableGlowWindows,
+  ].filter((window): window is NonNullable<typeof window> => Boolean(window));
+  const focused = rows.filter((row) =>
+    windows.some((window) => isTimeWithinRange(row.time, window.start, window.end)),
+  );
+  return takeItems(focused.length > 0 ? focused : rows, limit);
+}
+
+function compactGlowProfessionalHourlyRowForAi(
+  row: NonNullable<ForecastCalculationResult["professionalHourlyData"]>[number],
+  detail: DeepSeekForecastContextDetail,
+) {
+  if (detail === "budget") {
+    return {
+      time: row.time,
+      cloudTotalPercent: row.cloudTotalPercent,
+      cloudHighPercent: row.cloudHighPercent,
+      cloudMidPercent: row.cloudMidPercent,
+      cloudLowPercent: row.cloudLowPercent,
+      relativeHumidityPercent: row.relativeHumidityPercent,
+      dewPointSpreadC: row.dewPointSpreadC,
+      precipitationAmountMm: row.precipitationAmountMm,
+      precipitationProbabilityPercent: row.precipitationProbabilityPercent,
+      visibilityMeters: row.visibilityMeters,
+    };
+  }
+
+  return {
+    time: row.time,
+    timeLabel: row.timeLabel,
+    cloudTotalPercent: row.cloudTotalPercent,
+    cloudHighPercent: row.cloudHighPercent,
+    cloudMidPercent: row.cloudMidPercent,
+    cloudLowPercent: row.cloudLowPercent,
+    cloudLayerBasis: row.cloudLayerBasis,
+    relativeHumidityPercent: row.relativeHumidityPercent,
+    dewPointSpreadC: row.dewPointSpreadC,
+    precipitationAmountMm: row.precipitationAmountMm,
+    precipitationProbabilityPercent: row.precipitationProbabilityPercent,
+    visibilityMeters: row.visibilityMeters,
+    windSpeedMs: row.windSpeedMs,
+  };
+}
+
 function compactProfessionalHourlyTimeBasisForAi(
   basis: ForecastCalculationResult["professionalHourlyDataTimeBasis"],
   detail: DeepSeekForecastContextDetail,
@@ -1066,6 +1640,26 @@ function maxNullableNumber(values: readonly (number | null | undefined)[]): numb
     (value): value is number => typeof value === "number" && Number.isFinite(value),
   );
   return finiteValues.length > 0 ? Math.round(Math.max(...finiteValues) * 10) / 10 : null;
+}
+
+function minNullableNumber(values: readonly (number | null | undefined)[]): number | null {
+  const finiteValues = values.filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  );
+  return finiteValues.length > 0 ? Math.round(Math.min(...finiteValues) * 10) / 10 : null;
+}
+
+function isTimeWithinRange(value: string, start: string, end: string): boolean {
+  const timestamp = Date.parse(value);
+  const startTimestamp = Date.parse(start);
+  const endTimestamp = Date.parse(end);
+  return (
+    Number.isFinite(timestamp) &&
+    Number.isFinite(startTimestamp) &&
+    Number.isFinite(endTimestamp) &&
+    timestamp >= startTimestamp &&
+    timestamp <= endTimestamp
+  );
 }
 
 function compactCloudSeaAnalysisWindow(
@@ -1684,52 +2278,91 @@ function buildForecastExplanationUserPayload(
   input: ForecastExplanationInput,
   detail: DeepSeekForecastContextDetail,
 ) {
+  const targetConfig = forecastAiTargetConfigFor(input.forecastResult.target);
+  const isGlowBudget = input.forecastResult.target === "glow" && detail === "budget";
+  const baseConstraints = [
+    "Use only computedForecastFacts. Do not calculate, invent, or override weather, terrain, astronomy, coordinates, scores, risks, or windows.",
+    "If a fact is missing, say it needs a near-term recheck. Do not fill unknown values.",
+    "Do not infer low/mid/high cloud layers from total cloud.",
+    "If dataStatus.isMock=true, clearly call it demo data.",
+    "Return JSON only when possible; plain structured Chinese text is acceptable if JSON mode fails.",
+  ];
+
   return {
-    task: "Explain deterministic photo-weather forecast facts in concise Simplified Chinese.",
+    task: isGlowBudget
+      ? "Explain deterministic sunrise/sunset glow facts in concise Simplified Chinese."
+      : targetConfig?.task ??
+        "Explain deterministic photo-weather forecast facts in concise Simplified Chinese.",
+    targetCode: targetConfig?.targetCode ?? input.forecastResult.target,
+    targetSubjectZh: targetConfig?.subjectZh ?? null,
     outputMode: "short_practical_json",
-    outputLength: "600-900 Chinese characters total. No Markdown.",
-    requiredKeys: {
-      conclusion: [
-        "titleZh",
-        "summaryZh",
-        "recommendedDayZh",
-        "recommendationLevelZh",
-        "whetherWorthDedicatedTripZh",
-        "oneSentenceDecisionZh",
-      ],
-      bestPlan: [
-        "primaryTargetZh",
-        "bestDateZh",
-        "bestWindowZh",
-        "recommendedArrivalZh",
-        "whyThisWindowZh",
-        "backupPlanZh",
-      ],
-      weatherTrend: [
-        "trendSummaryZh",
-        "temperatureSummaryZh",
-        "rainSummaryZh",
-        "windSummaryZh",
-        "transparencySummaryZh",
-      ],
-      dayByDay: "1 item in budget mode, 1-2 items otherwise",
-      subjectAdvice: [
-        "cloudSeaZh",
-        "sunriseGlowZh",
-        "sunsetGlowZh",
-        "astroMilkyWayZh",
-        "transparencyZh",
-      ],
-      riskAndGear: ["keyRisks", "clothingZh", "gearZh", "safetyZh"],
-      finalAdvice: ["goNoGoZh", "ifAlreadyNearbyZh", "ifDedicatedTripZh", "nextCheckZh"],
-    },
-    constraints: [
-      "Use only computedForecastFacts. Do not calculate, invent, or override weather, terrain, astronomy, coordinates, scores, risks, or windows.",
-      "If a fact is missing, say it needs a near-term recheck. Do not fill unknown values.",
-      "Do not infer low/mid/high cloud layers from total cloud.",
-      "If dataStatus.isMock=true, clearly call it demo data.",
-      "Return JSON only when possible; plain structured Chinese text is acceptable if JSON mode fails.",
-    ],
+    outputLength: isGlowBudget
+      ? "500-700 Chinese chars. No Markdown."
+      : targetConfig?.outputLength ?? "600-900 Chinese characters total. No Markdown.",
+    preferredVisibleSectionsZh: targetConfig?.visibleSectionsZh ?? null,
+    promptPrioritiesZh:
+      isGlowBudget
+        ? ["朝霞、晚霞 priority; best local window; key cloud/rain/terrain/aerosol risks."]
+        : targetConfig?.promptPrioritiesZh ?? null,
+    requiredKeys:
+      input.forecastResult.target === "glow"
+        ? isGlowBudget
+          ? "shared ForecastAiExplanation JSON keys: conclusion, bestPlan, weatherTrend, subjectAdvice, riskAndGear, finalAdvice"
+          : {
+              conclusion: ["titleZh", "summaryZh", "oneSentenceDecisionZh"],
+              bestPlan: [
+                "primaryTargetZh",
+                "bestWindowZh",
+                "recommendedArrivalZh",
+                "whyThisWindowZh",
+                "backupPlanZh",
+              ],
+              weatherTrend: ["trendSummaryZh", "rainSummaryZh", "transparencySummaryZh"],
+              subjectAdvice: ["sunriseGlowZh", "sunsetGlowZh", "transparencyZh"],
+              riskAndGear: ["keyRisks", "gearZh", "safetyZh"],
+              finalAdvice: ["goNoGoZh", "ifDedicatedTripZh", "nextCheckZh"],
+            }
+        : {
+            conclusion: [
+              "titleZh",
+              "summaryZh",
+              "recommendedDayZh",
+              "recommendationLevelZh",
+              "whetherWorthDedicatedTripZh",
+              "oneSentenceDecisionZh",
+            ],
+            bestPlan: [
+              "primaryTargetZh",
+              "bestDateZh",
+              "bestWindowZh",
+              "recommendedArrivalZh",
+              "whyThisWindowZh",
+              "backupPlanZh",
+            ],
+            weatherTrend: [
+              "trendSummaryZh",
+              "temperatureSummaryZh",
+              "rainSummaryZh",
+              "windSummaryZh",
+              "transparencySummaryZh",
+            ],
+            dayByDay: "1 item in budget mode, 1-2 items otherwise",
+            subjectAdvice: [
+              "cloudSeaZh",
+              "sunriseGlowZh",
+              "sunsetGlowZh",
+              "astroMilkyWayZh",
+              "transparencyZh",
+            ],
+            riskAndGear: ["keyRisks", "clothingZh", "gearZh", "safetyZh"],
+            finalAdvice: ["goNoGoZh", "ifAlreadyNearbyZh", "ifDedicatedTripZh", "nextCheckZh"],
+          },
+    constraints: isGlowBudget
+      ? [
+          "Use only computedForecastFacts; missing facts need recheck, never filling.",
+          "Do not change sunrise glow score, sunset glow score, deterministic sunriseGlowScore/sunsetGlowScore, windows, sun times, cloud/aerosol/terrain values, or recommendation; do not recompute or use cloud-sea wording.",
+        ]
+      : [...baseConstraints, ...(targetConfig?.constraints ?? [])],
     userGoal: input.userGoal ?? null,
     computedForecastFacts: buildDeepSeekForecastPromptFacts(input.forecastResult, detail),
   };
@@ -1739,7 +2372,12 @@ function buildDeepSeekForecastPromptFacts(
   result: ForecastCalculationResult,
   detail: DeepSeekForecastContextDetail,
 ) {
+  if (result.target === "glow") {
+    return buildDeepSeekGlowPromptFacts(result, detail);
+  }
+
   const timezone = result.calendarBasis.timezone;
+  const targetConfig = forecastAiTargetConfigFor(result.target);
   const bestWindow = result.bestWindows.find(isExecutableWindow) ?? result.bestWindows[0];
   const bestDay = bestDailySummaryForPlan(result, bestWindow);
   const cloudSeaGuard =
@@ -1751,6 +2389,7 @@ function buildDeepSeekForecastPromptFacts(
   return {
     contextVersion: "forecast-interpretation-lean-v1",
     deterministicOnly: true,
+    targetCode: targetConfig?.targetCode ?? result.target,
     location: {
       name: limitText(result.place.name, 80),
       countryCode: result.place.countryCode,
@@ -1832,6 +2471,58 @@ function buildDeepSeekForecastPromptFacts(
       accessories: takeTextItems(result.clothingGuide.accessories, detail === "budget" ? 1 : 2, 60),
       riskNotes: takeTextItems(result.clothingGuide.riskNotes, detail === "budget" ? 1 : 2, 60),
     },
+    dataStatus: {
+      dataMode: result.weatherDataMode,
+      isMock: result.isMock,
+      noticeZh: limitText(providerNeutralText(result.dataNotice), textLimit),
+    },
+  };
+}
+
+function buildDeepSeekGlowPromptFacts(
+  result: ForecastCalculationResult,
+  detail: DeepSeekForecastContextDetail,
+) {
+  const timezone = result.calendarBasis.timezone;
+  const targetConfig = forecastAiTargetConfigFor(result.target);
+  const bestWindow = result.bestWindows.find(isExecutableWindow) ?? result.bestWindows[0];
+  const textLimit = detail === "budget" ? 60 : 90;
+
+  return {
+    contextVersion: "forecast-interpretation-glow-lean-v1",
+    deterministicOnly: true,
+    targetCode: targetConfig?.targetCode ?? result.target,
+    location: {
+      name: limitText(result.place.name, 80),
+      countryCode: result.place.countryCode,
+      coordinateSystem: result.place.coordinates.system,
+    },
+    target: result.target,
+    horizon: {
+      key: result.horizon,
+      rangeZh: result.calendarBasis.forecastRangeLabel,
+      timezone,
+      generatedAt: result.generatedAt,
+    },
+    overall: {
+      score: result.overallScore,
+      recommendationLevel: result.recommendationLevel,
+      recommendationLabelZh: result.recommendationLabel,
+      summaryZh: limitText(result.summary, textLimit),
+    },
+    keyWindows: bestWindow ? [compactPromptWindow(bestWindow, timezone, textLimit)] : [],
+    keyRisks: compactRiskFlags(result.riskFlags, detail === "budget" ? 1 : 2).map((risk) => ({
+      label: risk.label,
+      level: risk.level,
+      description: limitText(risk.description, textLimit),
+    })),
+    keyReasons: takeTextItems(result.keyReasons, detail === "budget" ? 1 : 2, textLimit),
+    deterministicSuggestions: takeTextItems(
+      result.photographyAdvice,
+      detail === "budget" ? 1 : 2,
+      textLimit,
+    ),
+    glow: buildGlowAiExplainPayload(result, detail),
     dataStatus: {
       dataMode: result.weatherDataMode,
       isMock: result.isMock,
@@ -2058,7 +2749,17 @@ function _buildLegacyForecastExplanationUserPayload(
   };
 }
 
-function buildJsonOnlySystemPrompt(): string {
+function buildJsonOnlySystemPrompt(
+  target?: ForecastCalculationResult["target"],
+  detail?: DeepSeekForecastContextDetail,
+): string {
+  if (target === "glow" && detail === "budget") {
+    return [
+      "Explain only deterministic forecast facts. Do not recompute or invent weather, sun times, cloud, aerosol, terrain, scores, windows, or recommendation.",
+      "Return one JSON object in Simplified Chinese. No Markdown.",
+    ].join("\n");
+  }
+
   return [
     "You are only allowed to explain and organize deterministic forecast results. Never recompute or invent weather, cloud, cloud-sea, terrain, astronomy, score, recommendation, risk, or window data.",
     "Return concise Simplified Chinese. Prefer one JSON object matching the requested schema; if exact JSON is not possible, return concise structured Chinese text without extra commentary.",
@@ -2088,11 +2789,12 @@ export function buildDeepSeekForecastExplanationRequest(
   const responseFormat = normalizeResponseFormat(options.responseFormat);
   const jsonOutputEnabled = options.jsonOutputEnabled ?? responseFormat === "json_object";
   const promptMaxChars = normalizePromptMaxChars(options.promptMaxChars);
-  let userContent = JSON.stringify(buildForecastExplanationUserPayload(input, "minimal"));
+  let promptDetail: DeepSeekForecastContextDetail = "minimal";
+  let userContent = JSON.stringify(buildForecastExplanationUserPayload(input, promptDetail));
   let messages: readonly DeepSeekChatMessage[] = [
     {
       role: "system",
-      content: buildJsonOnlySystemPrompt(),
+      content: buildJsonOnlySystemPrompt(input.forecastResult.target, promptDetail),
     },
     {
       role: "user",
@@ -2100,11 +2802,12 @@ export function buildDeepSeekForecastExplanationRequest(
     },
   ];
   if (buildPromptSizeChars(messages) > targetInterpretationPromptChars) {
-    userContent = JSON.stringify(buildForecastExplanationUserPayload(input, "budget"));
+    promptDetail = "budget";
+    userContent = JSON.stringify(buildForecastExplanationUserPayload(input, promptDetail));
     messages = [
       {
         role: "system",
-        content: buildJsonOnlySystemPrompt(),
+        content: buildJsonOnlySystemPrompt(input.forecastResult.target, promptDetail),
       },
       {
         role: "user",

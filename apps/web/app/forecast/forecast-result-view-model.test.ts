@@ -1,4 +1,6 @@
 import * as React from "react";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -6289,10 +6291,14 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("天气数据：演示天气数据");
       expect(html).toContain("地形数据：演示数据");
       expect(html).toContain("天文数据：本地算法计算");
+      expect(html).toContain('data-glow-section="GlowAiInterpretation"');
+      expect(html).toContain('data-ai-interpretation-target="glow"');
+      expect(html).toContain("生成智能解读");
       expect(html).toContain("GlowResultPage");
       expect(html).toContain("GlowCoreDecision");
       expect(html).toContain("GlowDailyTrend");
       expect(html).toContain("GlowDecisionGrid");
+      expectMarkersInOrder(html, ["GlowFinalDecisionSection", "GlowAiInterpretation"]);
       expect(html).toContain("ProfessionalHourlyCloudSection");
       expect(html).toContain('data-professional-hourly-shared="true"');
       expect(html).toContain('data-professional-hourly-target="glow"');
@@ -6314,6 +6320,41 @@ describe("forecast result target-aware view model", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("uses the exact shared intelligent interpretation component for cloud-sea and glow", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("./forecast-result-client.tsx", import.meta.url)),
+      "utf8",
+    );
+    const sharedComponentSource = source.slice(
+      source.indexOf("export function ForecastAiInterpretationSection"),
+      source.indexOf("export function ForecastResultClient"),
+    );
+    const hookSource = source.slice(
+      source.indexOf("function useForecastAiInterpretation"),
+      source.indexOf("export function ForecastAiInterpretationSection"),
+    );
+    const cloudSeaPageSource = source.slice(
+      source.indexOf("export function CloudSeaResultPage"),
+      source.indexOf("export function GlowResultPage"),
+    );
+    const glowPageSource = source.slice(
+      source.indexOf("export function GlowResultPage"),
+      source.indexOf("export function AstroResultPage"),
+    );
+    const sharedSectionCall = "<ForecastAiInterpretationSection query={query} result={result} />";
+
+    expect(sharedComponentSource).toContain("AiExplanationPanel");
+    expect(hookSource).toContain("/forecast/ai-explain");
+    expect(hookSource).toContain("normalizeAiExplainResponse");
+    expect(cloudSeaPageSource).toContain(sharedSectionCall);
+    expect(glowPageSource).toContain(sharedSectionCall);
+    expect(cloudSeaPageSource).toContain('data-cloud-sea-section="CloudSeaAiInterpretation"');
+    expect(glowPageSource).toContain('data-glow-section="GlowAiInterpretation"');
+    expect(glowPageSource).not.toContain("GlowAiInterpretationSection");
+    expect(glowPageSource).not.toContain("useGlowAiInterpretation");
+    expect(glowPageSource).not.toContain("/forecast/glow-ai");
   });
 
   it("uses the same shared professional hourly section for cloud-sea and glow", () => {
