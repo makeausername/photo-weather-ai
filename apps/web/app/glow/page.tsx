@@ -70,16 +70,12 @@ export default function GlowPage({ searchParams }: GlowPageProps) {
             defaultHorizon="72h"
             fixedTarget="glow"
             ctaLabel="查看朝霞晚霞判断"
+            selectedLocationDetailMode="compact"
+            showSelectedLocationActions
+            showSelectedLocationHorizon
+            enableCurrentLocation
+            currentLocationPrivacyHint="浏览器定位仅用于本次朝霞晚霞判断，不会公开显示。"
           />
-          <Card className="border-warning p-4 shadow-sm">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="warning">数据说明</Badge>
-              <p className="text-sm font-bold text-card-foreground">当前为体验模式</p>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">
-              当前为体验模式，结果会使用演示天气数据生成；正式天气数据源启用后将显示对应来源与更新时间。
-            </p>
-          </Card>
         </div>
 
         <main className="grid gap-5">

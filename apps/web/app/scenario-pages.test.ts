@@ -190,9 +190,10 @@ describe("scenario module pages", () => {
     expect(guideHtml).not.toContain("overflow-x");
   });
 
-  it("reuses the shared current-location input on homepage and cloud sea", () => {
+  it("reuses the shared current-location input on homepage, cloud sea, and glow", () => {
     const homepageHtml = renderToStaticMarkup(React.createElement(HomepageSearchPanel));
     const cloudSeaHtml = renderToStaticMarkup(React.createElement(CloudSeaPage));
+    const glowHtml = renderToStaticMarkup(React.createElement(GlowPage));
     const sharedInputHtml = renderToStaticMarkup(
       React.createElement(LocationSearchInput, {
         value: "",
@@ -203,7 +204,7 @@ describe("scenario module pages", () => {
       }),
     );
 
-    for (const html of [homepageHtml, cloudSeaHtml, sharedInputHtml]) {
+    for (const html of [homepageHtml, cloudSeaHtml, glowHtml, sharedInputHtml]) {
       expect(html).toContain('data-location-search-input="true"');
       expect(html).toContain('data-current-location-input-wrapper="true"');
       expect(html).toContain('data-current-location-button="true"');
@@ -229,6 +230,27 @@ describe("scenario module pages", () => {
     expect(html).toContain("浏览器定位仅用于本次云海判断，不会公开显示。");
     expect(hasExactButton(html, "定位")).toBe(false);
     expect(hasExactButton(html, "定位中")).toBe(false);
+    expect(html).not.toMatch(/api[_-]?key|secret|AMAP_|key=/i);
+  });
+
+  it("renders the glow locator icon inside the input without development copy", () => {
+    const html = renderToStaticMarkup(React.createElement(GlowPage));
+    const wrapperIndex = html.indexOf('data-current-location-input-wrapper="true"');
+    const inputIndex = html.indexOf('aria-label="目的地"', wrapperIndex);
+    const buttonIndex = html.indexOf('data-current-location-button="true"', wrapperIndex);
+
+    expect(wrapperIndex).toBeGreaterThanOrEqual(0);
+    expect(inputIndex).toBeGreaterThan(wrapperIndex);
+    expect(buttonIndex).toBeGreaterThan(inputIndex);
+    expect(html).toContain("浏览器定位仅用于本次朝霞晚霞判断，不会公开显示。");
+    expect(html).toContain("pr-12");
+    expect(html).toContain("absolute right-1.5 top-1/2");
+    expect(html).toContain("h-8 w-8");
+    expect(hasExactButton(html, "定位")).toBe(false);
+    expect(hasExactButton(html, "定位中")).toBe(false);
+    expect(html).not.toContain("数据说明");
+    expect(html).not.toContain("当前为体验模式");
+    expect(html).not.toMatch(/\bmock\b|\bdemo\b|演示数据|测试数据|开发模式|开发环境|provider|debug/i);
     expect(html).not.toMatch(/api[_-]?key|secret|AMAP_|key=/i);
   });
 
@@ -338,7 +360,7 @@ describe("scenario module pages", () => {
     expect(url.searchParams.get("photoSpotId")).toBeNull();
   });
 
-  it("keeps locator button styling out of cloud sea page-specific files", () => {
+  it("keeps locator button styling and geolocation logic out of scenario page files", () => {
     const scenarioSource = readFileSync(
       fileURLToPath(new URL("../components/scenario-module-page.tsx", import.meta.url)),
       "utf8",
@@ -347,11 +369,20 @@ describe("scenario module pages", () => {
       fileURLToPath(new URL("./cloud-sea/page.tsx", import.meta.url)),
       "utf8",
     );
+    const glowPageSource = readFileSync(
+      fileURLToPath(new URL("./glow/page.tsx", import.meta.url)),
+      "utf8",
+    );
 
-    expect(scenarioSource).not.toContain("data-current-location-button");
-    expect(scenarioSource).not.toContain("absolute right-1.5 top-1/2");
-    expect(cloudSeaPageSource).not.toContain("data-current-location-button");
-    expect(cloudSeaPageSource).not.toContain("absolute right-1.5 top-1/2");
+    for (const source of [scenarioSource, cloudSeaPageSource, glowPageSource]) {
+      expect(source).not.toContain("data-current-location-button");
+      expect(source).not.toContain("absolute right-1.5 top-1/2");
+      expect(source).not.toContain("navigator.geolocation");
+      expect(source).not.toContain("reverse-geocode");
+      expect(source).not.toContain("requestBrowserCurrentCoordinates");
+      expect(source).not.toContain("selectedLocationFromBrowserGeolocation");
+    }
+    expect(glowPageSource).toContain("enableCurrentLocation");
   });
 
   it("cloud sea page reads General deep-link query params and preselects context", () => {
@@ -396,8 +427,13 @@ describe("scenario module pages", () => {
     expect(html).toContain("地点搜索与机位选择");
     expect(html).toContain("常用机位");
     expect(html).toContain("预报范围选择");
+    expect(html).toContain("未来24小时");
+    expect(html).toContain("未来48小时");
+    expect(html).toContain("未来72小时");
+    expect(html).toContain("未来7天");
     expect(html).toContain("分析题材");
     expect(html).toContain("查看朝霞晚霞判断");
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>查看朝霞晚霞判断<\/button>/);
     expect(html).toContain("朝霞晚霞判断需要看什么");
     expect(html).toContain("日出日落时间");
     expect(html).toContain("中高云条件");
@@ -405,7 +441,58 @@ describe("scenario module pages", () => {
     expect(html).toContain("能见度与通透度");
     expect(html).toContain("地形遮挡");
     expect(html).toContain("风与降水");
-    expect(html).toContain("当前为体验模式，结果会使用演示天气数据生成");
+    expect(html).toContain('data-current-location-button="true"');
+    expect(html).toContain("浏览器定位仅用于本次朝霞晚霞判断，不会公开显示。");
+    expect(html).not.toContain("数据说明");
+    expect(html).not.toContain("当前为体验模式");
+    expect(html).not.toContain("演示天气数据");
+    expect(html).not.toContain("体验模式");
+    expect(html).not.toMatch(/\bmock\b|\bdemo\b|测试数据|开发模式|开发环境|provider|debug/i);
+  });
+
+  it("keeps the glow entry layout responsive without fixed wide columns", () => {
+    const html = renderToStaticMarkup(React.createElement(GlowPage));
+
+    expect(html).toContain("min-[900px]:grid-cols-[clamp(320px,34vw,410px)_minmax(0,1fr)]");
+    expect(html).toContain("min-[1280px]:grid-cols-[clamp(340px,28vw,430px)_minmax(0,1fr)]");
+    expect(html).toContain("relative min-w-0 w-full");
+    expect(html).toContain("pr-12");
+    expect(html).toContain("flex flex-wrap gap-2");
+    expect(html).toContain("sm:grid-cols-2 xl:grid-cols-3");
+  });
+
+  it("builds glow current-location requests with WGS84 coordinates and no spot id", () => {
+    const currentLocation = selectedLocationFromBrowserGeolocation({
+      latitudeWgs84: 31.2304,
+      longitudeWgs84: 121.4737,
+    });
+    const payload = buildForecastRequestPayload(currentLocation, "72h", "glow", {
+      timezone: "Asia/Shanghai",
+    });
+    const url = new URL(
+      buildForecastUrlFromSelectedLocation(currentLocation, "72h", "glow", {
+        timezone: "Asia/Shanghai",
+      }),
+      "http://localhost:3000",
+    );
+
+    expect(payload).toMatchObject({
+      name: "当前位置",
+      source: "browser_geolocation",
+      coordinateSource: "browser_geolocation",
+      latitudeWgs84: 31.2304,
+      longitudeWgs84: 121.4737,
+      horizon: "72h",
+      target: "glow",
+      timezone: "Asia/Shanghai",
+    });
+    expect(payload.photoSpotId).toBeUndefined();
+    expect(url.searchParams.get("target")).toBe("glow");
+    expect(url.searchParams.get("coordinateSource")).toBe("browser_geolocation");
+    expect(url.searchParams.get("latWgs84")).toBe("31.2304");
+    expect(url.searchParams.get("lngWgs84")).toBe("121.4737");
+    expect(url.searchParams.get("timezone")).toBe("Asia/Shanghai");
+    expect(url.searchParams.get("photoSpotId")).toBeNull();
   });
 
   it("glow page reads General deep-link query params and preselects context", () => {
