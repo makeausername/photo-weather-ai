@@ -1,6 +1,7 @@
 import type {
   Coordinates,
   ForecastWeatherSourceSummary,
+  NormalizedAerosolReference,
   NormalizedCurrentWeather,
   NormalizedDailyWeather,
   NormalizedHourlyWeather,
@@ -86,10 +87,11 @@ export type WeatherAlert = {
 export type AirQuality = {
   readonly provider: string;
   readonly observedAt: string;
-  readonly aqi: number;
+  readonly aqi?: number | null;
   readonly category: "excellent" | "good" | "light" | "moderate" | "heavy" | "severe";
-  readonly pm25: number;
-  readonly pm10: number;
+  readonly pm25?: number | null;
+  readonly pm10?: number | null;
+  readonly hourly?: readonly NormalizedAerosolReference[];
 };
 
 export type WeatherDataBundle = {

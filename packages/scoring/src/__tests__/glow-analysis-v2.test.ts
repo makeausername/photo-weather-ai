@@ -430,4 +430,77 @@ describe("glow analysis v2", () => {
     expect(analysis.bestGlowWindow?.type).toMatch(/^sunset_|afterglow$/);
     expect(analysis.sunsetGlowScore).toBeGreaterThan(analysis.sunriseGlowScore);
   });
+
+  it("keeps missing aerosol unavailable instead of treating it as clean air", () => {
+    const input = patchAllWeather(favorableGlowInput(), {
+      aerosolOpticalDepth550: undefined,
+      pm25: undefined,
+      pm10: undefined,
+      dust: undefined,
+      aerosolAvailability: undefined,
+    });
+
+    const analysis = calculateGlowAnalysis(input);
+
+    expect(analysis.aerosolAssessment.availability).toBe("unavailable");
+    expect(analysis.aerosolAssessment.scoreImpact).toBe(0);
+    expect(analysis.bestGlowWindows.some((window) => window.aerosolScore === 0)).toBe(false);
+  });
+
+  it("penalizes excessive aerosol and particulate without making moderate scatter negative", () => {
+    const moderate = patchAllWeather(favorableGlowInput(), {
+      aerosolOpticalDepth550: 0.12,
+      pm25: 16,
+      pm10: 30,
+      dust: 8,
+      aerosolAvailability: "available",
+      aerosolConfidence: "high",
+    });
+    const hazy = patchAllWeather(favorableGlowInput(), {
+      aerosolOpticalDepth550: 0.72,
+      pm25: 88,
+      pm10: 180,
+      dust: 130,
+      aerosolAvailability: "available",
+      aerosolConfidence: "high",
+    });
+
+    const moderateAnalysis = calculateGlowAnalysis(moderate);
+    const hazyAnalysis = calculateGlowAnalysis(hazy);
+
+    expect(moderateAnalysis.aerosolAssessment.state).toBe("favorable_scatter");
+    expect(moderateAnalysis.aerosolAssessment.scoreImpact).toBeGreaterThanOrEqual(0);
+    expect(hazyAnalysis.aerosolAssessment.state).toBe("dusty");
+    expect(hazyAnalysis.aerosolAssessment.scoreImpact).toBeLessThan(0);
+    expect(hazyAnalysis.practicalGlowScore).toBeLessThan(moderateAnalysis.practicalGlowScore);
+  });
+
+  it("marks terrain obstruction unavailable when only single-point terrain evidence exists", () => {
+    const input = withHorizon(
+      favorableGlowInput(),
+      {
+        sunriseHorizonAngle: 4,
+        sunsetHorizonAngle: 4,
+        blockedDirectionsZh: [],
+        obstructionNoteZh: "",
+      },
+      {
+        localReliefMeters: null,
+        elevationDiff5km: null,
+        minElevation1km: null,
+        minElevation3km: null,
+        maxElevation5km: null,
+      },
+    );
+
+    const analysis = calculateGlowAnalysis(input);
+
+    expect(analysis.terrainObstructionAssessments.length).toBeGreaterThan(0);
+    expect(analysis.terrainObstructionAssessments.every((item) => !item.dataAvailable)).toBe(true);
+    expect(
+      analysis.terrainObstructionAssessments.every(
+        (item) => item.obstructionStatus === "unavailable",
+      ),
+    ).toBe(true);
+  });
 });

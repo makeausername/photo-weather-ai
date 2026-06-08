@@ -86,6 +86,20 @@ const fieldConfidenceKeys = [
   "pressure",
 ] as const satisfies readonly (keyof WeatherConfidenceByField)[];
 
+const aerosolFieldKeys = [
+  "aerosolOpticalDepth550",
+  "pm25",
+  "pm10",
+  "dust",
+  "aerosolObservedAt",
+  "aerosolValidTime",
+  "aerosolSourceResolution",
+  "aerosolSourceResolutionHours",
+  "aerosolAvailability",
+  "aerosolConfidence",
+  "aerosolSourceNoteZh",
+] as const satisfies readonly (keyof NormalizedHourlyWeather)[];
+
 export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResult {
   const usableBundles = input.providerBundles.filter((bundle) => bundle.hourly.length > 0);
   if (usableBundles.length === 0) {
@@ -381,6 +395,28 @@ function fuseCurrent(
     cloudLow: primary?.cloudLow ?? hour?.cloudLow ?? null,
     cloudMid: primary?.cloudMid ?? hour?.cloudMid ?? null,
     cloudHigh: primary?.cloudHigh ?? hour?.cloudHigh ?? null,
+    aerosolOpticalDepth550:
+      primary?.aerosolOpticalDepth550 ??
+      hour?.aerosolOpticalDepth550 ??
+      primary?.airQuality?.aerosolOpticalDepth550 ??
+      null,
+    pm25: primary?.pm25 ?? hour?.pm25 ?? primary?.airQuality?.pm25 ?? null,
+    pm10: primary?.pm10 ?? hour?.pm10 ?? primary?.airQuality?.pm10 ?? null,
+    dust: primary?.dust ?? hour?.dust ?? primary?.airQuality?.dust ?? null,
+    aerosolObservedAt: primary?.aerosolObservedAt ?? hour?.aerosolObservedAt,
+    aerosolValidTime:
+      primary?.aerosolValidTime ?? hour?.aerosolValidTime ?? primary?.airQuality?.aerosolValidTime,
+    aerosolSourceResolution:
+      primary?.aerosolSourceResolution ??
+      hour?.aerosolSourceResolution ??
+      primary?.airQuality?.aerosolSourceResolution,
+    aerosolSourceResolutionHours:
+      primary?.aerosolSourceResolutionHours ?? hour?.aerosolSourceResolutionHours,
+    aerosolAvailability:
+      primary?.aerosolAvailability ?? hour?.aerosolAvailability ?? primary?.airQuality?.aerosolAvailability,
+    aerosolConfidence:
+      primary?.aerosolConfidence ?? hour?.aerosolConfidence ?? primary?.airQuality?.aerosolConfidence,
+    aerosolSourceNoteZh: primary?.aerosolSourceNoteZh ?? hour?.aerosolSourceNoteZh,
     precipitation: primary?.precipitation ?? hour?.precipitation ?? null,
     precipitationAmountMm:
       primary?.precipitationAmountMm ??
@@ -427,7 +463,7 @@ function fuseCurrent(
     terrainAdjustmentReason: primary?.terrainAdjustmentReason ?? hour?.terrainAdjustmentReason,
     weatherTextZh: primary?.weatherTextZh ?? hour?.weatherTextZh ?? null,
     weatherCode: primary?.weatherCode ?? hour?.weatherCode ?? null,
-    airQuality: primary?.airQuality ?? null,
+    airQuality: primary?.airQuality ?? currentAirQualityFromHour(hour),
     missingFields: [
       ...new Set([...(primary?.missingFields ?? []), ...(hour?.missingFields ?? [])]),
     ],
@@ -516,6 +552,16 @@ function fuseHourlyAt(
     }
   }
 
+  const aerosolFields = selectAerosolFields(candidates, primaryHour);
+  if (aerosolFields) {
+    for (const key of aerosolFieldKeys) {
+      if (aerosolFields[key] !== undefined) {
+        next[key] = aerosolFields[key];
+        missingFields.delete(key);
+      }
+    }
+  }
+
   return {
     ...(next as NormalizedHourlyWeather),
     providerCode: primaryBundle.providerCode,
@@ -524,6 +570,64 @@ function fuseHourlyAt(
     missingFields: [...missingFields],
     estimatedFields: estimatedFields.size > 0 ? [...estimatedFields] : undefined,
     fieldMetadata,
+  };
+}
+
+function selectAerosolFields(
+  candidates: readonly HourlyCandidate[],
+  primaryHour: NormalizedHourlyWeather,
+): Partial<NormalizedHourlyWeather> | undefined {
+  const source = hasAerosolSignal(primaryHour)
+    ? primaryHour
+    : candidates.find((candidate) => hasAerosolSignal(candidate.hour))?.hour;
+  if (!source) {
+    return undefined;
+  }
+
+  return {
+    aerosolOpticalDepth550: source.aerosolOpticalDepth550,
+    pm25: source.pm25,
+    pm10: source.pm10,
+    dust: source.dust,
+    aerosolObservedAt: source.aerosolObservedAt,
+    aerosolValidTime: source.aerosolValidTime,
+    aerosolSourceResolution: source.aerosolSourceResolution,
+    aerosolSourceResolutionHours: source.aerosolSourceResolutionHours,
+    aerosolAvailability: source.aerosolAvailability,
+    aerosolConfidence: source.aerosolConfidence,
+    aerosolSourceNoteZh: source.aerosolSourceNoteZh,
+  };
+}
+
+function hasAerosolSignal(hour: NormalizedHourlyWeather | undefined): boolean {
+  if (!hour || hour.aerosolAvailability === "unavailable") {
+    return false;
+  }
+
+  return (
+    hasUsableNumber(hour.aerosolOpticalDepth550) ||
+    hasUsableNumber(hour.pm25) ||
+    hasUsableNumber(hour.pm10) ||
+    hasUsableNumber(hour.dust)
+  );
+}
+
+function currentAirQualityFromHour(
+  hour: NormalizedHourlyWeather | undefined,
+): NormalizedCurrentWeather["airQuality"] {
+  if (!hasAerosolSignal(hour)) {
+    return null;
+  }
+
+  return {
+    pm25: hour?.pm25 ?? undefined,
+    pm10: hour?.pm10 ?? undefined,
+    aerosolOpticalDepth550: hour?.aerosolOpticalDepth550 ?? null,
+    dust: hour?.dust ?? null,
+    aerosolValidTime: hour?.aerosolValidTime,
+    aerosolSourceResolution: hour?.aerosolSourceResolution,
+    aerosolAvailability: hour?.aerosolAvailability,
+    aerosolConfidence: hour?.aerosolConfidence,
   };
 }
 

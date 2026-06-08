@@ -39,11 +39,12 @@ export class WeatherDataService {
         getNowInTimezone(input.timezone ?? defaultTimezone),
         input.timezone ?? defaultTimezone,
       );
-    const missingFields = collectWeatherFields(hourly, daily, "missingFields");
+    const hourlyWithAirQuality = attachAirQualityToHourly(hourly, airQuality);
+    const missingFields = collectWeatherFields(hourlyWithAirQuality, daily, "missingFields");
     const sourceSummaryMetadata = getProviderSourceSummaryMetadata(this.provider, input);
     const terrainMetadata = buildProviderTerrainMetadata({
       providerCode: this.provider.source.providerCode,
-      hourly,
+      hourly: hourlyWithAirQuality,
       daily,
       selectedSpotElevationMeters: input.elevationMeters,
     });
@@ -53,13 +54,13 @@ export class WeatherDataService {
       current,
       currentWeather: normalizeCurrentWeather({
         current,
-        firstHour: hourly[0],
+        firstHour: hourlyWithAirQuality[0],
         providerCode: this.provider.source.providerCode,
         providerLabelZh: this.provider.source.providerLabelZh,
         dataMode: this.provider.source.mode,
         airQuality,
       }),
-      hourly,
+      hourly: hourlyWithAirQuality,
       daily,
       alerts,
       airQuality,
@@ -71,7 +72,7 @@ export class WeatherDataService {
       forecastEnd: input.forecastEnd,
       noticeZh: `天气数据：${this.provider.source.providerLabelZh}`,
       missingFields,
-      estimatedFields: collectWeatherFields(hourly, daily, "estimatedFields"),
+      estimatedFields: collectWeatherFields(hourlyWithAirQuality, daily, "estimatedFields"),
       terrainMetadata,
       sourceSummaries: [
         {
@@ -80,14 +81,14 @@ export class WeatherDataService {
             providerLabelZh: this.provider.source.providerLabelZh,
             dataMode: this.provider.source.mode,
             generatedAt: generated,
-            availableFields: collectAvailableFields(hourly),
+            availableFields: collectAvailableFields(hourlyWithAirQuality),
             missingFields,
           }),
           ...sourceSummaryMetadata,
           availableFields:
             sourceSummaryMetadata?.availableFields ??
             sourceSummaryMetadata?.extractedFields ??
-            collectAvailableFields(hourly),
+            collectAvailableFields(hourlyWithAirQuality),
           missingFields: sourceSummaryMetadata?.missingFields ?? missingFields,
           messageZh:
             sourceSummaryMetadata?.messageZh ??
@@ -564,6 +565,7 @@ function normalizeCurrentWeather(input: {
   const missingFields = new Set(input.firstHour?.missingFields ?? []);
   const estimatedFields = new Set(input.firstHour?.estimatedFields ?? []);
   const dewPoint = input.firstHour?.dewPoint ?? null;
+  const airQuality = normalizeCurrentAirQuality(input.airQuality, input.firstHour);
   const dewPointSpread =
     input.firstHour?.dewPointSpread ??
     (dewPoint === null
@@ -599,6 +601,17 @@ function normalizeCurrentWeather(input: {
     cloudLow: input.firstHour?.cloudLow ?? null,
     cloudMid: input.firstHour?.cloudMid ?? null,
     cloudHigh: input.firstHour?.cloudHigh ?? null,
+    aerosolOpticalDepth550: input.firstHour?.aerosolOpticalDepth550 ?? null,
+    pm25: input.firstHour?.pm25 ?? airQuality?.pm25 ?? null,
+    pm10: input.firstHour?.pm10 ?? airQuality?.pm10 ?? null,
+    dust: input.firstHour?.dust ?? null,
+    aerosolObservedAt: input.firstHour?.aerosolObservedAt,
+    aerosolValidTime: input.firstHour?.aerosolValidTime,
+    aerosolSourceResolution: input.firstHour?.aerosolSourceResolution,
+    aerosolSourceResolutionHours: input.firstHour?.aerosolSourceResolutionHours,
+    aerosolAvailability: input.firstHour?.aerosolAvailability,
+    aerosolConfidence: input.firstHour?.aerosolConfidence,
+    aerosolSourceNoteZh: input.firstHour?.aerosolSourceNoteZh,
     precipitation: input.firstHour?.precipitation ?? null,
     precipitationAmountMm:
       input.firstHour?.precipitationAmountMm ?? input.firstHour?.precipitation ?? null,
@@ -623,17 +636,118 @@ function normalizeCurrentWeather(input: {
     terrainAdjustmentReason: input.firstHour?.terrainAdjustmentReason,
     weatherTextZh: input.current.summary,
     weatherCode: input.firstHour?.weatherCode ?? null,
-    airQuality: input.airQuality
-      ? {
-          aqi: input.airQuality.aqi,
-          category: input.airQuality.category,
-          pm25: input.airQuality.pm25,
-          pm10: input.airQuality.pm10,
-        }
-      : null,
+    airQuality,
     missingFields: [...missingFields],
     estimatedFields: [...estimatedFields],
     fieldMetadata: input.firstHour?.fieldMetadata,
+  };
+}
+
+export function attachAirQualityToHourly(
+  hourly: readonly NormalizedHourlyWeather[],
+  airQuality: WeatherDataBundle["airQuality"] | undefined,
+): readonly NormalizedHourlyWeather[] {
+  const references = (airQuality?.hourly ?? []).filter(
+    (reference) => reference.aerosolAvailability !== "unavailable",
+  );
+  if (references.length === 0) {
+    return hourly;
+  }
+
+  return hourly.map((hour) => {
+    const reference = selectAerosolReferenceForHour(hour.time, references);
+    if (!reference) {
+      return hour;
+    }
+
+    return {
+      ...hour,
+      aerosolOpticalDepth550: reference.aerosolOpticalDepth550,
+      pm25: reference.pm25,
+      pm10: reference.pm10,
+      dust: reference.dust,
+      aerosolObservedAt: reference.aerosolObservedAt,
+      aerosolValidTime: reference.aerosolValidTime,
+      aerosolSourceResolution: reference.aerosolSourceResolution,
+      aerosolSourceResolutionHours: reference.aerosolSourceResolutionHours,
+      aerosolAvailability: reference.aerosolAvailability,
+      aerosolConfidence: reference.aerosolConfidence,
+      aerosolSourceNoteZh: reference.aerosolSourceNoteZh,
+    };
+  });
+}
+
+function selectAerosolReferenceForHour(
+  hourTime: string,
+  references: NonNullable<NonNullable<WeatherDataBundle["airQuality"]>["hourly"]>,
+) {
+  const hourMs = Date.parse(hourTime);
+  if (!Number.isFinite(hourMs)) {
+    return references.find((reference) => reference.aerosolValidTime === hourTime);
+  }
+
+  const candidates = references
+    .map((reference) => {
+      const validTime = reference.aerosolValidTime ?? reference.aerosolObservedAt;
+      const validMs = validTime ? Date.parse(validTime) : Number.NaN;
+      const resolutionMs =
+        (reference.aerosolSourceResolutionHours ?? 1) * 60 * 60 * 1000;
+      const maxDistanceMs = Math.max(60 * 60 * 1000, resolutionMs / 2 + 30 * 60 * 1000);
+
+      return {
+        reference,
+        distanceMs: Math.abs(validMs - hourMs),
+        maxDistanceMs,
+      };
+    })
+    .filter((candidate) => Number.isFinite(candidate.distanceMs))
+    .sort((left, right) => left.distanceMs - right.distanceMs);
+
+  const nearest = candidates[0];
+  return nearest && nearest.distanceMs <= nearest.maxDistanceMs ? nearest.reference : undefined;
+}
+
+function normalizeCurrentAirQuality(
+  airQuality: WeatherDataBundle["airQuality"] | undefined,
+  firstHour: NormalizedHourlyWeather | undefined,
+): NormalizedCurrentWeather["airQuality"] {
+  const reference =
+    firstHour?.aerosolAvailability && firstHour.aerosolAvailability !== "unavailable"
+      ? firstHour
+      : undefined;
+  const hasEnvelopeSignal =
+    airQuality?.aqi !== null && airQuality?.aqi !== undefined
+      ? true
+      : airQuality?.pm25 !== null && airQuality?.pm25 !== undefined
+        ? true
+        : airQuality?.pm10 !== null && airQuality?.pm10 !== undefined;
+  const hasReferenceSignal =
+    reference?.aerosolOpticalDepth550 !== null &&
+    reference?.aerosolOpticalDepth550 !== undefined
+      ? true
+      : reference?.pm25 !== null && reference?.pm25 !== undefined
+        ? true
+        : reference?.pm10 !== null && reference?.pm10 !== undefined
+          ? true
+          : reference?.dust !== null && reference?.dust !== undefined;
+  if (
+    !hasEnvelopeSignal &&
+    !hasReferenceSignal
+  ) {
+    return null;
+  }
+
+  return {
+    aqi: airQuality?.aqi ?? undefined,
+    category: airQuality?.category,
+    pm25: reference?.pm25 ?? airQuality?.pm25 ?? undefined,
+    pm10: reference?.pm10 ?? airQuality?.pm10 ?? undefined,
+    aerosolOpticalDepth550: reference?.aerosolOpticalDepth550 ?? null,
+    dust: reference?.dust ?? null,
+    aerosolValidTime: reference?.aerosolValidTime,
+    aerosolSourceResolution: reference?.aerosolSourceResolution,
+    aerosolAvailability: reference?.aerosolAvailability,
+    aerosolConfidence: reference?.aerosolConfidence,
   };
 }
 

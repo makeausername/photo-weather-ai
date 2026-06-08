@@ -99,14 +99,24 @@ export type CloudSeaProfessionalHourlyWindow = {
   readonly label?: string;
 };
 
-export type CloudSeaProfessionalHourlyDisplayData = {
+export type ProfessionalHourlyRowAnnotation = {
+  readonly rowTime: string;
+  readonly label: string;
+  readonly detail: string;
+  readonly tone?: "default" | "success" | "warning" | "danger" | "info";
+};
+
+export type ProfessionalHourlyDisplayData = {
   readonly rows: readonly ProfessionalHourlyDataPoint[];
   readonly timeBasis: ProfessionalHourlyDataTimeBasis | null;
   readonly cloudLayerCompleteness: CloudLayerCompletenessContext;
   readonly cloudBasisConsistency: CloudSeaCloudBasisConsistencyContext;
   readonly focusWindows: readonly CloudSeaProfessionalHourlyWindow[];
   readonly riskWindows: readonly CloudSeaProfessionalHourlyWindow[];
+  readonly rowAnnotations?: readonly ProfessionalHourlyRowAnnotation[];
 };
+
+export type CloudSeaProfessionalHourlyDisplayData = ProfessionalHourlyDisplayData;
 
 export type CloudSeaAiInterpretationDisplayPayload = {
   readonly finalRecommendation: {
@@ -279,26 +289,36 @@ export type BuildCloudSeaDisplayDataInput = {
   readonly riskReview: readonly ForecastResultSectionItem[];
 };
 
+export type BuildProfessionalHourlyDisplayDataInput = {
+  readonly result: ForecastCalculationResult;
+  readonly focusWindows?: readonly CloudSeaProfessionalHourlyWindow[];
+  readonly riskWindows?: readonly CloudSeaProfessionalHourlyWindow[];
+  readonly rowAnnotations?: readonly ProfessionalHourlyRowAnnotation[];
+};
+
+type ProfessionalHourlyDisplayBundle = {
+  readonly rows: readonly ProfessionalHourlyDataPoint[];
+  readonly timeBasis: ProfessionalHourlyDataTimeBasis | null;
+  readonly horizonWindow: ForecastWindowAnchor;
+  readonly displayData: ProfessionalHourlyDisplayData;
+};
+
 export function buildCloudSeaDisplayData(
   input: BuildCloudSeaDisplayDataInput,
 ): CloudSeaDisplayData {
-  const rows = input.result.professionalHourlyData ?? [];
-  const timeBasis = input.result.professionalHourlyDataTimeBasis ?? null;
-  const horizonWindow = resolveCloudSeaDisplayHorizon(input.result, rows);
-  const displayRows = filterRowsToForecastWindow(rows, horizonWindow, (row) => row.time);
+  const professionalHourlyBundle = buildProfessionalHourlyDisplayBundle({
+    result: input.result,
+    focusWindows: cloudSeaFocusWindows(input.result),
+    riskWindows: input.result.cloudSeaAnalysis.notRecommendedCloudSeaWindows.map(compactWindow),
+  });
+  const horizonWindow = professionalHourlyBundle.horizonWindow;
+  const displayRows = professionalHourlyBundle.rows;
   const nearTermRows = displayRows.slice(0, 6);
   const nearTermEnd =
     nearTermRows.at(-1)?.time ?? fallbackNearTermEnd(horizonWindow.anchorStartLocal);
-  const displayTimeBasis = buildDisplayProfessionalHourlyTimeBasis(
-    timeBasis,
-    horizonWindow,
-    displayRows,
-  );
-  const cloudLayerCompleteness = buildCloudLayerCompletenessContext(displayRows);
-  const cloudBasisConsistency = buildCloudSeaCloudBasisConsistencyContext({
-    hourlyRows: displayRows,
-    cloudLayerCompletenessContext: cloudLayerCompleteness,
-  });
+  const professionalHourlyData = professionalHourlyBundle.displayData;
+  const cloudLayerCompleteness = professionalHourlyData.cloudLayerCompleteness;
+  const cloudBasisConsistency = professionalHourlyData.cloudBasisConsistency;
   const displayPrecipitationSignalContext = buildDisplayPrecipitationSignalContext({
     input,
     rows: displayRows,
@@ -314,14 +334,6 @@ export function buildCloudSeaDisplayData(
       cloudBasisConsistency,
       horizonWindow,
     });
-  const professionalHourlyData: CloudSeaProfessionalHourlyDisplayData = {
-    rows: displayRows,
-    timeBasis: displayTimeBasis,
-    cloudLayerCompleteness,
-    cloudBasisConsistency,
-    focusWindows: cloudSeaFocusWindows(input.result),
-    riskWindows: input.result.cloudSeaAnalysis.notRecommendedCloudSeaWindows.map(compactWindow),
-  };
   const currentNearTermWeather = buildCurrentNearTermWeatherDisplay({
     result: input.result,
     terrainContext: input.terrainContext,
@@ -398,6 +410,46 @@ export function buildCloudSeaDisplayData(
       riskReview: input.riskReview,
     }),
     displayDataMeta,
+  };
+}
+
+export function buildProfessionalHourlyDisplayDataForResult(
+  input: BuildProfessionalHourlyDisplayDataInput,
+): ProfessionalHourlyDisplayData {
+  return buildProfessionalHourlyDisplayBundle(input).displayData;
+}
+
+function buildProfessionalHourlyDisplayBundle(
+  input: BuildProfessionalHourlyDisplayDataInput,
+): ProfessionalHourlyDisplayBundle {
+  const rows = input.result.professionalHourlyData ?? [];
+  const timeBasis = input.result.professionalHourlyDataTimeBasis ?? null;
+  const horizonWindow = resolveCloudSeaDisplayHorizon(input.result, rows);
+  const displayRows = filterRowsToForecastWindow(rows, horizonWindow, (row) => row.time);
+  const displayTimeBasis = buildDisplayProfessionalHourlyTimeBasis(
+    timeBasis,
+    horizonWindow,
+    displayRows,
+  );
+  const cloudLayerCompleteness = buildCloudLayerCompletenessContext(displayRows);
+  const cloudBasisConsistency = buildCloudSeaCloudBasisConsistencyContext({
+    hourlyRows: displayRows,
+    cloudLayerCompletenessContext: cloudLayerCompleteness,
+  });
+
+  return {
+    rows: displayRows,
+    timeBasis: displayTimeBasis,
+    horizonWindow,
+    displayData: {
+      rows: displayRows,
+      timeBasis: displayTimeBasis,
+      cloudLayerCompleteness,
+      cloudBasisConsistency,
+      focusWindows: input.focusWindows ?? [],
+      riskWindows: input.riskWindows ?? [],
+      rowAnnotations: input.rowAnnotations,
+    },
   };
 }
 

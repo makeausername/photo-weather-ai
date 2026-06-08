@@ -146,6 +146,24 @@ export type NormalizedWeatherFieldMetadataMap = Partial<
   Record<string, NormalizedWeatherFieldMetadata>
 >;
 
+export type AerosolAvailability = "available" | "partial" | "unavailable";
+
+export type AerosolConfidence = "high" | "medium" | "low";
+
+export type NormalizedAerosolReference = {
+  readonly aerosolOpticalDepth550: number | null;
+  readonly pm25: number | null;
+  readonly pm10: number | null;
+  readonly dust: number | null;
+  readonly aerosolObservedAt?: string;
+  readonly aerosolValidTime?: string;
+  readonly aerosolSourceResolution?: string;
+  readonly aerosolSourceResolutionHours?: number;
+  readonly aerosolAvailability: AerosolAvailability;
+  readonly aerosolConfidence: AerosolConfidence;
+  readonly aerosolSourceNoteZh: string;
+};
+
 export type ElevationTemperatureCorrectionReason =
   | "provider_elevation_close_to_spot"
   | "provider_elevation_delta_beyond_threshold"
@@ -233,6 +251,17 @@ export type NormalizedHourlyWeather = {
   readonly cloudLow: number | null;
   readonly cloudMid: number | null;
   readonly cloudHigh: number | null;
+  readonly aerosolOpticalDepth550?: number | null;
+  readonly pm25?: number | null;
+  readonly pm10?: number | null;
+  readonly dust?: number | null;
+  readonly aerosolObservedAt?: string;
+  readonly aerosolValidTime?: string;
+  readonly aerosolSourceResolution?: string;
+  readonly aerosolSourceResolutionHours?: number;
+  readonly aerosolAvailability?: AerosolAvailability;
+  readonly aerosolConfidence?: AerosolConfidence;
+  readonly aerosolSourceNoteZh?: string;
   readonly exposedRidgeWindRisk?: ExposedRidgeWindRisk;
   readonly mountainFeelsLikeC?: number | null;
   readonly tripodStabilityRisk?: TripodStabilityRisk;
@@ -383,6 +412,17 @@ export type NormalizedCurrentWeather = {
   readonly cloudLow?: number | null;
   readonly cloudMid?: number | null;
   readonly cloudHigh?: number | null;
+  readonly aerosolOpticalDepth550?: number | null;
+  readonly pm25?: number | null;
+  readonly pm10?: number | null;
+  readonly dust?: number | null;
+  readonly aerosolObservedAt?: string;
+  readonly aerosolValidTime?: string;
+  readonly aerosolSourceResolution?: string;
+  readonly aerosolSourceResolutionHours?: number;
+  readonly aerosolAvailability?: AerosolAvailability;
+  readonly aerosolConfidence?: AerosolConfidence;
+  readonly aerosolSourceNoteZh?: string;
   readonly precipitation?: number | null;
   readonly precipitationAmountMm?: number | null;
   readonly rainAmountMm?: number | null;
@@ -412,6 +452,12 @@ export type NormalizedCurrentWeather = {
     readonly category?: string;
     readonly pm25?: number;
     readonly pm10?: number;
+    readonly aerosolOpticalDepth550?: number | null;
+    readonly dust?: number | null;
+    readonly aerosolValidTime?: string;
+    readonly aerosolSourceResolution?: string;
+    readonly aerosolAvailability?: AerosolAvailability;
+    readonly aerosolConfidence?: AerosolConfidence;
   } | null;
   readonly missingFields: readonly string[];
   readonly estimatedFields: readonly string[];
@@ -1118,6 +1164,7 @@ export type GlowWindow = {
   readonly lowCloudObstructionRisk?: number;
   readonly precipitationDisruptionRisk?: number;
   readonly visibilityColorQualityScore?: number;
+  readonly aerosolScore?: number;
   readonly terrainScore?: number;
   readonly rainOverlapsWindow?: boolean;
   readonly postRainOpeningChance?: GlowPostRainOpeningChance;
@@ -1138,6 +1185,7 @@ export type DailyGlow = {
   readonly lowCloudObstructionRisk?: number;
   readonly precipitationDisruptionRisk?: number;
   readonly visibilityColorQualityScore?: number;
+  readonly aerosolScore?: number;
   readonly labels?: GlowAssessmentLabels;
   readonly bestWindow?: GlowWindow;
   readonly watchableWindow?: GlowWindow;
@@ -1165,6 +1213,48 @@ export type GlowBackupPlan = {
   readonly detail: string;
 };
 
+export type GlowAerosolState =
+  | "clean"
+  | "favorable_scatter"
+  | "muted"
+  | "hazy"
+  | "dusty"
+  | "unavailable";
+
+export type GlowAerosolAssessment = {
+  readonly availability: AerosolAvailability;
+  readonly confidence: AerosolConfidence;
+  readonly state: GlowAerosolState;
+  readonly stateLabelZh: string;
+  readonly implicationZh: string;
+  readonly noteZh: string;
+  readonly scoreImpact: number;
+  readonly aerosolScore?: number;
+  readonly aerosolOpticalDepth550?: number | null;
+  readonly pm25?: number | null;
+  readonly pm10?: number | null;
+  readonly dust?: number | null;
+  readonly visibilityKm?: number | null;
+  readonly validTime?: string;
+  readonly sourceResolution?: string;
+};
+
+export type GlowTerrainObstructionStatus = "clear" | "marginal" | "blocked" | "unavailable";
+
+export type GlowTerrainObstructionAssessment = {
+  readonly phase: "sunrise" | "sunset";
+  readonly date?: string;
+  readonly solarAzimuthDegrees?: number | null;
+  readonly solarElevationDegrees?: number | null;
+  readonly terrainHorizonAngleDegrees?: number | null;
+  readonly solarClearanceDegrees?: number | null;
+  readonly obstructionStatus: GlowTerrainObstructionStatus;
+  readonly confidence: AerosolConfidence;
+  readonly dataAvailable: boolean;
+  readonly labelZh: string;
+  readonly noteZh: string;
+};
+
 export type GlowAnalysisResult = GlowAssessment & {
   readonly glowTravelScore: number;
   readonly rainOverlapsSunriseWindow: boolean;
@@ -1180,6 +1270,9 @@ export type GlowAnalysisResult = GlowAssessment & {
   readonly dailyGlow: readonly DailyGlow[];
   readonly cloudLayerEvidence: readonly GlowEvidenceItem[];
   readonly visibilityEvidence: readonly GlowEvidenceItem[];
+  readonly aerosolAssessment: GlowAerosolAssessment;
+  readonly aerosolEvidence: readonly GlowEvidenceItem[];
+  readonly terrainObstructionAssessments: readonly GlowTerrainObstructionAssessment[];
   readonly terrainObstructionEvidence: readonly GlowEvidenceItem[];
   readonly riskReasons: readonly string[];
   readonly opportunityReasons: readonly string[];

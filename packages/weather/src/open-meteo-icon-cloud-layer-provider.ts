@@ -5,6 +5,10 @@ import type {
   NormalizedWeatherFieldMetadataMap,
 } from "@photo-weather/shared";
 import {
+  getOpenMeteoAirQuality,
+  type OpenMeteoAirQualityClient,
+} from "./open-meteo-air-quality.js";
+import {
   metersToKilometers,
   normalizeDate,
   normalizeIsoTime,
@@ -258,6 +262,7 @@ export async function fetchOpenMeteoIconCloudLayers(
 
 export type OpenMeteoIconCloudLayerProviderOptions = {
   readonly client: OpenMeteoIconCloudLayerClient;
+  readonly airQualityClient?: OpenMeteoAirQualityClient;
 };
 
 export class OpenMeteoIconCloudLayerProvider implements WeatherProvider {
@@ -328,15 +333,11 @@ export class OpenMeteoIconCloudLayerProvider implements WeatherProvider {
     return [];
   }
 
-  async getAirQuality(_input: WeatherRequestInput): Promise<AirQuality> {
-    return {
-      provider: source.providerCode,
-      observedAt: new Date().toISOString(),
-      aqi: 0,
-      category: "good",
-      pm25: 0,
-      pm10: 0,
-    };
+  async getAirQuality(input: WeatherRequestInput): Promise<AirQuality> {
+    return getOpenMeteoAirQuality(input, {
+      client: this.options.airQualityClient,
+      providerCode: source.providerCode,
+    });
   }
 
   normalizeHourlyWeather(input: unknown): readonly NormalizedHourlyWeather[] {

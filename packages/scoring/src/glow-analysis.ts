@@ -3,12 +3,14 @@ import type {
   CloudSeaEvidenceEffect,
   ForecastCalculationInput,
   ForecastScore,
+  GlowAerosolAssessment,
   GlowAnalysisResult,
   GlowAssessmentLabels,
   GlowBackupPlan,
   GlowEvidenceItem,
   GlowPostRainOpeningChance,
   GlowRecommendationLabel,
+  GlowTerrainObstructionAssessment,
   GlowWindow,
   GlowWindowRainRisk,
   GlowWindowType,
@@ -36,6 +38,7 @@ type GlowComponentScores = {
   readonly lowCloudPassScore: number;
   readonly lowCloudRisk: number;
   readonly visibilityColorQualityScore: number;
+  readonly aerosolScore?: number;
   readonly precipitationPassScore: number;
   readonly precipitationDisruptionRisk: number;
   readonly terrain: number;
@@ -64,6 +67,7 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
       lowCloudObstructionRisk: components.lowCloudRisk,
       precipitationDisruptionRisk: components.precipitationDisruptionRisk,
       visibilityColorQualityScore: components.visibilityColorQualityScore,
+      aerosolScore: components.aerosolScore,
       terrainScore: components.terrain,
       rainOverlapsWindow: components.rainOverlapsWindow,
       postRainOpeningChance: components.postRainOpeningChance,
@@ -143,6 +147,8 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
     watchableGlowWindows[0],
     notRecommendedGlowWindows[0],
   );
+  const aerosolAssessment = buildGlowAerosolAssessment(input, candidates);
+  const terrainObstructionAssessments = buildTerrainObstructionAssessments(input);
 
   return {
     sunriseGlowScore,
@@ -168,6 +174,9 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
     dailyGlow: buildDailyGlow(input, candidates),
     cloudLayerEvidence: buildCloudLayerEvidence(input, candidates),
     visibilityEvidence: buildVisibilityEvidence(input, candidates),
+    aerosolAssessment,
+    aerosolEvidence: buildAerosolEvidence(aerosolAssessment),
+    terrainObstructionAssessments,
     terrainObstructionEvidence: buildTerrainEvidence(input),
     riskReasons: buildGlowRiskReasons(input, candidates, lowCloudObstructionRisk),
     opportunityReasons: buildGlowOpportunityReasons(input, candidates),
@@ -369,12 +378,14 @@ function calculateGlowComponents(
   const precipitationDisruptionRisk = calculatePrecipitationDisruptionRisk(window);
   const precipitationPassScore = 100 - precipitationDisruptionRisk;
   const visibilityColorQualityScore = scoreVisibilityColorQuality(window);
+  const aerosolScore = scoreAerosolAtmosphere(window);
   const terrain = scoreTerrainObstruction(input, phase);
   const windHumidity = scoreWindHumidity(window);
   const conditionScore = scoreGlowCondition({
     colorCarrierScore,
     lowCloudRisk,
     visibilityColorQualityScore,
+    aerosolScore,
     precipitationPassScore,
     terrain,
     windHumidity,
@@ -388,6 +399,7 @@ function calculateGlowComponents(
     lowCloudRisk,
     precipitationDisruptionRisk,
     visibilityColorQualityScore,
+    aerosolScore,
     terrain,
     windHumidity,
     rainOverlapsWindow,
@@ -400,6 +412,7 @@ function calculateGlowComponents(
     lowCloudRisk,
     lowCloudPassScore: 100 - lowCloudRisk,
     visibilityColorQualityScore,
+    aerosolScore,
     precipitationPassScore,
     precipitationDisruptionRisk,
     terrain,
@@ -416,18 +429,24 @@ function scoreGlowCondition(components: {
   readonly colorCarrierScore: number;
   readonly lowCloudRisk: number;
   readonly visibilityColorQualityScore: number;
+  readonly aerosolScore?: number;
   readonly precipitationPassScore: number;
   readonly terrain: number;
   readonly windHumidity: number;
 }): number {
-  return averageWeightedScore([
+  const weightedScores = [
     { score: components.colorCarrierScore, weight: 0.38 },
     { score: 100 - components.lowCloudRisk, weight: 0.2 },
     { score: components.visibilityColorQualityScore, weight: 0.17 },
     { score: components.precipitationPassScore, weight: 0.12 },
     { score: components.terrain, weight: 0.1 },
     { score: components.windHumidity, weight: 0.03 },
-  ]);
+  ];
+  if (typeof components.aerosolScore === "number") {
+    weightedScores.push({ score: components.aerosolScore, weight: 0.08 });
+  }
+
+  return averageWeightedScore(weightedScores);
 }
 
 function scorePracticalGlowWindow(input: {
@@ -436,6 +455,7 @@ function scorePracticalGlowWindow(input: {
   readonly lowCloudRisk: number;
   readonly precipitationDisruptionRisk: number;
   readonly visibilityColorQualityScore: number;
+  readonly aerosolScore?: number;
   readonly terrain: number;
   readonly windHumidity: number;
   readonly rainOverlapsWindow: boolean;
@@ -455,6 +475,15 @@ function scorePracticalGlowWindow(input: {
   const activeRainPenalty = input.rainOverlapsWindow ? 16 : 0;
   const visibilityPenalty =
     input.visibilityColorQualityScore < 35 ? 20 : input.visibilityColorQualityScore < 52 ? 11 : 0;
+  const aerosolPenalty =
+    input.aerosolScore === undefined
+      ? 0
+      : input.aerosolScore < 35
+        ? 18
+        : input.aerosolScore < 50
+          ? 10
+          : 0;
+  const aerosolBonus = input.aerosolScore !== undefined && input.aerosolScore >= 80 ? 3 : 0;
   const carrierPenalty = input.colorCarrierScore < 35 ? 22 : input.colorCarrierScore < 55 ? 12 : 0;
   const terrainPenalty = input.terrain < 45 ? 14 : input.terrain < 58 ? 7 : 0;
   const rainOpeningBonus =
@@ -466,10 +495,12 @@ function scorePracticalGlowWindow(input: {
   return clampScore(
     input.conditionScore +
       rainOpeningBonus +
+      aerosolBonus +
       warmLightBonus -
       lowCloudPenalty -
       rainPenalty -
       visibilityPenalty -
+      aerosolPenalty -
       carrierPenalty -
       terrainPenalty -
       blueHourPenalty -
@@ -586,6 +617,51 @@ function scoreVisibilityColorQuality(window: readonly NormalizedHourlyWeather[])
           : 0;
 
   return clampScore(visibilityScore * 0.62 + transparencyScore * 0.38 - humidityPenalty);
+}
+
+function scoreAerosolAtmosphere(window: readonly NormalizedHourlyWeather[]): number | undefined {
+  const aerosolOpticalDepth = averageDefined(window, (hour) => hour.aerosolOpticalDepth550);
+  const pm25 = averageDefined(window, (hour) => hour.pm25);
+  const pm10 = averageDefined(window, (hour) => hour.pm10);
+  const dust = averageDefined(window, (hour) => hour.dust);
+  const visibility = averageDefined(window, (hour) => hour.visibility);
+  const humidity = averageDefined(window, (hour) => hour.humidity) ?? 0;
+  const hasAerosolData =
+    aerosolOpticalDepth !== undefined ||
+    pm25 !== undefined ||
+    pm10 !== undefined ||
+    dust !== undefined;
+  if (!hasAerosolData) {
+    return undefined;
+  }
+
+  const aodScore =
+    aerosolOpticalDepth === undefined
+      ? 68
+      : aerosolOpticalDepth < 0.03
+        ? 66
+        : aerosolOpticalDepth <= 0.18
+          ? 84
+          : aerosolOpticalDepth <= 0.32
+            ? 74
+            : aerosolOpticalDepth <= 0.55
+              ? 54
+              : 30;
+  const pm25Penalty =
+    pm25 === undefined ? 0 : pm25 >= 75 ? 34 : pm25 >= 45 ? 22 : pm25 >= 25 ? 8 : 0;
+  const pm10Penalty =
+    pm10 === undefined ? 0 : pm10 >= 150 ? 28 : pm10 >= 90 ? 16 : pm10 >= 55 ? 7 : 0;
+  const dustPenalty =
+    dust === undefined ? 0 : dust >= 120 ? 32 : dust >= 70 ? 20 : dust >= 35 ? 8 : 0;
+  const hazePenalty =
+    visibility !== undefined && visibility < 6 && humidity < 92
+      ? 12
+      : visibility !== undefined && visibility < 3
+        ? 18
+        : 0;
+  const missingAodPenalty = aerosolOpticalDepth === undefined ? 4 : 0;
+
+  return clampScore(aodScore - pm25Penalty - pm10Penalty - dustPenalty - hazePenalty - missingAodPenalty);
 }
 
 function calculatePrecipitationDisruptionRisk(window: readonly NormalizedHourlyWeather[]): number {
@@ -771,6 +847,7 @@ function isShootableGlowWindow(window: GlowCandidate): boolean {
   const lowCloudRisk = window.lowCloudObstructionRisk ?? 100;
   const precipitationRisk = window.precipitationDisruptionRisk ?? 100;
   const visibilityScore = window.visibilityColorQualityScore ?? 0;
+  const aerosolScore = window.aerosolScore ?? 65;
   const terrainScore = window.terrainScore ?? 50;
 
   return (
@@ -779,6 +856,7 @@ function isShootableGlowWindow(window: GlowCandidate): boolean {
     lowCloudRisk < 76 &&
     precipitationRisk < 58 &&
     visibilityScore >= 52 &&
+    aerosolScore >= 38 &&
     terrainScore >= 45 &&
     !window.rainOverlapsWindow
   );
@@ -880,6 +958,12 @@ function buildDailyGlow(
       (window) => window.visibilityColorQualityScore,
       () => 0,
     );
+    const aerosolScores = dayWindows
+      .map((window) => window.aerosolScore)
+      .filter((score): score is number => typeof score === "number" && Number.isFinite(score));
+    const fallbackAerosolScore = scoreAerosolAtmosphere(candidateWeatherOrAll(input, dayWindows));
+    const aerosolScore =
+      aerosolScores.length > 0 ? clampScore(Math.max(...aerosolScores)) : fallbackAerosolScore;
     const bestTarget = pickBestDailyGlowTarget(sunriseScore, sunsetScore);
     const riskNote = bestWindow?.riskTags.length
       ? bestWindow.riskTags.join("、")
@@ -902,6 +986,7 @@ function buildDailyGlow(
       lowCloudObstructionRisk,
       precipitationDisruptionRisk,
       visibilityColorQualityScore,
+      aerosolScore,
       labels: buildGlowLabels(
         sunriseScore,
         sunsetScore,
@@ -1041,6 +1126,262 @@ function buildVisibilityEvidence(
       noteZh: "适度风速有利于云层移动；强风会破坏云层结构并增加拍摄难度，近零风可能保留雾霾。",
     },
   ];
+}
+
+function buildGlowAerosolAssessment(
+  input: ForecastCalculationInput,
+  candidates: readonly GlowCandidate[],
+): GlowAerosolAssessment {
+  const weather = candidateWeatherOrAll(input, candidates);
+  const aerosolOpticalDepth550 = averageDefined(weather, (hour) => hour.aerosolOpticalDepth550);
+  const pm25 = averageDefined(weather, (hour) => hour.pm25);
+  const pm10 = averageDefined(weather, (hour) => hour.pm10);
+  const dust = averageDefined(weather, (hour) => hour.dust);
+  const visibilityKm = averageDefined(weather, (hour) => hour.visibility);
+  const aerosolScore = scoreAerosolAtmosphere(weather);
+  const referenceHour = weather.find(
+    (hour) =>
+      hour.aerosolAvailability !== undefined && hour.aerosolAvailability !== "unavailable",
+  );
+  const availableFieldCount = [aerosolOpticalDepth550, pm25, pm10, dust].filter(
+    (value) => value !== undefined,
+  ).length;
+
+  if (aerosolScore === undefined || availableFieldCount === 0) {
+    return {
+      availability: "unavailable",
+      confidence: "low",
+      state: "unavailable",
+      stateLabelZh: "暂缺区域大气参考",
+      implicationZh: "不把气溶胶当作加分或扣分项，霞光判断主要看云层、降水和通透度。",
+      noteZh: "未收到 AOD、PM 或沙尘参考值；不会用 0 或晴朗假设替代。",
+      scoreImpact: 0,
+      visibilityKm,
+    };
+  }
+
+  const state = aerosolStateFromInputs({
+    aerosolScore,
+    aerosolOpticalDepth550,
+    pm25,
+    pm10,
+    dust,
+  });
+
+  return {
+    availability: availableFieldCount >= 3 ? "available" : "partial",
+    confidence: availableFieldCount >= 3 ? "high" : "medium",
+    state,
+    stateLabelZh: aerosolStateLabelZh(state),
+    implicationZh: aerosolImplicationZh(state),
+    noteZh: "气溶胶按区域参考处理，只解释透明度和散射倾向，不代表机位实测。",
+    scoreImpact: aerosolScore >= 80 ? 4 : aerosolScore >= 60 ? 0 : aerosolScore >= 45 ? -6 : -14,
+    aerosolScore,
+    aerosolOpticalDepth550,
+    pm25,
+    pm10,
+    dust,
+    visibilityKm,
+    validTime: referenceHour?.aerosolValidTime,
+    sourceResolution: referenceHour?.aerosolSourceResolution,
+  };
+}
+
+function buildAerosolEvidence(
+  assessment: GlowAerosolAssessment,
+): readonly GlowEvidenceItem[] {
+  return [
+    {
+      label: "AOD 550nm",
+      value: formatDecimalValue(assessment.aerosolOpticalDepth550, 3),
+      effect: aerosolEvidenceEffect(assessment),
+      noteZh: "中等气溶胶可能增强低角度散射；过高时会压低通透度和色彩纯度。",
+    },
+    {
+      label: "PM2.5",
+      value: formatConcentrationValue(assessment.pm25),
+      effect:
+        assessment.pm25 !== undefined && assessment.pm25 !== null && assessment.pm25 >= 45
+          ? "risk"
+          : "neutral",
+      noteZh: "颗粒物偏高时，远山层次和霞光饱和度会被削弱。",
+    },
+    {
+      label: "PM10 / 沙尘",
+      value: `${formatConcentrationValue(assessment.pm10)} / ${formatConcentrationValue(
+        assessment.dust,
+      )}`,
+      effect:
+        (assessment.pm10 !== undefined && assessment.pm10 !== null && assessment.pm10 >= 90) ||
+        (assessment.dust !== undefined && assessment.dust !== null && assessment.dust >= 70)
+          ? "risk"
+          : "neutral",
+      noteZh: "粗颗粒或沙尘信号偏高时，霞光容易变灰、变脏或远景发白。",
+    },
+    {
+      label: "大气结论",
+      value: assessment.stateLabelZh,
+      effect: aerosolEvidenceEffect(assessment),
+      noteZh: assessment.implicationZh,
+    },
+  ];
+}
+
+function buildTerrainObstructionAssessments(
+  input: ForecastCalculationInput,
+): readonly GlowTerrainObstructionAssessment[] {
+  return input.astroSummaries.flatMap((astro) => {
+    const assessments: GlowTerrainObstructionAssessment[] = [];
+    if (astro.sunrise) {
+      assessments.push(buildTerrainObstructionAssessment(input, astro, "sunrise"));
+    }
+    if (astro.sunset) {
+      assessments.push(buildTerrainObstructionAssessment(input, astro, "sunset"));
+    }
+    return assessments;
+  });
+}
+
+function buildTerrainObstructionAssessment(
+  input: ForecastCalculationInput,
+  astro: AstroSummary,
+  phase: GlowPhase,
+): GlowTerrainObstructionAssessment {
+  const horizonAngle = horizonAngleForPhase(input, phase);
+  const solarAzimuthDegrees =
+    phase === "sunrise" ? astro.sunriseAzimuth ?? null : astro.sunsetAzimuth ?? null;
+  const hasProfile = hasDirectionalTerrainProfile(input);
+  const dataAvailable =
+    hasProfile &&
+    typeof horizonAngle === "number" &&
+    Number.isFinite(horizonAngle) &&
+    typeof solarAzimuthDegrees === "number" &&
+    Number.isFinite(solarAzimuthDegrees);
+  const solarElevationDegrees = dataAvailable ? 6 : null;
+  const solarClearanceDegrees =
+    dataAvailable && solarElevationDegrees !== null
+      ? Math.round((solarElevationDegrees - horizonAngle) * 10) / 10
+      : null;
+  const blocked = hasBlockedDirection(input, phase);
+  const obstructionStatus = !dataAvailable
+    ? "unavailable"
+    : blocked || (solarClearanceDegrees ?? 0) < -4
+      ? "blocked"
+      : (solarClearanceDegrees ?? 0) < 1
+        ? "marginal"
+        : "clear";
+
+  return {
+    phase,
+    date: astro.date,
+    solarAzimuthDegrees,
+    solarElevationDegrees,
+    terrainHorizonAngleDegrees: dataAvailable ? horizonAngle : null,
+    solarClearanceDegrees,
+    obstructionStatus,
+    confidence: dataAvailable
+      ? input.terrainAnalysis.terrainProfile.elevationConfidence === "high"
+        ? "high"
+        : "medium"
+      : "low",
+    dataAvailable,
+    labelZh: phase === "sunrise" ? "日出方向地形遮挡" : "日落方向地形遮挡",
+    noteZh: terrainObstructionNoteZh(obstructionStatus, phase),
+  };
+}
+
+function aerosolEvidenceEffect(assessment: GlowAerosolAssessment): CloudSeaEvidenceEffect {
+  if (assessment.availability === "unavailable" || assessment.aerosolScore === undefined) {
+    return "neutral";
+  }
+  if (assessment.aerosolScore >= 72) {
+    return "positive";
+  }
+  if (assessment.aerosolScore < 50) {
+    return "risk";
+  }
+  return "neutral";
+}
+
+function aerosolStateFromInputs(input: {
+  readonly aerosolScore: number;
+  readonly aerosolOpticalDepth550?: number;
+  readonly pm25?: number;
+  readonly pm10?: number;
+  readonly dust?: number;
+}): GlowAerosolAssessment["state"] {
+  if ((input.dust ?? 0) >= 70 || (input.pm10 ?? 0) >= 120) {
+    return "dusty";
+  }
+  if (input.aerosolScore < 45 || (input.pm25 ?? 0) >= 55) {
+    return "hazy";
+  }
+  if (input.aerosolScore < 62) {
+    return "muted";
+  }
+  if (
+    input.aerosolOpticalDepth550 !== undefined &&
+    input.aerosolOpticalDepth550 >= 0.04 &&
+    input.aerosolOpticalDepth550 <= 0.22 &&
+    input.aerosolScore >= 72
+  ) {
+    return "favorable_scatter";
+  }
+  return "clean";
+}
+
+function aerosolStateLabelZh(state: GlowAerosolAssessment["state"]): string {
+  switch (state) {
+    case "favorable_scatter":
+      return "散射条件较有利";
+    case "muted":
+      return "透明度略受压制";
+    case "hazy":
+      return "霾/颗粒物偏高";
+    case "dusty":
+      return "粗颗粒或沙尘偏高";
+    case "unavailable":
+      return "暂缺区域大气参考";
+    case "clean":
+    default:
+      return "空气较干净";
+  }
+}
+
+function aerosolImplicationZh(state: GlowAerosolAssessment["state"]): string {
+  switch (state) {
+    case "favorable_scatter":
+      return "低角度光线有一定散射载体，若中高云配合，霞光颜色更容易铺开。";
+    case "muted":
+      return "散射载体存在但通透度一般，适合保守看待色彩强度。";
+    case "hazy":
+      return "细颗粒物会削弱远景层次和色彩纯度，霞光容易偏灰。";
+    case "dusty":
+      return "粗颗粒或沙尘会明显压低画面洁净度，不建议把霞光作为唯一目标。";
+    case "unavailable":
+      return "缺少大气参考，不用气溶胶调整霞光判断。";
+    case "clean":
+    default:
+      return "通透度压力较小，但若气溶胶过低，霞光面积仍主要取决于云层载体。";
+  }
+}
+
+function terrainObstructionNoteZh(
+  status: GlowTerrainObstructionAssessment["obstructionStatus"],
+  phase: GlowPhase,
+): string {
+  const target = phase === "sunrise" ? "日出" : "日落";
+  switch (status) {
+    case "clear":
+      return `${target}方向低角度光线有较好地形余量，遮挡不是主要风险。`;
+    case "marginal":
+      return `${target}方向地平遮挡接近核心低角度光线，需要现场确认机位是否能越过山脊或建筑。`;
+    case "blocked":
+      return `${target}方向地形遮挡偏强，直射光和近地平霞光可能被压缩。`;
+    case "unavailable":
+    default:
+      return "缺少可用的方向性地形剖面，不用单点海拔推断遮挡。";
+  }
 }
 
 function buildTerrainEvidence(input: ForecastCalculationInput): readonly GlowEvidenceItem[] {
@@ -1331,6 +1672,9 @@ function buildGlowWindowRiskTags(
   if (components.visibilityColorQualityScore < 55) {
     tags.push("通透度弱");
   }
+  if (components.aerosolScore !== undefined && components.aerosolScore < 50) {
+    tags.push("气溶胶偏浊");
+  }
   if (components.precipitationDisruptionRisk >= 45) {
     tags.push("降水干扰");
   }
@@ -1497,6 +1841,23 @@ function hasCloudLayerGaps(window: readonly NormalizedHourlyWeather[]): boolean 
   );
 }
 
+function hasDirectionalTerrainProfile(input: ForecastCalculationInput): boolean {
+  if (input.terrainAnalysis.dataSource === "unknown") {
+    return false;
+  }
+
+  const profile = input.terrainAnalysis.terrainProfile;
+  const horizon = input.terrainAnalysis.horizonProfile;
+  return (
+    typeof profile.localReliefMeters === "number" ||
+    typeof profile.elevationDiff5km === "number" ||
+    typeof profile.minElevation1km === "number" ||
+    typeof profile.minElevation3km === "number" ||
+    typeof profile.maxElevation5km === "number" ||
+    horizon.blockedDirectionsZh.length > 0
+  );
+}
+
 function terrainEffect(
   angle: number | undefined,
   phase: GlowPhase,
@@ -1530,6 +1891,18 @@ function effectFromScore(score: number): CloudSeaEvidenceEffect {
 function formatPercentValue(value: number | undefined): string {
   return typeof value === "number" && Number.isFinite(value)
     ? `${Math.round(value)}%`
+    : "暂缺数据";
+}
+
+function formatDecimalValue(value: number | null | undefined, digits: number): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value.toFixed(digits)
+    : "暂缺数据";
+}
+
+function formatConcentrationValue(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${Math.round(value)} µg/m³`
     : "暂缺数据";
 }
 

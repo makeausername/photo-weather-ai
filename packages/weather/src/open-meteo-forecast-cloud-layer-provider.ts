@@ -16,6 +16,10 @@ import type {
 import { WeatherProviderError } from "./provider-error.js";
 import type { WeatherProvider } from "./provider.js";
 import {
+  getOpenMeteoAirQuality,
+  type OpenMeteoAirQualityClient,
+} from "./open-meteo-air-quality.js";
+import {
   normalizeOpenMeteoIconCloudLayers,
   normalizeOpenMeteoIconDailyWeather,
   openMeteoIconCloudLayerMinimumForecastHours,
@@ -226,7 +230,10 @@ export class OpenMeteoForecastCloudLayerProvider implements WeatherProvider {
   private readonly metadataByKey = new Map<string, OpenMeteoForecastCloudLayerMetadata>();
 
   constructor(
-    private readonly options: { readonly client: OpenMeteoForecastCloudLayerClient },
+    private readonly options: {
+      readonly client: OpenMeteoForecastCloudLayerClient;
+      readonly airQualityClient?: OpenMeteoAirQualityClient;
+    },
   ) {}
 
   async getCurrentWeather(input: WeatherRequestInput): Promise<CurrentWeather> {
@@ -291,15 +298,11 @@ export class OpenMeteoForecastCloudLayerProvider implements WeatherProvider {
     return [];
   }
 
-  async getAirQuality(_input: WeatherRequestInput): Promise<AirQuality> {
-    return {
-      provider: source.providerCode,
-      observedAt: new Date().toISOString(),
-      aqi: 0,
-      category: "good",
-      pm25: 0,
-      pm10: 0,
-    };
+  async getAirQuality(input: WeatherRequestInput): Promise<AirQuality> {
+    return getOpenMeteoAirQuality(input, {
+      client: this.options.airQualityClient,
+      providerCode: source.providerCode,
+    });
   }
 
   normalizeHourlyWeather(input: unknown): readonly NormalizedHourlyWeather[] {

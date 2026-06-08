@@ -736,6 +736,65 @@ const baseResult: ForecastCalculationResult = {
         noteZh: "湿度本身不直接否定霞光。",
       },
     ],
+    aerosolAssessment: {
+      availability: "available",
+      confidence: "high",
+      state: "favorable_scatter",
+      stateLabelZh: "散射条件较有利",
+      implicationZh: "低角度光线有一定散射载体，若中高云配合，霞光颜色更容易铺开。",
+      noteZh: "气溶胶按区域参考处理，只解释透明度和散射倾向，不代表机位实测。",
+      scoreImpact: 4,
+      aerosolScore: 82,
+      aerosolOpticalDepth550: 0.12,
+      pm25: 18,
+      pm10: 32,
+      dust: 8,
+      visibilityKm: 18,
+      validTime: "2026-05-20T17:00:00+08:00",
+      sourceResolution: "1h",
+    },
+    aerosolEvidence: [
+      {
+        label: "AOD 550nm",
+        value: "0.120",
+        effect: "positive",
+        noteZh: "中等气溶胶可能增强低角度散射；过高时会压低通透度和色彩纯度。",
+      },
+      {
+        label: "大气结论",
+        value: "散射条件较有利",
+        effect: "positive",
+        noteZh: "低角度光线有一定散射载体，若中高云配合，霞光颜色更容易铺开。",
+      },
+    ],
+    terrainObstructionAssessments: [
+      {
+        phase: "sunrise",
+        date: "2026-05-20",
+        solarAzimuthDegrees: 72,
+        solarElevationDegrees: 6,
+        terrainHorizonAngleDegrees: 4.8,
+        solarClearanceDegrees: 1.2,
+        obstructionStatus: "clear",
+        confidence: "high",
+        dataAvailable: true,
+        labelZh: "日出方向地形遮挡",
+        noteZh: "日出方向低角度光线有较好地形余量，遮挡不是主要风险。",
+      },
+      {
+        phase: "sunset",
+        date: "2026-05-20",
+        solarAzimuthDegrees: 286,
+        solarElevationDegrees: 6,
+        terrainHorizonAngleDegrees: 5.5,
+        solarClearanceDegrees: 0.5,
+        obstructionStatus: "marginal",
+        confidence: "high",
+        dataAvailable: true,
+        labelZh: "日落方向地形遮挡",
+        noteZh: "日落方向地平遮挡接近核心低角度光线，需要现场确认机位是否能越过山脊或建筑。",
+      },
+    ],
     terrainObstructionEvidence: [
       {
         label: "日出地平遮挡",
@@ -6101,8 +6160,20 @@ describe("forecast result target-aware view model", () => {
       "晚霞机会",
       "最佳霞光窗口",
       "低云遮挡风险",
+      "气溶胶与通透度",
+      "地形遮挡",
     ]);
     expect(viewModel.dailyTrend.map((item) => item.date)).toEqual(["2026-05-20", "2026-05-21"]);
+    expect(viewModel.dailyTrend[0]?.cloudLayerSummaryLabel).toContain("色彩载体");
+    expect(viewModel.dailyTrend[0]?.aerosolTransparencyLabel).toContain("气溶胶");
+    expect(viewModel.professionalHourlyData.rows.length).toBeGreaterThan(0);
+    expect(viewModel.professionalHourlyData.rowAnnotations?.length).toBeGreaterThan(0);
+    expect(viewModel.sunWindowCards.length).toBeGreaterThan(0);
+    expect(viewModel.aerosolCard.stateLabel).toBe("散射条件较有利");
+    expect(viewModel.terrainObstructionCards.length).toBeGreaterThan(0);
+    expect(viewModel.aerosolEvidence.map((item) => item.label)).toEqual(
+      expect.arrayContaining(["AOD 550nm", "大气结论"]),
+    );
     expect(viewModel.cloudLayerEvidence.map((item) => item.label)).toEqual(
       expect.arrayContaining(["总云量", "低云", "中云", "高云"]),
     );

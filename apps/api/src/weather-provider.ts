@@ -15,6 +15,7 @@ import {
   openMeteoIconCloudLayerParserVersion,
   OpenMeteoForecastCloudLayerClient,
   OpenMeteoForecastCloudLayerProvider,
+  OpenMeteoAirQualityClient,
   OpenMeteoProvider,
   QWeatherClient,
   QWeatherProvider,
@@ -741,6 +742,11 @@ async function resolveRuntimeWeatherProviders(
             retryCount: openMeteo.retryCount,
             modelName: openMeteo.modelPreference ?? openMeteo.iconModel,
           }),
+          airQualityClient: new OpenMeteoAirQualityClient({
+            timezone: openMeteo.timezone,
+            timeoutMs: openMeteo.timeoutMs,
+            retryCount: openMeteo.retryCount,
+          }),
         }),
       );
       providers.push(
@@ -749,6 +755,11 @@ async function resolveRuntimeWeatherProviders(
             endpoint: openMeteo.mode === "customer" ? openMeteo.endpoint : openMeteo.baseUrl,
             mode: openMeteo.mode,
             apiKey: openMeteo.apiKey,
+            timezone: openMeteo.timezone,
+            timeoutMs: openMeteo.timeoutMs,
+            retryCount: openMeteo.retryCount,
+          }),
+          airQualityClient: new OpenMeteoAirQualityClient({
             timezone: openMeteo.timezone,
             timeoutMs: openMeteo.timeoutMs,
             retryCount: openMeteo.retryCount,
