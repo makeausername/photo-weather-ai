@@ -3,6 +3,7 @@ import { forecastHorizonLabels, forecastTargetLabels } from "@photo-weather/shar
 import { PlaceSearchCard } from "./place-search-card";
 import { PublicShell } from "./public-shell";
 import type { SelectedLocation } from "./selected-location";
+import { SubjectControlPanel } from "./subject-control-panel";
 import { Badge, Card, cn } from "./ui";
 
 type PopularScenarioSpot = {
@@ -353,11 +354,24 @@ export function ScenarioSearchPanel({
 }) {
   const isCloudSeaSearchPanel = config.target === "cloud_sea";
 
+  if (isCloudSeaSearchPanel) {
+    return (
+      <SubjectControlPanel
+        config={{
+          target: config.target,
+          defaultHorizon: config.defaultHorizon,
+          ctaLabel: config.ctaLabel,
+          currentLocationPrivacyHint: "浏览器定位仅用于本次云海判断，不会公开显示。",
+        }}
+        selectedLocation={selectedLocation}
+        onSelectedLocationChange={onSelectedLocationChange}
+        onForecastOptionsChange={onForecastOptionsChange}
+      />
+    );
+  }
+
   return (
-    <aside
-      className="grid content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]"
-      data-cloud-sea-section={isCloudSeaSearchPanel ? "CloudSeaSearchPanel" : undefined}
-    >
+    <aside className="grid content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]">
       <PlaceSearchCard
         title="地点搜索与机位选择"
         description="选择景区、城市或具体机位后进入对应题材判断。"
@@ -365,17 +379,6 @@ export function ScenarioSearchPanel({
         defaultHorizon={config.defaultHorizon}
         fixedTarget={config.target}
         ctaLabel={config.ctaLabel}
-        selectedLocationDetailMode={isCloudSeaSearchPanel ? "compact" : "full"}
-        showSelectedLocationActions={isCloudSeaSearchPanel}
-        showSelectedLocationHorizon={isCloudSeaSearchPanel}
-        showQuickLocations={!isCloudSeaSearchPanel}
-        showForecastSectionDivider={!isCloudSeaSearchPanel}
-        enableCurrentLocation={isCloudSeaSearchPanel}
-        currentLocationPrivacyHint={
-          isCloudSeaSearchPanel
-            ? "浏览器定位仅用于本次云海判断，不会公开显示。"
-            : undefined
-        }
         selectedLocation={selectedLocation}
         onSelectedLocationChange={onSelectedLocationChange}
         onForecastOptionsChange={onForecastOptionsChange}

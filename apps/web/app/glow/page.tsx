@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import { PlaceSearchCard } from "../../components/place-search-card";
 import { PublicShell } from "../../components/public-shell";
+import { SubjectControlPanel } from "../../components/subject-control-panel";
 import { SubjectDetailDeepLinkClient } from "../../components/subject-detail-deep-link-client";
 import { Badge, Card } from "../../components/ui";
 import { parseSubjectDetailSearchParams } from "../forecast/subject-detail-links";
+import { glowScenarioConfig } from "../scenario-configs";
 
 export const metadata: Metadata = {
   title: "朝霞晚霞 - 逐光天气",
@@ -61,22 +62,17 @@ export default function GlowPage({ searchParams }: GlowPageProps) {
         </p>
       </header>
 
-      <section className="grid gap-5 min-[900px]:grid-cols-[clamp(320px,34vw,410px)_minmax(0,1fr)] min-[1280px]:grid-cols-[clamp(340px,28vw,430px)_minmax(0,1fr)] min-[900px]:items-start">
-        <div className="grid content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]">
-          <PlaceSearchCard
-            title="地点搜索与机位选择"
-            description="搜索景区、城市或具体机位，选择预报范围后进入朝霞晚霞专项判断。"
-            badgeLabel="朝霞晚霞"
-            defaultHorizon="72h"
-            fixedTarget="glow"
-            ctaLabel="查看朝霞晚霞判断"
-            selectedLocationDetailMode="compact"
-            showSelectedLocationActions
-            showSelectedLocationHorizon
-            enableCurrentLocation
-            currentLocationPrivacyHint="浏览器定位仅用于本次朝霞晚霞判断，不会公开显示。"
-          />
-        </div>
+      <section className="grid gap-5 min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(340px,24vw,410px)_minmax(0,1fr)] min-[1200px]:items-start">
+        <SubjectControlPanel
+          config={{
+            target: glowScenarioConfig.target,
+            defaultHorizon: glowScenarioConfig.defaultHorizon,
+            ctaLabel: glowScenarioConfig.ctaLabel,
+            description:
+              "搜索景区、城市或具体机位，选择预报范围后进入朝霞晚霞专项判断。",
+            currentLocationPrivacyHint: "浏览器定位仅用于本次朝霞晚霞判断，不会公开显示。",
+          }}
+        />
 
         <main className="grid gap-5">
           <Card className="p-5 shadow-sm">

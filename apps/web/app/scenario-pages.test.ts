@@ -12,6 +12,7 @@ import {
   buildForecastUrlFromSelectedLocation,
   selectedLocationFromBrowserGeolocation,
 } from "../components/selected-location";
+import { SubjectControlPanel } from "../components/subject-control-panel";
 import AstroPage, { metadata as astroMetadata } from "./astro/page";
 import CloudSeaPage, { metadata as cloudSeaMetadata } from "./cloud-sea/page";
 import GlowPage, { metadata as glowMetadata } from "./glow/page";
@@ -258,6 +259,8 @@ describe("scenario module pages", () => {
     const html = renderToStaticMarkup(React.createElement(CloudSeaPage));
     const searchCardHtml = extractPlaceSearchCardHtml(html);
 
+    expect(html).toContain('data-subject-control-panel="true"');
+    expect(html).toContain('data-subject-control-panel-target="cloud_sea"');
     expect(searchCardHtml).toMatch(/<button[^>]*type="submit"[^>]*>搜索地点<\/button>/);
     expect(searchCardHtml).toContain('aria-label="目的地"');
     expect(searchCardHtml).toContain('data-current-location-button="true"');
@@ -277,6 +280,52 @@ describe("scenario module pages", () => {
       expect(searchCardHtml).not.toContain(label);
       expect(hasExactButton(searchCardHtml, label)).toBe(false);
     }
+  });
+
+  it("uses the shared subject control panel for cloud sea and glow", () => {
+    const cloudSeaHtml = renderToStaticMarkup(React.createElement(CloudSeaPage));
+    const glowHtml = renderToStaticMarkup(React.createElement(GlowPage));
+    const sharedGlowPanelHtml = renderToStaticMarkup(
+      React.createElement(SubjectControlPanel, {
+        config: {
+          target: glowScenarioConfig.target,
+          defaultHorizon: glowScenarioConfig.defaultHorizon,
+          ctaLabel: glowScenarioConfig.ctaLabel,
+          currentLocationPrivacyHint: "浏览器定位仅用于本次朝霞晚霞判断，不会公开显示。",
+        },
+      }),
+    );
+    const subjectControlSource = readFileSync(
+      fileURLToPath(new URL("../components/subject-control-panel.tsx", import.meta.url)),
+      "utf8",
+    );
+    const scenarioSource = readFileSync(
+      fileURLToPath(new URL("../components/scenario-module-page.tsx", import.meta.url)),
+      "utf8",
+    );
+    const glowPageSource = readFileSync(
+      fileURLToPath(new URL("./glow/page.tsx", import.meta.url)),
+      "utf8",
+    );
+
+    for (const html of [cloudSeaHtml, glowHtml, sharedGlowPanelHtml]) {
+      expect(html).toContain('data-subject-control-panel="true"');
+      expect(html).toContain("地点搜索与机位选择");
+      expect(html).toContain('data-location-search-input="true"');
+      expect(html).toContain('data-current-location-button="true"');
+      expect(html).toContain("预报范围选择");
+      expect(html).toContain("分析题材");
+      expect(html).not.toContain('data-quick-location-section="true"');
+      expect(html).not.toContain("常用机位");
+    }
+    expect(cloudSeaHtml).toContain('data-subject-control-panel-target="cloud_sea"');
+    expect(glowHtml).toContain('data-subject-control-panel-target="glow"');
+    expect(subjectControlSource).toContain("PlaceSearchCard");
+    expect(subjectControlSource).toContain("showQuickLocations={false}");
+    expect(subjectControlSource).toContain("enableCurrentLocation");
+    expect(scenarioSource).toContain("SubjectControlPanel");
+    expect(glowPageSource).toContain("SubjectControlPanel");
+    expect(glowPageSource).not.toContain("PlaceSearchCard");
   });
 
   it("renders the cloud sea pre-result location search panel without result dashboard chrome", () => {
@@ -382,7 +431,8 @@ describe("scenario module pages", () => {
       expect(source).not.toContain("requestBrowserCurrentCoordinates");
       expect(source).not.toContain("selectedLocationFromBrowserGeolocation");
     }
-    expect(glowPageSource).toContain("enableCurrentLocation");
+    expect(glowPageSource).toContain("SubjectControlPanel");
+    expect(glowPageSource).not.toContain("PlaceSearchCard");
   });
 
   it("cloud sea page reads General deep-link query params and preselects context", () => {
@@ -425,7 +475,14 @@ describe("scenario module pages", () => {
     expect(html).not.toContain("热门朝霞机位");
     expect(html).not.toContain("热门晚霞机位");
     expect(html).toContain("地点搜索与机位选择");
-    expect(html).toContain("常用机位");
+    expect(html).toContain('data-subject-control-panel="true"');
+    expect(html).toContain('data-subject-control-panel-target="glow"');
+    expect(html).not.toContain('data-quick-location-section="true"');
+    expect(html).not.toContain("常用机位");
+    for (const label of cloudSeaQuickSpotLabels) {
+      expect(html).not.toContain(label);
+      expect(hasExactButton(html, label)).toBe(false);
+    }
     expect(html).toContain("预报范围选择");
     expect(html).toContain("未来24小时");
     expect(html).toContain("未来48小时");
@@ -453,11 +510,11 @@ describe("scenario module pages", () => {
   it("keeps the glow entry layout responsive without fixed wide columns", () => {
     const html = renderToStaticMarkup(React.createElement(GlowPage));
 
-    expect(html).toContain("min-[900px]:grid-cols-[clamp(320px,34vw,410px)_minmax(0,1fr)]");
-    expect(html).toContain("min-[1280px]:grid-cols-[clamp(340px,28vw,430px)_minmax(0,1fr)]");
+    expect(html).toContain("min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)]");
+    expect(html).toContain("min-[1200px]:grid-cols-[clamp(340px,24vw,410px)_minmax(0,1fr)]");
     expect(html).toContain("relative min-w-0 w-full");
     expect(html).toContain("pr-12");
-    expect(html).toContain("flex flex-wrap gap-2");
+    expect(html).toContain('data-subject-control-panel="true"');
     expect(html).toContain("sm:grid-cols-2 xl:grid-cols-3");
   });
 
