@@ -52,7 +52,6 @@ import {
   type ForecastResultWindow,
   type ForecastResultWindowGroup,
   type GlowDailyTrendItem,
-  type GlowEvidenceViewItem,
   type GlowForecastViewModel,
   type GlowSunWindowCard,
   type GlowAerosolCard,
@@ -3756,49 +3755,43 @@ export function GlowResultPage({
   readonly viewModel: GlowForecastViewModel;
 }) {
   return (
-    <section
-      className="GlowResultPage glow-result-page grid gap-5"
-      data-glow-section="GlowResultPage"
-    >
+    <DecisionResultTemplate target="glow" className="GlowResultPage glow-result-page grid gap-5">
       <GlowTopContext query={query} result={result} />
       <GlowCoreDecision cards={viewModel.coreCards} />
-      <WeatherEssentialsPanel result={result} />
 
-      <main className="glow-result-stack grid gap-5" data-glow-section="GlowStackedLayout">
-        <GlowDailyTrend result={result} items={viewModel.dailyTrend} />
-        <GlowSunWindowCards cards={viewModel.sunWindowCards} />
-        <GlowWindowSection windows={viewModel.glowWindows} />
-        <GlowProfessionalHourlyCloudCards data={viewModel.professionalHourlyData} />
-        <GlowAtmosphereTerrainSection
-          aerosolCard={viewModel.aerosolCard}
-          terrainCards={viewModel.terrainObstructionCards}
+      <main
+        className="glow-result-stack grid w-full min-w-0 gap-5"
+        data-glow-section="GlowStackedLayout"
+        data-forecast-decision-layout="stacked"
+      >
+        <section
+          className="grid gap-5 min-[1120px]:grid-cols-[minmax(0,7fr)_minmax(300px,5fr)] min-[1120px]:items-start"
+          data-glow-section="GlowDecisionGrid"
+        >
+          <div className="grid min-w-0 gap-5">
+            <GlowDailyTrend result={result} items={viewModel.dailyTrend} />
+            <GlowWindowSection windows={viewModel.glowWindows} />
+          </div>
+          <div className="grid min-w-0 gap-5">
+            <GlowSunWindowCards cards={viewModel.sunWindowCards} />
+            <GlowAtmosphereTerrainSection
+              aerosolCard={viewModel.aerosolCard}
+              terrainCards={viewModel.terrainObstructionCards}
+            />
+            <GlowDepartureRecommendationCard
+              result={result}
+              items={viewModel.travelRecommendations}
+            />
+          </div>
+        </section>
+        <ProfessionalHourlyCloudSection
+          target="glow"
+          presentation="cards"
+          data={viewModel.professionalHourlyData}
         />
-        <GlowTwilightSection result={result} />
-        <GlowCloudStructureSection result={result} items={viewModel.cloudLayerEvidence} />
-        <GlowLowCloudRiskSection result={result} />
-        <GlowEvidenceSection
-          title="能见度与通透度"
-          badgeLabel="能见度 / 湿度 / 风 / 降水"
-          items={viewModel.visibilityEvidence}
-          dataSection="GlowVisibilitySection"
-        />
-        <GlowEvidenceSection
-          title="气溶胶与透明度参考"
-          badgeLabel="AOD / PM / 沙尘"
-          items={viewModel.aerosolEvidence}
-          dataSection="GlowAerosolSection"
-        />
-        <GlowTerrainSection result={result} items={viewModel.terrainObstructionEvidence} />
-        <GlowAdviceSection result={result} items={viewModel.travelRecommendations} />
-        <GlowRiskSection result={result} risks={viewModel.riskReasons} />
-        <GlowBackupPlanSection plans={viewModel.backupPlans} />
-        <GlowDataStatusSection
-          result={result}
-          notes={viewModel.missingDataNotes}
-          dataNotice={viewModel.dataNotice}
-        />
+        <GlowFinalDecisionSection result={result} viewModel={viewModel} />
       </main>
-    </section>
+    </DecisionResultTemplate>
   );
 }
 
@@ -4335,9 +4328,14 @@ function GlowTopContext({
   readonly query: ForecastQueryInput;
   readonly result: ForecastCalculationResult;
 }) {
+  const bestWindow = result.glowAnalysis.bestGlowWindow ?? result.glowAnalysis.bestGlowWindows[0];
+  const bestWindowLabel = bestWindow
+    ? `${bestWindow.labelZh} ${formatWindow(bestWindow.start, bestWindow.end)}`
+    : "暂无明确霞光窗口";
+
   return (
     <Card className="p-4 shadow-sm">
-      <div className="grid gap-4 min-[900px]:grid-cols-[minmax(0,1fr)_auto] min-[900px]:items-center">
+      <div className="grid gap-4 min-[900px]:grid-cols-[minmax(0,1fr)_minmax(260px,340px)] min-[900px]:items-start">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="default">朝霞晚霞专项判断</Badge>
@@ -4352,24 +4350,40 @@ function GlowTopContext({
           <h1 className="mt-3 break-words text-2xl font-bold leading-tight text-foreground sm:text-[28px]">
             {query.name}
           </h1>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
+            {result.recommendationLabel}。朝霞 {result.glowAnalysis.sunriseGlowScore} 分，晚霞{" "}
+            {result.glowAnalysis.sunsetGlowScore} 分；优先看 {bestWindowLabel}。
+          </p>
           <div className="mt-3 grid gap-1 text-xs leading-5 text-muted-foreground min-[900px]:grid-cols-2 min-[1120px]:flex min-[1120px]:flex-wrap min-[1120px]:gap-2">
             <span>预报范围：{result.calendarBasis.forecastRangeLabel}</span>
             <span>生成时间：{formatDateTime(result.generatedAt)}</span>
             <span>更新时间：{formatDateTime(result.generatedAt)}</span>
             <span>数据状态：{weatherStatusLabel(result)}</span>
+            <span>天气数据：{weatherModeBadge(result)}</span>
             <span>地形数据：{result.terrainAnalysis.dataSourceLabelZh}</span>
             <span>天文数据：{result.astroDataSourceLabelZh}</span>
           </div>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => {
-            window.location.assign("/glow");
-          }}
-        >
-          重新选择地点
-        </Button>
+        <div className="grid gap-3 rounded-lg border border-border bg-muted p-3">
+          <dl className="grid gap-2 text-xs leading-5 text-muted-foreground">
+            <CompactDefinition label="综合建议" value={result.recommendationLabel} />
+            <CompactDefinition label="最佳窗口" value={bestWindowLabel} />
+            <CompactDefinition
+              label="置信度"
+              value={confidenceLabel(result.glowAnalysis.confidenceLevel)}
+            />
+            <CompactDefinition label="数据可用性" value={dataReadinessBadgeLabel(result)} />
+          </dl>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              window.location.assign("/glow");
+            }}
+          >
+            重新选择地点
+          </Button>
+        </div>
       </div>
     </Card>
   );
@@ -4380,10 +4394,10 @@ function GlowCoreDecision({ cards }: { readonly cards: readonly ForecastResultCa
     <section className="glow-core-decision grid gap-3" data-glow-section="GlowCoreDecision">
       <SectionHeading
         title="核心判断"
-        description="分开查看朝霞、晚霞、最佳霞光窗口和低云遮挡风险。"
+        description="先看朝霞、晚霞、最佳窗口、低云遮挡、大气通透和地形遮挡。"
         badge="确定性霞光模型"
       />
-      <div className="grid gap-3 min-[900px]:grid-cols-2 min-[1280px]:grid-cols-4">
+      <div className="grid items-stretch gap-3 sm:grid-cols-2 min-[1180px]:grid-cols-3">
         {cards.map((card) => (
           <PrimaryResultCard key={card.key} card={card} />
         ))}
@@ -4419,112 +4433,46 @@ function GlowDailyTrend({
         {items.map((item) => (
           <article
             key={item.key}
-            className="grid gap-3 rounded-lg border border-border bg-muted p-3 min-[900px]:grid-cols-[minmax(150px,0.8fr)_minmax(180px,1fr)_minmax(220px,1.2fr)_minmax(0,1.35fr)] min-[900px]:items-start"
+            className="grid gap-3 rounded-lg border border-border bg-muted p-3 min-[900px]:grid-cols-[minmax(130px,0.75fr)_minmax(210px,1.15fr)_minmax(220px,1.15fr)_minmax(0,1fr)] min-[900px]:items-start"
           >
             <div className="min-w-0">
-              <h3 className="font-bold text-card-foreground">{item.dateLabel}</h3>
-              <p className="mt-1 text-xs text-muted-foreground">{item.bestTargetLabel}</p>
-            </div>
-            <dl className="grid gap-1 text-sm">
-              <GlowInlineDefinition label="云层摘要" value={item.cloudLayerSummaryLabel} />
-              <GlowInlineDefinition label="气溶胶" value={item.aerosolTransparencyLabel} />
-            </dl>
-            <dl className="grid gap-1 text-sm">
-              <GlowInlineDefinition label="朝霞机会" value={`${item.sunriseScore} 分`} />
-              <GlowInlineDefinition label="晚霞机会" value={`${item.sunsetScore} 分`} />
-              <GlowInlineDefinition label="低云遮挡" value={item.lowCloudRiskLabel} />
-              <GlowInlineDefinition label="色彩云条件" value={item.colorCarrierLabel} />
-            </dl>
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground">日出 / 日落窗口</p>
-              <dl className="mt-1 grid gap-1 text-sm">
-                <GlowInlineDefinition label="日出窗口" value={item.sunriseWindowLabel} />
-                <GlowInlineDefinition label="日落窗口" value={item.sunsetWindowLabel} />
-                <GlowInlineDefinition label="降水重叠" value={item.rainOverlapLabel} />
-                <GlowInlineDefinition label="雨后开口" value={item.postRainOpeningLabel} />
-              </dl>
-              <dl className="mt-2 grid gap-1 text-sm">
-                <GlowInlineDefinition label="地形遮挡" value={item.terrainObstructionLabel} />
-                <GlowInlineDefinition label="降水/风" value={item.precipitationWindRiskLabel} />
-              </dl>
-            </div>
-            <div>
               <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-bold text-card-foreground">{item.dateLabel}</h3>
                 <Badge variant={item.recommendationLabel === "不建议专程" ? "warning" : "default"}>
                   {item.recommendationLabel}
                 </Badge>
-                <Badge variant="muted">{item.riskNote}</Badge>
               </div>
-              <p className="mt-2 text-sm font-semibold leading-6 text-card-foreground">
-                最佳霞光窗口：{item.bestWindowLabel}
-              </p>
+              <p className="mt-1 text-xs text-muted-foreground">{item.bestTargetLabel}</p>
+              <dl className="mt-3 grid gap-1 text-sm">
+                <GlowInlineDefinition label="朝霞" value={`${item.sunriseScore} 分`} />
+                <GlowInlineDefinition label="晚霞" value={`${item.sunsetScore} 分`} />
+              </dl>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground">最佳候选窗口</p>
+              <dl className="mt-1 grid gap-1 text-sm">
+                <GlowInlineDefinition label="窗口" value={item.bestWindowLabel} />
+                <GlowInlineDefinition label="日出" value={item.sunriseWindowLabel} />
+                <GlowInlineDefinition label="日落" value={item.sunsetWindowLabel} />
+                <GlowInlineDefinition label="降水重叠" value={item.rainOverlapLabel} />
+              </dl>
+            </div>
+            <dl className="grid gap-1 text-sm">
+              <GlowInlineDefinition label="云层" value={item.cloudLayerSummaryLabel} />
+              <GlowInlineDefinition label="通透" value={item.aerosolTransparencyLabel} />
+              <GlowInlineDefinition label="地形" value={item.terrainObstructionLabel} />
+              <GlowInlineDefinition label="降水/风" value={item.precipitationWindRiskLabel} />
+            </dl>
+            <div>
+              <Badge variant="muted">{item.riskNote}</Badge>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.keyReason}</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {item.postRainOpeningLabel}
+              </p>
             </div>
           </article>
         ))}
       </div>
-    </Card>
-  );
-}
-
-function GlowTwilightSection({ result }: { readonly result: ForecastCalculationResult }) {
-  return (
-    <Card className="GlowTwilightSection glow-twilight-section p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">光线窗口</h2>
-        <Badge variant="muted">{result.astroDataSourceLabelZh}</Badge>
-      </div>
-      {result.astroSummaries.length > 0 ? (
-        <div className="mt-4 grid gap-3">
-          {result.astroSummaries.map((astro) => (
-            <article
-              key={astro.date}
-              className="grid gap-3 rounded-lg border border-border bg-muted p-3 min-[900px]:grid-cols-[minmax(150px,0.75fr)_repeat(3,minmax(180px,1fr))] min-[900px]:items-start"
-            >
-              <div>
-                <h3 className="font-bold text-card-foreground">
-                  {dateLabelForResultClient(result, astro.date)}
-                </h3>
-                <p className="mt-1 text-xs text-muted-foreground">{astro.timezone}</p>
-              </div>
-              <dl className="grid gap-2 text-sm">
-                <GlowInlineDefinition label="日出" value={formatOptionalTime(astro.sunrise)} />
-                <GlowInlineDefinition label="日落" value={formatOptionalTime(astro.sunset)} />
-              </dl>
-              <dl className="grid gap-2 text-sm">
-                <GlowInlineDefinition
-                  label="民用晨光"
-                  value={formatOptionalTime(astro.civilDawn)}
-                />
-                <GlowInlineDefinition
-                  label="日出暖光"
-                  value={formatDerivedWindow(astro.sunrise, shiftTime(astro.sunrise ?? "", 60))}
-                />
-                <GlowInlineDefinition
-                  label="日落后余晖"
-                  value={formatDerivedWindow(astro.sunset, astro.civilDusk)}
-                />
-              </dl>
-              <dl className="grid gap-2 text-sm">
-                <GlowInlineDefinition
-                  label="蓝调时间"
-                  value={formatDerivedWindow(astro.civilDusk, astro.nauticalDusk)}
-                />
-                <GlowInlineDefinition
-                  label="天文晨昏"
-                  value={`${formatOptionalTime(astro.astronomicalDawn)} / ${formatOptionalTime(
-                    astro.astronomicalDusk,
-                  )}`}
-                />
-              </dl>
-            </article>
-          ))}
-        </div>
-      ) : (
-        <p className="mt-3 rounded-lg border border-warning bg-muted p-3 text-sm leading-6 text-muted-foreground">
-          缺少日出日落时间，无法生成精确霞光窗口。
-        </p>
-      )}
     </Card>
   );
 }
@@ -4579,183 +4527,26 @@ function GlowWindowSection({
   );
 }
 
-function GlowCloudStructureSection({
-  result,
-  items,
-}: {
-  readonly result: ForecastCalculationResult;
-  readonly items: readonly GlowEvidenceViewItem[];
-}) {
-  return (
-    <Card
-      className="GlowCloudLayerSection glow-cloud-structure p-4 shadow-sm"
-      data-glow-section="GlowCloudLayerSection"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">云层结构</h2>
-        <Badge variant="muted">低云 / 中云 / 高云 / 色彩载体</Badge>
-      </div>
-      <dl className="mt-4 grid gap-2 text-sm min-[900px]:grid-cols-2 min-[1280px]:grid-cols-4">
-        <GlowInlineDefinition
-          label="色彩云条件"
-          value={`${result.glowAnalysis.labels.colorCarrier}（${result.glowAnalysis.colorCarrierScore} 分）`}
-        />
-        <GlowInlineDefinition
-          label="低云遮挡风险"
-          value={`${result.glowAnalysis.labels.lowCloudObstruction}（${result.glowAnalysis.lowCloudObstructionRisk} 分）`}
-        />
-        <GlowInlineDefinition
-          label="降水打断风险"
-          value={`${glowRiskText(result.glowAnalysis.precipitationDisruptionRisk)}（${result.glowAnalysis.precipitationDisruptionRisk} 分）`}
-        />
-        <GlowInlineDefinition
-          label="通透与色彩质量"
-          value={`${scoreLabelFromNumber(result.glowAnalysis.visibilityColorQualityScore)}（${result.glowAnalysis.visibilityColorQualityScore} 分）`}
-        />
-      </dl>
-      <div className="mt-4 grid gap-3 min-[900px]:grid-cols-2">
-        {items.map((item) => (
-          <article key={item.key} className="rounded-lg border border-border bg-muted p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-semibold text-card-foreground">{item.label}</h3>
-              <Badge variant={badgeVariantForTone(item.tone)}>{item.value}</Badge>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.detail}</p>
-          </article>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-function GlowEvidenceSection({
-  title,
-  badgeLabel,
-  items,
-  dataSection,
-}: {
-  readonly title: string;
-  readonly badgeLabel: string;
-  readonly items: readonly GlowEvidenceViewItem[];
-  readonly dataSection: string;
-}) {
-  return (
-    <Card className={`${dataSection} p-4 shadow-sm`} data-glow-section={dataSection}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">{title}</h2>
-        <Badge variant="muted">{badgeLabel}</Badge>
-      </div>
-      <div className="mt-4 grid gap-3 min-[900px]:grid-cols-2">
-        {items.map((item) => (
-          <article key={item.key} className="rounded-lg border border-border bg-muted p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-semibold text-card-foreground">{item.label}</h3>
-              <Badge variant={badgeVariantForTone(item.tone)}>{item.value}</Badge>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.detail}</p>
-          </article>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-function GlowLowCloudRiskSection({ result }: { readonly result: ForecastCalculationResult }) {
-  const risk = result.glowAnalysis.lowCloudObstructionRisk;
-  return (
-    <Card className="GlowLowCloudRiskSection glow-low-cloud-risk p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">低云遮挡风险</h2>
-        <Badge variant={risk >= 70 ? "danger" : risk >= 45 ? "warning" : "info"}>{risk} 分</Badge>
-      </div>
-      <div className="mt-4 grid gap-3 min-[900px]:grid-cols-3">
-        <article className="rounded-lg border border-border bg-muted p-4">
-          <h3 className="font-bold text-card-foreground">太阳方向</h3>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            低云可能遮挡太阳方向，低云过厚可能导致无明显霞光或只剩白光。
-          </p>
-        </article>
-        <article className="rounded-lg border border-border bg-muted p-4">
-          <h3 className="font-bold text-card-foreground">色彩载体</h3>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            中高云更适合作为霞光载体，低云更多用于判断遮挡和反差风险。
-          </p>
-        </article>
-        <article className="rounded-lg border border-border bg-muted p-4">
-          <h3 className="font-bold text-card-foreground">现场动作</h3>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            若太阳方向被低云压住，优先寻找更高机位、侧逆光角度或转拍层峦与云缝光。
-          </p>
-        </article>
-      </div>
-    </Card>
-  );
-}
-
-function GlowTerrainSection({
-  result,
-  items,
-}: {
-  readonly result: ForecastCalculationResult;
-  readonly items: readonly GlowEvidenceViewItem[];
-}) {
-  const horizon = result.terrainAnalysis.horizonProfile;
-  const terrainMissing =
-    typeof horizon.sunriseHorizonAngle !== "number" ||
-    typeof horizon.sunsetHorizonAngle !== "number";
-
-  return (
-    <Card className="GlowTerrainSection glow-terrain-section p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">地形遮挡参考</h2>
-        <Badge variant="muted">{result.terrainAnalysis.dataSourceLabelZh}</Badge>
-      </div>
-      <div className="mt-4 grid gap-3 min-[900px]:grid-cols-3">
-        {items.map((item) => (
-          <article key={item.key} className="rounded-lg border border-border bg-muted p-4">
-            <p className="text-xs font-semibold text-muted-foreground">{item.label}</p>
-            <p className="mt-2 break-words text-xl font-bold text-card-foreground">{item.value}</p>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.detail}</p>
-          </article>
-        ))}
-      </div>
-      <dl className="mt-3 grid gap-2 text-sm min-[900px]:grid-cols-3">
-        <CompactDefinition
-          label="日出遮挡角"
-          value={formatAngle(result.terrainAnalysis.horizonProfile.sunriseHorizonAngle)}
-        />
-        <CompactDefinition
-          label="日落遮挡角"
-          value={formatAngle(result.terrainAnalysis.horizonProfile.sunsetHorizonAngle)}
-        />
-        <CompactDefinition
-          label="遮挡方向"
-          value={formatBlockedDirections(result.terrainAnalysis.horizonProfile.blockedDirectionsZh)}
-        />
-      </dl>
-      {terrainMissing ? (
-        <p className="mt-3 rounded-lg border border-warning bg-muted p-3 text-sm leading-6 text-muted-foreground">
-          暂缺地形遮挡细节，正式地形数据接入后将提升判断精度。
-        </p>
-      ) : null}
-    </Card>
-  );
-}
-
-function GlowAdviceSection({
+function GlowDepartureRecommendationCard({
   result,
   items,
 }: {
   readonly result: ForecastCalculationResult;
   readonly items: readonly string[];
 }) {
-  const practicalItems = glowPracticalAdviceItems(result, items);
+  const practicalItems = glowPracticalAdviceItems(result, items).slice(0, 3);
+  const best = result.glowAnalysis.bestGlowWindow ?? result.glowAnalysis.bestGlowWindows[0];
 
   return (
-    <Card className="GlowAdviceSection glow-advice-section p-4 shadow-sm">
+    <Card
+      className="GlowDepartureRecommendation glow-departure-recommendation p-4 shadow-sm"
+      data-glow-section="GlowDepartureRecommendation"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">拍摄建议</h2>
-        <Badge variant="muted">提前到达 / 方向 / 备选 / 风险</Badge>
+        <h2 className="text-lg font-bold text-card-foreground">出发建议</h2>
+        <Badge variant={best && best.score >= 65 ? "default" : "warning"}>
+          {best ? `${best.score} 分窗口` : "暂无明确窗口"}
+        </Badge>
       </div>
       <ul className="mt-3 grid gap-2 text-sm leading-6 text-muted-foreground">
         {practicalItems.map((item) => (
@@ -4768,103 +4559,92 @@ function GlowAdviceSection({
   );
 }
 
-function GlowRiskSection({
+function GlowFinalDecisionSection({
   result,
-  risks,
+  viewModel,
 }: {
   readonly result: ForecastCalculationResult;
-  readonly risks: readonly string[];
+  readonly viewModel: GlowForecastViewModel;
 }) {
   const runtimeRisks = result.riskFlags.filter((risk) =>
     ["precipitation", "visibility", "wind"].includes(risk.key),
   );
+  const evidenceItems = [
+    ...viewModel.cloudLayerEvidence.slice(0, 3),
+    ...viewModel.visibilityEvidence.slice(0, 2),
+  ].slice(0, 4);
+  const riskItems = [
+    ...viewModel.riskReasons,
+    ...runtimeRisks.map((risk) => risk.description),
+  ].slice(0, 4);
+  const actionItems = glowPracticalAdviceItems(result, viewModel.travelRecommendations).slice(0, 4);
+  const backupPlans = viewModel.backupPlans.slice(0, 2);
 
   return (
-    <Card className="GlowRiskSection glow-risk-section p-4 shadow-sm">
+    <Card
+      className="GlowFinalDecisionSection glow-final-decision p-4 shadow-sm"
+      data-glow-section="GlowFinalDecisionSection"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">风险提示</h2>
-        <Badge variant="muted">低云 / 降水 / 通透 / 风</Badge>
+        <h2 className="text-lg font-bold text-card-foreground">判断依据、风险与行动</h2>
+        <Badge variant="muted">确定性结果</Badge>
       </div>
-      <div className="mt-3 grid gap-3 min-[900px]:grid-cols-2">
-        {risks.map((risk) => (
-          <article key={risk} className="rounded-lg border border-border bg-muted p-3">
-            <p className="text-sm leading-6 text-muted-foreground">{risk}</p>
-          </article>
-        ))}
-        {runtimeRisks.map((risk) => (
-          <article key={risk.key} className="rounded-lg border border-border bg-muted p-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-sm font-bold text-card-foreground">{risk.label}</h3>
-              <Badge variant={risk.level === "high" ? "danger" : "warning"}>
-                {riskLevelText(risk.level)}风险
-              </Badge>
-            </div>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{risk.description}</p>
-          </article>
-        ))}
+      <div className="mt-4 grid gap-3 min-[900px]:grid-cols-3">
+        <article className="rounded-lg border border-border bg-muted p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-bold text-card-foreground">判断依据</h3>
+            <Badge variant="muted">云层 / 通透</Badge>
+          </div>
+          <dl className="mt-3 grid gap-2 text-sm">
+            {evidenceItems.map((item) => (
+              <GlowInlineDefinition key={item.key} label={item.label} value={item.value} />
+            ))}
+          </dl>
+          <p className="mt-3 text-xs leading-5 text-muted-foreground">
+            逐小时细节见上方云层卡片；这里仅保留影响结论的摘要。
+          </p>
+        </article>
+
+        <article className="rounded-lg border border-border bg-muted p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-bold text-card-foreground">风险与备选</h3>
+            <Badge variant="warning">需复核</Badge>
+          </div>
+          <ul className="mt-3 grid gap-2 text-sm leading-6 text-muted-foreground">
+            {riskItems.map((risk) => (
+              <li key={risk}>{risk}</li>
+            ))}
+            {backupPlans.map((plan) => (
+              <li key={plan.condition}>
+                {plan.condition}：{plan.action}
+              </li>
+            ))}
+          </ul>
+        </article>
+
+        <article className="rounded-lg border border-border bg-muted p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-bold text-card-foreground">行动建议</h3>
+            <Badge variant={result.recommendationLabel.includes("不建议") ? "warning" : "default"}>
+              {result.recommendationLabel}
+            </Badge>
+          </div>
+          <ul className="mt-3 grid gap-2 text-sm leading-6 text-muted-foreground">
+            {actionItems.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+          {viewModel.missingDataNotes.length > 0 ? (
+            <p className="mt-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
+              {viewModel.missingDataNotes[0]}
+            </p>
+          ) : null}
+          <p className="mt-3 text-xs leading-5 text-muted-foreground">{viewModel.dataNotice}</p>
+        </article>
       </div>
     </Card>
   );
 }
-
-function GlowBackupPlanSection({ plans }: { readonly plans: readonly GlowBackupPlan[] }) {
-  return (
-    <Card className="GlowBackupPlanSection glow-backup-plan p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">备选拍摄方案</h2>
-        <Badge variant="muted">霞光失败时</Badge>
-      </div>
-      <div className="mt-3 grid gap-3 min-[900px]:grid-cols-2">
-        {plans.map((plan) => (
-          <article key={plan.condition} className="rounded-lg border border-border bg-muted p-3">
-            <p className="text-xs font-semibold text-muted-foreground">{plan.condition}</p>
-            <h3 className="mt-2 font-bold text-card-foreground">{plan.action}</h3>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{plan.detail}</p>
-          </article>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-function GlowDataStatusSection({
-  result,
-  notes,
-  dataNotice,
-}: {
-  readonly result: ForecastCalculationResult;
-  readonly notes: readonly string[];
-  readonly dataNotice: string;
-}) {
-  return (
-    <Card className="GlowDataStatusSection glow-data-status p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">数据状态 / 数据缺失说明</h2>
-        <Badge variant={result.weatherDataMode === "real" ? "success" : "warning"}>
-          {weatherModeBadge(result)}
-        </Badge>
-      </div>
-      <dl className="mt-3 grid gap-2 text-sm min-[900px]:grid-cols-3">
-        <CompactDefinition label="天气数据" value={weatherStatusLabel(result)} />
-        <CompactDefinition label="地形数据" value={result.terrainAnalysis.dataSourceLabelZh} />
-        <CompactDefinition label="天文数据" value={result.astroDataSourceLabelZh} />
-      </dl>
-      <p className="mt-3 rounded-lg border border-border bg-muted p-3 text-sm leading-6 text-muted-foreground">
-        {dataNotice}
-      </p>
-      {notes.length > 0 ? (
-        <ul className="mt-3 grid gap-2 text-sm leading-6 text-muted-foreground">
-          {notes.map((note) => (
-            <li key={note} className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
-              {note}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </Card>
-  );
-}
-
 function GlowInlineDefinition({
   label,
   value,
@@ -4934,122 +4714,6 @@ function GlowSunWindowCards({ cards }: { readonly cards: readonly GlowSunWindowC
   );
 }
 
-function GlowProfessionalHourlyCloudCards({
-  data,
-}: {
-  readonly data: ProfessionalHourlyDisplayData;
-}) {
-  const basis = data.timeBasis;
-  const rows = data.rows;
-  if (!isValidProfessionalHourlyTimeBasis(basis) || rows.length === 0) {
-    return null;
-  }
-
-  const annotations = new Map((data.rowAnnotations ?? []).map((item) => [item.rowTime, item]));
-  const rowsByDate = groupProfessionalHourlyRowsByDate(rows, basis.timezone);
-  const expectedRowCount = basis.expectedRowCount ?? basis.requestedHours ?? rows.length;
-
-  return (
-    <Card
-      className="GlowProfessionalHourlyCloudCards glow-professional-hourly-cloud-cards p-4 shadow-sm"
-      data-glow-section="GlowProfessionalHourlyCloudCards"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-bold text-card-foreground">逐小时云层与霞光条件</h2>
-          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
-            使用与云海页相同的专业小时数据模型，按本地日期展示完整预报范围内的云层、通透度、降水和风。
-          </p>
-        </div>
-        <Badge variant="accent">{rows.length} / {expectedRowCount} 小时</Badge>
-      </div>
-
-      <dl className="mt-4 grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground min-[760px]:grid-cols-3">
-        <CompactDefinition label="有效时间" value={basis.displayRangeZh ?? `${formatProfessionalTime(basis.startTime, basis.timezone)} - ${formatProfessionalTime(basis.endTime, basis.timezone)}`} />
-        <CompactDefinition label="时间步长" value={basis.stepMinutes === 60 ? "逐小时" : `${basis.stepMinutes} 分钟`} />
-        <CompactDefinition label="云层口径" value={professionalCloudBasisLabel(data.cloudBasisConsistency, data.cloudLayerCompleteness)} />
-      </dl>
-
-      <div className="mt-4 grid gap-4">
-        {rowsByDate.map((group) => (
-          <section key={group.dateLabel} className="grid gap-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-sm font-bold text-card-foreground">{group.dateLabel}</h3>
-              <Badge variant="muted">{group.rows.length} 小时</Badge>
-            </div>
-            <div className="grid gap-2 min-[760px]:grid-cols-2 min-[1180px]:grid-cols-3">
-              {group.rows.map((row) => (
-                <GlowProfessionalHourlyCloudCard
-                  key={row.time}
-                  row={row}
-                  timezone={basis.timezone}
-                  annotation={annotations.get(row.time)}
-                  cloudBasisRowNote={data.cloudBasisConsistency.rowNotesByHour?.[row.time]}
-                />
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-function GlowProfessionalHourlyCloudCard({
-  row,
-  timezone,
-  annotation,
-  cloudBasisRowNote,
-}: {
-  readonly row: ProfessionalHourlyRow;
-  readonly timezone: string;
-  readonly annotation?: ProfessionalHourlyRowAnnotation;
-  readonly cloudBasisRowNote?: string;
-}) {
-  const weatherText = providerNeutralProfessionalWeatherText(row.weatherText) ?? "天气";
-  const signal = professionalHourlyDisplaySignal(row);
-
-  return (
-    <article
-      className={cn(
-        "rounded-lg border bg-card p-3 text-sm shadow-sm",
-        annotation?.tone === "success"
-          ? "border-primary/40 bg-secondary/20"
-          : annotation?.tone === "warning" || annotation?.tone === "danger"
-            ? "border-warning/50 bg-accent/10"
-            : "border-border",
-      )}
-      data-glow-hourly-cloud-card={row.time}
-    >
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h4 className="font-bold text-card-foreground">
-            {row.timeLabel || formatProfessionalTime(row.time, timezone)}
-          </h4>
-          <p className="mt-0.5 text-xs text-muted-foreground">{weatherText}</p>
-        </div>
-        <Badge variant={professionalSignalBadgeVariant(signal)}>{signal}</Badge>
-      </div>
-      {annotation ? (
-        <p className="mt-2 rounded-md border border-border bg-muted px-2 py-1.5 text-xs leading-5 text-muted-foreground">
-          <span className="font-semibold text-card-foreground">{annotation.label}</span> · {annotation.detail}
-        </p>
-      ) : null}
-      <dl className="mt-3 grid gap-1.5 text-xs">
-        <GlowInlineDefinition label="总云 / 低云" value={`${formatProfessionalPercent(row.cloudTotalPercent)} / ${formatProfessionalPercent(row.cloudLowPercent)}`} />
-        <GlowInlineDefinition label="中云 / 高云" value={`${formatProfessionalPercent(row.cloudMidPercent)} / ${formatProfessionalPercent(row.cloudHighPercent)}`} />
-        <GlowInlineDefinition label="通透度" value={formatProfessionalVisibility(row.visibilityMeters)} />
-        <GlowInlineDefinition label="湿度 / 露点差" value={`${formatProfessionalPercent(row.relativeHumidityPercent)} / ${formatProfessionalTemperatureDelta(row.dewPointSpreadC)}`} />
-        <GlowInlineDefinition label="降水" value={formatProfessionalPrecipitation(row)} />
-        <GlowInlineDefinition label="风" value={`${formatProfessionalWindSpeed(row.windSpeedMs)} ${formatProfessionalWindDirection(row.windDirectionDeg)}`} />
-      </dl>
-      {cloudBasisRowNote ? (
-        <p className="mt-2 text-[11px] leading-5 text-muted-foreground">{cloudBasisRowNote}</p>
-      ) : null}
-    </article>
-  );
-}
-
 function GlowAtmosphereTerrainSection({
   aerosolCard,
   terrainCards,
@@ -5072,7 +4736,9 @@ function GlowAtmosphereTerrainSection({
         <GlowAerosolSummaryCard card={aerosolCard} />
         <div className="grid gap-2 min-[760px]:grid-cols-2">
           {terrainCards.length > 0 ? (
-            terrainCards.map((card) => <GlowTerrainObstructionSummaryCard key={card.key} card={card} />)
+            terrainCards.map((card) => (
+              <GlowTerrainObstructionSummaryCard key={card.key} card={card} />
+            ))
           ) : (
             <p className="rounded-lg border border-border bg-muted p-3 text-sm leading-6 text-muted-foreground">
               方向性地形剖面暂缺，不用单点海拔推断日出或日落遮挡。
@@ -5121,23 +4787,6 @@ function GlowTerrainObstructionSummaryCard({
       <p className="mt-2 text-sm leading-6 text-muted-foreground">{card.detail}</p>
     </article>
   );
-}
-
-function groupProfessionalHourlyRowsByDate(
-  rows: readonly ProfessionalHourlyRow[],
-  timezone: string,
-): readonly { readonly dateLabel: string; readonly rows: readonly ProfessionalHourlyRow[] }[] {
-  const groups = new Map<string, ProfessionalHourlyRow[]>();
-  for (const row of rows) {
-    const key = row.dateLabel || formatProfessionalDate(row.time, timezone);
-    const current = groups.get(key) ?? [];
-    current.push(row);
-    groups.set(key, current);
-  }
-  return [...groups.entries()].map(([dateLabel, groupedRows]) => ({
-    dateLabel,
-    rows: groupedRows,
-  }));
 }
 
 function CloudSeaTopResultHeader({
@@ -5769,6 +5418,16 @@ type ProfessionalHourlyFilterDefinition = {
   readonly label: string;
 };
 
+type ProfessionalHourlySectionTarget = "cloud_sea" | "glow";
+type ProfessionalHourlyPresentation = "table" | "cards";
+
+type ProfessionalHourlyCloudSectionProps = {
+  readonly target: ProfessionalHourlySectionTarget;
+  readonly presentation: ProfessionalHourlyPresentation;
+  readonly data: ProfessionalHourlyDisplayData;
+  readonly terrainContext?: CloudSeaTerrainContext;
+};
+
 function professionalHourlyFiltersForContext(
   terrainContext: CloudSeaTerrainContext,
 ): readonly ProfessionalHourlyFilterDefinition[] {
@@ -5810,6 +5469,22 @@ function CloudSeaProfessionalHourlyDataPanel({
   readonly data: CloudSeaProfessionalHourlyDisplayData;
   readonly terrainContext: CloudSeaTerrainContext;
 }) {
+  return (
+    <ProfessionalHourlyCloudSection
+      target="cloud_sea"
+      presentation="table"
+      data={data}
+      terrainContext={terrainContext}
+    />
+  );
+}
+
+function ProfessionalHourlyCloudSection({
+  target,
+  presentation,
+  data,
+  terrainContext,
+}: ProfessionalHourlyCloudSectionProps) {
   const rows = data.rows;
   const basis = data.timeBasis;
   const [expanded, setExpanded] = useState(true);
@@ -5831,9 +5506,25 @@ function CloudSeaProfessionalHourlyDataPanel({
   }
 
   const timeStepLabel = basis.stepMinutes === 60 ? "逐小时" : `${basis.stepMinutes} 分钟`;
-  const professionalHourlyFilters = professionalHourlyFiltersForContext(terrainContext);
+  const isTablePresentation = presentation === "table";
+  const professionalHourlyFilters = terrainContext
+    ? professionalHourlyFiltersForContext(terrainContext)
+    : [];
   const activeFilterLabel =
     professionalHourlyFilters.find((filter) => filter.mode === filterMode)?.label ?? "全部小时";
+  const sectionTitle = target === "glow" ? "逐小时云层与霞光条件" : "专业小时数据";
+  const sectionBadge = target === "glow" ? "共享小时模型" : "专业参考";
+  const sectionDescription =
+    target === "glow"
+      ? "直接使用云海页专业小时数据模型，展示完整预报范围内的云层、通透度、降水、风和霞光窗口关系。"
+      : terrainContext?.vocabulary.professionalDescription ??
+        "逐小时展示云层、湿度、露点、降水、能见度和风。";
+  const professionalUsageText =
+    terrainContext?.vocabulary.professionalUsageText ??
+    "逐小时卡片使用同一标准化数据，不重新计算霞光评分。";
+  const signalColumnLabel =
+    terrainContext?.vocabulary.professionalSignalColumnLabel ??
+    (target === "glow" ? "霞光关系" : "信号");
   const cloudLayerCompleteness = data.cloudLayerCompleteness;
   const cloudBasisConsistency = data.cloudBasisConsistency;
   const missingHeaderNote = professionalHourlyMissingHeaderNote(
@@ -5864,33 +5555,52 @@ function CloudSeaProfessionalHourlyDataPanel({
 
   return (
     <Card
-      className="CloudSeaProfessionalHourlyData cloud-sea-professional-hourly-data p-4 shadow-sm"
-      data-cloud-sea-section="CloudSeaProfessionalHourlyData"
+      className={cn(
+        "ProfessionalHourlyCloudSection p-4 shadow-sm",
+        target === "cloud_sea" &&
+          "CloudSeaProfessionalHourlyData cloud-sea-professional-hourly-data",
+        target === "glow" && "glow-professional-hourly-cloud-section",
+      )}
+      data-cloud-sea-section={target === "cloud_sea" ? "CloudSeaProfessionalHourlyData" : undefined}
+      data-glow-section={target === "glow" ? "ProfessionalHourlyCloudSection" : undefined}
+      data-professional-hourly-shared="true"
+      data-professional-hourly-target={target}
       data-testid="professional-hourly-data"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-bold text-card-foreground">专业小时数据</h2>
-            <Badge variant="accent">专业参考</Badge>
+            <h2 className="text-lg font-bold text-card-foreground">{sectionTitle}</h2>
+            <Badge variant="accent">{sectionBadge}</Badge>
           </div>
           <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
-            {terrainContext.vocabulary.professionalDescription}
+            {sectionDescription}
           </p>
         </div>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={() => {
-            setExpanded((current) => !current);
-          }}
-        >
-          {expanded ? "收起小时表" : "展开小时表"}
-        </Button>
+        {isTablePresentation ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setExpanded((current) => !current);
+            }}
+          >
+            {expanded ? "收起小时表" : "展开小时表"}
+          </Button>
+        ) : (
+          <Badge variant="muted">
+            {rows.length} / {expectedRowCount} 小时
+          </Badge>
+        )}
       </div>
 
-      <dl className="mt-4 grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground min-[760px]:grid-cols-4">
+      <dl
+        className={cn(
+          "mt-4 grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground",
+          isTablePresentation ? "min-[760px]:grid-cols-4" : "min-[760px]:grid-cols-3",
+        )}
+      >
         <CompactDefinition label="目标有效时间" value={targetRangeLabel} />
         <CompactDefinition label="覆盖率" value={`${rows.length} / ${expectedRowCount} 小时`} />
         {!coverageComplete ? <CompactDefinition label="实际显示" value={actualRangeLabel} /> : null}
@@ -5942,105 +5652,326 @@ function CloudSeaProfessionalHourlyDataPanel({
         </p>
       ) : null}
 
-      {!expanded ? (
+      {isTablePresentation && !expanded ? (
         <CloudSeaHourlyFocusPreview rows={filteredRows.slice(0, 4)} timezone={basis.timezone} />
       ) : null}
 
-      <div
-        className={cn("mt-4 grid gap-3", !expanded && "hidden")}
-        data-professional-hourly-expanded={expanded ? "true" : "false"}
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex flex-wrap gap-2" role="group" aria-label="专业小时数据筛选">
-            {professionalHourlyFilters.map((filter) => (
-              <button
-                key={filter.mode}
-                type="button"
-                className={cn(
-                  "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
-                  filterMode === filter.mode
-                    ? "border-primary bg-secondary text-secondary-foreground"
-                    : "border-border bg-card text-muted-foreground hover:border-primary hover:text-foreground",
+      {isTablePresentation ? (
+        <div
+          className={cn("mt-4 grid gap-3", !expanded && "hidden")}
+          data-professional-hourly-expanded={expanded ? "true" : "false"}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap gap-2" role="group" aria-label="专业小时数据筛选">
+              {professionalHourlyFilters.map((filter) => (
+                <button
+                  key={filter.mode}
+                  type="button"
+                  className={cn(
+                    "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                    filterMode === filter.mode
+                      ? "border-primary bg-secondary text-secondary-foreground"
+                      : "border-border bg-card text-muted-foreground hover:border-primary hover:text-foreground",
+                  )}
+                  onClick={() => {
+                    setFilterMode(filter.mode);
+                  }}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="text-xs leading-5 text-muted-foreground">
+            当前筛选：{activeFilterLabel}，筛选 {filteredRows.length} / {rows.length} 小时；覆盖{" "}
+            {rows.length} / {expectedRowCount} 小时。{professionalUsageText}
+          </p>
+
+          <div
+            className="max-w-full overflow-x-auto rounded-lg border border-border bg-card"
+            data-cloud-sea-professional-table-scroll="true"
+          >
+            <table className="w-full min-w-[1280px] border-collapse text-left text-[12px] leading-5">
+              <thead className="bg-muted text-xs text-muted-foreground">
+                <tr>
+                  {[
+                    "日期",
+                    "时间",
+                    "天气",
+                    signalColumnLabel,
+                    "总云量 %",
+                    "高云量 %",
+                    "中云量 %",
+                    "低云量 %",
+                    ...temperatureColumnLabels,
+                    "露点 °C",
+                    "露点差 °C",
+                    "湿度 %",
+                    "降水 mm / 降水概率 %",
+                    "能见度 km",
+                    "风速 m/s",
+                    "风向",
+                  ].map((label, index) => (
+                    <th
+                      key={label}
+                      scope="col"
+                      className={cn(
+                        "whitespace-nowrap border-b border-border px-2 py-2 font-semibold",
+                        index === 0 && "sticky left-0 z-20 bg-muted",
+                      )}
+                    >
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRows.length > 0 ? (
+                  filteredRows.map((row) => (
+                    <CloudSeaProfessionalHourlyRow
+                      key={row.time}
+                      row={row}
+                      timezone={basis.timezone}
+                      cloudBasisRowNote={cloudBasisConsistency.rowNotesByHour?.[row.time]}
+                      showRawTemperatureColumn={showRawTemperatureColumn}
+                    />
+                  ))
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={15 + temperatureColumnLabels.length}
+                      className="border-t border-border px-3 py-4 text-center text-sm text-muted-foreground"
+                    >
+                      当前筛选下暂无小时数据，请切换上方筛选复核完整预报。
+                    </td>
+                  </tr>
                 )}
-                onClick={() => {
-                  setFilterMode(filter.mode);
-                }}
-              >
-                {filter.label}
-              </button>
-            ))}
+              </tbody>
+            </table>
           </div>
         </div>
-        <p className="text-xs leading-5 text-muted-foreground">
-          当前筛选：{activeFilterLabel}，筛选 {filteredRows.length} / {rows.length} 小时；覆盖{" "}
-          {rows.length} / {expectedRowCount} 小时。{terrainContext.vocabulary.professionalUsageText}
-        </p>
-
-        <div
-          className="max-w-full overflow-x-auto rounded-lg border border-border bg-card"
-          data-cloud-sea-professional-table-scroll="true"
-        >
-          <table className="w-full min-w-[1280px] border-collapse text-left text-[12px] leading-5">
-            <thead className="bg-muted text-xs text-muted-foreground">
-              <tr>
-                {[
-                  "日期",
-                  "时间",
-                  "天气",
-                  terrainContext.vocabulary.professionalSignalColumnLabel,
-                  "总云量 %",
-                  "高云量 %",
-                  "中云量 %",
-                  "低云量 %",
-                  ...temperatureColumnLabels,
-                  "露点 °C",
-                  "露点差 °C",
-                  "湿度 %",
-                  "降水 mm / 降水概率 %",
-                  "能见度 km",
-                  "风速 m/s",
-                  "风向",
-                ].map((label, index) => (
-                  <th
-                    key={label}
-                    scope="col"
-                    className={cn(
-                      "whitespace-nowrap border-b border-border px-2 py-2 font-semibold",
-                      index === 0 && "sticky left-0 z-20 bg-muted",
-                    )}
-                  >
-                    {label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRows.length > 0 ? (
-                filteredRows.map((row) => (
-                  <CloudSeaProfessionalHourlyRow
-                    key={row.time}
-                    row={row}
-                    timezone={basis.timezone}
-                    cloudBasisRowNote={cloudBasisConsistency.rowNotesByHour?.[row.time]}
-                    showRawTemperatureColumn={showRawTemperatureColumn}
-                  />
-                ))
-              ) : (
-                <tr>
-                  <td
-                    colSpan={15 + temperatureColumnLabels.length}
-                    className="border-t border-border px-3 py-4 text-center text-sm text-muted-foreground"
-                  >
-                    当前筛选下暂无小时数据，请切换上方筛选复核完整预报。
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      ) : (
+        <ProfessionalHourlyCloudCardGroups
+          rows={rows}
+          data={data}
+          timezone={basis.timezone}
+          target={target}
+        />
+      )}
     </Card>
   );
+}
+
+function ProfessionalHourlyCloudCardGroups({
+  rows,
+  data,
+  timezone,
+  target,
+}: {
+  readonly rows: readonly ProfessionalHourlyRow[];
+  readonly data: ProfessionalHourlyDisplayData;
+  readonly timezone: string;
+  readonly target: ProfessionalHourlySectionTarget;
+}) {
+  const annotations = new Map((data.rowAnnotations ?? []).map((item) => [item.rowTime, item]));
+  const groups = professionalHourlyRowsByDate(rows, timezone);
+
+  return (
+    <div
+      className="mt-4 grid gap-4"
+      data-professional-hourly-card-layout="true"
+      data-professional-hourly-expanded="true"
+    >
+      {groups.map((group) => (
+        <section
+          key={group.dateLabel}
+          className="grid gap-2"
+          data-professional-hourly-date-group={group.dateLabel}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-bold text-card-foreground">{group.dateLabel}</h3>
+            <Badge variant="muted">{group.rows.length} 小时</Badge>
+          </div>
+          <div className="grid gap-2 min-[760px]:grid-cols-2 min-[1180px]:grid-cols-3">
+            {group.rows.map((row) => (
+              <ProfessionalHourlyCloudCard
+                key={row.time}
+                row={row}
+                timezone={timezone}
+                target={target}
+                annotation={annotations.get(row.time)}
+                cloudBasisRowNote={data.cloudBasisConsistency.rowNotesByHour?.[row.time]}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function professionalHourlyRowsByDate(
+  rows: readonly ProfessionalHourlyRow[],
+  timezone: string,
+): readonly { readonly dateLabel: string; readonly rows: readonly ProfessionalHourlyRow[] }[] {
+  const groups = new Map<string, ProfessionalHourlyRow[]>();
+  for (const row of rows) {
+    const key = row.dateLabel || formatProfessionalDate(row.time, timezone);
+    const current = groups.get(key) ?? [];
+    current.push(row);
+    groups.set(key, current);
+  }
+  return [...groups.entries()].map(([dateLabel, groupedRows]) => ({
+    dateLabel,
+    rows: groupedRows,
+  }));
+}
+
+function ProfessionalHourlyCloudCard({
+  row,
+  timezone,
+  target,
+  annotation,
+  cloudBasisRowNote,
+}: {
+  readonly row: ProfessionalHourlyRow;
+  readonly timezone: string;
+  readonly target: ProfessionalHourlySectionTarget;
+  readonly annotation?: ProfessionalHourlyRowAnnotation;
+  readonly cloudBasisRowNote?: string;
+}) {
+  const weatherText = providerNeutralProfessionalWeatherText(row.weatherText) ?? "天气";
+  const signal = professionalHourlyDisplaySignal(row);
+  const relationshipLabel = annotation?.label ?? (target === "glow" ? "非核心霞光窗口" : signal);
+  const badgeVariant = annotation?.tone
+    ? professionalHourlyAnnotationBadgeVariant(annotation.tone)
+    : professionalSignalBadgeVariant(signal);
+
+  return (
+    <article
+      className={cn(
+        "rounded-lg border bg-card p-3 text-sm shadow-sm",
+        annotation?.tone === "success"
+          ? "border-primary/40 bg-secondary/20"
+          : annotation?.tone === "warning" || annotation?.tone === "danger"
+            ? "border-warning/50 bg-accent/10"
+            : "border-border",
+      )}
+      data-professional-hourly-card={row.time}
+      data-glow-hourly-cloud-card={target === "glow" ? row.time : undefined}
+      data-cloud-sea-hourly-card={target === "cloud_sea" ? row.time : undefined}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h4 className="font-bold text-card-foreground">
+            {row.timeLabel || formatProfessionalTime(row.time, timezone)}
+          </h4>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {row.dateLabel || formatProfessionalDate(row.time, timezone)} · {weatherText}
+          </p>
+        </div>
+        <Badge variant={badgeVariant}>{relationshipLabel}</Badge>
+      </div>
+      {annotation ? (
+        <p className="mt-2 rounded-md border border-border bg-muted px-2 py-1.5 text-xs leading-5 text-muted-foreground">
+          <span className="font-semibold text-card-foreground">{annotation.label}</span> ·{" "}
+          {annotation.detail}
+        </p>
+      ) : null}
+      <dl className="mt-3 grid gap-1.5 text-xs">
+        <ProfessionalHourlyInlineDefinition
+          label="总云 / 低云"
+          value={`${formatProfessionalPercent(row.cloudTotalPercent)} / ${formatProfessionalPercent(row.cloudLowPercent)}`}
+        />
+        <ProfessionalHourlyInlineDefinition
+          label="中云 / 高云"
+          value={`${formatProfessionalPercent(row.cloudMidPercent)} / ${formatProfessionalPercent(row.cloudHighPercent)}`}
+        />
+        <ProfessionalHourlyInlineDefinition
+          label="能见度"
+          value={formatProfessionalVisibility(row.visibilityMeters)}
+        />
+        <ProfessionalHourlyInlineDefinition
+          label="湿度 / 露点差"
+          value={`${formatProfessionalPercent(row.relativeHumidityPercent)} / ${formatProfessionalTemperatureDelta(row.dewPointSpreadC)}`}
+        />
+        <ProfessionalHourlyInlineDefinition
+          label="降水"
+          value={formatProfessionalPrecipitation(row)}
+        />
+        <ProfessionalHourlyInlineDefinition
+          label="风"
+          value={`${formatProfessionalWindSpeed(row.windSpeedMs)} ${formatProfessionalWindDirection(row.windDirectionDeg)}`}
+        />
+      </dl>
+      <p className="mt-3 text-xs leading-5 text-muted-foreground">
+        {professionalHourlyPhotographyInterpretation(row, target, annotation)}
+      </p>
+      {cloudBasisRowNote ? (
+        <p className="mt-2 text-[11px] leading-5 text-muted-foreground">{cloudBasisRowNote}</p>
+      ) : null}
+    </article>
+  );
+}
+
+function professionalHourlyAnnotationBadgeVariant(
+  tone: ProfessionalHourlyRowAnnotation["tone"],
+): BadgeVariant {
+  if (tone === "success") {
+    return "default";
+  }
+  if (tone === "warning") {
+    return "warning";
+  }
+  if (tone === "danger") {
+    return "danger";
+  }
+  if (tone === "info") {
+    return "info";
+  }
+  return "muted";
+}
+
+function ProfessionalHourlyInlineDefinition({
+  label,
+  value,
+}: {
+  readonly label: string;
+  readonly value: string;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="font-semibold text-card-foreground">{value}</dd>
+    </div>
+  );
+}
+
+function professionalHourlyPhotographyInterpretation(
+  row: ProfessionalHourlyRow,
+  target: ProfessionalHourlySectionTarget,
+  annotation?: ProfessionalHourlyRowAnnotation,
+): string {
+  if (annotation) {
+    return annotation.detail;
+  }
+  if (professionalHourlyHasPrecipitation(row)) {
+    return target === "glow"
+      ? "降水会打断霞光，优先等待雨带移出。"
+      : "降水影响窗口，需要复核云雾和路面风险。";
+  }
+  if (target === "glow") {
+    if ((row.cloudLowPercent ?? 0) >= 70) {
+      return "低云偏多，太阳方向遮挡需要临场复核。";
+    }
+    if ((row.cloudMidPercent ?? 0) >= 30 || (row.cloudHighPercent ?? 0) >= 25) {
+      return "中高云可作色彩载体，关注日出日落前后变化。";
+    }
+    return "云层承载偏弱，适合作为普通光线备选。";
+  }
+  return professionalHourlyDisplaySignal(row) === "普通"
+    ? "作为背景小时复核云层、湿度和能见度。"
+    : "接近云海关注窗口，结合低云、湿度和能见度复核。";
 }
 
 function CloudSeaMultiSourceAgreementCard({
@@ -10077,23 +10008,6 @@ function postRainOpeningText(
   return "雨后开口待复核";
 }
 
-function scoreLabelFromNumber(score: number | undefined): "高" | "中" | "低" {
-  if (typeof score !== "number" || !Number.isFinite(score)) {
-    return "低";
-  }
-  if (score >= 70) {
-    return "高";
-  }
-  if (score >= 45) {
-    return "中";
-  }
-  return "低";
-}
-
-function glowRiskText(score: number): "高" | "中" | "低" {
-  return scoreLabelFromNumber(score);
-}
-
 function glowPracticalAdviceItems(
   result: ForecastCalculationResult,
   items: readonly string[],
@@ -10121,10 +10035,6 @@ function glowPracticalAdviceItems(
       : "风险控制：低云和降水暂未形成强阻断，仍需在窗口前复核云底和雨带。";
 
   return [arrival, direction, backup, rainAndWhiteout, ...items];
-}
-
-function formatDerivedWindow(start: string | undefined, end: string | undefined): string {
-  return start && end ? formatWindow(start, end) : "暂无数据";
 }
 
 function hourFromIsoLike(value: string): number | undefined {
@@ -10346,14 +10256,6 @@ function formatPercent(value: number | undefined): string {
   }
 
   return `${Math.round(value * 100)}%`;
-}
-
-function formatAngle(value: number | undefined): string {
-  return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(1)}°` : "暂缺数据";
-}
-
-function formatBlockedDirections(directions: readonly string[]): string {
-  return directions.length > 0 ? directions.join("、") : "暂无明显方向";
 }
 
 function formatMoonAltitudeSummary(values: Readonly<Record<string, number>> | undefined): string {

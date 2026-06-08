@@ -1745,6 +1745,74 @@ function professionalHourlyDataForTest(
   }));
 }
 
+function isoHourForTest(hourOffset: number): string {
+  const day = 20 + Math.floor(hourOffset / 24);
+  const hour = hourOffset % 24;
+  return `2026-05-${String(day).padStart(2, "0")}T${String(hour).padStart(2, "0")}:00:00+08:00`;
+}
+
+function professionalHourlyRangeForTest(hours: number): ProfessionalHourlyDataForTest {
+  const templateRows = professionalHourlyDataForTest();
+  return Array.from({ length: hours }, (_, hourOffset) => {
+    const template = templateRows[hourOffset % templateRows.length]!;
+    const day = 20 + Math.floor(hourOffset / 24);
+    const hour = hourOffset % 24;
+    return {
+      ...template,
+      time: isoHourForTest(hourOffset),
+      dateLabel: `5月${day}日`,
+      timeLabel: `${String(hour).padStart(2, "0")}:00`,
+    };
+  });
+}
+
+function resultWithGlowHourlyRange(
+  horizon: ForecastCalculationResult["horizon"],
+  hours: number,
+): ForecastCalculationResult {
+  const rows = professionalHourlyRangeForTest(hours);
+  const endTime = isoHourForTest(hours);
+  const targetDateCount = Math.max(1, Math.ceil(hours / 24));
+  const targetDates = Array.from(
+    { length: targetDateCount },
+    (_, index) => `2026-05-${String(20 + index).padStart(2, "0")}`,
+  );
+  const targetDateLabels = targetDates.map((date, index) => `2026年5月${20 + index}日`);
+
+  return {
+    ...resultForTarget("glow"),
+    horizon,
+    forecastEnd: endTime,
+    targetDates,
+    calendarBasis: {
+      ...baseResult.calendarBasis,
+      forecastEnd: endTime,
+      forecastEndLabel: `2026年5月${20 + Math.floor(hours / 24)}日 ${String(hours % 24).padStart(2, "0")}:00`,
+      forecastRangeLabel: `2026年5月20日 00:00 至 2026年5月${20 + Math.floor(hours / 24)}日 ${String(hours % 24).padStart(2, "0")}:00`,
+      targetDates,
+      targetDateLabels,
+      horizonHours: hours,
+    },
+    professionalHourlyData: rows,
+    professionalHourlyDataTimeBasis: {
+      startTime: "2026-05-20T00:00:00+08:00",
+      endTime,
+      stepMinutes: 60,
+      timezone: "Asia/Shanghai",
+      temperatureBasis: "terrain_adjusted",
+      temperatureBasisNoteZh: "温度口径：机位海拔修正后",
+      cloudLayerBasis: "explicit_layers",
+      cloudLayerBasisNoteZh: "云量口径：总云量 + 低/中/高云分层",
+      partialData: false,
+      expectedRowCount: hours,
+      requestedHours: hours,
+      anchorStartLocal: "2026-05-20T00:00:00+08:00",
+      anchorEndLocal: endTime,
+      horizonHours: hours,
+    },
+  };
+}
+
 function resultWithProfessionalHourlyData(
   overrides: Partial<ForecastCalculationResult> = {},
 ): ForecastCalculationResult {
@@ -6212,24 +6280,28 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("朝霞机会");
       expect(html).toContain("晚霞机会");
       expect(html).toContain("霞光拍摄窗口");
-      expect(html).toContain("光线窗口");
-      expect(html).toContain("云层结构");
+      expect(html).toContain("逐小时云层与霞光条件");
+      expect(html).toContain("出发建议");
+      expect(html).toContain("判断依据、风险与行动");
       expect(html).toContain("低云遮挡风险");
       expect(html).toContain("色彩云条件");
-      expect(html).toContain("能见度与通透度");
-      expect(html).toContain("地形遮挡参考");
-      expect(html).toContain("拍摄建议");
-      expect(html).toContain("风险提示");
-      expect(html).toContain("备选拍摄方案");
-      expect(html).toContain("数据状态 / 数据缺失说明");
       expect(html).toContain("天气数据：演示天气数据");
       expect(html).toContain("地形数据：演示数据");
       expect(html).toContain("天文数据：本地算法计算");
       expect(html).toContain("GlowResultPage");
       expect(html).toContain("GlowCoreDecision");
       expect(html).toContain("GlowDailyTrend");
-      expect(html).toContain("GlowCloudLayerSection");
-      expect(html).toContain("GlowVisibilitySection");
+      expect(html).toContain("GlowDecisionGrid");
+      expect(html).toContain("ProfessionalHourlyCloudSection");
+      expect(html).toContain('data-professional-hourly-shared="true"');
+      expect(html).toContain('data-professional-hourly-target="glow"');
+      expect(html).toContain('data-professional-hourly-card-layout="true"');
+      expect(html).not.toContain("光线窗口");
+      expect(html).not.toContain("云层结构");
+      expect(html).not.toContain("能见度与通透度");
+      expect(html).not.toContain("地形遮挡参考");
+      expect(html).not.toContain("数据状态 / 数据缺失说明");
+      expect(html).not.toContain("GlowProfessionalHourlyCloudCard");
       expect(html).not.toContain("<aside");
       expect(html).not.toContain("SideRail");
       expect(html).not.toContain("min-[1024px]:col-span-4");
@@ -6237,6 +6309,147 @@ describe("forecast result target-aware view model", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("uses the same shared professional hourly section for cloud-sea and glow", () => {
+    const cloudSeaResult = resultWithProfessionalHourlyData();
+    const cloudSeaViewModel = buildCloudSeaForecastViewModel(cloudSeaResult);
+    const cloudSeaHtml = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result: cloudSeaResult,
+        viewModel: cloudSeaViewModel,
+      }),
+    );
+    const glowResult = resultWithGlowHourlyRange("24h", 24);
+    const glowViewModel = buildGlowForecastViewModel(glowResult);
+    const glowHtml = renderToStaticMarkup(
+      React.createElement(GlowResultPage, {
+        query: { ...queryForTarget("glow"), horizon: "24h" },
+        result: glowResult,
+        viewModel: glowViewModel,
+      }),
+    );
+
+    expect(cloudSeaHtml).toContain('data-professional-hourly-shared="true"');
+    expect(cloudSeaHtml).toContain('data-professional-hourly-target="cloud_sea"');
+    expect(cloudSeaHtml).toContain('data-cloud-sea-professional-table-scroll="true"');
+    expect(glowHtml).toContain('data-professional-hourly-shared="true"');
+    expect(glowHtml).toContain('data-professional-hourly-target="glow"');
+    expect(glowHtml).toContain('data-professional-hourly-card-layout="true"');
+    expect(glowHtml).not.toContain('data-cloud-sea-professional-table-scroll="true"');
+    expect(glowHtml).not.toContain("GlowProfessionalHourlyCloudCard");
+  });
+
+  it("renders the full 24h glow hourly range as shared cards", () => {
+    const result = resultWithGlowHourlyRange("24h", 24);
+    const viewModel = buildGlowForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(GlowResultPage, {
+        query: { ...queryForTarget("glow"), horizon: "24h" },
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(viewModel.professionalHourlyData.rows).toHaveLength(24);
+    expect(countOccurrences(html, 'data-glow-hourly-cloud-card="')).toBe(24);
+    expect(html).toContain('data-glow-hourly-cloud-card="2026-05-20T00:00:00+08:00"');
+    expect(html).toContain('data-glow-hourly-cloud-card="2026-05-20T23:00:00+08:00"');
+    expect(html).toContain("总云 / 低云");
+    expect(html).toContain("中云 / 高云");
+    expect(html).toContain("88% / 82%");
+    expect(html).toContain("46% / 28%");
+  });
+
+  it.each([
+    ["48h", 48, ["5月20日", "5月21日"]],
+    ["72h", 72, ["5月20日", "5月21日", "5月22日"]],
+    ["7d", 168, ["5月20日", "5月21日", "5月22日", "5月23日", "5月24日", "5月25日", "5月26日"]],
+  ] as const)(
+    "renders all local date groups for %s glow hourly cards",
+    (horizon, hours, labels) => {
+      const result = resultWithGlowHourlyRange(horizon, hours);
+      const viewModel = buildGlowForecastViewModel(result);
+      const html = renderToStaticMarkup(
+        React.createElement(GlowResultPage, {
+          query: { ...queryForTarget("glow"), horizon },
+          result,
+          viewModel,
+        }),
+      );
+
+      expect(countOccurrences(html, 'data-glow-hourly-cloud-card="')).toBe(hours);
+      for (const label of labels) {
+        expect(html).toContain(`data-professional-hourly-date-group="${label}"`);
+      }
+    },
+  );
+
+  it("highlights sunrise and sunset glow windows without a duplicate hourly section", () => {
+    const result = resultWithGlowHourlyRange("24h", 24);
+    const viewModel = buildGlowForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(GlowResultPage, {
+        query: { ...queryForTarget("glow"), horizon: "24h" },
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(html).toContain("日出准备");
+    expect(html).toContain("朝霞核心");
+    expect(html).toContain("日落准备");
+    expect(html).toContain("晚霞核心");
+    expect(countOccurrences(html, 'data-professional-hourly-shared="true"')).toBe(1);
+    expect(countOccurrences(html, 'data-professional-hourly-card-layout="true"')).toBe(1);
+    expect(html).not.toContain("GlowProfessionalHourlyCloudCards");
+  });
+
+  it("keeps unavailable glow aerosol and obstruction data compact without fake values", () => {
+    const base = resultWithGlowHourlyRange("24h", 24);
+    const result: ForecastCalculationResult = {
+      ...base,
+      glowAnalysis: {
+        ...base.glowAnalysis,
+        aerosolAssessment: {
+          ...base.glowAnalysis.aerosolAssessment,
+          availability: "unavailable",
+          confidence: "low",
+          state: "unavailable",
+          stateLabelZh: "暂无可靠数据",
+          implicationZh: "当前气溶胶资料暂缺。",
+          noteZh: "不使用缺失值推断通透度。",
+          aerosolScore: undefined,
+          aerosolOpticalDepth550: undefined,
+          pm25: undefined,
+          pm10: undefined,
+          dust: undefined,
+          visibilityKm: undefined,
+          validTime: undefined,
+          sourceResolution: undefined,
+        },
+        aerosolEvidence: [],
+        terrainObstructionAssessments: [],
+        terrainObstructionEvidence: [],
+      },
+    };
+    const viewModel = buildGlowForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(GlowResultPage, {
+        query: { ...queryForTarget("glow"), horizon: "24h" },
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(html).toContain("暂无可靠数据");
+    expect(html).toContain("暂缺分项");
+    expect(html).toContain("AOD 暂缺");
+    expect(html).toContain("方向性地形剖面暂缺");
+    expect(html).not.toContain("AOD 0.000");
+    expect(html).not.toContain("PM2.5 0");
+    expect(html).not.toContain("min-h-");
   });
 
   it("labels glow window list as recommended, watchable, backup, and not recommended", () => {
