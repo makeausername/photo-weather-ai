@@ -2534,13 +2534,12 @@ function buildGlowProfessionalHourlyAnnotations(
     return [];
   }
 
-  const intervals = [
-    ...buildGlowWindowAnnotationIntervals(result),
-    ...buildGlowSunPhaseAnnotationIntervals(result),
-  ];
+  const intervals = buildGlowSunPhaseAnnotationIntervals(result);
   return rows
     .map((row): ProfessionalHourlyRowAnnotation | null => {
-      const interval = intervals.find((item) => isTimeInsideWindow(row.time, item.start, item.end));
+      const interval = intervals.find((item) =>
+        isProfessionalHourOverlappingWindow(row.time, item.start, item.end),
+      );
       if (!interval) {
         return null;
       }
@@ -2554,32 +2553,6 @@ function buildGlowProfessionalHourlyAnnotations(
     .filter((annotation): annotation is ProfessionalHourlyRowAnnotation => annotation !== null);
 }
 
-function buildGlowWindowAnnotationIntervals(result: ForecastCalculationResult) {
-  return [
-    ...result.glowAnalysis.bestGlowWindows.map((window) => ({
-      start: window.start,
-      end: window.end,
-      label: `推荐：${window.labelZh}`,
-      detail: `${window.score} 分，${window.noteZh}`,
-      tone: "success" as const,
-    })),
-    ...result.glowAnalysis.watchableGlowWindows.map((window) => ({
-      start: window.start,
-      end: window.end,
-      label: `可观察：${window.labelZh}`,
-      detail: `${window.score} 分，${window.noteZh}`,
-      tone: "info" as const,
-    })),
-    ...result.glowAnalysis.notRecommendedGlowWindows.map((window) => ({
-      start: window.start,
-      end: window.end,
-      label: `谨慎：${window.labelZh}`,
-      detail: `${window.score} 分，${window.noteZh}`,
-      tone: "warning" as const,
-    })),
-  ];
-}
-
 function buildGlowSunPhaseAnnotationIntervals(result: ForecastCalculationResult) {
   return result.astroSummaries.flatMap((astro) => {
     const intervals: Array<{
@@ -2591,52 +2564,34 @@ function buildGlowSunPhaseAnnotationIntervals(result: ForecastCalculationResult)
     }> = [];
     if (astro.sunrise) {
       intervals.push({
-        start: astro.civilDawn ?? addHoursInTimezone(astro.sunrise, -0.75, astro.timezone),
-        end: astro.sunrise,
-        label: "日出准备",
-        detail: "朝霞前的构图、测光和云层移动观察时段。",
-        tone: "info",
-      });
-      intervals.push({
         start: astro.sunrise,
         end: addHoursInTimezone(astro.sunrise, 0.75, astro.timezone),
-        label: "朝霞核心",
+        label: "朝霞核心窗口",
         detail: "日出后低角度光线与中高云对齐的核心观察段。",
         tone: "success",
+      });
+      intervals.push({
+        start: astro.civilDawn ?? addHoursInTimezone(astro.sunrise, -0.75, astro.timezone),
+        end: astro.sunrise,
+        label: "朝霞准备窗口",
+        detail: "朝霞前的构图、测光和云层移动观察时段。",
+        tone: "info",
       });
     }
     if (astro.sunset) {
       intervals.push({
         start: addHoursInTimezone(astro.sunset, -0.75, astro.timezone),
         end: astro.sunset,
-        label: "日落准备",
+        label: "晚霞准备窗口",
         detail: "晚霞前观察太阳方向低云遮挡和透光缝。",
         tone: "info",
       });
       intervals.push({
         start: astro.sunset,
         end: astro.civilDusk ?? addHoursInTimezone(astro.sunset, 0.75, astro.timezone),
-        label: "晚霞核心",
+        label: "晚霞核心窗口",
         detail: "日落后余晖与高云颜色发展的核心观察段。",
         tone: "success",
-      });
-    }
-    if (astro.nauticalDawn && astro.civilDawn) {
-      intervals.push({
-        start: astro.nauticalDawn,
-        end: astro.civilDawn,
-        label: "晨光过渡",
-        detail: "航海曙暮光到民用曙暮光的低亮度过渡段。",
-        tone: "default",
-      });
-    }
-    if (astro.civilDusk && astro.nauticalDusk) {
-      intervals.push({
-        start: astro.civilDusk,
-        end: astro.nauticalDusk,
-        label: "余晖过渡",
-        detail: "民用曙暮光到航海曙暮光的余晖观察段。",
-        tone: "default",
       });
     }
     return intervals;
@@ -2853,15 +2808,16 @@ function glowWindowRecommendationLabel(window: GlowWindow): string {
   return "不建议专程";
 }
 
-function isTimeInsideWindow(time: string, start: string, end: string): boolean {
+function isProfessionalHourOverlappingWindow(time: string, start: string, end: string): boolean {
   const timeMs = Date.parse(time);
   const startMs = Date.parse(start);
   const endMs = Date.parse(end);
+  const hourEndMs = timeMs + 60 * 60 * 1000;
   return (
     Number.isFinite(timeMs) &&
     Number.isFinite(startMs) &&
     Number.isFinite(endMs) &&
-    timeMs >= startMs &&
+    hourEndMs > startMs &&
     timeMs < endMs
   );
 }

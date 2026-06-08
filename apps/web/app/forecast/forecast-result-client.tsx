@@ -3784,10 +3784,10 @@ export function GlowResultPage({
             />
           </div>
         </section>
-        <ProfessionalHourlyCloudSection
+        <CloudSeaProfessionalHourlyDataPanel
           target="glow"
-          presentation="cards"
           data={viewModel.professionalHourlyData}
+          config={glowProfessionalHourlySectionConfig}
         />
         <GlowFinalDecisionSection result={result} viewModel={viewModel} />
       </main>
@@ -5419,21 +5419,48 @@ type ProfessionalHourlyFilterDefinition = {
 };
 
 type ProfessionalHourlySectionTarget = "cloud_sea" | "glow";
-type ProfessionalHourlyPresentation = "table" | "cards";
+
+type ProfessionalHourlySectionConfig = {
+  readonly sectionTitle?: string;
+  readonly sectionBadge?: string;
+  readonly sectionDescription?: string;
+  readonly usageText?: string;
+  readonly signalColumnLabel?: string;
+  readonly focusFilterLabel?: string;
+  readonly defaultFilterMode?: ProfessionalHourlyFilterMode;
+  readonly ordinarySignalLabel?: string;
+};
 
 type ProfessionalHourlyCloudSectionProps = {
   readonly target: ProfessionalHourlySectionTarget;
-  readonly presentation: ProfessionalHourlyPresentation;
   readonly data: ProfessionalHourlyDisplayData;
   readonly terrainContext?: CloudSeaTerrainContext;
+  readonly config?: ProfessionalHourlySectionConfig;
+};
+
+const glowProfessionalHourlySectionConfig: ProfessionalHourlySectionConfig = {
+  sectionDescription:
+    "逐小时展示云层、湿度、露点、降水、能见度、风与霞光窗口关系。",
+  usageText: "普通小时保持背景参考，重点复核带窗口标记的时段。",
+  signalColumnLabel: "窗口/信号",
+  focusFilterLabel: "只看霞光窗口",
+  defaultFilterMode: "all",
+  ordinarySignalLabel: "普通时段",
 };
 
 function professionalHourlyFiltersForContext(
-  terrainContext: CloudSeaTerrainContext,
+  terrainContext: CloudSeaTerrainContext | undefined,
+  config: ProfessionalHourlySectionConfig | undefined,
 ): readonly ProfessionalHourlyFilterDefinition[] {
   return [
     { mode: "all", label: "全部小时" },
-    { mode: "cloudSea", label: terrainContext.vocabulary.professionalCloudSeaFilterLabel },
+    {
+      mode: "cloudSea",
+      label:
+        config?.focusFilterLabel ??
+        terrainContext?.vocabulary.professionalCloudSeaFilterLabel ??
+        "只看重点窗口",
+    },
     { mode: "morning", label: "只看清晨窗口" },
     { mode: "risk", label: "只看有风险时段" },
   ];
@@ -5463,42 +5490,50 @@ function isValidProfessionalHourlyTimeBasis(
 }
 
 function CloudSeaProfessionalHourlyDataPanel({
+  target = "cloud_sea",
   data,
   terrainContext,
+  config,
 }: {
-  readonly data: CloudSeaProfessionalHourlyDisplayData;
-  readonly terrainContext: CloudSeaTerrainContext;
+  readonly target?: ProfessionalHourlySectionTarget;
+  readonly data: ProfessionalHourlyDisplayData;
+  readonly terrainContext?: CloudSeaTerrainContext;
+  readonly config?: ProfessionalHourlySectionConfig;
 }) {
   return (
     <ProfessionalHourlyCloudSection
-      target="cloud_sea"
-      presentation="table"
+      target={target}
       data={data}
       terrainContext={terrainContext}
+      config={config}
     />
   );
 }
 
 function ProfessionalHourlyCloudSection({
   target,
-  presentation,
   data,
   terrainContext,
+  config,
 }: ProfessionalHourlyCloudSectionProps) {
   const rows = data.rows;
   const basis = data.timeBasis;
   const [expanded, setExpanded] = useState(true);
   const [filterMode, setFilterMode] = useState<ProfessionalHourlyFilterMode>(() =>
-    defaultProfessionalHourlyFilter(data),
+    defaultProfessionalHourlyFilter(data, config),
   );
 
   useEffect(() => {
-    setFilterMode(defaultProfessionalHourlyFilter(data));
-  }, [data]);
+    setFilterMode(defaultProfessionalHourlyFilter(data, config));
+  }, [config, data]);
 
   const filteredRows = useMemo(
     () => filterProfessionalHourlyRows(rows, data, filterMode),
     [data, filterMode, rows],
+  );
+  const rowAnnotations = useMemo(
+    () => new Map((data.rowAnnotations ?? []).map((item) => [item.rowTime, item])),
+    [data.rowAnnotations],
   );
 
   if (!isValidProfessionalHourlyTimeBasis(basis) || rows.length === 0) {
@@ -5506,25 +5541,21 @@ function ProfessionalHourlyCloudSection({
   }
 
   const timeStepLabel = basis.stepMinutes === 60 ? "逐小时" : `${basis.stepMinutes} 分钟`;
-  const isTablePresentation = presentation === "table";
-  const professionalHourlyFilters = terrainContext
-    ? professionalHourlyFiltersForContext(terrainContext)
-    : [];
+  const professionalHourlyFilters = professionalHourlyFiltersForContext(terrainContext, config);
   const activeFilterLabel =
     professionalHourlyFilters.find((filter) => filter.mode === filterMode)?.label ?? "全部小时";
-  const sectionTitle = target === "glow" ? "逐小时云层与霞光条件" : "专业小时数据";
-  const sectionBadge = target === "glow" ? "共享小时模型" : "专业参考";
+  const sectionTitle = config?.sectionTitle ?? "专业小时数据";
+  const sectionBadge = config?.sectionBadge ?? "专业参考";
   const sectionDescription =
-    target === "glow"
-      ? "直接使用云海页专业小时数据模型，展示完整预报范围内的云层、通透度、降水、风和霞光窗口关系。"
-      : terrainContext?.vocabulary.professionalDescription ??
-        "逐小时展示云层、湿度、露点、降水、能见度和风。";
+    config?.sectionDescription ??
+    terrainContext?.vocabulary.professionalDescription ??
+    "逐小时展示云层、湿度、露点、降水、能见度和风。";
   const professionalUsageText =
+    config?.usageText ??
     terrainContext?.vocabulary.professionalUsageText ??
-    "逐小时卡片使用同一标准化数据，不重新计算霞光评分。";
+    "逐小时数据使用同一标准化口径，重点复核窗口附近变化。";
   const signalColumnLabel =
-    terrainContext?.vocabulary.professionalSignalColumnLabel ??
-    (target === "glow" ? "霞光关系" : "信号");
+    config?.signalColumnLabel ?? terrainContext?.vocabulary.professionalSignalColumnLabel ?? "信号";
   const cloudLayerCompleteness = data.cloudLayerCompleteness;
   const cloudBasisConsistency = data.cloudBasisConsistency;
   const missingHeaderNote = professionalHourlyMissingHeaderNote(
@@ -5577,29 +5608,20 @@ function ProfessionalHourlyCloudSection({
             {sectionDescription}
           </p>
         </div>
-        {isTablePresentation ? (
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              setExpanded((current) => !current);
-            }}
-          >
-            {expanded ? "收起小时表" : "展开小时表"}
-          </Button>
-        ) : (
-          <Badge variant="muted">
-            {rows.length} / {expectedRowCount} 小时
-          </Badge>
-        )}
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            setExpanded((current) => !current);
+          }}
+        >
+          {expanded ? "收起小时表" : "展开小时表"}
+        </Button>
       </div>
 
       <dl
-        className={cn(
-          "mt-4 grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground",
-          isTablePresentation ? "min-[760px]:grid-cols-4" : "min-[760px]:grid-cols-3",
-        )}
+        className="mt-4 grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground min-[760px]:grid-cols-4"
       >
         <CompactDefinition label="目标有效时间" value={targetRangeLabel} />
         <CompactDefinition label="覆盖率" value={`${rows.length} / ${expectedRowCount} 小时`} />
@@ -5652,15 +5674,19 @@ function ProfessionalHourlyCloudSection({
         </p>
       ) : null}
 
-      {isTablePresentation && !expanded ? (
-        <CloudSeaHourlyFocusPreview rows={filteredRows.slice(0, 4)} timezone={basis.timezone} />
+      {!expanded ? (
+        <CloudSeaHourlyFocusPreview
+          rows={filteredRows.slice(0, 4)}
+          timezone={basis.timezone}
+          rowAnnotations={rowAnnotations}
+          ordinarySignalLabel={config?.ordinarySignalLabel}
+        />
       ) : null}
 
-      {isTablePresentation ? (
-        <div
-          className={cn("mt-4 grid gap-3", !expanded && "hidden")}
-          data-professional-hourly-expanded={expanded ? "true" : "false"}
-        >
+      <div
+        className={cn("mt-4 grid gap-3", !expanded && "hidden")}
+        data-professional-hourly-expanded={expanded ? "true" : "false"}
+      >
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex flex-wrap gap-2" role="group" aria-label="专业小时数据筛选">
               {professionalHourlyFilters.map((filter) => (
@@ -5732,6 +5758,8 @@ function ProfessionalHourlyCloudSection({
                       key={row.time}
                       row={row}
                       timezone={basis.timezone}
+                      annotation={rowAnnotations.get(row.time)}
+                      ordinarySignalLabel={config?.ordinarySignalLabel}
                       cloudBasisRowNote={cloudBasisConsistency.rowNotesByHour?.[row.time]}
                       showRawTemperatureColumn={showRawTemperatureColumn}
                     />
@@ -5749,168 +5777,8 @@ function ProfessionalHourlyCloudSection({
               </tbody>
             </table>
           </div>
-        </div>
-      ) : (
-        <ProfessionalHourlyCloudCardGroups
-          rows={rows}
-          data={data}
-          timezone={basis.timezone}
-          target={target}
-        />
-      )}
-    </Card>
-  );
-}
-
-function ProfessionalHourlyCloudCardGroups({
-  rows,
-  data,
-  timezone,
-  target,
-}: {
-  readonly rows: readonly ProfessionalHourlyRow[];
-  readonly data: ProfessionalHourlyDisplayData;
-  readonly timezone: string;
-  readonly target: ProfessionalHourlySectionTarget;
-}) {
-  const annotations = new Map((data.rowAnnotations ?? []).map((item) => [item.rowTime, item]));
-  const groups = professionalHourlyRowsByDate(rows, timezone);
-
-  return (
-    <div
-      className="mt-4 grid gap-4"
-      data-professional-hourly-card-layout="true"
-      data-professional-hourly-expanded="true"
-    >
-      {groups.map((group) => (
-        <section
-          key={group.dateLabel}
-          className="grid gap-2"
-          data-professional-hourly-date-group={group.dateLabel}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-bold text-card-foreground">{group.dateLabel}</h3>
-            <Badge variant="muted">{group.rows.length} 小时</Badge>
-          </div>
-          <div className="grid gap-2 min-[760px]:grid-cols-2 min-[1180px]:grid-cols-3">
-            {group.rows.map((row) => (
-              <ProfessionalHourlyCloudCard
-                key={row.time}
-                row={row}
-                timezone={timezone}
-                target={target}
-                annotation={annotations.get(row.time)}
-                cloudBasisRowNote={data.cloudBasisConsistency.rowNotesByHour?.[row.time]}
-              />
-            ))}
-          </div>
-        </section>
-      ))}
-    </div>
-  );
-}
-
-function professionalHourlyRowsByDate(
-  rows: readonly ProfessionalHourlyRow[],
-  timezone: string,
-): readonly { readonly dateLabel: string; readonly rows: readonly ProfessionalHourlyRow[] }[] {
-  const groups = new Map<string, ProfessionalHourlyRow[]>();
-  for (const row of rows) {
-    const key = row.dateLabel || formatProfessionalDate(row.time, timezone);
-    const current = groups.get(key) ?? [];
-    current.push(row);
-    groups.set(key, current);
-  }
-  return [...groups.entries()].map(([dateLabel, groupedRows]) => ({
-    dateLabel,
-    rows: groupedRows,
-  }));
-}
-
-function ProfessionalHourlyCloudCard({
-  row,
-  timezone,
-  target,
-  annotation,
-  cloudBasisRowNote,
-}: {
-  readonly row: ProfessionalHourlyRow;
-  readonly timezone: string;
-  readonly target: ProfessionalHourlySectionTarget;
-  readonly annotation?: ProfessionalHourlyRowAnnotation;
-  readonly cloudBasisRowNote?: string;
-}) {
-  const weatherText = providerNeutralProfessionalWeatherText(row.weatherText) ?? "天气";
-  const signal = professionalHourlyDisplaySignal(row);
-  const relationshipLabel = annotation?.label ?? (target === "glow" ? "非核心霞光窗口" : signal);
-  const badgeVariant = annotation?.tone
-    ? professionalHourlyAnnotationBadgeVariant(annotation.tone)
-    : professionalSignalBadgeVariant(signal);
-
-  return (
-    <article
-      className={cn(
-        "rounded-lg border bg-card p-3 text-sm shadow-sm",
-        annotation?.tone === "success"
-          ? "border-primary/40 bg-secondary/20"
-          : annotation?.tone === "warning" || annotation?.tone === "danger"
-            ? "border-warning/50 bg-accent/10"
-            : "border-border",
-      )}
-      data-professional-hourly-card={row.time}
-      data-glow-hourly-cloud-card={target === "glow" ? row.time : undefined}
-      data-cloud-sea-hourly-card={target === "cloud_sea" ? row.time : undefined}
-    >
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h4 className="font-bold text-card-foreground">
-            {row.timeLabel || formatProfessionalTime(row.time, timezone)}
-          </h4>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {row.dateLabel || formatProfessionalDate(row.time, timezone)} · {weatherText}
-          </p>
-        </div>
-        <Badge variant={badgeVariant}>{relationshipLabel}</Badge>
       </div>
-      {annotation ? (
-        <p className="mt-2 rounded-md border border-border bg-muted px-2 py-1.5 text-xs leading-5 text-muted-foreground">
-          <span className="font-semibold text-card-foreground">{annotation.label}</span> ·{" "}
-          {annotation.detail}
-        </p>
-      ) : null}
-      <dl className="mt-3 grid gap-1.5 text-xs">
-        <ProfessionalHourlyInlineDefinition
-          label="总云 / 低云"
-          value={`${formatProfessionalPercent(row.cloudTotalPercent)} / ${formatProfessionalPercent(row.cloudLowPercent)}`}
-        />
-        <ProfessionalHourlyInlineDefinition
-          label="中云 / 高云"
-          value={`${formatProfessionalPercent(row.cloudMidPercent)} / ${formatProfessionalPercent(row.cloudHighPercent)}`}
-        />
-        <ProfessionalHourlyInlineDefinition
-          label="能见度"
-          value={formatProfessionalVisibility(row.visibilityMeters)}
-        />
-        <ProfessionalHourlyInlineDefinition
-          label="湿度 / 露点差"
-          value={`${formatProfessionalPercent(row.relativeHumidityPercent)} / ${formatProfessionalTemperatureDelta(row.dewPointSpreadC)}`}
-        />
-        <ProfessionalHourlyInlineDefinition
-          label="降水"
-          value={formatProfessionalPrecipitation(row)}
-        />
-        <ProfessionalHourlyInlineDefinition
-          label="风"
-          value={`${formatProfessionalWindSpeed(row.windSpeedMs)} ${formatProfessionalWindDirection(row.windDirectionDeg)}`}
-        />
-      </dl>
-      <p className="mt-3 text-xs leading-5 text-muted-foreground">
-        {professionalHourlyPhotographyInterpretation(row, target, annotation)}
-      </p>
-      {cloudBasisRowNote ? (
-        <p className="mt-2 text-[11px] leading-5 text-muted-foreground">{cloudBasisRowNote}</p>
-      ) : null}
-    </article>
+    </Card>
   );
 }
 
@@ -5930,48 +5798,6 @@ function professionalHourlyAnnotationBadgeVariant(
     return "info";
   }
   return "muted";
-}
-
-function ProfessionalHourlyInlineDefinition({
-  label,
-  value,
-}: {
-  readonly label: string;
-  readonly value: string;
-}) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="font-semibold text-card-foreground">{value}</dd>
-    </div>
-  );
-}
-
-function professionalHourlyPhotographyInterpretation(
-  row: ProfessionalHourlyRow,
-  target: ProfessionalHourlySectionTarget,
-  annotation?: ProfessionalHourlyRowAnnotation,
-): string {
-  if (annotation) {
-    return annotation.detail;
-  }
-  if (professionalHourlyHasPrecipitation(row)) {
-    return target === "glow"
-      ? "降水会打断霞光，优先等待雨带移出。"
-      : "降水影响窗口，需要复核云雾和路面风险。";
-  }
-  if (target === "glow") {
-    if ((row.cloudLowPercent ?? 0) >= 70) {
-      return "低云偏多，太阳方向遮挡需要临场复核。";
-    }
-    if ((row.cloudMidPercent ?? 0) >= 30 || (row.cloudHighPercent ?? 0) >= 25) {
-      return "中高云可作色彩载体，关注日出日落前后变化。";
-    }
-    return "云层承载偏弱，适合作为普通光线备选。";
-  }
-  return professionalHourlyDisplaySignal(row) === "普通"
-    ? "作为背景小时复核云层、湿度和能见度。"
-    : "接近云海关注窗口，结合低云、湿度和能见度复核。";
 }
 
 function CloudSeaMultiSourceAgreementCard({
@@ -6180,20 +6006,39 @@ function multiSourceDisagreementRank(
 function CloudSeaProfessionalHourlyRow({
   row,
   timezone,
+  annotation,
+  ordinarySignalLabel,
   cloudBasisRowNote,
   showRawTemperatureColumn,
 }: {
   readonly row: ProfessionalHourlyRow;
   readonly timezone: string;
+  readonly annotation?: ProfessionalHourlyRowAnnotation;
+  readonly ordinarySignalLabel?: string;
   readonly cloudBasisRowNote?: string;
   readonly showRawTemperatureColumn: boolean;
 }) {
   const signal = professionalHourlyDisplaySignal(row);
+  const signalLabel = annotation?.label ?? ordinarySignalLabel ?? signal;
+  const signalBadgeVariant = annotation?.tone
+    ? professionalHourlyAnnotationBadgeVariant(annotation.tone)
+    : ordinarySignalLabel
+      ? "muted"
+      : professionalSignalBadgeVariant(signal);
   const weatherText = providerNeutralProfessionalWeatherText(row.weatherText) ?? "—";
   const weatherGlyph = weatherGlyphForProfessionalHour(row, weatherText);
 
   return (
-    <tr className="odd:bg-card even:bg-muted/35" data-professional-hourly-row={row.time}>
+    <tr
+      className={cn(
+        "odd:bg-card even:bg-muted/35",
+        annotation?.tone === "success" && "bg-secondary/20",
+        (annotation?.tone === "warning" || annotation?.tone === "danger") && "bg-accent/10",
+      )}
+      data-professional-hourly-row={row.time}
+      data-professional-hourly-row-annotation={annotation?.label}
+      data-professional-hourly-row-emphasis={annotation?.tone}
+    >
       <ProfessionalHourlyCell
         cell="date"
         className="sticky left-0 z-10 bg-inherit font-semibold text-card-foreground"
@@ -6214,7 +6059,7 @@ function CloudSeaProfessionalHourlyRow({
         </span>
       </ProfessionalHourlyCell>
       <ProfessionalHourlyCell cell="signal">
-        <Badge variant={professionalSignalBadgeVariant(signal)}>{signal}</Badge>
+        <Badge variant={signalBadgeVariant}>{signalLabel}</Badge>
       </ProfessionalHourlyCell>
       <ProfessionalHourlyCell
         cell="cloud-total"
@@ -6292,34 +6137,44 @@ function CloudSeaProfessionalHourlyRow({
 function CloudSeaHourlyFocusPreview({
   rows,
   timezone,
+  rowAnnotations,
+  ordinarySignalLabel,
 }: {
   readonly rows: readonly ProfessionalHourlyRow[];
   readonly timezone: string;
+  readonly rowAnnotations: ReadonlyMap<string, ProfessionalHourlyRowAnnotation>;
+  readonly ordinarySignalLabel?: string;
 }) {
   return (
     <div className="mt-3 grid gap-2" data-cloud-sea-hourly-preview="true">
       <p className="text-xs font-semibold text-muted-foreground">默认聚焦云海窗口附近小时</p>
       {rows.length > 0 ? (
         <div className="grid gap-2 min-[760px]:grid-cols-2 min-[1180px]:grid-cols-4">
-          {rows.map((row) => (
-            <div key={row.time} className="rounded-lg border border-border bg-muted px-3 py-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-bold text-card-foreground">
-                  {row.timeLabel || formatProfessionalTime(row.time, timezone)}
+          {rows.map((row) => {
+            const annotation = rowAnnotations.get(row.time);
+            const signal = professionalHourlyDisplaySignal(row);
+            const signalLabel = annotation?.label ?? ordinarySignalLabel ?? signal;
+            const signalBadgeVariant = annotation?.tone
+              ? professionalHourlyAnnotationBadgeVariant(annotation.tone)
+              : ordinarySignalLabel
+                ? "muted"
+                : professionalSignalBadgeVariant(signal);
+            return (
+              <div key={row.time} className="rounded-lg border border-border bg-muted px-3 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-bold text-card-foreground">
+                    {row.timeLabel || formatProfessionalTime(row.time, timezone)}
+                  </p>
+                  <Badge variant={signalBadgeVariant}>{signalLabel}</Badge>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  低云 {formatProfessionalPercent(row.cloudLowPercent)} · 湿度{" "}
+                  {formatProfessionalPercent(row.relativeHumidityPercent)} · 能见度{" "}
+                  {formatProfessionalVisibility(row.visibilityMeters)}
                 </p>
-                <Badge
-                  variant={professionalSignalBadgeVariant(professionalHourlyDisplaySignal(row))}
-                >
-                  {professionalHourlyDisplaySignal(row)}
-                </Badge>
               </div>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                低云 {formatProfessionalPercent(row.cloudLowPercent)} · 湿度{" "}
-                {formatProfessionalPercent(row.relativeHumidityPercent)} · 能见度{" "}
-                {formatProfessionalVisibility(row.visibilityMeters)}
-              </p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <p className="rounded-lg border border-warning bg-muted p-3 text-sm leading-6 text-muted-foreground">
@@ -6573,7 +6428,11 @@ function ProfessionalHourlyCell({
 
 function defaultProfessionalHourlyFilter(
   data: CloudSeaProfessionalHourlyDisplayData,
+  config?: ProfessionalHourlySectionConfig,
 ): ProfessionalHourlyFilterMode {
+  if (config?.defaultFilterMode) {
+    return config.defaultFilterMode;
+  }
   return professionalHourlyFocusWindows(data).length > 0 ? "cloudSea" : "morning";
 }
 

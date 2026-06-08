@@ -219,10 +219,26 @@ describe("Cloud Sea display data rolling horizon", () => {
       source.indexOf("function CloudSeaProfessionalHourlyDataPanel"),
       source.indexOf("function CloudSeaMultiSourceAgreementCard"),
     );
+    const cloudSeaPageSource = source.slice(
+      source.indexOf("export function CloudSeaResultPage"),
+      source.indexOf("export function GlowResultPage"),
+    );
+    const glowPageSource = source.slice(
+      source.indexOf("export function GlowResultPage"),
+      source.indexOf("export function AstroResultPage"),
+    );
 
     expect(panelSource).toContain("const rows = data.rows");
+    expect(panelSource).toContain("data-cloud-sea-professional-table-scroll");
+    expect(panelSource).not.toContain("ProfessionalHourlyCloudCard");
+    expect(panelSource).not.toContain("professionalHourlyRowsByDate");
+    expect(panelSource).not.toContain("data-professional-hourly-card-layout");
+    expect(panelSource).not.toContain("data-glow-hourly-cloud-card");
     expect(panelSource).not.toMatch(/row\.date|currentDate|isSameDay|23:00/);
     expect(panelSource).not.toMatch(/startsWith\(\s*`\$\{date\}T`/);
+    expect(cloudSeaPageSource).toContain("<CloudSeaProfessionalHourlyDataPanel");
+    expect(glowPageSource).toContain("<CloudSeaProfessionalHourlyDataPanel");
+    expect(glowPageSource).not.toContain("<ProfessionalHourlyCloudSection");
   });
 
   it("keeps future48 provider-short coverage as 39 of 48 display hours", () => {

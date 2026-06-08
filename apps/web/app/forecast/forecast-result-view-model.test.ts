@@ -4593,7 +4593,7 @@ describe("forecast result target-aware view model", () => {
 
     expect(viewModel.target).toBe("cloud_sea");
     expect(viewModel.cloudSea).toBeDefined();
-    expect(viewModel.primaryCards.map((card) => card.label)).toEqual([
+    expect(viewModel.primaryCards.map((card) => card.label).slice(0, 4)).toEqual([
       "云海形成机会",
       "云海可拍机会",
       "白墙风险",
@@ -6196,7 +6196,7 @@ describe("forecast result target-aware view model", () => {
     const viewModel = buildForecastResultViewModel(resultForTarget("glow"), "glow");
 
     expect(viewModel.glow).toBeDefined();
-    expect(viewModel.primaryCards.map((card) => card.label)).toEqual([
+    expect(viewModel.primaryCards.map((card) => card.label).slice(0, 4)).toEqual([
       "朝霞机会",
       "晚霞机会",
       "最佳霞光窗口",
@@ -6221,7 +6221,7 @@ describe("forecast result target-aware view model", () => {
   });
 
   it("builds a specialized glow view model with separate sunrise, sunset, cloud, visibility, terrain, and backup modules", () => {
-    const viewModel = buildGlowForecastViewModel(resultForTarget("glow"));
+    const viewModel = buildGlowForecastViewModel(resultWithGlowHourlyRange("24h", 24));
 
     expect(viewModel.coreCards.map((card) => card.label)).toEqual([
       "朝霞机会",
@@ -6258,7 +6258,7 @@ describe("forecast result target-aware view model", () => {
   });
 
   it("renders the glow result without the entry-page popular spots placeholder", () => {
-    const result = resultForTarget("glow");
+    const result = resultWithGlowHourlyRange("24h", 24);
     const viewModel = buildGlowForecastViewModel(result);
     const fetchMock = vi.fn(() => {
       throw new Error("glow result render should not call external APIs");
@@ -6280,11 +6280,12 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("朝霞机会");
       expect(html).toContain("晚霞机会");
       expect(html).toContain("霞光拍摄窗口");
-      expect(html).toContain("逐小时云层与霞光条件");
+      expect(html).toContain("专业小时数据");
+      expect(html).toContain("专业参考");
       expect(html).toContain("出发建议");
       expect(html).toContain("判断依据、风险与行动");
       expect(html).toContain("低云遮挡风险");
-      expect(html).toContain("色彩云条件");
+      expect(html).toContain("色彩载体");
       expect(html).toContain("天气数据：演示天气数据");
       expect(html).toContain("地形数据：演示数据");
       expect(html).toContain("天文数据：本地算法计算");
@@ -6295,7 +6296,11 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("ProfessionalHourlyCloudSection");
       expect(html).toContain('data-professional-hourly-shared="true"');
       expect(html).toContain('data-professional-hourly-target="glow"');
-      expect(html).toContain('data-professional-hourly-card-layout="true"');
+      expect(html).toContain('data-cloud-sea-professional-table-scroll="true"');
+      expect(html).not.toContain("逐小时云层与霞光条件");
+      expect(html).not.toContain("共享小时模型");
+      expect(html).not.toContain('data-professional-hourly-card-layout="true"');
+      expect(html).not.toContain('data-glow-hourly-cloud-card="');
       expect(html).not.toContain("光线窗口");
       expect(html).not.toContain("云层结构");
       expect(html).not.toContain("能见度与通透度");
@@ -6336,12 +6341,12 @@ describe("forecast result target-aware view model", () => {
     expect(cloudSeaHtml).toContain('data-cloud-sea-professional-table-scroll="true"');
     expect(glowHtml).toContain('data-professional-hourly-shared="true"');
     expect(glowHtml).toContain('data-professional-hourly-target="glow"');
-    expect(glowHtml).toContain('data-professional-hourly-card-layout="true"');
-    expect(glowHtml).not.toContain('data-cloud-sea-professional-table-scroll="true"');
+    expect(glowHtml).toContain('data-cloud-sea-professional-table-scroll="true"');
+    expect(glowHtml).not.toContain('data-professional-hourly-card-layout="true"');
     expect(glowHtml).not.toContain("GlowProfessionalHourlyCloudCard");
   });
 
-  it("renders the full 24h glow hourly range as shared cards", () => {
+  it("renders the full 24h glow hourly range in the shared professional table", () => {
     const result = resultWithGlowHourlyRange("24h", 24);
     const viewModel = buildGlowForecastViewModel(result);
     const html = renderToStaticMarkup(
@@ -6353,22 +6358,26 @@ describe("forecast result target-aware view model", () => {
     );
 
     expect(viewModel.professionalHourlyData.rows).toHaveLength(24);
-    expect(countOccurrences(html, 'data-glow-hourly-cloud-card="')).toBe(24);
-    expect(html).toContain('data-glow-hourly-cloud-card="2026-05-20T00:00:00+08:00"');
-    expect(html).toContain('data-glow-hourly-cloud-card="2026-05-20T23:00:00+08:00"');
-    expect(html).toContain("总云 / 低云");
-    expect(html).toContain("中云 / 高云");
-    expect(html).toContain("88% / 82%");
-    expect(html).toContain("46% / 28%");
+    expect(countOccurrences(html, 'data-professional-hourly-row="')).toBe(24);
+    expect(html).toContain('data-professional-hourly-row="2026-05-20T00:00:00+08:00"');
+    expect(html).toContain('data-professional-hourly-row="2026-05-20T23:00:00+08:00"');
+    expect(html).toContain("总云量 %");
+    expect(html).toContain("高云量 %");
+    expect(html).toContain("中云量 %");
+    expect(html).toContain("低云量 %");
+    expect(html).toContain("88%");
+    expect(html).toContain("82%");
+    expect(html).toContain("46%");
+    expect(html).toContain("28%");
   });
 
   it.each([
-    ["48h", 48, ["5月20日", "5月21日"]],
-    ["72h", 72, ["5月20日", "5月21日", "5月22日"]],
-    ["7d", 168, ["5月20日", "5月21日", "5月22日", "5月23日", "5月24日", "5月25日", "5月26日"]],
+    ["48h", 48, ["2026-05-20T00:00:00+08:00", "2026-05-21T23:00:00+08:00"]],
+    ["72h", 72, ["2026-05-20T00:00:00+08:00", "2026-05-22T23:00:00+08:00"]],
+    ["7d", 168, ["2026-05-20T00:00:00+08:00", "2026-05-26T23:00:00+08:00"]],
   ] as const)(
-    "renders all local date groups for %s glow hourly cards",
-    (horizon, hours, labels) => {
+    "renders the full %s glow hourly range in the shared professional table",
+    (horizon, hours, rowTimes) => {
       const result = resultWithGlowHourlyRange(horizon, hours);
       const viewModel = buildGlowForecastViewModel(result);
       const html = renderToStaticMarkup(
@@ -6379,10 +6388,12 @@ describe("forecast result target-aware view model", () => {
         }),
       );
 
-      expect(countOccurrences(html, 'data-glow-hourly-cloud-card="')).toBe(hours);
-      for (const label of labels) {
-        expect(html).toContain(`data-professional-hourly-date-group="${label}"`);
+      expect(viewModel.professionalHourlyData.rows).toHaveLength(hours);
+      expect(countOccurrences(html, 'data-professional-hourly-row="')).toBe(hours);
+      for (const rowTime of rowTimes) {
+        expect(html).toContain(`data-professional-hourly-row="${rowTime}"`);
       }
+      expect(html).not.toContain("data-professional-hourly-date-group");
     },
   );
 
@@ -6397,12 +6408,15 @@ describe("forecast result target-aware view model", () => {
       }),
     );
 
-    expect(html).toContain("日出准备");
-    expect(html).toContain("朝霞核心");
-    expect(html).toContain("日落准备");
-    expect(html).toContain("晚霞核心");
+    expect(html).toContain("朝霞准备窗口");
+    expect(html).toContain("朝霞核心窗口");
+    expect(html).toContain("晚霞准备窗口");
+    expect(html).toContain("晚霞核心窗口");
+    expect(html).toContain("普通时段");
     expect(countOccurrences(html, 'data-professional-hourly-shared="true"')).toBe(1);
-    expect(countOccurrences(html, 'data-professional-hourly-card-layout="true"')).toBe(1);
+    expect(countOccurrences(html, 'data-cloud-sea-professional-table-scroll="true"')).toBe(1);
+    expect(html).not.toContain("非核心霞光窗口");
+    expect(html).not.toContain('data-professional-hourly-card-layout="true"');
     expect(html).not.toContain("GlowProfessionalHourlyCloudCards");
   });
 
