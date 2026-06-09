@@ -15,6 +15,7 @@ import type {
   DailyAstro,
   ForecastCalculationInput,
   GlowBackupPlan,
+  LightPollutionInfo,
   MoonImpactLevel,
   NormalizedHourlyWeather,
 } from "@photo-weather/shared";
@@ -28,7 +29,23 @@ import {
 const minuteMs = 60_000;
 const moonlessSampleStepMs = 30 * minuteMs;
 const minimumWindowMinutes = 30;
-const lightPollutionUnavailableNote = "暂未接入光污染数据，实际观星仍需结合现场环境判断。";
+const lightPollutionUnavailableNote =
+  "光污染数据暂缺；未按无光污染处理，需现场确认城市光穹与地平线环境。";
+const defaultLightPollutionInfo: LightPollutionInfo = {
+  available: false,
+  dataAvailable: false,
+  unavailableReason: "dataset_missing",
+  ambientRiskLevel: "insufficient",
+  ambientRiskLevelLabelZh: "数据不足",
+  directionalRisk: [],
+  confidence: "low",
+  sampleCount: 0,
+  validSampleCount: 0,
+  lightPollutionNoteZh: lightPollutionUnavailableNote,
+  starPenalty: 0,
+  milkyWayPenalty: 0,
+  scoringMode: "heuristic",
+};
 
 type ForecastTimeRange = {
   readonly forecastStart: string;
@@ -83,7 +100,80 @@ type AssessmentBuildInput = {
   readonly recommendedMilkyWayWindow?: AstroWindow;
   readonly weatherWindow: readonly NormalizedHourlyWeather[];
   readonly scores: AstroScoreInput;
+  readonly lightPollution: LightPollutionInfo;
 };
+
+function normalizeLightPollutionInfo(input: LightPollutionInfo | undefined): LightPollutionInfo {
+  if (!input) {
+    return defaultLightPollutionInfo;
+  }
+  return {
+    ...defaultLightPollutionInfo,
+    ...input,
+    ambientRiskLevel: input.ambientRiskLevel ?? defaultLightPollutionInfo.ambientRiskLevel,
+    ambientRiskLevelLabelZh:
+      input.ambientRiskLevelLabelZh ?? defaultLightPollutionInfo.ambientRiskLevelLabelZh,
+    directionalRisk: input.directionalRisk ?? [],
+    starPenalty: input.available ? Math.min(20, Math.max(0, input.starPenalty ?? 0)) : 0,
+    milkyWayPenalty: input.available ? Math.min(35, Math.max(0, input.milkyWayPenalty ?? 0)) : 0,
+    scoringMode: "heuristic",
+  };
+}
+
+function applyLightPollutionToAstroScores(
+  scores: AstroScoreInput,
+  lightPollution: LightPollutionInfo,
+): AstroScoreInput {
+  if (!lightPollution.available) {
+    return scores;
+  }
+  return {
+    ...scores,
+    starsScore: clampScore(scores.starsScore - lightPollution.starPenalty),
+    milkyWayScore: clampScore(scores.milkyWayScore - lightPollution.milkyWayPenalty),
+  };
+}
+
+function lightPollutionPracticalPenalty(
+  lightPollution: LightPollutionInfo,
+  hasMilkyWayWindow: boolean,
+): number {
+  if (!lightPollution.available) {
+    return 0;
+  }
+  return hasMilkyWayWindow ? lightPollution.milkyWayPenalty : lightPollution.starPenalty;
+}
+
+function buildLightPollutionEvidence(
+  lightPollution: LightPollutionInfo,
+): readonly AstroEvidenceItem[] {
+  if (!lightPollution.available) {
+    return [
+      {
+        label: "光污染参考",
+        value: "数据暂缺",
+        effect: "neutral",
+        noteZh: lightPollution.lightPollutionNoteZh || lightPollutionUnavailableNote,
+      },
+    ];
+  }
+  const targetLabel = lightPollution.targetDirectionLevelLabelZh
+    ? `；银河方向光害${lightPollution.targetDirectionLevelLabelZh}`
+    : "；银河方向角不足，未推断目标方向光害";
+  const penaltyText = `星空指数-${lightPollution.starPenalty}，银河指数-${lightPollution.milkyWayPenalty}`;
+  return [
+    {
+      label: "光污染参考",
+      value: `环境${lightPollution.ambientRiskLevelLabelZh}`,
+      effect:
+        (lightPollution.ambientRiskIndex ?? 0) >= 60 ||
+        (lightPollution.targetDirectionRisk ?? 0) >= 60
+          ? "risk"
+          : "neutral",
+      noteZh: `卫星夜光参考：环境光污染${lightPollution.ambientRiskLevelLabelZh}${targetLabel}；${penaltyText}。非现场SQM实测，不代表测量Bortle等级。`,
+    },
+  ];
+}
 
 export function calculateAstroAnalysis(
   input: ForecastCalculationInput,
@@ -102,6 +192,8 @@ export function calculateAstroAnalysis(
   const recommendedMilkyWayWindows =
     input.astroWindowBundle?.recommendedMilkyWayWindows ??
     buildRecommendedMilkyWayWindows(input, milkyWayCandidateWindows, moonlessNightWindows);
+  const lightPollution = normalizeLightPollutionInfo(input.lightPollution);
+  const adjustedScores = applyLightPollutionToAstroScores(scores, lightPollution);
   const dailyAstro = buildDailyAstro(
     input,
     astronomicalNightWindows,
@@ -109,8 +201,9 @@ export function calculateAstroAnalysis(
     milkyWayCandidateWindows,
     recommendedMilkyWayWindows,
     scores,
+    lightPollution,
   );
-  const assessment = selectTopAstroAssessment(dailyAstro, input, scores);
+  const assessment = selectTopAstroAssessment(dailyAstro, input, adjustedScores, lightPollution);
   const weatherBlockers = buildAstroWeatherBlockers(input, astronomicalNightWindows);
   const moonImpactScore = assessment.moonlightImpactScore;
   const astroConditionScore = assessment.astronomicalWindowScore;
@@ -119,20 +212,13 @@ export function calculateAstroAnalysis(
   const astroShootable = dailyAstro.some((day) => day.astroShootable);
   const astroTravelScore = astroPracticalScore;
   const recommendationLabel = recommendationLabelForScore(astroTravelScore);
-  const missingDataNotes = buildMissingDataNotes(input);
+  const missingDataNotes = buildMissingDataNotes(input, lightPollution);
   const confidenceLevel = classifyConfidence(missingDataNotes);
   const cloudEvidence = buildCloudEvidence(input, astronomicalNightWindows);
   const visibilityEvidence = buildVisibilityEvidence(input, astronomicalNightWindows);
   const moonEvidence = buildMoonEvidence(input, astronomicalNightWindows);
   const terrainEvidence = buildTerrainEvidence(input);
-  const lightPollutionEvidence: readonly AstroEvidenceItem[] = [
-    {
-      label: "光污染数据",
-      value: "暂未接入",
-      effect: "neutral",
-      noteZh: lightPollutionUnavailableNote,
-    },
-  ];
+  const lightPollutionEvidence = buildLightPollutionEvidence(lightPollution);
   const bestAstroWindows = [...recommendedMilkyWayWindows, ...moonlessNightWindows]
     .sort(
       (left, right) => right.score - left.score || Date.parse(left.start) - Date.parse(right.start),
@@ -140,8 +226,8 @@ export function calculateAstroAnalysis(
     .slice(0, Math.max(3, input.calendarBasis.targetDates.length));
 
   return {
-    starsScore: scores.starsScore,
-    milkyWayScore: scores.milkyWayScore,
+    starsScore: adjustedScores.starsScore,
+    milkyWayScore: adjustedScores.milkyWayScore,
     astroConditionScore,
     astroPracticalScore,
     astronomicalWindowScore: assessment.astronomicalWindowScore,
@@ -172,10 +258,7 @@ export function calculateAstroAnalysis(
     astronomicalNightWindows,
     milkyWayCandidateWindows,
     recommendedMilkyWayWindows,
-    lightPollution: {
-      lightPollutionSource: "unavailable",
-      lightPollutionNoteZh: lightPollutionUnavailableNote,
-    },
+    lightPollution,
     cloudEvidence,
     visibilityEvidence,
     moonEvidence,
@@ -187,6 +270,7 @@ export function calculateAstroAnalysis(
       assessment,
       recommendedMilkyWayWindows,
       weatherBlockers,
+      lightPollution,
     ),
     opportunityReasons: buildAstroOpportunityReasons(
       input,
@@ -195,10 +279,11 @@ export function calculateAstroAnalysis(
       recommendedMilkyWayWindows,
     ),
     travelRecommendations: buildAstroTravelRecommendations(
-      scores,
+      adjustedScores,
       assessment,
       recommendedMilkyWayWindows,
       weatherBlockers,
+      lightPollution,
     ),
     backupPlans: buildAstroBackupPlans(),
     missingDataNotes,
@@ -369,6 +454,7 @@ function buildDailyAstro(
   candidateWindows: readonly AstroWindow[],
   recommendedMilkyWayWindows: readonly AstroWindow[],
   scores: AstroScoreInput,
+  lightPollution: LightPollutionInfo,
 ): readonly DailyAstro[] {
   return input.calendarBasis.targetDates.map((date) => {
     const astro = input.astroSummaries.find((summary) => summary.date === date);
@@ -385,13 +471,19 @@ function buildDailyAstro(
           astronomicalNightWindow.end,
         )
       : nightlyWeatherForDate(input, date);
-    const starsScore = astro
+    const baseStarsScore = astro
       ? calculateDailyStarsScore(input, astro, weatherWindow)
       : scores.starsScore;
-    const milkyWayScore =
+    const baseMilkyWayScore =
       recommendedMilkyWayWindow?.score ??
       candidateWindow?.score ??
       Math.min(58, scores.milkyWayScore);
+    const starsScore = lightPollution.available
+      ? clampScore(baseStarsScore - lightPollution.starPenalty)
+      : baseStarsScore;
+    const milkyWayScore = lightPollution.available
+      ? clampScore(baseMilkyWayScore - lightPollution.milkyWayPenalty)
+      : baseMilkyWayScore;
     const assessment = buildAstroPhotographyAssessment({
       input,
       astro,
@@ -405,6 +497,7 @@ function buildDailyAstro(
         starsScore,
         milkyWayScore,
       },
+      lightPollution,
     });
     const weatherBlockers = assessment.astroWeatherBlockers;
     const astroConditionScore = assessment.astronomicalWindowScore;
@@ -440,6 +533,7 @@ function buildDailyAstro(
       moonlessNightWindow,
       recommendedMilkyWayWindow,
       assessment,
+      lightPollution,
       recommendationLabel: recommendationLabelForScore(astroPracticalScore),
       keyReason: dailyKeyReason(
         recommendedMilkyWayWindow,
@@ -749,6 +843,7 @@ function buildAstroPhotographyAssessment({
   recommendedMilkyWayWindow,
   weatherWindow,
   scores,
+  lightPollution,
 }: AssessmentBuildInput): AstroPhotographyAssessment {
   const stats = summarizeWeatherWindow(weatherWindow);
   const moonImpact = astro
@@ -796,11 +891,16 @@ function buildAstroPhotographyAssessment({
     { score: 100 - moonImpact.score, weight: 0.08 },
     { score: 100 - dewRiskScore, weight: 0.06 },
   ]);
-  const practicalAstroScore = clampScore(
-    Math.min(
+  const basePracticalAstroScore = Math.min(
       rawPracticalScore,
       astroPracticalWeatherCap(stats, astroWeatherBlockers, moonImpact, astroWindowAvailable),
-    ),
+  );
+  const practicalAstroScore = clampScore(
+    basePracticalAstroScore -
+      lightPollutionPracticalPenalty(
+        lightPollution,
+        Boolean(recommendedMilkyWayWindow || candidateWindow),
+      ),
   );
   const weatherAllows =
     astroWeatherBlockers.length === 0 &&
@@ -855,6 +955,7 @@ function selectTopAstroAssessment(
   dailyAstro: readonly DailyAstro[],
   input: ForecastCalculationInput,
   scores: AstroScoreInput,
+  lightPollution: LightPollutionInfo,
 ): AstroPhotographyAssessment {
   const bestAssessment = [...dailyAstro]
     .map((day) => day.assessment)
@@ -874,6 +975,7 @@ function selectTopAstroAssessment(
     astro: input.astroSummaries[0],
     weatherWindow: input.hourlyWeather,
     scores,
+    lightPollution,
   });
 }
 
@@ -1570,7 +1672,17 @@ function buildAstroRiskReasons(
   assessment: AstroPhotographyAssessment,
   recommendedWindows: readonly AstroWindow[],
   weatherBlockers: readonly string[],
+  lightPollution: LightPollutionInfo,
 ): readonly string[] {
+  const lightPollutionRisks = lightPollution.available
+    ? [
+        `卫星夜光参考：环境光污染${lightPollution.ambientRiskLevelLabelZh}${
+          lightPollution.targetDirectionLevelLabelZh
+            ? `，银河方向光害${lightPollution.targetDirectionLevelLabelZh}`
+            : ""
+        }；星空指数扣减${lightPollution.starPenalty}，银河指数扣减${lightPollution.milkyWayPenalty}。`,
+      ]
+    : [lightPollution.lightPollutionNoteZh || lightPollutionUnavailableNote];
   return [
     ...weatherBlockers.map((blocker) => `星空银河天气阻断：${blocker}。`),
     ...(weatherBlockers.length > 0
@@ -1591,7 +1703,7 @@ function buildAstroRiskReasons(
     ...(hasMissingCloudLayerFields(input.weatherMissingFields)
       ? ["缺少低云/中云/高云分层数据，云量判断置信度降低。"]
       : []),
-    lightPollutionUnavailableNote,
+    ...lightPollutionRisks,
   ];
 }
 
@@ -1622,6 +1734,7 @@ function buildAstroTravelRecommendations(
   assessment: AstroPhotographyAssessment,
   recommendedWindows: readonly AstroWindow[],
   weatherBlockers: readonly string[] = [],
+  lightPollution: LightPollutionInfo = defaultLightPollutionInfo,
 ): readonly string[] {
   const bestWindow = recommendedWindows[0];
 
@@ -1646,7 +1759,13 @@ function buildAstroTravelRecommendations(
     scores.starsScore >= 65
       ? "星空条件可用时，可同步准备星轨、深空或山脊夜景素材。"
       : "若云量偏高，可优先选择城市夜景、月景或等待云缝。",
-    "光污染较强时，优先避开城市方向或选择高海拔暗场机位。",
+    lightPollution.available
+      ? `光污染参考：环境${lightPollution.ambientRiskLevelLabelZh}${
+          lightPollution.targetDirectionLevelLabelZh
+            ? `，银河方向${lightPollution.targetDirectionLevelLabelZh}`
+            : ""
+        }；必要时避开城市光穹方向或调整构图。`
+      : lightPollutionUnavailableNote,
     scores.transparencyScore >= 65 && scores.milkyWayScore < 65
       ? "透明度好但银河条件一般时，可转拍星轨或山脊夜景。"
       : "出行前仍需复核最新云量、景区通行和现场安全条件。",
@@ -1680,7 +1799,10 @@ function buildAstroBackupPlans(): readonly GlowBackupPlan[] {
   ];
 }
 
-function buildMissingDataNotes(input: ForecastCalculationInput): readonly string[] {
+function buildMissingDataNotes(
+  input: ForecastCalculationInput,
+  lightPollution: LightPollutionInfo,
+): readonly string[] {
   const notes = [
     ...(hasMissingCloudLayerFields(input.weatherMissingFields)
       ? ["当前天气源缺少低云/中云/高云分层数据，星空银河判断置信度会降低。"]
@@ -1698,7 +1820,7 @@ function buildMissingDataNotes(input: ForecastCalculationInput): readonly string
     )
       ? ["银河窗口为简化本地估算，尚未完整建模银河拱桥、地形遮挡和光污染。"]
       : []),
-    lightPollutionUnavailableNote,
+    ...(lightPollution.available ? [] : [lightPollution.lightPollutionNoteZh || lightPollutionUnavailableNote]),
     ...(input.weatherDataMode === "real"
       ? []
       : ["天气数据当前为演示数据，正式出行前需要复核真实预报。"]),

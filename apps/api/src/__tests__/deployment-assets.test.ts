@@ -18,6 +18,8 @@ const productionScripts = [
   "scripts/resume-install.sh",
   "scripts/verify-admin-bootstrap.sh",
   "scripts/download-ephemeris.sh",
+  "scripts/import-light-pollution.sh",
+  "scripts/check-light-pollution.sh",
   "scripts/test-providers.sh",
   "scripts/test-deepseek-interpretation.sh",
 ] as const;
@@ -102,9 +104,12 @@ describe("production deployment assets", () => {
     expect(compose).toContain("POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}");
     expect(compose).toContain("DATABASE_URL: ${DATABASE_URL}");
     expect(compose).toContain("EPHEMERIS_PATH: /app/data/de421.bsp");
+    expect(compose).toContain("LIGHT_POLLUTION_DATASET_PATH: /app/data/light-pollution/current/light-pollution.cog.tif");
+    expect(compose).toContain("LIGHT_POLLUTION_CACHE_SIZE: ${LIGHT_POLLUTION_CACHE_SIZE:-1024}");
     expect(compose).toContain("postgres_data:");
     expect(compose).toContain("redis_data:");
     expect(compose).toContain("- astro_data:/app/data");
+    expect(compose).toContain("- ./deploy/light-pollution:/app/data/light-pollution");
     expect(compose).toContain("caddy_data:");
     expect(compose).toContain("caddy_config:");
     expect(compose).toContain("app_uploads:");
@@ -141,6 +146,10 @@ describe("production deployment assets", () => {
       "ENABLE_ASTRO_SERVICE=true",
       "ASTRO_SERVICE_URL=http://astro-service:4100",
       "ASTRO_SERVICE_TIMEOUT_MS=45000",
+      "LIGHT_POLLUTION_DATASET_PATH=/app/data/light-pollution/current/light-pollution.cog.tif",
+      "LIGHT_POLLUTION_METADATA_PATH=/app/data/light-pollution/current/metadata.json",
+      "LIGHT_POLLUTION_CACHE_SIZE=1024",
+      "LIGHT_POLLUTION_QUERY_TIMEOUT_MS=5000",
       "PIP_INDEX_URL=",
       "EPHEMERIS_LOCAL_FILE=",
       "EPHEMERIS_URLS=",
@@ -167,6 +176,12 @@ describe("production deployment assets", () => {
       "deploy/generated/",
       "deploy/assets/*.bsp",
       "deploy/ephemeris/*.bsp",
+      "deploy/light-pollution/incoming/*",
+      "deploy/light-pollution/current/*",
+      "deploy/light-pollution/backups/*",
+      "deploy/light-pollution/**/*.tif",
+      "deploy/light-pollution/**/*.tiff",
+      "!deploy/light-pollution/**/.gitkeep",
       ".runtime/",
       "backups/",
       "apps/astro-service/.venv/",
@@ -193,6 +208,9 @@ describe("production deployment assets", () => {
     expect(readRepoFile("docker-compose.prod.yml")).toContain("PIP_INDEX_URL: ${PIP_INDEX_URL:-}");
     expect(readRepoFile("apps/astro-service/Dockerfile")).toContain(
       "ENV EPHEMERIS_PATH=/app/data/de421.bsp",
+    );
+    expect(readRepoFile("apps/astro-service/Dockerfile")).toContain(
+      "ENV LIGHT_POLLUTION_DATASET_PATH=/app/data/light-pollution/current/light-pollution.cog.tif",
     );
   });
 

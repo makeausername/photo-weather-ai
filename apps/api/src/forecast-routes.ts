@@ -737,6 +737,7 @@ async function calculateForecastResult(
     astroWindowBundle: astroServiceData.astroWindowBundle,
     astroCalculationBasis: astroServiceData.astroCalculationBasis,
     astroDataSourceLabelZh: astroServiceData.astroDataSourceLabelZh,
+    lightPollution: astroServiceData.lightPollution,
   });
 }
 

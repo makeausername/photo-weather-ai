@@ -2925,6 +2925,7 @@ function compactAstroPromptFacts(
       weatherBlockers: takeTextItems(analysis.weatherBlockers, 3, textLimit),
       missingDataNotes: takeTextItems(analysis.missingDataNotes, 2, textLimit),
     },
+    lightPollution: compactAstroLightPollutionPromptFacts(analysis.lightPollution, textLimit),
     moon: moon
       ? {
           phaseNameZh: moon.moonPhaseNameZh,
@@ -2948,6 +2949,13 @@ function compactAstroPromptFacts(
       milkyWayPhotographyIndex: day.milkyWayScore,
       skyConditionScore: day.skyConditionScore,
       practicalAstroScore: day.practicalAstroScore,
+      lightPollution: {
+        dataAvailable: day.lightPollution.dataAvailable,
+        ambientLevelZh: day.lightPollution.ambientRiskLevelLabelZh,
+        targetDirectionLevelZh: day.lightPollution.targetDirectionLevelLabelZh ?? null,
+        starIndexPenalty: day.lightPollution.starPenalty,
+        milkyWayIndexPenalty: day.lightPollution.milkyWayPenalty,
+      },
       astronomicalNight: compactAstroWindow(day.astronomicalNightWindow, timezone, textLimit),
       moonlessNight: compactAstroWindow(day.moonlessNightWindow, timezone, textLimit),
       recommendedMilkyWay: compactAstroWindow(day.recommendedMilkyWayWindow, timezone, textLimit),
@@ -2985,6 +2993,29 @@ function compactAstroPromptFacts(
         ? compactProfessionalHourlyTimeBasisForAi(result.professionalHourlyDataTimeBasis, detail)
         : null,
     },
+  };
+}
+
+function compactAstroLightPollutionPromptFacts(
+  lightPollution: ForecastCalculationResult["astroAnalysis"]["lightPollution"],
+  textLimit: number,
+) {
+  return {
+    deterministicOnly: true,
+    dataAvailable: lightPollution.dataAvailable,
+    ambientLevelZh: lightPollution.ambientRiskLevelLabelZh,
+    ambientRiskIndex: lightPollution.ambientRiskIndex ?? null,
+    targetDirectionLevelZh: lightPollution.targetDirectionLevelLabelZh ?? null,
+    targetDirectionRisk: lightPollution.targetDirectionRisk ?? null,
+    datasetYear: lightPollution.datasetYear ?? null,
+    datasetVersion: lightPollution.datasetVersion ?? null,
+    starIndexPenalty: lightPollution.starPenalty,
+    milkyWayIndexPenalty: lightPollution.milkyWayPenalty,
+    missingOnSiteCheckNoteZh: lightPollution.dataAvailable
+      ? null
+      : limitText(lightPollution.lightPollutionNoteZh, textLimit),
+    constraintsZh:
+      "只解释这些确定性光污染事实；不要发明Bortle、SQM、辐亮度或风险等级，不要改写指数和推荐。",
   };
 }
 

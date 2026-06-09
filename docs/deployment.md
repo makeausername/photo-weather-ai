@@ -152,6 +152,48 @@ After installation, `GET http://astro-service:4100/health` from inside the app n
 
 If health still shows `ephemerisAvailable=false`, check `EPHEMERIS_PATH`, verify `/app/data/de421.bsp` exists inside the astro-service container, and confirm file permissions allow the container user to read it.
 
+## Optional Local Light-Pollution Raster
+
+Light-pollution data is optional for deployment, but production requests never call a real-time external light-pollution API. Use a legally obtained VIIRS-compatible nighttime-light GeoTIFF and keep it on the server, outside Git:
+
+```text
+deploy/light-pollution/incoming/
+deploy/light-pollution/current/
+deploy/light-pollution/backups/
+```
+
+Production Compose mounts this host directory into astro-service:
+
+```text
+./deploy/light-pollution:/app/data/light-pollution
+```
+
+The active dataset uses canonical files:
+
+```text
+current/light-pollution.cog.tif
+current/metadata.json
+current/checksum.sha256
+```
+
+Import one file, multiple files, or a tile directory after placing the source under `deploy/light-pollution/incoming/`:
+
+```bash
+bash scripts/import-light-pollution.sh incoming/<file-or-directory> -- --dataset-year 2024 --dataset-version <version>
+```
+
+Inspect the active dataset and astro-service health fields:
+
+```bash
+bash scripts/check-light-pollution.sh
+```
+
+The importer validates readability, dimensions, band availability, nodata, CRS, finite radiance values, coordinate bounds, metadata, and checksum. It mosaics supplied tiles, reprojects to EPSG:4326 when required, writes a tiled/compressed COG, builds overviews where practical, calculates valid-pixel statistics and log-radiance quantiles, writes metadata, and activates the dataset only after validation. The previous active raster/metadata/checksum are preserved under `deploy/light-pollution/backups/`; a failed import leaves the previous active dataset untouched.
+
+The public result treats the raster as a satellite-night-light reference. It displays relative ambient risk, target-direction risk, raw radiance in professional details, source year/version when available, and a non-SQM/non-Bortle disclaimer. Missing light-pollution data is not scored as low pollution: star/Milky Way suitability keeps the existing deterministic result, confidence is reduced, and the UI asks for on-site confirmation of city glow and horizon conditions.
+
+Light pollution affects only star and Milky Way photography suitability and recommendation confidence. It does not change weather probability, cloud probability, precipitation probability, astronomical darkness, Moon calculation, or Milky Way geometry.
+
 ## Admin Password Reset
 
 Use this when `/admin/login` says `邮箱或密码不正确。` or when an operator needs to rotate the production admin password:

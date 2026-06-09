@@ -1634,6 +1634,18 @@ build_production_images() {
   done
 }
 
+ensure_light_pollution_directories() {
+  mkdir -p \
+    "${PROJECT_ROOT}/deploy/light-pollution/incoming" \
+    "${PROJECT_ROOT}/deploy/light-pollution/current" \
+    "${PROJECT_ROOT}/deploy/light-pollution/backups"
+  chmod 755 "${PROJECT_ROOT}/deploy/light-pollution" \
+    "${PROJECT_ROOT}/deploy/light-pollution/incoming" \
+    "${PROJECT_ROOT}/deploy/light-pollution/current" \
+    "${PROJECT_ROOT}/deploy/light-pollution/backups" 2>/dev/null || true
+  echo "Light-pollution raster storage is ready at deploy/light-pollution; no raster is downloaded automatically."
+}
+
 compose_run_bootstrap_admin() {
   export ADMIN_EMAIL ADMIN_INITIAL_PASSWORD_B64 ADMIN_DISPLAY_NAME
   compose run --rm \
@@ -1796,6 +1808,7 @@ main() {
   ensure_docker
   ok "Docker 与 Docker Compose 检查通过。"
   ensure_swap_capacity
+  ensure_light_pollution_directories
   validate_compose_config
   ok "生产 Docker Compose 配置校验通过。"
   check_ports

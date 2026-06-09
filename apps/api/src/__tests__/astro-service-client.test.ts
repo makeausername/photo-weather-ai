@@ -136,6 +136,7 @@ const serviceResponse: AstroServiceCalculationResponse = {
         bestTime: "2026-05-23T02:10:00+08:00",
         minAltitude: 8,
         maxAltitude: 31,
+        bestAzimuth: 142.5,
         directionZh: "东南方",
         confidenceLevel: "high",
         noteZh: "银心高度超过 5° 的可见候选窗口。",
@@ -148,6 +149,7 @@ const serviceResponse: AstroServiceCalculationResponse = {
         end: "2026-05-23T03:35:00+08:00",
         bestTime: "2026-05-23T02:10:00+08:00",
         durationMinutes: 187,
+        bestAzimuth: 146,
         directionZh: "东南方",
         moonImpactLevel: "low",
         galacticCenterMaxAltitude: 31,
@@ -174,6 +176,53 @@ const serviceResponse: AstroServiceCalculationResponse = {
       galacticCenter: 10,
       solarAltitudeGlow: 1,
     },
+  },
+  lightPollution: {
+    available: true,
+    dataAvailable: true,
+    sourceCode: "eog-viirs-annual",
+    sourceLabel: "EOG VIIRS annual nighttime lights",
+    datasetYear: 2024,
+    datasetVersion: "v1",
+    checksumShort: "abc123def456",
+    localRadiance: 0.42,
+    localRadiancePercentile: 28,
+    surroundingHaloRadiance: 1.2,
+    ambientRiskIndex: 35,
+    ambientRiskLevel: "low",
+    ambientRiskLevelLabelZh: "低",
+    directionalRisk: [
+      {
+        direction: "southeast",
+        directionLabelZh: "东南",
+        azimuthDegrees: 135,
+        radiance: 2.1,
+        riskIndex: 48,
+        riskLevel: "medium",
+        riskLevelLabelZh: "中",
+        sampleCount: 12,
+        validSampleCount: 12,
+      },
+    ],
+    targetAzimuthDegrees: 146,
+    targetDirectionRisk: 48,
+    targetDirectionLevel: "medium",
+    targetDirectionLevelLabelZh: "中",
+    confidence: "high",
+    sampleCount: 113,
+    validSampleCount: 106,
+    calculationBasis: {
+      samplingConfigVersion: "satellite-night-light-v1",
+      coordinateSystem: "WGS84",
+      distancesKm: [5, 15, 30, 60],
+      distanceWeights: { local: 0.45, "5km": 0.22, "15km": 0.16, "30km": 0.11, "60km": 0.06 },
+      localNeighborhoodKm: [0, 0.5, 1.5],
+      directionSectorsDegrees: 45,
+      quantileBasis: "log_radiance_dataset_quantiles",
+      scoringMode: "heuristic",
+      nonSqmBortleNoticeZh: "该结果为卫星夜光参考，不是现场SQM实测，也不代表测量Bortle等级。",
+    },
+    lightPollutionNoteZh: "卫星夜光参考：环境光污染低，银河方向光害中。",
   },
 };
 
@@ -401,6 +450,7 @@ describe("AstroServiceClient", () => {
       moonset: "2026-05-23T00:28:00+08:00",
       moonIllumination: 0.36,
       milkyWayCalculationPrecision: "skyfield",
+      milkyWayGalacticCenterAzimuth: 142.5,
       elevationMeters: 1800,
       elevationAvailable: true,
       solarCalculationResolutionMinutes: 1,
@@ -428,6 +478,20 @@ describe("AstroServiceClient", () => {
         }),
       ]),
     );
+    expect(mapped.astroWindowBundle.milkyWayCandidateWindows[0]).toMatchObject({
+      galacticCenterAzimuth: 142.5,
+    });
+    expect(mapped.lightPollution).toMatchObject({
+      available: true,
+      dataAvailable: true,
+      ambientRiskIndex: 35,
+      ambientRiskLevelLabelZh: "低",
+      targetDirectionRisk: 48,
+      targetDirectionLevelLabelZh: "中",
+      starPenalty: 7,
+      milkyWayPenalty: 14,
+      scoringMode: "heuristic",
+    });
     expect(mapped.astroSummaries[0]?.sunsetAltitudeCrossings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

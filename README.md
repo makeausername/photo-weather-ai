@@ -28,7 +28,15 @@ bash scripts/install-cn.sh
 
 The China wrapper defaults to Ubuntu/Debian Docker packages, Docker registry mirrors, an APT mirror, and a pip index mirror, so a fresh server does not need manual Docker installation first.
 
-The installer creates `.env.production`, renders the Caddy config, installs Docker if needed, starts PostgreSQL/Redis/astro-service, downloads and verifies `/app/data/de421.bsp`, runs migrations and seed data, creates the first admin account, starts web/API/worker/Caddy, and enables automatic HTTPS through Caddy. See [docs/deployment.md](docs/deployment.md) for update, backup, status, uninstall, and troubleshooting commands.
+The installer creates `.env.production`, renders the Caddy config, installs Docker if needed, creates optional local light-pollution raster directories, starts PostgreSQL/Redis/astro-service, downloads and verifies `/app/data/de421.bsp`, runs migrations and seed data, creates the first admin account, starts web/API/worker/Caddy, and enables automatic HTTPS through Caddy. See [docs/deployment.md](docs/deployment.md) for update, backup, status, local light-pollution import, uninstall, and troubleshooting commands.
+
+Optional light-pollution data uses a local VIIRS-compatible nighttime-light GeoTIFF under `deploy/light-pollution/`; real raster files are ignored by Git. Import with:
+
+```bash
+bash scripts/import-light-pollution.sh incoming/<file-or-directory> -- --dataset-year 2024 --dataset-version <version>
+```
+
+The result is a satellite-night-light reference for astro suitability only. It is not a measured SQM or Bortle value, and missing data is not treated as low pollution.
 
 These documents define the strategic product boundary for 逐光天气. Future Codex tasks must not narrow the product into a simple weather query site or an AI text explanation tool. If a task touches weather, astronomy, terrain, scoring, provider normalization, AI explanation, result pages, or data-source display, preserve this boundary: 逐光天气 should eventually cover at least Tianwentong + Lijing Weather style information and provide more detailed photography decision support.
 

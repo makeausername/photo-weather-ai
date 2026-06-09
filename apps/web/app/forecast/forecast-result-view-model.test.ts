@@ -124,6 +124,22 @@ function cloudSeaScoreCalibrationForTest(
 type AstroAssessmentForTest = ForecastCalculationResult["astroAnalysis"]["assessment"];
 type DailyAstroForTest = ForecastCalculationResult["astroAnalysis"]["dailyAstro"][number];
 
+const lightPollutionForTest: ForecastCalculationResult["astroAnalysis"]["lightPollution"] = {
+  available: false,
+  dataAvailable: false,
+  unavailableReason: "dataset_missing",
+  ambientRiskLevel: "insufficient",
+  ambientRiskLevelLabelZh: "数据不足",
+  directionalRisk: [],
+  confidence: "low",
+  sampleCount: 0,
+  validSampleCount: 0,
+  lightPollutionNoteZh: "光污染数据暂缺；未按无光污染处理，需现场确认城市光穹与地平线环境。",
+  starPenalty: 0,
+  milkyWayPenalty: 0,
+  scoringMode: "heuristic",
+};
+
 function astroAssessmentForTest(
   overrides: Partial<AstroAssessmentForTest> = {},
 ): AstroAssessmentForTest {
@@ -218,6 +234,7 @@ function dailyAstroFieldsForTest(
   | "gearAdviceZh"
   | "warmthAdviceZh"
   | "assessment"
+  | "lightPollution"
 > {
   return {
     astronomicalWindowScore: assessment.astronomicalWindowScore,
@@ -235,6 +252,7 @@ function dailyAstroFieldsForTest(
     gearAdviceZh: assessment.gearAdviceZh,
     warmthAdviceZh: assessment.warmthAdviceZh,
     assessment,
+    lightPollution: lightPollutionForTest,
   };
 }
 
@@ -1157,10 +1175,7 @@ const baseResult: ForecastCalculationResult = {
         galacticCenterAltitude: 26,
       },
     ],
-    lightPollution: {
-      lightPollutionSource: "unavailable",
-      lightPollutionNoteZh: "暂未接入光污染数据，实际观星仍需结合现场环境判断。",
-    },
+    lightPollution: lightPollutionForTest,
     cloudEvidence: [
       {
         label: "总云量",
@@ -6788,7 +6803,7 @@ describe("forecast result target-aware view model", () => {
       "utf8",
     );
     const professionalDataSource = source.slice(
-      source.indexOf("function GlowProfessionalDataSection"),
+      source.indexOf("function AstroProfessionalDataSection"),
       source.indexOf("function CloudSeaTopResultHeader"),
     );
 

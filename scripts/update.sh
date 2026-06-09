@@ -179,6 +179,18 @@ create_and_verify_admin() {
   bash "${SCRIPT_DIR}/verify-admin-bootstrap.sh"
 }
 
+ensure_light_pollution_directories() {
+  mkdir -p \
+    "${PROJECT_ROOT}/deploy/light-pollution/incoming" \
+    "${PROJECT_ROOT}/deploy/light-pollution/current" \
+    "${PROJECT_ROOT}/deploy/light-pollution/backups"
+  chmod 755 "${PROJECT_ROOT}/deploy/light-pollution" \
+    "${PROJECT_ROOT}/deploy/light-pollution/incoming" \
+    "${PROJECT_ROOT}/deploy/light-pollution/current" \
+    "${PROJECT_ROOT}/deploy/light-pollution/backups" 2>/dev/null || true
+  echo "Light-pollution raster storage is ready at deploy/light-pollution; existing data are preserved."
+}
+
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "未找到 .env.production，请先运行 bash scripts/install.sh"
   exit 1
@@ -194,6 +206,7 @@ set -a
 . "${ENV_FILE}"
 set +a
 
+ensure_light_pollution_directories
 compose config >/dev/null
 
 if [[ -d .git ]]; then

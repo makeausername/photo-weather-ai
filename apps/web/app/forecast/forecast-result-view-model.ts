@@ -54,6 +54,7 @@ import {
   type GlowVividnessLevel,
   type GlowWindow,
   type GlowWindowLifecycleState,
+  type LightPollutionInfo,
   type PhotographyPrecipitationRisk,
 } from "@photo-weather/shared";
 import { addHoursInTimezone, getForecastTargetDates } from "@photo-weather/calendar";
@@ -615,6 +616,14 @@ export type AstroNightRecommendationLevel =
   | "not_recommended"
   | "insufficient";
 
+export type AstroLightPollutionDisplayModel = {
+  readonly available: boolean;
+  readonly compactLabel: string;
+  readonly detail: string;
+  readonly ambientLabel: string;
+  readonly targetDirectionLabel: string;
+};
+
 export type AstroNightDisplayModel = {
   readonly nightKey: string;
   readonly localEveningDate: string;
@@ -657,6 +666,7 @@ export type AstroNightDisplayModel = {
     readonly weatherUsableWindowLabel: string;
     readonly bestWindowLabel: string;
   };
+  readonly lightPollution: AstroLightPollutionDisplayModel;
   readonly weather: {
     readonly validHourCount: number;
     readonly totalHourCount: number;
@@ -710,6 +720,7 @@ export type AstroForecastViewModel = {
   readonly moonEvidence: readonly AstroEvidenceViewItem[];
   readonly terrainEvidence: readonly AstroEvidenceViewItem[];
   readonly lightPollutionEvidence: readonly AstroEvidenceViewItem[];
+  readonly lightPollution: LightPollutionInfo;
   readonly travelRecommendations: readonly string[];
   readonly riskReasons: readonly string[];
   readonly backupPlans: readonly GlowBackupPlan[];
@@ -2808,6 +2819,7 @@ export function buildAstroForecastViewModel(
     moonEvidence: mapAstroEvidence(analysis.moonEvidence),
     terrainEvidence: mapAstroEvidence(analysis.terrainEvidence),
     lightPollutionEvidence: mapAstroEvidence(analysis.lightPollutionEvidence),
+    lightPollution: analysis.lightPollution,
     travelRecommendations: analysis.travelRecommendations,
     riskReasons: analysis.riskReasons,
     backupPlans: analysis.backupPlans,
@@ -2944,15 +2956,16 @@ function buildAstroNightDisplayModels(
           ? formatAstroWindowTimeValue(day.recommendedMilkyWayWindow, timezone)
           : "暂无推荐银河窗口",
       },
+      lightPollution: astroLightPollutionDisplay(result.astroAnalysis.lightPollution),
       weather: weatherSummary,
       starPhotographyProbabilityPercent: starProbability,
       milkyWayPhotographyProbabilityPercent: milkyWayProbability,
       starPhotographyProbabilityDisplay: probabilityDisplay(starProbability),
       milkyWayPhotographyProbabilityDisplay: probabilityDisplay(milkyWayProbability),
       starPhotographyIndex: day?.practicalAstroScore ?? null,
-      milkyWayPhotographyIndex: day?.milkyWayGeometryScore ?? null,
+      milkyWayPhotographyIndex: day?.milkyWayScore ?? null,
       starPhotographyIndexDisplay: indexDisplay(day?.practicalAstroScore),
-      milkyWayPhotographyIndexDisplay: indexDisplay(day?.milkyWayGeometryScore),
+      milkyWayPhotographyIndexDisplay: indexDisplay(day?.milkyWayScore),
       recommendationLevel: recommendation.level,
       recommendationLabel: recommendation.label,
       conciseReason: recommendation.reason,
@@ -2989,6 +3002,28 @@ function observingNightDatesForResult(result: ForecastCalculationResult): readon
         },
       ),
     );
+}
+
+function astroLightPollutionDisplay(
+  lightPollution: LightPollutionInfo,
+): AstroLightPollutionDisplayModel {
+  if (!lightPollution.available) {
+    return {
+      available: false,
+      compactLabel: "光污染数据暂缺",
+      detail: "未按无光污染处理，需现场确认城市光穹与地平线环境。",
+      ambientLabel: "数据不足",
+      targetDirectionLabel: "数据不足",
+    };
+  }
+  const targetLabel = lightPollution.targetDirectionLevelLabelZh ?? "方向角不足";
+  return {
+    available: true,
+    compactLabel: `光污染：${lightPollution.ambientRiskLevelLabelZh}`,
+    detail: `银河方向光害：${targetLabel}`,
+    ambientLabel: lightPollution.ambientRiskLevelLabelZh,
+    targetDirectionLabel: targetLabel,
+  };
 }
 
 function safeForecastTargetDates(start: string, end: string, timezone: string): readonly string[] {
@@ -3619,11 +3654,11 @@ function buildAstroJudgmentFactors(
     {
       key: "light-terrain",
       label: "光污染/地形",
-      status: light?.value ?? "光污染暂无数据",
-      detail: `${light?.noteZh ?? "未接入光污染数据。"} ${
+      status: light?.value ?? night.lightPollution.compactLabel,
+      detail: `${light?.noteZh ?? night.lightPollution.detail} ${
         terrain?.noteZh ?? "地平线遮挡需现场确认。"
       }`,
-      tone: "muted",
+      tone: result.astroAnalysis.lightPollution.available ? "info" : "muted",
     },
   ];
 }
@@ -7914,10 +7949,17 @@ function buildAstroDataNotice(result: ForecastCalculationResult): string {
     result.weatherDataMode === "real"
       ? "当前天气数据来自已启用的正式数据源，星空银河判断仍需结合现场环境复核。"
       : "当前结果基于演示天气数据生成，用于体验分析流程，正式出行前需要复核真实预报和现场环境。";
+  const lightPollutionNotice = result.astroAnalysis.lightPollution.available
+    ? `光污染数据：卫星夜光参考（${result.astroAnalysis.lightPollution.sourceLabel ?? "本地栅格"}${
+        result.astroAnalysis.lightPollution.datasetYear
+          ? `，${result.astroAnalysis.lightPollution.datasetYear}`
+          : ""
+      }），非现场SQM实测，不代表测量Bortle等级。`
+    : `光污染数据：${result.astroAnalysis.lightPollution.lightPollutionNoteZh}`;
 
   return `天文数据：${result.astroDataSourceLabelZh}；天气数据：${weatherStatusLabelForViewModel(
     result,
-  )}；地形数据：${result.terrainAnalysis.dataSourceLabelZh}；光污染数据：暂未接入。${
+  )}；地形数据：${result.terrainAnalysis.dataSourceLabelZh}；${lightPollutionNotice}${
     result.terrainAnalysis.honestyNoteZh
   }${weatherNotice}${cloudLayerNote}`;
 }

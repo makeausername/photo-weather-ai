@@ -203,6 +203,18 @@ create_and_verify_admin() {
   run_logged "验证管理员角色与权限" bash "${SCRIPT_DIR}/verify-admin-bootstrap.sh"
 }
 
+ensure_light_pollution_directories() {
+  mkdir -p \
+    "${PROJECT_ROOT}/deploy/light-pollution/incoming" \
+    "${PROJECT_ROOT}/deploy/light-pollution/current" \
+    "${PROJECT_ROOT}/deploy/light-pollution/backups"
+  chmod 755 "${PROJECT_ROOT}/deploy/light-pollution" \
+    "${PROJECT_ROOT}/deploy/light-pollution/incoming" \
+    "${PROJECT_ROOT}/deploy/light-pollution/current" \
+    "${PROJECT_ROOT}/deploy/light-pollution/backups" 2>/dev/null || true
+  echo "Light-pollution raster storage is ready at deploy/light-pollution; existing data are preserved."
+}
+
 ensure_ephemeris_available() {
   echo "检查天文星历文件..."
   if compose run --rm api node -e "fetch('http://astro-service:4100/health').then(async (response) => { const text = await response.text(); if (!response.ok) process.exit(1); const body = JSON.parse(text); if (body.ephemerisAvailable !== true) process.exit(2); console.log(text); }).catch(() => process.exit(1));"; then
@@ -234,6 +246,7 @@ set -a
 . "${ENV_FILE}"
 set +a
 
+ensure_light_pollution_directories
 compose config >/dev/null
 
 build_production_images

@@ -6,6 +6,7 @@ import type {
   AstroWindowBundle,
   ForecastCalendarDayInfo,
   ForecastHorizon,
+  LightPollutionInfo,
   MoonAltitudeSample,
   MoonImpactLevel,
 } from "@photo-weather/shared";
@@ -146,6 +147,7 @@ const candidateWindowSchema = z.object({
   bestTime: optionalIsoStringSchema,
   minAltitude: z.number().finite(),
   maxAltitude: z.number().finite(),
+  bestAzimuth: z.number().finite().nullable().optional(),
   directionZh: z.string().min(1),
   confidenceLevel: z.enum(["low", "medium", "high"]),
   noteZh: z.string().min(1),
@@ -158,10 +160,80 @@ const recommendedWindowSchema = z.object({
   bestTime: optionalIsoStringSchema,
   durationMinutes: z.number().int().nonnegative(),
   directionZh: z.string().min(1),
+  bestAzimuth: z.number().finite().nullable().optional(),
   moonImpactLevel: moonImpactLevelSchema,
   galacticCenterMaxAltitude: z.number().finite(),
   reasonZh: z.string().min(1),
   limitationsZh: z.array(z.string().min(1)),
+});
+
+const lightPollutionRiskLevelSchema = z.enum([
+  "very_low",
+  "low",
+  "medium",
+  "high",
+  "very_high",
+  "insufficient",
+]);
+
+const directionalLightPollutionRiskSchema = z.object({
+  direction: z.enum([
+    "north",
+    "northeast",
+    "east",
+    "southeast",
+    "south",
+    "southwest",
+    "west",
+    "northwest",
+  ]),
+  directionLabelZh: z.string().min(1),
+  azimuthDegrees: z.number().finite(),
+  radiance: z.number().finite().nullable().optional(),
+  riskIndex: z.number().int().min(0).max(100).nullable().optional(),
+  riskLevel: lightPollutionRiskLevelSchema,
+  riskLevelLabelZh: z.string().min(1),
+  sampleCount: z.number().int().nonnegative(),
+  validSampleCount: z.number().int().nonnegative(),
+});
+
+const lightPollutionCalculationBasisSchema = z.object({
+  samplingConfigVersion: z.string().min(1),
+  coordinateSystem: z.literal("WGS84"),
+  distancesKm: z.array(z.number().finite().nonnegative()),
+  distanceWeights: z.record(z.string(), z.number().finite().nonnegative()),
+  localNeighborhoodKm: z.array(z.number().finite().nonnegative()),
+  directionSectorsDegrees: z.number().int().positive(),
+  quantileBasis: z.literal("log_radiance_dataset_quantiles"),
+  scoringMode: z.literal("heuristic"),
+  nonSqmBortleNoticeZh: z.string().min(1),
+});
+
+const lightPollutionResponseSchema = z.object({
+  available: z.boolean(),
+  dataAvailable: z.boolean(),
+  unavailableReason: z.string().nullable().optional(),
+  sourceCode: z.string().nullable().optional(),
+  sourceLabel: z.string().nullable().optional(),
+  datasetYear: z.number().int().nullable().optional(),
+  datasetVersion: z.string().nullable().optional(),
+  checksumShort: z.string().nullable().optional(),
+  localRadiance: z.number().finite().nullable().optional(),
+  localRadiancePercentile: z.number().finite().nullable().optional(),
+  surroundingHaloRadiance: z.number().finite().nullable().optional(),
+  ambientRiskIndex: z.number().int().min(0).max(100).nullable().optional(),
+  ambientRiskLevel: lightPollutionRiskLevelSchema,
+  ambientRiskLevelLabelZh: z.string().min(1),
+  directionalRisk: z.array(directionalLightPollutionRiskSchema),
+  targetAzimuthDegrees: z.number().finite().nullable().optional(),
+  targetDirectionRisk: z.number().int().min(0).max(100).nullable().optional(),
+  targetDirectionLevel: lightPollutionRiskLevelSchema.nullable().optional(),
+  targetDirectionLevelLabelZh: z.string().nullable().optional(),
+  confidence: z.enum(["low", "medium", "high"]),
+  sampleCount: z.number().int().nonnegative(),
+  validSampleCount: z.number().int().nonnegative(),
+  calculationBasis: lightPollutionCalculationBasisSchema.nullable().optional(),
+  lightPollutionNoteZh: z.string().min(1),
 });
 
 const astroServiceResponseSchema = z.object({
@@ -204,6 +276,7 @@ const astroServiceResponseSchema = z.object({
       })
       .optional(),
   }),
+  lightPollution: lightPollutionResponseSchema.nullable().optional(),
 });
 
 export type AstroServiceCalculationResponse = z.infer<typeof astroServiceResponseSchema>;
@@ -226,6 +299,7 @@ export type ForecastAstroServiceData = {
   readonly astroWindowBundle: AstroWindowBundle;
   readonly astroCalculationBasis: AstroCalculationBasis;
   readonly astroDataSourceLabelZh: string;
+  readonly lightPollution?: LightPollutionInfo;
 };
 
 export type AstroServiceClientOptions = {
@@ -563,6 +637,7 @@ export function mapAstroServiceResponseToForecastData(
       milkyWayBestTime: candidate?.bestTime ?? undefined,
       milkyWayDirection: candidate?.directionZh,
       milkyWayGalacticCenterAltitude: candidate?.maxAltitude,
+      milkyWayGalacticCenterAzimuth: candidate?.bestAzimuth ?? undefined,
       milkyWayCalculationPrecision: "skyfield",
       milkyWayVisibilityLevel: candidate
         ? visibilityLevelFromConfidence(candidate.confidenceLevel)
@@ -609,6 +684,9 @@ export function mapAstroServiceResponseToForecastData(
       samplingResolutionMinutes: response.calculationBasis.samplingResolutionMinutes,
     },
     astroDataSourceLabelZh: "本地天文服务计算",
+    lightPollution: response.lightPollution
+      ? mapLightPollutionResponse(response.lightPollution)
+      : undefined,
   };
 }
 
@@ -627,6 +705,7 @@ function mapCandidateWindow(
     noteZh: window.noteZh,
     directionZh: window.directionZh,
     galacticCenterAltitude: window.maxAltitude,
+    galacticCenterAzimuth: window.bestAzimuth ?? undefined,
   };
 }
 
@@ -645,6 +724,30 @@ function mapRecommendedWindow(
     noteZh: `${window.reasonZh}${window.limitationsZh.length > 0 ? ` ${window.limitationsZh.join(" ")}` : ""}`,
     directionZh: window.directionZh,
     galacticCenterAltitude: window.galacticCenterMaxAltitude,
+    galacticCenterAzimuth: window.bestAzimuth ?? undefined,
+  };
+}
+
+function mapLightPollutionResponse(
+  lightPollution: z.infer<typeof lightPollutionResponseSchema>,
+): LightPollutionInfo {
+  const ambientRisk = lightPollution.ambientRiskIndex ?? 0;
+  const starPenalty = lightPollution.available
+    ? Math.min(20, Math.round((ambientRisk / 100) * 20))
+    : 0;
+  const milkyWayRisk =
+    typeof lightPollution.targetDirectionRisk === "number"
+      ? ambientRisk * 0.55 + lightPollution.targetDirectionRisk * 0.45
+      : ambientRisk;
+  const milkyWayPenalty = lightPollution.available
+    ? Math.min(35, Math.round((milkyWayRisk / 100) * 35))
+    : 0;
+
+  return {
+    ...lightPollution,
+    starPenalty,
+    milkyWayPenalty,
+    scoringMode: "heuristic",
   };
 }
 
@@ -778,6 +881,11 @@ export type AstroServiceDebugStatus = {
   readonly defaultTimezone?: string;
   readonly ephemerisAvailable?: boolean;
   readonly ephemerisFileName?: string;
+  readonly lightPollutionAvailable?: boolean;
+  readonly lightPollutionDatasetYear?: number;
+  readonly lightPollutionDatasetVersion?: string;
+  readonly lightPollutionChecksumShort?: string;
+  readonly lightPollutionLoadError?: string;
   readonly lastError?: string;
   readonly envSource?: string;
 };
@@ -824,6 +932,11 @@ export async function checkAstroServiceHealth(options: {
     let defaultTimezone: string | undefined;
     let ephemerisAvailable: boolean | undefined;
     let ephemerisFileName: string | undefined;
+    let lightPollutionAvailable: boolean | undefined;
+    let lightPollutionDatasetYear: number | undefined;
+    let lightPollutionDatasetVersion: string | undefined;
+    let lightPollutionChecksumShort: string | undefined;
+    let lightPollutionLoadError: string | undefined;
     try {
       const body = JSON.parse(bodyText) as {
         ok?: unknown;
@@ -831,6 +944,11 @@ export async function checkAstroServiceHealth(options: {
         defaultTimezone?: unknown;
         ephemerisAvailable?: unknown;
         ephemerisFileName?: unknown;
+        lightPollutionAvailable?: unknown;
+        lightPollutionDatasetYear?: unknown;
+        lightPollutionDatasetVersion?: unknown;
+        lightPollutionChecksumShort?: unknown;
+        lightPollutionLoadError?: unknown;
       };
       if (typeof body.ok === "boolean") {
         healthOk = response.ok && body.ok;
@@ -847,6 +965,21 @@ export async function checkAstroServiceHealth(options: {
       if (typeof body.ephemerisFileName === "string") {
         ephemerisFileName = body.ephemerisFileName;
       }
+      if (typeof body.lightPollutionAvailable === "boolean") {
+        lightPollutionAvailable = body.lightPollutionAvailable;
+      }
+      if (typeof body.lightPollutionDatasetYear === "number") {
+        lightPollutionDatasetYear = body.lightPollutionDatasetYear;
+      }
+      if (typeof body.lightPollutionDatasetVersion === "string") {
+        lightPollutionDatasetVersion = body.lightPollutionDatasetVersion;
+      }
+      if (typeof body.lightPollutionChecksumShort === "string") {
+        lightPollutionChecksumShort = body.lightPollutionChecksumShort;
+      }
+      if (typeof body.lightPollutionLoadError === "string") {
+        lightPollutionLoadError = sanitizeLogText(body.lightPollutionLoadError);
+      }
     } catch {
       // Non-JSON health output is still represented by status and excerpt below.
     }
@@ -861,6 +994,11 @@ export async function checkAstroServiceHealth(options: {
       defaultTimezone,
       ephemerisAvailable,
       ephemerisFileName,
+      lightPollutionAvailable,
+      lightPollutionDatasetYear,
+      lightPollutionDatasetVersion,
+      lightPollutionChecksumShort,
+      lightPollutionLoadError,
       lastError: healthOk ? undefined : safeResponseExcerpt(bodyText),
       envSource: config.envSource,
     };

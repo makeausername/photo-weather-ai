@@ -499,6 +499,7 @@ class AstronomyCalculator:
                     bestTime=format_local_iso(best.timestamp),
                     minAltitude=round1(min_altitude),
                     maxAltitude=round1(max_altitude),
+                    bestAzimuth=round1(best.azimuth),
                     directionZh=direction_from_azimuth(best.azimuth),
                     confidenceLevel=milky_way_confidence(max_altitude, duration_minutes(segment_start, segment_end)),
                     noteZh="银心高度超过 5° 的可见候选窗口；是否推荐还需要叠加月光、云量、光污染和地形遮挡。",
@@ -540,7 +541,7 @@ class AstronomyCalculator:
                 moon_impact = self._moon_impact_for_window(context, observer, start, end)
                 if moon_impact_level(moon_impact) == "high":
                     continue
-                limitations = ["天气数据仍为演示数据，正式出行前需要复核真实云量和能见度。", "光污染数据暂未接入。"]
+                limitations = ["天气数据仍需出行前复核真实云量和能见度。"]
                 if max_altitude < 25:
                     limitations.append("银心高度未达到 25°，地景遮挡和低空透明度会更关键。")
                 windows.append(
@@ -551,6 +552,7 @@ class AstronomyCalculator:
                         bestTime=format_local_iso(best.timestamp),
                         durationMinutes=duration_minutes(start, end),
                         directionZh=direction_from_azimuth(best.azimuth),
+                        bestAzimuth=round1(best.azimuth),
                         moonImpactLevel=moon_impact_level(moon_impact),
                         galacticCenterMaxAltitude=round1(max_altitude),
                         reasonZh="该窗口同时位于天文黑夜、低月光影响窗口和银心有效高度候选窗口内。",

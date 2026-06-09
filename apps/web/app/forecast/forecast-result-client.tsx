@@ -3956,6 +3956,11 @@ function AstroNightCard({ night }: { readonly night: AstroForecastViewModel["nig
           detail={`${night.milkyWay.azimuthSummary} · 高度 ${night.milkyWay.maximumAltitudeDisplay}`}
         />
         <AstroMiniFact
+          label="光污染"
+          value={night.lightPollution.compactLabel}
+          detail={night.lightPollution.detail}
+        />
+        <AstroMiniFact
           label="最佳拍摄"
           value={night.bestShootingWindowLabel}
           detail={night.horizonCoverageLabel}
@@ -4094,6 +4099,8 @@ function AstroProfessionalDataSection({
             <AstroProfessionalFact label="置信度" value={confidenceLabel(result.astroAnalysis.confidenceLevel)} />
           </div>
 
+          <AstroLightPollutionProfessionalSection lightPollution={viewModel.lightPollution} />
+
           <div className="grid gap-3 min-[760px]:grid-cols-2">
             {viewModel.nightlyCards.map((night) => (
               <article key={night.nightKey} className="rounded-md border border-border bg-muted p-3">
@@ -4147,6 +4154,107 @@ function AstroProfessionalDataSection({
       ) : null}
     </Card>
   );
+}
+
+function AstroLightPollutionProfessionalSection({
+  lightPollution,
+}: {
+  readonly lightPollution: AstroForecastViewModel["lightPollution"];
+}) {
+  const sourceLabel = lightPollution.sourceLabel ?? lightPollution.sourceCode ?? "本地栅格";
+  const datasetLabel = lightPollution.available
+    ? `${sourceLabel}${lightPollution.datasetYear ? ` / ${lightPollution.datasetYear}` : ""}${
+        lightPollution.datasetVersion ? ` / ${lightPollution.datasetVersion}` : ""
+      }`
+    : "数据暂缺";
+  const directional = lightPollution.directionalRisk;
+
+  return (
+    <section className="rounded-md border border-border bg-muted p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-card-foreground">光污染栅格参考</h3>
+        <Badge variant={lightPollution.available ? "info" : "muted"}>
+          {lightPollution.available ? lightPollution.ambientRiskLevelLabelZh : "数据暂缺"}
+        </Badge>
+      </div>
+
+      <div className="mt-3 grid gap-3 min-[760px]:grid-cols-3">
+        <AstroProfessionalFact label="数据集" value={datasetLabel} />
+        <AstroProfessionalFact
+          label="环境风险"
+          value={
+            typeof lightPollution.ambientRiskIndex === "number"
+              ? `${lightPollution.ambientRiskIndex} / ${lightPollution.ambientRiskLevelLabelZh}`
+              : "数据不足"
+          }
+        />
+        <AstroProfessionalFact
+          label="银河方向"
+          value={
+            typeof lightPollution.targetDirectionRisk === "number"
+              ? `${lightPollution.targetDirectionRisk} / ${
+                  lightPollution.targetDirectionLevelLabelZh ?? "数据不足"
+                }`
+              : "未推断"
+          }
+        />
+      </div>
+
+      <dl className="mt-3 grid gap-2 text-sm min-[760px]:grid-cols-2">
+        <AstroInlineDefinition
+          label="本地辐亮度"
+          value={formatNullableNumber(lightPollution.localRadiance, " nW/cm²/sr")}
+        />
+        <AstroInlineDefinition
+          label="本地百分位"
+          value={formatNullableNumber(lightPollution.localRadiancePercentile, "%")}
+        />
+        <AstroInlineDefinition
+          label="周边光穹"
+          value={formatNullableNumber(lightPollution.surroundingHaloRadiance, " nW/cm²/sr")}
+        />
+        <AstroInlineDefinition
+          label="目标方位角"
+          value={formatNullableNumber(lightPollution.targetAzimuthDegrees, "°")}
+        />
+        <AstroInlineDefinition
+          label="有效采样"
+          value={`${lightPollution.validSampleCount}/${lightPollution.sampleCount}`}
+        />
+        <AstroInlineDefinition label="置信度" value={confidenceLabel(lightPollution.confidence)} />
+        <AstroInlineDefinition
+          label="校验码"
+          value={lightPollution.checksumShort ?? "暂无"}
+        />
+        <AstroInlineDefinition
+          label="计算模式"
+          value={lightPollution.calculationBasis?.scoringMode ?? lightPollution.scoringMode}
+        />
+      </dl>
+
+      {directional.length > 0 ? (
+        <div className="mt-3 grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,96px),1fr))]">
+          {directional.map((direction) => (
+            <div key={direction.direction} className="rounded-md border border-border bg-card px-2 py-2">
+              <p className="text-[11px] leading-4 text-muted-foreground">{direction.directionLabelZh}</p>
+              <p className="mt-1 text-sm font-semibold text-card-foreground">
+                {direction.riskIndex ?? "--"} / {direction.riskLevelLabelZh}
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <p className="mt-3 text-xs leading-5 text-muted-foreground">
+        {lightPollution.calculationBasis?.nonSqmBortleNoticeZh ??
+          "该结果为卫星夜光参考，不是现场SQM实测，也不代表测量Bortle等级。"}
+      </p>
+    </section>
+  );
+}
+
+function formatNullableNumber(value: number | null | undefined, suffix = ""): string {
+  return typeof value === "number" && Number.isFinite(value) ? `${Number(value.toFixed(2))}${suffix}` : "暂无";
 }
 
 function AstroProfessionalFact({

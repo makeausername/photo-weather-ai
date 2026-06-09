@@ -97,12 +97,12 @@
 
 ## Light Pollution Module
 
-- required data：光污染强度、Bortle 等级、城市方向光害、数据年份和分辨率。
-- preferred source：公开 VIIRS / light pollution atlas 类数据集，本地缓存。
-- free/open/local option：公共栅格数据、离线瓦片、预处理 spot 光污染等级。
+- required data：卫星夜光栅格辐亮度、相对环境光害、城市方向光害、数据年份和分辨率。
+- preferred source：合法取得的公开 VIIRS-compatible / light pollution atlas 类 GeoTIFF，本地缓存。
+- free/open/local option：公共栅格数据、离线瓦片、预处理 spot 卫星夜光参考。
 - paid option if needed：只有当商业 API 明显提升覆盖、更新频率或解析度时才评估。
 - development mode：mock/local spot metadata。
-- production mode：本地缓存查询；热门机位预计算光污染等级。
+- production mode：本地缓存查询；热门机位可预计算卫星夜光参考等级。
 - cost risk：逐请求在线查询不适合星空/银河热门场景。
 - accuracy risk：光污染数据更新慢，临时灯光、天气散射和城市发展会造成偏差。
 - fallback strategy：显示数据年份，允许用户反馈校准，缺失时降低星空/银河置信度。

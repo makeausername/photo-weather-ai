@@ -87,10 +87,15 @@ services:
     restart: unless-stopped
     environment:
       EPHEMERIS_PATH: /app/data/de421.bsp
+      LIGHT_POLLUTION_DATASET_PATH: /app/data/light-pollution/current/light-pollution.cog.tif
+      LIGHT_POLLUTION_METADATA_PATH: /app/data/light-pollution/current/metadata.json
+      LIGHT_POLLUTION_CACHE_SIZE: ${LIGHT_POLLUTION_CACHE_SIZE:-1024}
+      LIGHT_POLLUTION_QUERY_TIMEOUT_MS: ${LIGHT_POLLUTION_QUERY_TIMEOUT_MS:-5000}
     expose:
       - "4100"
     volumes:
       - astro_data:/app/data
+      - ./deploy/light-pollution:/app/data/light-pollution
       - logs:/app/logs
     networks:
       - app

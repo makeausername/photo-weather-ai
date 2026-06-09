@@ -801,6 +801,7 @@ export type ForecastCalculationInput = {
   readonly astroDataSourceLabelZh: string;
   readonly astroCalculationBasis?: AstroCalculationBasis;
   readonly astroWindowBundle?: AstroWindowBundle;
+  readonly lightPollution?: LightPollutionInfo;
 };
 
 export type ForecastScoreLevel = "poor" | "fair" | "good" | "excellent";
@@ -1504,6 +1505,7 @@ export type AstroWindow = {
   readonly noteZh: string;
   readonly directionZh?: string;
   readonly galacticCenterAltitude?: number;
+  readonly galacticCenterAzimuth?: number;
 };
 
 export type MoonlessNightWindow = {
@@ -1543,6 +1545,7 @@ export type DailyAstro = {
   readonly moonlessNightWindow?: AstroWindow;
   readonly recommendedMilkyWayWindow?: AstroWindow;
   readonly assessment: AstroPhotographyAssessment;
+  readonly lightPollution: LightPollutionInfo;
   readonly recommendationLabel: AstroRecommendationLabel;
   readonly keyReason: string;
   readonly riskNote: string;
@@ -1577,11 +1580,76 @@ export type AstroEvidenceItem = {
   readonly noteZh: string;
 };
 
+export type LightPollutionRiskLevel =
+  | "very_low"
+  | "low"
+  | "medium"
+  | "high"
+  | "very_high"
+  | "insufficient";
+
+export type LightPollutionDirection =
+  | "north"
+  | "northeast"
+  | "east"
+  | "southeast"
+  | "south"
+  | "southwest"
+  | "west"
+  | "northwest";
+
+export type DirectionalLightPollutionRisk = {
+  readonly direction: LightPollutionDirection;
+  readonly directionLabelZh: string;
+  readonly azimuthDegrees: number;
+  readonly radiance?: number | null;
+  readonly riskIndex?: number | null;
+  readonly riskLevel: LightPollutionRiskLevel;
+  readonly riskLevelLabelZh: string;
+  readonly sampleCount: number;
+  readonly validSampleCount: number;
+};
+
+export type LightPollutionCalculationBasis = {
+  readonly samplingConfigVersion: string;
+  readonly coordinateSystem: "WGS84";
+  readonly distancesKm: readonly number[];
+  readonly distanceWeights: Readonly<Record<string, number>>;
+  readonly localNeighborhoodKm: readonly number[];
+  readonly directionSectorsDegrees: number;
+  readonly quantileBasis: "log_radiance_dataset_quantiles";
+  readonly scoringMode: "heuristic";
+  readonly nonSqmBortleNoticeZh: string;
+};
+
 export type LightPollutionInfo = {
-  readonly bortleLevel?: number;
-  readonly lightPollutionLevel?: string;
-  readonly lightPollutionSource: "unavailable" | "demo" | "provider";
+  readonly available: boolean;
+  readonly dataAvailable: boolean;
+  readonly unavailableReason?: string | null;
+  readonly sourceCode?: string | null;
+  readonly sourceLabel?: string | null;
+  readonly datasetYear?: number | null;
+  readonly datasetVersion?: string | null;
+  readonly checksumShort?: string | null;
+  readonly localRadiance?: number | null;
+  readonly localRadiancePercentile?: number | null;
+  readonly surroundingHaloRadiance?: number | null;
+  readonly ambientRiskIndex?: number | null;
+  readonly ambientRiskLevel: LightPollutionRiskLevel;
+  readonly ambientRiskLevelLabelZh: string;
+  readonly directionalRisk: readonly DirectionalLightPollutionRisk[];
+  readonly targetAzimuthDegrees?: number | null;
+  readonly targetDirectionRisk?: number | null;
+  readonly targetDirectionLevel?: LightPollutionRiskLevel | null;
+  readonly targetDirectionLevelLabelZh?: string | null;
+  readonly confidence: AstroConfidenceLevel;
+  readonly sampleCount: number;
+  readonly validSampleCount: number;
+  readonly calculationBasis?: LightPollutionCalculationBasis | null;
   readonly lightPollutionNoteZh: string;
+  readonly starPenalty: number;
+  readonly milkyWayPenalty: number;
+  readonly scoringMode: "heuristic";
 };
 
 export type AstroAnalysisResult = {
