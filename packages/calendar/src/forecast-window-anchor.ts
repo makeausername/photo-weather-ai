@@ -134,8 +134,7 @@ export function filterRowsToForecastWindow<TRow>(
     .map((row) => ({ row, timestamp: Date.parse(selectTime(row) ?? "") }))
     .filter(
       (entry): entry is { readonly row: TRow; readonly timestamp: number } =>
-        Number.isFinite(entry.timestamp) &&
-        entry.timestamp >= startMs,
+        Number.isFinite(entry.timestamp) && entry.timestamp >= startMs,
     )
     .sort((left, right) => left.timestamp - right.timestamp)
     .slice(0, range.expectedRowCount)
@@ -145,8 +144,14 @@ export function filterRowsToForecastWindow<TRow>(
 function resolveAnchorStart(
   date: Date,
   timezone: string,
-  input: Pick<ForecastWindowAnchorInput, "allowCurrentHour" | "providerRows" | "selectProviderRowTime">,
-): { readonly anchorStart: Date; readonly source: ForecastWindowAnchor["debugMeta"]["anchorStartSource"] } {
+  input: Pick<
+    ForecastWindowAnchorInput,
+    "allowCurrentHour" | "providerRows" | "selectProviderRowTime"
+  >,
+): {
+  readonly anchorStart: Date;
+  readonly source: ForecastWindowAnchor["debugMeta"]["anchorStartSource"];
+} {
   const zoned = TZDate.tz(timezone, date);
   const floored = TZDate.tz(
     timezone,
@@ -159,15 +164,17 @@ function resolveAnchorStart(
     0,
   );
   const isExactHour =
-    zoned.getMinutes() === 0 &&
-    zoned.getSeconds() === 0 &&
-    zoned.getMilliseconds() === 0;
+    zoned.getMinutes() === 0 && zoned.getSeconds() === 0 && zoned.getMilliseconds() === 0;
 
   if (!isExactHour || input.allowCurrentHour === false) {
     return { anchorStart: addHours(floored, 1), source: "next_full_hour" };
   }
 
-  if (input.providerRows !== undefined && input.providerRows.length > 0 && input.selectProviderRowTime) {
+  if (
+    input.providerRows !== undefined &&
+    input.providerRows.length > 0 &&
+    input.selectProviderRowTime
+  ) {
     const currentHourMs = floored.getTime();
     const hasCurrentProviderRow = input.providerRows.some((row) => {
       const timestamp = Date.parse(input.selectProviderRowTime?.(row) ?? "");
@@ -211,7 +218,7 @@ function formatZonedIsoLocal(date: Date, timezone: string): string {
 function formatDisplayRangeZh(start: Date, end: Date, timezone: string): string {
   const startText = format(start, "yyyy年M月d日 HH:mm", { in: tz(timezone) });
   const endText = format(end, "yyyy年M月d日 HH:mm", { in: tz(timezone) });
-  return `${startText} 至 ${endText}`;
+  return `${startText}–${endText}`;
 }
 
 function formatOffset(offsetMinutes: number): string {

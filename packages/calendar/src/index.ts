@@ -161,7 +161,7 @@ export function formatChineseDateTimeRange(
     startParts.month === endParts.month &&
     startParts.day === endParts.day
   ) {
-    return `${startDateText} ${startClock}-${endClock}`;
+    return `${startDateText} ${startClock}–${endClock}`;
   }
 
   const endDateText =
@@ -169,7 +169,7 @@ export function formatChineseDateTimeRange(
       ? `${endParts.month}月${endParts.day}日`
       : `${endParts.year}年${endParts.month}月${endParts.day}日`;
 
-  return `${startDateText} ${startClock} 至 ${endDateText} ${endClock}`;
+  return `${startDateText} ${startClock}–${endDateText} ${endClock}`;
 }
 
 export function getChineseCalendarInfo(

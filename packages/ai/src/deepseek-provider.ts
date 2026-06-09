@@ -8,6 +8,8 @@ import {
   decisionCardSchema,
   deepSeekResponseFormat,
   formatArrivalDeadlineZh,
+  formatLocalDateLabel,
+  formatLocalTimeRange,
   formatShootingWindowZh,
   glowDisplayRecommendationForScore,
   glowScoreToDisplayProbabilityPercent,
@@ -98,7 +100,14 @@ export const forecastAiTargetConfigs = {
     subjectZh: "云海",
     task: "Explain deterministic Cloud Sea photo-weather forecast facts in concise Simplified Chinese.",
     outputLength: "600-900 Chinese characters total. No Markdown.",
-    visibleSectionsZh: ["一句话结论", "最建议关注", "天气大势", "题材判断", "风险与装备", "最终建议"],
+    visibleSectionsZh: [
+      "一句话结论",
+      "最建议关注",
+      "天气大势",
+      "题材判断",
+      "风险与装备",
+      "最终建议",
+    ],
     promptPrioritiesZh: [
       "解释云海形成、可拍窗口、白墙风险、到达与等待策略。",
       "低海拔或地形证据不足时使用低云/晨雾等保守说法。",
@@ -115,13 +124,7 @@ export const forecastAiTargetConfigs = {
     subjectZh: "朝霞晚霞",
     task: "Explain deterministic sunrise and sunset glow photography forecast facts in concise Simplified Chinese.",
     outputLength: "420-650 Chinese characters total. No Markdown.",
-    visibleSectionsZh: [
-      "是否值得去",
-      "最佳时间",
-      "为什么",
-      "怎么拍",
-      "备选方案",
-    ],
+    visibleSectionsZh: ["是否值得去", "最佳时间", "为什么", "怎么拍", "备选方案"],
     promptPrioritiesZh: [
       "先回答是否值得去，并明确优先朝霞、晚霞、两者都关注还是不建议专程。",
       "使用已给出的预测概率、最佳本地时间和建议到达时间，不要重算。",
@@ -558,14 +561,14 @@ export function buildDeepSeekForecastContext(
     bestDay: bestDay
       ? {
           date: bestDay.date,
-          dateZh: bestDay.dateLabelZh,
+          dateZh: formatDateLabelZh(bestDay.date, timezone, bestDay.dateLabelZh),
           score: bestDay.score,
           recommendationZh:
             cloudSeaGuard?.finalRecommendationLabel ??
             bestDay.dedicatedTripRecommendation ??
             bestDay.recommendationLabel,
           bestWindowZh: bestDay.bestShootableWindow
-            ? formatShootingWindowZh(bestDay.bestShootableWindow, timezone)
+            ? formatWindowTimeZh(bestDay.bestShootableWindow, timezone)
             : undefined,
           actionZh: limitText(bestDay.shortAdvice, 140),
         }
@@ -941,7 +944,7 @@ export function buildCloudSeaAiExplainPayload(
     dailyCloudSeaSummary: takeItems(analysis.dailyCloudSea, detail === "minimal" ? 1 : 2).map(
       (day) => ({
         date: day.date,
-        dateZh: day.dateLabelZh,
+        dateZh: formatDateLabelZh(day.date, timezone, day.dateLabelZh),
         recommendationZh: buildCloudSeaRecommendationGuardForResult(result, {
           cloudSeaScore: day.shootableScore ?? day.travelScore,
           shootabilityScore: day.shootableScore ?? day.travelScore,
@@ -1144,7 +1147,10 @@ export function buildGlowAiExplainPayload(
         ),
         textLimit,
       ),
-      mainRiskZh: limitText(firstText(analysis.riskReasons, "主要风险较低，仍需临近复核。"), textLimit),
+      mainRiskZh: limitText(
+        firstText(analysis.riskReasons, "主要风险较低，仍需临近复核。"),
+        textLimit,
+      ),
       backupPlanZh: backupPlan
         ? limitText(`${backupPlan.condition}：${backupPlan.action}`, textLimit)
         : "若霞光不足，转拍远山层次、云缝光或通透地景。",
@@ -1227,9 +1233,12 @@ export function buildGlowAiExplainPayload(
         detail: limitText(plan.detail, textLimit),
       })),
     },
-    dailyGlowSummary: takeItems(analysis.dailyGlow, isBudget ? 0 : detail === "minimal" ? 1 : 2).map((day) => ({
+    dailyGlowSummary: takeItems(
+      analysis.dailyGlow,
+      isBudget ? 0 : detail === "minimal" ? 1 : 2,
+    ).map((day) => ({
       date: day.date,
-      dateZh: day.dateLabelZh,
+      dateZh: formatDateLabelZh(day.date, timezone, day.dateLabelZh),
       sunriseProbabilityPercent: glowScoreToDisplayProbabilityPercent(day.sunriseScore),
       sunsetProbabilityPercent: glowScoreToDisplayProbabilityPercent(day.sunsetScore),
       bestTarget: day.bestTarget,
@@ -1258,7 +1267,10 @@ function glowWindowForPhase(
 }
 
 function glowWindowPhase(
-  window: Pick<ForecastCalculationResult["glowAnalysis"]["bestGlowWindows"][number], "type" | "start">,
+  window: Pick<
+    ForecastCalculationResult["glowAnalysis"]["bestGlowWindows"][number],
+    "type" | "start"
+  >,
 ): "sunrise" | "sunset" {
   if (["pre_dawn_glow", "sunrise_core", "morning_warm_light", "sunrise"].includes(window.type)) {
     return "sunrise";
@@ -1293,7 +1305,7 @@ function compactGlowWindowForAi(
       phase: glowWindowPhase(window),
       labelZh: window.labelZh,
       date: window.date,
-      windowZh: formatShootingWindowZh({ startTime: window.start, endTime: window.end }, timezone),
+      windowZh: formatLocalTimeRange(window.start, window.end, timezone),
       score: window.score,
       rainOverlapsWindow: window.rainOverlapsWindow,
       riskTags: takeTextItems(window.riskTags, 2, 40),
@@ -1305,7 +1317,7 @@ function compactGlowWindowForAi(
     phase: glowWindowPhase(window),
     labelZh: window.labelZh,
     date: window.date,
-    windowZh: formatShootingWindowZh({ startTime: window.start, endTime: window.end }, timezone),
+    windowZh: formatLocalTimeRange(window.start, window.end, timezone),
     score: window.score,
     colorCarrierScore: window.colorCarrierScore,
     lowCloudObstructionRisk: window.lowCloudObstructionRisk,
@@ -1388,7 +1400,8 @@ function compactGlowSunEvent(
         ? formatShootingWindowZh({ startTime: civilStart, endTime: civilEnd }, timezone)
         : undefined,
     solarAzimuthDegrees,
-    bestWindow: detail === "budget" ? undefined : compactGlowWindowForAi(window, timezone, textLimit, detail),
+    bestWindow:
+      detail === "budget" ? undefined : compactGlowWindowForAi(window, timezone, textLimit, detail),
     arrivalPreparationZh: glowArrivalPreparationZh(result, phase, window, timezone, textLimit),
   };
 }
@@ -1403,7 +1416,9 @@ function astroSummaryForGlowPhase(
     : undefined;
   return (
     withDate ??
-    result.astroSummaries.find((summary) => (phase === "sunrise" ? summary.sunrise : summary.sunset))
+    result.astroSummaries.find((summary) =>
+      phase === "sunrise" ? summary.sunrise : summary.sunset,
+    )
   );
 }
 
@@ -1577,10 +1592,7 @@ function compactCloudSeaAnalysisWindow(
   return {
     labelZh: window.label,
     date: window.date,
-    windowZh: formatShootingWindowZh(
-      { startTime: window.startTime, endTime: window.endTime },
-      timezone,
-    ),
+    windowZh: formatLocalTimeRange(window.startTime, window.endTime, timezone),
     score: window.score,
     formationScore: window.formationScore,
     shootableScore: window.shootableScore,
@@ -1726,7 +1738,7 @@ function compactAstroWindow(
   return {
     labelZh: window.labelZh,
     date: window.date,
-    windowZh: formatShootingWindowZh({ startTime: window.start, endTime: window.end }, timezone),
+    windowZh: formatLocalTimeRange(window.start, window.end, timezone),
     directionZh: window.directionZh,
     galacticCenterAltitude: window.galacticCenterAltitude,
   };
@@ -1739,7 +1751,7 @@ function compactForecastWindowBrief(
   return {
     labelZh: windowLabelZh(window),
     date: window.date,
-    windowZh: formatShootingWindowZh(window, timezone),
+    windowZh: formatWindowTimeZh(window, timezone),
     score: window.score,
     target: window.target,
     conditionScore: window.conditionScore,
@@ -1749,6 +1761,34 @@ function compactForecastWindowBrief(
     copyReasonZh: limitText(window.copyReasonZh ?? window.practicalNoteZh, 110),
     weatherBlockers: takeTextItems(window.weatherBlockers, 2, 80),
   };
+}
+
+function formatWindowTimeZh(
+  window: {
+    readonly startTime?: string;
+    readonly endTime?: string;
+    readonly start?: string;
+    readonly end?: string;
+  },
+  timezone: string,
+): string {
+  return formatLocalTimeRange(
+    window.startTime ?? window.start,
+    window.endTime ?? window.end,
+    timezone,
+  );
+}
+
+function formatDateLabelZh(
+  date: string | undefined,
+  timezone: string,
+  fallback = "日期待复核",
+): string {
+  if (!date) {
+    return fallback;
+  }
+  const label = formatLocalDateLabel(date, timezone);
+  return label === "时间待确认" ? fallback : label;
 }
 
 function compactDailyFact(
@@ -1762,7 +1802,7 @@ function compactDailyFact(
 
   return {
     date: summary.date,
-    dateZh: summary.dateLabelZh,
+    dateZh: formatDateLabelZh(summary.date, timezone, summary.dateLabelZh),
     score: summary.score,
     recommendationLabelZh: summary.recommendationLabel,
     dedicatedTripRecommendationZh: summary.dedicatedTripRecommendation,
@@ -1780,10 +1820,7 @@ function compactDailyFact(
       }),
       windowZh:
         window.startTime && window.endTime
-          ? formatShootingWindowZh(
-              { startTime: window.startTime, endTime: window.endTime },
-              timezone,
-            )
+          ? formatLocalTimeRange(window.startTime, window.endTime, timezone)
           : "暂无明确时间",
       reasonZh: limitText(window.reasonZh, 120),
       suitableForDedicatedTrip: window.suitableForDedicatedTrip,
@@ -2208,10 +2245,9 @@ function buildForecastExplanationUserPayload(
       ? "500-700 Chinese chars. No Markdown."
       : targetConfig?.outputLength ?? "600-900 Chinese characters total. No Markdown.",
     preferredVisibleSectionsZh: targetConfig?.visibleSectionsZh ?? null,
-    promptPrioritiesZh:
-      isGlowBudget
-        ? ["是否值得去；朝霞/晚霞概率；最佳本地时间；到达时间；主因、主风险和备选方案。"]
-        : targetConfig?.promptPrioritiesZh ?? null,
+    promptPrioritiesZh: isGlowBudget
+      ? ["是否值得去；朝霞/晚霞概率；最佳本地时间；到达时间；主因、主风险和备选方案。"]
+      : targetConfig?.promptPrioritiesZh ?? null,
     requiredKeys:
       input.forecastResult.target === "glow"
         ? isGlowBudget
@@ -2319,7 +2355,7 @@ function buildDeepSeekForecastPromptFacts(
     bestDay: bestDay
       ? {
           date: bestDay.date,
-          dateZh: bestDay.dateLabelZh,
+          dateZh: formatDateLabelZh(bestDay.date, timezone, bestDay.dateLabelZh),
           score: bestDay.score,
           recommendationZh:
             cloudSeaGuard?.finalRecommendationLabel ??
@@ -2439,7 +2475,7 @@ function compactPromptWindow(
   return {
     labelZh: windowLabelZh(window),
     date: window.date,
-    windowZh: formatShootingWindowZh(window, timezone),
+    windowZh: formatWindowTimeZh(window, timezone),
     target: window.target,
     score: window.score,
     practicalScore: window.practicalScore,
@@ -2461,7 +2497,7 @@ function compactPromptDailyFact(
 
   return {
     date: summary.date,
-    dateZh: summary.dateLabelZh,
+    dateZh: formatDateLabelZh(summary.date, timezone, summary.dateLabelZh),
     score: summary.score,
     recommendationZh: summary.dedicatedTripRecommendation ?? summary.recommendationLabel,
     bestWindow: bestWindow ? compactPromptWindow(bestWindow, timezone, textLimit) : null,
@@ -2524,7 +2560,8 @@ function compactCloudSeaPromptFacts(
     bestWindow: bestWindow
       ? {
           labelZh: bestWindow.label,
-          windowZh: formatShootingWindowZh(bestWindow, timezone),
+          date: bestWindow.date,
+          windowZh: formatWindowTimeZh(bestWindow, timezone),
           score: bestWindow.score,
           phase: bestWindow.phase,
           riskTag: bestWindow.riskTag,
@@ -2556,8 +2593,8 @@ function _buildLegacyForecastExplanationUserPayload(
       bestPlan: {
         primaryTargetZh: "主拍题材",
         bestDateZh: "最佳日期",
-        bestWindowZh: "最佳窗口，必须包含完整日期和时间",
-        recommendedArrivalZh: "建议到达时间，必须包含完整日期和时间",
+        bestWindowZh: "最佳窗口本地时间段，不重复 bestDateZh",
+        recommendedArrivalZh: "建议到达时间，使用确定性本地时间，不自行改写时间戳",
         whyThisWindowZh: "为什么选这个窗口",
         backupPlanZh: "备选窗口或备选题材",
       },
@@ -2580,7 +2617,7 @@ function _buildLegacyForecastExplanationUserPayload(
           sunsetGlowZh: "日落/晚霞/日落后余晖判断",
           astroZh: "星空/银河判断及天气阻断",
           transparencyZh: "通透度",
-          bestWindowZh: "当天最佳窗口，必须包含完整日期和时间；没有则说明暂无",
+          bestWindowZh: "当天最佳窗口本地时间段，不重复 dateZh；没有则说明暂无",
           actionZh: "绑定当天窗口/风险的行动建议",
         },
       ],
@@ -2787,7 +2824,7 @@ export function createRuleBasedForecastExplanation(
       titleZh: `${result.place.name}摄影天气决策`,
       summaryZh: `${result.summary} ${forecastTrendSummary(result)}`,
       recommendedDayZh: bestDaily
-        ? `最值得关注的是 ${bestDaily.dateLabelZh}，${bestDaily.bestShootableWindow ? `${windowLabelZh(bestDaily.bestShootableWindow)} ${formatShootingWindowZh(bestDaily.bestShootableWindow, timezone)}` : bestDaily.shortAdvice}`
+        ? `最值得关注的是 ${formatDateLabelZh(bestDaily.date, timezone, bestDaily.dateLabelZh)}，${bestDaily.bestShootableWindow ? `${windowLabelZh(bestDaily.bestShootableWindow)} ${formatWindowTimeZh(bestDaily.bestShootableWindow, timezone)}` : bestDaily.shortAdvice}`
         : "暂无足够逐日数据，先参考确定性评分和窗口列表。",
       recommendationLevelZh,
       whetherWorthDedicatedTripZh: cloudSeaExplanation?.actionSummaryZh ?? dedicatedDecision,
@@ -2795,14 +2832,14 @@ export function createRuleBasedForecastExplanation(
     },
     bestPlan: {
       primaryTargetZh: primarySubject,
-      bestDateZh: bestDaily?.dateLabelZh ?? bestWindow?.date ?? "日期待复核",
-      bestWindowZh: bestWindow
-        ? formatShootingWindowZh(bestWindow, timezone)
-        : "暂无高确定性拍摄窗口",
+      bestDateZh: bestDaily
+        ? formatDateLabelZh(bestDaily.date, timezone, bestDaily.dateLabelZh)
+        : formatDateLabelZh(bestWindow?.date, timezone),
+      bestWindowZh: bestWindow ? formatWindowTimeZh(bestWindow, timezone) : "暂无高确定性拍摄窗口",
       recommendedArrivalZh: bestWindow?.arrivalAdvice
         ? formatArrivalDeadlineZh(bestWindow.arrivalAdvice.recommendedArrivalTime, timezone)
         : bestWindow
-          ? `建议在 ${formatShootingWindowZh(bestWindow, timezone)} 前预留机位和取景时间`
+          ? `建议在 ${formatWindowTimeZh(bestWindow, timezone)} 前预留机位和取景时间`
           : "暂无明确到达时间",
       whyThisWindowZh:
         bestWindow?.copyReasonZh ??
@@ -2896,7 +2933,7 @@ function deterministicDayExplanation(
   const bestWindow = summary.bestShootableWindow ?? summary.keyWindows.find(isExecutableWindow);
 
   return {
-    dateZh: summary.dateLabelZh,
+    dateZh: formatDateLabelZh(summary.date, timezone, summary.dateLabelZh),
     recommendationZh: summary.dedicatedTripRecommendation ?? summary.recommendationLabel,
     scoreZh: `综合 ${summary.score} 分`,
     temperatureZh: summary.weather
@@ -2917,7 +2954,7 @@ function deterministicDayExplanation(
     ].join("；"),
     transparencyZh: dailyMetricZh(breakdown?.transparency),
     bestWindowZh: bestWindow
-      ? `${windowLabelZh(bestWindow)} ${formatShootingWindowZh(bestWindow, timezone)}`
+      ? `${windowLabelZh(bestWindow)} ${formatWindowTimeZh(bestWindow, timezone)}`
       : "暂无高确定性拍摄窗口",
     actionZh:
       summary.dedicatedTripAdviceZh ??

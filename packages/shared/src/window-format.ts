@@ -14,9 +14,13 @@ export type ShootingWindowFormatOptions = {
   readonly includeWeekday?: boolean;
 };
 
+export type LocalDateTimeFormatOptions = ShootingWindowFormatOptions;
+
 const defaultTimezone = "Asia/Shanghai";
 const defaultMissingWindowText = "暂无明确窗口";
 const defaultInvalidWindowText = "时间待确认";
+const rangeSeparator = "–";
+const dateTimeSeparator = " · ";
 
 type DateTimeParts = {
   readonly year: number;
@@ -32,37 +36,12 @@ export function formatShootingWindowZh(
   timezone = defaultTimezone,
   options: ShootingWindowFormatOptions = {},
 ): string {
-  const startValue = window.startTime ?? window.start;
-  const endValue = window.endTime ?? window.end;
-  const missingText = options.missingText ?? defaultMissingWindowText;
-  const invalidText = options.invalidText ?? defaultInvalidWindowText;
-  const style = options.style ?? "full";
-  const includeWeekday = options.includeWeekday ?? true;
-
-  if (!startValue || !endValue) {
-    return missingText;
-  }
-
-  const start = dateTimeParts(startValue, timezone);
-  const end = dateTimeParts(endValue, timezone);
-  if (!start || !end) {
-    return invalidText;
-  }
-
-  const sameDay = start.year === end.year && start.month === end.month && start.day === end.day;
-  const startClock = `${start.hour}:${start.minute}`;
-  const endClock = `${end.hour}:${end.minute}`;
-
-  if (sameDay) {
-    return `${formatDateZh(start, style, includeWeekday)} ${startClock}-${endClock}`;
-  }
-
-  return `${formatDateZh(start, style, includeWeekday)} ${startClock} - ${formatRangeEndDateZh(
-    start,
-    end,
-    style,
-    includeWeekday,
-  )} ${endClock}`;
+  return formatLocalDateTimeRange(
+    window.startTime ?? window.start,
+    window.endTime ?? window.end,
+    timezone,
+    options,
+  );
 }
 
 export function formatForecastWindowZh(
@@ -95,30 +74,184 @@ export function formatArrivalDeadlineZh(
   }
 
   const prefix = options.prefix ?? "建议到达：";
-  return `${prefix}${formatDateZh(
-    parts,
-    options.style ?? "full",
-    options.includeWeekday ?? true,
-  )} ${parts.hour}:${parts.minute} 前`;
+  return `${prefix}${formatDateZh(parts, options.style ?? "full", options.includeWeekday ?? true)}${dateTimeSeparator}${parts.hour}:${parts.minute} 前`;
+}
+
+export function formatLocalDate(
+  value: string | undefined,
+  timezone = defaultTimezone,
+  options: LocalDateTimeFormatOptions = {},
+): string {
+  const parts = value ? dateTimeParts(value, timezone) : undefined;
+  if (!parts) {
+    return options.invalidText ?? defaultInvalidWindowText;
+  }
+  return formatDateOnlyZh(parts, options.style ?? "full");
+}
+
+export function formatLocalWeekday(
+  value: string | undefined,
+  timezone = defaultTimezone,
+  options: Pick<LocalDateTimeFormatOptions, "invalidText"> = {},
+): string {
+  const parts = value ? dateTimeParts(value, timezone) : undefined;
+  return parts?.weekday ?? options.invalidText ?? defaultInvalidWindowText;
+}
+
+export function formatLocalDateLabel(
+  value: string | undefined,
+  timezone = defaultTimezone,
+  options: LocalDateTimeFormatOptions = {},
+): string {
+  const parts = value ? dateTimeParts(value, timezone) : undefined;
+  if (!parts) {
+    return options.invalidText ?? defaultInvalidWindowText;
+  }
+  return formatDateZh(parts, options.style ?? "full", options.includeWeekday ?? true);
+}
+
+export function formatLocalTime(
+  value: string | undefined,
+  timezone = defaultTimezone,
+  options: Pick<LocalDateTimeFormatOptions, "missingText" | "invalidText"> = {},
+): string {
+  if (!value) {
+    return options.missingText ?? "暂无明确时间";
+  }
+  const parts = dateTimeParts(value, timezone);
+  if (!parts) {
+    return options.invalidText ?? defaultInvalidWindowText;
+  }
+  return formatClock(parts);
+}
+
+export function formatLocalTimeRange(
+  start: string | undefined,
+  end: string | undefined,
+  timezone = defaultTimezone,
+  options: LocalDateTimeFormatOptions = {},
+): string {
+  const missingText = options.missingText ?? defaultMissingWindowText;
+  const invalidText = options.invalidText ?? defaultInvalidWindowText;
+  if (!start || !end) {
+    return missingText;
+  }
+
+  const startParts = dateTimeParts(start, timezone);
+  const endParts = dateTimeParts(end, timezone);
+  if (!startParts || !endParts) {
+    return invalidText;
+  }
+
+  if (!crossesDateBoundary(startParts, endParts)) {
+    return `${formatClock(startParts)}${rangeSeparator}${formatClock(endParts)}`;
+  }
+
+  return `${formatDateOnlyZh(startParts, "compact")} ${formatClock(startParts)}${rangeSeparator}${formatDateOnlyZh(
+    endParts,
+    needsYear(startParts, endParts) ? "full" : "compact",
+  )} ${formatClock(endParts)}`;
+}
+
+export function formatLocalDateTime(
+  value: string | undefined,
+  timezone = defaultTimezone,
+  options: LocalDateTimeFormatOptions = {},
+): string {
+  const parts = value ? dateTimeParts(value, timezone) : undefined;
+  if (!parts) {
+    return options.invalidText ?? defaultInvalidWindowText;
+  }
+  return `${formatDateZh(parts, options.style ?? "full", options.includeWeekday ?? true)}${dateTimeSeparator}${formatClock(parts)}`;
+}
+
+export function formatLocalDateTimeRange(
+  start: string | undefined,
+  end: string | undefined,
+  timezone = defaultTimezone,
+  options: LocalDateTimeFormatOptions = {},
+): string {
+  const missingText = options.missingText ?? defaultMissingWindowText;
+  const invalidText = options.invalidText ?? defaultInvalidWindowText;
+  const style = options.style ?? "full";
+  const includeWeekday = options.includeWeekday ?? true;
+  if (!start || !end) {
+    return missingText;
+  }
+
+  const startParts = dateTimeParts(start, timezone);
+  const endParts = dateTimeParts(end, timezone);
+  if (!startParts || !endParts) {
+    return invalidText;
+  }
+
+  if (!crossesDateBoundary(startParts, endParts)) {
+    return `${formatDateZh(startParts, style, includeWeekday)}${dateTimeSeparator}${formatClock(
+      startParts,
+    )}${rangeSeparator}${formatClock(endParts)}`;
+  }
+
+  return `${formatDateZh(startParts, style, includeWeekday)} ${formatClock(
+    startParts,
+  )}${rangeSeparator}${formatRangeEndDateZh(
+    startParts,
+    endParts,
+    style,
+    includeWeekday,
+  )} ${formatClock(endParts)}`;
+}
+
+export function crossesLocalDateBoundary(
+  start: string | undefined,
+  end: string | undefined,
+  timezone = defaultTimezone,
+): boolean {
+  if (!start || !end) {
+    return false;
+  }
+  const startParts = dateTimeParts(start, timezone);
+  const endParts = dateTimeParts(end, timezone);
+  return Boolean(startParts && endParts && crossesDateBoundary(startParts, endParts));
+}
+
+export function localDateKey(
+  value: string | undefined,
+  timezone = defaultTimezone,
+): string | undefined {
+  const parts = value ? dateTimeParts(value, timezone) : undefined;
+  if (!parts) {
+    return undefined;
+  }
+  return `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)}`;
 }
 
 function dateTimeParts(value: string, timezone: string): DateTimeParts | undefined {
+  const dateOnly = dateOnlyParts(value);
+  if (dateOnly) {
+    return dateOnly;
+  }
+
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) {
     return undefined;
   }
 
-  const parts = new Intl.DateTimeFormat("zh-CN", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    hourCycle: "h23",
-  }).formatToParts(new Date(timestamp));
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = new Intl.DateTimeFormat("zh-CN", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      weekday: "long",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      hourCycle: "h23",
+    }).formatToParts(new Date(timestamp));
+  } catch {
+    return undefined;
+  }
 
   const valueFor = (type: Intl.DateTimeFormatPartTypes) =>
     parts.find((part) => part.type === type)?.value;
@@ -150,17 +283,54 @@ function dateTimeParts(value: string, timezone: string): DateTimeParts | undefin
   };
 }
 
+function dateOnlyParts(value: string): DateTimeParts | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    return undefined;
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return undefined;
+  }
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return undefined;
+  }
+  return {
+    year,
+    month,
+    day,
+    weekday: weekdayZh(date.getUTCDay()),
+    hour: "00",
+    minute: "00",
+  };
+}
+
+function weekdayZh(day: number): string {
+  return ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"][day] ?? "星期日";
+}
+
 function formatDateZh(
   parts: DateTimeParts,
   style: ShootingWindowDateTimeFormat,
   includeWeekday: boolean,
 ): string {
   const weekday = includeWeekday ? ` ${parts.weekday}` : "";
+  return `${formatDateOnlyZh(parts, style)}${weekday}`;
+}
+
+function formatDateOnlyZh(parts: DateTimeParts, style: ShootingWindowDateTimeFormat): string {
   if (style === "compact") {
-    return `${parts.month}月${parts.day}日${weekday}`;
+    return `${parts.month}月${parts.day}日`;
   }
 
-  return `${parts.year}年${parts.month}月${parts.day}日${weekday}`;
+  return `${parts.year}年${parts.month}月${parts.day}日`;
 }
 
 function formatRangeEndDateZh(
@@ -179,4 +349,20 @@ function formatRangeEndDateZh(
   }
 
   return `${end.month}月${end.day}日${weekday}`;
+}
+
+function formatClock(parts: DateTimeParts): string {
+  return `${parts.hour}:${parts.minute}`;
+}
+
+function crossesDateBoundary(start: DateTimeParts, end: DateTimeParts): boolean {
+  return start.year !== end.year || start.month !== end.month || start.day !== end.day;
+}
+
+function needsYear(start: DateTimeParts, end: DateTimeParts): boolean {
+  return start.year !== end.year;
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
 }

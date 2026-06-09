@@ -261,7 +261,7 @@ const baseResult: ForecastCalculationResult = {
     forecastEnd: "2026-05-22T00:00:00+08:00",
     forecastStartLabel: "2026年5月20日 00:00",
     forecastEndLabel: "2026年5月22日 00:00",
-    forecastRangeLabel: "2026年5月20日 00:00 至 2026年5月22日 00:00",
+    forecastRangeLabel: "2026年5月20日 00:00–2026年5月22日 00:00",
     targetDates: ["2026-05-20", "2026-05-21"],
     targetDateLabels: ["2026年5月20日 星期三", "2026年5月21日 星期四"],
     horizonHours: 48,
@@ -1790,7 +1790,7 @@ function resultWithGlowHourlyRange(
       ...baseResult.calendarBasis,
       forecastEnd: endTime,
       forecastEndLabel: `2026年5月${20 + Math.floor(hours / 24)}日 ${String(hours % 24).padStart(2, "0")}:00`,
-      forecastRangeLabel: `2026年5月20日 00:00 至 2026年5月${20 + Math.floor(hours / 24)}日 ${String(hours % 24).padStart(2, "0")}:00`,
+      forecastRangeLabel: `2026年5月20日 00:00–2026年5月${20 + Math.floor(hours / 24)}日 ${String(hours % 24).padStart(2, "0")}:00`,
       targetDates,
       targetDateLabels,
       horizonHours: hours,
@@ -2527,7 +2527,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("逐日拍摄判断");
     expect(html).not.toContain("题材拆解");
     expect(html).toContain("风险提醒");
-    expect(html).toContain("重点时段：2026年5月20日 周三 05:00-07:00");
+    expect(html).toContain("重点时段：2026年5月20日 星期三 · 05:00–07:00");
     expect(html).toContain("影响时段：");
     expect(html).toContain("建议：");
     expect(html).toContain("到场观察云顶高度，避免只守单一机位。");
@@ -2646,9 +2646,9 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("repeat(auto-fit,minmax(220px,1fr))");
     expect(html).toContain("repeat(auto-fit,minmax(250px,1fr))");
     expect(html).toContain("repeat(auto-fit,minmax(300px,1fr))");
-    expect(html).toContain("当前与近时段天气（2026年5月20日 周三 00:00-06:00）");
+    expect(html).toContain("当前与近时段天气（2026年5月20日 星期三 · 00:00–06:00）");
     expect(html).toContain("当前实况：2026年5月20日 00:00");
-    expect(html).toContain("近时段参考：2026年5月20日 周三 00:00-06:00");
+    expect(html).toContain("近时段参考：2026年5月20日 星期三 · 00:00–06:00");
     expect(html).toContain("查看云海详情");
     expect(html).toContain("查看霞光详情");
     expect(html).toContain("查看星空详情");
@@ -2677,9 +2677,9 @@ describe("forecast result target-aware view model", () => {
     expect(dailySection).toContain("机位估算温度：10–18°C");
     expect(dailySection).toContain("降水概率：18%｜风：3.4m/s｜通透：较好");
     expect(dailySection).toContain("优先关注：");
-    expect(dailySection).toContain("清晨云海 2026年5月20日 周三 05:00-07:00");
+    expect(dailySection).toContain("清晨云海 05:00–07:00");
     expect(dailySection).toContain("备选观察：");
-    expect(dailySection).toContain("晚霞 2026年5月20日 周三 17:56-19:41");
+    expect(dailySection).toContain("晚霞 17:56–19:41");
     expect(dailySection).toContain("主要风险：");
     expect(dailySection).toContain("白墙风险");
     expect(dailySection).toContain("行动：");
@@ -2993,7 +2993,7 @@ describe("forecast result target-aware view model", () => {
     expect(topDecisionCards).not.toContain("白墙");
     expect(dailySection).toContain("多云");
     expect(dailySection).toContain("机位估算温度：16–30°C");
-    expect(dailySection).toContain("晨雾或云层变化 2026年5月20日 周三 05:00-07:00");
+    expect(dailySection).toContain("晨雾或云层变化 05:00–07:00");
     expect(dailySection).toContain("低云遮挡");
     expect(dailySection).toContain("关注晨雾、云层开口或日落光线，不建议按高山云海逻辑判断。");
     expect(dailySection).not.toContain("山顶估算温度");
@@ -3058,11 +3058,11 @@ describe("forecast result target-aware view model", () => {
     expect(summarySection).toContain("74%");
     expect(summarySection).toContain("66%");
     expect(summarySection).toContain("68%");
-    expect(summarySection).toContain("推荐窗口：</span>2026年5月20日 周三 05:00-07:00");
-    expect(summarySection).toContain("推荐窗口：</span>2026年5月20日 周三 04:30-06:15");
-    expect(summarySection).toContain("推荐窗口：</span>2026年5月20日 周三 17:56-19:41");
+    expect(summarySection).toContain("推荐窗口：</span>2026年5月20日 星期三 · 05:00–07:00");
+    expect(summarySection).toContain("推荐窗口：</span>2026年5月20日 星期三 · 04:30–06:15");
+    expect(summarySection).toContain("推荐窗口：</span>2026年5月20日 星期三 · 17:56–19:41");
     expect(summarySection).toContain(
-      "推荐窗口：</span>2026年5月20日 周三 20:24 - 5月21日 周四 03:48",
+      "推荐窗口：</span>2026年5月20日 星期三 20:24–5月21日 星期四 03:48",
     );
     expect(summarySection).toContain("查看云海详情");
     expect(countOccurrences(summarySection, "查看霞光详情")).toBe(2);
@@ -3469,7 +3469,7 @@ describe("forecast result target-aware view model", () => {
       }),
     );
 
-    expect(html).toContain("建议到达：2026年5月20日 周三 03:30 前");
+    expect(html).toContain("建议到达：2026年5月20日 星期三 · 03:30 前");
     expect(html).toContain("预留上山、找机位和观察云雾变化时间");
     expect(html).toContain("时间偏早，建议前一晚到达附近或住山上");
     expect(html).not.toContain("建议到达：03:30 前到达");
@@ -3549,8 +3549,8 @@ describe("forecast result target-aware view model", () => {
 
     expect(summarySection).toContain('data-subject="cloudSea"');
     expect(summarySection).toContain(">云海<");
-    expect(summarySection).toContain("推荐窗口：</span>2026年5月20日 周三 04:08-06:08");
-    expect(summarySection).toContain("备选窗口：</span>2026年5月21日 周四 05:10-07:10");
+    expect(summarySection).toContain("推荐窗口：</span>2026年5月20日 星期三 · 04:08–06:08");
+    expect(summarySection).toContain("备选窗口：</span>2026年5月21日 星期四 · 05:10–07:10");
     expect(summarySection).not.toContain("云雾变化");
     expect(summarySection).not.toContain("2026年5月20日 01:00–03:00");
     expect(summarySection).not.toContain("形成信号");
@@ -3606,7 +3606,7 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.bestWindows[0]?.label).toBe("日落暖光");
     expect(summarySection).toContain('data-subject="sunsetGlow"');
     expect(summarySection).toContain(">晚霞<");
-    expect(summarySection).toContain("推荐窗口：</span>2026年5月20日 周三 19:01-19:28");
+    expect(summarySection).toContain("推荐窗口：</span>2026年5月20日 星期三 · 19:01–19:28");
     expect(summarySection).not.toContain("日落暖光");
     expect(html).not.toContain("朝霞窗口 19:01");
   });
@@ -5156,7 +5156,7 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("CloudSeaNearTermWeather");
       expect(html).toContain('data-forecast-current-weather-cards="true"');
       expect(html).toContain('data-result-current-weather-section="true"');
-      expect(html).toContain("当前与近时段天气（2026年5月20日 周三 00:00-05:00）");
+      expect(html).toContain("当前与近时段天气（2026年5月20日 星期三 · 00:00–05:00）");
       expect(html).toContain("气温与体感");
       expect(html).toContain("云层与能见度");
       expect(html).toContain("风与降水");
@@ -6061,7 +6061,7 @@ describe("forecast result target-aware view model", () => {
         ...baseResult.calendarBasis,
         forecastEnd: "2026-05-27T00:00:00+08:00",
         forecastEndLabel: "2026年5月27日 00:00",
-        forecastRangeLabel: "2026年5月20日 00:00 至 2026年5月27日 00:00",
+        forecastRangeLabel: "2026年5月20日 00:00–2026年5月27日 00:00",
         targetDates: ["2026-05-20", "2026-05-21", "2026-05-22"],
         targetDateLabels: ["2026年5月20日 星期三", "2026年5月21日 星期四", "2026年5月22日 星期五"],
         horizonHours: 168,
@@ -6258,9 +6258,7 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.sunriseGlowProbabilityPercent).toBeLessThanOrEqual(100);
     expect(viewModel.sunsetGlowProbabilityPercent).toBeGreaterThanOrEqual(0);
     expect(viewModel.sunsetGlowProbabilityPercent).toBeLessThanOrEqual(100);
-    expect(viewModel.sunriseGlowProbabilityPercent).not.toBe(
-      result.glowAnalysis.sunriseGlowScore,
-    );
+    expect(viewModel.sunriseGlowProbabilityPercent).not.toBe(result.glowAnalysis.sunriseGlowScore);
     expect(viewModel.primaryOpportunities.map((item) => item.title)).toEqual(["朝霞", "晚霞"]);
     expect(viewModel.primaryOpportunities.every((item) => item.bestWindow.length > 0)).toBe(true);
     expect(viewModel.primaryOpportunities.map((item) => item.recommendation)).toEqual(
@@ -6640,7 +6638,7 @@ describe("forecast result target-aware view model", () => {
         ...baseResult.calendarBasis,
         forecastEnd: "2026-05-27T00:00:00+08:00",
         forecastEndLabel: "2026年5月27日 00:00",
-        forecastRangeLabel: "2026年5月20日 00:00 至 2026年5月27日 00:00",
+        forecastRangeLabel: "2026年5月20日 00:00–2026年5月27日 00:00",
         targetDates: ["2026-05-20", "2026-05-21", "2026-05-22"],
         targetDateLabels: ["2026年5月20日 星期三", "2026年5月21日 星期四", "2026年5月22日 星期五"],
         horizonHours: 168,
@@ -6722,7 +6720,7 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.astro?.dailyTrend).toHaveLength(2);
     expect(viewModel.astro?.recommendedMilkyWayWindows).toHaveLength(2);
     expect(viewModel.astro?.moonlessNightWindows[0]?.timeRangeLabel).toBe(
-      "2026年5月20日 周三 22:35 - 5月21日 周四 03:48",
+      "5月20日 22:35–5月21日 03:48",
     );
     const moonSection = viewModel.detailSections.find((section) => section.key === "moon-phase");
     expect(moonSection?.items).toHaveLength(2);
@@ -6825,7 +6823,7 @@ describe("forecast result target-aware view model", () => {
         ...baseResult.calendarBasis,
         forecastEnd: "2026-05-27T00:00:00+08:00",
         forecastEndLabel: "2026年5月27日 00:00",
-        forecastRangeLabel: "2026年5月20日 00:00 至 2026年5月27日 00:00",
+        forecastRangeLabel: "2026年5月20日 00:00–2026年5月27日 00:00",
         targetDates: ["2026-05-20", "2026-05-21", "2026-05-22"],
         targetDateLabels: ["2026年5月20日 星期三", "2026年5月21日 星期四", "2026年5月22日 星期五"],
         horizonHours: 168,

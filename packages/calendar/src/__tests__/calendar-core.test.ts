@@ -67,7 +67,7 @@ describe("Calendar Core", () => {
         "2026-05-21T01:00:00+08:00",
         defaultTimezone,
       ),
-    ).toBe("2026年5月20日 23:30 至 5月21日 01:00");
+    ).toBe("2026年5月20日 23:30–5月21日 01:00");
   });
 
   it("returns safe Chinese lunar calendar fields", () => {

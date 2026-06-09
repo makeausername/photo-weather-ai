@@ -1002,7 +1002,9 @@ function explicitCloudLayerForBasis(
   return finiteNumber(hour[field]) ?? null;
 }
 
-function calibrationRowFromHourlyWeather(hour: NormalizedHourlyWeather): CloudSeaScoreCalibrationHourlyRow {
+function calibrationRowFromHourlyWeather(
+  hour: NormalizedHourlyWeather,
+): CloudSeaScoreCalibrationHourlyRow {
   const cloudHighPercent = explicitCloudLayerForBasis(hour, "cloudHigh");
   const cloudMidPercent = explicitCloudLayerForBasis(hour, "cloudMid");
   const cloudLowPercent = explicitCloudLayerForBasis(hour, "cloudLow");
@@ -1041,7 +1043,8 @@ function calibrationRowFromHourlyWeather(hour: NormalizedHourlyWeather): CloudSe
       finiteNumber(hour.elevationAdjustedTemperature) ??
       finiteNumber(hour.temperature) ??
       null,
-    bodyFeelTemperatureC: finiteNumber(hour.mountainFeelsLikeC) ?? finiteNumber(hour.feelsLike) ?? null,
+    bodyFeelTemperatureC:
+      finiteNumber(hour.mountainFeelsLikeC) ?? finiteNumber(hour.feelsLike) ?? null,
     temperatureBasis:
       hour.temperatureAdjustment?.correctionApplied || hour.terrainAdjustmentApplied
         ? "terrain_adjusted"
@@ -1600,7 +1603,7 @@ function buildMissingDataNotes(
     notes.push("当前地形数据缺少 5km 高差，云海地形潜力判断置信度降低。");
   }
   if (!sunriseKnown) {
-    notes.push("当前日期缺少日出时间，已使用 04:30-07:30 清晨默认窗口，置信度降低。");
+    notes.push("当前日期缺少日出时间，已使用 04:30–07:30 清晨默认窗口，置信度降低。");
   }
   if (input.weatherDataMode !== "real") {
     notes.push("天气数据：演示数据。");
@@ -2161,20 +2164,19 @@ function buildTravelRecommendations(
   travelScore: number,
   evaluation: WindowEvaluation,
 ): readonly CloudSeaTravelRecommendation[] {
-  if (
-    evaluation.scoreCalibration.shouldDowngradeToCautious &&
-    evaluation.formationScore >= 70
-  ) {
+  if (evaluation.scoreCalibration.shouldDowngradeToCautious && evaluation.formationScore >= 70) {
     return [
       {
         situation: "已在山上",
         action: "可守但必须复核",
-        detail: "云海形成条件较好，但可拍窗口受云层厚度、降水或白墙风险限制，需复核云顶高度、能见度和开口。",
+        detail:
+          "云海形成条件较好，但可拍窗口受云层厚度、降水或白墙风险限制，需复核云顶高度、能见度和开口。",
       },
       {
         situation: "周边短途",
         action: "可机动准备",
-        detail: "可准备，但出发前必须复核云顶高度、降水和开口稳定性；若开口不明显，以备选题材为主。",
+        detail:
+          "可准备，但出发前必须复核云顶高度、降水和开口稳定性；若开口不明显，以备选题材为主。",
       },
       {
         situation: "远途专程",

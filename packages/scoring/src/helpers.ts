@@ -1,8 +1,11 @@
-import type { ForecastHorizon, NormalizedHourlyWeather } from "@photo-weather/shared";
+import {
+  formatLocalTimeRange,
+  type ForecastHorizon,
+  type NormalizedHourlyWeather,
+} from "@photo-weather/shared";
 import {
   addHoursInTimezone,
   defaultTimezone,
-  formatChineseDateTimeRange,
   getForecastHorizonHours,
 } from "@photo-weather/calendar";
 
@@ -65,12 +68,16 @@ export function getWeatherWindowAroundTime(
   });
 }
 
-export function formatChineseTimeRange(startTime: string, endTime: string): string {
+export function formatChineseTimeRange(
+  startTime: string,
+  endTime: string,
+  timezone = defaultTimezone,
+): string {
   if (!Number.isFinite(Date.parse(startTime)) || !Number.isFinite(Date.parse(endTime))) {
-    return `${startTime} 至 ${endTime}`;
+    return `${startTime}–${endTime}`;
   }
 
-  return formatChineseDateTimeRange(startTime, endTime, defaultTimezone);
+  return formatLocalTimeRange(startTime, endTime, timezone);
 }
 
 export function averageHourly(

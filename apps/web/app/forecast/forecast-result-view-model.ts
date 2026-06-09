@@ -4,8 +4,11 @@ import {
   buildCloudSeaPrecipitationSignalContext,
   buildCloudSeaRecommendationExplanation,
   buildCloudSeaWindowCenteredRiskContext,
+  crossesLocalDateBoundary,
   formatArrivalDeadlineZh,
-  formatShootingWindowZh,
+  formatLocalDateLabel,
+  formatLocalDateTimeRange,
+  formatLocalTimeRange,
   forecastTargetLabels,
   glowDisplayRecommendationForScore,
   glowScoreToDisplayProbabilityPercent,
@@ -104,9 +107,14 @@ export type ForecastResultWindow = {
   readonly moduleKey: ForecastResultModuleKey;
   readonly label: string;
   readonly date?: string;
+  readonly localDateKey: string;
+  readonly localDateLabel: string;
   readonly timeRangeLabel: string;
+  readonly dateTimeRangeLabel: string;
   readonly fullTimeRangeLabel: string;
   readonly compactTimeRangeLabel: string;
+  readonly crossesLocalDateBoundary: boolean;
+  readonly timezone: string;
   readonly startTime: string;
   readonly endTime: string;
   readonly score: number;
@@ -397,6 +405,8 @@ export type GlowPrimaryOpportunity = {
   readonly key: GlowOpportunityPhase;
   readonly title: "朝霞" | "晚霞";
   readonly probabilityPercent: number;
+  readonly bestDate: string;
+  readonly bestTime: string;
   readonly bestWindow: string;
   readonly recommendation: GlowDisplayRecommendation;
   readonly conciseReason: string;
@@ -406,6 +416,8 @@ export type GlowPrimaryOpportunity = {
 
 export type GlowOverallRecommendation = {
   readonly preferredTarget: "朝霞" | "晚霞" | "朝霞晚霞" | "暂不专程";
+  readonly preferredDate: string;
+  readonly preferredTime: string;
   readonly preferredWindow: string;
   readonly preferredProbabilityPercent: number;
   readonly recommendation: GlowDisplayRecommendation;
@@ -421,10 +433,13 @@ export type GlowDailyOpportunity = {
   readonly date: string;
   readonly dateLabel: string;
   readonly sunriseGlowProbabilityPercent: number;
+  readonly sunriseBestTime: string;
   readonly sunriseBestWindow: string;
   readonly sunsetGlowProbabilityPercent: number;
+  readonly sunsetBestTime: string;
   readonly sunsetBestWindow: string;
   readonly preferredTarget: "朝霞" | "晚霞" | "朝霞晚霞" | "暂不专程";
+  readonly preferredTime: string;
   readonly preferredWindow: string;
   readonly preferredProbabilityPercent: number;
   readonly recommendation: GlowDisplayRecommendation;
@@ -1092,7 +1107,10 @@ function buildCloudSeaDisplayTemperatureContextForResult(
 
 function resolveCloudSeaWindowRiskContextForViewModel(input: {
   readonly result: ForecastCalculationResult;
-  readonly bestWindow?: { readonly startTime?: string | null; readonly endTime?: string | null } | null;
+  readonly bestWindow?: {
+    readonly startTime?: string | null;
+    readonly endTime?: string | null;
+  } | null;
   readonly precipitationSignalContext: CloudSeaPrecipitationSignalContext;
   readonly cloudLayerCompleteness: CloudLayerCompletenessContext;
   readonly cloudBasisConsistency: CloudSeaCloudBasisConsistencyContext;
@@ -1486,11 +1504,13 @@ export function buildGlowForecastViewModel(
         "glow-best-window",
         "bestWindow",
         "最佳霞光窗口",
+        bestWindow ? bestWindow.labelZh : "暂无精确霞光窗口",
         bestWindow
-          ? `${windowDateLabel(result, bestWindow.date)} ${bestWindow.labelZh}`
-          : "暂无精确霞光窗口",
-        bestWindow
-          ? `${formatWindow(bestWindow.start, bestWindow.end)}，${bestWindow.noteZh}`
+          ? `${formatWindow(
+              bestWindow.start,
+              bestWindow.end,
+              result.calendarBasis.timezone,
+            )}，${bestWindow.noteZh}`
           : "缺少日出日落时间时，不生成精确霞光窗口。",
         "primary",
       ),
@@ -1564,6 +1584,8 @@ function buildGlowPrimaryOpportunity(
     key: phase,
     title: phase === "sunrise" ? "朝霞" : "晚霞",
     probabilityPercent: glowScoreToDisplayProbabilityPercent(score),
+    bestDate: window ? windowDateLabel(result, window.date) : "暂无明确日期",
+    bestTime: formatGlowWindowForParentDate(result, window, "暂无明确最佳时间"),
     bestWindow: formatGlowWindowForPublic(result, window, "暂无明确最佳时间"),
     recommendation,
     conciseReason: glowConciseReasonForPhase(result, analysis, phase, window),
@@ -1597,11 +1619,16 @@ function buildGlowOverallRecommendation(
     : "若霞光不足，转拍远山层次、云缝光或通透地景。";
   const mainRisk = firstText(
     analysis.riskReasons,
-    firstText(result.riskFlags.map((risk) => risk.description), "主要风险较低，仍需临近复核。"),
+    firstText(
+      result.riskFlags.map((risk) => risk.description),
+      "主要风险较低，仍需临近复核。",
+    ),
   );
 
   return {
     preferredTarget,
+    preferredDate: bestWindow ? windowDateLabel(result, bestWindow.date) : "暂无明确日期",
+    preferredTime: formatGlowWindowForParentDate(result, bestWindow, "暂无明确最佳时间"),
     preferredWindow: formatGlowWindowForPublic(result, bestWindow, "暂无明确最佳时间"),
     preferredProbabilityPercent: preferredOpportunity?.probabilityPercent ?? 0,
     recommendation,
@@ -1634,13 +1661,16 @@ function buildGlowDailyOpportunities(
     return {
       key: day.date,
       date: day.date,
-      dateLabel: day.dateLabelZh,
+      dateLabel: dateLabelForResult(result, day.date),
       sunriseGlowProbabilityPercent: glowScoreToDisplayProbabilityPercent(day.sunriseScore),
-      sunriseBestWindow: formatGlowWindowForPublic(result, sunriseWindow, "暂无明确朝霞时间"),
+      sunriseBestTime: formatGlowWindowForParentDate(result, sunriseWindow, "暂无明确朝霞时间"),
+      sunriseBestWindow: formatGlowWindowForParentDate(result, sunriseWindow, "暂无明确朝霞时间"),
       sunsetGlowProbabilityPercent: glowScoreToDisplayProbabilityPercent(day.sunsetScore),
-      sunsetBestWindow: formatGlowWindowForPublic(result, sunsetWindow, "暂无明确晚霞时间"),
+      sunsetBestTime: formatGlowWindowForParentDate(result, sunsetWindow, "暂无明确晚霞时间"),
+      sunsetBestWindow: formatGlowWindowForParentDate(result, sunsetWindow, "暂无明确晚霞时间"),
       preferredTarget: glowPreferredTargetLabel(day.bestTarget, recommendation),
-      preferredWindow: formatGlowWindowForPublic(result, preferredWindow, "暂无明确最佳时间"),
+      preferredTime: formatGlowWindowForParentDate(result, preferredWindow, "暂无明确最佳时间"),
+      preferredWindow: formatGlowWindowForParentDate(result, preferredWindow, "暂无明确最佳时间"),
       preferredProbabilityPercent: glowScoreToDisplayProbabilityPercent(
         Math.max(day.sunriseScore, day.sunsetScore),
       ),
@@ -1777,11 +1807,18 @@ function formatGlowWindowForPublic(
   if (!window) {
     return fallback;
   }
-  return `${windowDateLabel(result, window.date)} ${formatWindow(
-    window.start,
-    window.end,
-    result.calendarBasis.timezone,
-  )}`;
+  return formatLocalDateTimeRange(window.start, window.end, result.calendarBasis.timezone);
+}
+
+function formatGlowWindowForParentDate(
+  result: ForecastCalculationResult,
+  window: GlowWindow | undefined,
+  fallback: string,
+): string {
+  if (!window) {
+    return fallback;
+  }
+  return formatLocalTimeRange(window.start, window.end, result.calendarBasis.timezone);
 }
 
 function glowArrivalHint(
@@ -1841,7 +1878,10 @@ function glowDisplayTone(recommendation: GlowDisplayRecommendation): ForecastRes
 
 function compactGlowDisplayText(text: string): string {
   const trimmed = text.trim();
-  const firstSentence = trimmed.split(/[。；;]/).find((part) => part.trim().length > 0)?.trim();
+  const firstSentence = trimmed
+    .split(/[。；;]/)
+    .find((part) => part.trim().length > 0)
+    ?.trim();
   const value = firstSentence ? `${firstSentence}。` : trimmed;
   return value.length > 82 ? `${value.slice(0, 80)}...` : value;
 }
@@ -1950,7 +1990,9 @@ export function buildAstroForecastViewModel(
   const windowForDisplay = analysis.astroShootable
     ? bestRecommendedWindow
     : bestCandidateWindow ?? bestMoonlessWindow;
-  const windowValue = windowForDisplay ? formatAstroWindowValue(windowForDisplay) : "暂无明确窗口";
+  const windowValue = windowForDisplay
+    ? formatAstroWindowValue(windowForDisplay, result.calendarBasis.timezone)
+    : "暂无明确窗口";
   const windowDetail = analysis.astroShootable
     ? bestRecommendedWindow
       ? `推荐银河窗口，方向 ${bestRecommendedWindow.directionZh ?? "需现场复核"}；建议提前到达完成构图和对焦。`
@@ -2037,7 +2079,7 @@ export function buildAstroForecastViewModel(
       ),
     ],
     dailyTrend: analysis.dailyAstro.map((day) =>
-      mapDailyAstro(day, analysis.milkyWayCandidateWindows),
+      mapDailyAstro(day, analysis.milkyWayCandidateWindows, result.calendarBasis.timezone),
     ),
     astronomicalNightWindows: mapAstroWindows(result, analysis.astronomicalNightWindows),
     moonlessNightWindows: mapAstroWindows(result, analysis.moonlessNightWindows),
@@ -2084,7 +2126,7 @@ function buildDailyItems(result: ForecastCalculationResult): readonly ForecastRe
   return result.dailySummaries.map((summary) => ({
     key: `daily-${summary.date}`,
     date: summary.date,
-    dateLabel: summary.dateLabelZh,
+    dateLabel: dateLabelForResult(result, summary.date),
     score: summary.score,
     recommendationLabel: summary.recommendationLabel,
     bestWindowLabel: summary.bestShootableWindow
@@ -2116,13 +2158,13 @@ function buildWindowGroups(
   windows: readonly ForecastResultWindow[],
 ): readonly ForecastResultWindowGroup[] {
   return result.calendarBasis.targetDates
-    .map((date, index) => {
+    .map((date) => {
       const groupedWindows = windows.filter((window) => window.date === date);
 
       return {
         key: `window-group-${date}`,
         date,
-        dateLabel: result.calendarBasis.targetDateLabels[index] ?? date,
+        dateLabel: dateLabelForResult(result, date),
         windows: groupedWindows,
       };
     })
@@ -2213,7 +2255,7 @@ function buildCloudSeaDailySections(
       title: "是否值得等 / 是否值得专程",
       badgeLabel: "逐日判断",
       items: result.dailySummaries.map((day) => ({
-        label: day.dateLabelZh,
+        label: dateLabelForResult(result, day.date),
         value: day.recommendationLabel,
         detail: day.shortAdvice,
       })),
@@ -2828,14 +2870,14 @@ function buildGlowDailyTrend(
     return {
       key: day.date,
       date: day.date,
-      dateLabel: day.dateLabelZh,
+      dateLabel: dateLabelForResult(result, day.date),
       sunriseScore: day.sunriseScore,
       sunsetScore: day.sunsetScore,
       sunriseWindowLabel: sunriseWindow
-        ? formatGlowWindowBrief(sunriseWindow)
+        ? formatGlowWindowBrief(sunriseWindow, result.calendarBasis.timezone)
         : "暂无明确日出暖光窗口",
       sunsetWindowLabel: sunsetWindow
-        ? formatGlowWindowBrief(sunsetWindow)
+        ? formatGlowWindowBrief(sunsetWindow, result.calendarBasis.timezone)
         : "暂无明确日落暖光或余晖窗口",
       cloudLayerLabel: `色彩云 ${day.labels?.colorCarrier ?? glowColorCarrierLabel(day.colorCarrierScore ?? analysis.colorCarrierScore)}（${day.colorCarrierScore ?? analysis.colorCarrierScore} 分）`,
       rainOverlapLabel: dailyGlowRainOverlapLabel(day),
@@ -2849,7 +2891,11 @@ function buildGlowDailyTrend(
       terrainObstructionLabel: buildGlowDailyTerrainLabel(day, analysis),
       precipitationWindRiskLabel: buildGlowDailyWeatherRiskLabel(day, analysis),
       bestWindowLabel: bestWindow
-        ? `${bestWindow.labelZh} ${formatWindow(bestWindow.start, bestWindow.end)}`
+        ? `${bestWindow.labelZh} ${formatLocalTimeRange(
+            bestWindow.start,
+            bestWindow.end,
+            result.calendarBasis.timezone,
+          )}`
         : "暂无精确霞光窗口",
       bestTargetLabel: glowBestTargetLabel(day.bestTarget),
       recommendationLabel: day.recommendationLabel,
@@ -2882,7 +2928,7 @@ function buildGlowWindowItems(
       key: `${window.type}-${window.start}-${window.labelZh}`,
       type: window.type,
       label: `${windowDateLabel(result, window.date)} ${window.labelZh}`,
-      timeRangeLabel: formatWindow(window.start, window.end),
+      timeRangeLabel: formatLocalTimeRange(window.start, window.end, result.calendarBasis.timezone),
       categoryLabel,
       score: window.score,
       riskTags: window.riskTags,
@@ -3010,9 +3056,7 @@ function buildGlowSunWindowCard(
   phase: "sunrise" | "sunset",
 ): GlowSunWindowCard {
   const targetTime = phase === "sunrise" ? astro.sunrise : astro.sunset;
-  const dateLabel = result.calendarBasis.targetDateLabels[
-    result.calendarBasis.targetDates.indexOf(astro.date)
-  ] ?? astro.date;
+  const dateLabel = dateLabelForResult(result, astro.date);
   const bestWindow = glowWindowForDateAndPhase(analysis, astro.date, phase);
   const terrain = analysis.terrainObstructionAssessments.find(
     (item) => item.date === astro.date && item.phase === phase,
@@ -3038,11 +3082,11 @@ function buildGlowSunWindowCard(
     dateLabel,
     phase,
     title: phase === "sunrise" ? "日出霞光窗口" : "日落霞光窗口",
-    prepWindowLabel: formatWindow(prepStart, prepEnd),
+    prepWindowLabel: formatLocalTimeRange(prepStart, prepEnd, astro.timezone),
     coreWindowLabel: bestWindow
-      ? formatWindow(bestWindow.start, bestWindow.end)
-      : formatWindow(coreStart, coreEnd),
-    twilightWindowLabel: formatWindow(twilightStart, twilightEnd),
+      ? formatLocalTimeRange(bestWindow.start, bestWindow.end, astro.timezone)
+      : formatLocalTimeRange(coreStart, coreEnd, astro.timezone),
+    twilightWindowLabel: formatLocalTimeRange(twilightStart, twilightEnd, astro.timezone),
     azimuthLabel: formatAzimuthLabel(
       phase === "sunrise" ? astro.sunriseAzimuth : astro.sunsetAzimuth,
     ),
@@ -3050,9 +3094,7 @@ function buildGlowSunWindowCard(
     bestWindowLabel: bestWindow
       ? `${bestWindow.labelZh}，${bestWindow.score} 分`
       : "暂无可执行霞光窗口",
-    recommendationLabel: bestWindow
-      ? glowWindowRecommendationLabel(bestWindow)
-      : "谨慎参考",
+    recommendationLabel: bestWindow ? glowWindowRecommendationLabel(bestWindow) : "谨慎参考",
     detail: terrain?.noteZh ?? "缺少方向性地形剖面，不用单点海拔推断遮挡。",
     tone: bestWindow
       ? bestWindow.score >= 65
@@ -3069,7 +3111,9 @@ function buildGlowAerosolCard(assessment: GlowAerosolAssessment): GlowAerosolCar
     key: "glow-aerosol",
     stateLabel: assessment.stateLabelZh,
     scoreLabel:
-      assessment.aerosolScore === undefined ? "暂缺分项" : `${Math.round(assessment.aerosolScore)} 分`,
+      assessment.aerosolScore === undefined
+        ? "暂缺分项"
+        : `${Math.round(assessment.aerosolScore)} 分`,
     measurementLabel: [
       `AOD ${formatOptionalNumber(assessment.aerosolOpticalDepth550, 3)}`,
       `PM2.5 ${formatOptionalNumber(assessment.pm25, 0)}`,
@@ -3096,11 +3140,7 @@ function buildGlowTerrainObstructionCards(
   analysis: GlowAnalysisResult,
 ): readonly GlowTerrainObstructionCard[] {
   return analysis.terrainObstructionAssessments.map((assessment) => {
-    const dateLabel = assessment.date
-      ? result.calendarBasis.targetDateLabels[
-          result.calendarBasis.targetDates.indexOf(assessment.date)
-        ] ?? assessment.date
-      : "未定日期";
+    const dateLabel = assessment.date ? dateLabelForResult(result, assessment.date) : "未定日期";
     return {
       key: `${assessment.date ?? "unknown"}-${assessment.phase}`,
       dateLabel,
@@ -3153,7 +3193,9 @@ function buildGlowDailyWeatherRiskLabel(
   analysis: GlowAnalysisResult,
 ): string {
   const rain = dailyGlowRainOverlapLabel(day);
-  const risk = glowRiskLabel(day.precipitationDisruptionRisk ?? analysis.precipitationDisruptionRisk);
+  const risk = glowRiskLabel(
+    day.precipitationDisruptionRisk ?? analysis.precipitationDisruptionRisk,
+  );
   return `${rain}，降水干扰 ${risk}`;
 }
 
@@ -3212,21 +3254,15 @@ function isProfessionalHourOverlappingWindow(time: string, start: string, end: s
 }
 
 function formatOptionalNumber(value: number | null | undefined, digits: number): string {
-  return typeof value === "number" && Number.isFinite(value)
-    ? value.toFixed(digits)
-    : "暂缺";
+  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "暂缺";
 }
 
 function formatAzimuthLabel(value: number | null | undefined): string {
-  return typeof value === "number" && Number.isFinite(value)
-    ? `${Math.round(value)}°`
-    : "方位暂缺";
+  return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value)}°` : "方位暂缺";
 }
 
 function formatDegreeLabel(value: number | null | undefined): string {
-  return typeof value === "number" && Number.isFinite(value)
-    ? `${value.toFixed(1)}°`
-    : "暂缺";
+  return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(1)}°` : "暂缺";
 }
 
 function mapGlowEvidence(items: readonly GlowEvidenceItem[]): readonly GlowEvidenceViewItem[] {
@@ -3347,14 +3383,17 @@ function generalGlowWindowDetail(result: ForecastCalculationResult): string {
     ) ?? result.glowAnalysis.bestGlowWindow;
   const mainWindow = best ?? watchable;
   const mainWindowText = mainWindow
-    ? `主要可观察窗口：${formatWindow(mainWindow.start, mainWindow.end)}，${glowWindowNote(
-        mainWindow,
-      )}`
+    ? `主要可观察窗口：${formatWindow(
+        mainWindow.start,
+        mainWindow.end,
+        result.calendarBasis.timezone,
+      )}，${glowWindowNote(mainWindow)}`
     : "主要可观察窗口：暂无。";
   const highConfidenceText = highConfidence
-    ? `高确定性拍摄窗口：${windowDateLabel(result, highConfidence.date)} ${formatWindow(
+    ? `高确定性拍摄窗口：${formatWindow(
         highConfidence.start,
         highConfidence.end,
+        result.calendarBasis.timezone,
       )}。`
     : "高确定性拍摄窗口：暂无。";
 
@@ -3539,8 +3578,8 @@ function glowWindowForDateAndPhase(
   );
 }
 
-function formatGlowWindowBrief(window: GlowWindow): string {
-  return `${window.labelZh} ${formatWindow(window.start, window.end)}`;
+function formatGlowWindowBrief(window: GlowWindow, timezone = "Asia/Shanghai"): string {
+  return `${window.labelZh} ${formatLocalTimeRange(window.start, window.end, timezone)}`;
 }
 
 function dailyGlowRainOverlapLabel(day: GlowAnalysisResult["dailyGlow"][number]): string {
@@ -3636,7 +3675,8 @@ function buildCloudSeaHeroConclusion(
     recommendationLabel: recommendationGuard.finalRecommendationLabel,
     bestWindowLabel,
     arrivalLabel: cloudSeaArrivalLabel(result, bestWindow, mappedWindow),
-    conclusion: windowRiskContext?.windowCenteredSummaryZh ?? recommendationExplanation.oneLineConclusionZh,
+    conclusion:
+      windowRiskContext?.windowCenteredSummaryZh ?? recommendationExplanation.oneLineConclusionZh,
     confidenceLabel: cloudSeaConfidenceLabel(
       result.cloudSeaAnalysis.confidenceLevel,
       cloudLayerCompleteness,
@@ -3761,7 +3801,8 @@ function buildCloudSeaDailyTrend(
 
   return sourceDays.map((day) => {
     const scoreCalibration = day.scoreCalibration;
-    const cloudSeaScore = scoreCalibration?.finalCloudSeaScore ?? day.shootableScore ?? day.travelScore;
+    const cloudSeaScore =
+      scoreCalibration?.finalCloudSeaScore ?? day.shootableScore ?? day.travelScore;
     const shootabilityScore =
       scoreCalibration?.calibratedShootabilityScore ?? day.shootableScore ?? day.travelScore;
     const formationScore =
@@ -3817,7 +3858,10 @@ function buildCloudSeaDailyTrend(
     return {
       key: `cloud-sea-day-${day.date}`,
       date: day.date,
-      dateLabel: result.calendarBasis.horizonHours <= 24 ? "未来24小时" : day.dateLabelZh,
+      dateLabel:
+        result.calendarBasis.horizonHours <= 24
+          ? "未来24小时"
+          : dateLabelForResult(result, day.date),
       cloudSeaScore,
       cloudSeaLevel: scoreLevelText(scoreLevelFromScore(cloudSeaScore)),
       formationScore,
@@ -3830,14 +3874,14 @@ function buildCloudSeaDailyTrend(
       whiteoutRiskLabel: whiteoutRiskLabel(whiteoutScore),
       whiteoutRiskScore: whiteoutScore,
       bestMorningWindow: window
-        ? window.fullTimeRangeLabel
-        : formatWindow(
+        ? window.timeRangeLabel
+        : formatLocalTimeRange(
             day.bestWindow.startTime,
             day.bestWindow.endTime,
             result.calendarBasis.timezone,
           ),
       watchableWindow: day.watchableWindow
-        ? formatWindow(
+        ? formatLocalTimeRange(
             day.watchableWindow.startTime,
             day.watchableWindow.endTime,
             result.calendarBasis.timezone,
@@ -4004,7 +4048,7 @@ function buildCloudSeaWindowItems(
       startTime: window.startTime,
       endTime: window.endTime,
       displayLabelZh: window.fullTimeRangeLabel,
-      timeRangeLabel: window.fullTimeRangeLabel,
+      timeRangeLabel: window.timeRangeLabel,
       score: window.score,
       recommendationLabel: recommendationGuard.finalRecommendationLabel,
       labelReason: recommendationExplanation.cautionReasonZh,
@@ -4081,9 +4125,7 @@ function cloudSeaWindowItem(
     scoreCalibration?.calibratedFormationScore ?? window.formationScore ?? window.score;
   const resolvedShootabilityScore =
     scoreCalibration?.calibratedShootabilityScore ?? window.shootableScore ?? window.score;
-  const limitingFactor =
-    windowRiskContext?.limitingFactorZh ??
-    scoreCalibration?.capReasons[0];
+  const limitingFactor = windowRiskContext?.limitingFactorZh ?? scoreCalibration?.capReasons[0];
 
   const windowGuard = buildCloudSeaRecommendationGuardForRuleContext(result, terrainContext, {
     cloudLayerCompleteness: layerContext,
@@ -4129,9 +4171,9 @@ function cloudSeaWindowItem(
     scoreCalibration?.capApplied || scoreCalibration?.capReasons.length
       ? scoreCalibration.recommendationExplanationZh
       : windowGuard.finalRecommendationLevel === "strong_special_trip" ||
-    windowGuard.finalRecommendationLevel === "recommended_arrangement"
-      ? cloudSeaTerrainAwareText(window.noteZh, terrainContext)
-      : `${windowGuard.reasonZh}。${windowGuard.normalizedWindowRecommendation.actionSuggestionZh}`;
+          windowGuard.finalRecommendationLevel === "recommended_arrangement"
+        ? cloudSeaTerrainAwareText(window.noteZh, terrainContext)
+        : `${windowGuard.reasonZh}。${windowGuard.normalizedWindowRecommendation.actionSuggestionZh}`;
   const displayLabelZh = formatWindow(
     window.startTime,
     window.endTime,
@@ -4145,17 +4187,17 @@ function cloudSeaWindowItem(
     startTime: window.startTime,
     endTime: window.endTime,
     displayLabelZh,
-    timeRangeLabel: displayLabelZh,
+    timeRangeLabel: formatLocalTimeRange(
+      window.startTime,
+      window.endTime,
+      result.calendarBasis.timezone,
+    ),
     score: resolvedCloudSeaScore,
     recommendationLabel: windowGuard.finalRecommendationLabel,
     labelReason: limitingFactor ?? windowExplanation.cautionReasonZh,
     note: guardedWindowNote,
     riskTag: cloudSeaTerrainAwareText(
-      cloudSeaWindowRiskTag(
-        result,
-        resolvedCloudSeaScore,
-        windowPrecipitationSignal,
-      ),
+      cloudSeaWindowRiskTag(result, resolvedCloudSeaScore, windowPrecipitationSignal),
       terrainContext,
     ),
     cloudSeaChance: `形成 ${scoreLevelText(
@@ -4286,8 +4328,7 @@ function buildCloudSeaReasoningItems(
         ? `${cloudSeaPrecipitationValue(precipitationSignalContext)} / ${precipitationSignalContext.riskLabelZh}`
         : precipitationSignalContext.riskLabelZh,
       detail: cloudSeaTerrainAwareText(
-        windowRiskContext?.precipitationWindowSummaryZh ??
-          precipitationSignalContext.userSummaryZh,
+        windowRiskContext?.precipitationWindowSummaryZh ?? precipitationSignalContext.userSummaryZh,
         terrainContext,
       ),
       tone: precipitationSignalTone(precipitationSignalContext),
@@ -4603,10 +4644,10 @@ function buildCloudSeaRiskSummary(
     },
     {
       label: "窗口降水影响",
-      value: windowRiskContext?.windowRainImpact.riskLabelZh ?? precipitationSignalContext.riskLabelZh,
+      value:
+        windowRiskContext?.windowRainImpact.riskLabelZh ?? precipitationSignalContext.riskLabelZh,
       detail:
-        windowRiskContext?.precipitationWindowSummaryZh ??
-        precipitationSignalContext.userSummaryZh,
+        windowRiskContext?.precipitationWindowSummaryZh ?? precipitationSignalContext.userSummaryZh,
     },
     {
       label: "降水概率",
@@ -5615,6 +5656,7 @@ function buildGlowAdvice(result: ForecastCalculationResult): readonly string[] {
 function mapDailyAstro(
   day: DailyAstro,
   milkyWayCandidateWindows: readonly AstroWindow[],
+  timezone: string,
 ): AstroDailyTrendItem {
   const galacticCenterWindow =
     milkyWayCandidateWindows.find((window) => window.date === day.date) ??
@@ -5625,7 +5667,7 @@ function mapDailyAstro(
   return {
     key: `astro-daily-${day.date}`,
     date: day.date,
-    dateLabel: day.dateLabelZh,
+    dateLabel: formatLocalDateLabel(day.date, timezone),
     lunarDateText: day.lunarDateText,
     starsScore: day.starsScore,
     milkyWayScore: day.milkyWayScore,
@@ -5645,20 +5687,20 @@ function mapDailyAstro(
     dewRiskLabel: day.labels.dewRisk,
     windowRecommendationLabel: day.labels.windowRecommendation,
     astronomicalNightLabel: day.astronomicalNightWindow
-      ? formatAstroWindowValue(day.astronomicalNightWindow)
+      ? formatAstroWindowTimeValue(day.astronomicalNightWindow, timezone)
       : "暂无完整窗口",
     moonlessNightLabel: day.moonlessNightWindow
-      ? formatAstroWindowValue(day.moonlessNightWindow)
+      ? formatAstroWindowTimeValue(day.moonlessNightWindow, timezone)
       : "暂无明确窗口",
     galacticCenterWindowLabel: galacticCenterWindow
-      ? `${formatAstroWindowValue(galacticCenterWindow)}${
+      ? `${formatAstroWindowTimeValue(galacticCenterWindow, timezone)}${
           galacticCenterWindow.directionZh ? `，${galacticCenterWindow.directionZh}` : ""
         }`
       : "暂无明确银心窗口",
     recommendedMilkyWayLabel: day.recommendedMilkyWayWindow
       ? day.astroShootable
-        ? `推荐银河窗口：${formatAstroWindowValue(day.recommendedMilkyWayWindow)}`
-        : `仅作备选：${formatAstroWindowValue(day.recommendedMilkyWayWindow)}；${blockers}不支持专程拍摄`
+        ? `推荐银河窗口：${formatAstroWindowTimeValue(day.recommendedMilkyWayWindow, timezone)}`
+        : `仅作备选：${formatAstroWindowTimeValue(day.recommendedMilkyWayWindow, timezone)}；${blockers}不支持专程拍摄`
       : day.astroWindowAvailable
         ? `仅作备选窗口：${blockers}不支持专程拍摄`
         : "暂无推荐窗口",
@@ -5716,7 +5758,7 @@ function mapAstroWindows(
     type: window.type,
     label: window.labelZh,
     dateLabel: window.date ? dateLabelForResult(result, window.date) : "未来窗口",
-    timeRangeLabel: formatAstroWindowValue(window),
+    timeRangeLabel: formatAstroWindowTimeValue(window, result.calendarBasis.timezone),
     score: window.score,
     riskTags: window.riskTags,
     note: window.noteZh,
@@ -5749,8 +5791,18 @@ function moonImpactLevelLabel(level: DailyAstro["moonImpactLevel"] | undefined):
   return "暂无";
 }
 
-function formatAstroWindowValue(window: Pick<AstroWindow, "start" | "end">): string {
-  return formatShootingWindowZh({ startTime: window.start, endTime: window.end });
+function formatAstroWindowValue(
+  window: Pick<AstroWindow, "start" | "end">,
+  timezone = "Asia/Shanghai",
+): string {
+  return formatLocalDateTimeRange(window.start, window.end, timezone);
+}
+
+function formatAstroWindowTimeValue(
+  window: Pick<AstroWindow, "start" | "end">,
+  timezone = "Asia/Shanghai",
+): string {
+  return formatLocalTimeRange(window.start, window.end, timezone);
 }
 
 function windowTone(window: AstroWindow): ForecastResultCardTone {
@@ -5789,9 +5841,16 @@ function mapResultWindows(
     moduleKey: inferWindowModuleKey(window),
     label: displayWindowLabel(window),
     date: window.date,
-    timeRangeLabel: formatShootingWindowZh(window, timezone, { style: "compact" }),
-    fullTimeRangeLabel: formatShootingWindowZh(window, timezone),
-    compactTimeRangeLabel: formatShootingWindowZh(window, timezone, { style: "compact" }),
+    localDateKey: window.date ?? window.startTime.slice(0, 10),
+    localDateLabel: formatLocalDateLabel(window.date ?? window.startTime, timezone),
+    timeRangeLabel: formatLocalTimeRange(window.startTime, window.endTime, timezone),
+    dateTimeRangeLabel: formatLocalDateTimeRange(window.startTime, window.endTime, timezone),
+    fullTimeRangeLabel: formatLocalDateTimeRange(window.startTime, window.endTime, timezone),
+    compactTimeRangeLabel: formatLocalTimeRange(window.startTime, window.endTime, timezone, {
+      style: "compact",
+    }),
+    crossesLocalDateBoundary: crossesLocalDateBoundary(window.startTime, window.endTime, timezone),
+    timezone,
     startTime: window.startTime,
     endTime: window.endTime,
     score: window.score,
@@ -6276,8 +6335,9 @@ function formatOptionalTime(value: string | undefined): string {
 
 function dateLabelForResult(result: ForecastCalculationResult, date: string): string {
   const index = result.calendarBasis.targetDates.indexOf(date);
+  const label = formatLocalDateLabel(date, result.calendarBasis.timezone);
 
-  return result.calendarBasis.targetDateLabels[index] ?? date;
+  return label === "时间待确认" ? result.calendarBasis.targetDateLabels[index] ?? date : label;
 }
 
 function formatScoreValue(score: number | undefined): string {
@@ -6299,7 +6359,7 @@ function formatOptionalWindow(startTime: string | undefined, endTime: string | u
 }
 
 function formatWindow(startTime: string, endTime: string, timezone = "Asia/Shanghai"): string {
-  return formatShootingWindowZh({ startTime, endTime }, timezone);
+  return formatLocalDateTimeRange(startTime, endTime, timezone);
 }
 
 function formatTime(value: string, timezone = "Asia/Shanghai"): string {

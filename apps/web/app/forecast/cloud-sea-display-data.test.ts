@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatArrivalDeadlineZh,
   formatForecastWindowZh,
+  formatLocalTimeRange,
   type ForecastCalculationResult,
   type ProfessionalHourlyDataPoint,
 } from "@photo-weather/shared";
@@ -123,6 +124,11 @@ describe("Cloud Sea display data rolling horizon", () => {
       "2026-06-05T09:20:00+08:00",
       "Asia/Shanghai",
     );
+    const expectedDailyWindow = formatLocalTimeRange(
+      "2026-06-05T04:38:00+08:00",
+      "2026-06-05T06:35:00+08:00",
+      "Asia/Shanghai",
+    );
     const bestCard = viewModel.displayData.recommendationCards.find(
       (card) => card.key === "cloud-sea-best-window",
     );
@@ -141,7 +147,7 @@ describe("Cloud Sea display data rolling horizon", () => {
     expect(bestCard?.value).toBe(expectedWindow);
     expect(arrivalCard?.value).toBe(expectedArrival);
     expect(viewModel.displayData.cloudSeaWindowCards[0]?.displayLabelZh).toBe(expectedWindow);
-    expect(viewModel.displayData.dailyJudgment[0]?.bestMorningWindow).toBe(expectedWindow);
+    expect(viewModel.displayData.dailyJudgment[0]?.bestMorningWindow).toBe(expectedDailyWindow);
     expect(mainAction?.value).toBe(expectedWindow);
     expect(arrivalAction?.value).toBe(expectedArrival);
     expect(backupAction?.value).toBe(expectedBackup);
@@ -347,7 +353,7 @@ function cloudSeaImportantWindowResult(
         {
           ...result.cloudSeaAnalysis.dailyCloudSea[0]!,
           date: "2026-06-05",
-          dateLabelZh: "2026年6月5日 周五",
+          dateLabelZh: "2026年6月5日 星期五",
           bestWindow,
           watchableWindow: backupWindow,
         },
@@ -412,7 +418,7 @@ function rollingResult(
       requestedHours: 24,
       rule: "rolling_future_hours",
       displayLabel: "未来24小时",
-      displayRangeZh: "2026年6月2日 11:00 至 2026年6月3日 10:00",
+      displayRangeZh: "2026年6月2日 11:00–2026年6月3日 10:00",
       isFutureOnly: true,
       anchorRule: "future_hour_ceil_to_next_hour",
       partialData: false,
@@ -496,7 +502,7 @@ function future48RollingResult(
       coverageRule: "forecast_hours_with_buffer",
       rule: "rolling_future_hours",
       displayLabel: "未来48小时",
-      displayRangeZh: "2026年6月4日 09:00 至 2026年6月6日 08:00",
+      displayRangeZh: "2026年6月4日 09:00–2026年6月6日 08:00",
       isFutureOnly: true,
       anchorRule: "future_hour_ceil_to_next_hour",
       partialData: true,

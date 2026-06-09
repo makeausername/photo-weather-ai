@@ -88,12 +88,9 @@ function cloudSeaScoreCalibration(
 ): CloudSeaScoreCalibrationContext {
   const rawFormationScore = overrides.rawFormationScore ?? input.formationScore;
   const rawShootabilityScore = overrides.rawShootabilityScore ?? input.shootableScore;
-  const calibratedFormationScore =
-    overrides.calibratedFormationScore ?? input.formationScore;
+  const calibratedFormationScore = overrides.calibratedFormationScore ?? input.formationScore;
   const calibratedShootabilityScore =
-    overrides.calibratedShootabilityScore ??
-    overrides.finalCloudSeaScore ??
-    input.shootableScore;
+    overrides.calibratedShootabilityScore ?? overrides.finalCloudSeaScore ?? input.shootableScore;
   const finalCloudSeaScore = overrides.finalCloudSeaScore ?? calibratedShootabilityScore;
 
   return {
@@ -432,20 +429,17 @@ export const cloudSeaRegressionFixtures: Record<
     whiteoutRiskScore: 24,
     recommendationLabel: "推荐重点关注",
   }),
-  genericMissingAmountWithProbabilityCase: makeFixture(
-    "genericMissingAmountWithProbabilityCase",
-    {
-      rows: completeCloudSeaRows({
-        precipitationProbabilityPercent: 78,
-        precipitationAmountMm: null,
-      }),
-      cloudSeaScore: 78,
-      formationScore: 80,
-      shootableScore: 74,
-      whiteoutRiskScore: 30,
-      recommendationLabel: "推荐安排",
-    },
-  ),
+  genericMissingAmountWithProbabilityCase: makeFixture("genericMissingAmountWithProbabilityCase", {
+    rows: completeCloudSeaRows({
+      precipitationProbabilityPercent: 78,
+      precipitationAmountMm: null,
+    }),
+    cloudSeaScore: 78,
+    formationScore: 80,
+    shootableScore: 74,
+    whiteoutRiskScore: 30,
+    recommendationLabel: "推荐安排",
+  }),
   genericAmountWithoutProbabilityCase: makeFixture("genericAmountWithoutProbabilityCase", {
     rows: completeCloudSeaRows({
       precipitationProbabilityPercent: null,
@@ -594,7 +588,7 @@ function makeFixture(
       forecastEnd,
       forecastStartLabel: "2026年5月20日 00:00",
       forecastEndLabel: "2026年5月22日 00:00",
-      forecastRangeLabel: "2026年5月20日 00:00 至 2026年5月22日 00:00",
+      forecastRangeLabel: "2026年5月20日 00:00–2026年5月22日 00:00",
       targetDates: ["2026-05-20", "2026-05-21"],
       targetDateLabels: ["2026年5月20日 星期三", "2026年5月21日 星期四"],
       horizonHours: 48,

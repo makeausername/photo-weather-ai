@@ -69,7 +69,10 @@ describe("forecast scoring helpers", () => {
 
   it("formats time ranges in Chinese", () => {
     expect(formatChineseTimeRange("2026-05-20T05:18:00+08:00", "2026-05-20T06:18:00+08:00")).toBe(
-      "2026年5月20日 05:18-06:18",
+      "05:18–06:18",
+    );
+    expect(formatChineseTimeRange("2026-05-20T23:18:00+08:00", "2026-05-21T00:18:00+08:00")).toBe(
+      "5月20日 23:18–5月21日 00:18",
     );
   });
 });

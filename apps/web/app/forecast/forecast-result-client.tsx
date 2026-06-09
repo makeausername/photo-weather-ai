@@ -8,7 +8,9 @@ import {
   buildCloudSeaCloudBasisConsistencyContext,
   classifyTerrainMode,
   formatArrivalDeadlineZh,
-  formatShootingWindowZh,
+  formatLocalDateLabel,
+  formatLocalDateTimeRange,
+  formatLocalTimeRange,
   forecastHorizonLabels,
   forecastTargetLabels,
   type CloudLayerCompletenessContext,
@@ -2480,7 +2482,7 @@ function buildNearTermWeatherTimeContext(
   const basisEnd = nearTermWindowEnd(basisStart, result.forecastEnd);
   const sectionWindowLabel =
     basisStart && basisEnd
-      ? formatWindow(basisStart, basisEnd)
+      ? formatWindow(basisStart, basisEnd, result.calendarBasis.timezone)
       : result.calendarBasis.forecastRangeLabel;
   const currentBasisLabel = result.currentWeather?.observedAt
     ? `当前实况：${formatFullDateTime(result.currentWeather.observedAt)}`
@@ -2894,6 +2896,7 @@ function primaryReasonSentence(result: ForecastCalculationResult): string {
 
 function arrivalAdviceValue(
   window: ForecastResultWindow | ForecastCalculationResult["bestWindows"][number] | undefined,
+  timezone = "Asia/Shanghai",
 ): string {
   if (!window) {
     return "等待更新";
@@ -2905,14 +2908,15 @@ function arrivalAdviceValue(
     return window.arrivalFullLabel;
   }
   if (window.arrivalAdvice?.recommendedArrivalLabel) {
-    return formatArrivalDeadlineZh(window.arrivalAdvice.recommendedArrivalTime);
+    return formatArrivalDeadlineZh(window.arrivalAdvice.recommendedArrivalTime, timezone);
   }
   const arrivalTime = shiftTime(window.startTime, -50);
-  return formatArrivalDeadlineZh(arrivalTime);
+  return formatArrivalDeadlineZh(arrivalTime, timezone);
 }
 
 function arrivalAdviceDetail(
   window: ForecastResultWindow | ForecastCalculationResult["bestWindows"][number] | undefined,
+  timezone = "Asia/Shanghai",
 ): string {
   if (!window) {
     return "暂无明确高分窗口，先等待下一次预报更新，不建议为单一窗口赶路。";
@@ -2923,11 +2927,12 @@ function arrivalAdviceDetail(
 
   if (window.arrivalAdvice) {
     const warning = window.arrivalAdvice.warningZh ? ` ${window.arrivalAdvice.warningZh}` : "";
-    return `${arrivalAdviceValue(window)}。${window.arrivalAdvice.reasonZh}${warning}`;
+    return `${arrivalAdviceValue(window, timezone)}。${window.arrivalAdvice.reasonZh}${warning}`;
   }
 
-  return `最佳窗口 ${formatWindow(window.startTime, window.endTime)}，${formatArrivalDeadlineZh(
+  return `最佳窗口 ${formatWindow(window.startTime, window.endTime, timezone)}，${formatArrivalDeadlineZh(
     shiftTime(window.startTime, -50),
+    timezone,
   )}，完成取景、三脚架和防护准备。`;
 }
 
@@ -3454,7 +3459,11 @@ function fallbackRiskTimeLabel(
       .filter((day) => day.whiteoutRiskScore >= 50)
       .sort((left, right) => right.whiteoutRiskScore - left.whiteoutRiskScore)[0];
     if (whiteoutDay?.bestWindow) {
-      return formatWindow(whiteoutDay.bestWindow.startTime, whiteoutDay.bestWindow.endTime);
+      return formatWindow(
+        whiteoutDay.bestWindow.startTime,
+        whiteoutDay.bestWindow.endTime,
+        result.calendarBasis.timezone,
+      );
     }
     return formatDateBlockLabel(result, result.targetDates[0], "清晨窗口前后");
   }
@@ -3555,8 +3564,8 @@ function astroMainBlockers(
   return result.astroAnalysis.astroShootable ? [] : ["云量/低云/降水条件"];
 }
 
-function formatAstroWindowForUi(window: AstroWindowLike): string {
-  return formatShootingWindowZh({ startTime: window.start, endTime: window.end });
+function formatAstroWindowForUi(window: AstroWindowLike, timezone = "Asia/Shanghai"): string {
+  return formatLocalDateTimeRange(window.start, window.end, timezone);
 }
 
 function normalizeAiExplanationErrorMessage(message: string | undefined): string {
@@ -3765,10 +3774,7 @@ export function GlowResultPage({
         <GlowTopContext query={query} result={result} viewModel={viewModel} />
         <GlowPrimaryOpportunityCards opportunities={viewModel.primaryOpportunities} />
         <GlowOverallRecommendationCard recommendation={viewModel.overallRecommendation} />
-        <GlowDailyOpportunitySection
-          result={result}
-          opportunities={viewModel.dailyOpportunities}
-        />
+        <GlowDailyOpportunitySection result={result} opportunities={viewModel.dailyOpportunities} />
         <GlowWhyJudgmentSection items={viewModel.professionalEvidence.slice(0, 5)} />
         <GlowProfessionalEvidenceDetails
           items={viewModel.professionalEvidence}
@@ -4404,9 +4410,7 @@ function GlowPrimaryOpportunityCards({
               <p className="text-xs font-semibold text-muted-foreground">
                 {opportunity.title}概率与时间
               </p>
-              <h2 className="mt-1 text-xl font-bold text-card-foreground">
-                {opportunity.title}
-              </h2>
+              <h2 className="mt-1 text-xl font-bold text-card-foreground">{opportunity.title}</h2>
             </div>
             <Badge variant={badgeVariantForTone(opportunity.tone)}>
               {opportunity.recommendation}
@@ -4415,12 +4419,18 @@ function GlowPrimaryOpportunityCards({
           <div className="mt-4 grid gap-3 min-[520px]:grid-cols-[auto_minmax(0,1fr)] min-[520px]:items-end">
             <div>
               <p className="text-xs text-muted-foreground">预测概率</p>
-              <p className={cn("mt-1 text-4xl font-bold leading-none", cardToneText(opportunity.tone))}>
+              <p
+                className={cn(
+                  "mt-1 text-4xl font-bold leading-none",
+                  cardToneText(opportunity.tone),
+                )}
+              >
                 {opportunity.probabilityPercent}%
               </p>
             </div>
             <dl className="grid gap-2 text-sm">
-              <CompactDefinition label="最佳时间" value={opportunity.bestWindow} />
+              <CompactDefinition label="最佳日期" value={opportunity.bestDate} />
+              <CompactDefinition label="最佳时间" value={opportunity.bestTime} />
               <CompactDefinition label="到达建议" value={opportunity.secondaryTimingHint} />
             </dl>
           </div>
@@ -4454,12 +4464,13 @@ function GlowOverallRecommendationCard({
           {recommendation.recommendation}
         </Badge>
       </div>
-      <div className="mt-4 grid gap-3 min-[760px]:grid-cols-4">
+      <div className="mt-4 grid gap-3 min-[760px]:grid-cols-5">
         <CompactDefinition
           label="预测概率"
           value={`${recommendation.preferredProbabilityPercent}%`}
         />
-        <CompactDefinition label="最佳时间" value={recommendation.preferredWindow} />
+        <CompactDefinition label="最佳日期" value={recommendation.preferredDate} />
+        <CompactDefinition label="最佳时间" value={recommendation.preferredTime} />
         <CompactDefinition label="到达建议" value={recommendation.arrivalAdvice} />
         <CompactDefinition label="是否专程" value={recommendation.recommendation} />
       </div>
@@ -4522,14 +4533,14 @@ function GlowDailyOpportunitySection({
                 label="朝霞概率"
                 value={`${item.sunriseGlowProbabilityPercent}%`}
               />
-              <GlowInlineDefinition label="朝霞时间" value={item.sunriseBestWindow} />
+              <GlowInlineDefinition label="朝霞时间" value={item.sunriseBestTime} />
             </dl>
             <dl className="grid gap-1 text-sm">
               <GlowInlineDefinition
                 label="晚霞概率"
                 value={`${item.sunsetGlowProbabilityPercent}%`}
               />
-              <GlowInlineDefinition label="晚霞时间" value={item.sunsetBestWindow} />
+              <GlowInlineDefinition label="晚霞时间" value={item.sunsetBestTime} />
             </dl>
             <p className="text-sm leading-6 text-muted-foreground">{item.conciseReason}</p>
           </article>
@@ -5277,8 +5288,7 @@ type ProfessionalHourlyCloudSectionProps = {
 const glowProfessionalHourlySectionConfig: ProfessionalHourlySectionConfig = {
   sectionTitle: "专业小时数据",
   sectionBadge: "可展开",
-  sectionDescription:
-    "逐小时展示云层、湿度、露点、降水、能见度、风与霞光窗口关系。",
+  sectionDescription: "逐小时展示云层、湿度、露点、降水、能见度、风与霞光窗口关系。",
   usageText: "普通小时保持背景参考，重点复核带窗口标记的时段。",
   signalColumnLabel: "窗口/信号",
   focusFilterLabel: "只看霞光窗口",
@@ -5442,7 +5452,9 @@ function ProfessionalHourlyCloudSection({
       data-glow-section={target === "glow" ? "ProfessionalHourlyCloudSection" : undefined}
       data-professional-hourly-shared="true"
       data-professional-hourly-target={target}
-      data-professional-hourly-default-expanded={config?.initiallyExpanded === false ? "false" : "true"}
+      data-professional-hourly-default-expanded={
+        config?.initiallyExpanded === false ? "false" : "true"
+      }
       data-testid="professional-hourly-data"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -5469,9 +5481,7 @@ function ProfessionalHourlyCloudSection({
         </Button>
       </div>
 
-      <dl
-        className="mt-4 grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground min-[760px]:grid-cols-4"
-      >
+      <dl className="mt-4 grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground min-[760px]:grid-cols-4">
         <CompactDefinition label="目标有效时间" value={targetRangeLabel} />
         <CompactDefinition label="覆盖率" value={`${rows.length} / ${expectedRowCount} 小时`} />
         {!coverageComplete ? <CompactDefinition label="实际显示" value={actualRangeLabel} /> : null}
@@ -5537,96 +5547,96 @@ function ProfessionalHourlyCloudSection({
         className={cn("mt-4 grid gap-3", !expanded && "hidden")}
         data-professional-hourly-expanded={expanded ? "true" : "false"}
       >
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex flex-wrap gap-2" role="group" aria-label="专业小时数据筛选">
-              {professionalHourlyFilters.map((filter) => (
-                <button
-                  key={filter.mode}
-                  type="button"
-                  className={cn(
-                    "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
-                    filterMode === filter.mode
-                      ? "border-primary bg-secondary text-secondary-foreground"
-                      : "border-border bg-card text-muted-foreground hover:border-primary hover:text-foreground",
-                  )}
-                  onClick={() => {
-                    setFilterMode(filter.mode);
-                  }}
-                >
-                  {filter.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <p className="text-xs leading-5 text-muted-foreground">
-            当前筛选：{activeFilterLabel}，筛选 {filteredRows.length} / {rows.length} 小时；覆盖{" "}
-            {rows.length} / {expectedRowCount} 小时。{professionalUsageText}
-          </p>
-
-          <div
-            className="max-w-full overflow-x-auto rounded-lg border border-border bg-card"
-            data-cloud-sea-professional-table-scroll="true"
-          >
-            <table className="w-full min-w-[1280px] border-collapse text-left text-[12px] leading-5">
-              <thead className="bg-muted text-xs text-muted-foreground">
-                <tr>
-                  {[
-                    "日期",
-                    "时间",
-                    "天气",
-                    signalColumnLabel,
-                    "总云量 %",
-                    "高云量 %",
-                    "中云量 %",
-                    "低云量 %",
-                    ...temperatureColumnLabels,
-                    "露点 °C",
-                    "露点差 °C",
-                    "湿度 %",
-                    "降水 mm / 降水概率 %",
-                    "能见度 km",
-                    "风速 m/s",
-                    "风向",
-                  ].map((label, index) => (
-                    <th
-                      key={label}
-                      scope="col"
-                      className={cn(
-                        "whitespace-nowrap border-b border-border px-2 py-2 font-semibold",
-                        index === 0 && "sticky left-0 z-20 bg-muted",
-                      )}
-                    >
-                      {label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRows.length > 0 ? (
-                  filteredRows.map((row) => (
-                    <CloudSeaProfessionalHourlyRow
-                      key={row.time}
-                      row={row}
-                      timezone={basis.timezone}
-                      annotation={rowAnnotations.get(row.time)}
-                      ordinarySignalLabel={config?.ordinarySignalLabel}
-                      cloudBasisRowNote={cloudBasisConsistency.rowNotesByHour?.[row.time]}
-                      showRawTemperatureColumn={showRawTemperatureColumn}
-                    />
-                  ))
-                ) : (
-                  <tr>
-                    <td
-                      colSpan={15 + temperatureColumnLabels.length}
-                      className="border-t border-border px-3 py-4 text-center text-sm text-muted-foreground"
-                    >
-                      当前筛选下暂无小时数据，请切换上方筛选复核完整预报。
-                    </td>
-                  </tr>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap gap-2" role="group" aria-label="专业小时数据筛选">
+            {professionalHourlyFilters.map((filter) => (
+              <button
+                key={filter.mode}
+                type="button"
+                className={cn(
+                  "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                  filterMode === filter.mode
+                    ? "border-primary bg-secondary text-secondary-foreground"
+                    : "border-border bg-card text-muted-foreground hover:border-primary hover:text-foreground",
                 )}
-              </tbody>
-            </table>
+                onClick={() => {
+                  setFilterMode(filter.mode);
+                }}
+              >
+                {filter.label}
+              </button>
+            ))}
           </div>
+        </div>
+        <p className="text-xs leading-5 text-muted-foreground">
+          当前筛选：{activeFilterLabel}，筛选 {filteredRows.length} / {rows.length} 小时；覆盖{" "}
+          {rows.length} / {expectedRowCount} 小时。{professionalUsageText}
+        </p>
+
+        <div
+          className="max-w-full overflow-x-auto rounded-lg border border-border bg-card"
+          data-cloud-sea-professional-table-scroll="true"
+        >
+          <table className="w-full min-w-[1280px] border-collapse text-left text-[12px] leading-5">
+            <thead className="bg-muted text-xs text-muted-foreground">
+              <tr>
+                {[
+                  "日期",
+                  "时间",
+                  "天气",
+                  signalColumnLabel,
+                  "总云量 %",
+                  "高云量 %",
+                  "中云量 %",
+                  "低云量 %",
+                  ...temperatureColumnLabels,
+                  "露点 °C",
+                  "露点差 °C",
+                  "湿度 %",
+                  "降水 mm / 降水概率 %",
+                  "能见度 km",
+                  "风速 m/s",
+                  "风向",
+                ].map((label, index) => (
+                  <th
+                    key={label}
+                    scope="col"
+                    className={cn(
+                      "whitespace-nowrap border-b border-border px-2 py-2 font-semibold",
+                      index === 0 && "sticky left-0 z-20 bg-muted",
+                    )}
+                  >
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRows.length > 0 ? (
+                filteredRows.map((row) => (
+                  <CloudSeaProfessionalHourlyRow
+                    key={row.time}
+                    row={row}
+                    timezone={basis.timezone}
+                    annotation={rowAnnotations.get(row.time)}
+                    ordinarySignalLabel={config?.ordinarySignalLabel}
+                    cloudBasisRowNote={cloudBasisConsistency.rowNotesByHour?.[row.time]}
+                    showRawTemperatureColumn={showRawTemperatureColumn}
+                  />
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan={15 + temperatureColumnLabels.length}
+                    className="border-t border-border px-3 py-4 text-center text-sm text-muted-foreground"
+                  >
+                    当前筛选下暂无小时数据，请切换上方筛选复核完整预报。
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </Card>
   );
@@ -6973,10 +6983,14 @@ function buildGeneralSubjectSummaries(
             }
           : undefined,
       recommendedWindowText: recommendedWindow
-        ? formatWindow(recommendedWindow.startTime, recommendedWindow.endTime)
+        ? formatWindow(
+            recommendedWindow.startTime,
+            recommendedWindow.endTime,
+            result.calendarBasis.timezone,
+          )
         : "暂无高确定性窗口",
       backupWindowText: backupWindow
-        ? formatWindow(backupWindow.startTime, backupWindow.endTime)
+        ? formatWindow(backupWindow.startTime, backupWindow.endTime, result.calendarBasis.timezone)
         : undefined,
       blockerText: recommendedWindow ? undefined : blocker,
       action: generalSubjectAction(result, key, recommendationLabel, blocker),
@@ -7406,8 +7420,8 @@ function ComprehensiveCoreDecisionCards({
       "comprehensive-arrival",
       "recommendation",
       "到达建议",
-      arrivalAdviceValue(bestWindow),
-      arrivalAdviceDetail(bestWindow),
+      arrivalAdviceValue(bestWindow, result.calendarBasis.timezone),
+      arrivalAdviceDetail(bestWindow, result.calendarBasis.timezone),
       result.overallScore >= 65 ? "primary" : "accent",
     ),
     generalCloudMistCard(result),
@@ -7605,7 +7619,9 @@ function ComprehensiveMultiDaySummary({
               <Card className="grid h-full content-start gap-3 p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h3 className="font-bold text-card-foreground">{summary.dateLabelZh}</h3>
+                    <h3 className="font-bold text-card-foreground">
+                      {dateLabelForResultClient(result, summary.date)}
+                    </h3>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {summary.lunarDateText ? `农历${summary.lunarDateText}` : "农历暂缺"}
                     </p>
@@ -7630,9 +7646,10 @@ function ComprehensiveMultiDaySummary({
                   <p data-testid="daily-primary-window">
                     <span className="font-semibold text-card-foreground">优先关注：</span>
                     {primaryWindow
-                      ? `${windowLabelText(primaryWindow)} ${formatWindow(
+                      ? `${windowLabelText(primaryWindow)} ${formatWindowTimeRange(
                           primaryWindow.startTime,
                           primaryWindow.endTime,
+                          result.calendarBasis.timezone,
                         )}`
                       : "暂无高确定性拍摄窗口"}
                   </p>
@@ -7863,9 +7880,10 @@ function dailyBackupWindowText(
   backupWindow: GeneralForecastWindow | undefined,
 ): string | undefined {
   if (backupWindow) {
-    return `${windowLabelText(backupWindow)} ${formatWindow(
+    return `${windowLabelText(backupWindow)} ${formatWindowTimeRange(
       backupWindow.startTime,
       backupWindow.endTime,
+      result.calendarBasis.timezone,
     )}`;
   }
 
@@ -8101,7 +8119,7 @@ function ActionableAdviceSection({
         target="general"
         className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(250px,1fr))]"
       >
-        <AdviceBlock title="建议到达时间" items={[compactArrivalAdvice(bestWindow)]} />
+        <AdviceBlock title="建议到达时间" items={[compactArrivalAdvice(result, bestWindow)]} />
         <AdviceBlock
           title="优先拍摄题材"
           items={[compactSubjectAdvice(result, bestWindow, bestSubject)]}
@@ -8119,6 +8137,7 @@ function ActionableAdviceSection({
 }
 
 function compactArrivalAdvice(
+  result: ForecastCalculationResult,
   window: ForecastResultWindow | ForecastCalculationResult["bestWindows"][number] | undefined,
 ): string {
   if (!window) {
@@ -8128,11 +8147,12 @@ function compactArrivalAdvice(
     return "当前仅适合观察或备选，不按专程到达安排。";
   }
 
-  const windowText = `拍摄窗口：${formatWindow(window.startTime, window.endTime)}`;
+  const timezone = "timezone" in window ? window.timezone : result.calendarBasis.timezone;
+  const windowText = `拍摄窗口：${formatWindow(window.startTime, window.endTime, timezone)}`;
   const warning = window.arrivalAdvice?.warningZh
     ? ` ${firstSentence(window.arrivalAdvice.warningZh)}`
     : "";
-  return `${arrivalAdviceValue(window)}；${windowText}。${warning}`.trim();
+  return `${arrivalAdviceValue(window, timezone)}；${windowText}。${warning}`.trim();
 }
 
 function compactSubjectAdvice(
@@ -8798,7 +8818,10 @@ function CalculationBasisPanel({ result }: { readonly result: ForecastCalculatio
       <dl className="mt-4 grid gap-3 text-sm">
         <SummaryItem label="预报起点" value={basis.forecastStartLabel} />
         <SummaryItem label="预报终点" value={basis.forecastEndLabel} />
-        <SummaryItem label="覆盖日期" value={basis.targetDateLabels.join("、")} />
+        <SummaryItem
+          label="覆盖日期"
+          value={basis.targetDates.map((date) => dateLabelForResultClient(result, date)).join("、")}
+        />
         <SummaryItem label="时区" value={basis.timezoneLabel} />
         <SummaryItem label="WGS84 经纬度" value={formatWgs84Coordinates(basis)} />
         <SummaryItem label="坐标来源" value={basis.coordinateSource} />
@@ -8896,6 +8919,7 @@ function buildSubjectBreakdownCards(
           ? `${usesMountainSemantics ? "最佳云海窗口" : "云雾观察窗口"}：${formatWindow(
               analysis.bestCloudSeaWindow.startTime,
               analysis.bestCloudSeaWindow.endTime,
+              result.calendarBasis.timezone,
             )}`
           : analysis.labels.watchableWindowLabel ??
             (usesMountainSemantics ? "暂无明确可拍云海窗口" : "暂无明确云雾观察窗口"),
@@ -8948,9 +8972,17 @@ function buildGlowSubjectBreakdownCard(
   const window = bestWindowForSubject(result, key);
   const analysisWindow = bestGlowWindowForPhase(analysis, isSunrise ? "sunrise" : "sunset");
   const windowText = window
-    ? `${windowLabelText(window)}：${formatWindow(window.startTime, window.endTime)}`
+    ? `${windowLabelText(window)}：${formatWindow(
+        window.startTime,
+        window.endTime,
+        result.calendarBasis.timezone,
+      )}`
     : analysisWindow
-      ? `${analysisWindow.labelZh}：${formatWindow(analysisWindow.start, analysisWindow.end)}`
+      ? `${analysisWindow.labelZh}：${formatWindow(
+          analysisWindow.start,
+          analysisWindow.end,
+          result.calendarBasis.timezone,
+        )}`
       : isSunrise
         ? "暂无明确日出暖光窗口"
         : "暂无明确日落暖光或日落后余晖窗口";
@@ -9047,12 +9079,18 @@ function buildAstroSubjectBreakdownCard(
     : analysis.labels.starShootability;
   const windowLabel = isMilkyWay
     ? analysis.astroShootable && recommendedWindow
-      ? `推荐银河窗口：${formatAstroWindowForUi(recommendedWindow)}`
+      ? `推荐银河窗口：${formatAstroWindowForUi(recommendedWindow, result.calendarBasis.timezone)}`
       : candidateWindow
-        ? `银河天文窗口：${formatAstroWindowForUi(candidateWindow)}；${blockerText}，不建议专程夜拍`
+        ? `银河天文窗口：${formatAstroWindowForUi(
+            candidateWindow,
+            result.calendarBasis.timezone,
+          )}；${blockerText}，不建议专程夜拍`
         : "银河窗口：暂无可用"
     : astronomicalWindow
-      ? `天文窗口：${analysis.labels.astronomicalWindow}｜${formatAstroWindowForUi(astronomicalWindow)}`
+      ? `天文窗口：${analysis.labels.astronomicalWindow}｜${formatAstroWindowForUi(
+          astronomicalWindow,
+          result.calendarBasis.timezone,
+        )}`
       : `天文窗口：${analysis.labels.astronomicalWindow}`;
   const reason = analysis.astroShootable
     ? isMilkyWay
@@ -9086,7 +9124,10 @@ function buildAstroSubjectBreakdownCard(
       {
         label: "天文窗口",
         value: astronomicalWindow
-          ? `${analysis.labels.astronomicalWindow}｜${formatAstroWindowForUi(astronomicalWindow)}`
+          ? `${analysis.labels.astronomicalWindow}｜${formatAstroWindowForUi(
+              astronomicalWindow,
+              result.calendarBasis.timezone,
+            )}`
           : analysis.labels.astronomicalWindow,
       },
       {
@@ -9128,20 +9169,24 @@ function buildAstroSubjectBreakdownCard(
         ? [
             {
               label: "银心窗口",
-              value: candidateWindow ? formatAstroWindowForUi(candidateWindow) : "暂无明确窗口",
+              value: candidateWindow
+                ? formatAstroWindowForUi(candidateWindow, result.calendarBasis.timezone)
+                : "暂无明确窗口",
               detail: candidateWindow?.directionZh
                 ? `银河方向：${candidateWindow.directionZh}`
                 : "银河方向需结合现场前景复核。",
             },
             {
               label: "无月黑夜",
-              value: moonlessWindow ? formatAstroWindowForUi(moonlessWindow) : "暂无明确窗口",
+              value: moonlessWindow
+                ? formatAstroWindowForUi(moonlessWindow, result.calendarBasis.timezone)
+                : "暂无明确窗口",
             },
             {
               label: analysis.astroShootable ? "推荐银河窗口" : "银河窗口判断",
               value:
                 analysis.astroShootable && recommendedWindow
-                  ? formatAstroWindowForUi(recommendedWindow)
+                  ? formatAstroWindowForUi(recommendedWindow, result.calendarBasis.timezone)
                   : "天气未通过，不显示为推荐窗口",
             },
           ]
@@ -9285,7 +9330,7 @@ function coreWindowValue(window: ForecastResultWindow | undefined): string {
     return "暂无明确高分窗口";
   }
 
-  return window.fullTimeRangeLabel ?? formatShootingWindowZh(window);
+  return window.dateTimeRangeLabel;
 }
 
 function coreWindowDetail(
@@ -9317,20 +9362,38 @@ function subjectWindowLabel(result: ForecastCalculationResult, key: SubjectScore
       (key === "milkyWay" || key === "stars") &&
       (blockers.length > 0 || window.windowLevel === "blocked")
     ) {
-      return `天文窗口：${formatWindow(window.startTime, window.endTime)}；${
-        blockers[0] ?? astroBlockedReasonText(window)
-      }，不建议作为唯一目标。`;
+      return `天文窗口：${formatWindow(
+        window.startTime,
+        window.endTime,
+        result.calendarBasis.timezone,
+      )}；${blockers[0] ?? astroBlockedReasonText(window)}，不建议作为唯一目标。`;
     }
     if (key === "milkyWay") {
-      return `银河可拍窗口：${formatWindow(window.startTime, window.endTime)}`;
+      return `银河可拍窗口：${formatWindow(
+        window.startTime,
+        window.endTime,
+        result.calendarBasis.timezone,
+      )}`;
     }
     if (key === "sunsetGlow") {
-      return `${label}：${formatWindow(window.startTime, window.endTime)}`;
+      return `${label}：${formatWindow(
+        window.startTime,
+        window.endTime,
+        result.calendarBasis.timezone,
+      )}`;
     }
     if (key === "sunriseGlow") {
-      return `${label}：${formatWindow(window.startTime, window.endTime)}`;
+      return `${label}：${formatWindow(
+        window.startTime,
+        window.endTime,
+        result.calendarBasis.timezone,
+      )}`;
     }
-    return `${label}：${formatWindow(window.startTime, window.endTime)}`;
+    return `${label}：${formatWindow(
+      window.startTime,
+      window.endTime,
+      result.calendarBasis.timezone,
+    )}`;
   }
 
   if (key === "transparency") {
@@ -9633,12 +9696,14 @@ function glowGeneralWindowText(result: ForecastCalculationResult): string {
     ? `主要可观察窗口：${glowWindowDisplayName(mainWindow)} ${formatWindow(
         mainWindow.start,
         mainWindow.end,
+        result.calendarBasis.timezone,
       )}。`
     : "主要可观察窗口：暂无。";
   const highText = highConfidence
     ? `高确定性拍摄窗口：${glowWindowDisplayName(highConfidence)} ${formatWindow(
         highConfidence.start,
         highConfidence.end,
+        result.calendarBasis.timezone,
       )}。`
     : "高确定性拍摄窗口：暂无。";
   return `${mainText}${highText}`;
@@ -9794,7 +9859,8 @@ function formatOptionalTime(value: string | undefined): string {
 
 function dateLabelForResultClient(result: ForecastCalculationResult, date: string): string {
   const index = result.calendarBasis.targetDates.indexOf(date);
-  return result.calendarBasis.targetDateLabels[index] ?? date;
+  const label = formatLocalDateLabel(date, result.calendarBasis.timezone);
+  return label === "时间待确认" ? result.calendarBasis.targetDateLabels[index] ?? date : label;
 }
 
 function confidenceLabel(
@@ -9809,8 +9875,16 @@ function confidenceLabel(
   return "低";
 }
 
-function formatWindow(startTime: string, endTime: string): string {
-  return formatShootingWindowZh({ startTime, endTime });
+function formatWindow(startTime: string, endTime: string, timezone = "Asia/Shanghai"): string {
+  return formatLocalDateTimeRange(startTime, endTime, timezone);
+}
+
+function formatWindowTimeRange(
+  startTime: string,
+  endTime: string,
+  timezone = "Asia/Shanghai",
+): string {
+  return formatLocalTimeRange(startTime, endTime, timezone);
 }
 
 function formatTime(value: string): string {

@@ -306,8 +306,10 @@ describe("AI providers", () => {
       eventTime: "2026-05-21T18:57:00+08:00",
       solarAzimuthDegrees: 286,
     });
-    expect(glow?.sunriseGlow.bestWindow?.windowZh).toContain("2026年5月21日");
-    expect(glow?.sunsetGlow.bestWindow?.windowZh).toContain("2026年5月21日");
+    expect(glow?.sunriseGlow.bestWindow?.date).toBe("2026-05-21");
+    expect(glow?.sunriseGlow.bestWindow?.windowZh).toBe("04:45–05:35");
+    expect(glow?.sunsetGlow.bestWindow?.date).toBe("2026-05-21");
+    expect(glow?.sunsetGlow.bestWindow?.windowZh).toBe("17:55–19:18");
     expect(glow?.whyThisJudgment.map((item) => item.labelZh)).toEqual(
       expect.arrayContaining(["中高云条件", "低云遮挡", "降水风险", "通透度"]),
     );
@@ -440,15 +442,18 @@ describe("AI providers", () => {
       normalizedHourlyRowCount: expect.any(Number),
       nearTermRowCount: expect.any(Number),
     });
-    expect(payload.bestWindow?.windowZh).toBe("2026年5月21日 周四 05:00-07:00");
-    expect(payload.cloudSeaWindowCards.best[0]?.windowZh).toBe("2026年5月21日 周四 05:00-07:00");
+    expect(payload.bestWindow?.date).toBe("2026-05-21");
+    expect(payload.bestWindow?.windowZh).toBe("05:00–07:00");
+    expect(payload.cloudSeaWindowCards.best[0]?.date).toBe("2026-05-21");
+    expect(payload.cloudSeaWindowCards.best[0]?.windowZh).toBe("05:00–07:00");
     expect(payload.precipitationSignalSummary.mainTimeRangeZh).toBe(
-      "2026年5月21日 周四 05:00-07:00",
+      "2026年5月21日 星期四 · 05:00–07:00",
     );
     expect(payload.precipitationSignalContext.mainTimeRangeZh).toBe(
-      "2026年5月21日 周四 05:00-07:00",
+      "2026年5月21日 星期四 · 05:00–07:00",
     );
     expect(text).not.toMatch(/主窗口：05:00-07:00/);
+    expect(text).not.toContain("2026年5月21日 周四");
     expect(payload.displayTemperatureContext).toHaveProperty("displayTemperatureC");
     expect(payload.precipitationSignalContext).toMatchObject({
       precipitationSignalType: expect.any(String),
@@ -777,7 +782,7 @@ describe("AI providers", () => {
     expect(explanation.conclusion.recommendedDayZh).toContain("2026年5月21日 星期四");
     expect(explanation.conclusion.oneSentenceDecisionZh).toContain("谨慎参考");
     expect(explanation.bestPlan.bestDateZh).toBe("2026年5月21日 星期四");
-    expect(explanation.bestPlan.bestWindowZh).toContain("2026年5月21日 周四 05:20");
+    expect(explanation.bestPlan.bestWindowZh).toContain("05:20–");
     expect(explanation.bestPlan.primaryTargetZh).toContain("清晨云海");
     expect(explanation.bestPlan.backupPlanZh).toContain("备用题材");
     expect(explanation.weatherTrend.temperatureSummaryZh).toBeTruthy();
@@ -1326,7 +1331,7 @@ const forecastResultFixture: ForecastCalculationResult = {
     forecastEnd: "2026-05-22T08:00:00+08:00",
     forecastStartLabel: "2026年5月20日 08:00",
     forecastEndLabel: "2026年5月22日 08:00",
-    forecastRangeLabel: "2026年5月20日 08:00 至 5月22日 08:00",
+    forecastRangeLabel: "2026年5月20日 08:00–5月22日 08:00",
     targetDates: ["2026-05-20", "2026-05-21", "2026-05-22"],
     targetDateLabels: ["2026年5月20日 星期三", "2026年5月21日 星期四", "2026年5月22日 星期五"],
     horizonHours: 48,

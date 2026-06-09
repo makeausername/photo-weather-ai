@@ -1,6 +1,6 @@
 import {
   formatArrivalDeadlineZh,
-  formatShootingWindowZh,
+  formatLocalTimeRange,
   simplifyWeatherSummaryZh,
   type ClothingGuide,
   type ForecastCalculationResult,
@@ -313,7 +313,7 @@ export function dailyCardActionSuggestion(options: {
 
   if (bestWindow) {
     const subject = windowLabelText(bestWindow);
-    const windowTime = formatShootingWindowZh(bestWindow, timezone);
+    const windowTime = formatLocalTimeRange(bestWindow.startTime, bestWindow.endTime, timezone);
     const arrival = bestWindow.arrivalAdvice
       ? formatArrivalDeadlineZh(bestWindow.arrivalAdvice.recommendedArrivalTime, timezone)
       : "";
@@ -363,13 +363,7 @@ export function watchableWindowText(
   }
   const label = watchableWindowLabel(window);
   if (window.startTime && window.endTime) {
-    return `${label} ${formatShootingWindowZh(
-      {
-        startTime: window.startTime,
-        endTime: window.endTime,
-      },
-      timezone,
-    )}`;
+    return `${label} ${formatLocalTimeRange(window.startTime, window.endTime, timezone)}`;
   }
   return label;
 }
@@ -382,7 +376,11 @@ export function bestShootableWindowText(
   if (!window) {
     return "暂无高确定性拍摄窗口";
   }
-  return `${windowLabelText(window)} ${formatShootingWindowZh(window, timezone)}`;
+  return `${windowLabelText(window)} ${formatLocalTimeRange(
+    window.startTime,
+    window.endTime,
+    timezone,
+  )}`;
 }
 
 function watchableWindowLabel(window: ForecastWatchableWindow): string {
@@ -423,11 +421,13 @@ function naturalRainPeriod(raw: string): string {
 }
 
 function stripWindowTime(text: string | undefined): string {
-  return text
-    ?.trim()
-    .replace(/\s*\d{1,2}:\d{2}\s*[-–至到]\s*\d{1,2}:\d{2}\s*/g, "")
-    .replace(/(?:观察)?窗口$/g, "")
-    .trim() ?? "";
+  return (
+    text
+      ?.trim()
+      .replace(/\s*\d{1,2}:\d{2}\s*[-–至到]\s*\d{1,2}:\d{2}\s*/g, "")
+      .replace(/(?:观察)?窗口$/g, "")
+      .trim() ?? ""
+  );
 }
 
 function hourOf(value: string | undefined): number | undefined {

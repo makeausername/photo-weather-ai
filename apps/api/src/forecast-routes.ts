@@ -15,6 +15,8 @@ import {
   type ForecastCalculationResult,
   type ElevationSource,
   type ForecastQueryInput,
+  formatLocalDateLabel,
+  formatLocalTimeRange,
   forecastHorizonLabels,
   normalizeForecastQueryInput,
   forecastQueryInputSchema,
@@ -1002,7 +1004,9 @@ function withAiExplanationDisplayFields(
   };
 }
 
-function firstDisplayableAiText(values: readonly (string | null | undefined)[]): string | undefined {
+function firstDisplayableAiText(
+  values: readonly (string | null | undefined)[],
+): string | undefined {
   return values.map(cleanAiDisplayText).find((value): value is string => Boolean(value));
 }
 
@@ -1038,11 +1042,25 @@ function createEmergencyForecastExplanation(
   const mainRisk = result.riskFlags[0];
   const riskWindow = mainRisk?.timeWindowLabelZh ?? "出行前后";
   const weather = bestDay?.weather;
+  const timezone = result.calendarBasis.timezone;
+  const dateLabelZh = (date: string | undefined, fallback = "日期待复核"): string => {
+    if (!date) {
+      return fallback;
+    }
+    const label = formatLocalDateLabel(date, timezone);
+    return label === "时间待确认" ? fallback : label;
+  };
+  const windowTimeZh = (
+    window: { readonly startTime?: string; readonly endTime?: string } | undefined,
+  ): string =>
+    window?.startTime && window.endTime
+      ? formatLocalTimeRange(window.startTime, window.endTime, timezone)
+      : "暂无明确时间";
 
   const dayByDay =
     result.dailySummaries.length > 0
       ? result.dailySummaries.slice(0, 5).map((day) => ({
-          dateZh: day.dateLabelZh,
+          dateZh: dateLabelZh(day.date, day.dateLabelZh),
           recommendationZh: day.dedicatedTripRecommendation ?? day.recommendationLabel,
           scoreZh: `综合 ${day.score} 分`,
           temperatureZh: day.weather
@@ -1055,7 +1073,7 @@ function createEmergencyForecastExplanation(
           astroZh: result.scores.milkyWay.label,
           transparencyZh: result.scores.transparency.label,
           bestWindowZh: day.bestShootableWindow
-            ? `${day.bestShootableWindow.label} ${day.bestShootableWindow.startTime} 至 ${day.bestShootableWindow.endTime}`
+            ? `${day.bestShootableWindow.label} ${windowTimeZh(day.bestShootableWindow)}`
             : "暂无高确定性拍摄窗口",
           actionZh: day.shortAdvice,
         }))
@@ -1072,7 +1090,7 @@ function createEmergencyForecastExplanation(
             astroZh: result.scores.milkyWay.label,
             transparencyZh: result.scores.transparency.label,
             bestWindowZh: bestWindow
-              ? `${bestWindow.label} ${bestWindow.startTime} 至 ${bestWindow.endTime}`
+              ? `${bestWindow.label} ${windowTimeZh(bestWindow)}`
               : "暂无高确定性拍摄窗口",
             actionZh: result.photographyAdvice[0] ?? result.summary,
           },
@@ -1083,7 +1101,7 @@ function createEmergencyForecastExplanation(
       titleZh: `${result.place.name}拍摄天气简版解读`,
       summaryZh: result.summary,
       recommendedDayZh: bestDay
-        ? `${bestDay.dateLabelZh}最值得关注，${bestDay.shortAdvice}`
+        ? `${dateLabelZh(bestDay.date, bestDay.dateLabelZh)}最值得关注，${bestDay.shortAdvice}`
         : "暂未取得逐日摘要，请先参考综合评分与窗口列表。",
       recommendationLevelZh: result.recommendationLabel,
       whetherWorthDedicatedTripZh:
@@ -1092,10 +1110,10 @@ function createEmergencyForecastExplanation(
     },
     bestPlan: {
       primaryTargetZh: primarySubject,
-      bestDateZh: bestDay?.dateLabelZh ?? bestWindow?.date ?? "日期待复核",
-      bestWindowZh: bestWindow
-        ? `${bestWindow.startTime} 至 ${bestWindow.endTime}`
-        : "暂无明确高确定性窗口",
+      bestDateZh: bestDay
+        ? dateLabelZh(bestDay.date, bestDay.dateLabelZh)
+        : dateLabelZh(bestWindow?.date),
+      bestWindowZh: bestWindow ? windowTimeZh(bestWindow) : "暂无明确高确定性窗口",
       recommendedArrivalZh:
         bestWindow?.arrivalAdvice?.recommendedArrivalLabel ?? "按主窗口提前到位",
       whyThisWindowZh: bestWindow?.copyReasonZh ?? result.keyReasons[0] ?? result.summary,
