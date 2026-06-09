@@ -4394,20 +4394,20 @@ function GlowPrimaryOpportunityCards({
       data-glow-section="GlowPrimaryOpportunityCards"
     >
       {opportunities.map((opportunity) => (
-          <article
-            key={opportunity.key}
-            className={cn(
-              "rounded-lg border bg-card p-4 shadow-sm",
-              opportunity.tone === "primary"
-                ? "border-primary/40"
-                : opportunity.tone === "danger"
-                  ? "border-danger/40"
-                  : "border-border",
-              opportunity.windowState === "ended" ? "bg-muted/60" : "",
-            )}
-            data-glow-primary-opportunity={opportunity.key}
-            data-glow-window-state={opportunity.windowState}
-          >
+        <article
+          key={opportunity.key}
+          className={cn(
+            "rounded-lg border bg-card p-4 shadow-sm",
+            opportunity.tone === "primary"
+              ? "border-primary/40"
+              : opportunity.tone === "danger"
+                ? "border-danger/40"
+                : "border-border",
+            opportunity.windowState === "ended" ? "bg-muted/60" : "",
+          )}
+          data-glow-primary-opportunity={opportunity.key}
+          data-glow-window-state={opportunity.windowState}
+        >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-xs font-semibold text-muted-foreground">
@@ -4459,19 +4459,14 @@ function GlowOverallRecommendationCard({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold text-muted-foreground">今天最值得拍什么</p>
-          <h2 className="mt-1 text-xl font-bold text-card-foreground">
-            {recommendation.headline}
-          </h2>
+          <h2 className="mt-1 text-xl font-bold text-card-foreground">{recommendation.headline}</h2>
         </div>
         <Badge variant={badgeVariantForTone(recommendation.tone)}>
           {recommendation.recommendation}
         </Badge>
       </div>
       <div className="mt-4 grid gap-3 min-[760px]:grid-cols-5">
-        <CompactDefinition
-          label="预测概率"
-          value={recommendation.preferredProbabilityDisplay}
-        />
+        <CompactDefinition label="预测概率" value={recommendation.preferredProbabilityDisplay} />
         <CompactDefinition label="最佳日期" value={recommendation.preferredDate} />
         <CompactDefinition label="最佳时间" value={recommendation.preferredTime} />
         <CompactDefinition label="到达建议" value={recommendation.arrivalAdvice} />
@@ -4539,18 +4534,12 @@ function GlowDailyOpportunitySection({
               </p>
             </div>
             <dl className="grid gap-1 text-sm">
-              <GlowInlineDefinition
-                label="朝霞概率"
-                value={item.sunriseProbabilityDisplay}
-              />
-              <GlowInlineDefinition label="朝霞时间" value={item.sunriseBestTime} />
+              <GlowInlineDefinition label="朝霞概率" value={item.sunriseProbabilityDisplay} />
+              <GlowInlineDefinition label="预测朝霞最佳窗口" value={item.sunriseBestTime} />
             </dl>
             <dl className="grid gap-1 text-sm">
-              <GlowInlineDefinition
-                label="晚霞概率"
-                value={item.sunsetProbabilityDisplay}
-              />
-              <GlowInlineDefinition label="晚霞时间" value={item.sunsetBestTime} />
+              <GlowInlineDefinition label="晚霞概率" value={item.sunsetProbabilityDisplay} />
+              <GlowInlineDefinition label="预测晚霞最佳窗口" value={item.sunsetBestTime} />
             </dl>
             <p className="text-sm leading-6 text-muted-foreground">{item.conciseReason}</p>
           </article>
@@ -9763,8 +9752,17 @@ function bestGlowWindowForPhase(
   );
 }
 
-function isMorningGlowWindow(window: Pick<GlowWindow, "type" | "start" | "labelZh">): boolean {
+function isMorningGlowWindow(
+  window: Pick<GlowWindow, "type" | "start" | "labelZh" | "phase">,
+): boolean {
+  if (window.phase === "sunrise") {
+    return true;
+  }
+  if (window.phase === "sunset") {
+    return false;
+  }
   if (
+    window.type === "sunrise_glow" ||
     window.type === "pre_dawn_glow" ||
     window.type === "sunrise_core" ||
     window.type === "morning_warm_light" ||
@@ -9773,6 +9771,7 @@ function isMorningGlowWindow(window: Pick<GlowWindow, "type" | "start" | "labelZ
     return true;
   }
   if (
+    window.type === "sunset_glow" ||
     window.type === "sunset_warm_light" ||
     window.type === "sunset_core" ||
     window.type === "afterglow" ||

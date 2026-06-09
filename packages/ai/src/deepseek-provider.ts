@@ -1308,7 +1308,9 @@ type GlowPromptWindowState = {
   readonly probabilityDisplay: string;
 };
 
-function buildGlowPromptWindowStates(result: ForecastCalculationResult): readonly GlowPromptWindowState[] {
+function buildGlowPromptWindowStates(
+  result: ForecastCalculationResult,
+): readonly GlowPromptWindowState[] {
   return allGlowPromptWindows(result.glowAnalysis).map((window) =>
     glowPromptWindowStateForWindow(result, window, window.practicalScore ?? window.score),
   );
@@ -1349,7 +1351,11 @@ function selectGlowPromptPhaseState(
       : result.glowAnalysis.sunsetGlowScore;
   const phaseStates = states
     .filter((state) => state.phase === phase)
-    .map((state) => ({ ...state, score, probabilityPercent: glowScoreToDisplayProbabilityPercent(score) }))
+    .map((state) => ({
+      ...state,
+      score,
+      probabilityPercent: glowScoreToDisplayProbabilityPercent(score),
+    }))
     .map((state) => ({
       ...state,
       probabilityDisplay: glowPromptProbabilityDisplay(state.lifecycle, state.probabilityPercent),
@@ -1359,7 +1365,10 @@ function selectGlowPromptPhaseState(
     return actionable;
   }
 
-  const currentDate = glowLocalDateKey(glowPromptEvaluatedAt(result), result.calendarBasis.timezone);
+  const currentDate = glowLocalDateKey(
+    glowPromptEvaluatedAt(result),
+    result.calendarBasis.timezone,
+  );
   const currentEnded = phaseStates
     .filter((state) => state.lifecycle === "ended" && state.date === currentDate)
     .sort((left, right) => Date.parse(right.endAt ?? "") - Date.parse(left.endAt ?? ""))[0];
@@ -1389,7 +1398,10 @@ function selectGlowPromptActionableState(
     return undefined;
   }
 
-  const currentDate = glowLocalDateKey(glowPromptEvaluatedAt(result), result.calendarBasis.timezone);
+  const currentDate = glowLocalDateKey(
+    glowPromptEvaluatedAt(result),
+    result.calendarBasis.timezone,
+  );
   const currentDateStates = currentDate
     ? actionables.filter((state) => state.date === currentDate)
     : [];
@@ -1412,7 +1424,10 @@ function selectGlowPromptActionableState(
   return [...pool].sort(compareGlowPromptStates)[0];
 }
 
-function compareGlowPromptStates(left: GlowPromptWindowState, right: GlowPromptWindowState): number {
+function compareGlowPromptStates(
+  left: GlowPromptWindowState,
+  right: GlowPromptWindowState,
+): number {
   return (
     glowPromptLifecycleRank(left.lifecycle) - glowPromptLifecycleRank(right.lifecycle) ||
     right.score - left.score ||
@@ -1455,7 +1470,10 @@ function glowPromptLifecycleForDatePhase(
   return {
     lifecycle: state?.lifecycle ?? "unavailable",
     actionable: state?.isActionable ?? false,
-    windowZh: state?.startAt && state.endAt ? formatLocalTimeRange(state.startAt, state.endAt, result.calendarBasis.timezone) : null,
+    windowZh:
+      state?.startAt && state.endAt
+        ? formatLocalTimeRange(state.startAt, state.endAt, result.calendarBasis.timezone)
+        : null,
   };
 }
 
@@ -1533,7 +1551,8 @@ function unavailableGlowPromptState(
     score,
     probabilityPercent,
     probabilityDisplay: "暂无明确时间",
-    date: glowLocalDateKey(glowPromptEvaluatedAt(result), result.calendarBasis.timezone) ?? undefined,
+    date:
+      glowLocalDateKey(glowPromptEvaluatedAt(result), result.calendarBasis.timezone) ?? undefined,
   };
 }
 
@@ -1546,24 +1565,19 @@ function derivedGlowPromptSunWindowForDate(
   if (!astro) {
     return undefined;
   }
-  if (phase === "sunrise" && astro.sunrise) {
+  if (phase === "sunrise" && astro.sunriseGlowBestStartAt && astro.sunriseGlowBestEndAt) {
     return {
-      startAt: astro.sunrise,
-      endAt: shiftGlowPromptTime(astro.sunrise, 75),
+      startAt: astro.sunriseGlowBestStartAt,
+      endAt: astro.sunriseGlowBestEndAt,
     };
   }
-  if (phase === "sunset" && astro.sunset) {
+  if (phase === "sunset" && astro.sunsetGlowBestStartAt && astro.sunsetGlowBestEndAt) {
     return {
-      startAt: shiftGlowPromptTime(astro.sunset, -75),
-      endAt: astro.civilDusk ?? shiftGlowPromptTime(astro.sunset, 75),
+      startAt: astro.sunsetGlowBestStartAt,
+      endAt: astro.sunsetGlowBestEndAt,
     };
   }
   return undefined;
-}
-
-function shiftGlowPromptTime(value: string, minutes: number): string {
-  const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) ? new Date(timestamp + minutes * 60 * 1000).toISOString() : value;
 }
 
 function phaseScoreForPrompt(result: ForecastCalculationResult, phase: GlowPromptPhase): number {
@@ -1605,16 +1619,31 @@ function glowPromptRecommendationZh(state: GlowPromptWindowState): string {
 function glowWindowPhase(
   window: Pick<
     ForecastCalculationResult["glowAnalysis"]["bestGlowWindows"][number],
-    "type" | "start"
+    "type" | "start" | "phase"
   >,
 ): "sunrise" | "sunset" {
-  if (["pre_dawn_glow", "sunrise_core", "morning_warm_light", "sunrise"].includes(window.type)) {
+  if (window.phase === "sunrise") {
+    return "sunrise";
+  }
+  if (window.phase === "sunset") {
+    return "sunset";
+  }
+  if (
+    ["sunrise_glow", "pre_dawn_glow", "sunrise_core", "morning_warm_light", "sunrise"].includes(
+      window.type,
+    )
+  ) {
     return "sunrise";
   }
   if (
-    ["sunset_warm_light", "sunset_core", "afterglow", "blue_hour_transition", "sunset"].includes(
-      window.type,
-    )
+    [
+      "sunset_glow",
+      "sunset_warm_light",
+      "sunset_core",
+      "afterglow",
+      "blue_hour_transition",
+      "sunset",
+    ].includes(window.type)
   ) {
     return "sunset";
   }
@@ -1658,7 +1687,10 @@ function compactGlowWindowStateForAi(
     labelZh: window?.labelZh ?? `${glowPromptPhaseLabel(state.phase)}窗口`,
     date: state.date,
     windowZh: formatLocalTimeRange(state.startAt, state.endAt, timezone),
-    originalWindowZh: formatShootingWindowZh({ startTime: state.startAt, endTime: state.endAt }, timezone),
+    originalWindowZh: formatShootingWindowZh(
+      { startTime: state.startAt, endTime: state.endAt },
+      timezone,
+    ),
     probabilityPercent: state.probabilityPercent,
     probabilityDisplay: state.probabilityDisplay,
     score: state.score,
@@ -1676,10 +1708,7 @@ function compactGlowWindowStateForAi(
   };
 }
 
-function formatGlowWindowStateForAiDisplay(
-  state: GlowPromptWindowState,
-  timezone: string,
-): string {
+function formatGlowWindowStateForAiDisplay(state: GlowPromptWindowState, timezone: string): string {
   if (!state.startAt || !state.endAt) {
     return "暂无明确最佳时间";
   }
@@ -1689,10 +1718,7 @@ function formatGlowWindowStateForAiDisplay(
   )}`;
 }
 
-function recommendedGlowArrivalForStateZh(
-  state: GlowPromptWindowState,
-  timezone: string,
-): string {
+function recommendedGlowArrivalForStateZh(state: GlowPromptWindowState, timezone: string): string {
   if (state.lifecycle === "active") {
     return "窗口进行中，建议尽快到位";
   }

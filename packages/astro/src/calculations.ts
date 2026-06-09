@@ -10,6 +10,7 @@ import {
   SearchHourAngle,
   SearchRiseSet,
 } from "astronomy-engine";
+import { glowSolarAltitudeGeometryConfig } from "@photo-weather/shared";
 import type {
   AstroInput,
   AstronomicalNightWindow,
@@ -21,6 +22,12 @@ import type {
   MoonPhaseNameZh,
   MoonWaxingOrWaning,
   MoonTimes,
+  SolarAltitudeBandWindow,
+  SolarAltitudeCrossing,
+  SolarAltitudeCrossingInput,
+  SolarGlowGeometry,
+  SolarPosition,
+  SolarPositionInput,
   SunTimes,
   TwilightTimes,
 } from "./types.js";
@@ -30,6 +37,7 @@ const hourMs = 3_600_000;
 const minuteMs = 60_000;
 const milkyWaySampleStepMs = 15 * minuteMs;
 const milkyWayMinimumAltitude = 10;
+const solarAltitudeCrossingDerivationMethod = "solar_altitude_crossing";
 const milkyWayNoteZh = "银河窗口为简化本地估算，实际拍摄仍需结合云量、月光、光污染和地形遮挡。";
 
 let isGalacticCenterDefined = false;
@@ -63,6 +71,67 @@ export function getTwilightTimes(input: AstroInput): TwilightTimes {
     nauticalDusk: formatZonedIso(findSunAltitudeCrossing(context, -1, -12), context.timezone),
     astronomicalDawn: formatZonedIso(findSunAltitudeCrossing(context, 1, -18), context.timezone),
     astronomicalDusk: formatZonedIso(findSunAltitudeCrossing(context, -1, -18), context.timezone),
+  };
+}
+
+export function getSolarPosition(input: SolarPositionInput): SolarPosition {
+  const context = normalizeInput(input);
+  const timestamp = normalizeTimestamp(input.timestamp);
+  const horizontal = getBodyHorizontal(Body.Sun, timestamp, context);
+
+  return {
+    timestamp: formatZonedIso(timestamp, context.timezone) ?? new Date(timestamp).toISOString(),
+    timezone: context.timezone,
+    altitudeDegrees: round3(horizontal.altitude),
+    azimuthDegrees: round3(horizontal.azimuth),
+  };
+}
+
+export function getSolarAltitudeCrossing(input: SolarAltitudeCrossingInput): SolarAltitudeCrossing {
+  const context = normalizeInput(input);
+  const direction = input.direction === "setting" ? -1 : 1;
+  const at = findSunAltitudeCrossing(context, direction, input.altitudeDegrees);
+
+  return {
+    date: context.date,
+    timezone: context.timezone,
+    altitudeDegrees: input.altitudeDegrees,
+    direction: input.direction,
+    at: formatZonedIso(at, context.timezone),
+  };
+}
+
+export function getSolarGlowGeometry(input: AstroInput): SolarGlowGeometry {
+  const context = normalizeInput(input);
+  const config = glowSolarAltitudeGeometryConfig;
+  const sunriseCandidate = buildSolarAltitudeBandWindow(context, config.sunrise.candidate);
+  const sunriseBest = buildSolarAltitudeBandWindow(context, config.sunrise.best);
+  const sunsetCandidate = buildSolarAltitudeBandWindow(context, config.sunset.candidate);
+  const sunsetBest = buildSolarAltitudeBandWindow(context, config.sunset.best);
+
+  return {
+    date: context.date,
+    timezone: context.timezone,
+    elevationMeters: context.elevationMeters ?? null,
+    elevationAvailable: context.elevationAvailable,
+    solarCalculationResolutionMinutes: config.solarCalculationResolutionMinutes,
+    windowDerivationMethod: config.windowDerivationMethod,
+    sunriseAltitudeCrossings: [
+      crossingFromWindowStart(context, sunriseCandidate),
+      crossingFromWindowEnd(context, sunriseCandidate),
+      crossingFromWindowStart(context, sunriseBest),
+      crossingFromWindowEnd(context, sunriseBest),
+    ],
+    sunsetAltitudeCrossings: [
+      crossingFromWindowStart(context, sunsetCandidate),
+      crossingFromWindowEnd(context, sunsetCandidate),
+      crossingFromWindowStart(context, sunsetBest),
+      crossingFromWindowEnd(context, sunsetBest),
+    ],
+    sunriseGlowCandidateWindow: validSolarAltitudeBandWindow(sunriseCandidate),
+    sunriseGlowBestWindow: validSolarAltitudeBandWindow(sunriseBest),
+    sunsetGlowCandidateWindow: validSolarAltitudeBandWindow(sunsetCandidate),
+    sunsetGlowBestWindow: validSolarAltitudeBandWindow(sunsetBest),
   };
 }
 
@@ -264,7 +333,13 @@ export function getMoonWaxingOrWaning(phase: number): MoonWaxingOrWaning {
   return "unknown";
 }
 
-type NormalizedAstroInput = Required<AstroInput> & {
+type NormalizedAstroInput = {
+  readonly latitudeWgs84: number;
+  readonly longitudeWgs84: number;
+  readonly date: string;
+  readonly timezone: string;
+  readonly elevationMeters?: number;
+  readonly elevationAvailable: boolean;
   readonly midnightUtcMs: number;
   readonly nextMidnightUtcMs: number;
   readonly noonUtcMs: number;
@@ -283,6 +358,7 @@ type MilkyWaySample = {
 function normalizeInput(input: AstroInput): NormalizedAstroInput {
   const timezone = input.timezone?.trim() || defaultTimezone;
   const date = normalizeDate(input.date);
+  const elevationMeters = normalizeElevationMeters(input.elevationMeters);
 
   assertWgs84Coordinate(input.latitudeWgs84, "latitudeWgs84", -90, 90);
   assertWgs84Coordinate(input.longitudeWgs84, "longitudeWgs84", -180, 180);
@@ -292,10 +368,75 @@ function normalizeInput(input: AstroInput): NormalizedAstroInput {
     longitudeWgs84: input.longitudeWgs84,
     date,
     timezone,
+    elevationMeters,
+    elevationAvailable: elevationMeters !== undefined,
     midnightUtcMs: zonedDateTimeToUtcMs(date, timezone, 0, 0, 0),
     nextMidnightUtcMs: zonedDateTimeToUtcMs(addDays(date, 1), timezone, 0, 0, 0),
     noonUtcMs: zonedDateTimeToUtcMs(date, timezone, 12, 0, 0),
-    observer: new Observer(input.latitudeWgs84, input.longitudeWgs84, 0),
+    observer: new Observer(input.latitudeWgs84, input.longitudeWgs84, elevationMeters ?? 0),
+  };
+}
+
+function buildSolarAltitudeBandWindow(
+  context: NormalizedAstroInput,
+  band: {
+    readonly direction: "rising" | "setting";
+    readonly startAltitudeDegrees: number;
+    readonly endAltitudeDegrees: number;
+  },
+): SolarAltitudeBandWindow {
+  const direction = band.direction === "rising" ? 1 : -1;
+  const start = findSunAltitudeCrossing(context, direction, band.startAltitudeDegrees);
+  const end = findSunAltitudeCrossing(context, direction, band.endAltitudeDegrees);
+
+  return {
+    start: formatZonedIso(start, context.timezone),
+    end: formatZonedIso(end, context.timezone),
+    startAltitudeDegrees: band.startAltitudeDegrees,
+    endAltitudeDegrees: band.endAltitudeDegrees,
+    direction: band.direction,
+    derivationMethod: solarAltitudeCrossingDerivationMethod,
+    resolutionMinutes: glowSolarAltitudeGeometryConfig.solarCalculationResolutionMinutes,
+  };
+}
+
+function validSolarAltitudeBandWindow(
+  window: SolarAltitudeBandWindow,
+): SolarAltitudeBandWindow | undefined {
+  if (!window.start || !window.end) {
+    return undefined;
+  }
+  const startMs = Date.parse(window.start);
+  const endMs = Date.parse(window.end);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    return undefined;
+  }
+  return window;
+}
+
+function crossingFromWindowStart(
+  context: NormalizedAstroInput,
+  window: SolarAltitudeBandWindow,
+): SolarAltitudeCrossing {
+  return {
+    date: context.date,
+    timezone: context.timezone,
+    altitudeDegrees: window.startAltitudeDegrees,
+    direction: window.direction,
+    at: window.start,
+  };
+}
+
+function crossingFromWindowEnd(
+  context: NormalizedAstroInput,
+  window: SolarAltitudeBandWindow,
+): SolarAltitudeCrossing {
+  return {
+    date: context.date,
+    timezone: context.timezone,
+    altitudeDegrees: window.endAltitudeDegrees,
+    direction: window.direction,
+    at: window.end,
   };
 }
 
@@ -491,6 +632,19 @@ function normalizeDate(value: string): string {
   }
 
   return date;
+}
+
+function normalizeTimestamp(value: string | number | Date): number {
+  const timestamp =
+    value instanceof Date ? value.getTime() : typeof value === "number" ? value : Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    throw new Error("Solar position timestamp must be a valid date/time.");
+  }
+  return timestamp;
+}
+
+function normalizeElevationMeters(value: number | null | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function assertWgs84Coordinate(value: number, label: string, min: number, max: number): void {

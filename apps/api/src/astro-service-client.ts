@@ -9,6 +9,7 @@ import type {
   MoonAltitudeSample,
   MoonImpactLevel,
 } from "@photo-weather/shared";
+import { glowSolarAltitudeGeometryConfig } from "@photo-weather/shared";
 
 export const DEFAULT_ASTRO_SERVICE_URL = "http://127.0.0.1:4100";
 export const ASTRO_SERVICE_TIMEOUT_ENV = "ASTRO_SERVICE_TIMEOUT_MS";
@@ -98,6 +99,14 @@ const dailySunSchema = z.object({
   astronomicalDusk: optionalIsoStringSchema,
   sunriseAzimuth: z.number().finite().nullable().optional(),
   sunsetAzimuth: z.number().finite().nullable().optional(),
+  sunriseGlowCandidateStart: optionalIsoStringSchema,
+  sunriseGlowCandidateEnd: optionalIsoStringSchema,
+  sunriseGlowBestStart: optionalIsoStringSchema,
+  sunriseGlowBestEnd: optionalIsoStringSchema,
+  sunsetGlowCandidateStart: optionalIsoStringSchema,
+  sunsetGlowCandidateEnd: optionalIsoStringSchema,
+  sunsetGlowBestStart: optionalIsoStringSchema,
+  sunsetGlowBestEnd: optionalIsoStringSchema,
 });
 
 const dailyMoonSchema = z.object({
@@ -191,6 +200,7 @@ const astroServiceResponseSchema = z.object({
         moonlessWindow: z.number().int().positive().optional(),
         moonImpact: z.number().int().positive().optional(),
         galacticCenter: z.number().int().positive().optional(),
+        solarAltitudeGlow: z.number().int().positive().optional(),
       })
       .optional(),
   }),
@@ -451,6 +461,8 @@ export function mapAstroServiceResponseToForecastData(
     return {
       date,
       timezone: response.calculationBasis.timezone,
+      elevationMeters: response.calculationBasis.elevationMeters ?? null,
+      elevationAvailable: typeof response.calculationBasis.elevationMeters === "number",
       sunrise: sun.sunrise ?? undefined,
       sunset: sun.sunset ?? undefined,
       solarNoon: sun.solarNoon ?? undefined,
@@ -462,6 +474,61 @@ export function mapAstroServiceResponseToForecastData(
       nauticalDusk: sun.nauticalDusk ?? undefined,
       astronomicalDawn: sun.astronomicalDawn ?? undefined,
       astronomicalDusk: sun.astronomicalDusk ?? undefined,
+      solarCalculationResolutionMinutes:
+        response.calculationBasis.samplingResolutionMinutes?.solarAltitudeGlow,
+      glowWindowDerivationMethod: glowSolarAltitudeGeometryConfig.windowDerivationMethod,
+      sunriseAltitudeCrossings: [
+        {
+          altitudeDegrees: glowSolarAltitudeGeometryConfig.sunrise.candidate.startAltitudeDegrees,
+          direction: "rising",
+          at: sun.sunriseGlowCandidateStart ?? undefined,
+        },
+        {
+          altitudeDegrees: glowSolarAltitudeGeometryConfig.sunrise.candidate.endAltitudeDegrees,
+          direction: "rising",
+          at: sun.sunriseGlowCandidateEnd ?? undefined,
+        },
+        {
+          altitudeDegrees: glowSolarAltitudeGeometryConfig.sunrise.best.startAltitudeDegrees,
+          direction: "rising",
+          at: sun.sunriseGlowBestStart ?? undefined,
+        },
+        {
+          altitudeDegrees: glowSolarAltitudeGeometryConfig.sunrise.best.endAltitudeDegrees,
+          direction: "rising",
+          at: sun.sunriseGlowBestEnd ?? undefined,
+        },
+      ],
+      sunsetAltitudeCrossings: [
+        {
+          altitudeDegrees: glowSolarAltitudeGeometryConfig.sunset.candidate.startAltitudeDegrees,
+          direction: "setting",
+          at: sun.sunsetGlowCandidateStart ?? undefined,
+        },
+        {
+          altitudeDegrees: glowSolarAltitudeGeometryConfig.sunset.candidate.endAltitudeDegrees,
+          direction: "setting",
+          at: sun.sunsetGlowCandidateEnd ?? undefined,
+        },
+        {
+          altitudeDegrees: glowSolarAltitudeGeometryConfig.sunset.best.startAltitudeDegrees,
+          direction: "setting",
+          at: sun.sunsetGlowBestStart ?? undefined,
+        },
+        {
+          altitudeDegrees: glowSolarAltitudeGeometryConfig.sunset.best.endAltitudeDegrees,
+          direction: "setting",
+          at: sun.sunsetGlowBestEnd ?? undefined,
+        },
+      ],
+      sunriseGlowCandidateStartAt: sun.sunriseGlowCandidateStart ?? undefined,
+      sunriseGlowCandidateEndAt: sun.sunriseGlowCandidateEnd ?? undefined,
+      sunriseGlowBestStartAt: sun.sunriseGlowBestStart ?? undefined,
+      sunriseGlowBestEndAt: sun.sunriseGlowBestEnd ?? undefined,
+      sunsetGlowCandidateStartAt: sun.sunsetGlowCandidateStart ?? undefined,
+      sunsetGlowCandidateEndAt: sun.sunsetGlowCandidateEnd ?? undefined,
+      sunsetGlowBestStartAt: sun.sunsetGlowBestStart ?? undefined,
+      sunsetGlowBestEndAt: sun.sunsetGlowBestEnd ?? undefined,
       astronomicalNightStart: night?.start,
       astronomicalNightEnd: night?.end,
       moonPhase: moon.moonPhaseValue,

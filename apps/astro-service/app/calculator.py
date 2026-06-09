@@ -37,6 +37,15 @@ MOON_ALTITUDE_STEP_MINUTES = 60
 MOONLESS_WINDOW_STEP_MINUTES = 5
 MOON_IMPACT_STEP_MINUTES = 15
 GALACTIC_CENTER_STEP_MINUTES = 10
+SOLAR_ALTITUDE_GLOW_STEP_MINUTES = 1
+SUNRISE_GLOW_CANDIDATE_START_ALTITUDE = -6.0
+SUNRISE_GLOW_CANDIDATE_END_ALTITUDE = 2.0
+SUNRISE_GLOW_BEST_START_ALTITUDE = -4.0
+SUNRISE_GLOW_BEST_END_ALTITUDE = 1.0
+SUNSET_GLOW_CANDIDATE_START_ALTITUDE = 2.0
+SUNSET_GLOW_CANDIDATE_END_ALTITUDE = -6.0
+SUNSET_GLOW_BEST_START_ALTITUDE = 1.0
+SUNSET_GLOW_BEST_END_ALTITUDE = -4.0
 SAMPLING_RESOLUTION_MINUTES = {
     "sunCrossing": SUN_CROSSING_STEP_MINUTES,
     "solarNoon": SOLAR_NOON_STEP_MINUTES,
@@ -44,6 +53,7 @@ SAMPLING_RESOLUTION_MINUTES = {
     "moonlessWindow": MOONLESS_WINDOW_STEP_MINUTES,
     "moonImpact": MOON_IMPACT_STEP_MINUTES,
     "galacticCenter": GALACTIC_CENTER_STEP_MINUTES,
+    "solarAltitudeGlow": SOLAR_ALTITUDE_GLOW_STEP_MINUTES,
 }
 
 
@@ -216,6 +226,78 @@ class AstronomyCalculator:
         astronomical_dusk = self._first_crossing(
             context, observer, self.sun, day_start, day_end, -18.0, "setting"
         )
+        sunrise_glow_candidate_start = self._first_crossing(
+            context,
+            observer,
+            self.sun,
+            day_start,
+            day_end,
+            SUNRISE_GLOW_CANDIDATE_START_ALTITUDE,
+            "rising",
+        )
+        sunrise_glow_candidate_end = self._first_crossing(
+            context,
+            observer,
+            self.sun,
+            day_start,
+            day_end,
+            SUNRISE_GLOW_CANDIDATE_END_ALTITUDE,
+            "rising",
+        )
+        sunrise_glow_best_start = self._first_crossing(
+            context,
+            observer,
+            self.sun,
+            day_start,
+            day_end,
+            SUNRISE_GLOW_BEST_START_ALTITUDE,
+            "rising",
+        )
+        sunrise_glow_best_end = self._first_crossing(
+            context,
+            observer,
+            self.sun,
+            day_start,
+            day_end,
+            SUNRISE_GLOW_BEST_END_ALTITUDE,
+            "rising",
+        )
+        sunset_glow_candidate_start = self._first_crossing(
+            context,
+            observer,
+            self.sun,
+            day_start,
+            day_end,
+            SUNSET_GLOW_CANDIDATE_START_ALTITUDE,
+            "setting",
+        )
+        sunset_glow_candidate_end = self._first_crossing(
+            context,
+            observer,
+            self.sun,
+            day_start,
+            day_end,
+            SUNSET_GLOW_CANDIDATE_END_ALTITUDE,
+            "setting",
+        )
+        sunset_glow_best_start = self._first_crossing(
+            context,
+            observer,
+            self.sun,
+            day_start,
+            day_end,
+            SUNSET_GLOW_BEST_START_ALTITUDE,
+            "setting",
+        )
+        sunset_glow_best_end = self._first_crossing(
+            context,
+            observer,
+            self.sun,
+            day_start,
+            day_end,
+            SUNSET_GLOW_BEST_END_ALTITUDE,
+            "setting",
+        )
         solar_noon = self._solar_noon(context, observer, day_start, day_end)
 
         return DailySun(
@@ -235,6 +317,14 @@ class AstronomyCalculator:
             sunsetAzimuth=round1(self._horizontal(context, observer, self.sun, sunset).azimuth)
             if sunset
             else None,
+            sunriseGlowCandidateStart=format_optional_iso(sunrise_glow_candidate_start),
+            sunriseGlowCandidateEnd=format_optional_iso(sunrise_glow_candidate_end),
+            sunriseGlowBestStart=format_optional_iso(sunrise_glow_best_start),
+            sunriseGlowBestEnd=format_optional_iso(sunrise_glow_best_end),
+            sunsetGlowCandidateStart=format_optional_iso(sunset_glow_candidate_start),
+            sunsetGlowCandidateEnd=format_optional_iso(sunset_glow_candidate_end),
+            sunsetGlowBestStart=format_optional_iso(sunset_glow_best_start),
+            sunsetGlowBestEnd=format_optional_iso(sunset_glow_best_end),
         )
 
     def _daily_moon(

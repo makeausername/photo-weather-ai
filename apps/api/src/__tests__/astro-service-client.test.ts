@@ -33,6 +33,14 @@ const serviceResponse: AstroServiceCalculationResponse = {
         astronomicalDusk: "2026-05-22T20:31:00+08:00",
         sunriseAzimuth: 67.2,
         sunsetAzimuth: 292.8,
+        sunriseGlowCandidateStart: "2026-05-22T04:38:00+08:00",
+        sunriseGlowCandidateEnd: "2026-05-22T05:18:00+08:00",
+        sunriseGlowBestStart: "2026-05-22T04:50:00+08:00",
+        sunriseGlowBestEnd: "2026-05-22T05:14:00+08:00",
+        sunsetGlowCandidateStart: "2026-05-22T18:48:00+08:00",
+        sunsetGlowCandidateEnd: "2026-05-22T19:28:00+08:00",
+        sunsetGlowBestStart: "2026-05-22T18:52:00+08:00",
+        sunsetGlowBestEnd: "2026-05-22T19:16:00+08:00",
       },
       {
         date: "2026-05-23",
@@ -164,6 +172,7 @@ const serviceResponse: AstroServiceCalculationResponse = {
       moonlessWindow: 5,
       moonImpact: 15,
       galacticCenter: 10,
+      solarAltitudeGlow: 1,
     },
   },
 };
@@ -384,6 +393,7 @@ describe("AstroServiceClient", () => {
       samplingResolutionMinutes: expect.objectContaining({
         galacticCenter: 10,
         moonAltitude: 60,
+        solarAltitudeGlow: 1,
       }),
     });
     expect(mapped.astroSummaries[0]).toMatchObject({
@@ -391,7 +401,47 @@ describe("AstroServiceClient", () => {
       moonset: "2026-05-23T00:28:00+08:00",
       moonIllumination: 0.36,
       milkyWayCalculationPrecision: "skyfield",
+      elevationMeters: 1800,
+      elevationAvailable: true,
+      solarCalculationResolutionMinutes: 1,
+      glowWindowDerivationMethod: "solar_altitude_weather_v1",
+      sunriseGlowCandidateStartAt: "2026-05-22T04:38:00+08:00",
+      sunriseGlowCandidateEndAt: "2026-05-22T05:18:00+08:00",
+      sunriseGlowBestStartAt: "2026-05-22T04:50:00+08:00",
+      sunriseGlowBestEndAt: "2026-05-22T05:14:00+08:00",
+      sunsetGlowCandidateStartAt: "2026-05-22T18:48:00+08:00",
+      sunsetGlowCandidateEndAt: "2026-05-22T19:28:00+08:00",
+      sunsetGlowBestStartAt: "2026-05-22T18:52:00+08:00",
+      sunsetGlowBestEndAt: "2026-05-22T19:16:00+08:00",
     });
+    expect(mapped.astroSummaries[0]?.sunriseAltitudeCrossings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          altitudeDegrees: -6,
+          direction: "rising",
+          at: "2026-05-22T04:38:00+08:00",
+        }),
+        expect.objectContaining({
+          altitudeDegrees: -4,
+          direction: "rising",
+          at: "2026-05-22T04:50:00+08:00",
+        }),
+      ]),
+    );
+    expect(mapped.astroSummaries[0]?.sunsetAltitudeCrossings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          altitudeDegrees: 2,
+          direction: "setting",
+          at: "2026-05-22T18:48:00+08:00",
+        }),
+        expect.objectContaining({
+          altitudeDegrees: -4,
+          direction: "setting",
+          at: "2026-05-22T19:16:00+08:00",
+        }),
+      ]),
+    );
     expect(mapped.astroWindowBundle.recommendedMilkyWayWindows[0]).toMatchObject({
       labelZh: "推荐银河窗口",
       start: "2026-05-23T00:28:00+08:00",

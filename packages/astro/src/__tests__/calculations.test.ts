@@ -8,6 +8,9 @@ import {
   getMoonPhaseNameZh,
   getMoonWaxingOrWaning,
   getMoonTimes,
+  getSolarAltitudeCrossing,
+  getSolarGlowGeometry,
+  getSolarPosition,
   getSunTimes,
   getTwilightTimes,
 } from "../index.js";
@@ -72,6 +75,91 @@ describe("local astronomy calculations", () => {
     expect(sunset).toBeLessThan(civilDusk);
     expect(civilDusk).toBeLessThan(nauticalDusk);
     expect(nauticalDusk).toBeLessThan(astronomicalDusk);
+  });
+
+  it("builds ordered solar-altitude glow geometry around exact sun events", () => {
+    const sunTimes = getSunTimes({ ...huangshanInput, elevationMeters: 1860 });
+    const geometry = getSolarGlowGeometry({ ...huangshanInput, elevationMeters: 1860 });
+
+    const sunriseCandidateStart = requiredTimestamp(geometry.sunriseGlowCandidateWindow?.start);
+    const sunriseBestStart = requiredTimestamp(geometry.sunriseGlowBestWindow?.start);
+    const sunrise = requiredTimestamp(sunTimes.sunrise);
+    const sunriseBestEnd = requiredTimestamp(geometry.sunriseGlowBestWindow?.end);
+    const sunriseCandidateEnd = requiredTimestamp(geometry.sunriseGlowCandidateWindow?.end);
+    const sunsetCandidateStart = requiredTimestamp(geometry.sunsetGlowCandidateWindow?.start);
+    const sunsetBestStart = requiredTimestamp(geometry.sunsetGlowBestWindow?.start);
+    const sunset = requiredTimestamp(sunTimes.sunset);
+    const sunsetBestEnd = requiredTimestamp(geometry.sunsetGlowBestWindow?.end);
+    const sunsetCandidateEnd = requiredTimestamp(geometry.sunsetGlowCandidateWindow?.end);
+
+    expect(geometry).toMatchObject({
+      elevationMeters: 1860,
+      elevationAvailable: true,
+      windowDerivationMethod: "solar_altitude_weather_v1",
+      solarCalculationResolutionMinutes: 1,
+    });
+    expect(sunriseCandidateStart).toBeLessThan(sunriseBestStart);
+    expect(sunriseBestStart).toBeLessThan(sunrise);
+    expect(sunrise).toBeLessThan(sunriseBestEnd);
+    expect(sunriseBestEnd).toBeLessThan(sunriseCandidateEnd);
+    expect(sunsetCandidateStart).toBeLessThan(sunsetBestStart);
+    expect(sunsetBestStart).toBeLessThan(sunset);
+    expect(sunset).toBeLessThan(sunsetBestEnd);
+    expect(sunsetBestEnd).toBeLessThan(sunsetCandidateEnd);
+  });
+
+  it("exposes direct solar altitude crossings and positions without fixed time offsets", () => {
+    const input = { ...huangshanInput, elevationMeters: 1860 };
+    const minusSix = getSolarAltitudeCrossing({
+      ...input,
+      altitudeDegrees: -6,
+      direction: "rising",
+    });
+    const plusTwo = getSolarAltitudeCrossing({
+      ...input,
+      altitudeDegrees: 2,
+      direction: "rising",
+    });
+    const solarPosition = getSolarPosition({
+      ...input,
+      timestamp: getSunTimes(input).sunrise ?? "",
+    });
+
+    expect(requiredTimestamp(minusSix.at)).toBeLessThan(requiredTimestamp(plusTwo.at));
+    expect(Math.abs(solarPosition.altitudeDegrees)).toBeLessThan(1);
+    expect(solarPosition.azimuthDegrees).toBeGreaterThanOrEqual(0);
+    expect(solarPosition.azimuthDegrees).toBeLessThanOrEqual(360);
+  });
+
+  it("uses observer elevation in sun and glow geometry calculations", () => {
+    const seaLevel = getSunTimes({ ...huangshanInput, elevationMeters: 0 });
+    const summit = getSunTimes({ ...huangshanInput, elevationMeters: 1860 });
+    const summitGeometry = getSolarGlowGeometry({ ...huangshanInput, elevationMeters: 1860 });
+
+    expect(requiredTimestamp(seaLevel.sunrise)).not.toBe(requiredTimestamp(summit.sunrise));
+    expect(summitGeometry.elevationMeters).toBe(1860);
+    expect(summitGeometry.elevationAvailable).toBe(true);
+  });
+
+  it("marks polar solar-altitude glow windows unavailable when crossings do not occur", () => {
+    const geometry = getSolarGlowGeometry({
+      latitudeWgs84: 78.2232,
+      longitudeWgs84: 15.6469,
+      date: "2026-12-21",
+      timezone: "Arctic/Longyearbyen",
+      elevationMeters: 0,
+    });
+
+    expect(geometry.sunriseGlowCandidateWindow).toBeUndefined();
+    expect(geometry.sunriseGlowBestWindow).toBeUndefined();
+    expect(geometry.sunsetGlowCandidateWindow).toBeUndefined();
+    expect(geometry.sunsetGlowBestWindow).toBeUndefined();
+    expect(geometry.sunriseAltitudeCrossings.every((crossing) => crossing.at === undefined)).toBe(
+      true,
+    );
+    expect(geometry.sunsetAltitudeCrossings.every((crossing) => crossing.at === undefined)).toBe(
+      true,
+    );
   });
 
   it("maps moon phase fractions to Simplified Chinese labels", () => {

@@ -688,6 +688,8 @@ export type MoonInfo = {
 export type AstroSummary = {
   readonly date: string;
   readonly timezone: string;
+  readonly elevationMeters?: number | null;
+  readonly elevationAvailable?: boolean;
   readonly sunrise?: string;
   readonly sunset?: string;
   readonly solarNoon?: string;
@@ -699,6 +701,18 @@ export type AstroSummary = {
   readonly nauticalDusk?: string;
   readonly astronomicalDawn?: string;
   readonly astronomicalDusk?: string;
+  readonly solarCalculationResolutionMinutes?: number;
+  readonly glowWindowDerivationMethod?: string;
+  readonly sunriseAltitudeCrossings?: readonly SolarAltitudeCrossingSummary[];
+  readonly sunsetAltitudeCrossings?: readonly SolarAltitudeCrossingSummary[];
+  readonly sunriseGlowCandidateStartAt?: string;
+  readonly sunriseGlowCandidateEndAt?: string;
+  readonly sunriseGlowBestStartAt?: string;
+  readonly sunriseGlowBestEndAt?: string;
+  readonly sunsetGlowCandidateStartAt?: string;
+  readonly sunsetGlowCandidateEndAt?: string;
+  readonly sunsetGlowBestStartAt?: string;
+  readonly sunsetGlowBestEndAt?: string;
   readonly astronomicalNightStart?: string;
   readonly astronomicalNightEnd?: string;
   readonly moonPhase: number;
@@ -727,6 +741,12 @@ export type AstroSummary = {
   readonly milkyWayNoteZh?: string;
 };
 
+export type SolarAltitudeCrossingSummary = {
+  readonly altitudeDegrees: number;
+  readonly direction: "rising" | "setting";
+  readonly at?: string;
+};
+
 export type AstroCalculationBasis = {
   readonly ephemerisFileName?: string;
   readonly coordinateSystem: "WGS84";
@@ -741,6 +761,7 @@ export type AstroCalculationBasis = {
     readonly moonlessWindow?: number;
     readonly moonImpact?: number;
     readonly galacticCenter?: number;
+    readonly solarAltitudeGlow?: number;
   };
 };
 
@@ -899,7 +920,13 @@ export type CloudSeaWindowPrecipitationTiming =
   | "outside_window"
   | "unknown";
 
-export type CloudSeaWindowRainImpactLevel = "none" | "trace" | "low" | "medium" | "high" | "unknown";
+export type CloudSeaWindowRainImpactLevel =
+  | "none"
+  | "trace"
+  | "low"
+  | "medium"
+  | "high"
+  | "unknown";
 
 export type CloudSeaWindowRainImpact = {
   readonly timing: CloudSeaWindowPrecipitationTiming;
@@ -1118,6 +1145,8 @@ export type GlowPostRainOpeningChance = "low" | "medium" | "high";
 export type GlowWindowRainRisk = "low" | "medium" | "high";
 
 export type GlowWindowType =
+  | "sunrise_glow"
+  | "sunset_glow"
   | "pre_dawn_glow"
   | "sunrise_core"
   | "morning_warm_light"
@@ -1153,10 +1182,21 @@ export type GlowAssessment = {
 
 export type GlowWindow = {
   readonly type: GlowWindowType;
+  readonly phase?: "sunrise" | "sunset";
   readonly labelZh: string;
   readonly date?: string;
   readonly start: string;
   readonly end: string;
+  readonly eventAt?: string;
+  readonly candidateStartAt?: string;
+  readonly candidateEndAt?: string;
+  readonly candidateStartAltitudeDegrees?: number;
+  readonly candidateEndAltitudeDegrees?: number;
+  readonly bestStartAltitudeDegrees?: number;
+  readonly bestEndAltitudeDegrees?: number;
+  readonly solarCalculationResolutionMinutes?: number;
+  readonly weatherResolutionMinutes?: number;
+  readonly windowDerivationMethod?: string;
   readonly score: number;
   readonly conditionScore?: number;
   readonly practicalScore?: number;
@@ -1171,6 +1211,34 @@ export type GlowWindow = {
   readonly glowWindowRainRisk?: GlowWindowRainRisk;
   readonly riskTags: readonly string[];
   readonly noteZh: string;
+};
+
+export type GlowCanonicalWindow = {
+  readonly phase: "sunrise" | "sunset";
+  readonly date: string;
+  readonly timezone: string;
+  readonly eventAt?: string;
+  readonly candidateStartAt?: string;
+  readonly candidateEndAt?: string;
+  readonly bestStartAt?: string;
+  readonly bestEndAt?: string;
+  readonly probabilityScore?: number;
+  readonly confidence?: number;
+  readonly windowDerivationMethod: string;
+  readonly weatherResolutionMinutes?: number;
+  readonly solarCalculationResolutionMinutes?: number;
+  readonly elevationMeters?: number | null;
+  readonly elevationAvailable?: boolean;
+  readonly unavailableReason?: string;
+};
+
+export type GlowWindowDiagnostic = GlowCanonicalWindow & {
+  readonly target: "glow";
+  readonly latitudeValid: boolean;
+  readonly longitudeValid: boolean;
+  readonly sunriseAt?: string;
+  readonly sunsetAt?: string;
+  readonly solarAltitudeCrossings?: readonly SolarAltitudeCrossingSummary[];
 };
 
 export type GlowBestTarget = "sunrise" | "sunset" | "both" | "none";
@@ -1267,6 +1335,10 @@ export type GlowAnalysisResult = GlowAssessment & {
   readonly bestGlowWindows: readonly GlowWindow[];
   readonly watchableGlowWindows: readonly GlowWindow[];
   readonly notRecommendedGlowWindows: readonly GlowWindow[];
+  readonly canonicalWindows: readonly GlowCanonicalWindow[];
+  readonly sunriseGlowWindow?: GlowCanonicalWindow;
+  readonly sunsetGlowWindow?: GlowCanonicalWindow;
+  readonly diagnostics: readonly GlowWindowDiagnostic[];
   readonly dailyGlow: readonly DailyGlow[];
   readonly cloudLayerEvidence: readonly GlowEvidenceItem[];
   readonly visibilityEvidence: readonly GlowEvidenceItem[];

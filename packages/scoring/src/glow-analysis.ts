@@ -7,7 +7,9 @@ import type {
   GlowAnalysisResult,
   GlowAssessmentLabels,
   GlowBackupPlan,
+  GlowCanonicalWindow,
   GlowEvidenceItem,
+  GlowWindowDiagnostic,
   GlowPostRainOpeningChance,
   GlowRecommendationLabel,
   GlowTerrainObstructionAssessment,
@@ -16,6 +18,7 @@ import type {
   GlowWindowType,
   NormalizedHourlyWeather,
 } from "@photo-weather/shared";
+import { glowSolarAltitudeGeometryConfig } from "@photo-weather/shared";
 import { addHoursInTimezone } from "@photo-weather/calendar";
 import { averageHourly, averageWeightedScore, clampScore } from "./helpers.js";
 
@@ -72,7 +75,12 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
       rainOverlapsWindow: components.rainOverlapsWindow,
       postRainOpeningChance: components.postRainOpeningChance,
       glowWindowRainRisk: components.glowWindowRainRisk,
-      riskTags: buildGlowWindowRiskTags(input, candidate.weatherWindow, candidate.phase, components),
+      riskTags: buildGlowWindowRiskTags(
+        input,
+        candidate.weatherWindow,
+        candidate.phase,
+        components,
+      ),
       noteZh: buildGlowWindowNote(candidate.phase, candidate.type, components),
     };
   });
@@ -103,8 +111,10 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
   const sunriseGlowScore = phaseScore(candidates, "sunrise");
   const sunsetGlowScore = phaseScore(candidates, "sunset");
   const lowCloudObstructionRisk = calculateLowCloudObstructionRisk(input, candidates);
-  const colorCarrierScore = maxCandidateScore(candidates, (candidate) => candidate.colorCarrierScore, () =>
-    scoreColorCarrier(candidateWeatherOrAll(input, candidates)),
+  const colorCarrierScore = maxCandidateScore(
+    candidates,
+    (candidate) => candidate.colorCarrierScore,
+    () => scoreColorCarrier(candidateWeatherOrAll(input, candidates)),
   );
   const precipitationDisruptionRisk = maxCandidateScore(
     candidates,
@@ -138,6 +148,12 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
       : Math.min(rawGlowTravelScore, watchableGlowWindows.length > 0 ? 54 : 38);
   const missingDataNotes = buildGlowMissingDataNotes(input);
   const confidence = calculateGlowConfidenceScore(input, missingDataNotes);
+  const canonicalWindows = buildCanonicalGlowWindows(input, candidates, {
+    sunriseGlowScore,
+    sunsetGlowScore,
+    confidence,
+  });
+  const diagnostics = buildGlowWindowDiagnostics(input, canonicalWindows);
   const labels = buildGlowLabels(
     sunriseGlowScore,
     sunsetGlowScore,
@@ -171,6 +187,10 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
     bestGlowWindows: bestGlowWindows.map(toPublicGlowWindow),
     watchableGlowWindows: watchableGlowWindows.map(toPublicGlowWindow),
     notRecommendedGlowWindows: notRecommendedGlowWindows.map(toPublicGlowWindow),
+    canonicalWindows,
+    sunriseGlowWindow: canonicalWindows.find((window) => window.phase === "sunrise"),
+    sunsetGlowWindow: canonicalWindows.find((window) => window.phase === "sunset"),
+    diagnostics,
     dailyGlow: buildDailyGlow(input, candidates),
     cloudLayerEvidence: buildCloudLayerEvidence(input, candidates),
     visibilityEvidence: buildVisibilityEvidence(input, candidates),
@@ -202,7 +222,10 @@ export function buildGlowForecastScore(
       .slice(0, 1),
   ];
   const risks = analysis.riskReasons
-    .filter((reason) => reason.includes(phaseKeyword) || !reason.includes("朝霞") && !reason.includes("晚霞"))
+    .filter(
+      (reason) =>
+        reason.includes(phaseKeyword) || (!reason.includes("朝霞") && !reason.includes("晚霞")),
+    )
     .slice(0, 3);
 
   return {
@@ -249,34 +272,33 @@ function buildSunriseCandidates(
   astro: AstroSummary,
   forecastRange: ForecastTimeRange,
 ): readonly GlowCandidate[] {
-  if (!astro.sunrise) {
+  if (!astro.sunrise || !astro.sunriseGlowBestStartAt || !astro.sunriseGlowBestEndAt) {
     return [];
   }
 
   return [
     buildCandidate(input, forecastRange, {
       phase: "sunrise",
-      type: "pre_dawn_glow",
-      labelZh: "朝霞预备窗口",
+      type: "sunrise_glow",
+      labelZh: "预测朝霞最佳窗口",
       date: astro.date,
-      start: astro.civilDawn ?? shiftAstroTime(astro, astro.sunrise, -0.75),
-      end: astro.sunrise,
-    }),
-    buildCandidate(input, forecastRange, {
-      phase: "sunrise",
-      type: "sunrise_core",
-      labelZh: "朝霞核心窗口",
-      date: astro.date,
-      start: shiftAstroTime(astro, astro.sunrise, -25 / 60),
-      end: shiftAstroTime(astro, astro.sunrise, 25 / 60),
-    }),
-    buildCandidate(input, forecastRange, {
-      phase: "sunrise",
-      type: "morning_warm_light",
-      labelZh: "日出暖光窗口",
-      date: astro.date,
-      start: astro.sunrise,
-      end: shiftAstroTime(astro, astro.sunrise, 75 / 60),
+      start: astro.sunriseGlowBestStartAt,
+      end: astro.sunriseGlowBestEndAt,
+      eventAt: astro.sunrise,
+      candidateStartAt: astro.sunriseGlowCandidateStartAt,
+      candidateEndAt: astro.sunriseGlowCandidateEndAt,
+      candidateStartAltitudeDegrees:
+        glowSolarAltitudeGeometryConfig.sunrise.candidate.startAltitudeDegrees,
+      candidateEndAltitudeDegrees:
+        glowSolarAltitudeGeometryConfig.sunrise.candidate.endAltitudeDegrees,
+      bestStartAltitudeDegrees: glowSolarAltitudeGeometryConfig.sunrise.best.startAltitudeDegrees,
+      bestEndAltitudeDegrees: glowSolarAltitudeGeometryConfig.sunrise.best.endAltitudeDegrees,
+      solarCalculationResolutionMinutes:
+        astro.solarCalculationResolutionMinutes ??
+        glowSolarAltitudeGeometryConfig.solarCalculationResolutionMinutes,
+      weatherResolutionMinutes: estimateWeatherResolutionMinutes(input.hourlyWeather),
+      windowDerivationMethod:
+        astro.glowWindowDerivationMethod ?? glowSolarAltitudeGeometryConfig.windowDerivationMethod,
     }),
   ].filter((candidate): candidate is GlowCandidate => candidate !== null);
 }
@@ -286,61 +308,44 @@ function buildSunsetCandidates(
   astro: AstroSummary,
   forecastRange: ForecastTimeRange,
 ): readonly GlowCandidate[] {
-  if (!astro.sunset) {
+  if (!astro.sunset || !astro.sunsetGlowBestStartAt || !astro.sunsetGlowBestEndAt) {
     return [];
   }
 
   return [
     buildCandidate(input, forecastRange, {
       phase: "sunset",
-      type: "sunset_warm_light",
-      labelZh: "日落前暖光窗口",
+      type: "sunset_glow",
+      labelZh: "预测晚霞最佳窗口",
       date: astro.date,
-      start: shiftAstroTime(astro, astro.sunset, -75 / 60),
-      end: astro.sunset,
+      start: astro.sunsetGlowBestStartAt,
+      end: astro.sunsetGlowBestEndAt,
+      eventAt: astro.sunset,
+      candidateStartAt: astro.sunsetGlowCandidateStartAt,
+      candidateEndAt: astro.sunsetGlowCandidateEndAt,
+      candidateStartAltitudeDegrees:
+        glowSolarAltitudeGeometryConfig.sunset.candidate.startAltitudeDegrees,
+      candidateEndAltitudeDegrees:
+        glowSolarAltitudeGeometryConfig.sunset.candidate.endAltitudeDegrees,
+      bestStartAltitudeDegrees: glowSolarAltitudeGeometryConfig.sunset.best.startAltitudeDegrees,
+      bestEndAltitudeDegrees: glowSolarAltitudeGeometryConfig.sunset.best.endAltitudeDegrees,
+      solarCalculationResolutionMinutes:
+        astro.solarCalculationResolutionMinutes ??
+        glowSolarAltitudeGeometryConfig.solarCalculationResolutionMinutes,
+      weatherResolutionMinutes: estimateWeatherResolutionMinutes(input.hourlyWeather),
+      windowDerivationMethod:
+        astro.glowWindowDerivationMethod ?? glowSolarAltitudeGeometryConfig.windowDerivationMethod,
     }),
-    buildCandidate(input, forecastRange, {
-      phase: "sunset",
-      type: "sunset_core",
-      labelZh: "晚霞核心窗口",
-      date: astro.date,
-      start: shiftAstroTime(astro, astro.sunset, -25 / 60),
-      end: shiftAstroTime(astro, astro.sunset, 25 / 60),
-    }),
-    buildCandidate(input, forecastRange, {
-      phase: "sunset",
-      type: "afterglow",
-      labelZh: "霞光余晖窗口",
-      date: astro.date,
-      start: astro.sunset,
-      end: astro.civilDusk ?? shiftAstroTime(astro, astro.sunset, 0.75),
-    }),
-    ...(astro.civilDusk
-      ? [
-          buildCandidate(input, forecastRange, {
-            phase: "sunset",
-            type: "blue_hour_transition",
-            labelZh: "蓝调转场窗口",
-            date: astro.date,
-            start: astro.civilDusk,
-            end: astro.nauticalDusk ?? shiftAstroTime(astro, astro.civilDusk, 0.5),
-          }),
-        ]
-      : []),
   ].filter((candidate): candidate is GlowCandidate => candidate !== null);
 }
 
-function shiftAstroTime(astro: AstroSummary, time: string, hours: number): string {
-  return addHoursInTimezone(time, hours, astro.timezone);
+function toPublicGlowWindow(candidate: GlowCandidate): GlowWindow {
+  const { weatherWindow: _weatherWindow, ...window } = candidate;
+  return window;
 }
 
 function shiftForecastTime(input: ForecastCalculationInput, time: string, hours: number): string {
   return addHoursInTimezone(time, hours, input.calendarBasis.timezone);
-}
-
-function toPublicGlowWindow(candidate: GlowCandidate): GlowWindow {
-  const { phase: _phase, weatherWindow: _weatherWindow, ...window } = candidate;
-  return window;
 }
 
 function buildCandidate(
@@ -463,7 +468,13 @@ function scorePracticalGlowWindow(input: {
   readonly type: GlowWindowType;
 }): number {
   const lowCloudPenalty =
-    input.lowCloudRisk >= 90 ? 34 : input.lowCloudRisk >= 78 ? 24 : input.lowCloudRisk >= 65 ? 12 : 0;
+    input.lowCloudRisk >= 90
+      ? 34
+      : input.lowCloudRisk >= 78
+        ? 24
+        : input.lowCloudRisk >= 65
+          ? 12
+          : 0;
   const rainPenalty =
     input.precipitationDisruptionRisk >= 85
       ? 30
@@ -489,14 +500,11 @@ function scorePracticalGlowWindow(input: {
   const rainOpeningBonus =
     input.postRainOpeningChance === "high" ? 7 : input.postRainOpeningChance === "medium" ? 4 : 0;
   const blueHourPenalty = input.type === "blue_hour_transition" ? 12 : 0;
-  const warmLightBonus =
-    input.type === "morning_warm_light" || input.type === "sunset_warm_light" ? 2 : 0;
 
   return clampScore(
     input.conditionScore +
       rainOpeningBonus +
       aerosolBonus +
-      warmLightBonus -
       lowCloudPenalty -
       rainPenalty -
       visibilityPenalty -
@@ -573,16 +581,15 @@ function scoreLowCloudObstructionRisk(
         ? 88 + (lowCloud - 90) * 0.6
         : lowCloud >= 75
           ? 76 + (lowCloud - 75) * 0.5
-        : lowCloud >= 50
-          ? 56 + (lowCloud - 50) * 0.95
-          : lowCloud >= 20
-            ? 28 + (lowCloud - 20) * 0.45
-            : lowCloud < 40
-            ? 18 + lowCloud * 0.45
-            : 38 + (lowCloud - 40) * 1.5;
+          : lowCloud >= 50
+            ? 56 + (lowCloud - 50) * 0.95
+            : lowCloud >= 20
+              ? 28 + (lowCloud - 20) * 0.45
+              : lowCloud < 40
+                ? 18 + lowCloud * 0.45
+                : 38 + (lowCloud - 40) * 1.5;
   const horizonAngle = horizonAngleForPhase(input, phase);
-  const horizonRisk =
-    typeof horizonAngle === "number" ? Math.max(0, horizonAngle - 7) * 2.2 : 5;
+  const horizonRisk = typeof horizonAngle === "number" ? Math.max(0, horizonAngle - 7) * 2.2 : 5;
   const directionRisk = hasBlockedDirection(input, phase) ? 16 : 0;
   const totalCloudRisk = cloudTotal > 90 && (lowCloud ?? 0) > 55 ? 10 : 0;
   const fogRisk = (visibility ?? 99) < 5 && humidity >= 92 ? 12 : fogOrMist ? 10 : 0;
@@ -661,19 +668,40 @@ function scoreAerosolAtmosphere(window: readonly NormalizedHourlyWeather[]): num
         : 0;
   const missingAodPenalty = aerosolOpticalDepth === undefined ? 4 : 0;
 
-  return clampScore(aodScore - pm25Penalty - pm10Penalty - dustPenalty - hazePenalty - missingAodPenalty);
+  return clampScore(
+    aodScore - pm25Penalty - pm10Penalty - dustPenalty - hazePenalty - missingAodPenalty,
+  );
 }
 
 function calculatePrecipitationDisruptionRisk(window: readonly NormalizedHourlyWeather[]): number {
-  const precipitationProbability = averageDefined(window, (hour) => hour.precipitationProbability) ?? 0;
+  const precipitationProbability =
+    averageDefined(window, (hour) => hour.precipitationProbability) ?? 0;
   const precipitation = averageDefined(window, (hour) => precipitationAmount(hour)) ?? 0;
-  const activeRainText = window.some((hour) => /(雨|雪|阵雨|rain|snow|shower)/i.test(hour.weatherTextZh ?? ""));
+  const activeRainText = window.some((hour) =>
+    /(雨|雪|阵雨|rain|snow|shower)/i.test(hour.weatherTextZh ?? ""),
+  );
   const riskLevel = strongestPrecipitationRisk(window);
   const amountRisk =
-    precipitation >= 5 ? 82 : precipitation >= 2 ? 68 : precipitation >= 0.5 ? 48 : precipitation > 0.1 ? 28 : 0;
-  const probabilityRisk = precipitationProbability >= 75 ? 70 : precipitationProbability >= 55 ? 52 : precipitationProbability >= 35 ? 28 : 0;
+    precipitation >= 5
+      ? 82
+      : precipitation >= 2
+        ? 68
+        : precipitation >= 0.5
+          ? 48
+          : precipitation > 0.1
+            ? 28
+            : 0;
+  const probabilityRisk =
+    precipitationProbability >= 75
+      ? 70
+      : precipitationProbability >= 55
+        ? 52
+        : precipitationProbability >= 35
+          ? 28
+          : 0;
   const textRisk = activeRainText ? 18 : 0;
-  const providerRisk = riskLevel === "high" ? 75 : riskLevel === "medium" ? 55 : riskLevel === "low" ? 30 : 0;
+  const providerRisk =
+    riskLevel === "high" ? 75 : riskLevel === "medium" ? 55 : riskLevel === "low" ? 30 : 0;
 
   return clampScore(Math.max(amountRisk, probabilityRisk, providerRisk) + textRisk);
 }
@@ -698,7 +726,9 @@ function precipitationAmount(hour: NormalizedHourlyWeather): number | undefined 
   return values.length > 0 ? Math.max(...values) : undefined;
 }
 
-function strongestPrecipitationRisk(window: readonly NormalizedHourlyWeather[]): "low" | "medium" | "high" | undefined {
+function strongestPrecipitationRisk(
+  window: readonly NormalizedHourlyWeather[],
+): "low" | "medium" | "high" | undefined {
   const levels = window.map((hour) => hour.precipitationRisk?.rainRiskLevel);
   if (levels.includes("high") || levels.includes("severe")) {
     return "high";
@@ -806,7 +836,7 @@ function phaseScore(candidates: readonly GlowCandidate[], phase: GlowPhase): num
   const second = sorted[1]?.score ?? best;
   const coreRainPenalty = phaseCandidates.some(
     (candidate) =>
-      (candidate.type === "sunrise_core" || candidate.type === "sunset_core") &&
+      (candidate.type === "sunrise_glow" || candidate.type === "sunset_glow") &&
       candidate.rainOverlapsWindow &&
       (candidate.precipitationDisruptionRisk ?? 0) >= 45,
   )
@@ -862,9 +892,7 @@ function isShootableGlowWindow(window: GlowCandidate): boolean {
   );
 }
 
-function strongestPostRainOpening(
-  candidates: readonly GlowCandidate[],
-): GlowPostRainOpeningChance {
+function strongestPostRainOpening(candidates: readonly GlowCandidate[]): GlowPostRainOpeningChance {
   if (candidates.some((candidate) => candidate.postRainOpeningChance === "high")) {
     return "high";
   }
@@ -884,6 +912,107 @@ function strongestRainRisk(candidates: readonly GlowCandidate[]): GlowWindowRain
   return "low";
 }
 
+function buildCanonicalGlowWindows(
+  input: ForecastCalculationInput,
+  candidates: readonly GlowCandidate[],
+  scores: {
+    readonly sunriseGlowScore: number;
+    readonly sunsetGlowScore: number;
+    readonly confidence: number;
+  },
+): readonly GlowCanonicalWindow[] {
+  return input.astroSummaries.flatMap((astro) => [
+    buildCanonicalGlowWindow(input, candidates, astro, "sunrise", {
+      probabilityScore: scores.sunriseGlowScore,
+      confidence: scores.confidence,
+    }),
+    buildCanonicalGlowWindow(input, candidates, astro, "sunset", {
+      probabilityScore: scores.sunsetGlowScore,
+      confidence: scores.confidence,
+    }),
+  ]);
+}
+
+function buildCanonicalGlowWindow(
+  input: ForecastCalculationInput,
+  candidates: readonly GlowCandidate[],
+  astro: AstroSummary,
+  phase: GlowPhase,
+  scores: {
+    readonly probabilityScore: number;
+    readonly confidence: number;
+  },
+): GlowCanonicalWindow {
+  const candidate = candidates.find((item) => item.date === astro.date && item.phase === phase);
+  const eventAt = phase === "sunrise" ? astro.sunrise : astro.sunset;
+  const candidateStartAt =
+    candidate?.candidateStartAt ??
+    (phase === "sunrise" ? astro.sunriseGlowCandidateStartAt : astro.sunsetGlowCandidateStartAt);
+  const candidateEndAt =
+    candidate?.candidateEndAt ??
+    (phase === "sunrise" ? astro.sunriseGlowCandidateEndAt : astro.sunsetGlowCandidateEndAt);
+  const bestStartAt =
+    candidate?.start ??
+    (phase === "sunrise" ? astro.sunriseGlowBestStartAt : astro.sunsetGlowBestStartAt);
+  const bestEndAt =
+    candidate?.end ??
+    (phase === "sunrise" ? astro.sunriseGlowBestEndAt : astro.sunsetGlowBestEndAt);
+  const hasGeometry = Boolean(candidateStartAt && candidateEndAt && bestStartAt && bestEndAt);
+
+  return {
+    phase,
+    date: astro.date,
+    timezone: astro.timezone,
+    eventAt,
+    candidateStartAt,
+    candidateEndAt,
+    bestStartAt: candidate ? bestStartAt : undefined,
+    bestEndAt: candidate ? bestEndAt : undefined,
+    probabilityScore: candidate ? scores.probabilityScore : undefined,
+    confidence: candidate ? scores.confidence : undefined,
+    windowDerivationMethod:
+      candidate?.windowDerivationMethod ??
+      astro.glowWindowDerivationMethod ??
+      glowSolarAltitudeGeometryConfig.windowDerivationMethod,
+    weatherResolutionMinutes:
+      candidate?.weatherResolutionMinutes ?? estimateWeatherResolutionMinutes(input.hourlyWeather),
+    solarCalculationResolutionMinutes:
+      candidate?.solarCalculationResolutionMinutes ??
+      astro.solarCalculationResolutionMinutes ??
+      glowSolarAltitudeGeometryConfig.solarCalculationResolutionMinutes,
+    elevationMeters: astro.elevationMeters ?? null,
+    elevationAvailable: astro.elevationAvailable ?? typeof astro.elevationMeters === "number",
+    unavailableReason: candidate
+      ? undefined
+      : !eventAt
+        ? "missing_astronomical_event"
+        : !hasGeometry
+          ? "missing_solar_altitude_crossing"
+          : "missing_weather_in_solar_geometry_window",
+  };
+}
+
+function buildGlowWindowDiagnostics(
+  input: ForecastCalculationInput,
+  canonicalWindows: readonly GlowCanonicalWindow[],
+): readonly GlowWindowDiagnostic[] {
+  return canonicalWindows.map((window) => {
+    const astro = input.astroSummaries.find((summary) => summary.date === window.date);
+    return {
+      ...window,
+      target: "glow",
+      latitudeValid: isValidCoordinate(input.place.coordinates.latitude, -90, 90),
+      longitudeValid: isValidCoordinate(input.place.coordinates.longitude, -180, 180),
+      sunriseAt: astro?.sunrise,
+      sunsetAt: astro?.sunset,
+      solarAltitudeCrossings:
+        window.phase === "sunrise"
+          ? astro?.sunriseAltitudeCrossings
+          : astro?.sunsetAltitudeCrossings,
+    };
+  });
+}
+
 function calculateGlowTravelScore(
   sunriseGlowScore: number,
   sunsetGlowScore: number,
@@ -894,10 +1023,14 @@ function calculateGlowTravelScore(
 ): number {
   const bestGlow = Math.max(sunriseGlowScore, sunsetGlowScore);
   const secondGlow = Math.min(sunriseGlowScore, sunsetGlowScore);
-  const visibilityScore = Math.max(visibilityColorQualityScore, scoreVisibilityColorQuality(input.hourlyWeather));
+  const visibilityScore = Math.max(
+    visibilityColorQualityScore,
+    scoreVisibilityColorQuality(input.hourlyWeather),
+  );
   const rainPenalty =
     precipitationDisruptionRisk >= 78 ? 16 : precipitationDisruptionRisk >= 58 ? 8 : 0;
-  const lowCloudPenalty = lowCloudObstructionRisk >= 82 ? 12 : lowCloudObstructionRisk >= 70 ? 6 : 0;
+  const lowCloudPenalty =
+    lowCloudObstructionRisk >= 82 ? 12 : lowCloudObstructionRisk >= 70 ? 6 : 0;
 
   return clampScore(
     bestGlow * 0.58 +
@@ -942,7 +1075,11 @@ function buildDailyGlow(
     const practicalScore = bestWindow
       ? rawPracticalScore
       : Math.min(rawPracticalScore, watchableWindow ? 54 : 38);
-    const colorCarrierScore = maxCandidateScore(dayWindows, (window) => window.colorCarrierScore, () => 0);
+    const colorCarrierScore = maxCandidateScore(
+      dayWindows,
+      (window) => window.colorCarrierScore,
+      () => 0,
+    );
     const lowCloudObstructionRisk = maxCandidateScore(
       dayWindows,
       (window) => window.lowCloudObstructionRisk,
@@ -1081,7 +1218,8 @@ function buildCloudLayerEvidence(
     {
       label: "高云",
       value: formatPercentValue(cloudHigh),
-      effect: cloudHigh !== undefined && cloudHigh >= 20 && cloudHigh <= 70 ? "positive" : "neutral",
+      effect:
+        cloudHigh !== undefined && cloudHigh >= 20 && cloudHigh <= 70 ? "positive" : "neutral",
       noteZh: "高云是霞光色彩的重要载体，高云极厚时仍可有颜色，但画面对比度会下降。",
     },
   ];
@@ -1110,7 +1248,8 @@ function buildVisibilityEvidence(
     {
       label: "湿度",
       value: formatPercentValue(humidity),
-      effect: humidity !== undefined && humidity > 92 && (visibility ?? 99) < 8 ? "risk" : "neutral",
+      effect:
+        humidity !== undefined && humidity > 92 && (visibility ?? 99) < 8 ? "risk" : "neutral",
       noteZh: "湿度本身不直接否定霞光，但高湿叠加低能见度会削弱颜色和反差。",
     },
     {
@@ -1140,8 +1279,7 @@ function buildGlowAerosolAssessment(
   const visibilityKm = averageDefined(weather, (hour) => hour.visibility);
   const aerosolScore = scoreAerosolAtmosphere(weather);
   const referenceHour = weather.find(
-    (hour) =>
-      hour.aerosolAvailability !== undefined && hour.aerosolAvailability !== "unavailable",
+    (hour) => hour.aerosolAvailability !== undefined && hour.aerosolAvailability !== "unavailable",
   );
   const availableFieldCount = [aerosolOpticalDepth550, pm25, pm10, dust].filter(
     (value) => value !== undefined,
@@ -1187,9 +1325,7 @@ function buildGlowAerosolAssessment(
   };
 }
 
-function buildAerosolEvidence(
-  assessment: GlowAerosolAssessment,
-): readonly GlowEvidenceItem[] {
+function buildAerosolEvidence(assessment: GlowAerosolAssessment): readonly GlowEvidenceItem[] {
   return [
     {
       label: "AOD 550nm",
@@ -1405,7 +1541,10 @@ function buildTerrainEvidence(input: ForecastCalculationInput): readonly GlowEvi
     },
     {
       label: "遮挡方向",
-      value: horizon.blockedDirectionsZh.length > 0 ? horizon.blockedDirectionsZh.join("、") : "暂无明显方向",
+      value:
+        horizon.blockedDirectionsZh.length > 0
+          ? horizon.blockedDirectionsZh.join("、")
+          : "暂无明显方向",
       effect: horizon.blockedDirectionsZh.length > 0 ? "neutral" : "positive",
       noteZh: horizon.obstructionNoteZh || missingTerrainNote,
     },
@@ -1443,7 +1582,9 @@ function buildGlowRiskReasons(
     reasons.push(missingSunTimesNote);
   }
 
-  return reasons.length > 0 ? reasons : ["未发现高等级霞光风险，仍需出行前复核最新天气和现场视野。"];
+  return reasons.length > 0
+    ? reasons
+    : ["未发现高等级霞光风险，仍需出行前复核最新天气和现场视野。"];
 }
 
 function buildGlowOpportunityReasons(
@@ -1453,8 +1594,14 @@ function buildGlowOpportunityReasons(
   const reasons: string[] = [];
   const sunrise = bestPhaseWindow(candidates, "sunrise");
   const sunset = bestPhaseWindow(candidates, "sunset");
-  const cloudMid = averageDefined(candidateWeatherOrAll(input, candidates), (hour) => hour.cloudMid);
-  const cloudHigh = averageDefined(candidateWeatherOrAll(input, candidates), (hour) => hour.cloudHigh);
+  const cloudMid = averageDefined(
+    candidateWeatherOrAll(input, candidates),
+    (hour) => hour.cloudMid,
+  );
+  const cloudHigh = averageDefined(
+    candidateWeatherOrAll(input, candidates),
+    (hour) => hour.cloudHigh,
+  );
 
   if (sunrise) {
     reasons.push(`朝霞最佳参考为${sunrise.labelZh}，评分 ${sunrise.score} 分。`);
@@ -1482,7 +1629,9 @@ function buildGlowTravelRecommendations(
     "晚霞：建议日落前 60 分钟观察云层移动，重点看太阳方向是否留有透光缝。",
     "如果低云遮挡太阳方向，优先寻找更高机位或转拍层峦、云缝光和局部暖色。",
     "如果高云较好但低云不足，适合长焦山脊、远山层次和城市远景。",
-    best >= 65 ? "当前霞光信号具备等待价值，但正式天气数据启用前不建议单点押注。" : "当前霞光信号偏保守，更适合把霞光作为顺带观察目标。",
+    best >= 65
+      ? "当前霞光信号具备等待价值，但正式天气数据启用前不建议单点押注。"
+      : "当前霞光信号偏保守，更适合把霞光作为顺带观察目标。",
   ];
 }
 
@@ -1520,6 +1669,12 @@ function buildGlowMissingDataNotes(input: ForecastCalculationInput): readonly st
     input.weatherMissingFields.includes("visibility") ||
     !input.hourlyWeather.some((hour) => typeof hour.visibility === "number");
   const hasSunTimes = input.astroSummaries.some((astro) => astro.sunrise || astro.sunset);
+  const hasGlowGeometry = input.astroSummaries.some(
+    (astro) =>
+      (astro.sunriseGlowBestStartAt && astro.sunriseGlowBestEndAt) ||
+      (astro.sunsetGlowBestStartAt && astro.sunsetGlowBestEndAt),
+  );
+  const hasWeatherRows = input.hourlyWeather.length > 0;
   const horizon = input.terrainAnalysis.horizonProfile;
   const terrainMissing =
     typeof horizon.sunriseHorizonAngle !== "number" ||
@@ -1533,6 +1688,12 @@ function buildGlowMissingDataNotes(input: ForecastCalculationInput): readonly st
   }
   if (!hasSunTimes) {
     notes.push(missingSunTimesNote);
+  }
+  if (hasSunTimes && !hasGlowGeometry) {
+    notes.push("已保留精确日出/日落时刻，但缺少太阳高度角穿越结果，暂不生成预测朝霞/晚霞窗口。");
+  }
+  if (!hasWeatherRows) {
+    notes.push("已保留可用天文事件，但缺少窗口内天气资料，暂不生成霞光概率或最佳窗口。");
   }
   if (terrainMissing) {
     notes.push(missingTerrainNote);
@@ -1556,6 +1717,11 @@ function calculateGlowConfidenceScore(
     input.weatherMissingFields.includes("visibility") ||
     !input.hourlyWeather.some((hour) => typeof hour.visibility === "number");
   const hasSunTimes = input.astroSummaries.some((astro) => astro.sunrise || astro.sunset);
+  const hasGlowGeometry = input.astroSummaries.some(
+    (astro) =>
+      (astro.sunriseGlowBestStartAt && astro.sunriseGlowBestEndAt) ||
+      (astro.sunsetGlowBestStartAt && astro.sunsetGlowBestEndAt),
+  );
   const horizon = input.terrainAnalysis.horizonProfile;
   const terrainMissing =
     typeof horizon.sunriseHorizonAngle !== "number" ||
@@ -1568,6 +1734,12 @@ function calculateGlowConfidenceScore(
     confidenceScore -= 15;
   }
   if (!hasSunTimes) {
+    confidenceScore -= 25;
+  }
+  if (hasSunTimes && !hasGlowGeometry) {
+    confidenceScore -= 22;
+  }
+  if (input.hourlyWeather.length === 0) {
     confidenceScore -= 25;
   }
   if (terrainMissing) {
@@ -1678,7 +1850,10 @@ function buildGlowWindowRiskTags(
   if (components.precipitationDisruptionRisk >= 45) {
     tags.push("降水干扰");
   }
-  if (components.postRainOpeningChance === "medium" || components.postRainOpeningChance === "high") {
+  if (
+    components.postRainOpeningChance === "medium" ||
+    components.postRainOpeningChance === "high"
+  ) {
     tags.push("雨后短暂开口");
   }
   if (components.terrain < 62 || hasBlockedDirection(input, phase)) {
@@ -1777,6 +1952,33 @@ function weatherForWindow(
   });
 }
 
+function estimateWeatherResolutionMinutes(
+  hourlyWeather: readonly NormalizedHourlyWeather[],
+): number {
+  const timestamps = hourlyWeather
+    .map((hour) => Date.parse(hour.time))
+    .filter((timestamp) => Number.isFinite(timestamp))
+    .sort((left, right) => left - right);
+  const diffs = timestamps
+    .slice(1)
+    .map((timestamp, index) => timestamp - timestamps[index]!)
+    .filter((diff) => diff > 0);
+
+  if (diffs.length === 0) {
+    return glowSolarAltitudeGeometryConfig.weatherResolutionMinutes;
+  }
+
+  const sortedDiffs = [...diffs].sort((left, right) => left - right);
+  const medianDiff = sortedDiffs[Math.floor(sortedDiffs.length / 2)];
+  return medianDiff
+    ? Math.max(1, Math.round(medianDiff / 60_000))
+    : glowSolarAltitudeGeometryConfig.weatherResolutionMinutes;
+}
+
+function isValidCoordinate(value: number, min: number, max: number): boolean {
+  return Number.isFinite(value) && value >= min && value <= max;
+}
+
 function averageDefined(
   window: readonly NormalizedHourlyWeather[],
   selector: (hour: NormalizedHourlyWeather) => number | null | undefined,
@@ -1798,7 +2000,10 @@ function candidateWeatherOrAll(
   return weather.length > 0 ? weather : input.hourlyWeather;
 }
 
-function horizonAngleForPhase(input: ForecastCalculationInput, phase: GlowPhase): number | undefined {
+function horizonAngleForPhase(
+  input: ForecastCalculationInput,
+  phase: GlowPhase,
+): number | undefined {
   return phase === "sunrise"
     ? input.terrainAnalysis.horizonProfile.sunriseHorizonAngle
     : input.terrainAnalysis.horizonProfile.sunsetHorizonAngle;
@@ -1889,15 +2094,11 @@ function effectFromScore(score: number): CloudSeaEvidenceEffect {
 }
 
 function formatPercentValue(value: number | undefined): string {
-  return typeof value === "number" && Number.isFinite(value)
-    ? `${Math.round(value)}%`
-    : "暂缺数据";
+  return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value)}%` : "暂缺数据";
 }
 
 function formatDecimalValue(value: number | null | undefined, digits: number): string {
-  return typeof value === "number" && Number.isFinite(value)
-    ? value.toFixed(digits)
-    : "暂缺数据";
+  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "暂缺数据";
 }
 
 function formatConcentrationValue(value: number | null | undefined): string {

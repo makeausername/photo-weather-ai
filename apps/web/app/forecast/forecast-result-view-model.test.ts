@@ -656,6 +656,8 @@ const baseResult: ForecastCalculationResult = {
     ],
     watchableGlowWindows: [],
     notRecommendedGlowWindows: [],
+    canonicalWindows: [],
+    diagnostics: [],
     dailyGlow: [
       {
         date: "2026-05-20",
@@ -1301,6 +1303,14 @@ const baseResult: ForecastCalculationResult = {
       solarNoon: "2026-05-20T12:05:00+08:00",
       civilDawn: "2026-05-20T04:50:00+08:00",
       civilDusk: "2026-05-20T19:21:00+08:00",
+      sunriseGlowCandidateStartAt: "2026-05-20T04:30:00+08:00",
+      sunriseGlowCandidateEndAt: "2026-05-20T05:40:00+08:00",
+      sunriseGlowBestStartAt: "2026-05-20T04:45:00+08:00",
+      sunriseGlowBestEndAt: "2026-05-20T05:25:00+08:00",
+      sunsetGlowCandidateStartAt: "2026-05-20T17:30:00+08:00",
+      sunsetGlowCandidateEndAt: "2026-05-20T19:30:00+08:00",
+      sunsetGlowBestStartAt: "2026-05-20T17:50:00+08:00",
+      sunsetGlowBestEndAt: "2026-05-20T19:05:00+08:00",
       nauticalDawn: "2026-05-20T04:20:00+08:00",
       nauticalDusk: "2026-05-20T19:52:00+08:00",
       astronomicalDawn: "2026-05-20T03:48:00+08:00",
@@ -1341,6 +1351,14 @@ const baseResult: ForecastCalculationResult = {
       solarNoon: "2026-05-21T12:05:00+08:00",
       civilDawn: "2026-05-21T04:49:00+08:00",
       civilDusk: "2026-05-21T19:22:00+08:00",
+      sunriseGlowCandidateStartAt: "2026-05-21T04:29:00+08:00",
+      sunriseGlowCandidateEndAt: "2026-05-21T05:39:00+08:00",
+      sunriseGlowBestStartAt: "2026-05-21T04:44:00+08:00",
+      sunriseGlowBestEndAt: "2026-05-21T05:24:00+08:00",
+      sunsetGlowCandidateStartAt: "2026-05-21T17:31:00+08:00",
+      sunsetGlowCandidateEndAt: "2026-05-21T19:31:00+08:00",
+      sunsetGlowBestStartAt: "2026-05-21T17:51:00+08:00",
+      sunsetGlowBestEndAt: "2026-05-21T19:06:00+08:00",
       nauticalDawn: "2026-05-21T04:19:00+08:00",
       nauticalDusk: "2026-05-21T19:53:00+08:00",
       astronomicalDawn: "2026-05-21T03:47:00+08:00",
@@ -6316,7 +6334,11 @@ describe("forecast result target-aware view model", () => {
         ...base.glowAnalysis,
         sunriseGlowScore: 69,
         bestGlowWindow: sunriseWindow,
-        bestGlowWindows: [sunriseWindow, sunsetWindow, ...base.glowAnalysis.bestGlowWindows.slice(2)],
+        bestGlowWindows: [
+          sunriseWindow,
+          sunsetWindow,
+          ...base.glowAnalysis.bestGlowWindows.slice(2),
+        ],
         dailyGlow: base.glowAnalysis.dailyGlow.map((day) =>
           day.date === "2026-05-20"
             ? {
@@ -6735,10 +6757,12 @@ describe("forecast result target-aware view model", () => {
       }),
     );
 
-    expect(html).toContain("朝霞准备窗口");
-    expect(html).toContain("朝霞核心窗口");
-    expect(html).toContain("晚霞准备窗口");
-    expect(html).toContain("晚霞核心窗口");
+    expect(html).toContain("预测朝霞最佳窗口");
+    expect(html).toContain("预测晚霞最佳窗口");
+    expect(html).not.toContain("朝霞准备窗口");
+    expect(html).not.toContain("朝霞核心窗口");
+    expect(html).not.toContain("晚霞准备窗口");
+    expect(html).not.toContain("晚霞核心窗口");
     expect(html).toContain("普通时段");
     expect(countOccurrences(html, 'data-professional-hourly-shared="true"')).toBe(1);
     expect(countOccurrences(html, 'data-cloud-sea-professional-table-scroll="true"')).toBe(1);
@@ -6802,7 +6826,8 @@ describe("forecast result target-aware view model", () => {
         bestGlowWindows: [
           ...base.glowAnalysis.bestGlowWindows,
           {
-            type: "morning_warm_light",
+            type: "sunrise_glow",
+            phase: "sunrise",
             labelZh: "朝霞备选窗口",
             date: "2026-05-21",
             start: "2026-05-21T04:40:00+08:00",
@@ -6814,7 +6839,8 @@ describe("forecast result target-aware view model", () => {
         ],
         watchableGlowWindows: [
           {
-            type: "afterglow",
+            type: "sunset_glow",
+            phase: "sunset",
             labelZh: "日落后余晖",
             date: "2026-05-20",
             start: "2026-05-20T19:02:00+08:00",
@@ -6827,7 +6853,8 @@ describe("forecast result target-aware view model", () => {
         ],
         notRecommendedGlowWindows: [
           {
-            type: "sunrise",
+            type: "sunrise_glow",
+            phase: "sunrise",
             labelZh: "朝霞",
             date: "2026-05-20",
             start: "2026-05-20T04:30:00+08:00",

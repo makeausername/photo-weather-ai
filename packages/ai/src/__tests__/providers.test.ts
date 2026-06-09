@@ -1671,6 +1671,8 @@ const forecastResultFixture: ForecastCalculationResult = {
     ],
     watchableGlowWindows: [],
     notRecommendedGlowWindows: [],
+    canonicalWindows: [],
+    diagnostics: [],
     dailyGlow: [
       {
         date: "2026-05-21",

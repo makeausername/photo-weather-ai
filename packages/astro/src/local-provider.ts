@@ -4,6 +4,9 @@ import {
   getMoonIllumination,
   getMoonPhase,
   getMoonTimes,
+  getSolarAltitudeCrossing,
+  getSolarGlowGeometry,
+  getSolarPosition,
   getSunTimes,
   getTwilightTimes,
 } from "./calculations.js";
@@ -18,6 +21,11 @@ import type {
   MoonIllumination,
   MoonPhase,
   MoonTimes,
+  SolarAltitudeCrossing,
+  SolarAltitudeCrossingInput,
+  SolarGlowGeometry,
+  SolarPosition,
+  SolarPositionInput,
   SunTimes,
   TwilightTimes,
 } from "./types.js";
@@ -29,6 +37,20 @@ export class LocalAstroProvider implements AstroProvider {
 
   async getTwilightTimes(input: AstroInput): Promise<TwilightTimes> {
     return getTwilightTimes(input);
+  }
+
+  async getSolarPosition(input: SolarPositionInput): Promise<SolarPosition> {
+    return getSolarPosition(input);
+  }
+
+  async getSolarAltitudeCrossing(
+    input: SolarAltitudeCrossingInput,
+  ): Promise<SolarAltitudeCrossing> {
+    return getSolarAltitudeCrossing(input);
+  }
+
+  async getSolarGlowGeometry(input: AstroInput): Promise<SolarGlowGeometry> {
+    return getSolarGlowGeometry(input);
   }
 
   async getMoonPhase(input: AstroInput): Promise<MoonPhase> {

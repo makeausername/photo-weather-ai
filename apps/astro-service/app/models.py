@@ -33,6 +33,14 @@ class DailySun(BaseModel):
     astronomicalDusk: str | None = None
     sunriseAzimuth: float | None = None
     sunsetAzimuth: float | None = None
+    sunriseGlowCandidateStart: str | None = None
+    sunriseGlowCandidateEnd: str | None = None
+    sunriseGlowBestStart: str | None = None
+    sunriseGlowBestEnd: str | None = None
+    sunsetGlowCandidateStart: str | None = None
+    sunsetGlowCandidateEnd: str | None = None
+    sunsetGlowBestStart: str | None = None
+    sunsetGlowBestEnd: str | None = None
 
 
 class MoonAltitudeSample(BaseModel):

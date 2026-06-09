@@ -626,7 +626,11 @@ async function calculateForecastResult(
   astroServiceClient: AstroServiceClientLike,
   astroServiceConfig: AstroServiceConfig,
 ): Promise<ForecastCalculationResult> {
-  if (query.target === "astro" && astroServiceConfig.enabled && !astroServiceConfig.configuredUrl) {
+  const shouldUseAstroService =
+    astroServiceConfig.enabled &&
+    (query.target === "astro" || query.target === "glow" || query.target === "general");
+
+  if (shouldUseAstroService && !astroServiceConfig.configuredUrl) {
     throw new Error(astroServiceUrlMissingMessage);
   }
 
@@ -709,11 +713,7 @@ async function calculateForecastResult(
     terrainAnalysis,
   });
 
-  if (query.target !== "astro") {
-    return calculateForecast(calculationInput);
-  }
-
-  if (!astroServiceConfig.enabled) {
+  if (!shouldUseAstroService) {
     return calculateForecast(calculationInput);
   }
 

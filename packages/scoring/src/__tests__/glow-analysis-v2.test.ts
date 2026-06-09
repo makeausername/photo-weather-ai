@@ -149,6 +149,55 @@ function firstAstro(input: ForecastCalculationInput): AstroSummary & {
   return astro as AstroSummary & { readonly sunrise: string; readonly sunset: string };
 }
 
+function withFirstAstro(
+  input: ForecastCalculationInput,
+  patch: Partial<AstroSummary>,
+): ForecastCalculationInput {
+  return {
+    ...input,
+    astroSummaries: input.astroSummaries.map((astro, index) =>
+      index === 0 ? { ...astro, ...patch } : astro,
+    ),
+  };
+}
+
+function firstAstroWithGlowGeometry(input: ForecastCalculationInput): AstroSummary & {
+  readonly sunrise: string;
+  readonly sunset: string;
+  readonly sunriseGlowCandidateStartAt: string;
+  readonly sunriseGlowCandidateEndAt: string;
+  readonly sunriseGlowBestStartAt: string;
+  readonly sunriseGlowBestEndAt: string;
+  readonly sunsetGlowCandidateStartAt: string;
+  readonly sunsetGlowCandidateEndAt: string;
+  readonly sunsetGlowBestStartAt: string;
+  readonly sunsetGlowBestEndAt: string;
+} {
+  const astro = firstAstro(input);
+  if (
+    !astro.sunriseGlowCandidateStartAt ||
+    !astro.sunriseGlowCandidateEndAt ||
+    !astro.sunriseGlowBestStartAt ||
+    !astro.sunriseGlowBestEndAt ||
+    !astro.sunsetGlowCandidateStartAt ||
+    !astro.sunsetGlowCandidateEndAt ||
+    !astro.sunsetGlowBestStartAt ||
+    !astro.sunsetGlowBestEndAt
+  ) {
+    throw new Error("mock glow tests require solar-altitude glow geometry");
+  }
+  return astro as ReturnType<typeof firstAstro> & {
+    readonly sunriseGlowCandidateStartAt: string;
+    readonly sunriseGlowCandidateEndAt: string;
+    readonly sunriseGlowBestStartAt: string;
+    readonly sunriseGlowBestEndAt: string;
+    readonly sunsetGlowCandidateStartAt: string;
+    readonly sunsetGlowCandidateEndAt: string;
+    readonly sunsetGlowBestStartAt: string;
+    readonly sunsetGlowBestEndAt: string;
+  };
+}
+
 function allGlowWindows(input: ForecastCalculationInput) {
   const analysis = calculateGlowAnalysis(input);
   return [
@@ -174,9 +223,7 @@ describe("glow analysis v2", () => {
     expect(favorableAnalysis.colorCarrierScore).toBeGreaterThan(
       noCarrierAnalysis.colorCarrierScore,
     );
-    expect(favorableAnalysis.sunriseGlowScore).toBeGreaterThan(
-      noCarrierAnalysis.sunriseGlowScore,
-    );
+    expect(favorableAnalysis.sunriseGlowScore).toBeGreaterThan(noCarrierAnalysis.sunriseGlowScore);
   });
 
   it("raises low cloud obstruction and lowers practical score when low cloud is excessive", () => {
@@ -262,23 +309,91 @@ describe("glow analysis v2", () => {
     );
   });
 
-  it("builds deterministic morning and evening glow window classes with timezone", () => {
+  it("builds deterministic solar-altitude morning and evening glow windows with timezone", () => {
     const input = favorableGlowInput();
+    const astro = firstAstroWithGlowGeometry(input);
     const windows = allGlowWindows(input);
     const types = windows.map((window) => window.type);
-
-    expect(types).toEqual(
-      expect.arrayContaining([
-        "pre_dawn_glow",
-        "sunrise_core",
-        "morning_warm_light",
-        "sunset_warm_light",
-        "sunset_core",
-        "afterglow",
-      ]),
+    const sunriseWindow = windows.find(
+      (window) => window.type === "sunrise_glow" && window.date === astro.date,
     );
+    const sunsetWindow = windows.find(
+      (window) => window.type === "sunset_glow" && window.date === astro.date,
+    );
+
+    expect(types).toEqual(expect.arrayContaining(["sunrise_glow", "sunset_glow"]));
+    for (const legacyType of [
+      "pre_dawn_glow",
+      "sunrise_core",
+      "morning_warm_light",
+      "sunset_warm_light",
+      "sunset_core",
+      "afterglow",
+    ]) {
+      expect(types).not.toContain(legacyType);
+    }
+    expect(sunriseWindow).toBeDefined();
+    expect(sunsetWindow).toBeDefined();
+    if (!sunriseWindow || !sunsetWindow) {
+      throw new Error("expected canonical sunrise and sunset glow windows");
+    }
+    expect(sunriseWindow.phase).toBe("sunrise");
+    expect(sunsetWindow.phase).toBe("sunset");
+    expect(sunriseWindow.start).toBe(astro.sunriseGlowBestStartAt);
+    expect(sunriseWindow.end).toBe(astro.sunriseGlowBestEndAt);
+    expect(sunsetWindow.start).toBe(astro.sunsetGlowBestStartAt);
+    expect(sunsetWindow.end).toBe(astro.sunsetGlowBestEndAt);
+    expect(Date.parse(sunriseWindow.end)).not.toBe(Date.parse(shiftMinutes(astro.sunrise, 75)));
+    expect(Date.parse(sunsetWindow.start)).not.toBe(Date.parse(shiftMinutes(astro.sunset, -75)));
+    expect(Date.parse(astro.sunriseGlowCandidateStartAt)).toBeLessThan(
+      Date.parse(sunriseWindow.start),
+    );
+    expect(Date.parse(sunriseWindow.end)).toBeLessThan(Date.parse(astro.sunriseGlowCandidateEndAt));
+    expect(Date.parse(astro.sunsetGlowCandidateStartAt)).toBeLessThan(
+      Date.parse(sunsetWindow.start),
+    );
+    expect(Date.parse(sunsetWindow.end)).toBeLessThan(Date.parse(astro.sunsetGlowCandidateEndAt));
     expect(windows.every((window) => /[+-]\d{2}:\d{2}$/.test(window.start))).toBe(true);
     expect(windows.every((window) => /[+-]\d{2}:\d{2}$/.test(window.end))).toBe(true);
+  });
+
+  it("does not promote old sunrise +75 or sunset -75 fixed offsets as public glow", () => {
+    const input = withFirstAstro(favorableGlowInput(), {
+      sunrise: "2026-05-20T05:17:00+08:00",
+      sunriseGlowCandidateStartAt: "2026-05-20T04:50:00+08:00",
+      sunriseGlowCandidateEndAt: "2026-05-20T05:31:00+08:00",
+      sunriseGlowBestStartAt: "2026-05-20T05:00:00+08:00",
+      sunriseGlowBestEndAt: "2026-05-20T05:24:00+08:00",
+      sunset: "2026-05-20T19:37:00+08:00",
+      sunsetGlowCandidateStartAt: "2026-05-20T19:23:00+08:00",
+      sunsetGlowCandidateEndAt: "2026-05-20T20:10:00+08:00",
+      sunsetGlowBestStartAt: "2026-05-20T19:30:00+08:00",
+      sunsetGlowBestEndAt: "2026-05-20T19:55:00+08:00",
+    });
+    const analysis = calculateGlowAnalysis(input);
+    const windows = [
+      ...analysis.bestGlowWindows,
+      ...analysis.watchableGlowWindows,
+      ...analysis.notRecommendedGlowWindows,
+    ];
+    const sunriseWindow = windows.find((window) => window.type === "sunrise_glow");
+    const sunsetWindow = windows.find((window) => window.type === "sunset_glow");
+
+    expect(windows.some((window) => window.type === "morning_warm_light")).toBe(false);
+    expect(windows.some((window) => window.type === "sunset_warm_light")).toBe(false);
+    expect(sunriseWindow).toBeDefined();
+    expect(sunsetWindow).toBeDefined();
+    if (!sunriseWindow || !sunsetWindow) {
+      throw new Error("expected canonical glow windows");
+    }
+    expect(Date.parse(sunriseWindow.start)).not.toBe(Date.parse("2026-05-20T05:17:00+08:00"));
+    expect(Date.parse(sunriseWindow.end)).not.toBe(Date.parse("2026-05-20T06:32:00+08:00"));
+    expect(Date.parse(sunsetWindow.start)).not.toBe(Date.parse("2026-05-20T18:22:00+08:00"));
+    expect(Date.parse(sunsetWindow.end)).not.toBe(Date.parse("2026-05-20T19:37:00+08:00"));
+    expect(analysis.sunriseGlowWindow?.eventAt).toBe("2026-05-20T05:17:00+08:00");
+    expect(analysis.sunriseGlowWindow?.bestStartAt).toBe("2026-05-20T05:00:00+08:00");
+    expect(analysis.sunsetGlowWindow?.eventAt).toBe("2026-05-20T19:37:00+08:00");
+    expect(analysis.sunsetGlowWindow?.bestStartAt).toBe("2026-05-20T19:30:00+08:00");
   });
 
   it("never classifies a 19:00 evening glow window as morning glow", () => {
@@ -397,7 +512,9 @@ describe("glow analysis v2", () => {
         (window) => window.date === firstAstro(dry).date && window.type.startsWith("sunset"),
       ),
     ).toBeUndefined();
-    expect(analysis.watchableGlowWindows.concat(analysis.notRecommendedGlowWindows).length).toBeGreaterThan(0);
+    expect(
+      analysis.watchableGlowWindows.concat(analysis.notRecommendedGlowWindows).length,
+    ).toBeGreaterThan(0);
   });
 
   it("can recommend glow when mid and high cloud support is strong and low cloud stays open", () => {
@@ -427,7 +544,7 @@ describe("glow analysis v2", () => {
 
     const analysis = calculateGlowAnalysis(eveningOnly);
 
-    expect(analysis.bestGlowWindow?.type).toMatch(/^sunset_|afterglow$/);
+    expect(analysis.bestGlowWindow?.type).toBe("sunset_glow");
     expect(analysis.sunsetGlowScore).toBeGreaterThan(analysis.sunriseGlowScore);
   });
 

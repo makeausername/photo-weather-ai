@@ -39,6 +39,7 @@ import {
   getMoonAltitudeByHour,
   getMoonPhase,
   getMoonTimes,
+  getSolarGlowGeometry,
   getSunTimes,
   getTwilightTimes,
 } from "@photo-weather/astro";
@@ -69,6 +70,7 @@ type MockGenerationOptions = {
   readonly forecastRange?: ForecastDateRange;
   readonly now?: CalendarDateInput;
   readonly timezone?: string;
+  readonly elevationMeters?: number | null;
 };
 
 export type NormalizedForecastInputOptions = {
@@ -184,6 +186,7 @@ export function buildMockForecastInput(
         forecastRange,
         latitudeWgs84: query.latitudeWgs84,
         longitudeWgs84: query.longitudeWgs84,
+        elevationMeters: query.elevationMeters ?? resolveProfile(query.name).elevation,
       }),
       isMock: true,
       dataSourceLabel: "演示数据",
@@ -315,6 +318,8 @@ export function buildForecastInputFromNormalizedWeather(
         ...generationOptions,
         latitudeWgs84: query.latitudeWgs84,
         longitudeWgs84: query.longitudeWgs84,
+        elevationMeters:
+          terrainAnalysis.terrainProfile.elevationMeters ?? query.elevationMeters ?? null,
       }),
     generatedAt: forecastRange.forecastStart,
     currentWeather: adjustedWeather.currentWeather,
@@ -624,9 +629,11 @@ export function generateLocalAstroSummaries(
       longitudeWgs84,
       date,
       timezone: forecastRange.timezone,
+      elevationMeters: options.elevationMeters ?? null,
     };
     const sunTimes = getSunTimes(astroInput);
     const twilightTimes = getTwilightTimes(astroInput);
+    const solarGlowGeometry = getSolarGlowGeometry(astroInput);
     const moonPhase = getMoonPhase(astroInput);
     const moonTimes = getMoonTimes(astroInput);
     const moonAltitude = getMoonAltitudeByHour(astroInput);
@@ -649,6 +656,8 @@ export function generateLocalAstroSummaries(
     return {
       date,
       timezone: forecastRange.timezone,
+      elevationMeters: solarGlowGeometry.elevationMeters,
+      elevationAvailable: solarGlowGeometry.elevationAvailable,
       sunrise: sunTimes.sunrise,
       sunset: sunTimes.sunset,
       solarNoon: sunTimes.solarNoon,
@@ -660,6 +669,18 @@ export function generateLocalAstroSummaries(
       nauticalDusk: twilightTimes.nauticalDusk,
       astronomicalDawn: twilightTimes.astronomicalDawn,
       astronomicalDusk: twilightTimes.astronomicalDusk,
+      solarCalculationResolutionMinutes: solarGlowGeometry.solarCalculationResolutionMinutes,
+      glowWindowDerivationMethod: solarGlowGeometry.windowDerivationMethod,
+      sunriseAltitudeCrossings: solarGlowGeometry.sunriseAltitudeCrossings,
+      sunsetAltitudeCrossings: solarGlowGeometry.sunsetAltitudeCrossings,
+      sunriseGlowCandidateStartAt: solarGlowGeometry.sunriseGlowCandidateWindow?.start,
+      sunriseGlowCandidateEndAt: solarGlowGeometry.sunriseGlowCandidateWindow?.end,
+      sunriseGlowBestStartAt: solarGlowGeometry.sunriseGlowBestWindow?.start,
+      sunriseGlowBestEndAt: solarGlowGeometry.sunriseGlowBestWindow?.end,
+      sunsetGlowCandidateStartAt: solarGlowGeometry.sunsetGlowCandidateWindow?.start,
+      sunsetGlowCandidateEndAt: solarGlowGeometry.sunsetGlowCandidateWindow?.end,
+      sunsetGlowBestStartAt: solarGlowGeometry.sunsetGlowBestWindow?.start,
+      sunsetGlowBestEndAt: solarGlowGeometry.sunsetGlowBestWindow?.end,
       astronomicalNightStart: astronomicalNight.windowStart,
       astronomicalNightEnd: astronomicalNight.windowEnd,
       moonPhase: moonPhase.moonPhase,
@@ -790,7 +811,7 @@ function getCoordinateSourceLabel(source: string): string {
 function getDailySunTimes(
   date: string,
   timezone: string,
-  options: Pick<MockGenerationOptions, "latitudeWgs84" | "longitudeWgs84">,
+  options: Pick<MockGenerationOptions, "latitudeWgs84" | "longitudeWgs84" | "elevationMeters">,
 ): Pick<NormalizedDailyWeather, "sunrise" | "sunset"> | undefined {
   if (
     typeof options.latitudeWgs84 !== "number" ||
@@ -804,6 +825,7 @@ function getDailySunTimes(
   const sunTimes = getSunTimes({
     latitudeWgs84: options.latitudeWgs84,
     longitudeWgs84: options.longitudeWgs84,
+    elevationMeters: options.elevationMeters ?? null,
     date,
     timezone,
   });

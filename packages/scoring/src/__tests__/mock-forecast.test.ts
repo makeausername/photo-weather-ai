@@ -202,10 +202,17 @@ describe("mock forecast input builder", () => {
     ).toHaveLength(7);
 
     const glowWindows = glowResult.bestWindows.filter((window) => window.target === "glow");
+    const canonicalGlowWindowDates = new Set(
+      [
+        ...glowResult.glowAnalysis.bestGlowWindows,
+        ...glowResult.glowAnalysis.watchableGlowWindows,
+        ...glowResult.glowAnalysis.notRecommendedGlowWindows,
+      ]
+        .filter((window) => window.type === "sunrise_glow" || window.type === "sunset_glow")
+        .map((window) => window.date),
+    );
     expect(glowWindows.length).toBeGreaterThanOrEqual(7);
-    expect(
-      glowResult.bestWindows.filter((window) => window.label.startsWith("晚霞")).length,
-    ).toBeGreaterThanOrEqual(7);
+    expect(canonicalGlowWindowDates.size).toBeGreaterThanOrEqual(7);
     expect(glowResult.glowAnalysis.dailyGlow).toHaveLength(7);
 
     expect(

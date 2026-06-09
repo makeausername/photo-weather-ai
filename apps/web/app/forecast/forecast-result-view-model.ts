@@ -1492,10 +1492,7 @@ export function buildGlowForecastViewModel(
   const aerosolCard = buildGlowAerosolCard(analysis.aerosolAssessment);
   const terrainObstructionCards = buildGlowTerrainObstructionCards(result, analysis);
   const primaryOpportunities = buildGlowPrimaryOpportunities(result, analysis);
-  const overallRecommendation = buildGlowOverallRecommendation(
-    result,
-    analysis,
-  );
+  const overallRecommendation = buildGlowOverallRecommendation(result, analysis);
   const dailyOpportunities = buildGlowDailyOpportunities(result, analysis);
   const sunriseOpportunity = primaryOpportunities.find((item) => item.key === "sunrise");
   const sunsetOpportunity = primaryOpportunities.find((item) => item.key === "sunset");
@@ -1684,7 +1681,9 @@ function buildGlowOverallRecommendation(
   return {
     preferredTarget,
     headline: selectedWindow ? `优先${preferredTarget}` : "暂无后续霞光窗口",
-    preferredDate: selectedWindow?.date ? windowDateLabel(result, selectedWindow.date) : "暂无后续窗口",
+    preferredDate: selectedWindow?.date
+      ? windowDateLabel(result, selectedWindow.date)
+      : "暂无后续窗口",
     preferredTime: selectedWindow
       ? formatGlowLifecycleWindowForParentDate(result, selectedWindow, "暂无明确最佳时间")
       : "暂无后续窗口",
@@ -1992,7 +1991,8 @@ function buildGlowPhaseWindowStateForDate(
   phase: GlowOpportunityPhase,
 ): GlowLifecycleWindowView {
   const score = phase === "sunrise" ? day.sunriseScore : day.sunsetScore;
-  const window = glowWindowForDateAndPhase(analysis, day.date, phase) ?? dailyGlowWindowForPhase(day, phase);
+  const window =
+    glowWindowForDateAndPhase(analysis, day.date, phase) ?? dailyGlowWindowForPhase(day, phase);
   if (window) {
     return buildGlowLifecycleWindowView(result, phase, window, score);
   }
@@ -2066,7 +2066,8 @@ function buildGlowLifecycleWindowView(
     evaluatedAt: glowEvaluatedAt(result),
     timezone: result.calendarBasis.timezone,
   });
-  const date = window.date ?? glowLocalDateKey(window.start, result.calendarBasis.timezone) ?? undefined;
+  const date =
+    window.date ?? glowLocalDateKey(window.start, result.calendarBasis.timezone) ?? undefined;
   return buildGlowLifecycleWindowViewFromParts({
     result,
     phase,
@@ -2168,16 +2169,16 @@ function derivedGlowSunWindowForDate(
   if (!astro) {
     return undefined;
   }
-  if (phase === "sunrise" && astro.sunrise) {
+  if (phase === "sunrise" && astro.sunriseGlowBestStartAt && astro.sunriseGlowBestEndAt) {
     return {
-      startAt: astro.sunrise,
-      endAt: addHoursInTimezone(astro.sunrise, 1.25, astro.timezone),
+      startAt: astro.sunriseGlowBestStartAt,
+      endAt: astro.sunriseGlowBestEndAt,
     };
   }
-  if (phase === "sunset" && astro.sunset) {
+  if (phase === "sunset" && astro.sunsetGlowBestStartAt && astro.sunsetGlowBestEndAt) {
     return {
-      startAt: addHoursInTimezone(astro.sunset, -1.25, astro.timezone),
-      endAt: astro.civilDusk ?? addHoursInTimezone(astro.sunset, 1.25, astro.timezone),
+      startAt: astro.sunsetGlowBestStartAt,
+      endAt: astro.sunsetGlowBestEndAt,
     };
   }
   return undefined;
@@ -2321,7 +2322,8 @@ function glowConciseReasonForPhase(
       : phase === "sunset" && analysis.rainOverlapsSunsetWindow
         ? "日落窗口有降水干扰。"
         : "";
-  const activeText = window.state === "active" ? "窗口正在进行中，优先现场判断云缝和色彩发展。" : "";
+  const activeText =
+    window.state === "active" ? "窗口正在进行中，优先现场判断云缝和色彩发展。" : "";
   return compactGlowDisplayText(
     [activeText, window.window?.noteZh, firstText(score.reasons, ""), rainText]
       .filter(Boolean)
@@ -3503,37 +3505,71 @@ function buildGlowSunPhaseAnnotationIntervals(result: ForecastCalculationResult)
       readonly detail: string;
       readonly tone: "default" | "success" | "warning" | "danger" | "info";
     }> = [];
-    if (astro.sunrise) {
+    if (astro.sunriseGlowBestStartAt && astro.sunriseGlowBestEndAt) {
       intervals.push({
-        start: astro.sunrise,
-        end: addHoursInTimezone(astro.sunrise, 0.75, astro.timezone),
-        label: "朝霞核心窗口",
-        detail: "日出后低角度光线与中高云对齐的核心观察段。",
+        start: astro.sunriseGlowBestStartAt,
+        end: astro.sunriseGlowBestEndAt,
+        label: "预测朝霞最佳窗口",
+        detail: "由太阳高度角跨越区间推导的朝霞核心观察段。",
         tone: "success",
       });
-      intervals.push({
-        start: astro.civilDawn ?? addHoursInTimezone(astro.sunrise, -0.75, astro.timezone),
-        end: astro.sunrise,
-        label: "朝霞准备窗口",
-        detail: "朝霞前的构图、测光和云层移动观察时段。",
-        tone: "info",
-      });
+      if (
+        astro.sunriseGlowCandidateStartAt &&
+        Date.parse(astro.sunriseGlowCandidateStartAt) < Date.parse(astro.sunriseGlowBestStartAt)
+      ) {
+        intervals.push({
+          start: astro.sunriseGlowCandidateStartAt,
+          end: astro.sunriseGlowBestStartAt,
+          label: "朝霞候选前段",
+          detail: "由太阳高度角候选区间推导的提前到位和观察准备段。",
+          tone: "info",
+        });
+      }
+      if (
+        astro.sunriseGlowCandidateEndAt &&
+        Date.parse(astro.sunriseGlowCandidateEndAt) > Date.parse(astro.sunriseGlowBestEndAt)
+      ) {
+        intervals.push({
+          start: astro.sunriseGlowBestEndAt,
+          end: astro.sunriseGlowCandidateEndAt,
+          label: "朝霞候选后段",
+          detail: "最佳窗口后的低太阳高度角候选观察段。",
+          tone: "info",
+        });
+      }
     }
-    if (astro.sunset) {
+    if (astro.sunsetGlowBestStartAt && astro.sunsetGlowBestEndAt) {
+      if (
+        astro.sunsetGlowCandidateStartAt &&
+        Date.parse(astro.sunsetGlowCandidateStartAt) < Date.parse(astro.sunsetGlowBestStartAt)
+      ) {
+        intervals.push({
+          start: astro.sunsetGlowCandidateStartAt,
+          end: astro.sunsetGlowBestStartAt,
+          label: "晚霞候选前段",
+          detail: "由太阳高度角候选区间推导的提前到位和观察准备段。",
+          tone: "info",
+        });
+      }
       intervals.push({
-        start: addHoursInTimezone(astro.sunset, -0.75, astro.timezone),
-        end: astro.sunset,
-        label: "晚霞准备窗口",
-        detail: "晚霞前观察太阳方向低云遮挡和透光缝。",
-        tone: "info",
-      });
-      intervals.push({
-        start: astro.sunset,
-        end: astro.civilDusk ?? addHoursInTimezone(astro.sunset, 0.75, astro.timezone),
-        label: "晚霞核心窗口",
-        detail: "日落后余晖与高云颜色发展的核心观察段。",
+        start: astro.sunsetGlowBestStartAt,
+        end: astro.sunsetGlowBestEndAt,
+        label: "预测晚霞最佳窗口",
+        detail: "由太阳高度角跨越区间推导的晚霞核心观察段。",
         tone: "success",
       });
+      if (
+        astro.sunsetGlowCandidateEndAt &&
+        Date.parse(astro.sunsetGlowCandidateEndAt) > Date.parse(astro.sunsetGlowBestEndAt)
+      ) {
+        intervals.push({
+          start: astro.sunsetGlowBestEndAt,
+          end: astro.sunsetGlowCandidateEndAt,
+          label: "晚霞候选后段",
+          detail: "最佳窗口后的低太阳高度角候选观察段。",
+          tone: "info",
+        });
+      }
     }
     return intervals;
   });
@@ -3633,14 +3669,20 @@ function buildGlowSunWindowCard(
   );
   const prepStart =
     phase === "sunrise"
-      ? astro.civilDawn ?? addHoursInTimezone(targetTime ?? astro.date, -0.75, astro.timezone)
-      : addHoursInTimezone(targetTime ?? astro.date, -0.75, astro.timezone);
-  const prepEnd = targetTime ?? prepStart;
-  const coreStart = targetTime ?? prepEnd;
+      ? astro.sunriseGlowCandidateStartAt ?? astro.civilDawn ?? targetTime ?? astro.date
+      : astro.sunsetGlowCandidateStartAt ?? targetTime ?? astro.date;
+  const prepEnd =
+    phase === "sunrise"
+      ? astro.sunriseGlowCandidateEndAt ?? targetTime ?? prepStart
+      : astro.sunsetGlowCandidateEndAt ?? astro.civilDusk ?? targetTime ?? prepStart;
+  const coreStart =
+    phase === "sunrise"
+      ? astro.sunriseGlowBestStartAt ?? bestWindow?.start ?? prepStart
+      : astro.sunsetGlowBestStartAt ?? bestWindow?.start ?? prepStart;
   const coreEnd =
     phase === "sunrise"
-      ? addHoursInTimezone(coreStart, 0.75, astro.timezone)
-      : astro.civilDusk ?? addHoursInTimezone(coreStart, 0.75, astro.timezone);
+      ? astro.sunriseGlowBestEndAt ?? bestWindow?.end ?? prepEnd
+      : astro.sunsetGlowBestEndAt ?? bestWindow?.end ?? prepEnd;
   const twilightStart =
     phase === "sunrise" ? astro.nauticalDawn ?? prepStart : astro.civilDusk ?? coreEnd;
   const twilightEnd =
@@ -3651,7 +3693,7 @@ function buildGlowSunWindowCard(
     date: astro.date,
     dateLabel,
     phase,
-    title: phase === "sunrise" ? "日出霞光窗口" : "日落霞光窗口",
+    title: phase === "sunrise" ? "日出时刻与预测朝霞窗口" : "日落时刻与预测晚霞窗口",
     prepWindowLabel: formatLocalTimeRange(prepStart, prepEnd, astro.timezone),
     coreWindowLabel: bestWindow
       ? formatLocalTimeRange(bestWindow.start, bestWindow.end, astro.timezone)
@@ -4128,8 +4170,17 @@ function glowWindowNote(window: GlowWindow): string {
   return [window.noteZh, rainText, postRainText].filter(Boolean).join("");
 }
 
-function isMorningGlowWindow(window: Pick<GlowWindow, "type" | "start" | "labelZh">): boolean {
+function isMorningGlowWindow(
+  window: Pick<GlowWindow, "type" | "start" | "labelZh" | "phase">,
+): boolean {
+  if (window.phase === "sunrise") {
+    return true;
+  }
+  if (window.phase === "sunset") {
+    return false;
+  }
   if (
+    window.type === "sunrise_glow" ||
     window.type === "pre_dawn_glow" ||
     window.type === "sunrise_core" ||
     window.type === "morning_warm_light" ||
@@ -4138,6 +4189,7 @@ function isMorningGlowWindow(window: Pick<GlowWindow, "type" | "start" | "labelZ
     return true;
   }
   if (
+    window.type === "sunset_glow" ||
     window.type === "sunset_warm_light" ||
     window.type === "sunset_core" ||
     window.type === "afterglow" ||

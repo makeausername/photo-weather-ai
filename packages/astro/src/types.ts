@@ -3,6 +3,58 @@ export type AstroInput = {
   readonly longitudeWgs84: number;
   readonly date: string;
   readonly timezone?: string;
+  readonly elevationMeters?: number | null;
+};
+
+export type SolarAltitudeDirection = "rising" | "setting";
+
+export type SolarPositionInput = AstroInput & {
+  readonly timestamp: string | number | Date;
+};
+
+export type SolarPosition = {
+  readonly timestamp: string;
+  readonly timezone: string;
+  readonly altitudeDegrees: number;
+  readonly azimuthDegrees: number;
+};
+
+export type SolarAltitudeCrossingInput = AstroInput & {
+  readonly altitudeDegrees: number;
+  readonly direction: SolarAltitudeDirection;
+};
+
+export type SolarAltitudeCrossing = {
+  readonly date: string;
+  readonly timezone: string;
+  readonly altitudeDegrees: number;
+  readonly direction: SolarAltitudeDirection;
+  readonly at?: string;
+};
+
+export type SolarAltitudeBandWindow = {
+  readonly start?: string;
+  readonly end?: string;
+  readonly startAltitudeDegrees: number;
+  readonly endAltitudeDegrees: number;
+  readonly direction: SolarAltitudeDirection;
+  readonly derivationMethod: "solar_altitude_crossing";
+  readonly resolutionMinutes: number;
+};
+
+export type SolarGlowGeometry = {
+  readonly date: string;
+  readonly timezone: string;
+  readonly elevationMeters?: number | null;
+  readonly elevationAvailable: boolean;
+  readonly solarCalculationResolutionMinutes: number;
+  readonly windowDerivationMethod: string;
+  readonly sunriseAltitudeCrossings: readonly SolarAltitudeCrossing[];
+  readonly sunsetAltitudeCrossings: readonly SolarAltitudeCrossing[];
+  readonly sunriseGlowCandidateWindow?: SolarAltitudeBandWindow;
+  readonly sunriseGlowBestWindow?: SolarAltitudeBandWindow;
+  readonly sunsetGlowCandidateWindow?: SolarAltitudeBandWindow;
+  readonly sunsetGlowBestWindow?: SolarAltitudeBandWindow;
 };
 
 export type MoonPhaseNameZh =
@@ -138,6 +190,9 @@ export type MilkyWayWindow = {
 export type AstroProvider = {
   getSunTimes(input: AstroInput): Promise<SunTimes>;
   getTwilightTimes(input: AstroInput): Promise<TwilightTimes>;
+  getSolarPosition(input: SolarPositionInput): Promise<SolarPosition>;
+  getSolarAltitudeCrossing(input: SolarAltitudeCrossingInput): Promise<SolarAltitudeCrossing>;
+  getSolarGlowGeometry(input: AstroInput): Promise<SolarGlowGeometry>;
   getMoonPhase(input: AstroInput): Promise<MoonPhase>;
   getMoonIllumination(input: AstroInput): Promise<MoonIllumination>;
   getMoonCalendarMonth(input: MoonCalendarMonthInput): Promise<MoonCalendarMonth>;
