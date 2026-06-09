@@ -1873,6 +1873,22 @@ function resultWithGlowHourlyRange(
   };
 }
 
+function resultWithAstroHourlyRange(
+  horizon: ForecastCalculationResult["horizon"],
+  hours: number,
+): ForecastCalculationResult {
+  const hourlyRangeResult = resultWithGlowHourlyRange(horizon, hours);
+  return {
+    ...resultForTarget("astro"),
+    horizon,
+    forecastEnd: hourlyRangeResult.forecastEnd,
+    targetDates: hourlyRangeResult.targetDates,
+    calendarBasis: hourlyRangeResult.calendarBasis,
+    professionalHourlyData: hourlyRangeResult.professionalHourlyData,
+    professionalHourlyDataTimeBasis: hourlyRangeResult.professionalHourlyDataTimeBasis,
+  };
+}
+
 type GlowWindowForTest = ForecastCalculationResult["glowAnalysis"]["bestGlowWindows"][number];
 
 function glowWindowForTest(
@@ -6674,7 +6690,7 @@ describe("forecast result target-aware view model", () => {
     }
   });
 
-  it("uses the exact shared intelligent interpretation component for cloud-sea and glow", () => {
+  it("uses the exact shared intelligent interpretation component for cloud-sea, glow, and astro", () => {
     const source = readFileSync(
       fileURLToPath(new URL("./forecast-result-client.tsx", import.meta.url)),
       "utf8",
@@ -6695,6 +6711,10 @@ describe("forecast result target-aware view model", () => {
       source.indexOf("export function GlowResultPage"),
       source.indexOf("export function AstroResultPage"),
     );
+    const astroPageSource = source.slice(
+      source.indexOf("export function AstroResultPage"),
+      source.indexOf("function CloudSeaTopResultHeader"),
+    );
     const sharedSectionCall = "<ForecastAiInterpretationSection query={query} result={result} />";
 
     expect(sharedComponentSource).toContain("AiExplanationPanel");
@@ -6702,14 +6722,19 @@ describe("forecast result target-aware view model", () => {
     expect(hookSource).toContain("normalizeAiExplainResponse");
     expect(cloudSeaPageSource).toContain(sharedSectionCall);
     expect(glowPageSource).toContain(sharedSectionCall);
+    expect(astroPageSource).toContain(sharedSectionCall);
     expect(cloudSeaPageSource).toContain('data-cloud-sea-section="CloudSeaAiInterpretation"');
     expect(glowPageSource).toContain('data-glow-section="GlowAiInterpretation"');
+    expect(astroPageSource).toContain('data-astro-section="AstroAiInterpretation"');
     expect(glowPageSource).not.toContain("GlowAiInterpretationSection");
     expect(glowPageSource).not.toContain("useGlowAiInterpretation");
     expect(glowPageSource).not.toContain("/forecast/glow-ai");
+    expect(astroPageSource).not.toContain("AstroAiInterpretationSection");
+    expect(astroPageSource).not.toContain("useAstroAiInterpretation");
+    expect(astroPageSource).not.toContain("/forecast/astro-ai");
   });
 
-  it("uses the same shared professional hourly section for cloud-sea and glow", () => {
+  it("uses the same shared professional hourly section for cloud-sea, glow, and astro", () => {
     const cloudSeaResult = resultWithProfessionalHourlyData();
     const cloudSeaViewModel = buildCloudSeaForecastViewModel(cloudSeaResult);
     const cloudSeaHtml = renderToStaticMarkup(
@@ -6728,6 +6753,15 @@ describe("forecast result target-aware view model", () => {
         viewModel: glowViewModel,
       }),
     );
+    const astroResult = resultWithAstroHourlyRange("24h", 24);
+    const astroViewModel = buildAstroForecastViewModel(astroResult);
+    const astroHtml = renderToStaticMarkup(
+      React.createElement(AstroResultPage, {
+        query: { ...queryForTarget("astro"), horizon: "24h" },
+        result: astroResult,
+        viewModel: astroViewModel,
+      }),
+    );
 
     expect(cloudSeaHtml).toContain('data-professional-hourly-shared="true"');
     expect(cloudSeaHtml).toContain('data-professional-hourly-target="cloud_sea"');
@@ -6741,6 +6775,13 @@ describe("forecast result target-aware view model", () => {
     expect(glowHtml).not.toContain('data-cloud-sea-professional-table-scroll="true"');
     expect(glowHtml).not.toContain('data-professional-hourly-card-layout="true"');
     expect(glowHtml).not.toContain("GlowProfessionalHourlyCloudCard");
+    expect(astroHtml).toContain('data-astro-section="AstroProfessionalData"');
+    expect(astroHtml).toContain('data-astro-professional-data-expanded="false"');
+    expect(astroHtml).toContain('data-astro-professional-data-toggle="true"');
+    expect(astroHtml).not.toContain('data-professional-hourly-shared="true"');
+    expect(astroHtml).not.toContain('data-cloud-sea-professional-table-scroll="true"');
+    expect(astroHtml).not.toContain('data-professional-hourly-card-layout="true"');
+    expect(astroHtml).not.toContain("AstroProfessionalHourlyTable");
 
     const source = readFileSync(
       fileURLToPath(new URL("./forecast-result-client.tsx", import.meta.url)),
@@ -6753,6 +6794,7 @@ describe("forecast result target-aware view model", () => {
 
     expect(professionalDataSource).toContain("<CloudSeaProfessionalHourlyDataPanel");
     expect(professionalDataSource).toContain('target="glow"');
+    expect(professionalDataSource).toContain('target="astro"');
     expect(professionalDataSource).toContain('variant="embedded"');
   });
 
@@ -7108,55 +7150,89 @@ describe("forecast result target-aware view model", () => {
     expect(countOccurrences(html, 'data-glow-slot="sunset"')).toBe(7);
   });
 
-  it("prioritizes moon, astronomical night, Milky Way, and star modules on the astro view", () => {
-    const viewModel = buildForecastResultViewModel(resultForTarget("astro"), "astro");
+  it("builds the canonical observing-night astro model from deterministic facts", () => {
+    const result = resultWithAstroHourlyRange("48h", 48);
+    const viewModel = buildForecastResultViewModel(result, "astro");
+    const astro = viewModel.astro;
 
-    expect(viewModel.astro).toBeDefined();
-    expect(viewModel.primaryCards.map((card) => card.label)).toEqual([
-      "天文窗口",
-      "星空指数",
-      "银河指数",
-      "月光影响",
-      "云量阻挡",
-      "露水风险",
-      "银河窗口判断",
+    expect(astro).toBeDefined();
+    expect(astro?.nightlyCards.map((night) => night.localEveningDate)).toEqual([
+      "2026-05-19",
+      "2026-05-20",
+      "2026-05-21",
     ]);
-    expect(viewModel.detailSections.map((section) => section.title)).toEqual(
-      expect.arrayContaining([
-        "每晚观星条件",
-        "月相 / 月亮照明",
-        "天文黑夜",
-        "银河窗口",
-        "银河方向遮挡",
-        "地平线遮挡提示",
-        "山体遮挡风险",
-      ]),
-    );
-    expect(viewModel.astro?.dailyTrend).toHaveLength(2);
-    expect(viewModel.astro?.recommendedMilkyWayWindows).toHaveLength(2);
-    expect(viewModel.astro?.moonlessNightWindows[0]?.timeRangeLabel).toBe(
-      "5月20日 22:35–5月21日 03:48",
-    );
-    const moonSection = viewModel.detailSections.find((section) => section.key === "moon-phase");
-    expect(moonSection?.items).toHaveLength(2);
-    expect(JSON.stringify(moonSection)).toContain("农历日期");
-    expect(JSON.stringify(moonSection)).toContain("四月初五");
-    expect(JSON.stringify(moonSection)).toContain(
-      "月相基于本地天文算法计算；农历日期基于本地历法库生成",
-    );
-    expect(viewModel.scoreCards.map((card) => card.key)).toEqual([
-      "stars",
-      "milkyWay",
-      "transparency",
+    expect(astro?.bestNight?.localEveningDate).toBe("2026-05-20");
+    expect(astro?.backupNight?.localEveningDate).toBe("2026-05-21");
+    expect(astro?.professionalHourlyData.rows).toHaveLength(48);
+    expect(astro?.judgmentFactors.map((factor) => factor.key)).toEqual([
+      "astronomical-night",
+      "moonlight",
+      "milky-way-geometry",
+      "cloud",
+      "visibility-humidity",
+      "precipitation-wind",
+      "light-terrain",
     ]);
-    expect(viewModel.bestWindows[0]?.moduleKey).toBe("astronomicalNight");
-    expect(viewModel.bestWindows.map((window) => window.moduleKey)).toContain("milkyWay");
-    expect(viewModel.bestWindows.map((window) => window.moduleKey)).not.toContain("cloudSea");
-    expect(JSON.stringify(viewModel.astro)).not.toMatch(
-      /QWeather|Open-Meteo|meteoblue|Amap|和风|高德/i,
-    );
-    expect(viewModel.windowGroups.length).toBeGreaterThan(1);
+
+    const firstCoveredNight = astro?.nightlyCards.find((night) => night.localEveningDate === "2026-05-20");
+    expect(firstCoveredNight).toMatchObject({
+      nightKey: "astro-night-2026-05-20",
+      localEveningDate: "2026-05-20",
+      horizonCoverageState: "covered",
+      moon: expect.objectContaining({
+        phaseName: "娥眉月",
+        illuminationPercent: 24,
+        moonlightInterferenceLevel: expect.any(String),
+      }),
+      astronomicalNight: expect.objectContaining({
+        lifecycle: "available",
+      }),
+      milkyWay: expect.objectContaining({
+        available: true,
+        direction: "东南至南方",
+      }),
+      weather: expect.objectContaining({
+        validHourCount: expect.any(Number),
+        cloudSummary: expect.any(String),
+        precipitationRisk: expect.any(String),
+      }),
+    });
+    expect(firstCoveredNight?.starPhotographyProbabilityPercent).toBeGreaterThanOrEqual(0);
+    expect(firstCoveredNight?.milkyWayPhotographyProbabilityPercent).toBeGreaterThanOrEqual(0);
+    expect(firstCoveredNight?.starPhotographyIndex).toBeGreaterThanOrEqual(0);
+    expect(firstCoveredNight?.milkyWayPhotographyIndex).toBeGreaterThanOrEqual(0);
+    expect(firstCoveredNight?.milkyWay.bestStartAt).toBeDefined();
+    expect(JSON.stringify(astro)).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风|高德/i);
   });
+
+  it.each([
+    ["24h", 24, 2, ["partial", "partial"]],
+    ["48h", 48, 3, ["partial", "covered", "partial"]],
+    ["72h", 72, 4, ["partial", "covered", "covered", "partial"]],
+    ["7d", 168, 8, ["partial", "covered", "covered", "covered", "covered", "covered", "covered", "partial"]],
+  ] as const)(
+    "renders every local astro observing night intersecting the selected %s horizon",
+    (horizon, hours, expectedNightCount, expectedCoverage) => {
+      const result = resultWithAstroHourlyRange(horizon, hours);
+      const viewModel = buildAstroForecastViewModel(result);
+      const html = renderToStaticMarkup(
+        React.createElement(AstroResultPage, {
+          query: { ...queryForTarget("astro"), horizon },
+          result,
+          viewModel,
+        }),
+      );
+
+      expect(viewModel.nightlyCards).toHaveLength(expectedNightCount);
+      expect(viewModel.nightlyCards.map((night) => night.horizonCoverageState)).toEqual(
+        expectedCoverage,
+      );
+      expect(viewModel.professionalHourlyData.rows).toHaveLength(hours);
+      expect(countOccurrences(html, 'data-astro-night-card="true"')).toBe(expectedNightCount);
+      expect(countOccurrences(html, 'data-astro-professional-data-toggle="true"')).toBe(1);
+      expect(countOccurrences(html, 'data-professional-hourly-row="')).toBe(0);
+    },
+  );
 
   it("builds and renders a dedicated astro result page without popular spots or side rails", () => {
     const result = resultForTarget("astro");
@@ -7179,22 +7255,49 @@ describe("forecast result target-aware view model", () => {
       expect(html).not.toContain("热门星空机位");
       expect(html).not.toContain("热门银河机位");
       expect(html).toContain("星空银河判断");
-      expect(html).toContain("星空指数");
-      expect(html).toContain("银河指数");
-      expect(html).toContain("月光影响");
-      expect(html).toContain("天文黑夜与无月黑夜");
-      expect(html).toContain("推荐银河窗口");
-      expect(html).toContain("月相与月光");
-      expect(html).toContain("月出月落");
-      expect(html).toContain("云量与通透");
-      expect(html).toContain("光污染与地形遮挡");
-      expect(html).toContain("拍摄建议");
-      expect(html).toContain("备选拍摄方案");
-      expect(html).toContain("数据状态 / 数据缺失说明");
+      expect(html).toContain("最佳观测夜");
+      expect(html).toContain("逐夜星空银河机会");
+      expect(html).toContain("星空概率");
+      expect(html).toContain("银河概率");
+      expect(html).toContain("观星指数");
+      expect(html).toContain("月相");
+      expect(html).toContain("天文黑夜");
+      expect(html).toContain("银河窗口");
+      expect(html).toContain("为什么这样判断");
+      expect(html).toContain("专业数据");
+      expect(html).toContain("展开专业数据");
       expect(html).toContain("AstroResultPage");
-      expect(html).toContain("AstroCoreDecision");
-      expect(html).toContain("AstroDailyTrend");
       expect(html).toContain("AstroResultLayout");
+      expect(html).toContain('data-astro-section="AstroNightOpportunitySection"');
+      expect(html).toContain('data-astro-section="AstroWhyJudgmentSection"');
+      expect(html).toContain('data-astro-section="AstroProfessionalData"');
+      expect(html).toContain('data-astro-professional-data-expanded="false"');
+      expect(html).toContain('data-astro-section="AstroAiInterpretation"');
+      expect(html).toContain('data-ai-interpretation-target="astro"');
+      expect(html).toContain("生成智能解读");
+      expect(countOccurrences(html, 'data-astro-night-card="true"')).toBe(
+        viewModel.nightlyCards.length,
+      );
+      expect(countOccurrences(html, 'data-astro-professional-data-toggle="true"')).toBe(1);
+      expect(countOccurrences(html, 'data-professional-hourly-shared="true"')).toBe(0);
+      expect(countOccurrences(html, 'data-professional-hourly-row="')).toBe(0);
+      expectMarkersInOrder(html, [
+        "AstroResultPage",
+        "AstroNightOpportunitySection",
+        "AstroWhyJudgmentSection",
+        "AstroProfessionalData",
+        "AstroAiInterpretation",
+      ]);
+      expect(html).not.toContain("天文黑夜与无月黑夜");
+      expect(html).not.toContain("推荐银河窗口");
+      expect(html).not.toContain("月出月落");
+      expect(html).not.toContain("拍摄建议");
+      expect(html).not.toContain("备选拍摄方案");
+      expect(html).not.toContain("数据状态 / 数据缺失说明");
+      expect(html).not.toContain("AstroCoreDecision");
+      expect(html).not.toContain("AstroDailyTrend");
+      expect(html).not.toContain("AstroWindowSection");
+      expect(html).not.toContain("AstroMoonPhaseSection");
       expect(html).not.toContain("<aside");
       expect(html).not.toContain("SideRail");
       expect(html).not.toContain("min-[1024px]:col-span-4");
@@ -7215,16 +7318,17 @@ describe("forecast result target-aware view model", () => {
       }),
     );
 
-    expect(html).toContain("核心判断");
-    expect(html).toContain("每晚观星条件");
-    expect(html).toContain("月相与月光");
-    expect(html).toContain("云量与通透");
-    expect(html).toContain("拍摄建议");
+    expect(html).toContain("逐夜星空银河机会");
+    expect(html).toContain("为什么这样判断");
+    expect(html).toContain("专业数据");
     expect(html).toContain("云量阻挡");
     expect(html).toContain("月光影响");
-    expect(html).toContain("露水风险");
+    expect(html).toContain("通透度与湿度");
     expect(html).toContain("天文窗口存在，但低云偏多、降水干扰不支持拍摄");
-    expect(html).toContain("银河窗口判断");
+    expect(html).toContain("不建议前往");
+    expect(html).not.toContain("核心判断");
+    expect(html).not.toContain("每晚观星条件");
+    expect(html).not.toContain("拍摄建议");
     expect(html).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风|高德/i);
   });
 
@@ -7276,9 +7380,30 @@ describe("forecast result target-aware view model", () => {
     };
 
     const viewModel = buildAstroForecastViewModel(sevenDayResult);
+    const html = renderToStaticMarkup(
+      React.createElement(AstroResultPage, {
+        query: { ...queryForTarget("astro"), horizon: "7d" },
+        result: sevenDayResult,
+        viewModel,
+      }),
+    );
 
     expect(viewModel.dailyTrend).toHaveLength(3);
     expect(viewModel.dailyTrend.map((item) => item.date)).toContain("2026-05-22");
+    expect(viewModel.nightlyCards).toHaveLength(8);
+    expect(viewModel.nightlyCards.map((night) => night.localEveningDate)).toEqual([
+      "2026-05-19",
+      "2026-05-20",
+      "2026-05-21",
+      "2026-05-22",
+      "2026-05-23",
+      "2026-05-24",
+      "2026-05-25",
+      "2026-05-26",
+    ]);
+    expect(viewModel.nightlyCards[0]?.horizonCoverageState).toBe("partial");
+    expect(viewModel.nightlyCards.at(-1)?.horizonCoverageState).toBe("partial");
+    expect(countOccurrences(html, 'data-astro-night-card="true"')).toBe(8);
   });
 
   it("keeps data-source honesty in the shaped notice", () => {

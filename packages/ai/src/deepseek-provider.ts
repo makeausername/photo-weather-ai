@@ -2193,8 +2193,12 @@ function compactProfessionalHourlyRowForAi(
 function compactAstroWindow(
   window:
     | ForecastCalculationResult["astroAnalysis"]["recommendedMilkyWayWindows"][number]
+    | ForecastCalculationResult["astroAnalysis"]["astronomicalNightWindows"][number]
+    | ForecastCalculationResult["astroAnalysis"]["moonlessNightWindows"][number]
+    | ForecastCalculationResult["astroAnalysis"]["milkyWayCandidateWindows"][number]
     | undefined,
   timezone = "Asia/Shanghai",
+  textLimit = 80,
 ) {
   if (!window) {
     return null;
@@ -2204,8 +2208,10 @@ function compactAstroWindow(
     labelZh: window.labelZh,
     date: window.date,
     windowZh: formatLocalTimeRange(window.start, window.end, timezone),
+    score: window.score,
     directionZh: window.directionZh,
     galacticCenterAltitude: window.galacticCenterAltitude,
+    noteZh: limitText(window.noteZh, textLimit),
   };
 }
 
@@ -2870,10 +2876,13 @@ function buildDeepSeekForecastPromptFacts(
       result.target === "cloud_sea"
         ? compactCloudSeaPromptFacts(result, timezone, textLimit)
         : undefined,
-    astro: {
-      astroShootable: result.astroAnalysis.astroShootable,
-      weatherBlockers: takeTextItems(result.astroAnalysis.weatherBlockers, 2, textLimit),
-    },
+    astro:
+      result.target === "astro"
+        ? compactAstroPromptFacts(result, detail, timezone, textLimit)
+        : {
+            astroShootable: result.astroAnalysis.astroShootable,
+            weatherBlockers: takeTextItems(result.astroAnalysis.weatherBlockers, 2, textLimit),
+          },
     clothingAndEquipment: {
       summaryZh: limitText(result.clothingGuide.summaryZh, textLimit),
       layers: takeTextItems(result.clothingGuide.layers, detail === "budget" ? 1 : 2, 60),
@@ -2884,6 +2893,97 @@ function buildDeepSeekForecastPromptFacts(
       dataMode: result.weatherDataMode,
       isMock: result.isMock,
       noticeZh: limitText(providerNeutralText(result.dataNotice), textLimit),
+    },
+  };
+}
+
+function compactAstroPromptFacts(
+  result: ForecastCalculationResult,
+  detail: DeepSeekForecastContextDetail,
+  timezone: string,
+  textLimit: number,
+) {
+  const analysis = result.astroAnalysis;
+  const nightlyLimit = detail === "budget" ? 1 : detail === "minimal" ? 2 : 4;
+  const windowLimit = detail === "budget" ? 1 : 3;
+  const moon = analysis.moonInfo;
+
+  return {
+    contextVersion: "astro-night-decision-v1",
+    deterministicOnly: true,
+    sourceZh: providerNeutralText(result.astroDataSourceLabelZh),
+    confidenceLevel: analysis.confidenceLevel,
+    overall: {
+      astroShootable: analysis.astroShootable,
+      recommendationZh: analysis.recommendationLabel,
+      labels: analysis.labels,
+      starsScore: analysis.starsScore,
+      milkyWayScore: analysis.milkyWayScore,
+      skyConditionScore: analysis.skyConditionScore,
+      moonlightImpactScore: analysis.moonlightImpactScore,
+      practicalAstroScore: analysis.practicalAstroScore,
+      weatherBlockers: takeTextItems(analysis.weatherBlockers, 3, textLimit),
+      missingDataNotes: takeTextItems(analysis.missingDataNotes, 2, textLimit),
+    },
+    moon: moon
+      ? {
+          phaseNameZh: moon.moonPhaseNameZh,
+          illuminationPercent: Math.round(moon.moonIllumination * 100),
+          lunarDateText: moon.lunarDateText,
+          moonriseZh: moon.moonrise ? formatLocalTimeRange(moon.moonrise, moon.moonrise, timezone) : null,
+          moonsetZh: moon.moonset ? formatLocalTimeRange(moon.moonset, moon.moonset, timezone) : null,
+          calculationNoteZh: limitText(moon.calculationNoteZh, textLimit),
+        }
+      : null,
+    nightly: takeItems(analysis.dailyAstro, nightlyLimit).map((day) => ({
+      date: day.date,
+      dateZh: formatDateLabelZh(day.date, timezone, day.dateLabelZh),
+      localObservingNightDate: day.date,
+      lunarDateText: day.lunarDateText,
+      recommendationZh: day.recommendationLabel,
+      keyReasonZh: limitText(day.keyReason, textLimit),
+      riskNoteZh: limitText(day.riskNote, textLimit),
+      astroShootable: day.astroShootable,
+      starPhotographyIndex: day.starsScore,
+      milkyWayPhotographyIndex: day.milkyWayScore,
+      skyConditionScore: day.skyConditionScore,
+      practicalAstroScore: day.practicalAstroScore,
+      astronomicalNight: compactAstroWindow(day.astronomicalNightWindow, timezone, textLimit),
+      moonlessNight: compactAstroWindow(day.moonlessNightWindow, timezone, textLimit),
+      recommendedMilkyWay: compactAstroWindow(day.recommendedMilkyWayWindow, timezone, textLimit),
+      moonImpact: {
+        level: day.moonImpactLevel,
+        labelZh: day.labels.moonlightImpact,
+        score: day.moonlightImpactScore,
+      },
+      weather: {
+        cloudBlockerLevel: day.cloudBlockerLevel,
+        dewRiskLevel: day.dewRiskLevel,
+        tripodWindRisk: day.tripodWindRisk,
+        blockers: takeTextItems(day.weatherBlockers, 2, textLimit),
+      },
+      gearAdviceZh: takeTextItems(day.gearAdviceZh, detail === "budget" ? 1 : 2, textLimit),
+      warmthAdviceZh: limitText(day.warmthAdviceZh, textLimit),
+    })),
+    windows: {
+      astronomicalNight: takeItems(analysis.astronomicalNightWindows, windowLimit).map((window) =>
+        compactAstroWindow(window, timezone, textLimit),
+      ),
+      moonlessNight: takeItems(analysis.moonlessNightWindows, windowLimit).map((window) =>
+        compactAstroWindow(window, timezone, textLimit),
+      ),
+      recommendedMilkyWay: takeItems(analysis.recommendedMilkyWayWindows, windowLimit).map(
+        (window) => compactAstroWindow(window, timezone, textLimit),
+      ),
+      candidateMilkyWay: takeItems(analysis.milkyWayCandidateWindows, windowLimit).map((window) =>
+        compactAstroWindow(window, timezone, textLimit),
+      ),
+    },
+    professionalHourlySummary: {
+      rowCount: result.professionalHourlyData?.length ?? 0,
+      timeBasis: result.professionalHourlyDataTimeBasis
+        ? compactProfessionalHourlyTimeBasisForAi(result.professionalHourlyDataTimeBasis, detail)
+        : null,
     },
   };
 }

@@ -39,6 +39,7 @@ type ForecastExplanationRequestUserPayload = {
     readonly targetCode: string;
     readonly cloudSea?: Record<string, unknown>;
     readonly glow?: ReturnType<typeof buildGlowAiExplainPayload>;
+    readonly astro?: Record<string, unknown>;
   };
 };
 
@@ -686,8 +687,9 @@ describe("AI providers", () => {
       directionZh: "东南至南方",
       galacticCenterAltitude: 24,
     };
-    const context = buildDeepSeekForecastContext({
+    const astroResult: ForecastCalculationResult = {
       ...forecastResultFixture,
+      target: "astro",
       astroDataSourceLabelZh: "本地天文服务计算",
       weatherNoticeZh: "天气数据：和风天气；云层辅助：Open-Meteo；专业增强：meteoblue。",
       astroAnalysis: {
@@ -753,8 +755,14 @@ describe("AI providers", () => {
           warmthAdviceZh: "夜间湿冷，需准备防风保暖层。",
         },
       },
+    };
+    const context = buildDeepSeekForecastContext(astroResult);
+    const request = buildDeepSeekForecastExplanationRequest({
+      forecastResult: astroResult,
     });
+    const payload = readForecastExplanationUserPayload(request);
     const text = JSON.stringify(context);
+    const requestText = JSON.stringify(payload.computedForecastFacts);
 
     expect(context.topicScores).toEqual(
       expect.arrayContaining([
@@ -763,10 +771,39 @@ describe("AI providers", () => {
       ]),
     );
     expect(text).toContain("All values are precomputed deterministic facts");
+    expect(payload.computedForecastFacts.targetCode).toBe("astro");
+    expect(payload.computedForecastFacts.astro).toMatchObject({
+      contextVersion: "astro-night-decision-v1",
+      deterministicOnly: true,
+      overall: expect.objectContaining({
+        astroShootable: false,
+        weatherBlockers: expect.arrayContaining(["低云偏多，星空银河实际可见性较差。"]),
+      }),
+      moon: expect.objectContaining({
+        phaseNameZh: "娥眉月",
+        illuminationPercent: 31,
+      }),
+      windows: expect.objectContaining({
+        candidateMilkyWay: expect.arrayContaining([
+          expect.objectContaining({
+            labelZh: "银河候选窗口",
+            galacticCenterAltitude: 24,
+          }),
+        ]),
+      }),
+    });
+    expect(requestText).toContain("astro-night-decision-v1");
+    expect(requestText).toContain("天文黑夜");
+    expect(requestText).toContain("银河候选窗口");
+    expect(requestText).toContain("低云偏多，星空银河实际可见性较差。");
     expect(text).not.toContain("和风天气");
     expect(text).not.toContain("Open-Meteo");
     expect(text).not.toContain("meteoblue");
     expect(text).not.toContain("dataSourceLabelZh");
+    expect(requestText).not.toContain("和风天气");
+    expect(requestText).not.toContain("Open-Meteo");
+    expect(requestText).not.toContain("meteoblue");
+    expect(requestText).not.toContain("dataSourceLabelZh");
   });
 
   it("passes deterministic glow facts to DeepSeek without asking it to score glow", () => {

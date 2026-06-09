@@ -28,7 +28,6 @@ import {
   type ForecastRiskFlag,
   type ForecastScore,
   type ForecastScoreLevel,
-  type GlowBackupPlan,
   type GlowWindow,
 } from "@photo-weather/shared";
 import { PublicShell } from "../../components/public-shell";
@@ -38,10 +37,7 @@ import {
   buildForecastResultViewModel,
   getForecastResultPageShellCopy,
   type CloudSeaActionPlanItem,
-  type AstroDailyTrendItem,
-  type AstroEvidenceViewItem,
   type AstroForecastViewModel,
-  type AstroWindowViewItem,
   type CloudSeaDailyTrendItem,
   type CloudSeaForecastViewModel,
   type CloudSeaReasoningItem,
@@ -3802,52 +3798,18 @@ export function AstroResultPage({
       className="AstroResultPage astro-result-page grid gap-5"
       data-astro-section="AstroResultPage"
     >
-      <AstroTopContext query={query} result={result} />
-      <SectionHeading
-        title="核心判断"
-        description="先看实际可拍性，再看天文黑夜、银河几何、月光、云量和露水风险。"
-        badge={result.astroAnalysis.astroShootable ? "建议夜拍" : "谨慎夜拍"}
-      />
-      <AstroCoreDecision cards={viewModel.coreCards} />
-      <WeatherEssentialsPanel result={result} />
+      <AstroTopContext query={query} result={result} viewModel={viewModel} />
 
       <main
         className="AstroResultLayout astro-result-stack grid gap-5"
         data-astro-section="AstroResultLayout"
       >
-        <AstroDailyTrend result={result} items={viewModel.dailyTrend} />
-        <AstroNightWindowSection
-          astronomicalNightWindows={viewModel.astronomicalNightWindows}
-          moonlessNightWindows={viewModel.moonlessNightWindows}
-          astroDataSourceLabel={result.astroDataSourceLabelZh}
-        />
-        <AstroMilkyWaySection
-          candidateWindows={viewModel.milkyWayCandidateWindows}
-          recommendedWindows={viewModel.recommendedMilkyWayWindows}
-        />
-        <AstroMoonPhaseSection result={result} />
-        <AstroMoonriseMoonsetSection result={result} />
-        <AstroEvidenceSection
-          title="云量与通透"
-          badgeLabel="云层 / 通透 / 湿度"
-          items={[...viewModel.cloudEvidence, ...viewModel.visibilityEvidence]}
-          dataSection="AstroCloudVisibilitySection"
-        />
-        <AstroEvidenceSection
-          title="光污染与地形遮挡"
-          badgeLabel="光污染 / 地平线"
-          items={[...viewModel.lightPollutionEvidence, ...viewModel.terrainEvidence]}
-          dataSection="AstroLightTerrainSection"
-        />
-        <AstroAdviceSection items={viewModel.travelRecommendations} />
-        <AstroRiskSection risks={viewModel.riskReasons} />
-        <AstroBackupPlanSection plans={viewModel.backupPlans} />
-        <AstroDataStatusSection
-          result={result}
-          notes={viewModel.missingDataNotes}
-          dataNotice={viewModel.dataNotice}
-        />
-        <AstroMoonCalendarAction query={query} result={result} />
+        <AstroNightOpportunitySection nights={viewModel.nightlyCards} horizon={result.horizon} />
+        <AstroWhyJudgmentSection factors={viewModel.judgmentFactors} />
+        <AstroProfessionalDataSection query={query} result={result} viewModel={viewModel} />
+        <section className="mt-1 sm:mt-2" data-astro-section="AstroAiInterpretation">
+          <ForecastAiInterpretationSection query={query} result={result} />
+        </section>
       </main>
     </section>
   );
@@ -3856,10 +3818,15 @@ export function AstroResultPage({
 function AstroTopContext({
   query,
   result,
+  viewModel,
 }: {
   readonly query: ForecastQueryInput;
   readonly result: ForecastCalculationResult;
+  readonly viewModel: AstroForecastViewModel;
 }) {
+  const bestNight = viewModel.bestNight;
+  const backupNight = viewModel.backupNight;
+
   return (
     <Card className="p-4 shadow-sm">
       <div className="grid gap-4 min-[900px]:grid-cols-[minmax(0,1fr)_auto] min-[900px]:items-center">
@@ -3877,425 +3844,323 @@ function AstroTopContext({
           <h1 className="mt-3 break-words text-2xl font-bold leading-tight text-foreground sm:text-[28px]">
             {query.name}
           </h1>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
+            {bestNight
+              ? `最佳观测夜：${bestNight.localEveningDateLabel}，${bestNight.recommendationLabel}；${bestNight.conciseReason}`
+              : "本次预报范围内暂未形成可比较的观测夜。"}
+          </p>
           <div className="mt-3 grid gap-1 text-xs leading-5 text-muted-foreground min-[900px]:grid-cols-2 min-[1120px]:flex min-[1120px]:flex-wrap min-[1120px]:gap-2">
             <span>预报范围：{result.calendarBasis.forecastRangeLabel}</span>
             <span>生成时间：{formatDateTime(result.generatedAt)}</span>
             <span>更新时间：{formatDateTime(result.generatedAt)}</span>
             <span>数据状态：{weatherStatusLabel(result)}</span>
-            <span>天气数据：{weatherModeBadge(result)}</span>
-            <span>地形数据：{result.terrainAnalysis.dataSourceLabelZh}</span>
             <span>天文数据：{result.astroDataSourceLabelZh}</span>
+            {backupNight ? <span>备选夜：{backupNight.localEveningDateLabel}</span> : null}
           </div>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => {
-            window.location.assign("/astro");
-          }}
-        >
-          重新选择地点
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              window.location.assign("/astro");
+            }}
+          >
+            重新选择地点
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              window.location.assign(buildForecastUrlFromForecastQuery(query));
+            }}
+          >
+            重新判断
+          </Button>
+        </div>
       </div>
     </Card>
   );
 }
 
-function AstroCoreDecision({ cards }: { readonly cards: readonly ForecastResultCard[] }) {
-  return (
-    <section
-      className="AstroCoreDecision astro-core-decision grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(190px,1fr))]"
-      data-astro-section="AstroCoreDecision"
-    >
-      {cards.map((card) => (
-        <PrimaryResultCard key={card.key} card={card} />
-      ))}
-    </section>
-  );
-}
-
-function AstroDailyTrend({
-  result,
-  items,
+function AstroNightOpportunitySection({
+  nights,
+  horizon,
 }: {
-  readonly result: ForecastCalculationResult;
-  readonly items: readonly AstroDailyTrendItem[];
+  readonly nights: AstroForecastViewModel["nightlyCards"];
+  readonly horizon: ForecastCalculationResult["horizon"];
 }) {
   return (
-    <Card
-      className="AstroDailyTrend astro-daily-trend p-4 shadow-sm"
-      data-astro-section="AstroDailyTrend"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <section className="grid gap-3" data-astro-section="AstroNightOpportunitySection">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold text-card-foreground">每晚观星条件</h2>
+          <h2 className="text-lg font-bold text-card-foreground">逐夜星空银河机会</h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            分开看天文窗口、天气可拍性、银河几何、月光、云量和露水风险。
+            按本地观测夜比较月相、天文黑夜、银河窗口、天气覆盖和是否推荐拍摄。
           </p>
         </div>
-        <Badge variant="muted">{forecastHorizonLabels[result.horizon]}</Badge>
+        <Badge variant="muted">{forecastHorizonLabels[horizon]}</Badge>
       </div>
-      <div className="mt-4 grid gap-3">
-        {items.map((item) => (
-          <article
-            key={item.key}
-            className="grid gap-3 rounded-lg border border-border bg-muted p-3 min-[900px]:grid-cols-[minmax(155px,0.9fr)_minmax(165px,0.9fr)_minmax(210px,1.2fr)_minmax(0,1.5fr)] min-[900px]:items-start"
-          >
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="font-bold text-card-foreground">{item.dateLabel}</h3>
-                <Badge variant={item.recommendationLabel === "不建议专程" ? "warning" : "default"}>
-                  {item.recommendationLabel}
-                </Badge>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {item.lunarDateText ? `农历${item.lunarDateText}` : "夜间窗口"}
-              </p>
-            </div>
-            <dl className="grid gap-1 text-sm">
-              <AstroInlineDefinition
-                label="天文窗口"
-                value={item.astronomicalWindowAvailable ? "有" : "无"}
-              />
-              <AstroInlineDefinition label="天文条件" value={`${item.astroConditionScore} 分`} />
-              <AstroInlineDefinition
-                label="星空可拍性"
-                value={`${item.starShootabilityLabel} / ${item.astroPracticalScore} 分`}
-              />
-              <AstroInlineDefinition
-                label="银河可拍性"
-                value={`${item.milkyWayShootabilityLabel} / ${item.milkyWayGeometryScore} 分`}
-              />
-              <AstroInlineDefinition label="月光影响" value={item.moonImpactLabel} />
-            </dl>
-            <dl className="grid gap-1 text-sm">
-              <AstroInlineDefinition label="云量阻挡" value={item.cloudBlockerLabel} />
-              <AstroInlineDefinition label="露水风险" value={item.dewRiskLabel} />
-              <AstroInlineDefinition label="透明度" value={`${item.transparencyScore} 分`} />
-              <AstroInlineDefinition label="天文黑夜" value={item.astronomicalNightLabel} />
-              <AstroInlineDefinition label="无月黑夜" value={item.moonlessNightLabel} />
-              <AstroInlineDefinition label="银心窗口" value={item.galacticCenterWindowLabel} />
-              <AstroInlineDefinition
-                label={item.astroShootable ? "推荐银河窗口" : "银河窗口判断"}
-                value={item.recommendedMilkyWayLabel}
-              />
-            </dl>
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="muted">{item.riskNote}</Badge>
-                {item.weatherBlockers.length > 0 ? <Badge variant="danger">天气阻断</Badge> : null}
-                <Badge variant={item.astroShootable ? "default" : "warning"}>
-                  {item.nightShootingAdviceLabel}
-                </Badge>
-              </div>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                {item.blockerReasonLabel}；{item.keyReason}
-              </p>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                云量条件：{item.cloudConditionLabel}；降水：{item.precipitationRiskLabel}
-              </p>
-            </div>
-          </article>
+      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr))]">
+        {nights.map((night) => (
+          <AstroNightCard key={night.nightKey} night={night} />
         ))}
       </div>
-    </Card>
-  );
-}
-
-function AstroNightWindowSection({
-  astronomicalNightWindows,
-  moonlessNightWindows,
-  astroDataSourceLabel,
-}: {
-  readonly astronomicalNightWindows: readonly AstroWindowViewItem[];
-  readonly moonlessNightWindows: readonly AstroWindowViewItem[];
-  readonly astroDataSourceLabel: string;
-}) {
-  return (
-    <Card className="AstroNightWindowSection astro-night-window p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">天文黑夜与无月黑夜</h2>
-        <Badge variant="muted">{astroDataSourceLabel}</Badge>
-      </div>
-      <div className="mt-4 grid gap-4 min-[900px]:grid-cols-2">
-        <AstroWindowList title="天文黑夜" windows={astronomicalNightWindows} />
-        <AstroWindowList title="无月黑夜" windows={moonlessNightWindows} />
-      </div>
-    </Card>
-  );
-}
-
-function AstroMilkyWaySection({
-  candidateWindows,
-  recommendedWindows,
-}: {
-  readonly candidateWindows: readonly AstroWindowViewItem[];
-  readonly recommendedWindows: readonly AstroWindowViewItem[];
-}) {
-  return (
-    <Card className="AstroMilkyWaySection astro-milky-way p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">银河窗口与可拍性</h2>
-        <Badge variant="muted">银心方向 / 月光交集</Badge>
-      </div>
-      <div className="mt-4 grid gap-4 min-[900px]:grid-cols-2">
-        <AstroWindowList title="推荐窗口" windows={recommendedWindows} />
-        <AstroWindowList title="候选窗口" windows={candidateWindows} />
-      </div>
-    </Card>
-  );
-}
-
-function AstroWindowList({
-  title,
-  windows,
-}: {
-  readonly title: string;
-  readonly windows: readonly AstroWindowViewItem[];
-}) {
-  return (
-    <section className="grid gap-3">
-      <h3 className="text-sm font-bold text-card-foreground">{title}</h3>
-      {windows.length > 0 ? (
-        windows.map((window) => (
-          <article key={window.key} className="rounded-lg border border-border bg-muted p-3">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <p className="font-semibold text-card-foreground">{window.dateLabel}</p>
-                <p className="mt-1 text-sm font-semibold text-accent">{window.timeRangeLabel}</p>
-              </div>
-              <Badge variant={badgeVariantForTone(window.tone)}>{window.score} 分</Badge>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {window.direction ? <Badge variant="muted">{window.direction}</Badge> : null}
-              {window.altitude !== "暂缺数据" ? (
-                <Badge variant="info">银心高度 {window.altitude}</Badge>
-              ) : null}
-              {window.riskTags.map((tag) => (
-                <Badge key={tag} variant={tag.includes("偏") ? "warning" : "muted"}>
-                  {tag}
-                </Badge>
-              ))}
-            </div>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{window.note}</p>
-          </article>
-        ))
-      ) : (
-        <p className="rounded-lg border border-warning bg-muted p-3 text-sm leading-6 text-muted-foreground">
-          暂无可推荐拍摄窗口；若只有天文时间，仍需等待云量、月光和降水条件转好。
-        </p>
-      )}
     </section>
   );
 }
 
-function AstroMoonPhaseSection({ result }: { readonly result: ForecastCalculationResult }) {
+function AstroNightCard({ night }: { readonly night: AstroForecastViewModel["nightlyCards"][number] }) {
   return (
-    <Card className="AstroMoonPhaseSection astro-moon-phase p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">月相与月光</h2>
-        <Badge variant="muted">月相 / 照明 / 高度</Badge>
+    <article
+      className="AstroNightCard grid gap-3 rounded-lg border border-border bg-card p-4 shadow-sm"
+      data-astro-night-card="true"
+      data-astro-night-key={night.nightKey}
+      data-astro-night-coverage={night.horizonCoverageState}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="break-words text-base font-bold text-card-foreground">
+            {night.localEveningDateLabel}
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">{night.weekdayLabel}夜间</p>
+        </div>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Badge variant={astroRecommendationBadgeVariant(night.recommendationLevel)}>
+            {night.recommendationLabel}
+          </Badge>
+          {night.isPartiallyCovered ? <Badge variant="warning">部分覆盖</Badge> : null}
+        </div>
       </div>
-      <div className="mt-4 grid gap-3 min-[900px]:grid-cols-2">
-        {result.astroSummaries.map((astro) => (
-          <article key={astro.date} className="rounded-lg border border-border bg-muted p-3">
+
+      <div className="grid gap-2 min-[520px]:grid-cols-3">
+        <MetricPill label="星空概率" value={night.starPhotographyProbabilityDisplay} />
+        <MetricPill label="银河概率" value={night.milkyWayPhotographyProbabilityDisplay} />
+        <MetricPill label="观星指数" value={night.starPhotographyIndexDisplay} />
+      </div>
+
+      <div className="grid gap-2 min-[520px]:grid-cols-2">
+        <AstroMiniFact
+          label="月相"
+          value={`${night.moon.phaseName} · ${night.moon.illuminationDisplay}`}
+          detail={`月光干扰：${night.moon.moonlightInterferenceLevel}`}
+        />
+        <AstroMiniFact
+          label="天文黑夜"
+          value={night.astronomicalNight.windowLabel}
+          detail={night.astronomicalNight.label}
+        />
+        <AstroMiniFact
+          label="银河窗口"
+          value={night.milkyWay.bestWindowLabel}
+          detail={`${night.milkyWay.azimuthSummary} · 高度 ${night.milkyWay.maximumAltitudeDisplay}`}
+        />
+        <AstroMiniFact
+          label="最佳拍摄"
+          value={night.bestShootingWindowLabel}
+          detail={night.horizonCoverageLabel}
+        />
+      </div>
+
+      <p className="text-sm leading-6 text-muted-foreground">{night.conciseReason}</p>
+      {night.unavailableReason ? (
+        <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
+          {night.unavailableReason}
+        </p>
+      ) : null}
+    </article>
+  );
+}
+
+function AstroMiniFact({
+  label,
+  value,
+  detail,
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly detail: string;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-muted px-3 py-2">
+      <p className="text-[11px] leading-4 text-muted-foreground">{label}</p>
+      <p className="mt-1 break-words text-sm font-semibold text-card-foreground">{value}</p>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</p>
+    </div>
+  );
+}
+
+function AstroWhyJudgmentSection({
+  factors,
+}: {
+  readonly factors: AstroForecastViewModel["judgmentFactors"];
+}) {
+  if (factors.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="grid gap-3" data-astro-section="AstroWhyJudgmentSection">
+      <div>
+        <h2 className="text-lg font-bold text-card-foreground">为什么这样判断</h2>
+      </div>
+      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr))]">
+        {factors.map((factor) => (
+          <article key={factor.key} className="rounded-lg border border-border bg-card p-3 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="font-bold text-card-foreground">
-                {dateLabelForResultClient(result, astro.date)}
-              </h3>
-              <Badge variant={astro.moonIllumination >= 0.55 ? "warning" : "muted"}>
-                {formatPercent(astro.moonIllumination)}
-              </Badge>
+              <h3 className="text-sm font-semibold text-card-foreground">{factor.label}</h3>
+              <Badge variant={badgeVariantForTone(factor.tone)}>{factor.status}</Badge>
             </div>
-            <dl className="mt-3 grid gap-2 text-sm">
-              <AstroInlineDefinition label="月相" value={astro.moonPhaseNameZh} />
-              <AstroInlineDefinition label="农历" value={astro.lunarDateText} />
-              <AstroInlineDefinition label="月光影响" value={moonImpactText(astro)} />
-              <AstroInlineDefinition label="月出" value={formatOptionalTime(astro.moonrise)} />
-              <AstroInlineDefinition label="月落" value={formatOptionalTime(astro.moonset)} />
-            </dl>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">{factor.detail}</p>
           </article>
         ))}
       </div>
-    </Card>
+    </section>
   );
 }
 
-function AstroMoonriseMoonsetSection({ result }: { readonly result: ForecastCalculationResult }) {
-  return (
-    <Card className="AstroMoonriseMoonsetSection astro-moonrise-moonset p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">月出月落</h2>
-        <Badge variant="muted">{result.astroDataSourceLabelZh}</Badge>
-      </div>
-      <div className="mt-4 grid gap-3 min-[900px]:grid-cols-2 min-[1280px]:grid-cols-3">
-        {result.astroSummaries.map((astro) => (
-          <article key={astro.date} className="rounded-lg border border-border bg-muted p-3">
-            <h3 className="font-bold text-card-foreground">
-              {dateLabelForResultClient(result, astro.date)}
-            </h3>
-            <dl className="mt-3 grid gap-2 text-sm">
-              <AstroInlineDefinition label="月出" value={formatOptionalTime(astro.moonrise)} />
-              <AstroInlineDefinition label="月落" value={formatOptionalTime(astro.moonset)} />
-              <AstroInlineDefinition
-                label="夜间月亮高度"
-                value={formatMoonAltitudeSummary(astro.moonAltitudeByHour)}
-              />
-            </dl>
-          </article>
-        ))}
-      </div>
-    </Card>
-  );
+function astroRecommendationBadgeVariant(
+  level: AstroForecastViewModel["nightlyCards"][number]["recommendationLevel"],
+): BadgeVariant {
+  if (level === "recommended") {
+    return "default";
+  }
+  if (level === "watch") {
+    return "info";
+  }
+  if (level === "backup") {
+    return "warning";
+  }
+  if (level === "not_recommended") {
+    return "danger";
+  }
+  return "muted";
 }
 
-function AstroEvidenceSection({
-  title,
-  badgeLabel,
-  items,
-  dataSection,
-}: {
-  readonly title: string;
-  readonly badgeLabel: string;
-  readonly items: readonly AstroEvidenceViewItem[];
-  readonly dataSection: string;
-}) {
-  return (
-    <Card className={`${dataSection} p-4 shadow-sm`} data-astro-section={dataSection}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">{title}</h2>
-        <Badge variant="muted">{badgeLabel}</Badge>
-      </div>
-      <div className="mt-4 grid gap-3 min-[900px]:grid-cols-2">
-        {items.map((item) => (
-          <article key={item.key} className="rounded-lg border border-border bg-muted p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-semibold text-card-foreground">{item.label}</h3>
-              <Badge variant={badgeVariantForTone(item.tone)}>{item.value}</Badge>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.detail}</p>
-          </article>
-        ))}
-      </div>
-    </Card>
-  );
-}
+const astroProfessionalHourlySectionConfig: ProfessionalHourlySectionConfig = {
+  sectionTitle: "逐小时天气数据",
+  sectionDescription: "按所选预报范围展示云量、能见度、湿度、降水和风等夜拍判断依据。",
+  focusFilterLabel: "关键夜拍窗口",
+  allFilterLabel: "全部小时",
+  riskFilterLabel: "风险小时",
+  defaultFilterMode: "cloudSea",
+  signalColumnLabel: "参考",
+  signalColumnDescription: "用于复核星空银河窗口内的云量、低云、湿度、降水和风。",
+};
 
-function AstroAdviceSection({ items }: { readonly items: readonly string[] }) {
-  return (
-    <Card className="AstroAdviceSection astro-advice p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">拍摄建议</h2>
-        <Badge variant="muted">是否出发 / 到达 / 装备</Badge>
-      </div>
-      <ul className="mt-3 grid gap-2 text-sm leading-6 text-muted-foreground min-[900px]:grid-cols-2">
-        {items.map((item) => (
-          <li key={item} className="rounded-lg border border-border bg-muted px-3 py-2">
-            {item}
-          </li>
-        ))}
-      </ul>
-    </Card>
-  );
-}
-
-function AstroRiskSection({ risks }: { readonly risks: readonly string[] }) {
-  return (
-    <Card className="AstroRiskSection astro-risk p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">风险提示</h2>
-        <Badge variant="muted">月光 / 云量 / 通透 / 光污染</Badge>
-      </div>
-      <div className="mt-3 grid gap-3 min-[900px]:grid-cols-2">
-        {risks.map((risk) => (
-          <article key={risk} className="rounded-lg border border-border bg-muted p-3">
-            <p className="text-sm leading-6 text-muted-foreground">{risk}</p>
-          </article>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-function AstroBackupPlanSection({ plans }: { readonly plans: readonly GlowBackupPlan[] }) {
-  return (
-    <Card className="AstroBackupPlanSection astro-backup p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">备选拍摄方案</h2>
-        <Badge variant="muted">银河受限时</Badge>
-      </div>
-      <div className="mt-3 grid gap-3 min-[900px]:grid-cols-2">
-        {plans.map((plan) => (
-          <article key={plan.condition} className="rounded-lg border border-border bg-muted p-3">
-            <p className="text-xs font-semibold text-muted-foreground">{plan.condition}</p>
-            <h3 className="mt-2 font-bold text-card-foreground">{plan.action}</h3>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{plan.detail}</p>
-          </article>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-function AstroDataStatusSection({
+function AstroProfessionalDataSection({
+  query,
   result,
-  notes,
-  dataNotice,
+  viewModel,
 }: {
+  readonly query: ForecastQueryInput;
   readonly result: ForecastCalculationResult;
-  readonly notes: readonly string[];
-  readonly dataNotice: string;
+  readonly viewModel: AstroForecastViewModel;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
   return (
-    <Card className="AstroDataStatusSection astro-data-status p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">数据状态 / 数据缺失说明</h2>
-        <Badge variant={result.weatherDataMode === "real" ? "success" : "warning"}>
-          {weatherModeBadge(result)}
-        </Badge>
+    <Card
+      className="AstroProfessionalData rounded-lg border border-border bg-card p-4 shadow-sm"
+      data-astro-section="AstroProfessionalData"
+      data-astro-professional-data-expanded={expanded ? "true" : "false"}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-lg font-bold text-card-foreground">专业数据</h2>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
+            查看逐小时云量、月球位置、天文黑夜、银河高度、能见度、湿度、降水和风等判断依据
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          aria-expanded={expanded}
+          onClick={() => {
+            setExpanded((current) => !current);
+          }}
+          data-astro-professional-data-toggle="true"
+        >
+          {expanded ? "收起专业数据" : "展开专业数据"}
+        </Button>
       </div>
-      <dl className="mt-3 grid gap-2 text-sm min-[900px]:grid-cols-4">
-        <CompactDefinition label="天文数据" value={result.astroDataSourceLabelZh} />
-        <CompactDefinition label="天气数据" value={weatherStatusLabel(result)} />
-        <CompactDefinition label="地形数据" value={result.terrainAnalysis.dataSourceLabelZh} />
-        <CompactDefinition label="光污染数据" value="暂未接入" />
-      </dl>
-      <p className="mt-3 rounded-lg border border-border bg-muted p-3 text-sm leading-6 text-muted-foreground">
-        {dataNotice}
-      </p>
-      {notes.length > 0 ? (
-        <ul className="mt-3 grid gap-2 text-sm leading-6 text-muted-foreground">
-          {notes.map((note) => (
-            <li key={note} className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
-              {note}
-            </li>
-          ))}
-        </ul>
+
+      {expanded ? (
+        <div className="mt-4 grid gap-4" data-astro-professional-data-body="true">
+          <div className="grid gap-3 min-[760px]:grid-cols-3">
+            <AstroProfessionalFact label="天文数据" value={result.astroDataSourceLabelZh} />
+            <AstroProfessionalFact label="预报范围" value={result.calendarBasis.forecastRangeLabel} />
+            <AstroProfessionalFact label="置信度" value={confidenceLabel(result.astroAnalysis.confidenceLevel)} />
+          </div>
+
+          <div className="grid gap-3 min-[760px]:grid-cols-2">
+            {viewModel.nightlyCards.map((night) => (
+              <article key={night.nightKey} className="rounded-md border border-border bg-muted p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-card-foreground">
+                    {night.localEveningDateLabel}
+                  </h3>
+                  <Badge variant={astroRecommendationBadgeVariant(night.recommendationLevel)}>
+                    {night.recommendationLabel}
+                  </Badge>
+                </div>
+                <dl className="mt-3 grid gap-2 text-sm">
+                  <AstroInlineDefinition label="天文黑夜" value={night.astronomicalNight.windowLabel} />
+                  <AstroInlineDefinition label="月相" value={`${night.moon.phaseName} / ${night.moon.illuminationDisplay}`} />
+                  <AstroInlineDefinition label="月光干扰" value={night.moon.moonlightInterferenceLevel} />
+                  <AstroInlineDefinition label="银河几何窗口" value={night.milkyWay.geometricWindowLabel} />
+                  <AstroInlineDefinition label="天气可用窗口" value={night.milkyWay.weatherUsableWindowLabel} />
+                  <AstroInlineDefinition label="窗口天气覆盖" value={night.weather.coverageDisplay} />
+                </dl>
+              </article>
+            ))}
+          </div>
+
+          {viewModel.missingDataNotes.length > 0 ? (
+            <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
+              {viewModel.missingDataNotes[0]}
+            </p>
+          ) : null}
+          <p className="text-xs leading-5 text-muted-foreground">{viewModel.dataNotice}</p>
+
+          <CloudSeaProfessionalHourlyDataPanel
+            target="astro"
+            data={viewModel.professionalHourlyData}
+            config={astroProfessionalHourlySectionConfig}
+            variant="embedded"
+          />
+
+          <details className="rounded-md border border-border bg-muted p-3">
+            <summary className="cursor-pointer text-sm font-semibold text-card-foreground">
+              查看整月月相
+            </summary>
+            <div className="mt-4">
+              <MoonPhaseCalendar
+                latitudeWgs84={query.latitudeWgs84}
+                longitudeWgs84={query.longitudeWgs84}
+                timezone={result.calendarBasis.timezone}
+              />
+            </div>
+          </details>
+        </div>
       ) : null}
     </Card>
   );
 }
 
-function AstroMoonCalendarAction({
-  query,
-  result,
+function AstroProfessionalFact({
+  label,
+  value,
 }: {
-  readonly query: ForecastQueryInput;
-  readonly result: ForecastCalculationResult;
+  readonly label: string;
+  readonly value: string;
 }) {
   return (
-    <details className="rounded-lg border border-border bg-card p-4 shadow-sm">
-      <summary className="cursor-pointer text-sm font-bold text-card-foreground">
-        查看整月月相
-      </summary>
-      <div className="mt-4">
-        <MoonPhaseCalendar
-          latitudeWgs84={query.latitudeWgs84}
-          longitudeWgs84={query.longitudeWgs84}
-          timezone={result.calendarBasis.timezone}
-        />
-      </div>
-    </details>
+    <div className="rounded-md border border-border bg-muted px-3 py-2">
+      <p className="text-[11px] leading-4 text-muted-foreground">{label}</p>
+      <p className="mt-1 break-words text-sm font-semibold text-card-foreground">{value}</p>
+    </div>
   );
 }
 
@@ -5273,7 +5138,7 @@ type ProfessionalHourlyFilterDefinition = {
   readonly label: string;
 };
 
-type ProfessionalHourlySectionTarget = "cloud_sea" | "glow";
+type ProfessionalHourlySectionTarget = "cloud_sea" | "glow" | "astro";
 type ProfessionalHourlySectionVariant = "card" | "embedded";
 
 type ProfessionalHourlySectionConfig = {
@@ -5282,7 +5147,10 @@ type ProfessionalHourlySectionConfig = {
   readonly sectionDescription?: string;
   readonly usageText?: string;
   readonly signalColumnLabel?: string;
+  readonly signalColumnDescription?: string;
   readonly focusFilterLabel?: string;
+  readonly allFilterLabel?: string;
+  readonly riskFilterLabel?: string;
   readonly defaultFilterMode?: ProfessionalHourlyFilterMode;
   readonly ordinarySignalLabel?: string;
   readonly initiallyExpanded?: boolean;
@@ -5316,7 +5184,7 @@ function professionalHourlyFiltersForContext(
   config: ProfessionalHourlySectionConfig | undefined,
 ): readonly ProfessionalHourlyFilterDefinition[] {
   return [
-    { mode: "all", label: "全部小时" },
+    { mode: "all", label: config?.allFilterLabel ?? "全部小时" },
     {
       mode: "cloudSea",
       label:
@@ -5325,7 +5193,7 @@ function professionalHourlyFiltersForContext(
         "只看重点窗口",
     },
     { mode: "morning", label: "只看清晨窗口" },
-    { mode: "risk", label: "只看有风险时段" },
+    { mode: "risk", label: config?.riskFilterLabel ?? "只看有风险时段" },
   ];
 }
 
@@ -5651,6 +5519,7 @@ function ProfessionalHourlyCloudSection({
       <section
         className="ProfessionalHourlyCloudSection grid gap-3"
         data-glow-section={target === "glow" ? "ProfessionalHourlyCloudSection" : undefined}
+        data-astro-section={target === "astro" ? "ProfessionalHourlyCloudSection" : undefined}
         data-professional-hourly-shared="true"
         data-professional-hourly-target={target}
         data-professional-hourly-default-expanded="true"
@@ -5672,6 +5541,7 @@ function ProfessionalHourlyCloudSection({
       )}
       data-cloud-sea-section={target === "cloud_sea" ? "CloudSeaProfessionalHourlyData" : undefined}
       data-glow-section={target === "glow" ? "ProfessionalHourlyCloudSection" : undefined}
+      data-astro-section={target === "astro" ? "ProfessionalHourlyCloudSection" : undefined}
       data-professional-hourly-shared="true"
       data-professional-hourly-target={target}
       data-professional-hourly-default-expanded={
@@ -9924,10 +9794,6 @@ function formatFullDateTime(value: string): string {
     : value;
 }
 
-function formatOptionalTime(value: string | undefined): string {
-  return value ? formatTime(value) : "暂无数据";
-}
-
 function dateLabelForResultClient(result: ForecastCalculationResult, date: string): string {
   const index = result.calendarBasis.targetDates.indexOf(date);
   const label = formatLocalDateLabel(date, result.calendarBasis.timezone);
@@ -9956,20 +9822,6 @@ function formatWindowTimeRange(
   timezone = "Asia/Shanghai",
 ): string {
   return formatLocalTimeRange(startTime, endTime, timezone);
-}
-
-function formatTime(value: string): string {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(timestamp));
 }
 
 function formatTemperature(value: number | null | undefined): string {
@@ -10077,49 +9929,6 @@ function transparencyGradeLabel(
   return typeof score === "number" && Number.isFinite(score)
     ? `${label} ${Math.round(score)} 分`
     : label;
-}
-
-function formatPercent(value: number | undefined): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return "暂无数据";
-  }
-
-  return `${Math.round(value * 100)}%`;
-}
-
-function formatMoonAltitudeSummary(values: Readonly<Record<string, number>> | undefined): string {
-  if (!values) {
-    return "暂无数据";
-  }
-
-  const nightValues = ["20", "21", "22", "23", "00", "01", "02", "03", "04"].flatMap((hour) => {
-    const value = values[hour];
-    return typeof value === "number" && Number.isFinite(value) ? [value] : [];
-  });
-
-  if (nightValues.length === 0) {
-    return "暂无数据";
-  }
-
-  const maxAltitude = Math.max(...nightValues);
-  const visibleHours = nightValues.filter((value) => value > 0).length;
-
-  return `最高约 ${maxAltitude.toFixed(1)}°，地平线上 ${visibleHours} 个采样小时`;
-}
-
-function moonImpactText(
-  astro: ForecastCalculationResult["astroSummaries"][number] | undefined,
-): string {
-  if (!astro) {
-    return "暂无月光影响数据";
-  }
-  if (astro.moonIllumination < 0.35) {
-    return "月光影响较轻";
-  }
-  if (astro.moonIllumination < 0.65) {
-    return "月光影响中等";
-  }
-  return "月光影响偏强";
 }
 
 function formatCoordinate(value: number): string {

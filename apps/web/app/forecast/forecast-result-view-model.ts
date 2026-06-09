@@ -606,9 +606,101 @@ export type AstroEvidenceViewItem = {
   readonly tone: ForecastResultCardTone;
 };
 
+export type AstroNightHorizonCoverageState = "covered" | "partial" | "outside_horizon";
+
+export type AstroNightRecommendationLevel =
+  | "recommended"
+  | "watch"
+  | "backup"
+  | "not_recommended"
+  | "insufficient";
+
+export type AstroNightDisplayModel = {
+  readonly nightKey: string;
+  readonly localEveningDate: string;
+  readonly localEveningDateLabel: string;
+  readonly weekdayLabel: string;
+  readonly timezone: string;
+  readonly horizonCoverageState: AstroNightHorizonCoverageState;
+  readonly horizonCoverageLabel: string;
+  readonly isPartiallyCovered: boolean;
+  readonly astronomicalNight: {
+    readonly startAt?: string;
+    readonly endAt?: string;
+    readonly durationMinutes: number;
+    readonly lifecycle: "available" | "partial" | "unavailable";
+    readonly label: string;
+    readonly windowLabel: string;
+  };
+  readonly moon: {
+    readonly phaseName: string;
+    readonly illuminationPercent: number | null;
+    readonly illuminationDisplay: string;
+    readonly riseAt?: string;
+    readonly setAt?: string;
+    readonly altitudeDuringBestWindow: number | null;
+    readonly altitudeDuringBestWindowDisplay: string;
+    readonly moonlightInterferenceLevel: string;
+    readonly overlapMinutes: number | null;
+    readonly overlapDisplay: string;
+  };
+  readonly milkyWay: {
+    readonly available: boolean;
+    readonly coreVisibilityStartAt?: string;
+    readonly coreVisibilityEndAt?: string;
+    readonly bestStartAt?: string;
+    readonly bestEndAt?: string;
+    readonly maximumAltitudeDegrees: number | null;
+    readonly maximumAltitudeDisplay: string;
+    readonly azimuthSummary: string;
+    readonly geometricWindowLabel: string;
+    readonly weatherUsableWindowLabel: string;
+    readonly bestWindowLabel: string;
+  };
+  readonly weather: {
+    readonly validHourCount: number;
+    readonly totalHourCount: number;
+    readonly coverageDisplay: string;
+    readonly cloudSummary: string;
+    readonly lowCloudRisk: string;
+    readonly visibilitySummary: string;
+    readonly humidityRisk: string;
+    readonly precipitationRisk: string;
+    readonly windRisk: string;
+  };
+  readonly starPhotographyProbabilityPercent: number | null;
+  readonly milkyWayPhotographyProbabilityPercent: number | null;
+  readonly starPhotographyProbabilityDisplay: string;
+  readonly milkyWayPhotographyProbabilityDisplay: string;
+  readonly starPhotographyIndex: number | null;
+  readonly milkyWayPhotographyIndex: number | null;
+  readonly starPhotographyIndexDisplay: string;
+  readonly milkyWayPhotographyIndexDisplay: string;
+  readonly recommendationLevel: AstroNightRecommendationLevel;
+  readonly recommendationLabel: string;
+  readonly conciseReason: string;
+  readonly confidence: string;
+  readonly unavailableReason?: string;
+  readonly bestShootingWindowLabel: string;
+  readonly calibrationMode: "heuristic";
+};
+
+export type AstroJudgmentFactorCard = {
+  readonly key: string;
+  readonly label: string;
+  readonly status: string;
+  readonly detail: string;
+  readonly tone: ForecastResultCardTone;
+};
+
 export type AstroForecastViewModel = {
   readonly coreCards: readonly ForecastResultCard[];
   readonly dailyTrend: readonly AstroDailyTrendItem[];
+  readonly nightlyCards: readonly AstroNightDisplayModel[];
+  readonly bestNight?: AstroNightDisplayModel;
+  readonly backupNight?: AstroNightDisplayModel;
+  readonly judgmentFactors: readonly AstroJudgmentFactorCard[];
+  readonly professionalHourlyData: ProfessionalHourlyDisplayData;
   readonly astronomicalNightWindows: readonly AstroWindowViewItem[];
   readonly moonlessNightWindows: readonly AstroWindowViewItem[];
   readonly milkyWayCandidateWindows: readonly AstroWindowViewItem[];
@@ -2587,6 +2679,15 @@ export function buildAstroForecastViewModel(
   result: ForecastCalculationResult,
 ): AstroForecastViewModel {
   const analysis = result.astroAnalysis;
+  const nightlyCards = buildAstroNightDisplayModels(result);
+  const bestNight = selectBestAstroNight(nightlyCards);
+  const backupNight = selectBackupAstroNight(nightlyCards, bestNight);
+  const professionalHourlyData = buildProfessionalHourlyDisplayDataForResult({
+    result,
+    focusWindows: astroProfessionalFocusWindows(nightlyCards),
+    riskWindows: astroProfessionalRiskWindows(nightlyCards),
+    rowAnnotations: astroProfessionalRowAnnotations(nightlyCards),
+  });
   const firstDaily = analysis.dailyAstro[0];
   const firstMoon = analysis.moonInfo ?? result.astroSummaries[0]?.moonInfo;
   const bestRecommendedWindow = analysis.recommendedMilkyWayWindows[0];
@@ -2693,6 +2794,11 @@ export function buildAstroForecastViewModel(
     dailyTrend: analysis.dailyAstro.map((day) =>
       mapDailyAstro(day, analysis.milkyWayCandidateWindows, result.calendarBasis.timezone),
     ),
+    nightlyCards,
+    bestNight,
+    backupNight,
+    judgmentFactors: buildAstroJudgmentFactors(result, nightlyCards, bestNight),
+    professionalHourlyData,
     astronomicalNightWindows: mapAstroWindows(result, analysis.astronomicalNightWindows),
     moonlessNightWindows: mapAstroWindows(result, analysis.moonlessNightWindows),
     milkyWayCandidateWindows: mapAstroWindows(result, analysis.milkyWayCandidateWindows),
@@ -2708,6 +2814,818 @@ export function buildAstroForecastViewModel(
     missingDataNotes: analysis.missingDataNotes,
     dataNotice: buildAstroDataNotice(result),
   };
+}
+
+const astroObservingNightStartHour = 18;
+const astroObservingNightDurationHours = 18;
+
+type AstroWindowRange = Pick<AstroWindow, "start" | "end">;
+
+function buildAstroNightDisplayModels(
+  result: ForecastCalculationResult,
+): readonly AstroNightDisplayModel[] {
+  const timezone = result.calendarBasis.timezone;
+  const nightDates = observingNightDatesForResult(result);
+
+  return nightDates.map((date) => {
+    const day = result.astroAnalysis.dailyAstro.find((item) => item.date === date);
+    const astro = result.astroSummaries.find((item) => item.date === date);
+    const nominalNight = nominalObservingNightWindow(date, timezone);
+    const candidateWindow = result.astroAnalysis.milkyWayCandidateWindows.find(
+      (window) => window.date === date,
+    );
+    const geometricMilkyWayWindow = intersectAstroWindowRanges(
+      candidateWindow,
+      day?.astronomicalNightWindow,
+      timezone,
+    );
+    const bestWindow =
+      day?.recommendedMilkyWayWindow ?? day?.moonlessNightWindow ?? day?.astronomicalNightWindow;
+    const weatherRows = bestWindow
+      ? professionalRowsBetween(result.professionalHourlyData ?? [], bestWindow.start, bestWindow.end)
+      : [];
+    const expectedWeatherHours = bestWindow
+      ? Math.max(1, Math.ceil(durationMinutesBetween(bestWindow.start, bestWindow.end) / 60))
+      : 0;
+    const weatherSummary = summarizeAstroNightWeather(weatherRows, expectedWeatherHours);
+    const moonAltitude = bestWindow && astro ? moonAltitudeForWindow(astro, bestWindow, timezone) : null;
+    const moonOverlap = bestWindow && astro ? moonOverlapMinutesForWindow(astro, bestWindow) : null;
+    const moonInterference = moonlightInterferenceDisplay(day, moonOverlap, moonAltitude);
+    const horizonCoverageState = astroNightCoverageState(
+      result,
+      day?.astronomicalNightWindow ?? nominalNight,
+    );
+    const isPartiallyCovered = horizonCoverageState === "partial";
+    const starProbability = starPhotographyProbabilityForNight(day, weatherSummary, isPartiallyCovered);
+    const milkyWayProbability = milkyWayPhotographyProbabilityForNight(
+      day,
+      weatherSummary,
+      isPartiallyCovered,
+    );
+    const recommendation = astroNightRecommendation({
+      day,
+      astro,
+      starProbability,
+      milkyWayProbability,
+      weatherSummary,
+      horizonCoverageState,
+    });
+    const unavailableReason = astroNightUnavailableReason(day, astro, weatherSummary);
+
+    return {
+      nightKey: `astro-night-${date}`,
+      localEveningDate: date,
+      localEveningDateLabel: formatLocalDateLabel(addHoursInTimezone(date, 18, timezone), timezone),
+      weekdayLabel: formatLocalWeekday(addHoursInTimezone(date, 18, timezone), timezone),
+      timezone,
+      horizonCoverageState,
+      horizonCoverageLabel: horizonCoverageLabel(horizonCoverageState),
+      isPartiallyCovered,
+      astronomicalNight: {
+        startAt: day?.astronomicalNightWindow?.start,
+        endAt: day?.astronomicalNightWindow?.end,
+        durationMinutes: day?.astronomicalNightWindow?.durationMinutes ?? 0,
+        lifecycle: day?.astronomicalNightWindow
+          ? isPartiallyCovered
+            ? "partial"
+            : "available"
+          : "unavailable",
+        label: day?.astronomicalNightWindow
+          ? isPartiallyCovered
+            ? "部分天文黑夜"
+            : "有天文黑夜"
+          : "当晚无完整天文黑夜",
+        windowLabel: day?.astronomicalNightWindow
+          ? formatAstroWindowTimeValue(day.astronomicalNightWindow, timezone)
+          : "当晚无完整天文黑夜",
+      },
+      moon: {
+        phaseName: astro?.moonPhaseNameZh ?? "暂无月相",
+        illuminationPercent:
+          typeof astro?.moonIllumination === "number"
+            ? Math.round(astro.moonIllumination * 100)
+            : null,
+        illuminationDisplay:
+          typeof astro?.moonIllumination === "number" ? formatPercent(astro.moonIllumination) : "暂无数据",
+        riseAt: astro?.moonrise,
+        setAt: astro?.moonset,
+        altitudeDuringBestWindow: moonAltitude,
+        altitudeDuringBestWindowDisplay:
+          typeof moonAltitude === "number" ? `${Math.round(moonAltitude)}°` : "暂无数据",
+        moonlightInterferenceLevel: moonInterference,
+        overlapMinutes: moonOverlap,
+        overlapDisplay:
+          typeof moonOverlap === "number" ? `${Math.round(moonOverlap)} 分钟` : "暂无可靠数据",
+      },
+      milkyWay: {
+        available: Boolean(geometricMilkyWayWindow),
+        coreVisibilityStartAt: geometricMilkyWayWindow?.start,
+        coreVisibilityEndAt: geometricMilkyWayWindow?.end,
+        bestStartAt: day?.recommendedMilkyWayWindow?.start,
+        bestEndAt: day?.recommendedMilkyWayWindow?.end,
+        maximumAltitudeDegrees:
+          candidateWindow?.galacticCenterAltitude ??
+          astro?.milkyWayGalacticCenterAltitude ??
+          null,
+        maximumAltitudeDisplay: formatAngle(
+          candidateWindow?.galacticCenterAltitude ?? astro?.milkyWayGalacticCenterAltitude ?? undefined,
+        ),
+        azimuthSummary:
+          candidateWindow?.directionZh ?? astro?.milkyWayDirection ?? "地平线遮挡需现场确认",
+        geometricWindowLabel: geometricMilkyWayWindow
+          ? formatAstroWindowTimeValue(geometricMilkyWayWindow, timezone)
+          : "银河窗口暂无可靠数据",
+        weatherUsableWindowLabel: day?.recommendedMilkyWayWindow
+          ? formatAstroWindowTimeValue(day.recommendedMilkyWayWindow, timezone)
+          : weatherSummary.validHourCount > 0 && geometricMilkyWayWindow
+            ? "几何窗口存在，天气未达到推荐阈值"
+            : "暂无天气可用银河窗口",
+        bestWindowLabel: day?.recommendedMilkyWayWindow
+          ? formatAstroWindowTimeValue(day.recommendedMilkyWayWindow, timezone)
+          : "暂无推荐银河窗口",
+      },
+      weather: weatherSummary,
+      starPhotographyProbabilityPercent: starProbability,
+      milkyWayPhotographyProbabilityPercent: milkyWayProbability,
+      starPhotographyProbabilityDisplay: probabilityDisplay(starProbability),
+      milkyWayPhotographyProbabilityDisplay: probabilityDisplay(milkyWayProbability),
+      starPhotographyIndex: day?.practicalAstroScore ?? null,
+      milkyWayPhotographyIndex: day?.milkyWayGeometryScore ?? null,
+      starPhotographyIndexDisplay: indexDisplay(day?.practicalAstroScore),
+      milkyWayPhotographyIndexDisplay: indexDisplay(day?.milkyWayGeometryScore),
+      recommendationLevel: recommendation.level,
+      recommendationLabel: recommendation.label,
+      conciseReason: recommendation.reason,
+      confidence: astroNightConfidence(result, weatherSummary, horizonCoverageState),
+      unavailableReason,
+      bestShootingWindowLabel: bestWindow
+        ? formatAstroWindowTimeValue(bestWindow, timezone)
+        : "暂无可靠最佳拍摄窗口",
+      calibrationMode: "heuristic",
+    };
+  });
+}
+
+function observingNightDatesForResult(result: ForecastCalculationResult): readonly string[] {
+  const timezone = result.calendarBasis.timezone;
+  const searchStart = addHoursInTimezone(
+    result.calendarBasis.forecastStart,
+    -astroObservingNightDurationHours,
+    timezone,
+  );
+  const candidateDates = new Set<string>([
+    ...safeForecastTargetDates(searchStart, result.calendarBasis.forecastEnd, timezone),
+    ...result.astroAnalysis.dailyAstro.map((day) => day.date),
+  ]);
+
+  return [...candidateDates]
+    .sort()
+    .filter((date) =>
+      windowsIntersect(
+        nominalObservingNightWindow(date, timezone),
+        {
+          start: result.calendarBasis.forecastStart,
+          end: result.calendarBasis.forecastEnd,
+        },
+      ),
+    );
+}
+
+function safeForecastTargetDates(start: string, end: string, timezone: string): readonly string[] {
+  try {
+    return getForecastTargetDates(start, end, timezone);
+  } catch {
+    return [start.slice(0, 10), end.slice(0, 10)].filter(Boolean);
+  }
+}
+
+function nominalObservingNightWindow(date: string, timezone: string): AstroWindowRange {
+  const start = addHoursInTimezone(date, astroObservingNightStartHour, timezone);
+  return {
+    start,
+    end: addHoursInTimezone(start, astroObservingNightDurationHours, timezone),
+  };
+}
+
+function astroNightCoverageState(
+  result: ForecastCalculationResult,
+  window: AstroWindowRange,
+): AstroNightHorizonCoverageState {
+  const forecast = {
+    start: result.calendarBasis.forecastStart,
+    end: result.calendarBasis.forecastEnd,
+  };
+  if (!windowsIntersect(window, forecast)) {
+    return "outside_horizon";
+  }
+
+  const startMs = Date.parse(window.start);
+  const endMs = Date.parse(window.end);
+  const rangeStartMs = Date.parse(forecast.start);
+  const rangeEndMs = Date.parse(forecast.end);
+
+  if (
+    Number.isFinite(startMs) &&
+    Number.isFinite(endMs) &&
+    Number.isFinite(rangeStartMs) &&
+    Number.isFinite(rangeEndMs) &&
+    (startMs < rangeStartMs || endMs > rangeEndMs)
+  ) {
+    return "partial";
+  }
+
+  return "covered";
+}
+
+function horizonCoverageLabel(state: AstroNightHorizonCoverageState): string {
+  if (state === "covered") {
+    return "本次预报完整覆盖";
+  }
+  if (state === "partial") {
+    return "本次预报部分覆盖";
+  }
+  return "超出本次预报范围";
+}
+
+function windowsIntersect(left: AstroWindowRange, right: AstroWindowRange): boolean {
+  const leftStart = Date.parse(left.start);
+  const leftEnd = Date.parse(left.end);
+  const rightStart = Date.parse(right.start);
+  const rightEnd = Date.parse(right.end);
+
+  return (
+    Number.isFinite(leftStart) &&
+    Number.isFinite(leftEnd) &&
+    Number.isFinite(rightStart) &&
+    Number.isFinite(rightEnd) &&
+    leftStart < rightEnd &&
+    leftEnd > rightStart
+  );
+}
+
+function intersectAstroWindowRanges(
+  left: AstroWindowRange | undefined,
+  right: AstroWindowRange | undefined,
+  timezone: string,
+): AstroWindowRange | undefined {
+  if (!left || !right || !windowsIntersect(left, right)) {
+    return undefined;
+  }
+
+  const startMs = Math.max(Date.parse(left.start), Date.parse(right.start));
+  const endMs = Math.min(Date.parse(left.end), Date.parse(right.end));
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    return undefined;
+  }
+
+  return {
+    start: addHoursInTimezone(new Date(startMs), 0, timezone),
+    end: addHoursInTimezone(new Date(endMs), 0, timezone),
+  };
+}
+
+function professionalRowsBetween(
+  rows: NonNullable<ForecastCalculationResult["professionalHourlyData"]>,
+  start: string,
+  end: string,
+): NonNullable<ForecastCalculationResult["professionalHourlyData"]> {
+  const startMs = Date.parse(start);
+  const endMs = Date.parse(end);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    return [];
+  }
+
+  return rows.filter((row) => {
+    const rowMs = Date.parse(row.time);
+    return Number.isFinite(rowMs) && rowMs >= startMs && rowMs < endMs;
+  });
+}
+
+function durationMinutesBetween(start: string, end: string): number {
+  const startMs = Date.parse(start);
+  const endMs = Date.parse(end);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    return 0;
+  }
+  return Math.round((endMs - startMs) / 60_000);
+}
+
+function summarizeAstroNightWeather(
+  rows: NonNullable<ForecastCalculationResult["professionalHourlyData"]>,
+  expectedHours: number,
+): AstroNightDisplayModel["weather"] {
+  const totalCloud = averageNullable(rows.map((row) => row.cloudTotalPercent));
+  const lowCloud = averageNullable(rows.map((row) => row.cloudLowPercent));
+  const visibility = averageNullable(rows.map((row) => row.visibilityMeters));
+  const humidity = averageNullable(rows.map((row) => row.relativeHumidityPercent));
+  const precipitationProbability = maxNullable(rows.map((row) => row.precipitationProbabilityPercent));
+  const precipitationAmount = sumNullable(rows.map((row) => row.precipitationAmountMm));
+  const windSpeed = averageNullable(rows.map((row) => row.windSpeedMs));
+
+  return {
+    validHourCount: rows.length,
+    totalHourCount: expectedHours,
+    coverageDisplay:
+      expectedHours > 0 ? `${rows.length} / ${expectedHours} 小时` : "暂无窗口内小时数据",
+    cloudSummary:
+      totalCloud === null
+        ? "云量暂无数据"
+        : `总云量约 ${Math.round(totalCloud)}%，低云 ${formatNullablePercent(lowCloud)}`,
+    lowCloudRisk: riskTextFromPercent(lowCloud, 30, 50, "低云"),
+    visibilitySummary:
+      visibility === null ? "能见度暂无数据" : `能见度约 ${Math.round(visibility / 1000)} 公里`,
+    humidityRisk: riskTextFromPercent(humidity, 80, 90, "湿度"),
+    precipitationRisk:
+      precipitationProbability === null && precipitationAmount === null
+        ? "降水暂无数据"
+        : `降水概率 ${formatNullablePercent(precipitationProbability)}，降水量 ${
+            precipitationAmount === null ? "暂无数据" : `${round1ForDisplay(precipitationAmount)}mm`
+          }`,
+    windRisk:
+      windSpeed === null ? "风速暂无数据" : `平均风速约 ${round1ForDisplay(windSpeed)} m/s`,
+  };
+}
+
+function averageNullable(values: readonly (number | null | undefined)[]): number | null {
+  const usable = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return usable.length > 0 ? usable.reduce((sum, value) => sum + value, 0) / usable.length : null;
+}
+
+function maxNullable(values: readonly (number | null | undefined)[]): number | null {
+  const usable = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return usable.length > 0 ? Math.max(...usable) : null;
+}
+
+function sumNullable(values: readonly (number | null | undefined)[]): number | null {
+  const usable = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return usable.length > 0 ? usable.reduce((sum, value) => sum + value, 0) : null;
+}
+
+function formatNullablePercent(value: number | null): string {
+  return value === null ? "暂无数据" : `${Math.round(value)}%`;
+}
+
+function riskTextFromPercent(
+  value: number | null,
+  mediumThreshold: number,
+  highThreshold: number,
+  label: string,
+): string {
+  if (value === null) {
+    return `${label}暂无数据`;
+  }
+  if (value >= highThreshold) {
+    return `${label}高`;
+  }
+  if (value >= mediumThreshold) {
+    return `${label}中`;
+  }
+  return `${label}低`;
+}
+
+function round1ForDisplay(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function starPhotographyProbabilityForNight(
+  day: DailyAstro | undefined,
+  weather: AstroNightDisplayModel["weather"],
+  partial: boolean,
+): number | null {
+  if (!day || !day.astronomicalNightWindow || weather.validHourCount === 0) {
+    return null;
+  }
+
+  const weatherCoverageRatio =
+    weather.totalHourCount > 0 ? Math.min(1, weather.validHourCount / weather.totalHourCount) : 0;
+  const score = clampDisplayPercent(
+    day.practicalAstroScore * 0.62 +
+      day.skyConditionScore * 0.2 +
+      (100 - day.moonlightImpactScore) * 0.12 +
+      weatherCoverageRatio * 6 -
+      (partial ? 8 : 0),
+  );
+  return score;
+}
+
+function milkyWayPhotographyProbabilityForNight(
+  day: DailyAstro | undefined,
+  weather: AstroNightDisplayModel["weather"],
+  partial: boolean,
+): number | null {
+  if (!day || !day.astronomicalNightWindow || weather.validHourCount === 0) {
+    return null;
+  }
+
+  if (!day.recommendedMilkyWayWindow && !day.moonlessNightWindow) {
+    return Math.min(38, clampDisplayPercent(day.milkyWayGeometryScore * 0.45));
+  }
+
+  const weatherCoverageRatio =
+    weather.totalHourCount > 0 ? Math.min(1, weather.validHourCount / weather.totalHourCount) : 0;
+  return clampDisplayPercent(
+    day.milkyWayGeometryScore * 0.5 +
+      day.skyConditionScore * 0.22 +
+      (100 - day.moonlightImpactScore) * 0.2 +
+      weatherCoverageRatio * 8 -
+      (partial ? 10 : 0),
+  );
+}
+
+function clampDisplayPercent(value: number): number {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function probabilityDisplay(value: number | null): string {
+  return value === null ? "暂无可靠概率" : `${value}%`;
+}
+
+function indexDisplay(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value)}` : "暂无指数";
+}
+
+function moonlightInterferenceDisplay(
+  day: DailyAstro | undefined,
+  overlapMinutes: number | null,
+  altitudeDuringBestWindow: number | null,
+): string {
+  if (!day) {
+    return "数据不足";
+  }
+  if (overlapMinutes === 0 || (typeof altitudeDuringBestWindow === "number" && altitudeDuringBestWindow <= 0)) {
+    return "无";
+  }
+  if (day.moonlightImpactScore >= 82) {
+    return "很高";
+  }
+  if (day.moonlightImpactScore >= 65) {
+    return "高";
+  }
+  if (day.moonlightImpactScore >= 40) {
+    return "中";
+  }
+  return "低";
+}
+
+function moonAltitudeForWindow(
+  astro: AstroSummary,
+  window: AstroWindowRange,
+  timezone: string,
+): number | null {
+  const startMs = Date.parse(window.start);
+  const endMs = Date.parse(window.end);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    return null;
+  }
+
+  const sampleValues =
+    astro.moonAltitudeSamples
+      ?.filter((sample) => {
+        const sampleMs = Date.parse(sample.time);
+        return Number.isFinite(sampleMs) && sampleMs >= startMs && sampleMs <= endMs;
+      })
+      .map((sample) => sample.altitude)
+      .filter((value) => Number.isFinite(value)) ?? [];
+
+  if (sampleValues.length > 0) {
+    return round1ForDisplay(Math.max(...sampleValues));
+  }
+
+  const recordValues = [window.start, midpointIso(window.start, window.end, timezone), window.end]
+    .map((time) => moonAltitudeByHourValue(astro, time, timezone))
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+
+  return recordValues.length > 0 ? round1ForDisplay(Math.max(...recordValues)) : null;
+}
+
+function moonAltitudeByHourValue(
+  astro: AstroSummary,
+  time: string,
+  timezone: string,
+): number | undefined {
+  const hourText = formatLocalTime(time, timezone, { invalidText: "" }).slice(0, 2);
+  return astro.moonAltitudeByHour?.[hourText];
+}
+
+function midpointIso(start: string, end: string, timezone: string): string {
+  const startMs = Date.parse(start);
+  const endMs = Date.parse(end);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
+    return start;
+  }
+  return addHoursInTimezone(new Date((startMs + endMs) / 2), 0, timezone);
+}
+
+function moonOverlapMinutesForWindow(
+  astro: AstroSummary,
+  window: AstroWindowRange,
+): number | null {
+  const windowStart = Date.parse(window.start);
+  const windowEnd = Date.parse(window.end);
+  if (!Number.isFinite(windowStart) || !Number.isFinite(windowEnd) || windowEnd <= windowStart) {
+    return null;
+  }
+
+  const moonrise = parseOptionalMs(astro.moonrise);
+  const moonset = parseOptionalMs(astro.moonset);
+  if (moonrise === null && moonset === null) {
+    return null;
+  }
+
+  const moonStart = moonrise ?? windowStart;
+  const moonEnd = moonset ?? windowEnd;
+  const overlapStart = Math.max(windowStart, moonStart);
+  const overlapEnd = Math.min(windowEnd, moonEnd);
+  return Math.max(0, Math.round((overlapEnd - overlapStart) / 60_000));
+}
+
+function parseOptionalMs(value: string | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function astroNightRecommendation(input: {
+  readonly day: DailyAstro | undefined;
+  readonly astro: AstroSummary | undefined;
+  readonly starProbability: number | null;
+  readonly milkyWayProbability: number | null;
+  readonly weatherSummary: AstroNightDisplayModel["weather"];
+  readonly horizonCoverageState: AstroNightHorizonCoverageState;
+}): { readonly level: AstroNightRecommendationLevel; readonly label: string; readonly reason: string } {
+  const { day, astro, starProbability, milkyWayProbability, weatherSummary, horizonCoverageState } =
+    input;
+  if (!day || !astro) {
+    return {
+      level: "insufficient",
+      label: "暂无可靠判断",
+      reason: "本次天文或天气数据未覆盖这个观测夜，无法给出可靠推荐。",
+    };
+  }
+  if (!day.astronomicalNightWindow) {
+    return {
+      level: "not_recommended",
+      label: "不建议前往",
+      reason: "当晚无完整天文黑夜，星空和银河拍摄基础不足。",
+    };
+  }
+  if (weatherSummary.validHourCount === 0 || starProbability === null) {
+    return {
+      level: "insufficient",
+      label: "暂无可靠判断",
+      reason: "有天文几何数据，但窗口内天气小时数据不足，不能生成可拍概率。",
+    };
+  }
+
+  const blocked = day.weatherBlockers.length > 0;
+  const partial = horizonCoverageState === "partial";
+  const milky = milkyWayProbability ?? 0;
+
+  if (
+    !partial &&
+    !blocked &&
+    day.recommendedMilkyWayWindow &&
+    starProbability >= 70 &&
+    milky >= 58 &&
+    day.moonImpactLevel !== "high"
+  ) {
+    return {
+      level: "recommended",
+      label: "推荐拍摄",
+      reason: day.keyReason || "云量、月光和银河窗口组合较好，适合作为夜间主计划。",
+    };
+  }
+  if (!blocked && starProbability >= 55 && (milky >= 45 || day.moonlessNightWindow)) {
+    return {
+      level: partial ? "backup" : "watch",
+      label: partial ? "仅作备选" : "可以关注",
+      reason: partial
+        ? "本次预报只覆盖部分夜间窗口，适合临近复核后再决定。"
+        : day.keyReason || "星空可拍性尚可，银河窗口仍需临近复核云量和月光。",
+    };
+  }
+  if (starProbability >= 40 || day.astroWindowAvailable) {
+    return {
+      level: "backup",
+      label: "仅作备选",
+      reason:
+        day.weatherBlockers[0] ??
+        day.keyReason ??
+        "有夜间窗口，但云量、月光或天气覆盖不足以支持专程前往。",
+    };
+  }
+
+  return {
+    level: "not_recommended",
+    label: "不建议前往",
+    reason: day.weatherBlockers[0] ?? "星空银河窗口和天气条件组合不足，不建议作为夜拍目标。",
+  };
+}
+
+function astroNightUnavailableReason(
+  day: DailyAstro | undefined,
+  astro: AstroSummary | undefined,
+  weather: AstroNightDisplayModel["weather"],
+): string | undefined {
+  if (!astro) {
+    return "缺少这个观测夜的月相、天文黑夜或银河几何数据。";
+  }
+  if (!day) {
+    return "缺少这个观测夜的确定性评分结果。";
+  }
+  if (!day.astronomicalNightWindow) {
+    return "当晚无完整天文黑夜。";
+  }
+  if (weather.validHourCount === 0) {
+    return "缺少窗口内天气小时数据。";
+  }
+  return undefined;
+}
+
+function astroNightConfidence(
+  result: ForecastCalculationResult,
+  weather: AstroNightDisplayModel["weather"],
+  coverage: AstroNightHorizonCoverageState,
+): string {
+  const base = astroConfidenceLabel(result.astroAnalysis.confidenceLevel);
+  if (coverage === "partial") {
+    return `${base}，部分覆盖`;
+  }
+  if (weather.totalHourCount > 0 && weather.validHourCount / weather.totalHourCount < 0.6) {
+    return `${base}，天气覆盖不足`;
+  }
+  return base;
+}
+
+function astroConfidenceLabel(level: AstroAnalysisResult["confidenceLevel"]): string {
+  if (level === "high") {
+    return "高";
+  }
+  if (level === "medium") {
+    return "中";
+  }
+  return "低";
+}
+
+function selectBestAstroNight(
+  nights: readonly AstroNightDisplayModel[],
+): AstroNightDisplayModel | undefined {
+  return [...nights].sort(
+    (left, right) =>
+      astroRecommendationRank(right.recommendationLevel) -
+        astroRecommendationRank(left.recommendationLevel) ||
+      (right.milkyWayPhotographyProbabilityPercent ?? -1) -
+        (left.milkyWayPhotographyProbabilityPercent ?? -1) ||
+      (right.starPhotographyProbabilityPercent ?? -1) -
+        (left.starPhotographyProbabilityPercent ?? -1),
+  )[0];
+}
+
+function selectBackupAstroNight(
+  nights: readonly AstroNightDisplayModel[],
+  bestNight: AstroNightDisplayModel | undefined,
+): AstroNightDisplayModel | undefined {
+  return nights
+    .filter((night) => night.nightKey !== bestNight?.nightKey)
+    .sort(
+      (left, right) =>
+        astroRecommendationRank(right.recommendationLevel) -
+          astroRecommendationRank(left.recommendationLevel) ||
+        (right.starPhotographyProbabilityPercent ?? -1) -
+          (left.starPhotographyProbabilityPercent ?? -1),
+    )[0];
+}
+
+function astroRecommendationRank(level: AstroNightRecommendationLevel): number {
+  switch (level) {
+    case "recommended":
+      return 5;
+    case "watch":
+      return 4;
+    case "backup":
+      return 3;
+    case "not_recommended":
+      return 2;
+    case "insufficient":
+      return 1;
+  }
+}
+
+function astroProfessionalFocusWindows(
+  nights: readonly AstroNightDisplayModel[],
+): readonly CloudSeaProfessionalHourlyWindow[] {
+  return nights
+    .filter((night) => night.milkyWay.bestStartAt && night.milkyWay.bestEndAt)
+    .map((night) => ({
+      startTime: night.milkyWay.bestStartAt!,
+      endTime: night.milkyWay.bestEndAt!,
+      label: `${night.localEveningDateLabel} 最佳银河窗口`,
+    }));
+}
+
+function astroProfessionalRiskWindows(
+  nights: readonly AstroNightDisplayModel[],
+): readonly CloudSeaProfessionalHourlyWindow[] {
+  return nights
+    .filter(
+      (night) =>
+        night.recommendationLevel === "not_recommended" &&
+        night.astronomicalNight.startAt &&
+        night.astronomicalNight.endAt,
+    )
+    .map((night) => ({
+      startTime: night.astronomicalNight.startAt!,
+      endTime: night.astronomicalNight.endAt!,
+      label: `${night.localEveningDateLabel} 风险夜间窗口`,
+    }));
+}
+
+function astroProfessionalRowAnnotations(
+  nights: readonly AstroNightDisplayModel[],
+): readonly ProfessionalHourlyRowAnnotation[] {
+  return nights
+    .filter((night) => night.milkyWay.bestStartAt)
+    .map((night) => ({
+      rowTime: night.milkyWay.bestStartAt!,
+      label: "最佳星空窗口",
+      detail: night.conciseReason,
+      tone: night.recommendationLevel === "recommended" ? "success" : "info",
+    }));
+}
+
+function buildAstroJudgmentFactors(
+  result: ForecastCalculationResult,
+  nights: readonly AstroNightDisplayModel[],
+  bestNight: AstroNightDisplayModel | undefined,
+): readonly AstroJudgmentFactorCard[] {
+  const night = bestNight ?? nights[0];
+  const terrain = result.astroAnalysis.terrainEvidence[0];
+  const light = result.astroAnalysis.lightPollutionEvidence[0];
+  if (!night) {
+    return [];
+  }
+
+  return [
+    {
+      key: "astronomical-night",
+      label: "天文黑夜",
+      status: night.astronomicalNight.label,
+      detail: night.astronomicalNight.windowLabel,
+      tone: night.astronomicalNight.lifecycle === "available" ? "primary" : "accent",
+    },
+    {
+      key: "moonlight",
+      label: "月光干扰",
+      status: night.moon.moonlightInterferenceLevel,
+      detail: `${night.moon.phaseName}，照明 ${night.moon.illuminationDisplay}，重叠 ${night.moon.overlapDisplay}`,
+      tone:
+        night.moon.moonlightInterferenceLevel === "高" ||
+        night.moon.moonlightInterferenceLevel === "很高"
+          ? "danger"
+          : night.moon.moonlightInterferenceLevel === "中"
+            ? "accent"
+            : "primary",
+    },
+    {
+      key: "milky-way-geometry",
+      label: "银河高度/方向",
+      status: night.milkyWay.available ? night.milkyWay.maximumAltitudeDisplay : "暂无窗口",
+      detail: `${night.milkyWay.geometricWindowLabel}；${night.milkyWay.azimuthSummary}`,
+      tone: night.milkyWay.available ? "info" : "muted",
+    },
+    {
+      key: "cloud",
+      label: "云量",
+      status: night.weather.cloudSummary,
+      detail: night.weather.lowCloudRisk,
+      tone: /高/.test(night.weather.lowCloudRisk) ? "danger" : "info",
+    },
+    {
+      key: "visibility-humidity",
+      label: "通透度与湿度",
+      status: night.weather.visibilitySummary,
+      detail: night.weather.humidityRisk,
+      tone: /高/.test(night.weather.humidityRisk) ? "accent" : "info",
+    },
+    {
+      key: "precipitation-wind",
+      label: "降水与风",
+      status: night.weather.precipitationRisk,
+      detail: night.weather.windRisk,
+      tone: /[1-9]\d%|mm/.test(night.weather.precipitationRisk) ? "accent" : "muted",
+    },
+    {
+      key: "light-terrain",
+      label: "光污染/地形",
+      status: light?.value ?? "光污染暂无数据",
+      detail: `${light?.noteZh ?? "未接入光污染数据。"} ${
+        terrain?.noteZh ?? "地平线遮挡需现场确认。"
+      }`,
+      tone: "muted",
+    },
+  ];
 }
 
 function buildHorizonViewFields(
