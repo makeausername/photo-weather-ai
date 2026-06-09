@@ -11,10 +11,14 @@ import {
   formatLocalDateLabel,
   formatLocalTimeRange,
   formatShootingWindowZh,
+  classifyGlowWindowLifecycle,
+  glowLocalDateKey,
   glowDisplayRecommendationForScore,
   glowScoreToDisplayProbabilityPercent,
+  isGlowWindowRecommendationEligible,
   normalizeDeepSeekModel,
   type DeepSeekReasoningEffort,
+  type GlowWindowLifecycleState,
 } from "@photo-weather/shared";
 import type { DecisionCard, ForecastCalculationResult } from "@photo-weather/shared";
 import { z } from "zod";
@@ -1095,25 +1099,24 @@ export function buildGlowAiExplainPayload(
       result.professionalHourlyDataTimeBasis?.requestedHours,
   );
   const focusedRows = professionalHourlyRowsForGlowPayload(result, professionalRows, detail);
-  const bestWindow =
-    analysis.bestGlowWindow ??
-    analysis.bestGlowWindows[0] ??
-    analysis.watchableGlowWindows[0] ??
-    analysis.notRecommendedGlowWindows[0];
-  const sunriseWindow = glowWindowForPhase(analysis, "sunrise");
-  const sunsetWindow = glowWindowForPhase(analysis, "sunset");
+  const glowWindowStates = buildGlowPromptWindowStates(result);
+  const sunriseWindowState = selectGlowPromptPhaseState(result, glowWindowStates, "sunrise");
+  const sunsetWindowState = selectGlowPromptPhaseState(result, glowWindowStates, "sunset");
   const precipitationSummary = summarizeProfessionalHourlyPrecipitation(focusedRows);
   const maxWindSpeedMs = maxNullableNumber(focusedRows.map((row) => row.windSpeedMs));
+  const preferredWindowState = selectGlowPromptPrimaryState(result, glowWindowStates);
   const preferredPhase =
-    analysis.sunriseGlowScore >= analysis.sunsetGlowScore ? "sunrise" : "sunset";
-  const preferredWindow =
-    bestWindow ?? (preferredPhase === "sunrise" ? sunriseWindow : sunsetWindow);
-  const preferredProbability =
-    preferredPhase === "sunrise"
-      ? glowScoreToDisplayProbabilityPercent(analysis.sunriseGlowScore)
-      : glowScoreToDisplayProbabilityPercent(analysis.sunsetGlowScore);
+    preferredWindowState?.phase ??
+    (analysis.sunriseGlowScore >= analysis.sunsetGlowScore ? "sunrise" : "sunset");
+  const preferredProbability = preferredWindowState?.probabilityPercent ?? 0;
   const preferredTargetZh =
-    preferredPhase === "sunrise" ? "朝霞" : preferredPhase === "sunset" ? "晚霞" : "霞光";
+    preferredWindowState === undefined
+      ? "暂无后续霞光窗口"
+      : preferredPhase === "sunrise"
+        ? "朝霞"
+        : preferredPhase === "sunset"
+          ? "晚霞"
+          : "霞光";
   const backupPlan = analysis.backupPlans[0];
 
   return {
@@ -1122,7 +1125,7 @@ export function buildGlowAiExplainPayload(
     targetCode: "glow",
     deterministicOnly: true,
     instruction:
-      "Explain deterministic sunrise/sunset glow facts only. Use probability, best local time, go/no-go recommendation, one main reason, one main risk, and one backup plan. Do not recompute or change probability, scores, windows, sun times, cloud values, aerosol values, terrain obstruction, or the deterministic recommendation.",
+      "Explain deterministic sunrise/sunset glow facts only. Use lifecycle, probability, best local time, go/no-go recommendation, one main reason, one main risk, and one backup plan. Do not recommend ended windows as actionable. Do not recompute or change probability, scores, windows, sun times, cloud values, aerosol values, terrain obstruction, or the deterministic recommendation.",
     locationName: limitText(result.place.name, 80),
     horizon: {
       key: result.horizon,
@@ -1133,16 +1136,21 @@ export function buildGlowAiExplainPayload(
     primaryDecision: {
       preferredTargetZh,
       preferredProbabilityPercent: preferredProbability,
-      preferredWindowZh: preferredWindow
-        ? formatGlowWindowForAiDisplay(preferredWindow, timezone)
+      preferredProbabilityDisplay: preferredWindowState?.probabilityDisplay ?? "暂无后续窗口",
+      lifecycle: preferredWindowState?.lifecycle ?? "unavailable",
+      actionable: preferredWindowState?.isActionable ?? false,
+      preferredWindowZh: preferredWindowState
+        ? formatGlowWindowStateForAiDisplay(preferredWindowState, timezone)
         : "暂无明确最佳时间",
-      recommendedArrivalZh: preferredWindow
-        ? recommendedGlowArrivalZh(preferredWindow, timezone)
+      recommendedArrivalZh: preferredWindowState
+        ? recommendedGlowArrivalForStateZh(preferredWindowState, timezone)
         : "临近更新后再决定到达时间",
-      recommendationZh: glowDisplayRecommendationForScore(analysis.glowTravelScore),
+      recommendationZh: preferredWindowState
+        ? glowPromptRecommendationZh(preferredWindowState)
+        : "暂无后续窗口",
       mainReasonZh: limitText(
         firstText(
-          [preferredWindow?.noteZh, ...analysis.opportunityReasons],
+          [preferredWindowState?.window?.noteZh, ...analysis.opportunityReasons],
           "霞光机会由中高云、低云遮挡、降水和通透度共同决定。",
         ),
         textLimit,
@@ -1156,16 +1164,36 @@ export function buildGlowAiExplainPayload(
         : "若霞光不足，转拍远山层次、云缝光或通透地景。",
     },
     sunriseGlow: {
-      probabilityPercent: glowScoreToDisplayProbabilityPercent(analysis.sunriseGlowScore),
-      recommendationZh: glowDisplayRecommendationForScore(analysis.sunriseGlowScore),
-      bestWindow: compactGlowWindowForAi(sunriseWindow, timezone, textLimit, detail),
-      sunEvent: compactGlowSunEvent(result, "sunrise", sunriseWindow, timezone, textLimit, detail),
+      probabilityPercent: sunriseWindowState.probabilityPercent,
+      probabilityDisplay: sunriseWindowState.probabilityDisplay,
+      lifecycle: sunriseWindowState.lifecycle,
+      actionable: sunriseWindowState.isActionable,
+      recommendationZh: glowPromptRecommendationZh(sunriseWindowState),
+      bestWindow: compactGlowWindowStateForAi(sunriseWindowState, timezone, textLimit, detail),
+      sunEvent: compactGlowSunEvent(
+        result,
+        "sunrise",
+        sunriseWindowState,
+        timezone,
+        textLimit,
+        detail,
+      ),
     },
     sunsetGlow: {
-      probabilityPercent: glowScoreToDisplayProbabilityPercent(analysis.sunsetGlowScore),
-      recommendationZh: glowDisplayRecommendationForScore(analysis.sunsetGlowScore),
-      bestWindow: compactGlowWindowForAi(sunsetWindow, timezone, textLimit, detail),
-      sunEvent: compactGlowSunEvent(result, "sunset", sunsetWindow, timezone, textLimit, detail),
+      probabilityPercent: sunsetWindowState.probabilityPercent,
+      probabilityDisplay: sunsetWindowState.probabilityDisplay,
+      lifecycle: sunsetWindowState.lifecycle,
+      actionable: sunsetWindowState.isActionable,
+      recommendationZh: glowPromptRecommendationZh(sunsetWindowState),
+      bestWindow: compactGlowWindowStateForAi(sunsetWindowState, timezone, textLimit, detail),
+      sunEvent: compactGlowSunEvent(
+        result,
+        "sunset",
+        sunsetWindowState,
+        timezone,
+        textLimit,
+        detail,
+      ),
     },
     deterministicAuthority: {
       sunriseGlowScore: analysis.sunriseGlowScore,
@@ -1245,7 +1273,14 @@ export function buildGlowAiExplainPayload(
       recommendationLabelZh: glowDisplayRecommendationForScore(
         day.practicalScore ?? Math.max(day.sunriseScore, day.sunsetScore),
       ),
-      bestWindow: compactGlowWindowForAi(day.bestWindow, timezone, textLimit, detail),
+      sunriseLifecycle: glowPromptLifecycleForDatePhase(result, day.date, "sunrise"),
+      sunsetLifecycle: glowPromptLifecycleForDatePhase(result, day.date, "sunset"),
+      bestWindow: compactGlowWindowStateForAi(
+        glowPromptWindowStateForDailyWindow(result, day.bestWindow),
+        timezone,
+        textLimit,
+        detail,
+      ),
       keyReasonZh: limitText(day.keyReason, textLimit),
       riskNoteZh: limitText(day.riskNote, textLimit),
     })),
@@ -1253,17 +1288,318 @@ export function buildGlowAiExplainPayload(
   };
 }
 
-function glowWindowForPhase(
+type GlowPromptPhase = "sunrise" | "sunset";
+
+type GlowPromptWindow =
+  | ForecastCalculationResult["glowAnalysis"]["bestGlowWindows"][number]
+  | ForecastCalculationResult["glowAnalysis"]["watchableGlowWindows"][number]
+  | ForecastCalculationResult["glowAnalysis"]["notRecommendedGlowWindows"][number];
+
+type GlowPromptWindowState = {
+  readonly phase: GlowPromptPhase;
+  readonly lifecycle: GlowWindowLifecycleState;
+  readonly isActionable: boolean;
+  readonly window?: GlowPromptWindow;
+  readonly date?: string;
+  readonly startAt?: string;
+  readonly endAt?: string;
+  readonly score: number;
+  readonly probabilityPercent: number;
+  readonly probabilityDisplay: string;
+};
+
+function buildGlowPromptWindowStates(result: ForecastCalculationResult): readonly GlowPromptWindowState[] {
+  return allGlowPromptWindows(result.glowAnalysis).map((window) =>
+    glowPromptWindowStateForWindow(result, window, window.practicalScore ?? window.score),
+  );
+}
+
+function allGlowPromptWindows(
   analysis: ForecastCalculationResult["glowAnalysis"],
-  phase: "sunrise" | "sunset",
-) {
+): readonly GlowPromptWindow[] {
   const windows = [
     analysis.bestGlowWindow,
     ...analysis.bestGlowWindows,
     ...analysis.watchableGlowWindows,
     ...analysis.notRecommendedGlowWindows,
-  ].filter((window): window is NonNullable<typeof window> => Boolean(window));
-  return windows.find((window) => glowWindowPhase(window) === phase);
+  ].filter((window): window is GlowPromptWindow => Boolean(window));
+  const seen = new Set<string>();
+  const unique: GlowPromptWindow[] = [];
+
+  for (const window of windows) {
+    const key = `${window.type}-${window.start}-${window.end}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(window);
+  }
+
+  return unique;
+}
+
+function selectGlowPromptPhaseState(
+  result: ForecastCalculationResult,
+  states: readonly GlowPromptWindowState[],
+  phase: GlowPromptPhase,
+): GlowPromptWindowState {
+  const score =
+    phase === "sunrise"
+      ? result.glowAnalysis.sunriseGlowScore
+      : result.glowAnalysis.sunsetGlowScore;
+  const phaseStates = states
+    .filter((state) => state.phase === phase)
+    .map((state) => ({ ...state, score, probabilityPercent: glowScoreToDisplayProbabilityPercent(score) }))
+    .map((state) => ({
+      ...state,
+      probabilityDisplay: glowPromptProbabilityDisplay(state.lifecycle, state.probabilityPercent),
+    }));
+  const actionable = selectGlowPromptActionableState(result, phaseStates);
+  if (actionable) {
+    return actionable;
+  }
+
+  const currentDate = glowLocalDateKey(glowPromptEvaluatedAt(result), result.calendarBasis.timezone);
+  const currentEnded = phaseStates
+    .filter((state) => state.lifecycle === "ended" && state.date === currentDate)
+    .sort((left, right) => Date.parse(right.endAt ?? "") - Date.parse(left.endAt ?? ""))[0];
+  if (currentEnded) {
+    return currentEnded;
+  }
+
+  const derivedEnded = currentDate
+    ? derivedEndedGlowPromptState(result, phase, currentDate, score)
+    : undefined;
+  return derivedEnded ?? unavailableGlowPromptState(result, phase, score);
+}
+
+function selectGlowPromptPrimaryState(
+  result: ForecastCalculationResult,
+  states: readonly GlowPromptWindowState[],
+): GlowPromptWindowState | undefined {
+  return selectGlowPromptActionableState(result, states);
+}
+
+function selectGlowPromptActionableState(
+  result: ForecastCalculationResult,
+  states: readonly GlowPromptWindowState[],
+): GlowPromptWindowState | undefined {
+  const actionables = states.filter((state) => state.isActionable);
+  if (actionables.length === 0) {
+    return undefined;
+  }
+
+  const currentDate = glowLocalDateKey(glowPromptEvaluatedAt(result), result.calendarBasis.timezone);
+  const currentDateStates = currentDate
+    ? actionables.filter((state) => state.date === currentDate)
+    : [];
+  if (currentDateStates.length > 0) {
+    return [...currentDateStates].sort(compareGlowPromptStates)[0];
+  }
+
+  const futureDates = [
+    ...new Set(
+      actionables
+        .map((state) => state.date)
+        .filter((date): date is string => Boolean(date))
+        .filter((date) => !currentDate || date > currentDate),
+    ),
+  ].sort();
+  const nextDate = futureDates[0];
+  const nextDateStates = nextDate ? actionables.filter((state) => state.date === nextDate) : [];
+  const pool = nextDateStates.length > 0 ? nextDateStates : actionables;
+
+  return [...pool].sort(compareGlowPromptStates)[0];
+}
+
+function compareGlowPromptStates(left: GlowPromptWindowState, right: GlowPromptWindowState): number {
+  return (
+    glowPromptLifecycleRank(left.lifecycle) - glowPromptLifecycleRank(right.lifecycle) ||
+    right.score - left.score ||
+    Date.parse(left.startAt ?? "") - Date.parse(right.startAt ?? "")
+  );
+}
+
+function glowPromptLifecycleRank(state: GlowWindowLifecycleState): number {
+  if (state === "active") {
+    return 0;
+  }
+  if (state === "upcoming") {
+    return 1;
+  }
+  if (state === "ended") {
+    return 2;
+  }
+  return 3;
+}
+
+function glowPromptWindowStateForDailyWindow(
+  result: ForecastCalculationResult,
+  window: GlowPromptWindow | undefined,
+): GlowPromptWindowState | undefined {
+  return window
+    ? glowPromptWindowStateForWindow(result, window, window.practicalScore ?? window.score)
+    : undefined;
+}
+
+function glowPromptLifecycleForDatePhase(
+  result: ForecastCalculationResult,
+  date: string,
+  phase: GlowPromptPhase,
+) {
+  const state =
+    buildGlowPromptWindowStates(result).find(
+      (item) => item.date === date && item.phase === phase,
+    ) ?? derivedEndedGlowPromptState(result, phase, date, phaseScoreForPrompt(result, phase));
+
+  return {
+    lifecycle: state?.lifecycle ?? "unavailable",
+    actionable: state?.isActionable ?? false,
+    windowZh: state?.startAt && state.endAt ? formatLocalTimeRange(state.startAt, state.endAt, result.calendarBasis.timezone) : null,
+  };
+}
+
+function glowPromptWindowStateForWindow(
+  result: ForecastCalculationResult,
+  window: GlowPromptWindow,
+  score: number,
+): GlowPromptWindowState {
+  const lifecycle = classifyGlowWindowLifecycle({
+    startAt: window.start,
+    endAt: window.end,
+    evaluatedAt: glowPromptEvaluatedAt(result),
+    timezone: result.calendarBasis.timezone,
+  }).state;
+  const probabilityPercent = glowScoreToDisplayProbabilityPercent(score);
+
+  return {
+    phase: glowWindowPhase(window),
+    lifecycle,
+    isActionable: isGlowWindowRecommendationEligible(lifecycle),
+    window,
+    date: window.date ?? glowLocalDateKey(window.start, result.calendarBasis.timezone) ?? undefined,
+    startAt: window.start,
+    endAt: window.end,
+    score,
+    probabilityPercent,
+    probabilityDisplay: glowPromptProbabilityDisplay(lifecycle, probabilityPercent),
+  };
+}
+
+function derivedEndedGlowPromptState(
+  result: ForecastCalculationResult,
+  phase: GlowPromptPhase,
+  date: string,
+  score: number,
+): GlowPromptWindowState | undefined {
+  const window = derivedGlowPromptSunWindowForDate(result, phase, date);
+  if (!window) {
+    return undefined;
+  }
+  const lifecycle = classifyGlowWindowLifecycle({
+    startAt: window.startAt,
+    endAt: window.endAt,
+    evaluatedAt: glowPromptEvaluatedAt(result),
+    timezone: result.calendarBasis.timezone,
+  }).state;
+  if (lifecycle !== "ended") {
+    return undefined;
+  }
+  const probabilityPercent = glowScoreToDisplayProbabilityPercent(score);
+
+  return {
+    phase,
+    lifecycle,
+    isActionable: false,
+    date,
+    startAt: window.startAt,
+    endAt: window.endAt,
+    score,
+    probabilityPercent,
+    probabilityDisplay: "已结束",
+  };
+}
+
+function unavailableGlowPromptState(
+  result: ForecastCalculationResult,
+  phase: GlowPromptPhase,
+  score: number,
+): GlowPromptWindowState {
+  const probabilityPercent = glowScoreToDisplayProbabilityPercent(score);
+  return {
+    phase,
+    lifecycle: "unavailable",
+    isActionable: false,
+    score,
+    probabilityPercent,
+    probabilityDisplay: "暂无明确时间",
+    date: glowLocalDateKey(glowPromptEvaluatedAt(result), result.calendarBasis.timezone) ?? undefined,
+  };
+}
+
+function derivedGlowPromptSunWindowForDate(
+  result: ForecastCalculationResult,
+  phase: GlowPromptPhase,
+  date: string,
+): { readonly startAt: string; readonly endAt: string } | undefined {
+  const astro = result.astroSummaries.find((summary) => summary.date === date);
+  if (!astro) {
+    return undefined;
+  }
+  if (phase === "sunrise" && astro.sunrise) {
+    return {
+      startAt: astro.sunrise,
+      endAt: shiftGlowPromptTime(astro.sunrise, 75),
+    };
+  }
+  if (phase === "sunset" && astro.sunset) {
+    return {
+      startAt: shiftGlowPromptTime(astro.sunset, -75),
+      endAt: astro.civilDusk ?? shiftGlowPromptTime(astro.sunset, 75),
+    };
+  }
+  return undefined;
+}
+
+function shiftGlowPromptTime(value: string, minutes: number): string {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp + minutes * 60 * 1000).toISOString() : value;
+}
+
+function phaseScoreForPrompt(result: ForecastCalculationResult, phase: GlowPromptPhase): number {
+  return phase === "sunrise"
+    ? result.glowAnalysis.sunriseGlowScore
+    : result.glowAnalysis.sunsetGlowScore;
+}
+
+function glowPromptEvaluatedAt(result: ForecastCalculationResult): string {
+  return result.generatedAt || result.calendarBasis.forecastStart;
+}
+
+function glowPromptProbabilityDisplay(
+  lifecycle: GlowWindowLifecycleState,
+  probabilityPercent: number,
+): string {
+  if (lifecycle === "ended") {
+    return "已结束";
+  }
+  if (lifecycle === "unavailable") {
+    return "暂无明确时间";
+  }
+  return `${probabilityPercent}%`;
+}
+
+function glowPromptRecommendationZh(state: GlowPromptWindowState): string {
+  if (state.lifecycle === "active") {
+    return "窗口进行中";
+  }
+  if (state.lifecycle === "ended") {
+    return "已结束";
+  }
+  if (state.lifecycle === "unavailable") {
+    return "暂无明确时间";
+  }
+  return glowDisplayRecommendationForScore(state.score);
 }
 
 function glowWindowPhase(
@@ -1286,74 +1622,87 @@ function glowWindowPhase(
   return typeof hour === "number" && hour < 12 ? "sunrise" : "sunset";
 }
 
-function compactGlowWindowForAi(
-  window:
-    | ForecastCalculationResult["glowAnalysis"]["bestGlowWindows"][number]
-    | ForecastCalculationResult["glowAnalysis"]["watchableGlowWindows"][number]
-    | ForecastCalculationResult["glowAnalysis"]["notRecommendedGlowWindows"][number]
-    | undefined,
+function compactGlowWindowStateForAi(
+  state: GlowPromptWindowState | undefined,
   timezone: string,
   textLimit: number,
   detail: DeepSeekForecastContextDetail = "standard",
 ) {
-  if (!window) {
+  if (!state || !state.startAt || !state.endAt || state.lifecycle === "unavailable") {
     return null;
   }
+  const window = state.window;
   if (detail === "budget") {
     return {
-      type: window.type,
-      phase: glowWindowPhase(window),
-      labelZh: window.labelZh,
-      date: window.date,
-      windowZh: formatLocalTimeRange(window.start, window.end, timezone),
-      score: window.score,
-      rainOverlapsWindow: window.rainOverlapsWindow,
-      riskTags: takeTextItems(window.riskTags, 2, 40),
-      noteZh: limitText(window.noteZh, textLimit),
+      type: window?.type,
+      phase: state.phase,
+      lifecycle: state.lifecycle,
+      actionable: state.isActionable,
+      labelZh: window?.labelZh ?? `${glowPromptPhaseLabel(state.phase)}窗口`,
+      date: state.date,
+      windowZh: formatLocalTimeRange(state.startAt, state.endAt, timezone),
+      probabilityPercent: state.probabilityPercent,
+      probabilityDisplay: state.probabilityDisplay,
+      score: state.score,
+      rainOverlapsWindow: window?.rainOverlapsWindow,
+      riskTags: takeTextItems(window?.riskTags ?? [], 2, 40),
+      noteZh: limitText(window?.noteZh ?? glowPromptActionabilityZh(state), textLimit),
     };
   }
   return {
-    type: window.type,
-    phase: glowWindowPhase(window),
-    labelZh: window.labelZh,
-    date: window.date,
-    windowZh: formatLocalTimeRange(window.start, window.end, timezone),
-    score: window.score,
-    colorCarrierScore: window.colorCarrierScore,
-    lowCloudObstructionRisk: window.lowCloudObstructionRisk,
-    precipitationDisruptionRisk: window.precipitationDisruptionRisk,
-    visibilityColorQualityScore: window.visibilityColorQualityScore,
-    aerosolScore: window.aerosolScore,
-    terrainScore: window.terrainScore,
-    rainOverlapsWindow: window.rainOverlapsWindow,
-    postRainOpeningChance: window.postRainOpeningChance,
-    glowWindowRainRisk: window.glowWindowRainRisk,
-    riskTags: takeTextItems(window.riskTags, 3, 50),
-    noteZh: limitText(window.noteZh, textLimit),
+    type: window?.type,
+    phase: state.phase,
+    lifecycle: state.lifecycle,
+    actionable: state.isActionable,
+    actionabilityZh: glowPromptActionabilityZh(state),
+    labelZh: window?.labelZh ?? `${glowPromptPhaseLabel(state.phase)}窗口`,
+    date: state.date,
+    windowZh: formatLocalTimeRange(state.startAt, state.endAt, timezone),
+    originalWindowZh: formatShootingWindowZh({ startTime: state.startAt, endTime: state.endAt }, timezone),
+    probabilityPercent: state.probabilityPercent,
+    probabilityDisplay: state.probabilityDisplay,
+    score: state.score,
+    colorCarrierScore: window?.colorCarrierScore,
+    lowCloudObstructionRisk: window?.lowCloudObstructionRisk,
+    precipitationDisruptionRisk: window?.precipitationDisruptionRisk,
+    visibilityColorQualityScore: window?.visibilityColorQualityScore,
+    aerosolScore: window?.aerosolScore,
+    terrainScore: window?.terrainScore,
+    rainOverlapsWindow: window?.rainOverlapsWindow,
+    postRainOpeningChance: window?.postRainOpeningChance,
+    glowWindowRainRisk: window?.glowWindowRainRisk,
+    riskTags: takeTextItems(window?.riskTags ?? [], 3, 50),
+    noteZh: limitText(window?.noteZh ?? glowPromptActionabilityZh(state), textLimit),
   };
 }
 
-function formatGlowWindowForAiDisplay(
-  window:
-    | ForecastCalculationResult["glowAnalysis"]["bestGlowWindows"][number]
-    | ForecastCalculationResult["glowAnalysis"]["watchableGlowWindows"][number]
-    | ForecastCalculationResult["glowAnalysis"]["notRecommendedGlowWindows"][number],
+function formatGlowWindowStateForAiDisplay(
+  state: GlowPromptWindowState,
   timezone: string,
 ): string {
-  return `${window.labelZh} ${formatShootingWindowZh(
-    { startTime: window.start, endTime: window.end },
+  if (!state.startAt || !state.endAt) {
+    return "暂无明确最佳时间";
+  }
+  return `${state.window?.labelZh ?? `${glowPromptPhaseLabel(state.phase)}窗口`} ${formatShootingWindowZh(
+    { startTime: state.startAt, endTime: state.endAt },
     timezone,
   )}`;
 }
 
-function recommendedGlowArrivalZh(
-  window:
-    | ForecastCalculationResult["glowAnalysis"]["bestGlowWindows"][number]
-    | ForecastCalculationResult["glowAnalysis"]["watchableGlowWindows"][number]
-    | ForecastCalculationResult["glowAnalysis"]["notRecommendedGlowWindows"][number],
+function recommendedGlowArrivalForStateZh(
+  state: GlowPromptWindowState,
   timezone: string,
 ): string {
-  const startMs = Date.parse(window.start);
+  if (state.lifecycle === "active") {
+    return "窗口进行中，建议尽快到位";
+  }
+  if (state.lifecycle === "ended") {
+    return "本次窗口已结束，不建议为此窗口到达";
+  }
+  if (state.lifecycle === "unavailable" || !state.startAt) {
+    return "临近更新后再决定到达时间";
+  }
+  const startMs = Date.parse(state.startAt);
   if (!Number.isFinite(startMs)) {
     return "建议提前 45 分钟到达";
   }
@@ -1369,17 +1718,13 @@ function recommendedGlowArrivalZh(
 
 function compactGlowSunEvent(
   result: ForecastCalculationResult,
-  phase: "sunrise" | "sunset",
-  window:
-    | ForecastCalculationResult["glowAnalysis"]["bestGlowWindows"][number]
-    | ForecastCalculationResult["glowAnalysis"]["watchableGlowWindows"][number]
-    | ForecastCalculationResult["glowAnalysis"]["notRecommendedGlowWindows"][number]
-    | undefined,
+  phase: GlowPromptPhase,
+  state: GlowPromptWindowState,
   timezone: string,
   textLimit: number,
   detail: DeepSeekForecastContextDetail,
 ) {
-  const astro = astroSummaryForGlowPhase(result, phase, window?.date);
+  const astro = astroSummaryForGlowPhase(result, phase, state.date);
   const eventTime = phase === "sunrise" ? astro?.sunrise : astro?.sunset;
   const civilStart = phase === "sunrise" ? astro?.civilDawn : astro?.sunset;
   const civilEnd = phase === "sunrise" ? astro?.sunrise : astro?.civilDusk;
@@ -1395,14 +1740,18 @@ function compactGlowSunEvent(
         ? result.glowAnalysis.labels.sunriseGlowOpportunity
         : result.glowAnalysis.labels.sunsetGlowOpportunity,
     eventTime,
+    lifecycle: state.lifecycle,
+    actionable: state.isActionable,
     civilTwilightWindowZh:
       civilStart && civilEnd
         ? formatShootingWindowZh({ startTime: civilStart, endTime: civilEnd }, timezone)
         : undefined,
     solarAzimuthDegrees,
     bestWindow:
-      detail === "budget" ? undefined : compactGlowWindowForAi(window, timezone, textLimit, detail),
-    arrivalPreparationZh: glowArrivalPreparationZh(result, phase, window, timezone, textLimit),
+      detail === "budget"
+        ? undefined
+        : compactGlowWindowStateForAi(state, timezone, textLimit, detail),
+    arrivalPreparationZh: glowArrivalPreparationZh(result, phase, state, timezone, textLimit),
   };
 }
 
@@ -1424,15 +1773,21 @@ function astroSummaryForGlowPhase(
 
 function glowArrivalPreparationZh(
   result: ForecastCalculationResult,
-  phase: "sunrise" | "sunset",
-  window:
-    | ForecastCalculationResult["glowAnalysis"]["bestGlowWindows"][number]
-    | ForecastCalculationResult["glowAnalysis"]["watchableGlowWindows"][number]
-    | ForecastCalculationResult["glowAnalysis"]["notRecommendedGlowWindows"][number]
-    | undefined,
+  phase: GlowPromptPhase,
+  state: GlowPromptWindowState,
   timezone: string,
   textLimit: number,
 ): string {
+  if (state.lifecycle === "ended") {
+    return "该窗口已结束，不作为当前到达建议。";
+  }
+  if (state.lifecycle === "active") {
+    return "窗口进行中，建议尽快到位并现场复核云层。";
+  }
+  if (state.lifecycle === "unavailable") {
+    return "暂无明确到达时间，出发前优先复核日出/日落窗口、云层和降水。";
+  }
+
   const keyword = phase === "sunrise" ? /(朝霞|日出)/ : /(晚霞|日落|余晖)/;
   const deterministicAdvice = result.glowAnalysis.travelRecommendations.find((item) =>
     keyword.test(item),
@@ -1440,13 +1795,30 @@ function glowArrivalPreparationZh(
   if (deterministicAdvice) {
     return limitText(deterministicAdvice, textLimit);
   }
-  if (window) {
+  if (state.startAt && state.endAt) {
     return `按 ${formatShootingWindowZh(
-      { startTime: window.start, endTime: window.end },
+      { startTime: state.startAt, endTime: state.endAt },
       timezone,
     )} 提前完成到位、构图和安全复核。`;
   }
   return "暂无明确到达时间，出发前优先复核日出/日落窗口、云层和降水。";
+}
+
+function glowPromptActionabilityZh(state: GlowPromptWindowState): string {
+  if (state.lifecycle === "ended") {
+    return "窗口已结束，不作为当前行动建议。";
+  }
+  if (state.lifecycle === "active") {
+    return "窗口进行中，优先现场复核。";
+  }
+  if (state.lifecycle === "upcoming") {
+    return "未来窗口，可作为当前推荐候选。";
+  }
+  return "暂无可靠 deterministic 窗口。";
+}
+
+function glowPromptPhaseLabel(phase: GlowPromptPhase): "朝霞" | "晚霞" {
+  return phase === "sunrise" ? "朝霞" : "晚霞";
 }
 
 function compactGlowEvidenceByLabel(

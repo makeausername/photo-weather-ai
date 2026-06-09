@@ -327,6 +327,75 @@ describe("AI providers", () => {
     expect(request.promptSizeChars).toBeLessThanOrEqual(6000);
   });
 
+  it("marks ended glow windows in the DeepSeek prompt without zeroing their probability", () => {
+    const endedSunriseWindow = {
+      type: "sunrise" as const,
+      labelZh: "朝霞峰值窗口",
+      date: "2026-05-21",
+      start: "2026-05-21T05:17:00+08:00",
+      end: "2026-05-21T06:32:00+08:00",
+      score: 69,
+      riskTags: ["风险可控"],
+      noteZh: "朝霞窗口已经结束，但 deterministic 概率原值仍需保留。",
+    };
+    const upcomingSunsetWindow = {
+      ...endedSunriseWindow,
+      type: "sunset" as const,
+      labelZh: "晚霞峰值窗口",
+      start: "2026-05-21T17:55:00+08:00",
+      end: "2026-05-21T19:18:00+08:00",
+      score: 62,
+      noteZh: "晚霞窗口仍未开始，可作为当前行动候选。",
+    };
+    const request = buildDeepSeekForecastExplanationRequest({
+      forecastResult: {
+        ...forecastResultFixture,
+        target: "glow",
+        generatedAt: "2026-05-21T10:00:00+08:00",
+        astroSummaries: [astroSummaryForGlowTest()],
+        glowAnalysis: {
+          ...forecastResultFixture.glowAnalysis,
+          sunriseGlowScore: 69,
+          sunsetGlowScore: 62,
+          bestGlowWindow: endedSunriseWindow,
+          bestGlowWindows: [endedSunriseWindow, upcomingSunsetWindow],
+          dailyGlow: [
+            {
+              date: "2026-05-21",
+              dateLabelZh: "2026年5月21日 星期四",
+              sunriseScore: 69,
+              sunsetScore: 62,
+              bestWindow: endedSunriseWindow,
+              bestTarget: "sunrise",
+              recommendationLabel: "值得等待",
+              keyReason: "朝霞分数较高但窗口已结束。",
+              riskNote: "风险可控",
+            },
+          ],
+        },
+      },
+    });
+    const payload = readForecastExplanationUserPayload(request);
+    const glow = payload.computedForecastFacts.glow;
+
+    expect(glow?.sunriseGlow.lifecycle).toBe("ended");
+    expect(glow?.sunriseGlow.actionable).toBe(false);
+    expect(glow?.sunriseGlow.probabilityPercent).toBeGreaterThan(0);
+    expect(glow?.sunriseGlow.probabilityDisplay).toBe("已结束");
+    expect(glow?.sunriseGlow.bestWindow).toMatchObject({
+      lifecycle: "ended",
+      actionable: false,
+      windowZh: "05:17–06:32",
+    });
+    expect(glow?.primaryDecision).toMatchObject({
+      preferredTargetZh: "晚霞",
+      lifecycle: "upcoming",
+      actionable: true,
+    });
+    expect(glow?.primaryDecision.recommendedArrivalZh).not.toContain("04:");
+    expect(JSON.stringify(request.body)).toContain("Do not recommend ended windows as actionable");
+  });
+
   it("omits glow aerosol and terrain numeric details when those deterministic facts are unavailable", () => {
     const payload = buildGlowAiExplainPayload(
       {

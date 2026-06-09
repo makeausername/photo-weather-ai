@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import {
   buildCloudLayerCompletenessContext,
   buildCloudSeaCloudBasisConsistencyContext,
+  classifyGlowWindowLifecycle,
   classifyTerrainMode,
   formatArrivalDeadlineZh,
   formatLocalDateLabel,
@@ -4393,18 +4394,20 @@ function GlowPrimaryOpportunityCards({
       data-glow-section="GlowPrimaryOpportunityCards"
     >
       {opportunities.map((opportunity) => (
-        <article
-          key={opportunity.key}
-          className={cn(
-            "rounded-lg border bg-card p-4 shadow-sm",
-            opportunity.tone === "primary"
-              ? "border-primary/40"
-              : opportunity.tone === "danger"
-                ? "border-danger/40"
-                : "border-border",
-          )}
-          data-glow-primary-opportunity={opportunity.key}
-        >
+          <article
+            key={opportunity.key}
+            className={cn(
+              "rounded-lg border bg-card p-4 shadow-sm",
+              opportunity.tone === "primary"
+                ? "border-primary/40"
+                : opportunity.tone === "danger"
+                  ? "border-danger/40"
+                  : "border-border",
+              opportunity.windowState === "ended" ? "bg-muted/60" : "",
+            )}
+            data-glow-primary-opportunity={opportunity.key}
+            data-glow-window-state={opportunity.windowState}
+          >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-xs font-semibold text-muted-foreground">
@@ -4421,11 +4424,11 @@ function GlowPrimaryOpportunityCards({
               <p className="text-xs text-muted-foreground">预测概率</p>
               <p
                 className={cn(
-                  "mt-1 text-4xl font-bold leading-none",
+                  "mt-1 max-w-full break-words text-3xl font-bold leading-none sm:text-4xl",
                   cardToneText(opportunity.tone),
                 )}
               >
-                {opportunity.probabilityPercent}%
+                {opportunity.probabilityDisplay}
               </p>
             </div>
             <dl className="grid gap-2 text-sm">
@@ -4457,7 +4460,7 @@ function GlowOverallRecommendationCard({
         <div>
           <p className="text-xs font-semibold text-muted-foreground">今天最值得拍什么</p>
           <h2 className="mt-1 text-xl font-bold text-card-foreground">
-            优先{recommendation.preferredTarget}
+            {recommendation.headline}
           </h2>
         </div>
         <Badge variant={badgeVariantForTone(recommendation.tone)}>
@@ -4467,7 +4470,7 @@ function GlowOverallRecommendationCard({
       <div className="mt-4 grid gap-3 min-[760px]:grid-cols-5">
         <CompactDefinition
           label="预测概率"
-          value={`${recommendation.preferredProbabilityPercent}%`}
+          value={recommendation.preferredProbabilityDisplay}
         />
         <CompactDefinition label="最佳日期" value={recommendation.preferredDate} />
         <CompactDefinition label="最佳时间" value={recommendation.preferredTime} />
@@ -4511,11 +4514,18 @@ function GlowDailyOpportunitySection({
         <Badge variant="muted">{forecastHorizonLabels[result.horizon]}</Badge>
       </div>
       <div className="mt-4 grid gap-3">
+        {opportunities.length === 0 ? (
+          <p className="rounded-lg border border-border bg-muted px-3 py-3 text-sm text-muted-foreground">
+            所选预报范围内暂无后续霞光窗口
+          </p>
+        ) : null}
         {opportunities.map((item) => (
           <article
             key={item.key}
             className="grid gap-3 rounded-lg border border-border bg-muted p-3 min-[900px]:grid-cols-[minmax(150px,0.8fr)_minmax(180px,1fr)_minmax(180px,1fr)_minmax(200px,1.1fr)] min-[900px]:items-start"
             data-glow-daily-opportunity-date={item.date}
+            data-glow-sunrise-state={item.sunriseWindowState}
+            data-glow-sunset-state={item.sunsetWindowState}
           >
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -4525,20 +4535,20 @@ function GlowDailyOpportunitySection({
                 </Badge>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                优先{item.preferredTarget}，概率 {item.preferredProbabilityPercent}%
+                优先{item.preferredTarget}，概率 {item.preferredProbabilityDisplay}
               </p>
             </div>
             <dl className="grid gap-1 text-sm">
               <GlowInlineDefinition
                 label="朝霞概率"
-                value={`${item.sunriseGlowProbabilityPercent}%`}
+                value={item.sunriseProbabilityDisplay}
               />
               <GlowInlineDefinition label="朝霞时间" value={item.sunriseBestTime} />
             </dl>
             <dl className="grid gap-1 text-sm">
               <GlowInlineDefinition
                 label="晚霞概率"
-                value={`${item.sunsetGlowProbabilityPercent}%`}
+                value={item.sunsetProbabilityDisplay}
               />
               <GlowInlineDefinition label="晚霞时间" value={item.sunsetBestTime} />
             </dl>
@@ -7066,6 +7076,7 @@ function generalSubjectWindows(
 ): readonly ForecastCalculationResult["bestWindows"][number][] {
   return [...result.bestWindows]
     .filter((window) => matchesGeneralSubjectWindow(window, key))
+    .filter((window) => isActionableGlowClientWindow(result, window))
     .sort(
       (left, right) =>
         windowUsefulnessRank(right) - windowUsefulnessRank(left) ||
@@ -7811,12 +7822,29 @@ function sortedDailyWindows(
 ): readonly GeneralForecastWindow[] {
   return result.bestWindows
     .filter((window) => windowBelongsToDate(window, date))
+    .filter((window) => isActionableGlowClientWindow(result, window))
     .sort(
       (left, right) =>
         windowUsefulnessRank(right) - windowUsefulnessRank(left) ||
         (right.practicalScore ?? right.score) - (left.practicalScore ?? left.score) ||
         Date.parse(left.startTime) - Date.parse(right.startTime),
     );
+}
+
+function isActionableGlowClientWindow(
+  result: ForecastCalculationResult,
+  window: ForecastCalculationResult["bestWindows"][number],
+): boolean {
+  if (window.target !== "glow") {
+    return true;
+  }
+
+  return classifyGlowWindowLifecycle({
+    startAt: window.startTime,
+    endAt: window.endTime,
+    evaluatedAt: result.generatedAt || result.calendarBasis.forecastStart,
+    timezone: result.calendarBasis.timezone,
+  }).isRecommendationEligible;
 }
 
 function windowBelongsToDate(window: GeneralForecastWindow, date: string): boolean {

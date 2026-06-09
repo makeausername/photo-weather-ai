@@ -1815,6 +1815,19 @@ function resultWithGlowHourlyRange(
   };
 }
 
+type GlowWindowForTest = ForecastCalculationResult["glowAnalysis"]["bestGlowWindows"][number];
+
+function glowWindowForTest(
+  overrides: Pick<GlowWindowForTest, "type" | "labelZh" | "date" | "start" | "end" | "score"> &
+    Partial<GlowWindowForTest>,
+): GlowWindowForTest {
+  return {
+    riskTags: ["风险可控"],
+    noteZh: `${overrides.labelZh}窗口中高云和通透度较可用。`,
+    ...overrides,
+  };
+}
+
 function resultWithProfessionalHourlyData(
   overrides: Partial<ForecastCalculationResult> = {},
 ): ForecastCalculationResult {
@@ -6271,6 +6284,231 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.backupPlans.map((plan) => plan.condition)).toEqual(
       expect.arrayContaining(["无霞但通透", "低云遮挡"]),
     );
+  });
+
+  it("marks an ended sunrise glow window without converting its probability to 0%", () => {
+    const base = resultForTarget("glow");
+    const sunriseWindow = glowWindowForTest({
+      type: "sunrise",
+      labelZh: "朝霞峰值窗口",
+      date: "2026-05-20",
+      start: "2026-05-20T05:17:00+08:00",
+      end: "2026-05-20T06:32:00+08:00",
+      score: 69,
+      noteZh: "朝霞窗口中高云条件可用。",
+    });
+    const sunsetWindow = glowWindowForTest({
+      type: "sunset",
+      labelZh: "晚霞峰值窗口",
+      date: "2026-05-20",
+      start: "2026-05-20T17:56:00+08:00",
+      end: "2026-05-20T19:41:00+08:00",
+      score: 74,
+    });
+    const result: ForecastCalculationResult = {
+      ...base,
+      generatedAt: "2026-05-20T10:00:00+08:00",
+      scores: {
+        ...base.scores,
+        sunriseGlow: score("sunriseGlow", "朝霞", 69),
+      },
+      glowAnalysis: {
+        ...base.glowAnalysis,
+        sunriseGlowScore: 69,
+        bestGlowWindow: sunriseWindow,
+        bestGlowWindows: [sunriseWindow, sunsetWindow, ...base.glowAnalysis.bestGlowWindows.slice(2)],
+        dailyGlow: base.glowAnalysis.dailyGlow.map((day) =>
+          day.date === "2026-05-20"
+            ? {
+                ...day,
+                sunriseScore: 69,
+                sunsetScore: 74,
+                bestWindow: sunsetWindow,
+                bestTarget: "sunset",
+                keyReason: "朝霞窗口已结束，当前仅评估晚霞。",
+              }
+            : day,
+        ),
+      },
+    };
+
+    const viewModel = buildGlowForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(GlowResultPage, {
+        query: queryForTarget("glow"),
+        result,
+        viewModel,
+      }),
+    );
+    const sunrise = viewModel.primaryOpportunities.find((item) => item.key === "sunrise");
+    const today = viewModel.dailyOpportunities.find((item) => item.date === "2026-05-20");
+
+    expect(viewModel.sunriseGlowProbabilityPercent).toBe(66);
+    expect(viewModel.sunriseProbabilityDisplay).toBe("已结束");
+    expect(viewModel.sunriseWindowState).toBe("ended");
+    expect(viewModel.sunriseWindowStartAt).toBe("2026-05-20T05:17:00+08:00");
+    expect(sunrise?.bestTime).toBe("05:17–06:32");
+    expect(sunrise?.secondaryTimingHint).toBe("本次朝霞窗口已结束");
+    expect(viewModel.overallRecommendation.preferredTarget).toBe("晚霞");
+    expect(viewModel.overallRecommendation.preferredDate).toContain("2026年5月20日");
+    expect(viewModel.overallRecommendation.arrivalAdvice).not.toContain("04:");
+    expect(today?.sunriseProbabilityDisplay).toBe("已结束");
+    expect(today?.sunriseBestTime).toBe("05:17–06:32");
+    expect(today?.sunsetWindowState).toBe("upcoming");
+    expect(today?.preferredTarget).toBe("晚霞");
+    expect(html).toContain('data-glow-window-state="ended"');
+    expect(html).toContain("已结束");
+    expect(html).toContain("05:17–06:32");
+    expect(html).toContain("max-w-full break-words");
+  });
+
+  it("gives active glow windows priority over higher-scored upcoming windows", () => {
+    const base = resultForTarget("glow");
+    const sunriseWindow = glowWindowForTest({
+      type: "sunrise",
+      labelZh: "朝霞峰值窗口",
+      date: "2026-05-20",
+      start: "2026-05-20T05:17:00+08:00",
+      end: "2026-05-20T06:32:00+08:00",
+      score: 69,
+    });
+    const sunsetWindow = glowWindowForTest({
+      type: "sunset",
+      labelZh: "晚霞峰值窗口",
+      date: "2026-05-20",
+      start: "2026-05-20T17:56:00+08:00",
+      end: "2026-05-20T19:41:00+08:00",
+      score: 88,
+    });
+    const result: ForecastCalculationResult = {
+      ...base,
+      generatedAt: "2026-05-20T05:40:00+08:00",
+      glowAnalysis: {
+        ...base.glowAnalysis,
+        sunriseGlowScore: 69,
+        sunsetGlowScore: 88,
+        bestGlowWindows: [sunriseWindow, sunsetWindow],
+        dailyGlow: base.glowAnalysis.dailyGlow.slice(0, 1).map((day) => ({
+          ...day,
+          sunriseScore: 69,
+          sunsetScore: 88,
+          bestWindow: sunsetWindow,
+          bestTarget: "sunset",
+        })),
+      },
+    };
+
+    const viewModel = buildGlowForecastViewModel(result);
+
+    expect(viewModel.sunriseWindowState).toBe("active");
+    expect(viewModel.overallRecommendation.windowState).toBe("active");
+    expect(viewModel.overallRecommendation.preferredTarget).toBe("朝霞");
+    expect(viewModel.overallRecommendation.arrivalAdvice).toContain("窗口进行中");
+    expect(viewModel.dailyOpportunities[0]?.preferredTarget).toBe("朝霞");
+  });
+
+  it("keeps a future true 0% glow window as 0% instead of ended", () => {
+    const base = resultForTarget("glow");
+    const endedSunrise = glowWindowForTest({
+      type: "sunrise",
+      labelZh: "朝霞峰值窗口",
+      date: "2026-05-20",
+      start: "2026-05-20T05:17:00+08:00",
+      end: "2026-05-20T06:32:00+08:00",
+      score: 69,
+    });
+    const zeroSunset = glowWindowForTest({
+      type: "sunset",
+      labelZh: "晚霞低机会窗口",
+      date: "2026-05-20",
+      start: "2026-05-20T17:56:00+08:00",
+      end: "2026-05-20T19:41:00+08:00",
+      score: 0,
+      noteZh: "未来晚霞窗口存在，但 deterministic 模型预测几乎没有霞光机会。",
+    });
+    const result: ForecastCalculationResult = {
+      ...base,
+      generatedAt: "2026-05-20T10:00:00+08:00",
+      glowAnalysis: {
+        ...base.glowAnalysis,
+        sunriseGlowScore: 69,
+        sunsetGlowScore: 0,
+        bestGlowWindows: [endedSunrise],
+        watchableGlowWindows: [],
+        notRecommendedGlowWindows: [zeroSunset],
+        dailyGlow: [
+          {
+            ...base.glowAnalysis.dailyGlow[0]!,
+            sunriseScore: 69,
+            sunsetScore: 0,
+            bestWindow: zeroSunset,
+            notRecommendedWindow: zeroSunset,
+            bestTarget: "none",
+            keyReason: "晚霞窗口存在但机会很低。",
+          },
+        ],
+      },
+    };
+
+    const viewModel = buildGlowForecastViewModel(result);
+    const today = viewModel.dailyOpportunities[0];
+
+    expect(viewModel.sunsetWindowState).toBe("upcoming");
+    expect(viewModel.sunsetProbabilityDisplay).toBe("0%");
+    expect(viewModel.sunsetRecommendation).toBe("不建议专程前往");
+    expect(viewModel.overallRecommendation.preferredProbabilityDisplay).toBe("0%");
+    expect(today?.sunsetProbabilityDisplay).toBe("0%");
+    expect(today?.sunsetWindowState).toBe("upcoming");
+    expect(today?.sunriseProbabilityDisplay).toBe("已结束");
+  });
+
+  it("omits fully ended daily glow dates and falls back to the next future date", () => {
+    const result: ForecastCalculationResult = {
+      ...resultForTarget("glow"),
+      generatedAt: "2026-05-20T20:30:00+08:00",
+    };
+
+    const viewModel = buildGlowForecastViewModel(result);
+
+    expect(viewModel.overallRecommendation.preferredDate).toContain("2026年5月21日");
+    expect(viewModel.dailyOpportunities.map((item) => item.date)).toEqual(["2026-05-21"]);
+    expect(viewModel.dailyOpportunities.some((item) => item.date === "2026-05-20")).toBe(false);
+  });
+
+  it("renders a no-future-window state when all glow windows have ended", () => {
+    const base = resultForTarget("glow");
+    const result: ForecastCalculationResult = {
+      ...base,
+      horizon: "24h",
+      generatedAt: "2026-05-20T20:30:00+08:00",
+      targetDates: ["2026-05-20"],
+      calendarBasis: {
+        ...base.calendarBasis,
+        targetDates: ["2026-05-20"],
+        targetDateLabels: ["2026年5月20日 星期三"],
+        horizonHours: 24,
+      },
+      glowAnalysis: {
+        ...base.glowAnalysis,
+        bestGlowWindows: base.glowAnalysis.bestGlowWindows.filter(
+          (window) => window.date === "2026-05-20",
+        ),
+        dailyGlow: base.glowAnalysis.dailyGlow.filter((day) => day.date === "2026-05-20"),
+      },
+    };
+    const viewModel = buildGlowForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(GlowResultPage, {
+        query: { ...queryForTarget("glow"), horizon: "24h" },
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(viewModel.overallRecommendation.hasActionableWindow).toBe(false);
+    expect(viewModel.overallRecommendation.preferredProbabilityDisplay).toBe("暂无后续窗口");
+    expect(viewModel.dailyOpportunities).toHaveLength(0);
+    expect(html).toContain("所选预报范围内暂无后续霞光窗口");
   });
 
   it("renders the glow result without the entry-page popular spots placeholder", () => {

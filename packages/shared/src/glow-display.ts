@@ -11,6 +11,24 @@ export const glowDisplayRecommendationVocabulary = [
   "不建议专程前往",
 ] as const satisfies readonly GlowDisplayRecommendation[];
 
+export type GlowWindowLifecycleState = "upcoming" | "active" | "ended" | "unavailable";
+
+export type GlowWindowLifecycle = {
+  readonly state: GlowWindowLifecycleState;
+  readonly startAt?: string;
+  readonly endAt?: string;
+  readonly evaluatedAt: string;
+  readonly timezone: string;
+  readonly isRecommendationEligible: boolean;
+};
+
+export type GlowWindowLifecycleInput = {
+  readonly startAt?: string | null;
+  readonly endAt?: string | null;
+  readonly evaluatedAt: string | number | Date;
+  readonly timezone?: string | null;
+};
+
 const glowScoreProbabilityAnchors = [
   { score: 0, probability: 0 },
   { score: 42, probability: 32 },
@@ -25,6 +43,88 @@ function normalizedScore(value: number): number {
     return 0;
   }
   return Math.min(100, Math.max(0, value));
+}
+
+export function classifyGlowWindowLifecycle(input: GlowWindowLifecycleInput): GlowWindowLifecycle {
+  const timezone = input.timezone || "UTC";
+  const evaluatedAtMs = timestampMs(input.evaluatedAt);
+  const startAtMs = timestampMs(input.startAt);
+  const endAtMs = timestampMs(input.endAt);
+  const invalidWindow =
+    !Number.isFinite(evaluatedAtMs) ||
+    !Number.isFinite(startAtMs) ||
+    !Number.isFinite(endAtMs) ||
+    endAtMs <= startAtMs;
+
+  if (invalidWindow) {
+    return {
+      state: "unavailable",
+      startAt: input.startAt ?? undefined,
+      endAt: input.endAt ?? undefined,
+      evaluatedAt: normalizedTimestamp(input.evaluatedAt),
+      timezone,
+      isRecommendationEligible: false,
+    };
+  }
+
+  const state: GlowWindowLifecycleState =
+    evaluatedAtMs < startAtMs ? "upcoming" : evaluatedAtMs <= endAtMs ? "active" : "ended";
+
+  return {
+    state,
+    startAt: input.startAt ?? undefined,
+    endAt: input.endAt ?? undefined,
+    evaluatedAt: normalizedTimestamp(input.evaluatedAt),
+    timezone,
+    isRecommendationEligible: isGlowWindowRecommendationEligible(state),
+  };
+}
+
+export function isGlowWindowRecommendationEligible(state: GlowWindowLifecycleState): boolean {
+  return state === "upcoming" || state === "active";
+}
+
+export function glowLocalDateKey(
+  value: string | number | Date | null | undefined,
+  timezone: string,
+): string | null {
+  const timestamp = timestampMs(value);
+  if (!Number.isFinite(timestamp)) {
+    return null;
+  }
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone || "UTC",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(timestamp));
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+
+  return year && month && day ? `${year}-${month}-${day}` : null;
+}
+
+function timestampMs(value: string | number | Date | null | undefined): number {
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    return Date.parse(value);
+  }
+  return Number.NaN;
+}
+
+function normalizedTimestamp(value: string | number | Date): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  const timestamp = timestampMs(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : "";
 }
 
 // Glow scores are deterministic opportunity scores, not measured hit rates.

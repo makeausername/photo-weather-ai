@@ -10,8 +10,11 @@ import {
   formatLocalDateTimeRange,
   formatLocalTimeRange,
   forecastTargetLabels,
+  classifyGlowWindowLifecycle,
+  glowLocalDateKey,
   glowDisplayRecommendationForScore,
   glowScoreToDisplayProbabilityPercent,
+  isGlowWindowRecommendationEligible,
   type CloudLayerCompletenessContext,
   type CloudSeaCloudBasisConsistencyContext,
   type CloudSeaPrecipitationSignalContext,
@@ -43,6 +46,7 @@ import {
   type GlowEvidenceItem,
   type GlowTerrainObstructionAssessment,
   type GlowWindow,
+  type GlowWindowLifecycleState,
   type PhotographyPrecipitationRisk,
 } from "@photo-weather/shared";
 import { addHoursInTimezone } from "@photo-weather/calendar";
@@ -401,14 +405,28 @@ export type GlowEvidenceViewItem = {
 
 export type GlowOpportunityPhase = "sunrise" | "sunset";
 
+export type GlowDisplayRecommendationLabel =
+  | GlowDisplayRecommendation
+  | "窗口进行中"
+  | "已结束"
+  | "暂无明确时间"
+  | "暂无后续窗口";
+
 export type GlowPrimaryOpportunity = {
   readonly key: GlowOpportunityPhase;
   readonly title: "朝霞" | "晚霞";
   readonly probabilityPercent: number;
+  readonly probabilityDisplay: string;
   readonly bestDate: string;
   readonly bestTime: string;
   readonly bestWindow: string;
-  readonly recommendation: GlowDisplayRecommendation;
+  readonly recommendation: GlowDisplayRecommendationLabel;
+  readonly windowState: GlowWindowLifecycleState;
+  readonly windowStartAt?: string;
+  readonly windowEndAt?: string;
+  readonly evaluatedAt: string;
+  readonly timezone: string;
+  readonly isRecommendationEligible: boolean;
   readonly conciseReason: string;
   readonly secondaryTimingHint: string;
   readonly tone: ForecastResultCardTone;
@@ -416,11 +434,19 @@ export type GlowPrimaryOpportunity = {
 
 export type GlowOverallRecommendation = {
   readonly preferredTarget: "朝霞" | "晚霞" | "朝霞晚霞" | "暂不专程";
+  readonly headline: string;
   readonly preferredDate: string;
   readonly preferredTime: string;
   readonly preferredWindow: string;
   readonly preferredProbabilityPercent: number;
-  readonly recommendation: GlowDisplayRecommendation;
+  readonly preferredProbabilityDisplay: string;
+  readonly recommendation: GlowDisplayRecommendationLabel;
+  readonly hasActionableWindow: boolean;
+  readonly windowState?: GlowWindowLifecycleState;
+  readonly windowStartAt?: string;
+  readonly windowEndAt?: string;
+  readonly evaluatedAt: string;
+  readonly timezone: string;
   readonly arrivalAdvice: string;
   readonly conciseReason: string;
   readonly mainRisk: string;
@@ -433,16 +459,28 @@ export type GlowDailyOpportunity = {
   readonly date: string;
   readonly dateLabel: string;
   readonly sunriseGlowProbabilityPercent: number;
+  readonly sunriseProbabilityDisplay: string;
+  readonly sunriseWindowState: GlowWindowLifecycleState;
+  readonly sunriseWindowStartAt?: string;
+  readonly sunriseWindowEndAt?: string;
+  readonly sunriseIsRecommendationEligible: boolean;
   readonly sunriseBestTime: string;
   readonly sunriseBestWindow: string;
   readonly sunsetGlowProbabilityPercent: number;
+  readonly sunsetProbabilityDisplay: string;
+  readonly sunsetWindowState: GlowWindowLifecycleState;
+  readonly sunsetWindowStartAt?: string;
+  readonly sunsetWindowEndAt?: string;
+  readonly sunsetIsRecommendationEligible: boolean;
   readonly sunsetBestTime: string;
   readonly sunsetBestWindow: string;
   readonly preferredTarget: "朝霞" | "晚霞" | "朝霞晚霞" | "暂不专程";
   readonly preferredTime: string;
   readonly preferredWindow: string;
   readonly preferredProbabilityPercent: number;
-  readonly recommendation: GlowDisplayRecommendation;
+  readonly preferredProbabilityDisplay: string;
+  readonly recommendation: GlowDisplayRecommendationLabel;
+  readonly preferredWindowState?: GlowWindowLifecycleState;
   readonly conciseReason: string;
 };
 
@@ -488,10 +526,22 @@ export type GlowTerrainObstructionCard = {
 export type GlowForecastViewModel = {
   readonly sunriseGlowProbabilityPercent: number;
   readonly sunsetGlowProbabilityPercent: number;
+  readonly sunriseProbabilityDisplay: string;
+  readonly sunsetProbabilityDisplay: string;
+  readonly sunriseWindowState: GlowWindowLifecycleState;
+  readonly sunsetWindowState: GlowWindowLifecycleState;
+  readonly sunriseWindowStartAt?: string;
+  readonly sunriseWindowEndAt?: string;
+  readonly sunsetWindowStartAt?: string;
+  readonly sunsetWindowEndAt?: string;
+  readonly evaluatedAt: string;
+  readonly timezone: string;
+  readonly sunriseIsRecommendationEligible: boolean;
+  readonly sunsetIsRecommendationEligible: boolean;
   readonly sunriseBestWindow: string;
   readonly sunsetBestWindow: string;
-  readonly sunriseRecommendation: GlowDisplayRecommendation;
-  readonly sunsetRecommendation: GlowDisplayRecommendation;
+  readonly sunriseRecommendation: GlowDisplayRecommendationLabel;
+  readonly sunsetRecommendation: GlowDisplayRecommendationLabel;
   readonly preferredTarget: GlowOverallRecommendation["preferredTarget"];
   readonly preferredWindow: string;
   readonly preferredProbabilityPercent: number;
@@ -1432,7 +1482,6 @@ export function buildGlowForecastViewModel(
   result: ForecastCalculationResult,
 ): GlowForecastViewModel {
   const analysis = result.glowAnalysis;
-  const bestWindow = analysis.bestGlowWindows[0];
   const lowCloudRiskLabel = glowRiskLabel(analysis.lowCloudObstructionRisk);
   const professionalHourlyData = buildProfessionalHourlyDisplayDataForResult({
     result,
@@ -1446,9 +1495,10 @@ export function buildGlowForecastViewModel(
   const overallRecommendation = buildGlowOverallRecommendation(
     result,
     analysis,
-    primaryOpportunities,
   );
   const dailyOpportunities = buildGlowDailyOpportunities(result, analysis);
+  const sunriseOpportunity = primaryOpportunities.find((item) => item.key === "sunrise");
+  const sunsetOpportunity = primaryOpportunities.find((item) => item.key === "sunset");
   const professionalEvidence = buildGlowProfessionalEvidence(
     result,
     analysis,
@@ -1463,6 +1513,18 @@ export function buildGlowForecastViewModel(
   return {
     sunriseGlowProbabilityPercent: primaryOpportunities[0]?.probabilityPercent ?? 0,
     sunsetGlowProbabilityPercent: primaryOpportunities[1]?.probabilityPercent ?? 0,
+    sunriseProbabilityDisplay: sunriseOpportunity?.probabilityDisplay ?? "暂无明确时间",
+    sunsetProbabilityDisplay: sunsetOpportunity?.probabilityDisplay ?? "暂无明确时间",
+    sunriseWindowState: sunriseOpportunity?.windowState ?? "unavailable",
+    sunsetWindowState: sunsetOpportunity?.windowState ?? "unavailable",
+    sunriseWindowStartAt: sunriseOpportunity?.windowStartAt,
+    sunriseWindowEndAt: sunriseOpportunity?.windowEndAt,
+    sunsetWindowStartAt: sunsetOpportunity?.windowStartAt,
+    sunsetWindowEndAt: sunsetOpportunity?.windowEndAt,
+    evaluatedAt: glowEvaluatedAt(result),
+    timezone: result.calendarBasis.timezone,
+    sunriseIsRecommendationEligible: sunriseOpportunity?.isRecommendationEligible ?? false,
+    sunsetIsRecommendationEligible: sunsetOpportunity?.isRecommendationEligible ?? false,
     sunriseBestWindow: primaryOpportunities[0]?.bestWindow ?? "暂无明确最佳时间",
     sunsetBestWindow: primaryOpportunities[1]?.bestWindow ?? "暂无明确最佳时间",
     sunriseRecommendation: primaryOpportunities[0]?.recommendation ?? "不建议专程前往",
@@ -1504,15 +1566,13 @@ export function buildGlowForecastViewModel(
         "glow-best-window",
         "bestWindow",
         "最佳霞光窗口",
-        bestWindow ? bestWindow.labelZh : "暂无精确霞光窗口",
-        bestWindow
-          ? `${formatWindow(
-              bestWindow.start,
-              bestWindow.end,
-              result.calendarBasis.timezone,
-            )}，${bestWindow.noteZh}`
-          : "缺少日出日落时间时，不生成精确霞光窗口。",
-        "primary",
+        overallRecommendation.hasActionableWindow
+          ? overallRecommendation.preferredTarget
+          : "暂无后续霞光窗口",
+        overallRecommendation.hasActionableWindow
+          ? `${overallRecommendation.preferredWindow}，${overallRecommendation.conciseReason}`
+          : overallRecommendation.conciseReason,
+        overallRecommendation.tone,
       ),
       textCard(
         "glow-main-action",
@@ -1576,44 +1636,40 @@ function buildGlowPrimaryOpportunity(
   analysis: GlowAnalysisResult,
   phase: GlowOpportunityPhase,
 ): GlowPrimaryOpportunity {
-  const score = phase === "sunrise" ? analysis.sunriseGlowScore : analysis.sunsetGlowScore;
-  const window = glowWindowForPhase(analysis, phase);
-  const recommendation = glowDisplayRecommendationForScore(score);
+  const windowState = selectPrimaryGlowPhaseWindowState(result, analysis, phase);
 
   return {
     key: phase,
     title: phase === "sunrise" ? "朝霞" : "晚霞",
-    probabilityPercent: glowScoreToDisplayProbabilityPercent(score),
-    bestDate: window ? windowDateLabel(result, window.date) : "暂无明确日期",
-    bestTime: formatGlowWindowForParentDate(result, window, "暂无明确最佳时间"),
-    bestWindow: formatGlowWindowForPublic(result, window, "暂无明确最佳时间"),
-    recommendation,
-    conciseReason: glowConciseReasonForPhase(result, analysis, phase, window),
-    secondaryTimingHint: glowArrivalHint(result, window),
-    tone: glowDisplayTone(recommendation),
+    probabilityPercent: windowState.probabilityPercent,
+    probabilityDisplay: windowState.probabilityDisplay,
+    bestDate: windowState.date ? windowDateLabel(result, windowState.date) : "暂无明确日期",
+    bestTime: formatGlowLifecycleWindowForParentDate(result, windowState, "暂无明确最佳时间"),
+    bestWindow: formatGlowLifecycleWindowForPublic(result, windowState, "暂无明确最佳时间"),
+    recommendation: windowState.recommendation,
+    windowState: windowState.state,
+    windowStartAt: windowState.startAt,
+    windowEndAt: windowState.endAt,
+    evaluatedAt: windowState.evaluatedAt,
+    timezone: windowState.timezone,
+    isRecommendationEligible: windowState.isRecommendationEligible,
+    conciseReason: glowConciseReasonForPhase(result, analysis, phase, windowState),
+    secondaryTimingHint: glowArrivalHint(result, phase, windowState),
+    tone: windowState.tone,
   };
 }
 
 function buildGlowOverallRecommendation(
   result: ForecastCalculationResult,
   analysis: GlowAnalysisResult,
-  opportunities: readonly GlowPrimaryOpportunity[],
 ): GlowOverallRecommendation {
-  const sunrise = opportunities.find((item) => item.key === "sunrise");
-  const sunset = opportunities.find((item) => item.key === "sunset");
-  const preferredPhase =
-    analysis.sunriseGlowScore >= analysis.sunsetGlowScore ? "sunrise" : "sunset";
-  const preferredOpportunity =
-    opportunities.find((item) => item.key === preferredPhase) ?? sunset ?? sunrise;
-  const bestWindow =
-    analysis.bestGlowWindow ??
-    analysis.bestGlowWindows[0] ??
-    glowWindowForPhase(analysis, preferredPhase);
-  const recommendation = glowDisplayRecommendationForScore(analysis.glowTravelScore);
-  const preferredTarget = glowPreferredTargetLabel(
-    analysis.dailyGlow[0]?.bestTarget ?? (preferredPhase === "sunrise" ? "sunrise" : "sunset"),
-    recommendation,
-  );
+  const selectedWindow = selectOverallGlowWindowState(result, analysis);
+  const recommendation = selectedWindow
+    ? glowRecommendationForLifecycle(selectedWindow.state, selectedWindow.score)
+    : "暂无后续窗口";
+  const preferredTarget = selectedWindow
+    ? glowPreferredTargetLabel(selectedWindow.phase, recommendation)
+    : "暂不专程";
   const backupPlan = analysis.backupPlans[0]
     ? `${analysis.backupPlans[0].condition}：${analysis.backupPlans[0].action}`
     : "若霞光不足，转拍远山层次、云缝光或通透地景。";
@@ -1627,18 +1683,39 @@ function buildGlowOverallRecommendation(
 
   return {
     preferredTarget,
-    preferredDate: bestWindow ? windowDateLabel(result, bestWindow.date) : "暂无明确日期",
-    preferredTime: formatGlowWindowForParentDate(result, bestWindow, "暂无明确最佳时间"),
-    preferredWindow: formatGlowWindowForPublic(result, bestWindow, "暂无明确最佳时间"),
-    preferredProbabilityPercent: preferredOpportunity?.probabilityPercent ?? 0,
+    headline: selectedWindow ? `优先${preferredTarget}` : "暂无后续霞光窗口",
+    preferredDate: selectedWindow?.date ? windowDateLabel(result, selectedWindow.date) : "暂无后续窗口",
+    preferredTime: selectedWindow
+      ? formatGlowLifecycleWindowForParentDate(result, selectedWindow, "暂无明确最佳时间")
+      : "暂无后续窗口",
+    preferredWindow: selectedWindow
+      ? formatGlowLifecycleWindowForPublic(result, selectedWindow, "暂无明确最佳时间")
+      : "所选预报范围内暂无后续霞光窗口",
+    preferredProbabilityPercent: selectedWindow?.probabilityPercent ?? 0,
+    preferredProbabilityDisplay: selectedWindow?.probabilityDisplay ?? "暂无后续窗口",
     recommendation,
-    arrivalAdvice: glowArrivalHint(result, bestWindow),
+    hasActionableWindow: Boolean(selectedWindow),
+    windowState: selectedWindow?.state,
+    windowStartAt: selectedWindow?.startAt,
+    windowEndAt: selectedWindow?.endAt,
+    evaluatedAt: glowEvaluatedAt(result),
+    timezone: result.calendarBasis.timezone,
+    arrivalAdvice: selectedWindow
+      ? glowArrivalHint(result, selectedWindow.phase, selectedWindow)
+      : "暂无可用到达建议",
     conciseReason: compactGlowDisplayText(
-      preferredOpportunity?.conciseReason ?? firstText(analysis.opportunityReasons, result.summary),
+      selectedWindow
+        ? firstText(
+            [selectedWindow.window?.noteZh, ...analysis.opportunityReasons].filter(
+              (item): item is string => Boolean(item),
+            ),
+            result.summary,
+          )
+        : "所选预报范围内暂无后续霞光窗口。",
     ),
     mainRisk: compactGlowDisplayText(mainRisk),
     backupPlan: compactGlowDisplayText(backupPlan),
-    tone: glowDisplayTone(recommendation),
+    tone: selectedWindow ? selectedWindow.tone : "muted",
   };
 }
 
@@ -1646,38 +1723,73 @@ function buildGlowDailyOpportunities(
   result: ForecastCalculationResult,
   analysis: GlowAnalysisResult,
 ): readonly GlowDailyOpportunity[] {
-  return analysis.dailyGlow.map((day) => {
-    const sunriseWindow = glowWindowForDateAndPhase(analysis, day.date, "sunrise");
-    const sunsetWindow = glowWindowForDateAndPhase(analysis, day.date, "sunset");
-    const preferredWindow =
-      day.bestWindow ??
-      (day.sunriseScore >= day.sunsetScore ? sunriseWindow : sunsetWindow) ??
-      sunriseWindow ??
-      sunsetWindow;
-    const recommendation = glowDisplayRecommendationForScore(
-      day.practicalScore ?? Math.max(day.sunriseScore, day.sunsetScore),
-    );
+  return analysis.dailyGlow
+    .map((day): GlowDailyOpportunity | null => {
+      const sunriseState = buildGlowPhaseWindowStateForDate(result, analysis, day, "sunrise");
+      const sunsetState = buildGlowPhaseWindowStateForDate(result, analysis, day, "sunset");
+      const preferredState = selectDailyPreferredGlowWindowState([sunriseState, sunsetState]);
 
-    return {
-      key: day.date,
-      date: day.date,
-      dateLabel: dateLabelForResult(result, day.date),
-      sunriseGlowProbabilityPercent: glowScoreToDisplayProbabilityPercent(day.sunriseScore),
-      sunriseBestTime: formatGlowWindowForParentDate(result, sunriseWindow, "暂无明确朝霞时间"),
-      sunriseBestWindow: formatGlowWindowForParentDate(result, sunriseWindow, "暂无明确朝霞时间"),
-      sunsetGlowProbabilityPercent: glowScoreToDisplayProbabilityPercent(day.sunsetScore),
-      sunsetBestTime: formatGlowWindowForParentDate(result, sunsetWindow, "暂无明确晚霞时间"),
-      sunsetBestWindow: formatGlowWindowForParentDate(result, sunsetWindow, "暂无明确晚霞时间"),
-      preferredTarget: glowPreferredTargetLabel(day.bestTarget, recommendation),
-      preferredTime: formatGlowWindowForParentDate(result, preferredWindow, "暂无明确最佳时间"),
-      preferredWindow: formatGlowWindowForParentDate(result, preferredWindow, "暂无明确最佳时间"),
-      preferredProbabilityPercent: glowScoreToDisplayProbabilityPercent(
-        Math.max(day.sunriseScore, day.sunsetScore),
-      ),
-      recommendation,
-      conciseReason: compactGlowDisplayText(day.keyReason),
-    };
-  });
+      if (!preferredState) {
+        return null;
+      }
+
+      const recommendation = preferredState.recommendation;
+
+      return {
+        key: day.date,
+        date: day.date,
+        dateLabel: dateLabelForResult(result, day.date),
+        sunriseGlowProbabilityPercent: sunriseState.probabilityPercent,
+        sunriseProbabilityDisplay: sunriseState.probabilityDisplay,
+        sunriseWindowState: sunriseState.state,
+        sunriseWindowStartAt: sunriseState.startAt,
+        sunriseWindowEndAt: sunriseState.endAt,
+        sunriseIsRecommendationEligible: sunriseState.isRecommendationEligible,
+        sunriseBestTime: formatGlowLifecycleWindowForParentDate(
+          result,
+          sunriseState,
+          "暂无明确朝霞时间",
+        ),
+        sunriseBestWindow: formatGlowLifecycleWindowForParentDate(
+          result,
+          sunriseState,
+          "暂无明确朝霞时间",
+        ),
+        sunsetGlowProbabilityPercent: sunsetState.probabilityPercent,
+        sunsetProbabilityDisplay: sunsetState.probabilityDisplay,
+        sunsetWindowState: sunsetState.state,
+        sunsetWindowStartAt: sunsetState.startAt,
+        sunsetWindowEndAt: sunsetState.endAt,
+        sunsetIsRecommendationEligible: sunsetState.isRecommendationEligible,
+        sunsetBestTime: formatGlowLifecycleWindowForParentDate(
+          result,
+          sunsetState,
+          "暂无明确晚霞时间",
+        ),
+        sunsetBestWindow: formatGlowLifecycleWindowForParentDate(
+          result,
+          sunsetState,
+          "暂无明确晚霞时间",
+        ),
+        preferredTarget: glowPreferredTargetLabel(preferredState.phase, recommendation),
+        preferredTime: formatGlowLifecycleWindowForParentDate(
+          result,
+          preferredState,
+          "暂无明确最佳时间",
+        ),
+        preferredWindow: formatGlowLifecycleWindowForParentDate(
+          result,
+          preferredState,
+          "暂无明确最佳时间",
+        ),
+        preferredProbabilityPercent: preferredState.probabilityPercent,
+        preferredProbabilityDisplay: preferredState.probabilityDisplay,
+        recommendation,
+        preferredWindowState: preferredState.state,
+        conciseReason: dailyGlowLifecycleReason(day, sunriseState, sunsetState, preferredState),
+      };
+    })
+    .filter((item): item is GlowDailyOpportunity => item !== null);
 }
 
 function buildGlowProfessionalEvidence(
@@ -1784,51 +1896,403 @@ function uniqueGlowEvidenceItems(
   return unique;
 }
 
-function glowWindowForPhase(
-  analysis: GlowAnalysisResult,
-  phase: GlowOpportunityPhase,
-): GlowWindow | undefined {
+type GlowLifecycleWindowView = {
+  readonly phase: GlowOpportunityPhase;
+  readonly window?: GlowWindow;
+  readonly date?: string;
+  readonly startAt?: string;
+  readonly endAt?: string;
+  readonly state: GlowWindowLifecycleState;
+  readonly score: number;
+  readonly probabilityPercent: number;
+  readonly probabilityDisplay: string;
+  readonly recommendation: GlowDisplayRecommendationLabel;
+  readonly isRecommendationEligible: boolean;
+  readonly evaluatedAt: string;
+  readonly timezone: string;
+  readonly tone: ForecastResultCardTone;
+  readonly source: "scored" | "sun_event" | "none";
+};
+
+function glowEvaluatedAt(result: ForecastCalculationResult): string {
+  return result.generatedAt || result.calendarBasis.forecastStart;
+}
+
+function allGlowWindows(analysis: GlowAnalysisResult): readonly GlowWindow[] {
   const windows = [
     analysis.bestGlowWindow,
     ...analysis.bestGlowWindows,
     ...analysis.watchableGlowWindows,
     ...analysis.notRecommendedGlowWindows,
   ].filter((window): window is GlowWindow => Boolean(window));
-  return windows.find((window) =>
-    phase === "sunrise" ? isMorningGlowWindow(window) : !isMorningGlowWindow(window),
+  const seen = new Set<string>();
+  const unique: GlowWindow[] = [];
+
+  for (const window of windows) {
+    const key = `${window.type}-${window.start}-${window.end}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(window);
+  }
+
+  return unique;
+}
+
+function selectPrimaryGlowPhaseWindowState(
+  result: ForecastCalculationResult,
+  analysis: GlowAnalysisResult,
+  phase: GlowOpportunityPhase,
+): GlowLifecycleWindowView {
+  const score = phase === "sunrise" ? analysis.sunriseGlowScore : analysis.sunsetGlowScore;
+  const states = allGlowWindows(analysis)
+    .filter((window) =>
+      phase === "sunrise" ? isMorningGlowWindow(window) : !isMorningGlowWindow(window),
+    )
+    .map((window) => buildGlowLifecycleWindowView(result, phase, window, score));
+  const actionable = selectActionableGlowWindowState(result, states);
+  if (actionable) {
+    return actionable;
+  }
+
+  const currentDate = glowLocalDateKey(glowEvaluatedAt(result), result.calendarBasis.timezone);
+  const currentEnded = states
+    .filter((item) => item.state === "ended" && item.date === currentDate)
+    .sort(compareGlowWindowStateByLatestEnd)[0];
+  if (currentEnded) {
+    return currentEnded;
+  }
+
+  const derivedEnded = currentDate
+    ? buildDerivedEndedGlowWindowState(result, phase, currentDate, score)
+    : undefined;
+  return derivedEnded ?? buildUnavailableGlowWindowState(result, phase, score);
+}
+
+function selectOverallGlowWindowState(
+  result: ForecastCalculationResult,
+  analysis: GlowAnalysisResult,
+): GlowLifecycleWindowView | undefined {
+  const states = allGlowWindows(analysis).map((window) =>
+    buildGlowLifecycleWindowView(
+      result,
+      isMorningGlowWindow(window) ? "sunrise" : "sunset",
+      window,
+      window.practicalScore ?? window.score,
+    ),
+  );
+  return selectActionableGlowWindowState(result, states);
+}
+
+function buildGlowPhaseWindowStateForDate(
+  result: ForecastCalculationResult,
+  analysis: GlowAnalysisResult,
+  day: GlowAnalysisResult["dailyGlow"][number],
+  phase: GlowOpportunityPhase,
+): GlowLifecycleWindowView {
+  const score = phase === "sunrise" ? day.sunriseScore : day.sunsetScore;
+  const window = glowWindowForDateAndPhase(analysis, day.date, phase) ?? dailyGlowWindowForPhase(day, phase);
+  if (window) {
+    return buildGlowLifecycleWindowView(result, phase, window, score);
+  }
+
+  return (
+    buildDerivedEndedGlowWindowState(result, phase, day.date, score) ??
+    buildUnavailableGlowWindowState(result, phase, score)
   );
 }
 
-function formatGlowWindowForPublic(
-  result: ForecastCalculationResult,
-  window: GlowWindow | undefined,
-  fallback: string,
-): string {
-  if (!window) {
-    return fallback;
-  }
-  return formatLocalDateTimeRange(window.start, window.end, result.calendarBasis.timezone);
+function dailyGlowWindowForPhase(
+  day: GlowAnalysisResult["dailyGlow"][number],
+  phase: GlowOpportunityPhase,
+): GlowWindow | undefined {
+  return [day.bestWindow, day.watchableWindow, day.notRecommendedWindow]
+    .filter((window): window is GlowWindow => Boolean(window))
+    .find((window) =>
+      phase === "sunrise" ? isMorningGlowWindow(window) : !isMorningGlowWindow(window),
+    );
 }
 
-function formatGlowWindowForParentDate(
+function selectActionableGlowWindowState(
   result: ForecastCalculationResult,
-  window: GlowWindow | undefined,
+  states: readonly GlowLifecycleWindowView[],
+): GlowLifecycleWindowView | undefined {
+  const actionables = states.filter((state) => state.isRecommendationEligible);
+  if (actionables.length === 0) {
+    return undefined;
+  }
+
+  const timezone = result.calendarBasis.timezone;
+  const currentDate = glowLocalDateKey(glowEvaluatedAt(result), timezone);
+  const currentDateStates = currentDate
+    ? actionables.filter((state) => state.date === currentDate)
+    : [];
+  if (currentDateStates.length > 0) {
+    return [...currentDateStates].sort(compareGlowActionableWindowStates)[0];
+  }
+
+  const futureDates = [
+    ...new Set(
+      actionables
+        .map((state) => state.date)
+        .filter((date): date is string => Boolean(date))
+        .filter((date) => !currentDate || date > currentDate),
+    ),
+  ].sort();
+  const nextDate = futureDates[0];
+  const nextDateStates = nextDate ? actionables.filter((state) => state.date === nextDate) : [];
+  const pool = nextDateStates.length > 0 ? nextDateStates : actionables;
+
+  return [...pool].sort(compareGlowActionableWindowStates)[0];
+}
+
+function selectDailyPreferredGlowWindowState(
+  states: readonly GlowLifecycleWindowView[],
+): GlowLifecycleWindowView | undefined {
+  const actionables = states.filter((state) => state.isRecommendationEligible);
+  return [...actionables].sort(compareGlowActionableWindowStates)[0];
+}
+
+function buildGlowLifecycleWindowView(
+  result: ForecastCalculationResult,
+  phase: GlowOpportunityPhase,
+  window: GlowWindow,
+  score: number,
+): GlowLifecycleWindowView {
+  const lifecycle = classifyGlowWindowLifecycle({
+    startAt: window.start,
+    endAt: window.end,
+    evaluatedAt: glowEvaluatedAt(result),
+    timezone: result.calendarBasis.timezone,
+  });
+  const date = window.date ?? glowLocalDateKey(window.start, result.calendarBasis.timezone) ?? undefined;
+  return buildGlowLifecycleWindowViewFromParts({
+    result,
+    phase,
+    window,
+    date,
+    startAt: window.start,
+    endAt: window.end,
+    score,
+    state: lifecycle.state,
+    source: "scored",
+  });
+}
+
+function buildDerivedEndedGlowWindowState(
+  result: ForecastCalculationResult,
+  phase: GlowOpportunityPhase,
+  date: string,
+  score: number,
+): GlowLifecycleWindowView | undefined {
+  const window = derivedGlowSunWindowForDate(result, phase, date);
+  if (!window) {
+    return undefined;
+  }
+  const lifecycle = classifyGlowWindowLifecycle({
+    startAt: window.startAt,
+    endAt: window.endAt,
+    evaluatedAt: glowEvaluatedAt(result),
+    timezone: result.calendarBasis.timezone,
+  });
+  if (lifecycle.state !== "ended") {
+    return undefined;
+  }
+  return buildGlowLifecycleWindowViewFromParts({
+    result,
+    phase,
+    date,
+    startAt: window.startAt,
+    endAt: window.endAt,
+    score,
+    state: lifecycle.state,
+    source: "sun_event",
+  });
+}
+
+function buildUnavailableGlowWindowState(
+  result: ForecastCalculationResult,
+  phase: GlowOpportunityPhase,
+  score: number,
+): GlowLifecycleWindowView {
+  return buildGlowLifecycleWindowViewFromParts({
+    result,
+    phase,
+    score,
+    state: "unavailable",
+    source: "none",
+  });
+}
+
+function buildGlowLifecycleWindowViewFromParts(input: {
+  readonly result: ForecastCalculationResult;
+  readonly phase: GlowOpportunityPhase;
+  readonly window?: GlowWindow;
+  readonly date?: string;
+  readonly startAt?: string;
+  readonly endAt?: string;
+  readonly score: number;
+  readonly state: GlowWindowLifecycleState;
+  readonly source: GlowLifecycleWindowView["source"];
+}): GlowLifecycleWindowView {
+  const probabilityPercent = glowScoreToDisplayProbabilityPercent(input.score);
+  const recommendation = glowRecommendationForLifecycle(input.state, input.score);
+  const isRecommendationEligible = isGlowWindowRecommendationEligible(input.state);
+
+  return {
+    phase: input.phase,
+    window: input.window,
+    date: input.date,
+    startAt: input.startAt,
+    endAt: input.endAt,
+    state: input.state,
+    score: input.score,
+    probabilityPercent,
+    probabilityDisplay: glowProbabilityDisplayForLifecycle(input.state, probabilityPercent),
+    recommendation,
+    isRecommendationEligible,
+    evaluatedAt: glowEvaluatedAt(input.result),
+    timezone: input.result.calendarBasis.timezone,
+    tone: glowLifecycleTone(input.state, recommendation),
+    source: input.source,
+  };
+}
+
+function derivedGlowSunWindowForDate(
+  result: ForecastCalculationResult,
+  phase: GlowOpportunityPhase,
+  date: string,
+): { readonly startAt: string; readonly endAt: string } | undefined {
+  const astro = result.astroSummaries.find((summary) => summary.date === date);
+  if (!astro) {
+    return undefined;
+  }
+  if (phase === "sunrise" && astro.sunrise) {
+    return {
+      startAt: astro.sunrise,
+      endAt: addHoursInTimezone(astro.sunrise, 1.25, astro.timezone),
+    };
+  }
+  if (phase === "sunset" && astro.sunset) {
+    return {
+      startAt: addHoursInTimezone(astro.sunset, -1.25, astro.timezone),
+      endAt: astro.civilDusk ?? addHoursInTimezone(astro.sunset, 1.25, astro.timezone),
+    };
+  }
+  return undefined;
+}
+
+function compareGlowActionableWindowStates(
+  left: GlowLifecycleWindowView,
+  right: GlowLifecycleWindowView,
+): number {
+  return (
+    glowLifecycleActionRank(left.state) - glowLifecycleActionRank(right.state) ||
+    right.score - left.score ||
+    Date.parse(left.startAt ?? "") - Date.parse(right.startAt ?? "")
+  );
+}
+
+function compareGlowWindowStateByLatestEnd(
+  left: GlowLifecycleWindowView,
+  right: GlowLifecycleWindowView,
+): number {
+  return Date.parse(right.endAt ?? "") - Date.parse(left.endAt ?? "");
+}
+
+function glowLifecycleActionRank(state: GlowWindowLifecycleState): number {
+  if (state === "active") {
+    return 0;
+  }
+  if (state === "upcoming") {
+    return 1;
+  }
+  if (state === "ended") {
+    return 2;
+  }
+  return 3;
+}
+
+function glowRecommendationForLifecycle(
+  state: GlowWindowLifecycleState,
+  score: number,
+): GlowDisplayRecommendationLabel {
+  if (state === "active") {
+    return "窗口进行中";
+  }
+  if (state === "ended") {
+    return "已结束";
+  }
+  if (state === "unavailable") {
+    return "暂无明确时间";
+  }
+  return glowDisplayRecommendationForScore(score);
+}
+
+function glowProbabilityDisplayForLifecycle(
+  state: GlowWindowLifecycleState,
+  probabilityPercent: number,
+): string {
+  if (state === "ended") {
+    return "已结束";
+  }
+  if (state === "unavailable") {
+    return "暂无明确时间";
+  }
+  return `${probabilityPercent}%`;
+}
+
+function glowLifecycleTone(
+  state: GlowWindowLifecycleState,
+  recommendation: GlowDisplayRecommendationLabel,
+): ForecastResultCardTone {
+  if (state === "ended" || state === "unavailable") {
+    return "muted";
+  }
+  if (state === "active") {
+    return "primary";
+  }
+  return glowDisplayTone(recommendation);
+}
+
+function formatGlowLifecycleWindowForPublic(
+  result: ForecastCalculationResult,
+  window: GlowLifecycleWindowView,
   fallback: string,
 ): string {
-  if (!window) {
+  if (!window.startAt || !window.endAt) {
     return fallback;
   }
-  return formatLocalTimeRange(window.start, window.end, result.calendarBasis.timezone);
+  return formatLocalDateTimeRange(window.startAt, window.endAt, result.calendarBasis.timezone);
+}
+
+function formatGlowLifecycleWindowForParentDate(
+  result: ForecastCalculationResult,
+  window: GlowLifecycleWindowView,
+  fallback: string,
+): string {
+  if (!window.startAt || !window.endAt) {
+    return fallback;
+  }
+  return formatLocalTimeRange(window.startAt, window.endAt, result.calendarBasis.timezone);
 }
 
 function glowArrivalHint(
   result: ForecastCalculationResult,
-  window: GlowWindow | undefined,
+  phase: GlowOpportunityPhase,
+  window: GlowLifecycleWindowView,
 ): string {
-  if (!window) {
-    return "建议临近更新后再决定到达时间";
+  if (window.state === "active") {
+    return "窗口进行中，建议尽快到位";
   }
-  const arrivalTime = addHoursInTimezone(window.start, -0.75, result.calendarBasis.timezone);
+  if (window.state === "ended") {
+    return `本次${glowPhaseLabel(phase)}窗口已结束`;
+  }
+  if (window.state === "unavailable" || !window.startAt) {
+    return "暂无可用到达建议";
+  }
+  const arrivalTime = addHoursInTimezone(window.startAt, -0.75, result.calendarBasis.timezone);
   return `建议 ${formatTime(arrivalTime, result.calendarBasis.timezone)} 前到达`;
 }
 
@@ -1836,8 +2300,20 @@ function glowConciseReasonForPhase(
   result: ForecastCalculationResult,
   analysis: GlowAnalysisResult,
   phase: GlowOpportunityPhase,
-  window: GlowWindow | undefined,
+  window: GlowLifecycleWindowView,
 ): string {
+  if (window.state === "ended") {
+    const time = formatGlowLifecycleWindowForParentDate(result, window, "");
+    return compactGlowDisplayText(
+      time
+        ? `本次${glowPhaseLabel(phase)}窗口已结束。今日窗口为 ${time}。`
+        : `本次${glowPhaseLabel(phase)}窗口已结束。`,
+    );
+  }
+  if (window.state === "unavailable") {
+    return `暂无明确${glowPhaseLabel(phase)}时间。`;
+  }
+
   const score = phase === "sunrise" ? result.scores.sunriseGlow : result.scores.sunsetGlow;
   const rainText =
     phase === "sunrise" && analysis.rainOverlapsSunriseWindow
@@ -1845,16 +2321,46 @@ function glowConciseReasonForPhase(
       : phase === "sunset" && analysis.rainOverlapsSunsetWindow
         ? "日落窗口有降水干扰。"
         : "";
+  const activeText = window.state === "active" ? "窗口正在进行中，优先现场判断云缝和色彩发展。" : "";
   return compactGlowDisplayText(
-    [window?.noteZh, firstText(score.reasons, ""), rainText].filter(Boolean).join(""),
+    [activeText, window.window?.noteZh, firstText(score.reasons, ""), rainText]
+      .filter(Boolean)
+      .join(""),
   );
 }
 
+function dailyGlowLifecycleReason(
+  day: GlowAnalysisResult["dailyGlow"][number],
+  sunrise: GlowLifecycleWindowView,
+  sunset: GlowLifecycleWindowView,
+  preferred: GlowLifecycleWindowView,
+): string {
+  const endedSide =
+    sunrise.state === "ended" ? "朝霞" : sunset.state === "ended" ? "晚霞" : undefined;
+  const preferredLabel = glowPhaseLabel(preferred.phase);
+  if (endedSide) {
+    return compactGlowDisplayText(`${endedSide}窗口已结束，当前仅评估${preferredLabel}。`);
+  }
+  if (preferred.state === "active") {
+    return compactGlowDisplayText(`${preferredLabel}窗口进行中，建议尽快到位并现场复核云层。`);
+  }
+  return compactGlowDisplayText(preferred.window?.noteZh ?? day.keyReason);
+}
+
+function glowPhaseLabel(phase: GlowOpportunityPhase): "朝霞" | "晚霞" {
+  return phase === "sunrise" ? "朝霞" : "晚霞";
+}
+
 function glowPreferredTargetLabel(
-  target: GlowBestTarget,
-  recommendation: GlowDisplayRecommendation,
+  target: GlowBestTarget | GlowOpportunityPhase,
+  recommendation: GlowDisplayRecommendationLabel,
 ): GlowOverallRecommendation["preferredTarget"] {
-  if (recommendation === "不建议专程前往" || target === "none") {
+  if (
+    recommendation === "不建议专程前往" ||
+    recommendation === "暂无明确时间" ||
+    recommendation === "暂无后续窗口" ||
+    target === "none"
+  ) {
     return "暂不专程";
   }
   if (target === "both") {
@@ -1863,7 +2369,7 @@ function glowPreferredTargetLabel(
   return target === "sunrise" ? "朝霞" : "晚霞";
 }
 
-function glowDisplayTone(recommendation: GlowDisplayRecommendation): ForecastResultCardTone {
+function glowDisplayTone(recommendation: GlowDisplayRecommendationLabel): ForecastResultCardTone {
   if (recommendation === "推荐前往") {
     return "primary";
   }
@@ -2980,9 +3486,9 @@ function buildGlowProfessionalHourlyAnnotations(
       }
       return {
         rowTime: row.time,
-        label: interval.label,
-        detail: interval.detail,
-        tone: interval.tone,
+        label: glowProfessionalAnnotationLifecycleLabel(result, interval),
+        detail: glowProfessionalAnnotationLifecycleDetail(result, interval),
+        tone: glowProfessionalAnnotationLifecycleTone(result, interval),
       };
     })
     .filter((annotation): annotation is ProfessionalHourlyRowAnnotation => annotation !== null);
@@ -3031,6 +3537,70 @@ function buildGlowSunPhaseAnnotationIntervals(result: ForecastCalculationResult)
     }
     return intervals;
   });
+}
+
+function glowProfessionalAnnotationLifecycleLabel(
+  result: ForecastCalculationResult,
+  interval: { readonly start: string; readonly end: string; readonly label: string },
+): string {
+  const state = classifyGlowWindowLifecycle({
+    startAt: interval.start,
+    endAt: interval.end,
+    evaluatedAt: glowEvaluatedAt(result),
+    timezone: result.calendarBasis.timezone,
+  }).state;
+
+  if (state === "ended") {
+    return `${interval.label}（已结束）`;
+  }
+  if (state === "active") {
+    return `${interval.label}（窗口进行中）`;
+  }
+  return interval.label;
+}
+
+function glowProfessionalAnnotationLifecycleDetail(
+  result: ForecastCalculationResult,
+  interval: { readonly start: string; readonly end: string; readonly detail: string },
+): string {
+  const state = classifyGlowWindowLifecycle({
+    startAt: interval.start,
+    endAt: interval.end,
+    evaluatedAt: glowEvaluatedAt(result),
+    timezone: result.calendarBasis.timezone,
+  }).state;
+
+  if (state === "ended") {
+    return `本次窗口已结束。${interval.detail}`;
+  }
+  if (state === "active") {
+    return `窗口进行中，建议尽快到位并现场复核云层。${interval.detail}`;
+  }
+  return interval.detail;
+}
+
+function glowProfessionalAnnotationLifecycleTone(
+  result: ForecastCalculationResult,
+  interval: {
+    readonly start: string;
+    readonly end: string;
+    readonly tone: "default" | "success" | "warning" | "danger" | "info";
+  },
+): "default" | "success" | "warning" | "danger" | "info" {
+  const state = classifyGlowWindowLifecycle({
+    startAt: interval.start,
+    endAt: interval.end,
+    evaluatedAt: glowEvaluatedAt(result),
+    timezone: result.calendarBasis.timezone,
+  }).state;
+
+  if (state === "ended") {
+    return "info";
+  }
+  if (state === "active") {
+    return "success";
+  }
+  return interval.tone;
 }
 
 function buildGlowSunWindowCards(
@@ -3431,7 +4001,25 @@ function buildGlowForecastWindows(
     ),
   ];
 
-  return dedupeForecastWindows(converted);
+  return dedupeForecastWindows(converted).filter((window) =>
+    isForecastGlowWindowLifecycleEligible(result, window),
+  );
+}
+
+function isForecastGlowWindowLifecycleEligible(
+  result: ForecastCalculationResult,
+  window: ForecastTimeWindow,
+): boolean {
+  if (window.target !== "glow") {
+    return true;
+  }
+
+  return classifyGlowWindowLifecycle({
+    startAt: window.startTime,
+    endAt: window.endTime,
+    evaluatedAt: glowEvaluatedAt(result),
+    timezone: result.calendarBasis.timezone,
+  }).isRecommendationEligible;
 }
 
 function dedupeForecastWindows(
@@ -6042,6 +6630,7 @@ function practicalSubjectScore(
   const window = result.bestWindows.find(
     (candidate) =>
       candidate.target === target &&
+      isForecastGlowWindowLifecycleEligible(result, candidate) &&
       isExecutableForecastWindow(candidate) &&
       forecastWindowMatchesSubject(candidate, labelHint),
   );
