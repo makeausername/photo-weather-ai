@@ -38,7 +38,7 @@ export function SubjectControlPanel({
       <PlaceSearchCard
         title="地点搜索与机位选择"
         description={config.description ?? "选择景区、城市或具体机位后进入对应题材判断。"}
-        badgeLabel="题材预设"
+        badgeLabel={null}
         defaultHorizon={config.defaultHorizon}
         fixedTarget={config.target}
         ctaLabel={config.ctaLabel}

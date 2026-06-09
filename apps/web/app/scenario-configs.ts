@@ -101,7 +101,7 @@ export const glowScenarioConfig = {
   infoItems: [
     "朝霞通常关注日出前约一小时到日出后一段时间。",
     "晚霞通常关注日落前后云层层次和西向通透度。",
-    "天文时间基于地点经纬度本地计算，天气条件当前使用演示数据辅助判断。",
+    "天文时间基于地点经纬度判断，实际霞光仍需结合云量、能见度和临近降水复核。",
   ],
   learningTitle: "朝霞晚霞判断需要看什么",
   learningDescription:
@@ -162,10 +162,10 @@ export const astroScenarioConfig = {
   infoItems: [
     "新月前后通常更适合暗弱星空和银河细节。",
     "月亮在地平线以上且照明较强时，银河对比度会明显下降。",
-    "银河窗口为本地算法初步估算，仍需结合云量、光污染和地形遮挡。",
+    "银河窗口为初步估算，仍需结合云量、光污染和地形遮挡。",
   ],
   learningTitle: "星空银河判断需要看什么",
-  learningBadgeLabel: "星空要素",
+  learningBadgeLabel: "判断方法",
   learningItems: [
     {
       title: "天文黑夜",
@@ -192,7 +192,6 @@ export const astroScenarioConfig = {
       description: "光污染、山体遮挡和地平线方向会影响实际可见度。",
     },
   ],
-  dataNotice: "当前为体验模式，天气与地形结果会使用演示数据；天文时间基于本地天文计算。",
 } satisfies ScenarioPageConfig;
 
 export const scenarioPageConfigs = [

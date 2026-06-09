@@ -1,5 +1,5 @@
 import type { ForecastHorizon, ForecastTarget } from "@photo-weather/shared";
-import { forecastHorizonLabels, forecastTargetLabels } from "@photo-weather/shared";
+import { forecastHorizonLabels } from "@photo-weather/shared";
 import { PlaceSearchCard } from "./place-search-card";
 import { PublicShell } from "./public-shell";
 import type { SelectedLocation } from "./selected-location";
@@ -37,20 +37,44 @@ export type ScenarioPageConfig = {
   readonly learningDescription?: string;
   readonly learningBadgeLabel?: string;
   readonly learningItems?: readonly ScenarioLearningItem[];
-  readonly dataNotice?: string;
 };
 
-export const scenarioDataNotice =
-  "当前为体验模式，天气与地形结果使用演示数据生成；正式数据源启用后将显示对应来源与更新时间。";
+function isSubjectScenarioEntryTarget(target: ForecastTarget): boolean {
+  return target === "cloud_sea" || target === "glow" || target === "astro";
+}
+
+function subjectSearchDescription(target: ForecastTarget): string | undefined {
+  if (target === "glow") {
+    return "搜索景区、城市或具体机位，选择预报范围后进入朝霞晚霞专项判断。";
+  }
+
+  if (target === "astro") {
+    return "搜索景区、城市或具体机位，选择预报范围后进入星空银河专项判断。";
+  }
+
+  return undefined;
+}
+
+function subjectCurrentLocationPrivacyHint(target: ForecastTarget): string {
+  if (target === "glow") {
+    return "浏览器定位仅用于本次朝霞晚霞判断，不会公开显示。";
+  }
+
+  if (target === "astro") {
+    return "浏览器定位仅用于本次星空银河判断，不会公开显示。";
+  }
+
+  return "浏览器定位仅用于本次云海判断，不会公开显示。";
+}
 
 export function ScenarioModulePage({ config }: { readonly config: ScenarioPageConfig }) {
-  if (config.target === "cloud_sea" || config.target === "glow") {
+  if (isSubjectScenarioEntryTarget(config.target)) {
     return <SubjectScenarioEntryPage config={config} />;
   }
 
   return (
     <PublicShell contentClassName="grid gap-6 pb-14">
-      <header className="flex flex-col justify-between gap-4 border-b border-border pb-5 min-[900px]:flex-row min-[900px]:items-end">
+      <header className="border-b border-border pb-5">
         <div className="max-w-4xl">
           <Badge variant="default">风光摄影出行判断工具</Badge>
           <h1 className="mt-3 text-[32px] font-bold leading-tight tracking-normal text-foreground sm:text-[36px]">
@@ -58,15 +82,6 @@ export function ScenarioModulePage({ config }: { readonly config: ScenarioPageCo
           </h1>
           <p className="mt-3 text-[15px] leading-7 text-muted-foreground sm:text-base">
             {config.subtitle}
-          </p>
-        </div>
-        <div className="grid gap-2 rounded-lg border border-border bg-card px-4 py-3 text-sm shadow-sm min-[900px]:min-w-[300px]">
-          <div className="flex items-center justify-between gap-3">
-            <span className="font-semibold text-card-foreground">专题设置</span>
-            <Badge variant="accent">{forecastTargetLabels[config.target]}</Badge>
-          </div>
-          <p className="text-xs leading-5 text-muted-foreground">
-            默认预报范围：{forecastHorizonLabels[config.defaultHorizon]}
           </p>
         </div>
       </header>
@@ -197,31 +212,6 @@ function ScenarioLearningPageContent({ config }: { readonly config: ScenarioPage
     return null;
   }
 
-  if (config.target === "astro") {
-    return (
-      <>
-        <ScenarioSearchPanel config={config} />
-
-        <div className="grid gap-5 min-[900px]:min-w-0 min-[1200px]:col-span-2">
-          <ScenarioLearningGrid
-            title={config.learningTitle ?? "判断需要看什么"}
-            badgeLabel={config.learningBadgeLabel ?? "判断要素"}
-            items={config.learningItems}
-          />
-          <Card className="border-warning p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="warning">数据提醒</Badge>
-              <p className="text-sm font-bold text-card-foreground">当前为体验模式</p>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">
-              {config.dataNotice ?? scenarioDataNotice}
-            </p>
-          </Card>
-        </div>
-      </>
-    );
-  }
-
   return (
     <>
       <ScenarioSearchPanel config={config} />
@@ -260,15 +250,6 @@ function ScenarioSupportRail({ config }: { readonly config: ScenarioPageConfig }
         items={config.infoItems}
         tone="accent"
       />
-      <Card className="border-warning p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="warning">数据提醒</Badge>
-          <p className="text-sm font-bold text-card-foreground">当前为体验模式</p>
-        </div>
-        <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          {config.dataNotice ?? scenarioDataNotice}
-        </p>
-      </Card>
     </aside>
   );
 }
@@ -361,7 +342,7 @@ export function ScenarioSearchPanel({
     readonly target: ForecastTarget;
   }) => void;
 }) {
-  const isSubjectControlPanel = config.target === "cloud_sea" || config.target === "glow";
+  const isSubjectControlPanel = isSubjectScenarioEntryTarget(config.target);
 
   if (isSubjectControlPanel) {
     return (
@@ -370,14 +351,8 @@ export function ScenarioSearchPanel({
           target: config.target,
           defaultHorizon: config.defaultHorizon,
           ctaLabel: config.ctaLabel,
-          description:
-            config.target === "glow"
-              ? "搜索景区、城市或具体机位，选择预报范围后进入朝霞晚霞专项判断。"
-              : undefined,
-          currentLocationPrivacyHint:
-            config.target === "glow"
-              ? "浏览器定位仅用于本次朝霞晚霞判断，不会公开显示。"
-              : "浏览器定位仅用于本次云海判断，不会公开显示。",
+          description: subjectSearchDescription(config.target),
+          currentLocationPrivacyHint: subjectCurrentLocationPrivacyHint(config.target),
         }}
         selectedLocation={selectedLocation}
         onSelectedLocationChange={onSelectedLocationChange}
@@ -391,7 +366,7 @@ export function ScenarioSearchPanel({
       <PlaceSearchCard
         title="地点搜索与机位选择"
         description="选择景区、城市或具体机位后进入对应题材判断。"
-        badgeLabel="题材预设"
+        badgeLabel={null}
         defaultHorizon={config.defaultHorizon}
         fixedTarget={config.target}
         ctaLabel={config.ctaLabel}

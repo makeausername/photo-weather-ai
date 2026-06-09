@@ -191,10 +191,11 @@ describe("scenario module pages", () => {
     expect(guideHtml).not.toContain("overflow-x");
   });
 
-  it("reuses the shared current-location input on homepage, cloud sea, and glow", () => {
+  it("reuses the shared current-location input on homepage, cloud sea, glow, and astro", () => {
     const homepageHtml = renderToStaticMarkup(React.createElement(HomepageSearchPanel));
     const cloudSeaHtml = renderToStaticMarkup(React.createElement(CloudSeaPage));
     const glowHtml = renderToStaticMarkup(React.createElement(GlowPage));
+    const astroHtml = renderToStaticMarkup(React.createElement(AstroPage));
     const sharedInputHtml = renderToStaticMarkup(
       React.createElement(LocationSearchInput, {
         value: "",
@@ -205,7 +206,7 @@ describe("scenario module pages", () => {
       }),
     );
 
-    for (const html of [homepageHtml, cloudSeaHtml, glowHtml, sharedInputHtml]) {
+    for (const html of [homepageHtml, cloudSeaHtml, glowHtml, astroHtml, sharedInputHtml]) {
       expect(html).toContain('data-location-search-input="true"');
       expect(html).toContain('data-current-location-input-wrapper="true"');
       expect(html).toContain('data-current-location-button="true"');
@@ -255,6 +256,30 @@ describe("scenario module pages", () => {
     expect(html).not.toMatch(/api[_-]?key|secret|AMAP_|key=/i);
   });
 
+  it("renders the astro locator icon inside the input without development copy", () => {
+    const html = renderToStaticMarkup(React.createElement(AstroPage));
+    const wrapperIndex = html.indexOf('data-current-location-input-wrapper="true"');
+    const inputIndex = html.indexOf('aria-label="目的地"', wrapperIndex);
+    const buttonIndex = html.indexOf('data-current-location-button="true"', wrapperIndex);
+
+    expect(wrapperIndex).toBeGreaterThanOrEqual(0);
+    expect(inputIndex).toBeGreaterThan(wrapperIndex);
+    expect(buttonIndex).toBeGreaterThan(inputIndex);
+    expect(html).toContain("浏览器定位仅用于本次星空银河判断，不会公开显示。");
+    expect(html).toContain("pr-12");
+    expect(html).toContain("absolute right-1.5 top-1/2");
+    expect(html).toContain("h-8 w-8");
+    expect(hasExactButton(html, "定位")).toBe(false);
+    expect(hasExactButton(html, "定位中")).toBe(false);
+    expect(html).not.toContain("数据说明");
+    expect(html).not.toContain("数据提醒");
+    expect(html).not.toContain("当前为体验模式");
+    expect(html).not.toContain("演示数据");
+    expect(html).not.toContain("本地天文计算");
+    expect(html).not.toMatch(/\bmock\b|\bdemo\b|测试数据|开发模式|开发环境|provider|debug/i);
+    expect(html).not.toMatch(/api[_-]?key|secret|AMAP_|key=/i);
+  });
+
   it("removes cloud sea quick spots while keeping search controls available", () => {
     const html = renderToStaticMarkup(React.createElement(CloudSeaPage));
     const searchCardHtml = extractPlaceSearchCardHtml(html);
@@ -282,9 +307,10 @@ describe("scenario module pages", () => {
     }
   });
 
-  it("uses the shared subject control panel for cloud sea and glow", () => {
+  it("uses the shared subject control panel for cloud sea, glow, and astro", () => {
     const cloudSeaHtml = renderToStaticMarkup(React.createElement(CloudSeaPage));
     const glowHtml = renderToStaticMarkup(React.createElement(GlowPage));
+    const astroHtml = renderToStaticMarkup(React.createElement(AstroPage));
     const sharedGlowPanelHtml = renderToStaticMarkup(
       React.createElement(SubjectControlPanel, {
         config: {
@@ -292,6 +318,16 @@ describe("scenario module pages", () => {
           defaultHorizon: glowScenarioConfig.defaultHorizon,
           ctaLabel: glowScenarioConfig.ctaLabel,
           currentLocationPrivacyHint: "浏览器定位仅用于本次朝霞晚霞判断，不会公开显示。",
+        },
+      }),
+    );
+    const sharedAstroPanelHtml = renderToStaticMarkup(
+      React.createElement(SubjectControlPanel, {
+        config: {
+          target: astroScenarioConfig.target,
+          defaultHorizon: astroScenarioConfig.defaultHorizon,
+          ctaLabel: astroScenarioConfig.ctaLabel,
+          currentLocationPrivacyHint: "浏览器定位仅用于本次星空银河判断，不会公开显示。",
         },
       }),
     );
@@ -307,8 +343,18 @@ describe("scenario module pages", () => {
       fileURLToPath(new URL("./glow/page.tsx", import.meta.url)),
       "utf8",
     );
+    const astroPageSource = readFileSync(
+      fileURLToPath(new URL("./astro/page.tsx", import.meta.url)),
+      "utf8",
+    );
 
-    for (const html of [cloudSeaHtml, glowHtml, sharedGlowPanelHtml]) {
+    for (const html of [
+      cloudSeaHtml,
+      glowHtml,
+      astroHtml,
+      sharedGlowPanelHtml,
+      sharedAstroPanelHtml,
+    ]) {
       expect(html).toContain('data-subject-control-panel="true"');
       expect(html).toContain("地点搜索与机位选择");
       expect(html).toContain('data-location-search-input="true"');
@@ -320,13 +366,18 @@ describe("scenario module pages", () => {
     }
     expect(cloudSeaHtml).toContain('data-subject-control-panel-target="cloud_sea"');
     expect(glowHtml).toContain('data-subject-control-panel-target="glow"');
+    expect(astroHtml).toContain('data-subject-control-panel-target="astro"');
     expect(subjectControlSource).toContain("PlaceSearchCard");
     expect(subjectControlSource).toContain("showQuickLocations={false}");
     expect(subjectControlSource).toContain("enableCurrentLocation");
+    expect(subjectControlSource).toContain("badgeLabel={null}");
     expect(scenarioSource).toContain("SubjectControlPanel");
     expect(glowPageSource).toContain("ScenarioModulePage");
     expect(glowPageSource).not.toContain("SubjectControlPanel");
     expect(glowPageSource).not.toContain("PlaceSearchCard");
+    expect(astroPageSource).toContain("ScenarioModulePage");
+    expect(astroPageSource).not.toContain("SubjectControlPanel");
+    expect(astroPageSource).not.toContain("PlaceSearchCard");
   });
 
   it("renders the cloud sea pre-result location search panel without result dashboard chrome", () => {
@@ -423,8 +474,12 @@ describe("scenario module pages", () => {
       fileURLToPath(new URL("./glow/page.tsx", import.meta.url)),
       "utf8",
     );
+    const astroPageSource = readFileSync(
+      fileURLToPath(new URL("./astro/page.tsx", import.meta.url)),
+      "utf8",
+    );
 
-    for (const source of [scenarioSource, cloudSeaPageSource, glowPageSource]) {
+    for (const source of [scenarioSource, cloudSeaPageSource, glowPageSource, astroPageSource]) {
       expect(source).not.toContain("data-current-location-button");
       expect(source).not.toContain("absolute right-1.5 top-1/2");
       expect(source).not.toContain("navigator.geolocation");
@@ -435,6 +490,9 @@ describe("scenario module pages", () => {
     expect(glowPageSource).toContain("ScenarioModulePage");
     expect(glowPageSource).not.toContain("SubjectControlPanel");
     expect(glowPageSource).not.toContain("PlaceSearchCard");
+    expect(astroPageSource).toContain("ScenarioModulePage");
+    expect(astroPageSource).not.toContain("SubjectControlPanel");
+    expect(astroPageSource).not.toContain("PlaceSearchCard");
   });
 
   it("cloud sea page reads General deep-link query params and preselects context", () => {
@@ -520,6 +578,29 @@ describe("scenario module pages", () => {
     expect(html).toContain("sm:grid-cols-2 xl:grid-cols-3");
   });
 
+  it("keeps the astro entry layout responsive without fixed wide columns", () => {
+    const html = renderToStaticMarkup(React.createElement(AstroPage));
+    const subjectSectionStart = html.indexOf('data-subject-scenario-target="astro"');
+    const footerStart = html.indexOf("<footer", subjectSectionStart);
+    const subjectSectionHtml = html.slice(
+      subjectSectionStart,
+      footerStart === -1 ? undefined : footerStart,
+    );
+
+    expect(html).toContain("min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)]");
+    expect(html).toContain("min-[1200px]:grid-cols-[clamp(340px,24vw,410px)_minmax(0,1fr)]");
+    expect(html).toContain("relative min-w-0 w-full");
+    expect(html).toContain("pr-12");
+    expect(html).toContain('data-subject-control-panel="true"');
+    expect(html).toContain("sm:grid-cols-2 xl:grid-cols-3");
+    expect(html).not.toContain(
+      "min-[1200px]:grid-cols-[clamp(340px,24vw,410px)_minmax(0,1fr)_clamp",
+    );
+    expect(subjectSectionHtml).not.toMatch(
+      /w-\[(?:[1-9]\d{3,})px\]|min-w-\[(?:[1-9]\d{3,})px\]/,
+    );
+  });
+
   it("builds glow current-location requests with WGS84 coordinates and no spot id", () => {
     const currentLocation = selectedLocationFromBrowserGeolocation({
       latitudeWgs84: 31.2304,
@@ -547,6 +628,40 @@ describe("scenario module pages", () => {
     });
     expect(payload.photoSpotId).toBeUndefined();
     expect(url.searchParams.get("target")).toBe("glow");
+    expect(url.searchParams.get("coordinateSource")).toBe("browser_geolocation");
+    expect(url.searchParams.get("latWgs84")).toBe("31.2304");
+    expect(url.searchParams.get("lngWgs84")).toBe("121.4737");
+    expect(url.searchParams.get("timezone")).toBe("Asia/Shanghai");
+    expect(url.searchParams.get("photoSpotId")).toBeNull();
+  });
+
+  it("builds astro current-location requests with WGS84 coordinates and no spot id", () => {
+    const currentLocation = selectedLocationFromBrowserGeolocation({
+      latitudeWgs84: 31.2304,
+      longitudeWgs84: 121.4737,
+    });
+    const payload = buildForecastRequestPayload(currentLocation, "7d", "astro", {
+      timezone: "Asia/Shanghai",
+    });
+    const url = new URL(
+      buildForecastUrlFromSelectedLocation(currentLocation, "7d", "astro", {
+        timezone: "Asia/Shanghai",
+      }),
+      "http://localhost:3000",
+    );
+
+    expect(payload).toMatchObject({
+      name: "当前位置",
+      source: "browser_geolocation",
+      coordinateSource: "browser_geolocation",
+      latitudeWgs84: 31.2304,
+      longitudeWgs84: 121.4737,
+      horizon: "7d",
+      target: "astro",
+      timezone: "Asia/Shanghai",
+    });
+    expect(payload.photoSpotId).toBeUndefined();
+    expect(url.searchParams.get("target")).toBe("astro");
     expect(url.searchParams.get("coordinateSource")).toBe("browser_geolocation");
     expect(url.searchParams.get("latWgs84")).toBe("31.2304");
     expect(url.searchParams.get("lngWgs84")).toBe("121.4737");
@@ -627,20 +742,40 @@ describe("scenario module pages", () => {
     expect(serialized).not.toMatch(/coming soon|placeholder|todo|mock|fixture/i);
     expect(serialized).not.toContain("模块准备中");
     expect(serialized).not.toContain("本地模拟");
+    expect(serialized).not.toContain("体验模式");
+    expect(serialized).not.toContain("演示数据");
+    expect(serialized).not.toContain("本地天文计算");
+    expect(serialized).not.toContain("本地算法");
     expect(serialized).not.toMatch(/\bAI\b/);
   });
 
-  it("renders the astro entry page without the popular spot placeholder grid", () => {
+  it("renders the astro entry page with the shared public search and judgment layout", () => {
     const html = renderToStaticMarkup(React.createElement(AstroPage));
 
     expect(html).not.toContain("热门星空银河机位");
     expect(html).not.toContain("热门星空机位");
     expect(html).not.toContain("热门银河机位");
     expect(html).toContain("地点搜索与机位选择");
-    expect(html).toContain("常用机位");
+    expect(html).toContain('data-subject-control-panel="true"');
+    expect(html).toContain('data-subject-control-panel-target="astro"');
+    expect(html).toContain('data-subject-knowledge-guide="astro"');
+    expect(countOccurrences(html, 'data-subject-knowledge-card="astro"')).toBe(6);
+    expect(html).not.toContain('data-quick-location-section="true"');
+    expect(html).not.toContain("常用机位");
+    expect(html).not.toContain("专题设置");
+    expect(html).not.toContain("题材预设");
+    for (const label of cloudSeaQuickSpotLabels) {
+      expect(html).not.toContain(label);
+      expect(hasExactButton(html, label)).toBe(false);
+    }
     expect(html).toContain("预报范围选择");
+    expect(html).toContain("未来24小时");
+    expect(html).toContain("未来48小时");
+    expect(html).toContain("未来72小时");
+    expect(html).toContain("未来7天");
     expect(html).toContain("分析题材");
     expect(html).toContain("查看星空银河判断");
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>查看星空银河判断<\/button>/);
     expect(html).toContain("星空银河判断需要看什么");
     expect(html).toContain("天文黑夜");
     expect(html).toContain("月相与月光");
@@ -648,7 +783,15 @@ describe("scenario module pages", () => {
     expect(html).toContain("银河窗口");
     expect(html).toContain("云量与能见度");
     expect(html).toContain("光污染与地形");
-    expect(html).toContain("天文时间基于本地天文计算");
+    expect(html).toContain('data-current-location-button="true"');
+    expect(html).toContain("浏览器定位仅用于本次星空银河判断，不会公开显示。");
+    expect(html).not.toContain("数据提醒");
+    expect(html).not.toContain("当前为体验模式");
+    expect(html).not.toContain("体验模式");
+    expect(html).not.toContain("演示数据");
+    expect(html).not.toContain("本地天文计算");
+    expect(html).not.toContain("本地算法");
+    expect(html).not.toMatch(/\bmock\b|\bdemo\b|测试数据|开发模式|开发环境|provider|debug/i);
   });
 
   it("astro page reads General deep-link query params and preselects context", () => {
