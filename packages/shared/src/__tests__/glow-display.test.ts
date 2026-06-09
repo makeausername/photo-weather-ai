@@ -106,6 +106,36 @@ describe("glow window lifecycle classification", () => {
     expect(glowDisplayRecommendationForScore(0)).toBe("不建议专程前往");
   });
 
+  it("marks future windows outside the selected forecast range without hiding ended windows", () => {
+    expect(
+      classifyGlowWindowLifecycle({
+        startAt: "2026-06-10T18:10:00+08:00",
+        endAt: "2026-06-10T19:20:00+08:00",
+        evaluatedAt: "2026-06-09T10:00:00+08:00",
+        timezone: "Asia/Shanghai",
+        rangeStartAt: "2026-06-09T12:00:00+08:00",
+        rangeEndAt: "2026-06-10T12:00:00+08:00",
+      }),
+    ).toMatchObject({
+      state: "outside_horizon",
+      isRecommendationEligible: false,
+    });
+
+    expect(
+      classifyGlowWindowLifecycle({
+        startAt: "2026-06-09T05:17:00+08:00",
+        endAt: "2026-06-09T06:32:00+08:00",
+        evaluatedAt: "2026-06-09T10:00:00+08:00",
+        timezone: "Asia/Shanghai",
+        rangeStartAt: "2026-06-09T12:00:00+08:00",
+        rangeEndAt: "2026-06-10T12:00:00+08:00",
+      }),
+    ).toMatchObject({
+      state: "ended",
+      isRecommendationEligible: false,
+    });
+  });
+
   it("uses the selected IANA timezone for local date grouping", () => {
     expect(glowLocalDateKey("2026-06-10T03:30:00Z", "America/New_York")).toBe("2026-06-09");
     expect(glowLocalDateKey("2026-06-10T03:30:00Z", "Asia/Shanghai")).toBe("2026-06-10");

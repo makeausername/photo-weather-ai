@@ -11,7 +11,12 @@ export const glowDisplayRecommendationVocabulary = [
   "不建议专程前往",
 ] as const satisfies readonly GlowDisplayRecommendation[];
 
-export type GlowWindowLifecycleState = "upcoming" | "active" | "ended" | "unavailable";
+export type GlowWindowLifecycleState =
+  | "upcoming"
+  | "active"
+  | "ended"
+  | "unavailable"
+  | "outside_horizon";
 
 export type GlowWindowLifecycle = {
   readonly state: GlowWindowLifecycleState;
@@ -27,6 +32,8 @@ export type GlowWindowLifecycleInput = {
   readonly endAt?: string | null;
   readonly evaluatedAt: string | number | Date;
   readonly timezone?: string | null;
+  readonly rangeStartAt?: string | number | Date | null;
+  readonly rangeEndAt?: string | number | Date | null;
 };
 
 const glowScoreProbabilityAnchors = [
@@ -50,6 +57,8 @@ export function classifyGlowWindowLifecycle(input: GlowWindowLifecycleInput): Gl
   const evaluatedAtMs = timestampMs(input.evaluatedAt);
   const startAtMs = timestampMs(input.startAt);
   const endAtMs = timestampMs(input.endAt);
+  const rangeStartAtMs = timestampMs(input.rangeStartAt);
+  const rangeEndAtMs = timestampMs(input.rangeEndAt);
   const invalidWindow =
     !Number.isFinite(evaluatedAtMs) ||
     !Number.isFinite(startAtMs) ||
@@ -67,11 +76,26 @@ export function classifyGlowWindowLifecycle(input: GlowWindowLifecycleInput): Gl
     };
   }
 
+  if (Number.isFinite(rangeEndAtMs) && startAtMs >= rangeEndAtMs) {
+    return {
+      state: "outside_horizon",
+      startAt: input.startAt ?? undefined,
+      endAt: input.endAt ?? undefined,
+      evaluatedAt: normalizedTimestamp(input.evaluatedAt),
+      timezone,
+      isRecommendationEligible: false,
+    };
+  }
+
   const state: GlowWindowLifecycleState =
     evaluatedAtMs < startAtMs ? "upcoming" : evaluatedAtMs <= endAtMs ? "active" : "ended";
+  const rangeAdjustedState =
+    state !== "ended" && Number.isFinite(rangeStartAtMs) && endAtMs <= rangeStartAtMs
+      ? "outside_horizon"
+      : state;
 
   return {
-    state,
+    state: rangeAdjustedState,
     startAt: input.startAt ?? undefined,
     endAt: input.endAt ?? undefined,
     evaluatedAt: normalizedTimestamp(input.evaluatedAt),

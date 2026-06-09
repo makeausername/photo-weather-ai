@@ -233,6 +233,10 @@ describe("Cloud Sea display data rolling horizon", () => {
       source.indexOf("export function GlowResultPage"),
       source.indexOf("export function AstroResultPage"),
     );
+    const glowProfessionalDataSource = source.slice(
+      source.indexOf("function GlowProfessionalDataSection"),
+      source.indexOf("function CloudSeaTopResultHeader"),
+    );
 
     expect(panelSource).toContain("const rows = data.rows");
     expect(panelSource).toContain("data-cloud-sea-professional-table-scroll");
@@ -243,8 +247,11 @@ describe("Cloud Sea display data rolling horizon", () => {
     expect(panelSource).not.toMatch(/row\.date|currentDate|isSameDay|23:00/);
     expect(panelSource).not.toMatch(/startsWith\(\s*`\$\{date\}T`/);
     expect(cloudSeaPageSource).toContain("<CloudSeaProfessionalHourlyDataPanel");
-    expect(glowPageSource).toContain("<CloudSeaProfessionalHourlyDataPanel");
-    expect(glowPageSource).not.toContain("<ProfessionalHourlyCloudSection");
+    expect(glowPageSource).toContain("<GlowProfessionalDataSection");
+    expect(glowProfessionalDataSource).toContain("<CloudSeaProfessionalHourlyDataPanel");
+    expect(glowProfessionalDataSource).toContain('target="glow"');
+    expect(glowProfessionalDataSource).toContain('variant="embedded"');
+    expect(glowProfessionalDataSource).not.toContain("<ProfessionalHourlyCloudSection");
   });
 
   it("keeps future48 provider-short coverage as 39 of 48 display hours", () => {
