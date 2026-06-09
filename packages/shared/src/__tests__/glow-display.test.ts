@@ -5,6 +5,8 @@ import {
   glowDisplayRecommendationForScore,
   glowDisplayRecommendationVocabulary,
   glowScoreToDisplayProbabilityPercent,
+  glowVividnessLevelForIndex,
+  glowVividnessLevelLabelZh,
 } from "../glow-display.js";
 
 describe("glow display probability mapping", () => {
@@ -40,6 +42,15 @@ describe("glow display probability mapping", () => {
     expect(glowDisplayRecommendationForScore(70)).toBe("可以关注");
     expect(glowDisplayRecommendationForScore(55)).toBe("仅作备选");
     expect(glowDisplayRecommendationForScore(35)).toBe("不建议专程前往");
+  });
+
+  it("centralizes vividness thresholds and labels", () => {
+    expect(glowVividnessLevelForIndex(12)).toBe("weak");
+    expect(glowVividnessLevelForIndex(25)).toBe("slightly_weak");
+    expect(glowVividnessLevelForIndex(45)).toBe("moderate");
+    expect(glowVividnessLevelForIndex(65)).toBe("strong");
+    expect(glowVividnessLevelForIndex(80)).toBe("very_strong");
+    expect(glowVividnessLevelLabelZh("very_strong")).toBe("很鲜艳");
   });
 });
 

@@ -1144,6 +1144,69 @@ export type GlowPostRainOpeningChance = "low" | "medium" | "high";
 
 export type GlowWindowRainRisk = "low" | "medium" | "high";
 
+export type GlowProbabilityCalibrationMode = "heuristic";
+
+export type GlowVividnessLevel = "weak" | "slightly_weak" | "moderate" | "strong" | "very_strong";
+
+export type GlowProviderAgreementStatus =
+  | "unavailable"
+  | "single_source"
+  | "high"
+  | "medium"
+  | "low";
+
+export type GlowProviderModelSource = {
+  readonly providerCode: string;
+  readonly providerLabelZh?: string;
+  readonly modelName?: string;
+  readonly sourceId?: string;
+  readonly issueTime?: string;
+  readonly updateTime?: string;
+  readonly coverageHours: number;
+};
+
+export type GlowProviderAgreement = {
+  readonly status: GlowProviderAgreementStatus;
+  readonly providerCount: number;
+  readonly modelCount: number;
+  readonly modelSpread: number | null;
+  readonly confidenceAdjustment: number;
+  readonly summaryZh: string;
+  readonly sources: readonly GlowProviderModelSource[];
+};
+
+export type GlowModelMetricResult = {
+  readonly providerCode: string;
+  readonly providerLabelZh?: string;
+  readonly modelName?: string;
+  readonly sourceId?: string;
+  readonly occurrenceProbabilityPercent: number;
+  readonly vividnessIndex: number;
+  readonly vividnessLevel: GlowVividnessLevel;
+  readonly practicalSuitabilityScore: number;
+  readonly confidence: number;
+};
+
+export type GlowScoreBreakdown = {
+  readonly colorCarrierScore: number;
+  readonly lowCloudObstructionRisk: number;
+  readonly visibilityColorQualityScore: number;
+  readonly aerosolScore?: number;
+  readonly precipitationDisruptionRisk: number;
+  readonly terrainScore: number;
+  readonly windHumidityScore: number;
+  readonly occurrenceProbabilityPercent: number;
+  readonly vividnessIndex: number;
+  readonly practicalSuitabilityScore: number;
+  readonly confidence: number;
+  readonly providerCount: number;
+  readonly modelCount: number;
+  readonly modelSpread: number | null;
+  readonly calibrationMode: GlowProbabilityCalibrationMode;
+  readonly missingDataReasons: readonly string[];
+  readonly modelResults: readonly GlowModelMetricResult[];
+};
+
 export type GlowWindowType =
   | "sunrise_glow"
   | "sunset_glow"
@@ -1176,6 +1239,13 @@ export type GlowAssessment = {
   readonly precipitationDisruptionRisk: number;
   readonly visibilityColorQualityScore: number;
   readonly practicalGlowScore: number;
+  readonly occurrenceProbabilityPercent: number;
+  readonly vividnessIndex: number;
+  readonly vividnessLevel: GlowVividnessLevel;
+  readonly practicalSuitabilityScore: number;
+  readonly calibrationMode: GlowProbabilityCalibrationMode;
+  readonly providerAgreement: GlowProviderAgreement;
+  readonly scoreBreakdown: GlowScoreBreakdown;
   readonly confidence: number;
   readonly labels: GlowAssessmentLabels;
 };
@@ -1200,6 +1270,16 @@ export type GlowWindow = {
   readonly score: number;
   readonly conditionScore?: number;
   readonly practicalScore?: number;
+  readonly occurrenceProbabilityPercent?: number;
+  readonly vividnessIndex?: number;
+  readonly vividnessLevel?: GlowVividnessLevel;
+  readonly practicalSuitabilityScore?: number;
+  readonly recommendationLabel?: GlowRecommendationLabel;
+  readonly confidence?: number;
+  readonly calibrationMode?: GlowProbabilityCalibrationMode;
+  readonly providerAgreement?: GlowProviderAgreement;
+  readonly scoreBreakdown?: GlowScoreBreakdown;
+  readonly modelResults?: readonly GlowModelMetricResult[];
   readonly colorCarrierScore?: number;
   readonly lowCloudObstructionRisk?: number;
   readonly precipitationDisruptionRisk?: number;
@@ -1223,6 +1303,15 @@ export type GlowCanonicalWindow = {
   readonly bestStartAt?: string;
   readonly bestEndAt?: string;
   readonly probabilityScore?: number;
+  readonly occurrenceProbabilityPercent?: number;
+  readonly vividnessIndex?: number;
+  readonly vividnessLevel?: GlowVividnessLevel;
+  readonly practicalSuitabilityScore?: number;
+  readonly recommendationLabel?: GlowRecommendationLabel;
+  readonly calibrationMode?: GlowProbabilityCalibrationMode;
+  readonly providerAgreement?: GlowProviderAgreement;
+  readonly scoreBreakdown?: GlowScoreBreakdown;
+  readonly modelResults?: readonly GlowModelMetricResult[];
   readonly confidence?: number;
   readonly windowDerivationMethod: string;
   readonly weatherResolutionMinutes?: number;
@@ -1249,6 +1338,24 @@ export type DailyGlow = {
   readonly sunriseScore: number;
   readonly sunsetScore: number;
   readonly practicalScore?: number;
+  readonly occurrenceProbabilityPercent?: number;
+  readonly vividnessIndex?: number;
+  readonly vividnessLevel?: GlowVividnessLevel;
+  readonly practicalSuitabilityScore?: number;
+  readonly providerAgreement?: GlowProviderAgreement;
+  readonly scoreBreakdown?: GlowScoreBreakdown;
+  readonly sunriseOccurrenceProbabilityPercent?: number;
+  readonly sunsetOccurrenceProbabilityPercent?: number;
+  readonly sunriseVividnessIndex?: number;
+  readonly sunsetVividnessIndex?: number;
+  readonly sunriseVividnessLevel?: GlowVividnessLevel;
+  readonly sunsetVividnessLevel?: GlowVividnessLevel;
+  readonly sunrisePracticalSuitabilityScore?: number;
+  readonly sunsetPracticalSuitabilityScore?: number;
+  readonly sunriseProviderAgreement?: GlowProviderAgreement;
+  readonly sunsetProviderAgreement?: GlowProviderAgreement;
+  readonly sunriseScoreBreakdown?: GlowScoreBreakdown;
+  readonly sunsetScoreBreakdown?: GlowScoreBreakdown;
   readonly colorCarrierScore?: number;
   readonly lowCloudObstructionRisk?: number;
   readonly precipitationDisruptionRisk?: number;

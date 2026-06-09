@@ -217,10 +217,20 @@ describe("AI providers", () => {
   });
 
   it("builds a glow-specific DeepSeek prompt from concise deterministic facts", () => {
-    const sunriseWindow = forecastResultFixture.glowAnalysis.bestGlowWindows[0];
-    if (!sunriseWindow) {
+    const baseSunriseWindow = forecastResultFixture.glowAnalysis.bestGlowWindows[0];
+    if (!baseSunriseWindow) {
       throw new Error("forecast fixture must include a sunrise glow window");
     }
+    const sunriseWindow = {
+      ...baseSunriseWindow,
+      occurrenceProbabilityPercent: 75,
+      vividnessIndex: 79,
+      vividnessLevel: "strong" as const,
+      practicalSuitabilityScore: 72,
+      confidence: 72,
+      calibrationMode: "heuristic" as const,
+      providerAgreement: forecastResultFixture.glowAnalysis.providerAgreement,
+    };
     const sunsetWindow = {
       ...sunriseWindow,
       type: "sunset" as const,
@@ -228,6 +238,9 @@ describe("AI providers", () => {
       start: "2026-05-21T17:55:00+08:00",
       end: "2026-05-21T19:18:00+08:00",
       score: 62,
+      occurrenceProbabilityPercent: 62,
+      vividnessIndex: 66,
+      practicalSuitabilityScore: 58,
       noteZh: "晚霞窗口可作为备选，重点看西向中高云是否保留色彩载体。",
     };
     const request = buildDeepSeekForecastExplanationRequest({
@@ -286,16 +299,20 @@ describe("AI providers", () => {
     expect(payload.constraints.join("")).toContain("Do not change sunrise/sunset glow probability");
     expect(glow?.primaryDecision).toMatchObject({
       preferredTargetZh: "朝霞",
-      preferredProbabilityPercent: 73,
+      preferredProbabilityPercent: 75,
       recommendationZh: expect.any(String),
       recommendedArrivalZh: expect.stringContaining("建议"),
     });
     expect(glow?.sunriseGlow).toMatchObject({
-      probabilityPercent: 73,
+      probabilityPercent: 75,
+      vividnessIndex: 79,
+      practicalSuitabilityScore: 72,
       recommendationZh: "可以关注",
     });
     expect(glow?.sunsetGlow).toMatchObject({
-      probabilityPercent: 58,
+      probabilityPercent: 62,
+      vividnessIndex: 66,
+      practicalSuitabilityScore: 58,
       recommendationZh: "仅作备选",
     });
     expect(glow?.sunriseGlow.sunEvent).toMatchObject({
@@ -319,7 +336,16 @@ describe("AI providers", () => {
     });
     expect(JSON.stringify(glow?.professionalHourlySummary)).not.toContain("focusedRows");
     expect(glow?.actionPlan.travelAdviceZh.join("")).toContain("日出前 40-60 分钟");
-    expect(text).toContain("deterministic sunriseGlowScore");
+    expect(glow?.contextVersion).toBe("glow-ai-explain-v3");
+    expect(glow?.deterministicAuthority).toMatchObject({
+      occurrenceProbabilityPercent: 75,
+      vividnessIndex: 79,
+      practicalSuitabilityScore: 72,
+      calibrationMode: "heuristic",
+    });
+    expect(text).toContain("occurrenceProbabilityPercent");
+    expect(text).toContain("vividnessIndex");
+    expect(text).toContain("practicalSuitabilityScore");
     expect(text).not.toContain("professionalHourlyData");
     expect(text).not.toContain("focusedRows");
     expect(text).not.toContain("weatherTimeline");
@@ -1640,6 +1666,45 @@ const forecastResultFixture: ForecastCalculationResult = {
     precipitationDisruptionRisk: 16,
     visibilityColorQualityScore: 82,
     practicalGlowScore: 72,
+    occurrenceProbabilityPercent: 75,
+    vividnessIndex: 79,
+    vividnessLevel: "strong",
+    practicalSuitabilityScore: 72,
+    calibrationMode: "heuristic",
+    providerAgreement: {
+      status: "unavailable",
+      providerCount: 1,
+      modelCount: 1,
+      modelSpread: null,
+      confidenceAdjustment: 6,
+      summaryZh: "单一来源，暂不判断模型一致性",
+      sources: [
+        {
+          providerCode: "mock",
+          providerLabelZh: "模拟数据",
+          sourceId: "mock",
+          coverageHours: 2,
+        },
+      ],
+    },
+    scoreBreakdown: {
+      colorCarrierScore: 78,
+      lowCloudObstructionRisk: 38,
+      visibilityColorQualityScore: 82,
+      precipitationDisruptionRisk: 16,
+      terrainScore: 72,
+      windHumidityScore: 76,
+      occurrenceProbabilityPercent: 75,
+      vividnessIndex: 79,
+      practicalSuitabilityScore: 72,
+      confidence: 72,
+      providerCount: 1,
+      modelCount: 1,
+      modelSpread: null,
+      calibrationMode: "heuristic",
+      missingDataReasons: ["provider_model_agreement_unavailable"],
+      modelResults: [],
+    },
     confidence: 72,
     labels: {
       sunriseGlowOpportunity: "高",

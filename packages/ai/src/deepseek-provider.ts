@@ -14,13 +14,17 @@ import {
   classifyGlowWindowLifecycle,
   glowLocalDateKey,
   glowDisplayRecommendationForScore,
-  glowScoreToDisplayProbabilityPercent,
   isGlowWindowRecommendationEligible,
   normalizeDeepSeekModel,
   type DeepSeekReasoningEffort,
   type GlowWindowLifecycleState,
 } from "@photo-weather/shared";
-import type { DecisionCard, ForecastCalculationResult } from "@photo-weather/shared";
+import type {
+  DecisionCard,
+  ForecastCalculationResult,
+  GlowProviderAgreement,
+  GlowVividnessLevel,
+} from "@photo-weather/shared";
 import { z } from "zod";
 import { MockAIProvider } from "./mock-provider.js";
 import type {
@@ -1120,12 +1124,12 @@ export function buildGlowAiExplainPayload(
   const backupPlan = analysis.backupPlans[0];
 
   return {
-    contextVersion: "glow-ai-explain-v2",
+    contextVersion: "glow-ai-explain-v3",
     target: "glow",
     targetCode: "glow",
     deterministicOnly: true,
     instruction:
-      "Explain deterministic sunrise/sunset glow facts only. Use lifecycle, probability, best local time, go/no-go recommendation, one main reason, one main risk, and one backup plan. Do not recommend ended windows as actionable. Do not recompute or change probability, scores, windows, sun times, cloud values, aerosol values, terrain obstruction, or the deterministic recommendation.",
+      "Explain deterministic sunrise/sunset glow facts only. Keep three concepts separate: 出现可能性, 出现后的鲜艳程度, and 是否值得前往. Use lifecycle, occurrence probability, vividness, practical recommendation, best local time, one main reason, one main risk, and one backup plan. Do not recommend ended windows as actionable. Do not recompute or change occurrence probability, vividness, practical scores, windows, sun times, cloud values, aerosol values, terrain obstruction, provider agreement, or deterministic recommendation.",
     locationName: limitText(result.place.name, 80),
     horizon: {
       key: result.horizon,
@@ -1166,6 +1170,11 @@ export function buildGlowAiExplainPayload(
     sunriseGlow: {
       probabilityPercent: sunriseWindowState.probabilityPercent,
       probabilityDisplay: sunriseWindowState.probabilityDisplay,
+      vividnessIndex: sunriseWindowState.vividnessIndex,
+      vividnessLevel: sunriseWindowState.vividnessLevel,
+      practicalSuitabilityScore: sunriseWindowState.practicalSuitabilityScore,
+      confidence: sunriseWindowState.confidence,
+      providerAgreementStatus: sunriseWindowState.providerAgreement?.status,
       lifecycle: sunriseWindowState.lifecycle,
       actionable: sunriseWindowState.isActionable,
       recommendationZh: glowPromptRecommendationZh(sunriseWindowState),
@@ -1182,6 +1191,11 @@ export function buildGlowAiExplainPayload(
     sunsetGlow: {
       probabilityPercent: sunsetWindowState.probabilityPercent,
       probabilityDisplay: sunsetWindowState.probabilityDisplay,
+      vividnessIndex: sunsetWindowState.vividnessIndex,
+      vividnessLevel: sunsetWindowState.vividnessLevel,
+      practicalSuitabilityScore: sunsetWindowState.practicalSuitabilityScore,
+      confidence: sunsetWindowState.confidence,
+      providerAgreementStatus: sunsetWindowState.providerAgreement?.status,
       lifecycle: sunsetWindowState.lifecycle,
       actionable: sunsetWindowState.isActionable,
       recommendationZh: glowPromptRecommendationZh(sunsetWindowState),
@@ -1198,11 +1212,22 @@ export function buildGlowAiExplainPayload(
     deterministicAuthority: {
       sunriseGlowScore: analysis.sunriseGlowScore,
       sunsetGlowScore: analysis.sunsetGlowScore,
+      occurrenceProbabilityPercent: analysis.occurrenceProbabilityPercent,
+      vividnessIndex: analysis.vividnessIndex,
+      vividnessLevel: analysis.vividnessLevel,
+      practicalSuitabilityScore: analysis.practicalSuitabilityScore,
+      calibrationMode: analysis.calibrationMode,
+      providerAgreement: {
+        status: analysis.providerAgreement.status,
+        providerCount: analysis.providerAgreement.providerCount,
+        modelCount: analysis.providerAgreement.modelCount,
+        modelSpread: analysis.providerAgreement.modelSpread,
+      },
       glowTravelScore: analysis.glowTravelScore,
       recommendationLabelZh: glowDisplayRecommendationForScore(analysis.glowTravelScore),
       confidenceLevel: analysis.confidenceLevel,
       noteZh:
-        "These raw deterministic scores and mapped probabilities are authoritative; AI must not change them.",
+        "These deterministic occurrence, vividness, practical, window, and confidence values are authoritative; AI must not change them.",
     },
     whyThisJudgment: [
       {
@@ -1267,8 +1292,12 @@ export function buildGlowAiExplainPayload(
     ).map((day) => ({
       date: day.date,
       dateZh: formatDateLabelZh(day.date, timezone, day.dateLabelZh),
-      sunriseProbabilityPercent: glowScoreToDisplayProbabilityPercent(day.sunriseScore),
-      sunsetProbabilityPercent: glowScoreToDisplayProbabilityPercent(day.sunsetScore),
+      sunriseProbabilityPercent: day.sunriseOccurrenceProbabilityPercent ?? day.sunriseScore,
+      sunsetProbabilityPercent: day.sunsetOccurrenceProbabilityPercent ?? day.sunsetScore,
+      sunriseVividnessIndex: day.sunriseVividnessIndex,
+      sunsetVividnessIndex: day.sunsetVividnessIndex,
+      sunrisePracticalSuitabilityScore: day.sunrisePracticalSuitabilityScore,
+      sunsetPracticalSuitabilityScore: day.sunsetPracticalSuitabilityScore,
       bestTarget: day.bestTarget,
       recommendationLabelZh: glowDisplayRecommendationForScore(
         day.practicalScore ?? Math.max(day.sunriseScore, day.sunsetScore),
@@ -1306,13 +1335,23 @@ type GlowPromptWindowState = {
   readonly score: number;
   readonly probabilityPercent: number;
   readonly probabilityDisplay: string;
+  readonly vividnessIndex?: number;
+  readonly vividnessLevel?: GlowVividnessLevel;
+  readonly practicalSuitabilityScore?: number;
+  readonly confidence?: number;
+  readonly calibrationMode?: string;
+  readonly providerAgreement?: GlowProviderAgreement;
 };
 
 function buildGlowPromptWindowStates(
   result: ForecastCalculationResult,
 ): readonly GlowPromptWindowState[] {
   return allGlowPromptWindows(result.glowAnalysis).map((window) =>
-    glowPromptWindowStateForWindow(result, window, window.practicalScore ?? window.score),
+    glowPromptWindowStateForWindow(
+      result,
+      window,
+      window.practicalSuitabilityScore ?? window.practicalScore ?? window.score,
+    ),
   );
 }
 
@@ -1349,17 +1388,7 @@ function selectGlowPromptPhaseState(
     phase === "sunrise"
       ? result.glowAnalysis.sunriseGlowScore
       : result.glowAnalysis.sunsetGlowScore;
-  const phaseStates = states
-    .filter((state) => state.phase === phase)
-    .map((state) => ({
-      ...state,
-      score,
-      probabilityPercent: glowScoreToDisplayProbabilityPercent(score),
-    }))
-    .map((state) => ({
-      ...state,
-      probabilityDisplay: glowPromptProbabilityDisplay(state.lifecycle, state.probabilityPercent),
-    }));
+  const phaseStates = states.filter((state) => state.phase === phase);
   const actionable = selectGlowPromptActionableState(result, phaseStates);
   if (actionable) {
     return actionable;
@@ -1453,7 +1482,11 @@ function glowPromptWindowStateForDailyWindow(
   window: GlowPromptWindow | undefined,
 ): GlowPromptWindowState | undefined {
   return window
-    ? glowPromptWindowStateForWindow(result, window, window.practicalScore ?? window.score)
+    ? glowPromptWindowStateForWindow(
+        result,
+        window,
+        window.practicalSuitabilityScore ?? window.practicalScore ?? window.score,
+      )
     : undefined;
 }
 
@@ -1488,7 +1521,10 @@ function glowPromptWindowStateForWindow(
     evaluatedAt: glowPromptEvaluatedAt(result),
     timezone: result.calendarBasis.timezone,
   }).state;
-  const probabilityPercent = glowScoreToDisplayProbabilityPercent(score);
+  const probabilityPercent = promptPercent(window.occurrenceProbabilityPercent ?? score);
+  const practicalSuitabilityScore = promptPercent(
+    window.practicalSuitabilityScore ?? window.practicalScore ?? score,
+  );
 
   return {
     phase: glowWindowPhase(window),
@@ -1498,9 +1534,15 @@ function glowPromptWindowStateForWindow(
     date: window.date ?? glowLocalDateKey(window.start, result.calendarBasis.timezone) ?? undefined,
     startAt: window.start,
     endAt: window.end,
-    score,
+    score: practicalSuitabilityScore,
     probabilityPercent,
     probabilityDisplay: glowPromptProbabilityDisplay(lifecycle, probabilityPercent),
+    vividnessIndex: window.vividnessIndex,
+    vividnessLevel: window.vividnessLevel,
+    practicalSuitabilityScore,
+    confidence: window.confidence,
+    calibrationMode: window.calibrationMode,
+    providerAgreement: window.providerAgreement,
   };
 }
 
@@ -1523,7 +1565,7 @@ function derivedEndedGlowPromptState(
   if (lifecycle !== "ended") {
     return undefined;
   }
-  const probabilityPercent = glowScoreToDisplayProbabilityPercent(score);
+  const probabilityPercent = promptPercent(score);
 
   return {
     phase,
@@ -1543,7 +1585,7 @@ function unavailableGlowPromptState(
   phase: GlowPromptPhase,
   score: number,
 ): GlowPromptWindowState {
-  const probabilityPercent = glowScoreToDisplayProbabilityPercent(score);
+  const probabilityPercent = promptPercent(score);
   return {
     phase,
     lifecycle: "unavailable",
@@ -1601,6 +1643,13 @@ function glowPromptProbabilityDisplay(
     return "暂无明确时间";
   }
   return `${probabilityPercent}%`;
+}
+
+function promptPercent(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.min(100, Math.max(0, Math.round(value)));
 }
 
 function glowPromptRecommendationZh(state: GlowPromptWindowState): string {
@@ -1672,6 +1721,11 @@ function compactGlowWindowStateForAi(
       windowZh: formatLocalTimeRange(state.startAt, state.endAt, timezone),
       probabilityPercent: state.probabilityPercent,
       probabilityDisplay: state.probabilityDisplay,
+      vividnessIndex: state.vividnessIndex,
+      vividnessLevel: state.vividnessLevel,
+      practicalSuitabilityScore: state.practicalSuitabilityScore,
+      confidence: state.confidence,
+      providerAgreementStatus: state.providerAgreement?.status,
       score: state.score,
       rainOverlapsWindow: window?.rainOverlapsWindow,
       riskTags: takeTextItems(window?.riskTags ?? [], 2, 40),
@@ -1693,6 +1747,19 @@ function compactGlowWindowStateForAi(
     ),
     probabilityPercent: state.probabilityPercent,
     probabilityDisplay: state.probabilityDisplay,
+    vividnessIndex: state.vividnessIndex,
+    vividnessLevel: state.vividnessLevel,
+    practicalSuitabilityScore: state.practicalSuitabilityScore,
+    confidence: state.confidence,
+    calibrationMode: state.calibrationMode,
+    providerAgreement: state.providerAgreement
+      ? {
+          status: state.providerAgreement.status,
+          providerCount: state.providerAgreement.providerCount,
+          modelCount: state.providerAgreement.modelCount,
+          modelSpread: state.providerAgreement.modelSpread,
+        }
+      : undefined,
     score: state.score,
     colorCarrierScore: window?.colorCarrierScore,
     lowCloudObstructionRisk: window?.lowCloudObstructionRisk,

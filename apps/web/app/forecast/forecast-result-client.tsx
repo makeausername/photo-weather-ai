@@ -4470,6 +4470,8 @@ function GlowDailyPhaseStat({
       data-glow-slot={slot.phase}
       data-glow-slot-lifecycle={slot.lifecycle}
       data-glow-slot-probability={slot.probabilityPercent}
+      data-glow-slot-vividness={slot.vividnessIndex}
+      data-glow-slot-practical={slot.practicalSuitabilityScore}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <p className="text-xs font-bold text-card-foreground">{slot.label}</p>
@@ -4481,7 +4483,10 @@ function GlowDailyPhaseStat({
           hasProbability ? "text-2xl text-accent" : "text-sm text-muted-foreground",
         )}
       >
-        {slot.probabilityDisplay}
+        {hasProbability ? `预测概率 ${slot.probabilityDisplay}` : slot.probabilityDisplay}
+      </p>
+      <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">
+        鲜艳度：{slot.vividnessDisplay}
       </p>
       <p className="mt-2 break-words text-xs leading-5 text-muted-foreground">
         最佳时间：{slot.timeLabel}
@@ -4530,6 +4535,7 @@ function GlowWhyJudgmentSection({
 function GlowProfessionalDataSection({ viewModel }: { readonly viewModel: GlowForecastViewModel }) {
   const [expanded, setExpanded] = useState(false);
   const items = viewModel.professionalEvidence;
+  const scoringWindows = viewModel.professionalScoringWindows;
   const missingDataNotes = viewModel.missingDataNotes;
   const dataNotice = viewModel.dataNotice;
 
@@ -4561,6 +4567,40 @@ function GlowProfessionalDataSection({ viewModel }: { readonly viewModel: GlowFo
 
       {expanded ? (
         <div className="mt-4 grid gap-4" data-glow-professional-data-body="true">
+          {scoringWindows.length > 0 ? (
+            <div className="grid gap-3" data-glow-professional-scoring="true">
+              {scoringWindows.map((window) => (
+                <article
+                  key={window.key}
+                  className="rounded-lg border border-border bg-muted p-3"
+                  data-glow-professional-scoring-window={window.key}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <h3 className="font-semibold text-card-foreground">{window.label}</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">{window.timeLabel}</p>
+                    </div>
+                    <Badge variant={badgeVariantForTone(window.tone)}>{window.practicalDisplay}</Badge>
+                  </div>
+                  <div className="mt-3 grid gap-2 min-[640px]:grid-cols-4">
+                    <MetricPill label="出现概率" value={window.occurrenceDisplay} />
+                    <MetricPill label="鲜艳度" value={window.vividnessDisplay} />
+                    <MetricPill label="可信度" value={window.confidenceDisplay} />
+                    <MetricPill label="来源一致性" value={window.providerAgreementDisplay} />
+                  </div>
+                  {window.componentItems.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {window.componentItems.map((item) => (
+                        <Badge key={item.key} variant={badgeVariantForTone(item.tone)}>
+                          {item.label} {item.value}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          ) : null}
           <div className="flex flex-wrap gap-3" data-glow-professional-evidence-layout="balanced-flex">
             {items.map((item) => (
               <article
@@ -4592,6 +4632,15 @@ function GlowProfessionalDataSection({ viewModel }: { readonly viewModel: GlowFo
         </div>
       ) : null}
     </Card>
+  );
+}
+
+function MetricPill({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <div className="rounded-md border border-border bg-card px-2.5 py-2">
+      <p className="text-[11px] leading-4 text-muted-foreground">{label}</p>
+      <p className="mt-1 break-words text-sm font-semibold text-card-foreground">{value}</p>
+    </div>
   );
 }
 

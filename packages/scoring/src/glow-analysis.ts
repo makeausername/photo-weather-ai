@@ -9,10 +9,15 @@ import type {
   GlowBackupPlan,
   GlowCanonicalWindow,
   GlowEvidenceItem,
+  GlowModelMetricResult,
   GlowWindowDiagnostic,
   GlowPostRainOpeningChance,
+  GlowProviderAgreement,
+  GlowProviderModelSource,
   GlowRecommendationLabel,
+  GlowScoreBreakdown,
   GlowTerrainObstructionAssessment,
+  GlowVividnessLevel,
   GlowWindow,
   GlowWindowRainRisk,
   GlowWindowType,
@@ -21,6 +26,13 @@ import type {
 import { glowSolarAltitudeGeometryConfig } from "@photo-weather/shared";
 import { addHoursInTimezone } from "@photo-weather/calendar";
 import { averageHourly, averageWeightedScore, clampScore } from "./helpers.js";
+import {
+  calculateGlowPracticalSuitabilityScore,
+  calculateGlowVividnessIndex,
+  calibrateGlowOccurrenceProbability,
+  glowOccurrenceProbabilityCalibrationMode,
+  glowVividnessLevelForScore,
+} from "./glow-metrics.js";
 
 type ForecastTimeRange = {
   readonly forecastStart: string;
@@ -48,6 +60,14 @@ type GlowComponentScores = {
   readonly windHumidity: number;
   readonly conditionScore: number;
   readonly practicalScore: number;
+  readonly occurrenceProbabilityPercent: number;
+  readonly vividnessIndex: number;
+  readonly vividnessLevel: GlowVividnessLevel;
+  readonly practicalSuitabilityScore: number;
+  readonly confidence: number;
+  readonly providerAgreement: GlowProviderAgreement;
+  readonly scoreBreakdown: GlowScoreBreakdown;
+  readonly modelResults: readonly GlowModelMetricResult[];
   readonly rainOverlapsWindow: boolean;
   readonly postRainOpeningChance: GlowPostRainOpeningChance;
   readonly glowWindowRainRisk: GlowWindowRainRisk;
@@ -60,12 +80,22 @@ const missingTerrainNote = "暂缺地形遮挡细节，正式地形数据接入�
 export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnalysisResult {
   const candidates = buildGlowCandidates(input).map((candidate) => {
     const components = calculateGlowComponents(input, candidate);
-    const score = components.practicalScore;
+    const score = components.practicalSuitabilityScore;
     return {
       ...candidate,
       score,
       conditionScore: components.conditionScore,
-      practicalScore: components.practicalScore,
+      practicalScore: components.practicalSuitabilityScore,
+      occurrenceProbabilityPercent: components.occurrenceProbabilityPercent,
+      vividnessIndex: components.vividnessIndex,
+      vividnessLevel: components.vividnessLevel,
+      practicalSuitabilityScore: components.practicalSuitabilityScore,
+      recommendationLabel: glowRecommendationLabel(components.practicalSuitabilityScore),
+      confidence: components.confidence,
+      calibrationMode: glowOccurrenceProbabilityCalibrationMode,
+      providerAgreement: components.providerAgreement,
+      scoreBreakdown: components.scoreBreakdown,
+      modelResults: components.modelResults,
       colorCarrierScore: components.colorCarrierScore,
       lowCloudObstructionRisk: components.lowCloudRisk,
       precipitationDisruptionRisk: components.precipitationDisruptionRisk,
@@ -108,8 +138,26 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
       }
       return Date.parse(left.start) - Date.parse(right.start);
     });
-  const sunriseGlowScore = phaseScore(candidates, "sunrise");
-  const sunsetGlowScore = phaseScore(candidates, "sunset");
+  const sunriseGlowScore = phaseMetric(
+    candidates,
+    "sunrise",
+    (candidate) => candidate.occurrenceProbabilityPercent,
+  );
+  const sunsetGlowScore = phaseMetric(
+    candidates,
+    "sunset",
+    (candidate) => candidate.occurrenceProbabilityPercent,
+  );
+  const sunrisePracticalScore = phaseMetric(
+    candidates,
+    "sunrise",
+    (candidate) => candidate.practicalSuitabilityScore ?? candidate.practicalScore ?? candidate.score,
+  );
+  const sunsetPracticalScore = phaseMetric(
+    candidates,
+    "sunset",
+    (candidate) => candidate.practicalSuitabilityScore ?? candidate.practicalScore ?? candidate.score,
+  );
   const lowCloudObstructionRisk = calculateLowCloudObstructionRisk(input, candidates);
   const colorCarrierScore = maxCandidateScore(
     candidates,
@@ -135,8 +183,8 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
   const postRainOpeningChance = strongestPostRainOpening(candidates);
   const glowWindowRainRisk = strongestRainRisk(candidates);
   const rawGlowTravelScore = calculateGlowTravelScore(
-    sunriseGlowScore,
-    sunsetGlowScore,
+    sunrisePracticalScore,
+    sunsetPracticalScore,
     lowCloudObstructionRisk,
     precipitationDisruptionRisk,
     visibilityColorQualityScore,
@@ -148,6 +196,38 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
       : Math.min(rawGlowTravelScore, watchableGlowWindows.length > 0 ? 54 : 38);
   const missingDataNotes = buildGlowMissingDataNotes(input);
   const confidence = calculateGlowConfidenceScore(input, missingDataNotes);
+  const occurrenceProbabilityPercent = maxCandidateScore(
+    candidates,
+    (candidate) => candidate.occurrenceProbabilityPercent,
+    () => Math.max(sunriseGlowScore, sunsetGlowScore),
+  );
+  const vividnessIndex = maxCandidateScore(
+    candidates,
+    (candidate) => candidate.vividnessIndex,
+    () =>
+      calculateGlowVividnessIndex({
+        colorCarrierScore,
+        visibilityColorQualityScore,
+        aerosolScore: undefined,
+        humidityScore: 68,
+        solarGeometryScore: 76,
+      }),
+  );
+  const vividnessLevel = glowVividnessLevelForScore(vividnessIndex);
+  const providerAgreement = aggregateGlowProviderAgreement(candidates);
+  const scoreBreakdown = aggregateGlowScoreBreakdown({
+    candidates,
+    colorCarrierScore,
+    lowCloudObstructionRisk,
+    visibilityColorQualityScore,
+    precipitationDisruptionRisk,
+    practicalSuitabilityScore: glowTravelScore,
+    occurrenceProbabilityPercent,
+    vividnessIndex,
+    confidence,
+    missingDataNotes,
+    providerAgreement,
+  });
   const canonicalWindows = buildCanonicalGlowWindows(input, candidates, {
     sunriseGlowScore,
     sunsetGlowScore,
@@ -174,6 +254,13 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
     precipitationDisruptionRisk,
     visibilityColorQualityScore,
     practicalGlowScore: glowTravelScore,
+    occurrenceProbabilityPercent,
+    vividnessIndex,
+    vividnessLevel,
+    practicalSuitabilityScore: glowTravelScore,
+    calibrationMode: glowOccurrenceProbabilityCalibrationMode,
+    providerAgreement,
+    scoreBreakdown,
     confidence,
     labels,
     glowTravelScore,
@@ -386,6 +473,19 @@ function calculateGlowComponents(
   const aerosolScore = scoreAerosolAtmosphere(window);
   const terrain = scoreTerrainObstruction(input, phase);
   const windHumidity = scoreWindHumidity(window);
+  const missingDataReasons = buildGlowWindowMissingDataReasons(input, window);
+  const dataCompletenessScore = scoreGlowWindowDataCompleteness(input, window);
+  const modelResults = calculateGlowModelMetricResults(input, candidate, {
+    missingDataReasons,
+    dataCompletenessScore,
+  });
+  const providerAgreement = buildGlowProviderAgreement(modelResults);
+  const providerAgreementScore = providerAgreementScoreForStatus(providerAgreement);
+  const temporalProximityScore = scoreGlowTemporalProximity(candidate);
+  const confidence = clampScore(
+    calculateGlowConfidenceScore(input, buildGlowMissingDataNotes(input)) -
+      providerAgreement.confidenceAdjustment,
+  );
   const conditionScore = scoreGlowCondition({
     colorCarrierScore,
     lowCloudRisk,
@@ -398,19 +498,56 @@ function calculateGlowComponents(
   const rainOverlapsWindow = hasActivePrecipitation(window);
   const postRainOpeningChance = calculatePostRainOpeningChance(input, candidate);
   const glowWindowRainRisk = glowRainRiskLevel(precipitationDisruptionRisk);
-  const practicalScore = scorePracticalGlowWindow({
-    conditionScore,
+  const occurrenceProbabilityPercent = calibrateGlowOccurrenceProbability({
     colorCarrierScore,
-    lowCloudRisk,
+    lowCloudObstructionRisk: lowCloudRisk,
+    precipitationDisruptionRisk,
+    visibilityColorQualityScore,
+    providerAgreementScore,
+    dataCompletenessScore,
+    temporalProximityScore,
+  });
+  const vividnessIndex = calculateGlowVividnessIndex({
+    colorCarrierScore,
+    visibilityColorQualityScore,
+    aerosolScore,
+    humidityScore: scoreGlowWindowHumidityForVividness(window),
+    solarGeometryScore: scoreGlowWindowSolarGeometry(candidate),
+  });
+  const vividnessLevel = glowVividnessLevelForScore(vividnessIndex);
+  const practicalScore = calculateGlowPracticalSuitabilityScore({
+    occurrenceProbabilityPercent,
+    vividnessIndex,
+    lowCloudObstructionRisk: lowCloudRisk,
     precipitationDisruptionRisk,
     visibilityColorQualityScore,
     aerosolScore,
-    terrain,
-    windHumidity,
+    terrainScore: terrain,
+    windHumidityScore: windHumidity,
     rainOverlapsWindow,
     postRainOpeningChance,
     type: candidate.type,
+    confidence,
   });
+  const scoreBreakdown: GlowScoreBreakdown = {
+    colorCarrierScore,
+    lowCloudObstructionRisk: lowCloudRisk,
+    visibilityColorQualityScore,
+    aerosolScore,
+    precipitationDisruptionRisk,
+    terrainScore: terrain,
+    windHumidityScore: windHumidity,
+    occurrenceProbabilityPercent,
+    vividnessIndex,
+    practicalSuitabilityScore: practicalScore,
+    confidence,
+    providerCount: providerAgreement.providerCount,
+    modelCount: providerAgreement.modelCount,
+    modelSpread: providerAgreement.modelSpread,
+    calibrationMode: glowOccurrenceProbabilityCalibrationMode,
+    missingDataReasons,
+    modelResults,
+  };
 
   return {
     colorCarrierScore,
@@ -424,10 +561,395 @@ function calculateGlowComponents(
     windHumidity,
     conditionScore,
     practicalScore,
+    occurrenceProbabilityPercent,
+    vividnessIndex,
+    vividnessLevel,
+    practicalSuitabilityScore: practicalScore,
+    confidence,
+    providerAgreement,
+    scoreBreakdown,
+    modelResults,
     rainOverlapsWindow,
     postRainOpeningChance,
     glowWindowRainRisk,
   };
+}
+
+function buildGlowWindowMissingDataReasons(
+  input: ForecastCalculationInput,
+  window: readonly NormalizedHourlyWeather[],
+): readonly string[] {
+  const reasons: string[] = [];
+  const cloudLayerFields = ["cloudLow", "cloudMid", "cloudHigh"] as const;
+  if (cloudLayerFields.some((field) => input.weatherMissingFields.includes(field))) {
+    reasons.push("cloud_layers_missing");
+  }
+  if (window.length === 0) {
+    reasons.push("window_weather_missing");
+  }
+  if (!window.some((hour) => typeof hour.visibility === "number")) {
+    reasons.push("visibility_missing");
+  }
+  if (
+    !window.some(
+      (hour) =>
+        typeof hour.precipitationProbability === "number" ||
+        typeof precipitationAmount(hour) === "number",
+    )
+  ) {
+    reasons.push("precipitation_missing");
+  }
+  if (
+    !window.some(
+      (hour) =>
+        typeof hour.aerosolOpticalDepth550 === "number" ||
+        typeof hour.pm25 === "number" ||
+        typeof hour.pm10 === "number" ||
+        typeof hour.dust === "number",
+    )
+  ) {
+    reasons.push("aerosol_missing");
+  }
+  if (glowProviderModelGroups(window).length <= 1) {
+    reasons.push("provider_model_agreement_unavailable");
+  }
+  return [...new Set(reasons)];
+}
+
+function scoreGlowWindowDataCompleteness(
+  input: ForecastCalculationInput,
+  window: readonly NormalizedHourlyWeather[],
+): number {
+  let score = 100;
+  if (window.length === 0) {
+    score -= 35;
+  }
+  if (["cloudLow", "cloudMid", "cloudHigh"].some((field) => input.weatherMissingFields.includes(field))) {
+    score -= 28;
+  }
+  if (!window.some((hour) => typeof hour.visibility === "number")) {
+    score -= 12;
+  }
+  if (
+    !window.some(
+      (hour) =>
+        typeof hour.precipitationProbability === "number" ||
+        typeof precipitationAmount(hour) === "number",
+    )
+  ) {
+    score -= 10;
+  }
+  if (glowProviderModelGroups(window).length <= 1) {
+    score -= 8;
+  }
+  if (input.weatherDataMode !== "real") {
+    score -= 12;
+  }
+  return clampScore(score);
+}
+
+function calculateGlowModelMetricResults(
+  input: ForecastCalculationInput,
+  candidate: GlowCandidate,
+  options: {
+    readonly missingDataReasons: readonly string[];
+    readonly dataCompletenessScore: number;
+  },
+): readonly GlowModelMetricResult[] {
+  return glowProviderModelGroups(candidate.weatherWindow).map((group) => {
+    const colorCarrierScore = scoreColorCarrier(group.rows);
+    const lowCloudRisk = scoreLowCloudObstructionRisk(input, group.rows, candidate.phase);
+    const precipitationDisruptionRisk = calculatePrecipitationDisruptionRisk(group.rows);
+    const visibilityColorQualityScore = scoreVisibilityColorQuality(group.rows);
+    const aerosolScore = scoreAerosolAtmosphere(group.rows);
+    const terrainScore = scoreTerrainObstruction(input, candidate.phase);
+    const windHumidityScore = scoreWindHumidity(group.rows);
+    const occurrenceProbabilityPercent = calibrateGlowOccurrenceProbability({
+      colorCarrierScore,
+      lowCloudObstructionRisk: lowCloudRisk,
+      precipitationDisruptionRisk,
+      visibilityColorQualityScore,
+      providerAgreementScore: 60,
+      dataCompletenessScore: options.dataCompletenessScore,
+      temporalProximityScore: scoreGlowTemporalProximity(candidate),
+    });
+    const vividnessIndex = calculateGlowVividnessIndex({
+      colorCarrierScore,
+      visibilityColorQualityScore,
+      aerosolScore,
+      humidityScore: scoreGlowWindowHumidityForVividness(group.rows),
+      solarGeometryScore: scoreGlowWindowSolarGeometry(candidate),
+    });
+    const practicalSuitabilityScore = calculateGlowPracticalSuitabilityScore({
+      occurrenceProbabilityPercent,
+      vividnessIndex,
+      lowCloudObstructionRisk: lowCloudRisk,
+      precipitationDisruptionRisk,
+      visibilityColorQualityScore,
+      aerosolScore,
+      terrainScore,
+      windHumidityScore,
+      rainOverlapsWindow: hasActivePrecipitation(group.rows),
+      postRainOpeningChance: calculatePostRainOpeningChance(input, {
+        ...candidate,
+        weatherWindow: group.rows,
+      }),
+      type: candidate.type,
+      confidence: clampScore(calculateGlowConfidenceScore(input, options.missingDataReasons) - 6),
+    });
+
+    return {
+      providerCode: group.source.providerCode,
+      providerLabelZh: group.source.providerLabelZh,
+      modelName: group.source.modelName,
+      sourceId: group.source.sourceId,
+      occurrenceProbabilityPercent,
+      vividnessIndex,
+      vividnessLevel: glowVividnessLevelForScore(vividnessIndex),
+      practicalSuitabilityScore,
+      confidence: clampScore(calculateGlowConfidenceScore(input, options.missingDataReasons) - 6),
+    };
+  });
+}
+
+type GlowProviderModelGroup = {
+  readonly key: string;
+  readonly source: GlowProviderModelSource;
+  readonly rows: readonly NormalizedHourlyWeather[];
+};
+
+function glowProviderModelGroups(
+  window: readonly NormalizedHourlyWeather[],
+): readonly GlowProviderModelGroup[] {
+  const groups = new Map<string, { source: GlowProviderModelSource; rows: NormalizedHourlyWeather[] }>();
+  for (const hour of window) {
+    const source = glowProviderModelSourceForHour(hour);
+    const key = `${source.providerCode}::${source.sourceId ?? source.modelName ?? "default"}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.rows.push(hour);
+      continue;
+    }
+    groups.set(key, {
+      source,
+      rows: [hour],
+    });
+  }
+
+  return [...groups.entries()].map(([key, group]) => ({
+    key,
+    source: {
+      ...group.source,
+      coverageHours: new Set(group.rows.map((row) => row.time)).size,
+    },
+    rows: group.rows,
+  }));
+}
+
+function glowProviderModelSourceForHour(hour: NormalizedHourlyWeather): GlowProviderModelSource {
+  const fieldMetadata = hour.fieldMetadata ?? {};
+  const metadata =
+    fieldMetadata.cloudHigh ??
+    fieldMetadata.cloudMid ??
+    fieldMetadata.cloudLow ??
+    fieldMetadata.cloudTotal ??
+    fieldMetadata.visibility ??
+    fieldMetadata.precipitationProbability ??
+    fieldMetadata.precipitationAmountMm;
+  const providerCode = metadata?.providerCode ?? hour.providerCode ?? "unknown";
+  const modelName = metadata?.modelName;
+  const sourceId = metadata?.sourceId ?? (modelName ? `${providerCode}:${modelName}` : providerCode);
+
+  return {
+    providerCode,
+    providerLabelZh: metadata?.providerLabelZh ?? hour.providerLabelZh,
+    modelName,
+    sourceId,
+    coverageHours: 1,
+  };
+}
+
+function buildGlowProviderAgreement(
+  modelResults: readonly GlowModelMetricResult[],
+): GlowProviderAgreement {
+  const providerCount = new Set(modelResults.map((result) => result.providerCode)).size;
+  const modelCount = new Set(
+    modelResults.map((result) => `${result.providerCode}:${result.sourceId ?? result.modelName ?? "default"}`),
+  ).size;
+  const sources = modelResults.map((result) => ({
+    providerCode: result.providerCode,
+    providerLabelZh: result.providerLabelZh,
+    modelName: result.modelName,
+    sourceId: result.sourceId,
+    coverageHours: 1,
+  }));
+
+  if (modelResults.length <= 1 || modelCount <= 1) {
+    return {
+      status: "unavailable",
+      providerCount,
+      modelCount,
+      modelSpread: null,
+      confidenceAdjustment: 6,
+      summaryZh: "单一来源，暂不判断模型一致性",
+      sources,
+    };
+  }
+
+  const occurrenceSpread = spread(modelResults.map((result) => result.occurrenceProbabilityPercent));
+  const vividnessSpread = spread(modelResults.map((result) => result.vividnessIndex));
+  const practicalSpread = spread(modelResults.map((result) => result.practicalSuitabilityScore));
+  const modelSpread = Math.max(occurrenceSpread, vividnessSpread, practicalSpread);
+  const status = modelSpread <= 10 ? "high" : modelSpread <= 22 ? "medium" : "low";
+
+  return {
+    status,
+    providerCount,
+    modelCount,
+    modelSpread,
+    confidenceAdjustment: status === "high" ? 0 : status === "medium" ? 6 : 14,
+    summaryZh:
+      status === "high"
+        ? "可用来源判断接近"
+        : status === "medium"
+          ? "可用来源存在中等差异"
+          : "可用来源差异较大，需保守看待",
+    sources,
+  };
+}
+
+function providerAgreementScoreForStatus(agreement: GlowProviderAgreement): number {
+  switch (agreement.status) {
+    case "high":
+      return 90;
+    case "medium":
+      return 72;
+    case "low":
+      return 45;
+    case "single_source":
+    case "unavailable":
+    default:
+      return 60;
+  }
+}
+
+function scoreGlowTemporalProximity(candidate: GlowCandidate): number {
+  if (candidate.type === "sunrise_glow" || candidate.type === "sunset_glow") {
+    return 100;
+  }
+  if (candidate.type === "sunrise_core" || candidate.type === "sunset_core") {
+    return 92;
+  }
+  if (candidate.type === "pre_dawn_glow" || candidate.type === "afterglow") {
+    return 78;
+  }
+  return 68;
+}
+
+function scoreGlowWindowSolarGeometry(candidate: GlowCandidate): number {
+  const hasBestAltitude =
+    typeof candidate.bestStartAltitudeDegrees === "number" &&
+    typeof candidate.bestEndAltitudeDegrees === "number";
+  if (!hasBestAltitude) {
+    return 76;
+  }
+  const expected =
+    candidate.phase === "sunrise"
+      ? glowSolarAltitudeGeometryConfig.sunrise.best
+      : glowSolarAltitudeGeometryConfig.sunset.best;
+  const startDelta = Math.abs(candidate.bestStartAltitudeDegrees - expected.startAltitudeDegrees);
+  const endDelta = Math.abs(candidate.bestEndAltitudeDegrees - expected.endAltitudeDegrees);
+  return clampScore(96 - (startDelta + endDelta) * 4);
+}
+
+function scoreGlowWindowHumidityForVividness(window: readonly NormalizedHourlyWeather[]): number {
+  const humidity = averageDefined(window, (hour) => hour.humidity);
+  const visibility = averageDefined(window, (hour) => hour.visibility);
+  const dewPointSpread = averageDefined(window, (hour) => hour.dewPointSpread ?? null);
+  if (humidity === undefined) {
+    return 68;
+  }
+  if (humidity >= 96 && (visibility ?? 99) < 8) {
+    return 34;
+  }
+  if (humidity >= 92 || (dewPointSpread !== undefined && dewPointSpread <= 2)) {
+    return 50;
+  }
+  if (humidity <= 72) {
+    return 78;
+  }
+  return 68;
+}
+
+function aggregateGlowProviderAgreement(
+  candidates: readonly GlowCandidate[],
+): GlowProviderAgreement {
+  const best = bestMetricCandidate(candidates);
+  if (best?.providerAgreement) {
+    return best.providerAgreement;
+  }
+  return {
+    status: "unavailable",
+    providerCount: 0,
+    modelCount: 0,
+    modelSpread: null,
+    confidenceAdjustment: 10,
+    summaryZh: "缺少可用于一致性判断的窗口",
+    sources: [],
+  };
+}
+
+function aggregateGlowScoreBreakdown(input: {
+  readonly candidates: readonly GlowCandidate[];
+  readonly colorCarrierScore: number;
+  readonly lowCloudObstructionRisk: number;
+  readonly visibilityColorQualityScore: number;
+  readonly precipitationDisruptionRisk: number;
+  readonly practicalSuitabilityScore: number;
+  readonly occurrenceProbabilityPercent: number;
+  readonly vividnessIndex: number;
+  readonly confidence: number;
+  readonly missingDataNotes: readonly string[];
+  readonly providerAgreement: GlowProviderAgreement;
+}): GlowScoreBreakdown {
+  const best = bestMetricCandidate(input.candidates);
+  if (best?.scoreBreakdown) {
+    return best.scoreBreakdown;
+  }
+  return {
+    colorCarrierScore: input.colorCarrierScore,
+    lowCloudObstructionRisk: input.lowCloudObstructionRisk,
+    visibilityColorQualityScore: input.visibilityColorQualityScore,
+    precipitationDisruptionRisk: input.precipitationDisruptionRisk,
+    terrainScore: 0,
+    windHumidityScore: 0,
+    occurrenceProbabilityPercent: input.occurrenceProbabilityPercent,
+    vividnessIndex: input.vividnessIndex,
+    practicalSuitabilityScore: input.practicalSuitabilityScore,
+    confidence: input.confidence,
+    providerCount: input.providerAgreement.providerCount,
+    modelCount: input.providerAgreement.modelCount,
+    modelSpread: input.providerAgreement.modelSpread,
+    calibrationMode: glowOccurrenceProbabilityCalibrationMode,
+    missingDataReasons: input.missingDataNotes,
+    modelResults: [],
+  };
+}
+
+function bestMetricCandidate(candidates: readonly GlowCandidate[]): GlowCandidate | undefined {
+  return [...candidates].sort(
+    (left, right) =>
+      (right.practicalSuitabilityScore ?? right.practicalScore ?? right.score) -
+      (left.practicalSuitabilityScore ?? left.practicalScore ?? left.score),
+  )[0];
+}
+
+function spread(values: readonly number[]): number {
+  const finite = values.filter((value) => Number.isFinite(value));
+  if (finite.length <= 1) {
+    return 0;
+  }
+  return Math.round(Math.max(...finite) - Math.min(...finite));
 }
 
 function scoreGlowCondition(components: {
@@ -452,68 +974,6 @@ function scoreGlowCondition(components: {
   }
 
   return averageWeightedScore(weightedScores);
-}
-
-function scorePracticalGlowWindow(input: {
-  readonly conditionScore: number;
-  readonly colorCarrierScore: number;
-  readonly lowCloudRisk: number;
-  readonly precipitationDisruptionRisk: number;
-  readonly visibilityColorQualityScore: number;
-  readonly aerosolScore?: number;
-  readonly terrain: number;
-  readonly windHumidity: number;
-  readonly rainOverlapsWindow: boolean;
-  readonly postRainOpeningChance: GlowPostRainOpeningChance;
-  readonly type: GlowWindowType;
-}): number {
-  const lowCloudPenalty =
-    input.lowCloudRisk >= 90
-      ? 34
-      : input.lowCloudRisk >= 78
-        ? 24
-        : input.lowCloudRisk >= 65
-          ? 12
-          : 0;
-  const rainPenalty =
-    input.precipitationDisruptionRisk >= 85
-      ? 30
-      : input.precipitationDisruptionRisk >= 70
-        ? 24
-        : input.precipitationDisruptionRisk >= 50
-          ? 14
-          : 0;
-  const activeRainPenalty = input.rainOverlapsWindow ? 16 : 0;
-  const visibilityPenalty =
-    input.visibilityColorQualityScore < 35 ? 20 : input.visibilityColorQualityScore < 52 ? 11 : 0;
-  const aerosolPenalty =
-    input.aerosolScore === undefined
-      ? 0
-      : input.aerosolScore < 35
-        ? 18
-        : input.aerosolScore < 50
-          ? 10
-          : 0;
-  const aerosolBonus = input.aerosolScore !== undefined && input.aerosolScore >= 80 ? 3 : 0;
-  const carrierPenalty = input.colorCarrierScore < 35 ? 22 : input.colorCarrierScore < 55 ? 12 : 0;
-  const terrainPenalty = input.terrain < 45 ? 14 : input.terrain < 58 ? 7 : 0;
-  const rainOpeningBonus =
-    input.postRainOpeningChance === "high" ? 7 : input.postRainOpeningChance === "medium" ? 4 : 0;
-  const blueHourPenalty = input.type === "blue_hour_transition" ? 12 : 0;
-
-  return clampScore(
-    input.conditionScore +
-      rainOpeningBonus +
-      aerosolBonus +
-      lowCloudPenalty -
-      rainPenalty -
-      visibilityPenalty -
-      aerosolPenalty -
-      carrierPenalty -
-      terrainPenalty -
-      blueHourPenalty -
-      activeRainPenalty,
-  );
 }
 
 function scoreColorCarrier(window: readonly NormalizedHourlyWeather[]): number {
@@ -826,23 +1286,51 @@ function scoreWindHumidity(window: readonly NormalizedHourlyWeather[]): number {
   return clampScore(windScore - gustPenalty - humidityPenalty);
 }
 
-function phaseScore(candidates: readonly GlowCandidate[], phase: GlowPhase): number {
+function phaseMetric(
+  candidates: readonly GlowCandidate[],
+  phase: GlowPhase,
+  selector: (candidate: GlowCandidate) => number | undefined,
+  options: { readonly applyCoreRainPenalty?: boolean } = {},
+): number {
   const phaseCandidates = candidates.filter((candidate) => candidate.phase === phase);
   if (phaseCandidates.length === 0) {
     return 0;
   }
-  const sorted = [...phaseCandidates].sort((left, right) => right.score - left.score);
-  const best = sorted[0]?.score ?? 0;
-  const second = sorted[1]?.score ?? best;
-  const coreRainPenalty = phaseCandidates.some(
-    (candidate) =>
-      (candidate.type === "sunrise_glow" || candidate.type === "sunset_glow") &&
-      candidate.rainOverlapsWindow &&
-      (candidate.precipitationDisruptionRisk ?? 0) >= 45,
-  )
-    ? 12
-    : 0;
+  const sorted = [...phaseCandidates].sort(
+    (left, right) => (selector(right) ?? right.score) - (selector(left) ?? left.score),
+  );
+  const first = sorted[0];
+  if (!first) {
+    return 0;
+  }
+  const secondCandidate = sorted[1] ?? first;
+  const best = selector(first) ?? first.score;
+  const second = selector(secondCandidate) ?? secondCandidate.score;
+  const coreRainPenalty =
+    options.applyCoreRainPenalty === false
+      ? 0
+      : phaseCandidates.some(
+            (candidate) =>
+              (candidate.type === "sunrise_glow" || candidate.type === "sunset_glow") &&
+              candidate.rainOverlapsWindow &&
+              (candidate.precipitationDisruptionRisk ?? 0) >= 45,
+          )
+        ? 12
+        : 0;
   return clampScore(best * 0.75 + second * 0.25 - coreRainPenalty);
+}
+
+function phaseOptionalMetric(
+  candidates: readonly GlowCandidate[],
+  phase: GlowPhase,
+  selector: (candidate: GlowCandidate) => number | undefined,
+  options: { readonly applyCoreRainPenalty?: boolean } = {},
+): number | undefined {
+  const phaseCandidates = candidates.filter((candidate) => candidate.phase === phase);
+  if (phaseCandidates.length === 0) {
+    return undefined;
+  }
+  return phaseMetric(phaseCandidates, phase, selector, options);
 }
 
 function calculateLowCloudObstructionRisk(
@@ -969,7 +1457,20 @@ function buildCanonicalGlowWindow(
     bestStartAt: candidate ? bestStartAt : undefined,
     bestEndAt: candidate ? bestEndAt : undefined,
     probabilityScore: candidate ? scores.probabilityScore : undefined,
-    confidence: candidate ? scores.confidence : undefined,
+    occurrenceProbabilityPercent: candidate?.occurrenceProbabilityPercent,
+    vividnessIndex: candidate?.vividnessIndex,
+    vividnessLevel: candidate?.vividnessLevel,
+    practicalSuitabilityScore: candidate?.practicalSuitabilityScore ?? candidate?.practicalScore,
+    recommendationLabel:
+      candidate?.recommendationLabel ??
+      (candidate?.practicalSuitabilityScore !== undefined
+        ? glowRecommendationLabel(candidate.practicalSuitabilityScore)
+        : undefined),
+    calibrationMode: candidate ? glowOccurrenceProbabilityCalibrationMode : undefined,
+    providerAgreement: candidate?.providerAgreement,
+    scoreBreakdown: candidate?.scoreBreakdown,
+    modelResults: candidate?.modelResults,
+    confidence: candidate ? (candidate.confidence ?? scores.confidence) : undefined,
     windowDerivationMethod:
       candidate?.windowDerivationMethod ??
       astro.glowWindowDerivationMethod ??
@@ -1049,8 +1550,26 @@ function buildDailyGlow(
 ): readonly GlowAnalysisResult["dailyGlow"][number][] {
   return input.calendarBasis.targetDates.map((date, index) => {
     const dayWindows = candidates.filter((candidate) => candidate.date === date);
-    const sunriseScore = phaseScore(dayWindows, "sunrise");
-    const sunsetScore = phaseScore(dayWindows, "sunset");
+    const sunriseScore = phaseMetric(
+      dayWindows,
+      "sunrise",
+      (window) => window.occurrenceProbabilityPercent,
+    );
+    const sunsetScore = phaseMetric(
+      dayWindows,
+      "sunset",
+      (window) => window.occurrenceProbabilityPercent,
+    );
+    const sunrisePracticalScore = phaseMetric(
+      dayWindows,
+      "sunrise",
+      (window) => window.practicalSuitabilityScore ?? window.practicalScore ?? window.score,
+    );
+    const sunsetPracticalScore = phaseMetric(
+      dayWindows,
+      "sunset",
+      (window) => window.practicalSuitabilityScore ?? window.practicalScore ?? window.score,
+    );
     const bestWindow = [...dayWindows]
       .filter(isShootableGlowWindow)
       .sort((left, right) => right.score - left.score)[0];
@@ -1101,7 +1620,33 @@ function buildDailyGlow(
     const fallbackAerosolScore = scoreAerosolAtmosphere(candidateWeatherOrAll(input, dayWindows));
     const aerosolScore =
       aerosolScores.length > 0 ? clampScore(Math.max(...aerosolScores)) : fallbackAerosolScore;
-    const bestTarget = pickBestDailyGlowTarget(sunriseScore, sunsetScore);
+    const occurrenceProbabilityPercent = maxCandidateScore(
+      dayWindows,
+      (window) => window.occurrenceProbabilityPercent,
+      () => Math.max(sunriseScore, sunsetScore),
+    );
+    const vividnessIndex = maxCandidateScore(
+      dayWindows,
+      (window) => window.vividnessIndex,
+      () => 0,
+    );
+    const vividnessLevel = glowVividnessLevelForScore(vividnessIndex);
+    const bestMetric = bestMetricCandidate(dayWindows);
+    const bestTarget = pickBestDailyGlowTarget(sunrisePracticalScore, sunsetPracticalScore);
+    const sunriseVividnessIndex = phaseOptionalMetric(
+      dayWindows,
+      "sunrise",
+      (window) => window.vividnessIndex,
+      { applyCoreRainPenalty: false },
+    );
+    const sunsetVividnessIndex = phaseOptionalMetric(
+      dayWindows,
+      "sunset",
+      (window) => window.vividnessIndex,
+      { applyCoreRainPenalty: false },
+    );
+    const sunriseBestWindow = bestPhaseWindow(dayWindows, "sunrise");
+    const sunsetBestWindow = bestPhaseWindow(dayWindows, "sunset");
     const riskNote = bestWindow?.riskTags.length
       ? bestWindow.riskTags.join("、")
       : watchableWindow?.riskTags.length
@@ -1119,6 +1664,30 @@ function buildDailyGlow(
       sunriseScore,
       sunsetScore,
       practicalScore,
+      occurrenceProbabilityPercent,
+      vividnessIndex,
+      vividnessLevel,
+      practicalSuitabilityScore: practicalScore,
+      providerAgreement: bestMetric?.providerAgreement,
+      scoreBreakdown: bestMetric?.scoreBreakdown,
+      sunriseOccurrenceProbabilityPercent: sunriseScore,
+      sunsetOccurrenceProbabilityPercent: sunsetScore,
+      sunriseVividnessIndex,
+      sunsetVividnessIndex,
+      sunriseVividnessLevel:
+        sunriseVividnessIndex !== undefined
+          ? glowVividnessLevelForScore(sunriseVividnessIndex)
+          : undefined,
+      sunsetVividnessLevel:
+        sunsetVividnessIndex !== undefined
+          ? glowVividnessLevelForScore(sunsetVividnessIndex)
+          : undefined,
+      sunrisePracticalSuitabilityScore: sunrisePracticalScore,
+      sunsetPracticalSuitabilityScore: sunsetPracticalScore,
+      sunriseProviderAgreement: sunriseBestWindow?.providerAgreement,
+      sunsetProviderAgreement: sunsetBestWindow?.providerAgreement,
+      sunriseScoreBreakdown: sunriseBestWindow?.scoreBreakdown,
+      sunsetScoreBreakdown: sunsetBestWindow?.scoreBreakdown,
       colorCarrierScore,
       lowCloudObstructionRisk,
       precipitationDisruptionRisk,

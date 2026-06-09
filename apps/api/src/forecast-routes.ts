@@ -533,6 +533,7 @@ async function calculateForecastResultOrReply(
       astroServiceConfig,
     );
     logCloudSeaCoverageDiagnostics(logger, result);
+    logGlowScoringDiagnostics(logger, result);
     return attachCalibrationHint(result, query, dbClient);
   } catch (error) {
     logForecastCalculationFailure({
@@ -1556,6 +1557,78 @@ function logCloudSeaCoverageDiagnostics(
     "Cloud Sea cloud-layer coverage diagnostics",
   );
   logCloudSeaDisplayAlignmentDiagnostics(logger, result, temperatureDiagnostics);
+}
+
+function logGlowScoringDiagnostics(
+  logger: FastifyBaseLogger,
+  result: ForecastCalculationResult,
+): void {
+  if (result.target !== "glow") {
+    return;
+  }
+  const analysis = result.glowAnalysis;
+  logger.info(
+    {
+      route: "/forecast/calculate",
+      target: result.target,
+      occurrenceProbabilityPercent: analysis.occurrenceProbabilityPercent,
+      vividnessIndex: analysis.vividnessIndex,
+      vividnessLevel: analysis.vividnessLevel,
+      practicalSuitabilityScore: analysis.practicalSuitabilityScore,
+      confidence: analysis.confidence,
+      calibrationMode: analysis.calibrationMode,
+      providerAgreement: {
+        status: analysis.providerAgreement.status,
+        providerCount: analysis.providerAgreement.providerCount,
+        modelCount: analysis.providerAgreement.modelCount,
+        modelSpread: analysis.providerAgreement.modelSpread,
+        confidenceAdjustment: analysis.providerAgreement.confidenceAdjustment,
+      },
+      canonicalWindows: analysis.diagnostics.map((window) => ({
+        phase: window.phase,
+        date: window.date,
+        bestStartAt: window.bestStartAt,
+        bestEndAt: window.bestEndAt,
+        occurrenceProbabilityPercent: window.occurrenceProbabilityPercent,
+        vividnessIndex: window.vividnessIndex,
+        vividnessLevel: window.vividnessLevel,
+        practicalSuitabilityScore: window.practicalSuitabilityScore,
+        confidence: window.confidence,
+        calibrationMode: window.calibrationMode,
+        providerAgreement: window.providerAgreement
+          ? {
+              status: window.providerAgreement.status,
+              providerCount: window.providerAgreement.providerCount,
+              modelCount: window.providerAgreement.modelCount,
+              modelSpread: window.providerAgreement.modelSpread,
+            }
+          : undefined,
+        components: window.scoreBreakdown
+          ? {
+              colorCarrierScore: window.scoreBreakdown.colorCarrierScore,
+              lowCloudObstructionRisk: window.scoreBreakdown.lowCloudObstructionRisk,
+              visibilityColorQualityScore: window.scoreBreakdown.visibilityColorQualityScore,
+              precipitationDisruptionRisk: window.scoreBreakdown.precipitationDisruptionRisk,
+              terrainScore: window.scoreBreakdown.terrainScore,
+              windHumidityScore: window.scoreBreakdown.windHumidityScore,
+              missingDataReasons: window.scoreBreakdown.missingDataReasons,
+              modelResults: window.scoreBreakdown.modelResults.map((model) => ({
+                providerCode: model.providerCode,
+                modelName: model.modelName,
+                sourceId: model.sourceId,
+                occurrenceProbabilityPercent: model.occurrenceProbabilityPercent,
+                vividnessIndex: model.vividnessIndex,
+                practicalSuitabilityScore: model.practicalSuitabilityScore,
+                confidence: model.confidence,
+              })),
+            }
+          : undefined,
+        unavailableReason: window.unavailableReason,
+      })),
+      missingDataNotes: analysis.missingDataNotes,
+    },
+    "Glow scoring diagnostics",
+  );
 }
 
 function logCloudSeaDisplayAlignmentDiagnostics(

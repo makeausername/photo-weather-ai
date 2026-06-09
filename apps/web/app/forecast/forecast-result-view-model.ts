@@ -16,7 +16,8 @@ import {
   classifyGlowWindowLifecycle,
   glowLocalDateKey,
   glowDisplayRecommendationForScore,
-  glowScoreToDisplayProbabilityPercent,
+  glowVividnessLevelForIndex,
+  glowVividnessLevelLabelZh,
   isGlowWindowRecommendationEligible,
   type CloudLayerCompletenessContext,
   type CloudSeaCloudBasisConsistencyContext,
@@ -47,7 +48,10 @@ import {
   type GlowBestTarget,
   type GlowDisplayRecommendation,
   type GlowEvidenceItem,
+  type GlowProviderAgreement,
+  type GlowScoreBreakdown,
   type GlowTerrainObstructionAssessment,
+  type GlowVividnessLevel,
   type GlowWindow,
   type GlowWindowLifecycleState,
   type PhotographyPrecipitationRisk,
@@ -406,6 +410,27 @@ export type GlowEvidenceViewItem = {
   readonly tone: ForecastResultCardTone;
 };
 
+export type GlowProfessionalScoringWindow = {
+  readonly key: string;
+  readonly label: string;
+  readonly timeLabel: string;
+  readonly occurrenceProbabilityPercent?: number;
+  readonly occurrenceDisplay: string;
+  readonly vividnessIndex?: number;
+  readonly vividnessLevel?: GlowVividnessLevel;
+  readonly vividnessDisplay: string;
+  readonly practicalSuitabilityScore?: number;
+  readonly practicalDisplay: string;
+  readonly confidence?: number;
+  readonly confidenceDisplay: string;
+  readonly providerAgreement?: GlowProviderAgreement;
+  readonly providerAgreementDisplay: string;
+  readonly calibrationMode?: string;
+  readonly breakdown?: GlowScoreBreakdown;
+  readonly componentItems: readonly GlowEvidenceViewItem[];
+  readonly tone: ForecastResultCardTone;
+};
+
 export type GlowOpportunityPhase = "sunrise" | "sunset";
 
 export type GlowDisplayRecommendationLabel =
@@ -442,6 +467,14 @@ export type GlowDailyOpportunitySlot = {
   readonly lifecycle: GlowWindowLifecycleState;
   readonly probabilityPercent?: number;
   readonly probabilityDisplay: string;
+  readonly vividnessIndex?: number;
+  readonly vividnessLevel?: GlowVividnessLevel;
+  readonly vividnessDisplay: string;
+  readonly practicalSuitabilityScore?: number;
+  readonly practicalDisplay: string;
+  readonly confidence?: number;
+  readonly calibrationMode?: string;
+  readonly providerAgreement?: GlowProviderAgreement;
   readonly bestStartAt?: string;
   readonly bestEndAt?: string;
   readonly timeLabel: string;
@@ -498,6 +531,7 @@ export type GlowForecastViewModel = {
   readonly overallRecommendation: GlowOverallRecommendation;
   readonly dailyOpportunities: readonly GlowDailyOpportunity[];
   readonly professionalEvidence: readonly GlowEvidenceViewItem[];
+  readonly professionalScoringWindows: readonly GlowProfessionalScoringWindow[];
   readonly coreCards: readonly ForecastResultCard[];
   readonly dailyTrend: readonly GlowDailyTrendItem[];
   readonly glowWindows: readonly GlowWindowItem[];
@@ -1441,6 +1475,7 @@ export function buildGlowForecastViewModel(
   const terrainObstructionSummary = buildGlowTerrainObstructionSummary(terrainObstructionCards);
   const overallRecommendation = buildGlowOverallRecommendation(result, analysis);
   const dailyOpportunities = buildGlowDailyOpportunities(result, analysis);
+  const professionalScoringWindows = buildGlowProfessionalScoringWindows(result, analysis);
   const professionalEvidence = buildGlowProfessionalEvidence(
     result,
     analysis,
@@ -1461,6 +1496,7 @@ export function buildGlowForecastViewModel(
     overallRecommendation,
     dailyOpportunities,
     professionalEvidence,
+    professionalScoringWindows,
     coreCards: [
       scoreCard(
         "glow-sunrise-opportunity",
@@ -1662,6 +1698,14 @@ function glowDailyOpportunitySlot(
     lifecycle: state.state,
     probabilityPercent: canShowProbability ? state.probabilityPercent : undefined,
     probabilityDisplay: state.probabilityDisplay,
+    vividnessIndex: state.vividnessIndex,
+    vividnessLevel: state.vividnessLevel,
+    vividnessDisplay: state.vividnessDisplay,
+    practicalSuitabilityScore: state.practicalSuitabilityScore,
+    practicalDisplay: state.practicalDisplay,
+    confidence: state.confidence,
+    calibrationMode: state.calibrationMode,
+    providerAgreement: state.providerAgreement,
     bestStartAt: state.startAt,
     bestEndAt: state.endAt,
     timeLabel: formatGlowLifecycleWindowForParentDate(
@@ -1723,48 +1767,38 @@ function buildGlowProfessionalEvidence(
   const terrainObstructionSummary = buildGlowTerrainObstructionSummary(terrainObstructionCards);
   const summaryItems: readonly GlowEvidenceViewItem[] = [
     {
-      key: "glow-evidence-color-carrier",
-      label: "中高云条件",
-      value: glowColorCarrierLabel(analysis.colorCarrierScore),
-      detail:
-        analysis.colorCarrierScore >= 65
-          ? "中高云可作为霞光色彩载体。"
-          : "色彩载体偏弱，可能只有局部暖色。",
-      tone: analysis.colorCarrierScore >= 65 ? "accent" : "info",
+      key: "glow-evidence-occurrence",
+      label: "是否容易出现",
+      value: `${Math.round(analysis.occurrenceProbabilityPercent)}%`,
+      detail: "按中高云承载、低云遮挡、降水干扰、通透度、数据完整度和可用来源一致性校准。",
+      tone: analysis.occurrenceProbabilityPercent >= 65 ? "accent" : "info",
     },
     {
-      key: "glow-evidence-low-cloud",
-      label: "低云遮挡",
-      value: glowRiskLabel(analysis.lowCloudObstructionRisk),
+      key: "glow-evidence-vividness",
+      label: "出现后是否鲜艳",
+      value: glowVividnessDisplay(analysis.vividnessIndex, analysis.vividnessLevel),
       detail:
-        analysis.lowCloudObstructionRisk >= 70
-          ? "低云可能遮挡太阳方向。"
-          : "低云暂未成为主要阻断项。",
-      tone: analysis.lowCloudObstructionRisk >= 70 ? "danger" : "info",
+        analysis.vividnessIndex >= 65
+          ? "如果发生霞光，色彩强度预计较好。"
+          : "即使出现霞光，色彩可能偏弱或局部。",
+      tone: analysis.vividnessIndex >= 65 ? "accent" : "info",
     },
     {
-      key: "glow-evidence-transparency",
-      label: "通透度",
-      value: `${Math.round(analysis.visibilityColorQualityScore)} 分`,
-      detail:
-        analysis.visibilityColorQualityScore >= 65
-          ? "能见度和湿度对色彩、远山层次较友好。"
-          : "通透度一般，色彩和层次需要现场复核。",
-      tone: analysis.visibilityColorQualityScore >= 65 ? "accent" : "info",
-    },
-    {
-      key: "glow-evidence-precipitation",
-      label: "降水风险",
-      value: glowRiskLabel(analysis.precipitationDisruptionRisk),
+      key: "glow-evidence-main-blocker",
+      label: "主要阻碍",
+      value: glowPrimaryBlockerLabel(analysis, terrainObstructionSummary),
       detail: glowRainOverlapText(analysis),
-      tone: analysis.precipitationDisruptionRisk >= 70 ? "danger" : "info",
+      tone:
+        analysis.lowCloudObstructionRisk >= 70 || analysis.precipitationDisruptionRisk >= 70
+          ? "danger"
+          : "info",
     },
     {
-      key: "glow-evidence-terrain",
-      label: "地形遮挡",
-      value: terrainObstructionSummary.value,
-      detail: terrainObstructionSummary.detail,
-      tone: terrainObstructionCards.some((card) => card.tone === "danger") ? "danger" : "muted",
+      key: "glow-evidence-confidence",
+      label: "数据可信度",
+      value: `${Math.round(analysis.confidence)} 分`,
+      detail: glowProviderAgreementDisplay(analysis.providerAgreement),
+      tone: analysis.confidence >= 75 ? "accent" : "muted",
     },
   ];
   const detailedItems: readonly GlowEvidenceViewItem[] = [
@@ -1787,6 +1821,145 @@ function buildGlowProfessionalEvidence(
   ];
 
   return uniqueGlowEvidenceItems([...summaryItems, ...detailedItems]);
+}
+
+function buildGlowProfessionalScoringWindows(
+  result: ForecastCalculationResult,
+  analysis: GlowAnalysisResult,
+): readonly GlowProfessionalScoringWindow[] {
+  return analysis.canonicalWindows
+    .filter(
+      (window) =>
+        window.occurrenceProbabilityPercent !== undefined ||
+        window.vividnessIndex !== undefined ||
+        window.practicalSuitabilityScore !== undefined,
+    )
+    .slice(0, 10)
+    .map((window) => {
+      const occurrenceProbabilityPercent = finiteNumber(window.occurrenceProbabilityPercent);
+      const vividnessIndex = finiteNumber(window.vividnessIndex);
+      const vividnessLevel =
+        window.vividnessLevel ??
+        (vividnessIndex !== undefined ? glowVividnessLevelForIndex(vividnessIndex) : undefined);
+      const practicalSuitabilityScore = finiteNumber(window.practicalSuitabilityScore);
+      const confidence = finiteNumber(window.confidence);
+      return {
+        key: `${window.phase}-${window.date}`,
+        label: `${windowDateLabel(result, window.date)} ${glowPhaseLabel(window.phase)}`,
+        timeLabel:
+          window.bestStartAt && window.bestEndAt
+            ? formatLocalTimeRange(window.bestStartAt, window.bestEndAt, result.calendarBasis.timezone)
+            : "暂缺",
+        occurrenceProbabilityPercent,
+        occurrenceDisplay:
+          occurrenceProbabilityPercent !== undefined
+            ? `${Math.round(occurrenceProbabilityPercent)}%`
+            : "暂缺",
+        vividnessIndex,
+        vividnessLevel,
+        vividnessDisplay: glowVividnessDisplay(vividnessIndex, vividnessLevel),
+        practicalSuitabilityScore,
+        practicalDisplay:
+          practicalSuitabilityScore !== undefined
+            ? `${Math.round(practicalSuitabilityScore)} 分`
+            : "暂缺",
+        confidence,
+        confidenceDisplay: confidence !== undefined ? `${Math.round(confidence)} 分` : "暂缺",
+        providerAgreement: window.providerAgreement,
+        providerAgreementDisplay: glowProviderAgreementDisplay(window.providerAgreement),
+        calibrationMode: window.calibrationMode,
+        breakdown: window.scoreBreakdown,
+        componentItems: glowProfessionalScoringComponentItems(window.scoreBreakdown),
+        tone: scoreTone(practicalSuitabilityScore ?? occurrenceProbabilityPercent ?? 0),
+      };
+    });
+}
+
+function glowProfessionalScoringComponentItems(
+  breakdown: GlowScoreBreakdown | undefined,
+): readonly GlowEvidenceViewItem[] {
+  if (!breakdown) {
+    return [];
+  }
+  return [
+    {
+      key: "color-carrier",
+      label: "色彩载体",
+      value: `${Math.round(breakdown.colorCarrierScore)} 分`,
+      detail: "中高云和总云量是否能承载霞光色彩。",
+      tone: scoreTone(breakdown.colorCarrierScore),
+    },
+    {
+      key: "low-cloud",
+      label: "低云遮挡",
+      value: glowRiskLabel(breakdown.lowCloudObstructionRisk),
+      detail: "低云越高，越可能压住太阳方向。",
+      tone: breakdown.lowCloudObstructionRisk >= 70 ? "danger" : "info",
+    },
+    {
+      key: "precipitation",
+      label: "降水干扰",
+      value: glowRiskLabel(breakdown.precipitationDisruptionRisk),
+      detail: "窗口内降水会降低稳定观测和出片价值。",
+      tone: breakdown.precipitationDisruptionRisk >= 70 ? "danger" : "info",
+    },
+    {
+      key: "visibility",
+      label: "通透度",
+      value: `${Math.round(breakdown.visibilityColorQualityScore)} 分`,
+      detail: "能见度、湿度和透明度对色彩纯度与远景层次的影响。",
+      tone: scoreTone(breakdown.visibilityColorQualityScore),
+    },
+    {
+      key: "practical",
+      label: "前往建议",
+      value: `${Math.round(breakdown.practicalSuitabilityScore)} 分`,
+      detail: "综合出现概率、鲜艳度、低云、降水、地形、风湿和可信度。",
+      tone: scoreTone(breakdown.practicalSuitabilityScore),
+    },
+  ];
+}
+
+function glowProviderAgreementDisplay(agreement: GlowProviderAgreement | undefined): string {
+  if (!agreement || agreement.status === "unavailable" || agreement.providerCount <= 1) {
+    return "单一来源，暂不判断一致性";
+  }
+  if (agreement.status === "high") {
+    return "可用来源判断接近";
+  }
+  if (agreement.status === "medium") {
+    return "可用来源存在中等差异";
+  }
+  return "可用来源差异较大";
+}
+
+function glowPrimaryBlockerLabel(
+  analysis: GlowAnalysisResult,
+  terrainObstructionSummary: { readonly value: string },
+): string {
+  if (analysis.precipitationDisruptionRisk >= 70) {
+    return "降水干扰";
+  }
+  if (analysis.lowCloudObstructionRisk >= 70) {
+    return "低云遮挡";
+  }
+  if (analysis.visibilityColorQualityScore < 50) {
+    return "通透度偏弱";
+  }
+  if (terrainObstructionSummary.value.includes("阻") || terrainObstructionSummary.value.includes("遮")) {
+    return "地形遮挡";
+  }
+  return "暂无单一强阻碍";
+}
+
+function scoreTone(score: number): ForecastResultCardTone {
+  if (score >= 75) {
+    return "accent";
+  }
+  if (score >= 50) {
+    return "info";
+  }
+  return "muted";
 }
 
 function uniqueGlowEvidenceItems(
@@ -1815,6 +1988,14 @@ type GlowLifecycleWindowView = {
   readonly score: number;
   readonly probabilityPercent: number;
   readonly probabilityDisplay: string;
+  readonly vividnessIndex?: number;
+  readonly vividnessLevel?: GlowVividnessLevel;
+  readonly vividnessDisplay: string;
+  readonly practicalSuitabilityScore?: number;
+  readonly practicalDisplay: string;
+  readonly confidence?: number;
+  readonly calibrationMode?: string;
+  readonly providerAgreement?: GlowProviderAgreement;
   readonly recommendation: GlowDisplayRecommendationLabel;
   readonly isRecommendationEligible: boolean;
   readonly evaluatedAt: string;
@@ -2037,8 +2218,17 @@ function buildGlowLifecycleWindowViewFromParts(input: {
   readonly state: GlowWindowLifecycleState;
   readonly source: GlowLifecycleWindowView["source"];
 }): GlowLifecycleWindowView {
-  const probabilityPercent = glowScoreToDisplayProbabilityPercent(input.score);
-  const recommendation = glowRecommendationForLifecycle(input.state, input.score);
+  const occurrenceProbabilityPercent =
+    finiteNumber(input.window?.occurrenceProbabilityPercent) ?? clampPercent(input.score);
+  const practicalSuitabilityScore =
+    finiteNumber(input.window?.practicalSuitabilityScore ?? input.window?.practicalScore) ??
+    clampPercent(input.score);
+  const vividnessIndex = finiteNumber(input.window?.vividnessIndex);
+  const vividnessLevel =
+    input.window?.vividnessLevel ??
+    (vividnessIndex !== undefined ? glowVividnessLevelForIndexOrUndefined(vividnessIndex) : undefined);
+  const confidence = finiteNumber(input.window?.confidence);
+  const recommendation = glowRecommendationForLifecycle(input.state, practicalSuitabilityScore);
   const isRecommendationEligible = isGlowWindowRecommendationEligible(input.state);
 
   return {
@@ -2048,9 +2238,17 @@ function buildGlowLifecycleWindowViewFromParts(input: {
     startAt: input.startAt,
     endAt: input.endAt,
     state: input.state,
-    score: input.score,
-    probabilityPercent,
-    probabilityDisplay: glowProbabilityDisplayForLifecycle(input.state, probabilityPercent),
+    score: practicalSuitabilityScore,
+    probabilityPercent: occurrenceProbabilityPercent,
+    probabilityDisplay: glowProbabilityDisplayForLifecycle(input.state, occurrenceProbabilityPercent),
+    vividnessIndex,
+    vividnessLevel,
+    vividnessDisplay: glowVividnessDisplay(vividnessIndex, vividnessLevel),
+    practicalSuitabilityScore,
+    practicalDisplay: `${Math.round(practicalSuitabilityScore)} 分`,
+    confidence,
+    calibrationMode: input.window?.calibrationMode,
+    providerAgreement: input.window?.providerAgreement,
     recommendation,
     isRecommendationEligible,
     evaluatedAt: glowEvaluatedAt(input.result),
@@ -2058,6 +2256,31 @@ function buildGlowLifecycleWindowViewFromParts(input: {
     tone: glowLifecycleTone(input.state, recommendation),
     source: input.source,
   };
+}
+
+function finiteNumber(value: number | null | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.min(100, Math.max(0, Math.round(value)));
+}
+
+function glowVividnessLevelForIndexOrUndefined(index: number): GlowVividnessLevel | undefined {
+  return Number.isFinite(index) ? glowVividnessLevelForIndex(index) : undefined;
+}
+
+function glowVividnessDisplay(
+  index: number | undefined,
+  level: GlowVividnessLevel | undefined,
+): string {
+  if (index === undefined || level === undefined) {
+    return "暂缺";
+  }
+  return `${glowVividnessLevelLabelZh(level)}（${Math.round(index)}）`;
 }
 
 function derivedGlowSunWindowForDate(

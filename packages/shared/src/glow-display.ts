@@ -1,3 +1,5 @@
+import type { GlowVividnessLevel } from "./types.js";
+
 export type GlowDisplayRecommendation =
   | "推荐前往"
   | "可以关注"
@@ -44,6 +46,18 @@ const glowScoreProbabilityAnchors = [
   { score: 80, probability: 78 },
   { score: 100, probability: 94 },
 ] as const;
+
+export const glowVividnessLevelThresholds = [
+  { min: 80, level: "very_strong", labelZh: "很鲜艳" },
+  { min: 65, level: "strong", labelZh: "鲜艳" },
+  { min: 45, level: "moderate", labelZh: "中等" },
+  { min: 25, level: "slightly_weak", labelZh: "偏弱" },
+  { min: 0, level: "weak", labelZh: "弱" },
+] as const satisfies readonly {
+  readonly min: number;
+  readonly level: GlowVividnessLevel;
+  readonly labelZh: string;
+}[];
 
 function normalizedScore(value: number): number {
   if (!Number.isFinite(value)) {
@@ -170,6 +184,19 @@ export function glowScoreToDisplayProbabilityPercent(score: number): number {
   }
 
   return glowScoreProbabilityAnchors.at(-1)?.probability ?? 0;
+}
+
+export function glowVividnessLevelForIndex(index: number): GlowVividnessLevel {
+  const value = normalizedScore(index);
+  return (
+    glowVividnessLevelThresholds.find((threshold) => value >= threshold.min)?.level ?? "weak"
+  );
+}
+
+export function glowVividnessLevelLabelZh(level: GlowVividnessLevel): string {
+  return (
+    glowVividnessLevelThresholds.find((threshold) => threshold.level === level)?.labelZh ?? "弱"
+  );
 }
 
 export function glowDisplayRecommendationForScore(score: number): GlowDisplayRecommendation {

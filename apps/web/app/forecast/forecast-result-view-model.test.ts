@@ -605,6 +605,46 @@ const baseResult: ForecastCalculationResult = {
     precipitationDisruptionRisk: 18,
     visibilityColorQualityScore: 80,
     practicalGlowScore: 72,
+    occurrenceProbabilityPercent: 74,
+    vividnessIndex: 78,
+    vividnessLevel: "strong",
+    practicalSuitabilityScore: 72,
+    calibrationMode: "heuristic",
+    providerAgreement: {
+      status: "unavailable",
+      providerCount: 1,
+      modelCount: 1,
+      modelSpread: null,
+      confidenceAdjustment: 6,
+      summaryZh: "单一来源，暂不判断模型一致性",
+      sources: [
+        {
+          providerCode: "mock",
+          providerLabelZh: "模拟数据",
+          sourceId: "mock",
+          coverageHours: 2,
+        },
+      ],
+    },
+    scoreBreakdown: {
+      colorCarrierScore: 76,
+      lowCloudObstructionRisk: 42,
+      visibilityColorQualityScore: 80,
+      aerosolScore: 82,
+      precipitationDisruptionRisk: 18,
+      terrainScore: 72,
+      windHumidityScore: 76,
+      occurrenceProbabilityPercent: 74,
+      vividnessIndex: 78,
+      practicalSuitabilityScore: 72,
+      confidence: 72,
+      providerCount: 1,
+      modelCount: 1,
+      modelSpread: null,
+      calibrationMode: "heuristic",
+      missingDataReasons: ["provider_model_agreement_unavailable"],
+      modelResults: [],
+    },
     confidence: 72,
     labels: {
       sunriseGlowOpportunity: "中",
@@ -6566,7 +6606,13 @@ describe("forecast result target-aware view model", () => {
       expect(viewModel.dailyOpportunities[0]?.sunrise.probabilityPercent).toBeLessThanOrEqual(100);
       expect(viewModel.dailyOpportunities[0]?.sunset.probabilityPercent).toBeGreaterThanOrEqual(0);
       expect(viewModel.dailyOpportunities[0]?.sunset.probabilityPercent).toBeLessThanOrEqual(100);
+      expect(viewModel.dailyOpportunities[0]?.sunrise.vividnessDisplay).toMatch(/（\d+）|暂缺/);
+      expect(viewModel.dailyOpportunities[0]?.sunrise.practicalSuitabilityScore).toBeGreaterThanOrEqual(0);
+      expect(viewModel.professionalScoringWindows.length).toBeGreaterThan(0);
+      expect(viewModel.professionalScoringWindows[0]?.occurrenceDisplay).toMatch(/%|暂缺/);
       expect(html).toContain("未来逐日朝霞晚霞机会");
+      expect(html).toContain("预测概率");
+      expect(html).toContain("鲜艳度：");
       expect(html).toContain('data-glow-daily-card-grid="auto-fit"');
       expect(countOccurrences(html, 'data-glow-daily-opportunity-date="')).toBe(
         viewModel.dailyOpportunities.length,

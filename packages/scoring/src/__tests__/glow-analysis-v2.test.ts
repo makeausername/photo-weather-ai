@@ -106,6 +106,95 @@ function withHourlyWeather(
   };
 }
 
+function withProviderModelRows(input: ForecastCalculationInput): ForecastCalculationInput {
+  return {
+    ...input,
+    hourlyWeather: input.hourlyWeather.flatMap((hour) => [
+      withGlowSourceMetadata(
+        {
+          ...hour,
+          providerCode: "open_meteo",
+          providerLabelZh: "Open-Meteo",
+        },
+        "open_meteo",
+        "icon_global",
+      ),
+      withGlowSourceMetadata(
+        {
+          ...hour,
+          providerCode: "qweather",
+          providerLabelZh: "和风天气",
+          cloudTotal: 96,
+          cloudLow: 82,
+          cloudMid: 12,
+          cloudHigh: 10,
+          visibility: 6,
+          precipitationProbability: 62,
+          photographyTransparencyScore: 42,
+        },
+        "qweather",
+        "qweather-hourly",
+      ),
+    ]),
+  };
+}
+
+function withGlowSourceMetadata(
+  hour: NormalizedHourlyWeather,
+  providerCode: NormalizedHourlyWeather["providerCode"],
+  modelName: string,
+): NormalizedHourlyWeather {
+  const sourceId = `${providerCode}:${modelName}`;
+  return {
+    ...hour,
+    fieldMetadata: {
+      ...(hour.fieldMetadata ?? {}),
+      cloudTotal: {
+        providerCode,
+        providerLabelZh: hour.providerLabelZh,
+        sourceId,
+        modelName,
+        estimated: false,
+      },
+      cloudLow: {
+        providerCode,
+        providerLabelZh: hour.providerLabelZh,
+        sourceId,
+        modelName,
+        estimated: false,
+      },
+      cloudMid: {
+        providerCode,
+        providerLabelZh: hour.providerLabelZh,
+        sourceId,
+        modelName,
+        estimated: false,
+      },
+      cloudHigh: {
+        providerCode,
+        providerLabelZh: hour.providerLabelZh,
+        sourceId,
+        modelName,
+        estimated: false,
+      },
+      visibility: {
+        providerCode,
+        providerLabelZh: hour.providerLabelZh,
+        sourceId,
+        modelName,
+        estimated: false,
+      },
+      precipitationProbability: {
+        providerCode,
+        providerLabelZh: hour.providerLabelZh,
+        sourceId,
+        modelName,
+        estimated: false,
+      },
+    },
+  };
+}
+
 function withHorizon(
   input: ForecastCalculationInput,
   horizonPatch: Partial<HorizonProfileSummary>,
@@ -524,6 +613,71 @@ describe("glow analysis v2", () => {
     expect(analysis.colorCarrierScore).toBeGreaterThanOrEqual(55);
     expect(analysis.lowCloudObstructionRisk).toBeLessThan(76);
     expect(analysis.glowWindowRainRisk).toBe("low");
+  });
+
+  it("keeps occurrence probability, vividness, and practical suitability separate", () => {
+    const dry = favorableGlowInput();
+    const { sunset } = firstAstro(dry);
+    const rainySunset = patchWeatherRange(
+      dry,
+      shiftMinutes(sunset, -90),
+      shiftMinutes(sunset, 25),
+      activeRainPatch,
+    );
+    const analysis = calculateGlowAnalysis(rainySunset);
+    const window =
+      analysis.notRecommendedGlowWindows.find((item) => item.phase === "sunset") ??
+      analysis.watchableGlowWindows.find((item) => item.phase === "sunset") ??
+      analysis.bestGlowWindows.find((item) => item.phase === "sunset");
+
+    expect(window).toBeDefined();
+    if (!window) {
+      throw new Error("expected a scored sunset glow window");
+    }
+    expect(window.occurrenceProbabilityPercent).toBeGreaterThanOrEqual(0);
+    expect(window.occurrenceProbabilityPercent).toBeLessThanOrEqual(100);
+    expect(window.vividnessIndex).toBeGreaterThanOrEqual(0);
+    expect(window.vividnessIndex).toBeLessThanOrEqual(100);
+    expect(window.practicalSuitabilityScore).toBe(window.score);
+    expect(window.occurrenceProbabilityPercent).not.toBe(window.practicalSuitabilityScore);
+    expect(window.scoreBreakdown?.calibrationMode).toBe("heuristic");
+  });
+
+  it("marks single-source provider agreement unavailable without fabricating aerosol data", () => {
+    const input = patchAllWeather(favorableGlowInput(), {
+      aerosolOpticalDepth550: undefined,
+      pm25: undefined,
+      pm10: undefined,
+      dust: undefined,
+      aerosolAvailability: undefined,
+    });
+    const analysis = calculateGlowAnalysis(input);
+    const window = analysis.bestGlowWindow ?? analysis.watchableGlowWindows[0];
+
+    expect(window?.providerAgreement?.status).toBe("unavailable");
+    expect(window?.scoreBreakdown?.aerosolScore).toBeUndefined();
+    expect(window?.scoreBreakdown?.missingDataReasons).toContain("aerosol_missing");
+    expect(window?.scoreBreakdown?.missingDataReasons).toContain(
+      "provider_model_agreement_unavailable",
+    );
+  });
+
+  it("records provider/model disagreement only when distinct model rows are available", () => {
+    const analysis = calculateGlowAnalysis(withProviderModelRows(favorableGlowInput()));
+    const window =
+      analysis.bestGlowWindow ??
+      analysis.watchableGlowWindows[0] ??
+      analysis.notRecommendedGlowWindows[0];
+
+    expect(window).toBeDefined();
+    if (!window) {
+      throw new Error("expected a scored glow window");
+    }
+    expect(window.providerAgreement?.providerCount).toBeGreaterThan(1);
+    expect(window.providerAgreement?.modelCount).toBeGreaterThan(1);
+    expect(window.providerAgreement?.modelSpread).not.toBeNull();
+    expect(window.providerAgreement?.status).not.toBe("unavailable");
+    expect(window.scoreBreakdown?.modelResults.length).toBeGreaterThan(1);
   });
 
   it("allows a shootable evening glow window to become the best window", () => {
