@@ -324,7 +324,8 @@ describe("scenario module pages", () => {
     expect(subjectControlSource).toContain("showQuickLocations={false}");
     expect(subjectControlSource).toContain("enableCurrentLocation");
     expect(scenarioSource).toContain("SubjectControlPanel");
-    expect(glowPageSource).toContain("SubjectControlPanel");
+    expect(glowPageSource).toContain("ScenarioModulePage");
+    expect(glowPageSource).not.toContain("SubjectControlPanel");
     expect(glowPageSource).not.toContain("PlaceSearchCard");
   });
 
@@ -431,7 +432,8 @@ describe("scenario module pages", () => {
       expect(source).not.toContain("requestBrowserCurrentCoordinates");
       expect(source).not.toContain("selectedLocationFromBrowserGeolocation");
     }
-    expect(glowPageSource).toContain("SubjectControlPanel");
+    expect(glowPageSource).toContain("ScenarioModulePage");
+    expect(glowPageSource).not.toContain("SubjectControlPanel");
     expect(glowPageSource).not.toContain("PlaceSearchCard");
   });
 

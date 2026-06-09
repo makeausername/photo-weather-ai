@@ -103,6 +103,42 @@ export const glowScenarioConfig = {
     "晚霞通常关注日落前后云层层次和西向通透度。",
     "天文时间基于地点经纬度本地计算，天气条件当前使用演示数据辅助判断。",
   ],
+  learningTitle: "朝霞晚霞判断需要看什么",
+  learningDescription:
+    "霞光不是只看云量。先确认日出日落和晨昏窗口，再看中高云、低云遮挡、通透度、降水和地形是否支持出片。",
+  learningBadgeLabel: "晨昏窗口",
+  learningItems: [
+    {
+      title: "日出日落时间",
+      tag: "时间窗口",
+      description: "先确定太阳升落和晨昏阶段，避免错过主色彩时段。",
+    },
+    {
+      title: "中高云条件",
+      tag: "色彩载体",
+      description: "适量中高云更容易承载霞光色彩，完全晴空反而可能偏淡。",
+    },
+    {
+      title: "低云遮挡风险",
+      tag: "遮挡判断",
+      description: "低云过厚会压住太阳方向，可能只剩白光或无明显霞光。",
+    },
+    {
+      title: "能见度与通透度",
+      tag: "出片质量",
+      description: "通透度影响色彩、远山层次和画面稳定性。",
+    },
+    {
+      title: "地形遮挡",
+      tag: "地平线",
+      description: "山体、峡谷和建筑会改变实际可见日出日落时间。",
+    },
+    {
+      title: "风与降水",
+      tag: "现场风险",
+      description: "降水和云层移动会影响窗口可执行性，需要临近复核。",
+    },
+  ],
 } satisfies ScenarioPageConfig;
 
 export const astroScenarioConfig = {

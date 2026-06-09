@@ -1491,6 +1491,7 @@ export function buildGlowForecastViewModel(
   });
   const aerosolCard = buildGlowAerosolCard(analysis.aerosolAssessment);
   const terrainObstructionCards = buildGlowTerrainObstructionCards(result, analysis);
+  const terrainObstructionSummary = buildGlowTerrainObstructionSummary(terrainObstructionCards);
   const primaryOpportunities = buildGlowPrimaryOpportunities(result, analysis);
   const overallRecommendation = buildGlowOverallRecommendation(result, analysis);
   const dailyOpportunities = buildGlowDailyOpportunities(result, analysis);
@@ -1591,12 +1592,8 @@ export function buildGlowForecastViewModel(
         "glow-terrain-obstruction",
         "terrain",
         "地形遮挡",
-        terrainObstructionCards.length > 0
-          ? terrainObstructionCards.map((card) => `${card.title}：${card.statusLabel}`).join("；")
-          : "方向性地形剖面暂缺",
-        terrainObstructionCards.length > 0
-          ? terrainObstructionCards.map((card) => card.detail).join("；")
-          : "不使用单点海拔推断日出/日落方向遮挡。",
+        terrainObstructionSummary.value,
+        terrainObstructionSummary.detail,
         terrainObstructionCards.some((card) => card.tone === "danger") ? "danger" : "info",
       ),
     ],
@@ -1797,10 +1794,7 @@ function buildGlowProfessionalEvidence(
   aerosolCard: GlowAerosolCard,
   terrainObstructionCards: readonly GlowTerrainObstructionCard[],
 ): readonly GlowEvidenceViewItem[] {
-  const terrainValue =
-    terrainObstructionCards.length > 0
-      ? terrainObstructionCards.map((card) => `${card.title}${card.statusLabel}`).join(" / ")
-      : "数据不足";
+  const terrainObstructionSummary = buildGlowTerrainObstructionSummary(terrainObstructionCards);
   const summaryItems: readonly GlowEvidenceViewItem[] = [
     {
       key: "glow-evidence-color-carrier",
@@ -1842,11 +1836,8 @@ function buildGlowProfessionalEvidence(
     {
       key: "glow-evidence-terrain",
       label: "地形遮挡",
-      value: terrainValue,
-      detail:
-        terrainObstructionCards.length > 0
-          ? "方向性地形剖面仅用于日出/日落方向遮挡参考。"
-          : "地形遮挡数据不足，需现场确认太阳方向。",
+      value: terrainObstructionSummary.value,
+      detail: terrainObstructionSummary.detail,
       tone: terrainObstructionCards.some((card) => card.tone === "danger") ? "danger" : "muted",
     },
   ];
@@ -1860,13 +1851,6 @@ function buildGlowProfessionalEvidence(
       detail: aerosolCard.detail,
       tone: aerosolCard.tone,
     },
-    ...terrainObstructionCards.map((card) => ({
-      key: card.key,
-      label: card.title,
-      value: card.statusLabel,
-      detail: card.detail,
-      tone: card.tone,
-    })),
     ...result.riskFlags.slice(0, 2).map((risk) => ({
       key: `glow-risk-${risk.key}`,
       label: risk.label,
@@ -3509,7 +3493,7 @@ function buildGlowSunPhaseAnnotationIntervals(result: ForecastCalculationResult)
       intervals.push({
         start: astro.sunriseGlowBestStartAt,
         end: astro.sunriseGlowBestEndAt,
-        label: "预测朝霞最佳窗口",
+        label: "朝霞最佳",
         detail: "由太阳高度角跨越区间推导的朝霞核心观察段。",
         tone: "success",
       });
@@ -3554,7 +3538,7 @@ function buildGlowSunPhaseAnnotationIntervals(result: ForecastCalculationResult)
       intervals.push({
         start: astro.sunsetGlowBestStartAt,
         end: astro.sunsetGlowBestEndAt,
-        label: "预测晚霞最佳窗口",
+        label: "晚霞最佳",
         detail: "由太阳高度角跨越区间推导的晚霞核心观察段。",
         tone: "success",
       });
@@ -3761,10 +3745,65 @@ function buildGlowTerrainObstructionCards(
       azimuthLabel: formatAzimuthLabel(assessment.solarAzimuthDegrees),
       horizonLabel: formatDegreeLabel(assessment.terrainHorizonAngleDegrees),
       clearanceLabel: formatDegreeLabel(assessment.solarClearanceDegrees),
-      detail: assessment.noteZh,
+      detail: compactTerrainObstructionDisplayText(assessment.noteZh),
       tone: terrainTone(assessment),
     };
   });
+}
+
+function buildGlowTerrainObstructionSummary(
+  cards: readonly GlowTerrainObstructionCard[],
+): { readonly value: string; readonly detail: string } {
+  if (cards.length === 0) {
+    return {
+      value: "方向性地形剖面暂缺",
+      detail: "地形遮挡数据不足，需现场确认太阳方向。",
+    };
+  }
+
+  const phases = uniqueDisplayTexts(cards.map((card) => glowTerrainPhaseLabel(card.title)));
+  const statuses = uniqueDisplayTexts(cards.map((card) => card.statusLabel));
+  const riskyCards = cards.filter((card) => card.tone === "danger" || card.tone === "info");
+  const detailSource = riskyCards.length > 0 ? riskyCards : cards;
+
+  return {
+    value: `${phases.slice(0, 2).join("、")}：${statuses.slice(0, 2).join(" / ")}`,
+    detail: compactTerrainObstructionDisplayText(detailSource.map((card) => card.detail).join("；")),
+  };
+}
+
+function glowTerrainPhaseLabel(title: string): string {
+  if (title.includes("朝霞") || title.includes("日出")) {
+    return "朝霞";
+  }
+  if (title.includes("晚霞") || title.includes("日落")) {
+    return "晚霞";
+  }
+  return title;
+}
+
+function compactTerrainObstructionDisplayText(text: string): string {
+  const fragments = uniqueDisplayTexts(text.split(/[。；;]+/));
+  const value = fragments.length > 0 ? `${fragments.slice(0, 2).join("；")}。` : text.trim();
+  return value.length > 96 ? `${value.slice(0, 94)}...` : value;
+}
+
+function uniqueDisplayTexts(items: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const item of items) {
+    const value = item.trim().replace(/\s+/g, " ");
+    if (value.length === 0) {
+      continue;
+    }
+    const key = value.replace(/[。；;，,、\s]/g, "");
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(value);
+  }
+  return unique;
 }
 
 function buildGlowDailyCloudLayerSummary(
@@ -3797,7 +3836,7 @@ function buildGlowDailyTerrainLabel(
   if (assessments.length === 0) {
     return "方向性地形剖面暂缺";
   }
-  return assessments.map(terrainStatusLabel).join(" / ");
+  return uniqueDisplayTexts(assessments.map(terrainStatusLabel)).join(" / ");
 }
 
 function buildGlowDailyWeatherRiskLabel(

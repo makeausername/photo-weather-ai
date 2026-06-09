@@ -44,8 +44,8 @@ export const scenarioDataNotice =
   "当前为体验模式，天气与地形结果使用演示数据生成；正式数据源启用后将显示对应来源与更新时间。";
 
 export function ScenarioModulePage({ config }: { readonly config: ScenarioPageConfig }) {
-  if (config.target === "cloud_sea") {
-    return <CloudSeaScenarioEntryPage config={config} />;
+  if (config.target === "cloud_sea" || config.target === "glow") {
+    return <SubjectScenarioEntryPage config={config} />;
   }
 
   return (
@@ -82,8 +82,9 @@ export function ScenarioModulePage({ config }: { readonly config: ScenarioPageCo
   );
 }
 
-function CloudSeaScenarioEntryPage({ config }: { readonly config: ScenarioPageConfig }) {
+function SubjectScenarioEntryPage({ config }: { readonly config: ScenarioPageConfig }) {
   const pageMode = "search";
+  const isCloudSea = config.target === "cloud_sea";
 
   return (
     <PublicShell contentClassName="grid gap-6 pb-14">
@@ -101,20 +102,27 @@ function CloudSeaScenarioEntryPage({ config }: { readonly config: ScenarioPageCo
 
       <section
         className="grid gap-5 min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(340px,24vw,410px)_minmax(0,1fr)] min-[1200px]:items-start"
-        data-cloud-sea-page-mode={pageMode}
+        data-cloud-sea-page-mode={isCloudSea ? pageMode : undefined}
+        data-subject-scenario-page-mode={pageMode}
+        data-subject-scenario-target={config.target}
       >
         {pageMode === "search" ? <ScenarioSearchPanel config={config} /> : null}
-        <CloudSeaKnowledgeGuide config={config} />
+        <SubjectKnowledgeGuide config={config} />
       </section>
     </PublicShell>
   );
 }
 
-function CloudSeaKnowledgeGuide({ config }: { readonly config: ScenarioPageConfig }) {
+function SubjectKnowledgeGuide({ config }: { readonly config: ScenarioPageConfig }) {
   const items = config.learningItems ?? [];
+  const isCloudSea = config.target === "cloud_sea";
 
   return (
-    <section className="grid min-w-0 gap-4" data-cloud-sea-pre-result="knowledge-guide">
+    <section
+      className="grid min-w-0 gap-4"
+      data-cloud-sea-pre-result={isCloudSea ? "knowledge-guide" : undefined}
+      data-subject-knowledge-guide={config.target}
+    >
       <div className="rounded-lg border border-border bg-card p-5 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="accent">{config.learningBadgeLabel ?? "判断参考"}</Badge>
@@ -125,7 +133,7 @@ function CloudSeaKnowledgeGuide({ config }: { readonly config: ScenarioPageConfi
         </h2>
         <p className="mt-3 max-w-4xl text-sm leading-6 text-muted-foreground sm:text-[15px] sm:leading-7">
           {config.learningDescription ??
-            "选择地点后，系统会结合水汽、低云、地形、风速、光线窗口和降水时段判断云海形成、可拍机会与白墙风险。"}
+            "选择地点后，系统会结合时间窗口、云层、通透度、降水和地形遮挡，给出是否值得出发的判断。"}
         </p>
       </div>
 
@@ -134,7 +142,8 @@ function CloudSeaKnowledgeGuide({ config }: { readonly config: ScenarioPageConfi
           <article
             key={item.title}
             className="grid min-w-0 content-start gap-3 overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm"
-            data-cloud-sea-knowledge-card="true"
+            data-cloud-sea-knowledge-card={isCloudSea ? "true" : undefined}
+            data-subject-knowledge-card={config.target}
           >
             <div className="flex items-start justify-between gap-3">
               <span
@@ -352,16 +361,23 @@ export function ScenarioSearchPanel({
     readonly target: ForecastTarget;
   }) => void;
 }) {
-  const isCloudSeaSearchPanel = config.target === "cloud_sea";
+  const isSubjectControlPanel = config.target === "cloud_sea" || config.target === "glow";
 
-  if (isCloudSeaSearchPanel) {
+  if (isSubjectControlPanel) {
     return (
       <SubjectControlPanel
         config={{
           target: config.target,
           defaultHorizon: config.defaultHorizon,
           ctaLabel: config.ctaLabel,
-          currentLocationPrivacyHint: "浏览器定位仅用于本次云海判断，不会公开显示。",
+          description:
+            config.target === "glow"
+              ? "搜索景区、城市或具体机位，选择预报范围后进入朝霞晚霞专项判断。"
+              : undefined,
+          currentLocationPrivacyHint:
+            config.target === "glow"
+              ? "浏览器定位仅用于本次朝霞晚霞判断，不会公开显示。"
+              : "浏览器定位仅用于本次云海判断，不会公开显示。",
         }}
         selectedLocation={selectedLocation}
         onSelectedLocationChange={onSelectedLocationChange}

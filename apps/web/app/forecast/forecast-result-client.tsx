@@ -3772,9 +3772,8 @@ export function GlowResultPage({
         data-glow-section="GlowStackedLayout"
         data-forecast-decision-layout="stacked"
       >
-        <GlowTopContext query={query} result={result} viewModel={viewModel} />
+        <GlowTopResultHeader query={query} result={result} viewModel={viewModel} />
         <GlowPrimaryOpportunityCards opportunities={viewModel.primaryOpportunities} />
-        <GlowOverallRecommendationCard recommendation={viewModel.overallRecommendation} />
         <GlowDailyOpportunitySection result={result} opportunities={viewModel.dailyOpportunities} />
         <GlowWhyJudgmentSection items={viewModel.professionalEvidence.slice(0, 5)} />
         <GlowProfessionalEvidenceDetails
@@ -4325,7 +4324,7 @@ function AstroInlineDefinition({
   );
 }
 
-function GlowTopContext({
+function GlowTopResultHeader({
   query,
   result,
   viewModel,
@@ -4335,8 +4334,39 @@ function GlowTopContext({
   readonly viewModel: GlowForecastViewModel;
 }) {
   return (
-    <Card className="GlowCompactResultHeader p-4 shadow-sm" data-glow-section="GlowResultHeader">
-      <div className="grid gap-4 min-[900px]:grid-cols-[minmax(0,1fr)_auto] min-[900px]:items-start">
+    <section className="GlowTopResultHeader" data-glow-section="GlowResultHeader">
+      <ForecastResultHeader
+        target="glow"
+        className="grid gap-4 min-[880px]:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] min-[880px]:items-stretch"
+      >
+        <GlowHeroConclusion query={query} result={result} viewModel={viewModel} />
+        <GlowProbabilityScoreCard recommendation={viewModel.overallRecommendation} />
+      </ForecastResultHeader>
+    </section>
+  );
+}
+
+function GlowHeroConclusion({
+  query,
+  result,
+  viewModel,
+}: {
+  readonly query: ForecastQueryInput;
+  readonly result: ForecastCalculationResult;
+  readonly viewModel: GlowForecastViewModel;
+}) {
+  const recommendation = viewModel.overallRecommendation;
+  const goLabel =
+    recommendation.preferredTarget === "暂不专程"
+      ? "暂不建议专程"
+      : recommendation.recommendation;
+
+  return (
+    <ForecastResultSummaryCard
+      target="glow"
+      className="GlowHeroConclusion glow-hero-conclusion h-full p-5 shadow-sm"
+    >
+      <div className="flex h-full min-w-0 flex-col justify-between gap-5">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="default">朝霞晚霞</Badge>
@@ -4351,35 +4381,81 @@ function GlowTopContext({
           <h1 className="mt-3 break-words text-2xl font-bold leading-tight text-foreground sm:text-[28px]">
             {query.name}
           </h1>
-          <div className="mt-3 grid gap-1 text-xs leading-5 text-muted-foreground min-[900px]:grid-cols-2 min-[1120px]:flex min-[1120px]:flex-wrap min-[1120px]:gap-2">
-            <span>预报范围：{result.calendarBasis.forecastRangeLabel}</span>
-            <span>本地有效时间：{result.calendarBasis.forecastRangeLabel}</span>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
+            {recommendation.headline}，最高概率 {recommendation.preferredProbabilityDisplay}；
+            {recommendation.conciseReason}
+          </p>
+          <dl className="mt-4 grid gap-3 text-sm min-[760px]:grid-cols-4">
+            <CompactDefinition label="最佳日期" value={recommendation.preferredDate} />
+            <CompactDefinition label="最佳时间" value={recommendation.preferredTime} />
+            <CompactDefinition label="到达建议" value={recommendation.arrivalAdvice} />
+            <CompactDefinition label="是否值得去" value={goLabel} />
+          </dl>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <GlowSummaryChip label="判断" value={recommendation.conciseReason} />
+            <GlowSummaryChip label="风险" value={recommendation.mainRisk} />
+            <GlowSummaryChip label="备选" value={recommendation.backupPlan} />
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2 text-xs leading-5 text-muted-foreground">
+            <span>时间范围：{result.calendarBasis.forecastRangeLabel}</span>
             <span>生成时间：{formatDateTime(result.generatedAt)}</span>
-            <span>更新时间：{formatDateTime(result.generatedAt)}</span>
-            <span>数据可用性：{dataReadinessBadgeLabel(result)}</span>
             <span>天气：{weatherStatusLabel(result)}</span>
             <span>地形：{result.terrainAnalysis.dataSourceLabelZh}</span>
             <span>天文数据：{result.astroDataSourceLabelZh}</span>
           </div>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => {
-            window.location.assign("/glow");
-          }}
-        >
-          重新选择地点
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              window.location.assign("/glow");
+            }}
+          >
+            重新选择地点
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              window.location.assign(buildForecastUrlFromForecastQuery(query));
+            }}
+          >
+            重新判断
+          </Button>
+        </div>
       </div>
-      <p className="mt-3 rounded-lg border border-border bg-muted px-3 py-2 text-sm leading-6 text-muted-foreground">
-        {viewModel.preferredTarget === "暂不专程"
-          ? "暂不建议只为霞光专程"
-          : `优先${viewModel.preferredTarget}`}
-        ，预测概率 {viewModel.preferredProbabilityPercent}%；
-        {viewModel.overallRecommendation.recommendation}。{viewModel.conciseReason}
-      </p>
-    </Card>
+    </ForecastResultSummaryCard>
+  );
+}
+
+function GlowProbabilityScoreCard({
+  recommendation,
+}: {
+  readonly recommendation: GlowForecastViewModel["overallRecommendation"];
+}) {
+  return (
+    <ForecastScoreCard
+      target="glow"
+      className="GlowProbabilityScoreCard grid h-full content-between gap-4 p-5 shadow-sm"
+      label="最高霞光概率"
+      score={recommendation.preferredProbabilityPercent}
+      badgeLabel={recommendation.recommendation}
+      badgeVariant={badgeVariantForTone(recommendation.tone)}
+      summary={`${recommendation.preferredTarget} · ${recommendation.preferredTime}`}
+      dataTestId="glow-probability-score-card"
+    />
+  );
+}
+
+function GlowSummaryChip({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-muted px-3 py-1 text-xs leading-5 text-muted-foreground">
+      <span className="font-semibold text-card-foreground">{label}</span>
+      <span className="min-w-0 truncate">{firstSentence(value)}</span>
+    </span>
   );
 }
 
@@ -4389,101 +4465,61 @@ function GlowPrimaryOpportunityCards({
   readonly opportunities: GlowForecastViewModel["primaryOpportunities"];
 }) {
   return (
-    <section
-      className="GlowPrimaryOpportunityCards grid gap-3 max-[899px]:order-2 min-[900px]:grid-cols-2"
-      data-glow-section="GlowPrimaryOpportunityCards"
-    >
-      {opportunities.map((opportunity) => (
-        <article
-          key={opportunity.key}
-          className={cn(
-            "rounded-lg border bg-card p-4 shadow-sm",
-            opportunity.tone === "primary"
-              ? "border-primary/40"
-              : opportunity.tone === "danger"
-                ? "border-danger/40"
-                : "border-border",
-            opportunity.windowState === "ended" ? "bg-muted/60" : "",
-          )}
-          data-glow-primary-opportunity={opportunity.key}
-          data-glow-window-state={opportunity.windowState}
-        >
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground">
-                {opportunity.title}概率与时间
+    <section data-glow-section="GlowPrimaryOpportunityCards">
+      <ForecastMetricGrid
+        target="glow"
+        className="GlowPrimaryOpportunityCards grid items-stretch gap-3 sm:grid-cols-2"
+      >
+        {opportunities.map((opportunity) => (
+          <ForecastMetricCard key={opportunity.key} target="glow">
+            <article
+              className={cn(
+                "grid h-full content-start gap-4 rounded-lg border bg-card p-4 shadow-sm",
+                opportunity.tone === "primary"
+                  ? "border-primary/40"
+                  : opportunity.tone === "danger"
+                    ? "border-danger/40"
+                    : "border-border",
+                opportunity.windowState === "ended" ? "bg-muted/60" : "",
+              )}
+              data-glow-primary-opportunity={opportunity.key}
+              data-glow-window-state={opportunity.windowState}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground">霞光机会</p>
+                  <h2 className="mt-1 text-lg font-bold text-card-foreground">
+                    {opportunity.title}
+                  </h2>
+                </div>
+                <Badge variant={badgeVariantForTone(opportunity.tone)}>
+                  {opportunity.recommendation}
+                </Badge>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground">概率</p>
+                <p
+                  className={cn(
+                    "mt-1 max-w-full break-words text-3xl font-bold leading-none",
+                    cardToneText(opportunity.tone),
+                  )}
+                >
+                  {opportunity.probabilityDisplay}
+                </p>
+              </div>
+              <dl className="grid gap-2 text-sm min-[520px]:grid-cols-3">
+                <CompactDefinition label="最佳日期" value={opportunity.bestDate} />
+                <CompactDefinition label="最佳时间" value={opportunity.bestTime} />
+                <CompactDefinition label="到达建议" value={opportunity.secondaryTimingHint} />
+              </dl>
+              <p className="text-sm leading-6 text-muted-foreground">
+                {opportunity.conciseReason}
               </p>
-              <h2 className="mt-1 text-xl font-bold text-card-foreground">{opportunity.title}</h2>
-            </div>
-            <Badge variant={badgeVariantForTone(opportunity.tone)}>
-              {opportunity.recommendation}
-            </Badge>
-          </div>
-          <div className="mt-4 grid gap-3 min-[520px]:grid-cols-[auto_minmax(0,1fr)] min-[520px]:items-end">
-            <div>
-              <p className="text-xs text-muted-foreground">预测概率</p>
-              <p
-                className={cn(
-                  "mt-1 max-w-full break-words text-3xl font-bold leading-none sm:text-4xl",
-                  cardToneText(opportunity.tone),
-                )}
-              >
-                {opportunity.probabilityDisplay}
-              </p>
-            </div>
-            <dl className="grid gap-2 text-sm">
-              <CompactDefinition label="最佳日期" value={opportunity.bestDate} />
-              <CompactDefinition label="最佳时间" value={opportunity.bestTime} />
-              <CompactDefinition label="到达建议" value={opportunity.secondaryTimingHint} />
-            </dl>
-          </div>
-          <p className="mt-3 text-sm leading-6 text-muted-foreground">
-            {opportunity.conciseReason}
-          </p>
-        </article>
-      ))}
+            </article>
+          </ForecastMetricCard>
+        ))}
+      </ForecastMetricGrid>
     </section>
-  );
-}
-
-function GlowOverallRecommendationCard({
-  recommendation,
-}: {
-  readonly recommendation: GlowForecastViewModel["overallRecommendation"];
-}) {
-  return (
-    <Card
-      className="GlowOverallRecommendation p-4 shadow-sm max-[899px]:order-1"
-      data-glow-section="GlowOverallRecommendation"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold text-muted-foreground">今天最值得拍什么</p>
-          <h2 className="mt-1 text-xl font-bold text-card-foreground">{recommendation.headline}</h2>
-        </div>
-        <Badge variant={badgeVariantForTone(recommendation.tone)}>
-          {recommendation.recommendation}
-        </Badge>
-      </div>
-      <div className="mt-4 grid gap-3 min-[760px]:grid-cols-5">
-        <CompactDefinition label="预测概率" value={recommendation.preferredProbabilityDisplay} />
-        <CompactDefinition label="最佳日期" value={recommendation.preferredDate} />
-        <CompactDefinition label="最佳时间" value={recommendation.preferredTime} />
-        <CompactDefinition label="到达建议" value={recommendation.arrivalAdvice} />
-        <CompactDefinition label="是否专程" value={recommendation.recommendation} />
-      </div>
-      <div className="mt-3 grid gap-2 text-sm leading-6 text-muted-foreground min-[760px]:grid-cols-3">
-        <p className="rounded-lg border border-border bg-muted px-3 py-2">
-          {recommendation.conciseReason}
-        </p>
-        <p className="rounded-lg border border-border bg-muted px-3 py-2">
-          {recommendation.mainRisk}
-        </p>
-        <p className="rounded-lg border border-border bg-muted px-3 py-2">
-          {recommendation.backupPlan}
-        </p>
-      </div>
-    </Card>
   );
 }
 
@@ -4495,57 +4531,85 @@ function GlowDailyOpportunitySection({
   readonly opportunities: GlowForecastViewModel["dailyOpportunities"];
 }) {
   return (
-    <Card
-      className="GlowDailyOpportunities p-4 shadow-sm max-[899px]:order-3"
-      data-glow-section="GlowDailyOpportunities"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-bold text-card-foreground">未来逐日朝霞晚霞机会</h2>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            每天只保留朝霞概率/时间、晚霞概率/时间和一个优先建议。
-          </p>
+    <DailyDecisionList target="glow" dataTestId="glow-daily-opportunities">
+      <Card
+        className="GlowDailyOpportunities p-4 shadow-sm"
+        data-glow-section="GlowDailyOpportunities"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-card-foreground">未来逐日朝霞晚霞机会</h2>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              每天保留概率、最佳时间和一句出行判断，方便快速比较。
+            </p>
+          </div>
+          <Badge variant="muted">{forecastHorizonLabels[result.horizon]}</Badge>
         </div>
-        <Badge variant="muted">{forecastHorizonLabels[result.horizon]}</Badge>
-      </div>
-      <div className="mt-4 grid gap-3">
-        {opportunities.length === 0 ? (
-          <p className="rounded-lg border border-border bg-muted px-3 py-3 text-sm text-muted-foreground">
-            所选预报范围内暂无后续霞光窗口
-          </p>
-        ) : null}
-        {opportunities.map((item) => (
-          <article
-            key={item.key}
-            className="grid gap-3 rounded-lg border border-border bg-muted p-3 min-[900px]:grid-cols-[minmax(150px,0.8fr)_minmax(180px,1fr)_minmax(180px,1fr)_minmax(200px,1.1fr)] min-[900px]:items-start"
-            data-glow-daily-opportunity-date={item.date}
-            data-glow-sunrise-state={item.sunriseWindowState}
-            data-glow-sunset-state={item.sunsetWindowState}
-          >
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="font-bold text-card-foreground">{item.dateLabel}</h3>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 min-[1180px]:grid-cols-3">
+          {opportunities.length === 0 ? (
+            <p className="rounded-lg border border-border bg-muted px-3 py-3 text-sm text-muted-foreground sm:col-span-2 min-[1180px]:col-span-3">
+              所选预报范围内暂无后续霞光窗口
+            </p>
+          ) : null}
+          {opportunities.map((item) => (
+            <article
+              key={item.key}
+              className="grid h-full content-start gap-3 rounded-lg border border-border bg-muted p-3"
+              data-glow-daily-opportunity-date={item.date}
+              data-glow-sunrise-state={item.sunriseWindowState}
+              data-glow-sunset-state={item.sunsetWindowState}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="font-bold text-card-foreground">{item.dateLabel}</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    优先{item.preferredTarget} · {item.preferredProbabilityDisplay}
+                  </p>
+                </div>
                 <Badge variant={dailyDecisionBadgeVariant(item.recommendation)}>
                   {item.recommendation}
                 </Badge>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                优先{item.preferredTarget}，概率 {item.preferredProbabilityDisplay}
+              <div className="grid gap-2 min-[520px]:grid-cols-2">
+                <GlowDailyPhaseStat
+                  title="朝霞"
+                  probability={item.sunriseProbabilityDisplay}
+                  time={item.sunriseBestTime}
+                />
+                <GlowDailyPhaseStat
+                  title="晚霞"
+                  probability={item.sunsetProbabilityDisplay}
+                  time={item.sunsetBestTime}
+                />
+              </div>
+              <p className="text-sm leading-6 text-muted-foreground">
+                {firstSentence(item.conciseReason)}
               </p>
-            </div>
-            <dl className="grid gap-1 text-sm">
-              <GlowInlineDefinition label="朝霞概率" value={item.sunriseProbabilityDisplay} />
-              <GlowInlineDefinition label="预测朝霞最佳窗口" value={item.sunriseBestTime} />
-            </dl>
-            <dl className="grid gap-1 text-sm">
-              <GlowInlineDefinition label="晚霞概率" value={item.sunsetProbabilityDisplay} />
-              <GlowInlineDefinition label="预测晚霞最佳窗口" value={item.sunsetBestTime} />
-            </dl>
-            <p className="text-sm leading-6 text-muted-foreground">{item.conciseReason}</p>
-          </article>
-        ))}
+            </article>
+          ))}
+        </div>
+      </Card>
+    </DailyDecisionList>
+  );
+}
+
+function GlowDailyPhaseStat({
+  title,
+  probability,
+  time,
+}: {
+  readonly title: "朝霞" | "晚霞";
+  readonly probability: string;
+  readonly time: string;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-card px-2.5 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-bold text-card-foreground">{title}</p>
+        <p className="text-xs font-semibold text-accent">{probability}</p>
       </div>
-    </Card>
+      <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">最佳时间：{time}</p>
+    </div>
   );
 }
 
@@ -4556,23 +4620,30 @@ function GlowWhyJudgmentSection({
 }) {
   return (
     <Card
-      className="GlowWhyJudgment p-4 shadow-sm max-[899px]:order-4"
+      className="GlowWhyJudgment p-4 shadow-sm"
       data-glow-section="GlowWhyJudgment"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-card-foreground">为什么这样判断</h2>
         <Badge variant="muted">关键依据</Badge>
       </div>
-      <div className="mt-3 grid gap-2 min-[760px]:grid-cols-5">
+      <JudgmentBasisGrid
+        target="glow"
+        className="mt-4 grid gap-3 min-[760px]:grid-cols-2 min-[1180px]:grid-cols-3"
+      >
         {items.map((item) => (
-          <div key={item.key} className="rounded-lg border border-border bg-muted px-3 py-2">
-            <p className="text-xs text-muted-foreground">{item.label}</p>
-            <p className="mt-1 break-words text-sm font-semibold text-card-foreground">
-              {item.value}
-            </p>
-          </div>
+          <article
+            key={item.key}
+            className="grid min-h-[112px] content-start gap-2 rounded-lg border border-border bg-muted p-3"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="font-semibold text-card-foreground">{item.label}</h3>
+              <Badge variant={badgeVariantForTone(item.tone)}>{item.value}</Badge>
+            </div>
+            <p className="text-sm leading-6 text-muted-foreground">{firstSentence(item.detail)}</p>
+          </article>
         ))}
-      </div>
+      </JudgmentBasisGrid>
     </Card>
   );
 }
@@ -4588,7 +4659,7 @@ function GlowProfessionalEvidenceDetails({
 }) {
   return (
     <details
-      className="GlowProfessionalEvidence rounded-lg border border-border bg-card p-4 shadow-sm max-[899px]:order-5"
+      className="GlowProfessionalEvidence rounded-lg border border-border bg-card p-4 shadow-sm"
       data-glow-section="GlowProfessionalEvidence"
       data-glow-professional-evidence-default-expanded="false"
     >
@@ -4602,7 +4673,9 @@ function GlowProfessionalEvidenceDetails({
               <h3 className="font-semibold text-card-foreground">{item.label}</h3>
               <Badge variant={badgeVariantForTone(item.tone)}>{item.value}</Badge>
             </div>
-            <p className="mt-2 text-xs leading-5 text-muted-foreground">{item.detail}</p>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
+              {firstSentence(item.detail)}
+            </p>
           </article>
         ))}
       </div>
@@ -4613,21 +4686,6 @@ function GlowProfessionalEvidenceDetails({
       ) : null}
       <p className="mt-3 text-xs leading-5 text-muted-foreground">{dataNotice}</p>
     </details>
-  );
-}
-
-function GlowInlineDefinition({
-  label,
-  value,
-}: {
-  readonly label: string;
-  readonly value: string;
-}) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="font-semibold text-card-foreground">{value}</dd>
-    </div>
   );
 }
 

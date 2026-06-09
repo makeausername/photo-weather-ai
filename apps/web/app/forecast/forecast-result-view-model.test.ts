@@ -6557,9 +6557,9 @@ describe("forecast result target-aware view model", () => {
       expect(viewModel.sunriseGlowProbabilityPercent).toBeLessThanOrEqual(100);
       expect(viewModel.sunsetGlowProbabilityPercent).toBeGreaterThanOrEqual(0);
       expect(viewModel.sunsetGlowProbabilityPercent).toBeLessThanOrEqual(100);
-      expect(html).toContain("朝霞概率与时间");
-      expect(html).toContain("晚霞概率与时间");
-      expect(html).toContain("预测概率");
+      expect(html).toContain("最高霞光概率");
+      expect(html).toContain("霞光机会");
+      expect(html).toContain("概率");
       expect(html).toContain("最佳时间");
       expect(html).toContain("未来逐日朝霞晚霞机会");
       expect(html).toContain("为什么这样判断");
@@ -6575,13 +6575,13 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain('data-ai-interpretation-target="glow"');
       expect(html).toContain("生成智能解读");
       expect(html).toContain("GlowResultPage");
+      expect(html).toContain("GlowHeroConclusion");
+      expect(html).toContain("GlowProbabilityScoreCard");
       expect(html).toContain("GlowPrimaryOpportunityCards");
-      expect(html).toContain("GlowOverallRecommendation");
       expect(html).toContain("GlowDailyOpportunities");
       expectMarkersInOrder(html, [
         "GlowResultHeader",
         "GlowPrimaryOpportunityCards",
-        "GlowOverallRecommendation",
         "GlowDailyOpportunities",
         "GlowWhyJudgment",
         "GlowProfessionalEvidence",
@@ -6602,6 +6602,7 @@ describe("forecast result target-aware view model", () => {
       expect(html).not.toContain("出发建议");
       expect(html).not.toContain("判断依据、风险与行动");
       expect(html).not.toContain("GlowCoreDecision");
+      expect(html).not.toContain("GlowOverallRecommendation");
       expect(html).not.toContain("GlowDailyTrend");
       expect(html).not.toContain("GlowWindowSection");
       expect(html).not.toContain("GlowSunWindowCards");
@@ -6757,8 +6758,11 @@ describe("forecast result target-aware view model", () => {
       }),
     );
 
-    expect(html).toContain("预测朝霞最佳窗口");
-    expect(html).toContain("预测晚霞最佳窗口");
+    expect(html).toContain("最佳时间");
+    expect(html).toContain("朝霞");
+    expect(html).toContain("晚霞");
+    expect(html).not.toContain("预测朝霞最佳窗口");
+    expect(html).not.toContain("预测晚霞最佳窗口");
     expect(html).not.toContain("朝霞准备窗口");
     expect(html).not.toContain("朝霞核心窗口");
     expect(html).not.toContain("晚霞准备窗口");
@@ -6813,7 +6817,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("数据不足");
     expect(html).not.toContain("AOD 0.000");
     expect(html).not.toContain("PM2.5 0");
-    expect(html).not.toContain("min-h-");
+    expect(html).not.toContain("min-h-[220px]");
   });
 
   it("uses centralized recommendation vocabulary instead of a separate glow window list", () => {
