@@ -27,6 +27,11 @@ import {
   precipitationAmountMm,
   precipitationRiskLevel,
 } from "./weather-decision-metrics.js";
+import {
+  estimateBortleRangeForLightPollution,
+  estimatedBortleDisclaimerZh,
+  unavailableEstimatedBortleRange,
+} from "./light-pollution-bortle.js";
 
 const minuteMs = 60_000;
 const moonlessSampleStepMs = 30 * minuteMs;
@@ -43,6 +48,7 @@ const defaultLightPollutionInfo: LightPollutionInfo = {
   confidence: "low",
   sampleCount: 0,
   validSampleCount: 0,
+  estimatedBortleRange: unavailableEstimatedBortleRange("dataset_missing"),
   lightPollutionNoteZh: lightPollutionUnavailableNote,
   starPenalty: 0,
   milkyWayPenalty: 0,
@@ -173,6 +179,7 @@ export function lightPollutionWithTargetAzimuth(
     ...next,
     starPenalty: penalties.starPenalty,
     milkyWayPenalty: penalties.milkyWayPenalty,
+    estimatedBortleRange: estimateBortleRangeForLightPollution(next),
     scoringMode: "heuristic",
   };
 }
@@ -335,6 +342,9 @@ function buildLightPollutionEvidence(
     ? `；银河方向光害${lightPollution.targetDirectionLevelLabelZh}`
     : "；银河方向角不足，未推断目标方向光害";
   const penaltyText = `星空指数-${lightPollution.starPenalty}，银河指数-${lightPollution.milkyWayPenalty}`;
+  const bortleText = lightPollution.estimatedBortleRange?.available
+    ? `；波特尔估算：${lightPollution.estimatedBortleRange.rangeLabelZh} · ${lightPollution.estimatedBortleRange.skyQualityLabelZh}`
+    : "";
   return [
     {
       label: "光污染参考",
@@ -344,7 +354,7 @@ function buildLightPollutionEvidence(
         (lightPollution.targetDirectionRisk ?? 0) >= 60
           ? "risk"
           : "neutral",
-      noteZh: `卫星夜光参考：环境光污染${lightPollution.ambientRiskLevelLabelZh}${targetLabel}；${penaltyText}。非现场SQM实测，不代表测量Bortle等级。`,
+      noteZh: `卫星夜光参考：环境光污染${lightPollution.ambientRiskLevelLabelZh}${targetLabel}${bortleText}；${penaltyText}。${estimatedBortleDisclaimerZh}`,
     },
   ];
 }

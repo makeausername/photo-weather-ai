@@ -123,6 +123,56 @@ function cloudSeaScoreCalibrationForTest(
 
 type AstroAssessmentForTest = ForecastCalculationResult["astroAnalysis"]["assessment"];
 type DailyAstroForTest = ForecastCalculationResult["astroAnalysis"]["dailyAstro"][number];
+type EstimatedBortleRangeForTest = NonNullable<
+  ForecastCalculationResult["astroAnalysis"]["lightPollution"]["estimatedBortleRange"]
+>;
+
+const estimatedBortleDisclaimerForTest =
+  "基于卫星夜间灯光与环境光污染指数估算，非现场 SQM 实测，不代表正式波特尔观测认证。";
+
+const unavailableEstimatedBortleForTest: EstimatedBortleRangeForTest = {
+  available: false,
+  rangeLabelZh: "波特尔估算暂不可用",
+  skyQualityLabelZh: "数据不足",
+  confidence: "low",
+  methodVersion: "viirs-ambient-risk-range-v1",
+  basisZh: "当前缺少可靠的环境光污染标定，不能推断波特尔等级范围。",
+  disclaimerZh: estimatedBortleDisclaimerForTest,
+  unavailableReason: "dataset_missing",
+};
+
+function estimatedBortleForDisplayTest(
+  ambientRiskIndex: number | null | undefined,
+  confidence: EstimatedBortleRangeForTest["confidence"] = "low",
+): EstimatedBortleRangeForTest {
+  if (typeof ambientRiskIndex !== "number" || !Number.isFinite(ambientRiskIndex)) {
+    return unavailableEstimatedBortleForTest;
+  }
+  const clamped = Math.min(100, Math.max(0, ambientRiskIndex));
+  const bands = [
+    { max: 14, minClass: 1, maxClass: 2, skyQualityLabelZh: "极佳暗空" },
+    { max: 29, minClass: 2, maxClass: 3, skyQualityLabelZh: "优良暗空" },
+    { max: 44, minClass: 3, maxClass: 4, skyQualityLabelZh: "较暗天空" },
+    { max: 59, minClass: 4, maxClass: 5, skyQualityLabelZh: "城郊过渡" },
+    { max: 72, minClass: 5, maxClass: 6, skyQualityLabelZh: "城郊光害" },
+    { max: 84, minClass: 6, maxClass: 7, skyQualityLabelZh: "明显光害" },
+    { max: 94, minClass: 7, maxClass: 8, skyQualityLabelZh: "城市光害" },
+    { max: 100, minClass: 8, maxClass: 9, skyQualityLabelZh: "强城市光害" },
+  ] as const;
+  const band = bands.find((candidate) => clamped <= candidate.max) ?? bands[bands.length - 1]!;
+
+  return {
+    available: true,
+    minClass: band.minClass,
+    maxClass: band.maxClass,
+    rangeLabelZh: `${band.minClass}–${band.maxClass}级`,
+    skyQualityLabelZh: band.skyQualityLabelZh,
+    confidence,
+    methodVersion: "viirs-ambient-risk-range-v1",
+    basisZh: `使用环境光污染指数 ${clamped}/100 按 V1 区间映射；来源 卫星夜光参考 / 2026 / test。未使用银河方向光害改变位置级估算。`,
+    disclaimerZh: estimatedBortleDisclaimerForTest,
+  };
+}
 
 const lightPollutionForTest: ForecastCalculationResult["astroAnalysis"]["lightPollution"] = {
   available: false,
@@ -134,6 +184,7 @@ const lightPollutionForTest: ForecastCalculationResult["astroAnalysis"]["lightPo
   confidence: "low",
   sampleCount: 0,
   validSampleCount: 0,
+  estimatedBortleRange: unavailableEstimatedBortleForTest,
   lightPollutionNoteZh: "光污染数据暂缺；未按无光污染处理，需现场确认城市光穹与地平线环境。",
   starPenalty: 0,
   milkyWayPenalty: 0,
@@ -143,6 +194,10 @@ const lightPollutionForTest: ForecastCalculationResult["astroAnalysis"]["lightPo
 function lightPollutionForDisplayTest(
   overrides: Partial<ForecastCalculationResult["astroAnalysis"]["lightPollution"]> = {},
 ): ForecastCalculationResult["astroAnalysis"]["lightPollution"] {
+  const ambientRiskIndex =
+    typeof overrides.ambientRiskIndex === "number" || overrides.ambientRiskIndex === null
+      ? overrides.ambientRiskIndex
+      : 24;
   return {
     ...lightPollutionForTest,
     available: true,
@@ -156,7 +211,7 @@ function lightPollutionForDisplayTest(
     localRadiance: 0.18,
     localRadiancePercentile: 23,
     surroundingHaloRadiance: 0.42,
-    ambientRiskIndex: 24,
+    ambientRiskIndex,
     ambientRiskLevel: "low",
     ambientRiskLevelLabelZh: "低",
     targetAzimuthDegrees: 135,
@@ -201,6 +256,12 @@ function lightPollutionForDisplayTest(
       scoringMode: "heuristic",
       nonSqmBortleNoticeZh: "该结果为卫星夜光参考，不是现场SQM实测，也不代表测量Bortle等级。",
     },
+    estimatedBortleRange:
+      overrides.estimatedBortleRange ??
+      estimatedBortleForDisplayTest(
+        ambientRiskIndex,
+        overrides.confidence === "low" ? "low" : "medium",
+      ),
     lightPollutionNoteZh: "卫星夜光参考：环境光污染低，银河方向光害低。",
     starPenalty: 5,
     milkyWayPenalty: 9,
@@ -2495,6 +2556,24 @@ function expectNoObsoleteLightPollutionPlaceholders(html: string): void {
 
   for (const placeholder of placeholders) {
     expect(html).not.toContain(placeholder);
+  }
+}
+
+function expectNoForbiddenBortleCopy(html: string): void {
+  const forbiddenTexts = [
+    "波特尔等级：1级",
+    "实测波特尔",
+    "SQM实测值",
+    "mag/arcsec²",
+    "国标等级",
+    "官方认证",
+    "国标一级",
+    "国标二级",
+    "环境分区认证",
+  ];
+
+  for (const forbiddenText of forbiddenTexts) {
+    expect(html).not.toContain(forbiddenText);
   }
 }
 
@@ -7361,7 +7440,7 @@ describe("forecast result target-aware view model", () => {
     [
       "urban very-high-risk",
       lightPollutionForDisplayTest({
-        ambientRiskIndex: 92,
+        ambientRiskIndex: 100,
         ambientRiskLevel: "very_high",
         ambientRiskLevelLabelZh: "很高",
         targetDirectionRisk: 94,
@@ -7369,7 +7448,14 @@ describe("forecast result target-aware view model", () => {
         targetDirectionLevelLabelZh: "很高",
         lightPollutionNoteZh: "卫星夜光参考：环境光污染很高，银河方向光害很高。",
       }),
-      ["92", "很高", "银河方向光害很高", "不建议在当前地点专程拍摄"],
+      [
+        "100",
+        "很高",
+        "波特尔估算：8–9级",
+        "强城市光害",
+        "银河方向光害：很高",
+        "不建议在当前地点专程拍摄",
+      ],
     ],
     [
       "mountain very-low-risk",
@@ -7382,7 +7468,7 @@ describe("forecast result target-aware view model", () => {
         targetDirectionLevelLabelZh: "低",
         lightPollutionNoteZh: "卫星夜光参考：环境光污染极低，银河方向光害低。",
       }),
-      ["6", "极低", "银河方向光害低", "适合安排星空和银河拍摄"],
+      ["6", "极低", "波特尔估算：1–2级", "极佳暗空", "银河方向光害：低", "适合安排星空和银河拍摄"],
     ],
     [
       "medium-risk",
@@ -7395,7 +7481,14 @@ describe("forecast result target-aware view model", () => {
         targetDirectionLevelLabelZh: "中",
         lightPollutionNoteZh: "卫星夜光参考：环境光污染中，银河方向光害中。",
       }),
-      ["52", "中", "银河方向光害中", "优先选择背离城市光源的构图"],
+      [
+        "52",
+        "中",
+        "波特尔估算：4–5级",
+        "城郊过渡",
+        "银河方向光害：中",
+        "优先选择背离城市光源的构图",
+      ],
     ],
   ] as const)(
     "renders %s light-pollution conclusions in the astro page",
@@ -7418,6 +7511,7 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("光污染");
       expect(html).not.toContain("nW/cm²/sr");
       expectNoObsoleteLightPollutionPlaceholders(html);
+      expectNoForbiddenBortleCopy(html);
     },
   );
 
@@ -7438,7 +7532,9 @@ describe("forecast result target-aware view model", () => {
     );
     expect(html).not.toMatch(/光污染[^<]*0/);
     expect(html).not.toContain("光污染：极低");
+    expect(html).not.toContain("波特尔估算：1–2级");
     expectNoObsoleteLightPollutionPlaceholders(html);
+    expectNoForbiddenBortleCopy(html);
   });
 
   it("keeps ambient light-pollution display when directional risk is unavailable", () => {
@@ -7491,6 +7587,49 @@ describe("forecast result target-aware view model", () => {
     expect(countOccurrences(html, "银河方向光害")).toBeGreaterThanOrEqual(2);
     expect(html).toContain('data-astro-professional-data-expanded="false"');
     expect(html).not.toContain("nW/cm²/sr");
+    expectNoForbiddenBortleCopy(html);
+  });
+
+  it("keeps estimated Bortle location-level and synchronized with professional details", () => {
+    const lightPollution = lightPollutionForDisplayTest({
+      ambientRiskIndex: 6,
+      ambientRiskLevel: "very_low",
+      ambientRiskLevelLabelZh: "极低",
+      targetDirectionRisk: 12,
+      targetDirectionLevel: "very_low",
+      targetDirectionLevelLabelZh: "极低",
+      confidence: "low",
+    });
+    const result = {
+      ...resultWithAstroLightPollution(lightPollution, [lightPollution, lightPollution]),
+      aiExplanationError: "DeepSeek 服务请求超时。",
+    } as ForecastCalculationResult;
+    const viewModel = buildAstroForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(AstroResultPage, {
+        query: queryForTarget("astro"),
+        result,
+        viewModel,
+      }),
+    );
+    const nightlySection = sectionBetween(
+      html,
+      'data-astro-section="AstroNightOpportunitySection"',
+      'data-astro-section="AstroWhyJudgmentSection"',
+    );
+    const professionalBortleItem = viewModel.lightPollution.professionalDataItems.find(
+      (item) => item.label === "波特尔估算",
+    );
+
+    expect(viewModel.lightPollution.estimatedBortleRangeLabel).toBe("1–2级");
+    expect(professionalBortleItem?.value).toBe(viewModel.lightPollution.estimatedBortleRangeLabel);
+    expect(viewModel.lightPollution.noticeZh).toBe(estimatedBortleDisclaimerForTest);
+    expect(html).toContain("波特尔估算：1–2级");
+    expect(html).toContain("极佳暗空");
+    expect(nightlySection).not.toContain("波特尔估算");
+    expect(html).toContain('data-astro-professional-data-expanded="false"');
+    expect(html).not.toContain(estimatedBortleDisclaimerForTest);
+    expectNoForbiddenBortleCopy(html);
   });
 
   it.each([

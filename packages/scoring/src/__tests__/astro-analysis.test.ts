@@ -153,6 +153,17 @@ function lightPollutionFixture(overrides: Partial<LightPollutionInfo> = {}): Lig
     confidence: "high",
     sampleCount: 96,
     validSampleCount: 96,
+    calculationBasis: {
+      samplingConfigVersion: "satellite-night-light-v1",
+      coordinateSystem: "WGS84",
+      distancesKm: [5, 15, 30, 60],
+      distanceWeights: { local: 0.45, "5km": 0.22, "15km": 0.16, "30km": 0.11, "60km": 0.06 },
+      localNeighborhoodKm: [0, 0.5, 1.5],
+      directionSectorsDegrees: 45,
+      quantileBasis: "adaptive_positive_log_radiance_quantiles",
+      scoringMode: "heuristic",
+      nonSqmBortleNoticeZh: "该结果为卫星夜光参考，不是现场SQM实测，也不代表测量Bortle等级。",
+    },
     lightPollutionNoteZh: "卫星夜光参考：环境光污染低。",
     starPenalty: 4,
     milkyWayPenalty: 7,
@@ -566,6 +577,17 @@ describe("astro analysis", () => {
 
     expect(firstDay?.lightPollution.targetDirectionRisk).toBe(10);
     expect(secondDay?.lightPollution.targetDirectionRisk).toBe(95);
+    expect(analysis.lightPollution.estimatedBortleRange).toMatchObject({
+      available: true,
+      rangeLabelZh: "2–3级",
+      skyQualityLabelZh: "优良暗空",
+    });
+    expect(firstDay?.lightPollution.estimatedBortleRange?.rangeLabelZh).toBe(
+      analysis.lightPollution.estimatedBortleRange?.rangeLabelZh,
+    );
+    expect(secondDay?.lightPollution.estimatedBortleRange?.rangeLabelZh).toBe(
+      analysis.lightPollution.estimatedBortleRange?.rangeLabelZh,
+    );
     expect(firstDay?.lightPollution.milkyWayPenalty).toBeLessThan(
       secondDay?.lightPollution.milkyWayPenalty ?? 0,
     );

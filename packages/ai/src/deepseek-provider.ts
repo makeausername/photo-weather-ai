@@ -2931,8 +2931,12 @@ function compactAstroPromptFacts(
           phaseNameZh: moon.moonPhaseNameZh,
           illuminationPercent: Math.round(moon.moonIllumination * 100),
           lunarDateText: moon.lunarDateText,
-          moonriseZh: moon.moonrise ? formatLocalTimeRange(moon.moonrise, moon.moonrise, timezone) : null,
-          moonsetZh: moon.moonset ? formatLocalTimeRange(moon.moonset, moon.moonset, timezone) : null,
+          moonriseZh: moon.moonrise
+            ? formatLocalTimeRange(moon.moonrise, moon.moonrise, timezone)
+            : null,
+          moonsetZh: moon.moonset
+            ? formatLocalTimeRange(moon.moonset, moon.moonset, timezone)
+            : null,
           calculationNoteZh: limitText(moon.calculationNoteZh, textLimit),
         }
       : null,
@@ -3009,13 +3013,24 @@ function compactAstroLightPollutionPromptFacts(
     targetDirectionRisk: lightPollution.targetDirectionRisk ?? null,
     datasetYear: lightPollution.datasetYear ?? null,
     datasetVersion: lightPollution.datasetVersion ?? null,
+    estimatedBortle: lightPollution.estimatedBortleRange
+      ? {
+          available: lightPollution.estimatedBortleRange.available,
+          minClass: lightPollution.estimatedBortleRange.minClass ?? null,
+          maxClass: lightPollution.estimatedBortleRange.maxClass ?? null,
+          rangeLabelZh: lightPollution.estimatedBortleRange.rangeLabelZh,
+          skyQualityLabelZh: lightPollution.estimatedBortleRange.skyQualityLabelZh,
+          confidence: lightPollution.estimatedBortleRange.confidence,
+          disclaimerZh: limitText(lightPollution.estimatedBortleRange.disclaimerZh, textLimit),
+        }
+      : null,
     starIndexPenalty: lightPollution.starPenalty,
     milkyWayIndexPenalty: lightPollution.milkyWayPenalty,
     missingOnSiteCheckNoteZh: lightPollution.dataAvailable
       ? null
       : limitText(lightPollution.lightPollutionNoteZh, textLimit),
     constraintsZh:
-      "只解释这些确定性光污染事实；不要发明Bortle、SQM、辐亮度或风险等级，不要改写指数和推荐。",
+      "只解释这些确定性光污染事实；波特尔只能表述为估算范围，不要改成单一等级；不要发明SQM、mag/arcsec²、现场测量或官方认证，不要改写指数和推荐。",
   };
 }
 

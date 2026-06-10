@@ -751,6 +751,19 @@ describe("AI providers", () => {
           confidence: "high",
           sampleCount: 96,
           validSampleCount: 90,
+          estimatedBortleRange: {
+            available: true,
+            minClass: 6,
+            maxClass: 7,
+            rangeLabelZh: "6–7级",
+            skyQualityLabelZh: "明显光害",
+            confidence: "low",
+            methodVersion: "viirs-ambient-risk-range-v1",
+            basisZh:
+              "使用环境光污染指数 82/100 按 V1 区间映射；来源 卫星夜光参考 / 2026 / test。未使用银河方向光害改变位置级估算。",
+            disclaimerZh:
+              "基于卫星夜间灯光与环境光污染指数估算，非现场 SQM 实测，不代表正式波特尔观测认证。",
+          },
           lightPollutionNoteZh: "卫星夜光参考：环境光污染很高，银河方向光害高。",
           starPenalty: 16,
           milkyWayPenalty: 28,
@@ -824,6 +837,14 @@ describe("AI providers", () => {
         ambientLevelZh: "很高",
         targetDirectionRisk: 76,
         targetDirectionLevelZh: "高",
+        estimatedBortle: expect.objectContaining({
+          available: true,
+          minClass: 6,
+          maxClass: 7,
+          rangeLabelZh: "6–7级",
+          skyQualityLabelZh: "明显光害",
+          confidence: "low",
+        }),
         starIndexPenalty: 16,
         milkyWayIndexPenalty: 28,
       }),
@@ -832,6 +853,7 @@ describe("AI providers", () => {
     expect(requestText).toContain("天文黑夜");
     expect(requestText).toContain("银河候选窗口");
     expect(requestText).toContain("只解释这些确定性光污染事实");
+    expect(requestText).toContain("波特尔只能表述为估算范围");
     expect(requestText).toContain("低云偏多，星空银河实际可见性较差。");
     expect(requestText).not.toContain("localRadiance");
     expect(requestText).not.toContain("surroundingHaloRadiance");

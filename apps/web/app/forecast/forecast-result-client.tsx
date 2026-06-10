@@ -3828,10 +3828,10 @@ function AstroLightPollutionDecisionCard({
   const directionRiskLabel =
     lightPollution.bestWindowDirectionRiskLabelZh &&
     typeof lightPollution.bestWindowDirectionRisk === "number"
-      ? `银河方向光害${lightPollution.bestWindowDirectionRiskLabelZh}`
+      ? `银河方向光害：${lightPollution.bestWindowDirectionRiskLabelZh}`
       : lightPollution.available
-        ? "银河方向角不足"
-        : "需现场确认银河方向光害";
+        ? "银河方向光害：方向角不足"
+        : "银河方向光害：需现场确认";
 
   return (
     <Card
@@ -3847,6 +3847,7 @@ function AstroLightPollutionDecisionCard({
               <p className="text-4xl font-bold leading-none text-card-foreground">
                 {lightPollution.ambientRiskIndex}
               </p>
+              <p className="pb-1 text-sm font-semibold text-muted-foreground">/ 100</p>
               <p className="pb-1 text-base font-semibold text-card-foreground">
                 {lightPollution.ambientRiskLevelLabelZh}
               </p>
@@ -3862,6 +3863,18 @@ function AstroLightPollutionDecisionCard({
         </Badge>
       </div>
       <div className="grid gap-2 text-sm leading-6 text-muted-foreground">
+        <div className="grid gap-1">
+          <p className="font-semibold text-card-foreground">
+            {lightPollution.estimatedBortleAvailable
+              ? `波特尔估算：${lightPollution.estimatedBortleRangeLabel}`
+              : lightPollution.estimatedBortleRangeLabel}
+          </p>
+          <p>
+            {lightPollution.estimatedBortleAvailable
+              ? lightPollution.estimatedBortleSkyQualityLabel
+              : lightPollution.estimatedBortleBasis}
+          </p>
+        </div>
         {lightPollution.available ? (
           <p className="font-medium text-card-foreground">{directionRiskLabel}</p>
         ) : null}

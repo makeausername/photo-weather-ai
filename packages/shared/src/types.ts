@@ -1626,6 +1626,19 @@ export type LightPollutionCalculationBasis = {
   readonly nonSqmBortleNoticeZh: string;
 };
 
+export type EstimatedBortleRange = {
+  readonly available: boolean;
+  readonly minClass?: number;
+  readonly maxClass?: number;
+  readonly rangeLabelZh: string;
+  readonly skyQualityLabelZh: string;
+  readonly confidence: "low" | "medium";
+  readonly methodVersion: "viirs-ambient-risk-range-v1";
+  readonly basisZh: string;
+  readonly disclaimerZh: string;
+  readonly unavailableReason?: string;
+};
+
 export type LightPollutionInfo = {
   readonly available: boolean;
   readonly dataAvailable: boolean;
@@ -1650,6 +1663,7 @@ export type LightPollutionInfo = {
   readonly sampleCount: number;
   readonly validSampleCount: number;
   readonly calculationBasis?: LightPollutionCalculationBasis | null;
+  readonly estimatedBortleRange?: EstimatedBortleRange;
   readonly lightPollutionNoteZh: string;
   readonly starPenalty: number;
   readonly milkyWayPenalty: number;

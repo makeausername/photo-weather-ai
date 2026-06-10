@@ -629,6 +629,13 @@ export type AstroLightPollutionDisplayModel = {
   readonly confidenceLabelZh: string;
   readonly sourceLabelZh: string;
   readonly datasetLabel: string;
+  readonly estimatedBortleAvailable: boolean;
+  readonly estimatedBortleRangeLabel: string;
+  readonly estimatedBortleSkyQualityLabel: string;
+  readonly estimatedBortleConfidenceLabel: string;
+  readonly estimatedBortleBasis: string;
+  readonly estimatedBortleDisclaimer: string;
+  readonly estimatedBortleMethodVersion: string;
   readonly primaryConclusionZh: string;
   readonly recommendationZh: string;
   readonly statusBadgeLabelZh: string;
@@ -3062,9 +3069,9 @@ function astroLightPollutionDisplay(
     .filter((item): item is string => Boolean(item))
     .join(" / ");
   const confidenceLabelZh = lightPollutionConfidenceLabel(lightPollution.confidence);
+  const estimatedBortle = estimatedBortleDisplayFields(lightPollution);
   const noticeZh =
-    lightPollution.calculationBasis?.nonSqmBortleNoticeZh ??
-    "该结果为卫星夜光参考，不是现场SQM实测，也不代表测量Bortle等级。";
+    lightPollution.estimatedBortleRange?.disclaimerZh ?? estimatedBortle.estimatedBortleDisclaimer;
 
   if (!lightPollution.available) {
     const detail = "当前判断未把光污染当作低风险处理，拍摄前需现场确认城市光穹和地平线亮度。";
@@ -3081,6 +3088,7 @@ function astroLightPollutionDisplay(
       confidenceLabelZh,
       sourceLabelZh,
       datasetLabel: datasetLabel || "数据暂缺",
+      ...estimatedBortle,
       primaryConclusionZh: "光污染数据暂不可用",
       recommendationZh: detail,
       statusBadgeLabelZh: "数据暂缺",
@@ -3090,8 +3098,7 @@ function astroLightPollutionDisplay(
       detail,
       ambientLabel: "数据不足",
       targetDirectionLabel: "数据不足",
-      judgmentSummaryZh:
-        "光污染数据暂不可用；当前判断未把它当作低风险处理，现场仍需确认城市光穹和地平线亮度。",
+      judgmentSummaryZh: `光污染数据暂不可用；${estimatedBortle.estimatedBortleRangeLabel}：${estimatedBortle.estimatedBortleBasis}当前判断未把它当作低风险处理，现场仍需确认城市光穹和地平线亮度。`,
       professionalDataItems: buildAstroLightPollutionProfessionalDataItems(
         lightPollution,
         datasetLabel || "数据暂缺",
@@ -3141,6 +3148,7 @@ function astroLightPollutionDisplay(
     confidenceLabelZh,
     sourceLabelZh,
     datasetLabel,
+    ...estimatedBortle,
     primaryConclusionZh,
     recommendationZh,
     statusBadgeLabelZh: lightPollution.dataAvailable ? confidenceLabelZh : "数据不足",
@@ -3153,6 +3161,10 @@ function astroLightPollutionDisplay(
     ambientLabel,
     targetDirectionLabel: targetLabel ?? "数据不足",
     judgmentSummaryZh: `${directionText}；环境光污染${ambientLabel}。${
+      estimatedBortle.estimatedBortleAvailable
+        ? `波特尔估算：${estimatedBortle.estimatedBortleRangeLabel} · ${estimatedBortle.estimatedBortleSkyQualityLabel}。`
+        : ""
+    }${
       riskForRecommendation >= 60 ? "会压低星空和银河对比度。" : "对本次星空银河判断不是主要阻断。"
     }置信度${confidenceLabelZh}。`,
     professionalDataItems: buildAstroLightPollutionProfessionalDataItems(
@@ -3167,6 +3179,43 @@ function astroLightPollutionDisplay(
   };
 }
 
+function estimatedBortleDisplayFields(
+  lightPollution: LightPollutionInfo,
+): Pick<
+  AstroLightPollutionDisplayModel,
+  | "estimatedBortleAvailable"
+  | "estimatedBortleRangeLabel"
+  | "estimatedBortleSkyQualityLabel"
+  | "estimatedBortleConfidenceLabel"
+  | "estimatedBortleBasis"
+  | "estimatedBortleDisclaimer"
+  | "estimatedBortleMethodVersion"
+> {
+  const estimate = lightPollution.estimatedBortleRange;
+  if (!estimate) {
+    return {
+      estimatedBortleAvailable: false,
+      estimatedBortleRangeLabel: "波特尔估算暂不可用",
+      estimatedBortleSkyQualityLabel: "数据不足",
+      estimatedBortleConfidenceLabel: "低",
+      estimatedBortleBasis: "当前缺少可靠的环境光污染标定，不能推断波特尔等级范围。",
+      estimatedBortleDisclaimer:
+        "基于卫星夜间灯光与环境光污染指数估算，非现场 SQM 实测，不代表正式波特尔观测认证。",
+      estimatedBortleMethodVersion: "viirs-ambient-risk-range-v1",
+    };
+  }
+
+  return {
+    estimatedBortleAvailable: estimate.available,
+    estimatedBortleRangeLabel: estimate.rangeLabelZh,
+    estimatedBortleSkyQualityLabel: estimate.skyQualityLabelZh,
+    estimatedBortleConfidenceLabel: estimate.confidence === "medium" ? "中" : "低",
+    estimatedBortleBasis: estimate.basisZh,
+    estimatedBortleDisclaimer: estimate.disclaimerZh,
+    estimatedBortleMethodVersion: estimate.methodVersion,
+  };
+}
+
 function buildAstroLightPollutionProfessionalDataItems(
   lightPollution: LightPollutionInfo,
   datasetLabel: string,
@@ -3174,11 +3223,22 @@ function buildAstroLightPollutionProfessionalDataItems(
   confidenceLabelZh: string,
   noticeZh: string,
 ): readonly ForecastResultSectionItem[] {
+  const estimatedBortle = estimatedBortleDisplayFields(lightPollution);
   return [
     {
       label: "数据集",
       value: datasetLabel || "数据暂缺",
       detail: "卫星夜光栅格数据集和版本。",
+    },
+    {
+      label: "波特尔估算",
+      value: estimatedBortle.estimatedBortleRangeLabel,
+      detail: "基于位置级环境光污染指数的估算范围。",
+    },
+    {
+      label: "天空质量",
+      value: estimatedBortle.estimatedBortleSkyQualityLabel,
+      detail: "保守中文天空质量标签。",
     },
     {
       label: "本地辐亮度",
@@ -3191,12 +3251,27 @@ function buildAstroLightPollutionProfessionalDataItems(
       detail: "周边方向加权后的人工光影响参考。",
     },
     {
-      label: "环境风险",
+      label: "环境风险指数",
       value:
         typeof lightPollution.ambientRiskIndex === "number"
           ? `${lightPollution.ambientRiskIndex} / ${lightPollution.ambientRiskLevelLabelZh}`
           : "数据不足",
-      detail: "位置级环境光污染风险。",
+      detail: "位置级环境光污染风险，也是波特尔估算 V1 的输入。",
+    },
+    {
+      label: "波特尔置信度",
+      value: estimatedBortle.estimatedBortleConfidenceLabel,
+      detail: "V1 最高只显示中置信度。",
+    },
+    {
+      label: "波特尔方法",
+      value: estimatedBortle.estimatedBortleMethodVersion,
+      detail: "固定的环境光污染指数区间映射版本。",
+    },
+    {
+      label: "波特尔依据",
+      value: estimatedBortle.estimatedBortleBasis,
+      detail: "估算依据和输入指数。",
     },
     {
       label: "目标方位角",
@@ -3229,6 +3304,17 @@ function buildAstroLightPollutionProfessionalDataItems(
       detail: "公开页面仅作为卫星夜光参考，不展示内部 provider 细节。",
     },
     {
+      label: "数据年份",
+      value:
+        typeof lightPollution.datasetYear === "number" ? `${lightPollution.datasetYear}` : "暂无",
+      detail: "由光污染数据元信息动态提供。",
+    },
+    {
+      label: "数据版本",
+      value: lightPollution.datasetVersion ?? "暂无",
+      detail: "由光污染数据元信息动态提供。",
+    },
+    {
       label: "计算口径",
       value: lightPollution.calculationBasis?.scoringMode ?? lightPollution.scoringMode,
       detail: lightPollution.calculationBasis
@@ -3244,6 +3330,11 @@ function buildAstroLightPollutionProfessionalDataItems(
       label: "说明",
       value: "卫星夜光参考",
       detail: noticeZh,
+    },
+    {
+      label: "波特尔说明",
+      value: estimatedBortle.estimatedBortleDisclaimer,
+      detail: "估算限制。",
     },
   ];
 }
@@ -8245,7 +8336,7 @@ function buildAstroDataNotice(result: ForecastCalculationResult): string {
         result.astroAnalysis.lightPollution.datasetYear
           ? `，${result.astroAnalysis.lightPollution.datasetYear}`
           : ""
-      }），非现场SQM实测，不代表测量Bortle等级。`
+      }），基于卫星夜间灯光与环境光污染指数估算，非现场 SQM 实测，不代表正式波特尔观测认证。`
     : `光污染数据：${result.astroAnalysis.lightPollution.lightPollutionNoteZh}`;
 
   return `天文数据：${result.astroDataSourceLabelZh}；天气数据：${weatherStatusLabelForViewModel(
