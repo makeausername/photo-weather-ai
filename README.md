@@ -38,6 +38,14 @@ bash scripts/import-light-pollution.sh incoming/<file-or-directory> -- --dataset
 
 The result is a satellite-night-light reference for astro suitability only. It is not a measured SQM or Bortle value, and missing data is not treated as low pollution.
 
+Estimated Bortle calibration audits can be run from independent CSV/JSON references with:
+
+```bash
+pnpm bortle:calibrate -- --input deploy/calibration/bortle-reference.example.csv --dry-run --strict
+```
+
+Generated audit reports belong under `deploy/calibration/runtime/`, which is ignored by Git. The workflow compares supplied independent references with the production estimator and never rewrites production thresholds automatically.
+
 These documents define the strategic product boundary for 逐光天气. Future Codex tasks must not narrow the product into a simple weather query site or an AI text explanation tool. If a task touches weather, astronomy, terrain, scoring, provider normalization, AI explanation, result pages, or data-source display, preserve this boundary: 逐光天气 should eventually cover at least Tianwentong + Lijing Weather style information and provide more detailed photography decision support.
 
 逐光天气是面向中国大陆风光摄影用户的天气与拍摄机会判断系统，公开标语为“风光摄影出行判断工具”。当前仓库处于自托管 SaaS 产品基础与界面打磨阶段，重点是数据库、后台配置、地点/机位资料、亮色默认主题和前端 UI 基线。

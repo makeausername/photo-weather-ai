@@ -513,6 +513,53 @@ describe("AstroServiceClient", () => {
     });
   });
 
+  it("queries light-pollution directly without fabricating a target azimuth", async () => {
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            ...serviceResponse.lightPollution,
+            queryElapsedMs: 12.4,
+            cacheHit: false,
+          }),
+        ),
+      ),
+    );
+    const client = new AstroServiceClient({
+      baseUrl: "http://localhost:4100/",
+      fetchImpl,
+    });
+
+    const lightPollution = await client.queryLightPollution({
+      latitudeWgs84: 30.1321,
+      longitudeWgs84: 118.1691,
+      timezone: "Asia/Shanghai",
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://127.0.0.1:4100/light-pollution/query",
+      expect.objectContaining({ method: "POST" }),
+    );
+    const firstCall = fetchImpl.mock.calls[0] as
+      | [RequestInfo | URL, RequestInit | undefined]
+      | undefined;
+    const requestBody = JSON.parse(String(firstCall?.[1]?.body));
+    expect(requestBody).toMatchObject({
+      latitudeWgs84: 30.1321,
+      longitudeWgs84: 118.1691,
+      timezone: "Asia/Shanghai",
+    });
+    expect(requestBody).not.toHaveProperty("targetAzimuthDegrees");
+    expect(lightPollution).toMatchObject({
+      available: true,
+      dataAvailable: true,
+      ambientRiskIndex: 35,
+      starPenalty: 7,
+      milkyWayPenalty: 14,
+      scoringMode: "heuristic",
+    });
+  });
+
   it("does not abort a successful response before the configured timeout", async () => {
     vi.useFakeTimers();
     let aborted = false;

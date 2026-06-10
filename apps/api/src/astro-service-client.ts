@@ -284,7 +284,15 @@ const astroServiceResponseSchema = z.object({
   lightPollution: lightPollutionResponseSchema.nullable().optional(),
 });
 
+const lightPollutionQueryResponseSchema = lightPollutionResponseSchema.extend({
+  queryElapsedMs: z.number().finite().nonnegative().nullable().optional(),
+  cacheHit: z.boolean().optional(),
+});
+
 export type AstroServiceCalculationResponse = z.infer<typeof astroServiceResponseSchema>;
+export type AstroServiceLightPollutionQueryResponse = z.infer<
+  typeof lightPollutionQueryResponseSchema
+>;
 
 export type AstroServiceCalculateInput = {
   readonly latitudeWgs84: number;
@@ -293,6 +301,14 @@ export type AstroServiceCalculateInput = {
   readonly timezone: string;
   readonly horizon: ForecastHorizon;
   readonly startDateTime: string;
+};
+
+export type AstroServiceLightPollutionQueryInput = {
+  readonly latitudeWgs84: number;
+  readonly longitudeWgs84: number;
+  readonly observerElevationMeters?: number | null;
+  readonly targetAzimuthDegrees?: number | null;
+  readonly timezone?: string;
 };
 
 export type AstroServiceClientLike = {
@@ -494,6 +510,194 @@ export class AstroServiceClient implements AstroServiceClientLike {
           stack: normalizedError.stack,
         },
         "Astro-service request failed",
+      );
+      throw new AstroServiceClientError(
+        requestTimedOut ? "timeout" : "unavailable",
+        requestTimedOut ? astroServiceTimeoutMessage : astroServiceUnavailableMessage,
+        {
+          url: sanitizeAstroServiceUrlForLog(requestUrl),
+          elapsedMs,
+          timeoutMs: this.timeoutMs,
+          timedOut: requestTimedOut,
+          upstreamErrorName: normalizedError.name,
+          upstreamErrorMessage: normalizedError.message,
+        },
+        error,
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async queryLightPollution(
+    input: AstroServiceLightPollutionQueryInput,
+  ): Promise<LightPollutionInfo> {
+    const requestUrl = `${this.baseUrl}/light-pollution/query`;
+    const startedAt = Date.now();
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, this.timeoutMs);
+
+    try {
+      logInfo(
+        this.logger,
+        {
+          url: sanitizeAstroServiceUrlForLog(requestUrl),
+          timeoutMs: this.timeoutMs,
+          payload: summarizeLightPollutionQueryPayload(input),
+        },
+        `Calling astro-service light-pollution endpoint: ${sanitizeAstroServiceUrlForLog(
+          requestUrl,
+        )}`,
+      );
+
+      const response = await this.fetchImpl(requestUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(input),
+        signal: controller.signal,
+      });
+      const elapsedMs = Date.now() - startedAt;
+      const responseText = await response.text();
+      const responseBodyExcerpt = safeResponseExcerpt(responseText);
+
+      logInfo(
+        this.logger,
+        {
+          url: sanitizeAstroServiceUrlForLog(requestUrl),
+          status: response.status,
+          elapsedMs,
+          timeoutMs: this.timeoutMs,
+          timedOut: false,
+        },
+        "Astro-service light-pollution response received",
+      );
+
+      if (!response.ok) {
+        throw new AstroServiceClientError("unavailable", astroServiceUnavailableMessage, {
+          url: sanitizeAstroServiceUrlForLog(requestUrl),
+          status: response.status,
+          elapsedMs,
+          timeoutMs: this.timeoutMs,
+          timedOut: false,
+          responseBodyExcerpt,
+          upstreamErrorName: "AstroServiceHttpError",
+          upstreamErrorMessage: `Astro service responded with HTTP ${response.status}`,
+        });
+      }
+
+      let responseJson: unknown;
+      try {
+        responseJson = responseText ? JSON.parse(responseText) : null;
+      } catch (parseError) {
+        const normalizedError = normalizeError(parseError);
+        logError(
+          this.logger,
+          {
+            url: sanitizeAstroServiceUrlForLog(requestUrl),
+            status: response.status,
+            elapsedMs,
+            timeoutMs: this.timeoutMs,
+            timedOut: false,
+            parseErrorName: normalizedError.name,
+            parseErrorMessage: normalizedError.message,
+            responseBodyExcerpt,
+          },
+          "Astro-service light-pollution JSON parse failed",
+        );
+        throw new AstroServiceClientError(
+          "invalid_response",
+          astroServiceInvalidResponseMessage,
+          {
+            url: sanitizeAstroServiceUrlForLog(requestUrl),
+            status: response.status,
+            elapsedMs,
+            timeoutMs: this.timeoutMs,
+            timedOut: false,
+            responseBodyExcerpt,
+            parseErrorName: normalizedError.name,
+            parseErrorMessage: normalizedError.message,
+          },
+          parseError,
+        );
+      }
+
+      const parsed = lightPollutionQueryResponseSchema.safeParse(responseJson);
+      if (!parsed.success) {
+        logError(
+          this.logger,
+          {
+            url: sanitizeAstroServiceUrlForLog(requestUrl),
+            status: response.status,
+            elapsedMs,
+            timeoutMs: this.timeoutMs,
+            timedOut: false,
+            validationIssues: parsed.error.issues.map((issue) => ({
+              path: issue.path.join("."),
+              message: issue.message,
+            })),
+            responseBodyExcerpt,
+          },
+          "Astro-service light-pollution response validation failed",
+        );
+        throw new AstroServiceClientError(
+          "invalid_response",
+          astroServiceInvalidResponseMessage,
+          {
+            url: sanitizeAstroServiceUrlForLog(requestUrl),
+            status: response.status,
+            elapsedMs,
+            timeoutMs: this.timeoutMs,
+            timedOut: false,
+            responseBodyExcerpt,
+            upstreamErrorName: parsed.error.name,
+            upstreamErrorMessage: parsed.error.message,
+          },
+          parsed.error,
+        );
+      }
+
+      logInfo(
+        this.logger,
+        {
+          url: sanitizeAstroServiceUrlForLog(requestUrl),
+          status: response.status,
+          elapsedMs,
+          timeoutMs: this.timeoutMs,
+          timedOut: false,
+          dataAvailable: parsed.data.dataAvailable,
+          confidence: parsed.data.confidence,
+          datasetYear: parsed.data.datasetYear,
+          datasetVersion: parsed.data.datasetVersion,
+        },
+        "Astro-service light-pollution response parsed",
+      );
+
+      return mapLightPollutionResponse(parsed.data);
+    } catch (error) {
+      if (error instanceof AstroServiceClientError) {
+        throw error;
+      }
+      const normalizedError = normalizeError(error);
+      const elapsedMs = Date.now() - startedAt;
+      const requestTimedOut = timedOut || normalizedError.name === "AbortError";
+      logError(
+        this.logger,
+        {
+          url: sanitizeAstroServiceUrlForLog(requestUrl),
+          elapsedMs,
+          timeoutMs: this.timeoutMs,
+          timedOut: requestTimedOut,
+          errorName: normalizedError.name,
+          errorMessage: normalizedError.message,
+          stack: normalizedError.stack,
+        },
+        "Astro-service light-pollution request failed",
       );
       throw new AstroServiceClientError(
         requestTimedOut ? "timeout" : "unavailable",
@@ -1051,6 +1255,18 @@ function summarizeAstroServicePayload(input: AstroServiceCalculateInput): Record
     horizon: input.horizon,
     timezone: input.timezone,
     startDateTimePresent: Boolean(input.startDateTime),
+  };
+}
+
+function summarizeLightPollutionQueryPayload(
+  input: AstroServiceLightPollutionQueryInput,
+): Record<string, unknown> {
+  return {
+    latitudePresent: Number.isFinite(input.latitudeWgs84),
+    longitudePresent: Number.isFinite(input.longitudeWgs84),
+    observerElevationPresent: Number.isFinite(input.observerElevationMeters),
+    targetAzimuthPresent: Number.isFinite(input.targetAzimuthDegrees),
+    timezone: input.timezone ?? "service-default",
   };
 }
 

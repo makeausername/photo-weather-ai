@@ -17,6 +17,7 @@
     "test:qweather": "powershell -ExecutionPolicy Bypass -File scripts/test-qweather-provider.ps1",
     "test:weather-fusion": "powershell -ExecutionPolicy Bypass -File scripts/test-weather-fusion.ps1",
     "calibration:test": "bash scripts/test-historical-calibration.sh",
+    "bortle:calibrate": "pnpm --filter @photo-weather/api bortle:calibrate",
     "build": "pnpm -r --workspace-concurrency=1 --if-present build",
     "db:generate": "pnpm --filter @photo-weather/db db:generate",
     "db:migrate": "pnpm --filter @photo-weather/db db:migrate",

@@ -21,11 +21,13 @@ deploy/light-pollution/**/*.ovr
 deploy/light-pollution/**/*.aux.xml
 deploy/light-pollution/**/metadata.json
 deploy/light-pollution/**/checksum.sha256
+deploy/calibration/runtime/*
 !deploy/light-pollution/
 !deploy/light-pollution/incoming/
 !deploy/light-pollution/current/
 !deploy/light-pollution/backups/
 !deploy/light-pollution/**/.gitkeep
+!deploy/calibration/runtime/.gitkeep
 .runtime/
 backups/
 !deploy/light-pollution/backups/

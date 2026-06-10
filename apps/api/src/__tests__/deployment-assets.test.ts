@@ -110,6 +110,7 @@ describe("production deployment assets", () => {
     expect(compose).toContain("redis_data:");
     expect(compose).toContain("- astro_data:/app/data");
     expect(compose).toContain("- ./deploy/light-pollution:/app/data/light-pollution");
+    expect(compose).toContain("- ./deploy/calibration:/app/deploy/calibration");
     expect(compose).toContain("caddy_data:");
     expect(compose).toContain("caddy_config:");
     expect(compose).toContain("app_uploads:");
@@ -182,6 +183,8 @@ describe("production deployment assets", () => {
       "deploy/light-pollution/**/*.tif",
       "deploy/light-pollution/**/*.tiff",
       "!deploy/light-pollution/**/.gitkeep",
+      "deploy/calibration/runtime/*",
+      "!deploy/calibration/runtime/.gitkeep",
       ".runtime/",
       "backups/",
       "apps/astro-service/.venv/",

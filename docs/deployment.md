@@ -194,6 +194,42 @@ The public result treats the raster as a satellite-night-light reference. It dis
 
 Light pollution affects only star and Milky Way photography suitability and recommendation confidence. It does not change weather probability, cloud probability, precipitation probability, astronomical darkness, Moon calculation, or Milky Way geometry.
 
+## Estimated Bortle Calibration Audit
+
+The Bortle calibration workflow audits the current estimated Bortle range mapping against independently supplied reference ranges. It is an evidence-gathering tool only: it does not read the GeoTIFF directly, does not treat VIIRS as observed Bortle data, and does not automatically change production thresholds.
+
+Reference files can be CSV or JSON. Required fields are:
+
+```text
+id,name,latitudeWgs84,longitudeWgs84
+```
+
+Optional fields are:
+
+```text
+category,referenceBortleMin,referenceBortleMax,referenceSource,referenceObservedAt,referenceConfidence,notes
+```
+
+Reference Bortle values must come from independent observations or trusted external sources. The checked-in template at `deploy/calibration/bortle-reference.example.csv` is illustrative only and is not consumed automatically.
+
+Validate a file without sending astro-service queries:
+
+```bash
+pnpm bortle:calibrate -- --input deploy/calibration/bortle-reference.example.csv --dry-run --strict
+```
+
+For a production server-side audit, place the real private reference file under `deploy/calibration/runtime/` and run from the API container path:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml run --rm api pnpm --filter @photo-weather/api bortle:calibrate -- --input deploy/calibration/runtime/reference.csv --output-dir deploy/calibration/runtime --format all --redact-names
+```
+
+The API container calls `POST /light-pollution/query` on `http://astro-service:4100` by default. Use `--astro-service-url` only for local tests. The CLI validates latitude, longitude, duplicate IDs, Bortle class ranges, strict/non-strict behavior, then queries valid rows with conservative concurrency. It writes JSON, CSV, and Markdown reports to `deploy/calibration/runtime/`; generated reports and private runtime reference files are ignored by Git.
+
+Reports compare the estimated range with the supplied independent reference range, flag non-overlap distance, record diagnostics such as nodata, zero valid samples, low confidence, risk saturation, and missing dataset metadata, and summarize category distributions. Coordinates are omitted by default; use `--include-coordinates` only when the report is safe to share with coordinates. `--redact-names` replaces location names with IDs and omits free-form notes.
+
+Threshold-review recommendations require minimum evidence: at least 30 compared independent references, at least four categories with five or more references each, at least 80% high-confidence raster results, the same directional bias in at least two categories, and a material disagreement signal. Otherwise the report says: 当前参考样本不足，不建议修改生产波特尔映射阈值。
+
 ## Admin Password Reset
 
 Use this when `/admin/login` says `邮箱或密码不正确。` or when an operator needs to rotate the production admin password:

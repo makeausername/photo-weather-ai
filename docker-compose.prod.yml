@@ -53,6 +53,7 @@ services:
     volumes:
       - app_uploads:/app/uploads
       - logs:/app/logs
+      - ./deploy/calibration:/app/deploy/calibration
     depends_on:
       - postgres
       - redis
