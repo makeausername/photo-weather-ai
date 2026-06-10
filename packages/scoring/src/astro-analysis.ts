@@ -13,9 +13,11 @@ import type {
   AstroSummary,
   AstroWindow,
   DailyAstro,
+  DirectionalLightPollutionRisk,
   ForecastCalculationInput,
   GlowBackupPlan,
   LightPollutionInfo,
+  LightPollutionRiskLevel,
   MoonImpactLevel,
   NormalizedHourlyWeather,
 } from "@photo-weather/shared";
@@ -46,6 +48,134 @@ const defaultLightPollutionInfo: LightPollutionInfo = {
   milkyWayPenalty: 0,
   scoringMode: "heuristic",
 };
+
+export type ResolvedDirectionalLightPollutionRisk = {
+  readonly azimuthDegrees: number;
+  readonly riskIndex: number;
+  readonly riskLevel: LightPollutionRiskLevel;
+  readonly riskLevelLabelZh: string;
+  readonly interpolationBasis: "exact" | "interpolated";
+  readonly fromAzimuthDegrees: number;
+  readonly toAzimuthDegrees: number;
+};
+
+export function lightPollutionRiskLevelFromIndex(index: number | null | undefined): {
+  readonly level: LightPollutionRiskLevel;
+  readonly labelZh: string;
+} {
+  if (typeof index !== "number" || !Number.isFinite(index)) {
+    return { level: "insufficient", labelZh: "数据不足" };
+  }
+  if (index < 20) {
+    return { level: "very_low", labelZh: "极低" };
+  }
+  if (index < 40) {
+    return { level: "low", labelZh: "低" };
+  }
+  if (index < 60) {
+    return { level: "medium", labelZh: "中" };
+  }
+  if (index < 80) {
+    return { level: "high", labelZh: "高" };
+  }
+  return { level: "very_high", labelZh: "很高" };
+}
+
+export function resolveDirectionalLightPollutionRisk(
+  targetAzimuthDegrees: number | null | undefined,
+  directionalRisk: readonly DirectionalLightPollutionRisk[] | null | undefined,
+): ResolvedDirectionalLightPollutionRisk | undefined {
+  if (typeof targetAzimuthDegrees !== "number" || !Number.isFinite(targetAzimuthDegrees)) {
+    return undefined;
+  }
+  const validSectors = (directionalRisk ?? [])
+    .map((sector) => ({
+      azimuthDegrees: normalizeAzimuth(sector.azimuthDegrees),
+      riskIndex:
+        typeof sector.riskIndex === "number" && Number.isFinite(sector.riskIndex)
+          ? sector.riskIndex
+          : undefined,
+    }))
+    .filter(
+      (sector): sector is { readonly azimuthDegrees: number; readonly riskIndex: number } =>
+        sector.riskIndex !== undefined && Number.isFinite(sector.azimuthDegrees),
+    )
+    .sort((left, right) => left.azimuthDegrees - right.azimuthDegrees);
+
+  if (validSectors.length < 2) {
+    return undefined;
+  }
+
+  const azimuth = normalizeAzimuth(targetAzimuthDegrees);
+  const exact = validSectors.find(
+    (sector) => circularDistanceDegrees(azimuth, sector.azimuthDegrees) < 0.0001,
+  );
+  if (exact) {
+    const level = lightPollutionRiskLevelFromIndex(exact.riskIndex);
+    return {
+      azimuthDegrees: round1(azimuth),
+      riskIndex: exact.riskIndex,
+      riskLevel: level.level,
+      riskLevelLabelZh: level.labelZh,
+      interpolationBasis: "exact",
+      fromAzimuthDegrees: exact.azimuthDegrees,
+      toAzimuthDegrees: exact.azimuthDegrees,
+    };
+  }
+
+  for (let index = 0; index < validSectors.length; index += 1) {
+    const left = validSectors[index]!;
+    const right = validSectors[(index + 1) % validSectors.length]!;
+    const span = clockwiseDeltaDegrees(left.azimuthDegrees, right.azimuthDegrees);
+    if (span <= 0) {
+      continue;
+    }
+    const delta = clockwiseDeltaDegrees(left.azimuthDegrees, azimuth);
+    if (delta >= 0 && delta <= span) {
+      const weight = delta / span;
+      const riskIndex = Math.round(left.riskIndex * (1 - weight) + right.riskIndex * weight);
+      const level = lightPollutionRiskLevelFromIndex(riskIndex);
+      return {
+        azimuthDegrees: round1(azimuth),
+        riskIndex,
+        riskLevel: level.level,
+        riskLevelLabelZh: level.labelZh,
+        interpolationBasis: "interpolated",
+        fromAzimuthDegrees: left.azimuthDegrees,
+        toAzimuthDegrees: right.azimuthDegrees,
+      };
+    }
+  }
+
+  return undefined;
+}
+
+export function lightPollutionWithTargetAzimuth(
+  lightPollution: LightPollutionInfo,
+  targetAzimuthDegrees: number | null | undefined,
+): LightPollutionInfo {
+  const normalizedTargetAzimuth =
+    typeof targetAzimuthDegrees === "number" && Number.isFinite(targetAzimuthDegrees)
+      ? round1(normalizeAzimuth(targetAzimuthDegrees))
+      : null;
+  const resolved = lightPollution.available
+    ? resolveDirectionalLightPollutionRisk(normalizedTargetAzimuth, lightPollution.directionalRisk)
+    : undefined;
+  const next: LightPollutionInfo = {
+    ...lightPollution,
+    targetAzimuthDegrees: normalizedTargetAzimuth,
+    targetDirectionRisk: resolved?.riskIndex ?? null,
+    targetDirectionLevel: resolved?.riskLevel ?? null,
+    targetDirectionLevelLabelZh: resolved?.riskLevelLabelZh ?? null,
+  };
+  const penalties = lightPollutionPenalties(next);
+  return {
+    ...next,
+    starPenalty: penalties.starPenalty,
+    milkyWayPenalty: penalties.milkyWayPenalty,
+    scoringMode: "heuristic",
+  };
+}
 
 type ForecastTimeRange = {
   readonly forecastStart: string;
@@ -107,17 +237,61 @@ function normalizeLightPollutionInfo(input: LightPollutionInfo | undefined): Lig
   if (!input) {
     return defaultLightPollutionInfo;
   }
-  return {
+  const normalized: LightPollutionInfo = {
     ...defaultLightPollutionInfo,
     ...input,
     ambientRiskLevel: input.ambientRiskLevel ?? defaultLightPollutionInfo.ambientRiskLevel,
     ambientRiskLevelLabelZh:
       input.ambientRiskLevelLabelZh ?? defaultLightPollutionInfo.ambientRiskLevelLabelZh,
     directionalRisk: input.directionalRisk ?? [],
-    starPenalty: input.available ? Math.min(20, Math.max(0, input.starPenalty ?? 0)) : 0,
-    milkyWayPenalty: input.available ? Math.min(35, Math.max(0, input.milkyWayPenalty ?? 0)) : 0,
     scoringMode: "heuristic",
   };
+  return lightPollutionWithTargetAzimuth(normalized, input.targetAzimuthDegrees);
+}
+
+function lightPollutionPenalties(lightPollution: LightPollutionInfo): {
+  readonly starPenalty: number;
+  readonly milkyWayPenalty: number;
+} {
+  if (!lightPollution.available) {
+    return { starPenalty: 0, milkyWayPenalty: 0 };
+  }
+
+  const ambientRisk = finiteNumber(lightPollution.ambientRiskIndex);
+  const targetRisk = finiteNumber(lightPollution.targetDirectionRisk);
+  const starPenalty =
+    ambientRisk === undefined ? 0 : Math.min(20, Math.round((ambientRisk / 100) * 20));
+  const milkyWayRisk =
+    targetRisk !== undefined
+      ? ambientRisk !== undefined
+        ? ambientRisk * 0.55 + targetRisk * 0.45
+        : targetRisk
+      : ambientRisk;
+  const milkyWayPenalty =
+    milkyWayRisk === undefined ? 0 : Math.min(35, Math.round((milkyWayRisk / 100) * 35));
+
+  return { starPenalty, milkyWayPenalty };
+}
+
+function finiteNumber(value: number | null | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function normalizeAzimuth(value: number): number {
+  const normalized = value % 360;
+  return normalized < 0 ? normalized + 360 : normalized;
+}
+
+function clockwiseDeltaDegrees(from: number, to: number): number {
+  return (normalizeAzimuth(to) - normalizeAzimuth(from) + 360) % 360;
+}
+
+function circularDistanceDegrees(left: number, right: number): number {
+  return Math.abs(((normalizeAzimuth(left) - normalizeAzimuth(right) + 180) % 360) - 180);
+}
+
+function round1(value: number): number {
+  return Number(value.toFixed(1));
 }
 
 function applyLightPollutionToAstroScores(
@@ -192,8 +366,7 @@ export function calculateAstroAnalysis(
   const recommendedMilkyWayWindows =
     input.astroWindowBundle?.recommendedMilkyWayWindows ??
     buildRecommendedMilkyWayWindows(input, milkyWayCandidateWindows, moonlessNightWindows);
-  const lightPollution = normalizeLightPollutionInfo(input.lightPollution);
-  const adjustedScores = applyLightPollutionToAstroScores(scores, lightPollution);
+  const baseLightPollution = normalizeLightPollutionInfo(input.lightPollution);
   const dailyAstro = buildDailyAstro(
     input,
     astronomicalNightWindows,
@@ -201,9 +374,20 @@ export function calculateAstroAnalysis(
     milkyWayCandidateWindows,
     recommendedMilkyWayWindows,
     scores,
-    lightPollution,
+    baseLightPollution,
   );
-  const assessment = selectTopAstroAssessment(dailyAstro, input, adjustedScores, lightPollution);
+  const topDailyAstro = selectTopDailyAstro(dailyAstro);
+  const lightPollution = topDailyAstro?.lightPollution ?? baseLightPollution;
+  const adjustedScores = applyLightPollutionToAstroScores(scores, lightPollution);
+  const assessment =
+    topDailyAstro?.assessment ??
+    buildAstroPhotographyAssessment({
+      input,
+      astro: input.astroSummaries[0],
+      weatherWindow: input.hourlyWeather,
+      scores,
+      lightPollution,
+    });
   const weatherBlockers = buildAstroWeatherBlockers(input, astronomicalNightWindows);
   const moonImpactScore = assessment.moonlightImpactScore;
   const astroConditionScore = assessment.astronomicalWindowScore;
@@ -397,6 +581,7 @@ function buildMilkyWayCandidateWindows(
         noteZh: milkyWayCandidateNote(astro),
         directionZh: astro.milkyWayDirection,
         galacticCenterAltitude: astro.milkyWayGalacticCenterAltitude,
+        galacticCenterAzimuth: astro.milkyWayGalacticCenterAzimuth,
       },
     ];
   });
@@ -441,6 +626,7 @@ function buildRecommendedMilkyWayWindows(
             "该窗口同时位于天文黑夜、低月光影响窗口、银心可见候选窗口和可接受天气窗口内，适合作为银河拍摄优先时段。",
           directionZh: candidate.directionZh,
           galacticCenterAltitude: candidate.galacticCenterAltitude,
+          galacticCenterAzimuth: candidate.galacticCenterAzimuth,
         } satisfies AstroWindow,
       ];
     });
@@ -478,11 +664,15 @@ function buildDailyAstro(
       recommendedMilkyWayWindow?.score ??
       candidateWindow?.score ??
       Math.min(58, scores.milkyWayScore);
-    const starsScore = lightPollution.available
-      ? clampScore(baseStarsScore - lightPollution.starPenalty)
+    const dailyLightPollution = lightPollutionWithTargetAzimuth(
+      lightPollution,
+      dailyMilkyWayTargetAzimuth(recommendedMilkyWayWindow, candidateWindow),
+    );
+    const starsScore = dailyLightPollution.available
+      ? clampScore(baseStarsScore - dailyLightPollution.starPenalty)
       : baseStarsScore;
-    const milkyWayScore = lightPollution.available
-      ? clampScore(baseMilkyWayScore - lightPollution.milkyWayPenalty)
+    const milkyWayScore = dailyLightPollution.available
+      ? clampScore(baseMilkyWayScore - dailyLightPollution.milkyWayPenalty)
       : baseMilkyWayScore;
     const assessment = buildAstroPhotographyAssessment({
       input,
@@ -497,7 +687,7 @@ function buildDailyAstro(
         starsScore,
         milkyWayScore,
       },
-      lightPollution,
+      lightPollution: dailyLightPollution,
     });
     const weatherBlockers = assessment.astroWeatherBlockers;
     const astroConditionScore = assessment.astronomicalWindowScore;
@@ -533,7 +723,7 @@ function buildDailyAstro(
       moonlessNightWindow,
       recommendedMilkyWayWindow,
       assessment,
-      lightPollution,
+      lightPollution: dailyLightPollution,
       recommendationLabel: recommendationLabelForScore(astroPracticalScore),
       keyReason: dailyKeyReason(
         recommendedMilkyWayWindow,
@@ -546,6 +736,15 @@ function buildDailyAstro(
       riskNote: dailyRiskNote(weatherWindow, assessment, input),
     };
   });
+}
+
+function dailyMilkyWayTargetAzimuth(
+  recommendedMilkyWayWindow: AstroWindow | undefined,
+  candidateWindow: AstroWindow | undefined,
+): number | undefined {
+  const azimuth =
+    recommendedMilkyWayWindow?.galacticCenterAzimuth ?? candidateWindow?.galacticCenterAzimuth;
+  return typeof azimuth === "number" && Number.isFinite(azimuth) ? azimuth : undefined;
 }
 
 function findMoonlessSegments(
@@ -892,8 +1091,8 @@ function buildAstroPhotographyAssessment({
     { score: 100 - dewRiskScore, weight: 0.06 },
   ]);
   const basePracticalAstroScore = Math.min(
-      rawPracticalScore,
-      astroPracticalWeatherCap(stats, astroWeatherBlockers, moonImpact, astroWindowAvailable),
+    rawPracticalScore,
+    astroPracticalWeatherCap(stats, astroWeatherBlockers, moonImpact, astroWindowAvailable),
   );
   const practicalAstroScore = clampScore(
     basePracticalAstroScore -
@@ -951,32 +1150,13 @@ function buildAstroPhotographyAssessment({
   };
 }
 
-function selectTopAstroAssessment(
-  dailyAstro: readonly DailyAstro[],
-  input: ForecastCalculationInput,
-  scores: AstroScoreInput,
-  lightPollution: LightPollutionInfo,
-): AstroPhotographyAssessment {
-  const bestAssessment = [...dailyAstro]
-    .map((day) => day.assessment)
-    .sort(
-      (left, right) =>
-        Number(right.astroShootable) - Number(left.astroShootable) ||
-        right.practicalAstroScore - left.practicalAstroScore ||
-        right.astronomicalWindowScore - left.astronomicalWindowScore,
-    )[0];
-
-  if (bestAssessment) {
-    return bestAssessment;
-  }
-
-  return buildAstroPhotographyAssessment({
-    input,
-    astro: input.astroSummaries[0],
-    weatherWindow: input.hourlyWeather,
-    scores,
-    lightPollution,
-  });
+function selectTopDailyAstro(dailyAstro: readonly DailyAstro[]): DailyAstro | undefined {
+  return [...dailyAstro].sort(
+    (left, right) =>
+      Number(right.assessment.astroShootable) - Number(left.assessment.astroShootable) ||
+      right.assessment.practicalAstroScore - left.assessment.practicalAstroScore ||
+      right.assessment.astronomicalWindowScore - left.assessment.astronomicalWindowScore,
+  )[0];
 }
 
 function summarizeWeatherWindow(
@@ -1820,7 +2000,9 @@ function buildMissingDataNotes(
     )
       ? ["银河窗口为简化本地估算，尚未完整建模银河拱桥、地形遮挡和光污染。"]
       : []),
-    ...(lightPollution.available ? [] : [lightPollution.lightPollutionNoteZh || lightPollutionUnavailableNote]),
+    ...(lightPollution.available
+      ? []
+      : [lightPollution.lightPollutionNoteZh || lightPollutionUnavailableNote]),
     ...(input.weatherDataMode === "real"
       ? []
       : ["天气数据当前为演示数据，正式出行前需要复核真实预报。"]),

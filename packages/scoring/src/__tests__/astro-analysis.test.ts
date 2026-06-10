@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type {
   AstroSummary,
+  DirectionalLightPollutionRisk,
   ForecastCalculationInput,
+  LightPollutionInfo,
   NormalizedHourlyWeather,
 } from "@photo-weather/shared";
 import {
@@ -10,6 +12,7 @@ import {
   calculateForecast,
   calculateMilkyWayScore,
   calculateStarsScore,
+  resolveDirectionalLightPollutionRisk,
 } from "../index.js";
 
 const fixedNow = "2026-05-20T00:00:00+08:00";
@@ -78,7 +81,160 @@ function withLowMoon(input: ForecastCalculationInput): ForecastCalculationInput 
   };
 }
 
+const directionalRiskFixture: readonly DirectionalLightPollutionRisk[] = [
+  directionRisk("north", "北", 0, 10),
+  directionRisk("northeast", "东北", 45, 20),
+  directionRisk("east", "东", 90, 60),
+  directionRisk("southeast", "东南", 135, 50),
+  directionRisk("south", "南", 180, 95),
+  directionRisk("southwest", "西南", 225, 80),
+  directionRisk("west", "西", 270, 70),
+  directionRisk("northwest", "西北", 315, 90),
+];
+
+function directionRisk(
+  direction: DirectionalLightPollutionRisk["direction"],
+  label: string,
+  azimuthDegrees: number,
+  riskIndex: number | null,
+): DirectionalLightPollutionRisk {
+  return {
+    direction,
+    directionLabelZh: label,
+    azimuthDegrees,
+    riskIndex,
+    riskLevel:
+      riskIndex === null
+        ? "insufficient"
+        : riskIndex < 20
+          ? "very_low"
+          : riskIndex < 40
+            ? "low"
+            : riskIndex < 60
+              ? "medium"
+              : riskIndex < 80
+                ? "high"
+                : "very_high",
+    riskLevelLabelZh:
+      riskIndex === null
+        ? "数据不足"
+        : riskIndex < 20
+          ? "极低"
+          : riskIndex < 40
+            ? "低"
+            : riskIndex < 60
+              ? "中"
+              : riskIndex < 80
+                ? "高"
+                : "很高",
+    sampleCount: 12,
+    validSampleCount: riskIndex === null ? 0 : 12,
+  };
+}
+
+function lightPollutionFixture(overrides: Partial<LightPollutionInfo> = {}): LightPollutionInfo {
+  return {
+    available: true,
+    dataAvailable: true,
+    sourceCode: "eog_viirs",
+    sourceLabel: "EOG VIIRS",
+    datasetYear: 2026,
+    datasetVersion: "test",
+    localRadiance: 0.12,
+    surroundingHaloRadiance: 0.3,
+    ambientRiskIndex: 20,
+    ambientRiskLevel: "low",
+    ambientRiskLevelLabelZh: "低",
+    directionalRisk: directionalRiskFixture,
+    targetAzimuthDegrees: null,
+    targetDirectionRisk: null,
+    targetDirectionLevel: null,
+    targetDirectionLevelLabelZh: null,
+    confidence: "high",
+    sampleCount: 96,
+    validSampleCount: 96,
+    lightPollutionNoteZh: "卫星夜光参考：环境光污染低。",
+    starPenalty: 4,
+    milkyWayPenalty: 7,
+    scoringMode: "heuristic",
+    ...overrides,
+  };
+}
+
 describe("astro analysis", () => {
+  it("resolves directional light-pollution risk at an exact sector center", () => {
+    expect(resolveDirectionalLightPollutionRisk(90, directionalRiskFixture)).toMatchObject({
+      azimuthDegrees: 90,
+      riskIndex: 60,
+      riskLevelLabelZh: "高",
+      interpolationBasis: "exact",
+    });
+  });
+
+  it("interpolates directional light-pollution risk between two sectors", () => {
+    expect(resolveDirectionalLightPollutionRisk(67.5, directionalRiskFixture)).toMatchObject({
+      azimuthDegrees: 67.5,
+      riskIndex: 40,
+      riskLevelLabelZh: "中",
+      interpolationBasis: "interpolated",
+    });
+  });
+
+  it("interpolates directional light-pollution risk near 359 degrees", () => {
+    expect(resolveDirectionalLightPollutionRisk(359, directionalRiskFixture)).toMatchObject({
+      azimuthDegrees: 359,
+      riskIndex: 12,
+      riskLevelLabelZh: "极低",
+    });
+  });
+
+  it("interpolates directional light-pollution risk near 1 degree", () => {
+    expect(resolveDirectionalLightPollutionRisk(1, directionalRiskFixture)).toMatchObject({
+      azimuthDegrees: 1,
+      riskIndex: 10,
+      riskLevelLabelZh: "极低",
+    });
+  });
+
+  it("does not resolve directional light-pollution risk when azimuth is missing", () => {
+    expect(resolveDirectionalLightPollutionRisk(undefined, directionalRiskFixture)).toBeUndefined();
+  });
+
+  it("does not resolve directional light-pollution risk when samples are missing", () => {
+    expect(resolveDirectionalLightPollutionRisk(90, [])).toBeUndefined();
+  });
+
+  it("skips one invalid adjacent sector while resolving directional light-pollution risk", () => {
+    const withInvalidAdjacent = directionalRiskFixture.map((sector) =>
+      sector.direction === "northeast"
+        ? {
+            ...sector,
+            riskIndex: null,
+            riskLevel: "insufficient" as const,
+            riskLevelLabelZh: "数据不足",
+          }
+        : sector,
+    );
+
+    expect(resolveDirectionalLightPollutionRisk(45, withInvalidAdjacent)).toMatchObject({
+      azimuthDegrees: 45,
+      riskIndex: 35,
+      riskLevelLabelZh: "低",
+    });
+  });
+
+  it("does not resolve directional light-pollution risk when all sectors are unavailable", () => {
+    const unavailable = directionalRiskFixture.map((sector) => ({
+      ...sector,
+      riskIndex: null,
+      riskLevel: "insufficient" as const,
+      riskLevelLabelZh: "数据不足",
+      validSampleCount: 0,
+    }));
+
+    expect(resolveDirectionalLightPollutionRisk(90, unavailable)).toBeUndefined();
+  });
+
   it("keeps recommended Milky Way windows inside astronomical night", () => {
     const result = calculateForecast(
       buildMockForecastInput({ ...baseQuery, horizon: "7d" }, { now: fixedNow }),
@@ -322,6 +478,99 @@ describe("astro analysis", () => {
     expect(result.astroAnalysis.travelRecommendations.join("")).toMatch(
       /推荐银河窗口：2026年\d+月\d+日/,
     );
+  });
+
+  it("resolves each day's Milky Way light-pollution direction without duplicating penalties", () => {
+    const baseInput = withLowMoon(
+      buildMockForecastInput({ ...baseQuery, horizon: "48h" }, { now: fixedNow }),
+    );
+    const dates = baseInput.calendarBasis.targetDates.slice(0, 2);
+    const clearInput = withHourlyWeather(
+      {
+        ...baseInput,
+        lightPollution: lightPollutionFixture(),
+        astroWindowBundle: {
+          astronomicalNightWindows: dates.map((date, index) => ({
+            type: "astronomical_night" as const,
+            labelZh: "天文黑夜",
+            date,
+            start: `2026-05-${20 + index}T20:30:00+08:00`,
+            end: `2026-05-${21 + index}T03:30:00+08:00`,
+            durationMinutes: 420,
+            score: 82,
+            riskTags: [],
+            noteZh: "测试天文黑夜。",
+          })),
+          moonlessNightWindows: dates.map((date, index) => ({
+            type: "moonless_night" as const,
+            labelZh: "无月黑夜",
+            date,
+            start: `2026-05-${20 + index}T21:30:00+08:00`,
+            end: `2026-05-${21 + index}T03:00:00+08:00`,
+            durationMinutes: 330,
+            score: 84,
+            riskTags: ["月光较低"],
+            noteZh: "测试无月窗口。",
+          })),
+          milkyWayCandidateWindows: dates.map((date, index) => ({
+            type: "milky_way_candidate" as const,
+            labelZh: "银河候选窗口",
+            date,
+            start: `2026-05-${20 + index}T22:00:00+08:00`,
+            end: `2026-05-${21 + index}T02:30:00+08:00`,
+            durationMinutes: 270,
+            score: 80,
+            riskTags: [],
+            noteZh: "测试银河候选窗口。",
+            directionZh: index === 0 ? "北方" : "南方",
+            galacticCenterAltitude: 28,
+            galacticCenterAzimuth: index === 0 ? 0 : 180,
+          })),
+          recommendedMilkyWayWindows: dates.map((date, index) => ({
+            type: "recommended_milky_way" as const,
+            labelZh: "推荐银河窗口",
+            date,
+            start: `2026-05-${20 + index}T22:30:00+08:00`,
+            end: `2026-05-${21 + index}T02:00:00+08:00`,
+            durationMinutes: 210,
+            score: 80,
+            riskTags: [],
+            noteZh: "测试推荐银河窗口。",
+            directionZh: index === 0 ? "北方" : "南方",
+            galacticCenterAltitude: 28,
+            galacticCenterAzimuth: index === 0 ? 0 : 180,
+          })),
+        },
+      },
+      (hour) => ({
+        ...hour,
+        cloudTotal: 6,
+        cloudLow: 2,
+        cloudMid: 4,
+        cloudHigh: 6,
+        humidity: 45,
+        visibility: 34,
+        precipitationProbability: 0,
+        precipitation: 0,
+        precipitationAmountMm: 0,
+        weatherTextZh: "晴",
+      }),
+    );
+    const analysis = calculateAstroAnalysis(clearInput, {
+      starsScore: calculateStarsScore(clearInput).score,
+      milkyWayScore: calculateMilkyWayScore(clearInput).score,
+      transparencyScore: 80,
+    });
+    const firstDay = analysis.dailyAstro.find((day) => day.date === dates[0]);
+    const secondDay = analysis.dailyAstro.find((day) => day.date === dates[1]);
+
+    expect(firstDay?.lightPollution.targetDirectionRisk).toBe(10);
+    expect(secondDay?.lightPollution.targetDirectionRisk).toBe(95);
+    expect(firstDay?.lightPollution.milkyWayPenalty).toBeLessThan(
+      secondDay?.lightPollution.milkyWayPenalty ?? 0,
+    );
+    expect(firstDay?.milkyWayScore).toBe(80 - (firstDay?.lightPollution.milkyWayPenalty ?? 0));
+    expect(secondDay?.milkyWayScore).toBe(80 - (secondDay?.lightPollution.milkyWayPenalty ?? 0));
   });
 
   it("reduces Milky Way recommendation when the moon is high and bright", () => {

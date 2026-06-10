@@ -731,6 +731,31 @@ describe("AI providers", () => {
         weatherBlockers: ["低云偏多，星空银河实际可见性较差。", "降水干扰"],
         gearAdviceZh: ["湿度较高，需准备防露带、镜头布和防水收纳。"],
         warmthAdviceZh: "夜间湿冷，需准备防风保暖层。",
+        lightPollution: {
+          available: true,
+          dataAvailable: true,
+          sourceCode: "eog_viirs",
+          sourceLabel: "卫星夜光参考",
+          datasetYear: 2026,
+          datasetVersion: "test",
+          localRadiance: 0.18,
+          surroundingHaloRadiance: 1.2,
+          ambientRiskIndex: 82,
+          ambientRiskLevel: "very_high",
+          ambientRiskLevelLabelZh: "很高",
+          directionalRisk: [],
+          targetAzimuthDegrees: 135,
+          targetDirectionRisk: 76,
+          targetDirectionLevel: "high",
+          targetDirectionLevelLabelZh: "高",
+          confidence: "high",
+          sampleCount: 96,
+          validSampleCount: 90,
+          lightPollutionNoteZh: "卫星夜光参考：环境光污染很高，银河方向光害高。",
+          starPenalty: 16,
+          milkyWayPenalty: 28,
+          scoringMode: "heuristic",
+        },
         assessment: {
           ...forecastResultFixture.astroAnalysis.assessment,
           astroWindowAvailable: true,
@@ -792,11 +817,24 @@ describe("AI providers", () => {
           }),
         ]),
       }),
+      lightPollution: expect.objectContaining({
+        deterministicOnly: true,
+        dataAvailable: true,
+        ambientRiskIndex: 82,
+        ambientLevelZh: "很高",
+        targetDirectionRisk: 76,
+        targetDirectionLevelZh: "高",
+        starIndexPenalty: 16,
+        milkyWayIndexPenalty: 28,
+      }),
     });
     expect(requestText).toContain("astro-night-decision-v1");
     expect(requestText).toContain("天文黑夜");
     expect(requestText).toContain("银河候选窗口");
+    expect(requestText).toContain("只解释这些确定性光污染事实");
     expect(requestText).toContain("低云偏多，星空银河实际可见性较差。");
+    expect(requestText).not.toContain("localRadiance");
+    expect(requestText).not.toContain("surroundingHaloRadiance");
     expect(text).not.toContain("和风天气");
     expect(text).not.toContain("Open-Meteo");
     expect(text).not.toContain("meteoblue");
@@ -1968,14 +2006,14 @@ const forecastResultFixture: ForecastCalculationResult = {
     terrainEvidence: [],
     lightPollutionEvidence: [
       {
-        label: "光污染数据",
-        value: "暂未接入",
+        label: "光污染参考",
+        value: "数据暂缺",
         effect: "neutral",
-        noteZh: "暂未接入光污染数据，实际观星仍需结合现场环境判断。",
+        noteZh: "光污染数据暂缺；未按无光污染处理，需现场确认城市光穹与地平线环境。",
       },
     ],
     weatherBlockers: [],
-    riskReasons: ["暂未接入光污染数据，实际观星仍需结合现场环境判断。"],
+    riskReasons: ["光污染数据暂缺；未按无光污染处理，需现场确认城市光穹与地平线环境。"],
     opportunityReasons: [],
     travelRecommendations: [],
     backupPlans: [],

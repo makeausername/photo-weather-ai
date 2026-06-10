@@ -140,6 +140,75 @@ const lightPollutionForTest: ForecastCalculationResult["astroAnalysis"]["lightPo
   scoringMode: "heuristic",
 };
 
+function lightPollutionForDisplayTest(
+  overrides: Partial<ForecastCalculationResult["astroAnalysis"]["lightPollution"]> = {},
+): ForecastCalculationResult["astroAnalysis"]["lightPollution"] {
+  return {
+    ...lightPollutionForTest,
+    available: true,
+    dataAvailable: true,
+    unavailableReason: null,
+    sourceCode: "eog_viirs",
+    sourceLabel: "卫星夜光参考",
+    datasetYear: 2026,
+    datasetVersion: "test",
+    checksumShort: "abc123ef",
+    localRadiance: 0.18,
+    localRadiancePercentile: 23,
+    surroundingHaloRadiance: 0.42,
+    ambientRiskIndex: 24,
+    ambientRiskLevel: "low",
+    ambientRiskLevelLabelZh: "低",
+    targetAzimuthDegrees: 135,
+    targetDirectionRisk: 28,
+    targetDirectionLevel: "low",
+    targetDirectionLevelLabelZh: "低",
+    confidence: "high",
+    sampleCount: 96,
+    validSampleCount: 90,
+    directionalRisk: [
+      {
+        direction: "north",
+        directionLabelZh: "北",
+        azimuthDegrees: 0,
+        radiance: 0.1,
+        riskIndex: 8,
+        riskLevel: "very_low",
+        riskLevelLabelZh: "极低",
+        sampleCount: 12,
+        validSampleCount: 12,
+      },
+      {
+        direction: "south",
+        directionLabelZh: "南",
+        azimuthDegrees: 180,
+        radiance: 1.8,
+        riskIndex: 88,
+        riskLevel: "very_high",
+        riskLevelLabelZh: "很高",
+        sampleCount: 12,
+        validSampleCount: 12,
+      },
+    ],
+    calculationBasis: {
+      samplingConfigVersion: "test-light-pollution-v1",
+      coordinateSystem: "WGS84",
+      distancesKm: [2, 5, 10],
+      distanceWeights: { "2km": 0.5, "5km": 0.3, "10km": 0.2 },
+      localNeighborhoodKm: [0, 0.5, 1],
+      directionSectorsDegrees: 45,
+      quantileBasis: "adaptive_positive_log_radiance_quantiles",
+      scoringMode: "heuristic",
+      nonSqmBortleNoticeZh: "该结果为卫星夜光参考，不是现场SQM实测，也不代表测量Bortle等级。",
+    },
+    lightPollutionNoteZh: "卫星夜光参考：环境光污染低，银河方向光害低。",
+    starPenalty: 5,
+    milkyWayPenalty: 9,
+    scoringMode: "heuristic",
+    ...overrides,
+  };
+}
+
 function astroAssessmentForTest(
   overrides: Partial<AstroAssessmentForTest> = {},
 ): AstroAssessmentForTest {
@@ -1228,13 +1297,13 @@ const baseResult: ForecastCalculationResult = {
     ],
     lightPollutionEvidence: [
       {
-        label: "光污染数据",
-        value: "暂未接入",
+        label: "光污染参考",
+        value: "数据暂缺",
         effect: "neutral",
-        noteZh: "暂未接入光污染数据，实际观星仍需结合现场环境判断。",
+        noteZh: "光污染数据暂缺；未按无光污染处理，需现场确认城市光穹与地平线环境。",
       },
     ],
-    riskReasons: ["暂未接入光污染数据，实际观星仍需结合现场环境判断。"],
+    riskReasons: ["光污染数据暂缺；未按无光污染处理，需现场确认城市光穹与地平线环境。"],
     opportunityReasons: ["共找到 2 个推荐银河窗口。"],
     travelRecommendations: [
       "月落后优先拍摄银河，月亮未落前可转拍月光风景或星轨堆栈。",
@@ -1267,7 +1336,7 @@ const baseResult: ForecastCalculationResult = {
     ],
     missingDataNotes: [
       "银河窗口为简化本地估算，尚未完整建模银河拱桥、地形遮挡和光污染。",
-      "暂未接入光污染数据，实际观星仍需结合现场环境判断。",
+      "光污染数据暂缺；未按无光污染处理，需现场确认城市光穹与地平线环境。",
       "天气数据当前为演示数据，正式出行前需要复核真实预报。",
       "地形数据当前为演示数据，现场地平线遮挡仍需复核。",
     ],
@@ -1778,6 +1847,38 @@ function resultForTarget(target: ForecastCalculationResult["target"]): ForecastC
           }
         : undefined,
     dailySummaries: baseResult.dailySummaries.map((summary) => ({ ...summary, target })),
+  };
+}
+
+function resultWithAstroLightPollution(
+  lightPollution: ForecastCalculationResult["astroAnalysis"]["lightPollution"],
+  dailyLightPollution: readonly ForecastCalculationResult["astroAnalysis"]["lightPollution"][] = [],
+): ForecastCalculationResult {
+  const result = resultForTarget("astro");
+  return {
+    ...result,
+    astroAnalysis: {
+      ...result.astroAnalysis,
+      lightPollution,
+      lightPollutionEvidence: [
+        {
+          label: "光污染参考",
+          value: lightPollution.available
+            ? `环境${lightPollution.ambientRiskLevelLabelZh}`
+            : "数据暂缺",
+          effect:
+            (lightPollution.ambientRiskIndex ?? 0) >= 60 ||
+            (lightPollution.targetDirectionRisk ?? 0) >= 60
+              ? "risk"
+              : "neutral",
+          noteZh: lightPollution.lightPollutionNoteZh,
+        },
+      ],
+      dailyAstro: result.astroAnalysis.dailyAstro.map((day, index) => ({
+        ...day,
+        lightPollution: dailyLightPollution[index] ?? lightPollution,
+      })),
+    },
   };
 }
 
@@ -2381,6 +2482,20 @@ function renderAiPanelFromOutcome(outcome: ReturnType<typeof normalizeAiExplainR
 
 function countOccurrences(text: string, pattern: string): number {
   return text.split(pattern).length - 1;
+}
+
+function expectNoObsoleteLightPollutionPlaceholders(html: string): void {
+  const placeholders = [
+    `光污染${"暂未接入"}`,
+    `光污染/地形${"暂未接入"}`,
+    `后续${"接入"}`,
+    `模拟${"光污染"}`,
+    `体验${"数据"}`,
+  ];
+
+  for (const placeholder of placeholders) {
+    expect(html).not.toContain(placeholder);
+  }
 }
 
 function sectionBetween(html: string, startMarker: string, endMarker: string): string {
@@ -6362,10 +6477,13 @@ describe("forecast result target-aware view model", () => {
     expect(firstOpportunity?.sunrise.probabilityPercent).toBeLessThanOrEqual(100);
     expect(firstOpportunity?.sunset.probabilityPercent).toBeGreaterThanOrEqual(0);
     expect(firstOpportunity?.sunset.probabilityPercent).toBeLessThanOrEqual(100);
-    expect(firstOpportunity?.sunrise.probabilityPercent).not.toBe(result.glowAnalysis.sunriseGlowScore);
-    expect([firstOpportunity?.sunrise.recommendation, firstOpportunity?.sunset.recommendation]).toEqual(
-      expect.arrayContaining(["可以关注"]),
+    expect(firstOpportunity?.sunrise.probabilityPercent).not.toBe(
+      result.glowAnalysis.sunriseGlowScore,
     );
+    expect([
+      firstOpportunity?.sunrise.recommendation,
+      firstOpportunity?.sunset.recommendation,
+    ]).toEqual(expect.arrayContaining(["可以关注"]));
     expect(viewModel.overallRecommendation.preferredWindow).toBe(viewModel.preferredWindow);
     expect(viewModel.dailyOpportunities).toHaveLength(1);
     expect(viewModel.professionalEvidence.length).toBeGreaterThanOrEqual(5);
@@ -6564,7 +6682,10 @@ describe("forecast result target-aware view model", () => {
     const endedDay = viewModel.dailyOpportunities.find((item) => item.date === "2026-05-20");
 
     expect(viewModel.overallRecommendation.preferredDate).toContain("2026年5月21日");
-    expect(viewModel.dailyOpportunities.map((item) => item.date)).toEqual(["2026-05-20", "2026-05-21"]);
+    expect(viewModel.dailyOpportunities.map((item) => item.date)).toEqual([
+      "2026-05-20",
+      "2026-05-21",
+    ]);
     expect(endedDay?.sunrise.lifecycle).toBe("ended");
     expect(endedDay?.sunset.lifecycle).toBe("ended");
     expect(endedDay?.dailyRecommendation).toBe("已结束");
@@ -6638,7 +6759,9 @@ describe("forecast result target-aware view model", () => {
       expect(viewModel.dailyOpportunities[0]?.sunset.probabilityPercent).toBeGreaterThanOrEqual(0);
       expect(viewModel.dailyOpportunities[0]?.sunset.probabilityPercent).toBeLessThanOrEqual(100);
       expect(viewModel.dailyOpportunities[0]?.sunrise.vividnessDisplay).toMatch(/（\d+）|暂缺/);
-      expect(viewModel.dailyOpportunities[0]?.sunrise.practicalSuitabilityScore).toBeGreaterThanOrEqual(0);
+      expect(
+        viewModel.dailyOpportunities[0]?.sunrise.practicalSuitabilityScore,
+      ).toBeGreaterThanOrEqual(0);
       expect(viewModel.professionalScoringWindows.length).toBeGreaterThan(0);
       expect(viewModel.professionalScoringWindows[0]?.occurrenceDisplay).toMatch(/%|暂缺/);
       expect(html).toContain("未来逐日朝霞晚霞机会");
@@ -6648,8 +6771,12 @@ describe("forecast result target-aware view model", () => {
       expect(countOccurrences(html, 'data-glow-daily-opportunity-date="')).toBe(
         viewModel.dailyOpportunities.length,
       );
-      expect(countOccurrences(html, 'data-glow-slot="sunrise"')).toBe(viewModel.dailyOpportunities.length);
-      expect(countOccurrences(html, 'data-glow-slot="sunset"')).toBe(viewModel.dailyOpportunities.length);
+      expect(countOccurrences(html, 'data-glow-slot="sunrise"')).toBe(
+        viewModel.dailyOpportunities.length,
+      );
+      expect(countOccurrences(html, 'data-glow-slot="sunset"')).toBe(
+        viewModel.dailyOpportunities.length,
+      );
       expect(html).toContain("为什么这样判断");
       expect(html).toContain('data-glow-evidence-layout="balanced-flex"');
       expect(html).toContain('data-glow-section="GlowProfessionalData"');
@@ -6826,9 +6953,9 @@ describe("forecast result target-aware view model", () => {
 
     expect(viewModel.professionalHourlyData.rows).toHaveLength(24);
     expect(viewModel.professionalHourlyData.rows[0]?.time).toBe("2026-05-20T00:00:00+08:00");
-    expect(viewModel.professionalHourlyData.rows[viewModel.professionalHourlyData.rows.length - 1]?.time).toBe(
-      "2026-05-20T23:00:00+08:00",
-    );
+    expect(
+      viewModel.professionalHourlyData.rows[viewModel.professionalHourlyData.rows.length - 1]?.time,
+    ).toBe("2026-05-20T23:00:00+08:00");
     expect(html).toContain('data-glow-section="GlowProfessionalData"');
     expect(html).toContain('data-glow-professional-data-expanded="false"');
     expect(countOccurrences(html, 'data-professional-hourly-row="')).toBe(0);
@@ -6853,7 +6980,9 @@ describe("forecast result target-aware view model", () => {
 
       expect(viewModel.professionalHourlyData.rows).toHaveLength(hours);
       for (const rowTime of rowTimes) {
-        expect(viewModel.professionalHourlyData.rows.some((row) => row.time === rowTime)).toBe(true);
+        expect(viewModel.professionalHourlyData.rows.some((row) => row.time === rowTime)).toBe(
+          true,
+        );
       }
       expect(html).toContain('data-glow-section="GlowProfessionalData"');
       expect(countOccurrences(html, 'data-professional-hourly-row="')).toBe(0);
@@ -6881,8 +7010,12 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("朝霞核心窗口");
     expect(html).not.toContain("晚霞准备窗口");
     expect(html).not.toContain("晚霞核心窗口");
-    expect(countOccurrences(html, 'data-glow-slot="sunrise"')).toBe(viewModel.dailyOpportunities.length);
-    expect(countOccurrences(html, 'data-glow-slot="sunset"')).toBe(viewModel.dailyOpportunities.length);
+    expect(countOccurrences(html, 'data-glow-slot="sunrise"')).toBe(
+      viewModel.dailyOpportunities.length,
+    );
+    expect(countOccurrences(html, 'data-glow-slot="sunset"')).toBe(
+      viewModel.dailyOpportunities.length,
+    );
     expect(countOccurrences(html, 'data-glow-professional-data-toggle="true"')).toBe(1);
     expect(countOccurrences(html, 'data-professional-hourly-shared="true"')).toBe(0);
     expect(countOccurrences(html, 'data-cloud-sea-professional-table-scroll="true"')).toBe(0);
@@ -6949,7 +7082,9 @@ describe("forecast result target-aware view model", () => {
             (window) =>
               !(
                 window.date === "2026-05-21" &&
-                (window.phase === "sunrise" || window.type === "sunrise" || window.type === "sunrise_glow")
+                (window.phase === "sunrise" ||
+                  window.type === "sunrise" ||
+                  window.type === "sunrise_glow")
               ),
           ),
           {
@@ -7019,9 +7154,7 @@ describe("forecast result target-aware view model", () => {
       item.sunset.recommendation,
       item.dailyRecommendation,
     ]);
-    expect(dailySlotRecommendations).toEqual(
-      expect.arrayContaining(["可以关注"]),
-    );
+    expect(dailySlotRecommendations).toEqual(expect.arrayContaining(["可以关注"]));
     expect(dailySlotRecommendations).toEqual(expect.arrayContaining(["仅作备选"]));
     expect(html).toContain("可以关注");
     expect(html).toContain("仅作备选");
@@ -7082,7 +7215,9 @@ describe("forecast result target-aware view model", () => {
       "2026-05-23",
     ]);
     expect(viewModel.dailyOpportunities[0]?.isPartiallyCovered).toBe(true);
-    expect(viewModel.dailyOpportunities[viewModel.dailyOpportunities.length - 1]?.isPartiallyCovered).toBe(true);
+    expect(
+      viewModel.dailyOpportunities[viewModel.dailyOpportunities.length - 1]?.isPartiallyCovered,
+    ).toBe(true);
     expect(outsideDay?.sunset.lifecycle).toBe("outside_horizon");
     expect(outsideDay?.sunset.probabilityPercent).toBeUndefined();
     expect(outsideDay?.sunset.probabilityDisplay).toBe("超出本次预报范围");
@@ -7186,10 +7321,12 @@ describe("forecast result target-aware view model", () => {
       "cloud",
       "visibility-humidity",
       "precipitation-wind",
-      "light-terrain",
+      "light-pollution",
     ]);
 
-    const firstCoveredNight = astro?.nightlyCards.find((night) => night.localEveningDate === "2026-05-20");
+    const firstCoveredNight = astro?.nightlyCards.find(
+      (night) => night.localEveningDate === "2026-05-20",
+    );
     expect(firstCoveredNight).toMatchObject({
       nightKey: "astro-night-2026-05-20",
       localEveningDate: "2026-05-20",
@@ -7204,7 +7341,7 @@ describe("forecast result target-aware view model", () => {
       }),
       milkyWay: expect.objectContaining({
         available: true,
-        direction: "东南至南方",
+        azimuthSummary: "东南至南方",
       }),
       weather: expect.objectContaining({
         validHourCount: expect.any(Number),
@@ -7217,14 +7354,155 @@ describe("forecast result target-aware view model", () => {
     expect(firstCoveredNight?.starPhotographyIndex).toBeGreaterThanOrEqual(0);
     expect(firstCoveredNight?.milkyWayPhotographyIndex).toBeGreaterThanOrEqual(0);
     expect(firstCoveredNight?.milkyWay.bestStartAt).toBeDefined();
-    expect(JSON.stringify(astro)).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风|高德/i);
+    expect(JSON.stringify(astro)).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风天气|高德/i);
+  });
+
+  it.each([
+    [
+      "urban very-high-risk",
+      lightPollutionForDisplayTest({
+        ambientRiskIndex: 92,
+        ambientRiskLevel: "very_high",
+        ambientRiskLevelLabelZh: "很高",
+        targetDirectionRisk: 94,
+        targetDirectionLevel: "very_high",
+        targetDirectionLevelLabelZh: "很高",
+        lightPollutionNoteZh: "卫星夜光参考：环境光污染很高，银河方向光害很高。",
+      }),
+      ["92", "很高", "银河方向光害很高", "不建议在当前地点专程拍摄"],
+    ],
+    [
+      "mountain very-low-risk",
+      lightPollutionForDisplayTest({
+        ambientRiskIndex: 6,
+        ambientRiskLevel: "very_low",
+        ambientRiskLevelLabelZh: "极低",
+        targetDirectionRisk: 28,
+        targetDirectionLevel: "low",
+        targetDirectionLevelLabelZh: "低",
+        lightPollutionNoteZh: "卫星夜光参考：环境光污染极低，银河方向光害低。",
+      }),
+      ["6", "极低", "银河方向光害低", "适合安排星空和银河拍摄"],
+    ],
+    [
+      "medium-risk",
+      lightPollutionForDisplayTest({
+        ambientRiskIndex: 52,
+        ambientRiskLevel: "medium",
+        ambientRiskLevelLabelZh: "中",
+        targetDirectionRisk: 55,
+        targetDirectionLevel: "medium",
+        targetDirectionLevelLabelZh: "中",
+        lightPollutionNoteZh: "卫星夜光参考：环境光污染中，银河方向光害中。",
+      }),
+      ["52", "中", "银河方向光害中", "优先选择背离城市光源的构图"],
+    ],
+  ] as const)(
+    "renders %s light-pollution conclusions in the astro page",
+    (_, lightPollution, expectedTexts) => {
+      const result = resultWithAstroLightPollution(lightPollution);
+      const viewModel = buildAstroForecastViewModel(result);
+      const html = renderToStaticMarkup(
+        React.createElement(AstroResultPage, {
+          query: queryForTarget("astro"),
+          result,
+          viewModel,
+        }),
+      );
+
+      expect(html).toContain('data-astro-section="AstroLightPollutionDecision"');
+      for (const expectedText of expectedTexts) {
+        expect(html).toContain(expectedText);
+      }
+      expect(html).toContain("为什么这样判断");
+      expect(html).toContain("光污染");
+      expect(html).not.toContain("nW/cm²/sr");
+      expectNoObsoleteLightPollutionPlaceholders(html);
+    },
+  );
+
+  it("renders honest unavailable astro light-pollution state without fake low risk", () => {
+    const result = resultWithAstroLightPollution(lightPollutionForTest);
+    const viewModel = buildAstroForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(AstroResultPage, {
+        query: queryForTarget("astro"),
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(html).toContain("光污染数据暂不可用");
+    expect(html).toContain(
+      "当前判断未把光污染当作低风险处理，拍摄前需现场确认城市光穹和地平线亮度。",
+    );
+    expect(html).not.toMatch(/光污染[^<]*0/);
+    expect(html).not.toContain("光污染：极低");
+    expectNoObsoleteLightPollutionPlaceholders(html);
+  });
+
+  it("keeps ambient light-pollution display when directional risk is unavailable", () => {
+    const lightPollution = lightPollutionForDisplayTest({
+      ambientRiskIndex: 45,
+      ambientRiskLevel: "medium",
+      ambientRiskLevelLabelZh: "中",
+      targetAzimuthDegrees: null,
+      targetDirectionRisk: null,
+      targetDirectionLevel: null,
+      targetDirectionLevelLabelZh: null,
+      lightPollutionNoteZh: "卫星夜光参考：环境光污染中；银河方向角不足，未推断目标方向光害。",
+    });
+    const viewModel = buildAstroForecastViewModel(resultWithAstroLightPollution(lightPollution));
+
+    expect(viewModel.lightPollution.ambientRiskIndex).toBe(45);
+    expect(viewModel.lightPollution.bestWindowDirectionRisk).toBeNull();
+    expect(viewModel.lightPollution.primaryConclusionZh).toBe("光污染 45");
+    expect(viewModel.lightPollution.detail).toContain("银河方向角不足");
+    expect(viewModel.lightPollution.detail).not.toContain("极低");
+  });
+
+  it("keeps per-night directional light-pollution labels distinct on astro daily cards", () => {
+    const lowDirection = lightPollutionForDisplayTest({
+      targetAzimuthDegrees: 0,
+      targetDirectionRisk: 12,
+      targetDirectionLevel: "very_low",
+      targetDirectionLevelLabelZh: "极低",
+    });
+    const highDirection = lightPollutionForDisplayTest({
+      targetAzimuthDegrees: 180,
+      targetDirectionRisk: 92,
+      targetDirectionLevel: "very_high",
+      targetDirectionLevelLabelZh: "很高",
+    });
+    const result = resultWithAstroLightPollution(lowDirection, [lowDirection, highDirection]);
+    const viewModel = buildAstroForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(AstroResultPage, {
+        query: queryForTarget("astro"),
+        result,
+        viewModel,
+      }),
+    );
+    const dailyDirectionLabels = viewModel.nightlyCards
+      .filter((night) => night.lightPollution.showDailyDirection)
+      .map((night) => night.lightPollution.targetDirectionLabel);
+
+    expect(dailyDirectionLabels).toEqual(expect.arrayContaining(["极低", "很高"]));
+    expect(countOccurrences(html, "银河方向光害")).toBeGreaterThanOrEqual(2);
+    expect(html).toContain('data-astro-professional-data-expanded="false"');
+    expect(html).not.toContain("nW/cm²/sr");
   });
 
   it.each([
     ["24h", 24, 2, ["partial", "partial"]],
     ["48h", 48, 3, ["partial", "covered", "partial"]],
     ["72h", 72, 4, ["partial", "covered", "covered", "partial"]],
-    ["7d", 168, 8, ["partial", "covered", "covered", "covered", "covered", "covered", "covered", "partial"]],
+    [
+      "7d",
+      168,
+      8,
+      ["partial", "covered", "covered", "covered", "covered", "covered", "covered", "partial"],
+    ],
   ] as const)(
     "renders every local astro observing night intersecting the selected %s horizon",
     (horizon, hours, expectedNightCount, expectedCoverage) => {
@@ -7278,6 +7556,7 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("月相");
       expect(html).toContain("天文黑夜");
       expect(html).toContain("银河窗口");
+      expect(html).toContain('data-astro-section="AstroLightPollutionDecision"');
       expect(html).toContain("为什么这样判断");
       expect(html).toContain("专业数据");
       expect(html).toContain("展开专业数据");
@@ -7298,13 +7577,13 @@ describe("forecast result target-aware view model", () => {
       expect(countOccurrences(html, 'data-professional-hourly-row="')).toBe(0);
       expectMarkersInOrder(html, [
         "AstroResultPage",
+        "AstroLightPollutionDecision",
         "AstroNightOpportunitySection",
         "AstroWhyJudgmentSection",
         "AstroProfessionalData",
         "AstroAiInterpretation",
       ]);
       expect(html).not.toContain("天文黑夜与无月黑夜");
-      expect(html).not.toContain("推荐银河窗口");
       expect(html).not.toContain("月出月落");
       expect(html).not.toContain("拍摄建议");
       expect(html).not.toContain("备选拍摄方案");
@@ -7337,14 +7616,14 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("为什么这样判断");
     expect(html).toContain("专业数据");
     expect(html).toContain("云量阻挡");
-    expect(html).toContain("月光影响");
+    expect(html).toContain("月光干扰");
     expect(html).toContain("通透度与湿度");
     expect(html).toContain("天文窗口存在，但低云偏多、降水干扰不支持拍摄");
     expect(html).toContain("不建议前往");
     expect(html).not.toContain("核心判断");
     expect(html).not.toContain("每晚观星条件");
     expect(html).not.toContain("拍摄建议");
-    expect(html).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风|高德/i);
+    expect(html).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风天气|高德/i);
   });
 
   it("shows multiple nightly astro entries for a 7d astro result", () => {
