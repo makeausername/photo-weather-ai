@@ -26,6 +26,10 @@ LightPollutionDirection = Literal[
     "west",
     "northwest",
 ]
+LightPollutionQuantileBasis = Literal[
+    "adaptive_positive_log_radiance_quantiles",
+    "log_radiance_dataset_quantiles",
+]
 
 
 class AstroCalculateRequest(BaseModel):
@@ -167,7 +171,7 @@ class LightPollutionCalculationBasis(BaseModel):
     distanceWeights: dict[str, float]
     localNeighborhoodKm: list[float]
     directionSectorsDegrees: int
-    quantileBasis: Literal["log_radiance_dataset_quantiles"]
+    quantileBasis: LightPollutionQuantileBasis
     scoringMode: Literal["heuristic"]
     nonSqmBortleNoticeZh: str
 

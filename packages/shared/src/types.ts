@@ -1610,6 +1610,10 @@ export type DirectionalLightPollutionRisk = {
   readonly validSampleCount: number;
 };
 
+export type LightPollutionQuantileBasis =
+  | "adaptive_positive_log_radiance_quantiles"
+  | "log_radiance_dataset_quantiles";
+
 export type LightPollutionCalculationBasis = {
   readonly samplingConfigVersion: string;
   readonly coordinateSystem: "WGS84";
@@ -1617,7 +1621,7 @@ export type LightPollutionCalculationBasis = {
   readonly distanceWeights: Readonly<Record<string, number>>;
   readonly localNeighborhoodKm: readonly number[];
   readonly directionSectorsDegrees: number;
-  readonly quantileBasis: "log_radiance_dataset_quantiles";
+  readonly quantileBasis: LightPollutionQuantileBasis;
   readonly scoringMode: "heuristic";
   readonly nonSqmBortleNoticeZh: string;
 };

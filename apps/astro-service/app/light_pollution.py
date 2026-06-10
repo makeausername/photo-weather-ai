@@ -45,6 +45,9 @@ DISTANCE_WEIGHTS = {
 }
 DIRECTION_SECTOR_DEGREES = 45
 RADIANCE_EPSILON = 0.001
+QUANTILE_BASIS = "adaptive_positive_log_radiance_quantiles"
+CALIBRATION_LOW_QUANTILE_ORDER = ("p05", "p10", "p25", "p50")
+CALIBRATION_HIGH_QUANTILE_ORDER = ("p95", "p90", "p99")
 DEFAULT_UNAVAILABLE_NOTE_ZH = (
     "光污染数据暂缺；未按无光污染处理，需现场确认城市光穹与地平线环境。"
 )
@@ -90,6 +93,15 @@ class HealthState:
     dataset_version: str | None
     checksum_short: str | None
     load_error: str | None
+
+
+@dataclass(frozen=True)
+class CalibrationBounds:
+    low: float
+    high: float
+    low_quantile: str
+    high_quantile: str
+    quantile_source: str
 
 
 class LightPollutionDataset:
@@ -488,28 +500,77 @@ def risk_index(radiance: float | None, metadata: dict[str, Any]) -> int | None:
 
 
 def calibration_bounds(metadata: dict[str, Any]) -> tuple[float, float] | None:
+    selected = calibration_bound_selection(metadata)
+    if selected is None:
+        return None
+    return selected.low, selected.high
+
+
+def calibration_bound_selection(metadata: dict[str, Any]) -> CalibrationBounds | None:
     positive_quantiles = metadata.get("positiveRadianceQuantiles")
     if isinstance(positive_quantiles, dict):
-        bounds = quantile_bounds(positive_quantiles, require_positive_low=True)
+        bounds = adaptive_quantile_bounds(
+            positive_quantiles,
+            quantile_source="positiveRadianceQuantiles",
+        )
         if bounds is not None:
             return bounds
 
     legacy_quantiles = metadata.get("quantiles")
     if isinstance(legacy_quantiles, dict):
-        return quantile_bounds(legacy_quantiles, require_positive_low=False)
+        return adaptive_quantile_bounds(legacy_quantiles, quantile_source="quantiles")
     return None
 
 
-def quantile_bounds(quantiles: dict[str, Any], *, require_positive_low: bool) -> tuple[float, float] | None:
-    low = safe_float(quantiles.get("p05"))
-    high = safe_float(quantiles.get("p95"))
-    if low is None or high is None:
+def adaptive_quantile_bounds(
+    quantiles: dict[str, Any],
+    *,
+    quantile_source: str,
+) -> CalibrationBounds | None:
+    low_selection = first_positive_quantile(quantiles, CALIBRATION_LOW_QUANTILE_ORDER)
+    if low_selection is None:
         return None
-    if low < 0 or high <= 0 or high <= low:
+    low_key, low = low_selection
+
+    high_selection = first_quantile_greater_than(
+        quantiles,
+        CALIBRATION_HIGH_QUANTILE_ORDER,
+        low,
+    )
+    if high_selection is None:
         return None
-    if require_positive_low and low <= 0:
-        return None
-    return low, high
+    high_key, high = high_selection
+
+    return CalibrationBounds(
+        low=low,
+        high=high,
+        low_quantile=low_key,
+        high_quantile=high_key,
+        quantile_source=quantile_source,
+    )
+
+
+def first_positive_quantile(
+    quantiles: dict[str, Any],
+    candidates: tuple[str, ...],
+) -> tuple[str, float] | None:
+    for key in candidates:
+        value = safe_float(quantiles.get(key))
+        if value is not None and value > 0:
+            return key, value
+    return None
+
+
+def first_quantile_greater_than(
+    quantiles: dict[str, Any],
+    candidates: tuple[str, ...],
+    low: float,
+) -> tuple[str, float] | None:
+    for key in candidates:
+        value = safe_float(quantiles.get(key))
+        if value is not None and value > low:
+            return key, value
+    return None
 
 
 def risk_level(index: int | None) -> tuple[LightPollutionRiskLevel, str]:
@@ -601,7 +662,7 @@ def calculation_basis() -> LightPollutionCalculationBasis:
         distanceWeights=DISTANCE_WEIGHTS,
         localNeighborhoodKm=LOCAL_NEIGHBORHOOD_KM,
         directionSectorsDegrees=DIRECTION_SECTOR_DEGREES,
-        quantileBasis="log_radiance_dataset_quantiles",
+        quantileBasis=QUANTILE_BASIS,
         scoringMode="heuristic",
         nonSqmBortleNoticeZh=NON_SQM_BORTLE_NOTICE_ZH,
     )

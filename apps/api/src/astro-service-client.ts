@@ -197,6 +197,11 @@ const directionalLightPollutionRiskSchema = z.object({
   validSampleCount: z.number().int().nonnegative(),
 });
 
+const lightPollutionQuantileBasisSchema = z.enum([
+  "adaptive_positive_log_radiance_quantiles",
+  "log_radiance_dataset_quantiles",
+]);
+
 const lightPollutionCalculationBasisSchema = z.object({
   samplingConfigVersion: z.string().min(1),
   coordinateSystem: z.literal("WGS84"),
@@ -204,7 +209,7 @@ const lightPollutionCalculationBasisSchema = z.object({
   distanceWeights: z.record(z.string(), z.number().finite().nonnegative()),
   localNeighborhoodKm: z.array(z.number().finite().nonnegative()),
   directionSectorsDegrees: z.number().int().positive(),
-  quantileBasis: z.literal("log_radiance_dataset_quantiles"),
+  quantileBasis: lightPollutionQuantileBasisSchema,
   scoringMode: z.literal("heuristic"),
   nonSqmBortleNoticeZh: z.string().min(1),
 });

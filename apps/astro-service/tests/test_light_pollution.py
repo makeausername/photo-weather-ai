@@ -13,10 +13,30 @@ from pydantic import ValidationError
 from rasterio.transform import from_origin
 
 import app.main as astro_main
-from app.light_pollution import DirectionSample, LightPollutionService, risk_index
+from app.light_pollution import (
+    DirectionSample,
+    LightPollutionService,
+    calibration_bound_selection,
+    calibration_bounds,
+    risk_index,
+)
 from app.main import app
 from app.models import LightPollutionQueryRequest
 from scripts.import_light_pollution import STATS_SAMPLE_CAPACITY, calculate_stats, import_dataset
+
+
+PRODUCTION_POSITIVE_RADIANCE_QUANTILES = {
+    "p05": 0.0,
+    "p10": 0.264256,
+    "p25": 0.544856,
+    "p50": 0.98166,
+    "p75": 2.078005,
+    "p90": 6.13149,
+    "p95": 13.432347,
+    "p99": 45.204417,
+}
+
+ZERO_RADIANCE_QUANTILES = {f"p{key:02d}": 0 for key in (5, 10, 25, 50, 75, 90, 95, 99)}
 
 
 def write_test_raster(path: Path, *, crs: str = "EPSG:4326", nodata: float = -9999.0) -> None:
@@ -113,6 +133,139 @@ def write_metadata(
     (current / "checksum.sha256").write_text(f"{checksum}  light-pollution.cog.tif\n", encoding="utf-8")
 
 
+def assert_selected_bounds(
+    metadata: dict[str, object],
+    *,
+    low_quantile: str,
+    high_quantile: str,
+    quantile_source: str,
+) -> None:
+    selected = calibration_bound_selection(metadata)
+    assert selected is not None
+    assert selected.low_quantile == low_quantile
+    assert selected.high_quantile == high_quantile
+    assert selected.quantile_source == quantile_source
+    assert calibration_bounds(metadata) == (selected.low, selected.high)
+
+
+def test_adaptive_positive_radiance_calibration_bounds_select_valid_quantiles() -> None:
+    assert_selected_bounds(
+        {
+            "positiveRadianceQuantiles": {
+                "p05": 0.2,
+                "p10": 0.3,
+                "p25": 0.6,
+                "p50": 1.2,
+                "p90": 8,
+                "p95": 12,
+                "p99": 30,
+            }
+        },
+        low_quantile="p05",
+        high_quantile="p95",
+        quantile_source="positiveRadianceQuantiles",
+    )
+    assert_selected_bounds(
+        {"positiveRadianceQuantiles": PRODUCTION_POSITIVE_RADIANCE_QUANTILES},
+        low_quantile="p10",
+        high_quantile="p95",
+        quantile_source="positiveRadianceQuantiles",
+    )
+    assert calibration_bounds({"positiveRadianceQuantiles": PRODUCTION_POSITIVE_RADIANCE_QUANTILES}) == (
+        pytest.approx(PRODUCTION_POSITIVE_RADIANCE_QUANTILES["p10"]),
+        pytest.approx(PRODUCTION_POSITIVE_RADIANCE_QUANTILES["p95"]),
+    )
+    assert_selected_bounds(
+        {
+            "positiveRadianceQuantiles": {
+                "p05": 0,
+                "p10": 0,
+                "p25": 0.5,
+                "p50": 1.0,
+                "p90": 6,
+                "p95": 10,
+                "p99": 20,
+            }
+        },
+        low_quantile="p25",
+        high_quantile="p95",
+        quantile_source="positiveRadianceQuantiles",
+    )
+
+
+def test_adaptive_calibration_bounds_reject_invalid_low_and_high_quantiles() -> None:
+    assert calibration_bounds(
+        {
+            "positiveRadianceQuantiles": {
+                "p05": 0,
+                "p10": 0,
+                "p25": -1,
+                "p50": "nan",
+                "p95": 10,
+            }
+        }
+    ) is None
+    assert_selected_bounds(
+        {
+            "positiveRadianceQuantiles": {
+                "p05": 1,
+                "p90": 9,
+                "p95": 0,
+                "p99": 20,
+            }
+        },
+        low_quantile="p05",
+        high_quantile="p90",
+        quantile_source="positiveRadianceQuantiles",
+    )
+    assert calibration_bounds(
+        {
+            "positiveRadianceQuantiles": {
+                "p05": 2,
+                "p90": 1.5,
+                "p95": 2,
+                "p99": -1,
+            }
+        }
+    ) is None
+
+
+def test_calibration_bounds_keep_legacy_metadata_fallback_safe() -> None:
+    assert_selected_bounds(
+        {"quantiles": {"p05": 0.25, "p50": 1.0, "p95": 10}},
+        low_quantile="p05",
+        high_quantile="p95",
+        quantile_source="quantiles",
+    )
+    assert calibration_bounds({"quantiles": ZERO_RADIANCE_QUANTILES}) is None
+    assert risk_index(5, {"quantiles": ZERO_RADIANCE_QUANTILES}) is None
+
+    legacy_with_negative_minimum = {
+        "minimumRadiance": -0.4,
+        "rawMinimumRadiance": -0.4,
+        "quantiles": {"p05": -0.4, "p10": 0.25, "p50": 1, "p95": 10},
+    }
+    assert_selected_bounds(
+        legacy_with_negative_minimum,
+        low_quantile="p10",
+        high_quantile="p95",
+        quantile_source="quantiles",
+    )
+    assert risk_index(-0.5, legacy_with_negative_minimum) == 0
+    assert risk_index(5, {}) is None
+
+
+def test_risk_index_clamps_city_and_rural_values_with_production_quantiles() -> None:
+    metadata = {
+        "positiveRadianceQuantiles": PRODUCTION_POSITIVE_RADIANCE_QUANTILES,
+        "quantiles": ZERO_RADIANCE_QUANTILES,
+    }
+
+    assert risk_index(100, metadata) == 100
+    assert risk_index(0.01, metadata) == 0
+    assert risk_index(-0.5, metadata) == 0
+
+
 def test_light_pollution_query_samples_rings_directions_target_and_cache(tmp_path: Path) -> None:
     data_dir = tmp_path / "light-pollution"
     raster_path = data_dir / "current" / "light-pollution.cog.tif"
@@ -204,6 +357,62 @@ def test_light_pollution_endpoint_uses_direction_sample_radiance_without_500(
     assert payload["ambientRiskIndex"] is not None
     assert payload["targetDirectionRisk"] is not None
     assert len(payload["directionalRisk"]) == 8
+    service.close()
+
+
+def test_light_pollution_endpoint_uses_adaptive_positive_quantile_metadata_without_500(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_dir = tmp_path / "light-pollution"
+    raster_path = data_dir / "current" / "light-pollution.cog.tif"
+    write_test_raster(raster_path)
+    write_metadata(
+        data_dir,
+        overrides={
+            "statsAlgorithmVersion": "global-coordinate-hash-sample-v1",
+            "statsSampleCount": 200000,
+            "positiveRadianceStatsSampleCount": 200000,
+            "positiveRadiancePixelCount": 95050973,
+            "quantiles": ZERO_RADIANCE_QUANTILES,
+            "positiveRadianceQuantiles": PRODUCTION_POSITIVE_RADIANCE_QUANTILES,
+        },
+    )
+    metadata = json.loads((data_dir / "current" / "metadata.json").read_text(encoding="utf-8"))
+    selected = calibration_bound_selection(metadata)
+    assert selected is not None
+    assert selected.low == pytest.approx(PRODUCTION_POSITIVE_RADIANCE_QUANTILES["p10"])
+    assert selected.high == pytest.approx(PRODUCTION_POSITIVE_RADIANCE_QUANTILES["p95"])
+    assert selected.low_quantile == "p10"
+    assert selected.high_quantile == "p95"
+
+    service = LightPollutionService(
+        raster_path,
+        data_dir / "current" / "metadata.json",
+        cache_size=0,
+    )
+    monkeypatch.setattr(astro_main, "get_light_pollution_service", lambda: service)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.post(
+        "/light-pollution/query",
+        json={
+            "latitudeWgs84": 0,
+            "longitudeWgs84": 0,
+            "targetAzimuthDegrees": 90,
+            "timezone": "Asia/Shanghai",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert isinstance(payload["ambientRiskIndex"], int)
+    assert 0 <= payload["ambientRiskIndex"] <= 100
+    assert len(payload["directionalRisk"]) == 8
+    assert all(isinstance(item["riskIndex"], int) for item in payload["directionalRisk"])
+    assert payload["targetDirectionRisk"] is not None
+    assert payload["calculationBasis"]["quantileBasis"] == "adaptive_positive_log_radiance_quantiles"
     service.close()
 
 

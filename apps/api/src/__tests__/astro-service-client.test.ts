@@ -218,7 +218,7 @@ const serviceResponse: AstroServiceCalculationResponse = {
       distanceWeights: { local: 0.45, "5km": 0.22, "15km": 0.16, "30km": 0.11, "60km": 0.06 },
       localNeighborhoodKm: [0, 0.5, 1.5],
       directionSectorsDegrees: 45,
-      quantileBasis: "log_radiance_dataset_quantiles",
+      quantileBasis: "adaptive_positive_log_radiance_quantiles",
       scoringMode: "heuristic",
       nonSqmBortleNoticeZh: "该结果为卫星夜光参考，不是现场SQM实测，也不代表测量Bortle等级。",
     },
