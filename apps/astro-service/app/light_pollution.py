@@ -308,7 +308,7 @@ class LightPollutionService:
 
         local_radiance = local_samples.value
         halo_radiance = robust_aggregate(
-            [sample.value for sample in direction_samples if sample.value is not None]
+            [sample.radiance for sample in direction_samples if sample.radiance is not None]
         )
         ambient_radiance = weighted_radiance(
             [
@@ -473,15 +473,43 @@ def weighted_radiance(values: list[tuple[float | None, float]]) -> float | None:
 def risk_index(radiance: float | None, metadata: dict[str, Any]) -> int | None:
     if radiance is None or not math.isfinite(radiance):
         return None
-    quantiles = metadata.get("quantiles") if isinstance(metadata.get("quantiles"), dict) else {}
-    low = safe_float(quantiles.get("p05")) or safe_float(metadata.get("minimumRadiance")) or 0.0
-    high = safe_float(quantiles.get("p95")) or safe_float(metadata.get("maximumRadiance")) or 1.0
-    if high <= low:
-        high = low + 1.0
-    scaled = (math.log1p(max(0.0, radiance) + RADIANCE_EPSILON) - math.log1p(low + RADIANCE_EPSILON)) / (
-        math.log1p(high + RADIANCE_EPSILON) - math.log1p(low + RADIANCE_EPSILON)
-    )
+    bounds = calibration_bounds(metadata)
+    if bounds is None:
+        return None
+    low, high = bounds
+    normalized_radiance = max(0.0, radiance)
+    low_log = math.log1p(low + RADIANCE_EPSILON)
+    high_log = math.log1p(high + RADIANCE_EPSILON)
+    denominator = high_log - low_log
+    if denominator <= 0:
+        return None
+    scaled = (math.log1p(normalized_radiance + RADIANCE_EPSILON) - low_log) / denominator
     return int(max(0, min(100, round(scaled * 100))))
+
+
+def calibration_bounds(metadata: dict[str, Any]) -> tuple[float, float] | None:
+    positive_quantiles = metadata.get("positiveRadianceQuantiles")
+    if isinstance(positive_quantiles, dict):
+        bounds = quantile_bounds(positive_quantiles, require_positive_low=True)
+        if bounds is not None:
+            return bounds
+
+    legacy_quantiles = metadata.get("quantiles")
+    if isinstance(legacy_quantiles, dict):
+        return quantile_bounds(legacy_quantiles, require_positive_low=False)
+    return None
+
+
+def quantile_bounds(quantiles: dict[str, Any], *, require_positive_low: bool) -> tuple[float, float] | None:
+    low = safe_float(quantiles.get("p05"))
+    high = safe_float(quantiles.get("p95"))
+    if low is None or high is None:
+        return None
+    if low < 0 or high <= 0 or high <= low:
+        return None
+    if require_positive_low and low <= 0:
+        return None
+    return low, high
 
 
 def risk_level(index: int | None) -> tuple[LightPollutionRiskLevel, str]:

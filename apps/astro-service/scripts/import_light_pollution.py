@@ -26,6 +26,8 @@ except Exception as exc:  # pragma: no cover - import failure is reported by CLI
 
 
 IMPORTER_VERSION = "light-pollution-import-v1"
+STATS_ALGORITHM_VERSION = "global-coordinate-hash-sample-v1"
+STATS_SAMPLE_CAPACITY = 200_000
 DEFAULT_DATA_DIR = Path("/app/data/light-pollution")
 CURRENT_FILES = {
     "raster": "light-pollution.cog.tif",
@@ -289,43 +291,144 @@ def write_cog(source_tiff: Path, output_tiff: Path) -> None:
 
 
 def calculate_stats(path: Path) -> dict[str, Any]:
-    min_value = math.inf
-    max_value = -math.inf
+    raw_min_value = math.inf
+    raw_max_value = -math.inf
     valid_count = 0
-    sample_values: list[float] = []
+    negative_count = 0
+    zero_count = 0
+    positive_count = 0
+    normalized_sample_values = np.empty(0, dtype="float64")
+    normalized_sample_hashes = np.empty(0, dtype="uint64")
+    positive_sample_values = np.empty(0, dtype="float64")
+    positive_sample_hashes = np.empty(0, dtype="uint64")
     with rasterio.open(path) as dataset:
         for _, window in dataset.block_windows(1):
             block = dataset.read(1, window=window, masked=True)
-            values = np.asarray(block.compressed() if np.ma.isMaskedArray(block) else block.ravel())
-            values = values[np.isfinite(values)]
+            masked = np.ma.asarray(block)
+            data = masked.filled(np.nan).astype("float64", copy=False)
+            valid_mask = ~np.ma.getmaskarray(masked) & np.isfinite(data)
+            if not np.any(valid_mask):
+                continue
+
+            values = data[valid_mask]
             if values.size == 0:
                 continue
-            values = values.astype("float64")
             valid_count += int(values.size)
-            min_value = min(min_value, float(values.min()))
-            max_value = max(max_value, float(values.max()))
-            if len(sample_values) < 200_000:
-                needed = 200_000 - len(sample_values)
-                sample_values.extend(float(value) for value in values[:needed])
+            raw_min_value = min(raw_min_value, float(values.min()))
+            raw_max_value = max(raw_max_value, float(values.max()))
+            negative_count += int(np.count_nonzero(values < 0))
+            zero_count += int(np.count_nonzero(values == 0))
+            positive_count += int(np.count_nonzero(values > 0))
+
+            row_offsets, col_offsets = np.nonzero(valid_mask)
+            rows = row_offsets.astype("uint64", copy=False) + np.uint64(int(window.row_off))
+            cols = col_offsets.astype("uint64", copy=False) + np.uint64(int(window.col_off))
+            hashes = coordinate_hashes(rows, cols)
+
+            normalized_values = np.maximum(values, 0.0)
+            normalized_sample_values, normalized_sample_hashes = update_bounded_hash_sample(
+                normalized_sample_values,
+                normalized_sample_hashes,
+                normalized_values,
+                hashes,
+            )
+
+            positive_mask = values > 0
+            if np.any(positive_mask):
+                positive_sample_values, positive_sample_hashes = update_bounded_hash_sample(
+                    positive_sample_values,
+                    positive_sample_hashes,
+                    values[positive_mask],
+                    hashes[positive_mask],
+                )
 
     if valid_count == 0:
         return {
             "validPixelCount": 0,
+            "negativeRadiancePixelCount": 0,
+            "zeroRadiancePixelCount": 0,
+            "positiveRadiancePixelCount": 0,
+            "rawMinimumRadiance": None,
+            "rawMaximumRadiance": None,
             "minimumRadiance": None,
             "maximumRadiance": None,
             "quantiles": {},
+            "statsSampleCount": 0,
+            "statsSampleCapacity": STATS_SAMPLE_CAPACITY,
+            "positiveRadianceStatsSampleCount": 0,
+            "positiveRadianceQuantiles": {},
+            "statsAlgorithmVersion": STATS_ALGORITHM_VERSION,
         }
 
-    clipped = np.maximum(np.asarray(sample_values, dtype="float64"), 0.0)
-    quantiles = {
-        f"p{quantile:02d}": round(float(np.percentile(clipped, quantile)), 6)
-        for quantile in QUANTILE_KEYS
-    }
+    normalized_min = max(0.0, raw_min_value)
+    normalized_max = max(0.0, raw_max_value)
     return {
         "validPixelCount": valid_count,
-        "minimumRadiance": round(float(min_value), 6),
-        "maximumRadiance": round(float(max_value), 6),
-        "quantiles": quantiles,
+        "negativeRadiancePixelCount": negative_count,
+        "zeroRadiancePixelCount": zero_count,
+        "positiveRadiancePixelCount": positive_count,
+        "rawMinimumRadiance": round(float(raw_min_value), 6),
+        "rawMaximumRadiance": round(float(raw_max_value), 6),
+        "minimumRadiance": round(float(normalized_min), 6),
+        "maximumRadiance": round(float(normalized_max), 6),
+        "quantiles": quantiles_from_sample(normalized_sample_values),
+        "statsSampleCount": int(normalized_sample_values.size),
+        "statsSampleCapacity": STATS_SAMPLE_CAPACITY,
+        "positiveRadianceStatsSampleCount": int(positive_sample_values.size),
+        "positiveRadianceQuantiles": quantiles_from_sample(positive_sample_values),
+        "statsAlgorithmVersion": STATS_ALGORITHM_VERSION,
+    }
+
+
+def coordinate_hashes(rows: np.ndarray, cols: np.ndarray) -> np.ndarray:
+    values = (
+        rows.astype("uint64", copy=False) * np.uint64(0x9E3779B185EBCA87)
+    ) ^ (
+        cols.astype("uint64", copy=False) * np.uint64(0xC2B2AE3D27D4EB4F)
+    ) ^ np.uint64(0x165667B19E3779F9)
+    values = (values ^ (values >> np.uint64(30))) * np.uint64(0xBF58476D1CE4E5B9)
+    values = (values ^ (values >> np.uint64(27))) * np.uint64(0x94D049BB133111EB)
+    return values ^ (values >> np.uint64(31))
+
+
+def update_bounded_hash_sample(
+    sample_values: np.ndarray,
+    sample_hashes: np.ndarray,
+    values: np.ndarray,
+    hashes: np.ndarray,
+    *,
+    capacity: int = STATS_SAMPLE_CAPACITY,
+) -> tuple[np.ndarray, np.ndarray]:
+    if values.size == 0 or capacity <= 0:
+        return sample_values, sample_hashes
+
+    values = values.astype("float64", copy=False)
+    hashes = hashes.astype("uint64", copy=False)
+    if values.size > capacity:
+        keep = np.argpartition(hashes, capacity - 1)[:capacity]
+        values = values[keep]
+        hashes = hashes[keep]
+
+    if sample_values.size == 0:
+        combined_values = values
+        combined_hashes = hashes
+    else:
+        combined_values = np.concatenate([sample_values, values])
+        combined_hashes = np.concatenate([sample_hashes, hashes])
+
+    if combined_values.size <= capacity:
+        return combined_values, combined_hashes
+
+    keep = np.argpartition(combined_hashes, capacity - 1)[:capacity]
+    return combined_values[keep], combined_hashes[keep]
+
+
+def quantiles_from_sample(values: np.ndarray) -> dict[str, float]:
+    if values.size == 0:
+        return {}
+    return {
+        f"p{quantile:02d}": round(float(np.percentile(values, quantile)), 6)
+        for quantile in QUANTILE_KEYS
     }
 
 
@@ -361,9 +464,19 @@ def build_metadata(
         "unit": "nW/cm^2/sr",
         "nodata": dataset.nodata,
         "validPixelCount": stats["validPixelCount"],
+        "negativeRadiancePixelCount": stats["negativeRadiancePixelCount"],
+        "zeroRadiancePixelCount": stats["zeroRadiancePixelCount"],
+        "positiveRadiancePixelCount": stats["positiveRadiancePixelCount"],
+        "rawMinimumRadiance": stats["rawMinimumRadiance"],
+        "rawMaximumRadiance": stats["rawMaximumRadiance"],
         "minimumRadiance": stats["minimumRadiance"],
         "maximumRadiance": stats["maximumRadiance"],
         "quantiles": stats["quantiles"],
+        "statsSampleCount": stats["statsSampleCount"],
+        "statsSampleCapacity": stats["statsSampleCapacity"],
+        "positiveRadianceStatsSampleCount": stats["positiveRadianceStatsSampleCount"],
+        "positiveRadianceQuantiles": stats["positiveRadianceQuantiles"],
+        "statsAlgorithmVersion": stats["statsAlgorithmVersion"],
         "geographicBounds": {
             "west": dataset.bounds.left,
             "south": dataset.bounds.bottom,
