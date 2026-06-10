@@ -44,7 +44,7 @@ Estimated Bortle calibration audits can be run from independent CSV/JSON referen
 pnpm bortle:calibrate -- --input deploy/calibration/bortle-reference.example.csv --dry-run --strict
 ```
 
-Generated audit reports belong under `deploy/calibration/runtime/`, which is ignored by Git. The workflow compares supplied independent references with the production estimator and never rewrites production thresholds automatically.
+Generated audit reports belong under `deploy/calibration/runtime/`, which is ignored by Git. The workflow compares supplied independent references with the production estimator and never rewrites production thresholds automatically. Mismatch-investigation runs also write dedicated mismatch CSV/JSON files and audit-only candidate-analysis Markdown/JSON files. See [Bortle Calibration Mismatch Investigation](docs/bortle-calibration-mismatch-investigation.md) for output meanings, candidate simulation rules, evidence sufficiency gates, and how to add future SQM or independently verified Bortle references.
 
 These documents define the strategic product boundary for 逐光天气. Future Codex tasks must not narrow the product into a simple weather query site or an AI text explanation tool. If a task touches weather, astronomy, terrain, scoring, provider normalization, AI explanation, result pages, or data-source display, preserve this boundary: 逐光天气 should eventually cover at least Tianwentong + Lijing Weather style information and provide more detailed photography decision support.
 

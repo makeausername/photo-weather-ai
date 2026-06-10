@@ -19,6 +19,12 @@ import {
   type BortleCalibrationQueryClient,
   type BortleCalibrationReferencePoint,
 } from "../scripts/bortle-calibration.js";
+import {
+  buildBortleCandidateAnalysis,
+  buildBortleMismatchReport,
+  formatBortleCandidateAnalysisMarkdown,
+  formatBortleMismatchCsv,
+} from "../scripts/bortle-candidate-analysis.js";
 
 const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -137,6 +143,20 @@ function mockClientFor(lightPollution: LightPollutionInfo): BortleCalibrationQue
   };
 }
 
+function mockClientByLatitude(
+  lightPollutionByLatitude: Readonly<Record<number, LightPollutionInfo>>,
+): BortleCalibrationQueryClient {
+  return {
+    queryLightPollution: vi.fn(async (input) => {
+      const lightPollution = lightPollutionByLatitude[input.latitudeWgs84];
+      if (!lightPollution) {
+        throw new Error(`missing fixture for latitude ${input.latitudeWgs84}`);
+      }
+      return lightPollution;
+    }),
+  };
+}
+
 function defaultOptions() {
   return parseBortleCalibrationArgs(["--input", "reference.csv"], {
     ASTRO_SERVICE_URL: "http://astro-service:4100",
@@ -184,7 +204,11 @@ describe("Bortle calibration input validation", () => {
 
   it.each([
     ["invalid latitude", "id,name,latitudeWgs84,longitudeWgs84\na,Alpha,91,120", "latitudeWgs84"],
-    ["invalid longitude", "id,name,latitudeWgs84,longitudeWgs84\na,Alpha,31,-181", "longitudeWgs84"],
+    [
+      "invalid longitude",
+      "id,name,latitudeWgs84,longitudeWgs84\na,Alpha,31,-181",
+      "longitudeWgs84",
+    ],
     [
       "invalid Bortle class",
       "id,name,latitudeWgs84,longitudeWgs84,referenceBortleMin,referenceBortleMax\na,Alpha,31,120,0,3",
@@ -196,7 +220,11 @@ describe("Bortle calibration input validation", () => {
       "must not exceed",
     ],
     ["missing required field", "id,latitudeWgs84,longitudeWgs84\na,31,120", "name"],
-    ["malformed extra column", "id,name,latitudeWgs84,longitudeWgs84\na,Alpha,31,120,extra", "more columns"],
+    [
+      "malformed extra column",
+      "id,name,latitudeWgs84,longitudeWgs84\na,Alpha,31,120,extra",
+      "more columns",
+    ],
   ])("rejects %s", (_caseName, csv, expectedError) => {
     const result = validateBortleReferenceRows(parseBortleReferenceContent(csv, "reference.csv"));
 
@@ -271,9 +299,7 @@ describe("Bortle range comparison", () => {
   );
 
   it("skips comparison when the estimate is unavailable or reference is missing", async () => {
-    expect(
-      compareBortleRanges({ available: false }, { minClass: 1, maxClass: 2 }),
-    ).toBeNull();
+    expect(compareBortleRanges({ available: false }, { minClass: 1, maxClass: 2 })).toBeNull();
 
     const report = await buildBortleCalibrationReport({
       options: defaultOptions(),
@@ -290,7 +316,7 @@ describe("Bortle range comparison", () => {
 });
 
 describe("Bortle calibration reporting", () => {
-  it("renders deterministic JSON, CSV, Markdown, redacted names, hidden coordinates, and insufficient evidence", async () => {
+  it("renders deterministic JSON, CSV, Markdown, redacted names, raw diagnostics, and insufficient evidence", async () => {
     const report = await buildBortleCalibrationReport({
       options: { ...defaultOptions(), redactNames: true },
       rows: [row("private-1", 1, 1, 2, "protected_dark_site"), row("private-2", 2, 8, 9, "urban")],
@@ -306,19 +332,37 @@ describe("Bortle calibration reporting", () => {
     expect(report.points.map((point) => point.id)).toEqual(["private-1", "private-2"]);
     expect(report.points[0]).toMatchObject({ name: "private-1" });
     expect(report.points[0]?.coordinates).toBeUndefined();
+    expect(report.points[0]).toMatchObject({
+      latitudeWgs84: 1,
+      longitudeWgs84: 110,
+      referenceBortleMin: 1,
+      referenceBortleMax: 2,
+      localRadiance: 0.4,
+      surroundingHaloRadiance: 1.1,
+      localToHaloRatio: 0.364,
+      haloToLocalRatio: 2.75,
+      rasterQueryConfidence: "high",
+      rangeDistance: 1,
+      rangeOverlap: false,
+      biasDirection: "estimate_above_reference",
+      isLocalRadianceZeroOrNearZero: false,
+      isAmbientRiskSaturated: false,
+    });
     expect(report.points[0]?.reference?.notes).toBeUndefined();
     expect(json).not.toContain("Private private-1");
     expect(json).not.toContain("private note");
-    expect(csv.split("\n")[0]).not.toContain("latitudeWgs84");
+    expect(csv.split("\n")[0]).toContain("latitudeWgs84");
+    expect(csv.split("\n")[0]).toContain("localToHaloRatio");
     expect(markdown).toContain("Run timestamp: 2026-06-10T00:00:00.000Z");
     expect(markdown).toContain("Detailed Mismatch Table");
+    expect(markdown).toContain("Diagnostic Grouping");
     expect(markdown).toContain(insufficientBortleCalibrationEvidenceZh);
     expect(report.recommendation.action).toBe("investigate_specific_mismatches");
   });
 
-  it("allows threshold-review recommendations only when the minimum evidence gate is met", async () => {
-    const categories = ["dense_urban", "suburban", "rural", "protected_dark_site"];
-    const rows = Array.from({ length: 32 }, (_, index) =>
+  it("allows threshold-review recommendations only when the stricter evidence gate is met", async () => {
+    const categories = ["dense_urban", "suburban", "rural", "protected_dark_site", "town"];
+    const rows = Array.from({ length: 50 }, (_, index) =>
       row(`p${index + 1}`, index, 3, 4, categories[index % categories.length]!),
     );
 
@@ -331,7 +375,7 @@ describe("Bortle calibration reporting", () => {
       timestamp: "2026-06-10T00:00:00.000Z",
     });
 
-    expect(report.summary.comparedReferencePoints).toBe(32);
+    expect(report.summary.comparedReferencePoints).toBe(50);
     expect(report.summary.highConfidenceRasterRatio).toBe(1);
     expect(report.recommendation).toMatchObject({
       action: "consider_threshold_review",
@@ -373,15 +417,231 @@ describe("Bortle calibration reporting", () => {
 
       expect(exitCode).toBe(0);
       expect(output.join("\n")).toContain("wrote:");
-      expect(readFileSync(path.join(runtimeDir, "bortle-calibration-2026-06-10T00-00-00-000Z.json"), "utf8")).toContain(
-        '"redactedNames": true',
-      );
-      expect(readFileSync(path.join(runtimeDir, "bortle-calibration-2026-06-10T00-00-00-000Z.md"), "utf8")).toContain(
-        "Estimated Bortle Calibration Audit",
-      );
+      expect(
+        readFileSync(
+          path.join(runtimeDir, "bortle-calibration-2026-06-10T00-00-00-000Z.json"),
+          "utf8",
+        ),
+      ).toContain('"redactedNames": true');
+      expect(
+        readFileSync(
+          path.join(runtimeDir, "bortle-calibration-2026-06-10T00-00-00-000Z.md"),
+          "utf8",
+        ),
+      ).toContain("Estimated Bortle Calibration Audit");
+      expect(
+        readFileSync(
+          path.join(runtimeDir, "bortle-calibration-2026-06-10T00-00-00-000Z-mismatches.csv"),
+          "utf8",
+        ),
+      ).toContain("mismatchReasons");
+      expect(
+        JSON.parse(
+          readFileSync(
+            path.join(runtimeDir, "bortle-calibration-2026-06-10T00-00-00-000Z-mismatches.json"),
+            "utf8",
+          ),
+        ),
+      ).toMatchObject({ run: { auditOnly: true } });
+      expect(
+        JSON.parse(
+          readFileSync(
+            path.join(
+              runtimeDir,
+              "bortle-calibration-2026-06-10T00-00-00-000Z-candidate-analysis.json",
+            ),
+            "utf8",
+          ),
+        ),
+      ).toMatchObject({ run: { auditOnly: true, deterministic: true } });
+      expect(
+        readFileSync(
+          path.join(
+            runtimeDir,
+            "bortle-calibration-2026-06-10T00-00-00-000Z-candidate-analysis.md",
+          ),
+          "utf8",
+        ),
+      ).toContain("Bortle Calibration Candidate Analysis");
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("Bortle mismatch investigation diagnostics", () => {
+  it("surfaces zero-radiance, halo, high-radiance, and saturation diagnostics without frontend exposure", async () => {
+    const rows = [
+      row("zero-local-halo", 10, 4, 5, "rural"),
+      row("zero-local-zero-halo", 11, 1, 2, "astronomy_dark_site"),
+      row("low-local-city-halo", 12, 5, 6, "suburban"),
+      row("high-local", 13, 8, 9, "dense_urban"),
+    ];
+    const report = await buildBortleCalibrationReport({
+      options: defaultOptions(),
+      rows,
+      invalidRows: [],
+      totalInputRows: rows.length,
+      client: mockClientByLatitude({
+        10: lightPollutionFixture({
+          ambientRiskIndex: 5,
+          localRadiance: 0,
+          surroundingHaloRadiance: 20,
+        }),
+        11: lightPollutionFixture({
+          ambientRiskIndex: 0,
+          localRadiance: 0,
+          surroundingHaloRadiance: 0,
+        }),
+        12: lightPollutionFixture({
+          ambientRiskIndex: 8,
+          localRadiance: 0.0005,
+          surroundingHaloRadiance: 80,
+        }),
+        13: lightPollutionFixture({
+          ambientRiskIndex: 100,
+          localRadiance: 120,
+          surroundingHaloRadiance: 1,
+        }),
+      }),
+      timestamp: "2026-06-10T00:00:00.000Z",
+    });
+
+    const zeroLocalHalo = report.points.find((point) => point.id === "zero-local-halo");
+    const zeroZero = report.points.find((point) => point.id === "zero-local-zero-halo");
+    const lowLocalCityHalo = report.points.find((point) => point.id === "low-local-city-halo");
+    const highLocal = report.points.find((point) => point.id === "high-local");
+
+    expect(zeroLocalHalo).toMatchObject({
+      isLocalRadianceZeroOrNearZero: true,
+      localToHaloRatio: 0,
+      haloToLocalRatio: null,
+      localAndHaloDifferByRatioThreshold: true,
+    });
+    expect(zeroLocalHalo?.diagnostics).toEqual(
+      expect.arrayContaining([
+        "zero_or_near_zero_local_radiance",
+        "surrounding_halo_much_higher_than_local_radiance",
+      ]),
+    );
+    expect(zeroZero).toMatchObject({
+      isLocalRadianceZeroOrNearZero: true,
+      isAmbientRiskSaturated: true,
+      localToHaloRatio: 1,
+      haloToLocalRatio: 1,
+    });
+    expect(zeroZero?.diagnostics).toEqual(
+      expect.arrayContaining(["ambient_risk_saturated_0", "zero_or_near_zero_local_radiance"]),
+    );
+    expect(lowLocalCityHalo).toMatchObject({
+      isLocalRadianceZeroOrNearZero: true,
+      localAndHaloDifferByRatioThreshold: true,
+    });
+    expect(highLocal).toMatchObject({
+      isAmbientRiskSaturated: true,
+      localAndHaloDifferByRatioThreshold: true,
+    });
+    expect(highLocal?.diagnostics).toEqual(
+      expect.arrayContaining([
+        "ambient_risk_saturated_100",
+        "local_radiance_much_higher_than_surrounding_halo",
+      ]),
+    );
+
+    const mismatchReport = buildBortleMismatchReport(report);
+    expect(mismatchReport.summary.reasonDistribution).toMatchObject({
+      ambient_risk_saturated: 2,
+      suspicious_local_halo_ratio: 3,
+      zero_or_near_zero_local_radiance_estimated_bortle_1: 3,
+    });
+    expect(formatBortleMismatchCsv(mismatchReport)).toContain("haloToLocalRatio");
+  });
+});
+
+describe("Bortle candidate simulation", () => {
+  it("builds deterministic global monotonic candidates without category-specific mappings", async () => {
+    const categories = [
+      "dense_urban",
+      "suburban",
+      "town",
+      "rural",
+      "mountain",
+      "astronomy_dark_site",
+      "coastal",
+      "plain",
+    ];
+    const rows = categories.map((category, index) =>
+      row(
+        `candidate-${index + 1}`,
+        index + 20,
+        Math.min(index + 1, 8),
+        Math.min(index + 2, 9),
+        category,
+      ),
+    );
+    const lightPollutionByLatitude = Object.fromEntries(
+      rows.map((referenceRow, index) => {
+        const risk = index * 12 + 4;
+        return [
+          referenceRow.latitudeWgs84,
+          lightPollutionFixture({
+            ambientRiskIndex: risk,
+            localRadiance: index === 0 ? 0 : index * 0.8 + 0.1,
+            surroundingHaloRadiance: index === 0 ? 10 : index * 1.4 + 0.2,
+          }),
+        ];
+      }),
+    );
+    const report = await buildBortleCalibrationReport({
+      options: defaultOptions(),
+      rows,
+      invalidRows: [],
+      totalInputRows: rows.length,
+      client: mockClientByLatitude(lightPollutionByLatitude),
+      timestamp: "2026-06-10T00:00:00.000Z",
+    });
+
+    const first = buildBortleCandidateAnalysis(report);
+    const second = buildBortleCandidateAnalysis(report);
+    const markdown = formatBortleCandidateAnalysisMarkdown(first);
+
+    expect(second).toEqual(first);
+    expect(first.currentMapping.crossValidation).toMatchObject({
+      mode: "fixed_current_mapping",
+      deterministic: true,
+      foldCount: rows.length,
+    });
+    expect(first.candidates).toHaveLength(2);
+    for (const candidate of first.candidates) {
+      expect(candidate.crossValidation).toMatchObject({
+        mode: "leave_one_out",
+        deterministic: true,
+        foldCount: rows.length,
+      });
+      expect(candidate.usesLocationSpecificRules).toBe(false);
+      expect(candidate.usesCategorySpecificMapping).toBe(false);
+      expect(candidate.mappingMonotonic).toBe(true);
+      expect(candidate.thresholdMapping).toHaveLength(7);
+      expect(
+        candidate.thresholdMapping.every(
+          (threshold, index, thresholds) =>
+            index === 0 ||
+            threshold.maxCompositeRiskScore > thresholds[index - 1]!.maxCompositeRiskScore,
+        ),
+      ).toBe(true);
+    }
+    expect(first.recommendation).toMatchObject({
+      action: expect.stringMatching(/collect_more_references|investigate_specific_mismatches/),
+      productionDeploymentRecommended: false,
+      automaticActivationAllowed: false,
+    });
+    expect(
+      first.candidates[0]?.evidenceSufficiency.find(
+        (rule) => rule.id === "at_least_50_valid_reference_locations",
+      )?.passed,
+    ).toBe(false);
+    expect(markdown).toContain("Tianwentong screenshots");
+    expect(markdown).toContain("Uses category-specific mapping: false");
   });
 });
 
@@ -427,10 +687,18 @@ describe("Bortle calibration query behavior", () => {
           });
         }
         if (input.latitudeWgs84 === 6) {
-          return lightPollutionFixture({ ambientRiskIndex: 0, localRadiance: 10, surroundingHaloRadiance: 1 });
+          return lightPollutionFixture({
+            ambientRiskIndex: 0,
+            localRadiance: 10,
+            surroundingHaloRadiance: 1,
+          });
         }
         if (input.latitudeWgs84 === 7) {
-          return lightPollutionFixture({ ambientRiskIndex: 100, localRadiance: 1, surroundingHaloRadiance: 10 });
+          return lightPollutionFixture({
+            ambientRiskIndex: 100,
+            localRadiance: 1,
+            surroundingHaloRadiance: 10,
+          });
         }
         if (input.latitudeWgs84 === 8) {
           return lightPollutionFixture({
@@ -496,11 +764,7 @@ describe("Bortle calibration query behavior", () => {
   it("returns a non-zero CLI exit when fail-on-query-error is enabled", async () => {
     const tempDir = mkdtempSync(path.join(tmpdir(), "bortle-calibration-"));
     const inputPath = path.join(tempDir, "reference.csv");
-    writeFileSync(
-      inputPath,
-      "id,name,latitudeWgs84,longitudeWgs84\np1,Private,1,2\n",
-      "utf8",
-    );
+    writeFileSync(inputPath, "id,name,latitudeWgs84,longitudeWgs84\np1,Private,1,2\n", "utf8");
 
     try {
       const exitCode = await runBortleCalibrationCli(
@@ -547,6 +811,24 @@ describe("Bortle calibration estimator consistency", () => {
       estimatedBortleRangeLabel: canonical.rangeLabelZh,
       estimatorMethodVersion: canonical.methodVersion,
     });
+    expect(
+      estimateBortleRangeForLightPollution(lightPollutionFixture({ ambientRiskIndex: 14 })),
+    ).toMatchObject({
+      minClass: 1,
+      maxClass: 2,
+    });
+    expect(
+      estimateBortleRangeForLightPollution(lightPollutionFixture({ ambientRiskIndex: 15 })),
+    ).toMatchObject({
+      minClass: 2,
+      maxClass: 3,
+    });
+    expect(
+      estimateBortleRangeForLightPollution(lightPollutionFixture({ ambientRiskIndex: 95 })),
+    ).toMatchObject({
+      minClass: 8,
+      maxClass: 9,
+    });
     expect(source).toContain("estimateBortleRangeForLightPollution");
     expect(source).not.toContain("maxRiskIndex");
     expect(source).not.toContain("0–14");
@@ -564,9 +846,7 @@ describe("Bortle calibration estimator consistency", () => {
     expect(rootPackage.scripts["bortle:calibrate"]).toBe(
       "pnpm --filter @photo-weather/api bortle:calibrate",
     );
-    expect(apiPackage.scripts["bortle:calibrate"]).toBe(
-      "tsx src/scripts/bortle-calibration.ts",
-    );
+    expect(apiPackage.scripts["bortle:calibrate"]).toBe("tsx src/scripts/bortle-calibration.ts");
     expect(gitignore).toContain("deploy/calibration/runtime/*");
     expect(gitignore).toContain("!deploy/calibration/runtime/.gitkeep");
   });

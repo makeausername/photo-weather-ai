@@ -8,6 +8,13 @@ import {
   estimatedBortleMethodVersion,
 } from "@photo-weather/scoring";
 import {
+  bortleNearZeroRadianceThreshold,
+  buildBortleCandidateAnalysis,
+  buildBortleMismatchReport,
+  formatBortleCandidateAnalysisMarkdown,
+  formatBortleMismatchCsv,
+} from "./bortle-candidate-analysis.js";
+import {
   AstroServiceClient,
   AstroServiceClientError,
   type AstroServiceLightPollutionQueryInput,
@@ -108,11 +115,15 @@ export type BortleCalibrationPointReport = {
   readonly id: string;
   readonly name: string;
   readonly category?: string;
+  readonly latitudeWgs84?: number;
+  readonly longitudeWgs84?: number;
   readonly coordinates?: {
     readonly latitudeWgs84: number;
     readonly longitudeWgs84: number;
   };
   readonly reference?: BortleCalibrationReference;
+  readonly referenceBortleMin?: number;
+  readonly referenceBortleMax?: number;
   readonly querySuccess: boolean;
   readonly queryRetries: number;
   readonly queryFailure?: QueryFailure;
@@ -121,10 +132,13 @@ export type BortleCalibrationPointReport = {
   readonly datasetVersion?: string | null;
   readonly localRadiance?: number | null;
   readonly surroundingHaloRadiance?: number | null;
+  readonly localToHaloRatio?: number | null;
+  readonly haloToLocalRatio?: number | null;
   readonly ambientRiskIndex?: number | null;
   readonly ambientRiskLevel?: LightPollutionInfo["ambientRiskLevel"];
   readonly ambientRiskLevelLabelZh?: string;
   readonly validSampleCount?: number;
+  readonly rasterQueryConfidence?: LightPollutionInfo["confidence"];
   readonly confidence?: LightPollutionInfo["confidence"];
   readonly unavailableReason?: string | null;
   readonly estimatedBortleMin?: number;
@@ -132,6 +146,12 @@ export type BortleCalibrationPointReport = {
   readonly estimatedBortleRangeLabel?: string;
   readonly estimatedSkyQualityLabel?: string;
   readonly estimatorMethodVersion?: string;
+  readonly rangeDistance?: number;
+  readonly rangeOverlap?: boolean;
+  readonly biasDirection?: "estimate_below_reference" | "estimate_above_reference" | "overlap";
+  readonly isLocalRadianceZeroOrNearZero?: boolean;
+  readonly isAmbientRiskSaturated?: boolean;
+  readonly localAndHaloDifferByRatioThreshold?: boolean;
   readonly rangeComparison?: BortleRangeComparison;
   readonly diagnostics: readonly string[];
 };
@@ -169,7 +189,9 @@ export type BortleCalibrationRecommendation = {
   readonly evidenceSufficientForThresholdReview: boolean;
   readonly evidence: {
     readonly referencedPointCount: number;
+    readonly meaningfulEnvironmentCategories: number;
     readonly categoriesWithAtLeastFiveReferences: number;
+    readonly largestCategoryShare: number;
     readonly highConfidenceRasterRatio: number;
     readonly sameDirectionalBiasCategories: readonly string[];
     readonly medianClassDistance: number | null;
@@ -316,9 +338,7 @@ export function parseBortleReferenceContent(
   return parseCsvReferenceRows(content);
 }
 
-export function validateBortleReferenceRows(
-  rawRows: readonly RawReferenceRow[],
-): ValidationResult {
+export function validateBortleReferenceRows(rawRows: readonly RawReferenceRow[]): ValidationResult {
   const candidates: BortleCalibrationReferencePoint[] = [];
   const invalidRows: BortleCalibrationInvalidRow[] = [];
   const idCounts = new Map<string, number>();
@@ -551,7 +571,11 @@ export function formatBortleCalibrationMarkdown(report: BortleCalibrationReport)
     `- Action: ${report.recommendation.action}`,
     `- Recommendation: ${report.recommendation.messageZh}`,
     `- Referenced points compared: ${report.recommendation.evidence.referencedPointCount}`,
+    `- Meaningful environment categories: ${report.recommendation.evidence.meaningfulEnvironmentCategories}`,
     `- Categories with at least five references: ${report.recommendation.evidence.categoriesWithAtLeastFiveReferences}`,
+    `- Largest category share: ${formatPercent(
+      report.recommendation.evidence.largestCategoryShare,
+    )}`,
     `- High-confidence raster ratio: ${formatPercent(
       report.recommendation.evidence.highConfidenceRasterRatio,
     )}`,
@@ -562,6 +586,10 @@ export function formatBortleCalibrationMarkdown(report: BortleCalibrationReport)
       report.recommendation.evidence.overOneClassDisagreementRatio,
     )}`,
     "",
+    "## Diagnostic Grouping",
+    "",
+    formatDiagnosticGrouping(report.points),
+    "",
     "The tool does not automatically rewrite production Bortle thresholds.",
   ];
 
@@ -569,13 +597,13 @@ export function formatBortleCalibrationMarkdown(report: BortleCalibrationReport)
 }
 
 export function formatBortleCalibrationCsv(report: BortleCalibrationReport): string {
-  const includeCoordinates = report.run.includeCoordinates;
   const headers = [
     "rowNumber",
     "id",
     "name",
     "category",
-    ...(includeCoordinates ? ["latitudeWgs84", "longitudeWgs84"] : []),
+    "latitudeWgs84",
+    "longitudeWgs84",
     "referenceBortleMin",
     "referenceBortleMax",
     "querySuccess",
@@ -585,10 +613,13 @@ export function formatBortleCalibrationCsv(report: BortleCalibrationReport): str
     "datasetVersion",
     "localRadiance",
     "surroundingHaloRadiance",
+    "localToHaloRatio",
+    "haloToLocalRatio",
     "ambientRiskIndex",
     "ambientRiskLevel",
     "ambientRiskLevelLabelZh",
     "validSampleCount",
+    "rasterQueryConfidence",
     "confidence",
     "unavailableReason",
     "estimatedBortleMin",
@@ -596,13 +627,18 @@ export function formatBortleCalibrationCsv(report: BortleCalibrationReport): str
     "estimatedBortleRangeLabel",
     "estimatedSkyQualityLabel",
     "estimatorMethodVersion",
+    "rangeDistance",
     "rangeOverlap",
     "overlapClasses",
     "classDistance",
+    "biasDirection",
     "estimateBelowReference",
     "estimateAboveReference",
     "exactRangeMatch",
     "acceptableAdjacentMatch",
+    "isLocalRadianceZeroOrNearZero",
+    "isAmbientRiskSaturated",
+    "localAndHaloDifferByRatioThreshold",
     "diagnostics",
     "queryFailureKind",
     "queryFailureMessage",
@@ -613,11 +649,10 @@ export function formatBortleCalibrationCsv(report: BortleCalibrationReport): str
       point.id,
       point.name,
       point.category ?? "",
-      ...(includeCoordinates
-        ? [point.coordinates?.latitudeWgs84 ?? "", point.coordinates?.longitudeWgs84 ?? ""]
-        : []),
-      point.reference?.minClass ?? "",
-      point.reference?.maxClass ?? "",
+      point.latitudeWgs84 ?? "",
+      point.longitudeWgs84 ?? "",
+      point.referenceBortleMin ?? point.reference?.minClass ?? "",
+      point.referenceBortleMax ?? point.reference?.maxClass ?? "",
       point.querySuccess,
       point.queryRetries,
       point.datasetAvailable ?? "",
@@ -625,10 +660,13 @@ export function formatBortleCalibrationCsv(report: BortleCalibrationReport): str
       point.datasetVersion ?? "",
       point.localRadiance ?? "",
       point.surroundingHaloRadiance ?? "",
+      point.localToHaloRatio ?? "",
+      point.haloToLocalRatio ?? "",
       point.ambientRiskIndex ?? "",
       point.ambientRiskLevel ?? "",
       point.ambientRiskLevelLabelZh ?? "",
       point.validSampleCount ?? "",
+      point.rasterQueryConfidence ?? "",
       point.confidence ?? "",
       point.unavailableReason ?? "",
       point.estimatedBortleMin ?? "",
@@ -636,56 +674,47 @@ export function formatBortleCalibrationCsv(report: BortleCalibrationReport): str
       point.estimatedBortleRangeLabel ?? "",
       point.estimatedSkyQualityLabel ?? "",
       point.estimatorMethodVersion ?? "",
+      point.rangeDistance ?? "",
       point.rangeComparison?.rangeOverlap ?? "",
       point.rangeComparison?.overlapClasses.join(" ") ?? "",
       point.rangeComparison?.classDistance ?? "",
+      point.biasDirection ?? "",
       point.rangeComparison?.estimateBelowReference ?? "",
       point.rangeComparison?.estimateAboveReference ?? "",
       point.rangeComparison?.exactRangeMatch ?? "",
       point.rangeComparison?.acceptableAdjacentMatch ?? "",
+      point.isLocalRadianceZeroOrNearZero ?? "",
+      point.isAmbientRiskSaturated ?? "",
+      point.localAndHaloDifferByRatioThreshold ?? "",
       point.diagnostics.join(";"),
       point.queryFailure?.kind ?? "",
       point.queryFailure?.message ?? "",
     ].map(csvCell),
   );
   const invalidRows = report.invalidRows.map((row) =>
-    [
-      row.rowNumber,
-      row.id ?? "",
-      "INVALID",
-      "",
-      ...(includeCoordinates ? ["", ""] : []),
-      "",
-      "",
-      false,
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      row.errors.join(";"),
-      "validation",
-      row.errors.join(";"),
-    ].map(csvCell),
+    headers
+      .map((header) => {
+        if (header === "rowNumber") {
+          return row.rowNumber;
+        }
+        if (header === "id") {
+          return row.id ?? "";
+        }
+        if (header === "name") {
+          return "INVALID";
+        }
+        if (header === "querySuccess") {
+          return false;
+        }
+        if (header === "diagnostics" || header === "queryFailureMessage") {
+          return row.errors.join(";");
+        }
+        if (header === "queryFailureKind") {
+          return "validation";
+        }
+        return "";
+      })
+      .map(csvCell),
   );
 
   return [
@@ -756,13 +785,19 @@ function buildPointReport(
     id: row.id,
     name: outputOptions.redactNames ? row.id : row.name,
     category: row.category,
+    latitudeWgs84: row.latitudeWgs84,
+    longitudeWgs84: row.longitudeWgs84,
     coordinates: outputOptions.includeCoordinates
       ? {
           latitudeWgs84: row.latitudeWgs84,
           longitudeWgs84: row.longitudeWgs84,
         }
       : undefined,
-    reference: row.reference ? redactReference(row.reference, outputOptions.redactNames) : undefined,
+    reference: row.reference
+      ? redactReference(row.reference, outputOptions.redactNames)
+      : undefined,
+    referenceBortleMin: row.reference?.minClass,
+    referenceBortleMax: row.reference?.maxClass,
   };
 
   if (!queryResult.success) {
@@ -780,6 +815,7 @@ function buildPointReport(
   const rangeComparison = row.reference
     ? compareBortleRanges(estimatedBortle, row.reference)
     : undefined;
+  const radianceDiagnostics = buildRadianceDiagnosticFields(lightPollution);
 
   return {
     ...base,
@@ -790,10 +826,13 @@ function buildPointReport(
     datasetVersion: lightPollution.datasetVersion,
     localRadiance: lightPollution.localRadiance,
     surroundingHaloRadiance: lightPollution.surroundingHaloRadiance,
+    localToHaloRatio: radianceDiagnostics.localToHaloRatio,
+    haloToLocalRatio: radianceDiagnostics.haloToLocalRatio,
     ambientRiskIndex: lightPollution.ambientRiskIndex,
     ambientRiskLevel: lightPollution.ambientRiskLevel,
     ambientRiskLevelLabelZh: lightPollution.ambientRiskLevelLabelZh,
     validSampleCount: lightPollution.validSampleCount,
+    rasterQueryConfidence: lightPollution.confidence,
     confidence: lightPollution.confidence,
     unavailableReason: estimatedBortle.available
       ? lightPollution.unavailableReason
@@ -803,6 +842,12 @@ function buildPointReport(
     estimatedBortleRangeLabel: estimatedBortle.rangeLabelZh,
     estimatedSkyQualityLabel: estimatedBortle.skyQualityLabelZh,
     estimatorMethodVersion: estimatedBortle.methodVersion,
+    rangeDistance: rangeComparison?.classDistance,
+    rangeOverlap: rangeComparison?.rangeOverlap,
+    biasDirection: rangeComparison ? comparisonBiasDirection(rangeComparison) : undefined,
+    isLocalRadianceZeroOrNearZero: radianceDiagnostics.isLocalRadianceZeroOrNearZero,
+    isAmbientRiskSaturated: radianceDiagnostics.isAmbientRiskSaturated,
+    localAndHaloDifferByRatioThreshold: radianceDiagnostics.localAndHaloDifferByRatioThreshold,
     rangeComparison: rangeComparison ?? undefined,
     diagnostics: buildGeographicDiagnostics(lightPollution, estimatedBortle),
   };
@@ -879,6 +924,10 @@ function buildCalibrationRecommendation(
   const categoriesWithAtLeastFiveReferences = [...categoryCounts.values()].filter(
     (count) => count >= 5,
   ).length;
+  const meaningfulEnvironmentCategories = categoryCounts.size;
+  const largestCategoryCount =
+    categoryCounts.size > 0 ? Math.max(...[...categoryCounts.values()]) : 0;
+  const largestCategoryShare = comparedCount > 0 ? largestCategoryCount / comparedCount : 0;
   const belowCategories = new Set<string>();
   const aboveCategories = new Set<string>();
   for (const point of comparedPoints) {
@@ -901,8 +950,9 @@ function buildCalibrationRecommendation(
   const overOneClassDisagreementRatio =
     comparedCount > 0 ? summary.disagreementsGreaterThanOneClass / comparedCount : 0;
   const evidenceSufficientForThresholdReview =
-    comparedCount >= 30 &&
-    categoriesWithAtLeastFiveReferences >= 4 &&
+    comparedCount >= 50 &&
+    meaningfulEnvironmentCategories >= 5 &&
+    largestCategoryShare <= 0.5 &&
     summary.highConfidenceRasterRatio >= 0.8 &&
     sameDirectionalBiasCategories.length >= 2 &&
     ((summary.medianClassDistance ?? 0) > 1 || overOneClassDisagreementRatio > 0.25);
@@ -915,7 +965,9 @@ function buildCalibrationRecommendation(
       evidenceSufficientForThresholdReview,
       evidence: {
         referencedPointCount: comparedCount,
+        meaningfulEnvironmentCategories,
         categoriesWithAtLeastFiveReferences,
+        largestCategoryShare,
         highConfidenceRasterRatio: summary.highConfidenceRasterRatio,
         sameDirectionalBiasCategories,
         medianClassDistance: summary.medianClassDistance,
@@ -942,13 +994,81 @@ function buildCalibrationRecommendation(
     evidenceSufficientForThresholdReview,
     evidence: {
       referencedPointCount: comparedCount,
+      meaningfulEnvironmentCategories,
       categoriesWithAtLeastFiveReferences,
+      largestCategoryShare,
       highConfidenceRasterRatio: summary.highConfidenceRasterRatio,
       sameDirectionalBiasCategories,
       medianClassDistance: summary.medianClassDistance,
       overOneClassDisagreementRatio,
     },
   };
+}
+
+function buildRadianceDiagnosticFields(lightPollution: LightPollutionInfo): {
+  readonly localToHaloRatio: number | null;
+  readonly haloToLocalRatio: number | null;
+  readonly isLocalRadianceZeroOrNearZero: boolean;
+  readonly isAmbientRiskSaturated: boolean;
+  readonly localAndHaloDifferByRatioThreshold: boolean;
+} {
+  const localRadiance = lightPollution.localRadiance;
+  const haloRadiance = lightPollution.surroundingHaloRadiance;
+  const localToHaloRatio = radianceRatio(localRadiance, haloRadiance);
+  const haloToLocalRatio = radianceRatio(haloRadiance, localRadiance);
+  const isLocalRadianceZeroOrNearZero =
+    typeof localRadiance === "number" &&
+    Number.isFinite(localRadiance) &&
+    Math.abs(localRadiance) <= bortleNearZeroRadianceThreshold;
+  const isAmbientRiskSaturated =
+    lightPollution.ambientRiskIndex === 0 || lightPollution.ambientRiskIndex === 100;
+  const localAndHaloDifferByRatioThreshold =
+    typeof localRadiance === "number" &&
+    Number.isFinite(localRadiance) &&
+    typeof haloRadiance === "number" &&
+    Number.isFinite(haloRadiance) &&
+    ((localRadiance > 0 &&
+      localRadiance >= Math.max(haloRadiance, 0.0001) * radianceRatioThreshold) ||
+      (haloRadiance > 0 &&
+        haloRadiance >= Math.max(localRadiance, 0.0001) * radianceRatioThreshold));
+
+  return {
+    localToHaloRatio,
+    haloToLocalRatio,
+    isLocalRadianceZeroOrNearZero,
+    isAmbientRiskSaturated,
+    localAndHaloDifferByRatioThreshold,
+  };
+}
+
+function radianceRatio(
+  numerator: number | null | undefined,
+  denominator: number | null | undefined,
+): number | null {
+  if (
+    typeof numerator !== "number" ||
+    !Number.isFinite(numerator) ||
+    typeof denominator !== "number" ||
+    !Number.isFinite(denominator)
+  ) {
+    return null;
+  }
+  if (Math.abs(denominator) <= bortleNearZeroRadianceThreshold) {
+    return Math.abs(numerator) <= bortleNearZeroRadianceThreshold ? 1 : null;
+  }
+  return round(numerator / denominator, 3);
+}
+
+function comparisonBiasDirection(
+  comparison: BortleRangeComparison,
+): "estimate_below_reference" | "estimate_above_reference" | "overlap" {
+  if (comparison.estimateBelowReference) {
+    return "estimate_below_reference";
+  }
+  if (comparison.estimateAboveReference) {
+    return "estimate_above_reference";
+  }
+  return "overlap";
 }
 
 function buildGeographicDiagnostics(
@@ -990,6 +1110,13 @@ function buildGeographicDiagnostics(
       diagnostics.push("surrounding_halo_much_higher_than_local_radiance");
     }
   }
+  if (
+    typeof lightPollution.localRadiance === "number" &&
+    Number.isFinite(lightPollution.localRadiance) &&
+    Math.abs(lightPollution.localRadiance) <= bortleNearZeroRadianceThreshold
+  ) {
+    diagnostics.push("zero_or_near_zero_local_radiance");
+  }
   if (lightPollution.ambientRiskIndex === 0) {
     diagnostics.push("ambient_risk_saturated_0");
   }
@@ -1006,10 +1133,7 @@ function buildGeographicDiagnostics(
   ) {
     diagnostics.push("missing_dataset_metadata");
   }
-  if (
-    diagnostics.length === 0 &&
-    (!lightPollution.dataAvailable || !estimatedBortle.available)
-  ) {
+  if (diagnostics.length === 0 && (!lightPollution.dataAvailable || !estimatedBortle.available)) {
     diagnostics.push("light_pollution_unavailable");
   }
 
@@ -1041,6 +1165,44 @@ async function writeBortleCalibrationReports(
     await writeFile(file, formatBortleCalibrationMarkdown(report), "utf8");
     writtenFiles.push(file);
   }
+
+  const mismatchReport = buildBortleMismatchReport(report);
+  const mismatchJsonFile = path.join(
+    outputDir,
+    `bortle-calibration-${timestampSlug}-mismatches.json`,
+  );
+  await writeFile(mismatchJsonFile, `${JSON.stringify(mismatchReport, null, 2)}\n`, "utf8");
+  writtenFiles.push(mismatchJsonFile);
+
+  const mismatchCsvFile = path.join(
+    outputDir,
+    `bortle-calibration-${timestampSlug}-mismatches.csv`,
+  );
+  await writeFile(mismatchCsvFile, `${formatBortleMismatchCsv(mismatchReport)}\n`, "utf8");
+  writtenFiles.push(mismatchCsvFile);
+
+  const candidateAnalysis = buildBortleCandidateAnalysis(report);
+  const candidateAnalysisJsonFile = path.join(
+    outputDir,
+    `bortle-calibration-${timestampSlug}-candidate-analysis.json`,
+  );
+  await writeFile(
+    candidateAnalysisJsonFile,
+    `${JSON.stringify(candidateAnalysis, null, 2)}\n`,
+    "utf8",
+  );
+  writtenFiles.push(candidateAnalysisJsonFile);
+
+  const candidateAnalysisMarkdownFile = path.join(
+    outputDir,
+    `bortle-calibration-${timestampSlug}-candidate-analysis.md`,
+  );
+  await writeFile(
+    candidateAnalysisMarkdownFile,
+    formatBortleCandidateAnalysisMarkdown(candidateAnalysis),
+    "utf8",
+  );
+  writtenFiles.push(candidateAnalysisMarkdownFile);
 
   return writtenFiles;
 }
@@ -1315,11 +1477,7 @@ function normalizeFormats(values: readonly string[]): readonly ReportFormat[] {
   return [...formats];
 }
 
-function readPositiveInteger(
-  value: string | undefined,
-  fallback: number,
-  name: string,
-): number {
+function readPositiveInteger(value: string | undefined, fallback: number, name: string): number {
   if (!value) {
     return fallback;
   }
@@ -1380,7 +1538,9 @@ function redactInvalidRow(row: BortleCalibrationInvalidRow): BortleCalibrationIn
   };
 }
 
-function collectDatasetVersions(points: readonly BortleCalibrationPointReport[]): readonly string[] {
+function collectDatasetVersions(
+  points: readonly BortleCalibrationPointReport[],
+): readonly string[] {
   return [
     ...new Set(
       points
@@ -1399,7 +1559,9 @@ function distribution(values: readonly string[]): Readonly<Record<string, number
   for (const value of values) {
     counts.set(value, (counts.get(value) ?? 0) + 1);
   }
-  return Object.fromEntries([...counts.entries()].sort(([left], [right]) => left.localeCompare(right)));
+  return Object.fromEntries(
+    [...counts.entries()].sort(([left], [right]) => left.localeCompare(right)),
+  );
 }
 
 function mean(values: readonly number[]): number | null {
@@ -1440,6 +1602,105 @@ function formatDistribution(distributionValue: Readonly<Record<string, number>>)
     return "- n/a";
   }
   return entries.map(([label, count]) => `- ${label}: ${count}`).join("\n");
+}
+
+function formatDiagnosticGrouping(points: readonly BortleCalibrationPointReport[]): string {
+  const groupedPoints = points.filter((point) => isInvestigationPoint(point));
+  const groups = [
+    {
+      label: "ambient_risk_saturated_0",
+      points: groupedPoints.filter((point) =>
+        point.diagnostics.includes("ambient_risk_saturated_0"),
+      ),
+    },
+    {
+      label: "local_radiance_much_higher_than_surrounding_halo",
+      points: groupedPoints.filter((point) =>
+        point.diagnostics.includes("local_radiance_much_higher_than_surrounding_halo"),
+      ),
+    },
+    {
+      label: "surrounding_halo_much_higher_than_local_radiance",
+      points: groupedPoints.filter((point) =>
+        point.diagnostics.includes("surrounding_halo_much_higher_than_local_radiance"),
+      ),
+    },
+    {
+      label: "zero_or_near_zero_local_radiance",
+      points: groupedPoints.filter((point) =>
+        point.diagnostics.includes("zero_or_near_zero_local_radiance"),
+      ),
+    },
+    {
+      label: "estimated_below_reference",
+      points: groupedPoints.filter((point) => point.rangeComparison?.estimateBelowReference),
+    },
+    {
+      label: "estimated_above_reference",
+      points: groupedPoints.filter((point) => point.rangeComparison?.estimateAboveReference),
+    },
+  ];
+  const categoryGroups = groupPointIds(groupedPoints, (point) => point.category ?? "uncategorized");
+  const estimatedBandGroups = groupPointIds(
+    groupedPoints,
+    (point) => point.estimatedBortleRangeLabel ?? "unavailable",
+  );
+
+  return [
+    `- investigation_points: ${groupedPoints.length}${formatGroupedIds(groupedPoints)}`,
+    ...groups.map(
+      (group) => `- ${group.label}: ${group.points.length}${formatGroupedIds(group.points)}`,
+    ),
+    "- category:",
+    formatGroupedDistribution(categoryGroups),
+    "- estimated Bortle band:",
+    formatGroupedDistribution(estimatedBandGroups),
+  ].join("\n");
+}
+
+function isInvestigationPoint(point: BortleCalibrationPointReport): boolean {
+  return (
+    Boolean(point.rangeComparison && !point.rangeComparison.rangeOverlap) ||
+    (point.rangeComparison?.classDistance ?? 0) > 1 ||
+    Boolean(point.isAmbientRiskSaturated) ||
+    Boolean(point.localAndHaloDifferByRatioThreshold) ||
+    Boolean(
+      point.isLocalRadianceZeroOrNearZero &&
+        typeof point.estimatedBortleMin === "number" &&
+        point.estimatedBortleMin <= 1,
+    )
+  );
+}
+
+function groupPointIds(
+  points: readonly BortleCalibrationPointReport[],
+  keyForPoint: (point: BortleCalibrationPointReport) => string,
+): Readonly<Record<string, readonly string[]>> {
+  const grouped = new Map<string, string[]>();
+  for (const point of points) {
+    const key = keyForPoint(point);
+    grouped.set(key, [...(grouped.get(key) ?? []), point.id]);
+  }
+  return Object.fromEntries(
+    [...grouped.entries()].sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function formatGroupedIds(points: readonly BortleCalibrationPointReport[]): string {
+  return points.length > 0 ? ` (${points.map((point) => point.id).join(", ")})` : "";
+}
+
+function formatGroupedDistribution(grouped: Readonly<Record<string, readonly string[]>>): string {
+  const entries = Object.entries(grouped);
+  if (entries.length === 0) {
+    return "  - n/a";
+  }
+  return entries
+    .map(
+      ([label, ids]) =>
+        `  - ${label}: ${ids.length}${ids.length > 0 ? ` (${ids.join(", ")})` : ""}`,
+    )
+    .join("\n");
 }
 
 function formatMismatchTable(
