@@ -28,7 +28,7 @@ bash scripts/install-cn.sh
 
 The China wrapper defaults to Ubuntu/Debian Docker packages, Docker registry mirrors, an APT mirror, and a pip index mirror, so a fresh server does not need manual Docker installation first.
 
-The installer creates `.env.production`, renders the Caddy config, installs Docker if needed, creates optional local light-pollution raster directories, starts PostgreSQL/Redis/astro-service, downloads and verifies `/app/data/de421.bsp`, runs migrations and seed data, creates the first admin account, starts web/API/worker/Caddy, and enables automatic HTTPS through Caddy. See [docs/deployment.md](docs/deployment.md) for update, backup, status, local light-pollution import, uninstall, and troubleshooting commands.
+The installer creates `.env.production`, renders the Caddy config, installs Docker if needed, creates optional local light-pollution and terrain DEM raster directories, starts PostgreSQL/Redis/astro-service, downloads and verifies `/app/data/de421.bsp`, runs migrations and seed data, creates the first admin account, starts web/API/worker/Caddy, and enables automatic HTTPS through Caddy. See [docs/deployment.md](docs/deployment.md) for update, backup, status, local raster import, uninstall, and troubleshooting commands.
 
 Optional light-pollution data uses a local VIIRS-compatible nighttime-light GeoTIFF under `deploy/light-pollution/`; real raster files are ignored by Git. Import with:
 
@@ -37,6 +37,14 @@ bash scripts/import-light-pollution.sh incoming/<file-or-directory> -- --dataset
 ```
 
 The result is a satellite-night-light reference for astro suitability only. The public Milky Way page shows light-pollution risk, target-direction risk, and an estimated Bortle range; it is not a measured SQM value, not a national-standard level, and not an official Bortle observation. Raw radiance and sampling diagnostics stay in the collapsed professional data section. Missing data is not treated as low pollution.
+
+Optional terrain DEM data uses local GeoTIFF/COG elevation rasters under `deploy/terrain-dem/`; real DEM files and generated metadata are ignored by Git. Import with:
+
+```bash
+bash scripts/import-terrain-dem.sh incoming/<file-or-directory> -- --dataset-name "Local DEM" --dataset-year 2025 --dataset-version v1
+```
+
+When available, DEM profiles feed the Milky Way terrain-horizon obstruction model. Missing, out-of-bounds, unreadable, or low-confidence DEM data stays as uncertainty and is not treated as a clear horizon.
 
 Estimated Bortle calibration audits can be run from independent CSV/JSON references with:
 

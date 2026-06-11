@@ -622,7 +622,12 @@ export type ForecastProviderRuntimeSnapshot = {
 
 export type TerrainCloudSeaPotential = "low" | "medium" | "high";
 
-export type TerrainDataSource = "mock_terrain" | "open_meteo_elevation" | "manual" | "unknown";
+export type TerrainDataSource =
+  | "mock_terrain"
+  | "open_meteo_elevation"
+  | "manual"
+  | "dem"
+  | "unknown";
 
 export type TerrainHorizonObstructionLevel = "clear" | "marginal" | "obstructed" | "unknown";
 
@@ -655,6 +660,11 @@ export type TerrainHorizonUnavailableReason =
   | "missing_observer_elevation"
   | "insufficient_directional_sample"
   | "invalid_directional_sample"
+  | "terrain_dem_missing"
+  | "terrain_dem_metadata_missing"
+  | "terrain_dem_unreadable"
+  | "terrain_dem_out_of_bounds"
+  | "terrain_dem_no_data"
   | "unknown";
 
 export type TerrainHorizonDirectionSample = {
@@ -663,9 +673,21 @@ export type TerrainHorizonDirectionSample = {
   readonly horizonAltitudeDegrees?: number | null;
   readonly elevationMeters?: number | null;
   readonly distanceMeters?: number | null;
+  readonly sampledLatitudeWgs84?: number | null;
+  readonly sampledLongitudeWgs84?: number | null;
+  readonly observerElevationMeters?: number | null;
   readonly directionLabelZh?: string;
   readonly dataSource: TerrainHorizonDataSource;
+  readonly dataSourceLabelZh?: string;
   readonly confidence: TerrainHorizonConfidence;
+  readonly sampleCount?: number;
+  readonly validSampleCount?: number;
+  readonly maxSampleDistanceMeters?: number | null;
+  readonly datasetName?: string | null;
+  readonly datasetVersion?: string | null;
+  readonly datasetYear?: number | null;
+  readonly sourceName?: string | null;
+  readonly checksumShort?: string | null;
 };
 
 export type TerrainHorizonAssessment = {
@@ -696,6 +718,12 @@ export type TerrainHorizonAssessment = {
     readonly usedDirectionalProfile: boolean;
     readonly nearestAzimuthDeltaDegrees?: number | null;
     readonly sampleDistanceRangeMeters?: readonly [number, number];
+    readonly maxSampleDistanceMeters?: number | null;
+    readonly datasetName?: string | null;
+    readonly datasetVersion?: string | null;
+    readonly datasetYear?: number | null;
+    readonly sourceName?: string | null;
+    readonly checksumShort?: string | null;
     readonly notesZh: readonly string[];
   };
 };

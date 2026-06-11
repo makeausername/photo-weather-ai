@@ -129,6 +129,53 @@ describe("Terrain Core V1", () => {
     expect(terrainHorizonAssessmentHasDeterministicClearance(assessment)).toBe(false);
   });
 
+  it("uses DEM sample observer elevation and aggregate diagnostics metadata", () => {
+    const assessment = assessTerrainHorizonObstruction({
+      location: { latitude: 30.13, longitude: 118.16, system: "wgs84" },
+      target: "milky_way",
+      targetAzimuthDegrees: 146,
+      targetAltitudeDegrees: 31,
+      directionSamples: [
+        {
+          target: "milky_way",
+          azimuthDegrees: 146,
+          horizonAltitudeDegrees: 34,
+          observerElevationMeters: 1860,
+          dataSource: "dem_raster",
+          dataSourceLabelZh: "本地 DEM 地形剖面",
+          confidence: "high",
+          sampleCount: 120,
+          validSampleCount: 118,
+          maxSampleDistanceMeters: 30000,
+          datasetName: "Synthetic terrain DEM",
+          datasetYear: 2026,
+          datasetVersion: "test-dem-v1",
+          sourceName: "Synthetic DEM",
+          checksumShort: "abc123def456",
+        },
+      ],
+    });
+
+    expect(assessment).toMatchObject({
+      observerElevationMeters: 1860,
+      obstructionLevel: "obstructed",
+      obstructionClearanceDegrees: -3,
+      dataSource: "dem_raster",
+      dataSourceLabelZh: "本地 DEM 地形剖面",
+      professionalDiagnostics: expect.objectContaining({
+        sampleCount: 120,
+        validSampleCount: 118,
+        maxSampleDistanceMeters: 30000,
+        datasetName: "Synthetic terrain DEM",
+        datasetYear: 2026,
+        datasetVersion: "test-dem-v1",
+        sourceName: "Synthetic DEM",
+        checksumShort: "abc123def456",
+      }),
+    });
+    expect(terrainHorizonAssessmentHasDeterministicClearance(assessment)).toBe(true);
+  });
+
   it("returns deterministic mock terrain for known seed spots", async () => {
     const provider = new MockTerrainProvider();
 

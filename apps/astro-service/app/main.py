@@ -20,8 +20,11 @@ from .models import (
     HealthResponse,
     LightPollutionQueryRequest,
     LightPollutionQueryResponse,
+    TerrainDemProfileQueryRequest,
+    TerrainDemProfileQueryResponse,
 )
 from .responses import Utf8JSONResponse
+from .terrain_dem import TerrainDemService, unavailable_response as terrain_dem_unavailable_response
 from .timezones import DEFAULT_TIMEZONE, get_timezone
 
 
@@ -31,6 +34,8 @@ DEFAULT_LIGHT_POLLUTION_DATASET_PATH = Path(
     "/app/data/light-pollution/current/light-pollution.cog.tif"
 )
 DEFAULT_LIGHT_POLLUTION_METADATA_PATH = Path("/app/data/light-pollution/current/metadata.json")
+DEFAULT_TERRAIN_DEM_DATASET_PATH = Path("/app/data/terrain-dem/current/terrain-dem.cog.tif")
+DEFAULT_TERRAIN_DEM_METADATA_PATH = Path("/app/data/terrain-dem/current/metadata.json")
 logger = logging.getLogger("astro-service")
 
 
@@ -85,6 +90,14 @@ LIGHT_POLLUTION_METADATA_PATH = resolve_absolute_path_env(
     "LIGHT_POLLUTION_METADATA_PATH",
     DEFAULT_LIGHT_POLLUTION_METADATA_PATH,
 )
+TERRAIN_DEM_DATASET_PATH = resolve_absolute_path_env(
+    "TERRAIN_DEM_DATASET_PATH",
+    DEFAULT_TERRAIN_DEM_DATASET_PATH,
+)
+TERRAIN_DEM_METADATA_PATH = resolve_absolute_path_env(
+    "TERRAIN_DEM_METADATA_PATH",
+    DEFAULT_TERRAIN_DEM_METADATA_PATH,
+)
 LIGHT_POLLUTION_QUERY_TIMEOUT_MS = resolve_light_pollution_query_timeout_ms()
 
 
@@ -115,9 +128,15 @@ def get_light_pollution_service() -> LightPollutionService:
     )
 
 
+@lru_cache(maxsize=1)
+def get_terrain_dem_service() -> TerrainDemService:
+    return TerrainDemService(TERRAIN_DEM_DATASET_PATH, TERRAIN_DEM_METADATA_PATH)
+
+
 @app.on_event("shutdown")
 def shutdown_services() -> None:
     get_light_pollution_service().close()
+    get_terrain_dem_service().close()
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -129,6 +148,7 @@ def health() -> HealthResponse:
     except HTTPException:
         timezone_available = False
     light_pollution_health = get_light_pollution_service().health_state()
+    terrain_dem_health = get_terrain_dem_service().health_state()
     return HealthResponse(
         ok=ephemeris_available and timezone_available,
         service="astro-service",
@@ -144,6 +164,15 @@ def health() -> HealthResponse:
         lightPollutionDatasetVersion=light_pollution_health.dataset_version,
         lightPollutionChecksumShort=light_pollution_health.checksum_short,
         lightPollutionLoadError=light_pollution_health.load_error,
+        terrainDemAvailable=terrain_dem_health.available,
+        terrainDemDatasetPathConfigured=terrain_dem_health.dataset_path_configured,
+        terrainDemDatasetExists=terrain_dem_health.dataset_exists,
+        terrainDemMetadataAvailable=terrain_dem_health.metadata_available,
+        terrainDemDatasetYear=terrain_dem_health.dataset_year,
+        terrainDemDatasetVersion=terrain_dem_health.dataset_version,
+        terrainDemChecksumShort=terrain_dem_health.checksum_short,
+        terrainDemHealthStatus=terrain_dem_health.health_status,
+        terrainDemLoadError=terrain_dem_health.load_error,
     )
 
 
@@ -157,12 +186,25 @@ def query_light_pollution(request: LightPollutionQueryRequest) -> LightPollution
     return response
 
 
+@app.post("/terrain-dem/profile", response_model=TerrainDemProfileQueryResponse)
+def query_terrain_dem_profile(
+    request: TerrainDemProfileQueryRequest,
+) -> TerrainDemProfileQueryResponse:
+    response = get_terrain_dem_service().query_profile(request)
+    logger.info(
+        "terrain DEM profile query completed",
+        extra=terrain_dem_log_payload(request, response, route="/terrain-dem/profile"),
+    )
+    return response
+
+
 @app.post("/astro/calculate", response_model=AstroCalculateResponse)
 def calculate(request: AstroCalculateRequest) -> AstroCalculateResponse:
     try:
         get_timezone(request.timezone or DEFAULT_TIMEZONE)
         response = get_calculator().calculate(request)
         response.lightPollution = calculate_light_pollution_for_astro_request(request, response)
+        terrain_dem_profile = calculate_terrain_dem_for_astro_request(request, response)
         logger.info(
             "astro calculation completed",
             extra={
@@ -171,6 +213,8 @@ def calculate(request: AstroCalculateRequest) -> AstroCalculateResponse:
                 "targetDates": len(response.targetDates),
                 "lightPollutionAvailable": response.lightPollution.available,
                 "lightPollutionDatasetVersion": response.lightPollution.datasetVersion,
+                "terrainDemAvailable": terrain_dem_profile.available,
+                "terrainDemDatasetVersion": terrain_dem_profile.datasetVersion,
             },
         )
         return response
@@ -223,6 +267,45 @@ def calculate_light_pollution_for_astro_request(
     return light_pollution
 
 
+def calculate_terrain_dem_for_astro_request(
+    request: AstroCalculateRequest,
+    response: AstroCalculateResponse,
+) -> TerrainDemProfileQueryResponse:
+    target_azimuth, target_altitude = first_milky_way_target_geometry(response)
+    query = TerrainDemProfileQueryRequest(
+        latitudeWgs84=request.latitudeWgs84,
+        longitudeWgs84=request.longitudeWgs84,
+        observerElevationMeters=request.elevationMeters,
+        target="milky_way",
+        targetAzimuthDegrees=target_azimuth,
+        targetAltitudeDegrees=target_altitude,
+    )
+    try:
+        terrain_dem = get_terrain_dem_service().query_profile(query)
+    except Exception as exc:  # pragma: no cover - defensive guard for optional raster failures.
+        logger.warning(
+            "terrain DEM query failed during astro calculation",
+            extra={
+                "route": "/astro/calculate",
+                "latitudeRounded": round(request.latitudeWgs84, 3),
+                "longitudeRounded": round(request.longitudeWgs84, 3),
+                "targetAzimuthDegrees": target_azimuth,
+                "errorName": type(exc).__name__,
+                "errorMessage": str(exc),
+            },
+        )
+        terrain_dem = terrain_dem_unavailable_response(
+            "terrain_dem_unreadable",
+            request=query,
+            load_error=f"{type(exc).__name__}:{exc}",
+        )
+    logger.info(
+        "terrain DEM profile query completed",
+        extra=terrain_dem_log_payload(query, terrain_dem, route="/astro/calculate"),
+    )
+    return terrain_dem
+
+
 def first_milky_way_target_azimuth(response: AstroCalculateResponse) -> float | None:
     for window in response.milkyWay.recommendedWindows:
         if window.bestAzimuth is not None:
@@ -231,6 +314,16 @@ def first_milky_way_target_azimuth(response: AstroCalculateResponse) -> float | 
         if window.bestAzimuth is not None:
             return window.bestAzimuth
     return None
+
+
+def first_milky_way_target_geometry(response: AstroCalculateResponse) -> tuple[float | None, float | None]:
+    for window in response.milkyWay.recommendedWindows:
+        if window.bestAzimuth is not None:
+            return window.bestAzimuth, window.galacticCenterMaxAltitude
+    for window in response.milkyWay.candidateWindows:
+        if window.bestAzimuth is not None:
+            return window.bestAzimuth, window.maxAltitude
+    return None, None
 
 
 def light_pollution_log_payload(
@@ -251,5 +344,29 @@ def light_pollution_log_payload(
         "ambientRiskIndex": response.ambientRiskIndex,
         "targetDirectionRisk": response.targetDirectionRisk,
         "cacheHit": response.cacheHit,
+        "unavailableReason": response.unavailableReason,
+    }
+
+
+def terrain_dem_log_payload(
+    request: TerrainDemProfileQueryRequest,
+    response: TerrainDemProfileQueryResponse,
+    *,
+    route: str,
+) -> dict[str, object]:
+    return {
+        "route": route,
+        "available": response.available,
+        "datasetVersion": response.datasetVersion,
+        "datasetYear": response.datasetYear,
+        "queryElapsedMs": response.queryElapsedMs,
+        "latitudeRounded": round(request.latitudeWgs84, 3),
+        "longitudeRounded": round(request.longitudeWgs84, 3),
+        "targetAzimuthDegrees": request.targetAzimuthDegrees,
+        "targetAltitudeDegrees": request.targetAltitudeDegrees,
+        "validSampleCount": response.validSampleCount,
+        "sampleCount": response.sampleCount,
+        "horizonAltitudeDegrees": response.horizonAltitudeDegrees,
+        "obstructionLevel": response.obstructionLevel,
         "unavailableReason": response.unavailableReason,
     }

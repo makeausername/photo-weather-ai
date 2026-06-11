@@ -20,6 +20,8 @@ const productionScripts = [
   "scripts/download-ephemeris.sh",
   "scripts/import-light-pollution.sh",
   "scripts/check-light-pollution.sh",
+  "scripts/import-terrain-dem.sh",
+  "scripts/check-terrain-dem.sh",
   "scripts/test-providers.sh",
   "scripts/test-deepseek-interpretation.sh",
 ] as const;
@@ -106,10 +108,13 @@ describe("production deployment assets", () => {
     expect(compose).toContain("EPHEMERIS_PATH: /app/data/de421.bsp");
     expect(compose).toContain("LIGHT_POLLUTION_DATASET_PATH: /app/data/light-pollution/current/light-pollution.cog.tif");
     expect(compose).toContain("LIGHT_POLLUTION_CACHE_SIZE: ${LIGHT_POLLUTION_CACHE_SIZE:-1024}");
+    expect(compose).toContain("TERRAIN_DEM_DATASET_PATH: /app/data/terrain-dem/current/terrain-dem.cog.tif");
+    expect(compose).toContain("TERRAIN_DEM_METADATA_PATH: /app/data/terrain-dem/current/metadata.json");
     expect(compose).toContain("postgres_data:");
     expect(compose).toContain("redis_data:");
     expect(compose).toContain("- astro_data:/app/data");
     expect(compose).toContain("- ./deploy/light-pollution:/app/data/light-pollution");
+    expect(compose).toContain("- ./deploy/terrain-dem:/app/data/terrain-dem");
     expect(compose).toContain("- ./deploy/calibration:/app/deploy/calibration");
     expect(compose).toContain("caddy_data:");
     expect(compose).toContain("caddy_config:");
@@ -151,6 +156,8 @@ describe("production deployment assets", () => {
       "LIGHT_POLLUTION_METADATA_PATH=/app/data/light-pollution/current/metadata.json",
       "LIGHT_POLLUTION_CACHE_SIZE=1024",
       "LIGHT_POLLUTION_QUERY_TIMEOUT_MS=5000",
+      "TERRAIN_DEM_DATASET_PATH=/app/data/terrain-dem/current/terrain-dem.cog.tif",
+      "TERRAIN_DEM_METADATA_PATH=/app/data/terrain-dem/current/metadata.json",
       "PIP_INDEX_URL=",
       "EPHEMERIS_LOCAL_FILE=",
       "EPHEMERIS_URLS=",
@@ -183,6 +190,14 @@ describe("production deployment assets", () => {
       "deploy/light-pollution/**/*.tif",
       "deploy/light-pollution/**/*.tiff",
       "!deploy/light-pollution/**/.gitkeep",
+      "deploy/terrain-dem/incoming/*",
+      "deploy/terrain-dem/current/*",
+      "deploy/terrain-dem/backups/*",
+      "deploy/terrain-dem/**/*.tif",
+      "deploy/terrain-dem/**/*.tiff",
+      "deploy/terrain-dem/**/metadata.json",
+      "deploy/terrain-dem/**/checksum.sha256",
+      "!deploy/terrain-dem/**/.gitkeep",
       "deploy/calibration/runtime/*",
       "!deploy/calibration/runtime/.gitkeep",
       ".runtime/",
@@ -215,6 +230,46 @@ describe("production deployment assets", () => {
     expect(readRepoFile("apps/astro-service/Dockerfile")).toContain(
       "ENV LIGHT_POLLUTION_DATASET_PATH=/app/data/light-pollution/current/light-pollution.cog.tif",
     );
+    expect(readRepoFile("apps/astro-service/Dockerfile")).toContain(
+      "ENV TERRAIN_DEM_DATASET_PATH=/app/data/terrain-dem/current/terrain-dem.cog.tif",
+    );
+    expect(readRepoFile("apps/astro-service/Dockerfile")).toContain(
+      "/app/data/terrain-dem/current /app/data/terrain-dem/incoming",
+    );
+  });
+
+  it("ships optional local terrain DEM import and status scripts without downloading data", () => {
+    const importer = readRepoFile("scripts/import-terrain-dem.sh");
+    const checker = readRepoFile("scripts/check-terrain-dem.sh");
+    const installer = readRepoFile("scripts/install.sh");
+    const updater = readRepoFile("scripts/update.sh");
+    const resume = readRepoFile("scripts/resume-install.sh");
+
+    for (const source of [importer, checker]) {
+      expect(source).toContain('DATA_DIR="${PROJECT_ROOT}/deploy/terrain-dem"');
+      expect(source).toContain('-v "${DATA_DIR}:/app/data/terrain-dem"');
+      expect(source).toContain('COMPOSE_FILE="docker-compose.prod.yml"');
+      expect(source).toContain('ENV_FILE=".env.production"');
+      expect(source).not.toMatch(/\b(?:curl|wget)\b/);
+    }
+
+    expect(importer).toContain("python -m scripts.import_terrain_dem");
+    expect(importer).toContain("Place legally obtained GeoTIFF/COG DEM files");
+    expect(importer).toContain("This script does not download DEM data.");
+    expect(importer).toContain("compose restart astro-service");
+    expect(checker).toContain("python -m scripts.import_terrain_dem --check");
+    expect(checker).toContain("terrainDemAvailable");
+    expect(checker).toContain("terrainDemDatasetExists");
+    expect(checker).toContain("terrainDemMetadataAvailable");
+    expect(checker).toContain("terrainDemHealthStatus");
+    expect(checker).toContain("terrainDemLoadError");
+
+    for (const source of [installer, updater, resume]) {
+      expect(source).toContain("${PROJECT_ROOT}/deploy/terrain-dem/incoming");
+      expect(source).toContain("${PROJECT_ROOT}/deploy/terrain-dem/current");
+      expect(source).toContain("${PROJECT_ROOT}/deploy/terrain-dem/backups");
+      expect(source).toMatch(/no DEM is downloaded automatically|existing data are preserved/);
+    }
   });
 
   it("does not hard-code the old production database user in deployment assets", () => {

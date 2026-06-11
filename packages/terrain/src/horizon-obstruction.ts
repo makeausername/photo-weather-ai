@@ -55,11 +55,12 @@ export function assessTerrainHorizonObstruction(
   const samples = input.directionSamples ?? [];
   const targetAzimuth = finiteNumber(input.targetAzimuthDegrees);
   const targetAltitude = finiteNumber(input.targetAltitudeDegrees);
-  const observerElevation = finiteNumber(input.observerElevationMeters);
+  const observerElevation =
+    finiteNumber(input.observerElevationMeters) ?? firstSampleObserverElevation(samples);
   const maxDelta = finiteNumber(input.maxAzimuthDeltaDegrees) ?? defaultMaxAzimuthDeltaDegrees;
   const baseDiagnostics = {
     calculationRuleZh,
-    sampleCount: samples.length,
+    sampleCount: totalSampleCount(samples),
     validSampleCount: 0,
     usedDirectionalProfile: false,
     nearestAzimuthDeltaDegrees: null,
@@ -140,16 +141,25 @@ export function assessTerrainHorizonObstruction(
     obstructionLevel,
     confidence: normalizeConfidence(selected.source.confidence),
     dataSource: selected.source.dataSource,
-    dataSourceLabelZh: input.dataSourceLabelZh,
+    dataSourceLabelZh: selected.source.dataSourceLabelZh ?? input.dataSourceLabelZh,
     directionSample: selected.source,
     directionSamples: samples,
     professionalDiagnostics: {
       calculationRuleZh,
-      sampleCount: samples.length,
-      validSampleCount: matchingSamples.length,
+      sampleCount: totalSampleCount(samples),
+      validSampleCount: totalValidSampleCount(matchingSamples.map((sample) => sample.source)),
       usedDirectionalProfile: true,
       nearestAzimuthDeltaDegrees: selected.azimuthDeltaDegrees,
       sampleDistanceRangeMeters: sampleDistanceRange(matchingSamples.map((sample) => sample.source)),
+      maxSampleDistanceMeters:
+        finiteNumber(selected.source.maxSampleDistanceMeters) ??
+        finiteNumber(selected.source.distanceMeters) ??
+        null,
+      datasetName: selected.source.datasetName ?? null,
+      datasetVersion: selected.source.datasetVersion ?? null,
+      datasetYear: selected.source.datasetYear ?? null,
+      sourceName: selected.source.sourceName ?? null,
+      checksumShort: selected.source.checksumShort ?? null,
       notesZh: [
         "已使用目标方向附近的地形剖面样本计算 clearance。",
         `目标高度角 ${round1(targetAltitude)}°，地形地平线 ${selected.horizonAltitudeDegrees}°，clearance ${clearance}°。`,
@@ -254,6 +264,16 @@ export function terrainHorizonUnavailableReasonZh(
       return "目标方向样本不足";
     case "invalid_directional_sample":
       return "地形剖面样本无效";
+    case "terrain_dem_missing":
+      return "本地 DEM 数据缺失";
+    case "terrain_dem_metadata_missing":
+      return "本地 DEM 元数据缺失";
+    case "terrain_dem_unreadable":
+      return "本地 DEM 无法读取";
+    case "terrain_dem_out_of_bounds":
+      return "坐标超出 DEM 范围";
+    case "terrain_dem_no_data":
+      return "DEM 像元无有效海拔";
     case "missing_directional_profile":
       return "缺少目标方向地形剖面";
     case "unknown":
@@ -421,6 +441,26 @@ function sampleDistanceRange(
     return undefined;
   }
   return [Math.min(...distances), Math.max(...distances)] as const;
+}
+
+function firstSampleObserverElevation(
+  samples: readonly TerrainHorizonDirectionSample[],
+): number | undefined {
+  for (const sample of samples) {
+    const value = finiteNumber(sample.observerElevationMeters);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function totalSampleCount(samples: readonly TerrainHorizonDirectionSample[]): number {
+  return samples.reduce((sum, sample) => sum + (finiteNumber(sample.sampleCount) ?? 1), 0);
+}
+
+function totalValidSampleCount(samples: readonly TerrainHorizonDirectionSample[]): number {
+  return samples.reduce((sum, sample) => sum + (finiteNumber(sample.validSampleCount) ?? 1), 0);
 }
 
 function nearestAzimuthDelta(

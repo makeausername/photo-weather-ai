@@ -7,6 +7,8 @@ ENV LIGHT_POLLUTION_DATASET_PATH=/app/data/light-pollution/current/light-polluti
 ENV LIGHT_POLLUTION_METADATA_PATH=/app/data/light-pollution/current/metadata.json
 ENV LIGHT_POLLUTION_CACHE_SIZE=1024
 ENV LIGHT_POLLUTION_QUERY_TIMEOUT_MS=5000
+ENV TERRAIN_DEM_DATASET_PATH=/app/data/terrain-dem/current/terrain-dem.cog.tif
+ENV TERRAIN_DEM_METADATA_PATH=/app/data/terrain-dem/current/metadata.json
 
 WORKDIR /app/apps/astro-service
 ARG PIP_INDEX_URL=""
@@ -14,6 +16,7 @@ ARG PIP_INDEX_URL=""
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates libexpat1 libsqlite3-0 libtiff6 libcurl4 \
   && mkdir -p /app/data/light-pollution/current /app/data/light-pollution/incoming \
+    /app/data/terrain-dem/current /app/data/terrain-dem/incoming \
   && rm -rf /var/lib/apt/lists/*
 
 COPY apps/astro-service/requirements.txt ./requirements.txt

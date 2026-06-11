@@ -30,6 +30,18 @@ LightPollutionQuantileBasis = Literal[
     "adaptive_positive_log_radiance_quantiles",
     "log_radiance_dataset_quantiles",
 ]
+TerrainHorizonObstructionLevel = Literal["clear", "marginal", "obstructed", "unknown"]
+TerrainHorizonConfidence = Literal["high", "medium", "low", "unknown"]
+TerrainHorizonTarget = Literal[
+    "milky_way",
+    "sunrise",
+    "sunset",
+    "moonrise",
+    "moonset",
+    "landscape",
+    "custom",
+]
+TerrainDemObserverElevationSource = Literal["input", "dem", "unknown"]
 
 
 class AstroCalculateRequest(BaseModel):
@@ -205,6 +217,115 @@ class LightPollutionQueryResponse(BaseModel):
     cacheHit: bool = False
 
 
+class TerrainDemProfileQueryRequest(BaseModel):
+    latitudeWgs84: float = Field(ge=-90, le=90)
+    longitudeWgs84: float = Field(ge=-180, le=180)
+    observerElevationMeters: float | None = None
+    target: TerrainHorizonTarget = "milky_way"
+    targetAzimuthDegrees: float | None = Field(default=None, ge=0, le=360)
+    targetAltitudeDegrees: float | None = None
+    maxDistanceMeters: float = Field(default=30000, ge=100, le=100000)
+    sampleIntervalMeters: float = Field(default=250, ge=10, le=5000)
+    sampleCount: int | None = Field(default=None, ge=2, le=2000)
+
+    @field_validator(
+        "latitudeWgs84",
+        "longitudeWgs84",
+        "observerElevationMeters",
+        "targetAzimuthDegrees",
+        "targetAltitudeDegrees",
+        "maxDistanceMeters",
+        "sampleIntervalMeters",
+    )
+    @classmethod
+    def terrain_numeric_fields_must_be_finite(cls, value: float | None) -> float | None:
+        if value is None:
+            return value
+        if value != value or value in (float("inf"), float("-inf")):
+            raise ValueError("value must be finite")
+        return value
+
+
+class TerrainDemBounds(BaseModel):
+    west: float
+    south: float
+    east: float
+    north: float
+
+
+class TerrainDemResolution(BaseModel):
+    xDegrees: float
+    yDegrees: float
+    approximateMeters: float | None = None
+
+
+class TerrainDemMetadata(BaseModel):
+    datasetExists: bool
+    datasetName: str | None = None
+    datasetVersion: str | None = None
+    datasetYear: int | None = None
+    sourceName: str | None = None
+    crs: str | None = None
+    width: int | None = None
+    height: int | None = None
+    bounds: TerrainDemBounds | None = None
+    resolution: TerrainDemResolution | None = None
+    verticalUnit: str | None = None
+    noDataValue: float | None = None
+    checksumShort: str | None = None
+    importedAt: str | None = None
+    rasterPath: str | None = None
+    healthStatus: str
+
+
+class TerrainDemProfileSample(BaseModel):
+    distanceMeters: float
+    latitudeWgs84: float
+    longitudeWgs84: float
+    terrainElevationMeters: float
+    apparentTerrainAngleDegrees: float
+
+
+class TerrainDemCalculationBasis(BaseModel):
+    samplingConfigVersion: str
+    coordinateSystem: Literal["WGS84"]
+    verticalUnit: str
+    maxDistanceMeters: float
+    sampleIntervalMeters: float
+    requestedSampleCount: int
+    demResolutionMeters: float | None = None
+    obstructionRule: str
+
+
+class TerrainDemProfileQueryResponse(BaseModel):
+    available: bool
+    dataAvailable: bool
+    unavailableReason: str | None = None
+    sourceName: str | None = None
+    datasetName: str | None = None
+    datasetYear: int | None = None
+    datasetVersion: str | None = None
+    checksumShort: str | None = None
+    observerElevationMeters: float | None = None
+    observerElevationSource: TerrainDemObserverElevationSource = "unknown"
+    target: TerrainHorizonTarget = "milky_way"
+    targetAzimuthDegrees: float | None = None
+    targetAltitudeDegrees: float | None = None
+    horizonAltitudeDegrees: float | None = None
+    obstructionClearanceDegrees: float | None = None
+    obstructionLevel: TerrainHorizonObstructionLevel = "unknown"
+    confidence: TerrainHorizonConfidence = "low"
+    sampleCount: int
+    validSampleCount: int
+    maxSampleDistanceMeters: float | None = None
+    maxObstructionSample: TerrainDemProfileSample | None = None
+    profileSamples: list[TerrainDemProfileSample]
+    calculationBasis: TerrainDemCalculationBasis | None = None
+    terrainHorizonNoteZh: str
+    queryElapsedMs: float | None = None
+    cacheHit: bool = False
+
+
 class SunBlock(BaseModel):
     daily: list[DailySun]
 
@@ -263,3 +384,12 @@ class HealthResponse(BaseModel):
     lightPollutionDatasetVersion: str | None = None
     lightPollutionChecksumShort: str | None = None
     lightPollutionLoadError: str | None = None
+    terrainDemAvailable: bool = False
+    terrainDemDatasetPathConfigured: bool = False
+    terrainDemDatasetExists: bool = False
+    terrainDemMetadataAvailable: bool = False
+    terrainDemDatasetYear: int | None = None
+    terrainDemDatasetVersion: str | None = None
+    terrainDemChecksumShort: str | None = None
+    terrainDemHealthStatus: str | None = None
+    terrainDemLoadError: str | None = None

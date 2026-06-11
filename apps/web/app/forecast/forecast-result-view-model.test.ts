@@ -230,6 +230,53 @@ const terrainHorizonForTest: TerrainHorizonAssessment = {
   },
 };
 
+const terrainHorizonDemForTest: TerrainHorizonAssessment = {
+  ...terrainHorizonForTest,
+  dataSource: "dem_raster",
+  dataSourceLabelZh: "本地 DEM 地形剖面",
+  directionSample: {
+    ...terrainHorizonForTest.directionSample!,
+    dataSource: "dem_raster",
+    dataSourceLabelZh: "本地 DEM 地形剖面",
+    observerElevationMeters: 1860,
+    sampleCount: 120,
+    validSampleCount: 118,
+    maxSampleDistanceMeters: 30000,
+    datasetName: "Synthetic terrain DEM",
+    datasetYear: 2026,
+    datasetVersion: "test-dem-v1",
+    sourceName: "Synthetic DEM",
+    checksumShort: "abc123def456",
+  },
+  directionSamples: [
+    {
+      ...terrainHorizonForTest.directionSamples![0]!,
+      dataSource: "dem_raster",
+      dataSourceLabelZh: "本地 DEM 地形剖面",
+      observerElevationMeters: 1860,
+      sampleCount: 120,
+      validSampleCount: 118,
+      maxSampleDistanceMeters: 30000,
+      datasetName: "Synthetic terrain DEM",
+      datasetYear: 2026,
+      datasetVersion: "test-dem-v1",
+      sourceName: "Synthetic DEM",
+      checksumShort: "abc123def456",
+    },
+  ],
+  professionalDiagnostics: {
+    ...terrainHorizonForTest.professionalDiagnostics,
+    sampleCount: 120,
+    validSampleCount: 118,
+    maxSampleDistanceMeters: 30000,
+    datasetName: "Synthetic terrain DEM",
+    datasetYear: 2026,
+    datasetVersion: "test-dem-v1",
+    sourceName: "Synthetic DEM",
+    checksumShort: "abc123def456",
+  },
+};
+
 function lightPollutionForDisplayTest(
   overrides: Partial<ForecastCalculationResult["astroAnalysis"]["lightPollution"]> = {},
 ): ForecastCalculationResult["astroAnalysis"]["lightPollution"] {
@@ -7155,6 +7202,37 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain('data-astro-professional-data-expanded="false"');
     expect(html).not.toContain("clearance rule v1");
     expect(html).not.toContain("地形遮挡剖面");
+  });
+
+  it("keeps DEM terrain details in professional data without leaking raw raster paths", () => {
+    const result = resultWithAstroTerrainHorizon(terrainHorizonDemForTest);
+    const viewModel = buildAstroForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(AstroResultPage, {
+        query: queryForTarget("astro"),
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(viewModel.terrainHorizon.dataSourceLabelZh).toBe("本地 DEM 地形剖面");
+    expect(
+      viewModel.terrainHorizon.professionalDataItems.find((item) => item.label === "DEM 数据集"),
+    ).toMatchObject({
+      value: "Synthetic terrain DEM / 2026 / test-dem-v1",
+      detail: "来源 Synthetic DEM；checksum abc123def456",
+    });
+    expect(
+      viewModel.terrainHorizon.professionalDataItems.find((item) => item.label === "最大采样距离")
+        ?.value,
+    ).toBe("30000 m");
+    expect(
+      viewModel.terrainHorizon.professionalDataItems.find((item) => item.label === "观测点海拔")
+        ?.value,
+    ).toBe("1860 m");
+    expect(html).toContain('data-astro-professional-data-expanded="false"');
+    expect(html).not.toContain("terrain-dem.cog.tif");
+    expect(html).not.toContain("checksum abc123def456");
   });
 
   it("keeps missing astro terrain horizon unknown without fake zero clearance", () => {

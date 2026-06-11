@@ -66,6 +66,13 @@ Astro 结果页显示三层信息：
 
 正常公开页面不展示 provider code、原始 DEM 细节或内部调试字段。
 
+## Local DEM Integration
+
+- Astro-service can read a local EPSG:4326 GeoTIFF/COG from `/app/data/terrain-dem/current/terrain-dem.cog.tif` with metadata from `/app/data/terrain-dem/current/metadata.json`.
+- `POST /terrain-dem/profile` samples outward from the WGS84 observer along the target azimuth, computes the maximum apparent terrain angle, and returns `clearance = target altitude - terrain horizon altitude`.
+- DEM absence, metadata absence, unreadable raster, out-of-bounds coordinates, nodata pixels, missing target geometry, and insufficient samples all return unavailable states. They do not become clear terrain.
+- The API maps available DEM profiles to `TerrainHorizonDirectionSample` with `dataSource="dem_raster"` and lets the existing helper decide deterministic clearance. Scoring remains conservative: only medium/high confidence profiles can create a deterministic terrain penalty.
+
 ## Tests
 
 覆盖点：

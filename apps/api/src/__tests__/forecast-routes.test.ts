@@ -11,6 +11,7 @@ import {
   type AstroServiceCalculationResponse,
   type AstroServiceClientLike,
   type AstroServiceCalculateInput,
+  type AstroServiceTerrainDemProfileQueryResponse,
 } from "../astro-service-client.js";
 
 const validPayload = {
@@ -418,6 +419,62 @@ function buildAstroServiceResponse(
         galacticCenter: 10,
       },
     },
+  };
+}
+
+function buildTerrainDemProfileResponse(
+  overrides: Partial<AstroServiceTerrainDemProfileQueryResponse> = {},
+): AstroServiceTerrainDemProfileQueryResponse {
+  return {
+    available: true,
+    dataAvailable: true,
+    sourceName: "Synthetic DEM",
+    datasetName: "Synthetic terrain DEM",
+    datasetYear: 2026,
+    datasetVersion: "test-dem-v1",
+    checksumShort: "abc123def456",
+    observerElevationMeters: 1860,
+    observerElevationSource: "input",
+    target: "milky_way",
+    targetAzimuthDegrees: 146,
+    targetAltitudeDegrees: 31,
+    horizonAltitudeDegrees: 34,
+    obstructionClearanceDegrees: -3,
+    obstructionLevel: "obstructed",
+    confidence: "high",
+    sampleCount: 120,
+    validSampleCount: 118,
+    maxSampleDistanceMeters: 30000,
+    maxObstructionSample: {
+      distanceMeters: 4200,
+      latitudeWgs84: 30.104,
+      longitudeWgs84: 118.198,
+      terrainElevationMeters: 2420,
+      apparentTerrainAngleDegrees: 34,
+    },
+    profileSamples: [
+      {
+        distanceMeters: 4200,
+        latitudeWgs84: 30.104,
+        longitudeWgs84: 118.198,
+        terrainElevationMeters: 2420,
+        apparentTerrainAngleDegrees: 34,
+      },
+    ],
+    calculationBasis: {
+      samplingConfigVersion: "terrain-dem-profile-v1",
+      coordinateSystem: "WGS84",
+      verticalUnit: "meter",
+      maxDistanceMeters: 30000,
+      sampleIntervalMeters: 250,
+      requestedSampleCount: 120,
+      demResolutionMeters: 30,
+      obstructionRule: "clearance = target altitude - terrain horizon altitude",
+    },
+    terrainHorizonNoteZh: "已使用本地 DEM 沿目标方位采样地形剖面。",
+    queryElapsedMs: 9.8,
+    cacheHit: false,
+    ...overrides,
   };
 }
 
@@ -1383,6 +1440,91 @@ describe("forecast query validation route", () => {
     expect(body.astroAnalysis.recommendedMilkyWayWindows[0]).toMatchObject({
       labelZh: "推荐银河窗口",
       directionZh: "东南方",
+    });
+  });
+
+  it("enriches astro terrain horizon scoring with available local DEM profiles", async () => {
+    const calculateMock = vi.fn((input: AstroServiceCalculateInput) => {
+      const response = buildAstroServiceResponse(input);
+      return Promise.resolve({
+        ...response,
+        milkyWay: {
+          ...response.milkyWay,
+          recommendedWindows: response.milkyWay.recommendedWindows.map((window) => ({
+            ...window,
+            bestAzimuth: 146,
+          })),
+        },
+      });
+    });
+    const queryTerrainDemProfileMock = vi.fn(async () => buildTerrainDemProfileResponse());
+    const astroServiceClient: AstroServiceClientLike = {
+      calculate: calculateMock,
+      queryTerrainDemProfile: queryTerrainDemProfileMock,
+    };
+    app = buildApiServer({
+      authConfig: testAuthConfig,
+      astroServiceClient,
+      env: {
+        ...process.env,
+        ENABLE_ASTRO_SERVICE: "true",
+        ASTRO_SERVICE_URL: "http://127.0.0.1:4100",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        target: "astro",
+      },
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(queryTerrainDemProfileMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        latitudeWgs84: validPayload.latitudeWgs84,
+        longitudeWgs84: validPayload.longitudeWgs84,
+        observerElevationMeters: 1860,
+        target: "milky_way",
+        targetAzimuthDegrees: 146,
+        targetAltitudeDegrees: 31,
+        maxDistanceMeters: 30000,
+        sampleIntervalMeters: 250,
+      }),
+    );
+    expect(body.terrainAnalysis).toMatchObject({
+      dataSource: "dem",
+      dataSourceLabelZh: "本地 DEM 地形剖面",
+      isMock: false,
+    });
+    expect(body.terrainAnalysis.horizonProfile.directionSamples[0]).toMatchObject({
+      target: "milky_way",
+      dataSource: "dem_raster",
+      dataSourceLabelZh: "本地 DEM 地形剖面",
+      sampleCount: 120,
+      validSampleCount: 118,
+      datasetVersion: "test-dem-v1",
+    });
+    expect(body.astroAnalysis.terrainHorizonAssessment).toMatchObject({
+      obstructionLevel: "obstructed",
+      confidence: "high",
+      dataSource: "dem_raster",
+      dataSourceLabelZh: "本地 DEM 地形剖面",
+      directionSample: expect.objectContaining({
+        dataSource: "dem_raster",
+        observerElevationMeters: 1860,
+        datasetYear: 2026,
+      }),
+      professionalDiagnostics: expect.objectContaining({
+        sampleCount: 120,
+        validSampleCount: 118,
+        maxSampleDistanceMeters: 30000,
+        datasetVersion: "test-dem-v1",
+      }),
     });
   });
 

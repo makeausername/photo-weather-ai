@@ -3557,6 +3557,7 @@ function terrainHorizonProfessionalItems(
   }
 
   const diagnostics = assessment.professionalDiagnostics;
+  const directionSample = assessment.directionSample;
   return [
     {
       label: "地形遮挡状态",
@@ -3595,6 +3596,17 @@ function terrainHorizonProfessionalItems(
       detail: assessment.dataSource,
     },
     {
+      label: "观测点海拔",
+      value: formatNullableNumberForView(
+        directionSample?.observerElevationMeters ?? assessment.observerElevationMeters,
+        " m",
+      ),
+      detail:
+        directionSample?.observerElevationMeters !== undefined
+          ? "来自 DEM 剖面或输入的机位海拔。"
+          : "机位海拔暂未确认。",
+    },
+    {
       label: "置信度",
       value: terrainHorizonConfidenceLabel(assessment.confidence),
       detail: diagnostics.usedDirectionalProfile ? "来自方向剖面样本。" : "仅为定性 fallback。",
@@ -3607,6 +3619,19 @@ function terrainHorizonProfessionalItems(
           )} m`
         : "暂无",
       detail: `有效样本 ${diagnostics.validSampleCount}/${diagnostics.sampleCount}`,
+    },
+    {
+      label: "DEM 数据集",
+      value: terrainHorizonDatasetLabel(assessment),
+      detail: terrainHorizonDatasetDetail(assessment),
+    },
+    {
+      label: "最大采样距离",
+      value: formatNullableNumberForView(
+        diagnostics.maxSampleDistanceMeters ?? directionSample?.maxSampleDistanceMeters,
+        " m",
+      ),
+      detail: "沿目标方位从机位向外采样的最远距离；不代表近景树线或建筑遮挡已确认。",
     },
     {
       label: "不可用原因",
@@ -3707,6 +3732,16 @@ function terrainHorizonUnavailableReasonLabel(
       return "目标方向样本不足";
     case "invalid_directional_sample":
       return "地形剖面样本无效";
+    case "terrain_dem_missing":
+      return "本地 DEM 数据缺失";
+    case "terrain_dem_metadata_missing":
+      return "本地 DEM 元数据缺失";
+    case "terrain_dem_unreadable":
+      return "本地 DEM 无法读取";
+    case "terrain_dem_out_of_bounds":
+      return "坐标超出 DEM 范围";
+    case "terrain_dem_no_data":
+      return "DEM 像元无有效海拔";
     case "missing_directional_profile":
       return "缺少目标方向地形剖面";
     case "unknown":
@@ -3716,6 +3751,9 @@ function terrainHorizonUnavailableReasonLabel(
 }
 
 function terrainHorizonDataSourceLabel(assessment: TerrainHorizonAssessment): string {
+  if (assessment.dataSource === "dem" || assessment.dataSource === "dem_raster") {
+    return "本地 DEM 地形剖面";
+  }
   if (assessment.dataSource === "qualitative_fallback") {
     return "定性地形参考";
   }
@@ -3726,6 +3764,30 @@ function terrainHorizonDataSourceLabel(assessment: TerrainHorizonAssessment): st
     return "人工地形剖面";
   }
   return assessment.dataSource;
+}
+
+function terrainHorizonDatasetLabel(assessment: TerrainHorizonAssessment): string {
+  const diagnostics = assessment.professionalDiagnostics;
+  const sample = assessment.directionSample;
+  const name = diagnostics.datasetName ?? sample?.datasetName;
+  const source = diagnostics.sourceName ?? sample?.sourceName;
+  const year = diagnostics.datasetYear ?? sample?.datasetYear;
+  const version = diagnostics.datasetVersion ?? sample?.datasetVersion;
+  const parts = [name ?? source, year, version].filter(
+    (value): value is string | number => value !== null && value !== undefined && value !== "",
+  );
+  return parts.length > 0 ? parts.join(" / ") : "暂未提供";
+}
+
+function terrainHorizonDatasetDetail(assessment: TerrainHorizonAssessment): string {
+  const diagnostics = assessment.professionalDiagnostics;
+  const sample = assessment.directionSample;
+  const source = diagnostics.sourceName ?? sample?.sourceName;
+  const checksum = diagnostics.checksumShort ?? sample?.checksumShort;
+  return [
+    source ? `来源 ${source}` : "来源暂未提供",
+    checksum ? `checksum ${checksum}` : "checksum 暂未提供",
+  ].join("；");
 }
 
 function missingTerrainHorizonDetail(): string {

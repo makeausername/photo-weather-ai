@@ -9,6 +9,7 @@ import type {
   LightPollutionInfo,
   MoonAltitudeSample,
   MoonImpactLevel,
+  TerrainHorizonDirectionSample,
 } from "@photo-weather/shared";
 import { glowSolarAltitudeGeometryConfig } from "@photo-weather/shared";
 
@@ -241,6 +242,73 @@ const lightPollutionResponseSchema = z.object({
   lightPollutionNoteZh: z.string().min(1),
 });
 
+const terrainHorizonTargetSchema = z.enum([
+  "milky_way",
+  "sunrise",
+  "sunset",
+  "moonrise",
+  "moonset",
+  "landscape",
+  "custom",
+]);
+
+const terrainHorizonObstructionLevelSchema = z.enum([
+  "clear",
+  "marginal",
+  "obstructed",
+  "unknown",
+]);
+
+const terrainHorizonConfidenceSchema = z.enum(["high", "medium", "low", "unknown"]);
+
+const terrainDemProfileSampleSchema = z.object({
+  distanceMeters: z.number().finite().nonnegative(),
+  latitudeWgs84: z.number().finite(),
+  longitudeWgs84: z.number().finite(),
+  terrainElevationMeters: z.number().finite(),
+  apparentTerrainAngleDegrees: z.number().finite(),
+});
+
+const terrainDemCalculationBasisSchema = z.object({
+  samplingConfigVersion: z.string().min(1),
+  coordinateSystem: z.literal("WGS84"),
+  verticalUnit: z.string().min(1),
+  maxDistanceMeters: z.number().finite().positive(),
+  sampleIntervalMeters: z.number().finite().positive(),
+  requestedSampleCount: z.number().int().nonnegative(),
+  demResolutionMeters: z.number().finite().nullable().optional(),
+  obstructionRule: z.string().min(1),
+});
+
+const terrainDemProfileResponseSchema = z.object({
+  available: z.boolean(),
+  dataAvailable: z.boolean(),
+  unavailableReason: z.string().nullable().optional(),
+  sourceName: z.string().nullable().optional(),
+  datasetName: z.string().nullable().optional(),
+  datasetYear: z.number().int().nullable().optional(),
+  datasetVersion: z.string().nullable().optional(),
+  checksumShort: z.string().nullable().optional(),
+  observerElevationMeters: z.number().finite().nullable().optional(),
+  observerElevationSource: z.enum(["input", "dem", "unknown"]),
+  target: terrainHorizonTargetSchema,
+  targetAzimuthDegrees: z.number().finite().nullable().optional(),
+  targetAltitudeDegrees: z.number().finite().nullable().optional(),
+  horizonAltitudeDegrees: z.number().finite().nullable().optional(),
+  obstructionClearanceDegrees: z.number().finite().nullable().optional(),
+  obstructionLevel: terrainHorizonObstructionLevelSchema,
+  confidence: terrainHorizonConfidenceSchema,
+  sampleCount: z.number().int().nonnegative(),
+  validSampleCount: z.number().int().nonnegative(),
+  maxSampleDistanceMeters: z.number().finite().nullable().optional(),
+  maxObstructionSample: terrainDemProfileSampleSchema.nullable().optional(),
+  profileSamples: z.array(terrainDemProfileSampleSchema),
+  calculationBasis: terrainDemCalculationBasisSchema.nullable().optional(),
+  terrainHorizonNoteZh: z.string().min(1),
+  queryElapsedMs: z.number().finite().nonnegative().nullable().optional(),
+  cacheHit: z.boolean().optional(),
+});
+
 const astroServiceResponseSchema = z.object({
   forecastStart: z.string().datetime({ offset: true }),
   forecastEnd: z.string().datetime({ offset: true }),
@@ -293,6 +361,9 @@ export type AstroServiceCalculationResponse = z.infer<typeof astroServiceRespons
 export type AstroServiceLightPollutionQueryResponse = z.infer<
   typeof lightPollutionQueryResponseSchema
 >;
+export type AstroServiceTerrainDemProfileQueryResponse = z.infer<
+  typeof terrainDemProfileResponseSchema
+>;
 
 export type AstroServiceCalculateInput = {
   readonly latitudeWgs84: number;
@@ -311,8 +382,23 @@ export type AstroServiceLightPollutionQueryInput = {
   readonly timezone?: string;
 };
 
+export type AstroServiceTerrainDemProfileQueryInput = {
+  readonly latitudeWgs84: number;
+  readonly longitudeWgs84: number;
+  readonly observerElevationMeters?: number | null;
+  readonly target?: z.infer<typeof terrainHorizonTargetSchema>;
+  readonly targetAzimuthDegrees?: number | null;
+  readonly targetAltitudeDegrees?: number | null;
+  readonly maxDistanceMeters?: number;
+  readonly sampleIntervalMeters?: number;
+  readonly sampleCount?: number;
+};
+
 export type AstroServiceClientLike = {
   calculate(input: AstroServiceCalculateInput): Promise<AstroServiceCalculationResponse>;
+  queryTerrainDemProfile?(
+    input: AstroServiceTerrainDemProfileQueryInput,
+  ): Promise<AstroServiceTerrainDemProfileQueryResponse>;
 };
 
 export type ForecastAstroServiceData = {
@@ -716,6 +802,194 @@ export class AstroServiceClient implements AstroServiceClientLike {
       clearTimeout(timeout);
     }
   }
+
+  async queryTerrainDemProfile(
+    input: AstroServiceTerrainDemProfileQueryInput,
+  ): Promise<AstroServiceTerrainDemProfileQueryResponse> {
+    const requestUrl = `${this.baseUrl}/terrain-dem/profile`;
+    const startedAt = Date.now();
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, this.timeoutMs);
+
+    try {
+      logInfo(
+        this.logger,
+        {
+          url: sanitizeAstroServiceUrlForLog(requestUrl),
+          timeoutMs: this.timeoutMs,
+          payload: summarizeTerrainDemProfileQueryPayload(input),
+        },
+        `Calling astro-service terrain DEM endpoint: ${sanitizeAstroServiceUrlForLog(requestUrl)}`,
+      );
+
+      const response = await this.fetchImpl(requestUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(input),
+        signal: controller.signal,
+      });
+      const elapsedMs = Date.now() - startedAt;
+      const responseText = await response.text();
+      const responseBodyExcerpt = safeResponseExcerpt(responseText);
+
+      logInfo(
+        this.logger,
+        {
+          url: sanitizeAstroServiceUrlForLog(requestUrl),
+          status: response.status,
+          elapsedMs,
+          timeoutMs: this.timeoutMs,
+          timedOut: false,
+        },
+        "Astro-service terrain DEM response received",
+      );
+
+      if (!response.ok) {
+        throw new AstroServiceClientError("unavailable", astroServiceUnavailableMessage, {
+          url: sanitizeAstroServiceUrlForLog(requestUrl),
+          status: response.status,
+          elapsedMs,
+          timeoutMs: this.timeoutMs,
+          timedOut: false,
+          responseBodyExcerpt,
+          upstreamErrorName: "AstroServiceHttpError",
+          upstreamErrorMessage: `Astro service responded with HTTP ${response.status}`,
+        });
+      }
+
+      let responseJson: unknown;
+      try {
+        responseJson = responseText ? JSON.parse(responseText) : null;
+      } catch (parseError) {
+        const normalizedError = normalizeError(parseError);
+        logError(
+          this.logger,
+          {
+            url: sanitizeAstroServiceUrlForLog(requestUrl),
+            status: response.status,
+            elapsedMs,
+            timeoutMs: this.timeoutMs,
+            timedOut: false,
+            parseErrorName: normalizedError.name,
+            parseErrorMessage: normalizedError.message,
+            responseBodyExcerpt,
+          },
+          "Astro-service terrain DEM JSON parse failed",
+        );
+        throw new AstroServiceClientError(
+          "invalid_response",
+          astroServiceInvalidResponseMessage,
+          {
+            url: sanitizeAstroServiceUrlForLog(requestUrl),
+            status: response.status,
+            elapsedMs,
+            timeoutMs: this.timeoutMs,
+            timedOut: false,
+            responseBodyExcerpt,
+            parseErrorName: normalizedError.name,
+            parseErrorMessage: normalizedError.message,
+          },
+          parseError,
+        );
+      }
+
+      const parsed = terrainDemProfileResponseSchema.safeParse(responseJson);
+      if (!parsed.success) {
+        logError(
+          this.logger,
+          {
+            url: sanitizeAstroServiceUrlForLog(requestUrl),
+            status: response.status,
+            elapsedMs,
+            timeoutMs: this.timeoutMs,
+            timedOut: false,
+            validationIssues: parsed.error.issues.map((issue) => ({
+              path: issue.path.join("."),
+              message: issue.message,
+            })),
+            responseBodyExcerpt,
+          },
+          "Astro-service terrain DEM response validation failed",
+        );
+        throw new AstroServiceClientError(
+          "invalid_response",
+          astroServiceInvalidResponseMessage,
+          {
+            url: sanitizeAstroServiceUrlForLog(requestUrl),
+            status: response.status,
+            elapsedMs,
+            timeoutMs: this.timeoutMs,
+            timedOut: false,
+            responseBodyExcerpt,
+            upstreamErrorName: parsed.error.name,
+            upstreamErrorMessage: parsed.error.message,
+          },
+          parsed.error,
+        );
+      }
+
+      logInfo(
+        this.logger,
+        {
+          url: sanitizeAstroServiceUrlForLog(requestUrl),
+          status: response.status,
+          elapsedMs,
+          timeoutMs: this.timeoutMs,
+          timedOut: false,
+          dataAvailable: parsed.data.dataAvailable,
+          confidence: parsed.data.confidence,
+          datasetYear: parsed.data.datasetYear,
+          datasetVersion: parsed.data.datasetVersion,
+          sampleCount: parsed.data.sampleCount,
+          validSampleCount: parsed.data.validSampleCount,
+        },
+        "Astro-service terrain DEM response parsed",
+      );
+
+      return parsed.data;
+    } catch (error) {
+      if (error instanceof AstroServiceClientError) {
+        throw error;
+      }
+      const normalizedError = normalizeError(error);
+      const elapsedMs = Date.now() - startedAt;
+      const requestTimedOut = timedOut || normalizedError.name === "AbortError";
+      logError(
+        this.logger,
+        {
+          url: sanitizeAstroServiceUrlForLog(requestUrl),
+          elapsedMs,
+          timeoutMs: this.timeoutMs,
+          timedOut: requestTimedOut,
+          errorName: normalizedError.name,
+          errorMessage: normalizedError.message,
+          stack: normalizedError.stack,
+        },
+        "Astro-service terrain DEM request failed",
+      );
+      throw new AstroServiceClientError(
+        requestTimedOut ? "timeout" : "unavailable",
+        requestTimedOut ? astroServiceTimeoutMessage : astroServiceUnavailableMessage,
+        {
+          url: sanitizeAstroServiceUrlForLog(requestUrl),
+          elapsedMs,
+          timeoutMs: this.timeoutMs,
+          timedOut: requestTimedOut,
+          upstreamErrorName: normalizedError.name,
+          upstreamErrorMessage: normalizedError.message,
+        },
+        error,
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
 }
 
 export function mapAstroServiceResponseToForecastData(
@@ -960,6 +1234,50 @@ function mapLightPollutionResponse(
   };
 }
 
+export function mapTerrainDemProfileToDirectionSample(
+  profile: AstroServiceTerrainDemProfileQueryResponse,
+): TerrainHorizonDirectionSample | null {
+  if (
+    !profile.available ||
+    !profile.dataAvailable ||
+    typeof profile.targetAzimuthDegrees !== "number" ||
+    typeof profile.horizonAltitudeDegrees !== "number"
+  ) {
+    return null;
+  }
+
+  const maxSample = profile.maxObstructionSample ?? null;
+
+  return {
+    target: profile.target,
+    azimuthDegrees: roundTo(profile.targetAzimuthDegrees, 3),
+    horizonAltitudeDegrees: roundTo(profile.horizonAltitudeDegrees, 3),
+    elevationMeters:
+      typeof maxSample?.terrainElevationMeters === "number"
+        ? roundTo(maxSample.terrainElevationMeters, 1)
+        : null,
+    distanceMeters:
+      typeof maxSample?.distanceMeters === "number" ? roundTo(maxSample.distanceMeters, 1) : null,
+    sampledLatitudeWgs84:
+      typeof maxSample?.latitudeWgs84 === "number" ? roundTo(maxSample.latitudeWgs84, 7) : null,
+    sampledLongitudeWgs84:
+      typeof maxSample?.longitudeWgs84 === "number" ? roundTo(maxSample.longitudeWgs84, 7) : null,
+    observerElevationMeters: profile.observerElevationMeters ?? null,
+    directionLabelZh: directionLabelZhFromAzimuth(profile.targetAzimuthDegrees),
+    dataSource: "dem_raster",
+    dataSourceLabelZh: "本地 DEM 地形剖面",
+    confidence: profile.confidence,
+    sampleCount: profile.sampleCount,
+    validSampleCount: profile.validSampleCount,
+    maxSampleDistanceMeters: profile.maxSampleDistanceMeters ?? null,
+    datasetName: profile.datasetName ?? null,
+    datasetVersion: profile.datasetVersion ?? null,
+    datasetYear: profile.datasetYear ?? null,
+    sourceName: profile.sourceName ?? null,
+    checksumShort: profile.checksumShort ?? null,
+  };
+}
+
 function moonAltitudeRecord(
   samples: readonly z.infer<typeof moonAltitudeSampleSchema>[],
 ): Readonly<Record<string, number>> {
@@ -998,6 +1316,17 @@ function moonImpactRiskTag(level: MoonImpactLevel): string {
     return "月光中等";
   }
   return "月光偏强";
+}
+
+function directionLabelZhFromAzimuth(azimuthDegrees: number): string {
+  const normalized = (((azimuthDegrees % 360) + 360) % 360) / 45;
+  const index = Math.round(normalized) % 8;
+  return ["北", "东北", "东", "东南", "南", "西南", "西", "西北"][index] ?? "未知方向";
+}
+
+function roundTo(value: number, digits: number): number {
+  const scale = 10 ** digits;
+  return Math.round(value * scale) / scale;
 }
 
 function durationMinutes(start: string, end: string): number {
@@ -1095,6 +1424,14 @@ export type AstroServiceDebugStatus = {
   readonly lightPollutionDatasetVersion?: string;
   readonly lightPollutionChecksumShort?: string;
   readonly lightPollutionLoadError?: string;
+  readonly terrainDemAvailable?: boolean;
+  readonly terrainDemDatasetExists?: boolean;
+  readonly terrainDemMetadataAvailable?: boolean;
+  readonly terrainDemDatasetYear?: number;
+  readonly terrainDemDatasetVersion?: string;
+  readonly terrainDemChecksumShort?: string;
+  readonly terrainDemHealthStatus?: string;
+  readonly terrainDemLoadError?: string;
   readonly lastError?: string;
   readonly envSource?: string;
 };
@@ -1146,6 +1483,14 @@ export async function checkAstroServiceHealth(options: {
     let lightPollutionDatasetVersion: string | undefined;
     let lightPollutionChecksumShort: string | undefined;
     let lightPollutionLoadError: string | undefined;
+    let terrainDemAvailable: boolean | undefined;
+    let terrainDemDatasetExists: boolean | undefined;
+    let terrainDemMetadataAvailable: boolean | undefined;
+    let terrainDemDatasetYear: number | undefined;
+    let terrainDemDatasetVersion: string | undefined;
+    let terrainDemChecksumShort: string | undefined;
+    let terrainDemHealthStatus: string | undefined;
+    let terrainDemLoadError: string | undefined;
     try {
       const body = JSON.parse(bodyText) as {
         ok?: unknown;
@@ -1158,6 +1503,14 @@ export async function checkAstroServiceHealth(options: {
         lightPollutionDatasetVersion?: unknown;
         lightPollutionChecksumShort?: unknown;
         lightPollutionLoadError?: unknown;
+        terrainDemAvailable?: unknown;
+        terrainDemDatasetExists?: unknown;
+        terrainDemMetadataAvailable?: unknown;
+        terrainDemDatasetYear?: unknown;
+        terrainDemDatasetVersion?: unknown;
+        terrainDemChecksumShort?: unknown;
+        terrainDemHealthStatus?: unknown;
+        terrainDemLoadError?: unknown;
       };
       if (typeof body.ok === "boolean") {
         healthOk = response.ok && body.ok;
@@ -1189,6 +1542,30 @@ export async function checkAstroServiceHealth(options: {
       if (typeof body.lightPollutionLoadError === "string") {
         lightPollutionLoadError = sanitizeLogText(body.lightPollutionLoadError);
       }
+      if (typeof body.terrainDemAvailable === "boolean") {
+        terrainDemAvailable = body.terrainDemAvailable;
+      }
+      if (typeof body.terrainDemDatasetExists === "boolean") {
+        terrainDemDatasetExists = body.terrainDemDatasetExists;
+      }
+      if (typeof body.terrainDemMetadataAvailable === "boolean") {
+        terrainDemMetadataAvailable = body.terrainDemMetadataAvailable;
+      }
+      if (typeof body.terrainDemDatasetYear === "number") {
+        terrainDemDatasetYear = body.terrainDemDatasetYear;
+      }
+      if (typeof body.terrainDemDatasetVersion === "string") {
+        terrainDemDatasetVersion = body.terrainDemDatasetVersion;
+      }
+      if (typeof body.terrainDemChecksumShort === "string") {
+        terrainDemChecksumShort = body.terrainDemChecksumShort;
+      }
+      if (typeof body.terrainDemHealthStatus === "string") {
+        terrainDemHealthStatus = body.terrainDemHealthStatus;
+      }
+      if (typeof body.terrainDemLoadError === "string") {
+        terrainDemLoadError = sanitizeLogText(body.terrainDemLoadError);
+      }
     } catch {
       // Non-JSON health output is still represented by status and excerpt below.
     }
@@ -1208,6 +1585,14 @@ export async function checkAstroServiceHealth(options: {
       lightPollutionDatasetVersion,
       lightPollutionChecksumShort,
       lightPollutionLoadError,
+      terrainDemAvailable,
+      terrainDemDatasetExists,
+      terrainDemMetadataAvailable,
+      terrainDemDatasetYear,
+      terrainDemDatasetVersion,
+      terrainDemChecksumShort,
+      terrainDemHealthStatus,
+      terrainDemLoadError,
       lastError: healthOk ? undefined : safeResponseExcerpt(bodyText),
       envSource: config.envSource,
     };
@@ -1267,6 +1652,22 @@ function summarizeLightPollutionQueryPayload(
     observerElevationPresent: Number.isFinite(input.observerElevationMeters),
     targetAzimuthPresent: Number.isFinite(input.targetAzimuthDegrees),
     timezone: input.timezone ?? "service-default",
+  };
+}
+
+function summarizeTerrainDemProfileQueryPayload(
+  input: AstroServiceTerrainDemProfileQueryInput,
+): Record<string, unknown> {
+  return {
+    latitudePresent: Number.isFinite(input.latitudeWgs84),
+    longitudePresent: Number.isFinite(input.longitudeWgs84),
+    observerElevationPresent: Number.isFinite(input.observerElevationMeters),
+    target: input.target ?? "milky_way",
+    targetAzimuthPresent: Number.isFinite(input.targetAzimuthDegrees),
+    targetAltitudePresent: Number.isFinite(input.targetAltitudeDegrees),
+    maxDistanceMeters: input.maxDistanceMeters,
+    sampleIntervalMeters: input.sampleIntervalMeters,
+    sampleCount: input.sampleCount,
   };
 }
 

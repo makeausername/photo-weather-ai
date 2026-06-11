@@ -15,6 +15,8 @@ import {
   type ForecastCalculationResult,
   type ElevationSource,
   type ForecastQueryInput,
+  type TerrainAnalysisSummary,
+  type TerrainHorizonDirectionSample,
   formatLocalDateLabel,
   formatLocalTimeRange,
   forecastHorizonLabels,
@@ -60,10 +62,12 @@ import {
   astroServiceUnavailableMessage,
   checkAstroServiceHealth,
   mapAstroServiceResponseToForecastData,
+  mapTerrainDemProfileToDirectionSample,
   resolveAstroServiceConfig,
   sanitizeAstroServiceUrlForLog,
   type AstroServiceClientLike,
   type AstroServiceConfig,
+  type ForecastAstroServiceData,
 } from "./astro-service-client.js";
 import { createRuntimeElevationService } from "./elevation-service.js";
 
@@ -531,6 +535,7 @@ async function calculateForecastResultOrReply(
       elevationService,
       astroServiceClient,
       astroServiceConfig,
+      logger,
     );
     logCloudSeaCoverageDiagnostics(logger, result);
     logGlowScoringDiagnostics(logger, result);
@@ -626,6 +631,7 @@ async function calculateForecastResult(
   elevationService: TerrainElevationService,
   astroServiceClient: AstroServiceClientLike,
   astroServiceConfig: AstroServiceConfig,
+  logger: FastifyBaseLogger,
 ): Promise<ForecastCalculationResult> {
   const shouldUseAstroService =
     astroServiceConfig.enabled &&
@@ -730,15 +736,184 @@ async function calculateForecastResult(
     serviceResponse,
     calculationInput.calendarBasis.calendarDays,
   );
+  const enrichedTerrainAnalysis = await enrichTerrainAnalysisWithTerrainDem({
+    query,
+    terrainAnalysis,
+    astroServiceData,
+    astroServiceClient,
+    logger,
+  });
 
   return calculateForecast({
     ...calculationInput,
+    terrainAnalysis: enrichedTerrainAnalysis,
     astroSummaries: astroServiceData.astroSummaries,
     astroWindowBundle: astroServiceData.astroWindowBundle,
     astroCalculationBasis: astroServiceData.astroCalculationBasis,
     astroDataSourceLabelZh: astroServiceData.astroDataSourceLabelZh,
     lightPollution: astroServiceData.lightPollution,
   });
+}
+
+type TerrainDemTargetGeometry = {
+  readonly targetAzimuthDegrees: number;
+  readonly targetAltitudeDegrees: number | null;
+  readonly sourceWindowKey: string;
+};
+
+async function enrichTerrainAnalysisWithTerrainDem(options: {
+  readonly query: ForecastQueryInput;
+  readonly terrainAnalysis: TerrainAnalysisSummary;
+  readonly astroServiceData: ForecastAstroServiceData;
+  readonly astroServiceClient: AstroServiceClientLike;
+  readonly logger: FastifyBaseLogger;
+}): Promise<TerrainAnalysisSummary> {
+  const queryTerrainDemProfile =
+    options.astroServiceClient.queryTerrainDemProfile?.bind(options.astroServiceClient);
+  if (!queryTerrainDemProfile) {
+    return options.terrainAnalysis;
+  }
+
+  const targets = collectMilkyWayTerrainDemTargets(options.astroServiceData);
+  if (targets.length === 0) {
+    return options.terrainAnalysis;
+  }
+
+  const observerElevationMeters = firstFiniteNumber([
+    options.terrainAnalysis.terrainProfile.locationElevation,
+    options.terrainAnalysis.terrainProfile.elevationMeters,
+    options.query.elevationMeters,
+  ]);
+  const demSamples: TerrainHorizonDirectionSample[] = [];
+
+  for (const target of targets) {
+    try {
+      const profile = await queryTerrainDemProfile({
+        latitudeWgs84: options.query.latitudeWgs84,
+        longitudeWgs84: options.query.longitudeWgs84,
+        observerElevationMeters,
+        target: "milky_way",
+        targetAzimuthDegrees: target.targetAzimuthDegrees,
+        targetAltitudeDegrees: target.targetAltitudeDegrees,
+        maxDistanceMeters: 30_000,
+        sampleIntervalMeters: 250,
+      });
+      const sample = mapTerrainDemProfileToDirectionSample(profile);
+      if (sample) {
+        demSamples.push(sample);
+      }
+      options.logger.info(
+        {
+          route: "/forecast/calculate",
+          target: options.query.target,
+          terrainDemAvailable: profile.available,
+          terrainDemUnavailableReason: profile.unavailableReason ?? null,
+          terrainDemConfidence: profile.confidence,
+          terrainDemDatasetYear: profile.datasetYear ?? null,
+          terrainDemDatasetVersion: profile.datasetVersion ?? null,
+          terrainDemSampleCount: profile.sampleCount,
+          terrainDemValidSampleCount: profile.validSampleCount,
+          targetAzimuthDegrees: target.targetAzimuthDegrees,
+          targetAltitudeDegrees: target.targetAltitudeDegrees,
+          sourceWindowKey: target.sourceWindowKey,
+        },
+        "Terrain DEM profile query completed for forecast terrain enrichment",
+      );
+    } catch (error) {
+      const normalized = normalizeError(error);
+      options.logger.warn(
+        {
+          route: "/forecast/calculate",
+          target: options.query.target,
+          targetAzimuthDegrees: target.targetAzimuthDegrees,
+          sourceWindowKey: target.sourceWindowKey,
+          errorName: normalized.name,
+          errorMessage: normalized.message,
+        },
+        "Terrain DEM profile query failed; keeping existing terrain analysis",
+      );
+    }
+  }
+
+  if (demSamples.length === 0) {
+    return options.terrainAnalysis;
+  }
+
+  return {
+    ...options.terrainAnalysis,
+    horizonProfile: {
+      ...options.terrainAnalysis.horizonProfile,
+      directionSamples: mergeTerrainDemDirectionSamples(
+        options.terrainAnalysis.horizonProfile.directionSamples,
+        demSamples,
+      ),
+      obstructionNoteZh:
+        "本地 DEM 已提供银河方向地形剖面；云海高差、近景遮挡、树线和建筑遮挡仍需现场复核。",
+    },
+    dataSource: "dem",
+    dataSourceLabelZh: "本地 DEM 地形剖面",
+    isMock: false,
+    honestyNoteZh:
+      "银河方向地形遮挡使用本地 DEM；云海高差、近景遮挡、树线和建筑遮挡仍需现场复核。",
+  };
+}
+
+function collectMilkyWayTerrainDemTargets(
+  astroServiceData: ForecastAstroServiceData,
+): readonly TerrainDemTargetGeometry[] {
+  const windows = [
+    ...astroServiceData.astroWindowBundle.recommendedMilkyWayWindows,
+    ...astroServiceData.astroWindowBundle.milkyWayCandidateWindows,
+  ];
+  const seen = new Set<string>();
+  const targets: TerrainDemTargetGeometry[] = [];
+
+  for (const window of windows) {
+    if (
+      typeof window.galacticCenterAzimuth !== "number" ||
+      !Number.isFinite(window.galacticCenterAzimuth)
+    ) {
+      continue;
+    }
+    const targetAzimuthDegrees = window.galacticCenterAzimuth;
+    const targetAltitudeDegrees =
+      typeof window.galacticCenterAltitude === "number" &&
+      Number.isFinite(window.galacticCenterAltitude)
+        ? window.galacticCenterAltitude
+      : null;
+    const key = `${Math.round(targetAzimuthDegrees * 10) / 10}:${targetAltitudeDegrees === null ? "unknown" : Math.round(targetAltitudeDegrees * 10) / 10}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    targets.push({
+      targetAzimuthDegrees,
+      targetAltitudeDegrees,
+      sourceWindowKey: `${window.type}:${window.date ?? "unknown"}:${window.start}`,
+    });
+    if (targets.length >= 3) {
+      break;
+    }
+  }
+
+  return targets;
+}
+
+function mergeTerrainDemDirectionSamples(
+  existing: readonly TerrainHorizonDirectionSample[] | undefined,
+  demSamples: readonly TerrainHorizonDirectionSample[],
+): readonly TerrainHorizonDirectionSample[] {
+  const demTargets = new Set(demSamples.map((sample) => sample.target ?? "custom"));
+  const existingWithoutSameTarget = (existing ?? []).filter(
+    (sample) => sample.dataSource === "dem_raster" || !demTargets.has(sample.target ?? "custom"),
+  );
+  return [...demSamples, ...existingWithoutSameTarget];
+}
+
+function firstFiniteNumber(values: readonly (number | null | undefined)[]): number | undefined {
+  return values.find(
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  );
 }
 
 async function readRuntimeDeepSeekConfigOrDisabled(options: {

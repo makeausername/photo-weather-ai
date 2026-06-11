@@ -194,6 +194,48 @@ The public result treats the raster as a satellite-night-light reference. The Mi
 
 Light pollution affects only star and Milky Way photography suitability and recommendation confidence. It does not change weather probability, cloud probability, precipitation probability, astronomical darkness, Moon calculation, or Milky Way geometry.
 
+## Local Terrain DEM Data
+
+Terrain DEM data is optional for deployment. Production requests never download DEM data at runtime and missing DEM data is not treated as clear terrain. Use legally obtained GeoTIFF/COG elevation rasters and keep them on the server, outside Git:
+
+```text
+deploy/terrain-dem/incoming/
+deploy/terrain-dem/current/
+deploy/terrain-dem/backups/
+```
+
+Production Compose mounts this host directory into astro-service:
+
+```text
+./deploy/terrain-dem:/app/data/terrain-dem
+```
+
+The active dataset uses canonical files:
+
+```text
+current/terrain-dem.cog.tif
+current/metadata.json
+current/checksum.sha256
+```
+
+Import one file, multiple files, or a tile directory after placing the source under `deploy/terrain-dem/incoming/`:
+
+```bash
+bash scripts/import-terrain-dem.sh incoming/<file-or-directory> -- --dataset-name "Local DEM" --source-name "Operator supplied DEM" --dataset-year 2025 --dataset-version v1
+```
+
+Inspect the active dataset and astro-service health fields:
+
+```bash
+bash scripts/check-terrain-dem.sh
+```
+
+The importer validates local GeoTIFF readability, CRS, dimensions, nodata, finite elevation pixels, coordinate bounds, metadata, and checksum. It mosaics supplied tiles, reprojects to EPSG:4326 when required, writes a tiled/compressed GeoTIFF/COG, builds overviews where practical, writes metadata, and activates the dataset only after validation. The previous active raster/metadata/checksum are preserved under `deploy/terrain-dem/backups/`; a failed import leaves the previous active dataset untouched.
+
+Astro-service exposes DEM status on `/health` through `terrainDemAvailable`, `terrainDemDatasetExists`, `terrainDemMetadataAvailable`, `terrainDemDatasetYear`, `terrainDemDatasetVersion`, `terrainDemChecksumShort`, `terrainDemHealthStatus`, and `terrainDemLoadError`. Missing DEM data does not make `/health` fail when ephemeris and timezone data are healthy.
+
+When DEM is available, the API queries `POST /terrain-dem/profile` for Milky Way target directions and feeds the resulting `dem_raster` horizon sample into the existing terrain-horizon obstruction model. Only medium/high confidence directional profiles can create deterministic obstruction scoring. Low-confidence, missing, out-of-bounds, unreadable, or nodata DEM states stay as uncertainty and ask for on-site horizon confirmation.
+
 ## Estimated Bortle Calibration Audit
 
 The Bortle calibration workflow audits the current estimated Bortle range mapping against independently supplied reference ranges. It is an evidence-gathering tool only: it does not read the GeoTIFF directly, does not treat VIIRS as observed Bortle data, and does not automatically change production thresholds.
