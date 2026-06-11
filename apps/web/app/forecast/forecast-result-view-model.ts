@@ -731,12 +731,21 @@ export type AstroJudgmentFactorCard = {
   readonly tone: ForecastResultCardTone;
 };
 
+export type AstroActionSummaryItem = {
+  readonly key: "worth" | "best-window" | "main-blocker" | "backup" | "arrival";
+  readonly label: string;
+  readonly value: string;
+  readonly detail: string;
+  readonly tone: ForecastResultCardTone;
+};
+
 export type AstroForecastViewModel = {
   readonly coreCards: readonly ForecastResultCard[];
   readonly dailyTrend: readonly AstroDailyTrendItem[];
   readonly nightlyCards: readonly AstroNightDisplayModel[];
   readonly bestNight?: AstroNightDisplayModel;
   readonly backupNight?: AstroNightDisplayModel;
+  readonly actionSummary: readonly AstroActionSummaryItem[];
   readonly judgmentFactors: readonly AstroJudgmentFactorCard[];
   readonly professionalHourlyData: ProfessionalHourlyDisplayData;
   readonly astronomicalNightWindows: readonly AstroWindowViewItem[];
@@ -2850,6 +2859,7 @@ export function buildAstroForecastViewModel(
     nightlyCards,
     bestNight,
     backupNight,
+    actionSummary: buildAstroActionSummary(result, bestNight, backupNight),
     judgmentFactors: buildAstroJudgmentFactors(result, nightlyCards, bestNight),
     professionalHourlyData,
     astronomicalNightWindows: mapAstroWindows(result, analysis.astronomicalNightWindows),
@@ -4051,6 +4061,166 @@ function selectBackupAstroNight(
     )[0];
 }
 
+function buildAstroActionSummary(
+  result: ForecastCalculationResult,
+  bestNight: AstroNightDisplayModel | undefined,
+  backupNight: AstroNightDisplayModel | undefined,
+): readonly AstroActionSummaryItem[] {
+  const analysis = result.astroAnalysis;
+  const timezone = result.calendarBasis.timezone;
+  const worthTone = bestNight ? astroActionTone(bestNight.recommendationLevel) : "muted";
+  const bestWindowValue =
+    bestNight?.bestShootingWindowLabel ??
+    (analysis.recommendedMilkyWayWindow
+      ? formatAstroWindowValue(analysis.recommendedMilkyWayWindow, timezone)
+      : "暂无可靠最佳拍摄窗口");
+  const mainBlocker = astroActionMainBlocker(analysis);
+  const backupValue = backupNight
+    ? `${backupNight.localEveningDateLabel}：${backupNight.recommendationLabel}`
+    : analysis.astroShootable
+      ? "月光地景 / 星轨 / 山脊夜景"
+      : "云缝观察 / 月光地景 / 城市夜景";
+  const arrival = astroActionArrival(bestNight, timezone);
+
+  return [
+    {
+      key: "worth",
+      label: "是否值得去",
+      value: bestNight?.recommendationLabel ?? analysis.recommendationLabel,
+      detail:
+        bestNight?.conciseReason ??
+        "本次预报范围内暂未形成可比较的观测夜，以确定性评分和数据完整性为准。",
+      tone: worthTone,
+    },
+    {
+      key: "best-window",
+      label: "最佳拍摄窗口",
+      value: bestWindowValue,
+      detail:
+        bestNight?.milkyWay.azimuthSummary && bestNight.milkyWay.available
+          ? `银河方向：${bestNight.milkyWay.azimuthSummary}，高度 ${bestNight.milkyWay.maximumAltitudeDisplay}。`
+          : "暂无可执行银河窗口时，不按专程夜拍安排。",
+      tone: bestNight?.milkyWay.available ? worthTone : "muted",
+    },
+    {
+      key: "main-blocker",
+      label: "主要阻碍",
+      value: mainBlocker.value,
+      detail: mainBlocker.detail,
+      tone: mainBlocker.tone,
+    },
+    {
+      key: "backup",
+      label: "备选建议",
+      value: backupValue,
+      detail:
+        backupNight?.conciseReason ??
+        (analysis.astroShootable
+          ? "银河窗口前后保留星轨、月光地景和近景夜景，避免目标过单一。"
+          : "天气或月光不配合时，把夜拍降为备选，等待短临云图和现场通透度确认。"),
+      tone: backupNight ? astroActionTone(backupNight.recommendationLevel) : "info",
+    },
+    {
+      key: "arrival",
+      label: "到达建议",
+      value: arrival.value,
+      detail: arrival.detail,
+      tone: arrival.tone,
+    },
+  ];
+}
+
+function astroActionTone(level: AstroNightRecommendationLevel): ForecastResultCardTone {
+  switch (level) {
+    case "recommended":
+      return "primary";
+    case "watch":
+      return "info";
+    case "backup":
+      return "accent";
+    case "not_recommended":
+      return "danger";
+    case "insufficient":
+      return "muted";
+  }
+}
+
+function astroActionMainBlocker(analysis: AstroAnalysisResult): {
+  readonly value: string;
+  readonly detail: string;
+  readonly tone: ForecastResultCardTone;
+} {
+  if (analysis.weatherBlockers.length > 0) {
+    return {
+      value: astroBlockerSummary(analysis.weatherBlockers),
+      detail: "天气阻挡优先级高于光污染；云量、低云或降水不通过时，不把银河标为推荐。",
+      tone: "danger",
+    };
+  }
+  if (!analysis.astroWindowAvailable) {
+    return {
+      value: "缺少天文黑夜或银河窗口",
+      detail: "没有可靠夜间窗口时，不把低光污染当作可拍条件。",
+      tone: "muted",
+    };
+  }
+  if (analysis.moonlightImpactScore >= 65) {
+    return {
+      value: "月光影响偏强",
+      detail: "月亮在窗口内照明较强时，银河对比度会被压低。",
+      tone: "accent",
+    };
+  }
+  if (
+    analysis.lightPollution.available &&
+    ((analysis.lightPollution.ambientRiskIndex ?? 0) >= 60 ||
+      (analysis.lightPollution.targetDirectionRisk ?? 0) >= 60)
+  ) {
+    return {
+      value: "光污染影响",
+      detail:
+        analysis.lightPollution.targetDirectionRisk !== undefined &&
+        analysis.lightPollution.targetDirectionRisk !== null &&
+        analysis.lightPollution.targetDirectionRisk >= 60
+          ? "银河方向光害偏高，建议避开城市方向构图或换更暗机位。"
+          : "环境光污染偏高，即使天气较好，银河细节也可能偏弱。",
+      tone: "accent",
+    };
+  }
+  return {
+    value: "暂无主要阻碍",
+    detail: "云量、月光和光污染暂未构成主阻碍，仍需临近复核天气和现场安全。",
+    tone: "primary",
+  };
+}
+
+function astroActionArrival(
+  bestNight: AstroNightDisplayModel | undefined,
+  timezone: string,
+): {
+  readonly value: string;
+  readonly detail: string;
+  readonly tone: ForecastResultCardTone;
+} {
+  if (
+    bestNight &&
+    (bestNight.recommendationLevel === "recommended" || bestNight.recommendationLevel === "watch") &&
+    bestNight.milkyWay.bestStartAt
+  ) {
+    const arrivalTime = addHoursInTimezone(bestNight.milkyWay.bestStartAt, -1.25, timezone);
+    return {
+      value: `${formatTime(arrivalTime, timezone)} 前到达`,
+      detail: "预留 75 分钟完成停车、步行、构图、对焦和安全撤离规划。",
+      tone: astroActionTone(bestNight.recommendationLevel),
+    };
+  }
+  return {
+    value: "暂无专程到达建议",
+    detail: "当前仅适合备选或临近复核，不按银河专程窗口安排到达时间。",
+    tone: "muted",
+  };
+}
+
 function astroNightDataRank(night: AstroNightDisplayModel): number {
   return night.starPhotographyIndex !== null ||
     night.astronomicalNight.startAt ||
@@ -4131,14 +4301,14 @@ function buildAstroJudgmentFactors(
   return [
     {
       key: "astronomical-night",
-      label: "天文黑夜",
-      status: night.astronomicalNight.label,
-      detail: night.astronomicalNight.windowLabel,
+      label: "银河窗口",
+      status: night.milkyWay.available ? "有窗口" : night.astronomicalNight.label,
+      detail: `${night.astronomicalNight.windowLabel}；${night.milkyWay.bestWindowLabel}`,
       tone: night.astronomicalNight.lifecycle === "available" ? "primary" : "accent",
     },
     {
       key: "moonlight",
-      label: "月光干扰",
+      label: "月光影响",
       status: night.moon.moonlightInterferenceLevel,
       detail: `${night.moon.phaseName}，照明 ${night.moon.illuminationDisplay}，重叠 ${night.moon.overlapDisplay}`,
       tone:
@@ -4151,21 +4321,21 @@ function buildAstroJudgmentFactors(
     },
     {
       key: "milky-way-geometry",
-      label: "银河高度/方向",
+      label: "银心高度/方向",
       status: night.milkyWay.available ? night.milkyWay.maximumAltitudeDisplay : "暂无窗口",
       detail: `${night.milkyWay.geometricWindowLabel}；${night.milkyWay.azimuthSummary}`,
       tone: night.milkyWay.available ? "info" : "muted",
     },
     {
       key: "cloud",
-      label: "云量",
+      label: "天气阻挡",
       status: night.weather.cloudSummary,
       detail: night.weather.lowCloudRisk,
       tone: /高/.test(night.weather.lowCloudRisk) ? "danger" : "info",
     },
     {
       key: "visibility-humidity",
-      label: "通透度与湿度",
+      label: "通透度",
       status: night.weather.visibilitySummary,
       detail: night.weather.humidityRisk,
       tone: /高/.test(night.weather.humidityRisk) ? "accent" : "info",
@@ -4179,7 +4349,7 @@ function buildAstroJudgmentFactors(
     },
     {
       key: "light-pollution",
-      label: "光污染",
+      label: "光污染影响",
       status: lightPollution.available
         ? `环境${lightPollution.ambientRiskLevelLabelZh}`
         : "数据暂缺",

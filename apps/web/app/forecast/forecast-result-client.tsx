@@ -3913,6 +3913,19 @@ function AstroTopContext({
               ? `最佳观测夜：${bestNight.localEveningDateLabel}，${bestNight.recommendationLabel}；${bestNight.conciseReason}`
               : "本次预报范围内暂未形成可比较的观测夜。"}
           </p>
+          <dl className="mt-4 grid gap-x-4 gap-y-3 text-sm min-[760px]:grid-cols-5">
+            {viewModel.actionSummary.map((item) => (
+              <div key={item.key} className="min-w-0 border-l border-border pl-3">
+                <dt className="flex flex-wrap items-center gap-2 text-[11px] font-semibold leading-4 text-muted-foreground">
+                  <span>{item.label}</span>
+                  <Badge variant={badgeVariantForTone(item.tone)}>{item.value}</Badge>
+                </dt>
+                <dd className="mt-1 break-words text-xs leading-5 text-muted-foreground">
+                  {item.detail}
+                </dd>
+              </div>
+            ))}
+          </dl>
           <div className="mt-3 grid gap-1 text-xs leading-5 text-muted-foreground min-[900px]:grid-cols-2 min-[1120px]:flex min-[1120px]:flex-wrap min-[1120px]:gap-2">
             <span>预报范围：{result.calendarBasis.forecastRangeLabel}</span>
             <span>生成时间：{formatDateTime(result.generatedAt)}</span>
@@ -4011,7 +4024,7 @@ function AstroNightCard({
         <AstroMiniFact
           label="月相"
           value={`${night.moon.phaseName} · ${night.moon.illuminationDisplay}`}
-          detail={`月光干扰：${night.moon.moonlightInterferenceLevel}`}
+          detail={`月光影响：${night.moon.moonlightInterferenceLevel}`}
         />
         <AstroMiniFact
           label="天文黑夜"
@@ -4208,7 +4221,7 @@ function AstroProfessionalDataSection({
                     value={`${night.moon.phaseName} / ${night.moon.illuminationDisplay}`}
                   />
                   <AstroInlineDefinition
-                    label="月光干扰"
+                    label="月光影响"
                     value={night.moon.moonlightInterferenceLevel}
                   />
                   <AstroInlineDefinition

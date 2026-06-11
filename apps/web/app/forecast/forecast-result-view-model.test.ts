@@ -1358,7 +1358,7 @@ const baseResult: ForecastCalculationResult = {
     ],
     lightPollutionEvidence: [
       {
-        label: "光污染参考",
+        label: "光污染影响",
         value: "数据暂缺",
         effect: "neutral",
         noteZh: "光污染数据暂缺；未按无光污染处理，需现场确认城市光穹与地平线环境。",
@@ -1923,7 +1923,7 @@ function resultWithAstroLightPollution(
       lightPollution,
       lightPollutionEvidence: [
         {
-          label: "光污染参考",
+          label: "光污染影响",
           value: lightPollution.available
             ? `环境${lightPollution.ambientRiskLevelLabelZh}`
             : "数据暂缺",
@@ -7409,6 +7409,22 @@ describe("forecast result target-aware view model", () => {
       "precipitation-wind",
       "light-pollution",
     ]);
+    expect(astro?.judgmentFactors.map((factor) => factor.label)).toEqual([
+      "银河窗口",
+      "月光影响",
+      "银心高度/方向",
+      "天气阻挡",
+      "通透度",
+      "降水与风",
+      "光污染影响",
+    ]);
+    expect(astro?.actionSummary.map((item) => item.label)).toEqual([
+      "是否值得去",
+      "最佳拍摄窗口",
+      "主要阻碍",
+      "备选建议",
+      "到达建议",
+    ]);
 
     const firstCoveredNight = astro?.nightlyCards.find(
       (night) => night.localEveningDate === "2026-05-20",
@@ -7820,9 +7836,14 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("逐夜星空银河机会");
     expect(html).toContain("为什么这样判断");
     expect(html).toContain("专业数据");
-    expect(html).toContain("云量阻挡");
-    expect(html).toContain("月光干扰");
-    expect(html).toContain("通透度与湿度");
+    expect(html).toContain("是否值得去");
+    expect(html).toContain("最佳拍摄窗口");
+    expect(html).toContain("主要阻碍");
+    expect(html).toContain("备选建议");
+    expect(html).toContain("到达建议");
+    expect(html).toContain("天气阻挡");
+    expect(html).toContain("月光影响");
+    expect(html).toContain("通透度");
     expect(html).toContain("天文窗口存在，但低云偏多、降水干扰不支持拍摄");
     expect(html).toContain("不建议前往");
     expect(html).not.toContain("核心判断");

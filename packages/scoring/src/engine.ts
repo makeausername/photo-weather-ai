@@ -1501,7 +1501,7 @@ function applyAstroLightPollutionScore(
   }
   const reason =
     penalty > 0
-      ? `卫星夜光参考已作为启发式扣分纳入适宜度，扣减 ${penalty} 分；不代表现场SQM或Bortle实测。`
+      ? `卫星夜光参考已作为启发式扣分纳入适宜度，扣减 ${penalty} 分；不代表现场实测或正式等级。`
       : "光污染数据暂缺，未按无光污染处理；天气概率不因此调整。";
   return {
     ...score,

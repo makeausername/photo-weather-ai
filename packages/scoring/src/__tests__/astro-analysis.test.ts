@@ -81,6 +81,22 @@ function withLowMoon(input: ForecastCalculationInput): ForecastCalculationInput 
   };
 }
 
+function withClearAstroWeather(input: ForecastCalculationInput): ForecastCalculationInput {
+  return withHourlyWeather(input, (hour) => ({
+    ...hour,
+    cloudTotal: 8,
+    cloudLow: 2,
+    cloudMid: 4,
+    cloudHigh: 6,
+    humidity: 48,
+    visibility: 36,
+    precipitationProbability: 0,
+    precipitation: 0,
+    precipitationAmountMm: 0,
+    weatherTextZh: "晴",
+  }));
+}
+
 const directionalRiskFixture: readonly DirectionalLightPollutionRisk[] = [
   directionRisk("north", "北", 0, 10),
   directionRisk("northeast", "东北", 45, 20),
@@ -91,6 +107,19 @@ const directionalRiskFixture: readonly DirectionalLightPollutionRisk[] = [
   directionRisk("west", "西", 270, 70),
   directionRisk("northwest", "西北", 315, 90),
 ];
+
+function uniformDirectionalRiskFixture(
+  riskIndex: number,
+): readonly DirectionalLightPollutionRisk[] {
+  return directionalRiskFixture.map((sector) =>
+    directionRisk(
+      sector.direction,
+      sector.directionLabelZh,
+      sector.azimuthDegrees,
+      riskIndex,
+    ),
+  );
+}
 
 function directionRisk(
   direction: DirectionalLightPollutionRisk["direction"],
@@ -413,6 +442,43 @@ describe("astro analysis", () => {
     expect(result.astroAnalysis.recommendedMilkyWayWindows).toHaveLength(0);
   });
 
+  it("keeps heavy cloud as the main blocker even when light pollution is low", () => {
+    const baseInput = withLowMoon(buildMockForecastInput(baseQuery, { now: fixedNow }));
+    const blocked = withHourlyWeather(
+      {
+        ...baseInput,
+        lightPollution: lightPollutionFixture({
+          ambientRiskIndex: 6,
+          ambientRiskLevel: "very_low",
+          ambientRiskLevelLabelZh: "极低",
+          directionalRisk: uniformDirectionalRiskFixture(8),
+          lightPollutionNoteZh: "卫星夜光参考：环境光污染极低，银河方向光害极低。",
+        }),
+      },
+      (hour) => ({
+        ...hour,
+        cloudTotal: 95,
+        cloudLow: 82,
+        cloudMid: 76,
+        cloudHigh: 70,
+        humidity: 94,
+        visibility: 4,
+        precipitationProbability: 0,
+        precipitation: 0,
+        precipitationAmountMm: 0,
+        weatherTextZh: "阴有雾",
+      }),
+    );
+    const result = calculateForecast(blocked);
+
+    expect(result.astroAnalysis.astroShootable).toBe(false);
+    expect(result.astroAnalysis.astroPracticalScore).toBeLessThanOrEqual(34);
+    expect(result.astroAnalysis.weatherBlockers.join("")).toContain("总云量");
+    expect(result.astroAnalysis.riskReasons[0]).toContain("天气阻断");
+    expect(result.astroAnalysis.riskReasons.join("")).toContain("光污染较低");
+    expect(result.astroAnalysis.travelRecommendations[0]).toContain("天气阻挡优先级高于光污染");
+  });
+
   it("blocks Milky Way recommendations when astronomical night overlaps rain", () => {
     const baseInput = withLowMoon(buildMockForecastInput(baseQuery, { now: fixedNow }));
     const rainy = withHourlyWeather(baseInput, (hour) => ({
@@ -465,20 +531,9 @@ describe("astro analysis", () => {
   });
 
   it("allows astro to score high when sky, moon, rain, and transparency are favorable", () => {
-    const baseInput = withLowMoon(buildMockForecastInput(baseQuery, { now: fixedNow }));
-    const clear = withHourlyWeather(baseInput, (hour) => ({
-      ...hour,
-      cloudTotal: 8,
-      cloudLow: 2,
-      cloudMid: 4,
-      cloudHigh: 6,
-      humidity: 48,
-      visibility: 36,
-      precipitationProbability: 0,
-      precipitation: 0,
-      precipitationAmountMm: 0,
-      weatherTextZh: "晴",
-    }));
+    const clear = withClearAstroWeather(
+      withLowMoon(buildMockForecastInput(baseQuery, { now: fixedNow })),
+    );
     const result = calculateForecast(clear);
 
     expect(result.astroAnalysis.astroPracticalScore).toBeGreaterThanOrEqual(60);
@@ -489,6 +544,149 @@ describe("astro analysis", () => {
     expect(result.astroAnalysis.travelRecommendations.join("")).toMatch(
       /推荐银河窗口：2026年\d+月\d+日/,
     );
+  });
+
+  it("keeps low light pollution favorable when weather is otherwise good", () => {
+    const clear = withClearAstroWeather(
+      withLowMoon(buildMockForecastInput(baseQuery, { now: fixedNow })),
+    );
+    const lowLightPollution = calculateForecast({
+      ...clear,
+      lightPollution: lightPollutionFixture({
+        ambientRiskIndex: 6,
+        ambientRiskLevel: "very_low",
+        ambientRiskLevelLabelZh: "极低",
+        directionalRisk: uniformDirectionalRiskFixture(8),
+        lightPollutionNoteZh: "卫星夜光参考：环境光污染极低，银河方向光害极低。",
+      }),
+    });
+    const highLightPollution = calculateForecast({
+      ...clear,
+      lightPollution: lightPollutionFixture({
+        ambientRiskIndex: 100,
+        ambientRiskLevel: "very_high",
+        ambientRiskLevelLabelZh: "很高",
+        directionalRisk: uniformDirectionalRiskFixture(100),
+        lightPollutionNoteZh: "卫星夜光参考：环境光污染很高，银河方向光害很高。",
+      }),
+    });
+
+    expect(lowLightPollution.astroAnalysis.astroShootable).toBe(true);
+    expect(lowLightPollution.astroAnalysis.milkyWayScore).toBeGreaterThan(
+      highLightPollution.astroAnalysis.milkyWayScore,
+    );
+    expect(lowLightPollution.astroAnalysis.astroPracticalScore).toBeGreaterThan(
+      highLightPollution.astroAnalysis.astroPracticalScore,
+    );
+    expect(lowLightPollution.astroAnalysis.riskReasons.join("")).toContain(
+      "光污染较低，银河背景更暗",
+    );
+  });
+
+  it("lowers Milky Way recommendations when light pollution is high despite good weather", () => {
+    const clear = withClearAstroWeather(
+      withLowMoon(buildMockForecastInput(baseQuery, { now: fixedNow })),
+    );
+    const result = calculateForecast({
+      ...clear,
+      lightPollution: lightPollutionFixture({
+        ambientRiskIndex: 100,
+        ambientRiskLevel: "very_high",
+        ambientRiskLevelLabelZh: "很高",
+        directionalRisk: uniformDirectionalRiskFixture(100),
+        lightPollutionNoteZh: "卫星夜光参考：环境光污染很高，银河方向光害很高。",
+      }),
+    });
+
+    expect(result.astroAnalysis.lightPollution.milkyWayPenalty).toBe(35);
+    expect(result.astroAnalysis.astroShootable).toBe(false);
+    expect(result.astroAnalysis.recommendationLabel).toBe("谨慎参考");
+    expect(result.astroAnalysis.riskReasons.join("")).toContain("光污染很强");
+    expect(result.astroAnalysis.travelRecommendations.join("")).toContain(
+      "银河细节也可能偏弱",
+    );
+    expect(result.scores.milkyWay.score).toBe(result.astroAnalysis.milkyWayScore);
+  });
+
+  it("warns when the Milky Way direction has high light pollution even if local sky is dark", () => {
+    const baseInput = withLowMoon(buildMockForecastInput(baseQuery, { now: fixedNow }));
+    const date = baseInput.calendarBasis.targetDates[0]!;
+    const clear = withClearAstroWeather({
+      ...baseInput,
+      lightPollution: lightPollutionFixture({
+        ambientRiskIndex: 10,
+        ambientRiskLevel: "very_low",
+        ambientRiskLevelLabelZh: "极低",
+        directionalRisk: directionalRiskFixture,
+        lightPollutionNoteZh: "卫星夜光参考：环境光污染极低，银河方向光害很高。",
+      }),
+      astroWindowBundle: {
+        astronomicalNightWindows: [
+          {
+            type: "astronomical_night",
+            labelZh: "天文黑夜",
+            date,
+            start: "2026-05-20T20:30:00+08:00",
+            end: "2026-05-21T03:30:00+08:00",
+            durationMinutes: 420,
+            score: 82,
+            riskTags: [],
+            noteZh: "测试天文黑夜。",
+          },
+        ],
+        moonlessNightWindows: [
+          {
+            type: "moonless_night",
+            labelZh: "无月黑夜",
+            date,
+            start: "2026-05-20T21:30:00+08:00",
+            end: "2026-05-21T03:00:00+08:00",
+            durationMinutes: 330,
+            score: 84,
+            riskTags: ["月光较低"],
+            noteZh: "测试无月窗口。",
+          },
+        ],
+        milkyWayCandidateWindows: [
+          {
+            type: "milky_way_candidate",
+            labelZh: "银河候选窗口",
+            date,
+            start: "2026-05-20T22:00:00+08:00",
+            end: "2026-05-21T02:30:00+08:00",
+            durationMinutes: 270,
+            score: 80,
+            riskTags: [],
+            noteZh: "测试银河候选窗口。",
+            directionZh: "南方",
+            galacticCenterAltitude: 28,
+            galacticCenterAzimuth: 180,
+          },
+        ],
+        recommendedMilkyWayWindows: [
+          {
+            type: "recommended_milky_way",
+            labelZh: "推荐银河窗口",
+            date,
+            start: "2026-05-20T22:30:00+08:00",
+            end: "2026-05-21T02:00:00+08:00",
+            durationMinutes: 210,
+            score: 80,
+            riskTags: [],
+            noteZh: "测试推荐银河窗口。",
+            directionZh: "南方",
+            galacticCenterAltitude: 28,
+            galacticCenterAzimuth: 180,
+          },
+        ],
+      },
+    });
+    const result = calculateForecast(clear);
+
+    expect(result.astroAnalysis.lightPollution.ambientRiskLevelLabelZh).toBe("极低");
+    expect(result.astroAnalysis.lightPollution.targetDirectionRisk).toBe(95);
+    expect(result.astroAnalysis.riskReasons.join("")).toContain("银河方向光害偏高");
+    expect(result.astroAnalysis.travelRecommendations.join("")).toContain("避开城市方向构图");
   });
 
   it("resolves each day's Milky Way light-pollution direction without duplicating penalties", () => {
@@ -717,5 +915,31 @@ describe("astro analysis", () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
+  });
+
+  it("does not fabricate light-pollution values or forbidden display copy when data is unavailable", () => {
+    const clear = withClearAstroWeather(
+      withLowMoon(buildMockForecastInput(baseQuery, { now: fixedNow })),
+    );
+    const result = calculateForecast({
+      ...clear,
+      lightPollution: undefined,
+    });
+    const publicDeterministicText = JSON.stringify({
+      scores: result.scores,
+      riskReasons: result.astroAnalysis.riskReasons,
+      travelRecommendations: result.astroAnalysis.travelRecommendations,
+      lightPollutionEvidence: result.astroAnalysis.lightPollutionEvidence,
+      missingDataNotes: result.astroAnalysis.missingDataNotes,
+    });
+
+    expect(result.astroAnalysis.lightPollution.available).toBe(false);
+    expect(result.astroAnalysis.lightPollution.starPenalty).toBe(0);
+    expect(result.astroAnalysis.lightPollution.milkyWayPenalty).toBe(0);
+    expect(result.astroAnalysis.lightPollution.ambientRiskIndex).toBeUndefined();
+    expect(result.astroAnalysis.lightPollution.estimatedBortleRange?.available).toBe(false);
+    expect(publicDeterministicText).toContain("光污染数据暂缺");
+    expect(publicDeterministicText).not.toContain("1–2级");
+    expect(publicDeterministicText).not.toMatch(/SQM|国标|国家标准|国标等级|实测波特尔/i);
   });
 });

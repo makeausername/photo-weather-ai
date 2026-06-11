@@ -2028,7 +2028,7 @@ const forecastResultFixture: ForecastCalculationResult = {
     terrainEvidence: [],
     lightPollutionEvidence: [
       {
-        label: "光污染参考",
+        label: "光污染影响",
         value: "数据暂缺",
         effect: "neutral",
         noteZh: "光污染数据暂缺；未按无光污染处理，需现场确认城市光穹与地平线环境。",

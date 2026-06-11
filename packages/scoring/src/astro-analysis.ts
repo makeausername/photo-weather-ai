@@ -29,7 +29,6 @@ import {
 } from "./weather-decision-metrics.js";
 import {
   estimateBortleRangeForLightPollution,
-  estimatedBortleDisclaimerZh,
   unavailableEstimatedBortleRange,
 } from "./light-pollution-bortle.js";
 
@@ -331,7 +330,7 @@ function buildLightPollutionEvidence(
   if (!lightPollution.available) {
     return [
       {
-        label: "光污染参考",
+        label: "光污染影响",
         value: "数据暂缺",
         effect: "neutral",
         noteZh: lightPollution.lightPollutionNoteZh || lightPollutionUnavailableNote,
@@ -347,16 +346,36 @@ function buildLightPollutionEvidence(
     : "";
   return [
     {
-      label: "光污染参考",
+      label: "光污染影响",
       value: `环境${lightPollution.ambientRiskLevelLabelZh}`,
       effect:
         (lightPollution.ambientRiskIndex ?? 0) >= 60 ||
         (lightPollution.targetDirectionRisk ?? 0) >= 60
           ? "risk"
           : "neutral",
-      noteZh: `卫星夜光参考：环境光污染${lightPollution.ambientRiskLevelLabelZh}${targetLabel}${bortleText}；${penaltyText}。${estimatedBortleDisclaimerZh}`,
+      noteZh: `${lightPollutionDecisionText(lightPollution)}${targetLabel}${bortleText}；${penaltyText}。`,
     },
   ];
+}
+
+function lightPollutionDecisionText(lightPollution: LightPollutionInfo): string {
+  const ambientRisk = finiteNumber(lightPollution.ambientRiskIndex);
+  const targetRisk = finiteNumber(lightPollution.targetDirectionRisk);
+  const risk = Math.max(ambientRisk ?? 0, targetRisk ?? 0);
+
+  if (targetRisk !== undefined && targetRisk >= 60 && (ambientRisk ?? targetRisk) < 60) {
+    return "银河方向光害偏高，建议避开城市方向构图或向更暗一侧取景。";
+  }
+  if (risk >= 80) {
+    return "光污染很强，即使天气较好，银河细节也可能偏弱。";
+  }
+  if (risk >= 60) {
+    return "光污染较强，即使天空较清，银河背景也容易被光害压亮。";
+  }
+  if (risk >= 40) {
+    return "光污染中等，银河细节依赖透明度和避开城市方向的构图。";
+  }
+  return "光污染较低，银河背景更暗，有利于拍摄。";
 }
 
 export function calculateAstroAnalysis(
@@ -1865,13 +1884,7 @@ function buildAstroRiskReasons(
   lightPollution: LightPollutionInfo,
 ): readonly string[] {
   const lightPollutionRisks = lightPollution.available
-    ? [
-        `卫星夜光参考：环境光污染${lightPollution.ambientRiskLevelLabelZh}${
-          lightPollution.targetDirectionLevelLabelZh
-            ? `，银河方向光害${lightPollution.targetDirectionLevelLabelZh}`
-            : ""
-        }；星空指数扣减${lightPollution.starPenalty}，银河指数扣减${lightPollution.milkyWayPenalty}。`,
-      ]
+    ? [lightPollutionDecisionText(lightPollution)]
     : [lightPollution.lightPollutionNoteZh || lightPollutionUnavailableNote];
   return [
     ...weatherBlockers.map((blocker) => `星空银河天气阻断：${blocker}。`),
@@ -1927,40 +1940,42 @@ function buildAstroTravelRecommendations(
   lightPollution: LightPollutionInfo = defaultLightPollutionInfo,
 ): readonly string[] {
   const bestWindow = recommendedWindows[0];
+  const lightPollutionAdvice = lightPollution.available
+    ? lightPollutionDecisionText(lightPollution)
+    : lightPollutionUnavailableNote;
 
   if (weatherBlockers.length > 0) {
     return [
-      "天文窗口存在，但云量/降水/低云不支持拍摄。",
-      "星空银河仅作为备选，不建议为此熬夜；优先等待短临云图和雷达改善。",
-      ...weatherBlockers.slice(0, 2).map((blocker) => `主要阻断：${blocker}。`),
+      "是否值得去：不建议只为银河专程，当前天气阻挡优先级高于光污染条件。",
+      bestWindow
+        ? `最佳拍摄窗口：天气未通过，不把 ${formatFullTimeRange(
+            bestWindow.start,
+            bestWindow.end,
+          )} 标为推荐窗口。`
+        : "最佳拍摄窗口：暂无可执行银河窗口。",
+      `主要阻碍：${weatherBlockers.slice(0, 2).join("；")}。`,
+      `备选建议：星空银河仅作为备选，不建议为此熬夜；${lightPollutionAdvice}`,
+      "到达建议：等待短临云图、雷达和降水改善后再决定，不按专程夜拍时间出发。",
     ];
   }
 
   return [
     bestWindow
-      ? `推荐银河窗口：${formatFullTimeRange(bestWindow.start, bestWindow.end)}；方向 ${
+      ? `是否值得去：可按银河计划准备，但出行前仍需复核云量、月光和现场安全。`
+      : "是否值得去：不建议只为银河专程远途出发。",
+    bestWindow
+      ? `最佳拍摄窗口：推荐银河窗口：${formatFullTimeRange(bestWindow.start, bestWindow.end)}；方向 ${
           bestWindow.directionZh ?? "需现场复核"
-        }；建议至少提前 75-90 分钟到达，云量风险 ${assessment.labels.cloudBlocker}，月光影响 ${
-          assessment.labels.moonlightImpact
         }。`
-      : "若没有推荐银河窗口，不建议只为银河专程远途出发。",
-    "月落后优先拍摄银河，月亮未落前可转拍月光风景或星轨堆栈。",
-    "若银河窗口较短，建议提前完成构图和对焦。",
-    scores.starsScore >= 65
-      ? "星空条件可用时，可同步准备星轨、深空或山脊夜景素材。"
-      : "若云量偏高，可优先选择城市夜景、月景或等待云缝。",
-    lightPollution.available
-      ? `光污染参考：环境${lightPollution.ambientRiskLevelLabelZh}${
-          lightPollution.targetDirectionLevelLabelZh
-            ? `，银河方向${lightPollution.targetDirectionLevelLabelZh}`
-            : ""
-        }；必要时避开城市光穹方向或调整构图。`
-      : lightPollutionUnavailableNote,
+      : "最佳拍摄窗口：暂无推荐银河窗口。",
+    `主要阻碍：云量风险${assessment.labels.cloudBlocker}，月光影响${assessment.labels.moonlightImpact}；${lightPollutionAdvice}`,
     scores.transparencyScore >= 65 && scores.milkyWayScore < 65
-      ? "透明度好但银河条件一般时，可转拍星轨或山脊夜景。"
-      : "出行前仍需复核最新云量、景区通行和现场安全条件。",
-    assessment.warmthAdviceZh,
-    ...assessment.gearAdviceZh,
+      ? "备选建议：透明度好但银河条件一般，可转拍星轨、月光地景或山脊夜景。"
+      : "备选建议：月亮未落前可转拍月光风景或星轨堆栈，并准备近景夜景题材。",
+    bestWindow
+      ? `到达建议：建议至少提前 75-90 分钟到达，先完成构图、对焦和安全撤离规划；${assessment.warmthAdviceZh}`
+      : `到达建议：当前仅适合作为备选观察，不按专程到达安排；${assessment.warmthAdviceZh}`,
+    ...assessment.gearAdviceZh.slice(0, 2),
   ];
 }
 
