@@ -2548,8 +2548,11 @@ function countOccurrences(text: string, pattern: string): number {
 function expectNoObsoleteLightPollutionPlaceholders(html: string): void {
   const placeholders = [
     `光污染${"暂未接入"}`,
+    `光污染${"数据暂未接入"}`,
     `光污染/地形${"暂未接入"}`,
     `后续${"接入"}`,
+    `需要${"后续接入"}`,
+    `暂缺${"光污染"}`,
     `模拟${"光污染"}`,
     `体验${"数据"}`,
   ];
@@ -2564,9 +2567,13 @@ function expectNoForbiddenBortleCopy(html: string): void {
     "波特尔等级：1级",
     "实测波特尔",
     "SQM实测值",
+    "实测 SQM",
     "mag/arcsec²",
     "国标等级",
+    "官方等级",
     "官方认证",
+    "国家标准等级",
+    "全国标准",
     "国标一级",
     "国标二级",
     "环境分区认证",
@@ -7449,12 +7456,13 @@ describe("forecast result target-aware view model", () => {
         lightPollutionNoteZh: "卫星夜光参考：环境光污染很高，银河方向光害很高。",
       }),
       [
-        "100",
         "很高",
-        "波特尔估算：8–9级",
+        "估算波特尔",
+        "8–9级",
         "强城市光害",
-        "银河方向光害：很高",
-        "不建议在当前地点专程拍摄",
+        "银河方向",
+        "可以观星但银河细节较弱",
+        "光污染很高：天空背景明显发亮",
       ],
     ],
     [
@@ -7468,7 +7476,7 @@ describe("forecast result target-aware view model", () => {
         targetDirectionLevelLabelZh: "低",
         lightPollutionNoteZh: "卫星夜光参考：环境光污染极低，银河方向光害低。",
       }),
-      ["6", "极低", "波特尔估算：1–2级", "极佳暗空", "银河方向光害：低", "适合安排星空和银河拍摄"],
+      ["极低", "估算波特尔", "1–2级", "极佳暗空", "银河方向", "低", "适合安排星空和银河拍摄"],
     ],
     [
       "medium-risk",
@@ -7482,12 +7490,13 @@ describe("forecast result target-aware view model", () => {
         lightPollutionNoteZh: "卫星夜光参考：环境光污染中，银河方向光害中。",
       }),
       [
-        "52",
         "中",
-        "波特尔估算：4–5级",
+        "估算波特尔",
+        "4–5级",
         "城郊过渡",
-        "银河方向光害：中",
-        "优先选择背离城市光源的构图",
+        "银河方向",
+        "光污染中等",
+        "银河可拍性仍要看云量和月光",
       ],
     ],
   ] as const)(
@@ -7504,9 +7513,17 @@ describe("forecast result target-aware view model", () => {
       );
 
       expect(html).toContain('data-astro-section="AstroLightPollutionDecision"');
+      const lightPollutionCard = sectionBetween(
+        html,
+        'data-astro-light-pollution-main-card="true"',
+        'data-astro-section="AstroNightOpportunitySection"',
+      );
       for (const expectedText of expectedTexts) {
         expect(html).toContain(expectedText);
       }
+      expect(lightPollutionCard).not.toMatch(
+        /localRadiance|surroundingHaloRadiance|ambientRiskIndex|validSampleCount|checksum|pixel|quantile|raster|本地辐亮度|周边光穹|有效采样|校验码|nW\/cm²\/sr/i,
+      );
       expect(html).toContain("为什么这样判断");
       expect(html).toContain("光污染");
       expect(html).not.toContain("nW/cm²/sr");
@@ -7552,8 +7569,8 @@ describe("forecast result target-aware view model", () => {
 
     expect(viewModel.lightPollution.ambientRiskIndex).toBe(45);
     expect(viewModel.lightPollution.bestWindowDirectionRisk).toBeNull();
-    expect(viewModel.lightPollution.primaryConclusionZh).toBe("光污染 45");
-    expect(viewModel.lightPollution.detail).toContain("银河方向角不足");
+    expect(viewModel.lightPollution.primaryConclusionZh).toBe("中");
+    expect(viewModel.lightPollution.judgmentSummaryZh).toContain("银河方向角不足");
     expect(viewModel.lightPollution.detail).not.toContain("极低");
   });
 
@@ -7624,12 +7641,61 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.lightPollution.estimatedBortleRangeLabel).toBe("1–2级");
     expect(professionalBortleItem?.value).toBe(viewModel.lightPollution.estimatedBortleRangeLabel);
     expect(viewModel.lightPollution.noticeZh).toBe(estimatedBortleDisclaimerForTest);
-    expect(html).toContain("波特尔估算：1–2级");
+    expect(html).toContain("估算波特尔");
+    expect(html).toContain("1–2级");
     expect(html).toContain("极佳暗空");
     expect(nightlySection).not.toContain("波特尔估算");
     expect(html).toContain('data-astro-professional-data-expanded="false"');
     expect(html).not.toContain(estimatedBortleDisclaimerForTest);
     expectNoForbiddenBortleCopy(html);
+  });
+
+  it("keeps light-pollution diagnostics out of the main card and available for collapsed professional data", () => {
+    const lightPollution = lightPollutionForDisplayTest({
+      datasetYear: 2025,
+      datasetVersion: "v2.2",
+      sourceLabel: "EOG VIIRS annual nighttime lights",
+      ambientRiskIndex: 24,
+      ambientRiskLevel: "low",
+      ambientRiskLevelLabelZh: "低",
+      targetDirectionRisk: 28,
+      targetDirectionLevel: "low",
+      targetDirectionLevelLabelZh: "低",
+    });
+    const result = resultWithAstroLightPollution(lightPollution);
+    const viewModel = buildAstroForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(AstroResultPage, {
+        query: queryForTarget("astro"),
+        result,
+        viewModel,
+      }),
+    );
+    const mainCard = sectionBetween(
+      html,
+      'data-astro-light-pollution-main-card="true"',
+      'data-astro-section="AstroNightOpportunitySection"',
+    );
+    const professionalItemsByLabel = new Map(
+      viewModel.lightPollution.professionalDataItems.map((item) => [item.label, item]),
+    );
+
+    expect(mainCard).toContain("估算波特尔");
+    expect(mainCard).toContain("银河方向");
+    expect(mainCard).not.toMatch(
+      /本地辐亮度|周边光穹|环境风险指数|有效采样|校验码|nW\/cm²\/sr|localRadiance|surroundingHaloRadiance|ambientRiskIndex|validSampleCount|checksum/i,
+    );
+    expect(html).toContain('data-astro-professional-data-expanded="false"');
+    expect(html).not.toContain("本地辐亮度");
+    expect(professionalItemsByLabel.get("来源")?.value).toBe("EOG VIIRS annual nighttime lights");
+    expect(professionalItemsByLabel.get("数据年份")?.value).toBe("2025");
+    expect(professionalItemsByLabel.get("数据版本")?.value).toBe("v2.2");
+    expect(professionalItemsByLabel.get("本地辐亮度")?.value).toContain("nW/cm²/sr");
+    expect(professionalItemsByLabel.get("周边光穹")?.value).toContain("nW/cm²/sr");
+    expect(professionalItemsByLabel.get("目标方向风险")?.value).toBe("28 / 低");
+    expect(professionalItemsByLabel.get("有效采样")?.value).toBe("90/96");
+    expect(professionalItemsByLabel.get("校验码")?.value).toBe("abc123ef");
+    expectNoForbiddenBortleCopy(mainCard);
   });
 
   it.each([

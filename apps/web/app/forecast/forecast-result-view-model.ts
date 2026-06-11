@@ -620,6 +620,7 @@ export type AstroLightPollutionDisplayModel = {
   readonly available: boolean;
   readonly dataAvailable: boolean;
   readonly ambientRiskIndex: number | null;
+  readonly ambientRiskDisplayValue: string;
   readonly ambientRiskLevelLabelZh: string;
   readonly localRadiance: number | null;
   readonly surroundingHaloRadiance: number | null;
@@ -3079,6 +3080,7 @@ function astroLightPollutionDisplay(
       available: false,
       dataAvailable: false,
       ambientRiskIndex: null,
+      ambientRiskDisplayValue: "数据不足",
       ambientRiskLevelLabelZh: "数据不足",
       localRadiance: lightPollution.localRadiance ?? null,
       surroundingHaloRadiance: lightPollution.surroundingHaloRadiance ?? null,
@@ -3089,7 +3091,7 @@ function astroLightPollutionDisplay(
       sourceLabelZh,
       datasetLabel: datasetLabel || "数据暂缺",
       ...estimatedBortle,
-      primaryConclusionZh: "光污染数据暂不可用",
+      primaryConclusionZh: "数据不足",
       recommendationZh: detail,
       statusBadgeLabelZh: "数据暂缺",
       statusTone: "muted",
@@ -3114,17 +3116,11 @@ function astroLightPollutionDisplay(
   const targetLabel = lightPollution.targetDirectionLevelLabelZh ?? null;
   const ambientRiskIndex = lightPollution.ambientRiskIndex ?? null;
   const directionRisk = lightPollution.targetDirectionRisk ?? null;
-  const primaryConclusionZh =
-    typeof ambientRiskIndex === "number" ? `光污染 ${ambientRiskIndex}` : "光污染数据可用";
-  const riskForRecommendation = Math.max(ambientRiskIndex ?? 0, directionRisk ?? 0);
-  const recommendationZh =
-    riskForRecommendation >= 80
-      ? "城市灯光会明显压低银河对比度，不建议在当前地点专程拍摄。"
-      : riskForRecommendation >= 60
-        ? "人工光影响偏强，银河对比度会下降，建议换到更暗方向或机位。"
-        : riskForRecommendation >= 40
-          ? "人工光影响中等，适合优先选择背离城市光源的构图。"
-          : "当前地点人工光影响较弱，适合安排星空和银河拍摄。";
+  const riskForRecommendation = Math.max(
+    ambientRiskIndex ?? representativeLightPollutionRiskIndex(lightPollution.ambientRiskLevel),
+    directionRisk ?? representativeLightPollutionRiskIndex(lightPollution.targetDirectionLevel),
+  );
+  const recommendationZh = lightPollutionActionAdvice(riskForRecommendation, targetLabel);
   const statusTone: ForecastResultCardTone =
     riskForRecommendation >= 80
       ? "danger"
@@ -3134,11 +3130,15 @@ function astroLightPollutionDisplay(
           ? "info"
           : "primary";
   const directionText = targetLabel ? `银河方向光害${targetLabel}` : "银河方向角不足";
+  const primaryConclusionZh = ambientLabel || "数据可用";
+  const impactSummaryZh = lightPollutionImpactSummary(riskForRecommendation, targetLabel);
 
   return {
     available: true,
     dataAvailable: lightPollution.dataAvailable,
     ambientRiskIndex,
+    ambientRiskDisplayValue:
+      typeof ambientRiskIndex === "number" ? `${ambientRiskIndex}` : ambientLabel || "数据可用",
     ambientRiskLevelLabelZh: ambientLabel,
     localRadiance: lightPollution.localRadiance ?? null,
     surroundingHaloRadiance: lightPollution.surroundingHaloRadiance ?? null,
@@ -3155,18 +3155,17 @@ function astroLightPollutionDisplay(
     statusTone,
     showDailyDirection: typeof lightPollution.targetAzimuthDegrees === "number",
     compactLabel: targetLabel ? `银河方向光害：${targetLabel}` : `环境光污染：${ambientLabel}`,
-    detail: targetLabel
-      ? `环境光污染${ambientLabel}，${directionText}。`
-      : `环境光污染${ambientLabel}；银河方向角不足，未推断目标方向光害。`,
+    detail: impactSummaryZh,
     ambientLabel,
     targetDirectionLabel: targetLabel ?? "数据不足",
-    judgmentSummaryZh: `${directionText}；环境光污染${ambientLabel}。${
-      estimatedBortle.estimatedBortleAvailable
-        ? `波特尔估算：${estimatedBortle.estimatedBortleRangeLabel} · ${estimatedBortle.estimatedBortleSkyQualityLabel}。`
-        : ""
-    }${
-      riskForRecommendation >= 60 ? "会压低星空和银河对比度。" : "对本次星空银河判断不是主要阻断。"
-    }置信度${confidenceLabelZh}。`,
+    judgmentSummaryZh: lightPollutionJudgmentExplanation({
+      ambientLabel,
+      targetLabel,
+      directionText,
+      riskForRecommendation,
+      estimatedBortle,
+      confidenceLabelZh,
+    }),
     professionalDataItems: buildAstroLightPollutionProfessionalDataItems(
       lightPollution,
       datasetLabel,
@@ -3177,6 +3176,84 @@ function astroLightPollutionDisplay(
     directionalSectorItems: buildAstroLightPollutionDirectionalItems(lightPollution),
     noticeZh,
   };
+}
+
+function representativeLightPollutionRiskIndex(
+  level: LightPollutionInfo["ambientRiskLevel"] | LightPollutionInfo["targetDirectionLevel"],
+): number {
+  switch (level) {
+    case "very_low":
+      return 8;
+    case "low":
+      return 24;
+    case "medium":
+      return 50;
+    case "high":
+      return 68;
+    case "very_high":
+      return 88;
+    case "insufficient":
+    case null:
+    case undefined:
+      return 0;
+  }
+}
+
+function lightPollutionActionAdvice(riskIndex: number, targetLabel: string | null): string {
+  if (riskIndex >= 80) {
+    return targetLabel
+      ? "可以观星但银河细节较弱；建议更换暗场机位，或避开城市方向构图。"
+      : "可以观星但银河细节较弱；建议更换暗场机位并现场确认城市光穹方向。";
+  }
+  if (riskIndex >= 60) {
+    return "天空较清时仍可观星，但银河细节会被光害压弱；优先换到更暗方向或机位。";
+  }
+  if (riskIndex >= 40) {
+    return "银河可拍性仍要看云量和月光；构图上优先背离城市光源。";
+  }
+  return "云量和月光允许时，适合安排星空和银河拍摄。";
+}
+
+function lightPollutionImpactSummary(riskIndex: number, targetLabel: string | null): string {
+  if (riskIndex >= 80) {
+    return "光污染很高：天空背景明显发亮，银河细节容易被压掉。";
+  }
+  if (riskIndex >= 60) {
+    return targetLabel
+      ? "银河方向光害偏高：即使头顶较暗，朝城市方向拍摄仍会受影响。"
+      : "光污染高：天空背景发亮，银河细节容易被压弱。";
+  }
+  if (riskIndex >= 40) {
+    return "光污染中等：银河反差会受影响，建议避开城市光源方向。";
+  }
+  return "光污染低：银河背景更暗，星空对比度更好。";
+}
+
+function lightPollutionJudgmentExplanation(input: {
+  readonly ambientLabel: string;
+  readonly targetLabel: string | null;
+  readonly directionText: string;
+  readonly riskForRecommendation: number;
+  readonly estimatedBortle: Pick<
+    AstroLightPollutionDisplayModel,
+    "estimatedBortleAvailable" | "estimatedBortleRangeLabel" | "estimatedBortleSkyQualityLabel"
+  >;
+  readonly confidenceLabelZh: string;
+}): string {
+  const bortleText = input.estimatedBortle.estimatedBortleAvailable
+    ? `估算波特尔：${input.estimatedBortle.estimatedBortleRangeLabel} · ${input.estimatedBortle.estimatedBortleSkyQualityLabel}。`
+    : "";
+  const directionExplanation =
+    input.targetLabel && input.riskForRecommendation >= 60
+      ? "银河方向光害高：即使头顶较暗，朝城市方向拍摄仍会受影响。"
+      : input.targetLabel
+        ? `银河方向：${input.targetLabel}，构图朝向仍建议现场复核。`
+        : "银河方向角不足，目标方向光害需现场确认。";
+
+  return `${lightPollutionImpactSummary(
+    input.riskForRecommendation,
+    input.targetLabel,
+  )}${directionExplanation}${bortleText}${input.directionText}；环境光污染${input.ambientLabel}，置信度${input.confidenceLabelZh}。`;
 }
 
 function estimatedBortleDisplayFields(
@@ -3786,6 +3863,19 @@ function astroNightRecommendation(input: {
 
   const partial = horizonCoverageState === "partial";
   const milky = milkyWayProbability ?? 0;
+  const lightPollutionContext = astroNightLightPollutionContext(day.lightPollution);
+
+  if (
+    lightPollutionContext?.severity === "high" &&
+    day.moonImpactLevel !== "high" &&
+    starProbability >= 55
+  ) {
+    return {
+      level: partial ? "backup" : "watch",
+      label: partial ? "仅作备选" : "可以观星",
+      reason: lightPollutionContext.reason,
+    };
+  }
 
   if (
     !partial &&
@@ -3795,29 +3885,35 @@ function astroNightRecommendation(input: {
     milky >= 58 &&
     day.moonImpactLevel !== "high"
   ) {
+    const baseReason = day.keyReason || "云量、月光和银河窗口组合较好，适合作为夜间主计划。";
     return {
       level: "recommended",
       label: "推荐拍摄",
-      reason: day.keyReason || "云量、月光和银河窗口组合较好，适合作为夜间主计划。",
+      reason: appendAstroNightLightPollutionReason(baseReason, lightPollutionContext?.appendix),
     };
   }
   if (!blocked && starProbability >= 55 && (milky >= 45 || day.moonlessNightWindow)) {
+    const baseReason = partial
+      ? "本次预报只覆盖部分夜间窗口，适合临近复核后再决定。"
+      : day.keyReason || "星空可拍性尚可，银河窗口仍需临近复核云量和月光。";
     return {
       level: partial ? "backup" : "watch",
       label: partial ? "仅作备选" : "可以关注",
-      reason: partial
-        ? "本次预报只覆盖部分夜间窗口，适合临近复核后再决定。"
-        : day.keyReason || "星空可拍性尚可，银河窗口仍需临近复核云量和月光。",
+      reason: appendAstroNightLightPollutionReason(baseReason, lightPollutionContext?.appendix),
     };
   }
   if (starProbability >= 40 || day.astroWindowAvailable) {
+    const baseReason =
+      day.weatherBlockers[0] ??
+      day.keyReason ??
+      "有夜间窗口，但云量、月光或天气覆盖不足以支持专程前往。";
     return {
       level: "backup",
       label: "仅作备选",
-      reason:
-        day.weatherBlockers[0] ??
-        day.keyReason ??
-        "有夜间窗口，但云量、月光或天气覆盖不足以支持专程前往。",
+      reason: appendAstroNightLightPollutionReason(
+        baseReason,
+        lightPollutionContext?.severity === "low" ? undefined : lightPollutionContext?.appendix,
+      ),
     };
   }
 
@@ -3826,6 +3922,57 @@ function astroNightRecommendation(input: {
     label: "不建议前往",
     reason: day.weatherBlockers[0] ?? "星空银河窗口和天气条件组合不足，不建议作为夜拍目标。",
   };
+}
+
+function astroNightLightPollutionContext(
+  lightPollution: LightPollutionInfo | undefined,
+):
+  | {
+      readonly severity: "low" | "medium" | "high";
+      readonly reason: string;
+      readonly appendix: string;
+    }
+  | undefined {
+  if (!lightPollution?.available) {
+    return undefined;
+  }
+
+  const riskIndex = Math.max(
+    lightPollution.ambientRiskIndex ??
+      representativeLightPollutionRiskIndex(lightPollution.ambientRiskLevel),
+    lightPollution.targetDirectionRisk ??
+      representativeLightPollutionRiskIndex(lightPollution.targetDirectionLevel),
+  );
+
+  if (riskIndex >= 60) {
+    return {
+      severity: "high",
+      reason: "天空条件可用，但光污染偏高，可以观星但银河细节较弱；建议调整构图方向或更换机位。",
+      appendix: "光污染偏高，可以观星但银河细节较弱。",
+    };
+  }
+  if (riskIndex >= 40) {
+    return {
+      severity: "medium",
+      reason: "光污染中等，银河细节依赖透明度和避开城市方向的构图。",
+      appendix: "光污染中等，建议避开城市光源方向构图。",
+    };
+  }
+  return {
+    severity: "low",
+    reason: "光污染较低，云量和月光允许时适合银河拍摄。",
+    appendix: "光污染较低，有利于银河背景和星空对比。",
+  };
+}
+
+function appendAstroNightLightPollutionReason(
+  baseReason: string,
+  lightPollutionAppendix: string | undefined,
+): string {
+  if (!lightPollutionAppendix) {
+    return baseReason;
+  }
+  return `${baseReason}${/[。！？]$/.test(baseReason) ? "" : "。"}${lightPollutionAppendix}`;
 }
 
 function astroNightUnavailableReason(

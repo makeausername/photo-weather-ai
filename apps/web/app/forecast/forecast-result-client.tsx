@@ -3825,59 +3825,54 @@ function AstroLightPollutionDecisionCard({
 }: {
   readonly lightPollution: AstroForecastViewModel["lightPollution"];
 }) {
-  const directionRiskLabel =
+  const directionRiskValue =
     lightPollution.bestWindowDirectionRiskLabelZh &&
     typeof lightPollution.bestWindowDirectionRisk === "number"
-      ? `银河方向光害：${lightPollution.bestWindowDirectionRiskLabelZh}`
+      ? lightPollution.bestWindowDirectionRiskLabelZh
       : lightPollution.available
-        ? "银河方向光害：方向角不足"
-        : "银河方向光害：需现场确认";
+        ? "方向角不足"
+        : "需现场确认";
+  const bortleValue = lightPollution.estimatedBortleRangeLabel;
+  const bortleDetail = lightPollution.estimatedBortleAvailable
+    ? lightPollution.estimatedBortleSkyQualityLabel
+    : lightPollution.estimatedBortleBasis;
 
   return (
     <Card
       className="AstroLightPollutionDecision grid gap-3 p-4 shadow-sm"
       data-astro-section="AstroLightPollutionDecision"
       data-astro-light-pollution-available={lightPollution.available ? "true" : "false"}
+      data-astro-light-pollution-main-card="true"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-bold text-primary">光污染</p>
-          {lightPollution.available && typeof lightPollution.ambientRiskIndex === "number" ? (
-            <div className="mt-2 flex flex-wrap items-end gap-3">
-              <p className="text-4xl font-bold leading-none text-card-foreground">
-                {lightPollution.ambientRiskIndex}
-              </p>
-              <p className="pb-1 text-sm font-semibold text-muted-foreground">/ 100</p>
-              <p className="pb-1 text-base font-semibold text-card-foreground">
-                {lightPollution.ambientRiskLevelLabelZh}
-              </p>
-            </div>
-          ) : (
-            <h2 className="mt-2 text-xl font-bold leading-tight text-card-foreground">
-              {lightPollution.primaryConclusionZh}
-            </h2>
-          )}
+          <h2 className="mt-2 text-3xl font-bold leading-tight text-card-foreground">
+            {lightPollution.primaryConclusionZh}
+          </h2>
         </div>
         <Badge variant={badgeVariantForTone(lightPollution.statusTone)}>
           {lightPollution.statusBadgeLabelZh}
         </Badge>
       </div>
       <div className="grid gap-2 text-sm leading-6 text-muted-foreground">
-        <div className="grid gap-1">
-          <p className="font-semibold text-card-foreground">
-            {lightPollution.estimatedBortleAvailable
-              ? `波特尔估算：${lightPollution.estimatedBortleRangeLabel}`
-              : lightPollution.estimatedBortleRangeLabel}
-          </p>
-          <p>
-            {lightPollution.estimatedBortleAvailable
-              ? lightPollution.estimatedBortleSkyQualityLabel
-              : lightPollution.estimatedBortleBasis}
-          </p>
+        <div className="grid gap-2 min-[640px]:grid-cols-2">
+          <div>
+            <p className="text-[11px] font-semibold leading-4 text-muted-foreground">估算波特尔</p>
+            <p className="mt-1 font-semibold text-card-foreground">{bortleValue}</p>
+            <p className="mt-1 text-xs leading-5">{bortleDetail}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold leading-4 text-muted-foreground">银河方向</p>
+            <p className="mt-1 font-semibold text-card-foreground">{directionRiskValue}</p>
+            <p className="mt-1 text-xs leading-5">
+              {lightPollution.available
+                ? `环境光污染${lightPollution.ambientRiskLevelLabelZh}`
+                : lightPollution.detail}
+            </p>
+          </div>
         </div>
-        {lightPollution.available ? (
-          <p className="font-medium text-card-foreground">{directionRiskLabel}</p>
-        ) : null}
+        <p>{lightPollution.detail}</p>
         <p>{lightPollution.recommendationZh}</p>
       </div>
     </Card>

@@ -33,10 +33,10 @@ The installer creates `.env.production`, renders the Caddy config, installs Dock
 Optional light-pollution data uses a local VIIRS-compatible nighttime-light GeoTIFF under `deploy/light-pollution/`; real raster files are ignored by Git. Import with:
 
 ```bash
-bash scripts/import-light-pollution.sh incoming/<file-or-directory> -- --dataset-year 2024 --dataset-version <version>
+bash scripts/import-light-pollution.sh incoming/<file-or-directory> -- --dataset-year 2025 --dataset-version v2.2
 ```
 
-The result is a satellite-night-light reference for astro suitability only. It is not a measured SQM or Bortle value, and missing data is not treated as low pollution.
+The result is a satellite-night-light reference for astro suitability only. The public Milky Way page shows light-pollution risk, target-direction risk, and an estimated Bortle range; it is not a measured SQM value, not a national-standard level, and not an official Bortle observation. Raw radiance and sampling diagnostics stay in the collapsed professional data section. Missing data is not treated as low pollution.
 
 Estimated Bortle calibration audits can be run from independent CSV/JSON references with:
 
@@ -91,14 +91,14 @@ These documents define the strategic product boundary for 逐光天气. Future C
 
 尚未实现：
 
-- 完整生产级真实天气回测、真实 DEM / light pollution 接入、供应商成本仪表盘和长期精度校准；当前已具备 QWeather / Open-Meteo / meteoblue 配置、手动测试连接、多源融合、缓存与使用日志基础。
+- 完整生产级真实天气回测、真实 DEM、供应商成本仪表盘和长期精度校准；当前已具备 QWeather / Open-Meteo / meteoblue 配置、手动测试连接、多源融合、缓存、使用日志和本地 VIIRS 夜光栅格光污染参考基础。
 - 真实 DEM / elevation provider 接入；Open-Meteo Elevation 当前默认禁用，不参与本地自动化测试。
 - 生产级 DeepSeek 或其他 AI 自动分析流程；当前只允许后台服务商配置显式启用后的 DeepSeek 解读调用。
 - 支付、套餐、额度和商业化流程。
 - 生产级 Cookie/Session 加固。
 - 短信登录、真实查询历史、收藏机位持久化、额度控制、付费套餐、订阅计费和已保存报告。
 
-当前公开首页的地图、云层、地形和时间线为演示图层，用于展示产品方向；forecast 在未启用后台真实天气服务商时继续诚实显示演示 / 样例数据。当前搜索与 forecast 流程已完成地点识别、坐标归一化、机位匹配、预报范围选择、首页综合判断入口、专题页固定分析目标、天气多源融合入口、本地天文计算、摄影评分和 `/forecast` 目标感知结果展示；真实 DEM、light pollution、查询历史、收藏机位、支付和生产回测尚未实现。
+当前公开首页的地图、云层、地形和时间线为演示图层，用于展示产品方向；forecast 在未启用后台真实天气服务商时继续诚实显示演示 / 样例数据。当前搜索与 forecast 流程已完成地点识别、坐标归一化、机位匹配、预报范围选择、首页综合判断入口、专题页固定分析目标、天气多源融合入口、本地天文计算、VIIRS 夜光栅格光污染参考、摄影评分和 `/forecast` 目标感知结果展示；真实 DEM、查询历史、收藏机位、支付和生产回测尚未实现。
 
 ## 产品默认
 
@@ -135,9 +135,9 @@ These documents define the strategic product boundary for 逐光天气. Future C
 - Terrain Core V1：当前地形来自 `MockTerrainProvider`，输出 `terrainProfile`、`horizonProfile` 和 `dataSource=mock_terrain`；公开结果页显示为“地形数据：演示数据”，地形会影响云海潜力、白墙风险辅助判断、日出/日落方向遮挡、银河地平线遮挡和综合拍摄依据。
 - Astro Calculation Service V1：`apps/astro-service` 使用本地 `de421.bsp` 星历、Skyfield 和 WGS84 坐标计算日出 / 日落、太阳中天、民用 / 航海 / 天文晨昏光、月相、月亮照明、盈亏方向、月出 / 月落、逐小时月亮高度、天文黑夜、无月黑夜、银心高度方位、银河候选窗口和推荐银河窗口。
 - JS 简化本地估算：未启用 `ENABLE_ASTRO_SERVICE` 时仍保留 `packages/astro` 的本地估算作为体验流程兜底；结果必须显示“天文数据：简化本地估算”，不应被描述为精确天文服务结果。
-- 银河推荐窗口：推荐银河窗口必须同时位于天文黑夜、低月光影响或无月黑夜窗口、银心有效高度候选窗口内；天气数据仍为演示数据，地形数据仍为演示数据，光污染数据暂未接入。
+- 银河推荐窗口：推荐银河窗口必须同时位于天文黑夜、低月光影响或无月黑夜窗口、银心有效高度候选窗口内；天气和地形仍按实际启用状态诚实标注，光污染使用本地 VIIRS 夜光栅格作为参考。
 - 黄山光明顶、老君山金顶、三清山女神峰、武功山金顶等演示样例。
-- 数据提示：星空银河服务启用时显示 `天文数据：本地天文服务计算`；未启用时显示 `天文数据：简化本地估算`。天气数据仍显示 `天气数据：演示数据`，地形数据仍显示 `地形数据：演示数据`，光污染数据显示 `光污染数据：暂未接入`。
+- 数据提示：星空银河服务启用时显示 `天文数据：本地天文服务计算`；未启用时显示 `天文数据：简化本地估算`。天气、地形和光污染按实际数据状态显示；光污染卡展示风险等级、估算波特尔范围和银河方向光害，专业诊断折叠显示数据年份、版本、辐亮度、样本量和置信度。
 
 地形计算约定：
 

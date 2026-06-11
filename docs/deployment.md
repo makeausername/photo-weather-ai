@@ -179,7 +179,7 @@ current/checksum.sha256
 Import one file, multiple files, or a tile directory after placing the source under `deploy/light-pollution/incoming/`:
 
 ```bash
-bash scripts/import-light-pollution.sh incoming/<file-or-directory> -- --dataset-year 2024 --dataset-version <version>
+bash scripts/import-light-pollution.sh incoming/<file-or-directory> -- --dataset-year 2025 --dataset-version v2.2
 ```
 
 Inspect the active dataset and astro-service health fields:
@@ -190,7 +190,7 @@ bash scripts/check-light-pollution.sh
 
 The importer validates readability, dimensions, band availability, nodata, CRS, finite radiance values, coordinate bounds, metadata, and checksum. It mosaics supplied tiles, reprojects to EPSG:4326 when required, writes a tiled/compressed COG, builds overviews where practical, calculates valid-pixel statistics and log-radiance quantiles, writes metadata, and activates the dataset only after validation. The previous active raster/metadata/checksum are preserved under `deploy/light-pollution/backups/`; a failed import leaves the previous active dataset untouched.
 
-The public result treats the raster as a satellite-night-light reference. It displays relative ambient risk, target-direction risk, raw radiance in professional details, source year/version when available, and a non-SQM/non-Bortle disclaimer. Missing light-pollution data is not scored as low pollution: star/Milky Way suitability keeps the existing deterministic result, confidence is reduced, and the UI asks for on-site confirmation of city glow and horizon conditions.
+The public result treats the raster as a satellite-night-light reference. The Milky Way page displays user-facing light-pollution risk, estimated Bortle range, target-direction risk, impact on the current shoot, and one action recommendation. It does not display measured SQM, national-standard levels, or official Bortle observations. Raw radiance, sample counts, confidence, source year/version, and checksum stay in the collapsed professional data section. Missing light-pollution data is not scored as low pollution: star/Milky Way suitability keeps the existing deterministic result, confidence is reduced, and the UI asks for on-site confirmation of city glow and horizon conditions.
 
 Light pollution affects only star and Milky Way photography suitability and recommendation confidence. It does not change weather probability, cloud probability, precipitation probability, astronomical darkness, Moon calculation, or Milky Way geometry.
 
