@@ -3805,6 +3805,7 @@ export function AstroResultPage({
         data-astro-section="AstroResultLayout"
       >
         <AstroLightPollutionDecisionCard lightPollution={viewModel.lightPollution} />
+        <AstroTerrainHorizonDecisionCard terrain={viewModel.terrainHorizon} />
         <AstroNightOpportunitySection nights={viewModel.nightlyCards} horizon={result.horizon} />
         <AstroWhyJudgmentSection factors={viewModel.judgmentFactors} />
         <AstroProfessionalDataSection query={query} result={result} viewModel={viewModel} />
@@ -3874,6 +3875,39 @@ function AstroLightPollutionDecisionCard({
         </div>
         <p>{lightPollution.detail}</p>
         <p>{lightPollution.recommendationZh}</p>
+      </div>
+    </Card>
+  );
+}
+
+function AstroTerrainHorizonDecisionCard({
+  terrain,
+}: {
+  readonly terrain: AstroForecastViewModel["terrainHorizon"];
+}) {
+  return (
+    <Card
+      className="AstroTerrainHorizonDecision grid gap-3 p-4 shadow-sm"
+      data-astro-section="AstroTerrainHorizonDecision"
+      data-astro-terrain-horizon-available={terrain.available ? "true" : "false"}
+      data-astro-terrain-horizon-level={terrain.obstructionLevel}
+      data-astro-terrain-horizon-main-card="true"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-bold text-primary">地形遮挡</p>
+          <h2 className="mt-2 text-3xl font-bold leading-tight text-card-foreground">
+            {terrain.primaryConclusionZh}
+          </h2>
+        </div>
+        <Badge variant={badgeVariantForTone(terrain.statusTone)}>
+          {terrain.statusBadgeLabelZh}
+        </Badge>
+      </div>
+
+      <div className="grid gap-2 text-sm leading-6 text-muted-foreground">
+        <p>{terrain.detail}</p>
+        <p>{terrain.recommendationZh}</p>
       </div>
     </Card>
   );
@@ -4036,6 +4070,11 @@ function AstroNightCard({
           value={night.milkyWay.bestWindowLabel}
           detail={`${night.milkyWay.azimuthSummary} · 高度 ${night.milkyWay.maximumAltitudeDisplay}`}
         />
+        <AstroMiniFact
+          label="地形遮挡"
+          value={night.terrainHorizon.statusLabelZh}
+          detail={night.terrainHorizon.compactLabel}
+        />
         {night.lightPollution.showDailyDirection ? (
           <AstroMiniFact
             label="银河方向光害"
@@ -4196,6 +4235,7 @@ function AstroProfessionalDataSection({
           </div>
 
           <AstroLightPollutionProfessionalSection lightPollution={viewModel.lightPollution} />
+          <AstroTerrainHorizonProfessionalSection terrain={viewModel.terrainHorizon} />
 
           <div className="grid gap-3 min-[760px]:grid-cols-2">
             {viewModel.nightlyCards.map((night) => (
@@ -4322,6 +4362,43 @@ function AstroLightPollutionProfessionalSection({
       ) : null}
 
       <p className="mt-3 text-xs leading-5 text-muted-foreground">{lightPollution.noticeZh}</p>
+    </section>
+  );
+}
+
+function AstroTerrainHorizonProfessionalSection({
+  terrain,
+}: {
+  readonly terrain: AstroForecastViewModel["terrainHorizon"];
+}) {
+  return (
+    <section className="rounded-md border border-border bg-muted p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-card-foreground">地形遮挡剖面</h3>
+        <Badge variant={badgeVariantForTone(terrain.statusTone)}>{terrain.statusBadgeLabelZh}</Badge>
+      </div>
+
+      <div className="mt-3 grid gap-3 min-[760px]:grid-cols-3">
+        {terrain.professionalDataItems.slice(0, 3).map((item) => (
+          <AstroProfessionalFact
+            key={item.label}
+            label={item.label}
+            value={item.value ?? item.detail}
+          />
+        ))}
+      </div>
+
+      <dl className="mt-3 grid gap-2 text-sm min-[760px]:grid-cols-2">
+        {terrain.professionalDataItems.slice(3).map((item) => (
+          <AstroInlineDefinition
+            key={item.label}
+            label={item.label}
+            value={item.value ?? item.detail}
+          />
+        ))}
+      </dl>
+
+      <p className="mt-3 text-xs leading-5 text-muted-foreground">{terrain.diagnosticsNoteZh}</p>
     </section>
   );
 }

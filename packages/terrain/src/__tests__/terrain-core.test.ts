@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  assessTerrainHorizonObstruction,
   calculateElevationDiff,
   buildSpotTerrainProfile,
   classifyHorizonObstruction,
@@ -9,6 +10,7 @@ import {
   MockTerrainProvider,
   OpenMeteoElevationProvider,
   TerrainElevationService,
+  terrainHorizonAssessmentHasDeterministicClearance,
   validateTerrainCoordinates,
 } from "../index.js";
 
@@ -36,6 +38,97 @@ const knownSpots = [
 ] as const;
 
 describe("Terrain Core V1", () => {
+  it("classifies target-direction terrain horizon clearance with deterministic thresholds", () => {
+    const baseInput = {
+      location: { latitude: 30.13, longitude: 118.16, system: "wgs84" as const },
+      observerElevationMeters: 1800,
+      target: "milky_way" as const,
+      targetAzimuthDegrees: 180,
+      directionSamples: [
+        {
+          target: "milky_way" as const,
+          azimuthDegrees: 181,
+          horizonAltitudeDegrees: 6,
+          dataSource: "manual_profile" as const,
+          confidence: "high" as const,
+        },
+      ],
+    };
+
+    expect(
+      assessTerrainHorizonObstruction({
+        ...baseInput,
+        targetAltitudeDegrees: 10,
+      }),
+    ).toMatchObject({
+      obstructionLevel: "clear",
+      obstructionClearanceDegrees: 4,
+      horizonAltitudeDegrees: 6,
+    });
+    expect(
+      assessTerrainHorizonObstruction({
+        ...baseInput,
+        targetAltitudeDegrees: 8.5,
+      }).obstructionLevel,
+    ).toBe("marginal");
+    expect(
+      assessTerrainHorizonObstruction({
+        ...baseInput,
+        targetAltitudeDegrees: 5.5,
+      }).obstructionLevel,
+    ).toBe("obstructed");
+  });
+
+  it("keeps missing directional terrain profile unknown instead of assuming no obstruction", () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("terrain horizon helper should stay local");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const assessment = assessTerrainHorizonObstruction({
+      location: { latitude: 30.13, longitude: 118.16, system: "wgs84" },
+      observerElevationMeters: 1800,
+      target: "milky_way",
+      targetAzimuthDegrees: 180,
+      targetAltitudeDegrees: 8,
+      terrainType: "summit",
+      exposureType: "exposed",
+      viewingDirection: "panoramic",
+      directionSamples: [],
+    });
+
+    expect(assessment.obstructionLevel).toBe("unknown");
+    expect(assessment.horizonAltitudeDegrees).toBeNull();
+    expect(assessment.obstructionClearanceDegrees).toBeNull();
+    expect(assessment.dataSource).toBe("qualitative_fallback");
+    expect(terrainHorizonAssessmentHasDeterministicClearance(assessment)).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("does not treat low-confidence directional samples as deterministic clearance", () => {
+    const assessment = assessTerrainHorizonObstruction({
+      location: { latitude: 30.13, longitude: 118.16, system: "wgs84" },
+      observerElevationMeters: 1800,
+      target: "milky_way",
+      targetAzimuthDegrees: 180,
+      targetAltitudeDegrees: 5,
+      directionSamples: [
+        {
+          target: "milky_way",
+          azimuthDegrees: 180,
+          horizonAltitudeDegrees: 7,
+          dataSource: "manual_profile",
+          confidence: "low",
+        },
+      ],
+    });
+
+    expect(assessment.obstructionLevel).toBe("obstructed");
+    expect(assessment.obstructionClearanceDegrees).toBe(-2);
+    expect(terrainHorizonAssessmentHasDeterministicClearance(assessment)).toBe(false);
+  });
+
   it("returns deterministic mock terrain for known seed spots", async () => {
     const provider = new MockTerrainProvider();
 

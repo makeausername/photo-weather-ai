@@ -40,6 +40,7 @@ import {
   type ProfessionalHourlyTemperatureBasis,
   type RainImpactOnRecommendation,
   type TargetDailyBreakdown,
+  type TerrainHorizonAssessment,
 } from "@photo-weather/shared";
 import {
   defaultTimezone,
@@ -60,6 +61,12 @@ import {
   formatChineseTimeRange,
   getWeatherWindowAroundTime,
 } from "./helpers.js";
+import {
+  resolveMilkyWayTerrainHorizonAssessment,
+  terrainHorizonAssessmentHasDeterministicClearance,
+  terrainHorizonObstructionStatusZh,
+  terrainHorizonUnavailableReasonZh,
+} from "@photo-weather/terrain";
 import { analyzeCloudSea, cloudSeaRecommendationLevel } from "./cloud-sea-analysis.js";
 import { classifyCloudLayerRoles } from "./cloud-layer-roles.js";
 import { calculateAstroAnalysis } from "./astro-analysis.js";
@@ -1304,14 +1311,16 @@ export function calculateStarsScore(input: ForecastCalculationInput): ForecastSc
 }
 
 export function calculateMilkyWayScore(input: ForecastCalculationInput): ForecastScore {
-  const milkyWayHorizonAngle = input.terrainAnalysis.horizonProfile.milkyWayHorizonAngle;
   const candidate = findBestMilkyWayCandidate(input);
   const hasWindow = Boolean(candidate);
   const window = candidate?.weatherWindow ?? nightWindow(input.hourlyWeather);
   const cloudClearScore = 100 - averageHourly(window, (hour) => hour.cloudTotal);
   const moonScore = calculateMoonScoreForWindow(window, input.astroSummaries);
-  const horizonPenalty =
-    typeof milkyWayHorizonAngle === "number" ? Math.max(0, milkyWayHorizonAngle - 8) * 3 : 0;
+  const terrainHorizonAssessment = resolveMilkyWayTerrainHorizonAssessment({
+    terrainAnalysis: input.terrainAnalysis,
+    astro: candidate?.astro ?? input.astroSummaries[0],
+  });
+  const horizonPenalty = terrainHorizonForecastScorePenalty(terrainHorizonAssessment);
   const score = applyAstroPracticalWeatherCap(
     clampScore((candidate?.score ?? 18) - horizonPenalty),
     window,
@@ -1321,15 +1330,13 @@ export function calculateMilkyWayScore(input: ForecastCalculationInput): Forecas
       ? `本地算法银河窗口为 ${formatChineseTimeRange(candidate!.startTime, candidate!.endTime)}。`
       : "本地天文算法未给出可用银河窗口。",
     `银河窗口附近云量和月光综合折算得分 ${Math.round(score)}。`,
-    horizonReason("银河方向", milkyWayHorizonAngle),
+    horizonReason("银河方向", terrainHorizonAssessment),
   ];
   const risks = [
     ...(!hasWindow ? ["缺少银河窗口，只能按星空条件保守参考。"] : []),
     ...(cloudClearScore < 45 ? ["银河窗口附近云量偏多，银心细节可能不明显。"] : []),
     ...(moonScore < 45 ? ["月光偏强，银河对比度会降低。"] : []),
-    ...(typeof milkyWayHorizonAngle === "number" && milkyWayHorizonAngle > 10
-      ? ["银河方向地平线遮挡偏高，低仰角银心或地景衔接可能受山体影响。"]
-      : []),
+    ...terrainHorizonRisks(terrainHorizonAssessment),
   ];
 
   return makeScore("milkyWay", "银河", score, reasons, risks);
@@ -1515,12 +1522,44 @@ function applyAstroLightPollutionScore(
   };
 }
 
-function horizonReason(label: string, horizonAngle: number | undefined): string {
-  if (typeof horizonAngle !== "number" || !Number.isFinite(horizonAngle)) {
-    return `${label}暂无可用地平线遮挡角，本次不额外扣减地形遮挡。`;
+function horizonReason(label: string, assessment: TerrainHorizonAssessment): string {
+  if (!terrainHorizonAssessmentHasDeterministicClearance(assessment)) {
+    return `${label}地形遮挡暂无可用目标方向剖面；本次不按无遮挡处理，建议现场确认地平线。`;
   }
 
-  return `${label}演示地形遮挡角约 ${horizonAngle.toFixed(1)}°，用于辅助判断低角度光线和构图遮挡。`;
+  return `${label}地形遮挡：${terrainHorizonObstructionStatusZh(
+    assessment.obstructionLevel,
+  )}，clearance ${assessment.obstructionClearanceDegrees?.toFixed(1)}°。`;
+}
+
+function terrainHorizonForecastScorePenalty(assessment: TerrainHorizonAssessment): number {
+  if (!terrainHorizonAssessmentHasDeterministicClearance(assessment)) {
+    return 0;
+  }
+  if (assessment.obstructionLevel === "obstructed") {
+    return 26;
+  }
+  if (assessment.obstructionLevel === "marginal") {
+    return 8;
+  }
+  return 0;
+}
+
+function terrainHorizonRisks(assessment: TerrainHorizonAssessment): readonly string[] {
+  if (!terrainHorizonAssessmentHasDeterministicClearance(assessment)) {
+    return [
+      `地形遮挡暂无法精确判断：${terrainHorizonUnavailableReasonZh(
+        assessment.unavailableReason,
+      )}，未按无遮挡处理。`,
+    ];
+  }
+  if (assessment.obstructionLevel === "obstructed") {
+    return ["银河方向可能被地形遮挡，低仰角银心或地景衔接可能受山体影响。"];
+  }
+  if (assessment.obstructionLevel === "marginal") {
+    return ["银河方向接近地形遮挡临界，建议提前确认机位视野。"];
+  }
+  return [];
 }
 
 function findBestMilkyWayCandidate(

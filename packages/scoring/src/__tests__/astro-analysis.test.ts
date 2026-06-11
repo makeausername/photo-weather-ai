@@ -5,6 +5,7 @@ import type {
   ForecastCalculationInput,
   LightPollutionInfo,
   NormalizedHourlyWeather,
+  TerrainHorizonDirectionSample,
 } from "@photo-weather/shared";
 import {
   buildMockForecastInput,
@@ -95,6 +96,47 @@ function withClearAstroWeather(input: ForecastCalculationInput): ForecastCalcula
     precipitationAmountMm: 0,
     weatherTextZh: "晴",
   }));
+}
+
+function withMilkyWayTerrainHorizon(
+  input: ForecastCalculationInput,
+  horizonAltitudeDegrees: number,
+  confidence: TerrainHorizonDirectionSample["confidence"] = "high",
+): ForecastCalculationInput {
+  const astro = input.astroSummaries.find(
+    (summary) =>
+      typeof summary.milkyWayGalacticCenterAzimuth === "number" &&
+      typeof summary.milkyWayGalacticCenterAltitude === "number",
+  );
+  if (!astro || typeof astro.milkyWayGalacticCenterAzimuth !== "number") {
+    throw new Error("test input must include Milky Way target geometry");
+  }
+
+  const sample: TerrainHorizonDirectionSample = {
+    target: "milky_way",
+    azimuthDegrees: astro.milkyWayGalacticCenterAzimuth,
+    horizonAltitudeDegrees,
+    dataSource: "manual_profile",
+    confidence,
+  };
+
+  return {
+    ...input,
+    terrainSummary: {
+      ...input.terrainSummary,
+      milkyWayHorizonAngle: undefined,
+      directionSamples: [sample],
+    },
+    terrainAnalysis: {
+      ...input.terrainAnalysis,
+      isMock: false,
+      horizonProfile: {
+        ...input.terrainAnalysis.horizonProfile,
+        milkyWayHorizonAngle: undefined,
+        directionSamples: [sample],
+      },
+    },
+  };
 }
 
 const directionalRiskFixture: readonly DirectionalLightPollutionRisk[] = [
@@ -888,6 +930,80 @@ describe("astro analysis", () => {
         (window) => window.target === "astro" && window.executableForDedicatedTrip === true,
       ),
     ).toBe(false);
+  });
+
+  it("applies confirmed Milky Way terrain obstruction conservatively to astro scoring", () => {
+    const baseInput = withClearAstroWeather(
+      withLowMoon(buildMockForecastInput(baseQuery, { now: fixedNow })),
+    );
+    const targetAltitude =
+      baseInput.astroSummaries[0]?.milkyWayGalacticCenterAltitude ?? 24;
+    const clear = calculateForecast(
+      withMilkyWayTerrainHorizon(baseInput, targetAltitude - 4, "high"),
+    );
+    const obstructed = calculateForecast(
+      withMilkyWayTerrainHorizon(baseInput, targetAltitude + 1, "high"),
+    );
+
+    expect(clear.astroAnalysis.terrainHorizonAssessment?.obstructionLevel).toBe("clear");
+    expect(obstructed.astroAnalysis.terrainHorizonAssessment?.obstructionLevel).toBe("obstructed");
+    expect(clear.astroAnalysis.milkyWayGeometryScore).toBeGreaterThan(
+      obstructed.astroAnalysis.milkyWayGeometryScore,
+    );
+    expect(obstructed.astroAnalysis.astroShootable).toBe(false);
+    expect(obstructed.astroAnalysis.riskReasons.join(" ")).toContain("地形");
+  });
+
+  it("does not penalize astro scoring from low-confidence terrain horizon samples", () => {
+    const baseInput = withClearAstroWeather(
+      withLowMoon(buildMockForecastInput(baseQuery, { now: fixedNow })),
+    );
+    const targetAltitude =
+      baseInput.astroSummaries[0]?.milkyWayGalacticCenterAltitude ?? 24;
+    const clear = calculateForecast(
+      withMilkyWayTerrainHorizon(baseInput, targetAltitude - 4, "high"),
+    );
+    const lowConfidenceObstructed = calculateForecast(
+      withMilkyWayTerrainHorizon(baseInput, targetAltitude + 1, "low"),
+    );
+
+    expect(lowConfidenceObstructed.astroAnalysis.terrainHorizonAssessment).toMatchObject({
+      obstructionLevel: "obstructed",
+      confidence: "low",
+    });
+    expect(lowConfidenceObstructed.astroAnalysis.milkyWayGeometryScore).toBe(
+      clear.astroAnalysis.milkyWayGeometryScore,
+    );
+    expect(lowConfidenceObstructed.astroAnalysis.astroShootable).toBe(true);
+  });
+
+  it("keeps severe weather ahead of terrain when terrain is clear", () => {
+    const baseInput = withClearAstroWeather(
+      withLowMoon(buildMockForecastInput(baseQuery, { now: fixedNow })),
+    );
+    const targetAltitude =
+      baseInput.astroSummaries[0]?.milkyWayGalacticCenterAltitude ?? 24;
+    const cloudy = withHourlyWeather(
+      withMilkyWayTerrainHorizon(baseInput, targetAltitude - 4, "high"),
+      (hour) => ({
+        ...hour,
+        cloudTotal: 96,
+        cloudLow: 88,
+        cloudMid: 82,
+        cloudHigh: 78,
+        visibility: 3,
+        humidity: 96,
+        precipitationProbability: 0.3,
+        precipitation: 0.2,
+        precipitationAmountMm: 0.2,
+      }),
+    );
+    const result = calculateForecast(cloudy);
+
+    expect(result.astroAnalysis.terrainHorizonAssessment?.obstructionLevel).toBe("clear");
+    expect(result.astroAnalysis.cloudBlockerLevel).toBe("high");
+    expect(result.astroAnalysis.astroShootable).toBe(false);
+    expect(result.astroAnalysis.riskReasons[0]).toMatch(/天气|云|低云|能见度/);
   });
 
   it("keeps normal astro analysis provider-neutral", () => {

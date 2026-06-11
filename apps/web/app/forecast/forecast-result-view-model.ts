@@ -56,6 +56,7 @@ import {
   type GlowWindowLifecycleState,
   type LightPollutionInfo,
   type PhotographyPrecipitationRisk,
+  type TerrainHorizonAssessment,
 } from "@photo-weather/shared";
 import { addHoursInTimezone, getForecastTargetDates } from "@photo-weather/calendar";
 import {
@@ -576,6 +577,7 @@ export type AstroDailyTrendItem = {
   readonly moonlessNightLabel: string;
   readonly galacticCenterWindowLabel: string;
   readonly recommendedMilkyWayLabel: string;
+  readonly terrainHorizonLabel: string;
   readonly cloudConditionLabel: string;
   readonly precipitationRiskLabel: string;
   readonly nightShootingAdviceLabel: string;
@@ -652,6 +654,27 @@ export type AstroLightPollutionDisplayModel = {
   readonly noticeZh: string;
 };
 
+export type AstroTerrainHorizonDisplayModel = {
+  readonly available: boolean;
+  readonly obstructionLevel: TerrainHorizonAssessment["obstructionLevel"];
+  readonly statusLabelZh: string;
+  readonly statusBadgeLabelZh: string;
+  readonly statusTone: ForecastResultCardTone;
+  readonly primaryConclusionZh: string;
+  readonly detail: string;
+  readonly recommendationZh: string;
+  readonly compactLabel: string;
+  readonly targetAzimuthDisplay: string;
+  readonly targetAltitudeDisplay: string;
+  readonly horizonAltitudeDisplay: string;
+  readonly clearanceDisplay: string;
+  readonly confidenceLabelZh: string;
+  readonly dataSourceLabelZh: string;
+  readonly unavailableReasonLabelZh: string;
+  readonly professionalDataItems: readonly ForecastResultSectionItem[];
+  readonly diagnosticsNoteZh: string;
+};
+
 export type AstroNightDisplayModel = {
   readonly nightKey: string;
   readonly localEveningDate: string;
@@ -695,6 +718,7 @@ export type AstroNightDisplayModel = {
     readonly bestWindowLabel: string;
   };
   readonly lightPollution: AstroLightPollutionDisplayModel;
+  readonly terrainHorizon: AstroTerrainHorizonDisplayModel;
   readonly weather: {
     readonly validHourCount: number;
     readonly totalHourCount: number;
@@ -758,6 +782,7 @@ export type AstroForecastViewModel = {
   readonly terrainEvidence: readonly AstroEvidenceViewItem[];
   readonly lightPollutionEvidence: readonly AstroEvidenceViewItem[];
   readonly lightPollution: AstroLightPollutionDisplayModel;
+  readonly terrainHorizon: AstroTerrainHorizonDisplayModel;
   readonly travelRecommendations: readonly string[];
   readonly riskReasons: readonly string[];
   readonly backupPlans: readonly GlowBackupPlan[];
@@ -2776,6 +2801,8 @@ export function buildAstroForecastViewModel(
       ? `有天文窗口，但${blockerSummary}不支持银河拍摄，不建议专程熬夜。`
       : "暂无可用天文黑夜或银河几何窗口，夜间只作备选观察。";
 
+  const terrainHorizon = astroTerrainHorizonDisplay(analysis.terrainHorizonAssessment);
+
   return {
     coreCards: [
       scoreCard(
@@ -2804,6 +2831,14 @@ export function buildAstroForecastViewModel(
         `银河可拍性${analysis.labels.milkyWayShootability}；按银心高度、方向、窗口时长、月光和天气阻断综合判断。`,
         analysis.astroShootable ? "primary" : "danger",
         analysis.milkyWayGeometryScore,
+      ),
+      textCard(
+        "astro-terrain-horizon",
+        "terrain",
+        "地形遮挡",
+        terrainHorizon.statusLabelZh,
+        `${terrainHorizon.detail} ${terrainHorizon.recommendationZh}`,
+        terrainHorizon.statusTone,
       ),
       scoreCard(
         "astro-moon-impact",
@@ -2872,6 +2907,7 @@ export function buildAstroForecastViewModel(
     terrainEvidence: mapAstroEvidence(analysis.terrainEvidence),
     lightPollutionEvidence: mapAstroEvidence(analysis.lightPollutionEvidence),
     lightPollution: astroLightPollutionDisplay(analysis.lightPollution),
+    terrainHorizon,
     travelRecommendations: analysis.travelRecommendations,
     riskReasons: analysis.riskReasons,
     backupPlans: analysis.backupPlans,
@@ -3025,6 +3061,11 @@ function buildAstroNightDisplayModels(
       },
       lightPollution: astroLightPollutionDisplay(
         day?.lightPollution ?? result.astroAnalysis.lightPollution,
+      ),
+      terrainHorizon: astroTerrainHorizonDisplay(
+        day?.terrainHorizonAssessment ??
+          candidateWindow?.terrainHorizonAssessment ??
+          result.astroAnalysis.terrainHorizonAssessment,
       ),
       weather: weatherSummary,
       starPhotographyProbabilityPercent: starProbability,
@@ -3437,6 +3478,258 @@ function buildAstroLightPollutionDirectionalItems(
         : "数据不足",
     detail: `方位 ${formatNullableNumberForView(direction.azimuthDegrees, "°")}；有效采样 ${direction.validSampleCount}/${direction.sampleCount}。`,
   }));
+}
+
+function astroTerrainHorizonDisplay(
+  assessment: TerrainHorizonAssessment | undefined,
+): AstroTerrainHorizonDisplayModel {
+  if (!assessment) {
+    return {
+      available: false,
+      obstructionLevel: "unknown",
+      statusLabelZh: "数据不足",
+      statusBadgeLabelZh: "数据不足",
+      statusTone: "muted",
+      primaryConclusionZh: "地形遮挡暂无法精确判断",
+      detail: missingTerrainHorizonDetail(),
+      recommendationZh: "建议现场确认银河方向地平线遮挡。",
+      compactLabel: "地形遮挡：数据不足",
+      targetAzimuthDisplay: "暂无",
+      targetAltitudeDisplay: "暂无",
+      horizonAltitudeDisplay: "暂无精确角度",
+      clearanceDisplay: "暂无精确角度",
+      confidenceLabelZh: "低",
+      dataSourceLabelZh: "暂无方向剖面",
+      unavailableReasonLabelZh: "缺少目标方向地形剖面",
+      professionalDataItems: terrainHorizonProfessionalItems(undefined),
+      diagnosticsNoteZh: missingTerrainHorizonDetail(),
+    };
+  }
+
+  const statusLabelZh = terrainHorizonStatusLabel(assessment.obstructionLevel);
+  const statusTone = terrainHorizonTone(assessment);
+  const available = assessment.professionalDiagnostics.usedDirectionalProfile;
+  const detail = terrainHorizonDisplayDetail(assessment);
+  const recommendationZh = terrainHorizonRecommendation(assessment);
+
+  return {
+    available,
+    obstructionLevel: assessment.obstructionLevel,
+    statusLabelZh,
+    statusBadgeLabelZh: statusLabelZh,
+    statusTone,
+    primaryConclusionZh:
+      assessment.obstructionLevel === "unknown"
+        ? "地形遮挡暂无法精确判断"
+        : `地形遮挡${statusLabelZh}`,
+    detail,
+    recommendationZh,
+    compactLabel: `地形遮挡：${statusLabelZh}`,
+    targetAzimuthDisplay: formatNullableNumberForView(assessment.targetAzimuthDegrees, "°"),
+    targetAltitudeDisplay: formatNullableNumberForView(assessment.targetAltitudeDegrees, "°"),
+    horizonAltitudeDisplay:
+      typeof assessment.horizonAltitudeDegrees === "number"
+        ? formatNullableNumberForView(assessment.horizonAltitudeDegrees, "°")
+        : "暂无精确角度",
+    clearanceDisplay:
+      typeof assessment.obstructionClearanceDegrees === "number"
+        ? formatNullableNumberForView(assessment.obstructionClearanceDegrees, "°")
+        : "暂无精确角度",
+    confidenceLabelZh: terrainHorizonConfidenceLabel(assessment.confidence),
+    dataSourceLabelZh: assessment.dataSourceLabelZh ?? terrainHorizonDataSourceLabel(assessment),
+    unavailableReasonLabelZh: terrainHorizonUnavailableReasonLabel(assessment.unavailableReason),
+    professionalDataItems: terrainHorizonProfessionalItems(assessment),
+    diagnosticsNoteZh: assessment.professionalDiagnostics.notesZh.join(" "),
+  };
+}
+
+function terrainHorizonProfessionalItems(
+  assessment: TerrainHorizonAssessment | undefined,
+): readonly ForecastResultSectionItem[] {
+  if (!assessment) {
+    return [
+      {
+        label: "地形遮挡状态",
+        value: "数据不足",
+        detail: missingTerrainHorizonDetail(),
+      },
+    ];
+  }
+
+  const diagnostics = assessment.professionalDiagnostics;
+  return [
+    {
+      label: "地形遮挡状态",
+      value: terrainHorizonStatusLabel(assessment.obstructionLevel),
+      detail: terrainHorizonDisplayDetail(assessment),
+    },
+    {
+      label: "目标方位角",
+      value: formatNullableNumberForView(assessment.targetAzimuthDegrees, "°"),
+      detail: "银河窗口代表方向；缺失时不推断目标方向遮挡。",
+    },
+    {
+      label: "目标高度角",
+      value: formatNullableNumberForView(assessment.targetAltitudeDegrees, "°"),
+      detail: "银河中心或代表目标高度角。",
+    },
+    {
+      label: "地形地平线",
+      value:
+        typeof assessment.horizonAltitudeDegrees === "number"
+          ? formatNullableNumberForView(assessment.horizonAltitudeDegrees, "°")
+          : "暂无精确角度",
+      detail: "仅在有目标方向剖面样本时显示。",
+    },
+    {
+      label: "clearance",
+      value:
+        typeof assessment.obstructionClearanceDegrees === "number"
+          ? formatNullableNumberForView(assessment.obstructionClearanceDegrees, "°")
+          : "暂无精确角度",
+      detail: "目标高度角减地形地平线高度角。",
+    },
+    {
+      label: "数据来源",
+      value: assessment.dataSourceLabelZh ?? terrainHorizonDataSourceLabel(assessment),
+      detail: assessment.dataSource,
+    },
+    {
+      label: "置信度",
+      value: terrainHorizonConfidenceLabel(assessment.confidence),
+      detail: diagnostics.usedDirectionalProfile ? "来自方向剖面样本。" : "仅为定性 fallback。",
+    },
+    {
+      label: "样本距离",
+      value: diagnostics.sampleDistanceRangeMeters
+        ? `${Math.round(diagnostics.sampleDistanceRangeMeters[0])}-${Math.round(
+            diagnostics.sampleDistanceRangeMeters[1],
+          )} m`
+        : "暂无",
+      detail: `有效样本 ${diagnostics.validSampleCount}/${diagnostics.sampleCount}`,
+    },
+    {
+      label: "不可用原因",
+      value: terrainHorizonUnavailableReasonLabel(assessment.unavailableReason),
+      detail:
+        assessment.obstructionLevel === "unknown"
+          ? missingTerrainHorizonDetail()
+          : "已有方向剖面可用。",
+    },
+    {
+      label: "计算规则",
+      value: "clearance rule v1",
+      detail: diagnostics.calculationRuleZh,
+    },
+  ];
+}
+
+function terrainHorizonStatusLabel(
+  level: TerrainHorizonAssessment["obstructionLevel"],
+): string {
+  switch (level) {
+    case "clear":
+      return "无遮挡";
+    case "marginal":
+      return "临界";
+    case "obstructed":
+      return "可能遮挡";
+    case "unknown":
+      return "数据不足";
+  }
+}
+
+function terrainHorizonTone(assessment: TerrainHorizonAssessment): ForecastResultCardTone {
+  if (assessment.obstructionLevel === "clear") {
+    return "primary";
+  }
+  if (assessment.obstructionLevel === "marginal") {
+    return "accent";
+  }
+  if (assessment.obstructionLevel === "obstructed") {
+    return "danger";
+  }
+  return "muted";
+}
+
+function terrainHorizonDisplayDetail(assessment: TerrainHorizonAssessment): string {
+  if (assessment.obstructionLevel === "unknown") {
+    return assessment.qualitativeFallback?.summaryZh
+      ? `${missingTerrainHorizonDetail()}${assessment.qualitativeFallback.summaryZh}`
+      : missingTerrainHorizonDetail();
+  }
+  if (assessment.obstructionLevel === "clear") {
+    return "地形遮挡较低，银河方向视野较开阔。";
+  }
+  if (assessment.obstructionLevel === "marginal") {
+    return "银河方向接近山脊或地平线遮挡临界，构图前需要现场确认。";
+  }
+  return "银河方向可能被山体或地平线遮挡，低仰角银心不宜直接作为确定可拍条件。";
+}
+
+function terrainHorizonRecommendation(assessment: TerrainHorizonAssessment): string {
+  if (assessment.obstructionLevel === "clear") {
+    return "可继续按天气、月光和光污染判断；仍建议到场复核前景和安全通行。";
+  }
+  if (assessment.obstructionLevel === "marginal") {
+    return "提前到场确认山脊线，准备更高机位或更开阔方向的替代构图。";
+  }
+  if (assessment.obstructionLevel === "obstructed") {
+    return "建议更换机位、避开低仰角银河，或把星轨、月光地景作为备选。";
+  }
+  return "当前不能确认是否被山体挡住，建议现场确认银河方向地平线遮挡。";
+}
+
+function terrainHorizonConfidenceLabel(
+  confidence: TerrainHorizonAssessment["confidence"],
+): string {
+  if (confidence === "high") {
+    return "高";
+  }
+  if (confidence === "medium") {
+    return "中";
+  }
+  if (confidence === "low") {
+    return "低";
+  }
+  return "未知";
+}
+
+function terrainHorizonUnavailableReasonLabel(
+  reason: TerrainHorizonAssessment["unavailableReason"],
+): string {
+  switch (reason) {
+    case "missing_target_geometry":
+      return "缺少目标方位角或高度角";
+    case "missing_observer_elevation":
+      return "缺少机位海拔";
+    case "insufficient_directional_sample":
+      return "目标方向样本不足";
+    case "invalid_directional_sample":
+      return "地形剖面样本无效";
+    case "missing_directional_profile":
+      return "缺少目标方向地形剖面";
+    case "unknown":
+    case undefined:
+      return "无";
+  }
+}
+
+function terrainHorizonDataSourceLabel(assessment: TerrainHorizonAssessment): string {
+  if (assessment.dataSource === "qualitative_fallback") {
+    return "定性地形参考";
+  }
+  if (assessment.dataSource === "mock_terrain_profile") {
+    return "演示地形剖面";
+  }
+  if (assessment.dataSource === "manual_profile") {
+    return "人工地形剖面";
+  }
+  return assessment.dataSource;
+}
+
+function missingTerrainHorizonDetail(): string {
+  return "当前缺少目标方向的地形剖面数据，系统未把地形当作无遮挡处理，建议现场确认地平线遮挡。";
 }
 
 function lightPollutionConfidenceLabel(confidence: LightPollutionInfo["confidence"]): string {
@@ -4327,6 +4620,13 @@ function buildAstroJudgmentFactors(
       tone: night.milkyWay.available ? "info" : "muted",
     },
     {
+      key: "terrain-horizon",
+      label: "地形遮挡",
+      status: night.terrainHorizon.statusLabelZh,
+      detail: `${night.terrainHorizon.detail} ${night.terrainHorizon.recommendationZh}`,
+      tone: night.terrainHorizon.statusTone,
+    },
+    {
       key: "cloud",
       label: "天气阻挡",
       status: night.weather.cloudSummary,
@@ -4945,6 +5245,7 @@ function buildMilkyWaySection(result: ForecastCalculationResult): ForecastResult
 
 function buildMilkyWayObstructionSection(result: ForecastCalculationResult): ForecastResultSection {
   const horizon = result.terrainAnalysis.horizonProfile;
+  const terrainHorizon = astroTerrainHorizonDisplay(result.astroAnalysis.terrainHorizonAssessment);
 
   return {
     key: "milky-way-obstruction",
@@ -4952,11 +5253,11 @@ function buildMilkyWayObstructionSection(result: ForecastCalculationResult): For
     badgeLabel: "银河地平线",
     items: [
       {
-        label: "银河遮挡角",
-        value: formatAngle(horizon.milkyWayHorizonAngle),
+        label: "银河方向 clearance",
+        value: terrainHorizon.clearanceDisplay,
         detail:
           result.scores.milkyWay.risks.find((risk) => risk.includes("地平线遮挡")) ??
-          "银河方向遮挡角用于辅助判断低仰角银心和地景衔接是否容易被山体挡住。",
+          "clearance 用于辅助判断低仰角银心和地景衔接是否容易被山体挡住；缺少方向剖面时不显示精确角度。",
       },
       {
         label: "遮挡方向",
@@ -4994,7 +5295,7 @@ function buildMountainObstructionRiskSection(
   result: ForecastCalculationResult,
 ): ForecastResultSection {
   const terrain = result.terrainAnalysis.terrainProfile;
-  const horizon = result.terrainAnalysis.horizonProfile;
+  const terrainHorizon = astroTerrainHorizonDisplay(result.astroAnalysis.terrainHorizonAssessment);
 
   return {
     key: "mountain-obstruction-risk",
@@ -5008,7 +5309,7 @@ function buildMountainObstructionRiskSection(
       },
       {
         label: "遮挡风险",
-        value: formatAngle(horizon.milkyWayHorizonAngle),
+        value: terrainHorizon.statusLabelZh,
         detail:
           result.scores.milkyWay.risks.find((risk) => risk.includes("山体")) ??
           "若银河主体贴近山脊，建议现场用星图和机位实测复核。",
@@ -8063,6 +8364,7 @@ function mapDailyAstro(
       : day.astroWindowAvailable
         ? `仅作备选窗口：${blockers}不支持专程拍摄`
         : "暂无推荐窗口",
+    terrainHorizonLabel: astroTerrainHorizonDisplay(day.terrainHorizonAssessment).compactLabel,
     cloudConditionLabel:
       day.weatherBlockers.length > 0
         ? `${day.labels.cloudBlocker}：${blockers}`

@@ -1,4 +1,4 @@
-import type { TerrainDataSource } from "@photo-weather/shared";
+import type { TerrainDataSource, TerrainHorizonDirectionSample } from "@photo-weather/shared";
 import {
   calculateElevationDiff,
   classifyHorizonObstruction,
@@ -209,6 +209,11 @@ function buildSeededHorizonProfile(
     seed.milkyWayHorizonAngle,
   );
   const obstructionLevel = classifyHorizonObstruction(maxObstruction);
+  const directionSamples = [
+    directionSampleForTarget("sunrise", input.sunriseAzimuth, seed.sunriseHorizonAngle),
+    directionSampleForTarget("sunset", input.sunsetAzimuth, seed.sunsetHorizonAngle),
+    directionSampleForTarget("milky_way", input.milkyWayAzimuth, seed.milkyWayHorizonAngle),
+  ].filter((sample): sample is TerrainHorizonDirectionSample => sample !== undefined);
   const obstructionText =
     obstructionLevel === "high" ? "偏高" : obstructionLevel === "medium" ? "中等" : "较低";
 
@@ -216,6 +221,7 @@ function buildSeededHorizonProfile(
     sunriseHorizonAngle: seed.sunriseHorizonAngle,
     sunsetHorizonAngle: seed.sunsetHorizonAngle,
     milkyWayHorizonAngle: seed.milkyWayHorizonAngle,
+    directionSamples,
     blockedDirectionsZh,
     obstructionNoteZh: `基础地形剖面显示主要方向地平遮挡${obstructionText}，可作为日出日落和银河构图的辅助参考。`,
   };
@@ -223,8 +229,28 @@ function buildSeededHorizonProfile(
 
 function buildUnknownHorizonProfile(): HorizonProfile {
   return {
+    directionSamples: [],
     blockedDirectionsZh: [],
     obstructionNoteZh: "当前缺少可靠地平线遮挡资料，日出、日落和银河方向需现场复核。",
+  };
+}
+
+function directionSampleForTarget(
+  target: TerrainHorizonDirectionSample["target"],
+  azimuth: number | undefined,
+  horizonAltitudeDegrees: number,
+): TerrainHorizonDirectionSample | undefined {
+  if (azimuth === undefined || !Number.isFinite(azimuth)) {
+    return undefined;
+  }
+
+  return {
+    target,
+    azimuthDegrees: Math.round((((azimuth % 360) + 360) % 360) * 10) / 10,
+    horizonAltitudeDegrees,
+    directionLabelZh: getDirectionZhFromAzimuth(azimuth),
+    dataSource: "mock_terrain_profile",
+    confidence: "medium",
   };
 }
 

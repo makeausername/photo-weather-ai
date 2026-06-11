@@ -85,6 +85,11 @@
 
 ## Terrain / Elevation Module
 
+Directional horizon obstruction uses the canonical contract in
+[`terrain-horizon-obstruction-v1.md`](./terrain-horizon-obstruction-v1.md). Missing directional
+profiles must remain low-confidence unknowns and must not be displayed as `0°` or as confirmed
+clear sky.
+
 - required data：机位海拔、周边谷地海拔、高差、坡向、地平线遮挡、日出日落遮挡、银河方向遮挡、云海地形潜力。
 - preferred source：本地 verified spot metadata + local cached DEM。
 - free/open/local option：mock/local 数据、SRTM、Copernicus DEM、本地缓存 DEM、人工核验机位。

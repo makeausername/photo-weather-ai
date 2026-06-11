@@ -624,6 +624,82 @@ export type TerrainCloudSeaPotential = "low" | "medium" | "high";
 
 export type TerrainDataSource = "mock_terrain" | "open_meteo_elevation" | "manual" | "unknown";
 
+export type TerrainHorizonObstructionLevel = "clear" | "marginal" | "obstructed" | "unknown";
+
+export type TerrainHorizonDataSource =
+  | TerrainDataSource
+  | "directional_profile"
+  | "manual_profile"
+  | "dem_raster"
+  | "open_topo_data"
+  | "mapbox_terrain_rgb"
+  | "aws_terrain_tiles"
+  | "custom_local_dem"
+  | "mock_terrain_profile"
+  | "qualitative_fallback";
+
+export type TerrainHorizonConfidence = "high" | "medium" | "low" | "unknown";
+
+export type TerrainHorizonTarget =
+  | "milky_way"
+  | "sunrise"
+  | "sunset"
+  | "moonrise"
+  | "moonset"
+  | "landscape"
+  | "custom";
+
+export type TerrainHorizonUnavailableReason =
+  | "missing_directional_profile"
+  | "missing_target_geometry"
+  | "missing_observer_elevation"
+  | "insufficient_directional_sample"
+  | "invalid_directional_sample"
+  | "unknown";
+
+export type TerrainHorizonDirectionSample = {
+  readonly target?: TerrainHorizonTarget;
+  readonly azimuthDegrees: number;
+  readonly horizonAltitudeDegrees?: number | null;
+  readonly elevationMeters?: number | null;
+  readonly distanceMeters?: number | null;
+  readonly directionLabelZh?: string;
+  readonly dataSource: TerrainHorizonDataSource;
+  readonly confidence: TerrainHorizonConfidence;
+};
+
+export type TerrainHorizonAssessment = {
+  readonly location: Coordinates;
+  readonly observerElevationMeters?: number | null;
+  readonly target: TerrainHorizonTarget;
+  readonly targetAzimuthDegrees?: number | null;
+  readonly targetAltitudeDegrees?: number | null;
+  readonly horizonAltitudeDegrees?: number | null;
+  readonly obstructionClearanceDegrees?: number | null;
+  readonly obstructionLevel: TerrainHorizonObstructionLevel;
+  readonly confidence: TerrainHorizonConfidence;
+  readonly dataSource: TerrainHorizonDataSource;
+  readonly dataSourceLabelZh?: string;
+  readonly unavailableReason?: TerrainHorizonUnavailableReason;
+  readonly directionSample?: TerrainHorizonDirectionSample;
+  readonly directionSamples?: readonly TerrainHorizonDirectionSample[];
+  readonly qualitativeFallback?: {
+    readonly terrainType?: TerrainType;
+    readonly exposureType?: ExposureType;
+    readonly viewingDirection?: TerrainViewingDirection;
+    readonly summaryZh: string;
+  };
+  readonly professionalDiagnostics: {
+    readonly calculationRuleZh: string;
+    readonly sampleCount: number;
+    readonly validSampleCount: number;
+    readonly usedDirectionalProfile: boolean;
+    readonly nearestAzimuthDeltaDegrees?: number | null;
+    readonly sampleDistanceRangeMeters?: readonly [number, number];
+    readonly notesZh: readonly string[];
+  };
+};
+
 export type TerrainProfileSummary = SpotTerrainProfile & {
   readonly locationElevation: number | null;
   readonly minElevation1km: number | null;
@@ -642,6 +718,8 @@ export type HorizonProfileSummary = {
   readonly sunriseHorizonAngle?: number;
   readonly sunsetHorizonAngle?: number;
   readonly milkyWayHorizonAngle?: number;
+  readonly directionSamples?: readonly TerrainHorizonDirectionSample[];
+  readonly milkyWayAssessment?: TerrainHorizonAssessment;
   readonly blockedDirectionsZh: readonly string[];
   readonly obstructionNoteZh: string;
 };
@@ -1506,6 +1584,7 @@ export type AstroWindow = {
   readonly directionZh?: string;
   readonly galacticCenterAltitude?: number;
   readonly galacticCenterAzimuth?: number;
+  readonly terrainHorizonAssessment?: TerrainHorizonAssessment;
 };
 
 export type MoonlessNightWindow = {
@@ -1544,6 +1623,7 @@ export type DailyAstro = {
   readonly astronomicalNightWindow?: AstroWindow;
   readonly moonlessNightWindow?: AstroWindow;
   readonly recommendedMilkyWayWindow?: AstroWindow;
+  readonly terrainHorizonAssessment?: TerrainHorizonAssessment;
   readonly assessment: AstroPhotographyAssessment;
   readonly lightPollution: LightPollutionInfo;
   readonly recommendationLabel: AstroRecommendationLabel;
@@ -1568,6 +1648,7 @@ export type AstroPhotographyAssessment = {
   readonly tripodWindRisk: AstroRiskLevel;
   readonly astroWeatherBlockers: readonly string[];
   readonly recommendedMilkyWayWindow?: AstroWindow;
+  readonly terrainHorizonAssessment?: TerrainHorizonAssessment;
   readonly moonImpactReasonsZh: readonly string[];
   readonly gearAdviceZh: readonly string[];
   readonly warmthAdviceZh: string;
@@ -1694,6 +1775,7 @@ export type AstroAnalysisResult = {
   readonly tripodWindRisk: AstroRiskLevel;
   readonly assessment: AstroPhotographyAssessment;
   readonly recommendedMilkyWayWindow?: AstroWindow;
+  readonly terrainHorizonAssessment?: TerrainHorizonAssessment;
   readonly gearAdviceZh: readonly string[];
   readonly warmthAdviceZh: string;
   readonly bestAstroWindows: readonly AstroWindow[];

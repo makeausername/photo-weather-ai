@@ -601,6 +601,8 @@ function flattenTerrainAnalysis(analysis: TerrainAnalysisSummary): TerrainSummar
     sunriseHorizonAngle: analysis.horizonProfile.sunriseHorizonAngle,
     sunsetHorizonAngle: analysis.horizonProfile.sunsetHorizonAngle,
     milkyWayHorizonAngle: analysis.horizonProfile.milkyWayHorizonAngle,
+    directionSamples: analysis.horizonProfile.directionSamples,
+    milkyWayAssessment: analysis.horizonProfile.milkyWayAssessment,
     blockedDirectionsZh: analysis.horizonProfile.blockedDirectionsZh,
     obstructionNoteZh: analysis.horizonProfile.obstructionNoteZh,
     dataSource: analysis.dataSource,

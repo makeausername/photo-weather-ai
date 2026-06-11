@@ -20,7 +20,14 @@ import type {
   LightPollutionRiskLevel,
   MoonImpactLevel,
   NormalizedHourlyWeather,
+  TerrainHorizonAssessment,
 } from "@photo-weather/shared";
+import {
+  resolveMilkyWayTerrainHorizonAssessment,
+  terrainHorizonAssessmentHasDeterministicClearance,
+  terrainHorizonObstructionStatusZh,
+  terrainHorizonUnavailableReasonZh,
+} from "@photo-weather/terrain";
 import { averageHourly, averageWeightedScore, clampScore } from "./helpers.js";
 import {
   calculatePhotographyTransparencyScore,
@@ -324,6 +331,20 @@ function lightPollutionPracticalPenalty(
   return hasMilkyWayWindow ? lightPollution.milkyWayPenalty : lightPollution.starPenalty;
 }
 
+function terrainHorizonScorePenalty(assessment: TerrainHorizonAssessment | undefined): number {
+  if (!terrainHorizonAssessmentHasDeterministicClearance(assessment)) {
+    return 0;
+  }
+
+  if (assessment.obstructionLevel === "obstructed") {
+    return 26;
+  }
+  if (assessment.obstructionLevel === "marginal") {
+    return 8;
+  }
+  return 0;
+}
+
 function buildLightPollutionEvidence(
   lightPollution: LightPollutionInfo,
 ): readonly AstroEvidenceItem[] {
@@ -425,7 +446,11 @@ export function calculateAstroAnalysis(
   const astroShootable = dailyAstro.some((day) => day.astroShootable);
   const astroTravelScore = astroPracticalScore;
   const recommendationLabel = recommendationLabelForScore(astroTravelScore);
-  const missingDataNotes = buildMissingDataNotes(input, lightPollution);
+  const missingDataNotes = buildMissingDataNotes(
+    input,
+    lightPollution,
+    assessment.terrainHorizonAssessment,
+  );
   const confidenceLevel = classifyConfidence(missingDataNotes);
   const cloudEvidence = buildCloudEvidence(input, astronomicalNightWindows);
   const visibilityEvidence = buildVisibilityEvidence(input, astronomicalNightWindows);
@@ -462,6 +487,7 @@ export function calculateAstroAnalysis(
     tripodWindRisk: assessment.tripodWindRisk,
     assessment,
     recommendedMilkyWayWindow: assessment.recommendedMilkyWayWindow,
+    terrainHorizonAssessment: assessment.terrainHorizonAssessment,
     gearAdviceZh: assessment.gearAdviceZh,
     warmthAdviceZh: assessment.warmthAdviceZh,
     bestAstroWindows,
@@ -595,7 +621,17 @@ function buildMilkyWayCandidateWindows(
 
     const weatherWindow = weatherBetween(input.hourlyWeather, clipped.start, clipped.end);
     const moonImpact = moonImpactForWindow(astro, clipped.start, clipped.end);
-    const score = calculateMilkyWayWindowScore(input, astro, clipped.start, clipped.end);
+    const terrainHorizonAssessment = resolveMilkyWayTerrainHorizonAssessment({
+      terrainAnalysis: input.terrainAnalysis,
+      astro,
+    });
+    const score = calculateMilkyWayWindowScore(
+      input,
+      astro,
+      clipped.start,
+      clipped.end,
+      terrainHorizonAssessment,
+    );
 
     return [
       {
@@ -611,6 +647,7 @@ function buildMilkyWayCandidateWindows(
         directionZh: astro.milkyWayDirection,
         galacticCenterAltitude: astro.milkyWayGalacticCenterAltitude,
         galacticCenterAzimuth: astro.milkyWayGalacticCenterAzimuth,
+        terrainHorizonAssessment,
       },
     ];
   });
@@ -636,7 +673,20 @@ function buildRecommendedMilkyWayWindows(
     return intersections.flatMap((window) => {
       const weatherWindow = weatherBetween(input.hourlyWeather, window.start, window.end);
       const moonImpact = moonImpactForWindow(astro, window.start, window.end);
-      const score = calculateMilkyWayWindowScore(input, astro, window.start, window.end);
+      const terrainHorizonAssessment =
+        candidate.terrainHorizonAssessment ??
+        resolveMilkyWayTerrainHorizonAssessment({
+          terrainAnalysis: input.terrainAnalysis,
+          astro,
+          window: candidate,
+        });
+      const score = calculateMilkyWayWindowScore(
+        input,
+        astro,
+        window.start,
+        window.end,
+        terrainHorizonAssessment,
+      );
       if (!weatherSupportsMilkyWayWindow(weatherWindow) || score < 50) {
         return [];
       }
@@ -656,6 +706,7 @@ function buildRecommendedMilkyWayWindows(
           directionZh: candidate.directionZh,
           galacticCenterAltitude: candidate.galacticCenterAltitude,
           galacticCenterAzimuth: candidate.galacticCenterAzimuth,
+          terrainHorizonAssessment,
         } satisfies AstroWindow,
       ];
     });
@@ -751,6 +802,7 @@ function buildDailyAstro(
       astronomicalNightWindow,
       moonlessNightWindow,
       recommendedMilkyWayWindow,
+      terrainHorizonAssessment: assessment.terrainHorizonAssessment,
       assessment,
       lightPollution: dailyLightPollution,
       recommendationLabel: recommendationLabelForScore(astroPracticalScore),
@@ -982,10 +1034,11 @@ function calculateDailyStarsScore(
       weatherWindow[0]?.time,
       weatherWindow[weatherWindow.length - 1]?.time,
     ).score;
-  const terrainPenalty =
-    typeof input.terrainAnalysis.horizonProfile.milkyWayHorizonAngle === "number"
-      ? Math.max(0, input.terrainAnalysis.horizonProfile.milkyWayHorizonAngle - 10) * 1.8
-      : 0;
+  const terrainHorizonAssessment = resolveMilkyWayTerrainHorizonAssessment({
+    terrainAnalysis: input.terrainAnalysis,
+    astro,
+  });
+  const terrainPenalty = terrainHorizonScorePenalty(terrainHorizonAssessment) * 0.45;
 
   const score = clampScore(
     averageWeightedScore([
@@ -1005,6 +1058,10 @@ function calculateMilkyWayWindowScore(
   astro: AstroSummary,
   start: string,
   end: string,
+  terrainHorizonAssessment = resolveMilkyWayTerrainHorizonAssessment({
+    terrainAnalysis: input.terrainAnalysis,
+    astro,
+  }),
 ): number {
   const weatherWindow = weatherBetween(input.hourlyWeather, start, end);
   const durationScore = clampScore((durationMinutes(start, end) / 150) * 100);
@@ -1021,10 +1078,7 @@ function calculateMilkyWayWindowScore(
     typeof astro.milkyWayGalacticCenterAltitude === "number"
       ? clampScore((astro.milkyWayGalacticCenterAltitude - 8) * 5)
       : 62;
-  const terrainPenalty =
-    typeof input.terrainAnalysis.horizonProfile.milkyWayHorizonAngle === "number"
-      ? Math.max(0, input.terrainAnalysis.horizonProfile.milkyWayHorizonAngle - 8) * 2.4
-      : 0;
+  const terrainPenalty = terrainHorizonScorePenalty(terrainHorizonAssessment);
 
   const score = clampScore(
     averageWeightedScore([
@@ -1104,6 +1158,12 @@ function buildAstroPhotographyAssessment({
   const dewRiskLevel = riskLevelFromRiskScore(dewRiskScore);
   const tripodWindRisk = tripodWindRiskForStats(stats);
   const astroWeatherBlockers = astroWeatherBlockersForStats(stats);
+  const terrainHorizonAssessment = resolveMilkyWayTerrainHorizonAssessment({
+    terrainAnalysis: input.terrainAnalysis,
+    astro,
+    window: recommendedMilkyWayWindow ?? candidateWindow,
+  });
+  const terrainPenalty = terrainHorizonScorePenalty(terrainHorizonAssessment);
   const astroWindowAvailable =
     Boolean(astronomicalNightWindow) && (Boolean(moonlessNightWindow) || moonImpact.score < 65);
   const rawPracticalScore = averageWeightedScore([
@@ -1128,7 +1188,8 @@ function buildAstroPhotographyAssessment({
       lightPollutionPracticalPenalty(
         lightPollution,
         Boolean(recommendedMilkyWayWindow || candidateWindow),
-      ),
+      ) -
+      terrainPenalty,
   );
   const weatherAllows =
     astroWeatherBlockers.length === 0 &&
@@ -1138,10 +1199,14 @@ function buildAstroPhotographyAssessment({
     stats.precipitationRisk !== "high" &&
     stats.precipitationRisk !== "severe";
   const dewManageable = dewRiskScore < 88;
+  const terrainAllows =
+    !terrainHorizonAssessmentHasDeterministicClearance(terrainHorizonAssessment) ||
+    terrainHorizonAssessment.obstructionLevel !== "obstructed";
   const astroShootable =
     astroWindowAvailable &&
     weatherAllows &&
     dewManageable &&
+    terrainAllows &&
     practicalAstroScore >= 58 &&
     (Boolean(recommendedMilkyWayWindow) || Boolean(moonlessNightWindow));
   const labels = buildAstroPhotographyLabels({
@@ -1173,6 +1238,7 @@ function buildAstroPhotographyAssessment({
     tripodWindRisk,
     astroWeatherBlockers,
     recommendedMilkyWayWindow: astroShootable ? recommendedMilkyWayWindow : undefined,
+    terrainHorizonAssessment,
     moonImpactReasonsZh: moonImpact.reasons,
     gearAdviceZh: buildGearAdviceZh(stats, dewRiskLevel, tripodWindRisk, moonImpact.level),
     warmthAdviceZh: buildWarmthAdviceZh(stats),
@@ -1286,11 +1352,12 @@ function calculateMilkyWayGeometryScore(
       ? clampScore((candidateWindow.galacticCenterAltitude - 8) * 5)
       : 58;
   const directionScore = candidateWindow.directionZh ? 76 : 52;
-  const horizonAngle = input.terrainAnalysis.horizonProfile.milkyWayHorizonAngle;
-  const horizonPenalty =
-    typeof horizonAngle === "number" && Number.isFinite(horizonAngle)
-      ? Math.max(0, horizonAngle - 8) * 3
-      : 0;
+  const horizonPenalty = terrainHorizonScorePenalty(
+    resolveMilkyWayTerrainHorizonAssessment({
+      terrainAnalysis: input.terrainAnalysis,
+      window: candidateWindow,
+    }),
+  );
 
   return clampScore(
     averageWeightedScore([
@@ -1857,15 +1924,40 @@ function buildMoonEvidence(
 }
 
 function buildTerrainEvidence(input: ForecastCalculationInput): readonly AstroEvidenceItem[] {
-  const horizon = input.terrainAnalysis.horizonProfile;
-  const angle = horizon.milkyWayHorizonAngle;
+  const assessment = resolveMilkyWayTerrainHorizonAssessment({
+    terrainAnalysis: input.terrainAnalysis,
+    astro: input.astroSummaries[0],
+  });
+  const hasDeterministicClearance =
+    terrainHorizonAssessmentHasDeterministicClearance(assessment);
+  const effect =
+    hasDeterministicClearance && assessment.obstructionLevel === "obstructed"
+      ? "risk"
+      : hasDeterministicClearance && assessment.obstructionLevel === "clear"
+        ? "positive"
+        : "neutral";
+  const clearance =
+    typeof assessment.obstructionClearanceDegrees === "number"
+      ? `${assessment.obstructionClearanceDegrees.toFixed(1)}°`
+      : "暂无精确角度";
 
   return [
     {
       label: "银河方向地平遮挡",
-      value: typeof angle === "number" ? `${angle.toFixed(1)}°` : "暂无数据",
-      effect: typeof angle === "number" && angle > 12 ? "risk" : "neutral",
-      noteZh: horizon.obstructionNoteZh,
+      value: terrainHorizonObstructionStatusZh(assessment.obstructionLevel),
+      effect,
+      noteZh: terrainHorizonEvidenceNote(assessment),
+    },
+    {
+      label: "地形 clearance",
+      value: clearance,
+      effect,
+      noteZh:
+        typeof assessment.horizonAltitudeDegrees === "number"
+          ? `目标高度角 ${assessment.targetAltitudeDegrees?.toFixed(1) ?? "未知"}°，地形地平线 ${assessment.horizonAltitudeDegrees.toFixed(
+              1,
+            )}°。`
+          : "缺少目标方向地形剖面，不显示精确地平线角或 clearance。",
     },
     {
       label: "地形数据",
@@ -1874,6 +1966,28 @@ function buildTerrainEvidence(input: ForecastCalculationInput): readonly AstroEv
       noteZh: input.terrainAnalysis.honestyNoteZh,
     },
   ];
+}
+
+function terrainHorizonEvidenceNote(assessment: TerrainHorizonAssessment): string {
+  if (!terrainHorizonAssessmentHasDeterministicClearance(assessment)) {
+    return assessment.qualitativeFallback?.summaryZh
+      ? `地形遮挡暂无法精确判断。${assessment.qualitativeFallback.summaryZh}${missingDirectionalProfileNote()}`
+      : `地形遮挡暂无法精确判断。${terrainHorizonUnavailableReasonZh(
+          assessment.unavailableReason,
+        )}，${missingDirectionalProfileNote()}`;
+  }
+
+  if (assessment.obstructionLevel === "clear") {
+    return "地形遮挡较低，银河方向视野较开阔；仍建议到场复核前景和安全通行。";
+  }
+  if (assessment.obstructionLevel === "marginal") {
+    return "银河方向接近地形遮挡临界，建议提前确认机位视野并准备替代构图。";
+  }
+  return "银河方向可能被山体或地平线遮挡，建议更换机位或避开低仰角银河构图。";
+}
+
+function missingDirectionalProfileNote(): string {
+  return "当前缺少目标方向的地形剖面数据，系统未把地形当作无遮挡处理，建议现场确认地平线遮挡。";
 }
 
 function buildAstroRiskReasons(
@@ -1886,6 +2000,7 @@ function buildAstroRiskReasons(
   const lightPollutionRisks = lightPollution.available
     ? [lightPollutionDecisionText(lightPollution)]
     : [lightPollution.lightPollutionNoteZh || lightPollutionUnavailableNote];
+  const terrainRisk = buildTerrainHorizonRiskReason(assessment.terrainHorizonAssessment);
   return [
     ...weatherBlockers.map((blocker) => `星空银河天气阻断：${blocker}。`),
     ...(weatherBlockers.length > 0
@@ -1906,8 +2021,27 @@ function buildAstroRiskReasons(
     ...(hasMissingCloudLayerFields(input.weatherMissingFields)
       ? ["缺少低云/中云/高云分层数据，云量判断置信度降低。"]
       : []),
+    ...(terrainRisk ? [terrainRisk] : []),
     ...lightPollutionRisks,
   ];
+}
+
+function buildTerrainHorizonRiskReason(
+  assessment: TerrainHorizonAssessment | undefined,
+): string | undefined {
+  if (!assessment) {
+    return undefined;
+  }
+  if (!terrainHorizonAssessmentHasDeterministicClearance(assessment)) {
+    return "地形遮挡暂无可用目标方向剖面；本次没有把地形当作无遮挡处理，需现场复核银河方向地平线。";
+  }
+  if (assessment.obstructionLevel === "obstructed") {
+    return "银河方向可能被地形遮挡；即使天气较好，低仰角银心也可能被山体挡住。";
+  }
+  if (assessment.obstructionLevel === "marginal") {
+    return "银河方向 clearance 不足 3°，构图前应提前确认山脊和前景遮挡。";
+  }
+  return undefined;
 }
 
 function buildAstroOpportunityReasons(
@@ -1926,10 +2060,26 @@ function buildAstroOpportunityReasons(
     recommendedMilkyWayWindows.length > 0
       ? `共找到 ${recommendedMilkyWayWindows.length} 个推荐银河窗口。`
       : "银心候选窗口与低月光窗口交集不足。",
-    input.terrainAnalysis.horizonProfile.milkyWayHorizonAngle !== undefined
-      ? "演示地形遮挡已纳入银河方向风险判断。"
-      : "地形遮挡角暂缺，现场视野仍需复核。",
+    terrainHorizonOpportunityReason(input),
   ];
+}
+
+function terrainHorizonOpportunityReason(input: ForecastCalculationInput): string {
+  const assessment = resolveMilkyWayTerrainHorizonAssessment({
+    terrainAnalysis: input.terrainAnalysis,
+    astro: input.astroSummaries[0],
+  });
+
+  if (!terrainHorizonAssessmentHasDeterministicClearance(assessment)) {
+    return "地形遮挡暂无目标方向剖面，未按无遮挡处理，银河方向视野仍需现场复核。";
+  }
+  if (assessment.obstructionLevel === "clear") {
+    return "地形剖面显示银河方向 clearance 充足，未额外扣减地形遮挡。";
+  }
+  if (assessment.obstructionLevel === "marginal") {
+    return "地形剖面显示银河方向接近遮挡临界，已按轻度风险处理。";
+  }
+  return "地形剖面显示银河方向可能被遮挡，已按显著风险处理。";
 }
 
 function buildAstroTravelRecommendations(
@@ -2007,6 +2157,7 @@ function buildAstroBackupPlans(): readonly GlowBackupPlan[] {
 function buildMissingDataNotes(
   input: ForecastCalculationInput,
   lightPollution: LightPollutionInfo,
+  terrainHorizonAssessment?: TerrainHorizonAssessment,
 ): readonly string[] {
   const notes = [
     ...(hasMissingCloudLayerFields(input.weatherMissingFields)
@@ -2032,6 +2183,11 @@ function buildMissingDataNotes(
       ? []
       : ["天气数据当前为演示数据，正式出行前需要复核真实预报。"]),
     ...(input.terrainAnalysis.isMock ? ["地形数据当前为演示数据，现场地平线遮挡仍需复核。"] : []),
+    ...(!terrainHorizonAssessmentHasDeterministicClearance(terrainHorizonAssessment)
+      ? [
+          "地形遮挡暂无可用目标方向剖面；系统未按无遮挡处理，建议现场确认银河方向地平线。",
+        ]
+      : []),
   ];
 
   return Array.from(new Set(notes));
@@ -2104,6 +2260,12 @@ function dailyRiskNote(
   }
   if (assessment.moonImpactLevel === "high") {
     return "月光偏强";
+  }
+  if (
+    terrainHorizonAssessmentHasDeterministicClearance(assessment.terrainHorizonAssessment) &&
+    assessment.terrainHorizonAssessment.obstructionLevel === "obstructed"
+  ) {
+    return "地形遮挡";
   }
   if (
     input.terrainAnalysis.horizonProfile.milkyWayHorizonAngle !== undefined &&

@@ -10,6 +10,7 @@ import {
   type ForecastMultiSourceAgreementContext,
   type ForecastQueryInput,
   type ForecastScore,
+  type TerrainHorizonAssessment,
 } from "@photo-weather/shared";
 import {
   AiExplanationPanel,
@@ -189,6 +190,44 @@ const lightPollutionForTest: ForecastCalculationResult["astroAnalysis"]["lightPo
   starPenalty: 0,
   milkyWayPenalty: 0,
   scoringMode: "heuristic",
+};
+
+const terrainHorizonForTest: TerrainHorizonAssessment = {
+  location: { latitude: 30.13012, longitude: 118.16389, system: "wgs84" },
+  observerElevationMeters: 1860,
+  target: "milky_way",
+  targetAzimuthDegrees: 180,
+  targetAltitudeDegrees: 24,
+  horizonAltitudeDegrees: 8,
+  obstructionClearanceDegrees: 16,
+  obstructionLevel: "clear",
+  confidence: "high",
+  dataSource: "manual_profile",
+  dataSourceLabelZh: "人工地形剖面",
+  directionSample: {
+    target: "milky_way",
+    azimuthDegrees: 180,
+    horizonAltitudeDegrees: 8,
+    dataSource: "manual_profile",
+    confidence: "high",
+  },
+  directionSamples: [
+    {
+      target: "milky_way",
+      azimuthDegrees: 180,
+      horizonAltitudeDegrees: 8,
+      dataSource: "manual_profile",
+      confidence: "high",
+    },
+  ],
+  professionalDiagnostics: {
+    calculationRuleZh: "clearance = target altitude - terrain horizon altitude",
+    sampleCount: 1,
+    validSampleCount: 1,
+    usedDirectionalProfile: true,
+    nearestAzimuthDeltaDegrees: 0,
+    notesZh: ["测试地形剖面"],
+  },
 };
 
 function lightPollutionForDisplayTest(
@@ -1938,6 +1977,50 @@ function resultWithAstroLightPollution(
       dailyAstro: result.astroAnalysis.dailyAstro.map((day, index) => ({
         ...day,
         lightPollution: dailyLightPollution[index] ?? lightPollution,
+      })),
+    },
+  };
+}
+
+function resultWithAstroTerrainHorizon(
+  terrainHorizon: TerrainHorizonAssessment | undefined,
+): ForecastCalculationResult {
+  const result = resultForTarget("astro");
+  return {
+    ...result,
+    terrainSummary: {
+      ...result.terrainSummary,
+      milkyWayAssessment: terrainHorizon,
+      directionSamples: terrainHorizon?.directionSamples ?? [],
+    },
+    terrainAnalysis: {
+      ...result.terrainAnalysis,
+      horizonProfile: {
+        ...result.terrainAnalysis.horizonProfile,
+        milkyWayAssessment: terrainHorizon,
+        directionSamples: terrainHorizon?.directionSamples ?? [],
+      },
+    },
+    astroAnalysis: {
+      ...result.astroAnalysis,
+      terrainHorizonAssessment: terrainHorizon,
+      dailyAstro: result.astroAnalysis.dailyAstro.map((day) => ({
+        ...day,
+        terrainHorizonAssessment: terrainHorizon,
+        recommendedMilkyWayWindow: day.recommendedMilkyWayWindow
+          ? {
+              ...day.recommendedMilkyWayWindow,
+              terrainHorizonAssessment: terrainHorizon,
+            }
+          : undefined,
+      })),
+      milkyWayCandidateWindows: result.astroAnalysis.milkyWayCandidateWindows.map((window) => ({
+        ...window,
+        terrainHorizonAssessment: terrainHorizon,
+      })),
+      recommendedMilkyWayWindows: result.astroAnalysis.recommendedMilkyWayWindows.map((window) => ({
+        ...window,
+        terrainHorizonAssessment: terrainHorizon,
       })),
     },
   };
@@ -7047,6 +7130,43 @@ describe("forecast result target-aware view model", () => {
     expect(countOccurrences(html, 'data-professional-hourly-row="')).toBe(0);
   });
 
+  it("renders terrain horizon status on the astro page without expanding professional diagnostics", () => {
+    const result = resultWithAstroTerrainHorizon(terrainHorizonForTest);
+    const viewModel = buildAstroForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(AstroResultPage, {
+        query: queryForTarget("astro"),
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(viewModel.terrainHorizon.obstructionLevel).toBe("clear");
+    expect(viewModel.terrainHorizon.clearanceDisplay).toBe("16°");
+    expect(
+      viewModel.terrainHorizon.professionalDataItems.find((item) => item.label === "clearance")
+        ?.value,
+    ).toBe("16°");
+    expect(viewModel.nightlyCards[0]?.terrainHorizon.compactLabel).toContain("地形遮挡");
+    expect(viewModel.judgmentFactors.map((factor) => factor.key)).toContain("terrain-horizon");
+    expect(html).toContain('data-astro-section="AstroTerrainHorizonDecision"');
+    expect(html).toContain('data-astro-terrain-horizon-level="clear"');
+    expect(html).toContain("地形遮挡");
+    expect(html).toContain('data-astro-professional-data-expanded="false"');
+    expect(html).not.toContain("clearance rule v1");
+    expect(html).not.toContain("地形遮挡剖面");
+  });
+
+  it("keeps missing astro terrain horizon unknown without fake zero clearance", () => {
+    const viewModel = buildAstroForecastViewModel(resultWithAstroTerrainHorizon(undefined));
+
+    expect(viewModel.terrainHorizon.available).toBe(false);
+    expect(viewModel.terrainHorizon.obstructionLevel).toBe("unknown");
+    expect(viewModel.terrainHorizon.clearanceDisplay).not.toBe("0°");
+    expect(viewModel.terrainHorizon.horizonAltitudeDisplay).not.toBe("0°");
+    expect(viewModel.terrainHorizon.detail).toContain("系统未把地形当作无遮挡处理");
+  });
+
   it.each([
     ["48h", 48, ["2026-05-20T00:00:00+08:00", "2026-05-21T23:00:00+08:00"]],
     ["72h", 72, ["2026-05-20T00:00:00+08:00", "2026-05-22T23:00:00+08:00"]],
@@ -7404,12 +7524,13 @@ describe("forecast result target-aware view model", () => {
       "astronomical-night",
       "moonlight",
       "milky-way-geometry",
+      "terrain-horizon",
       "cloud",
       "visibility-humidity",
       "precipitation-wind",
       "light-pollution",
     ]);
-    expect(astro?.judgmentFactors.map((factor) => factor.label)).toEqual([
+    expect(astro?.judgmentFactors.map((factor) => factor.label)).toEqual(expect.arrayContaining([
       "银河窗口",
       "月光影响",
       "银心高度/方向",
@@ -7417,7 +7538,8 @@ describe("forecast result target-aware view model", () => {
       "通透度",
       "降水与风",
       "光污染影响",
-    ]);
+    ]));
+    expect(astro?.judgmentFactors.map((factor) => factor.label)).toContain("地形遮挡");
     expect(astro?.actionSummary.map((item) => item.label)).toEqual([
       "是否值得去",
       "最佳拍摄窗口",
