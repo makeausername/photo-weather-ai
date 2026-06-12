@@ -194,6 +194,38 @@ The public result treats the raster as a satellite-night-light reference. The Mi
 
 Light pollution affects only star and Milky Way photography suitability and recommendation confidence. It does not change weather probability, cloud probability, precipitation probability, astronomical darkness, Moon calculation, or Milky Way geometry.
 
+## National Sky Darkness Runtime Stats And QA
+
+National sky-darkness V1 uses the active local light-pollution raster to build nationwide distribution signals. Runtime stats and QA reports are operator artifacts and should stay outside Git under `deploy/calibration/runtime/`.
+
+Generate deterministic national runtime statistics with the production Compose contract:
+
+```bash
+bash scripts/sample-national-sky-darkness.sh -- --bbox 73,18,135,54 --step-degrees 0.5
+```
+
+The wrapper runs astro-service code against the mounted raster and writes:
+
+```text
+deploy/calibration/runtime/national-sky-darkness-stats.json
+```
+
+This JSON records nationwide quantiles, local/halo ratios, ambient-risk distributions, coarse-grid coverage, zero-radiance ratio, nodata/negative counts, dataset checksum, and tool version. It is a review input only. Production uses the packaged default national-statistical config unless a future change explicitly promotes reviewed stats into versioned model config.
+
+Run the QA-only benchmark with an independent private reference file:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml run --rm api pnpm --filter @photo-weather/api sky-darkness:benchmark -- --input deploy/calibration/runtime/reference.csv --output-dir deploy/calibration/runtime --format all --redact-names
+```
+
+For local validation without astro-service queries:
+
+```bash
+pnpm sky-darkness:benchmark -- --input deploy/calibration/bortle-reference.example.csv --dry-run --strict
+```
+
+The benchmark report includes exact matches, overlap matches, adjacent matches, over-optimistic errors, over-conservative errors, mean and median class distance, mismatch details, model versions, and a final QA recommendation. It is explicitly audit-only: it does not create production thresholds, place lists, coordinate mappings, scenic-spot rules, category hacks, SQM values, national-standard levels, or Tianwentong-derived mappings. The 30 Tianwentong screenshots remain QA/regression evidence only.
+
 ## Local Terrain DEM Data
 
 Terrain DEM data is optional for deployment. Production requests never download DEM data at runtime and missing DEM data is not treated as clear terrain. Use legally obtained GeoTIFF/COG elevation rasters and keep them on the server, outside Git:

@@ -25,6 +25,10 @@ import {
   formatBortleCandidateAnalysisMarkdown,
   formatBortleMismatchCsv,
 } from "../scripts/bortle-candidate-analysis.js";
+import {
+  buildNationalSkyDarknessBenchmarkReport,
+  formatNationalSkyDarknessBenchmarkMarkdown,
+} from "../scripts/national-sky-darkness-benchmark.js";
 
 const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -642,6 +646,60 @@ describe("Bortle candidate simulation", () => {
     ).toBe(false);
     expect(markdown).toContain("Tianwentong screenshots");
     expect(markdown).toContain("Uses category-specific mapping: false");
+  });
+});
+
+describe("National sky darkness benchmark QA", () => {
+  it("reports over-optimistic public errors without generating production rules", async () => {
+    const rows = [
+      row("optimistic", 21, 6, 7, "audit_dark_reference"),
+      row("conservative", 22, 6, 7, "audit_bright_reference"),
+    ];
+    const report = await buildNationalSkyDarknessBenchmarkReport({
+      options: defaultOptions(),
+      rows,
+      invalidRows: [],
+      totalInputRows: rows.length,
+      client: mockClientByLatitude({
+        21: lightPollutionFixture({
+          ambientRiskIndex: 5,
+          localRadiance: 0,
+          surroundingHaloRadiance: 20,
+        }),
+        22: lightPollutionFixture({
+          ambientRiskIndex: 95,
+          localRadiance: 60,
+          surroundingHaloRadiance: 80,
+        }),
+      }),
+      timestamp: "2026-06-10T00:00:00.000Z",
+    });
+    const markdown = formatNationalSkyDarknessBenchmarkMarkdown(report);
+    const optimistic = report.points.find((point) => point.id === "optimistic");
+
+    expect(report.run).toMatchObject({
+      auditOnly: true,
+      productionRulesGenerated: false,
+      toolVersion: "national-sky-darkness-benchmark-v1",
+    });
+    expect(report.summary).toMatchObject({
+      overOptimisticErrors: 1,
+      overConservativeErrors: 1,
+      errorsGreaterThanOneClass: 1,
+      finalQaRecommendation: "fail_investigate_over_optimism",
+    });
+    expect(optimistic).toMatchObject({
+      publicBortleRangeLabel: "2–4级（保守参考）",
+      overOptimisticError: true,
+    });
+    expect(optimistic?.diagnostics).toEqual(
+      expect.arrayContaining([
+        "urban_skyglow_spillover_risk",
+        "over_optimistic_public_range",
+      ]),
+    );
+    expect(markdown).toContain("Production rules generated: false");
+    expect(markdown).toContain("does not write thresholds, location rules, coordinate rules");
   });
 });
 

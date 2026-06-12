@@ -23,6 +23,7 @@ from app.light_pollution import (
 from app.main import app
 from app.models import LightPollutionQueryRequest
 from scripts.import_light_pollution import STATS_SAMPLE_CAPACITY, calculate_stats, import_dataset
+from scripts.national_sky_darkness_stats import build_national_sky_darkness_stats
 
 
 PRODUCTION_POSITIVE_RADIANCE_QUANTILES = {
@@ -557,6 +558,49 @@ def test_light_pollution_missing_dataset_and_invalid_coordinates_are_safe(tmp_pa
 
     with pytest.raises(ValidationError):
         LightPollutionQueryRequest(latitudeWgs84=float("nan"), longitudeWgs84=0)
+
+
+def test_national_sky_darkness_stats_sampler_generates_deterministic_runtime_report(tmp_path: Path) -> None:
+    data_dir = tmp_path / "light-pollution"
+    raster_path = data_dir / "current" / "light-pollution.cog.tif"
+    rows = np.arange(41, dtype="float32")[:, None]
+    cols = np.arange(41, dtype="float32")
+    data = (rows + cols) / 10
+    data[0, 0] = -1
+    data[1, 1] = 0
+    write_array_raster(raster_path, data)
+    write_metadata(data_dir)
+
+    first = build_national_sky_darkness_stats(
+        dataset_path=raster_path,
+        metadata_path=data_dir / "current" / "metadata.json",
+        bbox=(-1.0, -1.0, 1.0, 1.0),
+        step_degrees=1.0,
+        coarse_grid_degrees=1.0,
+        max_points=0,
+    )
+    second = build_national_sky_darkness_stats(
+        dataset_path=raster_path,
+        metadata_path=data_dir / "current" / "metadata.json",
+        bbox=(-1.0, -1.0, 1.0, 1.0),
+        step_degrees=1.0,
+        coarse_grid_degrees=1.0,
+        max_points=0,
+    )
+
+    assert first["sampling"]["deterministic"] is True
+    assert first["sample"] == second["sample"]
+    assert first["distributions"] == second["distributions"]
+    assert first["sample"]["totalSampledPoints"] == 4
+    assert first["sample"]["validSampledPoints"] == 4
+    assert first["sample"]["validLightPollutionPoints"] == 4
+    assert "p50" in first["distributions"]["positiveRadianceQuantiles"]
+    assert "p50" in first["distributions"]["allRadianceQuantiles"]
+    assert "p50" in first["distributions"]["localRadianceQuantiles"]
+    assert "p50" in first["distributions"]["surroundingHaloRadianceQuantiles"]
+    assert "p50" in first["distributions"]["ambientRiskIndexQuantiles"]
+    assert first["distributions"]["coarseGrid"]
+    assert any("production rules" in note for note in first["diagnosticNotes"])
 
 
 def test_importer_stats_sample_late_blocks_positive_quantiles_deterministically(tmp_path: Path) -> None:

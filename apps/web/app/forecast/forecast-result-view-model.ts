@@ -3549,6 +3549,26 @@ function buildAstroLightPollutionProfessionalDataItems(
       detail: `原始方法 ${rawEstimatedBortle.estimatedBortleMethodVersion}；公开展示方法 ${publicEstimatedBortle.estimatedBortleMethodVersion}。`,
     },
     {
+      label: "全国暗空模型",
+      value: publicSkyDarkness.nationalModelVersion,
+      detail: `全国统计配置 ${publicSkyDarkness.nationalStatsVersion}；原始 VIIRS 估算仍保留为诊断，不作为公开精确等级。`,
+    },
+    {
+      label: "全国分位",
+      value: `local ${formatNullableNumberForView(publicSkyDarkness.localRadianceQuantile, "%")} / halo ${formatNullableNumberForView(publicSkyDarkness.haloRadianceQuantile, "%")}`,
+      detail: `ambient ${formatNullableNumberForView(publicSkyDarkness.ambientRiskQuantile, "%")}；nationalRisk ${formatNullableNumberForView(publicSkyDarkness.nationalRiskIndex, "%")}。`,
+    },
+    {
+      label: "local/halo",
+      value: `local/halo ${formatNullableRatioForView(publicSkyDarkness.localToHaloRatio)} / halo/local ${formatNullableRatioForView(publicSkyDarkness.haloToLocalRatio)}`,
+      detail: `local/halo 分位 ${formatNullableNumberForView(publicSkyDarkness.localToHaloRatioQuantile, "%")}；halo/local 分位 ${formatNullableNumberForView(publicSkyDarkness.haloToLocalRatioQuantile, "%")}。`,
+    },
+    {
+      label: "全国模型诊断",
+      value: publicSkyDarkness.diagnostics.length > 0 ? publicSkyDarkness.diagnostics.join(", ") : "none",
+      detail: `低辐亮度饱和 ${formatBooleanForView(publicSkyDarkness.lowRadianceSaturationRisk)}；城市光穹外溢 ${formatBooleanForView(publicSkyDarkness.urbanSkyglowSpilloverRisk)}；暗区饱和带 ${formatBooleanForView(publicSkyDarkness.darkZoneSaturationRisk)}。`,
+    },
+    {
       label: "波特尔依据",
       value: publicEstimatedBortle.estimatedBortleBasis,
       detail: "估算依据和输入指数。",
@@ -4001,6 +4021,17 @@ function formatNullableNumberForView(value: number | null | undefined, suffix = 
   return typeof value === "number" && Number.isFinite(value)
     ? `${Number(value.toFixed(2))}${suffix}`
     : "暂无";
+}
+
+function formatNullableRatioForView(value: number | null | undefined): string {
+  if (value === Number.POSITIVE_INFINITY) {
+    return "∞";
+  }
+  return formatNullableNumberForView(value);
+}
+
+function formatBooleanForView(value: boolean): string {
+  return value ? "是" : "否";
 }
 
 function safeForecastTargetDates(start: string, end: string, timezone: string): readonly string[] {
