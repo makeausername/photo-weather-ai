@@ -283,6 +283,21 @@ const terrainDemProfileResponse: AstroServiceTerrainDemProfileQueryResponse = {
     demResolutionMeters: 30,
     obstructionRule: "clearance = target altitude - terrain horizon altitude",
   },
+  demCoverage: {
+    requiredTileId: "Copernicus_DSM_COG_30_N30_00_E118_00_DEM",
+    status: "available",
+    coveredByActiveDataset: true,
+    tileFileExists: true,
+    tileMetadataExists: true,
+    sourceName: "Copernicus DEM GLO-90 COG",
+    datasetName: "Copernicus DEM GLO-90",
+    datasetVersion: "2021",
+    datasetYear: 2021,
+    resolutionMeters: 90,
+    localPath:
+      "/app/data/terrain-dem/incoming/Copernicus_DSM_COG_30_N30_00_E118_00_DEM/Copernicus_DSM_COG_30_N30_00_E118_00_DEM.tif",
+    noteZh: "当前坐标已落在激活 DEM 数据集覆盖范围内。",
+  },
   terrainHorizonNoteZh: "已使用本地 DEM 沿目标方位采样地形剖面。",
   queryElapsedMs: 9.8,
   cacheHit: false,
@@ -696,6 +711,50 @@ describe("AstroServiceClient", () => {
       datasetYear: 2026,
       sourceName: "Synthetic DEM",
       checksumShort: "abc123def456",
+      terrainDemCoverage: expect.objectContaining({
+        requiredTileId: "Copernicus_DSM_COG_30_N30_00_E118_00_DEM",
+        status: "available",
+        coveredByActiveDataset: true,
+      }),
+    });
+  });
+
+  it("maps unavailable terrain DEM profiles to low-confidence coverage diagnostics", () => {
+    const sample = mapTerrainDemProfileToDirectionSample({
+      ...terrainDemProfileResponse,
+      available: false,
+      dataAvailable: false,
+      unavailableReason: "terrain_dem_out_of_bounds",
+      horizonAltitudeDegrees: undefined,
+      obstructionClearanceDegrees: undefined,
+      obstructionLevel: "unknown",
+      confidence: "low",
+      sampleCount: 0,
+      validSampleCount: 0,
+      maxObstructionSample: undefined,
+      profileSamples: [],
+      demCoverage: {
+        ...terrainDemProfileResponse.demCoverage!,
+        status: "missing",
+        coveredByActiveDataset: false,
+        tileFileExists: false,
+        tileMetadataExists: false,
+        noteZh: "当前激活 DEM 未覆盖该坐标；需要补充 DEM 瓦片。",
+      },
+    });
+
+    expect(sample).toMatchObject({
+      target: "milky_way",
+      azimuthDegrees: 146,
+      horizonAltitudeDegrees: null,
+      confidence: "low",
+      dataSource: "dem_raster",
+      unavailableReason: "terrain_dem_out_of_bounds",
+      terrainDemCoverage: expect.objectContaining({
+        requiredTileId: "Copernicus_DSM_COG_30_N30_00_E118_00_DEM",
+        status: "missing",
+        coveredByActiveDataset: false,
+      }),
     });
   });
 

@@ -660,12 +660,30 @@ export type TerrainHorizonUnavailableReason =
   | "missing_observer_elevation"
   | "insufficient_directional_sample"
   | "invalid_directional_sample"
+  | "invalid_coordinate"
   | "terrain_dem_missing"
   | "terrain_dem_metadata_missing"
   | "terrain_dem_unreadable"
   | "terrain_dem_out_of_bounds"
   | "terrain_dem_no_data"
   | "unknown";
+
+export type TerrainDemTileStatus = "available" | "missing" | "invalid" | "pending";
+
+export type TerrainDemTileCoverageDiagnostic = {
+  readonly requiredTileId?: string | null;
+  readonly status: TerrainDemTileStatus;
+  readonly coveredByActiveDataset: boolean;
+  readonly tileFileExists: boolean;
+  readonly tileMetadataExists: boolean;
+  readonly sourceName?: string | null;
+  readonly datasetName?: string | null;
+  readonly datasetVersion?: string | null;
+  readonly datasetYear?: number | null;
+  readonly resolutionMeters?: number | null;
+  readonly localPath?: string | null;
+  readonly noteZh: string;
+};
 
 export type TerrainHorizonDirectionSample = {
   readonly target?: TerrainHorizonTarget;
@@ -688,6 +706,8 @@ export type TerrainHorizonDirectionSample = {
   readonly datasetYear?: number | null;
   readonly sourceName?: string | null;
   readonly checksumShort?: string | null;
+  readonly unavailableReason?: TerrainHorizonUnavailableReason;
+  readonly terrainDemCoverage?: TerrainDemTileCoverageDiagnostic | null;
 };
 
 export type TerrainHorizonAssessment = {
@@ -724,6 +744,7 @@ export type TerrainHorizonAssessment = {
     readonly datasetYear?: number | null;
     readonly sourceName?: string | null;
     readonly checksumShort?: string | null;
+    readonly terrainDemCoverage?: TerrainDemTileCoverageDiagnostic | null;
     readonly notesZh: readonly string[];
   };
 };

@@ -46,6 +46,12 @@ bash scripts/import-terrain-dem.sh incoming/<file-or-directory> -- --dataset-nam
 
 When available, DEM profiles feed the Milky Way terrain-horizon obstruction model. Missing, out-of-bounds, unreadable, or low-confidence DEM data stays as uncertainty and is not treated as a clear horizon.
 
+National DEM coverage planning uses reviewed tile plans only; normal frontend/API requests never download DEM. See [National DEM Tile Coverage Manager V1](docs/national-dem-tile-coverage.md):
+
+```bash
+bash scripts/plan-terrain-dem-tiles.sh --coordinate 30.1328,118.171 --json
+```
+
 Estimated Bortle calibration audits can be run from independent CSV/JSON references with:
 
 ```bash

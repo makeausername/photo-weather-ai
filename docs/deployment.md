@@ -262,7 +262,15 @@ Inspect the active dataset and astro-service health fields:
 bash scripts/check-terrain-dem.sh
 ```
 
-The terrain DEM importer is local-only: it never downloads DEM data and only imports operator-supplied GeoTIFF/COG files already placed under `deploy/terrain-dem/incoming/`. Health/status output includes `terrainDemAvailable`, dataset/metadata existence, `terrainDemDatasetName`, dataset year/version, checksum, health status, and load error. The API uses the actual Milky Way window azimuth/altitude when requesting `/terrain-dem/profile`; missing, out-of-bounds, low-confidence, or insufficient DEM profiles stay `数据不足` in public UI and are not treated as clear terrain. The Milky Way page uses one selected-actionable-window terrain display across the top summary, selected daily/night card, `为什么这样判断`, and folded professional diagnostics. Exact DEM diagnostics remain in the folded professional data area.
+The terrain DEM importer is local-only: it never downloads DEM data and only imports operator-supplied GeoTIFF/COG files already placed under `deploy/terrain-dem/incoming/`. Health/status output includes `terrainDemAvailable`, dataset/metadata existence, `terrainDemDatasetName`, dataset year/version, checksum, health status, and load error. The API uses the actual Milky Way window azimuth/altitude when requesting `/terrain-dem/profile`; missing, out-of-bounds, low-confidence, or insufficient DEM profiles stay `地形数据不足` in public UI and are not treated as clear terrain. The Milky Way page uses one selected-actionable-window terrain display across the top summary, selected daily/night card, `为什么这样判断`, and folded professional diagnostics. Exact DEM diagnostics remain in the folded professional data area.
+
+For national-scale tile planning, generate a reviewed coverage report before downloading anything:
+
+```bash
+bash scripts/plan-terrain-dem-tiles.sh --region east-china-mountain-pilot --json
+```
+
+The planner reports required/existing/missing Copernicus DEM tiles, estimated local paths, suggested URLs, and import readiness. It does not download by default; generated command lists must be reviewed and run by an operator. See [National DEM Tile Coverage Manager V1](national-dem-tile-coverage.md).
 
 The importer validates local GeoTIFF readability, CRS, dimensions, nodata, finite elevation pixels, coordinate bounds, metadata, and checksum. It mosaics supplied tiles, reprojects to EPSG:4326 when required, writes a tiled/compressed GeoTIFF/COG, builds overviews where practical, writes metadata, and activates the dataset only after validation. The previous active raster/metadata/checksum are preserved under `deploy/terrain-dem/backups/`; a failed import leaves the previous active dataset untouched.
 

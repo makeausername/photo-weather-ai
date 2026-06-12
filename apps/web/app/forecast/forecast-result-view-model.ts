@@ -3659,13 +3659,13 @@ function astroTerrainHorizonDisplay(
     return {
       available: false,
       obstructionLevel: "unknown",
-      statusLabelZh: "数据不足",
-      statusBadgeLabelZh: "数据不足",
+      statusLabelZh: "地形数据不足",
+      statusBadgeLabelZh: "地形数据不足",
       statusTone: "muted",
       primaryConclusionZh: "地形遮挡暂无法精确判断",
       detail: missingTerrainHorizonDetail(),
       recommendationZh: "建议现场确认银河方向地平线遮挡。",
-      compactLabel: "地形遮挡：数据不足",
+      compactLabel: "地形遮挡：地形数据不足",
       targetAzimuthDisplay: "暂无",
       targetAltitudeDisplay: "暂无",
       horizonAltitudeDisplay: "暂无精确角度",
@@ -3687,13 +3687,13 @@ function astroTerrainHorizonDisplay(
     return {
       available: false,
       obstructionLevel: "unknown",
-      statusLabelZh: "数据不足",
-      statusBadgeLabelZh: "数据不足",
+      statusLabelZh: "地形数据不足",
+      statusBadgeLabelZh: "地形数据不足",
       statusTone: "muted",
       primaryConclusionZh: "地形遮挡暂无法精确判断",
       detail: terrainHorizonInsufficientPublicDetail(assessment),
       recommendationZh: "建议现场确认银河方向地平线遮挡；当前不按无遮挡处理。",
-      compactLabel: "地形遮挡：数据不足",
+      compactLabel: "地形遮挡：地形数据不足",
       targetAzimuthDisplay: "暂无",
       targetAltitudeDisplay: "暂无",
       horizonAltitudeDisplay: "暂无精确角度",
@@ -3764,7 +3764,8 @@ function terrainHorizonProfessionalItems(
 
   const diagnostics = assessment.professionalDiagnostics;
   const directionSample = assessment.directionSample;
-  return [
+  const demCoverage = diagnostics.terrainDemCoverage ?? directionSample?.terrainDemCoverage ?? null;
+  const items: ForecastResultSectionItem[] = [
     {
       label: "地形遮挡状态",
       value: terrainHorizonStatusLabel(assessment.obstructionLevel),
@@ -3831,6 +3832,15 @@ function terrainHorizonProfessionalItems(
       value: terrainHorizonDatasetLabel(assessment),
       detail: terrainHorizonDatasetDetail(assessment),
     },
+    ...(demCoverage
+      ? [
+          {
+            label: "DEM 覆盖状态",
+            value: terrainDemCoverageStatusLabel(demCoverage.status),
+            detail: terrainDemCoverageDetail(demCoverage),
+          },
+        ]
+      : []),
     {
       label: "最大采样距离",
       value: formatNullableNumberForView(
@@ -3853,6 +3863,7 @@ function terrainHorizonProfessionalItems(
       detail: diagnostics.calculationRuleZh,
     },
   ];
+  return items;
 }
 
 function terrainHorizonStatusLabel(level: TerrainHorizonAssessment["obstructionLevel"]): string {
@@ -3945,6 +3956,8 @@ function terrainHorizonUnavailableReasonLabel(
       return "目标方向样本不足";
     case "invalid_directional_sample":
       return "地形剖面样本无效";
+    case "invalid_coordinate":
+      return "坐标无效";
     case "terrain_dem_missing":
       return "本地 DEM 数据缺失";
     case "terrain_dem_metadata_missing":
@@ -3961,6 +3974,30 @@ function terrainHorizonUnavailableReasonLabel(
     case undefined:
       return "无";
   }
+}
+
+function terrainDemCoverageStatusLabel(
+  status: NonNullable<TerrainHorizonAssessment["professionalDiagnostics"]["terrainDemCoverage"]>["status"],
+): string {
+  switch (status) {
+    case "available":
+      return "瓦片已在本地";
+    case "missing":
+      return "DEM coverage missing";
+    case "invalid":
+      return "瓦片无效";
+    case "pending":
+      return "待处理";
+  }
+}
+
+function terrainDemCoverageDetail(
+  coverage: NonNullable<TerrainHorizonAssessment["professionalDiagnostics"]["terrainDemCoverage"]>,
+): string {
+  const tileId = coverage.requiredTileId ? `所需瓦片 ${coverage.requiredTileId}` : "所需瓦片暂无法解析";
+  const active = coverage.coveredByActiveDataset ? "已被当前激活 DEM 覆盖" : "当前激活 DEM 未覆盖";
+  const local = coverage.tileFileExists ? "本地瓦片文件存在" : "本地瓦片文件缺失";
+  return `${tileId}；${active}；${local}。${coverage.noteZh}`;
 }
 
 function terrainHorizonDataSourceLabel(assessment: TerrainHorizonAssessment): string {
@@ -4004,7 +4041,7 @@ function terrainHorizonDatasetDetail(assessment: TerrainHorizonAssessment): stri
 }
 
 function missingTerrainHorizonDetail(): string {
-  return "当前缺少目标方向的地形剖面数据，系统未把地形当作无遮挡处理，建议现场确认地平线遮挡。";
+  return "地形数据不足：当前缺少目标方向的地形剖面数据，系统未把地形当作无遮挡处理，建议现场确认地平线遮挡。";
 }
 
 function lightPollutionConfidenceLabel(confidence: LightPollutionInfo["confidence"]): string {

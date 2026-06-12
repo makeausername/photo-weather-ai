@@ -471,6 +471,21 @@ function buildTerrainDemProfileResponse(
       demResolutionMeters: 30,
       obstructionRule: "clearance = target altitude - terrain horizon altitude",
     },
+    demCoverage: {
+      requiredTileId: "Copernicus_DSM_COG_30_N30_00_E118_00_DEM",
+      status: "available",
+      coveredByActiveDataset: true,
+      tileFileExists: true,
+      tileMetadataExists: true,
+      sourceName: "Copernicus DEM GLO-90 COG",
+      datasetName: "Copernicus DEM GLO-90",
+      datasetVersion: "2021",
+      datasetYear: 2021,
+      resolutionMeters: 90,
+      localPath:
+        "/app/data/terrain-dem/incoming/Copernicus_DSM_COG_30_N30_00_E118_00_DEM/Copernicus_DSM_COG_30_N30_00_E118_00_DEM.tif",
+      noteZh: "当前坐标已落在激活 DEM 数据集覆盖范围内。",
+    },
     terrainHorizonNoteZh: "已使用本地 DEM 沿目标方位采样地形剖面。",
     queryElapsedMs: 9.8,
     cacheHit: false,
@@ -1508,6 +1523,10 @@ describe("forecast query validation route", () => {
       sampleCount: 120,
       validSampleCount: 118,
       datasetVersion: "test-dem-v1",
+      terrainDemCoverage: expect.objectContaining({
+        requiredTileId: "Copernicus_DSM_COG_30_N30_00_E118_00_DEM",
+        status: "available",
+      }),
     });
     expect(
       body.terrainAnalysis.horizonProfile.directionSamples.filter(
@@ -1529,8 +1548,102 @@ describe("forecast query validation route", () => {
         validSampleCount: 118,
         maxSampleDistanceMeters: 30000,
         datasetVersion: "test-dem-v1",
+        terrainDemCoverage: expect.objectContaining({
+          requiredTileId: "Copernicus_DSM_COG_30_N30_00_E118_00_DEM",
+          status: "available",
+        }),
       }),
     });
+  });
+
+  it("keeps missing DEM coverage diagnostic without treating terrain as clear", async () => {
+    const calculateMock = vi.fn((input: AstroServiceCalculateInput) => {
+      const response = buildAstroServiceResponse(input);
+      return Promise.resolve({
+        ...response,
+        milkyWay: {
+          ...response.milkyWay,
+          recommendedWindows: response.milkyWay.recommendedWindows.map((window) => ({
+            ...window,
+            bestAzimuth: 146,
+          })),
+        },
+      });
+    });
+    const queryTerrainDemProfileMock = vi.fn(async () =>
+      buildTerrainDemProfileResponse({
+        available: false,
+        dataAvailable: false,
+        unavailableReason: "terrain_dem_out_of_bounds",
+        horizonAltitudeDegrees: undefined,
+        obstructionClearanceDegrees: undefined,
+        obstructionLevel: "unknown",
+        confidence: "low",
+        sampleCount: 0,
+        validSampleCount: 0,
+        maxObstructionSample: undefined,
+        profileSamples: [],
+        demCoverage: {
+          requiredTileId: "Copernicus_DSM_COG_30_N30_00_E118_00_DEM",
+          status: "missing",
+          coveredByActiveDataset: false,
+          tileFileExists: false,
+          tileMetadataExists: false,
+          sourceName: "Copernicus DEM GLO-90 COG",
+          datasetName: "Copernicus DEM GLO-90",
+          datasetVersion: "2021",
+          datasetYear: 2021,
+          resolutionMeters: 90,
+          localPath:
+            "/app/data/terrain-dem/incoming/Copernicus_DSM_COG_30_N30_00_E118_00_DEM/Copernicus_DSM_COG_30_N30_00_E118_00_DEM.tif",
+          noteZh: "当前激活 DEM 未覆盖该坐标；需要补充 DEM 瓦片。",
+        },
+      }),
+    );
+    const astroServiceClient: AstroServiceClientLike = {
+      calculate: calculateMock,
+      queryTerrainDemProfile: queryTerrainDemProfileMock,
+    };
+    app = buildApiServer({
+      authConfig: testAuthConfig,
+      astroServiceClient,
+      env: {
+        ...process.env,
+        ENABLE_ASTRO_SERVICE: "true",
+        ASTRO_SERVICE_URL: "http://127.0.0.1:4100",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        target: "astro",
+      },
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.terrainAnalysis).toMatchObject({
+      dataSourceLabelZh: "本地 DEM 覆盖诊断",
+      honestyNoteZh: "地形数据不足；缺少可用 DEM 剖面时不按无遮挡处理。",
+    });
+    expect(body.astroAnalysis.terrainHorizonAssessment).toMatchObject({
+      obstructionLevel: "unknown",
+      confidence: "low",
+      dataSource: "dem_raster",
+      unavailableReason: "terrain_dem_out_of_bounds",
+      professionalDiagnostics: expect.objectContaining({
+        terrainDemCoverage: expect.objectContaining({
+          requiredTileId: "Copernicus_DSM_COG_30_N30_00_E118_00_DEM",
+          status: "missing",
+          coveredByActiveDataset: false,
+        }),
+      }),
+    });
+    expect(body.astroAnalysis.terrainHorizonAssessment.obstructionClearanceDegrees).toBeNull();
   });
 
   it("attaches a safe calibration hint for general forecast when enough labels exist", async () => {

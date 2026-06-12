@@ -103,18 +103,23 @@ export function assessTerrainHorizonObstruction(
   }
 
   if (matchingSamples.length === 0) {
-    const hasNearbyButInvalid = samples.some((sample) => {
+    const nearbyInvalidSamples = samples.filter((sample) => {
       const sampleAzimuth = finiteNumber(sample.azimuthDegrees);
       return (
         sampleAzimuth !== undefined &&
         circularDistanceDegrees(targetAzimuth, sampleAzimuth) <= maxDelta
       );
     });
+    const diagnosticSample = pickDiagnosticSample(targetAzimuth, nearbyInvalidSamples);
+    const hasNearbyButInvalid = nearbyInvalidSamples.length > 0;
     return unknownAssessment(input, {
-      unavailableReason: hasNearbyButInvalid
-        ? "insufficient_directional_sample"
-        : "missing_directional_profile",
+      unavailableReason:
+        diagnosticSample?.unavailableReason ??
+        (hasNearbyButInvalid ? "insufficient_directional_sample" : "missing_directional_profile"),
       notesZh: [
+        ...(diagnosticSample?.terrainDemCoverage
+          ? [diagnosticSample.terrainDemCoverage.noteZh]
+          : []),
         hasNearbyButInvalid
           ? "目标方向附近有样本，但样本缺少可用 horizon altitude 或 elevation/distance。"
           : missingDirectionalProfileNoteZh,
@@ -122,7 +127,17 @@ export function assessTerrainHorizonObstruction(
       diagnostics: {
         ...baseDiagnostics,
         nearestAzimuthDeltaDegrees: nearestAzimuthDelta(targetAzimuth, samples),
+        sampleCount: totalSampleCount(samples),
+        validSampleCount: totalValidSampleCount(nearbyInvalidSamples),
+        maxSampleDistanceMeters: diagnosticSample?.maxSampleDistanceMeters ?? null,
+        datasetName: diagnosticSample?.datasetName ?? null,
+        datasetVersion: diagnosticSample?.datasetVersion ?? null,
+        datasetYear: diagnosticSample?.datasetYear ?? null,
+        sourceName: diagnosticSample?.sourceName ?? null,
+        checksumShort: diagnosticSample?.checksumShort ?? null,
+        terrainDemCoverage: diagnosticSample?.terrainDemCoverage ?? null,
       },
+      diagnosticSample,
     });
   }
 
@@ -160,6 +175,7 @@ export function assessTerrainHorizonObstruction(
       datasetYear: selected.source.datasetYear ?? null,
       sourceName: selected.source.sourceName ?? null,
       checksumShort: selected.source.checksumShort ?? null,
+      terrainDemCoverage: selected.source.terrainDemCoverage ?? null,
       notesZh: [
         "已使用目标方向附近的地形剖面样本计算 clearance。",
         `目标高度角 ${round1(targetAltitude)}°，地形地平线 ${selected.horizonAltitudeDegrees}°，clearance ${clearance}°。`,
@@ -264,6 +280,8 @@ export function terrainHorizonUnavailableReasonZh(
       return "目标方向样本不足";
     case "invalid_directional_sample":
       return "地形剖面样本无效";
+    case "invalid_coordinate":
+      return "坐标无效";
     case "terrain_dem_missing":
       return "本地 DEM 数据缺失";
     case "terrain_dem_metadata_missing":
@@ -288,6 +306,7 @@ function unknownAssessment(
     readonly unavailableReason: TerrainHorizonUnavailableReason;
     readonly notesZh: readonly string[];
     readonly diagnostics: TerrainHorizonAssessment["professionalDiagnostics"];
+    readonly diagnosticSample?: TerrainHorizonDirectionSample;
   },
 ): TerrainHorizonAssessment {
   const fallback = qualitativeFallbackSummary(input);
@@ -301,9 +320,10 @@ function unknownAssessment(
     obstructionClearanceDegrees: null,
     obstructionLevel: "unknown",
     confidence: "low",
-    dataSource: "qualitative_fallback",
-    dataSourceLabelZh: input.dataSourceLabelZh,
+    dataSource: options.diagnosticSample?.dataSource ?? "qualitative_fallback",
+    dataSourceLabelZh: options.diagnosticSample?.dataSourceLabelZh ?? input.dataSourceLabelZh,
     unavailableReason: options.unavailableReason,
+    directionSample: options.diagnosticSample,
     directionSamples: input.directionSamples ?? [],
     qualitativeFallback: fallback,
     professionalDiagnostics: {
@@ -429,6 +449,21 @@ function pickBlockingSample(samples: readonly ResolvedSample[]): ResolvedSample 
       right.horizonAltitudeDegrees - left.horizonAltitudeDegrees ||
       left.azimuthDeltaDegrees - right.azimuthDeltaDegrees,
   )[0]!;
+}
+
+function pickDiagnosticSample(
+  targetAzimuth: number,
+  samples: readonly TerrainHorizonDirectionSample[],
+): TerrainHorizonDirectionSample | undefined {
+  return [...samples].sort((left, right) => {
+    const leftAzimuth = finiteNumber(left.azimuthDegrees);
+    const rightAzimuth = finiteNumber(right.azimuthDegrees);
+    const leftDelta =
+      leftAzimuth === undefined ? Number.POSITIVE_INFINITY : circularDistanceDegrees(targetAzimuth, leftAzimuth);
+    const rightDelta =
+      rightAzimuth === undefined ? Number.POSITIVE_INFINITY : circularDistanceDegrees(targetAzimuth, rightAzimuth);
+    return leftDelta - rightDelta;
+  })[0];
 }
 
 function sampleDistanceRange(

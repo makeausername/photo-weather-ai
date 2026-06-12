@@ -5,7 +5,7 @@ import logging
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 
 from .calculator import (
     EPHEMERIS_FILE_NAME,
@@ -22,9 +22,19 @@ from .models import (
     LightPollutionQueryResponse,
     TerrainDemProfileQueryRequest,
     TerrainDemProfileQueryResponse,
+    TerrainDemCoverageStatusResponse,
 )
 from .responses import Utf8JSONResponse
 from .terrain_dem import TerrainDemService, unavailable_response as terrain_dem_unavailable_response
+from .terrain_dem_coverage import (
+    build_coverage_status,
+    bbox_for_center_radius,
+    load_active_bounds,
+    load_region_config,
+    required_tile_ids_for_bbox,
+    required_tile_ids_for_coordinates,
+    tile_ids_from_region_config,
+)
 from .timezones import DEFAULT_TIMEZONE, get_timezone
 
 
@@ -199,6 +209,85 @@ def query_terrain_dem_profile(
     return response
 
 
+@app.get("/terrain-dem/coverage", response_model=TerrainDemCoverageStatusResponse)
+def terrain_dem_coverage(
+    latitudeWgs84: float | None = None,
+    longitudeWgs84: float | None = None,
+    radiusKm: float | None = None,
+    minLatitude: float | None = None,
+    minLongitude: float | None = None,
+    maxLatitude: float | None = None,
+    maxLongitude: float | None = None,
+    coordinate: list[str] | None = Query(default=None),
+    region: str | None = None,
+    datasetKey: str = "copernicus-dem-glo-90",
+) -> TerrainDemCoverageStatusResponse:
+    coordinates = parse_coordinate_query_values(coordinate or [])
+    tile_ids: set[str] = set()
+
+    if latitudeWgs84 is not None or longitudeWgs84 is not None:
+        if latitudeWgs84 is None or longitudeWgs84 is None:
+            raise HTTPException(
+                status_code=400,
+                detail="latitudeWgs84 and longitudeWgs84 must be supplied together",
+            )
+        coordinates.append((latitudeWgs84, longitudeWgs84))
+        if radiusKm is not None:
+            south, west, north, east = bbox_for_center_radius(
+                latitude=latitudeWgs84,
+                longitude=longitudeWgs84,
+                radius_km=radiusKm,
+            )
+            tile_ids.update(
+                required_tile_ids_for_bbox(
+                    south=south,
+                    west=west,
+                    north=north,
+                    east=east,
+                    dataset_key=datasetKey,
+                )
+            )
+        else:
+            tile_ids.update(
+                required_tile_ids_for_coordinates(
+                    [(latitudeWgs84, longitudeWgs84)],
+                    dataset_key=datasetKey,
+                )
+            )
+
+    bbox_values = [minLatitude, minLongitude, maxLatitude, maxLongitude]
+    if any(value is not None for value in bbox_values):
+        if any(value is None for value in bbox_values):
+            raise HTTPException(
+                status_code=400,
+                detail="bbox requires minLatitude, minLongitude, maxLatitude, and maxLongitude",
+            )
+        tile_ids.update(
+            required_tile_ids_for_bbox(
+                south=minLatitude,  # type: ignore[arg-type]
+                west=minLongitude,  # type: ignore[arg-type]
+                north=maxLatitude,  # type: ignore[arg-type]
+                east=maxLongitude,  # type: ignore[arg-type]
+                dataset_key=datasetKey,
+            )
+        )
+
+    if coordinates:
+        tile_ids.update(required_tile_ids_for_coordinates(coordinates, dataset_key=datasetKey))
+
+    if region:
+        config = load_region_config(region, data_dir=TERRAIN_DEM_DATASET_PATH.parent.parent)
+        tile_ids.update(tile_ids_from_region_config(config, dataset_key=datasetKey))
+
+    return build_coverage_status(
+        required_tile_ids=tile_ids,
+        coordinates=coordinates,
+        data_dir=TERRAIN_DEM_DATASET_PATH.parent.parent,
+        active_bounds=load_active_bounds(TERRAIN_DEM_METADATA_PATH),
+        dataset_key=datasetKey,
+    )
+
+
 @app.post("/astro/calculate", response_model=AstroCalculateResponse)
 def calculate(request: AstroCalculateRequest) -> AstroCalculateResponse:
     try:
@@ -325,6 +414,19 @@ def first_milky_way_target_geometry(response: AstroCalculateResponse) -> tuple[f
         if window.bestAzimuth is not None:
             return window.bestAzimuth, window.maxAltitude
     return None, None
+
+
+def parse_coordinate_query_values(values: list[str]) -> list[tuple[float, float]]:
+    coordinates: list[tuple[float, float]] = []
+    for value in values:
+        parts = [part.strip() for part in value.split(",")]
+        if len(parts) != 2:
+            raise HTTPException(status_code=400, detail="coordinate values must be LAT,LON")
+        try:
+            coordinates.append((float(parts[0]), float(parts[1])))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="coordinate values must be numeric") from exc
+    return coordinates
 
 
 def light_pollution_log_payload(

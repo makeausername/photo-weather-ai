@@ -277,6 +277,71 @@ const terrainHorizonDemForTest: TerrainHorizonAssessment = {
   },
 };
 
+const terrainHorizonMissingDemCoverageForTest: TerrainHorizonAssessment = {
+  location: { latitude: 30.13012, longitude: 118.16389, system: "wgs84" },
+  observerElevationMeters: 1860,
+  target: "milky_way",
+  targetAzimuthDegrees: 180,
+  targetAltitudeDegrees: 24,
+  horizonAltitudeDegrees: null,
+  obstructionClearanceDegrees: null,
+  obstructionLevel: "unknown",
+  confidence: "low",
+  dataSource: "dem_raster",
+  dataSourceLabelZh: "本地 DEM 地形剖面",
+  unavailableReason: "terrain_dem_out_of_bounds",
+  directionSample: {
+    target: "milky_way",
+    azimuthDegrees: 180,
+    horizonAltitudeDegrees: null,
+    dataSource: "dem_raster",
+    dataSourceLabelZh: "本地 DEM 地形剖面",
+    confidence: "low",
+    sampleCount: 0,
+    validSampleCount: 0,
+    unavailableReason: "terrain_dem_out_of_bounds",
+    terrainDemCoverage: {
+      requiredTileId: "Copernicus_DSM_COG_30_N30_00_E118_00_DEM",
+      status: "missing",
+      coveredByActiveDataset: false,
+      tileFileExists: false,
+      tileMetadataExists: false,
+      sourceName: "Copernicus DEM GLO-90 COG",
+      datasetName: "Copernicus DEM GLO-90",
+      datasetVersion: "2021",
+      datasetYear: 2021,
+      resolutionMeters: 90,
+      localPath:
+        "/app/data/terrain-dem/incoming/Copernicus_DSM_COG_30_N30_00_E118_00_DEM/Copernicus_DSM_COG_30_N30_00_E118_00_DEM.tif",
+      noteZh: "当前激活 DEM 未覆盖该坐标；需要补充 DEM 瓦片。",
+    },
+  },
+  directionSamples: [],
+  professionalDiagnostics: {
+    calculationRuleZh: "clearance = target altitude - terrain horizon altitude",
+    sampleCount: 0,
+    validSampleCount: 0,
+    usedDirectionalProfile: false,
+    nearestAzimuthDeltaDegrees: 0,
+    terrainDemCoverage: {
+      requiredTileId: "Copernicus_DSM_COG_30_N30_00_E118_00_DEM",
+      status: "missing",
+      coveredByActiveDataset: false,
+      tileFileExists: false,
+      tileMetadataExists: false,
+      sourceName: "Copernicus DEM GLO-90 COG",
+      datasetName: "Copernicus DEM GLO-90",
+      datasetVersion: "2021",
+      datasetYear: 2021,
+      resolutionMeters: 90,
+      localPath:
+        "/app/data/terrain-dem/incoming/Copernicus_DSM_COG_30_N30_00_E118_00_DEM/Copernicus_DSM_COG_30_N30_00_E118_00_DEM.tif",
+      noteZh: "当前激活 DEM 未覆盖该坐标；需要补充 DEM 瓦片。",
+    },
+    notesZh: ["当前激活 DEM 未覆盖该坐标；需要补充 DEM 瓦片。"],
+  },
+};
+
 function lightPollutionForDisplayTest(
   overrides: Partial<ForecastCalculationResult["astroAnalysis"]["lightPollution"]> = {},
 ): ForecastCalculationResult["astroAnalysis"]["lightPollution"] {
@@ -7373,7 +7438,7 @@ describe("forecast result target-aware view model", () => {
 
     expect(viewModel.terrainHorizon.available).toBe(false);
     expect(viewModel.terrainHorizon.obstructionLevel).toBe("unknown");
-    expect(viewModel.terrainHorizon.statusLabelZh).toBe("数据不足");
+    expect(viewModel.terrainHorizon.statusLabelZh).toBe("地形数据不足");
     expect(viewModel.terrainHorizon.clearanceDisplay).not.toBe("16°");
     expect(viewModel.terrainHorizon.detail).toContain("置信度不足");
     expect(
@@ -7392,6 +7457,34 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.terrainHorizon.clearanceDisplay).not.toBe("0°");
     expect(viewModel.terrainHorizon.horizonAltitudeDisplay).not.toBe("0°");
     expect(viewModel.terrainHorizon.detail).toContain("系统未把地形当作无遮挡处理");
+  });
+
+  it("shows safe public DEM missing copy and tile ID only in professional diagnostics", () => {
+    const result = resultWithAstroTerrainHorizon(terrainHorizonMissingDemCoverageForTest);
+    const viewModel = buildAstroForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(AstroResultPage, {
+        query: queryForTarget("astro"),
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(viewModel.terrainHorizon.available).toBe(false);
+    expect(viewModel.terrainHorizon.statusLabelZh).toBe("地形数据不足");
+    expect(viewModel.terrainHorizon.detail).toContain("地形数据不足");
+    expect(
+      viewModel.terrainHorizon.professionalDataItems.find(
+        (item) => item.label === "DEM 覆盖状态",
+      ),
+    ).toMatchObject({
+      value: "DEM coverage missing",
+      detail: expect.stringContaining("Copernicus_DSM_COG_30_N30_00_E118_00_DEM"),
+    });
+    expect(html).toContain("地形数据不足");
+    expect(html).not.toContain("Copernicus_DSM_COG_30_N30_00_E118_00_DEM");
+    expect(html).not.toContain("curl -fL");
+    expect(html).not.toContain("/app/data/terrain-dem/incoming");
   });
 
   it.each([

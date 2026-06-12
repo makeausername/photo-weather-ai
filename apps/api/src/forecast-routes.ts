@@ -813,6 +813,8 @@ async function enrichTerrainAnalysisWithTerrainDem(options: {
           terrainDemDatasetVersion: profile.datasetVersion ?? null,
           terrainDemSampleCount: profile.sampleCount,
           terrainDemValidSampleCount: profile.validSampleCount,
+          terrainDemRequiredTileId: profile.demCoverage?.requiredTileId ?? null,
+          terrainDemTileStatus: profile.demCoverage?.status ?? null,
           targetAzimuthDegrees: target.targetAzimuthDegrees,
           targetAltitudeDegrees: target.targetAltitudeDegrees,
           sourceWindowKey: target.sourceWindowKey,
@@ -839,6 +841,13 @@ async function enrichTerrainAnalysisWithTerrainDem(options: {
     return options.terrainAnalysis;
   }
 
+  const hasResolvedDemProfile = demSamples.some(
+    (sample) =>
+      typeof sample.horizonAltitudeDegrees === "number" &&
+      sample.unavailableReason === undefined &&
+      (sample.confidence === "medium" || sample.confidence === "high"),
+  );
+
   return {
     ...options.terrainAnalysis,
     horizonProfile: {
@@ -847,14 +856,16 @@ async function enrichTerrainAnalysisWithTerrainDem(options: {
         options.terrainAnalysis.horizonProfile.directionSamples,
         demSamples,
       ),
-      obstructionNoteZh:
-        "本地 DEM 已提供银河方向地形剖面；云海高差、近景遮挡、树线和建筑遮挡仍需现场复核。",
+      obstructionNoteZh: hasResolvedDemProfile
+        ? "本地 DEM 已提供银河方向地形剖面；云海高差、近景遮挡、树线和建筑遮挡仍需现场复核。"
+        : "地形数据不足；当前 DEM 未覆盖目标坐标或样本不可用，系统未按无遮挡处理。",
     },
     dataSource: "dem",
-    dataSourceLabelZh: "本地 DEM 地形剖面",
+    dataSourceLabelZh: hasResolvedDemProfile ? "本地 DEM 地形剖面" : "本地 DEM 覆盖诊断",
     isMock: false,
-    honestyNoteZh:
-      "银河方向地形遮挡使用本地 DEM；云海高差、近景遮挡、树线和建筑遮挡仍需现场复核。",
+    honestyNoteZh: hasResolvedDemProfile
+      ? "银河方向地形遮挡使用本地 DEM；云海高差、近景遮挡、树线和建筑遮挡仍需现场复核。"
+      : "地形数据不足；缺少可用 DEM 剖面时不按无遮挡处理。",
   };
 }
 

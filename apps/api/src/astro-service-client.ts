@@ -261,6 +261,23 @@ const terrainHorizonObstructionLevelSchema = z.enum([
 
 const terrainHorizonConfidenceSchema = z.enum(["high", "medium", "low", "unknown"]);
 
+const terrainDemTileStatusSchema = z.enum(["available", "missing", "invalid", "pending"]);
+
+const terrainDemCoverageSchema = z.object({
+  requiredTileId: z.string().nullable().optional(),
+  status: terrainDemTileStatusSchema,
+  coveredByActiveDataset: z.boolean(),
+  tileFileExists: z.boolean(),
+  tileMetadataExists: z.boolean(),
+  sourceName: z.string().nullable().optional(),
+  datasetName: z.string().nullable().optional(),
+  datasetVersion: z.string().nullable().optional(),
+  datasetYear: z.number().int().nullable().optional(),
+  resolutionMeters: z.number().finite().nullable().optional(),
+  localPath: z.string().nullable().optional(),
+  noteZh: z.string().min(1),
+});
+
 const terrainDemProfileSampleSchema = z.object({
   distanceMeters: z.number().finite().nonnegative(),
   latitudeWgs84: z.number().finite(),
@@ -304,6 +321,7 @@ const terrainDemProfileResponseSchema = z.object({
   maxObstructionSample: terrainDemProfileSampleSchema.nullable().optional(),
   profileSamples: z.array(terrainDemProfileSampleSchema),
   calculationBasis: terrainDemCalculationBasisSchema.nullable().optional(),
+  demCoverage: terrainDemCoverageSchema.nullable().optional(),
   terrainHorizonNoteZh: z.string().min(1),
   queryElapsedMs: z.number().finite().nonnegative().nullable().optional(),
   cacheHit: z.boolean().optional(),
@@ -1238,19 +1256,50 @@ export function mapTerrainDemProfileToDirectionSample(
   profile: AstroServiceTerrainDemProfileQueryResponse,
 ): TerrainHorizonDirectionSample | null {
   if (
-    !profile.available ||
-    !profile.dataAvailable ||
-    typeof profile.targetAzimuthDegrees !== "number" ||
-    typeof profile.horizonAltitudeDegrees !== "number"
+    typeof profile.targetAzimuthDegrees !== "number"
   ) {
     return null;
   }
 
   const maxSample = profile.maxObstructionSample ?? null;
-
-  return {
+  const common = {
     target: profile.target,
     azimuthDegrees: roundTo(profile.targetAzimuthDegrees, 3),
+    observerElevationMeters: profile.observerElevationMeters ?? null,
+    directionLabelZh: directionLabelZhFromAzimuth(profile.targetAzimuthDegrees),
+    dataSource: "dem_raster" as const,
+    dataSourceLabelZh: "本地 DEM 地形剖面",
+    confidence: profile.confidence,
+    sampleCount: profile.sampleCount,
+    validSampleCount: profile.validSampleCount,
+    maxSampleDistanceMeters: profile.maxSampleDistanceMeters ?? null,
+    datasetName: profile.datasetName ?? profile.demCoverage?.datasetName ?? null,
+    datasetVersion: profile.datasetVersion ?? profile.demCoverage?.datasetVersion ?? null,
+    datasetYear: profile.datasetYear ?? profile.demCoverage?.datasetYear ?? null,
+    sourceName: profile.sourceName ?? profile.demCoverage?.sourceName ?? null,
+    checksumShort: profile.checksumShort ?? null,
+    terrainDemCoverage: profile.demCoverage ?? null,
+  };
+
+  if (
+    !profile.available ||
+    !profile.dataAvailable ||
+    typeof profile.horizonAltitudeDegrees !== "number"
+  ) {
+    return {
+      ...common,
+      confidence: "low",
+      horizonAltitudeDegrees: null,
+      elevationMeters: null,
+      distanceMeters: null,
+      sampledLatitudeWgs84: null,
+      sampledLongitudeWgs84: null,
+      unavailableReason: normalizeTerrainDemUnavailableReason(profile.unavailableReason),
+    };
+  }
+
+  return {
+    ...common,
     horizonAltitudeDegrees: roundTo(profile.horizonAltitudeDegrees, 3),
     elevationMeters:
       typeof maxSample?.terrainElevationMeters === "number"
@@ -1262,20 +1311,28 @@ export function mapTerrainDemProfileToDirectionSample(
       typeof maxSample?.latitudeWgs84 === "number" ? roundTo(maxSample.latitudeWgs84, 7) : null,
     sampledLongitudeWgs84:
       typeof maxSample?.longitudeWgs84 === "number" ? roundTo(maxSample.longitudeWgs84, 7) : null,
-    observerElevationMeters: profile.observerElevationMeters ?? null,
-    directionLabelZh: directionLabelZhFromAzimuth(profile.targetAzimuthDegrees),
-    dataSource: "dem_raster",
-    dataSourceLabelZh: "本地 DEM 地形剖面",
-    confidence: profile.confidence,
-    sampleCount: profile.sampleCount,
-    validSampleCount: profile.validSampleCount,
-    maxSampleDistanceMeters: profile.maxSampleDistanceMeters ?? null,
-    datasetName: profile.datasetName ?? null,
-    datasetVersion: profile.datasetVersion ?? null,
-    datasetYear: profile.datasetYear ?? null,
-    sourceName: profile.sourceName ?? null,
-    checksumShort: profile.checksumShort ?? null,
   };
+}
+
+function normalizeTerrainDemUnavailableReason(
+  reason: string | null | undefined,
+): TerrainHorizonDirectionSample["unavailableReason"] {
+  const normalized = reason?.split(":")[0];
+  switch (normalized) {
+    case "invalid_coordinate":
+    case "missing_target_geometry":
+    case "missing_observer_elevation":
+    case "insufficient_directional_sample":
+    case "invalid_directional_sample":
+    case "terrain_dem_missing":
+    case "terrain_dem_metadata_missing":
+    case "terrain_dem_unreadable":
+    case "terrain_dem_out_of_bounds":
+    case "terrain_dem_no_data":
+      return normalized;
+    default:
+      return "unknown";
+  }
 }
 
 function moonAltitudeRecord(

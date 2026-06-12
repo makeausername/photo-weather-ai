@@ -241,6 +241,9 @@ describe("production deployment assets", () => {
   it("ships optional local terrain DEM import and status scripts without downloading data", () => {
     const importer = readRepoFile("scripts/import-terrain-dem.sh");
     const checker = readRepoFile("scripts/check-terrain-dem.sh");
+    const planner = readRepoFile("scripts/plan-terrain-dem-tiles.sh");
+    const plannerCli = readRepoFile("apps/astro-service/scripts/plan_terrain_dem_tiles.py");
+    const plannerDocs = readRepoFile("docs/national-dem-tile-coverage.md");
     const installer = readRepoFile("scripts/install.sh");
     const updater = readRepoFile("scripts/update.sh");
     const resume = readRepoFile("scripts/resume-install.sh");
@@ -264,6 +267,13 @@ describe("production deployment assets", () => {
     expect(checker).toContain("terrainDemDatasetName");
     expect(checker).toContain("terrainDemHealthStatus");
     expect(checker).toContain("terrainDemLoadError");
+    expect(planner).toContain("python -m scripts.plan_terrain_dem_tiles");
+    expect(planner).toContain('-v "${DATA_DIR}:/app/data/terrain-dem"');
+    expect(plannerCli).toContain("--download is intentionally not implemented");
+    expect(plannerCli).toContain("downloadCommands");
+    expect(plannerDocs).toContain("前端 forecast/API 普通请求不得自动下载 DEM");
+    expect(plannerDocs).toContain("缺少 DEM 不等于地形无遮挡");
+    expect(plannerDocs).toContain("GLO-90 vs GLO-30");
 
     for (const source of [installer, updater, resume]) {
       expect(source).toContain("${PROJECT_ROOT}/deploy/terrain-dem/incoming");

@@ -42,6 +42,7 @@ TerrainHorizonTarget = Literal[
     "custom",
 ]
 TerrainDemObserverElevationSource = Literal["input", "dem", "unknown"]
+TerrainDemTileStatus = Literal["available", "missing", "invalid", "pending"]
 
 
 class AstroCalculateRequest(BaseModel):
@@ -278,6 +279,82 @@ class TerrainDemMetadata(BaseModel):
     healthStatus: str
 
 
+class TerrainDemTile(BaseModel):
+    tileId: str
+    sourceName: str
+    datasetName: str
+    datasetVersion: str | None = None
+    datasetYear: int | None = None
+    minLatitude: float
+    maxLatitude: float
+    minLongitude: float
+    maxLongitude: float
+    localPath: str
+    fileExists: bool
+    metadataExists: bool
+    checksum: str | None = None
+    importedAt: str | None = None
+    status: TerrainDemTileStatus
+    resolutionMeters: float | None = None
+    verticalUnit: str | None = None
+    notes: str | None = None
+
+
+class TerrainDemTileCoverageDiagnostics(BaseModel):
+    requiredTileId: str | None = None
+    status: TerrainDemTileStatus
+    coveredByActiveDataset: bool
+    tileFileExists: bool
+    tileMetadataExists: bool
+    sourceName: str | None = None
+    datasetName: str | None = None
+    datasetVersion: str | None = None
+    datasetYear: int | None = None
+    resolutionMeters: float | None = None
+    localPath: str | None = None
+    noteZh: str
+
+
+class TerrainDemCoordinateCoverage(BaseModel):
+    latitudeWgs84: float
+    longitudeWgs84: float
+    validCoordinate: bool
+    requiredTileId: str | None = None
+    coveredByActiveDataset: bool
+    tileStatus: TerrainDemTileStatus
+    noteZh: str
+
+
+class TerrainDemCoverageImportReadiness(BaseModel):
+    readyForImport: bool
+    reasonZh: str
+    importCommand: str | None = None
+
+
+class TerrainDemCoverageStatusResponse(BaseModel):
+    datasetKey: str
+    sourceName: str
+    datasetName: str
+    datasetVersion: str | None = None
+    datasetYear: int | None = None
+    activeDatasetBounds: TerrainDemBounds | None = None
+    activeDatasetTileCount: int
+    requiredTileIds: list[str]
+    existingTileIds: list[str]
+    missingTileIds: list[str]
+    requiredTileCount: int
+    availableTileCount: int
+    missingTileCount: int
+    estimatedFileCount: int
+    estimatedLocalPaths: list[str]
+    suggestedDownloadUrls: list[str]
+    tiles: list[TerrainDemTile]
+    coordinateCoverage: list[TerrainDemCoordinateCoverage]
+    allCoordinatesCoveredByActiveDataset: bool | None = None
+    importReadiness: TerrainDemCoverageImportReadiness
+    generatedAt: str
+
+
 class TerrainDemProfileSample(BaseModel):
     distanceMeters: float
     latitudeWgs84: float
@@ -321,6 +398,7 @@ class TerrainDemProfileQueryResponse(BaseModel):
     maxObstructionSample: TerrainDemProfileSample | None = None
     profileSamples: list[TerrainDemProfileSample]
     calculationBasis: TerrainDemCalculationBasis | None = None
+    demCoverage: TerrainDemTileCoverageDiagnostics | None = None
     terrainHorizonNoteZh: str
     queryElapsedMs: float | None = None
     cacheHit: bool = False

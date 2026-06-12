@@ -112,6 +112,9 @@ def test_missing_terrain_dem_is_unavailable_without_faking_clearance(tmp_path: P
     assert response.unavailableReason == "terrain_dem_missing"
     assert response.obstructionLevel == "unknown"
     assert response.horizonAltitudeDegrees is None
+    assert response.demCoverage is not None
+    assert response.demCoverage.requiredTileId == "Copernicus_DSM_COG_30_N00_00_E000_00_DEM"
+    assert response.demCoverage.coveredByActiveDataset is False
 
 
 def test_metadata_missing_is_reported_separately(tmp_path: Path) -> None:
@@ -135,6 +138,9 @@ def test_out_of_bounds_and_no_data_are_honest_unavailable_states(tmp_path: Path)
     )
     assert out_of_bounds.available is False
     assert out_of_bounds.unavailableReason == "terrain_dem_out_of_bounds"
+    assert out_of_bounds.demCoverage is not None
+    assert out_of_bounds.demCoverage.requiredTileId == "Copernicus_DSM_COG_30_N10_00_E010_00_DEM"
+    assert out_of_bounds.demCoverage.coveredByActiveDataset is False
 
     no_data_dir = tmp_path / "nodata"
     write_profile_dataset(no_data_dir, nodata_only=True)
@@ -143,6 +149,8 @@ def test_out_of_bounds_and_no_data_are_honest_unavailable_states(tmp_path: Path)
     assert no_data.unavailableReason == "terrain_dem_no_data"
     assert no_data.sampleCount > 0
     assert no_data.validSampleCount == 0
+    assert no_data.demCoverage is not None
+    assert no_data.demCoverage.requiredTileId == "Copernicus_DSM_COG_30_N00_00_E000_00_DEM"
 
 
 def test_directional_profile_uses_target_azimuth_and_dem_observer_elevation(tmp_path: Path) -> None:
@@ -159,6 +167,8 @@ def test_directional_profile_uses_target_azimuth_and_dem_observer_elevation(tmp_
     )
 
     assert east.available is True
+    assert east.demCoverage is not None
+    assert east.demCoverage.coveredByActiveDataset is True
     assert east.observerElevationSource == "dem"
     assert east.observerElevationMeters == pytest.approx(100.0)
     assert east.obstructionLevel == "obstructed"

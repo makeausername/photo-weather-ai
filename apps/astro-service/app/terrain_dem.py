@@ -31,6 +31,7 @@ from .models import (
     TerrainDemProfileSample,
     TerrainDemResolution,
 )
+from .terrain_dem_coverage import coverage_for_coordinate, load_active_bounds
 
 
 SAMPLING_CONFIG_VERSION = "terrain-dem-profile-v1"
@@ -229,6 +230,7 @@ class TerrainDemService:
     def __init__(self, dataset_path: Path, metadata_path: Path) -> None:
         self.dataset = TerrainDemDataset(dataset_path, metadata_path)
         self._geod = Geod(ellps="WGS84") if Geod is not None else None
+        self._data_dir = dataset_path.parent.parent
 
     def close(self) -> None:
         self.dataset.close()
@@ -239,16 +241,30 @@ class TerrainDemService:
     def metadata(self) -> TerrainDemMetadata:
         return self.dataset.metadata_response()
 
+    def coverage_for_coordinate(self, latitude: float, longitude: float):
+        return coverage_for_coordinate(
+            latitude,
+            longitude,
+            data_dir=self._data_dir,
+            active_bounds=load_active_bounds(self.dataset.metadata_path),
+        )
+
     def query_profile(self, request: TerrainDemProfileQueryRequest) -> TerrainDemProfileQueryResponse:
         started_at = perf_counter()
+        coverage = self.coverage_for_coordinate(request.latitudeWgs84, request.longitudeWgs84)
         if RASTER_DEPENDENCY_ERROR is not None:
             return unavailable_response(
                 "terrain_dem_unreadable",
+                coverage=coverage,
                 query_elapsed_ms=elapsed_ms(started_at),
                 load_error=str(RASTER_DEPENDENCY_ERROR),
             )
         if not valid_coordinate(request.latitudeWgs84, request.longitudeWgs84):
-            return unavailable_response("invalid_coordinate", query_elapsed_ms=elapsed_ms(started_at))
+            return unavailable_response(
+                "invalid_coordinate",
+                coverage=coverage,
+                query_elapsed_ms=elapsed_ms(started_at),
+            )
 
         signature = self.dataset.signature
         metadata = self.dataset.metadata or {}
@@ -256,6 +272,7 @@ class TerrainDemService:
             return unavailable_response(
                 map_load_error_to_reason(self.dataset.load_error or self.dataset.health_status),
                 metadata=metadata,
+                coverage=coverage,
                 query_elapsed_ms=elapsed_ms(started_at),
             )
 
@@ -265,6 +282,7 @@ class TerrainDemService:
                 "terrain_dem_out_of_bounds",
                 metadata=metadata,
                 request=request,
+                coverage=coverage,
                 query_elapsed_ms=elapsed_ms(started_at),
             )
         if request.targetAzimuthDegrees is None:
@@ -272,6 +290,7 @@ class TerrainDemService:
                 "missing_target_geometry",
                 metadata=metadata,
                 request=request,
+                coverage=coverage,
                 query_elapsed_ms=elapsed_ms(started_at),
             )
 
@@ -289,6 +308,7 @@ class TerrainDemService:
                 "missing_observer_elevation",
                 metadata=metadata,
                 request=request,
+                coverage=coverage,
                 query_elapsed_ms=elapsed_ms(started_at),
             )
 
@@ -322,6 +342,7 @@ class TerrainDemService:
                 "terrain_dem_no_data",
                 metadata=metadata,
                 request=request,
+                coverage=coverage,
                 observer_elevation=observer_elevation,
                 observer_elevation_source=observer_elevation_source,
                 query_elapsed_ms=elapsed_ms(started_at),
@@ -332,6 +353,7 @@ class TerrainDemService:
                 "insufficient_directional_sample",
                 metadata=metadata,
                 request=request,
+                coverage=coverage,
                 observer_elevation=observer_elevation,
                 observer_elevation_source=observer_elevation_source,
                 query_elapsed_ms=elapsed_ms(started_at),
@@ -372,6 +394,7 @@ class TerrainDemService:
             maxObstructionSample=max_sample,
             profileSamples=profile_samples,
             calculationBasis=basis,
+            demCoverage=coverage,
             terrainHorizonNoteZh=DEFAULT_AVAILABLE_NOTE_ZH,
             queryElapsedMs=elapsed_ms(started_at),
             cacheHit=False,
@@ -395,6 +418,7 @@ def unavailable_response(
     sample_count: int = 0,
     valid_sample_count: int = 0,
     load_error: str | None = None,
+    coverage=None,
 ) -> TerrainDemProfileQueryResponse:
     metadata = metadata or {}
     if load_error:
@@ -421,6 +445,7 @@ def unavailable_response(
         validSampleCount=valid_sample_count,
         profileSamples=[],
         calculationBasis=calculation_basis(request, metadata, sample_count) if request else None,
+        demCoverage=coverage,
         terrainHorizonNoteZh=DEFAULT_UNAVAILABLE_NOTE_ZH,
         queryElapsedMs=query_elapsed_ms,
         cacheHit=False,

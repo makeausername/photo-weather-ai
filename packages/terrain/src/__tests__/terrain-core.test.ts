@@ -176,6 +176,53 @@ describe("Terrain Core V1", () => {
     expect(terrainHorizonAssessmentHasDeterministicClearance(assessment)).toBe(true);
   });
 
+  it("keeps missing DEM tile diagnostics unknown without deterministic clearance", () => {
+    const assessment = assessTerrainHorizonObstruction({
+      location: { latitude: 30.13, longitude: 118.16, system: "wgs84" },
+      target: "milky_way",
+      targetAzimuthDegrees: 146,
+      targetAltitudeDegrees: 31,
+      directionSamples: [
+        {
+          target: "milky_way",
+          azimuthDegrees: 146,
+          dataSource: "dem_raster",
+          dataSourceLabelZh: "本地 DEM 地形剖面",
+          confidence: "low",
+          sampleCount: 0,
+          validSampleCount: 0,
+          unavailableReason: "terrain_dem_out_of_bounds",
+          terrainDemCoverage: {
+            requiredTileId: "Copernicus_DSM_COG_30_N30_00_E118_00_DEM",
+            status: "missing",
+            coveredByActiveDataset: false,
+            tileFileExists: false,
+            tileMetadataExists: false,
+            datasetName: "Copernicus DEM GLO-90",
+            datasetVersion: "2021",
+            datasetYear: 2021,
+            sourceName: "Copernicus DEM GLO-90 COG",
+            resolutionMeters: 90,
+            localPath:
+              "/app/data/terrain-dem/incoming/Copernicus_DSM_COG_30_N30_00_E118_00_DEM/Copernicus_DSM_COG_30_N30_00_E118_00_DEM.tif",
+            noteZh: "当前激活 DEM 未覆盖该坐标；需要补充 DEM 瓦片。",
+          },
+        },
+      ],
+    });
+
+    expect(assessment.obstructionLevel).toBe("unknown");
+    expect(assessment.horizonAltitudeDegrees).toBeNull();
+    expect(assessment.obstructionClearanceDegrees).toBeNull();
+    expect(assessment.unavailableReason).toBe("terrain_dem_out_of_bounds");
+    expect(assessment.dataSource).toBe("dem_raster");
+    expect(assessment.professionalDiagnostics.terrainDemCoverage).toMatchObject({
+      requiredTileId: "Copernicus_DSM_COG_30_N30_00_E118_00_DEM",
+      status: "missing",
+    });
+    expect(terrainHorizonAssessmentHasDeterministicClearance(assessment)).toBe(false);
+  });
+
   it("returns deterministic mock terrain for known seed spots", async () => {
     const provider = new MockTerrainProvider();
 
