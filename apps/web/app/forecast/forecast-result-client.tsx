@@ -3859,7 +3859,9 @@ function AstroLightPollutionDecisionCard({
       <div className="grid gap-2 text-sm leading-6 text-muted-foreground">
         <div className="grid gap-2 min-[640px]:grid-cols-2">
           <div>
-            <p className="text-[11px] font-semibold leading-4 text-muted-foreground">估算波特尔</p>
+            <p className="text-[11px] font-semibold leading-4 text-muted-foreground">
+              公开保守估算
+            </p>
             <p className="mt-1 font-semibold text-card-foreground">{bortleValue}</p>
             <p className="mt-1 text-xs leading-5">{bortleDetail}</p>
           </div>

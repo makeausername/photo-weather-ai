@@ -1427,6 +1427,7 @@ export type AstroServiceDebugStatus = {
   readonly terrainDemAvailable?: boolean;
   readonly terrainDemDatasetExists?: boolean;
   readonly terrainDemMetadataAvailable?: boolean;
+  readonly terrainDemDatasetName?: string;
   readonly terrainDemDatasetYear?: number;
   readonly terrainDemDatasetVersion?: string;
   readonly terrainDemChecksumShort?: string;
@@ -1486,6 +1487,7 @@ export async function checkAstroServiceHealth(options: {
     let terrainDemAvailable: boolean | undefined;
     let terrainDemDatasetExists: boolean | undefined;
     let terrainDemMetadataAvailable: boolean | undefined;
+    let terrainDemDatasetName: string | undefined;
     let terrainDemDatasetYear: number | undefined;
     let terrainDemDatasetVersion: string | undefined;
     let terrainDemChecksumShort: string | undefined;
@@ -1506,6 +1508,7 @@ export async function checkAstroServiceHealth(options: {
         terrainDemAvailable?: unknown;
         terrainDemDatasetExists?: unknown;
         terrainDemMetadataAvailable?: unknown;
+        terrainDemDatasetName?: unknown;
         terrainDemDatasetYear?: unknown;
         terrainDemDatasetVersion?: unknown;
         terrainDemChecksumShort?: unknown;
@@ -1551,6 +1554,9 @@ export async function checkAstroServiceHealth(options: {
       if (typeof body.terrainDemMetadataAvailable === "boolean") {
         terrainDemMetadataAvailable = body.terrainDemMetadataAvailable;
       }
+      if (typeof body.terrainDemDatasetName === "string") {
+        terrainDemDatasetName = body.terrainDemDatasetName;
+      }
       if (typeof body.terrainDemDatasetYear === "number") {
         terrainDemDatasetYear = body.terrainDemDatasetYear;
       }
@@ -1588,6 +1594,7 @@ export async function checkAstroServiceHealth(options: {
       terrainDemAvailable,
       terrainDemDatasetExists,
       terrainDemMetadataAvailable,
+      terrainDemDatasetName,
       terrainDemDatasetYear,
       terrainDemDatasetVersion,
       terrainDemChecksumShort,

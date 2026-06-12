@@ -110,7 +110,7 @@ clear sky.
 - production mode：本地缓存查询；热门机位可预计算卫星夜光参考等级。
 - cost risk：逐请求在线查询不适合星空/银河热门场景。
 - accuracy risk：光污染数据更新慢，临时灯光、天气散射和城市发展会造成偏差。
-- fallback strategy：显示数据年份/版本和估算波特尔范围；不显示现场 SQM、国标等级或官方等级。缺失时降低星空/银河置信度，并提示现场复核城市光穹。
+- fallback strategy：显示数据年份/版本和公开保守波特尔范围；原始 VIIRS 波特尔估算保留在专业诊断中。不显示现场 SQM、国标等级或官方等级。缺失时降低星空/银河置信度，并提示现场复核城市光穹。
 
 ## Photography Scoring Module
 

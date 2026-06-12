@@ -517,7 +517,7 @@ describe("astro analysis", () => {
     expect(result.astroAnalysis.astroPracticalScore).toBeLessThanOrEqual(34);
     expect(result.astroAnalysis.weatherBlockers.join("")).toContain("总云量");
     expect(result.astroAnalysis.riskReasons[0]).toContain("天气阻断");
-    expect(result.astroAnalysis.riskReasons.join("")).toContain("光污染较低");
+    expect(result.astroAnalysis.riskReasons.join("")).toContain("按保守范围展示");
     expect(result.astroAnalysis.travelRecommendations[0]).toContain("天气阻挡优先级高于光污染");
   });
 
@@ -620,9 +620,21 @@ describe("astro analysis", () => {
     expect(lowLightPollution.astroAnalysis.astroPracticalScore).toBeGreaterThan(
       highLightPollution.astroAnalysis.astroPracticalScore,
     );
+    expect(lowLightPollution.astroAnalysis.lightPollution.estimatedBortleRange).toMatchObject({
+      available: true,
+      rangeLabelZh: "1–2级",
+      skyQualityLabelZh: "极佳暗空",
+    });
     expect(lowLightPollution.astroAnalysis.riskReasons.join("")).toContain(
-      "光污染较低，银河背景更暗",
+      "卫星夜光显示环境较暗，但当前按保守范围展示",
     );
+    expect(lowLightPollution.astroAnalysis.lightPollutionEvidence.map((item) => item.noteZh).join("")).toContain(
+      "公开保守估算：2–3级（保守参考）",
+    );
+    expect(lowLightPollution.astroAnalysis.travelRecommendations.join("")).toContain(
+      "按保守范围展示",
+    );
+    expect(lowLightPollution.astroAnalysis.travelRecommendations.join("")).not.toContain("1–2级");
   });
 
   it("lowers Milky Way recommendations when light pollution is high despite good weather", () => {

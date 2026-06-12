@@ -168,6 +168,7 @@ def health() -> HealthResponse:
         terrainDemDatasetPathConfigured=terrain_dem_health.dataset_path_configured,
         terrainDemDatasetExists=terrain_dem_health.dataset_exists,
         terrainDemMetadataAvailable=terrain_dem_health.metadata_available,
+        terrainDemDatasetName=terrain_dem_health.dataset_name,
         terrainDemDatasetYear=terrain_dem_health.dataset_year,
         terrainDemDatasetVersion=terrain_dem_health.dataset_version,
         terrainDemChecksumShort=terrain_dem_health.checksum_short,

@@ -226,6 +226,34 @@ describe("local astro diagnostics scripts", () => {
     expect(serverSource).not.toContain("JWT_SECRET");
   });
 
+  it("wires terrain DEM import and check scripts to local-only production compose operations", () => {
+    const importScript = readRepoFile("scripts/import-terrain-dem.sh");
+    const checkScript = readRepoFile("scripts/check-terrain-dem.sh");
+    const combined = `${importScript}\n${checkScript}`;
+
+    for (const expected of [
+      "docker-compose.prod.yml",
+      ".env.production",
+      "deploy/terrain-dem",
+      "/app/data/terrain-dem",
+      "python -m scripts.import_terrain_dem",
+      "python -m scripts.import_terrain_dem --check",
+      "terrainDemAvailable",
+      "terrainDemDatasetExists",
+      "terrainDemMetadataAvailable",
+      "terrainDemDatasetName",
+      "terrainDemDatasetYear",
+      "terrainDemDatasetVersion",
+      "terrainDemHealthStatus",
+      "terrainDemLoadError",
+      "This script does not download DEM data.",
+    ]) {
+      expect(combined).toContain(expected);
+    }
+
+    expect(combined).not.toMatch(/curl|wget|Invoke-WebRequest|Remove-Item|rm -rf/);
+  });
+
   it("prints real-weather calibration diagnostics without raw provider secrets", () => {
     const script = readRepoFile("scripts/test-real-weather.sh");
 

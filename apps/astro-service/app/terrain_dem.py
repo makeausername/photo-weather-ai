@@ -56,6 +56,7 @@ class HealthState:
     dataset_path_configured: bool
     dataset_exists: bool
     metadata_available: bool
+    dataset_name: str | None
     dataset_year: int | None
     dataset_version: str | None
     checksum_short: str | None
@@ -114,6 +115,7 @@ class TerrainDemDataset:
                 dataset_path_configured=bool(str(self.dataset_path)),
                 dataset_exists=self.dataset_path.exists(),
                 metadata_available=self.metadata_path.exists(),
+                dataset_name=None,
                 dataset_year=None,
                 dataset_version=None,
                 checksum_short=None,
@@ -129,6 +131,7 @@ class TerrainDemDataset:
                 dataset_path_configured=bool(str(self.dataset_path)),
                 dataset_exists=self.dataset_path.exists(),
                 metadata_available=self.metadata_path.exists(),
+                dataset_name=safe_str(metadata.get("datasetName")),
                 dataset_year=safe_int(metadata.get("datasetYear")),
                 dataset_version=safe_str(metadata.get("datasetVersion")),
                 checksum_short=checksum_short_from_metadata(metadata),

@@ -2696,10 +2696,12 @@ function expectNoForbiddenBortleCopy(html: string): void {
   const forbiddenTexts = [
     "波特尔等级：1级",
     "实测波特尔",
+    "SQM",
     "SQM实测值",
     "实测 SQM",
     "mag/arcsec²",
     "国标等级",
+    "国家标准",
     "官方等级",
     "官方认证",
     "国家标准等级",
@@ -2707,6 +2709,8 @@ function expectNoForbiddenBortleCopy(html: string): void {
     "国标一级",
     "国标二级",
     "环境分区认证",
+    "天文通",
+    "Tianwentong",
   ];
 
   for (const forbiddenText of forbiddenTexts) {
@@ -7235,6 +7239,48 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("checksum abc123def456");
   });
 
+  it("does not mark low-confidence DEM terrain profiles as publicly clear", () => {
+    const lowConfidenceDem: TerrainHorizonAssessment = {
+      ...terrainHorizonDemForTest,
+      confidence: "low",
+      directionSample: {
+        ...terrainHorizonDemForTest.directionSample!,
+        confidence: "low",
+      },
+      directionSamples: terrainHorizonDemForTest.directionSamples?.map((sample) => ({
+        ...sample,
+        confidence: "low" as const,
+      })),
+      professionalDiagnostics: {
+        ...terrainHorizonDemForTest.professionalDiagnostics,
+        usedDirectionalProfile: true,
+        notesZh: ["DEM 剖面已返回，但置信度不足，不按无遮挡公开展示。"],
+      },
+    };
+    const result = resultWithAstroTerrainHorizon(lowConfidenceDem);
+    const viewModel = buildAstroForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(AstroResultPage, {
+        query: queryForTarget("astro"),
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(viewModel.terrainHorizon.available).toBe(false);
+    expect(viewModel.terrainHorizon.obstructionLevel).toBe("unknown");
+    expect(viewModel.terrainHorizon.statusLabelZh).toBe("数据不足");
+    expect(viewModel.terrainHorizon.clearanceDisplay).not.toBe("16°");
+    expect(viewModel.terrainHorizon.detail).toContain("置信度不足");
+    expect(
+      viewModel.terrainHorizon.professionalDataItems.find(
+        (item) => item.label === "地形遮挡状态",
+      )?.value,
+    ).toBe("无遮挡");
+    expect(html).toContain('data-astro-terrain-horizon-level="unknown"');
+    expect(html).not.toContain('data-astro-terrain-horizon-level="clear"');
+  });
+
   it("keeps missing astro terrain horizon unknown without fake zero clearance", () => {
     const viewModel = buildAstroForecastViewModel(resultWithAstroTerrainHorizon(undefined));
 
@@ -7673,9 +7719,9 @@ describe("forecast result target-aware view model", () => {
       }),
       [
         "很高",
-        "估算波特尔",
+        "公开保守估算",
         "8–9级",
-        "强城市光害",
+        "强光污染",
         "银河方向",
         "可以观星但银河细节较弱",
         "光污染很高：天空背景明显发亮",
@@ -7692,7 +7738,15 @@ describe("forecast result target-aware view model", () => {
         targetDirectionLevelLabelZh: "低",
         lightPollutionNoteZh: "卫星夜光参考：环境光污染极低，银河方向光害低。",
       }),
-      ["极低", "估算波特尔", "1–2级", "极佳暗空", "银河方向", "低", "适合安排星空和银河拍摄"],
+      [
+        "较低",
+        "公开保守估算",
+        "2–3级（保守参考）",
+        "较低，保守参考",
+        "银河方向",
+        "低",
+        "按保守范围展示",
+      ],
     ],
     [
       "medium-risk",
@@ -7707,9 +7761,9 @@ describe("forecast result target-aware view model", () => {
       }),
       [
         "中",
-        "估算波特尔",
+        "公开保守估算",
         "4–5级",
-        "城郊过渡",
+        "中等光污染",
         "银河方向",
         "光污染中等",
         "银河可拍性仍要看云量和月光",
@@ -7717,7 +7771,7 @@ describe("forecast result target-aware view model", () => {
     ],
   ] as const)(
     "renders %s light-pollution conclusions in the astro page",
-    (_, lightPollution, expectedTexts) => {
+    (caseName, lightPollution, expectedTexts) => {
       const result = resultWithAstroLightPollution(lightPollution);
       const viewModel = buildAstroForecastViewModel(result);
       const html = renderToStaticMarkup(
@@ -7736,6 +7790,11 @@ describe("forecast result target-aware view model", () => {
       );
       for (const expectedText of expectedTexts) {
         expect(html).toContain(expectedText);
+      }
+      if (caseName === "mountain very-low-risk") {
+        expect(lightPollutionCard).not.toContain("1–2级");
+        expect(lightPollutionCard).not.toContain("极佳暗空");
+        expect(lightPollutionCard).not.toContain("极低");
       }
       expect(lightPollutionCard).not.toMatch(
         /localRadiance|surroundingHaloRadiance|ambientRiskIndex|validSampleCount|checksum|pixel|quantile|raster|本地辐亮度|周边光穹|有效采样|校验码|nW\/cm²\/sr/i,
@@ -7785,7 +7844,7 @@ describe("forecast result target-aware view model", () => {
 
     expect(viewModel.lightPollution.ambientRiskIndex).toBe(45);
     expect(viewModel.lightPollution.bestWindowDirectionRisk).toBeNull();
-    expect(viewModel.lightPollution.primaryConclusionZh).toBe("中");
+    expect(viewModel.lightPollution.primaryConclusionZh).toBe("中等光污染");
     expect(viewModel.lightPollution.judgmentSummaryZh).toContain("银河方向角不足");
     expect(viewModel.lightPollution.detail).not.toContain("极低");
   });
@@ -7816,7 +7875,7 @@ describe("forecast result target-aware view model", () => {
       .filter((night) => night.lightPollution.showDailyDirection)
       .map((night) => night.lightPollution.targetDirectionLabel);
 
-    expect(dailyDirectionLabels).toEqual(expect.arrayContaining(["极低", "很高"]));
+    expect(dailyDirectionLabels).toEqual(expect.arrayContaining(["较低", "很高"]));
     expect(countOccurrences(html, "银河方向光害")).toBeGreaterThanOrEqual(2);
     expect(html).toContain('data-astro-professional-data-expanded="false"');
     expect(html).not.toContain("nW/cm²/sr");
@@ -7850,17 +7909,29 @@ describe("forecast result target-aware view model", () => {
       'data-astro-section="AstroNightOpportunitySection"',
       'data-astro-section="AstroWhyJudgmentSection"',
     );
-    const professionalBortleItem = viewModel.lightPollution.professionalDataItems.find(
-      (item) => item.label === "波特尔估算",
+    const rawProfessionalBortleItem = viewModel.lightPollution.professionalDataItems.find(
+      (item) => item.label === "VIIRS原始估算",
+    );
+    const publicProfessionalBortleItem = viewModel.lightPollution.professionalDataItems.find(
+      (item) => item.label === "公开保守估算",
     );
 
-    expect(viewModel.lightPollution.estimatedBortleRangeLabel).toBe("1–2级");
-    expect(professionalBortleItem?.value).toBe(viewModel.lightPollution.estimatedBortleRangeLabel);
-    expect(viewModel.lightPollution.noticeZh).toBe(estimatedBortleDisclaimerForTest);
-    expect(html).toContain("估算波特尔");
-    expect(html).toContain("1–2级");
-    expect(html).toContain("极佳暗空");
-    expect(nightlySection).not.toContain("波特尔估算");
+    expect(viewModel.lightPollution.estimatedBortleRangeLabel).toBe("2–4级（保守参考）");
+    expect(viewModel.lightPollution.estimatedBortleSkyQualityLabel).toBe("尚暗，需现场确认");
+    expect(rawProfessionalBortleItem?.value).toBe("1–2级");
+    expect(publicProfessionalBortleItem?.value).toBe(
+      viewModel.lightPollution.estimatedBortleRangeLabel,
+    );
+    expect(viewModel.lightPollution.noticeZh).toBe(
+      "公开展示为卫星夜光保守估算，不代表现场实测或正式波特尔观测认证。",
+    );
+    expect(html).toContain("公开保守估算");
+    expect(html).toContain("2–4级（保守参考）");
+    expect(html).toContain("尚暗，需现场确认");
+    expect(html).not.toContain("1–2级");
+    expect(html).not.toContain("极佳暗空");
+    expect(html).not.toContain("光污染：极低");
+    expect(nightlySection).not.toContain("VIIRS原始估算");
     expect(html).toContain('data-astro-professional-data-expanded="false"');
     expect(html).not.toContain(estimatedBortleDisclaimerForTest);
     expectNoForbiddenBortleCopy(html);
@@ -7896,7 +7967,7 @@ describe("forecast result target-aware view model", () => {
       viewModel.lightPollution.professionalDataItems.map((item) => [item.label, item]),
     );
 
-    expect(mainCard).toContain("估算波特尔");
+    expect(mainCard).toContain("公开保守估算");
     expect(mainCard).toContain("银河方向");
     expect(mainCard).not.toMatch(
       /本地辐亮度|周边光穹|环境风险指数|有效采样|校验码|nW\/cm²\/sr|localRadiance|surroundingHaloRadiance|ambientRiskIndex|validSampleCount|checksum/i,

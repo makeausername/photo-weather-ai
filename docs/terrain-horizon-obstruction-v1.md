@@ -50,7 +50,7 @@ clearance = target altitude - terrain horizon altitude
 
 星空 / 银河链路使用 `resolveMilkyWayTerrainHorizonAssessment`：
 
-- 将银河候选窗的银心方位角 / 高度角作为目标几何。
+- 将推荐或候选银河窗口的实际银心方位角 / 高度角作为目标几何；不能用固定方位角、固定高度角或地点类别替代。
 - 优先使用 `horizonProfile.directionSamples`。
 - 兼容旧字段 `milkyWayHorizonAngle`，但只作为带来源标记的方向样本，不作为缺失数据的替代。
 - confirmed `obstructed` 会压低银河几何分和可拍判断；`marginal` 轻度降级；低置信度或 unknown 不加精确扣分，只提示现场复核。
@@ -64,7 +64,7 @@ Astro 结果页显示三层信息：
 - 每晚卡片：紧凑显示 `地形遮挡：无遮挡 / 临界 / 可能遮挡 / 数据不足`。
 - 专业数据：折叠默认关闭，展开后显示目标方位、目标高度、地形地平线、clearance、来源、置信度、样本数量和规则。
 
-正常公开页面不展示 provider code、原始 DEM 细节或内部调试字段。
+正常公开页面不展示 provider code、原始 DEM 细节或内部调试字段。只有使用方向剖面、置信度为 `medium` / `high`、目标角度和 clearance 都有效时，公开 UI 才显示明确遮挡状态；低置信度 DEM 即使返回了 clear 结果，也公开显示为 `数据不足`，原始状态只保留在专业数据中。
 
 ## Local DEM Integration
 
@@ -72,6 +72,7 @@ Astro 结果页显示三层信息：
 - `POST /terrain-dem/profile` samples outward from the WGS84 observer along the target azimuth, computes the maximum apparent terrain angle, and returns `clearance = target altitude - terrain horizon altitude`.
 - DEM absence, metadata absence, unreadable raster, out-of-bounds coordinates, nodata pixels, missing target geometry, and insufficient samples all return unavailable states. They do not become clear terrain.
 - The API maps available DEM profiles to `TerrainHorizonDirectionSample` with `dataSource="dem_raster"` and lets the existing helper decide deterministic clearance. Scoring remains conservative: only medium/high confidence profiles can create a deterministic terrain penalty.
+- Root scripts `scripts/import-terrain-dem.sh` and `scripts/check-terrain-dem.sh` operate through production Compose, mount `deploy/terrain-dem` to `/app/data/terrain-dem`, and never download DEM data. Health output includes dataset availability, metadata availability, dataset name/year/version, checksum, status, and load error.
 
 ## Tests
 

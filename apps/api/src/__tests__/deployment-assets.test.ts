@@ -261,6 +261,7 @@ describe("production deployment assets", () => {
     expect(checker).toContain("terrainDemAvailable");
     expect(checker).toContain("terrainDemDatasetExists");
     expect(checker).toContain("terrainDemMetadataAvailable");
+    expect(checker).toContain("terrainDemDatasetName");
     expect(checker).toContain("terrainDemHealthStatus");
     expect(checker).toContain("terrainDemLoadError");
 

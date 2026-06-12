@@ -207,12 +207,20 @@ ensure_light_pollution_directories() {
   mkdir -p \
     "${PROJECT_ROOT}/deploy/light-pollution/incoming" \
     "${PROJECT_ROOT}/deploy/light-pollution/current" \
-    "${PROJECT_ROOT}/deploy/light-pollution/backups"
+    "${PROJECT_ROOT}/deploy/light-pollution/backups" \
+    "${PROJECT_ROOT}/deploy/terrain-dem/incoming" \
+    "${PROJECT_ROOT}/deploy/terrain-dem/current" \
+    "${PROJECT_ROOT}/deploy/terrain-dem/backups"
   chmod 755 "${PROJECT_ROOT}/deploy/light-pollution" \
     "${PROJECT_ROOT}/deploy/light-pollution/incoming" \
     "${PROJECT_ROOT}/deploy/light-pollution/current" \
-    "${PROJECT_ROOT}/deploy/light-pollution/backups" 2>/dev/null || true
+    "${PROJECT_ROOT}/deploy/light-pollution/backups" \
+    "${PROJECT_ROOT}/deploy/terrain-dem" \
+    "${PROJECT_ROOT}/deploy/terrain-dem/incoming" \
+    "${PROJECT_ROOT}/deploy/terrain-dem/current" \
+    "${PROJECT_ROOT}/deploy/terrain-dem/backups" 2>/dev/null || true
   echo "Light-pollution raster storage is ready at deploy/light-pollution; existing data are preserved."
+  echo "Terrain DEM raster storage is ready at deploy/terrain-dem; existing data are preserved."
 }
 
 ensure_ephemeris_available() {

@@ -905,7 +905,7 @@ function mergeTerrainDemDirectionSamples(
 ): readonly TerrainHorizonDirectionSample[] {
   const demTargets = new Set(demSamples.map((sample) => sample.target ?? "custom"));
   const existingWithoutSameTarget = (existing ?? []).filter(
-    (sample) => sample.dataSource === "dem_raster" || !demTargets.has(sample.target ?? "custom"),
+    (sample) => !demTargets.has(sample.target ?? "custom"),
   );
   return [...demSamples, ...existingWithoutSameTarget];
 }

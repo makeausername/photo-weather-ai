@@ -1509,6 +1509,11 @@ describe("forecast query validation route", () => {
       validSampleCount: 118,
       datasetVersion: "test-dem-v1",
     });
+    expect(
+      body.terrainAnalysis.horizonProfile.directionSamples.filter(
+        (sample: { target?: string | null }) => sample.target === "milky_way",
+      ),
+    ).toHaveLength(1);
     expect(body.astroAnalysis.terrainHorizonAssessment).toMatchObject({
       obstructionLevel: "obstructed",
       confidence: "high",

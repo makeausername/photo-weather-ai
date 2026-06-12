@@ -22,6 +22,7 @@ import type {
   NormalizedHourlyWeather,
   TerrainHorizonAssessment,
 } from "@photo-weather/shared";
+import { resolvePublicSkyDarknessDisplay } from "@photo-weather/shared";
 import {
   resolveMilkyWayTerrainHorizonAssessment,
   terrainHorizonAssessmentHasDeterministicClearance,
@@ -362,13 +363,14 @@ function buildLightPollutionEvidence(
     ? `；银河方向光害${lightPollution.targetDirectionLevelLabelZh}`
     : "；银河方向角不足，未推断目标方向光害";
   const penaltyText = `星空指数-${lightPollution.starPenalty}，银河指数-${lightPollution.milkyWayPenalty}`;
-  const bortleText = lightPollution.estimatedBortleRange?.available
-    ? `；波特尔估算：${lightPollution.estimatedBortleRange.rangeLabelZh} · ${lightPollution.estimatedBortleRange.skyQualityLabelZh}`
+  const publicSkyDarkness = resolvePublicSkyDarknessDisplay(lightPollution);
+  const bortleText = publicSkyDarkness.available
+    ? `；公开保守估算：${publicSkyDarkness.rangeLabelZh} · ${publicSkyDarkness.skyQualityLabelZh}`
     : "";
   return [
     {
       label: "光污染影响",
-      value: `环境${lightPollution.ambientRiskLevelLabelZh}`,
+      value: publicSkyDarkness.available ? publicSkyDarkness.skyQualityLabelZh : "数据暂缺",
       effect:
         (lightPollution.ambientRiskIndex ?? 0) >= 60 ||
         (lightPollution.targetDirectionRisk ?? 0) >= 60
@@ -383,6 +385,7 @@ function lightPollutionDecisionText(lightPollution: LightPollutionInfo): string 
   const ambientRisk = finiteNumber(lightPollution.ambientRiskIndex);
   const targetRisk = finiteNumber(lightPollution.targetDirectionRisk);
   const risk = Math.max(ambientRisk ?? 0, targetRisk ?? 0);
+  const publicSkyDarkness = resolvePublicSkyDarknessDisplay(lightPollution);
 
   if (targetRisk !== undefined && targetRisk >= 60 && (ambientRisk ?? targetRisk) < 60) {
     return "银河方向光害偏高，建议避开城市方向构图或向更暗一侧取景。";
@@ -396,7 +399,10 @@ function lightPollutionDecisionText(lightPollution: LightPollutionInfo): string 
   if (risk >= 40) {
     return "光污染中等，银河细节依赖透明度和避开城市方向的构图。";
   }
-  return "光污染较低，银河背景更暗，有利于拍摄。";
+  if (publicSkyDarkness.available && publicSkyDarkness.conservative) {
+    return "卫星夜光显示环境较暗，但当前按保守范围展示，建议结合现场光害确认。";
+  }
+  return "光污染较低，具备银河拍摄基础，但仍需看云量、月光和透明度。";
 }
 
 export function calculateAstroAnalysis(

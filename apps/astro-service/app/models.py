@@ -388,6 +388,7 @@ class HealthResponse(BaseModel):
     terrainDemDatasetPathConfigured: bool = False
     terrainDemDatasetExists: bool = False
     terrainDemMetadataAvailable: bool = False
+    terrainDemDatasetName: str | None = None
     terrainDemDatasetYear: int | None = None
     terrainDemDatasetVersion: str | None = None
     terrainDemChecksumShort: str | None = None
