@@ -98,6 +98,9 @@ importers:
       '@photo-weather/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@photo-weather/terrain':
+        specifier: workspace:*
+        version: link:../../packages/terrain
       next:
         specifier: 14.2.3
         version: 14.2.3(react-dom@18.2.0(react@18.2.0))(react@18.2.0)

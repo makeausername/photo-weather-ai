@@ -130,6 +130,33 @@ describe("public sky darkness display", () => {
     expect(display.rangeLabelZh).toBe("2–4级（保守参考）");
   });
 
+  it("widens high-confidence low-end raw estimates when calibration evidence is only limited", () => {
+    const lightPollution = lightPollutionFixture({
+      ambientRiskIndex: 18,
+      localRadiance: 0.04,
+      surroundingHaloRadiance: 0.14,
+      confidence: "high",
+      sampleCount: 96,
+      validSampleCount: 96,
+      estimatedBortleRange: {
+        available: true,
+        minClass: 2,
+        maxClass: 3,
+        rangeLabelZh: "2–3级",
+        skyQualityLabelZh: "优良暗空",
+        confidence: "medium",
+        methodVersion: "viirs-ambient-risk-range-v1",
+        basisZh: "测试原始估算。",
+        disclaimerZh: "原始估算说明。",
+      },
+    });
+    const display = resolvePublicSkyDarknessDisplay(lightPollution);
+
+    expect(display.rangeLabelZh).toBe("2–4级（保守参考）");
+    expect(display.skyQualityLabelZh).toBe("尚暗，需现场确认");
+    expect(display.confidenceReasonsZh.join(" ")).toContain("低端原始波特尔范围");
+  });
+
   it("contains no location, coordinate, or category-specific production rule", () => {
     const source = readFileSync(
       fileURLToPath(new URL("../light-pollution-display.ts", import.meta.url)),

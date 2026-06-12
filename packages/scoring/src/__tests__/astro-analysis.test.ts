@@ -154,12 +154,7 @@ function uniformDirectionalRiskFixture(
   riskIndex: number,
 ): readonly DirectionalLightPollutionRisk[] {
   return directionalRiskFixture.map((sector) =>
-    directionRisk(
-      sector.direction,
-      sector.directionLabelZh,
-      sector.azimuthDegrees,
-      riskIndex,
-    ),
+    directionRisk(sector.direction, sector.directionLabelZh, sector.azimuthDegrees, riskIndex),
   );
 }
 
@@ -628,9 +623,9 @@ describe("astro analysis", () => {
     expect(lowLightPollution.astroAnalysis.riskReasons.join("")).toContain(
       "卫星夜光显示环境较暗，但当前按保守范围展示",
     );
-    expect(lowLightPollution.astroAnalysis.lightPollutionEvidence.map((item) => item.noteZh).join("")).toContain(
-      "公开保守估算：2–3级（保守参考）",
-    );
+    expect(
+      lowLightPollution.astroAnalysis.lightPollutionEvidence.map((item) => item.noteZh).join(""),
+    ).toContain("公开保守估算：2–4级（保守参考）");
     expect(lowLightPollution.astroAnalysis.travelRecommendations.join("")).toContain(
       "按保守范围展示",
     );
@@ -656,9 +651,7 @@ describe("astro analysis", () => {
     expect(result.astroAnalysis.astroShootable).toBe(false);
     expect(result.astroAnalysis.recommendationLabel).toBe("谨慎参考");
     expect(result.astroAnalysis.riskReasons.join("")).toContain("光污染很强");
-    expect(result.astroAnalysis.travelRecommendations.join("")).toContain(
-      "银河细节也可能偏弱",
-    );
+    expect(result.astroAnalysis.travelRecommendations.join("")).toContain("银河细节也可能偏弱");
     expect(result.scores.milkyWay.score).toBe(result.astroAnalysis.milkyWayScore);
   });
 
@@ -948,8 +941,7 @@ describe("astro analysis", () => {
     const baseInput = withClearAstroWeather(
       withLowMoon(buildMockForecastInput(baseQuery, { now: fixedNow })),
     );
-    const targetAltitude =
-      baseInput.astroSummaries[0]?.milkyWayGalacticCenterAltitude ?? 24;
+    const targetAltitude = baseInput.astroSummaries[0]?.milkyWayGalacticCenterAltitude ?? 24;
     const clear = calculateForecast(
       withMilkyWayTerrainHorizon(baseInput, targetAltitude - 4, "high"),
     );
@@ -970,8 +962,7 @@ describe("astro analysis", () => {
     const baseInput = withClearAstroWeather(
       withLowMoon(buildMockForecastInput(baseQuery, { now: fixedNow })),
     );
-    const targetAltitude =
-      baseInput.astroSummaries[0]?.milkyWayGalacticCenterAltitude ?? 24;
+    const targetAltitude = baseInput.astroSummaries[0]?.milkyWayGalacticCenterAltitude ?? 24;
     const clear = calculateForecast(
       withMilkyWayTerrainHorizon(baseInput, targetAltitude - 4, "high"),
     );
@@ -993,8 +984,7 @@ describe("astro analysis", () => {
     const baseInput = withClearAstroWeather(
       withLowMoon(buildMockForecastInput(baseQuery, { now: fixedNow })),
     );
-    const targetAltitude =
-      baseInput.astroSummaries[0]?.milkyWayGalacticCenterAltitude ?? 24;
+    const targetAltitude = baseInput.astroSummaries[0]?.milkyWayGalacticCenterAltitude ?? 24;
     const cloudy = withHourlyWeather(
       withMilkyWayTerrainHorizon(baseInput, targetAltitude - 4, "high"),
       (hour) => ({

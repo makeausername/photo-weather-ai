@@ -1,6 +1,6 @@
 import type { EstimatedBortleRange, LightPollutionInfo } from "./types.js";
 
-export const publicSkyDarknessDisplayVersion = "viirs-public-conservative-display-v1" as const;
+export const publicSkyDarknessDisplayVersion = "viirs-public-conservative-display-v2" as const;
 export const publicSkyDarknessDisclaimerZh =
   "公开展示为卫星夜光保守估算，不代表现场实测或正式波特尔观测认证。";
 
@@ -33,6 +33,8 @@ type PublicDisplaySignals = {
   readonly haloMismatch: boolean;
   readonly nearZeroLocalWithHalo: boolean;
   readonly ambientRiskSaturated: boolean;
+  readonly lowEndRawRange: boolean;
+  readonly conservativeDisplayUncertainty: boolean;
   readonly lowConfidence: boolean;
   readonly lowSampleSupport: boolean;
   readonly calibrationEvidenceLevel: PublicSkyDarknessDisplay["calibrationEvidenceLevel"];
@@ -47,7 +49,9 @@ export function resolvePublicSkyDarknessDisplay(
   if (!rawEstimate || !rawEstimate.available) {
     return unavailablePublicSkyDarknessDisplay(
       rawEstimate,
-      rawEstimate?.unavailableReason ?? lightPollution.unavailableReason ?? "raw_estimate_unavailable",
+      rawEstimate?.unavailableReason ??
+        lightPollution.unavailableReason ??
+        "raw_estimate_unavailable",
     );
   }
 
@@ -55,17 +59,15 @@ export function resolvePublicSkyDarknessDisplay(
   const rawMax = clampBortleClass(rawEstimate.maxClass ?? rawMin);
   const signals = resolvePublicDisplaySignals(lightPollution, rawEstimate);
   const reasons = conservativeDisplayReasons(lightPollution, rawEstimate, signals);
-  const shouldDowngradeDarkestRange =
-    rawMin <= 1 &&
-    (signals.calibrationEvidenceLevel !== "supported" ||
-      signals.lowConfidence ||
-      signals.lowSampleSupport ||
-      !signals.directionalCoverageComplete ||
-      signals.haloMismatch ||
-      signals.nearZeroLocalWithHalo ||
-      signals.ambientRiskSaturated);
+  const shouldDowngradeDarkestRange = rawMin <= 1 && signals.conservativeDisplayUncertainty;
+  const shouldLiftLowEndRange =
+    !shouldDowngradeDarkestRange &&
+    rawMin <= 2 &&
+    rawMax <= 3 &&
+    signals.conservativeDisplayUncertainty;
   const shouldWidenRange =
     !shouldDowngradeDarkestRange &&
+    !shouldLiftLowEndRange &&
     (signals.lowConfidence ||
       signals.lowSampleSupport ||
       signals.haloMismatch ||
@@ -74,12 +76,12 @@ export function resolvePublicSkyDarknessDisplay(
 
   const publicMin = shouldDowngradeDarkestRange ? 2 : rawMin;
   const publicMax = shouldDowngradeDarkestRange
-    ? signals.haloMismatch || signals.nearZeroLocalWithHalo || signals.lowConfidence
+    ? 4
+    : shouldLiftLowEndRange
       ? 4
-      : 3
-    : shouldWidenRange
-      ? clampBortleClass(rawMax + 1)
-      : rawMax;
+      : shouldWidenRange
+        ? clampBortleClass(rawMax + 1)
+        : rawMax;
   const normalizedMax = Math.max(publicMin, publicMax);
   const conservative =
     publicMin !== rawMin ||
@@ -125,8 +127,7 @@ function unavailablePublicSkyDarknessDisplay(
     methodVersion: rawEstimate?.methodVersion ?? "viirs-ambient-risk-range-v1",
     publicMethodVersion: publicSkyDarknessDisplayVersion,
     basisZh:
-      rawEstimate?.basisZh ??
-      "当前缺少可公开展示的卫星夜光保守估算输入，不能推断公开波特尔范围。",
+      rawEstimate?.basisZh ?? "当前缺少可公开展示的卫星夜光保守估算输入，不能推断公开波特尔范围。",
     disclaimerZh: publicSkyDarknessDisclaimerZh,
     unavailableReason,
     conservative: true,
@@ -176,31 +177,55 @@ function resolvePublicDisplaySignals(
           : null
       : null;
   const ambientRiskIndex = finiteNumber(lightPollution.ambientRiskIndex);
+  const rawMin = finiteNumber(rawEstimate.minClass);
+  const rawMax = finiteNumber(rawEstimate.maxClass);
+  const lowEndRawRange =
+    rawMin !== undefined &&
+    rawMin <= 2 &&
+    rawMax !== undefined &&
+    rawMax <= 3 &&
+    ambientRiskIndex !== undefined &&
+    ambientRiskIndex <= 29;
+  const ambientRiskSaturated =
+    rawMin !== undefined && rawMin <= 1 && ambientRiskIndex !== undefined && ambientRiskIndex <= 14;
+  const calibrationEvidenceLevel = resolveCalibrationEvidenceLevel(lightPollution);
+  const lowConfidence = lightPollution.confidence === "low" || rawEstimate.confidence === "low";
+  const lowSampleSupport =
+    lightPollution.validSampleCount < 48 ||
+    sampleCoverageRatio === null ||
+    sampleCoverageRatio < 0.75 ||
+    !targetDirectionResolved;
+  const haloMismatch =
+    typeof haloToLocalRatio === "number" &&
+    (haloToLocalRatio === Number.POSITIVE_INFINITY || haloToLocalRatio >= 8);
+  const nearZeroLocalWithHalo =
+    localRadiance !== undefined &&
+    localRadiance <= 0.001 &&
+    haloRadiance !== undefined &&
+    haloRadiance > 0.05;
+  const conservativeDisplayUncertainty =
+    lowEndRawRange &&
+    (calibrationEvidenceLevel !== "supported" ||
+      lowConfidence ||
+      lowSampleSupport ||
+      !directionalCoverageComplete ||
+      haloMismatch ||
+      nearZeroLocalWithHalo ||
+      ambientRiskSaturated ||
+      lightPollution.ambientRiskLevel === "insufficient");
 
   return {
     sampleCoverageRatio,
     directionalCoverageComplete,
     targetDirectionResolved,
-    haloMismatch:
-      typeof haloToLocalRatio === "number" &&
-      (haloToLocalRatio === Number.POSITIVE_INFINITY || haloToLocalRatio >= 8),
-    nearZeroLocalWithHalo:
-      localRadiance !== undefined &&
-      localRadiance <= 0.001 &&
-      haloRadiance !== undefined &&
-      haloRadiance > 0.05,
-    ambientRiskSaturated:
-      rawEstimate.minClass !== undefined &&
-      rawEstimate.minClass <= 1 &&
-      ambientRiskIndex !== undefined &&
-      ambientRiskIndex <= 3,
-    lowConfidence: lightPollution.confidence === "low" || rawEstimate.confidence === "low",
-    lowSampleSupport:
-      lightPollution.validSampleCount < 48 ||
-      sampleCoverageRatio === null ||
-      sampleCoverageRatio < 0.75 ||
-      !targetDirectionResolved,
-    calibrationEvidenceLevel: resolveCalibrationEvidenceLevel(lightPollution),
+    haloMismatch,
+    nearZeroLocalWithHalo,
+    ambientRiskSaturated,
+    lowEndRawRange,
+    conservativeDisplayUncertainty,
+    lowConfidence,
+    lowSampleSupport,
+    calibrationEvidenceLevel,
     localToHaloRatio,
     haloToLocalRatio,
   };
@@ -214,6 +239,12 @@ function conservativeDisplayReasons(
   const reasons: string[] = [];
   if (signals.calibrationEvidenceLevel !== "supported" && (rawEstimate.minClass ?? 9) <= 1) {
     reasons.push("缺少足够独立校准证据支撑公开展示 1–2 级");
+  }
+  if (signals.calibrationEvidenceLevel !== "supported" && signals.lowEndRawRange) {
+    reasons.push("低端原始波特尔范围缺少充分校准证据，公开展示需放宽");
+  }
+  if (signals.conservativeDisplayUncertainty) {
+    reasons.push("触发低辐亮度保守展示不确定性检查");
   }
   if (signals.lowConfidence) {
     reasons.push("卫星夜光查询置信度不足");

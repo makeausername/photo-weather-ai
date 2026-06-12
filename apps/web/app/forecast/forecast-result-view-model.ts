@@ -61,6 +61,7 @@ import {
   type PublicSkyDarknessDisplay,
 } from "@photo-weather/shared";
 import { addHoursInTimezone, getForecastTargetDates } from "@photo-weather/calendar";
+import { resolveMilkyWayTerrainHorizonAssessment } from "@photo-weather/terrain";
 import {
   bestShootableWindowText,
   recommendationLevelText,
@@ -2803,7 +2804,12 @@ export function buildAstroForecastViewModel(
       ? `有天文窗口，但${blockerSummary}不支持银河拍摄，不建议专程熬夜。`
       : "暂无可用天文黑夜或银河几何窗口，夜间只作备选观察。";
 
-  const terrainHorizon = astroTerrainHorizonDisplay(analysis.terrainHorizonAssessment);
+  const selectedTerrainAssessment = selectedMilkyWayTerrainAssessment(
+    result,
+    windowForDisplay,
+    bestNight,
+  );
+  const terrainHorizon = astroTerrainHorizonDisplay(selectedTerrainAssessment);
 
   return {
     coreCards: [
@@ -2897,7 +2903,7 @@ export function buildAstroForecastViewModel(
     bestNight,
     backupNight,
     actionSummary: buildAstroActionSummary(result, bestNight, backupNight),
-    judgmentFactors: buildAstroJudgmentFactors(result, nightlyCards, bestNight),
+    judgmentFactors: buildAstroJudgmentFactors(result, nightlyCards, bestNight, terrainHorizon),
     professionalHourlyData,
     astronomicalNightWindows: mapAstroWindows(result, analysis.astronomicalNightWindows),
     moonlessNightWindows: mapAstroWindows(result, analysis.moonlessNightWindows),
@@ -3065,9 +3071,7 @@ function buildAstroNightDisplayModels(
         day?.lightPollution ?? result.astroAnalysis.lightPollution,
       ),
       terrainHorizon: astroTerrainHorizonDisplay(
-        day?.terrainHorizonAssessment ??
-          candidateWindow?.terrainHorizonAssessment ??
-          result.astroAnalysis.terrainHorizonAssessment,
+        terrainAssessmentForAstroWindow(result, candidateWindow ?? bestWindow, date),
       ),
       weather: weatherSummary,
       starPhotographyProbabilityPercent: starProbability,
@@ -3089,6 +3093,53 @@ function buildAstroNightDisplayModels(
       calibrationMode: "heuristic",
     };
   });
+}
+
+function selectedMilkyWayTerrainAssessment(
+  result: ForecastCalculationResult,
+  selectedWindow?: AstroWindow,
+  bestNight?: AstroNightDisplayModel,
+): TerrainHorizonAssessment | undefined {
+  return terrainAssessmentForAstroWindow(
+    result,
+    selectedWindow,
+    selectedWindow?.date ?? bestNight?.localEveningDate,
+  );
+}
+
+function terrainAssessmentForAstroWindow(
+  result: ForecastCalculationResult,
+  window: AstroWindow | undefined,
+  date: string | undefined,
+): TerrainHorizonAssessment | undefined {
+  const astro = date
+    ? result.astroSummaries.find((summary) => summary.date === date)
+    : result.astroSummaries[0];
+  const day = date ? result.astroAnalysis.dailyAstro.find((item) => item.date === date) : undefined;
+
+  if (window?.terrainHorizonAssessment) {
+    return window.terrainHorizonAssessment;
+  }
+
+  if (hasAstroTerrainTargetGeometry(window, astro)) {
+    return resolveMilkyWayTerrainHorizonAssessment({
+      terrainAnalysis: result.terrainAnalysis,
+      astro,
+      window,
+    });
+  }
+
+  return day?.terrainHorizonAssessment ?? result.astroAnalysis.terrainHorizonAssessment;
+}
+
+function hasAstroTerrainTargetGeometry(
+  window: AstroWindow | undefined,
+  astro: AstroSummary | undefined,
+): boolean {
+  return (
+    isMeaningfulNumber(window?.galacticCenterAzimuth ?? astro?.milkyWayGalacticCenterAzimuth) &&
+    isMeaningfulNumber(window?.galacticCenterAltitude ?? astro?.milkyWayGalacticCenterAltitude)
+  );
 }
 
 function observingNightDatesForResult(result: ForecastCalculationResult): readonly string[] {
@@ -3784,9 +3835,7 @@ function terrainHorizonProfessionalItems(
   ];
 }
 
-function terrainHorizonStatusLabel(
-  level: TerrainHorizonAssessment["obstructionLevel"],
-): string {
+function terrainHorizonStatusLabel(level: TerrainHorizonAssessment["obstructionLevel"]): string {
   switch (level) {
     case "clear":
       return "无遮挡";
@@ -3851,9 +3900,7 @@ function terrainHorizonRecommendation(assessment: TerrainHorizonAssessment): str
   return "当前不能确认是否被山体挡住，建议现场确认银河方向地平线遮挡。";
 }
 
-function terrainHorizonConfidenceLabel(
-  confidence: TerrainHorizonAssessment["confidence"],
-): string {
+function terrainHorizonConfidenceLabel(confidence: TerrainHorizonAssessment["confidence"]): string {
   if (confidence === "high") {
     return "高";
   }
@@ -4435,9 +4482,7 @@ function astroNightRecommendation(input: {
   };
 }
 
-function astroNightLightPollutionContext(
-  lightPollution: LightPollutionInfo | undefined,
-):
+function astroNightLightPollutionContext(lightPollution: LightPollutionInfo | undefined):
   | {
       readonly severity: "low" | "medium" | "high";
       readonly reason: string;
@@ -4705,7 +4750,8 @@ function astroActionArrival(
 } {
   if (
     bestNight &&
-    (bestNight.recommendationLevel === "recommended" || bestNight.recommendationLevel === "watch") &&
+    (bestNight.recommendationLevel === "recommended" ||
+      bestNight.recommendationLevel === "watch") &&
     bestNight.milkyWay.bestStartAt
   ) {
     const arrivalTime = addHoursInTimezone(bestNight.milkyWay.bestStartAt, -1.25, timezone);
@@ -4791,6 +4837,7 @@ function buildAstroJudgmentFactors(
   result: ForecastCalculationResult,
   nights: readonly AstroNightDisplayModel[],
   bestNight: AstroNightDisplayModel | undefined,
+  terrainHorizon: AstroTerrainHorizonDisplayModel,
 ): readonly AstroJudgmentFactorCard[] {
   const night = bestNight ?? nights[0];
   const lightPollution =
@@ -4830,9 +4877,9 @@ function buildAstroJudgmentFactors(
     {
       key: "terrain-horizon",
       label: "地形遮挡",
-      status: night.terrainHorizon.statusLabelZh,
-      detail: `${night.terrainHorizon.detail} ${night.terrainHorizon.recommendationZh}`,
-      tone: night.terrainHorizon.statusTone,
+      status: terrainHorizon.statusLabelZh,
+      detail: `${terrainHorizon.detail} ${terrainHorizon.recommendationZh}`,
+      tone: terrainHorizon.statusTone,
     },
     {
       key: "cloud",
@@ -5453,7 +5500,7 @@ function buildMilkyWaySection(result: ForecastCalculationResult): ForecastResult
 
 function buildMilkyWayObstructionSection(result: ForecastCalculationResult): ForecastResultSection {
   const horizon = result.terrainAnalysis.horizonProfile;
-  const terrainHorizon = astroTerrainHorizonDisplay(result.astroAnalysis.terrainHorizonAssessment);
+  const terrainHorizon = astroTerrainHorizonDisplay(selectedMilkyWayTerrainAssessment(result));
 
   return {
     key: "milky-way-obstruction",
@@ -5503,7 +5550,7 @@ function buildMountainObstructionRiskSection(
   result: ForecastCalculationResult,
 ): ForecastResultSection {
   const terrain = result.terrainAnalysis.terrainProfile;
-  const terrainHorizon = astroTerrainHorizonDisplay(result.astroAnalysis.terrainHorizonAssessment);
+  const terrainHorizon = astroTerrainHorizonDisplay(selectedMilkyWayTerrainAssessment(result));
 
   return {
     key: "mountain-obstruction-risk",

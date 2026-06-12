@@ -7208,6 +7208,110 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("地形遮挡剖面");
   });
 
+  it("uses selected Milky Way DEM geometry as the canonical terrain display", () => {
+    const base = resultWithAstroTerrainHorizon(undefined);
+    const selectedWindow = {
+      ...base.astroAnalysis.recommendedMilkyWayWindows[0]!,
+      date: "2026-05-20",
+      galacticCenterAzimuth: 180,
+      galacticCenterAltitude: 24,
+      terrainHorizonAssessment: undefined,
+    };
+    const candidateWindow = {
+      ...base.astroAnalysis.milkyWayCandidateWindows[0]!,
+      date: "2026-05-20",
+      galacticCenterAzimuth: 180,
+      galacticCenterAltitude: 24,
+      terrainHorizonAssessment: undefined,
+    };
+    const result: ForecastCalculationResult = {
+      ...base,
+      terrainSummary: {
+        ...base.terrainSummary,
+        dataSource: "dem",
+        dataSourceLabelZh: "本地 DEM 地形剖面",
+        isMock: false,
+        honestyNoteZh: "银河方向地形遮挡使用本地 DEM；缺失时不按无遮挡处理。",
+        directionSamples: terrainHorizonDemForTest.directionSamples ?? [],
+        milkyWayAssessment: undefined,
+      },
+      terrainAnalysis: {
+        ...base.terrainAnalysis,
+        dataSource: "dem",
+        dataSourceLabelZh: "本地 DEM 地形剖面",
+        isMock: false,
+        honestyNoteZh: "银河方向地形遮挡使用本地 DEM；缺失时不按无遮挡处理。",
+        horizonProfile: {
+          ...base.terrainAnalysis.horizonProfile,
+          directionSamples: terrainHorizonDemForTest.directionSamples ?? [],
+          milkyWayAssessment: undefined,
+        },
+      },
+      astroAnalysis: {
+        ...base.astroAnalysis,
+        astroShootable: true,
+        recommendedMilkyWayWindow: selectedWindow,
+        terrainHorizonAssessment: undefined,
+        milkyWayCandidateWindows: [candidateWindow],
+        recommendedMilkyWayWindows: [selectedWindow],
+        dailyAstro: base.astroAnalysis.dailyAstro.map((day) =>
+          day.date === "2026-05-20"
+            ? {
+                ...day,
+                astroShootable: true,
+                terrainHorizonAssessment: undefined,
+                recommendedMilkyWayWindow: selectedWindow,
+              }
+            : {
+                ...day,
+                terrainHorizonAssessment: undefined,
+                recommendedMilkyWayWindow: undefined,
+              },
+        ),
+      },
+    };
+    const viewModel = buildAstroForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(AstroResultPage, {
+        query: queryForTarget("astro"),
+        result,
+        viewModel,
+      }),
+    );
+    const selectedNight = viewModel.bestNight;
+    const terrainFactor = viewModel.judgmentFactors.find(
+      (factor) => factor.key === "terrain-horizon",
+    );
+    const terrainTopCard = sectionBetween(
+      html,
+      'data-astro-section="AstroTerrainHorizonDecision"',
+      'data-astro-section="AstroNightOpportunitySection"',
+    );
+    const reasonSection = sectionBetween(
+      html,
+      'data-astro-section="AstroWhyJudgmentSection"',
+      'data-astro-section="AstroProfessionalData"',
+    );
+
+    expect(viewModel.terrainHorizon.obstructionLevel).toBe("clear");
+    expect(viewModel.terrainHorizon.dataSourceLabelZh).toBe("本地 DEM 地形剖面");
+    expect(viewModel.terrainHorizon.targetAzimuthDisplay).toBe("180°");
+    expect(viewModel.terrainHorizon.targetAltitudeDisplay).toBe("24°");
+    expect(selectedNight?.terrainHorizon.obstructionLevel).toBe(
+      viewModel.terrainHorizon.obstructionLevel,
+    );
+    expect(terrainFactor?.status).toBe(viewModel.terrainHorizon.statusLabelZh);
+    expect(
+      viewModel.terrainHorizon.professionalDataItems.find((item) => item.label === "地形遮挡状态")
+        ?.value,
+    ).toBe("无遮挡");
+    expect(terrainTopCard).toContain('data-astro-terrain-horizon-level="clear"');
+    expect(terrainTopCard).toContain("地形遮挡较低");
+    expect(terrainTopCard).not.toContain("地形遮挡暂无法精确判断");
+    expect(reasonSection).toContain("无遮挡");
+    expect(reasonSection).not.toContain("地形遮挡暂无法精确判断");
+  });
+
   it("keeps DEM terrain details in professional data without leaking raw raster paths", () => {
     const result = resultWithAstroTerrainHorizon(terrainHorizonDemForTest);
     const viewModel = buildAstroForecastViewModel(result);
@@ -7273,9 +7377,8 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.terrainHorizon.clearanceDisplay).not.toBe("16°");
     expect(viewModel.terrainHorizon.detail).toContain("置信度不足");
     expect(
-      viewModel.terrainHorizon.professionalDataItems.find(
-        (item) => item.label === "地形遮挡状态",
-      )?.value,
+      viewModel.terrainHorizon.professionalDataItems.find((item) => item.label === "地形遮挡状态")
+        ?.value,
     ).toBe("无遮挡");
     expect(html).toContain('data-astro-terrain-horizon-level="unknown"');
     expect(html).not.toContain('data-astro-terrain-horizon-level="clear"');
@@ -7654,15 +7757,17 @@ describe("forecast result target-aware view model", () => {
       "precipitation-wind",
       "light-pollution",
     ]);
-    expect(astro?.judgmentFactors.map((factor) => factor.label)).toEqual(expect.arrayContaining([
-      "银河窗口",
-      "月光影响",
-      "银心高度/方向",
-      "天气阻挡",
-      "通透度",
-      "降水与风",
-      "光污染影响",
-    ]));
+    expect(astro?.judgmentFactors.map((factor) => factor.label)).toEqual(
+      expect.arrayContaining([
+        "银河窗口",
+        "月光影响",
+        "银心高度/方向",
+        "天气阻挡",
+        "通透度",
+        "降水与风",
+        "光污染影响",
+      ]),
+    );
     expect(astro?.judgmentFactors.map((factor) => factor.label)).toContain("地形遮挡");
     expect(astro?.actionSummary.map((item) => item.label)).toEqual([
       "是否值得去",
@@ -7741,8 +7846,8 @@ describe("forecast result target-aware view model", () => {
       [
         "较低",
         "公开保守估算",
-        "2–3级（保守参考）",
-        "较低，保守参考",
+        "2–4级（保守参考）",
+        "尚暗，需现场确认",
         "银河方向",
         "低",
         "按保守范围展示",

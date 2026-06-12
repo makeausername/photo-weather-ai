@@ -66,12 +66,15 @@ Astro 结果页显示三层信息：
 
 正常公开页面不展示 provider code、原始 DEM 细节或内部调试字段。只有使用方向剖面、置信度为 `medium` / `high`、目标角度和 clearance 都有效时，公开 UI 才显示明确遮挡状态；低置信度 DEM 即使返回了 clear 结果，也公开显示为 `数据不足`，原始状态只保留在专业数据中。
 
+Milky Way 详情页使用一个统一的 selected-window terrain display model。顶部地形卡、逐夜卡片中被选中的银河窗口、`为什么这样判断` 地形因子和折叠专业数据必须读取同一个代表窗口的地形状态。代表窗口优先使用页面当前推荐/选中的银河窗口；有多个夜间窗口时，顶部摘要跟随该主窗口，单个逐夜卡片可以显示本夜自己的窗口状态。没有目标方位角或高度角时保持 unknown，不显示精确角度，也不标记为无遮挡。
+
 ## Local DEM Integration
 
 - Astro-service can read a local EPSG:4326 GeoTIFF/COG from `/app/data/terrain-dem/current/terrain-dem.cog.tif` with metadata from `/app/data/terrain-dem/current/metadata.json`.
 - `POST /terrain-dem/profile` samples outward from the WGS84 observer along the target azimuth, computes the maximum apparent terrain angle, and returns `clearance = target altitude - terrain horizon altitude`.
 - DEM absence, metadata absence, unreadable raster, out-of-bounds coordinates, nodata pixels, missing target geometry, and insufficient samples all return unavailable states. They do not become clear terrain.
 - The API maps available DEM profiles to `TerrainHorizonDirectionSample` with `dataSource="dem_raster"` and lets the existing helper decide deterministic clearance. Scoring remains conservative: only medium/high confidence profiles can create a deterministic terrain penalty.
+- Public terrain status is selected-window based: if the chosen Milky Way window has medium/high confidence DEM clearance, the top card must show `无遮挡`, `临界`, or `可能遮挡`; if DEM is missing/unusable, every relevant public section must stay `数据不足` instead of mixing clear and unknown states.
 - Root scripts `scripts/import-terrain-dem.sh` and `scripts/check-terrain-dem.sh` operate through production Compose, mount `deploy/terrain-dem` to `/app/data/terrain-dem`, and never download DEM data. Health output includes dataset availability, metadata availability, dataset name/year/version, checksum, status, and load error.
 
 ## Tests

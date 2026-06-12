@@ -461,7 +461,7 @@ export function calculateAstroAnalysis(
   const cloudEvidence = buildCloudEvidence(input, astronomicalNightWindows);
   const visibilityEvidence = buildVisibilityEvidence(input, astronomicalNightWindows);
   const moonEvidence = buildMoonEvidence(input, astronomicalNightWindows);
-  const terrainEvidence = buildTerrainEvidence(input);
+  const terrainEvidence = buildTerrainEvidence(input, assessment.terrainHorizonAssessment);
   const lightPollutionEvidence = buildLightPollutionEvidence(lightPollution);
   const bestAstroWindows = [...recommendedMilkyWayWindows, ...moonlessNightWindows]
     .sort(
@@ -522,6 +522,7 @@ export function calculateAstroAnalysis(
       astronomicalNightWindows,
       moonlessNightWindows,
       recommendedMilkyWayWindows,
+      assessment.terrainHorizonAssessment,
     ),
     travelRecommendations: buildAstroTravelRecommendations(
       adjustedScores,
@@ -1929,13 +1930,17 @@ function buildMoonEvidence(
   });
 }
 
-function buildTerrainEvidence(input: ForecastCalculationInput): readonly AstroEvidenceItem[] {
-  const assessment = resolveMilkyWayTerrainHorizonAssessment({
-    terrainAnalysis: input.terrainAnalysis,
-    astro: input.astroSummaries[0],
-  });
-  const hasDeterministicClearance =
-    terrainHorizonAssessmentHasDeterministicClearance(assessment);
+function buildTerrainEvidence(
+  input: ForecastCalculationInput,
+  terrainHorizonAssessment?: TerrainHorizonAssessment,
+): readonly AstroEvidenceItem[] {
+  const assessment =
+    terrainHorizonAssessment ??
+    resolveMilkyWayTerrainHorizonAssessment({
+      terrainAnalysis: input.terrainAnalysis,
+      astro: input.astroSummaries[0],
+    });
+  const hasDeterministicClearance = terrainHorizonAssessmentHasDeterministicClearance(assessment);
   const effect =
     hasDeterministicClearance && assessment.obstructionLevel === "obstructed"
       ? "risk"
@@ -2055,6 +2060,7 @@ function buildAstroOpportunityReasons(
   astronomicalNightWindows: readonly AstroWindow[],
   moonlessNightWindows: readonly AstroWindow[],
   recommendedMilkyWayWindows: readonly AstroWindow[],
+  terrainHorizonAssessment?: TerrainHorizonAssessment,
 ): readonly string[] {
   return [
     astronomicalNightWindows.length > 0
@@ -2066,15 +2072,20 @@ function buildAstroOpportunityReasons(
     recommendedMilkyWayWindows.length > 0
       ? `共找到 ${recommendedMilkyWayWindows.length} 个推荐银河窗口。`
       : "银心候选窗口与低月光窗口交集不足。",
-    terrainHorizonOpportunityReason(input),
+    terrainHorizonOpportunityReason(input, terrainHorizonAssessment),
   ];
 }
 
-function terrainHorizonOpportunityReason(input: ForecastCalculationInput): string {
-  const assessment = resolveMilkyWayTerrainHorizonAssessment({
-    terrainAnalysis: input.terrainAnalysis,
-    astro: input.astroSummaries[0],
-  });
+function terrainHorizonOpportunityReason(
+  input: ForecastCalculationInput,
+  terrainHorizonAssessment?: TerrainHorizonAssessment,
+): string {
+  const assessment =
+    terrainHorizonAssessment ??
+    resolveMilkyWayTerrainHorizonAssessment({
+      terrainAnalysis: input.terrainAnalysis,
+      astro: input.astroSummaries[0],
+    });
 
   if (!terrainHorizonAssessmentHasDeterministicClearance(assessment)) {
     return "地形遮挡暂无目标方向剖面，未按无遮挡处理，银河方向视野仍需现场复核。";
@@ -2190,9 +2201,7 @@ function buildMissingDataNotes(
       : ["天气数据当前为演示数据，正式出行前需要复核真实预报。"]),
     ...(input.terrainAnalysis.isMock ? ["地形数据当前为演示数据，现场地平线遮挡仍需复核。"] : []),
     ...(!terrainHorizonAssessmentHasDeterministicClearance(terrainHorizonAssessment)
-      ? [
-          "地形遮挡暂无可用目标方向剖面；系统未按无遮挡处理，建议现场确认银河方向地平线。",
-        ]
+      ? ["地形遮挡暂无可用目标方向剖面；系统未按无遮挡处理，建议现场确认银河方向地平线。"]
       : []),
   ];
 
