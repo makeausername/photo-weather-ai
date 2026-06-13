@@ -799,10 +799,14 @@ export type AstroDecisionSummary = {
   readonly recommendationTone: ForecastResultCardTone;
   readonly bestNightLabel: string;
   readonly bestWindowLabel: string;
+  readonly backupLabel: string;
+  readonly backupDetail: string;
   readonly arrivalLabel: string;
+  readonly actionSuggestionLabel: string;
   readonly directionLabel: string;
   readonly mainRiskLabel: string;
   readonly mainRiskDetail: string;
+  readonly secondaryRiskLabel: string;
   readonly confidenceLabel: string;
   readonly oneSentenceAdvice: string;
   readonly lightPollutionLabel: string;
@@ -5361,6 +5365,7 @@ function buildAstroDecisionSummary({
   const bestWindow = astroActionItem(actionSummary, "best-window");
   const arrival = astroActionItem(actionSummary, "arrival");
   const blocker = astroActionItem(actionSummary, "main-blocker");
+  const backup = astroActionItem(actionSummary, "backup");
   const confidence =
     bestNight?.confidence ?? astroConfidenceLabel(result.astroAnalysis.confidenceLevel);
   const oneSentenceAdvice =
@@ -5368,16 +5373,26 @@ function buildAstroDecisionSummary({
     (result.astroAnalysis.astroShootable
       ? "可作为夜拍候选，但仍需在出发前复核短临云图和现场光害。"
       : "当前不按银河专程计划，等待天气、月光或窗口条件改善。");
+  const actionSuggestionLabel =
+    arrival?.value && !arrival.value.startsWith("暂无")
+      ? arrival.value
+      : result.astroAnalysis.astroShootable
+        ? "保留夜拍机动，出发前复核云图"
+        : "暂不专程，等待临近复核";
 
   return {
     recommendationLabel: worth?.value ?? result.astroAnalysis.recommendationLabel,
     recommendationTone: worth?.tone ?? "muted",
     bestNightLabel: bestNight?.localEveningDateLabel ?? "暂无明确最佳夜",
     bestWindowLabel: bestWindow?.value ?? "暂无可靠最佳拍摄窗口",
+    backupLabel: backup?.value ?? "暂无明确备选窗口",
+    backupDetail: backup?.detail ?? "若主窗口不可执行，保留月光地景、云缝观察或更换机位作为备选。",
     arrivalLabel: arrival?.value ?? "暂无专程到达建议",
+    actionSuggestionLabel,
     directionLabel: bestNight?.directionSummaryLabel ?? "银河方向待确认",
     mainRiskLabel: blocker?.value ?? "主要风险待复核",
     mainRiskDetail: blocker?.detail ?? "仍需在出行前复核天气、月光、光污染和现场安全。",
+    secondaryRiskLabel: `${lightPollution.available ? lightPollution.targetDirectionLightPollutionLabel : lightPollution.compactLabel} / ${terrainHorizon.statusLabelZh}`,
     confidenceLabel: confidence,
     oneSentenceAdvice,
     lightPollutionLabel: lightPollution.available

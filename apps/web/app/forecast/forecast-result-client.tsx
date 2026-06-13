@@ -3923,7 +3923,7 @@ function AstroTopContext({
 }) {
   const decision = viewModel.decisionSummary;
   const metricItems = viewModel.actionSummary.filter((item) =>
-    ["worth", "light-pollution", "main-blocker", "backup"].includes(item.key),
+    ["best-window", "light-pollution", "main-blocker", "backup", "arrival"].includes(item.key),
   );
 
   return (
@@ -3932,9 +3932,9 @@ function AstroTopContext({
       data-astro-section="AstroDecisionFirstDashboard"
       data-astro-decision-first="true"
     >
-      <div className="grid gap-4 min-[1080px]:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)] min-[1080px]:items-stretch">
+      <div className="grid gap-4 min-[1080px]:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] min-[1080px]:items-stretch">
         <Card
-          className="AstroDecisionHero grid min-h-[360px] content-between gap-5 p-5 shadow-sm"
+          className="AstroDecisionHero grid min-h-[320px] content-between gap-4 p-5 shadow-sm"
           data-astro-decision-hero="true"
         >
           <div className="grid gap-4">
@@ -3967,19 +3967,21 @@ function AstroTopContext({
             </p>
 
             <dl
-              className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr))]"
+              className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,165px),1fr))]"
               data-astro-decision-first-metrics="true"
             >
+              <AstroDecisionFact label="是否值得去" value={decision.recommendationLabel} />
               <AstroDecisionFact label="最佳观测夜" value={decision.bestNightLabel} />
               <AstroDecisionFact label="最佳拍摄窗口" value={decision.bestWindowLabel} />
-              <AstroDecisionFact label="建议出发 / 到达" value={decision.arrivalLabel} />
-              <AstroDecisionFact label="银河核心方向" value={decision.directionLabel} />
+              <AstroDecisionFact label="备选窗口 / 目标" value={decision.backupLabel} />
+              <AstroDecisionFact label="主要阻碍" value={decision.mainRiskLabel} />
+              <AstroDecisionFact label="行动建议" value={decision.actionSuggestionLabel} />
             </dl>
 
             <div className="grid gap-2 min-[720px]:grid-cols-3">
               <AstroDecisionChip
-                label="主要风险"
-                value={decision.mainRiskLabel}
+                label="次要风险"
+                value={decision.secondaryRiskLabel}
                 tone={
                   viewModel.actionSummary.find((item) => item.key === "main-blocker")?.tone ??
                   "muted"
@@ -4030,12 +4032,10 @@ function AstroTopContext({
 
         <div className="grid gap-3">
           <AstroTopSupportCard
-            label="当前结论"
-            value={decision.mainRiskLabel}
-            detail={decision.mainRiskDetail}
-            tone={
-              viewModel.actionSummary.find((item) => item.key === "main-blocker")?.tone ?? "muted"
-            }
+            label="下一步"
+            value={decision.actionSuggestionLabel}
+            detail={decision.oneSentenceAdvice}
+            tone={decision.recommendationTone}
           />
           <AstroLightPollutionDecisionCard lightPollution={viewModel.lightPollution} />
           <AstroTerrainHorizonDecisionCard terrain={viewModel.terrainHorizon} />
@@ -4133,9 +4133,16 @@ function AstroNightOpportunitySection({
         </div>
         <Badge variant="muted">{forecastHorizonLabels[horizon]}</Badge>
       </div>
-      <div className="grid gap-3 min-[980px]:grid-cols-2">
-        {nights.map((night) => (
-          <AstroNightCard key={night.nightKey} night={night} />
+      <div
+        className="grid gap-3 min-[980px]:grid-cols-2"
+        data-astro-night-grid-odd={nights.length % 2 === 1 ? "true" : "false"}
+      >
+        {nights.map((night, index) => (
+          <AstroNightCard
+            key={night.nightKey}
+            night={night}
+            isLastOdd={nights.length % 2 === 1 && index === nights.length - 1}
+          />
         ))}
       </div>
     </section>
@@ -4144,14 +4151,25 @@ function AstroNightOpportunitySection({
 
 function AstroNightCard({
   night,
+  isLastOdd = false,
 }: {
   readonly night: AstroForecastViewModel["nightlyCards"][number];
+  readonly isLastOdd?: boolean;
 }) {
+  const compactReason = compactAstroNightReason(night);
+  const windowLabel = night.milkyWay.bestStartAt
+    ? night.bestShootingWindowLabel
+    : "暂无推荐银河窗口";
+
   return (
     <article
-      className="AstroNightCard grid gap-3 rounded-lg border border-border bg-card p-4 shadow-sm"
+      className={cn(
+        "AstroNightCard grid gap-3 rounded-lg border border-border bg-card p-4 shadow-sm",
+        isLastOdd && "min-[980px]:col-span-2",
+      )}
       data-astro-night-card="true"
       data-astro-day-decision-card="true"
+      data-astro-night-card-span={isLastOdd ? "full" : "single"}
       data-astro-night-key={night.nightKey}
       data-astro-night-coverage={night.horizonCoverageState}
     >
@@ -4170,53 +4188,56 @@ function AstroNightCard({
         </div>
       </div>
 
-      <div className="grid gap-2 min-[520px]:grid-cols-3">
+      <div className="grid gap-2 rounded-lg border border-border bg-secondary px-3 py-3 min-[640px]:grid-cols-[minmax(0,1fr)_auto] min-[640px]:items-center">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold leading-4 text-muted-foreground">最佳窗口</p>
+          <p className="mt-1 break-words text-sm font-bold leading-5 text-card-foreground">
+            {windowLabel}
+          </p>
+        </div>
+        <Badge variant={night.milkyWay.bestStartAt ? "default" : "muted"}>
+          {night.horizonCoverageLabel}
+        </Badge>
+      </div>
+
+      <div className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,118px),1fr))]">
         <MetricPill label="星空概率" value={night.starPhotographyProbabilityDisplay} />
         <MetricPill label="银河概率" value={night.milkyWayPhotographyProbabilityDisplay} />
         <MetricPill label="观星指数" value={night.starPhotographyIndexDisplay} />
+        <MetricPill label="月光" value={night.moon.moonlightInterferenceLevel} />
+        <MetricPill label="天气阻碍" value={compactAstroText(night.cloudWeatherBlockerLabel, 18)} />
       </div>
 
-      <div className="grid gap-2 min-[520px]:grid-cols-2">
-        <AstroMiniFact
-          label="最佳窗口"
-          value={night.bestShootingWindowLabel}
-          detail={night.horizonCoverageLabel}
-        />
+      <div className="grid gap-2 min-[700px]:grid-cols-3" data-astro-night-reason-grid="true">
         <AstroMiniFact
           label="月光影响"
           value={night.moonImpactSummaryLabel}
-          detail={`窗口重叠：${night.moon.overlapDisplay}`}
-        />
-        <AstroMiniFact
-          label="天气阻碍"
-          value={night.cloudWeatherBlockerLabel}
-          detail={`${night.weather.lowCloudRisk} · ${night.weather.precipitationRisk}`}
-        />
-        <AstroMiniFact
-          label="银河方向"
-          value={night.directionSummaryLabel}
-          detail={night.milkyWay.geometricWindowLabel}
+          detail={`重叠 ${night.moon.overlapDisplay}`}
         />
         <AstroMiniFact
           label="银河方向光害"
-          value={night.lightPollutionSummaryLabel}
-          detail={night.lightPollution.finalPhotographyImplicationZh}
+          value={
+            night.lightPollution.available
+              ? night.lightPollution.targetDirectionLightPollutionLabel
+              : night.lightPollution.compactLabel
+          }
+          detail={compactAstroText(night.lightPollution.finalPhotographyImplicationZh, 42)}
         />
         <AstroMiniFact
           label="地形遮挡"
           value={night.terrainSummaryLabel}
-          detail={night.terrainHorizon.recommendationZh}
-        />
-        <AstroMiniFact
-          label="行动"
-          value={night.recommendationLabel}
-          detail={night.actionNote}
-          className="min-[520px]:col-span-2"
-          dataTestId="astro-night-action-note"
+          detail={compactAstroText(night.terrainHorizon.recommendationZh, 42)}
         />
       </div>
 
-      <p className="text-sm leading-6 text-muted-foreground">{night.conciseReason}</p>
+      <p className="text-sm font-semibold leading-6 text-card-foreground">{compactReason}</p>
+      <p
+        className="rounded-md border border-border bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground"
+        data-testid="astro-night-action-note"
+      >
+        <span className="font-semibold text-card-foreground">行动：</span>
+        {night.actionNote}
+      </p>
       {night.unavailableReason ? (
         <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
           {night.unavailableReason}
@@ -4224,6 +4245,30 @@ function AstroNightCard({
       ) : null}
     </article>
   );
+}
+
+function compactAstroNightReason(night: AstroForecastViewModel["nightlyCards"][number]): string {
+  if (night.unavailableReason) {
+    return night.unavailableReason;
+  }
+  if (!night.milkyWay.bestStartAt && night.recommendationLevel === "not_recommended") {
+    return `${compactAstroText(night.cloudWeatherBlockerLabel, 28)}，暂无推荐银河窗口。`;
+  }
+  return compactAstroText(night.conciseReason, 52);
+}
+
+function compactAstroText(value: string, maxLength: number): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  const firstSentence = normalized.split(/[。；;！？]/)[0];
+  if (firstSentence && firstSentence.length <= maxLength) {
+    return `${firstSentence}。`;
+  }
+
+  return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`;
 }
 
 function AstroMiniFact({
@@ -4241,7 +4286,7 @@ function AstroMiniFact({
 }) {
   return (
     <div
-      className={cn(className, "rounded-md border border-border bg-muted px-3 py-2")}
+      className={cn(className, "min-w-0 rounded-md border border-border bg-muted/60 px-3 py-2")}
       data-testid={dataTestId}
     >
       <p className="text-[11px] leading-4 text-muted-foreground">{label}</p>
@@ -4265,17 +4310,28 @@ function AstroWhyJudgmentSection({
       <div>
         <h2 className="text-lg font-bold text-card-foreground">为什么这样判断</h2>
       </div>
-      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr))]">
-        {factors.map((factor) => (
+      <div
+        className="grid gap-3 min-[720px]:grid-cols-2 min-[1180px]:grid-cols-4"
+        data-astro-why-grid-odd={factors.length % 2 === 1 ? "true" : "false"}
+      >
+        {factors.map((factor, index) => (
           <article
             key={factor.key}
-            className="rounded-lg border border-border bg-card p-3 shadow-sm"
+            className={cn(
+              "grid min-h-[116px] content-start rounded-lg border border-border bg-card p-3 shadow-sm",
+              factors.length % 2 === 1 && index === factors.length - 1 && "min-[720px]:col-span-2",
+            )}
+            data-astro-why-factor-span={
+              factors.length % 2 === 1 && index === factors.length - 1 ? "wide" : "single"
+            }
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-semibold text-card-foreground">{factor.label}</h3>
               <Badge variant={badgeVariantForTone(factor.tone)}>{factor.status}</Badge>
             </div>
-            <p className="mt-2 text-xs leading-5 text-muted-foreground">{factor.detail}</p>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
+              {compactAstroText(factor.detail, 78)}
+            </p>
           </article>
         ))}
       </div>
@@ -4349,6 +4405,25 @@ function AstroProfessionalDataSection({
           {expanded ? "收起专业数据" : "展开专业数据"}
         </Button>
       </div>
+
+      <dl
+        className="mt-4 grid gap-2 text-sm [grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr))]"
+        data-astro-professional-collapsed-summary="true"
+        data-testid="astro-professional-collapsed-summary"
+      >
+        <AstroInlineDefinition
+          label="里面包含"
+          value="WA/VIIRS 光污染、DEM 地平线、天文窗口、月相、逐小时天气"
+        />
+        <AstroInlineDefinition
+          label="数据状态"
+          value={`${dataReadinessBadgeLabel(result)}；置信度 ${viewModel.decisionSummary.confidenceLabel}`}
+        />
+        <AstroInlineDefinition
+          label="覆盖范围"
+          value={`${viewModel.professionalHourlyData.rows.length} 小时；${viewModel.professionalDataGroups.length} 组证据`}
+        />
+      </dl>
 
       {expanded ? (
         <div className="mt-4 grid gap-4" data-astro-professional-data-body="true">
@@ -8742,6 +8817,7 @@ export function AiExplanationPanel({
         visibleContent.sections.length > 0),
   );
   const hasCompletedExplanation = Boolean(visibleExplanation) && !retryable && status !== "loading";
+  const shouldRenderEmptyState = !visibleExplanation && status !== "loading" && !errorMessage;
   const helperText =
     status === "loading"
       ? "DeepSeek V4 Pro 解读可能需要约 1-2 分钟，当前确定性判断结果仍可正常参考。"
@@ -8784,6 +8860,31 @@ export function AiExplanationPanel({
         <p className="mt-3 rounded-lg border border-warning/70 bg-muted px-3 py-2 text-sm leading-6 text-card-foreground">
           {errorMessage}
         </p>
+      ) : null}
+
+      {shouldRenderEmptyState ? (
+        <div
+          className="mt-3 grid gap-3 rounded-lg border border-border bg-muted px-3 py-3"
+          data-ai-interpretation-empty-state="compact"
+        >
+          <p className="text-sm font-semibold leading-6 text-card-foreground">
+            AI 解读是可选项，点击后会基于当前确定性结果生成摄影建议。
+          </p>
+          <dl className="grid gap-2 text-xs leading-5 text-muted-foreground min-[720px]:grid-cols-3">
+            <div>
+              <dt className="font-semibold text-card-foreground">来源</dt>
+              <dd>当前评分、窗口、风险和专业摘要</dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-card-foreground">不会改变</dt>
+              <dd>不重新计算天气、天文或评分</dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-card-foreground">输出</dt>
+              <dd>简短结论、主要风险和行动建议</dd>
+            </div>
+          </dl>
+        </div>
       ) : null}
 
       {visibleExplanation ? (

@@ -8327,6 +8327,12 @@ describe("forecast result target-aware view model", () => {
       );
       expect(viewModel.professionalHourlyData.rows).toHaveLength(hours);
       expect(countOccurrences(html, 'data-astro-night-card="true"')).toBe(expectedNightCount);
+      expect(html).toContain(
+        `data-astro-night-grid-odd="${expectedNightCount % 2 === 1 ? "true" : "false"}"`,
+      );
+      expect(countOccurrences(html, 'data-astro-night-card-span="full"')).toBe(
+        expectedNightCount % 2 === 1 ? 1 : 0,
+      );
       expect(countOccurrences(html, 'data-astro-professional-data-toggle="true"')).toBe(1);
       expect(countOccurrences(html, 'data-professional-hourly-row="')).toBe(0);
     },
@@ -8368,6 +8374,7 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("为什么这样判断");
       expect(html).toContain("专业数据");
       expect(html).toContain("展开专业数据");
+      expect(html).toContain('data-astro-professional-collapsed-summary="true"');
       expect(html).toContain("AstroResultPage");
       expect(html).toContain("AstroResultLayout");
       expect(html).toContain('data-astro-section="AstroNightOpportunitySection"');
@@ -8376,6 +8383,7 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain('data-astro-professional-data-expanded="false"');
       expect(html).toContain('data-astro-section="AstroAiInterpretation"');
       expect(html).toContain('data-ai-interpretation-target="astro"');
+      expect(html).toContain('data-ai-interpretation-empty-state="compact"');
       expect(html).toContain("生成智能解读");
       expect(countOccurrences(html, 'data-astro-night-card="true"')).toBe(
         viewModel.nightlyCards.length,
@@ -8401,9 +8409,12 @@ describe("forecast result target-aware view model", () => {
       expect(html).not.toContain("AstroDailyTrend");
       expect(html).not.toContain("AstroWindowSection");
       expect(html).not.toContain("AstroMoonPhaseSection");
+      expect(html).not.toContain("当前位置");
+      expect(html).not.toContain('data-forecast-result-header="true"');
       expect(html).not.toContain("<aside");
       expect(html).not.toContain("SideRail");
       expect(html).not.toContain("min-[1024px]:col-span-4");
+      expect(html).not.toMatch(/latitude|longitude|经度|纬度/);
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
@@ -8442,18 +8453,22 @@ describe("forecast result target-aware view model", () => {
     });
     expect(decisionSection).toContain("最佳观测夜");
     expect(decisionSection).toContain("最佳拍摄窗口");
-    expect(decisionSection).toContain("建议出发 / 到达");
-    expect(decisionSection).toContain("银河核心方向");
-    expect(decisionSection).toContain("主要风险");
+    expect(decisionSection).toContain("备选窗口 / 目标");
+    expect(decisionSection).toContain("行动建议");
+    expect(decisionSection).toContain("主要阻碍");
+    expect(decisionSection).toContain("次要风险");
     expect(decisionSection).toContain("置信度");
     expect(countOccurrences(nightlySection, 'data-astro-day-decision-card="true"')).toBe(
       viewModel.nightlyCards.length,
     );
+    expect(nightlySection).toContain('data-astro-night-reason-grid="true"');
     expect(nightlySection).toContain("最佳窗口");
     expect(nightlySection).toContain("月光影响");
     expect(nightlySection).toContain("天气阻碍");
     expect(nightlySection).toContain("银河方向光害");
-    expect(nightlySection).toContain('data-testid="astro-night-action-note"');
+    expect(countOccurrences(nightlySection, 'data-testid="astro-night-action-note"')).toBe(
+      viewModel.nightlyCards.length,
+    );
     expect(viewModel.professionalDataGroups.map((group) => group.key)).toEqual([
       "public-summary",
       "light-pollution-evidence",
@@ -8466,7 +8481,10 @@ describe("forecast result target-aware view model", () => {
       developerDiagnostics: true,
     });
     expect(html).toContain('data-astro-professional-data-expanded="false"');
+    expect(html).toContain('data-testid="astro-professional-collapsed-summary"');
+    expect(html).toContain("WA/VIIRS 光污染、DEM 地平线、天文窗口、月相、逐小时天气");
     expect(html).not.toContain('data-astro-professional-data-body="true"');
+    expect(html).toContain('data-ai-interpretation-empty-state="compact"');
   });
 
   it("renders dedicated astro cloud, moon, dew, and blocked Milky Way states", () => {
