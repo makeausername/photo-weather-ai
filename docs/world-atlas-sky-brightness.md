@@ -1,0 +1,57 @@
+# World Atlas Sky Brightness Raster V1
+
+This feature adds an optional local sky-brightness raster layer for Milky Way decisions. It is designed for World Atlas style modeled sky brightness or any operator-provided equivalent raster, but the runtime never downloads data and never calls a third-party sky-brightness API.
+
+## Operator Contract
+
+- Put licensed source GeoTIFF/COG files under `deploy/sky-brightness/incoming/`.
+- Activate data only through `bash scripts/import-sky-brightness-raster.sh`.
+- Inspect the active dataset with `bash scripts/check-sky-brightness-raster.sh`.
+- Production Compose mounts `./deploy/sky-brightness:/app/data/sky-brightness`.
+- The active files are `current/sky-brightness.cog.tif`, `current/metadata.json`, and `current/checksum.sha256`.
+- Generated rasters, metadata, checksums, and backups are ignored by Git.
+
+Example:
+
+```bash
+bash scripts/import-sky-brightness-raster.sh incoming/<file-or-directory> -- \
+  --value-type sqm \
+  --dataset-name "World Atlas modeled sky brightness" \
+  --dataset-year 2015 \
+  --dataset-version v1
+```
+
+Supported `--value-type` values are `sqm`, `artificial_brightness_mcd_m2`, `ratio_to_natural`, `radiance`, `bortle_class`, and `unknown`.
+
+## Runtime Behavior
+
+Astro-service exposes `POST /sky-brightness/query` and also includes `skyBrightness` inside `/astro/calculate`. Missing files, missing metadata, unreadable rasters, out-of-bounds coordinates, nodata samples, and unsupported value types are non-fatal. They reduce confidence and keep deterministic astronomy/weather output available.
+
+Health fields include dataset existence, metadata availability, dataset name/year/version, value type, checksum prefix, health status, and load error. Public UI must not expose provider names or raw operator details outside professional diagnostics.
+
+## Conversion Rules
+
+- `sqm`: treated as a modeled raster-derived sky brightness value only when it is physically plausible.
+- `artificial_brightness_mcd_m2`: converted with a natural-sky luminance baseline and widened Bortle uncertainty.
+- `ratio_to_natural`: converted with a natural-sky baseline and widened Bortle uncertainty.
+- `bortle_class`: used as a broad modeled class range, without deriving SQM.
+- `radiance` and `unknown`: kept as raw diagnostics only; no SQM or Bortle range is fabricated.
+
+Modeled SQM is never presented as measured SQM. Bortle ranges are estimates, not official Bortle observations and not national-standard classifications.
+
+## WA Plus VIIRS Fusion
+
+When a defensible sky-brightness Bortle range exists, it becomes the primary public baseline. The existing VIIRS night-light layer remains useful as current light-source evidence:
+
+- local radiance and halo can widen or lift an over-dark modeled baseline;
+- strong VIIRS conflict prevents narrow dark claims;
+- missing WA/model data falls back to the existing conservative VIIRS public display;
+- raw VIIRS and raw WA/model fields stay in diagnostics.
+
+No location names, coordinate allowlists, scenic-spot categories, or city/rural/mountain hardcoding are used.
+
+## QA Boundary
+
+Tianwentong screenshots and other third-party references are benchmark QA artifacts only. Reports may label them as `competitorBenchmark`, `thirdPartyReference`, and `notGroundTruth`, but they do not create production thresholds, place mappings, coordinate rules, or category overrides.
+
+The product advantage should come from combining modeled sky brightness, current light-source evidence, weather, Moon, astronomical Milky Way windows, DEM/horizon obstruction, and concrete action advice. It must not claim a more precise single-point SQM, official dark-sky grade, or national-standard level.

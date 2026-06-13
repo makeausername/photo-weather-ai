@@ -38,13 +38,14 @@ Mismatch files include range non-overlaps, distance greater than one class, satu
 The audit keeps four concepts separate:
 
 - Raster measurement: EOG VIIRS satellite night-light values and derived local/halo risk fields.
+- Modeled sky-brightness baseline: optional WA/model raster output, including raw value type, modeled SQM only when defensible, broad estimated Bortle range, dataset year/version, checksum, and conversion notes.
 - Current deterministic estimate: the existing production Bortle estimator result.
-- Third-party reference range: user-supplied Tianwentong screenshot values.
+- Third-party reference range: user-supplied Tianwentong screenshot values or similar competitor references.
 - Candidate offline simulation: deterministic audit-only threshold experiments.
 
-Tianwentong screenshot values are third-party model references. They are not SQM field measurements and should not be described as physical ground truth.
+Tianwentong screenshot values are third-party model references. They are labeled `competitorBenchmark`, `thirdPartyReference`, and `notGroundTruth`. They are not SQM field measurements and should not be described as physical ground truth.
 
-Each point records local radiance, surrounding halo radiance, local/halo ratios, ambient risk index and level, raster confidence, dataset year/version, range distance, overlap, bias direction, saturation flags, zero/near-zero local radiance, and ratio-threshold diagnostics.
+Each point records local radiance, surrounding halo radiance, local/halo ratios, ambient risk index and level, raster confidence, dataset year/version, optional WA/model sky-brightness diagnostics, range distance, overlap, bias direction, saturation flags, zero/near-zero local radiance, and ratio-threshold diagnostics.
 
 ## Candidate Analysis
 

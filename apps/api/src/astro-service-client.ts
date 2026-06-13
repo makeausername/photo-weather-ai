@@ -9,6 +9,7 @@ import type {
   LightPollutionInfo,
   MoonAltitudeSample,
   MoonImpactLevel,
+  SkyBrightnessInfo,
   TerrainHorizonDirectionSample,
 } from "@photo-weather/shared";
 import { glowSolarAltitudeGeometryConfig } from "@photo-weather/shared";
@@ -242,6 +243,96 @@ const lightPollutionResponseSchema = z.object({
   lightPollutionNoteZh: z.string().min(1),
 });
 
+const skyBrightnessValueTypeSchema = z.enum([
+  "sqm",
+  "artificial_brightness_mcd_m2",
+  "ratio_to_natural",
+  "radiance",
+  "bortle_class",
+  "unknown",
+]);
+
+const skyBrightnessHealthStatusSchema = z.enum([
+  "available",
+  "missing",
+  "metadata_missing",
+  "unreadable",
+  "unsupported_value_type",
+  "insufficient_data",
+]);
+
+const skyBrightnessEstimatedBortleRangeSchema = z.object({
+  available: z.boolean(),
+  minClass: z.number().int().min(1).max(9).nullable().optional(),
+  maxClass: z.number().int().min(1).max(9).nullable().optional(),
+  rangeLabelZh: z.string().min(1),
+  confidence: z.enum(["low", "medium", "high"]),
+  basisZh: z.string().min(1),
+  methodVersion: z.literal("wa-modeled-sqm-v1"),
+  unavailableReason: z.string().nullable().optional(),
+});
+
+const chinaDarkSkyReferenceSchema = z.object({
+  available: z.boolean(),
+  labelZh: z.string().nullable().optional(),
+  noteZh: z.string().min(1),
+  modelDerived: z.boolean(),
+  measured: z.boolean(),
+  official: z.boolean(),
+});
+
+const skyBrightnessDiagnosticsSchema = z.object({
+  healthStatus: skyBrightnessHealthStatusSchema,
+  rasterPath: z.string().nullable().optional(),
+  metadataPath: z.string().nullable().optional(),
+  metadataExists: z.boolean(),
+  datasetExists: z.boolean(),
+  loadError: z.string().nullable().optional(),
+  bounds: z
+    .object({
+      west: z.number().finite(),
+      south: z.number().finite(),
+      east: z.number().finite(),
+      north: z.number().finite(),
+    })
+    .nullable()
+    .optional(),
+  resolution: z
+    .object({
+      xDegrees: z.number().finite(),
+      yDegrees: z.number().finite(),
+    })
+    .nullable()
+    .optional(),
+  sampleCount: z.number().int().nonnegative(),
+  validSampleCount: z.number().int().nonnegative(),
+  conversionNotes: z.array(z.string()),
+  uncertaintyNotes: z.array(z.string()),
+});
+
+const skyBrightnessResponseSchema = z.object({
+  available: z.boolean(),
+  dataAvailable: z.boolean(),
+  unavailableReason: z.string().nullable().optional(),
+  sourceName: z.string().nullable().optional(),
+  sourceType: z.string().nullable().optional(),
+  datasetName: z.string().nullable().optional(),
+  datasetYear: z.number().int().nullable().optional(),
+  datasetVersion: z.string().nullable().optional(),
+  checksumShort: z.string().nullable().optional(),
+  valueType: skyBrightnessValueTypeSchema,
+  rawValue: z.number().finite().nullable().optional(),
+  valueUnit: z.string().nullable().optional(),
+  modeledSqm: z.number().finite().nullable().optional(),
+  artificialBrightness: z.number().finite().nullable().optional(),
+  estimatedBortleRange: skyBrightnessEstimatedBortleRangeSchema.nullable().optional(),
+  chinaDarkSkyReference: chinaDarkSkyReferenceSchema.nullable().optional(),
+  confidence: z.enum(["low", "medium", "high"]),
+  diagnostics: skyBrightnessDiagnosticsSchema,
+  queryElapsedMs: z.number().finite().nonnegative().nullable().optional(),
+  cacheHit: z.boolean().optional(),
+});
+
 const terrainHorizonTargetSchema = z.enum([
   "milky_way",
   "sunrise",
@@ -368,6 +459,7 @@ const astroServiceResponseSchema = z.object({
       .optional(),
   }),
   lightPollution: lightPollutionResponseSchema.nullable().optional(),
+  skyBrightness: skyBrightnessResponseSchema.nullable().optional(),
 });
 
 const lightPollutionQueryResponseSchema = lightPollutionResponseSchema.extend({
@@ -379,6 +471,7 @@ export type AstroServiceCalculationResponse = z.infer<typeof astroServiceRespons
 export type AstroServiceLightPollutionQueryResponse = z.infer<
   typeof lightPollutionQueryResponseSchema
 >;
+export type AstroServiceSkyBrightnessQueryResponse = z.infer<typeof skyBrightnessResponseSchema>;
 export type AstroServiceTerrainDemProfileQueryResponse = z.infer<
   typeof terrainDemProfileResponseSchema
 >;
@@ -400,6 +493,12 @@ export type AstroServiceLightPollutionQueryInput = {
   readonly timezone?: string;
 };
 
+export type AstroServiceSkyBrightnessQueryInput = {
+  readonly latitudeWgs84: number;
+  readonly longitudeWgs84: number;
+  readonly timezone?: string;
+};
+
 export type AstroServiceTerrainDemProfileQueryInput = {
   readonly latitudeWgs84: number;
   readonly longitudeWgs84: number;
@@ -414,6 +513,9 @@ export type AstroServiceTerrainDemProfileQueryInput = {
 
 export type AstroServiceClientLike = {
   calculate(input: AstroServiceCalculateInput): Promise<AstroServiceCalculationResponse>;
+  querySkyBrightness?(
+    input: AstroServiceSkyBrightnessQueryInput,
+  ): Promise<AstroServiceSkyBrightnessQueryResponse>;
   queryTerrainDemProfile?(
     input: AstroServiceTerrainDemProfileQueryInput,
   ): Promise<AstroServiceTerrainDemProfileQueryResponse>;
@@ -425,6 +527,7 @@ export type ForecastAstroServiceData = {
   readonly astroCalculationBasis: AstroCalculationBasis;
   readonly astroDataSourceLabelZh: string;
   readonly lightPollution?: LightPollutionInfo;
+  readonly skyBrightness?: SkyBrightnessInfo;
 };
 
 export type AstroServiceClientOptions = {
@@ -821,6 +924,140 @@ export class AstroServiceClient implements AstroServiceClientLike {
     }
   }
 
+  async querySkyBrightness(
+    input: AstroServiceSkyBrightnessQueryInput,
+  ): Promise<AstroServiceSkyBrightnessQueryResponse> {
+    const requestUrl = `${this.baseUrl}/sky-brightness/query`;
+    const startedAt = Date.now();
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, this.timeoutMs);
+
+    try {
+      logInfo(
+        this.logger,
+        {
+          url: sanitizeAstroServiceUrlForLog(requestUrl),
+          timeoutMs: this.timeoutMs,
+          payload: summarizeSkyBrightnessQueryPayload(input),
+        },
+        `Calling astro-service sky-brightness endpoint: ${sanitizeAstroServiceUrlForLog(
+          requestUrl,
+        )}`,
+      );
+
+      const response = await this.fetchImpl(requestUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(input),
+        signal: controller.signal,
+      });
+      const elapsedMs = Date.now() - startedAt;
+      const responseText = await response.text();
+      const responseBodyExcerpt = safeResponseExcerpt(responseText);
+
+      if (!response.ok) {
+        throw new AstroServiceClientError("unavailable", astroServiceUnavailableMessage, {
+          url: sanitizeAstroServiceUrlForLog(requestUrl),
+          status: response.status,
+          elapsedMs,
+          timeoutMs: this.timeoutMs,
+          timedOut: false,
+          responseBodyExcerpt,
+          upstreamErrorName: "AstroServiceHttpError",
+          upstreamErrorMessage: `Astro service responded with HTTP ${response.status}`,
+        });
+      }
+
+      let responseJson: unknown;
+      try {
+        responseJson = responseText ? JSON.parse(responseText) : null;
+      } catch (parseError) {
+        const normalizedError = normalizeError(parseError);
+        throw new AstroServiceClientError(
+          "invalid_response",
+          astroServiceInvalidResponseMessage,
+          {
+            url: sanitizeAstroServiceUrlForLog(requestUrl),
+            status: response.status,
+            elapsedMs,
+            timeoutMs: this.timeoutMs,
+            timedOut: false,
+            responseBodyExcerpt,
+            parseErrorName: normalizedError.name,
+            parseErrorMessage: normalizedError.message,
+          },
+          parseError,
+        );
+      }
+
+      const parsed = skyBrightnessResponseSchema.safeParse(responseJson);
+      if (!parsed.success) {
+        throw new AstroServiceClientError(
+          "invalid_response",
+          astroServiceInvalidResponseMessage,
+          {
+            url: sanitizeAstroServiceUrlForLog(requestUrl),
+            status: response.status,
+            elapsedMs,
+            timeoutMs: this.timeoutMs,
+            timedOut: false,
+            responseBodyExcerpt,
+            upstreamErrorName: parsed.error.name,
+            upstreamErrorMessage: parsed.error.message,
+          },
+          parsed.error,
+        );
+      }
+
+      logInfo(
+        this.logger,
+        {
+          url: sanitizeAstroServiceUrlForLog(requestUrl),
+          status: response.status,
+          elapsedMs,
+          timeoutMs: this.timeoutMs,
+          timedOut: false,
+          dataAvailable: parsed.data.dataAvailable,
+          valueType: parsed.data.valueType,
+          confidence: parsed.data.confidence,
+          datasetYear: parsed.data.datasetYear,
+          datasetVersion: parsed.data.datasetVersion,
+        },
+        "Astro-service sky-brightness response parsed",
+      );
+
+      return parsed.data;
+    } catch (error) {
+      if (error instanceof AstroServiceClientError) {
+        throw error;
+      }
+      const normalizedError = normalizeError(error);
+      const elapsedMs = Date.now() - startedAt;
+      const requestTimedOut = timedOut || normalizedError.name === "AbortError";
+      throw new AstroServiceClientError(
+        requestTimedOut ? "timeout" : "unavailable",
+        requestTimedOut ? astroServiceTimeoutMessage : astroServiceUnavailableMessage,
+        {
+          url: sanitizeAstroServiceUrlForLog(requestUrl),
+          elapsedMs,
+          timeoutMs: this.timeoutMs,
+          timedOut: requestTimedOut,
+          upstreamErrorName: normalizedError.name,
+          upstreamErrorMessage: normalizedError.message,
+        },
+        error,
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   async queryTerrainDemProfile(
     input: AstroServiceTerrainDemProfileQueryInput,
   ): Promise<AstroServiceTerrainDemProfileQueryResponse> {
@@ -1186,8 +1423,9 @@ export function mapAstroServiceResponseToForecastData(
     },
     astroDataSourceLabelZh: "本地天文服务计算",
     lightPollution: response.lightPollution
-      ? mapLightPollutionResponse(response.lightPollution)
+      ? mapLightPollutionResponse(response.lightPollution, response.skyBrightness ?? undefined)
       : undefined,
+    skyBrightness: response.skyBrightness ?? undefined,
   };
 }
 
@@ -1231,6 +1469,7 @@ function mapRecommendedWindow(
 
 function mapLightPollutionResponse(
   lightPollution: z.infer<typeof lightPollutionResponseSchema>,
+  skyBrightness?: z.infer<typeof skyBrightnessResponseSchema>,
 ): LightPollutionInfo {
   const ambientRisk = lightPollution.ambientRiskIndex ?? 0;
   const starPenalty = lightPollution.available
@@ -1246,6 +1485,7 @@ function mapLightPollutionResponse(
 
   return {
     ...lightPollution,
+    skyBrightness: skyBrightness ?? null,
     starPenalty,
     milkyWayPenalty,
     scoringMode: "heuristic",
@@ -1481,6 +1721,16 @@ export type AstroServiceDebugStatus = {
   readonly lightPollutionDatasetVersion?: string;
   readonly lightPollutionChecksumShort?: string;
   readonly lightPollutionLoadError?: string;
+  readonly skyBrightnessAvailable?: boolean;
+  readonly skyBrightnessDatasetExists?: boolean;
+  readonly skyBrightnessMetadataAvailable?: boolean;
+  readonly skyBrightnessDatasetName?: string;
+  readonly skyBrightnessDatasetYear?: number;
+  readonly skyBrightnessDatasetVersion?: string;
+  readonly skyBrightnessValueType?: string;
+  readonly skyBrightnessChecksumShort?: string;
+  readonly skyBrightnessHealthStatus?: string;
+  readonly skyBrightnessLoadError?: string;
   readonly terrainDemAvailable?: boolean;
   readonly terrainDemDatasetExists?: boolean;
   readonly terrainDemMetadataAvailable?: boolean;
@@ -1541,6 +1791,16 @@ export async function checkAstroServiceHealth(options: {
     let lightPollutionDatasetVersion: string | undefined;
     let lightPollutionChecksumShort: string | undefined;
     let lightPollutionLoadError: string | undefined;
+    let skyBrightnessAvailable: boolean | undefined;
+    let skyBrightnessDatasetExists: boolean | undefined;
+    let skyBrightnessMetadataAvailable: boolean | undefined;
+    let skyBrightnessDatasetName: string | undefined;
+    let skyBrightnessDatasetYear: number | undefined;
+    let skyBrightnessDatasetVersion: string | undefined;
+    let skyBrightnessValueType: string | undefined;
+    let skyBrightnessChecksumShort: string | undefined;
+    let skyBrightnessHealthStatus: string | undefined;
+    let skyBrightnessLoadError: string | undefined;
     let terrainDemAvailable: boolean | undefined;
     let terrainDemDatasetExists: boolean | undefined;
     let terrainDemMetadataAvailable: boolean | undefined;
@@ -1562,6 +1822,16 @@ export async function checkAstroServiceHealth(options: {
         lightPollutionDatasetVersion?: unknown;
         lightPollutionChecksumShort?: unknown;
         lightPollutionLoadError?: unknown;
+        skyBrightnessAvailable?: unknown;
+        skyBrightnessDatasetExists?: unknown;
+        skyBrightnessMetadataAvailable?: unknown;
+        skyBrightnessDatasetName?: unknown;
+        skyBrightnessDatasetYear?: unknown;
+        skyBrightnessDatasetVersion?: unknown;
+        skyBrightnessValueType?: unknown;
+        skyBrightnessChecksumShort?: unknown;
+        skyBrightnessHealthStatus?: unknown;
+        skyBrightnessLoadError?: unknown;
         terrainDemAvailable?: unknown;
         terrainDemDatasetExists?: unknown;
         terrainDemMetadataAvailable?: unknown;
@@ -1601,6 +1871,36 @@ export async function checkAstroServiceHealth(options: {
       }
       if (typeof body.lightPollutionLoadError === "string") {
         lightPollutionLoadError = sanitizeLogText(body.lightPollutionLoadError);
+      }
+      if (typeof body.skyBrightnessAvailable === "boolean") {
+        skyBrightnessAvailable = body.skyBrightnessAvailable;
+      }
+      if (typeof body.skyBrightnessDatasetExists === "boolean") {
+        skyBrightnessDatasetExists = body.skyBrightnessDatasetExists;
+      }
+      if (typeof body.skyBrightnessMetadataAvailable === "boolean") {
+        skyBrightnessMetadataAvailable = body.skyBrightnessMetadataAvailable;
+      }
+      if (typeof body.skyBrightnessDatasetName === "string") {
+        skyBrightnessDatasetName = body.skyBrightnessDatasetName;
+      }
+      if (typeof body.skyBrightnessDatasetYear === "number") {
+        skyBrightnessDatasetYear = body.skyBrightnessDatasetYear;
+      }
+      if (typeof body.skyBrightnessDatasetVersion === "string") {
+        skyBrightnessDatasetVersion = body.skyBrightnessDatasetVersion;
+      }
+      if (typeof body.skyBrightnessValueType === "string") {
+        skyBrightnessValueType = body.skyBrightnessValueType;
+      }
+      if (typeof body.skyBrightnessChecksumShort === "string") {
+        skyBrightnessChecksumShort = body.skyBrightnessChecksumShort;
+      }
+      if (typeof body.skyBrightnessHealthStatus === "string") {
+        skyBrightnessHealthStatus = body.skyBrightnessHealthStatus;
+      }
+      if (typeof body.skyBrightnessLoadError === "string") {
+        skyBrightnessLoadError = sanitizeLogText(body.skyBrightnessLoadError);
       }
       if (typeof body.terrainDemAvailable === "boolean") {
         terrainDemAvailable = body.terrainDemAvailable;
@@ -1648,6 +1948,16 @@ export async function checkAstroServiceHealth(options: {
       lightPollutionDatasetVersion,
       lightPollutionChecksumShort,
       lightPollutionLoadError,
+      skyBrightnessAvailable,
+      skyBrightnessDatasetExists,
+      skyBrightnessMetadataAvailable,
+      skyBrightnessDatasetName,
+      skyBrightnessDatasetYear,
+      skyBrightnessDatasetVersion,
+      skyBrightnessValueType,
+      skyBrightnessChecksumShort,
+      skyBrightnessHealthStatus,
+      skyBrightnessLoadError,
       terrainDemAvailable,
       terrainDemDatasetExists,
       terrainDemMetadataAvailable,
@@ -1715,6 +2025,16 @@ function summarizeLightPollutionQueryPayload(
     longitudePresent: Number.isFinite(input.longitudeWgs84),
     observerElevationPresent: Number.isFinite(input.observerElevationMeters),
     targetAzimuthPresent: Number.isFinite(input.targetAzimuthDegrees),
+    timezone: input.timezone ?? "service-default",
+  };
+}
+
+function summarizeSkyBrightnessQueryPayload(
+  input: AstroServiceSkyBrightnessQueryInput,
+): Record<string, unknown> {
+  return {
+    latitudePresent: Number.isFinite(input.latitudeWgs84),
+    longitudePresent: Number.isFinite(input.longitudeWgs84),
     timezone: input.timezone ?? "service-default",
   };
 }

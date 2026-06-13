@@ -1769,6 +1769,82 @@ export type EstimatedBortleRange = {
   readonly unavailableReason?: string;
 };
 
+export type SkyBrightnessValueType =
+  | "sqm"
+  | "artificial_brightness_mcd_m2"
+  | "ratio_to_natural"
+  | "radiance"
+  | "bortle_class"
+  | "unknown";
+
+export type SkyBrightnessEstimatedBortleRange = {
+  readonly available: boolean;
+  readonly minClass?: number | null;
+  readonly maxClass?: number | null;
+  readonly rangeLabelZh: string;
+  readonly confidence: AstroConfidenceLevel;
+  readonly basisZh: string;
+  readonly methodVersion: "wa-modeled-sqm-v1";
+  readonly unavailableReason?: string | null;
+};
+
+export type ChinaDarkSkyReference = {
+  readonly available: boolean;
+  readonly labelZh?: string | null;
+  readonly noteZh: string;
+  readonly modelDerived: boolean;
+  readonly measured: boolean;
+  readonly official: boolean;
+};
+
+export type SkyBrightnessInfo = {
+  readonly available: boolean;
+  readonly dataAvailable: boolean;
+  readonly unavailableReason?: string | null;
+  readonly sourceName?: string | null;
+  readonly sourceType?: string | null;
+  readonly datasetName?: string | null;
+  readonly datasetYear?: number | null;
+  readonly datasetVersion?: string | null;
+  readonly checksumShort?: string | null;
+  readonly valueType: SkyBrightnessValueType;
+  readonly rawValue?: number | null;
+  readonly valueUnit?: string | null;
+  readonly modeledSqm?: number | null;
+  readonly artificialBrightness?: number | null;
+  readonly estimatedBortleRange?: SkyBrightnessEstimatedBortleRange | null;
+  readonly chinaDarkSkyReference?: ChinaDarkSkyReference | null;
+  readonly confidence: AstroConfidenceLevel;
+  readonly diagnostics?: {
+    readonly healthStatus:
+      | "available"
+      | "missing"
+      | "metadata_missing"
+      | "unreadable"
+      | "unsupported_value_type"
+      | "insufficient_data";
+    readonly rasterPath?: string | null;
+    readonly metadataPath?: string | null;
+    readonly metadataExists: boolean;
+    readonly datasetExists: boolean;
+    readonly loadError?: string | null;
+    readonly bounds?: {
+      readonly west: number;
+      readonly south: number;
+      readonly east: number;
+      readonly north: number;
+    } | null;
+    readonly resolution?: {
+      readonly xDegrees: number;
+      readonly yDegrees: number;
+    } | null;
+    readonly sampleCount: number;
+    readonly validSampleCount: number;
+    readonly conversionNotes: readonly string[];
+    readonly uncertaintyNotes: readonly string[];
+  } | null;
+};
+
 export type LightPollutionInfo = {
   readonly available: boolean;
   readonly dataAvailable: boolean;
@@ -1794,6 +1870,7 @@ export type LightPollutionInfo = {
   readonly validSampleCount: number;
   readonly calculationBasis?: LightPollutionCalculationBasis | null;
   readonly estimatedBortleRange?: EstimatedBortleRange;
+  readonly skyBrightness?: SkyBrightnessInfo | null;
   readonly lightPollutionNoteZh: string;
   readonly starPenalty: number;
   readonly milkyWayPenalty: number;

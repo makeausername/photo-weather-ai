@@ -3636,6 +3636,76 @@ function buildAstroLightPollutionProfessionalDataItems(
       value: publicEstimatedBortle.estimatedBortleDisclaimer,
       detail: "估算限制。",
     },
+    ...buildSkyBrightnessProfessionalDataItems(lightPollution, publicSkyDarkness),
+  ];
+}
+
+function buildSkyBrightnessProfessionalDataItems(
+  lightPollution: LightPollutionInfo,
+  publicSkyDarkness: PublicSkyDarknessDisplay,
+): readonly ForecastResultSectionItem[] {
+  const skyBrightness = lightPollution.skyBrightness;
+  if (!skyBrightness) {
+    return [
+      {
+        label: "WA/model baseline",
+        value: "unavailable",
+        detail: "No WA/model sky-brightness raster was returned; public range uses the national VIIRS fallback conservatively.",
+      },
+    ];
+  }
+
+  const notes = [
+    ...(skyBrightness.diagnostics?.conversionNotes ?? []),
+    ...(skyBrightness.diagnostics?.uncertaintyNotes ?? []),
+  ].join(" ");
+  return [
+    {
+      label: "WA/model baseline",
+      value: publicSkyDarkness.primaryBaseline,
+      detail:
+        publicSkyDarkness.primaryBaseline === "wa_model"
+          ? "WA/model sky brightness is the primary public dark-sky baseline; VIIRS refines local, halo, and directional risk."
+          : "WA/model sky brightness is unavailable or not convertible; public range uses the national VIIRS fallback conservatively.",
+    },
+    {
+      label: "WA/model raw value",
+      value: formatNullableNumberForView(skyBrightness.rawValue, skyBrightness.valueUnit ? ` ${skyBrightness.valueUnit}` : ""),
+      detail: `valueType=${skyBrightness.valueType}; dataset=${skyBrightness.datasetName ?? "n/a"}.`,
+    },
+    {
+      label: "WA/model raster-derived SQM",
+      value:
+        typeof skyBrightness.modeledSqm === "number"
+          ? `${skyBrightness.modeledSqm.toFixed(2)} mag/arcsec^2`
+          : "not derived",
+      detail: "Model-derived only, not measured SQM and not a field observation.",
+    },
+    {
+      label: "WA/model Bortle range",
+      value: skyBrightness.estimatedBortleRange?.rangeLabelZh ?? "not derived",
+      detail: skyBrightness.estimatedBortleRange?.basisZh ?? "Value type does not support a defensible Bortle conversion.",
+    },
+    {
+      label: "Fused public range",
+      value: publicSkyDarkness.rangeLabelZh,
+      detail: `raw VIIRS=${publicSkyDarkness.rawRangeLabelZh}; WA=${publicSkyDarkness.skyBrightnessEstimatedBortleLabel ?? "n/a"}; conflict=${formatBooleanForView(publicSkyDarkness.skyBrightnessConflictRisk)}.`,
+    },
+    {
+      label: "WA/model dataset",
+      value: [
+        skyBrightness.datasetYear ? `${skyBrightness.datasetYear}` : undefined,
+        skyBrightness.datasetVersion ?? undefined,
+      ]
+        .filter(Boolean)
+        .join(" / ") || "n/a",
+      detail: `checksum=${skyBrightness.checksumShort ?? "n/a"}; health=${skyBrightness.diagnostics?.healthStatus ?? "unknown"}.`,
+    },
+    {
+      label: "WA/model notes",
+      value: skyBrightness.confidence,
+      detail: notes || "No extra conversion notes.",
+    },
   ];
 }
 

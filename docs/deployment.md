@@ -194,6 +194,48 @@ The public result treats the raster as a satellite-night-light reference. The Mi
 
 Light pollution affects only star and Milky Way photography suitability and recommendation confidence. It does not change weather probability, cloud probability, precipitation probability, astronomical darkness, Moon calculation, or Milky Way geometry.
 
+## Local WA/Model Sky Brightness Data
+
+Sky-brightness data is optional for deployment. Production requests never download WA/model rasters at runtime and never call a real-time sky-brightness API. Use a legally obtained World Atlas style or equivalent modeled sky-brightness GeoTIFF and keep it on the server, outside Git:
+
+```text
+deploy/sky-brightness/incoming/
+deploy/sky-brightness/current/
+deploy/sky-brightness/backups/
+```
+
+Production Compose mounts this host directory into astro-service:
+
+```text
+./deploy/sky-brightness:/app/data/sky-brightness
+```
+
+The active dataset uses canonical files:
+
+```text
+current/sky-brightness.cog.tif
+current/metadata.json
+current/checksum.sha256
+```
+
+Import one file, multiple files, or a tile directory after placing the source under `deploy/sky-brightness/incoming/`:
+
+```bash
+bash scripts/import-sky-brightness-raster.sh incoming/<file-or-directory> -- --value-type sqm --dataset-year 2015 --dataset-version v1
+```
+
+Inspect the active dataset and astro-service health fields:
+
+```bash
+bash scripts/check-sky-brightness-raster.sh
+```
+
+The importer validates local GeoTIFF readability, CRS, dimensions, nodata, finite values, coordinate bounds, metadata, checksum, and value statistics. It writes a tiled/compressed COG, metadata, checksum, and backups; a failed import leaves the previous active dataset untouched. It never downloads data.
+
+Supported value types are `sqm`, `artificial_brightness_mcd_m2`, `ratio_to_natural`, `radiance`, `bortle_class`, and `unknown`. Only defensible value types derive a modeled SQM or estimated Bortle range. `radiance` and `unknown` remain raw diagnostics only.
+
+When available, WA/model sky brightness becomes the primary public dark-sky baseline. VIIRS remains current night-light evidence and can widen or lift the public range when local radiance, halo, or ambient-risk signals conflict with an over-dark modeled baseline. The public result must not claim measured SQM, official Bortle observations, national-standard levels, or official dark-sky certification. Raw modeled values, conversion notes, checksum, source year/version, and conflict diagnostics stay in the folded professional data section. Missing sky-brightness data is not scored as dark sky.
+
 ## National Sky Darkness Runtime Stats And QA
 
 National sky-darkness V1 uses the active local light-pollution raster to build nationwide distribution signals. Runtime stats and QA reports are operator artifacts and should stay outside Git under `deploy/calibration/runtime/`.
@@ -224,7 +266,7 @@ For local validation without astro-service queries:
 pnpm sky-darkness:benchmark -- --input deploy/calibration/bortle-reference.example.csv --dry-run --strict
 ```
 
-The benchmark report includes exact matches, overlap matches, adjacent matches, over-optimistic errors, over-conservative errors, mean and median class distance, mismatch details, model versions, and a final QA recommendation. It is explicitly audit-only: it does not create production thresholds, place lists, coordinate mappings, scenic-spot rules, category hacks, SQM values, national-standard levels, or Tianwentong-derived mappings. The 30 Tianwentong screenshots remain QA/regression evidence only.
+The benchmark report includes exact matches, overlap matches, adjacent matches, over-optimistic errors, over-conservative errors, mean and median class distance, mismatch details, model versions, WA/model sky-brightness diagnostics when available, and a final QA recommendation. It is explicitly audit-only: references are `competitorBenchmark`, `thirdPartyReference`, and `notGroundTruth`; they do not create production thresholds, place lists, coordinate mappings, scenic-spot rules, category hacks, SQM values, national-standard levels, or Tianwentong-derived mappings. The 30 Tianwentong screenshots remain QA/regression evidence only.
 
 ## Local Terrain DEM Data
 

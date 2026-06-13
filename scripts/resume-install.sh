@@ -208,6 +208,9 @@ ensure_light_pollution_directories() {
     "${PROJECT_ROOT}/deploy/light-pollution/incoming" \
     "${PROJECT_ROOT}/deploy/light-pollution/current" \
     "${PROJECT_ROOT}/deploy/light-pollution/backups" \
+    "${PROJECT_ROOT}/deploy/sky-brightness/incoming" \
+    "${PROJECT_ROOT}/deploy/sky-brightness/current" \
+    "${PROJECT_ROOT}/deploy/sky-brightness/backups" \
     "${PROJECT_ROOT}/deploy/terrain-dem/incoming" \
     "${PROJECT_ROOT}/deploy/terrain-dem/current" \
     "${PROJECT_ROOT}/deploy/terrain-dem/backups"
@@ -215,11 +218,16 @@ ensure_light_pollution_directories() {
     "${PROJECT_ROOT}/deploy/light-pollution/incoming" \
     "${PROJECT_ROOT}/deploy/light-pollution/current" \
     "${PROJECT_ROOT}/deploy/light-pollution/backups" \
+    "${PROJECT_ROOT}/deploy/sky-brightness" \
+    "${PROJECT_ROOT}/deploy/sky-brightness/incoming" \
+    "${PROJECT_ROOT}/deploy/sky-brightness/current" \
+    "${PROJECT_ROOT}/deploy/sky-brightness/backups" \
     "${PROJECT_ROOT}/deploy/terrain-dem" \
     "${PROJECT_ROOT}/deploy/terrain-dem/incoming" \
     "${PROJECT_ROOT}/deploy/terrain-dem/current" \
     "${PROJECT_ROOT}/deploy/terrain-dem/backups" 2>/dev/null || true
   echo "Light-pollution raster storage is ready at deploy/light-pollution; existing data are preserved."
+  echo "Sky-brightness raster storage is ready at deploy/sky-brightness; existing data are preserved."
   echo "Terrain DEM raster storage is ready at deploy/terrain-dem; existing data are preserved."
 }
 

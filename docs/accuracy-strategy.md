@@ -150,6 +150,15 @@ Milky Way light-pollution scoring and display:
 - 热门机位可预取和缓存，长尾地点按需查询。
 - API 成本、缓存命中率和用户价值必须进入后台运营监控。
 
+## World Atlas / modeled sky brightness V1
+
+- WA/model sky brightness is an optional local raster layer under `deploy/sky-brightness/current/`; runtime requests never download raster data.
+- The public dark-sky baseline prefers defensible WA/model estimated Bortle ranges when available. VIIRS remains current night-light evidence and can widen/lift the public range when local radiance, halo, or ambient risk conflicts with the model.
+- `sqm`, `artificial_brightness_mcd_m2`, `ratio_to_natural`, and `bortle_class` have explicit conservative conversion rules. `radiance` and `unknown` stay raw-only diagnostics and must not fabricate SQM/Bortle output.
+- Public UI must not display measured SQM, official Bortle observations, national-standard levels, official dark-sky certification, or single-point precision claims from modeled raster data.
+- Benchmark screenshots and third-party ranges are audit-only references: `competitorBenchmark`, `thirdPartyReference`, `notGroundTruth`. They must not create location, coordinate, scenic-spot, or category-specific production rules.
+- The competitive product claim should be the combined decision system: modeled dark-sky baseline + current light-source evidence + weather + Moon + Milky Way geometry + DEM/horizon + action advice.
+
 ## Historical Calibration V1
 
 历史校准把预测结果、历史天气和真实观测标签连起来，用同一套 deterministic scoring rules 做历史回放，再统计命中率、误报率和漏报率。普通结果页只在样本量足够时显示保守提示，不展示 provider/debug 细节，也不让 AI 参与天气或评分计算。详细流程见 `docs/historical-calibration-v1.md`。

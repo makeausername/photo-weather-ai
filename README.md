@@ -5,6 +5,7 @@
 - [Product Scope](docs/product-scope.md)
 - [Data Source Blueprint](docs/data-source-blueprint.md)
 - [Accuracy Strategy](docs/accuracy-strategy.md)
+- [World Atlas Sky Brightness Raster V1](docs/world-atlas-sky-brightness.md)
 - [Development Roadmap](docs/development-roadmap.md)
 - [Cost Control](docs/provider-cost-control.md)
 - [Admin Provider Configuration](docs/admin-providers.md)
@@ -28,7 +29,7 @@ bash scripts/install-cn.sh
 
 The China wrapper defaults to Ubuntu/Debian Docker packages, Docker registry mirrors, an APT mirror, and a pip index mirror, so a fresh server does not need manual Docker installation first.
 
-The installer creates `.env.production`, renders the Caddy config, installs Docker if needed, creates optional local light-pollution and terrain DEM raster directories, starts PostgreSQL/Redis/astro-service, downloads and verifies `/app/data/de421.bsp`, runs migrations and seed data, creates the first admin account, starts web/API/worker/Caddy, and enables automatic HTTPS through Caddy. See [docs/deployment.md](docs/deployment.md) for update, backup, status, local raster import, uninstall, and troubleshooting commands.
+The installer creates `.env.production`, renders the Caddy config, installs Docker if needed, creates optional local light-pollution, sky-brightness, and terrain DEM raster directories, starts PostgreSQL/Redis/astro-service, downloads and verifies `/app/data/de421.bsp`, runs migrations and seed data, creates the first admin account, starts web/API/worker/Caddy, and enables automatic HTTPS through Caddy. See [docs/deployment.md](docs/deployment.md) for update, backup, status, local raster import, uninstall, and troubleshooting commands.
 
 Optional light-pollution data uses a local VIIRS-compatible nighttime-light GeoTIFF under `deploy/light-pollution/`; real raster files are ignored by Git. Import with:
 
@@ -37,6 +38,14 @@ bash scripts/import-light-pollution.sh incoming/<file-or-directory> -- --dataset
 ```
 
 The result is a satellite-night-light reference for astro suitability only. The public Milky Way page shows light-pollution risk, target-direction risk, and an estimated Bortle range; it is not a measured SQM value, not a national-standard level, and not an official Bortle observation. Raw radiance and sampling diagnostics stay in the collapsed professional data section. Missing data is not treated as low pollution.
+
+Optional WA/model sky-brightness data uses a local modeled sky-brightness GeoTIFF under `deploy/sky-brightness/`; real raster files are ignored by Git. Import with:
+
+```bash
+bash scripts/import-sky-brightness-raster.sh incoming/<file-or-directory> -- --value-type sqm --dataset-year 2015 --dataset-version v1
+```
+
+When available, this modeled sky-brightness raster becomes the primary public dark-sky baseline, while the VIIRS night-light raster remains current light-source evidence that can widen or lift over-dark results. Public UI still shows conservative estimated Bortle ranges only; modeled SQM, raw values, checksum, and conversion notes stay in professional diagnostics. Missing WA/model data is not treated as dark sky. See [World Atlas Sky Brightness Raster V1](docs/world-atlas-sky-brightness.md).
 
 Optional terrain DEM data uses local GeoTIFF/COG elevation rasters under `deploy/terrain-dem/`; real DEM files and generated metadata are ignored by Git. Import with:
 

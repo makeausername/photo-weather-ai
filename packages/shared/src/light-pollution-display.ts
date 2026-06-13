@@ -42,6 +42,14 @@ export type PublicSkyDarknessDisplay = {
   readonly urbanSkyglowSpilloverRisk: boolean;
   readonly darkZoneSaturationRisk: boolean;
   readonly nationalRiskIndex: number | null;
+  readonly primaryBaseline: "wa_model" | "viirs_national_fallback";
+  readonly skyBrightnessAvailable: boolean;
+  readonly skyBrightnessEstimatedBortleMin: number | null;
+  readonly skyBrightnessEstimatedBortleMax: number | null;
+  readonly skyBrightnessEstimatedBortleLabel: string | null;
+  readonly skyBrightnessDatasetYear: number | null;
+  readonly skyBrightnessDatasetVersion: string | null;
+  readonly skyBrightnessConflictRisk: boolean;
 };
 
 export function resolveNationalSkyDarknessDisplay(
@@ -102,6 +110,14 @@ function publicDisplayFromNationalModel(
     urbanSkyglowSpilloverRisk: nationalModel.urbanSkyglowSpilloverRisk,
     darkZoneSaturationRisk: nationalModel.darkZoneSaturationRisk,
     nationalRiskIndex: nationalModel.nationalRiskIndex,
+    primaryBaseline: nationalModel.primaryBaseline,
+    skyBrightnessAvailable: nationalModel.skyBrightnessAvailable,
+    skyBrightnessEstimatedBortleMin: nationalModel.skyBrightnessEstimatedBortleMin,
+    skyBrightnessEstimatedBortleMax: nationalModel.skyBrightnessEstimatedBortleMax,
+    skyBrightnessEstimatedBortleLabel: nationalModel.skyBrightnessEstimatedBortleLabel,
+    skyBrightnessDatasetYear: nationalModel.skyBrightnessDatasetYear,
+    skyBrightnessDatasetVersion: nationalModel.skyBrightnessDatasetVersion,
+    skyBrightnessConflictRisk: nationalModel.skyBrightnessConflictRisk,
   };
 }
 
@@ -141,5 +157,13 @@ function unavailablePublicSkyDarknessDisplay(
     urbanSkyglowSpilloverRisk: false,
     darkZoneSaturationRisk: false,
     nationalRiskIndex: null,
+    primaryBaseline: "viirs_national_fallback",
+    skyBrightnessAvailable: false,
+    skyBrightnessEstimatedBortleMin: null,
+    skyBrightnessEstimatedBortleMax: null,
+    skyBrightnessEstimatedBortleLabel: null,
+    skyBrightnessDatasetYear: null,
+    skyBrightnessDatasetVersion: null,
+    skyBrightnessConflictRisk: false,
   };
 }

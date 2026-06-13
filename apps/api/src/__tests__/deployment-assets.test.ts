@@ -20,6 +20,8 @@ const productionScripts = [
   "scripts/download-ephemeris.sh",
   "scripts/import-light-pollution.sh",
   "scripts/check-light-pollution.sh",
+  "scripts/import-sky-brightness-raster.sh",
+  "scripts/check-sky-brightness-raster.sh",
   "scripts/import-terrain-dem.sh",
   "scripts/check-terrain-dem.sh",
   "scripts/test-providers.sh",
@@ -108,12 +110,15 @@ describe("production deployment assets", () => {
     expect(compose).toContain("EPHEMERIS_PATH: /app/data/de421.bsp");
     expect(compose).toContain("LIGHT_POLLUTION_DATASET_PATH: /app/data/light-pollution/current/light-pollution.cog.tif");
     expect(compose).toContain("LIGHT_POLLUTION_CACHE_SIZE: ${LIGHT_POLLUTION_CACHE_SIZE:-1024}");
+    expect(compose).toContain("SKY_BRIGHTNESS_DATASET_PATH: /app/data/sky-brightness/current/sky-brightness.cog.tif");
+    expect(compose).toContain("SKY_BRIGHTNESS_METADATA_PATH: /app/data/sky-brightness/current/metadata.json");
     expect(compose).toContain("TERRAIN_DEM_DATASET_PATH: /app/data/terrain-dem/current/terrain-dem.cog.tif");
     expect(compose).toContain("TERRAIN_DEM_METADATA_PATH: /app/data/terrain-dem/current/metadata.json");
     expect(compose).toContain("postgres_data:");
     expect(compose).toContain("redis_data:");
     expect(compose).toContain("- astro_data:/app/data");
     expect(compose).toContain("- ./deploy/light-pollution:/app/data/light-pollution");
+    expect(compose).toContain("- ./deploy/sky-brightness:/app/data/sky-brightness");
     expect(compose).toContain("- ./deploy/terrain-dem:/app/data/terrain-dem");
     expect(compose).toContain("- ./deploy/calibration:/app/deploy/calibration");
     expect(compose).toContain("caddy_data:");
@@ -156,6 +161,8 @@ describe("production deployment assets", () => {
       "LIGHT_POLLUTION_METADATA_PATH=/app/data/light-pollution/current/metadata.json",
       "LIGHT_POLLUTION_CACHE_SIZE=1024",
       "LIGHT_POLLUTION_QUERY_TIMEOUT_MS=5000",
+      "SKY_BRIGHTNESS_DATASET_PATH=/app/data/sky-brightness/current/sky-brightness.cog.tif",
+      "SKY_BRIGHTNESS_METADATA_PATH=/app/data/sky-brightness/current/metadata.json",
       "TERRAIN_DEM_DATASET_PATH=/app/data/terrain-dem/current/terrain-dem.cog.tif",
       "TERRAIN_DEM_METADATA_PATH=/app/data/terrain-dem/current/metadata.json",
       "PIP_INDEX_URL=",
@@ -190,6 +197,14 @@ describe("production deployment assets", () => {
       "deploy/light-pollution/**/*.tif",
       "deploy/light-pollution/**/*.tiff",
       "!deploy/light-pollution/**/.gitkeep",
+      "deploy/sky-brightness/incoming/*",
+      "deploy/sky-brightness/current/*",
+      "deploy/sky-brightness/backups/*",
+      "deploy/sky-brightness/**/*.tif",
+      "deploy/sky-brightness/**/*.tiff",
+      "deploy/sky-brightness/**/metadata.json",
+      "deploy/sky-brightness/**/checksum.sha256",
+      "!deploy/sky-brightness/**/.gitkeep",
       "deploy/terrain-dem/incoming/*",
       "deploy/terrain-dem/current/*",
       "deploy/terrain-dem/backups/*",
@@ -231,11 +246,59 @@ describe("production deployment assets", () => {
       "ENV LIGHT_POLLUTION_DATASET_PATH=/app/data/light-pollution/current/light-pollution.cog.tif",
     );
     expect(readRepoFile("apps/astro-service/Dockerfile")).toContain(
+      "ENV SKY_BRIGHTNESS_DATASET_PATH=/app/data/sky-brightness/current/sky-brightness.cog.tif",
+    );
+    expect(readRepoFile("apps/astro-service/Dockerfile")).toContain(
       "ENV TERRAIN_DEM_DATASET_PATH=/app/data/terrain-dem/current/terrain-dem.cog.tif",
+    );
+    expect(readRepoFile("apps/astro-service/Dockerfile")).toContain(
+      "/app/data/sky-brightness/current /app/data/sky-brightness/incoming",
     );
     expect(readRepoFile("apps/astro-service/Dockerfile")).toContain(
       "/app/data/terrain-dem/current /app/data/terrain-dem/incoming",
     );
+  });
+
+  it("ships optional local sky-brightness import and status scripts without downloading data", () => {
+    const importer = readRepoFile("scripts/import-sky-brightness-raster.sh");
+    const checker = readRepoFile("scripts/check-sky-brightness-raster.sh");
+    const importerCli = readRepoFile("apps/astro-service/scripts/import_sky_brightness_raster.py");
+    const installer = readRepoFile("scripts/install.sh");
+    const updater = readRepoFile("scripts/update.sh");
+    const resume = readRepoFile("scripts/resume-install.sh");
+
+    for (const source of [importer, checker]) {
+      expect(source).toContain('DATA_DIR="${PROJECT_ROOT}/deploy/sky-brightness"');
+      expect(source).toContain('-v "${DATA_DIR}:/app/data/sky-brightness"');
+      expect(source).toContain('COMPOSE_FILE="docker-compose.prod.yml"');
+      expect(source).toContain('ENV_FILE=".env.production"');
+      expect(source).not.toMatch(/\b(?:curl|wget)\b/);
+    }
+
+    expect(importer).toContain("python -m scripts.import_sky_brightness_raster");
+    expect(importer).toContain("Place legally obtained GeoTIFF files");
+    expect(importer).toContain("This script does not download WA or other sky-brightness data.");
+    expect(importer).toContain("compose restart astro-service");
+    expect(checker).toContain("python -m scripts.import_sky_brightness_raster --check");
+    expect(checker).toContain("skyBrightnessAvailable");
+    expect(checker).toContain("skyBrightnessDatasetExists");
+    expect(checker).toContain("skyBrightnessMetadataAvailable");
+    expect(checker).toContain("skyBrightnessDatasetName");
+    expect(checker).toContain("skyBrightnessDatasetYear");
+    expect(checker).toContain("skyBrightnessDatasetVersion");
+    expect(checker).toContain("skyBrightnessValueType");
+    expect(checker).toContain("skyBrightnessHealthStatus");
+    expect(checker).toContain("skyBrightnessLoadError");
+    expect(importerCli).toContain("does not download data");
+    expect(importerCli).toContain("metadata.json");
+    expect(importerCli).toContain("checksum.sha256");
+
+    for (const source of [installer, updater, resume]) {
+      expect(source).toContain("${PROJECT_ROOT}/deploy/sky-brightness/incoming");
+      expect(source).toContain("${PROJECT_ROOT}/deploy/sky-brightness/current");
+      expect(source).toContain("${PROJECT_ROOT}/deploy/sky-brightness/backups");
+      expect(source).toMatch(/no WA or other sky-brightness raster is downloaded automatically|existing data are preserved/);
+    }
   });
 
   it("ships optional local terrain DEM import and status scripts without downloading data", () => {

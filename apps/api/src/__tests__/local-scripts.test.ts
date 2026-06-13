@@ -254,6 +254,35 @@ describe("local astro diagnostics scripts", () => {
     expect(combined).not.toMatch(/curl|wget|Invoke-WebRequest|Remove-Item|rm -rf/);
   });
 
+  it("wires sky-brightness import and check scripts to local-only production compose operations", () => {
+    const importScript = readRepoFile("scripts/import-sky-brightness-raster.sh");
+    const checkScript = readRepoFile("scripts/check-sky-brightness-raster.sh");
+    const combined = `${importScript}\n${checkScript}`;
+
+    for (const expected of [
+      "docker-compose.prod.yml",
+      ".env.production",
+      "deploy/sky-brightness",
+      "/app/data/sky-brightness",
+      "python -m scripts.import_sky_brightness_raster",
+      "python -m scripts.import_sky_brightness_raster --check",
+      "skyBrightnessAvailable",
+      "skyBrightnessDatasetExists",
+      "skyBrightnessMetadataAvailable",
+      "skyBrightnessDatasetName",
+      "skyBrightnessDatasetYear",
+      "skyBrightnessDatasetVersion",
+      "skyBrightnessValueType",
+      "skyBrightnessHealthStatus",
+      "skyBrightnessLoadError",
+      "This script does not download WA or other sky-brightness data.",
+    ]) {
+      expect(combined).toContain(expected);
+    }
+
+    expect(combined).not.toMatch(/curl|wget|Invoke-WebRequest|Remove-Item|rm -rf/);
+  });
+
   it("prints real-weather calibration diagnostics without raw provider secrets", () => {
     const script = readRepoFile("scripts/test-real-weather.sh");
 

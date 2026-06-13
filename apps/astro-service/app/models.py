@@ -43,6 +43,22 @@ TerrainHorizonTarget = Literal[
 ]
 TerrainDemObserverElevationSource = Literal["input", "dem", "unknown"]
 TerrainDemTileStatus = Literal["available", "missing", "invalid", "pending"]
+SkyBrightnessValueType = Literal[
+    "sqm",
+    "artificial_brightness_mcd_m2",
+    "ratio_to_natural",
+    "radiance",
+    "bortle_class",
+    "unknown",
+]
+SkyBrightnessHealthStatus = Literal[
+    "available",
+    "missing",
+    "metadata_missing",
+    "unreadable",
+    "unsupported_value_type",
+    "insufficient_data",
+]
 
 
 class AstroCalculateRequest(BaseModel):
@@ -214,6 +230,89 @@ class LightPollutionQueryResponse(BaseModel):
     validSampleCount: int
     calculationBasis: LightPollutionCalculationBasis | None = None
     lightPollutionNoteZh: str
+    queryElapsedMs: float | None = None
+    cacheHit: bool = False
+
+
+class SkyBrightnessQueryRequest(BaseModel):
+    latitudeWgs84: float = Field(ge=-90, le=90)
+    longitudeWgs84: float = Field(ge=-180, le=180)
+    timezone: str = "Asia/Shanghai"
+
+    @field_validator("latitudeWgs84", "longitudeWgs84")
+    @classmethod
+    def sky_brightness_coordinates_must_be_finite(cls, value: float) -> float:
+        if value != value or value in (float("inf"), float("-inf")):
+            raise ValueError("coordinate must be finite")
+        return value
+
+
+class SkyBrightnessBounds(BaseModel):
+    west: float
+    south: float
+    east: float
+    north: float
+
+
+class SkyBrightnessResolution(BaseModel):
+    xDegrees: float
+    yDegrees: float
+
+
+class SkyBrightnessEstimatedBortleRange(BaseModel):
+    available: bool
+    minClass: int | None = None
+    maxClass: int | None = None
+    rangeLabelZh: str
+    confidence: ConfidenceLevel
+    basisZh: str
+    methodVersion: Literal["wa-modeled-sqm-v1"]
+    unavailableReason: str | None = None
+
+
+class ChinaDarkSkyReference(BaseModel):
+    available: bool
+    labelZh: str | None = None
+    noteZh: str
+    modelDerived: bool = True
+    measured: bool = False
+    official: bool = False
+
+
+class SkyBrightnessDiagnostics(BaseModel):
+    healthStatus: SkyBrightnessHealthStatus
+    rasterPath: str | None = None
+    metadataPath: str | None = None
+    metadataExists: bool = False
+    datasetExists: bool = False
+    loadError: str | None = None
+    bounds: SkyBrightnessBounds | None = None
+    resolution: SkyBrightnessResolution | None = None
+    sampleCount: int = 0
+    validSampleCount: int = 0
+    conversionNotes: list[str] = []
+    uncertaintyNotes: list[str] = []
+
+
+class SkyBrightnessQueryResponse(BaseModel):
+    available: bool
+    dataAvailable: bool
+    unavailableReason: str | None = None
+    sourceName: str | None = None
+    sourceType: str | None = None
+    datasetName: str | None = None
+    datasetYear: int | None = None
+    datasetVersion: str | None = None
+    checksumShort: str | None = None
+    valueType: SkyBrightnessValueType
+    rawValue: float | None = None
+    valueUnit: str | None = None
+    modeledSqm: float | None = None
+    artificialBrightness: float | None = None
+    estimatedBortleRange: SkyBrightnessEstimatedBortleRange | None = None
+    chinaDarkSkyReference: ChinaDarkSkyReference | None = None
+    confidence: ConfidenceLevel
+    diagnostics: SkyBrightnessDiagnostics
     queryElapsedMs: float | None = None
     cacheHit: bool = False
 
@@ -445,6 +544,7 @@ class AstroCalculateResponse(BaseModel):
     milkyWay: MilkyWayBlock
     calculationBasis: CalculationBasis
     lightPollution: LightPollutionQueryResponse | None = None
+    skyBrightness: SkyBrightnessQueryResponse | None = None
 
 
 class HealthResponse(BaseModel):
@@ -462,6 +562,17 @@ class HealthResponse(BaseModel):
     lightPollutionDatasetVersion: str | None = None
     lightPollutionChecksumShort: str | None = None
     lightPollutionLoadError: str | None = None
+    skyBrightnessAvailable: bool = False
+    skyBrightnessDatasetPathConfigured: bool = False
+    skyBrightnessDatasetExists: bool = False
+    skyBrightnessMetadataAvailable: bool = False
+    skyBrightnessDatasetName: str | None = None
+    skyBrightnessDatasetYear: int | None = None
+    skyBrightnessDatasetVersion: str | None = None
+    skyBrightnessValueType: SkyBrightnessValueType | None = None
+    skyBrightnessChecksumShort: str | None = None
+    skyBrightnessHealthStatus: str | None = None
+    skyBrightnessLoadError: str | None = None
     terrainDemAvailable: bool = False
     terrainDemDatasetPathConfigured: bool = False
     terrainDemDatasetExists: bool = False

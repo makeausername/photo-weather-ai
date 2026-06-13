@@ -69,6 +69,12 @@ export type NationalSkyDarknessBenchmarkPoint = {
   readonly localRadianceQuantile?: number | null;
   readonly haloRadianceQuantile?: number | null;
   readonly nationalRiskIndex?: number | null;
+  readonly skyBrightnessAvailable?: boolean;
+  readonly skyBrightnessValueType?: string | null;
+  readonly skyBrightnessModeledSqm?: number | null;
+  readonly skyBrightnessEstimatedBortleRangeLabel?: string | null;
+  readonly skyBrightnessDatasetYear?: number | null;
+  readonly skyBrightnessDatasetVersion?: string | null;
   readonly lowRadianceSaturationRisk?: boolean;
   readonly urbanSkyglowSpilloverRisk?: boolean;
   readonly darkZoneSaturationRisk?: boolean;
@@ -228,7 +234,7 @@ export async function buildNationalSkyDarknessBenchmarkReport({
       strict: options.strict,
       redactedNames: options.redactNames,
       benchmarkSourcePolicy:
-        "Screenshot and future field references are QA benchmarks only and never generate production place rules.",
+        "References are competitorBenchmark / thirdPartyReference / notGroundTruth QA inputs only and never generate production place, coordinate, or category rules.",
     },
     summary: summarizeBenchmark(totalInputRows, invalidRows, points),
     invalidRows,
@@ -302,6 +308,12 @@ export function formatNationalSkyDarknessBenchmarkCsv(
     "localRadianceQuantile",
     "haloRadianceQuantile",
     "nationalRiskIndex",
+    "skyBrightnessAvailable",
+    "skyBrightnessValueType",
+    "skyBrightnessModeledSqm",
+    "skyBrightnessEstimatedBortleRangeLabel",
+    "skyBrightnessDatasetYear",
+    "skyBrightnessDatasetVersion",
     "publicModelVersion",
     "nationalStatsVersion",
     "diagnostics",
@@ -327,6 +339,12 @@ export function formatNationalSkyDarknessBenchmarkCsv(
       point.localRadianceQuantile ?? "",
       point.haloRadianceQuantile ?? "",
       point.nationalRiskIndex ?? "",
+      point.skyBrightnessAvailable ?? "",
+      point.skyBrightnessValueType ?? "",
+      point.skyBrightnessModeledSqm ?? "",
+      point.skyBrightnessEstimatedBortleRangeLabel ?? "",
+      point.skyBrightnessDatasetYear ?? "",
+      point.skyBrightnessDatasetVersion ?? "",
       point.publicModelVersion ?? "",
       point.nationalStatsVersion ?? "",
       point.diagnostics.join(";"),
@@ -367,7 +385,25 @@ async function queryReferenceRow(
         longitudeWgs84: row.longitudeWgs84,
       };
       const lightPollution = await client.queryLightPollution(input);
-      return { success: true, lightPollution, retries };
+      const querySkyBrightness = (
+        client as BortleCalibrationQueryClient & {
+          querySkyBrightness?: (query: {
+            readonly latitudeWgs84: number;
+            readonly longitudeWgs84: number;
+          }) => Promise<LightPollutionInfo["skyBrightness"]>;
+        }
+      ).querySkyBrightness;
+      const skyBrightness = querySkyBrightness
+        ? await querySkyBrightness({
+            latitudeWgs84: row.latitudeWgs84,
+            longitudeWgs84: row.longitudeWgs84,
+          }).catch(() => null)
+        : null;
+      return {
+        success: true,
+        lightPollution: skyBrightness ? { ...lightPollution, skyBrightness } : lightPollution,
+        retries,
+      };
     } catch (error) {
       const failure = normalizeQueryFailure(error);
       if (attempt < maxRetryCount && isRetryableFailure(failure)) {
@@ -446,6 +482,13 @@ function buildBenchmarkPoint(
     localRadianceQuantile: display.localRadianceQuantile,
     haloRadianceQuantile: display.haloRadianceQuantile,
     nationalRiskIndex: display.nationalRiskIndex,
+    skyBrightnessAvailable: lightPollution.skyBrightness?.available ?? false,
+    skyBrightnessValueType: lightPollution.skyBrightness?.valueType ?? null,
+    skyBrightnessModeledSqm: lightPollution.skyBrightness?.modeledSqm ?? null,
+    skyBrightnessEstimatedBortleRangeLabel:
+      lightPollution.skyBrightness?.estimatedBortleRange?.rangeLabelZh ?? null,
+    skyBrightnessDatasetYear: lightPollution.skyBrightness?.datasetYear ?? null,
+    skyBrightnessDatasetVersion: lightPollution.skyBrightness?.datasetVersion ?? null,
     lowRadianceSaturationRisk: display.lowRadianceSaturationRisk,
     urbanSkyglowSpilloverRisk: display.urbanSkyglowSpilloverRisk,
     darkZoneSaturationRisk: display.darkZoneSaturationRisk,

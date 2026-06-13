@@ -20,11 +20,14 @@ from .models import (
     HealthResponse,
     LightPollutionQueryRequest,
     LightPollutionQueryResponse,
+    SkyBrightnessQueryRequest,
+    SkyBrightnessQueryResponse,
     TerrainDemProfileQueryRequest,
     TerrainDemProfileQueryResponse,
     TerrainDemCoverageStatusResponse,
 )
 from .responses import Utf8JSONResponse
+from .sky_brightness import SkyBrightnessService, unavailable_response as sky_brightness_unavailable_response
 from .terrain_dem import TerrainDemService, unavailable_response as terrain_dem_unavailable_response
 from .terrain_dem_coverage import (
     build_coverage_status,
@@ -44,6 +47,10 @@ DEFAULT_LIGHT_POLLUTION_DATASET_PATH = Path(
     "/app/data/light-pollution/current/light-pollution.cog.tif"
 )
 DEFAULT_LIGHT_POLLUTION_METADATA_PATH = Path("/app/data/light-pollution/current/metadata.json")
+DEFAULT_SKY_BRIGHTNESS_DATASET_PATH = Path(
+    "/app/data/sky-brightness/current/sky-brightness.cog.tif"
+)
+DEFAULT_SKY_BRIGHTNESS_METADATA_PATH = Path("/app/data/sky-brightness/current/metadata.json")
 DEFAULT_TERRAIN_DEM_DATASET_PATH = Path("/app/data/terrain-dem/current/terrain-dem.cog.tif")
 DEFAULT_TERRAIN_DEM_METADATA_PATH = Path("/app/data/terrain-dem/current/metadata.json")
 logger = logging.getLogger("astro-service")
@@ -108,6 +115,14 @@ TERRAIN_DEM_METADATA_PATH = resolve_absolute_path_env(
     "TERRAIN_DEM_METADATA_PATH",
     DEFAULT_TERRAIN_DEM_METADATA_PATH,
 )
+SKY_BRIGHTNESS_DATASET_PATH = resolve_absolute_path_env(
+    "SKY_BRIGHTNESS_DATASET_PATH",
+    DEFAULT_SKY_BRIGHTNESS_DATASET_PATH,
+)
+SKY_BRIGHTNESS_METADATA_PATH = resolve_absolute_path_env(
+    "SKY_BRIGHTNESS_METADATA_PATH",
+    DEFAULT_SKY_BRIGHTNESS_METADATA_PATH,
+)
 LIGHT_POLLUTION_QUERY_TIMEOUT_MS = resolve_light_pollution_query_timeout_ms()
 
 
@@ -139,6 +154,15 @@ def get_light_pollution_service() -> LightPollutionService:
 
 
 @lru_cache(maxsize=1)
+def get_sky_brightness_service() -> SkyBrightnessService:
+    return SkyBrightnessService(
+        SKY_BRIGHTNESS_DATASET_PATH,
+        SKY_BRIGHTNESS_METADATA_PATH,
+        cache_size=resolve_light_pollution_cache_size(),
+    )
+
+
+@lru_cache(maxsize=1)
 def get_terrain_dem_service() -> TerrainDemService:
     return TerrainDemService(TERRAIN_DEM_DATASET_PATH, TERRAIN_DEM_METADATA_PATH)
 
@@ -146,6 +170,7 @@ def get_terrain_dem_service() -> TerrainDemService:
 @app.on_event("shutdown")
 def shutdown_services() -> None:
     get_light_pollution_service().close()
+    get_sky_brightness_service().close()
     get_terrain_dem_service().close()
 
 
@@ -158,6 +183,7 @@ def health() -> HealthResponse:
     except HTTPException:
         timezone_available = False
     light_pollution_health = get_light_pollution_service().health_state()
+    sky_brightness_health = get_sky_brightness_service().health_state()
     terrain_dem_health = get_terrain_dem_service().health_state()
     return HealthResponse(
         ok=ephemeris_available and timezone_available,
@@ -174,6 +200,17 @@ def health() -> HealthResponse:
         lightPollutionDatasetVersion=light_pollution_health.dataset_version,
         lightPollutionChecksumShort=light_pollution_health.checksum_short,
         lightPollutionLoadError=light_pollution_health.load_error,
+        skyBrightnessAvailable=sky_brightness_health.available,
+        skyBrightnessDatasetPathConfigured=sky_brightness_health.dataset_path_configured,
+        skyBrightnessDatasetExists=sky_brightness_health.dataset_exists,
+        skyBrightnessMetadataAvailable=sky_brightness_health.metadata_available,
+        skyBrightnessDatasetName=sky_brightness_health.dataset_name,
+        skyBrightnessDatasetYear=sky_brightness_health.dataset_year,
+        skyBrightnessDatasetVersion=sky_brightness_health.dataset_version,
+        skyBrightnessValueType=sky_brightness_health.value_type,
+        skyBrightnessChecksumShort=sky_brightness_health.checksum_short,
+        skyBrightnessHealthStatus=sky_brightness_health.health_status,
+        skyBrightnessLoadError=sky_brightness_health.load_error,
         terrainDemAvailable=terrain_dem_health.available,
         terrainDemDatasetPathConfigured=terrain_dem_health.dataset_path_configured,
         terrainDemDatasetExists=terrain_dem_health.dataset_exists,
@@ -193,6 +230,16 @@ def query_light_pollution(request: LightPollutionQueryRequest) -> LightPollution
     logger.info(
         "light pollution query completed",
         extra=light_pollution_log_payload(request, response, route="/light-pollution/query"),
+    )
+    return response
+
+
+@app.post("/sky-brightness/query", response_model=SkyBrightnessQueryResponse)
+def query_sky_brightness(request: SkyBrightnessQueryRequest) -> SkyBrightnessQueryResponse:
+    response = get_sky_brightness_service().query(request)
+    logger.info(
+        "sky brightness query completed",
+        extra=sky_brightness_log_payload(request, response, route="/sky-brightness/query"),
     )
     return response
 
@@ -294,6 +341,7 @@ def calculate(request: AstroCalculateRequest) -> AstroCalculateResponse:
         get_timezone(request.timezone or DEFAULT_TIMEZONE)
         response = get_calculator().calculate(request)
         response.lightPollution = calculate_light_pollution_for_astro_request(request, response)
+        response.skyBrightness = calculate_sky_brightness_for_astro_request(request)
         terrain_dem_profile = calculate_terrain_dem_for_astro_request(request, response)
         logger.info(
             "astro calculation completed",
@@ -303,6 +351,8 @@ def calculate(request: AstroCalculateRequest) -> AstroCalculateResponse:
                 "targetDates": len(response.targetDates),
                 "lightPollutionAvailable": response.lightPollution.available,
                 "lightPollutionDatasetVersion": response.lightPollution.datasetVersion,
+                "skyBrightnessAvailable": response.skyBrightness.available,
+                "skyBrightnessDatasetVersion": response.skyBrightness.datasetVersion,
                 "terrainDemAvailable": terrain_dem_profile.available,
                 "terrainDemDatasetVersion": terrain_dem_profile.datasetVersion,
             },
@@ -355,6 +405,35 @@ def calculate_light_pollution_for_astro_request(
         extra=light_pollution_log_payload(query, light_pollution, route="/astro/calculate"),
     )
     return light_pollution
+
+
+def calculate_sky_brightness_for_astro_request(
+    request: AstroCalculateRequest,
+) -> SkyBrightnessQueryResponse:
+    query = SkyBrightnessQueryRequest(
+        latitudeWgs84=request.latitudeWgs84,
+        longitudeWgs84=request.longitudeWgs84,
+        timezone=request.timezone or DEFAULT_TIMEZONE,
+    )
+    try:
+        sky_brightness = get_sky_brightness_service().query(query)
+    except Exception as exc:  # pragma: no cover - defensive guard for optional raster failures.
+        logger.warning(
+            "sky brightness query failed during astro calculation",
+            extra={
+                "route": "/astro/calculate",
+                "latitudeRounded": round(request.latitudeWgs84, 3),
+                "longitudeRounded": round(request.longitudeWgs84, 3),
+                "errorName": type(exc).__name__,
+                "errorMessage": str(exc),
+            },
+        )
+        sky_brightness = sky_brightness_unavailable_response("query_failed")
+    logger.info(
+        "sky brightness query completed",
+        extra=sky_brightness_log_payload(query, sky_brightness, route="/astro/calculate"),
+    )
+    return sky_brightness
 
 
 def calculate_terrain_dem_for_astro_request(
@@ -448,6 +527,28 @@ def light_pollution_log_payload(
         "targetDirectionRisk": response.targetDirectionRisk,
         "cacheHit": response.cacheHit,
         "unavailableReason": response.unavailableReason,
+    }
+
+
+def sky_brightness_log_payload(
+    request: SkyBrightnessQueryRequest,
+    response: SkyBrightnessQueryResponse,
+    *,
+    route: str,
+) -> dict[str, object]:
+    return {
+        "route": route,
+        "available": response.available,
+        "datasetName": response.datasetName,
+        "datasetVersion": response.datasetVersion,
+        "datasetYear": response.datasetYear,
+        "valueType": response.valueType,
+        "queryElapsedMs": response.queryElapsedMs,
+        "latitudeRounded": round(request.latitudeWgs84, 3),
+        "longitudeRounded": round(request.longitudeWgs84, 3),
+        "confidence": response.confidence,
+        "unavailableReason": response.unavailableReason,
+        "healthStatus": response.diagnostics.healthStatus,
     }
 
 
