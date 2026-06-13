@@ -466,7 +466,7 @@ export function formatSkyDarknessDiagnosticText(report: SkyDarknessDiagnosticRep
       report.ratios.haloToLocalRatio,
     )}`,
     `Overall site sky darkness: ${report.overallSkyDarkness.rangeLabelZh}; label=${report.overallSkyDarkness.skyQualityLabelZh}; confidence=${report.overallSkyDarkness.confidence}`,
-    `Target-direction light pollution: ${report.targetDirectionLightPollution.riskLevelLabelZh}; status=${report.targetDirectionLightPollution.status}; warning=${report.targetDirectionLightPollution.warningZh}`,
+    formatTargetDirectionDiagnosticLine(report),
     `Fused public range: ${report.fusedPublicBortleRange.rangeLabelZh}; label=${report.publicLabel}; confidence=${report.confidence}`,
     `Range width: ${formatNullable(report.fusedPublicBortleRange.rangeWidthClasses)} classes; policy=${report.fusedPublicBortleRange.rangeWidthPolicy}`,
     `DEM: coverage=${report.dem.demDatasetCoverageAvailable ? "available" : "unavailable"}; profile=${
@@ -499,6 +499,16 @@ function demCoverageDiagnosticNoteZh(
     return "DEM数据覆盖可用，但本次未计算遮挡剖面，因为缺少目标方位/高度。";
   }
   return baseNote;
+}
+
+function formatTargetDirectionDiagnosticLine(report: SkyDarknessDiagnosticReport): string {
+  if (
+    report.targetDirectionLightPollution.status === "unknown" &&
+    report.targetDirectionLightPollution.azimuthDegrees === null
+  ) {
+    return "Target-direction light pollution: target direction unknown because no azimuth was provided; this is not missing light-pollution data";
+  }
+  return `Target-direction light pollution: ${report.targetDirectionLightPollution.riskLevelLabelZh}; status=${report.targetDirectionLightPollution.status}; warning=${report.targetDirectionLightPollution.warningZh}`;
 }
 
 function parseCoordinate(value: string | undefined): SkyDarknessDiagnosticOptions["coordinate"] {

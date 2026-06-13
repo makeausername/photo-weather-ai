@@ -60,13 +60,13 @@ Use coordinate diagnostics to inspect one point without external services:
 bash scripts/diagnose-sky-darkness.sh --coordinate 35.1,112.2 --json --azimuth 135 --label qa
 ```
 
-Use the QA benchmark wrapper for private reference CSV/JSON files:
+Use the QA report wrapper for private reference CSV/JSON files:
 
 ```bash
-bash scripts/evaluate-sky-darkness-benchmarks.sh deploy/calibration/runtime/bortle-reference.csv --format json --include-coordinates
+bash scripts/report-sky-darkness-qa.sh deploy/calibration/runtime/bortle-reference.csv --include-coordinates
 ```
 
-Use `--format json`, `--format csv`, `--format markdown`, or `--format all` for report output. The wrapper also accepts `--json` as a compatibility alias for `--format json`.
+By default it writes Markdown and JSON reports. Use `--format json`, `--format csv`, `--format markdown`, or `--format all` to override output formats. The older `scripts/evaluate-sky-darkness-benchmarks.sh` wrapper remains available and accepts `--json` as a compatibility alias for `--format json`.
 
 No location names, coordinate allowlists, scenic-spot categories, or city/rural/mountain hardcoding are used.
 

@@ -7865,6 +7865,7 @@ describe("forecast result target-aware view model", () => {
     expect(astro?.actionSummary.map((item) => item.label)).toEqual([
       "是否值得去",
       "最佳拍摄窗口",
+      "光污染判断",
       "主要阻碍",
       "备选建议",
       "到达建议",
@@ -8047,6 +8048,43 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.lightPollution.primaryConclusionZh).toBe("中等光污染");
     expect(viewModel.lightPollution.judgmentSummaryZh).toContain("银河方向角不足");
     expect(viewModel.lightPollution.detail).not.toContain("极低");
+  });
+
+  it("explains when the overall environment is affected but the Milky Way direction is clean", () => {
+    const lightPollution = lightPollutionForDisplayTest({
+      ambientRiskIndex: 64,
+      ambientRiskLevel: "high",
+      ambientRiskLevelLabelZh: "高",
+      targetAzimuthDegrees: 135,
+      targetDirectionRisk: 18,
+      targetDirectionLevel: "very_low",
+      targetDirectionLevelLabelZh: "极低",
+      lightPollutionNoteZh: "卫星夜光参考：环境光污染高，银河方向光害极低。",
+    });
+    const result = resultWithAstroLightPollution(lightPollution);
+    const viewModel = buildAstroForecastViewModel(result);
+    const lightPollutionSummary = viewModel.actionSummary.find(
+      (item) => item.key === "light-pollution",
+    );
+    const html = renderToStaticMarkup(
+      React.createElement(AstroResultPage, {
+        query: queryForTarget("astro"),
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(lightPollutionSummary).toMatchObject({
+      label: "光污染判断",
+      value: "整体受影响",
+    });
+    expect(lightPollutionSummary?.detail).toContain("整体环境：尚暗但受周边光害影响");
+    expect(lightPollutionSummary?.detail).toContain("银河方向：较低，目标方向较干净");
+    expect(lightPollutionSummary?.detail).toContain("避开高光害方向");
+    expect(html).toContain("整体受影响");
+    expect(html).toContain("目标方向较干净");
+    expect(viewModel.lightPollution.overallSkyDarknessRangeLabel).not.toBe("1–2级");
+    expectNoForbiddenBortleCopy(html);
   });
 
   it("keeps per-night directional light-pollution labels distinct on astro daily cards", () => {
@@ -8243,11 +8281,10 @@ describe("forecast result target-aware view model", () => {
     const developerGroup = groups.find((group) => group.developerDiagnostics);
 
     expect(groupKeys).toEqual([
-      "decision-layers",
-      "public-summary",
+      "public-conclusion",
       "wa-baseline",
       "viirs-current-light",
-      "fusion-explanation",
+      "direction-light",
       "developer-diagnostics",
     ]);
     expect(viewModel.lightPollution.estimatedBortleRangeLabel).toBe("4–5级（保守参考）");
@@ -8387,6 +8424,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("专业数据");
     expect(html).toContain("是否值得去");
     expect(html).toContain("最佳拍摄窗口");
+    expect(html).toContain("光污染判断");
     expect(html).toContain("主要阻碍");
     expect(html).toContain("备选建议");
     expect(html).toContain("到达建议");

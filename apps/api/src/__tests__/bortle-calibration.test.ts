@@ -694,6 +694,9 @@ describe("National sky darkness benchmark QA", () => {
       tooWideOutputs: 0,
       benchmarkLikeFourPlusDisplayedAsVeryDark: 0,
       errorsGreaterThanOneClass: 1,
+      passCount: 0,
+      warnCount: 1,
+      failCount: 1,
       finalQaRecommendation: "fail_investigate_over_optimism",
     });
     expect(optimistic).toMatchObject({
@@ -712,6 +715,17 @@ describe("National sky darkness benchmark QA", () => {
     );
     expect(markdown).toContain("Production rules generated: false");
     expect(markdown).toContain("Comparison basis: overall site sky-darkness range");
+    expect(markdown).toContain("Pass / warn / fail: 0 / 1 / 1");
+    expect(markdown).toContain("## Over-Optimistic List");
+    expect(markdown).toContain("## Over-Conservative List");
+    expect(markdown).toContain("## Too-Wide Range List");
+    expect(markdown).toContain("## Direction-Sensitive Cases");
+    expect(markdown).toContain("## Top 10 Mismatches");
+    expect(markdown).toContain("Suggested next action:");
+    expect(report.summary.overOptimisticList.join("\n")).toContain("optimistic");
+    expect(report.summary.overConservativeList.join("\n")).toContain("conservative");
+    expect(report.summary.directionSensitiveCaseList.join("\n")).toContain("spread=");
+    expect(report.summary.topTenMismatchList.join("\n")).toContain("optimistic");
     expect(markdown).toContain("Too-wide public outputs: 0");
     expect(markdown).toContain("does not write thresholds, location rules, coordinate rules");
   });
@@ -945,6 +959,41 @@ describe("Sky darkness coordinate diagnostic", () => {
     expect(payload.fusedPublicBortleRange).toHaveProperty("rangeLabelZh");
     expect(payload.dem).toMatchObject({ queried: false, status: "not_queried" });
     expect(client.queryLightPollution).toHaveBeenCalledTimes(1);
+  });
+
+  it("text output explains missing target azimuth without treating light-pollution data as missing", async () => {
+    const output: string[] = [];
+    const client: SkyDarknessDiagnosticClient = {
+      queryLightPollution: vi.fn(async () =>
+        lightPollutionFixture({
+          targetAzimuthDegrees: null,
+          targetDirectionRisk: null,
+          targetDirectionLevel: null,
+          targetDirectionLevelLabelZh: null,
+        }),
+      ),
+      querySkyBrightness: vi.fn(async () => null),
+    };
+
+    await expect(
+      runSkyDarknessDiagnosticCli(
+        ["--coordinate", "35.1,112.2"],
+        (text) => output.push(text),
+        () => undefined,
+        {
+          client,
+          now: () => new Date("2026-06-13T00:00:00.000Z"),
+        },
+      ),
+    ).resolves.toBe(0);
+
+    const text = output.join("");
+    expect(text).toContain("Overall site sky darkness:");
+    expect(text).toContain(
+      "Target-direction light pollution: target direction unknown because no azimuth was provided",
+    );
+    expect(text).toContain("this is not missing light-pollution data");
+    expect(text).toContain("VIIRS: available");
   });
 });
 

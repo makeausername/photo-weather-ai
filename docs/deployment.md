@@ -260,14 +260,14 @@ deploy/calibration/runtime/national-sky-darkness-stats.json
 
 This JSON records nationwide quantiles, local/halo ratios, ambient-risk distributions, coarse-grid coverage, zero-radiance ratio, nodata/negative counts, dataset checksum, and tool version. It is a review input only. Production uses the packaged default national-statistical config unless a future change explicitly promotes reviewed stats into versioned model config.
 
-Run the QA-only benchmark with an independent private reference file:
+Run the QA-only benchmark report with an independent private reference file:
 
 ```bash
-bash scripts/evaluate-sky-darkness-benchmarks.sh deploy/calibration/runtime/bortle-reference.csv --format json --include-coordinates
+bash scripts/report-sky-darkness-qa.sh deploy/calibration/runtime/bortle-reference.csv --include-coordinates
 docker compose --env-file .env.production -f docker-compose.prod.yml run --rm api pnpm --filter @photo-weather/api exec tsx src/scripts/national-sky-darkness-benchmark.ts --input deploy/calibration/runtime/bortle-reference.csv --output-dir deploy/calibration/runtime --format json --include-coordinates
 ```
 
-The benchmark wrapper accepts `--format json`, `--format csv`, `--format markdown`, and `--format all`. For operator convenience, `--json` is translated to `--format json` before the API CLI runs.
+The report wrapper defaults to Markdown and JSON output. It accepts `--format json`, `--format csv`, `--format markdown`, and `--format all`; `scripts/evaluate-sky-darkness-benchmarks.sh` remains available for compatibility and translates `--json` to `--format json` before the API CLI runs.
 
 For local validation without astro-service queries:
 
@@ -275,7 +275,7 @@ For local validation without astro-service queries:
 pnpm --filter @photo-weather/api exec tsx src/scripts/national-sky-darkness-benchmark.ts --input deploy/calibration/bortle-reference.example.csv --dry-run --strict
 ```
 
-The benchmark report includes exact matches, overlap matches, adjacent matches, over-optimistic errors, over-conservative errors, too-wide public outputs, Bortle 4+ references shown as public 1-2, mean and median class distance, mismatch details, model versions, WA/model sky-brightness diagnostics when available, and a final QA recommendation. It warns or fails when public output becomes too optimistic, systematically too low, or too vague to be useful. It is explicitly audit-only: references are `competitorBenchmark`, `thirdPartyReference`, and `notGroundTruth`; they do not create production thresholds, place lists, coordinate mappings, scenic-spot rules, category hacks, SQM values, national-standard levels, or Tianwentong-derived mappings. The 30 Tianwentong screenshots remain QA/regression evidence only.
+The benchmark report includes total benchmark count, pass/warn/fail summary, exact matches, overlap matches, adjacent matches, over-optimistic list, over-conservative list, too-wide range list, direction-sensitive cases, top 10 mismatches, model versions, WA/model sky-brightness diagnostics when available, and a suggested next action. It warns or fails when public output becomes too optimistic, systematically too low, or too vague to be useful. It is explicitly audit-only: references are `competitorBenchmark`, `thirdPartyReference`, and `notGroundTruth`; they do not create production thresholds, place lists, coordinate mappings, scenic-spot rules, category hacks, SQM values, national-standard levels, or Tianwentong-derived mappings. The 30 Tianwentong screenshots remain QA/regression evidence only.
 
 ## Local Terrain DEM Data
 

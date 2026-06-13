@@ -3950,7 +3950,7 @@ function AstroTopContext({
               ? `最佳观测夜：${bestNight.localEveningDateLabel}，${bestNight.recommendationLabel}；${bestNight.conciseReason}`
               : "本次预报范围内暂未形成可比较的观测夜。"}
           </p>
-          <dl className="mt-4 grid gap-x-4 gap-y-3 text-sm min-[760px]:grid-cols-5">
+          <dl className="mt-4 grid gap-x-4 gap-y-3 text-sm [grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr))]">
             {viewModel.actionSummary.map((item) => (
               <div key={item.key} className="min-w-0 border-l border-border pl-3">
                 <dt className="flex flex-wrap items-center gap-2 text-[11px] font-semibold leading-4 text-muted-foreground">
@@ -4415,9 +4415,12 @@ function AstroTerrainHorizonProfessionalSection({
   readonly terrain: AstroForecastViewModel["terrainHorizon"];
 }) {
   return (
-    <section className="rounded-md border border-border bg-muted p-3">
+    <section
+      className="rounded-md border border-border bg-muted p-3"
+      data-astro-professional-dem-group="dem-terrain"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-card-foreground">地形遮挡剖面</h3>
+        <h3 className="text-sm font-semibold text-card-foreground">DEM地形</h3>
         <Badge variant={badgeVariantForTone(terrain.statusTone)}>{terrain.statusBadgeLabelZh}</Badge>
       </div>
 

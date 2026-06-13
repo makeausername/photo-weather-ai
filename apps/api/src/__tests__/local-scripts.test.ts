@@ -286,13 +286,14 @@ describe("local astro diagnostics scripts", () => {
   it("wires sky-darkness diagnostic and benchmark wrappers to local-only compose operations", () => {
     const diagnoseScript = readRepoFile("scripts/diagnose-sky-darkness.sh");
     const evaluateScript = readRepoFile("scripts/evaluate-sky-darkness-benchmarks.sh");
+    const reportScript = readRepoFile("scripts/report-sky-darkness-qa.sh");
     const packageJson = JSON.parse(readRepoFile("package.json")) as {
       scripts: Record<string, string>;
     };
     const apiPackageJson = JSON.parse(readRepoFile("apps/api/package.json")) as {
       scripts: Record<string, string>;
     };
-    const combined = `${diagnoseScript}\n${evaluateScript}`;
+    const combined = `${diagnoseScript}\n${evaluateScript}\n${reportScript}`;
 
     expect(packageJson.scripts["sky-darkness:diagnose"]).toBe(
       "pnpm --filter @photo-weather/api sky-darkness:diagnose",
@@ -300,6 +301,7 @@ describe("local astro diagnostics scripts", () => {
     expect(apiPackageJson.scripts["sky-darkness:diagnose"]).toBe(
       "tsx src/scripts/diagnose-sky-darkness.ts",
     );
+    expect(packageJson.scripts["sky-darkness:qa"]).toBe("bash scripts/report-sky-darkness-qa.sh");
 
     for (const expected of [
       "docker-compose.prod.yml",
@@ -310,6 +312,8 @@ describe("local astro diagnostics scripts", () => {
       "normalized_args+=(--format json)",
       "This command queries only the local active WA/model and VIIRS datasets",
       "Compatibility: --json is translated to --format json.",
+      "Default outputs: --format markdown --format json.",
+      "This is audit-only. It writes QA reports, not production rules.",
       "competitorBenchmark, thirdPartyReference, notGroundTruth",
     ]) {
       expect(combined).toContain(expected);
@@ -320,6 +324,8 @@ describe("local astro diagnostics scripts", () => {
     expect(evaluateScript).toContain('if [[ "${arg}" == "--json" ]]');
     expect(evaluateScript).toContain("args=(--input");
     expect(evaluateScript).toContain('"${normalized_args[@]}"');
+    expect(reportScript).toContain("normalized_args+=(--format markdown --format json)");
+    expect(reportScript).toContain("src/scripts/national-sky-darkness-benchmark.ts");
     expect(combined).not.toMatch(/curl|wget|Invoke-WebRequest|Remove-Item|rm -rf/);
   });
 

@@ -96,6 +96,11 @@ export type NationalSkyDarknessBenchmarkPoint = {
   readonly overConservativeError?: boolean;
   readonly benchmarkLikeFourPlusDisplayedAsVeryDark?: boolean;
   readonly classDistance?: number;
+  readonly qaStatus: "pass" | "warn" | "fail";
+  readonly directionalRiskSpread?: number | null;
+  readonly directionHighRiskLabelsZh?: readonly string[];
+  readonly directionCleanLabelsZh?: readonly string[];
+  readonly directionSensitiveCase?: boolean;
   readonly diagnostics: readonly string[];
 };
 
@@ -117,7 +122,16 @@ export type NationalSkyDarknessBenchmarkSummary = {
   readonly meanClassDistance: number | null;
   readonly medianClassDistance: number | null;
   readonly categoryDistributionAuditOnly: Readonly<Record<string, number>>;
+  readonly passCount: number;
+  readonly warnCount: number;
+  readonly failCount: number;
   readonly mismatchList: readonly string[];
+  readonly overOptimisticList: readonly string[];
+  readonly overConservativeList: readonly string[];
+  readonly tooWideRangeList: readonly string[];
+  readonly directionSensitiveCaseList: readonly string[];
+  readonly topTenMismatchList: readonly string[];
+  readonly suggestedNextAction: string;
   readonly finalQaRecommendation:
     | "pass"
     | "warn_collect_more_references"
@@ -289,19 +303,39 @@ export function formatNationalSkyDarknessBenchmarkMarkdown(
     `- Too-wide public outputs: ${summary.tooWideOutputs}`,
     `- Bortle 4+ references shown as public 1-2: ${summary.benchmarkLikeFourPlusDisplayedAsVeryDark}`,
     `- Errors greater than one class: ${summary.errorsGreaterThanOneClass}`,
+    `- Pass / warn / fail: ${summary.passCount} / ${summary.warnCount} / ${summary.failCount}`,
     `- Mean class distance: ${formatNullableNumber(summary.meanClassDistance)}`,
     `- Median class distance: ${formatNullableNumber(summary.medianClassDistance)}`,
     `- Final QA recommendation: ${summary.finalQaRecommendation}`,
+    `- Suggested next action: ${summary.suggestedNextAction}`,
     "",
     "## Category Distribution (Audit Only)",
     "",
     formatDistribution(summary.categoryDistributionAuditOnly),
     "",
+    "## Over-Optimistic List",
+    "",
+    formatList(summary.overOptimisticList),
+    "",
+    "## Over-Conservative List",
+    "",
+    formatList(summary.overConservativeList),
+    "",
+    "## Too-Wide Range List",
+    "",
+    formatList(summary.tooWideRangeList),
+    "",
+    "## Direction-Sensitive Cases",
+    "",
+    formatList(summary.directionSensitiveCaseList),
+    "",
+    "## Top 10 Mismatches",
+    "",
+    formatList(summary.topTenMismatchList),
+    "",
     "## Mismatches",
     "",
-    summary.mismatchList.length > 0
-      ? summary.mismatchList.map((id) => `- ${id}`).join("\n")
-      : "- none",
+    formatList(summary.mismatchList),
     "",
     "This command is QA-only. It does not write thresholds, location rules, coordinate rules, or category-specific production mappings.",
   ].join("\n");
@@ -337,6 +371,11 @@ export function formatNationalSkyDarknessBenchmarkCsv(
     "classDistance",
     "overOptimisticError",
     "overConservativeError",
+    "qaStatus",
+    "directionalRiskSpread",
+    "directionHighRiskLabelsZh",
+    "directionCleanLabelsZh",
+    "directionSensitiveCase",
     "localRadiance",
     "surroundingHaloRadiance",
     "ambientRiskIndex",
@@ -381,6 +420,11 @@ export function formatNationalSkyDarknessBenchmarkCsv(
       point.rangeComparison?.classDistance ?? "",
       point.overOptimisticError ?? "",
       point.overConservativeError ?? "",
+      point.qaStatus,
+      point.directionalRiskSpread ?? "",
+      point.directionHighRiskLabelsZh?.join(";") ?? "",
+      point.directionCleanLabelsZh?.join(";") ?? "",
+      point.directionSensitiveCase ?? "",
       point.localRadiance ?? "",
       point.surroundingHaloRadiance ?? "",
       point.ambientRiskIndex ?? "",
@@ -488,6 +532,7 @@ function buildBenchmarkPoint(
       querySuccess: false,
       queryRetries: queryResult.retries,
       queryFailure: queryResult.failure,
+      qaStatus: "fail",
       diagnostics: ["query_failed"],
     };
   }
@@ -515,6 +560,18 @@ function buildBenchmarkPoint(
       typeof display.maxClass === "number" &&
       display.maxClass <= 2,
   );
+  const directionalSummary = summarizeDirectionalRisk(lightPollution);
+  const tooWideOutput = display.tooWideRange;
+  const qaStatus = qaStatusForBenchmarkPoint({
+    querySuccess: true,
+    overOptimisticError,
+    overConservativeError,
+    benchmarkLikeFourPlusDisplayedAsVeryDark,
+    tooWideOutput,
+    classDistance: rangeComparison?.classDistance,
+    rangeOverlap: rangeComparison?.rangeOverlap,
+    directionSensitiveCase: directionalSummary.directionSensitiveCase,
+  });
 
   return {
     ...base,
@@ -538,7 +595,7 @@ function buildBenchmarkPoint(
     publicFinalDisplayedBasis: "overall_site_sky_darkness",
     benchmarkComparisonBasis: "overall_site_sky_darkness",
     publicRangeWidthPolicy: display.rangeWidthPolicy,
-    tooWideOutput: display.tooWideRange,
+    tooWideOutput,
     publicModelVersion: display.nationalModelVersion,
     nationalStatsVersion: display.nationalStatsVersion,
     localRadiance: lightPollution.localRadiance,
@@ -565,11 +622,17 @@ function buildBenchmarkPoint(
     overConservativeError,
     benchmarkLikeFourPlusDisplayedAsVeryDark,
     classDistance: rangeComparison?.classDistance,
+    qaStatus,
+    directionalRiskSpread: directionalSummary.directionalRiskSpread,
+    directionHighRiskLabelsZh: directionalSummary.directionHighRiskLabelsZh,
+    directionCleanLabelsZh: directionalSummary.directionCleanLabelsZh,
+    directionSensitiveCase: directionalSummary.directionSensitiveCase,
     diagnostics: [
       ...display.diagnostics,
       ...(overOptimisticError ? ["over_optimistic_public_range"] : []),
       ...(overConservativeError ? ["over_conservative_public_range"] : []),
-      ...(display.tooWideRange ? ["too_wide_public_range"] : []),
+      ...(tooWideOutput ? ["too_wide_public_range"] : []),
+      ...(directionalSummary.directionSensitiveCase ? ["direction_sensitive_case"] : []),
       ...(benchmarkLikeFourPlusDisplayedAsVeryDark
         ? ["benchmark_like_four_plus_displayed_as_very_dark"]
         : []),
@@ -596,6 +659,14 @@ function summarizeBenchmark(
   const mismatchList = compared
     .filter((point) => !point.rangeComparison?.rangeOverlap)
     .map((point) => point.id);
+  const finalRecommendation = finalQaRecommendation({
+    comparedCount: compared.length,
+    overOptimisticErrors,
+    tooWideOutputs,
+    benchmarkLikeFourPlusDisplayedAsVeryDark,
+    errorsGreaterThanOneClass,
+    mismatchCount: mismatchList.length,
+  });
   return {
     benchmarkCount: totalInputRows,
     validRows: points.length,
@@ -615,16 +686,139 @@ function summarizeBenchmark(
     meanClassDistance: mean(distances),
     medianClassDistance: median(distances),
     categoryDistributionAuditOnly: distribution(points.map((point) => point.category ?? "n/a")),
+    passCount: points.filter((point) => point.qaStatus === "pass").length,
+    warnCount: points.filter((point) => point.qaStatus === "warn").length,
+    failCount: points.filter((point) => point.qaStatus === "fail").length,
     mismatchList,
-    finalQaRecommendation: finalQaRecommendation({
-      comparedCount: compared.length,
-      overOptimisticErrors,
-      tooWideOutputs,
-      benchmarkLikeFourPlusDisplayedAsVeryDark,
-      errorsGreaterThanOneClass,
-      mismatchCount: mismatchList.length,
-    }),
+    overOptimisticList: points.filter((point) => point.overOptimisticError).map(formatQaPointSummary),
+    overConservativeList: points
+      .filter((point) => point.overConservativeError)
+      .map(formatQaPointSummary),
+    tooWideRangeList: points.filter((point) => point.tooWideOutput).map(formatQaPointSummary),
+    directionSensitiveCaseList: points
+      .filter((point) => point.directionSensitiveCase)
+      .map(formatDirectionSensitiveSummary),
+    topTenMismatchList: compared
+      .filter((point) => !point.rangeComparison?.rangeOverlap)
+      .sort((left, right) => (right.classDistance ?? 0) - (left.classDistance ?? 0))
+      .slice(0, 10)
+      .map(formatQaPointSummary),
+    suggestedNextAction: suggestedNextAction(finalRecommendation),
+    finalQaRecommendation: finalRecommendation,
   };
+}
+
+function summarizeDirectionalRisk(lightPollution: LightPollutionInfo): {
+  readonly directionalRiskSpread: number | null;
+  readonly directionHighRiskLabelsZh: readonly string[];
+  readonly directionCleanLabelsZh: readonly string[];
+  readonly directionSensitiveCase: boolean;
+} {
+  const validDirections = lightPollution.directionalRisk.filter(
+    (direction) => typeof direction.riskIndex === "number" && Number.isFinite(direction.riskIndex),
+  );
+  if (validDirections.length === 0) {
+    return {
+      directionalRiskSpread: null,
+      directionHighRiskLabelsZh: [],
+      directionCleanLabelsZh: [],
+      directionSensitiveCase: false,
+    };
+  }
+  const riskIndexes = validDirections.map((direction) => direction.riskIndex!);
+  const directionalRiskSpread = Math.round(Math.max(...riskIndexes) - Math.min(...riskIndexes));
+  const directionHighRiskLabelsZh = validDirections
+    .filter((direction) => direction.riskIndex! >= 60)
+    .map((direction) => direction.directionLabelZh);
+  const directionCleanLabelsZh = validDirections
+    .filter((direction) => direction.riskIndex! < 40)
+    .map((direction) => direction.directionLabelZh);
+
+  return {
+    directionalRiskSpread,
+    directionHighRiskLabelsZh,
+    directionCleanLabelsZh,
+    directionSensitiveCase:
+      directionalRiskSpread >= 40 ||
+      (directionHighRiskLabelsZh.length > 0 && directionCleanLabelsZh.length > 0),
+  };
+}
+
+function qaStatusForBenchmarkPoint(input: {
+  readonly querySuccess: boolean;
+  readonly overOptimisticError: boolean;
+  readonly overConservativeError: boolean;
+  readonly benchmarkLikeFourPlusDisplayedAsVeryDark: boolean;
+  readonly tooWideOutput: boolean;
+  readonly classDistance?: number;
+  readonly rangeOverlap?: boolean;
+  readonly directionSensitiveCase: boolean;
+}): NationalSkyDarknessBenchmarkPoint["qaStatus"] {
+  if (
+    !input.querySuccess ||
+    input.benchmarkLikeFourPlusDisplayedAsVeryDark ||
+    (input.overOptimisticError && (input.classDistance ?? 0) > 1)
+  ) {
+    return "fail";
+  }
+  if (
+    input.overOptimisticError ||
+    input.overConservativeError ||
+    input.tooWideOutput ||
+    input.rangeOverlap === false ||
+    input.directionSensitiveCase
+  ) {
+    return "warn";
+  }
+  return "pass";
+}
+
+function formatQaPointSummary(point: NationalSkyDarknessBenchmarkPoint): string {
+  return [
+    point.id,
+    `ref=${formatReferenceRange(point)}`,
+    `public=${point.publicFinalDisplayedRangeLabel ?? point.publicBortleRangeLabel ?? "n/a"}`,
+    `distance=${point.classDistance ?? "n/a"}`,
+    `status=${point.qaStatus}`,
+  ].join(" | ");
+}
+
+function formatDirectionSensitiveSummary(point: NationalSkyDarknessBenchmarkPoint): string {
+  return [
+    point.id,
+    `spread=${point.directionalRiskSpread ?? "n/a"}`,
+    `avoid=${point.directionHighRiskLabelsZh?.join("/") || "none"}`,
+    `clean=${point.directionCleanLabelsZh?.join("/") || "none"}`,
+  ].join(" | ");
+}
+
+function formatReferenceRange(point: NationalSkyDarknessBenchmarkPoint): string {
+  if (
+    typeof point.referenceBortleMin === "number" &&
+    typeof point.referenceBortleMax === "number"
+  ) {
+    return `${point.referenceBortleMin}-${point.referenceBortleMax}`;
+  }
+  return "n/a";
+}
+
+function suggestedNextAction(
+  recommendation: NationalSkyDarknessBenchmarkSummary["finalQaRecommendation"],
+): string {
+  switch (recommendation) {
+    case "pass":
+      return "Keep current public fusion behavior and continue collecting independent references.";
+    case "warn_collect_more_references":
+      return "Collect more independent national references before changing thresholds.";
+    case "warn_investigate_mismatches":
+      return "Inspect the top mismatch list and verify reference quality before considering model changes.";
+    case "warn_public_ranges_too_wide":
+      return "Review why public ranges are wide, then add evidence rather than production rules.";
+    case "fail_public_ranges_too_vague":
+      return "Investigate range-width drivers before release; do not add location or category hacks.";
+    case "fail_investigate_over_optimism":
+      return "Investigate over-optimistic cases first; keep this report audit-only and avoid production rules.";
+  }
 }
 
 function finalQaRecommendation(input: {
@@ -762,6 +956,10 @@ function formatDistribution(distributionValue: Readonly<Record<string, number>>)
     return "- n/a";
   }
   return entries.map(([label, count]) => `- ${label}: ${count}`).join("\n");
+}
+
+function formatList(values: readonly string[]): string {
+  return values.length > 0 ? values.map((value) => `- ${value}`).join("\n") : "- none";
 }
 
 function csvCell(value: unknown): string {
