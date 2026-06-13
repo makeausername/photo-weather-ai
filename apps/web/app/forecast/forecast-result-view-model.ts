@@ -769,6 +769,12 @@ export type AstroNightDisplayModel = {
   readonly confidence: string;
   readonly unavailableReason?: string;
   readonly bestShootingWindowLabel: string;
+  readonly directionSummaryLabel: string;
+  readonly moonImpactSummaryLabel: string;
+  readonly cloudWeatherBlockerLabel: string;
+  readonly lightPollutionSummaryLabel: string;
+  readonly terrainSummaryLabel: string;
+  readonly actionNote: string;
   readonly calibrationMode: "heuristic";
 };
 
@@ -781,17 +787,26 @@ export type AstroJudgmentFactorCard = {
 };
 
 export type AstroActionSummaryItem = {
-  readonly key:
-    | "worth"
-    | "best-window"
-    | "light-pollution"
-    | "main-blocker"
-    | "backup"
-    | "arrival";
+  readonly key: "worth" | "best-window" | "light-pollution" | "main-blocker" | "backup" | "arrival";
   readonly label: string;
   readonly value: string;
   readonly detail: string;
   readonly tone: ForecastResultCardTone;
+};
+
+export type AstroDecisionSummary = {
+  readonly recommendationLabel: string;
+  readonly recommendationTone: ForecastResultCardTone;
+  readonly bestNightLabel: string;
+  readonly bestWindowLabel: string;
+  readonly arrivalLabel: string;
+  readonly directionLabel: string;
+  readonly mainRiskLabel: string;
+  readonly mainRiskDetail: string;
+  readonly confidenceLabel: string;
+  readonly oneSentenceAdvice: string;
+  readonly lightPollutionLabel: string;
+  readonly terrainLabel: string;
 };
 
 export type AstroForecastViewModel = {
@@ -800,8 +815,10 @@ export type AstroForecastViewModel = {
   readonly nightlyCards: readonly AstroNightDisplayModel[];
   readonly bestNight?: AstroNightDisplayModel;
   readonly backupNight?: AstroNightDisplayModel;
+  readonly decisionSummary: AstroDecisionSummary;
   readonly actionSummary: readonly AstroActionSummaryItem[];
   readonly judgmentFactors: readonly AstroJudgmentFactorCard[];
+  readonly professionalDataGroups: readonly AstroProfessionalDataGroup[];
   readonly professionalHourlyData: ProfessionalHourlyDisplayData;
   readonly astronomicalNightWindows: readonly AstroWindowViewItem[];
   readonly moonlessNightWindows: readonly AstroWindowViewItem[];
@@ -2838,6 +2855,28 @@ export function buildAstroForecastViewModel(
     bestNight,
   );
   const terrainHorizon = astroTerrainHorizonDisplay(selectedTerrainAssessment);
+  const lightPollution = astroLightPollutionDisplay(analysis.lightPollution, {
+    overallSkyDarkness: analysis.overallSkyDarkness,
+    targetDirectionLightPollution: analysis.targetDirectionLightPollution,
+    finalPhotographyDecision: analysis.finalPhotographyDecision,
+  });
+  const actionSummary = buildAstroActionSummary(result, bestNight, backupNight);
+  const decisionSummary = buildAstroDecisionSummary({
+    result,
+    bestNight,
+    actionSummary,
+    lightPollution,
+    terrainHorizon,
+  });
+  const professionalDataGroups = buildAstroPageProfessionalDataGroups({
+    result,
+    nights: nightlyCards,
+    bestNight,
+    lightPollution,
+    terrainHorizon,
+    professionalHourlyData,
+    decisionSummary,
+  });
 
   return {
     coreCards: [
@@ -2930,8 +2969,10 @@ export function buildAstroForecastViewModel(
     nightlyCards,
     bestNight,
     backupNight,
-    actionSummary: buildAstroActionSummary(result, bestNight, backupNight),
+    decisionSummary,
+    actionSummary,
     judgmentFactors: buildAstroJudgmentFactors(result, nightlyCards, bestNight, terrainHorizon),
+    professionalDataGroups,
     professionalHourlyData,
     astronomicalNightWindows: mapAstroWindows(result, analysis.astronomicalNightWindows),
     moonlessNightWindows: mapAstroWindows(result, analysis.moonlessNightWindows),
@@ -2942,11 +2983,7 @@ export function buildAstroForecastViewModel(
     moonEvidence: mapAstroEvidence(analysis.moonEvidence),
     terrainEvidence: mapAstroEvidence(analysis.terrainEvidence),
     lightPollutionEvidence: mapAstroEvidence(analysis.lightPollutionEvidence),
-    lightPollution: astroLightPollutionDisplay(analysis.lightPollution, {
-      overallSkyDarkness: analysis.overallSkyDarkness,
-      targetDirectionLightPollution: analysis.targetDirectionLightPollution,
-      finalPhotographyDecision: analysis.finalPhotographyDecision,
-    }),
+    lightPollution,
     terrainHorizon,
     travelRecommendations: analysis.travelRecommendations,
     riskReasons: analysis.riskReasons,
@@ -3024,6 +3061,38 @@ function buildAstroNightDisplayModels(
       horizonCoverageState,
     });
     const unavailableReason = astroNightUnavailableReason(day, astro, weatherSummary);
+    const lightPollutionDisplay = astroLightPollutionDisplay(
+      day?.lightPollution ?? result.astroAnalysis.lightPollution,
+      {
+        overallSkyDarkness: day?.overallSkyDarkness ?? result.astroAnalysis.overallSkyDarkness,
+        targetDirectionLightPollution:
+          day?.targetDirectionLightPollution ?? result.astroAnalysis.targetDirectionLightPollution,
+        finalPhotographyDecision:
+          day?.finalPhotographyDecision ?? result.astroAnalysis.finalPhotographyDecision,
+      },
+    );
+    const terrainHorizonDisplay = astroTerrainHorizonDisplay(
+      terrainAssessmentForAstroWindow(result, candidateWindow ?? bestWindow, date),
+    );
+    const bestShootingWindowLabel = bestWindow
+      ? formatAstroWindowTimeValue(bestWindow, timezone)
+      : "暂无可靠最佳拍摄窗口";
+    const directionSummaryLabel = geometricMilkyWayWindow
+      ? `${candidateWindow?.directionZh ?? astro?.milkyWayDirection ?? "方向待复核"} · 高度 ${formatAngle(
+          candidateWindow?.galacticCenterAltitude ??
+            astro?.milkyWayGalacticCenterAltitude ??
+            undefined,
+        )}`
+      : "银河方向待确认";
+    const cloudWeatherBlockerLabel =
+      day?.weatherBlockers[0] ??
+      (weatherSummary.validHourCount === 0
+        ? weatherSummary.coverageDisplay
+        : weatherSummary.cloudSummary);
+    const lightPollutionSummaryLabel = lightPollutionDisplay.available
+      ? `整体${lightPollutionDisplay.overallSkyDarknessRangeLabel}；银河方向${lightPollutionDisplay.targetDirectionLightPollutionLabel}`
+      : lightPollutionDisplay.compactLabel;
+    const terrainSummaryLabel = `${terrainHorizonDisplay.statusLabelZh} · ${terrainHorizonDisplay.compactLabel}`;
 
     return {
       nightKey: `astro-night-${date}`,
@@ -3099,20 +3168,8 @@ function buildAstroNightDisplayModels(
           ? formatAstroWindowTimeValue(day.recommendedMilkyWayWindow, timezone)
           : "暂无推荐银河窗口",
       },
-      lightPollution: astroLightPollutionDisplay(
-        day?.lightPollution ?? result.astroAnalysis.lightPollution,
-        {
-          overallSkyDarkness: day?.overallSkyDarkness ?? result.astroAnalysis.overallSkyDarkness,
-          targetDirectionLightPollution:
-            day?.targetDirectionLightPollution ??
-            result.astroAnalysis.targetDirectionLightPollution,
-          finalPhotographyDecision:
-            day?.finalPhotographyDecision ?? result.astroAnalysis.finalPhotographyDecision,
-        },
-      ),
-      terrainHorizon: astroTerrainHorizonDisplay(
-        terrainAssessmentForAstroWindow(result, candidateWindow ?? bestWindow, date),
-      ),
+      lightPollution: lightPollutionDisplay,
+      terrainHorizon: terrainHorizonDisplay,
       weather: weatherSummary,
       starPhotographyProbabilityPercent: starProbability,
       milkyWayPhotographyProbabilityPercent: milkyWayProbability,
@@ -3127,9 +3184,19 @@ function buildAstroNightDisplayModels(
       conciseReason: recommendation.reason,
       confidence: astroNightConfidence(result, weatherSummary, horizonCoverageState),
       unavailableReason,
-      bestShootingWindowLabel: bestWindow
-        ? formatAstroWindowTimeValue(bestWindow, timezone)
-        : "暂无可靠最佳拍摄窗口",
+      bestShootingWindowLabel,
+      directionSummaryLabel,
+      moonImpactSummaryLabel: `${moonInterference} · ${astro?.moonPhaseNameZh ?? "暂无月相"} ${typeof astro?.moonIllumination === "number" ? formatPercent(astro.moonIllumination) : "暂无照明"}`,
+      cloudWeatherBlockerLabel,
+      lightPollutionSummaryLabel,
+      terrainSummaryLabel,
+      actionNote: astroNightActionNote({
+        recommendationLevel: recommendation.level,
+        bestShootingWindowLabel,
+        conciseReason: recommendation.reason,
+        horizonCoverageState,
+        unavailableReason,
+      }),
       calibrationMode: "heuristic",
     };
   });
@@ -3225,7 +3292,8 @@ function astroLightPollutionDisplay(
   const overallSkyDarkness =
     canonical.overallSkyDarkness ?? fallbackOverallSkyDarkness(lightPollution, publicSkyDarkness);
   const targetDirectionLightPollution =
-    canonical.targetDirectionLightPollution ?? fallbackTargetDirectionLightPollution(lightPollution);
+    canonical.targetDirectionLightPollution ??
+    fallbackTargetDirectionLightPollution(lightPollution);
   const estimatedBortle = estimatedBortleDisplayFields(publicSkyDarkness);
   const rawEstimatedBortle = rawEstimatedBortleDisplayFields(lightPollution);
   const noticeZh = publicSkyDarkness.disclaimerZh;
@@ -3281,7 +3349,8 @@ function astroLightPollutionDisplay(
       targetDirectionLightPollutionLabel: targetDirectionLightPollution.riskLevelLabelZh,
       targetDirectionLightPollutionWarning: targetDirectionLightPollution.warningZh,
       finalPhotographyImplicationZh:
-        canonical.finalPhotographyDecision?.summaryZh ?? "光污染数据暂缺，不能把现场条件视为低风险。",
+        canonical.finalPhotographyDecision?.summaryZh ??
+        "光污染数据暂缺，不能把现场条件视为低风险。",
     };
   }
   const ambientLabel = lightPollution.ambientRiskLevelLabelZh;
@@ -3634,9 +3703,9 @@ function lightPollutionJudgmentExplanation(input: {
       ? "银河方向光害高：即使头顶较暗，朝城市方向拍摄仍会受影响。"
       : input.targetLabel && input.ambientRiskIndex >= 60 && input.directionRiskIndex < 40
         ? "整体环境受周边光害影响，但银河方向较干净，构图时应避开高光害方向。"
-      : input.targetLabel
-        ? `银河方向：${input.targetLabel}，构图朝向仍建议现场复核。`
-        : "银河方向角不足，目标方向光害需现场确认。";
+        : input.targetLabel
+          ? `银河方向：${input.targetLabel}，构图朝向仍建议现场复核。`
+          : "银河方向角不足，目标方向光害需现场确认。";
 
   return `${lightPollutionImpactSummary(
     input.ambientRiskIndex,
@@ -3720,7 +3789,7 @@ function buildAstroLightPollutionProfessionalDataGroups(
     | "estimatedBortleConfidenceLabel"
     | "estimatedBortleBasis"
     | "estimatedBortleDisclaimer"
-      | "estimatedBortleMethodVersion"
+    | "estimatedBortleMethodVersion"
   >,
   overallSkyDarkness: OverallSkyDarkness,
   targetDirectionLightPollution: TargetDirectionLightPollution,
@@ -3819,10 +3888,7 @@ function buildAstroLightPollutionProfessionalDataGroups(
         },
         {
           label: "周边光穹",
-          value: formatNullableNumberForView(
-            lightPollution.surroundingHaloRadiance,
-            " nW/cm²/sr",
-          ),
+          value: formatNullableNumberForView(lightPollution.surroundingHaloRadiance, " nW/cm²/sr"),
           detail: "周边方向加权后的人工光影响参考。",
         },
         {
@@ -3856,7 +3922,9 @@ function buildAstroLightPollutionProfessionalDataGroups(
         {
           label: "数据年份",
           value:
-            typeof lightPollution.datasetYear === "number" ? `${lightPollution.datasetYear}` : "暂无",
+            typeof lightPollution.datasetYear === "number"
+              ? `${lightPollution.datasetYear}`
+              : "暂无",
           detail: "由光污染数据元信息动态提供。",
         },
         {
@@ -3989,9 +4057,7 @@ function fusionActionLabel(publicSkyDarkness: PublicSkyDarknessDisplay): string 
   return "VIIRS保守回退";
 }
 
-function rangeWidthPolicyLabelZh(
-  policy: PublicSkyDarknessDisplay["rangeWidthPolicy"],
-): string {
+function rangeWidthPolicyLabelZh(policy: PublicSkyDarknessDisplay["rangeWidthPolicy"]): string {
   switch (policy) {
     case "narrow":
       return "窄范围";
@@ -4472,7 +4538,9 @@ function terrainHorizonUnavailableReasonLabel(
 }
 
 function terrainDemCoverageStatusLabel(
-  status: NonNullable<TerrainHorizonAssessment["professionalDiagnostics"]["terrainDemCoverage"]>["status"],
+  status: NonNullable<
+    TerrainHorizonAssessment["professionalDiagnostics"]["terrainDemCoverage"]
+  >["status"],
 ): string {
   switch (status) {
     case "available":
@@ -4489,7 +4557,9 @@ function terrainDemCoverageStatusLabel(
 function terrainDemCoverageDetail(
   coverage: NonNullable<TerrainHorizonAssessment["professionalDiagnostics"]["terrainDemCoverage"]>,
 ): string {
-  const tileId = coverage.requiredTileId ? `所需瓦片 ${coverage.requiredTileId}` : "所需瓦片暂无法解析";
+  const tileId = coverage.requiredTileId
+    ? `所需瓦片 ${coverage.requiredTileId}`
+    : "所需瓦片暂无法解析";
   const active = coverage.coveredByActiveDataset ? "已被当前激活 DEM 覆盖" : "当前激活 DEM 未覆盖";
   const local = coverage.tileFileExists ? "本地瓦片文件存在" : "本地瓦片文件缺失";
   return `${tileId}；${active}；${local}。${coverage.noteZh}`;
@@ -5114,6 +5184,33 @@ function astroNightUnavailableReason(
   return undefined;
 }
 
+function astroNightActionNote(input: {
+  readonly recommendationLevel: AstroNightRecommendationLevel;
+  readonly bestShootingWindowLabel: string;
+  readonly conciseReason: string;
+  readonly horizonCoverageState: AstroNightHorizonCoverageState;
+  readonly unavailableReason?: string;
+}): string {
+  if (input.unavailableReason) {
+    return `不按专程计划；${input.unavailableReason}`;
+  }
+  if (input.horizonCoverageState === "partial") {
+    return "预报只覆盖部分夜间窗口，先列为备选，等临近预报补齐后再决定。";
+  }
+  switch (input.recommendationLevel) {
+    case "recommended":
+      return `可作为主计划；围绕 ${input.bestShootingWindowLabel} 安排到达、构图和对焦。`;
+    case "watch":
+      return `可以关注；保留机动性，出发前复核云图、月光和现场光害。`;
+    case "backup":
+      return "仅作备选；若已在附近可观察云缝，专程出发需等待临近复核。";
+    case "not_recommended":
+      return `不建议前往；${input.conciseReason}`;
+    case "insufficient":
+      return "数据不足；不要按银河专程计划，只保留现场观察。";
+  }
+}
+
 function astroNightConfidence(
   result: ForecastCalculationResult,
   weather: AstroNightDisplayModel["weather"],
@@ -5247,6 +5344,196 @@ function buildAstroActionSummary(
   ];
 }
 
+function buildAstroDecisionSummary({
+  result,
+  bestNight,
+  actionSummary,
+  lightPollution,
+  terrainHorizon,
+}: {
+  readonly result: ForecastCalculationResult;
+  readonly bestNight: AstroNightDisplayModel | undefined;
+  readonly actionSummary: readonly AstroActionSummaryItem[];
+  readonly lightPollution: AstroLightPollutionDisplayModel;
+  readonly terrainHorizon: AstroTerrainHorizonDisplayModel;
+}): AstroDecisionSummary {
+  const worth = astroActionItem(actionSummary, "worth");
+  const bestWindow = astroActionItem(actionSummary, "best-window");
+  const arrival = astroActionItem(actionSummary, "arrival");
+  const blocker = astroActionItem(actionSummary, "main-blocker");
+  const confidence =
+    bestNight?.confidence ?? astroConfidenceLabel(result.astroAnalysis.confidenceLevel);
+  const oneSentenceAdvice =
+    bestNight?.actionNote ??
+    (result.astroAnalysis.astroShootable
+      ? "可作为夜拍候选，但仍需在出发前复核短临云图和现场光害。"
+      : "当前不按银河专程计划，等待天气、月光或窗口条件改善。");
+
+  return {
+    recommendationLabel: worth?.value ?? result.astroAnalysis.recommendationLabel,
+    recommendationTone: worth?.tone ?? "muted",
+    bestNightLabel: bestNight?.localEveningDateLabel ?? "暂无明确最佳夜",
+    bestWindowLabel: bestWindow?.value ?? "暂无可靠最佳拍摄窗口",
+    arrivalLabel: arrival?.value ?? "暂无专程到达建议",
+    directionLabel: bestNight?.directionSummaryLabel ?? "银河方向待确认",
+    mainRiskLabel: blocker?.value ?? "主要风险待复核",
+    mainRiskDetail: blocker?.detail ?? "仍需在出行前复核天气、月光、光污染和现场安全。",
+    confidenceLabel: confidence,
+    oneSentenceAdvice,
+    lightPollutionLabel: lightPollution.available
+      ? `${lightPollution.overallSkyDarknessRangeLabel} / 方向${lightPollution.targetDirectionLightPollutionLabel}`
+      : lightPollution.compactLabel,
+    terrainLabel: `${terrainHorizon.statusLabelZh} / ${terrainHorizon.clearanceDisplay}`,
+  };
+}
+
+function astroActionItem(
+  items: readonly AstroActionSummaryItem[],
+  key: AstroActionSummaryItem["key"],
+): AstroActionSummaryItem | undefined {
+  return items.find((item) => item.key === key);
+}
+
+function buildAstroPageProfessionalDataGroups({
+  result,
+  nights,
+  bestNight,
+  lightPollution,
+  terrainHorizon,
+  professionalHourlyData,
+  decisionSummary,
+}: {
+  readonly result: ForecastCalculationResult;
+  readonly nights: readonly AstroNightDisplayModel[];
+  readonly bestNight: AstroNightDisplayModel | undefined;
+  readonly lightPollution: AstroLightPollutionDisplayModel;
+  readonly terrainHorizon: AstroTerrainHorizonDisplayModel;
+  readonly professionalHourlyData: ProfessionalHourlyDisplayData;
+  readonly decisionSummary: AstroDecisionSummary;
+}): readonly AstroProfessionalDataGroup[] {
+  const night = bestNight ?? nights[0];
+  const lightPollutionPublicItems = lightPollution.professionalDataGroups
+    .filter((group) => !group.developerDiagnostics)
+    .flatMap((group) => group.items.slice(0, group.key === "viirs-current-light" ? 4 : 3));
+  const lightPollutionDiagnostics = lightPollution.professionalDataGroups
+    .filter((group) => group.developerDiagnostics)
+    .flatMap((group) => group.items);
+
+  return [
+    {
+      key: "public-summary",
+      title: "公开结论摘要",
+      badgeLabel: decisionSummary.recommendationLabel,
+      description: "面向出行决策的公开结论，先给是否前往、窗口、风险和置信度。",
+      items: [
+        {
+          label: "是否前往",
+          value: decisionSummary.recommendationLabel,
+          detail: decisionSummary.oneSentenceAdvice,
+        },
+        {
+          label: "最佳观测夜",
+          value: decisionSummary.bestNightLabel,
+          detail: `窗口：${decisionSummary.bestWindowLabel}`,
+        },
+        {
+          label: "到达建议",
+          value: decisionSummary.arrivalLabel,
+          detail: "用于安排停车、步行、构图、对焦和安全撤离。",
+        },
+        {
+          label: "主要风险",
+          value: decisionSummary.mainRiskLabel,
+          detail: decisionSummary.mainRiskDetail,
+        },
+        {
+          label: "置信度",
+          value: decisionSummary.confidenceLabel,
+          detail: "由天文数据、天气小时覆盖、光污染和地形可用性共同决定。",
+        },
+      ],
+    },
+    {
+      key: "light-pollution-evidence",
+      title: "光污染模型证据",
+      badgeLabel: lightPollution.available ? lightPollution.statusBadgeLabelZh : "数据暂缺",
+      description: "合并 WA/模型天空亮度、VIIRS 本地灯光、周边光穹和银河方向光害。",
+      items: lightPollutionPublicItems,
+    },
+    {
+      key: "terrain-horizon-evidence",
+      title: "地形遮挡证据",
+      badgeLabel: terrainHorizon.statusBadgeLabelZh,
+      description: "银河目标方位角、目标高度、地平线高度、clearance 和 DEM 可用性。",
+      items: terrainHorizon.professionalDataItems,
+    },
+    {
+      key: "astronomy-time-basis",
+      title: "天文窗口 / 月相 / 时间依据",
+      badgeLabel: result.astroDataSourceLabelZh,
+      description: "展示本次最佳夜的天文黑夜、银河窗口、月相和逐小时天气覆盖。",
+      items: [
+        {
+          label: "天文数据",
+          value: result.astroDataSourceLabelZh,
+          detail: result.calendarBasis.forecastRangeLabel,
+        },
+        {
+          label: "天文黑夜",
+          value: night?.astronomicalNight.windowLabel ?? "暂无观测夜",
+          detail: night?.astronomicalNight.label ?? "本次预报范围内未形成可比较观测夜。",
+        },
+        {
+          label: "银河窗口",
+          value: night?.milkyWay.bestWindowLabel ?? "暂无推荐银河窗口",
+          detail: night?.directionSummaryLabel ?? "银河方向待确认。",
+        },
+        {
+          label: "月光影响",
+          value: night?.moonImpactSummaryLabel ?? "暂无月相数据",
+          detail: night?.moon.overlapDisplay
+            ? `窗口重叠：${night.moon.overlapDisplay}`
+            : "月光重叠暂无可靠数据。",
+        },
+        {
+          label: "天气小时覆盖",
+          value: night?.weather.coverageDisplay ?? `${professionalHourlyData.rows.length} 小时`,
+          detail: `专业小时数据总量 ${professionalHourlyData.rows.length}；焦点窗口 ${professionalHourlyData.focusWindows.length} 个。`,
+        },
+      ],
+    },
+    {
+      key: "developer-diagnostics",
+      title: "开发诊断",
+      badgeLabel: "默认折叠",
+      description: "原始诊断字段、内部说明和低层数据口径，仅用于排查模型版本。",
+      collapsedByDefault: true,
+      developerDiagnostics: true,
+      items: [
+        {
+          label: "数据说明",
+          value: "公开页提示",
+          detail: buildAstroDataNotice(result),
+        },
+        {
+          label: "缺失数据",
+          value:
+            result.astroAnalysis.missingDataNotes.length > 0
+              ? `${result.astroAnalysis.missingDataNotes.length} 条`
+              : "none",
+          detail: result.astroAnalysis.missingDataNotes[0] ?? "当前没有额外缺失数据提示。",
+        },
+        {
+          label: "逐小时窗口",
+          value: `${professionalHourlyData.focusWindows.length} focus / ${professionalHourlyData.riskWindows.length} risk`,
+          detail: `总行数 ${professionalHourlyData.rows.length}；默认仅在专业数据展开后显示。`,
+        },
+        ...lightPollutionDiagnostics,
+      ],
+    },
+  ];
+}
+
 function astroActionTone(level: AstroNightRecommendationLevel): ForecastResultCardTone {
   switch (level) {
     case "recommended":
@@ -5285,8 +5572,7 @@ function astroActionLightPollution(analysis: AstroAnalysisResult): {
   const targetRisk = target.riskIndex ?? null;
   const targetClean = target.status === "resolved" && targetRisk !== null && targetRisk < 40;
   const targetHigh = target.status === "resolved" && targetRisk !== null && targetRisk >= 60;
-  const overallAffected =
-    typeof overall.maxClass === "number" && overall.maxClass >= 4;
+  const overallAffected = typeof overall.maxClass === "number" && overall.maxClass >= 4;
 
   if (overallAffected && targetClean) {
     return {
