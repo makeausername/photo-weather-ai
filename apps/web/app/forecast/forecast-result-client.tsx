@@ -2003,9 +2003,11 @@ function useForecastAiInterpretation(
 export function ForecastAiInterpretationSection({
   query,
   result,
+  emptyStateVariant,
 }: {
   readonly query: ForecastQueryInput;
   readonly result: ForecastCalculationResult;
+  readonly emptyStateVariant?: "deterministic";
 }) {
   const aiInterpretation = useForecastAiInterpretation(query, result);
 
@@ -2016,6 +2018,7 @@ export function ForecastAiInterpretationSection({
       errorMessage={aiInterpretation.errorMessage}
       retryable={aiInterpretation.retryable}
       onGenerate={aiInterpretation.generate}
+      emptyStateVariant={emptyStateVariant}
     />
   );
 }
@@ -3812,7 +3815,11 @@ export function AstroResultPage({
           data-astro-section="AstroAiInterpretation"
           data-ai-interpretation-target="astro"
         >
-          <ForecastAiInterpretationSection query={query} result={result} />
+          <ForecastAiInterpretationSection
+            query={query}
+            result={result}
+            emptyStateVariant="deterministic"
+          />
         </section>
       </main>
     </section>
@@ -3966,6 +3973,8 @@ function AstroTopContext({
               {decision.oneSentenceAdvice}
             </p>
 
+            <AstroActionPlanGrid items={viewModel.actionPlan} />
+
             <dl
               className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,165px),1fr))]"
               data-astro-decision-first-metrics="true"
@@ -4053,6 +4062,48 @@ function AstroTopContext({
           />
         ))}
       </div>
+    </section>
+  );
+}
+
+function AstroActionPlanGrid({ items }: { readonly items: AstroForecastViewModel["actionPlan"] }) {
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <section
+      className="rounded-lg border border-border bg-secondary/70 p-3"
+      data-astro-action-plan="true"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-bold text-card-foreground">行动方案</h2>
+        <Badge variant="muted">出发前复核</Badge>
+      </div>
+      <dl className="mt-3 grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr))]">
+        {items.map((item) => (
+          <div
+            key={item.key}
+            className="min-w-0 rounded-md border border-border bg-card px-3 py-2"
+            data-astro-action-plan-item={item.key}
+          >
+            <dt className="text-[11px] font-semibold leading-4 text-muted-foreground">
+              {item.label}
+            </dt>
+            <dd
+              className={cn(
+                "mt-1 break-words text-sm font-bold leading-5",
+                cardToneText(item.tone),
+              )}
+            >
+              {item.value}
+            </dd>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              {compactAstroText(item.detail, 42)}
+            </p>
+          </div>
+        ))}
+      </dl>
     </section>
   );
 }
@@ -4164,7 +4215,12 @@ function AstroNightCard({
   return (
     <article
       className={cn(
-        "AstroNightCard grid gap-3 rounded-lg border border-border bg-card p-4 shadow-sm",
+        "AstroNightCard grid gap-3 rounded-lg border bg-card p-4 shadow-sm",
+        night.recommendationLevel === "recommended" && "border-primary/50 bg-secondary/30",
+        night.recommendationLevel === "watch" && "border-info/40",
+        night.recommendationLevel === "backup" && "border-accent/40",
+        night.recommendationLevel === "not_recommended" && "border-danger/35",
+        night.recommendationLevel === "insufficient" && "border-border",
         isLastOdd && "min-[980px]:col-span-2",
       )}
       data-astro-night-card="true"
@@ -4172,6 +4228,7 @@ function AstroNightCard({
       data-astro-night-card-span={isLastOdd ? "full" : "single"}
       data-astro-night-key={night.nightKey}
       data-astro-night-coverage={night.horizonCoverageState}
+      data-astro-night-recommendation-level={night.recommendationLevel}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
@@ -4200,34 +4257,20 @@ function AstroNightCard({
         </Badge>
       </div>
 
-      <div className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,118px),1fr))]">
-        <MetricPill label="星空概率" value={night.starPhotographyProbabilityDisplay} />
-        <MetricPill label="银河概率" value={night.milkyWayPhotographyProbabilityDisplay} />
-        <MetricPill label="观星指数" value={night.starPhotographyIndexDisplay} />
-        <MetricPill label="月光" value={night.moon.moonlightInterferenceLevel} />
-        <MetricPill label="天气阻碍" value={compactAstroText(night.cloudWeatherBlockerLabel, 18)} />
+      <div
+        className="flex flex-wrap gap-2"
+        data-astro-night-reason-grid="true"
+        data-astro-night-factor-chips="true"
+      >
+        {night.factorChips.map((chip) => (
+          <AstroNightFactorChip key={chip.key} chip={chip} />
+        ))}
       </div>
 
-      <div className="grid gap-2 min-[700px]:grid-cols-3" data-astro-night-reason-grid="true">
-        <AstroMiniFact
-          label="月光影响"
-          value={night.moonImpactSummaryLabel}
-          detail={`重叠 ${night.moon.overlapDisplay}`}
-        />
-        <AstroMiniFact
-          label="银河方向光害"
-          value={
-            night.lightPollution.available
-              ? night.lightPollution.targetDirectionLightPollutionLabel
-              : night.lightPollution.compactLabel
-          }
-          detail={compactAstroText(night.lightPollution.finalPhotographyImplicationZh, 42)}
-        />
-        <AstroMiniFact
-          label="地形遮挡"
-          value={night.terrainSummaryLabel}
-          detail={compactAstroText(night.terrainHorizon.recommendationZh, 42)}
-        />
+      <div className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,124px),1fr))]">
+        <MetricPill label="星空概率" value={night.starPhotographyProbabilityDisplay} />
+        <MetricPill label="银河概率" value={night.milkyWayPhotographyProbabilityDisplay} />
+        <MetricPill label="置信度" value={night.confidence} />
       </div>
 
       <p className="text-sm font-semibold leading-6 text-card-foreground">{compactReason}</p>
@@ -4244,6 +4287,28 @@ function AstroNightCard({
         </p>
       ) : null}
     </article>
+  );
+}
+
+function AstroNightFactorChip({
+  chip,
+}: {
+  readonly chip: AstroForecastViewModel["nightlyCards"][number]["factorChips"][number];
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex min-h-7 items-center rounded-full border px-2.5 py-1 text-xs font-semibold leading-4",
+        chip.tone === "primary" && "border-primary/30 bg-primary/10 text-primary",
+        chip.tone === "accent" && "border-accent/30 bg-accent/10 text-accent",
+        chip.tone === "danger" && "border-danger/30 bg-danger/10 text-danger",
+        chip.tone === "info" && "border-info/30 bg-info/10 text-info",
+        chip.tone === "muted" && "border-border bg-muted text-muted-foreground",
+      )}
+      data-astro-night-factor-chip={chip.key}
+    >
+      {chip.label}
+    </span>
   );
 }
 
@@ -4269,31 +4334,6 @@ function compactAstroText(value: string, maxLength: number): string {
   }
 
   return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`;
-}
-
-function AstroMiniFact({
-  label,
-  value,
-  detail,
-  className,
-  dataTestId,
-}: {
-  readonly label: string;
-  readonly value: string;
-  readonly detail: string;
-  readonly className?: string;
-  readonly dataTestId?: string;
-}) {
-  return (
-    <div
-      className={cn(className, "min-w-0 rounded-md border border-border bg-muted/60 px-3 py-2")}
-      data-testid={dataTestId}
-    >
-      <p className="text-[11px] leading-4 text-muted-foreground">{label}</p>
-      <p className="mt-1 break-words text-sm font-semibold text-card-foreground">{value}</p>
-      <p className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</p>
-    </div>
-  );
 }
 
 function AstroWhyJudgmentSection({
@@ -4366,6 +4406,10 @@ const astroProfessionalHourlySectionConfig: ProfessionalHourlySectionConfig = {
   defaultFilterMode: "cloudSea",
   signalColumnLabel: "参考",
   signalColumnDescription: "用于复核星空银河窗口内的云量、低云、湿度、降水和风。",
+  initiallyExpanded: false,
+  expandButtonLabel: "展开完整小时表",
+  collapseButtonLabel: "收起完整小时表",
+  previewTitle: "默认显示关键夜拍小时摘要",
 };
 
 function AstroProfessionalDataSection({
@@ -4406,6 +4450,13 @@ function AstroProfessionalDataSection({
         </Button>
       </div>
 
+      <p
+        className="mt-4 rounded-lg border border-border bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground"
+        data-astro-professional-collapsed-note="true"
+      >
+        已汇总 {astroProfessionalSourceSummary(viewModel)}。展开查看模型依据、分组证据与原始诊断。
+      </p>
+
       <dl
         className="mt-4 grid gap-2 text-sm [grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr))]"
         data-astro-professional-collapsed-summary="true"
@@ -4424,6 +4475,8 @@ function AstroProfessionalDataSection({
           value={`${viewModel.professionalHourlyData.rows.length} 小时；${viewModel.professionalDataGroups.length} 组证据`}
         />
       </dl>
+
+      <AstroHourlySummaryGrid items={viewModel.hourlySummary} />
 
       {expanded ? (
         <div className="mt-4 grid gap-4" data-astro-professional-data-body="true">
@@ -4468,6 +4521,48 @@ function AstroProfessionalDataSection({
   );
 }
 
+function astroProfessionalSourceSummary(viewModel: AstroForecastViewModel): string {
+  return [
+    viewModel.lightPollution.available ? "WA/VIIRS 光污染" : "光污染待复核",
+    viewModel.terrainHorizon.available ? "DEM 地形" : "DEM 地形待复核",
+    viewModel.professionalHourlyData.rows.length > 0 ? "逐小时天气" : "逐小时天气待补",
+    "月相",
+    "天文窗口",
+  ].join("、");
+}
+
+function AstroHourlySummaryGrid({
+  items,
+}: {
+  readonly items: AstroForecastViewModel["hourlySummary"];
+}) {
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="mt-3 grid gap-2" data-astro-hourly-summary="true">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-bold text-card-foreground">逐小时摘要</h3>
+        <Badge variant="muted">小时表默认折叠</Badge>
+      </div>
+      <dl className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr))]">
+        {items.map((item) => (
+          <div key={item.key} className="rounded-md border border-border bg-card px-3 py-2">
+            <dt className="text-[11px] leading-4 text-muted-foreground">{item.label}</dt>
+            <dd className={cn("mt-1 break-words text-sm font-semibold", cardToneText(item.tone))}>
+              {item.value}
+            </dd>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              {compactAstroText(item.detail, 44)}
+            </p>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
 function AstroProfessionalGroupSection({
   group,
 }: {
@@ -4478,7 +4573,7 @@ function AstroProfessionalGroupSection({
       {group.description ? (
         <p className="mt-1 text-xs leading-5 text-muted-foreground">{group.description}</p>
       ) : null}
-      <dl className="mt-3 grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr))]">
+      <dl className="mt-3 grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr))]">
         {group.items.map((item) => (
           <AstroProfessionalFact
             key={`${group.key}-${item.label}`}
@@ -4494,9 +4589,15 @@ function AstroProfessionalGroupSection({
   if (group.collapsedByDefault) {
     return (
       <details
-        className="rounded-lg border border-border bg-muted p-3"
+        className={cn(
+          "rounded-lg border border-border bg-muted/70 p-3",
+          group.developerDiagnostics && "border-dashed bg-muted/50",
+        )}
         data-astro-professional-data-group={group.key}
         data-astro-professional-data-group-collapsed="true"
+        data-astro-professional-data-group-secondary={
+          group.developerDiagnostics ? "true" : undefined
+        }
       >
         <summary className="cursor-pointer text-sm font-semibold text-card-foreground">
           {group.title}
@@ -4513,7 +4614,7 @@ function AstroProfessionalGroupSection({
 
   return (
     <section
-      className="rounded-lg border border-border bg-muted p-3"
+      className="rounded-lg border border-border bg-card p-3"
       data-astro-professional-data-group={group.key}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -5635,14 +5736,14 @@ function ProfessionalHourlyCloudSection({
   const rows = data.rows;
   const basis = data.timeBasis;
   const embedded = variant === "embedded";
-  const [expanded, setExpanded] = useState(embedded ? true : config?.initiallyExpanded ?? true);
+  const [expanded, setExpanded] = useState(config?.initiallyExpanded ?? true);
   const [filterMode, setFilterMode] = useState<ProfessionalHourlyFilterMode>(() =>
     defaultProfessionalHourlyFilter(data, config),
   );
 
   useEffect(() => {
-    setExpanded(embedded ? true : config?.initiallyExpanded ?? true);
-  }, [config, embedded]);
+    setExpanded(config?.initiallyExpanded ?? true);
+  }, [config]);
 
   useEffect(() => {
     setFilterMode(defaultProfessionalHourlyFilter(data, config));
@@ -5704,14 +5805,19 @@ function ProfessionalHourlyCloudSection({
     rows[0]?.time ?? basis.startTime,
     basis.timezone,
   )} - ${formatFullDateTimeForTimezone(rows.at(-1)?.time ?? basis.endTime, basis.timezone)}`;
+  const showHourlyToggleHeader = !embedded || config?.initiallyExpanded === false;
 
   const content = (
     <>
-      {!embedded ? (
+      {showHourlyToggleHeader ? (
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-bold text-card-foreground">{sectionTitle}</h2>
+              {embedded ? (
+                <h3 className="text-sm font-bold text-card-foreground">{sectionTitle}</h3>
+              ) : (
+                <h2 className="text-lg font-bold text-card-foreground">{sectionTitle}</h2>
+              )}
               <Badge variant="accent">{sectionBadge}</Badge>
             </div>
             <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
@@ -5787,7 +5893,7 @@ function ProfessionalHourlyCloudSection({
         </p>
       ) : null}
 
-      {!expanded && !embedded ? (
+      {!expanded ? (
         <CloudSeaHourlyFocusPreview
           rows={filteredRows.slice(0, 4)}
           timezone={basis.timezone}
@@ -5903,7 +6009,9 @@ function ProfessionalHourlyCloudSection({
         data-astro-section={target === "astro" ? "ProfessionalHourlyCloudSection" : undefined}
         data-professional-hourly-shared="true"
         data-professional-hourly-target={target}
-        data-professional-hourly-default-expanded="true"
+        data-professional-hourly-default-expanded={
+          config?.initiallyExpanded === false ? "false" : "true"
+        }
         data-professional-hourly-variant="embedded"
         data-testid="professional-hourly-data"
       >
@@ -8796,12 +8904,14 @@ export function AiExplanationPanel({
   errorMessage,
   retryable,
   onGenerate,
+  emptyStateVariant,
 }: {
   readonly status: AiStatus;
   readonly explanation: ForecastAiExplanation | null;
   readonly errorMessage: string;
   readonly retryable: boolean;
   readonly onGenerate: () => void;
+  readonly emptyStateVariant?: "deterministic";
 }) {
   const visibleExplanation = isDisplayableAiExplanation(explanation) ? explanation : null;
   const visibleContent = visibleExplanation
@@ -8864,12 +8974,24 @@ export function AiExplanationPanel({
 
       {shouldRenderEmptyState ? (
         <div
-          className="mt-3 grid gap-3 rounded-lg border border-border bg-muted px-3 py-3"
+          className={cn(
+            "mt-3 grid rounded-lg border border-border bg-muted px-3 py-3",
+            emptyStateVariant === "deterministic" ? "gap-2" : "gap-3",
+          )}
           data-ai-interpretation-empty-state="compact"
         >
-          <p className="text-sm font-semibold leading-6 text-card-foreground">
-            AI 解读是可选项，点击后会基于当前确定性结果生成摄影建议。
-          </p>
+          {emptyStateVariant === "deterministic" ? (
+            <>
+              <p className="text-sm font-semibold leading-6 text-card-foreground">可生成智能解读</p>
+              <p className="text-xs leading-5 text-muted-foreground">
+                基于当前确定性评分、窗口、风险和专业摘要生成，不重新计算天气、天文或评分。
+              </p>
+            </>
+          ) : (
+            <p className="text-sm font-semibold leading-6 text-card-foreground">
+              AI 解读是可选项，点击后会基于当前确定性结果生成摄影建议。
+            </p>
+          )}
           <dl className="grid gap-2 text-xs leading-5 text-muted-foreground min-[720px]:grid-cols-3">
             <div>
               <dt className="font-semibold text-card-foreground">来源</dt>

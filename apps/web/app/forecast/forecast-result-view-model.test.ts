@@ -2261,6 +2261,27 @@ function resultWithAstroHourlyRange(
   };
 }
 
+function pickAstroHourlyFields(
+  result: ForecastCalculationResult,
+): Pick<
+  ForecastCalculationResult,
+  | "horizon"
+  | "forecastEnd"
+  | "targetDates"
+  | "calendarBasis"
+  | "professionalHourlyData"
+  | "professionalHourlyDataTimeBasis"
+> {
+  return {
+    horizon: result.horizon,
+    forecastEnd: result.forecastEnd,
+    targetDates: result.targetDates,
+    calendarBasis: result.calendarBasis,
+    professionalHourlyData: result.professionalHourlyData,
+    professionalHourlyDataTimeBasis: result.professionalHourlyDataTimeBasis,
+  };
+}
+
 type GlowWindowForTest = ForecastCalculationResult["glowAnalysis"]["bestGlowWindows"][number];
 
 function glowWindowForTest(
@@ -7143,13 +7164,15 @@ describe("forecast result target-aware view model", () => {
       source.indexOf("function CloudSeaTopResultHeader"),
     );
     const sharedSectionCall = "<ForecastAiInterpretationSection query={query} result={result} />";
+    const sharedSectionComponent = "<ForecastAiInterpretationSection";
 
     expect(sharedComponentSource).toContain("AiExplanationPanel");
     expect(hookSource).toContain("/forecast/ai-explain");
     expect(hookSource).toContain("normalizeAiExplainResponse");
     expect(cloudSeaPageSource).toContain(sharedSectionCall);
     expect(glowPageSource).toContain(sharedSectionCall);
-    expect(astroPageSource).toContain(sharedSectionCall);
+    expect(astroPageSource).toContain(sharedSectionComponent);
+    expect(astroPageSource).toContain('emptyStateVariant="deterministic"');
     expect(cloudSeaPageSource).toContain('data-cloud-sea-section="CloudSeaAiInterpretation"');
     expect(glowPageSource).toContain('data-glow-section="GlowAiInterpretation"');
     expect(astroPageSource).toContain('data-astro-section="AstroAiInterpretation"');
@@ -7223,6 +7246,8 @@ describe("forecast result target-aware view model", () => {
     expect(professionalDataSource).toContain('target="glow"');
     expect(professionalDataSource).toContain('target="astro"');
     expect(professionalDataSource).toContain('variant="embedded"');
+    expect(source).toContain("initiallyExpanded: false");
+    expect(source).toContain("展开完整小时表");
   });
 
   it("keeps the full 24h glow hourly range behind the collapsed professional data card", () => {
@@ -8112,7 +8137,9 @@ describe("forecast result target-aware view model", () => {
       .map((night) => night.lightPollution.targetDirectionLabel);
 
     expect(dailyDirectionLabels).toEqual(expect.arrayContaining(["较低", "很高"]));
-    expect(countOccurrences(html, "银河方向光害")).toBeGreaterThanOrEqual(2);
+    expect(
+      countOccurrences(html, 'data-astro-night-factor-chip="direction-light"'),
+    ).toBeGreaterThanOrEqual(2);
     expect(html).toContain('data-astro-professional-data-expanded="false"');
     expect(html).not.toContain("nW/cm²/sr");
     expectNoForbiddenBortleCopy(html);
@@ -8339,7 +8366,10 @@ describe("forecast result target-aware view model", () => {
   );
 
   it("builds and renders a dedicated astro result page without popular spots or side rails", () => {
-    const result = resultForTarget("astro");
+    const result = {
+      ...resultWithAstroLightPollution(lightPollutionForDisplayTest()),
+      ...pickAstroHourlyFields(resultWithAstroHourlyRange("7d", 48)),
+    };
     const viewModel = buildAstroForecastViewModel(result);
     const fetchMock = vi.fn(() => {
       throw new Error("astro result render should not call external APIs");
@@ -8363,18 +8393,20 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("逐夜星空银河机会");
       expect(html).toContain("星空概率");
       expect(html).toContain("银河概率");
-      expect(html).toContain("观星指数");
       expect(html).toContain("最佳窗口");
-      expect(html).toContain("月光影响");
-      expect(html).toContain("天气阻碍");
+      expect(html).toContain("行动方案");
+      expect(html).toContain('data-astro-action-plan="true"');
+      expect(html).toContain("月光低");
+      expect(html).toContain("银河窗口可用");
       expect(html).toContain("银河方向");
-      expect(html).toContain("银河方向光害");
       expect(html).toContain("行动");
       expect(html).toContain('data-astro-section="AstroLightPollutionDecision"');
       expect(html).toContain("为什么这样判断");
       expect(html).toContain("专业数据");
       expect(html).toContain("展开专业数据");
       expect(html).toContain('data-astro-professional-collapsed-summary="true"');
+      expect(html).toContain('data-astro-professional-collapsed-note="true"');
+      expect(html).toContain('data-astro-hourly-summary="true"');
       expect(html).toContain("AstroResultPage");
       expect(html).toContain("AstroResultLayout");
       expect(html).toContain('data-astro-section="AstroNightOpportunitySection"');
@@ -8422,7 +8454,10 @@ describe("forecast result target-aware view model", () => {
   });
 
   it("renders the astro result as a decision-first dashboard with compact day cards and grouped professional data", () => {
-    const result = resultForTarget("astro");
+    const result = {
+      ...resultWithAstroLightPollution(lightPollutionForDisplayTest()),
+      ...pickAstroHourlyFields(resultWithAstroHourlyRange("7d", 48)),
+    };
     const viewModel = buildAstroForecastViewModel(result);
     const html = renderToStaticMarkup(
       React.createElement(AstroResultPage, {
@@ -8451,6 +8486,21 @@ describe("forecast result target-aware view model", () => {
       confidenceLabel: expect.any(String),
       oneSentenceAdvice: expect.any(String),
     });
+    expect(viewModel.actionPlan.map((item) => item.key)).toEqual([
+      "timing",
+      "window",
+      "direction",
+      "avoid-direction",
+      "blocker",
+      "note",
+    ]);
+    expect(viewModel.hourlySummary.map((item) => item.key)).toEqual([
+      "best-hours",
+      "worst-hours",
+      "cloud-minimum",
+      "visibility-wind",
+      "precipitation",
+    ]);
     expect(decisionSection).toContain("最佳观测夜");
     expect(decisionSection).toContain("最佳拍摄窗口");
     expect(decisionSection).toContain("备选窗口 / 目标");
@@ -8458,20 +8508,29 @@ describe("forecast result target-aware view model", () => {
     expect(decisionSection).toContain("主要阻碍");
     expect(decisionSection).toContain("次要风险");
     expect(decisionSection).toContain("置信度");
+    expect(decisionSection).toContain("行动方案");
+    expect(decisionSection).toContain('data-astro-action-plan-item="timing"');
+    expect(decisionSection).toContain('data-astro-action-plan-item="window"');
+    expect(decisionSection).toContain('data-astro-action-plan-item="direction"');
+    expect(decisionSection).toContain('data-astro-action-plan-item="avoid-direction"');
     expect(countOccurrences(nightlySection, 'data-astro-day-decision-card="true"')).toBe(
       viewModel.nightlyCards.length,
     );
     expect(nightlySection).toContain('data-astro-night-reason-grid="true"');
+    expect(nightlySection).toContain('data-astro-night-factor-chips="true"');
+    expect(
+      countOccurrences(nightlySection, 'data-astro-night-factor-chip="'),
+    ).toBeGreaterThanOrEqual(viewModel.nightlyCards.length * 3);
     expect(nightlySection).toContain("最佳窗口");
-    expect(nightlySection).toContain("月光影响");
-    expect(nightlySection).toContain("天气阻碍");
-    expect(nightlySection).toContain("银河方向光害");
+    expect(nightlySection).toContain("银河窗口可用");
+    expect(nightlySection).toContain("月光低");
     expect(countOccurrences(nightlySection, 'data-testid="astro-night-action-note"')).toBe(
       viewModel.nightlyCards.length,
     );
     expect(viewModel.professionalDataGroups.map((group) => group.key)).toEqual([
-      "public-summary",
+      "decision-summary",
       "light-pollution-evidence",
+      "direction-light-pollution",
       "terrain-horizon-evidence",
       "astronomy-time-basis",
       "developer-diagnostics",
@@ -8483,8 +8542,12 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain('data-astro-professional-data-expanded="false"');
     expect(html).toContain('data-testid="astro-professional-collapsed-summary"');
     expect(html).toContain("WA/VIIRS 光污染、DEM 地平线、天文窗口、月相、逐小时天气");
+    expect(html).toContain("已汇总");
+    expect(html).toContain("逐小时摘要");
+    expect(html).toContain("小时表默认折叠");
     expect(html).not.toContain('data-astro-professional-data-body="true"');
     expect(html).toContain('data-ai-interpretation-empty-state="compact"');
+    expect(html).toContain("可生成智能解读");
   });
 
   it("renders dedicated astro cloud, moon, dew, and blocked Milky Way states", () => {

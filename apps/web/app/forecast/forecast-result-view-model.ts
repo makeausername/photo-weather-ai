@@ -775,7 +775,14 @@ export type AstroNightDisplayModel = {
   readonly lightPollutionSummaryLabel: string;
   readonly terrainSummaryLabel: string;
   readonly actionNote: string;
+  readonly factorChips: readonly AstroNightFactorChip[];
   readonly calibrationMode: "heuristic";
+};
+
+export type AstroNightFactorChip = {
+  readonly key: string;
+  readonly label: string;
+  readonly tone: ForecastResultCardTone;
 };
 
 export type AstroJudgmentFactorCard = {
@@ -788,6 +795,27 @@ export type AstroJudgmentFactorCard = {
 
 export type AstroActionSummaryItem = {
   readonly key: "worth" | "best-window" | "light-pollution" | "main-blocker" | "backup" | "arrival";
+  readonly label: string;
+  readonly value: string;
+  readonly detail: string;
+  readonly tone: ForecastResultCardTone;
+};
+
+export type AstroActionPlanItem = {
+  readonly key: "timing" | "window" | "direction" | "avoid-direction" | "blocker" | "note";
+  readonly label: string;
+  readonly value: string;
+  readonly detail: string;
+  readonly tone: ForecastResultCardTone;
+};
+
+export type AstroHourlySummaryItem = {
+  readonly key:
+    | "best-hours"
+    | "worst-hours"
+    | "cloud-minimum"
+    | "visibility-wind"
+    | "precipitation";
   readonly label: string;
   readonly value: string;
   readonly detail: string;
@@ -821,9 +849,11 @@ export type AstroForecastViewModel = {
   readonly backupNight?: AstroNightDisplayModel;
   readonly decisionSummary: AstroDecisionSummary;
   readonly actionSummary: readonly AstroActionSummaryItem[];
+  readonly actionPlan: readonly AstroActionPlanItem[];
   readonly judgmentFactors: readonly AstroJudgmentFactorCard[];
   readonly professionalDataGroups: readonly AstroProfessionalDataGroup[];
   readonly professionalHourlyData: ProfessionalHourlyDisplayData;
+  readonly hourlySummary: readonly AstroHourlySummaryItem[];
   readonly astronomicalNightWindows: readonly AstroWindowViewItem[];
   readonly moonlessNightWindows: readonly AstroWindowViewItem[];
   readonly milkyWayCandidateWindows: readonly AstroWindowViewItem[];
@@ -2872,6 +2902,17 @@ export function buildAstroForecastViewModel(
     lightPollution,
     terrainHorizon,
   });
+  const actionPlan = buildAstroActionPlan({
+    result,
+    bestNight,
+    actionSummary,
+    decisionSummary,
+    lightPollution,
+  });
+  const hourlySummary = buildAstroHourlySummary(
+    professionalHourlyData,
+    result.calendarBasis.timezone,
+  );
   const professionalDataGroups = buildAstroPageProfessionalDataGroups({
     result,
     nights: nightlyCards,
@@ -2975,9 +3016,11 @@ export function buildAstroForecastViewModel(
     backupNight,
     decisionSummary,
     actionSummary,
+    actionPlan,
     judgmentFactors: buildAstroJudgmentFactors(result, nightlyCards, bestNight, terrainHorizon),
     professionalDataGroups,
     professionalHourlyData,
+    hourlySummary,
     astronomicalNightWindows: mapAstroWindows(result, analysis.astronomicalNightWindows),
     moonlessNightWindows: mapAstroWindows(result, analysis.moonlessNightWindows),
     milkyWayCandidateWindows: mapAstroWindows(result, analysis.milkyWayCandidateWindows),
@@ -3097,6 +3140,15 @@ function buildAstroNightDisplayModels(
       ? `整体${lightPollutionDisplay.overallSkyDarknessRangeLabel}；银河方向${lightPollutionDisplay.targetDirectionLightPollutionLabel}`
       : lightPollutionDisplay.compactLabel;
     const terrainSummaryLabel = `${terrainHorizonDisplay.statusLabelZh} · ${terrainHorizonDisplay.compactLabel}`;
+    const factorChips = buildAstroNightFactorChips({
+      day,
+      recommendationLevel: recommendation.level,
+      moonInterference,
+      geometricMilkyWayWindow,
+      bestWindow: day?.recommendedMilkyWayWindow,
+      lightPollution: lightPollutionDisplay,
+      terrainHorizon: terrainHorizonDisplay,
+    });
 
     return {
       nightKey: `astro-night-${date}`,
@@ -3201,6 +3253,7 @@ function buildAstroNightDisplayModels(
         horizonCoverageState,
         unavailableReason,
       }),
+      factorChips,
       calibrationMode: "heuristic",
     };
   });
@@ -3216,6 +3269,96 @@ function selectedMilkyWayTerrainAssessment(
     selectedWindow,
     selectedWindow?.date ?? bestNight?.localEveningDate,
   );
+}
+
+function buildAstroNightFactorChips({
+  day,
+  recommendationLevel,
+  moonInterference,
+  geometricMilkyWayWindow,
+  bestWindow,
+  lightPollution,
+  terrainHorizon,
+}: {
+  readonly day: DailyAstro | undefined;
+  readonly recommendationLevel: AstroNightRecommendationLevel;
+  readonly moonInterference: string;
+  readonly geometricMilkyWayWindow: AstroWindowRange | null | undefined;
+  readonly bestWindow: AstroWindow | undefined;
+  readonly lightPollution: AstroLightPollutionDisplayModel;
+  readonly terrainHorizon: AstroTerrainHorizonDisplayModel;
+}): readonly AstroNightFactorChip[] {
+  const blockers = day?.weatherBlockers ?? [];
+  const blockerText = blockers.join(" ");
+  const chips: AstroNightFactorChip[] = [];
+
+  if (recommendationLevel === "not_recommended") {
+    chips.push({ key: "decision", label: "不建议前往", tone: "danger" });
+  }
+
+  chips.push(
+    /总云|云量|云层|厚云|低云/.test(blockerText)
+      ? { key: "cloud", label: "云量高", tone: "danger" }
+      : { key: "cloud", label: "云量可控", tone: "primary" },
+  );
+
+  if (/降水|雨|雪/.test(blockerText)) {
+    chips.push({ key: "precipitation", label: "降水风险", tone: "accent" });
+  }
+
+  chips.push(
+    moonInterference === "高" || moonInterference === "很高"
+      ? { key: "moon", label: "月光高", tone: "accent" }
+      : moonInterference === "中"
+        ? { key: "moon", label: "月光中", tone: "info" }
+        : { key: "moon", label: "月光低", tone: "primary" },
+  );
+
+  chips.push(
+    bestWindow
+      ? { key: "window", label: "银河窗口可用", tone: "primary" }
+      : geometricMilkyWayWindow
+        ? { key: "window", label: "银河备选窗口", tone: "info" }
+        : { key: "window", label: "银河窗口不足", tone: "muted" },
+  );
+
+  if (terrainHorizon.obstructionLevel === "clear") {
+    chips.push({ key: "terrain", label: "地形无遮挡", tone: "primary" });
+  } else if (
+    terrainHorizon.obstructionLevel === "obstructed" ||
+    terrainHorizon.obstructionLevel === "marginal"
+  ) {
+    chips.push({ key: "terrain", label: "地形遮挡", tone: "accent" });
+  } else {
+    chips.push({ key: "terrain", label: "地形需复核", tone: "muted" });
+  }
+
+  chips.push(astroDirectionLightPollutionChip(lightPollution));
+
+  const unique = new Map<string, AstroNightFactorChip>();
+  for (const chip of chips) {
+    if (!unique.has(chip.key)) {
+      unique.set(chip.key, chip);
+    }
+  }
+
+  return [...unique.values()];
+}
+
+function astroDirectionLightPollutionChip(
+  lightPollution: AstroLightPollutionDisplayModel,
+): AstroNightFactorChip {
+  const target = lightPollution.targetDirectionLightPollution;
+  if (!lightPollution.available || target.status !== "resolved") {
+    return { key: "direction-light", label: "光害需复核", tone: "muted" };
+  }
+  if ((target.riskIndex ?? 0) >= 60) {
+    return { key: "direction-light", label: "方向光害高", tone: "accent" };
+  }
+  if ((target.riskIndex ?? 0) >= 40) {
+    return { key: "direction-light", label: "光害中等", tone: "info" };
+  }
+  return { key: "direction-light", label: "方向良好", tone: "primary" };
 }
 
 function terrainAssessmentForAstroWindow(
@@ -5402,6 +5545,286 @@ function buildAstroDecisionSummary({
   };
 }
 
+function buildAstroActionPlan({
+  result,
+  bestNight,
+  actionSummary,
+  decisionSummary,
+  lightPollution,
+}: {
+  readonly result: ForecastCalculationResult;
+  readonly bestNight: AstroNightDisplayModel | undefined;
+  readonly actionSummary: readonly AstroActionSummaryItem[];
+  readonly decisionSummary: AstroDecisionSummary;
+  readonly lightPollution: AstroLightPollutionDisplayModel;
+}): readonly AstroActionPlanItem[] {
+  const arrival = astroActionItem(actionSummary, "arrival");
+  const blocker = astroActionItem(actionSummary, "main-blocker");
+  const bestWindow = astroActionItem(actionSummary, "best-window");
+  const avoidDirections = lightPollution.targetDirectionLightPollution.avoidDirectionLabelsZh;
+  const hasAvoidDirection =
+    lightPollution.available &&
+    lightPollution.targetDirectionLightPollution.status === "resolved" &&
+    avoidDirections.length > 0;
+  const timingLabel =
+    arrival?.value && !arrival.value.startsWith("暂无")
+      ? arrival.value
+      : result.astroAnalysis.astroShootable
+        ? "按窗口前 60-90 分钟到位"
+        : "暂不安排专程出发";
+
+  return [
+    {
+      key: "timing",
+      label: "出发 / 到达",
+      value: timingLabel,
+      detail: arrival?.detail ?? "用于安排交通、步行、构图、对焦和安全撤离。",
+      tone: arrival?.tone ?? decisionSummary.recommendationTone,
+    },
+    {
+      key: "window",
+      label: "最佳窗口",
+      value: bestWindow?.value ?? decisionSummary.bestWindowLabel,
+      detail: bestWindow?.detail ?? "优先围绕可执行银河窗口安排拍摄顺序。",
+      tone: bestWindow?.tone ?? decisionSummary.recommendationTone,
+    },
+    {
+      key: "direction",
+      label: "拍摄方向",
+      value: decisionSummary.directionLabel,
+      detail: bestNight?.milkyWay.maximumAltitudeDisplay
+        ? `银心最高约 ${bestNight.milkyWay.maximumAltitudeDisplay}，现场仍需结合前景复核。`
+        : "银河方向需结合现场前景和地平线复核。",
+      tone: bestNight?.milkyWay.available ? "info" : "muted",
+    },
+    ...(hasAvoidDirection
+      ? [
+          {
+            key: "avoid-direction" as const,
+            label: "避开方向",
+            value: avoidDirections.join("、"),
+            detail: lightPollution.targetDirectionLightPollution.warningZh,
+            tone: lightPollution.statusTone,
+          },
+        ]
+      : []),
+    {
+      key: "blocker",
+      label: "主要阻碍",
+      value: blocker?.value ?? decisionSummary.mainRiskLabel,
+      detail: blocker?.detail ?? decisionSummary.mainRiskDetail,
+      tone: blocker?.tone ?? "muted",
+    },
+    {
+      key: "note",
+      label: "行动备注",
+      value: decisionSummary.actionSuggestionLabel,
+      detail: decisionSummary.oneSentenceAdvice,
+      tone: decisionSummary.recommendationTone,
+    },
+  ];
+}
+
+function buildAstroHourlySummary(
+  data: ProfessionalHourlyDisplayData,
+  timezone: string,
+): readonly AstroHourlySummaryItem[] {
+  const rows = data.rows;
+  if (rows.length === 0) {
+    return [
+      {
+        key: "best-hours",
+        label: "最佳小时",
+        value: "暂无逐小时数据",
+        detail: "展开专业数据后也不会展示空表，需等待天气源补齐小时预报。",
+        tone: "muted",
+      },
+    ];
+  }
+
+  const focusRows = rowsForHourlyWindows(rows, data.focusWindows);
+  const riskRows = rowsForHourlyWindows(rows, data.riskWindows);
+  const bestRows = (focusRows.length > 0 ? focusRows : rows)
+    .slice()
+    .sort((left, right) => astroHourlyDisplayRankValue(right) - astroHourlyDisplayRankValue(left))
+    .slice(0, 2);
+  const worstRows = (riskRows.length > 0 ? riskRows : rows.filter(astroHourlyRowHasDisplayRisk))
+    .slice()
+    .sort(
+      (left, right) =>
+        astroHourlyDisplayRiskRankValue(right) - astroHourlyDisplayRiskRankValue(left),
+    )
+    .slice(0, 2);
+  const cloudMinimum = minimumFinite(rows.map((row) => row.cloudTotalPercent));
+  const visibilityMinimum = minimumFinite(rows.map((row) => row.visibilityMeters));
+  const windMaximum = maximumFinite(rows.map((row) => row.windSpeedMs));
+  const maxPrecipitationAmount = maximumFinite(rows.map((row) => row.precipitationAmountMm));
+  const maxPrecipitationProbability = maximumFinite(
+    rows.map((row) => row.precipitationProbabilityPercent),
+  );
+
+  return [
+    {
+      key: "best-hours",
+      label: "最佳小时",
+      value: formatHourlySummaryTimes(bestRows, timezone),
+      detail: data.focusWindows[0]?.label ?? "按银河/天文焦点窗口和云量、降水、能见度做展示摘要。",
+      tone: bestRows.length > 0 ? "primary" : "muted",
+    },
+    {
+      key: "worst-hours",
+      label: "风险小时",
+      value: worstRows.length > 0 ? formatHourlySummaryTimes(worstRows, timezone) : "暂无突出风险",
+      detail: "优先提示降水、低能见度、强风或风险窗口内的小时。",
+      tone: worstRows.length > 0 ? "accent" : "info",
+    },
+    {
+      key: "cloud-minimum",
+      label: "云量低点",
+      value: isMeaningfulNumber(cloudMinimum) ? `${Math.round(cloudMinimum)}%` : "暂无数据",
+      detail: "取本次可展示逐小时总云量最低值，仅作快速浏览。",
+      tone: isMeaningfulNumber(cloudMinimum) && cloudMinimum <= 45 ? "primary" : "info",
+    },
+    {
+      key: "visibility-wind",
+      label: "能见度 / 风",
+      value: `${formatVisibilityKm(visibilityMinimum)} / ${formatWindMs(windMaximum)}`,
+      detail: "能见度取最低值，风速取最高值，用于判断通透和器材稳定性。",
+      tone:
+        (isMeaningfulNumber(visibilityMinimum) && visibilityMinimum <= 5000) ||
+        (isMeaningfulNumber(windMaximum) && windMaximum >= 9)
+          ? "accent"
+          : "info",
+    },
+    {
+      key: "precipitation",
+      label: "降水风险",
+      value: formatPrecipitationSummary(maxPrecipitationAmount, maxPrecipitationProbability),
+      detail: "取逐小时最高雨量和最高降水概率，不替代确定性推荐。",
+      tone:
+        (isMeaningfulNumber(maxPrecipitationAmount) && maxPrecipitationAmount > 0) ||
+        (isMeaningfulNumber(maxPrecipitationProbability) && maxPrecipitationProbability >= 40)
+          ? "accent"
+          : "primary",
+    },
+  ];
+}
+
+function rowsForHourlyWindows(
+  rows: readonly ProfessionalHourlyDisplayData["rows"][number][],
+  windows: readonly CloudSeaProfessionalHourlyWindow[],
+): readonly ProfessionalHourlyDisplayData["rows"][number][] {
+  if (windows.length === 0) {
+    return [];
+  }
+
+  return rows.filter((row) =>
+    windows.some((window) => {
+      const rowTime = Date.parse(row.time);
+      const start = Date.parse(window.startTime);
+      const end = Date.parse(window.endTime);
+      return (
+        Number.isFinite(rowTime) &&
+        Number.isFinite(start) &&
+        Number.isFinite(end) &&
+        rowTime >= start &&
+        rowTime <= end
+      );
+    }),
+  );
+}
+
+function astroHourlyDisplayRankValue(row: ProfessionalHourlyDisplayData["rows"][number]): number {
+  const cloudScore = isMeaningfulNumber(row.cloudTotalPercent) ? 100 - row.cloudTotalPercent : 40;
+  const lowCloudScore = isMeaningfulNumber(row.cloudLowPercent) ? 100 - row.cloudLowPercent : 40;
+  const visibilityScore = isMeaningfulNumber(row.visibilityMeters)
+    ? Math.min(100, row.visibilityMeters / 200)
+    : 40;
+  const precipitationPenalty =
+    (isMeaningfulNumber(row.precipitationAmountMm) ? row.precipitationAmountMm * 20 : 0) +
+    (isMeaningfulNumber(row.precipitationProbabilityPercent)
+      ? row.precipitationProbabilityPercent / 2
+      : 0);
+  const windPenalty = isMeaningfulNumber(row.windSpeedMs)
+    ? Math.max(0, row.windSpeedMs - 5) * 5
+    : 0;
+
+  return cloudScore + lowCloudScore + visibilityScore - precipitationPenalty - windPenalty;
+}
+
+function astroHourlyDisplayRiskRankValue(
+  row: ProfessionalHourlyDisplayData["rows"][number],
+): number {
+  const cloudRisk = isMeaningfulNumber(row.cloudTotalPercent) ? row.cloudTotalPercent : 0;
+  const lowCloudRisk = isMeaningfulNumber(row.cloudLowPercent) ? row.cloudLowPercent : 0;
+  const precipitationRisk =
+    (isMeaningfulNumber(row.precipitationAmountMm) ? row.precipitationAmountMm * 30 : 0) +
+    (isMeaningfulNumber(row.precipitationProbabilityPercent)
+      ? row.precipitationProbabilityPercent
+      : 0);
+  const visibilityRisk = isMeaningfulNumber(row.visibilityMeters)
+    ? Math.max(0, 8000 - row.visibilityMeters) / 100
+    : 0;
+  const windRisk = isMeaningfulNumber(row.windSpeedMs) ? row.windSpeedMs * 6 : 0;
+
+  return cloudRisk + lowCloudRisk + precipitationRisk + visibilityRisk + windRisk;
+}
+
+function astroHourlyRowHasDisplayRisk(row: ProfessionalHourlyDisplayData["rows"][number]): boolean {
+  return (
+    (isMeaningfulNumber(row.precipitationAmountMm) && row.precipitationAmountMm > 0) ||
+    (isMeaningfulNumber(row.precipitationProbabilityPercent) &&
+      row.precipitationProbabilityPercent >= 40) ||
+    (isMeaningfulNumber(row.visibilityMeters) && row.visibilityMeters <= 5000) ||
+    (isMeaningfulNumber(row.windSpeedMs) && row.windSpeedMs >= 8) ||
+    (isMeaningfulNumber(row.cloudTotalPercent) && row.cloudTotalPercent >= 80)
+  );
+}
+
+function formatHourlySummaryTimes(
+  rows: readonly ProfessionalHourlyDisplayData["rows"][number][],
+  timezone: string,
+): string {
+  if (rows.length === 0) {
+    return "暂无明确小时";
+  }
+
+  return rows
+    .map((row) => row.timeLabel || formatTime(row.time, timezone))
+    .filter(Boolean)
+    .join("、");
+}
+
+function minimumFinite(values: readonly (number | null | undefined)[]): number | null {
+  const finite = values.filter(isMeaningfulNumber);
+  return finite.length > 0 ? Math.min(...finite) : null;
+}
+
+function maximumFinite(values: readonly (number | null | undefined)[]): number | null {
+  const finite = values.filter(isMeaningfulNumber);
+  return finite.length > 0 ? Math.max(...finite) : null;
+}
+
+function formatVisibilityKm(value: number | null): string {
+  return isMeaningfulNumber(value) ? `${formatDecimal(value / 1000)} km` : "暂无数据";
+}
+
+function formatWindMs(value: number | null): string {
+  return isMeaningfulNumber(value) ? `${formatDecimal(value)} m/s` : "暂无数据";
+}
+
+function formatPrecipitationSummary(amount: number | null, probability: number | null): string {
+  const amountLabel = isMeaningfulNumber(amount) ? `${formatDecimal(amount)} mm` : "暂无雨量";
+  const probabilityLabel = isMeaningfulNumber(probability)
+    ? `${Math.round(probability)}%`
+    : "暂无概率";
+  return `${amountLabel} / ${probabilityLabel}`;
+}
+
+function formatDecimal(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
 function astroActionItem(
   items: readonly AstroActionSummaryItem[],
   key: AstroActionSummaryItem["key"],
@@ -5436,8 +5859,8 @@ function buildAstroPageProfessionalDataGroups({
 
   return [
     {
-      key: "public-summary",
-      title: "公开结论摘要",
+      key: "decision-summary",
+      title: "决策摘要",
       badgeLabel: decisionSummary.recommendationLabel,
       description: "面向出行决策的公开结论，先给是否前往、窗口、风险和置信度。",
       items: [
@@ -5470,17 +5893,33 @@ function buildAstroPageProfessionalDataGroups({
     },
     {
       key: "light-pollution-evidence",
-      title: "光污染模型证据",
+      title: "光污染证据",
       badgeLabel: lightPollution.available ? lightPollution.statusBadgeLabelZh : "数据暂缺",
-      description: "合并 WA/模型天空亮度、VIIRS 本地灯光、周边光穹和银河方向光害。",
-      items: lightPollutionPublicItems,
+      description: "合并 WA/模型天空亮度、VIIRS 本地灯光和周边光穹，只保留影响出行判断的关键值。",
+      items: lightPollutionPublicItems.slice(0, 6),
+    },
+    {
+      key: "direction-light-pollution",
+      title: "方向光害",
+      badgeLabel: lightPollution.targetDirectionLightPollutionLabel,
+      description: "银河目标方向与应避开的亮方向，辅助现场构图和机位选择。",
+      items:
+        lightPollution.directionalSectorItems.length > 0
+          ? lightPollution.directionalSectorItems.slice(0, 4)
+          : [
+              {
+                label: "银河方向",
+                value: lightPollution.targetDirectionLightPollutionLabel,
+                detail: lightPollution.targetDirectionLightPollutionWarning,
+              },
+            ],
     },
     {
       key: "terrain-horizon-evidence",
       title: "地形遮挡证据",
       badgeLabel: terrainHorizon.statusBadgeLabelZh,
-      description: "银河目标方位角、目标高度、地平线高度、clearance 和 DEM 可用性。",
-      items: terrainHorizon.professionalDataItems,
+      description: "银河目标方位角、目标高度、地平线高度和 DEM 可用性。",
+      items: terrainHorizon.professionalDataItems.slice(0, 6),
     },
     {
       key: "astronomy-time-basis",
