@@ -1,4 +1,4 @@
-import type { EstimatedBortleRange, LightPollutionInfo } from "./types.js";
+import type { EstimatedBortleRange, LightPollutionInfo, SkyBrightnessInfo } from "./types.js";
 import {
   defaultNationalSkyDarknessModelConfig,
   resolveNationalSkyDarknessModel,
@@ -7,7 +7,16 @@ import {
 
 export const publicSkyDarknessDisplayVersion = "china-national-sky-darkness-public-v1" as const;
 export const publicSkyDarknessDisclaimerZh =
-  "公开展示为卫星夜光和全国分布校准后的保守暗空估算，不代表现场实测或官方暗空认证。";
+  "公开展示为 WA/模型天空亮度、VIIRS 卫星夜光和全国分布校准后的保守暗空估算，不代表现场实测或官方暗空认证。";
+
+export type ModelDerivedDarkSkyReferenceDisplay = {
+  readonly labelZh: string;
+  readonly noteZh: string;
+  readonly publicDisplayable: boolean;
+  readonly modelDerived: true;
+  readonly measured: false;
+  readonly official: false;
+};
 
 export type PublicSkyDarknessDisplay = {
   readonly available: boolean;
@@ -53,6 +62,8 @@ export type PublicSkyDarknessDisplay = {
   readonly skyBrightnessDatasetYear: number | null;
   readonly skyBrightnessDatasetVersion: string | null;
   readonly skyBrightnessConflictRisk: boolean;
+  readonly skyBrightnessViirsBrighteningRisk: boolean;
+  readonly modelDerivedDarkSkyReference: ModelDerivedDarkSkyReferenceDisplay | null;
 };
 
 export function resolveNationalSkyDarknessDisplay(
@@ -66,7 +77,7 @@ export function resolveNationalSkyDarknessDisplay(
         rawEstimate?.unavailableReason ?? lightPollution.unavailableReason ?? "raw_estimate_unavailable",
       );
       const nationalModel = resolveNationalSkyDarknessModel(lightPollution, unavailableRawEstimate);
-      return publicDisplayFromNationalModel(unavailableRawEstimate, nationalModel);
+      return publicDisplayFromNationalModel(unavailableRawEstimate, nationalModel, lightPollution.skyBrightness);
     }
     return unavailablePublicSkyDarknessDisplay(
       rawEstimate,
@@ -77,7 +88,7 @@ export function resolveNationalSkyDarknessDisplay(
   }
 
   const nationalModel = resolveNationalSkyDarknessModel(lightPollution, rawEstimate);
-  return publicDisplayFromNationalModel(rawEstimate, nationalModel);
+  return publicDisplayFromNationalModel(rawEstimate, nationalModel, lightPollution.skyBrightness);
 }
 
 export const resolvePublicSkyDarknessDisplay = resolveNationalSkyDarknessDisplay;
@@ -88,6 +99,7 @@ export const resolvePublicLightPollutionLabel = resolveNationalSkyDarknessDispla
 function publicDisplayFromNationalModel(
   rawEstimate: EstimatedBortleRange,
   nationalModel: NationalSkyDarknessModelResult,
+  skyBrightness?: SkyBrightnessInfo | null,
 ): PublicSkyDarknessDisplay {
   return {
     available: nationalModel.available,
@@ -132,6 +144,11 @@ function publicDisplayFromNationalModel(
     skyBrightnessDatasetYear: nationalModel.skyBrightnessDatasetYear,
     skyBrightnessDatasetVersion: nationalModel.skyBrightnessDatasetVersion,
     skyBrightnessConflictRisk: nationalModel.skyBrightnessConflictRisk,
+    skyBrightnessViirsBrighteningRisk: nationalModel.skyBrightnessViirsBrighteningRisk,
+    modelDerivedDarkSkyReference: modelDerivedDarkSkyReferenceDisplay(
+      skyBrightness,
+      nationalModel.confidence,
+    ),
   };
 }
 
@@ -150,6 +167,31 @@ function unavailableViirsEstimate(
       "Raw VIIRS Bortle estimate is unavailable; WA/model sky brightness may still provide a conservative modeled baseline.",
     disclaimerZh: rawEstimate?.disclaimerZh ?? publicSkyDarknessDisclaimerZh,
     unavailableReason,
+  };
+}
+
+function modelDerivedDarkSkyReferenceDisplay(
+  skyBrightness: SkyBrightnessInfo | null | undefined,
+  confidence: EstimatedBortleRange["confidence"],
+): ModelDerivedDarkSkyReferenceDisplay | null {
+  const reference = skyBrightness?.chinaDarkSkyReference;
+  if (
+    !reference?.available ||
+    !reference.modelDerived ||
+    reference.measured ||
+    reference.official
+  ) {
+    return null;
+  }
+
+  const sourceLabel = reference.labelZh?.trim() || "模型暗夜参考";
+  return {
+    labelZh: `暗夜参考：${sourceLabel}（模型估算，非认证）`,
+    noteZh: `${reference.noteZh}；该参考为模型估算，非现场实测，非官方认证。`,
+    publicDisplayable: confidence !== "low",
+    modelDerived: true,
+    measured: false,
+    official: false,
   };
 }
 
@@ -200,5 +242,7 @@ function unavailablePublicSkyDarknessDisplay(
     skyBrightnessDatasetYear: null,
     skyBrightnessDatasetVersion: null,
     skyBrightnessConflictRisk: false,
+    skyBrightnessViirsBrighteningRisk: false,
+    modelDerivedDarkSkyReference: null,
   };
 }

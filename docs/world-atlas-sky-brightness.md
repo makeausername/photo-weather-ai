@@ -44,10 +44,15 @@ Modeled SQM is never presented as measured SQM. Artificial brightness, natural b
 When a defensible sky-brightness Bortle range exists, it becomes the primary public baseline. The existing VIIRS night-light layer remains useful as current light-source evidence:
 
 - local radiance and halo can widen or lift an over-dark modeled baseline;
+- WA 3-4 style moderate darkness plus brighter VIIRS current-light evidence can lift to 4-5 rather than staying anchored to the darker WA low end;
 - strong VIIRS conflict prevents narrow dark claims;
 - missing WA/model data falls back to the existing conservative VIIRS public display;
 - missing VIIRS can fall back to WA/model with low confidence when WA/model is usable;
 - raw VIIRS and raw WA/model fields stay in diagnostics.
+
+The public Bortle value is always a fused estimated range. High-confidence output should stay narrow, medium confidence normally uses a two-class range, and wider ranges require a visible uncertainty reason. A model-derived dark-sky reference may be shown only as `暗夜参考：模型估算，非认证`; it is not measured SQM, not an official grade, and not a national-standard classification.
+
+Professional data is grouped as public summary, WA sky-brightness baseline, VIIRS current-light evidence, fusion explanation, DEM terrain status, and collapsed developer diagnostics. Raw internal diagnostic codes and long conversion notes belong only in the developer diagnostics group.
 
 Use coordinate diagnostics to inspect one point without external services:
 

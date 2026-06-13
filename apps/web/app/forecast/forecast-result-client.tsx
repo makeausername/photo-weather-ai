@@ -4329,25 +4329,65 @@ function AstroLightPollutionProfessionalSection({
         </Badge>
       </div>
 
-      <div className="mt-3 grid gap-3 min-[760px]:grid-cols-3">
-        {lightPollution.professionalDataItems.slice(0, 3).map((item) => (
-          <AstroProfessionalFact
-            key={item.label}
-            label={item.label}
-            value={item.value ?? item.detail}
-          />
-        ))}
+      <div className="mt-3 grid gap-3" data-astro-light-pollution-professional-groups="true">
+        {lightPollution.professionalDataGroups.map((group) =>
+          group.collapsedByDefault ? (
+            <details
+              key={group.key}
+              className="rounded-md border border-border bg-card px-3 py-2"
+              data-astro-light-pollution-professional-group={group.key}
+            >
+              <summary className="cursor-pointer text-sm font-semibold text-card-foreground">
+                {group.title}
+                {group.badgeLabel ? (
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    {group.badgeLabel}
+                  </span>
+                ) : null}
+              </summary>
+              {group.description ? (
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  {group.description}
+                </p>
+              ) : null}
+              <dl className="mt-3 grid gap-2 text-sm min-[760px]:grid-cols-2">
+                {group.items.map((item) => (
+                  <AstroInlineDefinition
+                    key={item.label}
+                    label={item.label}
+                    value={item.value ?? item.detail}
+                  />
+                ))}
+              </dl>
+            </details>
+          ) : (
+            <section
+              key={group.key}
+              className="rounded-md border border-border bg-card p-3"
+              data-astro-light-pollution-professional-group={group.key}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h4 className="text-sm font-semibold text-card-foreground">{group.title}</h4>
+                {group.badgeLabel ? <Badge variant="muted">{group.badgeLabel}</Badge> : null}
+              </div>
+              {group.description ? (
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {group.description}
+                </p>
+              ) : null}
+              <dl className="mt-3 grid gap-2 text-sm min-[760px]:grid-cols-2">
+                {group.items.map((item) => (
+                  <AstroInlineDefinition
+                    key={item.label}
+                    label={item.label}
+                    value={item.value ?? item.detail}
+                  />
+                ))}
+              </dl>
+            </section>
+          ),
+        )}
       </div>
-
-      <dl className="mt-3 grid gap-2 text-sm min-[760px]:grid-cols-2">
-        {lightPollution.professionalDataItems.slice(3).map((item) => (
-          <AstroInlineDefinition
-            key={item.label}
-            label={item.label}
-            value={item.value ?? item.detail}
-          />
-        ))}
-      </dl>
 
       {lightPollution.directionalSectorItems.length > 0 ? (
         <div className="mt-3 grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,96px),1fr))]">

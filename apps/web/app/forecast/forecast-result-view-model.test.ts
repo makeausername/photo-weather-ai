@@ -7960,8 +7960,8 @@ describe("forecast result target-aware view model", () => {
       [
         "中",
         "公开保守估算",
-        "4–5级",
-        "中等光污染",
+        "5–6级（保守参考）",
+        "光污染偏强",
         "银河方向",
         "光污染中等",
         "银河可拍性仍要看云量和月光",
@@ -8121,7 +8121,7 @@ describe("forecast result target-aware view model", () => {
       viewModel.lightPollution.estimatedBortleRangeLabel,
     );
     expect(viewModel.lightPollution.noticeZh).toBe(
-      "公开展示为卫星夜光保守估算，不代表现场实测或正式波特尔观测认证。",
+      "公开展示为 WA/模型天空亮度、VIIRS 卫星夜光和全国分布校准后的保守暗空估算，不代表现场实测或官方暗空认证。",
     );
     expect(html).toContain("公开保守估算");
     expect(html).toContain("2–4级（保守参考）");
@@ -8181,6 +8181,82 @@ describe("forecast result target-aware view model", () => {
     expect(professionalItemsByLabel.get("有效采样")?.value).toBe("90/96");
     expect(professionalItemsByLabel.get("校验码")?.value).toBe("abc123ef");
     expectNoForbiddenBortleCopy(mainCard);
+  });
+
+  it("groups WA and VIIRS professional light-pollution data with raw codes collapsed", () => {
+    const lightPollution = lightPollutionForDisplayTest({
+      ambientRiskIndex: 35,
+      localRadiance: 0.06,
+      surroundingHaloRadiance: 0.1,
+      skyBrightness: {
+        available: true,
+        dataAvailable: true,
+        datasetName: "Synthetic WA",
+        datasetYear: 2015,
+        datasetVersion: "WA2015-Falchi2016-v1.1",
+        checksumShort: "wa123",
+        valueType: "artificial_brightness_mcd_m2",
+        rawValue: 0.35,
+        valueUnit: "mcd/m^2",
+        artificialBrightness: 0.35,
+        naturalSkyBrightnessMcdM2: 0.174,
+        modeledTotalSkyBrightnessMcdM2: 0.524,
+        modeledSqm: 20.8,
+        estimatedBortleRange: {
+          available: true,
+          minClass: 3,
+          maxClass: 4,
+          rangeLabelZh: "3-4级（模型估算）",
+          confidence: "medium",
+          basisZh: "模型天空亮度栅格估算，非现场实测。",
+          methodVersion: "wa-modeled-sqm-v1",
+        },
+        chinaDarkSkyReference: {
+          available: true,
+          labelZh: "较暗天空",
+          noteZh: "模型估算，非认证。",
+          modelDerived: true,
+          measured: false,
+          official: false,
+        },
+        confidence: "medium",
+        diagnostics: {
+          healthStatus: "available",
+          metadataExists: true,
+          datasetExists: true,
+          sampleCount: 1,
+          validSampleCount: 1,
+          conversionNotes: ["raw conversion note"],
+          uncertaintyNotes: ["raw uncertainty note"],
+        },
+      },
+    });
+    const viewModel = buildAstroForecastViewModel(resultWithAstroLightPollution(lightPollution));
+    const groups = viewModel.lightPollution.professionalDataGroups;
+    const groupKeys = groups.map((group) => group.key);
+    const primaryGroupsText = JSON.stringify(
+      groups.filter((group) => !group.developerDiagnostics),
+    );
+    const developerGroup = groups.find((group) => group.developerDiagnostics);
+
+    expect(groupKeys).toEqual([
+      "public-summary",
+      "wa-baseline",
+      "viirs-current-light",
+      "fusion-explanation",
+      "developer-diagnostics",
+    ]);
+    expect(viewModel.lightPollution.estimatedBortleRangeLabel).toBe("4–5级（保守参考）");
+    expect(primaryGroupsText).toContain("暗夜参考：较暗天空（模型估算，非认证）");
+    expect(primaryGroupsText).toContain("模型SQM（非实测）");
+    expect(primaryGroupsText).not.toMatch(/wa_model_baseline_available|raw conversion note|raw uncertainty note/);
+    expect(developerGroup).toMatchObject({
+      collapsedByDefault: true,
+      developerDiagnostics: true,
+    });
+    expect(JSON.stringify(developerGroup)).toContain("wa_model_baseline_available");
+    expect(JSON.stringify(developerGroup)).toContain("raw conversion note");
+    expect(JSON.stringify(groups)).not.toMatch(/国标|国家标准|国标等级/);
   });
 
   it.each([

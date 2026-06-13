@@ -653,8 +653,19 @@ export type AstroLightPollutionDisplayModel = {
   readonly targetDirectionLabel: string;
   readonly judgmentSummaryZh: string;
   readonly professionalDataItems: readonly ForecastResultSectionItem[];
+  readonly professionalDataGroups: readonly AstroProfessionalDataGroup[];
   readonly directionalSectorItems: readonly ForecastResultSectionItem[];
   readonly noticeZh: string;
+};
+
+export type AstroProfessionalDataGroup = {
+  readonly key: string;
+  readonly title: string;
+  readonly badgeLabel?: string;
+  readonly description?: string;
+  readonly items: readonly ForecastResultSectionItem[];
+  readonly collapsedByDefault?: boolean;
+  readonly developerDiagnostics?: boolean;
 };
 
 export type AstroTerrainHorizonDisplayModel = {
@@ -3181,6 +3192,15 @@ function astroLightPollutionDisplay(
 
   if (!lightPollution.available) {
     const detail = "当前判断未把光污染当作低风险处理，拍摄前需现场确认城市光穹和地平线亮度。";
+    const professionalDataGroups = buildAstroLightPollutionProfessionalDataGroups(
+      lightPollution,
+      datasetLabel || "数据暂缺",
+      sourceLabelZh,
+      confidenceLabelZh,
+      noticeZh,
+      publicSkyDarkness,
+      rawEstimatedBortle,
+    );
     return {
       available: false,
       dataAvailable: false,
@@ -3206,15 +3226,8 @@ function astroLightPollutionDisplay(
       ambientLabel: "数据不足",
       targetDirectionLabel: "数据不足",
       judgmentSummaryZh: `光污染数据暂不可用；${estimatedBortle.estimatedBortleRangeLabel}：${estimatedBortle.estimatedBortleBasis}当前判断未把它当作低风险处理，现场仍需确认城市光穹和地平线亮度。`,
-      professionalDataItems: buildAstroLightPollutionProfessionalDataItems(
-        lightPollution,
-        datasetLabel || "数据暂缺",
-        sourceLabelZh,
-        confidenceLabelZh,
-        noticeZh,
-        publicSkyDarkness,
-        rawEstimatedBortle,
-      ),
+      professionalDataItems: flattenAstroProfessionalDataGroups(professionalDataGroups),
+      professionalDataGroups,
       directionalSectorItems: buildAstroLightPollutionDirectionalItems(lightPollution),
       noticeZh,
     };
@@ -3254,6 +3267,15 @@ function astroLightPollutionDisplay(
     riskForRecommendation,
     publicTargetLabel,
     publicSkyDarkness.conservative,
+  );
+  const professionalDataGroups = buildAstroLightPollutionProfessionalDataGroups(
+    lightPollution,
+    datasetLabel,
+    sourceLabelZh,
+    confidenceLabelZh,
+    noticeZh,
+    publicSkyDarkness,
+    rawEstimatedBortle,
   );
 
   return {
@@ -3298,15 +3320,8 @@ function astroLightPollutionDisplay(
       publicSkyDarkness,
       confidenceLabelZh,
     }),
-    professionalDataItems: buildAstroLightPollutionProfessionalDataItems(
-      lightPollution,
-      datasetLabel,
-      sourceLabelZh,
-      confidenceLabelZh,
-      noticeZh,
-      publicSkyDarkness,
-      rawEstimatedBortle,
-    ),
+    professionalDataItems: flattenAstroProfessionalDataGroups(professionalDataGroups),
+    professionalDataGroups,
     directionalSectorItems: buildAstroLightPollutionDirectionalItems(lightPollution),
     noticeZh,
   };
@@ -3485,7 +3500,7 @@ function rawEstimatedBortleDisplayFields(
   };
 }
 
-function buildAstroLightPollutionProfessionalDataItems(
+function buildAstroLightPollutionProfessionalDataGroups(
   lightPollution: LightPollutionInfo,
   datasetLabel: string,
   sourceLabelZh: string,
@@ -3502,145 +3517,267 @@ function buildAstroLightPollutionProfessionalDataItems(
     | "estimatedBortleDisclaimer"
     | "estimatedBortleMethodVersion"
   >,
-): readonly ForecastResultSectionItem[] {
+): readonly AstroProfessionalDataGroup[] {
   const publicEstimatedBortle = estimatedBortleDisplayFields(publicSkyDarkness);
-  return [
+  const uncertaintyReasons =
+    publicSkyDarkness.confidenceReasonsZh.length > 0
+      ? publicSkyDarkness.confidenceReasonsZh.join("；")
+      : "当前未触发额外不确定性说明。";
+  const publicSummaryItems: ForecastResultSectionItem[] = [
     {
-      label: "数据集",
-      value: datasetLabel || "数据暂缺",
-      detail: "卫星夜光栅格数据集和版本。",
-    },
-    {
-      label: "VIIRS原始估算",
-      value: rawEstimatedBortle.estimatedBortleRangeLabel,
-      detail: `${rawEstimatedBortle.estimatedBortleSkyQualityLabel}；${rawEstimatedBortle.estimatedBortleBasis}`,
+      label: "公开光污染标签",
+      value: publicEstimatedBortle.estimatedBortleSkyQualityLabel,
+      detail: "由最终融合后的公开范围和置信度生成。",
     },
     {
       label: "公开保守估算",
       value: publicEstimatedBortle.estimatedBortleRangeLabel,
-      detail: `${publicEstimatedBortle.estimatedBortleSkyQualityLabel}；${publicEstimatedBortle.estimatedBortleBasis}`,
+      detail: publicEstimatedBortle.estimatedBortleBasis,
     },
     {
-      label: "本地辐亮度",
-      value: formatNullableNumberForView(lightPollution.localRadiance, " nW/cm²/sr"),
-      detail: "当前位置附近夜光辐亮度参考值。",
-    },
-    {
-      label: "周边光穹",
-      value: formatNullableNumberForView(lightPollution.surroundingHaloRadiance, " nW/cm²/sr"),
-      detail: "周边方向加权后的人工光影响参考。",
-    },
-    {
-      label: "环境风险指数",
-      value:
-        typeof lightPollution.ambientRiskIndex === "number"
-          ? `${lightPollution.ambientRiskIndex} / ${lightPollution.ambientRiskLevelLabelZh}`
-          : "数据不足",
-      detail: "位置级环境光污染风险，也是波特尔估算 V1 的输入。",
-    },
-    {
-      label: "波特尔置信度",
+      label: "公开置信度",
       value: publicEstimatedBortle.estimatedBortleConfidenceLabel,
-      detail: `公开展示置信度；原始估算置信度 ${rawEstimatedBortle.estimatedBortleConfidenceLabel}。`,
+      detail: `原始估算置信度 ${rawEstimatedBortle.estimatedBortleConfidenceLabel}。`,
     },
     {
-      label: "波特尔方法",
-      value: publicEstimatedBortle.estimatedBortleMethodVersion,
-      detail: `原始方法 ${rawEstimatedBortle.estimatedBortleMethodVersion}；公开展示方法 ${publicEstimatedBortle.estimatedBortleMethodVersion}。`,
+      label: "不确定性原因",
+      value: publicSkyDarkness.tooWideRange ? "需现场确认" : uncertaintyReasons,
+      detail:
+        publicSkyDarkness.rangeWidthClasses && publicSkyDarkness.rangeWidthClasses > 3
+          ? "公开范围超过 3 个等级，必须结合现场光穹、云量和月光确认。"
+          : "用于解释公开范围为何保守、上调或放宽。",
+    },
+  ];
+
+  if (publicSkyDarkness.modelDerivedDarkSkyReference) {
+    publicSummaryItems.push({
+      label: "暗夜参考",
+      value: publicSkyDarkness.modelDerivedDarkSkyReference.labelZh,
+      detail: publicSkyDarkness.modelDerivedDarkSkyReference.publicDisplayable
+        ? publicSkyDarkness.modelDerivedDarkSkyReference.noteZh
+        : `${publicSkyDarkness.modelDerivedDarkSkyReference.noteZh} 当前置信度较低，仅在专业数据中展示。`,
+    });
+  }
+
+  return [
+    {
+      key: "public-summary",
+      title: "公开摘要",
+      badgeLabel: publicSkyDarkness.confidence === "medium" ? "中置信" : "低置信",
+      description: "面向拍摄决策的最终公开范围、标签和不确定性说明。",
+      items: publicSummaryItems,
     },
     {
-      label: "全国暗空模型",
-      value: publicSkyDarkness.nationalModelVersion,
-      detail: `全国统计配置 ${publicSkyDarkness.nationalStatsVersion}；原始 VIIRS 估算仍保留为诊断，不作为公开精确等级。`,
+      key: "wa-baseline",
+      title: "WA天空亮度基线",
+      badgeLabel: publicSkyDarkness.skyBrightnessAvailable ? "WA可用" : "WA暂缺",
+      description: "WA/模型天空亮度作为暗空基线；模型SQM只作为模型估算显示。",
+      items: buildSkyBrightnessPrimaryProfessionalDataItems(lightPollution, publicSkyDarkness),
     },
     {
-      label: "全国分位",
-      value: `local ${formatNullableNumberForView(publicSkyDarkness.localRadianceQuantile, "%")} / halo ${formatNullableNumberForView(publicSkyDarkness.haloRadianceQuantile, "%")}`,
-      detail: `ambient ${formatNullableNumberForView(publicSkyDarkness.ambientRiskQuantile, "%")}；nationalRisk ${formatNullableNumberForView(publicSkyDarkness.nationalRiskIndex, "%")}。`,
+      key: "viirs-current-light",
+      title: "VIIRS当前夜光证据",
+      badgeLabel: lightPollution.available ? "VIIRS可用" : "VIIRS暂缺",
+      description: "VIIRS用于当前光源、周边光穹、方向风险和全国分位修正。",
+      items: [
+        {
+          label: "VIIRS原始估算",
+          value: rawEstimatedBortle.estimatedBortleRangeLabel,
+          detail: `${rawEstimatedBortle.estimatedBortleSkyQualityLabel}；原始诊断保留，不直接作为公开精确等级。`,
+        },
+        {
+          label: "本地辐亮度",
+          value: formatNullableNumberForView(lightPollution.localRadiance, " nW/cm²/sr"),
+          detail: "当前位置附近夜光辐亮度参考值。",
+        },
+        {
+          label: "周边光穹",
+          value: formatNullableNumberForView(
+            lightPollution.surroundingHaloRadiance,
+            " nW/cm²/sr",
+          ),
+          detail: "周边方向加权后的人工光影响参考。",
+        },
+        {
+          label: "环境风险指数",
+          value:
+            typeof lightPollution.ambientRiskIndex === "number"
+              ? `${lightPollution.ambientRiskIndex} / ${lightPollution.ambientRiskLevelLabelZh}`
+              : "数据不足",
+          detail: "位置级环境光污染风险，也是原始 VIIRS 波特尔估算输入。",
+        },
+        {
+          label: "目标方位角",
+          value: formatNullableNumberForView(lightPollution.targetAzimuthDegrees, "°"),
+          detail: "本次代表银河窗口的银心方位角。",
+        },
+        {
+          label: "目标方向风险",
+          value:
+            typeof lightPollution.targetDirectionRisk === "number"
+              ? `${lightPollution.targetDirectionRisk} / ${
+                  lightPollution.targetDirectionLevelLabelZh ?? "数据不足"
+                }`
+              : "未推断",
+          detail: "由方向扇区按目标方位角解析，不额外查询栅格。",
+        },
+        {
+          label: "有效采样",
+          value: `${lightPollution.validSampleCount}/${lightPollution.sampleCount}`,
+          detail: "有效栅格样本数 / 总采样数。",
+        },
+        {
+          label: "来源",
+          value: sourceLabelZh,
+          detail: "专业数据保留数据集来源；普通公开卡片不展示 provider 细节。",
+        },
+        {
+          label: "数据年份",
+          value:
+            typeof lightPollution.datasetYear === "number" ? `${lightPollution.datasetYear}` : "暂无",
+          detail: "由光污染数据元信息动态提供。",
+        },
+        {
+          label: "数据版本",
+          value: lightPollution.datasetVersion ?? "暂无",
+          detail: "由光污染数据元信息动态提供。",
+        },
+      ],
     },
     {
-      label: "local/halo",
-      value: `local/halo ${formatNullableRatioForView(publicSkyDarkness.localToHaloRatio)} / halo/local ${formatNullableRatioForView(publicSkyDarkness.haloToLocalRatio)}`,
-      detail: `local/halo 分位 ${formatNullableNumberForView(publicSkyDarkness.localToHaloRatioQuantile, "%")}；halo/local 分位 ${formatNullableNumberForView(publicSkyDarkness.haloToLocalRatioQuantile, "%")}。`,
+      key: "fusion-explanation",
+      title: "融合解释",
+      badgeLabel: fusionActionLabel(publicSkyDarkness),
+      description: "说明 WA 基线与 VIIRS 当前证据如何影响最终公开范围。",
+      items: [
+        {
+          label: "融合调整",
+          value: fusionActionLabel(publicSkyDarkness),
+          detail: uncertaintyReasons,
+        },
+        {
+          label: "WA/VIIRS关系",
+          value: publicSkyDarkness.skyBrightnessConflictRisk
+            ? "存在差异，已放宽"
+            : publicSkyDarkness.skyBrightnessViirsBrighteningRisk
+              ? "VIIRS偏亮，已上调"
+              : "未发现强冲突",
+          detail: `WA范围 ${publicSkyDarkness.skyBrightnessEstimatedBortleLabel ?? "暂无"}；VIIRS原始 ${publicSkyDarkness.rawRangeLabelZh}。`,
+        },
+        {
+          label: "最终公开范围",
+          value: publicSkyDarkness.rangeLabelZh,
+          detail: `范围宽度 ${formatNullableNumberForView(publicSkyDarkness.rangeWidthClasses, " 个等级")}；策略 ${rangeWidthPolicyLabelZh(publicSkyDarkness.rangeWidthPolicy)}。`,
+        },
+        {
+          label: "最终标签",
+          value: publicSkyDarkness.skyQualityLabelZh,
+          detail: "标签只来自最终融合范围和置信度，不使用原始单一信号覆盖。",
+        },
+        {
+          label: "全国分位",
+          value: `本地 ${formatNullableNumberForView(publicSkyDarkness.localRadianceQuantile, "%")} / 光穹 ${formatNullableNumberForView(publicSkyDarkness.haloRadianceQuantile, "%")}`,
+          detail: `环境 ${formatNullableNumberForView(publicSkyDarkness.ambientRiskQuantile, "%")}；综合风险 ${formatNullableNumberForView(publicSkyDarkness.nationalRiskIndex, "%")}。`,
+        },
+        {
+          label: "local/halo",
+          value: `local/halo ${formatNullableRatioForView(publicSkyDarkness.localToHaloRatio)} / halo/local ${formatNullableRatioForView(publicSkyDarkness.haloToLocalRatio)}`,
+          detail: `local/halo 分位 ${formatNullableNumberForView(publicSkyDarkness.localToHaloRatioQuantile, "%")}；halo/local 分位 ${formatNullableNumberForView(publicSkyDarkness.haloToLocalRatioQuantile, "%")}。`,
+        },
+      ],
     },
     {
-      label: "全国模型诊断",
-      value: publicSkyDarkness.diagnostics.length > 0 ? publicSkyDarkness.diagnostics.join(", ") : "none",
-      detail: `低辐亮度饱和 ${formatBooleanForView(publicSkyDarkness.lowRadianceSaturationRisk)}；城市光穹外溢 ${formatBooleanForView(publicSkyDarkness.urbanSkyglowSpilloverRisk)}；暗区饱和带 ${formatBooleanForView(publicSkyDarkness.darkZoneSaturationRisk)}。`,
+      key: "developer-diagnostics",
+      title: "开发诊断",
+      badgeLabel: "默认折叠",
+      description: "原始诊断代码、计算口径和校验信息，用于排查模型版本。",
+      collapsedByDefault: true,
+      developerDiagnostics: true,
+      items: [
+        {
+          label: "内部诊断代码",
+          value:
+            publicSkyDarkness.diagnostics.length > 0
+              ? publicSkyDarkness.diagnostics.join(", ")
+              : "none",
+          detail: `低辐亮度饱和 ${formatBooleanForView(publicSkyDarkness.lowRadianceSaturationRisk)}；城市光穹外溢 ${formatBooleanForView(publicSkyDarkness.urbanSkyglowSpilloverRisk)}；暗区饱和带 ${formatBooleanForView(publicSkyDarkness.darkZoneSaturationRisk)}。`,
+        },
+        {
+          label: "波特尔方法",
+          value: publicEstimatedBortle.estimatedBortleMethodVersion,
+          detail: `原始方法 ${rawEstimatedBortle.estimatedBortleMethodVersion}；公开展示方法 ${publicEstimatedBortle.estimatedBortleMethodVersion}。`,
+        },
+        {
+          label: "计算口径",
+          value: lightPollution.calculationBasis?.scoringMode ?? lightPollution.scoringMode,
+          detail: lightPollution.calculationBasis
+            ? `${lightPollution.calculationBasis.samplingConfigVersion}；${lightPollution.calculationBasis.directionSectorsDegrees}° 扇区`
+            : "暂无计算口径",
+        },
+        {
+          label: "校验码",
+          value: lightPollution.checksumShort ?? "暂无",
+          detail: "数据集校验短值，用于排查版本。",
+        },
+        {
+          label: "说明",
+          value: "卫星夜光参考",
+          detail: noticeZh,
+        },
+        {
+          label: "波特尔说明",
+          value: publicEstimatedBortle.estimatedBortleDisclaimer,
+          detail: "估算限制。",
+        },
+        ...buildSkyBrightnessDeveloperDiagnosticItems(lightPollution),
+      ],
     },
-    {
-      label: "波特尔依据",
-      value: publicEstimatedBortle.estimatedBortleBasis,
-      detail: "估算依据和输入指数。",
-    },
-    {
-      label: "目标方位角",
-      value: formatNullableNumberForView(lightPollution.targetAzimuthDegrees, "°"),
-      detail: "本次代表银河窗口的银心方位角。",
-    },
-    {
-      label: "目标方向风险",
-      value:
-        typeof lightPollution.targetDirectionRisk === "number"
-          ? `${lightPollution.targetDirectionRisk} / ${
-              lightPollution.targetDirectionLevelLabelZh ?? "数据不足"
-            }`
-          : "未推断",
-      detail: "由方向扇区按目标方位角解析，不额外查询栅格。",
-    },
-    {
-      label: "有效采样",
-      value: `${lightPollution.validSampleCount}/${lightPollution.sampleCount}`,
-      detail: "有效栅格样本数 / 总采样数。",
-    },
-    {
-      label: "置信度",
-      value: confidenceLabelZh,
-      detail: "由有效样本数量和覆盖情况估计。",
-    },
-    {
-      label: "来源",
-      value: sourceLabelZh,
-      detail: "公开页面仅作为卫星夜光参考，不展示内部 provider 细节。",
-    },
-    {
-      label: "数据年份",
-      value:
-        typeof lightPollution.datasetYear === "number" ? `${lightPollution.datasetYear}` : "暂无",
-      detail: "由光污染数据元信息动态提供。",
-    },
-    {
-      label: "数据版本",
-      value: lightPollution.datasetVersion ?? "暂无",
-      detail: "由光污染数据元信息动态提供。",
-    },
-    {
-      label: "计算口径",
-      value: lightPollution.calculationBasis?.scoringMode ?? lightPollution.scoringMode,
-      detail: lightPollution.calculationBasis
-        ? `${lightPollution.calculationBasis.samplingConfigVersion}；${lightPollution.calculationBasis.directionSectorsDegrees}° 扇区`
-        : "暂无计算口径",
-    },
-    {
-      label: "校验码",
-      value: lightPollution.checksumShort ?? "暂无",
-      detail: "数据集校验短值，用于排查版本。",
-    },
-    {
-      label: "说明",
-      value: "卫星夜光参考",
-      detail: noticeZh,
-    },
-    {
-      label: "波特尔说明",
-      value: publicEstimatedBortle.estimatedBortleDisclaimer,
-      detail: "估算限制。",
-    },
-    ...buildSkyBrightnessProfessionalDataItems(lightPollution, publicSkyDarkness),
   ];
 }
 
-function buildSkyBrightnessProfessionalDataItems(
+function flattenAstroProfessionalDataGroups(
+  groups: readonly AstroProfessionalDataGroup[],
+): readonly ForecastResultSectionItem[] {
+  return groups.flatMap((group) => group.items);
+}
+
+function fusionActionLabel(publicSkyDarkness: PublicSkyDarknessDisplay): string {
+  if (publicSkyDarkness.skyBrightnessViirsBrighteningRisk) {
+    return "VIIRS偏亮，上调范围";
+  }
+  if (publicSkyDarkness.skyBrightnessConflictRisk) {
+    return "WA/VIIRS差异，放宽范围";
+  }
+  if (publicSkyDarkness.rangeWidthPolicy === "too_wide") {
+    return "范围过宽，需现场确认";
+  }
+  if (publicSkyDarkness.rangeWidthPolicy === "wide_uncertain") {
+    return "不确定性放宽";
+  }
+  if (publicSkyDarkness.primaryBaseline === "wa_model") {
+    return "WA基线为主";
+  }
+  return "VIIRS保守回退";
+}
+
+function rangeWidthPolicyLabelZh(
+  policy: PublicSkyDarknessDisplay["rangeWidthPolicy"],
+): string {
+  switch (policy) {
+    case "narrow":
+      return "窄范围";
+    case "normal":
+      return "常规范围";
+    case "wide_uncertain":
+      return "不确定性放宽";
+    case "too_wide":
+      return "过宽，需现场确认";
+    case "unavailable":
+      return "不可用";
+  }
+}
+
+function buildSkyBrightnessPrimaryProfessionalDataItems(
   lightPollution: LightPollutionInfo,
   publicSkyDarkness: PublicSkyDarknessDisplay,
 ): readonly ForecastResultSectionItem[] {
@@ -3648,11 +3785,80 @@ function buildSkyBrightnessProfessionalDataItems(
   if (!skyBrightness) {
     return [
       {
-        label: "WA/model baseline",
-        value: "unavailable",
-        detail: "No WA/model sky-brightness raster was returned; public range uses the national VIIRS fallback conservatively.",
+        label: "WA/模型基线",
+        value: "不可用",
+        detail: "未返回 WA/模型天空亮度栅格；公开范围使用全国 VIIRS 保守回退。",
       },
     ];
+  }
+
+  return [
+    {
+      label: "WA/模型基线",
+      value: publicSkyDarkness.primaryBaseline === "wa_model" ? "作为公开暗空基线" : "仅作诊断",
+      detail:
+        publicSkyDarkness.primaryBaseline === "wa_model"
+          ? "WA/模型天空亮度作为公开暗空基线；VIIRS修正当前本地、光穹和方向风险。"
+          : "WA/模型天空亮度不可用或不可换算；公开范围使用全国 VIIRS 保守回退。",
+    },
+    {
+      label: "WA原始亮度",
+      value: formatNullableNumberForView(
+        skyBrightness.artificialBrightness ?? skyBrightness.rawValue,
+        skyBrightness.valueUnit ? ` ${skyBrightness.valueUnit}` : "",
+      ),
+      detail: `数值类型 ${skyBrightness.valueType}；数据集 ${skyBrightness.datasetName ?? "暂无"}。`,
+    },
+    {
+      label: "模型总天空亮度",
+      value: [
+        `人工 ${formatNullableNumberForView(skyBrightness.artificialBrightness, " mcd/m^2")}`,
+        `自然 ${formatNullableNumberForView(skyBrightness.naturalSkyBrightnessMcdM2, " mcd/m^2")}`,
+        `总量 ${formatNullableNumberForView(skyBrightness.modeledTotalSkyBrightnessMcdM2, " mcd/m^2")}`,
+      ].join("；"),
+      detail: "人工亮度、自然背景和模型总天空亮度分开保存后再换算。",
+    },
+    {
+      label: "模型SQM（非实测）",
+      value:
+        typeof skyBrightness.modeledSqm === "number"
+          ? `${skyBrightness.modeledSqm.toFixed(2)} mag/arcsec^2`
+          : "未换算",
+      detail: "基于 WA/模型天空亮度栅格估算，不是现场SQM实测。",
+    },
+    {
+      label: "WA估算波特尔范围",
+      value: skyBrightness.estimatedBortleRange?.rangeLabelZh ?? "未换算",
+      detail:
+        skyBrightness.estimatedBortleRange?.basisZh ??
+        "当前数值类型不支持可靠波特尔换算，仅保留原始诊断。",
+    },
+    {
+      label: "换算说明",
+      value: skyBrightness.confidence === "high" ? "模型信心较高" : "模型信心需复核",
+      detail: "换算说明已整理为公开可读口径；原始换算备注保留在开发诊断中。",
+    },
+    {
+      label: "WA数据集",
+      value:
+        [
+          skyBrightness.datasetName ?? undefined,
+          skyBrightness.datasetYear ? `${skyBrightness.datasetYear}` : undefined,
+          skyBrightness.datasetVersion ?? undefined,
+        ]
+          .filter(Boolean)
+          .join(" / ") || "暂无",
+      detail: `校验 ${skyBrightness.checksumShort ?? "暂无"}；健康状态 ${skyBrightness.diagnostics?.healthStatus ?? "unknown"}。`,
+    },
+  ];
+}
+
+function buildSkyBrightnessDeveloperDiagnosticItems(
+  lightPollution: LightPollutionInfo,
+): readonly ForecastResultSectionItem[] {
+  const skyBrightness = lightPollution.skyBrightness;
+  if (!skyBrightness) {
+    return [];
   }
 
   const notes = [
@@ -3661,20 +3867,15 @@ function buildSkyBrightnessProfessionalDataItems(
   ].join(" ");
   return [
     {
-      label: "WA/model baseline",
-      value: publicSkyDarkness.primaryBaseline,
-      detail:
-        publicSkyDarkness.primaryBaseline === "wa_model"
-          ? "WA/model sky brightness is the primary public dark-sky baseline; VIIRS refines local, halo, and directional risk."
-          : "WA/model sky brightness is unavailable or not convertible; public range uses the national VIIRS fallback conservatively.",
-    },
-    {
-      label: "WA/model raw value",
-      value: formatNullableNumberForView(skyBrightness.rawValue, skyBrightness.valueUnit ? ` ${skyBrightness.valueUnit}` : ""),
+      label: "WA原始值",
+      value: formatNullableNumberForView(
+        skyBrightness.rawValue,
+        skyBrightness.valueUnit ? ` ${skyBrightness.valueUnit}` : "",
+      ),
       detail: `valueType=${skyBrightness.valueType}; dataset=${skyBrightness.datasetName ?? "n/a"}.`,
     },
     {
-      label: "WA/model conversion components",
+      label: "WA换算组件",
       value: [
         `artificial=${formatNullableNumberForView(skyBrightness.artificialBrightness, " mcd/m^2")}`,
         `natural=${formatNullableNumberForView(skyBrightness.naturalSkyBrightnessMcdM2, " mcd/m^2")}`,
@@ -3684,40 +3885,7 @@ function buildSkyBrightnessProfessionalDataItems(
         "Artificial brightness, natural baseline, and modeled total sky brightness are kept separate before deriving modeled SQM.",
     },
     {
-      label: "WA/model raster-derived SQM",
-      value:
-        typeof skyBrightness.modeledSqm === "number"
-          ? `${skyBrightness.modeledSqm.toFixed(2)} mag/arcsec^2`
-          : "not derived",
-      detail: "Model-derived only, not measured SQM and not a field observation.",
-    },
-    {
-      label: "WA/model Bortle range",
-      value: skyBrightness.estimatedBortleRange?.rangeLabelZh ?? "not derived",
-      detail: skyBrightness.estimatedBortleRange?.basisZh ?? "Value type does not support a defensible Bortle conversion.",
-    },
-    {
-      label: "Fused public range",
-      value: publicSkyDarkness.rangeLabelZh,
-      detail: `raw VIIRS=${publicSkyDarkness.rawRangeLabelZh}; WA=${publicSkyDarkness.skyBrightnessEstimatedBortleLabel ?? "n/a"}; conflict=${formatBooleanForView(publicSkyDarkness.skyBrightnessConflictRisk)}.`,
-    },
-    {
-      label: "Public range width policy",
-      value: `${publicSkyDarkness.rangeWidthPolicy} (${formatNullableNumberForView(publicSkyDarkness.rangeWidthClasses, " classes")})`,
-      detail: `tooWide=${formatBooleanForView(publicSkyDarkness.tooWideRange)}; confidence=${publicSkyDarkness.confidence}.`,
-    },
-    {
-      label: "WA/model dataset",
-      value: [
-        skyBrightness.datasetYear ? `${skyBrightness.datasetYear}` : undefined,
-        skyBrightness.datasetVersion ?? undefined,
-      ]
-        .filter(Boolean)
-        .join(" / ") || "n/a",
-      detail: `checksum=${skyBrightness.checksumShort ?? "n/a"}; health=${skyBrightness.diagnostics?.healthStatus ?? "unknown"}.`,
-    },
-    {
-      label: "WA/model notes",
+      label: "WA原始备注",
       value: skyBrightness.confidence,
       detail: notes || "No extra conversion notes.",
     },

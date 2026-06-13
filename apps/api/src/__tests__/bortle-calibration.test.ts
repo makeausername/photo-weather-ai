@@ -760,6 +760,45 @@ describe("Sky darkness coordinate diagnostic", () => {
           uncertaintyNotes: ["modeled, not measured"],
         },
       })),
+      queryTerrainDemProfile: vi.fn(async () => ({
+        available: true,
+        dataAvailable: true,
+        sourceName: "Synthetic DEM",
+        datasetName: "Synthetic terrain DEM",
+        datasetYear: 2026,
+        datasetVersion: "test-dem-v1",
+        checksumShort: "dem123",
+        observerElevationMeters: 1860,
+        observerElevationSource: "dem" as const,
+        target: "milky_way" as const,
+        targetAzimuthDegrees: 135,
+        targetAltitudeDegrees: null,
+        horizonAltitudeDegrees: 4.2,
+        obstructionClearanceDegrees: 16.8,
+        obstructionLevel: "clear" as const,
+        confidence: "high" as const,
+        sampleCount: 120,
+        validSampleCount: 118,
+        maxSampleDistanceMeters: 30000,
+        maxObstructionSample: null,
+        profileSamples: [],
+        calculationBasis: null,
+        demCoverage: {
+          status: "available" as const,
+          coveredByActiveDataset: true,
+          tileFileExists: true,
+          tileMetadataExists: true,
+          sourceName: "Synthetic DEM",
+          datasetName: "Synthetic terrain DEM",
+          datasetVersion: "test-dem-v1",
+          datasetYear: 2026,
+          resolutionMeters: 90,
+          noteZh: "DEM 覆盖该坐标。",
+        },
+        terrainHorizonNoteZh: "银河方向地形遮挡较低。",
+        queryElapsedMs: 1,
+        cacheHit: false,
+      })),
     };
 
     const report = await buildSkyDarknessDiagnosticReport(options, client, {
@@ -786,8 +825,18 @@ describe("Sky darkness coordinate diagnostic", () => {
     expect(report.fusedPublicBortleRange.available).toBe(true);
     expect(report.publicLabel).toEqual(expect.any(String));
     expect(report.diagnostics).toEqual(expect.arrayContaining(["wa_model_baseline_available"]));
+    expect(report.dem).toMatchObject({
+      queried: true,
+      available: true,
+      status: "available",
+      horizonAltitudeDegrees: 4.2,
+      obstructionClearanceDegrees: 16.8,
+      confidence: "high",
+      datasetVersion: "test-dem-v1",
+    });
     expect(client.queryLightPollution).toHaveBeenCalledTimes(1);
     expect(client.querySkyBrightness).toHaveBeenCalledTimes(1);
+    expect(client.queryTerrainDemProfile).toHaveBeenCalledTimes(1);
   });
 
   it("runs the JSON CLI with an injected client without external network access", async () => {
@@ -812,6 +861,7 @@ describe("Sky darkness coordinate diagnostic", () => {
     const payload = JSON.parse(output.join(""));
     expect(payload.run.externalNetworkCalls).toBe(false);
     expect(payload.fusedPublicBortleRange).toHaveProperty("rangeLabelZh");
+    expect(payload.dem).toMatchObject({ queried: false, status: "not_queried" });
     expect(client.queryLightPollution).toHaveBeenCalledTimes(1);
   });
 });

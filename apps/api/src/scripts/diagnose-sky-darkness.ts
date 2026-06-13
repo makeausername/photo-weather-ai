@@ -10,6 +10,8 @@ import {
   AstroServiceClient,
   type AstroServiceLightPollutionQueryInput,
   type AstroServiceSkyBrightnessQueryInput,
+  type AstroServiceTerrainDemProfileQueryInput,
+  type AstroServiceTerrainDemProfileQueryResponse,
 } from "../astro-service-client.js";
 
 const defaultAstroServiceUrl = "http://127.0.0.1:4100";
@@ -32,6 +34,9 @@ export type SkyDarknessDiagnosticClient = {
   querySkyBrightness?(
     input: AstroServiceSkyBrightnessQueryInput,
   ): Promise<SkyBrightnessInfo | null | undefined>;
+  queryTerrainDemProfile?(
+    input: AstroServiceTerrainDemProfileQueryInput,
+  ): Promise<AstroServiceTerrainDemProfileQueryResponse | null | undefined>;
 };
 
 export type SkyDarknessDiagnosticReport = {
@@ -118,6 +123,23 @@ export type SkyDarknessDiagnosticReport = {
     readonly waDatasetVersion: string | null;
     readonly viirsDatasetYear: number | null;
     readonly viirsDatasetVersion: string | null;
+  };
+  readonly dem: {
+    readonly queried: boolean;
+    readonly available: boolean;
+    readonly dataAvailable: boolean;
+    readonly status: string;
+    readonly horizonAltitudeDegrees: number | null;
+    readonly obstructionClearanceDegrees: number | null;
+    readonly obstructionLevel: string | null;
+    readonly confidence: string | null;
+    readonly sampleCount: number | null;
+    readonly validSampleCount: number | null;
+    readonly datasetName: string | null;
+    readonly datasetYear: number | null;
+    readonly datasetVersion: string | null;
+    readonly coverageNoteZh: string | null;
+    readonly queryFailure: string | null;
   };
 };
 
@@ -218,6 +240,8 @@ export async function buildSkyDarknessDiagnosticReport(
   const lightPollution = await client.queryLightPollution(queryInput);
   let skyBrightness: SkyBrightnessInfo | null = null;
   let skyBrightnessFailure: string | null = null;
+  let terrainDem: AstroServiceTerrainDemProfileQueryResponse | null = null;
+  let terrainDemFailure: string | null = null;
   if (client.querySkyBrightness) {
     try {
       skyBrightness =
@@ -227,6 +251,19 @@ export async function buildSkyDarknessDiagnosticReport(
         })) ?? null;
     } catch (error) {
       skyBrightnessFailure = error instanceof Error ? error.message : String(error);
+    }
+  }
+  if (client.queryTerrainDemProfile) {
+    try {
+      terrainDem =
+        (await client.queryTerrainDemProfile({
+          latitudeWgs84: options.coordinate.latitudeWgs84,
+          longitudeWgs84: options.coordinate.longitudeWgs84,
+          target: "milky_way",
+          targetAzimuthDegrees: options.azimuthDegrees ?? null,
+        })) ?? null;
+    } catch (error) {
+      terrainDemFailure = error instanceof Error ? error.message : String(error);
     }
   }
 
@@ -324,6 +361,26 @@ export async function buildSkyDarknessDiagnosticReport(
       viirsDatasetYear: lightPollution.datasetYear ?? null,
       viirsDatasetVersion: lightPollution.datasetVersion ?? null,
     },
+    dem: {
+      queried: Boolean(client.queryTerrainDemProfile),
+      available: terrainDem?.available ?? false,
+      dataAvailable: terrainDem?.dataAvailable ?? false,
+      status:
+        terrainDem?.demCoverage?.status ??
+        terrainDem?.unavailableReason ??
+        (client.queryTerrainDemProfile ? "unavailable" : "not_queried"),
+      horizonAltitudeDegrees: finiteOrNull(terrainDem?.horizonAltitudeDegrees),
+      obstructionClearanceDegrees: finiteOrNull(terrainDem?.obstructionClearanceDegrees),
+      obstructionLevel: terrainDem?.obstructionLevel ?? null,
+      confidence: terrainDem?.confidence ?? null,
+      sampleCount: terrainDem?.sampleCount ?? null,
+      validSampleCount: terrainDem?.validSampleCount ?? null,
+      datasetName: terrainDem?.datasetName ?? terrainDem?.demCoverage?.datasetName ?? null,
+      datasetYear: terrainDem?.datasetYear ?? terrainDem?.demCoverage?.datasetYear ?? null,
+      datasetVersion: terrainDem?.datasetVersion ?? terrainDem?.demCoverage?.datasetVersion ?? null,
+      coverageNoteZh: terrainDem?.demCoverage?.noteZh ?? terrainDem?.terrainHorizonNoteZh ?? null,
+      queryFailure: terrainDemFailure,
+    },
   };
 }
 
@@ -348,6 +405,11 @@ export function formatSkyDarknessDiagnosticText(report: SkyDarknessDiagnosticRep
     )}`,
     `Fused public range: ${report.fusedPublicBortleRange.rangeLabelZh}; label=${report.publicLabel}; confidence=${report.confidence}`,
     `Range width: ${formatNullable(report.fusedPublicBortleRange.rangeWidthClasses)} classes; policy=${report.fusedPublicBortleRange.rangeWidthPolicy}`,
+    `DEM: ${report.dem.queried ? report.dem.status : "not queried"}; horizon=${formatNullable(
+      report.dem.horizonAltitudeDegrees,
+    )}; clearance=${formatNullable(report.dem.obstructionClearanceDegrees)}; confidence=${
+      report.dem.confidence ?? "n/a"
+    }`,
     `Diagnostics: ${report.diagnostics.length > 0 ? report.diagnostics.join(", ") : "none"}`,
     "No external services were called by this diagnostic; it uses the configured local astro-service datasets.",
   ].join("\n");

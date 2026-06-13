@@ -67,6 +67,7 @@ export type NationalSkyDarknessModelResult = {
   readonly skyBrightnessDatasetYear: number | null;
   readonly skyBrightnessDatasetVersion: string | null;
   readonly skyBrightnessConflictRisk: boolean;
+  readonly skyBrightnessViirsBrighteningRisk: boolean;
   readonly basisZh: string;
 };
 
@@ -313,6 +314,7 @@ export function resolveNationalSkyDarknessModel(
     lowEndRawRange,
     skyBrightnessAvailable: fusion.skyBrightnessAvailable,
     skyBrightnessConflictRisk: fusion.skyBrightnessConflictRisk,
+    skyBrightnessViirsBrighteningRisk: fusion.skyBrightnessViirsBrighteningRisk,
     skyBrightnessUnsupported: fusion.skyBrightnessUnsupported,
     rangeWidthPolicy,
   });
@@ -378,6 +380,7 @@ export function resolveNationalSkyDarknessModel(
     skyBrightnessDatasetYear: fusion.skyBrightnessDatasetYear,
     skyBrightnessDatasetVersion: fusion.skyBrightnessDatasetVersion,
     skyBrightnessConflictRisk: fusion.skyBrightnessConflictRisk,
+    skyBrightnessViirsBrighteningRisk: fusion.skyBrightnessViirsBrighteningRisk,
     basisZh: buildNationalBasisZhV2({
       rawEstimate,
       config,
@@ -406,6 +409,8 @@ export function resolveChinaPublicBortleRange(
     rangeLabelZh: result.rangeLabelZh,
   };
 }
+
+export const resolveNationalSkyDarknessDecision = resolveNationalSkyDarknessModel;
 
 export function resolveNationalLightPollutionLabel(
   lightPollution: LightPollutionInfo,
@@ -464,6 +469,7 @@ function unavailableNationalSkyDarknessModel(
     skyBrightnessDatasetYear: null,
     skyBrightnessDatasetVersion: null,
     skyBrightnessConflictRisk: false,
+    skyBrightnessViirsBrighteningRisk: false,
     basisZh: rawEstimate.basisZh,
   };
 }
@@ -498,6 +504,7 @@ function nationalSkyDarknessModelFromWaOnly(
     lowEndRawRange: false,
     skyBrightnessAvailable: true,
     skyBrightnessConflictRisk: false,
+    skyBrightnessViirsBrighteningRisk: false,
     skyBrightnessUnsupported: skyBrightness?.diagnostics?.healthStatus === "unsupported_value_type",
     rangeWidthPolicy,
     extraDiagnostics: ["viirs_estimate_unavailable"],
@@ -550,11 +557,12 @@ function nationalSkyDarknessModelFromWaOnly(
     skyBrightnessDatasetYear: skyBrightness?.datasetYear ?? null,
     skyBrightnessDatasetVersion: skyBrightness?.datasetVersion ?? null,
     skyBrightnessConflictRisk: false,
+    skyBrightnessViirsBrighteningRisk: false,
     basisZh: [
-      `National sky-darkness model ${config.version}.`,
-      `Public baseline: WA/model only (${skyBrightness?.estimatedBortleRange?.rangeLabelZh ?? "available"}).`,
-      "Raw VIIRS estimate is unavailable; confidence is lowered and local/halo correction is not inferred.",
-      "Modeled values are raster-derived estimates, not field measurements or validated classifications.",
+      `全国暗空模型 ${config.version}。`,
+      `公开基线：仅使用 WA/模型天空亮度（${skyBrightness?.estimatedBortleRange?.rangeLabelZh ?? "可用"}）。`,
+      "VIIRS 原始估算不可用，已降低置信度，未推断本地/周边光穹修正。",
+      "模型值来自本地栅格估算，不是现场实测或官方认证。",
       rawEstimate.basisZh,
     ].join(" "),
   };
@@ -576,6 +584,7 @@ export type SkyBrightnessViirsFusionResult = {
   readonly skyBrightnessEstimatedBortleLabel: string | null;
   readonly skyBrightnessDatasetYear: number | null;
   readonly skyBrightnessDatasetVersion: string | null;
+  readonly skyBrightnessViirsBrighteningRisk: boolean;
 };
 
 export function resolveSkyBrightnessViirsFusion(input: {
@@ -625,6 +634,7 @@ export function resolveSkyBrightnessViirsFusion(input: {
         fallbackRange.minClass !== input.viirsPublicRange.minClass ||
         fallbackRange.maxClass !== input.viirsPublicRange.maxClass,
       skyBrightnessConflictRisk: false,
+      skyBrightnessViirsBrighteningRisk: false,
       ...base,
     };
   }
@@ -632,6 +642,12 @@ export function resolveSkyBrightnessViirsFusion(input: {
   const viirsRange = input.viirsPublicRange;
   const conflictDistance = rangeDistance(viirsRange, skyRange);
   const conflictRisk = conflictDistance > 1;
+  const waModeratelyDark = skyRange.minClass >= 3 && skyRange.maxClass <= 4;
+  const viirsBrighteningRisk =
+    waModeratelyDark &&
+    input.nationalRiskIndex !== null &&
+    input.nationalRiskIndex >= 34 &&
+    !input.stableNationalDarkEvidence;
   const waSupportsVeryDark = skyRange.maxClass <= 2;
   const strongDarkEvidence =
     waSupportsVeryDark &&
@@ -665,11 +681,19 @@ export function resolveSkyBrightnessViirsFusion(input: {
     };
   }
 
+  if (viirsBrighteningRisk) {
+    publicRange = {
+      minClass: Math.max(publicRange.minClass, clampBortleClass(skyRange.minClass + 1)),
+      maxClass: Math.max(publicRange.maxClass, clampBortleClass(skyRange.maxClass + 1)),
+    };
+  }
+
   const normalizedPublicRange = applyPublicRangeWidthPolicy({
     range: publicRange,
     anchorRange: skyRange,
     maxWidthClasses:
       conflictRisk ||
+      viirsBrighteningRisk ||
       input.lowSampleSupport ||
       input.urbanSkyglowSpilloverRisk ||
       input.lowRadianceSaturationRisk
@@ -680,6 +704,7 @@ export function resolveSkyBrightnessViirsFusion(input: {
     normalizedPublicRange.minClass !== skyRange.minClass ||
     normalizedPublicRange.maxClass !== skyRange.maxClass ||
     conflictRisk ||
+    viirsBrighteningRisk ||
     input.lowSampleSupport ||
     input.urbanSkyglowSpilloverRisk ||
     input.lowRadianceSaturationRisk;
@@ -689,9 +714,12 @@ export function resolveSkyBrightnessViirsFusion(input: {
     primaryBaseline: "wa_model",
     conservative,
     skyBrightnessConflictRisk: conflictRisk,
+    skyBrightnessViirsBrighteningRisk: viirsBrighteningRisk,
     ...base,
   };
 }
+
+export const resolveWaViirsSkyBrightnessFusion = resolveSkyBrightnessViirsFusion;
 
 function resolvePublicBortleRange(input: {
   readonly rawEstimate: EstimatedBortleRange;
@@ -793,6 +821,7 @@ function resolveDiagnostics(input: {
   readonly lowEndRawRange: boolean;
   readonly skyBrightnessAvailable: boolean;
   readonly skyBrightnessConflictRisk: boolean;
+  readonly skyBrightnessViirsBrighteningRisk: boolean;
   readonly skyBrightnessUnsupported: boolean;
   readonly rangeWidthPolicy: NationalSkyDarknessModelResult["rangeWidthPolicy"];
   readonly extraDiagnostics?: readonly string[];
@@ -802,6 +831,7 @@ function resolveDiagnostics(input: {
     input.skyBrightnessAvailable ? "wa_model_baseline_available" : "wa_model_baseline_unavailable",
     input.skyBrightnessUnsupported ? "wa_value_type_unsupported" : "",
     input.skyBrightnessConflictRisk ? "wa_viirs_conflict_range_widened" : "",
+    input.skyBrightnessViirsBrighteningRisk ? "viirs_current_light_lifts_public_range" : "",
     input.rangeWidthPolicy === "wide_uncertain" ? "public_range_wide_uncertain" : "",
     input.rangeWidthPolicy === "too_wide" ? "public_range_too_wide" : "",
     input.calibrationEvidenceLevel === "supported" ? "" : "calibration_evidence_not_supported",
@@ -827,6 +857,8 @@ function diagnosticReasonZh(diagnostic: string): string {
       return "WA/模型天空亮度数值类型不支持，仅保留原始诊断";
     case "wa_viirs_conflict_range_widened":
       return "WA/模型天空亮度与 VIIRS 信号存在差异，公开范围已放宽";
+    case "viirs_current_light_lifts_public_range":
+      return "VIIRS 当前夜光和周边光穹证据偏亮，已上调公开波特尔范围";
     case "viirs_estimate_unavailable":
       return "\u0056\u0049\u0049\u0052\u0053 \u539f\u59cb\u4f30\u7b97\u4e0d\u53ef\u7528\uff0c\u4ec5\u4ee5 WA/\u6a21\u578b\u57fa\u7ebf\u4f5c\u4f4e\u7f6e\u4fe1\u5ea6\u53c2\u8003";
     case "public_range_wide_uncertain":
@@ -911,21 +943,35 @@ function buildNationalBasisZhV2(input: {
         : `halo/local=${input.haloToLocalRatio}`;
   const fusionText =
     input.fusion.primaryBaseline === "wa_model"
-      ? `WA/model baseline=${input.fusion.skyBrightnessEstimatedBortleLabel ?? "available"}`
-      : "WA/model baseline unavailable; using national VIIRS fallback";
+      ? `WA/模型天空亮度基线 ${input.fusion.skyBrightnessEstimatedBortleLabel ?? "可用"}`
+      : "WA/模型天空亮度不可用，使用全国 VIIRS 保守回退";
   const diagnosticText =
-    input.diagnostics.length > 0 ? input.diagnostics.join(", ") : "none";
+    input.diagnostics.length > 0
+      ? input.diagnostics.map(diagnosticReasonZh).join("；")
+      : "暂无额外不确定性";
   return [
-    `National sky-darkness model ${input.config.version}.`,
-    `Public baseline: ${fusionText}.`,
-    `Raw VIIRS estimate: ${input.rawEstimate.rangeLabelZh}.`,
-    `Calibration evidence: ${input.calibrationEvidenceLevel}.`,
-    `Quantiles: ${quantileText}.`,
-    `Ratios: ${ratioText}.`,
-    `nationalRisk=${formatNullablePercent(input.nationalRiskIndex)}.`,
-    `Diagnostics: ${diagnosticText}.`,
-    "Modeled values are raster-derived estimates, not field measurements or validated classifications.",
+    `全国暗空模型 ${input.config.version}。`,
+    `公开基线：${fusionText}。`,
+    `VIIRS 原始估算：${input.rawEstimate.rangeLabelZh}。`,
+    `校准证据：${calibrationEvidenceLabelZh(input.calibrationEvidenceLevel)}。`,
+    `全国分位：${quantileText}。`,
+    `比值：${ratioText}。`,
+    `综合风险指数：${formatNullablePercent(input.nationalRiskIndex)}。`,
+    `不确定性：${diagnosticText}。`,
+    "模型值来自本地栅格估算，不是现场实测或官方认证。",
   ].join(" ");
+}
+
+function calibrationEvidenceLabelZh(
+  level: NationalSkyDarknessModelResult["calibrationEvidenceLevel"],
+): string {
+  if (level === "supported") {
+    return "支持较窄范围";
+  }
+  if (level === "limited") {
+    return "有限，按保守范围展示";
+  }
+  return "不足，需现场确认";
 }
 
 

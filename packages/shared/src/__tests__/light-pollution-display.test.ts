@@ -337,6 +337,34 @@ describe("public sky darkness display", () => {
     expect(display.rawRangeLabelZh).toBe("1-2");
   });
 
+  it("lifts WA moderate darkness when VIIRS current-light evidence is brighter", () => {
+    const display = resolvePublicSkyDarknessDisplay(
+      lightPollutionFixture({
+        localRadiance: 0.06,
+        surroundingHaloRadiance: 0.1,
+        ambientRiskIndex: 35,
+        skyBrightness: skyBrightnessFixture({
+          estimatedBortleRange: {
+            available: true,
+            minClass: 3,
+            maxClass: 4,
+            rangeLabelZh: "3-4级（模型估算）",
+            confidence: "medium",
+            basisZh: "Raster-derived modeled sky brightness, not a field measurement.",
+            methodVersion: "wa-modeled-sqm-v1",
+          },
+        }),
+      }),
+    );
+
+    expect(display.primaryBaseline).toBe("wa_model");
+    expect(display.minClass).toBe(4);
+    expect(display.maxClass).toBe(5);
+    expect(display.rangeWidthClasses).toBe(2);
+    expect(display.skyBrightnessViirsBrighteningRisk).toBe(true);
+    expect(display.confidenceReasonsZh.join(" ")).toContain("VIIRS 当前夜光");
+  });
+
   it("does not let very dark VIIRS override moderate WA/model sky brightness", () => {
     const display = resolvePublicSkyDarknessDisplay(
       lightPollutionFixture({
@@ -528,7 +556,24 @@ describe("public sky darkness display", () => {
     );
     const publicText = JSON.stringify(display);
 
-    expect(publicText).not.toMatch(/SQM|鍥芥爣|鍥藉鏍囧噯|鍥芥爣绛夌骇|official/i);
+    expect(publicText).not.toMatch(/SQM|鍥芥爣|鍥藉鏍囧噯|鍥芥爣绛夌骇/i);
+  });
+
+  it("exposes model-derived dark-sky reference as non-official when available", () => {
+    const display = resolvePublicSkyDarknessDisplay(
+      lightPollutionFixture({
+        skyBrightness: skyBrightnessFixture(),
+      }),
+    );
+
+    expect(display.modelDerivedDarkSkyReference).toMatchObject({
+      modelDerived: true,
+      measured: false,
+      official: false,
+    });
+    expect(display.modelDerivedDarkSkyReference?.labelZh).toContain("模型估算");
+    expect(display.modelDerivedDarkSkyReference?.labelZh).toContain("非认证");
+    expect(JSON.stringify(display.modelDerivedDarkSkyReference)).not.toMatch(/国标|国家标准|官方等级/);
   });
 
   it("contains no location, coordinate, or category-specific production rule", () => {
