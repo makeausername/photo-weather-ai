@@ -472,7 +472,7 @@ function sanitizeReportUrl(value: string): string {
 
 function usageText(): string {
   return [
-    "Usage: pnpm sky-darkness:diagnose -- --coordinate lat,lon [--json] [--azimuth degrees] [--label text]",
+    "Usage: pnpm --filter @photo-weather/api exec tsx src/scripts/diagnose-sky-darkness.ts --coordinate lat,lon [--json] [--azimuth degrees] [--label text]",
     "",
     "Options:",
     "  --coordinate lat,lon       Required WGS84 coordinate.",

@@ -67,14 +67,16 @@ National DEM coverage planning uses reviewed tile plans only; normal frontend/AP
 bash scripts/plan-terrain-dem-tiles.sh --coordinate 30.1328,118.171 --json
 ```
 
+Planner output separates active DEM raster coverage from raw incoming tile staging. If a coordinate is already inside the active raster bounds, coordinate coverage is available and no download/import is requested even when the corresponding incoming Copernicus tile is not staged.
+
 Estimated Bortle calibration audits can be run from independent CSV/JSON references with:
 
 ```bash
 pnpm bortle:calibrate -- --input deploy/calibration/bortle-reference.example.csv --dry-run --strict
-bash scripts/evaluate-sky-darkness-benchmarks.sh deploy/calibration/bortle-reference.example.csv --dry-run --strict
+bash scripts/evaluate-sky-darkness-benchmarks.sh deploy/calibration/runtime/bortle-reference.csv --format json --include-coordinates
 ```
 
-Generated audit reports belong under `deploy/calibration/runtime/`, which is ignored by Git. The workflow compares supplied independent references with the production estimator and never rewrites production thresholds automatically. Mismatch-investigation runs also write dedicated mismatch CSV/JSON files and audit-only candidate-analysis Markdown/JSON files. See [Bortle Calibration Mismatch Investigation](docs/bortle-calibration-mismatch-investigation.md) for output meanings, candidate simulation rules, evidence sufficiency gates, and how to add future SQM or independently verified Bortle references.
+Generated audit reports belong under `deploy/calibration/runtime/`, which is ignored by Git. The sky-darkness benchmark wrapper uses `--format json`, `--format csv`, `--format markdown`, or `--format all`; `--json` is accepted as a compatibility alias for `--format json`. The workflow compares supplied independent references with the production estimator and never rewrites production thresholds automatically. Mismatch-investigation runs also write dedicated mismatch CSV/JSON files and audit-only candidate-analysis Markdown/JSON files. See [Bortle Calibration Mismatch Investigation](docs/bortle-calibration-mismatch-investigation.md) for output meanings, candidate simulation rules, evidence sufficiency gates, and how to add future SQM or independently verified Bortle references.
 
 These documents define the strategic product boundary for 逐光天气. Future Codex tasks must not narrow the product into a simple weather query site or an AI text explanation tool. If a task touches weather, astronomy, terrain, scoring, provider normalization, AI explanation, result pages, or data-source display, preserve this boundary: 逐光天气 should eventually cover at least Tianwentong + Lijing Weather style information and provide more detailed photography decision support.
 

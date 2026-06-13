@@ -248,9 +248,11 @@ def coverage_for_coordinate(
         tile_id = resolve_copernicus_dem_tile_id(latitude, longitude, dataset_key=dataset_key)
         tile = build_tile_record(tile_id, data_dir=data_dir, dataset_key=dataset_key)
         covered = coordinate_within_active_bounds(latitude, longitude, active_bounds)
+        effective_status = "available" if covered else tile.status
         return TerrainDemTileCoverageDiagnostics(
             requiredTileId=tile_id,
-            status=tile.status,
+            status=effective_status,
+            incomingTileStatus=tile.status,
             coveredByActiveDataset=covered,
             tileFileExists=tile.fileExists,
             tileMetadataExists=tile.metadataExists,
@@ -290,12 +292,27 @@ def build_coverage_status(
     dataset = dataset_profile(dataset_key)
     tile_ids = sort_tile_ids(set(required_tile_ids))
     tiles = [build_tile_record(tile_id, data_dir=data_dir, dataset_key=dataset.key) for tile_id in tile_ids]
-    existing_tile_ids = [tile.tileId for tile in tiles if tile.status == "available"]
-    missing_tile_ids = [tile.tileId for tile in tiles if tile.status != "available"]
     coordinate_statuses = [
         coordinate_coverage(latitude, longitude, data_dir=data_dir, active_bounds=active_bounds, dataset_key=dataset.key)
         for latitude, longitude in coordinates
     ]
+    active_covered_tile_ids = {
+        item.requiredTileId
+        for item in coordinate_statuses
+        if item.requiredTileId is not None and item.coveredByActiveDataset
+    }
+    existing_tile_ids = [tile.tileId for tile in tiles if tile.status == "available"]
+    raw_missing_tile_ids = [tile.tileId for tile in tiles if tile.status != "available"]
+    missing_tile_ids = [
+        tile_id for tile_id in raw_missing_tile_ids if tile_id not in active_covered_tile_ids
+    ]
+    available_tile_count = len(tile_ids) - len(missing_tile_ids)
+    import_readiness = build_import_readiness(
+        missing_tile_ids=missing_tile_ids,
+        tile_ids=tile_ids,
+        tiles=tiles,
+        coordinate_statuses=coordinate_statuses,
+    )
     return TerrainDemCoverageStatusResponse(
         datasetKey=dataset.key,
         sourceName=dataset.source_name,
@@ -308,7 +325,7 @@ def build_coverage_status(
         existingTileIds=existing_tile_ids,
         missingTileIds=missing_tile_ids,
         requiredTileCount=len(tile_ids),
-        availableTileCount=len(existing_tile_ids),
+        availableTileCount=available_tile_count,
         missingTileCount=len(missing_tile_ids),
         estimatedFileCount=len(tile_ids),
         estimatedLocalPaths=[tile.localPath for tile in tiles],
@@ -316,11 +333,7 @@ def build_coverage_status(
         tiles=tiles,
         coordinateCoverage=coordinate_statuses,
         allCoordinatesCoveredByActiveDataset=all_coordinates_covered(coordinate_statuses),
-        importReadiness=TerrainDemCoverageImportReadiness(
-            readyForImport=len(missing_tile_ids) == 0 and len(tile_ids) > 0,
-            reasonZh=import_readiness_reason(missing_tile_ids, tile_ids),
-            importCommand=suggest_import_command(tiles) if len(missing_tile_ids) == 0 and len(tile_ids) > 0 else None,
-        ),
+        importReadiness=import_readiness,
         generatedAt=datetime.now(UTC).isoformat(),
     )
 
@@ -347,6 +360,7 @@ def coordinate_coverage(
         requiredTileId=coverage.requiredTileId,
         coveredByActiveDataset=coverage.coveredByActiveDataset,
         tileStatus=coverage.status,
+        incomingTileStatus=coverage.incomingTileStatus,
         noteZh=coverage.noteZh,
     )
 
@@ -561,6 +575,38 @@ def import_readiness_reason(missing_tile_ids: list[str], tile_ids: list[str]) ->
     if missing_tile_ids:
         return f"仍缺少 {len(missing_tile_ids)} 个 DEM 瓦片；先生成下载计划并人工复核。"
     return "所需瓦片均已在本地待导入目录中，可运行导入命令生成激活 DEM。"
+
+
+def build_import_readiness(
+    *,
+    missing_tile_ids: list[str],
+    tile_ids: list[str],
+    tiles: list[TerrainDemTile],
+    coordinate_statuses: list[TerrainDemCoordinateCoverage],
+) -> TerrainDemCoverageImportReadiness:
+    if not tile_ids:
+        return TerrainDemCoverageImportReadiness(
+            readyForImport=False,
+            reasonZh="未提供坐标、范围或区域配置，暂无可导入瓦片。",
+            importCommand=None,
+        )
+    if missing_tile_ids:
+        return TerrainDemCoverageImportReadiness(
+            readyForImport=False,
+            reasonZh=f"仍缺少 {len(missing_tile_ids)} 个 DEM 瓦片；先生成下载计划并人工复核。",
+            importCommand=None,
+        )
+    if all_coordinates_covered(coordinate_statuses):
+        return TerrainDemCoverageImportReadiness(
+            readyForImport=False,
+            reasonZh="请求坐标已由当前激活 DEM 栅格覆盖；无需为坐标覆盖下载或导入瓦片。",
+            importCommand=None,
+        )
+    return TerrainDemCoverageImportReadiness(
+        readyForImport=True,
+        reasonZh=import_readiness_reason(missing_tile_ids, tile_ids),
+        importCommand=suggest_import_command(tiles),
+    )
 
 
 def suggest_import_command(tiles: list[TerrainDemTile]) -> str:

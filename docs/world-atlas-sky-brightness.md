@@ -63,8 +63,10 @@ bash scripts/diagnose-sky-darkness.sh --coordinate 35.1,112.2 --json --azimuth 1
 Use the QA benchmark wrapper for private reference CSV/JSON files:
 
 ```bash
-bash scripts/evaluate-sky-darkness-benchmarks.sh deploy/calibration/runtime/reference.csv --format all --redact-names
+bash scripts/evaluate-sky-darkness-benchmarks.sh deploy/calibration/runtime/bortle-reference.csv --format json --include-coordinates
 ```
+
+Use `--format json`, `--format csv`, `--format markdown`, or `--format all` for report output. The wrapper also accepts `--json` as a compatibility alias for `--format json`.
 
 No location names, coordinate allowlists, scenic-spot categories, or city/rural/mountain hardcoding are used.
 

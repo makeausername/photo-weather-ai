@@ -115,6 +115,44 @@ def test_coverage_status_detects_existing_and_missing_tiles(tmp_path: Path) -> N
     assert status.tiles[0].checksum == "b" * 64
 
 
+def test_active_dataset_coverage_does_not_request_incoming_tile_download(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    current_dir = tmp_path / "current"
+    current_dir.mkdir(parents=True)
+    (current_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "bounds": {"west": 118, "south": 30, "east": 119, "north": 31},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = plan_tiles_main(
+        [
+            "--data-dir",
+            str(tmp_path),
+            "--coordinate",
+            "30.1321,118.1691",
+            "--json",
+        ]
+    )
+    output = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert output["missingTileCount"] == 0
+    assert output["missingTileIds"] == []
+    assert output["suggestedDownloadUrls"] == []
+    assert output["downloadCommands"] == []
+    assert output["coordinateCoverage"][0]["coveredByActiveDataset"] is True
+    assert output["coordinateCoverage"][0]["tileStatus"] == "available"
+    assert output["coordinateCoverage"][0]["incomingTileStatus"] == "missing"
+    assert output["importReadiness"]["readyForImport"] is False
+    assert "无需" in output["importReadiness"]["reasonZh"]
+    assert "缺少" not in output["importReadiness"]["reasonZh"]
+
+
 def test_download_command_list_is_deterministic_and_not_executed(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     plan_file = tmp_path / "download-plan.sh"
     exit_code = plan_tiles_main(

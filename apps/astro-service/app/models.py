@@ -404,6 +404,7 @@ class TerrainDemTile(BaseModel):
 class TerrainDemTileCoverageDiagnostics(BaseModel):
     requiredTileId: str | None = None
     status: TerrainDemTileStatus
+    incomingTileStatus: TerrainDemTileStatus | None = None
     coveredByActiveDataset: bool
     tileFileExists: bool
     tileMetadataExists: bool
@@ -423,6 +424,7 @@ class TerrainDemCoordinateCoverage(BaseModel):
     requiredTileId: str | None = None
     coveredByActiveDataset: bool
     tileStatus: TerrainDemTileStatus
+    incomingTileStatus: TerrainDemTileStatus | None = None
     noteZh: str
 
 

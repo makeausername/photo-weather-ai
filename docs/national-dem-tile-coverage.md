@@ -61,6 +61,8 @@ python -m scripts.plan_terrain_dem_tiles --data-dir ../../deploy/terrain-dem --c
 curl 'http://127.0.0.1:4100/terrain-dem/coverage?latitudeWgs84=30.1328&longitudeWgs84=118.171'
 ```
 
+Coordinate coverage is based on the active DEM raster first. When `coveredByActiveDataset=true`, `tileStatus` reports coordinate coverage as `available`; `incomingTileStatus` preserves the raw Copernicus tile staging state when the incoming tile is missing or invalid. In the default coverage report, `missingTileCount`, `missingTileIds`, suggested download URLs, and generated download commands are actionable for active-raster coverage, so a coordinate already inside the active raster does not request another tile download just because the raw incoming tile is absent.
+
 ## Plan Tiles For A Region
 
 中心点 + 半径：

@@ -359,6 +359,7 @@ const terrainDemTileStatusSchema = z.enum(["available", "missing", "invalid", "p
 const terrainDemCoverageSchema = z.object({
   requiredTileId: z.string().nullable().optional(),
   status: terrainDemTileStatusSchema,
+  incomingTileStatus: terrainDemTileStatusSchema.nullable().optional(),
   coveredByActiveDataset: z.boolean(),
   tileFileExists: z.boolean(),
   tileMetadataExists: z.boolean(),

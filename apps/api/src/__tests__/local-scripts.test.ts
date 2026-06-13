@@ -304,15 +304,22 @@ describe("local astro diagnostics scripts", () => {
     for (const expected of [
       "docker-compose.prod.yml",
       ".env.production",
-      "sky-darkness:diagnose",
-      "sky-darkness:benchmark",
+      "pnpm --filter @photo-weather/api exec tsx src/scripts/diagnose-sky-darkness.ts",
+      "pnpm --filter @photo-weather/api exec tsx src/scripts/national-sky-darkness-benchmark.ts",
       "--astro-service-url http://astro-service:4100",
+      "normalized_args+=(--format json)",
       "This command queries only the local active WA/model and VIIRS datasets",
+      "Compatibility: --json is translated to --format json.",
       "competitorBenchmark, thirdPartyReference, notGroundTruth",
     ]) {
       expect(combined).toContain(expected);
     }
 
+    expect(diagnoseScript).not.toMatch(/sky-darkness:diagnose\s+--/);
+    expect(evaluateScript).not.toMatch(/sky-darkness:benchmark\s+--/);
+    expect(evaluateScript).toContain('if [[ "${arg}" == "--json" ]]');
+    expect(evaluateScript).toContain("args=(--input");
+    expect(evaluateScript).toContain('"${normalized_args[@]}"');
     expect(combined).not.toMatch(/curl|wget|Invoke-WebRequest|Remove-Item|rm -rf/);
   });
 

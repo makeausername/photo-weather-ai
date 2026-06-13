@@ -27,6 +27,8 @@ compose() {
 
 if [[ $# -eq 0 ]]; then
   echo "Usage: bash scripts/evaluate-sky-darkness-benchmarks.sh <benchmark.csv|benchmark.json> [benchmark options]"
+  echo "Use --format json, --format csv, --format markdown, or --format all for report output."
+  echo "Compatibility: --json is translated to --format json."
   echo "Benchmark references are QA only: competitorBenchmark, thirdPartyReference, notGroundTruth."
   exit 2
 fi
@@ -44,8 +46,16 @@ if [[ "${args[0]}" != --* ]]; then
   args=(--input "${benchmark_path}" "${args[@]}")
 fi
 
-compose run --rm api \
-  pnpm --filter @photo-weather/api sky-darkness:benchmark -- \
-    --astro-service-url http://astro-service:4100 \
-    "${args[@]}"
+normalized_args=()
+for arg in "${args[@]}"; do
+  if [[ "${arg}" == "--json" ]]; then
+    normalized_args+=(--format json)
+  else
+    normalized_args+=("${arg}")
+  fi
+done
 
+compose run --rm api \
+  pnpm --filter @photo-weather/api exec tsx src/scripts/national-sky-darkness-benchmark.ts \
+    --astro-service-url http://astro-service:4100 \
+    "${normalized_args[@]}"

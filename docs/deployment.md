@@ -263,14 +263,16 @@ This JSON records nationwide quantiles, local/halo ratios, ambient-risk distribu
 Run the QA-only benchmark with an independent private reference file:
 
 ```bash
-bash scripts/evaluate-sky-darkness-benchmarks.sh deploy/calibration/runtime/reference.csv --format all --redact-names
-docker compose --env-file .env.production -f docker-compose.prod.yml run --rm api pnpm --filter @photo-weather/api sky-darkness:benchmark -- --input deploy/calibration/runtime/reference.csv --output-dir deploy/calibration/runtime --format all --redact-names
+bash scripts/evaluate-sky-darkness-benchmarks.sh deploy/calibration/runtime/bortle-reference.csv --format json --include-coordinates
+docker compose --env-file .env.production -f docker-compose.prod.yml run --rm api pnpm --filter @photo-weather/api exec tsx src/scripts/national-sky-darkness-benchmark.ts --input deploy/calibration/runtime/bortle-reference.csv --output-dir deploy/calibration/runtime --format json --include-coordinates
 ```
+
+The benchmark wrapper accepts `--format json`, `--format csv`, `--format markdown`, and `--format all`. For operator convenience, `--json` is translated to `--format json` before the API CLI runs.
 
 For local validation without astro-service queries:
 
 ```bash
-pnpm sky-darkness:benchmark -- --input deploy/calibration/bortle-reference.example.csv --dry-run --strict
+pnpm --filter @photo-weather/api exec tsx src/scripts/national-sky-darkness-benchmark.ts --input deploy/calibration/bortle-reference.example.csv --dry-run --strict
 ```
 
 The benchmark report includes exact matches, overlap matches, adjacent matches, over-optimistic errors, over-conservative errors, too-wide public outputs, Bortle 4+ references shown as public 1-2, mean and median class distance, mismatch details, model versions, WA/model sky-brightness diagnostics when available, and a final QA recommendation. It warns or fails when public output becomes too optimistic, systematically too low, or too vague to be useful. It is explicitly audit-only: references are `competitorBenchmark`, `thirdPartyReference`, and `notGroundTruth`; they do not create production thresholds, place lists, coordinate mappings, scenic-spot rules, category hacks, SQM values, national-standard levels, or Tianwentong-derived mappings. The 30 Tianwentong screenshots remain QA/regression evidence only.
@@ -320,6 +322,8 @@ bash scripts/plan-terrain-dem-tiles.sh --region east-china-mountain-pilot --json
 ```
 
 The planner reports required/existing/missing Copernicus DEM tiles, estimated local paths, suggested URLs, and import readiness. It does not download by default; generated command lists must be reviewed and run by an operator. See [National DEM Tile Coverage Manager V1](national-dem-tile-coverage.md).
+
+Coverage reports distinguish active DEM raster coverage from raw incoming tile staging. If `coveredByActiveDataset=true`, the coordinate already has active terrain coverage; a missing incoming tile is only a staging diagnostic and the default report must not ask the operator to download/import that tile for the covered coordinate.
 
 The importer validates local GeoTIFF readability, CRS, dimensions, nodata, finite elevation pixels, coordinate bounds, metadata, and checksum. It mosaics supplied tiles, reprojects to EPSG:4326 when required, writes a tiled/compressed GeoTIFF/COG, builds overviews where practical, writes metadata, and activates the dataset only after validation. The previous active raster/metadata/checksum are preserved under `deploy/terrain-dem/backups/`; a failed import leaves the previous active dataset untouched.
 

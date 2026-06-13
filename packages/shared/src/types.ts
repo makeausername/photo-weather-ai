@@ -673,6 +673,7 @@ export type TerrainDemTileStatus = "available" | "missing" | "invalid" | "pendin
 export type TerrainDemTileCoverageDiagnostic = {
   readonly requiredTileId?: string | null;
   readonly status: TerrainDemTileStatus;
+  readonly incomingTileStatus?: TerrainDemTileStatus | null;
   readonly coveredByActiveDataset: boolean;
   readonly tileFileExists: boolean;
   readonly tileMetadataExists: boolean;

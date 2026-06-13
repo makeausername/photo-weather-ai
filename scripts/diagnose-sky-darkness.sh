@@ -32,7 +32,6 @@ if [[ $# -eq 0 ]]; then
 fi
 
 compose run --rm api \
-  pnpm --filter @photo-weather/api sky-darkness:diagnose -- \
+  pnpm --filter @photo-weather/api exec tsx src/scripts/diagnose-sky-darkness.ts \
     --astro-service-url http://astro-service:4100 \
     "$@"
-
