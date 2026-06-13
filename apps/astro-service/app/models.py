@@ -309,6 +309,8 @@ class SkyBrightnessQueryResponse(BaseModel):
     valueUnit: str | None = None
     modeledSqm: float | None = None
     artificialBrightness: float | None = None
+    naturalSkyBrightnessMcdM2: float | None = None
+    modeledTotalSkyBrightnessMcdM2: float | None = None
     estimatedBortleRange: SkyBrightnessEstimatedBortleRange | None = None
     chinaDarkSkyReference: ChinaDarkSkyReference | None = None
     confidence: ConfidenceLevel

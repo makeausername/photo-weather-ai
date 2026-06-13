@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import type { DirectionalLightPollutionRisk, LightPollutionInfo } from "@photo-weather/shared";
+import type { DirectionalLightPollutionRisk, LightPollutionInfo, SkyBrightnessInfo } from "@photo-weather/shared";
 import { estimateBortleRangeForLightPollution } from "@photo-weather/scoring";
 import { AstroServiceClientError } from "../astro-service-client.js";
 import {
@@ -29,6 +29,12 @@ import {
   buildNationalSkyDarknessBenchmarkReport,
   formatNationalSkyDarknessBenchmarkMarkdown,
 } from "../scripts/national-sky-darkness-benchmark.js";
+import {
+  buildSkyDarknessDiagnosticReport,
+  parseSkyDarknessDiagnosticArgs,
+  runSkyDarknessDiagnosticCli,
+  type SkyDarknessDiagnosticClient,
+} from "../scripts/diagnose-sky-darkness.js";
 
 const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -685,6 +691,8 @@ describe("National sky darkness benchmark QA", () => {
     expect(report.summary).toMatchObject({
       overOptimisticErrors: 1,
       overConservativeErrors: 1,
+      tooWideOutputs: 0,
+      benchmarkLikeFourPlusDisplayedAsVeryDark: 0,
       errorsGreaterThanOneClass: 1,
       finalQaRecommendation: "fail_investigate_over_optimism",
     });
@@ -699,7 +707,112 @@ describe("National sky darkness benchmark QA", () => {
       ]),
     );
     expect(markdown).toContain("Production rules generated: false");
+    expect(markdown).toContain("Too-wide public outputs: 0");
     expect(markdown).toContain("does not write thresholds, location rules, coordinate rules");
+  });
+});
+
+describe("Sky darkness coordinate diagnostic", () => {
+  it("parses coordinate diagnostics and reports WA, VIIRS, fused range, and local-only policy", async () => {
+    const options = parseSkyDarknessDiagnosticArgs(
+      ["--coordinate", "35.1,112.2", "--azimuth", "135", "--label", "qa", "--json"],
+      { ASTRO_SERVICE_URL: "http://127.0.0.1:4100" } as NodeJS.ProcessEnv,
+    );
+    const client: SkyDarknessDiagnosticClient = {
+      queryLightPollution: vi.fn(async () =>
+        lightPollutionFixture({
+          localRadiance: 0.2,
+          surroundingHaloRadiance: 0.5,
+          ambientRiskIndex: 32,
+        }),
+      ),
+      querySkyBrightness: vi.fn(async (): Promise<SkyBrightnessInfo> => ({
+        available: true,
+        dataAvailable: true,
+        datasetName: "Synthetic WA",
+        datasetYear: 2015,
+        datasetVersion: "WA2015-Falchi2016-v1.1",
+        checksumShort: "abc123",
+        valueType: "artificial_brightness_mcd_m2",
+        rawValue: 0.35,
+        valueUnit: "mcd/m^2",
+        artificialBrightness: 0.35,
+        naturalSkyBrightnessMcdM2: 0.174,
+        modeledTotalSkyBrightnessMcdM2: 0.524,
+        modeledSqm: 20.8,
+        estimatedBortleRange: {
+          available: true,
+          minClass: 3,
+          maxClass: 4,
+          rangeLabelZh: "3-4",
+          confidence: "low",
+          basisZh: "Modeled, not measured.",
+          methodVersion: "wa-modeled-sqm-v1",
+        },
+        confidence: "low",
+        diagnostics: {
+          healthStatus: "available",
+          metadataExists: true,
+          datasetExists: true,
+          sampleCount: 1,
+          validSampleCount: 1,
+          conversionNotes: ["artificial plus natural baseline"],
+          uncertaintyNotes: ["modeled, not measured"],
+        },
+      })),
+    };
+
+    const report = await buildSkyDarknessDiagnosticReport(options, client, {
+      now: () => new Date("2026-06-13T00:00:00.000Z"),
+    });
+
+    expect(report.run).toMatchObject({
+      toolVersion: "sky-darkness-diagnostic-v1",
+      localDatasetOnly: true,
+      externalNetworkCalls: false,
+    });
+    expect(report.coordinate).toMatchObject({ latitudeWgs84: 35.1, longitudeWgs84: 112.2, label: "qa" });
+    expect(report.wa).toMatchObject({
+      available: true,
+      valueType: "artificial_brightness_mcd_m2",
+      rawValue: 0.35,
+      artificialBrightness: 0.35,
+      naturalSkyBrightnessMcdM2: 0.174,
+      modeledTotalSkyBrightnessMcdM2: 0.524,
+      modeledSqm: 20.8,
+      datasetVersion: "WA2015-Falchi2016-v1.1",
+    });
+    expect(report.viirs.localRadiance).toBe(0.2);
+    expect(report.fusedPublicBortleRange.available).toBe(true);
+    expect(report.publicLabel).toEqual(expect.any(String));
+    expect(report.diagnostics).toEqual(expect.arrayContaining(["wa_model_baseline_available"]));
+    expect(client.queryLightPollution).toHaveBeenCalledTimes(1);
+    expect(client.querySkyBrightness).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs the JSON CLI with an injected client without external network access", async () => {
+    const output: string[] = [];
+    const client: SkyDarknessDiagnosticClient = {
+      queryLightPollution: vi.fn(async () => lightPollutionFixture()),
+      querySkyBrightness: vi.fn(async () => null),
+    };
+
+    await expect(
+      runSkyDarknessDiagnosticCli(
+        ["--coordinate", "35.1,112.2", "--json"],
+        (text) => output.push(text),
+        () => undefined,
+        {
+          client,
+          now: () => new Date("2026-06-13T00:00:00.000Z"),
+        },
+      ),
+    ).resolves.toBe(0);
+
+    const payload = JSON.parse(output.join(""));
+    expect(payload.run.externalNetworkCalls).toBe(false);
+    expect(payload.fusedPublicBortleRange).toHaveProperty("rangeLabelZh");
+    expect(client.queryLightPollution).toHaveBeenCalledTimes(1);
   });
 });
 

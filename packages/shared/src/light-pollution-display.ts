@@ -25,6 +25,9 @@ export type PublicSkyDarknessDisplay = {
   readonly unavailableReason?: string;
   readonly conservative: boolean;
   readonly calibrationEvidenceLevel: "insufficient" | "limited" | "supported";
+  readonly rangeWidthClasses: number | null;
+  readonly rangeWidthPolicy: "narrow" | "normal" | "wide_uncertain" | "too_wide" | "unavailable";
+  readonly tooWideRange: boolean;
   readonly confidenceReasonsZh: readonly string[];
   readonly diagnostics: readonly string[];
   readonly rawRangeLabelZh: string;
@@ -57,6 +60,14 @@ export function resolveNationalSkyDarknessDisplay(
 ): PublicSkyDarknessDisplay {
   const rawEstimate = lightPollution.estimatedBortleRange;
   if (!rawEstimate || !rawEstimate.available) {
+    if (lightPollution.skyBrightness?.estimatedBortleRange?.available) {
+      const unavailableRawEstimate = unavailableViirsEstimate(
+        rawEstimate,
+        rawEstimate?.unavailableReason ?? lightPollution.unavailableReason ?? "raw_estimate_unavailable",
+      );
+      const nationalModel = resolveNationalSkyDarknessModel(lightPollution, unavailableRawEstimate);
+      return publicDisplayFromNationalModel(unavailableRawEstimate, nationalModel);
+    }
     return unavailablePublicSkyDarknessDisplay(
       rawEstimate,
       rawEstimate?.unavailableReason ??
@@ -93,6 +104,9 @@ function publicDisplayFromNationalModel(
     disclaimerZh: publicSkyDarknessDisclaimerZh,
     conservative: nationalModel.conservative,
     calibrationEvidenceLevel: nationalModel.calibrationEvidenceLevel,
+    rangeWidthClasses: nationalModel.rangeWidthClasses,
+    rangeWidthPolicy: nationalModel.rangeWidthPolicy,
+    tooWideRange: nationalModel.tooWideRange,
     confidenceReasonsZh: nationalModel.confidenceReasonsZh,
     diagnostics: nationalModel.diagnostics,
     rawRangeLabelZh: rawEstimate.rangeLabelZh,
@@ -121,6 +135,24 @@ function publicDisplayFromNationalModel(
   };
 }
 
+function unavailableViirsEstimate(
+  rawEstimate: EstimatedBortleRange | undefined,
+  unavailableReason: string,
+): EstimatedBortleRange {
+  return {
+    available: false,
+    rangeLabelZh: rawEstimate?.rangeLabelZh ?? "VIIRS unavailable",
+    skyQualityLabelZh: rawEstimate?.skyQualityLabelZh ?? "VIIRS unavailable",
+    confidence: "low",
+    methodVersion: rawEstimate?.methodVersion ?? "viirs-ambient-risk-range-v1",
+    basisZh:
+      rawEstimate?.basisZh ??
+      "Raw VIIRS Bortle estimate is unavailable; WA/model sky brightness may still provide a conservative modeled baseline.",
+    disclaimerZh: rawEstimate?.disclaimerZh ?? publicSkyDarknessDisclaimerZh,
+    unavailableReason,
+  };
+}
+
 function unavailablePublicSkyDarknessDisplay(
   rawEstimate: EstimatedBortleRange | undefined,
   unavailableReason: string,
@@ -140,6 +172,9 @@ function unavailablePublicSkyDarknessDisplay(
     unavailableReason,
     conservative: true,
     calibrationEvidenceLevel: "insufficient",
+    rangeWidthClasses: null,
+    rangeWidthPolicy: "unavailable",
+    tooWideRange: false,
     confidenceReasonsZh: ["原始波特尔估算不可用"],
     diagnostics: ["raw_estimate_unavailable"],
     rawRangeLabelZh: rawEstimate?.rangeLabelZh ?? "不可用",

@@ -153,9 +153,10 @@ Milky Way light-pollution scoring and display:
 ## World Atlas / modeled sky brightness V1
 
 - WA/model sky brightness is an optional local raster layer under `deploy/sky-brightness/current/`; runtime requests never download raster data.
-- The public dark-sky baseline prefers defensible WA/model estimated Bortle ranges when available. VIIRS remains current night-light evidence and can widen/lift the public range when local radiance, halo, or ambient risk conflicts with the model.
-- `sqm`, `artificial_brightness_mcd_m2`, `ratio_to_natural`, and `bortle_class` have explicit conservative conversion rules. `radiance` and `unknown` stay raw-only diagnostics and must not fabricate SQM/Bortle output.
+- The public dark-sky baseline prefers defensible WA/model estimated Bortle ranges when available. VIIRS remains current night-light evidence and can widen/lift the public range when local radiance, halo, or ambient risk conflicts with the model; if VIIRS is missing, usable WA/model output is low-confidence rather than precise.
+- `sqm`, `artificial_brightness_mcd_m2`, `ratio_to_natural`, and `bortle_class` have explicit conservative conversion rules. `artificial_brightness_mcd_m2` is artificial brightness, not total brightness or measured SQM; `radiance` and `unknown` stay raw-only diagnostics and must not fabricate SQM/Bortle output.
 - Public UI must not display measured SQM, official Bortle observations, national-standard levels, official dark-sky certification, or single-point precision claims from modeled raster data.
+- Use `bash scripts/diagnose-sky-darkness.sh --coordinate lat,lon --json` for coordinate-level WA/VIIRS diagnostics and `bash scripts/evaluate-sky-darkness-benchmarks.sh <reference.csv>` for QA-only public-fusion benchmark reports.
 - Benchmark screenshots and third-party ranges are audit-only references: `competitorBenchmark`, `thirdPartyReference`, `notGroundTruth`. They must not create location, coordinate, scenic-spot, or category-specific production rules.
 - The competitive product claim should be the combined decision system: modeled dark-sky baseline + current light-source evidence + weather + Moon + Milky Way geometry + DEM/horizon + action advice.
 

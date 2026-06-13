@@ -32,12 +32,12 @@ Health fields include dataset existence, metadata availability, dataset name/yea
 ## Conversion Rules
 
 - `sqm`: treated as a modeled raster-derived sky brightness value only when it is physically plausible.
-- `artificial_brightness_mcd_m2`: converted with a natural-sky luminance baseline and widened Bortle uncertainty.
+- `artificial_brightness_mcd_m2`: treated as modeled artificial zenith sky brightness in mcd/m^2, kept separate from the natural-sky luminance baseline, then combined only to derive modeled total sky brightness and modeled SQM.
 - `ratio_to_natural`: converted with a natural-sky baseline and widened Bortle uncertainty.
 - `bortle_class`: used as a broad modeled class range, without deriving SQM.
 - `radiance` and `unknown`: kept as raw diagnostics only; no SQM or Bortle range is fabricated.
 
-Modeled SQM is never presented as measured SQM. Bortle ranges are estimates, not official Bortle observations and not national-standard classifications.
+Modeled SQM is never presented as measured SQM. Artificial brightness, natural baseline, modeled total sky brightness, modeled SQM, and estimated Bortle range are separate diagnostics. Bortle ranges are estimates, not official Bortle observations and not national-standard classifications.
 
 ## WA Plus VIIRS Fusion
 
@@ -46,7 +46,20 @@ When a defensible sky-brightness Bortle range exists, it becomes the primary pub
 - local radiance and halo can widen or lift an over-dark modeled baseline;
 - strong VIIRS conflict prevents narrow dark claims;
 - missing WA/model data falls back to the existing conservative VIIRS public display;
+- missing VIIRS can fall back to WA/model with low confidence when WA/model is usable;
 - raw VIIRS and raw WA/model fields stay in diagnostics.
+
+Use coordinate diagnostics to inspect one point without external services:
+
+```bash
+bash scripts/diagnose-sky-darkness.sh --coordinate 35.1,112.2 --json --azimuth 135 --label qa
+```
+
+Use the QA benchmark wrapper for private reference CSV/JSON files:
+
+```bash
+bash scripts/evaluate-sky-darkness-benchmarks.sh deploy/calibration/runtime/reference.csv --format all --redact-names
+```
 
 No location names, coordinate allowlists, scenic-spot categories, or city/rural/mountain hardcoding are used.
 

@@ -296,7 +296,7 @@ describe("public sky darkness display", () => {
     expect(display.rangeLabelZh).toBe("2–4级（保守参考）");
     expect(display.localRadianceQuantile).toEqual(expect.any(Number));
     expect(display.haloRadianceQuantile).toEqual(expect.any(Number));
-    expect(display.nationalModelVersion).toBe("china-national-sky-darkness-v1");
+    expect(display.nationalModelVersion).toBe("china-national-sky-darkness-v2");
   });
 
   it("uses WA/model sky brightness as the public baseline when it is available", () => {
@@ -362,6 +362,162 @@ describe("public sky darkness display", () => {
     expect(display.minClass).toBeGreaterThanOrEqual(4);
     expect(display.minClass).not.toBe(1);
     expect(display.maxClass).not.toBe(2);
+  });
+
+  it("keeps WA moderate plus very dark VIIRS useful instead of publishing a three-class default range", () => {
+    const display = resolvePublicSkyDarknessDisplay(
+      lightPollutionFixture({
+        localRadiance: 0.0001,
+        surroundingHaloRadiance: 0.02,
+        ambientRiskIndex: 6,
+        skyBrightness: skyBrightnessFixture({
+          modeledSqm: 19.8,
+          estimatedBortleRange: {
+            available: true,
+            minClass: 4,
+            maxClass: 5,
+            rangeLabelZh: "4-5",
+            confidence: "medium",
+            basisZh: "Raster-derived modeled sky brightness, not a field measurement.",
+            methodVersion: "wa-modeled-sqm-v1",
+          },
+        }),
+      }),
+    );
+
+    expect(display.primaryBaseline).toBe("wa_model");
+    expect(display.minClass).toBe(4);
+    expect(display.maxClass).toBe(5);
+    expect(display.rangeWidthClasses).toBeLessThanOrEqual(2);
+    expect(display.rangeWidthPolicy).toBe("normal");
+  });
+
+  it("lifts and widens WA dark output when VIIRS halo risk is high without exceeding three classes", () => {
+    const display = resolvePublicSkyDarknessDisplay(
+      lightPollutionFixture({
+        localRadiance: 0.0002,
+        surroundingHaloRadiance: 3.2,
+        ambientRiskIndex: 72,
+        skyBrightness: skyBrightnessFixture({
+          modeledSqm: 21.4,
+          estimatedBortleRange: {
+            available: true,
+            minClass: 2,
+            maxClass: 3,
+            rangeLabelZh: "2-3",
+            confidence: "medium",
+            basisZh: "Raster-derived modeled sky brightness, not a field measurement.",
+            methodVersion: "wa-modeled-sqm-v1",
+          },
+        }),
+      }),
+    );
+
+    expect(display.primaryBaseline).toBe("wa_model");
+    expect(display.minClass).toBeGreaterThanOrEqual(2);
+    expect(display.maxClass).toBeGreaterThanOrEqual(4);
+    expect(display.rangeWidthClasses).toBeLessThanOrEqual(3);
+    expect(display.diagnostics).toEqual(expect.arrayContaining(["urban_skyglow_spillover_risk"]));
+  });
+
+  it("keeps WA and VIIRS consistent dark evidence narrower and more confident", () => {
+    const lightPollution = lightPollutionFixture({
+      localRadiance: 0.004,
+      surroundingHaloRadiance: 0.005,
+      ambientRiskIndex: 5,
+      calculationBasis: {
+        ...lightPollutionFixture().calculationBasis!,
+        samplingConfigVersion: "satellite-night-light-field-validated-v1",
+      },
+      skyBrightness: skyBrightnessFixture({
+        modeledSqm: 21.4,
+        estimatedBortleRange: {
+          available: true,
+          minClass: 2,
+          maxClass: 3,
+          rangeLabelZh: "2-3",
+          confidence: "medium",
+          basisZh: "Raster-derived modeled sky brightness, not a field measurement.",
+          methodVersion: "wa-modeled-sqm-v1",
+        },
+      }),
+      estimatedBortleRange: {
+        available: true,
+        minClass: 2,
+        maxClass: 3,
+        rangeLabelZh: "2-3",
+        skyQualityLabelZh: "dark",
+        confidence: "medium",
+        methodVersion: "viirs-ambient-risk-range-v1",
+        basisZh: "raw fixture",
+        disclaimerZh: "raw fixture",
+      },
+    });
+
+    const display = resolvePublicSkyDarknessDisplay(lightPollution);
+
+    expect(display.primaryBaseline).toBe("wa_model");
+    expect(display.minClass).toBe(2);
+    expect(display.maxClass).toBe(3);
+    expect(display.rangeWidthClasses).toBe(2);
+    expect(display.confidence).toBe("medium");
+  });
+
+  it("falls back to WA/model with low confidence when VIIRS raw estimate is missing", () => {
+    const display = resolvePublicSkyDarknessDisplay(
+      lightPollutionFixture({
+        estimatedBortleRange: {
+          available: false,
+          rangeLabelZh: "unavailable",
+          skyQualityLabelZh: "unavailable",
+          confidence: "low",
+          methodVersion: "viirs-ambient-risk-range-v1",
+          basisZh: "VIIRS unavailable",
+          disclaimerZh: "raw unavailable",
+          unavailableReason: "viirs_missing",
+        },
+        skyBrightness: skyBrightnessFixture({
+          estimatedBortleRange: {
+            available: true,
+            minClass: 4,
+            maxClass: 5,
+            rangeLabelZh: "4-5",
+            confidence: "medium",
+            basisZh: "Raster-derived modeled sky brightness, not a field measurement.",
+            methodVersion: "wa-modeled-sqm-v1",
+          },
+        }),
+      }),
+    );
+
+    expect(display.available).toBe(true);
+    expect(display.primaryBaseline).toBe("wa_model");
+    expect(display.confidence).toBe("low");
+    expect(display.diagnostics).toEqual(expect.arrayContaining(["viirs_estimate_unavailable"]));
+  });
+
+  it("does not use a strong directional label when a low-confidence range includes darker classes", () => {
+    const display = resolvePublicSkyDarknessDisplay(
+      lightPollutionFixture({
+        localRadiance: 0.0002,
+        surroundingHaloRadiance: 3.2,
+        ambientRiskIndex: 72,
+        skyBrightness: skyBrightnessFixture({
+          estimatedBortleRange: {
+            available: true,
+            minClass: 2,
+            maxClass: 3,
+            rangeLabelZh: "2-3",
+            confidence: "medium",
+            basisZh: "Raster-derived modeled sky brightness, not a field measurement.",
+            methodVersion: "wa-modeled-sqm-v1",
+          },
+        }),
+      }),
+    );
+
+    expect(display.rangeWidthClasses).toBeGreaterThanOrEqual(3);
+    expect(display.skyQualityLabelZh).not.toMatch(/\u5149\u6c61\u67d3\u504f\u5f3a/);
   });
 
   it("keeps public WA fusion wording free of measured SQM and national-standard claims", () => {

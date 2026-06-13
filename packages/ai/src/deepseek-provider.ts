@@ -16,6 +16,7 @@ import {
   glowDisplayRecommendationForScore,
   isGlowWindowRecommendationEligible,
   normalizeDeepSeekModel,
+  resolvePublicSkyDarknessDisplay,
   type DeepSeekReasoningEffort,
   type GlowWindowLifecycleState,
 } from "@photo-weather/shared";
@@ -3004,6 +3005,7 @@ function compactAstroLightPollutionPromptFacts(
   lightPollution: ForecastCalculationResult["astroAnalysis"]["lightPollution"],
   textLimit: number,
 ) {
+  const publicSkyDarkness = resolvePublicSkyDarknessDisplay(lightPollution);
   return {
     deterministicOnly: true,
     dataAvailable: lightPollution.dataAvailable,
@@ -3013,15 +3015,17 @@ function compactAstroLightPollutionPromptFacts(
     targetDirectionRisk: lightPollution.targetDirectionRisk ?? null,
     datasetYear: lightPollution.datasetYear ?? null,
     datasetVersion: lightPollution.datasetVersion ?? null,
-    estimatedBortle: lightPollution.estimatedBortleRange
+    estimatedBortle: publicSkyDarkness.available
       ? {
-          available: lightPollution.estimatedBortleRange.available,
-          minClass: lightPollution.estimatedBortleRange.minClass ?? null,
-          maxClass: lightPollution.estimatedBortleRange.maxClass ?? null,
-          rangeLabelZh: lightPollution.estimatedBortleRange.rangeLabelZh,
-          skyQualityLabelZh: lightPollution.estimatedBortleRange.skyQualityLabelZh,
-          confidence: lightPollution.estimatedBortleRange.confidence,
-          disclaimerZh: limitText(lightPollution.estimatedBortleRange.disclaimerZh, textLimit),
+          available: publicSkyDarkness.available,
+          minClass: publicSkyDarkness.minClass ?? null,
+          maxClass: publicSkyDarkness.maxClass ?? null,
+          rangeLabelZh: publicSkyDarkness.rangeLabelZh,
+          skyQualityLabelZh: publicSkyDarkness.skyQualityLabelZh,
+          confidence: publicSkyDarkness.confidence,
+          primaryBaseline: publicSkyDarkness.primaryBaseline,
+          rangeWidthPolicy: publicSkyDarkness.rangeWidthPolicy,
+          disclaimerZh: limitText(publicSkyDarkness.disclaimerZh, textLimit),
         }
       : null,
     starIndexPenalty: lightPollution.starPenalty,

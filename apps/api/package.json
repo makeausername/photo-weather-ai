@@ -10,6 +10,7 @@
     "test-provider": "node dist/provider-diagnostics-cli.js",
     "calibration:test": "node dist/historical-calibration-cli.js",
     "bortle:calibrate": "tsx src/scripts/bortle-calibration.ts",
+    "sky-darkness:diagnose": "tsx src/scripts/diagnose-sky-darkness.ts",
     "sky-darkness:benchmark": "tsx src/scripts/national-sky-darkness-benchmark.ts",
     "verify-admin-auth": "node dist/verify-admin-auth-context.js",
     "test": "vitest run --passWithNoTests"

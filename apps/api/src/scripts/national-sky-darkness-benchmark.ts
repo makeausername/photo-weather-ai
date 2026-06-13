@@ -55,9 +55,12 @@ export type NationalSkyDarknessBenchmarkPoint = {
   readonly rawEstimatedBortleRangeLabel?: string;
   readonly publicBortleMin?: number;
   readonly publicBortleMax?: number;
+  readonly publicRangeWidthClasses?: number | null;
   readonly publicBortleRangeLabel?: string;
   readonly publicSkyQualityLabel?: string;
   readonly publicConfidence?: string;
+  readonly publicRangeWidthPolicy?: string;
+  readonly tooWideOutput?: boolean;
   readonly publicModelVersion?: string;
   readonly nationalStatsVersion?: string;
   readonly localRadiance?: number | null;
@@ -81,6 +84,7 @@ export type NationalSkyDarknessBenchmarkPoint = {
   readonly rangeComparison?: BortleRangeComparison;
   readonly overOptimisticError?: boolean;
   readonly overConservativeError?: boolean;
+  readonly benchmarkLikeFourPlusDisplayedAsVeryDark?: boolean;
   readonly classDistance?: number;
   readonly diagnostics: readonly string[];
 };
@@ -97,6 +101,8 @@ export type NationalSkyDarknessBenchmarkSummary = {
   readonly adjacentMatches: number;
   readonly overOptimisticErrors: number;
   readonly overConservativeErrors: number;
+  readonly tooWideOutputs: number;
+  readonly benchmarkLikeFourPlusDisplayedAsVeryDark: number;
   readonly errorsGreaterThanOneClass: number;
   readonly meanClassDistance: number | null;
   readonly medianClassDistance: number | null;
@@ -106,6 +112,8 @@ export type NationalSkyDarknessBenchmarkSummary = {
     | "pass"
     | "warn_collect_more_references"
     | "warn_investigate_mismatches"
+    | "warn_public_ranges_too_wide"
+    | "fail_public_ranges_too_vague"
     | "fail_investigate_over_optimism";
 };
 
@@ -198,6 +206,7 @@ export async function runNationalSkyDarknessBenchmarkCli(
     output(`benchmarks compared: ${report.summary.comparedReferencePoints}`);
     output(`over-optimistic errors: ${report.summary.overOptimisticErrors}`);
     output(`over-conservative errors: ${report.summary.overConservativeErrors}`);
+    output(`too-wide public outputs: ${report.summary.tooWideOutputs}`);
     output(`QA recommendation: ${report.summary.finalQaRecommendation}`);
     for (const file of writtenFiles) {
       output(`wrote: ${file}`);
@@ -266,6 +275,8 @@ export function formatNationalSkyDarknessBenchmarkMarkdown(
     `- Adjacent matches: ${summary.adjacentMatches}`,
     `- Over-optimistic errors: ${summary.overOptimisticErrors}`,
     `- Over-conservative errors: ${summary.overConservativeErrors}`,
+    `- Too-wide public outputs: ${summary.tooWideOutputs}`,
+    `- Bortle 4+ references shown as public 1-2: ${summary.benchmarkLikeFourPlusDisplayedAsVeryDark}`,
     `- Errors greater than one class: ${summary.errorsGreaterThanOneClass}`,
     `- Mean class distance: ${formatNullableNumber(summary.meanClassDistance)}`,
     `- Median class distance: ${formatNullableNumber(summary.medianClassDistance)}`,
@@ -296,7 +307,10 @@ export function formatNationalSkyDarknessBenchmarkCsv(
     "referenceBortleMax",
     "publicBortleMin",
     "publicBortleMax",
+    "publicRangeWidthClasses",
     "publicBortleRangeLabel",
+    "publicRangeWidthPolicy",
+    "tooWideOutput",
     "rawEstimatedBortleRangeLabel",
     "rangeOverlap",
     "classDistance",
@@ -327,7 +341,10 @@ export function formatNationalSkyDarknessBenchmarkCsv(
       point.referenceBortleMax ?? "",
       point.publicBortleMin ?? "",
       point.publicBortleMax ?? "",
+      point.publicRangeWidthClasses ?? "",
       point.publicBortleRangeLabel ?? "",
+      point.publicRangeWidthPolicy ?? "",
+      point.tooWideOutput ?? "",
       point.rawEstimatedBortleRangeLabel ?? "",
       point.rangeComparison?.rangeOverlap ?? "",
       point.rangeComparison?.classDistance ?? "",
@@ -460,6 +477,12 @@ function buildBenchmarkPoint(
     : undefined;
   const overOptimisticError = Boolean(rangeComparison?.estimateBelowReference);
   const overConservativeError = Boolean(rangeComparison?.estimateAboveReference);
+  const benchmarkLikeFourPlusDisplayedAsVeryDark = Boolean(
+    row.reference &&
+      row.reference.minClass >= 4 &&
+      typeof display.maxClass === "number" &&
+      display.maxClass <= 2,
+  );
 
   return {
     ...base,
@@ -468,9 +491,12 @@ function buildBenchmarkPoint(
     rawEstimatedBortleRangeLabel: rawEstimate.rangeLabelZh,
     publicBortleMin: display.minClass,
     publicBortleMax: display.maxClass,
+    publicRangeWidthClasses: display.rangeWidthClasses,
     publicBortleRangeLabel: display.rangeLabelZh,
     publicSkyQualityLabel: display.skyQualityLabelZh,
     publicConfidence: display.confidence,
+    publicRangeWidthPolicy: display.rangeWidthPolicy,
+    tooWideOutput: display.tooWideRange,
     publicModelVersion: display.nationalModelVersion,
     nationalStatsVersion: display.nationalStatsVersion,
     localRadiance: lightPollution.localRadiance,
@@ -495,11 +521,16 @@ function buildBenchmarkPoint(
     rangeComparison: rangeComparison ?? undefined,
     overOptimisticError,
     overConservativeError,
+    benchmarkLikeFourPlusDisplayedAsVeryDark,
     classDistance: rangeComparison?.classDistance,
     diagnostics: [
       ...display.diagnostics,
       ...(overOptimisticError ? ["over_optimistic_public_range"] : []),
       ...(overConservativeError ? ["over_conservative_public_range"] : []),
+      ...(display.tooWideRange ? ["too_wide_public_range"] : []),
+      ...(benchmarkLikeFourPlusDisplayedAsVeryDark
+        ? ["benchmark_like_four_plus_displayed_as_very_dark"]
+        : []),
     ],
   };
 }
@@ -513,6 +544,10 @@ function summarizeBenchmark(
   const distances = compared.map((point) => point.rangeComparison!.classDistance);
   const overOptimisticErrors = compared.filter((point) => point.overOptimisticError).length;
   const overConservativeErrors = compared.filter((point) => point.overConservativeError).length;
+  const tooWideOutputs = points.filter((point) => point.tooWideOutput).length;
+  const benchmarkLikeFourPlusDisplayedAsVeryDark = points.filter(
+    (point) => point.benchmarkLikeFourPlusDisplayedAsVeryDark,
+  ).length;
   const errorsGreaterThanOneClass = compared.filter(
     (point) => (point.rangeComparison?.classDistance ?? 0) > 1,
   ).length;
@@ -532,6 +567,8 @@ function summarizeBenchmark(
       .length,
     overOptimisticErrors,
     overConservativeErrors,
+    tooWideOutputs,
+    benchmarkLikeFourPlusDisplayedAsVeryDark,
     errorsGreaterThanOneClass,
     meanClassDistance: mean(distances),
     medianClassDistance: median(distances),
@@ -540,6 +577,8 @@ function summarizeBenchmark(
     finalQaRecommendation: finalQaRecommendation({
       comparedCount: compared.length,
       overOptimisticErrors,
+      tooWideOutputs,
+      benchmarkLikeFourPlusDisplayedAsVeryDark,
       errorsGreaterThanOneClass,
       mismatchCount: mismatchList.length,
     }),
@@ -549,14 +588,28 @@ function summarizeBenchmark(
 function finalQaRecommendation(input: {
   readonly comparedCount: number;
   readonly overOptimisticErrors: number;
+  readonly tooWideOutputs: number;
+  readonly benchmarkLikeFourPlusDisplayedAsVeryDark: number;
   readonly errorsGreaterThanOneClass: number;
   readonly mismatchCount: number;
 }): NationalSkyDarknessBenchmarkSummary["finalQaRecommendation"] {
+  if (input.benchmarkLikeFourPlusDisplayedAsVeryDark > 0) {
+    return "fail_investigate_over_optimism";
+  }
   if (input.overOptimisticErrors > 0 && input.errorsGreaterThanOneClass > 0) {
+    return "fail_investigate_over_optimism";
+  }
+  if (input.overOptimisticErrors / Math.max(1, input.comparedCount) > 0.25) {
     return "fail_investigate_over_optimism";
   }
   if (input.comparedCount < 30) {
     return "warn_collect_more_references";
+  }
+  if (input.tooWideOutputs / Math.max(1, input.comparedCount) > 0.35) {
+    return "fail_public_ranges_too_vague";
+  }
+  if (input.tooWideOutputs / Math.max(1, input.comparedCount) > 0.2) {
+    return "warn_public_ranges_too_wide";
   }
   if (input.mismatchCount / Math.max(1, input.comparedCount) > 0.25) {
     return "warn_investigate_mismatches";

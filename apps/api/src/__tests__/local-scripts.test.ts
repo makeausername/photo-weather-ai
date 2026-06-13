@@ -283,6 +283,39 @@ describe("local astro diagnostics scripts", () => {
     expect(combined).not.toMatch(/curl|wget|Invoke-WebRequest|Remove-Item|rm -rf/);
   });
 
+  it("wires sky-darkness diagnostic and benchmark wrappers to local-only compose operations", () => {
+    const diagnoseScript = readRepoFile("scripts/diagnose-sky-darkness.sh");
+    const evaluateScript = readRepoFile("scripts/evaluate-sky-darkness-benchmarks.sh");
+    const packageJson = JSON.parse(readRepoFile("package.json")) as {
+      scripts: Record<string, string>;
+    };
+    const apiPackageJson = JSON.parse(readRepoFile("apps/api/package.json")) as {
+      scripts: Record<string, string>;
+    };
+    const combined = `${diagnoseScript}\n${evaluateScript}`;
+
+    expect(packageJson.scripts["sky-darkness:diagnose"]).toBe(
+      "pnpm --filter @photo-weather/api sky-darkness:diagnose",
+    );
+    expect(apiPackageJson.scripts["sky-darkness:diagnose"]).toBe(
+      "tsx src/scripts/diagnose-sky-darkness.ts",
+    );
+
+    for (const expected of [
+      "docker-compose.prod.yml",
+      ".env.production",
+      "sky-darkness:diagnose",
+      "sky-darkness:benchmark",
+      "--astro-service-url http://astro-service:4100",
+      "This command queries only the local active WA/model and VIIRS datasets",
+      "competitorBenchmark, thirdPartyReference, notGroundTruth",
+    ]) {
+      expect(combined).toContain(expected);
+    }
+
+    expect(combined).not.toMatch(/curl|wget|Invoke-WebRequest|Remove-Item|rm -rf/);
+  });
+
   it("prints real-weather calibration diagnostics without raw provider secrets", () => {
     const script = readRepoFile("scripts/test-real-weather.sh");
 

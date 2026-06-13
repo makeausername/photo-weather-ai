@@ -3674,6 +3674,16 @@ function buildSkyBrightnessProfessionalDataItems(
       detail: `valueType=${skyBrightness.valueType}; dataset=${skyBrightness.datasetName ?? "n/a"}.`,
     },
     {
+      label: "WA/model conversion components",
+      value: [
+        `artificial=${formatNullableNumberForView(skyBrightness.artificialBrightness, " mcd/m^2")}`,
+        `natural=${formatNullableNumberForView(skyBrightness.naturalSkyBrightnessMcdM2, " mcd/m^2")}`,
+        `total=${formatNullableNumberForView(skyBrightness.modeledTotalSkyBrightnessMcdM2, " mcd/m^2")}`,
+      ].join("; "),
+      detail:
+        "Artificial brightness, natural baseline, and modeled total sky brightness are kept separate before deriving modeled SQM.",
+    },
+    {
       label: "WA/model raster-derived SQM",
       value:
         typeof skyBrightness.modeledSqm === "number"
@@ -3690,6 +3700,11 @@ function buildSkyBrightnessProfessionalDataItems(
       label: "Fused public range",
       value: publicSkyDarkness.rangeLabelZh,
       detail: `raw VIIRS=${publicSkyDarkness.rawRangeLabelZh}; WA=${publicSkyDarkness.skyBrightnessEstimatedBortleLabel ?? "n/a"}; conflict=${formatBooleanForView(publicSkyDarkness.skyBrightnessConflictRisk)}.`,
+    },
+    {
+      label: "Public range width policy",
+      value: `${publicSkyDarkness.rangeWidthPolicy} (${formatNullableNumberForView(publicSkyDarkness.rangeWidthClasses, " classes")})`,
+      detail: `tooWide=${formatBooleanForView(publicSkyDarkness.tooWideRange)}; confidence=${publicSkyDarkness.confidence}.`,
     },
     {
       label: "WA/model dataset",

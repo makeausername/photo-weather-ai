@@ -18,6 +18,7 @@
     "test:weather-fusion": "powershell -ExecutionPolicy Bypass -File scripts/test-weather-fusion.ps1",
     "calibration:test": "bash scripts/test-historical-calibration.sh",
     "bortle:calibrate": "pnpm --filter @photo-weather/api bortle:calibrate",
+    "sky-darkness:diagnose": "pnpm --filter @photo-weather/api sky-darkness:diagnose",
     "sky-darkness:stats": "bash scripts/sample-national-sky-darkness.sh",
     "sky-darkness:benchmark": "pnpm --filter @photo-weather/api sky-darkness:benchmark",
     "build": "pnpm -r --workspace-concurrency=1 --if-present build",

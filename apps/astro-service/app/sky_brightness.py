@@ -330,6 +330,14 @@ class SkyBrightnessService:
             valueUnit=safe_str(metadata.get("valueUnit")),
             modeledSqm=round_optional(conversion.get("modeledSqm"), 3),
             artificialBrightness=round_optional(conversion.get("artificialBrightness"), 6),
+            naturalSkyBrightnessMcdM2=round_optional(
+                conversion.get("naturalSkyBrightnessMcdM2"),
+                6,
+            ),
+            modeledTotalSkyBrightnessMcdM2=round_optional(
+                conversion.get("modeledTotalSkyBrightnessMcdM2"),
+                6,
+            ),
             estimatedBortleRange=estimated_range,
             chinaDarkSkyReference=china_reference,
             confidence=conversion["confidence"],
@@ -359,6 +367,8 @@ def convert_sky_brightness_value(
     uncertainty_notes: list[str] = []
     modeled_sqm: float | None = None
     artificial_brightness: float | None = None
+    natural_sky_brightness_mcd_m2: float | None = None
+    modeled_total_sky_brightness_mcd_m2: float | None = None
     raw_bortle_class: int | None = None
     confidence: str = "low"
 
@@ -371,17 +381,24 @@ def convert_sky_brightness_value(
             uncertainty_notes.append("SQM raster value is outside the expected physical range.")
     elif value_type == "artificial_brightness_mcd_m2":
         artificial_brightness = max(0.0, raw_value)
-        total_mcd = NATURAL_SKY_BRIGHTNESS_MCD_M2 + artificial_brightness
-        modeled_sqm = sqm_from_luminance_mcd_m2(total_mcd)
+        natural_sky_brightness_mcd_m2 = NATURAL_SKY_BRIGHTNESS_MCD_M2
+        modeled_total_sky_brightness_mcd_m2 = (
+            natural_sky_brightness_mcd_m2 + artificial_brightness
+        )
+        modeled_sqm = sqm_from_luminance_mcd_m2(modeled_total_sky_brightness_mcd_m2)
         confidence = "low"
         conversion_notes.append(
-            "Converted artificial sky brightness mcd/m^2 to modeled SQM using a natural-sky luminance baseline."
+            "Interpreted raster value as artificial zenith sky brightness in mcd/m^2, added the natural-sky luminance baseline, then derived modeled SQM."
         )
         uncertainty_notes.append("Artificial-brightness conversion is model-derived; Bortle range is widened.")
     elif value_type == "ratio_to_natural":
         ratio = max(0.0, raw_value)
         modeled_sqm = NATURAL_SKY_SQM - 2.5 * math.log10(1.0 + ratio)
         artificial_brightness = NATURAL_SKY_BRIGHTNESS_MCD_M2 * ratio
+        natural_sky_brightness_mcd_m2 = NATURAL_SKY_BRIGHTNESS_MCD_M2
+        modeled_total_sky_brightness_mcd_m2 = (
+            natural_sky_brightness_mcd_m2 + artificial_brightness
+        )
         confidence = "low"
         conversion_notes.append("Converted ratio_to_natural to modeled SQM using a natural-sky baseline.")
         uncertainty_notes.append("Ratio conversion is model-derived; Bortle range is widened.")
@@ -398,6 +415,8 @@ def convert_sky_brightness_value(
     return {
         "modeledSqm": modeled_sqm,
         "artificialBrightness": artificial_brightness,
+        "naturalSkyBrightnessMcdM2": natural_sky_brightness_mcd_m2,
+        "modeledTotalSkyBrightnessMcdM2": modeled_total_sky_brightness_mcd_m2,
         "rawBortleClass": raw_bortle_class,
         "confidence": confidence,
         "conversionNotes": conversion_notes,

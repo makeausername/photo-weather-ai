@@ -45,7 +45,13 @@ Optional WA/model sky-brightness data uses a local modeled sky-brightness GeoTIF
 bash scripts/import-sky-brightness-raster.sh incoming/<file-or-directory> -- --value-type sqm --dataset-year 2015 --dataset-version v1
 ```
 
-When available, this modeled sky-brightness raster becomes the primary public dark-sky baseline, while the VIIRS night-light raster remains current light-source evidence that can widen or lift over-dark results. Public UI still shows conservative estimated Bortle ranges only; modeled SQM, raw values, checksum, and conversion notes stay in professional diagnostics. Missing WA/model data is not treated as dark sky. See [World Atlas Sky Brightness Raster V1](docs/world-atlas-sky-brightness.md).
+When available, this modeled sky-brightness raster becomes the primary public dark-sky baseline, while the VIIRS night-light raster remains current light-source evidence that can widen or lift over-dark results. Public UI still shows conservative estimated Bortle ranges only; modeled SQM, raw values, checksum, conversion components, range-width policy, and conversion notes stay in professional diagnostics. Missing WA/model data is not treated as dark sky. See [World Atlas Sky Brightness Raster V1](docs/world-atlas-sky-brightness.md).
+
+Coordinate-level WA/VIIRS fusion diagnostics use only the local active astro-service datasets:
+
+```bash
+bash scripts/diagnose-sky-darkness.sh --coordinate 35.1,112.2 --json --azimuth 135 --label qa
+```
 
 Optional terrain DEM data uses local GeoTIFF/COG elevation rasters under `deploy/terrain-dem/`; real DEM files and generated metadata are ignored by Git. Import with:
 
@@ -65,6 +71,7 @@ Estimated Bortle calibration audits can be run from independent CSV/JSON referen
 
 ```bash
 pnpm bortle:calibrate -- --input deploy/calibration/bortle-reference.example.csv --dry-run --strict
+bash scripts/evaluate-sky-darkness-benchmarks.sh deploy/calibration/bortle-reference.example.csv --dry-run --strict
 ```
 
 Generated audit reports belong under `deploy/calibration/runtime/`, which is ignored by Git. The workflow compares supplied independent references with the production estimator and never rewrites production thresholds automatically. Mismatch-investigation runs also write dedicated mismatch CSV/JSON files and audit-only candidate-analysis Markdown/JSON files. See [Bortle Calibration Mismatch Investigation](docs/bortle-calibration-mismatch-investigation.md) for output meanings, candidate simulation rules, evidence sufficiency gates, and how to add future SQM or independently verified Bortle references.

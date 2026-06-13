@@ -1812,6 +1812,8 @@ export type SkyBrightnessInfo = {
   readonly valueUnit?: string | null;
   readonly modeledSqm?: number | null;
   readonly artificialBrightness?: number | null;
+  readonly naturalSkyBrightnessMcdM2?: number | null;
+  readonly modeledTotalSkyBrightnessMcdM2?: number | null;
   readonly estimatedBortleRange?: SkyBrightnessEstimatedBortleRange | null;
   readonly chinaDarkSkyReference?: ChinaDarkSkyReference | null;
   readonly confidence: AstroConfidenceLevel;

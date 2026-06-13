@@ -156,9 +156,12 @@ def test_artificial_brightness_fixture_converts_conservatively(tmp_path: Path) -
 
     assert response.available is True
     assert response.artificialBrightness == pytest.approx(0.35)
+    assert response.naturalSkyBrightnessMcdM2 == pytest.approx(0.174)
+    assert response.modeledTotalSkyBrightnessMcdM2 == pytest.approx(0.524)
     assert response.modeledSqm is not None
     assert response.estimatedBortleRange is not None
     assert response.estimatedBortleRange.maxClass > response.estimatedBortleRange.minClass
+    assert "measured SQM" in response.estimatedBortleRange.basisZh
     assert any("widened" in note for note in response.diagnostics.uncertaintyNotes)
 
 
@@ -177,6 +180,9 @@ def test_unknown_value_type_keeps_raw_value_without_fake_sqm_or_bortle(tmp_path:
     assert response.available is True
     assert response.rawValue == pytest.approx(123)
     assert response.modeledSqm is None
+    assert response.artificialBrightness is None
+    assert response.naturalSkyBrightnessMcdM2 is None
+    assert response.modeledTotalSkyBrightnessMcdM2 is None
     assert response.estimatedBortleRange is None
 
 

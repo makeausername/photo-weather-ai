@@ -232,13 +232,19 @@ bash scripts/check-sky-brightness-raster.sh
 
 The importer validates local GeoTIFF readability, CRS, dimensions, nodata, finite values, coordinate bounds, metadata, checksum, and value statistics. It writes a tiled/compressed COG, metadata, checksum, and backups; a failed import leaves the previous active dataset untouched. It never downloads data.
 
-Supported value types are `sqm`, `artificial_brightness_mcd_m2`, `ratio_to_natural`, `radiance`, `bortle_class`, and `unknown`. Only defensible value types derive a modeled SQM or estimated Bortle range. `radiance` and `unknown` remain raw diagnostics only.
+Supported value types are `sqm`, `artificial_brightness_mcd_m2`, `ratio_to_natural`, `radiance`, `bortle_class`, and `unknown`. Only defensible value types derive a modeled SQM or estimated Bortle range. `artificial_brightness_mcd_m2` is artificial zenith sky brightness in mcd/m^2; it is stored separately from the natural-sky baseline and the modeled total sky brightness used to derive modeled SQM. `radiance` and `unknown` remain raw diagnostics only.
 
-When available, WA/model sky brightness becomes the primary public dark-sky baseline. VIIRS remains current night-light evidence and can widen or lift the public range when local radiance, halo, or ambient-risk signals conflict with an over-dark modeled baseline. The public result must not claim measured SQM, official Bortle observations, national-standard levels, or official dark-sky certification. Raw modeled values, conversion notes, checksum, source year/version, and conflict diagnostics stay in the folded professional data section. Missing sky-brightness data is not scored as dark sky.
+When available, WA/model sky brightness becomes the primary public dark-sky baseline. VIIRS remains current night-light evidence and can widen or lift the public range when local radiance, halo, or ambient-risk signals conflict with an over-dark modeled baseline. If VIIRS is missing but WA/model is usable, the public result may use WA/model with low confidence and explicit diagnostics; missing VIIRS does not imply a clear dark sky. The public result must not claim measured SQM, official Bortle observations, national-standard levels, or official dark-sky certification. Raw modeled values, conversion notes, checksum, source year/version, range-width policy, and conflict diagnostics stay in the folded professional data section. Missing sky-brightness data is not scored as dark sky.
 
 ## National Sky Darkness Runtime Stats And QA
 
-National sky-darkness V1 uses the active local light-pollution raster to build nationwide distribution signals. Runtime stats and QA reports are operator artifacts and should stay outside Git under `deploy/calibration/runtime/`.
+National sky-darkness V2 uses WA/model sky brightness as the public baseline when available and the active local VIIRS-compatible light-pollution raster for current local, halo, directional, and national-quantile correction. Runtime stats and QA reports are operator artifacts and should stay outside Git under `deploy/calibration/runtime/`.
+
+Run a coordinate-level diagnostic against the active local datasets:
+
+```bash
+bash scripts/diagnose-sky-darkness.sh --coordinate 35.1,112.2 --json --azimuth 135 --label qa
+```
 
 Generate deterministic national runtime statistics with the production Compose contract:
 
@@ -257,6 +263,7 @@ This JSON records nationwide quantiles, local/halo ratios, ambient-risk distribu
 Run the QA-only benchmark with an independent private reference file:
 
 ```bash
+bash scripts/evaluate-sky-darkness-benchmarks.sh deploy/calibration/runtime/reference.csv --format all --redact-names
 docker compose --env-file .env.production -f docker-compose.prod.yml run --rm api pnpm --filter @photo-weather/api sky-darkness:benchmark -- --input deploy/calibration/runtime/reference.csv --output-dir deploy/calibration/runtime --format all --redact-names
 ```
 
@@ -266,7 +273,7 @@ For local validation without astro-service queries:
 pnpm sky-darkness:benchmark -- --input deploy/calibration/bortle-reference.example.csv --dry-run --strict
 ```
 
-The benchmark report includes exact matches, overlap matches, adjacent matches, over-optimistic errors, over-conservative errors, mean and median class distance, mismatch details, model versions, WA/model sky-brightness diagnostics when available, and a final QA recommendation. It is explicitly audit-only: references are `competitorBenchmark`, `thirdPartyReference`, and `notGroundTruth`; they do not create production thresholds, place lists, coordinate mappings, scenic-spot rules, category hacks, SQM values, national-standard levels, or Tianwentong-derived mappings. The 30 Tianwentong screenshots remain QA/regression evidence only.
+The benchmark report includes exact matches, overlap matches, adjacent matches, over-optimistic errors, over-conservative errors, too-wide public outputs, Bortle 4+ references shown as public 1-2, mean and median class distance, mismatch details, model versions, WA/model sky-brightness diagnostics when available, and a final QA recommendation. It warns or fails when public output becomes too optimistic, systematically too low, or too vague to be useful. It is explicitly audit-only: references are `competitorBenchmark`, `thirdPartyReference`, and `notGroundTruth`; they do not create production thresholds, place lists, coordinate mappings, scenic-spot rules, category hacks, SQM values, national-standard levels, or Tianwentong-derived mappings. The 30 Tianwentong screenshots remain QA/regression evidence only.
 
 ## Local Terrain DEM Data
 

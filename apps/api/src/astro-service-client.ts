@@ -325,6 +325,8 @@ const skyBrightnessResponseSchema = z.object({
   valueUnit: z.string().nullable().optional(),
   modeledSqm: z.number().finite().nullable().optional(),
   artificialBrightness: z.number().finite().nullable().optional(),
+  naturalSkyBrightnessMcdM2: z.number().finite().nullable().optional(),
+  modeledTotalSkyBrightnessMcdM2: z.number().finite().nullable().optional(),
   estimatedBortleRange: skyBrightnessEstimatedBortleRangeSchema.nullable().optional(),
   chinaDarkSkyReference: chinaDarkSkyReferenceSchema.nullable().optional(),
   confidence: z.enum(["low", "medium", "high"]),
