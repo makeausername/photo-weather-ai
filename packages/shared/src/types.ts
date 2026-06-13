@@ -1676,6 +1676,9 @@ export type DailyAstro = {
   readonly terrainHorizonAssessment?: TerrainHorizonAssessment;
   readonly assessment: AstroPhotographyAssessment;
   readonly lightPollution: LightPollutionInfo;
+  readonly overallSkyDarkness?: OverallSkyDarkness;
+  readonly targetDirectionLightPollution?: TargetDirectionLightPollution;
+  readonly finalPhotographyDecision?: FinalPhotographyDecision;
   readonly recommendationLabel: AstroRecommendationLabel;
   readonly keyReason: string;
   readonly riskNote: string;
@@ -1880,6 +1883,74 @@ export type LightPollutionInfo = {
   readonly scoringMode: "heuristic";
 };
 
+export type OverallSkyDarkness = {
+  readonly available: boolean;
+  readonly minClass?: number;
+  readonly maxClass?: number;
+  readonly rangeLabelZh: string;
+  readonly skyQualityLabelZh: string;
+  readonly confidence: EstimatedBortleRange["confidence"];
+  readonly basisZh: string;
+  readonly conservative: boolean;
+  readonly calibrationEvidenceLevel: "insufficient" | "limited" | "supported";
+  readonly rangeWidthClasses: number | null;
+  readonly rangeWidthPolicy: "narrow" | "normal" | "wide_uncertain" | "too_wide" | "unavailable";
+  readonly diagnostics: readonly string[];
+  readonly rawEstimatedBortleRangeLabel: string;
+  readonly primaryBaseline: "wa_model" | "viirs_national_fallback";
+  readonly skyBrightnessAvailable: boolean;
+  readonly skyBrightnessEstimatedBortleLabel: string | null;
+  readonly localRadiance: number | null;
+  readonly surroundingHaloRadiance: number | null;
+  readonly ambientRiskIndex: number | null;
+  readonly nationalRiskIndex: number | null;
+  readonly localToHaloRatio: number | null;
+  readonly haloToLocalRatio: number | null;
+  readonly localRadianceQuantile: number | null;
+  readonly haloRadianceQuantile: number | null;
+  readonly ambientRiskQuantile: number | null;
+  readonly noteZh: string;
+};
+
+export type TargetDirectionLightPollution = {
+  readonly available: boolean;
+  readonly status: "resolved" | "unknown" | "unavailable";
+  readonly azimuthDegrees: number | null;
+  readonly directionLabelZh: string;
+  readonly radiance: number | null;
+  readonly riskIndex: number | null;
+  readonly riskLevel: LightPollutionRiskLevel;
+  readonly riskLevelLabelZh: string;
+  readonly warningZh: string;
+  readonly basisZh: string;
+  readonly avoidDirectionLabelsZh: readonly string[];
+  readonly cleanerDirectionLabelsZh: readonly string[];
+};
+
+export type FinalPhotographyDecision = {
+  readonly available: boolean;
+  readonly shootable: boolean;
+  readonly score: number;
+  readonly recommendationLabel: AstroRecommendationLabel;
+  readonly overallSkyDarknessRangeLabelZh: string;
+  readonly targetDirectionLightPollutionLabelZh: string;
+  readonly summaryZh: string;
+  readonly reasonsZh: readonly string[];
+  readonly componentScores: {
+    readonly overallSkyDarkness: number | null;
+    readonly targetDirectionLightPollution: number | null;
+    readonly cloudCover: number;
+    readonly cloudLayers: number | null;
+    readonly visibility: number | null;
+    readonly precipitation: number | null;
+    readonly wind: number | null;
+    readonly moonIllumination: number;
+    readonly astronomicalNight: number;
+    readonly milkyWayWindow: number;
+    readonly terrainObstruction: number | null;
+  };
+};
+
 export type AstroAnalysisResult = {
   readonly starsScore: number;
   readonly milkyWayScore: number;
@@ -1915,6 +1986,9 @@ export type AstroAnalysisResult = {
   readonly milkyWayCandidateWindows: readonly AstroWindow[];
   readonly recommendedMilkyWayWindows: readonly AstroWindow[];
   readonly lightPollution: LightPollutionInfo;
+  readonly overallSkyDarkness?: OverallSkyDarkness;
+  readonly targetDirectionLightPollution?: TargetDirectionLightPollution;
+  readonly finalPhotographyDecision?: FinalPhotographyDecision;
   readonly cloudEvidence: readonly AstroEvidenceItem[];
   readonly visibilityEvidence: readonly AstroEvidenceItem[];
   readonly moonEvidence: readonly AstroEvidenceItem[];

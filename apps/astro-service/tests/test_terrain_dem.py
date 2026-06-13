@@ -153,6 +153,20 @@ def test_out_of_bounds_and_no_data_are_honest_unavailable_states(tmp_path: Path)
     assert no_data.demCoverage.requiredTileId == "Copernicus_DSM_COG_30_N00_00_E000_00_DEM"
 
 
+def test_missing_target_geometry_does_not_report_covered_dem_as_missing(tmp_path: Path) -> None:
+    write_profile_dataset(tmp_path)
+    service = terrain_service(tmp_path)
+
+    response = service.query_profile(profile_request(targetAzimuthDegrees=None))
+
+    assert response.available is False
+    assert response.dataAvailable is False
+    assert response.unavailableReason == "missing_target_geometry"
+    assert response.demCoverage is not None
+    assert response.demCoverage.coveredByActiveDataset is True
+    assert response.terrainHorizonNoteZh == "DEM数据覆盖可用，但本次未计算遮挡剖面，因为缺少目标方位/高度。"
+
+
 def test_directional_profile_uses_target_azimuth_and_dem_observer_elevation(tmp_path: Path) -> None:
     write_profile_dataset(tmp_path)
     service = terrain_service(tmp_path)

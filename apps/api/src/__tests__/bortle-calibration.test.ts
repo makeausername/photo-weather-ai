@@ -698,6 +698,10 @@ describe("National sky darkness benchmark QA", () => {
     });
     expect(optimistic).toMatchObject({
       publicBortleRangeLabel: "2–4级（保守参考）",
+      overallSiteSkyDarknessRangeLabel: "2–4级（保守参考）",
+      publicFinalDisplayedRangeLabel: "2–4级（保守参考）",
+      publicFinalDisplayedBasis: "overall_site_sky_darkness",
+      benchmarkComparisonBasis: "overall_site_sky_darkness",
       overOptimisticError: true,
     });
     expect(optimistic?.diagnostics).toEqual(
@@ -707,6 +711,7 @@ describe("National sky darkness benchmark QA", () => {
       ]),
     );
     expect(markdown).toContain("Production rules generated: false");
+    expect(markdown).toContain("Comparison basis: overall site sky-darkness range");
     expect(markdown).toContain("Too-wide public outputs: 0");
     expect(markdown).toContain("does not write thresholds, location rules, coordinate rules");
   });
@@ -823,11 +828,22 @@ describe("Sky darkness coordinate diagnostic", () => {
     });
     expect(report.viirs.localRadiance).toBe(0.2);
     expect(report.fusedPublicBortleRange.available).toBe(true);
+    expect(report.overallSkyDarkness).toMatchObject({
+      available: true,
+      rangeLabelZh: expect.any(String),
+    });
+    expect(report.targetDirectionLightPollution).toMatchObject({
+      status: expect.any(String),
+      riskLevelLabelZh: expect.any(String),
+    });
     expect(report.publicLabel).toEqual(expect.any(String));
     expect(report.diagnostics).toEqual(expect.arrayContaining(["wa_model_baseline_available"]));
     expect(report.dem).toMatchObject({
       queried: true,
       available: true,
+      demDatasetCoverageAvailable: true,
+      demProfileComputed: true,
+      demProfileUnavailableReason: null,
       status: "available",
       horizonAltitudeDegrees: 4.2,
       obstructionClearanceDegrees: 16.8,
@@ -837,6 +853,72 @@ describe("Sky darkness coordinate diagnostic", () => {
     expect(client.queryLightPollution).toHaveBeenCalledTimes(1);
     expect(client.querySkyBrightness).toHaveBeenCalledTimes(1);
     expect(client.queryTerrainDemProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it("distinguishes available DEM coverage from an uncomputed profile when target geometry is missing", async () => {
+    const options = parseSkyDarknessDiagnosticArgs(
+      ["--coordinate", "35.1,112.2", "--json"],
+      { ASTRO_SERVICE_URL: "http://127.0.0.1:4100" } as NodeJS.ProcessEnv,
+    );
+    const client: SkyDarknessDiagnosticClient = {
+      queryLightPollution: vi.fn(async () => lightPollutionFixture()),
+      querySkyBrightness: vi.fn(async () => null),
+      queryTerrainDemProfile: vi.fn(async () => ({
+        available: false,
+        dataAvailable: false,
+        unavailableReason: "missing_target_geometry",
+        sourceName: "Synthetic DEM",
+        datasetName: "Synthetic terrain DEM",
+        datasetYear: 2026,
+        datasetVersion: "test-dem-v1",
+        checksumShort: "dem123",
+        observerElevationMeters: 1860,
+        observerElevationSource: "dem" as const,
+        target: "milky_way" as const,
+        targetAzimuthDegrees: null,
+        targetAltitudeDegrees: null,
+        horizonAltitudeDegrees: null,
+        obstructionClearanceDegrees: null,
+        obstructionLevel: "unknown" as const,
+        confidence: "low" as const,
+        sampleCount: 0,
+        validSampleCount: 0,
+        maxSampleDistanceMeters: null,
+        maxObstructionSample: null,
+        profileSamples: [],
+        calculationBasis: null,
+        demCoverage: {
+          status: "available" as const,
+          coveredByActiveDataset: true,
+          tileFileExists: true,
+          tileMetadataExists: true,
+          sourceName: "Synthetic DEM",
+          datasetName: "Synthetic terrain DEM",
+          datasetVersion: "test-dem-v1",
+          datasetYear: 2026,
+          resolutionMeters: 90,
+          noteZh: "当前坐标已落在激活 DEM 数据集覆盖范围内。",
+        },
+        terrainHorizonNoteZh: "DEM数据覆盖可用，但本次未计算遮挡剖面，因为缺少目标方位/高度。",
+        queryElapsedMs: 1,
+        cacheHit: false,
+      })),
+    };
+
+    const report = await buildSkyDarknessDiagnosticReport(options, client, {
+      now: () => new Date("2026-06-13T00:00:00.000Z"),
+    });
+
+    expect(report.dem).toMatchObject({
+      queried: true,
+      available: false,
+      dataAvailable: false,
+      demDatasetCoverageAvailable: true,
+      demProfileComputed: false,
+      demProfileUnavailableReason: "missing_target_geometry",
+      status: "available",
+      coverageNoteZh: "DEM数据覆盖可用，但本次未计算遮挡剖面，因为缺少目标方位/高度。",
+    });
   });
 
   it("runs the JSON CLI with an injected client without external network access", async () => {

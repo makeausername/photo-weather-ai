@@ -423,8 +423,16 @@ def unavailable_response(
     metadata = metadata or {}
     if load_error:
         reason = f"{reason}:{load_error}"
+    reason_code = reason.split(":", 1)[0]
     target_azimuth = request.targetAzimuthDegrees if request else None
     target_altitude = request.targetAltitudeDegrees if request else None
+    terrain_note = DEFAULT_UNAVAILABLE_NOTE_ZH
+    if (
+        reason_code == "missing_target_geometry"
+        and coverage is not None
+        and getattr(coverage, "coveredByActiveDataset", False)
+    ):
+        terrain_note = "DEM数据覆盖可用，但本次未计算遮挡剖面，因为缺少目标方位/高度。"
     return TerrainDemProfileQueryResponse(
         available=False,
         dataAvailable=False,
@@ -446,7 +454,7 @@ def unavailable_response(
         profileSamples=[],
         calculationBasis=calculation_basis(request, metadata, sample_count) if request else None,
         demCoverage=coverage,
-        terrainHorizonNoteZh=DEFAULT_UNAVAILABLE_NOTE_ZH,
+        terrainHorizonNoteZh=terrain_note,
         queryElapsedMs=query_elapsed_ms,
         cacheHit=False,
     )

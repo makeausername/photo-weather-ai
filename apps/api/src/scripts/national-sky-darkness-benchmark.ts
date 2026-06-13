@@ -53,12 +53,22 @@ export type NationalSkyDarknessBenchmarkPoint = {
   readonly queryRetries: number;
   readonly queryFailure?: QueryFailure;
   readonly rawEstimatedBortleRangeLabel?: string;
+  readonly overallSiteSkyDarknessMin?: number;
+  readonly overallSiteSkyDarknessMax?: number;
+  readonly overallSiteSkyDarknessRangeLabel?: string;
+  readonly overallSiteSkyQualityLabel?: string;
+  readonly overallSiteSkyDarknessConfidence?: string;
   readonly publicBortleMin?: number;
   readonly publicBortleMax?: number;
   readonly publicRangeWidthClasses?: number | null;
   readonly publicBortleRangeLabel?: string;
   readonly publicSkyQualityLabel?: string;
   readonly publicConfidence?: string;
+  readonly publicFinalDisplayedBortleMin?: number;
+  readonly publicFinalDisplayedBortleMax?: number;
+  readonly publicFinalDisplayedRangeLabel?: string;
+  readonly publicFinalDisplayedBasis?: "overall_site_sky_darkness" | "final_photography_decision";
+  readonly benchmarkComparisonBasis?: "overall_site_sky_darkness";
   readonly publicRangeWidthPolicy?: string;
   readonly tooWideOutput?: boolean;
   readonly publicModelVersion?: string;
@@ -265,6 +275,7 @@ export function formatNationalSkyDarknessBenchmarkMarkdown(
     `- Audit only: ${report.run.auditOnly}`,
     `- Production rules generated: ${report.run.productionRulesGenerated}`,
     `- Benchmark policy: ${report.run.benchmarkSourcePolicy}`,
+    "- Comparison basis: overall site sky-darkness range; target-direction quality is audited separately from the benchmark match.",
     "",
     "## Summary",
     "",
@@ -305,8 +316,18 @@ export function formatNationalSkyDarknessBenchmarkCsv(
     "category",
     "referenceBortleMin",
     "referenceBortleMax",
+    "overallSiteSkyDarknessMin",
+    "overallSiteSkyDarknessMax",
+    "overallSiteSkyDarknessRangeLabel",
+    "overallSiteSkyQualityLabel",
+    "overallSiteSkyDarknessConfidence",
     "publicBortleMin",
     "publicBortleMax",
+    "publicFinalDisplayedBortleMin",
+    "publicFinalDisplayedBortleMax",
+    "publicFinalDisplayedRangeLabel",
+    "publicFinalDisplayedBasis",
+    "benchmarkComparisonBasis",
     "publicRangeWidthClasses",
     "publicBortleRangeLabel",
     "publicRangeWidthPolicy",
@@ -339,8 +360,18 @@ export function formatNationalSkyDarknessBenchmarkCsv(
       point.category ?? "",
       point.referenceBortleMin ?? "",
       point.referenceBortleMax ?? "",
+      point.overallSiteSkyDarknessMin ?? "",
+      point.overallSiteSkyDarknessMax ?? "",
+      point.overallSiteSkyDarknessRangeLabel ?? "",
+      point.overallSiteSkyQualityLabel ?? "",
+      point.overallSiteSkyDarknessConfidence ?? "",
       point.publicBortleMin ?? "",
       point.publicBortleMax ?? "",
+      point.publicFinalDisplayedBortleMin ?? "",
+      point.publicFinalDisplayedBortleMax ?? "",
+      point.publicFinalDisplayedRangeLabel ?? "",
+      point.publicFinalDisplayedBasis ?? "",
+      point.benchmarkComparisonBasis ?? "",
       point.publicRangeWidthClasses ?? "",
       point.publicBortleRangeLabel ?? "",
       point.publicRangeWidthPolicy ?? "",
@@ -467,10 +498,11 @@ function buildBenchmarkPoint(
     ...lightPollution,
     estimatedBortleRange: rawEstimate,
   });
+  const overallSiteSkyDarkness = display;
   const estimateForComparison = {
-    available: display.available,
-    minClass: display.minClass,
-    maxClass: display.maxClass,
+    available: overallSiteSkyDarkness.available,
+    minClass: overallSiteSkyDarkness.minClass,
+    maxClass: overallSiteSkyDarkness.maxClass,
   };
   const rangeComparison = row.reference
     ? compareBortleRanges(estimateForComparison, row.reference)
@@ -489,12 +521,22 @@ function buildBenchmarkPoint(
     querySuccess: true,
     queryRetries: queryResult.retries,
     rawEstimatedBortleRangeLabel: rawEstimate.rangeLabelZh,
+    overallSiteSkyDarknessMin: overallSiteSkyDarkness.minClass,
+    overallSiteSkyDarknessMax: overallSiteSkyDarkness.maxClass,
+    overallSiteSkyDarknessRangeLabel: overallSiteSkyDarkness.rangeLabelZh,
+    overallSiteSkyQualityLabel: overallSiteSkyDarkness.skyQualityLabelZh,
+    overallSiteSkyDarknessConfidence: overallSiteSkyDarkness.confidence,
     publicBortleMin: display.minClass,
     publicBortleMax: display.maxClass,
     publicRangeWidthClasses: display.rangeWidthClasses,
     publicBortleRangeLabel: display.rangeLabelZh,
     publicSkyQualityLabel: display.skyQualityLabelZh,
     publicConfidence: display.confidence,
+    publicFinalDisplayedBortleMin: display.minClass,
+    publicFinalDisplayedBortleMax: display.maxClass,
+    publicFinalDisplayedRangeLabel: display.rangeLabelZh,
+    publicFinalDisplayedBasis: "overall_site_sky_darkness",
+    benchmarkComparisonBasis: "overall_site_sky_darkness",
     publicRangeWidthPolicy: display.rangeWidthPolicy,
     tooWideOutput: display.tooWideRange,
     publicModelVersion: display.nationalModelVersion,

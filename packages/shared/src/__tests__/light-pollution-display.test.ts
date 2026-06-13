@@ -387,7 +387,7 @@ describe("public sky darkness display", () => {
     );
 
     expect(display.primaryBaseline).toBe("wa_model");
-    expect(display.minClass).toBeGreaterThanOrEqual(4);
+    expect(display.minClass).toBeGreaterThanOrEqual(3);
     expect(display.minClass).not.toBe(1);
     expect(display.maxClass).not.toBe(2);
   });
@@ -446,6 +446,42 @@ describe("public sky darkness display", () => {
     expect(display.maxClass).toBeGreaterThanOrEqual(4);
     expect(display.rangeWidthClasses).toBeLessThanOrEqual(3);
     expect(display.diagnostics).toEqual(expect.arrayContaining(["urban_skyglow_spillover_risk"]));
+  });
+
+  it("does not let a clean target direction lower the overall site sky-darkness range", () => {
+    const display = resolvePublicSkyDarknessDisplay(
+      lightPollutionFixture({
+        localRadiance: 0.22,
+        surroundingHaloRadiance: 1.6,
+        ambientRiskIndex: 58,
+        targetDirectionRisk: 8,
+        targetDirectionLevel: "very_low",
+        targetDirectionLevelLabelZh: "极低",
+        directionalRisk: directionalRiskFixture.map((direction) => ({
+          ...direction,
+          riskIndex: 8,
+          riskLevel: "very_low" as const,
+          riskLevelLabelZh: "极低",
+        })),
+        skyBrightness: skyBrightnessFixture({
+          modeledSqm: 21.4,
+          estimatedBortleRange: {
+            available: true,
+            minClass: 2,
+            maxClass: 3,
+            rangeLabelZh: "2-3",
+            confidence: "medium",
+            basisZh: "Raster-derived modeled sky brightness, not a field measurement.",
+            methodVersion: "wa-modeled-sqm-v1",
+          },
+        }),
+      }),
+    );
+
+    expect(display.primaryBaseline).toBe("wa_model");
+    expect(display.minClass).toBeGreaterThanOrEqual(3);
+    expect(display.rangeLabelZh).not.toBe("2-3");
+    expect(display.basisZh).not.toMatch(/target direction|银河方向.*降低整体/);
   });
 
   it("keeps WA and VIIRS consistent dark evidence narrower and more confident", () => {

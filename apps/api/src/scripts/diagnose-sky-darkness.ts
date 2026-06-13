@@ -5,7 +5,11 @@ import {
   type LightPollutionInfo,
   type SkyBrightnessInfo,
 } from "@photo-weather/shared";
-import { estimateBortleRangeForLightPollution } from "@photo-weather/scoring";
+import {
+  buildOverallSkyDarkness,
+  buildTargetDirectionLightPollution,
+  estimateBortleRangeForLightPollution,
+} from "@photo-weather/scoring";
 import {
   AstroServiceClient,
   type AstroServiceLightPollutionQueryInput,
@@ -105,6 +109,27 @@ export type SkyDarknessDiagnosticReport = {
     readonly targetDirectionLevelLabelZh: string | null;
     readonly directionalRisk: LightPollutionInfo["directionalRisk"];
   };
+  readonly overallSkyDarkness: {
+    readonly available: boolean;
+    readonly minClass?: number;
+    readonly maxClass?: number;
+    readonly rangeLabelZh: string;
+    readonly skyQualityLabelZh: string;
+    readonly confidence: string;
+    readonly basisZh: string;
+    readonly diagnostics: readonly string[];
+  };
+  readonly targetDirectionLightPollution: {
+    readonly available: boolean;
+    readonly status: string;
+    readonly azimuthDegrees: number | null;
+    readonly directionLabelZh: string;
+    readonly riskIndex: number | null;
+    readonly riskLevel: string;
+    readonly riskLevelLabelZh: string;
+    readonly warningZh: string;
+    readonly avoidDirectionLabelsZh: readonly string[];
+  };
   readonly fusedPublicBortleRange: {
     readonly available: boolean;
     readonly minClass?: number;
@@ -128,6 +153,9 @@ export type SkyDarknessDiagnosticReport = {
     readonly queried: boolean;
     readonly available: boolean;
     readonly dataAvailable: boolean;
+    readonly demDatasetCoverageAvailable: boolean;
+    readonly demProfileComputed: boolean;
+    readonly demProfileUnavailableReason: string | null;
     readonly status: string;
     readonly horizonAltitudeDegrees: number | null;
     readonly obstructionClearanceDegrees: number | null;
@@ -274,7 +302,17 @@ export async function buildSkyDarknessDiagnosticReport(
     skyBrightness: skyBrightness ?? lightPollution.skyBrightness ?? null,
   };
   const publicDisplay = resolvePublicSkyDarknessDisplay(fusedLightPollution);
+  const overallSkyDarkness = buildOverallSkyDarkness(fusedLightPollution);
+  const targetDirectionLightPollution = buildTargetDirectionLightPollution(fusedLightPollution);
   const wa = fusedLightPollution.skyBrightness ?? null;
+  const demDatasetCoverageAvailable = Boolean(terrainDem?.demCoverage?.coveredByActiveDataset);
+  const demProfileComputed = Boolean(
+    terrainDem?.available &&
+      terrainDem.dataAvailable &&
+      typeof terrainDem.horizonAltitudeDegrees === "number",
+  );
+  const demProfileUnavailableReason = terrainDem?.unavailableReason ?? terrainDemFailure;
+  const demCoverageNoteZh = demCoverageDiagnosticNoteZh(terrainDem, demProfileComputed);
 
   return {
     run: {
@@ -342,6 +380,27 @@ export async function buildSkyDarknessDiagnosticReport(
       targetDirectionLevelLabelZh: lightPollution.targetDirectionLevelLabelZh ?? null,
       directionalRisk: lightPollution.directionalRisk,
     },
+    overallSkyDarkness: {
+      available: overallSkyDarkness.available,
+      minClass: overallSkyDarkness.minClass,
+      maxClass: overallSkyDarkness.maxClass,
+      rangeLabelZh: overallSkyDarkness.rangeLabelZh,
+      skyQualityLabelZh: overallSkyDarkness.skyQualityLabelZh,
+      confidence: overallSkyDarkness.confidence,
+      basisZh: overallSkyDarkness.basisZh,
+      diagnostics: overallSkyDarkness.diagnostics,
+    },
+    targetDirectionLightPollution: {
+      available: targetDirectionLightPollution.available,
+      status: targetDirectionLightPollution.status,
+      azimuthDegrees: targetDirectionLightPollution.azimuthDegrees,
+      directionLabelZh: targetDirectionLightPollution.directionLabelZh,
+      riskIndex: targetDirectionLightPollution.riskIndex,
+      riskLevel: targetDirectionLightPollution.riskLevel,
+      riskLevelLabelZh: targetDirectionLightPollution.riskLevelLabelZh,
+      warningZh: targetDirectionLightPollution.warningZh,
+      avoidDirectionLabelsZh: targetDirectionLightPollution.avoidDirectionLabelsZh,
+    },
     fusedPublicBortleRange: {
       available: publicDisplay.available,
       minClass: publicDisplay.minClass,
@@ -365,6 +424,9 @@ export async function buildSkyDarknessDiagnosticReport(
       queried: Boolean(client.queryTerrainDemProfile),
       available: terrainDem?.available ?? false,
       dataAvailable: terrainDem?.dataAvailable ?? false,
+      demDatasetCoverageAvailable,
+      demProfileComputed,
+      demProfileUnavailableReason,
       status:
         terrainDem?.demCoverage?.status ??
         terrainDem?.unavailableReason ??
@@ -378,7 +440,7 @@ export async function buildSkyDarknessDiagnosticReport(
       datasetName: terrainDem?.datasetName ?? terrainDem?.demCoverage?.datasetName ?? null,
       datasetYear: terrainDem?.datasetYear ?? terrainDem?.demCoverage?.datasetYear ?? null,
       datasetVersion: terrainDem?.datasetVersion ?? terrainDem?.demCoverage?.datasetVersion ?? null,
-      coverageNoteZh: terrainDem?.demCoverage?.noteZh ?? terrainDem?.terrainHorizonNoteZh ?? null,
+      coverageNoteZh: demCoverageNoteZh,
       queryFailure: terrainDemFailure,
     },
   };
@@ -403,16 +465,40 @@ export function formatSkyDarknessDiagnosticText(report: SkyDarknessDiagnosticRep
     `Ratios: local/halo=${formatNullable(report.ratios.localToHaloRatio)}; halo/local=${formatNullable(
       report.ratios.haloToLocalRatio,
     )}`,
+    `Overall site sky darkness: ${report.overallSkyDarkness.rangeLabelZh}; label=${report.overallSkyDarkness.skyQualityLabelZh}; confidence=${report.overallSkyDarkness.confidence}`,
+    `Target-direction light pollution: ${report.targetDirectionLightPollution.riskLevelLabelZh}; status=${report.targetDirectionLightPollution.status}; warning=${report.targetDirectionLightPollution.warningZh}`,
     `Fused public range: ${report.fusedPublicBortleRange.rangeLabelZh}; label=${report.publicLabel}; confidence=${report.confidence}`,
     `Range width: ${formatNullable(report.fusedPublicBortleRange.rangeWidthClasses)} classes; policy=${report.fusedPublicBortleRange.rangeWidthPolicy}`,
-    `DEM: ${report.dem.queried ? report.dem.status : "not queried"}; horizon=${formatNullable(
+    `DEM: coverage=${report.dem.demDatasetCoverageAvailable ? "available" : "unavailable"}; profile=${
+      report.dem.demProfileComputed ? "computed" : "not_computed"
+    }; reason=${report.dem.demProfileUnavailableReason ?? "n/a"}; horizon=${formatNullable(
       report.dem.horizonAltitudeDegrees,
     )}; clearance=${formatNullable(report.dem.obstructionClearanceDegrees)}; confidence=${
       report.dem.confidence ?? "n/a"
     }`,
+    report.dem.coverageNoteZh ? `DEM note: ${report.dem.coverageNoteZh}` : "",
     `Diagnostics: ${report.diagnostics.length > 0 ? report.diagnostics.join(", ") : "none"}`,
     "No external services were called by this diagnostic; it uses the configured local astro-service datasets.",
-  ].join("\n");
+  ].filter(Boolean).join("\n");
+}
+
+function demCoverageDiagnosticNoteZh(
+  terrainDem: AstroServiceTerrainDemProfileQueryResponse | null,
+  demProfileComputed: boolean,
+): string | null {
+  if (!terrainDem) {
+    return null;
+  }
+  const baseNote = terrainDem.demCoverage?.noteZh ?? terrainDem.terrainHorizonNoteZh ?? null;
+  const reason = terrainDem.unavailableReason?.split(":")[0];
+  if (
+    terrainDem.demCoverage?.coveredByActiveDataset &&
+    !demProfileComputed &&
+    reason === "missing_target_geometry"
+  ) {
+    return "DEM数据覆盖可用，但本次未计算遮挡剖面，因为缺少目标方位/高度。";
+  }
+  return baseNote;
 }
 
 function parseCoordinate(value: string | undefined): SkyDarknessDiagnosticOptions["coordinate"] {

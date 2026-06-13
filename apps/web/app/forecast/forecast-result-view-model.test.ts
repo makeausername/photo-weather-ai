@@ -7917,7 +7917,7 @@ describe("forecast result target-aware view model", () => {
       }),
       [
         "很高",
-        "公开保守估算",
+        "整体光污染",
         "8–9级",
         "强光污染",
         "银河方向",
@@ -7938,7 +7938,7 @@ describe("forecast result target-aware view model", () => {
       }),
       [
         "较低",
-        "公开保守估算",
+        "整体光污染",
         "2–4级（保守参考）",
         "尚暗，需现场确认",
         "银河方向",
@@ -7959,7 +7959,7 @@ describe("forecast result target-aware view model", () => {
       }),
       [
         "中",
-        "公开保守估算",
+        "整体光污染",
         "5–6级（保守参考）",
         "光污染偏强",
         "银河方向",
@@ -8042,6 +8042,8 @@ describe("forecast result target-aware view model", () => {
 
     expect(viewModel.lightPollution.ambientRiskIndex).toBe(45);
     expect(viewModel.lightPollution.bestWindowDirectionRisk).toBeNull();
+    expect(viewModel.lightPollution.targetDirectionLightPollution.status).toBe("unknown");
+    expect(viewModel.lightPollution.targetDirectionLightPollutionLabel).toBe("未知");
     expect(viewModel.lightPollution.primaryConclusionZh).toBe("中等光污染");
     expect(viewModel.lightPollution.judgmentSummaryZh).toContain("银河方向角不足");
     expect(viewModel.lightPollution.detail).not.toContain("极低");
@@ -8123,7 +8125,7 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.lightPollution.noticeZh).toBe(
       "公开展示为 WA/模型天空亮度、VIIRS 卫星夜光和全国分布校准后的保守暗空估算，不代表现场实测或官方暗空认证。",
     );
-    expect(html).toContain("公开保守估算");
+    expect(html).toContain("整体光污染");
     expect(html).toContain("2–4级（保守参考）");
     expect(html).toContain("尚暗，需现场确认");
     expect(html).not.toContain("1–2级");
@@ -8165,8 +8167,9 @@ describe("forecast result target-aware view model", () => {
       viewModel.lightPollution.professionalDataItems.map((item) => [item.label, item]),
     );
 
-    expect(mainCard).toContain("公开保守估算");
+    expect(mainCard).toContain("整体光污染");
     expect(mainCard).toContain("银河方向");
+    expect(mainCard).toContain("置信度");
     expect(mainCard).not.toMatch(
       /本地辐亮度|周边光穹|环境风险指数|有效采样|校验码|nW\/cm²\/sr|localRadiance|surroundingHaloRadiance|ambientRiskIndex|validSampleCount|checksum/i,
     );
@@ -8240,6 +8243,7 @@ describe("forecast result target-aware view model", () => {
     const developerGroup = groups.find((group) => group.developerDiagnostics);
 
     expect(groupKeys).toEqual([
+      "decision-layers",
       "public-summary",
       "wa-baseline",
       "viirs-current-light",

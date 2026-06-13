@@ -3826,18 +3826,6 @@ function AstroLightPollutionDecisionCard({
 }: {
   readonly lightPollution: AstroForecastViewModel["lightPollution"];
 }) {
-  const directionRiskValue =
-    lightPollution.bestWindowDirectionRiskLabelZh &&
-    typeof lightPollution.bestWindowDirectionRisk === "number"
-      ? lightPollution.bestWindowDirectionRiskLabelZh
-      : lightPollution.available
-        ? "方向角不足"
-        : "需现场确认";
-  const bortleValue = lightPollution.estimatedBortleRangeLabel;
-  const bortleDetail = lightPollution.estimatedBortleAvailable
-    ? lightPollution.estimatedBortleSkyQualityLabel
-    : lightPollution.estimatedBortleBasis;
-
   return (
     <Card
       className="AstroLightPollutionDecision grid gap-3 p-4 shadow-sm"
@@ -3857,21 +3845,34 @@ function AstroLightPollutionDecisionCard({
         </Badge>
       </div>
       <div className="grid gap-2 text-sm leading-6 text-muted-foreground">
-        <div className="grid gap-2 min-[640px]:grid-cols-2">
+        <div className="grid gap-2 min-[640px]:grid-cols-3">
           <div>
             <p className="text-[11px] font-semibold leading-4 text-muted-foreground">
-              公开保守估算
+              整体光污染
             </p>
-            <p className="mt-1 font-semibold text-card-foreground">{bortleValue}</p>
-            <p className="mt-1 text-xs leading-5">{bortleDetail}</p>
+            <p className="mt-1 font-semibold text-card-foreground">
+              {lightPollution.overallSkyDarknessRangeLabel}
+            </p>
+            <p className="mt-1 text-xs leading-5">
+              {lightPollution.overallSkyDarknessQualityLabel}
+            </p>
           </div>
           <div>
             <p className="text-[11px] font-semibold leading-4 text-muted-foreground">银河方向</p>
-            <p className="mt-1 font-semibold text-card-foreground">{directionRiskValue}</p>
+            <p className="mt-1 font-semibold text-card-foreground">
+              {lightPollution.targetDirectionLightPollutionLabel}
+            </p>
             <p className="mt-1 text-xs leading-5">
-              {lightPollution.available
-                ? `环境光污染${lightPollution.ambientRiskLevelLabelZh}`
-                : lightPollution.detail}
+              {lightPollution.targetDirectionLightPollutionWarning}
+            </p>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold leading-4 text-muted-foreground">置信度</p>
+            <p className="mt-1 font-semibold text-card-foreground">
+              {lightPollution.estimatedBortleConfidenceLabel}
+            </p>
+            <p className="mt-1 text-xs leading-5">
+              {lightPollution.finalPhotographyImplicationZh}
             </p>
           </div>
         </div>

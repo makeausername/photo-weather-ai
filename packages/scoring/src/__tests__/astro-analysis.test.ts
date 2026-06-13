@@ -9,6 +9,7 @@ import type {
 } from "@photo-weather/shared";
 import {
   buildMockForecastInput,
+  buildTargetDirectionLightPollution,
   calculateAstroAnalysis,
   calculateForecast,
   calculateMilkyWayScore,
@@ -732,6 +733,14 @@ describe("astro analysis", () => {
 
     expect(result.astroAnalysis.lightPollution.ambientRiskLevelLabelZh).toBe("极低");
     expect(result.astroAnalysis.lightPollution.targetDirectionRisk).toBe(95);
+    expect(result.astroAnalysis.targetDirectionLightPollution).toMatchObject({
+      riskIndex: 95,
+      riskLevel: "very_high",
+    });
+    expect(result.astroAnalysis.finalPhotographyDecision?.shootable).toBe(false);
+    expect(
+      result.astroAnalysis.finalPhotographyDecision?.componentScores.targetDirectionLightPollution,
+    ).toBeLessThan(20);
     expect(result.astroAnalysis.riskReasons.join("")).toContain("银河方向光害偏高");
     expect(result.astroAnalysis.travelRecommendations.join("")).toContain("避开城市方向构图");
   });
@@ -838,6 +847,97 @@ describe("astro analysis", () => {
     );
     expect(firstDay?.milkyWayScore).toBe(80 - (firstDay?.lightPollution.milkyWayPenalty ?? 0));
     expect(secondDay?.milkyWayScore).toBe(80 - (secondDay?.lightPollution.milkyWayPenalty ?? 0));
+  });
+
+  it("publishes separate overall darkness, target-direction light pollution, and final decision layers", () => {
+    const clearInput = withClearAstroWeather(
+      withLowMoon(buildMockForecastInput(baseQuery, { now: fixedNow })),
+    );
+    const analysis = calculateAstroAnalysis(
+      {
+        ...clearInput,
+        lightPollution: lightPollutionFixture({
+          ambientRiskIndex: 62,
+          ambientRiskLevel: "high",
+          ambientRiskLevelLabelZh: "高",
+          localRadiance: 0.9,
+          surroundingHaloRadiance: 2.8,
+          directionalRisk: uniformDirectionalRiskFixture(12),
+          targetDirectionRisk: null,
+          targetDirectionLevel: null,
+          targetDirectionLevelLabelZh: null,
+        }),
+      },
+      {
+        starsScore: calculateStarsScore(clearInput).score,
+        milkyWayScore: calculateMilkyWayScore(clearInput).score,
+        transparencyScore: 80,
+      },
+    );
+
+    expect(analysis.overallSkyDarkness).toMatchObject({
+      available: true,
+      ambientRiskIndex: 62,
+    });
+    expect(analysis.overallSkyDarkness?.minClass).toBeGreaterThanOrEqual(5);
+    expect(analysis.targetDirectionLightPollution).toMatchObject({
+      status: "resolved",
+      riskIndex: 12,
+      riskLevel: "very_low",
+    });
+    expect(analysis.finalPhotographyDecision).toMatchObject({
+      available: true,
+      shootable: true,
+    });
+    expect(analysis.finalPhotographyDecision?.summaryZh).toContain("银河方向较干净");
+  });
+
+  it("does not let a clean target direction make overall site darkness too dark", () => {
+    const lightPollution = lightPollutionFixture({
+      ambientRiskIndex: 68,
+      ambientRiskLevel: "high",
+      ambientRiskLevelLabelZh: "高",
+      directionalRisk: uniformDirectionalRiskFixture(8),
+    });
+    const clearInput = withClearAstroWeather(
+      withLowMoon(buildMockForecastInput(baseQuery, { now: fixedNow })),
+    );
+    const analysis = calculateAstroAnalysis(
+      {
+        ...clearInput,
+        lightPollution,
+      },
+      {
+        starsScore: calculateStarsScore(clearInput).score,
+        milkyWayScore: calculateMilkyWayScore(clearInput).score,
+        transparencyScore: 80,
+      },
+    );
+
+    expect(analysis.targetDirectionLightPollution?.riskIndex).toBe(8);
+    expect(analysis.overallSkyDarkness?.minClass).toBeGreaterThanOrEqual(5);
+    expect(analysis.overallSkyDarkness?.rangeLabelZh).not.toContain("1–2");
+    expect(analysis.overallSkyDarkness?.rangeLabelZh).not.toContain("2–3");
+  });
+
+  it("keeps missing target azimuth unknown instead of marking the direction clear", () => {
+    const target = buildTargetDirectionLightPollution(
+      lightPollutionFixture({
+        targetAzimuthDegrees: null,
+        targetDirectionRisk: null,
+        targetDirectionLevel: null,
+        targetDirectionLevelLabelZh: null,
+      }),
+    );
+
+    expect(target).toMatchObject({
+      available: true,
+      status: "unknown",
+      riskIndex: null,
+      riskLevel: "insufficient",
+      riskLevelLabelZh: "未知",
+    });
+    expect(target.warningZh).toContain("不能显示为干净");
   });
 
   it("reduces Milky Way recommendation when the moon is high and bright", () => {

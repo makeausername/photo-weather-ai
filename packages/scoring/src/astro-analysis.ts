@@ -16,10 +16,13 @@ import type {
   DirectionalLightPollutionRisk,
   ForecastCalculationInput,
   GlowBackupPlan,
+  OverallSkyDarkness,
+  FinalPhotographyDecision,
   LightPollutionInfo,
   LightPollutionRiskLevel,
   MoonImpactLevel,
   NormalizedHourlyWeather,
+  TargetDirectionLightPollution,
   TerrainHorizonAssessment,
 } from "@photo-weather/shared";
 import { resolvePublicSkyDarknessDisplay } from "@photo-weather/shared";
@@ -92,6 +95,30 @@ export function lightPollutionRiskLevelFromIndex(index: number | null | undefine
     return { level: "high", labelZh: "高" };
   }
   return { level: "very_high", labelZh: "很高" };
+}
+
+function representativeLightPollutionRiskIndex(
+  riskLevel: LightPollutionRiskLevel,
+  riskIndex?: number | null,
+): number {
+  if (typeof riskIndex === "number" && Number.isFinite(riskIndex)) {
+    return riskIndex;
+  }
+  switch (riskLevel) {
+    case "very_low":
+      return 10;
+    case "low":
+      return 30;
+    case "medium":
+      return 50;
+    case "high":
+      return 70;
+    case "very_high":
+      return 90;
+    case "insufficient":
+    default:
+      return 50;
+  }
 }
 
 export function resolveDirectionalLightPollutionRisk(
@@ -381,28 +408,286 @@ function buildLightPollutionEvidence(
   ];
 }
 
+export function buildOverallSkyDarkness(lightPollution: LightPollutionInfo): OverallSkyDarkness {
+  const display = resolvePublicSkyDarknessDisplay(lightPollution);
+  return {
+    available: display.available,
+    minClass: display.minClass,
+    maxClass: display.maxClass,
+    rangeLabelZh: display.rangeLabelZh,
+    skyQualityLabelZh: display.skyQualityLabelZh,
+    confidence: display.confidence,
+    basisZh: display.basisZh,
+    conservative: display.conservative,
+    calibrationEvidenceLevel: display.calibrationEvidenceLevel,
+    rangeWidthClasses: display.rangeWidthClasses,
+    rangeWidthPolicy: display.rangeWidthPolicy,
+    diagnostics: display.diagnostics,
+    rawEstimatedBortleRangeLabel: display.rawRangeLabelZh,
+    primaryBaseline: display.primaryBaseline,
+    skyBrightnessAvailable: display.skyBrightnessAvailable,
+    skyBrightnessEstimatedBortleLabel: display.skyBrightnessEstimatedBortleLabel,
+    localRadiance: lightPollution.localRadiance ?? null,
+    surroundingHaloRadiance: lightPollution.surroundingHaloRadiance ?? null,
+    ambientRiskIndex: lightPollution.ambientRiskIndex ?? null,
+    nationalRiskIndex: display.nationalRiskIndex,
+    localToHaloRatio: display.localToHaloRatio,
+    haloToLocalRatio: display.haloToLocalRatio,
+    localRadianceQuantile: display.localRadianceQuantile,
+    haloRadianceQuantile: display.haloRadianceQuantile,
+    ambientRiskQuantile: display.ambientRiskQuantile,
+    noteZh:
+      "整体暗空只使用 WA/模型天空亮度、VIIRS 本地夜光、周边光穹、全国分位和校准不确定性；不使用银河目标方向降低整体光污染等级。",
+  };
+}
+
+export function buildTargetDirectionLightPollution(
+  lightPollution: LightPollutionInfo,
+): TargetDirectionLightPollution {
+  if (!lightPollution.available || !lightPollution.dataAvailable) {
+    return {
+      available: false,
+      status: "unavailable",
+      azimuthDegrees: lightPollution.targetAzimuthDegrees ?? null,
+      directionLabelZh: "未知",
+      radiance: null,
+      riskIndex: null,
+      riskLevel: "insufficient",
+      riskLevelLabelZh: "未知",
+      warningZh: "光污染数据暂缺，不能把银河方向视为干净。",
+      basisZh: "缺少可用 VIIRS 方向风险数据。",
+      avoidDirectionLabelsZh: [],
+      cleanerDirectionLabelsZh: [],
+    };
+  }
+
+  const targetAzimuth =
+    typeof lightPollution.targetAzimuthDegrees === "number" &&
+    Number.isFinite(lightPollution.targetAzimuthDegrees)
+      ? lightPollution.targetAzimuthDegrees
+      : null;
+  const targetRisk =
+    typeof lightPollution.targetDirectionRisk === "number" &&
+    Number.isFinite(lightPollution.targetDirectionRisk)
+      ? lightPollution.targetDirectionRisk
+      : null;
+  const targetSector = targetAzimuth === null ? undefined : nearestDirectionalRiskSector(lightPollution);
+  const avoidDirectionLabelsZh = lightPollution.directionalRisk
+    .filter(
+      (direction) => representativeLightPollutionRiskIndex(direction.riskLevel, direction.riskIndex) >= 60,
+    )
+    .map((direction) => direction.directionLabelZh);
+  const cleanerDirectionLabelsZh = lightPollution.directionalRisk
+    .filter(
+      (direction) => representativeLightPollutionRiskIndex(direction.riskLevel, direction.riskIndex) < 40,
+    )
+    .map((direction) => direction.directionLabelZh);
+
+  if (targetAzimuth === null || targetRisk === null) {
+    return {
+      available: true,
+      status: "unknown",
+      azimuthDegrees: targetAzimuth,
+      directionLabelZh: targetSector?.directionLabelZh ?? "未知",
+      radiance: targetSector?.radiance ?? null,
+      riskIndex: null,
+      riskLevel: "insufficient",
+      riskLevelLabelZh: "未知",
+      warningZh: "缺少目标方位角或方向样本，银河方向不能显示为干净。",
+      basisZh: "目标方向风险需要银河窗口方位角和可用方向扇区样本。",
+      avoidDirectionLabelsZh,
+      cleanerDirectionLabelsZh,
+    };
+  }
+
+  const level =
+    lightPollution.targetDirectionLevel && lightPollution.targetDirectionLevel !== "insufficient"
+      ? lightPollution.targetDirectionLevel
+      : lightPollutionRiskLevelFromIndex(targetRisk).level;
+  const levelLabel = lightPollution.targetDirectionLevelLabelZh ?? lightPollutionRiskLevelFromIndex(targetRisk).labelZh;
+  const directionLabel = targetSector?.directionLabelZh ?? directionLabelZhFromAzimuth(targetAzimuth);
+
+  return {
+    available: true,
+    status: "resolved",
+    azimuthDegrees: targetAzimuth,
+    directionLabelZh: directionLabel,
+    radiance: targetSector?.radiance ?? null,
+    riskIndex: targetRisk,
+    riskLevel: level,
+    riskLevelLabelZh: levelLabel,
+    warningZh: targetDirectionWarningZh(level, directionLabel, avoidDirectionLabelsZh),
+    basisZh: `按 ${directionLabel} 目标方位角 ${round1(normalizeAzimuth(targetAzimuth))}° 从 VIIRS 方向扇区解析。`,
+    avoidDirectionLabelsZh,
+    cleanerDirectionLabelsZh,
+  };
+}
+
+function buildFinalPhotographyDecision(input: {
+  readonly assessment: AstroPhotographyAssessment;
+  readonly overallSkyDarkness: OverallSkyDarkness;
+  readonly targetDirectionLightPollution: TargetDirectionLightPollution;
+  readonly weatherBlockers: readonly string[];
+  readonly astroWindowAvailable: boolean;
+  readonly astroShootable: boolean;
+}): FinalPhotographyDecision {
+  const terrainPenalty = terrainHorizonScorePenalty(input.assessment.terrainHorizonAssessment);
+  const targetRiskScore =
+    input.targetDirectionLightPollution.riskIndex === null
+      ? null
+      : Math.max(0, 100 - input.targetDirectionLightPollution.riskIndex);
+  const overallScore =
+    typeof input.overallSkyDarkness.maxClass === "number"
+      ? clampScore(100 - (input.overallSkyDarkness.maxClass - 1) * 11)
+      : null;
+  const cloudLayerScore =
+    input.assessment.cloudBlockerLevel === "high"
+      ? 20
+      : input.assessment.cloudBlockerLevel === "medium"
+        ? 55
+        : 85;
+  const visibilityScore = input.assessment.transparencyScore;
+  const precipitationScore = input.weatherBlockers.some((reason) => reason.includes("降水"))
+    ? 25
+    : 90;
+  const windScore = input.assessment.tripodWindRisk === "high" ? 35 : input.assessment.tripodWindRisk === "medium" ? 65 : 90;
+  const moonScore = clampScore(100 - input.assessment.moonlightImpactScore);
+  const astronomicalNightScore = input.astroWindowAvailable ? input.assessment.astronomicalWindowScore : 0;
+  const milkyWayWindowScore = input.assessment.milkyWayGeometryScore;
+  const terrainScore = input.assessment.terrainHorizonAssessment
+    ? clampScore(100 - terrainPenalty * 3)
+    : null;
+
+  const reasons = [
+    `整体暗空：${input.overallSkyDarkness.rangeLabelZh}，${input.overallSkyDarkness.skyQualityLabelZh}。`,
+    `银河方向：${input.targetDirectionLightPollution.riskLevelLabelZh}，${input.targetDirectionLightPollution.warningZh}`,
+    ...input.weatherBlockers.slice(0, 2),
+    input.assessment.moonlightImpactScore >= 65 ? "月光影响偏强。" : "月光未构成主要阻断。",
+    terrainPenalty > 0 ? "地形遮挡进入最终决策。" : "地形遮挡未构成主要扣分。",
+  ];
+
+  const targetClean =
+    input.targetDirectionLightPollution.status === "resolved" &&
+    input.targetDirectionLightPollution.riskIndex !== null &&
+    input.targetDirectionLightPollution.riskIndex < 40;
+  const targetDirectionMajorBlocker =
+    input.targetDirectionLightPollution.status === "resolved" &&
+    input.targetDirectionLightPollution.riskIndex !== null &&
+    input.targetDirectionLightPollution.riskIndex >= 80;
+  const targetDirectionScoreCap =
+    targetRiskScore !== null && input.targetDirectionLightPollution.riskIndex !== null
+      ? input.targetDirectionLightPollution.riskIndex >= 60
+        ? Math.min(49, targetRiskScore + 10)
+        : null
+      : null;
+  const finalScore = clampScore(
+    targetDirectionScoreCap === null
+      ? input.assessment.practicalAstroScore
+      : Math.min(input.assessment.practicalAstroScore, targetDirectionScoreCap),
+  );
+  const shootable = input.astroShootable && !targetDirectionMajorBlocker;
+  const overallModerate =
+    typeof input.overallSkyDarkness.maxClass === "number" &&
+    input.overallSkyDarkness.maxClass >= 4;
+  const summaryZh =
+    overallModerate && targetClean && shootable
+      ? "整体环境受周边光害影响，但银河方向较干净；天气、月光和地形允许时仍可拍摄。"
+      : shootable
+        ? "整体暗空、银河方向、天气、月光和地形综合后支持拍摄。"
+        : "最终拍摄建议被天气、月光、目标方向光害或地形条件压低。";
+
+  return {
+    available: true,
+    shootable,
+    score: finalScore,
+    recommendationLabel: recommendationLabelForScore(finalScore),
+    overallSkyDarknessRangeLabelZh: input.overallSkyDarkness.rangeLabelZh,
+    targetDirectionLightPollutionLabelZh: input.targetDirectionLightPollution.riskLevelLabelZh,
+    summaryZh,
+    reasonsZh: Array.from(new Set(reasons)),
+    componentScores: {
+      overallSkyDarkness: overallScore,
+      targetDirectionLightPollution: targetRiskScore,
+      cloudCover: input.assessment.skyConditionScore,
+      cloudLayers: cloudLayerScore,
+      visibility: visibilityScore,
+      precipitation: precipitationScore,
+      wind: windScore,
+      moonIllumination: moonScore,
+      astronomicalNight: astronomicalNightScore,
+      milkyWayWindow: milkyWayWindowScore,
+      terrainObstruction: terrainScore,
+    },
+  };
+}
+
 function lightPollutionDecisionText(lightPollution: LightPollutionInfo): string {
   const ambientRisk = finiteNumber(lightPollution.ambientRiskIndex);
   const targetRisk = finiteNumber(lightPollution.targetDirectionRisk);
-  const risk = Math.max(ambientRisk ?? 0, targetRisk ?? 0);
   const publicSkyDarkness = resolvePublicSkyDarknessDisplay(lightPollution);
 
   if (targetRisk !== undefined && targetRisk >= 60 && (ambientRisk ?? targetRisk) < 60) {
     return "银河方向光害偏高，建议避开城市方向构图或向更暗一侧取景。";
   }
-  if (risk >= 80) {
+  if ((ambientRisk ?? 0) >= 80 || (targetRisk ?? 0) >= 80) {
     return "光污染很强，即使天气较好，银河细节也可能偏弱。";
   }
-  if (risk >= 60) {
+  if ((ambientRisk ?? 0) >= 60 && (targetRisk ?? 100) < 40) {
+    return "整体环境受周边光害影响，但银河方向相对干净；若天气、月光和地形允许，仍可拍摄，并建议避开高光害方向。";
+  }
+  if ((ambientRisk ?? 0) >= 60 || (targetRisk ?? 0) >= 60) {
     return "光污染较强，即使天空较清，银河背景也容易被光害压亮。";
   }
-  if (risk >= 40) {
+  if ((ambientRisk ?? 0) >= 40 && (targetRisk ?? 100) < 40) {
+    return "整体光污染中等，但目标银河方向较干净；构图时继续避开高光害方向。";
+  }
+  if ((ambientRisk ?? 0) >= 40 || (targetRisk ?? 0) >= 40) {
     return "光污染中等，银河细节依赖透明度和避开城市方向的构图。";
   }
   if (publicSkyDarkness.available && publicSkyDarkness.conservative) {
     return "卫星夜光显示环境较暗，但当前按保守范围展示，建议结合现场光害确认。";
   }
   return "光污染较低，具备银河拍摄基础，但仍需看云量、月光和透明度。";
+}
+
+function nearestDirectionalRiskSector(
+  lightPollution: LightPollutionInfo,
+): DirectionalLightPollutionRisk | undefined {
+  const targetAzimuth = finiteNumber(lightPollution.targetAzimuthDegrees);
+  if (targetAzimuth === undefined) {
+    return undefined;
+  }
+  return [...lightPollution.directionalRisk]
+    .filter((sector) => Number.isFinite(sector.azimuthDegrees))
+    .sort(
+      (left, right) =>
+        circularDistanceDegrees(targetAzimuth, left.azimuthDegrees) -
+        circularDistanceDegrees(targetAzimuth, right.azimuthDegrees),
+    )[0];
+}
+
+function targetDirectionWarningZh(
+  level: LightPollutionRiskLevel,
+  directionLabelZh: string,
+  avoidDirectionLabelsZh: readonly string[],
+): string {
+  if (level === "very_low" || level === "low") {
+    const avoidText =
+      avoidDirectionLabelsZh.length > 0 ? `；建议避开 ${avoidDirectionLabelsZh.join(" / ")} 等高光害方向` : "";
+    return `${directionLabelZh}银河方向较干净${avoidText}。`;
+  }
+  if (level === "medium") {
+    return `${directionLabelZh}银河方向光害中等，银河反差依赖透明度和构图避光。`;
+  }
+  if (level === "high" || level === "very_high") {
+    return `${directionLabelZh}银河方向光害偏高，会降低银河细节和背景反差。`;
+  }
+  return "目标方向光害未知，不能按干净方向处理。";
+}
+
+function directionLabelZhFromAzimuth(azimuthDegrees: number): string {
+  const index = Math.round(normalizeAzimuth(azimuthDegrees) / 45) % 8;
+  return ["北", "东北", "东", "东南", "南", "西南", "西", "西北"][index] ?? "未知";
 }
 
 export function calculateAstroAnalysis(
@@ -463,6 +748,16 @@ export function calculateAstroAnalysis(
   const moonEvidence = buildMoonEvidence(input, astronomicalNightWindows);
   const terrainEvidence = buildTerrainEvidence(input, assessment.terrainHorizonAssessment);
   const lightPollutionEvidence = buildLightPollutionEvidence(lightPollution);
+  const overallSkyDarkness = buildOverallSkyDarkness(lightPollution);
+  const targetDirectionLightPollution = buildTargetDirectionLightPollution(lightPollution);
+  const finalPhotographyDecision = buildFinalPhotographyDecision({
+    assessment,
+    overallSkyDarkness,
+    targetDirectionLightPollution,
+    weatherBlockers,
+    astroWindowAvailable,
+    astroShootable,
+  });
   const bestAstroWindows = [...recommendedMilkyWayWindows, ...moonlessNightWindows]
     .sort(
       (left, right) => right.score - left.score || Date.parse(left.start) - Date.parse(right.start),
@@ -504,6 +799,9 @@ export function calculateAstroAnalysis(
     milkyWayCandidateWindows,
     recommendedMilkyWayWindows,
     lightPollution,
+    overallSkyDarkness,
+    targetDirectionLightPollution,
+    finalPhotographyDecision,
     cloudEvidence,
     visibilityEvidence,
     moonEvidence,
@@ -779,6 +1077,16 @@ function buildDailyAstro(
     const weatherBlockers = assessment.astroWeatherBlockers;
     const astroConditionScore = assessment.astronomicalWindowScore;
     const astroPracticalScore = assessment.practicalAstroScore;
+    const overallSkyDarkness = buildOverallSkyDarkness(dailyLightPollution);
+    const targetDirectionLightPollution = buildTargetDirectionLightPollution(dailyLightPollution);
+    const finalPhotographyDecision = buildFinalPhotographyDecision({
+      assessment,
+      overallSkyDarkness,
+      targetDirectionLightPollution,
+      weatherBlockers,
+      astroWindowAvailable: assessment.astroWindowAvailable,
+      astroShootable: assessment.astroShootable,
+    });
 
     return {
       date,
@@ -812,6 +1120,9 @@ function buildDailyAstro(
       terrainHorizonAssessment: assessment.terrainHorizonAssessment,
       assessment,
       lightPollution: dailyLightPollution,
+      overallSkyDarkness,
+      targetDirectionLightPollution,
+      finalPhotographyDecision,
       recommendationLabel: recommendationLabelForScore(astroPracticalScore),
       keyReason: dailyKeyReason(
         recommendedMilkyWayWindow,
