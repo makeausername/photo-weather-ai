@@ -7383,11 +7383,6 @@ describe("forecast result target-aware view model", () => {
       'data-astro-section="AstroDecisionFirstDashboard"',
       'data-astro-section="AstroNightOpportunitySection"',
     );
-    const reasonSection = sectionBetween(
-      html,
-      'data-astro-section="AstroWhyJudgmentSection"',
-      'data-astro-section="AstroProfessionalData"',
-    );
 
     expect(viewModel.terrainHorizon.obstructionLevel).toBe("clear");
     expect(viewModel.terrainHorizon.dataSourceLabelZh).toBe("本地 DEM 地形剖面");
@@ -7411,8 +7406,8 @@ describe("forecast result target-aware view model", () => {
     expect(decisionSection).toContain('data-astro-public-factor-chip="terrain-horizon"');
     expect(decisionSection).toContain(viewModel.terrainHorizon.publicDecisionLabel);
     expect(decisionSection).not.toContain("地形遮挡暂无法精确判断");
-    expect(reasonSection).not.toContain("无遮挡");
-    expect(reasonSection).not.toContain("地形遮挡暂无法精确判断");
+    expect(html).not.toContain('data-astro-section="AstroWhyJudgmentSection"');
+    expect(html).not.toContain('data-astro-why-factor="terrain-horizon"');
   });
 
   it("keeps DEM terrain details in professional data without leaking raw raster paths", () => {
@@ -8022,7 +8017,9 @@ describe("forecast result target-aware view model", () => {
       expect(decisionSection).not.toMatch(
         /localRadiance|surroundingHaloRadiance|ambientRiskIndex|validSampleCount|checksum|pixel|quantile|raster|本地辐亮度|周边光穹|有效采样|校验码|nW\/cm²\/sr/i,
       );
-      expect(html).toContain("为什么这样判断");
+      expect(html).not.toContain("为什么这样判断");
+      expect(html).not.toContain('data-astro-section="AstroWhyJudgmentSection"');
+      expect(html).not.toContain("data-astro-why-factor");
       expect(html).toContain("光污染");
       expect(html).not.toContain("nW/cm²/sr");
       expectNoObsoleteLightPollutionPlaceholders(html);
@@ -8183,7 +8180,7 @@ describe("forecast result target-aware view model", () => {
     const nightlySection = sectionBetween(
       html,
       'data-astro-section="AstroNightOpportunitySection"',
-      'data-astro-section="AstroWhyJudgmentSection"',
+      'data-astro-section="AstroProfessionalData"',
     );
     const rawProfessionalBortleItem = viewModel.lightPollution.professionalDataItems.find(
       (item) => item.label === "VIIRS原始估算",
@@ -8534,16 +8531,21 @@ describe("forecast result target-aware view model", () => {
       expect(html).not.toContain('data-astro-top-side-panel="true"');
       expect(html).not.toContain("下一步判断");
       expect(html).not.toContain("备选、置信度与关键阻碍");
-      expect(html).toContain("为什么这样判断");
+      expect(html).not.toContain("为什么这样判断");
       expect(html).toContain("专业数据");
       expect(html).toContain("展开专业数据");
-      expect(html).toContain('data-astro-professional-collapsed-summary="true"');
-      expect(html).toContain('data-astro-professional-collapsed-note="true"');
+      expect(html).not.toContain('data-astro-professional-collapsed-summary="true"');
+      expect(html).not.toContain('data-astro-professional-collapsed-note="true"');
+      expect(html).not.toContain('data-testid="astro-professional-collapsed-summary"');
+      expect(html).not.toContain("已汇总");
+      expect(html).not.toContain("里面包含");
+      expect(html).not.toContain("WA/VIIRS 光污染、DEM 地平线、天文窗口、月相、逐小时天气");
       expect(html).not.toContain('data-astro-hourly-summary="true"');
       expect(html).toContain("AstroResultPage");
       expect(html).toContain("AstroResultLayout");
       expect(html).toContain('data-astro-section="AstroNightOpportunitySection"');
-      expect(html).toContain('data-astro-section="AstroWhyJudgmentSection"');
+      expect(html).not.toContain('data-astro-section="AstroWhyJudgmentSection"');
+      expect(html).not.toContain("data-astro-why-factor");
       expect(html).toContain('data-astro-section="AstroProfessionalData"');
       expect(html).toContain('data-astro-professional-data-expanded="false"');
       expect(html).toContain('data-astro-section="AstroAiInterpretation"');
@@ -8561,7 +8563,6 @@ describe("forecast result target-aware view model", () => {
         "AstroDecisionFirstDashboard",
         'data-astro-decision-layout="single-main"',
         "AstroNightOpportunitySection",
-        "AstroWhyJudgmentSection",
         "AstroProfessionalData",
         "AstroAiInterpretation",
       ]);
@@ -8607,7 +8608,7 @@ describe("forecast result target-aware view model", () => {
     const nightlySection = sectionBetween(
       html,
       'data-astro-section="AstroNightOpportunitySection"',
-      'data-astro-section="AstroWhyJudgmentSection"',
+      'data-astro-section="AstroProfessionalData"',
     );
 
     expect(viewModel.decisionSummary).toMatchObject({
@@ -8689,10 +8690,16 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.judgmentFactors.map((factor) => factor.key)).not.toEqual(
       expect.arrayContaining(["light-pollution", "terrain-horizon"]),
     );
+    expect(html).not.toContain("为什么这样判断");
+    expect(html).not.toContain('data-astro-section="AstroWhyJudgmentSection"');
+    expect(html).not.toContain("data-astro-why-factor");
     expect(html).toContain('data-astro-professional-data-expanded="false"');
-    expect(html).toContain('data-testid="astro-professional-collapsed-summary"');
-    expect(html).toContain("WA/VIIRS 光污染、DEM 地平线、天文窗口、月相、逐小时天气");
-    expect(html).toContain("已汇总");
+    expect(html).not.toContain('data-testid="astro-professional-collapsed-summary"');
+    expect(html).not.toContain('data-astro-professional-collapsed-summary="true"');
+    expect(html).not.toContain('data-astro-professional-collapsed-note="true"');
+    expect(html).not.toContain("WA/VIIRS 光污染、DEM 地平线、天文窗口、月相、逐小时天气");
+    expect(html).not.toContain("已汇总");
+    expect(html).not.toContain("里面包含");
     expect(html).not.toContain("逐小时摘要");
     expect(html).not.toContain("小时表默认折叠");
     expect(html).not.toContain('data-astro-professional-data-body="true"');
@@ -8718,12 +8725,6 @@ describe("forecast result target-aware view model", () => {
       'data-astro-section="AstroDecisionFirstDashboard"',
       'data-astro-section="AstroNightOpportunitySection"',
     );
-    const reasoningSection = sectionBetween(
-      html,
-      'data-astro-section="AstroWhyJudgmentSection"',
-      'data-astro-section="AstroProfessionalData"',
-    );
-
     expect(countOccurrences(decisionSection, 'data-astro-public-factor-chip="light-pollution"')).toBe(
       1,
     );
@@ -8732,8 +8733,9 @@ describe("forecast result target-aware view model", () => {
     );
     expect(decisionSection).not.toContain('data-astro-section="AstroLightPollutionDecision"');
     expect(decisionSection).not.toContain('data-astro-section="AstroTerrainHorizonDecision"');
-    expect(reasoningSection).not.toContain('data-astro-why-factor="light-pollution"');
-    expect(reasoningSection).not.toContain('data-astro-why-factor="terrain-horizon"');
+    expect(html).not.toContain('data-astro-section="AstroWhyJudgmentSection"');
+    expect(html).not.toContain('data-astro-why-factor="light-pollution"');
+    expect(html).not.toContain('data-astro-why-factor="terrain-horizon"');
     expect(viewModel.publicDisplay.factorChips.map((chip) => chip.semanticKey)).toEqual([
       "light-pollution-public",
       "terrain-horizon-public",
@@ -8761,7 +8763,8 @@ describe("forecast result target-aware view model", () => {
     );
 
     expect(html).toContain("逐夜星空银河机会");
-    expect(html).toContain("为什么这样判断");
+    expect(html).not.toContain("为什么这样判断");
+    expect(html).not.toContain('data-astro-section="AstroWhyJudgmentSection"');
     expect(html).toContain("专业数据");
     expect(html).toContain("是否值得去");
     expect(html).toContain("最佳拍摄窗口");
@@ -8770,8 +8773,8 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("备选窗口 / 目标");
     expect(html).toContain("出发 / 到达");
     expect(html).toContain("天气阻挡");
-    expect(html).toContain("月光影响");
-    expect(html).toContain("通透度");
+    expect(html).toContain("月光低");
+    expect(html).toContain("银河备选窗口");
     expect(html).toContain("天文窗口存在，但低云偏多、降水干扰不支持拍摄");
     expect(html).toContain("不建议前往");
     expect(html).not.toContain('data-astro-top-side-panel="true"');

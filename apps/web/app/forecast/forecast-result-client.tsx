@@ -3808,7 +3808,6 @@ export function AstroResultPage({
         data-astro-section="AstroResultLayout"
       >
         <AstroNightOpportunitySection nights={viewModel.nightlyCards} horizon={result.horizon} />
-        <AstroWhyJudgmentSection factors={viewModel.judgmentFactors} />
         <AstroProfessionalDataSection query={query} result={result} viewModel={viewModel} />
         <section
           className="mt-1 sm:mt-2"
@@ -4183,45 +4182,6 @@ function compactAstroText(value: string, maxLength: number): string {
   return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`;
 }
 
-function AstroWhyJudgmentSection({
-  factors,
-}: {
-  readonly factors: AstroForecastViewModel["judgmentFactors"];
-}) {
-  if (factors.length === 0) {
-    return null;
-  }
-
-  return (
-    <section className="grid gap-3" data-astro-section="AstroWhyJudgmentSection">
-      <div>
-        <h2 className="text-lg font-bold text-card-foreground">为什么这样判断</h2>
-      </div>
-      <div
-        className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr))]"
-        data-astro-why-grid-odd={factors.length % 2 === 1 ? "true" : "false"}
-      >
-        {factors.map((factor) => (
-          <article
-            key={factor.key}
-            className="grid content-start rounded-lg border border-border bg-card p-3 shadow-sm"
-            data-astro-why-factor={factor.key}
-            data-astro-why-factor-span="auto"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-card-foreground">{factor.label}</h3>
-              <Badge variant={badgeVariantForTone(factor.tone)}>{factor.status}</Badge>
-            </div>
-            <p className="mt-2 text-xs leading-5 text-muted-foreground">
-              {compactAstroText(factor.detail, 78)}
-            </p>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function astroRecommendationBadgeVariant(
   level: AstroForecastViewModel["nightlyCards"][number]["recommendationLevel"],
 ): BadgeVariant {
@@ -4293,32 +4253,6 @@ function AstroProfessionalDataSection({
         </Button>
       </div>
 
-      <p
-        className="mt-4 rounded-lg border border-border bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground"
-        data-astro-professional-collapsed-note="true"
-      >
-        已汇总 {astroProfessionalSourceSummary(viewModel)}。展开查看模型依据、分组证据与原始诊断。
-      </p>
-
-      <dl
-        className="mt-4 grid gap-2 text-sm [grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr))]"
-        data-astro-professional-collapsed-summary="true"
-        data-testid="astro-professional-collapsed-summary"
-      >
-        <AstroInlineDefinition
-          label="里面包含"
-          value="WA/VIIRS 光污染、DEM 地平线、天文窗口、月相、逐小时天气"
-        />
-        <AstroInlineDefinition
-          label="数据状态"
-          value={`${dataReadinessBadgeLabel(result)}；置信度 ${viewModel.decisionSummary.confidenceLabel}`}
-        />
-        <AstroInlineDefinition
-          label="覆盖范围"
-          value={`${viewModel.professionalHourlyData.rows.length} 小时；${viewModel.professionalDataGroups.length} 组证据`}
-        />
-      </dl>
-
       {expanded ? (
         <div className="mt-4 grid gap-4" data-astro-professional-data-body="true">
           <AstroHourlySummaryGrid items={viewModel.hourlySummary} />
@@ -4362,16 +4296,6 @@ function AstroProfessionalDataSection({
       ) : null}
     </Card>
   );
-}
-
-function astroProfessionalSourceSummary(viewModel: AstroForecastViewModel): string {
-  return [
-    viewModel.lightPollution.available ? "WA/VIIRS 光污染" : "光污染待复核",
-    viewModel.terrainHorizon.available ? "DEM 地形" : "DEM 地形待复核",
-    viewModel.professionalHourlyData.rows.length > 0 ? "逐小时天气" : "逐小时天气待补",
-    "月相",
-    "天文窗口",
-  ].join("、");
 }
 
 function AstroHourlySummaryGrid({
@@ -4483,21 +4407,6 @@ function AstroProfessionalFact({
       <p className="text-[11px] leading-4 text-muted-foreground">{label}</p>
       <p className="mt-1 break-words text-sm font-semibold text-card-foreground">{value}</p>
       {detail ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</p> : null}
-    </div>
-  );
-}
-
-function AstroInlineDefinition({
-  label,
-  value,
-}: {
-  readonly label: string;
-  readonly value: string;
-}) {
-  return (
-    <div className="flex flex-wrap items-start justify-between gap-2">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="break-words font-semibold text-card-foreground">{value}</dd>
     </div>
   );
 }
