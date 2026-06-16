@@ -7856,10 +7856,10 @@ describe("forecast result target-aware view model", () => {
 
     expect(astro).toBeDefined();
     expect(astro?.nightlyCards.map((night) => night.localEveningDate)).toEqual([
-      "2026-05-19",
       "2026-05-20",
       "2026-05-21",
     ]);
+    expect(astro?.nightlyCards.map((night) => night.localEveningDate)).not.toContain("2026-05-19");
     expect(astro?.bestNight?.localEveningDate).toBe("2026-05-20");
     expect(astro?.backupNight?.localEveningDate).toBe("2026-05-21");
     expect(astro?.professionalHourlyData.rows).toHaveLength(48);
@@ -7941,10 +7941,9 @@ describe("forecast result target-aware view model", () => {
       }),
       [
         "很高",
-        "整体光污染",
-        "8–9级",
-        "强光污染",
-        "银河方向",
+        "整体光害",
+        "光害偏高",
+        "方向光害较强",
         "可以观星但银河细节较弱",
         "光污染很高：天空背景明显发亮",
       ],
@@ -7960,15 +7959,7 @@ describe("forecast result target-aware view model", () => {
         targetDirectionLevelLabelZh: "低",
         lightPollutionNoteZh: "卫星夜光参考：环境光污染极低，银河方向光害低。",
       }),
-      [
-        "较低",
-        "整体光污染",
-        "2–4级（保守参考）",
-        "尚暗，需现场确认",
-        "银河方向",
-        "低",
-        "按保守范围展示",
-      ],
+      ["较低", "整体光害", "光害低", "方向光害较低", "按保守范围展示"],
     ],
     [
       "medium-risk",
@@ -7981,15 +7972,7 @@ describe("forecast result target-aware view model", () => {
         targetDirectionLevelLabelZh: "中",
         lightPollutionNoteZh: "卫星夜光参考：环境光污染中，银河方向光害中。",
       }),
-      [
-        "中",
-        "整体光污染",
-        "5–6级（保守参考）",
-        "光污染偏强",
-        "银河方向",
-        "光污染中等",
-        "银河可拍性仍要看云量和月光",
-      ],
+      ["中", "整体光害", "光害中等", "方向光害中等", "银河可拍性仍要看云量和月光"],
     ],
   ] as const)(
     "renders %s light-pollution conclusions in the astro page",
@@ -8040,7 +8023,7 @@ describe("forecast result target-aware view model", () => {
       }),
     );
 
-    expect(html).toContain("光污染数据暂不可用");
+    expect(html).toContain("需要保守判断");
     expect(html).toContain(
       "当前判断未把光污染当作低风险处理，拍摄前需现场确认城市光穹和地平线亮度。",
     );
@@ -8188,9 +8171,11 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.lightPollution.noticeZh).toBe(
       "公开展示为 WA/模型天空亮度、VIIRS 卫星夜光和全国分布校准后的保守暗空估算，不代表现场实测或官方暗空认证。",
     );
-    expect(html).toContain("整体光污染");
-    expect(html).toContain("2–4级（保守参考）");
-    expect(html).toContain("尚暗，需现场确认");
+    expect(html).toContain("整体光害");
+    expect(html).toContain("光害低");
+    expect(html).toContain("方向光害较低");
+    expect(html).not.toContain("2–4级（保守参考）");
+    expect(html).not.toContain("尚暗，需现场确认");
     expect(html).not.toContain("1–2级");
     expect(html).not.toContain("极佳暗空");
     expect(html).not.toContain("光污染：极低");
@@ -8230,7 +8215,9 @@ describe("forecast result target-aware view model", () => {
       viewModel.lightPollution.professionalDataItems.map((item) => [item.label, item]),
     );
 
-    expect(mainCard).toContain("整体光污染");
+    expect(mainCard).toContain("整体光害");
+    expect(mainCard).toContain("光害低");
+    expect(mainCard).toContain("方向光害较低");
     expect(mainCard).toContain("银河方向");
     expect(mainCard).toContain("置信度");
     expect(mainCard).not.toMatch(
@@ -8326,17 +8313,12 @@ describe("forecast result target-aware view model", () => {
   });
 
   it.each([
-    ["24h", 24, 2, ["partial", "partial"]],
-    ["48h", 48, 3, ["partial", "covered", "partial"]],
-    ["72h", 72, 4, ["partial", "covered", "covered", "partial"]],
-    [
-      "7d",
-      168,
-      8,
-      ["partial", "covered", "covered", "covered", "covered", "covered", "covered", "partial"],
-    ],
+    ["24h", 24, 1, ["partial"]],
+    ["48h", 48, 2, ["covered", "partial"]],
+    ["72h", 72, 3, ["covered", "covered", "partial"]],
+    ["7d", 168, 7, ["covered", "covered", "covered", "covered", "covered", "covered", "partial"]],
   ] as const)(
-    "renders every local astro observing night intersecting the selected %s horizon",
+    "renders public astro observing nights from the selected local start date for %s",
     (horizon, hours, expectedNightCount, expectedCoverage) => {
       const result = resultWithAstroHourlyRange(horizon, hours);
       const viewModel = buildAstroForecastViewModel(result);
@@ -8349,6 +8331,9 @@ describe("forecast result target-aware view model", () => {
       );
 
       expect(viewModel.nightlyCards).toHaveLength(expectedNightCount);
+      expect(viewModel.nightlyCards.map((night) => night.localEveningDate)).not.toContain(
+        "2026-05-19",
+      );
       expect(viewModel.nightlyCards.map((night) => night.horizonCoverageState)).toEqual(
         expectedCoverage,
       );
@@ -8364,6 +8349,121 @@ describe("forecast result target-aware view model", () => {
       expect(countOccurrences(html, 'data-professional-hourly-row="')).toBe(0);
     },
   );
+
+  it("normalizes future astro public nights to the selected local start date without hiding by CSS", () => {
+    const base = resultWithAstroHourlyRange("48h", 48);
+    const firstDay = base.astroAnalysis.dailyAstro[0]!;
+    const previousWindow = {
+      ...firstDay.recommendedMilkyWayWindow!,
+      date: "2026-06-15",
+      start: "2026-06-15T21:24:00+08:00",
+      end: "2026-06-16T03:34:00+08:00",
+      durationMinutes: 370,
+    };
+    const selectedWindow = {
+      ...firstDay.recommendedMilkyWayWindow!,
+      date: "2026-06-16",
+      start: "2026-06-16T21:24:00+08:00",
+      end: "2026-06-17T03:34:00+08:00",
+      durationMinutes: 370,
+    };
+    const previousDay: DailyAstroForTest = {
+      ...firstDay,
+      date: "2026-06-15",
+      dateLabelZh: "2026年6月15日 星期一",
+      astronomicalNightWindow: {
+        ...firstDay.astronomicalNightWindow!,
+        date: "2026-06-15",
+        start: "2026-06-15T20:24:00+08:00",
+        end: "2026-06-16T03:48:00+08:00",
+      },
+      moonlessNightWindow: {
+        ...firstDay.moonlessNightWindow!,
+        date: "2026-06-15",
+        start: "2026-06-15T22:35:00+08:00",
+        end: "2026-06-16T03:48:00+08:00",
+      },
+      recommendedMilkyWayWindow: previousWindow,
+      keyReason: "内部上一观测夜不应进入未来公开列表。",
+    };
+    const selectedDay: DailyAstroForTest = {
+      ...firstDay,
+      date: "2026-06-16",
+      dateLabelZh: "2026年6月16日 星期二",
+      astronomicalNightWindow: {
+        ...firstDay.astronomicalNightWindow!,
+        date: "2026-06-16",
+        start: "2026-06-16T20:24:00+08:00",
+        end: "2026-06-17T03:48:00+08:00",
+      },
+      moonlessNightWindow: {
+        ...firstDay.moonlessNightWindow!,
+        date: "2026-06-16",
+        start: "2026-06-16T22:35:00+08:00",
+        end: "2026-06-17T03:48:00+08:00",
+      },
+      recommendedMilkyWayWindow: selectedWindow,
+      keyReason: "推荐银河窗口 21:24 - 03:34，方向 东南至南方。",
+    };
+    const result: ForecastCalculationResult = {
+      ...base,
+      forecastStart: "2026-06-16T00:00:00+08:00",
+      forecastEnd: "2026-06-18T00:00:00+08:00",
+      targetDates: ["2026-06-16", "2026-06-17"],
+      calendarBasis: {
+        ...base.calendarBasis,
+        forecastStart: "2026-06-16T00:00:00+08:00",
+        forecastEnd: "2026-06-18T00:00:00+08:00",
+        forecastStartLabel: "2026年6月16日 00:00",
+        forecastEndLabel: "2026年6月18日 00:00",
+        forecastRangeLabel: "2026年6月16日 00:00–2026年6月18日 00:00",
+        targetDates: ["2026-06-16", "2026-06-17"],
+        targetDateLabels: ["2026年6月16日 星期二", "2026年6月17日 星期三"],
+      },
+      astroAnalysis: {
+        ...base.astroAnalysis,
+        dailyAstro: [previousDay, selectedDay],
+        recommendedMilkyWayWindow: previousWindow,
+        recommendedMilkyWayWindows: [previousWindow, selectedWindow],
+        milkyWayCandidateWindows: [
+          { ...previousWindow, type: "milky_way_candidate" as const, labelZh: "银河候选窗口" },
+          { ...selectedWindow, type: "milky_way_candidate" as const, labelZh: "银河候选窗口" },
+        ],
+        moonlessNightWindows: [previousDay.moonlessNightWindow!, selectedDay.moonlessNightWindow!],
+        astronomicalNightWindows: [
+          previousDay.astronomicalNightWindow!,
+          selectedDay.astronomicalNightWindow!,
+        ],
+      },
+    };
+    const viewModel = buildAstroForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(AstroResultPage, {
+        query: { ...queryForTarget("astro"), horizon: "48h" },
+        result,
+        viewModel,
+      }),
+    );
+    const implementationSource = readFileSync(
+      fileURLToPath(new URL("./forecast-result-view-model.ts", import.meta.url)),
+      "utf8",
+    );
+
+    expect(viewModel.nightlyCards.map((night) => night.localEveningDate)).toEqual([
+      "2026-06-16",
+      "2026-06-17",
+    ]);
+    expect(viewModel.bestNight?.localEveningDate).toBe("2026-06-16");
+    expect(viewModel.decisionSummary.bestWindowLabel).toContain("6月16日 21:24–6月17日 03:34");
+    expect(
+      viewModel.professionalDataGroups[1]?.items.map((item) => item.value).join(" "),
+    ).toContain("6月16日 21:24–6月17日 03:34");
+    expect(html).toContain("2026年6月16日 星期二");
+    expect(html).toContain("6月16日 21:24–6月17日 03:34");
+    expect(html).not.toContain('data-astro-night-key="astro-night-2026-06-15"');
+    expect(html).not.toContain("2026年6月15日 星期一");
+    expect(implementationSource).not.toMatch(/2026-06-1[56]|黄山光明顶|30\.13012|118\.16389/);
+  });
 
   it("builds and renders a dedicated astro result page without popular spots or side rails", () => {
     const result = {
@@ -8391,9 +8491,8 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("星空银河判断");
       expect(html).toContain("最佳观测夜");
       expect(html).toContain("逐夜星空银河机会");
-      expect(html).toContain("星空概率");
-      expect(html).toContain("银河概率");
       expect(html).toContain("最佳窗口");
+      expect(html).toContain("主要阻碍");
       expect(html).toContain("行动方案");
       expect(html).toContain('data-astro-action-plan="true"');
       expect(html).toContain("月光低");
@@ -8406,7 +8505,7 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("展开专业数据");
       expect(html).toContain('data-astro-professional-collapsed-summary="true"');
       expect(html).toContain('data-astro-professional-collapsed-note="true"');
-      expect(html).toContain('data-astro-hourly-summary="true"');
+      expect(html).not.toContain('data-astro-hourly-summary="true"');
       expect(html).toContain("AstroResultPage");
       expect(html).toContain("AstroResultLayout");
       expect(html).toContain('data-astro-section="AstroNightOpportunitySection"');
@@ -8513,14 +8612,17 @@ describe("forecast result target-aware view model", () => {
     expect(decisionSection).toContain('data-astro-action-plan-item="window"');
     expect(decisionSection).toContain('data-astro-action-plan-item="direction"');
     expect(decisionSection).toContain('data-astro-action-plan-item="avoid-direction"');
+    expect(decisionSection).not.toMatch(
+      /本地辐亮度|周边光穹|环境风险指数|有效采样|校验码|nW\/cm²\/sr|clearance|DEM 数据集/i,
+    );
     expect(countOccurrences(nightlySection, 'data-astro-day-decision-card="true"')).toBe(
       viewModel.nightlyCards.length,
     );
     expect(nightlySection).toContain('data-astro-night-reason-grid="true"');
     expect(nightlySection).toContain('data-astro-night-factor-chips="true"');
-    expect(
-      countOccurrences(nightlySection, 'data-astro-night-factor-chip="'),
-    ).toBeGreaterThanOrEqual(viewModel.nightlyCards.length * 3);
+    const chipCount = countOccurrences(nightlySection, 'data-astro-night-factor-chip="');
+    expect(chipCount).toBeGreaterThanOrEqual(viewModel.nightlyCards.length * 3);
+    expect(chipCount).toBeLessThanOrEqual(viewModel.nightlyCards.length * 5);
     expect(nightlySection).toContain("最佳窗口");
     expect(nightlySection).toContain("银河窗口可用");
     expect(nightlySection).toContain("月光低");
@@ -8529,10 +8631,10 @@ describe("forecast result target-aware view model", () => {
     );
     expect(viewModel.professionalDataGroups.map((group) => group.key)).toEqual([
       "decision-summary",
+      "astronomy-window",
+      "weather-blockers",
       "light-pollution-evidence",
-      "direction-light-pollution",
       "terrain-horizon-evidence",
-      "astronomy-time-basis",
       "developer-diagnostics",
     ]);
     expect(viewModel.professionalDataGroups.at(-1)).toMatchObject({
@@ -8543,8 +8645,8 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain('data-testid="astro-professional-collapsed-summary"');
     expect(html).toContain("WA/VIIRS 光污染、DEM 地平线、天文窗口、月相、逐小时天气");
     expect(html).toContain("已汇总");
-    expect(html).toContain("逐小时摘要");
-    expect(html).toContain("小时表默认折叠");
+    expect(html).not.toContain("逐小时摘要");
+    expect(html).not.toContain("小时表默认折叠");
     expect(html).not.toContain('data-astro-professional-data-body="true"');
     expect(html).toContain('data-ai-interpretation-empty-state="compact"');
     expect(html).toContain("可生成智能解读");
@@ -8639,9 +8741,8 @@ describe("forecast result target-aware view model", () => {
 
     expect(viewModel.dailyTrend).toHaveLength(3);
     expect(viewModel.dailyTrend.map((item) => item.date)).toContain("2026-05-22");
-    expect(viewModel.nightlyCards).toHaveLength(8);
+    expect(viewModel.nightlyCards).toHaveLength(7);
     expect(viewModel.nightlyCards.map((night) => night.localEveningDate)).toEqual([
-      "2026-05-19",
       "2026-05-20",
       "2026-05-21",
       "2026-05-22",
@@ -8650,9 +8751,9 @@ describe("forecast result target-aware view model", () => {
       "2026-05-25",
       "2026-05-26",
     ]);
-    expect(viewModel.nightlyCards[0]?.horizonCoverageState).toBe("partial");
+    expect(viewModel.nightlyCards[0]?.horizonCoverageState).toBe("covered");
     expect(viewModel.nightlyCards.at(-1)?.horizonCoverageState).toBe("partial");
-    expect(countOccurrences(html, 'data-astro-night-card="true"')).toBe(8);
+    expect(countOccurrences(html, 'data-astro-night-card="true"')).toBe(7);
   });
 
   it("keeps data-source honesty in the shaped notice", () => {

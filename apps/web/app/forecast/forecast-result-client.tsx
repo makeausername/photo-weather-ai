@@ -3847,7 +3847,7 @@ function AstroLightPollutionDecisionCard({
         <div className="min-w-0">
           <p className="text-xs font-bold text-primary">光污染</p>
           <h2 className="mt-1 break-words text-lg font-bold leading-tight text-card-foreground">
-            {lightPollution.primaryConclusionZh}
+            {lightPollution.publicDecisionLabel}
           </h2>
         </div>
         <Badge variant={badgeVariantForTone(lightPollution.statusTone)}>
@@ -3855,13 +3855,10 @@ function AstroLightPollutionDecisionCard({
         </Badge>
       </div>
       <dl className="grid gap-2 text-sm min-[520px]:grid-cols-3">
-        <AstroInlineDefinition
-          label="整体光污染"
-          value={lightPollution.overallSkyDarknessRangeLabel}
-        />
+        <AstroInlineDefinition label="整体光害" value={lightPollution.publicDecisionLabel} />
         <AstroInlineDefinition
           label="银河方向"
-          value={lightPollution.targetDirectionLightPollutionLabel}
+          value={lightPollution.publicDirectionDecisionLabel}
         />
         <AstroInlineDefinition
           label="置信度"
@@ -3898,7 +3895,7 @@ function AstroTerrainHorizonDecisionCard({
         <div className="min-w-0">
           <p className="text-xs font-bold text-primary">地形遮挡</p>
           <h2 className="mt-1 break-words text-lg font-bold leading-tight text-card-foreground">
-            {terrain.primaryConclusionZh}
+            {terrain.publicDecisionLabel}
           </h2>
         </div>
         <Badge variant={badgeVariantForTone(terrain.statusTone)}>
@@ -3907,9 +3904,9 @@ function AstroTerrainHorizonDecisionCard({
       </div>
 
       <dl className="grid gap-2 text-sm min-[520px]:grid-cols-3">
-        <AstroInlineDefinition label="方位" value={terrain.targetAzimuthDisplay} />
-        <AstroInlineDefinition label="高度" value={terrain.targetAltitudeDisplay} />
-        <AstroInlineDefinition label="clearance" value={terrain.clearanceDisplay} />
+        <AstroInlineDefinition label="地形结论" value={terrain.publicDecisionLabel} />
+        <AstroInlineDefinition label="影响程度" value={terrain.statusBadgeLabelZh} />
+        <AstroInlineDefinition label="置信度" value={terrain.confidenceLabelZh} />
       </dl>
       <div className="grid gap-1 text-xs leading-5 text-muted-foreground">
         <p>{terrain.detail}</p>
@@ -4267,13 +4264,10 @@ function AstroNightCard({
         ))}
       </div>
 
-      <div className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,124px),1fr))]">
-        <MetricPill label="星空概率" value={night.starPhotographyProbabilityDisplay} />
-        <MetricPill label="银河概率" value={night.milkyWayPhotographyProbabilityDisplay} />
-        <MetricPill label="置信度" value={night.confidence} />
-      </div>
-
-      <p className="text-sm font-semibold leading-6 text-card-foreground">{compactReason}</p>
+      <p className="text-sm font-semibold leading-6 text-card-foreground">
+        <span className="text-muted-foreground">主要阻碍：</span>
+        {compactReason}
+      </p>
       <p
         className="rounded-md border border-border bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground"
         data-testid="astro-night-action-note"
@@ -4476,10 +4470,10 @@ function AstroProfessionalDataSection({
         />
       </dl>
 
-      <AstroHourlySummaryGrid items={viewModel.hourlySummary} />
-
       {expanded ? (
         <div className="mt-4 grid gap-4" data-astro-professional-data-body="true">
+          <AstroHourlySummaryGrid items={viewModel.hourlySummary} />
+
           <div
             className="grid gap-3 min-[900px]:grid-cols-2"
             data-astro-professional-data-groups="true"

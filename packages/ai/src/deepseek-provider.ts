@@ -11,6 +11,7 @@ import {
   formatLocalDateLabel,
   formatLocalTimeRange,
   formatShootingWindowZh,
+  localDateKey,
   classifyGlowWindowLifecycle,
   glowLocalDateKey,
   glowDisplayRecommendationForScore,
@@ -537,11 +538,21 @@ export function buildDeepSeekForecastContext(
   const isCompactTarget = isCloudSeaTarget || isGlowTarget;
   const dailyLimit = detail === "minimal" || isCompactTarget ? 2 : 4;
   const windowLimit = detail === "minimal" || isCompactTarget ? 1 : 3;
-  const bestWindow = result.bestWindows.find(isExecutableWindow) ?? result.bestWindows[0];
-  const bestDay = bestDailySummaryForPlan(result, bestWindow);
+  const contextWindows =
+    result.target === "astro"
+      ? filterPublicForecastPromptWindows(result, result.bestWindows)
+      : result.bestWindows;
+  const contextDailySummaries =
+    result.target === "astro"
+      ? result.dailySummaries.filter(
+          (summary) => summary.date >= forecastPublicStartDateKey(result),
+        )
+      : result.dailySummaries;
+  const bestWindow = contextWindows.find(isExecutableWindow) ?? contextWindows[0];
+  const bestDay = bestDailySummaryForPlan(result, bestWindow, contextDailySummaries);
   const cloudSeaGuard =
     result.target === "cloud_sea" ? buildCloudSeaRecommendationGuardForResult(result) : null;
-  const dailyFacts = takeItems(result.dailySummaries, dailyLimit).map((summary) =>
+  const dailyFacts = takeItems(contextDailySummaries, dailyLimit).map((summary) =>
     compactDailyFact(result, summary, timezone),
   );
 
@@ -582,7 +593,7 @@ export function buildDeepSeekForecastContext(
           actionZh: limitText(bestDay.shortAdvice, 140),
         }
       : null,
-    bestWindows: takeItems(result.bestWindows, windowLimit).map((window) =>
+    bestWindows: takeItems(contextWindows, windowLimit).map((window) =>
       compactForecastWindowBrief(window, timezone),
     ),
     dailySummaries: dailyFacts,
@@ -2794,8 +2805,18 @@ function buildDeepSeekForecastPromptFacts(
 
   const timezone = result.calendarBasis.timezone;
   const targetConfig = forecastAiTargetConfigFor(result.target);
-  const bestWindow = result.bestWindows.find(isExecutableWindow) ?? result.bestWindows[0];
-  const bestDay = bestDailySummaryForPlan(result, bestWindow);
+  const promptWindows =
+    result.target === "astro"
+      ? filterPublicForecastPromptWindows(result, result.bestWindows)
+      : result.bestWindows;
+  const promptDailySummaries =
+    result.target === "astro"
+      ? result.dailySummaries.filter(
+          (summary) => summary.date >= forecastPublicStartDateKey(result),
+        )
+      : result.dailySummaries;
+  const bestWindow = promptWindows.find(isExecutableWindow) ?? promptWindows[0];
+  const bestDay = bestDailySummaryForPlan(result, bestWindow, promptDailySummaries);
   const cloudSeaGuard =
     result.target === "cloud_sea" ? buildCloudSeaRecommendationGuardForResult(result) : null;
   const dailyLimit = detail === "budget" ? 1 : 2;
@@ -2836,7 +2857,7 @@ function buildDeepSeekForecastPromptFacts(
           actionZh: limitText(bestDay.shortAdvice, textLimit),
         }
       : null,
-    keyWindows: takeItems(result.bestWindows, detail === "budget" ? 1 : 2).map((window) =>
+    keyWindows: takeItems(promptWindows, detail === "budget" ? 1 : 2).map((window) =>
       compactPromptWindow(window, timezone, textLimit),
     ),
     keyRisks: compactRiskFlags(result.riskFlags, riskLimit).map((risk) => ({
@@ -2850,7 +2871,7 @@ function buildDeepSeekForecastPromptFacts(
       detail === "budget" ? 1 : 2,
       textLimit,
     ),
-    daily: takeItems(result.dailySummaries, dailyLimit).map((summary) =>
+    daily: takeItems(promptDailySummaries, dailyLimit).map((summary) =>
       compactPromptDailyFact(result, summary, timezone, textLimit),
     ),
     topicScores: [
@@ -2898,6 +2919,29 @@ function buildDeepSeekForecastPromptFacts(
   };
 }
 
+function forecastPublicStartDateKey(result: ForecastCalculationResult): string {
+  return (
+    localDateKey(result.calendarBasis.forecastStart, result.calendarBasis.timezone) ??
+    result.calendarBasis.forecastStart.slice(0, 10)
+  );
+}
+
+function filterPublicForecastPromptWindows<
+  TWindow extends {
+    readonly date?: string;
+    readonly startTime?: string;
+    readonly start?: string;
+  },
+>(result: ForecastCalculationResult, windows: readonly TWindow[]): readonly TWindow[] {
+  const publicStartDate = forecastPublicStartDateKey(result);
+  const timezone = result.calendarBasis.timezone;
+  return windows.filter((window) => {
+    const start = window.startTime ?? window.start;
+    const windowDate = window.date ?? localDateKey(start, timezone) ?? start?.slice(0, 10) ?? "";
+    return windowDate >= publicStartDate;
+  });
+}
+
 function compactAstroPromptFacts(
   result: ForecastCalculationResult,
   detail: DeepSeekForecastContextDetail,
@@ -2908,6 +2952,25 @@ function compactAstroPromptFacts(
   const nightlyLimit = detail === "budget" ? 1 : detail === "minimal" ? 2 : 4;
   const windowLimit = detail === "budget" ? 1 : 3;
   const moon = analysis.moonInfo;
+  const publicDailyAstro = analysis.dailyAstro.filter(
+    (day) => day.date >= forecastPublicStartDateKey(result),
+  );
+  const publicAstronomicalNightWindows = filterPublicForecastPromptWindows(
+    result,
+    analysis.astronomicalNightWindows,
+  );
+  const publicMoonlessNightWindows = filterPublicForecastPromptWindows(
+    result,
+    analysis.moonlessNightWindows,
+  );
+  const publicRecommendedMilkyWayWindows = filterPublicForecastPromptWindows(
+    result,
+    analysis.recommendedMilkyWayWindows,
+  );
+  const publicMilkyWayCandidateWindows = filterPublicForecastPromptWindows(
+    result,
+    analysis.milkyWayCandidateWindows,
+  );
 
   return {
     contextVersion: "astro-night-decision-v1",
@@ -2941,7 +3004,7 @@ function compactAstroPromptFacts(
           calculationNoteZh: limitText(moon.calculationNoteZh, textLimit),
         }
       : null,
-    nightly: takeItems(analysis.dailyAstro, nightlyLimit).map((day) => ({
+    nightly: takeItems(publicDailyAstro, nightlyLimit).map((day) => ({
       date: day.date,
       dateZh: formatDateLabelZh(day.date, timezone, day.dateLabelZh),
       localObservingNightDate: day.date,
@@ -2979,16 +3042,16 @@ function compactAstroPromptFacts(
       warmthAdviceZh: limitText(day.warmthAdviceZh, textLimit),
     })),
     windows: {
-      astronomicalNight: takeItems(analysis.astronomicalNightWindows, windowLimit).map((window) =>
+      astronomicalNight: takeItems(publicAstronomicalNightWindows, windowLimit).map((window) =>
         compactAstroWindow(window, timezone, textLimit),
       ),
-      moonlessNight: takeItems(analysis.moonlessNightWindows, windowLimit).map((window) =>
+      moonlessNight: takeItems(publicMoonlessNightWindows, windowLimit).map((window) =>
         compactAstroWindow(window, timezone, textLimit),
       ),
-      recommendedMilkyWay: takeItems(analysis.recommendedMilkyWayWindows, windowLimit).map(
-        (window) => compactAstroWindow(window, timezone, textLimit),
+      recommendedMilkyWay: takeItems(publicRecommendedMilkyWayWindows, windowLimit).map((window) =>
+        compactAstroWindow(window, timezone, textLimit),
       ),
-      candidateMilkyWay: takeItems(analysis.milkyWayCandidateWindows, windowLimit).map((window) =>
+      candidateMilkyWay: takeItems(publicMilkyWayCandidateWindows, windowLimit).map((window) =>
         compactAstroWindow(window, timezone, textLimit),
       ),
     },
@@ -3384,9 +3447,19 @@ export function createRuleBasedForecastExplanation(
   result: ForecastCalculationResult,
 ): ForecastAiExplanation {
   const timezone = result.calendarBasis.timezone;
-  const bestWindow = result.bestWindows.find(isExecutableWindow) ?? result.bestWindows[0];
-  const backupWindow = result.bestWindows.find((window) => window !== bestWindow);
-  const bestDaily = bestDailySummaryForPlan(result, bestWindow);
+  const explanationWindows =
+    result.target === "astro"
+      ? filterPublicForecastPromptWindows(result, result.bestWindows)
+      : result.bestWindows;
+  const explanationDailySummaries =
+    result.target === "astro"
+      ? result.dailySummaries.filter(
+          (summary) => summary.date >= forecastPublicStartDateKey(result),
+        )
+      : result.dailySummaries;
+  const bestWindow = explanationWindows.find(isExecutableWindow) ?? explanationWindows[0];
+  const backupWindow = explanationWindows.find((window) => window !== bestWindow);
+  const bestDaily = bestDailySummaryForPlan(result, bestWindow, explanationDailySummaries);
   const cloudSeaGuard =
     result.target === "cloud_sea" ? buildCloudSeaRecommendationGuardForResult(result) : null;
   const cloudSeaExplanation = cloudSeaGuard
@@ -3472,7 +3545,7 @@ export function createRuleBasedForecastExplanation(
       windSummaryZh: windTrendSummary(result),
       transparencySummaryZh: transparencyTrendSummary(result),
     },
-    dayByDay: takeItems(result.dailySummaries, 5).map((summary) =>
+    dayByDay: takeItems(explanationDailySummaries, 5).map((summary) =>
       deterministicDayExplanation(result, summary, timezone),
     ),
     subjectAdvice: {
@@ -3522,17 +3595,18 @@ export function createRuleBasedForecastExplanation(
 function bestDailySummaryForPlan(
   result: ForecastCalculationResult,
   bestWindow: ForecastCalculationResult["bestWindows"][number] | undefined,
+  dailySummaries: readonly ForecastCalculationResult["dailySummaries"][number][] = result.dailySummaries,
 ): ForecastCalculationResult["dailySummaries"][number] | undefined {
   if (bestWindow) {
-    const matchingDay = result.dailySummaries.find((summary) => summary.date === bestWindow.date);
+    const matchingDay = dailySummaries.find((summary) => summary.date === bestWindow.date);
     if (matchingDay) {
       return matchingDay;
     }
   }
 
   return (
-    result.dailySummaries.find((summary) => summary.bestShootableWindow) ??
-    [...result.dailySummaries].sort(
+    dailySummaries.find((summary) => summary.bestShootableWindow) ??
+    [...dailySummaries].sort(
       (left, right) =>
         (right.practicalTripScore ?? right.score) - (left.practicalTripScore ?? left.score),
     )[0]

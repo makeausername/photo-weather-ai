@@ -20,6 +20,7 @@ import {
   formatLocalDateLabel,
   formatLocalTimeRange,
   forecastHorizonLabels,
+  localDateKey,
   normalizeForecastQueryInput,
   forecastQueryInputSchema,
   forecastTargetLabels,
@@ -1223,8 +1224,16 @@ function buildDeterministicFallbackInterpretation(
 function createEmergencyForecastExplanation(
   result: ForecastCalculationResult,
 ): ForecastAiExplanation {
-  const bestWindow = result.bestWindows[0];
-  const bestDay = result.dailySummaries[0];
+  const emergencyWindows =
+    result.target === "astro"
+      ? filterPublicEmergencyWindows(result, result.bestWindows)
+      : result.bestWindows;
+  const emergencyDailySummaries =
+    result.target === "astro"
+      ? filterPublicEmergencyDailySummaries(result, result.dailySummaries)
+      : result.dailySummaries;
+  const bestWindow = emergencyWindows[0];
+  const bestDay = emergencyDailySummaries[0];
   const primarySubject = bestSubjectLabel(result, 0);
   const backupSubject = bestSubjectLabel(result, 1);
   const mainRisk = result.riskFlags[0];
@@ -1246,8 +1255,8 @@ function createEmergencyForecastExplanation(
       : "暂无明确时间";
 
   const dayByDay =
-    result.dailySummaries.length > 0
-      ? result.dailySummaries.slice(0, 5).map((day) => ({
+    emergencyDailySummaries.length > 0
+      ? emergencyDailySummaries.slice(0, 5).map((day) => ({
           dateZh: dateLabelZh(day.date, day.dateLabelZh),
           recommendationZh: day.dedicatedTripRecommendation ?? day.recommendationLabel,
           scoreZh: `综合 ${day.score} 分`,
@@ -1351,6 +1360,32 @@ function createEmergencyForecastExplanation(
       noteZh: "基于确定性计算结果生成的简版解读。",
     },
   };
+}
+
+function filterPublicEmergencyWindows<
+  TWindow extends { readonly date?: string; readonly startTime?: string },
+>(result: ForecastCalculationResult, windows: readonly TWindow[]): readonly TWindow[] {
+  const startDate =
+    localDateKey(result.calendarBasis.forecastStart, result.calendarBasis.timezone) ??
+    result.calendarBasis.forecastStart.slice(0, 10);
+  return windows.filter((window) => {
+    const windowDate =
+      window.date ??
+      localDateKey(window.startTime, result.calendarBasis.timezone) ??
+      window.startTime?.slice(0, 10) ??
+      "";
+    return windowDate >= startDate;
+  });
+}
+
+function filterPublicEmergencyDailySummaries<TDaily extends { readonly date: string }>(
+  result: ForecastCalculationResult,
+  dailySummaries: readonly TDaily[],
+): readonly TDaily[] {
+  const startDate =
+    localDateKey(result.calendarBasis.forecastStart, result.calendarBasis.timezone) ??
+    result.calendarBasis.forecastStart.slice(0, 10);
+  return dailySummaries.filter((summary) => summary.date >= startDate);
 }
 
 function bestSubjectLabel(result: ForecastCalculationResult, index: number): string {

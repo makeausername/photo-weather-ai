@@ -674,6 +674,19 @@ describe("AI providers", () => {
   });
 
   it("passes deterministic astro V2 facts to DeepSeek without provider names", () => {
+    const preStartAstroWindow = {
+      type: "milky_way_candidate" as const,
+      labelZh: "前一晚银河候选窗口",
+      date: "2026-05-19",
+      start: "2026-05-20T01:10:00+08:00",
+      end: "2026-05-20T03:20:00+08:00",
+      durationMinutes: 130,
+      score: 91,
+      riskTags: [],
+      noteZh: "不应进入公开 AI 上下文。",
+      directionZh: "东南至南方",
+      galacticCenterAltitude: 25,
+    };
     const astroWindow = {
       type: "milky_way_candidate" as const,
       labelZh: "银河候选窗口",
@@ -687,9 +700,49 @@ describe("AI providers", () => {
       directionZh: "东南至南方",
       galacticCenterAltitude: 24,
     };
+    const preStartPromptWindow = {
+      label: "前一晚误差窗口",
+      date: "2026-05-19",
+      startTime: "2026-05-20T01:10:00+08:00",
+      endTime: "2026-05-20T03:20:00+08:00",
+      score: 91,
+      target: "astro" as const,
+    };
+    const publicPromptWindow = {
+      label: "公开银河窗口",
+      date: "2026-05-21",
+      startTime: astroWindow.start,
+      endTime: astroWindow.end,
+      score: astroWindow.score,
+      target: "astro" as const,
+    };
+    const baseDaily = forecastResultFixture.dailySummaries[0]!;
     const astroResult: ForecastCalculationResult = {
       ...forecastResultFixture,
       target: "astro",
+      bestWindows: [preStartPromptWindow, publicPromptWindow],
+      dailySummaries: [
+        {
+          ...baseDaily,
+          date: "2026-05-19",
+          dateLabelZh: "2026年5月19日 星期二",
+          score: 91,
+          recommendationLabel: "前一晚误差判断",
+          shortAdvice: "前一晚不应进入公开 AI 上下文。",
+          keyWindows: [preStartPromptWindow],
+          bestShootableWindow: preStartPromptWindow,
+        },
+        {
+          ...baseDaily,
+          date: "2026-05-21",
+          dateLabelZh: "2026年5月21日 星期四",
+          score: 62,
+          recommendationLabel: "仅作备选窗口",
+          shortAdvice: "公开日期窗口可用于 AI 解读。",
+          keyWindows: [publicPromptWindow],
+          bestShootableWindow: publicPromptWindow,
+        },
+      ],
       astroDataSourceLabelZh: "本地天文服务计算",
       weatherNoticeZh: "天气数据：和风天气；云层辅助：Open-Meteo；专业增强：meteoblue。",
       astroAnalysis: {
@@ -719,6 +772,11 @@ describe("AI providers", () => {
         recommendedMilkyWayWindows: [],
         astronomicalNightWindows: [
           {
+            ...preStartAstroWindow,
+            type: "astronomical_night",
+            labelZh: "前一晚天文黑夜",
+          },
+          {
             ...astroWindow,
             type: "astronomical_night",
             labelZh: "天文黑夜",
@@ -727,7 +785,7 @@ describe("AI providers", () => {
           },
         ],
         moonlessNightWindows: [],
-        milkyWayCandidateWindows: [astroWindow],
+        milkyWayCandidateWindows: [preStartAstroWindow, astroWindow],
         weatherBlockers: ["低云偏多，星空银河实际可见性较差。", "降水干扰"],
         gearAdviceZh: ["湿度较高，需准备防露带、镜头布和防水收纳。"],
         warmthAdviceZh: "夜间湿冷，需准备防风保暖层。",
@@ -839,11 +897,13 @@ describe("AI providers", () => {
         targetDirectionLevelZh: "高",
         estimatedBortle: expect.objectContaining({
           available: true,
-          minClass: 6,
-          maxClass: 7,
-          rangeLabelZh: "6–7级",
-          skyQualityLabelZh: "明显光害",
+          minClass: 7,
+          maxClass: 9,
+          rangeLabelZh: "7–9级（保守参考）",
+          skyQualityLabelZh: "偏强，需现场确认",
           confidence: "low",
+          primaryBaseline: "viirs_national_fallback",
+          rangeWidthPolicy: "wide_uncertain",
         }),
         starIndexPenalty: 16,
         milkyWayIndexPenalty: 28,
@@ -852,6 +912,12 @@ describe("AI providers", () => {
     expect(requestText).toContain("astro-night-decision-v1");
     expect(requestText).toContain("天文黑夜");
     expect(requestText).toContain("银河候选窗口");
+    expect(requestText).toContain("2026-05-21");
+    expect(requestText).not.toContain("前一晚");
+    expect(requestText).not.toContain('"date":"2026-05-19"');
+    expect(text).toContain("公开银河");
+    expect(text).not.toContain("前一晚");
+    expect(text).not.toContain('"date":"2026-05-19"');
     expect(requestText).toContain("只解释这些确定性光污染事实");
     expect(requestText).toContain("波特尔只能表述为估算范围");
     expect(requestText).toContain("低云偏多，星空银河实际可见性较差。");
@@ -865,6 +931,14 @@ describe("AI providers", () => {
     expect(requestText).not.toContain("Open-Meteo");
     expect(requestText).not.toContain("meteoblue");
     expect(requestText).not.toContain("dataSourceLabelZh");
+
+    const fallbackExplanation = createRuleBasedForecastExplanation(astroResult);
+    const fallbackText = JSON.stringify(fallbackExplanation);
+    expect(fallbackExplanation.bestPlan.bestDateZh).toContain("2026年5月21日");
+    expect(fallbackExplanation.bestPlan.bestWindowZh).toContain("01:10");
+    expect(fallbackText).toContain("公开银河");
+    expect(fallbackText).not.toContain("前一晚");
+    expect(fallbackText).not.toContain('"date":"2026-05-19"');
   });
 
   it("passes deterministic glow facts to DeepSeek without asking it to score glow", () => {
