@@ -797,6 +797,39 @@ export type AstroJudgmentFactorCard = {
   readonly tone: ForecastResultCardTone;
 };
 
+export type AstroDecisionFactItem = {
+  readonly key: string;
+  readonly semanticKey: string;
+  readonly label: string;
+  readonly value: string;
+  readonly tone: ForecastResultCardTone;
+};
+
+export type AstroPublicFactorChip = {
+  readonly key: string;
+  readonly semanticKey: string;
+  readonly label: string;
+  readonly value: string;
+  readonly tone: ForecastResultCardTone;
+};
+
+export type AstroTopSidePanelItem = {
+  readonly key: string;
+  readonly semanticKey: string;
+  readonly label: string;
+  readonly value: string;
+  readonly detail: string;
+  readonly tone: ForecastResultCardTone;
+};
+
+export type AstroPublicDisplayModel = {
+  readonly decisionFacts: readonly AstroDecisionFactItem[];
+  readonly factorChips: readonly AstroPublicFactorChip[];
+  readonly sidePanelItems: readonly AstroTopSidePanelItem[];
+  readonly actionPlan: readonly AstroActionPlanItem[];
+  readonly judgmentFactors: readonly AstroJudgmentFactorCard[];
+};
+
 export type AstroActionSummaryItem = {
   readonly key: "worth" | "best-window" | "light-pollution" | "main-blocker" | "backup" | "arrival";
   readonly label: string;
@@ -855,6 +888,7 @@ export type AstroForecastViewModel = {
   readonly actionSummary: readonly AstroActionSummaryItem[];
   readonly actionPlan: readonly AstroActionPlanItem[];
   readonly judgmentFactors: readonly AstroJudgmentFactorCard[];
+  readonly publicDisplay: AstroPublicDisplayModel;
   readonly professionalDataGroups: readonly AstroProfessionalDataGroup[];
   readonly professionalHourlyData: ProfessionalHourlyDisplayData;
   readonly hourlySummary: readonly AstroHourlySummaryItem[];
@@ -2931,6 +2965,15 @@ export function buildAstroForecastViewModel(
     decisionSummary,
     lightPollution,
   });
+  const judgmentFactors = buildAstroJudgmentFactors(result, nightlyCards, bestNight, terrainHorizon);
+  const publicDisplay = buildAstroPublicDisplay({
+    decisionSummary,
+    actionSummary,
+    actionPlan,
+    judgmentFactors,
+    lightPollution,
+    terrainHorizon,
+  });
   const hourlySummary = buildAstroHourlySummary(
     professionalHourlyData,
     result.calendarBasis.timezone,
@@ -3038,8 +3081,9 @@ export function buildAstroForecastViewModel(
     backupNight,
     decisionSummary,
     actionSummary,
-    actionPlan,
-    judgmentFactors: buildAstroJudgmentFactors(result, nightlyCards, bestNight, terrainHorizon),
+    actionPlan: publicDisplay.actionPlan,
+    judgmentFactors: publicDisplay.judgmentFactors,
+    publicDisplay,
     professionalDataGroups,
     professionalHourlyData,
     hourlySummary,
@@ -5738,6 +5782,217 @@ function buildAstroActionPlan({
       tone: decisionSummary.recommendationTone,
     },
   ];
+}
+
+type AstroPublicFactCandidate<T> = T & {
+  readonly semanticKey: string;
+};
+
+function buildAstroPublicDisplay({
+  decisionSummary,
+  actionSummary,
+  actionPlan,
+  judgmentFactors,
+  lightPollution,
+  terrainHorizon,
+}: {
+  readonly decisionSummary: AstroDecisionSummary;
+  readonly actionSummary: readonly AstroActionSummaryItem[];
+  readonly actionPlan: readonly AstroActionPlanItem[];
+  readonly judgmentFactors: readonly AstroJudgmentFactorCard[];
+  readonly lightPollution: AstroLightPollutionDisplayModel;
+  readonly terrainHorizon: AstroTerrainHorizonDisplayModel;
+}): AstroPublicDisplayModel {
+  const worth = astroActionItem(actionSummary, "worth");
+  const bestWindow = astroActionItem(actionSummary, "best-window");
+  const backup = astroActionItem(actionSummary, "backup");
+  const claimedPublicFacts = new Set<string>();
+
+  const decisionFacts = claimAstroPublicFacts<AstroDecisionFactItem>(
+    [
+      {
+        key: "worth",
+        semanticKey: "decision-worth",
+        label: "是否值得去",
+        value: decisionSummary.recommendationLabel,
+        tone: decisionSummary.recommendationTone,
+      },
+      {
+        key: "best-night",
+        semanticKey: "best-observing-night",
+        label: "最佳观测夜",
+        value: decisionSummary.bestNightLabel,
+        tone: decisionSummary.recommendationTone,
+      },
+      {
+        key: "best-window",
+        semanticKey: "best-shooting-window",
+        label: "最佳拍摄窗口",
+        value: decisionSummary.bestWindowLabel,
+        tone: bestWindow?.tone ?? decisionSummary.recommendationTone,
+      },
+      {
+        key: "backup",
+        semanticKey: "backup-option",
+        label: "备选窗口 / 目标",
+        value: decisionSummary.backupLabel,
+        tone: backup?.tone ?? "info",
+      },
+      {
+        key: "action",
+        semanticKey: "next-action",
+        label: "行动建议",
+        value: decisionSummary.actionSuggestionLabel,
+        tone: worth?.tone ?? decisionSummary.recommendationTone,
+      },
+    ],
+    claimedPublicFacts,
+  );
+
+  const factorChips = claimAstroPublicFacts<AstroPublicFactorChip>(
+    [
+      {
+        key: "light-pollution",
+        semanticKey: "light-pollution-public",
+        label: "光污染",
+        value: lightPollution.publicDirectionDecisionLabel,
+        tone: lightPollution.statusTone,
+      },
+      {
+        key: "terrain-horizon",
+        semanticKey: "terrain-horizon-public",
+        label: "地形",
+        value: terrainHorizon.available
+          ? terrainHorizon.publicDecisionLabel
+          : terrainHorizon.statusLabelZh,
+        tone: terrainHorizon.statusTone,
+      },
+    ],
+    claimedPublicFacts,
+  );
+
+  const sidePanelItems = claimAstroPublicFacts<AstroTopSidePanelItem>(
+    [
+      {
+        key: "next-best",
+        semanticKey: "next-best-option",
+        label: "下一备选",
+        value: decisionSummary.backupLabel,
+        detail: decisionSummary.backupDetail,
+        tone: backup?.tone ?? "info",
+      },
+      {
+        key: "confidence",
+        semanticKey: "decision-confidence",
+        label: "置信度",
+        value: decisionSummary.confidenceLabel,
+        detail: "由天文窗口、逐小时天气、光污染和地形数据完整性共同决定。",
+        tone: decisionSummary.recommendationTone,
+      },
+      {
+        key: "key-blocker",
+        semanticKey: "key-blocker",
+        label: "关键阻碍",
+        value: decisionSummary.mainRiskLabel,
+        detail: decisionSummary.mainRiskDetail,
+        tone: astroActionItem(actionSummary, "main-blocker")?.tone ?? "muted",
+      },
+    ],
+    claimedPublicFacts,
+  );
+
+  return {
+    decisionFacts,
+    factorChips,
+    sidePanelItems,
+    actionPlan: actionPlan.filter(isMeaningfulAstroActionPlanItem),
+    judgmentFactors: normalizeAstroJudgmentFactors(judgmentFactors, claimedPublicFacts),
+  };
+}
+
+function claimAstroPublicFacts<T extends { readonly value: string }>(
+  candidates: readonly AstroPublicFactCandidate<T>[],
+  claimedPublicFacts: Set<string>,
+): readonly T[] {
+  const owned: T[] = [];
+
+  for (const candidate of candidates) {
+    if (claimedPublicFacts.has(candidate.semanticKey)) {
+      continue;
+    }
+    if (isPlaceholderAstroPublicValue(candidate.value)) {
+      continue;
+    }
+
+    claimedPublicFacts.add(candidate.semanticKey);
+    owned.push(candidate);
+  }
+
+  return owned;
+}
+
+function normalizeAstroJudgmentFactors(
+  factors: readonly AstroJudgmentFactorCard[],
+  claimedPublicFacts: ReadonlySet<string>,
+): readonly AstroJudgmentFactorCard[] {
+  const hiddenSemanticKeys = new Set([
+    "light-pollution-public",
+    "terrain-horizon-public",
+    ...claimedPublicFacts,
+  ]);
+  const factorSemanticKey: Record<string, string> = {
+    "light-pollution": "light-pollution-public",
+    "terrain-horizon": "terrain-horizon-public",
+  };
+  const seenReasonKeys = new Set<string>();
+  const normalized: AstroJudgmentFactorCard[] = [];
+
+  for (const factor of factors) {
+    const semanticKey = factorSemanticKey[factor.key] ?? `reason-${factor.key}`;
+    if (hiddenSemanticKeys.has(semanticKey)) {
+      continue;
+    }
+    if (isPlaceholderAstroPublicValue(factor.status) && isPlaceholderAstroPublicValue(factor.detail)) {
+      continue;
+    }
+
+    const reasonKey = `${factor.label}|${factor.status}|${factor.detail}`;
+    if (seenReasonKeys.has(reasonKey)) {
+      continue;
+    }
+
+    seenReasonKeys.add(reasonKey);
+    normalized.push(factor);
+  }
+
+  return normalized;
+}
+
+function isMeaningfulAstroActionPlanItem(item: AstroActionPlanItem): boolean {
+  if (isPlaceholderAstroPublicValue(item.value)) {
+    return false;
+  }
+  if (item.key === "window" && /暂无可靠|暂无明确|暂无推荐/.test(item.value)) {
+    return false;
+  }
+  if (item.key === "direction" && /待确认|暂无/.test(item.value)) {
+    return false;
+  }
+  if (item.key === "avoid-direction" && /待确认|暂无|未知/.test(item.value)) {
+    return false;
+  }
+  return true;
+}
+
+function isPlaceholderAstroPublicValue(value: string): boolean {
+  const normalized = value.replace(/\s+/g, "").trim();
+  return (
+    normalized.length === 0 ||
+    normalized === "none" ||
+    normalized === "未知" ||
+    normalized === "待确认" ||
+    /^暂无/.test(normalized)
+  );
 }
 
 function buildAstroHourlySummary(

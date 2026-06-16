@@ -3826,96 +3826,6 @@ export function AstroResultPage({
   );
 }
 
-function AstroLightPollutionDecisionCard({
-  lightPollution,
-  className,
-}: {
-  readonly lightPollution: AstroForecastViewModel["lightPollution"];
-  readonly className?: string;
-}) {
-  return (
-    <article
-      className={cn(
-        className,
-        "AstroLightPollutionDecision grid min-h-[178px] content-between gap-3 rounded-lg border border-border bg-card p-4 shadow-sm",
-      )}
-      data-astro-section="AstroLightPollutionDecision"
-      data-astro-light-pollution-available={lightPollution.available ? "true" : "false"}
-      data-astro-light-pollution-main-card="true"
-    >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-bold text-primary">光污染</p>
-          <h2 className="mt-1 break-words text-lg font-bold leading-tight text-card-foreground">
-            {lightPollution.publicDecisionLabel}
-          </h2>
-        </div>
-        <Badge variant={badgeVariantForTone(lightPollution.statusTone)}>
-          {lightPollution.statusBadgeLabelZh}
-        </Badge>
-      </div>
-      <dl className="grid gap-2 text-sm min-[520px]:grid-cols-3">
-        <AstroInlineDefinition label="整体光害" value={lightPollution.publicDecisionLabel} />
-        <AstroInlineDefinition
-          label="银河方向"
-          value={lightPollution.publicDirectionDecisionLabel}
-        />
-        <AstroInlineDefinition
-          label="置信度"
-          value={lightPollution.estimatedBortleConfidenceLabel}
-        />
-      </dl>
-      <div className="grid gap-1 text-xs leading-5 text-muted-foreground">
-        <p>{lightPollution.detail}</p>
-        <p>{lightPollution.recommendationZh}</p>
-      </div>
-    </article>
-  );
-}
-
-function AstroTerrainHorizonDecisionCard({
-  terrain,
-  className,
-}: {
-  readonly terrain: AstroForecastViewModel["terrainHorizon"];
-  readonly className?: string;
-}) {
-  return (
-    <article
-      className={cn(
-        className,
-        "AstroTerrainHorizonDecision grid min-h-[150px] content-between gap-3 rounded-lg border border-border bg-card p-4 shadow-sm",
-      )}
-      data-astro-section="AstroTerrainHorizonDecision"
-      data-astro-terrain-horizon-available={terrain.available ? "true" : "false"}
-      data-astro-terrain-horizon-level={terrain.obstructionLevel}
-      data-astro-terrain-horizon-main-card="true"
-    >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-bold text-primary">地形遮挡</p>
-          <h2 className="mt-1 break-words text-lg font-bold leading-tight text-card-foreground">
-            {terrain.publicDecisionLabel}
-          </h2>
-        </div>
-        <Badge variant={badgeVariantForTone(terrain.statusTone)}>
-          {terrain.statusBadgeLabelZh}
-        </Badge>
-      </div>
-
-      <dl className="grid gap-2 text-sm min-[520px]:grid-cols-3">
-        <AstroInlineDefinition label="地形结论" value={terrain.publicDecisionLabel} />
-        <AstroInlineDefinition label="影响程度" value={terrain.statusBadgeLabelZh} />
-        <AstroInlineDefinition label="置信度" value={terrain.confidenceLabelZh} />
-      </dl>
-      <div className="grid gap-1 text-xs leading-5 text-muted-foreground">
-        <p>{terrain.detail}</p>
-        <p>{terrain.recommendationZh}</p>
-      </div>
-    </article>
-  );
-}
-
 function AstroTopContext({
   query,
   result,
@@ -3926,9 +3836,6 @@ function AstroTopContext({
   readonly viewModel: AstroForecastViewModel;
 }) {
   const decision = viewModel.decisionSummary;
-  const metricItems = viewModel.actionSummary.filter((item) =>
-    ["best-window", "light-pollution", "main-blocker", "backup", "arrival"].includes(item.key),
-  );
 
   return (
     <section
@@ -3936,9 +3843,9 @@ function AstroTopContext({
       data-astro-section="AstroDecisionFirstDashboard"
       data-astro-decision-first="true"
     >
-      <div className="grid gap-4 min-[1080px]:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] min-[1080px]:items-stretch">
+      <div className="grid gap-4 min-[1080px]:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] min-[1080px]:items-start">
         <Card
-          className="AstroDecisionHero grid min-h-[320px] content-between gap-4 p-5 shadow-sm"
+          className="AstroDecisionHero grid gap-4 p-5 shadow-sm"
           data-astro-decision-hero="true"
         >
           <div className="grid gap-4">
@@ -3976,33 +3883,18 @@ function AstroTopContext({
               className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,165px),1fr))]"
               data-astro-decision-first-metrics="true"
             >
-              <AstroDecisionFact label="是否值得去" value={decision.recommendationLabel} />
-              <AstroDecisionFact label="最佳观测夜" value={decision.bestNightLabel} />
-              <AstroDecisionFact label="最佳拍摄窗口" value={decision.bestWindowLabel} />
-              <AstroDecisionFact label="备选窗口 / 目标" value={decision.backupLabel} />
-              <AstroDecisionFact label="主要阻碍" value={decision.mainRiskLabel} />
-              <AstroDecisionFact label="行动建议" value={decision.actionSuggestionLabel} />
+              {viewModel.publicDisplay.decisionFacts.map((item) => (
+                <AstroDecisionFact key={item.key} item={item} />
+              ))}
             </dl>
 
-            <div className="grid gap-2 min-[720px]:grid-cols-3">
-              <AstroDecisionChip
-                label="次要风险"
-                value={decision.secondaryRiskLabel}
-                tone={
-                  viewModel.actionSummary.find((item) => item.key === "main-blocker")?.tone ??
-                  "muted"
-                }
-              />
-              <AstroDecisionChip
-                label="光污染"
-                value={decision.lightPollutionLabel}
-                tone={viewModel.lightPollution.statusTone}
-              />
-              <AstroDecisionChip
-                label="地形"
-                value={decision.terrainLabel}
-                tone={viewModel.terrainHorizon.statusTone}
-              />
+            <div
+              className="flex flex-wrap gap-2"
+              data-astro-public-factor-chips="true"
+            >
+              {viewModel.publicDisplay.factorChips.map((chip) => (
+                <AstroDecisionChip key={chip.key} chip={chip} />
+              ))}
             </div>
           </div>
 
@@ -4036,28 +3928,7 @@ function AstroTopContext({
           </div>
         </Card>
 
-        <div className="grid gap-3">
-          <AstroTopSupportCard
-            label="下一步"
-            value={decision.actionSuggestionLabel}
-            detail={decision.oneSentenceAdvice}
-            tone={decision.recommendationTone}
-          />
-          <AstroLightPollutionDecisionCard lightPollution={viewModel.lightPollution} />
-          <AstroTerrainHorizonDecisionCard terrain={viewModel.terrainHorizon} />
-        </div>
-      </div>
-
-      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr))]">
-        {metricItems.map((item) => (
-          <AstroTopSupportCard
-            key={item.key}
-            label={item.label}
-            value={item.value}
-            detail={item.detail}
-            tone={item.tone}
-          />
-        ))}
+        <AstroTopSidePanel items={viewModel.publicDisplay.sidePanelItems} />
       </div>
     </section>
   );
@@ -4105,61 +3976,81 @@ function AstroActionPlanGrid({ items }: { readonly items: AstroForecastViewModel
   );
 }
 
-function AstroDecisionFact({ label, value }: { readonly label: string; readonly value: string }) {
+function AstroDecisionFact({
+  item,
+}: {
+  readonly item: AstroForecastViewModel["publicDisplay"]["decisionFacts"][number];
+}) {
   return (
-    <div className="min-w-0 rounded-lg border border-border bg-muted px-3 py-3">
-      <dt className="text-[11px] font-semibold leading-4 text-muted-foreground">{label}</dt>
-      <dd className="mt-1 break-words text-sm font-bold leading-5 text-card-foreground">{value}</dd>
+    <div
+      className="min-w-0 rounded-lg border border-border bg-muted px-3 py-3"
+      data-astro-decision-fact={item.key}
+      data-astro-semantic-key={item.semanticKey}
+    >
+      <dt className="text-[11px] font-semibold leading-4 text-muted-foreground">{item.label}</dt>
+      <dd className={cn("mt-1 break-words text-sm font-bold leading-5", cardToneText(item.tone))}>
+        {item.value}
+      </dd>
     </div>
   );
 }
 
 function AstroDecisionChip({
-  label,
-  value,
-  tone,
+  chip,
 }: {
-  readonly label: string;
-  readonly value: string;
-  readonly tone: ForecastResultCardTone;
+  readonly chip: AstroForecastViewModel["publicDisplay"]["factorChips"][number];
 }) {
   return (
-    <div className="min-w-0 rounded-lg border border-border bg-card px-3 py-2">
-      <p className="text-[11px] font-semibold leading-4 text-muted-foreground">{label}</p>
-      <p className={cn("mt-1 break-words text-sm font-bold leading-5", cardToneText(tone))}>
-        {value}
+    <div
+      className="min-w-0 rounded-full border border-border bg-card px-3 py-2"
+      data-astro-public-factor-chip={chip.key}
+      data-astro-semantic-key={chip.semanticKey}
+    >
+      <p className="text-[11px] font-semibold leading-4 text-muted-foreground">{chip.label}</p>
+      <p className={cn("mt-0.5 break-words text-sm font-bold leading-5", cardToneText(chip.tone))}>
+        {chip.value}
       </p>
     </div>
   );
 }
 
-function AstroTopSupportCard({
-  label,
-  value,
-  detail,
-  tone,
+function AstroTopSidePanel({
+  items,
 }: {
-  readonly label: string;
-  readonly value: string;
-  readonly detail: string;
-  readonly tone: ForecastResultCardTone;
+  readonly items: AstroForecastViewModel["publicDisplay"]["sidePanelItems"];
 }) {
+  if (items.length === 0) {
+    return null;
+  }
+
   return (
-    <article
-      className="grid min-h-[120px] content-start gap-2 rounded-lg border border-border bg-card p-4 shadow-sm"
-      data-astro-decision-support-card="true"
+    <div
+      className="grid gap-3 rounded-lg border border-border bg-card p-4 shadow-sm"
+      data-astro-top-side-panel="true"
     >
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-semibold text-muted-foreground">{label}</p>
-        <Badge
-          variant={badgeVariantForTone(tone)}
-          className="max-w-[70%] whitespace-normal text-left leading-4"
-        >
-          {value}
-        </Badge>
+      <div>
+        <p className="text-xs font-bold text-primary">下一步判断</p>
+        <h2 className="mt-1 text-lg font-bold text-card-foreground">备选、置信度与关键阻碍</h2>
       </div>
-      <p className="text-xs leading-5 text-muted-foreground">{detail}</p>
-    </article>
+      <dl className="grid gap-3">
+        {items.map((item) => (
+          <div
+            key={item.key}
+            className="min-w-0 rounded-md border border-border bg-muted px-3 py-2"
+            data-astro-top-side-panel-item={item.key}
+            data-astro-semantic-key={item.semanticKey}
+          >
+            <dt className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-semibold leading-4 text-muted-foreground">
+              <span>{item.label}</span>
+              <Badge variant={badgeVariantForTone(item.tone)}>{item.value}</Badge>
+            </dt>
+            <dd className="mt-2 text-xs leading-5 text-muted-foreground">
+              {compactAstroText(item.detail, 64)}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 
@@ -4345,19 +4236,15 @@ function AstroWhyJudgmentSection({
         <h2 className="text-lg font-bold text-card-foreground">为什么这样判断</h2>
       </div>
       <div
-        className="grid gap-3 min-[720px]:grid-cols-2 min-[1180px]:grid-cols-4"
+        className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr))]"
         data-astro-why-grid-odd={factors.length % 2 === 1 ? "true" : "false"}
       >
-        {factors.map((factor, index) => (
+        {factors.map((factor) => (
           <article
             key={factor.key}
-            className={cn(
-              "grid min-h-[116px] content-start rounded-lg border border-border bg-card p-3 shadow-sm",
-              factors.length % 2 === 1 && index === factors.length - 1 && "min-[720px]:col-span-2",
-            )}
-            data-astro-why-factor-span={
-              factors.length % 2 === 1 && index === factors.length - 1 ? "wide" : "single"
-            }
+            className="grid content-start rounded-lg border border-border bg-card p-3 shadow-sm"
+            data-astro-why-factor={factor.key}
+            data-astro-why-factor-span="auto"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-semibold text-card-foreground">{factor.label}</h3>
