@@ -4433,8 +4433,10 @@ describe("forecast result target-aware view model", () => {
     );
 
     expect(html).toContain("智能解读");
-    expect(html).toContain("可手动生成更自然的摄影建议，当前判断结果不依赖 AI。");
     expect(html).toContain("生成智能解读");
+    expect(html).not.toContain("可手动生成更自然的摄影建议，当前判断结果不依赖 AI。");
+    expect(html).not.toContain("可生成智能解读");
+    expect(html).not.toContain('data-ai-interpretation-empty-state="compact"');
     expect(html).not.toContain("确定性简版");
     expect(html).not.toContain("基于确定性计算结果生成的简版解读");
     expect(html).not.toContain("基于确定性计算结果生成的简版解读在页面加载后立即可见。");
@@ -5695,8 +5697,10 @@ describe("forecast result target-aware view model", () => {
       expect(html).not.toContain("CloudSeaStackedLayout");
       expect(html).toContain('data-cloud-sea-section="CloudSeaAiInterpretation"');
       expect(html).toContain("智能解读");
-      expect(html).toContain("可手动生成更自然的摄影建议，当前判断结果不依赖 AI。");
       expect(html).toContain("生成智能解读");
+      expect(html).not.toContain("可手动生成更自然的摄影建议，当前判断结果不依赖 AI。");
+      expect(html).not.toContain("可生成智能解读");
+      expect(html).not.toContain('data-ai-interpretation-empty-state="compact"');
       expect(html).not.toContain("确定性简版");
       expect(html).not.toContain("基于确定性计算结果生成的简版解读");
       expect(html).not.toContain("CloudSeaActionSummary");
@@ -7164,15 +7168,14 @@ describe("forecast result target-aware view model", () => {
       source.indexOf("function CloudSeaTopResultHeader"),
     );
     const sharedSectionCall = "<ForecastAiInterpretationSection query={query} result={result} />";
-    const sharedSectionComponent = "<ForecastAiInterpretationSection";
 
     expect(sharedComponentSource).toContain("AiExplanationPanel");
     expect(hookSource).toContain("/forecast/ai-explain");
     expect(hookSource).toContain("normalizeAiExplainResponse");
     expect(cloudSeaPageSource).toContain(sharedSectionCall);
     expect(glowPageSource).toContain(sharedSectionCall);
-    expect(astroPageSource).toContain(sharedSectionComponent);
-    expect(astroPageSource).toContain('emptyStateVariant="deterministic"');
+    expect(astroPageSource).toContain(sharedSectionCall);
+    expect(astroPageSource).not.toContain("emptyStateVariant");
     expect(cloudSeaPageSource).toContain('data-cloud-sea-section="CloudSeaAiInterpretation"');
     expect(glowPageSource).toContain('data-glow-section="GlowAiInterpretation"');
     expect(astroPageSource).toContain('data-astro-section="AstroAiInterpretation"');
@@ -8376,6 +8379,75 @@ describe("forecast result target-aware view model", () => {
     },
   );
 
+  it.each([
+    [
+      "24h recommended high confidence",
+      () => {
+        const result = resultWithAstroHourlyRange("24h", 24);
+        return {
+          ...result,
+          astroAnalysis: { ...result.astroAnalysis, confidenceLevel: "high" as const },
+        };
+      },
+    ],
+    [
+      "48h recommended low confidence",
+      () => {
+        const result = resultWithAstroHourlyRange("48h", 48);
+        return {
+          ...result,
+          astroAnalysis: { ...result.astroAnalysis, confidenceLevel: "low" as const },
+        };
+      },
+    ],
+    [
+      "72h not recommended low confidence",
+      () => {
+        const result = {
+          ...resultWithBlockedAstro("astro"),
+          ...pickAstroHourlyFields(resultWithAstroHourlyRange("72h", 72)),
+        };
+        return {
+          ...result,
+          astroAnalysis: { ...result.astroAnalysis, confidenceLevel: "low" as const },
+        };
+      },
+    ],
+    [
+      "7d recommended high confidence",
+      () => {
+        const result = resultWithAstroHourlyRange("7d", 168);
+        return {
+          ...result,
+          astroAnalysis: { ...result.astroAnalysis, confidenceLevel: "high" as const },
+        };
+      },
+    ],
+  ] as const)("keeps Astro AI interpretation idle state clean for %s", (_label, createResult) => {
+    const result = createResult();
+    const viewModel = buildAstroForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(AstroResultPage, {
+        query: { ...queryForTarget("astro"), horizon: result.horizon },
+        result,
+        viewModel,
+      }),
+    );
+    const aiSectionIndex = html.indexOf('data-astro-section="AstroAiInterpretation"');
+    const aiSection = html.slice(aiSectionIndex);
+
+    expect(aiSectionIndex).toBeGreaterThanOrEqual(0);
+    expect(aiSection).toContain("智能解读");
+    expect(aiSection).toContain("生成智能解读");
+    expect(aiSection).not.toContain("可手动生成更自然的摄影建议");
+    expect(aiSection).not.toContain("当前判断结果不依赖 AI");
+    expect(aiSection).not.toContain("可生成智能解读");
+    expect(aiSection).not.toContain("不会改变");
+    expect(aiSection).not.toContain("输出");
+    expect(aiSection).not.toMatch(/>来源</);
+    expect(aiSection).not.toContain('data-ai-interpretation-empty-state="compact"');
+  });
+
   it("normalizes future astro public nights to the selected local start date without hiding by CSS", () => {
     const base = resultWithAstroHourlyRange("48h", 48);
     const firstDay = base.astroAnalysis.dailyAstro[0]!;
@@ -8550,8 +8622,10 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain('data-astro-professional-data-expanded="false"');
       expect(html).toContain('data-astro-section="AstroAiInterpretation"');
       expect(html).toContain('data-ai-interpretation-target="astro"');
-      expect(html).toContain('data-ai-interpretation-empty-state="compact"');
       expect(html).toContain("生成智能解读");
+      expect(html).not.toContain('data-ai-interpretation-empty-state="compact"');
+      expect(html).not.toContain("可手动生成更自然的摄影建议，当前判断结果不依赖 AI。");
+      expect(html).not.toContain("可生成智能解读");
       expect(countOccurrences(html, 'data-astro-night-card="true"')).toBe(
         viewModel.nightlyCards.length,
       );
@@ -8703,8 +8777,11 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("逐小时摘要");
     expect(html).not.toContain("小时表默认折叠");
     expect(html).not.toContain('data-astro-professional-data-body="true"');
-    expect(html).toContain('data-ai-interpretation-empty-state="compact"');
-    expect(html).toContain("可生成智能解读");
+    expect(html).toContain("智能解读");
+    expect(html).toContain("生成智能解读");
+    expect(html).not.toContain('data-ai-interpretation-empty-state="compact"');
+    expect(html).not.toContain("可生成智能解读");
+    expect(html).not.toContain("可手动生成更自然的摄影建议，当前判断结果不依赖 AI。");
   });
 
   it("deduplicates public astro terrain and light-pollution ownership", () => {

@@ -2003,11 +2003,9 @@ function useForecastAiInterpretation(
 export function ForecastAiInterpretationSection({
   query,
   result,
-  emptyStateVariant,
 }: {
   readonly query: ForecastQueryInput;
   readonly result: ForecastCalculationResult;
-  readonly emptyStateVariant?: "deterministic";
 }) {
   const aiInterpretation = useForecastAiInterpretation(query, result);
 
@@ -2018,7 +2016,6 @@ export function ForecastAiInterpretationSection({
       errorMessage={aiInterpretation.errorMessage}
       retryable={aiInterpretation.retryable}
       onGenerate={aiInterpretation.generate}
-      emptyStateVariant={emptyStateVariant}
     />
   );
 }
@@ -3814,11 +3811,7 @@ export function AstroResultPage({
           data-astro-section="AstroAiInterpretation"
           data-ai-interpretation-target="astro"
         >
-          <ForecastAiInterpretationSection
-            query={query}
-            result={result}
-            emptyStateVariant="deterministic"
-          />
+          <ForecastAiInterpretationSection query={query} result={result} />
         </section>
       </main>
     </section>
@@ -8656,14 +8649,12 @@ export function AiExplanationPanel({
   errorMessage,
   retryable,
   onGenerate,
-  emptyStateVariant,
 }: {
   readonly status: AiStatus;
   readonly explanation: ForecastAiExplanation | null;
   readonly errorMessage: string;
   readonly retryable: boolean;
   readonly onGenerate: () => void;
-  readonly emptyStateVariant?: "deterministic";
 }) {
   const visibleExplanation = isDisplayableAiExplanation(explanation) ? explanation : null;
   const visibleContent = visibleExplanation
@@ -8679,11 +8670,7 @@ export function AiExplanationPanel({
         visibleContent.sections.length > 0),
   );
   const hasCompletedExplanation = Boolean(visibleExplanation) && !retryable && status !== "loading";
-  const shouldRenderEmptyState = !visibleExplanation && status !== "loading" && !errorMessage;
-  const helperText =
-    status === "loading"
-      ? "DeepSeek V4 Pro 解读可能需要约 1-2 分钟，当前确定性判断结果仍可正常参考。"
-      : "可手动生成更自然的摄影建议，当前判断结果不依赖 AI。";
+  const loadingText = "DeepSeek V4 Pro 解读可能需要约 1-2 分钟，当前确定性判断结果仍可正常参考。";
   const buttonLabel =
     status === "loading"
       ? "正在生成智能解读..."
@@ -8698,9 +8685,6 @@ export function AiExplanationPanel({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-[220px] flex-1">
           <h2 className="text-lg font-bold text-card-foreground">智能解读</h2>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            可手动生成更自然的摄影建议，当前判断结果不依赖 AI。
-          </p>
         </div>
         <Button
           className="min-w-[132px] shrink-0"
@@ -8714,7 +8698,7 @@ export function AiExplanationPanel({
 
       {status === "loading" ? (
         <p className="mt-3 rounded-lg border border-border bg-muted px-3 py-2 text-sm leading-6 text-card-foreground">
-          {helperText}
+          {loadingText}
         </p>
       ) : null}
 
@@ -8722,43 +8706,6 @@ export function AiExplanationPanel({
         <p className="mt-3 rounded-lg border border-warning/70 bg-muted px-3 py-2 text-sm leading-6 text-card-foreground">
           {errorMessage}
         </p>
-      ) : null}
-
-      {shouldRenderEmptyState ? (
-        <div
-          className={cn(
-            "mt-3 grid rounded-lg border border-border bg-muted px-3 py-3",
-            emptyStateVariant === "deterministic" ? "gap-2" : "gap-3",
-          )}
-          data-ai-interpretation-empty-state="compact"
-        >
-          {emptyStateVariant === "deterministic" ? (
-            <>
-              <p className="text-sm font-semibold leading-6 text-card-foreground">可生成智能解读</p>
-              <p className="text-xs leading-5 text-muted-foreground">
-                基于当前确定性评分、窗口、风险和专业摘要生成，不重新计算天气、天文或评分。
-              </p>
-            </>
-          ) : (
-            <p className="text-sm font-semibold leading-6 text-card-foreground">
-              AI 解读是可选项，点击后会基于当前确定性结果生成摄影建议。
-            </p>
-          )}
-          <dl className="grid gap-2 text-xs leading-5 text-muted-foreground min-[720px]:grid-cols-3">
-            <div>
-              <dt className="font-semibold text-card-foreground">来源</dt>
-              <dd>当前评分、窗口、风险和专业摘要</dd>
-            </div>
-            <div>
-              <dt className="font-semibold text-card-foreground">不会改变</dt>
-              <dd>不重新计算天气、天文或评分</dd>
-            </div>
-            <div>
-              <dt className="font-semibold text-card-foreground">输出</dt>
-              <dd>简短结论、主要风险和行动建议</dd>
-            </div>
-          </dl>
-        </div>
       ) : null}
 
       {visibleExplanation ? (
