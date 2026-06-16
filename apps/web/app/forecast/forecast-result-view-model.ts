@@ -802,6 +802,7 @@ export type AstroDecisionFactItem = {
   readonly semanticKey: string;
   readonly label: string;
   readonly value: string;
+  readonly detail?: string;
   readonly tone: ForecastResultCardTone;
 };
 
@@ -813,19 +814,9 @@ export type AstroPublicFactorChip = {
   readonly tone: ForecastResultCardTone;
 };
 
-export type AstroTopSidePanelItem = {
-  readonly key: string;
-  readonly semanticKey: string;
-  readonly label: string;
-  readonly value: string;
-  readonly detail: string;
-  readonly tone: ForecastResultCardTone;
-};
-
 export type AstroPublicDisplayModel = {
   readonly decisionFacts: readonly AstroDecisionFactItem[];
   readonly factorChips: readonly AstroPublicFactorChip[];
-  readonly sidePanelItems: readonly AstroTopSidePanelItem[];
   readonly actionPlan: readonly AstroActionPlanItem[];
   readonly judgmentFactors: readonly AstroJudgmentFactorCard[];
 };
@@ -5836,6 +5827,7 @@ function buildAstroPublicDisplay({
         semanticKey: "backup-option",
         label: "备选窗口 / 目标",
         value: decisionSummary.backupLabel,
+        detail: decisionSummary.backupDetail,
         tone: backup?.tone ?? "info",
       },
       {
@@ -5871,40 +5863,9 @@ function buildAstroPublicDisplay({
     claimedPublicFacts,
   );
 
-  const sidePanelItems = claimAstroPublicFacts<AstroTopSidePanelItem>(
-    [
-      {
-        key: "next-best",
-        semanticKey: "next-best-option",
-        label: "下一备选",
-        value: decisionSummary.backupLabel,
-        detail: decisionSummary.backupDetail,
-        tone: backup?.tone ?? "info",
-      },
-      {
-        key: "confidence",
-        semanticKey: "decision-confidence",
-        label: "置信度",
-        value: decisionSummary.confidenceLabel,
-        detail: "由天文窗口、逐小时天气、光污染和地形数据完整性共同决定。",
-        tone: decisionSummary.recommendationTone,
-      },
-      {
-        key: "key-blocker",
-        semanticKey: "key-blocker",
-        label: "关键阻碍",
-        value: decisionSummary.mainRiskLabel,
-        detail: decisionSummary.mainRiskDetail,
-        tone: astroActionItem(actionSummary, "main-blocker")?.tone ?? "muted",
-      },
-    ],
-    claimedPublicFacts,
-  );
-
   return {
     decisionFacts,
     factorChips,
-    sidePanelItems,
     actionPlan: actionPlan.filter(isMeaningfulAstroActionPlanItem),
     judgmentFactors: normalizeAstroJudgmentFactors(judgmentFactors, claimedPublicFacts),
   };

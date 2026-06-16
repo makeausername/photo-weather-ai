@@ -1,0 +1,12 @@
+{
+  "id": "east-china-mountain-pilot",
+  "nameZh": "华东山地试点",
+  "descriptionZh": "用于华东山地摄影区域 DEM 覆盖规划的试点范围，仅包含规划边界。",
+  "bbox": {
+    "south": 27.0,
+    "west": 110.0,
+    "north": 34.5,
+    "east": 121.5
+  },
+  "coordinates": []
+}

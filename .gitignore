@@ -23,6 +23,16 @@ deploy/light-pollution/**/*.ovr
 deploy/light-pollution/**/*.aux.xml
 deploy/light-pollution/**/metadata.json
 deploy/light-pollution/**/checksum.sha256
+deploy/sky-brightness/incoming/*
+deploy/sky-brightness/current/*
+deploy/sky-brightness/backups/*
+deploy/sky-brightness/**/*.tif
+deploy/sky-brightness/**/*.tiff
+deploy/sky-brightness/**/*.vrt
+deploy/sky-brightness/**/*.ovr
+deploy/sky-brightness/**/*.aux.xml
+deploy/sky-brightness/**/metadata.json
+deploy/sky-brightness/**/checksum.sha256
 deploy/terrain-dem/incoming/*
 deploy/terrain-dem/current/*
 deploy/terrain-dem/backups/*
@@ -39,6 +49,11 @@ deploy/calibration/runtime/*
 !deploy/light-pollution/current/
 !deploy/light-pollution/backups/
 !deploy/light-pollution/**/.gitkeep
+!deploy/sky-brightness/
+!deploy/sky-brightness/incoming/
+!deploy/sky-brightness/current/
+!deploy/sky-brightness/backups/
+!deploy/sky-brightness/**/.gitkeep
 !deploy/terrain-dem/
 !deploy/terrain-dem/incoming/
 !deploy/terrain-dem/current/
@@ -49,6 +64,8 @@ deploy/calibration/runtime/*
 backups/
 !deploy/light-pollution/backups/
 !deploy/light-pollution/backups/.gitkeep
+!deploy/sky-brightness/backups/
+!deploy/sky-brightness/backups/.gitkeep
 !deploy/terrain-dem/backups/
 !deploy/terrain-dem/backups/.gitkeep
 apps/astro-service/data/*.bsp

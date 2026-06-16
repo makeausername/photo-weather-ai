@@ -3843,93 +3843,90 @@ function AstroTopContext({
       data-astro-section="AstroDecisionFirstDashboard"
       data-astro-decision-first="true"
     >
-      <div className="grid gap-4 min-[1080px]:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] min-[1080px]:items-start">
-        <Card
-          className="AstroDecisionHero grid gap-4 p-5 shadow-sm"
-          data-astro-decision-hero="true"
-        >
-          <div className="grid gap-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="default">星空银河判断</Badge>
-                  <Badge variant={dataReadinessBadgeVariant(result)}>
-                    {dataReadinessBadgeLabel(result)}
-                  </Badge>
-                  <Badge variant="muted">{forecastHorizonLabels[query.horizon]}</Badge>
-                </div>
-                <p className="mt-4 text-xs font-semibold text-muted-foreground">{query.name}</p>
-                <h1
-                  className={cn(
-                    "mt-2 break-words text-3xl font-bold leading-tight sm:text-4xl",
-                    cardToneText(decision.recommendationTone),
-                  )}
-                >
-                  {decision.recommendationLabel}
-                </h1>
+      <Card
+        className="AstroDecisionHero grid w-full min-w-0 gap-4 p-5 shadow-sm min-[900px]:p-6"
+        data-astro-decision-hero="true"
+        data-astro-decision-layout="single-main"
+      >
+        <div className="grid gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="default">星空银河判断</Badge>
+                <Badge variant={dataReadinessBadgeVariant(result)}>
+                  {dataReadinessBadgeLabel(result)}
+                </Badge>
+                <Badge variant="muted">{forecastHorizonLabels[query.horizon]}</Badge>
               </div>
-              <Badge variant={badgeVariantForTone(decision.recommendationTone)}>
-                置信度：{decision.confidenceLabel}
-              </Badge>
+              <p className="mt-4 text-xs font-semibold text-muted-foreground">{query.name}</p>
+              <h1
+                className={cn(
+                  "mt-2 break-words text-3xl font-bold leading-tight sm:text-4xl",
+                  cardToneText(decision.recommendationTone),
+                )}
+              >
+                {decision.recommendationLabel}
+              </h1>
             </div>
-
-            <p className="max-w-4xl text-sm font-semibold leading-6 text-card-foreground">
-              {decision.oneSentenceAdvice}
-            </p>
-
-            <AstroActionPlanGrid items={viewModel.actionPlan} />
-
-            <dl
-              className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,165px),1fr))]"
-              data-astro-decision-first-metrics="true"
-            >
-              {viewModel.publicDisplay.decisionFacts.map((item) => (
-                <AstroDecisionFact key={item.key} item={item} />
-              ))}
-            </dl>
-
-            <div
-              className="flex flex-wrap gap-2"
-              data-astro-public-factor-chips="true"
-            >
-              {viewModel.publicDisplay.factorChips.map((chip) => (
-                <AstroDecisionChip key={chip.key} chip={chip} />
-              ))}
-            </div>
+            <Badge variant={badgeVariantForTone(decision.recommendationTone)}>
+              置信度：{decision.confidenceLabel}
+            </Badge>
           </div>
 
-          <div className="grid gap-3 border-t border-border pt-4 min-[760px]:grid-cols-[minmax(0,1fr)_auto] min-[760px]:items-end">
-            <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs leading-5 text-muted-foreground">
-              <span>预报范围：{result.calendarBasis.forecastRangeLabel}</span>
-              <span>生成时间：{formatDateTime(result.generatedAt)}</span>
-              <span>数据状态：{weatherStatusLabel(result)}</span>
-              <span>天文数据：{result.astroDataSourceLabelZh}</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  window.location.assign("/astro");
-                }}
-              >
-                重新选择地点
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  window.location.assign(buildForecastUrlFromForecastQuery(query));
-                }}
-              >
-                重新判断
-              </Button>
-            </div>
-          </div>
-        </Card>
+          <p className="max-w-5xl text-sm font-semibold leading-6 text-card-foreground">
+            {decision.oneSentenceAdvice}
+          </p>
 
-        <AstroTopSidePanel items={viewModel.publicDisplay.sidePanelItems} />
-      </div>
+          <AstroActionPlanGrid items={viewModel.actionPlan} />
+
+          <dl
+            className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr))]"
+            data-astro-decision-first-metrics="true"
+          >
+            {viewModel.publicDisplay.decisionFacts.map((item) => (
+              <AstroDecisionFact key={item.key} item={item} />
+            ))}
+          </dl>
+
+          <div
+            className="flex flex-wrap gap-2"
+            data-astro-public-factor-chips="true"
+          >
+            {viewModel.publicDisplay.factorChips.map((chip) => (
+              <AstroDecisionChip key={chip.key} chip={chip} />
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-3 border-t border-border pt-4 min-[760px]:grid-cols-[minmax(0,1fr)_auto] min-[760px]:items-end">
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs leading-5 text-muted-foreground">
+            <span>预报范围：{result.calendarBasis.forecastRangeLabel}</span>
+            <span>生成时间：{formatDateTime(result.generatedAt)}</span>
+            <span>数据状态：{weatherStatusLabel(result)}</span>
+            <span>天文数据：{result.astroDataSourceLabelZh}</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                window.location.assign("/astro");
+              }}
+            >
+              重新选择地点
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                window.location.assign(buildForecastUrlFromForecastQuery(query));
+              }}
+            >
+              重新判断
+            </Button>
+          </div>
+        </div>
+      </Card>
     </section>
   );
 }
@@ -3991,6 +3988,11 @@ function AstroDecisionFact({
       <dd className={cn("mt-1 break-words text-sm font-bold leading-5", cardToneText(item.tone))}>
         {item.value}
       </dd>
+      {item.detail ? (
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          {compactAstroText(item.detail, 64)}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -4010,46 +4012,6 @@ function AstroDecisionChip({
       <p className={cn("mt-0.5 break-words text-sm font-bold leading-5", cardToneText(chip.tone))}>
         {chip.value}
       </p>
-    </div>
-  );
-}
-
-function AstroTopSidePanel({
-  items,
-}: {
-  readonly items: AstroForecastViewModel["publicDisplay"]["sidePanelItems"];
-}) {
-  if (items.length === 0) {
-    return null;
-  }
-
-  return (
-    <div
-      className="grid gap-3 rounded-lg border border-border bg-card p-4 shadow-sm"
-      data-astro-top-side-panel="true"
-    >
-      <div>
-        <p className="text-xs font-bold text-primary">下一步判断</p>
-        <h2 className="mt-1 text-lg font-bold text-card-foreground">备选、置信度与关键阻碍</h2>
-      </div>
-      <dl className="grid gap-3">
-        {items.map((item) => (
-          <div
-            key={item.key}
-            className="min-w-0 rounded-md border border-border bg-muted px-3 py-2"
-            data-astro-top-side-panel-item={item.key}
-            data-astro-semantic-key={item.semanticKey}
-          >
-            <dt className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-semibold leading-4 text-muted-foreground">
-              <span>{item.label}</span>
-              <Badge variant={badgeVariantForTone(item.tone)}>{item.value}</Badge>
-            </dt>
-            <dd className="mt-2 text-xs leading-5 text-muted-foreground">
-              {compactAstroText(item.detail, 64)}
-            </dd>
-          </div>
-        ))}
-      </dl>
     </div>
   );
 }

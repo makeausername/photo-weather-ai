@@ -1,0 +1,12 @@
+{
+  "id": "western-china-astro-pilot",
+  "nameZh": "西部星空试点",
+  "descriptionZh": "用于西部暗夜/银河候选区域 DEM 覆盖规划的粗粒度边界。",
+  "bbox": {
+    "south": 26.0,
+    "west": 73.0,
+    "north": 45.0,
+    "east": 103.0
+  },
+  "coordinates": []
+}

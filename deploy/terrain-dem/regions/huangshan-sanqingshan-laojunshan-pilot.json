@@ -1,0 +1,22 @@
+{
+  "id": "huangshan-sanqingshan-laojunshan-pilot",
+  "nameZh": "黄山三清山老君山试点",
+  "descriptionZh": "用于几个已验证山地机位周边 DEM 覆盖规划的坐标集合。",
+  "coordinates": [
+    {
+      "nameZh": "黄山光明顶",
+      "latitude": 30.1328,
+      "longitude": 118.171
+    },
+    {
+      "nameZh": "三清山女神峰",
+      "latitude": 28.9139,
+      "longitude": 118.0699
+    },
+    {
+      "nameZh": "老君山金顶",
+      "latitude": 33.7852,
+      "longitude": 111.6402
+    }
+  ]
+}

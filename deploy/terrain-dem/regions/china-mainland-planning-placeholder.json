@@ -1,0 +1,12 @@
+{
+  "id": "china-mainland-planning-placeholder",
+  "nameZh": "中国大陆全国规划占位",
+  "descriptionZh": "仅用于估算全国 DEM 瓦片规模和磁盘容量；执行前应按分省/分区拆分。",
+  "bbox": {
+    "south": 18.0,
+    "west": 73.0,
+    "north": 54.0,
+    "east": 135.0
+  },
+  "coordinates": []
+}

@@ -8530,7 +8530,10 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("行动");
       expect(html).toContain('data-astro-public-factor-chip="light-pollution"');
       expect(html).toContain('data-astro-public-factor-chip="terrain-horizon"');
-      expect(html).toContain('data-astro-top-side-panel="true"');
+      expect(html).toContain('data-astro-decision-layout="single-main"');
+      expect(html).not.toContain('data-astro-top-side-panel="true"');
+      expect(html).not.toContain("下一步判断");
+      expect(html).not.toContain("备选、置信度与关键阻碍");
       expect(html).toContain("为什么这样判断");
       expect(html).toContain("专业数据");
       expect(html).toContain("展开专业数据");
@@ -8556,7 +8559,7 @@ describe("forecast result target-aware view model", () => {
       expectMarkersInOrder(html, [
         "AstroResultPage",
         "AstroDecisionFirstDashboard",
-        'data-astro-top-side-panel="true"',
+        'data-astro-decision-layout="single-main"',
         "AstroNightOpportunitySection",
         "AstroWhyJudgmentSection",
         "AstroProfessionalData",
@@ -8635,15 +8638,15 @@ describe("forecast result target-aware view model", () => {
     expect(decisionSection).toContain("最佳拍摄窗口");
     expect(decisionSection).toContain("备选窗口 / 目标");
     expect(decisionSection).toContain("行动建议");
-    expect(viewModel.publicDisplay.sidePanelItems.map((item) => item.key)).not.toContain(
-      "key-blocker",
-    );
     expect(decisionSection).not.toContain("暂无主要阻碍");
     expect(decisionSection).toContain("置信度");
     expect(decisionSection).toContain("行动方案");
     expect(decisionSection).toContain('data-astro-public-factor-chip="light-pollution"');
     expect(decisionSection).toContain('data-astro-public-factor-chip="terrain-horizon"');
-    expect(decisionSection).toContain('data-astro-top-side-panel="true"');
+    expect(decisionSection).toContain('data-astro-decision-layout="single-main"');
+    expect(decisionSection).not.toContain('data-astro-top-side-panel="true"');
+    expect(decisionSection).not.toContain("下一步判断");
+    expect(decisionSection).not.toContain("备选、置信度与关键阻碍");
     expect(decisionSection).toContain('data-astro-action-plan-item="timing"');
     expect(decisionSection).toContain('data-astro-action-plan-item="window"');
     expect(decisionSection).toContain('data-astro-action-plan-item="direction"');
@@ -8771,10 +8774,47 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("通透度");
     expect(html).toContain("天文窗口存在，但低云偏多、降水干扰不支持拍摄");
     expect(html).toContain("不建议前往");
+    expect(html).not.toContain('data-astro-top-side-panel="true"');
+    expect(html).not.toContain("下一步判断");
+    expect(html).not.toContain("备选、置信度与关键阻碍");
     expect(html).not.toContain("核心判断");
     expect(html).not.toContain("每晚观星条件");
     expect(html).not.toContain("拍摄建议");
     expect(html).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风天气|高德/i);
+  });
+
+  it.each([
+    ["high" as const, "高"],
+    ["low" as const, "低"],
+  ])("keeps astro %s confidence in the main result area without the removed sidebar", (level, label) => {
+    const base = resultForTarget("astro");
+    const result: ForecastCalculationResult = {
+      ...base,
+      astroAnalysis: {
+        ...base.astroAnalysis,
+        confidenceLevel: level,
+      },
+    };
+    const viewModel = buildAstroForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(AstroResultPage, {
+        query: queryForTarget("astro"),
+        result,
+        viewModel,
+      }),
+    );
+    const decisionSection = sectionBetween(
+      html,
+      'data-astro-section="AstroDecisionFirstDashboard"',
+      'data-astro-section="AstroNightOpportunitySection"',
+    );
+
+    expect(decisionSection).toContain(`置信度：${label}`);
+    expect(decisionSection).toContain("行动方案");
+    expect(decisionSection).toContain("最佳拍摄窗口");
+    expect(decisionSection).not.toContain('data-astro-top-side-panel="true"');
+    expect(decisionSection).not.toContain("下一步判断");
+    expect(decisionSection).not.toContain("备选、置信度与关键阻碍");
   });
 
   it("shows multiple nightly astro entries for a 7d astro result", () => {
