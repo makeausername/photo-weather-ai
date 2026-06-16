@@ -3880,10 +3880,7 @@ function AstroTopContext({
             ))}
           </dl>
 
-          <div
-            className="flex flex-wrap gap-2"
-            data-astro-public-factor-chips="true"
-          >
+          <div className="flex flex-wrap gap-2" data-astro-public-factor-chips="true">
             {viewModel.publicDisplay.factorChips.map((chip) => (
               <AstroDecisionChip key={chip.key} chip={chip} />
             ))}
@@ -4049,7 +4046,7 @@ function AstroNightCard({
   readonly night: AstroForecastViewModel["nightlyCards"][number];
   readonly isLastOdd?: boolean;
 }) {
-  const compactReason = compactAstroNightReason(night);
+  const compactJudgment = compactAstroNightJudgment(night);
   const windowLabel = night.milkyWay.bestStartAt
     ? night.bestShootingWindowLabel
     : "暂无推荐银河窗口";
@@ -4109,9 +4106,12 @@ function AstroNightCard({
         ))}
       </div>
 
-      <p className="text-sm font-semibold leading-6 text-card-foreground">
-        <span className="text-muted-foreground">主要阻碍：</span>
-        {compactReason}
+      <p
+        className="break-words text-sm font-semibold leading-6 text-card-foreground"
+        data-astro-night-judgment={night.judgmentSummary.semanticKey}
+      >
+        <span className="text-muted-foreground">{night.judgmentSummary.label}：</span>
+        <span className={cardToneText(night.judgmentSummary.tone)}>{compactJudgment}</span>
       </p>
       <p
         className="rounded-md border border-border bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground"
@@ -4151,14 +4151,8 @@ function AstroNightFactorChip({
   );
 }
 
-function compactAstroNightReason(night: AstroForecastViewModel["nightlyCards"][number]): string {
-  if (night.unavailableReason) {
-    return night.unavailableReason;
-  }
-  if (!night.milkyWay.bestStartAt && night.recommendationLevel === "not_recommended") {
-    return `${compactAstroText(night.cloudWeatherBlockerLabel, 28)}，暂无推荐银河窗口。`;
-  }
-  return compactAstroText(night.conciseReason, 52);
+function compactAstroNightJudgment(night: AstroForecastViewModel["nightlyCards"][number]): string {
+  return compactAstroText(night.judgmentSummary.value, 58);
 }
 
 function compactAstroText(value: string, maxLength: number): string {

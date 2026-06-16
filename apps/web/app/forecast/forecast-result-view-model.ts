@@ -588,6 +588,12 @@ export type AstroDailyTrendItem = {
   readonly cloudConditionLabel: string;
   readonly precipitationRiskLabel: string;
   readonly nightShootingAdviceLabel: string;
+  readonly recommendationBasisLabel: string;
+  readonly blockerReasonsLabel: string;
+  readonly judgmentLabel: AstroNightJudgmentLabel;
+  readonly judgmentValue: string;
+  readonly judgmentTone: ForecastResultCardTone;
+  readonly judgmentSemanticKey: AstroNightJudgmentSemanticKey;
   readonly blockerReasonLabel: string;
   readonly recommendationLabel: AstroAnalysisResult["recommendationLabel"];
   readonly keyReason: string;
@@ -624,6 +630,13 @@ export type AstroNightRecommendationLevel =
   | "backup"
   | "not_recommended"
   | "insufficient";
+
+export type AstroNightJudgmentSemanticKey =
+  | "recommendation_basis"
+  | "main_blockers"
+  | "key_judgment";
+
+export type AstroNightJudgmentLabel = "推荐依据" | "可拍依据" | "主要阻碍" | "关键判断";
 
 export type AstroLightPollutionDisplayModel = {
   readonly available: boolean;
@@ -770,6 +783,14 @@ export type AstroNightDisplayModel = {
   readonly recommendationLevel: AstroNightRecommendationLevel;
   readonly recommendationLabel: string;
   readonly conciseReason: string;
+  readonly recommendationBasis: readonly string[];
+  readonly blockerReasons: readonly string[];
+  readonly judgmentSummary: {
+    readonly label: AstroNightJudgmentLabel;
+    readonly value: string;
+    readonly tone: ForecastResultCardTone;
+    readonly semanticKey: AstroNightJudgmentSemanticKey;
+  };
   readonly confidence: string;
   readonly unavailableReason?: string;
   readonly bestShootingWindowLabel: string;
@@ -2956,7 +2977,12 @@ export function buildAstroForecastViewModel(
     decisionSummary,
     lightPollution,
   });
-  const judgmentFactors = buildAstroJudgmentFactors(result, nightlyCards, bestNight, terrainHorizon);
+  const judgmentFactors = buildAstroJudgmentFactors(
+    result,
+    nightlyCards,
+    bestNight,
+    terrainHorizon,
+  );
   const publicDisplay = buildAstroPublicDisplay({
     decisionSummary,
     actionSummary,
@@ -3206,6 +3232,20 @@ function buildAstroNightDisplayModels(
       lightPollution: lightPollutionDisplay,
       terrainHorizon: terrainHorizonDisplay,
     });
+    const semanticFields = buildAstroNightSemanticFields({
+      day,
+      astro,
+      recommendationLevel: recommendation.level,
+      recommendationReason: recommendation.reason,
+      weatherSummary,
+      moonInterference,
+      geometricMilkyWayWindow,
+      candidateWindow,
+      lightPollution: lightPollutionDisplay,
+      terrainHorizon: terrainHorizonDisplay,
+      horizonCoverageState,
+      unavailableReason,
+    });
 
     return {
       nightKey: `astro-night-${date}`,
@@ -3295,6 +3335,9 @@ function buildAstroNightDisplayModels(
       recommendationLevel: recommendation.level,
       recommendationLabel: recommendation.label,
       conciseReason: recommendation.reason,
+      recommendationBasis: semanticFields.recommendationBasis,
+      blockerReasons: semanticFields.blockerReasons,
+      judgmentSummary: semanticFields.judgmentSummary,
       confidence: astroNightConfidence(result, weatherSummary, horizonCoverageState),
       unavailableReason,
       bestShootingWindowLabel,
@@ -3314,6 +3357,278 @@ function buildAstroNightDisplayModels(
       calibrationMode: "heuristic",
     };
   });
+}
+
+function buildAstroNightSemanticFields(input: {
+  readonly day: DailyAstro | undefined;
+  readonly astro: AstroSummary | undefined;
+  readonly recommendationLevel: AstroNightRecommendationLevel;
+  readonly recommendationReason: string;
+  readonly weatherSummary: AstroNightDisplayModel["weather"];
+  readonly moonInterference: string;
+  readonly geometricMilkyWayWindow: AstroWindowRange | null | undefined;
+  readonly candidateWindow: AstroWindow | undefined;
+  readonly lightPollution: AstroLightPollutionDisplayModel;
+  readonly terrainHorizon: AstroTerrainHorizonDisplayModel;
+  readonly horizonCoverageState: AstroNightHorizonCoverageState;
+  readonly unavailableReason?: string;
+}): Pick<AstroNightDisplayModel, "recommendationBasis" | "blockerReasons" | "judgmentSummary"> {
+  const recommendationBasis = astroNightRecommendationBasis(input);
+  const blockerReasons = astroNightActualBlockerReasons(input);
+  const basisText = joinAstroSemanticItems(
+    recommendationBasis,
+    sanitizeAstroBasisReason(input.recommendationReason) ??
+      "本次夜间窗口、月光和天气条件需综合复核。",
+  );
+  const blockerText = joinAstroSemanticItems(
+    blockerReasons,
+    input.unavailableReason ??
+      sanitizeAstroBlockerText(input.recommendationReason) ??
+      "星空银河窗口和天气条件组合不足。",
+  );
+  const mixedText =
+    blockerReasons.length > 0
+      ? `${basisText}；风险：${blockerReasons.slice(0, 2).join("、")}。`
+      : input.horizonCoverageState === "partial"
+        ? `${basisText}；预报只覆盖部分夜间窗口，需等临近资料补齐。`
+        : basisText;
+  const dailyRecommended = Boolean(
+    input.day?.astroShootable &&
+      input.day.recommendedMilkyWayWindow &&
+      input.day.weatherBlockers.length === 0,
+  );
+
+  if (dailyRecommended || input.recommendationLevel === "recommended") {
+    if (blockerReasons.length === 0) {
+      return {
+        recommendationBasis,
+        blockerReasons,
+        judgmentSummary: {
+          label: "推荐依据",
+          value: basisText,
+          tone: "primary",
+          semanticKey: "recommendation_basis",
+        },
+      };
+    }
+
+    return {
+      recommendationBasis,
+      blockerReasons,
+      judgmentSummary: {
+        label: "关键判断",
+        value: mixedText,
+        tone: "accent",
+        semanticKey: "key_judgment",
+      },
+    };
+  }
+
+  if (input.recommendationLevel === "watch") {
+    return {
+      recommendationBasis,
+      blockerReasons,
+      judgmentSummary:
+        blockerReasons.length > 0 || input.horizonCoverageState === "partial"
+          ? {
+              label: "关键判断",
+              value: mixedText,
+              tone: "info",
+              semanticKey: "key_judgment",
+            }
+          : {
+              label: "可拍依据",
+              value: basisText,
+              tone: "primary",
+              semanticKey: "recommendation_basis",
+            },
+    };
+  }
+
+  if (input.recommendationLevel === "backup") {
+    return {
+      recommendationBasis,
+      blockerReasons,
+      judgmentSummary: {
+        label: "关键判断",
+        value: mixedText,
+        tone: blockerReasons.length > 0 ? "accent" : "info",
+        semanticKey: "key_judgment",
+      },
+    };
+  }
+
+  if (input.recommendationLevel === "insufficient" && blockerReasons.length === 0) {
+    return {
+      recommendationBasis,
+      blockerReasons,
+      judgmentSummary: {
+        label: "关键判断",
+        value: blockerText,
+        tone: "muted",
+        semanticKey: "key_judgment",
+      },
+    };
+  }
+
+  return {
+    recommendationBasis,
+    blockerReasons,
+    judgmentSummary: {
+      label: "主要阻碍",
+      value: blockerText,
+      tone: "danger",
+      semanticKey: "main_blockers",
+    },
+  };
+}
+
+function astroNightRecommendationBasis(input: {
+  readonly day: DailyAstro | undefined;
+  readonly weatherSummary: AstroNightDisplayModel["weather"];
+  readonly moonInterference: string;
+  readonly geometricMilkyWayWindow: AstroWindowRange | null | undefined;
+  readonly candidateWindow: AstroWindow | undefined;
+}): readonly string[] {
+  const day = input.day;
+  const direction =
+    day?.recommendedMilkyWayWindow?.directionZh ?? input.candidateWindow?.directionZh;
+  const directionText = direction ? `，方向 ${direction}` : "";
+  const basis: string[] = [];
+
+  if (day?.recommendedMilkyWayWindow) {
+    basis.push(
+      `推荐银河窗口可用${directionText}；月光${input.moonInterference}，天气条件支持夜拍。`,
+    );
+  } else if (input.geometricMilkyWayWindow) {
+    basis.push(`银心几何窗口存在${directionText}，可作为夜间观察基础。`);
+  } else if (day?.moonlessNightWindow) {
+    basis.push("有无月黑夜，可作为星空、星轨或夜景备选。");
+  } else if (day?.astronomicalNightWindow) {
+    basis.push("有天文黑夜，但低月光或银心条件不足。");
+  }
+
+  if (day && day.weatherBlockers.length === 0 && input.weatherSummary.validHourCount > 0) {
+    basis.push("云量、降水和通透度暂未构成主要阻断。");
+  }
+
+  return uniqueAstroSemanticItems(basis).slice(0, 2);
+}
+
+function astroNightActualBlockerReasons(input: {
+  readonly day: DailyAstro | undefined;
+  readonly astro: AstroSummary | undefined;
+  readonly weatherSummary: AstroNightDisplayModel["weather"];
+  readonly moonInterference: string;
+  readonly geometricMilkyWayWindow: AstroWindowRange | null | undefined;
+  readonly lightPollution: AstroLightPollutionDisplayModel;
+  readonly terrainHorizon: AstroTerrainHorizonDisplayModel;
+  readonly unavailableReason?: string;
+}): readonly string[] {
+  const day = input.day;
+  const blockers: (string | undefined)[] = [];
+
+  blockers.push(...(day?.weatherBlockers ?? []).map(sanitizeAstroBlockerText));
+
+  if (!day) {
+    blockers.push(input.unavailableReason ?? "缺少这个观测夜的天文或评分数据");
+  } else if (
+    !input.astro &&
+    !day.recommendedMilkyWayWindow &&
+    !input.geometricMilkyWayWindow &&
+    !day.moonlessNightWindow &&
+    !day.astronomicalNightWindow
+  ) {
+    blockers.push("缺少这个观测夜的天文数据");
+  } else if (!day.astronomicalNightWindow) {
+    blockers.push("当晚无完整天文黑夜");
+  } else if (
+    !day.recommendedMilkyWayWindow &&
+    !input.geometricMilkyWayWindow &&
+    !day.moonlessNightWindow
+  ) {
+    blockers.push("暂无有效银河窗口");
+  }
+
+  if (
+    day?.moonImpactLevel === "high" ||
+    input.moonInterference === "高" ||
+    input.moonInterference === "很高"
+  ) {
+    blockers.push("月光影响偏强");
+  }
+  if (day?.dewRiskLevel === "high") {
+    blockers.push("露水和结露风险高");
+  }
+  if (input.weatherSummary.validHourCount === 0 && !day?.astroShootable) {
+    blockers.push("缺少窗口内天气小时数据");
+  }
+  if (input.terrainHorizon.obstructionLevel === "obstructed") {
+    blockers.push("银河方向地形遮挡风险高");
+  } else if (input.terrainHorizon.obstructionLevel === "marginal") {
+    blockers.push("银河方向接近地形遮挡临界");
+  }
+  if (
+    input.lightPollution.targetDirectionLightPollution.status === "resolved" &&
+    (input.lightPollution.targetDirectionLightPollution.riskIndex ?? 0) >= 60
+  ) {
+    blockers.push("银河方向光害偏高");
+  }
+
+  return uniqueAstroSemanticItems(blockers).slice(0, 4);
+}
+
+function joinAstroSemanticItems(items: readonly string[], fallback: string): string {
+  const text = uniqueAstroSemanticItems(items).join("；");
+  return text || fallback;
+}
+
+function sanitizeAstroBasisReason(value: string | undefined): string | undefined {
+  const normalized = sanitizeAstroSentence(value);
+  if (!normalized) {
+    return undefined;
+  }
+  if (/^推荐银河窗口/.test(normalized)) {
+    return normalized
+      .replace(/^推荐银河窗口[：:\s]*/, "推荐银河窗口可用，")
+      .replace(
+        /\d{4}年\d{1,2}月\d{1,2}日\s*\d{1,2}:\d{2}[–—-]\d{1,2}月\d{1,2}日\s*\d{1,2}:\d{2}[，,]?/,
+        "",
+      )
+      .replace(/\d{1,2}:\d{2}\s*[–—-]\s*\d{1,2}:\d{2}[，,]?/, "")
+      .replace(/\s+/g, " ")
+      .replace(/，{2,}/g, "，")
+      .replace(/^推荐银河窗口可用，方向/, "推荐银河窗口可用，方向")
+      .trim();
+  }
+  return normalized;
+}
+
+function sanitizeAstroBlockerText(value: string | undefined): string | undefined {
+  const normalized = sanitizeAstroSentence(value);
+  if (!normalized || /^推荐银河窗口/.test(normalized)) {
+    return undefined;
+  }
+  return normalized;
+}
+
+function sanitizeAstroSentence(value: string | undefined): string | undefined {
+  const normalized = value
+    ?.replace(/\s+/g, " ")
+    .replace(/[。.]$/, "")
+    .trim();
+  return normalized ? normalized : undefined;
+}
+
+function uniqueAstroSemanticItems(items: readonly (string | undefined)[]): readonly string[] {
+  const unique = new Set<string>();
+  for (const item of items) {
+    const normalized = sanitizeAstroSentence(item);
+    if (normalized) {
+      unique.add(normalized);
+    }
+  }
+  return [...unique];
 }
 
 function selectedMilkyWayTerrainAssessment(
@@ -5913,7 +6228,10 @@ function normalizeAstroJudgmentFactors(
     if (hiddenSemanticKeys.has(semanticKey)) {
       continue;
     }
-    if (isPlaceholderAstroPublicValue(factor.status) && isPlaceholderAstroPublicValue(factor.detail)) {
+    if (
+      isPlaceholderAstroPublicValue(factor.status) &&
+      isPlaceholderAstroPublicValue(factor.detail)
+    ) {
       continue;
     }
 
@@ -10309,6 +10627,7 @@ function mapDailyAstro(
     day.recommendedMilkyWayWindow;
   const blockers = astroBlockerSummary(day.weatherBlockers);
   const precipitationBlocker = day.weatherBlockers.find((blocker) => /降水|雨|雪/.test(blocker));
+  const semanticFields = buildAstroDailyTrendSemanticFields(day, galacticCenterWindow);
 
   return {
     key: `astro-daily-${day.date}`,
@@ -10361,15 +10680,102 @@ function mapDailyAstro(
       : day.astroWindowAvailable
         ? "仅作备选"
         : "不建议夜拍",
-    blockerReasonLabel:
-      day.weatherBlockers.length > 0
-        ? `主要阻碍：${blockers}`
-        : day.astroShootable
-          ? "云量较低、月光影响小，可重点关注银河窗口。"
-          : "暂无可执行银河窗口。",
+    recommendationBasisLabel: joinAstroSemanticItems(
+      semanticFields.recommendationBasis,
+      "暂无明确推荐依据",
+    ),
+    blockerReasonsLabel: joinAstroSemanticItems(semanticFields.blockerReasons, "暂无主要阻碍"),
+    judgmentLabel: semanticFields.judgmentSummary.label,
+    judgmentValue: semanticFields.judgmentSummary.value,
+    judgmentTone: semanticFields.judgmentSummary.tone,
+    judgmentSemanticKey: semanticFields.judgmentSummary.semanticKey,
+    blockerReasonLabel: `${semanticFields.judgmentSummary.label}：${semanticFields.judgmentSummary.value}`,
     recommendationLabel: day.recommendationLabel,
     keyReason: day.keyReason,
     riskNote: day.riskNote,
+  };
+}
+
+function buildAstroDailyTrendSemanticFields(
+  day: DailyAstro,
+  galacticCenterWindow: AstroWindow | undefined,
+): Pick<AstroNightDisplayModel, "recommendationBasis" | "blockerReasons" | "judgmentSummary"> {
+  const direction = day.recommendedMilkyWayWindow?.directionZh ?? galacticCenterWindow?.directionZh;
+  const directionText = direction ? `，方向 ${direction}` : "";
+  const recommendationBasis = uniqueAstroSemanticItems([
+    day.recommendedMilkyWayWindow
+      ? `推荐银河窗口可用${directionText}；月光${moonImpactLevelLabel(day.moonImpactLevel)}，天气条件支持夜拍。`
+      : galacticCenterWindow
+        ? `银心几何窗口存在${directionText}，可作为夜间观察基础。`
+        : day.moonlessNightWindow
+          ? "有无月黑夜，可作为星空、星轨或夜景备选。"
+          : day.astronomicalNightWindow
+            ? "有天文黑夜，但低月光或银心条件不足。"
+            : undefined,
+    day.weatherBlockers.length === 0 ? "云量、降水和通透度暂未构成主要阻断。" : undefined,
+  ]).slice(0, 2);
+  const blockerReasons = uniqueAstroSemanticItems([
+    ...day.weatherBlockers.map(sanitizeAstroBlockerText),
+    !day.astronomicalNightWindow ? "当晚无完整天文黑夜" : undefined,
+    !day.recommendedMilkyWayWindow && !galacticCenterWindow && !day.moonlessNightWindow
+      ? "暂无有效银河窗口"
+      : undefined,
+    day.moonImpactLevel === "high" ? "月光影响偏强" : undefined,
+    day.dewRiskLevel === "high" ? "露水和结露风险高" : undefined,
+    day.terrainHorizonAssessment?.obstructionLevel === "obstructed"
+      ? "银河方向地形遮挡风险高"
+      : day.terrainHorizonAssessment?.obstructionLevel === "marginal"
+        ? "银河方向接近地形遮挡临界"
+        : undefined,
+  ]).slice(0, 4);
+  const basisText = joinAstroSemanticItems(
+    recommendationBasis,
+    sanitizeAstroBasisReason(day.keyReason) ?? "本次夜间窗口、月光和天气条件需综合复核。",
+  );
+  const blockerText = joinAstroSemanticItems(
+    blockerReasons,
+    sanitizeAstroBlockerText(day.riskNote) ??
+      sanitizeAstroBlockerText(day.keyReason) ??
+      "星空银河窗口和天气条件组合不足。",
+  );
+
+  if (day.astroShootable && blockerReasons.length === 0) {
+    return {
+      recommendationBasis,
+      blockerReasons,
+      judgmentSummary: {
+        label: "推荐依据",
+        value: basisText,
+        tone: "primary",
+        semanticKey: "recommendation_basis",
+      },
+    };
+  }
+  if (!day.astroShootable && blockerReasons.length > 0) {
+    return {
+      recommendationBasis,
+      blockerReasons,
+      judgmentSummary: {
+        label: "主要阻碍",
+        value: blockerText,
+        tone: "danger",
+        semanticKey: "main_blockers",
+      },
+    };
+  }
+
+  return {
+    recommendationBasis,
+    blockerReasons,
+    judgmentSummary: {
+      label: "关键判断",
+      value:
+        blockerReasons.length > 0
+          ? `${basisText}；风险：${blockerReasons.slice(0, 2).join("、")}。`
+          : basisText,
+      tone: blockerReasons.length > 0 ? "accent" : "info",
+      semanticKey: "key_judgment",
+    },
   };
 }
 
