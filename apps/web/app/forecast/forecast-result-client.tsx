@@ -6932,15 +6932,16 @@ function CloudSeaDailyTrend({
           <Badge variant="muted">{forecastHorizonLabels[result.horizon]}</Badge>
         </div>
         <div
-          className="mt-4 grid gap-3 min-[720px]:grid-cols-2 min-[1180px]:grid-cols-3"
+          className="mt-4 grid grid-cols-4 gap-3 min-[720px]:grid-cols-4 min-[1180px]:grid-cols-6"
           data-cloud-sea-daily-card-grid="true"
           data-testid="cloud-sea-daily-card-grid"
         >
-          {items.map((item) => (
+          {items.map((item, index) => (
             <article
               key={item.key}
               className={cn(
                 "CloudSeaDailyCard cloud-sea-daily-card grid h-full min-w-0 content-start gap-3 rounded-lg border bg-card p-4 shadow-sm",
+                cloudSeaDailyCardSpanClassName(index, items.length),
                 cloudSeaDailyCardToneClassName(item.recommendedAction),
               )}
               data-cloud-sea-daily-card="true"
@@ -7017,6 +7018,23 @@ function CloudSeaDailyTrend({
       </Card>
     </DailyDecisionList>
   );
+}
+
+function cloudSeaDailyCardSpanClassName(index: number, total: number): string {
+  const isLastCard = index === total - 1;
+  const isInFinalDesktopPair = index >= total - 2;
+  const tabletSpanClassName =
+    total % 2 === 1 && isLastCard ? "min-[720px]:col-span-4" : "min-[720px]:col-span-2";
+
+  if (total % 3 === 1 && isLastCard) {
+    return cn("col-span-4", tabletSpanClassName, "min-[1180px]:col-span-6");
+  }
+
+  if (total % 3 === 2 && isInFinalDesktopPair) {
+    return cn("col-span-4", tabletSpanClassName, "min-[1180px]:col-span-3");
+  }
+
+  return cn("col-span-4", tabletSpanClassName, "min-[1180px]:col-span-2");
 }
 
 function cloudSeaDailyCardToneClassName(label: string): string {

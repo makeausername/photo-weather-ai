@@ -40,6 +40,8 @@ import {
   buildCloudSeaForecastViewModel,
   buildForecastResultViewModel,
   buildGlowForecastViewModel,
+  type CloudSeaDailyTrendItem,
+  type CloudSeaForecastViewModel,
 } from "./forecast-result-view-model";
 import {
   buildCloudSeaTerrainContext,
@@ -2762,6 +2764,13 @@ function renderAiPanelFromOutcome(outcome: ReturnType<typeof normalizeAiExplainR
 
 function countOccurrences(text: string, pattern: string): number {
   return text.split(pattern).length - 1;
+}
+
+function classNamesForCloudSeaDailyCards(html: string): readonly string[] {
+  return Array.from(
+    html.matchAll(/<article\b[^>]*data-cloud-sea-daily-card="true"[^>]*>/g),
+    (match) => match[0].match(/\bclass="([^"]*)"/)?.[1] ?? "",
+  );
 }
 
 function expectNoObsoleteLightPollutionPlaceholders(html: string): void {
@@ -5703,8 +5712,11 @@ describe("forecast result target-aware view model", () => {
       );
       expect(dailyCardSection).toContain('data-testid="cloud-sea-daily-card-grid"');
       expect(dailyCardSection).toContain('data-cloud-sea-daily-card-grid="true"');
-      expect(dailyCardSection).toContain("min-[720px]:grid-cols-2");
-      expect(dailyCardSection).toContain("min-[1180px]:grid-cols-3");
+      expect(dailyCardSection).toContain("grid-cols-4");
+      expect(dailyCardSection).toContain("min-[720px]:grid-cols-4");
+      expect(dailyCardSection).toContain("min-[1180px]:grid-cols-6");
+      expect(dailyCardSection).not.toContain("min-[720px]:grid-cols-2");
+      expect(dailyCardSection).not.toContain("min-[1180px]:grid-cols-3");
       expect(dailyCardSection).not.toMatch(/min-\[900px\]:grid-cols-\[minmax\(150px,0\.8fr\)/);
       expect(countOccurrences(dailyCardSection, 'data-testid="cloud-sea-daily-card"')).toBe(
         viewModel.dailyTrend.length,
@@ -5816,8 +5828,17 @@ describe("forecast result target-aware view model", () => {
 
     expect(dailyTrendSource).toContain('data-cloud-sea-daily-card-grid="true"');
     expect(dailyTrendSource).toContain('data-testid="cloud-sea-daily-card-grid"');
-    expect(dailyTrendSource).toContain("min-[720px]:grid-cols-2");
-    expect(dailyTrendSource).toContain("min-[1180px]:grid-cols-3");
+    expect(dailyTrendSource).toContain("grid-cols-4");
+    expect(dailyTrendSource).toContain("min-[720px]:grid-cols-4");
+    expect(dailyTrendSource).toContain("min-[1180px]:grid-cols-6");
+    expect(dailyTrendSource).toContain("cloudSeaDailyCardSpanClassName(index, items.length)");
+    expect(dailyTrendSource).toContain("min-[720px]:col-span-2");
+    expect(dailyTrendSource).toContain("min-[720px]:col-span-4");
+    expect(dailyTrendSource).toContain("min-[1180px]:col-span-2");
+    expect(dailyTrendSource).toContain("min-[1180px]:col-span-3");
+    expect(dailyTrendSource).toContain("min-[1180px]:col-span-6");
+    expect(dailyTrendSource).not.toContain("min-[720px]:grid-cols-2");
+    expect(dailyTrendSource).not.toContain("min-[1180px]:grid-cols-3");
     expect(dailyTrendSource).toContain("CloudSeaDailyCard cloud-sea-daily-card");
     expect(dailyTrendSource).toContain("recommendationBadgeVariant(item.recommendedAction)");
     expect(dailyTrendSource).not.toMatch(/min-\[900px\]:grid-cols-\[minmax\(150px,0\.8fr\)/);
@@ -5828,6 +5849,70 @@ describe("forecast result target-aware view model", () => {
     expect(dailyTrendSource).toContain('dataTestId="cloud-sea-daily-stat"');
     expect(dailyTrendSource).toContain('data-testid="cloud-sea-daily-reason"');
     expect(dailyTrendSource).toContain('data-testid="cloud-sea-daily-action"');
+  });
+
+  it("balances Cloud Sea daily card remainder rows for one through seven cards", () => {
+    const result = resultWithProfessionalHourlyData();
+    const baseViewModel = buildCloudSeaForecastViewModel(result);
+    const baseItems = baseViewModel.displayData.dailyJudgment;
+
+    expect(baseItems.length).toBeGreaterThan(0);
+    const fallbackItem = baseItems[0];
+
+    if (!fallbackItem) {
+      throw new Error("Expected Cloud Sea daily card fixture items");
+    }
+
+    for (const total of [1, 2, 3, 4, 5, 6, 7]) {
+      const dailyItems: CloudSeaDailyTrendItem[] = Array.from({ length: total }, (_, index) => {
+        const item = baseItems[index % baseItems.length] ?? fallbackItem;
+
+        return {
+          ...item,
+          key: `${item.key}-layout-${total}-${index}`,
+        };
+      });
+      const viewModel: CloudSeaForecastViewModel = {
+        ...baseViewModel,
+        dailyTrend: dailyItems,
+        displayData: {
+          ...baseViewModel.displayData,
+          dailyJudgment: dailyItems,
+        },
+      };
+      const html = renderToStaticMarkup(
+        React.createElement(CloudSeaResultPage, {
+          query: queryForTarget("cloud_sea"),
+          result,
+          viewModel,
+        }),
+      );
+      const dailyCardSection = sectionBetween(
+        html,
+        "CloudSeaDailyTrend",
+        "CloudSeaProfessionalData",
+      );
+      const cardClassNames = classNamesForCloudSeaDailyCards(dailyCardSection);
+
+      expect(cardClassNames).toHaveLength(total);
+      expect(cardClassNames.every((className) => className.includes("col-span-4"))).toBe(true);
+
+      cardClassNames.forEach((className, index) => {
+        const expectedTabletSpan =
+          total % 2 === 1 && index === total - 1
+            ? "min-[720px]:col-span-4"
+            : "min-[720px]:col-span-2";
+        expect(className).toContain(expectedTabletSpan);
+
+        const expectedDesktopSpan =
+          total % 3 === 1 && index === total - 1
+            ? "min-[1180px]:col-span-6"
+            : total % 3 === 2 && index >= total - 2
+              ? "min-[1180px]:col-span-3"
+              : "min-[1180px]:col-span-2";
+        expect(className).toContain(expectedDesktopSpan);
+      });
+    }
   });
 
   it("places Cloud Sea intelligent interpretation after deterministic result sections", () => {
