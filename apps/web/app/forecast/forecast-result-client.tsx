@@ -111,6 +111,8 @@ export type DecisionProgressContext = {
 
 type DecisionTemplateTarget = "general" | "cloud_sea";
 
+type CloudSeaTravelDecision = "go" | "cautious" | "no_go";
+
 type NormalizedAiExplanationSection = {
   readonly title: string;
   readonly text: string;
@@ -3711,6 +3713,8 @@ export function CloudSeaResultPage({
   readonly viewModel: CloudSeaForecastViewModel;
   readonly returnUrl?: string;
 }) {
+  const travelDecision = deriveCloudSeaTravelDecision(viewModel);
+
   return (
     <DecisionResultTemplate
       target="cloud_sea"
@@ -3732,7 +3736,7 @@ export function CloudSeaResultPage({
           <CloudSeaWindowCardsSection
             windows={viewModel.displayData.cloudSeaWindowCards}
             terrainContext={viewModel.terrainContext}
-            travelDecision={viewModel.travelDecision}
+            travelDecision={travelDecision}
           />
           {returnUrl ? <CloudSeaReturnLink href={returnUrl} /> : null}
         </section>
@@ -3754,6 +3758,41 @@ export function CloudSeaResultPage({
       </main>
     </DecisionResultTemplate>
   );
+}
+
+function deriveCloudSeaTravelDecision(viewModel: CloudSeaForecastViewModel): CloudSeaTravelDecision {
+  const displayData = viewModel.displayData;
+  const decisionCards = displayData.recommendationCards.filter(
+    (card) =>
+      card.key === "cloud-sea-recommendation" ||
+      card.key === "cloud-sea-best-window" ||
+      card.key === "cloud-sea-arrival",
+  );
+  const decisionActions = displayData.actionPlan.filter(
+    (item) => item.key === "departure" || item.key === "arrival" || item.key === "main-window",
+  );
+  const decisionText = [
+    displayData.header.recommendationLabel,
+    displayData.header.bestWindowLabel,
+    displayData.header.arrivalLabel,
+    displayData.scoreCard.badgeLabel,
+    ...decisionCards.flatMap((card) => [card.label, card.value, card.detail]),
+    ...decisionActions.flatMap((item) => [item.label, item.value, item.detail]),
+  ].join(" ");
+
+  if (/不建议|暂不安排(?:行程|出发)|不安排(?:专程|出发|行程)/.test(decisionText)) {
+    return "no_go";
+  }
+
+  if (
+    /谨慎参考|仅作备选|仅供备选|备选观察|到达参考|参考窗口|低云\/晨雾参考窗口|已在附近|顺带观察|不把[^。；]*确定行程|需临近预报复核/.test(
+      decisionText,
+    )
+  ) {
+    return "cautious";
+  }
+
+  return "go";
 }
 
 function CloudSeaDecisionSupportSection({
@@ -5089,9 +5128,9 @@ function CloudSeaWindowCardsSection({
 }: {
   readonly windows: readonly CloudSeaWindowItem[];
   readonly terrainContext: CloudSeaTerrainContext;
-  readonly travelDecision: CloudSeaForecastViewModel["travelDecision"];
+  readonly travelDecision: CloudSeaTravelDecision;
 }) {
-  const cards = buildCloudSeaWindowCardData(windows, terrainContext);
+  const cards = buildCloudSeaWindowCardData(windows, terrainContext, travelDecision);
 
   return (
     <section
@@ -5176,7 +5215,7 @@ function CloudSeaWindowCardLine({
 
 function cloudSeaWindowCardPrimaryLabel(
   terrainContext: CloudSeaTerrainContext,
-  travelDecision: CloudSeaForecastViewModel["travelDecision"],
+  travelDecision: CloudSeaTravelDecision,
 ): string {
   if (travelDecision === "no_go") {
     return "备选观察窗口";
@@ -5190,6 +5229,7 @@ function cloudSeaWindowCardPrimaryLabel(
 function buildCloudSeaWindowCardData(
   windows: readonly CloudSeaWindowItem[],
   terrainContext: CloudSeaTerrainContext,
+  travelDecision: CloudSeaTravelDecision,
 ): readonly CloudSeaWindowCardData[] {
   const sortedWindows = [...windows].sort(compareCloudSeaWindowPriority);
 
@@ -5197,7 +5237,7 @@ function buildCloudSeaWindowCardData(
     const candidates = sortedWindows.filter((item) =>
       cloudSeaWindowMatchesCategory(item, definition.key),
     );
-    return cloudSeaWindowCategoryCard(definition, candidates, terrainContext);
+    return cloudSeaWindowCategoryCard(definition, candidates, terrainContext, travelDecision);
   });
 }
 
@@ -5205,6 +5245,7 @@ function cloudSeaWindowCategoryCard(
   definition: CloudSeaWindowCategoryDefinition,
   candidates: readonly CloudSeaWindowItem[],
   terrainContext: CloudSeaTerrainContext,
+  travelDecision: CloudSeaTravelDecision,
 ): CloudSeaWindowCardData {
   const primary = candidates[0];
   const backup = candidates.find((candidate) => candidate.key !== primary?.key);
@@ -5222,7 +5263,7 @@ function cloudSeaWindowCategoryCard(
       backupWindow: "等待下一次预报更新",
       labelReason: definition.noWindowIssue,
       mainIssue: definition.noWindowIssue,
-      action: definition.noWindowAction,
+      action: cloudSeaNoWindowCardAction(definition, terrainContext, travelDecision),
       cautionNote: undefined,
     };
   }
@@ -5239,7 +5280,7 @@ function cloudSeaWindowCategoryCard(
     backupWindow: backup?.displayLabelZh ?? "暂无备选窗口",
     labelReason: compactCloudSeaWindowReason(primary.labelReason),
     mainIssue: cloudSeaWindowMainIssue(definition.key, primary, terrainContext),
-    action: cloudSeaWindowCardAction(definition.key, primary, terrainContext),
+    action: cloudSeaWindowCardAction(definition.key, primary, terrainContext, travelDecision),
     cautionNote: cloudSeaWindowHasLayerRoleRedirect(primary)
       ? primary.layerCompletenessNote
       : undefined,
@@ -5437,7 +5478,16 @@ function cloudSeaWindowCardAction(
   category: CloudSeaWindowCategoryKey,
   item: CloudSeaWindowItem,
   terrainContext: CloudSeaTerrainContext,
+  travelDecision: CloudSeaTravelDecision,
 ): string {
+  if (travelDecision === "no_go") {
+    return terrainContext.shouldDowngradeCloudSeaWording
+      ? "当前整体不建议专程；此窗口只作低云/晨雾备选观察，等待下一次预报并复核降水、能见度和通行。"
+      : "当前整体不建议专程；此窗口只作云海备选观察，等待下一次预报并复核降水、能见度和通行。";
+  }
+  if (travelDecision === "cautious") {
+    return "仅供备选参考；如已在附近或仍决定前往，出发前复核低云、能见度、降水和现场通行，不把该窗口当作确定行程。";
+  }
   if (cloudSeaWindowHasLayerRoleRedirect(item)) {
     return terrainContext.shouldDowngradeCloudSeaWording
       ? "中高云更适合观察霞光或云层纹理，不按云海判断。"
@@ -5459,6 +5509,22 @@ function cloudSeaWindowCardAction(
     return "仅作氛围、剪影、层次或现场观察，不作为正常明亮风光主窗口。";
   }
   return item.actionSuggestion;
+}
+
+function cloudSeaNoWindowCardAction(
+  definition: CloudSeaWindowCategoryDefinition,
+  terrainContext: CloudSeaTerrainContext,
+  travelDecision: CloudSeaTravelDecision,
+): string {
+  if (travelDecision === "no_go") {
+    return terrainContext.shouldDowngradeCloudSeaWording
+      ? "当前整体不建议专程；没有明确低云/晨雾窗口，等待下一次预报或转向霞光、云层纹理和近景。"
+      : "当前整体不建议专程；没有明确云海窗口，等待下一次预报或转向霞光、云层纹理和近景。";
+  }
+  if (travelDecision === "cautious") {
+    return `${definition.noWindowAction} 若仍前往，只作备选观察并在出发前复核现场条件。`;
+  }
+  return definition.noWindowAction;
 }
 
 function cloudSeaWindowHasLayerRoleRedirect(item: CloudSeaWindowItem): boolean {
