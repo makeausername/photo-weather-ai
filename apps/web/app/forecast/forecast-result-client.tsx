@@ -3719,37 +3719,101 @@ export function CloudSeaResultPage({
       dataCloudSeaSection="CloudSeaResultPage"
       dataCloudSeaPageMode="result"
     >
-      <main className="grid w-full min-w-0 gap-5" data-forecast-decision-layout="stacked">
-        <CloudSeaTopResultHeader query={query} displayData={viewModel.displayData} />
-        <CloudSeaMetricCards cards={viewModel.displayData.recommendationCards} />
-        <CloudSeaNearTermWeatherSection display={viewModel.displayData.currentNearTermWeather} />
-        <CloudSeaWindowCardsSection
-          windows={viewModel.displayData.cloudSeaWindowCards}
-          terrainContext={viewModel.terrainContext}
-        />
-        <CloudSeaProfessionalHourlyDataPanel
-          data={viewModel.displayData.professionalHourlyData}
-          terrainContext={viewModel.terrainContext}
-        />
-        <CloudSeaMultiSourceAgreementCard context={viewModel.displayData.multiSourceConsistency} />
-        <CloudSeaDailyTrend
-          result={result}
-          items={viewModel.displayData.dailyJudgment}
-          terrainContext={viewModel.terrainContext}
-        />
-        <CloudSeaReasoningSection items={viewModel.displayData.judgmentBasis} />
-        <CloudSeaActionPlanSection items={viewModel.displayData.actionPlan} />
-        <CloudSeaRiskSummarySection
-          riskSummary={viewModel.displayData.riskReview}
-          terrainContext={viewModel.terrainContext}
-        />
-        {viewModel.dataCaution ? <CloudSeaInlineCaution text={viewModel.dataCaution} /> : null}
-        {returnUrl ? <CloudSeaReturnLink href={returnUrl} /> : null}
+      <main
+        className="CloudSeaResultStack grid w-full min-w-0 gap-5"
+        data-forecast-decision-layout="stacked"
+      >
+        <section
+          className="CloudSeaWindowDecision cloud-sea-window-decision grid gap-5"
+          data-cloud-sea-section="CloudSeaWindowDecision"
+        >
+          <CloudSeaTopResultHeader query={query} displayData={viewModel.displayData} />
+          <CloudSeaMetricCards cards={viewModel.displayData.recommendationCards} />
+          <CloudSeaNearTermWeatherSection display={viewModel.displayData.currentNearTermWeather} />
+          <CloudSeaWindowCardsSection
+            windows={viewModel.displayData.cloudSeaWindowCards}
+            terrainContext={viewModel.terrainContext}
+          />
+          {returnUrl ? <CloudSeaReturnLink href={returnUrl} /> : null}
+        </section>
+        <section
+          className="CloudSeaDailyCards cloud-sea-daily-cards grid gap-3"
+          data-cloud-sea-section="CloudSeaDailyCards"
+        >
+          <CloudSeaDailyTrend
+            result={result}
+            items={viewModel.displayData.dailyJudgment}
+            terrainContext={viewModel.terrainContext}
+          />
+        </section>
+        <CloudSeaProfessionalDataSection viewModel={viewModel} />
         <section className="mt-1 sm:mt-2" data-cloud-sea-section="CloudSeaAiInterpretation">
           <ForecastAiInterpretationSection query={query} result={result} />
         </section>
       </main>
     </DecisionResultTemplate>
+  );
+}
+
+function CloudSeaProfessionalDataSection({
+  viewModel,
+}: {
+  readonly viewModel: CloudSeaForecastViewModel;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <Card
+      className="CloudSeaProfessionalData cloud-sea-professional-data rounded-lg border border-border bg-card p-4 shadow-sm"
+      data-cloud-sea-section="CloudSeaProfessionalData"
+      data-cloud-sea-professional-data-expanded={expanded ? "true" : "false"}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-lg font-bold text-card-foreground">专业数据</h2>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
+            查看逐小时云层、湿度、露点、降水、能见度、风、多源一致性、判断依据、行动和风险复核。
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          aria-expanded={expanded}
+          onClick={() => {
+            setExpanded((current) => !current);
+          }}
+          data-cloud-sea-professional-data-toggle="true"
+        >
+          {expanded ? "收起专业数据" : "展开专业数据"}
+        </Button>
+      </div>
+
+      <div
+        className={cn("mt-4 grid gap-4", !expanded && "hidden")}
+        aria-hidden={expanded ? undefined : true}
+        data-cloud-sea-professional-data-body="true"
+        data-cloud-sea-professional-data-body-expanded={expanded ? "true" : "false"}
+      >
+        <CloudSeaProfessionalHourlyDataPanel
+          data={viewModel.displayData.professionalHourlyData}
+          terrainContext={viewModel.terrainContext}
+          variant="embedded"
+        />
+        <CloudSeaMultiSourceAgreementCard
+          context={viewModel.displayData.multiSourceConsistency}
+          variant="embedded"
+        />
+        <CloudSeaReasoningSection items={viewModel.displayData.judgmentBasis} variant="embedded" />
+        <CloudSeaActionPlanSection items={viewModel.displayData.actionPlan} variant="embedded" />
+        <CloudSeaRiskSummarySection
+          riskSummary={viewModel.displayData.riskReview}
+          terrainContext={viewModel.terrainContext}
+          variant="embedded"
+        />
+        {viewModel.dataCaution ? <CloudSeaInlineCaution text={viewModel.dataCaution} /> : null}
+      </div>
+    </Card>
   );
 }
 
@@ -5770,7 +5834,12 @@ function ProfessionalHourlyCloudSection({
   if (embedded) {
     return (
       <section
-        className="ProfessionalHourlyCloudSection grid gap-3"
+        className={cn(
+          "ProfessionalHourlyCloudSection grid gap-3",
+          target === "cloud_sea" &&
+            "CloudSeaProfessionalHourlyData cloud-sea-professional-hourly-data",
+        )}
+        data-cloud-sea-section={target === "cloud_sea" ? "CloudSeaProfessionalHourlyData" : undefined}
         data-glow-section={target === "glow" ? "ProfessionalHourlyCloudSection" : undefined}
         data-astro-section={target === "astro" ? "ProfessionalHourlyCloudSection" : undefined}
         data-professional-hourly-shared="true"
@@ -5879,8 +5948,10 @@ export function professionalHourlySignalDisplayForTarget(
 
 function CloudSeaMultiSourceAgreementCard({
   context,
+  variant = "card",
 }: {
   readonly context: ForecastMultiSourceAgreementContext | null;
+  readonly variant?: "card" | "embedded";
 }) {
   if (!context) {
     return null;
@@ -5888,10 +5959,14 @@ function CloudSeaMultiSourceAgreementCard({
 
   const statusLabel = multiSourceAgreementStatusLabel(context);
   const notes = multiSourceAgreementNotes(context);
+  const Container = (variant === "embedded" ? "section" : Card) as React.ElementType;
 
   return (
-    <Card
-      className="CloudSeaMultiSourceAgreement cloud-sea-multi-source-agreement p-4 shadow-sm"
+    <Container
+      className={cn(
+        "CloudSeaMultiSourceAgreement cloud-sea-multi-source-agreement p-4",
+        variant === "card" ? "shadow-sm" : "rounded-lg border border-border bg-muted",
+      )}
       data-cloud-sea-section="CloudSeaMultiSourceAgreement"
       data-testid="cloud-sea-multi-source-agreement"
       data-agreement-level={context.agreementLevel}
@@ -5941,7 +6016,7 @@ function CloudSeaMultiSourceAgreementCard({
           <CompactDefinition label="降水分歧" value={multiSourcePrecipitationStatus(context)} />
         </dl>
       </div>
-    </Card>
+    </Container>
   );
 }
 
@@ -6917,9 +6992,23 @@ function CloudSeaDailyStat({ label, value }: { readonly label: string; readonly 
   );
 }
 
-function CloudSeaReasoningSection({ items }: { readonly items: readonly CloudSeaReasoningItem[] }) {
+function CloudSeaReasoningSection({
+  items,
+  variant = "card",
+}: {
+  readonly items: readonly CloudSeaReasoningItem[];
+  readonly variant?: "card" | "embedded";
+}) {
+  const Container = (variant === "embedded" ? "section" : Card) as React.ElementType;
+
   return (
-    <Card className="CloudSeaReasoning cloud-sea-reasoning p-4 shadow-sm">
+    <Container
+      className={cn(
+        "CloudSeaReasoning cloud-sea-reasoning p-4",
+        variant === "card" ? "shadow-sm" : "rounded-lg border border-border bg-muted",
+      )}
+      data-cloud-sea-section="CloudSeaReasoning"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-card-foreground">判断依据</h2>
         <Badge variant="muted">当前结果</Badge>
@@ -6945,7 +7034,7 @@ function CloudSeaReasoningSection({ items }: { readonly items: readonly CloudSea
           </article>
         ))}
       </JudgmentBasisGrid>
-    </Card>
+    </Container>
   );
 }
 
@@ -6959,11 +7048,21 @@ function CloudSeaInlineCaution({ text }: { readonly text: string }) {
 
 function CloudSeaActionPlanSection({
   items,
+  variant = "card",
 }: {
   readonly items: readonly CloudSeaActionPlanItem[];
+  readonly variant?: "card" | "embedded";
 }) {
+  const Container = (variant === "embedded" ? "section" : Card) as React.ElementType;
+
   return (
-    <Card className="CloudSeaActionPlan cloud-sea-action-plan p-4 shadow-sm">
+    <Container
+      className={cn(
+        "CloudSeaActionPlan cloud-sea-action-plan p-4",
+        variant === "card" ? "shadow-sm" : "rounded-lg border border-border bg-muted",
+      )}
+      data-cloud-sea-section="CloudSeaActionPlan"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-card-foreground">行动方案</h2>
         <Badge variant="muted">是否出发 / 到达 / 主守 / 备选</Badge>
@@ -6985,17 +7084,20 @@ function CloudSeaActionPlanSection({
           </article>
         ))}
       </ActionPlanGrid>
-    </Card>
+    </Container>
   );
 }
 
 function CloudSeaRiskSummarySection({
   riskSummary,
   terrainContext,
+  variant = "card",
 }: {
   readonly riskSummary: readonly ForecastResultSectionItem[];
   readonly terrainContext: CloudSeaTerrainContext;
+  readonly variant?: "card" | "embedded";
 }) {
+  const Container = (variant === "embedded" ? "section" : Card) as React.ElementType;
   const focusedRiskSummary = riskSummary.filter(
     (item) =>
       !["云海形成机会", "云海可拍机会", "低云/晨雾信号", "云层可观察机会", "雨后开口"].includes(
@@ -7004,7 +7106,13 @@ function CloudSeaRiskSummarySection({
   );
 
   return (
-    <Card className="CloudSeaRiskSummary cloud-sea-risk-summary p-4 shadow-sm">
+    <Container
+      className={cn(
+        "CloudSeaRiskSummary cloud-sea-risk-summary p-4",
+        variant === "card" ? "shadow-sm" : "rounded-lg border border-border bg-muted",
+      )}
+      data-cloud-sea-section="CloudSeaRiskSummary"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-card-foreground">风险与复核</h2>
         <Badge variant="muted">
@@ -7025,7 +7133,7 @@ function CloudSeaRiskSummarySection({
           </article>
         ))}
       </div>
-    </Card>
+    </Container>
   );
 }
 
