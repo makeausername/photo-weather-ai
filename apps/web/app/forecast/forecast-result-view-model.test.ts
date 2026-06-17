@@ -5194,12 +5194,16 @@ describe("forecast result target-aware view model", () => {
     ]);
     expect(viewModel.actionPlan.map((item) => item.label)).toEqual([
       "是否建议出发",
-      "建议到达时间",
-      "主守窗口",
+      "到达参考",
+      "参考窗口",
       "备选方案",
       "装备提醒",
       "现场复核点",
     ]);
+    expect(viewModel.travelDecision).toBe("cautious");
+    expect(viewModel.actionPlan.find((item) => item.key === "arrival")?.value).toContain(
+      "仅供备选，到达参考",
+    );
   });
 
   it("classifies Cloud Sea terrain semantics from elevation and surrounding relief", () => {
@@ -5289,7 +5293,7 @@ describe("forecast result target-aware view model", () => {
       "低云遮挡风险",
       "雨后开口机会",
     ]);
-    expect(viewModel.actionPlan.map((item) => item.label)).toContain("观察窗口");
+    expect(viewModel.actionPlan.map((item) => item.label)).toContain("参考窗口");
     expect(viewModel.dailyTrend.map((item) => item.recommendedAction)).toContain("已在附近可观察");
 
     expect(html).toContain("低云/晨雾参考");
@@ -5361,12 +5365,21 @@ describe("forecast result target-aware view model", () => {
     );
 
     expect(viewModel.recommendationGuard.finalRecommendationLabel).toBe("不建议专程");
+    expect(viewModel.travelDecision).toBe("no_go");
     expect(viewModel.hero.recommendationLabel).toBe("不建议专程");
     expect(viewModel.hero.bestWindowLabel).toContain("备选观察窗口");
+    expect(viewModel.hero.arrivalLabel).toBe("暂不安排行程");
     expect(viewModel.actionPlan.find((item) => item.key === "departure")).toMatchObject({
       label: "是否建议出发",
       value: "不建议专程",
     });
+    expect(viewModel.actionPlan.find((item) => item.key === "arrival")).toMatchObject({
+      label: "不建议出发",
+      value: "等待下次预报",
+    });
+    expect(viewModel.actionPlan.find((item) => item.key === "main-window")?.label).toBe(
+      "备选观察窗口",
+    );
     expect(viewModel.dailyTrend.every((item) => item.recommendedAction === "不建议专程")).toBe(
       true,
     );
@@ -5378,6 +5391,11 @@ describe("forecast result target-aware view model", () => {
     expect(actionPlan).toContain("当前云海证据不足");
     expect(windowSection).toContain("不建议专程");
     expect(viewModel.cloudSeaWindows.map((item) => item.label).join(" ")).toContain("备选观察窗口");
+    expect(html).toContain("暂不安排行程");
+    expect(html).toContain("等待下一次预报");
+    expect(html).not.toContain("建议到达");
+    expect(html).not.toContain("建议到达时间");
+    expect(html).not.toContain("主守窗口");
     expect(html).not.toContain("强推荐专程");
     expect(html).not.toContain("推荐专程云海");
     expect(html).not.toContain("云海主守");
@@ -5580,7 +5598,8 @@ describe("forecast result target-aware view model", () => {
       expect(html).not.toContain("是否值得专程去");
       expect(html).toContain("白墙风险");
       expect(html).toContain("黄山光明顶 云海判断");
-      expect(html).toContain("建议到达");
+      expect(html).toContain("到达参考");
+      expect(html).toContain("仅供备选，到达参考");
       expect(html).toContain("云海窗口与备选");
       expect(html).toContain("按光线和时段归纳主窗口与备选窗口，快速判断哪一类云海更值得守拍。");
       expect(html).toContain("云海窗口");
@@ -5590,7 +5609,7 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("无光云海");
       expect(countOccurrences(html, 'data-testid="cloud-sea-window-category-card"')).toBe(4);
       expect(countOccurrences(html, "机会指数")).toBe(4);
-      expect(countOccurrences(html, "主窗口：</dt>")).toBe(4);
+      expect(countOccurrences(html, "参考窗口：</dt>")).toBe(4);
       expect(countOccurrences(html, "备选窗口：</dt>")).toBe(4);
       expect(countOccurrences(html, "主要限制：</dt>")).toBe(4);
       expect(countOccurrences(html, "行动：</span>")).toBe(4);
@@ -5602,8 +5621,9 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("判断依据");
       expect(html).toContain("行动方案");
       expect(html).toContain("风险与复核");
-      expect(html).toContain("建议到达时间");
-      expect(html).toContain("主守窗口");
+      expect(html).not.toContain("建议到达时间");
+      expect(html).not.toContain("主守窗口");
+      expect(html).toContain("参考窗口");
       expect(html).toContain("备选方案");
       expect(html).toContain("装备提醒");
       expect(html).toContain("现场复核点");
@@ -6073,7 +6093,7 @@ describe("forecast result target-aware view model", () => {
     expect(section).toContain("无光云海");
     expect(countOccurrences(section, "机会指数")).toBe(4);
     expect(countOccurrences(section, "暂无明确评分")).toBe(4);
-    expect(countOccurrences(section, "主窗口：</dt>")).toBe(4);
+    expect(countOccurrences(section, "参考窗口：</dt>")).toBe(4);
     expect(countOccurrences(section, "备选窗口：</dt>")).toBe(4);
     expect(countOccurrences(section, "主要限制：</dt>")).toBe(4);
     expect(countOccurrences(section, "行动：</span>")).toBe(4);

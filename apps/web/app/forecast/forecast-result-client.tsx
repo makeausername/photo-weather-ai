@@ -3732,6 +3732,7 @@ export function CloudSeaResultPage({
           <CloudSeaWindowCardsSection
             windows={viewModel.displayData.cloudSeaWindowCards}
             terrainContext={viewModel.terrainContext}
+            travelDecision={viewModel.travelDecision}
           />
           {returnUrl ? <CloudSeaReturnLink href={returnUrl} /> : null}
         </section>
@@ -5084,9 +5085,11 @@ function cloudSeaWindowCategoryDefinitions(
 function CloudSeaWindowCardsSection({
   windows,
   terrainContext,
+  travelDecision,
 }: {
   readonly windows: readonly CloudSeaWindowItem[];
   readonly terrainContext: CloudSeaTerrainContext;
+  readonly travelDecision: CloudSeaForecastViewModel["travelDecision"];
 }) {
   const cards = buildCloudSeaWindowCardData(windows, terrainContext);
 
@@ -5133,7 +5136,7 @@ function CloudSeaWindowCardsSection({
 
             <dl className="grid gap-1.5 text-xs leading-5 text-muted-foreground">
               <CloudSeaWindowCardLine
-                label={terrainContext.shouldDowngradeCloudSeaWording ? "观察窗口" : "主窗口"}
+                label={cloudSeaWindowCardPrimaryLabel(terrainContext, travelDecision)}
                 value={card.primaryWindow}
               />
               <CloudSeaWindowCardLine label="备选窗口" value={card.backupWindow} />
@@ -5169,6 +5172,19 @@ function CloudSeaWindowCardLine({
       <dd className="inline break-words">{value}</dd>
     </div>
   );
+}
+
+function cloudSeaWindowCardPrimaryLabel(
+  terrainContext: CloudSeaTerrainContext,
+  travelDecision: CloudSeaForecastViewModel["travelDecision"],
+): string {
+  if (travelDecision === "no_go") {
+    return "备选观察窗口";
+  }
+  if (travelDecision === "cautious") {
+    return "参考窗口";
+  }
+  return terrainContext.shouldDowngradeCloudSeaWording ? "观察窗口" : "主窗口";
 }
 
 function buildCloudSeaWindowCardData(
@@ -6960,6 +6976,7 @@ function CloudSeaActionPlanSection({
   readonly variant?: "card" | "embedded";
 }) {
   const Container = (variant === "embedded" ? "section" : Card) as React.ElementType;
+  const hasMainGuardAction = items.some((item) => item.label === "主守窗口");
 
   return (
     <Container
@@ -6971,7 +6988,9 @@ function CloudSeaActionPlanSection({
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-card-foreground">行动方案</h2>
-        <Badge variant="muted">是否出发 / 到达 / 主守 / 备选</Badge>
+        <Badge variant="muted">
+          {hasMainGuardAction ? "是否出发 / 到达 / 主守 / 备选" : "是否出发 / 窗口参考 / 备选"}
+        </Badge>
       </div>
       <ActionPlanGrid
         target="cloud_sea"
