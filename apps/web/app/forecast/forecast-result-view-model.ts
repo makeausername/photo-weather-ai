@@ -2995,15 +2995,17 @@ export function buildAstroForecastViewModel(
     professionalHourlyData,
     result.calendarBasis.timezone,
   );
-  const professionalDataGroups = buildAstroPageProfessionalDataGroups({
-    result,
-    nights: nightlyCards,
-    bestNight,
-    lightPollution,
-    terrainHorizon,
-    professionalHourlyData,
-    decisionSummary,
-  });
+  const professionalDataGroups = filterAstroPublicProfessionalDataGroups(
+    buildAstroPageProfessionalDataGroups({
+      result,
+      nights: nightlyCards,
+      bestNight,
+      lightPollution,
+      terrainHorizon,
+      professionalHourlyData,
+      decisionSummary,
+    }),
+  );
 
   return {
     coreCards: [
@@ -6481,6 +6483,73 @@ function astroActionItem(
   return items.find((item) => item.key === key);
 }
 
+const astroDeveloperDiagnosticGroupKeys = new Set(["developer-diagnostics"]);
+const astroDeveloperDiagnosticGroupTitles = new Set(["开发诊断"]);
+const astroDeveloperDiagnosticBadgeLabels = new Set(["默认折叠"]);
+const astroPublicProfessionalMetadataItemLabels = new Set(
+  [
+    "数据来源",
+    "来源",
+    "数据年份",
+    "数据版本",
+    "校验码",
+    "计算口径",
+    "计算规则",
+    "内部诊断代码",
+    "波特尔方法",
+    "说明",
+    "波特尔说明",
+    "WA数据集",
+    "WA原始值",
+    "WA换算组件",
+    "WA原始备注",
+    "WA/模型基线",
+    "WA原始亮度",
+    "换算说明",
+    "DEM 数据集",
+    "天文数据",
+    "数据说明",
+    "缺失数据",
+    "逐小时窗口",
+  ].map(normalizeAstroProfessionalMetadataKey),
+);
+
+export function filterAstroPublicProfessionalDataGroups(
+  groups: readonly AstroProfessionalDataGroup[],
+): readonly AstroProfessionalDataGroup[] {
+  return groups.flatMap((group) => {
+    if (isAstroDeveloperDiagnosticGroup(group)) {
+      return [];
+    }
+
+    const items = group.items.filter(isAstroPublicProfessionalDataItem);
+    if (items.length === 0) {
+      return [];
+    }
+
+    return [{ ...group, items }];
+  });
+}
+
+function isAstroDeveloperDiagnosticGroup(group: AstroProfessionalDataGroup): boolean {
+  return (
+    group.developerDiagnostics === true ||
+    astroDeveloperDiagnosticGroupKeys.has(group.key) ||
+    astroDeveloperDiagnosticGroupTitles.has(group.title) ||
+    (group.badgeLabel ? astroDeveloperDiagnosticBadgeLabels.has(group.badgeLabel) : false)
+  );
+}
+
+function isAstroPublicProfessionalDataItem(item: ForecastResultSectionItem): boolean {
+  return !astroPublicProfessionalMetadataItemLabels.has(
+    normalizeAstroProfessionalMetadataKey(item.label),
+  );
+}
+
+function normalizeAstroProfessionalMetadataKey(label: string): string {
+  return label.replace(/\s+/g, "").trim();
+}
+
 function buildAstroPageProfessionalDataGroups({
   result,
   nights,
@@ -6553,14 +6622,10 @@ function buildAstroPageProfessionalDataGroups({
     {
       key: "astronomy-window",
       title: "天文窗口",
-      badgeLabel: result.astroDataSourceLabelZh,
+      badgeLabel:
+        night?.astronomicalNight.lifecycle === "available" ? "天文黑夜可用" : "天文黑夜待确认",
       description: "展示本次最佳夜的天文黑夜、银河窗口和月相依据。",
       items: [
-        {
-          label: "天文数据",
-          value: result.astroDataSourceLabelZh,
-          detail: result.calendarBasis.forecastRangeLabel,
-        },
         {
           label: "天文黑夜",
           value: night?.astronomicalNight.windowLabel ?? "暂无观测夜",
@@ -6620,7 +6685,7 @@ function buildAstroPageProfessionalDataGroups({
       key: "light-pollution-evidence",
       title: "光污染证据",
       badgeLabel: lightPollution.publicDecisionLabel,
-      description: "合并 WA/模型天空亮度、VIIRS 当前灯光和方向光害，作为出行判断的次级证据。",
+      description: "合并环境暗空、当前灯光和方向光害，作为出行判断的次级证据。",
       items: [...lightPollutionPublicItems.slice(0, 4), ...directionalLightPollutionItems].slice(
         0,
         7,
@@ -6630,7 +6695,7 @@ function buildAstroPageProfessionalDataGroups({
       key: "terrain-horizon-evidence",
       title: "地形证据",
       badgeLabel: terrainHorizon.publicDecisionLabel,
-      description: "地形遮挡参与判断；方位角、地平线高度和 DEM 细节只在专业数据中展示。",
+      description: "地形遮挡参与判断；保留方位角、地平线高度和可执行遮挡结论。",
       items: terrainHorizon.professionalDataItems.slice(0, 6),
     },
     {

@@ -8829,12 +8829,10 @@ describe("forecast result target-aware view model", () => {
       "weather-blockers",
       "light-pollution-evidence",
       "terrain-horizon-evidence",
-      "developer-diagnostics",
     ]);
-    expect(viewModel.professionalDataGroups.at(-1)).toMatchObject({
-      collapsedByDefault: true,
-      developerDiagnostics: true,
-    });
+    expect(viewModel.professionalDataGroups.some((group) => group.developerDiagnostics)).toBe(
+      false,
+    );
     expect(viewModel.publicDisplay.factorChips.map((chip) => chip.semanticKey)).toEqual([
       "light-pollution-public",
       "terrain-horizon-public",
@@ -8860,6 +8858,100 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain('data-ai-interpretation-empty-state="compact"');
     expect(html).not.toContain("可生成智能解读");
     expect(html).not.toContain("可手动生成更自然的摄影建议，当前判断结果不依赖 AI。");
+  });
+
+  it("hides astro public diagnostics and source metadata while keeping usable result content", () => {
+    const lightPollution = lightPollutionForDisplayTest({
+      sourceLabel: "EOG VIIRS annual nighttime lights",
+    });
+    const terrainResult = resultWithAstroTerrainHorizon(terrainHorizonDemForTest);
+    const result: ForecastCalculationResult = {
+      ...terrainResult,
+      ...pickAstroHourlyFields(resultWithAstroHourlyRange("7d", 48)),
+      astroAnalysis: {
+        ...terrainResult.astroAnalysis,
+        lightPollution,
+        lightPollutionEvidence: [
+          {
+            label: "光污染影响",
+            value: "环境低",
+            effect: "neutral",
+            noteZh: lightPollution.lightPollutionNoteZh,
+          },
+        ],
+        missingDataNotes: [
+          "当前天气数据为演示数据，结果仅用于体验分析流程。",
+          "EOG VIIRS annual nighttime lights 数据集暂未覆盖。",
+        ],
+        dailyAstro: terrainResult.astroAnalysis.dailyAstro.map((day) => ({
+          ...day,
+          lightPollution,
+          terrainHorizonAssessment: terrainHorizonDemForTest,
+        })),
+      },
+    };
+    const viewModel = buildAstroForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(AstroResultPage, {
+        query: queryForTarget("astro"),
+        result,
+        viewModel,
+      }),
+    );
+    const publicProfessionalText = JSON.stringify(viewModel.professionalDataGroups);
+    const publicResultText = `${html}\n${publicProfessionalText}`;
+    const source = readFileSync(
+      fileURLToPath(new URL("./forecast-result-client.tsx", import.meta.url)),
+      "utf8",
+    );
+    const professionalDataSource = source.slice(
+      source.indexOf("function AstroProfessionalDataSection"),
+      source.indexOf("function AstroProfessionalGroupSection"),
+    );
+
+    for (const forbiddenText of [
+      "开发诊断",
+      "默认折叠",
+      "数据状态：",
+      "天文数据：",
+      "数据来源",
+      "DEM 数据集",
+      "校验码",
+      "计算口径",
+      "VIIRS annual nighttime lights",
+      "EOG VIIRS",
+    ]) {
+      expect(publicResultText).not.toContain(forbiddenText);
+    }
+
+    expect(viewModel.professionalDataGroups.map((group) => group.key)).toEqual([
+      "decision-summary",
+      "astronomy-window",
+      "weather-blockers",
+      "light-pollution-evidence",
+      "terrain-horizon-evidence",
+    ]);
+    expect(publicProfessionalText).toContain("决策摘要");
+    expect(publicProfessionalText).toContain("天文窗口");
+    expect(publicProfessionalText).toContain("光污染证据");
+    expect(publicProfessionalText).toContain("地形证据");
+    expect(viewModel.hourlySummary.map((item) => item.key)).toEqual([
+      "best-hours",
+      "worst-hours",
+      "cloud-minimum",
+      "visibility-wind",
+      "precipitation",
+    ]);
+    expect(viewModel.professionalHourlyData.rows).toHaveLength(48);
+    expect(html).toContain(viewModel.decisionSummary.recommendationLabel);
+    expect(html).toContain("专业数据");
+    expect(html).toContain("展开专业数据");
+    expect(professionalDataSource).toContain("AstroHourlySummaryGrid");
+    expect(professionalDataSource).toContain("<CloudSeaProfessionalHourlyDataPanel");
+    expect(professionalDataSource).toContain("MoonPhaseCalendar");
+    expect(professionalDataSource).toContain("查看整月月相");
+    expect(professionalDataSource).not.toContain("viewModel.dataNotice");
+    expect(professionalDataSource).not.toContain("viewModel.missingDataNotes");
   });
 
   it("deduplicates public astro terrain and light-pollution ownership", () => {

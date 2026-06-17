@@ -35,6 +35,7 @@ import { MoonPhaseCalendar } from "../../components/moon-phase-calendar";
 import { Badge, Button, Card, cn } from "../../components/ui";
 import {
   buildForecastResultViewModel,
+  filterAstroPublicProfessionalDataGroups,
   getForecastResultPageShellCopy,
   type CloudSeaActionPlanItem,
   type AstroForecastViewModel,
@@ -3891,8 +3892,6 @@ function AstroTopContext({
           <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs leading-5 text-muted-foreground">
             <span>预报范围：{result.calendarBasis.forecastRangeLabel}</span>
             <span>生成时间：{formatDateTime(result.generatedAt)}</span>
-            <span>数据状态：{weatherStatusLabel(result)}</span>
-            <span>天文数据：{result.astroDataSourceLabelZh}</span>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -4212,6 +4211,9 @@ function AstroProfessionalDataSection({
   readonly viewModel: AstroForecastViewModel;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const professionalDataGroups = filterAstroPublicProfessionalDataGroups(
+    viewModel.professionalDataGroups,
+  );
 
   return (
     <Card
@@ -4244,21 +4246,16 @@ function AstroProfessionalDataSection({
         <div className="mt-4 grid gap-4" data-astro-professional-data-body="true">
           <AstroHourlySummaryGrid items={viewModel.hourlySummary} />
 
-          <div
-            className="grid gap-3 min-[900px]:grid-cols-2"
-            data-astro-professional-data-groups="true"
-          >
-            {viewModel.professionalDataGroups.map((group) => (
-              <AstroProfessionalGroupSection key={group.key} group={group} />
-            ))}
-          </div>
-
-          {viewModel.missingDataNotes.length > 0 ? (
-            <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
-              {viewModel.missingDataNotes[0]}
-            </p>
+          {professionalDataGroups.length > 0 ? (
+            <div
+              className="grid gap-3 min-[900px]:grid-cols-2"
+              data-astro-professional-data-groups="true"
+            >
+              {professionalDataGroups.map((group) => (
+                <AstroProfessionalGroupSection key={group.key} group={group} />
+              ))}
+            </div>
           ) : null}
-          <p className="text-xs leading-5 text-muted-foreground">{viewModel.dataNotice}</p>
 
           <CloudSeaProfessionalHourlyDataPanel
             target="astro"
@@ -4298,7 +4295,7 @@ function AstroHourlySummaryGrid({
     <section className="mt-3 grid gap-2" data-astro-hourly-summary="true">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-bold text-card-foreground">逐小时摘要</h3>
-        <Badge variant="muted">小时表默认折叠</Badge>
+        <Badge variant="muted">关键小时摘要</Badge>
       </div>
       <dl className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr))]">
         {items.map((item) => (
@@ -4322,15 +4319,20 @@ function AstroProfessionalGroupSection({
 }: {
   readonly group: AstroForecastViewModel["professionalDataGroups"][number];
 }) {
+  const publicGroup = filterAstroPublicProfessionalDataGroups([group])[0];
+  if (!publicGroup) {
+    return null;
+  }
+
   const body = (
     <>
-      {group.description ? (
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">{group.description}</p>
+      {publicGroup.description ? (
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">{publicGroup.description}</p>
       ) : null}
       <dl className="mt-3 grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr))]">
-        {group.items.map((item) => (
+        {publicGroup.items.map((item) => (
           <AstroProfessionalFact
-            key={`${group.key}-${item.label}`}
+            key={`${publicGroup.key}-${item.label}`}
             label={item.label}
             value={item.value ?? item.detail}
             detail={item.value ? item.detail : undefined}
@@ -4340,24 +4342,18 @@ function AstroProfessionalGroupSection({
     </>
   );
 
-  if (group.collapsedByDefault) {
+  if (publicGroup.collapsedByDefault) {
     return (
       <details
-        className={cn(
-          "rounded-lg border border-border bg-muted/70 p-3",
-          group.developerDiagnostics && "border-dashed bg-muted/50",
-        )}
-        data-astro-professional-data-group={group.key}
+        className="rounded-lg border border-border bg-muted/70 p-3"
+        data-astro-professional-data-group={publicGroup.key}
         data-astro-professional-data-group-collapsed="true"
-        data-astro-professional-data-group-secondary={
-          group.developerDiagnostics ? "true" : undefined
-        }
       >
         <summary className="cursor-pointer text-sm font-semibold text-card-foreground">
-          {group.title}
-          {group.badgeLabel ? (
+          {publicGroup.title}
+          {publicGroup.badgeLabel ? (
             <span className="ml-2 text-xs font-normal text-muted-foreground">
-              {group.badgeLabel}
+              {publicGroup.badgeLabel}
             </span>
           ) : null}
         </summary>
@@ -4369,11 +4365,11 @@ function AstroProfessionalGroupSection({
   return (
     <section
       className="rounded-lg border border-border bg-card p-3"
-      data-astro-professional-data-group={group.key}
+      data-astro-professional-data-group={publicGroup.key}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-card-foreground">{group.title}</h3>
-        {group.badgeLabel ? <Badge variant="muted">{group.badgeLabel}</Badge> : null}
+        <h3 className="text-sm font-semibold text-card-foreground">{publicGroup.title}</h3>
+        {publicGroup.badgeLabel ? <Badge variant="muted">{publicGroup.badgeLabel}</Badge> : null}
       </div>
       {body}
     </section>
