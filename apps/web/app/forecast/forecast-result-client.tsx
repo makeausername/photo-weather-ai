@@ -4201,6 +4201,20 @@ const astroProfessionalHourlySectionConfig: ProfessionalHourlySectionConfig = {
   previewTitle: "默认显示关键夜拍小时摘要",
 };
 
+const astroProfessionalDataGroupsGridClassName =
+  "grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr))]";
+
+const astroProfessionalFullWidthGroupKeys = new Set(["terrain-horizon-evidence"]);
+
+function astroProfessionalGroupUsesFullWidth(
+  group: AstroForecastViewModel["professionalDataGroups"][number],
+): boolean {
+  return (
+    astroProfessionalFullWidthGroupKeys.has(group.key) ||
+    (group.key.endsWith("-evidence") && group.items.length <= 5)
+  );
+}
+
 function AstroProfessionalDataSection({
   query,
   result,
@@ -4248,7 +4262,7 @@ function AstroProfessionalDataSection({
 
           {professionalDataGroups.length > 0 ? (
             <div
-              className="grid gap-3 min-[900px]:grid-cols-2"
+              className={astroProfessionalDataGroupsGridClassName}
               data-astro-professional-data-groups="true"
             >
               {professionalDataGroups.map((group) => (
@@ -4323,6 +4337,7 @@ function AstroProfessionalGroupSection({
   if (!publicGroup) {
     return null;
   }
+  const usesFullWidth = astroProfessionalGroupUsesFullWidth(publicGroup);
 
   const body = (
     <>
@@ -4345,9 +4360,13 @@ function AstroProfessionalGroupSection({
   if (publicGroup.collapsedByDefault) {
     return (
       <details
-        className="rounded-lg border border-border bg-muted/70 p-3"
+        className={cn(
+          "rounded-lg border border-border bg-muted/70 p-3",
+          usesFullWidth && "[grid-column:1/-1]",
+        )}
         data-astro-professional-data-group={publicGroup.key}
         data-astro-professional-data-group-collapsed="true"
+        data-astro-professional-data-group-span={usesFullWidth ? "full" : "auto"}
       >
         <summary className="cursor-pointer text-sm font-semibold text-card-foreground">
           {publicGroup.title}
@@ -4364,8 +4383,12 @@ function AstroProfessionalGroupSection({
 
   return (
     <section
-      className="rounded-lg border border-border bg-card p-3"
+      className={cn(
+        "rounded-lg border border-border bg-card p-3",
+        usesFullWidth && "[grid-column:1/-1]",
+      )}
       data-astro-professional-data-group={publicGroup.key}
+      data-astro-professional-data-group-span={usesFullWidth ? "full" : "auto"}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-card-foreground">{publicGroup.title}</h3>

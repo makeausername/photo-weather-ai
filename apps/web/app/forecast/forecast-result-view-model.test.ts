@@ -8908,6 +8908,10 @@ describe("forecast result target-aware view model", () => {
       source.indexOf("function AstroProfessionalDataSection"),
       source.indexOf("function AstroProfessionalGroupSection"),
     );
+    const professionalGroupSource = source.slice(
+      source.indexOf("const astroProfessionalDataGroupsGridClassName"),
+      source.indexOf("function AstroProfessionalFact"),
+    );
 
     for (const forbiddenText of [
       "开发诊断",
@@ -8952,6 +8956,13 @@ describe("forecast result target-aware view model", () => {
     expect(professionalDataSource).toContain("查看整月月相");
     expect(professionalDataSource).not.toContain("viewModel.dataNotice");
     expect(professionalDataSource).not.toContain("viewModel.missingDataNotes");
+    expect(professionalDataSource).toContain("astroProfessionalDataGroupsGridClassName");
+    expect(professionalDataSource).not.toContain('className="grid gap-3 min-[900px]:grid-cols-2"');
+    expect(professionalGroupSource).toContain("repeat(auto-fit");
+    expect(professionalGroupSource).toContain("astroProfessionalGroupUsesFullWidth");
+    expect(professionalGroupSource).toContain("terrain-horizon-evidence");
+    expect(professionalGroupSource).toContain("[grid-column:1/-1]");
+    expect(professionalGroupSource).toContain("data-astro-professional-data-group-span");
   });
 
   it("deduplicates public astro terrain and light-pollution ownership", () => {
