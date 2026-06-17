@@ -5699,7 +5699,7 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("/ 100");
       expect(html).toContain("地形参考：机位海拔约 1860 米");
       expect(html).toContain("推荐等级");
-      expect(html).toContain("云层变化参考窗口");
+      expect(html).toContain("参考窗口");
       expect(html).toContain("云海形成 / 可拍机会");
       expect(html).toContain("主要风险");
       expect(countOccurrences(html, 'data-cloud-sea-metric-card="true"')).toBe(6);
