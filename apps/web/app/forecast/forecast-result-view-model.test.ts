@@ -5959,7 +5959,10 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("高云量 %");
       expect(html).toContain("中云量 %");
       expect(html).toContain("低云量 %");
-      expect(html).toContain("多源一致性");
+      expect(professionalHourlySection).not.toContain("CloudSeaMultiSourceAgreement");
+      expect(professionalHourlySection).not.toContain("多源一致性");
+      expect(html).not.toContain("CloudSeaMultiSourceAgreement");
+      expect(html).not.toContain("多源一致性");
       expect(dataCaution).toContain("低云分歧较大");
       expectMarkersInOrder(html, [
         "CloudSeaWindowDecision",
@@ -5977,8 +5980,6 @@ describe("forecast result target-aware view model", () => {
         "CloudSeaAiInterpretation",
         "智能解读",
       ]);
-      expect(html.indexOf("CloudSeaMultiSourceAgreement")).toBeLessThan(aiIndex);
-      expect(html.indexOf("多源一致性")).toBeLessThan(aiIndex);
       expect(html.indexOf(dataCaution)).toBeLessThan(aiIndex);
       expect(afterAiSection).not.toContain("专业小时数据");
       expect(afterAiSection).not.toContain("每日云海判断");
@@ -6278,7 +6279,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toMatch(/latitude|longitude|WGS84|GCJ-02|经度|纬度/i);
   });
 
-  it("renders compact multi-source low-cloud disagreement without provider names or coordinates", () => {
+  it("keeps multi-source low-cloud disagreement in the view model without rendering the agreement card", () => {
     const base = resultWithProfessionalHourlyData();
     const context = agreementContext();
     const result = {
@@ -6298,26 +6299,29 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const agreementSection = sectionBetween(
+    const professionalDataSection = sectionBetween(
       html,
-      "CloudSeaMultiSourceAgreement",
-      "CloudSeaReasoning",
+      "CloudSeaProfessionalData",
+      "CloudSeaAiInterpretation",
     );
 
     expect(viewModel.multiSourceAgreementContext).toMatchObject({
       disagreementLevel: "high",
       shouldLowerConfidence: true,
     });
+    expect(viewModel.displayData.multiSourceConsistency).toMatchObject({
+      disagreementLevel: "high",
+      shouldLowerConfidence: true,
+    });
     expect(viewModel.hero.confidenceLabel).toBe("中（多源分歧需复核）");
     expect(viewModel.dataCaution).toContain("低云分歧较大");
     expect(html).toContain("CloudSeaProfessionalHourlyData");
-    expect(html).toContain("CloudSeaMultiSourceAgreement");
-    expect(html).toContain("多源一致性");
-    expect(html).toContain("存在明显分歧");
-    expect(html).toContain("已降低置信度");
-    expect(agreementSection).toContain("低云分歧较大");
-    expect(agreementSection).toContain("低云多源差值约 45 个百分点");
-    expect(agreementSection).toContain("降水分歧");
+    expect(professionalDataSection).toContain("CloudSeaProfessionalHourlyData");
+    expect(professionalDataSection).toContain("CloudSeaReasoning");
+    expect(professionalDataSection).not.toContain("CloudSeaMultiSourceAgreement");
+    expect(professionalDataSection).not.toContain("多源一致性");
+    expect(html).not.toContain("CloudSeaMultiSourceAgreement");
+    expect(html).not.toContain("多源一致性");
     expect(html).not.toContain("QWeather");
     expect(html).not.toContain("qweather");
     expect(html).not.toContain("Open-Meteo");
@@ -6325,14 +6329,11 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("和风天气");
     expect(html).not.toMatch(/latitude|longitude|WGS84|经度|纬度/i);
     expect(html.indexOf("CloudSeaProfessionalHourlyData")).toBeLessThan(
-      html.indexOf("CloudSeaMultiSourceAgreement"),
-    );
-    expect(html.indexOf("CloudSeaMultiSourceAgreement")).toBeLessThan(
       html.indexOf("CloudSeaReasoning"),
     );
   });
 
-  it("renders mid/high multi-source disagreement as glow or texture related without lowering cloud sea confidence", () => {
+  it("keeps mid/high multi-source disagreement from lowering cloud sea confidence without rendering the agreement card", () => {
     const base = resultWithProfessionalHourlyData();
     const context = agreementContext({
       fieldDisagreements: [
@@ -6380,18 +6381,30 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const agreementSection = sectionBetween(
+    const professionalDataSection = sectionBetween(
       html,
-      "CloudSeaMultiSourceAgreement",
-      "CloudSeaReasoning",
+      "CloudSeaProfessionalData",
+      "CloudSeaAiInterpretation",
     );
 
+    expect(viewModel.multiSourceAgreementContext).toMatchObject({
+      disagreementLevel: "high",
+      shouldLowerConfidence: false,
+      shouldShowReviewWarning: true,
+    });
+    expect(viewModel.displayData.multiSourceConsistency).toMatchObject({
+      disagreementLevel: "high",
+      shouldLowerConfidence: false,
+      shouldShowReviewWarning: true,
+    });
     expect(viewModel.hero.confidenceLabel).toBe("高");
-    expect(agreementSection).toContain("中高云分歧较大");
-    expect(agreementSection).toContain("偏霞光参考");
-    expect(agreementSection).toContain("更多影响霞光和云层纹理");
-    expect(agreementSection).not.toContain("已降低置信度");
     expect(html).toContain("CloudSeaProfessionalHourlyData");
+    expect(professionalDataSection).toContain("CloudSeaProfessionalHourlyData");
+    expect(professionalDataSection).toContain("CloudSeaReasoning");
+    expect(professionalDataSection).not.toContain("CloudSeaMultiSourceAgreement");
+    expect(professionalDataSection).not.toContain("多源一致性");
+    expect(html).not.toContain("CloudSeaMultiSourceAgreement");
+    expect(html).not.toContain("多源一致性");
     expect(html).not.toContain("Open-Meteo");
     expect(html).not.toContain("meteoblue");
     expect(html).not.toContain("QWeather");
