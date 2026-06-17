@@ -5378,7 +5378,7 @@ type ProfessionalHourlyFilterDefinition = {
   readonly label: string;
 };
 
-type ProfessionalHourlySectionTarget = "cloud_sea" | "glow" | "astro";
+export type ProfessionalHourlySectionTarget = "cloud_sea" | "glow" | "astro";
 type ProfessionalHourlySectionVariant = "card" | "embedded";
 
 type ProfessionalHourlySectionConfig = {
@@ -5460,7 +5460,7 @@ function isValidProfessionalHourlyTimeBasis(
   );
 }
 
-function CloudSeaProfessionalHourlyDataPanel({
+export function CloudSeaProfessionalHourlyDataPanel({
   target = "cloud_sea",
   data,
   terrainContext,
@@ -5653,6 +5653,7 @@ function ProfessionalHourlyCloudSection({
 
       {!expanded ? (
         <CloudSeaHourlyFocusPreview
+          target={target}
           rows={filteredRows.slice(0, 4)}
           timezone={basis.timezone}
           rowAnnotations={rowAnnotations}
@@ -5734,6 +5735,7 @@ function ProfessionalHourlyCloudSection({
                 filteredRows.map((row) => (
                   <CloudSeaProfessionalHourlyRow
                     key={row.time}
+                    target={target}
                     row={row}
                     timezone={basis.timezone}
                     annotation={rowAnnotations.get(row.time)}
@@ -5818,6 +5820,55 @@ function professionalHourlyAnnotationBadgeVariant(
     return "info";
   }
   return "muted";
+}
+
+type ProfessionalHourlySignalDisplay = {
+  readonly label: string;
+  readonly badgeVariant: BadgeVariant;
+};
+
+const astroProfessionalHourlySignalDisplayBySignal = {
+  "霞光参考": { label: "云层偏多", badgeVariant: "warning" },
+  "云层纹理": { label: "云层参考", badgeVariant: "info" },
+  "可拍窗口": { label: "夜拍窗口", badgeVariant: "default" },
+  "形成信号": { label: "夜拍参考", badgeVariant: "info" },
+  "雨后开口": { label: "开口需复核", badgeVariant: "warning" },
+  "白墙风险": { label: "低云/雾风险", badgeVariant: "danger" },
+  "需复核": { label: "需复核", badgeVariant: "warning" },
+  "普通": { label: "普通", badgeVariant: "muted" },
+} satisfies Record<ProfessionalHourlyRow["cloudSeaSignal"], ProfessionalHourlySignalDisplay>;
+
+export function professionalHourlySignalDisplayForTarget(
+  target: ProfessionalHourlySectionTarget,
+  signal: ProfessionalHourlyRow["cloudSeaSignal"],
+  {
+    annotation,
+    ordinarySignalLabel,
+  }: {
+    readonly annotation?: Pick<ProfessionalHourlyRowAnnotation, "label" | "tone">;
+    readonly ordinarySignalLabel?: string;
+  } = {},
+): ProfessionalHourlySignalDisplay {
+  if (annotation?.label !== undefined) {
+    return {
+      label: annotation.label,
+      badgeVariant: annotation.tone
+        ? professionalHourlyAnnotationBadgeVariant(annotation.tone)
+        : ordinarySignalLabel
+          ? "muted"
+          : professionalSignalBadgeVariantForTarget(target, signal),
+    };
+  }
+
+  if (ordinarySignalLabel) {
+    return { label: ordinarySignalLabel, badgeVariant: "muted" };
+  }
+
+  if (target === "astro") {
+    return astroProfessionalHourlySignalDisplayBySignal[signal];
+  }
+
+  return { label: signal, badgeVariant: professionalSignalBadgeVariant(signal) };
 }
 
 function CloudSeaMultiSourceAgreementCard({
@@ -6024,6 +6075,7 @@ function multiSourceDisagreementRank(
 }
 
 function CloudSeaProfessionalHourlyRow({
+  target,
   row,
   timezone,
   annotation,
@@ -6031,6 +6083,7 @@ function CloudSeaProfessionalHourlyRow({
   cloudBasisRowNote,
   showRawTemperatureColumn,
 }: {
+  readonly target: ProfessionalHourlySectionTarget;
   readonly row: ProfessionalHourlyRow;
   readonly timezone: string;
   readonly annotation?: ProfessionalHourlyRowAnnotation;
@@ -6039,12 +6092,10 @@ function CloudSeaProfessionalHourlyRow({
   readonly showRawTemperatureColumn: boolean;
 }) {
   const signal = professionalHourlyDisplaySignal(row);
-  const signalLabel = annotation?.label ?? ordinarySignalLabel ?? signal;
-  const signalBadgeVariant = annotation?.tone
-    ? professionalHourlyAnnotationBadgeVariant(annotation.tone)
-    : ordinarySignalLabel
-      ? "muted"
-      : professionalSignalBadgeVariant(signal);
+  const signalDisplay = professionalHourlySignalDisplayForTarget(target, signal, {
+    annotation,
+    ordinarySignalLabel,
+  });
   const weatherText = providerNeutralProfessionalWeatherText(row.weatherText) ?? "—";
   const weatherGlyph = weatherGlyphForProfessionalHour(row, weatherText);
 
@@ -6079,7 +6130,7 @@ function CloudSeaProfessionalHourlyRow({
         </span>
       </ProfessionalHourlyCell>
       <ProfessionalHourlyCell cell="signal">
-        <Badge variant={signalBadgeVariant}>{signalLabel}</Badge>
+        <Badge variant={signalDisplay.badgeVariant}>{signalDisplay.label}</Badge>
       </ProfessionalHourlyCell>
       <ProfessionalHourlyCell
         cell="cloud-total"
@@ -6155,12 +6206,14 @@ function CloudSeaProfessionalHourlyRow({
 }
 
 function CloudSeaHourlyFocusPreview({
+  target,
   rows,
   timezone,
   rowAnnotations,
   ordinarySignalLabel,
   title,
 }: {
+  readonly target: ProfessionalHourlySectionTarget;
   readonly rows: readonly ProfessionalHourlyRow[];
   readonly timezone: string;
   readonly rowAnnotations: ReadonlyMap<string, ProfessionalHourlyRowAnnotation>;
@@ -6177,19 +6230,17 @@ function CloudSeaHourlyFocusPreview({
           {rows.map((row) => {
             const annotation = rowAnnotations.get(row.time);
             const signal = professionalHourlyDisplaySignal(row);
-            const signalLabel = annotation?.label ?? ordinarySignalLabel ?? signal;
-            const signalBadgeVariant = annotation?.tone
-              ? professionalHourlyAnnotationBadgeVariant(annotation.tone)
-              : ordinarySignalLabel
-                ? "muted"
-                : professionalSignalBadgeVariant(signal);
+            const signalDisplay = professionalHourlySignalDisplayForTarget(target, signal, {
+              annotation,
+              ordinarySignalLabel,
+            });
             return (
               <div key={row.time} className="rounded-lg border border-border bg-muted px-3 py-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-bold text-card-foreground">
                     {row.timeLabel || formatProfessionalTime(row.time, timezone)}
                   </p>
-                  <Badge variant={signalBadgeVariant}>{signalLabel}</Badge>
+                  <Badge variant={signalDisplay.badgeVariant}>{signalDisplay.label}</Badge>
                 </div>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
                   低云 {formatProfessionalPercent(row.cloudLowPercent)} · 湿度{" "}
@@ -6537,6 +6588,17 @@ function professionalSignalBadgeVariant(signal: ProfessionalHourlyRow["cloudSeaS
     return "warning" as const;
   }
   return "muted" as const;
+}
+
+function professionalSignalBadgeVariantForTarget(
+  target: ProfessionalHourlySectionTarget,
+  signal: ProfessionalHourlyRow["cloudSeaSignal"],
+): BadgeVariant {
+  if (target === "astro") {
+    return astroProfessionalHourlySignalDisplayBySignal[signal].badgeVariant;
+  }
+
+  return professionalSignalBadgeVariant(signal);
 }
 
 function professionalHourlyDisplaySignal(

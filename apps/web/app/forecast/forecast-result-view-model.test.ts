@@ -16,6 +16,7 @@ import {
   AiExplanationPanel,
   ComprehensiveForecastView,
   AstroResultPage,
+  CloudSeaProfessionalHourlyDataPanel,
   CloudSeaResultPage,
   ForecastDecisionErrorState,
   ForecastDecisionLoadingState,
@@ -28,6 +29,7 @@ import {
   deepSeekBackendTimeoutMaxMs,
   normalizeAiExplanationContent,
   normalizeAiExplainResponse,
+  professionalHourlySignalDisplayForTarget,
   providerDiagnosticText,
   readCachedAiExplanation,
   resolveForecastPageMode,
@@ -43,6 +45,7 @@ import {
   buildCloudSeaTerrainContext,
   cloudSeaTerrainRecommendationLabel,
 } from "./cloud-sea-terrain-context";
+import { buildProfessionalHourlyDisplayDataForResult } from "./cloud-sea-display-data";
 import {
   buildGeneralDailySubjectLinks,
   buildSubjectDetailDeepLink,
@@ -7251,6 +7254,79 @@ describe("forecast result target-aware view model", () => {
     expect(professionalDataSource).toContain('variant="embedded"');
     expect(source).toContain("initiallyExpanded: false");
     expect(source).toContain("展开完整小时表");
+  });
+
+  it("uses astro-safe professional hourly fallback signal labels without changing glow labels", () => {
+    const rows = professionalHourlyRangeForTest(24).map((row) => ({
+      ...row,
+      cloudSeaSignal: "霞光参考" as const,
+      cloudSeaSignalLevel: "watch" as const,
+    }));
+    const result: ForecastCalculationResult = {
+      ...resultWithAstroHourlyRange("24h", 24),
+      professionalHourlyData: rows,
+    };
+    const annotatedRow = rows.find((row) => row.timeLabel === "04:00") ?? rows[0]!;
+    const unannotatedData = buildProfessionalHourlyDisplayDataForResult({ result });
+    const annotatedData = buildProfessionalHourlyDisplayDataForResult({
+      result,
+      rowAnnotations: [
+        {
+          rowTime: annotatedRow.time,
+          label: "银河优先复核",
+          detail: "row annotation priority regression",
+          tone: "info",
+        },
+      ],
+    });
+
+    expect(professionalHourlySignalDisplayForTarget("astro", "霞光参考")).toMatchObject({
+      label: "云层偏多",
+      badgeVariant: "warning",
+    });
+    expect(
+      professionalHourlySignalDisplayForTarget("astro", "霞光参考", {
+        annotation: { label: "银河优先复核", tone: "info" },
+      }),
+    ).toMatchObject({ label: "银河优先复核", badgeVariant: "info" });
+    expect(professionalHourlySignalDisplayForTarget("cloud_sea", "霞光参考").label).toBe(
+      "霞光参考",
+    );
+    expect(professionalHourlySignalDisplayForTarget("glow", "霞光参考").label).toBe("霞光参考");
+
+    const collapsedAstroHtml = renderToStaticMarkup(
+      React.createElement(CloudSeaProfessionalHourlyDataPanel, {
+        target: "astro",
+        data: annotatedData,
+        config: { initiallyExpanded: false, previewTitle: "关键夜拍小时摘要" },
+        variant: "embedded",
+      }),
+    );
+    const expandedAstroHtml = renderToStaticMarkup(
+      React.createElement(CloudSeaProfessionalHourlyDataPanel, {
+        target: "astro",
+        data: unannotatedData,
+        config: { initiallyExpanded: true },
+        variant: "embedded",
+      }),
+    );
+    const glowHtml = renderToStaticMarkup(
+      React.createElement(CloudSeaProfessionalHourlyDataPanel, {
+        target: "glow",
+        data: unannotatedData,
+        config: { initiallyExpanded: true },
+        variant: "embedded",
+      }),
+    );
+
+    expect(collapsedAstroHtml).toContain('data-cloud-sea-hourly-preview="true"');
+    expect(collapsedAstroHtml).toContain("银河优先复核");
+    expect(collapsedAstroHtml).toContain("云层偏多");
+    expect(collapsedAstroHtml).not.toContain("霞光参考");
+    expect(expandedAstroHtml).toContain('data-professional-hourly-row="');
+    expect(expandedAstroHtml).toContain("云层偏多");
+    expect(expandedAstroHtml).not.toContain("霞光参考");
+    expect(glowHtml).toContain("霞光参考");
   });
 
   it("keeps the full 24h glow hourly range behind the collapsed professional data card", () => {
