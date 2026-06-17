@@ -5696,6 +5696,40 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain('data-cloud-sea-section="CloudSeaProfessionalData"');
       expect(html).toContain('data-cloud-sea-professional-data-expanded="false"');
       expect(html).toContain("CloudSeaDailyTrend");
+      const dailyCardSection = sectionBetween(
+        html,
+        "CloudSeaDailyTrend",
+        "CloudSeaProfessionalData",
+      );
+      expect(dailyCardSection).toContain('data-testid="cloud-sea-daily-card-grid"');
+      expect(dailyCardSection).toContain('data-cloud-sea-daily-card-grid="true"');
+      expect(dailyCardSection).toContain("min-[720px]:grid-cols-2");
+      expect(dailyCardSection).toContain("min-[1180px]:grid-cols-3");
+      expect(dailyCardSection).not.toMatch(/min-\[900px\]:grid-cols-\[minmax\(150px,0\.8fr\)/);
+      expect(countOccurrences(dailyCardSection, 'data-testid="cloud-sea-daily-card"')).toBe(
+        viewModel.dailyTrend.length,
+      );
+      expect(countOccurrences(dailyCardSection, 'data-testid="cloud-sea-daily-date"')).toBe(
+        viewModel.dailyTrend.length,
+      );
+      expect(
+        countOccurrences(dailyCardSection, 'data-testid="cloud-sea-daily-recommendation"'),
+      ).toBe(viewModel.dailyTrend.length);
+      expect(countOccurrences(dailyCardSection, 'data-testid="cloud-sea-daily-main-window"')).toBe(
+        viewModel.dailyTrend.length,
+      );
+      expect(countOccurrences(dailyCardSection, 'data-testid="cloud-sea-daily-rain-opening"')).toBe(
+        viewModel.dailyTrend.length,
+      );
+      expect(countOccurrences(dailyCardSection, 'data-testid="cloud-sea-daily-stat"')).toBe(
+        viewModel.dailyTrend.length * 3,
+      );
+      expect(countOccurrences(dailyCardSection, 'data-testid="cloud-sea-daily-action"')).toBe(
+        viewModel.dailyTrend.length,
+      );
+      expect(countOccurrences(dailyCardSection, 'data-testid="cloud-sea-daily-reason"')).toBe(
+        viewModel.dailyTrend.filter((item) => item.decisionReason).length,
+      );
       expect(html).toContain('data-forecast-daily-decision-list="true"');
       expect(html).toContain('data-result-daily-section="true"');
       expect(html).toContain("CloudSeaReasoning");
@@ -5768,6 +5802,32 @@ describe("forecast result target-aware view model", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("keeps CloudSeaDailyTrend on a compact card-grid source contract", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("./forecast-result-client.tsx", import.meta.url)),
+      "utf8",
+    );
+    const dailyTrendSource = source.slice(
+      source.indexOf("function CloudSeaDailyTrend"),
+      source.indexOf("function CloudSeaReasoningSection"),
+    );
+
+    expect(dailyTrendSource).toContain('data-cloud-sea-daily-card-grid="true"');
+    expect(dailyTrendSource).toContain('data-testid="cloud-sea-daily-card-grid"');
+    expect(dailyTrendSource).toContain("min-[720px]:grid-cols-2");
+    expect(dailyTrendSource).toContain("min-[1180px]:grid-cols-3");
+    expect(dailyTrendSource).toContain("CloudSeaDailyCard cloud-sea-daily-card");
+    expect(dailyTrendSource).toContain("recommendationBadgeVariant(item.recommendedAction)");
+    expect(dailyTrendSource).not.toMatch(/min-\[900px\]:grid-cols-\[minmax\(150px,0\.8fr\)/);
+    expect(dailyTrendSource).toContain('data-testid="cloud-sea-daily-date"');
+    expect(dailyTrendSource).toContain('data-testid="cloud-sea-daily-recommendation"');
+    expect(dailyTrendSource).toContain('dataTestId="cloud-sea-daily-main-window"');
+    expect(dailyTrendSource).toContain('dataTestId="cloud-sea-daily-rain-opening"');
+    expect(dailyTrendSource).toContain('dataTestId="cloud-sea-daily-stat"');
+    expect(dailyTrendSource).toContain('data-testid="cloud-sea-daily-reason"');
+    expect(dailyTrendSource).toContain('data-testid="cloud-sea-daily-action"');
   });
 
   it("places Cloud Sea intelligent interpretation after deterministic result sections", () => {

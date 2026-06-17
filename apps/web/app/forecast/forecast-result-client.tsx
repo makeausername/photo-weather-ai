@@ -6931,44 +6931,80 @@ function CloudSeaDailyTrend({
           </div>
           <Badge variant="muted">{forecastHorizonLabels[result.horizon]}</Badge>
         </div>
-        <div className="mt-4 grid gap-2">
+        <div
+          className="mt-4 grid gap-3 min-[720px]:grid-cols-2 min-[1180px]:grid-cols-3"
+          data-cloud-sea-daily-card-grid="true"
+          data-testid="cloud-sea-daily-card-grid"
+        >
           {items.map((item) => (
             <article
               key={item.key}
-              className="grid gap-3 rounded-lg border border-border bg-muted p-3 min-[900px]:grid-cols-[minmax(150px,0.8fr)_minmax(175px,1fr)_minmax(210px,1.2fr)_minmax(0,1.3fr)] min-[900px]:items-start"
+              className={cn(
+                "CloudSeaDailyCard cloud-sea-daily-card grid h-full min-w-0 content-start gap-3 rounded-lg border bg-card p-4 shadow-sm",
+                cloudSeaDailyCardToneClassName(item.recommendedAction),
+              )}
+              data-cloud-sea-daily-card="true"
+              data-testid="cloud-sea-daily-card"
             >
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="font-bold text-card-foreground">{item.dateLabel}</h3>
-                  <Badge variant={item.recommendedAction === "不建议专程" ? "warning" : "default"}>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h3
+                    className="break-words text-base font-bold leading-6 text-card-foreground"
+                    data-testid="cloud-sea-daily-date"
+                  >
+                    {item.dateLabel}
+                  </h3>
+                </div>
+                <span className="shrink-0" data-testid="cloud-sea-daily-recommendation">
+                  <Badge variant={recommendationBadgeVariant(item.recommendedAction)}>
                     {item.recommendedAction}
                   </Badge>
-                </div>
+                </span>
               </div>
-              <dl className="grid gap-1 text-sm">
+              <dl className="grid gap-2 rounded-lg border border-border bg-secondary/70 px-3 py-2 text-sm">
                 <CloudSeaInlineDefinition
                   label={terrainContext.vocabulary.dailyBestWindowLabel}
                   value={item.bestMorningWindow}
+                  dataTestId="cloud-sea-daily-main-window"
                 />
-                <CloudSeaInlineDefinition label="雨后开口" value={item.rainOpeningLabel} />
+                <CloudSeaInlineDefinition
+                  label="雨后开口"
+                  value={item.rainOpeningLabel}
+                  dataTestId="cloud-sea-daily-rain-opening"
+                />
               </dl>
-              <div className="grid gap-2 min-[520px]:grid-cols-3 min-[900px]:grid-cols-1 min-[1180px]:grid-cols-3">
+              <div className="grid grid-cols-3 gap-2" data-testid="cloud-sea-daily-stats">
                 <CloudSeaDailyStat
                   label={terrainContext.shouldDowngradeCloudSeaWording ? "信号" : "形成"}
                   value={`${item.formationLevel} ${item.formationScore}分`}
+                  dataTestId="cloud-sea-daily-stat"
                 />
                 <CloudSeaDailyStat
                   label={terrainContext.shouldDowngradeCloudSeaWording ? "可观察" : "可拍"}
                   value={`${item.shootableLevel} ${item.shootableScore}分`}
+                  dataTestId="cloud-sea-daily-stat"
                 />
                 <CloudSeaDailyStat
                   label={terrainContext.vocabulary.dailyObstructionStatLabel}
                   value={`${item.whiteoutRiskLabel} ${item.whiteoutRiskScore}分`}
+                  dataTestId="cloud-sea-daily-stat"
                 />
               </div>
-              <div className="grid gap-1 text-sm leading-6 text-muted-foreground">
-                {item.decisionReason ? <p>{firstSentence(item.decisionReason)}</p> : null}
-                <p>{item.actionSuggestion}</p>
+              <div className="grid gap-2 text-sm leading-6">
+                {item.decisionReason ? (
+                  <p
+                    className="break-words text-xs leading-5 text-muted-foreground"
+                    data-testid="cloud-sea-daily-reason"
+                  >
+                    {firstSentence(item.decisionReason)}
+                  </p>
+                ) : null}
+                <p
+                  className="break-words text-xs font-semibold leading-5 text-card-foreground"
+                  data-testid="cloud-sea-daily-action"
+                >
+                  {item.actionSuggestion}
+                </p>
                 {item.layerCompletenessNote ? (
                   <p className="rounded-md border border-warning/40 bg-accent/10 px-2 py-1 text-xs leading-5">
                     {item.layerCompletenessNote}
@@ -6983,9 +7019,35 @@ function CloudSeaDailyTrend({
   );
 }
 
-function CloudSeaDailyStat({ label, value }: { readonly label: string; readonly value: string }) {
+function cloudSeaDailyCardToneClassName(label: string): string {
+  const variant = recommendationBadgeVariant(label);
+
+  if (variant === "danger") {
+    return "border-danger/35";
+  }
+  if (variant === "accent" || variant === "warning") {
+    return "border-accent/40";
+  }
+  if (variant === "default" || variant === "success") {
+    return "border-primary/45 bg-secondary/25";
+  }
+  return "border-border";
+}
+
+function CloudSeaDailyStat({
+  label,
+  value,
+  dataTestId,
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly dataTestId?: string;
+}) {
   return (
-    <div className="rounded-md border border-border bg-card px-2 py-1.5">
+    <div
+      className="min-w-0 rounded-md border border-border bg-muted px-2 py-1.5"
+      data-testid={dataTestId}
+    >
       <p className="text-[11px] font-semibold text-muted-foreground">{label}</p>
       <p className="mt-0.5 break-words text-xs font-bold text-card-foreground">{value}</p>
     </div>
@@ -7152,12 +7214,14 @@ function CloudSeaReturnLink({ href }: { readonly href: string }) {
 function CloudSeaInlineDefinition({
   label,
   value,
+  dataTestId,
 }: {
   readonly label: string;
   readonly value: string;
+  readonly dataTestId?: string;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="flex flex-wrap items-center justify-between gap-2" data-testid={dataTestId}>
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="font-semibold text-card-foreground">{value}</dd>
     </div>
