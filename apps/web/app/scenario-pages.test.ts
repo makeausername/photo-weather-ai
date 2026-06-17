@@ -2,8 +2,9 @@ import * as React from "react";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
+import { forecastHorizonLabels } from "@photo-weather/shared";
 import { describe, expect, it, vi } from "vitest";
-import { ScenarioSearchPanel } from "../components/scenario-module-page";
+import { ScenarioSearchPanel, SubjectKnowledgeGuide } from "../components/scenario-module-page";
 import { HomepageSearchPanel } from "../components/homepage-search-panel";
 import { LocationSearchInput } from "../components/location-search-input";
 import { buildForecastUrl, type PlaceSearchResult } from "../components/place-search-card";
@@ -29,6 +30,8 @@ vi.mock("next/navigation", () => ({
 
 const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
+
+const selectableForecastHorizons = ["24h", "48h", "72h", "7d"] as const;
 
 const samplePlace: PlaceSearchResult = {
   id: "mock-place-huangshan-guangmingding",
@@ -378,6 +381,63 @@ describe("scenario module pages", () => {
     expect(astroPageSource).toContain("ScenarioModulePage");
     expect(astroPageSource).not.toContain("SubjectControlPanel");
     expect(astroPageSource).not.toContain("PlaceSearchCard");
+  });
+
+  it("renders the subject guide horizon badge from the selected horizon", () => {
+    for (const config of [cloudSeaScenarioConfig, glowScenarioConfig, astroScenarioConfig]) {
+      for (const selectedHorizon of selectableForecastHorizons) {
+        const html = renderToStaticMarkup(
+          React.createElement(SubjectKnowledgeGuide, {
+            config,
+            selectedHorizon,
+          }),
+        );
+
+        expect(html).toContain(`data-subject-knowledge-guide="${config.target}"`);
+        expect(html).toContain(forecastHorizonLabels[selectedHorizon]);
+        if (selectedHorizon !== config.defaultHorizon) {
+          expect(html).not.toContain(forecastHorizonLabels[config.defaultHorizon]);
+        }
+      }
+    }
+  });
+
+  it("syncs the subject guide horizon through shared onForecastOptionsChange state", () => {
+    const scenarioSource = readFileSync(
+      fileURLToPath(new URL("../components/scenario-module-page.tsx", import.meta.url)),
+      "utf8",
+    );
+    const cloudSeaPageSource = readFileSync(
+      fileURLToPath(new URL("./cloud-sea/page.tsx", import.meta.url)),
+      "utf8",
+    );
+    const glowPageSource = readFileSync(
+      fileURLToPath(new URL("./glow/page.tsx", import.meta.url)),
+      "utf8",
+    );
+    const astroPageSource = readFileSync(
+      fileURLToPath(new URL("./astro/page.tsx", import.meta.url)),
+      "utf8",
+    );
+
+    expect(scenarioSource).toContain(
+      "useState<ForecastHorizon>(config.defaultHorizon)",
+    );
+    expect(scenarioSource).toContain("const handleForecastOptionsChange = useCallback");
+    expect(scenarioSource).toContain("setSelectedHorizon(options.horizon)");
+    expect(scenarioSource).toContain("onForecastOptionsChange={handleForecastOptionsChange}");
+    expect(scenarioSource).toContain("selectedHorizon={selectedHorizon}");
+    expect(scenarioSource).toContain("forecastHorizonLabels[selectedHorizon]");
+    expect(scenarioSource).not.toContain("forecastHorizonLabels[config.defaultHorizon]");
+
+    for (const source of [cloudSeaPageSource, glowPageSource, astroPageSource]) {
+      expect(source).toContain("ScenarioModulePage");
+      expect(source).not.toContain("SubjectControlPanel");
+      expect(source).not.toContain("PlaceSearchCard");
+      expect(source).not.toContain("onForecastOptionsChange");
+      expect(source).not.toContain("selectedHorizon");
+      expect(source).not.toContain("useState");
+    }
   });
 
   it("renders the cloud sea pre-result location search panel without result dashboard chrome", () => {

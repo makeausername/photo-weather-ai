@@ -1,3 +1,6 @@
+"use client";
+
+import { useCallback, useState } from "react";
 import type { ForecastHorizon, ForecastTarget } from "@photo-weather/shared";
 import { forecastHorizonLabels } from "@photo-weather/shared";
 import { PlaceSearchCard } from "./place-search-card";
@@ -100,6 +103,13 @@ export function ScenarioModulePage({ config }: { readonly config: ScenarioPageCo
 function SubjectScenarioEntryPage({ config }: { readonly config: ScenarioPageConfig }) {
   const pageMode = "search";
   const isCloudSea = config.target === "cloud_sea";
+  const [selectedHorizon, setSelectedHorizon] = useState<ForecastHorizon>(config.defaultHorizon);
+  const handleForecastOptionsChange = useCallback(
+    (options: { readonly horizon: ForecastHorizon; readonly target: ForecastTarget }) => {
+      setSelectedHorizon(options.horizon);
+    },
+    [],
+  );
 
   return (
     <PublicShell contentClassName="grid gap-6 pb-14">
@@ -121,14 +131,25 @@ function SubjectScenarioEntryPage({ config }: { readonly config: ScenarioPageCon
         data-subject-scenario-page-mode={pageMode}
         data-subject-scenario-target={config.target}
       >
-        {pageMode === "search" ? <ScenarioSearchPanel config={config} /> : null}
-        <SubjectKnowledgeGuide config={config} />
+        {pageMode === "search" ? (
+          <ScenarioSearchPanel
+            config={config}
+            onForecastOptionsChange={handleForecastOptionsChange}
+          />
+        ) : null}
+        <SubjectKnowledgeGuide config={config} selectedHorizon={selectedHorizon} />
       </section>
     </PublicShell>
   );
 }
 
-function SubjectKnowledgeGuide({ config }: { readonly config: ScenarioPageConfig }) {
+export function SubjectKnowledgeGuide({
+  config,
+  selectedHorizon,
+}: {
+  readonly config: ScenarioPageConfig;
+  readonly selectedHorizon: ForecastHorizon;
+}) {
   const items = config.learningItems ?? [];
   const isCloudSea = config.target === "cloud_sea";
 
@@ -141,7 +162,7 @@ function SubjectKnowledgeGuide({ config }: { readonly config: ScenarioPageConfig
       <div className="rounded-lg border border-border bg-card p-5 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="accent">{config.learningBadgeLabel ?? "判断参考"}</Badge>
-          <Badge variant="muted">{forecastHorizonLabels[config.defaultHorizon]}</Badge>
+          <Badge variant="muted">{forecastHorizonLabels[selectedHorizon]}</Badge>
         </div>
         <h2 className="mt-3 text-xl font-bold leading-tight text-card-foreground">
           {config.learningTitle ?? "云海判断需要关注什么"}
