@@ -5394,7 +5394,7 @@ describe("forecast result target-aware view model", () => {
       }),
     );
     const actionPlan = sectionBetween(html, "CloudSeaActionPlan", "CloudSeaRiskSummary");
-    const dailySection = sectionBetween(html, "CloudSeaDailyTrend", "CloudSeaProfessionalData");
+    const dailySection = sectionBetween(html, "CloudSeaDailyTrend", "CloudSeaDecisionSupport");
 
     expect(viewModel.recommendationGuard.maxAllowedRecommendationStrength).toBe(
       "observe_if_nearby",
@@ -5702,13 +5702,25 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("CloudSeaWindowCards");
       expect(html).toContain('data-cloud-sea-section="CloudSeaWindowDecision"');
       expect(html).toContain('data-cloud-sea-section="CloudSeaDailyCards"');
+      expect(html).toContain('data-cloud-sea-section="CloudSeaDecisionSupport"');
+      expect(html).toContain("判断依据与行动建议");
       expect(html).toContain('data-cloud-sea-section="CloudSeaProfessionalData"');
       expect(html).toContain('data-cloud-sea-professional-data-expanded="false"');
       expect(html).toContain("CloudSeaDailyTrend");
       const dailyCardSection = sectionBetween(
         html,
         "CloudSeaDailyTrend",
+        "CloudSeaDecisionSupport",
+      );
+      const decisionSupportSection = sectionBetween(
+        html,
+        "CloudSeaDecisionSupport",
         "CloudSeaProfessionalData",
+      );
+      const professionalDataSection = sectionBetween(
+        html,
+        "CloudSeaProfessionalData",
+        "CloudSeaAiInterpretation",
       );
       expect(dailyCardSection).toContain('data-testid="cloud-sea-daily-card-grid"');
       expect(dailyCardSection).toContain('data-cloud-sea-daily-card-grid="true"');
@@ -5742,6 +5754,22 @@ describe("forecast result target-aware view model", () => {
       expect(countOccurrences(dailyCardSection, 'data-testid="cloud-sea-daily-reason"')).toBe(
         viewModel.dailyTrend.filter((item) => item.decisionReason).length,
       );
+      expect(decisionSupportSection).toContain("CloudSeaReasoning");
+      expect(decisionSupportSection).toContain("CloudSeaActionPlan");
+      expect(decisionSupportSection).toContain("CloudSeaRiskSummary");
+      expect(decisionSupportSection).toContain("判断依据");
+      expect(decisionSupportSection).toContain("行动方案");
+      expect(decisionSupportSection).toContain("风险与复核");
+      expect(decisionSupportSection).not.toContain("CloudSeaProfessionalHourlyData");
+      expect(professionalDataSection).not.toContain("CloudSeaReasoning");
+      expect(professionalDataSection).not.toContain("CloudSeaActionPlan");
+      expect(professionalDataSection).not.toContain("CloudSeaRiskSummary");
+      expect(professionalDataSection).not.toContain("判断依据");
+      expect(professionalDataSection).not.toContain("行动方案");
+      expect(professionalDataSection).not.toContain("风险与复核");
+      expect(countOccurrences(html, 'data-cloud-sea-section="CloudSeaReasoning"')).toBe(1);
+      expect(countOccurrences(html, 'data-cloud-sea-section="CloudSeaActionPlan"')).toBe(1);
+      expect(countOccurrences(html, 'data-cloud-sea-section="CloudSeaRiskSummary"')).toBe(1);
       expect(html).toContain('data-forecast-daily-decision-list="true"');
       expect(html).toContain('data-result-daily-section="true"');
       expect(html).toContain("CloudSeaReasoning");
@@ -5786,11 +5814,17 @@ describe("forecast result target-aware view model", () => {
       }
       expect(html.indexOf("CloudSeaWindowCards")).toBeLessThan(html.indexOf("CloudSeaDailyTrend"));
       expect(html.indexOf("CloudSeaDailyTrend")).toBeLessThan(
-        html.indexOf("CloudSeaProfessionalData"),
+        html.indexOf("CloudSeaDecisionSupport"),
       );
-      expect(html.indexOf("CloudSeaProfessionalData")).toBeLessThan(
+      expect(html.indexOf("CloudSeaDecisionSupport")).toBeLessThan(
         html.indexOf("CloudSeaReasoning"),
       );
+      expect(html.indexOf("CloudSeaRiskSummary")).toBeLessThan(
+        html.indexOf("CloudSeaProfessionalData"),
+      );
+      if (professionalHourlyIndex >= 0) {
+        expect(html.indexOf("CloudSeaProfessionalData")).toBeLessThan(professionalHourlyIndex);
+      }
       expect(html.indexOf("CloudSeaDailyTrend")).toBeLessThan(html.indexOf("判断依据"));
       expect(html.indexOf("判断依据")).toBeLessThan(html.indexOf("行动方案"));
       expect(html.indexOf("行动方案")).toBeLessThan(html.indexOf("风险与复核"));
@@ -5803,10 +5837,11 @@ describe("forecast result target-aware view model", () => {
         "CloudSeaWindowCards",
         "CloudSeaDailyCards",
         "CloudSeaDailyTrend",
-        "CloudSeaProfessionalData",
+        "CloudSeaDecisionSupport",
         "CloudSeaReasoning",
         "CloudSeaActionPlan",
         "CloudSeaRiskSummary",
+        "CloudSeaProfessionalData",
         "CloudSeaAiInterpretation",
         "智能解读",
       ]);
@@ -5890,7 +5925,7 @@ describe("forecast result target-aware view model", () => {
       const dailyCardSection = sectionBetween(
         html,
         "CloudSeaDailyTrend",
-        "CloudSeaProfessionalData",
+        "CloudSeaDecisionSupport",
       );
       const cardClassNames = classNamesForCloudSeaDailyCards(dailyCardSection);
 
@@ -5945,7 +5980,12 @@ describe("forecast result target-aware view model", () => {
       const aiIndex = html.indexOf("智能解读");
       const dataCaution = viewModel.dataCaution ?? "";
       const afterAiSection = html.slice(aiIndex);
-      const professionalHourlySection = sectionBetween(
+      const decisionSupportSection = sectionBetween(
+        html,
+        "CloudSeaDecisionSupport",
+        "CloudSeaProfessionalData",
+      );
+      const professionalDataSection = sectionBetween(
         html,
         "CloudSeaProfessionalData",
         "CloudSeaAiInterpretation",
@@ -5954,13 +5994,20 @@ describe("forecast result target-aware view model", () => {
       expect(aiIndex).toBeGreaterThanOrEqual(0);
       expect(html).toContain("生成智能解读");
       expect(html).toContain("专业小时数据");
-      expect(professionalHourlySection).toContain("专业小时数据");
+      expect(decisionSupportSection).toContain("CloudSeaReasoning");
+      expect(decisionSupportSection).toContain("CloudSeaActionPlan");
+      expect(decisionSupportSection).toContain("CloudSeaRiskSummary");
+      expect(professionalDataSection).toContain("专业小时数据");
+      expect(professionalDataSection).toContain("CloudSeaProfessionalHourlyData");
+      expect(professionalDataSection).not.toContain("CloudSeaReasoning");
+      expect(professionalDataSection).not.toContain("CloudSeaActionPlan");
+      expect(professionalDataSection).not.toContain("CloudSeaRiskSummary");
       expect(html).toContain("总云量 %");
       expect(html).toContain("高云量 %");
       expect(html).toContain("中云量 %");
       expect(html).toContain("低云量 %");
-      expect(professionalHourlySection).not.toContain("CloudSeaMultiSourceAgreement");
-      expect(professionalHourlySection).not.toContain("多源一致性");
+      expect(professionalDataSection).not.toContain("CloudSeaMultiSourceAgreement");
+      expect(professionalDataSection).not.toContain("多源一致性");
       expect(html).not.toContain("CloudSeaMultiSourceAgreement");
       expect(html).not.toContain("多源一致性");
       expect(dataCaution).toContain("低云分歧较大");
@@ -5972,11 +6019,12 @@ describe("forecast result target-aware view model", () => {
         "CloudSeaWindowCards",
         "CloudSeaDailyCards",
         "CloudSeaDailyTrend",
-        "CloudSeaProfessionalData",
-        "CloudSeaProfessionalHourlyData",
+        "CloudSeaDecisionSupport",
         "CloudSeaReasoning",
         "CloudSeaActionPlan",
         "CloudSeaRiskSummary",
+        "CloudSeaProfessionalData",
+        "CloudSeaProfessionalHourlyData",
         "CloudSeaAiInterpretation",
         "智能解读",
       ]);
@@ -6052,6 +6100,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("CloudSeaCoreMetrics");
     expect(html).toContain("CloudSeaWindowCards");
     expect(html).toContain("CloudSeaDailyTrend");
+    expect(html).toContain("CloudSeaDecisionSupport");
     expect(html).toContain("CloudSeaProfessionalData");
     expect(html).toContain("CloudSeaProfessionalHourlyData");
     expect(html).toContain('data-testid="professional-hourly-data"');
@@ -6108,11 +6157,34 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("meteoblue");
     expect(html).not.toContain("Open-Meteo");
     expect(html).not.toContain("和风天气");
+    const decisionSupportSection = sectionBetween(
+      html,
+      "CloudSeaDecisionSupport",
+      "CloudSeaProfessionalData",
+    );
+    const professionalDataSection = sectionBetween(
+      html,
+      "CloudSeaProfessionalData",
+      "CloudSeaAiInterpretation",
+    );
+    expect(decisionSupportSection).toContain("CloudSeaReasoning");
+    expect(decisionSupportSection).toContain("CloudSeaActionPlan");
+    expect(decisionSupportSection).toContain("CloudSeaRiskSummary");
+    expect(professionalDataSection).toContain("CloudSeaProfessionalHourlyData");
+    expect(professionalDataSection).not.toContain("CloudSeaReasoning");
+    expect(professionalDataSection).not.toContain("CloudSeaActionPlan");
+    expect(professionalDataSection).not.toContain("CloudSeaRiskSummary");
+    expect(professionalDataSection).not.toContain("判断依据");
+    expect(professionalDataSection).not.toContain("行动方案");
+    expect(professionalDataSection).not.toContain("风险与复核");
 
     expect(html.indexOf("CloudSeaWindowCards")).toBeLessThan(
       html.indexOf("CloudSeaDailyTrend"),
     );
     expect(html.indexOf("CloudSeaDailyTrend")).toBeLessThan(
+      html.indexOf("CloudSeaDecisionSupport"),
+    );
+    expect(html.indexOf("CloudSeaRiskSummary")).toBeLessThan(
       html.indexOf("CloudSeaProfessionalData"),
     );
     expect(html.indexOf("CloudSeaProfessionalData")).toBeLessThan(
@@ -6304,6 +6376,11 @@ describe("forecast result target-aware view model", () => {
       "CloudSeaProfessionalData",
       "CloudSeaAiInterpretation",
     );
+    const decisionSupportSection = sectionBetween(
+      html,
+      "CloudSeaDecisionSupport",
+      "CloudSeaProfessionalData",
+    );
 
     expect(viewModel.multiSourceAgreementContext).toMatchObject({
       disagreementLevel: "high",
@@ -6317,7 +6394,11 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.dataCaution).toContain("低云分歧较大");
     expect(html).toContain("CloudSeaProfessionalHourlyData");
     expect(professionalDataSection).toContain("CloudSeaProfessionalHourlyData");
-    expect(professionalDataSection).toContain("CloudSeaReasoning");
+    expect(professionalDataSection).not.toContain("CloudSeaReasoning");
+    expect(professionalDataSection).not.toContain("CloudSeaActionPlan");
+    expect(professionalDataSection).not.toContain("CloudSeaRiskSummary");
+    expect(decisionSupportSection).toContain("CloudSeaReasoning");
+    expect(decisionSupportSection).toContain("低云分歧较大");
     expect(professionalDataSection).not.toContain("CloudSeaMultiSourceAgreement");
     expect(professionalDataSection).not.toContain("多源一致性");
     expect(html).not.toContain("CloudSeaMultiSourceAgreement");
@@ -6328,8 +6409,8 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("meteoblue");
     expect(html).not.toContain("和风天气");
     expect(html).not.toMatch(/latitude|longitude|WGS84|经度|纬度/i);
-    expect(html.indexOf("CloudSeaProfessionalHourlyData")).toBeLessThan(
-      html.indexOf("CloudSeaReasoning"),
+    expect(html.indexOf("CloudSeaRiskSummary")).toBeLessThan(
+      html.indexOf("CloudSeaProfessionalData"),
     );
   });
 
@@ -6386,6 +6467,11 @@ describe("forecast result target-aware view model", () => {
       "CloudSeaProfessionalData",
       "CloudSeaAiInterpretation",
     );
+    const decisionSupportSection = sectionBetween(
+      html,
+      "CloudSeaDecisionSupport",
+      "CloudSeaProfessionalData",
+    );
 
     expect(viewModel.multiSourceAgreementContext).toMatchObject({
       disagreementLevel: "high",
@@ -6400,7 +6486,10 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.hero.confidenceLabel).toBe("高");
     expect(html).toContain("CloudSeaProfessionalHourlyData");
     expect(professionalDataSection).toContain("CloudSeaProfessionalHourlyData");
-    expect(professionalDataSection).toContain("CloudSeaReasoning");
+    expect(professionalDataSection).not.toContain("CloudSeaReasoning");
+    expect(professionalDataSection).not.toContain("CloudSeaActionPlan");
+    expect(professionalDataSection).not.toContain("CloudSeaRiskSummary");
+    expect(decisionSupportSection).toContain("CloudSeaReasoning");
     expect(professionalDataSection).not.toContain("CloudSeaMultiSourceAgreement");
     expect(professionalDataSection).not.toContain("多源一致性");
     expect(html).not.toContain("CloudSeaMultiSourceAgreement");

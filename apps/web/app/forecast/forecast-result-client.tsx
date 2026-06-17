@@ -3745,12 +3745,42 @@ export function CloudSeaResultPage({
             terrainContext={viewModel.terrainContext}
           />
         </section>
+        <CloudSeaDecisionSupportSection viewModel={viewModel} />
         <CloudSeaProfessionalDataSection viewModel={viewModel} />
         <section className="mt-1 sm:mt-2" data-cloud-sea-section="CloudSeaAiInterpretation">
           <ForecastAiInterpretationSection query={query} result={result} />
         </section>
       </main>
     </DecisionResultTemplate>
+  );
+}
+
+function CloudSeaDecisionSupportSection({
+  viewModel,
+}: {
+  readonly viewModel: CloudSeaForecastViewModel;
+}) {
+  return (
+    <section
+      className="CloudSeaDecisionSupport cloud-sea-decision-support grid gap-3"
+      data-cloud-sea-section="CloudSeaDecisionSupport"
+    >
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-lg font-bold text-card-foreground">判断依据与行动建议</h2>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
+            汇总当前判断、出发方案和风险复核；专业小时数据在下方单独查看。
+          </p>
+        </div>
+      </div>
+      <CloudSeaReasoningSection items={viewModel.displayData.judgmentBasis} />
+      <CloudSeaActionPlanSection items={viewModel.displayData.actionPlan} />
+      <CloudSeaRiskSummarySection
+        riskSummary={viewModel.displayData.riskReview}
+        terrainContext={viewModel.terrainContext}
+      />
+      {viewModel.dataCaution ? <CloudSeaInlineCaution text={viewModel.dataCaution} /> : null}
+    </section>
   );
 }
 
@@ -3771,7 +3801,7 @@ function CloudSeaProfessionalDataSection({
         <div className="min-w-0">
           <h2 className="text-lg font-bold text-card-foreground">专业数据</h2>
           <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
-            查看逐小时云层、湿度、露点、降水、能见度、风、判断依据、行动和风险复核。
+            查看逐小时云层、湿度、露点、降水、能见度和风的专业小时表。
           </p>
         </div>
         <Button
@@ -3799,14 +3829,6 @@ function CloudSeaProfessionalDataSection({
           terrainContext={viewModel.terrainContext}
           variant="embedded"
         />
-        <CloudSeaReasoningSection items={viewModel.displayData.judgmentBasis} variant="embedded" />
-        <CloudSeaActionPlanSection items={viewModel.displayData.actionPlan} variant="embedded" />
-        <CloudSeaRiskSummarySection
-          riskSummary={viewModel.displayData.riskReview}
-          terrainContext={viewModel.terrainContext}
-          variant="embedded"
-        />
-        {viewModel.dataCaution ? <CloudSeaInlineCaution text={viewModel.dataCaution} /> : null}
       </div>
     </Card>
   );
