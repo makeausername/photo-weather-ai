@@ -5913,6 +5913,17 @@ const astroProfessionalHourlySignalDisplayBySignal = {
   "普通": { label: "普通", badgeVariant: "muted" },
 } satisfies Record<ProfessionalHourlyRow["cloudSeaSignal"], ProfessionalHourlySignalDisplay>;
 
+const cloudSeaProfessionalHourlySignalDisplayBySignal = {
+  "霞光参考": { label: "普通", badgeVariant: "muted" },
+  "云层纹理": { label: "普通", badgeVariant: "muted" },
+  "可拍窗口": { label: "云海信号", badgeVariant: "default" },
+  "形成信号": { label: "形成信号", badgeVariant: "info" },
+  "雨后开口": { label: "雨后开口", badgeVariant: "accent" },
+  "白墙风险": { label: "白墙风险", badgeVariant: "danger" },
+  "需复核": { label: "需复核", badgeVariant: "warning" },
+  "普通": { label: "普通", badgeVariant: "muted" },
+} satisfies Record<ProfessionalHourlyRow["cloudSeaSignal"], ProfessionalHourlySignalDisplay>;
+
 export function professionalHourlySignalDisplayForTarget(
   target: ProfessionalHourlySectionTarget,
   signal: ProfessionalHourlyRow["cloudSeaSignal"],
@@ -5935,8 +5946,12 @@ export function professionalHourlySignalDisplayForTarget(
     };
   }
 
-  if (ordinarySignalLabel) {
+  if (ordinarySignalLabel && signal === "普通") {
     return { label: ordinarySignalLabel, badgeVariant: "muted" };
+  }
+
+  if (target === "cloud_sea") {
+    return cloudSeaProfessionalHourlySignalDisplayBySignal[signal];
   }
 
   if (target === "astro") {
@@ -6677,6 +6692,9 @@ function professionalSignalBadgeVariantForTarget(
 ): BadgeVariant {
   if (target === "astro") {
     return astroProfessionalHourlySignalDisplayBySignal[signal].badgeVariant;
+  }
+  if (target === "cloud_sea") {
+    return cloudSeaProfessionalHourlySignalDisplayBySignal[signal].badgeVariant;
   }
 
   return professionalSignalBadgeVariant(signal);

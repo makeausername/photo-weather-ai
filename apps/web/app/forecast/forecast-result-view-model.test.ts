@@ -6098,7 +6098,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("风速 m/s");
     expect(html).toContain("风向");
     expect(html).toContain("云海信号");
-    expect(html).toContain("可拍窗口");
+    expect(html).not.toContain("可拍窗口</span>");
     expect(html).toContain('data-professional-hourly-row="2026-05-20T05:00:00+08:00"');
     expect(html).not.toContain('data-professional-hourly-row="2026-05-20T13:00:00+08:00"');
     expect(html).toContain("max-w-full overflow-x-auto");
@@ -6397,7 +6397,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("QWeather");
   });
 
-  it("renders mid/high cloud only rows as glow or texture reference, not cloud sea", () => {
+  it("renders mid/high cloud only rows as ordinary Cloud Sea hourly table signals", () => {
     const hourly = professionalHourlyDataForTest().map((row, index) => ({
       ...row,
       cloudSeaSignal: index >= 4 && index <= 7 ? ("霞光参考" as const) : ("云层纹理" as const),
@@ -6427,6 +6427,11 @@ describe("forecast result target-aware view model", () => {
       "CloudSeaProfessionalData",
       "CloudSeaAiInterpretation",
     );
+    const professionalHourlyTable = sectionBetween(
+      professionalSection,
+      'data-cloud-sea-professional-table-scroll="true"',
+      "</table>",
+    );
 
     expect(viewModel.reasoningItems).toEqual(
       expect.arrayContaining([
@@ -6441,11 +6446,12 @@ describe("forecast result target-aware view model", () => {
     );
     expect(html).toContain("中高云角色");
     expect(html).toContain("低云信号不足，不直接作为云海依据");
-    expect(professionalSection).toContain("霞光参考");
-    expect(professionalSection).toContain("云层纹理");
-    expect(professionalSection).not.toContain("可拍窗口</span>");
-    expect(professionalSection).not.toContain("形成信号</span>");
-    expect(professionalSection).not.toContain("白墙风险</span>");
+    expect(professionalHourlyTable).toContain("普通");
+    expect(professionalHourlyTable).not.toContain("霞光参考");
+    expect(professionalHourlyTable).not.toContain("云层纹理");
+    expect(professionalHourlyTable).not.toContain("可拍窗口</span>");
+    expect(professionalHourlyTable).not.toContain("形成信号</span>");
+    expect(professionalHourlyTable).not.toContain("白墙风险</span>");
   });
 
   it("keeps the General Forecast return path without unrelated cloud sea subject links", () => {
@@ -7424,7 +7430,7 @@ describe("forecast result target-aware view model", () => {
     expect(source).toContain("展开完整小时表");
   });
 
-  it("uses astro-safe professional hourly fallback signal labels without changing glow labels", () => {
+  it("uses target-specific professional hourly fallback signal labels without changing glow labels", () => {
     const rows = professionalHourlyRangeForTest(24).map((row) => ({
       ...row,
       cloudSeaSignal: "霞光参考" as const,
@@ -7457,10 +7463,29 @@ describe("forecast result target-aware view model", () => {
         annotation: { label: "银河优先复核", tone: "info" },
       }),
     ).toMatchObject({ label: "银河优先复核", badgeVariant: "info" });
-    expect(professionalHourlySignalDisplayForTarget("cloud_sea", "霞光参考").label).toBe(
-      "霞光参考",
-    );
+    expect(professionalHourlySignalDisplayForTarget("cloud_sea", "霞光参考")).toMatchObject({
+      label: "普通",
+      badgeVariant: "muted",
+    });
+    expect(professionalHourlySignalDisplayForTarget("cloud_sea", "云层纹理")).toMatchObject({
+      label: "普通",
+      badgeVariant: "muted",
+    });
+    expect(professionalHourlySignalDisplayForTarget("cloud_sea", "可拍窗口")).toMatchObject({
+      label: "云海信号",
+      badgeVariant: "default",
+    });
     expect(professionalHourlySignalDisplayForTarget("glow", "霞光参考").label).toBe("霞光参考");
+    expect(
+      professionalHourlySignalDisplayForTarget("glow", "霞光参考", {
+        ordinarySignalLabel: "普通时段",
+      }).label,
+    ).toBe("霞光参考");
+    expect(
+      professionalHourlySignalDisplayForTarget("glow", "普通", {
+        ordinarySignalLabel: "普通时段",
+      }).label,
+    ).toBe("普通时段");
 
     const expandedAstroHtml = renderToStaticMarkup(
       React.createElement(CloudSeaProfessionalHourlyDataPanel, {
@@ -7470,11 +7495,19 @@ describe("forecast result target-aware view model", () => {
         variant: "embedded",
       }),
     );
+    const cloudSeaHtml = renderToStaticMarkup(
+      React.createElement(CloudSeaProfessionalHourlyDataPanel, {
+        target: "cloud_sea",
+        data: unannotatedData,
+        config: { initiallyExpanded: true },
+        variant: "embedded",
+      }),
+    );
     const glowHtml = renderToStaticMarkup(
       React.createElement(CloudSeaProfessionalHourlyDataPanel, {
         target: "glow",
         data: unannotatedData,
-        config: { initiallyExpanded: true },
+        config: { initiallyExpanded: true, ordinarySignalLabel: "普通时段" },
         variant: "embedded",
       }),
     );
@@ -7483,6 +7516,9 @@ describe("forecast result target-aware view model", () => {
     expect(expandedAstroHtml).toContain("银河优先复核");
     expect(expandedAstroHtml).toContain("云层偏多");
     expect(expandedAstroHtml).not.toContain("霞光参考");
+    expect(cloudSeaHtml).toContain('data-professional-hourly-target="cloud_sea"');
+    expect(cloudSeaHtml).toContain("普通");
+    expect(cloudSeaHtml).not.toContain("霞光参考");
     expect(glowHtml).toContain("霞光参考");
   });
 
