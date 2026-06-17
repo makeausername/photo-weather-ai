@@ -7253,6 +7253,10 @@ describe("forecast result target-aware view model", () => {
     expect(professionalDataSource).toContain('target="astro"');
     expect(professionalDataSource).toContain('variant="embedded"');
     expect(source).toContain("initiallyExpanded: false");
+    expect(source).toContain("showCoverageNote?: boolean");
+    expect(source).toContain("showCollapsedPreview?: boolean");
+    expect(source).toContain("showCoverageNote: false");
+    expect(source).toContain("showCollapsedPreview: false");
     expect(source).toContain("展开完整小时表");
   });
 
@@ -7294,18 +7298,10 @@ describe("forecast result target-aware view model", () => {
     );
     expect(professionalHourlySignalDisplayForTarget("glow", "霞光参考").label).toBe("霞光参考");
 
-    const collapsedAstroHtml = renderToStaticMarkup(
-      React.createElement(CloudSeaProfessionalHourlyDataPanel, {
-        target: "astro",
-        data: annotatedData,
-        config: { initiallyExpanded: false, previewTitle: "关键夜拍小时摘要" },
-        variant: "embedded",
-      }),
-    );
     const expandedAstroHtml = renderToStaticMarkup(
       React.createElement(CloudSeaProfessionalHourlyDataPanel, {
         target: "astro",
-        data: unannotatedData,
+        data: annotatedData,
         config: { initiallyExpanded: true },
         variant: "embedded",
       }),
@@ -7319,14 +7315,77 @@ describe("forecast result target-aware view model", () => {
       }),
     );
 
-    expect(collapsedAstroHtml).toContain('data-cloud-sea-hourly-preview="true"');
-    expect(collapsedAstroHtml).toContain("银河优先复核");
-    expect(collapsedAstroHtml).toContain("云层偏多");
-    expect(collapsedAstroHtml).not.toContain("霞光参考");
     expect(expandedAstroHtml).toContain('data-professional-hourly-row="');
+    expect(expandedAstroHtml).toContain("银河优先复核");
     expect(expandedAstroHtml).toContain("云层偏多");
     expect(expandedAstroHtml).not.toContain("霞光参考");
     expect(glowHtml).toContain("霞光参考");
+  });
+
+  it("hides the astro professional hourly collapsed preview and coverage note without changing the table", () => {
+    const result = resultWithAstroHourlyRange("24h", 24);
+    const resultWithCoverageNote: ForecastCalculationResult = {
+      ...result,
+      professionalHourlyDataTimeBasis: {
+        ...result.professionalHourlyDataTimeBasis!,
+        professionalCoverageNoteZh: "分层覆盖说明测试",
+      },
+    };
+    const data = buildProfessionalHourlyDisplayDataForResult({ result: resultWithCoverageNote });
+    const collapsedAstroHtml = renderToStaticMarkup(
+      React.createElement(CloudSeaProfessionalHourlyDataPanel, {
+        target: "astro",
+        data,
+        config: {
+          initiallyExpanded: false,
+          expandButtonLabel: "展开完整小时表",
+          previewTitle: "默认显示关键夜拍小时摘要",
+          showCoverageNote: false,
+          showCollapsedPreview: false,
+        },
+        variant: "embedded",
+      }),
+    );
+    const expandedAstroHtml = renderToStaticMarkup(
+      React.createElement(CloudSeaProfessionalHourlyDataPanel, {
+        target: "astro",
+        data,
+        config: {
+          initiallyExpanded: true,
+          showCoverageNote: false,
+          showCollapsedPreview: false,
+        },
+        variant: "embedded",
+      }),
+    );
+    const collapsedGlowHtml = renderToStaticMarkup(
+      React.createElement(CloudSeaProfessionalHourlyDataPanel, {
+        target: "glow",
+        data,
+        config: {
+          initiallyExpanded: false,
+          previewTitle: "默认显示关键夜拍小时摘要",
+        },
+        variant: "embedded",
+      }),
+    );
+
+    expect(collapsedAstroHtml).toContain('data-professional-hourly-target="astro"');
+    expect(collapsedAstroHtml).toContain('data-professional-hourly-expanded="false"');
+    expect(collapsedAstroHtml).toContain("展开完整小时表");
+    expect(collapsedAstroHtml).toContain("24 / 24");
+    expect(collapsedAstroHtml).not.toContain('data-testid="cloud-layer-coverage-note"');
+    expect(collapsedAstroHtml).not.toContain("分层覆盖说明测试");
+    expect(collapsedAstroHtml).not.toContain('data-cloud-sea-hourly-preview="true"');
+    expect(collapsedAstroHtml).not.toContain("默认显示关键夜拍小时摘要");
+    expect(expandedAstroHtml).toContain('data-professional-hourly-expanded="true"');
+    expect(expandedAstroHtml).toContain('data-professional-hourly-row="');
+    expect(expandedAstroHtml).not.toContain('data-cloud-sea-hourly-preview="true"');
+    expect(expandedAstroHtml).not.toContain('data-testid="cloud-layer-coverage-note"');
+    expect(collapsedGlowHtml).toContain('data-testid="cloud-layer-coverage-note"');
+    expect(collapsedGlowHtml).toContain("分层覆盖说明测试");
+    expect(collapsedGlowHtml).toContain('data-cloud-sea-hourly-preview="true"');
+    expect(collapsedGlowHtml).toContain("默认显示关键夜拍小时摘要");
   });
 
   it("keeps the full 24h glow hourly range behind the collapsed professional data card", () => {

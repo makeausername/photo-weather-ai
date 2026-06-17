@@ -4198,7 +4198,8 @@ const astroProfessionalHourlySectionConfig: ProfessionalHourlySectionConfig = {
   initiallyExpanded: false,
   expandButtonLabel: "展开完整小时表",
   collapseButtonLabel: "收起完整小时表",
-  previewTitle: "默认显示关键夜拍小时摘要",
+  showCoverageNote: false,
+  showCollapsedPreview: false,
 };
 
 const astroProfessionalDataGroupsGridClassName =
@@ -5397,6 +5398,8 @@ type ProfessionalHourlySectionConfig = {
   readonly expandButtonLabel?: string;
   readonly collapseButtonLabel?: string;
   readonly previewTitle?: string;
+  readonly showCoverageNote?: boolean;
+  readonly showCollapsedPreview?: boolean;
 };
 
 type ProfessionalHourlyCloudSectionProps = {
@@ -5564,6 +5567,8 @@ function ProfessionalHourlyCloudSection({
     basis.timezone,
   )} - ${formatFullDateTimeForTimezone(rows.at(-1)?.time ?? basis.endTime, basis.timezone)}`;
   const showHourlyToggleHeader = !embedded || config?.initiallyExpanded === false;
+  const showCoverageNote = target !== "astro" && (config?.showCoverageNote ?? true);
+  const showCollapsedPreview = target !== "astro" && (config?.showCollapsedPreview ?? true);
 
   const content = (
     <>
@@ -5630,7 +5635,8 @@ function ProfessionalHourlyCloudSection({
           <CompactDefinition label="缺失说明" value={missingHeaderNote} />
         ) : null}
       </dl>
-      {coverageNote &&
+      {showCoverageNote &&
+      coverageNote &&
       coverageNote !== missingHeaderNote &&
       coverageNote !== incompleteFieldNote ? (
         <p
@@ -5651,7 +5657,7 @@ function ProfessionalHourlyCloudSection({
         </p>
       ) : null}
 
-      {!expanded ? (
+      {!expanded && showCollapsedPreview ? (
         <CloudSeaHourlyFocusPreview
           target={target}
           rows={filteredRows.slice(0, 4)}
