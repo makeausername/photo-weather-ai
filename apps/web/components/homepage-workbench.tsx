@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   ForecastCalculationResult,
   ForecastHorizon,
@@ -183,14 +183,6 @@ export function HomepageWorkbench() {
     result: null,
   });
 
-  const selectPopularSpot = useCallback((spot: HomepagePopularSpot) => {
-    setSelectedLocation(homepagePopularSpotToSelectedLocation(spot));
-    window.requestAnimationFrame(() => {
-      workspaceRef.current?.focus({ preventScroll: true });
-      workspaceRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  }, []);
-
   useEffect(() => {
     if (!selectedLocation) {
       setLayerState({ status: "idle", result: null });
@@ -246,25 +238,22 @@ export function HomepageWorkbench() {
   }, [forecastOptions.horizon, forecastOptions.target, selectedLocation]);
 
   return (
-    <>
-      <div
-        id="analysis"
-        ref={workspaceRef}
-        tabIndex={-1}
-        className="grid scroll-mt-24 gap-5 outline-none min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(360px,24vw,420px)_minmax(0,1fr)_clamp(360px,24vw,420px)] min-[1200px]:items-start"
-      >
-        <HomepageSearchPanel
-          selectedLocation={selectedLocation}
-          onSelectedLocationChange={setSelectedLocation}
-          onForecastOptionsChange={setForecastOptions}
-        />
-        <div className="grid gap-5 min-[1200px]:contents">
-          <HomepageWeatherLayer location={selectedLocation} state={layerState} />
-          <HomepageDecisionSummary location={selectedLocation} state={layerState} />
-        </div>
+    <div
+      id="analysis"
+      ref={workspaceRef}
+      tabIndex={-1}
+      className="grid scroll-mt-24 gap-5 outline-none min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(360px,24vw,420px)_minmax(0,1fr)_clamp(360px,24vw,420px)] min-[1200px]:items-start"
+    >
+      <HomepageSearchPanel
+        selectedLocation={selectedLocation}
+        onSelectedLocationChange={setSelectedLocation}
+        onForecastOptionsChange={setForecastOptions}
+      />
+      <div className="grid gap-5 min-[1200px]:contents">
+        <HomepageWeatherLayer location={selectedLocation} state={layerState} />
+        <HomepageDecisionSummary location={selectedLocation} state={layerState} />
       </div>
-      <HomepagePopularSpotsSection onSelectSpot={selectPopularSpot} />
-    </>
+    </div>
   );
 }
 

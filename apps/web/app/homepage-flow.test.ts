@@ -603,7 +603,7 @@ describe("homepage forecast flow", () => {
     expect(hasExactButton(html, "星空银河")).toBe(false);
   });
 
-  it("removes the duplicated homepage quick spot section but keeps the lower selected spots", () => {
+  it("does not render popular spot sections on the homepage", () => {
     const panelHtml = renderToStaticMarkup(React.createElement(HomepageSearchPanel));
     const pageHtml = renderToStaticMarkup(React.createElement(HomePage));
 
@@ -612,9 +612,11 @@ describe("homepage forecast flow", () => {
     expect(panelHtml).not.toContain("老君山金顶");
     expect(panelHtml).not.toContain("三清山女神峰");
     expect(panelHtml).not.toContain("武功山金顶");
-    expect(pageHtml).toContain("精选机位");
-    expect(pageHtml).toContain("黄山光明顶");
-    expect(pageHtml).toContain("老君山金顶");
+    expect(pageHtml).not.toContain("精选机位");
+    expect(pageHtml).not.toContain("黄山光明顶");
+    expect(pageHtml).not.toContain("老君山金顶");
+    expect(pageHtml).not.toContain("三清山女神峰");
+    expect(pageHtml).not.toContain("武功山金顶");
   });
 
   it("renders the current-location control as an embedded input icon button", () => {
@@ -971,10 +973,13 @@ describe("homepage forecast flow", () => {
     const html = renderToStaticMarkup(React.createElement(HomepageWorkbench));
 
     expect(html).toContain("minmax(0,1fr)");
+    expect(html).toContain("min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)]");
+    expect(html).toContain(
+      "min-[1200px]:grid-cols-[clamp(360px,24vw,420px)_minmax(0,1fr)_clamp(360px,24vw,420px)]",
+    );
     expect(html).toContain("min-w-0");
     expect(html).toContain("overflow-hidden");
-    expect(html).toContain("sm:grid-cols-2");
-    expect(html).toContain("xl:grid-cols-4");
+    expect(html).not.toContain("xl:grid-cols-4");
     expect(html).not.toMatch(/w-\[(?:[1-9]\d{3,})px\]|min-w-\[(?:[1-9]\d{3,})px\]/);
   });
 
@@ -984,9 +989,11 @@ describe("homepage forecast flow", () => {
     expect(html).toContain(
       "输入拍摄地点，快速判断是否值得出发、最佳到达时间、优先题材和主要风险。",
     );
-    expect(html).toContain("精选机位");
-    expect(html).toContain("出发前重点");
-    expect(html).toContain("常见题材判断");
+    expect(html).not.toContain("精选机位");
+    expect(html).not.toContain("出发前重点");
+    expect(html).not.toContain("常见题材判断");
+    expect(html).not.toContain("黄山光明顶");
+    expect(html).not.toContain("老君山金顶");
     expect(html).not.toContain("实时决策工作台");
     expect(html).not.toContain("多源数据");
     expect(html).not.toContain("数据源未完全配置");
