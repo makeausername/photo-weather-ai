@@ -323,6 +323,8 @@ export type CloudSeaActionLabel =
   | "不建议专程"
   | "仅作备选";
 
+export type CloudSeaTravelDecisionState = "go" | "cautious" | "no_go";
+
 export type CloudSeaTravelRecommendation = {
   readonly situation: "已在山上" | "周边短途" | "远途专程";
   readonly action: string;
@@ -353,6 +355,7 @@ export type CloudSeaForecastViewModel = {
   readonly precipitationSignal: CloudSeaPrecipitationSignalContext;
   readonly recommendationGuard: CloudSeaRecommendationGuardOutput;
   readonly recommendationExplanation: CloudSeaRecommendationExplanation;
+  readonly travelDecision: CloudSeaTravelDecisionState;
   readonly hero: CloudSeaHeroConclusionView;
   readonly coreCards: readonly ForecastResultCard[];
   readonly dailyTrend: readonly CloudSeaDailyTrendItem[];
@@ -1130,6 +1133,7 @@ export function buildCloudSeaForecastViewModel(
   );
   const precipitationSignalContext = ruleContext.precipitationSignalContext;
   const recommendationGuard = ruleContext.recommendationGuardContext;
+  const travelDecision = cloudSeaTravelDecisionState(recommendationGuard);
   const whiteoutLabel = whiteoutRiskLabel(analysis.whiteoutRiskScore);
   const dataNotice = buildCloudSeaDataNotice(result);
   const vocabulary = terrainContext.vocabulary;
@@ -1179,6 +1183,7 @@ export function buildCloudSeaForecastViewModel(
     cloudBasisConsistency,
     multiSourceAgreementContext,
     recommendationGuard,
+    travelDecision,
     weatherVariableConsistencyContext,
     recommendationExplanation,
     windowRiskContext,
@@ -1281,6 +1286,7 @@ export function buildCloudSeaForecastViewModel(
     cloudSeaWindows,
     terrainContext,
     recommendationGuard,
+    travelDecision,
     displayTemperatureContext,
     weatherVariableConsistencyContext,
     precipitationSignalContext,
@@ -1298,6 +1304,7 @@ export function buildCloudSeaForecastViewModel(
     result,
     hero,
     recommendationGuard,
+    travelDecision,
     recommendationExplanation,
     coreCards,
     riskSummary,
@@ -1346,6 +1353,7 @@ export function buildCloudSeaForecastViewModel(
     precipitationSignal: precipitationSignalContext,
     recommendationGuard,
     recommendationExplanation,
+    travelDecision,
     hero,
     coreCards,
     dailyTrend,
@@ -1525,6 +1533,7 @@ function buildCloudSeaRecommendationCards({
   result,
   hero,
   recommendationGuard,
+  travelDecision,
   recommendationExplanation,
   coreCards,
   riskSummary,
@@ -1533,6 +1542,7 @@ function buildCloudSeaRecommendationCards({
   readonly result: ForecastCalculationResult;
   readonly hero: CloudSeaHeroConclusionView;
   readonly recommendationGuard: CloudSeaRecommendationGuardOutput;
+  readonly travelDecision: CloudSeaTravelDecisionState;
   readonly recommendationExplanation: CloudSeaRecommendationExplanation;
   readonly coreCards: readonly ForecastResultCard[];
   readonly riskSummary: readonly ForecastResultSectionItem[];
@@ -1571,7 +1581,10 @@ function buildCloudSeaRecommendationCards({
     textCard(
       "cloud-sea-best-window",
       "bestWindow",
-      recommendationGuard.normalizedWindowRecommendation.metricLabel,
+      cloudSeaWindowMetricLabelForDecision(
+        recommendationGuard.normalizedWindowRecommendation.metricLabel,
+        travelDecision,
+      ),
       hero.bestWindowLabel,
       firstDisplaySentence(recommendationExplanation.actionSummaryZh),
       "accent",
@@ -1579,11 +1592,9 @@ function buildCloudSeaRecommendationCards({
     textCard(
       "cloud-sea-arrival",
       "recommendation",
-      "建议到达",
-      hero.arrivalLabel,
-      terrainContext.shouldDowngradeCloudSeaWording
-        ? "窗口前到位，先看低云是否贴地、远山层次和通透度。"
-        : "窗口前到位，先看云顶高度、低云厚度和远山层次。",
+      cloudSeaArrivalCardLabel(travelDecision),
+      cloudSeaArrivalValueForDecision(hero.arrivalLabel, travelDecision, "card"),
+      cloudSeaArrivalCardDetail(travelDecision, terrainContext),
       recommendationGuard.finalRecommendationTone,
     ),
     scoreCard(
@@ -8674,6 +8685,7 @@ function buildCloudSeaHeroConclusion(
   cloudBasisConsistency: CloudSeaCloudBasisConsistencyContext,
   multiSourceAgreementContext: ForecastMultiSourceAgreementContext | null,
   recommendationGuard: CloudSeaRecommendationGuardOutput,
+  travelDecision: CloudSeaTravelDecisionState,
   weatherVariableConsistencyContext: CloudSeaWeatherVariableConsistencyContext,
   recommendationExplanation: CloudSeaRecommendationExplanation,
   windowRiskContext?: CloudSeaWindowRiskContext,
@@ -8688,7 +8700,7 @@ function buildCloudSeaHeroConclusion(
           window.startTime === bestWindow.startTime && window.endTime === bestWindow.endTime,
       )
     : windows[0];
-  const bestWindowLabel = bestWindow
+  const rawBestWindowLabel = bestWindow
     ? `${recommendationGuard.normalizedWindowRecommendation.windowLabel}：${
         mappedWindow?.fullTimeRangeLabel ??
         formatWindow(bestWindow.startTime, bestWindow.endTime, result.calendarBasis.timezone)
@@ -8702,8 +8714,12 @@ function buildCloudSeaHeroConclusion(
     title: `${result.place.name} ${terrainContext.vocabulary.heroTitleSuffix}`,
     forecastRangeLabel: result.calendarBasis.forecastRangeLabel,
     recommendationLabel: recommendationGuard.finalRecommendationLabel,
-    bestWindowLabel,
-    arrivalLabel: cloudSeaArrivalLabel(result, bestWindow, mappedWindow),
+    bestWindowLabel: cloudSeaWindowValueForDecision(rawBestWindowLabel, travelDecision),
+    arrivalLabel: cloudSeaArrivalValueForDecision(
+      cloudSeaArrivalLabel(result, bestWindow, mappedWindow),
+      travelDecision,
+      "hero",
+    ),
     conclusion:
       windowRiskContext?.windowCenteredSummaryZh ?? recommendationExplanation.oneLineConclusionZh,
     confidenceLabel: cloudSeaConfidenceLabel(
@@ -9478,6 +9494,7 @@ function buildCloudSeaActionPlan(
   windows: readonly ForecastResultWindow[],
   terrainContext: CloudSeaTerrainContext,
   recommendationGuard: CloudSeaRecommendationGuardOutput,
+  travelDecision: CloudSeaTravelDecisionState,
   displayTemperatureContext: CloudSeaDisplayTemperatureContext,
   weatherVariableConsistencyContext: CloudSeaWeatherVariableConsistencyContext,
   precipitationSignalContext: CloudSeaPrecipitationSignalContext,
@@ -9559,26 +9576,29 @@ function buildCloudSeaActionPlan(
     },
     {
       key: "arrival",
-      label: "建议到达时间",
-      value: cloudSeaArrivalLabel(result, bestWindow, mappedWindow),
-      detail: bestWindow
-        ? terrainContext.shouldDowngradeCloudSeaWording
-          ? "到达后先观察近地雾气、低云是否贴地、远山层次和通透度。"
-          : "到达后先观察云顶高度、低云厚度和远山层次。"
-        : terrainContext.shouldDowngradeCloudSeaWording
-          ? "暂无明确低云/晨雾窗口，先等待临近预报确认低云、雾气和能见度。"
-          : "暂无明确云海窗口，先等待临近预报确认低云和能见度。",
-      tone: "accent",
+      label: cloudSeaArrivalActionLabel(travelDecision),
+      value: cloudSeaArrivalValueForDecision(
+        cloudSeaArrivalLabel(result, bestWindow, mappedWindow),
+        travelDecision,
+        "action",
+      ),
+      detail: cloudSeaArrivalActionDetail(travelDecision, Boolean(bestWindow), terrainContext),
+      tone: travelDecision === "go" ? "accent" : recommendationGuard.finalRecommendationTone,
     },
     {
       key: "main-window",
-      label: terrainContext.shouldDowngradeCloudSeaWording ? "观察窗口" : "主守窗口",
-      value: mainWindowDisplayLabel ?? "需临近预报复核",
-      detail:
-        windowRiskContext?.actionAdviceZh ??
-        (precipitationSignalContext.shouldDowngradeWindow
-          ? precipitationSignalContext.actionAdviceZh
-          : `${recommendationExplanation.actionSummaryZh}${precipitationSignalContext.precipitationSignalType !== "none" ? ` ${precipitationSignalContext.actionAdviceZh}` : ""}`),
+      label: cloudSeaMainWindowActionLabel(travelDecision, terrainContext),
+      value: cloudSeaWindowValueForDecision(
+        mainWindowDisplayLabel ?? "需临近预报复核",
+        travelDecision,
+      ),
+      detail: cloudSeaMainWindowActionDetail({
+        travelDecision,
+        terrainContext,
+        recommendationExplanation,
+        precipitationSignalContext,
+        windowRiskContext,
+      }),
       tone: recommendationGuard.finalRecommendationTone,
     },
     {
@@ -9780,6 +9800,182 @@ function cloudSeaArrivalLabel(
     shiftIsoLikeTime(bestWindow.startTime, -90),
     result.calendarBasis.timezone,
   );
+}
+
+function cloudSeaTravelDecisionState(
+  recommendationGuard: CloudSeaRecommendationGuardOutput,
+): CloudSeaTravelDecisionState {
+  if (
+    recommendationGuard.finalRecommendationLevel === "do_not_go_special" ||
+    recommendationGuard.finalRecommendationLabel.includes("不建议")
+  ) {
+    return "no_go";
+  }
+  return recommendationGuard.isSpecialTripRecommended ? "go" : "cautious";
+}
+
+function cloudSeaWindowMetricLabelForDecision(
+  label: string,
+  travelDecision: CloudSeaTravelDecisionState,
+): string {
+  if (travelDecision === "go") {
+    return label;
+  }
+  if (travelDecision === "no_go") {
+    return "备选观察窗口";
+  }
+  return label.includes("低云/晨雾参考窗口") ? "低云/晨雾参考窗口" : "参考窗口";
+}
+
+function cloudSeaWindowValueForDecision(
+  label: string,
+  travelDecision: CloudSeaTravelDecisionState,
+): string {
+  if (travelDecision === "go" || label.startsWith("暂无") || label.startsWith("需")) {
+    return label;
+  }
+  const prefix = cloudSeaWindowMetricLabelForDecision(label, travelDecision);
+  if (label.startsWith(prefix)) {
+    return label;
+  }
+  const colonIndex = label.indexOf("：");
+  if (colonIndex >= 0) {
+    return `${prefix}${label.slice(colonIndex)}`;
+  }
+  return `${prefix}：${label}`;
+}
+
+function cloudSeaArrivalCardLabel(travelDecision: CloudSeaTravelDecisionState): string {
+  if (travelDecision === "no_go") {
+    return "出发决策";
+  }
+  if (travelDecision === "cautious") {
+    return "到达参考";
+  }
+  return "建议到达";
+}
+
+function cloudSeaArrivalActionLabel(travelDecision: CloudSeaTravelDecisionState): string {
+  if (travelDecision === "no_go") {
+    return "不建议出发";
+  }
+  if (travelDecision === "cautious") {
+    return "到达参考";
+  }
+  return "建议到达时间";
+}
+
+function cloudSeaArrivalValueForDecision(
+  arrivalLabel: string,
+  travelDecision: CloudSeaTravelDecisionState,
+  surface: "card" | "action" | "hero",
+): string {
+  if (travelDecision === "no_go") {
+    return surface === "action" ? "等待下次预报" : "暂不安排行程";
+  }
+  if (travelDecision === "cautious") {
+    const referenceLabel = cloudSeaArrivalReferenceLabel(arrivalLabel);
+    return referenceLabel.startsWith("暂无") || referenceLabel.startsWith("需")
+      ? "如仍前往，到达时间需临近预报复核"
+      : `如仍前往，建议到达：${referenceLabel}`;
+  }
+  return arrivalLabel;
+}
+
+function cloudSeaArrivalReferenceLabel(arrivalLabel: string): string {
+  return arrivalLabel.replace(/^建议到达：/, "").trim();
+}
+
+function cloudSeaArrivalCardDetail(
+  travelDecision: CloudSeaTravelDecisionState,
+  terrainContext: CloudSeaTerrainContext,
+): string {
+  if (travelDecision === "no_go") {
+    return cloudSeaTerrainAwareText(
+      "等待下一次预报更新；优先转向通透度、云层纹理、霞光或近景层次，避免远途专程。只有已在附近且接受不确定性时，再把窗口作为灵活备选观察。",
+      terrainContext,
+    );
+  }
+  if (travelDecision === "cautious") {
+    return cloudSeaTerrainAwareText(
+      "仅作为备选到达参考，出发前必须复核低云分层、能见度、降水和现场通行；证据不足时等待下一次预报。",
+      terrainContext,
+    );
+  }
+  return terrainContext.shouldDowngradeCloudSeaWording
+    ? "窗口前到位，先看低云是否贴地、远山层次和通透度。"
+    : "窗口前到位，先看云顶高度、低云厚度和远山层次。";
+}
+
+function cloudSeaArrivalActionDetail(
+  travelDecision: CloudSeaTravelDecisionState,
+  hasBestWindow: boolean,
+  terrainContext: CloudSeaTerrainContext,
+): string {
+  if (travelDecision === "no_go") {
+    return cloudSeaTerrainAwareText(
+      "当前决策是不建议专程，暂不安排出发和到达时间；等待下一次预报，或改看通透度、云层纹理、霞光备选题材。若已在附近且能灵活撤退，可只作备选观察。",
+      terrainContext,
+    );
+  }
+  if (travelDecision === "cautious") {
+    return cloudSeaTerrainAwareText(
+      "到达时间只作备选参考；如仍前往，出发前复核低云、能见度、降水和通行条件，不把该窗口当作确定行程。",
+      terrainContext,
+    );
+  }
+  if (hasBestWindow) {
+    return terrainContext.shouldDowngradeCloudSeaWording
+      ? "到达后先观察近地雾气、低云是否贴地、远山层次和通透度。"
+      : "到达后先观察云顶高度、低云厚度和远山层次。";
+  }
+  return terrainContext.shouldDowngradeCloudSeaWording
+    ? "暂无明确低云/晨雾窗口，先等待临近预报确认低云、雾气和能见度。"
+    : "暂无明确云海窗口，先等待临近预报确认低云和能见度。";
+}
+
+function cloudSeaMainWindowActionLabel(
+  travelDecision: CloudSeaTravelDecisionState,
+  terrainContext: CloudSeaTerrainContext,
+): string {
+  if (travelDecision === "no_go") {
+    return "备选观察窗口";
+  }
+  if (travelDecision === "cautious") {
+    return "参考窗口";
+  }
+  return terrainContext.shouldDowngradeCloudSeaWording ? "观察窗口" : "主守窗口";
+}
+
+function cloudSeaMainWindowActionDetail(input: {
+  readonly travelDecision: CloudSeaTravelDecisionState;
+  readonly terrainContext: CloudSeaTerrainContext;
+  readonly recommendationExplanation: CloudSeaRecommendationExplanation;
+  readonly precipitationSignalContext: CloudSeaPrecipitationSignalContext;
+  readonly windowRiskContext?: CloudSeaWindowRiskContext;
+}): string {
+  const riskAdvice =
+    input.windowRiskContext?.actionAdviceZh ??
+    (input.precipitationSignalContext.shouldDowngradeWindow
+      ? input.precipitationSignalContext.actionAdviceZh
+      : `${input.recommendationExplanation.actionSummaryZh}${
+          input.precipitationSignalContext.precipitationSignalType !== "none"
+            ? ` ${input.precipitationSignalContext.actionAdviceZh}`
+            : ""
+        }`);
+  if (input.travelDecision === "no_go") {
+    return cloudSeaTerrainAwareText(
+      `仅保留作参考窗口，不安排专程出发；等待下一次预报，并优先准备通透度、云层纹理或霞光备选。${riskAdvice}`,
+      input.terrainContext,
+    );
+  }
+  if (input.travelDecision === "cautious") {
+    return cloudSeaTerrainAwareText(
+      `仅供备选观察；如仍前往，出发前必须复核临近预报和现场条件。${riskAdvice}`,
+      input.terrainContext,
+    );
+  }
+  return riskAdvice;
 }
 
 function _cloudSeaConclusion(

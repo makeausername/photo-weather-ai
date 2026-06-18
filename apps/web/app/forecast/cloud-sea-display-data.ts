@@ -288,7 +288,6 @@ export type BuildCloudSeaDisplayDataInput = {
   readonly dailyJudgment: readonly CloudSeaDailyTrendItem[];
   readonly judgmentBasis: readonly CloudSeaReasoningItem[];
   readonly actionPlan: readonly CloudSeaActionPlanItem[];
-  readonly travelDecision: CloudSeaDisplayTravelDecision;
   readonly riskReview: readonly ForecastResultSectionItem[];
 };
 
