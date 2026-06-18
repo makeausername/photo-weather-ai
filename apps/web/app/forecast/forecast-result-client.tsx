@@ -3947,10 +3947,6 @@ export function GlowResultPage({
           <GlowTopResultHeader query={query} result={result} viewModel={viewModel} />
           <GlowMetricCards cards={viewModel.coreCards} />
           <GlowNearTermWeatherSection viewModel={viewModel} />
-          <GlowWindowCardsSection
-            windows={viewModel.glowWindows}
-            recommendation={viewModel.overallRecommendation}
-          />
         </section>
         <GlowDailyCardsSection opportunities={viewModel.dailyOpportunities} />
         <GlowDecisionSupportSection viewModel={viewModel} />
@@ -4912,88 +4908,6 @@ function GlowCompactInfoCard({ card }: { readonly card: GlowNearTermWeatherCard 
   );
 }
 
-function GlowWindowCardsSection({
-  windows,
-  recommendation,
-}: {
-  readonly windows: GlowForecastViewModel["glowWindows"];
-  readonly recommendation: GlowForecastViewModel["overallRecommendation"];
-}) {
-  return (
-    <section
-      className="GlowWindowCards glow-window-cards grid gap-3"
-      data-glow-section="GlowWindowCards"
-      data-testid="glow-window-cards-section"
-    >
-      <GlowSectionHeading
-        title="日出 / 日落霞光窗口"
-        description="按已有霞光窗口展示朝霞、晚霞、余晖与备选时段，方便先排主拍摄窗口再留备选。"
-        badge={recommendation.preferredTarget}
-      />
-      {windows.length === 0 ? (
-        <p className="rounded-lg border border-border bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground">
-          {recommendation.preferredWindow}
-        </p>
-      ) : null}
-      {windows.length > 0 ? (
-        <div
-          className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr))]"
-          data-glow-window-card-grid="auto-fit"
-        >
-          {windows.map((window) => (
-            <GlowWindowCard key={window.key} window={window} />
-          ))}
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-function GlowWindowCard({
-  window,
-}: {
-  readonly window: GlowForecastViewModel["glowWindows"][number];
-}) {
-  return (
-    <article
-      className={cn(
-        "grid h-full content-start gap-2 rounded-lg border bg-card p-3 shadow-sm",
-        glowToneBorderClassName(window.tone),
-      )}
-      data-glow-window-card={window.key}
-      data-glow-window-phase={glowWindowItemPhase(window)}
-    >
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <h3 className="text-base font-bold text-card-foreground">{window.label}</h3>
-        <Badge variant={glowWindowCategoryBadge(window.categoryLabel)}>
-          {window.categoryLabel}
-        </Badge>
-      </div>
-      <div>
-        <p className="text-xs font-semibold text-muted-foreground">
-          {glowWindowPhaseLabel(window)}
-        </p>
-        <p
-          className={cn(
-            "mt-1 text-xl font-bold leading-7 [overflow-wrap:anywhere]",
-            glowToneClassName(window.tone),
-          )}
-        >
-          {Math.round(window.score)} 分
-        </p>
-      </div>
-      <dl className="grid gap-1.5 text-xs leading-5 text-muted-foreground">
-        <GlowDefinitionLine label="窗口时间" value={window.timeRangeLabel} />
-        <GlowDefinitionLine label="拍摄行动" value={glowWindowActionText(window)} />
-        <GlowDefinitionLine label="风险复核" value={glowWindowRiskText(window)} />
-      </dl>
-      <p className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
-        {firstSentence(window.note)}
-      </p>
-    </article>
-  );
-}
-
 function GlowDailyCardsSection({
   opportunities,
 }: {
@@ -5345,50 +5259,6 @@ function GlowDefinitionLine({ label, value }: { readonly label: string; readonly
       <dd className="inline break-words [overflow-wrap:anywhere]">{value}</dd>
     </div>
   );
-}
-
-function glowWindowItemPhase(
-  window: GlowForecastViewModel["glowWindows"][number],
-): "sunrise" | "sunset" {
-  switch (window.type) {
-    case "sunrise_glow":
-    case "pre_dawn_glow":
-    case "sunrise_core":
-    case "morning_warm_light":
-    case "sunrise":
-      return "sunrise";
-    case "sunset_glow":
-    case "sunset_warm_light":
-    case "sunset_core":
-    case "afterglow":
-    case "blue_hour_transition":
-    case "sunset":
-      return "sunset";
-    case "warm_light":
-    default:
-      return window.label.includes("朝霞") || window.label.includes("日出") ? "sunrise" : "sunset";
-  }
-}
-
-function glowWindowPhaseLabel(window: GlowForecastViewModel["glowWindows"][number]): string {
-  return glowWindowItemPhase(window) === "sunrise" ? "日出窗口" : "日落窗口";
-}
-
-function glowWindowActionText(window: GlowForecastViewModel["glowWindows"][number]): string {
-  if (window.categoryLabel === "不建议") {
-    return "不按专程安排，保留现场观察或转拍备选题材。";
-  }
-  if (window.categoryLabel === "仅作备选") {
-    return "作为备选窗口，出发前复核低云遮挡、降水影响和通透度。";
-  }
-  if (window.categoryLabel === "可观察") {
-    return "可顺带观察，优先确认云层开口和地平线遮挡。";
-  }
-  return "优先按该窗口完成构图与到达安排。";
-}
-
-function glowWindowRiskText(window: GlowForecastViewModel["glowWindows"][number]): string {
-  return window.riskTags.length > 0 ? window.riskTags.slice(0, 2).join(" / ") : firstSentence(window.note);
 }
 
 function glowDailyCardSpanClassName(index: number, count: number): string {
