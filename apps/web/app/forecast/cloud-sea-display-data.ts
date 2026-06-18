@@ -233,6 +233,8 @@ export type CloudSeaImportantWindowDisplayData = {
   readonly backupWindow: CloudSeaImportantWindowDisplay;
 };
 
+type CloudSeaDisplayTravelDecision = "go" | "cautious" | "no_go";
+
 export type CloudSeaDisplayDataMeta = {
   readonly generatedAt: string;
   readonly timezone: string;
@@ -286,6 +288,7 @@ export type BuildCloudSeaDisplayDataInput = {
   readonly dailyJudgment: readonly CloudSeaDailyTrendItem[];
   readonly judgmentBasis: readonly CloudSeaReasoningItem[];
   readonly actionPlan: readonly CloudSeaActionPlanItem[];
+  readonly travelDecision: CloudSeaDisplayTravelDecision;
   readonly riskReview: readonly ForecastResultSectionItem[];
 };
 
@@ -357,21 +360,32 @@ export function buildCloudSeaDisplayData(
     cloudLayerCompleteness,
     cloudBasisConsistency,
   });
-  const importantWindows = buildImportantWindowDisplayData(input);
+  const travelDecision = deriveCloudSeaDisplayTravelDecision(input);
+  const importantWindows = buildImportantWindowDisplayData(input, travelDecision);
   const recommendationCards = applyImportantWindowRecommendationLabels(
     input.recommendationCards,
     importantWindows,
+    travelDecision,
   );
   const actionPlan = applyWindowRiskActionLabels(
-    applyImportantWindowActionLabels(input.actionPlan, importantWindows),
+    applyImportantWindowActionLabels(input.actionPlan, importantWindows, travelDecision),
     windowRiskContext,
+    travelDecision,
   );
 
   return {
     header: {
       ...input.header,
-      bestWindowLabel: importantWindows.bestWindow.displayLabelZh,
-      arrivalLabel: importantWindows.arrival.displayLabelZh,
+      bestWindowLabel: windowDisplayValueForDecision(
+        importantWindows.bestWindow.displayLabelZh,
+        travelDecision,
+        input.header.bestWindowLabel,
+      ),
+      arrivalLabel: arrivalDisplayValueForDecision(
+        importantWindows.arrival.displayLabelZh,
+        travelDecision,
+        "hero",
+      ),
       heroBadgeLabel: input.terrainContext.vocabulary.heroBadgeLabel,
       dataBadgeLabel: cloudSeaDataBadgeLabel(input.result),
       dataBadgeVariant: cloudSeaDataBadgeVariant(input.result),
@@ -461,6 +475,7 @@ type CloudSeaDisplayWindowSource = {
 
 function buildImportantWindowDisplayData(
   input: BuildCloudSeaDisplayDataInput,
+  travelDecision: CloudSeaDisplayTravelDecision,
 ): CloudSeaImportantWindowDisplayData {
   const timezone = input.result.calendarBasis.timezone;
   const bestSource = firstDisplayWindowAtOrAfterAnchor(input.result);
@@ -478,8 +493,10 @@ function buildImportantWindowDisplayData(
     ? input.result.bestWindows.find((window) => sameWindowTime(window, bestSource))
     : undefined;
   const arrivalTime =
-    forecastBestWindow?.arrivalAdvice?.recommendedArrivalTime ??
-    (bestSource?.startTime ? shiftDisplayTime(bestSource.startTime, -90) : null);
+    travelDecision === "no_go"
+      ? null
+      : forecastBestWindow?.arrivalAdvice?.recommendedArrivalTime ??
+        (bestSource?.startTime ? shiftDisplayTime(bestSource.startTime, -90) : null);
   const backupSource =
     input.cloudSeaWindowCards.find(
       (window) =>
@@ -489,7 +506,7 @@ function buildImportantWindowDisplayData(
 
   return {
     bestWindow,
-    arrival: formatArrivalDisplay(arrivalTime, timezone),
+    arrival: formatArrivalDisplayForDecision(arrivalTime, timezone, travelDecision),
     mainWindow: bestWindow,
     backupWindow: formatImportantWindowDisplay(backupSource, timezone, "暂无备选窗口"),
   };
@@ -498,27 +515,49 @@ function buildImportantWindowDisplayData(
 function applyImportantWindowRecommendationLabels(
   cards: readonly ForecastResultCard[],
   importantWindows: CloudSeaImportantWindowDisplayData,
+  travelDecision: CloudSeaDisplayTravelDecision,
 ): readonly ForecastResultCard[] {
   let changed = false;
   const normalized = cards.map((card) => {
     if (card.key === "cloud-sea-best-window") {
-      if (card.value === importantWindows.bestWindow.displayLabelZh) {
+      const value = windowDisplayValueForDecision(
+        importantWindows.bestWindow.displayLabelZh,
+        travelDecision,
+        card.label,
+      );
+      if (card.value === value) {
         return card;
       }
       changed = true;
       return {
         ...card,
-        value: importantWindows.bestWindow.displayLabelZh,
+        value,
       };
     }
     if (card.key === "cloud-sea-arrival") {
-      if (card.value === importantWindows.arrival.displayLabelZh) {
+      const label = arrivalCardLabelForDecision(travelDecision, card.label);
+      const value = arrivalDisplayValueForDecision(
+        importantWindows.arrival.displayLabelZh,
+        travelDecision,
+        "card",
+      );
+      const detail = arrivalCardDetailForDecision(travelDecision, card.detail);
+      const tone = travelDecision === "no_go" ? "danger" : card.tone;
+      if (
+        card.label === label &&
+        card.value === value &&
+        card.detail === detail &&
+        card.tone === tone
+      ) {
         return card;
       }
       changed = true;
       return {
         ...card,
-        value: importantWindows.arrival.displayLabelZh,
+        label,
+        value,
+        detail,
+        tone,
       };
     }
     return card;
@@ -529,27 +568,49 @@ function applyImportantWindowRecommendationLabels(
 function applyImportantWindowActionLabels(
   items: readonly CloudSeaActionPlanItem[],
   importantWindows: CloudSeaImportantWindowDisplayData,
+  travelDecision: CloudSeaDisplayTravelDecision,
 ): readonly CloudSeaActionPlanItem[] {
   let changed = false;
   const normalized = items.map((item) => {
     if (item.key === "arrival") {
-      if (item.value === importantWindows.arrival.displayLabelZh) {
+      const label = arrivalActionLabelForDecision(travelDecision, item.label);
+      const value = arrivalDisplayValueForDecision(
+        importantWindows.arrival.displayLabelZh,
+        travelDecision,
+        "action",
+      );
+      const detail = arrivalActionDetailForDecision(travelDecision, item.detail);
+      const tone = travelDecision === "no_go" ? "danger" : item.tone;
+      if (
+        item.label === label &&
+        item.value === value &&
+        item.detail === detail &&
+        item.tone === tone
+      ) {
         return item;
       }
       changed = true;
       return {
         ...item,
-        value: importantWindows.arrival.displayLabelZh,
+        label,
+        value,
+        detail,
+        tone,
       };
     }
     if (item.key === "main-window") {
-      if (item.value === importantWindows.mainWindow.displayLabelZh) {
+      const value = windowDisplayValueForDecision(
+        importantWindows.mainWindow.displayLabelZh,
+        travelDecision,
+        item.label,
+      );
+      if (item.value === value) {
         return item;
       }
       changed = true;
       return {
         ...item,
-        value: importantWindows.mainWindow.displayLabelZh,
+        value,
       };
     }
     if (item.key === "backup" && importantWindows.backupWindow.hasWindow) {
@@ -570,17 +631,23 @@ function applyImportantWindowActionLabels(
 function applyWindowRiskActionLabels(
   items: readonly CloudSeaActionPlanItem[],
   windowRiskContext: CloudSeaWindowRiskContext,
+  travelDecision: CloudSeaDisplayTravelDecision,
 ): readonly CloudSeaActionPlanItem[] {
   let changed = false;
   const normalized = items.map((item) => {
     if (item.key === "main-window") {
-      if (item.detail === windowRiskContext.actionAdviceZh) {
+      const detail = windowRiskActionDetailForDecision(
+        item.detail,
+        windowRiskContext.actionAdviceZh,
+        travelDecision,
+      );
+      if (item.detail === detail) {
         return item;
       }
       changed = true;
       return {
         ...item,
-        detail: windowRiskContext.actionAdviceZh,
+        detail,
       };
     }
     return item;
@@ -625,7 +692,8 @@ function buildDisplayWindowRiskContext(input: {
     displayTemperatureContext: {
       displayTemperatureC: input.input.displayTemperatureContext.displayTemperatureC,
       bodyFeelTemperatureC: input.input.displayTemperatureContext.bodyFeelTemperatureC,
-      terrainAdjustedTemperatureC: input.input.displayTemperatureContext.terrainAdjustedTemperatureC,
+      terrainAdjustedTemperatureC:
+        input.input.displayTemperatureContext.terrainAdjustedTemperatureC,
       basis: input.input.displayTemperatureContext.basis,
     },
     terrainContext: {
@@ -698,6 +766,196 @@ function formatArrivalDisplay(
     arrivalTime: arrivalTime ?? null,
     hasArrivalTime: Boolean(arrivalTime),
   };
+}
+
+function formatArrivalDisplayForDecision(
+  arrivalTime: string | null | undefined,
+  timezone: string,
+  travelDecision: CloudSeaDisplayTravelDecision,
+): CloudSeaArrivalDisplay {
+  if (travelDecision === "no_go") {
+    return {
+      displayLabelZh: "暂不安排行程",
+      arrivalTime: null,
+      hasArrivalTime: false,
+    };
+  }
+  const arrival = formatArrivalDisplay(arrivalTime, timezone);
+  if (travelDecision === "cautious") {
+    return {
+      ...arrival,
+      displayLabelZh: cautiousArrivalDisplayValue(arrival.displayLabelZh),
+    };
+  }
+  return arrival;
+}
+
+function deriveCloudSeaDisplayTravelDecision(
+  input: BuildCloudSeaDisplayDataInput,
+): CloudSeaDisplayTravelDecision {
+  const recommendationLevel = input.recommendationGuard.finalRecommendationLevel;
+  const primaryDecisionText = [
+    input.recommendationGuard.finalRecommendationLabel,
+    input.header.recommendationLabel,
+    input.recommendationCards.find((card) => card.key === "cloud-sea-recommendation")?.value,
+    input.actionPlan.find((item) => item.key === "departure")?.value,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  if (recommendationLevel === "do_not_go_special" || containsNoGoDecision(primaryDecisionText)) {
+    return "no_go";
+  }
+
+  if (
+    !input.recommendationGuard.isSpecialTripRecommended ||
+    recommendationLevel === "cautious_reference" ||
+    recommendationLevel === "observe_if_nearby" ||
+    recommendationLevel === "backup_only" ||
+    containsCautiousDecision(primaryDecisionText)
+  ) {
+    return "cautious";
+  }
+
+  return "go";
+}
+
+function windowDisplayValueForDecision(
+  value: string,
+  travelDecision: CloudSeaDisplayTravelDecision,
+  preferredPrefix?: string,
+): string {
+  if (travelDecision === "go" || value.startsWith("暂无") || value.startsWith("需")) {
+    return value;
+  }
+  const prefix = windowReferencePrefixForDecision(travelDecision, preferredPrefix);
+  if (value.startsWith(prefix)) {
+    return value;
+  }
+  const colonIndex = value.indexOf("：");
+  if (colonIndex >= 0) {
+    return `${prefix}${value.slice(colonIndex)}`;
+  }
+  return `${prefix}：${value}`;
+}
+
+function windowReferencePrefixForDecision(
+  travelDecision: CloudSeaDisplayTravelDecision,
+  preferredPrefix?: string,
+): string {
+  if (travelDecision === "no_go") {
+    return "备选观察窗口";
+  }
+  return preferredPrefix?.includes("低云/晨雾参考窗口") ? "低云/晨雾参考窗口" : "参考窗口";
+}
+
+function arrivalDisplayValueForDecision(
+  value: string,
+  travelDecision: CloudSeaDisplayTravelDecision,
+  surface: "card" | "action" | "hero",
+): string {
+  if (travelDecision === "no_go") {
+    return surface === "action" ? "等待下次预报" : "暂不安排行程";
+  }
+  if (travelDecision === "cautious") {
+    return cautiousArrivalDisplayValue(value);
+  }
+  return value;
+}
+
+function arrivalCardLabelForDecision(
+  travelDecision: CloudSeaDisplayTravelDecision,
+  currentLabel: string,
+): string {
+  if (travelDecision === "no_go") {
+    return "出发决策";
+  }
+  if (travelDecision === "cautious") {
+    return "到达参考";
+  }
+  return currentLabel;
+}
+
+function arrivalActionLabelForDecision(
+  travelDecision: CloudSeaDisplayTravelDecision,
+  currentLabel: string,
+): string {
+  if (travelDecision === "no_go") {
+    return "行程建议";
+  }
+  if (travelDecision === "cautious") {
+    return "到达参考";
+  }
+  return currentLabel;
+}
+
+function arrivalCardDetailForDecision(
+  travelDecision: CloudSeaDisplayTravelDecision,
+  currentDetail: string,
+): string {
+  if (travelDecision === "no_go") {
+    return "当前不建议专程出发，等待下一次预报更新；避免为单一窗口安排远途，重新复核降水、能见度和通行条件后再决策。";
+  }
+  if (travelDecision === "cautious") {
+    return "仅作为备选到达参考；如仍前往，出发前必须复核降水、能见度和通行条件，证据不足时等待下一次预报。";
+  }
+  return currentDetail;
+}
+
+function arrivalActionDetailForDecision(
+  travelDecision: CloudSeaDisplayTravelDecision,
+  currentDetail: string,
+): string {
+  if (travelDecision === "no_go") {
+    return "当前没有推荐的专程出发行程；等待下一次预报，重新复核降水、能见度和通行条件后再决定。";
+  }
+  if (travelDecision === "cautious") {
+    return "到达时间只作备选参考；如仍前往，出发前必须复核降水、能见度和通行条件，不把该窗口当作确定行程。";
+  }
+  return currentDetail;
+}
+
+function cautiousArrivalDisplayValue(value: string): string {
+  if (
+    value.startsWith("如仍前往") ||
+    value.startsWith("到达参考") ||
+    value.startsWith("仅供备选")
+  ) {
+    return value;
+  }
+  if (value.startsWith("建议到达：")) {
+    return `如仍前往，${value}`;
+  }
+  if (value.startsWith("暂无") || value.startsWith("需")) {
+    return "如仍前往，到达时间需临近预报复核";
+  }
+  return `如仍前往，到达参考：${arrivalReferenceDisplayValue(value)}`;
+}
+
+function arrivalReferenceDisplayValue(value: string): string {
+  return value.replace(/^建议到达：/, "").trim();
+}
+
+function windowRiskActionDetailForDecision(
+  currentDetail: string,
+  riskAdvice: string,
+  travelDecision: CloudSeaDisplayTravelDecision,
+): string {
+  if (travelDecision === "no_go") {
+    return currentDetail.includes(riskAdvice) ? currentDetail : `${currentDetail} ${riskAdvice}`;
+  }
+  if (travelDecision === "cautious") {
+    return currentDetail.includes(riskAdvice) ? currentDetail : `${currentDetail} ${riskAdvice}`;
+  }
+  return riskAdvice;
+}
+
+function containsNoGoDecision(text: string): boolean {
+  return /不建议|暂不安排|不安排专程|不安排出发|不安排该行程/.test(text);
+}
+
+function containsCautiousDecision(text: string): boolean {
+  return /谨慎|备选|参考|等待|如仍前往|已在附近|顺带观察|可观察/.test(text);
 }
 
 function sameWindowTime(

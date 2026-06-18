@@ -5202,7 +5202,7 @@ describe("forecast result target-aware view model", () => {
     ]);
     expect(viewModel.travelDecision).toBe("cautious");
     expect(viewModel.actionPlan.find((item) => item.key === "arrival")?.value).toContain(
-      "仅供备选，到达参考",
+      "如仍前往，建议到达",
     );
   });
 
@@ -5599,7 +5599,7 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("白墙风险");
       expect(html).toContain("黄山光明顶 云海判断");
       expect(html).toContain("到达参考");
-      expect(html).toContain("仅供备选，到达参考");
+      expect(html).toContain("如仍前往，建议到达");
       expect(html).toContain("云海窗口与备选");
       expect(html).toContain("按光线和时段归纳主窗口与备选窗口，快速判断哪一类云海更值得守拍。");
       expect(html).toContain("云海窗口");
