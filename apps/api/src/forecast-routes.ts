@@ -104,6 +104,8 @@ type DisplayableAiExplanation = ForecastAiExplanation & {
 
 const deepSeekForecastInterpretationCacheTtlMs = 1000 * 60 * 60;
 const deepSeekForecastInterpretationCache = new Map<string, CachedDeepSeekForecastInterpretation>();
+const defaultForecastCalculateCacheTtlMs = 5 * 60 * 1000;
+const defaultForecastCalculateCacheMaxEntries = 256;
 
 const missingWgs84CoordinateErrorMessage = "当前地点缺少有效 WGS84 坐标，无法计算星空银河窗口。";
 
@@ -113,6 +115,133 @@ const forecastCalculateRequestSchema = forecastQueryInputSchema.extend({
   timezone: z.string().trim().min(1).optional(),
   startDateTime: z.string().datetime({ offset: true }).optional(),
 });
+
+type ForecastCalculateRequest = z.infer<typeof forecastCalculateRequestSchema>;
+
+type TtlCacheEntry<TValue> = {
+  readonly value: TValue;
+  readonly expiresAt: number;
+  readonly createdAt: number;
+};
+
+function readPositiveIntegerEnv(
+  env: NodeJS.ProcessEnv,
+  key: string,
+  fallback: number,
+  options: { readonly min?: number; readonly max?: number } = {},
+): number {
+  const raw = env[key];
+  if (raw === undefined || raw.trim() === "") {
+    return fallback;
+  }
+
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+
+  const integer = Math.floor(value);
+  if (options.min !== undefined && integer < options.min) {
+    return options.min;
+  }
+  if (options.max !== undefined && integer > options.max) {
+    return options.max;
+  }
+  return integer;
+}
+
+function readCachedValue<TValue>(
+  cache: Map<string, TtlCacheEntry<TValue>>,
+  key: string,
+  now = Date.now(),
+): TValue | undefined {
+  const cached = cache.get(key);
+  if (!cached) {
+    return undefined;
+  }
+
+  if (cached.expiresAt <= now) {
+    cache.delete(key);
+    return undefined;
+  }
+
+  cache.delete(key);
+  cache.set(key, cached);
+  return cached.value;
+}
+
+function writeCachedValue<TValue>(
+  cache: Map<string, TtlCacheEntry<TValue>>,
+  key: string,
+  value: TValue,
+  ttlMs: number,
+  maxEntries: number,
+  now = Date.now(),
+): void {
+  cache.delete(key);
+  cache.set(key, {
+    value,
+    createdAt: now,
+    expiresAt: now + ttlMs,
+  });
+  pruneCache(cache, maxEntries, now);
+}
+
+function pruneCache<TValue>(
+  cache: Map<string, TtlCacheEntry<TValue>>,
+  maxEntries: number,
+  now = Date.now(),
+): void {
+  for (const [key, value] of cache) {
+    if (value.expiresAt <= now) {
+      cache.delete(key);
+    }
+  }
+
+  while (cache.size > maxEntries) {
+    const oldestKey = cache.keys().next().value as string | undefined;
+    if (!oldestKey) {
+      break;
+    }
+    cache.delete(oldestKey);
+  }
+}
+
+function roundOptionalCacheNumber(value: number | null | undefined, digits: number): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+}
+
+function createForecastCalculateCacheKey(input: ForecastCalculateRequest): string {
+  const stableInput = {
+    name: input.name,
+    source: input.source,
+    coordinateSource: input.coordinateSource ?? null,
+    horizon: input.horizon,
+    target: input.target,
+    timezone: input.timezone ?? null,
+    startDateTime: input.startDateTime ?? null,
+    latitudeGcj02: roundCoordinateForCache(input.latitudeGcj02),
+    longitudeGcj02: roundCoordinateForCache(input.longitudeGcj02),
+    latitudeWgs84: roundCoordinateForCache(input.latitudeWgs84),
+    longitudeWgs84: roundCoordinateForCache(input.longitudeWgs84),
+    elevationMeters: roundOptionalCacheNumber(input.elevationMeters, 2),
+    elevationSource: input.elevationSource ?? null,
+    elevationConfidence: input.elevationConfidence ?? null,
+    locationId: input.locationId ?? null,
+    photoSpotId: input.photoSpotId ?? null,
+    useAiExplanation: input.useAiExplanation,
+  };
+
+  return `forecast-calculate:${createHash("sha256")
+    .update(JSON.stringify(stableInput))
+    .digest("hex")
+    .slice(0, 32)}`;
+}
 
 type ForecastCalculationOptions = {
   readonly timezone?: string;
@@ -195,6 +324,20 @@ export function registerForecastRoutes(
       timeoutMs: astroServiceConfig.timeoutMs,
       logger: app.log,
     });
+  const forecastCalculateCacheTtlMs = readPositiveIntegerEnv(
+    env,
+    "FORECAST_CALCULATE_CACHE_TTL_MS",
+    defaultForecastCalculateCacheTtlMs,
+    { min: 1000, max: 60 * 60 * 1000 },
+  );
+  const forecastCalculateCacheMaxEntries = readPositiveIntegerEnv(
+    env,
+    "FORECAST_CALCULATE_CACHE_MAX_ENTRIES",
+    defaultForecastCalculateCacheMaxEntries,
+    { min: 1, max: 100_000 },
+  );
+  const forecastCalculateCache = new Map<string, TtlCacheEntry<ForecastCalculationWithAiResult>>();
+  const forecastCalculateInFlight = new Map<string, Promise<ForecastCalculationResult>>();
 
   app.post("/forecast/validate-query", async (request, reply) => {
     const parsedBody = forecastQueryInputSchema.safeParse(
@@ -240,23 +383,53 @@ export function registerForecastRoutes(
       startDateTime,
       ...query
     } = parsedBody.data;
-    const result = await calculateForecastResultOrReply(
-      query,
-      { timezone, startDateTime },
-      weatherDataService,
-      terrainProvider,
-      elevationService,
-      astroServiceClient,
-      astroServiceConfig,
-      options.dbClient,
-      reply,
-      request.log,
-    );
-    if (!result) {
-      return reply;
+    const cacheKey = createForecastCalculateCacheKey(parsedBody.data);
+    const cached = readCachedValue(forecastCalculateCache, cacheKey);
+    if (cached) {
+      return reply.send(cached);
     }
 
-    return reply.send(withDeterministicAiExplanation(result));
+    let calculationPromise = forecastCalculateInFlight.get(cacheKey);
+    if (!calculationPromise) {
+      calculationPromise = calculateForecastResultWithCalibration(
+        query,
+        { timezone, startDateTime },
+        weatherDataService,
+        terrainProvider,
+        elevationService,
+        astroServiceClient,
+        astroServiceConfig,
+        options.dbClient,
+        request.log,
+      );
+      forecastCalculateInFlight.set(cacheKey, calculationPromise);
+    }
+
+    try {
+      const result = await calculationPromise;
+      const response = withDeterministicAiExplanation(result);
+      writeCachedValue(
+        forecastCalculateCache,
+        cacheKey,
+        response,
+        forecastCalculateCacheTtlMs,
+        forecastCalculateCacheMaxEntries,
+      );
+      return reply.send(response);
+    } catch (error) {
+      return sendForecastCalculationError({
+        logger: request.log,
+        route: "/forecast/calculate",
+        queryLike: query,
+        astroServiceConfig,
+        error,
+        reply,
+      });
+    } finally {
+      if (forecastCalculateInFlight.get(cacheKey) === calculationPromise) {
+        forecastCalculateInFlight.delete(cacheKey);
+      }
+    }
   });
 
   app.post("/forecast/ai-explain", async (request, reply) => {
@@ -528,7 +701,7 @@ async function calculateForecastResultOrReply(
   logger: FastifyBaseLogger,
 ): Promise<ForecastCalculationResult | null> {
   try {
-    const result = await calculateForecastResult(
+    return await calculateForecastResultWithCalibration(
       query,
       requestOptions,
       weatherDataService,
@@ -536,65 +709,108 @@ async function calculateForecastResultOrReply(
       elevationService,
       astroServiceClient,
       astroServiceConfig,
+      dbClient,
       logger,
     );
-    logCloudSeaCoverageDiagnostics(logger, result);
-    logGlowScoringDiagnostics(logger, result);
-    return attachCalibrationHint(result, query, dbClient);
   } catch (error) {
-    logForecastCalculationFailure({
+    return sendForecastCalculationError({
       logger,
       route: "/forecast/calculate",
       queryLike: query,
       astroServiceConfig,
       error,
+      reply,
     });
-    const message = (error as Error).message;
-    if (message === astroServiceUnavailableMessage) {
-      reply.status(503).send({
-        error: "astro_service_unavailable",
-        message: astroServiceUnavailableMessage,
-      });
-      return null;
-    }
-    if (message === astroServiceTimeoutMessage) {
-      reply.status(503).send({
-        error: "astro_service_timeout",
-        message: astroServiceTimeoutMessage,
-      });
-      return null;
-    }
-    if (message === astroServiceInvalidResponseMessage) {
-      reply.status(502).send({
-        error: "astro_service_invalid_response",
-        message: astroServiceInvalidResponseMessage,
-      });
-      return null;
-    }
-    if (message === astroServiceUrlMissingMessage) {
-      reply.status(503).send({
-        error: "astro_service_url_missing",
-        message: astroServiceUrlMissingMessage,
-      });
-      return null;
-    }
-    if (message === forecastDateRangeErrorMessage) {
-      reply.status(400).send({
-        error: "invalid_forecast_range",
-        message: forecastDateRangeErrorMessage,
-      });
-      return null;
-    }
-    if (message === missingWgs84CoordinateErrorMessage) {
-      reply.status(400).send({
-        error: "invalid_wgs84_coordinates",
-        message: missingWgs84CoordinateErrorMessage,
-      });
-      return null;
-    }
-
-    throw error;
   }
+}
+
+async function calculateForecastResultWithCalibration(
+  query: ForecastQueryInput,
+  requestOptions: ForecastCalculationOptions,
+  weatherDataService: WeatherDataServiceLike,
+  terrainProvider: TerrainProvider,
+  elevationService: TerrainElevationService,
+  astroServiceClient: AstroServiceClientLike,
+  astroServiceConfig: AstroServiceConfig,
+  dbClient: DatabaseClient | undefined,
+  logger: FastifyBaseLogger,
+): Promise<ForecastCalculationResult> {
+  const result = await calculateForecastResult(
+    query,
+    requestOptions,
+    weatherDataService,
+    terrainProvider,
+    elevationService,
+    astroServiceClient,
+    astroServiceConfig,
+    logger,
+  );
+  logCloudSeaCoverageDiagnostics(logger, result);
+  logGlowScoringDiagnostics(logger, result);
+  return attachCalibrationHint(result, query, dbClient);
+}
+
+function sendForecastCalculationError(options: {
+  readonly logger: FastifyBaseLogger;
+  readonly route: string;
+  readonly queryLike: unknown;
+  readonly astroServiceConfig: AstroServiceConfig;
+  readonly error: unknown;
+  readonly reply: FastifyReply;
+}): null {
+  const { logger, route, queryLike, astroServiceConfig, error, reply } = options;
+  logForecastCalculationFailure({
+    logger,
+    route,
+    queryLike,
+    astroServiceConfig,
+    error,
+  });
+  const message = (error as Error).message;
+  if (message === astroServiceUnavailableMessage) {
+    reply.status(503).send({
+      error: "astro_service_unavailable",
+      message: astroServiceUnavailableMessage,
+    });
+    return null;
+  }
+  if (message === astroServiceTimeoutMessage) {
+    reply.status(503).send({
+      error: "astro_service_timeout",
+      message: astroServiceTimeoutMessage,
+    });
+    return null;
+  }
+  if (message === astroServiceInvalidResponseMessage) {
+    reply.status(502).send({
+      error: "astro_service_invalid_response",
+      message: astroServiceInvalidResponseMessage,
+    });
+    return null;
+  }
+  if (message === astroServiceUrlMissingMessage) {
+    reply.status(503).send({
+      error: "astro_service_url_missing",
+      message: astroServiceUrlMissingMessage,
+    });
+    return null;
+  }
+  if (message === forecastDateRangeErrorMessage) {
+    reply.status(400).send({
+      error: "invalid_forecast_range",
+      message: forecastDateRangeErrorMessage,
+    });
+    return null;
+  }
+  if (message === missingWgs84CoordinateErrorMessage) {
+    reply.status(400).send({
+      error: "invalid_wgs84_coordinates",
+      message: missingWgs84CoordinateErrorMessage,
+    });
+    return null;
+  }
+
+  throw error;
 }
 
 async function attachCalibrationHint(
@@ -769,8 +985,9 @@ async function enrichTerrainAnalysisWithTerrainDem(options: {
   readonly astroServiceClient: AstroServiceClientLike;
   readonly logger: FastifyBaseLogger;
 }): Promise<TerrainAnalysisSummary> {
-  const queryTerrainDemProfile =
-    options.astroServiceClient.queryTerrainDemProfile?.bind(options.astroServiceClient);
+  const queryTerrainDemProfile = options.astroServiceClient.queryTerrainDemProfile?.bind(
+    options.astroServiceClient,
+  );
   if (!queryTerrainDemProfile) {
     return options.terrainAnalysis;
   }
@@ -892,7 +1109,7 @@ function collectMilkyWayTerrainDemTargets(
       typeof window.galacticCenterAltitude === "number" &&
       Number.isFinite(window.galacticCenterAltitude)
         ? window.galacticCenterAltitude
-      : null;
+        : null;
     const key = `${Math.round(targetAzimuthDegrees * 10) / 10}:${targetAltitudeDegrees === null ? "unknown" : Math.round(targetAltitudeDegrees * 10) / 10}`;
     if (seen.has(key)) {
       continue;

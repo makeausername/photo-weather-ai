@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
+import type { NormalizedDailyWeather, NormalizedHourlyWeather } from "@photo-weather/shared";
+import type {
+  AirQuality,
+  CurrentWeather,
+  WeatherAlert,
+  WeatherDataBundle,
+  WeatherProvider,
+  WeatherRequestInput,
+} from "@photo-weather/weather";
 import { buildApiServer } from "../server.js";
 import { createFakeDatabaseClient, testAuthConfig } from "./fake-db.js";
 import {
@@ -493,6 +502,147 @@ function buildTerrainDemProfileResponse(
   };
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function dedupeHour(overrides: Partial<NormalizedHourlyWeather> = {}): NormalizedHourlyWeather {
+  return {
+    time: "2026-05-20T00:00:00+08:00",
+    temperature: 15,
+    feelsLike: 14,
+    humidity: 82,
+    dewPointSpread: 2.8,
+    pressure: 1006,
+    windSpeed: 2.6,
+    windGust: 4.2,
+    windDirection: 135,
+    precipitationProbability: 12,
+    precipitation: 0,
+    visibility: 22,
+    dewPoint: 12.2,
+    cloudTotal: 48,
+    cloudLow: 20,
+    cloudMid: 35,
+    cloudHigh: 42,
+    weatherCode: "3",
+    weatherTextZh: "Partly cloudy",
+    providerCode: "qweather",
+    providerLabelZh: "QWeather",
+    dataMode: "real",
+    sourceConfidence: 0.86,
+    missingFields: [],
+    ...overrides,
+  };
+}
+
+function buildDedupeWeatherProvider(calls: { current: number }): WeatherProvider {
+  const firstHour = dedupeHour({
+    time: "2026-05-20T00:00:00+08:00",
+    providerCode: "qweather",
+    providerLabelZh: "QWeather",
+    dataMode: "real",
+  });
+  const hourly = Array.from({ length: 54 }, (_, index) => ({
+    ...firstHour,
+    time: isoHourFrom("2026-05-20T00:00:00+08:00", index),
+    temperature: 12 + (index % 6),
+  }));
+  const daily: readonly NormalizedDailyWeather[] = [0, 1, 2].map((index) => ({
+    date: dateForIndex(index),
+    tempMin: 8,
+    tempMax: 18,
+    precipitationProbability: 20,
+    precipitation: 0,
+    windSpeed: 2.6,
+    windGust: 4.2,
+    windDirection: 135,
+    humidity: 82,
+    visibility: 22,
+    cloudTotal: 48,
+    cloudLow: 20,
+    cloudMid: 35,
+    cloudHigh: 42,
+    weatherSummary: "Partly cloudy",
+    sunrise: `${dateForIndex(index)}T05:10:00+08:00`,
+    sunset: `${dateForIndex(index)}T18:55:00+08:00`,
+    providerCode: "qweather",
+    providerLabelZh: "QWeather",
+    dataMode: "real",
+    missingFields: [],
+  }));
+
+  return {
+    source: {
+      providerCode: "qweather",
+      displayName: "QWeather",
+      providerLabelZh: "QWeather",
+      isMock: false,
+      mode: "real",
+    },
+    async getCurrentWeather(input: WeatherRequestInput): Promise<CurrentWeather> {
+      calls.current += 1;
+      await delay(25);
+      return {
+        provider: "qweather",
+        observedAt: firstHour.time,
+        coordinates: input.coordinates,
+        condition: "partly_cloudy",
+        summary: "Partly cloudy",
+        temperatureCelsius: 12,
+        feelsLikeCelsius: 11,
+        humidityPercent: 82,
+        cloudCoverPercent: 48,
+        windSpeedMetersPerSecond: 2.6,
+        visibilityKilometers: 22,
+      };
+    },
+    async getHourlyForecast(
+      _input: WeatherRequestInput,
+    ): Promise<readonly NormalizedHourlyWeather[]> {
+      return hourly;
+    },
+    async getDailyForecast(
+      _input: WeatherRequestInput,
+    ): Promise<readonly NormalizedDailyWeather[]> {
+      return daily;
+    },
+    async getWeatherAlerts(_input: WeatherRequestInput): Promise<readonly WeatherAlert[]> {
+      return [];
+    },
+    async getAirQuality(_input: WeatherRequestInput): Promise<AirQuality> {
+      return {
+        provider: "qweather",
+        observedAt: firstHour.time,
+        aqi: 35,
+        category: "good",
+        pm25: 14,
+        pm10: 22,
+      };
+    },
+    normalizeHourlyWeather(_input: unknown): readonly NormalizedHourlyWeather[] {
+      return hourly;
+    },
+    normalizeDailyWeather(_input: unknown): readonly NormalizedDailyWeather[] {
+      return daily;
+    },
+    normalizeWeatherData(_input: unknown): WeatherDataBundle {
+      return {
+        hourly,
+        daily,
+        alerts: [],
+        providerCode: "qweather",
+        providerLabelZh: "QWeather",
+        dataMode: "real",
+        generatedAt: firstHour.time,
+        noticeZh: "Weather data: QWeather",
+      };
+    },
+  };
+}
+
 describe("forecast query validation route", () => {
   let app: FastifyInstance | undefined;
 
@@ -735,6 +885,43 @@ describe("forecast query validation route", () => {
     });
     expect(body.keyReasons.length).toBeGreaterThan(0);
     expect(body.photographyAdvice.length).toBeGreaterThan(0);
+  });
+
+  it("dedupes identical concurrent forecast calculate requests", async () => {
+    const providerCalls = { current: 0 };
+    app = buildApiServer({
+      authConfig: testAuthConfig,
+      logger: false,
+      weatherProvider: buildDedupeWeatherProvider(providerCalls),
+      env: {
+        ...process.env,
+        ENABLE_ASTRO_SERVICE: "false",
+        FORECAST_CALCULATE_CACHE_TTL_MS: "300000",
+      },
+    });
+    const payload = {
+      ...validPayload,
+      timezone: "Asia/Shanghai",
+      startDateTime: "2026-05-20T00:00:00+08:00",
+    };
+
+    const [firstResponse, secondResponse] = await Promise.all([
+      app.inject({
+        method: "POST",
+        url: "/forecast/calculate",
+        payload,
+      }),
+      app.inject({
+        method: "POST",
+        url: "/forecast/calculate",
+        payload,
+      }),
+    ]);
+
+    expect(firstResponse.statusCode).toBe(200);
+    expect(secondResponse.statusCode).toBe(200);
+    expect(providerCalls.current).toBe(1);
+    expect(secondResponse.json()).toEqual(firstResponse.json());
   });
 
   it("enriches a non-seeded selected location with mocked elevation during calculation", async () => {

@@ -108,12 +108,22 @@ describe("production deployment assets", () => {
     expect(compose).toContain("POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}");
     expect(compose).toContain("DATABASE_URL: ${DATABASE_URL}");
     expect(compose).toContain("EPHEMERIS_PATH: /app/data/de421.bsp");
-    expect(compose).toContain("LIGHT_POLLUTION_DATASET_PATH: /app/data/light-pollution/current/light-pollution.cog.tif");
+    expect(compose).toContain(
+      "LIGHT_POLLUTION_DATASET_PATH: /app/data/light-pollution/current/light-pollution.cog.tif",
+    );
     expect(compose).toContain("LIGHT_POLLUTION_CACHE_SIZE: ${LIGHT_POLLUTION_CACHE_SIZE:-1024}");
-    expect(compose).toContain("SKY_BRIGHTNESS_DATASET_PATH: /app/data/sky-brightness/current/sky-brightness.cog.tif");
-    expect(compose).toContain("SKY_BRIGHTNESS_METADATA_PATH: /app/data/sky-brightness/current/metadata.json");
-    expect(compose).toContain("TERRAIN_DEM_DATASET_PATH: /app/data/terrain-dem/current/terrain-dem.cog.tif");
-    expect(compose).toContain("TERRAIN_DEM_METADATA_PATH: /app/data/terrain-dem/current/metadata.json");
+    expect(compose).toContain(
+      "SKY_BRIGHTNESS_DATASET_PATH: /app/data/sky-brightness/current/sky-brightness.cog.tif",
+    );
+    expect(compose).toContain(
+      "SKY_BRIGHTNESS_METADATA_PATH: /app/data/sky-brightness/current/metadata.json",
+    );
+    expect(compose).toContain(
+      "TERRAIN_DEM_DATASET_PATH: /app/data/terrain-dem/current/terrain-dem.cog.tif",
+    );
+    expect(compose).toContain(
+      "TERRAIN_DEM_METADATA_PATH: /app/data/terrain-dem/current/metadata.json",
+    );
     expect(compose).toContain("postgres_data:");
     expect(compose).toContain("redis_data:");
     expect(compose).toContain("- astro_data:/app/data");
@@ -125,6 +135,15 @@ describe("production deployment assets", () => {
     expect(compose).toContain("caddy_config:");
     expect(compose).toContain("app_uploads:");
     expect(compose).toContain("logs:");
+    expect(compose).toContain("pg_isready -U");
+    expect(compose).toContain('redis-cli -a "$${REDIS_PASSWORD}" ping | grep PONG');
+    expect(compose).toContain("http://127.0.0.1:4000/health");
+    expect(compose).toContain("http://127.0.0.1:4100/health");
+    expect(compose).toContain("http://127.0.0.1:3000");
+    expect(compose).toContain("condition: service_healthy");
+    expect(compose).toContain("driver: json-file");
+    expect(compose).toContain('max-size: "10m"');
+    expect(compose).toContain('max-file: "5"');
     expect(compose).not.toContain('"4100:4100"');
   });
 
@@ -154,6 +173,19 @@ describe("production deployment assets", () => {
       "ADMIN_EMAIL=ADMIN_EMAIL_PLACEHOLDER",
       "ADMIN_INITIAL_PASSWORD_B64=ADMIN_INITIAL_PASSWORD_B64_PLACEHOLDER",
       "ADMIN_DISPLAY_NAME=ADMIN_DISPLAY_NAME_PLACEHOLDER",
+      "API_BODY_LIMIT_BYTES=1048576",
+      "API_REQUEST_TIMEOUT_MS=60000",
+      "API_CONNECTION_TIMEOUT_MS=10000",
+      "API_KEEP_ALIVE_TIMEOUT_MS=65000",
+      "API_TRUST_PROXY=true",
+      "API_RATE_LIMIT_ENABLED=true",
+      "API_RATE_LIMIT_WINDOW_MS=60000",
+      "API_RATE_LIMIT_MAX=60",
+      "API_RATE_LIMIT_MAX_BUCKETS=10000",
+      "FORECAST_CALCULATE_CACHE_TTL_MS=300000",
+      "FORECAST_CALCULATE_CACHE_MAX_ENTRIES=256",
+      "PUBLIC_SEARCH_CACHE_TTL_MS=300000",
+      "PUBLIC_SEARCH_CACHE_MAX_ENTRIES=256",
       "ENABLE_ASTRO_SERVICE=true",
       "ASTRO_SERVICE_URL=http://astro-service:4100",
       "ASTRO_SERVICE_TIMEOUT_MS=45000",
@@ -297,7 +329,9 @@ describe("production deployment assets", () => {
       expect(source).toContain("${PROJECT_ROOT}/deploy/sky-brightness/incoming");
       expect(source).toContain("${PROJECT_ROOT}/deploy/sky-brightness/current");
       expect(source).toContain("${PROJECT_ROOT}/deploy/sky-brightness/backups");
-      expect(source).toMatch(/no WA or other sky-brightness raster is downloaded automatically|existing data are preserved/);
+      expect(source).toMatch(
+        /no WA or other sky-brightness raster is downloaded automatically|existing data are preserved/,
+      );
     }
   });
 
@@ -763,6 +797,27 @@ describe("production deployment assets", () => {
 
     expect(migration).toContain('REGEXP_REPLACE("roles"."id"::text');
     expect(migration).not.toContain('REGEXP_REPLACE("id"');
+  });
+
+  it("adds idempotent trigram indexes for public location search fields", () => {
+    const migration = readRepoFile(
+      "packages/db/prisma/migrations/0009_search_trigram_indexes/migration.sql",
+    );
+
+    expect(migration).toContain("CREATE EXTENSION IF NOT EXISTS pg_trgm");
+    for (const expected of [
+      "ON locations USING GIN (name gin_trgm_ops)",
+      "ON locations USING GIN (slug gin_trgm_ops)",
+      "ON locations USING GIN (province gin_trgm_ops)",
+      "ON locations USING GIN (city gin_trgm_ops)",
+      "ON locations USING GIN (district gin_trgm_ops)",
+      "ON photo_spots USING GIN (name gin_trgm_ops)",
+      "ON photo_spots USING GIN (slug gin_trgm_ops)",
+      "ON photo_spots USING GIN (description gin_trgm_ops)",
+    ]) {
+      expect(migration).toContain(expected);
+    }
+    expect(migration).toMatch(/CREATE INDEX IF NOT EXISTS/g);
   });
 
   it("ships the production provider diagnostics script without printing secrets", () => {

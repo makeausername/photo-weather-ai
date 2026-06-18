@@ -51,6 +51,158 @@ type HealthCheckResult = {
 
 const databaseUrlEnvKey = ["DATABASE", "URL"].join("_");
 const redisUrlEnvKey = ["REDIS", "URL"].join("_");
+const defaultBodyLimitBytes = 1024 * 1024;
+const defaultRequestTimeoutMs = 60 * 1000;
+const defaultConnectionTimeoutMs = 10 * 1000;
+const defaultKeepAliveTimeoutMs = 65 * 1000;
+const defaultRateLimitWindowMs = 60 * 1000;
+const defaultRateLimitMaxRequests = 60;
+const defaultRateLimitMaxBuckets = 10_000;
+
+type PublicRateLimitBucket = {
+  count: number;
+  resetAt: number;
+};
+
+type PublicRateLimitDecision =
+  | {
+      readonly limited: false;
+    }
+  | {
+      readonly limited: true;
+      readonly retryAfterSeconds: number;
+    };
+
+const publicRateLimitedRoutes = new Set([
+  "POST /forecast/calculate",
+  "POST /forecast/ai-explain",
+  "GET /search/places",
+  "GET /search/reverse-geocode",
+]);
+
+function readBooleanEnv(env: NodeJS.ProcessEnv, key: string, fallback: boolean): boolean {
+  const raw = env[key];
+  if (raw === undefined || raw.trim() === "") {
+    return fallback;
+  }
+
+  return ["1", "true", "yes", "on"].includes(raw.trim().toLowerCase());
+}
+
+function readPositiveIntegerEnv(
+  env: NodeJS.ProcessEnv,
+  keys: string | readonly string[],
+  fallback: number,
+  options: { readonly min?: number; readonly max?: number } = {},
+): number {
+  const keyList = typeof keys === "string" ? [keys] : keys;
+  const raw = keyList.map((key) => env[key]).find((value) => value !== undefined);
+  if (raw === undefined || raw.trim() === "") {
+    return fallback;
+  }
+
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+
+  const integer = Math.floor(value);
+  if (options.min !== undefined && integer < options.min) {
+    return options.min;
+  }
+  if (options.max !== undefined && integer > options.max) {
+    return options.max;
+  }
+  return integer;
+}
+
+function requestPath(url: string): string {
+  return url.split("?")[0] || "/";
+}
+
+function prunePublicRateLimitBuckets(
+  buckets: Map<string, PublicRateLimitBucket>,
+  now: number,
+  maxBuckets: number,
+): void {
+  for (const [key, bucket] of buckets) {
+    if (bucket.resetAt <= now) {
+      buckets.delete(key);
+    }
+  }
+
+  while (buckets.size > maxBuckets) {
+    const oldestKey = buckets.keys().next().value as string | undefined;
+    if (!oldestKey) {
+      break;
+    }
+    buckets.delete(oldestKey);
+  }
+}
+
+function createPublicRateGuard(env: NodeJS.ProcessEnv): {
+  readonly check: (input: {
+    readonly method: string;
+    readonly url: string;
+    readonly clientId: string;
+  }) => PublicRateLimitDecision;
+} {
+  const enabled = readBooleanEnv(env, "API_RATE_LIMIT_ENABLED", true);
+  const windowMs = readPositiveIntegerEnv(
+    env,
+    ["API_RATE_LIMIT_WINDOW_MS", "PUBLIC_RATE_LIMIT_WINDOW_MS"],
+    defaultRateLimitWindowMs,
+    { min: 1000, max: 60 * 60 * 1000 },
+  );
+  const maxRequests = readPositiveIntegerEnv(
+    env,
+    ["API_RATE_LIMIT_MAX", "PUBLIC_RATE_LIMIT_MAX"],
+    defaultRateLimitMaxRequests,
+    { min: 1, max: 10_000 },
+  );
+  const maxBuckets = readPositiveIntegerEnv(
+    env,
+    ["API_RATE_LIMIT_MAX_BUCKETS", "PUBLIC_RATE_LIMIT_MAX_BUCKETS"],
+    defaultRateLimitMaxBuckets,
+    { min: 100, max: 1_000_000 },
+  );
+  const buckets = new Map<string, PublicRateLimitBucket>();
+
+  return {
+    check(input) {
+      if (!enabled) {
+        return { limited: false };
+      }
+
+      const routeKey = `${input.method.toUpperCase()} ${requestPath(input.url)}`;
+      if (!publicRateLimitedRoutes.has(routeKey)) {
+        return { limited: false };
+      }
+
+      const now = Date.now();
+      prunePublicRateLimitBuckets(buckets, now, maxBuckets);
+      const bucketKey = `${input.clientId}|${routeKey}`;
+      const existing = buckets.get(bucketKey);
+      if (!existing || existing.resetAt <= now) {
+        buckets.set(bucketKey, {
+          count: 1,
+          resetAt: now + windowMs,
+        });
+        return { limited: false };
+      }
+
+      existing.count += 1;
+      if (existing.count <= maxRequests) {
+        return { limited: false };
+      }
+
+      return {
+        limited: true,
+        retryAfterSeconds: Math.max(1, Math.ceil((existing.resetAt - now) / 1000)),
+      };
+    },
+  };
+}
 
 function elapsedSince(startedAt: number): number {
   return Date.now() - startedAt;
@@ -203,12 +355,40 @@ function summarizeServiceStatus(checks: readonly HealthCheckResult[]): "ok" | "d
 }
 
 export function buildApiServer(options: ApiServerOptions = {}) {
+  const env = options.env ?? process.env;
   const app = Fastify({
     logger: options.logger ?? true,
+    bodyLimit: readPositiveIntegerEnv(env, "API_BODY_LIMIT_BYTES", defaultBodyLimitBytes, {
+      min: 16 * 1024,
+      max: 10 * 1024 * 1024,
+    }),
+    requestTimeout: readPositiveIntegerEnv(env, "API_REQUEST_TIMEOUT_MS", defaultRequestTimeoutMs, {
+      min: 1000,
+      max: 5 * 60 * 1000,
+    }),
+    connectionTimeout: readPositiveIntegerEnv(
+      env,
+      "API_CONNECTION_TIMEOUT_MS",
+      defaultConnectionTimeoutMs,
+      {
+        min: 1000,
+        max: 60 * 1000,
+      },
+    ),
+    keepAliveTimeout: readPositiveIntegerEnv(
+      env,
+      "API_KEEP_ALIVE_TIMEOUT_MS",
+      defaultKeepAliveTimeoutMs,
+      {
+        min: 1000,
+        max: 5 * 60 * 1000,
+      },
+    ),
+    trustProxy: readBooleanEnv(env, "API_TRUST_PROXY", true),
   });
 
-  const env = options.env ?? process.env;
   const startedAt = Date.now();
+  const publicRateGuard = createPublicRateGuard(env);
   const astroServiceConfig = resolveAstroServiceConfig(env);
   app.log.info(
     {
@@ -249,6 +429,26 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     reply.header("Access-Control-Allow-Origin", "*");
     reply.header("Access-Control-Allow-Methods", "GET,PATCH,POST,DELETE,OPTIONS");
     reply.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
+  });
+
+  app.addHook("onRequest", async (request, reply) => {
+    if (request.method === "OPTIONS" || requestPath(request.url) === "/health") {
+      return;
+    }
+
+    const decision = publicRateGuard.check({
+      method: request.method,
+      url: request.url,
+      clientId: request.ip,
+    });
+    if (!decision.limited) {
+      return;
+    }
+
+    return reply.status(429).header("Retry-After", String(decision.retryAfterSeconds)).send({
+      error: "rate_limited",
+      message: "Too many requests. Please try again later.",
+    });
   });
 
   app.addHook("preParsing", (request, _reply, payload, done) => {
@@ -325,6 +525,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     dbClient: options.dbClient,
     resolveGeoProvider: resolveRuntimeGeoProvider,
     resolveReverseGeocodeProvider: resolveRuntimeReverseGeocodeProvider,
+    env,
   });
   registerAdminRoutes(app, {
     dbClient: options.dbClient,

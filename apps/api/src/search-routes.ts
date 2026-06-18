@@ -51,6 +51,7 @@ export type SearchRoutesOptions = {
   readonly dbClient?: DatabaseClient;
   readonly resolveGeoProvider: () => Promise<GeoProvider>;
   readonly resolveReverseGeocodeProvider?: () => Promise<GeoProvider | null>;
+  readonly env?: NodeJS.ProcessEnv;
 };
 
 const searchPlacesQuerySchema = z.object({
@@ -61,6 +62,110 @@ const reverseGeocodeQuerySchema = z.object({
   lat: z.coerce.number().finite().min(-90).max(90),
   lng: z.coerce.number().finite().min(-180).max(180),
 });
+
+const defaultPublicSearchCacheTtlMs = 5 * 60 * 1000;
+const defaultPublicSearchCacheMaxEntries = 256;
+
+type TtlCacheEntry<TValue> = {
+  readonly value: TValue;
+  readonly expiresAt: number;
+  readonly createdAt: number;
+};
+
+function readPositiveIntegerEnv(
+  env: NodeJS.ProcessEnv,
+  key: string,
+  fallback: number,
+  options: { readonly min?: number; readonly max?: number } = {},
+): number {
+  const raw = env[key];
+  if (raw === undefined || raw.trim() === "") {
+    return fallback;
+  }
+
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+
+  const integer = Math.floor(value);
+  if (options.min !== undefined && integer < options.min) {
+    return options.min;
+  }
+  if (options.max !== undefined && integer > options.max) {
+    return options.max;
+  }
+  return integer;
+}
+
+function readCachedValue<TValue>(
+  cache: Map<string, TtlCacheEntry<TValue>>,
+  key: string,
+  now = Date.now(),
+): TValue | undefined {
+  const cached = cache.get(key);
+  if (!cached) {
+    return undefined;
+  }
+
+  if (cached.expiresAt <= now) {
+    cache.delete(key);
+    return undefined;
+  }
+
+  cache.delete(key);
+  cache.set(key, cached);
+  return cached.value;
+}
+
+function writeCachedValue<TValue>(
+  cache: Map<string, TtlCacheEntry<TValue>>,
+  key: string,
+  value: TValue,
+  ttlMs: number,
+  maxEntries: number,
+  now = Date.now(),
+): void {
+  cache.delete(key);
+  cache.set(key, {
+    value,
+    createdAt: now,
+    expiresAt: now + ttlMs,
+  });
+  pruneCache(cache, maxEntries, now);
+}
+
+function pruneCache<TValue>(
+  cache: Map<string, TtlCacheEntry<TValue>>,
+  maxEntries: number,
+  now = Date.now(),
+): void {
+  for (const [key, value] of cache) {
+    if (value.expiresAt <= now) {
+      cache.delete(key);
+    }
+  }
+
+  while (cache.size > maxEntries) {
+    const oldestKey = cache.keys().next().value as string | undefined;
+    if (!oldestKey) {
+      break;
+    }
+    cache.delete(oldestKey);
+  }
+}
+
+function roundedCoordinateCachePart(value: number): string {
+  return value.toFixed(5);
+}
+
+function searchPlacesCacheKey(query: string): string {
+  return `places:${query}`;
+}
+
+function reverseGeocodeCacheKey(input: { readonly lat: number; readonly lng: number }): string {
+  return `reverse:${roundedCoordinateCachePart(input.lat)},${roundedCoordinateCachePart(input.lng)}`;
+}
 
 function sendZodError(reply: FastifyReply, error: z.ZodError): FastifyReply {
   return reply.status(400).send({
@@ -232,10 +337,35 @@ function mergeResults(
 }
 
 export function registerSearchRoutes(app: FastifyInstance, options: SearchRoutesOptions): void {
+  const env = options.env ?? process.env;
+  const cacheTtlMs = readPositiveIntegerEnv(
+    env,
+    "PUBLIC_SEARCH_CACHE_TTL_MS",
+    defaultPublicSearchCacheTtlMs,
+    { min: 1000, max: 60 * 60 * 1000 },
+  );
+  const cacheMaxEntries = readPositiveIntegerEnv(
+    env,
+    "PUBLIC_SEARCH_CACHE_MAX_ENTRIES",
+    defaultPublicSearchCacheMaxEntries,
+    { min: 1, max: 100_000 },
+  );
+  const placesCache = new Map<
+    string,
+    TtlCacheEntry<{ readonly query: string; readonly results: readonly PublicPlaceSearchResult[] }>
+  >();
+  const reverseGeocodeCache = new Map<string, TtlCacheEntry<PublicReverseGeocodeResult>>();
+
   app.get("/search/reverse-geocode", async (request, reply) => {
     const parsedQuery = reverseGeocodeQuerySchema.safeParse(request.query);
     if (!parsedQuery.success) {
       return sendZodError(reply, parsedQuery.error);
+    }
+
+    const cacheKey = reverseGeocodeCacheKey(parsedQuery.data);
+    const cached = readCachedValue(reverseGeocodeCache, cacheKey);
+    if (cached) {
+      return cached;
     }
 
     const provider = options.resolveReverseGeocodeProvider
@@ -257,7 +387,9 @@ export function registerSearchRoutes(app: FastifyInstance, options: SearchRoutes
         { locale: "zh-CN" },
       );
 
-      return providerToReverseGeocodeResult(result.place, result.formattedAddress);
+      const response = providerToReverseGeocodeResult(result.place, result.formattedAddress);
+      writeCachedValue(reverseGeocodeCache, cacheKey, response, cacheTtlMs, cacheMaxEntries);
+      return response;
     } catch (error) {
       request.log.warn({ err: error }, "Public reverse geocode unavailable");
       return {
@@ -273,6 +405,12 @@ export function registerSearchRoutes(app: FastifyInstance, options: SearchRoutes
     }
 
     const query = parsedQuery.data.q;
+    const cacheKey = searchPlacesCacheKey(query);
+    const cached = readCachedValue(placesCache, cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     try {
       const [locations, photoSpots] = await Promise.all([
         listLocations({ search: query, client: options.dbClient }),
@@ -290,10 +428,12 @@ export function registerSearchRoutes(app: FastifyInstance, options: SearchRoutes
         ...providerResults.map((place) => providerToSearchResult(place)),
       ]);
 
-      return {
+      const response = {
         query,
         results,
       };
+      writeCachedValue(placesCache, cacheKey, response, cacheTtlMs, cacheMaxEntries);
+      return response;
     } catch (error) {
       request.log.error({ err: error, query }, "Public place search failed");
       return reply.status(503).send({
