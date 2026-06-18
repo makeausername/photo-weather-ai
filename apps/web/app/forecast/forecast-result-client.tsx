@@ -3934,15 +3934,26 @@ export function GlowResultPage({
   readonly viewModel: GlowForecastViewModel;
 }) {
   return (
-    <DecisionResultTemplate target="glow" className="GlowResultPage glow-result-page grid gap-5">
+    <DecisionResultTemplate target="glow" className="GlowResultPage glow-result-page grid gap-4">
       <main
-        className="glow-result-stack grid w-full min-w-0 gap-5"
+        className="GlowResultStack glow-result-stack grid w-full min-w-0 gap-4"
         data-glow-section="GlowStackedLayout"
         data-forecast-decision-layout="stacked"
       >
-        <GlowTopResultHeader query={query} result={result} viewModel={viewModel} />
-        <GlowDailyOpportunitySection opportunities={viewModel.dailyOpportunities} />
-        <GlowWhyJudgmentSection items={viewModel.professionalEvidence.slice(0, 5)} />
+        <section
+          className="GlowWindowDecision glow-window-decision grid gap-4"
+          data-glow-section="GlowWindowDecision"
+        >
+          <GlowTopResultHeader query={query} result={result} viewModel={viewModel} />
+          <GlowMetricCards cards={viewModel.coreCards} />
+          <GlowNearTermWeatherSection viewModel={viewModel} />
+          <GlowWindowCardsSection
+            windows={viewModel.glowWindows}
+            recommendation={viewModel.overallRecommendation}
+          />
+        </section>
+        <GlowDailyCardsSection opportunities={viewModel.dailyOpportunities} />
+        <GlowDecisionSupportSection viewModel={viewModel} />
         <GlowProfessionalDataSection viewModel={viewModel} />
         <section
           className="mt-1 sm:mt-2"
@@ -4599,9 +4610,16 @@ function GlowTopResultHeader({
   readonly viewModel: GlowForecastViewModel;
 }) {
   return (
-    <section className="GlowTopResultHeader" data-glow-section="GlowResultHeader">
+    <header
+      className="GlowTopResultHeader grid gap-3 min-[880px]:grid-cols-[minmax(0,1.45fr)_minmax(260px,320px)] min-[880px]:items-start min-[1280px]:grid-cols-[minmax(0,1.55fr)_minmax(280px,340px)]"
+      data-forecast-result-header="true"
+      data-result-header-row="true"
+      data-result-target="glow"
+      data-glow-section="GlowResultHeader"
+    >
       <GlowHeroConclusion query={query} result={result} viewModel={viewModel} />
-    </section>
+      <GlowDecisionSnapshotCard recommendation={viewModel.overallRecommendation} />
+    </header>
   );
 }
 
@@ -4617,18 +4635,23 @@ function GlowHeroConclusion({
   const recommendation = viewModel.overallRecommendation;
 
   return (
-    <ForecastResultSummaryCard
-      target="glow"
-      className="GlowHeroConclusion glow-hero-conclusion p-4 shadow-sm sm:p-5"
+    <Card
+      className={glowPanelClassName("GlowHeroConclusion glow-hero-conclusion min-w-0 p-4")}
+      data-forecast-result-summary-card="true"
+      data-result-header-summary-card="true"
+      data-result-target="glow"
     >
-      <div className="grid min-w-0 gap-4 min-[900px]:grid-cols-[minmax(0,1fr)_auto] min-[900px]:items-start">
+      <div className="grid min-w-0 gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="default">朝霞晚霞</Badge>
+            <Badge variant="default">朝霞 / 晚霞</Badge>
             <Badge variant={dataReadinessBadgeVariant(result)}>
               {dataReadinessBadgeLabel(result)}
             </Badge>
             <Badge variant="muted">{forecastHorizonLabels[query.horizon]}</Badge>
+            <Badge variant={glowRecommendationBadgeVariant(recommendation.recommendation)}>
+              {recommendation.recommendation}
+            </Badge>
           </div>
           <h1 className="mt-3 break-words text-2xl font-bold leading-tight text-foreground sm:text-[28px]">
             {query.name}
@@ -4639,12 +4662,11 @@ function GlowHeroConclusion({
           <div className="mt-4 flex flex-wrap gap-x-3 gap-y-1 text-xs leading-5 text-muted-foreground">
             <span>时间范围：{result.calendarBasis.forecastRangeLabel}</span>
             <span>生成时间：{formatDateTime(result.generatedAt)}</span>
-            <span>天气：{weatherStatusLabel(result)}</span>
-            <span>地形：{result.terrainAnalysis.dataSourceLabelZh}</span>
-            <span>天文数据：{result.astroDataSourceLabelZh}</span>
+            <span>首选目标：{recommendation.preferredTarget}</span>
+            <span>推荐日期：{recommendation.preferredDate}</span>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2 min-[900px]:justify-end">
+        <div className="flex flex-wrap gap-2">
           <Button
             type="button"
             variant="secondary"
@@ -4667,11 +4689,312 @@ function GlowHeroConclusion({
           </Button>
         </div>
       </div>
-    </ForecastResultSummaryCard>
+    </Card>
   );
 }
 
-function GlowDailyOpportunitySection({
+function GlowDecisionSnapshotCard({
+  recommendation,
+}: {
+  readonly recommendation: GlowForecastViewModel["overallRecommendation"];
+}) {
+  return (
+    <Card
+      className={glowPanelClassName(
+        cn(
+          "GlowDecisionSnapshot grid h-full content-start gap-3 p-3",
+          glowToneBorderClassName(recommendation.tone),
+        ),
+      )}
+      data-glow-section="GlowDecisionSnapshot"
+      data-result-score-card="true"
+      data-result-target="glow"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-muted-foreground">是否值得专程</p>
+          <p
+            className={cn(
+              "mt-2 break-words text-2xl font-bold leading-8 [overflow-wrap:anywhere]",
+              glowToneClassName(recommendation.tone),
+            )}
+          >
+            {recommendation.preferredTarget}
+          </p>
+        </div>
+        <Badge variant={glowRecommendationBadgeVariant(recommendation.recommendation)}>
+          {recommendation.recommendation}
+        </Badge>
+      </div>
+      <dl className="grid gap-2 text-xs leading-5 text-muted-foreground">
+        <GlowDefinitionLine label="拍摄窗口" value={recommendation.preferredWindow} />
+        <GlowDefinitionLine label="到达建议" value={recommendation.arrivalAdvice} />
+        <GlowDefinitionLine label="主要风险" value={recommendation.mainRisk} />
+      </dl>
+    </Card>
+  );
+}
+
+function GlowMetricCards({ cards }: { readonly cards: readonly ForecastResultCard[] }) {
+  return (
+    <section
+      className="GlowMetricCards glow-core-metrics grid gap-3"
+      data-glow-section="GlowCoreMetrics"
+    >
+      <ForecastMetricGrid
+        target="glow"
+        className="grid items-stretch gap-2 sm:grid-cols-2 min-[1180px]:grid-cols-3"
+        dataTestId="glow-core-metric-cards"
+      >
+        {cards.map((card) => (
+          <ForecastMetricCard key={card.key} target="glow">
+            <GlowPrimaryMetricCard card={card} />
+          </ForecastMetricCard>
+        ))}
+      </ForecastMetricGrid>
+    </section>
+  );
+}
+
+function GlowPrimaryMetricCard({ card }: { readonly card: ForecastResultCard }) {
+  return (
+    <div
+      className={cn(
+        "grid h-full content-start gap-2 rounded-lg border bg-card p-3 shadow-sm",
+        glowToneBorderClassName(card.tone),
+      )}
+      data-glow-metric-card={card.key}
+    >
+      <p className="text-xs font-semibold text-muted-foreground">{card.label}</p>
+      <p
+        className={cn(
+          "break-words text-xl font-bold leading-7 [overflow-wrap:anywhere]",
+          glowToneClassName(card.tone),
+        )}
+      >
+        {card.value}
+      </p>
+      <p className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+        {userFacingResultText(card.detail)}
+      </p>
+      {typeof card.score === "number" ? (
+        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+          <div
+            className={cn("h-full rounded-full", glowToneBarClassName(card.tone))}
+            style={{ width: `${card.score}%` }}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+type GlowNearTermWeatherCard = {
+  readonly key: string;
+  readonly title: string;
+  readonly value: string;
+  readonly detail: string;
+  readonly badge?: string;
+  readonly tone: ForecastResultCardTone;
+};
+
+function GlowNearTermWeatherSection({
+  viewModel,
+}: {
+  readonly viewModel: GlowForecastViewModel;
+}) {
+  const cards = buildGlowNearTermWeatherCards(viewModel);
+
+  if (cards.length === 0) {
+    return null;
+  }
+
+  return (
+    <section
+      className="GlowNearTermWeather glow-near-term-weather grid gap-3"
+      data-glow-section="GlowNearTermWeather"
+      data-testid="glow-near-term-weather"
+    >
+      <GlowSectionHeading
+        title="当前 / 近时段霞光天气"
+        description="聚焦中高云条件、通透度、低云遮挡风险与地平线遮挡，辅助判断晨昏拍摄窗口。"
+        badge="天气相关"
+      />
+      <div className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr))]">
+        {cards.map((card) => (
+          <GlowCompactInfoCard key={card.key} card={card} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function buildGlowNearTermWeatherCards(
+  viewModel: GlowForecastViewModel,
+): readonly GlowNearTermWeatherCard[] {
+  const cards: GlowNearTermWeatherCard[] = [];
+  const cloudLayer = viewModel.cloudLayerEvidence[0];
+  const visibility = viewModel.visibilityEvidence[0];
+  const aerosol = viewModel.aerosolCard;
+  const terrain = viewModel.terrainObstructionCards[0];
+
+  if (cloudLayer) {
+    cards.push({
+      key: "glow-cloud-layer",
+      title: "中高云条件",
+      value: cloudLayer.value,
+      detail: firstSentence(cloudLayer.detail),
+      badge: cloudLayer.label,
+      tone: cloudLayer.tone,
+    });
+  }
+
+  if (visibility) {
+    cards.push({
+      key: "glow-visibility",
+      title: "通透度",
+      value: visibility.value,
+      detail: firstSentence(visibility.detail),
+      badge: visibility.label,
+      tone: visibility.tone,
+    });
+  }
+
+  cards.push({
+    key: aerosol.key,
+    title: "气溶胶与通透度",
+    value: aerosol.stateLabel,
+    detail: `${aerosol.measurementLabel}。${firstSentence(aerosol.detail)}`,
+    badge: aerosol.scoreLabel,
+    tone: aerosol.tone,
+  });
+
+  if (terrain) {
+    cards.push({
+      key: terrain.key,
+      title: "地平线遮挡",
+      value: terrain.statusLabel,
+      detail: `${terrain.azimuthLabel} / ${terrain.horizonLabel} / ${terrain.clearanceLabel}。${terrain.detail}`,
+      badge: terrain.title,
+      tone: terrain.tone,
+    });
+  }
+
+  return cards;
+}
+
+function GlowCompactInfoCard({ card }: { readonly card: GlowNearTermWeatherCard }) {
+  return (
+    <Card
+      className={cn(
+        "grid h-full content-start gap-2 p-3 shadow-sm",
+        glowToneBorderClassName(card.tone),
+      )}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-bold text-card-foreground">{card.title}</p>
+        {card.badge ? (
+          <Badge variant={glowRecommendationBadgeVariant(card.badge)}>{card.badge}</Badge>
+        ) : null}
+      </div>
+      <p
+        className={cn(
+          "break-words text-base font-bold leading-6 [overflow-wrap:anywhere]",
+          glowToneClassName(card.tone),
+        )}
+      >
+        {card.value}
+      </p>
+      <p className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+        {card.detail}
+      </p>
+    </Card>
+  );
+}
+
+function GlowWindowCardsSection({
+  windows,
+  recommendation,
+}: {
+  readonly windows: GlowForecastViewModel["glowWindows"];
+  readonly recommendation: GlowForecastViewModel["overallRecommendation"];
+}) {
+  return (
+    <section
+      className="GlowWindowCards glow-window-cards grid gap-3"
+      data-glow-section="GlowWindowCards"
+      data-testid="glow-window-cards-section"
+    >
+      <GlowSectionHeading
+        title="日出 / 日落霞光窗口"
+        description="按已有霞光窗口展示朝霞、晚霞、余晖与备选时段，方便先排主拍摄窗口再留备选。"
+        badge={recommendation.preferredTarget}
+      />
+      {windows.length === 0 ? (
+        <p className="rounded-lg border border-border bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground">
+          {recommendation.preferredWindow}
+        </p>
+      ) : null}
+      {windows.length > 0 ? (
+        <div
+          className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr))]"
+          data-glow-window-card-grid="auto-fit"
+        >
+          {windows.map((window) => (
+            <GlowWindowCard key={window.key} window={window} />
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function GlowWindowCard({
+  window,
+}: {
+  readonly window: GlowForecastViewModel["glowWindows"][number];
+}) {
+  return (
+    <article
+      className={cn(
+        "grid h-full content-start gap-2 rounded-lg border bg-card p-3 shadow-sm",
+        glowToneBorderClassName(window.tone),
+      )}
+      data-glow-window-card={window.key}
+      data-glow-window-phase={glowWindowItemPhase(window)}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <h3 className="text-base font-bold text-card-foreground">{window.label}</h3>
+        <Badge variant={glowWindowCategoryBadge(window.categoryLabel)}>
+          {window.categoryLabel}
+        </Badge>
+      </div>
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground">
+          {glowWindowPhaseLabel(window)}
+        </p>
+        <p
+          className={cn(
+            "mt-1 text-xl font-bold leading-7 [overflow-wrap:anywhere]",
+            glowToneClassName(window.tone),
+          )}
+        >
+          {Math.round(window.score)} 分
+        </p>
+      </div>
+      <dl className="grid gap-1.5 text-xs leading-5 text-muted-foreground">
+        <GlowDefinitionLine label="窗口时间" value={window.timeRangeLabel} />
+        <GlowDefinitionLine label="拍摄行动" value={glowWindowActionText(window)} />
+        <GlowDefinitionLine label="风险复核" value={glowWindowRiskText(window)} />
+      </dl>
+      <p className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+        {firstSentence(window.note)}
+      </p>
+    </article>
+  );
+}
+
+function GlowDailyCardsSection({
   opportunities,
 }: {
   readonly opportunities: GlowForecastViewModel["dailyOpportunities"];
@@ -4682,54 +5005,79 @@ function GlowDailyOpportunitySection({
         className="GlowDailyOpportunities p-4 shadow-sm"
         data-glow-section="GlowDailyOpportunities"
       >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-bold text-card-foreground">未来逐日朝霞晚霞机会</h2>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              每天保留概率、最佳时间和一句出行判断，方便快速比较。
-            </p>
-          </div>
-        </div>
+        <GlowSectionHeading
+          title="逐日朝霞 / 晚霞机会"
+          description="每天保留日出窗口、日落窗口、最佳拍摄动作和风险理由，便于横向比较。"
+          badge="日卡片"
+        />
         <div
-          className="mt-4 grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))]"
-          data-glow-daily-card-grid="auto-fit"
+          className="mt-4 grid gap-3 sm:grid-cols-2 min-[1180px]:grid-cols-6"
+          data-glow-daily-card-grid="balanced-col-span"
+          data-glow-daily-card-balance="responsive-col-span"
         >
           {opportunities.length === 0 ? (
-            <p className="rounded-lg border border-border bg-muted px-3 py-3 text-sm text-muted-foreground">
+            <p className="rounded-lg border border-border bg-muted px-3 py-3 text-sm text-muted-foreground sm:col-span-2 min-[1180px]:col-span-6">
               所选预报范围内暂无后续霞光窗口
             </p>
           ) : null}
-          {opportunities.map((item) => (
-            <article
+          {opportunities.map((item, index) => (
+            <GlowDailyCard
               key={item.key}
-              className="grid content-start gap-3 rounded-lg border border-border bg-muted p-3"
-              data-glow-daily-opportunity-date={item.date}
-              data-glow-sunrise-state={item.sunrise.lifecycle}
-              data-glow-sunset-state={item.sunset.lifecycle}
-              data-glow-partial-date={item.isPartiallyCovered ? "true" : "false"}
-            >
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <h3 className="font-bold text-card-foreground">{item.localDateLabel}</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">{item.weekdayLabel}</p>
-                </div>
-                <Badge variant={dailyDecisionBadgeVariant(item.dailyRecommendation)}>
-                  {item.dailyRecommendation}
-                </Badge>
-                {item.isPartiallyCovered ? <Badge variant="muted">部分覆盖</Badge> : null}
-              </div>
-              <div className="grid gap-2 min-[520px]:grid-cols-2">
-                <GlowDailyPhaseStat slot={item.sunrise} />
-                <GlowDailyPhaseStat slot={item.sunset} />
-              </div>
-              <p className="text-sm leading-6 text-muted-foreground">
-                {firstSentence(item.conciseReason)}
-              </p>
-            </article>
+              item={item}
+              index={index}
+              count={opportunities.length}
+            />
           ))}
         </div>
       </Card>
     </DailyDecisionList>
+  );
+}
+
+function GlowDailyCard({
+  item,
+  index,
+  count,
+}: {
+  readonly item: GlowForecastViewModel["dailyOpportunities"][number];
+  readonly index: number;
+  readonly count: number;
+}) {
+  const preferredSlot = preferredGlowDailySlot(item);
+
+  return (
+    <article
+      className={cn(
+        "grid content-start gap-3 rounded-lg border border-border bg-card p-3 shadow-sm sm:col-span-1 min-[1180px]:col-span-2",
+        glowDailyCardSpanClassName(index, count),
+      )}
+      data-glow-daily-opportunity-date={item.date}
+      data-glow-sunrise-state={item.sunrise.lifecycle}
+      data-glow-sunset-state={item.sunset.lifecycle}
+      data-glow-partial-date={item.isPartiallyCovered ? "true" : "false"}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="font-bold text-card-foreground">{item.localDateLabel}</h3>
+          <p className="mt-1 text-xs text-muted-foreground">{item.weekdayLabel}</p>
+        </div>
+        <div className="flex flex-wrap justify-end gap-1.5">
+          <Badge variant={glowRecommendationBadgeVariant(item.dailyRecommendation)}>
+            {item.dailyRecommendation}
+          </Badge>
+          {item.isPartiallyCovered ? <Badge variant="muted">部分覆盖</Badge> : null}
+        </div>
+      </div>
+      <div className="grid gap-2 min-[520px]:grid-cols-2">
+        <GlowDailyPhaseStat slot={item.sunrise} />
+        <GlowDailyPhaseStat slot={item.sunset} />
+      </div>
+      <dl className="grid gap-1.5 rounded-md border border-border bg-muted px-2.5 py-2 text-xs leading-5 text-muted-foreground">
+        <GlowDefinitionLine label="最佳窗口" value={glowDailyBestWindowText(item, preferredSlot)} />
+        <GlowDefinitionLine label="拍摄行动" value={glowDailyActionText(item, preferredSlot)} />
+        <GlowDefinitionLine label="风险/理由" value={firstSentence(item.conciseReason)} />
+      </dl>
+    </article>
   );
 }
 
@@ -4741,7 +5089,7 @@ function GlowDailyPhaseStat({
   const hasProbability = typeof slot.probabilityPercent === "number";
   return (
     <div
-      className="rounded-md border border-border bg-card px-2.5 py-2"
+      className="rounded-md border border-border bg-muted px-2.5 py-2"
       data-glow-slot={slot.phase}
       data-glow-slot-lifecycle={slot.lifecycle}
       data-glow-slot-probability={slot.probabilityPercent}
@@ -4750,12 +5098,14 @@ function GlowDailyPhaseStat({
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <p className="text-xs font-bold text-card-foreground">{slot.label}</p>
-        <Badge variant={badgeVariantForTone(slot.tone)}>{slot.recommendation}</Badge>
+        <Badge variant={glowRecommendationBadgeVariant(slot.recommendation)}>
+          {slot.recommendation}
+        </Badge>
       </div>
       <p
         className={cn(
           "mt-2 max-w-full break-words font-bold leading-none",
-          hasProbability ? "text-2xl text-accent" : "text-sm text-muted-foreground",
+          hasProbability ? "text-xl text-primary" : "text-sm text-muted-foreground",
         )}
       >
         {hasProbability ? `预测概率 ${slot.probabilityDisplay}` : slot.probabilityDisplay}
@@ -4766,41 +5116,64 @@ function GlowDailyPhaseStat({
       <p className="mt-2 break-words text-xs leading-5 text-muted-foreground">
         最佳时间：{slot.timeLabel}
       </p>
+      <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">
+        适拍度：{slot.practicalDisplay}
+      </p>
     </div>
   );
 }
 
-function GlowWhyJudgmentSection({
-  items,
+function GlowDecisionSupportSection({
+  viewModel,
 }: {
-  readonly items: GlowForecastViewModel["professionalEvidence"];
+  readonly viewModel: GlowForecastViewModel;
 }) {
+  const recommendation = viewModel.overallRecommendation;
+  const evidenceItems = viewModel.professionalEvidence.slice(0, 4);
+  const actionItems = uniqueGlowSupportItems([
+    recommendation.arrivalAdvice,
+    ...viewModel.travelRecommendations.slice(0, 2),
+  ]);
+  const riskItems = uniqueGlowSupportItems([
+    recommendation.mainRisk,
+    ...viewModel.riskReasons.slice(0, 2),
+  ]);
+  const backupItems = uniqueGlowSupportItems([
+    recommendation.backupPlan,
+    ...viewModel.backupPlans.slice(0, 2).map((plan) => `${plan.condition}：${plan.action}。${plan.detail}`),
+  ]);
+
   return (
-    <Card className="GlowWhyJudgment p-4 shadow-sm" data-glow-section="GlowWhyJudgment">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-card-foreground">为什么这样判断</h2>
-        <Badge variant="muted">关键依据</Badge>
-      </div>
+    <section
+      className="GlowDecisionSupport glow-decision-support grid gap-3"
+      data-glow-section="GlowDecisionSupport"
+    >
+      <GlowSectionHeading
+        title="霞光判断依据与拍摄复核"
+        description="把判断依据、拍摄行动、风险复核和备选窗口放在同一组，便于出发前快速确认。"
+        badge={recommendation.recommendation}
+        badgeVariant={glowRecommendationBadgeVariant(recommendation.recommendation)}
+      />
       <div
-        className="mt-4 flex flex-wrap gap-3"
+        className="grid gap-3 sm:grid-cols-2 min-[1180px]:grid-cols-4"
         data-glow-evidence-layout="balanced-flex"
         data-result-judgment-basis-grid="true"
         data-result-target="glow"
       >
-        {items.map((item) => (
-          <article
-            key={item.key}
-            className="grid min-w-[min(100%,190px)] flex-1 content-start gap-2 rounded-lg border border-border bg-muted p-3"
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-semibold text-card-foreground">{item.label}</h3>
-              <Badge variant={badgeVariantForTone(item.tone)}>{item.value}</Badge>
-            </div>
-            <p className="text-sm leading-6 text-muted-foreground">{firstSentence(item.detail)}</p>
-          </article>
-        ))}
+        <GlowSupportCard
+          title="判断依据"
+          badge="关键指标"
+          items={
+            evidenceItems.length > 0
+              ? evidenceItems.map((item) => `${item.label}：${item.value}，${firstSentence(item.detail)}`)
+              : [recommendation.conciseReason]
+          }
+        />
+        <GlowSupportCard title="拍摄行动" badge={recommendation.preferredTarget} items={actionItems} />
+        <GlowSupportCard title="风险复核" badge="出发前确认" items={riskItems} />
+        <GlowSupportCard title="备选窗口" badge="备选方案" items={backupItems} />
       </div>
-    </Card>
+    </section>
   );
 }
 
@@ -4813,7 +5186,7 @@ function GlowProfessionalDataSection({ viewModel }: { readonly viewModel: GlowFo
 
   return (
     <Card
-      className="GlowProfessionalData rounded-lg border border-border bg-card p-4 shadow-sm"
+      className={glowPanelClassName("GlowProfessionalData p-4")}
       data-glow-section="GlowProfessionalData"
       data-glow-professional-data-expanded={expanded ? "true" : "false"}
     >
@@ -4828,6 +5201,7 @@ function GlowProfessionalDataSection({ viewModel }: { readonly viewModel: GlowFo
           type="button"
           variant="secondary"
           size="sm"
+          aria-expanded={expanded}
           onClick={() => {
             setExpanded((current) => !current);
           }}
@@ -4908,6 +5282,241 @@ function GlowProfessionalDataSection({ viewModel }: { readonly viewModel: GlowFo
           />
         </div>
       ) : null}
+    </Card>
+  );
+}
+
+function glowPanelClassName(className?: string): string {
+  return cn("rounded-lg border border-border bg-card shadow-sm", className);
+}
+
+function glowCompactCardClassName(className?: string): string {
+  return glowPanelClassName(cn("p-3", className));
+}
+
+function glowToneClassName(tone: ForecastResultCardTone): string {
+  const toneClasses: Record<ForecastResultCardTone, string> = {
+    primary: "text-primary",
+    accent: "text-primary",
+    danger: "text-danger",
+    info: "text-primary",
+    muted: "text-card-foreground",
+  };
+
+  return toneClasses[tone];
+}
+
+function glowToneBarClassName(tone: ForecastResultCardTone): string {
+  const toneClasses: Record<ForecastResultCardTone, string> = {
+    primary: "bg-primary",
+    accent: "bg-primary",
+    danger: "bg-danger",
+    info: "bg-primary",
+    muted: "bg-muted-foreground",
+  };
+
+  return toneClasses[tone];
+}
+
+function glowToneBorderClassName(tone: ForecastResultCardTone): string {
+  const toneClasses: Record<ForecastResultCardTone, string> = {
+    primary: "border-primary/40",
+    accent: "border-primary/35",
+    danger: "border-danger/35",
+    info: "border-primary/25",
+    muted: "border-border",
+  };
+
+  return toneClasses[tone];
+}
+
+function glowRecommendationBadgeVariant(label: string | undefined): BadgeVariant {
+  if (!label) {
+    return "muted";
+  }
+  if (label.includes("不建议")) {
+    return "danger";
+  }
+  if (label.includes("强推荐") || label.includes("推荐拍摄") || label.includes("窗口进行中")) {
+    return "default";
+  }
+  if (label.includes("谨慎") || label.includes("可观察") || label.includes("仅作")) {
+    return "accent";
+  }
+  if (label.includes("暂无") || label.includes("超出") || label.includes("已结束")) {
+    return "muted";
+  }
+  return "muted";
+}
+
+function GlowSectionHeading({
+  title,
+  description,
+  badge,
+  badgeVariant = "muted",
+}: {
+  readonly title: string;
+  readonly description?: string;
+  readonly badge?: string;
+  readonly badgeVariant?: BadgeVariant;
+}) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-2">
+      <div className="min-w-0">
+        <h2 className="text-base font-bold text-card-foreground">{title}</h2>
+        {description ? (
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
+            {description}
+          </p>
+        ) : null}
+      </div>
+      {badge ? <Badge variant={badgeVariant}>{badge}</Badge> : null}
+    </div>
+  );
+}
+
+function GlowDefinitionLine({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <div>
+      <dt className="inline font-semibold text-card-foreground">{label}：</dt>
+      <dd className="inline break-words [overflow-wrap:anywhere]">{value}</dd>
+    </div>
+  );
+}
+
+function glowWindowItemPhase(
+  window: GlowForecastViewModel["glowWindows"][number],
+): "sunrise" | "sunset" {
+  switch (window.type) {
+    case "sunrise_glow":
+    case "pre_dawn_glow":
+    case "sunrise_core":
+    case "morning_warm_light":
+    case "sunrise":
+      return "sunrise";
+    case "sunset_glow":
+    case "sunset_warm_light":
+    case "sunset_core":
+    case "afterglow":
+    case "blue_hour_transition":
+    case "sunset":
+      return "sunset";
+    case "warm_light":
+    default:
+      return window.label.includes("朝霞") || window.label.includes("日出") ? "sunrise" : "sunset";
+  }
+}
+
+function glowWindowPhaseLabel(window: GlowForecastViewModel["glowWindows"][number]): string {
+  return glowWindowItemPhase(window) === "sunrise" ? "日出窗口" : "日落窗口";
+}
+
+function glowWindowActionText(window: GlowForecastViewModel["glowWindows"][number]): string {
+  if (window.categoryLabel === "不建议") {
+    return "不按专程安排，保留现场观察或转拍备选题材。";
+  }
+  if (window.categoryLabel === "仅作备选") {
+    return "作为备选窗口，出发前复核低云遮挡、降水影响和通透度。";
+  }
+  if (window.categoryLabel === "可观察") {
+    return "可顺带观察，优先确认云层开口和地平线遮挡。";
+  }
+  return "优先按该窗口完成构图与到达安排。";
+}
+
+function glowWindowRiskText(window: GlowForecastViewModel["glowWindows"][number]): string {
+  return window.riskTags.length > 0 ? window.riskTags.slice(0, 2).join(" / ") : firstSentence(window.note);
+}
+
+function glowDailyCardSpanClassName(index: number, count: number): string {
+  const isLast = index === count - 1;
+  const isLastTwo = index >= count - 2;
+  return cn(
+    count % 2 === 1 && isLast && "sm:col-span-2",
+    count % 3 === 1 && isLast && "min-[1180px]:col-span-6",
+    count % 3 === 2 && isLastTwo && "min-[1180px]:col-span-3",
+  );
+}
+
+function preferredGlowDailySlot(
+  item: GlowForecastViewModel["dailyOpportunities"][number],
+): GlowForecastViewModel["dailyOpportunities"][number]["sunrise"] {
+  if (item.preferredTarget === "朝霞") {
+    return item.sunrise;
+  }
+  if (item.preferredTarget === "晚霞") {
+    return item.sunset;
+  }
+  const slots = [item.sunrise, item.sunset];
+  return [...slots].sort((left, right) => glowSlotSortScore(right) - glowSlotSortScore(left))[0] ?? item.sunrise;
+}
+
+function glowSlotSortScore(
+  slot: GlowForecastViewModel["dailyOpportunities"][number]["sunrise"],
+): number {
+  return slot.practicalSuitabilityScore ?? slot.probabilityPercent ?? 0;
+}
+
+function glowDailyBestWindowText(
+  item: GlowForecastViewModel["dailyOpportunities"][number],
+  slot: GlowForecastViewModel["dailyOpportunities"][number]["sunrise"],
+): string {
+  if (item.preferredTarget === "暂不专程") {
+    return "暂不专程，等待后续窗口或转拍备选题材。";
+  }
+  return `${item.preferredTarget} ${slot.timeLabel}`;
+}
+
+function glowDailyActionText(
+  item: GlowForecastViewModel["dailyOpportunities"][number],
+  slot: GlowForecastViewModel["dailyOpportunities"][number]["sunrise"],
+): string {
+  if (!slot.isRecommendationEligible || item.preferredTarget === "暂不专程") {
+    return "不按专程到达安排，出发前复核临近预报。";
+  }
+  if (slot.lifecycle === "active") {
+    return "窗口进行中，优先就近完成构图和曝光调整。";
+  }
+  return `${slot.label}优先，按${slot.timeLabel}前完成机位到达。`;
+}
+
+function uniqueGlowSupportItems(items: readonly string[]): readonly string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const item of items) {
+    const value = item.trim();
+    const displayValue = value ? firstSentence(value) : "";
+    if (!displayValue || seen.has(displayValue)) {
+      continue;
+    }
+    seen.add(displayValue);
+    unique.push(value);
+  }
+  return unique;
+}
+
+function GlowSupportCard({
+  title,
+  badge,
+  items,
+}: {
+  readonly title: string;
+  readonly badge: string;
+  readonly items: readonly string[];
+}) {
+  return (
+    <Card className={glowCompactCardClassName("grid h-full content-start gap-2")}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-bold text-card-foreground">{title}</h3>
+        <Badge variant={glowRecommendationBadgeVariant(badge)}>{badge}</Badge>
+      </div>
+      <ul className="grid gap-1.5">
+        {items.map((item) => (
+          <li key={item} className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+            {firstSentence(item)}
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }
