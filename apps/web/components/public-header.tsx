@@ -14,7 +14,6 @@ const navLinks = [
   { href: "/cloud-sea", label: "云海" },
   { href: "/glow", label: "朝霞晚霞" },
   { href: "/astro", label: "星空银河" },
-  { href: "/spots", label: "机位库" },
   { href: "/pricing", label: "定价" },
 ] as const;
 

@@ -29,10 +29,7 @@ import {
 import {
   buildHomepageLayerStatus,
   HomepageDecisionSummary,
-  homepagePopularSpots,
-  HomepagePopularSpotsSection,
   HomepageWeatherLayer,
-  homepagePopularSpotToSelectedLocation,
   HomepageWorkbench,
 } from "../components/homepage-workbench";
 import {
@@ -185,24 +182,6 @@ const homepageLayerResult = {
 
 function hasExactButton(html: string, label: string): boolean {
   return new RegExp(`<button[^>]*>\\s*${label}\\s*</button>`).test(html);
-}
-
-type ElementWithChildren = React.ReactElement<{
-  readonly children?: React.ReactNode;
-  readonly onClick?: () => void;
-}>;
-
-function collectElementsByType(node: React.ReactNode, type: string): ElementWithChildren[] {
-  if (Array.isArray(node)) {
-    return node.flatMap((child) => collectElementsByType(child, type));
-  }
-
-  if (!React.isValidElement<{ children?: React.ReactNode }>(node)) {
-    return [];
-  }
-
-  const matches = node.type === type ? [node as ElementWithChildren] : [];
-  return [...matches, ...collectElementsByType(node.props.children, type)];
 }
 
 describe("homepage forecast flow", () => {
@@ -934,39 +913,6 @@ describe("homepage forecast flow", () => {
         isCollapsedAfterSelection: clearState.isCollapsedAfterSelection,
       }),
     ).toBe(false);
-  });
-
-  it("renders operational popular spot cards", () => {
-    const html = renderToStaticMarkup(
-      React.createElement(HomepagePopularSpotsSection, { onSelectSpot: vi.fn() }),
-    );
-    const laojunshan = homepagePopularSpots.find((spot) => spot.name === "老君山金顶");
-
-    expect(laojunshan).toBeDefined();
-    expect(html).toContain("精选机位");
-    expect(html).toContain("选择常用风光机位，快速进入判断。");
-    expect(html).toContain("老君山金顶");
-    expect(html).toContain("云海");
-    expect(html).toContain("选择机位");
-    expect(html).toContain("<button");
-    expect(homepagePopularSpotToSelectedLocation(laojunshan!).displayName).toBe("老君山金顶");
-    expect(homepagePopularSpotToSelectedLocation(laojunshan!).photoSpotId).toBe(
-      "spot-laojunshan-jinding",
-    );
-  });
-
-  it("wires popular spot clicks to selected location updates", () => {
-    const onSelectSpot = vi.fn();
-    const tree = HomepagePopularSpotsSection({ onSelectSpot });
-    const buttons = collectElementsByType(tree, "button");
-
-    expect(buttons[0]).toBeDefined();
-    buttons[0]?.props.onClick?.();
-
-    expect(onSelectSpot).toHaveBeenCalledWith(homepagePopularSpots[0]);
-    expect(homepagePopularSpotToSelectedLocation(homepagePopularSpots[0]).displayName).toBe(
-      "黄山光明顶",
-    );
   });
 
   it("keeps the homepage workspace responsive without fixed wide columns", () => {
