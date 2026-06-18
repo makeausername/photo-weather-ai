@@ -5,7 +5,7 @@ import type { SelectedLocation } from "./selected-location";
 export const homepageDefaultHorizon: ForecastHorizon = "48h";
 export const homepageDefaultTarget: ForecastTarget = "general";
 export const homepageTargetHelperText =
-  "云海和霞光建议重点查看未来24–72小时，星空银河可查看未来7天。";
+  "预报范围会影响可评估的窗口数量；短周期适合临近出行，7天适合提前看趋势。";
 
 export function HomepageSearchPanel({
   selectedLocation,
