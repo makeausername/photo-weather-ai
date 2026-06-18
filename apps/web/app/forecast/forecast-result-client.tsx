@@ -3876,13 +3876,15 @@ function CloudSeaProfessionalDataSection({
 }: {
   readonly viewModel: CloudSeaForecastViewModel;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
   return (
     <Card
       className={cloudSeaPanelClassName(
         "CloudSeaProfessionalData cloud-sea-professional-data p-3 sm:p-4",
       )}
       data-cloud-sea-section="CloudSeaProfessionalData"
-      data-cloud-sea-professional-data-expanded="true"
+      data-cloud-sea-professional-data-expanded={expanded ? "true" : "false"}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
@@ -3891,19 +3893,33 @@ function CloudSeaProfessionalDataSection({
             查看逐小时云层、湿度、露点、降水、能见度和风的专业小时表。
           </p>
         </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          aria-expanded={expanded}
+          onClick={() => {
+            setExpanded((current) => !current);
+          }}
+          data-cloud-sea-professional-data-toggle="true"
+        >
+          {expanded ? "收起专业数据" : "展开专业数据"}
+        </Button>
       </div>
 
-      <div
-        className="mt-3 grid gap-3"
-        data-cloud-sea-professional-data-body="true"
-        data-cloud-sea-professional-data-body-expanded="true"
-      >
-        <CloudSeaProfessionalHourlyDataPanel
-          data={viewModel.displayData.professionalHourlyData}
-          terrainContext={viewModel.terrainContext}
-          variant="embedded"
-        />
-      </div>
+      {expanded ? (
+        <div
+          className="mt-3 grid gap-3"
+          data-cloud-sea-professional-data-body="true"
+          data-cloud-sea-professional-data-body-expanded="true"
+        >
+          <CloudSeaProfessionalHourlyDataPanel
+            data={viewModel.displayData.professionalHourlyData}
+            terrainContext={viewModel.terrainContext}
+            variant="embedded"
+          />
+        </div>
+      ) : null}
     </Card>
   );
 }
