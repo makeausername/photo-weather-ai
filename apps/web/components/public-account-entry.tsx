@@ -14,6 +14,12 @@ type PublicAccountEntryProps = {
   readonly onNavigate?: () => void;
 };
 
+export const publicAccountMenuLinks = [
+  { href: "/account", label: "账户中心" },
+  { href: "/#analysis", label: "开始判断" },
+  { href: "/pricing", label: "定价" },
+] as const;
+
 export function PublicAccountEntry({ onNavigate }: PublicAccountEntryProps) {
   const [session, setSession] = useState<PublicAccountSession | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -81,26 +87,49 @@ export function PublicAccountEntry({ onNavigate }: PublicAccountEntryProps) {
       </button>
 
       {menuOpen ? (
-        <div
-          role="menu"
-          className="absolute right-0 z-50 mt-2 grid min-w-44 overflow-hidden rounded-lg border border-border bg-card p-1 shadow-soft"
-        >
-          <AccountMenuLink href="/account" label="账户中心" onNavigate={handleNavigate} />
-          <AccountMenuLink href="/account#queries" label="我的查询" onNavigate={handleNavigate} />
-          <AccountMenuLink href="/account#favorites" label="收藏机位" onNavigate={handleNavigate} />
-          {showAdminEntry ? (
-            <AccountMenuLink href="/admin" label="管理后台入口" onNavigate={handleNavigate} />
-          ) : null}
-          <button
-            type="button"
-            role="menuitem"
-            className="rounded-md px-3 py-2 text-left text-sm font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-            onClick={() => void handleLogout()}
-          >
-            退出登录
-          </button>
-        </div>
+        <PublicAccountMenuContent
+          showAdminEntry={showAdminEntry}
+          onNavigate={handleNavigate}
+          onLogout={() => void handleLogout()}
+        />
       ) : null}
+    </div>
+  );
+}
+
+export function PublicAccountMenuContent({
+  showAdminEntry,
+  onNavigate,
+  onLogout,
+}: {
+  readonly showAdminEntry: boolean;
+  readonly onNavigate?: () => void;
+  readonly onLogout: () => void;
+}) {
+  return (
+    <div
+      role="menu"
+      className="absolute right-0 z-50 mt-2 grid min-w-48 overflow-hidden rounded-lg border border-border bg-card p-1 shadow-soft"
+    >
+      {publicAccountMenuLinks.map((item) => (
+        <AccountMenuLink
+          key={item.href}
+          href={item.href}
+          label={item.label}
+          onNavigate={onNavigate}
+        />
+      ))}
+      {showAdminEntry ? (
+        <AccountMenuLink href="/admin" label="管理后台入口" onNavigate={onNavigate} />
+      ) : null}
+      <button
+        type="button"
+        role="menuitem"
+        className="rounded-md px-3 py-2 text-left text-sm font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+        onClick={onLogout}
+      >
+        退出登录
+      </button>
     </div>
   );
 }

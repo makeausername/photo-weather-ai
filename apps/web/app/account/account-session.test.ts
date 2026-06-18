@@ -4,16 +4,22 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   loginPublicAccount,
   shouldShowAdminEntry,
+  type PublicAccountSession,
 } from "../../components/account-session";
 import {
   invalidCredentialsMessage,
   loginServiceUnavailableMessage,
   sanitizeAuthErrorMessage,
 } from "../../components/auth-errors";
+import {
+  PublicAccountMenuContent,
+  publicAccountMenuLinks,
+} from "../../components/public-account-entry";
 import { publicHeaderActionLabels, publicHeaderNavLabels } from "../../components/public-header";
 import AccountPage, { metadata as accountMetadata } from "./page";
 import {
   accountCenterSectionLabels,
+  AuthenticatedAccountCenter,
   formatAccountRoleLabels,
   UnauthenticatedAccountPrompt,
 } from "./account-center-client";
@@ -27,6 +33,32 @@ import { publicRegisterFormLabels } from "../register/register-form";
 const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
 
+const baseAccountSession: PublicAccountSession = {
+  user: {
+    id: "user-1",
+    email: "photo@example.com",
+    phone: null,
+    displayName: "逐光摄影师",
+    status: "active",
+    createdAt: "2026-06-01T08:20:00.000Z",
+    updatedAt: "2026-06-10T10:00:00.000Z",
+    lastLoginAt: "2026-06-17T14:35:00.000Z",
+  },
+  profile: {
+    id: "profile-1",
+    userId: "user-1",
+    avatarUrl: null,
+    preferredUnits: "metric",
+    preferredLanguage: "zh-CN",
+    createdAt: "2026-06-01T08:20:00.000Z",
+    updatedAt: "2026-06-10T10:00:00.000Z",
+  },
+  roles: ["user"],
+  roleCodes: ["user"],
+  permissions: [],
+  isAdmin: false,
+};
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -38,13 +70,36 @@ describe("public account navigation", () => {
       "云海",
       "朝霞晚霞",
       "星空银河",
-      "机位库",
       "定价",
     ]);
     expect(publicHeaderActionLabels).toEqual(["账户"]);
     expect(publicHeaderActionLabels).not.toContain("开始分析");
     expect([...publicHeaderNavLabels, ...publicHeaderActionLabels]).not.toContain("管理后台");
     expect([...publicHeaderNavLabels, ...publicHeaderActionLabels]).not.toContain("登录");
+  });
+
+  it("keeps the account dropdown on real routes only", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(PublicAccountMenuContent, {
+        showAdminEntry: false,
+        onLogout: () => undefined,
+      }),
+    );
+
+    expect(publicAccountMenuLinks.map((link) => link.href)).toEqual([
+      "/account",
+      "/#analysis",
+      "/pricing",
+    ]);
+    expect(html).toContain('href="/account"');
+    expect(html).toContain('href="/#analysis"');
+    expect(html).toContain('href="/pricing"');
+    expect(html).toContain("退出登录");
+    expect(html).not.toContain("/account#queries");
+    expect(html).not.toContain("/account#favorites");
+    expect(html).not.toContain("我的查询");
+    expect(html).not.toContain("收藏机位");
+    expect(html).not.toContain("管理后台入口");
   });
 
   it("shows admin entry for admin role, super admin role, or manage permission only", () => {
@@ -101,12 +156,11 @@ describe("account center foundation", () => {
     expect(AccountPage()).toBeTruthy();
     expect(accountMetadata.title).toBe("账户中心 - 逐光天气");
     expect(accountCenterSectionLabels).toEqual([
-      "账户概览",
-      "我的查询",
-      "收藏机位",
-      "报告管理",
-      "套餐权益",
-      "安全设置",
+      "账户总览",
+      "资料信息",
+      "偏好设置",
+      "安全与登录",
+      "快捷入口",
     ]);
   });
 
@@ -114,9 +168,86 @@ describe("account center foundation", () => {
     const html = renderToStaticMarkup(React.createElement(UnauthenticatedAccountPrompt));
 
     expect(html).toContain("请先登录后查看账户中心。");
+    expect(html).toContain("登录后可管理账户信息，并继续使用逐光天气的拍摄判断工具。");
     expect(html).toContain("登录逐光天气");
     expect(html).toContain("创建账户");
     expect(html).toContain('href="/login"');
+    expect(html).toContain('href="/register"');
+    expect(html).not.toContain("查询历史");
+    expect(html).not.toContain("收藏机位");
+  });
+
+  it("renders a session-backed authenticated account dashboard", () => {
+    const html = renderAuthenticatedAccountCenter(baseAccountSession);
+
+    expect(html).toContain("逐光摄影师");
+    expect(html).toContain("photo@example.com");
+    expect(html).toContain("正常");
+    expect(html).toContain("普通用户");
+    expect(html).toContain("注册时间");
+    expect(html).toContain("最近登录时间");
+    expect(html).toContain("2026/06/01");
+    expect(html).toContain("2026/06/17");
+    expect(html).toContain("公制单位");
+    expect(html).toContain("简体中文");
+    expect(html).toContain('href="/#analysis"');
+    expect(html).toContain('href="/cloud-sea"');
+    expect(html).toContain('href="/glow"');
+    expect(html).toContain('href="/astro"');
+    expect(html).toContain('href="/pricing"');
+  });
+
+  it("renders the admin card only for admin sessions", () => {
+    const userHtml = renderAuthenticatedAccountCenter(baseAccountSession);
+    const adminHtml = renderAuthenticatedAccountCenter({
+      ...baseAccountSession,
+      roles: [{ id: "role-admin", code: "admin", name: "admin", displayName: "管理员" }],
+      roleCodes: ["admin"],
+      permissions: ["admin.manage"],
+      isAdmin: true,
+    });
+    const adminMenuHtml = renderToStaticMarkup(
+      React.createElement(PublicAccountMenuContent, {
+        showAdminEntry: true,
+        onLogout: () => undefined,
+      }),
+    );
+
+    expect(userHtml).not.toContain("管理后台");
+    expect(adminHtml).toContain("管理后台");
+    expect(adminHtml).toContain("进入管理后台");
+    expect(adminHtml).toContain("管理系统配置、服务商配置和地点数据。");
+    expect(adminHtml).toContain('href="/admin"');
+    expect(adminMenuHtml).toContain("管理后台入口");
+    expect(adminMenuHtml).toContain('href="/admin"');
+  });
+
+  it("does not render account placeholder or unavailable-module wording", () => {
+    const html = [
+      renderAuthenticatedAccountCenter(baseAccountSession),
+      renderToStaticMarkup(React.createElement(UnauthenticatedAccountPrompt)),
+      renderToStaticMarkup(
+        React.createElement(PublicAccountMenuContent, {
+          showAdminEntry: false,
+          onLogout: () => undefined,
+        }),
+      ),
+    ].join("");
+    const unavailableCopy = [
+      "即将开放",
+      "规划中",
+      "后续版本开放",
+      "基础体验模式",
+      "暂无查询记录",
+      "暂无收藏机位",
+      "暂无已保存报告",
+      "占位",
+      "开发",
+    ];
+
+    for (const phrase of unavailableCopy) {
+      expect(html).not.toContain(phrase);
+    }
   });
 
   it("keeps public login and admin login routes importable", () => {
@@ -139,6 +270,16 @@ describe("account center foundation", () => {
     ]);
   });
 });
+
+function renderAuthenticatedAccountCenter(session: PublicAccountSession): string {
+  return renderToStaticMarkup(
+    React.createElement(AuthenticatedAccountCenter, {
+      session,
+      onLogout: () => undefined,
+      isLoggingOut: false,
+    }),
+  );
+}
 
 describe("login error sanitization", () => {
   const rawPrismaLoginError =

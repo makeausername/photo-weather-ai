@@ -29,12 +29,11 @@ const statusLabels: Record<string, string> = {
 };
 
 export const accountCenterSectionLabels = [
-  "账户概览",
-  "我的查询",
-  "收藏机位",
-  "报告管理",
-  "套餐权益",
-  "安全设置",
+  "账户总览",
+  "资料信息",
+  "偏好设置",
+  "安全与登录",
+  "快捷入口",
 ] as const;
 
 export function AccountCenterClient() {
@@ -99,12 +98,12 @@ export function AccountCenterClient() {
 
 export function UnauthenticatedAccountPrompt() {
   return (
-    <Card className="grid gap-4 border-warning p-5 shadow-sm sm:p-6">
+    <Card className="grid gap-4 p-5 shadow-sm sm:p-6">
       <div>
         <Badge variant="warning">尚未登录</Badge>
         <h2 className="mt-3 text-xl font-bold text-card-foreground">请先登录后查看账户中心。</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          登录后可查看查询历史、收藏机位、保存报告和管理套餐权益。
+          登录后可管理账户信息，并继续使用逐光天气的拍摄判断工具。
         </p>
       </div>
       <div className="flex flex-wrap gap-3">
@@ -125,7 +124,7 @@ export function UnauthenticatedAccountPrompt() {
   );
 }
 
-function AuthenticatedAccountCenter({
+export function AuthenticatedAccountCenter({
   session,
   onLogout,
   isLoggingOut,
@@ -135,58 +134,69 @@ function AuthenticatedAccountCenter({
   readonly isLoggingOut: boolean;
 }) {
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(260px,0.85fr)_minmax(0,1.45fr)_minmax(240px,0.8fr)]">
-      <div className="grid gap-5">
-        <AccountOverview session={session} />
-        <PlanCard />
-      </div>
+    <div className="grid gap-5">
+      <AccountStatusHero session={session} />
 
-      <div className="grid gap-5">
-        <PlaceholderCard
-          id="queries"
-          title="我的查询"
-          description="暂无查询记录。完成一次拍摄天气分析后，将在这里显示历史记录。"
-        />
-        <PlaceholderCard
-          id="favorites"
-          title="收藏机位"
-          description="暂无收藏机位。你可以在机位库中收藏常用拍摄点，便于快速分析。"
-        />
-        <PlaceholderCard
-          id="reports"
-          title="报告管理"
-          description="暂无已保存报告。后续生成的拍摄天气报告会集中显示在这里。"
-        />
-      </div>
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
+        <div className="grid gap-5">
+          <ProfileCard session={session} />
+          <PreferencesCard session={session} />
+        </div>
 
-      <div className="grid content-start gap-5">
-        <SecurityCard session={session} onLogout={onLogout} isLoggingOut={isLoggingOut} />
-        {shouldShowAdminEntry(session) ? <AdminAccessCard /> : null}
+        <div className="grid content-start gap-5">
+          <SecurityCard session={session} onLogout={onLogout} isLoggingOut={isLoggingOut} />
+          <QuickActionsCard />
+          {shouldShowAdminEntry(session) ? <AdminAccessCard /> : null}
+        </div>
       </div>
     </div>
   );
 }
 
-function AccountOverview({ session }: { readonly session: PublicAccountSession }) {
+function AccountStatusHero({ session }: { readonly session: PublicAccountSession }) {
+  const roleText = formatAccountRoleLabels(session.roles, session.roleCodes);
+  const statusText = formatStatus(session.user.status);
+  const displayName = session.user.displayName || session.user.email;
+
+  return (
+    <Card className="p-5 shadow-sm sm:p-6">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)] lg:items-end">
+        <div className="min-w-0">
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="success">已登录</Badge>
+            <Badge variant={statusBadgeVariant(session.user.status)}>{statusText}</Badge>
+            <Badge variant="muted">{roleText}</Badge>
+          </div>
+          <h2 className="mt-4 break-words text-2xl font-bold leading-tight text-card-foreground sm:text-[30px]">
+            {displayName}
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            管理你的登录信息、安全状态和逐光天气使用入口。
+          </p>
+        </div>
+        <dl className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+          <SummaryField label="最近登录" value={formatOptionalDateTime(session.user.lastLoginAt)} />
+          <SummaryField label="注册时间" value={formatOptionalDateTime(session.user.createdAt)} />
+          <SummaryField label="账户角色" value={roleText} />
+        </dl>
+      </div>
+    </Card>
+  );
+}
+
+function ProfileCard({ session }: { readonly session: PublicAccountSession }) {
   const roleText = formatAccountRoleLabels(session.roles, session.roleCodes);
   const statusText = formatStatus(session.user.status);
 
   return (
     <Card className="p-5 shadow-sm sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <Badge variant="success">已登录</Badge>
-          <h2 className="mt-3 text-xl font-bold text-card-foreground">账户概览</h2>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            逐光天气账户中心会集中承载查询、收藏、报告和权益信息。
-          </p>
-        </div>
-        <Badge variant="muted">基础体验</Badge>
-      </div>
-
+      <h2 className="text-lg font-bold text-card-foreground">资料信息</h2>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+        当前账户的基础身份信息和可见状态。
+      </p>
       <dl className="mt-5 grid gap-3 text-sm">
         <AccountField label="邮箱" value={session.user.email} />
-        <AccountField label="昵称 / 显示名称" value={session.user.displayName} />
+        <AccountField label="显示名称" value={session.user.displayName} />
         <AccountField label="用户角色" value={roleText} />
         <AccountField label="当前状态" value={statusText} />
         <AccountField label="注册时间" value={formatOptionalDateTime(session.user.createdAt)} />
@@ -194,52 +204,37 @@ function AccountOverview({ session }: { readonly session: PublicAccountSession }
           label="最近登录时间"
           value={formatOptionalDateTime(session.user.lastLoginAt)}
         />
-        <AccountField label="当前权益" value="基础体验模式" />
       </dl>
     </Card>
   );
 }
 
-function PlaceholderCard({
-  id,
-  title,
-  description,
-}: {
-  readonly id: string;
-  readonly title: string;
-  readonly description: string;
-}) {
-  return (
-    <div id={id}>
+function PreferencesCard({ session }: { readonly session: PublicAccountSession }) {
+  if (!session.profile) {
+    return (
       <Card className="p-5 shadow-sm sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-bold text-card-foreground">{title}</h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
-          </div>
-          <Badge variant="muted">即将开放</Badge>
-        </div>
+        <h2 className="text-lg font-bold text-card-foreground">偏好设置</h2>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          账户偏好将在保存后显示。
+        </p>
       </Card>
-    </div>
-  );
-}
+    );
+  }
 
-function PlanCard() {
   return (
-    <div id="plan">
-      <Card className="p-5 shadow-sm sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-bold text-card-foreground">套餐权益</h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">当前为基础体验模式。</p>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              该功能将在后续版本开放。
-            </p>
-          </div>
-          <Badge variant="info">规划中</Badge>
-        </div>
-      </Card>
-    </div>
+    <Card className="p-5 shadow-sm sm:p-6">
+      <h2 className="text-lg font-bold text-card-foreground">偏好设置</h2>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+        与账户资料绑定的显示偏好。
+      </p>
+      <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
+        <AccountField label="单位制" value={formatPreferredUnits(session.profile.preferredUnits)} />
+        <AccountField
+          label="界面语言"
+          value={formatPreferredLanguage(session.profile.preferredLanguage)}
+        />
+      </dl>
+    </Card>
   );
 }
 
@@ -252,23 +247,24 @@ function SecurityCard({
   readonly onLogout: () => void;
   readonly isLoggingOut: boolean;
 }) {
+  const statusText = formatStatus(session.user.status);
+
   return (
     <Card className="p-5 shadow-sm sm:p-6">
-      <h2 className="text-lg font-bold text-card-foreground">安全设置</h2>
-      <div className="mt-4 grid gap-3 text-sm">
+      <h2 className="text-lg font-bold text-card-foreground">安全与登录</h2>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+        查看当前登录身份，并在需要时退出账户。
+      </p>
+      <dl className="mt-5 grid gap-3 text-sm">
         <AccountField label="登录邮箱" value={session.user.email} />
-        <div className="rounded-lg border border-border bg-muted px-4 py-3">
-          <p className="font-semibold text-card-foreground">修改密码</p>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            该功能将在后续版本开放。
-          </p>
-        </div>
-      </div>
+        <AccountField label="账户状态" value={statusText} />
+        <AccountField label="最近登录时间" value={formatOptionalDateTime(session.user.lastLoginAt)} />
+      </dl>
       <Button
         type="button"
         variant="secondary"
         size="lg"
-        className="mt-4"
+        className="mt-4 w-full"
         disabled={isLoggingOut}
         onClick={onLogout}
       >
@@ -278,21 +274,63 @@ function SecurityCard({
   );
 }
 
+const quickActionLinks = [
+  { href: "/#analysis", label: "首页 / 开始判断" },
+  { href: "/cloud-sea", label: "云海" },
+  { href: "/glow", label: "朝霞晚霞" },
+  { href: "/astro", label: "星空银河" },
+  { href: "/pricing", label: "定价" },
+] as const;
+
+function QuickActionsCard() {
+  return (
+    <Card className="p-5 shadow-sm sm:p-6">
+      <h2 className="text-lg font-bold text-card-foreground">快捷入口</h2>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+        继续使用逐光天气的常用页面。
+      </p>
+      <div className="mt-5 grid gap-2">
+        {quickActionLinks.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted px-4 py-3 text-sm font-semibold text-card-foreground transition hover:border-primary hover:bg-secondary"
+          >
+            <span>{item.label}</span>
+            <span className="text-muted-foreground">访问</span>
+          </Link>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function AdminAccessCard() {
   return (
     <Card className="border-primary p-5 shadow-sm sm:p-6">
-      <Badge variant="success">管理员可见</Badge>
+      <Badge variant="muted">管理员</Badge>
       <h2 className="mt-3 text-lg font-bold text-card-foreground">管理后台</h2>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">
-        进入系统配置、服务商配置、地点与机位管理。
+        管理系统配置、服务商配置和地点数据。
       </p>
       <Link
         href="/admin"
         className="mt-4 inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
       >
-        管理后台入口
+        进入管理后台
       </Link>
     </Card>
+  );
+}
+
+function SummaryField({ label, value }: { readonly label: string; readonly value: string | null }) {
+  return (
+    <div className="rounded-lg border border-border bg-muted px-4 py-3">
+      <dt className="text-xs font-semibold text-muted-foreground">{label}</dt>
+      <dd className="mt-1 break-words text-sm font-bold text-card-foreground">
+        {value || emptyValue}
+      </dd>
+    </div>
   );
 }
 
@@ -362,6 +400,50 @@ function formatStatus(status: string | null): string {
   }
 
   return statusLabels[status] ?? "未知状态";
+}
+
+type AccountBadgeVariant = "success" | "warning" | "danger" | "muted" | "info";
+
+function statusBadgeVariant(status: string | null): AccountBadgeVariant {
+  if (status === "active") {
+    return "success";
+  }
+
+  if (status === "pending") {
+    return "warning";
+  }
+
+  if (status === "disabled") {
+    return "danger";
+  }
+
+  return "muted";
+}
+
+function formatPreferredUnits(value: string | null): string {
+  if (!value) {
+    return emptyValue;
+  }
+
+  const labels: Record<string, string> = {
+    metric: "公制单位",
+    imperial: "英制单位",
+  };
+
+  return labels[value] ?? value;
+}
+
+function formatPreferredLanguage(value: string | null): string {
+  if (!value) {
+    return emptyValue;
+  }
+
+  const labels: Record<string, string> = {
+    "zh-CN": "简体中文",
+    "en-US": "English",
+  };
+
+  return labels[value] ?? value;
 }
 
 function formatOptionalDateTime(value: string | null): string {
