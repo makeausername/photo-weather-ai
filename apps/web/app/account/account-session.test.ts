@@ -12,6 +12,7 @@ import {
   sanitizeAuthErrorMessage,
 } from "../../components/auth-errors";
 import {
+  PublicAccountEntry,
   PublicAccountMenuContent,
   publicAccountMenuLinks,
 } from "../../components/public-account-entry";
@@ -78,28 +79,48 @@ describe("public account navigation", () => {
     expect([...publicHeaderNavLabels, ...publicHeaderActionLabels]).not.toContain("登录");
   });
 
-  it("keeps the account dropdown on real routes only", () => {
-    const html = renderToStaticMarkup(
-      React.createElement(PublicAccountMenuContent, {
-        showAdminEntry: false,
-        onLogout: () => undefined,
-      }),
-    );
+  it("keeps the logged-out account entry pointed at the public login route", () => {
+    const html = renderToStaticMarkup(React.createElement(PublicAccountEntry));
 
-    expect(publicAccountMenuLinks.map((link) => link.href)).toEqual([
-      "/account",
-      "/#analysis",
-      "/pricing",
-    ]);
+    expect(html).toContain('href="/login"');
+    expect(html).toContain("账户");
+  });
+
+  it("keeps the account dropdown on real routes only", () => {
+    const html = renderPublicAccountMenu();
+
+    expect(publicAccountMenuLinks).toEqual([{ href: "/account", label: "账户中心" }]);
     expect(html).toContain('href="/account"');
-    expect(html).toContain('href="/#analysis"');
-    expect(html).toContain('href="/pricing"');
+    expect(html).toContain("账户中心");
     expect(html).toContain("退出登录");
+    expect(html).not.toContain('href="/#analysis"');
+    expect(html).not.toContain('href="/pricing"');
+    expect(html).not.toContain('href="/admin"');
+    expect(html).not.toContain("开始判断");
+    expect(html).not.toContain("定价");
     expect(html).not.toContain("/account#queries");
     expect(html).not.toContain("/account#favorites");
     expect(html).not.toContain("我的查询");
     expect(html).not.toContain("收藏机位");
     expect(html).not.toContain("管理后台入口");
+  });
+
+  it("keeps admin entry out of the header menu even when admin-like menu state is passed", () => {
+    const html = renderPublicAccountMenu({
+      session: {
+        ...baseAccountSession,
+        roles: [{ id: "role-admin", code: "admin", name: "admin", displayName: "管理员" }],
+        roleCodes: ["admin"],
+        permissions: ["admin.manage"],
+        isAdmin: true,
+      },
+      showAdminEntry: true,
+    });
+
+    expect(html).toContain("账户中心");
+    expect(html).toContain("退出登录");
+    expect(html).not.toContain("管理后台入口");
+    expect(html).not.toContain('href="/admin"');
   });
 
   it("shows admin entry for admin role, super admin role, or manage permission only", () => {
@@ -206,32 +227,22 @@ describe("account center foundation", () => {
       permissions: ["admin.manage"],
       isAdmin: true,
     });
-    const adminMenuHtml = renderToStaticMarkup(
-      React.createElement(PublicAccountMenuContent, {
-        showAdminEntry: true,
-        onLogout: () => undefined,
-      }),
-    );
+    const adminMenuHtml = renderPublicAccountMenu({ showAdminEntry: true });
 
     expect(userHtml).not.toContain("管理后台");
     expect(adminHtml).toContain("管理后台");
     expect(adminHtml).toContain("进入管理后台");
     expect(adminHtml).toContain("管理系统配置、服务商配置和地点数据。");
     expect(adminHtml).toContain('href="/admin"');
-    expect(adminMenuHtml).toContain("管理后台入口");
-    expect(adminMenuHtml).toContain('href="/admin"');
+    expect(adminMenuHtml).not.toContain("管理后台入口");
+    expect(adminMenuHtml).not.toContain('href="/admin"');
   });
 
   it("does not render account placeholder or unavailable-module wording", () => {
     const html = [
       renderAuthenticatedAccountCenter(baseAccountSession),
       renderToStaticMarkup(React.createElement(UnauthenticatedAccountPrompt)),
-      renderToStaticMarkup(
-        React.createElement(PublicAccountMenuContent, {
-          showAdminEntry: false,
-          onLogout: () => undefined,
-        }),
-      ),
+      renderPublicAccountMenu(),
     ].join("");
     const unavailableCopy = [
       "即将开放",
@@ -278,6 +289,15 @@ function renderAuthenticatedAccountCenter(session: PublicAccountSession): string
       onLogout: () => undefined,
       isLoggingOut: false,
     }),
+  );
+}
+
+function renderPublicAccountMenu(extraProps: Record<string, unknown> = {}): string {
+  return renderToStaticMarkup(
+    React.createElement(PublicAccountMenuContent, {
+      ...extraProps,
+      onLogout: () => undefined,
+    } as React.ComponentProps<typeof PublicAccountMenuContent> & Record<string, unknown>),
   );
 }
 

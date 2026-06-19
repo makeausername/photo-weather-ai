@@ -56,6 +56,7 @@ import {
   astroBlockedReasonText,
   clothingEquipmentAdvice,
   compactPrecipitationDisplayText,
+  isProbabilityOnlyPrecipitationSignal,
   rainRiskText,
   windowLabelText,
 } from "./forecast-copy";
@@ -2443,7 +2444,10 @@ function WeatherEssentialsPanel({ result }: { readonly result: ForecastCalculati
             current?.windGust ?? firstDay?.windGust,
           )}
           value={precipitationDisplayValue(current ?? firstDay)}
-          detail={`${precipitationDisplayDetail(current ?? firstDay)}。${windPrecipitationActionText(result)}`}
+          detail={`${precipitationDisplayDetail(current ?? firstDay)}。${windPrecipitationActionText(
+            result,
+            current ?? firstDay,
+          )}`}
         />
         <CompactInfoCard
           title="湿度与露点"
@@ -3223,6 +3227,10 @@ function precipitationDisplayDetail(
 
 function windPrecipitationActionText(
   result: ForecastCalculationResult,
+  weather:
+    | ForecastCalculationResult["dailySummaries"][number]["weather"]
+    | ForecastCalculationResult["currentWeather"]
+    | undefined,
   weatherVariableConsistencyContext?: CloudSeaWeatherVariableConsistencyContext,
   precipitationSignalContext?: CloudSeaForecastViewModel["precipitationSignal"],
 ): string {
@@ -3241,6 +3249,9 @@ function windPrecipitationActionText(
   }
   const rainRisk = result.riskFlags.find((risk) => risk.key === "precipitation");
   const windRisk = result.riskFlags.find((risk) => risk.key === "wind");
+  if (rainRisk && isProbabilityOnlyPrecipitationSignal(weather)) {
+    return "降水概率和雨量信号不一致，暂不按确定降水处理，出发前复核短临雷达和实况。";
+  }
   if (rainRisk) {
     return "降水干扰需优先规避。";
   }

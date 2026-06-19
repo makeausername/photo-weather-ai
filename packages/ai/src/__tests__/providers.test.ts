@@ -30,6 +30,7 @@ const place = {
 };
 
 type ForecastExplanationRequestUserPayload = {
+  readonly task: string;
   readonly targetCode: string;
   readonly targetSubjectZh?: string | null;
   readonly preferredVisibleSectionsZh?: readonly string[] | null;
@@ -215,6 +216,47 @@ describe("AI providers", () => {
     expect(payload.computedForecastFacts.cloudSea?.recommendationZh).toBeTypeOf("string");
     expect(payload.computedForecastFacts.glow).toBeUndefined();
     expect(request.body.model).toBe("deepseek-v4-pro");
+  });
+
+  it("passes general through a data-grounded decision prompt", () => {
+    const request = buildDeepSeekForecastExplanationRequest({
+      forecastResult: {
+        ...forecastResultFixture,
+        target: "general",
+      },
+    });
+    const payload = readForecastExplanationUserPayload(request);
+    const constraints = payload.constraints.join("\n");
+
+    expect(forecastAiTargetConfigs.general.targetCode).toBe("general");
+    expect(payload.targetCode).toBe("general");
+    expect(payload.targetSubjectZh).toBe("综合判断");
+    expect(payload.task).toContain("综合判断");
+    expect(payload.task).not.toContain("Cloud Sea photo-weather");
+    expect(payload.task).not.toContain("sunrise and sunset glow");
+    expect(payload.preferredVisibleSectionsZh).toEqual([
+      "是否值得去",
+      "优先题材与窗口",
+      "主要天气风险",
+      "备选策略",
+      "复核重点",
+    ]);
+    expect(payload.promptPrioritiesZh?.join("")).toContain("综合判断是否值得去");
+    expect(payload.promptPrioritiesZh?.join("")).toContain("优先哪个题材/窗口");
+    expect(constraints).toContain("use deterministic facts only");
+    expect(constraints).toContain("Do not invent exact arrival time");
+    expect(constraints).toContain("Do not invent cloud layer values");
+    expect(constraints).toContain("Do not infer terrain obstruction");
+    expect(constraints).toContain(
+      "Do not turn precipitation probability into certain rainfall when precipitation amount is 0 or missing",
+    );
+    expect(constraints).toContain("Do not invent safety, road, access");
+    expect(constraints).toContain("Do not invent moonlight, Milky Way, glow, or cloud-sea details");
+    expect(constraints).toContain("If data is missing or weak");
+    expect(constraints).toContain("Do not use cloud-sea or glow wording as the primary task");
+    expect(payload.computedForecastFacts.targetCode).toBe("general");
+    expect(payload.computedForecastFacts.cloudSea).toBeUndefined();
+    expect(payload.computedForecastFacts.glow).toBeUndefined();
   });
 
   it("builds a glow-specific DeepSeek prompt from concise deterministic facts", () => {

@@ -286,6 +286,11 @@ describe("Cloud Sea result page final regression QA", () => {
     const rendered = renderCloudSeaFixture(cloudSeaRegressionFixture(fixtureName));
 
     expect(rendered.html).toContain("CloudSeaTopResultHeader");
+    expect(rendered.html).toContain('data-cloud-sea-section="CloudSeaWindowDecision"');
+    expect(rendered.html).toContain('data-cloud-sea-section="CloudSeaDailyCards"');
+    expect(rendered.html).toContain('data-cloud-sea-section="CloudSeaDecisionSupport"');
+    expect(rendered.html).toContain('data-cloud-sea-section="CloudSeaProfessionalData"');
+    expect(rendered.html).toContain('data-cloud-sea-professional-data-expanded="true"');
     expect(rendered.html).toContain("CloudSeaHeroConclusion");
     expect(rendered.html).toContain('data-cloud-sea-section="CloudSeaScoreCard"');
     expect(rendered.html).toContain('data-cloud-sea-metric-card="true"');
@@ -303,17 +308,29 @@ describe("Cloud Sea result page final regression QA", () => {
     expect(rendered.html).toContain("中云量 %");
     expect(rendered.html).toContain("低云量 %");
     expectMarkersInOrder(rendered.html, [
+      "CloudSeaWindowDecision",
       "CloudSeaTopResultHeader",
       "CloudSeaCoreMetrics",
       "CloudSeaNearTermWeather",
       "CloudSeaWindowCards",
-      "CloudSeaProfessionalHourlyData",
+      "CloudSeaDailyCards",
       "CloudSeaDailyTrend",
+      "CloudSeaDecisionSupport",
       "CloudSeaReasoning",
       "CloudSeaActionPlan",
       "CloudSeaRiskSummary",
+      "CloudSeaProfessionalData",
+      "CloudSeaProfessionalHourlyData",
       "CloudSeaAiInterpretation",
     ]);
+    const professionalSection = sectionBetween(
+      rendered.html,
+      "CloudSeaProfessionalData",
+      "CloudSeaAiInterpretation",
+    );
+    expect(professionalSection).not.toContain("CloudSeaReasoning");
+    expect(professionalSection).not.toContain("CloudSeaActionPlan");
+    expect(professionalSection).not.toContain("CloudSeaRiskSummary");
   });
 
   it("uses adjusted high-mountain display temperature instead of warm raw grid values", () => {
@@ -324,8 +341,8 @@ describe("Cloud Sea result page final regression QA", () => {
     const actionSection = sectionBetween(html, "CloudSeaActionPlan", "CloudSeaRiskSummary");
     const professionalSection = sectionBetween(
       html,
-      "CloudSeaProfessionalHourlyData",
-      "CloudSeaDailyTrend",
+      "CloudSeaProfessionalData",
+      "CloudSeaAiInterpretation",
     );
 
     expect(viewModel.displayTemperatureContext.basis).toBe("terrain_adjusted");
@@ -471,8 +488,8 @@ describe("Cloud Sea result page final regression QA", () => {
     );
     const professionalSection = sectionBetween(
       html,
-      "CloudSeaProfessionalHourlyData",
-      "CloudSeaDailyTrend",
+      "CloudSeaProfessionalData",
+      "CloudSeaAiInterpretation",
     );
 
     expect(professionalSection).toContain("需复核");
@@ -491,8 +508,8 @@ describe("Cloud Sea result page final regression QA", () => {
     );
     const professionalSection = sectionBetween(
       html,
-      "CloudSeaProfessionalHourlyData",
-      "CloudSeaDailyTrend",
+      "CloudSeaProfessionalData",
+      "CloudSeaAiInterpretation",
     );
 
     expect(viewModel.cloudBasisConsistency.cloudBasisLevel).toBe("mixed_basis");
@@ -526,7 +543,15 @@ describe("Cloud Sea result page final regression QA", () => {
     expect(viewModel.displayData.aiInterpretationPayload.finalRecommendation.label).toBe(
       viewModel.recommendationGuard.finalRecommendationLabel,
     );
-    expect(viewModel.displayData.actionPlan).toBe(viewModel.actionPlan);
+    expect(viewModel.displayData.actionPlan).toHaveLength(viewModel.actionPlan.length);
+    expect(viewModel.displayData.actionPlan.find((item) => item.key === "departure")).toEqual(
+      viewModel.actionPlan.find((item) => item.key === "departure"),
+    );
+    expect(viewModel.displayData.actionPlan.find((item) => item.key === "arrival")).toMatchObject({
+      label: "到达参考",
+      value: expect.stringContaining("如仍前往，建议到达"),
+      detail: expect.stringContaining("出发前必须复核"),
+    });
     expect(viewModel.displayData.riskReview).toBe(viewModel.riskSummary);
     expect(viewModel.recommendationExplanation.whyNotStrongerZh).toContain("评分较高");
     expect(viewModel.recommendationExplanation.whyNotStrongerZh).toContain("云量口径");
@@ -667,8 +692,8 @@ describe("Cloud Sea result page final regression QA", () => {
     const { html } = renderCloudSeaFixture(cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase"));
     const professionalSection = sectionBetween(
       html,
-      "CloudSeaProfessionalHourlyData",
-      "CloudSeaDailyTrend",
+      "CloudSeaProfessionalData",
+      "CloudSeaAiInterpretation",
     );
 
     for (const header of [
@@ -727,10 +752,14 @@ describe("Cloud Sea result page final regression QA", () => {
       expect(fetchMock).not.toHaveBeenCalled();
       expect(html).toContain("生成智能解读");
       expectMarkersInOrder(html, [
-        "CloudSeaProfessionalHourlyData",
+        "CloudSeaDailyCards",
+        "CloudSeaDailyTrend",
+        "CloudSeaDecisionSupport",
         "CloudSeaReasoning",
         "CloudSeaActionPlan",
         "CloudSeaRiskSummary",
+        "CloudSeaProfessionalData",
+        "CloudSeaProfessionalHourlyData",
         "CloudSeaAiInterpretation",
         "智能解读",
       ]);

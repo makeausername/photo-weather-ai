@@ -92,7 +92,7 @@ export type DeepSeekRequestPreview = {
   readonly outputMode: "json_object" | "text_with_json_fallback";
 };
 
-export type ForecastAiInterpretationTargetCode = "cloud_sea" | "glow";
+export type ForecastAiInterpretationTargetCode = "cloud_sea" | "glow" | "general";
 
 type ForecastAiTargetConfig = {
   readonly targetCode: ForecastAiInterpretationTargetCode;
@@ -151,12 +151,44 @@ export const forecastAiTargetConfigs = {
       "Do not use cloud-sea wording as the primary subject.",
     ],
   },
+  general: {
+    targetCode: "general",
+    subjectZh: "综合判断",
+    task: "Explain deterministic 综合判断 photo-weather forecast facts as a decision-oriented, data-grounded interpretation in concise Simplified Chinese.",
+    outputLength: "600-900 Chinese characters total. No Markdown.",
+    visibleSectionsZh: ["是否值得去", "优先题材与窗口", "主要天气风险", "备选策略", "复核重点"],
+    promptPrioritiesZh: [
+      "先回答综合判断是否值得去，区分专程前往、已在附近可观察、仅作备选或不建议专程。",
+      "只根据已提供的分数、推荐等级、最佳日期、窗口、风险和 deterministicSuggestions 判断应该优先哪个题材/窗口。",
+      "说明主要天气风险时必须绑定输入中的降水、云量/云层、风、通透度、温度或数据缺口事实。",
+      "给出备选策略和复核重点；如果证据缺失或偏弱，明确说证据不足或省略该结论。",
+      "综合判断是主任务；云海、朝霞晚霞、星空/银河只能作为已给出的确定性题材事实被比较，不得改成单一题材专报。",
+    ],
+    constraints: [
+      "For general, treat deterministic forecast result fields as authoritative; use deterministic facts only from computedForecastFacts and do not guess, infer, calculate, or fill missing facts.",
+      "Focus on 综合判断 as the primary target: explain whether it is worth going, which subject/window is worth prioritizing, main weather risks, fallback strategy, and what to re-check.",
+      "Do not use cloud-sea or glow wording as the primary task; mention cloud sea, glow, astro, Milky Way, or transparency only when deterministic subject fields provide those facts.",
+      "Do not invent exact arrival time; use only provided window or arrival facts, and if unavailable say the evidence is insufficient or omit that conclusion.",
+      "Do not invent cloud layer values. Do not infer terrain obstruction if terrain evidence is unavailable.",
+      "Do not turn precipitation probability into certain rainfall when precipitation amount is 0 or missing.",
+      "Do not invent safety, road, access, closure, transport, or on-site conditions not present in computedForecastFacts.",
+      "Do not invent moonlight, Milky Way, glow, or cloud-sea details beyond deterministic fields.",
+      "If data is missing or weak, say evidence is insufficient or omit that conclusion.",
+    ],
+  },
 } satisfies Record<ForecastAiInterpretationTargetCode, ForecastAiTargetConfig>;
 
 function forecastAiTargetConfigFor(
   target: ForecastCalculationResult["target"],
 ): ForecastAiTargetConfig | undefined {
-  return target === "cloud_sea" || target === "glow" ? forecastAiTargetConfigs[target] : undefined;
+  switch (target) {
+    case "cloud_sea":
+    case "glow":
+    case "general":
+      return forecastAiTargetConfigs[target];
+    default:
+      return undefined;
+  }
 }
 
 type JsonParseStrategy = Extract<

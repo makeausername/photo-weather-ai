@@ -7372,12 +7372,13 @@ describe("forecast result target-aware view model", () => {
         expect(viewModel.professionalScoringWindows[0]?.occurrenceDisplay).toMatch(/%|暂缺/);
       }
       expect(html).toContain("逐日朝霞 / 晚霞机会");
+      expect(html).not.toContain("日出 / 日落霞光窗口");
       expect(html).toContain("预测概率");
       expect(html).toContain("鲜艳度：");
       expect(html).toContain("适拍度：");
       expect(html).toContain('data-glow-section="GlowCoreMetrics"');
       expect(html).toContain('data-glow-section="GlowNearTermWeather"');
-      expect(html).toContain('data-glow-section="GlowWindowCards"');
+      expect(html).not.toContain('data-glow-section="GlowWindowCards"');
       expect(html).toContain('data-glow-daily-card-grid="balanced-col-span"');
       expect(html).toContain('data-glow-daily-card-balance="responsive-col-span"');
       expect(countOccurrences(html, 'data-glow-daily-opportunity-date="')).toBe(
@@ -7411,7 +7412,6 @@ describe("forecast result target-aware view model", () => {
         "GlowResultHeader",
         "GlowCoreMetrics",
         "GlowNearTermWeather",
-        "GlowWindowCards",
         "GlowDailyOpportunities",
         "GlowDecisionSupport",
         "GlowProfessionalData",
@@ -8105,7 +8105,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("min-h-[220px]");
   });
 
-  it("keeps daily recommendation vocabulary while rendering glow-specific window cards", () => {
+  it("keeps daily recommendation vocabulary while rendering only daily glow cards", () => {
     const base = resultForTarget("glow");
     const result: ForecastCalculationResult = {
       ...base,
@@ -8193,14 +8193,13 @@ describe("forecast result target-aware view model", () => {
     expect(dailySlotRecommendations).toEqual(expect.arrayContaining(["仅作备选"]));
     expect(html).toContain("可以关注");
     expect(html).toContain("仅作备选");
-    expect(html).toContain('data-glow-section="GlowWindowCards"');
-    expect(html).toContain('data-glow-window-card-grid="auto-fit"');
-    expect(countOccurrences(html, 'data-glow-window-card="')).toBe(viewModel.glowWindows.length);
-    expect(html).toContain("推荐拍摄");
-    expect(html).toContain("可观察");
-    expect(html).toContain("不建议</span>");
+    expect(viewModel.glowWindows.length).toBeGreaterThan(0);
+    expect(html).toContain('data-glow-section="GlowDailyOpportunities"');
+    expect(html).not.toContain('data-glow-section="GlowWindowCards"');
+    expect(html).not.toContain('data-glow-window-card-grid="auto-fit"');
+    expect(countOccurrences(html, 'data-glow-window-card="')).toBe(0);
+    expect(html).not.toContain("日出 / 日落霞光窗口");
     expect(html).not.toContain("霞光拍摄窗口");
-    expect(html).toContain("日落后余晖");
   });
 
   it("builds one glow daily card per selected local date even when targetDates is stale", () => {

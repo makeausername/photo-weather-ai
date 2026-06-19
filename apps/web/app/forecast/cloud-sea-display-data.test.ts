@@ -119,6 +119,8 @@ describe("Cloud Sea display data rolling horizon", () => {
       "Asia/Shanghai",
     );
     const expectedArrival = formatArrivalDeadlineZh("2026-06-05T03:08:00+08:00", "Asia/Shanghai");
+    const expectedReferenceWindow = `参考窗口：${expectedWindow}`;
+    const expectedArrivalReference = `如仍前往，${expectedArrival}`;
     const expectedBackup = formatForecastWindowZh(
       "2026-06-05T08:10:00+08:00",
       "2026-06-05T09:20:00+08:00",
@@ -140,16 +142,18 @@ describe("Cloud Sea display data rolling horizon", () => {
     const backupAction = viewModel.displayData.actionPlan.find((item) => item.key === "backup");
 
     expect(viewModel.displayData.importantWindows.bestWindow.displayLabelZh).toBe(expectedWindow);
-    expect(viewModel.displayData.importantWindows.arrival.displayLabelZh).toBe(expectedArrival);
+    expect(viewModel.displayData.importantWindows.arrival.displayLabelZh).toBe(
+      expectedArrivalReference,
+    );
     expect(viewModel.displayData.importantWindows.mainWindow.displayLabelZh).toBe(expectedWindow);
     expect(viewModel.displayData.importantWindows.backupWindow.displayLabelZh).toBe(expectedBackup);
-    expect(viewModel.displayData.header.bestWindowLabel).toBe(expectedWindow);
-    expect(bestCard?.value).toBe(expectedWindow);
-    expect(arrivalCard?.value).toBe(expectedArrival);
+    expect(viewModel.displayData.header.bestWindowLabel).toBe(expectedReferenceWindow);
+    expect(bestCard?.value).toBe(expectedReferenceWindow);
+    expect(arrivalCard?.value).toBe(expectedArrivalReference);
     expect(viewModel.displayData.cloudSeaWindowCards[0]?.displayLabelZh).toBe(expectedWindow);
     expect(viewModel.displayData.dailyJudgment[0]?.bestMorningWindow).toBe(expectedDailyWindow);
-    expect(mainAction?.value).toBe(expectedWindow);
-    expect(arrivalAction?.value).toBe(expectedArrival);
+    expect(mainAction?.value).toBe(expectedReferenceWindow);
+    expect(arrivalAction?.value).toBe(expectedArrivalReference);
     expect(backupAction?.value).toBe(expectedBackup);
     expect(viewModel.displayData.riskReview.find((item) => item.label === "影响时段")?.value).toBe(
       expectedWindow,
@@ -158,14 +162,105 @@ describe("Cloud Sea display data rolling horizon", () => {
       viewModel.displayData.aiInterpretationPayload.actionPlan.find(
         (item) => item.key === "main-window",
       )?.value,
-    ).toBe(expectedWindow);
+    ).toBe(expectedReferenceWindow);
     expect(
       viewModel.displayData.aiInterpretationPayload.precipitationSignalContext.mainTimeRangeZh,
     ).toBe(expectedWindow);
     expect(html).toContain(expectedWindow);
-    expect(html).toContain(expectedArrival);
+    expect(html).toContain(expectedArrivalReference);
     expect(html).toContain(expectedBackup);
     expect(html).not.toMatch(/>\s*04:38-06:35\s*</);
+  });
+
+  it("keeps no-go display data free of unconditional arrival recommendations", () => {
+    const fixture = cloudSeaRegressionFixture("genericLowScoreContradictionCase");
+    const viewModel = buildCloudSeaForecastViewModel(fixture.result);
+    const display = viewModel.displayData;
+    const arrivalCard = display.recommendationCards.find(
+      (card) => card.key === "cloud-sea-arrival",
+    );
+    const arrivalAction = display.actionPlan.find((item) => item.key === "arrival");
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: fixture.query,
+        result: fixture.result,
+        viewModel,
+      }),
+    );
+
+    expect(viewModel.recommendationGuard.finalRecommendationLabel).toBe("不建议专程");
+    expect(display.importantWindows.arrival).toEqual({
+      displayLabelZh: "暂不安排行程",
+      arrivalTime: null,
+      hasArrivalTime: false,
+    });
+    expect(display.header.arrivalLabel).toBe("暂不安排行程");
+    expect(arrivalCard).toMatchObject({
+      label: "出发决策",
+      value: "暂不安排行程",
+    });
+    expect(arrivalCard?.detail).toContain("等待下一次预报");
+    expect(arrivalCard?.detail).toContain("降水");
+    expect(arrivalCard?.detail).toContain("通行");
+    expect(arrivalAction).toMatchObject({
+      label: "行程建议",
+      value: "等待下次预报",
+    });
+    expect(arrivalAction?.detail).toContain("没有推荐的专程出发行程");
+    expect(arrivalAction?.detail).toContain("能见度");
+
+    const arrivalSurfaceText = cloudSeaArrivalSurfaceText(display);
+    expect(arrivalSurfaceText).not.toContain("建议到达");
+    expect(arrivalSurfaceText).not.toContain("建议到达时间");
+    expect(html).not.toContain("建议到达");
+    expect(html).not.toContain("建议到达时间");
+  });
+
+  it("uses conditional arrival wording for cautious Cloud Sea display data", () => {
+    const fixture = cloudSeaRegressionFixture("genericCloudBasisMismatchCase");
+    const viewModel = buildCloudSeaForecastViewModel(fixture.result);
+    const display = viewModel.displayData;
+    const arrivalCard = display.recommendationCards.find(
+      (card) => card.key === "cloud-sea-arrival",
+    );
+    const arrivalAction = display.actionPlan.find((item) => item.key === "arrival");
+
+    expect(viewModel.travelDecision).toBe("cautious");
+    expect(display.importantWindows.arrival.hasArrivalTime).toBe(true);
+    expect(display.importantWindows.arrival.displayLabelZh).toMatch(/^如仍前往，建议到达：/);
+    expect(display.header.arrivalLabel).toBe(display.importantWindows.arrival.displayLabelZh);
+    expect(arrivalCard).toMatchObject({
+      label: "到达参考",
+      value: display.importantWindows.arrival.displayLabelZh,
+    });
+    expect(arrivalCard?.detail).toContain("出发前必须复核");
+    expect(arrivalAction).toMatchObject({
+      label: "到达参考",
+      value: display.importantWindows.arrival.displayLabelZh,
+    });
+    expect(arrivalAction?.detail).toContain("不把该窗口当作确定行程");
+  });
+
+  it("keeps normal arrival guidance for recommended Cloud Sea display data", () => {
+    const fixture = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
+    const viewModel = buildCloudSeaForecastViewModel(fixture.result);
+    const display = viewModel.displayData;
+    const arrivalCard = display.recommendationCards.find(
+      (card) => card.key === "cloud-sea-arrival",
+    );
+    const arrivalAction = display.actionPlan.find((item) => item.key === "arrival");
+
+    expect(viewModel.travelDecision).toBe("go");
+    expect(display.importantWindows.arrival.displayLabelZh).toContain("建议到达：");
+    expect(display.header.arrivalLabel).toBe(display.importantWindows.arrival.displayLabelZh);
+    expect(arrivalCard).toMatchObject({
+      label: "建议到达",
+      value: display.importantWindows.arrival.displayLabelZh,
+    });
+    expect(arrivalAction).toMatchObject({
+      label: "建议到达时间",
+      value: display.importantWindows.arrival.displayLabelZh,
+    });
   });
 
   it("aligns professional table, near-term cards, temperature context, and AI payload to the same rolling rows", () => {
@@ -223,7 +318,7 @@ describe("Cloud Sea display data rolling horizon", () => {
     );
     const panelSource = source.slice(
       source.indexOf("function CloudSeaProfessionalHourlyDataPanel"),
-      source.indexOf("function CloudSeaMultiSourceAgreementCard"),
+      source.indexOf("function CloudSeaProfessionalHourlyRow"),
     );
     const cloudSeaPageSource = source.slice(
       source.indexOf("export function CloudSeaResultPage"),
@@ -247,6 +342,7 @@ describe("Cloud Sea display data rolling horizon", () => {
     expect(panelSource).not.toMatch(/row\.date|currentDate|isSameDay|23:00/);
     expect(panelSource).not.toMatch(/startsWith\(\s*`\$\{date\}T`/);
     expect(cloudSeaPageSource).toContain("<CloudSeaProfessionalHourlyDataPanel");
+    expect(cloudSeaPageSource).not.toContain("CloudSeaMultiSourceAgreement");
     expect(glowPageSource).toContain("<GlowProfessionalDataSection");
     expect(glowProfessionalDataSource).toContain("<CloudSeaProfessionalHourlyDataPanel");
     expect(glowProfessionalDataSource).toContain('target="glow"');
@@ -305,6 +401,17 @@ describe("Cloud Sea display data rolling horizon", () => {
     expect(html).toContain("2026年6月6日 08:00");
   });
 });
+
+function cloudSeaArrivalSurfaceText(
+  display: ReturnType<typeof buildCloudSeaForecastViewModel>["displayData"],
+): string {
+  return [
+    display.header.arrivalLabel,
+    display.importantWindows.arrival.displayLabelZh,
+    ...display.recommendationCards.flatMap((card) => [card.label, card.value, card.detail]),
+    ...display.actionPlan.flatMap((item) => [item.label, item.value, item.detail]),
+  ].join(" ");
+}
 
 function cloudSeaImportantWindowResult(
   result: ForecastCalculationResult,

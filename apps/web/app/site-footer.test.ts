@@ -21,7 +21,6 @@ const removedFooterNavigationLabels = [
   "云海",
   "朝霞晚霞",
   "星空银河",
-  "机位库",
   "定价",
 ] as const;
 

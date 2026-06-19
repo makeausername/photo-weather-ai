@@ -75,6 +75,8 @@ It writes matching values to:
 
 Custom database passwords are URL-encoded with `python3 urllib.parse.quote` before `DATABASE_URL` is written. If `python3` is unavailable, leave the DB password blank so the installer generates a URL-safe password, use only URL-safe password characters, or install `python3` before using a custom password with reserved URL characters. The installer prints `POSTGRES_DB`, `POSTGRES_USER`, and a masked `DATABASE_URL`; it never prints `POSTGRES_PASSWORD`.
 
+Production API safety knobs are written in `deploy/env.production.template`: `API_BODY_LIMIT_BYTES`, `API_REQUEST_TIMEOUT_MS`, `API_CONNECTION_TIMEOUT_MS`, `API_KEEP_ALIVE_TIMEOUT_MS`, `API_TRUST_PROXY`, `API_RATE_LIMIT_*`, `FORECAST_CALCULATE_CACHE_*`, and `PUBLIC_SEARCH_CACHE_*`. Defaults keep `/health` unrestricted, rate-limit only public expensive endpoints, and use short in-memory caches only; no Redis-backed cache is introduced in this phase.
+
 管理员密码支持常见强密码符号；交互输入不会回显；请避免在命令行明文传入密码。安装器要求管理员密码至少 12 位，并包含大小写字母、数字和特殊字符。新生成的 `.env.production` 使用 `ADMIN_INITIAL_PASSWORD_B64` 保存初始管理员密码，`bootstrap:admin` / `verify-admin-bootstrap.sh` 仍兼容既有的 `ADMIN_INITIAL_PASSWORD`、`ADMIN_PASSWORD`、`ADMIN_PASSWORD_B64`、`INITIAL_ADMIN_PASSWORD(_B64)`、`SUPER_ADMIN_EMAIL` 和 `SUPER_ADMIN_PASSWORD(_B64)`。
 
 Logs are written to `deploy/install.log`. The log includes the installer region, Docker install method, APT mirror, pip index, Docker registry mirrors, Docker version, Compose version, and the final Docker method used. Secrets remain masked. For streamed command output:
