@@ -82,59 +82,72 @@ export function stripRepeatedCopyLabel(text: string | undefined, label: string):
 export function rainRiskText(weather: RainRiskWeather | undefined): RainRiskCopy {
   const amount = precipitationAmount(weather);
   const probability = displayedPrecipitationProbability(weather, amount);
+  const missingAmountSignal = hasMissingAmountPrecipitationSignal(weather, amount);
   const probabilityOnlySignal = hasProbabilityOnlyPrecipitationSignal(weather, amount, probability);
-  const explicitWeatherSignal = hasExplicitPrecipitationWeatherSignal(weather);
   const timing = rainTimingText(weather);
   const label = precipitationRiskLabel(weather);
+
+  if (missingAmountSignal) {
+    const signalWord = precipitationSignalWord(weather, amount);
+    const probabilityText =
+      typeof probability === "number" && Number.isFinite(probability)
+        ? `，概率 ${Math.round(probability)}%`
+        : "";
+    return {
+      label,
+      value: `${signalWord}信号${probabilityText}，雨量待复核`,
+      detail: `${precipitationSignalSourceText(
+        weather,
+        amount,
+      )}，预计雨量暂缺，需复核短临雷达和实况。`,
+      timing,
+      level: "待复核",
+    };
+  }
 
   if (probabilityOnlySignal) {
     return {
       label,
       value: probabilityOnlyPrecipitationValue(probability, amount),
-      detail: probabilityOnlyPrecipitationDetail(probability, amount),
+      detail: probabilityOnlyPrecipitationDetail(weather, probability, amount),
       timing,
       level: "待复核",
     };
   }
 
-  if (
-    explicitWeatherSignal &&
-    amount === null &&
-    probability === null &&
-    !hasSupportingPrecipitationRiskData(weather)
-  ) {
-    const signalWord = precipitationSignalWord(weather, amount);
-    return {
-      label,
-      value: `${signalWord}信号，雨量待复核`,
-      detail: `${signalWord}来自天气文本或天气代码，预计雨量暂缺，需复核短临雷达和实况。`,
-      timing,
-      level: "待复核",
-    };
-  }
-
+  const canUseRiskData = canUsePrecipitationRiskData(weather, amount);
   const level =
-    explicitRainRiskLevel(weather?.precipitationRisk) ??
+    (canUseRiskData ? explicitRainRiskLevel(weather?.precipitationRisk) : undefined) ??
     precipitationRiskLevel(probability, amount);
   const amountText = hasMeaningfulPrecipitationAmount(amount)
     ? `预计 ${formatMillimeters(amount)}`
     : "";
+  const riskAmountConflictText = precipitationRiskAmountConflictsWithPrimary(weather, amount)
+    ? "雨量证据不一致"
+    : "";
+  const nonMeaningfulAmountText =
+    amount !== null &&
+    !hasMeaningfulPrecipitationAmount(amount) &&
+    (riskAmountConflictText || hasExplicitPrecipitationWeatherSignal(weather))
+      ? `预计雨量 ${formatMillimeters(amount)}`
+      : "";
   const probabilityText =
     typeof probability === "number" && Number.isFinite(probability)
       ? `概率 ${Math.round(probability)}%`
       : "";
   const valueParts = [level, amountText || probabilityText].filter(Boolean);
   const split = precipitationSplitText(weather);
-  const riskAdvice = weather?.precipitationRisk?.recommendationZh;
-  const explicitMissingAmountText =
-    explicitWeatherSignal && amount === null
-      ? `${precipitationSignalWord(weather, amount)}信号，预计雨量暂缺`
-      : "";
+  const riskAdvice = canUseRiskData ? weather?.precipitationRisk?.recommendationZh : undefined;
+  const explicitWeatherSignalText = hasExplicitPrecipitationWeatherSignal(weather)
+    ? `${precipitationSignalWord(weather, amount)}信号`
+    : "";
   const detailParts = [
     level === "待复核" ? "降水概率暂缺" : `降水风险${level}`,
-    explicitMissingAmountText,
+    explicitWeatherSignalText,
     amountText,
+    nonMeaningfulAmountText,
     split,
+    riskAmountConflictText,
     riskAdvice ?? timing,
   ].filter(Boolean);
 
@@ -150,6 +163,10 @@ export function rainRiskText(weather: RainRiskWeather | undefined): RainRiskCopy
 export function compactPrecipitationDisplayText(weather: RainRiskWeather | undefined): string {
   const amount = precipitationAmount(weather);
   const probability = displayedPrecipitationProbability(weather, amount);
+
+  if (hasMissingAmountPrecipitationSignal(weather, amount)) {
+    return `${precipitationSignalWord(weather, amount)}信号，雨量待复核`;
+  }
 
   if (hasProbabilityOnlyPrecipitationSignal(weather, amount, probability)) {
     return `${precipitationProbabilityLabel(weather, amount)}信号：${Math.round(
@@ -195,19 +212,21 @@ export function rainTimingText(weather: RainRiskWeather | undefined): string {
   const natural = naturalRainPeriod(raw);
   const amount = precipitationAmount(weather);
   const probability = displayedPrecipitationProbability(weather, amount);
-  if (hasProbabilityOnlyPrecipitationSignal(weather, amount, probability)) {
-    return probabilityOnlyPrecipitationTiming(probability, amount);
-  }
-
-  if (hasExplicitPrecipitationWeatherSignal(weather) && amount === null) {
+  if (hasMissingAmountPrecipitationSignal(weather, amount)) {
     return `${precipitationSignalWord(
       weather,
       amount,
     )}信号明确但预计雨量暂缺，出发前复核短临雷达和实况。`;
   }
 
+  if (hasProbabilityOnlyPrecipitationSignal(weather, amount, probability)) {
+    return probabilityOnlyPrecipitationTiming(weather, probability, amount);
+  }
+
+  const canUseRiskData = canUsePrecipitationRiskData(weather, amount);
   const level =
-    explicitRainRiskLevel(weather?.precipitationRisk) ?? precipitationRiskLevel(null, amount);
+    (canUseRiskData ? explicitRainRiskLevel(weather?.precipitationRisk) : undefined) ??
+    precipitationRiskLevel(null, amount);
   const precipitationWord = precipitationTypeWord(weather);
   const disruptionWord =
     weather?.precipitationType === "snow"
@@ -557,6 +576,75 @@ function hasMeaningfulPrecipitationAmount(amount: number | null | undefined): bo
   );
 }
 
+function canUsePrecipitationRiskData(
+  weather: RainRiskWeather | undefined,
+  amount: number | null,
+): boolean {
+  return (
+    Boolean(weather?.precipitationRisk) &&
+    hasPrimaryConfirmedPrecipitationEvidence(weather, amount) &&
+    !precipitationRiskAmountConflictsWithPrimary(weather, amount)
+  );
+}
+
+function hasPrimaryConfirmedPrecipitationEvidence(
+  weather: RainRiskWeather | undefined,
+  amount: number | null,
+): boolean {
+  if (!weather) {
+    return false;
+  }
+  return (
+    hasMeaningfulPrecipitationAmount(amount) ||
+    hasMeaningfulPrecipitationAmount(weather.rainAmountMm) ||
+    hasMeaningfulPrecipitationAmount(weather.snowAmountMm) ||
+    hasExplicitPrecipitationWeatherSignal(weather) ||
+    hasMissingAmountPrecipitationSignal(weather, amount)
+  );
+}
+
+function hasMissingAmountPrecipitationSignal(
+  weather: RainRiskWeather | undefined,
+  amount: number | null,
+): boolean {
+  if (!weather || amount !== null) {
+    return false;
+  }
+  return hasExplicitPrecipitationWeatherSignal(weather) || hasPrecipitationTypeSignal(weather);
+}
+
+function hasPrecipitationTypeSignal(weather: RainRiskWeather | undefined): boolean {
+  return (
+    weather?.precipitationType === "rain" ||
+    weather?.precipitationType === "snow" ||
+    weather?.precipitationType === "mixed"
+  );
+}
+
+function precipitationRiskAmountConflictsWithPrimary(
+  weather: RainRiskWeather | undefined,
+  amount: number | null,
+): boolean {
+  const riskAmount = weather?.precipitationRisk?.precipitationAmountMm;
+  if (
+    amount === null ||
+    typeof riskAmount !== "number" ||
+    !Number.isFinite(riskAmount)
+  ) {
+    return false;
+  }
+
+  const primaryIsMeaningful = hasMeaningfulPrecipitationAmount(amount);
+  const riskIsMeaningful = hasMeaningfulPrecipitationAmount(riskAmount);
+  if (primaryIsMeaningful !== riskIsMeaningful) {
+    return true;
+  }
+  if (!primaryIsMeaningful && !riskIsMeaningful) {
+    return false;
+  }
+  return Math.abs(riskAmount - amount) >= MEANINGFUL_PRECIPITATION_AMOUNT_MM;
+}
+
 function hasProbabilityOnlyPrecipitationSignal(
   weather: RainRiskWeather | undefined,
   amount: number | null,
@@ -575,7 +663,7 @@ function hasProbabilityOnlyPrecipitationSignal(
     return false;
   }
 
-  if (hasExplicitPrecipitationWeatherSignal(weather)) {
+  if (hasPrimaryConfirmedPrecipitationEvidence(weather, amount)) {
     return false;
   }
 
@@ -594,23 +682,37 @@ function probabilityOnlyPrecipitationValue(
     typeof probability === "number" && Number.isFinite(probability)
       ? `降水概率 ${Math.round(probability)}%`
       : "降水概率信号";
-  return `${probabilityText}，雨量 ${formatMillimeters(amount)}`;
+  const amountText = amount === null ? "预计雨量待复核" : `预计雨量 ${formatMillimeters(amount)}`;
+  return `${probabilityText}，${amountText}`;
 }
 
 function probabilityOnlyPrecipitationDetail(
+  weather: RainRiskWeather | undefined,
   probability: number | null | undefined,
   amount: number | null,
 ): string {
   const probabilityText =
     typeof probability === "number" && Number.isFinite(probability)
-      ? `（${Math.round(probability)}%）`
+      ? ` ${Math.round(probability)}%`
       : "";
   const amountText =
-    amount === null ? "预计雨量待复核" : `预计雨量为 ${formatMillimeters(amount)}`;
-  return `有降水概率信号${probabilityText}，但${amountText}，需复核短临雷达和实况。不直接判定为降水干扰。`;
+    amount === null ? "预计雨量待复核" : `预计雨量 ${formatMillimeters(amount)}`;
+  const consistencyText = precipitationRiskAmountConflictsWithPrimary(weather, amount)
+    ? "雨量证据不一致，"
+    : "";
+  const affectedText = probabilityOnlyAffectedWindowsText(weather);
+  return [
+    `降水概率信号${probabilityText}，${amountText}，${consistencyText}需复核短临雷达和实况。`,
+    "暂不按确定降水处理。",
+    "不直接判定为降水干扰。",
+    affectedText,
+  ]
+    .filter(Boolean)
+    .join("");
 }
 
 function probabilityOnlyPrecipitationTiming(
+  weather: RainRiskWeather | undefined,
   probability: number | null | undefined,
   amount: number | null,
 ): string {
@@ -618,15 +720,32 @@ function probabilityOnlyPrecipitationTiming(
     typeof probability === "number" && Number.isFinite(probability)
       ? `降水概率 ${Math.round(probability)}%`
       : "降水概率信号";
-  return `${probabilityText}，雨量 ${formatMillimeters(
-    amount,
-  )}；降水信号不一致，暂不按确定降水处理，出发前复核短临雷达和实况。`;
+  const amountText = amount === null ? "预计雨量待复核" : `预计雨量 ${formatMillimeters(amount)}`;
+  const consistencyText = precipitationRiskAmountConflictsWithPrimary(weather, amount)
+    ? "雨量证据不一致"
+    : "降水信号不一致";
+  const affectedText = probabilityOnlyAffectedWindowsText(weather);
+  return [
+    `${probabilityText}，${amountText}；${consistencyText}，暂不按确定降水处理，出发前复核短临雷达和实况。`,
+    affectedText,
+  ]
+    .filter(Boolean)
+    .join("");
+}
+
+function probabilityOnlyAffectedWindowsText(weather: RainRiskWeather | undefined): string {
+  const affectedWindows =
+    weather?.precipitationRisk?.affectedWindows.filter((window) => window.trim().length > 0) ?? [];
+  if (affectedWindows.length === 0) {
+    return "";
+  }
+  return `可能受降水概率信号影响的时段：${affectedWindows.slice(0, 3).join("、")}，需复核。`;
 }
 
 function hasSupportingPrecipitationRiskData(weather: RainRiskWeather | undefined): boolean {
   return (
-    hasMeaningfulPrecipitationAmount(weather?.precipitationRisk?.precipitationAmountMm) ||
-    (weather?.precipitationRisk?.affectedWindows.length ?? 0) > 0
+    canUsePrecipitationRiskData(weather, precipitationAmount(weather)) &&
+    hasMeaningfulPrecipitationAmount(weather?.precipitationRisk?.precipitationAmountMm)
   );
 }
 
@@ -725,6 +844,20 @@ function precipitationSignalWord(
   return "降水";
 }
 
+function precipitationSignalSourceText(
+  weather: RainRiskWeather | undefined,
+  amount: number | null,
+): string {
+  const signalWord = precipitationSignalWord(weather, amount);
+  if (hasExplicitPrecipitationWeatherSignal(weather)) {
+    return `${signalWord}来自天气文本或天气代码`;
+  }
+  if (hasMissingAmountPrecipitationSignal(weather, amount)) {
+    return `${signalWord}来自降水类型`;
+  }
+  return `${signalWord}信号`;
+}
+
 function precipitationTypeWord(weather: RainRiskWeather | undefined): string {
   if (weather?.precipitationType === "snow") {
     return "降雪";
@@ -802,42 +935,12 @@ function hasPrecipitationSignal(
   if (!weather) {
     return false;
   }
-  if (hasMeaningfulPrecipitationAmount(amount)) {
-    return true;
-  }
-  if (
-    weather.precipitationType === "rain" ||
-    weather.precipitationType === "snow" ||
-    weather.precipitationType === "mixed"
-  ) {
-    return true;
-  }
-  if (
-    weather.precipitationRisk &&
-    weather.precipitationRisk.rainRiskLevel !== "none" &&
-    weather.precipitationRisk.rainRiskLevel !== "low"
-  ) {
-    return true;
-  }
-  const text = weather.weatherTextZh ?? "";
-  return (
-    weatherTextIndicatesRain(text) ||
-    weatherTextIndicatesSnow(text) ||
-    codeIndicatesRain(weather.weatherCode) ||
-    codeIndicatesSnow(weather.weatherCode)
-  );
+  return hasPrimaryConfirmedPrecipitationEvidence(weather, amount);
 }
 
 function hasExplicitPrecipitationWeatherSignal(weather: RainRiskWeather | undefined): boolean {
   if (!weather) {
     return false;
-  }
-  if (
-    weather.precipitationType === "rain" ||
-    weather.precipitationType === "snow" ||
-    weather.precipitationType === "mixed"
-  ) {
-    return true;
   }
   const text = simplifyWeatherSummaryZh(weather.weatherTextZh) ?? weather.weatherTextZh ?? "";
   return (
