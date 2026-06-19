@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import {
   getCurrentAccountSession,
   logoutPublicAccount,
-  shouldShowAdminEntry,
   type PublicAccountSession,
 } from "./account-session";
 import { cn } from "./ui";
@@ -16,8 +15,6 @@ type PublicAccountEntryProps = {
 
 export const publicAccountMenuLinks = [
   { href: "/account", label: "账户中心" },
-  { href: "/#analysis", label: "开始判断" },
-  { href: "/pricing", label: "定价" },
 ] as const;
 
 export function PublicAccountEntry({ onNavigate }: PublicAccountEntryProps) {
@@ -56,8 +53,6 @@ export function PublicAccountEntry({ onNavigate }: PublicAccountEntryProps) {
     );
   }
 
-  const showAdminEntry = shouldShowAdminEntry(session);
-
   function handleNavigate() {
     setMenuOpen(false);
     onNavigate?.();
@@ -88,7 +83,6 @@ export function PublicAccountEntry({ onNavigate }: PublicAccountEntryProps) {
 
       {menuOpen ? (
         <PublicAccountMenuContent
-          showAdminEntry={showAdminEntry}
           onNavigate={handleNavigate}
           onLogout={() => void handleLogout()}
         />
@@ -98,11 +92,9 @@ export function PublicAccountEntry({ onNavigate }: PublicAccountEntryProps) {
 }
 
 export function PublicAccountMenuContent({
-  showAdminEntry,
   onNavigate,
   onLogout,
 }: {
-  readonly showAdminEntry: boolean;
   readonly onNavigate?: () => void;
   readonly onLogout: () => void;
 }) {
@@ -119,9 +111,6 @@ export function PublicAccountMenuContent({
           onNavigate={onNavigate}
         />
       ))}
-      {showAdminEntry ? (
-        <AccountMenuLink href="/admin" label="管理后台入口" onNavigate={onNavigate} />
-      ) : null}
       <button
         type="button"
         role="menuitem"
