@@ -83,6 +83,7 @@ import {
   readRuntimeOpenMeteoConfig,
   readRuntimeQWeatherConfig,
 } from "./weather-provider.js";
+import { checkVerificationProviderConfig } from "./verification-senders.js";
 
 const jsonSchema: z.ZodType<JsonValue> = z.lazy(() =>
   z.union([
@@ -422,6 +423,8 @@ function getProviderNameZh(providerType: string, providerCode: string): string {
     "weather:open_meteo": "Open-Meteo",
     "weather:meteoblue": "meteoblue",
     "ai:deepseek": "DeepSeek",
+    "email:aliyun_smtp": "阿里云企业邮箱 SMTP",
+    "sms:aliyun_sms": "阿里云短信",
   };
 
   return names[key] ?? "服务商";
@@ -1401,6 +1404,31 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
           env,
         });
         return providerDiagnosticResponse(result);
+      }
+
+      if (
+        (request.params.providerType === "email" &&
+          request.params.providerCode === "aliyun_smtp") ||
+        (request.params.providerType === "sms" && request.params.providerCode === "aliyun_sms")
+      ) {
+        const result = await checkVerificationProviderConfig({
+          channel: request.params.providerType === "email" ? "email" : "sms",
+          dbClient: client,
+        });
+
+        return {
+          success: result.success,
+          mode: result.mode,
+          ...createProviderTestMetadata(
+            request.params.providerType,
+            request.params.providerCode,
+            "mock",
+            "配置检查",
+          ),
+          configReady: result.configReady,
+          messageZh: result.messageZh,
+          message: result.messageZh,
+        };
       }
 
       if (request.params.providerType === "geo" && request.params.providerCode === "amap") {

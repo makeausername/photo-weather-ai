@@ -257,7 +257,7 @@ export type MockConnectionTestResult = {
 
 export type SafeAdminUser = {
   readonly id: string;
-  readonly email: string;
+  readonly email: string | null;
   readonly phone: string | null;
   readonly displayName: string | null;
   readonly status: string;
@@ -355,10 +355,7 @@ function redirectToLogin(): void {
 }
 
 function roleValueMatchesAdmin(value: unknown): boolean {
-  return (
-    typeof value === "string" &&
-    ["admin", "super_admin"].includes(value.trim().toLowerCase())
-  );
+  return typeof value === "string" && ["admin", "super_admin"].includes(value.trim().toLowerCase());
 }
 
 export function sessionHasAdminAccess(

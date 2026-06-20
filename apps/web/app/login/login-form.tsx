@@ -8,16 +8,22 @@ import { sanitizeAuthErrorMessage } from "../../components/auth-errors";
 import { loginPublicAccount } from "../../components/account-session";
 import { Badge, Button, Card, FormField, Input } from "../../components/ui";
 
-export const publicLoginFormLabels = ["邮箱", "密码", "登录", "创建账户", "返回首页"] as const;
+export const publicLoginFormLabels = [
+  "邮箱或手机号",
+  "密码",
+  "登录",
+  "创建账户",
+  "返回首页",
+] as const;
 
 type LoginFormProps = {
-  readonly initialEmail?: string;
+  readonly initialIdentifier?: string;
   readonly registered?: boolean;
 };
 
-export function LoginForm({ initialEmail = "", registered = false }: LoginFormProps) {
+export function LoginForm({ initialIdentifier = "", registered = false }: LoginFormProps) {
   const router = useRouter();
-  const [email, setEmail] = useState(initialEmail);
+  const [identifier, setIdentifier] = useState(initialIdentifier);
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState(registered ? "账户创建成功，请登录逐光天气。" : "");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -26,8 +32,8 @@ export function LoginForm({ initialEmail = "", registered = false }: LoginFormPr
     event.preventDefault();
     setStatus("");
 
-    if (!email.trim()) {
-      setStatus("请输入邮箱。");
+    if (!identifier.trim()) {
+      setStatus("请输入邮箱或手机号。");
       return;
     }
 
@@ -38,7 +44,7 @@ export function LoginForm({ initialEmail = "", registered = false }: LoginFormPr
 
     setIsSubmitting(true);
     try {
-      await loginPublicAccount(email.trim(), password);
+      await loginPublicAccount(identifier.trim(), password);
       router.replace("/account");
     } catch (error) {
       setStatus(sanitizeAuthErrorMessage((error as Error).message));
@@ -53,18 +59,18 @@ export function LoginForm({ initialEmail = "", registered = false }: LoginFormPr
         <Badge variant="muted">账户</Badge>
         <h2 className="mt-3 text-xl font-bold text-card-foreground">登录逐光天气</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          登录后可查看查询历史、收藏机位、保存报告和管理套餐权益。
+          登录后可进入账户中心，管理资料、安全信息和后台权限入口。
         </p>
       </div>
 
       <form className="grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
-        <FormField label="邮箱">
+        <FormField label="邮箱或手机号">
           <Input
-            type="email"
-            autoComplete="email"
-            placeholder="请输入邮箱"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            type="text"
+            autoComplete="username"
+            placeholder="请输入邮箱或手机号"
+            value={identifier}
+            onChange={(event) => setIdentifier(event.target.value)}
             required
           />
         </FormField>

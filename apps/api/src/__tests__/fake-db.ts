@@ -15,6 +15,7 @@ export type FakeDatabaseState = {
   readonly providers: Map<string, any>;
   readonly auditLogs: any[];
   readonly users: Map<string, any>;
+  readonly verificationCodes: Map<string, any>;
   readonly profiles: Map<string, any>;
   readonly sessions: Map<string, any>;
   readonly roles: Map<string, any>;
@@ -155,6 +156,7 @@ export async function createFakeDatabaseClient(): Promise<{
   const providers = new Map<string, any>();
   const auditLogs: any[] = [];
   const users = new Map<string, any>();
+  const verificationCodes = new Map<string, any>();
   const profiles = new Map<string, any>();
   const sessions = new Map<string, any>();
   const roles = createRoleGraph(seedData, now);
@@ -248,6 +250,7 @@ export async function createFakeDatabaseClient(): Promise<{
     providers,
     auditLogs,
     users,
+    verificationCodes,
     profiles,
     sessions,
     roles,
@@ -267,7 +270,9 @@ export async function createFakeDatabaseClient(): Promise<{
         const user =
           where.id !== undefined
             ? state.users.get(where.id)
-            : [...state.users.values()].find((record) => record.email === where.email);
+            : where.email !== undefined
+              ? [...state.users.values()].find((record) => record.email === where.email)
+              : [...state.users.values()].find((record) => record.phone === where.phone);
 
         return user ? userWithRoles(user, state.roles, state.profiles) : null;
       },
@@ -299,6 +304,96 @@ export async function createFakeDatabaseClient(): Promise<{
         };
         state.users.set(where.id, next);
         return userWithRoles(next, state.roles, state.profiles);
+      },
+    },
+    authVerificationCode: {
+      create: async ({ data }: any) => {
+        const verificationCode = {
+          id: `verification-code-${state.verificationCodes.size}`,
+          consumedAt: null,
+          attemptCount: 0,
+          ipAddress: null,
+          userAgent: null,
+          createdAt: now,
+          updatedAt: now,
+          ...data,
+        };
+        state.verificationCodes.set(verificationCode.id, verificationCode);
+        return verificationCode;
+      },
+      findFirst: async ({ where, orderBy }: any) => {
+        const records = [...state.verificationCodes.values()]
+          .filter((record) => where?.channel === undefined || record.channel === where.channel)
+          .filter((record) => where?.purpose === undefined || record.purpose === where.purpose)
+          .filter((record) => where?.target === undefined || record.target === where.target)
+          .filter((record) =>
+            where?.consumedAt === undefined ? true : record.consumedAt === where.consumedAt,
+          )
+          .filter((record) =>
+            where?.expiresAt?.gt === undefined
+              ? true
+              : record.expiresAt.getTime() > where.expiresAt.gt.getTime(),
+          )
+          .sort((left, right) =>
+            orderBy?.createdAt === "desc"
+              ? right.createdAt.getTime() - left.createdAt.getTime()
+              : left.createdAt.getTime() - right.createdAt.getTime(),
+          );
+        return records[0] ?? null;
+      },
+      update: async ({ where, data }: any) => {
+        const existing = state.verificationCodes.get(where.id);
+        if (!existing) {
+          throw new Error(`Missing verification code ${where.id}`);
+        }
+
+        const next = {
+          ...existing,
+          ...data,
+          attemptCount:
+            typeof data?.attemptCount?.increment === "number"
+              ? existing.attemptCount + data.attemptCount.increment
+              : data?.attemptCount ?? existing.attemptCount,
+          updatedAt: now,
+        };
+        state.verificationCodes.set(where.id, next);
+        return next;
+      },
+      updateMany: async ({ where, data }: any) => {
+        let count = 0;
+        for (const [id, record] of state.verificationCodes.entries()) {
+          const matches =
+            (where.id === undefined || record.id === where.id) &&
+            (where.consumedAt === undefined || record.consumedAt === where.consumedAt) &&
+            (where.expiresAt?.gt === undefined ||
+              record.expiresAt.getTime() > where.expiresAt.gt.getTime());
+          if (!matches) {
+            continue;
+          }
+
+          state.verificationCodes.set(id, {
+            ...record,
+            ...data,
+            updatedAt: now,
+          });
+          count += 1;
+        }
+
+        return { count };
+      },
+      deleteMany: async ({ where }: any) => {
+        let count = 0;
+        for (const [id, record] of state.verificationCodes.entries()) {
+          if (
+            where?.expiresAt?.lt === undefined ||
+            record.expiresAt.getTime() < where.expiresAt.lt.getTime()
+          ) {
+            state.verificationCodes.delete(id);
+            count += 1;
+          }
+        }
+
+        return { count };
       },
     },
     userProfile: {
@@ -799,7 +894,9 @@ export async function createFakeDatabaseClient(): Promise<{
       },
       update: async ({ where, data }: any) => {
         const key = where.id
-          ? [...state.observedOutcomes.entries()].find(([, outcome]) => outcome.id === where.id)?.[0]
+          ? [...state.observedOutcomes.entries()].find(
+              ([, outcome]) => outcome.id === where.id,
+            )?.[0]
           : observedOutcomeKey(where.locationKey_target_outcomeDate);
         const existing = key ? state.observedOutcomes.get(key) : null;
         if (!key || !existing) {

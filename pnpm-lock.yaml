@@ -80,6 +80,9 @@ importers:
       fastify:
         specifier: 4.27.0
         version: 4.27.0
+      nodemailer:
+        specifier: 6.9.13
+        version: 6.9.13
       zod:
         specifier: 3.23.8
         version: 3.23.8
@@ -1564,6 +1567,10 @@ packages:
 
   node-releases@2.0.44:
     resolution: {integrity: sha512-5WUyunoPMsvvEhS8AxHtRzP+oA8UCkJ7YRxatWKjngndhDGLiqEVAQKWjFAiAiuL8zMRGzGSJxFnLetoa43qGQ==}
+
+  nodemailer@6.9.13:
+    resolution: {integrity: sha512-7o38Yogx6krdoBf3jCAqnIN4oSQFx+fMa0I7dK1D+me9kBxx12D+/33wSb+fhOCtIxvYJ+4x4IMEhmhCKfAiOA==}
+    engines: {node: '>=6.0.0'}
 
   normalize-path@3.0.0:
     resolution: {integrity: sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==}
@@ -3284,6 +3291,8 @@ snapshots:
       - babel-plugin-macros
 
   node-releases@2.0.44: {}
+
+  nodemailer@6.9.13: {}
 
   normalize-path@3.0.0: {}
 

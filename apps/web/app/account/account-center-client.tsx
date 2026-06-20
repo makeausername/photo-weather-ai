@@ -157,7 +157,8 @@ export function AuthenticatedAccountCenter({
 function AccountStatusHero({ session }: { readonly session: PublicAccountSession }) {
   const roleText = formatAccountRoleLabels(session.roles, session.roleCodes);
   const statusText = formatStatus(session.user.status);
-  const displayName = session.user.displayName || session.user.email;
+  const accountIdentifier = primaryAccountIdentifier(session);
+  const displayName = session.user.displayName || accountIdentifier;
   const permissionText = formatPermissionSummary(session.permissions);
 
   return (
@@ -174,7 +175,7 @@ function AccountStatusHero({ session }: { readonly session: PublicAccountSession
               {displayName}
             </h2>
             <p className="mt-1 break-words text-sm font-medium text-muted-foreground">
-              {session.user.email}
+              {accountIdentifier}
             </p>
           </div>
           <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs font-semibold text-muted-foreground">
@@ -209,6 +210,7 @@ function ProfileCard({ session }: { readonly session: PublicAccountSession }) {
       </div>
       <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
         <AccountField label="邮箱" value={session.user.email} />
+        <AccountField label="手机号" value={session.user.phone} />
         <AccountField label="显示名称" value={session.user.displayName} />
         <AccountField label="账户状态" value={statusText} />
         <AccountField label="账户角色" value={roleText} />
@@ -232,9 +234,7 @@ function PreferencesCard({
   return (
     <Card className="p-5 shadow-sm sm:p-6">
       <h2 className="text-lg font-bold text-card-foreground">偏好设置</h2>
-      <p className="mt-1 text-sm leading-6 text-muted-foreground">
-        当前账户保存的显示偏好。
-      </p>
+      <p className="mt-1 text-sm leading-6 text-muted-foreground">当前账户保存的显示偏好。</p>
       <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
         <AccountField label="单位制" value={formatPreferredUnits(profile.preferredUnits)} />
         <AccountField label="界面语言" value={formatPreferredLanguage(profile.preferredLanguage)} />
@@ -266,7 +266,7 @@ function SecurityCard({
         <Badge variant={statusBadgeVariant(session.user.status)}>{statusText}</Badge>
       </div>
       <dl className="mt-4 grid gap-2 text-sm">
-        <CompactField label="登录邮箱" value={session.user.email} />
+        <CompactField label="登录账号" value={primaryAccountIdentifier(session)} />
         <CompactField label="账户状态" value={statusText} />
         <CompactField label="最近登录" value={formatOptionalDateTime(session.user.lastLoginAt)} />
       </dl>
@@ -359,6 +359,10 @@ function AdminAccessCard() {
   );
 }
 
+function primaryAccountIdentifier(session: PublicAccountSession): string {
+  return session.user.email ?? session.user.phone ?? emptyValue;
+}
+
 function SummaryField({ label, value }: { readonly label: string; readonly value: string | null }) {
   return (
     <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5">
@@ -381,7 +385,10 @@ function AccountField({
 }) {
   return (
     <div
-      className={cn("grid gap-1 rounded-lg border border-border bg-muted/40 px-3 py-2.5", className)}
+      className={cn(
+        "grid gap-1 rounded-lg border border-border bg-muted/40 px-3 py-2.5",
+        className,
+      )}
     >
       <dt className="text-xs font-semibold text-muted-foreground">{label}</dt>
       <dd
@@ -426,7 +433,7 @@ function roleDisplayText(role: AccountRole): string {
   }
 
   const code = role.code ?? undefined;
-  const codeLabel = code ? (roleLabels[code] ?? roleLabels[code.toLowerCase()]) : undefined;
+  const codeLabel = code ? roleLabels[code] ?? roleLabels[code.toLowerCase()] : undefined;
   if (codeLabel) {
     return codeLabel;
   }

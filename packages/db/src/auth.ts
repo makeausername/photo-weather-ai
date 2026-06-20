@@ -68,10 +68,22 @@ export class DuplicateUserEmailError extends Error {
   }
 }
 
+export class DuplicateUserPhoneError extends Error {
+  constructor(readonly phone: string) {
+    super("Duplicate user phone.");
+  }
+}
+
+export class MissingUserIdentifierError extends Error {
+  constructor() {
+    super("User email or phone is required.");
+  }
+}
+
 export function safeUser(record: UserRecord | any): SafeUser {
   return {
     id: record.id,
-    email: record.email,
+    email: record.email ?? null,
     phone: record.phone ?? null,
     displayName: record.displayName ?? null,
     status: record.status,
@@ -196,13 +208,70 @@ export async function getUserAuthContextByEmail(
   options: { readonly client?: DatabaseClient } = {},
 ): Promise<(AuthenticatedPrincipal & { readonly passwordHash: string }) | null> {
   const client = await resolveClient(options.client);
+  const normalizedEmail = normalizeUserEmail(email);
+  if (!normalizedEmail) {
+    return null;
+  }
+
   const user = await requireUserDelegate(client).findUnique({
-    where: { email: email.trim().toLowerCase() },
+    where: { email: normalizedEmail },
     include: userAuthInclude,
   });
   const principal = normalizePrincipal(user);
 
   return principal && user?.passwordHash ? { ...principal, passwordHash: user.passwordHash } : null;
+}
+
+export async function getUserAuthContextByIdentifier(
+  identifier: string,
+  options: { readonly client?: DatabaseClient } = {},
+): Promise<(AuthenticatedPrincipal & { readonly passwordHash: string }) | null> {
+  const client = await resolveClient(options.client);
+  const normalizedIdentifier = identifier.trim();
+  if (!normalizedIdentifier) {
+    return null;
+  }
+
+  const normalizedEmail = normalizedIdentifier.includes("@")
+    ? normalizeRequiredEmail(normalizedIdentifier)
+    : null;
+  const normalizedPhone = normalizedEmail ? null : normalizeUserPhone(normalizedIdentifier);
+  if (!normalizedEmail && !normalizedPhone) {
+    return null;
+  }
+
+  const user = await requireUserDelegate(client).findUnique({
+    where: normalizedEmail ? { email: normalizedEmail } : { phone: normalizedPhone },
+    include: userAuthInclude,
+  });
+  const principal = normalizePrincipal(user);
+
+  return principal && user?.passwordHash ? { ...principal, passwordHash: user.passwordHash } : null;
+}
+
+export async function getUserAccountByIdentifier(
+  identifier: string,
+  options: { readonly client?: DatabaseClient } = {},
+): Promise<SafeUser | null> {
+  const client = await resolveClient(options.client);
+  const normalizedIdentifier = identifier.trim();
+  if (!normalizedIdentifier) {
+    return null;
+  }
+
+  const normalizedEmail = normalizedIdentifier.includes("@")
+    ? normalizeRequiredEmail(normalizedIdentifier)
+    : null;
+  const normalizedPhone = normalizedEmail ? null : normalizeUserPhone(normalizedIdentifier);
+  if (!normalizedEmail && !normalizedPhone) {
+    return null;
+  }
+
+  const user = await requireUserDelegate(client).findUnique({
+    where: normalizedEmail ? { email: normalizedEmail } : { phone: normalizedPhone },
+  });
+
+  return user ? safeUser(user) : null;
 }
 
 export async function getUserAuthContextById(
@@ -218,7 +287,20 @@ export async function getUserAuthContextById(
   return normalizePrincipal(user);
 }
 
-function normalizeEmail(email: string): string {
+export function normalizeUserEmail(email: string | null | undefined): string | null {
+  const normalized = email?.trim().toLowerCase();
+  return normalized ? normalized : null;
+}
+
+export function normalizeUserPhone(phone: string | null | undefined): string | null {
+  const normalized = phone
+    ?.replace(/[\s-]/g, "")
+    .replace(/^\+?86/, "")
+    .trim();
+  return normalized ? normalized : null;
+}
+
+function normalizeRequiredEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
@@ -229,7 +311,8 @@ function normalizeDisplayName(displayName: string | null | undefined): string | 
 
 export async function createPublicUserAccount(
   input: {
-    readonly email: string;
+    readonly email?: string | null;
+    readonly phone?: string | null;
     readonly password: string;
     readonly displayName?: string | null;
   },
@@ -239,13 +322,29 @@ export async function createPublicUserAccount(
   const userDelegate = requireUserDelegate(client);
   const roleDelegate = requireRoleDelegate(client);
   const userRoleDelegate = requireUserRoleDelegate(client);
-  const email = normalizeEmail(input.email);
+  const email = normalizeUserEmail(input.email);
+  const phone = normalizeUserPhone(input.phone);
 
-  const existingUser = await userDelegate.findUnique({
-    where: { email },
-  });
-  if (existingUser) {
-    throw new DuplicateUserEmailError(email);
+  if (!email && !phone) {
+    throw new MissingUserIdentifierError();
+  }
+
+  if (email) {
+    const existingEmailUser = await userDelegate.findUnique({
+      where: { email },
+    });
+    if (existingEmailUser) {
+      throw new DuplicateUserEmailError(email);
+    }
+  }
+
+  if (phone) {
+    const existingPhoneUser = await userDelegate.findUnique({
+      where: { phone },
+    });
+    if (existingPhoneUser) {
+      throw new DuplicateUserPhoneError(phone);
+    }
   }
 
   const userRole = await roleDelegate.findUnique({
@@ -258,6 +357,7 @@ export async function createPublicUserAccount(
   const user = await userDelegate.create({
     data: {
       email,
+      phone,
       passwordHash: await hashUserPassword(input.password),
       displayName: normalizeDisplayName(input.displayName),
       status: "active",

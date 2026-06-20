@@ -1,10 +1,15 @@
 import {
   createOrUpdateAdmin,
   createOrUpdateSuperAdmin,
+  createPublicUserAccount,
+  DuplicateUserEmailError,
+  DuplicateUserPhoneError,
   formatCreateAdminResult,
+  getUserAuthContextByIdentifier,
   hasPermission,
   hashPassword,
   hashUserPassword,
+  MissingUserIdentifierError,
   readCreateAdminEnv,
   readVerifyAdminEnv,
   safeUser,
@@ -78,7 +83,9 @@ function createAdminScriptClient(): {
         .filter((role) => !String(role.code ?? "").trim())
         .filter((role) =>
           ["admin", "administrator", "管理员", "超级管理员"].includes(
-            String(role.name ?? "").trim().toLowerCase(),
+            String(role.name ?? "")
+              .trim()
+              .toLowerCase(),
           ),
         )
         .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
@@ -107,7 +114,9 @@ function createAdminScriptClient(): {
         const user =
           where.id !== undefined
             ? users.get(where.id)
-            : [...users.values()].find((candidate) => candidate.email === where.email);
+            : where.email !== undefined
+              ? [...users.values()].find((candidate) => candidate.email === where.email)
+              : [...users.values()].find((candidate) => candidate.phone === where.phone);
         return user ? userWithRoles(user) : null;
       },
       create: async ({ data }: any) => {
@@ -251,6 +260,18 @@ function createAdminScriptClient(): {
   };
 }
 
+function seedPublicUserRole(state: ReturnType<typeof createAdminScriptClient>["state"]): void {
+  const now = new Date("2026-01-01T00:00:00.000Z");
+  state.roles.set("user", {
+    id: "role-user",
+    code: "user",
+    name: "user",
+    description: "Public user",
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
 describe("admin auth helpers", () => {
   it("hashes and verifies passwords without storing plain text", async () => {
     const password = "CorrectHorseBattery99!";
@@ -267,6 +288,122 @@ describe("admin auth helpers", () => {
 
     expect(passwordHash).not.toBe(password);
     expect(await verifyPassword(password, passwordHash)).toBe(true);
+  });
+
+  it("creates public users with email only", async () => {
+    const { client, state } = createAdminScriptClient();
+    seedPublicUserRole(state);
+
+    const principal = await createPublicUserAccount(
+      {
+        email: "Photo@Example.com",
+        password: "public88",
+        displayName: "Photo User",
+      },
+      { client },
+    );
+
+    expect(principal.user).toMatchObject({
+      email: "photo@example.com",
+      phone: null,
+      displayName: "Photo User",
+      status: "active",
+    });
+    expect([...state.users.values()][0].passwordHash).not.toBe("public88");
+  });
+
+  it("creates public users with phone only", async () => {
+    const { client, state } = createAdminScriptClient();
+    seedPublicUserRole(state);
+
+    const principal = await createPublicUserAccount(
+      {
+        phone: "+86 138-0013-8000",
+        password: "public88",
+      },
+      { client },
+    );
+
+    expect(principal.user).toMatchObject({
+      email: null,
+      phone: "13800138000",
+      status: "active",
+    });
+  });
+
+  it("rejects public users without email and phone", async () => {
+    const { client, state } = createAdminScriptClient();
+    seedPublicUserRole(state);
+
+    await expect(
+      createPublicUserAccount(
+        {
+          password: "public88",
+        },
+        { client },
+      ),
+    ).rejects.toBeInstanceOf(MissingUserIdentifierError);
+  });
+
+  it("rejects duplicate public email and phone values", async () => {
+    const { client, state } = createAdminScriptClient();
+    seedPublicUserRole(state);
+    await createPublicUserAccount(
+      {
+        email: "user@example.com",
+        phone: "13800138000",
+        password: "public88",
+      },
+      { client },
+    );
+
+    await expect(
+      createPublicUserAccount(
+        {
+          email: "USER@example.com",
+          password: "public88",
+        },
+        { client },
+      ),
+    ).rejects.toBeInstanceOf(DuplicateUserEmailError);
+
+    await expect(
+      createPublicUserAccount(
+        {
+          phone: "13800138000",
+          password: "public88",
+        },
+        { client },
+      ),
+    ).rejects.toBeInstanceOf(DuplicateUserPhoneError);
+  });
+
+  it("looks up login context by email or phone identifier", async () => {
+    const { client, state } = createAdminScriptClient();
+    seedPublicUserRole(state);
+    await createPublicUserAccount(
+      {
+        email: "lookup@example.com",
+        phone: "13800138000",
+        password: "public88",
+      },
+      { client },
+    );
+
+    await expect(
+      getUserAuthContextByIdentifier("LOOKUP@example.com", { client }),
+    ).resolves.toMatchObject({
+      user: {
+        email: "lookup@example.com",
+      },
+    });
+    await expect(
+      getUserAuthContextByIdentifier("+86 13800138000", { client }),
+    ).resolves.toMatchObject({
+      user: {
+        phone: "13800138000",
+      },
+    });
   });
 
   it("serializes users without passwordHash", () => {
@@ -375,7 +512,9 @@ describe("admin auth helpers", () => {
       roleCode: "admin",
     });
     expect(state.userRoles.size).toBe(1);
-    await expect(verifyAdminBootstrap({ email: "admin@example.com", client })).resolves.toMatchObject({
+    await expect(
+      verifyAdminBootstrap({ email: "admin@example.com", client }),
+    ).resolves.toMatchObject({
       roles: ["admin"],
     });
   });

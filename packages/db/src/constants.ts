@@ -16,6 +16,7 @@ export const providerTypes = [
   "terrain",
   "storage",
   "billing",
+  "email",
   "sms",
 ] as const satisfies readonly ProviderType[];
 

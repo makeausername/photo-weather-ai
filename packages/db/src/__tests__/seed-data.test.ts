@@ -39,11 +39,46 @@ describe("database seed data", () => {
       "open_meteo",
       "meteoblue",
       "amap",
+      "aliyun_smtp",
+      "aliyun_sms",
       "local_storage",
       "aliyun_oss",
       "tencent_cos",
       "s3_compatible",
     ]);
+    expect(seedData.providerConfigs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          providerType: "email",
+          providerCode: "aliyun_smtp",
+          displayName: "阿里云企业邮箱 SMTP",
+          enabled: false,
+          configJson: expect.objectContaining({
+            realCallEnabled: false,
+            port: 465,
+            secure: true,
+          }),
+          maskedSecretJson: {
+            username: "",
+            password: "",
+          },
+        }),
+        expect.objectContaining({
+          providerType: "sms",
+          providerCode: "aliyun_sms",
+          displayName: "阿里云短信",
+          enabled: false,
+          configJson: expect.objectContaining({
+            realCallEnabled: false,
+            regionId: "cn-hangzhou",
+          }),
+          maskedSecretJson: {
+            accessKeyId: "",
+            accessKeySecret: "",
+          },
+        }),
+      ]),
+    );
     expect(seedData.providerConfigs.every((provider) => provider.secretJson)).toBe(true);
     expect(seedData.providerConfigs.every((provider) => provider.maskedSecretJson)).toBe(true);
     expect(JSON.stringify(seedData.providerConfigs)).not.toContain("CHANGE_ME");

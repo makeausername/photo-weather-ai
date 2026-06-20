@@ -4,6 +4,39 @@ import { invalidCredentialsMessage, loginServiceUnavailableMessage } from "../au
 import { buildApiServer } from "../server.js";
 import { adminAuthorizationHeader, createFakeDatabaseClient, testAuthConfig } from "./fake-db.js";
 
+const registerTestEnv: NodeJS.ProcessEnv = {
+  ...process.env,
+  NODE_ENV: "test",
+  AUTH_VERIFICATION_EXPOSE_MOCK_CODE: "true",
+  AUTH_VERIFICATION_RESEND_SECONDS: "0",
+};
+
+async function sendRegisterCode(
+  app: FastifyInstance,
+  input: {
+    readonly channel: "email" | "sms";
+    readonly target: string;
+  },
+): Promise<{
+  readonly statusCode: number;
+  readonly body: {
+    readonly success?: boolean;
+    readonly mockCode?: string;
+    readonly mode?: string;
+  };
+}> {
+  const response = await app.inject({
+    method: "POST",
+    url: "/auth/register/send-code",
+    payload: input,
+  });
+
+  return {
+    statusCode: response.statusCode,
+    body: response.json(),
+  };
+}
+
 describe("auth routes", () => {
   let app: FastifyInstance | undefined;
 
@@ -54,15 +87,84 @@ describe("auth routes", () => {
     });
   });
 
-  it("registers a public account with the normal user role and safe response", async () => {
+  it("sends an email verification code through the mock sender and stores only a hash", async () => {
     const { client, state } = await createFakeDatabaseClient();
-    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      env: registerTestEnv,
+    });
+
+    const response = await sendRegisterCode(app, {
+      channel: "email",
+      target: "New.User@Example.com",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      mode: "mock",
+    });
+    expect(response.body.mockCode).toMatch(/^\d{6}$/);
+    const storedCode = [...state.verificationCodes.values()][0];
+    expect(storedCode).toMatchObject({
+      channel: "email",
+      purpose: "register",
+      target: "new.user@example.com",
+      consumedAt: null,
+      attemptCount: 0,
+    });
+    expect(storedCode.codeHash).toHaveLength(64);
+    expect(storedCode.codeHash).not.toBe(response.body.mockCode);
+  });
+
+  it("sends an SMS verification code through the mock sender and stores only a hash", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      env: registerTestEnv,
+    });
+
+    const response = await sendRegisterCode(app, {
+      channel: "sms",
+      target: "+86 13800138000",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.mockCode).toMatch(/^\d{6}$/);
+    const storedCode = [...state.verificationCodes.values()][0];
+    expect(storedCode).toMatchObject({
+      channel: "sms",
+      purpose: "register",
+      target: "13800138000",
+    });
+    expect(storedCode.codeHash).not.toBe(response.body.mockCode);
+  });
+
+  it("confirms a verification code and registers a public email account", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      env: registerTestEnv,
+    });
+
+    const sent = await sendRegisterCode(app, {
+      channel: "email",
+      target: "New.User@Example.com",
+    });
 
     const response = await app.inject({
       method: "POST",
-      url: "/auth/register",
+      url: "/auth/register/confirm",
       payload: {
-        email: "New.User@Example.com",
+        channel: "email",
+        target: "New.User@Example.com",
+        code: sent.body.mockCode,
         password: "public88",
         displayName: "逐光用户",
       },
@@ -85,6 +187,7 @@ describe("auth routes", () => {
       isAdmin: false,
     });
     expect(response.body).not.toContain("passwordHash");
+    expect(response.body).not.toContain("accessToken");
 
     const createdUser = [...state.users.values()].find(
       (user) => user.email === "new.user@example.com",
@@ -97,26 +200,154 @@ describe("auth routes", () => {
       userId: createdUser?.id,
       preferredLanguage: "zh-CN",
     });
+    expect([...state.verificationCodes.values()][0].consumedAt).toEqual(expect.any(Date));
   });
 
-  it("rejects duplicate public registration with a Chinese-friendly error", async () => {
+  it("rejects duplicate email or phone targets before sending codes", async () => {
     const { client } = await createFakeDatabaseClient();
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      env: registerTestEnv,
+    });
+
+    const emailResponse = await app.inject({
+      method: "POST",
+      url: "/auth/register/send-code",
+      payload: {
+        channel: "email",
+        target: "user@example.com",
+      },
+    });
+
+    expect(emailResponse.statusCode).toBe(409);
+    expect(emailResponse.json()).toMatchObject({
+      error: "duplicate_email",
+      message: "该邮箱已注册，请直接登录。",
+    });
+
+    const sent = await sendRegisterCode(app, {
+      channel: "sms",
+      target: "13800138000",
+    });
+    await app.inject({
+      method: "POST",
+      url: "/auth/register/confirm",
+      payload: {
+        channel: "sms",
+        target: "13800138000",
+        code: sent.body.mockCode,
+        password: "public88",
+      },
+    });
+
+    const phoneResponse = await app.inject({
+      method: "POST",
+      url: "/auth/register/send-code",
+      payload: {
+        channel: "sms",
+        target: "13800138000",
+      },
+    });
+    expect(phoneResponse.statusCode).toBe(409);
+    expect(phoneResponse.json()).toMatchObject({
+      error: "duplicate_phone",
+      message: "该手机号已注册，请直接登录。",
+    });
+  });
+
+  it("rejects wrong, expired, and reused verification codes", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      env: registerTestEnv,
+    });
+
+    const sent = await sendRegisterCode(app, {
+      channel: "email",
+      target: "wrong-code@example.com",
+    });
+    const wrongResponse = await app.inject({
+      method: "POST",
+      url: "/auth/register/confirm",
+      payload: {
+        channel: "email",
+        target: "wrong-code@example.com",
+        code: "000000",
+        password: "public88",
+      },
+    });
+    expect(wrongResponse.statusCode).toBe(400);
+    expect([...state.verificationCodes.values()][0].attemptCount).toBe(1);
+    expect([...state.users.values()].some((user) => user.email === "wrong-code@example.com")).toBe(
+      false,
+    );
+
+    const storedCode = [...state.verificationCodes.values()][0];
+    state.verificationCodes.set(storedCode.id, {
+      ...storedCode,
+      expiresAt: new Date(Date.now() - 1000),
+    });
+    const expiredResponse = await app.inject({
+      method: "POST",
+      url: "/auth/register/confirm",
+      payload: {
+        channel: "email",
+        target: "wrong-code@example.com",
+        code: sent.body.mockCode,
+        password: "public88",
+      },
+    });
+    expect(expiredResponse.statusCode).toBe(400);
+
+    const sentAgain = await sendRegisterCode(app, {
+      channel: "email",
+      target: "reuse@example.com",
+    });
+    const successResponse = await app.inject({
+      method: "POST",
+      url: "/auth/register/confirm",
+      payload: {
+        channel: "email",
+        target: "reuse@example.com",
+        code: sentAgain.body.mockCode,
+        password: "public88",
+      },
+    });
+    expect(successResponse.statusCode).toBe(201);
+    const reusedResponse = await app.inject({
+      method: "POST",
+      url: "/auth/register/confirm",
+      payload: {
+        channel: "email",
+        target: "reuse@example.com",
+        code: sentAgain.body.mockCode,
+        password: "public88",
+      },
+    });
+    expect(reusedResponse.statusCode).toBe(400);
+  });
+
+  it("does not allow direct unverified public registration", async () => {
+    const { client, state } = await createFakeDatabaseClient();
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
 
     const response = await app.inject({
       method: "POST",
       url: "/auth/register",
       payload: {
-        email: "user@example.com",
+        email: "direct@example.com",
         password: "public88",
       },
     });
 
-    expect(response.statusCode).toBe(409);
-    expect(response.json()).toMatchObject({
-      error: "duplicate_email",
-      message: "该邮箱已注册，请直接登录。",
-    });
+    expect(response.statusCode).toBe(400);
+    expect([...state.users.values()].some((user) => user.email === "direct@example.com")).toBe(
+      false,
+    );
   });
 
   it("logs in with a normal public user account", async () => {
@@ -150,6 +381,49 @@ describe("auth routes", () => {
       isAdmin: false,
     });
     expect(response.body).not.toContain("passwordHash");
+  });
+
+  it("logs in with a phone identifier after SMS registration", async () => {
+    const { client } = await createFakeDatabaseClient();
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      env: registerTestEnv,
+    });
+
+    const sent = await sendRegisterCode(app, {
+      channel: "sms",
+      target: "13900139000",
+    });
+    await app.inject({
+      method: "POST",
+      url: "/auth/register/confirm",
+      payload: {
+        channel: "sms",
+        target: "13900139000",
+        code: sent.body.mockCode,
+        password: "public88",
+      },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: {
+        identifier: "13900139000",
+        password: "public88",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      user: {
+        email: null,
+        phone: "13900139000",
+      },
+      roleCodes: ["user"],
+    });
   });
 
   it("rejects login with the wrong password and does not return tokens", async () => {

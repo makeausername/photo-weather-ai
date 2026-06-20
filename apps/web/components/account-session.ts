@@ -21,6 +21,18 @@ export type PublicAccountSession = {
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
+export type RegisterVerificationChannel = "email" | "sms";
+
+export type SendRegisterVerificationCodeResponse = {
+  readonly success: boolean;
+  readonly channel: RegisterVerificationChannel;
+  readonly targetMasked: string;
+  readonly expiresInSeconds: number;
+  readonly resendAfterSeconds: number;
+  readonly mode: "mock" | "real" | "config_check";
+  readonly mockCode?: string;
+};
+
 type PublicApiErrorPayload = {
   readonly error?: string;
   readonly message?: string;
@@ -117,7 +129,7 @@ export async function getCurrentAccountSession(): Promise<PublicAccountSession |
 }
 
 export async function loginPublicAccount(
-  email: string,
+  identifier: string,
   password: string,
 ): Promise<PublicAccountSession> {
   const response = await fetch(`${apiBaseUrl}/auth/login`, {
@@ -125,7 +137,7 @@ export async function loginPublicAccount(
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ identifier, password }),
   });
 
   if (!response.ok) {
@@ -137,12 +149,37 @@ export async function loginPublicAccount(
   return session;
 }
 
-export async function registerPublicAccount(input: {
-  readonly email: string;
+export async function sendRegisterVerificationCode(input: {
+  readonly channel: RegisterVerificationChannel;
+  readonly target: string;
+}): Promise<SendRegisterVerificationCodeResponse> {
+  const response = await fetch(`${apiBaseUrl}/auth/register/send-code`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    const fallback =
+      input.channel === "email"
+        ? "邮件服务暂不可用，请稍后重试。"
+        : "短信服务暂不可用，请稍后重试。";
+    throw new Error(await readPublicApiError(response, fallback));
+  }
+
+  return (await response.json()) as SendRegisterVerificationCodeResponse;
+}
+
+export async function confirmRegisterPublicAccount(input: {
+  readonly channel: RegisterVerificationChannel;
+  readonly target: string;
+  readonly code: string;
   readonly password: string;
   readonly displayName?: string;
 }): Promise<PublicAccountSession> {
-  const response = await fetch(`${apiBaseUrl}/auth/register`, {
+  const response = await fetch(`${apiBaseUrl}/auth/register/confirm`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -155,6 +192,16 @@ export async function registerPublicAccount(input: {
   }
 
   return (await response.json()) as PublicAccountSession;
+}
+
+export async function registerPublicAccount(input: {
+  readonly channel: RegisterVerificationChannel;
+  readonly target: string;
+  readonly code: string;
+  readonly password: string;
+  readonly displayName?: string;
+}): Promise<PublicAccountSession> {
+  return confirmRegisterPublicAccount(input);
 }
 
 export async function logoutPublicAccount(): Promise<void> {

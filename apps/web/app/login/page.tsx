@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Badge, Card } from "../../components/ui";
+import { Badge } from "../../components/ui";
 import { PublicShell } from "../../components/public-shell";
 import { LoginForm } from "./login-form";
 
@@ -11,13 +11,14 @@ export const metadata: Metadata = {
 type LoginPageProps = {
   readonly searchParams?: {
     readonly registered?: string;
+    readonly identifier?: string;
     readonly email?: string;
   };
 };
 
 export default function LoginPage({ searchParams }: LoginPageProps) {
   const registered = searchParams?.registered === "1";
-  const initialEmail = searchParams?.email ?? "";
+  const initialIdentifier = searchParams?.identifier ?? searchParams?.email ?? "";
 
   return (
     <PublicShell contentClassName="pb-14">
@@ -28,17 +29,15 @@ export default function LoginPage({ searchParams }: LoginPageProps) {
             登录逐光天气
           </h1>
           <p className="mt-4 max-w-[760px] text-[15px] leading-7 text-muted-foreground sm:text-base sm:leading-8">
-            登录后可查看查询历史、收藏机位、保存报告和管理套餐权益。
+            使用邮箱或手机号登录账户中心，管理资料、安全信息和后台权限入口。
           </p>
 
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            {["保存常用机位和查询记录", "集中管理后续拍摄报告", "查看套餐权益和账户状态", "管理员从账户中心进入后台"].map(
-              (item) => (
-                <Card key={item} className="px-4 py-3">
-                  <p className="text-sm font-semibold text-card-foreground">{item}</p>
-                </Card>
-              ),
-            )}
+          <div className="mt-6 flex flex-wrap gap-2">
+            {["邮箱登录", "手机号登录", "账户中心", "管理员入口"].map((item) => (
+              <Badge key={item} variant="muted">
+                {item}
+              </Badge>
+            ))}
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
@@ -58,7 +57,7 @@ export default function LoginPage({ searchParams }: LoginPageProps) {
         </div>
 
         <div className="lg:col-span-5">
-          <LoginForm initialEmail={initialEmail} registered={registered} />
+          <LoginForm initialIdentifier={initialIdentifier} registered={registered} />
         </div>
       </section>
     </PublicShell>

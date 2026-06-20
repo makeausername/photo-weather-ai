@@ -19,7 +19,17 @@ enum ProviderType {
   terrain
   storage
   billing
+  email
   sms
+}
+
+enum AuthVerificationChannel {
+  email
+  sms
+}
+
+enum AuthVerificationPurpose {
+  register
 }
 
 enum SettingValueType {
@@ -129,7 +139,7 @@ enum ObservedOutcomeSource {
 
 model User {
   id           String          @id @default(cuid())
-  email        String          @unique
+  email        String?         @unique
   phone        String?         @unique
   passwordHash String          @map("password_hash")
   displayName  String?         @map("display_name")
@@ -144,6 +154,27 @@ model User {
 
   @@index([status])
   @@map("users")
+}
+
+model AuthVerificationCode {
+  id           String                  @id @default(cuid())
+  channel      AuthVerificationChannel
+  purpose      AuthVerificationPurpose
+  target       String
+  codeHash     String                  @map("code_hash")
+  expiresAt    DateTime                @map("expires_at")
+  consumedAt   DateTime?               @map("consumed_at")
+  attemptCount Int                     @default(0) @map("attempt_count")
+  ipAddress    String?                 @map("ip_address")
+  userAgent    String?                 @map("user_agent")
+  createdAt    DateTime                @default(now()) @map("created_at")
+  updatedAt    DateTime                @updatedAt @map("updated_at")
+
+  @@index([channel, purpose, target])
+  @@index([expiresAt])
+  @@index([consumedAt])
+  @@index([createdAt])
+  @@map("auth_verification_codes")
 }
 
 model UserSession {
@@ -482,24 +513,24 @@ model HistoricalWeatherSample {
 }
 
 model ForecastReplayRun {
-  id             String                          @id @default(cuid())
-  spotId         String?                         @map("spot_id")
-  locationKey    String?                         @map("location_key")
-  locationName   String                          @map("location_name")
-  latitudeWgs84  Float                           @map("latitude_wgs84")
-  longitudeWgs84 Float                           @map("longitude_wgs84")
-  elevationMeters Float?                         @map("elevation_meters")
-  dateStart      DateTime                        @map("date_start") @db.Date
-  dateEnd        DateTime                        @map("date_end") @db.Date
-  target         ForecastReplayTarget
-  modelVersion   String?                         @map("model_version")
-  ruleVersion    String?                         @map("rule_version")
-  sourceProvider HistoricalWeatherSourceProvider @map("source_provider")
-  status         ForecastReplayStatus            @default(pending)
-  errorMessage   String?                         @map("error_message")
-  createdAt      DateTime                        @default(now()) @map("created_at")
-  completedAt    DateTime?                       @map("completed_at")
-  results        ForecastReplayResult[]
+  id              String                          @id @default(cuid())
+  spotId          String?                         @map("spot_id")
+  locationKey     String?                         @map("location_key")
+  locationName    String                          @map("location_name")
+  latitudeWgs84   Float                           @map("latitude_wgs84")
+  longitudeWgs84  Float                           @map("longitude_wgs84")
+  elevationMeters Float?                          @map("elevation_meters")
+  dateStart       DateTime                        @map("date_start") @db.Date
+  dateEnd         DateTime                        @map("date_end") @db.Date
+  target          ForecastReplayTarget
+  modelVersion    String?                         @map("model_version")
+  ruleVersion     String?                         @map("rule_version")
+  sourceProvider  HistoricalWeatherSourceProvider @map("source_provider")
+  status          ForecastReplayStatus            @default(pending)
+  errorMessage    String?                         @map("error_message")
+  createdAt       DateTime                        @default(now()) @map("created_at")
+  completedAt     DateTime?                       @map("completed_at")
+  results         ForecastReplayResult[]
 
   @@index([locationKey, target])
   @@index([status])
@@ -543,31 +574,31 @@ model ForecastReplayResult {
 }
 
 model ObservedOutcome {
-  id                     String                @id @default(cuid())
-  spotId                 String?               @map("spot_id")
-  locationKey            String?               @map("location_key")
-  locationName           String                @map("location_name")
-  latitudeWgs84          Float?                @map("latitude_wgs84")
-  longitudeWgs84         Float?                @map("longitude_wgs84")
-  target                 ForecastReplayTarget
-  outcomeDate            DateTime              @map("outcome_date") @db.Date
-  observationWindowStart DateTime?             @map("observation_window_start")
-  observationWindowEnd   DateTime?             @map("observation_window_end")
-  observedResult         ObservedResult        @map("observed_result")
-  cloudSeaLevel          CalibrationLevel?     @map("cloud_sea_level")
-  whiteoutLevel          WhiteoutLevel?        @map("whiteout_level")
-  sunriseGlowLevel       CalibrationLevel?     @map("sunrise_glow_level")
-  sunsetGlowLevel        CalibrationLevel?     @map("sunset_glow_level")
-  astroVisibilityLevel   CalibrationLevel?     @map("astro_visibility_level")
-  milkyWayVisibilityLevel CalibrationLevel?    @map("milky_way_visibility_level")
-  transparencyLevel      TransparencyLevel?    @map("transparency_level")
-  rainImpactLevel        RainImpactLevel?      @map("rain_impact_level")
-  notes                  String?
-  photoEvidenceUrl       String?               @map("photo_evidence_url")
-  source                 ObservedOutcomeSource @default(admin_manual)
-  createdBy              String?               @map("created_by")
-  createdAt              DateTime              @default(now()) @map("created_at")
-  updatedAt              DateTime              @updatedAt @map("updated_at")
+  id                      String                @id @default(cuid())
+  spotId                  String?               @map("spot_id")
+  locationKey             String?               @map("location_key")
+  locationName            String                @map("location_name")
+  latitudeWgs84           Float?                @map("latitude_wgs84")
+  longitudeWgs84          Float?                @map("longitude_wgs84")
+  target                  ForecastReplayTarget
+  outcomeDate             DateTime              @map("outcome_date") @db.Date
+  observationWindowStart  DateTime?             @map("observation_window_start")
+  observationWindowEnd    DateTime?             @map("observation_window_end")
+  observedResult          ObservedResult        @map("observed_result")
+  cloudSeaLevel           CalibrationLevel?     @map("cloud_sea_level")
+  whiteoutLevel           WhiteoutLevel?        @map("whiteout_level")
+  sunriseGlowLevel        CalibrationLevel?     @map("sunrise_glow_level")
+  sunsetGlowLevel         CalibrationLevel?     @map("sunset_glow_level")
+  astroVisibilityLevel    CalibrationLevel?     @map("astro_visibility_level")
+  milkyWayVisibilityLevel CalibrationLevel?     @map("milky_way_visibility_level")
+  transparencyLevel       TransparencyLevel?    @map("transparency_level")
+  rainImpactLevel         RainImpactLevel?      @map("rain_impact_level")
+  notes                   String?
+  photoEvidenceUrl        String?               @map("photo_evidence_url")
+  source                  ObservedOutcomeSource @default(admin_manual)
+  createdBy               String?               @map("created_by")
+  createdAt               DateTime              @default(now()) @map("created_at")
+  updatedAt               DateTime              @updatedAt @map("updated_at")
 
   @@unique([locationKey, target, outcomeDate])
   @@index([spotId])

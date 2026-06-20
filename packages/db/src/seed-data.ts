@@ -440,6 +440,53 @@ const providerConfigs = [
     maskedSecretJson: {},
   },
   {
+    providerType: "email",
+    providerCode: "aliyun_smtp",
+    displayName: "阿里云企业邮箱 SMTP",
+    enabled: false,
+    priority: 100,
+    configJson: {
+      realCallEnabled: false,
+      host: "",
+      port: 465,
+      secure: true,
+      fromName: "逐光天气",
+      fromAddress: "",
+      timeoutMs: 10000,
+    },
+    secretJson: {
+      username: "",
+      password: "",
+    },
+    maskedSecretJson: {
+      username: "",
+      password: "",
+    },
+  },
+  {
+    providerType: "sms",
+    providerCode: "aliyun_sms",
+    displayName: "阿里云短信",
+    enabled: false,
+    priority: 100,
+    configJson: {
+      realCallEnabled: false,
+      regionId: "cn-hangzhou",
+      endpoint: "",
+      signName: "",
+      templateCode: "",
+      timeoutMs: 10000,
+    },
+    secretJson: {
+      accessKeyId: "",
+      accessKeySecret: "",
+    },
+    maskedSecretJson: {
+      accessKeyId: "",
+      accessKeySecret: "",
+    },
+  },
+  {
     providerType: "storage",
     providerCode: "local_storage",
     displayName: "本地存储",

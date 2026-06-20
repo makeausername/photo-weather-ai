@@ -74,6 +74,10 @@ type PublicRateLimitDecision =
     };
 
 const publicRateLimitedRoutes = new Set([
+  "POST /auth/login",
+  "POST /auth/register",
+  "POST /auth/register/send-code",
+  "POST /auth/register/confirm",
   "POST /forecast/calculate",
   "POST /forecast/ai-explain",
   "GET /search/places",
@@ -510,7 +514,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     };
   });
 
-  registerAuthRoutes(app, { dbClient: options.dbClient, authConfig });
+  registerAuthRoutes(app, { dbClient: options.dbClient, authConfig, env });
   registerForecastRoutes(app, {
     dbClient: options.dbClient,
     weatherProvider,

@@ -8,7 +8,19 @@ export type JsonValue = JsonPrimitive | JsonObject | readonly JsonValue[];
 
 export type UserStatus = "active" | "disabled";
 
-export type ProviderType = "ai" | "weather" | "geo" | "terrain" | "storage" | "billing" | "sms";
+export type ProviderType =
+  | "ai"
+  | "weather"
+  | "geo"
+  | "terrain"
+  | "storage"
+  | "billing"
+  | "email"
+  | "sms";
+
+export type AuthVerificationChannel = "email" | "sms";
+
+export type AuthVerificationPurpose = "register";
 
 export type LocationType = "scenic_area" | "viewpoint" | "mountain" | "lake" | "city" | "custom";
 
@@ -93,7 +105,7 @@ export type SafeProviderConfig = Omit<ProviderConfigRecord, "secretJson">;
 
 export type UserRecord = {
   readonly id: string;
-  readonly email: string;
+  readonly email: string | null;
   readonly phone: string | null;
   readonly passwordHash: string;
   readonly displayName: string | null;
@@ -104,6 +116,21 @@ export type UserRecord = {
 };
 
 export type SafeUser = Omit<UserRecord, "passwordHash">;
+
+export type AuthVerificationCodeRecord = {
+  readonly id: string;
+  readonly channel: AuthVerificationChannel;
+  readonly purpose: AuthVerificationPurpose;
+  readonly target: string;
+  readonly codeHash: string;
+  readonly expiresAt: Date;
+  readonly consumedAt: Date | null;
+  readonly attemptCount: number;
+  readonly ipAddress: string | null;
+  readonly userAgent: string | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+};
 
 export type UserProfileRecord = {
   readonly id: string;
@@ -412,6 +439,13 @@ export type DatabaseClient = {
     readonly findUnique: (args: any) => Promise<any>;
     readonly create: (args: any) => Promise<any>;
     readonly update: (args: any) => Promise<any>;
+  };
+  readonly authVerificationCode?: {
+    readonly create: (args: any) => Promise<any>;
+    readonly findFirst: (args: any) => Promise<any>;
+    readonly update: (args: any) => Promise<any>;
+    readonly updateMany: (args: any) => Promise<{ count: number }>;
+    readonly deleteMany?: (args: any) => Promise<{ count: number }>;
   };
   readonly systemSetting: {
     readonly findUnique: (args: any) => Promise<any>;

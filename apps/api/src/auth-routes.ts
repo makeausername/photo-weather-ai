@@ -1,23 +1,42 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
+  consumeAuthVerificationCode,
   createAuditLog,
+  createAuthVerificationCode,
   createPublicUserAccount,
   createRefreshToken,
   createUserSession,
   DuplicateUserEmailError,
+  DuplicateUserPhoneError,
+  findLatestActiveAuthVerificationCode,
   getActiveUserSessionByRefreshToken,
-  getUserAuthContextByEmail,
+  getUserAccountByIdentifier,
+  getUserAuthContextByIdentifier,
   getUserAuthContextById,
   hashRefreshToken,
+  incrementAuthVerificationAttempt,
+  normalizeUserEmail,
+  normalizeUserPhone,
   principalHasAdminRole,
   requiredAdminPermissions,
   revokeUserSessionByRefreshToken,
   touchUserLastLogin,
+  verifyAuthVerificationCode,
   verifyPassword,
 } from "@photo-weather/db";
-import type { AuthenticatedPrincipal, DatabaseClient, JsonValue } from "@photo-weather/db";
+import type {
+  AuthVerificationChannel,
+  AuthenticatedPrincipal,
+  DatabaseClient,
+  JsonValue,
+} from "@photo-weather/db";
 import { z } from "zod";
+import {
+  createVerificationSender,
+  type VerificationSender,
+  type VerificationSenderResult,
+} from "./verification-senders.js";
 
 export type AuthConfig = {
   readonly jwtSecret: string;
@@ -43,6 +62,8 @@ export type RequirePermissionOptions = {
 export type AuthRoutesOptions = {
   readonly dbClient?: DatabaseClient;
   readonly authConfig: AuthConfig;
+  readonly env?: NodeJS.ProcessEnv;
+  readonly verificationSender?: VerificationSender;
 };
 
 type AccessTokenPayload = {
@@ -62,17 +83,34 @@ class ApiAuthError extends Error {
   }
 }
 
-export const invalidCredentialsMessage = "邮箱或密码不正确。";
-export const loginServiceUnavailableMessage =
-  "登录服务暂时不可用，请稍后重试或联系管理员。";
+export const invalidCredentialsMessage = "邮箱、手机号或密码不正确。";
+export const loginServiceUnavailableMessage = "登录服务暂时不可用，请稍后重试或联系管理员。";
 
-const loginSchema = z.object({
-  email: z.string().trim().email("请输入有效邮箱地址。"),
-  password: z.string().min(1, "请输入密码。").max(1000, "密码长度超过限制。"),
+const loginSchema = z
+  .object({
+    identifier: z.string().trim().min(1, "请输入邮箱或手机号。").max(200).optional(),
+    email: z.string().trim().email("请输入有效邮箱地址。").optional(),
+    password: z.string().min(1, "请输入密码。").max(1000, "密码长度超过限制。"),
+  })
+  .refine((value) => value.identifier || value.email, {
+    message: "请输入邮箱或手机号。",
+    path: ["identifier"],
+  });
+
+const verificationChannelSchema = z.enum(["email", "sms"]);
+
+const sendRegisterCodeSchema = z.object({
+  channel: verificationChannelSchema,
+  target: z.string().trim().min(1, "请输入邮箱或手机号。").max(200, "账号标识过长。"),
 });
 
-const registerSchema = z.object({
-  email: z.string().trim().email("请输入有效邮箱地址。"),
+const registerConfirmSchema = z.object({
+  channel: verificationChannelSchema,
+  target: z.string().trim().min(1, "请输入邮箱或手机号。").max(200, "账号标识过长。"),
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, "请输入 6 位数字验证码。"),
   password: z.string().min(8, "密码至少需要 8 个字符。").max(1000, "密码长度超过限制。"),
   displayName: z
     .string()
@@ -81,6 +119,8 @@ const registerSchema = z.object({
     .optional()
     .transform((value) => value || undefined),
 });
+
+type RegisterConfirmInput = z.infer<typeof registerConfirmSchema>;
 
 const refreshSchema = z.object({
   refreshToken: z.string().min(20),
@@ -101,6 +141,73 @@ function parsePositiveInteger(value: string | undefined, fallback: number, name:
   }
 
   return parsed;
+}
+
+function readAuthVerificationSeconds(
+  source: NodeJS.ProcessEnv,
+  key: string,
+  fallback: number,
+): number {
+  try {
+    return parsePositiveInteger(source[key], fallback, key);
+  } catch {
+    return fallback;
+  }
+}
+
+function verificationCodeTtlSeconds(source: NodeJS.ProcessEnv): number {
+  return readAuthVerificationSeconds(source, "AUTH_VERIFICATION_CODE_TTL_SECONDS", 10 * 60);
+}
+
+function verificationResendCooldownSeconds(source: NodeJS.ProcessEnv): number {
+  return readAuthVerificationSeconds(source, "AUTH_VERIFICATION_RESEND_SECONDS", 60);
+}
+
+function verificationMaxAttempts(source: NodeJS.ProcessEnv): number {
+  return readAuthVerificationSeconds(source, "AUTH_VERIFICATION_MAX_ATTEMPTS", 5);
+}
+
+function generateVerificationCode(): string {
+  return randomInt(0, 1_000_000).toString().padStart(6, "0");
+}
+
+function normalizeRegisterTarget(channel: AuthVerificationChannel, target: string): string | null {
+  if (channel === "email") {
+    const normalized = normalizeUserEmail(target);
+    return normalized && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized) ? normalized : null;
+  }
+
+  const normalized = normalizeUserPhone(target);
+  return normalized && /^1[3-9]\d{9}$/.test(normalized) ? normalized : null;
+}
+
+function targetMasked(channel: AuthVerificationChannel, target: string): string {
+  if (channel === "email") {
+    const [name, domain] = target.split("@");
+    if (!name || !domain) {
+      return target;
+    }
+    const visible = name.length <= 2 ? name.slice(0, 1) : name.slice(0, 2);
+    return `${visible}***@${domain}`;
+  }
+
+  return target.length === 11 ? `${target.slice(0, 3)}****${target.slice(-4)}` : target;
+}
+
+function shouldExposeMockCode(
+  env: NodeJS.ProcessEnv,
+  sendResult: Pick<VerificationSenderResult, "mode">,
+): boolean {
+  return (
+    env.NODE_ENV !== "production" &&
+    env.AUTH_VERIFICATION_EXPOSE_MOCK_CODE === "true" &&
+    sendResult.mode === "mock"
+  );
+}
+
+async function isRegisterTargetTaken(target: string, client?: DatabaseClient): Promise<boolean> {
+  const account = await getUserAccountByIdentifier(target, { client });
+  return account !== null;
 }
 
 export function loadAuthConfig(source: NodeJS.ProcessEnv = process.env): AuthConfig {
@@ -273,10 +380,7 @@ function hasPermission(principal: AuthenticatedPrincipal, permission: string): b
 }
 
 function isAdminPrincipal(principal: AuthenticatedPrincipal): boolean {
-  return (
-    principal.permissions.includes("admin.manage") ||
-    principalHasAdminRole(principal)
-  );
+  return principal.permissions.includes("admin.manage") || principalHasAdminRole(principal);
 }
 
 export async function requirePermission(
@@ -363,7 +467,8 @@ async function recordAuthAudit(
     readonly client?: DatabaseClient;
     readonly actorUserId?: string | null;
     readonly action: string;
-    readonly email?: string;
+    readonly target?: string;
+    readonly channel?: AuthVerificationChannel;
     readonly ipAddress?: string;
     readonly userAgent?: string | null;
   },
@@ -374,8 +479,13 @@ async function recordAuthAudit(
         actorUserId: input.actorUserId ?? null,
         action: input.action,
         targetType: "auth",
-        targetId: input.email ?? null,
-        afterJson: input.email ? toAuditJson({ email: input.email }) : null,
+        targetId: input.target ?? null,
+        afterJson: input.target
+          ? toAuditJson({
+              target: input.target,
+              ...(input.channel ? { channel: input.channel } : {}),
+            })
+          : null,
         ipAddress: input.ipAddress ?? null,
         userAgent: input.userAgent ?? null,
       },
@@ -406,21 +516,83 @@ function sendLoginServiceUnavailable(reply: FastifyReply): FastifyReply {
 export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOptions): void {
   const client = options.dbClient;
   const authConfig = options.authConfig;
+  const env = options.env ?? process.env;
+  const verificationSender =
+    options.verificationSender ?? createVerificationSender({ dbClient: client, env });
 
-  app.post("/auth/register", async (request, reply) => {
-    const parsedBody = registerSchema.safeParse(request.body);
-    if (!parsedBody.success) {
-      return sendZodError(reply, parsedBody.error);
+  async function confirmPublicRegistration(
+    input: RegisterConfirmInput,
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ) {
+    const target = normalizeRegisterTarget(input.channel, input.target);
+    if (!target) {
+      return reply.status(400).send({
+        error: "invalid_register_target",
+        message: input.channel === "email" ? "请输入有效邮箱地址。" : "请输入有效手机号。",
+      });
     }
 
-    const email = parsedBody.data.email.trim().toLowerCase();
+    const now = new Date();
+    const verificationCode = await findLatestActiveAuthVerificationCode(
+      {
+        channel: input.channel,
+        purpose: "register",
+        target,
+        now,
+      },
+      { client },
+    );
+
+    const sendVerifyFailure = async () => {
+      await recordAuthAudit(app, {
+        client,
+        action: "auth.register.verify_failure",
+        target,
+        channel: input.channel,
+        ipAddress: request.ip,
+        userAgent: request.headers["user-agent"] ?? null,
+      });
+
+      return reply.status(400).send({
+        error: "verification_code_invalid",
+        message: "验证码错误或已过期，请重新获取。",
+      });
+    };
+
+    if (!verificationCode || verificationCode.attemptCount >= verificationMaxAttempts(env)) {
+      return sendVerifyFailure();
+    }
+
+    if (
+      !verifyAuthVerificationCode(verificationCode, {
+        code: input.code,
+        secret: authConfig.jwtSecret,
+        env,
+      })
+    ) {
+      await incrementAuthVerificationAttempt({ id: verificationCode.id }, { client });
+      return sendVerifyFailure();
+    }
+
+    const consumed = await consumeAuthVerificationCode(
+      {
+        id: verificationCode.id,
+        now,
+      },
+      { client },
+    );
+    if (!consumed) {
+      return sendVerifyFailure();
+    }
 
     try {
       const principal = await createPublicUserAccount(
         {
-          email,
-          password: parsedBody.data.password,
-          displayName: parsedBody.data.displayName,
+          email: input.channel === "email" ? target : null,
+          phone: input.channel === "sms" ? target : null,
+          password: input.password,
+          displayName: input.displayName,
         },
         { client },
       );
@@ -429,30 +601,163 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
         client,
         actorUserId: principal.user.id,
         action: "auth.register.success",
-        email,
+        target,
+        channel: input.channel,
         ipAddress: request.ip,
         userAgent: request.headers["user-agent"] ?? null,
       });
 
       return reply.status(201).send(publicPrincipalResponse(principal));
     } catch (error) {
-      if (error instanceof DuplicateUserEmailError) {
+      if (error instanceof DuplicateUserEmailError || error instanceof DuplicateUserPhoneError) {
         await recordAuthAudit(app, {
           client,
           action: "auth.register.duplicate",
-          email,
+          target,
+          channel: input.channel,
           ipAddress: request.ip,
           userAgent: request.headers["user-agent"] ?? null,
         });
 
         return reply.status(409).send({
-          error: "duplicate_email",
-          message: "该邮箱已注册，请直接登录。",
+          error: input.channel === "email" ? "duplicate_email" : "duplicate_phone",
+          message:
+            input.channel === "email"
+              ? "该邮箱已注册，请直接登录。"
+              : "该手机号已注册，请直接登录。",
         });
       }
 
       throw error;
     }
+  }
+
+  app.post("/auth/register", async (request, reply) => {
+    const parsedBody = registerConfirmSchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return sendZodError(reply, parsedBody.error);
+    }
+
+    return confirmPublicRegistration(parsedBody.data, request, reply);
+  });
+
+  app.post("/auth/register/send-code", async (request, reply) => {
+    const parsedBody = sendRegisterCodeSchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return sendZodError(reply, parsedBody.error);
+    }
+
+    const target = normalizeRegisterTarget(parsedBody.data.channel, parsedBody.data.target);
+    if (!target) {
+      return reply.status(400).send({
+        error: "invalid_register_target",
+        message:
+          parsedBody.data.channel === "email" ? "请输入有效邮箱地址。" : "请输入有效手机号。",
+      });
+    }
+
+    if (await isRegisterTargetTaken(target, client)) {
+      await recordAuthAudit(app, {
+        client,
+        action: "auth.register.duplicate",
+        target,
+        channel: parsedBody.data.channel,
+        ipAddress: request.ip,
+        userAgent: request.headers["user-agent"] ?? null,
+      });
+
+      return reply.status(409).send({
+        error: parsedBody.data.channel === "email" ? "duplicate_email" : "duplicate_phone",
+        message:
+          parsedBody.data.channel === "email"
+            ? "该邮箱已注册，请直接登录。"
+            : "该手机号已注册，请直接登录。",
+      });
+    }
+
+    const now = new Date();
+    const cooldownSeconds = verificationResendCooldownSeconds(env);
+    const existing = await findLatestActiveAuthVerificationCode(
+      {
+        channel: parsedBody.data.channel,
+        purpose: "register",
+        target,
+        now,
+      },
+      { client },
+    );
+    if (existing) {
+      const resendAt = existing.createdAt.getTime() + cooldownSeconds * 1000;
+      if (resendAt > now.getTime()) {
+        return reply.status(429).send({
+          error: "verification_resend_cooldown",
+          channel: parsedBody.data.channel,
+          targetMasked: targetMasked(parsedBody.data.channel, target),
+          resendAfterSeconds: Math.ceil((resendAt - now.getTime()) / 1000),
+          message: "验证码发送过于频繁，请稍后再试。",
+        });
+      }
+    }
+
+    const code = generateVerificationCode();
+    const ttlSeconds = verificationCodeTtlSeconds(env);
+    await createAuthVerificationCode(
+      {
+        channel: parsedBody.data.channel,
+        purpose: "register",
+        target,
+        code,
+        expiresAt: new Date(now.getTime() + ttlSeconds * 1000),
+        ipAddress: request.ip,
+        userAgent: request.headers["user-agent"] ?? null,
+        secret: authConfig.jwtSecret,
+        env,
+      },
+      { client },
+    );
+
+    const sendResult = await verificationSender.send({
+      channel: parsedBody.data.channel,
+      purpose: "register",
+      target,
+      code,
+    });
+    if (!sendResult.success) {
+      return reply.status(503).send({
+        error: sendResult.error ?? "verification_sender_unavailable",
+        channel: parsedBody.data.channel,
+        mode: sendResult.mode,
+        message: sendResult.messageZh,
+      });
+    }
+
+    await recordAuthAudit(app, {
+      client,
+      action: "auth.register.code_sent",
+      target,
+      channel: parsedBody.data.channel,
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"] ?? null,
+    });
+
+    return reply.send({
+      success: true,
+      channel: parsedBody.data.channel,
+      targetMasked: targetMasked(parsedBody.data.channel, target),
+      expiresInSeconds: ttlSeconds,
+      resendAfterSeconds: cooldownSeconds,
+      mode: sendResult.mode,
+      ...(shouldExposeMockCode(env, sendResult) ? { mockCode: code } : {}),
+    });
+  });
+
+  app.post("/auth/register/confirm", async (request, reply) => {
+    const parsedBody = registerConfirmSchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return sendZodError(reply, parsedBody.error);
+    }
+
+    return confirmPublicRegistration(parsedBody.data, request, reply);
   });
 
   app.post("/auth/login", async (request, reply) => {
@@ -461,9 +766,9 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
       return sendZodError(reply, parsedBody.error);
     }
 
-    const email = parsedBody.data.email.trim().toLowerCase();
+    const identifier = (parsedBody.data.identifier ?? parsedBody.data.email ?? "").trim();
     try {
-      const authContext = await getUserAuthContextByEmail(email, { client });
+      const authContext = await getUserAuthContextByIdentifier(identifier, { client });
       const passwordMatches = authContext
         ? await verifyPassword(parsedBody.data.password, authContext.passwordHash)
         : false;
@@ -472,7 +777,7 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
         await recordAuthAudit(app, {
           client,
           action: "auth.login.failure",
-          email,
+          target: identifier,
           ipAddress: request.ip,
           userAgent: request.headers["user-agent"] ?? null,
         });
@@ -502,14 +807,14 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
         client,
         actorUserId: principal.user.id,
         action: "auth.login.success",
-        email,
+        target: identifier,
         ipAddress: request.ip,
         userAgent: request.headers["user-agent"] ?? null,
       });
 
       return authResponse(principal, signAccessToken(principal.user.id, authConfig), refreshToken);
     } catch (error) {
-      request.log.error({ err: error, email }, "Auth login failed");
+      request.log.error({ err: error, identifier }, "Auth login failed");
       return sendLoginServiceUnavailable(reply);
     }
   });

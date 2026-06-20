@@ -2,7 +2,10 @@ import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  confirmRegisterPublicAccount,
   loginPublicAccount,
+  registerPublicAccount,
+  sendRegisterVerificationCode,
   shouldShowAdminEntry,
   type PublicAccountSession,
 } from "../../components/account-session";
@@ -66,13 +69,7 @@ afterEach(() => {
 
 describe("public account navigation", () => {
   it("uses a unified account entry instead of top-level login or admin actions", () => {
-    expect(publicHeaderNavLabels).toEqual([
-      "首页",
-      "云海",
-      "朝霞晚霞",
-      "星空银河",
-      "定价",
-    ]);
+    expect(publicHeaderNavLabels).toEqual(["首页", "云海", "朝霞晚霞", "星空银河", "定价"]);
     expect(publicHeaderActionLabels).toEqual(["账户"]);
     expect(publicHeaderActionLabels).not.toContain("开始分析");
     expect([...publicHeaderNavLabels, ...publicHeaderActionLabels]).not.toContain("管理后台");
@@ -304,7 +301,7 @@ describe("account center foundation", () => {
   it("keeps public login and admin login routes importable", () => {
     expect(LoginPage({})).toBeTruthy();
     expect(loginMetadata.title).toBe("用户登录 - 逐光天气");
-    expect(publicLoginFormLabels).toEqual(["邮箱", "密码", "登录", "创建账户", "返回首页"]);
+    expect(publicLoginFormLabels).toEqual(["邮箱或手机号", "密码", "登录", "创建账户", "返回首页"]);
     expect(AdminLoginPage).toBeTypeOf("function");
   });
 
@@ -312,8 +309,13 @@ describe("account center foundation", () => {
     expect(RegisterPage()).toBeTruthy();
     expect(registerMetadata.title).toBe("创建账户 - 逐光天气");
     expect(publicRegisterFormLabels).toEqual([
+      "邮箱注册",
+      "短信注册",
       "昵称",
       "邮箱",
+      "手机号",
+      "验证码",
+      "发送验证码",
       "密码",
       "确认密码",
       "注册",
@@ -385,5 +387,137 @@ describe("login error sanitization", () => {
     await expect(loginPublicAccount("user@example.com", "CorrectHorseBattery99")).rejects.toThrow(
       loginServiceUnavailableMessage,
     );
+  });
+});
+
+describe("public registration session API", () => {
+  it("sends registration verification codes through the send-code endpoint", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          channel: "email",
+          targetMasked: "ph***@example.com",
+          expiresInSeconds: 600,
+          resendAfterSeconds: 60,
+          mode: "mock",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await expect(
+      sendRegisterVerificationCode({
+        channel: "email",
+        target: "photo@example.com",
+      }),
+    ).resolves.toMatchObject({
+      success: true,
+      channel: "email",
+    });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:4000/auth/register/send-code",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          channel: "email",
+          target: "photo@example.com",
+        }),
+      }),
+    );
+  });
+
+  it("confirms registration through the verification endpoint", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          user: {
+            id: "user-2",
+            email: null,
+            phone: "13800138000",
+            displayName: null,
+            status: "active",
+            createdAt: "2026-06-01T08:20:00.000Z",
+            updatedAt: "2026-06-01T08:20:00.000Z",
+            lastLoginAt: null,
+          },
+          profile: null,
+          roles: [],
+          roleCodes: ["user"],
+          permissions: [],
+          isAdmin: false,
+        }),
+        {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await expect(
+      confirmRegisterPublicAccount({
+        channel: "sms",
+        target: "13800138000",
+        code: "123456",
+        password: "public88",
+      }),
+    ).resolves.toMatchObject({
+      user: {
+        email: null,
+        phone: "13800138000",
+      },
+    });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:4000/auth/register/confirm",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+  });
+
+  it("keeps registerPublicAccount as verification-confirm compatibility only", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          user: {
+            id: "user-3",
+            email: "photo@example.com",
+            phone: null,
+            displayName: null,
+            status: "active",
+            createdAt: "2026-06-01T08:20:00.000Z",
+            updatedAt: "2026-06-01T08:20:00.000Z",
+            lastLoginAt: null,
+          },
+          profile: null,
+          roles: [],
+          roleCodes: ["user"],
+          permissions: [],
+          isAdmin: false,
+        }),
+        {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await registerPublicAccount({
+      channel: "email",
+      target: "photo@example.com",
+      code: "123456",
+      password: "public88",
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:4000/auth/register/confirm",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+    expect(JSON.stringify(fetchSpy.mock.calls)).not.toContain('/auth/register"');
   });
 });
