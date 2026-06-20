@@ -248,7 +248,10 @@ export type MockConnectionTestResult = {
   readonly realCallEnabled?: boolean;
   readonly apiKeyPresent?: boolean;
   readonly attempted?: boolean;
+  readonly configReady?: boolean;
+  readonly error?: string;
   readonly errorCategory?: string;
+  readonly missingFields?: readonly string[];
   readonly testedAt?: string;
   readonly providerType?: string;
   readonly messageZh?: string;

@@ -13,6 +13,8 @@ export function generateStaticParams() {
     { providerType: "weather" },
     { providerType: "geo" },
     { providerType: "storage" },
+    { providerType: "email" },
+    { providerType: "sms" },
   ];
 }
 
@@ -20,7 +22,7 @@ export default function AdminProviderTypePage({ params }: AdminProviderTypePageP
   return (
     <AdminShell
       title="服务商配置"
-      description="统一管理地图、天气数据源和智能解读服务。保存配置只保存参数，测试连接用于验证真实服务是否可用。"
+      description="统一管理地图、天气数据源、智能解读、邮箱和短信验证码服务。保存配置只保存参数，测试连接用于验证服务配置。"
     >
       <AdminProvidersClient providerType={params.providerType} />
     </AdminShell>

@@ -14,6 +14,7 @@ describe("admin provider console source", () => {
       "地图与地理服务",
       "天气数据源",
       "智能解读",
+      "账户验证服务",
       "已启用",
       "真实调用",
       "需要处理",
@@ -49,8 +50,25 @@ describe("admin provider console source", () => {
       "地点搜索",
       "坐标转换",
       "智能解读",
+      "邮箱验证码",
+      "短信验证码",
+      "阿里云短信",
     ]) {
       expect(source).toContain(label);
+    }
+  });
+
+  it("includes account verification providers in the managed allowlist", () => {
+    for (const snippet of [
+      '"email:aliyun_smtp"',
+      '"sms:aliyun_sms"',
+      'displayName: "阿里云企业邮箱 SMTP"',
+      'displayName: "阿里云短信"',
+      'requiredConfigKeys: ["host", "port", "secure", "fromAddress"]',
+      'requiredConfigKeys: ["regionId", "signName", "templateCode"]',
+      "统一管理地图、天气数据源、智能解读、邮箱和短信验证码服务。",
+    ]) {
+      expect(source).toContain(snippet);
     }
   });
 
@@ -64,6 +82,13 @@ describe("admin provider console source", () => {
       'packages: ["basic-1h", "clouds-1h"]',
       'model: "deepseek-v4-pro"',
       "timeoutMs: 120000",
+      'host: ""',
+      "port: 465",
+      "secure: true",
+      'fromAddress: ""',
+      'regionId: "cn-hangzhou"',
+      'signName: ""',
+      'templateCode: ""',
     ]) {
       expect(source).toContain(snippet);
     }

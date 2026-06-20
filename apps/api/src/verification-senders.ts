@@ -17,6 +17,7 @@ export type VerificationSenderResult = {
   readonly mode: VerificationSendMode;
   readonly messageZh: string;
   readonly error?: string;
+  readonly missingFields?: readonly string[];
 };
 
 export type VerificationSendInput = {
@@ -152,6 +153,61 @@ function smsConfigReady(config: SmsProviderConfig): boolean {
       config.accessKeyId &&
       config.accessKeySecret,
   );
+}
+
+function missingEmailConfigFields(config: EmailProviderConfig): readonly string[] {
+  const missingFields: string[] = [];
+  if (!config.enabled) {
+    missingFields.push("启用该服务商");
+  }
+  if (!config.host) {
+    missingFields.push("SMTP Host");
+  }
+  if (!config.port) {
+    missingFields.push("SMTP 端口");
+  }
+  if (!config.fromAddress) {
+    missingFields.push("发件邮箱");
+  }
+  if (!config.username) {
+    missingFields.push("SMTP 用户名");
+  }
+  if (!config.password) {
+    missingFields.push("SMTP 密码 / 授权码");
+  }
+  return missingFields;
+}
+
+function missingSmsConfigFields(config: SmsProviderConfig): readonly string[] {
+  const missingFields: string[] = [];
+  if (!config.enabled) {
+    missingFields.push("启用该服务商");
+  }
+  if (!config.regionId) {
+    missingFields.push("Region ID");
+  }
+  if (!config.signName) {
+    missingFields.push("短信签名");
+  }
+  if (!config.templateCode) {
+    missingFields.push("模板 Code");
+  }
+  if (!config.accessKeyId) {
+    missingFields.push("AccessKey ID");
+  }
+  if (!config.accessKeySecret) {
+    missingFields.push("AccessKey Secret");
+  }
+  return missingFields;
+}
+
+function missingVerificationConfigMessage(
+  channel: AuthVerificationChannel,
+  missingFields: readonly string[],
+): string {
+  const serviceName = channel === "email" ? "邮件服务" : "短信服务";
+  const deliveryName = channel === "email" ? "真实邮件" : "真实短信";
+  return `${serviceName}真实调用已开启，请补充：${missingFields.join("、")}。本次未发送${deliveryName}。`;
 }
 
 function isLocalMockMode(env: NodeJS.ProcessEnv): boolean {
@@ -399,16 +455,39 @@ export async function checkVerificationProviderConfig(input: {
       client: input.dbClient,
     });
     const config = resolveEmailConfig(provider);
+    if (!config.realCallEnabled) {
+      return {
+        success: true,
+        channel: "email",
+        providerCode: "aliyun_smtp",
+        mode: "config_check",
+        configReady: false,
+        messageZh: "当前为模拟测试，未发送真实邮件/短信。",
+      };
+    }
+
     const configReady = emailConfigReady(config);
+    const missingFields = missingEmailConfigFields(config);
+    if (!configReady) {
+      return {
+        success: false,
+        channel: "email",
+        providerCode: "aliyun_smtp",
+        mode: "config_check",
+        configReady: false,
+        error: "provider_config_missing",
+        missingFields,
+        messageZh: missingVerificationConfigMessage("email", missingFields),
+      };
+    }
+
     return {
       success: true,
       channel: "email",
       providerCode: "aliyun_smtp",
       mode: "config_check",
       configReady,
-      messageZh: configReady
-        ? "邮件服务配置完整；本次未发送真实邮件。"
-        : "邮件服务未启用或配置不完整；本次未发送真实邮件。",
+      messageZh: "邮件服务配置完整；本次未发送真实邮件。",
     };
   }
 
@@ -416,15 +495,38 @@ export async function checkVerificationProviderConfig(input: {
     client: input.dbClient,
   });
   const config = resolveSmsConfig(provider);
+  if (!config.realCallEnabled) {
+    return {
+      success: true,
+      channel: "sms",
+      providerCode: "aliyun_sms",
+      mode: "config_check",
+      configReady: false,
+      messageZh: "当前为模拟测试，未发送真实邮件/短信。",
+    };
+  }
+
   const configReady = smsConfigReady(config);
+  const missingFields = missingSmsConfigFields(config);
+  if (!configReady) {
+    return {
+      success: false,
+      channel: "sms",
+      providerCode: "aliyun_sms",
+      mode: "config_check",
+      configReady: false,
+      error: "provider_config_missing",
+      missingFields,
+      messageZh: missingVerificationConfigMessage("sms", missingFields),
+    };
+  }
+
   return {
     success: true,
     channel: "sms",
     providerCode: "aliyun_sms",
     mode: "config_check",
     configReady,
-    messageZh: configReady
-      ? "短信服务配置完整；本次未发送真实短信。"
-      : "短信服务未启用或配置不完整；本次未发送真实短信。",
+    messageZh: "短信服务配置完整；本次未发送真实短信。",
   };
 }

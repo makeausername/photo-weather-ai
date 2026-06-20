@@ -1426,6 +1426,8 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
             "配置检查",
           ),
           configReady: result.configReady,
+          error: result.error,
+          missingFields: result.missingFields,
           messageZh: result.messageZh,
           message: result.messageZh,
         };

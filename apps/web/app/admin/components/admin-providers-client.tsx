@@ -33,13 +33,15 @@ type AdminProvidersClientProps = {
   readonly providerType?: string;
 };
 
-type ProviderGroupKey = "geo" | "weather" | "ai";
+type ProviderGroupKey = "geo" | "weather" | "ai" | "notification";
 type ProviderKey =
   | "geo:amap"
   | "weather:qweather"
   | "weather:open_meteo"
   | "weather:meteoblue"
-  | "ai:deepseek";
+  | "ai:deepseek"
+  | "email:aliyun_smtp"
+  | "sms:aliyun_sms";
 type RowState = ProviderSaveFeedbackState;
 type FieldDrafts = Record<string, Record<string, string>>;
 type ClearSecretDrafts = Record<string, Record<string, boolean>>;
@@ -76,6 +78,8 @@ const providerOrder: readonly ProviderKey[] = [
   "weather:open_meteo",
   "weather:meteoblue",
   "ai:deepseek",
+  "email:aliyun_smtp",
+  "sms:aliyun_sms",
 ];
 
 const providerGroups = [
@@ -93,6 +97,11 @@ const providerGroups = [
     key: "ai",
     title: "智能解读",
     description: "管理结果说明和文案生成能力，不参与天气、天文、地形或评分计算。",
+  },
+  {
+    key: "notification",
+    title: "账户验证服务",
+    description: "配置注册验证码邮件和短信服务，密钥只保存在服务端。",
   },
 ] as const satisfies readonly {
   readonly key: ProviderGroupKey;
@@ -141,6 +150,22 @@ const providerMeta: Record<ProviderKey, ProviderMeta> = {
     capabilities: ["智能解读", "文案生成", "结果说明"],
     requiredConfigKeys: ["model"],
   },
+  "email:aliyun_smtp": {
+    key: "email:aliyun_smtp",
+    group: "notification",
+    displayName: "阿里云企业邮箱 SMTP",
+    purpose: "用于发送邮箱注册验证码。",
+    capabilities: ["邮箱验证码", "SMTP", "注册验证"],
+    requiredConfigKeys: ["host", "port", "secure", "fromAddress"],
+  },
+  "sms:aliyun_sms": {
+    key: "sms:aliyun_sms",
+    group: "notification",
+    displayName: "阿里云短信",
+    purpose: "用于发送手机注册验证码。",
+    capabilities: ["短信验证码", "注册验证", "阿里云短信"],
+    requiredConfigKeys: ["regionId", "signName", "templateCode"],
+  },
 };
 
 const advancedHiddenKeys = new Set(["realCallEnabled", "analysisMode", "model"]);
@@ -172,6 +197,23 @@ const providerConfigDefaults: Partial<Record<string, Record<string, JsonValue>>>
     baseUrl: "https://api.deepseek.com",
     model: "deepseek-v4-pro",
     timeoutMs: 120000,
+  },
+  aliyun_smtp: {
+    realCallEnabled: false,
+    host: "",
+    port: 465,
+    secure: true,
+    fromName: "逐光天气",
+    fromAddress: "",
+    timeoutMs: 10000,
+  },
+  aliyun_sms: {
+    realCallEnabled: false,
+    regionId: "cn-hangzhou",
+    endpoint: "",
+    signName: "",
+    templateCode: "",
+    timeoutMs: 10000,
   },
 };
 
@@ -1176,7 +1218,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         <div className="min-w-0">
           <h2 className="text-xl font-bold tracking-normal text-foreground">服务商配置</h2>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-muted-foreground">
-            统一管理地图、天气数据源和智能解读服务。保存配置只保存参数，测试连接用于验证真实服务是否可用。
+            统一管理地图、天气数据源、智能解读、邮箱和短信验证码服务。保存配置只保存参数，测试连接用于验证服务配置。
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -1469,7 +1511,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         <div className="rounded-lg border border-border bg-card">
           <EmptyState
             title="暂无可管理的服务商"
-            description="当前控制台只管理高德地图、和风天气、Open-Meteo、meteoblue 和 DeepSeek。"
+            description="当前控制台只管理高德地图、和风天气、Open-Meteo、meteoblue、DeepSeek、邮箱和短信验证码服务。"
           />
         </div>
       ) : null}

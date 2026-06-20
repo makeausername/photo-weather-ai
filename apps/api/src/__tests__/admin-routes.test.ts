@@ -542,6 +542,126 @@ describe("admin config routes", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("checks verification providers without sending email or SMS when real calls are disabled", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("verification provider config check must not call network");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const emailResponse = await app.inject({
+      method: "POST",
+      url: "/admin/providers/email/aliyun_smtp/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+    const smsResponse = await app.inject({
+      method: "POST",
+      url: "/admin/providers/sms/aliyun_sms/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(emailResponse.statusCode).toBe(200);
+    expect(emailResponse.json()).toMatchObject({
+      success: true,
+      mode: "config_check",
+      connectionMode: "mock",
+      modeLabelZh: "配置检查",
+      providerCode: "aliyun_smtp",
+      providerNameZh: "阿里云企业邮箱 SMTP",
+      configReady: false,
+      message: "当前为模拟测试，未发送真实邮件/短信。",
+    });
+    expect(smsResponse.statusCode).toBe(200);
+    expect(smsResponse.json()).toMatchObject({
+      success: true,
+      mode: "config_check",
+      connectionMode: "mock",
+      modeLabelZh: "配置检查",
+      providerCode: "aliyun_sms",
+      providerNameZh: "阿里云短信",
+      configReady: false,
+      message: "当前为模拟测试，未发送真实邮件/短信。",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("returns missing-field errors for verification providers without sending messages", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("verification provider config check must not call network");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const emailProvider = state.providers.get("email:aliyun_smtp");
+    const smsProvider = state.providers.get("sms:aliyun_sms");
+    state.providers.set("email:aliyun_smtp", {
+      ...emailProvider,
+      enabled: true,
+      configJson: {
+        ...(emailProvider.configJson ?? {}),
+        realCallEnabled: true,
+        host: "",
+        fromAddress: "",
+      },
+      secretJson: {
+        username: "smtp-secret-user",
+      },
+      maskedSecretJson: {
+        username: "smtp****user",
+      },
+    });
+    state.providers.set("sms:aliyun_sms", {
+      ...smsProvider,
+      enabled: true,
+      configJson: {
+        ...(smsProvider.configJson ?? {}),
+        realCallEnabled: true,
+        signName: "",
+        templateCode: "",
+      },
+      secretJson: {
+        accessKeyId: "sms-secret-id",
+      },
+      maskedSecretJson: {
+        accessKeyId: "sms****id",
+      },
+    });
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const emailResponse = await app.inject({
+      method: "POST",
+      url: "/admin/providers/email/aliyun_smtp/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+    const smsResponse = await app.inject({
+      method: "POST",
+      url: "/admin/providers/sms/aliyun_sms/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(emailResponse.statusCode).toBe(200);
+    expect(emailResponse.json()).toMatchObject({
+      success: false,
+      mode: "config_check",
+      error: "provider_config_missing",
+      providerCode: "aliyun_smtp",
+      missingFields: ["SMTP Host", "发件邮箱", "SMTP 密码 / 授权码"],
+      message: "邮件服务真实调用已开启，请补充：SMTP Host、发件邮箱、SMTP 密码 / 授权码。本次未发送真实邮件。",
+    });
+    expect(smsResponse.statusCode).toBe(200);
+    expect(smsResponse.json()).toMatchObject({
+      success: false,
+      mode: "config_check",
+      error: "provider_config_missing",
+      providerCode: "aliyun_sms",
+      missingFields: ["短信签名", "模板 Code", "AccessKey Secret"],
+      message: "短信服务真实调用已开启，请补充：短信签名、模板 Code、AccessKey Secret。本次未发送真实短信。",
+    });
+    expect(emailResponse.body).not.toContain("smtp-secret-user");
+    expect(smsResponse.body).not.toContain("sms-secret-id");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("tests a real QWeather connection through mocked fetch outside NODE_ENV=test", async () => {
     const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
       const url = new URL(String(input));

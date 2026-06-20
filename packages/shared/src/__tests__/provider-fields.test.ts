@@ -17,6 +17,8 @@ describe("provider field presets", () => {
         "open_meteo",
         "meteoblue",
         "amap",
+        "aliyun_smtp",
+        "aliyun_sms",
         "aliyun_oss",
         "tencent_cos",
         "s3_compatible",
@@ -117,6 +119,76 @@ describe("provider field presets", () => {
       expect.arrayContaining([
         expect.objectContaining({ key: "timeoutMs", target: "configJson", advanced: true }),
         expect.objectContaining({ key: "retryCount", target: "configJson", advanced: true }),
+      ]),
+    );
+  });
+
+  it("defines editable account verification provider fields without exposing secrets", () => {
+    expect(getProviderFieldPreset("aliyun_smtp")?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "realCallEnabled", target: "configJson" }),
+        expect.objectContaining({ key: "host", label: "SMTP Host", target: "configJson" }),
+        expect.objectContaining({
+          key: "port",
+          label: "SMTP 端口",
+          target: "configJson",
+          control: "number",
+          defaultValue: 465,
+          min: 1,
+          max: 65535,
+        }),
+        expect.objectContaining({
+          key: "secure",
+          label: "启用 SSL/TLS",
+          target: "configJson",
+          control: "boolean",
+          defaultValue: true,
+        }),
+        expect.objectContaining({ key: "fromAddress", label: "发件邮箱", target: "configJson" }),
+        expect.objectContaining({
+          key: "username",
+          label: "SMTP 用户名",
+          target: "secretJson",
+          password: true,
+        }),
+        expect.objectContaining({
+          key: "password",
+          label: "SMTP 密码 / 授权码",
+          target: "secretJson",
+          password: true,
+        }),
+      ]),
+    );
+
+    expect(getProviderFieldPreset("aliyun_sms")?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "realCallEnabled", target: "configJson" }),
+        expect.objectContaining({
+          key: "regionId",
+          label: "Region ID",
+          target: "configJson",
+          defaultValue: "cn-hangzhou",
+        }),
+        expect.objectContaining({
+          key: "endpoint",
+          label: "Endpoint",
+          target: "configJson",
+          advanced: true,
+        }),
+        expect.objectContaining({ key: "signName", label: "短信签名", target: "configJson" }),
+        expect.objectContaining({ key: "templateCode", label: "模板 Code", target: "configJson" }),
+        expect.objectContaining({
+          key: "accessKeyId",
+          label: "AccessKey ID",
+          target: "secretJson",
+          password: true,
+        }),
+        expect.objectContaining({
+          key: "accessKeySecret",
+          label: "AccessKey Secret",
+          target: "secretJson",
+          password: true,
+        }),
       ]),
     );
   });
