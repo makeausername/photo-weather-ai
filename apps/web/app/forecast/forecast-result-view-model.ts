@@ -90,6 +90,10 @@ import {
   type ProfessionalHourlyDisplayData,
   type ProfessionalHourlyRowAnnotation,
 } from "./cloud-sea-display-data";
+import {
+  buildTerrainDisplayModel,
+  terrainDisplayTextWithoutRawLabels,
+} from "./terrain-display-model";
 
 export type ForecastResultModuleKey =
   | "overall"
@@ -4870,7 +4874,7 @@ function astroTerrainHorizonDisplay(
       dataSourceLabelZh: assessment.dataSourceLabelZh ?? terrainHorizonDataSourceLabel(assessment),
       unavailableReasonLabelZh: terrainHorizonUnavailableReasonLabel(assessment.unavailableReason),
       professionalDataItems: terrainHorizonProfessionalItems(assessment),
-      diagnosticsNoteZh: assessment.professionalDiagnostics.notesZh.join(" "),
+      diagnosticsNoteZh: terrainHorizonDiagnosticsNote(assessment),
       publicDecisionLabel: "地形可能影响，需要现场确认",
     };
   }
@@ -4902,7 +4906,7 @@ function astroTerrainHorizonDisplay(
     dataSourceLabelZh: assessment.dataSourceLabelZh ?? terrainHorizonDataSourceLabel(assessment),
     unavailableReasonLabelZh: terrainHorizonUnavailableReasonLabel(assessment.unavailableReason),
     professionalDataItems: terrainHorizonProfessionalItems(assessment),
-    diagnosticsNoteZh: assessment.professionalDiagnostics.notesZh.join(" "),
+    diagnosticsNoteZh: terrainHorizonDiagnosticsNote(assessment),
     publicDecisionLabel,
   };
 }
@@ -4960,7 +4964,7 @@ function terrainHorizonProfessionalItems(
       detail: "仅在有目标方向剖面样本时显示。",
     },
     {
-      label: "clearance",
+      label: "地形净空角",
       value:
         typeof assessment.obstructionClearanceDegrees === "number"
           ? formatNullableNumberForView(assessment.obstructionClearanceDegrees, "°")
@@ -5029,8 +5033,11 @@ function terrainHorizonProfessionalItems(
     },
     {
       label: "计算规则",
-      value: "clearance rule v1",
-      detail: diagnostics.calculationRuleZh,
+      value: "目标高度角减地形地平线",
+      detail: terrainDisplayTextWithoutRawLabels(
+        diagnostics.calculationRuleZh ||
+          "地形净空角 = 目标高度角 - 地形地平线高度角；仅用于方向遮挡判断。",
+      ),
     },
   ];
   return items;
@@ -5169,7 +5176,7 @@ function terrainDemCoverageStatusLabel(
     case "available":
       return "瓦片已在本地";
     case "missing":
-      return "DEM coverage missing";
+      return "DEM 覆盖缺失";
     case "invalid":
       return "瓦片无效";
     case "pending":
@@ -5201,7 +5208,22 @@ function terrainHorizonDataSourceLabel(assessment: TerrainHorizonAssessment): st
   if (assessment.dataSource === "manual_profile") {
     return "人工地形剖面";
   }
-  return assessment.dataSource;
+  if (assessment.dataSource === "custom_local_dem") {
+    return "本地 DEM 地形剖面";
+  }
+  if (assessment.dataSource === "directional_profile") {
+    return "方向地形剖面";
+  }
+  if (assessment.dataSource === "open_topo_data") {
+    return "公开地形数据";
+  }
+  if (
+    assessment.dataSource === "mapbox_terrain_rgb" ||
+    assessment.dataSource === "aws_terrain_tiles"
+  ) {
+    return "地形瓦片剖面";
+  }
+  return "地形剖面";
 }
 
 function terrainHorizonDatasetLabel(assessment: TerrainHorizonAssessment): string {
@@ -5224,12 +5246,16 @@ function terrainHorizonDatasetDetail(assessment: TerrainHorizonAssessment): stri
   const checksum = diagnostics.checksumShort ?? sample?.checksumShort;
   return [
     source ? `来源 ${source}` : "来源暂未提供",
-    checksum ? `checksum ${checksum}` : "checksum 暂未提供",
+    checksum ? `校验码 ${checksum}` : "校验码暂未提供",
   ].join("；");
 }
 
 function missingTerrainHorizonDetail(): string {
   return "地形数据不足：当前缺少目标方向的地形剖面数据，系统未把地形当作无遮挡处理，建议现场确认地平线遮挡。";
+}
+
+function terrainHorizonDiagnosticsNote(assessment: TerrainHorizonAssessment): string {
+  return terrainDisplayTextWithoutRawLabels(assessment.professionalDiagnostics.notesZh.join(" "));
 }
 
 function lightPollutionConfidenceLabel(confidence: LightPollutionInfo["confidence"]): string {
@@ -7272,35 +7298,34 @@ function buildNightlyAstroConditionSection(
 
 function buildTerrainReferenceSection(result: ForecastCalculationResult): ForecastResultSection {
   const terrain = result.terrainAnalysis.terrainProfile;
-  const hasRelief = isMeaningfulNumber(terrain.elevationDiff5km);
+  const terrainDisplay = buildTerrainDisplayModel(result);
 
   return {
     key: "terrain-reference",
     title: "地形与海拔参考",
-    badgeLabel: result.terrainAnalysis.dataSourceLabelZh,
+    badgeLabel: terrainDisplay.sourceBadgeLabelZh,
     items: [
       {
         label: "机位海拔",
-        value: formatElevationValue(terrain.locationElevation),
-        detail:
-          terrain.locationElevation === null
-            ? "海拔资料暂未确认，体感仅作参考。"
-            : terrain.terrainNoteZh,
+        value: terrainDisplay.spotElevation.valueLabel,
+        detail: terrainDisplay.spotElevation.detail,
       },
       {
         label: "周边海拔范围",
-        value:
-          isMeaningfulNumber(terrain.minElevation5km) && isMeaningfulNumber(terrain.maxElevation5km)
-            ? `${formatMeters(terrain.minElevation5km)} - ${formatMeters(terrain.maxElevation5km)}`
-            : "周边高差暂未计算",
-        detail: hasRelief
-          ? `5公里范围平均海拔约 ${formatMeters(terrain.avgElevation5km)}，用于云海与遮挡判断。`
-          : "暂未接入周边 DEM 剖面，云海和遮挡判断会按低置信度处理。",
+        value: terrainDisplay.surroundingRelief.rangeLabel,
+        detail: terrainDisplay.surroundingRelief.available
+          ? `${terrainDisplay.surroundingRelief.detail} ${terrainDisplay.surroundingRelief.boundaryZh}`
+          : `${terrainDisplay.surroundingRelief.detail} ${terrainDisplay.uncertaintyBoundaryZh}`,
       },
       {
-        label: "山谷方向",
+        label: "目标方向地形地平线",
+        value: terrainDisplay.directionalHorizon.statusLabelZh,
+        detail: terrainDisplay.directionalHorizon.detail,
+      },
+      {
+        label: "山谷 / 山脊参考",
         value: terrain.valleyDirectionZh ?? "暂无方向",
-        detail: `山脊参考：${terrain.ridgeDirectionZh ?? "暂无方向"}。当前使用演示地形数据。`,
+        detail: `山脊参考：${terrain.ridgeDirectionZh ?? "暂无方向"}。${terrainDisplay.uncertaintyBoundaryZh}`,
       },
     ],
   };
@@ -7308,9 +7333,7 @@ function buildTerrainReferenceSection(result: ForecastCalculationResult): Foreca
 
 function buildValleyElevationDiffSection(result: ForecastCalculationResult): ForecastResultSection {
   const terrain = result.terrainAnalysis.terrainProfile;
-  const reliefValue = isMeaningfulNumber(terrain.elevationDiff5km)
-    ? formatMeters(terrain.elevationDiff5km)
-    : "周边高差暂未计算";
+  const terrainDisplay = buildTerrainDisplayModel(result);
 
   return {
     key: "valley-elevation-diff",
@@ -7329,10 +7352,10 @@ function buildValleyElevationDiffSection(result: ForecastCalculationResult): For
       },
       {
         label: "5公里高差",
-        value: reliefValue,
-        detail: isMeaningfulNumber(terrain.elevationDiff5km)
-          ? "高差越明显，清晨低云与山顶视角形成云海边界的地形基础通常越好。"
-          : "周边高差暂未计算，不能按 0 米处理。",
+        value: terrainDisplay.surroundingRelief.valueLabel,
+        detail: terrainDisplay.surroundingRelief.available
+          ? "高差越明显，清晨低云与机位视角形成云雾边界的地形基础通常越好。"
+          : terrainDisplay.surroundingRelief.boundaryZh,
       },
     ],
   };
@@ -7342,16 +7365,19 @@ function buildCloudSeaTerrainPotentialSection(
   result: ForecastCalculationResult,
 ): ForecastResultSection {
   const terrain = result.terrainAnalysis.terrainProfile;
+  const terrainDisplay = buildTerrainDisplayModel(result);
 
   return {
     key: "cloud-sea-terrain-potential",
     title: "云海地形潜力",
-    badgeLabel: "演示数据",
+    badgeLabel: terrainDisplay.sourceBadgeLabelZh,
     items: [
       {
         label: "潜力等级",
         value: terrainPotentialLabel(terrain.terrainCloudSeaPotential),
-        detail: "按机位海拔、周边高差和山谷结构折算；缺少周边高差时按低置信度处理。",
+        detail: terrainDisplay.surroundingRelief.available
+          ? "按机位海拔、周边高差和山谷结构折算；方向遮挡另由地形地平线字段表示。"
+          : `${terrainDisplay.surroundingRelief.boundaryZh} 云海潜力不使用地形净空角反推。`,
       },
       {
         label: "评分影响",
@@ -7362,8 +7388,8 @@ function buildCloudSeaTerrainPotentialSection(
       },
       {
         label: "数据边界",
-        value: result.terrainAnalysis.dataSourceLabelZh,
-        detail: result.terrainAnalysis.honestyNoteZh,
+        value: terrainDisplay.demStatus.labelZh,
+        detail: terrainDisplay.uncertaintyBoundaryZh,
       },
     ],
   };
@@ -7372,7 +7398,7 @@ function buildCloudSeaTerrainPotentialSection(
 function buildWhiteoutTerrainAssistSection(
   result: ForecastCalculationResult,
 ): ForecastResultSection {
-  const terrain = result.terrainAnalysis.terrainProfile;
+  const terrainDisplay = buildTerrainDisplayModel(result);
 
   return {
     key: "whiteout-terrain-assist",
@@ -7388,13 +7414,13 @@ function buildWhiteoutTerrainAssistSection(
         ),
       },
       {
-        label: "地形提示",
-        value: terrain.valleyDirectionZh ?? "暂无方向",
-        detail: "地形只辅助判断云雾可能堆积的方向，不代表真实 DEM 或现场能见度。",
+        label: "方向遮挡参考",
+        value: terrainDisplay.directionalHorizon.statusLabelZh,
+        detail: terrainDisplay.directionalHorizon.detail,
       },
       {
         label: "现场复核",
-        detail: terrain.terrainNoteZh,
+        detail: terrainDisplay.uncertaintyBoundaryZh,
       },
     ],
   };
@@ -7403,26 +7429,32 @@ function buildWhiteoutTerrainAssistSection(
 function buildCompactTerrainSection(result: ForecastCalculationResult): ForecastResultSection {
   const terrain = result.terrainAnalysis.terrainProfile;
   const horizon = result.terrainAnalysis.horizonProfile;
+  const terrainDisplay = buildTerrainDisplayModel(result);
 
   return {
     key: "compact-terrain",
     title: "地形摘要",
-    badgeLabel: result.terrainAnalysis.dataSourceLabelZh,
+    badgeLabel: terrainDisplay.sourceBadgeLabelZh,
     items: [
       {
         label: "机位海拔",
-        value: formatElevationValue(terrain.locationElevation),
-        detail: isMeaningfulNumber(terrain.elevationDiff5km)
-          ? `周边5公里高差约 ${formatMeters(terrain.elevationDiff5km)}。`
-          : "周边高差暂未计算。",
+        value: terrainDisplay.spotElevation.valueLabel,
+        detail: terrainDisplay.surroundingRelief.available
+          ? `周边高差${terrainDisplay.surroundingRelief.valueLabel}。`
+          : terrainDisplay.surroundingRelief.boundaryZh,
       },
       {
         label: "云海地形潜力",
         value: terrainPotentialLabel(terrain.terrainCloudSeaPotential),
-        detail: terrain.terrainNoteZh,
+        detail: terrainDisplay.cloudSeaNoteZh,
       },
       {
-        label: "遮挡方向",
+        label: "目标方向地形地平线",
+        value: terrainDisplay.directionalHorizon.statusLabelZh,
+        detail: terrainDisplay.directionalHorizon.detail,
+      },
+      {
+        label: "传统遮挡方向",
         value:
           horizon.blockedDirectionsZh.length > 0
             ? horizon.blockedDirectionsZh.join("、")
@@ -7540,11 +7572,12 @@ function buildTerrainObstructionTipSection(
   result: ForecastCalculationResult,
 ): ForecastResultSection {
   const horizon = result.terrainAnalysis.horizonProfile;
+  const terrainDisplay = buildTerrainDisplayModel(result);
 
   return {
     key: "terrain-obstruction-tip",
     title: "地形遮挡提示",
-    badgeLabel: result.terrainAnalysis.dataSourceLabelZh,
+    badgeLabel: terrainDisplay.sourceBadgeLabelZh,
     items: [
       {
         label: "低角度光线",
@@ -7552,8 +7585,8 @@ function buildTerrainObstructionTipSection(
       },
       {
         label: "数据边界",
-        value: "模拟地形",
-        detail: `${horizon.obstructionNoteZh} ${result.terrainAnalysis.honestyNoteZh}`,
+        value: terrainDisplay.demStatus.labelZh,
+        detail: `${horizon.obstructionNoteZh} ${terrainDisplay.uncertaintyBoundaryZh}`,
       },
     ],
   };
@@ -7625,19 +7658,30 @@ function buildMilkyWaySection(result: ForecastCalculationResult): ForecastResult
 
 function buildMilkyWayObstructionSection(result: ForecastCalculationResult): ForecastResultSection {
   const horizon = result.terrainAnalysis.horizonProfile;
-  const terrainHorizon = astroTerrainHorizonDisplay(selectedMilkyWayTerrainAssessment(result));
+  const selectedAssessment = selectedMilkyWayTerrainAssessment(result);
+  const terrainHorizon = astroTerrainHorizonDisplay(selectedAssessment);
+  const terrainDisplay = buildTerrainDisplayModel(result, {
+    terrainHorizonAssessment: selectedAssessment,
+    targetLabelZh: "银河方向",
+  });
 
   return {
     key: "milky-way-obstruction",
     title: "银河方向遮挡",
-    badgeLabel: "银河地平线",
+    badgeLabel: terrainDisplay.sourceBadgeLabelZh,
     items: [
       {
-        label: "银河方向 clearance",
+        label: "银河方向地形净空角",
         value: terrainHorizon.clearanceDisplay,
-        detail:
+        detail: terrainDisplayTextWithoutRawLabels(
           result.scores.milkyWay.risks.find((risk) => risk.includes("地平线遮挡")) ??
-          "clearance 用于辅助判断低仰角银心和地景衔接是否容易被山体挡住；缺少方向剖面时不显示精确角度。",
+            "地形净空角用于辅助判断低仰角银心和地景衔接是否容易被山体挡住；缺少方向剖面时不显示精确角度。",
+        ),
+      },
+      {
+        label: "方向地形地平线",
+        value: terrainDisplay.directionalHorizon.statusLabelZh,
+        detail: terrainDisplay.directionalHorizon.detail,
       },
       {
         label: "遮挡方向",
@@ -8106,6 +8150,7 @@ function buildGlowTerrainObstructionCards(
   result: ForecastCalculationResult,
   analysis: GlowAnalysisResult,
 ): readonly GlowTerrainObstructionCard[] {
+  const terrainDisplay = buildTerrainDisplayModel(result);
   return analysis.terrainObstructionAssessments.map((assessment) => {
     const dateLabel = assessment.date ? dateLabelForResult(result, assessment.date) : "未定日期";
     return {
@@ -8114,9 +8159,11 @@ function buildGlowTerrainObstructionCards(
       title: assessment.labelZh,
       statusLabel: terrainStatusLabel(assessment),
       azimuthLabel: formatAzimuthLabel(assessment.solarAzimuthDegrees),
-      horizonLabel: formatDegreeLabel(assessment.terrainHorizonAngleDegrees),
-      clearanceLabel: formatDegreeLabel(assessment.solarClearanceDegrees),
-      detail: compactTerrainObstructionDisplayText(assessment.noteZh),
+      horizonLabel: formatTerrainHorizonAngleLabel(assessment.terrainHorizonAngleDegrees),
+      clearanceLabel: formatTerrainClearanceLabel(assessment.solarClearanceDegrees),
+      detail: compactTerrainObstructionDisplayText(
+        `${assessment.noteZh} ${terrainDisplay.demStatus.labelZh}；${terrainDisplay.uncertaintyBoundaryZh}`,
+      ),
       tone: terrainTone(assessment),
     };
   });
@@ -8270,11 +8317,21 @@ function formatOptionalNumber(value: number | null | undefined, digits: number):
 }
 
 function formatAzimuthLabel(value: number | null | undefined): string {
-  return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value)}°` : "方位暂缺";
+  return typeof value === "number" && Number.isFinite(value)
+    ? `方位 ${Math.round(value)}°`
+    : "方位暂缺";
 }
 
-function formatDegreeLabel(value: number | null | undefined): string {
-  return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(1)}°` : "暂缺";
+function formatTerrainHorizonAngleLabel(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `地形地平线 ${value.toFixed(1)}°`
+    : "地形地平线暂缺";
+}
+
+function formatTerrainClearanceLabel(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `地形净空角 ${value.toFixed(1)}°`
+    : "地形净空角暂缺";
 }
 
 function mapGlowEvidence(items: readonly GlowEvidenceItem[]): readonly GlowEvidenceViewItem[] {
@@ -11704,10 +11761,6 @@ function formatPercent(value: number | undefined): string {
   }
 
   return `${Math.round(value * 100)}%`;
-}
-
-function formatElevationValue(value: number | null | undefined): string {
-  return isMeaningfulNumber(value) ? `约 ${Math.round(value)} 米` : "暂未确认";
 }
 
 function formatMeters(value: number | null | undefined): string {

@@ -70,6 +70,7 @@ import {
   type SubjectDetailTarget,
 } from "./subject-detail-links";
 import type { CloudSeaTerrainContext } from "./cloud-sea-terrain-context";
+import { buildTerrainDisplayModel } from "./terrain-display-model";
 import type {
   CloudSeaCurrentNearTermWeatherDisplay,
   CloudSeaDisplayData,
@@ -3774,7 +3775,9 @@ export function CloudSeaResultPage({
   );
 }
 
-function deriveCloudSeaTravelDecision(viewModel: CloudSeaForecastViewModel): CloudSeaTravelDecision {
+function deriveCloudSeaTravelDecision(
+  viewModel: CloudSeaForecastViewModel,
+): CloudSeaTravelDecision {
   const displayData = viewModel.displayData;
   const decisionCards = displayData.recommendationCards.filter(
     (card) =>
@@ -4805,11 +4808,7 @@ type GlowNearTermWeatherCard = {
   readonly tone: ForecastResultCardTone;
 };
 
-function GlowNearTermWeatherSection({
-  viewModel,
-}: {
-  readonly viewModel: GlowForecastViewModel;
-}) {
+function GlowNearTermWeatherSection({ viewModel }: { readonly viewModel: GlowForecastViewModel }) {
   const cards = buildGlowNearTermWeatherCards(viewModel);
 
   if (cards.length === 0) {
@@ -4946,12 +4945,7 @@ function GlowDailyCardsSection({
             </p>
           ) : null}
           {opportunities.map((item, index) => (
-            <GlowDailyCard
-              key={item.key}
-              item={item}
-              index={index}
-              count={opportunities.length}
-            />
+            <GlowDailyCard key={item.key} item={item} index={index} count={opportunities.length} />
           ))}
         </div>
       </Card>
@@ -5048,11 +5042,7 @@ function GlowDailyPhaseStat({
   );
 }
 
-function GlowDecisionSupportSection({
-  viewModel,
-}: {
-  readonly viewModel: GlowForecastViewModel;
-}) {
+function GlowDecisionSupportSection({ viewModel }: { readonly viewModel: GlowForecastViewModel }) {
   const recommendation = viewModel.overallRecommendation;
   const evidenceItems = viewModel.professionalEvidence.slice(0, 4);
   const actionItems = uniqueGlowSupportItems([
@@ -5065,7 +5055,9 @@ function GlowDecisionSupportSection({
   ]);
   const backupItems = uniqueGlowSupportItems([
     recommendation.backupPlan,
-    ...viewModel.backupPlans.slice(0, 2).map((plan) => `${plan.condition}：${plan.action}。${plan.detail}`),
+    ...viewModel.backupPlans
+      .slice(0, 2)
+      .map((plan) => `${plan.condition}：${plan.action}。${plan.detail}`),
   ]);
 
   return (
@@ -5090,11 +5082,17 @@ function GlowDecisionSupportSection({
           badge="关键指标"
           items={
             evidenceItems.length > 0
-              ? evidenceItems.map((item) => `${item.label}：${item.value}，${firstSentence(item.detail)}`)
+              ? evidenceItems.map(
+                  (item) => `${item.label}：${item.value}，${firstSentence(item.detail)}`,
+                )
               : [recommendation.conciseReason]
           }
         />
-        <GlowSupportCard title="拍摄行动" badge={recommendation.preferredTarget} items={actionItems} />
+        <GlowSupportCard
+          title="拍摄行动"
+          badge={recommendation.preferredTarget}
+          items={actionItems}
+        />
         <GlowSupportCard title="风险复核" badge="出发前确认" items={riskItems} />
         <GlowSupportCard title="备选窗口" badge="备选方案" items={backupItems} />
       </div>
@@ -5253,9 +5251,7 @@ function GlowSectionHeading({
       <div className="min-w-0">
         <h2 className="text-base font-bold text-card-foreground">{title}</h2>
         {description ? (
-          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
-            {description}
-          </p>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">{description}</p>
         ) : null}
       </div>
       {badge ? <Badge variant={badgeVariant}>{badge}</Badge> : null}
@@ -5292,7 +5288,10 @@ function preferredGlowDailySlot(
     return item.sunset;
   }
   const slots = [item.sunrise, item.sunset];
-  return [...slots].sort((left, right) => glowSlotSortScore(right) - glowSlotSortScore(left))[0] ?? item.sunrise;
+  return (
+    [...slots].sort((left, right) => glowSlotSortScore(right) - glowSlotSortScore(left))[0] ??
+    item.sunrise
+  );
 }
 
 function glowSlotSortScore(
@@ -5356,7 +5355,10 @@ function GlowSupportCard({
       </div>
       <ul className="grid gap-1.5">
         {items.map((item) => (
-          <li key={item} className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+          <li
+            key={item}
+            className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]"
+          >
             {firstSentence(item)}
           </li>
         ))}
@@ -5579,25 +5581,14 @@ function _cloudSeaTerrainSummary(
   result: ForecastCalculationResult,
   terrainContext: CloudSeaTerrainContext,
 ): string {
+  const terrainDisplay = buildTerrainDisplayModel(result);
   if (
     terrainContext.shouldDowngradeCloudSeaWording ||
     terrainContext.elevationMeters === undefined
   ) {
     return terrainContext.terrainNoteZh;
   }
-  const profile = result.terrainAnalysis.terrainProfile;
-  const support = result.cloudSeaAnalysis.terrainSupport;
-  const elevation =
-    profile.locationElevation ?? profile.elevationMeters ?? support.selectedSpotElevationMeters;
-  const relief = profile.localReliefMeters ?? profile.elevationDiff5km ?? support.localReliefMeters;
-  const elevationText = isFiniteNumber(elevation)
-    ? `机位海拔约 ${Math.round(elevation)} 米`
-    : "机位海拔暂未确认";
-  const reliefText = isFiniteNumber(relief)
-    ? `周边高差约 ${Math.round(relief)} 米，${support.level === "高" ? "支持云海观察" : "需结合现场云雾高度复核"}。`
-    : "周边高差暂未计算。";
-
-  return `地形参考：${elevationText}，${reliefText}`;
+  return terrainDisplay.cloudSeaNoteZh;
 }
 
 function CloudSeaNearTermWeatherSection({
@@ -6560,7 +6551,9 @@ function ProfessionalHourlyCloudSection({
           target === "cloud_sea" &&
             "CloudSeaProfessionalHourlyData cloud-sea-professional-hourly-data",
         )}
-        data-cloud-sea-section={target === "cloud_sea" ? "CloudSeaProfessionalHourlyData" : undefined}
+        data-cloud-sea-section={
+          target === "cloud_sea" ? "CloudSeaProfessionalHourlyData" : undefined
+        }
         data-glow-section={target === "glow" ? "ProfessionalHourlyCloudSection" : undefined}
         data-astro-section={target === "astro" ? "ProfessionalHourlyCloudSection" : undefined}
         data-professional-hourly-shared="true"
@@ -6624,25 +6617,25 @@ type ProfessionalHourlySignalDisplay = {
 };
 
 const astroProfessionalHourlySignalDisplayBySignal = {
-  "霞光参考": { label: "云层偏多", badgeVariant: "warning" },
-  "云层纹理": { label: "云层参考", badgeVariant: "info" },
-  "可拍窗口": { label: "夜拍窗口", badgeVariant: "default" },
-  "形成信号": { label: "夜拍参考", badgeVariant: "info" },
-  "雨后开口": { label: "开口需复核", badgeVariant: "warning" },
-  "白墙风险": { label: "低云/雾风险", badgeVariant: "danger" },
-  "需复核": { label: "需复核", badgeVariant: "warning" },
-  "普通": { label: "普通", badgeVariant: "muted" },
+  霞光参考: { label: "云层偏多", badgeVariant: "warning" },
+  云层纹理: { label: "云层参考", badgeVariant: "info" },
+  可拍窗口: { label: "夜拍窗口", badgeVariant: "default" },
+  形成信号: { label: "夜拍参考", badgeVariant: "info" },
+  雨后开口: { label: "开口需复核", badgeVariant: "warning" },
+  白墙风险: { label: "低云/雾风险", badgeVariant: "danger" },
+  需复核: { label: "需复核", badgeVariant: "warning" },
+  普通: { label: "普通", badgeVariant: "muted" },
 } satisfies Record<ProfessionalHourlyRow["cloudSeaSignal"], ProfessionalHourlySignalDisplay>;
 
 const cloudSeaProfessionalHourlySignalDisplayBySignal = {
-  "霞光参考": { label: "普通", badgeVariant: "muted" },
-  "云层纹理": { label: "普通", badgeVariant: "muted" },
-  "可拍窗口": { label: "云海信号", badgeVariant: "default" },
-  "形成信号": { label: "形成信号", badgeVariant: "info" },
-  "雨后开口": { label: "雨后开口", badgeVariant: "accent" },
-  "白墙风险": { label: "白墙风险", badgeVariant: "danger" },
-  "需复核": { label: "需复核", badgeVariant: "warning" },
-  "普通": { label: "普通", badgeVariant: "muted" },
+  霞光参考: { label: "普通", badgeVariant: "muted" },
+  云层纹理: { label: "普通", badgeVariant: "muted" },
+  可拍窗口: { label: "云海信号", badgeVariant: "default" },
+  形成信号: { label: "形成信号", badgeVariant: "info" },
+  雨后开口: { label: "雨后开口", badgeVariant: "accent" },
+  白墙风险: { label: "白墙风险", badgeVariant: "danger" },
+  需复核: { label: "需复核", badgeVariant: "warning" },
+  普通: { label: "普通", badgeVariant: "muted" },
 } satisfies Record<ProfessionalHourlyRow["cloudSeaSignal"], ProfessionalHourlySignalDisplay>;
 
 export function professionalHourlySignalDisplayForTarget(
@@ -10980,7 +10973,7 @@ function formatElevationValue(value: number | null | undefined): string {
 function formatReliefValue(value: number | null | undefined): string {
   return typeof value === "number" && Number.isFinite(value)
     ? `约 ${Math.round(value)} 米`
-    : "周边高差暂未计算";
+    : "周边高差暂未返回";
 }
 
 function terrainPotentialLabel(

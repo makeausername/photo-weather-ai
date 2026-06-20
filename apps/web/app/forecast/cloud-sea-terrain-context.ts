@@ -5,6 +5,10 @@ import {
   type TerrainMode,
   type TerrainType,
 } from "@photo-weather/shared";
+import {
+  buildTerrainDisplayModel,
+  type ForecastTerrainDisplayModel,
+} from "./terrain-display-model";
 
 export type CloudSeaTerrainClass =
   | "high_mountain"
@@ -25,6 +29,7 @@ export type CloudSeaTerrainContextInput = {
   readonly terrainConfidence?: string | null;
   readonly elevationConfidence?: ElevationConfidence | null;
   readonly terrainMode?: TerrainMode | null;
+  readonly terrainDisplay?: ForecastTerrainDisplayModel | null;
 };
 
 export type CloudSeaWindowCategoryCopy = {
@@ -217,6 +222,7 @@ export function buildCloudSeaTerrainContextFromResult(
 ): CloudSeaTerrainContext {
   const profile = result.terrainAnalysis.terrainProfile;
   const support = result.cloudSeaAnalysis.terrainSupport;
+  const terrainDisplay = buildTerrainDisplayModel(result);
 
   return buildCloudSeaTerrainContext({
     elevationMeters:
@@ -232,6 +238,7 @@ export function buildCloudSeaTerrainContextFromResult(
     elevationConfidence: profile.elevationConfidence,
     terrainConfidence: support.confidence,
     terrainMode: support.terrainMode,
+    terrainDisplay,
   });
 }
 
@@ -291,15 +298,15 @@ export function buildCloudSeaTerrainContext(
     surroundingReliefMeters: surroundingRelief,
     nearbyValleyElevationMeters: nearbyValleyElevation,
     terrainType: terrainType || undefined,
-    terrainNoteZh: terrainNoteZh({
-      elevation,
-      surroundingRelief,
-      isClassicCloudSeaEligible,
-      shouldDowngradeCloudSeaWording,
-    }),
-    windowSectionNoteZh: shouldDowngradeCloudSeaWording
-      ? downgradedWindowSectionNoteZh
-      : undefined,
+    terrainNoteZh:
+      input.terrainDisplay?.cloudSeaNoteZh ??
+      terrainNoteZh({
+        elevation,
+        surroundingRelief,
+        isClassicCloudSeaEligible,
+        shouldDowngradeCloudSeaWording,
+      }),
+    windowSectionNoteZh: shouldDowngradeCloudSeaWording ? downgradedWindowSectionNoteZh : undefined,
     windowCategoryLabels: windowCategoryLabelsFromVocabulary(vocabulary),
     forbiddenStrongRecommendation: shouldDowngradeCloudSeaWording,
     recommendationCeiling: shouldDowngradeCloudSeaWording
@@ -414,7 +421,7 @@ function terrainNoteZh(input: {
   if (input.shouldDowngradeCloudSeaWording) {
     const elevationText = `机位海拔约 ${Math.round(input.elevation)} 米`;
     if (input.surroundingRelief === undefined) {
-      return `地形参考：${elevationText}，周边高差暂未计算，当前按低海拔低云/晨雾参考处理。`;
+      return `地形参考：${elevationText}，周边高差暂未返回，当前按低海拔低云/晨雾参考处理。`;
     }
     return `地形参考：${elevationText}，周边高差不足，当前按低云/晨雾和通透参考处理。`;
   }
@@ -425,7 +432,7 @@ function terrainNoteZh(input: {
       input.surroundingRelief,
     )} 米，支持云海观察。`;
   }
-  return `地形参考：${elevationText}，周边高差暂未计算，需结合现场云雾高度复核。`;
+  return `地形参考：${elevationText}，周边高差暂未返回，需结合现场云雾高度复核。`;
 }
 
 function normalizeTerrainType(value: string | null | undefined): string {

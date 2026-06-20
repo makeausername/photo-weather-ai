@@ -2143,6 +2143,125 @@ function resultWithAstroTerrainHorizon(
   };
 }
 
+function resultWithUnifiedTerrainDisplayState(
+  target: ForecastCalculationResult["target"],
+  options: {
+    readonly terrainHorizon?: TerrainHorizonAssessment;
+    readonly reliefMeters?: number | null;
+  },
+): ForecastCalculationResult {
+  const base = resultForTarget(target);
+  const relief = options.reliefMeters ?? null;
+  const minElevation5km = relief === null ? null : 1860 - relief;
+  const maxElevation5km = relief === null ? null : 1860;
+  const terrainProfile = {
+    ...base.terrainAnalysis.terrainProfile,
+    elevationMeters: 1860,
+    elevationSource: "dem" as const,
+    elevationConfidence: "high" as const,
+    locationElevation: 1860,
+    nearbyValleyElevationMeters: relief === null ? null : 1860 - relief,
+    localReliefMeters: relief,
+    minElevation1km: relief === null ? null : 1380,
+    minElevation3km: relief === null ? null : 980,
+    minElevation5km,
+    maxElevation5km,
+    avgElevation5km: relief === null ? null : 1280,
+    elevationDiff5km: relief,
+    terrainNoteZh:
+      relief === null
+        ? "DEM 已返回机位海拔，周边高差统计暂未返回。"
+        : "DEM 已返回机位海拔和周边高差统计。",
+  };
+  const horizonProfile = {
+    ...base.terrainAnalysis.horizonProfile,
+    directionSamples: options.terrainHorizon?.directionSamples ?? [],
+    milkyWayAssessment: options.terrainHorizon,
+  };
+  const dataNotice =
+    "天气数据：正式数据；地形数据：本地 DEM 地形剖面；天文数据：本地算法计算。";
+
+  return {
+    ...base,
+    isMock: false,
+    dataNotice,
+    dataSourceLabel: "正式数据",
+    keyReasons:
+      relief === null
+        ? ["地形参考：机位海拔约 1860 米，周边高差暂未返回。"]
+        : [`地形参考：机位海拔约 1860 米，周边高差约 ${relief} 米。`],
+    terrainSummary: {
+      ...base.terrainSummary,
+      ...terrainProfile,
+      ...horizonProfile,
+      dataSource: "dem",
+      dataSourceLabelZh: "本地 DEM 地形剖面",
+      isMock: false,
+      honestyNoteZh: "地形方向遮挡使用本地 DEM；缺失时不按无遮挡处理。",
+    },
+    terrainAnalysis: {
+      ...base.terrainAnalysis,
+      terrainProfile,
+      horizonProfile,
+      dataSource: "dem",
+      dataSourceLabelZh: "本地 DEM 地形剖面",
+      isMock: false,
+      honestyNoteZh: "地形方向遮挡使用本地 DEM；缺失时不按无遮挡处理。",
+    },
+    cloudSeaAnalysis: {
+      ...base.cloudSeaAnalysis,
+      terrainSupport: {
+        ...base.cloudSeaAnalysis.terrainSupport,
+        selectedSpotElevationMeters: 1860,
+        nearbyValleyElevationMeters: relief === null ? undefined : 1860 - relief,
+        localReliefMeters: relief === null ? undefined : relief,
+        providerElevationMeters: 1860,
+        messageZh:
+          relief === null
+            ? "DEM 已返回方向遮挡，周边高差统计暂未返回。"
+            : "DEM 已返回方向遮挡和周边高差统计。",
+      },
+      missingDataNotes: base.cloudSeaAnalysis.missingDataNotes.filter(
+        (note) => !note.includes("演示数据"),
+      ),
+      dataMode: "real",
+    },
+    glowAnalysis: {
+      ...base.glowAnalysis,
+      missingDataNotes: base.glowAnalysis.missingDataNotes.filter(
+        (note) => !note.includes("演示数据"),
+      ),
+      dataMode: "real",
+    },
+    astroAnalysis: {
+      ...base.astroAnalysis,
+      terrainHorizonAssessment: options.terrainHorizon,
+      missingDataNotes: base.astroAnalysis.missingDataNotes.filter(
+        (note) => !note.includes("演示数据"),
+      ),
+      dataMode: "real",
+      dailyAstro: base.astroAnalysis.dailyAstro.map((day) => ({
+        ...day,
+        terrainHorizonAssessment: options.terrainHorizon,
+        recommendedMilkyWayWindow: day.recommendedMilkyWayWindow
+          ? {
+              ...day.recommendedMilkyWayWindow,
+              terrainHorizonAssessment: options.terrainHorizon,
+            }
+          : undefined,
+      })),
+      milkyWayCandidateWindows: base.astroAnalysis.milkyWayCandidateWindows.map((window) => ({
+        ...window,
+        terrainHorizonAssessment: options.terrainHorizon,
+      })),
+      recommendedMilkyWayWindows: base.astroAnalysis.recommendedMilkyWayWindows.map((window) => ({
+        ...window,
+        terrainHorizonAssessment: options.terrainHorizon,
+      })),
+    },
+  };
+}
+
 type ProfessionalHourlyDataForTest = NonNullable<
   ForecastCalculationResult["professionalHourlyData"]
 >;
@@ -2468,7 +2587,7 @@ function lowElevationCloudSeaResultForTest(): ForecastCalculationResult {
         description: "局部时段可能出现低云遮挡。",
       },
     ],
-    keyReasons: ["地形参考：机位海拔约 142 米，周边高差暂未计算。"],
+    keyReasons: ["地形参考：机位海拔约 142 米，周边高差暂未返回。"],
   };
 }
 
@@ -3100,7 +3219,7 @@ describe("forecast result target-aware view model", () => {
     };
     const result: ForecastCalculationResult = {
       ...baseResult,
-      keyReasons: ["地形参考：机位海拔暂未确认，体感仅作参考，周边高差暂未计算。"],
+      keyReasons: ["地形参考：机位海拔暂未确认，体感仅作参考，周边高差暂未返回。"],
       terrainSummary: {
         ...baseResult.terrainSummary,
         ...unknownTerrain,
@@ -3133,7 +3252,7 @@ describe("forecast result target-aware view model", () => {
     );
 
     expect(html).toContain("海拔资料暂未确认，体感仅作参考");
-    expect(html).toContain("周边高差暂未计算");
+    expect(html).toContain("周边高差暂未返回");
     expect(html).not.toContain("机位海拔约 0 米");
     expect(html).not.toContain("5公里高差约 0 米");
     expect(html).not.toContain(">0 米<");
@@ -3498,7 +3617,7 @@ describe("forecast result target-aware view model", () => {
           description: "低云或雾气可能影响通透度。",
         },
       ],
-      keyReasons: ["地形参考：机位海拔约 142 米，周边高差暂未计算。"],
+      keyReasons: ["地形参考：机位海拔约 142 米，周边高差暂未返回。"],
     };
     const viewModel = buildForecastResultViewModel(result, "general");
     const html = renderToStaticMarkup(
@@ -5297,7 +5416,7 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.dailyTrend.map((item) => item.recommendedAction)).toContain("已在附近可观察");
 
     expect(html).toContain("低云/晨雾参考");
-    expect(html).toContain("地形参考：机位海拔约 142 米，周边高差暂未计算");
+    expect(html).toContain("地形参考：机位海拔约 142 米；周边高差暂未返回");
     expect(windowSection).toContain("低云观察与备选");
     expect(windowSection).toContain(
       "当前地形更适合顺带观察，本区块按低云、晨雾、层云和通透参考处理。",
@@ -7763,7 +7882,7 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.terrainHorizon.obstructionLevel).toBe("clear");
     expect(viewModel.terrainHorizon.clearanceDisplay).toBe("16°");
     expect(
-      viewModel.terrainHorizon.professionalDataItems.find((item) => item.label === "clearance")
+      viewModel.terrainHorizon.professionalDataItems.find((item) => item.label === "地形净空角")
         ?.value,
     ).toBe("16°");
     expect(viewModel.nightlyCards[0]?.terrainHorizon.compactLabel).toContain("地形遮挡");
@@ -7777,6 +7896,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("地形");
     expect(html).toContain('data-astro-professional-data-expanded="false"');
     expect(html).not.toContain("clearance rule v1");
+    expect(html).not.toContain("clearance");
     expect(html).not.toContain("地形遮挡剖面");
   });
 
@@ -7902,7 +8022,7 @@ describe("forecast result target-aware view model", () => {
       viewModel.terrainHorizon.professionalDataItems.find((item) => item.label === "DEM 数据集"),
     ).toMatchObject({
       value: "Synthetic terrain DEM / 2026 / test-dem-v1",
-      detail: "来源 Synthetic DEM；checksum abc123def456",
+      detail: "来源 Synthetic DEM；校验码 abc123def456",
     });
     expect(
       viewModel.terrainHorizon.professionalDataItems.find((item) => item.label === "最大采样距离")
@@ -7915,6 +8035,139 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain('data-astro-professional-data-expanded="false"');
     expect(html).not.toContain("terrain-dem.cog.tif");
     expect(html).not.toContain("checksum abc123def456");
+  });
+
+  it("distinguishes available DEM horizon from missing surrounding relief in public terrain output", () => {
+    const result = resultWithUnifiedTerrainDisplayState("general", {
+      terrainHorizon: terrainHorizonDemForTest,
+      reliefMeters: null,
+    });
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+        aiStatus: "idle",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        aiRetryable: false,
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+    const terrainText = viewModel.detailSections
+      .filter((section) => section.key.includes("terrain") || section.title.includes("地形"))
+      .flatMap((section) => [
+        section.title,
+        section.badgeLabel ?? "",
+        ...section.items.flatMap((item) => [item.label, item.value ?? "", item.detail]),
+      ])
+      .join(" ");
+    const output = `${html} ${terrainText}`;
+
+    expect(output).not.toContain("暂未接入周边 DEM 剖面");
+    expect(output).not.toContain("当前使用演示地形数据");
+    expect(output).not.toContain("周边高差暂未计算");
+    expect(output).not.toContain("clearance");
+    expect(output).toContain("DEM 地形遮挡已可用");
+    expect(output).toContain("周边高差统计暂未返回");
+    expect(output).toContain("目标方向地形地平线");
+    expect(output).toContain("地形净空角");
+  });
+
+  it("shows returned surrounding relief together with DEM directional horizon status", () => {
+    const result = resultWithUnifiedTerrainDisplayState("cloud_sea", {
+      terrainHorizon: terrainHorizonDemForTest,
+      reliefMeters: 1484,
+    });
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(html).toContain("周边高差约 1484 米");
+    expect(html).toContain("DEM 地形遮挡已可用");
+    expect(html).toContain("地形净空角 16°");
+    expect(html).not.toContain("周边高差暂未计算");
+    expect(html).not.toContain("暂未接入周边 DEM 剖面");
+    expect(html).not.toContain("当前使用演示地形数据");
+    expect(html).not.toContain("clearance");
+  });
+
+  it("keeps Chinese terrain field labels consistent across general, cloud sea, glow, and astro pages", () => {
+    const terrainOptions = {
+      terrainHorizon: terrainHorizonDemForTest,
+      reliefMeters: null,
+    };
+    const generalResult = resultWithUnifiedTerrainDisplayState("general", terrainOptions);
+    const generalViewModel = buildForecastResultViewModel(generalResult, "general");
+    const generalHtml = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result: generalResult,
+        viewModel: generalViewModel,
+        aiStatus: "idle",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        aiRetryable: false,
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+    const generalTerrainText = generalViewModel.detailSections
+      .filter((section) => section.key.includes("terrain") || section.title.includes("地形"))
+      .flatMap((section) => [
+        section.title,
+        section.badgeLabel ?? "",
+        ...section.items.flatMap((item) => [item.label, item.value ?? "", item.detail]),
+      ])
+      .join(" ");
+    const cloudSeaResult = resultWithUnifiedTerrainDisplayState("cloud_sea", terrainOptions);
+    const cloudSeaHtml = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result: cloudSeaResult,
+        viewModel: buildCloudSeaForecastViewModel(cloudSeaResult),
+      }),
+    );
+    const glowResult = resultWithUnifiedTerrainDisplayState("glow", terrainOptions);
+    const glowHtml = renderToStaticMarkup(
+      React.createElement(GlowResultPage, {
+        query: queryForTarget("glow"),
+        result: glowResult,
+        viewModel: buildGlowForecastViewModel(glowResult),
+      }),
+    );
+    const astroResult = resultWithUnifiedTerrainDisplayState("astro", terrainOptions);
+    const astroViewModel = buildAstroForecastViewModel(astroResult);
+    const astroHtml = renderToStaticMarkup(
+      React.createElement(AstroResultPage, {
+        query: queryForTarget("astro"),
+        result: astroResult,
+        viewModel: astroViewModel,
+      }),
+    );
+    const astroProfessionalText = astroViewModel.terrainHorizon.professionalDataItems
+      .flatMap((item) => [item.label, item.value ?? "", item.detail])
+      .join(" ");
+
+    for (const output of [
+      `${generalHtml} ${generalTerrainText}`,
+      cloudSeaHtml,
+      glowHtml,
+      `${astroHtml} ${astroProfessionalText}`,
+    ]) {
+      expect(output).toContain("地形净空角");
+      expect(output).not.toContain("clearance");
+      expect(output).not.toContain("暂未接入周边 DEM 剖面");
+      expect(output).not.toContain("当前使用演示地形数据");
+    }
+    expect(astroViewModel.terrainHorizon.professionalDataItems.map((item) => item.label)).toContain(
+      "地形净空角",
+    );
   });
 
   it("does not mark low-confidence DEM terrain profiles as publicly clear", () => {
@@ -7983,10 +8236,12 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.terrainHorizon.available).toBe(false);
     expect(viewModel.terrainHorizon.statusLabelZh).toBe("地形数据不足");
     expect(viewModel.terrainHorizon.detail).toContain("地形数据不足");
+    expect(viewModel.terrainHorizon.publicDecisionLabel).not.toBe("地形无遮挡");
+    expect(viewModel.terrainHorizon.obstructionLevel).not.toBe("clear");
     expect(
       viewModel.terrainHorizon.professionalDataItems.find((item) => item.label === "DEM 覆盖状态"),
     ).toMatchObject({
-      value: "DEM coverage missing",
+      value: "DEM 覆盖缺失",
       detail: expect.stringContaining("Copernicus_DSM_COG_30_N30_00_E118_00_DEM"),
     });
     expect(html).toContain('data-astro-public-factor-chip="terrain-horizon"');
