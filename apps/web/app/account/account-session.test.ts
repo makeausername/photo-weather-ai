@@ -179,6 +179,7 @@ describe("account center foundation", () => {
     expect(accountCenterSectionLabels).toEqual([
       "账户总览",
       "资料信息",
+      "权限与角色",
       "偏好设置",
       "安全与登录",
     ]);
@@ -206,10 +207,15 @@ describe("account center foundation", () => {
     expect(html).toContain("普通用户");
     expect(html).toContain("注册时间");
     expect(html).toContain("最近登录时间");
+    expect(html).toContain("资料更新时间");
+    expect(html).toContain("权限与角色");
+    expect(html).toContain("暂无额外权限");
     expect(html).toContain("2026/06/01");
+    expect(html).toContain("2026/06/10");
     expect(html).toContain("2026/06/17");
     expect(html).toContain("公制单位");
     expect(html).toContain("简体中文");
+    expect(html).toContain("退出登录");
 
     for (const removedDashboardLink of [
       'href="/#analysis"',
@@ -228,9 +234,22 @@ describe("account center foundation", () => {
       "朝霞晚霞",
       "星空银河",
       "定价",
+      "账户偏好将在保存后显示",
     ]) {
       expect(html).not.toContain(removedDashboardLabel);
     }
+  });
+
+  it("omits the sparse preferences card when profile data is missing", () => {
+    const html = renderAuthenticatedAccountCenter({
+      ...baseAccountSession,
+      profile: null,
+    });
+
+    expect(html).toContain("逐光摄影师");
+    expect(html).toContain("权限与角色");
+    expect(html).not.toContain("偏好设置");
+    expect(html).not.toContain("账户偏好将在保存后显示");
   });
 
   it("renders the admin card only for admin sessions", () => {
@@ -269,6 +288,12 @@ describe("account center foundation", () => {
       "暂无已保存报告",
       "占位",
       "开发",
+      "coming soon",
+      "planned",
+      "placeholder",
+      "development",
+      "unavailable",
+      "账户偏好将在保存后显示",
     ];
 
     for (const phrase of unavailableCopy) {

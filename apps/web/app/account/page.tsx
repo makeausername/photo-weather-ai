@@ -15,7 +15,7 @@ export default function AccountPage() {
           账户中心
         </h1>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground sm:text-[15px]">
-          管理登录信息、账户状态和逐光天气常用入口。
+          管理账户资料、登录安全、偏好设置和系统权限。
         </p>
       </header>
 

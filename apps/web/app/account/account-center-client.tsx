@@ -31,6 +31,7 @@ const statusLabels: Record<string, string> = {
 export const accountCenterSectionLabels = [
   "账户总览",
   "资料信息",
+  "权限与角色",
   "偏好设置",
   "安全与登录",
 ] as const;
@@ -138,14 +139,16 @@ export function AuthenticatedAccountCenter({
     <div className="grid gap-5">
       <AccountStatusHero session={session} />
 
-      <div className="grid gap-5 lg:grid-cols-2 lg:items-start">
-        <ProfileCard session={session} />
-        <SecurityCard session={session} onLogout={onLogout} isLoggingOut={isLoggingOut} />
-      </div>
-
-      <div className={cn("grid gap-5 lg:items-start", showAdminEntry ? "lg:grid-cols-2" : "")}>
-        <PreferencesCard session={session} />
-        {showAdminEntry ? <AdminAccessCard /> : null}
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)] xl:items-start">
+        <div className="grid gap-5">
+          <ProfileCard session={session} />
+          {session.profile ? <PreferencesCard profile={session.profile} /> : null}
+        </div>
+        <div className="grid gap-5">
+          <SecurityCard session={session} onLogout={onLogout} isLoggingOut={isLoggingOut} />
+          <RolePermissionsCard session={session} />
+          {showAdminEntry ? <AdminAccessCard /> : null}
+        </div>
       </div>
     </div>
   );
@@ -155,27 +158,34 @@ function AccountStatusHero({ session }: { readonly session: PublicAccountSession
   const roleText = formatAccountRoleLabels(session.roles, session.roleCodes);
   const statusText = formatStatus(session.user.status);
   const displayName = session.user.displayName || session.user.email;
+  const permissionText = formatPermissionSummary(session.permissions);
 
   return (
     <Card className="p-5 shadow-sm sm:p-6">
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)] lg:items-end">
-        <div className="min-w-0">
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="success">已登录</Badge>
-            <Badge variant={statusBadgeVariant(session.user.status)}>{statusText}</Badge>
-            <Badge variant="muted">{roleText}</Badge>
+      <div className="grid gap-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="success">已登录</Badge>
+              <Badge variant={statusBadgeVariant(session.user.status)}>{statusText}</Badge>
+              <Badge variant="muted">{roleText}</Badge>
+            </div>
+            <h2 className="mt-4 break-words text-2xl font-bold leading-tight text-card-foreground sm:text-[30px]">
+              {displayName}
+            </h2>
+            <p className="mt-1 break-words text-sm font-medium text-muted-foreground">
+              {session.user.email}
+            </p>
           </div>
-          <h2 className="mt-4 break-words text-2xl font-bold leading-tight text-card-foreground sm:text-[30px]">
-            {displayName}
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            管理你的登录信息、安全状态和逐光天气使用入口。
-          </p>
+          <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs font-semibold text-muted-foreground">
+            账户总览
+          </div>
         </div>
-        <dl className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+        <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <SummaryField label="最近登录" value={formatOptionalDateTime(session.user.lastLoginAt)} />
           <SummaryField label="注册时间" value={formatOptionalDateTime(session.user.createdAt)} />
           <SummaryField label="账户角色" value={roleText} />
+          <SummaryField label="权限状态" value={permissionText} />
         </dl>
       </div>
     </Card>
@@ -188,49 +198,46 @@ function ProfileCard({ session }: { readonly session: PublicAccountSession }) {
 
   return (
     <Card className="p-5 shadow-sm sm:p-6">
-      <h2 className="text-lg font-bold text-card-foreground">资料信息</h2>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">
-        当前账户的基础身份信息和可见状态。
-      </p>
-      <dl className="mt-5 grid gap-3 text-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-card-foreground">资料信息</h2>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            当前账户的基础身份信息和账户状态。
+          </p>
+        </div>
+        <Badge variant={statusBadgeVariant(session.user.status)}>{statusText}</Badge>
+      </div>
+      <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
         <AccountField label="邮箱" value={session.user.email} />
         <AccountField label="显示名称" value={session.user.displayName} />
-        <AccountField label="用户角色" value={roleText} />
-        <AccountField label="当前状态" value={statusText} />
+        <AccountField label="账户状态" value={statusText} />
+        <AccountField label="账户角色" value={roleText} />
         <AccountField label="注册时间" value={formatOptionalDateTime(session.user.createdAt)} />
+        <AccountField label="资料更新时间" value={formatOptionalDateTime(session.user.updatedAt)} />
         <AccountField
           label="最近登录时间"
           value={formatOptionalDateTime(session.user.lastLoginAt)}
+          className="sm:col-span-2"
         />
       </dl>
     </Card>
   );
 }
 
-function PreferencesCard({ session }: { readonly session: PublicAccountSession }) {
-  if (!session.profile) {
-    return (
-      <Card className="p-5 shadow-sm sm:p-6">
-        <h2 className="text-lg font-bold text-card-foreground">偏好设置</h2>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          账户偏好将在保存后显示。
-        </p>
-      </Card>
-    );
-  }
-
+function PreferencesCard({
+  profile,
+}: {
+  readonly profile: NonNullable<PublicAccountSession["profile"]>;
+}) {
   return (
     <Card className="p-5 shadow-sm sm:p-6">
       <h2 className="text-lg font-bold text-card-foreground">偏好设置</h2>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">
-        与账户资料绑定的显示偏好。
+      <p className="mt-1 text-sm leading-6 text-muted-foreground">
+        当前账户保存的显示偏好。
       </p>
-      <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
-        <AccountField label="单位制" value={formatPreferredUnits(session.profile.preferredUnits)} />
-        <AccountField
-          label="界面语言"
-          value={formatPreferredLanguage(session.profile.preferredLanguage)}
-        />
+      <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+        <AccountField label="单位制" value={formatPreferredUnits(profile.preferredUnits)} />
+        <AccountField label="界面语言" value={formatPreferredLanguage(profile.preferredLanguage)} />
       </dl>
     </Card>
   );
@@ -248,20 +255,25 @@ function SecurityCard({
   const statusText = formatStatus(session.user.status);
 
   return (
-    <Card className="p-5 shadow-sm sm:p-6">
-      <h2 className="text-lg font-bold text-card-foreground">安全与登录</h2>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">
-        查看当前登录身份，并在需要时退出账户。
-      </p>
-      <dl className="mt-5 grid gap-3 text-sm">
-        <AccountField label="登录邮箱" value={session.user.email} />
-        <AccountField label="账户状态" value={statusText} />
-        <AccountField label="最近登录时间" value={formatOptionalDateTime(session.user.lastLoginAt)} />
+    <Card className="p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-card-foreground">安全与登录</h2>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            查看当前登录身份，并在需要时退出账户。
+          </p>
+        </div>
+        <Badge variant={statusBadgeVariant(session.user.status)}>{statusText}</Badge>
+      </div>
+      <dl className="mt-4 grid gap-2 text-sm">
+        <CompactField label="登录邮箱" value={session.user.email} />
+        <CompactField label="账户状态" value={statusText} />
+        <CompactField label="最近登录" value={formatOptionalDateTime(session.user.lastLoginAt)} />
       </dl>
       <Button
         type="button"
         variant="secondary"
-        size="lg"
+        size="md"
         className="mt-4 w-full"
         disabled={isLoggingOut}
         onClick={onLogout}
@@ -272,9 +284,66 @@ function SecurityCard({
   );
 }
 
+function RolePermissionsCard({ session }: { readonly session: PublicAccountSession }) {
+  const roleItems = collectAccountRoleLabels(session.roles, session.roleCodes);
+  const permissionItems = collectPermissionItems(session.permissions);
+  const permissionText = formatPermissionSummary(permissionItems);
+
+  return (
+    <Card className="p-5 shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-card-foreground">权限与角色</h2>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            基于当前会话返回的角色和权限。
+          </p>
+        </div>
+        <Badge variant={permissionItems.length > 0 ? "info" : "muted"}>{permissionText}</Badge>
+      </div>
+
+      <div className="mt-4 grid gap-4">
+        <div>
+          <h3 className="text-xs font-semibold text-muted-foreground">账户角色</h3>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {roleItems.length > 0 ? (
+              roleItems.map((role) => (
+                <Badge key={role} variant="muted">
+                  {role}
+                </Badge>
+              ))
+            ) : (
+              <Badge variant="muted">{emptyValue}</Badge>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-xs font-semibold text-muted-foreground">权限</h3>
+          {permissionItems.length > 0 ? (
+            <ul className="mt-2 grid gap-2">
+              {permissionItems.map((permission) => (
+                <li
+                  key={permission}
+                  className="break-all rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm font-semibold text-card-foreground"
+                >
+                  {permission}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm font-semibold text-muted-foreground">
+              暂无额外权限
+            </p>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function AdminAccessCard() {
   return (
-    <Card className="border-primary p-5 shadow-sm sm:p-6">
+    <Card className="border-primary p-5 shadow-sm">
       <Badge variant="muted">管理员</Badge>
       <h2 className="mt-3 text-lg font-bold text-card-foreground">管理后台</h2>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">
@@ -292,7 +361,7 @@ function AdminAccessCard() {
 
 function SummaryField({ label, value }: { readonly label: string; readonly value: string | null }) {
   return (
-    <div className="rounded-lg border border-border bg-muted px-4 py-3">
+    <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5">
       <dt className="text-xs font-semibold text-muted-foreground">{label}</dt>
       <dd className="mt-1 break-words text-sm font-bold text-card-foreground">
         {value || emptyValue}
@@ -301,13 +370,39 @@ function SummaryField({ label, value }: { readonly label: string; readonly value
   );
 }
 
-function AccountField({ label, value }: { readonly label: string; readonly value: string | null }) {
+function AccountField({
+  label,
+  value,
+  className,
+}: {
+  readonly label: string;
+  readonly value: string | null;
+  readonly className?: string;
+}) {
   return (
-    <div className="grid gap-1 rounded-lg border border-border bg-muted px-4 py-3">
+    <div
+      className={cn("grid gap-1 rounded-lg border border-border bg-muted/40 px-3 py-2.5", className)}
+    >
       <dt className="text-xs font-semibold text-muted-foreground">{label}</dt>
       <dd
         className={cn(
           "break-words text-sm font-semibold text-card-foreground",
+          !value && "text-muted-foreground",
+        )}
+      >
+        {value || emptyValue}
+      </dd>
+    </div>
+  );
+}
+
+function CompactField({ label, value }: { readonly label: string; readonly value: string | null }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5">
+      <dt className="text-xs font-semibold text-muted-foreground">{label}</dt>
+      <dd
+        className={cn(
+          "min-w-0 break-words text-right text-sm font-semibold text-card-foreground",
           !value && "text-muted-foreground",
         )}
       >
@@ -343,10 +438,18 @@ export function formatAccountRoleLabels(
   roles: readonly AccountRole[],
   roleCodes: readonly string[] = [],
 ): string {
-  if (roles.length === 0 && roleCodes.length === 0) {
+  const labels = collectAccountRoleLabels(roles, roleCodes);
+  if (labels.length === 0) {
     return emptyValue;
   }
 
+  return labels.join("、");
+}
+
+function collectAccountRoleLabels(
+  roles: readonly AccountRole[],
+  roleCodes: readonly string[] = [],
+): string[] {
   const values = new Map<string, string>();
   for (const role of roles) {
     const key = roleCodeOf(role) ?? roleDisplayText(role);
@@ -358,7 +461,20 @@ export function formatAccountRoleLabels(
     }
   }
 
-  return [...values.values()].join("、");
+  return [...values.values()];
+}
+
+function collectPermissionItems(permissions: readonly string[]): string[] {
+  return [...new Set(permissions.filter(Boolean))];
+}
+
+function formatPermissionSummary(permissions: readonly string[]): string {
+  const count = collectPermissionItems(permissions).length;
+  if (count === 0) {
+    return "暂无额外权限";
+  }
+
+  return `${count} 项权限`;
 }
 
 function formatStatus(status: string | null): string {
