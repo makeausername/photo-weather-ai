@@ -83,6 +83,15 @@ import {
   readRuntimeOpenMeteoConfig,
   readRuntimeQWeatherConfig,
 } from "./weather-provider.js";
+import {
+  createObjectStorageProvider,
+  getActiveObjectStorageProvider,
+  isStorageProviderCode,
+  normalizeContentType,
+  readRuntimeStorageConfig,
+  storageProviderNameZh,
+  type ObjectStorageTestConnectionResult,
+} from "./object-storage.js";
 import { checkVerificationProviderConfig } from "./verification-senders.js";
 
 const jsonSchema: z.ZodType<JsonValue> = z.lazy(() =>
@@ -271,6 +280,26 @@ const providerConnectionTestSchema = z
   })
   .optional();
 
+const storageProviderCodeSchema = z.enum(["local_storage", "aliyun_oss", "tencent_cos"]);
+
+const storageTestObjectKeySchema = z
+  .string()
+  .trim()
+  .min(1, "请填写测试对象 Key。")
+  .max(240, "测试对象 Key 不能超过 240 个字符。");
+
+const storageTestUploadSchema = z.object({
+  providerCode: storageProviderCodeSchema.optional(),
+  key: storageTestObjectKeySchema.default("health-check/manual-test.txt"),
+  content: z.string().max(65536, "测试内容不能超过 65536 个字符。").default("hello"),
+  contentType: z.string().trim().max(120).default("text/plain"),
+});
+
+const storageTestObjectQuerySchema = z.object({
+  providerCode: storageProviderCodeSchema.optional(),
+  key: storageTestObjectKeySchema.default("health-check/manual-test.txt"),
+});
+
 const dateOnlySchema = z
   .string()
   .trim()
@@ -364,6 +393,34 @@ function sanitizeProviderErrorMessage(message: string, secret: string | undefine
   return message.split(secret).join("[redacted]");
 }
 
+function safeStorageRouteErrorMessage(error: unknown): string {
+  const fallback = "对象存储测试失败，请检查服务商配置。";
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  const trimmed = message.trim().split(/\r?\n/)[0]?.slice(0, 300) ?? "";
+  if (!trimmed) {
+    return fallback;
+  }
+
+  if (
+    [
+      /secretJson/i,
+      /accessKeySecret/i,
+      /secretKey/i,
+      /SecretId/i,
+      /password/i,
+      /authorization/i,
+      /token/i,
+      /[A-Za-z]:[\\/]/,
+      /\/(?:home|var|srv|app|tmp)\//,
+      /\bat\s+\S+\s+\(/,
+    ].some((pattern) => pattern.test(trimmed))
+  ) {
+    return fallback;
+  }
+
+  return trimmed;
+}
+
 function groupBy<TItem, TKey extends string>(
   items: readonly TItem[],
   getKey: (item: TItem) => TKey,
@@ -425,9 +482,32 @@ function getProviderNameZh(providerType: string, providerCode: string): string {
     "ai:deepseek": "DeepSeek",
     "email:aliyun_smtp": "阿里云企业邮箱 SMTP",
     "sms:aliyun_sms": "阿里云短信",
+    "storage:local_storage": "本地存储",
+    "storage:aliyun_oss": "阿里云 OSS",
+    "storage:tencent_cos": "腾讯云 COS",
   };
 
   return names[key] ?? "服务商";
+}
+
+function storageConnectionMode(mode: ObjectStorageTestConnectionResult["mode"]): "mock" | "real" {
+  return mode === "real" ? "real" : "mock";
+}
+
+function storageModeLabelZh(mode: ObjectStorageTestConnectionResult["mode"]): string {
+  return mode === "real" ? "真实服务" : "配置检查";
+}
+
+function storageProviderTestResponse(result: ObjectStorageTestConnectionResult) {
+  const modeLabelZh = storageModeLabelZh(result.mode);
+  return {
+    ...result,
+    connectionMode: storageConnectionMode(result.mode),
+    modeZh: modeLabelZh,
+    modeLabelZh,
+    testedAt: new Date().toISOString(),
+    message: result.messageZh,
+  };
 }
 
 function providerSaveMessageZh(providerType: string, providerCode: string): string {
@@ -1393,6 +1473,29 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
         return sendZodError(reply, parsedBody.error);
       }
 
+      if (request.params.providerType === "storage") {
+        if (!isStorageProviderCode(request.params.providerCode)) {
+          return sendProviderTestFailure(reply, {
+            providerType: request.params.providerType,
+            providerCode: request.params.providerCode,
+            connectionMode: "mock",
+            mode: "config_check",
+            modeLabelZh: "配置检查",
+            error: "unsupported_storage_provider",
+            messageZh: "当前版本仅支持本地存储、阿里云 OSS 和腾讯云 COS。",
+          });
+        }
+
+        const runtimeConfig = await readRuntimeStorageConfig({
+          dbClient: client,
+          env,
+          providerCode: request.params.providerCode,
+        });
+        const provider = createObjectStorageProvider(runtimeConfig, env);
+        const result = await provider.testConnection({ realCheck: true });
+        return storageProviderTestResponse(result);
+      }
+
       const diagnosticProviderCode = providerDiagnosticCodeFromRoute(
         request.params.providerType,
         request.params.providerCode,
@@ -1861,6 +1964,180 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       };
     },
   );
+
+  app.post("/admin/storage/test-upload", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "providers.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedBody = storageTestUploadSchema.safeParse(request.body ?? {});
+    if (!parsedBody.success) {
+      return sendZodError(reply, parsedBody.error);
+    }
+
+    let contentType: string;
+    try {
+      contentType = normalizeContentType(parsedBody.data.contentType);
+    } catch (error) {
+      return sendError(reply, 400, "invalid_content_type", (error as Error).message);
+    }
+
+    const provider = await getActiveObjectStorageProvider({
+      dbClient: client,
+      env,
+      providerCode: parsedBody.data.providerCode,
+    });
+    const contentBytes = new TextEncoder().encode(parsedBody.data.content);
+    const maxJsonTestBytes = Math.min(provider.maxUploadBytes, 65536);
+    if (contentBytes.byteLength > maxJsonTestBytes) {
+      return reply.status(413).send({
+        error: "storage_test_payload_too_large",
+        message: `测试内容不能超过 ${maxJsonTestBytes} 字节。`,
+        messageZh: `测试内容不能超过 ${maxJsonTestBytes} 字节。`,
+      });
+    }
+
+    try {
+      const object = await provider.putObject({
+        key: parsedBody.data.key,
+        body: contentBytes,
+        contentType,
+      });
+
+      await createAuditLog(
+        {
+          actorUserId: auth.auditActorUserId,
+          action: "storage_test.upload",
+          targetType: "storage_object",
+          targetId: `${object.providerCode}:${object.key}`,
+          afterJson: toAuditJson(object),
+          ipAddress: request.ip,
+          userAgent: request.headers["user-agent"] ?? null,
+        },
+        { client },
+      );
+
+      const messageZh = `${storageProviderNameZh(provider.providerCode)} 测试对象已写入。`;
+      return {
+        success: true,
+        providerType: provider.providerType,
+        providerCode: provider.providerCode,
+        providerNameZh: storageProviderNameZh(provider.providerCode),
+        object,
+        readUrl: await provider.createReadUrl({ key: object.key }),
+        messageZh,
+        message: messageZh,
+      };
+    } catch (error) {
+      return sendError(
+        reply,
+        400,
+        "storage_test_upload_failed",
+        safeStorageRouteErrorMessage(error),
+      );
+    }
+  });
+
+  app.get("/admin/storage/test-download", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "providers.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedQuery = storageTestObjectQuerySchema.safeParse(request.query ?? {});
+    if (!parsedQuery.success) {
+      return sendZodError(reply, parsedQuery.error);
+    }
+
+    const provider = await getActiveObjectStorageProvider({
+      dbClient: client,
+      env,
+      providerCode: parsedQuery.data.providerCode,
+    });
+
+    try {
+      const object = await provider.getObject({ key: parsedQuery.data.key });
+      if (object.body.byteLength > 65536) {
+        return reply.status(413).send({
+          error: "storage_test_object_too_large",
+          message: "测试下载对象超过 65536 字节，未在 JSON 响应中返回内容。",
+          messageZh: "测试下载对象超过 65536 字节，未在 JSON 响应中返回内容。",
+        });
+      }
+
+      const { body: _body, ...metadata } = object;
+      const messageZh = `${storageProviderNameZh(provider.providerCode)} 测试对象读取成功。`;
+      return {
+        success: true,
+        providerType: provider.providerType,
+        providerCode: provider.providerCode,
+        providerNameZh: storageProviderNameZh(provider.providerCode),
+        object: metadata,
+        content: new TextDecoder().decode(object.body),
+        messageZh,
+        message: messageZh,
+      };
+    } catch (error) {
+      return sendError(
+        reply,
+        400,
+        "storage_test_download_failed",
+        safeStorageRouteErrorMessage(error),
+      );
+    }
+  });
+
+  app.delete("/admin/storage/test-object", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "providers.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedQuery = storageTestObjectQuerySchema.safeParse(request.query ?? {});
+    if (!parsedQuery.success) {
+      return sendZodError(reply, parsedQuery.error);
+    }
+
+    const provider = await getActiveObjectStorageProvider({
+      dbClient: client,
+      env,
+      providerCode: parsedQuery.data.providerCode,
+    });
+
+    try {
+      await provider.deleteObject({ key: parsedQuery.data.key });
+      await createAuditLog(
+        {
+          actorUserId: auth.auditActorUserId,
+          action: "storage_test.delete",
+          targetType: "storage_object",
+          targetId: `${provider.providerCode}:${parsedQuery.data.key}`,
+          ipAddress: request.ip,
+          userAgent: request.headers["user-agent"] ?? null,
+        },
+        { client },
+      );
+
+      const messageZh = `${storageProviderNameZh(provider.providerCode)} 测试对象已删除。`;
+      return {
+        success: true,
+        providerType: provider.providerType,
+        providerCode: provider.providerCode,
+        providerNameZh: storageProviderNameZh(provider.providerCode),
+        key: parsedQuery.data.key,
+        messageZh,
+        message: messageZh,
+      };
+    } catch (error) {
+      return sendError(
+        reply,
+        400,
+        "storage_test_delete_failed",
+        safeStorageRouteErrorMessage(error),
+      );
+    }
+  });
 
   if (isLocalDevelopment(env)) {
     app.get("/debug/providers", async () => {

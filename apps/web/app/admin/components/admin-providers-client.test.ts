@@ -5,6 +5,10 @@ import { describe, expect, it } from "vitest";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(resolve(__dirname, "admin-providers-client.tsx"), "utf8");
+const providerFieldsSource = readFileSync(
+  resolve(__dirname, "../../../../../packages/shared/src/provider-fields.ts"),
+  "utf8",
+);
 
 describe("admin provider console source", () => {
   it("defines grouped provider console sections and an overview", () => {
@@ -15,6 +19,7 @@ describe("admin provider console source", () => {
       "天气数据源",
       "智能解读",
       "账户验证服务",
+      "对象存储",
       "已启用",
       "真实调用",
       "需要处理",
@@ -53,22 +58,52 @@ describe("admin provider console source", () => {
       "邮箱验证码",
       "短信验证码",
       "阿里云短信",
+      "报告文件",
+      "导出文件",
+      "生成素材",
+      "对象存储",
     ]) {
       expect(source).toContain(label);
     }
   });
 
-  it("includes account verification providers in the managed allowlist", () => {
+  it("includes account verification and object storage providers in the managed allowlist", () => {
     for (const snippet of [
       '"email:aliyun_smtp"',
       '"sms:aliyun_sms"',
+      '"storage:local_storage"',
+      '"storage:aliyun_oss"',
+      '"storage:tencent_cos"',
       'displayName: "阿里云企业邮箱 SMTP"',
       'displayName: "阿里云短信"',
+      'displayName: "本地存储"',
+      'displayName: "阿里云 OSS"',
+      'displayName: "腾讯云 COS"',
       'requiredConfigKeys: ["host", "port", "secure", "fromAddress"]',
       'requiredConfigKeys: ["regionId", "signName", "templateCode"]',
-      "统一管理地图、天气数据源、智能解读、邮箱和短信验证码服务。",
+      'requiredConfigKeys: ["rootPath", "publicBaseUrl", "basePrefix", "maxUploadBytes"]',
+      'requiredConfigKeys: ["region", "endpoint", "bucket", "basePrefix", "publicBaseUrl"]',
+      'requiredConfigKeys: ["region", "bucket", "basePrefix", "publicBaseUrl"]',
+      "统一管理地图、天气数据源、智能解读、邮箱、短信验证码和对象存储服务。",
     ]) {
       expect(source).toContain(snippet);
+    }
+  });
+
+  it("exposes object storage field labels through the imported provider presets", () => {
+    for (const label of [
+      "Bucket",
+      "Region",
+      "Endpoint",
+      "AccessKey ID",
+      "AccessKey Secret",
+      "Secret ID",
+      "Secret Key",
+      "最大上传字节数",
+      "存储前缀",
+      "公开访问地址",
+    ]) {
+      expect(providerFieldsSource).toContain(label);
     }
   });
 
@@ -89,6 +124,11 @@ describe("admin provider console source", () => {
       'regionId: "cn-hangzhou"',
       'signName: ""',
       'templateCode: ""',
+      'rootPath: "data/uploads"',
+      'basePrefix: "uploads"',
+      "maxUploadBytes: 10485760",
+      'bucket: ""',
+      'endpoint: ""',
     ]) {
       expect(source).toContain(snippet);
     }

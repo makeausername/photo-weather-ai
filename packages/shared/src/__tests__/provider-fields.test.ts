@@ -193,6 +193,119 @@ describe("provider field presets", () => {
     );
   });
 
+  it("defines complete object storage provider fields without exposing secrets", () => {
+    expect(getProviderFieldPreset("local_storage")?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "rootPath", target: "configJson" }),
+        expect.objectContaining({ key: "publicBaseUrl", target: "configJson" }),
+        expect.objectContaining({ key: "basePrefix", target: "configJson" }),
+        expect.objectContaining({
+          key: "maxUploadBytes",
+          target: "configJson",
+          control: "number",
+          defaultValue: 10485760,
+        }),
+      ]),
+    );
+
+    expect(getProviderFieldPreset("aliyun_oss")?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "realCallEnabled",
+          label: "启用真实调用",
+          target: "configJson",
+          control: "boolean",
+        }),
+        expect.objectContaining({ key: "region", label: "Region", target: "configJson" }),
+        expect.objectContaining({ key: "endpoint", label: "Endpoint", target: "configJson" }),
+        expect.objectContaining({ key: "bucket", label: "Bucket", target: "configJson" }),
+        expect.objectContaining({ key: "basePrefix", label: "存储前缀", target: "configJson" }),
+        expect.objectContaining({
+          key: "publicBaseUrl",
+          label: "公开访问地址",
+          target: "configJson",
+        }),
+        expect.objectContaining({
+          key: "forcePathStyle",
+          label: "Path-style 访问",
+          target: "configJson",
+          advanced: true,
+        }),
+        expect.objectContaining({
+          key: "timeoutMs",
+          label: "请求超时（毫秒）",
+          target: "configJson",
+          defaultValue: 10000,
+          advanced: true,
+        }),
+        expect.objectContaining({
+          key: "maxUploadBytes",
+          label: "最大上传字节数",
+          target: "configJson",
+          defaultValue: 10485760,
+          advanced: true,
+        }),
+        expect.objectContaining({
+          key: "accessKeyId",
+          label: "AccessKey ID",
+          target: "secretJson",
+          password: true,
+        }),
+        expect.objectContaining({
+          key: "accessKeySecret",
+          label: "AccessKey Secret",
+          target: "secretJson",
+          password: true,
+        }),
+      ]),
+    );
+
+    expect(getProviderFieldPreset("tencent_cos")?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "realCallEnabled",
+          label: "启用真实调用",
+          target: "configJson",
+          control: "boolean",
+        }),
+        expect.objectContaining({ key: "region", label: "Region", target: "configJson" }),
+        expect.objectContaining({ key: "bucket", label: "Bucket", target: "configJson" }),
+        expect.objectContaining({ key: "basePrefix", label: "存储前缀", target: "configJson" }),
+        expect.objectContaining({
+          key: "publicBaseUrl",
+          label: "公开访问地址",
+          target: "configJson",
+        }),
+        expect.objectContaining({
+          key: "timeoutMs",
+          label: "请求超时（毫秒）",
+          target: "configJson",
+          defaultValue: 10000,
+          advanced: true,
+        }),
+        expect.objectContaining({
+          key: "maxUploadBytes",
+          label: "最大上传字节数",
+          target: "configJson",
+          defaultValue: 10485760,
+          advanced: true,
+        }),
+        expect.objectContaining({
+          key: "secretId",
+          label: "Secret ID",
+          target: "secretJson",
+          password: true,
+        }),
+        expect.objectContaining({
+          key: "secretKey",
+          label: "Secret Key",
+          target: "secretJson",
+          password: true,
+        }),
+      ]),
+    );
+  });
+
   it("keeps DeepSeek model dropdown values centralized", () => {
     expect(deepSeekModelOptions.map((option) => option.value)).toEqual(["deepseek-v4-pro"]);
     expect(normalizeDeepSeekModel("deepseek-reasoner")).toBe("deepseek-v4-pro");

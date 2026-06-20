@@ -509,9 +509,9 @@ docker compose --env-file .env.production -f docker-compose.prod.yml config >/tm
 
 If a previous installer run left a broken env file, run `bash scripts/install.sh` again. When it prints `检测到现有 .env.production 格式错误。`, choose the default `Y` to back up the old file as `.env.production.broken-YYYYMMDD-HHMMSS` and regenerate a clean configuration.
 
-Third-party API keys may contain characters that are easy to break in env files. The production installer now leaves initial provider keys empty; configure weather, map, and model provider keys in the admin console after deployment.
+Third-party API keys may contain characters that are easy to break in env files. The production installer now leaves initial provider keys empty; configure weather, map, model, account verification, and object storage provider keys in the admin console after deployment.
 
-Provider configuration lives in `/admin/providers`; see [admin-providers.md](admin-providers.md). After saving QWeather, Open-Meteo, meteoblue, Amap, or DeepSeek settings, click `测试连接` in the UI. For a server-side safe diagnostic that does not print API keys:
+Provider configuration lives in `/admin/providers`; see [admin-providers.md](admin-providers.md). After saving QWeather, Open-Meteo, meteoblue, Amap, DeepSeek, Aliyun OSS, or Tencent COS settings, click `测试连接` in the UI. Cloud object storage stays in config-check mode until `启用真实调用` is switched on after credentials are saved. Automated tests do not call real cloud storage. For a server-side safe diagnostic that does not print API keys:
 
 ```bash
 bash scripts/test-providers.sh

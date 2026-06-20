@@ -33,7 +33,7 @@ type AdminProvidersClientProps = {
   readonly providerType?: string;
 };
 
-type ProviderGroupKey = "geo" | "weather" | "ai" | "notification";
+type ProviderGroupKey = "geo" | "weather" | "ai" | "notification" | "storage";
 type ProviderKey =
   | "geo:amap"
   | "weather:qweather"
@@ -41,7 +41,10 @@ type ProviderKey =
   | "weather:meteoblue"
   | "ai:deepseek"
   | "email:aliyun_smtp"
-  | "sms:aliyun_sms";
+  | "sms:aliyun_sms"
+  | "storage:local_storage"
+  | "storage:aliyun_oss"
+  | "storage:tencent_cos";
 type RowState = ProviderSaveFeedbackState;
 type FieldDrafts = Record<string, Record<string, string>>;
 type ClearSecretDrafts = Record<string, Record<string, boolean>>;
@@ -80,6 +83,9 @@ const providerOrder: readonly ProviderKey[] = [
   "ai:deepseek",
   "email:aliyun_smtp",
   "sms:aliyun_sms",
+  "storage:local_storage",
+  "storage:aliyun_oss",
+  "storage:tencent_cos",
 ];
 
 const providerGroups = [
@@ -102,6 +108,11 @@ const providerGroups = [
     key: "notification",
     title: "账户验证服务",
     description: "配置注册验证码邮件和短信服务，密钥只保存在服务端。",
+  },
+  {
+    key: "storage",
+    title: "对象存储",
+    description: "配置报告、导出文件和生成素材的存储后端，密钥只保存在服务端。",
   },
 ] as const satisfies readonly {
   readonly key: ProviderGroupKey;
@@ -166,6 +177,30 @@ const providerMeta: Record<ProviderKey, ProviderMeta> = {
     capabilities: ["短信验证码", "注册验证", "阿里云短信"],
     requiredConfigKeys: ["regionId", "signName", "templateCode"],
   },
+  "storage:local_storage": {
+    key: "storage:local_storage",
+    group: "storage",
+    displayName: "本地存储",
+    purpose: "单机部署和开发环境的本地文件存储后端。",
+    capabilities: ["报告文件", "导出文件", "生成素材", "本地磁盘"],
+    requiredConfigKeys: ["rootPath", "publicBaseUrl", "basePrefix", "maxUploadBytes"],
+  },
+  "storage:aliyun_oss": {
+    key: "storage:aliyun_oss",
+    group: "storage",
+    displayName: "阿里云 OSS",
+    purpose: "用于生产环境报告、导出文件和生成素材的阿里云 OSS 存储后端。",
+    capabilities: ["对象存储", "报告文件", "导出文件", "生成素材"],
+    requiredConfigKeys: ["region", "endpoint", "bucket", "basePrefix", "publicBaseUrl"],
+  },
+  "storage:tencent_cos": {
+    key: "storage:tencent_cos",
+    group: "storage",
+    displayName: "腾讯云 COS",
+    purpose: "用于生产环境报告、导出文件和生成素材的腾讯云 COS 存储后端。",
+    capabilities: ["对象存储", "报告文件", "导出文件", "生成素材"],
+    requiredConfigKeys: ["region", "bucket", "basePrefix", "publicBaseUrl"],
+  },
 };
 
 const advancedHiddenKeys = new Set(["realCallEnabled", "analysisMode", "model"]);
@@ -214,6 +249,32 @@ const providerConfigDefaults: Partial<Record<string, Record<string, JsonValue>>>
     signName: "",
     templateCode: "",
     timeoutMs: 10000,
+  },
+  local_storage: {
+    rootPath: "data/uploads",
+    publicBaseUrl: "",
+    basePrefix: "uploads",
+    maxUploadBytes: 10485760,
+  },
+  aliyun_oss: {
+    realCallEnabled: false,
+    region: "",
+    endpoint: "",
+    bucket: "",
+    basePrefix: "uploads",
+    publicBaseUrl: "",
+    forcePathStyle: false,
+    timeoutMs: 10000,
+    maxUploadBytes: 10485760,
+  },
+  tencent_cos: {
+    realCallEnabled: false,
+    region: "",
+    bucket: "",
+    basePrefix: "uploads",
+    publicBaseUrl: "",
+    timeoutMs: 10000,
+    maxUploadBytes: 10485760,
   },
 };
 
@@ -376,10 +437,6 @@ function getAdvancedConfigFields(provider: SafeProviderConfig): readonly Provide
   );
 }
 
-function primarySecretField(provider: SafeProviderConfig): ProviderFieldDefinition | undefined {
-  return getPresetFields(provider, "secretJson")[0];
-}
-
 function hasSavedSecret(provider: SafeProviderConfig, key: string): boolean {
   const value = readJsonField(provider.maskedSecretJson, key);
   return value !== undefined && value !== null && value !== "";
@@ -528,16 +585,16 @@ function openMeteoMode(provider: SafeProviderConfig): "free" | "customer" {
 }
 
 function secretStatusLabel(provider: SafeProviderConfig): string {
-  const secretField = primarySecretField(provider);
-  if (!secretField) {
+  const secretFields = getPresetFields(provider, "secretJson");
+  if (secretFields.length === 0) {
     return "可选";
   }
 
   if (isOpenMeteoProvider(provider) && openMeteoMode(provider) === "free") {
-    return hasSavedSecret(provider, secretField.key) ? "已保存" : "可选";
+    return secretFields.some((field) => hasSavedSecret(provider, field.key)) ? "已保存" : "可选";
   }
 
-  return hasSavedSecret(provider, secretField.key) ? "已保存" : "未保存";
+  return secretFields.every((field) => hasSavedSecret(provider, field.key)) ? "已保存" : "未保存";
 }
 
 function secretStatusVariant(provider: SafeProviderConfig): "success" | "warning" | "muted" {
@@ -588,8 +645,8 @@ function modeStatusLabel(provider: SafeProviderConfig, realEnabled: boolean): st
 }
 
 function providerRequiresSavedSecret(provider: SafeProviderConfig, realEnabled: boolean): boolean {
-  const secretField = primarySecretField(provider);
-  if (!secretField || !realEnabled) {
+  const secretFields = getPresetFields(provider, "secretJson");
+  if (secretFields.length === 0 || !realEnabled) {
     return false;
   }
 
@@ -602,10 +659,10 @@ function providerNeedsAttention(
   testState: RowState | undefined,
 ): boolean {
   const realEnabled = isRealDevCallEnabled(provider, flags);
-  const secretField = primarySecretField(provider);
+  const secretFields = getPresetFields(provider, "secretJson");
   const missingRequiredSecret =
-    providerRequiresSavedSecret(provider, realEnabled) && secretField
-      ? !hasSavedSecret(provider, secretField.key)
+    providerRequiresSavedSecret(provider, realEnabled) && secretFields.length > 0
+      ? secretFields.some((field) => !hasSavedSecret(provider, field.key))
       : false;
   const qweatherMissingHost =
     provider.providerCode === "qweather" &&
@@ -1218,7 +1275,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         <div className="min-w-0">
           <h2 className="text-xl font-bold tracking-normal text-foreground">服务商配置</h2>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-muted-foreground">
-            统一管理地图、天气数据源、智能解读、邮箱和短信验证码服务。保存配置只保存参数，测试连接用于验证服务配置。
+            统一管理地图、天气数据源、智能解读、邮箱、短信验证码和对象存储服务。保存配置只保存参数，测试连接用于验证服务配置。
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -1511,7 +1568,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         <div className="rounded-lg border border-border bg-card">
           <EmptyState
             title="暂无可管理的服务商"
-            description="当前控制台只管理高德地图、和风天气、Open-Meteo、meteoblue、DeepSeek、邮箱和短信验证码服务。"
+            description="当前控制台只管理高德地图、和风天气、Open-Meteo、meteoblue、DeepSeek、邮箱、短信验证码和对象存储服务。"
           />
         </div>
       ) : null}

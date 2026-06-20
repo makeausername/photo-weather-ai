@@ -1,6 +1,6 @@
 # 后台服务商配置
 
-`/admin/providers` 是生产服务商配置控制台。当前控制台按“地图与地理服务”“天气数据源”“智能解读”分组管理高德地图、和风天气、Open-Meteo、meteoblue 和 DeepSeek。
+`/admin/providers` 是生产服务商配置控制台。当前控制台按“地图与地理服务”“天气数据源”“智能解读”“账户验证服务”“对象存储”分组管理高德地图、和风天气、Open-Meteo、meteoblue、DeepSeek、注册验证码服务和对象存储服务。
 
 API Key 只保存在服务端数据库的密钥字段中，前端只接收脱敏后的 `maskedSecretJson`。后台页面、测试连接响应、诊断脚本和日志都不应输出原始密钥、原始配置 JSON、Prisma 错误或堆栈。
 
@@ -15,7 +15,7 @@ API Key 只保存在服务端数据库的密钥字段中，前端只接收脱敏
 
 - **保存配置**：只保存启用状态、优先级、非密钥配置和新填写的密钥，不会自动请求第三方服务。成功返回 `{服务商} 配置已保存。`
 - **测试连接**：只有服务商已启用、`启用真实调用` 已打开，并且必要凭据已保存时，才会由管理员点击后请求真实服务。成功返回 `{服务商} 连接测试通过，耗时 {latencyMs}ms。`
-- 自动化测试必须 mock 网络请求，不调用真实 QWeather、Open-Meteo、meteoblue、高德地图或 DeepSeek。
+- 自动化测试必须 mock 网络请求，不调用真实 QWeather、Open-Meteo、meteoblue、高德地图、DeepSeek、阿里云 OSS 或腾讯云 COS。
 
 ## 和风天气
 
@@ -54,6 +54,28 @@ meteoblue 可作为专业增强天气源，用于 Forecast API 真实测试和�
 ## DeepSeek
 
 DeepSeek 只用于解释确定性评分、风险和拍摄建议。启用服务商和真实调用并保存 API Key 后，测试连接会执行最小 JSON 响应检查。DeepSeek 不计算天气、天文、地形、坐标或评分。
+
+## 对象存储
+
+对象存储用于后续报告文件、导出文件和生成素材，不会接入 forecast 结果页、支付或 AI 解释流程。默认存储服务商由 `storage.provider` 系统设置选择，缺省为 `local_storage`。
+
+支持的服务商：
+
+- `local_storage`：默认启用，写入服务器本地 `rootPath` 下，默认配置为 `data/uploads`、`basePrefix=uploads`、`maxUploadBytes=10485760`。
+- `aliyun_oss`：默认禁用。必填参数为 `region`、`endpoint`、`bucket`、`accessKeyId`、`accessKeySecret`、`basePrefix`；`publicBaseUrl` 可选。
+- `tencent_cos`：默认禁用。必填参数为 `region`、`bucket`、`secretId`、`secretKey`、`basePrefix`；`publicBaseUrl` 可选。
+
+阿里云 OSS 和腾讯云 COS 的 `启用真实调用` 默认为关闭。保存凭据后仍需手动开启 `启用该服务商` 和 `启用真实调用`，再点击测试连接，后台才会对真实云存储执行轻量健康检查。健康检查使用 `health-check/storage-test.txt`，写入、读取/探测后会立即删除。
+
+关闭真实调用时，测试连接只做配置检查，不上传文件，也不请求云服务。自动化测试不得请求真实对象存储 SDK；测试只覆盖 config-check、缺失字段、本地存储和管理员权限。
+
+管理员可用以下后台专用接口手动验证小对象读写：
+
+- `POST /admin/storage/test-upload`
+- `GET /admin/storage/test-download`
+- `DELETE /admin/storage/test-object`
+
+这些接口只允许拥有服务商管理权限的后台用户调用，支持 `local_storage`、`aliyun_oss`、`tencent_cos`，不会创建公开匿名下载路由，也不会返回服务器绝对文件路径或原始密钥。
 
 ## 服务器诊断
 

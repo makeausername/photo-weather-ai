@@ -51,6 +51,18 @@ export function providerSaveSuccessMessage(provider: ProviderIdentity): string {
     return "高德地图 配置已保存。";
   }
 
+  if (provider.providerCode === "local_storage") {
+    return "本地存储 配置已保存。";
+  }
+
+  if (provider.providerCode === "aliyun_oss") {
+    return "阿里云 OSS 配置已保存。";
+  }
+
+  if (provider.providerCode === "tencent_cos") {
+    return "腾讯云 COS 配置已保存。";
+  }
+
   return "服务商配置已保存。";
 }
 

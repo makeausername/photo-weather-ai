@@ -77,6 +77,68 @@ describe("database seed data", () => {
             accessKeySecret: "",
           },
         }),
+        expect.objectContaining({
+          providerType: "storage",
+          providerCode: "local_storage",
+          displayName: "本地存储",
+          enabled: true,
+          configJson: {
+            rootPath: "data/uploads",
+            publicBaseUrl: "",
+            basePrefix: "uploads",
+            maxUploadBytes: 10485760,
+          },
+          secretJson: {},
+          maskedSecretJson: {},
+        }),
+        expect.objectContaining({
+          providerType: "storage",
+          providerCode: "aliyun_oss",
+          displayName: "阿里云 OSS",
+          enabled: false,
+          configJson: {
+            realCallEnabled: false,
+            region: "",
+            endpoint: "",
+            bucket: "",
+            basePrefix: "uploads",
+            publicBaseUrl: "",
+            forcePathStyle: false,
+            timeoutMs: 10000,
+            maxUploadBytes: 10485760,
+          },
+          secretJson: {
+            accessKeyId: "",
+            accessKeySecret: "",
+          },
+          maskedSecretJson: {
+            accessKeyId: "",
+            accessKeySecret: "",
+          },
+        }),
+        expect.objectContaining({
+          providerType: "storage",
+          providerCode: "tencent_cos",
+          displayName: "腾讯云 COS",
+          enabled: false,
+          configJson: {
+            realCallEnabled: false,
+            region: "",
+            bucket: "",
+            basePrefix: "uploads",
+            publicBaseUrl: "",
+            timeoutMs: 10000,
+            maxUploadBytes: 10485760,
+          },
+          secretJson: {
+            secretId: "",
+            secretKey: "",
+          },
+          maskedSecretJson: {
+            secretId: "",
+            secretKey: "",
+          },
+        }),
       ]),
     );
     expect(seedData.providerConfigs.every((provider) => provider.secretJson)).toBe(true);
