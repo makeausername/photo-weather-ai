@@ -33,7 +33,6 @@ export const accountCenterSectionLabels = [
   "资料信息",
   "偏好设置",
   "安全与登录",
-  "快捷入口",
 ] as const;
 
 export function AccountCenterClient() {
@@ -133,21 +132,20 @@ export function AuthenticatedAccountCenter({
   readonly onLogout: () => void;
   readonly isLoggingOut: boolean;
 }) {
+  const showAdminEntry = shouldShowAdminEntry(session);
+
   return (
     <div className="grid gap-5">
       <AccountStatusHero session={session} />
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
-        <div className="grid gap-5">
-          <ProfileCard session={session} />
-          <PreferencesCard session={session} />
-        </div>
+      <div className="grid gap-5 lg:grid-cols-2 lg:items-start">
+        <ProfileCard session={session} />
+        <SecurityCard session={session} onLogout={onLogout} isLoggingOut={isLoggingOut} />
+      </div>
 
-        <div className="grid content-start gap-5">
-          <SecurityCard session={session} onLogout={onLogout} isLoggingOut={isLoggingOut} />
-          <QuickActionsCard />
-          {shouldShowAdminEntry(session) ? <AdminAccessCard /> : null}
-        </div>
+      <div className={cn("grid gap-5 lg:items-start", showAdminEntry ? "lg:grid-cols-2" : "")}>
+        <PreferencesCard session={session} />
+        {showAdminEntry ? <AdminAccessCard /> : null}
       </div>
     </div>
   );
@@ -270,37 +268,6 @@ function SecurityCard({
       >
         {isLoggingOut ? "正在退出..." : "退出登录"}
       </Button>
-    </Card>
-  );
-}
-
-const quickActionLinks = [
-  { href: "/#analysis", label: "首页 / 开始判断" },
-  { href: "/cloud-sea", label: "云海" },
-  { href: "/glow", label: "朝霞晚霞" },
-  { href: "/astro", label: "星空银河" },
-  { href: "/pricing", label: "定价" },
-] as const;
-
-function QuickActionsCard() {
-  return (
-    <Card className="p-5 shadow-sm sm:p-6">
-      <h2 className="text-lg font-bold text-card-foreground">快捷入口</h2>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">
-        继续使用逐光天气的常用页面。
-      </p>
-      <div className="mt-5 grid gap-2">
-        {quickActionLinks.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted px-4 py-3 text-sm font-semibold text-card-foreground transition hover:border-primary hover:bg-secondary"
-          >
-            <span>{item.label}</span>
-            <span className="text-muted-foreground">访问</span>
-          </Link>
-        ))}
-      </div>
     </Card>
   );
 }

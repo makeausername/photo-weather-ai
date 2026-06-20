@@ -181,7 +181,6 @@ describe("account center foundation", () => {
       "资料信息",
       "偏好设置",
       "安全与登录",
-      "快捷入口",
     ]);
   });
 
@@ -211,11 +210,27 @@ describe("account center foundation", () => {
     expect(html).toContain("2026/06/17");
     expect(html).toContain("公制单位");
     expect(html).toContain("简体中文");
-    expect(html).toContain('href="/#analysis"');
-    expect(html).toContain('href="/cloud-sea"');
-    expect(html).toContain('href="/glow"');
-    expect(html).toContain('href="/astro"');
-    expect(html).toContain('href="/pricing"');
+
+    for (const removedDashboardLink of [
+      'href="/#analysis"',
+      'href="/cloud-sea"',
+      'href="/glow"',
+      'href="/astro"',
+      'href="/pricing"',
+    ]) {
+      expect(html).not.toContain(removedDashboardLink);
+    }
+
+    for (const removedDashboardLabel of [
+      "快捷入口",
+      "首页 / 开始判断",
+      "云海",
+      "朝霞晚霞",
+      "星空银河",
+      "定价",
+    ]) {
+      expect(html).not.toContain(removedDashboardLabel);
+    }
   });
 
   it("renders the admin card only for admin sessions", () => {
