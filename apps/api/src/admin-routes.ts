@@ -3,14 +3,11 @@ import {
   assertProviderType,
   createAuditLog,
   createLocation,
-  createPhotoSpot,
   deleteLocation,
-  deletePhotoSpot,
   getProviderConfig,
   getLocation,
   getPhotoSpot,
   listLocations,
-  listPhotoSpots,
   getSystemSetting,
   listAuditLogs,
   listProviderConfigs,
@@ -20,11 +17,9 @@ import {
   setSystemSetting,
   updateProviderConfig,
   updateLocation,
-  updatePhotoSpot,
   validateProviderCode,
   validateSettingKey,
   validateSettingValue,
-  viewDirections,
 } from "@photo-weather/db";
 import type { DatabaseClient, JsonValue, ProviderType } from "@photo-weather/db";
 import { MockGeoProvider, validateCoordinates } from "@photo-weather/geo";
@@ -229,44 +224,7 @@ const locationPatchSchema = locationPayloadSchema
   .partial()
   .refine((value) => Object.keys(value).length > 0, "请至少提供一个要更新的地点字段。");
 
-const photoSpotPayloadSchema = z.object({
-  locationId: requiredTextSchema("所属地点"),
-  name: requiredTextSchema("机位名称"),
-  slug: slugSchema,
-  description: optionalTextSchema("机位说明", 2000),
-  latitudeGcj02: latitudeSchema,
-  longitudeGcj02: longitudeSchema,
-  latitudeWgs84: latitudeSchema,
-  longitudeWgs84: longitudeSchema,
-  elevation: elevationSchema,
-  viewDirection: z.enum(viewDirections, {
-    invalid_type_error: "请选择朝向。",
-    required_error: "请选择朝向。",
-  }),
-  bestForSunrise: z.boolean().default(false),
-  bestForSunset: z.boolean().default(false),
-  bestForCloudSea: z.boolean().default(false),
-  bestForStars: z.boolean().default(false),
-  bestForMilkyWay: z.boolean().default(false),
-  bestForSnow: z.boolean().default(false),
-  accessNote: optionalTextSchema("到达说明", 2000),
-  trafficNote: optionalTextSchema("交通说明", 2000),
-  safetyNote: optionalTextSchema("安全说明", 2000),
-  riskNote: optionalTextSchema("风险提示", 2000),
-  isHot: z.boolean().default(false),
-  isVerified: z.boolean().default(false),
-});
-
-const photoSpotPatchSchema = photoSpotPayloadSchema
-  .partial()
-  .refine((value) => Object.keys(value).length > 0, "请至少提供一个要更新的机位字段。");
-
 const listLocationsQuerySchema = z.object({
-  q: z.string().trim().optional(),
-});
-
-const listPhotoSpotsQuerySchema = z.object({
-  locationId: z.string().trim().min(1).optional(),
   q: z.string().trim().optional(),
 });
 
@@ -310,6 +268,7 @@ const historicalSourceProviderSchema = z.enum(historicalWeatherSourceProviders);
 
 const calibrationLocationSchema = z.object({
   spotId: z.string().trim().min(1).optional(),
+  locationId: z.string().trim().min(1).optional(),
   locationKey: z.string().trim().min(1).optional(),
   locationName: z.string().trim().min(1).optional(),
   latitudeWgs84: latitudeSchema.optional(),
@@ -355,6 +314,7 @@ const observedOutcomePayloadSchema = calibrationLocationSchema.extend({
 
 const calibrationStatsQuerySchema = z.object({
   spotId: z.string().trim().min(1).optional(),
+  locationId: z.string().trim().min(1).optional(),
   locationKey: z.string().trim().min(1).optional(),
   target: calibrationTargetSchema.optional(),
   ruleVersion: z.string().trim().min(1).optional(),
@@ -362,6 +322,7 @@ const calibrationStatsQuerySchema = z.object({
 
 const calibrationReplayResultsQuerySchema = z.object({
   spotId: z.string().trim().min(1).optional(),
+  locationId: z.string().trim().min(1).optional(),
   locationKey: z.string().trim().min(1).optional(),
   target: calibrationTargetSchema.optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
@@ -379,6 +340,20 @@ export type AdminRoutesOptions = {
 
 function toAuditJson(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue;
+}
+
+function calibrationLocationKeyFromQuery(input: {
+  readonly spotId?: string;
+  readonly locationId?: string;
+  readonly locationKey?: string;
+}): string | undefined {
+  if (input.spotId) {
+    return buildCalibrationLocationKey({ spotId: input.spotId });
+  }
+  if (input.locationId) {
+    return buildCalibrationLocationKey({ locationId: input.locationId });
+  }
+  return input.locationKey;
 }
 
 function isLocalDevelopment(env: NodeJS.ProcessEnv): boolean {
@@ -638,7 +613,7 @@ async function resolveCalibrationLocation(
   if (input.spotId) {
     const spot = await getPhotoSpot(input.spotId, { client });
     if (!spot) {
-      throw new Error("未找到用于历史校准的机位。");
+      throw new Error("未找到用于历史校准的旧版拍摄点。");
     }
 
     return {
@@ -651,12 +626,29 @@ async function resolveCalibrationLocation(
     };
   }
 
+  if (input.locationId) {
+    const location = await getLocation(input.locationId, { client });
+    if (!location) {
+      throw new Error("未找到用于历史校准的地点。");
+    }
+
+    return {
+      spotId: null,
+      locationKey:
+        input.locationKey ?? buildCalibrationLocationKey({ locationId: location.id }),
+      locationName: input.locationName ?? location.name,
+      latitudeWgs84: input.latitudeWgs84 ?? location.latitudeWgs84,
+      longitudeWgs84: input.longitudeWgs84 ?? location.longitudeWgs84,
+      elevationMeters: input.elevationMeters ?? location.elevation,
+    };
+  }
+
   if (
     !input.locationName ||
     typeof input.latitudeWgs84 !== "number" ||
     typeof input.longitudeWgs84 !== "number"
   ) {
-    throw new Error("请提供机位，或提供地点名称与 WGS84 坐标。");
+    throw new Error("请选择地点，或提供地点名称与 WGS84 坐标。");
   }
 
   return {
@@ -706,8 +698,8 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       return reply;
     }
 
-    const [photoSpots, stats, recentResults, outcomes, overview] = await Promise.all([
-      listPhotoSpots({ client }),
+    const [locations, stats, recentResults, outcomes, overview] = await Promise.all([
+      listLocations({ client }),
       listCalibrationStats({ client }),
       listForecastReplayResults({ client, limit: 50 }),
       listObservedOutcomes({ client }),
@@ -716,7 +708,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
 
     return {
       overview,
-      photoSpots,
+      locations,
       targets: calibrationTargets,
       minimumHintSampleCount: defaultCalibrationMinimumSampleCount,
       stats,
@@ -731,8 +723,8 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       return reply;
     }
 
-    const [photoSpots, stats, recentResults, outcomes, overview] = await Promise.all([
-      listPhotoSpots({ client }),
+    const [locations, stats, recentResults, outcomes, overview] = await Promise.all([
+      listLocations({ client }),
       listCalibrationStats({ client }),
       listForecastReplayResults({ client, limit: 50 }),
       listObservedOutcomes({ client }),
@@ -741,7 +733,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
 
     return {
       overview,
-      photoSpots,
+      locations,
       targets: calibrationTargets,
       minimumHintSampleCount: defaultCalibrationMinimumSampleCount,
       stats,
@@ -891,9 +883,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       return sendZodError(reply, parsedQuery.error);
     }
 
-    const locationKey = parsedQuery.data.spotId
-      ? buildCalibrationLocationKey({ spotId: parsedQuery.data.spotId })
-      : parsedQuery.data.locationKey;
+    const locationKey = calibrationLocationKeyFromQuery(parsedQuery.data);
     const [results, outcomes] = await Promise.all([
       listForecastReplayResults({
         client,
@@ -1039,9 +1029,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       return sendZodError(reply, parsedQuery.error);
     }
 
-    const locationKey = parsedQuery.data.spotId
-      ? buildCalibrationLocationKey({ spotId: parsedQuery.data.spotId })
-      : parsedQuery.data.locationKey;
+    const locationKey = calibrationLocationKeyFromQuery(parsedQuery.data);
     const stats = await listCalibrationStats({
       client,
       locationKey,
@@ -1061,6 +1049,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
     const parsedBody = calibrationReplaySchema
       .pick({
         spotId: true,
+        locationId: true,
         locationKey: true,
         locationName: true,
         latitudeWgs84: true,
@@ -1100,6 +1089,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
     const parsedBody = calibrationReplaySchema
       .pick({
         spotId: true,
+        locationId: true,
         locationKey: true,
         locationName: true,
         latitudeWgs84: true,
@@ -2320,158 +2310,6 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
     );
 
     return { location };
-  });
-
-  app.get("/admin/photo-spots", async (request, reply) => {
-    const auth = await requirePermission(request, reply, client, authConfig, "photo_spots.manage");
-    if (!auth) {
-      return reply;
-    }
-
-    const parsedQuery = listPhotoSpotsQuerySchema.safeParse(request.query);
-    if (!parsedQuery.success) {
-      return sendZodError(reply, parsedQuery.error);
-    }
-
-    const photoSpots = await listPhotoSpots({
-      locationId: parsedQuery.data.locationId,
-      search: parsedQuery.data.q,
-      client,
-    });
-
-    return { photoSpots };
-  });
-
-  app.get<{ Params: { id: string } }>("/admin/photo-spots/:id", async (request, reply) => {
-    const auth = await requirePermission(request, reply, client, authConfig, "photo_spots.manage");
-    if (!auth) {
-      return reply;
-    }
-
-    const photoSpot = await getPhotoSpot(request.params.id, { client });
-    if (!photoSpot) {
-      return sendError(reply, 404, "photo_spot_not_found", "未找到摄影机位。");
-    }
-
-    return { photoSpot };
-  });
-
-  app.post("/admin/photo-spots", async (request, reply) => {
-    const auth = await requirePermission(request, reply, client, authConfig, "photo_spots.manage");
-    if (!auth) {
-      return reply;
-    }
-
-    const parsedBody = photoSpotPayloadSchema.safeParse(request.body);
-    if (!parsedBody.success) {
-      return sendZodError(reply, parsedBody.error);
-    }
-
-    const location = await getLocation(parsedBody.data.locationId, { client });
-    if (!location) {
-      return sendError(reply, 400, "invalid_location", "请选择有效的所属地点。");
-    }
-
-    const coordinateError = validateCoordinatePair(parsedBody.data);
-    if (coordinateError) {
-      return sendError(reply, 400, "invalid_coordinates", coordinateError);
-    }
-
-    const photoSpot = await createPhotoSpot(parsedBody.data, { client });
-    await createAuditLog(
-      {
-        actorUserId: auth.auditActorUserId,
-        action: "photo_spot.create",
-        targetType: "photo_spot",
-        targetId: photoSpot.id,
-        afterJson: toAuditJson(photoSpot),
-        ipAddress: request.ip,
-        userAgent: request.headers["user-agent"] ?? null,
-      },
-      { client },
-    );
-
-    return reply.status(201).send({ photoSpot });
-  });
-
-  app.patch<{ Params: { id: string } }>("/admin/photo-spots/:id", async (request, reply) => {
-    const auth = await requirePermission(request, reply, client, authConfig, "photo_spots.manage");
-    if (!auth) {
-      return reply;
-    }
-
-    const parsedBody = photoSpotPatchSchema.safeParse(request.body);
-    if (!parsedBody.success) {
-      return sendZodError(reply, parsedBody.error);
-    }
-
-    const existingPhotoSpot = await getPhotoSpot(request.params.id, { client });
-    if (!existingPhotoSpot) {
-      return sendError(reply, 404, "photo_spot_not_found", "未找到摄影机位。");
-    }
-
-    if (parsedBody.data.locationId) {
-      const location = await getLocation(parsedBody.data.locationId, { client });
-      if (!location) {
-        return sendError(reply, 400, "invalid_location", "请选择有效的所属地点。");
-      }
-    }
-
-    const coordinateError = validateCoordinatePair({
-      latitudeGcj02: parsedBody.data.latitudeGcj02 ?? existingPhotoSpot.latitudeGcj02,
-      longitudeGcj02: parsedBody.data.longitudeGcj02 ?? existingPhotoSpot.longitudeGcj02,
-      latitudeWgs84: parsedBody.data.latitudeWgs84 ?? existingPhotoSpot.latitudeWgs84,
-      longitudeWgs84: parsedBody.data.longitudeWgs84 ?? existingPhotoSpot.longitudeWgs84,
-    });
-    if (coordinateError) {
-      return sendError(reply, 400, "invalid_coordinates", coordinateError);
-    }
-
-    const photoSpot = await updatePhotoSpot(request.params.id, parsedBody.data, { client });
-    await createAuditLog(
-      {
-        actorUserId: auth.auditActorUserId,
-        action: "photo_spot.update",
-        targetType: "photo_spot",
-        targetId: photoSpot.id,
-        beforeJson: toAuditJson(existingPhotoSpot),
-        afterJson: toAuditJson(photoSpot),
-        ipAddress: request.ip,
-        userAgent: request.headers["user-agent"] ?? null,
-      },
-      { client },
-    );
-
-    return { photoSpot };
-  });
-
-  app.delete<{ Params: { id: string } }>("/admin/photo-spots/:id", async (request, reply) => {
-    const auth = await requirePermission(request, reply, client, authConfig, "photo_spots.manage");
-    if (!auth) {
-      return reply;
-    }
-
-    const existingPhotoSpot = await getPhotoSpot(request.params.id, { client });
-    if (!existingPhotoSpot) {
-      return sendError(reply, 404, "photo_spot_not_found", "未找到摄影机位。");
-    }
-
-    const photoSpot = await deletePhotoSpot(request.params.id, { client });
-    await createAuditLog(
-      {
-        actorUserId: auth.auditActorUserId,
-        action: "photo_spot.delete",
-        targetType: "photo_spot",
-        targetId: existingPhotoSpot.id,
-        beforeJson: toAuditJson(existingPhotoSpot),
-        afterJson: toAuditJson(photoSpot),
-        ipAddress: request.ip,
-        userAgent: request.headers["user-agent"] ?? null,
-      },
-      { client },
-    );
-
-    return { photoSpot };
   });
 
   app.get("/admin/geo/search", async (request, reply) => {

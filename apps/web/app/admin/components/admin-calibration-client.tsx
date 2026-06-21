@@ -18,8 +18,8 @@ import type {
   AdminCalibrationStats,
   AdminCalibrationTarget,
   AdminForecastReplayResult,
+  AdminLocation,
   AdminObservedOutcome,
-  AdminPhotoSpot,
 } from "../admin-api";
 
 type CalibrationOverviewResponse = {
@@ -28,7 +28,7 @@ type CalibrationOverviewResponse = {
     readonly totalHistoricalSamples: number;
     readonly totalObservedOutcomes: number;
   };
-  readonly photoSpots: AdminPhotoSpot[];
+  readonly locations: AdminLocation[];
   readonly targets: AdminCalibrationTarget[];
   readonly minimumHintSampleCount: number;
   readonly stats: AdminCalibrationStats[];
@@ -196,19 +196,34 @@ function calibrationHintText(stats: AdminCalibrationStats | undefined, minimumSa
     return "历史样本较少，当前仍以实时判断为主。";
   }
   if (stats.falsePositiveRate >= 0.35) {
-    return "历史回放显示该机位同类条件偏乐观，建议出发前复核临近预报。";
+    return "历史回放显示该地点同类条件偏乐观，建议出发前复核临近预报。";
   }
   if (stats.falseNegativeRate >= 0.35) {
-    return "历史回放显示该机位偶有低分出片情况，若已在附近可保留机动观察。";
+    return "历史回放显示该地点偶有低分出片情况，若已在附近可保留机动观察。";
   }
   if (stats.hitRate >= 0.75) {
-    return "该机位同类条件历史命中率较稳定。";
+    return "该地点同类条件历史命中率较稳定。";
   }
   return "当前样本未显示明显系统性偏差，仍建议按临近预报复核。";
 }
 
+function buildLocationKey(location: AdminLocation): string {
+  return `location:${location.id}`;
+}
+
+function calibrationLocationPayload(location: AdminLocation) {
+  return {
+    locationId: location.id,
+    locationKey: buildLocationKey(location),
+    locationName: location.name,
+    latitudeWgs84: location.latitudeWgs84,
+    longitudeWgs84: location.longitudeWgs84,
+    elevationMeters: location.elevation,
+  };
+}
+
 export function AdminCalibrationClient() {
-  const [photoSpots, setPhotoSpots] = useState<AdminPhotoSpot[]>([]);
+  const [locations, setLocations] = useState<AdminLocation[]>([]);
   const [stats, setStats] = useState<AdminCalibrationStats[]>([]);
   const [results, setResults] = useState<AdminForecastReplayResult[]>([]);
   const [outcomes, setOutcomes] = useState<AdminObservedOutcome[]>([]);
@@ -219,18 +234,18 @@ export function AdminCalibrationClient() {
     totalObservedOutcomes: 0,
   });
   const [minimumSamples, setMinimumSamples] = useState(10);
-  const [spotId, setSpotId] = useState("");
+  const [locationId, setLocationId] = useState("");
   const [target, setTarget] = useState<AdminCalibrationTarget>("general");
   const [startDate, setStartDate] = useState(sevenDaysAgo());
   const [endDate, setEndDate] = useState(todayDate());
   const [outcomeForm, setOutcomeForm] = useState<OutcomeForm>(emptyOutcomeForm);
   const [status, setStatus] = useState("正在加载历史校准数据...");
 
-  const selectedSpot = useMemo(
-    () => photoSpots.find((spot) => spot.id === spotId),
-    [photoSpots, spotId],
+  const selectedLocation = useMemo(
+    () => locations.find((location) => location.id === locationId),
+    [locations, locationId],
   );
-  const selectedLocationKey = selectedSpot ? `spot:${selectedSpot.id}` : "";
+  const selectedLocationKey = selectedLocation ? buildLocationKey(selectedLocation) : "";
   const filteredStats = stats.filter(
     (item) =>
       (!selectedLocationKey || item.locationKey === selectedLocationKey) && item.target === target,
@@ -243,25 +258,26 @@ export function AdminCalibrationClient() {
     try {
       const response = await adminApiFetch<CalibrationOverviewResponse>("/admin/calibration");
       setOverview(response.overview);
-      setPhotoSpots(response.photoSpots);
+      setLocations(response.locations);
       setStats(response.stats);
       setResults(response.recentResults);
       setOutcomes(response.outcomes);
       setComparisons([]);
       setMinimumSamples(response.minimumHintSampleCount);
-      setSpotId((current) => current || response.photoSpots[0]?.id || "");
+      setLocationId((current) => current || response.locations[0]?.id || "");
       setStatus("历史校准数据已加载。");
     } catch (error) {
       setStatus((error as Error).message);
     }
   }
 
-  async function loadReplayResults(nextSpotId = spotId, nextTarget = target) {
-    if (!nextSpotId) {
+  async function loadReplayResults(nextLocationId = locationId, nextTarget = target) {
+    const location = locations.find((item) => item.id === nextLocationId);
+    if (!location) {
       return;
     }
     const params = new URLSearchParams({
-      spotId: nextSpotId,
+      locationKey: buildLocationKey(location),
       target: nextTarget,
       limit: "100",
     });
@@ -278,8 +294,8 @@ export function AdminCalibrationClient() {
   }, []);
 
   async function fetchHistory() {
-    if (!spotId) {
-      setStatus("请先选择机位。");
+    if (!selectedLocation) {
+      setStatus("请先选择地点。");
       return;
     }
     setStatus("正在拉取历史天气...");
@@ -290,7 +306,7 @@ export function AdminCalibrationClient() {
         readonly sampleCount: number;
       }>("/admin/calibration/fetch-history", {
         method: "POST",
-        body: JSON.stringify({ spotId, startDate, endDate }),
+        body: JSON.stringify({ ...calibrationLocationPayload(selectedLocation), startDate, endDate }),
       });
       setStatus(
         `历史天气已入库：新增 ${response.insertedCount} 条，跳过重复 ${response.skippedDuplicateCount} 条。`,
@@ -301,8 +317,8 @@ export function AdminCalibrationClient() {
   }
 
   async function runReplay() {
-    if (!spotId) {
-      setStatus("请先选择机位。");
+    if (!selectedLocation) {
+      setStatus("请先选择地点。");
       return;
     }
     setStatus("正在执行历史回放...");
@@ -311,10 +327,15 @@ export function AdminCalibrationClient() {
         "/admin/calibration/replay",
         {
           method: "POST",
-          body: JSON.stringify({ spotId, startDate, endDate, target }),
+          body: JSON.stringify({
+            ...calibrationLocationPayload(selectedLocation),
+            startDate,
+            endDate,
+            target,
+          }),
         },
       );
-      await loadReplayResults();
+      await loadReplayResults(selectedLocation.id, target);
       setStatus(`历史回放完成：生成 ${response.resultCount} 条预测结果。`);
     } catch (error) {
       setStatus((error as Error).message);
@@ -322,8 +343,8 @@ export function AdminCalibrationClient() {
   }
 
   async function rebuildStats() {
-    if (!spotId) {
-      setStatus("请先选择机位。");
+    if (!selectedLocation) {
+      setStatus("请先选择地点。");
       return;
     }
     setStatus("正在计算校准统计...");
@@ -332,7 +353,7 @@ export function AdminCalibrationClient() {
         "/admin/calibration/stats/rebuild",
         {
           method: "POST",
-          body: JSON.stringify({ spotId, target }),
+          body: JSON.stringify({ ...calibrationLocationPayload(selectedLocation), target }),
         },
       );
       setStats((current) => [
@@ -353,8 +374,8 @@ export function AdminCalibrationClient() {
   }
 
   async function saveOutcome() {
-    if (!spotId) {
-      setStatus("请先选择机位。");
+    if (!selectedLocation) {
+      setStatus("请先选择地点。");
       return;
     }
     setStatus("正在保存观测标注...");
@@ -364,7 +385,7 @@ export function AdminCalibrationClient() {
         {
           method: "POST",
           body: JSON.stringify({
-            spotId,
+            ...calibrationLocationPayload(selectedLocation),
             target,
             outcomeDate: outcomeForm.outcomeDate,
             observedResult: outcomeForm.observedResult,
@@ -387,7 +408,7 @@ export function AdminCalibrationClient() {
         response.outcome,
         ...current.filter((item) => item.id !== response.outcome.id),
       ]);
-      await loadReplayResults();
+      await loadReplayResults(selectedLocation.id, target);
       setStatus("观测标注已保存。");
     } catch (error) {
       setStatus((error as Error).message);
@@ -422,7 +443,7 @@ export function AdminCalibrationClient() {
       <Card className="overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-border px-5 py-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <h2 className="text-lg font-bold">校准概览</h2>
+            <h2 className="text-lg font-bold">地点校准概览</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               普通结果页至少需要 {minimumSamples} 条样本才显示历史校准提示。
             </p>
@@ -443,7 +464,7 @@ export function AdminCalibrationClient() {
               onClick={() => {
                 const nextTarget = value as AdminCalibrationTarget;
                 setTarget(nextTarget);
-                void loadReplayResults(spotId, nextTarget);
+                void loadReplayResults(locationId, nextTarget);
               }}
             >
               {label}
@@ -451,17 +472,18 @@ export function AdminCalibrationClient() {
           ))}
         </div>
         <div className="grid gap-3 p-5 md:grid-cols-3">
-          <FormField label="机位">
+          <FormField label="历史校准地点">
             <Select
-              value={spotId}
+              value={locationId}
               onChange={(event) => {
-                setSpotId(event.target.value);
+                setLocationId(event.target.value);
                 void loadReplayResults(event.target.value, target);
               }}
             >
-              {photoSpots.map((spot) => (
-                <option key={spot.id} value={spot.id}>
-                  {spot.name}
+              <option value="">请选择地点</option>
+              {locations.map((location) => (
+                <option key={location.id} value={location.id}>
+                  {location.name}
                 </option>
               ))}
             </Select>
@@ -497,7 +519,7 @@ export function AdminCalibrationClient() {
           <div className="border-b border-border px-5 py-4">
             <h2 className="text-lg font-bold">回放结果</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              显示当前机位和目标的历史预测、人工标注和命中状态。
+              显示当前地点和目标的历史预测、人工标注和命中状态。
             </p>
           </div>
           {results.length > 0 ? (

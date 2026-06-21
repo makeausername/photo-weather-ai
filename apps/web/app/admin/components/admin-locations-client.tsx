@@ -1,6 +1,5 @@
 ﻿"use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   Badge,
@@ -222,26 +221,13 @@ export function AdminLocationsClient() {
 
   return (
     <div className="grid gap-6">
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        <Link
-          href="/admin/locations"
-          className="whitespace-nowrap rounded-lg border border-primary bg-secondary px-3 py-2 text-sm font-semibold text-secondary-foreground"
-        >
-          地点管理
-        </Link>
-        <Link
-          href="/admin/photo-spots"
-          className="whitespace-nowrap rounded-lg border border-border bg-card px-3 py-2 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary hover:text-primary"
-        >
-          机位管理
-        </Link>
-      </div>
-
       <Card className="overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-border px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-lg font-bold">地点资料</h2>
-            <p className="mt-1 text-sm text-muted-foreground">管理景区、山地、城市与自定义拍摄地点。</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              管理景区、山地、城市与自定义拍摄地点，作为预报和历史校准的统一分析单元。
+            </p>
           </div>
           <span className={`rounded-lg border px-3 py-2 text-sm ${statusClass(status)}`}>
             {status}
@@ -459,7 +445,7 @@ export function AdminLocationsClient() {
       <ConfirmDialog
         open={deleteTarget !== null}
         title="删除地点"
-        description={<>确认删除「{deleteTarget?.name}」？该地点下的机位也会一起删除。</>}
+        description={<>确认删除「{deleteTarget?.name}」？该操作会写入审计日志。</>}
         confirmLabel="删除"
         cancelLabel="取消"
         onConfirm={() => {

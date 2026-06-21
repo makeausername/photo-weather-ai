@@ -8,8 +8,8 @@ export async function seedDatabase(client: DatabaseClient): Promise<void> {
   if (!client.role || !client.permission || !client.rolePermission) {
     throw new Error("Seed database client is missing role or permission delegates.");
   }
-  if (!client.location || !client.photoSpot || !client.spotTag) {
-    throw new Error("Seed database client is missing location or photo spot delegates.");
+  if (!client.location) {
+    throw new Error("Seed database client is missing location delegate.");
   }
 
   const seedData = buildSeedData();
@@ -98,38 +98,6 @@ export async function seedDatabase(client: DatabaseClient): Promise<void> {
     });
   }
 
-  for (const spotTag of seedData.spotTags) {
-    await client.spotTag.upsert({
-      where: { code: spotTag.code },
-      create: spotTag,
-      update: {
-        name: spotTag.name,
-        description: spotTag.description,
-      },
-    });
-  }
-
-  for (const photoSpot of seedData.photoSpots) {
-    const location = await client.location.findUnique({ where: { slug: photoSpot.locationSlug } });
-    if (!location) {
-      throw new Error(`Missing seed location for photo spot: ${photoSpot.locationSlug}`);
-    }
-
-    const { locationSlug: _locationSlug, ...photoSpotData } = photoSpot;
-    await client.photoSpot.upsert({
-      where: {
-        locationId_slug: {
-          locationId: location.id,
-          slug: photoSpot.slug,
-        },
-      },
-      create: {
-        ...photoSpotData,
-        locationId: location.id,
-      },
-      update: {},
-    });
-  }
 }
 
 async function main(): Promise<void> {

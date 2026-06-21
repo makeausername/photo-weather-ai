@@ -15,16 +15,16 @@ const actionLabels: Record<string, string> = {
   "location.create": "新增地点",
   "location.update": "编辑地点",
   "location.delete": "删除地点",
-  "photo_spot.create": "新增机位",
-  "photo_spot.update": "编辑机位",
-  "photo_spot.delete": "删除机位",
+  "photo_spot.create": "旧版拍摄点记录新增",
+  "photo_spot.update": "旧版拍摄点记录编辑",
+  "photo_spot.delete": "旧版拍摄点记录删除",
 };
 
 const targetTypeLabels: Record<string, string> = {
   system_setting: "系统设置",
   provider_config: "服务商配置",
   location: "地点",
-  photo_spot: "机位",
+  photo_spot: "旧版拍摄点",
 };
 
 function formatDate(value: string): string {
@@ -89,7 +89,7 @@ export function AdminAuditClient() {
       ) : (
         <EmptyState
           title="暂无审计日志"
-          description="后台产生配置、地点或机位变更后会显示在这里。"
+          description="后台产生配置或地点变更后会显示在这里。"
         />
       )}
     </Card>

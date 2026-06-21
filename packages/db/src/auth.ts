@@ -18,7 +18,6 @@ export const requiredAdminPermissions = [
   "providers.manage",
   "users.manage",
   "locations.manage",
-  "photo_spots.manage",
   "audit.read",
   "usage.read",
 ] as const;

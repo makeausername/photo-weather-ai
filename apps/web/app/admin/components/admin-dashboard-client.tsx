@@ -3,18 +3,12 @@
 import { useEffect, useState } from "react";
 import { Badge, Card, EmptyState, Table } from "../../../components/ui";
 import { adminApiFetch } from "../admin-api";
-import type {
-  AdminAuditLog,
-  AdminLocation,
-  AdminPhotoSpot,
-  SafeProviderConfig,
-} from "../admin-api";
+import type { AdminAuditLog, AdminLocation, SafeProviderConfig } from "../admin-api";
 
 type DashboardState = {
   readonly settingsOk: boolean | null;
   readonly providers: SafeProviderConfig[];
   readonly locations: AdminLocation[];
-  readonly photoSpots: AdminPhotoSpot[];
   readonly auditLogs: AdminAuditLog[];
   readonly error?: string;
 };
@@ -23,7 +17,6 @@ const initialState: DashboardState = {
   settingsOk: null,
   providers: [],
   locations: [],
-  photoSpots: [],
   auditLogs: [],
 };
 
@@ -33,16 +26,16 @@ const actionLabels: Record<string, string> = {
   "location.create": "新增地点",
   "location.update": "编辑地点",
   "location.delete": "删除地点",
-  "photo_spot.create": "新增机位",
-  "photo_spot.update": "编辑机位",
-  "photo_spot.delete": "删除机位",
+  "photo_spot.create": "旧版拍摄点记录新增",
+  "photo_spot.update": "旧版拍摄点记录编辑",
+  "photo_spot.delete": "旧版拍摄点记录删除",
 };
 
 const targetTypeLabels: Record<string, string> = {
   system_setting: "系统设置",
   provider_config: "服务商配置",
   location: "地点",
-  photo_spot: "机位",
+  photo_spot: "旧版拍摄点",
 };
 
 function formatDate(value: string): string {
@@ -59,12 +52,11 @@ export function AdminDashboardClient() {
     let cancelled = false;
 
     async function loadDashboard() {
-      const [settingsResult, providersResult, locationsResult, spotsResult, auditResult] =
+      const [settingsResult, providersResult, locationsResult, auditResult] =
         await Promise.allSettled([
           adminApiFetch<{ readonly settings: unknown[] }>("/admin/settings"),
           adminApiFetch<{ readonly providers: SafeProviderConfig[] }>("/admin/providers"),
           adminApiFetch<{ readonly locations: AdminLocation[] }>("/admin/locations"),
-          adminApiFetch<{ readonly photoSpots: AdminPhotoSpot[] }>("/admin/photo-spots"),
           adminApiFetch<{ readonly logs: AdminAuditLog[] }>("/admin/audit-logs?limit=5"),
         ]);
 
@@ -76,13 +68,11 @@ export function AdminDashboardClient() {
         settingsOk: settingsResult.status === "fulfilled",
         providers: providersResult.status === "fulfilled" ? providersResult.value.providers : [],
         locations: locationsResult.status === "fulfilled" ? locationsResult.value.locations : [],
-        photoSpots: spotsResult.status === "fulfilled" ? spotsResult.value.photoSpots : [],
         auditLogs: auditResult.status === "fulfilled" ? auditResult.value.logs : [],
         error:
           settingsResult.status === "rejected" &&
           providersResult.status === "rejected" &&
-          locationsResult.status === "rejected" &&
-          spotsResult.status === "rejected"
+          locationsResult.status === "rejected"
             ? "后台接口暂不可用，当前显示兜底状态。"
             : undefined,
       });
@@ -116,12 +106,6 @@ export function AdminDashboardClient() {
       description: "来自地点管理接口；接口不可用时显示 0",
       badge: "地点",
     },
-    {
-      title: "机位数量",
-      value: String(state.photoSpots.length),
-      description: "来自机位管理接口；接口不可用时显示 0",
-      badge: "机位",
-    },
   ] as const;
 
   return (
@@ -132,7 +116,7 @@ export function AdminDashboardClient() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3">
         {summaryCards.map((card) => (
           <Card key={card.title} className="grid gap-3 p-5">
             <div className="flex items-start justify-between gap-3">
@@ -181,7 +165,7 @@ export function AdminDashboardClient() {
             </tbody>
           </Table>
         ) : (
-          <EmptyState title="暂无最近操作" description="有配置、地点或机位变更后会显示在这里。" />
+          <EmptyState title="暂无最近操作" description="有配置或地点变更后会显示在这里。" />
         )}
       </Card>
     </div>

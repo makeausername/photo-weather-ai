@@ -23,12 +23,17 @@ describe("admin calibration UI", () => {
     const html = renderToStaticMarkup(React.createElement(AdminCalibrationClient));
 
     expect(html).toContain("校准概览");
+    expect(html).toContain("地点");
+    expect(html).toContain("地点校准");
+    expect(html).toContain("历史校准地点");
     expect(html).toContain("拉取历史天气");
     expect(html).toContain("运行历史回放");
     expect(html).toContain("回放结果");
     expect(html).toContain("观测标注");
     expect(html).toContain("银河可见");
     expect(html).toContain("校准统计");
+    expect(html).not.toContain("机位");
+    expect(html).not.toContain("spotId");
     expect(html).not.toMatch(/api[_-]?key|secret/i);
   });
 });

@@ -54,7 +54,7 @@ export default function AdminLoginPage() {
         <div className="hidden min-w-0 lg:block">
           <p className="text-sm font-semibold text-primary">后台运营</p>
           <h1 className="mt-4 max-w-2xl text-[38px] font-bold leading-tight tracking-normal text-foreground">
-            管理地点、机位与服务商配置
+            管理地点与服务商配置
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-8 text-muted-foreground">
             控制台用于维护逐光天气的本地资料、模拟服务商配置和审计记录。密钥保存后仅展示脱敏结果。

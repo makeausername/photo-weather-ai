@@ -5,7 +5,6 @@ import type {
   LocationType,
   ProviderType,
   SettingValueType,
-  ViewDirection,
 } from "./types.js";
 
 export type RoleSeed = {
@@ -65,37 +64,6 @@ export type LocationSeed = {
   readonly isVerified: boolean;
 };
 
-export type PhotoSpotSeed = {
-  readonly locationSlug: string;
-  readonly name: string;
-  readonly slug: string;
-  readonly description: string | null;
-  readonly latitudeGcj02: number;
-  readonly longitudeGcj02: number;
-  readonly latitudeWgs84: number;
-  readonly longitudeWgs84: number;
-  readonly elevation: number | null;
-  readonly viewDirection: ViewDirection;
-  readonly bestForSunrise: boolean;
-  readonly bestForSunset: boolean;
-  readonly bestForCloudSea: boolean;
-  readonly bestForStars: boolean;
-  readonly bestForMilkyWay: boolean;
-  readonly bestForSnow: boolean;
-  readonly accessNote: string | null;
-  readonly trafficNote: string | null;
-  readonly safetyNote: string | null;
-  readonly riskNote: string | null;
-  readonly isHot: boolean;
-  readonly isVerified: boolean;
-};
-
-export type SpotTagSeed = {
-  readonly code: string;
-  readonly name: string;
-  readonly description: string;
-};
-
 export type DatabaseSeedData = {
   readonly roles: readonly RoleSeed[];
   readonly permissions: readonly PermissionSeed[];
@@ -103,8 +71,6 @@ export type DatabaseSeedData = {
   readonly systemSettings: readonly SystemSettingSeed[];
   readonly providerConfigs: readonly ProviderConfigSeed[];
   readonly locations: readonly LocationSeed[];
-  readonly photoSpots: readonly PhotoSpotSeed[];
-  readonly spotTags: readonly SpotTagSeed[];
 };
 
 const roles = [
@@ -150,11 +116,6 @@ const permissions = [
     code: "locations.manage",
     name: "管理地点",
     description: "维护景区、城市和拍摄地点基础资料。",
-  },
-  {
-    code: "photo_spots.manage",
-    name: "管理摄影机位",
-    description: "维护摄影机位、方向、交通、安全和适拍标签。",
   },
   {
     code: "audit.read",
@@ -630,125 +591,6 @@ const locations = [
   },
 ] as const satisfies readonly LocationSeed[];
 
-const sampleVerificationNote = "种子示例数据，坐标、海拔、交通和风险信息上线前必须人工核验。";
-
-const photoSpots = [
-  {
-    locationSlug: "huangshan",
-    name: "黄山光明顶",
-    slug: "huangshan-guangmingding",
-    description: sampleVerificationNote,
-    latitudeGcj02: 30.1351,
-    longitudeGcj02: 118.1767,
-    latitudeWgs84: 30.1328,
-    longitudeWgs84: 118.171,
-    elevation: 1860,
-    viewDirection: "all",
-    bestForSunrise: true,
-    bestForSunset: true,
-    bestForCloudSea: true,
-    bestForStars: true,
-    bestForMilkyWay: false,
-    bestForSnow: true,
-    accessNote: "需按景区开放与索道运营时间安排。",
-    trafficNote: "生产使用前请补充最新交通和步道信息。",
-    safetyNote: "山顶风大、低温和结冰风险需单独核验。",
-    riskNote: sampleVerificationNote,
-    isHot: true,
-    isVerified: false,
-  },
-  {
-    locationSlug: "laojunshan",
-    name: "老君山金顶",
-    slug: "laojunshan-jinding",
-    description: sampleVerificationNote,
-    latitudeGcj02: 33.7867,
-    longitudeGcj02: 111.6462,
-    latitudeWgs84: 33.7852,
-    longitudeWgs84: 111.6402,
-    elevation: 2190,
-    viewDirection: "all",
-    bestForSunrise: true,
-    bestForSunset: true,
-    bestForCloudSea: true,
-    bestForStars: true,
-    bestForMilkyWay: false,
-    bestForSnow: true,
-    accessNote: "需核验景区夜间和清晨开放政策。",
-    trafficNote: "生产使用前请补充索道、摆渡车和徒步路线信息。",
-    safetyNote: "冬季积雪、结冰、强风风险需单独核验。",
-    riskNote: sampleVerificationNote,
-    isHot: true,
-    isVerified: false,
-  },
-  {
-    locationSlug: "sanqingshan",
-    name: "三清山女神峰",
-    slug: "sanqingshan-nvshenfeng",
-    description: sampleVerificationNote,
-    latitudeGcj02: 28.9169,
-    longitudeGcj02: 118.0751,
-    latitudeWgs84: 28.9139,
-    longitudeWgs84: 118.0699,
-    elevation: 1600,
-    viewDirection: "east",
-    bestForSunrise: true,
-    bestForSunset: false,
-    bestForCloudSea: true,
-    bestForStars: true,
-    bestForMilkyWay: false,
-    bestForSnow: true,
-    accessNote: "需结合景区栈道开放状态安排。",
-    trafficNote: "生产使用前请补充索道和步行时间。",
-    safetyNote: "雨雾、湿滑栈道和雷电风险需单独核验。",
-    riskNote: sampleVerificationNote,
-    isHot: true,
-    isVerified: false,
-  },
-  {
-    locationSlug: "wugongshan",
-    name: "武功山金顶",
-    slug: "wugongshan-jinding",
-    description: sampleVerificationNote,
-    latitudeGcj02: 27.4748,
-    longitudeGcj02: 114.1859,
-    latitudeWgs84: 27.4716,
-    longitudeWgs84: 114.1808,
-    elevation: 1918,
-    viewDirection: "all",
-    bestForSunrise: true,
-    bestForSunset: true,
-    bestForCloudSea: true,
-    bestForStars: true,
-    bestForMilkyWay: true,
-    bestForSnow: true,
-    accessNote: "需核验露营、夜爬和景区开放规则。",
-    trafficNote: "生产使用前请补充缆车、徒步线路和返程信息。",
-    safetyNote: "高山草甸风大、雷雨和失温风险需单独核验。",
-    riskNote: sampleVerificationNote,
-    isHot: true,
-    isVerified: false,
-  },
-] as const satisfies readonly PhotoSpotSeed[];
-
-const spotTags = [
-  {
-    code: "seed_example",
-    name: "种子示例",
-    description: "仅用于初始化演示，生产使用前必须人工核验。",
-  },
-  {
-    code: "mountain_view",
-    name: "山岳视野",
-    description: "适合山岳、峰林、云海和远景层次。",
-  },
-  {
-    code: "night_sky",
-    name: "星空参考",
-    description: "可作为未来星空和银河判断的人工标签。",
-  },
-] as const satisfies readonly SpotTagSeed[];
-
 export function buildSeedData(): DatabaseSeedData {
   return {
     roles: roles.map((role) => ({ ...role })),
@@ -765,7 +607,5 @@ export function buildSeedData(): DatabaseSeedData {
       maskedSecretJson: cloneJsonValue(providerConfig.maskedSecretJson),
     })),
     locations: locations.map((location) => ({ ...location })),
-    photoSpots: photoSpots.map((photoSpot) => ({ ...photoSpot })),
-    spotTags: spotTags.map((spotTag) => ({ ...spotTag })),
   };
 }

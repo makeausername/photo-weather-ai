@@ -1,3 +1,4 @@
+import { requiredAdminPermissions } from "../auth.js";
 import { buildSeedData } from "../seed-data.js";
 import { describe, expect, it } from "vitest";
 
@@ -14,7 +15,6 @@ describe("database seed data", () => {
       "providers.manage",
       "users.manage",
       "locations.manage",
-      "photo_spots.manage",
       "audit.read",
       "usage.read",
     ]);
@@ -146,7 +146,7 @@ describe("database seed data", () => {
     expect(JSON.stringify(seedData.providerConfigs)).not.toContain("CHANGE_ME");
   });
 
-  it("includes unverified Chinese location and photo spot examples", () => {
+  it("includes unverified Chinese location examples without active photo spot samples", () => {
     const seedData = buildSeedData();
 
     expect(seedData.locations.map((location) => location.name)).toEqual([
@@ -155,14 +155,9 @@ describe("database seed data", () => {
       "三清山",
       "武功山",
     ]);
-    expect(seedData.photoSpots.map((photoSpot) => photoSpot.name)).toEqual([
-      "黄山光明顶",
-      "老君山金顶",
-      "三清山女神峰",
-      "武功山金顶",
-    ]);
     expect(seedData.locations.every((location) => location.isVerified === false)).toBe(true);
-    expect(seedData.photoSpots.every((photoSpot) => photoSpot.isVerified === false)).toBe(true);
-    expect(JSON.stringify(seedData.photoSpots)).toContain("上线前必须人工核验");
+    expect(JSON.stringify(seedData)).not.toContain("黄山光明顶");
+    expect(JSON.stringify(seedData)).not.toContain("photo_spots.manage");
+    expect(requiredAdminPermissions).not.toContain("photo_spots.manage");
   });
 });
