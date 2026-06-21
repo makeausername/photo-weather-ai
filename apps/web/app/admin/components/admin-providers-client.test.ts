@@ -9,27 +9,34 @@ const providerFieldsSource = readFileSync(
   resolve(__dirname, "../../../../../packages/shared/src/provider-fields.ts"),
   "utf8",
 );
+const providerPageSource = readFileSync(resolve(__dirname, "../providers/page.tsx"), "utf8");
 
 describe("admin provider console source", () => {
-  it("defines grouped provider console sections and an overview", () => {
+  it("defines category navigation and provider overview", () => {
     for (const label of [
       "服务商配置",
       "服务商总数",
-      "地图与地理服务",
-      "天气数据源",
+      "地图与地理",
+      "天气数据",
       "智能解读",
-      "支付与订单",
-      "账户验证服务",
+      "支付收款",
+      "邮箱短信",
       "对象存储",
       "已启用",
       "真实调用",
-      "需要处理",
+      "需处理",
     ]) {
       expect(source).toContain(label);
     }
+
+    expect(source).toContain("data-provider-category-nav");
+    expect(source).toContain("data-provider-category={group.key}");
+    expect(source).toContain("selectGroup(group.key)");
+    expect(source).toContain('useState<ProviderGroupKey>("weather")');
+    expect(source).toContain("categorySessionStorageKey");
   });
 
-  it("keeps provider cards secret-safe and compact", () => {
+  it("uses compact summaries and one selected provider detail instead of full sequential forms", () => {
     expect(source).toContain("StatusFacts");
     expect(source).toContain("ProviderTestDetails");
     expect(source).toContain("providerTestButtonLabel");
@@ -38,6 +45,12 @@ describe("admin provider console source", () => {
     expect(source).toContain("ProviderCardErrorBoundary");
     expect(source).toContain("该服务商配置暂时无法显示，请刷新或检查配置。");
     expect(source).toContain("data-provider-card");
+    expect(source).toContain("data-provider-summary");
+    expect(source).toContain("data-provider-detail");
+    expect(source).toContain("selectedProvider ? renderProviderDetail(selectedProvider) : null");
+    expect(source).toContain("setSelectedProviderId(provider.id)");
+    expect(source).not.toContain("group.providers.map((provider, index)");
+    expect(source).not.toContain("isOddLast");
     expect(source).not.toContain("providerTabs");
     expect(source).not.toContain("RealDevCallNotice");
     expect(source).not.toContain("SavedSecretSummary");
@@ -74,7 +87,7 @@ describe("admin provider console source", () => {
     }
   });
 
-  it("includes account verification and object storage providers in the managed allowlist", () => {
+  it("keeps payment, account verification, and object storage providers easy to find", () => {
     for (const snippet of [
       '"email:aliyun_smtp"',
       '"sms:aliyun_sms"',
@@ -97,7 +110,23 @@ describe("admin provider console source", () => {
       'requiredConfigKeys: ["region", "bucket", "basePrefix", "publicBaseUrl"]',
       'requiredConfigKeys: ["mode", "appId", "mchId", "notifyUrl", "returnUrl"]',
       'requiredConfigKeys: ["mode", "appId", "notifyUrl", "returnUrl"]',
-      "统一管理地图、天气数据源、智能解读、支付收款、邮箱、短信验证码和对象存储服务。",
+      "按服务类型管理地图、天气、AI 解读、支付收款、账户验证和对象存储配置。",
+    ]) {
+      expect(source).toContain(snippet);
+    }
+  });
+
+  it("supports provider search by name, provider code, capability, and purpose", () => {
+    for (const snippet of [
+      "providerMatchesSearch",
+      "providerName(provider)",
+      "provider.displayName",
+      "provider.providerCode",
+      "provider.providerType",
+      "meta?.purpose",
+      'meta?.capabilities.join(" ")',
+      "按名称、代码、能力或用途搜索",
+      "例如 微信支付、wechat_pay、阿里云 OSS",
     ]) {
       expect(source).toContain(snippet);
     }
@@ -159,5 +188,19 @@ describe("admin provider console source", () => {
 
     expect(source).toContain("maskedSecretJson");
     expect(source).not.toContain("provider.secretJson");
+  });
+
+  it("does not add filler or stale limited provider copy", () => {
+    for (const forbidden of ["占位", "敬请期待", "coming soon", "暂无功能"]) {
+      expect(source).not.toContain(forbidden);
+      expect(providerPageSource).not.toContain(forbidden);
+    }
+
+    expect(providerPageSource).toContain(
+      "按服务类型管理地图、天气、AI 解读、支付收款、账户验证和对象存储配置。",
+    );
+    expect(providerPageSource).not.toContain(
+      "统一管理地图、天气数据源、智能解读、邮箱和短信验证码服务。",
+    );
   });
 });

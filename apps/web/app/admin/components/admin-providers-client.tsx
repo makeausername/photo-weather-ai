@@ -95,13 +95,13 @@ const providerOrder: readonly ProviderKey[] = [
 const providerGroups = [
   {
     key: "geo",
-    title: "地图与地理服务",
+    title: "地图与地理",
     description: "管理地点搜索、地理编码和坐标转换能力，密钥仅在服务端调用时使用。",
   },
   {
     key: "weather",
-    title: "天气数据源",
-    description: "管理真实天气测试和后续多源对照。保存配置不会触发外部请求。",
+    title: "天气数据",
+    description: "管理和风天气、Open-Meteo、meteoblue 等天气数据源。保存配置不会触发外部请求。",
   },
   {
     key: "ai",
@@ -110,13 +110,13 @@ const providerGroups = [
   },
   {
     key: "billing",
-    title: "支付与订单",
+    title: "支付收款",
     description: "管理微信支付和支付宝收款配置；密钥、证书和回调验签材料只保存在服务端。",
   },
   {
     key: "notification",
-    title: "账户验证服务",
-    description: "配置注册验证码邮件和短信服务，密钥只保存在服务端。",
+    title: "邮箱短信",
+    description: "管理邮箱验证码和短信验证码服务，密钥只保存在服务端。",
   },
   {
     key: "storage",
@@ -128,6 +128,16 @@ const providerGroups = [
   readonly title: string;
   readonly description: string;
 }[];
+
+type ProviderGroupWithProviders = (typeof providerGroups)[number] & {
+  readonly providers: SafeProviderConfig[];
+};
+
+type ProviderGroupSummary = ProviderGroupWithProviders & {
+  readonly enabledCount: number;
+  readonly realEnabledCount: number;
+  readonly needsAttentionCount: number;
+};
 
 const providerMeta: Record<ProviderKey, ProviderMeta> = {
   "geo:amap": {
@@ -718,6 +728,40 @@ function providerNeedsAttention(
   return testState?.status === "error" || missingRequiredSecret || qweatherMissingHost;
 }
 
+const categorySessionStorageKey = "photo_weather_admin_provider_category";
+
+function isProviderGroupKeyValue(value: string | null): value is ProviderGroupKey {
+  return Boolean(value && providerGroups.some((group) => group.key === value));
+}
+
+function normalizeSearchText(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function providerMatchesSearch(provider: SafeProviderConfig, query: string): boolean {
+  if (!query) {
+    return true;
+  }
+
+  const meta = getMeta(provider);
+  const group = meta ? providerGroups.find((item) => item.key === meta.group) : undefined;
+  const searchableText = [
+    providerName(provider),
+    provider.displayName,
+    provider.providerCode,
+    provider.providerType,
+    meta?.purpose,
+    meta?.capabilities.join(" "),
+    group?.title,
+    group?.description,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" ")
+    .toLowerCase();
+
+  return searchableText.includes(query);
+}
+
 function sortManagedProviders(providers: readonly SafeProviderConfig[]): SafeProviderConfig[] {
   return providers
     .filter((provider) => getManagedProviderKey(provider))
@@ -972,8 +1016,12 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   const [saveStateByProvider, setSaveStateByProvider] = useState<Record<string, RowState>>({});
   const [testStateByProvider, setTestStateByProvider] = useState<Record<string, RowState>>({});
   const [testResultByProvider, setTestResultByProvider] = useState<TestResultDrafts>({});
+  const [activeGroupKey, setActiveGroupKey] = useState<ProviderGroupKey>("weather");
+  const [providerSearchTerm, setProviderSearchTerm] = useState("");
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const savingProviderIds = useRef(new Set<string>());
   const testingProviderIds = useRef(new Set<string>());
+  const activeGroupInitialized = useRef(false);
 
   const loadProviders = useCallback(async () => {
     setLoadState({ status: "saving", message: "正在刷新服务商状态..." });
@@ -1004,7 +1052,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     void loadProviders();
   }, [loadProviders]);
 
-  const groupedProviders = useMemo(() => {
+  const groupedProviders = useMemo<ProviderGroupWithProviders[]>(() => {
     const providerByGroup = new Map<ProviderGroupKey, SafeProviderConfig[]>();
     for (const group of providerGroups) {
       providerByGroup.set(group.key, []);
@@ -1041,6 +1089,100 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       needsAttentionCount,
     };
   }, [providers, realDevCallFlags, testStateByProvider]);
+
+  const groupSummaries = useMemo<ProviderGroupSummary[]>(
+    () =>
+      groupedProviders.map((group) => ({
+        ...group,
+        enabledCount: group.providers.filter((provider) => provider.enabled).length,
+        realEnabledCount: group.providers.filter((provider) =>
+          isRealDevCallEnabled(provider, realDevCallFlags),
+        ).length,
+        needsAttentionCount: group.providers.filter((provider) =>
+          providerNeedsAttention(provider, realDevCallFlags, testStateByProvider[provider.id]),
+        ).length,
+      })),
+    [groupedProviders, realDevCallFlags, testStateByProvider],
+  );
+
+  const preferredActiveGroupKey = useMemo<ProviderGroupKey>(() => {
+    const attentionGroup = groupSummaries.find(
+      (group) => group.providers.length > 0 && group.needsAttentionCount > 0,
+    );
+    if (attentionGroup) {
+      return attentionGroup.key;
+    }
+
+    const weatherGroup = groupSummaries.find(
+      (group) => group.key === "weather" && group.providers.length > 0,
+    );
+    if (weatherGroup) {
+      return weatherGroup.key;
+    }
+
+    return groupSummaries.find((group) => group.providers.length > 0)?.key ?? "weather";
+  }, [groupSummaries]);
+
+  useEffect(() => {
+    if (!groupSummaries.some((group) => group.providers.length > 0)) {
+      return;
+    }
+
+    setActiveGroupKey((current) => {
+      if (!activeGroupInitialized.current) {
+        activeGroupInitialized.current = true;
+        const storedGroup =
+          typeof window === "undefined"
+            ? null
+            : window.sessionStorage.getItem(categorySessionStorageKey);
+        if (
+          isProviderGroupKeyValue(storedGroup) &&
+          groupSummaries.some((group) => group.key === storedGroup && group.providers.length > 0)
+        ) {
+          return storedGroup;
+        }
+        return preferredActiveGroupKey;
+      }
+
+      return groupSummaries.some((group) => group.key === current && group.providers.length > 0)
+        ? current
+        : preferredActiveGroupKey;
+    });
+  }, [groupSummaries, preferredActiveGroupKey]);
+
+  const searchQuery = normalizeSearchText(providerSearchTerm);
+  const searchResultGroups = useMemo<ProviderGroupSummary[]>(() => {
+    if (!searchQuery) {
+      return [];
+    }
+
+    return groupSummaries
+      .map((group) => ({
+        ...group,
+        providers: group.providers.filter((provider) =>
+          providerMatchesSearch(provider, searchQuery),
+        ),
+      }))
+      .filter((group) => group.providers.length > 0);
+  }, [groupSummaries, searchQuery]);
+
+  const activeGroup = groupSummaries.find((group) => group.key === activeGroupKey) ?? null;
+  const visibleGroups = searchQuery ? searchResultGroups : activeGroup ? [activeGroup] : [];
+  const visibleProviderIds = useMemo(
+    () => new Set(visibleGroups.flatMap((group) => group.providers.map((provider) => provider.id))),
+    [visibleGroups],
+  );
+  const selectedProvider = useMemo(
+    () =>
+      providers.find(
+        (provider) => provider.id === selectedProviderId && visibleProviderIds.has(provider.id),
+      ) ?? null,
+    [providers, selectedProviderId, visibleProviderIds],
+  );
+  const searchResultCount = searchResultGroups.reduce(
+    (count, group) => count + group.providers.length,
+    0,
+  );
 
   function markProviderDirty(providerId: string) {
     setDirtyProviders((current) => ({ ...current, [providerId]: true }));
@@ -1302,6 +1444,319 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     }
   }
 
+  function selectGroup(groupKey: ProviderGroupKey) {
+    activeGroupInitialized.current = true;
+    setActiveGroupKey(groupKey);
+    setSelectedProviderId(null);
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(categorySessionStorageKey, groupKey);
+    }
+  }
+
+  function renderProviderSummaryCard(provider: SafeProviderConfig) {
+    const meta = getMeta(provider);
+    const saveState = saveStateByProvider[provider.id];
+    const testState = testStateByProvider[provider.id];
+    const dirty = dirtyProviders[provider.id] ?? false;
+    const isSaving = isProviderSaveDisabled(saveState);
+    const isTesting = isProviderTestDisabled(testState);
+    const realEnabled = isRealDevCallEnabled(provider, realDevCallFlags);
+    const needsAttention = providerNeedsAttention(provider, realDevCallFlags, testState);
+    const selected = selectedProvider?.id === provider.id;
+
+    return (
+      <article
+        key={provider.id}
+        data-provider-card={providerIdentityKey(provider)}
+        data-provider-summary={providerIdentityKey(provider)}
+        className={cn(
+          "grid min-w-0 gap-3 rounded-lg border border-border bg-card p-4 shadow-sm transition",
+          selected && "border-primary bg-secondary/35",
+          needsAttention && !selected && "border-warning",
+        )}
+      >
+        <button
+          type="button"
+          aria-pressed={selected}
+          className="grid min-w-0 gap-2 text-left"
+          onClick={() => setSelectedProviderId(provider.id)}
+        >
+          <span className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <span className="min-w-0">
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="text-base font-bold text-card-foreground">
+                  {providerName(provider)}
+                </span>
+                <Badge variant="muted" className="rounded-md">
+                  {provider.providerCode}
+                </Badge>
+                {needsAttention ? (
+                  <Badge variant="warning" className="rounded-md">
+                    需处理
+                  </Badge>
+                ) : null}
+              </span>
+              <span className="mt-1 block text-sm leading-6 text-muted-foreground">
+                {meta?.purpose ?? "服务商配置与连接测试。"}
+              </span>
+            </span>
+            <Badge variant={provider.enabled ? "success" : "muted"} className="rounded-md">
+              {provider.enabled ? "已启用" : "未启用"}
+            </Badge>
+          </span>
+
+          <span className="flex flex-wrap gap-2">
+            <Badge variant={realEnabled ? "success" : "muted"} className="rounded-md">
+              真实调用：{realEnabled ? "已启用" : "未启用"}
+            </Badge>
+            <Badge variant={secretStatusVariant(provider)} className="rounded-md">
+              密钥：{secretStatusLabel(provider)}
+            </Badge>
+            <Badge variant={testStatusVariant(testState)} className="rounded-md">
+              最近测试：{testStatusLabel(testState)}
+            </Badge>
+          </span>
+
+          {meta?.capabilities.length ? (
+            <span className="flex flex-wrap gap-2">
+              {meta.capabilities.slice(0, 4).map((capability) => (
+                <Badge key={capability} variant="info" className="rounded-md px-2 py-0.5">
+                  {capability}
+                </Badge>
+              ))}
+            </span>
+          ) : null}
+        </button>
+
+        <div className="flex flex-col gap-2 border-t border-border pt-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 flex-wrap gap-2">
+            <FeedbackPill state={saveState} dirty={dirty} />
+            <FeedbackPill state={testState} />
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <Button size="sm" onClick={() => setSelectedProviderId(provider.id)}>
+              配置
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={isTesting}
+              onClick={() => void testProvider(provider)}
+            >
+              {providerTestButtonLabel(testState)}
+            </Button>
+            {dirty ? (
+              <Button size="sm" disabled={isSaving} onClick={() => void saveProvider(provider)}>
+                {providerSaveButtonLabel(saveState)}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      </article>
+    );
+  }
+
+  function renderProviderDetail(provider: SafeProviderConfig) {
+    const meta = getMeta(provider);
+    const realCallField = getFieldByKey(provider, "realCallEnabled");
+    const requiredConfigFields = getRequiredConfigFields(provider);
+    const advancedConfigFields = getAdvancedConfigFields(provider);
+    const secretFields = getPresetFields(provider, "secretJson");
+    const saveState = saveStateByProvider[provider.id];
+    const testState = testStateByProvider[provider.id];
+    const dirty = dirtyProviders[provider.id] ?? false;
+    const isSaving = isProviderSaveDisabled(saveState);
+    const isTesting = isProviderTestDisabled(testState);
+    const advancedOpen = advancedProviders[provider.id] ?? false;
+
+    return (
+      <article
+        key={provider.id}
+        data-provider-detail={providerIdentityKey(provider)}
+        className="grid min-w-0 gap-4 rounded-lg border border-primary/50 bg-card p-4 shadow-sm"
+      >
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h4 className="text-base font-bold text-card-foreground">{providerName(provider)}</h4>
+              <Badge variant="muted" className="rounded-md">
+                {provider.providerCode}
+              </Badge>
+            </div>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              {meta?.purpose ?? "服务商配置与连接测试。"}
+            </p>
+          </div>
+          <Badge variant={provider.enabled ? "success" : "muted"} className="rounded-md">
+            {provider.enabled ? "已启用" : "未启用"}
+          </Badge>
+        </div>
+
+        <StatusFacts provider={provider} flags={realDevCallFlags} testState={testState} />
+
+        {meta?.capabilities.length ? (
+          <div className="flex flex-wrap gap-2">
+            {meta.capabilities.map((capability) => (
+              <Badge key={capability} variant="info" className="rounded-md px-2 py-0.5">
+                {capability}
+              </Badge>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="grid gap-4 border-t border-border pt-4">
+          <section className="grid gap-3">
+            <SectionTitle
+              title="基础开关"
+              description="保存开关只更新后台参数；真实调用开关生效后，测试连接才会请求真实服务。"
+            />
+            <div className="grid gap-2 sm:grid-cols-2">
+              <CompactSwitch
+                label="启用该服务商"
+                description="控制该服务商是否可被后台流程读取。"
+                checked={enabledDrafts[provider.id] ?? provider.enabled}
+                onChange={(checked) => {
+                  markProviderDirty(provider.id);
+                  setEnabledDrafts((current) => ({
+                    ...current,
+                    [provider.id]: checked,
+                  }));
+                }}
+              />
+              {realCallField ? renderConfigField(provider, realCallField) : null}
+            </div>
+          </section>
+
+          <section className="grid gap-3">
+            <SectionTitle
+              title="必填配置"
+              description={
+                requiredConfigFields.length > 0
+                  ? "常用参数直接编辑，正常管理员不需要处理原始 JSON。"
+                  : "该服务商的必填配置集中在密钥配置中。"
+              }
+            />
+            {requiredConfigFields.length > 0 ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {requiredConfigFields.map((field) => renderConfigField(provider, field))}
+              </div>
+            ) : (
+              <p className="rounded-md border border-border bg-background/45 px-3 py-2 text-sm text-muted-foreground">
+                保存 API Key 后即可测试真实连接。
+              </p>
+            )}
+          </section>
+
+          <section className="grid gap-3">
+            <SectionTitle
+              title="密钥配置"
+              description="密钥只保存到服务端；留空会保留已保存密钥，保存后仅显示脱敏状态。"
+            />
+            {secretFields.length > 0 ? (
+              <div className="grid gap-3">
+                {secretFields.map((field) => {
+                  const visible = secretVisibility[provider.id]?.[field.key] ?? false;
+                  const clearSelected = clearSecretDrafts[provider.id]?.[field.key] ?? false;
+                  const saved = hasSavedSecret(provider, field.key);
+
+                  return (
+                    <FormField
+                      key={field.key}
+                      label={field.label}
+                      hint={
+                        <span>
+                          {field.helpText ? `${field.helpText} ` : ""}
+                          已保存：{maskedSecretLabel(provider, field.key)}
+                        </span>
+                      }
+                    >
+                      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+                        <Input
+                          type={field.password && !visible ? "password" : "text"}
+                          value={secretFieldDrafts[provider.id]?.[field.key] ?? ""}
+                          placeholder={field.placeholder ?? "留空则保持现有密钥不变"}
+                          disabled={clearSelected}
+                          onChange={(event) =>
+                            updateSecretField(provider.id, field.key, event.target.value)
+                          }
+                        />
+                        {field.password ? (
+                          <Button
+                            variant="secondary"
+                            onClick={() => toggleSecretVisibility(provider.id, field.key)}
+                          >
+                            {visible ? "隐藏" : "显示"}
+                          </Button>
+                        ) : null}
+                        {saved ? (
+                          <Button
+                            variant={clearSelected ? "danger" : "secondary"}
+                            onClick={() => toggleClearSecret(provider.id, field.key)}
+                          >
+                            {clearSelected ? "取消清除" : "清除"}
+                          </Button>
+                        ) : null}
+                      </div>
+                    </FormField>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="rounded-md border border-border bg-background/45 px-3 py-2 text-sm text-muted-foreground">
+                该服务商无需密钥。
+              </p>
+            )}
+          </section>
+
+          <ProviderCardErrorBoundary providerLabel={providerName(provider)}>
+            <AdvancedConfigContent
+              provider={provider}
+              advancedOpen={advancedOpen}
+              advancedConfigFields={advancedConfigFields}
+              priority={priorityDrafts[provider.id] ?? provider.priority}
+              onOpenChange={(open) => {
+                setAdvancedProviders((current) => ({
+                  ...current,
+                  [provider.id]: open,
+                }));
+              }}
+              onPriorityChange={(priority) => {
+                markProviderDirty(provider.id);
+                setPriorityDrafts((current) => ({
+                  ...current,
+                  [provider.id]: priority,
+                }));
+              }}
+              renderConfigField={renderConfigField}
+            />
+          </ProviderCardErrorBoundary>
+        </div>
+
+        <footer className="flex flex-col gap-3 border-t border-border pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-wrap gap-2">
+              <FeedbackPill state={saveState} dirty={dirty} />
+              <FeedbackPill state={testState} />
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Button disabled={isSaving} onClick={() => void saveProvider(provider)}>
+                {providerSaveButtonLabel(saveState)}
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={isTesting}
+                onClick={() => void testProvider(provider)}
+              >
+                {providerTestButtonLabel(testState)}
+              </Button>
+            </div>
+          </div>
+          <ProviderTestDetails result={testResultByProvider[provider.id]} />
+        </footer>
+      </article>
+    );
+  }
+
   if (providers.length === 0 && loadState.status === "error") {
     return (
       <div className="rounded-lg border border-border bg-card">
@@ -1321,7 +1776,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         <div className="min-w-0">
           <h2 className="text-xl font-bold tracking-normal text-foreground">服务商配置</h2>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-muted-foreground">
-            统一管理地图、天气数据源、智能解读、支付收款、邮箱、短信验证码和对象存储服务。保存配置只保存参数，测试连接用于验证服务配置。
+            按服务类型管理地图、天气、AI 解读、支付收款、账户验证和对象存储配置。
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -1366,255 +1821,143 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         ))}
       </section>
 
-      {groupedProviders.map((group) => {
-        if (group.providers.length === 0) {
-          return null;
-        }
+      <section className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+        <aside className="grid min-w-0 content-start gap-3">
+          <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
+            <FormField label="搜索服务商" hint="支持中文名称、provider code、能力和用途。">
+              <Input
+                value={providerSearchTerm}
+                aria-label="搜索服务商"
+                placeholder="例如 微信支付、wechat_pay、阿里云 OSS"
+                onChange={(event) => {
+                  setProviderSearchTerm(event.target.value);
+                  setSelectedProviderId(null);
+                }}
+              />
+            </FormField>
+          </div>
 
-        return (
-          <section key={group.key} className="grid gap-3" data-provider-group={group.key}>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-foreground">{group.title}</h3>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">{group.description}</p>
-              </div>
-              <Badge variant="muted">{group.providers.length} 个服务商</Badge>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              {group.providers.map((provider, index) => {
-                const meta = getMeta(provider);
-                const realCallField = getFieldByKey(provider, "realCallEnabled");
-                const requiredConfigFields = getRequiredConfigFields(provider);
-                const advancedConfigFields = getAdvancedConfigFields(provider);
-                const secretFields = getPresetFields(provider, "secretJson");
-                const saveState = saveStateByProvider[provider.id];
-                const testState = testStateByProvider[provider.id];
-                const dirty = dirtyProviders[provider.id] ?? false;
-                const isSaving = isProviderSaveDisabled(saveState);
-                const isTesting = isProviderTestDisabled(testState);
-                const isOddLast =
-                  group.providers.length % 2 === 1 && index === group.providers.length - 1;
-                const advancedOpen = advancedProviders[provider.id] ?? false;
-
-                return (
-                  <article
-                    key={provider.id}
-                    data-provider-card={providerIdentityKey(provider)}
-                    className={cn(
-                      "grid min-w-0 gap-4 rounded-lg border border-border bg-card p-4 shadow-sm",
-                      isOddLast && "md:col-span-2",
-                    )}
-                  >
-                    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h4 className="text-base font-bold text-card-foreground">
-                            {providerName(provider)}
-                          </h4>
-                          <Badge variant="muted" className="rounded-md">
-                            {provider.providerCode}
-                          </Badge>
-                        </div>
-                        <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                          {meta?.purpose ?? "服务商配置与连接测试。"}
-                        </p>
-                      </div>
-                      <Badge
-                        variant={provider.enabled ? "success" : "muted"}
-                        className="rounded-md"
-                      >
-                        {provider.enabled ? "已启用" : "未启用"}
-                      </Badge>
+          <nav
+            aria-label="服务商分类"
+            data-provider-category-nav
+            className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-1"
+          >
+            {groupSummaries.map((group) => {
+              const active = group.key === activeGroupKey;
+              return (
+                <button
+                  key={group.key}
+                  type="button"
+                  data-provider-category={group.key}
+                  disabled={group.providers.length === 0}
+                  className={cn(
+                    "grid min-w-[220px] gap-3 rounded-lg border border-border bg-card p-4 text-left shadow-sm transition sm:min-w-0",
+                    active && "border-primary bg-secondary",
+                    group.needsAttentionCount > 0 && !active && "border-warning",
+                    group.providers.length === 0 && "cursor-not-allowed opacity-55",
+                  )}
+                  onClick={() => selectGroup(group.key)}
+                >
+                  <span className="grid gap-1">
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-bold text-card-foreground">{group.title}</span>
+                      {group.needsAttentionCount > 0 ? (
+                        <Badge variant="warning" className="rounded-md">
+                          {group.needsAttentionCount}
+                        </Badge>
+                      ) : null}
+                    </span>
+                    <span className="text-xs leading-5 text-muted-foreground">
+                      {group.description}
+                    </span>
+                  </span>
+                  <dl className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <dt className="text-muted-foreground">服务商</dt>
+                      <dd className="mt-0.5 font-semibold text-card-foreground">
+                        {group.providers.length}
+                      </dd>
                     </div>
-
-                    <StatusFacts
-                      provider={provider}
-                      flags={realDevCallFlags}
-                      testState={testState}
-                    />
-
-                    {meta?.capabilities.length ? (
-                      <div className="flex flex-wrap gap-2">
-                        {meta.capabilities.map((capability) => (
-                          <Badge key={capability} variant="info" className="rounded-md px-2 py-0.5">
-                            {capability}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    <div className="grid gap-4 border-t border-border pt-4">
-                      <section className="grid gap-3">
-                        <SectionTitle
-                          title="基础开关"
-                          description="保存开关只更新后台参数；真实调用开关生效后，测试连接才会请求真实服务。"
-                        />
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          <CompactSwitch
-                            label="启用该服务商"
-                            description="控制该服务商是否可被后台流程读取。"
-                            checked={enabledDrafts[provider.id] ?? provider.enabled}
-                            onChange={(checked) => {
-                              markProviderDirty(provider.id);
-                              setEnabledDrafts((current) => ({
-                                ...current,
-                                [provider.id]: checked,
-                              }));
-                            }}
-                          />
-                          {realCallField ? renderConfigField(provider, realCallField) : null}
-                        </div>
-                      </section>
-
-                      <section className="grid gap-3">
-                        <SectionTitle
-                          title="必填配置"
-                          description={
-                            requiredConfigFields.length > 0
-                              ? "常用参数直接编辑，正常管理员不需要处理原始 JSON。"
-                              : "该服务商的必填配置集中在密钥配置中。"
-                          }
-                        />
-                        {requiredConfigFields.length > 0 ? (
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            {requiredConfigFields.map((field) =>
-                              renderConfigField(provider, field),
-                            )}
-                          </div>
-                        ) : (
-                          <p className="rounded-md border border-border bg-background/45 px-3 py-2 text-sm text-muted-foreground">
-                            保存 API Key 后即可测试真实连接。
-                          </p>
-                        )}
-                      </section>
-
-                      <section className="grid gap-3">
-                        <SectionTitle
-                          title="密钥配置"
-                          description="密钥只保存到服务端；留空会保留已保存密钥，保存后仅显示脱敏状态。"
-                        />
-                        {secretFields.length > 0 ? (
-                          <div className="grid gap-3">
-                            {secretFields.map((field) => {
-                              const visible = secretVisibility[provider.id]?.[field.key] ?? false;
-                              const clearSelected =
-                                clearSecretDrafts[provider.id]?.[field.key] ?? false;
-                              const saved = hasSavedSecret(provider, field.key);
-
-                              return (
-                                <FormField
-                                  key={field.key}
-                                  label={field.label}
-                                  hint={
-                                    <span>
-                                      {field.helpText ? `${field.helpText} ` : ""}
-                                      已保存：{maskedSecretLabel(provider, field.key)}
-                                    </span>
-                                  }
-                                >
-                                  <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-                                    <Input
-                                      type={field.password && !visible ? "password" : "text"}
-                                      value={secretFieldDrafts[provider.id]?.[field.key] ?? ""}
-                                      placeholder={field.placeholder ?? "留空则保持现有密钥不变"}
-                                      disabled={clearSelected}
-                                      onChange={(event) =>
-                                        updateSecretField(
-                                          provider.id,
-                                          field.key,
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
-                                    {field.password ? (
-                                      <Button
-                                        variant="secondary"
-                                        onClick={() =>
-                                          toggleSecretVisibility(provider.id, field.key)
-                                        }
-                                      >
-                                        {visible ? "隐藏" : "显示"}
-                                      </Button>
-                                    ) : null}
-                                    {saved ? (
-                                      <Button
-                                        variant={clearSelected ? "danger" : "secondary"}
-                                        onClick={() => toggleClearSecret(provider.id, field.key)}
-                                      >
-                                        {clearSelected ? "取消清除" : "清除"}
-                                      </Button>
-                                    ) : null}
-                                  </div>
-                                </FormField>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <p className="rounded-md border border-border bg-background/45 px-3 py-2 text-sm text-muted-foreground">
-                            该服务商无需密钥。
-                          </p>
-                        )}
-                      </section>
-
-                      <ProviderCardErrorBoundary providerLabel={providerName(provider)}>
-                        <AdvancedConfigContent
-                          provider={provider}
-                          advancedOpen={advancedOpen}
-                          advancedConfigFields={advancedConfigFields}
-                          priority={priorityDrafts[provider.id] ?? provider.priority}
-                          onOpenChange={(open) => {
-                            setAdvancedProviders((current) => ({
-                              ...current,
-                              [provider.id]: open,
-                            }));
-                          }}
-                          onPriorityChange={(priority) => {
-                            markProviderDirty(provider.id);
-                            setPriorityDrafts((current) => ({
-                              ...current,
-                              [provider.id]: priority,
-                            }));
-                          }}
-                          renderConfigField={renderConfigField}
-                        />
-                      </ProviderCardErrorBoundary>
+                    <div>
+                      <dt className="text-muted-foreground">已启用</dt>
+                      <dd className="mt-0.5 font-semibold text-card-foreground">
+                        {group.enabledCount}
+                      </dd>
                     </div>
+                    <div>
+                      <dt className="text-muted-foreground">真实调用</dt>
+                      <dd className="mt-0.5 font-semibold text-card-foreground">
+                        {group.realEnabledCount}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">需处理</dt>
+                      <dd className="mt-0.5 font-semibold text-card-foreground">
+                        {group.needsAttentionCount}
+                      </dd>
+                    </div>
+                  </dl>
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
 
-                    <footer className="flex flex-col gap-3 border-t border-border pt-4">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex min-w-0 flex-wrap gap-2">
-                          <FeedbackPill state={saveState} dirty={dirty} />
-                          <FeedbackPill state={testState} />
-                        </div>
-                        <div className="flex shrink-0 flex-wrap gap-2">
-                          <Button disabled={isSaving} onClick={() => void saveProvider(provider)}>
-                            {providerSaveButtonLabel(saveState)}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            disabled={isTesting}
-                            onClick={() => void testProvider(provider)}
-                          >
-                            {providerTestButtonLabel(testState)}
-                          </Button>
-                        </div>
-                      </div>
-                      <ProviderTestDetails result={testResultByProvider[provider.id]} />
-                    </footer>
-                  </article>
-                );
-              })}
+        <section className="grid min-w-0 content-start gap-4">
+          <div className="flex flex-col gap-2 rounded-lg border border-border bg-card px-4 py-3 shadow-sm sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-primary">
+                {searchQuery ? "搜索结果" : "当前分类"}
+              </p>
+              <h3 className="mt-1 text-lg font-bold text-foreground">
+                {searchQuery
+                  ? `匹配 ${searchResultCount} 个服务商`
+                  : activeGroup?.title ?? "服务商分类"}
+              </h3>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                {searchQuery
+                  ? "按分类展示匹配服务商，可继续选择服务商进入配置详情。"
+                  : activeGroup?.description ?? "选择左侧分类查看对应服务商。"}
+              </p>
             </div>
-          </section>
-        );
-      })}
+            <Badge variant="muted" className="rounded-md">
+              {searchQuery
+                ? `${searchResultGroups.length} 个分类`
+                : `${activeGroup?.providers.length ?? 0} 个服务商`}
+            </Badge>
+          </div>
+
+          {visibleGroups.length > 0 ? (
+            visibleGroups.map((group) => (
+              <section key={group.key} className="grid gap-3" data-provider-group={group.key}>
+                {searchQuery ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="text-base font-bold text-foreground">{group.title}</h4>
+                    <Badge variant="muted" className="rounded-md">
+                      {group.providers.length} 个匹配
+                    </Badge>
+                  </div>
+                ) : null}
+                <div className="grid gap-3 xl:grid-cols-2">
+                  {group.providers.map((provider) => renderProviderSummaryCard(provider))}
+                </div>
+              </section>
+            ))
+          ) : searchQuery ? (
+            <div className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground shadow-sm">
+              未找到匹配的服务商。请尝试服务商名称、代码、能力或用途。
+            </div>
+          ) : null}
+
+          {selectedProvider ? renderProviderDetail(selectedProvider) : null}
+        </section>
+      </section>
 
       {providers.length === 0 && loadState.status !== "saving" ? (
         <div className="rounded-lg border border-border bg-card">
           <EmptyState
             title="暂无可管理的服务商"
-            description="当前控制台只管理高德地图、和风天气、Open-Meteo、meteoblue、DeepSeek、微信支付、支付宝、邮箱、短信验证码和对象存储服务。"
+            description="当前控制台只管理地图与地理、天气数据、智能解读、支付收款、邮箱短信和对象存储服务。"
           />
         </div>
       ) : null}
