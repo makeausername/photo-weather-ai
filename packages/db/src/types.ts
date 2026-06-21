@@ -557,9 +557,12 @@ export type DatabaseClient = {
   ) => Promise<TResult>;
   readonly user?: {
     readonly findUnique: (args: any) => Promise<any>;
+    readonly findFirst?: (args: any) => Promise<any>;
     readonly findMany?: (args?: any) => Promise<any[]>;
+    readonly count?: (args?: any) => Promise<number>;
     readonly create: (args: any) => Promise<any>;
     readonly update: (args: any) => Promise<any>;
+    readonly updateMany?: (args: any) => Promise<{ count: number }>;
   };
   readonly authVerificationCode?: {
     readonly create: (args: any) => Promise<any>;
@@ -680,11 +683,14 @@ export type DatabaseClient = {
   readonly userSession?: {
     readonly create: (args: any) => Promise<any>;
     readonly findUnique: (args: any) => Promise<any>;
+    readonly findMany?: (args?: any) => Promise<any[]>;
     readonly update: (args: any) => Promise<any>;
     readonly updateMany?: (args: any) => Promise<{ count: number }>;
   };
   readonly userRole?: {
+    readonly findMany?: (args?: any) => Promise<any[]>;
     readonly upsert: (args: any) => Promise<any>;
+    readonly deleteMany?: (args: any) => Promise<{ count: number }>;
   };
   readonly userProfile?: {
     readonly create: (args: any) => Promise<any>;
@@ -692,6 +698,7 @@ export type DatabaseClient = {
   readonly role?: {
     readonly upsert: (args: any) => Promise<any>;
     readonly findUnique: (args: any) => Promise<any>;
+    readonly findMany?: (args?: any) => Promise<any[]>;
   };
   readonly permission?: {
     readonly upsert: (args: any) => Promise<any>;

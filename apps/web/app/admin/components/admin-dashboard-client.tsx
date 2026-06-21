@@ -1,14 +1,22 @@
 ﻿"use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Badge, Card, EmptyState, Table } from "../../../components/ui";
 import { adminApiFetch } from "../admin-api";
-import type { AdminAuditLog, SafeProviderConfig } from "../admin-api";
+import type {
+  AdminAuditLog,
+  AdminPaymentOrderListResponse,
+  AdminUserListResponse,
+  SafeProviderConfig,
+} from "../admin-api";
 
 type DashboardState = {
   readonly settingsOk: boolean | null;
   readonly providers: SafeProviderConfig[];
   readonly auditLogs: AdminAuditLog[];
+  readonly userSummary: AdminUserListResponse["summary"] | null;
+  readonly orderSummary: AdminPaymentOrderListResponse["summary"] | null;
   readonly error?: string;
 };
 
@@ -16,6 +24,8 @@ const initialState: DashboardState = {
   settingsOk: null,
   providers: [],
   auditLogs: [],
+  userSummary: null,
+  orderSummary: null,
 };
 
 const actionLabels: Record<string, string> = {
@@ -50,11 +60,13 @@ export function AdminDashboardClient() {
     let cancelled = false;
 
     async function loadDashboard() {
-      const [settingsResult, providersResult, auditResult] =
+      const [settingsResult, providersResult, auditResult, usersResult, ordersResult] =
         await Promise.allSettled([
           adminApiFetch<{ readonly settings: unknown[] }>("/admin/settings"),
           adminApiFetch<{ readonly providers: SafeProviderConfig[] }>("/admin/providers"),
           adminApiFetch<{ readonly logs: AdminAuditLog[] }>("/admin/audit-logs?limit=5"),
+          adminApiFetch<AdminUserListResponse>("/admin/users?pageSize=1"),
+          adminApiFetch<AdminPaymentOrderListResponse>("/admin/orders?pageSize=1"),
         ]);
 
       if (cancelled) {
@@ -65,10 +77,14 @@ export function AdminDashboardClient() {
         settingsOk: settingsResult.status === "fulfilled",
         providers: providersResult.status === "fulfilled" ? providersResult.value.providers : [],
         auditLogs: auditResult.status === "fulfilled" ? auditResult.value.logs : [],
+        userSummary: usersResult.status === "fulfilled" ? usersResult.value.summary : null,
+        orderSummary: ordersResult.status === "fulfilled" ? ordersResult.value.summary : null,
         error:
           settingsResult.status === "rejected" &&
           providersResult.status === "rejected" &&
-          auditResult.status === "rejected"
+          auditResult.status === "rejected" &&
+          usersResult.status === "rejected" &&
+          ordersResult.status === "rejected"
             ? "后台接口暂不可用，当前显示兜底状态。"
             : undefined,
       });
@@ -96,6 +112,24 @@ export function AdminDashboardClient() {
       description: "仅统计配置开关，不触发真实连接或外部调用",
       badge: "本地状态",
     },
+    {
+      title: "用户运营",
+      value: state.userSummary
+        ? `${state.userSummary.activeUsers} / ${state.userSummary.totalUsers}`
+        : "--",
+      description: "活跃用户 / 用户总数",
+      badge: "运营",
+    },
+    {
+      title: "订单收入",
+      value: state.orderSummary
+        ? `¥${(state.orderSummary.totalRevenueCents / 100).toFixed(2)}`
+        : "--",
+      description: state.orderSummary
+        ? `${state.orderSummary.paidOrders} 笔已支付，今日 ¥${(state.orderSummary.todayRevenueCents / 100).toFixed(2)}`
+        : "等待订单统计",
+      badge: "订单",
+    },
   ] as const;
 
   return (
@@ -106,7 +140,7 @@ export function AdminDashboardClient() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {summaryCards.map((card) => (
           <Card key={card.title} className="grid gap-3 p-5">
             <div className="flex items-start justify-between gap-3">
@@ -119,6 +153,29 @@ export function AdminDashboardClient() {
             <p className="text-xs leading-5 text-muted-foreground">{card.description}</p>
           </Card>
         ))}
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Link
+          href="/admin/users"
+          className="rounded-lg border border-border bg-card p-5 shadow-sm transition hover:border-primary hover:bg-secondary"
+        >
+          <p className="text-sm font-semibold text-muted-foreground">运营模块</p>
+          <h2 className="mt-2 text-xl font-bold text-foreground">用户管理</h2>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            查看账号、角色、订单、积分、查询历史、会话和审计记录。
+          </p>
+        </Link>
+        <Link
+          href="/admin/orders"
+          className="rounded-lg border border-border bg-card p-5 shadow-sm transition hover:border-primary hover:bg-secondary"
+        >
+          <p className="text-sm font-semibold text-muted-foreground">运营模块</p>
+          <h2 className="mt-2 text-xl font-bold text-foreground">订单管理</h2>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            查看支付订单、通知、权益发放、积分流水和安全操作。
+          </p>
+        </Link>
       </div>
 
       <Card className="overflow-hidden">

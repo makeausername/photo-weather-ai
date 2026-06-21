@@ -13,6 +13,13 @@ const adminLinkGroups = [
     links: [{ href: "/admin", label: "控制台" }],
   },
   {
+    label: "运营",
+    links: [
+      { href: "/admin/users", label: "用户管理" },
+      { href: "/admin/orders", label: "订单管理" },
+    ],
+  },
+  {
     label: "配置",
     links: [
       { href: "/admin/settings", label: "系统设置" },

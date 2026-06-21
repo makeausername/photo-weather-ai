@@ -1,5 +1,40 @@
 export { createAuditLog, listAuditLogs, sanitizeAuditJson } from "./audit.js";
 export {
+  AdminUserNotFoundError,
+  InvalidAdminRoleAssignmentError,
+  LastAdminAccessChangeError,
+  adminUserAuditSnapshot,
+  createAdminManagedUser,
+  disableUserAccount,
+  enableUserAccount,
+  generateAdminTemporaryPassword,
+  getAdminUserDetail,
+  getUserOperationalSummary,
+  listAdminUsers,
+  listUserAuditLogsForAdmin,
+  listUserCreditLedgerForAdmin,
+  listUserEntitlementsForAdmin,
+  listUserForecastHistoryForAdmin,
+  listUserPaymentOrdersForAdmin,
+  listUserSessionsForAdmin,
+  principalCanManageAdminRoles,
+  resetUserPasswordByAdmin,
+  revokeUserSessionsByAdmin,
+  updateAdminManagedUser,
+  updateUserRolesByAdmin,
+} from "./admin-users.js";
+export {
+  AdminPaymentOrderNotFoundError,
+  adminOrderAuditSnapshot,
+  getAdminPaymentOrderDetail,
+  getOrderOperationalTimeline,
+  listAdminPaymentOrders,
+  listOrderCreditLedger,
+  listOrderEntitlements,
+  listPaymentNotificationsForAdmin,
+  updateAdminPaymentOrderDetail,
+} from "./admin-orders.js";
+export {
   assertPermission,
   createRefreshToken,
   createPublicUserAccount,
@@ -191,6 +226,31 @@ export type {
   ViewDirection,
   WhiteoutLevel,
 } from "./types.js";
+export type {
+  AdminOrderAuditLogItem,
+  AdminOrderCreditLedgerItem,
+  AdminOrderEntitlementItem,
+  AdminOrderTimelineItem,
+  AdminPaymentNotificationItem,
+  AdminPaymentOrderDetail,
+  AdminPaymentOrderListItem,
+  AdminPaymentOrderListResult,
+  AdminPaymentOrderListSort,
+  ListAdminPaymentOrdersInput,
+} from "./admin-orders.js";
+export type {
+  AdminUserAuditLogItem,
+  AdminUserCreditLedgerItem,
+  AdminUserDetail,
+  AdminUserEntitlementItem,
+  AdminUserForecastHistoryItem,
+  AdminUserListItem,
+  AdminUserListResult,
+  AdminUserOrderItem,
+  AdminUserSessionItem,
+  AdminUserListSort,
+  ListAdminUsersInput,
+} from "./admin-users.js";
 
 export type DatabasePackageStatus = {
   readonly prismaSchema: "database_foundation";

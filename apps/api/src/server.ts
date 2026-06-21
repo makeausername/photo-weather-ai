@@ -12,6 +12,8 @@ import type {
 } from "@photo-weather/terrain";
 import { createWeatherProvider, type WeatherProvider } from "@photo-weather/weather";
 import { registerAdminRoutes } from "./admin-routes.js";
+import { registerAdminOrderRoutes } from "./admin-orders-routes.js";
+import { registerAdminUserRoutes } from "./admin-users-routes.js";
 import { registerAccountRoutes } from "./account-routes.js";
 import {
   checkAstroServiceHealth,
@@ -565,6 +567,15 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     geoProvider,
     resolveGeoProvider: resolveRuntimeGeoProvider,
     terrainProvider: options.terrainProvider,
+    env,
+  });
+  registerAdminUserRoutes(app, {
+    dbClient: options.dbClient,
+    authConfig,
+  });
+  registerAdminOrderRoutes(app, {
+    dbClient: options.dbClient,
+    authConfig,
     env,
   });
 

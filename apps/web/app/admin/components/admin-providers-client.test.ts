@@ -46,6 +46,8 @@ describe("admin provider module source", () => {
   it("promotes provider categories into the AdminShell sidebar", () => {
     for (const snippet of [
       '{ href: "/admin", label: "控制台" }',
+      '{ href: "/admin/users", label: "用户管理" }',
+      '{ href: "/admin/orders", label: "订单管理" }',
       '{ href: "/admin/settings", label: "系统设置" }',
       '{ href: "/admin/providers/geo", label: "地图服务" }',
       '{ href: "/admin/providers/weather", label: "天气数据" }',
@@ -60,6 +62,7 @@ describe("admin provider module source", () => {
     }
 
     expect(adminShellSource).toContain('label: "总览"');
+    expect(adminShellSource).toContain('label: "运营"');
     expect(adminShellSource).toContain('label: "配置"');
     expect(adminShellSource).toContain('label: "运维"');
     expect(adminShellSource).not.toContain('{ href: "/admin/providers", label: "服务商配置" }');

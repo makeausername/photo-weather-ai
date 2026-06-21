@@ -447,6 +447,18 @@ export async function createFakeDatabaseClient(): Promise<{
         return session;
       },
       findUnique: async ({ where }: any) => state.sessions.get(where.refreshTokenHash) ?? null,
+      findMany: async ({ where, orderBy, take }: any = {}) =>
+        [...state.sessions.values()]
+          .filter((session) => where?.userId === undefined || session.userId === where.userId)
+          .filter((session) =>
+            where?.revokedAt === undefined ? true : session.revokedAt === where.revokedAt,
+          )
+          .sort((left, right) =>
+            orderBy?.[0]?.createdAt === "asc"
+              ? left.createdAt.getTime() - right.createdAt.getTime()
+              : right.createdAt.getTime() - left.createdAt.getTime(),
+          )
+          .slice(0, take ?? Number.POSITIVE_INFINITY),
       update: async ({ where, data }: any) => {
         const existing = [...state.sessions.values()].find((session) => session.id === where.id);
         if (!existing) {
@@ -486,11 +498,32 @@ export async function createFakeDatabaseClient(): Promise<{
     },
     role: {
       findUnique: async ({ where }: any) => state.roles.get(where.code) ?? null,
+      findMany: async ({ where }: any = {}) =>
+        [...state.roles.values()].filter(
+          (role) =>
+            where?.code?.in === undefined ||
+            (where.code.in as readonly string[]).includes(role.code),
+        ),
       upsert: async () => {
         throw new Error("Role upsert is not used by API tests.");
       },
     },
     userRole: {
+      findMany: async ({ where }: any = {}) =>
+        [...state.users.values()]
+          .filter((user) => where?.userId === undefined || user.id === where.userId)
+          .flatMap((user) =>
+            user.roleCodes
+              .map((roleCode: string) => state.roles.get(roleCode))
+              .filter(Boolean)
+              .map((role: any) => ({
+                id: `${user.id}:${role.id}`,
+                userId: user.id,
+                roleId: role.id,
+                role,
+                createdAt: now,
+              })),
+          ),
       upsert: async ({ create }: any) => {
         const user = state.users.get(create.userId);
         const role = [...state.roles.values()].find((candidate) => candidate.id === create.roleId);
@@ -498,6 +531,15 @@ export async function createFakeDatabaseClient(): Promise<{
           user.roleCodes.push(role.code);
         }
         return { id: "user-role" };
+      },
+      deleteMany: async ({ where }: any) => {
+        const user = state.users.get(where.userId);
+        if (!user) {
+          return { count: 0 };
+        }
+        const count = user.roleCodes.length;
+        user.roleCodes = [];
+        return { count };
       },
     },
     systemSetting: {
@@ -705,11 +747,17 @@ export async function createFakeDatabaseClient(): Promise<{
         state.paymentNotifications.set(notification.id, notification);
         return notification;
       },
-      findMany: async ({ where }: any = {}) =>
+      findMany: async ({ where, orderBy, take }: any = {}) =>
         [...state.paymentNotifications.values()].filter(
           (notification) =>
             where?.orderNo === undefined || notification.orderNo === where.orderNo,
-        ),
+        )
+          .sort((left, right) =>
+            orderBy?.[0]?.createdAt === "asc"
+              ? left.createdAt.getTime() - right.createdAt.getTime()
+              : right.createdAt.getTime() - left.createdAt.getTime(),
+          )
+          .slice(0, take ?? Number.POSITIVE_INFINITY),
       update: async ({ where, data }: any) => {
         const existing = state.paymentNotifications.get(where.id);
         if (!existing) {
@@ -832,7 +880,28 @@ export async function createFakeDatabaseClient(): Promise<{
         state.auditLogs.unshift(log);
         return log;
       },
-      findMany: async ({ take }: any = {}) => state.auditLogs.slice(0, take ?? 50),
+      findMany: async ({ where, orderBy, take }: any = {}) =>
+        state.auditLogs
+          .filter((log) => {
+            if (!where?.OR) {
+              return true;
+            }
+            return (where.OR as any[]).some((condition) => {
+              if (condition.targetId !== undefined) {
+                return log.targetId === condition.targetId;
+              }
+              if (condition.actorUserId !== undefined) {
+                return log.actorUserId === condition.actorUserId;
+              }
+              return false;
+            });
+          })
+          .sort((left, right) =>
+            orderBy?.[0]?.createdAt === "asc"
+              ? left.createdAt.getTime() - right.createdAt.getTime()
+              : right.createdAt.getTime() - left.createdAt.getTime(),
+          )
+          .slice(0, take ?? 50),
     },
     location: {
       findUnique: async ({ where }: any) => {

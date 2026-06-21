@@ -273,6 +273,269 @@ export type AdminAuthSession = {
   readonly isAdmin: boolean;
 };
 
+export type AdminRole = {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly displayName: string | null;
+  readonly description: string | null;
+};
+
+export type AdminUserOperationalSummary = {
+  readonly orderCount: number;
+  readonly paidOrderCount: number;
+  readonly totalPaidAmountCents: number;
+  readonly currentCreditBalance: number;
+  readonly forecastHistoryCount: number;
+  readonly activeSessionCount: number;
+  readonly entitlementCount: number;
+};
+
+export type AdminUserListItem = SafeAdminUser &
+  AdminUserOperationalSummary & {
+    readonly emailMasked: string | null;
+    readonly phoneMasked: string | null;
+    readonly roles: readonly AdminRole[];
+    readonly roleCodes: readonly string[];
+    readonly permissions: readonly string[];
+  };
+
+export type AdminUserListResponse = {
+  readonly items: readonly AdminUserListItem[];
+  readonly pagination: {
+    readonly page: number;
+    readonly pageSize: number;
+    readonly total: number;
+    readonly totalPages: number;
+  };
+  readonly summary: {
+    readonly totalUsers: number;
+    readonly activeUsers: number;
+    readonly disabledUsers: number;
+    readonly todayNewUsers: number;
+    readonly paidUsers: number;
+    readonly totalPaidAmountCents: number;
+  };
+};
+
+export type AdminUserOrderItem = {
+  readonly orderNo: string;
+  readonly provider: string;
+  readonly productCode: string;
+  readonly amountCents: number;
+  readonly currency: string;
+  readonly status: string;
+  readonly paidAt: string | null;
+  readonly expiresAt: string | null;
+  readonly providerTradeNo: string | null;
+  readonly entitlementGrantedAt: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
+
+export type AdminUserForecastHistoryItem = {
+  readonly id: string;
+  readonly locationName: string;
+  readonly target: string;
+  readonly horizon: string;
+  readonly timezone: string | null;
+  readonly overallScore: number | null;
+  readonly recommendationLabel: string | null;
+  readonly bestWindowStart: string | null;
+  readonly bestWindowEnd: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
+
+export type AdminUserEntitlementItem = {
+  readonly id: string;
+  readonly orderId: string;
+  readonly type: string;
+  readonly quantity: number;
+  readonly remainingQuantity: number | null;
+  readonly startsAt: string;
+  readonly expiresAt: string | null;
+  readonly grantedAt: string;
+  readonly metadataJson: JsonValue | null;
+};
+
+export type AdminUserCreditLedgerItem = {
+  readonly id: string;
+  readonly orderId: string | null;
+  readonly entitlementId: string | null;
+  readonly delta: number;
+  readonly balanceAfter: number;
+  readonly reason: string;
+  readonly metadataJson: JsonValue | null;
+  readonly createdAt: string;
+};
+
+export type AdminUserSessionItem = {
+  readonly id: string;
+  readonly userId: string;
+  readonly expiresAt: string;
+  readonly revokedAt: string | null;
+  readonly ipAddress: string | null;
+  readonly userAgent: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly active: boolean;
+};
+
+export type AdminUserAuditLogItem = {
+  readonly id: string;
+  readonly actorUserId: string | null;
+  readonly action: string;
+  readonly targetType: string;
+  readonly targetId: string | null;
+  readonly ipAddress: string | null;
+  readonly userAgent: string | null;
+  readonly createdAt: string;
+};
+
+export type AdminUserDetail = {
+  readonly profile: SafeAdminUser;
+  readonly emailMasked: string | null;
+  readonly phoneMasked: string | null;
+  readonly roles: readonly AdminRole[];
+  readonly roleCodes: readonly string[];
+  readonly permissions: readonly string[];
+  readonly accountStatus: string;
+  readonly summary: AdminUserOperationalSummary;
+  readonly sessionsSummary: {
+    readonly active: number;
+    readonly revoked: number;
+    readonly expired: number;
+    readonly total: number;
+  };
+  readonly orderSummary: {
+    readonly total: number;
+    readonly paid: number;
+    readonly unpaid: number;
+    readonly totalPaidAmountCents: number;
+  };
+  readonly entitlementSummary: {
+    readonly total: number;
+    readonly active: number;
+    readonly forecastCreditsRemaining: number;
+  };
+  readonly creditBalance: number;
+  readonly recentOrders: readonly AdminUserOrderItem[];
+  readonly recentForecastHistory: readonly AdminUserForecastHistoryItem[];
+  readonly recentAuditLogs: readonly AdminUserAuditLogItem[];
+  readonly recentSessions: readonly AdminUserSessionItem[];
+  readonly entitlements: readonly AdminUserEntitlementItem[];
+  readonly creditLedger: readonly AdminUserCreditLedgerItem[];
+};
+
+export type AdminPaymentUserSummary = Pick<
+  SafeAdminUser,
+  "id" | "email" | "phone" | "displayName" | "status" | "createdAt"
+>;
+
+export type AdminPaymentOrderListItem = {
+  readonly orderNo: string;
+  readonly user: AdminPaymentUserSummary | null;
+  readonly provider: "mock" | "wechat_pay" | "alipay";
+  readonly productCode: string;
+  readonly amountCents: number;
+  readonly currency: string;
+  readonly status: string;
+  readonly paidAt: string | null;
+  readonly expiresAt: string | null;
+  readonly providerTradeNo: string | null;
+  readonly entitlementGrantedAt: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
+
+export type AdminPaymentOrderListResponse = {
+  readonly items: readonly AdminPaymentOrderListItem[];
+  readonly pagination: {
+    readonly page: number;
+    readonly pageSize: number;
+    readonly total: number;
+    readonly totalPages: number;
+  };
+  readonly summary: {
+    readonly totalOrders: number;
+    readonly paidOrders: number;
+    readonly unpaidOrders: number;
+    readonly failedOrCanceledOrders: number;
+    readonly totalRevenueCents: number;
+    readonly todayRevenueCents: number;
+  };
+};
+
+export type AdminPaymentNotificationItem = {
+  readonly id: string;
+  readonly provider: "mock" | "wechat_pay" | "alipay";
+  readonly orderNo: string | null;
+  readonly providerTradeNo: string | null;
+  readonly signatureVerified: boolean;
+  readonly status: string;
+  readonly errorMessage: string | null;
+  readonly createdAt: string;
+  readonly processedAt: string | null;
+};
+
+export type AdminOrderTimelineItem = {
+  readonly at: string;
+  readonly type: "created" | "notification" | "paid" | "entitlement" | "status";
+  readonly title: string;
+  readonly status: string;
+  readonly description: string | null;
+};
+
+export type AdminOrderEntitlementItem = {
+  readonly id: string;
+  readonly userId: string;
+  readonly orderId: string;
+  readonly type: string;
+  readonly quantity: number;
+  readonly remainingQuantity: number | null;
+  readonly startsAt: string;
+  readonly expiresAt: string | null;
+  readonly grantedAt: string;
+  readonly metadataJson: JsonValue | null;
+};
+
+export type AdminOrderCreditLedgerItem = {
+  readonly id: string;
+  readonly userId: string;
+  readonly orderId: string | null;
+  readonly entitlementId: string | null;
+  readonly delta: number;
+  readonly balanceAfter: number;
+  readonly reason: string;
+  readonly metadataJson: JsonValue | null;
+  readonly createdAt: string;
+};
+
+export type AdminPaymentOrderDetail = {
+  readonly order: AdminPaymentOrderListItem & {
+    readonly id: string;
+    readonly metadataJson: JsonValue | null;
+    readonly adminNote: string | null;
+  };
+  readonly user: AdminPaymentUserSummary | null;
+  readonly product: {
+    readonly id: string;
+    readonly code: string;
+    readonly name: string;
+    readonly description: string | null;
+    readonly amountCents: number;
+    readonly currency: string;
+    readonly credits: number;
+    readonly durationDays: number | null;
+  } | null;
+  readonly timeline: readonly AdminOrderTimelineItem[];
+  readonly notifications: readonly AdminPaymentNotificationItem[];
+  readonly entitlements: readonly AdminOrderEntitlementItem[];
+  readonly creditLedger: readonly AdminOrderCreditLedgerItem[];
+  readonly auditLogs: readonly AdminUserAuditLogItem[];
+};
+
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 const accessTokenKey = "photo_weather_admin_access_token";
 const refreshTokenKey = "photo_weather_admin_refresh_token";
@@ -517,4 +780,201 @@ export async function logoutAdmin(): Promise<void> {
       window.location.href = "/admin/login";
     }
   }
+}
+
+function queryString(params: Record<string, string | number | boolean | null | undefined>): string {
+  const searchParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") {
+      continue;
+    }
+    searchParams.set(key, String(value));
+  }
+  const value = searchParams.toString();
+  return value ? `?${value}` : "";
+}
+
+export async function fetchAdminUsers(params: {
+  readonly q?: string;
+  readonly status?: string;
+  readonly role?: string;
+  readonly hasOrders?: string;
+  readonly hasCredits?: string;
+  readonly createdFrom?: string;
+  readonly createdTo?: string;
+  readonly page?: number;
+  readonly pageSize?: number;
+  readonly sort?: string;
+} = {}): Promise<AdminUserListResponse> {
+  return adminApiFetch<AdminUserListResponse>(`/admin/users${queryString(params)}`);
+}
+
+export async function fetchAdminUserDetail(userId: string): Promise<AdminUserDetail> {
+  const response = await adminApiFetch<{ readonly user: AdminUserDetail }>(
+    `/admin/users/${encodeURIComponent(userId)}`,
+  );
+  return response.user;
+}
+
+export async function createAdminUser(input: {
+  readonly email?: string | null;
+  readonly phone?: string | null;
+  readonly password?: string;
+  readonly generatePassword?: boolean;
+  readonly displayName?: string | null;
+  readonly roleCodes?: readonly string[];
+}): Promise<{ readonly user: AdminUserDetail; readonly generatedPassword: string | null }> {
+  return adminApiFetch("/admin/users", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateAdminUser(
+  userId: string,
+  input: {
+    readonly email?: string | null;
+    readonly phone?: string | null;
+    readonly displayName?: string | null;
+    readonly status?: "active" | "disabled";
+  },
+): Promise<AdminUserDetail> {
+  const response = await adminApiFetch<{ readonly user: AdminUserDetail }>(
+    `/admin/users/${encodeURIComponent(userId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+  return response.user;
+}
+
+export async function disableAdminUser(
+  userId: string,
+  revokeSessions = true,
+): Promise<{ readonly user: AdminUserDetail; readonly revokedSessionCount: number }> {
+  return adminApiFetch(`/admin/users/${encodeURIComponent(userId)}/disable`, {
+    method: "POST",
+    body: JSON.stringify({ revokeSessions }),
+  });
+}
+
+export async function enableAdminUser(userId: string): Promise<AdminUserDetail> {
+  const response = await adminApiFetch<{ readonly user: AdminUserDetail }>(
+    `/admin/users/${encodeURIComponent(userId)}/enable`,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
+  );
+  return response.user;
+}
+
+export async function resetAdminUserPassword(
+  userId: string,
+  input: { readonly temporaryPassword?: string; readonly generatePassword?: boolean } = {
+    generatePassword: true,
+  },
+): Promise<{
+  readonly user: AdminUserDetail;
+  readonly generatedPassword: string | null;
+  readonly revokedSessionCount: number;
+}> {
+  return adminApiFetch(`/admin/users/${encodeURIComponent(userId)}/reset-password`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function revokeAdminUserSessions(
+  userId: string,
+): Promise<{ readonly revokedSessionCount: number; readonly sessions: readonly AdminUserSessionItem[] }> {
+  return adminApiFetch(`/admin/users/${encodeURIComponent(userId)}/revoke-sessions`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export async function updateAdminUserRoles(
+  userId: string,
+  roleCodes: readonly string[],
+): Promise<AdminUserDetail> {
+  const response = await adminApiFetch<{ readonly user: AdminUserDetail }>(
+    `/admin/users/${encodeURIComponent(userId)}/roles`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ roleCodes }),
+    },
+  );
+  return response.user;
+}
+
+export async function fetchAdminOrders(params: {
+  readonly q?: string;
+  readonly status?: string;
+  readonly provider?: string;
+  readonly productCode?: string;
+  readonly userId?: string;
+  readonly paid?: string;
+  readonly createdFrom?: string;
+  readonly createdTo?: string;
+  readonly page?: number;
+  readonly pageSize?: number;
+  readonly sort?: string;
+} = {}): Promise<AdminPaymentOrderListResponse> {
+  return adminApiFetch<AdminPaymentOrderListResponse>(`/admin/orders${queryString(params)}`);
+}
+
+export async function fetchAdminOrderDetail(orderNo: string): Promise<AdminPaymentOrderDetail> {
+  const response = await adminApiFetch<{ readonly order: AdminPaymentOrderDetail }>(
+    `/admin/orders/${encodeURIComponent(orderNo)}`,
+  );
+  return response.order;
+}
+
+export async function updateAdminOrder(
+  orderNo: string,
+  input: { readonly adminNote?: string | null },
+): Promise<AdminPaymentOrderDetail> {
+  const response = await adminApiFetch<{ readonly order: AdminPaymentOrderDetail }>(
+    `/admin/orders/${encodeURIComponent(orderNo)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+  return response.order;
+}
+
+export async function cancelAdminOrder(orderNo: string): Promise<AdminPaymentOrderDetail> {
+  const response = await adminApiFetch<{ readonly order: AdminPaymentOrderDetail }>(
+    `/admin/orders/${encodeURIComponent(orderNo)}/cancel`,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
+  );
+  return response.order;
+}
+
+export async function closeAdminOrder(orderNo: string): Promise<AdminPaymentOrderDetail> {
+  const response = await adminApiFetch<{ readonly order: AdminPaymentOrderDetail }>(
+    `/admin/orders/${encodeURIComponent(orderNo)}/close`,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
+  );
+  return response.order;
+}
+
+export async function markAdminOrderPaid(orderNo: string): Promise<{
+  readonly success: boolean;
+  readonly order: AdminPaymentOrderDetail;
+  readonly entitlementGranted: boolean;
+}> {
+  return adminApiFetch(`/admin/orders/${encodeURIComponent(orderNo)}/mark-paid`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
 }
