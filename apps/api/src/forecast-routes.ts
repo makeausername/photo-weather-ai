@@ -34,7 +34,7 @@ import {
   type ForecastAiExplanation,
   type ForecastAiExplanationParseStrategy,
 } from "@photo-weather/ai";
-import type { DatabaseClient } from "@photo-weather/db";
+import { getRuntimeProviderConfig, type DatabaseClient } from "@photo-weather/db";
 import { buildForecastInputFromWeatherBundle, calculateForecast } from "@photo-weather/scoring";
 import {
   MockTerrainProvider,
@@ -44,6 +44,7 @@ import {
 } from "@photo-weather/terrain";
 import {
   createWeatherProvider,
+  isWeatherProviderError,
   WeatherDataService,
   type WeatherProvider,
 } from "@photo-weather/weather";
@@ -105,7 +106,11 @@ type DisplayableAiExplanation = ForecastAiExplanation & {
 const deepSeekForecastInterpretationCacheTtlMs = 1000 * 60 * 60;
 const deepSeekForecastInterpretationCache = new Map<string, CachedDeepSeekForecastInterpretation>();
 const defaultForecastCalculateCacheTtlMs = 5 * 60 * 1000;
+const defaultForecastCalculateStaleIfErrorTtlMs = 30 * 60 * 1000;
 const defaultForecastCalculateCacheMaxEntries = 256;
+const defaultForecastCalculateRetryCount = 2;
+const defaultForecastCalculateRetryDelayMs = 600;
+const forecastTransientHttpStatuses = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 
 const missingWgs84CoordinateErrorMessage = "当前地点缺少有效 WGS84 坐标，无法计算星空银河窗口。";
 
@@ -137,6 +142,32 @@ function readPositiveIntegerEnv(
 
   const value = Number(raw);
   if (!Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+
+  const integer = Math.floor(value);
+  if (options.min !== undefined && integer < options.min) {
+    return options.min;
+  }
+  if (options.max !== undefined && integer > options.max) {
+    return options.max;
+  }
+  return integer;
+}
+
+function readNonNegativeIntegerEnv(
+  env: NodeJS.ProcessEnv,
+  key: string,
+  fallback: number,
+  options: { readonly min?: number; readonly max?: number } = {},
+): number {
+  const raw = env[key];
+  if (raw === undefined || raw.trim() === "") {
+    return fallback;
+  }
+
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
     return fallback;
   }
 
@@ -216,8 +247,16 @@ function roundOptionalCacheNumber(value: number | null | undefined, digits: numb
   return Math.round(value * factor) / factor;
 }
 
-function createForecastCalculateCacheKey(input: ForecastCalculateRequest): string {
+function createForecastCalculateCacheKey(
+  input: ForecastCalculateRequest,
+  options: {
+    readonly runtimeCacheSalt?: string;
+    readonly rawTarget?: string | null;
+  } = {},
+): string {
   const stableInput = {
+    runtimeCacheSalt: options.runtimeCacheSalt ?? null,
+    rawTarget: options.rawTarget ?? input.target,
     name: input.name,
     source: input.source,
     coordinateSource: input.coordinateSource ?? null,
@@ -243,9 +282,80 @@ function createForecastCalculateCacheKey(input: ForecastCalculateRequest): strin
     .slice(0, 32)}`;
 }
 
+async function createForecastCalculateRuntimeCacheSalt(options: {
+  readonly dbClient?: DatabaseClient;
+  readonly env: NodeJS.ProcessEnv;
+}): Promise<string> {
+  if (options.dbClient) {
+    const providers = await Promise.all(
+      (["qweather", "open_meteo", "meteoblue"] as const).map(async (providerCode) => {
+        const provider = await getRuntimeProviderConfig("weather", providerCode, {
+          client: options.dbClient,
+        });
+        return {
+          providerCode,
+          enabled: provider?.enabled ?? false,
+          priority: provider?.priority ?? 0,
+          updatedAt: provider?.updatedAt.toISOString() ?? null,
+        };
+      }),
+    );
+    return JSON.stringify(providers);
+  }
+
+  return JSON.stringify({
+    weatherProvider: options.env.WEATHER_PROVIDER ?? null,
+    weatherProviderMode: options.env.WEATHER_PROVIDER_MODE ?? null,
+    qweatherHost: options.env.QWEATHER_API_HOST ?? options.env.QWEATHER_BASE_URL ?? null,
+    openMeteoEnabled: options.env.OPEN_METEO_ENABLED ?? null,
+    openMeteoMode: options.env.OPEN_METEO_MODE ?? null,
+    openMeteoBaseUrl: options.env.OPEN_METEO_BASE_URL ?? null,
+    openMeteoCustomerEndpoint: options.env.OPEN_METEO_CUSTOMER_ENDPOINT ?? null,
+    meteoblueBaseUrl: options.env.METEOBLUE_BASE_URL ?? null,
+    meteobluePackages: options.env.METEOBLUE_PACKAGES ?? options.env.METEOBLUE_PACKAGE_NAME ?? null,
+  });
+}
+
+function readRawForecastTarget(value: unknown): string | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const target = value.target;
+  return typeof target === "string" && target.trim().length > 0 ? target.trim() : null;
+}
+
 type ForecastCalculationOptions = {
   readonly timezone?: string;
   readonly startDateTime?: string;
+};
+
+type ForecastCalculateCacheState = {
+  readonly fresh: Map<string, TtlCacheEntry<ForecastCalculationWithAiResult>>;
+  readonly stale: Map<string, TtlCacheEntry<ForecastCalculationWithAiResult>>;
+  readonly inFlight: Map<string, Promise<ForecastCalculationWithAiResult>>;
+  readonly freshTtlMs: number;
+  readonly staleIfErrorTtlMs: number;
+  readonly maxEntries: number;
+};
+
+type ForecastCalculationServices = {
+  readonly weatherDataService: WeatherDataServiceLike;
+  readonly terrainProvider: TerrainProvider;
+  readonly elevationService: TerrainElevationService;
+  readonly astroServiceClient: AstroServiceClientLike;
+  readonly astroServiceConfig: AstroServiceConfig;
+  readonly dbClient?: DatabaseClient;
+};
+
+type ForecastResilienceOptions = {
+  readonly retryCount: number;
+  readonly retryDelayMs: number;
+};
+
+type ForecastTransientClassification = {
+  readonly transient: boolean;
+  readonly category: string;
+  readonly statusCode?: number;
 };
 
 function sendZodError(reply: FastifyReply, error: ZodError): FastifyReply {
@@ -330,14 +440,50 @@ export function registerForecastRoutes(
     defaultForecastCalculateCacheTtlMs,
     { min: 1000, max: 60 * 60 * 1000 },
   );
+  const forecastCalculateStaleIfErrorTtlMs = readPositiveIntegerEnv(
+    env,
+    "FORECAST_CALCULATE_STALE_IF_ERROR_TTL_MS",
+    defaultForecastCalculateStaleIfErrorTtlMs,
+    { min: 1000, max: 6 * 60 * 60 * 1000 },
+  );
   const forecastCalculateCacheMaxEntries = readPositiveIntegerEnv(
     env,
     "FORECAST_CALCULATE_CACHE_MAX_ENTRIES",
     defaultForecastCalculateCacheMaxEntries,
     { min: 1, max: 100_000 },
   );
-  const forecastCalculateCache = new Map<string, TtlCacheEntry<ForecastCalculationWithAiResult>>();
-  const forecastCalculateInFlight = new Map<string, Promise<ForecastCalculationResult>>();
+  const forecastCalculateRetryCount = readNonNegativeIntegerEnv(
+    env,
+    "FORECAST_CALCULATE_RETRY_COUNT",
+    defaultForecastCalculateRetryCount,
+    { min: 0, max: 5 },
+  );
+  const forecastCalculateRetryDelayMs = readNonNegativeIntegerEnv(
+    env,
+    "FORECAST_CALCULATE_RETRY_BASE_DELAY_MS",
+    env.NODE_ENV === "test" ? 0 : defaultForecastCalculateRetryDelayMs,
+    { min: 0, max: 10_000 },
+  );
+  const forecastCalculateCacheState: ForecastCalculateCacheState = {
+    fresh: new Map<string, TtlCacheEntry<ForecastCalculationWithAiResult>>(),
+    stale: new Map<string, TtlCacheEntry<ForecastCalculationWithAiResult>>(),
+    inFlight: new Map<string, Promise<ForecastCalculationWithAiResult>>(),
+    freshTtlMs: forecastCalculateCacheTtlMs,
+    staleIfErrorTtlMs: forecastCalculateStaleIfErrorTtlMs,
+    maxEntries: forecastCalculateCacheMaxEntries,
+  };
+  const forecastCalculationServices: ForecastCalculationServices = {
+    weatherDataService,
+    terrainProvider,
+    elevationService,
+    astroServiceClient,
+    astroServiceConfig,
+    dbClient: options.dbClient,
+  };
+  const forecastResilienceOptions: ForecastResilienceOptions = {
+    retryCount: forecastCalculateRetryCount,
+    retryDelayMs: forecastCalculateRetryDelayMs,
+  };
 
   app.post("/forecast/validate-query", async (request, reply) => {
     const parsedBody = forecastQueryInputSchema.safeParse(
@@ -383,39 +529,30 @@ export function registerForecastRoutes(
       startDateTime,
       ...query
     } = parsedBody.data;
-    const cacheKey = createForecastCalculateCacheKey(parsedBody.data);
-    const cached = readCachedValue(forecastCalculateCache, cacheKey);
-    if (cached) {
-      return reply.send(cached);
-    }
-
-    let calculationPromise = forecastCalculateInFlight.get(cacheKey);
-    if (!calculationPromise) {
-      calculationPromise = calculateForecastResultWithCalibration(
-        query,
-        { timezone, startDateTime },
-        weatherDataService,
-        terrainProvider,
-        elevationService,
-        astroServiceClient,
-        astroServiceConfig,
-        options.dbClient,
-        request.log,
-      );
-      forecastCalculateInFlight.set(cacheKey, calculationPromise);
-    }
+    const runtimeCacheSalt = await createForecastCalculateRuntimeCacheSalt({
+      dbClient: options.dbClient,
+      env,
+    });
+    const cacheKey = createForecastCalculateCacheKey(parsedBody.data, {
+      runtimeCacheSalt,
+      rawTarget: readRawForecastTarget(request.body),
+    });
 
     try {
-      const result = await calculationPromise;
-      const response = withDeterministicAiExplanation(result);
-      writeCachedValue(
-        forecastCalculateCache,
+      const calculation = await calculateForecastWithRouteResilience({
         cacheKey,
-        response,
-        forecastCalculateCacheTtlMs,
-        forecastCalculateCacheMaxEntries,
-      );
-      return reply.send(response);
+        query,
+        requestOptions: { timezone, startDateTime },
+        cacheState: forecastCalculateCacheState,
+        services: forecastCalculationServices,
+        resilience: forecastResilienceOptions,
+        logger: request.log,
+        route: "/forecast/calculate",
+      });
+      if (calculation.servedStale) {
+        reply.header("X-Forecast-Stale", "1");
+      }
+      return reply.send(calculation.result);
     } catch (error) {
       return sendForecastCalculationError({
         logger: request.log,
@@ -425,10 +562,6 @@ export function registerForecastRoutes(
         error,
         reply,
       });
-    } finally {
-      if (forecastCalculateInFlight.get(cacheKey) === calculationPromise) {
-        forecastCalculateInFlight.delete(cacheKey);
-      }
     }
   });
 
@@ -441,20 +574,40 @@ export function registerForecastRoutes(
     }
     const { timezone, ...query } = parsedBody.data;
 
-    const result = await calculateForecastResultOrReply(
-      query,
-      { timezone },
-      weatherDataService,
-      terrainProvider,
-      elevationService,
-      astroServiceClient,
-      astroServiceConfig,
-      options.dbClient,
-      reply,
-      request.log,
-    );
-    if (!result) {
-      return reply;
+    const forecastCalculateRequest = {
+      ...query,
+      timezone,
+      useAiExplanation: false,
+    } satisfies ForecastCalculateRequest;
+    const runtimeCacheSalt = await createForecastCalculateRuntimeCacheSalt({
+      dbClient: options.dbClient,
+      env,
+    });
+    let result: ForecastCalculationWithAiResult;
+    try {
+      const calculation = await calculateForecastWithRouteResilience({
+        cacheKey: createForecastCalculateCacheKey(forecastCalculateRequest, {
+          runtimeCacheSalt,
+          rawTarget: readRawForecastTarget(request.body),
+        }),
+        query,
+        requestOptions: { timezone },
+        cacheState: forecastCalculateCacheState,
+        services: forecastCalculationServices,
+        resilience: forecastResilienceOptions,
+        logger: request.log,
+        route: "/forecast/ai-explain",
+      });
+      result = calculation.result;
+    } catch (error) {
+      return sendForecastCalculationError({
+        logger: request.log,
+        route: "/forecast/ai-explain",
+        queryLike: query,
+        astroServiceConfig,
+        error,
+        reply,
+      });
     }
     const runtimeDeepSeek = await readRuntimeDeepSeekConfigOrDisabled({
       dbClient: options.dbClient,
@@ -688,40 +841,265 @@ export function registerForecastRoutes(
   }
 }
 
-async function calculateForecastResultOrReply(
-  query: ForecastQueryInput,
-  requestOptions: ForecastCalculationOptions,
-  weatherDataService: WeatherDataServiceLike,
-  terrainProvider: TerrainProvider,
-  elevationService: TerrainElevationService,
-  astroServiceClient: AstroServiceClientLike,
-  astroServiceConfig: AstroServiceConfig,
-  dbClient: DatabaseClient | undefined,
-  reply: FastifyReply,
-  logger: FastifyBaseLogger,
-): Promise<ForecastCalculationResult | null> {
-  try {
-    return await calculateForecastResultWithCalibration(
+async function calculateForecastWithRouteResilience(options: {
+  readonly cacheKey: string;
+  readonly query: ForecastQueryInput;
+  readonly requestOptions: ForecastCalculationOptions;
+  readonly cacheState: ForecastCalculateCacheState;
+  readonly services: ForecastCalculationServices;
+  readonly resilience: ForecastResilienceOptions;
+  readonly logger: FastifyBaseLogger;
+  readonly route: string;
+}): Promise<{
+  readonly result: ForecastCalculationWithAiResult;
+  readonly servedStale: boolean;
+}> {
+  const {
+    cacheKey,
+    query,
+    requestOptions,
+    cacheState,
+    services,
+    resilience,
+    logger,
+    route,
+  } = options;
+  const cached = readCachedValue(cacheState.fresh, cacheKey);
+  if (cached) {
+    logForecastCalculationCacheEvent({
+      logger,
+      route,
+      queryLike: query,
+      event: "cache_hit",
+    });
+    return { result: cached, servedStale: false };
+  }
+
+  let calculationPromise = cacheState.inFlight.get(cacheKey);
+  if (calculationPromise) {
+    logForecastCalculationCacheEvent({
+      logger,
+      route,
+      queryLike: query,
+      event: "in_flight_hit",
+    });
+  } else {
+    calculationPromise = calculateForecastResultWithRetry({
       query,
       requestOptions,
-      weatherDataService,
-      terrainProvider,
-      elevationService,
-      astroServiceClient,
-      astroServiceConfig,
-      dbClient,
+      services,
+      resilience,
       logger,
-    );
-  } catch (error) {
-    return sendForecastCalculationError({
-      logger,
-      route: "/forecast/calculate",
-      queryLike: query,
-      astroServiceConfig,
-      error,
-      reply,
+      route,
+    }).then((result) => {
+      const response = withDeterministicAiExplanation(result);
+      writeForecastCalculateSuccessCache(cacheState, cacheKey, response);
+      return response;
     });
+    cacheState.inFlight.set(cacheKey, calculationPromise);
   }
+
+  try {
+    return {
+      result: await calculationPromise,
+      servedStale: false,
+    };
+  } catch (error) {
+    const classification = classifyForecastCalculationError(error);
+    if (classification.transient) {
+      const stale = readCachedValue(cacheState.stale, cacheKey);
+      if (stale) {
+        logForecastCalculationStaleServed({
+          logger,
+          route,
+          queryLike: query,
+          category: classification.category,
+        });
+        return { result: stale, servedStale: true };
+      }
+    }
+    throw error;
+  } finally {
+    if (cacheState.inFlight.get(cacheKey) === calculationPromise) {
+      cacheState.inFlight.delete(cacheKey);
+    }
+  }
+}
+
+async function calculateForecastResultWithRetry(options: {
+  readonly query: ForecastQueryInput;
+  readonly requestOptions: ForecastCalculationOptions;
+  readonly services: ForecastCalculationServices;
+  readonly resilience: ForecastResilienceOptions;
+  readonly logger: FastifyBaseLogger;
+  readonly route: string;
+}): Promise<ForecastCalculationResult> {
+  const { query, requestOptions, services, resilience, logger, route } = options;
+  const maxAttempts = Math.max(1, resilience.retryCount + 1);
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      logForecastCalculationAttempt({
+        logger,
+        route,
+        queryLike: query,
+        attempt,
+        maxAttempts,
+      });
+      return await calculateForecastResultWithCalibration(
+        query,
+        requestOptions,
+        services.weatherDataService,
+        services.terrainProvider,
+        services.elevationService,
+        services.astroServiceClient,
+        services.astroServiceConfig,
+        services.dbClient,
+        logger,
+      );
+    } catch (error) {
+      const classification = classifyForecastCalculationError(error);
+      if (!classification.transient || attempt >= maxAttempts) {
+        throw error;
+      }
+      logForecastCalculationRetry({
+        logger,
+        route,
+        queryLike: query,
+        attempt,
+        nextAttempt: attempt + 1,
+        category: classification.category,
+        statusCode: classification.statusCode,
+      });
+      await delayForecastRetry(retryDelayMsForAttempt(resilience.retryDelayMs, attempt));
+    }
+  }
+
+  throw new Error("unreachable forecast retry state");
+}
+
+function writeForecastCalculateSuccessCache(
+  cacheState: ForecastCalculateCacheState,
+  cacheKey: string,
+  response: ForecastCalculationWithAiResult,
+): void {
+  writeCachedValue(
+    cacheState.fresh,
+    cacheKey,
+    response,
+    cacheState.freshTtlMs,
+    cacheState.maxEntries,
+  );
+  writeCachedValue(
+    cacheState.stale,
+    cacheKey,
+    response,
+    cacheState.staleIfErrorTtlMs,
+    cacheState.maxEntries,
+  );
+}
+
+function retryDelayMsForAttempt(baseDelayMs: number, attempt: number): number {
+  if (baseDelayMs <= 0) {
+    return 0;
+  }
+  const withoutJitter = Math.min(baseDelayMs * 2 ** Math.max(0, attempt - 1), 2400);
+  return Math.round(withoutJitter + Math.random() * withoutJitter * 0.2);
+}
+
+function delayForecastRetry(delayMs: number): Promise<void> {
+  if (delayMs <= 0) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
+}
+
+function classifyForecastCalculationError(error: unknown): ForecastTransientClassification {
+  if (isDeterministicForecastValidationError(error)) {
+    return { transient: false, category: "validation" };
+  }
+
+  if (error instanceof AstroServiceClientError) {
+    if (
+      error.kind === "timeout" ||
+      error.kind === "unavailable" ||
+      error.kind === "invalid_response"
+    ) {
+      return {
+        transient: true,
+        category: `astro_service_${error.kind}`,
+        statusCode: error.diagnostics.status,
+      };
+    }
+    return { transient: false, category: `astro_service_${error.kind}` };
+  }
+
+  if (isWeatherProviderError(error)) {
+    const transient =
+      error.errorCategory === "timeout" ||
+      error.errorCategory === "network" ||
+      isTransientForecastHttpStatus(error.statusCode);
+    return {
+      transient,
+      category: `weather_${error.errorCategory}`,
+      statusCode: error.statusCode,
+    };
+  }
+
+  if (isRecord(error)) {
+    const status = readNumericStatus(error);
+    if (isTransientForecastHttpStatus(status)) {
+      return { transient: true, category: "upstream_http_status", statusCode: status };
+    }
+  }
+
+  if (error instanceof TypeError) {
+    return { transient: true, category: "network_error" };
+  }
+
+  const normalized = normalizeError(error);
+  if (/timeout|timed out|fetch failed|network|ECONNRESET|ECONNREFUSED|EAI_AGAIN/i.test(normalized.message)) {
+    return { transient: true, category: "network_or_timeout" };
+  }
+
+  return { transient: false, category: "unknown" };
+}
+
+function isDeterministicForecastValidationError(error: unknown): boolean {
+  if (error instanceof z.ZodError) {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message === forecastDateRangeErrorMessage ||
+    message === missingWgs84CoordinateErrorMessage ||
+    message === astroServiceUrlMissingMessage
+  );
+}
+
+function readNumericStatus(record: Record<string, unknown>): number | undefined {
+  const candidates = [record.status, record.statusCode, record.code];
+  for (const candidate of candidates) {
+    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+      return candidate;
+    }
+    if (typeof candidate === "string" && /^\d+$/.test(candidate)) {
+      const parsed = Number(candidate);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+  return undefined;
+}
+
+function isTransientForecastHttpStatus(status: number | undefined): boolean {
+  return typeof status === "number" && forecastTransientHttpStatuses.has(status);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 async function calculateForecastResultWithCalibration(
@@ -759,12 +1137,15 @@ function sendForecastCalculationError(options: {
   readonly reply: FastifyReply;
 }): null {
   const { logger, route, queryLike, astroServiceConfig, error, reply } = options;
+  const classification = classifyForecastCalculationError(error);
   logForecastCalculationFailure({
     logger,
     route,
     queryLike,
     astroServiceConfig,
     error,
+    category: classification.category,
+    transient: classification.transient,
   });
   const message = (error as Error).message;
   if (message === astroServiceUnavailableMessage) {
@@ -809,8 +1190,19 @@ function sendForecastCalculationError(options: {
     });
     return null;
   }
+  if (classification.transient) {
+    reply.status(503).send({
+      error: "forecast_calculation_transient_failure",
+      message: "拍摄天气分析暂时不可用，请稍后重试。",
+    });
+    return null;
+  }
 
-  throw error;
+  reply.status(500).send({
+    error: "forecast_calculation_failed",
+    message: "拍摄天气分析暂时不可用，请稍后重试。",
+  });
+  return null;
 }
 
 async function attachCalibrationHint(
@@ -2328,8 +2720,10 @@ function logForecastCalculationFailure(options: {
   readonly queryLike: unknown;
   readonly astroServiceConfig: AstroServiceConfig;
   readonly error: unknown;
+  readonly category?: string;
+  readonly transient?: boolean;
 }): void {
-  const { logger, route, queryLike, astroServiceConfig, error } = options;
+  const { logger, route, queryLike, astroServiceConfig, error, category, transient } = options;
   const normalizedError = normalizeError(error);
   const astroError = error instanceof AstroServiceClientError ? error : null;
   const query = extractForecastQueryLogFields(queryLike);
@@ -2346,18 +2740,100 @@ function logForecastCalculationFailure(options: {
       astroServiceTimeoutMs: astroServiceConfig.timeoutMs,
       coordinatesPresent: query.coordinatesPresent,
       locationName: query.locationName,
+      failureCategory: category,
+      transient,
       errorName: diagnostics?.upstreamErrorName ?? normalizedError.name,
       errorMessage: diagnostics?.upstreamErrorMessage ?? normalizedError.message,
       wrappedErrorName: normalizedError.name,
       wrappedErrorMessage: normalizedError.message,
-      stack: normalizedError.stack,
       upstreamAstroServiceStatus: diagnostics?.status,
-      upstreamAstroServiceResponseBodyExcerpt: diagnostics?.responseBodyExcerpt,
       elapsedMs: diagnostics?.elapsedMs,
       upstreamAstroServiceTimeoutMs: diagnostics?.timeoutMs,
       upstreamAstroServiceTimedOut: diagnostics?.timedOut,
     },
     "Forecast calculation failed",
+  );
+}
+
+function logForecastCalculationAttempt(options: {
+  readonly logger: FastifyBaseLogger;
+  readonly route: string;
+  readonly queryLike: unknown;
+  readonly attempt: number;
+  readonly maxAttempts: number;
+}): void {
+  const query = extractForecastQueryLogFields(options.queryLike);
+  options.logger.info(
+    {
+      route: options.route,
+      target: query.target,
+      horizon: query.horizon,
+      attempt: options.attempt,
+      maxAttempts: options.maxAttempts,
+    },
+    "Forecast calculation attempt started",
+  );
+}
+
+function logForecastCalculationRetry(options: {
+  readonly logger: FastifyBaseLogger;
+  readonly route: string;
+  readonly queryLike: unknown;
+  readonly attempt: number;
+  readonly nextAttempt: number;
+  readonly category: string;
+  readonly statusCode?: number;
+}): void {
+  const query = extractForecastQueryLogFields(options.queryLike);
+  options.logger.warn(
+    {
+      route: options.route,
+      target: query.target,
+      horizon: query.horizon,
+      attempt: options.attempt,
+      nextAttempt: options.nextAttempt,
+      retryReason: options.category,
+      statusCode: options.statusCode,
+    },
+    "Forecast calculation transient failure; retrying",
+  );
+}
+
+function logForecastCalculationStaleServed(options: {
+  readonly logger: FastifyBaseLogger;
+  readonly route: string;
+  readonly queryLike: unknown;
+  readonly category: string;
+}): void {
+  const query = extractForecastQueryLogFields(options.queryLike);
+  options.logger.warn(
+    {
+      route: options.route,
+      target: query.target,
+      horizon: query.horizon,
+      staleIfErrorServed: true,
+      failureCategory: options.category,
+    },
+    "Forecast calculation served stale result after transient failure",
+  );
+}
+
+function logForecastCalculationCacheEvent(options: {
+  readonly logger: FastifyBaseLogger;
+  readonly route: string;
+  readonly queryLike: unknown;
+  readonly event: "cache_hit" | "in_flight_hit";
+}): void {
+  const query = extractForecastQueryLogFields(options.queryLike);
+  options.logger.info(
+    {
+      route: options.route,
+      target: query.target,
+      horizon: query.horizon,
+      cacheHit: options.event === "cache_hit",
+      inFlightHit: options.event === "in_flight_hit",
+    },
+    "Forecast calculation cache event",
   );
 }
 

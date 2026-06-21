@@ -652,6 +652,7 @@ describe("forecast query validation route", () => {
       app = undefined;
     }
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("normalizes a public forecast query without calling providers", async () => {
@@ -2078,6 +2079,158 @@ describe("forecast query validation route", () => {
     expect(response.body).not.toContain("This operation was aborted");
   });
 
+  it("retries a transient astro-service timeout and returns the recovered forecast", async () => {
+    const calculateMock = vi.fn((input: AstroServiceCalculateInput) => {
+      if (calculateMock.mock.calls.length === 1) {
+        return Promise.reject(
+          new AstroServiceClientError("timeout", astroServiceTimeoutMessage, {
+            url: "http://127.0.0.1:4100/astro/calculate",
+            elapsedMs: 8011,
+            timeoutMs: 8000,
+            timedOut: true,
+          }),
+        );
+      }
+      return Promise.resolve(buildAstroServiceResponse(input));
+    });
+    app = buildApiServer({
+      authConfig: testAuthConfig,
+      astroServiceClient: {
+        calculate: calculateMock,
+      },
+      env: {
+        ...process.env,
+        ENABLE_ASTRO_SERVICE: "true",
+        ASTRO_SERVICE_URL: "http://127.0.0.1:4100",
+        FORECAST_CALCULATE_RETRY_BASE_DELAY_MS: "0",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        target: "astro",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(calculateMock).toHaveBeenCalledTimes(2);
+    expect(response.json()).toMatchObject({
+      target: "astro",
+    });
+  });
+
+  it("serves same-key stale forecast data after transient retry exhaustion", async () => {
+    const dateNow = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-05-20T00:00:00+08:00"));
+    const calculateMock = vi.fn((input: AstroServiceCalculateInput) => {
+      if (calculateMock.mock.calls.length === 1) {
+        return Promise.resolve(buildAstroServiceResponse(input));
+      }
+      return Promise.reject(
+        new AstroServiceClientError("timeout", astroServiceTimeoutMessage, {
+          url: "http://127.0.0.1:4100/astro/calculate",
+          elapsedMs: 8011,
+          timeoutMs: 8000,
+          timedOut: true,
+        }),
+      );
+    });
+    app = buildApiServer({
+      authConfig: testAuthConfig,
+      astroServiceClient: {
+        calculate: calculateMock,
+      },
+      env: {
+        ...process.env,
+        ENABLE_ASTRO_SERVICE: "true",
+        ASTRO_SERVICE_URL: "http://127.0.0.1:4100",
+        FORECAST_CALCULATE_CACHE_TTL_MS: "1000",
+        FORECAST_CALCULATE_STALE_IF_ERROR_TTL_MS: "1800000",
+        FORECAST_CALCULATE_RETRY_BASE_DELAY_MS: "0",
+      },
+      logger: false,
+    });
+    const payload = {
+      ...validPayload,
+      target: "astro" as const,
+      startDateTime: "2026-05-20T00:00:00+08:00",
+    };
+
+    const firstResponse = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload,
+    });
+    dateNow.mockReturnValue(Date.parse("2026-05-20T00:00:02+08:00"));
+    const staleResponse = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload,
+    });
+
+    expect(firstResponse.statusCode).toBe(200);
+    expect(staleResponse.statusCode).toBe(200);
+    expect(staleResponse.headers["x-forecast-stale"]).toBe("1");
+    expect(staleResponse.json()).toMatchObject({
+      target: "astro",
+      generatedAt: firstResponse.json().generatedAt,
+    });
+    expect(calculateMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("does not use stale forecast data for validation errors", async () => {
+    const dateNow = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-05-20T00:00:00+08:00"));
+    const calculateMock = vi.fn((input: AstroServiceCalculateInput) =>
+      Promise.resolve(buildAstroServiceResponse(input)),
+    );
+    app = buildApiServer({
+      authConfig: testAuthConfig,
+      astroServiceClient: {
+        calculate: calculateMock,
+      },
+      env: {
+        ...process.env,
+        ENABLE_ASTRO_SERVICE: "true",
+        ASTRO_SERVICE_URL: "http://127.0.0.1:4100",
+        FORECAST_CALCULATE_CACHE_TTL_MS: "1000",
+        FORECAST_CALCULATE_STALE_IF_ERROR_TTL_MS: "1800000",
+      },
+      logger: false,
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        target: "astro",
+        startDateTime: "2026-05-20T00:00:00+08:00",
+      },
+    });
+    dateNow.mockReturnValue(Date.parse("2026-05-20T00:00:02+08:00"));
+    const invalidPayload: Record<string, unknown> = {
+      ...validPayload,
+      target: "astro",
+    };
+    delete invalidPayload.latitudeWgs84;
+
+    const invalidResponse = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: invalidPayload,
+    });
+
+    expect(invalidResponse.statusCode).toBe(400);
+    expect(invalidResponse.json()).toMatchObject({
+      error: "invalid_wgs84_coordinates",
+    });
+    expect(invalidResponse.headers["x-forecast-stale"]).toBeUndefined();
+    expect(calculateMock).toHaveBeenCalledTimes(1);
+  });
+
   it("returns a sanitized Chinese error when astro-service response shape is invalid", async () => {
     const astroServiceClient: AstroServiceClientLike = {
       calculate: vi.fn(() =>
@@ -2439,6 +2592,62 @@ describe("forecast query validation route", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(response.body.length).toBeGreaterThan(2);
     expect(response.body).not.toContain("secretJson");
+  });
+
+  it("uses the resilient forecast calculation cache for ai-explain", async () => {
+    const calculateMock = vi.fn((input: AstroServiceCalculateInput) => {
+      if (calculateMock.mock.calls.length === 1) {
+        return Promise.reject(
+          new AstroServiceClientError("unavailable", astroServiceUnavailableMessage, {
+            url: "http://127.0.0.1:4100/astro/calculate",
+            upstreamErrorName: "TypeError",
+            upstreamErrorMessage: "fetch failed",
+          }),
+        );
+      }
+      return Promise.resolve(buildAstroServiceResponse(input));
+    });
+    app = buildApiServer({
+      authConfig: testAuthConfig,
+      astroServiceClient: {
+        calculate: calculateMock,
+      },
+      env: {
+        ...process.env,
+        ENABLE_ASTRO_SERVICE: "true",
+        ASTRO_SERVICE_URL: "http://127.0.0.1:4100",
+        FORECAST_CALCULATE_RETRY_BASE_DELAY_MS: "0",
+      },
+      logger: false,
+    });
+    const payload = {
+      ...validPayload,
+      target: "astro" as const,
+      timezone: "Asia/Shanghai",
+    };
+
+    const aiResponse = await app.inject({
+      method: "POST",
+      url: "/forecast/ai-explain",
+      payload,
+    });
+    const calculateResponse = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload,
+    });
+
+    expect(aiResponse.statusCode).toBe(200);
+    expect(aiResponse.json()).toMatchObject({
+      success: false,
+      source: "fallback",
+      error: "ai_explanation_unavailable",
+    });
+    expect(calculateResponse.statusCode).toBe(200);
+    expect(calculateResponse.json()).toMatchObject({
+      target: "astro",
+    });
+    expect(calculateMock).toHaveBeenCalledTimes(2);
   });
 
   it("does not block forecast calculation on DeepSeek when useAiExplanation is requested", async () => {

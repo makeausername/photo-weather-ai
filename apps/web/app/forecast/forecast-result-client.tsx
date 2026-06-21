@@ -94,6 +94,12 @@ import {
   ForecastScoreCard,
   JudgmentBasisGrid,
 } from "./result-dashboard-components";
+import {
+  isForecastRequestAbortError,
+  normalizeForecastClientErrorMessage,
+  requestForecastCalculation,
+  stableForecastQueryKey,
+} from "./forecast-request-client";
 
 type ForecastResultClientProps = {
   readonly query: ForecastQueryInput | null;
@@ -308,12 +314,6 @@ type AiExplainResponse = {
   };
 };
 
-type ApiErrorPayload = {
-  readonly messageZh?: string;
-  readonly message?: string;
-  readonly error?: string;
-};
-
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 export const deepSeekBackendTimeoutMaxMs = 120_000;
 export const aiExplainFrontendTimeoutMs = 130_000;
@@ -357,20 +357,6 @@ const scoreLevelLabels: Record<ForecastScoreLevel, string> = {
   good: "较好",
   excellent: "优秀",
 };
-
-async function readApiErrorMessage(response: Response, fallback: string): Promise<string> {
-  const text = await response.text();
-  if (!text) {
-    return fallback;
-  }
-
-  try {
-    const payload = JSON.parse(text) as ApiErrorPayload;
-    return payload.messageZh || payload.message || payload.error || fallback;
-  } catch {
-    return fallback;
-  }
-}
 
 async function readApiJsonPayload(response: Response): Promise<unknown> {
   const text = await response.text();
@@ -2029,9 +2015,17 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
   const [status, setStatus] = useState<LoadStatus>(query ? "loading" : "idle");
   const [result, setResult] = useState<ForecastCalculationResult | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
+  const [retryNonce, setRetryNonce] = useState(0);
   const aiInterpretation = useForecastAiInterpretation(query, result);
+  const latestQueryRef = useRef<ForecastQueryInput | null>(query);
+  const resultRef = useRef<ForecastCalculationResult | null>(result);
+  const resultQueryKeyRef = useRef("");
+  const requestSequenceRef = useRef(0);
 
-  const queryKey = useMemo(() => (query ? JSON.stringify(query) : ""), [query]);
+  latestQueryRef.current = query;
+  resultRef.current = result;
+
+  const queryKey = useMemo(() => (query ? stableForecastQueryKey(query) : ""), [query]);
   const activeTarget = query?.target ?? result?.target ?? "general";
   const shellCopy = getForecastResultPageShellCopy(activeTarget);
   const pageMode = resolveForecastPageMode({
@@ -2049,43 +2043,69 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
   const changeLocationPath = isCloudSeaFlow ? "/cloud-sea" : "/#analysis";
 
   useEffect(() => {
-    if (!query) {
+    if (!queryKey) {
+      requestSequenceRef.current += 1;
+      resultQueryKeyRef.current = "";
+      resultRef.current = null;
+      setStatus("idle");
+      setResult(null);
+      setErrorMessage("");
       return;
     }
 
-    const activeQuery = query;
+    const activeQuery = latestQueryRef.current;
+    if (!activeQuery) {
+      return;
+    }
+    const requestQuery: ForecastQueryInput = activeQuery;
+    const activeQueryKey = queryKey;
+    const requestSequence = requestSequenceRef.current + 1;
+    requestSequenceRef.current = requestSequence;
     const controller = new AbortController();
-    setStatus("loading");
-    setResult(null);
+    const hasResultForSameQuery =
+      resultQueryKeyRef.current === activeQueryKey && resultRef.current !== null;
+    if (!hasResultForSameQuery) {
+      resultRef.current = null;
+      setResult(null);
+      setStatus("loading");
+    } else {
+      setStatus("ready");
+    }
     setErrorMessage("");
 
     async function calculateForecast() {
       try {
-        const response = await fetch(`${apiBaseUrl}/forecast/calculate`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(activeQuery),
+        const data = await requestForecastCalculation(requestQuery, {
           signal: controller.signal,
         });
-
-        if (!response.ok) {
-          throw new Error(
-            await readApiErrorMessage(response, "拍摄天气分析暂时不可用，请稍后重试。"),
-          );
-        }
-
-        const data = (await response.json()) as ForecastCalculationResult;
-        writeForecastResultContext({ query: activeQuery, result: data });
-        setResult(data);
-        setStatus("ready");
-      } catch (error) {
-        if ((error as Error).name === "AbortError") {
+        if (
+          requestSequenceRef.current !== requestSequence ||
+          stableForecastQueryKey(latestQueryRef.current ?? requestQuery) !== activeQueryKey
+        ) {
           return;
         }
 
-        setErrorMessage((error as Error).message || "拍摄天气分析暂时不可用，请稍后重试。");
+        writeForecastResultContext({ query: requestQuery, result: data });
+        resultQueryKeyRef.current = activeQueryKey;
+        resultRef.current = data;
+        setResult(data);
+        setStatus("ready");
+      } catch (error) {
+        if (isForecastRequestAbortError(error)) {
+          return;
+        }
+        if (
+          requestSequenceRef.current !== requestSequence ||
+          stableForecastQueryKey(latestQueryRef.current ?? requestQuery) !== activeQueryKey
+        ) {
+          return;
+        }
+        if (resultQueryKeyRef.current === activeQueryKey && resultRef.current) {
+          setStatus("ready");
+          return;
+        }
+
+        setErrorMessage(normalizeForecastClientErrorMessage(error));
         setStatus("error");
       }
     }
@@ -2095,7 +2115,11 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
     return () => {
       controller.abort();
     };
-  }, [query, queryKey]);
+  }, [queryKey, retryNonce]);
+
+  const retryForecast = React.useCallback(() => {
+    setRetryNonce((value) => value + 1);
+  }, []);
 
   return (
     <PublicShell contentClassName="grid gap-5 pb-14">
@@ -2154,6 +2178,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
           target={isCloudSeaFlow ? "cloud_sea" : "general"}
           query={query}
           message={errorMessage}
+          onRetry={retryForecast}
         />
       ) : null}
 
@@ -2239,10 +2264,12 @@ export function ForecastDecisionErrorState({
   target,
   query,
   message,
+  onRetry,
 }: {
   readonly target: DecisionTemplateTarget;
   readonly query: ForecastQueryInput;
   readonly message: string;
+  readonly onRetry?: () => void;
 }) {
   const horizonLabel = decisionProgressHorizonLabel(query);
 
@@ -2276,6 +2303,10 @@ export function ForecastDecisionErrorState({
                 variant="ghost"
                 size="sm"
                 onClick={() => {
+                  if (onRetry) {
+                    onRetry();
+                    return;
+                  }
                   window.location.assign(buildForecastUrlFromForecastQuery(query));
                 }}
               >
@@ -2298,6 +2329,23 @@ export function ForecastDecisionErrorState({
       error={{
         message: "分析失败",
         description: message,
+        actions: (
+          <>
+            <Button type="button" variant="secondary" size="sm" onClick={onRetry}>
+              重新分析
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                window.location.assign("/#analysis");
+              }}
+            >
+              重新选择地点
+            </Button>
+          </>
+        ),
       }}
       info={{
         title: "分析基础",

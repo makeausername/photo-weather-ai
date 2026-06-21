@@ -5709,6 +5709,42 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("118.16389");
   });
 
+  it("renders a clean retry action on the shared general forecast error state", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ForecastDecisionErrorState, {
+        target: "general",
+        query: queryForTarget("general"),
+        message:
+          "本次分析请求超时或上游数据暂时不可用，已自动重试但仍未成功。可以直接重新分析，通常不需要重新选择地点。",
+        onRetry: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('data-testid="decision-error-template"');
+    expect(html).toContain("重新分析");
+    expect(html).toContain("重新选择地点");
+    expect(html).toContain("已自动重试但仍未成功");
+    expect(html).not.toMatch(/provider|cache key|stack|AbortError|C:\\|\/app\/|https?:\/\//i);
+  });
+
+  it("keeps ForecastResultClient calculation keyed by stable query key instead of raw object identity", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("./forecast-result-client.tsx", import.meta.url)),
+      "utf8",
+    );
+    const clientSource = source.slice(
+      source.indexOf("export function ForecastResultClient"),
+      source.indexOf("function DashboardFrame"),
+    );
+
+    expect(clientSource).toContain("stableForecastQueryKey(query)");
+    expect(clientSource).toContain("requestForecastCalculation(requestQuery");
+    expect(clientSource).toContain("requestSequenceRef");
+    expect(clientSource).toContain("resultQueryKeyRef");
+    expect(clientSource).toContain("}, [queryKey, retryNonce])");
+    expect(clientSource).not.toContain("}, [query, queryKey])");
+  });
+
   it("renders the cloud sea result through the shared DecisionResultTemplate without entry-page search/sidebar", () => {
     const result = resultForTarget("cloud_sea");
     const viewModel = buildCloudSeaForecastViewModel(result);
