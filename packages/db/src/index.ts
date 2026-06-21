@@ -5,24 +5,32 @@ export {
   createPublicUserAccount,
   DuplicateUserEmailError,
   DuplicateUserPhoneError,
+  LastAdminAccountDeletionError,
   createUserSession,
   getActiveUserSessionByRefreshToken,
   getUserAccountByIdentifier,
   getUserAuthContextByEmail,
   getUserAuthContextByIdentifier,
   getUserAuthContextById,
+  getUserAuthContextWithPasswordById,
   hashRefreshToken,
   hasPermission,
   adminRoleCodes,
+  isLastActiveAdminUser,
   isAdminRoleLike,
   principalHasAdminRole,
   requiredAdminPermissions,
+  revokeUserSessions,
   revokeUserSessionByRefreshToken,
+  softDeleteUserAccount,
   MissingUserIdentifierError,
   normalizeUserEmail,
   normalizeUserPhone,
   safeUser,
   touchUserLastLogin,
+  updateUserEmail,
+  updateUserPassword,
+  updateUserPhone,
 } from "./auth.js";
 export {
   consumeAuthVerificationCode,
@@ -35,6 +43,12 @@ export {
   verifyAuthVerificationCode,
 } from "./auth-verification.js";
 export { disconnectPrismaClient, getPrismaClient } from "./client.js";
+export {
+  clearUserForecastHistory,
+  deleteUserForecastHistory,
+  listUserForecastHistory,
+  saveUserForecastHistory,
+} from "./forecast-history.js";
 export {
   assertProviderType,
   assertSettingValueType,
@@ -143,6 +157,7 @@ export type {
   TerrainElevationCacheRecord,
   TransparencyLevel,
   UserRecord,
+  UserForecastHistoryRecord,
   UserProfileRecord,
   UserSessionRecord,
   UserStatus,

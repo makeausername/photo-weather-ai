@@ -30,6 +30,9 @@ enum AuthVerificationChannel {
 
 enum AuthVerificationPurpose {
   register
+  change_email
+  change_phone
+  delete_account
 }
 
 enum SettingValueType {
@@ -138,19 +141,20 @@ enum ObservedOutcomeSource {
 }
 
 model User {
-  id           String          @id @default(cuid())
-  email        String?         @unique
-  phone        String?         @unique
-  passwordHash String          @map("password_hash")
-  displayName  String?         @map("display_name")
-  status       UserStatus      @default(active)
-  createdAt    DateTime        @default(now()) @map("created_at")
-  updatedAt    DateTime        @updatedAt @map("updated_at")
-  lastLoginAt  DateTime?       @map("last_login_at")
-  profile      UserProfile?
-  roles        UserRole[]
-  auditLogs    AdminAuditLog[]
-  sessions     UserSession[]
+  id              String                @id @default(cuid())
+  email           String?               @unique
+  phone           String?               @unique
+  passwordHash    String                @map("password_hash")
+  displayName     String?               @map("display_name")
+  status          UserStatus            @default(active)
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
+  lastLoginAt     DateTime?             @map("last_login_at")
+  profile         UserProfile?
+  roles           UserRole[]
+  auditLogs       AdminAuditLog[]
+  sessions        UserSession[]
+  forecastHistory UserForecastHistory[]
 
   @@index([status])
   @@map("users")
@@ -192,6 +196,37 @@ model UserSession {
   @@index([userId])
   @@index([expiresAt])
   @@map("user_sessions")
+}
+
+model UserForecastHistory {
+  id                  String               @id @default(cuid())
+  userId              String               @map("user_id")
+  locationName        String               @map("location_name")
+  target              ForecastReplayTarget
+  horizon             String
+  timezone            String?
+  latitudeGcj02       Float?               @map("latitude_gcj02")
+  longitudeGcj02      Float?               @map("longitude_gcj02")
+  latitudeWgs84       Float?               @map("latitude_wgs84")
+  longitudeWgs84      Float?               @map("longitude_wgs84")
+  elevationMeters     Float?               @map("elevation_meters")
+  locationId          String?              @map("location_id")
+  photoSpotId         String?              @map("photo_spot_id")
+  queryKey            String               @map("query_key")
+  queryJson           Json                 @map("query_json")
+  resultSummaryJson   Json?                @map("result_summary_json")
+  overallScore        Float?               @map("overall_score")
+  recommendationLabel String?              @map("recommendation_label")
+  bestWindowStart     DateTime?            @map("best_window_start")
+  bestWindowEnd       DateTime?            @map("best_window_end")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, target, createdAt])
+  @@index([userId, queryKey, createdAt])
+  @@map("user_forecast_history")
 }
 
 model UserProfile {

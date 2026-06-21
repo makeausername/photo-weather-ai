@@ -223,10 +223,37 @@ function safeUnavailableMessage(channel: AuthVerificationChannel): string {
   return channel === "email" ? "邮件服务暂不可用，请稍后重试。" : "短信服务暂不可用，请稍后重试。";
 }
 
-function formatEmailHtml(code: string): string {
+function verificationPurposeTitle(purpose: AuthVerificationPurpose): string {
+  if (purpose === "change_email") {
+    return "换绑邮箱验证码";
+  }
+  if (purpose === "change_phone") {
+    return "绑定手机验证码";
+  }
+  if (purpose === "delete_account") {
+    return "注销账户确认验证码";
+  }
+  return "注册验证码";
+}
+
+function verificationPurposeIntro(purpose: AuthVerificationPurpose): string {
+  if (purpose === "change_email") {
+    return "你正在换绑逐光天气账户邮箱。";
+  }
+  if (purpose === "change_phone") {
+    return "你正在绑定或更换逐光天气账户手机号。";
+  }
+  if (purpose === "delete_account") {
+    return "你正在确认注销逐光天气账户。";
+  }
+  return "你正在注册逐光天气账户。";
+}
+
+function formatEmailHtml(input: Pick<VerificationSendInput, "purpose" | "code">): string {
+  const title = verificationPurposeTitle(input.purpose);
   return [
-    "<p>你正在注册逐光天气账户。</p>",
-    `<p>验证码：<strong>${code}</strong></p>`,
+    `<p>${verificationPurposeIntro(input.purpose)}</p>`,
+    `<p>${title}：<strong>${input.code}</strong></p>`,
     "<p>验证码 10 分钟内有效，请勿转发给他人。</p>",
   ].join("");
 }
@@ -298,9 +325,9 @@ export class SmtpEmailVerificationSender implements VerificationSender {
       await transporter.sendMail({
         from: `"${config.fromName}" <${config.fromAddress}>`,
         to: input.target,
-        subject: "逐光天气注册验证码",
-        text: `你正在注册逐光天气账户，验证码为 ${input.code}，10 分钟内有效。`,
-        html: formatEmailHtml(input.code),
+        subject: `逐光天气${verificationPurposeTitle(input.purpose)}`,
+        text: `${verificationPurposeIntro(input.purpose)}验证码为 ${input.code}，10 分钟内有效。`,
+        html: formatEmailHtml(input),
       });
 
       return {

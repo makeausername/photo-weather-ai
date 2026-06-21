@@ -24,6 +24,7 @@ export type FakeDatabaseState = {
   readonly historicalWeatherSamples: Map<string, any>;
   readonly forecastReplayRuns: Map<string, any>;
   readonly forecastReplayResults: Map<string, any>;
+  readonly forecastHistory: Map<string, any>;
   readonly observedOutcomes: Map<string, any>;
   readonly calibrationStats: Map<string, any>;
   readonly terrainElevationCache: Map<string, any>;
@@ -165,6 +166,7 @@ export async function createFakeDatabaseClient(): Promise<{
   const historicalWeatherSamples = new Map<string, any>();
   const forecastReplayRuns = new Map<string, any>();
   const forecastReplayResults = new Map<string, any>();
+  const forecastHistory = new Map<string, any>();
   const observedOutcomes = new Map<string, any>();
   const calibrationStats = new Map<string, any>();
   const terrainElevationCache = new Map<string, any>();
@@ -259,6 +261,7 @@ export async function createFakeDatabaseClient(): Promise<{
     historicalWeatherSamples,
     forecastReplayRuns,
     forecastReplayResults,
+    forecastHistory,
     observedOutcomes,
     calibrationStats,
     terrainElevationCache,
@@ -276,6 +279,11 @@ export async function createFakeDatabaseClient(): Promise<{
 
         return user ? userWithRoles(user, state.roles, state.profiles) : null;
       },
+      findMany: async ({ where }: any = {}) =>
+        [...state.users.values()]
+          .filter((user) => where?.status === undefined || user.status === where.status)
+          .filter((user) => where?.id?.not === undefined || user.id !== where.id.not)
+          .map((user) => userWithRoles(user, state.roles, state.profiles)),
       create: async ({ data }: any) => {
         const user = {
           id: `user-${state.users.size}`,
@@ -437,6 +445,28 @@ export async function createFakeDatabaseClient(): Promise<{
         };
         state.sessions.set(next.refreshTokenHash, next);
         return next;
+      },
+      updateMany: async ({ where, data }: any) => {
+        let count = 0;
+        for (const [key, session] of state.sessions.entries()) {
+          const matches =
+            (where.userId === undefined || session.userId === where.userId) &&
+            (where.revokedAt === undefined || session.revokedAt === where.revokedAt) &&
+            (where.refreshTokenHash?.not === undefined ||
+              session.refreshTokenHash !== where.refreshTokenHash.not);
+          if (!matches) {
+            continue;
+          }
+
+          state.sessions.set(key, {
+            ...session,
+            ...data,
+            updatedAt: now,
+          });
+          count += 1;
+        }
+
+        return { count };
       },
     },
     role: {
@@ -863,6 +893,74 @@ export async function createFakeDatabaseClient(): Promise<{
             where,
           })
         ).length,
+    },
+    userForecastHistory: {
+      findFirst: async ({ where, orderBy }: any) => {
+        const records = [...state.forecastHistory.values()]
+          .filter((record) => where?.userId === undefined || record.userId === where.userId)
+          .filter((record) => where?.queryKey === undefined || record.queryKey === where.queryKey)
+          .filter((record) =>
+            where?.createdAt?.gte === undefined
+              ? true
+              : record.createdAt.getTime() >= where.createdAt.gte.getTime(),
+          )
+          .sort((left, right) =>
+            orderBy?.createdAt === "desc"
+              ? right.createdAt.getTime() - left.createdAt.getTime()
+              : left.createdAt.getTime() - right.createdAt.getTime(),
+          );
+        return records[0] ?? null;
+      },
+      findMany: async ({ where, orderBy, take }: any = {}) =>
+        [...state.forecastHistory.values()]
+          .filter((record) => where?.userId === undefined || record.userId === where.userId)
+          .filter((record) => where?.target === undefined || record.target === where.target)
+          .sort((left, right) =>
+            orderBy?.createdAt === "asc"
+              ? left.createdAt.getTime() - right.createdAt.getTime()
+              : right.createdAt.getTime() - left.createdAt.getTime(),
+          )
+          .slice(0, take ?? Number.POSITIVE_INFINITY),
+      create: async ({ data }: any) => {
+        const record = {
+          id: `forecast-history-${state.forecastHistory.size}`,
+          createdAt: new Date(now.getTime() + state.forecastHistory.size),
+          updatedAt: now,
+          ...data,
+        };
+        state.forecastHistory.set(record.id, record);
+        return record;
+      },
+      update: async ({ where, data }: any) => {
+        const existing = state.forecastHistory.get(where.id);
+        if (!existing) {
+          throw new Error(`Missing forecast history ${where.id}`);
+        }
+
+        const next = {
+          ...existing,
+          ...data,
+          updatedAt: now,
+        };
+        state.forecastHistory.set(where.id, next);
+        return next;
+      },
+      deleteMany: async ({ where }: any) => {
+        let count = 0;
+        for (const [id, record] of state.forecastHistory.entries()) {
+          const matches =
+            (where.id === undefined || record.id === where.id) &&
+            (where.userId === undefined || record.userId === where.userId);
+          if (!matches) {
+            continue;
+          }
+
+          state.forecastHistory.delete(id);
+          count += 1;
+        }
+
+        return { count };
+      },
     },
     observedOutcome: {
       findUnique: async ({ where }: any) => {

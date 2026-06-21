@@ -12,6 +12,7 @@ import type {
 } from "@photo-weather/terrain";
 import { createWeatherProvider, type WeatherProvider } from "@photo-weather/weather";
 import { registerAdminRoutes } from "./admin-routes.js";
+import { registerAccountRoutes } from "./account-routes.js";
 import {
   checkAstroServiceHealth,
   resolveAstroServiceConfig,
@@ -78,6 +79,13 @@ const publicRateLimitedRoutes = new Set([
   "POST /auth/register",
   "POST /auth/register/send-code",
   "POST /auth/register/confirm",
+  "POST /account/change-password",
+  "POST /account/email/send-code",
+  "POST /account/email/confirm",
+  "POST /account/phone/send-code",
+  "POST /account/phone/confirm",
+  "POST /account/delete",
+  "POST /account/forecast-history",
   "POST /forecast/calculate",
   "POST /forecast/ai-explain",
   "GET /search/places",
@@ -515,6 +523,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
   });
 
   registerAuthRoutes(app, { dbClient: options.dbClient, authConfig, env });
+  registerAccountRoutes(app, { dbClient: options.dbClient, authConfig, env });
   registerForecastRoutes(app, {
     dbClient: options.dbClient,
     weatherProvider,

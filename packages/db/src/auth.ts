@@ -80,6 +80,12 @@ export class MissingUserIdentifierError extends Error {
   }
 }
 
+export class LastAdminAccountDeletionError extends Error {
+  constructor(readonly userId: string) {
+    super("Cannot delete the last active admin account.");
+  }
+}
+
 export function safeUser(record: UserRecord | any): SafeUser {
   return {
     id: record.id,
@@ -287,6 +293,20 @@ export async function getUserAuthContextById(
   return normalizePrincipal(user);
 }
 
+export async function getUserAuthContextWithPasswordById(
+  userId: string,
+  options: { readonly client?: DatabaseClient } = {},
+): Promise<(AuthenticatedPrincipal & { readonly passwordHash: string }) | null> {
+  const client = await resolveClient(options.client);
+  const user = await requireUserDelegate(client).findUnique({
+    where: { id: userId },
+    include: userAuthInclude,
+  });
+  const principal = normalizePrincipal(user);
+
+  return principal && user?.passwordHash ? { ...principal, passwordHash: user.passwordHash } : null;
+}
+
 export function normalizeUserEmail(email: string | null | undefined): string | null {
   const normalized = email?.trim().toLowerCase();
   return normalized ? normalized : null;
@@ -394,6 +414,154 @@ export async function createPublicUserAccount(
   return principal;
 }
 
+export async function updateUserPassword(
+  input: {
+    readonly userId: string;
+    readonly password: string;
+  },
+  options: { readonly client?: DatabaseClient } = {},
+): Promise<AuthenticatedPrincipal> {
+  const client = await resolveClient(options.client);
+  await requireUserDelegate(client).update({
+    where: { id: input.userId },
+    data: {
+      passwordHash: await hashUserPassword(input.password),
+    },
+  });
+
+  const principal = await getUserAuthContextById(input.userId, { client });
+  if (!principal) {
+    throw new Error("Updated user could not be loaded.");
+  }
+
+  return principal;
+}
+
+export async function updateUserEmail(
+  input: {
+    readonly userId: string;
+    readonly email: string;
+  },
+  options: { readonly client?: DatabaseClient } = {},
+): Promise<AuthenticatedPrincipal> {
+  const client = await resolveClient(options.client);
+  const userDelegate = requireUserDelegate(client);
+  const email = normalizeUserEmail(input.email);
+  if (!email) {
+    throw new MissingUserIdentifierError();
+  }
+
+  const existingEmailUser = await userDelegate.findUnique({
+    where: { email },
+  });
+  if (existingEmailUser && existingEmailUser.id !== input.userId) {
+    throw new DuplicateUserEmailError(email);
+  }
+
+  await userDelegate.update({
+    where: { id: input.userId },
+    data: { email },
+  });
+
+  const principal = await getUserAuthContextById(input.userId, { client });
+  if (!principal) {
+    throw new Error("Updated user could not be loaded.");
+  }
+
+  return principal;
+}
+
+export async function updateUserPhone(
+  input: {
+    readonly userId: string;
+    readonly phone: string;
+  },
+  options: { readonly client?: DatabaseClient } = {},
+): Promise<AuthenticatedPrincipal> {
+  const client = await resolveClient(options.client);
+  const userDelegate = requireUserDelegate(client);
+  const phone = normalizeUserPhone(input.phone);
+  if (!phone) {
+    throw new MissingUserIdentifierError();
+  }
+
+  const existingPhoneUser = await userDelegate.findUnique({
+    where: { phone },
+  });
+  if (existingPhoneUser && existingPhoneUser.id !== input.userId) {
+    throw new DuplicateUserPhoneError(phone);
+  }
+
+  await userDelegate.update({
+    where: { id: input.userId },
+    data: { phone },
+  });
+
+  const principal = await getUserAuthContextById(input.userId, { client });
+  if (!principal) {
+    throw new Error("Updated user could not be loaded.");
+  }
+
+  return principal;
+}
+
+function principalHasAdminAccess(principal: AuthenticatedPrincipal): boolean {
+  return principal.permissions.includes("admin.manage") || principalHasAdminRole(principal);
+}
+
+export async function isLastActiveAdminUser(
+  userId: string,
+  options: { readonly client?: DatabaseClient } = {},
+): Promise<boolean> {
+  const client = await resolveClient(options.client);
+  const principal = await getUserAuthContextById(userId, { client });
+  if (!principal || !principalHasAdminAccess(principal)) {
+    return false;
+  }
+
+  const userDelegate = requireUserDelegate(client);
+  if (!userDelegate.findMany) {
+    return true;
+  }
+
+  const activeUsers = await userDelegate.findMany({
+    where: {
+      status: "active",
+      id: {
+        not: userId,
+      },
+    },
+    include: userAuthInclude,
+  });
+
+  return !activeUsers
+    .map((record) => normalizePrincipal(record))
+    .some((candidate) => candidate !== null && principalHasAdminAccess(candidate));
+}
+
+export async function softDeleteUserAccount(
+  input: {
+    readonly userId: string;
+  },
+  options: { readonly client?: DatabaseClient } = {},
+): Promise<void> {
+  const client = await resolveClient(options.client);
+  if (await isLastActiveAdminUser(input.userId, { client })) {
+    throw new LastAdminAccountDeletionError(input.userId);
+  }
+
+  await requireUserDelegate(client).update({
+    where: { id: input.userId },
+    data: {
+      status: "disabled",
+      email: null,
+      phone: null,
+      displayName: null,
+      passwordHash: await hashUserPassword(randomBytes(32).toString("base64url")),
+    },
+  });
+}
+
 export function hasPermission(
   principal: Pick<AuthenticatedPrincipal, "permissions">,
   permission: string,
@@ -493,6 +661,37 @@ export async function revokeUserSessionByRefreshToken(
     where: { id: existing.id },
     data: { revokedAt: options.now ?? new Date() },
   });
+}
+
+export async function revokeUserSessions(
+  input: {
+    readonly userId: string;
+    readonly exceptRefreshToken?: string | null;
+  },
+  options: { readonly client?: DatabaseClient; readonly now?: Date } = {},
+): Promise<number> {
+  const client = await resolveClient(options.client);
+  const delegate = requireUserSessionDelegate(client);
+  if (!delegate.updateMany) {
+    return 0;
+  }
+
+  const where: Record<string, unknown> = {
+    userId: input.userId,
+    revokedAt: null,
+  };
+  if (input.exceptRefreshToken) {
+    where.refreshTokenHash = {
+      not: hashRefreshToken(input.exceptRefreshToken),
+    };
+  }
+
+  const result = await delegate.updateMany({
+    where,
+    data: { revokedAt: options.now ?? new Date() },
+  });
+
+  return result.count;
 }
 
 export async function touchUserLastLogin(

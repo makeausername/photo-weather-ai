@@ -7,6 +7,7 @@ import {
   registerPublicAccount,
   sendRegisterVerificationCode,
   shouldShowAdminEntry,
+  type AccountForecastHistoryRecord,
   type PublicAccountSession,
 } from "../../components/account-session";
 import {
@@ -24,6 +25,7 @@ import AccountPage, { metadata as accountMetadata } from "./page";
 import {
   accountCenterSectionLabels,
   AuthenticatedAccountCenter,
+  buildForecastHistoryHref,
   formatAccountRoleLabels,
   UnauthenticatedAccountPrompt,
 } from "./account-center-client";
@@ -61,6 +63,47 @@ const baseAccountSession: PublicAccountSession = {
   roleCodes: ["user"],
   permissions: [],
   isAdmin: false,
+};
+
+const cloudSeaHistoryRecord: AccountForecastHistoryRecord = {
+  id: "history-cloud-sea-1",
+  locationName: "测试山顶",
+  target: "cloud_sea",
+  horizon: "48h",
+  timezone: "Asia/Shanghai",
+  latitudeGcj02: 30.12,
+  longitudeGcj02: 118.16,
+  latitudeWgs84: 30.118,
+  longitudeWgs84: 118.156,
+  elevationMeters: 1200,
+  locationId: "location-test",
+  photoSpotId: "spot-test",
+  queryJson: {
+    name: "测试山顶",
+    source: "manual",
+    latitudeGcj02: 30.12,
+    longitudeGcj02: 118.16,
+    latitudeWgs84: 30.118,
+    longitudeWgs84: 118.156,
+    horizon: "48h",
+    target: "cloud_sea",
+    timezone: "Asia/Shanghai",
+    elevationMeters: 1200,
+    locationId: "location-test",
+    photoSpotId: "spot-test",
+  },
+  resultSummaryJson: {
+    overallScore: 82,
+    recommendationLabel: "推荐前往",
+    bestWindowStart: "2026-06-22T05:00:00+08:00",
+    bestWindowEnd: "2026-06-22T07:00:00+08:00",
+  },
+  overallScore: 82,
+  recommendationLabel: "推荐前往",
+  bestWindowStart: "2026-06-22T05:00:00+08:00",
+  bestWindowEnd: "2026-06-22T07:00:00+08:00",
+  createdAt: "2026-06-21T08:00:00.000Z",
+  updatedAt: "2026-06-21T08:00:00.000Z",
 };
 
 afterEach(() => {
@@ -149,7 +192,8 @@ describe("public account navigation", () => {
       ]),
     ).toBe("管理员");
     expect(formatAccountRoleLabels([], ["admin"])).toBe("管理员");
-    expect(formatAccountRoleLabels([], [])).toBe("暂无数据");
+    expect(formatAccountRoleLabels([], ["super_admin"])).toBe("超级管理员");
+    expect(formatAccountRoleLabels([], [])).toBe("普通用户");
   });
 
   it("allows /admin access only for admin role data or admin permission", () => {
@@ -174,11 +218,13 @@ describe("account center foundation", () => {
     expect(AccountPage()).toBeTruthy();
     expect(accountMetadata.title).toBe("账户中心 - 逐光天气");
     expect(accountCenterSectionLabels).toEqual([
-      "账户总览",
-      "资料信息",
-      "权限与角色",
-      "偏好设置",
-      "安全与登录",
+      "账户概览",
+      "账户资料",
+      "安全设置",
+      "查询历史",
+      "绑定方式",
+      "管理入口",
+      "注销账户",
     ]);
   });
 
@@ -186,12 +232,12 @@ describe("account center foundation", () => {
     const html = renderToStaticMarkup(React.createElement(UnauthenticatedAccountPrompt));
 
     expect(html).toContain("请先登录后查看账户中心。");
-    expect(html).toContain("登录后可管理账户信息，并继续使用逐光天气的拍摄判断工具。");
+    expect(html).toContain("登录后可管理账户资料、登录安全、绑定方式和查询历史。");
     expect(html).toContain("登录逐光天气");
     expect(html).toContain("创建账户");
     expect(html).toContain('href="/login"');
     expect(html).toContain('href="/register"');
-    expect(html).not.toContain("查询历史");
+    expect(html).not.toContain("暂无查询历史");
     expect(html).not.toContain("收藏机位");
   });
 
@@ -205,14 +251,23 @@ describe("account center foundation", () => {
     expect(html).toContain("注册时间");
     expect(html).toContain("最近登录时间");
     expect(html).toContain("资料更新时间");
-    expect(html).toContain("权限与角色");
-    expect(html).toContain("暂无额外权限");
+    expect(html).toContain("账户资料");
+    expect(html).toContain("绑定方式");
+    expect(html).toContain("安全设置");
+    expect(html).toContain("查询历史");
+    expect(html).toContain("暂无查询历史");
+    expect(html).toContain("修改密码");
+    expect(html).toContain("修改绑定邮箱");
+    expect(html).toContain("绑定/修改手机");
+    expect(html).toContain("注销账户");
     expect(html).toContain("2026/06/01");
     expect(html).toContain("2026/06/10");
     expect(html).toContain("2026/06/17");
-    expect(html).toContain("公制单位");
-    expect(html).toContain("简体中文");
     expect(html).toContain("退出登录");
+    expect(html).not.toContain("权限与角色");
+    expect(html).not.toContain("暂无额外权限");
+    expect(html).not.toContain("admin.manage");
+    expect(html).not.toContain("providers.manage");
 
     for (const removedDashboardLink of [
       'href="/#analysis"',
@@ -231,20 +286,60 @@ describe("account center foundation", () => {
       "朝霞晚霞",
       "星空银河",
       "定价",
+      "偏好设置",
       "账户偏好将在保存后显示",
     ]) {
       expect(html).not.toContain(removedDashboardLabel);
     }
   });
 
-  it("omits the sparse preferences card when profile data is missing", () => {
+  it("renders compact forecast history rows with correct target jump links", () => {
+    const html = renderAuthenticatedAccountCenter(baseAccountSession, [cloudSeaHistoryRecord]);
+    const href = buildForecastHistoryHref(cloudSeaHistoryRecord);
+
+    expect(href).toContain("/cloud-sea?");
+    expect(href).toContain("from=account_history");
+    expect(href).toContain("name=%E6%B5%8B%E8%AF%95%E5%B1%B1%E9%A1%B6");
+    expect(href).toContain("target=cloud_sea");
+    expect(href).toContain("horizon=48h");
+    expect(href).toContain("latGcj02=30.12");
+    expect(href).toContain("lngGcj02=118.16");
+    expect(href).toContain("latWgs84=30.118");
+    expect(href).toContain("lngWgs84=118.156");
+    expect(href).toContain("elevationMeters=1200");
+    expect(href).toContain("timezone=Asia%2FShanghai");
+    expect(href).toContain("locationId=location-test");
+    expect(href).toContain("photoSpotId=spot-test");
+    expect(html).toContain("测试山顶");
+    expect(html).toContain("云海");
+    expect(html).toContain("未来48小时");
+    expect(html).toContain("推荐前往");
+    expect(html).toContain("82 分");
+    expect(html).toContain("打开分析");
+    expect(html).toContain('href="/cloud-sea?');
+    expect(html).not.toContain("坐标不足");
+  });
+
+  it("renders a compact and useful empty history state", () => {
+    const html = renderAuthenticatedAccountCenter(baseAccountSession, []);
+
+    expect(html).toContain("暂无查询历史");
+    expect(html).toContain("完成一次天气分析后，最近记录会自动出现在这里。");
+    expect(html).toContain("开始分析");
+    expect(html).toContain('href="/"');
+    expect(html).not.toContain("占位");
+  });
+
+  it("keeps the profile-missing layout free of sparse preference and permission cards", () => {
     const html = renderAuthenticatedAccountCenter({
       ...baseAccountSession,
       profile: null,
     });
 
     expect(html).toContain("逐光摄影师");
-    expect(html).toContain("权限与角色");
+    expect(html).toContain("账户资料");
+    expect(html).toContain("查询历史");
+    expect(html).not.toContain("权限与角色");
     expect(html).not.toContain("偏好设置");
     expect(html).not.toContain("账户偏好将在保存后显示");
   });
@@ -265,6 +360,10 @@ describe("account center foundation", () => {
     expect(adminHtml).toContain("进入管理后台");
     expect(adminHtml).toContain("管理系统配置、服务商配置和地点数据。");
     expect(adminHtml).toContain('href="/admin"');
+    expect(adminHtml).toContain("管理员");
+    expect(adminHtml).not.toContain("admin.manage");
+    expect(adminHtml).not.toContain("audit.read");
+    expect(adminHtml).not.toContain("providers.manage");
     expect(adminMenuHtml).not.toContain("管理后台入口");
     expect(adminMenuHtml).not.toContain('href="/admin"');
   });
@@ -287,7 +386,6 @@ describe("account center foundation", () => {
       "开发",
       "coming soon",
       "planned",
-      "placeholder",
       "development",
       "unavailable",
       "账户偏好将在保存后显示",
@@ -324,12 +422,16 @@ describe("account center foundation", () => {
   });
 });
 
-function renderAuthenticatedAccountCenter(session: PublicAccountSession): string {
+function renderAuthenticatedAccountCenter(
+  session: PublicAccountSession,
+  initialHistory: readonly AccountForecastHistoryRecord[] = [],
+): string {
   return renderToStaticMarkup(
     React.createElement(AuthenticatedAccountCenter, {
       session,
       onLogout: () => undefined,
       isLoggingOut: false,
+      initialHistory,
     }),
   );
 }

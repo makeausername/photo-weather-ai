@@ -16,8 +16,7 @@ export const forecastCalculationTransientFailureMessage =
 const forecastCalculationValidationFailureMessage =
   "当前地点坐标或预报范围无效，请重新选择地点后再试。";
 
-const forecastCalculationGenericFailureMessage =
-  "拍摄天气分析暂时不可用，请稍后重试。";
+const forecastCalculationGenericFailureMessage = "拍摄天气分析暂时不可用，请稍后重试。";
 
 type ForecastCacheRecord = {
   readonly version: 1;
@@ -484,16 +483,18 @@ function sleepWithAbort(delayMs: number, signal: AbortSignal | undefined): Promi
     return Promise.resolve();
   }
   return new Promise((resolve, reject) => {
-    let timeout: ReturnType<typeof globalThis.setTimeout>;
-    const abort = () => {
+    const timeout: ReturnType<typeof globalThis.setTimeout> = globalThis.setTimeout(
+      resolveDelay,
+      delayMs,
+    );
+    function abort() {
       globalThis.clearTimeout(timeout);
       reject(createAbortError());
-    };
-    const resolveDelay = () => {
+    }
+    function resolveDelay() {
       signal?.removeEventListener("abort", abort);
       resolve();
-    };
-    timeout = globalThis.setTimeout(resolveDelay, delayMs);
+    }
     if (signal?.aborted) {
       abort();
       return;

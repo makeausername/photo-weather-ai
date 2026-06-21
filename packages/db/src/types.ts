@@ -20,7 +20,11 @@ export type ProviderType =
 
 export type AuthVerificationChannel = "email" | "sms";
 
-export type AuthVerificationPurpose = "register";
+export type AuthVerificationPurpose =
+  | "register"
+  | "change_email"
+  | "change_phone"
+  | "delete_account";
 
 export type LocationType = "scenic_area" | "viewpoint" | "mountain" | "lake" | "city" | "custom";
 
@@ -182,6 +186,31 @@ export type UserSessionRecord = {
   readonly revokedAt: Date | null;
   readonly ipAddress: string | null;
   readonly userAgent: string | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+};
+
+export type UserForecastHistoryRecord = {
+  readonly id: string;
+  readonly userId: string;
+  readonly locationName: string;
+  readonly target: ForecastReplayTarget;
+  readonly horizon: string;
+  readonly timezone: string | null;
+  readonly latitudeGcj02: number | null;
+  readonly longitudeGcj02: number | null;
+  readonly latitudeWgs84: number | null;
+  readonly longitudeWgs84: number | null;
+  readonly elevationMeters: number | null;
+  readonly locationId: string | null;
+  readonly photoSpotId: string | null;
+  readonly queryKey: string;
+  readonly queryJson: JsonValue;
+  readonly resultSummaryJson: JsonValue | null;
+  readonly overallScore: number | null;
+  readonly recommendationLabel: string | null;
+  readonly bestWindowStart: Date | null;
+  readonly bestWindowEnd: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 };
@@ -437,6 +466,7 @@ export type DatabaseClient = {
   ) => Promise<TResult>;
   readonly user?: {
     readonly findUnique: (args: any) => Promise<any>;
+    readonly findMany?: (args?: any) => Promise<any[]>;
     readonly create: (args: any) => Promise<any>;
     readonly update: (args: any) => Promise<any>;
   };
@@ -529,6 +559,7 @@ export type DatabaseClient = {
     readonly create: (args: any) => Promise<any>;
     readonly findUnique: (args: any) => Promise<any>;
     readonly update: (args: any) => Promise<any>;
+    readonly updateMany?: (args: any) => Promise<{ count: number }>;
   };
   readonly userRole?: {
     readonly upsert: (args: any) => Promise<any>;
@@ -548,5 +579,12 @@ export type DatabaseClient = {
   readonly rolePermission?: {
     readonly upsert: (args: any) => Promise<any>;
     readonly findMany?: (args?: any) => Promise<any[]>;
+  };
+  readonly userForecastHistory?: {
+    readonly findFirst: (args: any) => Promise<any>;
+    readonly findMany: (args?: any) => Promise<any[]>;
+    readonly create: (args: any) => Promise<any>;
+    readonly update: (args: any) => Promise<any>;
+    readonly deleteMany?: (args: any) => Promise<{ count: number }>;
   };
 };

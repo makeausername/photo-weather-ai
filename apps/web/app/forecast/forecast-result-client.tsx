@@ -32,6 +32,7 @@ import {
 import { PublicShell } from "../../components/public-shell";
 import { MoonPhaseCalendar } from "../../components/moon-phase-calendar";
 import { Badge, Button, Card, cn } from "../../components/ui";
+import { saveForecastHistory } from "../../components/account-session";
 import {
   buildForecastResultViewModel,
   filterAstroPublicProfessionalDataGroups,
@@ -2020,6 +2021,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
   const latestQueryRef = useRef<ForecastQueryInput | null>(query);
   const resultRef = useRef<ForecastCalculationResult | null>(result);
   const resultQueryKeyRef = useRef("");
+  const historySaveKeyRef = useRef("");
   const requestSequenceRef = useRef(0);
 
   latestQueryRef.current = query;
@@ -2046,6 +2048,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
     if (!queryKey) {
       requestSequenceRef.current += 1;
       resultQueryKeyRef.current = "";
+      historySaveKeyRef.current = "";
       resultRef.current = null;
       setStatus("idle");
       setResult(null);
@@ -2090,6 +2093,21 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
         resultRef.current = data;
         setResult(data);
         setStatus("ready");
+        const historySaveKey = `${activeQueryKey}:${data.generatedAt}`;
+        if (historySaveKeyRef.current !== historySaveKey) {
+          historySaveKeyRef.current = historySaveKey;
+          void saveForecastHistory({
+            query: requestQuery,
+            resultSummary: buildForecastHistorySummary(data),
+          }).catch((error) => {
+            if (process.env.NODE_ENV !== "production") {
+              console.debug(
+                "Forecast history save skipped.",
+                error instanceof Error ? error.name : "unknown",
+              );
+            }
+          });
+        }
       } catch (error) {
         if (isForecastRequestAbortError(error)) {
           return;
@@ -2195,6 +2213,16 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
       ) : null}
     </PublicShell>
   );
+}
+
+function buildForecastHistorySummary(result: ForecastCalculationResult) {
+  const bestWindow = result.bestWindows[0];
+  return {
+    overallScore: result.overallScore,
+    recommendationLabel: result.recommendationLabel,
+    bestWindowStart: bestWindow?.startTime ?? null,
+    bestWindowEnd: bestWindow?.endTime ?? null,
+  };
 }
 
 function DashboardFrame({
