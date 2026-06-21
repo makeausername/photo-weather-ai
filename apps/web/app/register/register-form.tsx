@@ -9,7 +9,9 @@ import {
   sendRegisterVerificationCode,
   type RegisterVerificationChannel,
 } from "../../components/account-session";
-import { Badge, Button, Card, FormField, Input, cn } from "../../components/ui";
+import { PasswordInput } from "../../components/password-input";
+import { AuthCard, AuthStatusMessage } from "../../components/public-auth";
+import { Button, FormField, Input, cn } from "../../components/ui";
 
 export const publicRegisterFormLabels = [
   "邮箱注册",
@@ -32,6 +34,16 @@ function isTargetValid(channel: RegisterVerificationChannel, target: string): bo
     : /^1[3-9]\d{9}$/.test(value);
 }
 
+type AuthFormStatusTone = "success" | "error" | "info";
+
+export function buildRegisteredLoginHref(identifier: string): string {
+  const params = new URLSearchParams({
+    registered: "1",
+    identifier,
+  });
+  return `/login?${params.toString()}`;
+}
+
 export function RegisterForm() {
   const router = useRouter();
   const [channel, setChannel] = useState<RegisterVerificationChannel>("email");
@@ -42,6 +54,7 @@ export function RegisterForm() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [status, setStatus] = useState("");
+  const [statusTone, setStatusTone] = useState<AuthFormStatusTone>("info");
   const [cooldown, setCooldown] = useState(0);
   const [isSendingCode, setIsSendingCode] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -57,6 +70,10 @@ export function RegisterForm() {
       !isSubmitting,
     [code, confirmPassword, isSubmitting, password, targetIsValid],
   );
+  const passwordRequirements = [
+    { label: "至少 8 个字符", met: password.length >= 8 },
+    { label: "两次输入一致", met: Boolean(confirmPassword) && password === confirmPassword },
+  ] as const;
 
   useEffect(() => {
     if (cooldown <= 0) {
@@ -73,12 +90,15 @@ export function RegisterForm() {
     setChannel(nextChannel);
     setCode("");
     setStatus("");
+    setStatusTone("info");
     setCooldown(0);
   }
 
   async function handleSendCode() {
     setStatus("");
+    setStatusTone("info");
     if (!targetIsValid) {
+      setStatusTone("error");
       setStatus(channel === "email" ? "请输入有效邮箱地址。" : "请输入有效手机号。");
       return;
     }
@@ -90,11 +110,13 @@ export function RegisterForm() {
         target,
       });
       setCooldown(result.resendAfterSeconds);
+      setStatusTone("success");
       setStatus("验证码已发送，请查收。");
       if (result.mockCode) {
         setCode(result.mockCode);
       }
     } catch (error) {
+      setStatusTone("error");
       setStatus((error as Error).message || "验证码发送失败，请稍后重试。");
     } finally {
       setIsSendingCode(false);
@@ -104,23 +126,28 @@ export function RegisterForm() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setStatus("");
+    setStatusTone("info");
 
     if (!targetIsValid) {
+      setStatusTone("error");
       setStatus(channel === "email" ? "请输入有效邮箱地址。" : "请输入有效手机号。");
       return;
     }
 
     if (!/^\d{6}$/.test(code.trim())) {
+      setStatusTone("error");
       setStatus("请输入 6 位数字验证码。");
       return;
     }
 
     if (password.length < 8) {
+      setStatusTone("error");
       setStatus("密码至少需要 8 个字符。");
       return;
     }
 
     if (password !== confirmPassword) {
+      setStatusTone("error");
       setStatus("两次输入的密码不一致。");
       return;
     }
@@ -135,12 +162,9 @@ export function RegisterForm() {
         ...(displayName.trim() ? { displayName: displayName.trim() } : {}),
       });
 
-      const params = new URLSearchParams({
-        registered: "1",
-        identifier: target,
-      });
-      router.replace(`/login?${params.toString()}`);
+      router.replace(buildRegisteredLoginHref(target));
     } catch (error) {
+      setStatusTone("error");
       setStatus((error as Error).message || "验证码错误或已过期，请重新获取。");
     } finally {
       setIsSubmitting(false);
@@ -148,16 +172,15 @@ export function RegisterForm() {
   }
 
   return (
-    <Card className="p-5 shadow-soft sm:p-6">
-      <div className="mb-5">
-        <Badge variant="muted">新账户</Badge>
-        <h2 className="mt-3 text-xl font-bold text-card-foreground">创建逐光天气账户</h2>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          使用邮箱或手机号完成验证，创建后可在账户中心管理资料和安全信息。
-        </p>
-      </div>
-
-      <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg border border-border bg-muted p-1">
+    <AuthCard
+      eyebrow="新账户"
+      title="创建逐光天气账户"
+      description="选择邮箱或短信验证方式，设置密码后即可进入账户体系。"
+    >
+      <div
+        className="mb-4 grid grid-cols-2 gap-2 rounded-lg border border-border bg-muted p-1"
+        aria-label="注册方式"
+      >
         {[
           { value: "email", label: "邮箱注册" },
           { value: "sms", label: "短信注册" },
@@ -171,6 +194,7 @@ export function RegisterForm() {
                 ? "bg-card text-card-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",
             )}
+            aria-pressed={channel === item.value}
             onClick={() => switchChannel(item.value as RegisterVerificationChannel)}
           >
             {item.label}
@@ -216,7 +240,7 @@ export function RegisterForm() {
         )}
 
         <FormField label="验证码">
-          <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
             <Input
               type="text"
               inputMode="numeric"
@@ -230,6 +254,7 @@ export function RegisterForm() {
             <Button
               type="button"
               variant="secondary"
+              className="w-full min-w-[132px] sm:w-auto"
               disabled={!targetIsValid || cooldown > 0 || isSendingCode}
               onClick={() => void handleSendCode()}
             >
@@ -239,8 +264,7 @@ export function RegisterForm() {
         </FormField>
 
         <FormField label="密码" hint="至少 8 个字符。">
-          <Input
-            type="password"
+          <PasswordInput
             autoComplete="new-password"
             placeholder="请输入密码"
             value={password}
@@ -250,8 +274,7 @@ export function RegisterForm() {
           />
         </FormField>
         <FormField label="确认密码">
-          <Input
-            type="password"
+          <PasswordInput
             autoComplete="new-password"
             placeholder="请再次输入密码"
             value={confirmPassword}
@@ -261,14 +284,34 @@ export function RegisterForm() {
           />
         </FormField>
 
-        {status ? (
-          <div className="rounded-lg border border-info bg-card px-3 py-2 text-sm leading-6 text-info">
-            {status}
+        <div className="grid gap-2 rounded-lg border border-border bg-muted/35 p-3">
+          <p className="text-xs font-bold text-card-foreground">密码要求</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {passwordRequirements.map((item) => (
+              <span
+                key={item.label}
+                className={cn(
+                  "inline-flex items-center gap-2 text-xs font-medium",
+                  item.met ? "text-success" : "text-muted-foreground",
+                )}
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "h-2 w-2 rounded-full",
+                    item.met ? "bg-success" : "bg-muted-foreground/45",
+                  )}
+                />
+                {item.label}
+              </span>
+            ))}
           </div>
-        ) : null}
+        </div>
 
-        <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-          <Button type="submit" size="lg" disabled={!canRegister} className="w-full">
+        <AuthStatusMessage message={status} tone={statusTone} />
+
+        <div className="grid gap-3">
+          <Button type="submit" size="lg" disabled={!canRegister} className="h-11 w-full">
             {isSubmitting ? "正在注册..." : "注册"}
           </Button>
           <Link
@@ -279,6 +322,6 @@ export function RegisterForm() {
           </Link>
         </div>
       </form>
-    </Card>
+    </AuthCard>
   );
 }

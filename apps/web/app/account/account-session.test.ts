@@ -33,10 +33,21 @@ import {
 } from "./account-center-client";
 import { sessionHasAdminAccess } from "../admin/admin-api";
 import AdminLoginPage from "../admin/login/page";
+import { loginAuthTrustItems, loginAuthWorkflowItems } from "../login/auth-content";
 import LoginPage, { metadata as loginMetadata } from "../login/page";
 import { publicLoginFormLabels } from "../login/login-form";
+import { registerAuthTrustItems, registerAuthWorkflowItems } from "../register/auth-content";
 import RegisterPage, { metadata as registerMetadata } from "../register/page";
-import { publicRegisterFormLabels } from "../register/register-form";
+import { buildRegisteredLoginHref, publicRegisterFormLabels } from "../register/register-form";
+
+const routerReplaceMock = vi.hoisted(() => vi.fn());
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/",
+  useRouter: () => ({
+    replace: routerReplaceMock,
+  }),
+}));
 
 const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
@@ -109,6 +120,7 @@ const cloudSeaHistoryRecord: AccountForecastHistoryRecord = {
 };
 
 afterEach(() => {
+  routerReplaceMock.mockReset();
   vi.restoreAllMocks();
 });
 
@@ -232,9 +244,13 @@ describe("account center foundation", () => {
   it("shows the unauthenticated account login prompt", () => {
     const html = renderToStaticMarkup(React.createElement(UnauthenticatedAccountPrompt));
 
-    expect(html).toContain("请先登录后查看账户中心。");
-    expect(html).toContain("登录后可管理账户资料、登录安全、绑定方式和查询历史。");
-    expect(html).toContain("登录逐光天气");
+    expect(html).toContain('data-auth-account-prompt="commercial-auth-prompt"');
+    expect(html).toContain("登录后查看账户中心");
+    expect(html).toContain("账户中心用于管理查询历史、订单权益、绑定方式和登录安全。");
+    expect(html).toContain("查询历史");
+    expect(html).toContain("订单与权益");
+    expect(html).toContain("账户安全");
+    expect(html).toContain("登录");
     expect(html).toContain("创建账户");
     expect(html).toContain('href="/login"');
     expect(html).toContain('href="/register"');
@@ -527,11 +543,65 @@ describe("account center foundation", () => {
     }
   });
 
+  it("renders the public login page as a polished commercial auth layout", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(LoginPage, {
+        searchParams: {
+          registered: "1",
+          identifier: "photo@example.com",
+        },
+      }),
+    );
+
+    expect(html).toContain('data-auth-layout="commercial-two-column responsive-auth-grid"');
+    expect(html).toContain('data-auth-product-panel="trust-and-workflow"');
+    expect(html).toContain('data-auth-card="refined-form"');
+    expect(html).toContain("逐光天气账户");
+    expect(html).toContain("保存常用查询与历史记录");
+    expect(html).toContain("管理订单、权益和账户安全");
+    expect(html).toContain("欢迎回来");
+    expect(html).toContain("邮箱或手机号");
+    expect(html).toContain("密码");
+    expect(html).toContain('value="photo@example.com"');
+    expect(html).toContain("账户创建成功，请登录逐光天气。");
+    expect(html).toContain("显示密码");
+    expect(html).toContain('href="/register"');
+    expect(html).toContain('href="/"');
+    expect(html).toContain("lg:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.75fr)]");
+    expect(html).toContain("order-1");
+    expect(html).toContain("sm:grid-cols-2");
+    expect(loginAuthTrustItems).toHaveLength(3);
+    expect(loginAuthWorkflowItems).toHaveLength(4);
+    expect(html).not.toContain("管理员入口");
+  });
+
   it("keeps public login and admin login routes importable", () => {
     expect(LoginPage({})).toBeTruthy();
     expect(loginMetadata.title).toBe("用户登录 - 逐光天气");
     expect(publicLoginFormLabels).toEqual(["邮箱或手机号", "密码", "登录", "创建账户", "返回首页"]);
     expect(AdminLoginPage).toBeTypeOf("function");
+  });
+
+  it("renders the public register page with the shared auth visual system", () => {
+    const html = renderToStaticMarkup(React.createElement(RegisterPage));
+
+    expect(html).toContain('data-auth-layout="commercial-two-column responsive-auth-grid"');
+    expect(html).toContain('data-auth-product-panel="trust-and-workflow"');
+    expect(html).toContain('data-auth-card="refined-form"');
+    expect(html).toContain("创建逐光天气账户");
+    expect(html).toContain("完成验证，开始管理你的摄影出行记录");
+    expect(html).toContain("邮箱注册");
+    expect(html).toContain("短信注册");
+    expect(html).toContain("验证码");
+    expect(html).toContain("发送验证码");
+    expect(html).toContain("密码要求");
+    expect(html).toContain("至少 8 个字符");
+    expect(html).toContain("两次输入一致");
+    expect(html).toContain("已有账户，去登录");
+    expect(html).toContain("sm:grid-cols-[minmax(0,1fr)_auto]");
+    expect(html).toContain("w-full min-w-[132px] sm:w-auto");
+    expect(registerAuthTrustItems).toHaveLength(3);
+    expect(registerAuthWorkflowItems).toHaveLength(4);
   });
 
   it("keeps the public register route importable with the expected form labels", () => {
@@ -550,6 +620,35 @@ describe("account center foundation", () => {
       "注册",
       "已有账户，去登录",
     ]);
+    expect(buildRegisteredLoginHref("photo@example.com")).toBe(
+      "/login?registered=1&identifier=photo%40example.com",
+    );
+    expect(buildRegisteredLoginHref("13800138000")).toBe(
+      "/login?registered=1&identifier=13800138000",
+    );
+  });
+
+  it("keeps public auth pages free of placeholder or hardcoded environment copy", () => {
+    const html = [
+      renderToStaticMarkup(React.createElement(LoginPage)),
+      renderToStaticMarkup(React.createElement(RegisterPage)),
+      renderToStaticMarkup(React.createElement(UnauthenticatedAccountPrompt)),
+    ].join("");
+    const forbiddenCopy = [
+      "占位",
+      "敬请期待",
+      "coming soon",
+      "暂无功能",
+      "admin@zhuguangweather.com",
+      "127.0.0.1",
+      "localhost",
+      "截图",
+      "服务器路径",
+    ];
+
+    for (const phrase of forbiddenCopy) {
+      expect(html).not.toContain(phrase);
+    }
   });
 });
 

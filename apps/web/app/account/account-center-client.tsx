@@ -24,6 +24,7 @@ import {
   type PublicAccountSession,
 } from "../../components/account-session";
 import type { AccountRole, JsonValue } from "../admin/admin-api";
+import { AuthTrustList } from "../../components/public-auth";
 import { Badge, Button, Card, FormField, Input, cn } from "../../components/ui";
 import {
   forecastHorizonLabels,
@@ -123,27 +124,49 @@ export function AccountCenterClient() {
 
 export function UnauthenticatedAccountPrompt() {
   return (
-    <Card className="grid gap-4 p-5 shadow-sm sm:p-6">
-      <div>
-        <Badge variant="warning">尚未登录</Badge>
-        <h2 className="mt-3 text-xl font-bold text-card-foreground">请先登录后查看账户中心。</h2>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          登录后可管理账户资料、登录安全、绑定方式和查询历史。
-        </p>
-      </div>
-      <div className="flex flex-wrap gap-3">
-        <Link
-          href="/login"
-          className="inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
-        >
-          登录逐光天气
-        </Link>
-        <Link
-          href="/register"
-          className="inline-flex h-10 items-center rounded-lg border border-border bg-card px-4 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary"
-        >
-          创建账户
-        </Link>
+    <Card data-auth-account-prompt="commercial-auth-prompt" className="overflow-hidden shadow-soft">
+      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="p-5 sm:p-6">
+          <p className="text-sm font-bold text-primary">账户中心</p>
+          <h2 className="mt-3 text-2xl font-bold leading-tight text-card-foreground">
+            登录后查看账户中心
+          </h2>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
+            账户中心用于管理查询历史、订单权益、绑定方式和登录安全。登录后会根据账户权限显示可用功能。
+          </p>
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <Link
+              href="/login"
+              className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
+            >
+              登录
+            </Link>
+            <Link
+              href="/register"
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-card px-4 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary"
+            >
+              创建账户
+            </Link>
+          </div>
+        </div>
+        <div className="border-t border-border bg-muted/35 p-5 sm:p-6 lg:border-l lg:border-t-0">
+          <AuthTrustList
+            items={[
+              {
+                title: "查询历史",
+                description: "查看最近保存的地点和分析结果。",
+              },
+              {
+                title: "订单与权益",
+                description: "确认订单状态和可用预测次数。",
+              },
+              {
+                title: "账户安全",
+                description: "维护密码、邮箱和手机绑定方式。",
+              },
+            ]}
+          />
+        </div>
       </div>
     </Card>
   );
