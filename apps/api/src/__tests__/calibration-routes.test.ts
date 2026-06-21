@@ -27,7 +27,8 @@ describe("admin calibration routes", () => {
     expect(response.statusCode).toBe(200);
     const bodyText = response.body;
     const body = response.json();
-    expect(body.photoSpots.length).toBeGreaterThan(0);
+    expect(body.locations.length).toBeGreaterThan(0);
+    expect(body.photoSpots).toBeUndefined();
     expect(body.targets).toContain("general");
     expect(bodyText).not.toMatch(/api[_-]?key|secret/i);
   });
@@ -41,7 +42,7 @@ describe("admin calibration routes", () => {
       url: "/admin/calibration/fetch-history",
       headers: adminAuthorizationHeader(),
       payload: {
-        spotId: "photo-spot-0",
+        locationId: "location-0",
         startDate: "2026-05-01",
         endDate: "2026-05-02",
       },
@@ -55,11 +56,11 @@ describe("admin calibration routes", () => {
 
   it("runs replay from stored historical samples and stores observed outcome labels", async () => {
     const { client, state } = await createFakeDatabaseClient();
-    const spot = state.photoSpots.get("photo-spot-0");
-    if (!spot) {
-      throw new Error("expected seeded photo spot");
+    const location = state.locations.get("location-0");
+    if (!location) {
+      throw new Error("expected seeded location");
     }
-    await storeHistoricalWeatherSamples(buildSamplesForSpot(spot), { client });
+    await storeHistoricalWeatherSamples(buildSamplesForLocation(location), { client });
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
 
     const replayResponse = await app.inject({
@@ -67,7 +68,7 @@ describe("admin calibration routes", () => {
       url: "/admin/calibration/replay",
       headers: adminAuthorizationHeader(),
       payload: {
-        spotId: spot.id,
+        locationId: location.id,
         startDate: "2026-05-01",
         endDate: "2026-05-01",
         target: "general",
@@ -82,7 +83,7 @@ describe("admin calibration routes", () => {
       url: "/admin/calibration/outcomes",
       headers: adminAuthorizationHeader(),
       payload: {
-        spotId: spot.id,
+        locationId: location.id,
         target: "general",
         outcomeDate: "2026-05-01",
         observedResult: "success",
@@ -100,13 +101,16 @@ describe("admin calibration routes", () => {
 
     expect(outcomeResponse.statusCode).toBe(200);
     expect(outcomeResponse.json().outcome).toMatchObject({
+      spotId: null,
+      locationKey: `location:${location.id}`,
+      locationName: location.name,
       observedResult: "success",
       target: "general",
     });
 
     const resultsResponse = await app.inject({
       method: "GET",
-      url: `/admin/calibration/replay-results?spotId=${spot.id}&target=general`,
+      url: `/admin/calibration/replay-results?locationId=${location.id}&target=general`,
       headers: adminAuthorizationHeader(),
     });
 
@@ -123,7 +127,7 @@ describe("admin calibration routes", () => {
       url: `/admin/calibration/outcomes/${outcomeId}`,
       headers: adminAuthorizationHeader(),
       payload: {
-        spotId: spot.id,
+        locationId: location.id,
         target: "general",
         outcomeDate: "2026-05-01",
         observedResult: "partial",
@@ -151,7 +155,7 @@ describe("admin calibration routes", () => {
       url: "/admin/calibration/stats/recompute",
       headers: adminAuthorizationHeader(),
       payload: {
-        spotId: spot.id,
+        locationId: location.id,
         target: "general",
       },
     });
@@ -173,7 +177,7 @@ describe("admin calibration routes", () => {
       url: "/admin/calibration/outcomes",
       headers: adminAuthorizationHeader(),
       payload: {
-        spotId: "photo-spot-0",
+        locationId: "location-0",
         target: "general",
         outcomeDate: "2026-05-01",
         observedResult: "great",
@@ -187,14 +191,14 @@ describe("admin calibration routes", () => {
   });
 });
 
-function buildSamplesForSpot(spot: any) {
+function buildSamplesForLocation(location: any) {
   return Array.from({ length: 24 }, (_, index) => ({
-    spotId: spot.id,
-    locationKey: `spot:${spot.id}`,
-    locationName: spot.name,
-    latitudeWgs84: spot.latitudeWgs84,
-    longitudeWgs84: spot.longitudeWgs84,
-    elevationMeters: spot.elevation,
+    spotId: null,
+    locationKey: `location:${location.id}`,
+    locationName: location.name,
+    latitudeWgs84: location.latitudeWgs84,
+    longitudeWgs84: location.longitudeWgs84,
+    elevationMeters: location.elevation,
     sourceProvider: "open_meteo_historical" as const,
     sampleTime: new Date(`2026-05-01T${String(index).padStart(2, "0")}:00:00+08:00`),
     timezone: "Asia/Shanghai",

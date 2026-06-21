@@ -1633,7 +1633,7 @@ describe("admin config routes", () => {
     });
   });
 
-  it("creates a location and a photo spot with authenticated audit logs", async () => {
+  it("creates a location with authenticated audit logs", async () => {
     const { client, state } = await createFakeDatabaseClient();
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
 
@@ -1667,73 +1667,23 @@ describe("admin config routes", () => {
       isVerified: false,
     });
 
-    const photoSpotResponse = await app.inject({
-      method: "POST",
-      url: "/admin/photo-spots",
-      headers: adminAuthorizationHeader(),
-      payload: {
-        locationId: location.id,
-        name: "测试机位",
-        slug: "test-spot",
-        description: "测试说明",
-        latitudeGcj02: 31.002,
-        longitudeGcj02: 102.002,
-        latitudeWgs84: 31,
-        longitudeWgs84: 102,
-        elevation: 3210,
-        viewDirection: "east",
-        bestForSunrise: true,
-        bestForSunset: false,
-        bestForCloudSea: true,
-        bestForStars: false,
-        bestForMilkyWay: false,
-        bestForSnow: true,
-        accessNote: "测试到达说明",
-        trafficNote: "测试交通说明",
-        safetyNote: "测试安全说明",
-        riskNote: "测试风险提示",
-        isHot: false,
-        isVerified: false,
-      },
-    });
-
-    expect(photoSpotResponse.statusCode).toBe(201);
-    expect(photoSpotResponse.json().photoSpot).toMatchObject({
-      name: "测试机位",
-      viewDirection: "east",
-      bestForSunrise: true,
-    });
-    expect(state.auditLogs.map((log) => log.action)).toEqual([
-      "photo_spot.create",
-      "location.create",
-    ]);
+    expect(state.auditLogs.map((log) => log.action)).toEqual(["location.create"]);
   });
 
-  it("rejects photo spot creation for an unknown location", async () => {
+  it("does not expose admin photo spot CRUD routes", async () => {
     const { client } = await createFakeDatabaseClient();
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
 
-    const response = await app.inject({
-      method: "POST",
-      url: "/admin/photo-spots",
-      headers: adminAuthorizationHeader(),
-      payload: {
-        locationId: "missing-location",
-        name: "无效机位",
-        slug: "invalid-spot",
-        latitudeGcj02: 30,
-        longitudeGcj02: 120,
-        latitudeWgs84: 29.998,
-        longitudeWgs84: 119.995,
-        viewDirection: "east",
-      },
-    });
+    for (const method of ["GET", "POST", "PATCH", "DELETE"] as const) {
+      const response = await app.inject({
+        method,
+        url: method === "GET" || method === "POST" ? "/admin/photo-spots" : "/admin/photo-spots/legacy",
+        headers: adminAuthorizationHeader(),
+        payload: method === "POST" || method === "PATCH" ? { name: "旧版拍摄点" } : undefined,
+      });
 
-    expect(response.statusCode).toBe(400);
-    expect(response.json()).toMatchObject({
-      error: "invalid_location",
-      message: "请选择有效的所属地点。",
-    });
+      expect(response.statusCode).toBe(404);
+    }
   });
 
   it("returns deterministic local geo search results without external services", async () => {
@@ -1774,7 +1724,7 @@ describe("admin config routes", () => {
     });
   });
 
-  it("maps local locations and photo spots before provider results in public search", async () => {
+  it("maps local locations before provider results in public search", async () => {
     const { client } = await createFakeDatabaseClient();
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
 
@@ -1792,13 +1742,9 @@ describe("admin config routes", () => {
       latitudeGcj02: 30.1351,
       longitudeWgs84: 118.171,
     });
-    expect(body.results[1]).toMatchObject({
-      name: "黄山光明顶",
-      source: "local_photo_spot",
-      matchedPhotoSpotId: "photo-spot-0",
-      matchedLocationId: "location-0",
-      locationType: "viewpoint",
-    });
+    expect(body.results).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ source: "local_photo_spot" })]),
+    );
   });
 
   it("keeps public search mock-safe when Amap is enabled but real flag is false", async () => {

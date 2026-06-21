@@ -203,24 +203,6 @@ export async function createFakeDatabaseClient(): Promise<{
     });
   });
 
-  seedData.photoSpots.forEach((photoSpot, index) => {
-    const location = [...locations.values()].find(
-      (candidate) => candidate.slug === photoSpot.locationSlug,
-    );
-    if (!location) {
-      throw new Error(`Missing fake location for ${photoSpot.locationSlug}`);
-    }
-
-    const { locationSlug: _locationSlug, ...photoSpotData } = photoSpot;
-    photoSpots.set(`photo-spot-${index}`, {
-      id: `photo-spot-${index}`,
-      locationId: location.id,
-      ...photoSpotData,
-      createdAt: now,
-      updatedAt: now,
-    });
-  });
-
   users.set("admin-user", {
     id: "admin-user",
     email: "admin@example.com",

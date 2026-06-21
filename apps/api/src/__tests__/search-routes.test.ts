@@ -78,7 +78,7 @@ describe("public search routes", () => {
 
   it("caches successful identical public place searches", async () => {
     const { client } = await createFakeDatabaseClient();
-    if (!client.location || !client.photoSpot) {
+    if (!client.location) {
       throw new Error("Fake database client is missing public search delegates.");
     }
     const cachedClient = {
@@ -86,10 +86,6 @@ describe("public search routes", () => {
       location: {
         ...client.location,
         findMany: vi.fn(client.location.findMany),
-      },
-      photoSpot: {
-        ...client.photoSpot,
-        findMany: vi.fn(client.photoSpot.findMany),
       },
     };
     app = buildApiServer({
@@ -115,7 +111,6 @@ describe("public search routes", () => {
     expect(secondResponse.statusCode).toBe(200);
     expect(secondResponse.json()).toEqual(firstResponse.json());
     expect(cachedClient.location.findMany).toHaveBeenCalledTimes(1);
-    expect(cachedClient.photoSpot.findMany).toHaveBeenCalledTimes(1);
   });
 
   it("does not cache failed public place searches", async () => {

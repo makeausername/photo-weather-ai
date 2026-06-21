@@ -1,16 +1,14 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import {
   listLocations,
-  listPhotoSpots,
   type DatabaseClient,
   type LocationRecord,
-  type PhotoSpotRecord,
 } from "@photo-weather/db";
 import { validateCoordinates } from "@photo-weather/geo";
 import type { GeoPlaceResult, GeoProvider } from "@photo-weather/geo";
 import { z } from "zod";
 
-type PublicPlaceSearchSource = "local_location" | "local_photo_spot" | "amap" | "mock";
+type PublicPlaceSearchSource = "local_location" | "amap" | "mock";
 
 export const publicPlaceSearchUnavailableMessage =
   "地点搜索暂时不可用，请检查数据库连接或稍后重试。";
@@ -253,29 +251,6 @@ function locationToSearchResult(location: LocationRecord): PublicPlaceSearchResu
   };
 }
 
-function photoSpotToSearchResult(photoSpot: PhotoSpotRecord): PublicPlaceSearchResult {
-  assertCoordinatePair(photoSpot);
-
-  return {
-    id: `local-photo-spot:${photoSpot.id}`,
-    name: photoSpot.name,
-    address: photoSpot.location?.address ?? photoSpot.description,
-    province: photoSpot.location?.province ?? null,
-    city: photoSpot.location?.city ?? null,
-    district: photoSpot.location?.district ?? null,
-    source: "local_photo_spot",
-    locationType: "viewpoint",
-    matchedPhotoSpotId: photoSpot.id,
-    matchedLocationId: photoSpot.locationId,
-    latitudeGcj02: photoSpot.latitudeGcj02,
-    longitudeGcj02: photoSpot.longitudeGcj02,
-    latitudeWgs84: photoSpot.latitudeWgs84,
-    longitudeWgs84: photoSpot.longitudeWgs84,
-    elevation: photoSpot.elevation,
-    isVerified: photoSpot.isVerified,
-  };
-}
-
 function providerToSearchResult(place: GeoPlaceResult): PublicPlaceSearchResult {
   return {
     id: `${place.source}:${place.providerPlaceId ?? place.id}`,
@@ -412,10 +387,7 @@ export function registerSearchRoutes(app: FastifyInstance, options: SearchRoutes
     }
 
     try {
-      const [locations, photoSpots] = await Promise.all([
-        listLocations({ search: query, client: options.dbClient }),
-        listPhotoSpots({ search: query, client: options.dbClient }),
-      ]);
+      const locations = await listLocations({ search: query, client: options.dbClient });
       const geoProvider = await options.resolveGeoProvider();
       const providerResults = await geoProvider.searchPlace(query, {
         countryCode: "CN",
@@ -424,7 +396,6 @@ export function registerSearchRoutes(app: FastifyInstance, options: SearchRoutes
       });
       const results = mergeResults([
         ...locations.map((location) => locationToSearchResult(location)),
-        ...photoSpots.map((photoSpot) => photoSpotToSearchResult(photoSpot)),
         ...providerResults.map((place) => providerToSearchResult(place)),
       ]);
 
