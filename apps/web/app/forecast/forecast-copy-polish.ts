@@ -6,6 +6,7 @@ import {
   type ForecastTarget,
   type TerrainMode,
 } from "@photo-weather/shared";
+import { sanitizeUnsupportedForecastCopy } from "./forecast-claim-guard";
 
 type ForecastPrimarySummaryOptions = {
   readonly cloudSeaDowngraded?: boolean;
@@ -28,16 +29,20 @@ export function buildForecastPrimarySummary(
   target: ForecastTarget,
   options: ForecastPrimarySummaryOptions = {},
 ): string {
+  const domain = forecastTargetToClaimDomain(target);
+  const guarded = (text: string) =>
+    normalizeForecastPublicCopyText(sanitizeUnsupportedForecastCopy(result, text, domain));
+
   if (target === "cloud_sea") {
-    return normalizeForecastPublicCopyText(buildCloudSeaSummary(result, options.cloudSeaDowngraded));
+    return guarded(buildCloudSeaSummary(result, options.cloudSeaDowngraded));
   }
   if (target === "glow") {
-    return normalizeForecastPublicCopyText(buildGlowSummary(result));
+    return guarded(buildGlowSummary(result));
   }
   if (target === "astro") {
-    return normalizeForecastPublicCopyText(buildAstroSummary(result));
+    return guarded(buildAstroSummary(result));
   }
-  return normalizeForecastPublicCopyText(buildGeneralSummary(result));
+  return guarded(buildGeneralSummary(result));
 }
 
 export function buildForecastDataBoundaryNotice(
@@ -65,17 +70,30 @@ export function buildForecastDataBoundaryNotice(
   const terrainBoundary = result.terrainAnalysis.honestyNoteZh;
 
   return normalizeForecastPublicCopyText(
-    [
-      `天气数据：${weatherStatus}；${terrainStatus}；天文数据：${result.astroDataSourceLabelZh}。`,
-      weatherBoundary,
-      targetBoundary,
-      terrainBoundary,
-      astronomyBoundary,
-      cloudLayerBoundary,
-    ]
-      .filter(Boolean)
-      .join(""),
+    sanitizeUnsupportedForecastCopy(
+      result,
+      [
+        `天气数据：${weatherStatus}；${terrainStatus}；天文数据：${result.astroDataSourceLabelZh}。`,
+        weatherBoundary,
+        targetBoundary,
+        terrainBoundary,
+        astronomyBoundary,
+        cloudLayerBoundary,
+      ]
+        .filter(Boolean)
+        .join(""),
+      forecastTargetToClaimDomain(target),
+    ),
   );
+}
+
+function forecastTargetToClaimDomain(
+  target: ForecastTarget,
+): "general" | "cloud_sea" | "glow" | "astro" {
+  if (target === "cloud_sea" || target === "glow" || target === "astro") {
+    return target;
+  }
+  return "general";
 }
 
 function buildGeneralSummary(result: ForecastCalculationResult): string {

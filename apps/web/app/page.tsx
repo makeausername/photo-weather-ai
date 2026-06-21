@@ -12,7 +12,7 @@ export default function HomePage() {
             逐光天气
           </h1>
           <p className="mt-3 text-[15px] leading-7 text-muted-foreground sm:text-base">
-            输入拍摄地点，快速判断是否值得出发、最佳窗口、优先题材和主要风险。
+            输入拍摄地点后，生成出行判断、最佳窗口、优先题材和主要风险。
           </p>
         </div>
       </header>

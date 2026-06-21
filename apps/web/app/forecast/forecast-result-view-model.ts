@@ -99,6 +99,7 @@ import {
   buildTerrainDisplayModel,
   terrainDisplayTextWithoutRawLabels,
 } from "./terrain-display-model";
+import { sanitizeForecastPublicCopyTree } from "./forecast-claim-guard";
 
 export type ForecastResultModuleKey =
   | "overall"
@@ -983,18 +984,18 @@ export function buildForecastResultViewModel(
   target: ForecastTarget = result.target,
 ): ForecastResultViewModel {
   if (target === "cloud_sea") {
-    return buildCloudSeaViewModel(result);
+    return sanitizeForecastPublicCopyTree(result, target, buildCloudSeaViewModel(result));
   }
 
   if (target === "glow") {
-    return buildGlowViewModel(result);
+    return sanitizeForecastPublicCopyTree(result, target, buildGlowViewModel(result));
   }
 
   if (target === "astro") {
-    return buildAstroViewModel(result);
+    return sanitizeForecastPublicCopyTree(result, target, buildAstroViewModel(result));
   }
 
-  return buildGeneralViewModel(result);
+  return sanitizeForecastPublicCopyTree(result, "general", buildGeneralViewModel(result));
 }
 
 function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResultViewModel {
@@ -1017,7 +1018,7 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
       )
     : null;
 
-  return {
+  return sanitizeForecastPublicCopyTree(result, "general", {
     target: "general",
     targetLabel: forecastTargetLabels.general,
     pageTitle: shellCopy.pageTitle,
@@ -1115,7 +1116,7 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
     ],
     hiddenModuleKeys: [],
     dataNotice: buildDataNotice(result),
-  };
+  });
 }
 
 export function buildCloudSeaForecastViewModel(
@@ -1353,7 +1354,7 @@ export function buildCloudSeaForecastViewModel(
     riskReview: riskSummary,
   });
 
-  return {
+  return sanitizeForecastPublicCopyTree(result, "cloud_sea", {
     displayData,
     ruleContext,
     terrainContext,
@@ -1380,7 +1381,7 @@ export function buildCloudSeaForecastViewModel(
     missingDataNotes: analysis.missingDataNotes,
     dataCaution,
     dataNotice,
-  };
+  });
 }
 
 function buildCloudSeaDisplayTemperatureContextForResult(
@@ -1736,7 +1737,7 @@ function buildCloudSeaViewModel(result: ForecastCalculationResult): ForecastResu
     result.calendarBasis.timezone,
   );
 
-  return {
+  return sanitizeForecastPublicCopyTree(result, "cloud_sea", {
     target: "cloud_sea",
     targetLabel: forecastTargetLabels.cloud_sea,
     pageTitle: shellCopy.pageTitle,
@@ -1773,7 +1774,7 @@ function buildCloudSeaViewModel(result: ForecastCalculationResult): ForecastResu
     hiddenModuleKeys: ["stars", "milkyWay", "astronomy", "astronomicalNight", "moon"],
     dataNotice: cloudSea.dataNotice,
     cloudSea,
-  };
+  });
 }
 
 export function buildGlowForecastViewModel(
@@ -1804,7 +1805,7 @@ export function buildGlowForecastViewModel(
     "建议结合朝霞、晚霞和现场云层变化灵活安排。",
   );
 
-  return {
+  return sanitizeForecastPublicCopyTree(result, "glow", {
     evaluatedAt: glowEvaluatedAt(result),
     timezone: result.calendarBasis.timezone,
     preferredTarget: overallRecommendation.preferredTarget,
@@ -1890,7 +1891,7 @@ export function buildGlowForecastViewModel(
     backupPlans: analysis.backupPlans,
     missingDataNotes: analysis.missingDataNotes,
     dataNotice: buildGlowDataNotice(result),
-  };
+  });
 }
 
 function buildGlowOverallRecommendation(
@@ -1915,7 +1916,7 @@ function buildGlowOverallRecommendation(
     ),
   );
 
-  return {
+  return sanitizeForecastPublicCopyTree(result, "glow", {
     preferredTarget,
     headline: selectedWindow ? `优先${preferredTarget}` : "暂无后续霞光窗口",
     preferredDate: selectedWindow?.date
@@ -1950,7 +1951,7 @@ function buildGlowOverallRecommendation(
     mainRisk: compactGlowDisplayText(mainRisk),
     backupPlan: compactGlowDisplayText(backupPlan),
     tone: selectedWindow ? selectedWindow.tone : "muted",
-  };
+  });
 }
 
 function buildGlowDailyOpportunities(
@@ -2009,7 +2010,7 @@ function glowDailyOpportunitySlot(
   state: GlowLifecycleWindowView,
 ): GlowDailyOpportunitySlot {
   const canShowProbability = state.state === "upcoming" || state.state === "active";
-  return {
+  return sanitizeForecastPublicCopyTree(result, "glow", {
     phase: state.phase,
     label: glowPhaseLabel(state.phase),
     lifecycle: state.state,
@@ -2033,7 +2034,7 @@ function glowDailyOpportunitySlot(
     recommendation: state.recommendation,
     isRecommendationEligible: state.isRecommendationEligible,
     tone: state.tone,
-  };
+  });
 }
 
 function dailyRecommendationForGlowSlots(
@@ -3027,7 +3028,7 @@ export function buildAstroForecastViewModel(
     }),
   );
 
-  return {
+  return sanitizeForecastPublicCopyTree(result, "astro", {
     coreCards: [
       scoreCard(
         "astro-window-score",
@@ -3142,7 +3143,7 @@ export function buildAstroForecastViewModel(
     backupPlans: analysis.backupPlans,
     missingDataNotes: analysis.missingDataNotes,
     dataNotice: buildAstroDataNotice(result),
-  };
+  });
 }
 
 const astroObservingNightStartHour = 18;

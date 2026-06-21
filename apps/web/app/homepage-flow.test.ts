@@ -904,7 +904,7 @@ describe("homepage forecast flow", () => {
     const html = renderToStaticMarkup(React.createElement(HomePage));
 
     expect(html).toContain(
-      "输入拍摄地点，快速判断是否值得出发、最佳窗口、优先题材和主要风险。",
+      "输入拍摄地点后，生成出行判断、最佳窗口、优先题材和主要风险。",
     );
     expect(html).toContain("综合出行判断会看什么");
     expect(html).toContain("地点与窗口");

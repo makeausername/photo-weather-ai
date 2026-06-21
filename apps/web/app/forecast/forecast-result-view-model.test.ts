@@ -8407,7 +8407,7 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.terrainHorizon.obstructionLevel).toBe("unknown");
     expect(viewModel.terrainHorizon.clearanceDisplay).not.toBe("0°");
     expect(viewModel.terrainHorizon.horizonAltitudeDisplay).not.toBe("0°");
-    expect(viewModel.terrainHorizon.detail).toContain("系统未把地形当作无遮挡处理");
+    expect(viewModel.terrainHorizon.detail).toContain("系统将地形遮挡标记为需复核");
   });
 
   it("shows safe public DEM missing copy and tile ID only in professional diagnostics", () => {
