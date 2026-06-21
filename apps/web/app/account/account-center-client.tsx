@@ -164,21 +164,24 @@ export function AuthenticatedAccountCenter({
   return (
     <div className="grid gap-5">
       <AccountOverviewCard session={session} />
+      <ForecastHistoryCard initialHistory={initialHistory} />
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)] xl:items-start">
+      <div
+        className="grid gap-5 xl:grid-cols-2 xl:items-start"
+        data-account-layout="balanced-columns"
+      >
         <div className="grid gap-5">
           <ProfileCard session={session} />
-          <ContactBindingCard session={session} onSessionUpdate={onSessionUpdate} />
           <SecuritySettingsCard
             onLogout={onLogout}
             isLoggingOut={isLoggingOut}
             onSessionUpdate={onSessionUpdate}
           />
-          <DangerZoneCard onAccountDeleted={onAccountDeleted} />
+          {showAdminEntry ? <AdminAccessCard /> : null}
         </div>
         <div className="grid gap-5">
-          <ForecastHistoryCard initialHistory={initialHistory} />
-          {showAdminEntry ? <AdminAccessCard /> : null}
+          <ContactBindingCard session={session} onSessionUpdate={onSessionUpdate} />
+          <DangerZoneCard onAccountDeleted={onAccountDeleted} />
         </div>
       </div>
     </div>

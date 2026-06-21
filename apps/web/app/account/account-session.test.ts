@@ -330,6 +330,46 @@ describe("account center foundation", () => {
     expect(html).not.toContain("占位");
   });
 
+  it("uses a balanced desktop layout without right-column filler", () => {
+    const userHtml = renderAuthenticatedAccountCenter(baseAccountSession, []);
+    const adminHtml = renderAuthenticatedAccountCenter(
+      {
+        ...baseAccountSession,
+        roles: [{ id: "role-admin", code: "admin", name: "admin", displayName: "admin" }],
+        roleCodes: ["admin"],
+        permissions: ["admin.manage"],
+        isAdmin: true,
+      },
+      [],
+    );
+
+    for (const html of [userHtml, adminHtml]) {
+      expect(html).toContain('data-account-layout="balanced-columns"');
+      for (const sectionLabel of [
+        "\u8d26\u6237\u8d44\u6599",
+        "\u67e5\u8be2\u5386\u53f2",
+        "\u7ed1\u5b9a\u65b9\u5f0f",
+        "\u5b89\u5168\u8bbe\u7f6e",
+        "\u6ce8\u9500\u8d26\u6237",
+      ]) {
+        expect(html).toContain(sectionLabel);
+      }
+      expect(html).not.toContain("min-h-[");
+      expect(html).not.toMatch(/\bmin-h-(?:4[8-9]|[5-9]\d|\d{3,})\b/);
+      expect(html).not.toContain(">placeholder<");
+      expect(html).not.toContain("filler");
+      expect(html).not.toContain("coming soon");
+      expect(html).not.toContain("\u5360\u4f4d");
+      expect(html).not.toContain("\u656c\u8bf7\u671f\u5f85");
+      expect(html).not.toContain("\u6682\u65e0\u529f\u80fd");
+    }
+
+    expect(userHtml).not.toContain('href="/admin"');
+    expect(userHtml).not.toContain("data-account-admin-placeholder");
+    expect(userHtml).not.toContain("data-empty-admin-slot");
+    expect(adminHtml).toContain('href="/admin"');
+  });
+
   it("keeps the profile-missing layout free of sparse preference and permission cards", () => {
     const html = renderAuthenticatedAccountCenter({
       ...baseAccountSession,
@@ -366,6 +406,31 @@ describe("account center foundation", () => {
     expect(adminHtml).not.toContain("providers.manage");
     expect(adminMenuHtml).not.toContain("管理后台入口");
     expect(adminMenuHtml).not.toContain('href="/admin"');
+  });
+
+  it("does not render raw permission codes in the public account center", () => {
+    const rawPermissionCodes = [
+      "admin.manage",
+      "audit.read",
+      "providers.manage",
+      "settings.manage",
+      "users.manage",
+      "locations.manage",
+      "photo_spots.manage",
+      "usage.read",
+    ];
+    const html = renderAuthenticatedAccountCenter({
+      ...baseAccountSession,
+      roles: [{ id: "role-admin", code: "admin", name: "admin", displayName: "admin" }],
+      roleCodes: ["admin"],
+      permissions: rawPermissionCodes,
+      isAdmin: true,
+    });
+
+    expect(html).toContain('href="/admin"');
+    for (const permissionCode of rawPermissionCodes) {
+      expect(html).not.toContain(permissionCode);
+    }
   });
 
   it("does not render account placeholder or unavailable-module wording", () => {
