@@ -427,7 +427,7 @@ describe("Cloud Sea result page final regression QA", () => {
 
     expect(viewModel.displayTemperatureContext.basis).toBe("raw_grid_with_warning");
     expect(viewModel.displayTemperatureContext.isUserFacingTemperatureReliable).toBe(false);
-    expect(nearTermSection).toContain("原始格点温度，仅供参考");
+    expect(nearTermSection).toContain("原始格点温度，未做海拔订正");
     expect(nearTermSection).toContain("29°C");
     expect(nearTermSection).toContain("高山机位体感可能更冷");
     expect(nearTermSection).not.toContain("山顶估算温度");
@@ -444,7 +444,7 @@ describe("Cloud Sea result page final regression QA", () => {
     expect(viewModel.displayTemperatureContext.isHighMountainTemperatureSensitive).toBe(false);
     expect(viewModel.displayTemperatureContext.displayTemperatureC).toBe(29);
     expect(nearTermSection).toContain("29°C");
-    expect(nearTermSection).not.toContain("原始格点温度，仅供参考");
+    expect(nearTermSection).not.toContain("原始格点温度，未做海拔订正");
     expect(nearTermSection).not.toContain("高山机位体感可能更冷");
     expect(nearTermSection).not.toContain("高山体感需复核");
   });

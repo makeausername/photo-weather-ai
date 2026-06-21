@@ -178,7 +178,7 @@ export function buildCloudSeaDisplayTemperatureContext(
     isUserFacingTemperatureReliable,
     basisLabelZh,
     userTemperatureTitleZh:
-      basis === "raw_grid_with_warning" ? "原始格点温度，仅供参考" : basisLabelZh,
+      basis === "raw_grid_with_warning" ? "原始格点温度，未做海拔订正" : basisLabelZh,
     userTemperatureSummaryZh: userTemperatureSummary({
       basisLabelZh,
       bodyFeelLabelZh,
@@ -296,7 +296,7 @@ function basisLabel(basis: CloudSeaDisplayTemperatureBasis): string {
     return "机位估算温度";
   }
   if (basis === "raw_grid_with_warning") {
-    return "原始格点温度，仅供参考";
+    return "原始格点温度，未做海拔订正";
   }
   if (basis === "provider_point") {
     return "机位估算温度";

@@ -72,6 +72,11 @@ import {
   watchableWindowText,
   windowLabelText,
 } from "./forecast-copy";
+import {
+  buildForecastDataBoundaryNotice,
+  buildForecastPrimarySummary,
+  normalizeForecastPublicCopyText,
+} from "./forecast-copy-polish";
 import { cloudSeaTerrainAwareText, type CloudSeaTerrainContext } from "./cloud-sea-terrain-context";
 import {
   buildCloudSeaRecommendationGuardForRuleContext,
@@ -1017,7 +1022,7 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
     targetLabel: forecastTargetLabels.general,
     pageTitle: shellCopy.pageTitle,
     pageSubtitle: shellCopy.pageSubtitle,
-    primarySummary: result.summary,
+    primarySummary: buildForecastPrimarySummary(result, "general"),
     recommendationLabel: result.recommendationLabel,
     primaryCards: [
       textCard(
@@ -1736,9 +1741,9 @@ function buildCloudSeaViewModel(result: ForecastCalculationResult): ForecastResu
     targetLabel: forecastTargetLabels.cloud_sea,
     pageTitle: shellCopy.pageTitle,
     pageSubtitle: shellCopy.pageSubtitle,
-    primarySummary: cloudSea.terrainContext.shouldDowngradeCloudSeaWording
-      ? `本页按低海拔机位的低云、晨雾、云层变化和通透度参考处理。${result.summary}`
-      : `本页优先区分云海形成、云海可拍和白墙风险。${result.summary}`,
+    primarySummary: buildForecastPrimarySummary(result, "cloud_sea", {
+      cloudSeaDowngraded: cloudSea.terrainContext.shouldDowngradeCloudSeaWording,
+    }),
     recommendationLabel: cloudSea.hero.recommendationLabel,
     primaryCards: cloudSea.coreCards,
     scoreCards: [result.scores.cloudSea, result.scores.whiteoutRisk, result.scores.transparency],
@@ -2836,7 +2841,7 @@ function buildGlowViewModel(result: ForecastCalculationResult): ForecastResultVi
     targetLabel: forecastTargetLabels.glow,
     pageTitle: shellCopy.pageTitle,
     pageSubtitle: shellCopy.pageSubtitle,
-    primarySummary: `本页优先看朝霞、晚霞、晨昏时间和云层遮挡。${result.summary}`,
+    primarySummary: buildForecastPrimarySummary(result, "glow"),
     recommendationLabel: result.glowAnalysis.recommendationLabel,
     primaryCards: glow.coreCards,
     scoreCards: [result.scores.sunriseGlow, result.scores.sunsetGlow, result.scores.transparency],
@@ -2880,7 +2885,7 @@ function buildAstroViewModel(result: ForecastCalculationResult): ForecastResultV
     targetLabel: forecastTargetLabels.astro,
     pageTitle: shellCopy.pageTitle,
     pageSubtitle: shellCopy.pageSubtitle,
-    primarySummary: `本页优先看月光影响、天文黑夜、无月黑夜、推荐银河窗口、云量和能见度。${result.summary}`,
+    primarySummary: buildForecastPrimarySummary(result, "astro"),
     recommendationLabel: result.astroAnalysis.recommendationLabel,
     primaryCards: astroForecast.coreCards,
     scoreCards: [result.scores.stars, result.scores.milkyWay, result.scores.transparency],
@@ -7192,7 +7197,7 @@ function buildCloudSeaDailySections(
         )}`,
         detail: `${formatDailyMetricWindow(day.cloudSeaFormation)} ${formatDailyMetricWindow(
           day.cloudSeaShootable,
-        )} ${day.weatherSummary ?? "天气摘要当前使用演示数据。"}`.trim(),
+        )} ${day.weatherSummary ?? "天气摘要暂缺，临近出发前复核降水、低云和能见度。"}`.trim(),
       })),
     },
     {
@@ -7208,13 +7213,15 @@ function buildCloudSeaDailySections(
     {
       key: "daily-cloud-sea-weather",
       title: "风速/湿度/低云摘要",
-      badgeLabel: "演示数据",
+      badgeLabel: "逐日摘要",
       items: result.targetDailyBreakdown.map((day) => ({
         label: dateLabelForResult(result, day.date),
         value: day.weatherSummary ?? "暂无逐日天气摘要",
         detail:
           day.whiteoutRisk?.detail ??
-          "当前逐日摘要基于演示天气数据生成，正式数据源启用后将显示对应预报时间。",
+          (result.weatherDataMode === "real"
+            ? "该日暂无白墙风险细节，出发前复核低云、降水和能见度。"
+            : "逐日天气摘要暂缺，正式出行前需复核真实天气源、低云、降水和能见度。"),
       })),
     },
     {
@@ -8368,10 +8375,6 @@ function mapGlowEvidence(items: readonly GlowEvidenceItem[]): readonly GlowEvide
 }
 
 function buildGlowDataNotice(result: ForecastCalculationResult): string {
-  const weatherText = `天气数据：${weatherStatusLabelForViewModel(result)}`;
-  const terrainText = result.terrainAnalysis.isMock
-    ? "地形数据：演示数据"
-    : `地形数据：${result.terrainAnalysis.dataSourceLabelZh}`;
   const fieldNotes = hasMissingCloudLayers(result)
     ? ["当前天气源缺少低云/中云/高云分层数据，相关判断将降低置信度。"]
     : [];
@@ -8379,14 +8382,9 @@ function buildGlowDataNotice(result: ForecastCalculationResult): string {
     (note) => !note.includes("当前天气数据为演示数据"),
   );
   const uniqueNotes = [...new Set(notes)];
-  const modeNotice =
-    result.weatherDataMode === "real"
-      ? "当前天气数据来自已启用的正式数据源，评分仍按标准化天气字段计算。"
-      : "当前为体验模式，结果会使用演示天气数据生成；正式天气数据源启用后将显示对应来源与更新时间。";
 
   return [
-    `${weatherText}；${terrainText}；天文数据：${result.astroDataSourceLabelZh}。`,
-    modeNotice,
+    buildForecastDataBoundaryNotice(result, "glow"),
     ...uniqueNotes,
   ].join("");
 }
@@ -8800,8 +8798,9 @@ function buildCloudSeaHeroConclusion(
       travelDecision,
       "hero",
     ),
-    conclusion:
+    conclusion: normalizeForecastPublicCopyText(
       windowRiskContext?.windowCenteredSummaryZh ?? recommendationExplanation.oneLineConclusionZh,
+    ),
     confidenceLabel: cloudSeaConfidenceLabel(
       result.cloudSeaAnalysis.confidenceLevel,
       cloudLayerCompleteness,
@@ -11707,43 +11706,11 @@ function evidenceTone(effect: CloudSeaEvidenceEffect): ForecastResultCardTone {
 }
 
 function buildDataNotice(result: ForecastCalculationResult): string {
-  const nonRealNotice =
-    result.weatherDataMode === "real"
-      ? "当前天气数据来自已启用的真实天气源，出行前仍需复核最新预警、道路和景区开放信息。"
-      : "当前结果基于演示天气数据生成，仅用于体验分析流程。正式天气数据源启用后，将显示对应的数据来源与预报时间。";
-  const astronomyNotice =
-    result.astroDataSourceLabelZh === "本地天文服务计算"
-      ? "天文时间由本地天文服务计算，实际拍摄仍需结合云量、光污染和地形遮挡。"
-      : "天文时间为简化本地估算，实际拍摄仍需结合云量、光污染和地形遮挡。";
-  const cloudLayerNote = hasMissingCloudLayers(result)
-    ? "；当前天气源缺少低云/中云/高云分层数据，相关判断将降低置信度。"
-    : "";
-
-  return `天气数据：${weatherStatusLabelForViewModel(result)}；${result.terrainAnalysis.honestyNoteZh}；天文数据：${result.astroDataSourceLabelZh}。${nonRealNotice}${astronomyNotice}${cloudLayerNote}`;
+  return buildForecastDataBoundaryNotice(result, result.target);
 }
 
 function buildAstroDataNotice(result: ForecastCalculationResult): string {
-  const cloudLayerNote = hasMissingCloudLayers(result)
-    ? "；当前天气源缺少低云/中云/高云分层数据，星空银河判断置信度会降低。"
-    : "";
-
-  const weatherNotice =
-    result.weatherDataMode === "real"
-      ? "当前天气数据来自已启用的正式数据源，星空银河判断仍需结合现场环境复核。"
-      : "当前结果基于演示天气数据生成，用于体验分析流程，正式出行前需要复核真实预报和现场环境。";
-  const lightPollutionNotice = result.astroAnalysis.lightPollution.available
-    ? `光污染数据：卫星夜光参考（${result.astroAnalysis.lightPollution.sourceLabel ?? "本地栅格"}${
-        result.astroAnalysis.lightPollution.datasetYear
-          ? `，${result.astroAnalysis.lightPollution.datasetYear}`
-          : ""
-      }），公开波特尔为卫星夜光保守展示估算，不代表现场实测或正式波特尔观测认证。`
-    : `光污染数据：${result.astroAnalysis.lightPollution.lightPollutionNoteZh}`;
-
-  return `天文数据：${result.astroDataSourceLabelZh}；天气数据：${weatherStatusLabelForViewModel(
-    result,
-  )}；地形数据：${result.terrainAnalysis.dataSourceLabelZh}；${lightPollutionNotice}${
-    result.terrainAnalysis.honestyNoteZh
-  }${weatherNotice}${cloudLayerNote}`;
+  return buildForecastDataBoundaryNotice(result, "astro");
 }
 
 function buildCloudLayerMissingItem(
@@ -11764,19 +11731,6 @@ function hasMissingCloudLayers(result: ForecastCalculationResult): boolean {
   return ["cloudLow", "cloudMid", "cloudHigh"].some((field) =>
     result.weatherMissingFields.includes(field),
   );
-}
-
-function weatherStatusLabelForViewModel(result: ForecastCalculationResult): string {
-  if (result.weatherDataMode === "real") {
-    return "已启用真实天气数据";
-  }
-  if (result.weatherDataMode === "fixture") {
-    return "样例天气数据";
-  }
-  if (result.weatherDataMode === "fallback") {
-    return "已回退演示天气数据";
-  }
-  return "演示天气数据";
 }
 
 function formatOptionalTime(value: string | undefined): string {

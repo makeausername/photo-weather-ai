@@ -60,6 +60,7 @@ import {
   rainRiskText,
   windowLabelText,
 } from "./forecast-copy";
+import { normalizeForecastPublicCopyText } from "./forecast-copy-polish";
 import {
   buildGeneralForecastReturnUrl,
   buildGeneralDailySubjectLinks,
@@ -2876,22 +2877,22 @@ function recommendationBadgeVariant(label: string): BadgeVariant {
 }
 
 function userFacingResultText(text: string): string {
-  return text
-    .replace(/当前天气或地形仍包含演示数据/g, "部分辅助指标仅供体验参考")
-    .replace(/地形数据：演示数据/g, "辅助指标仅供体验参考")
-    .replace(/本地算法银河窗口/g, "银河窗口")
-    .replace(/本地算法计算/g, "天文窗口判断")
-    .replace(/本地算法/g, "天文窗口")
-    .replace(/演示评分/g, "综合评分")
-    .replace(/模拟评分/g, "综合评分")
-    .replace(/演示数据/g, "体验参考")
-    .replace(/和风天气|QWeather|Open-Meteo|meteoblue|高德地图/g, "预报信息")
-    .replace(/WGS84|GCJ-02|GCJ02/g, "")
-    .replace(/数据置信度/g, "判断可信度")
-    .replace(/数据来源/g, "判断依据")
-    .replace(/计算与数据/g, "拍摄判断")
-    .replace(/\s+/g, " ")
-    .trim();
+  return normalizeForecastPublicCopyText(
+    text
+      .replace(/当前天气或地形仍包含演示数据/g, "部分辅助指标仅供体验参考")
+      .replace(/地形数据：演示数据/g, "辅助指标仅供体验参考")
+      .replace(/本地算法银河窗口/g, "银河窗口")
+      .replace(/本地算法计算/g, "天文窗口判断")
+      .replace(/本地算法/g, "天文窗口")
+      .replace(/演示评分/g, "综合评分")
+      .replace(/模拟评分/g, "综合评分")
+      .replace(/演示数据/g, "体验参考")
+      .replace(/和风天气|QWeather|Open-Meteo|meteoblue|高德地图/g, "预报信息")
+      .replace(/WGS84|GCJ-02|GCJ02/g, "")
+      .replace(/数据置信度/g, "判断可信度")
+      .replace(/数据来源/g, "判断依据")
+      .replace(/计算与数据/g, "拍摄判断"),
+  );
 }
 
 function primaryReasonSentence(result: ForecastCalculationResult): string {

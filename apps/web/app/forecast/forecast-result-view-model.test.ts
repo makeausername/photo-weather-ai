@@ -4497,8 +4497,8 @@ describe("forecast result target-aware view model", () => {
         falsePositiveRate: 0.28,
         falseNegativeRate: 0.08,
         confidenceAdjustment: "slight_down",
-        cautionNoteZh: "该机位历史回放存在偏乐观情况，本次建议谨慎参考。",
-        displayNoteZh: "历史校准：该机位历史回放存在偏乐观情况，本次建议谨慎参考。",
+        cautionNoteZh: "该机位历史回放存在偏乐观情况，本次先列为备选，临近再决定。",
+        displayNoteZh: "历史校准：该机位历史回放存在偏乐观情况，本次先列为备选，临近再决定。",
       },
     };
 
@@ -7802,6 +7802,100 @@ describe("forecast result target-aware view model", () => {
     expect(glowHtml).toContain("霞光参考");
   });
 
+  it("polishes public forecast copy across general, cloud-sea, glow, and astro pages", () => {
+    const generalResult = resultForTarget("general");
+    const generalViewModel = buildForecastResultViewModel(generalResult, "general");
+    const generalHtml = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result: generalResult,
+        viewModel: generalViewModel,
+        aiStatus: "idle",
+        aiExplanation: null,
+        aiErrorMessage: "",
+        aiRetryable: false,
+        onGenerateAiExplanation: vi.fn(),
+      }),
+    );
+    const generalOutput = `${generalViewModel.primarySummary} ${generalViewModel.dataNotice} ${generalHtml}`;
+
+    expect(generalViewModel.primarySummary).toMatch(/云海|低云\/晨雾|朝霞|晚霞|天文|通透度/);
+    expect(generalViewModel.primarySummary).toMatch(/主要风险|暂未形成高等级阻断/);
+    expect(generalViewModel.primarySummary).toMatch(/复核|备选|候选|不建议|专程/);
+    expect(generalViewModel.dataNotice).toContain("当前结果基于所选预报范围");
+    expect(generalViewModel.dataNotice).toContain("降水、云量和能见度");
+
+    const cloudSeaResult = resultForTarget("cloud_sea");
+    const cloudSeaShellViewModel = buildForecastResultViewModel(cloudSeaResult, "cloud_sea");
+    const cloudSeaViewModel =
+      cloudSeaShellViewModel.cloudSea ?? buildCloudSeaForecastViewModel(cloudSeaResult);
+    const cloudSeaHtml = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result: cloudSeaResult,
+        viewModel: cloudSeaViewModel,
+      }),
+    );
+    const cloudSeaOutput = `${cloudSeaShellViewModel.primarySummary} ${cloudSeaViewModel.hero.conclusion} ${cloudSeaViewModel.dataNotice} ${cloudSeaHtml}`;
+
+    expect(cloudSeaShellViewModel.primarySummary).toContain("云海形成");
+    expect(cloudSeaShellViewModel.primarySummary).toContain("白墙风险");
+    expect(cloudSeaShellViewModel.primarySummary).toContain("云顶高度");
+    expect(cloudSeaShellViewModel.primarySummary).toContain("能见度");
+    expect(cloudSeaViewModel.dataNotice).toContain(
+      "地形高差未返回时，不按已确认云海地形处理",
+    );
+    expect(cloudSeaOutput).not.toContain("目标方向地形地平线");
+    expect(cloudSeaOutput).not.toContain("地形净空角");
+
+    const glowResult = resultForTarget("glow");
+    const glowShellViewModel = buildForecastResultViewModel(glowResult, "glow");
+    const glowViewModel = glowShellViewModel.glow ?? buildGlowForecastViewModel(glowResult);
+    const glowHtml = renderToStaticMarkup(
+      React.createElement(GlowResultPage, {
+        query: queryForTarget("glow"),
+        result: glowResult,
+        viewModel: glowViewModel,
+      }),
+    );
+    const glowOutput = `${glowShellViewModel.primarySummary} ${glowViewModel.dataNotice} ${glowHtml}`;
+
+    expect(glowShellViewModel.primarySummary).toContain("日出/日落");
+    expect(glowShellViewModel.primarySummary).toContain("民用曙暮光");
+    expect(glowShellViewModel.primarySummary).toContain("中高云色彩载体");
+    expect(glowShellViewModel.primarySummary).toContain("低云遮挡");
+    expect(glowShellViewModel.primarySummary).toMatch(/太阳方向开口|地平线开口/);
+    expect(glowOutput).not.toContain("白墙风险");
+    expect(glowOutput).not.toContain("云顶高度");
+
+    const astroResult = resultForTarget("astro");
+    const astroShellViewModel = buildForecastResultViewModel(astroResult, "astro");
+    const astroViewModel = astroShellViewModel.astro ?? buildAstroForecastViewModel(astroResult);
+    const astroHtml = renderToStaticMarkup(
+      React.createElement(AstroResultPage, {
+        query: queryForTarget("astro"),
+        result: astroResult,
+        viewModel: astroViewModel,
+      }),
+    );
+    const astroOutput = `${astroShellViewModel.primarySummary} ${astroViewModel.dataNotice} ${astroHtml}`;
+
+    expect(astroShellViewModel.primarySummary).toContain("天文黑夜");
+    expect(astroShellViewModel.primarySummary).toContain("月");
+    expect(astroShellViewModel.primarySummary).toContain("光污染");
+    expect(astroOutput).toContain("地形地平线");
+    expect(astroViewModel.dataNotice).toContain("光污染为卫星夜光参考，不等于现场 SQM 实测");
+    expect(astroOutput).not.toContain("白墙风险");
+    expect(astroOutput).not.toContain("云顶高度");
+
+    for (const output of [generalOutput, cloudSeaOutput, glowOutput, astroOutput]) {
+      expect(output).not.toContain("clearance");
+      expect(output).not.toContain("当前使用演示数据");
+      expect(output).not.toContain("仅供参考");
+      expect(output).not.toContain("建议谨慎参考");
+    }
+  });
+
   it("hides the astro professional hourly collapsed preview and coverage note without changing the table", () => {
     const result = resultWithAstroHourlyRange("24h", 24);
     const resultWithCoverageNote: ForecastCalculationResult = {
@@ -8118,6 +8212,7 @@ describe("forecast result target-aware view model", () => {
     expect(terrainText).toMatch(/高差缺测|周边高差未返回/);
     expect(terrainItem?.value).toBe("高海拔 / 高差缺测");
     expect(terrainItem?.value).not.toBe("低");
+    expect(terrainItem?.value).not.toMatch(/^低$/);
     expect(terrainText).toContain("DEM 方向遮挡数据已可用");
     expect(terrainText).not.toContain("目标方向地形地平线");
     expect(terrainText).not.toContain("不按无遮挡处理");
@@ -8145,6 +8240,7 @@ describe("forecast result target-aware view model", () => {
     expect(terrainText).toContain("低海拔");
     expect(terrainText).toContain("高差缺测");
     expect(terrainItem?.value).toBe("低海拔 / 高差缺测");
+    expect(terrainItem?.value).not.toMatch(/^低$/);
     expect(terrainText).toContain("DEM 方向遮挡数据已可用");
     expect(terrainText).not.toContain("DEM 方向遮挡未返回");
     expect(terrainText).not.toContain("目标方向地形地平线");
