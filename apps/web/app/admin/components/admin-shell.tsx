@@ -7,12 +7,30 @@ import { ThemeToggle } from "../../../components/theme-toggle";
 import { cn } from "../../../components/ui";
 import { AdminSessionBadge } from "./admin-session-badge";
 
-const adminLinks = [
-  { href: "/admin", label: "控制台" },
-  { href: "/admin/settings", label: "系统设置" },
-  { href: "/admin/providers", label: "服务商配置" },
-  { href: "/admin/calibration", label: "历史校准" },
-  { href: "/admin/audit", label: "审计日志" },
+const adminLinkGroups = [
+  {
+    label: "总览",
+    links: [{ href: "/admin", label: "控制台" }],
+  },
+  {
+    label: "配置",
+    links: [
+      { href: "/admin/settings", label: "系统设置" },
+      { href: "/admin/providers/geo", label: "地图服务" },
+      { href: "/admin/providers/weather", label: "天气数据" },
+      { href: "/admin/providers/ai", label: "智能解读" },
+      { href: "/admin/providers/billing", label: "支付收款" },
+      { href: "/admin/providers/notification", label: "邮箱短信" },
+      { href: "/admin/providers/storage", label: "对象存储" },
+    ],
+  },
+  {
+    label: "运维",
+    links: [
+      { href: "/admin/calibration", label: "历史校准" },
+      { href: "/admin/audit", label: "审计日志" },
+    ],
+  },
 ] as const;
 
 type AdminShellProps = {
@@ -44,24 +62,31 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
             </span>
           </Link>
 
-          <nav className="flex gap-2 overflow-x-auto pb-1 lg:grid lg:gap-1 lg:overflow-visible lg:pb-0">
-            {adminLinks.map((link) => {
-              const active = isActive(pathname, link.href);
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={cn(
-                    "whitespace-nowrap rounded-md border px-3 py-2 text-sm font-semibold transition lg:border-l-2",
-                    active
-                      ? "border-primary bg-secondary text-secondary-foreground"
-                      : "border-transparent text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground lg:hover:border-l-primary",
-                  )}
-                >
-                  {link.label}
-                </Link>
-              );
-            })}
+          <nav className="flex gap-2 overflow-x-auto pb-1 lg:grid lg:gap-4 lg:overflow-visible lg:pb-0">
+            {adminLinkGroups.map((group) => (
+              <div key={group.label} className="flex shrink-0 gap-2 lg:grid lg:gap-1">
+                <p className="hidden px-3 text-[11px] font-bold text-muted-foreground lg:block">
+                  {group.label}
+                </p>
+                {group.links.map((link) => {
+                  const active = isActive(pathname, link.href);
+                  return (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      className={cn(
+                        "whitespace-nowrap rounded-md border px-3 py-2 text-sm font-semibold transition lg:border-l-2",
+                        active
+                          ? "border-primary bg-secondary text-secondary-foreground"
+                          : "border-transparent text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground lg:hover:border-l-primary",
+                      )}
+                    >
+                      {link.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            ))}
           </nav>
         </div>
       </aside>

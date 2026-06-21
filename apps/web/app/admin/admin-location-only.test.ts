@@ -31,7 +31,13 @@ describe("location-only admin surfaces", () => {
       }),
     );
 
+    for (const label of ["地图服务", "天气数据", "智能解读", "支付收款", "邮箱短信", "对象存储"]) {
+      expect(html).toContain(label);
+    }
+
     expect(html).toContain("历史校准");
+    expect(html).not.toContain("服务商配置");
+    expect(html).not.toContain('/admin/providers"');
     expect(html).not.toContain("地点管理");
     expect(html).not.toContain("/admin/locations");
     expect(html).not.toContain("机位管理");

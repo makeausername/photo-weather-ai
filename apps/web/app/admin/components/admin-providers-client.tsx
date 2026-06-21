@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { Component, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import {
@@ -29,11 +28,11 @@ type ProvidersResponse = {
   readonly realDevCallFlags?: RealDevCallFlags;
 };
 
-type AdminProvidersClientProps = {
-  readonly providerType?: string;
-};
-
 type ProviderGroupKey = "geo" | "weather" | "ai" | "billing" | "notification" | "storage";
+type ProviderApiType = "geo" | "weather" | "ai" | "billing" | "email" | "sms" | "storage";
+type AdminProvidersClientProps = {
+  readonly providerType: ProviderGroupKey;
+};
 type ProviderKey =
   | "geo:amap"
   | "weather:qweather"
@@ -92,59 +91,49 @@ const providerOrder: readonly ProviderKey[] = [
   "storage:tencent_cos",
 ];
 
-const providerGroups = [
+const providerModules = [
   {
     key: "geo",
-    marker: "地",
-    title: "地图与地理",
-    description: "管理地点搜索、地理编码和坐标转换能力，密钥仅在服务端调用时使用。",
+    title: "地图服务",
+    description: "管理高德地图的地点搜索、地理编码和坐标转换配置。",
+    apiProviderTypes: ["geo"],
   },
   {
     key: "weather",
-    marker: "天",
     title: "天气数据",
-    description: "管理和风天气、Open-Meteo、meteoblue 等天气数据源。保存配置不会触发外部请求。",
+    description: "管理和风天气、Open-Meteo、meteoblue 等天气数据源、逐小时预报和云层分层配置。",
+    apiProviderTypes: ["weather"],
   },
   {
     key: "ai",
-    marker: "AI",
     title: "智能解读",
-    description: "管理结果说明和文案生成能力，不参与天气、天文、地形或评分计算。",
+    description: "管理 DeepSeek 智能解读配置，不参与确定性天气、天文和地形计算。",
+    apiProviderTypes: ["ai"],
   },
   {
     key: "billing",
-    marker: "付",
     title: "支付收款",
-    description: "管理微信支付和支付宝收款配置；密钥、证书和回调验签材料只保存在服务端。",
+    description: "管理微信支付、支付宝、订单回调、证书、密钥和验签配置。",
+    apiProviderTypes: ["billing"],
   },
   {
     key: "notification",
-    marker: "信",
     title: "邮箱短信",
-    description: "管理邮箱验证码和短信验证码服务，密钥只保存在服务端。",
+    description: "管理邮箱验证码和短信验证码服务配置。",
+    apiProviderTypes: ["email", "sms"],
   },
   {
     key: "storage",
-    marker: "存",
     title: "对象存储",
-    description: "配置报告、导出文件和生成素材的存储后端，密钥只保存在服务端。",
+    description: "管理本地存储、阿里云 OSS、腾讯云 COS 等报告与文件存储配置。",
+    apiProviderTypes: ["storage"],
   },
 ] as const satisfies readonly {
   readonly key: ProviderGroupKey;
-  readonly marker: string;
   readonly title: string;
   readonly description: string;
+  readonly apiProviderTypes: readonly ProviderApiType[];
 }[];
-
-type ProviderGroupWithProviders = (typeof providerGroups)[number] & {
-  readonly providers: SafeProviderConfig[];
-};
-
-type ProviderGroupSummary = ProviderGroupWithProviders & {
-  readonly enabledCount: number;
-  readonly realEnabledCount: number;
-  readonly needsAttentionCount: number;
-};
 
 const providerMeta: Record<ProviderKey, ProviderMeta> = {
   "geo:amap": {
@@ -246,6 +235,8 @@ const providerMeta: Record<ProviderKey, ProviderMeta> = {
 };
 
 const advancedHiddenKeys = new Set(["realCallEnabled", "analysisMode", "model"]);
+const defaultProviderModule =
+  providerModules.find((module) => module.key === "weather") ?? providerModules[0];
 
 const providerConfigDefaults: Partial<Record<string, Record<string, JsonValue>>> = {
   qweather: {
@@ -735,40 +726,6 @@ function providerNeedsAttention(
   return testState?.status === "error" || missingRequiredSecret || qweatherMissingHost;
 }
 
-const categorySessionStorageKey = "photo_weather_admin_provider_category";
-
-function isProviderGroupKeyValue(value: string | null): value is ProviderGroupKey {
-  return Boolean(value && providerGroups.some((group) => group.key === value));
-}
-
-function normalizeSearchText(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-function providerMatchesSearch(provider: SafeProviderConfig, query: string): boolean {
-  if (!query) {
-    return true;
-  }
-
-  const meta = getMeta(provider);
-  const group = meta ? providerGroups.find((item) => item.key === meta.group) : undefined;
-  const searchableText = [
-    providerName(provider),
-    provider.displayName,
-    provider.providerCode,
-    provider.providerType,
-    meta?.purpose,
-    meta?.capabilities.join(" "),
-    group?.title,
-    group?.description,
-  ]
-    .filter((value): value is string => Boolean(value))
-    .join(" ")
-    .toLowerCase();
-
-  return searchableText.includes(query);
-}
-
 function sortManagedProviders(providers: readonly SafeProviderConfig[]): SafeProviderConfig[] {
   return providers
     .filter((provider) => getManagedProviderKey(provider))
@@ -1008,6 +965,10 @@ function AdvancedConfigContent({
 }
 
 export function AdminProvidersClient({ providerType }: AdminProvidersClientProps) {
+  const moduleDefinition = useMemo(
+    () => providerModules.find((module) => module.key === providerType) ?? defaultProviderModule,
+    [providerType],
+  );
   const [providers, setProviders] = useState<SafeProviderConfig[]>([]);
   const [realDevCallFlags, setRealDevCallFlags] =
     useState<RealDevCallFlags>(defaultRealDevCallFlags);
@@ -1023,21 +984,28 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   const [saveStateByProvider, setSaveStateByProvider] = useState<Record<string, RowState>>({});
   const [testStateByProvider, setTestStateByProvider] = useState<Record<string, RowState>>({});
   const [testResultByProvider, setTestResultByProvider] = useState<TestResultDrafts>({});
-  const [activeGroupKey, setActiveGroupKey] = useState<ProviderGroupKey>("weather");
-  const [providerSearchTerm, setProviderSearchTerm] = useState("");
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const savingProviderIds = useRef(new Set<string>());
   const testingProviderIds = useRef(new Set<string>());
-  const activeGroupInitialized = useRef(false);
 
   const loadProviders = useCallback(async () => {
-    setLoadState({ status: "saving", message: "正在刷新服务商状态..." });
+    setLoadState({ status: "saving", message: `正在刷新${moduleDefinition.title}状态...` });
     try {
-      const params = providerType ? `?providerType=${encodeURIComponent(providerType)}` : "";
-      const response = await adminApiFetch<ProvidersResponse>(`/admin/providers${params}`);
-      const managedProviders = sortManagedProviders(response.providers);
+      const responses = await Promise.all(
+        moduleDefinition.apiProviderTypes.map((apiProviderType) =>
+          adminApiFetch<ProvidersResponse>(
+            `/admin/providers?providerType=${encodeURIComponent(apiProviderType)}`,
+          ),
+        ),
+      );
+      const managedProviders = sortManagedProviders(
+        responses.flatMap((response) => response.providers),
+      ).filter((provider) => getMeta(provider)?.group === moduleDefinition.key);
+      const realDevFlags =
+        responses.find((response) => response.realDevCallFlags)?.realDevCallFlags ??
+        defaultRealDevCallFlags;
       setProviders(managedProviders);
-      setRealDevCallFlags(response.realDevCallFlags ?? defaultRealDevCallFlags);
+      setRealDevCallFlags(realDevFlags);
       setEnabledDrafts(createEnabledDrafts(managedProviders));
       setPriorityDrafts(createPriorityDrafts(managedProviders));
       setConfigFieldDrafts(createConfigFieldDrafts(managedProviders));
@@ -1050,35 +1018,14 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     } catch (error) {
       setLoadState({
         status: "error",
-        message: error instanceof Error ? error.message : "无法加载服务商配置。",
+        message: error instanceof Error ? error.message : `无法加载${moduleDefinition.title}配置。`,
       });
     }
-  }, [providerType]);
+  }, [moduleDefinition]);
 
   useEffect(() => {
     void loadProviders();
   }, [loadProviders]);
-
-  const groupedProviders = useMemo<ProviderGroupWithProviders[]>(() => {
-    const providerByGroup = new Map<ProviderGroupKey, SafeProviderConfig[]>();
-    for (const group of providerGroups) {
-      providerByGroup.set(group.key, []);
-    }
-
-    for (const provider of providers) {
-      const meta = getMeta(provider);
-      if (meta) {
-        providerByGroup.get(meta.group)?.push(provider);
-      }
-    }
-
-    return providerGroups
-      .map((group) => ({
-        ...group,
-        providers: providerByGroup.get(group.key) ?? [],
-      }))
-      .filter((group) => !providerType || group.key === providerType || group.providers.length > 0);
-  }, [providerType, providers]);
 
   const overview = useMemo(() => {
     const enabledCount = providers.filter((provider) => provider.enabled).length;
@@ -1097,87 +1044,9 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     };
   }, [providers, realDevCallFlags, testStateByProvider]);
 
-  const groupSummaries = useMemo<ProviderGroupSummary[]>(
-    () =>
-      groupedProviders.map((group) => ({
-        ...group,
-        enabledCount: group.providers.filter((provider) => provider.enabled).length,
-        realEnabledCount: group.providers.filter((provider) =>
-          isRealDevCallEnabled(provider, realDevCallFlags),
-        ).length,
-        needsAttentionCount: group.providers.filter((provider) =>
-          providerNeedsAttention(provider, realDevCallFlags, testStateByProvider[provider.id]),
-        ).length,
-      })),
-    [groupedProviders, realDevCallFlags, testStateByProvider],
-  );
-
-  const preferredActiveGroupKey = useMemo<ProviderGroupKey>(() => {
-    const attentionGroup = groupSummaries.find(
-      (group) => group.providers.length > 0 && group.needsAttentionCount > 0,
-    );
-    if (attentionGroup) {
-      return attentionGroup.key;
-    }
-
-    const weatherGroup = groupSummaries.find(
-      (group) => group.key === "weather" && group.providers.length > 0,
-    );
-    if (weatherGroup) {
-      return weatherGroup.key;
-    }
-
-    return groupSummaries.find((group) => group.providers.length > 0)?.key ?? "weather";
-  }, [groupSummaries]);
-
-  useEffect(() => {
-    if (!groupSummaries.some((group) => group.providers.length > 0)) {
-      return;
-    }
-
-    setActiveGroupKey((current) => {
-      if (!activeGroupInitialized.current) {
-        activeGroupInitialized.current = true;
-        const storedGroup =
-          typeof window === "undefined"
-            ? null
-            : window.sessionStorage.getItem(categorySessionStorageKey);
-        if (
-          isProviderGroupKeyValue(storedGroup) &&
-          groupSummaries.some((group) => group.key === storedGroup && group.providers.length > 0)
-        ) {
-          return storedGroup;
-        }
-        return preferredActiveGroupKey;
-      }
-
-      return groupSummaries.some((group) => group.key === current && group.providers.length > 0)
-        ? current
-        : preferredActiveGroupKey;
-    });
-  }, [groupSummaries, preferredActiveGroupKey]);
-
-  const searchQuery = normalizeSearchText(providerSearchTerm);
-  const searchResultGroups = useMemo<ProviderGroupSummary[]>(() => {
-    if (!searchQuery) {
-      return [];
-    }
-
-    return groupSummaries
-      .map((group) => ({
-        ...group,
-        providers: group.providers.filter((provider) =>
-          providerMatchesSearch(provider, searchQuery),
-        ),
-      }))
-      .filter((group) => group.providers.length > 0);
-  }, [groupSummaries, searchQuery]);
-
-  const activeGroup = groupSummaries.find((group) => group.key === activeGroupKey) ?? null;
-  const visibleGroups = searchQuery ? searchResultGroups : activeGroup ? [activeGroup] : [];
   const visibleProviders = useMemo(
-    () => visibleGroups.flatMap((group) => group.providers),
-    [visibleGroups],
+    () => providers.filter((provider) => getMeta(provider)?.group === moduleDefinition.key),
+    [moduleDefinition.key, providers],
   );
   const visibleProviderIds = useMemo(
     () => new Set(visibleProviders.map((provider) => provider.id)),
@@ -1188,6 +1057,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       visibleProviders.find((provider) =>
         providerNeedsAttention(provider, realDevCallFlags, testStateByProvider[provider.id]),
       ) ??
+      visibleProviders.find((provider) => provider.enabled) ??
       visibleProviders[0] ??
       null,
     [realDevCallFlags, testStateByProvider, visibleProviders],
@@ -1196,10 +1066,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     () => visibleProviders.find((provider) => provider.id === selectedProviderId) ?? null,
     [selectedProviderId, visibleProviders],
   );
-  const searchResultCount = searchResultGroups.reduce(
-    (count, group) => count + group.providers.length,
-    0,
-  );
+  const detailProvider = selectedProvider ?? preferredVisibleProvider;
 
   useEffect(() => {
     if (!preferredVisibleProvider) {
@@ -1474,24 +1341,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     }
   }
 
-  function selectGroup(groupKey: ProviderGroupKey) {
-    activeGroupInitialized.current = true;
-    setActiveGroupKey(groupKey);
-    setSelectedProviderId(null);
-    if (typeof window !== "undefined") {
-      window.sessionStorage.setItem(categorySessionStorageKey, groupKey);
-    }
-  }
-
   function selectProvider(provider: SafeProviderConfig) {
-    const groupKey = getMeta(provider)?.group;
-    if (groupKey) {
-      activeGroupInitialized.current = true;
-      setActiveGroupKey(groupKey);
-      if (typeof window !== "undefined") {
-        window.sessionStorage.setItem(categorySessionStorageKey, groupKey);
-      }
-    }
     setSelectedProviderId(provider.id);
   }
 
@@ -1504,7 +1354,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     const isTesting = isProviderTestDisabled(testState);
     const realEnabled = isRealDevCallEnabled(provider, realDevCallFlags);
     const needsAttention = providerNeedsAttention(provider, realDevCallFlags, testState);
-    const selected = selectedProvider?.id === provider.id;
+    const selected = detailProvider?.id === provider.id;
 
     return (
       <li
@@ -1820,12 +1670,18 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   }
 
   return (
-    <div className="grid w-full gap-5" data-provider-console>
+    <div
+      className="grid w-full gap-5"
+      data-provider-console
+      data-provider-module={moduleDefinition.key}
+    >
       <header className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-sm xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
-          <h2 className="text-xl font-bold tracking-normal text-foreground">服务商配置</h2>
+          <h2 className="text-xl font-bold tracking-normal text-foreground">
+            {moduleDefinition.title}服务商
+          </h2>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-muted-foreground">
-            按服务类型管理地图与地理、天气数据、智能解读、支付收款、邮箱短信和对象存储配置。
+            {moduleDefinition.description}
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -1836,12 +1692,6 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
           >
             {loadState.status === "saving" ? "刷新中..." : "刷新状态"}
           </Button>
-          <Link
-            href="/admin"
-            className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-card px-3.5 text-sm font-semibold text-card-foreground transition hover:border-primary hover:bg-secondary"
-          >
-            返回控制台
-          </Link>
         </div>
       </header>
 
@@ -1851,9 +1701,12 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         </div>
       ) : null}
 
-      <section aria-label="服务商总览" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <section
+        aria-label={`${moduleDefinition.title}模块概览`}
+        className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4"
+      >
         {[
-          { label: "服务商总数", value: overview.totalCount },
+          { label: "模块服务商", value: overview.totalCount },
           { label: "已启用", value: overview.enabledCount },
           { label: "真实调用", value: overview.realEnabledCount },
           { label: "需要处理", value: overview.needsAttentionCount },
@@ -1870,159 +1723,49 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         ))}
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]" data-provider-console-grid>
-        <aside className="grid min-w-0 content-start gap-3">
-          <div className="rounded-lg border border-border bg-card p-3 shadow-sm">
-            <FormField label="搜索服务商" hint="支持中文名称、provider code、能力和用途。">
-              <Input
-                value={providerSearchTerm}
-                aria-label="搜索服务商"
-                placeholder="例如 微信支付、wechat_pay、阿里云 OSS、aliyun_oss"
-                onChange={(event) => {
-                  setProviderSearchTerm(event.target.value);
-                  setSelectedProviderId(null);
-                }}
-              />
-            </FormField>
-          </div>
-
-          <nav
-            aria-label="服务商分类"
-            data-provider-category-nav
-            className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-card p-2 shadow-sm sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-1"
-          >
-            {groupSummaries.map((group) => {
-              const active = group.key === activeGroupKey;
-              return (
-                <button
-                  key={group.key}
-                  type="button"
-                  data-provider-category={group.key}
-                  disabled={group.providers.length === 0}
-                  className={cn(
-                    "flex min-w-[190px] items-center gap-2 rounded-md px-2.5 py-2 text-left transition sm:min-w-0",
-                    active
-                      ? "bg-secondary text-secondary-foreground"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                    group.needsAttentionCount > 0 && !active && "text-warning",
-                    group.providers.length === 0 && "cursor-not-allowed opacity-55",
-                  )}
-                  onClick={() => selectGroup(group.key)}
-                >
-                  <span
-                    className={cn(
-                      "grid h-8 w-8 shrink-0 place-items-center rounded-md border text-xs font-bold",
-                      active
-                        ? "border-primary bg-card text-primary"
-                        : "border-border bg-background text-muted-foreground",
-                    )}
-                  >
-                    {group.marker}
-                  </span>
-                  <span className="grid min-w-0 flex-1 gap-0.5">
-                    <span className="truncate text-sm font-bold">{group.title}</span>
-                    <span className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs">
-                      <span>{group.providers.length} 家</span>
-                      <span>{group.enabledCount} 启用</span>
-                      {group.needsAttentionCount > 0 ? (
-                        <span>{group.needsAttentionCount} 需处理</span>
-                      ) : null}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
-          </nav>
-        </aside>
-
-        <section className="grid min-w-0 content-start gap-4">
-          <div className="flex flex-col gap-2 rounded-lg border border-border bg-card px-4 py-3 shadow-sm sm:flex-row sm:items-start sm:justify-between">
+      <section
+        className={cn(
+          "grid gap-4",
+          visibleProviders.length > 0 && "xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]",
+        )}
+        data-provider-module-grid
+      >
+        <section
+          aria-label={`${moduleDefinition.title}服务商列表`}
+          data-provider-list
+          className="min-w-0 overflow-hidden rounded-lg border border-border bg-card shadow-sm"
+        >
+          <div className="flex flex-col gap-2 border-b border-border px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <p className="text-xs font-semibold text-primary">
-                {searchQuery ? "搜索结果" : "当前分类"}
-              </p>
-              <h3 className="mt-1 text-lg font-bold text-foreground">
-                {searchQuery
-                  ? `匹配 ${searchResultCount} 个服务商`
-                  : activeGroup?.title ?? "服务商分类"}
-              </h3>
+              <p className="text-xs font-semibold text-primary">当前模块</p>
+              <h3 className="mt-1 text-lg font-bold text-foreground">{moduleDefinition.title}</h3>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                {searchQuery
-                  ? "按分类展示匹配服务商，可继续选择服务商进入配置详情。"
-                  : activeGroup?.description ?? "选择左侧分类查看对应服务商。"}
+                选择一个服务商后，在右侧维护完整配置和连接测试。
               </p>
             </div>
             <Badge variant="muted" className="rounded-md">
-              {searchQuery
-                ? `${searchResultGroups.length} 个分类`
-                : `${activeGroup?.providers.length ?? 0} 个服务商`}
+              {visibleProviders.length} 个服务商
             </Badge>
           </div>
 
-          <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]">
-            <section
-              aria-label="当前服务商列表"
-              data-provider-list
-              className="min-w-0 overflow-hidden rounded-lg border border-border bg-card shadow-sm"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2.5">
-                <div className="min-w-0">
-                  <h4 className="text-sm font-bold text-card-foreground">
-                    {searchQuery ? "匹配服务商" : "分类服务商"}
-                  </h4>
-                  <p className="mt-0.5 text-xs text-muted-foreground">选择一项后在右侧维护配置。</p>
-                </div>
-                <Badge variant="muted" className="rounded-md">
-                  {visibleProviders.length} 项
-                </Badge>
-              </div>
-
-              {visibleProviders.length > 0 ? (
-                visibleGroups
-                  .filter((group) => group.providers.length > 0)
-                  .map((group) => (
-                    <section key={group.key} data-provider-group={group.key}>
-                      {searchQuery ? (
-                        <div className="flex flex-wrap items-center justify-between gap-2 bg-muted/55 px-3 py-2">
-                          <span className="text-xs font-bold text-card-foreground">
-                            {group.title}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {group.providers.length} 个匹配
-                          </span>
-                        </div>
-                      ) : null}
-                      <ul data-provider-list-group={group.key}>
-                        {group.providers.map((provider) => renderProviderListRow(provider))}
-                      </ul>
-                    </section>
-                  ))
-              ) : searchQuery ? (
-                <div className="px-3 py-3 text-sm leading-6 text-muted-foreground">
-                  未找到匹配的服务商。请尝试服务商名称、代码、能力、用途或分类。
-                </div>
-              ) : (
-                <div className="px-3 py-3 text-sm leading-6 text-muted-foreground">
-                  该分类没有可管理的服务商。
-                </div>
-              )}
-            </section>
-
-            <section data-provider-detail-panel className="min-w-0">
-              {selectedProvider ? renderProviderDetail(selectedProvider) : null}
-            </section>
-          </div>
+          {visibleProviders.length > 0 ? (
+            <ul data-provider-list-group={moduleDefinition.key}>
+              {visibleProviders.map((provider) => renderProviderListRow(provider))}
+            </ul>
+          ) : (
+            <EmptyState
+              title={`当前没有可管理的${moduleDefinition.title}服务商`}
+              description="请确认后台 API 已返回该模块的安全服务商配置。"
+            />
+          )}
         </section>
-      </section>
 
-      {providers.length === 0 && loadState.status !== "saving" ? (
-        <div className="rounded-lg border border-border bg-card">
-          <EmptyState
-            title="暂无可管理的服务商"
-            description="当前控制台只管理地图与地理、天气数据、智能解读、支付收款、邮箱短信和对象存储服务。"
-          />
-        </div>
-      ) : null}
+        {visibleProviders.length > 0 ? (
+          <section data-provider-detail-panel className="min-w-0">
+            {detailProvider ? renderProviderDetail(detailProvider) : null}
+          </section>
+        ) : null}
+      </section>
     </div>
   );
 }

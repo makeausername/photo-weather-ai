@@ -1,168 +1,250 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(resolve(__dirname, "admin-providers-client.tsx"), "utf8");
+const adminShellSource = readFileSync(resolve(__dirname, "admin-shell.tsx"), "utf8");
 const providerFieldsSource = readFileSync(
   resolve(__dirname, "../../../../../packages/shared/src/provider-fields.ts"),
   "utf8",
 );
-const providerPageSource = readFileSync(resolve(__dirname, "../providers/page.tsx"), "utf8");
+const providersRouteDir = resolve(__dirname, "../providers");
+const providerIndexPageSource = readFileSync(resolve(providersRouteDir, "page.tsx"), "utf8");
 
-describe("admin provider console source", () => {
-  it("defines compact category navigation and provider overview", () => {
-    for (const label of [
-      "服务商配置",
-      "服务商总数",
-      "地图与地理",
-      "天气数据",
-      "智能解读",
-      "支付收款",
-      "邮箱短信",
-      "对象存储",
-      "已启用",
-      "真实调用",
-      "需处理",
-    ]) {
-      expect(source).toContain(label);
-    }
+function readProviderPage(moduleName: string): string {
+  return readFileSync(resolve(providersRouteDir, moduleName, "page.tsx"), "utf8");
+}
 
-    expect(source).toContain("data-provider-category-nav");
-    expect(source).toContain("data-provider-category={group.key}");
-    expect(source).toContain("group.marker");
-    expect(source).toContain("selectGroup(group.key)");
-    expect(source).toContain('useState<ProviderGroupKey>("weather")');
-    expect(source).toContain("categorySessionStorageKey");
-    expect(source).toContain("lg:grid-cols-[280px_minmax(0,1fr)]");
-    expect(source).toContain("flex min-w-[190px] items-center gap-2 rounded-md");
-    expect(source).not.toContain("min-w-[220px] gap-3 rounded-lg border border-border bg-card p-4");
-  });
+const providerPageSources = [
+  providerIndexPageSource,
+  readProviderPage("geo"),
+  readProviderPage("weather"),
+  readProviderPage("ai"),
+  readProviderPage("billing"),
+  readProviderPage("notification"),
+  readProviderPage("storage"),
+].join("\n");
 
-  it("uses compact summaries and one selected provider detail instead of full sequential forms", () => {
-    expect(source).toContain("StatusFacts");
-    expect(source).toContain("ProviderTestDetails");
-    expect(source).toContain("providerTestButtonLabel");
-    expect(source).toContain("有未保存修改");
-    expect(source).toContain("展开高级配置");
-    expect(source).toContain("ProviderCardErrorBoundary");
-    expect(source).toContain("该服务商配置暂时无法显示，请刷新或检查配置。");
-    expect(source).toContain("data-provider-list");
-    expect(source).toContain("data-provider-list-group={group.key}");
-    expect(source).toContain("data-provider-summary");
-    expect(source).toContain("data-provider-detail-panel");
-    expect(source).toContain("data-provider-detail");
-    expect(source).toContain("selectedProvider ? renderProviderDetail(selectedProvider) : null");
-    expect(source).toContain("renderProviderListRow(provider)");
-    expect(source).toContain("selectProvider(provider)");
-    expect(source).toContain("preferredVisibleProvider");
-    expect(source).not.toContain("group.providers.map((provider, index)");
-    expect(source).not.toContain("providers.map((provider) => renderProviderDetail");
-    expect(source).not.toContain("group.providers.map((provider) => renderProviderDetail");
-    expect(source).not.toContain("renderProviderSummaryCard");
-    expect(source).not.toContain("isOddLast");
-    expect(source).not.toContain("providerTabs");
-    expect(source).not.toContain("RealDevCallNotice");
-    expect(source).not.toContain("SavedSecretSummary");
-    expect(source).not.toContain("当前将请求真实服务，请确认 Key 有效且注意调用费用。");
-    expect(source).not.toContain("V1 仅保留专业增强源接口，不在自动流程中请求 meteoblue 服务");
-  });
-
-  it("declares the requested capability badges", () => {
-    for (const label of [
-      "实时天气",
-      "逐小时预报",
-      "云层分层",
-      "多模型交叉验证",
-      "Forecast API",
-      "商业精度提升",
-      "地点搜索",
-      "坐标转换",
-      "智能解读",
-      "Native 扫码",
-      "API v3 签名",
-      "回调验签",
-      "电脑网站支付",
-      "手机网站支付",
-      "RSA2 签名",
-      "邮箱验证码",
-      "短信验证码",
-      "阿里云短信",
-      "报告文件",
-      "导出文件",
-      "生成素材",
-      "对象存储",
-    ]) {
-      expect(source).toContain(label);
-    }
-  });
-
-  it("keeps payment, account verification, and object storage providers easy to find", () => {
+describe("admin provider module source", () => {
+  it("promotes provider categories into the AdminShell sidebar", () => {
     for (const snippet of [
+      '{ href: "/admin", label: "控制台" }',
+      '{ href: "/admin/settings", label: "系统设置" }',
+      '{ href: "/admin/providers/geo", label: "地图服务" }',
+      '{ href: "/admin/providers/weather", label: "天气数据" }',
+      '{ href: "/admin/providers/ai", label: "智能解读" }',
+      '{ href: "/admin/providers/billing", label: "支付收款" }',
+      '{ href: "/admin/providers/notification", label: "邮箱短信" }',
+      '{ href: "/admin/providers/storage", label: "对象存储" }',
+      '{ href: "/admin/calibration", label: "历史校准" }',
+      '{ href: "/admin/audit", label: "审计日志" }',
+    ]) {
+      expect(adminShellSource).toContain(snippet);
+    }
+
+    expect(adminShellSource).toContain('label: "总览"');
+    expect(adminShellSource).toContain('label: "配置"');
+    expect(adminShellSource).toContain('label: "运维"');
+    expect(adminShellSource).not.toContain('{ href: "/admin/providers", label: "服务商配置" }');
+  });
+
+  it("redirects the retired provider mega page to the weather module", () => {
+    expect(providerIndexPageSource).toContain('redirect("/admin/providers/weather")');
+    expect(providerIndexPageSource).not.toContain("AdminProvidersClient");
+    expect(providerIndexPageSource).not.toContain("服务商配置");
+  });
+
+  it("defines dedicated provider module pages with the required titles and module keys", () => {
+    const modulePages = [
+      {
+        route: "geo",
+        title: 'title="地图服务"',
+        description: "管理高德地图的地点搜索、地理编码和坐标转换配置。",
+        providerType: 'providerType="geo"',
+      },
+      {
+        route: "weather",
+        title: 'title="天气数据"',
+        description: "管理和风天气、Open-Meteo、meteoblue 等天气数据源、逐小时预报和云层分层配置。",
+        providerType: 'providerType="weather"',
+      },
+      {
+        route: "ai",
+        title: 'title="智能解读"',
+        description:
+          "管理 DeepSeek 智能解读配置。AI 只负责说明和文案生成，不参与确定性天气、天文和地形计算。",
+        providerType: 'providerType="ai"',
+      },
+      {
+        route: "billing",
+        title: 'title="支付收款"',
+        description: "管理微信支付、支付宝、订单回调、证书、密钥和验签配置。",
+        providerType: 'providerType="billing"',
+      },
+      {
+        route: "notification",
+        title: 'title="邮箱短信"',
+        description: "管理邮箱验证码和短信验证码服务配置。",
+        providerType: 'providerType="notification"',
+      },
+      {
+        route: "storage",
+        title: 'title="对象存储"',
+        description: "管理本地存储、阿里云 OSS、腾讯云 COS 等报告与文件存储配置。",
+        providerType: 'providerType="storage"',
+      },
+    ];
+
+    for (const page of modulePages) {
+      const pageSource = readProviderPage(page.route);
+      expect(pageSource).toContain(page.title);
+      expect(pageSource).toContain(page.description);
+      expect(pageSource).toContain(page.providerType);
+      expect(pageSource).toContain("AdminShell");
+      expect(pageSource).toContain("AdminProvidersClient");
+    }
+
+    expect(existsSync(resolve(providersRouteDir, "[providerType]", "page.tsx"))).toBe(false);
+  });
+
+  it("loads only the backend provider types for the active sidebar module", () => {
+    for (const snippet of [
+      "readonly providerType: ProviderGroupKey",
+      'key: "geo"',
+      'apiProviderTypes: ["geo"]',
+      'key: "weather"',
+      'apiProviderTypes: ["weather"]',
+      'key: "ai"',
+      'apiProviderTypes: ["ai"]',
+      'key: "billing"',
+      'apiProviderTypes: ["billing"]',
+      'key: "notification"',
+      'apiProviderTypes: ["email", "sms"]',
+      'key: "storage"',
+      'apiProviderTypes: ["storage"]',
+      "Promise.all(",
+      "`/admin/providers?providerType=${encodeURIComponent(apiProviderType)}`",
+      ").filter((provider) => getMeta(provider)?.group === moduleDefinition.key)",
+      "data-provider-module={moduleDefinition.key}",
+      "data-provider-list-group={moduleDefinition.key}",
+    ]) {
+      expect(source).toContain(snippet);
+    }
+  });
+
+  it("keeps the exact provider ownership for each module", () => {
+    for (const snippet of [
+      '"geo:amap"',
+      'group: "geo"',
+      'displayName: "高德地图"',
+      '"weather:qweather"',
+      '"weather:open_meteo"',
+      '"weather:meteoblue"',
+      'group: "weather"',
+      'displayName: "和风天气"',
+      'displayName: "Open-Meteo"',
+      'displayName: "meteoblue"',
+      '"ai:deepseek"',
+      'group: "ai"',
+      'displayName: "DeepSeek"',
+      '"billing:wechat_pay"',
+      '"billing:alipay"',
+      'group: "billing"',
+      'displayName: "微信支付"',
+      'displayName: "支付宝"',
       '"email:aliyun_smtp"',
       '"sms:aliyun_sms"',
+      'group: "notification"',
+      'displayName: "阿里云企业邮箱 SMTP"',
+      'displayName: "阿里云短信"',
       '"storage:local_storage"',
       '"storage:aliyun_oss"',
       '"storage:tencent_cos"',
-      '"billing:wechat_pay"',
-      '"billing:alipay"',
-      'displayName: "阿里云企业邮箱 SMTP"',
-      'displayName: "阿里云短信"',
-      'displayName: "微信支付"',
-      'displayName: "支付宝"',
+      'group: "storage"',
       'displayName: "本地存储"',
       'displayName: "阿里云 OSS"',
       'displayName: "腾讯云 COS"',
-      'requiredConfigKeys: ["host", "port", "secure", "fromAddress"]',
-      'requiredConfigKeys: ["regionId", "signName", "templateCode"]',
-      'requiredConfigKeys: ["rootPath", "publicBaseUrl", "basePrefix", "maxUploadBytes"]',
-      'requiredConfigKeys: ["region", "endpoint", "bucket", "basePrefix", "publicBaseUrl"]',
-      'requiredConfigKeys: ["region", "bucket", "basePrefix", "publicBaseUrl"]',
-      'requiredConfigKeys: ["mode", "appId", "mchId", "notifyUrl", "returnUrl"]',
-      'requiredConfigKeys: ["mode", "appId", "notifyUrl", "returnUrl"]',
-      "按服务类型管理地图与地理、天气数据、智能解读、支付收款、邮箱短信和对象存储配置。",
-      'group: "billing"',
-      'group: "storage"',
     ]) {
       expect(source).toContain(snippet);
     }
   });
 
-  it("supports provider search by name, provider code, capability, and purpose", () => {
-    for (const snippet of [
+  it("removes internal provider category cards, search, and the all-provider list", () => {
+    for (const forbidden of [
+      "data-provider-category-nav",
+      "data-provider-category={group.key}",
+      "selectGroup(",
+      "categorySessionStorageKey",
+      "providerSearchTerm",
       "providerMatchesSearch",
-      "providerName(provider)",
-      "provider.displayName",
-      "provider.providerCode",
-      "provider.providerType",
-      "meta?.purpose",
-      'meta?.capabilities.join(" ")',
-      "支持中文名称、provider code、能力和用途",
-      "例如 微信支付、wechat_pay、阿里云 OSS",
-      "aliyun_oss",
-      "group?.title",
-      "setSelectedProviderId(null)",
+      "搜索服务商",
+      "服务商分类",
+      "地图与地理",
+      "匹配服务商",
+      "lg:grid-cols-[280px_minmax(0,1fr)]",
+      "flex min-w-[190px] items-center gap-2 rounded-md",
+      "data-provider-console-grid",
+    ]) {
+      expect(source).not.toContain(forbidden);
+    }
+
+    expect(source).toContain("visibleProviders.map((provider) => renderProviderListRow(provider))");
+    expect(source).not.toContain("providers.map((provider) => renderProviderListRow(provider))");
+  });
+
+  it("uses compact module summaries and one selected provider detail panel", () => {
+    for (const snippet of [
+      "模块服务商",
+      "已启用",
+      "真实调用",
+      "需要处理",
+      "StatusFacts",
+      "ProviderTestDetails",
+      "有未保存修改",
+      "展开高级配置",
+      "ProviderCardErrorBoundary",
+      "该服务商配置暂时无法显示，请刷新或检查配置。",
+      "data-provider-list",
+      "data-provider-summary",
+      "data-provider-detail-panel",
+      "data-provider-detail",
+      "detailProvider ? renderProviderDetail(detailProvider) : null",
+      "visibleProviders.find((provider) => provider.enabled) ??",
+      "visibleProviders[0] ??",
+    ]) {
+      expect(source).toContain(snippet);
+    }
+
+    expect(source).not.toContain("providers.map((provider) => renderProviderDetail");
+    expect(source).not.toContain("visibleProviders.map((provider) => renderProviderDetail");
+    expect(source).not.toContain("renderProviderSummaryCard");
+  });
+
+  it("preserves selected-provider save, test, enable, real-call, secret, and detail actions", () => {
+    for (const snippet of [
+      "saveProvider(provider)",
+      "testProvider(provider)",
+      "createProviderConnectionTestRequestInit()",
+      "启用该服务商",
+      'getFieldByKey(provider, "realCallEnabled")',
+      "requiredConfigFields.map((field) => renderConfigField(provider, field))",
+      "secretFields.map((field) =>",
+      "maskedSecretLabel(provider, field.key)",
+      "toggleSecretVisibility(provider.id, field.key)",
+      "toggleClearSecret(provider.id, field.key)",
+      "AdvancedConfigContent",
+      "dirtyProviders",
+      "providerSaveButtonLabel",
+      "providerTestButtonLabel",
+      "ProviderTestDetails",
     ]) {
       expect(source).toContain(snippet);
     }
   });
 
-  it("structures the selected provider detail into the required sections", () => {
-    for (const label of [
-      "顶部概览",
-      "基础开关",
-      "常用配置",
-      "密钥配置",
-      "展开高级配置",
-      "保存配置",
-      "测试连接",
-    ]) {
-      expect(source).toContain(label);
-    }
-  });
-
-  it("exposes object storage and payment field labels through the imported provider presets", () => {
+  it("keeps provider fields and secrets safe", () => {
     for (const label of [
       "Bucket",
       "Region",
@@ -183,44 +265,13 @@ describe("admin provider console source", () => {
     ]) {
       expect(providerFieldsSource).toContain(label);
     }
-  });
-
-  it("keeps advanced provider defaults crash-safe without exposing secrets", () => {
-    for (const snippet of [
-      "timeoutMs: 10000",
-      "retryCount: 1",
-      'language: "zh"',
-      'unit: "m"',
-      'baseUrl: "https://my.meteoblue.com"',
-      'packages: ["basic-1h", "clouds-1h"]',
-      'model: "deepseek-v4-pro"',
-      "timeoutMs: 120000",
-      'mode: "native"',
-      'apiBaseUrl: "https://api.mch.weixin.qq.com"',
-      'mode: "page"',
-      'gatewayUrl: "https://openapi.alipay.com/gateway.do"',
-      'signType: "RSA2"',
-      'host: ""',
-      "port: 465",
-      "secure: true",
-      'fromAddress: ""',
-      'regionId: "cn-hangzhou"',
-      'signName: ""',
-      'templateCode: ""',
-      'rootPath: "data/uploads"',
-      'basePrefix: "uploads"',
-      "maxUploadBytes: 10485760",
-      'bucket: ""',
-      'endpoint: ""',
-    ]) {
-      expect(source).toContain(snippet);
-    }
 
     expect(source).toContain("maskedSecretJson");
+    expect(source).toContain("secretFieldDrafts");
     expect(source).not.toContain("provider.secretJson");
   });
 
-  it("does not add filler or stale limited provider copy", () => {
+  it("does not add placeholder or filler layout copy", () => {
     for (const forbidden of [
       "占位",
       "敬请期待",
@@ -231,14 +282,7 @@ describe("admin provider console source", () => {
       "h-[520px]",
     ]) {
       expect(source).not.toContain(forbidden);
-      expect(providerPageSource).not.toContain(forbidden);
+      expect(providerPageSources).not.toContain(forbidden);
     }
-
-    expect(providerPageSource).toContain(
-      "按服务类型管理地图与地理、天气数据、智能解读、支付收款、邮箱短信和对象存储配置。",
-    );
-    expect(providerPageSource).not.toContain(
-      "统一管理地图、天气数据源、智能解读、邮箱和短信验证码服务。",
-    );
   });
 });
