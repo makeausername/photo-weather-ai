@@ -11,7 +11,6 @@ const adminLinks = [
   { href: "/admin", label: "控制台" },
   { href: "/admin/settings", label: "系统设置" },
   { href: "/admin/providers", label: "服务商配置" },
-  { href: "/admin/locations", label: "地点管理" },
   { href: "/admin/calibration", label: "历史校准" },
   { href: "/admin/audit", label: "审计日志" },
 ] as const;

@@ -18,7 +18,7 @@ import type {
   AdminCalibrationStats,
   AdminCalibrationTarget,
   AdminForecastReplayResult,
-  AdminLocation,
+  AdminGeoSearchResult,
   AdminObservedOutcome,
 } from "../admin-api";
 
@@ -28,7 +28,6 @@ type CalibrationOverviewResponse = {
     readonly totalHistoricalSamples: number;
     readonly totalObservedOutcomes: number;
   };
-  readonly locations: AdminLocation[];
   readonly targets: AdminCalibrationTarget[];
   readonly minimumHintSampleCount: number;
   readonly stats: AdminCalibrationStats[];
@@ -40,6 +39,35 @@ type ReplayResultsResponse = {
   readonly results: AdminForecastReplayResult[];
   readonly outcomes: AdminObservedOutcome[];
   readonly comparisons: AdminCalibrationComparison[];
+};
+
+type ManualLocationForm = {
+  readonly locationName: string;
+  readonly latitudeWgs84: string;
+  readonly longitudeWgs84: string;
+  readonly elevationMeters: string;
+  readonly timezone: string;
+};
+
+type ManualCalibrationLocationPayload = {
+  readonly locationName: string;
+  readonly latitudeWgs84: number;
+  readonly longitudeWgs84: number;
+  readonly elevationMeters: number | null;
+  readonly timezone: string;
+};
+
+type CalibrationLocationResponse = {
+  readonly locationName: string;
+  readonly locationKey: string;
+  readonly latitudeWgs84: number;
+  readonly longitudeWgs84: number;
+  readonly elevationMeters?: number | null;
+};
+
+type GeoSearchResponse = {
+  readonly provider: string;
+  readonly results: AdminGeoSearchResult[];
 };
 
 type OutcomeForm = {
@@ -98,6 +126,14 @@ const emptyOutcomeForm: OutcomeForm = {
   observationWindowEnd: "",
   notes: "",
   photoEvidenceUrl: "",
+};
+
+const emptyManualLocationForm: ManualLocationForm = {
+  locationName: "",
+  latitudeWgs84: "",
+  longitudeWgs84: "",
+  elevationMeters: "",
+  timezone: "Asia/Shanghai",
 };
 
 function todayDate(): string {
@@ -207,23 +243,71 @@ function calibrationHintText(stats: AdminCalibrationStats | undefined, minimumSa
   return "当前样本未显示明显系统性偏差，仍建议按临近预报复核。";
 }
 
-function buildLocationKey(location: AdminLocation): string {
-  return `location:${location.id}`;
+function requiredNumber(fieldName: string, value: string): number {
+  const parsed = Number(value.trim());
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${fieldName}必须是有效数字。`);
+  }
+  return parsed;
 }
 
-function calibrationLocationPayload(location: AdminLocation) {
+function optionalNumber(fieldName: string, value: string): number | null {
+  if (!value.trim()) {
+    return null;
+  }
+  return requiredNumber(fieldName, value);
+}
+
+function buildWgs84LocationKey(latitudeWgs84: number, longitudeWgs84: number): string {
+  return `wgs84:${latitudeWgs84.toFixed(5)},${longitudeWgs84.toFixed(5)}`;
+}
+
+function manualLocationPayload(form: ManualLocationForm): ManualCalibrationLocationPayload {
+  const locationName = form.locationName.trim();
+  if (!locationName) {
+    throw new Error("请填写地点名称与 WGS84 坐标。");
+  }
+
+  const latitudeWgs84 = requiredNumber("WGS84 纬度", form.latitudeWgs84);
+  const longitudeWgs84 = requiredNumber("WGS84 经度", form.longitudeWgs84);
+  const elevationMeters = optionalNumber("海拔", form.elevationMeters);
+  const timezone = form.timezone.trim() || "Asia/Shanghai";
+
   return {
-    locationId: location.id,
-    locationKey: buildLocationKey(location),
-    locationName: location.name,
-    latitudeWgs84: location.latitudeWgs84,
-    longitudeWgs84: location.longitudeWgs84,
-    elevationMeters: location.elevation,
+    locationName,
+    latitudeWgs84,
+    longitudeWgs84,
+    elevationMeters,
+    timezone,
+  };
+}
+
+function manualLocationKey(form: ManualLocationForm): string {
+  try {
+    const payload = manualLocationPayload(form);
+    return buildWgs84LocationKey(payload.latitudeWgs84, payload.longitudeWgs84);
+  } catch {
+    return "";
+  }
+}
+
+function formFromReturnedLocation(
+  current: ManualLocationForm,
+  location: CalibrationLocationResponse,
+): ManualLocationForm {
+  return {
+    ...current,
+    locationName: location.locationName,
+    latitudeWgs84: String(location.latitudeWgs84),
+    longitudeWgs84: String(location.longitudeWgs84),
+    elevationMeters:
+      location.elevationMeters === null || location.elevationMeters === undefined
+        ? current.elevationMeters
+        : String(location.elevationMeters),
   };
 }
 
 export function AdminCalibrationClient() {
-  const [locations, setLocations] = useState<AdminLocation[]>([]);
   const [stats, setStats] = useState<AdminCalibrationStats[]>([]);
   const [results, setResults] = useState<AdminForecastReplayResult[]>([]);
   const [outcomes, setOutcomes] = useState<AdminObservedOutcome[]>([]);
@@ -234,23 +318,22 @@ export function AdminCalibrationClient() {
     totalObservedOutcomes: 0,
   });
   const [minimumSamples, setMinimumSamples] = useState(10);
-  const [locationId, setLocationId] = useState("");
+  const [manualLocation, setManualLocation] =
+    useState<ManualLocationForm>(emptyManualLocationForm);
+  const [geoSearchQuery, setGeoSearchQuery] = useState("");
+  const [geoSearchResults, setGeoSearchResults] = useState<AdminGeoSearchResult[]>([]);
   const [target, setTarget] = useState<AdminCalibrationTarget>("general");
   const [startDate, setStartDate] = useState(sevenDaysAgo());
   const [endDate, setEndDate] = useState(todayDate());
   const [outcomeForm, setOutcomeForm] = useState<OutcomeForm>(emptyOutcomeForm);
   const [status, setStatus] = useState("正在加载历史校准数据...");
 
-  const selectedLocation = useMemo(
-    () => locations.find((location) => location.id === locationId),
-    [locations, locationId],
-  );
-  const selectedLocationKey = selectedLocation ? buildLocationKey(selectedLocation) : "";
+  const selectedLocationKey = useMemo(() => manualLocationKey(manualLocation), [manualLocation]);
   const filteredStats = stats.filter(
     (item) =>
       (!selectedLocationKey || item.locationKey === selectedLocationKey) && item.target === target,
   );
-  const selectedStats = filteredStats[0];
+  const selectedStats = selectedLocationKey ? filteredStats[0] : undefined;
   const selectedSummary = selectedStats ? summaryJsonObject(selectedStats.summaryJson) : {};
   const mismatchReasons = summaryStringList(selectedSummary.mismatchReasons);
 
@@ -258,29 +341,25 @@ export function AdminCalibrationClient() {
     try {
       const response = await adminApiFetch<CalibrationOverviewResponse>("/admin/calibration");
       setOverview(response.overview);
-      setLocations(response.locations);
       setStats(response.stats);
       setResults(response.recentResults);
       setOutcomes(response.outcomes);
       setComparisons([]);
       setMinimumSamples(response.minimumHintSampleCount);
-      setLocationId((current) => current || response.locations[0]?.id || "");
       setStatus("历史校准数据已加载。");
     } catch (error) {
       setStatus((error as Error).message);
     }
   }
 
-  async function loadReplayResults(nextLocationId = locationId, nextTarget = target) {
-    const location = locations.find((item) => item.id === nextLocationId);
-    if (!location) {
-      return;
-    }
+  async function loadReplayResults(nextLocationKey = selectedLocationKey, nextTarget = target) {
     const params = new URLSearchParams({
-      locationKey: buildLocationKey(location),
       target: nextTarget,
       limit: "100",
     });
+    if (nextLocationKey) {
+      params.set("locationKey", nextLocationKey);
+    }
     const response = await adminApiFetch<ReplayResultsResponse>(
       `/admin/calibration/replay-results?${params.toString()}`,
     );
@@ -293,21 +372,30 @@ export function AdminCalibrationClient() {
     void loadOverview();
   }, []);
 
+  function updateManualLocation<K extends keyof ManualLocationForm>(
+    key: K,
+    value: ManualLocationForm[K],
+  ) {
+    setManualLocation((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
   async function fetchHistory() {
-    if (!selectedLocation) {
-      setStatus("请先选择地点。");
-      return;
-    }
     setStatus("正在拉取历史天气...");
     try {
+      const locationPayload = manualLocationPayload(manualLocation);
       const response = await adminApiFetch<{
+        readonly location: CalibrationLocationResponse;
         readonly insertedCount: number;
         readonly skippedDuplicateCount: number;
         readonly sampleCount: number;
       }>("/admin/calibration/fetch-history", {
         method: "POST",
-        body: JSON.stringify({ ...calibrationLocationPayload(selectedLocation), startDate, endDate }),
+        body: JSON.stringify({ ...locationPayload, startDate, endDate }),
       });
+      setManualLocation((current) => formFromReturnedLocation(current, response.location));
       setStatus(
         `历史天气已入库：新增 ${response.insertedCount} 条，跳过重复 ${response.skippedDuplicateCount} 条。`,
       );
@@ -317,25 +405,26 @@ export function AdminCalibrationClient() {
   }
 
   async function runReplay() {
-    if (!selectedLocation) {
-      setStatus("请先选择地点。");
-      return;
-    }
     setStatus("正在执行历史回放...");
     try {
+      const locationPayload = manualLocationPayload(manualLocation);
+      const locationKey = buildWgs84LocationKey(
+        locationPayload.latitudeWgs84,
+        locationPayload.longitudeWgs84,
+      );
       const response = await adminApiFetch<{ readonly resultCount: number }>(
         "/admin/calibration/replay",
         {
           method: "POST",
           body: JSON.stringify({
-            ...calibrationLocationPayload(selectedLocation),
+            ...locationPayload,
             startDate,
             endDate,
             target,
           }),
         },
       );
-      await loadReplayResults(selectedLocation.id, target);
+      await loadReplayResults(locationKey, target);
       setStatus(`历史回放完成：生成 ${response.resultCount} 条预测结果。`);
     } catch (error) {
       setStatus((error as Error).message);
@@ -343,17 +432,14 @@ export function AdminCalibrationClient() {
   }
 
   async function rebuildStats() {
-    if (!selectedLocation) {
-      setStatus("请先选择地点。");
-      return;
-    }
     setStatus("正在计算校准统计...");
     try {
+      const locationPayload = manualLocationPayload(manualLocation);
       const response = await adminApiFetch<{ readonly stats: AdminCalibrationStats }>(
         "/admin/calibration/stats/rebuild",
         {
           method: "POST",
-          body: JSON.stringify({ ...calibrationLocationPayload(selectedLocation), target }),
+          body: JSON.stringify({ ...locationPayload, target }),
         },
       );
       setStats((current) => [
@@ -374,18 +460,19 @@ export function AdminCalibrationClient() {
   }
 
   async function saveOutcome() {
-    if (!selectedLocation) {
-      setStatus("请先选择地点。");
-      return;
-    }
     setStatus("正在保存观测标注...");
     try {
+      const locationPayload = manualLocationPayload(manualLocation);
+      const locationKey = buildWgs84LocationKey(
+        locationPayload.latitudeWgs84,
+        locationPayload.longitudeWgs84,
+      );
       const response = await adminApiFetch<{ readonly outcome: AdminObservedOutcome }>(
         "/admin/calibration/outcomes",
         {
           method: "POST",
           body: JSON.stringify({
-            ...calibrationLocationPayload(selectedLocation),
+            ...locationPayload,
             target,
             outcomeDate: outcomeForm.outcomeDate,
             observedResult: outcomeForm.observedResult,
@@ -408,7 +495,19 @@ export function AdminCalibrationClient() {
         response.outcome,
         ...current.filter((item) => item.id !== response.outcome.id),
       ]);
-      await loadReplayResults(selectedLocation.id, target);
+      const outcomeLatitudeWgs84 = response.outcome.latitudeWgs84;
+      const outcomeLongitudeWgs84 = response.outcome.longitudeWgs84;
+      if (typeof outcomeLatitudeWgs84 === "number" && typeof outcomeLongitudeWgs84 === "number") {
+        setManualLocation((current) =>
+          formFromReturnedLocation(current, {
+            locationName: response.outcome.locationName,
+            locationKey: response.outcome.locationKey ?? locationKey,
+            latitudeWgs84: outcomeLatitudeWgs84,
+            longitudeWgs84: outcomeLongitudeWgs84,
+          }),
+        );
+      }
+      await loadReplayResults(locationKey, target);
       setStatus("观测标注已保存。");
     } catch (error) {
       setStatus((error as Error).message);
@@ -438,6 +537,38 @@ export function AdminCalibrationClient() {
     }));
   }
 
+  async function searchGeoLocation() {
+    const query = geoSearchQuery.trim();
+    if (!query) {
+      setStatus("请输入要搜索的地点名称。");
+      return;
+    }
+
+    setStatus("正在搜索地点...");
+    try {
+      const response = await adminApiFetch<GeoSearchResponse>(
+        `/admin/geo/search?q=${encodeURIComponent(query)}`,
+      );
+      setGeoSearchResults(response.results);
+      setStatus(response.results.length > 0 ? "地点搜索结果已加载。" : "未找到地点，请手动填写 WGS84 坐标。");
+    } catch (error) {
+      setGeoSearchResults([]);
+      setStatus(`${(error as Error).message}。可继续手动填写 WGS84 坐标。`);
+    }
+  }
+
+  function applyGeoSearchResult(result: AdminGeoSearchResult) {
+    setManualLocation((current) => ({
+      ...current,
+      locationName: result.name,
+      latitudeWgs84: String(result.coordinatesWgs84.latitude),
+      longitudeWgs84: String(result.coordinatesWgs84.longitude),
+    }));
+    setGeoSearchQuery(result.name);
+    setGeoSearchResults([]);
+    setStatus("已填入搜索结果，可按需校正 WGS84 坐标。");
+  }
+
   return (
     <div className="grid gap-5">
       <Card className="overflow-hidden">
@@ -464,30 +595,87 @@ export function AdminCalibrationClient() {
               onClick={() => {
                 const nextTarget = value as AdminCalibrationTarget;
                 setTarget(nextTarget);
-                void loadReplayResults(locationId, nextTarget);
+                void loadReplayResults(selectedLocationKey, nextTarget);
               }}
             >
               {label}
             </Button>
           ))}
         </div>
-        <div className="grid gap-3 p-5 md:grid-cols-3">
-          <FormField label="历史校准地点">
-            <Select
-              value={locationId}
-              onChange={(event) => {
-                setLocationId(event.target.value);
-                void loadReplayResults(event.target.value, target);
-              }}
-            >
-              <option value="">请选择地点</option>
-              {locations.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.name}
-                </option>
-              ))}
-            </Select>
-          </FormField>
+        <div className="grid gap-4 border-b border-border p-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <FormField label="地点名称">
+              <Input
+                value={manualLocation.locationName}
+                onChange={(event) => updateManualLocation("locationName", event.target.value)}
+              />
+            </FormField>
+            <FormField label="WGS84 纬度">
+              <Input
+                inputMode="decimal"
+                value={manualLocation.latitudeWgs84}
+                onChange={(event) => updateManualLocation("latitudeWgs84", event.target.value)}
+              />
+            </FormField>
+            <FormField label="WGS84 经度">
+              <Input
+                inputMode="decimal"
+                value={manualLocation.longitudeWgs84}
+                onChange={(event) => updateManualLocation("longitudeWgs84", event.target.value)}
+              />
+            </FormField>
+            <FormField label="海拔（米，可选）">
+              <Input
+                inputMode="decimal"
+                value={manualLocation.elevationMeters}
+                onChange={(event) => updateManualLocation("elevationMeters", event.target.value)}
+              />
+            </FormField>
+            <FormField label="时区">
+              <Input
+                value={manualLocation.timezone}
+                onChange={(event) => updateManualLocation("timezone", event.target.value)}
+              />
+            </FormField>
+            <div className="self-end text-xs leading-5 text-muted-foreground xl:col-span-1">
+              天气与历史样本按 WGS84 坐标匹配；搜索结果只填入表单，不会创建保存地点。
+            </div>
+          </div>
+
+          <div className="grid content-start gap-3">
+            <FormField label="搜索地点（可选）">
+              <div className="flex gap-2">
+                <Input
+                  value={geoSearchQuery}
+                  onChange={(event) => setGeoSearchQuery(event.target.value)}
+                />
+                <Button variant="secondary" onClick={() => void searchGeoLocation()}>
+                  搜索
+                </Button>
+              </div>
+            </FormField>
+            {geoSearchResults.length > 0 ? (
+              <div className="grid gap-2">
+                {geoSearchResults.slice(0, 4).map((result) => (
+                  <button
+                    key={result.id}
+                    type="button"
+                    className="rounded-md border border-border bg-card px-3 py-2 text-left text-sm transition hover:border-primary hover:bg-secondary"
+                    onClick={() => applyGeoSearchResult(result)}
+                  >
+                    <span className="font-semibold text-foreground">{result.name}</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      {[result.province, result.city, result.district].filter(Boolean).join(" / ") ||
+                        result.address ||
+                        "WGS84 坐标结果"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <div className="grid gap-3 p-5 md:grid-cols-2">
           <FormField label="开始日期">
             <Input
               type="date"
@@ -519,7 +707,7 @@ export function AdminCalibrationClient() {
           <div className="border-b border-border px-5 py-4">
             <h2 className="text-lg font-bold">回放结果</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              显示当前地点和目标的历史预测、人工标注和命中状态。
+              显示当前手动位置和目标的历史预测、人工标注和命中状态；未填写位置时显示近期全局回放。
             </p>
           </div>
           {results.length > 0 ? (
@@ -585,7 +773,7 @@ export function AdminCalibrationClient() {
               </tbody>
             </Table>
           ) : (
-            <EmptyState title="暂无回放结果" description="先拉取历史天气，再执行规则回放。" />
+            <EmptyState title="暂无回放结果" description="填写地点名称与 WGS84 坐标后，可拉取历史天气并执行规则回放。" />
           )}
         </Card>
 
@@ -792,7 +980,7 @@ export function AdminCalibrationClient() {
             </Table>
           </div>
         ) : (
-          <EmptyState title="暂无统计" description="保存观测标注后点击计算校准统计。" />
+          <EmptyState title="暂无统计" description="填写手动位置并保存观测标注后，可重新统计该 WGS84 位置的校准结果。" />
         )}
       </Card>
     </div>

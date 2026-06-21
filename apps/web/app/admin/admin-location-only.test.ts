@@ -1,9 +1,10 @@
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import AdminLocationsPage from "./locations/page";
 import AdminPhotoSpotsPage from "./photo-spots/page";
+import { AdminCalibrationClient } from "./components/admin-calibration-client";
 import { AdminDashboardClient } from "./components/admin-dashboard-client";
-import { AdminLocationsClient } from "./components/admin-locations-client";
 import { AdminShell } from "./components/admin-shell";
 
 const testGlobal = globalThis as typeof globalThis & { React: typeof React };
@@ -17,45 +18,60 @@ const redirectMock = vi.hoisted(() =>
 
 vi.mock("next/navigation", () => ({
   redirect: redirectMock,
-  usePathname: () => "/admin/locations",
+  usePathname: () => "/admin/calibration",
 }));
 
 describe("location-only admin surfaces", () => {
-  it("removes photo spot management from the admin shell", () => {
+  it("removes fixed location management from the admin shell", () => {
     const html = renderToStaticMarkup(
       React.createElement(AdminShell, {
-        title: "地点管理",
-        description: "地点资料",
+        title: "控制台",
+        description: "后台状态",
         children: React.createElement("div", null, "content"),
       }),
     );
 
-    expect(html).toContain("地点管理");
+    expect(html).toContain("历史校准");
+    expect(html).not.toContain("地点管理");
+    expect(html).not.toContain("/admin/locations");
     expect(html).not.toContain("机位管理");
     expect(html).not.toContain("/admin/photo-spots");
   });
 
-  it("renders location management without the old tab switcher", () => {
-    const html = renderToStaticMarkup(React.createElement(AdminLocationsClient));
+  it("redirects the retired location page to historical calibration", () => {
+    expect(() => AdminLocationsPage()).toThrow("redirect:/admin/calibration");
 
-    expect(html).toContain("地点资料");
-    expect(html).toContain("新增地点");
-    expect(html).not.toContain("机位管理");
-    expect(html).not.toContain("/admin/photo-spots");
-    expect(html).not.toContain("该地点下的机位");
+    expect(redirectMock).toHaveBeenCalledWith("/admin/calibration");
   });
 
-  it("keeps the dashboard location-only", () => {
+  it("renders manual calibration location fields without a fixed location dropdown", () => {
+    const html = renderToStaticMarkup(React.createElement(AdminCalibrationClient));
+
+    expect(html).toContain("地点名称");
+    expect(html).toContain("WGS84 纬度");
+    expect(html).toContain("WGS84 经度");
+    expect(html).toContain("时区");
+    expect(html).toContain("搜索地点");
+    expect(html).not.toContain("请选择地点");
+    expect(html).not.toContain("新增地点");
+    expect(html).not.toContain("地点列表");
+  });
+
+  it("keeps the dashboard focused on active admin modules", () => {
     const html = renderToStaticMarkup(React.createElement(AdminDashboardClient));
 
-    expect(html).toContain("地点数量");
+    expect(html).toContain("服务商配置");
+    expect(html).not.toContain("地点数量");
+    expect(html).not.toContain("地点资料");
+    expect(html).not.toContain("新增地点");
     expect(html).not.toContain("机位数量");
+    expect(html).not.toContain("/admin/locations");
     expect(html).not.toContain("/admin/photo-spots");
   });
 
-  it("redirects the retired photo spot page to locations", () => {
-    expect(() => AdminPhotoSpotsPage()).toThrow("redirect:/admin/locations");
+  it("redirects the retired photo spot page to the admin console", () => {
+    expect(() => AdminPhotoSpotsPage()).toThrow("redirect:/admin");
 
-    expect(redirectMock).toHaveBeenCalledWith("/admin/locations");
+    expect(redirectMock).toHaveBeenCalledWith("/admin");
   });
 });

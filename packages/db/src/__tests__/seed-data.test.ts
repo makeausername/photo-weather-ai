@@ -14,7 +14,6 @@ describe("database seed data", () => {
       "settings.manage",
       "providers.manage",
       "users.manage",
-      "locations.manage",
       "audit.read",
       "usage.read",
     ]);
@@ -146,18 +145,18 @@ describe("database seed data", () => {
     expect(JSON.stringify(seedData.providerConfigs)).not.toContain("CHANGE_ME");
   });
 
-  it("includes unverified Chinese location examples without active photo spot samples", () => {
+  it("does not seed fixed demo locations or inactive location permissions", () => {
     const seedData = buildSeedData();
 
-    expect(seedData.locations.map((location) => location.name)).toEqual([
-      "黄山",
-      "老君山",
-      "三清山",
-      "武功山",
-    ]);
-    expect(seedData.locations.every((location) => location.isVerified === false)).toBe(true);
+    expect(seedData.locations).toEqual([]);
+    expect(JSON.stringify(seedData)).not.toContain("黄山");
+    expect(JSON.stringify(seedData)).not.toContain("老君山");
+    expect(JSON.stringify(seedData)).not.toContain("三清山");
+    expect(JSON.stringify(seedData)).not.toContain("武功山");
+    expect(JSON.stringify(seedData)).not.toContain("locations.manage");
     expect(JSON.stringify(seedData)).not.toContain("黄山光明顶");
     expect(JSON.stringify(seedData)).not.toContain("photo_spots.manage");
+    expect(requiredAdminPermissions).not.toContain("locations.manage");
     expect(requiredAdminPermissions).not.toContain("photo_spots.manage");
   });
 });

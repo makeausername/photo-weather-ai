@@ -1,17 +1,13 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import {
-  listLocations,
-  type DatabaseClient,
-  type LocationRecord,
-} from "@photo-weather/db";
+import type { DatabaseClient } from "@photo-weather/db";
 import { validateCoordinates } from "@photo-weather/geo";
 import type { GeoPlaceResult, GeoProvider } from "@photo-weather/geo";
 import { z } from "zod";
 
-type PublicPlaceSearchSource = "local_location" | "amap" | "mock";
+type PublicPlaceSearchSource = "amap" | "mock";
 
 export const publicPlaceSearchUnavailableMessage =
-  "地点搜索暂时不可用，请检查数据库连接或稍后重试。";
+  "地点搜索暂时不可用，请稍后重试，或直接输入地点名称与 WGS84 坐标。";
 
 export type PublicPlaceSearchResult = {
   readonly id: string;
@@ -22,8 +18,6 @@ export type PublicPlaceSearchResult = {
   readonly district: string | null;
   readonly source: PublicPlaceSearchSource;
   readonly locationType: string;
-  readonly matchedPhotoSpotId?: string;
-  readonly matchedLocationId?: string;
   readonly latitudeGcj02: number;
   readonly longitudeGcj02: number;
   readonly latitudeWgs84: number;
@@ -229,29 +223,14 @@ function assertCoordinatePair(input: {
   }
 }
 
-function locationToSearchResult(location: LocationRecord): PublicPlaceSearchResult {
-  assertCoordinatePair(location);
-
-  return {
-    id: `local-location:${location.id}`,
-    name: location.name,
-    address: location.address,
-    province: location.province,
-    city: location.city,
-    district: location.district,
-    source: "local_location",
-    locationType: location.locationType,
-    matchedLocationId: location.id,
-    latitudeGcj02: location.latitudeGcj02,
-    longitudeGcj02: location.longitudeGcj02,
-    latitudeWgs84: location.latitudeWgs84,
-    longitudeWgs84: location.longitudeWgs84,
-    elevation: location.elevation,
-    isVerified: location.isVerified,
-  };
-}
-
 function providerToSearchResult(place: GeoPlaceResult): PublicPlaceSearchResult {
+  assertCoordinatePair({
+    latitudeGcj02: place.latitudeGcj02,
+    longitudeGcj02: place.longitudeGcj02,
+    latitudeWgs84: place.latitudeWgs84,
+    longitudeWgs84: place.longitudeWgs84,
+  });
+
   return {
     id: `${place.source}:${place.providerPlaceId ?? place.id}`,
     name: place.name,
@@ -387,17 +366,13 @@ export function registerSearchRoutes(app: FastifyInstance, options: SearchRoutes
     }
 
     try {
-      const locations = await listLocations({ search: query, client: options.dbClient });
       const geoProvider = await options.resolveGeoProvider();
       const providerResults = await geoProvider.searchPlace(query, {
         countryCode: "CN",
         locale: "zh-CN",
         limit: 8,
       });
-      const results = mergeResults([
-        ...locations.map((location) => locationToSearchResult(location)),
-        ...providerResults.map((place) => providerToSearchResult(place)),
-      ]);
+      const results = mergeResults(providerResults.map((place) => providerToSearchResult(place)));
 
       const response = {
         query,

@@ -16,26 +16,20 @@ describe("public search routes", () => {
     vi.unstubAllGlobals();
   });
 
-  it("returns sanitized Chinese error when database place search fails", async () => {
+  it("returns sanitized Chinese error when provider place search fails", async () => {
     const { client } = await createFakeDatabaseClient();
-    const rawDatabaseError = new Error(
-      "Invalid `requireLocationDelegate(client).findMany()` invocation in C:\\Users\\konne\\Desktop\\photo-weather-ai\\packages\\db\\src\\locations.ts:141:58\nCan't reach database server at `127.0.0.1:15432`",
+    const rawProviderError = new Error(
+      "Amap request failed at C:\\Users\\konne\\Desktop\\photo-weather-ai\\apps\\api\\src\\geo-provider.ts:20:5 with key=secret",
     );
-    rawDatabaseError.name = "PrismaClientInitializationError";
-    if (!client.location) {
-      throw new Error("Fake database client is missing location delegate.");
-    }
-    const failingClient = {
-      ...client,
-      location: {
-        ...client.location,
-        findMany: vi.fn(async () => {
-          throw rawDatabaseError;
-        }),
-      },
-    };
+    const geoProvider = new MockGeoProvider();
+    vi.spyOn(geoProvider, "searchPlace").mockRejectedValue(rawProviderError);
 
-    app = buildApiServer({ dbClient: failingClient, authConfig: testAuthConfig, logger: false });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      geoProvider,
+    });
 
     const response = await app.inject({
       method: "GET",
@@ -50,9 +44,11 @@ describe("public search routes", () => {
     expect(response.body).not.toContain("Prisma");
     expect(response.body).not.toContain("requireLocationDelegate");
     expect(response.body).not.toContain("findMany");
+    expect(response.body).not.toContain("Amap");
+    expect(response.body).not.toContain("secret");
     expect(response.body).not.toContain("127.0.0.1:15432");
     expect(response.body).not.toContain("C:\\Users");
-    expect(response.body).not.toContain("locations.ts");
+    expect(response.body).not.toContain("geo-provider.ts");
   });
 
   it("keeps successful public place search working without external APIs", async () => {
@@ -70,28 +66,22 @@ describe("public search routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().results[0]).toMatchObject({
-      source: "local_location",
-      matchedLocationId: "location-0",
+      source: "mock",
+      name: "黄山光明顶",
     });
+    expect(response.body).not.toContain("matchedLocationId");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("caches successful identical public place searches", async () => {
     const { client } = await createFakeDatabaseClient();
-    if (!client.location) {
-      throw new Error("Fake database client is missing public search delegates.");
-    }
-    const cachedClient = {
-      ...client,
-      location: {
-        ...client.location,
-        findMany: vi.fn(client.location.findMany),
-      },
-    };
+    const geoProvider = new MockGeoProvider();
+    const searchSpy = vi.spyOn(geoProvider, "searchPlace");
     app = buildApiServer({
-      dbClient: cachedClient,
+      dbClient: client,
       authConfig: testAuthConfig,
       logger: false,
+      geoProvider,
       env: {
         ...process.env,
         PUBLIC_SEARCH_CACHE_TTL_MS: "300000",
@@ -110,32 +100,22 @@ describe("public search routes", () => {
     expect(firstResponse.statusCode).toBe(200);
     expect(secondResponse.statusCode).toBe(200);
     expect(secondResponse.json()).toEqual(firstResponse.json());
-    expect(cachedClient.location.findMany).toHaveBeenCalledTimes(1);
+    expect(searchSpy).toHaveBeenCalledTimes(1);
   });
 
   it("does not cache failed public place searches", async () => {
     const { client } = await createFakeDatabaseClient();
-    if (!client.location) {
-      throw new Error("Fake database client is missing location delegate.");
-    }
-    const locationFindMany = vi.fn(async (...args: Parameters<typeof client.location.findMany>) => {
-      if (locationFindMany.mock.calls.length === 1) {
-        throw new Error("temporary local place search failure");
-      }
-
-      return client.location!.findMany(...args);
-    });
-    const retryingClient = {
-      ...client,
-      location: {
-        ...client.location,
-        findMany: locationFindMany,
-      },
-    };
+    const geoProvider = new MockGeoProvider();
+    const originalSearchPlace = geoProvider.searchPlace.bind(geoProvider);
+    const searchSpy = vi
+      .spyOn(geoProvider, "searchPlace")
+      .mockRejectedValueOnce(new Error("temporary provider search failure"))
+      .mockImplementationOnce(originalSearchPlace);
     app = buildApiServer({
-      dbClient: retryingClient,
+      dbClient: client,
       authConfig: testAuthConfig,
       logger: false,
+      geoProvider,
       env: {
         ...process.env,
         PUBLIC_SEARCH_CACHE_TTL_MS: "300000",
@@ -153,7 +133,7 @@ describe("public search routes", () => {
 
     expect(firstResponse.statusCode).toBe(503);
     expect(secondResponse.statusCode).toBe(200);
-    expect(locationFindMany).toHaveBeenCalledTimes(2);
+    expect(searchSpy).toHaveBeenCalledTimes(2);
   });
 
   it("reports reverse geocoding unavailable without calling external APIs by default", async () => {

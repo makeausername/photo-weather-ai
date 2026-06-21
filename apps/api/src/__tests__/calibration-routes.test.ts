@@ -27,7 +27,7 @@ describe("admin calibration routes", () => {
     expect(response.statusCode).toBe(200);
     const bodyText = response.body;
     const body = response.json();
-    expect(body.locations.length).toBeGreaterThan(0);
+    expect(body.locations).toBeUndefined();
     expect(body.photoSpots).toBeUndefined();
     expect(body.targets).toContain("general");
     expect(bodyText).not.toMatch(/api[_-]?key|secret/i);
@@ -42,7 +42,10 @@ describe("admin calibration routes", () => {
       url: "/admin/calibration/fetch-history",
       headers: adminAuthorizationHeader(),
       payload: {
-        locationId: "location-0",
+        locationName: "手动校准点",
+        latitudeWgs84: 30.12345,
+        longitudeWgs84: 120.54321,
+        elevationMeters: 300,
         startDate: "2026-05-01",
         endDate: "2026-05-02",
       },
@@ -55,11 +58,8 @@ describe("admin calibration routes", () => {
   });
 
   it("runs replay from stored historical samples and stores observed outcome labels", async () => {
-    const { client, state } = await createFakeDatabaseClient();
-    const location = state.locations.get("location-0");
-    if (!location) {
-      throw new Error("expected seeded location");
-    }
+    const { client } = await createFakeDatabaseClient();
+    const location = manualCalibrationLocation();
     await storeHistoricalWeatherSamples(buildSamplesForLocation(location), { client });
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
 
@@ -68,7 +68,10 @@ describe("admin calibration routes", () => {
       url: "/admin/calibration/replay",
       headers: adminAuthorizationHeader(),
       payload: {
-        locationId: location.id,
+        locationName: location.locationName,
+        latitudeWgs84: location.latitudeWgs84,
+        longitudeWgs84: location.longitudeWgs84,
+        elevationMeters: location.elevationMeters,
         startDate: "2026-05-01",
         endDate: "2026-05-01",
         target: "general",
@@ -83,7 +86,10 @@ describe("admin calibration routes", () => {
       url: "/admin/calibration/outcomes",
       headers: adminAuthorizationHeader(),
       payload: {
-        locationId: location.id,
+        locationName: location.locationName,
+        latitudeWgs84: location.latitudeWgs84,
+        longitudeWgs84: location.longitudeWgs84,
+        elevationMeters: location.elevationMeters,
         target: "general",
         outcomeDate: "2026-05-01",
         observedResult: "success",
@@ -102,15 +108,15 @@ describe("admin calibration routes", () => {
     expect(outcomeResponse.statusCode).toBe(200);
     expect(outcomeResponse.json().outcome).toMatchObject({
       spotId: null,
-      locationKey: `location:${location.id}`,
-      locationName: location.name,
+      locationKey: location.locationKey,
+      locationName: location.locationName,
       observedResult: "success",
       target: "general",
     });
 
     const resultsResponse = await app.inject({
       method: "GET",
-      url: `/admin/calibration/replay-results?locationId=${location.id}&target=general`,
+      url: `/admin/calibration/replay-results?locationKey=${encodeURIComponent(location.locationKey)}&target=general`,
       headers: adminAuthorizationHeader(),
     });
 
@@ -127,7 +133,10 @@ describe("admin calibration routes", () => {
       url: `/admin/calibration/outcomes/${outcomeId}`,
       headers: adminAuthorizationHeader(),
       payload: {
-        locationId: location.id,
+        locationName: location.locationName,
+        latitudeWgs84: location.latitudeWgs84,
+        longitudeWgs84: location.longitudeWgs84,
+        elevationMeters: location.elevationMeters,
         target: "general",
         outcomeDate: "2026-05-01",
         observedResult: "partial",
@@ -155,16 +164,63 @@ describe("admin calibration routes", () => {
       url: "/admin/calibration/stats/recompute",
       headers: adminAuthorizationHeader(),
       payload: {
-        locationId: location.id,
+        locationName: location.locationName,
+        latitudeWgs84: location.latitudeWgs84,
+        longitudeWgs84: location.longitudeWgs84,
+        elevationMeters: location.elevationMeters,
         target: "general",
       },
     });
 
     expect(statsResponse.statusCode).toBe(200);
     expect(statsResponse.json().stats).toMatchObject({
+      locationKey: location.locationKey,
       sampleCount: 1,
       labeledCount: 1,
       partialCount: 1,
+    });
+  });
+
+  it("keeps legacy locationId resolution for old calibration records", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const legacyLocation = {
+      id: "legacy-location",
+      name: "旧版地点",
+      slug: "legacy-location",
+      province: "浙江省",
+      city: "杭州市",
+      district: null,
+      address: null,
+      latitudeGcj02: 30.11,
+      longitudeGcj02: 120.11,
+      latitudeWgs84: 30.1,
+      longitudeWgs84: 120.1,
+      elevation: 120,
+      locationType: "custom",
+      source: "manual",
+      isVerified: false,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    };
+    state.locations.set(legacyLocation.id, legacyLocation);
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/calibration/outcomes",
+      headers: adminAuthorizationHeader(),
+      payload: {
+        locationId: legacyLocation.id,
+        target: "general",
+        outcomeDate: "2026-05-01",
+        observedResult: "unknown",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().outcome).toMatchObject({
+      locationKey: `location:${legacyLocation.id}`,
+      locationName: legacyLocation.name,
     });
   });
 
@@ -177,7 +233,9 @@ describe("admin calibration routes", () => {
       url: "/admin/calibration/outcomes",
       headers: adminAuthorizationHeader(),
       payload: {
-        locationId: "location-0",
+        locationName: "手动校准点",
+        latitudeWgs84: 30.12345,
+        longitudeWgs84: 120.54321,
         target: "general",
         outcomeDate: "2026-05-01",
         observedResult: "great",
@@ -191,14 +249,24 @@ describe("admin calibration routes", () => {
   });
 });
 
-function buildSamplesForLocation(location: any) {
+function manualCalibrationLocation() {
+  return {
+    locationName: "手动校准点",
+    locationKey: "wgs84:30.12345,120.54321",
+    latitudeWgs84: 30.12345,
+    longitudeWgs84: 120.54321,
+    elevationMeters: 300,
+  };
+}
+
+function buildSamplesForLocation(location: ReturnType<typeof manualCalibrationLocation>) {
   return Array.from({ length: 24 }, (_, index) => ({
     spotId: null,
-    locationKey: `location:${location.id}`,
-    locationName: location.name,
+    locationKey: location.locationKey,
+    locationName: location.locationName,
     latitudeWgs84: location.latitudeWgs84,
     longitudeWgs84: location.longitudeWgs84,
-    elevationMeters: location.elevation,
+    elevationMeters: location.elevationMeters,
     sourceProvider: "open_meteo_historical" as const,
     sampleTime: new Date(`2026-05-01T${String(index).padStart(2, "0")}:00:00+08:00`),
     timezone: "Asia/Shanghai",

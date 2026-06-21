@@ -12,9 +12,9 @@ type AuditResponse = {
 const actionLabels: Record<string, string> = {
   "system_setting.update": "更新系统设置",
   "provider_config.update": "更新服务商配置",
-  "location.create": "新增地点",
-  "location.update": "编辑地点",
-  "location.delete": "删除地点",
+  "location.create": "旧版地点记录新增",
+  "location.update": "旧版地点记录编辑",
+  "location.delete": "旧版地点记录删除",
   "photo_spot.create": "旧版拍摄点记录新增",
   "photo_spot.update": "旧版拍摄点记录编辑",
   "photo_spot.delete": "旧版拍摄点记录删除",
@@ -23,7 +23,7 @@ const actionLabels: Record<string, string> = {
 const targetTypeLabels: Record<string, string> = {
   system_setting: "系统设置",
   provider_config: "服务商配置",
-  location: "地点",
+  location: "旧版地点",
   photo_spot: "旧版拍摄点",
 };
 
@@ -89,7 +89,7 @@ export function AdminAuditClient() {
       ) : (
         <EmptyState
           title="暂无审计日志"
-          description="后台产生配置或地点变更后会显示在这里。"
+          description="后台产生配置、校准或审计事件后会显示在这里。"
         />
       )}
     </Card>

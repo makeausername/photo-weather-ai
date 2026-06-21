@@ -3,12 +3,11 @@
 import { useEffect, useState } from "react";
 import { Badge, Card, EmptyState, Table } from "../../../components/ui";
 import { adminApiFetch } from "../admin-api";
-import type { AdminAuditLog, AdminLocation, SafeProviderConfig } from "../admin-api";
+import type { AdminAuditLog, SafeProviderConfig } from "../admin-api";
 
 type DashboardState = {
   readonly settingsOk: boolean | null;
   readonly providers: SafeProviderConfig[];
-  readonly locations: AdminLocation[];
   readonly auditLogs: AdminAuditLog[];
   readonly error?: string;
 };
@@ -16,16 +15,15 @@ type DashboardState = {
 const initialState: DashboardState = {
   settingsOk: null,
   providers: [],
-  locations: [],
   auditLogs: [],
 };
 
 const actionLabels: Record<string, string> = {
   "system_setting.update": "更新系统设置",
   "provider_config.update": "更新服务商配置",
-  "location.create": "新增地点",
-  "location.update": "编辑地点",
-  "location.delete": "删除地点",
+  "location.create": "旧版地点记录新增",
+  "location.update": "旧版地点记录编辑",
+  "location.delete": "旧版地点记录删除",
   "photo_spot.create": "旧版拍摄点记录新增",
   "photo_spot.update": "旧版拍摄点记录编辑",
   "photo_spot.delete": "旧版拍摄点记录删除",
@@ -34,7 +32,7 @@ const actionLabels: Record<string, string> = {
 const targetTypeLabels: Record<string, string> = {
   system_setting: "系统设置",
   provider_config: "服务商配置",
-  location: "地点",
+  location: "旧版地点",
   photo_spot: "旧版拍摄点",
 };
 
@@ -52,11 +50,10 @@ export function AdminDashboardClient() {
     let cancelled = false;
 
     async function loadDashboard() {
-      const [settingsResult, providersResult, locationsResult, auditResult] =
+      const [settingsResult, providersResult, auditResult] =
         await Promise.allSettled([
           adminApiFetch<{ readonly settings: unknown[] }>("/admin/settings"),
           adminApiFetch<{ readonly providers: SafeProviderConfig[] }>("/admin/providers"),
-          adminApiFetch<{ readonly locations: AdminLocation[] }>("/admin/locations"),
           adminApiFetch<{ readonly logs: AdminAuditLog[] }>("/admin/audit-logs?limit=5"),
         ]);
 
@@ -67,12 +64,11 @@ export function AdminDashboardClient() {
       setState({
         settingsOk: settingsResult.status === "fulfilled",
         providers: providersResult.status === "fulfilled" ? providersResult.value.providers : [],
-        locations: locationsResult.status === "fulfilled" ? locationsResult.value.locations : [],
         auditLogs: auditResult.status === "fulfilled" ? auditResult.value.logs : [],
         error:
           settingsResult.status === "rejected" &&
           providersResult.status === "rejected" &&
-          locationsResult.status === "rejected"
+          auditResult.status === "rejected"
             ? "后台接口暂不可用，当前显示兜底状态。"
             : undefined,
       });
@@ -100,12 +96,6 @@ export function AdminDashboardClient() {
       description: "仅统计配置开关，不触发真实连接或外部调用",
       badge: "本地状态",
     },
-    {
-      title: "地点数量",
-      value: String(state.locations.length),
-      description: "来自地点管理接口；接口不可用时显示 0",
-      badge: "地点",
-    },
   ] as const;
 
   return (
@@ -116,7 +106,7 @@ export function AdminDashboardClient() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         {summaryCards.map((card) => (
           <Card key={card.title} className="grid gap-3 p-5">
             <div className="flex items-start justify-between gap-3">
@@ -165,7 +155,7 @@ export function AdminDashboardClient() {
             </tbody>
           </Table>
         ) : (
-          <EmptyState title="暂无最近操作" description="有配置或地点变更后会显示在这里。" />
+          <EmptyState title="暂无最近操作" description="有配置或校准操作后会显示在这里。" />
         )}
       </Card>
     </div>

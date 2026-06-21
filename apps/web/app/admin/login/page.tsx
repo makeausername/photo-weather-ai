@@ -54,13 +54,13 @@ export default function AdminLoginPage() {
         <div className="hidden min-w-0 lg:block">
           <p className="text-sm font-semibold text-primary">后台运营</p>
           <h1 className="mt-4 max-w-2xl text-[38px] font-bold leading-tight tracking-normal text-foreground">
-            管理地点与服务商配置
+            管理服务商配置与历史校准
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-8 text-muted-foreground">
-            控制台用于维护逐光天气的本地资料、模拟服务商配置和审计记录。密钥保存后仅展示脱敏结果。
+            控制台用于维护逐光天气的服务商配置、历史校准和审计记录。密钥保存后仅展示脱敏结果。
           </p>
           <div className="mt-6 grid max-w-2xl gap-3 md:grid-cols-3">
-            {["地点资料", "服务商配置", "审计日志"].map((item) => (
+            {["历史校准", "服务商配置", "审计日志"].map((item) => (
               <div key={item} className="rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
                 <p className="text-sm font-semibold text-card-foreground">{item}</p>
               </div>

@@ -2,27 +2,21 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import {
   assertProviderType,
   createAuditLog,
-  createLocation,
-  deleteLocation,
   getProviderConfig,
   getLocation,
   getPhotoSpot,
-  listLocations,
   getSystemSetting,
   listAuditLogs,
   listProviderConfigs,
   listSystemSettings,
-  locationSources,
-  locationTypes,
   setSystemSetting,
   updateProviderConfig,
-  updateLocation,
   validateProviderCode,
   validateSettingKey,
   validateSettingValue,
 } from "@photo-weather/db";
 import type { DatabaseClient, JsonValue, ProviderType } from "@photo-weather/db";
-import { MockGeoProvider, validateCoordinates } from "@photo-weather/geo";
+import { MockGeoProvider } from "@photo-weather/geo";
 import type { GeoProvider } from "@photo-weather/geo";
 import {
   buildCalibrationLocationKey,
@@ -148,35 +142,6 @@ const auditLogsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 
-const slugSchema = z
-  .string({ required_error: "请填写 slug。" })
-  .trim()
-  .min(1, "请填写 slug。")
-  .max(120, "slug 不能超过 120 个字符。")
-  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "slug 只能使用小写字母、数字和连字符。");
-
-const requiredTextSchema = (fieldName: string, maxLength = 120) =>
-  z
-    .string({ required_error: `请填写${fieldName}。` })
-    .trim()
-    .min(1, `请填写${fieldName}。`)
-    .max(maxLength, `${fieldName}不能超过 ${maxLength} 个字符。`);
-
-const optionalTextSchema = (fieldName: string, maxLength = 1000) =>
-  z
-    .string()
-    .max(maxLength, `${fieldName}不能超过 ${maxLength} 个字符。`)
-    .nullable()
-    .optional()
-    .transform((value) => {
-      if (value === undefined) {
-        return undefined;
-      }
-
-      const trimmed = value?.trim() ?? "";
-      return trimmed ? trimmed : null;
-    });
-
 const latitudeSchema = z
   .number({ invalid_type_error: "纬度必须是数字。" })
   .finite("纬度必须是有效数字。")
@@ -196,37 +161,6 @@ const elevationSchema = z
   .max(9000, "海拔不能大于 9000 米。")
   .nullable()
   .optional();
-
-const locationPayloadSchema = z.object({
-  name: requiredTextSchema("地点名称"),
-  slug: slugSchema,
-  province: requiredTextSchema("省份"),
-  city: requiredTextSchema("城市"),
-  district: optionalTextSchema("区县", 120),
-  address: optionalTextSchema("详细地址", 500),
-  latitudeGcj02: latitudeSchema,
-  longitudeGcj02: longitudeSchema,
-  latitudeWgs84: latitudeSchema,
-  longitudeWgs84: longitudeSchema,
-  elevation: elevationSchema,
-  locationType: z.enum(locationTypes, {
-    invalid_type_error: "请选择地点类型。",
-    required_error: "请选择地点类型。",
-  }),
-  source: z.enum(locationSources, {
-    invalid_type_error: "请选择地点来源。",
-    required_error: "请选择地点来源。",
-  }),
-  isVerified: z.boolean().default(false),
-});
-
-const locationPatchSchema = locationPayloadSchema
-  .partial()
-  .refine((value) => Object.keys(value).length > 0, "请至少提供一个要更新的地点字段。");
-
-const listLocationsQuerySchema = z.object({
-  q: z.string().trim().optional(),
-});
 
 const geoSearchQuerySchema = z.object({
   q: z.string().trim().min(1, "请输入搜索关键词。"),
@@ -328,6 +262,9 @@ const calibrationReplayResultsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
 
+const retiredFixedLocationLibraryMessage =
+  "固定地点库管理已停用，历史校准请直接输入地点名称与 WGS84 坐标。";
+
 export type AdminRoutesOptions = {
   readonly dbClient?: DatabaseClient;
   readonly authConfig: AuthConfig;
@@ -354,6 +291,15 @@ function calibrationLocationKeyFromQuery(input: {
     return buildCalibrationLocationKey({ locationId: input.locationId });
   }
   return input.locationKey;
+}
+
+function sendRetiredFixedLocationLibrary(reply: FastifyReply) {
+  return sendError(
+    reply,
+    410,
+    "fixed_location_library_retired",
+    retiredFixedLocationLibraryMessage,
+  );
 }
 
 function isLocalDevelopment(env: NodeJS.ProcessEnv): boolean {
@@ -572,40 +518,6 @@ function isJsonObjectValue(value: JsonValue | undefined): value is Record<string
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function validateCoordinatePair(input: {
-  readonly latitudeGcj02: number;
-  readonly longitudeGcj02: number;
-  readonly latitudeWgs84: number;
-  readonly longitudeWgs84: number;
-}): string | null {
-  const gcj02Validation = validateCoordinates(
-    {
-      latitude: input.latitudeGcj02,
-      longitude: input.longitudeGcj02,
-      system: "gcj02",
-    },
-    { expectedSystem: "gcj02" },
-  );
-  const wgs84Validation = validateCoordinates(
-    {
-      latitude: input.latitudeWgs84,
-      longitude: input.longitudeWgs84,
-      system: "wgs84",
-    },
-    { expectedSystem: "wgs84" },
-  );
-
-  if (!gcj02Validation.ok) {
-    return "GCJ-02 坐标不合法。";
-  }
-
-  if (!wgs84Validation.ok) {
-    return "WGS84 坐标不合法。";
-  }
-
-  return null;
-}
-
 async function resolveCalibrationLocation(
   input: z.infer<typeof calibrationLocationSchema>,
   client: DatabaseClient | undefined,
@@ -648,7 +560,7 @@ async function resolveCalibrationLocation(
     typeof input.latitudeWgs84 !== "number" ||
     typeof input.longitudeWgs84 !== "number"
   ) {
-    throw new Error("请选择地点，或提供地点名称与 WGS84 坐标。");
+    throw new Error("请填写地点名称与 WGS84 坐标。");
   }
 
   return {
@@ -698,8 +610,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       return reply;
     }
 
-    const [locations, stats, recentResults, outcomes, overview] = await Promise.all([
-      listLocations({ client }),
+    const [stats, recentResults, outcomes, overview] = await Promise.all([
       listCalibrationStats({ client }),
       listForecastReplayResults({ client, limit: 50 }),
       listObservedOutcomes({ client }),
@@ -708,7 +619,6 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
 
     return {
       overview,
-      locations,
       targets: calibrationTargets,
       minimumHintSampleCount: defaultCalibrationMinimumSampleCount,
       stats,
@@ -723,8 +633,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       return reply;
     }
 
-    const [locations, stats, recentResults, outcomes, overview] = await Promise.all([
-      listLocations({ client }),
+    const [stats, recentResults, outcomes, overview] = await Promise.all([
       listCalibrationStats({ client }),
       listForecastReplayResults({ client, limit: 50 }),
       listObservedOutcomes({ client }),
@@ -733,7 +642,6 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
 
     return {
       overview,
-      locations,
       targets: calibrationTargets,
       minimumHintSampleCount: defaultCalibrationMinimumSampleCount,
       stats,
@@ -2174,146 +2082,52 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
   }
 
   app.get("/admin/locations", async (request, reply) => {
-    const auth = await requirePermission(request, reply, client, authConfig, "locations.manage");
+    const auth = await requirePermission(request, reply, client, authConfig, "admin.manage");
     if (!auth) {
       return reply;
     }
 
-    const parsedQuery = listLocationsQuerySchema.safeParse(request.query);
-    if (!parsedQuery.success) {
-      return sendZodError(reply, parsedQuery.error);
-    }
-
-    const locations = await listLocations({
-      search: parsedQuery.data.q,
-      client,
-    });
-
-    return { locations };
+    return sendRetiredFixedLocationLibrary(reply);
   });
 
   app.get<{ Params: { id: string } }>("/admin/locations/:id", async (request, reply) => {
-    const auth = await requirePermission(request, reply, client, authConfig, "locations.manage");
+    const auth = await requirePermission(request, reply, client, authConfig, "admin.manage");
     if (!auth) {
       return reply;
     }
 
-    const location = await getLocation(request.params.id, { client });
-    if (!location) {
-      return sendError(reply, 404, "location_not_found", "未找到地点。");
-    }
-
-    return { location };
+    return sendRetiredFixedLocationLibrary(reply);
   });
 
   app.post("/admin/locations", async (request, reply) => {
-    const auth = await requirePermission(request, reply, client, authConfig, "locations.manage");
+    const auth = await requirePermission(request, reply, client, authConfig, "admin.manage");
     if (!auth) {
       return reply;
     }
 
-    const parsedBody = locationPayloadSchema.safeParse(request.body);
-    if (!parsedBody.success) {
-      return sendZodError(reply, parsedBody.error);
-    }
-
-    const coordinateError = validateCoordinatePair(parsedBody.data);
-    if (coordinateError) {
-      return sendError(reply, 400, "invalid_coordinates", coordinateError);
-    }
-
-    const location = await createLocation(parsedBody.data, { client });
-    await createAuditLog(
-      {
-        actorUserId: auth.auditActorUserId,
-        action: "location.create",
-        targetType: "location",
-        targetId: location.id,
-        afterJson: toAuditJson(location),
-        ipAddress: request.ip,
-        userAgent: request.headers["user-agent"] ?? null,
-      },
-      { client },
-    );
-
-    return reply.status(201).send({ location });
+    return sendRetiredFixedLocationLibrary(reply);
   });
 
   app.patch<{ Params: { id: string } }>("/admin/locations/:id", async (request, reply) => {
-    const auth = await requirePermission(request, reply, client, authConfig, "locations.manage");
+    const auth = await requirePermission(request, reply, client, authConfig, "admin.manage");
     if (!auth) {
       return reply;
     }
 
-    const parsedBody = locationPatchSchema.safeParse(request.body);
-    if (!parsedBody.success) {
-      return sendZodError(reply, parsedBody.error);
-    }
-
-    const existingLocation = await getLocation(request.params.id, { client });
-    if (!existingLocation) {
-      return sendError(reply, 404, "location_not_found", "未找到地点。");
-    }
-
-    const coordinateError = validateCoordinatePair({
-      latitudeGcj02: parsedBody.data.latitudeGcj02 ?? existingLocation.latitudeGcj02,
-      longitudeGcj02: parsedBody.data.longitudeGcj02 ?? existingLocation.longitudeGcj02,
-      latitudeWgs84: parsedBody.data.latitudeWgs84 ?? existingLocation.latitudeWgs84,
-      longitudeWgs84: parsedBody.data.longitudeWgs84 ?? existingLocation.longitudeWgs84,
-    });
-    if (coordinateError) {
-      return sendError(reply, 400, "invalid_coordinates", coordinateError);
-    }
-
-    const location = await updateLocation(request.params.id, parsedBody.data, { client });
-    await createAuditLog(
-      {
-        actorUserId: auth.auditActorUserId,
-        action: "location.update",
-        targetType: "location",
-        targetId: location.id,
-        beforeJson: toAuditJson(existingLocation),
-        afterJson: toAuditJson(location),
-        ipAddress: request.ip,
-        userAgent: request.headers["user-agent"] ?? null,
-      },
-      { client },
-    );
-
-    return { location };
+    return sendRetiredFixedLocationLibrary(reply);
   });
 
   app.delete<{ Params: { id: string } }>("/admin/locations/:id", async (request, reply) => {
-    const auth = await requirePermission(request, reply, client, authConfig, "locations.manage");
+    const auth = await requirePermission(request, reply, client, authConfig, "admin.manage");
     if (!auth) {
       return reply;
     }
 
-    const existingLocation = await getLocation(request.params.id, { client });
-    if (!existingLocation) {
-      return sendError(reply, 404, "location_not_found", "未找到地点。");
-    }
-
-    const location = await deleteLocation(request.params.id, { client });
-    await createAuditLog(
-      {
-        actorUserId: auth.auditActorUserId,
-        action: "location.delete",
-        targetType: "location",
-        targetId: existingLocation.id,
-        beforeJson: toAuditJson(existingLocation),
-        afterJson: toAuditJson(location),
-        ipAddress: request.ip,
-        userAgent: request.headers["user-agent"] ?? null,
-      },
-      { client },
-    );
-
-    return { location };
+    return sendRetiredFixedLocationLibrary(reply);
   });
 
   app.get("/admin/geo/search", async (request, reply) => {
-    const auth = await requirePermission(request, reply, client, authConfig, "locations.manage");
+    const auth = await requirePermission(request, reply, client, authConfig, "providers.manage");
     if (!auth) {
       return reply;
     }

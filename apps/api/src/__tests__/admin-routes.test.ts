@@ -1592,82 +1592,25 @@ describe("admin config routes", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("lists seeded Chinese locations and validates unsafe coordinates", async () => {
-    const { client } = await createFakeDatabaseClient();
-    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
-
-    const listResponse = await app.inject({
-      method: "GET",
-      url: "/admin/locations",
-      headers: adminAuthorizationHeader(),
-    });
-
-    expect(listResponse.statusCode).toBe(200);
-    expect(listResponse.json().locations.map((location: any) => location.name)).toContain("黄山");
-
-    const invalidResponse = await app.inject({
-      method: "POST",
-      url: "/admin/locations",
-      headers: adminAuthorizationHeader(),
-      payload: {
-        name: "测试地点",
-        slug: "test-location",
-        province: "浙江省",
-        city: "杭州市",
-        district: null,
-        address: null,
-        latitudeGcj02: 120,
-        longitudeGcj02: 120.1,
-        latitudeWgs84: 30.2,
-        longitudeWgs84: 120.1,
-        elevation: null,
-        locationType: "city",
-        source: "manual",
-        isVerified: false,
-      },
-    });
-
-    expect(invalidResponse.statusCode).toBe(400);
-    expect(invalidResponse.json()).toMatchObject({
-      error: "validation_error",
-    });
-  });
-
-  it("creates a location with authenticated audit logs", async () => {
+  it("returns 410 for the retired fixed location admin API", async () => {
     const { client, state } = await createFakeDatabaseClient();
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
 
-    const locationResponse = await app.inject({
-      method: "POST",
-      url: "/admin/locations",
-      headers: adminAuthorizationHeader(),
-      payload: {
-        name: "测试山地",
-        slug: "test-mountain",
-        province: "四川省",
-        city: "阿坝州",
-        district: "小金县",
-        address: "测试地址",
-        latitudeGcj02: 31.002,
-        longitudeGcj02: 102.002,
-        latitudeWgs84: 31,
-        longitudeWgs84: 102,
-        elevation: 3200,
-        locationType: "mountain",
-        source: "manual",
-        isVerified: false,
-      },
-    });
+    for (const method of ["GET", "POST", "PATCH", "DELETE"] as const) {
+      const response = await app.inject({
+        method,
+        url: method === "GET" || method === "POST" ? "/admin/locations" : "/admin/locations/legacy",
+        headers: adminAuthorizationHeader(),
+        payload: method === "POST" || method === "PATCH" ? { name: "旧地点" } : undefined,
+      });
 
-    expect(locationResponse.statusCode).toBe(201);
-    const location = locationResponse.json().location;
-    expect(location).toMatchObject({
-      name: "测试山地",
-      source: "manual",
-      isVerified: false,
-    });
-
-    expect(state.auditLogs.map((log) => log.action)).toEqual(["location.create"]);
+      expect(response.statusCode).toBe(410);
+      expect(response.json()).toMatchObject({
+        error: "fixed_location_library_retired",
+        message: "固定地点库管理已停用，历史校准请直接输入地点名称与 WGS84 坐标。",
+      });
+    }
+    expect(state.auditLogs.map((log) => log.action)).not.toContain("location.create");
   });
 
   it("does not expose admin photo spot CRUD routes", async () => {
@@ -1724,7 +1667,7 @@ describe("admin config routes", () => {
     });
   });
 
-  it("maps local locations before provider results in public search", async () => {
+  it("uses provider results instead of fixed local locations in public search", async () => {
     const { client } = await createFakeDatabaseClient();
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
 
@@ -1736,14 +1679,14 @@ describe("admin config routes", () => {
     expect(response.statusCode).toBe(200);
     const body = response.json();
     expect(body.results[0]).toMatchObject({
-      name: "黄山",
-      source: "local_location",
-      matchedLocationId: "location-0",
-      latitudeGcj02: 30.1351,
-      longitudeWgs84: 118.171,
+      name: "黄山光明顶",
+      source: "mock",
     });
     expect(body.results).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ source: "local_photo_spot" })]),
+      expect.arrayContaining([expect.objectContaining({ source: "local_location" })]),
+    );
+    expect(body.results).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ matchedLocationId: expect.any(String) })]),
     );
   });
 
@@ -1773,13 +1716,13 @@ describe("admin config routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().results[0]).toMatchObject({
-      name: "黄山",
-      source: "local_location",
+      name: "黄山光明顶",
+      source: "mock",
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("mixes real Amap results after local public search results when explicitly enabled", async () => {
+  it("uses real Amap results when explicitly enabled", async () => {
     const { client, state } = await createFakeDatabaseClient();
     const amapProvider = state.providers.get("geo:amap");
     state.providers.set("geo:amap", {
@@ -1843,8 +1786,8 @@ describe("admin config routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(body.results[0]).toMatchObject({
-      name: "黄山",
-      source: "local_location",
+      name: "黄山迎客松",
+      source: "amap",
     });
     expect(body.results.some((result: any) => result.source === "amap")).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(1);
