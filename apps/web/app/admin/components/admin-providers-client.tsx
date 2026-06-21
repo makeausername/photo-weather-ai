@@ -95,36 +95,43 @@ const providerOrder: readonly ProviderKey[] = [
 const providerGroups = [
   {
     key: "geo",
+    marker: "地",
     title: "地图与地理",
     description: "管理地点搜索、地理编码和坐标转换能力，密钥仅在服务端调用时使用。",
   },
   {
     key: "weather",
+    marker: "天",
     title: "天气数据",
     description: "管理和风天气、Open-Meteo、meteoblue 等天气数据源。保存配置不会触发外部请求。",
   },
   {
     key: "ai",
+    marker: "AI",
     title: "智能解读",
     description: "管理结果说明和文案生成能力，不参与天气、天文、地形或评分计算。",
   },
   {
     key: "billing",
+    marker: "付",
     title: "支付收款",
     description: "管理微信支付和支付宝收款配置；密钥、证书和回调验签材料只保存在服务端。",
   },
   {
     key: "notification",
+    marker: "信",
     title: "邮箱短信",
     description: "管理邮箱验证码和短信验证码服务，密钥只保存在服务端。",
   },
   {
     key: "storage",
+    marker: "存",
     title: "对象存储",
     description: "配置报告、导出文件和生成素材的存储后端，密钥只保存在服务端。",
   },
 ] as const satisfies readonly {
   readonly key: ProviderGroupKey;
+  readonly marker: string;
   readonly title: string;
   readonly description: string;
 }[];
@@ -1168,21 +1175,44 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
 
   const activeGroup = groupSummaries.find((group) => group.key === activeGroupKey) ?? null;
   const visibleGroups = searchQuery ? searchResultGroups : activeGroup ? [activeGroup] : [];
-  const visibleProviderIds = useMemo(
-    () => new Set(visibleGroups.flatMap((group) => group.providers.map((provider) => provider.id))),
+  const visibleProviders = useMemo(
+    () => visibleGroups.flatMap((group) => group.providers),
     [visibleGroups],
   );
-  const selectedProvider = useMemo(
+  const visibleProviderIds = useMemo(
+    () => new Set(visibleProviders.map((provider) => provider.id)),
+    [visibleProviders],
+  );
+  const preferredVisibleProvider = useMemo(
     () =>
-      providers.find(
-        (provider) => provider.id === selectedProviderId && visibleProviderIds.has(provider.id),
-      ) ?? null,
-    [providers, selectedProviderId, visibleProviderIds],
+      visibleProviders.find((provider) =>
+        providerNeedsAttention(provider, realDevCallFlags, testStateByProvider[provider.id]),
+      ) ??
+      visibleProviders[0] ??
+      null,
+    [realDevCallFlags, testStateByProvider, visibleProviders],
+  );
+  const selectedProvider = useMemo(
+    () => visibleProviders.find((provider) => provider.id === selectedProviderId) ?? null,
+    [selectedProviderId, visibleProviders],
   );
   const searchResultCount = searchResultGroups.reduce(
     (count, group) => count + group.providers.length,
     0,
   );
+
+  useEffect(() => {
+    if (!preferredVisibleProvider) {
+      if (selectedProviderId !== null) {
+        setSelectedProviderId(null);
+      }
+      return;
+    }
+
+    if (!selectedProviderId || !visibleProviderIds.has(selectedProviderId)) {
+      setSelectedProviderId(preferredVisibleProvider.id);
+    }
+  }, [preferredVisibleProvider, selectedProviderId, visibleProviderIds]);
 
   function markProviderDirty(providerId: string) {
     setDirtyProviders((current) => ({ ...current, [providerId]: true }));
@@ -1453,7 +1483,19 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     }
   }
 
-  function renderProviderSummaryCard(provider: SafeProviderConfig) {
+  function selectProvider(provider: SafeProviderConfig) {
+    const groupKey = getMeta(provider)?.group;
+    if (groupKey) {
+      activeGroupInitialized.current = true;
+      setActiveGroupKey(groupKey);
+      if (typeof window !== "undefined") {
+        window.sessionStorage.setItem(categorySessionStorageKey, groupKey);
+      }
+    }
+    setSelectedProviderId(provider.id);
+  }
+
+  function renderProviderListRow(provider: SafeProviderConfig) {
     const meta = getMeta(provider);
     const saveState = saveStateByProvider[provider.id];
     const testState = testStateByProvider[provider.id];
@@ -1465,94 +1507,95 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     const selected = selectedProvider?.id === provider.id;
 
     return (
-      <article
+      <li
         key={provider.id}
-        data-provider-card={providerIdentityKey(provider)}
         data-provider-summary={providerIdentityKey(provider)}
         className={cn(
-          "grid min-w-0 gap-3 rounded-lg border border-border bg-card p-4 shadow-sm transition",
-          selected && "border-primary bg-secondary/35",
-          needsAttention && !selected && "border-warning",
+          "grid min-w-0 gap-2 border-b border-border px-3 py-2.5 transition last:border-b-0",
+          selected && "bg-secondary/70",
+          needsAttention && !selected && "bg-warning/5",
         )}
       >
-        <button
-          type="button"
-          aria-pressed={selected}
-          className="grid min-w-0 gap-2 text-left"
-          onClick={() => setSelectedProviderId(provider.id)}
-        >
-          <span className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-            <span className="min-w-0">
-              <span className="flex flex-wrap items-center gap-2">
-                <span className="text-base font-bold text-card-foreground">
-                  {providerName(provider)}
-                </span>
-                <Badge variant="muted" className="rounded-md">
-                  {provider.providerCode}
+        <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+          <button
+            type="button"
+            aria-pressed={selected}
+            className="grid min-w-0 gap-1 text-left"
+            onClick={() => selectProvider(provider)}
+          >
+            <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="truncate text-sm font-bold text-card-foreground">
+                {providerName(provider)}
+              </span>
+              <span className="truncate text-xs text-muted-foreground">
+                {provider.providerCode}
+              </span>
+              {needsAttention ? (
+                <Badge variant="warning" className="rounded-md px-2 py-0.5">
+                  需处理
                 </Badge>
-                {needsAttention ? (
-                  <Badge variant="warning" className="rounded-md">
-                    需处理
-                  </Badge>
-                ) : null}
-              </span>
-              <span className="mt-1 block text-sm leading-6 text-muted-foreground">
-                {meta?.purpose ?? "服务商配置与连接测试。"}
-              </span>
+              ) : null}
             </span>
-            <Badge variant={provider.enabled ? "success" : "muted"} className="rounded-md">
-              {provider.enabled ? "已启用" : "未启用"}
-            </Badge>
-          </span>
+            <span className="truncate text-xs leading-5 text-muted-foreground">
+              {meta?.purpose ?? "服务商配置与连接测试。"}
+            </span>
+          </button>
 
-          <span className="flex flex-wrap gap-2">
-            <Badge variant={realEnabled ? "success" : "muted"} className="rounded-md">
-              真实调用：{realEnabled ? "已启用" : "未启用"}
+          <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+            <Badge
+              variant={provider.enabled ? "success" : "muted"}
+              className="rounded-md px-2 py-0.5"
+            >
+              {provider.enabled ? "启用" : "停用"}
             </Badge>
-            <Badge variant={secretStatusVariant(provider)} className="rounded-md">
+            <Badge variant={realEnabled ? "success" : "muted"} className="rounded-md px-2 py-0.5">
+              真实：{realEnabled ? "开" : "关"}
+            </Badge>
+            <Badge variant={secretStatusVariant(provider)} className="rounded-md px-2 py-0.5">
               密钥：{secretStatusLabel(provider)}
             </Badge>
-            <Badge variant={testStatusVariant(testState)} className="rounded-md">
-              最近测试：{testStatusLabel(testState)}
+            <Badge variant={testStatusVariant(testState)} className="rounded-md px-2 py-0.5">
+              测试：{testStatusLabel(testState)}
             </Badge>
-          </span>
+          </div>
+        </div>
 
-          {meta?.capabilities.length ? (
-            <span className="flex flex-wrap gap-2">
-              {meta.capabilities.slice(0, 4).map((capability) => (
-                <Badge key={capability} variant="info" className="rounded-md px-2 py-0.5">
-                  {capability}
-                </Badge>
-              ))}
-            </span>
-          ) : null}
-        </button>
-
-        <div className="flex flex-col gap-2 border-t border-border pt-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 flex-wrap gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 flex-wrap gap-1.5">
+            {meta?.capabilities.slice(0, 3).map((capability) => (
+              <Badge key={capability} variant="info" className="rounded-md px-2 py-0.5">
+                {capability}
+              </Badge>
+            ))}
             <FeedbackPill state={saveState} dirty={dirty} />
             <FeedbackPill state={testState} />
           </div>
-          <div className="flex shrink-0 flex-wrap gap-2">
-            <Button size="sm" onClick={() => setSelectedProviderId(provider.id)}>
+          <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+            <Button size="sm" onClick={() => selectProvider(provider)}>
               配置
             </Button>
             <Button
               size="sm"
               variant="secondary"
+              aria-label="测试连接"
               disabled={isTesting}
               onClick={() => void testProvider(provider)}
             >
               {providerTestButtonLabel(testState)}
             </Button>
             {dirty ? (
-              <Button size="sm" disabled={isSaving} onClick={() => void saveProvider(provider)}>
+              <Button
+                size="sm"
+                aria-label="保存配置"
+                disabled={isSaving}
+                onClick={() => void saveProvider(provider)}
+              >
                 {providerSaveButtonLabel(saveState)}
               </Button>
             ) : null}
           </div>
         </div>
-      </article>
+      </li>
     );
   }
 
@@ -1575,6 +1618,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         data-provider-detail={providerIdentityKey(provider)}
         className="grid min-w-0 gap-4 rounded-lg border border-primary/50 bg-card p-4 shadow-sm"
       >
+        <p className="text-xs font-semibold text-primary">顶部概览</p>
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -1629,11 +1673,11 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
 
           <section className="grid gap-3">
             <SectionTitle
-              title="必填配置"
+              title="常用配置"
               description={
                 requiredConfigFields.length > 0
                   ? "常用参数直接编辑，正常管理员不需要处理原始 JSON。"
-                  : "该服务商的必填配置集中在密钥配置中。"
+                  : "该服务商没有额外常用参数；如需密钥请在下方维护。"
               }
             />
             {requiredConfigFields.length > 0 ? (
@@ -1642,7 +1686,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               </div>
             ) : (
               <p className="rounded-md border border-border bg-background/45 px-3 py-2 text-sm text-muted-foreground">
-                保存 API Key 后即可测试真实连接。
+                保存密钥或开关后即可测试连接。
               </p>
             )}
           </section>
@@ -1739,11 +1783,16 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               <FeedbackPill state={testState} />
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
-              <Button disabled={isSaving} onClick={() => void saveProvider(provider)}>
+              <Button
+                aria-label="保存配置"
+                disabled={isSaving}
+                onClick={() => void saveProvider(provider)}
+              >
                 {providerSaveButtonLabel(saveState)}
               </Button>
               <Button
                 variant="secondary"
+                aria-label="测试连接"
                 disabled={isTesting}
                 onClick={() => void testProvider(provider)}
               >
@@ -1771,12 +1820,12 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   }
 
   return (
-    <div className="grid w-full gap-6">
-      <header className="flex flex-col gap-4 rounded-lg border border-border bg-card px-5 py-4 shadow-sm xl:flex-row xl:items-start xl:justify-between">
+    <div className="grid w-full gap-5" data-provider-console>
+      <header className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-sm xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
           <h2 className="text-xl font-bold tracking-normal text-foreground">服务商配置</h2>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-muted-foreground">
-            按服务类型管理地图、天气、AI 解读、支付收款、账户验证和对象存储配置。
+            按服务类型管理地图与地理、天气数据、智能解读、支付收款、邮箱短信和对象存储配置。
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -1802,7 +1851,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         </div>
       ) : null}
 
-      <section aria-label="服务商总览" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="服务商总览" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { label: "服务商总数", value: overview.totalCount },
           { label: "已启用", value: overview.enabledCount },
@@ -1811,24 +1860,24 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         ].map((item) => (
           <div
             key={item.label}
-            className="rounded-lg border border-border bg-card px-4 py-3 shadow-sm"
+            className="rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm"
           >
             <p className="text-xs font-semibold text-muted-foreground">{item.label}</p>
-            <p className="mt-1 text-2xl font-bold leading-tight text-card-foreground">
+            <p className="mt-1 text-xl font-bold leading-tight text-card-foreground">
               {item.value}
             </p>
           </div>
         ))}
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+      <section className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]" data-provider-console-grid>
         <aside className="grid min-w-0 content-start gap-3">
-          <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
+          <div className="rounded-lg border border-border bg-card p-3 shadow-sm">
             <FormField label="搜索服务商" hint="支持中文名称、provider code、能力和用途。">
               <Input
                 value={providerSearchTerm}
                 aria-label="搜索服务商"
-                placeholder="例如 微信支付、wechat_pay、阿里云 OSS"
+                placeholder="例如 微信支付、wechat_pay、阿里云 OSS、aliyun_oss"
                 onChange={(event) => {
                   setProviderSearchTerm(event.target.value);
                   setSelectedProviderId(null);
@@ -1840,7 +1889,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
           <nav
             aria-label="服务商分类"
             data-provider-category-nav
-            className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-1"
+            className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-card p-2 shadow-sm sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-1"
           >
             {groupSummaries.map((group) => {
               const active = group.key === activeGroupKey;
@@ -1851,52 +1900,35 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                   data-provider-category={group.key}
                   disabled={group.providers.length === 0}
                   className={cn(
-                    "grid min-w-[220px] gap-3 rounded-lg border border-border bg-card p-4 text-left shadow-sm transition sm:min-w-0",
-                    active && "border-primary bg-secondary",
-                    group.needsAttentionCount > 0 && !active && "border-warning",
+                    "flex min-w-[190px] items-center gap-2 rounded-md px-2.5 py-2 text-left transition sm:min-w-0",
+                    active
+                      ? "bg-secondary text-secondary-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    group.needsAttentionCount > 0 && !active && "text-warning",
                     group.providers.length === 0 && "cursor-not-allowed opacity-55",
                   )}
                   onClick={() => selectGroup(group.key)}
                 >
-                  <span className="grid gap-1">
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-bold text-card-foreground">{group.title}</span>
+                  <span
+                    className={cn(
+                      "grid h-8 w-8 shrink-0 place-items-center rounded-md border text-xs font-bold",
+                      active
+                        ? "border-primary bg-card text-primary"
+                        : "border-border bg-background text-muted-foreground",
+                    )}
+                  >
+                    {group.marker}
+                  </span>
+                  <span className="grid min-w-0 flex-1 gap-0.5">
+                    <span className="truncate text-sm font-bold">{group.title}</span>
+                    <span className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs">
+                      <span>{group.providers.length} 家</span>
+                      <span>{group.enabledCount} 启用</span>
                       {group.needsAttentionCount > 0 ? (
-                        <Badge variant="warning" className="rounded-md">
-                          {group.needsAttentionCount}
-                        </Badge>
+                        <span>{group.needsAttentionCount} 需处理</span>
                       ) : null}
                     </span>
-                    <span className="text-xs leading-5 text-muted-foreground">
-                      {group.description}
-                    </span>
                   </span>
-                  <dl className="grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <dt className="text-muted-foreground">服务商</dt>
-                      <dd className="mt-0.5 font-semibold text-card-foreground">
-                        {group.providers.length}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground">已启用</dt>
-                      <dd className="mt-0.5 font-semibold text-card-foreground">
-                        {group.enabledCount}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground">真实调用</dt>
-                      <dd className="mt-0.5 font-semibold text-card-foreground">
-                        {group.realEnabledCount}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground">需处理</dt>
-                      <dd className="mt-0.5 font-semibold text-card-foreground">
-                        {group.needsAttentionCount}
-                      </dd>
-                    </div>
-                  </dl>
                 </button>
               );
             })}
@@ -1927,29 +1959,59 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
             </Badge>
           </div>
 
-          {visibleGroups.length > 0 ? (
-            visibleGroups.map((group) => (
-              <section key={group.key} className="grid gap-3" data-provider-group={group.key}>
-                {searchQuery ? (
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h4 className="text-base font-bold text-foreground">{group.title}</h4>
-                    <Badge variant="muted" className="rounded-md">
-                      {group.providers.length} 个匹配
-                    </Badge>
-                  </div>
-                ) : null}
-                <div className="grid gap-3 xl:grid-cols-2">
-                  {group.providers.map((provider) => renderProviderSummaryCard(provider))}
+          <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]">
+            <section
+              aria-label="当前服务商列表"
+              data-provider-list
+              className="min-w-0 overflow-hidden rounded-lg border border-border bg-card shadow-sm"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2.5">
+                <div className="min-w-0">
+                  <h4 className="text-sm font-bold text-card-foreground">
+                    {searchQuery ? "匹配服务商" : "分类服务商"}
+                  </h4>
+                  <p className="mt-0.5 text-xs text-muted-foreground">选择一项后在右侧维护配置。</p>
                 </div>
-              </section>
-            ))
-          ) : searchQuery ? (
-            <div className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground shadow-sm">
-              未找到匹配的服务商。请尝试服务商名称、代码、能力或用途。
-            </div>
-          ) : null}
+                <Badge variant="muted" className="rounded-md">
+                  {visibleProviders.length} 项
+                </Badge>
+              </div>
 
-          {selectedProvider ? renderProviderDetail(selectedProvider) : null}
+              {visibleProviders.length > 0 ? (
+                visibleGroups
+                  .filter((group) => group.providers.length > 0)
+                  .map((group) => (
+                    <section key={group.key} data-provider-group={group.key}>
+                      {searchQuery ? (
+                        <div className="flex flex-wrap items-center justify-between gap-2 bg-muted/55 px-3 py-2">
+                          <span className="text-xs font-bold text-card-foreground">
+                            {group.title}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {group.providers.length} 个匹配
+                          </span>
+                        </div>
+                      ) : null}
+                      <ul data-provider-list-group={group.key}>
+                        {group.providers.map((provider) => renderProviderListRow(provider))}
+                      </ul>
+                    </section>
+                  ))
+              ) : searchQuery ? (
+                <div className="px-3 py-3 text-sm leading-6 text-muted-foreground">
+                  未找到匹配的服务商。请尝试服务商名称、代码、能力、用途或分类。
+                </div>
+              ) : (
+                <div className="px-3 py-3 text-sm leading-6 text-muted-foreground">
+                  该分类没有可管理的服务商。
+                </div>
+              )}
+            </section>
+
+            <section data-provider-detail-panel className="min-w-0">
+              {selectedProvider ? renderProviderDetail(selectedProvider) : null}
+            </section>
+          </div>
         </section>
       </section>
 
