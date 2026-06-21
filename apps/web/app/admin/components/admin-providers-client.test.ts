@@ -17,6 +17,16 @@ function readProviderPage(moduleName: string): string {
   return readFileSync(resolve(providersRouteDir, moduleName, "page.tsx"), "utf8");
 }
 
+function sourceBetween(haystack: string, start: string, end: string): string {
+  const startIndex = haystack.indexOf(start);
+  const endIndex = haystack.indexOf(end, startIndex + start.length);
+
+  expect(startIndex).toBeGreaterThanOrEqual(0);
+  expect(endIndex).toBeGreaterThan(startIndex);
+
+  return haystack.slice(startIndex, endIndex);
+}
+
 const providerPageSources = [
   providerIndexPageSource,
   readProviderPage("geo"),
@@ -26,6 +36,11 @@ const providerPageSources = [
   readProviderPage("notification"),
   readProviderPage("storage"),
 ].join("\n");
+const providerListRowSource = sourceBetween(
+  source,
+  "function renderProviderListRow",
+  "function renderProviderDetail",
+);
 
 describe("admin provider module source", () => {
   it("promotes provider categories into the AdminShell sidebar", () => {
@@ -48,6 +63,14 @@ describe("admin provider module source", () => {
     expect(adminShellSource).toContain('label: "配置"');
     expect(adminShellSource).toContain('label: "运维"');
     expect(adminShellSource).not.toContain('{ href: "/admin/providers", label: "服务商配置" }');
+  });
+
+  it("keeps the AdminShell sidebar wide enough for first-class module labels", () => {
+    expect(adminShellSource).toContain("lg:grid-cols-[260px_minmax(0,1fr)]");
+    expect(adminShellSource).toContain("xl:grid-cols-[272px_minmax(0,1fr)]");
+    expect(adminShellSource).toContain("lg:w-full lg:min-w-0 lg:whitespace-normal");
+    expect(adminShellSource).not.toContain("lg:grid-cols-[228px_minmax(0,1fr)]");
+    expect(adminShellSource).not.toContain("truncate");
   });
 
   it("redirects the retired provider mega page to the weather module", () => {
@@ -220,6 +243,22 @@ describe("admin provider module source", () => {
     expect(source).not.toContain("providers.map((provider) => renderProviderDetail");
     expect(source).not.toContain("visibleProviders.map((provider) => renderProviderDetail");
     expect(source).not.toContain("renderProviderSummaryCard");
+  });
+
+  it("uses adaptive readable provider lists without hard truncating display names", () => {
+    for (const snippet of [
+      "const useSideProviderList = visibleProviders.length >= 3",
+      "xl:grid-cols-[minmax(420px,500px)_minmax(0,1fr)]",
+      'data-provider-list-layout={useSideProviderList ? "side" : "top"}',
+      'useSideProviderList ? "grid" : "grid gap-3 p-3 md:grid-cols-2"',
+      "break-words text-sm font-bold leading-5 text-card-foreground",
+      "break-all text-xs leading-5 text-muted-foreground",
+    ]) {
+      expect(source).toContain(snippet);
+    }
+
+    expect(source).not.toContain("xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]");
+    expect(providerListRowSource).not.toContain("truncate");
   });
 
   it("preserves selected-provider save, test, enable, real-call, secret, and detail actions", () => {

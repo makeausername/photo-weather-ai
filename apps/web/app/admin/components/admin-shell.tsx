@@ -51,9 +51,9 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
   const pathname = usePathname();
 
   return (
-    <main className="min-h-screen bg-background text-foreground lg:grid lg:grid-cols-[228px_minmax(0,1fr)]">
+    <main className="min-h-screen bg-background text-foreground lg:grid lg:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[272px_minmax(0,1fr)]">
       <aside className="border-b border-border bg-card/96 lg:min-h-screen lg:border-b-0 lg:border-r">
-        <div className="sticky top-0 grid content-start gap-4 p-4 lg:min-h-screen">
+        <div className="sticky top-0 grid content-start gap-5 p-4 lg:min-h-screen lg:p-5">
           <Link href="/admin" className="flex items-center gap-3">
             <img src="/brand-mark.svg" alt="" className="h-9 w-9 shrink-0" aria-hidden="true" />
             <span className="grid leading-tight">
@@ -62,10 +62,10 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
             </span>
           </Link>
 
-          <nav className="flex gap-2 overflow-x-auto pb-1 lg:grid lg:gap-4 lg:overflow-visible lg:pb-0">
+          <nav className="flex gap-2 overflow-x-auto pb-1 lg:grid lg:gap-5 lg:overflow-visible lg:pb-0">
             {adminLinkGroups.map((group) => (
-              <div key={group.label} className="flex shrink-0 gap-2 lg:grid lg:gap-1">
-                <p className="hidden px-3 text-[11px] font-bold text-muted-foreground lg:block">
+              <div key={group.label} className="flex shrink-0 gap-2 lg:grid lg:shrink lg:gap-1.5">
+                <p className="hidden px-3.5 text-[11px] font-bold text-muted-foreground lg:block">
                   {group.label}
                 </p>
                 {group.links.map((link) => {
@@ -75,7 +75,7 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
                       key={link.href}
                       href={link.href}
                       className={cn(
-                        "whitespace-nowrap rounded-md border px-3 py-2 text-sm font-semibold transition lg:border-l-2",
+                        "min-w-max whitespace-nowrap rounded-md border px-3 py-2 text-sm font-semibold leading-5 transition lg:w-full lg:min-w-0 lg:whitespace-normal lg:border-l-2 lg:px-3.5 lg:py-2.5",
                         active
                           ? "border-primary bg-secondary text-secondary-foreground"
                           : "border-transparent text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground lg:hover:border-l-primary",

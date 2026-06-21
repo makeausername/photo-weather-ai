@@ -1067,6 +1067,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     [selectedProviderId, visibleProviders],
   );
   const detailProvider = selectedProvider ?? preferredVisibleProvider;
+  const useSideProviderList = visibleProviders.length >= 3;
 
   useEffect(() => {
     if (!preferredVisibleProvider) {
@@ -1361,24 +1362,30 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         key={provider.id}
         data-provider-summary={providerIdentityKey(provider)}
         className={cn(
-          "grid min-w-0 gap-2 border-b border-border px-3 py-2.5 transition last:border-b-0",
-          selected && "bg-secondary/70",
+          "grid min-w-0 gap-3 px-3 py-3 transition",
+          useSideProviderList
+            ? "border-b border-border last:border-b-0"
+            : "rounded-md border border-border",
+          !useSideProviderList && !selected && "bg-background/35",
+          selected && "bg-secondary/70 ring-1 ring-primary/40",
           needsAttention && !selected && "bg-warning/5",
         )}
       >
-        <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+        <div className="grid min-w-0 gap-2">
           <button
             type="button"
             aria-pressed={selected}
             className="grid min-w-0 gap-1 text-left"
             onClick={() => selectProvider(provider)}
           >
-            <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="truncate text-sm font-bold text-card-foreground">
-                {providerName(provider)}
-              </span>
-              <span className="truncate text-xs text-muted-foreground">
-                {provider.providerCode}
+            <span className="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
+              <span className="grid min-w-0 gap-0.5">
+                <span className="break-words text-sm font-bold leading-5 text-card-foreground">
+                  {providerName(provider)}
+                </span>
+                <span className="break-all text-xs leading-5 text-muted-foreground">
+                  {provider.providerCode}
+                </span>
               </span>
               {needsAttention ? (
                 <Badge variant="warning" className="rounded-md px-2 py-0.5">
@@ -1386,12 +1393,12 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                 </Badge>
               ) : null}
             </span>
-            <span className="truncate text-xs leading-5 text-muted-foreground">
+            <span className="break-words text-xs leading-5 text-muted-foreground">
               {meta?.purpose ?? "服务商配置与连接测试。"}
             </span>
           </button>
 
-          <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+          <div className="flex min-w-0 flex-wrap gap-2">
             <Badge
               variant={provider.enabled ? "success" : "muted"}
               className="rounded-md px-2 py-0.5"
@@ -1726,13 +1733,17 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       <section
         className={cn(
           "grid gap-4",
-          visibleProviders.length > 0 && "xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]",
+          visibleProviders.length > 0 &&
+            (useSideProviderList
+              ? "xl:grid-cols-[minmax(420px,500px)_minmax(0,1fr)]"
+              : "xl:grid-cols-1"),
         )}
         data-provider-module-grid
       >
         <section
           aria-label={`${moduleDefinition.title}服务商列表`}
           data-provider-list
+          data-provider-list-layout={useSideProviderList ? "side" : "top"}
           className="min-w-0 overflow-hidden rounded-lg border border-border bg-card shadow-sm"
         >
           <div className="flex flex-col gap-2 border-b border-border px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1749,7 +1760,14 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
           </div>
 
           {visibleProviders.length > 0 ? (
-            <ul data-provider-list-group={moduleDefinition.key}>
+            <ul
+              data-provider-list-group={moduleDefinition.key}
+              className={cn(
+                "min-w-0",
+                useSideProviderList ? "grid" : "grid gap-3 p-3 md:grid-cols-2",
+                !useSideProviderList && visibleProviders.length === 1 && "md:grid-cols-1",
+              )}
+            >
               {visibleProviders.map((provider) => renderProviderListRow(provider))}
             </ul>
           ) : (
