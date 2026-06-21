@@ -11,11 +11,15 @@ import {
   deleteAccountForecastHistory,
   deletePublicAccount,
   getCurrentAccountSession,
+  listAccountBillingOrders,
+  listAccountEntitlements,
   listAccountForecastHistory,
   logoutPublicAccount,
   sendAccountEmailCode,
   sendAccountPhoneCode,
   shouldShowAdminEntry,
+  type AccountBillingOrderRecord,
+  type AccountEntitlementRecord,
   type AccountForecastHistoryRecord,
   type PublicAccountSession,
 } from "../../components/account-session";
@@ -41,6 +45,7 @@ const statusLabels: Record<string, string> = {
 
 export const accountCenterSectionLabels = [
   "账户概览",
+  "订单与权益",
   "账户资料",
   "安全设置",
   "查询历史",
@@ -151,6 +156,7 @@ export function AuthenticatedAccountCenter({
   onSessionUpdate,
   onAccountDeleted,
   initialHistory,
+  initialBillingSummary,
 }: {
   readonly session: PublicAccountSession;
   readonly onLogout: () => void;
@@ -158,12 +164,17 @@ export function AuthenticatedAccountCenter({
   readonly onSessionUpdate?: (session: PublicAccountSession) => void;
   readonly onAccountDeleted?: () => void;
   readonly initialHistory?: readonly AccountForecastHistoryRecord[];
+  readonly initialBillingSummary?: {
+    readonly orders: readonly AccountBillingOrderRecord[];
+    readonly entitlements: readonly AccountEntitlementRecord[];
+  };
 }) {
   const showAdminEntry = shouldShowAdminEntry(session);
 
   return (
     <div className="grid gap-5">
       <AccountOverviewCard session={session} />
+      <BillingSummaryCard initialSummary={initialBillingSummary} />
       <ForecastHistoryCard initialHistory={initialHistory} />
 
       <div
@@ -295,6 +306,138 @@ function SecuritySettingsCard({
         </div>
       </div>
     </Card>
+  );
+}
+
+function BillingSummaryCard({
+  initialSummary,
+}: {
+  readonly initialSummary?: {
+    readonly orders: readonly AccountBillingOrderRecord[];
+    readonly entitlements: readonly AccountEntitlementRecord[];
+  };
+}) {
+  const [orders, setOrders] = useState<readonly AccountBillingOrderRecord[]>(
+    initialSummary?.orders ?? [],
+  );
+  const [entitlements, setEntitlements] = useState<readonly AccountEntitlementRecord[]>(
+    initialSummary?.entitlements ?? [],
+  );
+  const [state, setState] = useState<LoadState>(initialSummary ? "ready" : "loading");
+  const [errorMessage, setErrorMessage] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (initialSummary) {
+      setOrders(initialSummary.orders);
+      setEntitlements(initialSummary.entitlements);
+      setState("ready");
+      setErrorMessage("");
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    Promise.all([listAccountBillingOrders({ limit: 5 }), listAccountEntitlements()])
+      .then(([nextOrders, nextEntitlements]) => {
+        if (!cancelled) {
+          setOrders(nextOrders);
+          setEntitlements(nextEntitlements);
+          setState("ready");
+          setErrorMessage("");
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setOrders([]);
+          setEntitlements([]);
+          setState("ready");
+          setErrorMessage(error instanceof Error ? error.message : "订单与权益暂时无法加载。");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialSummary]);
+
+  const remainingCredits = entitlements
+    .filter((item) => item.type === "forecast_credit")
+    .reduce((total, item) => total + Math.max(0, item.remainingQuantity ?? 0), 0);
+  const paidCount = orders.filter((order) => order.status === "paid").length;
+
+  return (
+    <Card className="p-5 shadow-sm sm:p-6">
+      <SectionTitle
+        title="订单与权益"
+        description="仅展示订单状态和可用权益，不展示支付服务商原始回调、签名或密钥配置。"
+        aside={<Badge variant="info">可用 {remainingCredits} 次</Badge>}
+      />
+      {state === "loading" ? (
+        <p className="mt-4 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          正在读取订单与权益...
+        </p>
+      ) : null}
+      {errorMessage ? <StatusMessage state="error" message={errorMessage} /> : null}
+      {state === "ready" && orders.length === 0 ? <BillingEmptyState /> : null}
+      {orders.length > 0 ? (
+        <div className="mt-4 grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
+          <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-1">
+            <SummaryField label="可用预测次数" value={`${remainingCredits} 次`} />
+            <SummaryField label="已支付订单" value={`${paidCount} 笔`} />
+          </dl>
+          <div className="grid gap-2">
+            {orders.map((order) => (
+              <BillingOrderRow key={order.orderNo} order={order} />
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
+function BillingEmptyState() {
+  return (
+    <div className="mt-4 flex flex-col gap-3 rounded-lg border border-dashed border-border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <p className="text-sm font-bold text-card-foreground">暂无订单</p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          购买预测次数后，订单状态和剩余权益会显示在这里。
+        </p>
+      </div>
+      <Link
+        href="/pricing"
+        className="inline-flex h-9 w-fit items-center rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
+      >
+        查看定价
+      </Link>
+    </div>
+  );
+}
+
+function BillingOrderRow({ order }: { readonly order: AccountBillingOrderRecord }) {
+  return (
+    <article className="rounded-lg border border-border bg-muted/30 p-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap gap-2">
+            <Badge variant={billingStatusVariant(order.status)}>{billingStatusLabel(order.status)}</Badge>
+            <Badge variant="muted">{billingProviderLabel(order.provider)}</Badge>
+          </div>
+          <p className="mt-2 break-all text-sm font-bold text-card-foreground">
+            {order.orderNo}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            {order.productCode} · {formatPriceCny(order.amountCents)}
+          </p>
+        </div>
+        <p className="shrink-0 text-xs text-muted-foreground">
+          {formatOptionalDateTime(order.createdAt)}
+        </p>
+      </div>
+    </article>
   );
 }
 
@@ -455,7 +598,7 @@ function AdminAccessCard() {
       <Badge variant="muted">管理入口</Badge>
       <h2 className="mt-3 text-lg font-bold text-card-foreground">管理后台</h2>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">
-        管理系统配置、服务商配置和地点数据。
+        管理系统配置、服务商配置和历史校准。
       </p>
       <Link
         href="/admin"
@@ -962,6 +1105,50 @@ function formatStatus(status: string | null): string {
 }
 
 type AccountBadgeVariant = "success" | "warning" | "danger" | "muted" | "info";
+
+function billingStatusLabel(status: AccountBillingOrderRecord["status"]): string {
+  const labels: Record<AccountBillingOrderRecord["status"], string> = {
+    created: "已创建",
+    pending: "待支付",
+    paid: "已支付",
+    closed: "已关闭",
+    canceled: "已取消",
+    failed: "支付失败",
+    refunded: "已退款",
+  };
+  return labels[status];
+}
+
+function billingStatusVariant(status: AccountBillingOrderRecord["status"]): AccountBadgeVariant {
+  if (status === "paid") {
+    return "success";
+  }
+  if (status === "pending" || status === "created") {
+    return "warning";
+  }
+  if (status === "failed" || status === "refunded") {
+    return "danger";
+  }
+  return "muted";
+}
+
+function billingProviderLabel(provider: AccountBillingOrderRecord["provider"]): string {
+  if (provider === "wechat_pay") {
+    return "微信支付";
+  }
+  if (provider === "alipay") {
+    return "支付宝";
+  }
+  return "模拟支付";
+}
+
+function formatPriceCny(amountCents: number): string {
+  return new Intl.NumberFormat("zh-CN", {
+    style: "currency",
+    currency: "CNY",
+    minimumFractionDigits: 2,
+  }).format(amountCents / 100);
+}
 
 function statusBadgeVariant(status: string | null): AccountBadgeVariant {
   if (status === "active") {

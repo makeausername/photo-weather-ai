@@ -42,7 +42,7 @@ const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:400
 const homepageGuidanceCards = [
   {
     title: "地点与窗口",
-    description: "把城市、景区或机位坐标与所选预报范围绑定，先确定要评估的时间段。",
+    description: "把城市、景区或地点坐标与所选预报范围绑定，先确定要评估的时间段。",
   },
   {
     title: "云层与光线",

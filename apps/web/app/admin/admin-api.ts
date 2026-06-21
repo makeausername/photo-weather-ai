@@ -223,6 +223,7 @@ export type MockConnectionTestResult = {
   readonly error?: string;
   readonly errorCategory?: string;
   readonly missingFields?: readonly string[];
+  readonly invalidFields?: readonly string[];
   readonly testedAt?: string;
   readonly providerType?: string;
   readonly messageZh?: string;

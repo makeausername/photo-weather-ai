@@ -586,6 +586,91 @@ describe("admin config routes", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("checks billing providers without creating payment orders or exposing secrets", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("billing provider config checks must not call network");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const wechatProvider = state.providers.get("billing:wechat_pay");
+    const alipayProvider = state.providers.get("billing:alipay");
+    state.providers.set("billing:wechat_pay", {
+      ...wechatProvider,
+      enabled: true,
+      configJson: {
+        ...(wechatProvider.configJson ?? {}),
+        realCallEnabled: true,
+      },
+      secretJson: {
+        merchantPrivateKeyPem: "not-a-private-key",
+        apiV3Key: "short",
+      },
+      maskedSecretJson: {
+        merchantPrivateKeyPem: "[set]",
+        apiV3Key: "sh****rt",
+      },
+    });
+    state.providers.set("billing:alipay", {
+      ...alipayProvider,
+      enabled: true,
+      configJson: {
+        ...(alipayProvider.configJson ?? {}),
+        realCallEnabled: true,
+      },
+      secretJson: {
+        appPrivateKeyPem: "not-a-private-key",
+        alipayPublicKeyPem: "not-a-public-key",
+      },
+      maskedSecretJson: {
+        appPrivateKeyPem: "[set]",
+        alipayPublicKeyPem: "[set]",
+      },
+    });
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const wechatResponse = await app.inject({
+      method: "POST",
+      url: "/admin/providers/billing/wechat_pay/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+    const alipayResponse = await app.inject({
+      method: "POST",
+      url: "/admin/providers/billing/alipay/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(wechatResponse.statusCode).toBe(200);
+    expect(wechatResponse.json()).toMatchObject({
+      success: false,
+      mode: "config_check",
+      connectionMode: "mock",
+      providerType: "billing",
+      providerCode: "wechat_pay",
+      configReady: false,
+    });
+    expect(wechatResponse.json().missingFields).toEqual(
+      expect.arrayContaining(["appId", "mchId", "notifyUrl"]),
+    );
+    expect(wechatResponse.json().invalidFields).toEqual(
+      expect.arrayContaining(["merchantPrivateKeyPem", "apiV3Key"]),
+    );
+    expect(alipayResponse.statusCode).toBe(200);
+    expect(alipayResponse.json()).toMatchObject({
+      success: false,
+      mode: "config_check",
+      connectionMode: "mock",
+      providerType: "billing",
+      providerCode: "alipay",
+      configReady: false,
+    });
+    expect(alipayResponse.json().invalidFields).toEqual(
+      expect.arrayContaining(["appPrivateKeyPem", "alipayPublicKeyPem"]),
+    );
+    expect(wechatResponse.body).not.toContain("not-a-private-key");
+    expect(alipayResponse.body).not.toContain("not-a-public-key");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("returns missing-field errors for verification providers without sending messages", async () => {
     const fetchMock = vi.fn(() => {
       throw new Error("verification provider config check must not call network");

@@ -33,13 +33,15 @@ type AdminProvidersClientProps = {
   readonly providerType?: string;
 };
 
-type ProviderGroupKey = "geo" | "weather" | "ai" | "notification" | "storage";
+type ProviderGroupKey = "geo" | "weather" | "ai" | "billing" | "notification" | "storage";
 type ProviderKey =
   | "geo:amap"
   | "weather:qweather"
   | "weather:open_meteo"
   | "weather:meteoblue"
   | "ai:deepseek"
+  | "billing:wechat_pay"
+  | "billing:alipay"
   | "email:aliyun_smtp"
   | "sms:aliyun_sms"
   | "storage:local_storage"
@@ -81,6 +83,8 @@ const providerOrder: readonly ProviderKey[] = [
   "weather:open_meteo",
   "weather:meteoblue",
   "ai:deepseek",
+  "billing:wechat_pay",
+  "billing:alipay",
   "email:aliyun_smtp",
   "sms:aliyun_sms",
   "storage:local_storage",
@@ -103,6 +107,11 @@ const providerGroups = [
     key: "ai",
     title: "智能解读",
     description: "管理结果说明和文案生成能力，不参与天气、天文、地形或评分计算。",
+  },
+  {
+    key: "billing",
+    title: "支付与订单",
+    description: "管理微信支付和支付宝收款配置；密钥、证书和回调验签材料只保存在服务端。",
   },
   {
     key: "notification",
@@ -160,6 +169,22 @@ const providerMeta: Record<ProviderKey, ProviderMeta> = {
     purpose: "用于智能解读、文案生成和结果说明，不改写确定性评分。",
     capabilities: ["智能解读", "文案生成", "结果说明"],
     requiredConfigKeys: ["model"],
+  },
+  "billing:wechat_pay": {
+    key: "billing:wechat_pay",
+    group: "billing",
+    displayName: "微信支付",
+    purpose: "用于国内微信 Native 扫码支付，回调验签通过后才会发放订单权益。",
+    capabilities: ["Native 扫码", "API v3 签名", "回调验签", "权益发放"],
+    requiredConfigKeys: ["mode", "appId", "mchId", "notifyUrl", "returnUrl"],
+  },
+  "billing:alipay": {
+    key: "billing:alipay",
+    group: "billing",
+    displayName: "支付宝",
+    purpose: "用于支付宝电脑网站和手机网站支付，异步通知验签通过后才会发放订单权益。",
+    capabilities: ["电脑网站支付", "手机网站支付", "RSA2 签名", "异步通知"],
+    requiredConfigKeys: ["mode", "appId", "notifyUrl", "returnUrl"],
   },
   "email:aliyun_smtp": {
     key: "email:aliyun_smtp",
@@ -232,6 +257,27 @@ const providerConfigDefaults: Partial<Record<string, Record<string, JsonValue>>>
     baseUrl: "https://api.deepseek.com",
     model: "deepseek-v4-pro",
     timeoutMs: 120000,
+  },
+  wechat_pay: {
+    realCallEnabled: false,
+    mode: "native",
+    appId: "",
+    mchId: "",
+    notifyUrl: "",
+    returnUrl: "",
+    apiBaseUrl: "https://api.mch.weixin.qq.com",
+    timeoutMs: 10000,
+  },
+  alipay: {
+    realCallEnabled: false,
+    mode: "page",
+    appId: "",
+    notifyUrl: "",
+    returnUrl: "",
+    gatewayUrl: "https://openapi.alipay.com/gateway.do",
+    charset: "utf-8",
+    signType: "RSA2",
+    timeoutMs: 10000,
   },
   aliyun_smtp: {
     realCallEnabled: false,
@@ -1275,7 +1321,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         <div className="min-w-0">
           <h2 className="text-xl font-bold tracking-normal text-foreground">服务商配置</h2>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-muted-foreground">
-            统一管理地图、天气数据源、智能解读、邮箱、短信验证码和对象存储服务。保存配置只保存参数，测试连接用于验证服务配置。
+            统一管理地图、天气数据源、智能解读、支付收款、邮箱、短信验证码和对象存储服务。保存配置只保存参数，测试连接用于验证服务配置。
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -1568,7 +1614,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         <div className="rounded-lg border border-border bg-card">
           <EmptyState
             title="暂无可管理的服务商"
-            description="当前控制台只管理高德地图、和风天气、Open-Meteo、meteoblue、DeepSeek、邮箱、短信验证码和对象存储服务。"
+            description="当前控制台只管理高德地图、和风天气、Open-Meteo、meteoblue、DeepSeek、微信支付、支付宝、邮箱、短信验证码和对象存储服务。"
           />
         </div>
       ) : null}

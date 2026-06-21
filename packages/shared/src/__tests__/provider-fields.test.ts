@@ -23,6 +23,8 @@ describe("provider field presets", () => {
         "tencent_cos",
         "s3_compatible",
         "local_storage",
+        "wechat_pay",
+        "alipay",
       ]),
     );
 
@@ -301,6 +303,80 @@ describe("provider field presets", () => {
           label: "Secret Key",
           target: "secretJson",
           password: true,
+        }),
+      ]),
+    );
+  });
+
+  it("defines payment provider fields without exposing raw secrets", () => {
+    expect(getProviderFieldPreset("wechat_pay")?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "realCallEnabled",
+          label: "启用真实调用",
+          target: "configJson",
+          control: "boolean",
+          defaultValue: false,
+        }),
+        expect.objectContaining({
+          key: "mode",
+          label: "支付模式",
+          target: "configJson",
+          control: "select",
+          defaultValue: "native",
+        }),
+        expect.objectContaining({ key: "appId", target: "configJson" }),
+        expect.objectContaining({ key: "mchId", target: "configJson" }),
+        expect.objectContaining({ key: "notifyUrl", target: "configJson" }),
+        expect.objectContaining({
+          key: "merchantPrivateKeyPem",
+          label: "商户私钥 PEM",
+          target: "secretJson",
+          password: true,
+        }),
+        expect.objectContaining({
+          key: "apiV3Key",
+          label: "API v3 密钥",
+          target: "secretJson",
+          password: true,
+        }),
+        expect.objectContaining({
+          key: "platformPublicKeyPem",
+          label: "平台公钥 PEM",
+          target: "secretJson",
+          password: true,
+        }),
+      ]),
+    );
+
+    expect(getProviderFieldPreset("alipay")?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "mode",
+          label: "支付模式",
+          target: "configJson",
+          control: "select",
+          defaultValue: "page",
+        }),
+        expect.objectContaining({ key: "appId", target: "configJson" }),
+        expect.objectContaining({ key: "notifyUrl", target: "configJson" }),
+        expect.objectContaining({
+          key: "appPrivateKeyPem",
+          label: "应用私钥 PEM",
+          target: "secretJson",
+          password: true,
+        }),
+        expect.objectContaining({
+          key: "alipayPublicKeyPem",
+          label: "支付宝公钥 PEM",
+          target: "secretJson",
+          password: true,
+        }),
+        expect.objectContaining({
+          key: "gatewayUrl",
+          label: "支付宝网关",
+          target: "configJson",
+          advanced: true,
         }),
       ]),
     );

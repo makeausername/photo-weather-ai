@@ -36,8 +36,8 @@ export function SubjectControlPanel({
       data-cloud-sea-section={isCloudSea ? "CloudSeaSearchPanel" : undefined}
     >
       <PlaceSearchCard
-        title="地点搜索与机位选择"
-        description={config.description ?? "选择景区、城市或具体机位后进入对应题材判断。"}
+        title="地点搜索与范围选择"
+        description={config.description ?? "选择景区、城市或具体地点后进入对应题材判断。"}
         badgeLabel={null}
         defaultHorizon={config.defaultHorizon}
         fixedTarget={config.target}

@@ -22,6 +22,7 @@ import type { AuthConfig } from "./auth-routes.js";
 import { loadAuthConfig, registerAuthRoutes } from "./auth-routes.js";
 import { registerForecastRoutes } from "./forecast-routes.js";
 import { resolveGeoProvider, resolveReverseGeocodeProvider } from "./geo-provider.js";
+import { registerPaymentRoutes } from "./payment-routes.js";
 import { registerSearchRoutes } from "./search-routes.js";
 import { createRuntimeWeatherDataService } from "./weather-provider.js";
 
@@ -34,6 +35,7 @@ export type ApiServerOptions = {
   readonly elevationProvider?: ElevationProvider;
   readonly elevationService?: TerrainElevationService;
   readonly astroServiceClient?: AstroServiceClientLike;
+  readonly paymentFetcher?: typeof fetch;
   readonly env?: NodeJS.ProcessEnv;
   readonly logger?: boolean;
 };
@@ -88,9 +90,21 @@ const publicRateLimitedRoutes = new Set([
   "POST /account/forecast-history",
   "POST /forecast/calculate",
   "POST /forecast/ai-explain",
+  "POST /billing/orders",
+  "GET /billing/orders",
   "GET /search/places",
   "GET /search/reverse-geocode",
 ]);
+
+function isPublicRateLimitedRoute(method: string, url: string): boolean {
+  const path = requestPath(url);
+  const routeKey = `${method.toUpperCase()} ${path}`;
+  if (publicRateLimitedRoutes.has(routeKey)) {
+    return true;
+  }
+
+  return method.toUpperCase() === "GET" && /^\/billing\/orders\/[^/]+$/.test(path);
+}
 
 function readBooleanEnv(env: NodeJS.ProcessEnv, key: string, fallback: boolean): boolean {
   const raw = env[key];
@@ -186,14 +200,13 @@ function createPublicRateGuard(env: NodeJS.ProcessEnv): {
         return { limited: false };
       }
 
-      const routeKey = `${input.method.toUpperCase()} ${requestPath(input.url)}`;
-      if (!publicRateLimitedRoutes.has(routeKey)) {
+      if (!isPublicRateLimitedRoute(input.method, input.url)) {
         return { limited: false };
       }
 
       const now = Date.now();
       prunePublicRateLimitBuckets(buckets, now, maxBuckets);
-      const bucketKey = `${input.clientId}|${routeKey}`;
+      const bucketKey = `${input.clientId}|${input.method.toUpperCase()} ${requestPath(input.url)}`;
       const existing = buckets.get(bucketKey);
       if (!existing || existing.resetAt <= now) {
         buckets.set(bucketKey, {
@@ -524,6 +537,12 @@ export function buildApiServer(options: ApiServerOptions = {}) {
 
   registerAuthRoutes(app, { dbClient: options.dbClient, authConfig, env });
   registerAccountRoutes(app, { dbClient: options.dbClient, authConfig, env });
+  registerPaymentRoutes(app, {
+    dbClient: options.dbClient,
+    authConfig,
+    env,
+    fetcher: options.paymentFetcher,
+  });
   registerForecastRoutes(app, {
     dbClient: options.dbClient,
     weatherProvider,

@@ -192,6 +192,45 @@ export const weatherDefaultTimeoutMs = 10000;
 
 export const weatherDefaultRetryCount = 1;
 
+export const wechatPayDefaultApiBaseUrl = "https://api.mch.weixin.qq.com";
+
+export const alipayDefaultGatewayUrl = "https://openapi.alipay.com/gateway.do";
+
+export const paymentDefaultTimeoutMs = 10000;
+
+export const wechatPayModeOptions = [
+  {
+    value: "native",
+    label: "Native 扫码支付",
+  },
+  {
+    value: "h5",
+    label: "H5 支付",
+  },
+  {
+    value: "jsapi",
+    label: "JSAPI 支付",
+  },
+] as const satisfies readonly ProviderFieldOption[];
+
+export const alipayModeOptions = [
+  {
+    value: "page",
+    label: "电脑网站支付",
+  },
+  {
+    value: "wap",
+    label: "手机网站支付",
+  },
+] as const satisfies readonly ProviderFieldOption[];
+
+export const alipaySignTypeOptions = [
+  {
+    value: "RSA2",
+    label: "RSA2",
+  },
+] as const satisfies readonly ProviderFieldOption[];
+
 const keepExistingSecretPlaceholder = "留空则保持现有密钥不变";
 
 export const providerFieldPresets = [
@@ -582,6 +621,202 @@ export const providerFieldPresets = [
         min: 0,
         max: 5,
         step: 1,
+        advanced: true,
+      },
+    ],
+  },
+  {
+    providerCode: "wechat_pay",
+    helpText:
+      "微信支付用于国内订单收款。默认使用 Native 扫码支付；真实调用开启前，测试连接只做配置和密钥格式检查。",
+    fields: [
+      {
+        key: "realCallEnabled",
+        label: "启用真实调用",
+        target: "configJson",
+        control: "boolean",
+        defaultValue: false,
+        helpText: "关闭时仅创建站内待支付订单，不请求微信支付接口，也不会提前发放权益。",
+      },
+      {
+        key: "mode",
+        label: "支付模式",
+        target: "configJson",
+        control: "select",
+        options: wechatPayModeOptions,
+        defaultValue: "native",
+      },
+      {
+        key: "appId",
+        label: "AppID",
+        target: "configJson",
+        placeholder: "微信支付绑定的 AppID",
+      },
+      {
+        key: "mchId",
+        label: "商户号",
+        target: "configJson",
+        placeholder: "微信支付商户号",
+      },
+      {
+        key: "notifyUrl",
+        label: "支付通知地址",
+        target: "configJson",
+        placeholder: "https://example.com/billing/wechat-pay/notify",
+      },
+      {
+        key: "returnUrl",
+        label: "支付完成返回地址",
+        target: "configJson",
+        placeholder: "https://example.com/pricing",
+      },
+      {
+        key: "merchantSerialNo",
+        label: "商户证书序列号",
+        target: "secretJson",
+        placeholder: keepExistingSecretPlaceholder,
+        password: true,
+      },
+      {
+        key: "merchantPrivateKeyPem",
+        label: "商户私钥 PEM",
+        target: "secretJson",
+        placeholder: keepExistingSecretPlaceholder,
+        password: true,
+        helpText: "仅保存在服务端，用于生成微信支付 API v3 请求签名。",
+      },
+      {
+        key: "apiV3Key",
+        label: "API v3 密钥",
+        target: "secretJson",
+        placeholder: keepExistingSecretPlaceholder,
+        password: true,
+        helpText: "用于解密微信支付回调 resource，不会返回到前端。",
+      },
+      {
+        key: "platformCertificatePem",
+        label: "平台证书 PEM",
+        target: "secretJson",
+        placeholder: keepExistingSecretPlaceholder,
+        password: true,
+        helpText: "用于验签微信支付回调；如使用平台公钥，可填写下方平台公钥 PEM。",
+      },
+      {
+        key: "platformPublicKeyPem",
+        label: "平台公钥 PEM",
+        target: "secretJson",
+        placeholder: keepExistingSecretPlaceholder,
+        password: true,
+      },
+      {
+        key: "apiBaseUrl",
+        label: "API Base URL",
+        target: "configJson",
+        placeholder: wechatPayDefaultApiBaseUrl,
+        defaultValue: wechatPayDefaultApiBaseUrl,
+        advanced: true,
+      },
+      {
+        key: "timeoutMs",
+        label: "请求超时（毫秒）",
+        target: "configJson",
+        control: "number",
+        defaultValue: paymentDefaultTimeoutMs,
+        min: 1000,
+        max: 30000,
+        step: 100,
+        advanced: true,
+      },
+    ],
+  },
+  {
+    providerCode: "alipay",
+    helpText:
+      "支付宝用于电脑网站和手机网站支付。真实调用开启前，测试连接只检查应用参数、公钥和私钥格式。",
+    fields: [
+      {
+        key: "realCallEnabled",
+        label: "启用真实调用",
+        target: "configJson",
+        control: "boolean",
+        defaultValue: false,
+        helpText: "关闭时仅创建站内待支付订单，不跳转真实支付宝网关，也不会提前发放权益。",
+      },
+      {
+        key: "mode",
+        label: "支付模式",
+        target: "configJson",
+        control: "select",
+        options: alipayModeOptions,
+        defaultValue: "page",
+      },
+      {
+        key: "appId",
+        label: "AppID",
+        target: "configJson",
+        placeholder: "支付宝开放平台应用 AppID",
+      },
+      {
+        key: "notifyUrl",
+        label: "异步通知地址",
+        target: "configJson",
+        placeholder: "https://example.com/billing/alipay/notify",
+      },
+      {
+        key: "returnUrl",
+        label: "同步返回地址",
+        target: "configJson",
+        placeholder: "https://example.com/billing/alipay/return",
+      },
+      {
+        key: "appPrivateKeyPem",
+        label: "应用私钥 PEM",
+        target: "secretJson",
+        placeholder: keepExistingSecretPlaceholder,
+        password: true,
+        helpText: "仅用于服务端生成 RSA2 签名。",
+      },
+      {
+        key: "alipayPublicKeyPem",
+        label: "支付宝公钥 PEM",
+        target: "secretJson",
+        placeholder: keepExistingSecretPlaceholder,
+        password: true,
+        helpText: "用于验签支付宝异步通知。",
+      },
+      {
+        key: "gatewayUrl",
+        label: "支付宝网关",
+        target: "configJson",
+        placeholder: alipayDefaultGatewayUrl,
+        defaultValue: alipayDefaultGatewayUrl,
+        advanced: true,
+      },
+      {
+        key: "charset",
+        label: "字符集",
+        target: "configJson",
+        defaultValue: "utf-8",
+        advanced: true,
+      },
+      {
+        key: "signType",
+        label: "签名类型",
+        target: "configJson",
+        control: "select",
+        options: alipaySignTypeOptions,
+        defaultValue: "RSA2",
+        advanced: true,
+      },
+      {
+        key: "timeoutMs",
+        label: "请求超时（毫秒）",
+        target: "configJson",
+        control: "number",
+        defaultValue: paymentDefaultTimeoutMs,
+        min: 1000,
+        max: 30000,
+        step: 100,
         advanced: true,
       },
     ],

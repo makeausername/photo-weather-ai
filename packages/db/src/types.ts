@@ -18,6 +18,21 @@ export type ProviderType =
   | "email"
   | "sms";
 
+export type PaymentProviderCode = "mock" | "wechat_pay" | "alipay";
+
+export type PaymentOrderStatus =
+  | "created"
+  | "pending"
+  | "paid"
+  | "closed"
+  | "canceled"
+  | "failed"
+  | "refunded";
+
+export type PaymentNotifyStatus = "received" | "verified" | "processed" | "ignored" | "failed";
+
+export type EntitlementType = "forecast_credit" | "subscription" | "feature_unlock";
+
 export type AuthVerificationChannel = "email" | "sms";
 
 export type AuthVerificationPurpose =
@@ -213,6 +228,82 @@ export type UserForecastHistoryRecord = {
   readonly bestWindowEnd: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
+};
+
+export type BillingProductRecord = {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly amountCents: number;
+  readonly currency: string;
+  readonly credits: number;
+  readonly durationDays: number | null;
+  readonly enabled: boolean;
+  readonly sortOrder: number;
+  readonly metadataJson: JsonValue | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+};
+
+export type PaymentOrderRecord = {
+  readonly id: string;
+  readonly orderNo: string;
+  readonly userId: string;
+  readonly provider: PaymentProviderCode;
+  readonly amountCents: number;
+  readonly currency: string;
+  readonly productCode: string;
+  readonly productId: string | null;
+  readonly status: PaymentOrderStatus;
+  readonly paidAt: Date | null;
+  readonly expiresAt: Date | null;
+  readonly providerTradeNo: string | null;
+  readonly providerPayloadJson: JsonValue | null;
+  readonly metadataJson: JsonValue | null;
+  readonly entitlementGrantedAt: Date | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+};
+
+export type PaymentNotificationRecord = {
+  readonly id: string;
+  readonly provider: PaymentProviderCode;
+  readonly orderNo: string | null;
+  readonly providerTradeNo: string | null;
+  readonly rawBody: string | null;
+  readonly rawJson: JsonValue | null;
+  readonly headersJson: JsonValue | null;
+  readonly signatureVerified: boolean;
+  readonly status: PaymentNotifyStatus;
+  readonly errorMessage: string | null;
+  readonly createdAt: Date;
+  readonly processedAt: Date | null;
+};
+
+export type UserEntitlementRecord = {
+  readonly id: string;
+  readonly userId: string;
+  readonly orderId: string;
+  readonly type: EntitlementType;
+  readonly quantity: number;
+  readonly remainingQuantity: number | null;
+  readonly startsAt: Date;
+  readonly expiresAt: Date | null;
+  readonly grantedAt: Date;
+  readonly metadataJson: JsonValue | null;
+};
+
+export type UserCreditLedgerRecord = {
+  readonly id: string;
+  readonly userId: string;
+  readonly orderId: string | null;
+  readonly entitlementId: string | null;
+  readonly delta: number;
+  readonly balanceAfter: number;
+  readonly reason: string;
+  readonly metadataJson: JsonValue | null;
+  readonly createdAt: Date;
 };
 
 export type AdminAuditLogInput = {
@@ -487,6 +578,37 @@ export type DatabaseClient = {
     readonly findMany: (args?: any) => Promise<any[]>;
     readonly upsert: (args: any) => Promise<any>;
     readonly update: (args: any) => Promise<any>;
+  };
+  readonly billingProduct?: {
+    readonly findUnique: (args: any) => Promise<any>;
+    readonly findMany: (args?: any) => Promise<any[]>;
+    readonly upsert: (args: any) => Promise<any>;
+  };
+  readonly paymentOrder?: {
+    readonly create: (args: any) => Promise<any>;
+    readonly findUnique: (args: any) => Promise<any>;
+    readonly findFirst?: (args: any) => Promise<any>;
+    readonly findMany: (args?: any) => Promise<any[]>;
+    readonly update: (args: any) => Promise<any>;
+    readonly updateMany?: (args: any) => Promise<{ count: number }>;
+  };
+  readonly paymentNotification?: {
+    readonly create: (args: any) => Promise<any>;
+    readonly findMany?: (args?: any) => Promise<any[]>;
+    readonly update: (args: any) => Promise<any>;
+  };
+  readonly userEntitlement?: {
+    readonly create: (args: any) => Promise<any>;
+    readonly findUnique?: (args: any) => Promise<any>;
+    readonly findFirst?: (args: any) => Promise<any>;
+    readonly findMany: (args?: any) => Promise<any[]>;
+    readonly upsert?: (args: any) => Promise<any>;
+    readonly update?: (args: any) => Promise<any>;
+  };
+  readonly userCreditLedger?: {
+    readonly create: (args: any) => Promise<any>;
+    readonly findMany: (args?: any) => Promise<any[]>;
+    readonly upsert?: (args: any) => Promise<any>;
   };
   readonly adminAuditLog: {
     readonly create: (args: any) => Promise<any>;

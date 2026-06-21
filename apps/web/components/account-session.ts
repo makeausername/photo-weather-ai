@@ -75,6 +75,31 @@ export type AccountForecastHistoryRecord = {
   readonly updatedAt: string;
 };
 
+export type AccountBillingOrderRecord = {
+  readonly orderNo: string;
+  readonly provider: "wechat_pay" | "alipay" | "mock";
+  readonly amountCents: number;
+  readonly currency: string;
+  readonly productCode: string;
+  readonly status: "created" | "pending" | "paid" | "closed" | "canceled" | "failed" | "refunded";
+  readonly paidAt: string | null;
+  readonly expiresAt: string | null;
+  readonly providerTradeNo: string | null;
+  readonly entitlementGrantedAt: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
+
+export type AccountEntitlementRecord = {
+  readonly id: string;
+  readonly type: "forecast_credit" | "subscription" | "feature_unlock";
+  readonly quantity: number;
+  readonly remainingQuantity: number | null;
+  readonly startsAt: string;
+  readonly expiresAt: string | null;
+  readonly grantedAt: string;
+};
+
 type PublicApiErrorPayload = {
   readonly error?: string;
   readonly message?: string;
@@ -371,6 +396,27 @@ export async function listAccountForecastHistory(input: {
   const response = await accountApiFetch<{
     readonly items: readonly AccountForecastHistoryRecord[];
   }>(`/account/forecast-history${suffix}`);
+  return response.items;
+}
+
+export async function listAccountBillingOrders(input: {
+  readonly limit?: number;
+} = {}): Promise<readonly AccountBillingOrderRecord[]> {
+  const params = new URLSearchParams();
+  if (input.limit) {
+    params.set("limit", String(input.limit));
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  const response = await accountApiFetch<{
+    readonly items: readonly AccountBillingOrderRecord[];
+  }>(`/billing/orders${suffix}`);
+  return response.items;
+}
+
+export async function listAccountEntitlements(): Promise<readonly AccountEntitlementRecord[]> {
+  const response = await accountApiFetch<{
+    readonly items: readonly AccountEntitlementRecord[];
+  }>("/billing/entitlements");
   return response.items;
 }
 

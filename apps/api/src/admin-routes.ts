@@ -64,6 +64,7 @@ import {
   runProviderDiagnostic,
   type ProviderDiagnosticResult,
 } from "./provider-diagnostics.js";
+import { checkBillingProviderConfig } from "./payment-provider.js";
 import {
   normalizeOpenMeteoAdminConfigJson,
   normalizeMeteoblueAdminConfigJson,
@@ -406,6 +407,8 @@ function getProviderNameZh(providerType: string, providerCode: string): string {
     "storage:local_storage": "本地存储",
     "storage:aliyun_oss": "阿里云 OSS",
     "storage:tencent_cos": "腾讯云 COS",
+    "billing:wechat_pay": "微信支付",
+    "billing:alipay": "支付宝",
   };
 
   return names[key] ?? "服务商";
@@ -1369,6 +1372,35 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       const parsedBody = providerConnectionTestSchema.safeParse(request.body ?? {});
       if (!parsedBody.success) {
         return sendZodError(reply, parsedBody.error);
+      }
+
+      if (
+        request.params.providerType === "billing" &&
+        (request.params.providerCode === "wechat_pay" || request.params.providerCode === "alipay")
+      ) {
+        const result = await checkBillingProviderConfig({
+          providerCode: request.params.providerCode,
+          dbClient: client,
+          env,
+        });
+
+        return {
+          success: result.success,
+          mode: result.mode,
+          ...createProviderTestMetadata(
+            request.params.providerType,
+            request.params.providerCode,
+            "mock",
+            "配置检查",
+          ),
+          enabled: result.enabled,
+          realCallEnabled: result.realCallEnabled,
+          configReady: result.configReady,
+          missingFields: result.missingFields,
+          invalidFields: result.invalidFields,
+          messageZh: result.messageZh,
+          message: result.messageZh,
+        };
       }
 
       if (request.params.providerType === "storage") {

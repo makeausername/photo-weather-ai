@@ -110,7 +110,7 @@ type PlaceSearchCardProps = {
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
 export const publicPlaceSearchUnavailableMessage =
-  "地点搜索暂时不可用，请检查数据库连接或稍后重试。";
+  "地点搜索暂时不可用，请稍后重试，或直接输入地点名称与 WGS84 坐标。";
 
 const unsafeSearchErrorPatterns: readonly RegExp[] = [
   /prisma/i,
@@ -146,7 +146,7 @@ const targetOptions: readonly ForecastTarget[] = ["general", "cloud_sea", "glow"
 
 const sourceLabels: Record<PlaceResultSource, string> = {
   local_location: "本地地点",
-  local_photo_spot: "本地机位",
+  local_photo_spot: "本地地点",
   amap: "高德地图",
   mock: "备用地点",
 };
@@ -432,7 +432,7 @@ export function HorizonSelector({
 export function PlaceSearchCard({
   className,
   title = "选择拍摄地点",
-  description = "搜索景区、城市或具体机位",
+  description = "搜索景区、城市或具体地点",
   badgeLabel = "本地优先",
   searchPlaceholder = "请输入拍摄地点",
   horizonLabel = "预报范围选择",
@@ -772,7 +772,7 @@ export function PlaceSearchCard({
 
       {showQuickLocationSection ? (
         <div data-quick-location-section="true" className="grid gap-2">
-          <p className="text-xs font-semibold text-muted-foreground">常用机位</p>
+          <p className="text-xs font-semibold text-muted-foreground">常用地点</p>
           <PopularSpotChips onSelect={handleQueryChange} />
         </div>
       ) : null}
@@ -798,7 +798,7 @@ export function PlaceSearchCard({
 
         {showEmptyState ? (
           <div className="rounded-lg border border-border bg-muted px-3 py-3 text-sm leading-6 text-muted-foreground">
-            暂未找到相关地点，请尝试输入景区、城市或具体机位名称。
+            暂未找到相关地点，请尝试输入景区、城市或具体地点名称。
           </div>
         ) : null}
 
@@ -1020,7 +1020,7 @@ function SelectedLocationBadge({ location }: { readonly location: SelectedLocati
   if (location.photoSpotId) {
     return (
       <Badge variant="success" className="shrink-0">
-        已匹配机位
+        已匹配地点
       </Badge>
     );
   }

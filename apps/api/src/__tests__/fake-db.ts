@@ -25,6 +25,11 @@ export type FakeDatabaseState = {
   readonly forecastReplayRuns: Map<string, any>;
   readonly forecastReplayResults: Map<string, any>;
   readonly forecastHistory: Map<string, any>;
+  readonly billingProducts: Map<string, any>;
+  readonly paymentOrders: Map<string, any>;
+  readonly paymentNotifications: Map<string, any>;
+  readonly userEntitlements: Map<string, any>;
+  readonly userCreditLedger: Map<string, any>;
   readonly observedOutcomes: Map<string, any>;
   readonly calibrationStats: Map<string, any>;
   readonly terrainElevationCache: Map<string, any>;
@@ -136,6 +141,14 @@ function calibrationStatsKey(input: {
   return `${input.locationKey}:${input.target}:${input.ruleVersion}`;
 }
 
+function entitlementKey(input: { readonly orderId: string; readonly type: string }): string {
+  return `${input.orderId}:${input.type}`;
+}
+
+function creditLedgerKey(input: { readonly orderId?: string | null; readonly reason: string }): string {
+  return `${input.orderId ?? "none"}:${input.reason}`;
+}
+
 function inDateRange(
   value: Date,
   range: { readonly gte?: Date; readonly lte?: Date; readonly lt?: Date },
@@ -167,6 +180,11 @@ export async function createFakeDatabaseClient(): Promise<{
   const forecastReplayRuns = new Map<string, any>();
   const forecastReplayResults = new Map<string, any>();
   const forecastHistory = new Map<string, any>();
+  const billingProducts = new Map<string, any>();
+  const paymentOrders = new Map<string, any>();
+  const paymentNotifications = new Map<string, any>();
+  const userEntitlements = new Map<string, any>();
+  const userCreditLedger = new Map<string, any>();
   const observedOutcomes = new Map<string, any>();
   const calibrationStats = new Map<string, any>();
   const terrainElevationCache = new Map<string, any>();
@@ -189,6 +207,16 @@ export async function createFakeDatabaseClient(): Promise<{
       configJson: cloneJson(provider.configJson),
       secretJson: cloneJson(provider.secretJson),
       maskedSecretJson: cloneJson(provider.maskedSecretJson),
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+
+  seedData.billingProducts.forEach((product, index) => {
+    billingProducts.set(product.code, {
+      id: `billing-product-${index}`,
+      ...product,
+      metadataJson: cloneJson(product.metadataJson),
       createdAt: now,
       updatedAt: now,
     });
@@ -244,6 +272,11 @@ export async function createFakeDatabaseClient(): Promise<{
     forecastReplayRuns,
     forecastReplayResults,
     forecastHistory,
+    billingProducts,
+    paymentOrders,
+    paymentNotifications,
+    userEntitlements,
+    userCreditLedger,
     observedOutcomes,
     calibrationStats,
     terrainElevationCache,
@@ -534,6 +567,259 @@ export async function createFakeDatabaseClient(): Promise<{
       },
       upsert: async () => {
         throw new Error("Provider upsert is not used by API tests.");
+      },
+    },
+    billingProduct: {
+      findUnique: async ({ where }: any) => state.billingProducts.get(where.code) ?? null,
+      findMany: async ({ where, orderBy, take }: any = {}) =>
+        [...state.billingProducts.values()]
+          .filter((product) => where?.enabled === undefined || product.enabled === where.enabled)
+          .sort((left, right) => {
+            if (Array.isArray(orderBy)) {
+              return (
+                left.sortOrder - right.sortOrder ||
+                left.code.localeCompare(right.code)
+              );
+            }
+            return left.sortOrder - right.sortOrder;
+          })
+          .slice(0, take ?? Number.POSITIVE_INFINITY),
+      upsert: async ({ where, create, update }: any) => {
+        const existing = state.billingProducts.get(where.code);
+        if (existing) {
+          const next = {
+            ...existing,
+            ...update,
+            updatedAt: now,
+          };
+          state.billingProducts.set(where.code, next);
+          return next;
+        }
+        const product = {
+          id: `billing-product-${state.billingProducts.size}`,
+          createdAt: now,
+          updatedAt: now,
+          ...create,
+        };
+        state.billingProducts.set(product.code, product);
+        return product;
+      },
+    },
+    paymentOrder: {
+      create: async ({ data }: any) => {
+        const order = {
+          id: `payment-order-${state.paymentOrders.size}`,
+          productId: null,
+          status: "created",
+          paidAt: null,
+          expiresAt: null,
+          providerTradeNo: null,
+          providerPayloadJson: null,
+          metadataJson: null,
+          entitlementGrantedAt: null,
+          createdAt: new Date(now.getTime() + state.paymentOrders.size),
+          updatedAt: now,
+          ...data,
+        };
+        state.paymentOrders.set(order.orderNo, order);
+        return order;
+      },
+      findUnique: async ({ where }: any) => {
+        if (where.orderNo !== undefined) {
+          return state.paymentOrders.get(where.orderNo) ?? null;
+        }
+        if (where.id !== undefined) {
+          return (
+            [...state.paymentOrders.values()].find((order) => order.id === where.id) ?? null
+          );
+        }
+        return null;
+      },
+      findFirst: async ({ where }: any) =>
+        [...state.paymentOrders.values()].find((order) => {
+          return (
+            (where?.orderNo === undefined || order.orderNo === where.orderNo) &&
+            (where?.userId === undefined || order.userId === where.userId)
+          );
+        }) ?? null,
+      findMany: async ({ where, orderBy, take }: any = {}) =>
+        [...state.paymentOrders.values()]
+          .filter((order) => where?.userId === undefined || order.userId === where.userId)
+          .filter((order) => where?.status === undefined || order.status === where.status)
+          .sort((left, right) =>
+            orderBy?.[0]?.createdAt === "asc"
+              ? left.createdAt.getTime() - right.createdAt.getTime()
+              : right.createdAt.getTime() - left.createdAt.getTime(),
+          )
+          .slice(0, take ?? Number.POSITIVE_INFINITY),
+      update: async ({ where, data }: any) => {
+        const existing =
+          where.orderNo !== undefined
+            ? state.paymentOrders.get(where.orderNo)
+            : [...state.paymentOrders.values()].find((order) => order.id === where.id);
+        if (!existing) {
+          throw new Error(`Missing payment order ${where.orderNo ?? where.id}`);
+        }
+        const next = {
+          ...existing,
+          ...Object.fromEntries(
+            Object.entries(data ?? {}).filter(([, value]) => value !== undefined),
+          ),
+          updatedAt: now,
+        };
+        state.paymentOrders.delete(existing.orderNo);
+        state.paymentOrders.set(next.orderNo, next);
+        return next;
+      },
+      updateMany: async ({ where, data }: any) => {
+        let count = 0;
+        for (const [orderNo, order] of state.paymentOrders.entries()) {
+          const matches =
+            (where?.orderNo === undefined || order.orderNo === where.orderNo) &&
+            (where?.status === undefined || order.status === where.status);
+          if (!matches) {
+            continue;
+          }
+          state.paymentOrders.set(orderNo, { ...order, ...data, updatedAt: now });
+          count += 1;
+        }
+        return { count };
+      },
+    },
+    paymentNotification: {
+      create: async ({ data }: any) => {
+        const notification = {
+          id: `payment-notification-${state.paymentNotifications.size}`,
+          orderNo: null,
+          providerTradeNo: null,
+          rawBody: null,
+          rawJson: null,
+          headersJson: null,
+          signatureVerified: false,
+          status: "received",
+          errorMessage: null,
+          createdAt: new Date(now.getTime() + state.paymentNotifications.size),
+          processedAt: null,
+          ...data,
+        };
+        state.paymentNotifications.set(notification.id, notification);
+        return notification;
+      },
+      findMany: async ({ where }: any = {}) =>
+        [...state.paymentNotifications.values()].filter(
+          (notification) =>
+            where?.orderNo === undefined || notification.orderNo === where.orderNo,
+        ),
+      update: async ({ where, data }: any) => {
+        const existing = state.paymentNotifications.get(where.id);
+        if (!existing) {
+          throw new Error(`Missing payment notification ${where.id}`);
+        }
+        const next = {
+          ...existing,
+          ...Object.fromEntries(
+            Object.entries(data ?? {}).filter(([, value]) => value !== undefined),
+          ),
+        };
+        state.paymentNotifications.set(where.id, next);
+        return next;
+      },
+    },
+    userEntitlement: {
+      create: async ({ data }: any) => {
+        const entitlement = {
+          id: `user-entitlement-${state.userEntitlements.size}`,
+          startsAt: now,
+          expiresAt: null,
+          grantedAt: now,
+          metadataJson: null,
+          ...data,
+        };
+        state.userEntitlements.set(entitlementKey(entitlement), entitlement);
+        return entitlement;
+      },
+      findUnique: async ({ where }: any) => {
+        if (where.orderId_type) {
+          return state.userEntitlements.get(entitlementKey(where.orderId_type)) ?? null;
+        }
+        if (where.id) {
+          return (
+            [...state.userEntitlements.values()].find(
+              (entitlement) => entitlement.id === where.id,
+            ) ?? null
+          );
+        }
+        return null;
+      },
+      findMany: async ({ where, orderBy }: any = {}) =>
+        [...state.userEntitlements.values()]
+          .filter(
+            (entitlement) => where?.userId === undefined || entitlement.userId === where.userId,
+          )
+          .filter(
+            (entitlement) => where?.orderId === undefined || entitlement.orderId === where.orderId,
+          )
+          .filter((entitlement) => where?.type === undefined || entitlement.type === where.type)
+          .sort((left, right) =>
+            orderBy?.[0]?.grantedAt === "asc"
+              ? left.grantedAt.getTime() - right.grantedAt.getTime()
+              : right.grantedAt.getTime() - left.grantedAt.getTime(),
+          ),
+      upsert: async ({ where, create, update }: any) => {
+        const key = entitlementKey(where.orderId_type);
+        const existing = state.userEntitlements.get(key);
+        if (existing) {
+          const next = { ...existing, ...update };
+          state.userEntitlements.set(key, next);
+          return next;
+        }
+        return client.userEntitlement!.create({ data: create });
+      },
+      update: async ({ where, data }: any) => {
+        const existing =
+          [...state.userEntitlements.entries()].find(
+            ([, entitlement]) => entitlement.id === where.id,
+          ) ?? null;
+        if (!existing) {
+          throw new Error(`Missing user entitlement ${where.id}`);
+        }
+        const [key, entitlement] = existing;
+        const next = { ...entitlement, ...data };
+        state.userEntitlements.set(key, next);
+        return next;
+      },
+    },
+    userCreditLedger: {
+      create: async ({ data }: any) => {
+        const record = {
+          id: `user-credit-ledger-${state.userCreditLedger.size}`,
+          orderId: null,
+          entitlementId: null,
+          metadataJson: null,
+          createdAt: new Date(now.getTime() + state.userCreditLedger.size),
+          ...data,
+        };
+        state.userCreditLedger.set(creditLedgerKey(record), record);
+        return record;
+      },
+      findMany: async ({ where, orderBy }: any = {}) =>
+        [...state.userCreditLedger.values()]
+          .filter((record) => where?.userId === undefined || record.userId === where.userId)
+          .filter((record) => where?.orderId === undefined || record.orderId === where.orderId)
+          .sort((left, right) =>
+            orderBy?.[0]?.createdAt === "desc"
+              ? right.createdAt.getTime() - left.createdAt.getTime()
+              : left.createdAt.getTime() - right.createdAt.getTime(),
+          ),
+      upsert: async ({ where, create, update }: any) => {
+        const key = creditLedgerKey(where.orderId_reason);
+        const existing = state.userCreditLedger.get(key);
+        if (existing) {
+          const next = { ...existing, ...update };
+          state.userCreditLedger.set(key, next);
+          return next;
+        }
+        return client.userCreditLedger!.create({ data: create });
       },
     },
     adminAuditLog: {

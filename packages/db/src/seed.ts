@@ -11,6 +11,9 @@ export async function seedDatabase(client: DatabaseClient): Promise<void> {
   if (!client.location) {
     throw new Error("Seed database client is missing location delegate.");
   }
+  if (!client.billingProduct) {
+    throw new Error("Seed database client is missing billing product delegate.");
+  }
 
   const seedData = buildSeedData();
 
@@ -86,6 +89,24 @@ export async function seedDatabase(client: DatabaseClient): Promise<void> {
       create: providerConfig,
       update: {
         displayName: providerConfig.displayName,
+      },
+    });
+  }
+
+  for (const product of seedData.billingProducts) {
+    await client.billingProduct.upsert({
+      where: { code: product.code },
+      create: product,
+      update: {
+        name: product.name,
+        description: product.description,
+        amountCents: product.amountCents,
+        currency: product.currency,
+        credits: product.credits,
+        durationDays: product.durationDays,
+        enabled: product.enabled,
+        sortOrder: product.sortOrder,
+        metadataJson: product.metadataJson,
       },
     });
   }

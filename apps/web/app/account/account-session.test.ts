@@ -7,6 +7,8 @@ import {
   registerPublicAccount,
   sendRegisterVerificationCode,
   shouldShowAdminEntry,
+  type AccountBillingOrderRecord,
+  type AccountEntitlementRecord,
   type AccountForecastHistoryRecord,
   type PublicAccountSession,
 } from "../../components/account-session";
@@ -179,9 +181,7 @@ describe("public account navigation", () => {
     ).toBe(true);
     expect(shouldShowAdminEntry({ roles: ["super_admin"], permissions: [] })).toBe(true);
     expect(shouldShowAdminEntry({ roles: ["user"], permissions: ["admin.manage"] })).toBe(true);
-    expect(shouldShowAdminEntry({ roles: ["user"], permissions: ["locations.manage"] })).toBe(
-      false,
-    );
+    expect(shouldShowAdminEntry({ roles: ["user"], permissions: ["users.manage"] })).toBe(false);
     expect(shouldShowAdminEntry(null)).toBe(false);
   });
 
@@ -219,6 +219,7 @@ describe("account center foundation", () => {
     expect(accountMetadata.title).toBe("账户中心 - 逐光天气");
     expect(accountCenterSectionLabels).toEqual([
       "账户概览",
+      "订单与权益",
       "账户资料",
       "安全设置",
       "查询历史",
@@ -254,6 +255,8 @@ describe("account center foundation", () => {
     expect(html).toContain("账户资料");
     expect(html).toContain("绑定方式");
     expect(html).toContain("安全设置");
+    expect(html).toContain("订单与权益");
+    expect(html).toContain("正在读取订单与权益");
     expect(html).toContain("查询历史");
     expect(html).toContain("暂无查询历史");
     expect(html).toContain("修改密码");
@@ -318,6 +321,71 @@ describe("account center foundation", () => {
     expect(html).toContain("打开分析");
     expect(html).toContain('href="/cloud-sea?');
     expect(html).not.toContain("坐标不足");
+  });
+
+  it("renders billing orders and entitlements without provider internals", () => {
+    const html = renderAuthenticatedAccountCenter(baseAccountSession, [], {
+      orders: [
+        {
+          orderNo: "P202606210001",
+          provider: "wechat_pay",
+          amountCents: 990,
+          currency: "CNY",
+          productCode: "forecast_credit_20",
+          status: "paid",
+          paidAt: "2026-06-21T08:05:00.000Z",
+          expiresAt: null,
+          providerTradeNo: "wx-transaction-id",
+          entitlementGrantedAt: "2026-06-21T08:05:01.000Z",
+          createdAt: "2026-06-21T08:00:00.000Z",
+          updatedAt: "2026-06-21T08:05:01.000Z",
+        },
+      ],
+      entitlements: [
+        {
+          id: "entitlement-1",
+          type: "forecast_credit",
+          quantity: 20,
+          remainingQuantity: 20,
+          startsAt: "2026-06-21T08:05:01.000Z",
+          expiresAt: null,
+          grantedAt: "2026-06-21T08:05:01.000Z",
+        },
+      ],
+    });
+
+    expect(html).toContain("订单与权益");
+    expect(html).toContain("可用 20 次");
+    expect(html).toContain("已支付订单");
+    expect(html).toContain("1 笔");
+    expect(html).toContain("P202606210001");
+    expect(html).toContain("微信支付");
+    expect(html).toContain("已支付");
+    for (const rawProviderDetail of [
+      "providerPayload",
+      "rawBody",
+      "rawJson",
+      "secretJson",
+      "apiV3Key",
+      "merchantPrivateKeyPem",
+      "platformCertificatePem",
+      "signature",
+      "wx-transaction-id",
+    ]) {
+      expect(html).not.toContain(rawProviderDetail);
+    }
+  });
+
+  it("renders a compact billing empty state only when billing data has loaded", () => {
+    const html = renderAuthenticatedAccountCenter(baseAccountSession, [], {
+      orders: [],
+      entitlements: [],
+    });
+
+    expect(html).toContain("暂无订单");
+    expect(html).toContain("购买预测次数后，订单状态和剩余权益会显示在这里。");
+    expect(html).toContain("查看定价");
+    expect(html).toContain('href="/pricing"');
   });
 
   it("renders a compact and useful empty history state", () => {
@@ -398,7 +466,7 @@ describe("account center foundation", () => {
     expect(userHtml).not.toContain("管理后台");
     expect(adminHtml).toContain("管理后台");
     expect(adminHtml).toContain("进入管理后台");
-    expect(adminHtml).toContain("管理系统配置、服务商配置和地点数据。");
+    expect(adminHtml).toContain("管理系统配置、服务商配置和历史校准。");
     expect(adminHtml).toContain('href="/admin"');
     expect(adminHtml).toContain("管理员");
     expect(adminHtml).not.toContain("admin.manage");
@@ -415,8 +483,6 @@ describe("account center foundation", () => {
       "providers.manage",
       "settings.manage",
       "users.manage",
-      "locations.manage",
-      "photo_spots.manage",
       "usage.read",
     ];
     const html = renderAuthenticatedAccountCenter({
@@ -490,6 +556,10 @@ describe("account center foundation", () => {
 function renderAuthenticatedAccountCenter(
   session: PublicAccountSession,
   initialHistory: readonly AccountForecastHistoryRecord[] = [],
+  initialBillingSummary?: {
+    readonly orders: readonly AccountBillingOrderRecord[];
+    readonly entitlements: readonly AccountEntitlementRecord[];
+  },
 ): string {
   return renderToStaticMarkup(
     React.createElement(AuthenticatedAccountCenter, {
@@ -497,6 +567,7 @@ function renderAuthenticatedAccountCenter(
       onLogout: () => undefined,
       isLoggingOut: false,
       initialHistory,
+      initialBillingSummary,
     }),
   );
 }

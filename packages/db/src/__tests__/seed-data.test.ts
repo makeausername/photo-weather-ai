@@ -38,6 +38,8 @@ describe("database seed data", () => {
       "open_meteo",
       "meteoblue",
       "amap",
+      "wechat_pay",
+      "alipay",
       "aliyun_smtp",
       "aliyun_sms",
       "local_storage",
@@ -47,6 +49,51 @@ describe("database seed data", () => {
     ]);
     expect(seedData.providerConfigs).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          providerType: "billing",
+          providerCode: "wechat_pay",
+          displayName: "微信支付",
+          enabled: false,
+          configJson: expect.objectContaining({
+            realCallEnabled: false,
+            mode: "native",
+            apiBaseUrl: "https://api.mch.weixin.qq.com",
+          }),
+          secretJson: {
+            merchantSerialNo: "",
+            merchantPrivateKeyPem: "",
+            apiV3Key: "",
+            platformCertificatePem: "",
+            platformPublicKeyPem: "",
+          },
+          maskedSecretJson: {
+            merchantSerialNo: "",
+            merchantPrivateKeyPem: "",
+            apiV3Key: "",
+            platformCertificatePem: "",
+            platformPublicKeyPem: "",
+          },
+        }),
+        expect.objectContaining({
+          providerType: "billing",
+          providerCode: "alipay",
+          displayName: "支付宝",
+          enabled: false,
+          configJson: expect.objectContaining({
+            realCallEnabled: false,
+            mode: "page",
+            gatewayUrl: "https://openapi.alipay.com/gateway.do",
+            signType: "RSA2",
+          }),
+          secretJson: {
+            appPrivateKeyPem: "",
+            alipayPublicKeyPem: "",
+          },
+          maskedSecretJson: {
+            appPrivateKeyPem: "",
+            alipayPublicKeyPem: "",
+          },
+        }),
         expect.objectContaining({
           providerType: "email",
           providerCode: "aliyun_smtp",
@@ -143,6 +190,32 @@ describe("database seed data", () => {
     expect(seedData.providerConfigs.every((provider) => provider.secretJson)).toBe(true);
     expect(seedData.providerConfigs.every((provider) => provider.maskedSecretJson)).toBe(true);
     expect(JSON.stringify(seedData.providerConfigs)).not.toContain("CHANGE_ME");
+  });
+
+  it("seeds enabled billing products with integer-cent CNY pricing", () => {
+    const seedData = buildSeedData();
+
+    expect(seedData.billingProducts).toEqual([
+      expect.objectContaining({
+        code: "forecast_credit_20",
+        name: "20 次专业预测包",
+        amountCents: 990,
+        currency: "CNY",
+        credits: 20,
+        enabled: true,
+      }),
+      expect.objectContaining({
+        code: "forecast_credit_100",
+        name: "100 次专业预测包",
+        amountCents: 3990,
+        currency: "CNY",
+        credits: 100,
+        enabled: true,
+      }),
+    ]);
+    expect(seedData.billingProducts.every((product) => Number.isInteger(product.amountCents))).toBe(
+      true,
+    );
   });
 
   it("does not seed fixed demo locations or inactive location permissions", () => {

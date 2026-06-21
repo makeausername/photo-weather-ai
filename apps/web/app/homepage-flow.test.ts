@@ -287,7 +287,7 @@ describe("homepage forecast flow", () => {
     expect(html).toContain("能见度与通透");
     expect(html).toContain("月相与夜景");
     expect(html).toContain("降水与风险");
-    expect(html).toContain("把城市、景区或机位坐标与所选预报范围绑定");
+    expect(html).toContain("把城市、景区或地点坐标与所选预报范围绑定");
     expect(html).toContain("01");
     expect(html).toContain("06");
     expect(html).toContain("sm:grid-cols-2");

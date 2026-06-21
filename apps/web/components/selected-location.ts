@@ -241,7 +241,7 @@ function coordinateSourceLabel(source: SelectedLocationSource): string {
     return "高德地图";
   }
   if (source === "local_photo_spot") {
-    return "本地机位";
+    return "本地地点";
   }
   return "手动/本地地点";
 }

@@ -48,11 +48,11 @@ function isSubjectScenarioEntryTarget(target: ForecastTarget): boolean {
 
 function subjectSearchDescription(target: ForecastTarget): string | undefined {
   if (target === "glow") {
-    return "搜索景区、城市或具体机位，选择预报范围后进入朝霞晚霞专项判断。";
+    return "搜索景区、城市或具体地点，选择预报范围后进入朝霞晚霞专项判断。";
   }
 
   if (target === "astro") {
-    return "搜索景区、城市或具体机位，选择预报范围后进入星空银河专项判断。";
+    return "搜索景区、城市或具体地点，选择预报范围后进入星空银河专项判断。";
   }
 
   return undefined;
@@ -290,10 +290,10 @@ function ScenarioPopularSpotGrid({
     <section className="grid gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-primary">机位参考</p>
+          <p className="text-sm font-semibold text-primary">地点参考</p>
           <h2 className="mt-1 text-xl font-bold text-foreground">{title}</h2>
         </div>
-        <Badge variant="warning">机位参考</Badge>
+        <Badge variant="warning">地点参考</Badge>
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         {spots.map((spot) => (
@@ -385,8 +385,8 @@ export function ScenarioSearchPanel({
   return (
     <aside className="grid content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]">
       <PlaceSearchCard
-        title="地点搜索与机位选择"
-        description="选择景区、城市或具体机位后进入对应题材判断。"
+        title="地点搜索与范围选择"
+        description="选择景区、城市或具体地点后进入对应题材判断。"
         badgeLabel={null}
         defaultHorizon={config.defaultHorizon}
         fixedTarget={config.target}

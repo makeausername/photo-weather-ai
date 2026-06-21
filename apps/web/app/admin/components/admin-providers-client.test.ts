@@ -18,6 +18,7 @@ describe("admin provider console source", () => {
       "地图与地理服务",
       "天气数据源",
       "智能解读",
+      "支付与订单",
       "账户验证服务",
       "对象存储",
       "已启用",
@@ -55,6 +56,12 @@ describe("admin provider console source", () => {
       "地点搜索",
       "坐标转换",
       "智能解读",
+      "Native 扫码",
+      "API v3 签名",
+      "回调验签",
+      "电脑网站支付",
+      "手机网站支付",
+      "RSA2 签名",
       "邮箱验证码",
       "短信验证码",
       "阿里云短信",
@@ -74,8 +81,12 @@ describe("admin provider console source", () => {
       '"storage:local_storage"',
       '"storage:aliyun_oss"',
       '"storage:tencent_cos"',
+      '"billing:wechat_pay"',
+      '"billing:alipay"',
       'displayName: "阿里云企业邮箱 SMTP"',
       'displayName: "阿里云短信"',
+      'displayName: "微信支付"',
+      'displayName: "支付宝"',
       'displayName: "本地存储"',
       'displayName: "阿里云 OSS"',
       'displayName: "腾讯云 COS"',
@@ -84,13 +95,15 @@ describe("admin provider console source", () => {
       'requiredConfigKeys: ["rootPath", "publicBaseUrl", "basePrefix", "maxUploadBytes"]',
       'requiredConfigKeys: ["region", "endpoint", "bucket", "basePrefix", "publicBaseUrl"]',
       'requiredConfigKeys: ["region", "bucket", "basePrefix", "publicBaseUrl"]',
-      "统一管理地图、天气数据源、智能解读、邮箱、短信验证码和对象存储服务。",
+      'requiredConfigKeys: ["mode", "appId", "mchId", "notifyUrl", "returnUrl"]',
+      'requiredConfigKeys: ["mode", "appId", "notifyUrl", "returnUrl"]',
+      "统一管理地图、天气数据源、智能解读、支付收款、邮箱、短信验证码和对象存储服务。",
     ]) {
       expect(source).toContain(snippet);
     }
   });
 
-  it("exposes object storage field labels through the imported provider presets", () => {
+  it("exposes object storage and payment field labels through the imported provider presets", () => {
     for (const label of [
       "Bucket",
       "Region",
@@ -102,6 +115,12 @@ describe("admin provider console source", () => {
       "最大上传字节数",
       "存储前缀",
       "公开访问地址",
+      "商户私钥 PEM",
+      "API v3 密钥",
+      "平台公钥 PEM",
+      "应用私钥 PEM",
+      "支付宝公钥 PEM",
+      "支付宝网关",
     ]) {
       expect(providerFieldsSource).toContain(label);
     }
@@ -117,6 +136,11 @@ describe("admin provider console source", () => {
       'packages: ["basic-1h", "clouds-1h"]',
       'model: "deepseek-v4-pro"',
       "timeoutMs: 120000",
+      'mode: "native"',
+      'apiBaseUrl: "https://api.mch.weixin.qq.com"',
+      'mode: "page"',
+      'gatewayUrl: "https://openapi.alipay.com/gateway.do"',
+      'signType: "RSA2"',
       'host: ""',
       "port: 465",
       "secure: true",

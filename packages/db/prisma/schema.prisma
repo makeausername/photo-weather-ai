@@ -23,6 +23,36 @@ enum ProviderType {
   sms
 }
 
+enum PaymentProviderCode {
+  mock
+  wechat_pay
+  alipay
+}
+
+enum PaymentOrderStatus {
+  created
+  pending
+  paid
+  closed
+  canceled
+  failed
+  refunded
+}
+
+enum PaymentNotifyStatus {
+  received
+  verified
+  processed
+  ignored
+  failed
+}
+
+enum EntitlementType {
+  forecast_credit
+  subscription
+  feature_unlock
+}
+
 enum AuthVerificationChannel {
   email
   sms
@@ -155,6 +185,9 @@ model User {
   auditLogs       AdminAuditLog[]
   sessions        UserSession[]
   forecastHistory UserForecastHistory[]
+  paymentOrders   PaymentOrder[]
+  entitlements    UserEntitlement[]
+  creditLedger    UserCreditLedger[]
 
   @@index([status])
   @@map("users")
@@ -387,6 +420,123 @@ model ApiUsageLog {
   @@index([requestId])
   @@index([createdAt])
   @@map("api_usage_logs")
+}
+
+model BillingProduct {
+  id           String         @id @default(cuid())
+  code         String         @unique
+  name         String
+  description  String?
+  amountCents  Int            @map("amount_cents")
+  currency     String         @default("CNY")
+  credits      Int            @default(0)
+  durationDays Int?           @map("duration_days")
+  enabled      Boolean        @default(true)
+  sortOrder    Int            @default(100) @map("sort_order")
+  metadataJson Json?          @map("metadata_json")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+  orders       PaymentOrder[]
+
+  @@index([enabled, sortOrder])
+  @@map("billing_products")
+}
+
+model PaymentOrder {
+  id                   String              @id @default(cuid())
+  orderNo              String              @unique @map("order_no")
+  userId               String              @map("user_id")
+  provider             PaymentProviderCode
+  amountCents          Int                 @map("amount_cents")
+  currency             String              @default("CNY")
+  productCode          String              @map("product_code")
+  productId            String?             @map("product_id")
+  status               PaymentOrderStatus  @default(created)
+  paidAt               DateTime?           @map("paid_at")
+  expiresAt            DateTime?           @map("expires_at")
+  providerTradeNo      String?             @map("provider_trade_no")
+  providerPayloadJson  Json?               @map("provider_payload_json")
+  metadataJson         Json?               @map("metadata_json")
+  entitlementGrantedAt DateTime?           @map("entitlement_granted_at")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+  user                 User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product              BillingProduct?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+  notifications        PaymentNotification[]
+  entitlements         UserEntitlement[]
+  creditLedger         UserCreditLedger[]
+
+  @@index([userId])
+  @@index([orderNo])
+  @@index([providerTradeNo])
+  @@index([status])
+  @@index([createdAt])
+  @@index([provider, providerTradeNo])
+  @@map("payment_orders")
+}
+
+model PaymentNotification {
+  id                  String              @id @default(cuid())
+  provider            PaymentProviderCode
+  orderNo             String?             @map("order_no")
+  providerTradeNo     String?             @map("provider_trade_no")
+  rawBody             String?             @map("raw_body")
+  rawJson             Json?               @map("raw_json")
+  headersJson         Json?               @map("headers_json")
+  signatureVerified   Boolean             @default(false) @map("signature_verified")
+  status              PaymentNotifyStatus @default(received)
+  errorMessage        String?             @map("error_message")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  processedAt         DateTime?           @map("processed_at")
+  order               PaymentOrder?       @relation(fields: [orderNo], references: [orderNo], onDelete: SetNull)
+
+  @@index([provider, createdAt])
+  @@index([orderNo])
+  @@index([providerTradeNo])
+  @@index([status])
+  @@map("payment_notifications")
+}
+
+model UserEntitlement {
+  id                String          @id @default(cuid())
+  userId            String          @map("user_id")
+  orderId           String          @map("order_id")
+  type              EntitlementType
+  quantity          Int             @default(0)
+  remainingQuantity Int?            @map("remaining_quantity")
+  startsAt          DateTime        @default(now()) @map("starts_at")
+  expiresAt         DateTime?       @map("expires_at")
+  grantedAt         DateTime        @default(now()) @map("granted_at")
+  metadataJson      Json?           @map("metadata_json")
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order             PaymentOrder    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  creditLedger      UserCreditLedger[]
+
+  @@unique([orderId, type])
+  @@index([userId])
+  @@index([type])
+  @@index([expiresAt])
+  @@map("user_entitlements")
+}
+
+model UserCreditLedger {
+  id             String           @id @default(cuid())
+  userId         String           @map("user_id")
+  orderId        String?          @map("order_id")
+  entitlementId  String?          @map("entitlement_id")
+  delta          Int
+  balanceAfter   Int              @map("balance_after")
+  reason         String
+  metadataJson   Json?            @map("metadata_json")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order          PaymentOrder?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  entitlement    UserEntitlement? @relation(fields: [entitlementId], references: [id], onDelete: SetNull)
+
+  @@unique([orderId, reason])
+  @@index([userId, createdAt])
+  @@index([entitlementId])
+  @@map("user_credit_ledger")
 }
 
 model Location {

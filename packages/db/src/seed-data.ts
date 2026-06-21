@@ -47,6 +47,19 @@ export type ProviderConfigSeed = {
   readonly maskedSecretJson: JsonValue;
 };
 
+export type BillingProductSeed = {
+  readonly code: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly amountCents: number;
+  readonly currency: "CNY";
+  readonly credits: number;
+  readonly durationDays: number | null;
+  readonly enabled: boolean;
+  readonly sortOrder: number;
+  readonly metadataJson: JsonValue;
+};
+
 export type LocationSeed = {
   readonly name: string;
   readonly slug: string;
@@ -70,6 +83,7 @@ export type DatabaseSeedData = {
   readonly rolePermissions: readonly RolePermissionSeed[];
   readonly systemSettings: readonly SystemSettingSeed[];
   readonly providerConfigs: readonly ProviderConfigSeed[];
+  readonly billingProducts: readonly BillingProductSeed[];
   readonly locations: readonly LocationSeed[];
 };
 
@@ -396,6 +410,63 @@ const providerConfigs = [
     maskedSecretJson: {},
   },
   {
+    providerType: "billing",
+    providerCode: "wechat_pay",
+    displayName: "微信支付",
+    enabled: false,
+    priority: 100,
+    configJson: {
+      realCallEnabled: false,
+      mode: "native",
+      appId: "",
+      mchId: "",
+      notifyUrl: "",
+      returnUrl: "",
+      apiBaseUrl: "https://api.mch.weixin.qq.com",
+      timeoutMs: 10000,
+    },
+    secretJson: {
+      merchantSerialNo: "",
+      merchantPrivateKeyPem: "",
+      apiV3Key: "",
+      platformCertificatePem: "",
+      platformPublicKeyPem: "",
+    },
+    maskedSecretJson: {
+      merchantSerialNo: "",
+      merchantPrivateKeyPem: "",
+      apiV3Key: "",
+      platformCertificatePem: "",
+      platformPublicKeyPem: "",
+    },
+  },
+  {
+    providerType: "billing",
+    providerCode: "alipay",
+    displayName: "支付宝",
+    enabled: false,
+    priority: 110,
+    configJson: {
+      realCallEnabled: false,
+      mode: "page",
+      appId: "",
+      notifyUrl: "",
+      returnUrl: "",
+      gatewayUrl: "https://openapi.alipay.com/gateway.do",
+      charset: "utf-8",
+      signType: "RSA2",
+      timeoutMs: 10000,
+    },
+    secretJson: {
+      appPrivateKeyPem: "",
+      alipayPublicKeyPem: "",
+    },
+    maskedSecretJson: {
+      appPrivateKeyPem: "",
+      alipayPublicKeyPem: "",
+    },
+  },
+  {
     providerType: "email",
     providerCode: "aliyun_smtp",
     displayName: "阿里云企业邮箱 SMTP",
@@ -519,6 +590,39 @@ const providerConfigs = [
   },
 ] as const satisfies readonly ProviderConfigSeed[];
 
+const billingProducts = [
+  {
+    code: "forecast_credit_20",
+    name: "20 次专业预测包",
+    description: "适合短期旅行和拍摄计划使用，支付成功后发放预测次数。",
+    amountCents: 990,
+    currency: "CNY",
+    credits: 20,
+    durationDays: null,
+    enabled: true,
+    sortOrder: 100,
+    metadataJson: {
+      badge: "入门",
+      entitlementType: "forecast_credit",
+    },
+  },
+  {
+    code: "forecast_credit_100",
+    name: "100 次专业预测包",
+    description: "适合高频查询、踩点和团队拍摄前的批量判断。",
+    amountCents: 3990,
+    currency: "CNY",
+    credits: 100,
+    durationDays: null,
+    enabled: true,
+    sortOrder: 200,
+    metadataJson: {
+      badge: "常用",
+      entitlementType: "forecast_credit",
+    },
+  },
+] as const satisfies readonly BillingProductSeed[];
+
 const locations: readonly LocationSeed[] = [];
 
 export function buildSeedData(): DatabaseSeedData {
@@ -535,6 +639,10 @@ export function buildSeedData(): DatabaseSeedData {
       configJson: cloneJsonValue(providerConfig.configJson),
       secretJson: cloneJsonValue(providerConfig.secretJson),
       maskedSecretJson: cloneJsonValue(providerConfig.maskedSecretJson),
+    })),
+    billingProducts: billingProducts.map((product) => ({
+      ...product,
+      metadataJson: cloneJsonValue(product.metadataJson),
     })),
     locations: locations.map((location) => ({ ...location })),
   };
