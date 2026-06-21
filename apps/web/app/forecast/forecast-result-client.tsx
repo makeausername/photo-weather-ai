@@ -10980,12 +10980,12 @@ function terrainPotentialLabel(
   potential: ForecastCalculationResult["terrainAnalysis"]["terrainProfile"]["terrainCloudSeaPotential"],
 ): string {
   if (potential === "high") {
-    return "高";
+    return "云海地形支撑高";
   }
   if (potential === "medium") {
-    return "中";
+    return "云海地形支撑中";
   }
-  return "低";
+  return "云海地形支撑低";
 }
 
 function formatWgs84Coordinates(result: ForecastCalculationResult["calendarBasis"]): string {

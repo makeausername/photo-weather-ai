@@ -2148,26 +2148,39 @@ function resultWithUnifiedTerrainDisplayState(
   options: {
     readonly terrainHorizon?: TerrainHorizonAssessment;
     readonly reliefMeters?: number | null;
+    readonly elevationMeters?: number;
   },
 ): ForecastCalculationResult {
   const base = resultForTarget(target);
+  const elevation = options.elevationMeters ?? 1860;
   const relief = options.reliefMeters ?? null;
-  const minElevation5km = relief === null ? null : 1860 - relief;
-  const maxElevation5km = relief === null ? null : 1860;
+  const minElevation5km = relief === null ? null : elevation - relief;
+  const maxElevation5km = relief === null ? null : elevation;
+  const isLowElevation = elevation < 200;
   const terrainProfile = {
     ...base.terrainAnalysis.terrainProfile,
-    elevationMeters: 1860,
+    elevationMeters: elevation,
     elevationSource: "dem" as const,
     elevationConfidence: "high" as const,
-    locationElevation: 1860,
-    nearbyValleyElevationMeters: relief === null ? null : 1860 - relief,
+    locationElevation: elevation,
+    nearbyValleyElevationMeters: relief === null ? null : elevation - relief,
     localReliefMeters: relief,
-    minElevation1km: relief === null ? null : 1380,
-    minElevation3km: relief === null ? null : 980,
+    minElevation1km: relief === null ? null : Math.max(0, elevation - Math.min(relief, 480)),
+    minElevation3km: relief === null ? null : Math.max(0, elevation - Math.min(relief, 880)),
     minElevation5km,
     maxElevation5km,
-    avgElevation5km: relief === null ? null : 1280,
+    avgElevation5km: relief === null ? null : Math.round((elevation - relief + elevation) / 2),
     elevationDiff5km: relief,
+    terrainType: isLowElevation ? ("unknown" as const) : base.terrainAnalysis.terrainProfile.terrainType,
+    exposureType: isLowElevation
+      ? ("unknown" as const)
+      : base.terrainAnalysis.terrainProfile.exposureType,
+    viewingDirection: isLowElevation
+      ? ("unknown" as const)
+      : base.terrainAnalysis.terrainProfile.viewingDirection,
+    terrainCloudSeaPotential: isLowElevation
+      ? ("low" as const)
+      : base.terrainAnalysis.terrainProfile.terrainCloudSeaPotential,
     terrainNoteZh:
       relief === null
         ? "DEM 已返回机位海拔，周边高差统计暂未返回。"
@@ -2188,8 +2201,8 @@ function resultWithUnifiedTerrainDisplayState(
     dataSourceLabel: "正式数据",
     keyReasons:
       relief === null
-        ? ["地形参考：机位海拔约 1860 米，周边高差暂未返回。"]
-        : [`地形参考：机位海拔约 1860 米，周边高差约 ${relief} 米。`],
+        ? [`地形参考：机位海拔约 ${elevation} 米，周边高差暂未返回。`]
+        : [`地形参考：机位海拔约 ${elevation} 米，周边高差约 ${relief} 米。`],
     terrainSummary: {
       ...base.terrainSummary,
       ...terrainProfile,
@@ -2212,10 +2225,15 @@ function resultWithUnifiedTerrainDisplayState(
       ...base.cloudSeaAnalysis,
       terrainSupport: {
         ...base.cloudSeaAnalysis.terrainSupport,
-        selectedSpotElevationMeters: 1860,
-        nearbyValleyElevationMeters: relief === null ? undefined : 1860 - relief,
+        score: isLowElevation ? 20 : base.cloudSeaAnalysis.terrainSupport.score,
+        level: isLowElevation ? "低" : base.cloudSeaAnalysis.terrainSupport.level,
+        terrainMode: isLowElevation ? "lowland" : base.cloudSeaAnalysis.terrainSupport.terrainMode,
+        selectedSpotElevationMeters: elevation,
+        nearbyValleyElevationMeters: relief === null ? undefined : elevation - relief,
         localReliefMeters: relief === null ? undefined : relief,
-        providerElevationMeters: 1860,
+        providerElevationMeters: elevation,
+        terrainType: isLowElevation ? "unknown" : base.cloudSeaAnalysis.terrainSupport.terrainType,
+        exposureType: isLowElevation ? "unknown" : base.cloudSeaAnalysis.terrainSupport.exposureType,
         messageZh:
           relief === null
             ? "DEM 已返回方向遮挡，周边高差统计暂未返回。"
@@ -5342,7 +5360,9 @@ describe("forecast result target-aware view model", () => {
     expect(lowland.terrainClass).toBe("low_elevation");
     expect(lowland.isClassicCloudSeaEligible).toBe(false);
     expect(lowland.shouldDowngradeCloudSeaWording).toBe(true);
-    expect(lowland.terrainNoteZh).toContain("当前按低海拔低云/晨雾参考处理");
+    expect(lowland.terrainNoteZh).toContain("低海拔");
+    expect(lowland.terrainNoteZh).toContain("高差缺测");
+    expect(lowland.terrainNoteZh).toContain("当前按低云/晨雾参考处理");
     expect(lowland.vocabulary.windowCategories.sunrise.title).toBe("日出低云 / 晨雾");
     expect(lowland.windowCategoryLabels).toEqual({
       sunrise: "日出低云 / 晨雾",
@@ -5416,7 +5436,8 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.dailyTrend.map((item) => item.recommendedAction)).toContain("已在附近可观察");
 
     expect(html).toContain("低云/晨雾参考");
-    expect(html).toContain("地形参考：机位海拔约 142 米；周边高差暂未返回");
+    expect(html).toContain("地形参考：机位海拔约 142 米（低海拔）；高差缺测");
+    expect(html).toContain("周边5公里高差统计暂未返回");
     expect(windowSection).toContain("低云观察与备选");
     expect(windowSection).toContain(
       "当前地形更适合顺带观察，本区块按低云、晨雾、层云和通透参考处理。",
@@ -8069,13 +8090,69 @@ describe("forecast result target-aware view model", () => {
     expect(output).not.toContain("当前使用演示地形数据");
     expect(output).not.toContain("周边高差暂未计算");
     expect(output).not.toContain("clearance");
-    expect(output).toContain("DEM 地形遮挡已可用");
+    expect(output).toContain("高海拔");
+    expect(output).toContain("DEM 方向剖面");
     expect(output).toContain("周边高差统计暂未返回");
     expect(output).toContain("目标方向地形地平线");
     expect(output).toContain("地形净空角");
   });
 
-  it("shows returned surrounding relief together with DEM directional horizon status", () => {
+  it("labels a high-altitude Cloud Sea spot with missing relief as high elevation plus relief missing", () => {
+    const result = resultWithUnifiedTerrainDisplayState("cloud_sea", {
+      terrainHorizon: terrainHorizonDemForTest,
+      reliefMeters: null,
+      elevationMeters: 1961,
+    });
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result,
+        viewModel,
+      }),
+    );
+    const terrainItem = viewModel.reasoningItems.find((item) => item.key === "terrain-relief");
+    const terrainText = `${html} ${terrainItem?.value ?? ""} ${terrainItem?.detail ?? ""}`;
+
+    expect(terrainText).toContain("高海拔");
+    expect(terrainText).toMatch(/高差缺测|周边高差未返回/);
+    expect(terrainItem?.value).toBe("高海拔 / 高差缺测");
+    expect(terrainItem?.value).not.toBe("低");
+    expect(terrainText).toContain("DEM 方向遮挡数据已可用");
+    expect(terrainText).not.toContain("目标方向地形地平线");
+    expect(terrainText).not.toContain("不按无遮挡处理");
+    expect(terrainText).not.toContain("地形净空角");
+    expect(terrainText).not.toContain("clearance");
+  });
+
+  it("keeps low-altitude Cloud Sea relief-missing wording separate from DEM availability", () => {
+    const result = resultWithUnifiedTerrainDisplayState("cloud_sea", {
+      terrainHorizon: terrainHorizonDemForTest,
+      reliefMeters: null,
+      elevationMeters: 142,
+    });
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, {
+        query: queryForTarget("cloud_sea"),
+        result,
+        viewModel,
+      }),
+    );
+    const terrainItem = viewModel.reasoningItems.find((item) => item.key === "terrain-relief");
+    const terrainText = `${html} ${terrainItem?.value ?? ""} ${terrainItem?.detail ?? ""}`;
+
+    expect(terrainText).toContain("低海拔");
+    expect(terrainText).toContain("高差缺测");
+    expect(terrainItem?.value).toBe("低海拔 / 高差缺测");
+    expect(terrainText).toContain("DEM 方向遮挡数据已可用");
+    expect(terrainText).not.toContain("DEM 方向遮挡未返回");
+    expect(terrainText).not.toContain("目标方向地形地平线");
+    expect(terrainText).not.toContain("不按无遮挡处理");
+    expect(terrainText).not.toContain("地形净空角");
+  });
+
+  it("uses Cloud Sea morphology wording when returned surrounding relief is available", () => {
     const result = resultWithUnifiedTerrainDisplayState("cloud_sea", {
       terrainHorizon: terrainHorizonDemForTest,
       reliefMeters: 1484,
@@ -8089,9 +8166,17 @@ describe("forecast result target-aware view model", () => {
       }),
     );
 
-    expect(html).toContain("周边高差约 1484 米");
-    expect(html).toContain("DEM 地形遮挡已可用");
-    expect(html).toContain("地形净空角 16°");
+    const terrainItem = viewModel.reasoningItems.find((item) => item.key === "terrain-relief");
+    expect(html).toContain("周边5公里高差约 1484 米");
+    expect(html).toContain("高差明显");
+    expect(html).toContain("现场复核");
+    expect(terrainItem?.value).toContain("高海拔");
+    expect(terrainItem?.value).toContain("高差明显");
+    expect(html).not.toContain("高差缺测");
+    expect(html).not.toContain("周边高差统计暂未返回");
+    expect(html).not.toContain("目标方向地形地平线");
+    expect(html).not.toContain("不按无遮挡处理");
+    expect(html).not.toContain("地形净空角 16°");
     expect(html).not.toContain("周边高差暂未计算");
     expect(html).not.toContain("暂未接入周边 DEM 剖面");
     expect(html).not.toContain("当前使用演示地形数据");
@@ -8126,13 +8211,19 @@ describe("forecast result target-aware view model", () => {
       ])
       .join(" ");
     const cloudSeaResult = resultWithUnifiedTerrainDisplayState("cloud_sea", terrainOptions);
+    const cloudSeaViewModel = buildCloudSeaForecastViewModel(cloudSeaResult);
     const cloudSeaHtml = renderToStaticMarkup(
       React.createElement(CloudSeaResultPage, {
         query: queryForTarget("cloud_sea"),
         result: cloudSeaResult,
-        viewModel: buildCloudSeaForecastViewModel(cloudSeaResult),
+        viewModel: cloudSeaViewModel,
       }),
     );
+    const cloudSeaTerrainText = cloudSeaViewModel.reasoningItems
+      .filter((item) => item.key === "terrain-relief")
+      .flatMap((item) => [item.label, item.value ?? "", item.detail])
+      .join(" ");
+    const cloudSeaOutput = `${cloudSeaHtml} ${cloudSeaTerrainText}`;
     const glowResult = resultWithUnifiedTerrainDisplayState("glow", terrainOptions);
     const glowHtml = renderToStaticMarkup(
       React.createElement(GlowResultPage, {
@@ -8154,17 +8245,18 @@ describe("forecast result target-aware view model", () => {
       .flatMap((item) => [item.label, item.value ?? "", item.detail])
       .join(" ");
 
-    for (const output of [
-      `${generalHtml} ${generalTerrainText}`,
-      cloudSeaHtml,
-      glowHtml,
-      `${astroHtml} ${astroProfessionalText}`,
-    ]) {
+    for (const output of [`${generalHtml} ${generalTerrainText}`, glowHtml, `${astroHtml} ${astroProfessionalText}`]) {
       expect(output).toContain("地形净空角");
       expect(output).not.toContain("clearance");
       expect(output).not.toContain("暂未接入周边 DEM 剖面");
       expect(output).not.toContain("当前使用演示地形数据");
     }
+    expect(cloudSeaOutput).toContain("高差缺测");
+    expect(cloudSeaTerrainText).toContain("DEM 方向遮挡数据已可用");
+    expect(cloudSeaOutput).not.toContain("目标方向地形地平线");
+    expect(cloudSeaOutput).not.toContain("不按无遮挡处理");
+    expect(cloudSeaOutput).not.toContain("地形净空角");
+    expect(cloudSeaOutput).not.toContain("clearance");
     expect(astroViewModel.terrainHorizon.professionalDataItems.map((item) => item.label)).toContain(
       "地形净空角",
     );

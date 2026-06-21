@@ -414,25 +414,54 @@ function terrainNoteZh(input: {
 }): string {
   if (input.elevation === undefined) {
     return input.shouldDowngradeCloudSeaWording
-      ? "地形参考：地形数据不足，先按低云、晨雾和通透参考处理。"
-      : "地形参考：地形数据不足，云顶高度和周边高差需现场复核。";
+      ? "地形参考：机位海拔暂未返回；高差缺测，先按低云、晨雾和通透参考处理。"
+      : "地形参考：机位海拔暂未返回；高差缺测，云顶高度和周边高差需现场复核。";
   }
 
+  const elevationBand = cloudSeaElevationBandLabel(input.elevation);
   if (input.shouldDowngradeCloudSeaWording) {
-    const elevationText = `机位海拔约 ${Math.round(input.elevation)} 米`;
+    const elevationText = `机位海拔约 ${Math.round(input.elevation)} 米（${elevationBand}）`;
     if (input.surroundingRelief === undefined) {
-      return `地形参考：${elevationText}，周边高差暂未返回，当前按低海拔低云/晨雾参考处理。`;
+      return `地形参考：${elevationText}；高差缺测，周边5公里高差统计暂未返回，当前按低云/晨雾参考处理。`;
     }
-    return `地形参考：${elevationText}，周边高差不足，当前按低云/晨雾和通透参考处理。`;
+    return `地形参考：${elevationText}；周边5公里高差约 ${Math.round(
+      input.surroundingRelief,
+    )} 米，${cloudSeaReliefSupportPhrase(input.surroundingRelief)}当前仍按低云/晨雾和通透参考处理。`;
   }
 
-  const elevationText = `机位海拔约 ${Math.round(input.elevation)} 米`;
+  const elevationText = `机位海拔约 ${Math.round(input.elevation)} 米（${elevationBand}）`;
   if (input.surroundingRelief !== undefined) {
-    return `地形参考：${elevationText}，周边高差约 ${Math.round(
+    return `地形参考：${elevationText}；周边5公里高差约 ${Math.round(
       input.surroundingRelief,
-    )} 米，支持云海观察。`;
+    )} 米，${cloudSeaReliefSupportPhrase(input.surroundingRelief)}仍需现场复核云顶高度和白墙风险。`;
   }
-  return `地形参考：${elevationText}，周边高差暂未返回，需结合现场云雾高度复核。`;
+  return `地形参考：${elevationText}；高差缺测，周边5公里高差统计暂未返回，云海地形高差不能按已确认处理，需结合现场云雾高度复核。`;
+}
+
+function cloudSeaElevationBandLabel(elevation: number): string {
+  if (elevation < 200) {
+    return "低海拔";
+  }
+  if (elevation < 800) {
+    return "丘陵/低山";
+  }
+  if (elevation < 1500) {
+    return "中高海拔";
+  }
+  if (elevation < 2500) {
+    return "高海拔";
+  }
+  return "超高海拔";
+}
+
+function cloudSeaReliefSupportPhrase(reliefMeters: number): string {
+  if (reliefMeters >= 600) {
+    return "高差明显，有利于俯拍低云/云海；";
+  }
+  if (reliefMeters >= 300) {
+    return "高差一般，可作为云雾层次参考；";
+  }
+  return "高差较弱，云海纵深和俯拍优势有限；";
 }
 
 function normalizeTerrainType(value: string | null | undefined): string {

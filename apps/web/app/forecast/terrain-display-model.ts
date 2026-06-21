@@ -4,9 +4,28 @@ import type {
   TerrainHorizonDataSource,
 } from "@photo-weather/shared";
 
+export type ForecastTerrainElevationBandKey =
+  | "unknown"
+  | "low"
+  | "hill_low_mountain"
+  | "mid_high"
+  | "high"
+  | "very_high";
+
+export type ForecastTerrainReliefSupportLevel =
+  | "missing"
+  | "weak"
+  | "moderate"
+  | "strong";
+
 export type ForecastTerrainDisplayModel = {
   readonly sourceBadgeLabelZh: string;
   readonly isMock: boolean;
+  readonly elevationBand: {
+    readonly key: ForecastTerrainElevationBandKey;
+    readonly labelZh: string;
+    readonly detail: string;
+  };
   readonly spotElevation: {
     readonly valueMeters?: number;
     readonly valueLabel: string;
@@ -14,11 +33,20 @@ export type ForecastTerrainDisplayModel = {
   };
   readonly surroundingRelief: {
     readonly available: boolean;
+    readonly supportLevel: ForecastTerrainReliefSupportLevel;
     readonly valueMeters?: number;
     readonly valueLabel: string;
+    readonly statusLabelZh: string;
+    readonly supportLabelZh: string;
     readonly rangeLabel: string;
     readonly detail: string;
     readonly boundaryZh: string;
+  };
+  readonly cloudSeaMorphology: {
+    readonly confidenceLabelZh: string;
+    readonly supportLabelZh: string;
+    readonly detail: string;
+    readonly dataBoundaryZh: string;
   };
   readonly directionalHorizon: {
     readonly assessment?: TerrainHorizonAssessment;
@@ -33,6 +61,10 @@ export type ForecastTerrainDisplayModel = {
   };
   readonly demStatus: {
     readonly availableForDirectionalHorizon: boolean;
+    readonly labelZh: string;
+    readonly detail: string;
+  };
+  readonly dataBoundary: {
     readonly labelZh: string;
     readonly detail: string;
   };
@@ -55,6 +87,7 @@ export function buildTerrainDisplayModel(
     finiteNumber(profile.locationElevation) ??
     finiteNumber(profile.elevationMeters) ??
     finiteNumber(terrainSupport.selectedSpotElevationMeters);
+  const elevationBand = elevationBandForMeters(elevation);
   const relief = resolveSurroundingRelief(result);
   const directionalHorizon = buildDirectionalHorizonDisplay(
     assessment,
@@ -68,7 +101,10 @@ export function buildTerrainDisplayModel(
   const demStatus = buildDemStatus(result, assessment, directionalHorizon);
   const spotElevation = {
     valueMeters: elevation,
-    valueLabel: elevation === undefined ? "机位海拔暂未返回" : `约 ${Math.round(elevation)} 米`,
+    valueLabel:
+      elevation === undefined
+        ? "机位海拔暂未返回"
+        : `约 ${Math.round(elevation)} 米（${elevationBand.labelZh}）`,
     detail:
       elevation === undefined
         ? "当前仅能按低置信度处理体感和地形相关判断。"
@@ -81,28 +117,37 @@ export function buildTerrainDisplayModel(
     directionalHorizon,
     demStatus,
   });
+  const cloudSeaMorphology = buildCloudSeaMorphology({
+    elevation,
+    elevationBand,
+    relief,
+    demStatus,
+  });
+  const dataBoundary = {
+    labelZh: dataBoundaryLabel({ isMock: result.terrainAnalysis.isMock, relief, directionalHorizon }),
+    detail: uncertaintyBoundaryZh,
+  };
   const publicSummaryZh = [
+    `海拔带：${elevationBand.labelZh}`,
     `机位海拔：${spotElevation.valueLabel}`,
     `周边高差：${relief.valueLabel}`,
-    `目标方向地形地平线：${directionalHorizon.statusLabelZh}`,
-    demStatus.labelZh,
+    `方向遮挡：${directionalHorizon.statusLabelZh}`,
+    `数据边界：${dataBoundary.labelZh}`,
   ].join("；");
 
   return {
     sourceBadgeLabelZh,
     isMock: result.terrainAnalysis.isMock,
+    elevationBand,
     spotElevation,
     surroundingRelief: relief,
+    cloudSeaMorphology,
     directionalHorizon,
     demStatus,
+    dataBoundary,
     uncertaintyBoundaryZh,
     publicSummaryZh,
-    cloudSeaNoteZh: buildCloudSeaTerrainNote({
-      elevation,
-      relief,
-      directionalHorizon,
-      demStatus,
-    }),
+    cloudSeaNoteZh: cloudSeaMorphology.detail,
   };
 }
 
@@ -115,6 +160,51 @@ export function terrainDisplayTextWithoutRawLabels(text: string): string {
     .replace(/DEM coverage missing/g, "DEM 覆盖缺失")
     .replace(/checksum/gi, "校验码")
     .replace(/\bfallback\b/gi, "保守参考");
+}
+
+function elevationBandForMeters(
+  elevation: number | undefined,
+): ForecastTerrainDisplayModel["elevationBand"] {
+  if (elevation === undefined) {
+    return {
+      key: "unknown",
+      labelZh: "海拔缺测",
+      detail: "机位海拔暂未返回，不能据此判断低地、山地或高海拔体感。",
+    };
+  }
+  if (elevation < 200) {
+    return {
+      key: "low",
+      labelZh: "低海拔",
+      detail: "低于 200 米，按低海拔机位处理体感和低云参考。",
+    };
+  }
+  if (elevation < 800) {
+    return {
+      key: "hill_low_mountain",
+      labelZh: "丘陵/低山",
+      detail: "约 200-800 米，属于丘陵或低山机位。",
+    };
+  }
+  if (elevation < 1500) {
+    return {
+      key: "mid_high",
+      labelZh: "中高海拔",
+      detail: "约 800-1500 米，机位海拔已有山地体感参考价值。",
+    };
+  }
+  if (elevation < 2500) {
+    return {
+      key: "high",
+      labelZh: "高海拔",
+      detail: "约 1500-2500 米，按高海拔机位处理体感、低云和云顶高度复核。",
+    };
+  }
+  return {
+    key: "very_high",
+    labelZh: "超高海拔",
+    detail: "2500 米及以上，按超高海拔机位处理体感、低云和安全余量。",
+  };
 }
 
 function resolveSurroundingRelief(
@@ -141,26 +231,34 @@ function resolveSurroundingRelief(
 
   if (relief !== undefined) {
     const source =
-      localRelief !== undefined ? "来自周边高差字段" : "由已返回的周边最高/最低海拔范围计算";
+      localRelief !== undefined ? "来自周边高差统计" : "由已返回的周边最高/最低海拔范围计算";
+    const supportLevel = surroundingReliefSupportLevel(relief);
+    const supportLabelZh = surroundingReliefSupportLabel(supportLevel);
     return {
       available: true,
+      supportLevel,
       valueMeters: relief,
-      valueLabel: `约 ${formatMeters(relief)}`,
+      valueLabel: `高差约 ${formatMeters(relief)}`,
+      statusLabelZh: "高差已返回",
+      supportLabelZh,
       rangeLabel,
       detail:
         avgElevation !== undefined
           ? `${source}；5公里范围平均海拔约 ${formatMeters(avgElevation)}。`
-          : `${source}；未使用地形地平线或净空角反推高差。`,
+          : `${source}；没有用方向遮挡结论反推周边高差。`,
       boundaryZh: "周边高差已返回；仍需结合现场云雾高度和近景遮挡复核。",
     };
   }
 
   return {
     available: false,
-    valueLabel: "周边高差暂未返回",
+    supportLevel: "missing",
+    valueLabel: "周边高差未返回",
+    statusLabelZh: "高差缺测",
+    supportLabelZh: "云海地形支撑低置信",
     rangeLabel,
-    detail: "未返回 elevationDiff5km、localReliefMeters 或周边最高/最低海拔，不能按 0 米处理。",
-    boundaryZh: "周边高差统计暂未返回；不会用目标方向地形地平线或净空角反推高差。",
+    detail: "周边5公里高差、局地高差或最高/最低海拔范围暂未返回，不能按 0 米处理。",
+    boundaryZh: "周边高差统计暂未返回；云海地形高差不能按已确认处理，需要现场复核。",
   };
 }
 
@@ -287,41 +385,100 @@ function buildUncertaintyBoundary(input: {
   return "周边高差与目标方向地形遮挡来自不同字段，当前展示不互相推算。";
 }
 
-function buildCloudSeaTerrainNote(input: {
+function buildCloudSeaMorphology(input: {
   readonly elevation?: number;
+  readonly elevationBand: ForecastTerrainDisplayModel["elevationBand"];
   readonly relief: ForecastTerrainDisplayModel["surroundingRelief"];
-  readonly directionalHorizon: ForecastTerrainDisplayModel["directionalHorizon"];
   readonly demStatus: ForecastTerrainDisplayModel["demStatus"];
-}): string {
-  const parts = [
+}): ForecastTerrainDisplayModel["cloudSeaMorphology"] {
+  const elevationText =
     input.elevation === undefined
       ? "机位海拔暂未返回"
-      : `机位海拔约 ${Math.round(input.elevation)} 米`,
-  ];
+      : `机位海拔约 ${Math.round(input.elevation)} 米（${input.elevationBand.labelZh}）`;
 
-  if (input.relief.available) {
-    parts.push(`周边高差${input.relief.valueLabel}`);
-  } else if (input.demStatus.availableForDirectionalHorizon) {
-    parts.push("DEM 地形遮挡已可用，但周边高差统计暂未返回");
-  } else {
-    parts.push("周边高差暂未返回");
+  if (input.relief.available && input.relief.valueMeters !== undefined) {
+    const reliefValue = input.relief.valueMeters;
+    const conclusion = cloudSeaReliefConclusion(reliefValue);
+    const detail = `地形参考：${elevationText}；周边5公里高差约 ${Math.round(
+      reliefValue,
+    )} 米。${conclusion}仍需现场复核云顶高度、低云贴地情况和白墙风险。`;
+    return {
+      confidenceLabelZh: "中置信（高差已返回）",
+      supportLabelZh: input.relief.supportLabelZh,
+      detail,
+      dataBoundaryZh: input.relief.boundaryZh,
+    };
   }
 
-  if (input.directionalHorizon.available) {
-    const horizonStatus = input.demStatus.availableForDirectionalHorizon
-      ? "DEM 地形遮挡已可用"
-      : `${input.directionalHorizon.targetLabelZh}地形地平线已返回`;
-    parts.push(
-      `${horizonStatus}，${input.directionalHorizon.targetLabelZh}地形净空角 ${input.directionalHorizon.clearanceLabel}`,
-    );
-  } else {
-    parts.push(input.demStatus.detail);
-  }
+  const elevationHandling =
+    input.elevation === undefined
+      ? "当前仅按低置信度处理体感、低云和白墙风险"
+      : `当前可按${input.elevationBand.labelZh}机位处理体感、低云和白墙风险`;
+  const demBoundary = input.demStatus.availableForDirectionalHorizon
+    ? "DEM 方向遮挡数据已可用；周边高差统计仍未返回。"
+    : "周边高差统计仍未返回。";
+  const detail = `地形参考：${elevationText}；高差缺测，周边5公里高差统计暂未返回。${elevationHandling}，但云海地形高差不能按已确认处理，需结合现场云雾高度复核。${demBoundary}`;
 
-  const boundary = input.relief.available
-    ? "云海仍需现场复核云雾高度、低云贴地情况和近景遮挡。"
-    : "当前可判断目标方向遮挡；云海地形高差仍需结合现场云雾高度复核。";
-  return `地形参考：${parts.join("；")}。${boundary}`;
+  return {
+    confidenceLabelZh: "低置信（高差缺测）",
+    supportLabelZh: input.relief.supportLabelZh,
+    detail,
+    dataBoundaryZh: demBoundary,
+  };
+}
+
+function cloudSeaReliefConclusion(reliefMeters: number): string {
+  const supportLevel = surroundingReliefSupportLevel(reliefMeters);
+  if (supportLevel === "strong") {
+    return "高差明显，有利于俯拍低云/云海；";
+  }
+  if (supportLevel === "moderate") {
+    return "高差一般，可作为云雾层次参考，不把云海确定性抬高；";
+  }
+  return "高差较弱，云海纵深和俯拍优势有限；";
+}
+
+function surroundingReliefSupportLevel(value: number): ForecastTerrainReliefSupportLevel {
+  if (value >= 600) {
+    return "strong";
+  }
+  if (value >= 300) {
+    return "moderate";
+  }
+  return "weak";
+}
+
+function surroundingReliefSupportLabel(level: ForecastTerrainReliefSupportLevel): string {
+  switch (level) {
+    case "strong":
+      return "高差明显";
+    case "moderate":
+      return "高差一般";
+    case "weak":
+      return "高差较弱";
+    case "missing":
+      return "高差缺测";
+  }
+}
+
+function dataBoundaryLabel(input: {
+  readonly isMock: boolean;
+  readonly relief: ForecastTerrainDisplayModel["surroundingRelief"];
+  readonly directionalHorizon: ForecastTerrainDisplayModel["directionalHorizon"];
+}): string {
+  if (input.isMock) {
+    return "演示地形数据";
+  }
+  if (!input.relief.available && input.directionalHorizon.available) {
+    return "方向遮挡可用 / 高差缺测";
+  }
+  if (!input.relief.available) {
+    return "高差缺测";
+  }
+  if (!input.directionalHorizon.available) {
+    return "高差已返回 / 方向遮挡待复核";
+  }
+  return "高差与方向遮挡分开显示";
 }
 
 function selectTerrainHorizonAssessment(

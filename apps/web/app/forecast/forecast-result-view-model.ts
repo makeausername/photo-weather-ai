@@ -1737,7 +1737,7 @@ function buildCloudSeaViewModel(result: ForecastCalculationResult): ForecastResu
     pageTitle: shellCopy.pageTitle,
     pageSubtitle: shellCopy.pageSubtitle,
     primarySummary: cloudSea.terrainContext.shouldDowngradeCloudSeaWording
-      ? `本页按低海拔低云、晨雾、云层变化和通透度参考处理。${result.summary}`
+      ? `本页按低海拔机位的低云、晨雾、云层变化和通透度参考处理。${result.summary}`
       : `本页优先区分云海形成、云海可拍和白墙风险。${result.summary}`,
     recommendationLabel: cloudSea.hero.recommendationLabel,
     primaryCards: cloudSea.coreCards,
@@ -7299,24 +7299,51 @@ function buildNightlyAstroConditionSection(
 function buildTerrainReferenceSection(result: ForecastCalculationResult): ForecastResultSection {
   const terrain = result.terrainAnalysis.terrainProfile;
   const terrainDisplay = buildTerrainDisplayModel(result);
+  const sharedItems: ForecastResultSectionItem[] = [
+    {
+      label: "海拔带",
+      value: terrainDisplay.elevationBand.labelZh,
+      detail: terrainDisplay.elevationBand.detail,
+    },
+    {
+      label: "机位海拔",
+      value: terrainDisplay.spotElevation.valueLabel,
+      detail: terrainDisplay.spotElevation.detail,
+    },
+    {
+      label: "周边海拔范围",
+      value: terrainDisplay.surroundingRelief.rangeLabel,
+      detail: `${terrainDisplay.surroundingRelief.detail} ${terrainDisplay.surroundingRelief.boundaryZh}`,
+    },
+  ];
+
+  if (result.target === "cloud_sea") {
+    return {
+      key: "terrain-reference",
+      title: "地形与海拔参考",
+      badgeLabel: terrainDisplay.elevationBand.labelZh,
+      items: [
+        ...sharedItems,
+        {
+          label: "云海地形支撑",
+          value: terrainDisplay.cloudSeaMorphology.supportLabelZh,
+          detail: terrainDisplay.cloudSeaMorphology.detail,
+        },
+        {
+          label: "数据边界",
+          value: terrainDisplay.dataBoundary.labelZh,
+          detail: terrainDisplay.cloudSeaMorphology.dataBoundaryZh,
+        },
+      ],
+    };
+  }
 
   return {
     key: "terrain-reference",
     title: "地形与海拔参考",
     badgeLabel: terrainDisplay.sourceBadgeLabelZh,
     items: [
-      {
-        label: "机位海拔",
-        value: terrainDisplay.spotElevation.valueLabel,
-        detail: terrainDisplay.spotElevation.detail,
-      },
-      {
-        label: "周边海拔范围",
-        value: terrainDisplay.surroundingRelief.rangeLabel,
-        detail: terrainDisplay.surroundingRelief.available
-          ? `${terrainDisplay.surroundingRelief.detail} ${terrainDisplay.surroundingRelief.boundaryZh}`
-          : `${terrainDisplay.surroundingRelief.detail} ${terrainDisplay.uncertaintyBoundaryZh}`,
-      },
+      ...sharedItems,
       {
         label: "目标方向地形地平线",
         value: terrainDisplay.directionalHorizon.statusLabelZh,
@@ -7354,7 +7381,7 @@ function buildValleyElevationDiffSection(result: ForecastCalculationResult): For
         label: "5公里高差",
         value: terrainDisplay.surroundingRelief.valueLabel,
         detail: terrainDisplay.surroundingRelief.available
-          ? "高差越明显，清晨低云与机位视角形成云雾边界的地形基础通常越好。"
+          ? `${terrainDisplay.surroundingRelief.supportLabelZh}，清晨低云与机位视角形成云雾边界的地形基础仍需结合云顶高度复核。`
           : terrainDisplay.surroundingRelief.boundaryZh,
       },
     ],
@@ -7370,26 +7397,22 @@ function buildCloudSeaTerrainPotentialSection(
   return {
     key: "cloud-sea-terrain-potential",
     title: "云海地形潜力",
-    badgeLabel: terrainDisplay.sourceBadgeLabelZh,
+    badgeLabel: terrainDisplay.elevationBand.labelZh,
     items: [
       {
         label: "潜力等级",
         value: terrainPotentialLabel(terrain.terrainCloudSeaPotential),
-        detail: terrainDisplay.surroundingRelief.available
-          ? "按机位海拔、周边高差和山谷结构折算；方向遮挡另由地形地平线字段表示。"
-          : `${terrainDisplay.surroundingRelief.boundaryZh} 云海潜力不使用地形净空角反推。`,
+        detail: terrainDisplay.cloudSeaMorphology.detail,
       },
       {
         label: "评分影响",
         value: `${result.scores.cloudSea.score} 分`,
-        detail:
-          result.scores.cloudSea.reasons.find((reason) => reason.includes("地形潜力")) ??
-          terrain.terrainNoteZh,
+        detail: terrainDisplay.cloudSeaMorphology.detail,
       },
       {
         label: "数据边界",
-        value: terrainDisplay.demStatus.labelZh,
-        detail: terrainDisplay.uncertaintyBoundaryZh,
+        value: terrainDisplay.dataBoundary.labelZh,
+        detail: terrainDisplay.cloudSeaMorphology.dataBoundaryZh,
       },
     ],
   };
@@ -7414,13 +7437,13 @@ function buildWhiteoutTerrainAssistSection(
         ),
       },
       {
-        label: "方向遮挡参考",
-        value: terrainDisplay.directionalHorizon.statusLabelZh,
-        detail: terrainDisplay.directionalHorizon.detail,
+        label: "地形与云顶复核",
+        value: terrainDisplay.cloudSeaMorphology.confidenceLabelZh,
+        detail: terrainDisplay.cloudSeaMorphology.detail,
       },
       {
         label: "现场复核",
-        detail: terrainDisplay.uncertaintyBoundaryZh,
+        detail: "到场后重点复核云顶高度、低云是否贴近机位、能见度和白墙风险。",
       },
     ],
   };
@@ -7440,7 +7463,7 @@ function buildCompactTerrainSection(result: ForecastCalculationResult): Forecast
         label: "机位海拔",
         value: terrainDisplay.spotElevation.valueLabel,
         detail: terrainDisplay.surroundingRelief.available
-          ? `周边高差${terrainDisplay.surroundingRelief.valueLabel}。`
+          ? `周边${terrainDisplay.surroundingRelief.valueLabel}。`
           : terrainDisplay.surroundingRelief.boundaryZh,
       },
       {
@@ -9026,14 +9049,63 @@ function buildCloudSeaTerrainEvidence(
   result: ForecastCalculationResult,
   terrainContext: CloudSeaTerrainContext,
 ): CloudSeaForecastViewModel["terrainEvidence"] {
+  const terrainDisplay = buildTerrainDisplayModel(result);
   return {
     dataSource: result.terrainAnalysis.dataSourceLabelZh,
-    items: result.cloudSeaAnalysis.terrainEvidence.map((item) => ({
+    items: result.cloudSeaAnalysis.terrainEvidence.map((item) =>
+      normalizeCloudSeaTerrainEvidenceItem(item, terrainDisplay, terrainContext),
+    ),
+  };
+}
+
+function normalizeCloudSeaTerrainEvidenceItem(
+  item: ForecastCalculationResult["cloudSeaAnalysis"]["terrainEvidence"][number],
+  terrainDisplay: ReturnType<typeof buildTerrainDisplayModel>,
+  terrainContext: CloudSeaTerrainContext,
+): CloudSeaTerrainEvidenceItem {
+  if (item.label === "机位海拔") {
+    return {
       key: keyFromLabel(item.label),
       label: item.label,
-      value: item.value,
-      detail: cloudSeaTerrainAwareText(item.noteZh, terrainContext),
-    })),
+      value: terrainDisplay.spotElevation.valueLabel,
+      detail: terrainDisplay.spotElevation.detail,
+    };
+  }
+
+  if (item.label === "5km 高差") {
+    return {
+      key: keyFromLabel(item.label),
+      label: "周边5公里高差",
+      value: terrainDisplay.surroundingRelief.valueLabel,
+      detail: terrainDisplay.surroundingRelief.available
+        ? terrainDisplay.surroundingRelief.boundaryZh
+        : terrainDisplay.cloudSeaMorphology.detail,
+    };
+  }
+
+  if (item.label === "云海地形潜力") {
+    return {
+      key: keyFromLabel(item.label),
+      label: "云海地形支撑",
+      value: terrainDisplay.cloudSeaMorphology.supportLabelZh,
+      detail: terrainDisplay.cloudSeaMorphology.detail,
+    };
+  }
+
+  if (item.label === "地形数据来源") {
+    return {
+      key: keyFromLabel(item.label),
+      label: "数据边界",
+      value: terrainDisplay.dataBoundary.labelZh,
+      detail: terrainDisplay.dataBoundary.detail,
+    };
+  }
+
+  return {
+    key: keyFromLabel(item.label),
+    label: item.label,
+    value: item.value,
+    detail: cloudSeaTerrainAwareText(item.noteZh, terrainContext),
   };
 }
 
@@ -9350,7 +9422,7 @@ function buildCloudSeaReasoningItems(
   const wind = cloudSeaWeatherEvidence(result, "风速");
   const precipitation = cloudSeaWeatherEvidence(result, "降水");
   const precipitationSignalContext = weatherVariableConsistencyContext.precipitationSignalContext;
-  const relief = result.terrainAnalysis.terrainProfile.localReliefMeters;
+  const terrainDisplay = buildTerrainDisplayModel(result);
   const cloudLayerRoleItem = buildCloudLayerRoleReasoningItem(result, terrainContext);
   const consistencyItem = buildCloudSeaVariableConsistencyReasoningItem(
     weatherVariableConsistencyContext,
@@ -9439,12 +9511,11 @@ function buildCloudSeaReasoningItems(
     {
       key: "terrain-relief",
       label: "地形与高差",
-      value:
-        relief !== null && relief !== undefined
-          ? `${Math.round(relief)} 米`
-          : analysis.terrainSupport.level,
+      value: terrainDisplay.surroundingRelief.available
+        ? `${terrainDisplay.elevationBand.labelZh} / ${terrainDisplay.surroundingRelief.supportLabelZh}`
+        : `${terrainDisplay.elevationBand.labelZh} / ${terrainDisplay.surroundingRelief.statusLabelZh}`,
       detail: terrainContext.terrainNoteZh,
-      tone: analysis.terrainSupport.level === "高" ? "primary" : "muted",
+      tone: terrainDisplay.surroundingRelief.available ? "primary" : "muted",
     },
     {
       key: "whiteout",
@@ -11783,10 +11854,10 @@ function terrainPotentialLabel(
   potential: ForecastCalculationResult["terrainAnalysis"]["terrainProfile"]["terrainCloudSeaPotential"],
 ): string {
   if (potential === "high") {
-    return "高";
+    return "云海地形支撑高";
   }
   if (potential === "medium") {
-    return "中";
+    return "云海地形支撑中";
   }
-  return "低";
+  return "云海地形支撑低";
 }
