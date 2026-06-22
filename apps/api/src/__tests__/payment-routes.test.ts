@@ -208,18 +208,38 @@ describe("payment routes", () => {
     const response = await app.inject({ method: "GET", url: "/billing/products" });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().products).toEqual([
-      expect.objectContaining({
-        code: "forecast_credit_20",
-        amountCents: 990,
-        currency: "CNY",
-      }),
-      expect.objectContaining({
-        code: "forecast_credit_100",
-        amountCents: 3990,
-        currency: "CNY",
-      }),
-    ]);
+    expect(response.json().products).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "monthly_full",
+          amountCents: 1900,
+          currency: "CNY",
+        }),
+        expect.objectContaining({
+          code: "quarterly_full",
+          amountCents: 4900,
+          currency: "CNY",
+        }),
+        expect.objectContaining({
+          code: "yearly_full",
+          amountCents: 16800,
+          currency: "CNY",
+        }),
+        expect.objectContaining({
+          code: "forecast_credit_20",
+          amountCents: 990,
+          currency: "CNY",
+        }),
+        expect.objectContaining({
+          code: "forecast_credit_100",
+          amountCents: 3990,
+          currency: "CNY",
+        }),
+      ]),
+    );
+    expect(response.json().products).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "trial_7_days" })]),
+    );
     expect(response.body).not.toContain("secretJson");
   });
 

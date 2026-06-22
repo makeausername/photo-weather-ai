@@ -210,6 +210,11 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <InfoItem label="会员套餐" value={user.access.currentPlanName} />
+            <InfoItem
+              label="会员到期"
+              value={user.access.entitlementExpiresAt ? formatDate(user.access.entitlementExpiresAt) : "免费/不限"}
+            />
             <InfoItem label="积分余额" value={user.creditBalance} />
             <InfoItem label="支付金额" value={formatMoney(user.summary.totalPaidAmountCents)} />
             <InfoItem label="订单数" value={`${user.summary.orderCount} / 已付 ${user.summary.paidOrderCount}`} />
@@ -491,4 +496,3 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
     </div>
   );
 }
-

@@ -5,6 +5,7 @@ import {
   consumeAuthVerificationCode,
   createAuditLog,
   createAuthVerificationCode,
+  buildAccountAccessStatus,
   deleteUserForecastHistory,
   DuplicateUserEmailError,
   DuplicateUserPhoneError,
@@ -17,8 +18,10 @@ import {
   normalizeUserEmail,
   normalizeUserPhone,
   revokeUserSessions,
+  resolveUserForecastAccess,
   saveUserForecastHistory,
   softDeleteUserAccount,
+  upgradeRequiredResponse,
   updateUserEmail,
   updateUserPassword,
   updateUserPhone,
@@ -30,6 +33,7 @@ import type {
   AuthVerificationPurpose,
   AuthenticatedPrincipal,
   DatabaseClient,
+  ForecastAccessStatus,
   JsonValue,
   UserForecastHistoryRecord,
 } from "@photo-weather/db";
@@ -546,7 +550,61 @@ function optionalDate(value: string | null | undefined): Date | null {
   return Number.isFinite(parsed.getTime()) ? parsed : null;
 }
 
-function historyResponse(record: UserForecastHistoryRecord) {
+function horizonHours(horizon: string): number {
+  if (horizon === "48h") {
+    return 48;
+  }
+  if (horizon === "72h") {
+    return 72;
+  }
+  if (horizon === "7d") {
+    return 168;
+  }
+  return 24;
+}
+
+function isJsonRecord(value: JsonValue | null | undefined): value is Record<string, JsonValue> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readHistoryAccessMeta(record: UserForecastHistoryRecord): Record<string, JsonValue> | null {
+  const query = isJsonRecord(record.queryJson) ? record.queryJson.accessMeta : null;
+  if (isJsonRecord(query)) {
+    return query;
+  }
+  const summary = isJsonRecord(record.resultSummaryJson)
+    ? record.resultSummaryJson.accessMeta
+    : null;
+  return isJsonRecord(summary) ? summary : null;
+}
+
+function historyUsedFullAccess(record: UserForecastHistoryRecord): boolean {
+  const metadata = readHistoryAccessMeta(record);
+  if (metadata && typeof metadata.fullAccessFeaturesUsed === "boolean") {
+    return metadata.fullAccessFeaturesUsed;
+  }
+  return record.target !== "general" || horizonHours(record.horizon) > 24;
+}
+
+function lockedHistoryQuery(record: UserForecastHistoryRecord): JsonValue {
+  return compactJson({
+    locked: true,
+    name: record.locationName,
+    target: record.target,
+    horizon: record.horizon,
+    timezone: record.timezone,
+    latitudeGcj02: record.latitudeGcj02,
+    longitudeGcj02: record.longitudeGcj02,
+    latitudeWgs84: record.latitudeWgs84,
+    longitudeWgs84: record.longitudeWgs84,
+    elevationMeters: record.elevationMeters,
+    locationId: record.locationId,
+    photoSpotId: record.photoSpotId,
+  });
+}
+
+function historyResponse(record: UserForecastHistoryRecord, access?: ForecastAccessStatus) {
+  const locked = Boolean(access && !access.canViewFullHistory && historyUsedFullAccess(record));
   return {
     id: record.id,
     locationName: record.locationName,
@@ -560,8 +618,12 @@ function historyResponse(record: UserForecastHistoryRecord) {
     elevationMeters: record.elevationMeters,
     locationId: record.locationId,
     photoSpotId: record.photoSpotId,
-    queryJson: record.queryJson,
-    resultSummaryJson: record.resultSummaryJson,
+    locked,
+    upgradeRequiredMessage: locked
+      ? "会员到期后，完整摄影报告已锁定。开通月卡、季卡或年卡后可继续查看。"
+      : null,
+    queryJson: locked ? lockedHistoryQuery(record) : record.queryJson,
+    resultSummaryJson: locked ? compactJson({ locked: true }) : record.resultSummaryJson,
     overallScore: record.overallScore,
     recommendationLabel: record.recommendationLabel,
     bestWindowStart: record.bestWindowStart?.toISOString() ?? null,
@@ -569,6 +631,26 @@ function historyResponse(record: UserForecastHistoryRecord) {
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
   };
+}
+
+function buildServerHistoryAccessMeta(input: {
+  readonly query: ForecastQueryInput;
+  readonly access: ForecastAccessStatus;
+  readonly now: Date;
+}): JsonValue {
+  const hours = horizonHours(input.query.horizon);
+  return compactJson({
+    tier: input.access.tier,
+    hasFullAccess: input.access.hasFullAccess,
+    fullAccessFeaturesUsed:
+      input.access.hasFullAccess && (input.query.target !== "general" || hours > 24),
+    horizonHours: hours,
+    target: input.query.target,
+    aiExplanationIncluded: false,
+    professionalTableIncluded: input.access.hasFullAccess,
+    fullReportIncluded: input.access.hasFullAccess,
+    generatedAt: input.now.toISOString(),
+  });
 }
 
 export function registerAccountRoutes(app: FastifyInstance, options: AccountRoutesOptions): void {
@@ -945,6 +1027,21 @@ export function registerAccountRoutes(app: FastifyInstance, options: AccountRout
     return reply.send({ success: true });
   });
 
+  app.get("/account/access", async (request, reply) => {
+    const context = await requireAccountAuth(request, reply, client, authConfig);
+    if (!context) {
+      return reply;
+    }
+    const now = new Date();
+    const access = await resolveUserForecastAccess({
+      principal: context.principal,
+      client,
+      env,
+      now,
+    });
+    return reply.send(buildAccountAccessStatus(access, { now }));
+  });
+
   app.get("/account/forecast-history", async (request, reply) => {
     const context = await requireAccountAuth(request, reply, client, authConfig);
     if (!context) {
@@ -963,9 +1060,15 @@ export function registerAccountRoutes(app: FastifyInstance, options: AccountRout
       },
       { client },
     );
+    const access = await resolveUserForecastAccess({
+      principal: context.principal,
+      client,
+      env,
+      now: new Date(),
+    });
 
     return reply.send({
-      items: history.map(historyResponse),
+      items: history.map((record) => historyResponse(record, access)),
     });
   });
 
@@ -982,11 +1085,23 @@ export function registerAccountRoutes(app: FastifyInstance, options: AccountRout
 
     const query = parsedBody.data.query;
     const resultSummary = parsedBody.data.resultSummary;
+    const now = new Date();
+    const access = await resolveUserForecastAccess({
+      principal: context.principal,
+      client,
+      env,
+      now,
+    });
+    if (!access.hasFullAccess && (query.target !== "general" || horizonHours(query.horizon) > 24)) {
+      return reply.status(402).send(upgradeRequiredResponse(access));
+    }
+    const accessMeta = buildServerHistoryAccessMeta({ query, access, now });
     const compactSummary = {
       overallScore: optionalFiniteNumber(resultSummary?.overallScore),
       recommendationLabel: optionalTrimmedString(resultSummary?.recommendationLabel),
       bestWindowStart: optionalTrimmedString(resultSummary?.bestWindowStart),
       bestWindowEnd: optionalTrimmedString(resultSummary?.bestWindowEnd),
+      accessMeta,
     };
     const record = await saveUserForecastHistory(
       {
@@ -1003,7 +1118,7 @@ export function registerAccountRoutes(app: FastifyInstance, options: AccountRout
         locationId: query.locationId ?? null,
         photoSpotId: query.photoSpotId ?? null,
         queryKey: stableHistoryQueryKey(query),
-        queryJson: compactJson(query),
+        queryJson: compactJson({ ...query, accessMeta }),
         resultSummaryJson: compactJson(compactSummary),
         overallScore: compactSummary.overallScore,
         recommendationLabel: compactSummary.recommendationLabel,
@@ -1013,7 +1128,7 @@ export function registerAccountRoutes(app: FastifyInstance, options: AccountRout
       { client },
     );
 
-    return reply.status(201).send(historyResponse(record));
+    return reply.status(201).send(historyResponse(record, access));
   });
 
   app.delete("/account/forecast-history", async (request, reply) => {

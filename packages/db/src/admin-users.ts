@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 
 import { getPrismaClient } from "./client.js";
+import { buildAccountAccessStatus, resolveUserForecastAccess, type AccountAccessStatus } from "./access.js";
 import {
   DuplicateUserEmailError,
   DuplicateUserPhoneError,
@@ -150,6 +151,7 @@ export type AdminUserListItem = SafeUser & {
   readonly roles: readonly SafeRole[];
   readonly roleCodes: readonly string[];
   readonly permissions: readonly string[];
+  readonly access: AccountAccessStatus;
 } & AdminUserOperationalSummary;
 
 export type AdminUserListSummary = {
@@ -180,6 +182,7 @@ export type AdminUserDetail = {
   readonly roleCodes: readonly string[];
   readonly permissions: readonly string[];
   readonly accountStatus: UserStatus;
+  readonly access: AccountAccessStatus;
   readonly summary: AdminUserOperationalSummary;
   readonly sessionsSummary: {
     readonly active: number;
@@ -637,7 +640,10 @@ export async function listAdminUsers(
   const items = await Promise.all(
     records.map(async (record) => {
       const parts = principalParts(record);
-      const summary = await getUserOperationalSummary({ userId: record.id }, { client, now });
+      const [summary, access] = await Promise.all([
+        getUserOperationalSummary({ userId: record.id }, { client, now }),
+        resolveUserForecastAccess({ userId: record.id, client, now }),
+      ]);
       const user = safeUser(record);
       return {
         ...user,
@@ -646,6 +652,7 @@ export async function listAdminUsers(
         roles: parts.roles,
         roleCodes: parts.roleCodes,
         permissions: parts.permissions,
+        access: buildAccountAccessStatus(access, { now }),
         ...summary,
       } satisfies AdminUserListItem;
     }),
@@ -703,13 +710,14 @@ export async function getAdminUserDetail(
   const record = await getUserRecord(userId, client);
   const profile = safeUser(record);
   const parts = principalParts(record);
-  const [orders, history, auditLogs, sessions, entitlements, creditLedger] = await Promise.all([
+  const [orders, history, auditLogs, sessions, entitlements, creditLedger, access] = await Promise.all([
     listOrdersForUser(userId, client),
     listForecastHistoryForUser(userId, client),
     listAuditLogsForUser(userId, client, 20),
     listUserSessionsForAdmin({ userId, limit: 20 }, { client, now }),
     listEntitlementsForUser(userId, client),
     listCreditLedgerForUser(userId, client),
+    resolveUserForecastAccess({ userId, client, now }),
   ]);
   const paidOrders = orders.filter((order) => order.status === "paid");
   const unpaidOrders = orders.filter((order) => !["paid", "closed", "canceled", "refunded"].includes(order.status));
@@ -745,6 +753,7 @@ export async function getAdminUserDetail(
     roleCodes: parts.roleCodes,
     permissions: parts.permissions,
     accountStatus: profile.status,
+    access: buildAccountAccessStatus(access, { now }),
     summary,
     sessionsSummary: sessionBuckets,
     orderSummary: {

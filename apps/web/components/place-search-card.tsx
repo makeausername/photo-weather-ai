@@ -10,6 +10,7 @@ import {
   type BrowserGeolocationReverseResult,
   type SelectedLocation,
 } from "./selected-location";
+import { getAccountAccess } from "./account-session";
 import { LocationSearchInput } from "./location-search-input";
 import { Badge, Button, Card, cn } from "./ui";
 
@@ -99,6 +100,8 @@ type PlaceSearchCardProps = {
   readonly showForecastSectionDivider?: boolean;
   readonly enableCurrentLocation?: boolean;
   readonly currentLocationPrivacyHint?: string;
+  readonly requiresFullAccess?: boolean;
+  readonly lockExtendedHorizonsForFree?: boolean;
   readonly selectedLocation?: SelectedLocation | null;
   readonly onSelectedLocationChange?: (location: SelectedLocation | null) => void;
   readonly onForecastOptionsChange?: (options: {
@@ -403,28 +406,38 @@ export function PopularSpotChips({
 export function HorizonSelector({
   value,
   onChange,
+  disabledOptions,
 }: {
   readonly value: ForecastHorizon;
   readonly onChange: (value: ForecastHorizon) => void;
+  readonly disabledOptions?: ReadonlySet<ForecastHorizon>;
 }) {
   return (
     <div className="grid grid-cols-2 gap-2">
-      {horizonOptions.map((option) => (
-        <button
-          key={option}
-          type="button"
-          aria-pressed={value === option}
-          onClick={() => onChange(option)}
-          className={cn(
-            "h-8 rounded-md border px-2 text-xs font-semibold transition",
-            value === option
-              ? "border-primary bg-primary text-primary-foreground"
-              : "border-border bg-card text-card-foreground hover:border-primary hover:bg-secondary",
-          )}
-        >
-          {forecastHorizonLabels[option]}
-        </button>
-      ))}
+      {horizonOptions.map((option) => {
+        const disabled = disabledOptions?.has(option) ?? false;
+        return (
+          <button
+            key={option}
+            type="button"
+            aria-pressed={value === option}
+            disabled={disabled}
+            onClick={() => {
+              if (!disabled) {
+                onChange(option);
+              }
+            }}
+            className={cn(
+              "h-8 rounded-md border px-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-55",
+              value === option
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border bg-card text-card-foreground hover:border-primary hover:bg-secondary disabled:hover:border-border disabled:hover:bg-card",
+            )}
+          >
+            {forecastHorizonLabels[option]}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -451,6 +464,8 @@ export function PlaceSearchCard({
   showForecastSectionDivider = true,
   enableCurrentLocation = false,
   currentLocationPrivacyHint = "浏览器定位仅用于本次天气判断，不会公开显示。",
+  requiresFullAccess = false,
+  lockExtendedHorizonsForFree = false,
   selectedLocation,
   onSelectedLocationChange,
   onForecastOptionsChange,
@@ -472,6 +487,7 @@ export function PlaceSearchCard({
   const [target, setTarget] = useState<ForecastTarget>(fixedTarget ?? defaultTarget);
   const [currentLocationStatus, setCurrentLocationStatus] = useState<CurrentLocationStatus>("idle");
   const [currentLocationError, setCurrentLocationError] = useState("");
+  const [hasFullAccess, setHasFullAccess] = useState<boolean | null>(null);
 
   const trimmedQuery = query.trim();
   const activeTarget = fixedTarget ?? (showTargetSelector ? target : defaultTarget);
@@ -495,10 +511,49 @@ export function PlaceSearchCard({
   const showQuickLocationSection =
     shouldRenderQuickLocations && (!activeSelectedLocation || isActivelySearching);
   const isCurrentLocationLoading = currentLocationStatus === "loading";
+  const shouldResolveAccess = requiresFullAccess || lockExtendedHorizonsForFree;
+  const hasLimitedAccess = shouldResolveAccess && hasFullAccess === false;
+  const disabledHorizonOptions = useMemo(
+    () =>
+      lockExtendedHorizonsForFree && hasLimitedAccess
+        ? new Set<ForecastHorizon>(["48h", "72h", "7d"])
+        : undefined,
+    [hasLimitedAccess, lockExtendedHorizonsForFree],
+  );
+  const fullAccessCtaLocked = requiresFullAccess && hasLimitedAccess;
 
   useEffect(() => {
     onForecastOptionsChange?.({ horizon, target: activeTarget });
   }, [activeTarget, horizon, onForecastOptionsChange]);
+
+  useEffect(() => {
+    if (!shouldResolveAccess) {
+      return;
+    }
+
+    let isMounted = true;
+    void getAccountAccess()
+      .then((access) => {
+        if (isMounted) {
+          setHasFullAccess(access.hasFullAccess);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setHasFullAccess(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [shouldResolveAccess]);
+
+  useEffect(() => {
+    if (disabledHorizonOptions?.has(horizon)) {
+      setHorizon("24h");
+    }
+  }, [disabledHorizonOptions, horizon]);
 
   const selectedCoordinateText = useMemo(() => {
     if (!selectedPlace) {
@@ -899,7 +954,11 @@ export function PlaceSearchCard({
       >
         <div className="grid gap-2">
           <p className="text-sm font-semibold text-card-foreground">{horizonLabel}</p>
-          <HorizonSelector value={horizon} onChange={setHorizon} />
+          <HorizonSelector
+            value={horizon}
+            onChange={setHorizon}
+            disabledOptions={disabledHorizonOptions}
+          />
         </div>
 
         {fixedTarget ? (
@@ -940,13 +999,26 @@ export function PlaceSearchCard({
           </p>
         ) : null}
 
+        {hasLimitedAccess ? (
+          <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
+            当前账户只能查看未来 24 小时基础天气。开通月卡、季卡或年卡后可查看完整摄影判断。
+            <a className="ml-2 font-semibold text-primary hover:underline" href="/pricing">
+              开通会员
+            </a>
+          </div>
+        ) : null}
+
         <Button
           type="button"
           className="h-9 w-full"
-          disabled={!activeSelectedLocation}
+          disabled={!activeSelectedLocation || fullAccessCtaLocked}
           onClick={handleRunForecast}
         >
-          {activeSelectedLocation ? ctaLabel : ctaDisabledLabel ?? ctaLabel}
+          {fullAccessCtaLocked
+            ? "开通会员后查看完整判断"
+            : activeSelectedLocation
+              ? ctaLabel
+              : ctaDisabledLabel ?? ctaLabel}
         </Button>
       </div>
     </Card>

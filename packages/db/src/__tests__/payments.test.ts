@@ -3,10 +3,13 @@ import {
   assertUserOwnsPaymentOrder,
   createPaymentOrder,
   getPaymentOrderByOrderNo,
+  grantFullForecastAccessFromOrderOnce,
   grantPaymentEntitlementOnce,
+  grantRegistrationTrialForUserOnce,
   listUserEntitlements,
   markPaymentOrderPaid,
   PaymentAmountMismatchError,
+  PaymentEntitlementGrantError,
   PaymentOrderAccessDeniedError,
 } from "../index.js";
 import { buildSeedData } from "../seed-data.js";
@@ -118,7 +121,8 @@ function createPaymentFakeClient(): { readonly client: DatabaseClient; readonly 
         [...entitlements.values()].filter(
           (entitlement) =>
             (where?.userId === undefined || entitlement.userId === where.userId) &&
-            (where?.orderId === undefined || entitlement.orderId === where.orderId),
+            (where?.orderId === undefined || entitlement.orderId === where.orderId) &&
+            (where?.type === undefined || entitlement.type === where.type),
         ),
       upsert: async ({ where, create, update }: any) => {
         const key = `${where.orderId_type.orderId}:${where.orderId_type.type}`;
@@ -241,6 +245,113 @@ describe("payment helpers", () => {
     await expect(getPaymentOrderByOrderNo("PTEST003", { client })).resolves.toMatchObject({
       status: "pending",
     });
+  });
+
+  it("grants monthly full access once and stacks paid renewals from active expiration", async () => {
+    const { client, state } = createPaymentFakeClient();
+    const firstNow = new Date("2026-06-21T00:00:00.000Z");
+    const secondNow = new Date("2026-06-22T00:00:00.000Z");
+
+    await createPaymentOrder(
+      {
+        orderNo: "PFULL001",
+        userId: "user-1",
+        provider: "wechat_pay",
+        amountCents: 1900,
+        productCode: "monthly_full",
+        status: "pending",
+      },
+      { client },
+    );
+    await markPaymentOrderPaid(
+      { orderNo: "PFULL001", provider: "wechat_pay", amountCents: 1900 },
+      { client },
+    );
+    const firstGrant = await grantFullForecastAccessFromOrderOnce(
+      { orderNo: "PFULL001" },
+      { client, now: firstNow },
+    );
+
+    await createPaymentOrder(
+      {
+        orderNo: "PFULL002",
+        userId: "user-1",
+        provider: "wechat_pay",
+        amountCents: 1900,
+        productCode: "monthly_full",
+        status: "pending",
+      },
+      { client },
+    );
+    await markPaymentOrderPaid(
+      { orderNo: "PFULL002", provider: "wechat_pay", amountCents: 1900 },
+      { client },
+    );
+    const secondGrant = await grantFullForecastAccessFromOrderOnce(
+      { orderNo: "PFULL002" },
+      { client, now: secondNow },
+    );
+    const repeatedSecondGrant = await grantFullForecastAccessFromOrderOnce(
+      { orderNo: "PFULL002" },
+      { client, now: secondNow },
+    );
+
+    expect(firstGrant.granted).toBe(true);
+    expect(firstGrant.entitlements[0]?.type).toBe("full_forecast_access");
+    expect(firstGrant.entitlements[0]?.expiresAt?.toISOString()).toBe(
+      "2026-07-21T00:00:00.000Z",
+    );
+    expect(secondGrant.granted).toBe(true);
+    expect(secondGrant.entitlements[0]?.expiresAt?.toISOString()).toBe(
+      "2026-08-20T00:00:00.000Z",
+    );
+    expect(repeatedSecondGrant.granted).toBe(false);
+    expect(state.entitlements.size).toBe(2);
+    expect(state.ledger.size).toBe(2);
+  });
+
+  it("grants registration trial only once per user", async () => {
+    const { client, state } = createPaymentFakeClient();
+    const now = new Date("2026-06-21T00:00:00.000Z");
+    const firstGrant = await grantRegistrationTrialForUserOnce(
+      { userId: "user-trial" },
+      { client, now },
+    );
+    const secondGrant = await grantRegistrationTrialForUserOnce(
+      { userId: "user-trial" },
+      { client, now: new Date("2026-06-22T00:00:00.000Z") },
+    );
+
+    expect(firstGrant.trialEnabled).toBe(true);
+    expect(firstGrant.granted).toBe(true);
+    expect(firstGrant.order.amountCents).toBe(0);
+    expect(firstGrant.order.provider).toBe("mock");
+    expect(firstGrant.entitlements[0]?.type).toBe("full_forecast_access");
+    expect(firstGrant.entitlements[0]?.expiresAt?.toISOString()).toBe(
+      "2026-06-28T00:00:00.000Z",
+    );
+    expect(secondGrant.granted).toBe(false);
+    expect([...state.orders.values()].filter((order: any) => order.productCode === "trial_7_days")).toHaveLength(1);
+    expect(state.entitlements.size).toBe(1);
+  });
+
+  it("does not grant full access for unpaid or canceled membership orders", async () => {
+    const { client } = createPaymentFakeClient();
+    await createPaymentOrder(
+      {
+        orderNo: "PFULL003",
+        userId: "user-1",
+        provider: "wechat_pay",
+        amountCents: 1900,
+        productCode: "monthly_full",
+        status: "canceled",
+      },
+      { client },
+    );
+
+    await expect(
+      grantFullForecastAccessFromOrderOnce({ orderNo: "PFULL003" }, { client }),
+    ).rejects.toBeInstanceOf(PaymentEntitlementGrantError);
   });
 
   it("does not allow a user to access another user's order", async () => {

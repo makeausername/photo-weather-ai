@@ -1,6 +1,15 @@
 import { randomBytes } from "node:crypto";
 
+import {
+  fullForecastAccessEntitlementType,
+  getForecastAccessSettings,
+  isFullForecastAccessProduct,
+  isInternalTrialProduct,
+  trialFullAccessProductCode,
+} from "./access.js";
+import { createAuditLog } from "./audit.js";
 import { getPrismaClient } from "./client.js";
+import { isPlainJsonObject } from "./json.js";
 import type {
   BillingProductRecord,
   DatabaseClient,
@@ -102,6 +111,10 @@ export type GrantPaymentEntitlementResult = {
   readonly order: PaymentOrderRecord;
   readonly entitlements: readonly UserEntitlementRecord[];
   readonly creditLedgerEntry?: UserCreditLedgerRecord | null;
+};
+
+export type GrantRegistrationTrialResult = GrantPaymentEntitlementResult & {
+  readonly trialEnabled: boolean;
 };
 
 async function resolveClient(client?: DatabaseClient): Promise<DatabaseClient> {
@@ -268,6 +281,79 @@ function entitlementExpiryForProduct(product: BillingProductRecord, startsAt: Da
   }
 
   return new Date(startsAt.getTime() + product.durationDays * 24 * 60 * 60 * 1000);
+}
+
+function readStringMetadata(value: JsonValue | null | undefined, key: string): string | null {
+  if (!isPlainJsonObject(value)) {
+    return null;
+  }
+  const field = value[key];
+  return typeof field === "string" && field.trim() ? field.trim() : null;
+}
+
+function readBooleanMetadata(value: JsonValue | null | undefined, key: string): boolean | null {
+  if (!isPlainJsonObject(value)) {
+    return null;
+  }
+  const field = value[key];
+  return typeof field === "boolean" ? field : null;
+}
+
+function compactJson(value: unknown): JsonValue {
+  return JSON.parse(JSON.stringify(value)) as JsonValue;
+}
+
+function addDays(value: Date, days: number): Date {
+  return new Date(value.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function latestActiveFullAccessExpiration(
+  entitlements: readonly UserEntitlementRecord[],
+  now: Date,
+): Date | null {
+  let latest: Date | null = null;
+  for (const entitlement of entitlements) {
+    if (entitlement.expiresAt === null || entitlement.expiresAt.getTime() <= now.getTime()) {
+      continue;
+    }
+    if (!latest || entitlement.expiresAt.getTime() > latest.getTime()) {
+      latest = entitlement.expiresAt;
+    }
+  }
+  return latest;
+}
+
+function assertFullAccessProductGrantable(input: {
+  readonly order: PaymentOrderRecord;
+  readonly product: BillingProductRecord;
+}): void {
+  const { order, product } = input;
+  if (!isFullForecastAccessProduct(product)) {
+    throw new PaymentEntitlementGrantError(
+      `Billing product ${product.code} does not grant full forecast access.`,
+    );
+  }
+  if (!product.durationDays || product.durationDays <= 0) {
+    throw new PaymentEntitlementGrantError("Full-access product duration must be positive.");
+  }
+
+  if (isInternalTrialProduct(product)) {
+    const source = readStringMetadata(order.metadataJson, "source");
+    const internal = readBooleanMetadata(order.metadataJson, "internal");
+    if (
+      order.provider !== "mock" ||
+      order.amountCents !== 0 ||
+      source !== "registration_trial" ||
+      internal !== true
+    ) {
+      throw new PaymentEntitlementGrantError("Trial product can only be granted by internal registration flow.");
+    }
+    return;
+  }
+
+  if (product.code === trialFullAccessProductCode || order.amountCents <= 0) {
+    throw new PaymentEntitlementGrantError("Public paid orders must have a positive amount.");
+  }
 }
 
 export async function listBillingProducts(
@@ -477,6 +563,289 @@ export async function updatePaymentNotificationStatus(
   return normalizePaymentNotification(record);
 }
 
+async function grantFullForecastAccessFromPaidOrderInTransaction(
+  input: {
+    readonly order: PaymentOrderRecord;
+    readonly product: BillingProductRecord;
+    readonly now: Date;
+    readonly actorUserId?: string | null;
+  },
+  tx: DatabaseClient,
+): Promise<GrantPaymentEntitlementResult> {
+  const paymentOrder = requireDelegate(tx.paymentOrder, "paymentOrder");
+  const userEntitlement = requireDelegate(tx.userEntitlement, "userEntitlement");
+  const userCreditLedger = requireDelegate(tx.userCreditLedger, "userCreditLedger");
+  const { order, product, now } = input;
+
+  if (order.status !== "paid") {
+    throw new PaymentEntitlementGrantError("Full forecast access can only be granted for paid orders.");
+  }
+  assertFullAccessProductGrantable({ order, product });
+
+  const existingEntitlements = await userEntitlement.findMany({
+    where: { orderId: order.id, type: fullForecastAccessEntitlementType },
+    orderBy: [{ grantedAt: "asc" }],
+  });
+  if (order.entitlementGrantedAt || existingEntitlements.length > 0) {
+    return {
+      granted: false,
+      order,
+      entitlements: existingEntitlements.map(normalizeUserEntitlement),
+      creditLedgerEntry: null,
+    };
+  }
+
+  const activeRecords = await userEntitlement.findMany({
+    where: {
+      userId: order.userId,
+      type: fullForecastAccessEntitlementType,
+    },
+    orderBy: [{ expiresAt: "desc" }, { grantedAt: "desc" }],
+  });
+  const activeEntitlements = activeRecords.map(normalizeUserEntitlement);
+  const stackedFrom = latestActiveFullAccessExpiration(activeEntitlements, now);
+  const base = stackedFrom && stackedFrom.getTime() > now.getTime() ? stackedFrom : now;
+  const expiresAt = addDays(base, product.durationDays ?? 0);
+  const entitlementData = {
+    userId: order.userId,
+    orderId: order.id,
+    type: fullForecastAccessEntitlementType,
+    quantity: 1,
+    remainingQuantity: null,
+    startsAt: now,
+    expiresAt,
+    grantedAt: now,
+    metadataJson: compactJson({
+      productCode: product.code,
+      productName: product.name,
+      durationDays: product.durationDays,
+      source: isInternalTrialProduct(product) ? "registration_trial" : "paid_order",
+      orderNo: order.orderNo,
+      stackedFrom: stackedFrom?.toISOString() ?? null,
+    }),
+  };
+  const entitlementRecord =
+    typeof userEntitlement.upsert === "function"
+      ? await userEntitlement.upsert({
+          where: {
+            orderId_type: {
+              orderId: order.id,
+              type: fullForecastAccessEntitlementType,
+            },
+          },
+          create: entitlementData,
+          update: {},
+        })
+      : await userEntitlement.create({ data: entitlementData });
+  const entitlement = normalizeUserEntitlement(entitlementRecord);
+
+  const ledgerRecords = await userCreditLedger.findMany({
+    where: { userId: order.userId },
+    orderBy: [{ createdAt: "asc" }],
+  });
+  const currentBalance = ledgerRecords.reduce(
+    (total, record) => total + Number(record.delta ?? 0),
+    0,
+  );
+  const ledgerData = {
+    userId: order.userId,
+    orderId: order.id,
+    entitlementId: entitlement.id,
+    delta: 0,
+    balanceAfter: currentBalance,
+    reason: "full_forecast_access_grant",
+    metadataJson: compactJson({
+      orderNo: order.orderNo,
+      productCode: product.code,
+      expiresAt: expiresAt.toISOString(),
+    }),
+  };
+  const ledgerRecord =
+    typeof userCreditLedger.upsert === "function"
+      ? await userCreditLedger.upsert({
+          where: { orderId_reason: { orderId: order.id, reason: ledgerData.reason } },
+          create: ledgerData,
+          update: {},
+        })
+      : await userCreditLedger.create({ data: ledgerData });
+  const creditLedgerEntry = normalizeUserCreditLedger(ledgerRecord);
+
+  const updatedOrder = normalizePaymentOrder(
+    await paymentOrder.update({
+      where: { orderNo: order.orderNo },
+      data: { entitlementGrantedAt: now },
+    }),
+  );
+
+  await createAuditLog(
+    {
+      actorUserId: input.actorUserId ?? null,
+      action: "billing.entitlement.full_forecast_access_granted",
+      targetType: "payment_order",
+      targetId: order.orderNo,
+      afterJson: compactJson({
+        userId: order.userId,
+        orderNo: order.orderNo,
+        productCode: product.code,
+        entitlementId: entitlement.id,
+        expiresAt: expiresAt.toISOString(),
+      }),
+    },
+    { client: tx },
+  );
+
+  return {
+    granted: true,
+    order: updatedOrder,
+    entitlements: [entitlement],
+    creditLedgerEntry,
+  };
+}
+
+export async function grantFullForecastAccessFromOrderOnce(
+  input: {
+    readonly orderNo: string;
+    readonly actorUserId?: string | null;
+  },
+  options: { readonly client?: DatabaseClient; readonly now?: Date } = {},
+): Promise<GrantPaymentEntitlementResult> {
+  const client = await resolveClient(options.client);
+  const now = options.now ?? new Date();
+  return withTransaction(client, async (tx) => {
+    const paymentOrder = requireDelegate(tx.paymentOrder, "paymentOrder");
+    const billingProduct = requireDelegate(tx.billingProduct, "billingProduct");
+    const orderRecord = await paymentOrder.findUnique({ where: { orderNo: input.orderNo } });
+    if (!orderRecord) {
+      throw new PaymentOrderNotFoundError(input.orderNo);
+    }
+    const order = normalizePaymentOrder(orderRecord);
+    const productRecord = await billingProduct.findUnique({ where: { code: order.productCode } });
+    if (!productRecord) {
+      throw new PaymentEntitlementGrantError(`Billing product not found: ${order.productCode}`);
+    }
+    const product = normalizeBillingProduct(productRecord);
+    return grantFullForecastAccessFromPaidOrderInTransaction(
+      { order, product, now, actorUserId: input.actorUserId },
+      tx,
+    );
+  });
+}
+
+export async function grantRegistrationTrialForUserOnce(
+  input: { readonly userId: string; readonly actorUserId?: string | null },
+  options: { readonly client?: DatabaseClient; readonly env?: NodeJS.ProcessEnv; readonly now?: Date } = {},
+): Promise<GrantRegistrationTrialResult> {
+  const settings = getForecastAccessSettings(options.env);
+  const client = await resolveClient(options.client);
+  const now = options.now ?? new Date();
+  if (!settings.registrationTrialEnabled) {
+    return {
+      trialEnabled: false,
+      granted: false,
+      order: {
+        id: "",
+        orderNo: "",
+        userId: input.userId,
+        provider: "mock",
+        amountCents: 0,
+        currency: "CNY",
+        productCode: trialFullAccessProductCode,
+        productId: null,
+        status: "closed",
+        paidAt: null,
+        expiresAt: null,
+        providerTradeNo: null,
+        providerPayloadJson: null,
+        metadataJson: null,
+        entitlementGrantedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      },
+      entitlements: [],
+      creditLedgerEntry: null,
+    };
+  }
+
+  return withTransaction(client, async (tx) => {
+    const paymentOrder = requireDelegate(tx.paymentOrder, "paymentOrder");
+    const billingProduct = requireDelegate(tx.billingProduct, "billingProduct");
+    const productRecord = await billingProduct.findUnique({
+      where: { code: trialFullAccessProductCode },
+    });
+    if (!productRecord) {
+      throw new PaymentEntitlementGrantError(`Billing product not found: ${trialFullAccessProductCode}`);
+    }
+    const product = normalizeBillingProduct(productRecord);
+    if (!product.enabled || !isInternalTrialProduct(product)) {
+      throw new PaymentEntitlementGrantError("Registration trial product is not marked internal.");
+    }
+
+    const existingOrders = await paymentOrder.findMany({
+      where: {
+        userId: input.userId,
+      },
+      orderBy: [{ createdAt: "asc" }],
+    });
+    const existingTrial = existingOrders
+      .map(normalizePaymentOrder)
+      .find((order) => order.productCode === trialFullAccessProductCode);
+
+    const order =
+      existingTrial ??
+      normalizePaymentOrder(
+        await paymentOrder.create({
+          data: {
+            orderNo: generatePaymentOrderNo(now).replace(/^P/, "T"),
+            userId: input.userId,
+            provider: "mock",
+            amountCents: 0,
+            currency: product.currency,
+            productCode: product.code,
+            productId: product.id,
+            status: "paid",
+            paidAt: now,
+            expiresAt: null,
+            providerTradeNo: `registration_trial:${input.userId}`,
+            providerPayloadJson: null,
+            metadataJson: compactJson({
+              internal: true,
+              source: "registration_trial",
+              grantType: fullForecastAccessEntitlementType,
+              trialDays: settings.registrationTrialDays,
+            }),
+          },
+        }),
+      );
+
+    if (existingTrial && existingTrial.status !== "paid") {
+      return {
+        trialEnabled: true,
+        granted: false,
+        order: existingTrial,
+        entitlements: [],
+        creditLedgerEntry: null,
+      };
+    }
+
+    const grant = await grantFullForecastAccessFromPaidOrderInTransaction(
+      {
+        order,
+        product: {
+          ...product,
+          durationDays: settings.registrationTrialDays,
+        },
+        now,
+        actorUserId: input.actorUserId ?? input.userId,
+      },
+      tx,
+    );
+    return {
+      trialEnabled: true,
+      ...grant,
+    };
+  });
+}
+
 export async function grantPaymentEntitlementOnce(
   input: { readonly orderNo: string },
   options: { readonly client?: DatabaseClient } = {},
@@ -497,6 +866,19 @@ export async function grantPaymentEntitlementOnce(
       throw new PaymentEntitlementGrantError("Payment entitlement can only be granted for paid orders.");
     }
 
+    const productRecord = await billingProduct.findUnique({ where: { code: order.productCode } });
+    if (!productRecord) {
+      throw new PaymentEntitlementGrantError(`Billing product not found: ${order.productCode}`);
+    }
+
+    const product = normalizeBillingProduct(productRecord);
+    if (isFullForecastAccessProduct(product)) {
+      return grantFullForecastAccessFromPaidOrderInTransaction(
+        { order, product, now: new Date() },
+        tx,
+      );
+    }
+
     const existingEntitlements = await userEntitlement.findMany({
       where: { orderId: order.id },
       orderBy: [{ grantedAt: "asc" }],
@@ -510,12 +892,6 @@ export async function grantPaymentEntitlementOnce(
       };
     }
 
-    const productRecord = await billingProduct.findUnique({ where: { code: order.productCode } });
-    if (!productRecord) {
-      throw new PaymentEntitlementGrantError(`Billing product not found: ${order.productCode}`);
-    }
-
-    const product = normalizeBillingProduct(productRecord);
     const startsAt = new Date();
     const type = entitlementTypeForProduct(product);
     const quantity = entitlementQuantityForProduct(product);

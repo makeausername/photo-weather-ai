@@ -33,7 +33,11 @@ export type PaymentOrderStatus =
 
 export type PaymentNotifyStatus = "received" | "verified" | "processed" | "ignored" | "failed";
 
-export type EntitlementType = "forecast_credit" | "subscription" | "feature_unlock";
+export type EntitlementType =
+  | "forecast_credit"
+  | "subscription"
+  | "feature_unlock"
+  | "full_forecast_access";
 
 export type AuthVerificationChannel = "email" | "sms";
 

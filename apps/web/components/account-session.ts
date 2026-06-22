@@ -95,6 +95,8 @@ export type AccountForecastHistoryRecord = {
   readonly elevationMeters: number | null;
   readonly locationId: string | null;
   readonly photoSpotId: string | null;
+  readonly locked?: boolean;
+  readonly upgradeRequiredMessage?: string | null;
   readonly queryJson: JsonValue;
   readonly resultSummaryJson: JsonValue | null;
   readonly overallScore: number | null;
@@ -122,12 +124,31 @@ export type AccountBillingOrderRecord = {
 
 export type AccountEntitlementRecord = {
   readonly id: string;
-  readonly type: "forecast_credit" | "subscription" | "feature_unlock";
+  readonly type: "forecast_credit" | "subscription" | "feature_unlock" | "full_forecast_access";
   readonly quantity: number;
   readonly remainingQuantity: number | null;
   readonly startsAt: string;
   readonly expiresAt: string | null;
   readonly grantedAt: string;
+};
+
+export type AccountAccessStatus = {
+  readonly userId: string | null;
+  readonly tier: "guest" | "free" | "trial" | "monthly" | "quarterly" | "yearly" | "admin";
+  readonly hasFullAccess: boolean;
+  readonly maxForecastHours: number;
+  readonly allowedTargets: readonly string[];
+  readonly canUseAiExplanation: boolean;
+  readonly canViewFullHistory: boolean;
+  readonly activeEntitlementId?: string;
+  readonly activeProductCode?: string;
+  readonly entitlementExpiresAt?: string;
+  readonly currentPlanName: string;
+  readonly remainingDays: number | null;
+  readonly trialExpired: boolean;
+  readonly upgradeRequiredForFullAccess: boolean;
+  readonly freeLimitMessage: string;
+  readonly reason: string;
 };
 
 type PublicApiErrorPayload = {
@@ -505,6 +526,10 @@ export async function listAccountEntitlements(): Promise<readonly AccountEntitle
     readonly items: readonly AccountEntitlementRecord[];
   }>("/billing/entitlements");
   return response.items;
+}
+
+export async function getAccountAccess(): Promise<AccountAccessStatus> {
+  return accountApiFetch<AccountAccessStatus>("/account/access");
 }
 
 export async function saveForecastHistory(input: {

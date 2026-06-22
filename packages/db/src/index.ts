@@ -1,5 +1,30 @@
 export { createAuditLog, listAuditLogs, sanitizeAuditJson } from "./audit.js";
 export {
+  buildAccountAccessStatus,
+  checkForecastAccess,
+  fullForecastAccessEntitlementType,
+  fullForecastAccessProductCodes,
+  getForecastAccessSettings,
+  isFullForecastAccessProduct,
+  isInternalTrialProduct,
+  isPublicPurchasableBillingProduct,
+  monthlyFullAccessProductCode,
+  quarterlyFullAccessProductCode,
+  resolveUserForecastAccess,
+  trialFullAccessProductCode,
+  upgradeRequiredMessage,
+  upgradeRequiredResponse,
+  yearlyFullAccessProductCode,
+} from "./access.js";
+export type {
+  AccountAccessStatus,
+  ForecastAccessDecision,
+  ForecastAccessReason,
+  ForecastAccessSettings,
+  ForecastAccessStatus,
+  ForecastAccessTier,
+} from "./access.js";
+export {
   AdminUserNotFoundError,
   InvalidAdminRoleAssignmentError,
   LastAdminAccessChangeError,
@@ -143,7 +168,9 @@ export {
   createPaymentOrder,
   getBillingProductByCode,
   getPaymentOrderByOrderNo,
+  grantFullForecastAccessFromOrderOnce,
   grantPaymentEntitlementOnce,
+  grantRegistrationTrialForUserOnce,
   InvalidPaymentStatusTransitionError,
   listBillingProducts,
   listUserEntitlements,

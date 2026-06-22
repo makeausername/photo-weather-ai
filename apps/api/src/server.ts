@@ -557,6 +557,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
   });
   registerForecastRoutes(app, {
     dbClient: options.dbClient,
+    authConfig,
     weatherProvider,
     weatherDataService,
     terrainProvider: options.terrainProvider,

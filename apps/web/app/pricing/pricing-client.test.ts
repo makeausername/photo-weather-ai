@@ -13,27 +13,51 @@ testGlobal.React = React;
 const products: readonly BillingProduct[] = [
   {
     id: "product-1",
-    code: "forecast_credit_20",
-    name: "20 次专业预测包",
-    description: "适合短期旅行和拍摄计划使用，支付成功后发放预测次数。",
-    amountCents: 990,
+    code: "trial_7_days",
+    name: "注册赠送 7 天",
+    description: "新用户注册后自动发放，不开放购买。",
+    amountCents: 0,
     currency: "CNY",
-    credits: 20,
-    durationDays: null,
+    credits: 0,
+    durationDays: 7,
+    enabled: true,
+    sortOrder: 0,
+  },
+  {
+    id: "product-2",
+    code: "monthly_full",
+    name: "月卡",
+    description: "开通完整摄影判断 30 天。",
+    amountCents: 1900,
+    currency: "CNY",
+    credits: 0,
+    durationDays: 30,
     enabled: true,
     sortOrder: 10,
   },
   {
-    id: "product-2",
-    code: "forecast_credit_100",
-    name: "100 次专业预测包",
-    description: "适合高频拍摄和团队使用。",
-    amountCents: 3990,
+    id: "product-3",
+    code: "quarterly_full",
+    name: "季卡",
+    description: "开通完整摄影判断 90 天。",
+    amountCents: 4900,
     currency: "CNY",
-    credits: 100,
-    durationDays: null,
+    credits: 0,
+    durationDays: 90,
     enabled: true,
     sortOrder: 20,
+  },
+  {
+    id: "product-4",
+    code: "yearly_full",
+    name: "年卡",
+    description: "开通完整摄影判断 365 天。",
+    amountCents: 16800,
+    currency: "CNY",
+    credits: 0,
+    durationDays: 365,
+    enabled: true,
+    sortOrder: 30,
   },
 ];
 
@@ -44,21 +68,24 @@ describe("pricing checkout client", () => {
     );
 
     expect(pricingCheckoutLabels).toEqual([
-      "专业预测包",
+      "摄影会员",
       "微信支付",
       "支付宝",
       "创建订单",
       "订单状态",
     ]);
     expect(html).toContain("定价方案");
-    expect(html).toContain("20 次专业预测包");
-    expect(html).toContain("100 次专业预测包");
+    expect(html).toContain("月卡");
+    expect(html).toContain("季卡");
+    expect(html).toContain("年卡");
+    expect(html).not.toContain("注册赠送 7 天");
     expect(html).toContain("微信支付");
     expect(html).toContain("支付宝");
     expect(html).toContain("创建订单");
     expect(html).toContain("查看账户权益");
-    expect(html).toContain("¥9.90");
-    expect(html).toContain("¥39.90");
+    expect(html).toContain("¥19.00");
+    expect(html).toContain("¥49.00");
+    expect(html).toContain("¥168.00");
 
     for (const forbidden of [
       "providerPayload",

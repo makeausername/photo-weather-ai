@@ -324,6 +324,19 @@ export type AdminUserOperationalSummary = {
   readonly entitlementCount: number;
 };
 
+export type AdminUserAccessStatus = {
+  readonly tier: "guest" | "free" | "trial" | "monthly" | "quarterly" | "yearly" | "admin";
+  readonly hasFullAccess: boolean;
+  readonly maxForecastHours: number;
+  readonly currentPlanName: string;
+  readonly activeProductCode?: string;
+  readonly entitlementExpiresAt?: string;
+  readonly remainingDays: number | null;
+  readonly trialExpired: boolean;
+  readonly upgradeRequiredForFullAccess: boolean;
+  readonly reason: string;
+};
+
 export type AdminUserListItem = SafeAdminUser &
   AdminUserOperationalSummary & {
     readonly emailMasked: string | null;
@@ -331,6 +344,7 @@ export type AdminUserListItem = SafeAdminUser &
     readonly roles: readonly AdminRole[];
     readonly roleCodes: readonly string[];
     readonly permissions: readonly string[];
+    readonly access: AdminUserAccessStatus;
   };
 
 export type AdminUserListResponse = {
@@ -434,6 +448,7 @@ export type AdminUserDetail = {
   readonly roleCodes: readonly string[];
   readonly permissions: readonly string[];
   readonly accountStatus: string;
+  readonly access: AdminUserAccessStatus;
   readonly summary: AdminUserOperationalSummary;
   readonly sessionsSummary: {
     readonly active: number;

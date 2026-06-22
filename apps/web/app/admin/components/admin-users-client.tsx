@@ -395,6 +395,7 @@ export function AdminUsersClient() {
               <th className="px-3 py-2.5">联系方式</th>
               <th className="px-3 py-2.5">角色</th>
               <th className="px-3 py-2.5">状态</th>
+              <th className="px-3 py-2.5">会员</th>
               <th className="px-3 py-2.5">订单/支付</th>
               <th className="px-3 py-2.5">积分</th>
               <th className="px-3 py-2.5">最近登录</th>
@@ -415,6 +416,16 @@ export function AdminUsersClient() {
                 </td>
                 <td className="px-3 py-2.5 text-card-foreground">{roleLabels(user.roleCodes)}</td>
                 <td className="px-3 py-2.5">{statusBadge(user.status)}</td>
+                <td className="px-3 py-2.5">
+                  <p className="font-semibold text-card-foreground">{user.access.currentPlanName}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {user.access.entitlementExpiresAt
+                      ? `${formatDate(user.access.entitlementExpiresAt)} 到期`
+                      : user.access.hasFullAccess
+                        ? "不限套餐"
+                        : "免费/已过期"}
+                  </p>
+                </td>
                 <td className="px-3 py-2.5">
                   <p className="font-semibold">{user.orderCount} 单 / {user.paidOrderCount} 已付</p>
                   <p className="text-xs text-muted-foreground">{formatMoney(user.totalPaidAmountCents)}</p>
@@ -491,4 +502,3 @@ export function AdminUsersClient() {
     </div>
   );
 }
-

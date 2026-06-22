@@ -140,8 +140,8 @@ const baseHistoryQuery = {
   longitudeGcj02: 118.16,
   latitudeWgs84: 30.118,
   longitudeWgs84: 118.156,
-  horizon: "48h",
-  target: "cloud_sea",
+  horizon: "24h",
+  target: "general",
   timezone: "Asia/Shanghai",
   elevationMeters: 1200,
   locationId: "location-test",
@@ -478,6 +478,24 @@ describe("auth routes", () => {
     expect(state.profiles.get(createdUser?.id)).toMatchObject({
       userId: createdUser?.id,
       preferredLanguage: "zh-CN",
+    });
+    const trialOrders = [...state.paymentOrders.values()].filter(
+      (order) => order.userId === createdUser?.id && order.productCode === "trial_7_days",
+    );
+    expect(trialOrders).toHaveLength(1);
+    expect(trialOrders[0]).toMatchObject({
+      amountCents: 0,
+      provider: "mock",
+      status: "paid",
+    });
+    const trialEntitlements = [...state.userEntitlements.values()].filter(
+      (entitlement) =>
+        entitlement.userId === createdUser?.id && entitlement.type === "full_forecast_access",
+    );
+    expect(trialEntitlements).toHaveLength(1);
+    expect(trialEntitlements[0]?.metadataJson).toMatchObject({
+      productCode: "trial_7_days",
+      source: "registration_trial",
     });
     expect([...state.verificationCodes.values()][0].consumedAt).toEqual(expect.any(Date));
   });
@@ -1506,7 +1524,7 @@ describe("auth routes", () => {
     expect(plainList.json().items).toEqual([
       expect.objectContaining({
         locationName: "测试山顶",
-        target: "cloud_sea",
+        target: "general",
         recommendationLabel: "推荐前往",
       }),
     ]);

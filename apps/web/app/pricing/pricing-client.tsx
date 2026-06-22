@@ -50,9 +50,10 @@ type OrderResponse = {
 };
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+const membershipProductCodes = new Set(["monthly_full", "quarterly_full", "yearly_full"]);
 
 export const pricingCheckoutLabels = [
-  "专业预测包",
+  "摄影会员",
   "微信支付",
   "支付宝",
   "创建订单",
@@ -87,7 +88,9 @@ async function fetchProducts(): Promise<readonly BillingProduct[]> {
   if (!response.ok) {
     throw new Error(await readApiError(response, "暂时无法读取套餐。"));
   }
-  return ((await response.json()) as ProductResponse).products;
+  return ((await response.json()) as ProductResponse).products.filter((product) =>
+    membershipProductCodes.has(product.code),
+  );
 }
 
 async function createOrder(input: {
@@ -153,8 +156,13 @@ export function PricingClient({
 }: {
   readonly initialProducts?: readonly BillingProduct[];
 }) {
-  const [products, setProducts] = useState<readonly BillingProduct[]>(initialProducts ?? []);
-  const [selectedProductCode, setSelectedProductCode] = useState(initialProducts?.[0]?.code ?? "");
+  const initialVisibleProducts = initialProducts?.filter((product) =>
+    membershipProductCodes.has(product.code),
+  );
+  const [products, setProducts] = useState<readonly BillingProduct[]>(initialVisibleProducts ?? []);
+  const [selectedProductCode, setSelectedProductCode] = useState(
+    initialVisibleProducts?.[0]?.code ?? "",
+  );
   const [provider, setProvider] = useState<"wechat_pay" | "alipay">("wechat_pay");
   const [checkout, setCheckout] = useState<CheckoutPayload | null>(null);
   const [order, setOrder] = useState<BillingOrder | null>(null);
@@ -165,6 +173,11 @@ export function PricingClient({
 
   useEffect(() => {
     if (initialProducts) {
+      const nextProducts = initialProducts.filter((product) =>
+        membershipProductCodes.has(product.code),
+      );
+      setProducts(nextProducts);
+      setSelectedProductCode((current) => current || nextProducts[0]?.code || "");
       return;
     }
 
@@ -282,7 +295,9 @@ export function PricingClient({
                       {product.description}
                     </p>
                   </div>
-                  <Badge variant="info">{product.credits} 次</Badge>
+                  <Badge variant="info">
+                    {product.durationDays ? `${product.durationDays} 天` : "会员"}
+                  </Badge>
                 </div>
                 <p className="text-2xl font-bold text-foreground">
                   {formatPrice(product.amountCents)}

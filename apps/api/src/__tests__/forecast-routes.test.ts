@@ -23,6 +23,8 @@ import {
   type AstroServiceTerrainDemProfileQueryResponse,
 } from "../astro-service-client.js";
 
+const forecastTestAuthConfig = { ...testAuthConfig, adminAuthBypass: true };
+
 const validPayload = {
   name: "黄山光明顶",
   source: "local_photo_spot",
@@ -656,7 +658,7 @@ describe("forecast query validation route", () => {
   });
 
   it("normalizes a public forecast query without calling providers", async () => {
-    app = buildApiServer({ authConfig: testAuthConfig, logger: false });
+    app = buildApiServer({ authConfig: forecastTestAuthConfig, logger: false });
 
     const response = await app.inject({
       method: "POST",
@@ -675,7 +677,7 @@ describe("forecast query validation route", () => {
   });
 
   it("rejects invalid coordinate ranges", async () => {
-    app = buildApiServer({ authConfig: testAuthConfig, logger: false });
+    app = buildApiServer({ authConfig: forecastTestAuthConfig, logger: false });
 
     const response = await app.inject({
       method: "POST",
@@ -693,12 +695,101 @@ describe("forecast query validation route", () => {
     });
   });
 
+  it("allows guest 24h general forecast but rejects full modules before provider work", async () => {
+    app = buildApiServer({ authConfig: testAuthConfig, logger: false });
+
+    const allowed = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        target: "general",
+        horizon: "24h",
+      },
+    });
+
+    expect(allowed.statusCode).toBe(200);
+
+    await app.close();
+    const getCurrentWeather = vi.fn();
+    const getForecast = vi.fn();
+    const weatherProvider = {
+      getCurrentWeather,
+      getForecast,
+    } as unknown as WeatherProvider;
+    app = buildApiServer({ authConfig: testAuthConfig, weatherProvider, logger: false });
+
+    const rejected = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: validPayload,
+    });
+
+    expect(rejected.statusCode).toBe(402);
+    expect(rejected.json()).toMatchObject({
+      error: "upgrade_required",
+      required: {
+        feature: "full_forecast_access",
+        maxForecastHours: 168,
+      },
+    });
+    expect(getCurrentWeather).not.toHaveBeenCalled();
+    expect(getForecast).not.toHaveBeenCalled();
+  });
+
+  it("rejects guest 24h requests shifted into the future before provider work", async () => {
+    const getCurrentWeather = vi.fn();
+    const getForecast = vi.fn();
+    const weatherProvider = {
+      getCurrentWeather,
+      getForecast,
+    } as unknown as WeatherProvider;
+    app = buildApiServer({ authConfig: testAuthConfig, weatherProvider, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        target: "general",
+        horizon: "24h",
+        startDateTime: "2099-01-01T00:00:00+08:00",
+      },
+    });
+
+    expect(response.statusCode).toBe(402);
+    expect(response.json()).toMatchObject({ error: "upgrade_required" });
+    expect(getCurrentWeather).not.toHaveBeenCalled();
+    expect(getForecast).not.toHaveBeenCalled();
+  });
+
+  it("rejects guest AI explanation before calculating forecast or calling DeepSeek", async () => {
+    const getCurrentWeather = vi.fn();
+    const getForecast = vi.fn();
+    const weatherProvider = {
+      getCurrentWeather,
+      getForecast,
+    } as unknown as WeatherProvider;
+    app = buildApiServer({ authConfig: testAuthConfig, weatherProvider, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/ai-explain",
+      payload: validPayload,
+    });
+
+    expect(response.statusCode).toBe(402);
+    expect(response.json()).toMatchObject({ error: "upgrade_required" });
+    expect(getCurrentWeather).not.toHaveBeenCalled();
+    expect(getForecast).not.toHaveBeenCalled();
+  });
+
   it("calculates a deterministic mock forecast result without real network calls", async () => {
     const fetchMock = vi.fn(() => {
       throw new Error("real network calls are disabled in forecast tests");
     });
     vi.stubGlobal("fetch", fetchMock);
-    app = buildApiServer({ authConfig: testAuthConfig, logger: false });
+    app = buildApiServer({ authConfig: forecastTestAuthConfig, logger: false });
 
     const response = await app.inject({
       method: "POST",
@@ -891,7 +982,7 @@ describe("forecast query validation route", () => {
   it("dedupes identical concurrent forecast calculate requests", async () => {
     const providerCalls = { current: 0 };
     app = buildApiServer({
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       logger: false,
       weatherProvider: buildDedupeWeatherProvider(providerCalls),
       env: {
@@ -934,7 +1025,7 @@ describe("forecast query validation route", () => {
       })),
     };
     app = buildApiServer({
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       elevationProvider,
       logger: false,
     });
@@ -996,7 +1087,7 @@ describe("forecast query validation route", () => {
       })),
     };
     app = buildApiServer({
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       elevationProvider,
       logger: false,
     });
@@ -1094,7 +1185,7 @@ describe("forecast query validation route", () => {
     vi.stubGlobal("fetch", fetchMock);
     app = buildApiServer({
       dbClient: client,
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       env: {
         ...process.env,
         NODE_ENV: "development",
@@ -1253,7 +1344,7 @@ describe("forecast query validation route", () => {
     vi.stubGlobal("fetch", fetchMock);
     app = buildApiServer({
       dbClient: client,
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       env: {
         ...process.env,
         NODE_ENV: "development",
@@ -1366,7 +1457,7 @@ describe("forecast query validation route", () => {
     vi.stubGlobal("fetch", fetchMock);
     app = buildApiServer({
       dbClient: client,
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       env: {
         ...process.env,
         NODE_ENV: "development",
@@ -1474,7 +1565,7 @@ describe("forecast query validation route", () => {
     vi.stubGlobal("fetch", fetchMock);
     app = buildApiServer({
       dbClient: client,
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       env: {
         ...process.env,
         NODE_ENV: "development",
@@ -1555,7 +1646,7 @@ describe("forecast query validation route", () => {
       throw new Error("real network calls are disabled in forecast tests");
     });
     vi.stubGlobal("fetch", fetchMock);
-    app = buildApiServer({ authConfig: testAuthConfig, logger: false });
+    app = buildApiServer({ authConfig: forecastTestAuthConfig, logger: false });
 
     const response = await app.inject({
       method: "POST",
@@ -1597,7 +1688,7 @@ describe("forecast query validation route", () => {
       calculate: calculateMock,
     };
     app = buildApiServer({
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       astroServiceClient,
       env: {
         ...process.env,
@@ -1666,7 +1757,7 @@ describe("forecast query validation route", () => {
       queryTerrainDemProfile: queryTerrainDemProfileMock,
     };
     app = buildApiServer({
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       astroServiceClient,
       env: {
         ...process.env,
@@ -1793,7 +1884,7 @@ describe("forecast query validation route", () => {
       queryTerrainDemProfile: queryTerrainDemProfileMock,
     };
     app = buildApiServer({
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       astroServiceClient,
       env: {
         ...process.env,
@@ -1867,7 +1958,7 @@ describe("forecast query validation route", () => {
       updatedAt: new Date("2026-05-01T00:00:00.000Z"),
       summaryJson: {},
     });
-    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+    app = buildApiServer({ dbClient: client, authConfig: forecastTestAuthConfig, logger: false });
 
     const response = await app.inject({
       method: "POST",
@@ -1893,7 +1984,7 @@ describe("forecast query validation route", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     const { client } = await createFakeDatabaseClient();
-    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+    app = buildApiServer({ dbClient: client, authConfig: forecastTestAuthConfig, logger: false });
 
     const response = await app.inject({
       method: "POST",
@@ -1918,7 +2009,7 @@ describe("forecast query validation route", () => {
       calculate: calculateMock,
     };
     app = buildApiServer({
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       astroServiceClient,
       env: {
         ...process.env,
@@ -1957,7 +2048,7 @@ describe("forecast query validation route", () => {
       calculate: calculateMock,
     };
     app = buildApiServer({
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       astroServiceClient,
       env: {
         ...process.env,
@@ -2005,7 +2096,7 @@ describe("forecast query validation route", () => {
       ),
     };
     app = buildApiServer({
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       astroServiceClient,
       env: {
         ...process.env,
@@ -2049,7 +2140,7 @@ describe("forecast query validation route", () => {
       ),
     };
     app = buildApiServer({
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       astroServiceClient,
       env: {
         ...process.env,
@@ -2094,7 +2185,7 @@ describe("forecast query validation route", () => {
       return Promise.resolve(buildAstroServiceResponse(input));
     });
     app = buildApiServer({
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       astroServiceClient: {
         calculate: calculateMock,
       },
@@ -2139,7 +2230,7 @@ describe("forecast query validation route", () => {
       );
     });
     app = buildApiServer({
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       astroServiceClient: {
         calculate: calculateMock,
       },
@@ -2187,7 +2278,7 @@ describe("forecast query validation route", () => {
       Promise.resolve(buildAstroServiceResponse(input)),
     );
     app = buildApiServer({
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       astroServiceClient: {
         calculate: calculateMock,
       },
@@ -2246,7 +2337,7 @@ describe("forecast query validation route", () => {
       ),
     };
     app = buildApiServer({
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       astroServiceClient,
       env: {
         ...process.env,
@@ -2282,7 +2373,7 @@ describe("forecast query validation route", () => {
       }),
     };
     app = buildApiServer({
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       astroServiceClient,
       env: {
         ...process.env,
@@ -2312,7 +2403,7 @@ describe("forecast query validation route", () => {
 
   it("returns a coordinate-specific Chinese error without stack traces", async () => {
     app = buildApiServer({
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       env: {
         ...process.env,
         ENABLE_ASTRO_SERVICE: "true",
@@ -2341,7 +2432,7 @@ describe("forecast query validation route", () => {
 
   it("exposes sanitized local astro-service debug status", async () => {
     app = buildApiServer({
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       env: {
         ...process.env,
         NODE_ENV: "development",
@@ -2387,7 +2478,7 @@ describe("forecast query validation route", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     app = buildApiServer({
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       env: {
         ...process.env,
         NODE_ENV: "development",
@@ -2435,7 +2526,7 @@ describe("forecast query validation route", () => {
       }),
     };
     app = buildApiServer({
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       astroServiceClient,
       env: {
         ...process.env,
@@ -2465,7 +2556,7 @@ describe("forecast query validation route", () => {
       throw new Error("real network calls are disabled in glow forecast tests");
     });
     vi.stubGlobal("fetch", fetchMock);
-    app = buildApiServer({ authConfig: testAuthConfig, logger: false });
+    app = buildApiServer({ authConfig: forecastTestAuthConfig, logger: false });
 
     const response = await app.inject({
       method: "POST",
@@ -2501,7 +2592,7 @@ describe("forecast query validation route", () => {
       throw new Error("real network calls are disabled in forecast tests");
     });
     vi.stubGlobal("fetch", fetchMock);
-    app = buildApiServer({ authConfig: testAuthConfig, logger: false });
+    app = buildApiServer({ authConfig: forecastTestAuthConfig, logger: false });
 
     const response = await app.inject({
       method: "POST",
@@ -2545,7 +2636,7 @@ describe("forecast query validation route", () => {
     });
     app = buildApiServer({
       dbClient: client,
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       env: {
         ...process.env,
         NODE_ENV: "development",
@@ -2608,7 +2699,7 @@ describe("forecast query validation route", () => {
       return Promise.resolve(buildAstroServiceResponse(input));
     });
     app = buildApiServer({
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       astroServiceClient: {
         calculate: calculateMock,
       },
@@ -2674,7 +2765,7 @@ describe("forecast query validation route", () => {
     });
     app = buildApiServer({
       dbClient: client,
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       env: {
         ...process.env,
         NODE_ENV: "development",
@@ -2728,7 +2819,7 @@ describe("forecast query validation route", () => {
     });
     app = buildApiServer({
       dbClient: client,
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       env: {
         ...process.env,
         NODE_ENV: "development",
@@ -2809,7 +2900,7 @@ describe("forecast query validation route", () => {
     });
     app = buildApiServer({
       dbClient: client,
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       env: {
         ...process.env,
         NODE_ENV: "development",
@@ -2887,7 +2978,7 @@ describe("forecast query validation route", () => {
     });
     app = buildApiServer({
       dbClient: client,
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       env: {
         ...process.env,
         NODE_ENV: "development",
@@ -2996,7 +3087,7 @@ describe("forecast query validation route", () => {
     });
     app = buildApiServer({
       dbClient: client,
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       env: {
         ...process.env,
         NODE_ENV: "development",
@@ -3094,7 +3185,7 @@ describe("forecast query validation route", () => {
     });
     app = buildApiServer({
       dbClient: client,
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       env: {
         ...process.env,
         NODE_ENV: "development",
@@ -3186,7 +3277,7 @@ describe("forecast query validation route", () => {
     });
     app = buildApiServer({
       dbClient: client,
-      authConfig: testAuthConfig,
+      authConfig: forecastTestAuthConfig,
       env: {
         ...process.env,
         NODE_ENV: "development",
@@ -3262,7 +3353,7 @@ describe("forecast query validation route", () => {
   });
 
   it("rejects unsupported horizon and target for calculation", async () => {
-    app = buildApiServer({ authConfig: testAuthConfig, logger: false });
+    app = buildApiServer({ authConfig: forecastTestAuthConfig, logger: false });
 
     const horizonResponse = await app.inject({
       method: "POST",

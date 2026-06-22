@@ -49,6 +49,8 @@ export function SubjectControlPanel({
         showForecastSectionDivider={false}
         enableCurrentLocation
         currentLocationPrivacyHint={config.currentLocationPrivacyHint}
+        requiresFullAccess
+        lockExtendedHorizonsForFree
         selectedLocation={selectedLocation}
         onSelectedLocationChange={onSelectedLocationChange}
         onForecastOptionsChange={onForecastOptionsChange}

@@ -14,6 +14,7 @@ import {
   homepageDefaultTarget,
 } from "./homepage-search-panel";
 import { buildForecastRequestPayload, type SelectedLocation } from "./selected-location";
+import { getStoredAdminTokens } from "../app/admin/admin-api";
 import { Badge, Card, cn } from "./ui";
 
 type LayerStatus = "idle" | "loading" | "ready" | "partial" | "fallback" | "error";
@@ -93,10 +94,12 @@ export function HomepageWorkbench() {
 
     async function loadSelectedLocationForecast() {
       try {
+        const tokens = getStoredAdminTokens();
         const response = await fetch(`${apiBaseUrl}/forecast/calculate`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            ...(tokens ? { Authorization: `Bearer ${tokens.accessToken}` } : {}),
           },
           body: JSON.stringify(
             buildForecastRequestPayload(location, forecastOptions.horizon, forecastOptions.target),

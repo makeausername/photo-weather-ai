@@ -326,8 +326,8 @@ describe("account center foundation", () => {
     expect(html).toContain("账户资料");
     expect(html).toContain("绑定方式");
     expect(html).toContain("安全设置");
-    expect(html).toContain("订单与权益");
-    expect(html).toContain("正在读取订单与权益");
+    expect(html).toContain("订单与会员");
+    expect(html).toContain("正在读取订单与会员状态");
     expect(html).toContain("查询历史");
     expect(html).toContain("暂无查询历史");
     expect(html).toContain("修改密码");
@@ -425,8 +425,8 @@ describe("account center foundation", () => {
       ],
     });
 
-    expect(html).toContain("订单与权益");
-    expect(html).toContain("可用 20 次");
+    expect(html).toContain("订单与会员");
+    expect(html).toContain("20 次");
     expect(html).toContain("已支付订单");
     expect(html).toContain("1 笔");
     expect(html).toContain("P202606210001");

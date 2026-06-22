@@ -53,6 +53,7 @@ enum EntitlementType {
   forecast_credit
   subscription
   feature_unlock
+  full_forecast_access
 }
 
 enum AuthVerificationChannel {

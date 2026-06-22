@@ -285,24 +285,65 @@ describe("database seed data", () => {
   it("seeds enabled billing products with integer-cent CNY pricing", () => {
     const seedData = buildSeedData();
 
-    expect(seedData.billingProducts).toEqual([
-      expect.objectContaining({
-        code: "forecast_credit_20",
-        name: "20 次专业预测包",
-        amountCents: 990,
-        currency: "CNY",
-        credits: 20,
-        enabled: true,
-      }),
-      expect.objectContaining({
-        code: "forecast_credit_100",
-        name: "100 次专业预测包",
-        amountCents: 3990,
-        currency: "CNY",
-        credits: 100,
-        enabled: true,
-      }),
-    ]);
+    expect(seedData.billingProducts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "trial_7_days",
+          amountCents: 0,
+          currency: "CNY",
+          credits: 0,
+          durationDays: 7,
+          enabled: true,
+          metadataJson: expect.objectContaining({
+            internal: true,
+            public: false,
+            grantType: "full_forecast_access",
+            source: "registration_trial",
+          }),
+        }),
+        expect.objectContaining({
+          code: "monthly_full",
+          amountCents: 1900,
+          currency: "CNY",
+          credits: 0,
+          durationDays: 30,
+          enabled: true,
+          metadataJson: expect.objectContaining({
+            grantType: "full_forecast_access",
+          }),
+        }),
+        expect.objectContaining({
+          code: "quarterly_full",
+          durationDays: 90,
+          metadataJson: expect.objectContaining({
+            grantType: "full_forecast_access",
+          }),
+        }),
+        expect.objectContaining({
+          code: "yearly_full",
+          durationDays: 365,
+          metadataJson: expect.objectContaining({
+            grantType: "full_forecast_access",
+          }),
+        }),
+        expect.objectContaining({
+          code: "forecast_credit_20",
+          name: "20 次专业预测包",
+          amountCents: 990,
+          currency: "CNY",
+          credits: 20,
+          enabled: true,
+        }),
+        expect.objectContaining({
+          code: "forecast_credit_100",
+          name: "100 次专业预测包",
+          amountCents: 3990,
+          currency: "CNY",
+          credits: 100,
+          enabled: true,
+        }),
+      ]),
+    );
     expect(seedData.billingProducts.every((product) => Number.isInteger(product.amountCents))).toBe(
       true,
     );

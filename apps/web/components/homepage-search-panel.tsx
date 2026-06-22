@@ -2,7 +2,7 @@ import type { ForecastHorizon, ForecastTarget } from "@photo-weather/shared";
 import { PlaceSearchCard } from "./place-search-card";
 import type { SelectedLocation } from "./selected-location";
 
-export const homepageDefaultHorizon: ForecastHorizon = "48h";
+export const homepageDefaultHorizon: ForecastHorizon = "24h";
 export const homepageDefaultTarget: ForecastTarget = "general";
 export const homepageTargetHelperText =
   "预报范围会影响可评估的窗口数量；短周期适合临近出行，7天适合提前看趋势。";
@@ -37,6 +37,7 @@ export function HomepageSearchPanel({
       showSelectedLocationActions
       showQuickLocations={false}
       enableCurrentLocation
+      lockExtendedHorizonsForFree
       selectedLocation={selectedLocation}
       onSelectedLocationChange={onSelectedLocationChange}
       onForecastOptionsChange={onForecastOptionsChange}

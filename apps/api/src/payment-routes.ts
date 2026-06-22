@@ -7,6 +7,7 @@ import {
   getBillingProductByCode,
   getPaymentOrderByOrderNo,
   grantPaymentEntitlementOnce,
+  isPublicPurchasableBillingProduct,
   listBillingProducts,
   listUserEntitlements,
   listUserPaymentOrders,
@@ -411,7 +412,7 @@ export function registerPaymentRoutes(app: FastifyInstance, options: PaymentRout
 
   app.get("/billing/products", async () => {
     const products = await listBillingProducts({ enabledOnly: true, client });
-    return { products: products.map(productResponse) };
+    return { products: products.filter(isPublicPurchasableBillingProduct).map(productResponse) };
   });
 
   app.post("/billing/orders", async (request, reply) => {
@@ -435,6 +436,9 @@ export function registerPaymentRoutes(app: FastifyInstance, options: PaymentRout
     const product = await getBillingProductByCode(parsedBody.data.productCode, { client });
     if (!product || !product.enabled) {
       return sendError(reply, 404, "product_not_found", "计费产品不存在或未启用。");
+    }
+    if (!isPublicPurchasableBillingProduct(product)) {
+      return sendError(reply, 403, "product_not_purchasable", "该套餐不支持公开购买。");
     }
     if (product.currency !== "CNY") {
       return sendError(reply, 400, "unsupported_currency", "V1 仅支持人民币订单。");

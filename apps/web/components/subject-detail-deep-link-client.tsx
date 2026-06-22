@@ -15,6 +15,7 @@ import {
   GlowResultPage,
   type DecisionProgressContext,
 } from "../app/forecast/forecast-result-client";
+import { getStoredAdminTokens } from "../app/admin/admin-api";
 import { buildForecastResultViewModel } from "../app/forecast/forecast-result-view-model";
 import {
   formatSubjectDetailWindowLabel,
@@ -111,10 +112,12 @@ export function SubjectDetailDeepLinkClient({
           ...parsed.fallbackQuery,
           ...parsed.requestOptions,
         };
+        const tokens = getStoredAdminTokens();
         const response = await fetch(`${apiBaseUrl}/forecast/calculate`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            ...(tokens ? { Authorization: `Bearer ${tokens.accessToken}` } : {}),
           },
           body: JSON.stringify(requestBody),
         });

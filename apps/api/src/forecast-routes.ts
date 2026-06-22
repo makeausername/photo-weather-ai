@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   buildForecastDateRange,
   forecastDateRangeErrorMessage,
@@ -34,7 +34,15 @@ import {
   type ForecastAiExplanation,
   type ForecastAiExplanationParseStrategy,
 } from "@photo-weather/ai";
-import { getRuntimeProviderConfig, type DatabaseClient } from "@photo-weather/db";
+import {
+  checkForecastAccess,
+  getRuntimeProviderConfig,
+  resolveUserForecastAccess,
+  upgradeRequiredResponse,
+  type AuthenticatedPrincipal,
+  type DatabaseClient,
+  type ForecastAccessStatus,
+} from "@photo-weather/db";
 import { buildForecastInputFromWeatherBundle, calculateForecast } from "@photo-weather/scoring";
 import {
   MockTerrainProvider,
@@ -54,6 +62,7 @@ import {
   readRuntimeDeepSeekConfig,
   type RuntimeDeepSeekConfig,
 } from "./ai-provider.js";
+import { authenticateRequest, type AuthConfig } from "./auth-routes.js";
 import type { WeatherDataServiceLike } from "./weather-provider.js";
 import {
   AstroServiceClient,
@@ -75,6 +84,7 @@ import { createRuntimeElevationService } from "./elevation-service.js";
 
 export type ForecastRoutesOptions = {
   readonly dbClient?: DatabaseClient;
+  readonly authConfig?: AuthConfig;
   readonly weatherProvider?: WeatherProvider;
   readonly weatherDataService?: WeatherDataServiceLike;
   readonly terrainProvider?: TerrainProvider;
@@ -252,10 +262,14 @@ function createForecastCalculateCacheKey(
   options: {
     readonly runtimeCacheSalt?: string;
     readonly rawTarget?: string | null;
+    readonly access?: Pick<ForecastAccessStatus, "tier" | "activeProductCode" | "hasFullAccess">;
   } = {},
 ): string {
   const stableInput = {
     runtimeCacheSalt: options.runtimeCacheSalt ?? null,
+    accessTier: options.access?.tier ?? "guest",
+    accessProductCode: options.access?.activeProductCode ?? null,
+    accessHasFullAccess: options.access?.hasFullAccess ?? false,
     rawTarget: options.rawTarget ?? input.target,
     name: input.name,
     source: input.source,
@@ -322,6 +336,68 @@ function readRawForecastTarget(value: unknown): string | null {
   }
   const target = value.target;
   return typeof target === "string" && target.trim().length > 0 ? target.trim() : null;
+}
+
+async function resolveOptionalForecastPrincipal(input: {
+  readonly request: FastifyRequest;
+  readonly client?: DatabaseClient;
+  readonly authConfig?: AuthConfig;
+}): Promise<AuthenticatedPrincipal | null> {
+  if (!input.authConfig) {
+    return null;
+  }
+  if (!input.authConfig.adminAuthBypass && !input.request.headers.authorization) {
+    return null;
+  }
+  try {
+    return (await authenticateRequest(input.request, input.client, input.authConfig)).principal;
+  } catch (error) {
+    const authError = error as { readonly statusCode?: number };
+    if (authError.statusCode === 401 || authError.statusCode === 403) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function resolveForecastAccessForRequest(input: {
+  readonly request: FastifyRequest;
+  readonly client?: DatabaseClient;
+  readonly authConfig?: AuthConfig;
+  readonly env: NodeJS.ProcessEnv;
+  readonly body: ForecastCalculateRequest;
+  readonly useAiExplanation: boolean;
+  readonly reply: FastifyReply;
+}): Promise<ForecastAccessStatus | null> {
+  const serverNow = new Date();
+  const forecastRange = buildForecastDateRange(input.body.horizon, {
+    timezone: input.body.timezone,
+    now: input.body.startDateTime ?? serverNow,
+  });
+  const principal = await resolveOptionalForecastPrincipal({
+    request: input.request,
+    client: input.client,
+    authConfig: input.authConfig,
+  });
+  const access = await resolveUserForecastAccess({
+    principal,
+    client: input.client,
+    env: input.env,
+    now: serverNow,
+  });
+  const decision = checkForecastAccess({
+    access,
+    target: input.body.target,
+    useAiExplanation: input.useAiExplanation,
+    forecastStart: new Date(forecastRange.forecastStart),
+    forecastEnd: new Date(forecastRange.forecastEnd),
+    now: serverNow,
+  });
+  if (!decision.allowed) {
+    input.reply.status(decision.statusCode ?? 402).send(upgradeRequiredResponse(access));
+    return null;
+  }
+  return access;
 }
 
 type ForecastCalculationOptions = {
@@ -524,11 +600,35 @@ export function registerForecastRoutes(
     }
 
     const {
-      useAiExplanation: _useAiExplanation,
+      useAiExplanation,
       timezone,
       startDateTime,
       ...query
     } = parsedBody.data;
+    let access: ForecastAccessStatus | null;
+    try {
+      access = await resolveForecastAccessForRequest({
+        request,
+        reply,
+        client: options.dbClient,
+        authConfig: options.authConfig,
+        env,
+        body: parsedBody.data,
+        useAiExplanation,
+      });
+    } catch (error) {
+      return sendForecastCalculationError({
+        logger: request.log,
+        route: "/forecast/calculate",
+        queryLike: query,
+        astroServiceConfig,
+        error,
+        reply,
+      });
+    }
+    if (!access) {
+      return reply;
+    }
     const runtimeCacheSalt = await createForecastCalculateRuntimeCacheSalt({
       dbClient: options.dbClient,
       env,
@@ -536,6 +636,7 @@ export function registerForecastRoutes(
     const cacheKey = createForecastCalculateCacheKey(parsedBody.data, {
       runtimeCacheSalt,
       rawTarget: readRawForecastTarget(request.body),
+      access,
     });
 
     try {
@@ -579,6 +680,30 @@ export function registerForecastRoutes(
       timezone,
       useAiExplanation: false,
     } satisfies ForecastCalculateRequest;
+    let access: ForecastAccessStatus | null;
+    try {
+      access = await resolveForecastAccessForRequest({
+        request,
+        reply,
+        client: options.dbClient,
+        authConfig: options.authConfig,
+        env,
+        body: forecastCalculateRequest,
+        useAiExplanation: true,
+      });
+    } catch (error) {
+      return sendForecastCalculationError({
+        logger: request.log,
+        route: "/forecast/ai-explain",
+        queryLike: query,
+        astroServiceConfig,
+        error,
+        reply,
+      });
+    }
+    if (!access) {
+      return reply;
+    }
     const runtimeCacheSalt = await createForecastCalculateRuntimeCacheSalt({
       dbClient: options.dbClient,
       env,
@@ -589,6 +714,7 @@ export function registerForecastRoutes(
         cacheKey: createForecastCalculateCacheKey(forecastCalculateRequest, {
           runtimeCacheSalt,
           rawTarget: readRawForecastTarget(request.body),
+          access,
         }),
         query,
         requestOptions: { timezone },

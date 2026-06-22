@@ -10,6 +10,7 @@ import {
   confirmAccountPhone,
   deleteAccountForecastHistory,
   deletePublicAccount,
+  getAccountAccess,
   getCurrentAccountSession,
   listAccountBillingOrders,
   listAccountEntitlements,
@@ -19,6 +20,7 @@ import {
   sendAccountPhoneCode,
   shouldShowAdminEntry,
   type AccountBillingOrderRecord,
+  type AccountAccessStatus,
   type AccountEntitlementRecord,
   type AccountForecastHistoryRecord,
   type PublicAccountSession,
@@ -333,6 +335,7 @@ function BillingSummaryCard({
   readonly initialSummary?: {
     readonly orders: readonly AccountBillingOrderRecord[];
     readonly entitlements: readonly AccountEntitlementRecord[];
+    readonly access?: AccountAccessStatus;
   };
 }) {
   const [orders, setOrders] = useState<readonly AccountBillingOrderRecord[]>(
@@ -340,6 +343,9 @@ function BillingSummaryCard({
   );
   const [entitlements, setEntitlements] = useState<readonly AccountEntitlementRecord[]>(
     initialSummary?.entitlements ?? [],
+  );
+  const [access, setAccess] = useState<AccountAccessStatus | null>(
+    initialSummary?.access ?? null,
   );
   const [state, setState] = useState<LoadState>(initialSummary ? "ready" : "loading");
   const [errorMessage, setErrorMessage] = useState("");
@@ -350,6 +356,7 @@ function BillingSummaryCard({
     if (initialSummary) {
       setOrders(initialSummary.orders);
       setEntitlements(initialSummary.entitlements);
+      setAccess(initialSummary.access ?? null);
       setState("ready");
       setErrorMessage("");
       return () => {
@@ -357,11 +364,12 @@ function BillingSummaryCard({
       };
     }
 
-    Promise.all([listAccountBillingOrders({ limit: 5 }), listAccountEntitlements()])
-      .then(([nextOrders, nextEntitlements]) => {
+    Promise.all([listAccountBillingOrders({ limit: 5 }), listAccountEntitlements(), getAccountAccess()])
+      .then(([nextOrders, nextEntitlements, nextAccess]) => {
         if (!cancelled) {
           setOrders(nextOrders);
           setEntitlements(nextEntitlements);
+          setAccess(nextAccess);
           setState("ready");
           setErrorMessage("");
         }
@@ -370,6 +378,7 @@ function BillingSummaryCard({
         if (!cancelled) {
           setOrders([]);
           setEntitlements([]);
+          setAccess(null);
           setState("ready");
           setErrorMessage(error instanceof Error ? error.message : "订单与权益暂时无法加载。");
         }
@@ -384,28 +393,50 @@ function BillingSummaryCard({
     .filter((item) => item.type === "forecast_credit")
     .reduce((total, item) => total + Math.max(0, item.remainingQuantity ?? 0), 0);
   const paidCount = orders.filter((order) => order.status === "paid").length;
+  const accessBadge = access?.hasFullAccess ? "success" : "warning";
 
   return (
     <Card className="p-5 shadow-sm sm:p-6">
       <SectionTitle
-        title="订单与权益"
-        description="仅展示订单状态和可用权益，不展示支付服务商原始回调、签名或密钥配置。"
-        aside={<Badge variant="info">可用 {remainingCredits} 次</Badge>}
+        title="订单与会员"
+        description="当前访问权限由后台权益计算，订单金额、套餐时长和会员有效期不读取前端状态。"
+        aside={access ? <Badge variant={accessBadge}>{access.currentPlanName}</Badge> : null}
       />
       {state === "loading" ? (
         <p className="mt-4 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-          正在读取订单与权益...
+          正在读取订单与会员状态...
         </p>
       ) : null}
       {errorMessage ? <StatusMessage state="error" message={errorMessage} /> : null}
-      {state === "ready" && orders.length === 0 ? <BillingEmptyState /> : null}
-      {orders.length > 0 ? (
+      {state === "ready" ? (
         <div className="mt-4 grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
           <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-1">
-            <SummaryField label="可用预测次数" value={`${remainingCredits} 次`} />
+            <SummaryField label="当前套餐" value={access?.currentPlanName ?? null} />
+            <SummaryField label="到期时间" value={formatOptionalDateTime(access?.entitlementExpiresAt ?? null)} />
+            <SummaryField
+              label="剩余天数"
+              value={access?.remainingDays === null || access?.remainingDays === undefined ? null : `${access.remainingDays} 天`}
+            />
+            <SummaryField label="可查时长" value={`未来 ${access?.maxForecastHours ?? 24} 小时`} />
+            <SummaryField label="历史次数权益" value={`${remainingCredits} 次`} />
             <SummaryField label="已支付订单" value={`${paidCount} 笔`} />
           </dl>
           <div className="grid gap-2">
+            {access?.upgradeRequiredForFullAccess ? (
+              <div className="rounded-lg border border-warning bg-card p-3">
+                <p className="text-sm font-bold text-card-foreground">当前为免费访问</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {access.freeLimitMessage}
+                </p>
+                <Link
+                  href="/pricing"
+                  className="mt-3 inline-flex h-9 w-fit items-center rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
+                >
+                  查看月卡/季卡/年卡
+                </Link>
+              </div>
+            ) : null}
+            {orders.length === 0 ? <BillingEmptyState /> : null}
             {orders.map((order) => (
               <BillingOrderRow key={order.orderNo} order={order} />
             ))}
@@ -560,7 +591,7 @@ function HistoryRow({
   readonly item: AccountForecastHistoryRecord;
   readonly onDelete: () => void;
 }) {
-  const href = buildForecastHistoryHref(item);
+  const href = item.locked ? null : buildForecastHistoryHref(item);
   const targetLabel = targetLabelFor(item.target);
   const horizonLabel = horizonLabelFor(item.horizon);
   const scoreText =
@@ -575,13 +606,16 @@ function HistoryRow({
           <div className="flex flex-wrap gap-2">
             <Badge variant="muted">{targetLabel}</Badge>
             <Badge variant="muted">{horizonLabel}</Badge>
+            {item.locked ? <Badge variant="warning">已锁定</Badge> : null}
             {scoreText ? <Badge variant="info">{scoreText}</Badge> : null}
           </div>
           <h3 className="mt-2 break-words text-sm font-bold text-card-foreground">
             {item.locationName}
           </h3>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            {item.recommendationLabel || "结果摘要待补充"}
+            {item.locked
+              ? item.upgradeRequiredMessage || "会员到期后，完整报告已锁定。"
+              : item.recommendationLabel || "结果摘要待补充"}
             {item.bestWindowStart ? ` · ${formatHistoryWindow(item)}` : ""}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -595,6 +629,13 @@ function HistoryRow({
               className="inline-flex h-8 items-center rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
             >
               打开分析
+            </Link>
+          ) : item.locked ? (
+            <Link
+              href="/pricing"
+              className="inline-flex h-8 items-center rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
+            >
+              开通会员
             </Link>
           ) : (
             <span className="inline-flex h-8 items-center rounded-lg border border-border bg-card px-3 text-xs font-semibold text-muted-foreground">

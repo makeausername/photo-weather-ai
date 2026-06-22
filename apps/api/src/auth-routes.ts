@@ -16,6 +16,7 @@ import {
   getUserAccountByIdentifier,
   getUserAuthContextByIdentifier,
   getUserAuthContextById,
+  grantRegistrationTrialForUserOnce,
   hashRefreshToken,
   incrementAuthVerificationAttempt,
   normalizeUserEmail,
@@ -741,6 +742,10 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
         },
         { client },
       );
+      const trialGrant = await grantRegistrationTrialForUserOnce(
+        { userId: principal.user.id, actorUserId: principal.user.id },
+        { client, env, now },
+      );
 
       await recordAuthAudit(app, {
         client,
@@ -748,6 +753,12 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
         action: "auth.register.success",
         target,
         channel: input.channel,
+        afterJson: {
+          trialGranted: trialGrant.granted,
+          trialEnabled: trialGrant.trialEnabled,
+          trialProductCode: trialGrant.order.productCode || null,
+          trialExpiresAt: trialGrant.entitlements[0]?.expiresAt?.toISOString() ?? null,
+        },
         ipAddress: request.ip,
         userAgent: request.headers["user-agent"] ?? null,
       });
