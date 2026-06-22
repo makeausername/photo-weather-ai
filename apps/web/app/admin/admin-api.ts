@@ -2,6 +2,14 @@ import {
   loginServiceUnavailableMessage,
   sanitizeAuthErrorMessage,
 } from "../../components/auth-errors";
+import {
+  clearSession,
+  getSessionForRequest,
+  getStoredSessionTokens,
+  refreshStoredSession,
+  storeSession,
+  type SessionClearReason,
+} from "../../components/session-manager";
 
 export type JsonPrimitive = string | number | boolean | null;
 
@@ -643,10 +651,6 @@ export type UpdateAdminProductInput = {
 };
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
-const accessTokenKey = "photo_weather_admin_access_token";
-const refreshTokenKey = "photo_weather_admin_refresh_token";
-const accessTokenExpiresAtKey = "photo_weather_admin_access_token_expires_at";
-const sessionExpiresAtKey = "photo_weather_admin_session_expires_at";
 export const adminSessionExpiredMessage = "后台登录已过期，请重新登录。";
 
 type AdminApiErrorPayload = {
@@ -659,71 +663,20 @@ function isBrowser(): boolean {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 }
 
-function storedSessionIsExpired(): boolean {
-  if (!isBrowser()) {
-    return false;
-  }
-
-  const sessionExpiresAt = window.localStorage.getItem(sessionExpiresAtKey);
-  if (!sessionExpiresAt) {
-    return false;
-  }
-
-  const expiresAt = Date.parse(sessionExpiresAt);
-  return !Number.isFinite(expiresAt) || expiresAt <= Date.now();
-}
-
 export function getStoredAdminTokens(): {
   readonly accessToken: string;
   readonly refreshToken: string;
 } | null {
-  if (!isBrowser()) {
-    return null;
-  }
-
-  if (storedSessionIsExpired()) {
-    clearAdminSession();
-    return null;
-  }
-
-  const accessToken = window.localStorage.getItem(accessTokenKey);
-  const refreshToken = window.localStorage.getItem(refreshTokenKey);
-  if (!accessToken || !refreshToken) {
-    clearAdminSession();
-    return null;
-  }
-
-  return { accessToken, refreshToken };
+  const tokens = getStoredSessionTokens();
+  return tokens ? { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken } : null;
 }
 
 export function storeAdminSession(session: AdminAuthSession): void {
-  if (!isBrowser()) {
-    return;
-  }
-
-  window.localStorage.setItem(accessTokenKey, session.accessToken);
-  window.localStorage.setItem(refreshTokenKey, session.refreshToken);
-  if (session.accessTokenExpiresAt) {
-    window.localStorage.setItem(accessTokenExpiresAtKey, session.accessTokenExpiresAt);
-  } else {
-    window.localStorage.removeItem(accessTokenExpiresAtKey);
-  }
-  if (session.sessionExpiresAt) {
-    window.localStorage.setItem(sessionExpiresAtKey, session.sessionExpiresAt);
-  } else {
-    window.localStorage.removeItem(sessionExpiresAtKey);
-  }
+  storeSession(session);
 }
 
-export function clearAdminSession(): void {
-  if (!isBrowser()) {
-    return;
-  }
-
-  window.localStorage.removeItem(accessTokenKey);
-  window.localStorage.removeItem(refreshTokenKey);
-  window.localStorage.removeItem(accessTokenExpiresAtKey);
-  window.localStorage.removeItem(sessionExpiresAtKey);
+export function clearAdminSession(reason?: SessionClearReason): void {
+  clearSession(reason);
 }
 
 function redirectToLogin(): void {
@@ -859,35 +812,12 @@ export async function prefetchCdnUrls(
   });
 }
 
-async function refreshAdminSession(): Promise<boolean> {
-  const tokens = getStoredAdminTokens();
-  if (!tokens) {
-    return false;
-  }
-
-  const response = await fetch(`${apiBaseUrl}/auth/refresh`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ refreshToken: tokens.refreshToken }),
-  });
-
-  if (!response.ok) {
-    clearAdminSession();
-    return false;
-  }
-
-  storeAdminSession((await response.json()) as AdminAuthSession);
-  return true;
-}
-
 export async function adminApiFetch<TResponse>(
   path: string,
   init: RequestInit = {},
   options: { readonly retryOnUnauthorized?: boolean } = { retryOnUnauthorized: true },
 ): Promise<TResponse> {
-  const tokens = getStoredAdminTokens();
+  const tokens = await getSessionForRequest({ baseUrl: apiBaseUrl, fetcher: fetch });
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
     headers: {
@@ -898,7 +828,16 @@ export async function adminApiFetch<TResponse>(
   });
 
   if (response.status === 401 && options.retryOnUnauthorized !== false) {
-    const refreshed = await refreshAdminSession();
+    const latestTokens = getStoredSessionTokens();
+    if (
+      tokens?.refreshToken &&
+      latestTokens?.refreshToken &&
+      latestTokens.refreshToken !== tokens.refreshToken
+    ) {
+      return adminApiFetch<TResponse>(path, init, { retryOnUnauthorized: false });
+    }
+
+    const refreshed = await refreshStoredSession({ baseUrl: apiBaseUrl, fetcher: fetch });
     if (refreshed) {
       return adminApiFetch<TResponse>(path, init, { retryOnUnauthorized: false });
     }
@@ -951,7 +890,7 @@ export async function logoutAdmin(): Promise<void> {
       body: JSON.stringify(tokens ? { refreshToken: tokens.refreshToken } : {}),
     });
   } finally {
-    clearAdminSession();
+    clearAdminSession("explicit_logout");
     if (isBrowser()) {
       window.location.href = "/admin/login";
     }

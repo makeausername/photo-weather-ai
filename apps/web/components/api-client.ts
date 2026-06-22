@@ -1,9 +1,9 @@
-import type { AdminAuthSession } from "../app/admin/admin-api";
 import {
-  clearAdminSession,
-  getStoredAdminTokens,
-  storeAdminSession,
-} from "../app/admin/admin-api";
+  clearSession,
+  getStoredSessionTokens,
+  refreshStoredSession,
+  shouldRefreshAccessTokenSoon,
+} from "./session-manager";
 import { sanitizeAuthErrorMessage } from "./auth-errors";
 
 export const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
@@ -125,7 +125,7 @@ const unsafePublicErrorPatterns: readonly RegExp[] = [
 ];
 
 export function currentAuthCacheScope(): string {
-  const tokens = getStoredAdminTokens();
+  const tokens = getStoredSessionTokens();
   return tokens ? `user:${stableStringHash(tokens.accessToken)}` : "guest";
 }
 
@@ -177,9 +177,25 @@ export async function apiFetch<TResponse>(
   init: RequestInit = {},
   options: ApiFetchOptions = {},
 ): Promise<TResponse> {
+  return apiFetchInternal(path, init, options, false);
+}
+
+async function apiFetchInternal<TResponse>(
+  path: string,
+  init: RequestInit,
+  options: ApiFetchOptions,
+  suppressAuth: boolean,
+): Promise<TResponse> {
   const authMode = options.authMode ?? "public";
   const fetcher = options.fetcher ?? fetch;
-  const tokens = getStoredAdminTokens();
+  let tokens = suppressAuth || authMode === "public" ? null : getStoredSessionTokens();
+  if (tokens && shouldRefreshAccessTokenSoon(tokens)) {
+    tokens =
+      (await refreshStoredSession({
+        baseUrl: options.baseUrl,
+        fetcher,
+      })) ?? getStoredSessionTokens();
+  }
 
   if (authMode === "required" && !tokens) {
     throw new ApiClientError(loginRequiredMessage, {
@@ -201,15 +217,42 @@ export async function apiFetch<TResponse>(
     tokens?.refreshToken &&
     authMode !== "public"
   ) {
-    const refreshed = await refreshCurrentSession({
-      baseUrl: options.baseUrl,
-      fetcher,
-    });
+    const latestTokens = getStoredSessionTokens();
+    if (latestTokens?.refreshToken && latestTokens.refreshToken !== tokens.refreshToken) {
+      return apiFetchInternal<TResponse>(
+        path,
+        init,
+        {
+          ...options,
+          retryOnUnauthorized: false,
+        },
+        false,
+      );
+    }
+
+    const refreshed = await refreshStoredSession({ baseUrl: options.baseUrl, fetcher });
     if (refreshed) {
-      return apiFetch<TResponse>(path, init, {
-        ...options,
-        retryOnUnauthorized: false,
-      });
+      return apiFetchInternal<TResponse>(
+        path,
+        init,
+        {
+          ...options,
+          retryOnUnauthorized: false,
+        },
+        false,
+      );
+    }
+
+    if (authMode === "optional") {
+      return apiFetchInternal<TResponse>(
+        path,
+        init,
+        {
+          ...options,
+          retryOnUnauthorized: false,
+        },
+        true,
+      );
     }
   }
 
@@ -234,7 +277,7 @@ export async function normalizeApiResponseError(
   const retryable = isRetryableApiError(status, code, kind);
 
   if (kind === "auth") {
-    clearAdminSession();
+    clearSession("server_invalid_session");
   }
 
   return new ApiClientError(message, {
@@ -260,32 +303,6 @@ function requestHeaders(
     ...(authMode !== "public" && accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     ...headers,
   };
-}
-
-async function refreshCurrentSession(options: {
-  readonly baseUrl?: string;
-  readonly fetcher: typeof fetch;
-}): Promise<boolean> {
-  const tokens = getStoredAdminTokens();
-  if (!tokens) {
-    return false;
-  }
-
-  const response = await options.fetcher(`${options.baseUrl ?? apiBaseUrl}/auth/refresh`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ refreshToken: tokens.refreshToken }),
-  });
-
-  if (!response.ok) {
-    clearAdminSession();
-    return false;
-  }
-
-  storeAdminSession((await response.json()) as AdminAuthSession);
-  return true;
 }
 
 async function readApiErrorPayload(response: Response): Promise<unknown> {
@@ -363,8 +380,17 @@ function fallbackMessageForKind(
   return fallbackMessage;
 }
 
-function isRetryableApiError(status: number, code: string | undefined, kind: ApiErrorKind): boolean {
-  if (kind === "upgrade_required" || kind === "auth" || kind === "captcha" || kind === "validation") {
+function isRetryableApiError(
+  status: number,
+  code: string | undefined,
+  kind: ApiErrorKind,
+): boolean {
+  if (
+    kind === "upgrade_required" ||
+    kind === "auth" ||
+    kind === "captcha" ||
+    kind === "validation"
+  ) {
     return false;
   }
   return (
