@@ -37,6 +37,11 @@ import {
   type VerificationSender,
   type VerificationSenderResult,
 } from "./verification-senders.js";
+import {
+  tencentCaptchaProviderCode,
+  verifyTencentCaptcha,
+  type CaptchaVerifyAction,
+} from "./captcha-provider.js";
 
 export type AuthConfig = {
   readonly jwtSecret: string;
@@ -64,6 +69,7 @@ export type AuthRoutesOptions = {
   readonly authConfig: AuthConfig;
   readonly env?: NodeJS.ProcessEnv;
   readonly verificationSender?: VerificationSender;
+  readonly captchaFetcher?: typeof fetch;
 };
 
 type AccessTokenPayload = {
@@ -85,12 +91,20 @@ class ApiAuthError extends Error {
 
 export const invalidCredentialsMessage = "邮箱、手机号或密码不正确。";
 export const loginServiceUnavailableMessage = "登录服务暂时不可用，请稍后重试或联系管理员。";
+export const captchaRequiredMessage = "请先完成安全验证。";
+
+const captchaTokenSchema = z.object({
+  providerCode: z.literal(tencentCaptchaProviderCode),
+  ticket: z.string().trim().min(1).max(4096),
+  randstr: z.string().trim().min(1).max(256),
+});
 
 const loginSchema = z
   .object({
     identifier: z.string().trim().min(1, "请输入邮箱或手机号。").max(200).optional(),
     email: z.string().trim().email("请输入有效邮箱地址。").optional(),
     password: z.string().min(1, "请输入密码。").max(1000, "密码长度超过限制。"),
+    captcha: captchaTokenSchema.optional(),
   })
   .refine((value) => value.identifier || value.email, {
     message: "请输入邮箱或手机号。",
@@ -102,6 +116,7 @@ const verificationChannelSchema = z.enum(["email", "sms"]);
 const sendRegisterCodeSchema = z.object({
   channel: verificationChannelSchema,
   target: z.string().trim().min(1, "请输入邮箱或手机号。").max(200, "账号标识过长。"),
+  captcha: captchaTokenSchema.optional(),
 });
 
 const registerConfirmSchema = z.object({
@@ -118,6 +133,7 @@ const registerConfirmSchema = z.object({
     .max(40, "昵称最多 40 个字符。")
     .optional()
     .transform((value) => value || undefined),
+  captcha: captchaTokenSchema.optional(),
 });
 
 type RegisterConfirmInput = z.infer<typeof registerConfirmSchema>;
@@ -520,6 +536,62 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
   const verificationSender =
     options.verificationSender ?? createVerificationSender({ dbClient: client, env });
 
+  async function verifyAuthCaptcha(
+    input: {
+      readonly action: CaptchaVerifyAction;
+      readonly captcha?: z.infer<typeof captchaTokenSchema>;
+      readonly target?: string;
+      readonly channel?: AuthVerificationChannel;
+    },
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ): Promise<boolean> {
+    const result = await verifyTencentCaptcha(
+      {
+        action: input.action,
+        ticket: input.captcha?.ticket ?? "",
+        randstr: input.captcha?.randstr ?? "",
+        userIp: request.ip,
+        userAgent: request.headers["user-agent"] ?? null,
+      },
+      {
+        dbClient: client,
+        env,
+        fetcher: options.captchaFetcher,
+      },
+    );
+
+    if (result.success) {
+      if (result.enforced) {
+        await recordAuthAudit(app, {
+          client,
+          action: "auth.captcha.success",
+          target: input.target,
+          channel: input.channel,
+          ipAddress: request.ip,
+          userAgent: request.headers["user-agent"] ?? null,
+        });
+      }
+      return true;
+    }
+
+    await recordAuthAudit(app, {
+      client,
+      action: "auth.captcha.failure",
+      target: input.target,
+      channel: input.channel,
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"] ?? null,
+    });
+
+    const statusCode = result.error === "captcha_required" ? 400 : 403;
+    reply.status(statusCode).send({
+      error: result.error ?? "captcha_invalid",
+      message: result.error === "captcha_required" ? captchaRequiredMessage : result.messageZh,
+    });
+    return false;
+  }
+
   async function confirmPublicRegistration(
     input: RegisterConfirmInput,
     request: FastifyRequest,
@@ -531,6 +603,21 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
         error: "invalid_register_target",
         message: input.channel === "email" ? "请输入有效邮箱地址。" : "请输入有效手机号。",
       });
+    }
+
+    if (
+      !(await verifyAuthCaptcha(
+        {
+          action: "register_confirm",
+          captcha: input.captcha,
+          target,
+          channel: input.channel,
+        },
+        request,
+        reply,
+      ))
+    ) {
+      return reply;
     }
 
     const now = new Date();
@@ -656,6 +743,21 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
       });
     }
 
+    if (
+      !(await verifyAuthCaptcha(
+        {
+          action: "register_send_code",
+          captcha: parsedBody.data.captcha,
+          target,
+          channel: parsedBody.data.channel,
+        },
+        request,
+        reply,
+      ))
+    ) {
+      return reply;
+    }
+
     if (await isRegisterTargetTaken(target, client)) {
       await recordAuthAudit(app, {
         client,
@@ -767,6 +869,20 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
     }
 
     const identifier = (parsedBody.data.identifier ?? parsedBody.data.email ?? "").trim();
+    if (
+      !(await verifyAuthCaptcha(
+        {
+          action: "login",
+          captcha: parsedBody.data.captcha,
+          target: identifier,
+        },
+        request,
+        reply,
+      ))
+    ) {
+      return reply;
+    }
+
     try {
       const authContext = await getUserAuthContextByIdentifier(identifier, { client });
       const passwordMatches = authContext

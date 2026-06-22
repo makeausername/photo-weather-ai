@@ -253,6 +253,12 @@ export const tencentCdnPurgeTypeOptions = [
   },
 ] as const satisfies readonly ProviderFieldOption[];
 
+export const tencentCaptchaDefaultEndpoint = "https://captcha.tencentcloudapi.com";
+
+export const tencentCaptchaDefaultSdkUrl = "https://turing.captcha.qcloud.com/TCaptcha.js";
+
+export const tencentCaptchaDefaultCaptchaType = 9;
+
 const keepExistingSecretPlaceholder = "留空则保持现有密钥不变";
 
 export const providerFieldPresets = [
@@ -979,8 +985,153 @@ export const providerFieldPresets = [
     ],
   },
   {
+    providerCode: "tencent_captcha",
+    helpText:
+      "腾讯云验证码用于登录、注册和账号绑定前的人机验证；前台只读取 CaptchaAppId 和 SDK 地址，不暴露服务端密钥。",
+    fields: [
+      {
+        key: "realCallEnabled",
+        label: "启用真实调用",
+        target: "configJson",
+        control: "boolean",
+        defaultValue: false,
+        helpText: "开启后服务端会调用腾讯云 DescribeCaptchaResult 校验 ticket 和 randstr。",
+      },
+      {
+        key: "captchaAppId",
+        label: "CaptchaAppId",
+        target: "configJson",
+        placeholder: "腾讯云验证码控制台中的 CaptchaAppId",
+      },
+      {
+        key: "captchaType",
+        label: "CaptchaType",
+        target: "configJson",
+        control: "number",
+        defaultValue: tencentCaptchaDefaultCaptchaType,
+        min: 9,
+        max: 9,
+        step: 1,
+        advanced: true,
+        helpText: "Web/App 验证码固定使用 9。",
+      },
+      {
+        key: "sdkUrl",
+        label: "前端 SDK 地址",
+        target: "configJson",
+        placeholder: tencentCaptchaDefaultSdkUrl,
+        defaultValue: tencentCaptchaDefaultSdkUrl,
+        advanced: true,
+      },
+      {
+        key: "endpoint",
+        label: "Endpoint",
+        target: "configJson",
+        placeholder: tencentCaptchaDefaultEndpoint,
+        defaultValue: tencentCaptchaDefaultEndpoint,
+        advanced: true,
+      },
+      {
+        key: "region",
+        label: "Region",
+        target: "configJson",
+        placeholder: "ap-guangzhou",
+        defaultValue: "ap-guangzhou",
+        advanced: true,
+      },
+      {
+        key: "timeoutMs",
+        label: "请求超时（毫秒）",
+        target: "configJson",
+        control: "number",
+        defaultValue: 10000,
+        min: 1000,
+        max: 30000,
+        step: 100,
+        advanced: true,
+      },
+      {
+        key: "retryCount",
+        label: "重试次数",
+        target: "configJson",
+        control: "number",
+        defaultValue: 1,
+        min: 0,
+        max: 3,
+        step: 1,
+        advanced: true,
+      },
+      {
+        key: "enforceOnLogin",
+        label: "登录启用验证",
+        target: "configJson",
+        control: "boolean",
+        defaultValue: false,
+      },
+      {
+        key: "enforceOnRegisterSendCode",
+        label: "注册发送验证码前启用验证",
+        target: "configJson",
+        control: "boolean",
+        defaultValue: true,
+      },
+      {
+        key: "enforceOnRegisterConfirm",
+        label: "注册确认前启用验证",
+        target: "configJson",
+        control: "boolean",
+        defaultValue: false,
+      },
+      {
+        key: "enforceOnAccountBinding",
+        label: "账号绑定启用验证",
+        target: "configJson",
+        control: "boolean",
+        defaultValue: true,
+      },
+      {
+        key: "failOpenInDevelopment",
+        label: "开发环境配置缺失时放行",
+        target: "configJson",
+        control: "boolean",
+        defaultValue: true,
+        advanced: true,
+      },
+      {
+        key: "failOpenInProduction",
+        label: "生产环境配置缺失时放行",
+        target: "configJson",
+        control: "boolean",
+        defaultValue: false,
+        advanced: true,
+      },
+      {
+        key: "secretId",
+        label: "Secret ID",
+        target: "secretJson",
+        placeholder: keepExistingSecretPlaceholder,
+        password: true,
+      },
+      {
+        key: "secretKey",
+        label: "Secret Key",
+        target: "secretJson",
+        placeholder: keepExistingSecretPlaceholder,
+        password: true,
+      },
+      {
+        key: "appSecretKey",
+        label: "AppSecretKey",
+        target: "secretJson",
+        placeholder: keepExistingSecretPlaceholder,
+        password: true,
+      },
+    ],
+  },
+  {
     providerCode: "aliyun_oss",
-    helpText: "用于报告、导出文件和生成素材的阿里云 OSS 存储后端；只有启用真实调用后才会请求云服务。",
+    helpText:
+      "用于报告、导出文件和生成素材的阿里云 OSS 存储后端；只有启用真实调用后才会请求云服务。",
     fields: [
       {
         key: "realCallEnabled",
@@ -1052,7 +1203,8 @@ export const providerFieldPresets = [
   },
   {
     providerCode: "tencent_cos",
-    helpText: "用于报告、导出文件和生成素材的腾讯云 COS 存储后端；只有启用真实调用后才会请求云服务。",
+    helpText:
+      "用于报告、导出文件和生成素材的腾讯云 COS 存储后端；只有启用真实调用后才会请求云服务。",
     fields: [
       {
         key: "realCallEnabled",

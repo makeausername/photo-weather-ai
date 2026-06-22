@@ -22,6 +22,7 @@ enum ProviderType {
   email
   sms
   cdn
+  captcha
 }
 
 enum PaymentProviderCode {

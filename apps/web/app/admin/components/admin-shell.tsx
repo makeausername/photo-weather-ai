@@ -28,6 +28,7 @@ const adminLinkGroups = [
       { href: "/admin/providers/ai", label: "智能解读" },
       { href: "/admin/providers/billing", label: "支付收款" },
       { href: "/admin/providers/notification", label: "邮箱短信" },
+      { href: "/admin/providers/captcha", label: "人机验证" },
       { href: "/admin/providers/storage", label: "对象存储" },
       { href: "/admin/providers/cdn", label: "CDN加速" },
     ],

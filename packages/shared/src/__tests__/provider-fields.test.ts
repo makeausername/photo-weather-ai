@@ -19,6 +19,7 @@ describe("provider field presets", () => {
         "amap",
         "aliyun_smtp",
         "aliyun_sms",
+        "tencent_captcha",
         "aliyun_oss",
         "tencent_cos",
         "aliyun_cdn",
@@ -193,6 +194,86 @@ describe("provider field presets", () => {
           target: "secretJson",
           password: true,
         }),
+      ]),
+    );
+  });
+
+  it("defines Tencent captcha fields without exposing server secrets as config", () => {
+    expect(getProviderFieldPreset("tencent_captcha")?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "realCallEnabled",
+          label: "启用真实调用",
+          target: "configJson",
+          control: "boolean",
+          defaultValue: false,
+        }),
+        expect.objectContaining({
+          key: "captchaAppId",
+          label: "CaptchaAppId",
+          target: "configJson",
+        }),
+        expect.objectContaining({
+          key: "captchaType",
+          label: "CaptchaType",
+          target: "configJson",
+          control: "number",
+          defaultValue: 9,
+        }),
+        expect.objectContaining({
+          key: "sdkUrl",
+          label: "前端 SDK 地址",
+          target: "configJson",
+          defaultValue: "https://turing.captcha.qcloud.com/TCaptcha.js",
+        }),
+        expect.objectContaining({
+          key: "endpoint",
+          label: "Endpoint",
+          target: "configJson",
+          defaultValue: "https://captcha.tencentcloudapi.com",
+        }),
+        expect.objectContaining({
+          key: "enforceOnRegisterSendCode",
+          target: "configJson",
+          control: "boolean",
+          defaultValue: true,
+        }),
+        expect.objectContaining({
+          key: "failOpenInProduction",
+          target: "configJson",
+          control: "boolean",
+          defaultValue: false,
+          advanced: true,
+        }),
+        expect.objectContaining({
+          key: "secretId",
+          label: "Secret ID",
+          target: "secretJson",
+          password: true,
+        }),
+        expect.objectContaining({
+          key: "secretKey",
+          label: "Secret Key",
+          target: "secretJson",
+          password: true,
+        }),
+        expect.objectContaining({
+          key: "appSecretKey",
+          label: "AppSecretKey",
+          target: "secretJson",
+          password: true,
+        }),
+      ]),
+    );
+    expect(
+      getProviderFieldPreset("tencent_captcha")?.fields.filter(
+        (field) => field.target === "configJson",
+      ),
+    ).toEqual(
+      expect.not.arrayContaining([
+        expect.objectContaining({ key: "secretId" }),
+        expect.objectContaining({ key: "secretKey" }),
+        expect.objectContaining({ key: "appSecretKey" }),
       ]),
     );
   });

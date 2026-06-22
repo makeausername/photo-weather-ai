@@ -34,6 +34,7 @@ const providerPageSources = [
   readProviderPage("ai"),
   readProviderPage("billing"),
   readProviderPage("notification"),
+  readProviderPage("captcha"),
   readProviderPage("storage"),
   readProviderPage("cdn"),
 ].join("\n");
@@ -55,6 +56,7 @@ describe("admin provider module source", () => {
       '{ href: "/admin/providers/ai", label: "智能解读" }',
       '{ href: "/admin/providers/billing", label: "支付收款" }',
       '{ href: "/admin/providers/notification", label: "邮箱短信" }',
+      '{ href: "/admin/providers/captcha", label: "人机验证" }',
       '{ href: "/admin/providers/storage", label: "对象存储" }',
       '{ href: "/admin/providers/cdn", label: "CDN加速" }',
       '{ href: "/admin/calibration", label: "历史校准" }',
@@ -118,6 +120,12 @@ describe("admin provider module source", () => {
         providerType: 'providerType="notification"',
       },
       {
+        route: "captcha",
+        title: 'title="人机验证"',
+        description: "管理腾讯云验证码，用于登录、注册发送验证码和账号绑定前的人机校验。",
+        providerType: 'providerType="captcha"',
+      },
+      {
         route: "storage",
         title: 'title="对象存储"',
         description: "管理本地存储、阿里云 OSS、腾讯云 COS 等报告与文件存储配置。",
@@ -156,6 +164,8 @@ describe("admin provider module source", () => {
       'apiProviderTypes: ["billing"]',
       'key: "notification"',
       'apiProviderTypes: ["email", "sms"]',
+      'key: "captcha"',
+      'apiProviderTypes: ["captcha"]',
       'key: "storage"',
       'apiProviderTypes: ["storage"]',
       'key: "cdn"',
@@ -195,6 +205,9 @@ describe("admin provider module source", () => {
       'group: "notification"',
       'displayName: "阿里云企业邮箱 SMTP"',
       'displayName: "阿里云短信"',
+      '"captcha:tencent_captcha"',
+      'group: "captcha"',
+      'displayName: "腾讯云验证码"',
       '"storage:local_storage"',
       '"storage:aliyun_oss"',
       '"storage:tencent_cos"',
@@ -322,6 +335,10 @@ describe("admin provider module source", () => {
       "CDN 加速域名",
       "默认刷新类型",
       "每分钟操作限额",
+      "CaptchaAppId",
+      "CaptchaType",
+      "前端 SDK 地址",
+      "AppSecretKey",
     ]) {
       expect(providerFieldsSource).toContain(label);
     }
@@ -333,7 +350,7 @@ describe("admin provider module source", () => {
 
   it("renders CDN operations only inside the CDN module", () => {
     for (const snippet of [
-      "moduleDefinition.key === \"cdn\"",
+      'moduleDefinition.key === "cdn"',
       "CdnOperationsPanel",
       "data-cdn-operation-panel",
       "refreshCdnCache",

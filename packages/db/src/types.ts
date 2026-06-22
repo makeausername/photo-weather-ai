@@ -17,7 +17,8 @@ export type ProviderType =
   | "billing"
   | "email"
   | "sms"
-  | "cdn";
+  | "cdn"
+  | "captcha";
 
 export type PaymentProviderCode = "mock" | "wechat_pay" | "alipay";
 

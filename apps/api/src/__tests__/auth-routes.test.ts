@@ -1,7 +1,11 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { hashRefreshToken, verifyPassword } from "@photo-weather/db";
-import { invalidCredentialsMessage, loginServiceUnavailableMessage } from "../auth-routes.js";
+import {
+  captchaRequiredMessage,
+  invalidCredentialsMessage,
+  loginServiceUnavailableMessage,
+} from "../auth-routes.js";
 import { buildApiServer } from "../server.js";
 import { adminAuthorizationHeader, createFakeDatabaseClient, testAuthConfig } from "./fake-db.js";
 
@@ -17,10 +21,13 @@ async function sendRegisterCode(
   input: {
     readonly channel: "email" | "sms";
     readonly target: string;
+    readonly captcha?: CaptchaTestToken;
   },
 ): Promise<{
   readonly statusCode: number;
   readonly body: {
+    readonly error?: string;
+    readonly message?: string;
     readonly success?: boolean;
     readonly mockCode?: string;
     readonly mode?: string;
@@ -36,6 +43,68 @@ async function sendRegisterCode(
     statusCode: response.statusCode,
     body: response.json(),
   };
+}
+
+type CaptchaTestToken = {
+  readonly providerCode: "tencent_captcha";
+  readonly ticket: string;
+  readonly randstr: string;
+};
+
+const validCaptchaToken: CaptchaTestToken = {
+  providerCode: "tencent_captcha",
+  ticket: "ticket-valid-123456",
+  randstr: "@rand",
+};
+
+function enableCaptchaForAuth(
+  state: Awaited<ReturnType<typeof createFakeDatabaseClient>>["state"],
+  overrides: Record<string, unknown> = {},
+) {
+  const provider = state.providers.get("captcha:tencent_captcha");
+  state.providers.set("captcha:tencent_captcha", {
+    ...provider,
+    enabled: true,
+    configJson: {
+      ...(provider.configJson ?? {}),
+      realCallEnabled: true,
+      captchaAppId: "199999164",
+      enforceOnLogin: false,
+      enforceOnRegisterSendCode: false,
+      enforceOnRegisterConfirm: false,
+      failOpenInDevelopment: false,
+      failOpenInProduction: false,
+      ...overrides,
+    },
+    secretJson: {
+      secretId: "tencent-secret-id",
+      secretKey: "tencent-secret-key",
+      appSecretKey: "captcha-app-secret",
+    },
+    maskedSecretJson: {
+      secretId: "tenc****t-id",
+      secretKey: "tenc****-key",
+      appSecretKey: "capt****cret",
+    },
+  });
+}
+
+function createCaptchaFetcher() {
+  return vi.fn(async () => {
+    return new Response(
+      JSON.stringify({
+        Response: {
+          CaptchaCode: 1,
+          CaptchaMsg: "OK",
+          RequestId: "req-auth-captcha",
+        },
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  });
 }
 
 async function sendAccountEmailCode(
@@ -159,6 +228,104 @@ describe("auth routes", () => {
     expect(storedCode.codeHash).not.toBe(response.body.mockCode);
   });
 
+  it("returns public captcha config without server secrets", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const disabledResponse = await app.inject({
+      method: "GET",
+      url: "/captcha/config",
+    });
+    expect(disabledResponse.statusCode).toBe(200);
+    expect(disabledResponse.json()).toMatchObject({
+      captcha: {
+        enabled: false,
+        providerCode: "tencent_captcha",
+        captchaAppId: "",
+        sdkUrl: "https://turing.captcha.qcloud.com/TCaptcha.js",
+      },
+    });
+
+    enableCaptchaForAuth(state, {
+      enforceOnLogin: true,
+      enforceOnRegisterSendCode: true,
+    });
+    const enabledResponse = await app.inject({
+      method: "GET",
+      url: "/captcha/config",
+    });
+    expect(enabledResponse.statusCode).toBe(200);
+    expect(enabledResponse.json()).toMatchObject({
+      captcha: {
+        enabled: true,
+        providerCode: "tencent_captcha",
+        captchaAppId: "199999164",
+        enforceOnLogin: true,
+        enforceOnRegisterSendCode: true,
+      },
+    });
+    expect(enabledResponse.body).not.toContain("secretJson");
+    expect(enabledResponse.body).not.toContain("tencent-secret-key");
+    expect(enabledResponse.body).not.toContain("captcha-app-secret");
+    expect(enabledResponse.body).not.toContain("captcha.tencentcloudapi.com");
+  });
+
+  it("requires captcha before sending registration verification codes when enabled", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    enableCaptchaForAuth(state, {
+      enforceOnRegisterSendCode: true,
+    });
+    const captchaFetcher = createCaptchaFetcher();
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      env: registerTestEnv,
+      captchaFetcher: captchaFetcher as unknown as typeof fetch,
+    });
+
+    const missingResponse = await sendRegisterCode(app, {
+      channel: "email",
+      target: "captcha-required@example.com",
+    });
+
+    expect(missingResponse.statusCode).toBe(400);
+    expect(missingResponse.body).toMatchObject({
+      error: "captcha_required",
+      message: captchaRequiredMessage,
+    });
+    expect(state.verificationCodes.size).toBe(0);
+    expect(captchaFetcher).not.toHaveBeenCalled();
+
+    const invalidResponse = await sendRegisterCode(app, {
+      channel: "email",
+      target: "captcha-required@example.com",
+      captcha: {
+        providerCode: "tencent_captcha",
+        ticket: "short",
+        randstr: "@rand",
+      },
+    });
+    expect(invalidResponse.statusCode).toBe(403);
+    expect(state.verificationCodes.size).toBe(0);
+    expect(captchaFetcher).not.toHaveBeenCalled();
+
+    const validResponse = await sendRegisterCode(app, {
+      channel: "email",
+      target: "captcha-required@example.com",
+      captcha: validCaptchaToken,
+    });
+    expect(validResponse.statusCode).toBe(200);
+    expect(validResponse.body).toMatchObject({
+      success: true,
+      mode: "mock",
+    });
+    expect(state.verificationCodes.size).toBe(1);
+    expect(captchaFetcher).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(state.auditLogs)).not.toContain(validCaptchaToken.ticket);
+    expect(JSON.stringify(state.auditLogs)).not.toContain(validCaptchaToken.randstr);
+  });
+
   it("sends an SMS verification code through the mock sender and stores only a hash", async () => {
     const { client, state } = await createFakeDatabaseClient();
     app = buildApiServer({
@@ -241,6 +408,66 @@ describe("auth routes", () => {
       preferredLanguage: "zh-CN",
     });
     expect([...state.verificationCodes.values()][0].consumedAt).toEqual(expect.any(Date));
+  });
+
+  it("requires captcha before registration confirm when confirm enforcement is enabled", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    enableCaptchaForAuth(state, {
+      enforceOnRegisterConfirm: true,
+    });
+    const captchaFetcher = createCaptchaFetcher();
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      env: registerTestEnv,
+      captchaFetcher: captchaFetcher as unknown as typeof fetch,
+    });
+
+    const sent = await sendRegisterCode(app, {
+      channel: "email",
+      target: "confirm-captcha@example.com",
+    });
+    expect(sent.statusCode).toBe(200);
+
+    const missingResponse = await app.inject({
+      method: "POST",
+      url: "/auth/register/confirm",
+      payload: {
+        channel: "email",
+        target: "confirm-captcha@example.com",
+        code: sent.body.mockCode,
+        password: "public88",
+      },
+    });
+    expect(missingResponse.statusCode).toBe(400);
+    expect(missingResponse.json()).toMatchObject({
+      error: "captcha_required",
+      message: captchaRequiredMessage,
+    });
+    expect([...state.verificationCodes.values()][0].consumedAt).toBeNull();
+    expect(
+      [...state.users.values()].some((user) => user.email === "confirm-captcha@example.com"),
+    ).toBe(false);
+
+    const validResponse = await app.inject({
+      method: "POST",
+      url: "/auth/register/confirm",
+      payload: {
+        channel: "email",
+        target: "confirm-captcha@example.com",
+        code: sent.body.mockCode,
+        password: "public88",
+        captcha: validCaptchaToken,
+      },
+    });
+    expect(validResponse.statusCode).toBe(201);
+    expect(validResponse.json()).toMatchObject({
+      user: {
+        email: "confirm-captcha@example.com",
+      },
+    });
+    expect(captchaFetcher).toHaveBeenCalledTimes(1);
   });
 
   it("rejects duplicate email or phone targets before sending codes", async () => {
@@ -421,6 +648,56 @@ describe("auth routes", () => {
       isAdmin: false,
     });
     expect(response.body).not.toContain("passwordHash");
+  });
+
+  it("requires captcha before login account lookup when login enforcement is enabled", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    enableCaptchaForAuth(state, {
+      enforceOnLogin: true,
+    });
+    const captchaFetcher = createCaptchaFetcher();
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      env: registerTestEnv,
+      captchaFetcher: captchaFetcher as unknown as typeof fetch,
+    });
+
+    const missingResponse = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: {
+        email: "user@example.com",
+        password: "CorrectHorseBattery99!",
+      },
+    });
+
+    expect(missingResponse.statusCode).toBe(400);
+    expect(missingResponse.json()).toMatchObject({
+      error: "captcha_required",
+      message: captchaRequiredMessage,
+    });
+    expect(state.sessions.size).toBe(1);
+    expect(captchaFetcher).not.toHaveBeenCalled();
+
+    const validResponse = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: {
+        email: "user@example.com",
+        password: "CorrectHorseBattery99!",
+        captcha: validCaptchaToken,
+      },
+    });
+    expect(validResponse.statusCode).toBe(200);
+    expect(validResponse.json()).toMatchObject({
+      user: {
+        id: "plain-user",
+      },
+    });
+    expect(state.sessions.size).toBe(2);
+    expect(captchaFetcher).toHaveBeenCalledTimes(1);
   });
 
   it("logs in with a phone identifier after SMS registration", async () => {

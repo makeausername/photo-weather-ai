@@ -15,6 +15,7 @@ import { registerAdminRoutes } from "./admin-routes.js";
 import { registerAdminOrderRoutes } from "./admin-orders-routes.js";
 import { registerAdminUserRoutes } from "./admin-users-routes.js";
 import { registerAccountRoutes } from "./account-routes.js";
+import { registerCaptchaRoutes } from "./captcha-routes.js";
 import {
   checkAstroServiceHealth,
   resolveAstroServiceConfig,
@@ -38,6 +39,7 @@ export type ApiServerOptions = {
   readonly elevationService?: TerrainElevationService;
   readonly astroServiceClient?: AstroServiceClientLike;
   readonly paymentFetcher?: typeof fetch;
+  readonly captchaFetcher?: typeof fetch;
   readonly env?: NodeJS.ProcessEnv;
   readonly logger?: boolean;
 };
@@ -539,7 +541,13 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     };
   });
 
-  registerAuthRoutes(app, { dbClient: options.dbClient, authConfig, env });
+  registerCaptchaRoutes(app, { dbClient: options.dbClient, env });
+  registerAuthRoutes(app, {
+    dbClient: options.dbClient,
+    authConfig,
+    env,
+    captchaFetcher: options.captchaFetcher,
+  });
   registerAccountRoutes(app, { dbClient: options.dbClient, authConfig, env });
   registerPaymentRoutes(app, {
     dbClient: options.dbClient,

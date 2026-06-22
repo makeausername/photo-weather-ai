@@ -25,6 +25,36 @@ const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:400
 
 export type RegisterVerificationChannel = "email" | "sms";
 
+export type CaptchaProviderCode = "tencent_captcha";
+
+export type CaptchaToken = {
+  readonly providerCode: CaptchaProviderCode;
+  readonly ticket: string;
+  readonly randstr: string;
+};
+
+export type CaptchaPublicConfig = {
+  readonly enabled: boolean;
+  readonly providerCode: CaptchaProviderCode;
+  readonly captchaAppId: string;
+  readonly sdkUrl: string;
+  readonly enforceOnLogin: boolean;
+  readonly enforceOnRegisterSendCode: boolean;
+  readonly enforceOnRegisterConfirm: boolean;
+  readonly enforceOnAccountBinding: boolean;
+};
+
+const disabledCaptchaConfig: CaptchaPublicConfig = {
+  enabled: false,
+  providerCode: "tencent_captcha",
+  captchaAppId: "",
+  sdkUrl: "https://turing.captcha.qcloud.com/TCaptcha.js",
+  enforceOnLogin: false,
+  enforceOnRegisterSendCode: false,
+  enforceOnRegisterConfirm: false,
+  enforceOnAccountBinding: false,
+};
+
 export type SendRegisterVerificationCodeResponse = {
   readonly success: boolean;
   readonly channel: RegisterVerificationChannel;
@@ -143,6 +173,39 @@ async function readPublicApiError(response: Response, fallback: string): Promise
   return fallback;
 }
 
+export async function getCaptchaPublicConfig(): Promise<CaptchaPublicConfig> {
+  const response = await fetch(`${apiBaseUrl}/captcha/config`, {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    return disabledCaptchaConfig;
+  }
+
+  const payload = (await response.json().catch(() => ({}))) as {
+    readonly captcha?: Partial<CaptchaPublicConfig>;
+  };
+  const captcha = payload.captcha;
+  if (!captcha || captcha.providerCode !== "tencent_captcha") {
+    return disabledCaptchaConfig;
+  }
+
+  return {
+    ...disabledCaptchaConfig,
+    enabled: captcha.enabled === true,
+    providerCode: "tencent_captcha",
+    captchaAppId: typeof captcha.captchaAppId === "string" ? captcha.captchaAppId : "",
+    sdkUrl:
+      typeof captcha.sdkUrl === "string" && captcha.sdkUrl
+        ? captcha.sdkUrl
+        : disabledCaptchaConfig.sdkUrl,
+    enforceOnLogin: captcha.enforceOnLogin === true,
+    enforceOnRegisterSendCode: captcha.enforceOnRegisterSendCode === true,
+    enforceOnRegisterConfirm: captcha.enforceOnRegisterConfirm === true,
+    enforceOnAccountBinding: captcha.enforceOnAccountBinding === true,
+  };
+}
+
 async function refreshCurrentAccountSession(): Promise<PublicAccountSession | null> {
   const tokens = getStoredAdminTokens();
   if (!tokens) {
@@ -231,13 +294,14 @@ export async function getCurrentAccountSession(): Promise<PublicAccountSession |
 export async function loginPublicAccount(
   identifier: string,
   password: string,
+  captcha?: CaptchaToken,
 ): Promise<PublicAccountSession> {
   const response = await fetch(`${apiBaseUrl}/auth/login`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ identifier, password }),
+    body: JSON.stringify({ identifier, password, ...(captcha ? { captcha } : {}) }),
   });
 
   if (!response.ok) {
@@ -252,6 +316,7 @@ export async function loginPublicAccount(
 export async function sendRegisterVerificationCode(input: {
   readonly channel: RegisterVerificationChannel;
   readonly target: string;
+  readonly captcha?: CaptchaToken;
 }): Promise<SendRegisterVerificationCodeResponse> {
   const response = await fetch(`${apiBaseUrl}/auth/register/send-code`, {
     method: "POST",
@@ -278,6 +343,7 @@ export async function confirmRegisterPublicAccount(input: {
   readonly code: string;
   readonly password: string;
   readonly displayName?: string;
+  readonly captcha?: CaptchaToken;
 }): Promise<PublicAccountSession> {
   const response = await fetch(`${apiBaseUrl}/auth/register/confirm`, {
     method: "POST",
@@ -300,6 +366,7 @@ export async function registerPublicAccount(input: {
   readonly code: string;
   readonly password: string;
   readonly displayName?: string;
+  readonly captcha?: CaptchaToken;
 }): Promise<PublicAccountSession> {
   return confirmRegisterPublicAccount(input);
 }
@@ -385,9 +452,11 @@ export async function deletePublicAccount(input: {
   clearAdminSession();
 }
 
-export async function listAccountForecastHistory(input: {
-  readonly limit?: number;
-} = {}): Promise<readonly AccountForecastHistoryRecord[]> {
+export async function listAccountForecastHistory(
+  input: {
+    readonly limit?: number;
+  } = {},
+): Promise<readonly AccountForecastHistoryRecord[]> {
   const params = new URLSearchParams();
   if (input.limit) {
     params.set("limit", String(input.limit));
@@ -399,9 +468,11 @@ export async function listAccountForecastHistory(input: {
   return response.items;
 }
 
-export async function listAccountBillingOrders(input: {
-  readonly limit?: number;
-} = {}): Promise<readonly AccountBillingOrderRecord[]> {
+export async function listAccountBillingOrders(
+  input: {
+    readonly limit?: number;
+  } = {},
+): Promise<readonly AccountBillingOrderRecord[]> {
   const params = new URLSearchParams();
   if (input.limit) {
     params.set("limit", String(input.limit));

@@ -167,6 +167,59 @@ describe("admin config routes", () => {
     expect(response.body).not.toContain("secretJson");
   });
 
+  it("checks Tencent captcha provider configuration without a live captcha request", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("captcha admin config checks must not call network");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const provider = state.providers.get("captcha:tencent_captcha");
+    state.providers.set("captcha:tencent_captcha", {
+      ...provider,
+      enabled: true,
+      configJson: {
+        ...(provider.configJson ?? {}),
+        realCallEnabled: true,
+        captchaAppId: "199999164",
+      },
+      secretJson: {
+        secretId: "tencent-secret-id",
+        secretKey: "tencent-secret-key",
+        appSecretKey: "captcha-app-secret",
+      },
+      maskedSecretJson: {
+        secretId: "tenc****t-id",
+        secretKey: "tenc****-key",
+        appSecretKey: "capt****cret",
+      },
+    });
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/providers/captcha/tencent_captcha/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: true,
+      mode: "config_check",
+      connectionMode: "mock",
+      providerType: "captcha",
+      providerCode: "tencent_captcha",
+      providerNameZh: "腾讯云验证码",
+      enabled: true,
+      realCallEnabled: true,
+      configReady: true,
+      missingFields: [],
+    });
+    expect(response.body).not.toContain("secretJson");
+    expect(response.body).not.toContain("tencent-secret-key");
+    expect(response.body).not.toContain("captcha-app-secret");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("exposes safe local provider debug status without QWeather secrets", async () => {
     const { client, state } = await createFakeDatabaseClient();
     const qWeatherProvider = state.providers.get("weather:qweather");
@@ -840,7 +893,8 @@ describe("admin config routes", () => {
       error: "provider_config_missing",
       providerCode: "aliyun_smtp",
       missingFields: ["SMTP Host", "发件邮箱", "SMTP 密码 / 授权码"],
-      message: "邮件服务真实调用已开启，请补充：SMTP Host、发件邮箱、SMTP 密码 / 授权码。本次未发送真实邮件。",
+      message:
+        "邮件服务真实调用已开启，请补充：SMTP Host、发件邮箱、SMTP 密码 / 授权码。本次未发送真实邮件。",
     });
     expect(smsResponse.statusCode).toBe(200);
     expect(smsResponse.json()).toMatchObject({
@@ -849,7 +903,8 @@ describe("admin config routes", () => {
       error: "provider_config_missing",
       providerCode: "aliyun_sms",
       missingFields: ["短信签名", "模板 Code", "AccessKey Secret"],
-      message: "短信服务真实调用已开启，请补充：短信签名、模板 Code、AccessKey Secret。本次未发送真实短信。",
+      message:
+        "短信服务真实调用已开启，请补充：短信签名、模板 Code、AccessKey Secret。本次未发送真实短信。",
     });
     expect(emailResponse.body).not.toContain("smtp-secret-user");
     expect(smsResponse.body).not.toContain("sms-secret-id");
@@ -1953,7 +2008,10 @@ describe("admin config routes", () => {
     for (const method of ["GET", "POST", "PATCH", "DELETE"] as const) {
       const response = await app.inject({
         method,
-        url: method === "GET" || method === "POST" ? "/admin/photo-spots" : "/admin/photo-spots/legacy",
+        url:
+          method === "GET" || method === "POST"
+            ? "/admin/photo-spots"
+            : "/admin/photo-spots/legacy",
         headers: adminAuthorizationHeader(),
         payload: method === "POST" || method === "PATCH" ? { name: "旧版拍摄点" } : undefined,
       });

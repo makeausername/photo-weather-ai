@@ -3,11 +3,16 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { sanitizeAuthErrorMessage } from "../../components/auth-errors";
-import { loginPublicAccount } from "../../components/account-session";
+import {
+  getCaptchaPublicConfig,
+  loginPublicAccount,
+  type CaptchaPublicConfig,
+} from "../../components/account-session";
 import { AuthCard, AuthStatusMessage } from "../../components/public-auth";
 import { PasswordInput } from "../../components/password-input";
+import { runTencentCaptcha } from "../../components/tencent-captcha";
 import { Button, FormField, Input } from "../../components/ui";
 
 export const publicLoginFormLabels = [
@@ -32,10 +37,21 @@ export function LoginForm({ initialIdentifier = "", registered = false }: LoginF
   const [status, setStatus] = useState(
     registered ? "账户已创建，可以用刚才的邮箱或手机号登录。" : "",
   );
-  const [statusTone, setStatusTone] = useState<AuthFormStatusTone>(
-    registered ? "success" : "info",
-  );
+  const [statusTone, setStatusTone] = useState<AuthFormStatusTone>(registered ? "success" : "info");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [captchaConfig, setCaptchaConfig] = useState<CaptchaPublicConfig | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void getCaptchaPublicConfig().then((config) => {
+      if (active) {
+        setCaptchaConfig(config);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -56,7 +72,15 @@ export function LoginForm({ initialIdentifier = "", registered = false }: LoginF
 
     setIsSubmitting(true);
     try {
-      await loginPublicAccount(identifier.trim(), password);
+      const activeCaptchaConfig = captchaConfig ?? (await getCaptchaPublicConfig());
+      if (!captchaConfig) {
+        setCaptchaConfig(activeCaptchaConfig);
+      }
+      const captcha =
+        activeCaptchaConfig.enabled && activeCaptchaConfig.enforceOnLogin
+          ? await runTencentCaptcha(activeCaptchaConfig, "login")
+          : undefined;
+      await loginPublicAccount(identifier.trim(), password, captcha);
       router.replace("/account");
     } catch (error) {
       setStatusTone("error");

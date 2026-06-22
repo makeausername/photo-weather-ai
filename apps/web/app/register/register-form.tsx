@@ -6,11 +6,14 @@ import type { FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
   confirmRegisterPublicAccount,
+  getCaptchaPublicConfig,
   sendRegisterVerificationCode,
+  type CaptchaPublicConfig,
   type RegisterVerificationChannel,
 } from "../../components/account-session";
 import { PasswordInput } from "../../components/password-input";
 import { AuthCard, AuthStatusMessage } from "../../components/public-auth";
+import { runTencentCaptcha } from "../../components/tencent-captcha";
 import { Button, FormField, Input, cn } from "../../components/ui";
 
 export const publicRegisterFormLabels = [
@@ -96,6 +99,7 @@ export function RegisterForm() {
   const [cooldown, setCooldown] = useState(0);
   const [isSendingCode, setIsSendingCode] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [captchaConfig, setCaptchaConfig] = useState<CaptchaPublicConfig | null>(null);
 
   const target = channel === "email" ? email.trim() : phone.trim();
   const targetIsValid = isTargetValid(channel, target);
@@ -110,6 +114,18 @@ export function RegisterForm() {
       }),
     [code, confirmPassword, isSubmitting, password, targetIsValid],
   );
+
+  useEffect(() => {
+    let active = true;
+    void getCaptchaPublicConfig().then((config) => {
+      if (active) {
+        setCaptchaConfig(config);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (cooldown <= 0) {
@@ -141,9 +157,18 @@ export function RegisterForm() {
 
     setIsSendingCode(true);
     try {
+      const activeCaptchaConfig = captchaConfig ?? (await getCaptchaPublicConfig());
+      if (!captchaConfig) {
+        setCaptchaConfig(activeCaptchaConfig);
+      }
+      const captcha =
+        activeCaptchaConfig.enabled && activeCaptchaConfig.enforceOnRegisterSendCode
+          ? await runTencentCaptcha(activeCaptchaConfig, "register_send_code")
+          : undefined;
       const result = await sendRegisterVerificationCode({
         channel,
         target,
+        captcha,
       });
       setCooldown(result.resendAfterSeconds);
       setStatusTone("success");
@@ -185,11 +210,20 @@ export function RegisterForm() {
 
     setIsSubmitting(true);
     try {
+      const activeCaptchaConfig = captchaConfig ?? (await getCaptchaPublicConfig());
+      if (!captchaConfig) {
+        setCaptchaConfig(activeCaptchaConfig);
+      }
+      const captcha =
+        activeCaptchaConfig.enabled && activeCaptchaConfig.enforceOnRegisterConfirm
+          ? await runTencentCaptcha(activeCaptchaConfig, "register_confirm")
+          : undefined;
       await confirmRegisterPublicAccount({
         channel,
         target,
         code: code.trim(),
         password,
+        captcha,
         ...(displayName.trim() ? { displayName: displayName.trim() } : {}),
       });
 

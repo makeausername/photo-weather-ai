@@ -6,6 +6,9 @@ import {
   getDeepSeekModeRuntimeDefaults,
   getProviderFieldPreset,
   normalizeDeepSeekAnalysisMode,
+  tencentCaptchaDefaultCaptchaType,
+  tencentCaptchaDefaultEndpoint,
+  tencentCaptchaDefaultSdkUrl,
   type ProviderFieldDefinition,
 } from "../../../../../packages/shared/src/provider-fields";
 import type {
@@ -40,8 +43,25 @@ type ProvidersResponse = {
   readonly realDevCallFlags?: RealDevCallFlags;
 };
 
-type ProviderGroupKey = "geo" | "weather" | "ai" | "billing" | "notification" | "storage" | "cdn";
-type ProviderApiType = "geo" | "weather" | "ai" | "billing" | "email" | "sms" | "storage" | "cdn";
+type ProviderGroupKey =
+  | "geo"
+  | "weather"
+  | "ai"
+  | "billing"
+  | "notification"
+  | "captcha"
+  | "storage"
+  | "cdn";
+type ProviderApiType =
+  | "geo"
+  | "weather"
+  | "ai"
+  | "billing"
+  | "email"
+  | "sms"
+  | "captcha"
+  | "storage"
+  | "cdn";
 type AdminProvidersClientProps = {
   readonly providerType: ProviderGroupKey;
 };
@@ -55,6 +75,7 @@ type ProviderKey =
   | "billing:alipay"
   | "email:aliyun_smtp"
   | "sms:aliyun_sms"
+  | "captcha:tencent_captcha"
   | "storage:local_storage"
   | "storage:aliyun_oss"
   | "storage:tencent_cos"
@@ -100,6 +121,7 @@ const providerOrder: readonly ProviderKey[] = [
   "billing:alipay",
   "email:aliyun_smtp",
   "sms:aliyun_sms",
+  "captcha:tencent_captcha",
   "storage:local_storage",
   "storage:aliyun_oss",
   "storage:tencent_cos",
@@ -137,6 +159,12 @@ const providerModules = [
     title: "邮箱短信",
     description: "管理邮箱验证码和短信验证码服务配置。",
     apiProviderTypes: ["email", "sms"],
+  },
+  {
+    key: "captcha",
+    title: "人机验证",
+    description: "管理腾讯云验证码，用于注册、登录和账号绑定前的人机校验。",
+    apiProviderTypes: ["captcha"],
   },
   {
     key: "storage",
@@ -229,6 +257,14 @@ const providerMeta: Record<ProviderKey, ProviderMeta> = {
     purpose: "用于发送手机注册验证码。",
     capabilities: ["短信验证码", "注册验证", "阿里云短信"],
     requiredConfigKeys: ["regionId", "signName", "templateCode"],
+  },
+  "captcha:tencent_captcha": {
+    key: "captcha:tencent_captcha",
+    group: "captcha",
+    displayName: "腾讯云验证码",
+    purpose: "用于登录、注册发送验证码和账号绑定前的人机校验。",
+    capabilities: ["人机验证", "注册防刷", "登录保护", "账号绑定保护"],
+    requiredConfigKeys: ["captchaAppId", "captchaType", "sdkUrl", "endpoint", "region"],
   },
   "storage:local_storage": {
     key: "storage:local_storage",
@@ -341,6 +377,22 @@ const providerConfigDefaults: Partial<Record<string, Record<string, JsonValue>>>
     signName: "",
     templateCode: "",
     timeoutMs: 10000,
+  },
+  tencent_captcha: {
+    realCallEnabled: false,
+    captchaAppId: "",
+    captchaType: tencentCaptchaDefaultCaptchaType,
+    endpoint: tencentCaptchaDefaultEndpoint,
+    sdkUrl: tencentCaptchaDefaultSdkUrl,
+    region: "ap-guangzhou",
+    timeoutMs: 10000,
+    retryCount: 1,
+    enforceOnLogin: false,
+    enforceOnRegisterSendCode: true,
+    enforceOnRegisterConfirm: false,
+    enforceOnAccountBinding: true,
+    failOpenInDevelopment: true,
+    failOpenInProduction: false,
   },
   local_storage: {
     rootPath: "data/uploads",
@@ -1058,7 +1110,8 @@ function cdnProviderReadiness(provider: SafeProviderConfig | null): {
     };
   }
 
-  const realCallEnabled = readBooleanJson(readJsonField(provider.configJson, "realCallEnabled")) ?? false;
+  const realCallEnabled =
+    readBooleanJson(readJsonField(provider.configJson, "realCallEnabled")) ?? false;
   if (!provider.enabled) {
     return {
       ready: false,
@@ -1164,7 +1217,10 @@ function CdnOperationsPanel({ providers }: { readonly providers: readonly SafePr
       return;
     }
 
-    if (!selectedProviderId || !cdnProviders.some((provider) => provider.id === selectedProviderId)) {
+    if (
+      !selectedProviderId ||
+      !cdnProviders.some((provider) => provider.id === selectedProviderId)
+    ) {
       setSelectedProviderId(preferredProvider.id);
     }
   }, [cdnProviders, selectedProviderId]);

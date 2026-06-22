@@ -94,6 +94,7 @@ import {
   type CdnRefreshType,
   type CdnTestConnectionResult,
 } from "./cdn-provider.js";
+import { checkTencentCaptchaConfig } from "./captcha-provider.js";
 import { checkVerificationProviderConfig } from "./verification-senders.js";
 
 const jsonSchema: z.ZodType<JsonValue> = z.lazy(() =>
@@ -453,6 +454,7 @@ function getProviderNameZh(providerType: string, providerCode: string): string {
     "storage:tencent_cos": "腾讯云 COS",
     "cdn:aliyun_cdn": "阿里云 CDN",
     "cdn:tencent_cdn": "腾讯云 CDN",
+    "captcha:tencent_captcha": "腾讯云验证码",
     "billing:wechat_pay": "微信支付",
     "billing:alipay": "支付宝",
   };
@@ -555,7 +557,11 @@ function combineCdnOperationResults(
     mode,
     acceptedCount,
     rejectedCount,
-    providerTaskId: results.map((result) => result.providerTaskId).filter(Boolean).join(",") || undefined,
+    providerTaskId:
+      results
+        .map((result) => result.providerTaskId)
+        .filter(Boolean)
+        .join(",") || undefined,
     messageZh: success
       ? `${cdnProviderNameZh(providerCode)} 已受理 ${acceptedCount} 条 CDN 操作。`
       : `${cdnProviderNameZh(providerCode)} CDN 操作未完全受理。`,
@@ -678,8 +684,7 @@ async function resolveCalibrationLocation(
 
     return {
       spotId: null,
-      locationKey:
-        input.locationKey ?? buildCalibrationLocationKey({ locationId: location.id }),
+      locationKey: input.locationKey ?? buildCalibrationLocationKey({ locationId: location.id }),
       locationName: input.locationName ?? location.name,
       latitudeWgs84: input.latitudeWgs84 ?? location.latitudeWgs84,
       longitudeWgs84: input.longitudeWgs84 ?? location.longitudeWgs84,
@@ -1501,6 +1506,33 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       const parsedBody = providerConnectionTestSchema.safeParse(request.body ?? {});
       if (!parsedBody.success) {
         return sendZodError(reply, parsedBody.error);
+      }
+
+      if (
+        request.params.providerType === "captcha" &&
+        request.params.providerCode === "tencent_captcha"
+      ) {
+        const result = await checkTencentCaptchaConfig({
+          dbClient: client,
+          env,
+        });
+
+        return {
+          success: result.success,
+          mode: result.mode,
+          ...createProviderTestMetadata(
+            request.params.providerType,
+            request.params.providerCode,
+            "mock",
+            "配置检查",
+          ),
+          enabled: result.enabled,
+          realCallEnabled: result.realCallEnabled,
+          configReady: result.configReady,
+          missingFields: result.missingFields,
+          messageZh: result.messageZh,
+          message: result.messageZh,
+        };
       }
 
       if (

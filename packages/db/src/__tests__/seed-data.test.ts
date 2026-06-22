@@ -29,6 +29,7 @@ describe("database seed data", () => {
       })),
     ]);
     expect(providerTypes).toContain("cdn");
+    expect(providerTypes).toContain("captcha");
   });
 
   it("creates provider placeholders without real secrets", () => {
@@ -44,6 +45,7 @@ describe("database seed data", () => {
       "alipay",
       "aliyun_smtp",
       "aliyun_sms",
+      "tencent_captcha",
       "local_storage",
       "aliyun_oss",
       "tencent_cos",
@@ -125,6 +127,39 @@ describe("database seed data", () => {
           maskedSecretJson: {
             accessKeyId: "",
             accessKeySecret: "",
+          },
+        }),
+        expect.objectContaining({
+          providerType: "captcha",
+          providerCode: "tencent_captcha",
+          displayName: "腾讯云验证码",
+          enabled: false,
+          priority: 100,
+          configJson: {
+            realCallEnabled: false,
+            captchaAppId: "",
+            captchaType: 9,
+            endpoint: "https://captcha.tencentcloudapi.com",
+            sdkUrl: "https://turing.captcha.qcloud.com/TCaptcha.js",
+            region: "ap-guangzhou",
+            timeoutMs: 10000,
+            retryCount: 1,
+            enforceOnLogin: false,
+            enforceOnRegisterSendCode: true,
+            enforceOnRegisterConfirm: false,
+            enforceOnAccountBinding: true,
+            failOpenInDevelopment: true,
+            failOpenInProduction: false,
+          },
+          secretJson: {
+            secretId: "",
+            secretKey: "",
+            appSecretKey: "",
+          },
+          maskedSecretJson: {
+            secretId: "",
+            secretKey: "",
+            appSecretKey: "",
           },
         }),
         expect.objectContaining({
