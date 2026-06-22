@@ -35,6 +35,7 @@ const providerPageSources = [
   readProviderPage("billing"),
   readProviderPage("notification"),
   readProviderPage("storage"),
+  readProviderPage("cdn"),
 ].join("\n");
 const providerListRowSource = sourceBetween(
   source,
@@ -55,6 +56,7 @@ describe("admin provider module source", () => {
       '{ href: "/admin/providers/billing", label: "支付收款" }',
       '{ href: "/admin/providers/notification", label: "邮箱短信" }',
       '{ href: "/admin/providers/storage", label: "对象存储" }',
+      '{ href: "/admin/providers/cdn", label: "CDN加速" }',
       '{ href: "/admin/calibration", label: "历史校准" }',
       '{ href: "/admin/audit", label: "审计日志" }',
     ]) {
@@ -121,6 +123,12 @@ describe("admin provider module source", () => {
         description: "管理本地存储、阿里云 OSS、腾讯云 COS 等报告与文件存储配置。",
         providerType: 'providerType="storage"',
       },
+      {
+        route: "cdn",
+        title: 'title="CDN加速"',
+        description: "管理阿里云 CDN、腾讯云 CDN 的缓存刷新、预热、域名和密钥配置。",
+        providerType: 'providerType="cdn"',
+      },
     ];
 
     for (const page of modulePages) {
@@ -150,6 +158,8 @@ describe("admin provider module source", () => {
       'apiProviderTypes: ["email", "sms"]',
       'key: "storage"',
       'apiProviderTypes: ["storage"]',
+      'key: "cdn"',
+      'apiProviderTypes: ["cdn"]',
       "Promise.all(",
       "`/admin/providers?providerType=${encodeURIComponent(apiProviderType)}`",
       ").filter((provider) => getMeta(provider)?.group === moduleDefinition.key)",
@@ -192,6 +202,11 @@ describe("admin provider module source", () => {
       'displayName: "本地存储"',
       'displayName: "阿里云 OSS"',
       'displayName: "腾讯云 COS"',
+      '"cdn:aliyun_cdn"',
+      '"cdn:tencent_cdn"',
+      'group: "cdn"',
+      'displayName: "阿里云 CDN"',
+      'displayName: "腾讯云 CDN"',
     ]) {
       expect(source).toContain(snippet);
     }
@@ -304,6 +319,9 @@ describe("admin provider module source", () => {
       "应用私钥 PEM",
       "支付宝公钥 PEM",
       "支付宝网关",
+      "CDN 加速域名",
+      "默认刷新类型",
+      "每分钟操作限额",
     ]) {
       expect(providerFieldsSource).toContain(label);
     }
@@ -311,6 +329,22 @@ describe("admin provider module source", () => {
     expect(source).toContain("maskedSecretJson");
     expect(source).toContain("secretFieldDrafts");
     expect(source).not.toContain("provider.secretJson");
+  });
+
+  it("renders CDN operations only inside the CDN module", () => {
+    for (const snippet of [
+      "moduleDefinition.key === \"cdn\"",
+      "CdnOperationsPanel",
+      "data-cdn-operation-panel",
+      "refreshCdnCache",
+      "prefetchCdnUrls",
+      "缓存刷新与 URL 预热",
+      "刷新和预热会消耗 CDN 配额",
+      "CDN 操作 URL",
+      "providerCode: selectedProviderCode",
+    ]) {
+      expect(source).toContain(snippet);
+    }
   });
 
   it("does not add placeholder or filler layout copy", () => {

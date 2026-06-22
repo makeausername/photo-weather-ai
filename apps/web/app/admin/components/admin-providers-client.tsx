@@ -8,8 +8,20 @@ import {
   normalizeDeepSeekAnalysisMode,
   type ProviderFieldDefinition,
 } from "../../../../../packages/shared/src/provider-fields";
-import type { JsonValue, MockConnectionTestResult, SafeProviderConfig } from "../admin-api";
-import { adminApiFetch, createProviderConnectionTestRequestInit } from "../admin-api";
+import type {
+  AdminCdnOperationResult,
+  AdminCdnProviderCode,
+  AdminCdnRefreshType,
+  JsonValue,
+  MockConnectionTestResult,
+  SafeProviderConfig,
+} from "../admin-api";
+import {
+  adminApiFetch,
+  createProviderConnectionTestRequestInit,
+  prefetchCdnUrls,
+  refreshCdnCache,
+} from "../admin-api";
 import { Badge, Button, EmptyState, FormField, Input, Select, cn } from "../../../components/ui";
 import {
   isProviderSaveDisabled,
@@ -28,8 +40,8 @@ type ProvidersResponse = {
   readonly realDevCallFlags?: RealDevCallFlags;
 };
 
-type ProviderGroupKey = "geo" | "weather" | "ai" | "billing" | "notification" | "storage";
-type ProviderApiType = "geo" | "weather" | "ai" | "billing" | "email" | "sms" | "storage";
+type ProviderGroupKey = "geo" | "weather" | "ai" | "billing" | "notification" | "storage" | "cdn";
+type ProviderApiType = "geo" | "weather" | "ai" | "billing" | "email" | "sms" | "storage" | "cdn";
 type AdminProvidersClientProps = {
   readonly providerType: ProviderGroupKey;
 };
@@ -45,7 +57,9 @@ type ProviderKey =
   | "sms:aliyun_sms"
   | "storage:local_storage"
   | "storage:aliyun_oss"
-  | "storage:tencent_cos";
+  | "storage:tencent_cos"
+  | "cdn:aliyun_cdn"
+  | "cdn:tencent_cdn";
 type RowState = ProviderSaveFeedbackState;
 type FieldDrafts = Record<string, Record<string, string>>;
 type ClearSecretDrafts = Record<string, Record<string, boolean>>;
@@ -89,6 +103,8 @@ const providerOrder: readonly ProviderKey[] = [
   "storage:local_storage",
   "storage:aliyun_oss",
   "storage:tencent_cos",
+  "cdn:aliyun_cdn",
+  "cdn:tencent_cdn",
 ];
 
 const providerModules = [
@@ -127,6 +143,12 @@ const providerModules = [
     title: "对象存储",
     description: "管理本地存储、阿里云 OSS、腾讯云 COS 等报告与文件存储配置。",
     apiProviderTypes: ["storage"],
+  },
+  {
+    key: "cdn",
+    title: "CDN加速",
+    description: "管理阿里云 CDN、腾讯云 CDN 的缓存刷新、预热和域名加速配置。",
+    apiProviderTypes: ["cdn"],
   },
 ] as const satisfies readonly {
   readonly key: ProviderGroupKey;
@@ -232,6 +254,22 @@ const providerMeta: Record<ProviderKey, ProviderMeta> = {
     capabilities: ["对象存储", "报告文件", "导出文件", "生成素材"],
     requiredConfigKeys: ["region", "bucket", "basePrefix", "publicBaseUrl"],
   },
+  "cdn:aliyun_cdn": {
+    key: "cdn:aliyun_cdn",
+    group: "cdn",
+    displayName: "阿里云 CDN",
+    purpose: "用于阿里云 CDN 域名缓存刷新、URL 预热和加速配置。",
+    capabilities: ["缓存刷新", "URL 预热", "域名配置", "回源加速", "访问加速"],
+    requiredConfigKeys: ["domains", "endpoint", "defaultRefreshType"],
+  },
+  "cdn:tencent_cdn": {
+    key: "cdn:tencent_cdn",
+    group: "cdn",
+    displayName: "腾讯云 CDN",
+    purpose: "用于腾讯云 CDN URL 刷新、路径刷新、URL 预热和加速配置。",
+    capabilities: ["缓存刷新", "URL 预热", "域名配置", "回源加速", "访问加速"],
+    requiredConfigKeys: ["domains", "endpoint", "defaultPurgeType"],
+  },
 };
 
 const advancedHiddenKeys = new Set(["realCallEnabled", "analysisMode", "model"]);
@@ -330,6 +368,27 @@ const providerConfigDefaults: Partial<Record<string, Record<string, JsonValue>>>
     timeoutMs: 10000,
     maxUploadBytes: 10485760,
   },
+  aliyun_cdn: {
+    realCallEnabled: false,
+    endpoint: "https://cdn.aliyuncs.com",
+    domains: "",
+    defaultRefreshType: "file",
+    timeoutMs: 10000,
+    retryCount: 1,
+    rateLimitPerMinute: 60,
+    dryRun: true,
+  },
+  tencent_cdn: {
+    realCallEnabled: false,
+    endpoint: "https://cdn.tencentcloudapi.com",
+    region: "",
+    domains: "",
+    defaultPurgeType: "url",
+    timeoutMs: 10000,
+    retryCount: 1,
+    rateLimitPerMinute: 60,
+    dryRun: true,
+  },
 };
 
 function isJsonObject(value: JsonValue | null | undefined): value is Record<string, JsonValue> {
@@ -386,7 +445,7 @@ function configFieldValueToInput(
   field: ProviderFieldDefinition,
   value: JsonValue | undefined,
 ): string {
-  if (field.key === "packages" && Array.isArray(value)) {
+  if ((field.key === "packages" || field.key === "domains") && Array.isArray(value)) {
     return value.filter((item): item is string => typeof item === "string").join(",");
   }
 
@@ -398,7 +457,7 @@ function providerFieldDefaultToInput(
   field: ProviderFieldDefinition,
 ): string {
   const value = providerConfigDefaults[provider.providerCode]?.[field.key];
-  if (field.key === "packages" && Array.isArray(value)) {
+  if ((field.key === "packages" || field.key === "domains") && Array.isArray(value)) {
     return value.filter((item): item is string => typeof item === "string").join(",");
   }
   return value === undefined ? fieldDefaultToInput(field) : configFieldValueToInput(field, value);
@@ -961,6 +1020,333 @@ function AdvancedConfigContent({
         ) : null}
       </div>
     </details>
+  );
+}
+
+function isAdminCdnProviderCode(providerCode: string): providerCode is AdminCdnProviderCode {
+  return providerCode === "aliyun_cdn" || providerCode === "tencent_cdn";
+}
+
+function splitCdnOperationInput(value: string): string[] {
+  return value
+    .split(/[\n,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function readCdnDomains(provider: SafeProviderConfig): readonly string[] {
+  const value = readJsonField(provider.configJson, "domains");
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string" && item.trim() !== "");
+  }
+  if (typeof value === "string") {
+    return splitCdnOperationInput(value);
+  }
+  return [];
+}
+
+function cdnProviderReadiness(provider: SafeProviderConfig | null): {
+  readonly ready: boolean;
+  readonly message: string;
+  readonly realCallEnabled: boolean;
+} {
+  if (!provider) {
+    return {
+      ready: false,
+      message: "请先选择 CDN 服务商。",
+      realCallEnabled: false,
+    };
+  }
+
+  const realCallEnabled = readBooleanJson(readJsonField(provider.configJson, "realCallEnabled")) ?? false;
+  if (!provider.enabled) {
+    return {
+      ready: false,
+      message: "请先启用该 CDN 服务商。",
+      realCallEnabled,
+    };
+  }
+
+  if (readCdnDomains(provider).length === 0) {
+    return {
+      ready: false,
+      message: "请先保存 CDN 加速域名。",
+      realCallEnabled,
+    };
+  }
+
+  if (realCallEnabled) {
+    const missingSecret = getPresetFields(provider, "secretJson").some(
+      (field) => !hasSavedSecret(provider, field.key),
+    );
+    if (missingSecret) {
+      return {
+        ready: false,
+        message: "真实调用开启时请先保存 CDN 密钥。",
+        realCallEnabled,
+      };
+    }
+  }
+
+  return {
+    ready: true,
+    message: realCallEnabled ? "真实调用模式" : "配置检查模式",
+    realCallEnabled,
+  };
+}
+
+function CdnOperationResultSummary({ result }: { readonly result?: AdminCdnOperationResult }) {
+  if (!result) {
+    return null;
+  }
+
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-background/45 px-3 py-2 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant={result.success ? "success" : "danger"} className="rounded-md">
+          {result.success ? "已受理" : "未受理"}
+        </Badge>
+        <Badge variant="muted" className="rounded-md">
+          {result.providerNameZh}
+        </Badge>
+        <Badge variant={result.mode === "real" ? "info" : "muted"} className="rounded-md">
+          {result.mode === "real" ? "真实调用" : "配置检查"}
+        </Badge>
+      </div>
+      <p className="leading-6 text-card-foreground">{result.messageZh}</p>
+      <p className="text-xs leading-5 text-muted-foreground">
+        已接收 {result.acceptedCount} 条，拒绝 {result.rejectedCount} 条
+        {result.providerTaskId ? `，任务 ${result.providerTaskId}` : ""}。
+      </p>
+    </div>
+  );
+}
+
+function CdnOperationsPanel({ providers }: { readonly providers: readonly SafeProviderConfig[] }) {
+  const [selectedProviderId, setSelectedProviderId] = useState<string>("");
+  const [refreshUrlsInput, setRefreshUrlsInput] = useState("");
+  const [refreshDirectoriesInput, setRefreshDirectoriesInput] = useState("");
+  const [prefetchUrlsInput, setPrefetchUrlsInput] = useState("");
+  const [refreshType, setRefreshType] = useState<AdminCdnRefreshType>("file");
+  const [busyAction, setBusyAction] = useState<"refresh" | "prefetch" | null>(null);
+  const [result, setResult] = useState<AdminCdnOperationResult | undefined>();
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const cdnProviders = useMemo(
+    () => providers.filter((provider) => isAdminCdnProviderCode(provider.providerCode)),
+    [providers],
+  );
+  const selectedProvider = useMemo(
+    () => cdnProviders.find((provider) => provider.id === selectedProviderId) ?? null,
+    [cdnProviders, selectedProviderId],
+  );
+  const readiness = cdnProviderReadiness(selectedProvider);
+  const refreshUrls = splitCdnOperationInput(refreshUrlsInput);
+  const refreshDirectories = splitCdnOperationInput(refreshDirectoriesInput);
+  const prefetchUrls = splitCdnOperationInput(prefetchUrlsInput);
+  const selectedProviderCode = selectedProvider?.providerCode;
+  const canRefresh =
+    readiness.ready &&
+    busyAction === null &&
+    Boolean(selectedProviderCode && isAdminCdnProviderCode(selectedProviderCode)) &&
+    (refreshUrls.length > 0 || refreshDirectories.length > 0);
+  const canPrefetch =
+    readiness.ready &&
+    busyAction === null &&
+    Boolean(selectedProviderCode && isAdminCdnProviderCode(selectedProviderCode)) &&
+    prefetchUrls.length > 0;
+
+  useEffect(() => {
+    const preferredProvider =
+      cdnProviders.find((provider) => provider.enabled) ?? cdnProviders[0] ?? null;
+    if (!preferredProvider) {
+      setSelectedProviderId("");
+      return;
+    }
+
+    if (!selectedProviderId || !cdnProviders.some((provider) => provider.id === selectedProviderId)) {
+      setSelectedProviderId(preferredProvider.id);
+    }
+  }, [cdnProviders, selectedProviderId]);
+
+  useEffect(() => {
+    if (
+      selectedProvider?.providerCode === "tencent_cdn" &&
+      refreshType !== "url" &&
+      refreshType !== "path"
+    ) {
+      setRefreshType("url");
+    }
+    if (
+      selectedProvider?.providerCode === "aliyun_cdn" &&
+      refreshType !== "file" &&
+      refreshType !== "directory"
+    ) {
+      setRefreshType("file");
+    }
+  }, [refreshType, selectedProvider?.providerCode]);
+
+  async function runRefresh() {
+    if (!selectedProviderCode || !isAdminCdnProviderCode(selectedProviderCode)) {
+      return;
+    }
+    if (!canRefresh) {
+      setErrorMessage(readiness.message);
+      return;
+    }
+
+    setBusyAction("refresh");
+    setErrorMessage(null);
+    setResult(undefined);
+    try {
+      setResult(
+        await refreshCdnCache({
+          providerCode: selectedProviderCode,
+          urls: refreshUrls,
+          directories: refreshDirectories,
+          refreshType,
+        }),
+      );
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "CDN 缓存刷新失败。");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function runPrefetch() {
+    if (!selectedProviderCode || !isAdminCdnProviderCode(selectedProviderCode)) {
+      return;
+    }
+    if (!canPrefetch) {
+      setErrorMessage(readiness.message);
+      return;
+    }
+
+    setBusyAction("prefetch");
+    setErrorMessage(null);
+    setResult(undefined);
+    try {
+      setResult(
+        await prefetchCdnUrls({
+          providerCode: selectedProviderCode,
+          urls: prefetchUrls,
+        }),
+      );
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "CDN URL 预热失败。");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  const refreshTypeOptions =
+    selectedProvider?.providerCode === "tencent_cdn"
+      ? [
+          { value: "url", label: "URL" },
+          { value: "path", label: "路径目录" },
+        ]
+      : [
+          { value: "file", label: "URL 文件" },
+          { value: "directory", label: "目录" },
+        ];
+
+  return (
+    <section
+      data-cdn-operation-panel
+      className="grid gap-4 rounded-lg border border-border bg-card px-4 py-3 shadow-sm"
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-primary">CDN 操作</p>
+          <h3 className="mt-1 text-lg font-bold text-card-foreground">缓存刷新与 URL 预热</h3>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            刷新和预热会消耗 CDN 配额；真实调用开启后会影响线上缓存状态。
+          </p>
+        </div>
+        <Badge variant={readiness.ready ? "success" : "warning"} className="rounded-md">
+          {readiness.message}
+        </Badge>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-[minmax(220px,320px)_minmax(0,1fr)]">
+        <FormField label="服务商">
+          <Select
+            value={selectedProviderId}
+            onChange={(event) => setSelectedProviderId(event.target.value)}
+          >
+            {cdnProviders.map((provider) => (
+              <option key={provider.id} value={provider.id}>
+                {providerName(provider)}
+              </option>
+            ))}
+          </Select>
+        </FormField>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <section className="grid gap-3 rounded-md border border-border bg-background/35 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <SectionTitle title="缓存刷新" description="URL 与目录会按已配置 CDN 域名校验。" />
+              <Select
+                className="w-32"
+                value={refreshType}
+                onChange={(event) => setRefreshType(event.target.value as AdminCdnRefreshType)}
+              >
+                {refreshTypeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <FormField label="CDN 操作 URL">
+              <textarea
+                value={refreshUrlsInput}
+                onChange={(event) => setRefreshUrlsInput(event.target.value)}
+                rows={4}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary"
+                placeholder="https://cdn.example.com/assets/app.js"
+              />
+            </FormField>
+            <FormField label="目录 / 路径">
+              <textarea
+                value={refreshDirectoriesInput}
+                onChange={(event) => setRefreshDirectoriesInput(event.target.value)}
+                rows={3}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary"
+                placeholder="https://cdn.example.com/assets/"
+              />
+            </FormField>
+            <Button disabled={!canRefresh} onClick={() => void runRefresh()}>
+              {busyAction === "refresh" ? "刷新中..." : "刷新缓存"}
+            </Button>
+          </section>
+
+          <section className="grid gap-3 rounded-md border border-border bg-background/35 p-3">
+            <SectionTitle title="URL 预热" description="预热 URL 同样会按已配置 CDN 域名校验。" />
+            <FormField label="CDN 预热 URL">
+              <textarea
+                value={prefetchUrlsInput}
+                onChange={(event) => setPrefetchUrlsInput(event.target.value)}
+                rows={7}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary"
+                placeholder="https://cdn.example.com/assets/app.js"
+              />
+            </FormField>
+            <Button disabled={!canPrefetch} onClick={() => void runPrefetch()}>
+              {busyAction === "prefetch" ? "预热中..." : "URL 预热"}
+            </Button>
+          </section>
+        </div>
+      </div>
+
+      {errorMessage ? (
+        <div className="rounded-md border border-danger bg-card px-3 py-2 text-sm text-danger">
+          {errorMessage}
+        </div>
+      ) : null}
+      <CdnOperationResultSummary result={result} />
+    </section>
   );
 }
 
@@ -1784,6 +2170,8 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
           </section>
         ) : null}
       </section>
+
+      {moduleDefinition.key === "cdn" ? <CdnOperationsPanel providers={visibleProviders} /> : null}
     </div>
   );
 }

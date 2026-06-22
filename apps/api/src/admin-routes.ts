@@ -82,6 +82,18 @@ import {
   storageProviderNameZh,
   type ObjectStorageTestConnectionResult,
 } from "./object-storage.js";
+import {
+  cdnProviderCodes,
+  CdnProviderError,
+  cdnProviderNameZh,
+  createCdnProvider,
+  isCdnProviderCode,
+  readRuntimeCdnConfig,
+  type CdnOperationResult,
+  type CdnProviderCode,
+  type CdnRefreshType,
+  type CdnTestConnectionResult,
+} from "./cdn-provider.js";
 import { checkVerificationProviderConfig } from "./verification-senders.js";
 
 const jsonSchema: z.ZodType<JsonValue> = z.lazy(() =>
@@ -191,6 +203,38 @@ const storageTestUploadSchema = z.object({
 const storageTestObjectQuerySchema = z.object({
   providerCode: storageProviderCodeSchema.optional(),
   key: storageTestObjectKeySchema.default("health-check/manual-test.txt"),
+});
+
+const cdnProviderCodeSchema = z.enum(cdnProviderCodes);
+const cdnRefreshTypeValues = ["file", "directory", "url", "path"] as const;
+const cdnRefreshTypeSchema = z.enum(cdnRefreshTypeValues);
+const cdnOperationUrlSchema = z.string().trim().min(1).max(2048);
+const cdnOperationUrlListSchema = z.array(cdnOperationUrlSchema).max(100).default([]);
+
+const cdnRefreshSchema = z
+  .object({
+    providerCode: cdnProviderCodeSchema.optional(),
+    urls: cdnOperationUrlListSchema.optional().default([]),
+    directories: cdnOperationUrlListSchema.optional().default([]),
+    refreshType: cdnRefreshTypeSchema.optional(),
+  })
+  .refine((value) => value.urls.length + value.directories.length > 0, {
+    message: "请填写至少一个需要刷新的 CDN URL 或目录。",
+  })
+  .refine((value) => value.urls.length + value.directories.length <= 100, {
+    message: "单次 CDN 刷新不能超过 100 条 URL/目录。",
+  });
+
+const cdnPrefetchSchema = z.object({
+  providerCode: cdnProviderCodeSchema.optional(),
+  urls: cdnOperationUrlListSchema.refine((value) => value.length > 0, {
+    message: "请填写至少一个需要预热的 CDN URL。",
+  }),
+});
+
+const cdnTasksQuerySchema = z.object({
+  providerCode: cdnProviderCodeSchema.optional(),
+  taskId: z.string().trim().min(1).max(120).optional(),
 });
 
 const dateOnlySchema = z
@@ -407,6 +451,8 @@ function getProviderNameZh(providerType: string, providerCode: string): string {
     "storage:local_storage": "本地存储",
     "storage:aliyun_oss": "阿里云 OSS",
     "storage:tencent_cos": "腾讯云 COS",
+    "cdn:aliyun_cdn": "阿里云 CDN",
+    "cdn:tencent_cdn": "腾讯云 CDN",
     "billing:wechat_pay": "微信支付",
     "billing:alipay": "支付宝",
   };
@@ -431,6 +477,89 @@ function storageProviderTestResponse(result: ObjectStorageTestConnectionResult) 
     modeLabelZh,
     testedAt: new Date().toISOString(),
     message: result.messageZh,
+  };
+}
+
+function cdnProviderTestResponse(result: CdnTestConnectionResult) {
+  const modeLabelZh = result.mode === "real" ? "真实服务" : "配置检查";
+  return {
+    ...result,
+    connectionMode: result.mode === "real" ? "real" : "mock",
+    modeZh: modeLabelZh,
+    modeLabelZh,
+    testedAt: new Date().toISOString(),
+    message: result.messageZh,
+  };
+}
+
+function safeCdnRouteErrorMessage(error: unknown): string {
+  if (error instanceof CdnProviderError) {
+    return error.messageZh;
+  }
+
+  return "CDN 操作失败，请检查服务商配置。";
+}
+
+function cdnRouteErrorStatus(error: unknown): number {
+  return error instanceof CdnProviderError ? error.statusCode : 400;
+}
+
+async function resolveCdnProviderCode(
+  providerCode: CdnProviderCode | undefined,
+  client: DatabaseClient | undefined,
+): Promise<CdnProviderCode> {
+  if (providerCode) {
+    return providerCode;
+  }
+
+  const providers = await listProviderConfigs({
+    providerType: "cdn",
+    enabledOnly: true,
+    client,
+  });
+  const provider = providers.find((item) => isCdnProviderCode(item.providerCode));
+  if (!provider || !isCdnProviderCode(provider.providerCode)) {
+    throw new CdnProviderError("cdn_provider_missing", "请先启用一个 CDN 服务商。", 409);
+  }
+  return provider.providerCode;
+}
+
+function combineCdnOperationResults(
+  providerCode: CdnProviderCode,
+  results: readonly CdnOperationResult[],
+): CdnOperationResult {
+  if (results.length === 0) {
+    throw new CdnProviderError("cdn_operation_empty", "CDN 操作内容为空。");
+  }
+
+  if (results.length === 1) {
+    const onlyResult = results[0];
+    if (!onlyResult) {
+      throw new CdnProviderError("cdn_operation_empty", "CDN 操作内容为空。");
+    }
+    return onlyResult;
+  }
+
+  const acceptedCount = results.reduce((sum, result) => sum + result.acceptedCount, 0);
+  const rejectedCount = results.reduce((sum, result) => sum + result.rejectedCount, 0);
+  const success = results.every((result) => result.success);
+  const mode = results.some((result) => result.mode === "real")
+    ? "real"
+    : results.some((result) => result.mode === "config_check")
+      ? "config_check"
+      : "mock";
+  return {
+    success,
+    providerCode,
+    providerNameZh: cdnProviderNameZh(providerCode),
+    mode,
+    acceptedCount,
+    rejectedCount,
+    providerTaskId: results.map((result) => result.providerTaskId).filter(Boolean).join(",") || undefined,
+    messageZh: success
+      ? `${cdnProviderNameZh(providerCode)} 已受理 ${acceptedCount} 条 CDN 操作。`
+      : `${cdnProviderNameZh(providerCode)} CDN 操作未完全受理。`,
+    sanitizedError: results.find((result) => result.sanitizedError)?.sanitizedError,
   };
 }
 
@@ -1426,6 +1555,28 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
         return storageProviderTestResponse(result);
       }
 
+      if (request.params.providerType === "cdn") {
+        if (!isCdnProviderCode(request.params.providerCode)) {
+          return sendProviderTestFailure(reply, {
+            providerType: request.params.providerType,
+            providerCode: request.params.providerCode,
+            connectionMode: "mock",
+            mode: "config_check",
+            modeLabelZh: "配置检查",
+            error: "unsupported_cdn_provider",
+            messageZh: "当前版本仅支持阿里云 CDN 和腾讯云 CDN。",
+          });
+        }
+
+        const runtimeConfig = await readRuntimeCdnConfig({
+          dbClient: client,
+          providerCode: request.params.providerCode,
+        });
+        const provider = createCdnProvider(runtimeConfig, { env });
+        const result = await provider.testConnection();
+        return cdnProviderTestResponse(result);
+      }
+
       const diagnosticProviderCode = providerDiagnosticCodeFromRoute(
         request.params.providerType,
         request.params.providerCode,
@@ -1894,6 +2045,193 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       };
     },
   );
+
+  app.post("/admin/cdn/refresh", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "providers.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedBody = cdnRefreshSchema.safeParse(request.body ?? {});
+    if (!parsedBody.success) {
+      return sendZodError(reply, parsedBody.error);
+    }
+
+    let providerCode: CdnProviderCode | undefined;
+    try {
+      providerCode = await resolveCdnProviderCode(parsedBody.data.providerCode, client);
+      const runtimeConfig = await readRuntimeCdnConfig({ dbClient: client, providerCode });
+      const provider = createCdnProvider(runtimeConfig, { env });
+      const results: CdnOperationResult[] = [];
+      if (parsedBody.data.urls.length > 0) {
+        results.push(
+          await provider.refreshUrls({
+            urls: parsedBody.data.urls,
+            refreshType: parsedBody.data.refreshType as CdnRefreshType | undefined,
+            caller: "admin",
+          }),
+        );
+      }
+      if (parsedBody.data.directories.length > 0) {
+        results.push(
+          await provider.refreshDirectories({
+            directories: parsedBody.data.directories,
+            refreshType: parsedBody.data.refreshType as CdnRefreshType | undefined,
+            caller: "admin",
+          }),
+        );
+      }
+      const result = combineCdnOperationResults(providerCode, results);
+
+      await createAuditLog(
+        {
+          actorUserId: auth.auditActorUserId,
+          action: "cdn.refresh",
+          targetType: "cdn_provider",
+          targetId: `cdn:${providerCode}`,
+          afterJson: toAuditJson({
+            providerCode,
+            urlsCount: parsedBody.data.urls.length,
+            directoriesCount: parsedBody.data.directories.length,
+            refreshType: parsedBody.data.refreshType ?? null,
+            mode: result.mode,
+            success: result.success,
+            acceptedCount: result.acceptedCount,
+            rejectedCount: result.rejectedCount,
+          }),
+          ipAddress: request.ip,
+          userAgent: request.headers["user-agent"] ?? null,
+        },
+        { client },
+      );
+
+      return result;
+    } catch (error) {
+      if (providerCode) {
+        await createAuditLog(
+          {
+            actorUserId: auth.auditActorUserId,
+            action: "cdn.refresh",
+            targetType: "cdn_provider",
+            targetId: `cdn:${providerCode}`,
+            afterJson: toAuditJson({
+              providerCode,
+              urlsCount: parsedBody.data.urls.length,
+              directoriesCount: parsedBody.data.directories.length,
+              success: false,
+              error: error instanceof CdnProviderError ? error.code : "cdn_refresh_failed",
+            }),
+            ipAddress: request.ip,
+            userAgent: request.headers["user-agent"] ?? null,
+          },
+          { client },
+        );
+      }
+      return sendError(
+        reply,
+        cdnRouteErrorStatus(error),
+        error instanceof CdnProviderError ? error.code : "cdn_refresh_failed",
+        safeCdnRouteErrorMessage(error),
+      );
+    }
+  });
+
+  app.post("/admin/cdn/prefetch", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "providers.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedBody = cdnPrefetchSchema.safeParse(request.body ?? {});
+    if (!parsedBody.success) {
+      return sendZodError(reply, parsedBody.error);
+    }
+
+    let providerCode: CdnProviderCode | undefined;
+    try {
+      providerCode = await resolveCdnProviderCode(parsedBody.data.providerCode, client);
+      const runtimeConfig = await readRuntimeCdnConfig({ dbClient: client, providerCode });
+      const provider = createCdnProvider(runtimeConfig, { env });
+      const result = await provider.prefetchUrls({
+        urls: parsedBody.data.urls,
+        caller: "admin",
+      });
+
+      await createAuditLog(
+        {
+          actorUserId: auth.auditActorUserId,
+          action: "cdn.prefetch",
+          targetType: "cdn_provider",
+          targetId: `cdn:${providerCode}`,
+          afterJson: toAuditJson({
+            providerCode,
+            urlsCount: parsedBody.data.urls.length,
+            mode: result.mode,
+            success: result.success,
+            acceptedCount: result.acceptedCount,
+            rejectedCount: result.rejectedCount,
+          }),
+          ipAddress: request.ip,
+          userAgent: request.headers["user-agent"] ?? null,
+        },
+        { client },
+      );
+
+      return result;
+    } catch (error) {
+      if (providerCode) {
+        await createAuditLog(
+          {
+            actorUserId: auth.auditActorUserId,
+            action: "cdn.prefetch",
+            targetType: "cdn_provider",
+            targetId: `cdn:${providerCode}`,
+            afterJson: toAuditJson({
+              providerCode,
+              urlsCount: parsedBody.data.urls.length,
+              success: false,
+              error: error instanceof CdnProviderError ? error.code : "cdn_prefetch_failed",
+            }),
+            ipAddress: request.ip,
+            userAgent: request.headers["user-agent"] ?? null,
+          },
+          { client },
+        );
+      }
+      return sendError(
+        reply,
+        cdnRouteErrorStatus(error),
+        error instanceof CdnProviderError ? error.code : "cdn_prefetch_failed",
+        safeCdnRouteErrorMessage(error),
+      );
+    }
+  });
+
+  app.get("/admin/cdn/tasks", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "providers.manage");
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedQuery = cdnTasksQuerySchema.safeParse(request.query ?? {});
+    if (!parsedQuery.success) {
+      return sendZodError(reply, parsedQuery.error);
+    }
+
+    try {
+      const providerCode = await resolveCdnProviderCode(parsedQuery.data.providerCode, client);
+      const runtimeConfig = await readRuntimeCdnConfig({ dbClient: client, providerCode });
+      const provider = createCdnProvider(runtimeConfig, { env });
+      return await provider.listTasks({ taskId: parsedQuery.data.taskId });
+    } catch (error) {
+      return sendError(
+        reply,
+        cdnRouteErrorStatus(error),
+        error instanceof CdnProviderError ? error.code : "cdn_tasks_failed",
+        safeCdnRouteErrorMessage(error),
+      );
+    }
+  });
 
   app.post("/admin/storage/test-upload", async (request, reply) => {
     const auth = await requirePermission(request, reply, client, authConfig, "providers.manage");

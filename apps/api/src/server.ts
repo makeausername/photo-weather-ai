@@ -96,6 +96,8 @@ const publicRateLimitedRoutes = new Set([
   "GET /billing/orders",
   "GET /search/places",
   "GET /search/reverse-geocode",
+  "POST /admin/cdn/refresh",
+  "POST /admin/cdn/prefetch",
 ]);
 
 function isPublicRateLimitedRoute(method: string, url: string): boolean {

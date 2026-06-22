@@ -21,6 +21,8 @@ describe("provider field presets", () => {
         "aliyun_sms",
         "aliyun_oss",
         "tencent_cos",
+        "aliyun_cdn",
+        "tencent_cdn",
         "s3_compatible",
         "local_storage",
         "wechat_pay",
@@ -291,6 +293,99 @@ describe("provider field presets", () => {
           target: "configJson",
           defaultValue: 10485760,
           advanced: true,
+        }),
+        expect.objectContaining({
+          key: "secretId",
+          label: "Secret ID",
+          target: "secretJson",
+          password: true,
+        }),
+        expect.objectContaining({
+          key: "secretKey",
+          label: "Secret Key",
+          target: "secretJson",
+          password: true,
+        }),
+      ]),
+    );
+  });
+
+  it("defines complete CDN provider fields without exposing secrets", () => {
+    expect(getProviderFieldPreset("aliyun_cdn")?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "realCallEnabled",
+          label: "启用真实调用",
+          target: "configJson",
+          control: "boolean",
+        }),
+        expect.objectContaining({ key: "domains", label: "CDN 加速域名", target: "configJson" }),
+        expect.objectContaining({
+          key: "endpoint",
+          label: "Endpoint",
+          target: "configJson",
+          defaultValue: "https://cdn.aliyuncs.com",
+        }),
+        expect.objectContaining({
+          key: "defaultRefreshType",
+          target: "configJson",
+          control: "select",
+          defaultValue: "file",
+        }),
+        expect.objectContaining({
+          key: "timeoutMs",
+          target: "configJson",
+          defaultValue: 10000,
+          advanced: true,
+        }),
+        expect.objectContaining({
+          key: "retryCount",
+          target: "configJson",
+          defaultValue: 1,
+          advanced: true,
+        }),
+        expect.objectContaining({
+          key: "rateLimitPerMinute",
+          target: "configJson",
+          defaultValue: 60,
+          advanced: true,
+        }),
+        expect.objectContaining({
+          key: "accessKeyId",
+          label: "AccessKey ID",
+          target: "secretJson",
+          password: true,
+        }),
+        expect.objectContaining({
+          key: "accessKeySecret",
+          label: "AccessKey Secret",
+          target: "secretJson",
+          password: true,
+        }),
+      ]),
+    );
+
+    expect(getProviderFieldPreset("tencent_cdn")?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "realCallEnabled",
+          label: "启用真实调用",
+          target: "configJson",
+          control: "boolean",
+        }),
+        expect.objectContaining({ key: "domains", label: "CDN 加速域名", target: "configJson" }),
+        expect.objectContaining({
+          key: "endpoint",
+          label: "Endpoint",
+          target: "configJson",
+          defaultValue: "https://cdn.tencentcloudapi.com",
+        }),
+        expect.objectContaining({ key: "region", label: "Region", target: "configJson" }),
+        expect.objectContaining({
+          key: "defaultPurgeType",
+          target: "configJson",
+          control: "select",
+          defaultValue: "url",
         }),
         expect.objectContaining({
           key: "secretId",

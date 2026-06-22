@@ -21,6 +21,7 @@ enum ProviderType {
   billing
   email
   sms
+  cdn
 }
 
 enum PaymentProviderCode {

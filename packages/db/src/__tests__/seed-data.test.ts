@@ -1,4 +1,5 @@
 import { requiredAdminPermissions } from "../auth.js";
+import { providerTypes } from "../constants.js";
 import { buildSeedData } from "../seed-data.js";
 import { describe, expect, it } from "vitest";
 
@@ -27,6 +28,7 @@ describe("database seed data", () => {
         permissionCode: permission.code,
       })),
     ]);
+    expect(providerTypes).toContain("cdn");
   });
 
   it("creates provider placeholders without real secrets", () => {
@@ -46,6 +48,8 @@ describe("database seed data", () => {
       "aliyun_oss",
       "tencent_cos",
       "s3_compatible",
+      "aliyun_cdn",
+      "tencent_cdn",
     ]);
     expect(seedData.providerConfigs).toEqual(
       expect.arrayContaining([
@@ -175,6 +179,57 @@ describe("database seed data", () => {
             publicBaseUrl: "",
             timeoutMs: 10000,
             maxUploadBytes: 10485760,
+          },
+          secretJson: {
+            secretId: "",
+            secretKey: "",
+          },
+          maskedSecretJson: {
+            secretId: "",
+            secretKey: "",
+          },
+        }),
+        expect.objectContaining({
+          providerType: "cdn",
+          providerCode: "aliyun_cdn",
+          displayName: "阿里云 CDN",
+          enabled: false,
+          priority: 100,
+          configJson: {
+            realCallEnabled: false,
+            endpoint: "https://cdn.aliyuncs.com",
+            domains: [],
+            defaultRefreshType: "file",
+            timeoutMs: 10000,
+            retryCount: 1,
+            rateLimitPerMinute: 60,
+            dryRun: true,
+          },
+          secretJson: {
+            accessKeyId: "",
+            accessKeySecret: "",
+          },
+          maskedSecretJson: {
+            accessKeyId: "",
+            accessKeySecret: "",
+          },
+        }),
+        expect.objectContaining({
+          providerType: "cdn",
+          providerCode: "tencent_cdn",
+          displayName: "腾讯云 CDN",
+          enabled: false,
+          priority: 200,
+          configJson: {
+            realCallEnabled: false,
+            endpoint: "https://cdn.tencentcloudapi.com",
+            region: "",
+            domains: [],
+            defaultPurgeType: "url",
+            timeoutMs: 10000,
+            retryCount: 1,
+            rateLimitPerMinute: 60,
+            dryRun: true,
           },
           secretJson: {
             secretId: "",

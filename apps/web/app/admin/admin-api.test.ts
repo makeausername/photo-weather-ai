@@ -7,6 +7,8 @@ import {
   adminApiFetch,
   adminSessionExpiredMessage,
   createProviderConnectionTestRequestInit,
+  prefetchCdnUrls,
+  refreshCdnCache,
   loginAdmin,
 } from "./admin-api";
 
@@ -58,6 +60,41 @@ describe("admin API request helpers", () => {
         body: JSON.stringify({}),
       }),
     ).rejects.toThrow(adminSessionExpiredMessage);
+  });
+
+  it("calls CDN operation endpoints with typed payloads", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            success: true,
+            providerCode: "aliyun_cdn",
+            providerNameZh: "阿里云 CDN",
+            mode: "mock",
+            acceptedCount: 1,
+            rejectedCount: 0,
+            messageZh: "ok",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      ),
+    );
+
+    await refreshCdnCache({
+      providerCode: "aliyun_cdn",
+      urls: ["https://cdn.example.com/app.js"],
+      refreshType: "file",
+    });
+    await prefetchCdnUrls({
+      providerCode: "aliyun_cdn",
+      urls: ["https://cdn.example.com/app.js"],
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://localhost:4000/admin/cdn/refresh");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("http://localhost:4000/admin/cdn/prefetch");
   });
 
   it("sanitizes raw database failures during admin login", async () => {

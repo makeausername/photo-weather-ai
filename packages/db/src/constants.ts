@@ -18,6 +18,7 @@ export const providerTypes = [
   "billing",
   "email",
   "sms",
+  "cdn",
 ] as const satisfies readonly ProviderType[];
 
 export const locationTypes = [

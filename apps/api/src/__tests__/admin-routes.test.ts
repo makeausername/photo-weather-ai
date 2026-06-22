@@ -147,6 +147,26 @@ describe("admin config routes", () => {
     expect(JSON.stringify(body)).not.toContain("secretJson");
   });
 
+  it("lists CDN providers separately from other provider modules", async () => {
+    const { client } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/providers?providerType=cdn",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.providers.map((provider: any) => provider.providerCode)).toEqual([
+      "aliyun_cdn",
+      "tencent_cdn",
+    ]);
+    expect(body.providers.every((provider: any) => provider.providerType === "cdn")).toBe(true);
+    expect(response.body).not.toContain("secretJson");
+  });
+
   it("exposes safe local provider debug status without QWeather secrets", async () => {
     const { client, state } = await createFakeDatabaseClient();
     const qWeatherProvider = state.providers.get("weather:qweather");
@@ -316,6 +336,47 @@ describe("admin config routes", () => {
       targetId: "ai:deepseek",
     });
     expect(JSON.stringify(auditResponse.json())).not.toContain("sk-real-secret");
+  });
+
+  it("saves CDN config with masked server-only secrets", async () => {
+    const { client } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/admin/providers/cdn/aliyun_cdn",
+      headers: adminAuthorizationHeader(),
+      payload: {
+        enabled: true,
+        configJson: {
+          realCallEnabled: true,
+          endpoint: "https://cdn.aliyuncs.com",
+          domains: "cdn.example.com",
+          dryRun: true,
+        },
+        secretJson: {
+          accessKeyId: "aliyun-access-id",
+          accessKeySecret: "aliyun-access-secret",
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: true,
+      messageZh: "阿里云 CDN 配置已保存。",
+      provider: {
+        providerType: "cdn",
+        providerCode: "aliyun_cdn",
+        enabled: true,
+        maskedSecretJson: {
+          accessKeyId: "aliy****s-id",
+          accessKeySecret: "aliy****cret",
+        },
+      },
+    });
+    expect(response.body).not.toContain("secretJson");
+    expect(response.body).not.toContain("aliyun-access-secret");
   });
 
   it("preserves blank secret updates and clears secrets only when explicit", async () => {
@@ -668,6 +729,54 @@ describe("admin config routes", () => {
     );
     expect(wechatResponse.body).not.toContain("not-a-private-key");
     expect(alipayResponse.body).not.toContain("not-a-public-key");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("checks CDN providers in config-check mode without external calls or secret leaks", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("CDN provider tests must not call network");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const aliyunProvider = state.providers.get("cdn:aliyun_cdn");
+    state.providers.set("cdn:aliyun_cdn", {
+      ...aliyunProvider,
+      enabled: true,
+      configJson: {
+        ...(aliyunProvider.configJson ?? {}),
+        domains: ["cdn.example.com"],
+        realCallEnabled: true,
+        dryRun: true,
+      },
+      secretJson: {
+        accessKeyId: "aliyun-test-id",
+        accessKeySecret: "aliyun-test-secret",
+      },
+      maskedSecretJson: {
+        accessKeyId: "aliy****t-id",
+        accessKeySecret: "aliy****cret",
+      },
+    });
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/providers/cdn/aliyun_cdn/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: true,
+      mode: "config_check",
+      connectionMode: "mock",
+      providerType: "cdn",
+      providerCode: "aliyun_cdn",
+      providerNameZh: "阿里云 CDN",
+      message: "阿里云 CDN Dry Run 已开启，配置检查通过，未请求真实 CDN 服务。",
+    });
+    expect(response.body).not.toContain("aliyun-test-secret");
+    expect(response.body).not.toContain("secretJson");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -1675,6 +1784,145 @@ describe("admin config routes", () => {
       connectionMode: "mock",
     });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("protects CDN refresh and validates unsafe URLs", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const aliyunProvider = state.providers.get("cdn:aliyun_cdn");
+    state.providers.set("cdn:aliyun_cdn", {
+      ...aliyunProvider,
+      enabled: true,
+      configJson: {
+        ...(aliyunProvider.configJson ?? {}),
+        domains: ["cdn.example.com"],
+        realCallEnabled: false,
+      },
+    });
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const forbiddenResponse = await app.inject({
+      method: "POST",
+      url: "/admin/cdn/refresh",
+      headers: adminAuthorizationHeader("plain-user"),
+      payload: {
+        providerCode: "aliyun_cdn",
+        urls: ["https://cdn.example.com/app.js"],
+      },
+    });
+    expect(forbiddenResponse.statusCode).toBe(403);
+
+    for (const url of [
+      "http://localhost/app.js",
+      "http://127.0.0.1/app.js",
+      "http://192.168.1.10/app.js",
+      "file:///tmp/app.js",
+      "data:text/plain,hello",
+      "javascript:alert(1)",
+    ]) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/admin/cdn/refresh",
+        headers: adminAuthorizationHeader(),
+        payload: {
+          providerCode: "aliyun_cdn",
+          urls: [url],
+        },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({
+        error: "invalid_cdn_url",
+      });
+      expect(response.body).not.toContain("at ");
+    }
+
+    const otherDomainResponse = await app.inject({
+      method: "POST",
+      url: "/admin/cdn/refresh",
+      headers: adminAuthorizationHeader(),
+      payload: {
+        providerCode: "aliyun_cdn",
+        urls: ["https://other.example.com/app.js"],
+      },
+    });
+
+    expect(otherDomainResponse.statusCode).toBe(400);
+    expect(otherDomainResponse.json()).toMatchObject({
+      error: "cdn_domain_not_allowed",
+      message: "CDN 操作 URL 必须属于已配置的加速域名。",
+    });
+  });
+
+  it("accepts safe CDN refresh and prefetch in mock mode and records audit logs", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("CDN mock operations must not call network");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const tencentProvider = state.providers.get("cdn:tencent_cdn");
+    state.providers.set("cdn:tencent_cdn", {
+      ...tencentProvider,
+      enabled: true,
+      configJson: {
+        ...(tencentProvider.configJson ?? {}),
+        domains: "cdn.example.com",
+        realCallEnabled: false,
+      },
+      secretJson: {
+        secretId: "tencent-secret-id",
+        secretKey: "tencent-secret-key",
+      },
+      maskedSecretJson: {
+        secretId: "tenc****t-id",
+        secretKey: "tenc****-key",
+      },
+    });
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const refreshResponse = await app.inject({
+      method: "POST",
+      url: "/admin/cdn/refresh",
+      headers: adminAuthorizationHeader(),
+      payload: {
+        providerCode: "tencent_cdn",
+        urls: ["https://cdn.example.com/app.js", "https://cdn.example.com/app.js"],
+        directories: ["https://cdn.example.com/assets/"],
+        refreshType: "url",
+      },
+    });
+    const prefetchResponse = await app.inject({
+      method: "POST",
+      url: "/admin/cdn/prefetch",
+      headers: adminAuthorizationHeader(),
+      payload: {
+        providerCode: "tencent_cdn",
+        urls: ["https://cdn.example.com/app.js"],
+      },
+    });
+
+    expect(refreshResponse.statusCode).toBe(200);
+    expect(refreshResponse.json()).toMatchObject({
+      success: true,
+      providerCode: "tencent_cdn",
+      providerNameZh: "腾讯云 CDN",
+      mode: "mock",
+      acceptedCount: 2,
+      rejectedCount: 0,
+    });
+    expect(prefetchResponse.statusCode).toBe(200);
+    expect(prefetchResponse.json()).toMatchObject({
+      success: true,
+      providerCode: "tencent_cdn",
+      mode: "mock",
+      acceptedCount: 1,
+    });
+    expect(refreshResponse.body).not.toContain("tencent-secret-key");
+    expect(prefetchResponse.body).not.toContain("tencent-secret-key");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(state.auditLogs.map((log) => log.action)).toEqual(
+      expect.arrayContaining(["cdn.refresh", "cdn.prefetch"]),
+    );
+    expect(JSON.stringify(state.auditLogs)).not.toContain("tencent-secret-key");
   });
 
   it("returns 410 for the retired fixed location admin API", async () => {

@@ -230,6 +230,35 @@ export type MockConnectionTestResult = {
   readonly message: string;
 };
 
+export type AdminCdnProviderCode = "aliyun_cdn" | "tencent_cdn";
+
+export type AdminCdnRefreshType = "file" | "directory" | "url" | "path";
+
+export type AdminCdnRefreshRequest = {
+  readonly providerCode?: AdminCdnProviderCode;
+  readonly urls?: readonly string[];
+  readonly directories?: readonly string[];
+  readonly refreshType?: AdminCdnRefreshType;
+};
+
+export type AdminCdnPrefetchRequest = {
+  readonly providerCode?: AdminCdnProviderCode;
+  readonly urls: readonly string[];
+};
+
+export type AdminCdnOperationResult = {
+  readonly success: boolean;
+  readonly providerCode: AdminCdnProviderCode;
+  readonly providerNameZh: string;
+  readonly mode: "mock" | "config_check" | "real";
+  readonly taskId?: string;
+  readonly providerTaskId?: string;
+  readonly acceptedCount: number;
+  readonly rejectedCount: number;
+  readonly messageZh: string;
+  readonly sanitizedError?: string;
+};
+
 export type SafeAdminUser = {
   readonly id: string;
   readonly email: string | null;
@@ -681,6 +710,24 @@ export function createProviderConnectionTestRequestInit(): RequestInit {
     method: "POST",
     body: JSON.stringify({}),
   };
+}
+
+export async function refreshCdnCache(
+  input: AdminCdnRefreshRequest,
+): Promise<AdminCdnOperationResult> {
+  return adminApiFetch<AdminCdnOperationResult>("/admin/cdn/refresh", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function prefetchCdnUrls(
+  input: AdminCdnPrefetchRequest,
+): Promise<AdminCdnOperationResult> {
+  return adminApiFetch<AdminCdnOperationResult>("/admin/cdn/prefetch", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 async function refreshAdminSession(): Promise<boolean> {

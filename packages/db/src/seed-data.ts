@@ -588,6 +588,57 @@ const providerConfigs = [
     secretJson: {},
     maskedSecretJson: {},
   },
+  {
+    providerType: "cdn",
+    providerCode: "aliyun_cdn",
+    displayName: "阿里云 CDN",
+    enabled: false,
+    priority: 100,
+    configJson: {
+      realCallEnabled: false,
+      endpoint: "https://cdn.aliyuncs.com",
+      domains: [],
+      defaultRefreshType: "file",
+      timeoutMs: 10000,
+      retryCount: 1,
+      rateLimitPerMinute: 60,
+      dryRun: true,
+    },
+    secretJson: {
+      accessKeyId: "",
+      accessKeySecret: "",
+    },
+    maskedSecretJson: {
+      accessKeyId: "",
+      accessKeySecret: "",
+    },
+  },
+  {
+    providerType: "cdn",
+    providerCode: "tencent_cdn",
+    displayName: "腾讯云 CDN",
+    enabled: false,
+    priority: 200,
+    configJson: {
+      realCallEnabled: false,
+      endpoint: "https://cdn.tencentcloudapi.com",
+      region: "",
+      domains: [],
+      defaultPurgeType: "url",
+      timeoutMs: 10000,
+      retryCount: 1,
+      rateLimitPerMinute: 60,
+      dryRun: true,
+    },
+    secretJson: {
+      secretId: "",
+      secretKey: "",
+    },
+    maskedSecretJson: {
+      secretId: "",
+      secretKey: "",
+    },
+  },
 ] as const satisfies readonly ProviderConfigSeed[];
 
 const billingProducts = [
