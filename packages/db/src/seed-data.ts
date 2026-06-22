@@ -688,8 +688,11 @@ const billingProducts = [
     metadataJson: {
       internal: true,
       public: false,
+      publicVisible: false,
+      publicPurchasable: false,
       grantType: "full_forecast_access",
       source: "registration_trial",
+      featureBullets: ["注册后自动发放", "7 天完整摄影判断", "不可公开购买"],
     },
   },
   {
@@ -704,8 +707,11 @@ const billingProducts = [
     sortOrder: 20,
     metadataJson: {
       public: true,
+      publicVisible: true,
+      publicPurchasable: true,
       grantType: "full_forecast_access",
       plan: "monthly",
+      featureBullets: ["完整摄影判断", "云海 / 朝霞晚霞 / 星空银河", "专业逐小时表格", "会员期内完整历史报告"],
     },
   },
   {
@@ -720,8 +726,13 @@ const billingProducts = [
     sortOrder: 30,
     metadataJson: {
       public: true,
+      publicVisible: true,
+      publicPurchasable: true,
       grantType: "full_forecast_access",
       plan: "quarterly",
+      recommended: true,
+      badgeText: "推荐",
+      featureBullets: ["完整摄影判断", "云海 / 朝霞晚霞 / 星空银河", "专业逐小时表格", "续费后有效期自动顺延"],
     },
   },
   {
@@ -736,8 +747,12 @@ const billingProducts = [
     sortOrder: 40,
     metadataJson: {
       public: true,
+      publicVisible: true,
+      publicPurchasable: true,
       grantType: "full_forecast_access",
       plan: "yearly",
+      badgeText: "最划算",
+      featureBullets: ["完整摄影判断", "云海 / 朝霞晚霞 / 星空银河", "专业逐小时表格", "全年完整历史报告"],
     },
   },
   {
@@ -753,6 +768,8 @@ const billingProducts = [
     metadataJson: {
       badge: "入门",
       entitlementType: "forecast_credit",
+      publicVisible: false,
+      publicPurchasable: false,
     },
   },
   {
@@ -768,6 +785,8 @@ const billingProducts = [
     metadataJson: {
       badge: "常用",
       entitlementType: "forecast_credit",
+      publicVisible: false,
+      publicPurchasable: false,
     },
   },
 ] as const satisfies readonly BillingProductSeed[];

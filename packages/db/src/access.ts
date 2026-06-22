@@ -22,6 +22,12 @@ export const fullForecastAccessProductCodes = [
   yearlyFullAccessProductCode,
 ] as const;
 
+const publicFullForecastAccessProductCodes = new Set<string>([
+  monthlyFullAccessProductCode,
+  quarterlyFullAccessProductCode,
+  yearlyFullAccessProductCode,
+]);
+
 export type ForecastAccessTier =
   | "guest"
   | "free"
@@ -157,14 +163,19 @@ export function isInternalTrialProduct(product: BillingProductRecord): boolean {
 }
 
 export function isPublicPurchasableBillingProduct(product: BillingProductRecord): boolean {
-  if (!product.enabled || product.amountCents <= 0) {
+  if (
+    !publicFullForecastAccessProductCodes.has(product.code) ||
+    !isFullForecastAccessProduct(product) ||
+    product.amountCents <= 0 ||
+    product.currency !== "CNY"
+  ) {
     return false;
   }
   const metadata = isPlainJsonObject(product.metadataJson) ? product.metadataJson : {};
-  if (metadata.internal === true || metadata.public === false) {
+  if (metadata.internal === true || metadata.publicPurchasable === false) {
     return false;
   }
-  return true;
+  return metadata.publicPurchasable === true || metadata.public === true;
 }
 
 function tierForProductCode(productCode: string | null | undefined): ForecastAccessTier {

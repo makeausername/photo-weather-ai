@@ -3,7 +3,6 @@ import { randomBytes } from "node:crypto";
 import {
   fullForecastAccessEntitlementType,
   getForecastAccessSettings,
-  isFullForecastAccessProduct,
   isInternalTrialProduct,
   trialFullAccessProductCode,
 } from "./access.js";
@@ -299,6 +298,13 @@ function readBooleanMetadata(value: JsonValue | null | undefined, key: string): 
   return typeof field === "boolean" ? field : null;
 }
 
+function productGrantsFullForecastAccess(product: BillingProductRecord): boolean {
+  if (!product.durationDays || product.durationDays <= 0) {
+    return false;
+  }
+  return readStringMetadata(product.metadataJson, "grantType") === fullForecastAccessEntitlementType;
+}
+
 function compactJson(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue;
 }
@@ -328,7 +334,7 @@ function assertFullAccessProductGrantable(input: {
   readonly product: BillingProductRecord;
 }): void {
   const { order, product } = input;
-  if (!isFullForecastAccessProduct(product)) {
+  if (!productGrantsFullForecastAccess(product)) {
     throw new PaymentEntitlementGrantError(
       `Billing product ${product.code} does not grant full forecast access.`,
     );
@@ -872,7 +878,7 @@ export async function grantPaymentEntitlementOnce(
     }
 
     const product = normalizeBillingProduct(productRecord);
-    if (isFullForecastAccessProduct(product)) {
+    if (productGrantsFullForecastAccess(product)) {
       return grantFullForecastAccessFromPaidOrderInTransaction(
         { order, product, now: new Date() },
         tx,

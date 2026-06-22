@@ -13,6 +13,7 @@ import type {
 import { createWeatherProvider, type WeatherProvider } from "@photo-weather/weather";
 import { registerAdminRoutes } from "./admin-routes.js";
 import { registerAdminOrderRoutes } from "./admin-orders-routes.js";
+import { registerAdminProductRoutes } from "./admin-products-routes.js";
 import { registerAdminUserRoutes } from "./admin-users-routes.js";
 import { registerAccountRoutes } from "./account-routes.js";
 import { registerCaptchaRoutes } from "./captcha-routes.js";
@@ -588,6 +589,10 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     dbClient: options.dbClient,
     authConfig,
     env,
+  });
+  registerAdminProductRoutes(app, {
+    dbClient: options.dbClient,
+    authConfig,
   });
 
   return app;

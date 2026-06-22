@@ -584,6 +584,46 @@ export type AdminPaymentOrderDetail = {
   readonly auditLogs: readonly AdminUserAuditLogItem[];
 };
 
+export type AdminBillingProduct = {
+  readonly code: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly amountCents: number;
+  readonly currency: string;
+  readonly durationDays: number | null;
+  readonly enabled: boolean;
+  readonly sortOrder: number;
+  readonly publicVisible: boolean;
+  readonly publicPurchasable: boolean;
+  readonly recommended: boolean;
+  readonly badgeText: string | null;
+  readonly featureBullets: readonly string[];
+  readonly metadataJson: {
+    readonly internal?: boolean;
+    readonly source?: string;
+    readonly plan?: string;
+    readonly grantType?: string;
+  };
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
+
+export type UpdateAdminProductInput = {
+  readonly name?: string;
+  readonly description?: string | null;
+  readonly amountCents?: number;
+  readonly currency?: "CNY";
+  readonly enabled?: boolean;
+  readonly sortOrder?: number;
+  readonly publicVisible?: boolean;
+  readonly publicPurchasable?: boolean;
+  readonly recommended?: boolean;
+  readonly badgeText?: string | null;
+  readonly featureBullets?: readonly string[];
+  readonly publicDescription?: string | null;
+  readonly shortDescription?: string | null;
+};
+
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 const accessTokenKey = "photo_weather_admin_access_token";
 const refreshTokenKey = "photo_weather_admin_refresh_token";
@@ -1102,4 +1142,54 @@ export async function markAdminOrderPaid(orderNo: string): Promise<{
     method: "POST",
     body: JSON.stringify({}),
   });
+}
+
+export async function listAdminProducts(): Promise<readonly AdminBillingProduct[]> {
+  const response = await adminApiFetch<{ readonly products: readonly AdminBillingProduct[] }>(
+    "/admin/products",
+  );
+  return response.products;
+}
+
+export async function getAdminProduct(code: string): Promise<AdminBillingProduct> {
+  const response = await adminApiFetch<{ readonly product: AdminBillingProduct }>(
+    `/admin/products/${encodeURIComponent(code)}`,
+  );
+  return response.product;
+}
+
+export async function updateAdminProduct(
+  code: string,
+  input: UpdateAdminProductInput,
+): Promise<AdminBillingProduct> {
+  const response = await adminApiFetch<{ readonly product: AdminBillingProduct }>(
+    `/admin/products/${encodeURIComponent(code)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+  return response.product;
+}
+
+export async function enableAdminProduct(code: string): Promise<AdminBillingProduct> {
+  const response = await adminApiFetch<{ readonly product: AdminBillingProduct }>(
+    `/admin/products/${encodeURIComponent(code)}/enable`,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
+  );
+  return response.product;
+}
+
+export async function disableAdminProduct(code: string): Promise<AdminBillingProduct> {
+  const response = await adminApiFetch<{ readonly product: AdminBillingProduct }>(
+    `/admin/products/${encodeURIComponent(code)}/disable`,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
+  );
+  return response.product;
 }

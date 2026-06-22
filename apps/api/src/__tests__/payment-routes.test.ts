@@ -88,7 +88,7 @@ function enableAlipayProvider(state: any, pair = createPemPair()) {
 async function createBillingOrder(
   app: FastifyInstance,
   provider: "wechat_pay" | "alipay",
-  productCode = "forecast_credit_20",
+  productCode = "monthly_full",
 ) {
   const response = await app.inject({
     method: "POST",
@@ -201,7 +201,7 @@ describe("payment routes", () => {
     vi.restoreAllMocks();
   });
 
-  it("lists enabled billing products without authentication", async () => {
+  it("lists only public purchasable full-access billing products without authentication", async () => {
     const { client } = await createFakeDatabaseClient();
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, env: testEnv, logger: false });
 
@@ -225,21 +225,18 @@ describe("payment routes", () => {
           amountCents: 16800,
           currency: "CNY",
         }),
-        expect.objectContaining({
-          code: "forecast_credit_20",
-          amountCents: 990,
-          currency: "CNY",
-        }),
-        expect.objectContaining({
-          code: "forecast_credit_100",
-          amountCents: 3990,
-          currency: "CNY",
-        }),
       ]),
     );
+    expect(response.json().products.map((product: any) => product.code)).toEqual([
+      "monthly_full",
+      "quarterly_full",
+      "yearly_full",
+    ]);
     expect(response.json().products).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ code: "trial_7_days" })]),
     );
+    expect(response.body).not.toContain("metadataJson");
+    expect(response.body).not.toContain("grantType");
     expect(response.body).not.toContain("secretJson");
   });
 
@@ -251,7 +248,7 @@ describe("payment routes", () => {
       method: "POST",
       url: "/billing/orders",
       payload: {
-        productCode: "forecast_credit_20",
+        productCode: "monthly_full",
         provider: "wechat_pay",
       },
     });
@@ -260,7 +257,7 @@ describe("payment routes", () => {
       url: "/billing/orders",
       headers: adminAuthorizationHeader("plain-user"),
       payload: {
-        productCode: "forecast_credit_20",
+        productCode: "monthly_full",
         provider: "wechat_pay",
       },
     });
@@ -290,13 +287,100 @@ describe("payment routes", () => {
 
     expect(body.order).toMatchObject({
       provider: "wechat_pay",
-      amountCents: 990,
+      amountCents: 1900,
       status: "pending",
     });
     expect(body.checkout).toMatchObject({ kind: "mock" });
     expect(JSON.stringify(body)).not.toContain("providerPayloadJson");
     expect(JSON.stringify(body)).not.toContain("merchantPrivateKeyPem");
     expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("rejects trial purchases, ignores frontend amount tampering, and blocks disabled products", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    enableWechatProvider(state);
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: testEnv,
+      logger: false,
+    });
+
+    const trial = await app.inject({
+      method: "POST",
+      url: "/billing/orders",
+      headers: adminAuthorizationHeader("plain-user"),
+      payload: {
+        productCode: "trial_7_days",
+        provider: "wechat_pay",
+      },
+    });
+    const tampered = await app.inject({
+      method: "POST",
+      url: "/billing/orders",
+      headers: adminAuthorizationHeader("plain-user"),
+      payload: {
+        productCode: "monthly_full",
+        provider: "wechat_pay",
+        amountCents: 1,
+        durationDays: 365,
+        grantType: "full_forecast_access",
+      },
+    });
+    state.billingProducts.set("monthly_full", {
+      ...state.billingProducts.get("monthly_full"),
+      enabled: false,
+    });
+    const disabled = await app.inject({
+      method: "POST",
+      url: "/billing/orders",
+      headers: adminAuthorizationHeader("plain-user"),
+      payload: {
+        productCode: "monthly_full",
+        provider: "wechat_pay",
+      },
+    });
+
+    expect(trial.statusCode).toBe(403);
+    expect(trial.json()).toMatchObject({ error: "product_not_purchasable" });
+    expect(tampered.statusCode).toBe(201);
+    expect(tampered.json().order).toMatchObject({
+      productCode: "monthly_full",
+      amountCents: 1900,
+    });
+    expect(JSON.stringify(state.paymentOrders.get(tampered.json().order.orderNo))).not.toContain(
+      "365",
+    );
+    expect(disabled.statusCode).toBe(404);
+    expect(disabled.json()).toMatchObject({ error: "product_not_found" });
+  });
+
+  it("uses the current DB product amount and duration for paid full-access orders", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    enableAlipayProvider(state);
+    state.billingProducts.set("monthly_full", {
+      ...state.billingProducts.get("monthly_full"),
+      amountCents: 2500,
+      durationDays: 45,
+    });
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, env: testEnv, logger: false });
+
+    const { order } = await createBillingOrder(app, "alipay", "monthly_full");
+    const response = await app.inject({
+      method: "POST",
+      url: `/admin/billing/orders/${order.orderNo}/mark-paid`,
+      headers: adminAuthorizationHeader("admin-user"),
+    });
+
+    expect(order.amountCents).toBe(2500);
+    expect(response.statusCode).toBe(200);
+    expect([...state.userEntitlements.values()][0]).toMatchObject({
+      type: "full_forecast_access",
+      metadataJson: expect.objectContaining({
+        productCode: "monthly_full",
+        durationDays: 45,
+      }),
+    });
   });
 
   it("rejects invalid WeChat signatures and processes valid notifications idempotently", async () => {
@@ -386,7 +470,7 @@ describe("payment routes", () => {
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, env: testEnv, logger: false });
     const { order } = await createBillingOrder(app, "alipay");
     const body = signedAlipayBody(
-      { orderNo: order.orderNo, totalAmount: "9.90" },
+      { orderNo: order.orderNo, totalAmount: "19.00" },
       pair.privateKeyPem,
     );
 
@@ -453,7 +537,7 @@ describe("payment routes", () => {
     const { client, state } = await createFakeDatabaseClient();
     enableAlipayProvider(state);
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, env: testEnv, logger: false });
-    const { order } = await createBillingOrder(app, "alipay", "forecast_credit_100");
+    const { order } = await createBillingOrder(app, "alipay", "yearly_full");
 
     const response = await app.inject({
       method: "POST",
@@ -468,13 +552,16 @@ describe("payment routes", () => {
       order: {
         orderNo: order.orderNo,
         status: "paid",
-        amountCents: 3990,
+        amountCents: 16800,
       },
     });
     expect(state.userEntitlements.size).toBe(1);
     expect([...state.userEntitlements.values()][0]).toMatchObject({
-      quantity: 100,
-      remainingQuantity: 100,
+      type: "full_forecast_access",
+      metadataJson: expect.objectContaining({
+        productCode: "yearly_full",
+        durationDays: 365,
+      }),
     });
     expect(state.auditLogs[0]).toMatchObject({
       actorUserId: "admin-user",

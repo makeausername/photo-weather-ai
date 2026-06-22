@@ -647,6 +647,21 @@ export async function createFakeDatabaseClient(): Promise<{
         state.billingProducts.set(product.code, product);
         return product;
       },
+      update: async ({ where, data }: any) => {
+        const existing = state.billingProducts.get(where.code);
+        if (!existing) {
+          throw new Error(`Missing billing product ${where.code}`);
+        }
+        const next = {
+          ...existing,
+          ...Object.fromEntries(
+            Object.entries(data ?? {}).filter(([, value]) => value !== undefined),
+          ),
+          updatedAt: now,
+        };
+        state.billingProducts.set(where.code, next);
+        return next;
+      },
     },
     paymentOrder: {
       create: async ({ data }: any) => {

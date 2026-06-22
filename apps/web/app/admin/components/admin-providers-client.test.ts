@@ -50,6 +50,7 @@ describe("admin provider module source", () => {
       '{ href: "/admin", label: "控制台" }',
       '{ href: "/admin/users", label: "用户管理" }',
       '{ href: "/admin/orders", label: "订单管理" }',
+      '{ href: "/admin/products", label: "套餐定价" }',
       '{ href: "/admin/settings", label: "系统设置" }',
       '{ href: "/admin/providers/geo", label: "地图服务" }',
       '{ href: "/admin/providers/weather", label: "天气数据" }',

@@ -1,8 +1,67 @@
 import { fileURLToPath } from "node:url";
 
+import { fullForecastAccessEntitlementType, trialFullAccessProductCode } from "./access.js";
 import { disconnectPrismaClient, getPrismaClient } from "./client.js";
+import { cloneJsonValue, isPlainJsonObject } from "./json.js";
 import { buildSeedData } from "./seed-data.js";
+import type { BillingProductSeed } from "./seed-data.js";
 import type { DatabaseClient } from "./types.js";
+
+function mergeBillingProductSeedMetadata(
+  product: BillingProductSeed,
+  existingMetadata: unknown,
+) {
+  const defaults = isPlainJsonObject(product.metadataJson) ? product.metadataJson : {};
+  const existing = isPlainJsonObject(existingMetadata) ? existingMetadata : {};
+  const merged = {
+    ...defaults,
+    ...existing,
+  };
+
+  if (product.code === trialFullAccessProductCode) {
+    return cloneJsonValue({
+      ...merged,
+      internal: true,
+      public: false,
+      publicVisible: false,
+      publicPurchasable: false,
+      grantType: fullForecastAccessEntitlementType,
+      source: "registration_trial",
+    });
+  }
+
+  return cloneJsonValue(merged);
+}
+
+function billingProductSeedUpdateData(product: BillingProductSeed, existing: any) {
+  const metadataJson = mergeBillingProductSeedMetadata(product, existing?.metadataJson);
+
+  if (product.code === trialFullAccessProductCode) {
+    return {
+      amountCents: 0,
+      currency: "CNY",
+      credits: 0,
+      durationDays: product.durationDays,
+      enabled: true,
+      metadataJson,
+    };
+  }
+
+  if (
+    product.code === "monthly_full" ||
+    product.code === "quarterly_full" ||
+    product.code === "yearly_full"
+  ) {
+    return {
+      currency: "CNY",
+      credits: 0,
+      durationDays: product.durationDays,
+      metadataJson,
+    };
+  }
+
+  return { metadataJson };
+}
 
 export async function seedDatabase(client: DatabaseClient): Promise<void> {
   if (!client.role || !client.permission || !client.rolePermission) {
@@ -94,20 +153,23 @@ export async function seedDatabase(client: DatabaseClient): Promise<void> {
   }
 
   for (const product of seedData.billingProducts) {
-    await client.billingProduct.upsert({
+    const existing = await client.billingProduct.findUnique({ where: { code: product.code } });
+    if (!existing) {
+      await client.billingProduct.upsert({
+        where: { code: product.code },
+        create: product,
+        update: {},
+      });
+      continue;
+    }
+
+    if (typeof client.billingProduct.update !== "function") {
+      continue;
+    }
+
+    await client.billingProduct.update({
       where: { code: product.code },
-      create: product,
-      update: {
-        name: product.name,
-        description: product.description,
-        amountCents: product.amountCents,
-        currency: product.currency,
-        credits: product.credits,
-        durationDays: product.durationDays,
-        enabled: product.enabled,
-        sortOrder: product.sortOrder,
-        metadataJson: product.metadataJson,
-      },
+      data: billingProductSeedUpdateData(product, existing),
     });
   }
 

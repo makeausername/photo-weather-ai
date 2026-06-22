@@ -3,12 +3,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   confirmRegisterPublicAccount,
+  createBillingOrder,
   getCaptchaPublicConfig,
   getCurrentAccountSession,
   loginPublicAccount,
   registerPublicAccount,
   sendRegisterVerificationCode,
   shouldShowAdminEntry,
+  type AccountAccessStatus,
   type AccountBillingOrderRecord,
   type AccountEntitlementRecord,
   type AccountForecastHistoryRecord,
@@ -400,9 +402,9 @@ describe("account center foundation", () => {
         {
           orderNo: "P202606210001",
           provider: "wechat_pay",
-          amountCents: 990,
+          amountCents: 1900,
           currency: "CNY",
-          productCode: "forecast_credit_20",
+          productCode: "monthly_full",
           status: "paid",
           paidAt: "2026-06-21T08:05:00.000Z",
           expiresAt: null,
@@ -415,18 +417,42 @@ describe("account center foundation", () => {
       entitlements: [
         {
           id: "entitlement-1",
-          type: "forecast_credit",
-          quantity: 20,
-          remainingQuantity: 20,
+          type: "full_forecast_access",
+          quantity: 1,
+          remainingQuantity: null,
           startsAt: "2026-06-21T08:05:01.000Z",
-          expiresAt: null,
+          expiresAt: "2026-07-21T08:05:01.000Z",
           grantedAt: "2026-06-21T08:05:01.000Z",
         },
       ],
+      access: {
+        userId: "user-1",
+        tier: "monthly",
+        hasFullAccess: true,
+        maxForecastHours: 168,
+        allowedTargets: ["general", "cloud_sea", "glow", "astro"],
+        canUseAiExplanation: true,
+        canViewFullHistory: true,
+        activeEntitlementId: "entitlement-1",
+        activeProductCode: "monthly_full",
+        entitlementExpiresAt: "2026-07-21T08:05:01.000Z",
+        currentPlanName: "月卡",
+        remainingDays: 30,
+        trialExpired: false,
+        upgradeRequiredForFullAccess: false,
+        freeLimitMessage: "当前账户只能查看未来 24 小时基础天气。",
+        reason: "paid_active",
+      },
     });
 
     expect(html).toContain("订单与会员");
-    expect(html).toContain("20 次");
+    expect(html).toContain("当前权限");
+    expect(html).toContain("月卡");
+    expect(html).toContain("续费后有效期自动顺延");
+    expect(html).toContain("续费/升级");
+    expect(html).toContain("未来 168 小时");
+    expect(html).toContain("权益记录");
+    expect(html).toContain("1 条");
     expect(html).toContain("已支付订单");
     expect(html).toContain("1 笔");
     expect(html).toContain("P202606210001");
@@ -454,7 +480,7 @@ describe("account center foundation", () => {
     });
 
     expect(html).toContain("暂无订单");
-    expect(html).toContain("购买预测次数后，订单状态和剩余权益会显示在这里。");
+    expect(html).toContain("购买月卡、季卡或年卡后，订单状态和会员有效期会显示在这里。");
     expect(html).toContain("查看定价");
     expect(html).toContain('href="/pricing"');
   });
@@ -773,6 +799,7 @@ function renderAuthenticatedAccountCenter(
   initialBillingSummary?: {
     readonly orders: readonly AccountBillingOrderRecord[];
     readonly entitlements: readonly AccountEntitlementRecord[];
+    readonly access?: AccountAccessStatus;
   },
 ): string {
   return renderToStaticMarkup(
@@ -889,6 +916,64 @@ describe("public registration session API", () => {
     expect(localStorage.getItem("photo_weather_admin_access_token_expires_at")).toBe(
       accessTokenExpiresAt,
     );
+  });
+
+  it("creates billing orders with productCode and provider only", async () => {
+    installBrowserWindow();
+    storeAdminSession(createStoredSession());
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          order: {
+            orderNo: "P202606220001",
+            provider: "wechat_pay",
+            amountCents: 2100,
+            currency: "CNY",
+            productCode: "monthly_full",
+            status: "pending",
+            paidAt: null,
+            expiresAt: null,
+            providerTradeNo: null,
+            entitlementGrantedAt: null,
+            createdAt: "2026-06-22T08:00:00.000Z",
+            updatedAt: "2026-06-22T08:00:00.000Z",
+          },
+          checkout: {
+            kind: "mock",
+            message: "测试支付",
+          },
+        }),
+        {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await expect(
+      createBillingOrder({ productCode: "monthly_full", provider: "wechat_pay" }),
+    ).resolves.toMatchObject({
+      order: {
+        productCode: "monthly_full",
+        amountCents: 2100,
+      },
+    });
+
+    const [, init] = fetchSpy.mock.calls[0] ?? [];
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:4000/billing/orders",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({
+      productCode: "monthly_full",
+      provider: "wechat_pay",
+    });
+    expect(String((init as RequestInit).body)).not.toContain("amountCents");
+    expect(String((init as RequestInit).body)).not.toContain("durationDays");
+    expect(String((init as RequestInit).body)).not.toContain("grantType");
+    expect(String((init as RequestInit).body)).not.toContain("hasFullAccess");
   });
 
   it("clears public account storage when refresh token is expired or invalid", async () => {

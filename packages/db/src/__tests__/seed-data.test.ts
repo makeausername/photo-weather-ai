@@ -297,6 +297,8 @@ describe("database seed data", () => {
           metadataJson: expect.objectContaining({
             internal: true,
             public: false,
+            publicVisible: false,
+            publicPurchasable: false,
             grantType: "full_forecast_access",
             source: "registration_trial",
           }),
@@ -309,21 +311,34 @@ describe("database seed data", () => {
           durationDays: 30,
           enabled: true,
           metadataJson: expect.objectContaining({
+            publicVisible: true,
+            publicPurchasable: true,
             grantType: "full_forecast_access",
+            plan: "monthly",
+            featureBullets: expect.arrayContaining(["完整摄影判断"]),
           }),
         }),
         expect.objectContaining({
           code: "quarterly_full",
           durationDays: 90,
           metadataJson: expect.objectContaining({
+            publicVisible: true,
+            publicPurchasable: true,
             grantType: "full_forecast_access",
+            plan: "quarterly",
+            recommended: true,
+            badgeText: "推荐",
           }),
         }),
         expect.objectContaining({
           code: "yearly_full",
           durationDays: 365,
           metadataJson: expect.objectContaining({
+            publicVisible: true,
+            publicPurchasable: true,
             grantType: "full_forecast_access",
+            plan: "yearly",
+            badgeText: "最划算",
           }),
         }),
         expect.objectContaining({
@@ -333,6 +348,10 @@ describe("database seed data", () => {
           currency: "CNY",
           credits: 20,
           enabled: true,
+          metadataJson: expect.objectContaining({
+            publicVisible: false,
+            publicPurchasable: false,
+          }),
         }),
         expect.objectContaining({
           code: "forecast_credit_100",

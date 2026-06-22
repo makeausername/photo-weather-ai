@@ -592,6 +592,7 @@ export type DatabaseClient = {
     readonly findUnique: (args: any) => Promise<any>;
     readonly findMany: (args?: any) => Promise<any[]>;
     readonly upsert: (args: any) => Promise<any>;
+    readonly update?: (args: any) => Promise<any>;
   };
   readonly paymentOrder?: {
     readonly create: (args: any) => Promise<any>;

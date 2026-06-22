@@ -8,7 +8,7 @@ import {
   getPaymentOrderByOrderNo,
   grantPaymentEntitlementOnce,
   isPublicPurchasableBillingProduct,
-  listBillingProducts,
+  listPublicBillingProducts,
   listUserEntitlements,
   listUserPaymentOrders,
   markPaymentOrderPaid,
@@ -21,7 +21,6 @@ import {
 } from "@photo-weather/db";
 import type {
   AuthenticatedPrincipal,
-  BillingProductRecord,
   DatabaseClient,
   JsonValue,
   PaymentOrderRecord,
@@ -105,22 +104,6 @@ async function requireBillingAuth(
     }
     throw error;
   }
-}
-
-function productResponse(product: BillingProductRecord) {
-  return {
-    id: product.id,
-    code: product.code,
-    name: product.name,
-    description: product.description,
-    amountCents: product.amountCents,
-    currency: product.currency,
-    credits: product.credits,
-    durationDays: product.durationDays,
-    enabled: product.enabled,
-    sortOrder: product.sortOrder,
-    metadataJson: product.metadataJson,
-  };
 }
 
 function orderResponse(order: PaymentOrderRecord) {
@@ -411,8 +394,7 @@ export function registerPaymentRoutes(app: FastifyInstance, options: PaymentRout
   registerRawBodyCapture(app);
 
   app.get("/billing/products", async () => {
-    const products = await listBillingProducts({ enabledOnly: true, client });
-    return { products: products.filter(isPublicPurchasableBillingProduct).map(productResponse) };
+    return { products: await listPublicBillingProducts({ client }) };
   });
 
   app.post("/billing/orders", async (request, reply) => {

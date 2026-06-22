@@ -187,6 +187,7 @@ export function AuthenticatedAccountCenter({
   readonly initialBillingSummary?: {
     readonly orders: readonly AccountBillingOrderRecord[];
     readonly entitlements: readonly AccountEntitlementRecord[];
+    readonly access?: AccountAccessStatus;
   };
 }) {
   const showAdminEntry = shouldShowAdminEntry(session);
@@ -389,11 +390,26 @@ function BillingSummaryCard({
     };
   }, [initialSummary]);
 
-  const remainingCredits = entitlements
-    .filter((item) => item.type === "forecast_credit")
-    .reduce((total, item) => total + Math.max(0, item.remainingQuantity ?? 0), 0);
   const paidCount = orders.filter((order) => order.status === "paid").length;
+  const entitlementCount = entitlements.length;
   const accessBadge = access?.hasFullAccess ? "success" : "warning";
+  const paidPlanName =
+    access && ["monthly", "quarterly", "yearly"].includes(access.tier)
+      ? access.currentPlanName
+      : null;
+  const trialRemaining =
+    access?.tier === "trial" && access.remainingDays !== null
+      ? `${access.remainingDays} 天`
+      : access?.trialExpired
+        ? "试用已结束"
+        : null;
+  const accessNotice = access
+    ? access.tier === "trial"
+      ? "试用期内可使用完整摄影判断；到期后会自动回到免费版。"
+      : access.upgradeRequiredForFullAccess
+        ? "当前为免费版，仅可查询未来 24 小时基础天气。"
+        : "当前拥有完整访问权限，续费后有效期自动顺延。"
+    : null;
 
   return (
     <Card className="p-5 shadow-sm sm:p-6">
@@ -411,17 +427,33 @@ function BillingSummaryCard({
       {state === "ready" ? (
         <div className="mt-4 grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
           <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-1">
-            <SummaryField label="当前套餐" value={access?.currentPlanName ?? null} />
+            <SummaryField label="当前权限" value={access?.currentPlanName ?? null} />
+            <SummaryField label="试用剩余" value={trialRemaining} />
+            <SummaryField label="付费套餐" value={paidPlanName} />
             <SummaryField label="到期时间" value={formatOptionalDateTime(access?.entitlementExpiresAt ?? null)} />
             <SummaryField
               label="剩余天数"
               value={access?.remainingDays === null || access?.remainingDays === undefined ? null : `${access.remainingDays} 天`}
             />
             <SummaryField label="可查时长" value={`未来 ${access?.maxForecastHours ?? 24} 小时`} />
-            <SummaryField label="历史次数权益" value={`${remainingCredits} 次`} />
+            <SummaryField label="权益记录" value={`${entitlementCount} 条`} />
             <SummaryField label="已支付订单" value={`${paidCount} 笔`} />
           </dl>
           <div className="grid gap-2">
+            {accessNotice ? (
+              <div className="rounded-lg border border-border bg-muted/35 p-3">
+                <p className="text-sm font-bold text-card-foreground">会员状态</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">{accessNotice}</p>
+                {!access?.upgradeRequiredForFullAccess ? (
+                  <Link
+                    href="/pricing"
+                    className="mt-3 inline-flex h-9 w-fit items-center rounded-lg border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary"
+                  >
+                    续费/升级
+                  </Link>
+                ) : null}
+              </div>
+            ) : null}
             {access?.upgradeRequiredForFullAccess ? (
               <div className="rounded-lg border border-warning bg-card p-3">
                 <p className="text-sm font-bold text-card-foreground">当前为免费访问</p>
@@ -453,7 +485,7 @@ function BillingEmptyState() {
       <div>
         <p className="text-sm font-bold text-card-foreground">暂无订单</p>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          购买预测次数后，订单状态和剩余权益会显示在这里。
+          购买月卡、季卡或年卡后，订单状态和会员有效期会显示在这里。
         </p>
       </div>
       <Link

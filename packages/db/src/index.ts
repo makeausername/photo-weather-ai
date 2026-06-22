@@ -184,6 +184,26 @@ export {
   updatePaymentNotificationStatus,
   updatePaymentOrderStatus,
 } from "./payments.js";
+export {
+  BillingProductNotFoundError,
+  InvalidBillingProductUpdateError,
+  billingProductAdminSnapshot,
+  formatBillingProductDurationText,
+  formatBillingProductPriceText,
+  getAdminBillingProductByCode,
+  isPublicFullAccessBillingProduct,
+  listAdminBillingProducts,
+  listPublicBillingProducts,
+  toAdminBillingProduct,
+  toPublicBillingProduct,
+  updateAdminBillingProduct,
+} from "./products.js";
+export type {
+  AdminBillingProduct,
+  PublicBillingProduct,
+  SafeBillingProductMetadata,
+  UpdateAdminBillingProductInput,
+} from "./products.js";
 export { buildSeedData } from "./seed-data.js";
 export { seedDatabase } from "./seed.js";
 export { maskSecretJson, maskSecretString, maskSecretValue } from "./secrets.js";

@@ -17,6 +17,7 @@ const adminLinkGroups = [
     links: [
       { href: "/admin/users", label: "用户管理" },
       { href: "/admin/orders", label: "订单管理" },
+      { href: "/admin/products", label: "套餐定价" },
     ],
   },
   {

@@ -122,6 +122,34 @@ export type AccountBillingOrderRecord = {
   readonly updatedAt: string;
 };
 
+export type PublicBillingProduct = {
+  readonly code: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly amountCents: number;
+  readonly currency: string;
+  readonly priceText: string;
+  readonly durationDays: number | null;
+  readonly durationText: string;
+  readonly recommended: boolean;
+  readonly badgeText: string | null;
+  readonly featureBullets: readonly string[];
+  readonly sortOrder: number;
+};
+
+export type BillingPaymentProvider = "wechat_pay" | "alipay";
+
+export type BillingCheckoutPayload =
+  | { readonly kind: "mock"; readonly message: string }
+  | { readonly kind: "qr_code"; readonly codeUrl: string; readonly message: string }
+  | { readonly kind: "redirect_url"; readonly redirectUrl: string; readonly message: string }
+  | { readonly kind: "form_html"; readonly formHtml: string; readonly message: string };
+
+export type CreateBillingOrderResponse = {
+  readonly order: AccountBillingOrderRecord;
+  readonly checkout?: BillingCheckoutPayload;
+};
+
 export type AccountEntitlementRecord = {
   readonly id: string;
   readonly type: "forecast_credit" | "subscription" | "feature_unlock" | "full_forecast_access";
@@ -519,6 +547,42 @@ export async function listAccountBillingOrders(
     readonly items: readonly AccountBillingOrderRecord[];
   }>(`/billing/orders${suffix}`);
   return response.items;
+}
+
+export async function listPublicBillingProducts(): Promise<readonly PublicBillingProduct[]> {
+  const response = await fetch(`${apiBaseUrl}/billing/products`, {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(await readPublicApiError(response, "暂时无法读取套餐。"));
+  }
+
+  const payload = (await response.json()) as {
+    readonly products?: readonly PublicBillingProduct[];
+  };
+  return payload.products ?? [];
+}
+
+export async function createBillingOrder(input: {
+  readonly productCode: string;
+  readonly provider: BillingPaymentProvider;
+}): Promise<CreateBillingOrderResponse> {
+  return accountApiFetch<CreateBillingOrderResponse>("/billing/orders", {
+    method: "POST",
+    body: JSON.stringify({
+      productCode: input.productCode,
+      provider: input.provider,
+    }),
+  });
+}
+
+export async function getBillingOrder(orderNo: string): Promise<AccountBillingOrderRecord> {
+  const response = await accountApiFetch<{ readonly order: AccountBillingOrderRecord }>(
+    `/billing/orders/${encodeURIComponent(orderNo)}`,
+  );
+  return response.order;
 }
 
 export async function listAccountEntitlements(): Promise<readonly AccountEntitlementRecord[]> {
