@@ -294,6 +294,10 @@ export type AccountRole =
 export type AdminAuthSession = {
   readonly accessToken: string;
   readonly refreshToken: string;
+  readonly accessTokenExpiresAt?: string;
+  readonly sessionExpiresAt?: string;
+  readonly sessionTtlDays?: number;
+  readonly sessionRoleType?: "user" | "admin" | string;
   readonly user: SafeAdminUser;
   readonly profile: SafeAccountProfile | null;
   readonly roles: readonly AccountRole[];
@@ -568,7 +572,9 @@ export type AdminPaymentOrderDetail = {
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 const accessTokenKey = "photo_weather_admin_access_token";
 const refreshTokenKey = "photo_weather_admin_refresh_token";
-export const adminSessionExpiredMessage = "登录状态已失效，请重新登录后台后再测试。";
+const accessTokenExpiresAtKey = "photo_weather_admin_access_token_expires_at";
+const sessionExpiresAtKey = "photo_weather_admin_session_expires_at";
+export const adminSessionExpiredMessage = "后台登录已过期，请重新登录。";
 
 type AdminApiErrorPayload = {
   readonly error?: string;
@@ -580,6 +586,20 @@ function isBrowser(): boolean {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 }
 
+function storedSessionIsExpired(): boolean {
+  if (!isBrowser()) {
+    return false;
+  }
+
+  const sessionExpiresAt = window.localStorage.getItem(sessionExpiresAtKey);
+  if (!sessionExpiresAt) {
+    return false;
+  }
+
+  const expiresAt = Date.parse(sessionExpiresAt);
+  return !Number.isFinite(expiresAt) || expiresAt <= Date.now();
+}
+
 export function getStoredAdminTokens(): {
   readonly accessToken: string;
   readonly refreshToken: string;
@@ -588,10 +608,19 @@ export function getStoredAdminTokens(): {
     return null;
   }
 
+  if (storedSessionIsExpired()) {
+    clearAdminSession();
+    return null;
+  }
+
   const accessToken = window.localStorage.getItem(accessTokenKey);
   const refreshToken = window.localStorage.getItem(refreshTokenKey);
+  if (!accessToken || !refreshToken) {
+    clearAdminSession();
+    return null;
+  }
 
-  return accessToken && refreshToken ? { accessToken, refreshToken } : null;
+  return { accessToken, refreshToken };
 }
 
 export function storeAdminSession(session: AdminAuthSession): void {
@@ -601,6 +630,16 @@ export function storeAdminSession(session: AdminAuthSession): void {
 
   window.localStorage.setItem(accessTokenKey, session.accessToken);
   window.localStorage.setItem(refreshTokenKey, session.refreshToken);
+  if (session.accessTokenExpiresAt) {
+    window.localStorage.setItem(accessTokenExpiresAtKey, session.accessTokenExpiresAt);
+  } else {
+    window.localStorage.removeItem(accessTokenExpiresAtKey);
+  }
+  if (session.sessionExpiresAt) {
+    window.localStorage.setItem(sessionExpiresAtKey, session.sessionExpiresAt);
+  } else {
+    window.localStorage.removeItem(sessionExpiresAtKey);
+  }
 }
 
 export function clearAdminSession(): void {
@@ -610,6 +649,8 @@ export function clearAdminSession(): void {
 
   window.localStorage.removeItem(accessTokenKey);
   window.localStorage.removeItem(refreshTokenKey);
+  window.localStorage.removeItem(accessTokenExpiresAtKey);
+  window.localStorage.removeItem(sessionExpiresAtKey);
 }
 
 function redirectToLogin(): void {
@@ -657,6 +698,17 @@ export function sessionHasAdminAccess(
   );
 }
 
+function isSessionAuthErrorCode(error: string | undefined): boolean {
+  return (
+    error === "invalid_refresh_token" ||
+    error === "token_expired" ||
+    error === "invalid_session" ||
+    error === "invalid_token" ||
+    error === "missing_token" ||
+    error === "admin_unauthorized"
+  );
+}
+
 function formatAdminApiError(errorText: string, status: number): string {
   if (!errorText) {
     return `后台接口请求失败，状态码 ${status}`;
@@ -664,6 +716,10 @@ function formatAdminApiError(errorText: string, status: number): string {
 
   try {
     const payload = JSON.parse(errorText) as AdminApiErrorPayload;
+    if (isSessionAuthErrorCode(payload.error)) {
+      return adminSessionExpiredMessage;
+    }
+
     if (payload.message) {
       return sanitizeAuthErrorMessage(payload.message, `后台接口请求失败，状态码 ${status}`);
     }
@@ -841,18 +897,20 @@ function queryString(params: Record<string, string | number | boolean | null | u
   return value ? `?${value}` : "";
 }
 
-export async function fetchAdminUsers(params: {
-  readonly q?: string;
-  readonly status?: string;
-  readonly role?: string;
-  readonly hasOrders?: string;
-  readonly hasCredits?: string;
-  readonly createdFrom?: string;
-  readonly createdTo?: string;
-  readonly page?: number;
-  readonly pageSize?: number;
-  readonly sort?: string;
-} = {}): Promise<AdminUserListResponse> {
+export async function fetchAdminUsers(
+  params: {
+    readonly q?: string;
+    readonly status?: string;
+    readonly role?: string;
+    readonly hasOrders?: string;
+    readonly hasCredits?: string;
+    readonly createdFrom?: string;
+    readonly createdTo?: string;
+    readonly page?: number;
+    readonly pageSize?: number;
+    readonly sort?: string;
+  } = {},
+): Promise<AdminUserListResponse> {
   return adminApiFetch<AdminUserListResponse>(`/admin/users${queryString(params)}`);
 }
 
@@ -935,7 +993,10 @@ export async function resetAdminUserPassword(
 
 export async function revokeAdminUserSessions(
   userId: string,
-): Promise<{ readonly revokedSessionCount: number; readonly sessions: readonly AdminUserSessionItem[] }> {
+): Promise<{
+  readonly revokedSessionCount: number;
+  readonly sessions: readonly AdminUserSessionItem[];
+}> {
   return adminApiFetch(`/admin/users/${encodeURIComponent(userId)}/revoke-sessions`, {
     method: "POST",
     body: JSON.stringify({}),
@@ -956,19 +1017,21 @@ export async function updateAdminUserRoles(
   return response.user;
 }
 
-export async function fetchAdminOrders(params: {
-  readonly q?: string;
-  readonly status?: string;
-  readonly provider?: string;
-  readonly productCode?: string;
-  readonly userId?: string;
-  readonly paid?: string;
-  readonly createdFrom?: string;
-  readonly createdTo?: string;
-  readonly page?: number;
-  readonly pageSize?: number;
-  readonly sort?: string;
-} = {}): Promise<AdminPaymentOrderListResponse> {
+export async function fetchAdminOrders(
+  params: {
+    readonly q?: string;
+    readonly status?: string;
+    readonly provider?: string;
+    readonly productCode?: string;
+    readonly userId?: string;
+    readonly paid?: string;
+    readonly createdFrom?: string;
+    readonly createdTo?: string;
+    readonly page?: number;
+    readonly pageSize?: number;
+    readonly sort?: string;
+  } = {},
+): Promise<AdminPaymentOrderListResponse> {
   return adminApiFetch<AdminPaymentOrderListResponse>(`/admin/orders${queryString(params)}`);
 }
 

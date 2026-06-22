@@ -3,6 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   confirmRegisterPublicAccount,
+  getCaptchaPublicConfig,
+  getCurrentAccountSession,
   loginPublicAccount,
   registerPublicAccount,
   sendRegisterVerificationCode,
@@ -10,6 +12,7 @@ import {
   type AccountBillingOrderRecord,
   type AccountEntitlementRecord,
   type AccountForecastHistoryRecord,
+  type CaptchaToken,
   type PublicAccountSession,
 } from "../../components/account-session";
 import {
@@ -31,14 +34,17 @@ import {
   formatAccountRoleLabels,
   UnauthenticatedAccountPrompt,
 } from "./account-center-client";
-import { sessionHasAdminAccess } from "../admin/admin-api";
+import { getStoredAdminTokens, sessionHasAdminAccess, storeAdminSession } from "../admin/admin-api";
 import AdminLoginPage from "../admin/login/page";
-import { loginAuthIntroItems } from "../login/auth-content";
 import LoginPage, { metadata as loginMetadata } from "../login/page";
 import { publicLoginFormLabels } from "../login/login-form";
-import { registerAuthIntroItems } from "../register/auth-content";
 import RegisterPage, { metadata as registerMetadata } from "../register/page";
-import { buildRegisteredLoginHref, publicRegisterFormLabels } from "../register/register-form";
+import {
+  buildRegisteredLoginHref,
+  canSubmitRegisterForm,
+  getRegisterPasswordStatusMessage,
+  publicRegisterFormLabels,
+} from "../register/register-form";
 
 const routerReplaceMock = vi.hoisted(() => vi.fn());
 
@@ -122,7 +128,56 @@ const cloudSeaHistoryRecord: AccountForecastHistoryRecord = {
 afterEach(() => {
   routerReplaceMock.mockReset();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
+
+function createLocalStorageMock(): Storage {
+  const store = new Map<string, string>();
+  return {
+    get length() {
+      return store.size;
+    },
+    clear: () => store.clear(),
+    getItem: (key: string) => store.get(key) ?? null,
+    key: (index: number) => [...store.keys()][index] ?? null,
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+    },
+  };
+}
+
+function installBrowserWindow() {
+  const localStorage = createLocalStorageMock();
+  vi.stubGlobal("window", {
+    localStorage,
+    location: {
+      pathname: "/account",
+      search: "",
+      href: "/account",
+    },
+  });
+
+  return { localStorage };
+}
+
+function createStoredSession(overrides: Partial<Parameters<typeof storeAdminSession>[0]> = {}) {
+  return {
+    accessToken: "account-access-token",
+    refreshToken: "account-refresh-token",
+    accessTokenExpiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    sessionExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    user: baseAccountSession.user,
+    profile: baseAccountSession.profile,
+    roles: baseAccountSession.roles,
+    roleCodes: baseAccountSession.roleCodes,
+    permissions: baseAccountSession.permissions,
+    isAdmin: baseAccountSession.isAdmin,
+    ...overrides,
+  };
+}
 
 describe("public account navigation", () => {
   it("uses a unified account entry instead of top-level login or admin actions", () => {
@@ -543,7 +598,7 @@ describe("account center foundation", () => {
     }
   });
 
-  it("renders the public login page as a balanced auth layout", () => {
+  it("renders the public login page as a centered auth form layout", () => {
     const html = renderToStaticMarkup(
       React.createElement(LoginPage, {
         searchParams: {
@@ -553,15 +608,17 @@ describe("account center foundation", () => {
       }),
     );
 
-    expect(html).toContain('data-auth-layout="balanced-public-auth homepage-rhythm responsive-auth-grid"');
-    expect(html).toContain('data-auth-product-panel="practical-account-intro"');
-    expect(html).toContain('data-auth-card="balanced-form-card"');
-    expect(html).toContain("登录账户，继续查看你的拍摄记录");
-    expect(html).toContain("用邮箱或手机号登录。登录后可以查看历史分析、订单和账户设置。");
-    expect(html).toContain("最近看过的地点更容易找回");
-    expect(html).toContain("订单和可用次数放在一起");
-    expect(html).toContain("有权限时显示后台入口");
-    expect(html).toContain("登录后可以做什么");
+    expect(html).toContain('data-auth-layout="centered-public-auth"');
+    expect(html).toContain('data-auth-card="centered-form-card"');
+    expect(html).toContain("max-w-[500px]");
+    expect(html).not.toContain('data-auth-product-panel="practical-account-intro"');
+    expect(html).not.toContain("lg:grid-cols-[minmax(0,1fr)_minmax(380px,460px)]");
+    expect(html).not.toContain("登录账户，继续查看你的拍摄记录");
+    expect(html).not.toContain("用邮箱或手机号登录。登录后可以查看历史分析、订单和账户设置。");
+    expect(html).not.toContain("最近看过的地点更容易找回");
+    expect(html).not.toContain("订单和可用次数放在一起");
+    expect(html).not.toContain("有权限时显示后台入口");
+    expect(html).not.toContain("登录后可以做什么");
     expect(html).toContain("输入邮箱或手机号和密码");
     expect(html).toContain("邮箱或手机号");
     expect(html).toContain("密码");
@@ -570,9 +627,7 @@ describe("account center foundation", () => {
     expect(html).toContain("显示密码");
     expect(html).toContain('href="/register"');
     expect(html).toContain('href="/"');
-    expect(html).toContain("lg:grid-cols-[minmax(0,1fr)_minmax(380px,460px)]");
     expect(html).toContain("sm:grid-cols-2");
-    expect(loginAuthIntroItems).toHaveLength(3);
     for (const phrase of [
       "账户系统",
       "账户工作流",
@@ -581,6 +636,8 @@ describe("account center foundation", () => {
       "清晰可查",
       "面向风光摄影出行判断",
       "运营控制台",
+      "特性",
+      "工作流卡片",
     ]) {
       expect(html).not.toContain(phrase);
     }
@@ -593,34 +650,43 @@ describe("account center foundation", () => {
     expect(AdminLoginPage).toBeTypeOf("function");
   });
 
-  it("renders the public register page with the shared auth visual system", () => {
+  it("renders the public register page as a centered auth form layout", () => {
     const html = renderToStaticMarkup(React.createElement(RegisterPage));
 
-    expect(html).toContain('data-auth-layout="balanced-public-auth homepage-rhythm responsive-auth-grid"');
-    expect(html).toContain('data-auth-product-panel="practical-account-intro"');
-    expect(html).toContain('data-auth-card="balanced-form-card"');
-    expect(html).toContain("创建账户，保存你的拍摄判断");
-    expect(html).toContain("用邮箱或手机号完成验证。以后可以在账户中心查看历史记录、订单和绑定方式。");
-    expect(html).toContain("历史分析以后还能找到");
-    expect(html).toContain("订单和次数跟随账户");
-    expect(html).toContain("邮箱或手机号都可以使用");
-    expect(html).toContain("注册前准备");
+    expect(html).toContain('data-auth-layout="centered-public-auth"');
+    expect(html).toContain('data-auth-card="centered-form-card"');
+    expect(html).toContain("max-w-[580px]");
+    expect(html).not.toContain('data-auth-product-panel="practical-account-intro"');
+    expect(html).not.toContain("lg:grid-cols-[minmax(0,1fr)_minmax(380px,460px)]");
+    expect(html).not.toContain("创建账户，保存你的拍摄判断");
+    expect(html).not.toContain(
+      "用邮箱或手机号完成验证。以后可以在账户中心查看历史记录、订单和绑定方式。",
+    );
+    expect(html).not.toContain("历史分析以后还能找到");
+    expect(html).not.toContain("订单和次数跟随账户");
+    expect(html).not.toContain("邮箱或手机号都可以使用");
+    expect(html).not.toContain("注册前准备");
     expect(html).toContain("邮箱注册");
     expect(html).toContain("短信注册");
     expect(html).toContain("验证码");
     expect(html).toContain("发送验证码");
-    expect(html).toContain("密码要求");
-    expect(html).toContain("至少 8 个字符");
-    expect(html).toContain("两次输入一致");
+    expect(html).toContain("密码");
+    expect(html).toContain("确认密码");
+    expect(html).toContain('placeholder="请输入密码"');
+    expect(html).toContain('placeholder="请再次输入密码"');
+    expect(html).toMatch(/<button[^>]*type="submit"[^>]*disabled=""/);
+    expect(html).not.toContain("密码要求");
+    expect(html).not.toContain("两次输入一致");
     expect(html).toContain("已有账户，去登录");
     expect(html).toContain("sm:grid-cols-[minmax(0,1fr)_136px]");
-    expect(registerAuthIntroItems).toHaveLength(3);
     for (const phrase of [
       "账户体系",
       "工作流",
       "统一管理订单与权益",
       "完成验证，开始管理你的摄影出行记录",
       "安全邮箱或短信验证",
+      "编号",
+      "信任列表",
     ]) {
       expect(html).not.toContain(phrase);
     }
@@ -648,6 +714,33 @@ describe("account center foundation", () => {
     expect(buildRegisteredLoginHref("13800138000")).toBe(
       "/login?registered=1&identifier=13800138000",
     );
+  });
+
+  it("keeps register password validation blocking short or mismatched passwords", () => {
+    const validRegistrationInput = {
+      targetIsValid: true,
+      code: "123456",
+      password: "public88",
+      confirmPassword: "public88",
+      isSubmitting: false,
+    };
+
+    expect(canSubmitRegisterForm(validRegistrationInput)).toBe(true);
+    expect(
+      canSubmitRegisterForm({
+        ...validRegistrationInput,
+        password: "short",
+        confirmPassword: "short",
+      }),
+    ).toBe(false);
+    expect(getRegisterPasswordStatusMessage("short", "short")).toBe("密码至少需要 8 个字符。");
+    expect(
+      canSubmitRegisterForm({
+        ...validRegistrationInput,
+        confirmPassword: "public99",
+      }),
+    ).toBe(false);
+    expect(getRegisterPasswordStatusMessage("public88", "public99")).toBe("两次输入的密码不一致。");
   });
 
   it("keeps public auth pages free of placeholder or hardcoded environment copy", () => {
@@ -750,6 +843,234 @@ describe("login error sanitization", () => {
 });
 
 describe("public registration session API", () => {
+  const captchaToken: CaptchaToken = {
+    providerCode: "tencent_captcha",
+    ticket: "ticket-valid-123456",
+    randstr: "@rand",
+  };
+
+  it("stores public login sessions with session expiration metadata", async () => {
+    const { localStorage } = installBrowserWindow();
+    const sessionExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const accessTokenExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          accessToken: "account-access-token",
+          refreshToken: "account-refresh-token",
+          accessTokenExpiresAt,
+          sessionExpiresAt,
+          sessionTtlDays: 7,
+          sessionRoleType: "user",
+          user: baseAccountSession.user,
+          profile: baseAccountSession.profile,
+          roles: baseAccountSession.roles,
+          roleCodes: baseAccountSession.roleCodes,
+          permissions: baseAccountSession.permissions,
+          isAdmin: false,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await expect(loginPublicAccount("photo@example.com", "public88")).resolves.toMatchObject({
+      user: {
+        id: "user-1",
+      },
+    });
+    expect(getStoredAdminTokens()).toEqual({
+      accessToken: "account-access-token",
+      refreshToken: "account-refresh-token",
+    });
+    expect(localStorage.getItem("photo_weather_admin_session_expires_at")).toBe(sessionExpiresAt);
+    expect(localStorage.getItem("photo_weather_admin_access_token_expires_at")).toBe(
+      accessTokenExpiresAt,
+    );
+  });
+
+  it("clears public account storage when refresh token is expired or invalid", async () => {
+    installBrowserWindow();
+    storeAdminSession(createStoredSession());
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "token_expired", message: "expired" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: "invalid_refresh_token",
+            message: "Refresh token is invalid or expired.",
+          }),
+          {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      );
+
+    await expect(getCurrentAccountSession()).resolves.toBeNull();
+    expect(getStoredAdminTokens()).toBeNull();
+  });
+
+  it("fetches public captcha config without leaking server fields", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          captcha: {
+            enabled: true,
+            providerCode: "tencent_captcha",
+            captchaAppId: "199999164",
+            sdkUrl: "https://turing.captcha.qcloud.com/TCaptcha.js",
+            enforceOnLogin: true,
+            enforceOnRegisterSendCode: true,
+            enforceOnRegisterConfirm: false,
+            enforceOnAccountBinding: true,
+            secretKey: "server-secret",
+            endpoint: "https://captcha.tencentcloudapi.com",
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    const config = await getCaptchaPublicConfig();
+    expect(config).toEqual({
+      enabled: true,
+      providerCode: "tencent_captcha",
+      captchaAppId: "199999164",
+      sdkUrl: "https://turing.captcha.qcloud.com/TCaptcha.js",
+      enforceOnLogin: true,
+      enforceOnRegisterSendCode: true,
+      enforceOnRegisterConfirm: false,
+      enforceOnAccountBinding: true,
+    });
+    expect(fetchSpy).toHaveBeenCalledWith("http://localhost:4000/captcha/config", {
+      cache: "no-store",
+    });
+    expect(JSON.stringify(config)).not.toContain("server-secret");
+    expect(JSON.stringify(config)).not.toContain("captcha.tencentcloudapi.com");
+  });
+
+  it("sends captcha tokens through public auth request bodies", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            user: {
+              id: "user-1",
+              email: "photo@example.com",
+              phone: null,
+              displayName: null,
+              status: "active",
+              createdAt: "2026-06-01T08:20:00.000Z",
+              updatedAt: "2026-06-01T08:20:00.000Z",
+              lastLoginAt: null,
+            },
+            profile: null,
+            roles: [],
+            roleCodes: ["user"],
+            permissions: [],
+            isAdmin: false,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            success: true,
+            channel: "email",
+            targetMasked: "ph***@example.com",
+            expiresInSeconds: 600,
+            resendAfterSeconds: 60,
+            mode: "mock",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            user: {
+              id: "user-2",
+              email: "photo@example.com",
+              phone: null,
+              displayName: null,
+              status: "active",
+              createdAt: "2026-06-01T08:20:00.000Z",
+              updatedAt: "2026-06-01T08:20:00.000Z",
+              lastLoginAt: null,
+            },
+            profile: null,
+            roles: [],
+            roleCodes: ["user"],
+            permissions: [],
+            isAdmin: false,
+          }),
+          {
+            status: 201,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      );
+
+    await loginPublicAccount("photo@example.com", "public88", captchaToken);
+    await sendRegisterVerificationCode({
+      channel: "email",
+      target: "photo@example.com",
+      captcha: captchaToken,
+    });
+    await confirmRegisterPublicAccount({
+      channel: "email",
+      target: "photo@example.com",
+      code: "123456",
+      password: "public88",
+      captcha: captchaToken,
+    });
+
+    const requestBodies = fetchSpy.mock.calls.map(([, init]) =>
+      JSON.parse(String((init as RequestInit).body)),
+    );
+    expect(requestBodies).toEqual([
+      {
+        identifier: "photo@example.com",
+        password: "public88",
+        captcha: captchaToken,
+      },
+      {
+        channel: "email",
+        target: "photo@example.com",
+        captcha: captchaToken,
+      },
+      {
+        channel: "email",
+        target: "photo@example.com",
+        code: "123456",
+        password: "public88",
+        captcha: captchaToken,
+      },
+    ]);
+  });
+
   it("sends registration verification codes through the send-code endpoint", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(

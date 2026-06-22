@@ -2,6 +2,8 @@ import {
   createOrUpdateAdmin,
   createOrUpdateSuperAdmin,
   createPublicUserAccount,
+  calculateSessionExpiresAt,
+  capRotatedSessionExpiresAt,
   DuplicateUserEmailError,
   DuplicateUserPhoneError,
   formatCreateAdminResult,
@@ -9,9 +11,12 @@ import {
   hasPermission,
   hashPassword,
   hashUserPassword,
+  isSessionExpired,
   MissingUserIdentifierError,
   readCreateAdminEnv,
   readVerifyAdminEnv,
+  resolveRoleBasedSessionTtlDays,
+  resolveRoleBasedSessionType,
   safeUser,
   verifyAdminBootstrap,
   verifySuperAdmin,
@@ -429,6 +434,57 @@ describe("admin auth helpers", () => {
   it("checks RBAC permissions", () => {
     expect(hasPermission({ permissions: ["settings.manage"] }, "settings.manage")).toBe(true);
     expect(hasPermission({ permissions: ["settings.manage"] }, "providers.manage")).toBe(false);
+  });
+
+  it("resolves role-based session TTLs and caps rotated sessions", () => {
+    const config = {
+      userSessionTtlDays: 7,
+      adminSessionTtlDays: 3,
+    };
+    const now = new Date("2026-06-22T00:00:00.000Z");
+    const normalPrincipal = {
+      roles: [
+        { id: "role-user", code: "user", name: "user", displayName: "用户", description: null },
+      ],
+      roleCodes: ["user"],
+      permissions: [],
+    };
+    const adminPrincipal = {
+      roles: [],
+      roleCodes: [],
+      permissions: ["admin.manage"],
+    };
+
+    expect(resolveRoleBasedSessionType(normalPrincipal)).toBe("user");
+    expect(resolveRoleBasedSessionTtlDays(normalPrincipal, config)).toBe(7);
+    expect(calculateSessionExpiresAt(normalPrincipal, config, now).toISOString()).toBe(
+      "2026-06-29T00:00:00.000Z",
+    );
+
+    expect(resolveRoleBasedSessionType(adminPrincipal)).toBe("admin");
+    expect(resolveRoleBasedSessionTtlDays(adminPrincipal, config)).toBe(3);
+    expect(calculateSessionExpiresAt(adminPrincipal, config, now).toISOString()).toBe(
+      "2026-06-25T00:00:00.000Z",
+    );
+
+    expect(
+      capRotatedSessionExpiresAt(
+        new Date("2026-07-22T00:00:00.000Z"),
+        normalPrincipal,
+        config,
+        now,
+      ).toISOString(),
+    ).toBe("2026-06-29T00:00:00.000Z");
+    expect(
+      capRotatedSessionExpiresAt(
+        new Date("2026-06-24T00:00:00.000Z"),
+        adminPrincipal,
+        config,
+        now,
+      ).toISOString(),
+    ).toBe("2026-06-24T00:00:00.000Z");
+    expect(isSessionExpired(new Date("2026-06-22T00:00:00.000Z"), now)).toBe(true);
+    expect(isSessionExpired(new Date("2026-06-22T00:00:01.000Z"), now)).toBe(false);
   });
 
   it("keeps legacy super-admin helper names as bootstrap aliases", () => {

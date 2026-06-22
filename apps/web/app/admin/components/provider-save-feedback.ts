@@ -3,8 +3,7 @@ export type ProviderSaveFeedbackState = {
   readonly message?: string;
 };
 
-export const adminProviderTestSessionExpiredMessage =
-  "登录状态已失效，请重新登录后台后再测试。";
+export const adminProviderTestSessionExpiredMessage = "后台登录已过期，请重新登录。";
 
 type ProviderIdentity = {
   readonly providerType: string;

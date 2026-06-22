@@ -136,6 +136,18 @@ type PublicApiErrorPayload = {
   readonly issues?: readonly { readonly message?: string }[];
 };
 
+const publicSessionExpiredMessage = "登录状态已过期，请重新登录。";
+
+function isSessionAuthErrorCode(error: string | undefined): boolean {
+  return (
+    error === "invalid_refresh_token" ||
+    error === "token_expired" ||
+    error === "invalid_session" ||
+    error === "invalid_token" ||
+    error === "missing_token"
+  );
+}
+
 export function shouldShowAdminEntry(
   session:
     | {
@@ -158,6 +170,10 @@ async function readPublicApiError(response: Response, fallback: string): Promise
 
   try {
     const payload = JSON.parse(errorText) as PublicApiErrorPayload;
+    if (isSessionAuthErrorCode(payload.error)) {
+      return publicSessionExpiredMessage;
+    }
+
     if (payload.message) {
       return sanitizeAuthErrorMessage(payload.message, fallback);
     }

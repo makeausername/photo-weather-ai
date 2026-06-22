@@ -4,7 +4,9 @@ import { hashRefreshToken, verifyPassword } from "@photo-weather/db";
 import {
   captchaRequiredMessage,
   invalidCredentialsMessage,
+  loadAuthConfig,
   loginServiceUnavailableMessage,
+  sessionInvalidMessage,
 } from "../auth-routes.js";
 import { buildApiServer } from "../server.js";
 import { adminAuthorizationHeader, createFakeDatabaseClient, testAuthConfig } from "./fake-db.js";
@@ -146,6 +148,41 @@ const baseHistoryQuery = {
   photoSpotId: "spot-test",
 } as const;
 
+const dayMs = 24 * 60 * 60 * 1000;
+
+function expectDateWithinDaysFrom(
+  value: Date | string | undefined,
+  days: number,
+  lowerBound: Date,
+  upperBound: Date,
+) {
+  expect(value).toBeDefined();
+  const time = new Date(value as Date | string).getTime();
+  expect(time).toBeGreaterThanOrEqual(lowerBound.getTime() + days * dayMs - 1000);
+  expect(time).toBeLessThanOrEqual(upperBound.getTime() + days * dayMs + 1000);
+}
+
+function seedRefreshSession(
+  state: Awaited<ReturnType<typeof createFakeDatabaseClient>>["state"],
+  input: {
+    readonly refreshToken: string;
+    readonly userId: string;
+    readonly expiresAt: Date;
+  },
+) {
+  state.sessions.set(hashRefreshToken(input.refreshToken), {
+    id: `seeded-session-${input.refreshToken}`,
+    userId: input.userId,
+    refreshTokenHash: hashRefreshToken(input.refreshToken),
+    expiresAt: input.expiresAt,
+    revokedAt: null,
+    ipAddress: null,
+    userAgent: null,
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+  });
+}
+
 describe("auth routes", () => {
   let app: FastifyInstance | undefined;
 
@@ -156,10 +193,27 @@ describe("auth routes", () => {
     }
   });
 
+  it("loads role-based session TTL defaults without using the legacy refresh TTL", () => {
+    const config = loadAuthConfig({
+      NODE_ENV: "test",
+      JWT_SECRET: "test-jwt-secret-must-be-at-least-32-chars",
+      JWT_REFRESH_TOKEN_TTL_DAYS: "30",
+    });
+
+    expect(config).toMatchObject({
+      accessTokenTtlSeconds: 15 * 60,
+      userSessionTtlDays: 7,
+      adminSessionTtlDays: 3,
+      adminAuthBypass: false,
+    });
+    expect(config).not.toHaveProperty("refreshTokenTtlDays");
+  });
+
   it("logs in with a valid admin account and excludes passwordHash", async () => {
     const { client, state } = await createFakeDatabaseClient();
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
 
+    const beforeLogin = new Date();
     const response = await app.inject({
       method: "POST",
       url: "/auth/login",
@@ -168,6 +222,7 @@ describe("auth routes", () => {
         password: "CorrectHorseBattery99!",
       },
     });
+    const afterLogin = new Date();
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
@@ -188,11 +243,28 @@ describe("auth routes", () => {
     ]);
     expect(body.roleCodes).toContain("admin");
     expect(body.permissions).toContain("admin.manage");
+    expect(body.accessTokenExpiresAt).toEqual(expect.any(String));
+    expect(body.sessionExpiresAt).toEqual(expect.any(String));
+    expect(body.sessionTtlDays).toBe(3);
+    expect(body.sessionRoleType).toBe("admin");
     expect(response.body).not.toContain("passwordHash");
+    expect(response.body).not.toContain("refreshTokenHash");
+    expectDateWithinDaysFrom(body.accessTokenExpiresAt, 900 / 86400, beforeLogin, afterLogin);
+    expectDateWithinDaysFrom(body.sessionExpiresAt, 3, beforeLogin, afterLogin);
+    const session = state.sessions.get(hashRefreshToken(body.refreshToken));
+    expect(session).toMatchObject({
+      userId: "admin-user",
+      expiresAt: new Date(body.sessionExpiresAt),
+    });
     expect(state.sessions.size).toBeGreaterThan(1);
     expect(state.auditLogs[0]).toMatchObject({
       actorUserId: "admin-user",
       action: "auth.login.success",
+      afterJson: expect.objectContaining({
+        sessionExpiresAt: body.sessionExpiresAt,
+        roleSessionType: "admin",
+        sessionTtlDays: 3,
+      }),
     });
   });
 
@@ -618,9 +690,10 @@ describe("auth routes", () => {
   });
 
   it("logs in with a normal public user account", async () => {
-    const { client } = await createFakeDatabaseClient();
+    const { client, state } = await createFakeDatabaseClient();
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
 
+    const beforeLogin = new Date();
     const response = await app.inject({
       method: "POST",
       url: "/auth/login",
@@ -629,11 +702,17 @@ describe("auth routes", () => {
         password: "CorrectHorseBattery99!",
       },
     });
+    const afterLogin = new Date();
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({
+    const body = response.json();
+    expect(body).toMatchObject({
       accessToken: expect.any(String),
       refreshToken: expect.any(String),
+      accessTokenExpiresAt: expect.any(String),
+      sessionExpiresAt: expect.any(String),
+      sessionTtlDays: 7,
+      sessionRoleType: "user",
       user: {
         id: "plain-user",
         email: "user@example.com",
@@ -648,6 +727,13 @@ describe("auth routes", () => {
       isAdmin: false,
     });
     expect(response.body).not.toContain("passwordHash");
+    expect(response.body).not.toContain("refreshTokenHash");
+    expectDateWithinDaysFrom(body.accessTokenExpiresAt, 900 / 86400, beforeLogin, afterLogin);
+    expectDateWithinDaysFrom(body.sessionExpiresAt, 7, beforeLogin, afterLogin);
+    expect(state.sessions.get(hashRefreshToken(body.refreshToken))).toMatchObject({
+      userId: "plain-user",
+      expiresAt: new Date(body.sessionExpiresAt),
+    });
   });
 
   it("requires captcha before login account lookup when login enforcement is enabled", async () => {
@@ -801,10 +887,116 @@ describe("auth routes", () => {
     expect(response.body).not.toContain("Authentication failed");
   });
 
-  it("refreshes a valid refresh token and revokes the old session", async () => {
+  it("refreshes a normal user without extending the original absolute session expiration", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const refreshToken = "plain-refresh-token-absolute-cap";
+    const originalExpiresAt = new Date(Date.now() + dayMs);
+    seedRefreshSession(state, {
+      refreshToken,
+      userId: "plain-user",
+      expiresAt: originalExpiresAt,
+    });
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/refresh",
+      payload: {
+        refreshToken,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.accessToken).toEqual(expect.any(String));
+    expect(body.refreshToken).not.toBe(refreshToken);
+    expect(body.sessionRoleType).toBe("user");
+    expect(body.sessionTtlDays).toBe(7);
+    expect(new Date(body.sessionExpiresAt).getTime()).toBe(originalExpiresAt.getTime());
+    expect(state.sessions.get(hashRefreshToken(refreshToken))).toMatchObject({
+      revokedAt: expect.any(Date),
+    });
+    expect(state.sessions.get(hashRefreshToken(body.refreshToken))).toMatchObject({
+      userId: "plain-user",
+      expiresAt: originalExpiresAt,
+    });
+    expect(state.auditLogs[0]).toMatchObject({
+      action: "auth.refresh.success",
+      actorUserId: "plain-user",
+      afterJson: expect.objectContaining({
+        sessionExpiresAt: originalExpiresAt.toISOString(),
+        roleSessionType: "user",
+      }),
+    });
+  });
+
+  it("refreshes an admin without extending the original absolute session expiration", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const refreshToken = "admin-refresh-token-absolute-cap";
+    const originalExpiresAt = new Date(Date.now() + dayMs);
+    seedRefreshSession(state, {
+      refreshToken,
+      userId: "admin-user",
+      expiresAt: originalExpiresAt,
+    });
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/refresh",
+      payload: {
+        refreshToken,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.sessionRoleType).toBe("admin");
+    expect(body.sessionTtlDays).toBe(3);
+    expect(new Date(body.sessionExpiresAt).getTime()).toBe(originalExpiresAt.getTime());
+    expect(state.sessions.get(hashRefreshToken(body.refreshToken))).toMatchObject({
+      userId: "admin-user",
+      expiresAt: originalExpiresAt,
+    });
+  });
+
+  it("caps a legacy long normal refresh session to seven days", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const refreshToken = "plain-refresh-token-legacy-long";
+    seedRefreshSession(state, {
+      refreshToken,
+      userId: "plain-user",
+      expiresAt: new Date(Date.now() + 30 * dayMs),
+    });
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const beforeRefresh = new Date();
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/refresh",
+      payload: {
+        refreshToken,
+      },
+    });
+    const afterRefresh = new Date();
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.sessionRoleType).toBe("user");
+    expectDateWithinDaysFrom(body.sessionExpiresAt, 7, beforeRefresh, afterRefresh);
+    expectDateWithinDaysFrom(
+      state.sessions.get(hashRefreshToken(body.refreshToken))?.expiresAt,
+      7,
+      beforeRefresh,
+      afterRefresh,
+    );
+  });
+
+  it("caps a legacy long admin refresh session to three days", async () => {
     const { client, state } = await createFakeDatabaseClient();
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
 
+    const beforeRefresh = new Date();
     const response = await app.inject({
       method: "POST",
       url: "/auth/refresh",
@@ -812,15 +1004,124 @@ describe("auth routes", () => {
         refreshToken: "existing-refresh-token-for-tests",
       },
     });
+    const afterRefresh = new Date();
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().accessToken).toEqual(expect.any(String));
-    expect(response.json().refreshToken).not.toBe("existing-refresh-token-for-tests");
+    const body = response.json();
+    expect(body.refreshToken).not.toBe("existing-refresh-token-for-tests");
+    expect(body.sessionRoleType).toBe("admin");
+    expect(body.sessionTtlDays).toBe(3);
+    expectDateWithinDaysFrom(body.sessionExpiresAt, 3, beforeRefresh, afterRefresh);
+    expectDateWithinDaysFrom(
+      state.sessions.get(hashRefreshToken(body.refreshToken))?.expiresAt,
+      3,
+      beforeRefresh,
+      afterRefresh,
+    );
     expect(
       [...state.sessions.values()].find((session) => session.id === "existing-session"),
     ).toMatchObject({
       revokedAt: expect.any(Date),
     });
+  });
+
+  it("revokes the refresh session and returns 401 when the user has been disabled", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const refreshToken = "disabled-user-refresh-token";
+    seedRefreshSession(state, {
+      refreshToken,
+      userId: "plain-user",
+      expiresAt: new Date(Date.now() + 7 * dayMs),
+    });
+    state.users.set("plain-user", {
+      ...state.users.get("plain-user"),
+      status: "disabled",
+    });
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/refresh",
+      payload: {
+        refreshToken,
+      },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({
+      error: "invalid_session",
+      message: sessionInvalidMessage,
+    });
+    expect(response.body).not.toContain("accessToken");
+    expect(state.sessions.get(hashRefreshToken(refreshToken))).toMatchObject({
+      revokedAt: expect.any(Date),
+    });
+    expect(state.auditLogs[0]).toMatchObject({
+      action: "auth.refresh.failure",
+      actorUserId: "plain-user",
+      afterJson: expect.objectContaining({
+        reason: "inactive_user",
+      }),
+    });
+  });
+
+  it("rejects invalid refresh tokens without leaking tokens or hashes", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+    const rawRefreshToken = "sensitive-refresh-token-1234567890";
+    const refreshTokenHash = hashRefreshToken(rawRefreshToken);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/refresh",
+      payload: {
+        refreshToken: rawRefreshToken,
+      },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({
+      error: "invalid_refresh_token",
+      message: sessionInvalidMessage,
+    });
+    expect(response.body).not.toContain(rawRefreshToken);
+    expect(response.body).not.toContain(refreshTokenHash);
+    expect(response.body).not.toContain("refreshTokenHash");
+    expect(JSON.stringify(state.auditLogs)).not.toContain(rawRefreshToken);
+    expect(JSON.stringify(state.auditLogs)).not.toContain(refreshTokenHash);
+    expect(state.auditLogs[0]).toMatchObject({
+      action: "auth.refresh.failure",
+      afterJson: expect.objectContaining({
+        reason: "invalid_or_expired_refresh_token",
+      }),
+    });
+  });
+
+  it("logs out by revoking the refresh token without leaking token material", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/logout",
+      payload: {
+        refreshToken: "existing-refresh-token-for-tests",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ success: true });
+    expect(state.sessions.get(hashRefreshToken("existing-refresh-token-for-tests"))).toMatchObject({
+      revokedAt: expect.any(Date),
+    });
+    expect(state.auditLogs[0]).toMatchObject({
+      action: "auth.logout.success",
+      actorUserId: "admin-user",
+      afterJson: expect.objectContaining({
+        hadActiveSession: true,
+      }),
+    });
+    expect(JSON.stringify(state.auditLogs)).not.toContain("existing-refresh-token-for-tests");
   });
 
   it("returns the current user for a valid access token", async () => {

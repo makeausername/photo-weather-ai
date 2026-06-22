@@ -9,7 +9,8 @@ import { buildApiServer } from "./server.js";
 const smokeAuthConfig = {
   jwtSecret: "admin-bootstrap-verification-secret-32-chars",
   accessTokenTtlSeconds: 15 * 60,
-  refreshTokenTtlDays: 30,
+  userSessionTtlDays: 7,
+  adminSessionTtlDays: 3,
   adminAuthBypass: false,
 };
 
@@ -71,7 +72,9 @@ async function main(): Promise<void> {
     });
 
     if (loginResponse.statusCode !== 200) {
-      throw new Error(`Admin auth route verification failed with status ${loginResponse.statusCode}.`);
+      throw new Error(
+        `Admin auth route verification failed with status ${loginResponse.statusCode}.`,
+      );
     }
 
     const loginBody = loginResponse.json() as {
@@ -113,7 +116,9 @@ async function main(): Promise<void> {
     }
 
     if (!meBody.roles?.some((role) => roleMatchesAdmin(role) && roleHasNormalizedShape(role))) {
-      throw new Error("Authenticated /auth/me did not return normalized role code/name/displayName.");
+      throw new Error(
+        "Authenticated /auth/me did not return normalized role code/name/displayName.",
+      );
     }
 
     console.log("OK admin auth route recognizes admin role.");

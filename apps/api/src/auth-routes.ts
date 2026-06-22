@@ -7,6 +7,8 @@ import {
   createPublicUserAccount,
   createRefreshToken,
   createUserSession,
+  calculateSessionExpiresAt,
+  capRotatedSessionExpiresAt,
   DuplicateUserEmailError,
   DuplicateUserPhoneError,
   findLatestActiveAuthVerificationCode,
@@ -18,8 +20,11 @@ import {
   incrementAuthVerificationAttempt,
   normalizeUserEmail,
   normalizeUserPhone,
+  principalHasAdminAccess,
   principalHasAdminRole,
   requiredAdminPermissions,
+  resolveRoleBasedSessionTtlDays,
+  resolveRoleBasedSessionType,
   revokeUserSessionByRefreshToken,
   touchUserLastLogin,
   verifyAuthVerificationCode,
@@ -30,6 +35,7 @@ import type {
   AuthenticatedPrincipal,
   DatabaseClient,
   JsonValue,
+  RoleBasedSessionType,
 } from "@photo-weather/db";
 import { z } from "zod";
 import {
@@ -46,7 +52,8 @@ import {
 export type AuthConfig = {
   readonly jwtSecret: string;
   readonly accessTokenTtlSeconds: number;
-  readonly refreshTokenTtlDays: number;
+  readonly userSessionTtlDays: number;
+  readonly adminSessionTtlDays: number;
   readonly adminAuthBypass: boolean;
 };
 
@@ -92,6 +99,8 @@ class ApiAuthError extends Error {
 export const invalidCredentialsMessage = "邮箱、手机号或密码不正确。";
 export const loginServiceUnavailableMessage = "登录服务暂时不可用，请稍后重试或联系管理员。";
 export const captchaRequiredMessage = "请先完成安全验证。";
+export const sessionExpiredMessage = "登录状态已过期，请重新登录。";
+export const sessionInvalidMessage = "登录状态已失效，请重新登录。";
 
 const captchaTokenSchema = z.object({
   providerCode: z.literal(tencentCaptchaProviderCode),
@@ -244,10 +253,15 @@ export function loadAuthConfig(source: NodeJS.ProcessEnv = process.env): AuthCon
       15 * 60,
       "JWT_ACCESS_TOKEN_TTL_SECONDS",
     ),
-    refreshTokenTtlDays: parsePositiveInteger(
-      source.JWT_REFRESH_TOKEN_TTL_DAYS,
-      30,
-      "JWT_REFRESH_TOKEN_TTL_DAYS",
+    userSessionTtlDays: parsePositiveInteger(
+      source.AUTH_USER_SESSION_TTL_DAYS,
+      7,
+      "AUTH_USER_SESSION_TTL_DAYS",
+    ),
+    adminSessionTtlDays: parsePositiveInteger(
+      source.AUTH_ADMIN_SESSION_TTL_DAYS,
+      3,
+      "AUTH_ADMIN_SESSION_TTL_DAYS",
     ),
     adminAuthBypass,
   };
@@ -292,28 +306,28 @@ function verifyAccessToken(
 ): AccessTokenPayload {
   const parts = token.split(".");
   if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
-    throw new ApiAuthError(401, "invalid_token", "Invalid access token.");
+    throw new ApiAuthError(401, "invalid_token", sessionInvalidMessage);
   }
 
   const data = `${parts[0]}.${parts[1]}`;
   const expectedSignature = signTokenData(data, config.jwtSecret);
   if (!safeEqual(parts[2], expectedSignature)) {
-    throw new ApiAuthError(401, "invalid_token", "Invalid access token.");
+    throw new ApiAuthError(401, "invalid_token", sessionInvalidMessage);
   }
 
   let payload: AccessTokenPayload;
   try {
     payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as AccessTokenPayload;
   } catch {
-    throw new ApiAuthError(401, "invalid_token", "Invalid access token.");
+    throw new ApiAuthError(401, "invalid_token", sessionInvalidMessage);
   }
 
   if (payload.type !== "access" || !payload.sub || typeof payload.exp !== "number") {
-    throw new ApiAuthError(401, "invalid_token", "Invalid access token.");
+    throw new ApiAuthError(401, "invalid_token", sessionInvalidMessage);
   }
 
   if (payload.exp <= Math.floor(now.getTime() / 1000)) {
-    throw new ApiAuthError(401, "token_expired", "Access token expired.");
+    throw new ApiAuthError(401, "token_expired", sessionExpiredMessage);
   }
 
   return payload;
@@ -322,12 +336,12 @@ function verifyAccessToken(
 function readBearerToken(request: FastifyRequest): string {
   const authorization = request.headers.authorization;
   if (!authorization?.startsWith("Bearer ")) {
-    throw new ApiAuthError(401, "missing_token", "Authorization bearer token is required.");
+    throw new ApiAuthError(401, "missing_token", sessionInvalidMessage);
   }
 
   const token = authorization.slice("Bearer ".length).trim();
   if (!token) {
-    throw new ApiAuthError(401, "missing_token", "Authorization bearer token is required.");
+    throw new ApiAuthError(401, "missing_token", sessionInvalidMessage);
   }
 
   return token;
@@ -377,7 +391,7 @@ export async function authenticateRequest(
   const payload = verifyAccessToken(readBearerToken(request), config);
   const principal = await getUserAuthContextById(payload.sub, { client });
   if (!principal) {
-    throw new ApiAuthError(401, "invalid_session", "Authenticated user is not active.");
+    throw new ApiAuthError(401, "invalid_session", sessionInvalidMessage);
   }
 
   return {
@@ -396,7 +410,7 @@ function hasPermission(principal: AuthenticatedPrincipal, permission: string): b
 }
 
 function isAdminPrincipal(principal: AuthenticatedPrincipal): boolean {
-  return principal.permissions.includes("admin.manage") || principalHasAdminRole(principal);
+  return principalHasAdminAccess(principal);
 }
 
 export async function requirePermission(
@@ -439,20 +453,42 @@ export async function requirePermission(
   }
 }
 
-function refreshTokenExpiresAt(config: AuthConfig, now: Date = new Date()): Date {
-  const expiresAt = new Date(now);
-  expiresAt.setDate(expiresAt.getDate() + config.refreshTokenTtlDays);
-  return expiresAt;
+export function accessTokenExpiresAt(config: AuthConfig, now: Date = new Date()): Date {
+  return new Date(now.getTime() + config.accessTokenTtlSeconds * 1000);
+}
+
+function authSessionMetadata(
+  principal: AuthenticatedPrincipal,
+  config: AuthConfig,
+  sessionExpiresAt: Date,
+  now: Date,
+): {
+  readonly accessTokenExpiresAt: string;
+  readonly sessionExpiresAt: string;
+  readonly sessionTtlDays: number;
+  readonly sessionRoleType: RoleBasedSessionType;
+} {
+  return {
+    accessTokenExpiresAt: accessTokenExpiresAt(config, now).toISOString(),
+    sessionExpiresAt: sessionExpiresAt.toISOString(),
+    sessionTtlDays: resolveRoleBasedSessionTtlDays(principal, config),
+    sessionRoleType: resolveRoleBasedSessionType(principal),
+  };
 }
 
 function authResponse(
   principal: AuthenticatedPrincipal,
   accessToken: string,
   refreshToken: string,
+  metadata: ReturnType<typeof authSessionMetadata>,
 ) {
   return {
     accessToken,
     refreshToken,
+    accessTokenExpiresAt: metadata.accessTokenExpiresAt,
+    sessionExpiresAt: metadata.sessionExpiresAt,
+    sessionTtlDays: metadata.sessionTtlDays,
+    sessionRoleType: metadata.sessionRoleType,
     user: principal.user,
     profile: principal.profile,
     roles: principal.roles,
@@ -477,6 +513,32 @@ function toAuditJson(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue;
 }
 
+function authAuditAfterJson(input: {
+  readonly target?: string;
+  readonly channel?: AuthVerificationChannel;
+  readonly afterJson?: unknown;
+}): JsonValue | null {
+  const payload: Record<string, unknown> = {};
+  if (input.target) {
+    payload.target = input.target;
+  }
+  if (input.channel) {
+    payload.channel = input.channel;
+  }
+  if (
+    input.afterJson !== undefined &&
+    typeof input.afterJson === "object" &&
+    input.afterJson !== null &&
+    !Array.isArray(input.afterJson)
+  ) {
+    Object.assign(payload, input.afterJson);
+  } else if (input.afterJson !== undefined) {
+    payload.detail = input.afterJson;
+  }
+
+  return Object.keys(payload).length > 0 ? toAuditJson(payload) : null;
+}
+
 async function recordAuthAudit(
   app: FastifyInstance,
   input: {
@@ -485,6 +547,7 @@ async function recordAuthAudit(
     readonly action: string;
     readonly target?: string;
     readonly channel?: AuthVerificationChannel;
+    readonly afterJson?: unknown;
     readonly ipAddress?: string;
     readonly userAgent?: string | null;
   },
@@ -496,12 +559,7 @@ async function recordAuthAudit(
         action: input.action,
         targetType: "auth",
         targetId: input.target ?? null,
-        afterJson: input.target
-          ? toAuditJson({
-              target: input.target,
-              ...(input.channel ? { channel: input.channel } : {}),
-            })
-          : null,
+        afterJson: authAuditAfterJson(input),
         ipAddress: input.ipAddress ?? null,
         userAgent: input.userAgent ?? null,
       },
@@ -904,31 +962,44 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
         });
       }
 
+      const now = new Date();
+      const sessionExpiresAt = calculateSessionExpiresAt(authContext, authConfig, now);
       const refreshToken = createRefreshToken();
       await createUserSession(
         {
           userId: authContext.user.id,
           refreshTokenHash: hashRefreshToken(refreshToken),
-          expiresAt: refreshTokenExpiresAt(authConfig),
+          expiresAt: sessionExpiresAt,
           ipAddress: request.ip,
           userAgent: request.headers["user-agent"] ?? null,
         },
         { client },
       );
-      await touchUserLastLogin(authContext.user.id, { client });
+      await touchUserLastLogin(authContext.user.id, { client, now });
 
       const refreshedPrincipal = await getUserAuthContextById(authContext.user.id, { client });
       const principal = refreshedPrincipal ?? authContext;
+      const metadata = authSessionMetadata(principal, authConfig, sessionExpiresAt, now);
       await recordAuthAudit(app, {
         client,
         actorUserId: principal.user.id,
         action: "auth.login.success",
         target: identifier,
+        afterJson: {
+          sessionExpiresAt: metadata.sessionExpiresAt,
+          roleSessionType: metadata.sessionRoleType,
+          sessionTtlDays: metadata.sessionTtlDays,
+        },
         ipAddress: request.ip,
         userAgent: request.headers["user-agent"] ?? null,
       });
 
-      return authResponse(principal, signAccessToken(principal.user.id, authConfig), refreshToken);
+      return authResponse(
+        principal,
+        signAccessToken(principal.user.id, authConfig, now),
+        refreshToken,
+        metadata,
+      );
     } catch (error) {
       request.log.error({ err: error, identifier }, "Auth login failed");
       return sendLoginServiceUnavailable(reply);
@@ -941,45 +1012,108 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
       return sendZodError(reply, parsedBody.error);
     }
 
+    const now = new Date();
     const existingSession = await getActiveUserSessionByRefreshToken(parsedBody.data.refreshToken, {
       client,
+      now,
     });
     if (!existingSession) {
+      await recordAuthAudit(app, {
+        client,
+        action: "auth.refresh.failure",
+        afterJson: {
+          reason: "invalid_or_expired_refresh_token",
+        },
+        ipAddress: request.ip,
+        userAgent: request.headers["user-agent"] ?? null,
+      });
       return reply.status(401).send({
         error: "invalid_refresh_token",
-        message: "Refresh token is invalid or expired.",
+        message: sessionInvalidMessage,
       });
     }
 
     const principal = await getUserAuthContextById(existingSession.userId, { client });
     if (!principal) {
-      await revokeUserSessionByRefreshToken(parsedBody.data.refreshToken, { client });
+      await revokeUserSessionByRefreshToken(parsedBody.data.refreshToken, { client, now });
+      await recordAuthAudit(app, {
+        client,
+        actorUserId: existingSession.userId,
+        action: "auth.refresh.failure",
+        target: existingSession.userId,
+        afterJson: {
+          reason: "inactive_user",
+        },
+        ipAddress: request.ip,
+        userAgent: request.headers["user-agent"] ?? null,
+      });
       return reply.status(401).send({
         error: "invalid_session",
-        message: "Authenticated user is not active.",
+        message: sessionInvalidMessage,
       });
     }
 
-    await revokeUserSessionByRefreshToken(parsedBody.data.refreshToken, { client });
+    await revokeUserSessionByRefreshToken(parsedBody.data.refreshToken, { client, now });
     const refreshToken = createRefreshToken();
+    const sessionExpiresAt = capRotatedSessionExpiresAt(
+      existingSession.expiresAt,
+      principal,
+      authConfig,
+      now,
+    );
     await createUserSession(
       {
         userId: principal.user.id,
         refreshTokenHash: hashRefreshToken(refreshToken),
-        expiresAt: refreshTokenExpiresAt(authConfig),
+        expiresAt: sessionExpiresAt,
         ipAddress: request.ip,
         userAgent: request.headers["user-agent"] ?? null,
       },
       { client },
     );
+    const metadata = authSessionMetadata(principal, authConfig, sessionExpiresAt, now);
+    await recordAuthAudit(app, {
+      client,
+      actorUserId: principal.user.id,
+      action: "auth.refresh.success",
+      target: principal.user.id,
+      afterJson: {
+        sessionExpiresAt: metadata.sessionExpiresAt,
+        roleSessionType: metadata.sessionRoleType,
+        sessionTtlDays: metadata.sessionTtlDays,
+      },
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"] ?? null,
+    });
 
-    return authResponse(principal, signAccessToken(principal.user.id, authConfig), refreshToken);
+    return authResponse(
+      principal,
+      signAccessToken(principal.user.id, authConfig, now),
+      refreshToken,
+      metadata,
+    );
   });
 
   app.post("/auth/logout", async (request) => {
     const parsedBody = logoutSchema.safeParse(request.body ?? {});
     if (parsedBody.success && parsedBody.data.refreshToken) {
-      await revokeUserSessionByRefreshToken(parsedBody.data.refreshToken, { client });
+      const now = new Date();
+      const existingSession = await getActiveUserSessionByRefreshToken(
+        parsedBody.data.refreshToken,
+        { client, now },
+      );
+      await revokeUserSessionByRefreshToken(parsedBody.data.refreshToken, { client, now });
+      await recordAuthAudit(app, {
+        client,
+        actorUserId: existingSession?.userId ?? null,
+        action: "auth.logout.success",
+        target: existingSession?.userId,
+        afterJson: {
+          hadActiveSession: existingSession !== null,
+        },
+        ipAddress: request.ip,
+        userAgent: request.headers["user-agent"] ?? null,
+      });
     }
 
     return {

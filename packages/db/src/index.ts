@@ -36,6 +36,8 @@ export {
 } from "./admin-orders.js";
 export {
   assertPermission,
+  calculateSessionExpiresAt,
+  capRotatedSessionExpiresAt,
   createRefreshToken,
   createPublicUserAccount,
   DuplicateUserEmailError,
@@ -53,8 +55,12 @@ export {
   adminRoleCodes,
   isLastActiveAdminUser,
   isAdminRoleLike,
+  isSessionExpired,
+  principalHasAdminAccess,
   principalHasAdminRole,
   requiredAdminPermissions,
+  resolveRoleBasedSessionTtlDays,
+  resolveRoleBasedSessionType,
   revokeUserSessions,
   revokeUserSessionByRefreshToken,
   softDeleteUserAccount,
@@ -226,6 +232,7 @@ export type {
   ViewDirection,
   WhiteoutLevel,
 } from "./types.js";
+export type { RoleBasedSessionTtlConfig, RoleBasedSessionType } from "./auth.js";
 export type {
   AdminOrderAuditLogItem,
   AdminOrderCreditLedgerItem,

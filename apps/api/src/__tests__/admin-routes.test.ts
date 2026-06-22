@@ -45,8 +45,8 @@ describe("admin config routes", () => {
       attempted: false,
       error: "admin_unauthorized",
       errorCategory: "admin_unauthorized",
-      messageZh: "登录状态已失效，请重新登录后台后再测试。",
-      message: "登录状态已失效，请重新登录后台后再测试。",
+      messageZh: "后台登录已过期，请重新登录。",
+      message: "后台登录已过期，请重新登录。",
     });
   });
 

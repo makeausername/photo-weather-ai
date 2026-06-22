@@ -612,9 +612,7 @@ function providerTestAuthFailureResponse(
 ) {
   const errorCategory = error.statusCode === 401 ? "admin_unauthorized" : "admin_forbidden";
   const messageZh =
-    error.statusCode === 401
-      ? "登录状态已失效，请重新登录后台后再测试。"
-      : "当前账号没有服务商测试权限。";
+    error.statusCode === 401 ? "后台登录已过期，请重新登录。" : "当前账号没有服务商测试权限。";
 
   return {
     success: false,

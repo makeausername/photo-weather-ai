@@ -154,6 +154,64 @@ export function principalHasAdminRole(
   );
 }
 
+export type RoleBasedSessionType = "user" | "admin";
+
+export type RoleBasedSessionTtlConfig = {
+  readonly userSessionTtlDays: number;
+  readonly adminSessionTtlDays: number;
+};
+
+export function principalHasAdminAccess(
+  principal: Pick<AuthenticatedPrincipal, "roles" | "roleCodes" | "permissions">,
+): boolean {
+  return principal.permissions.includes("admin.manage") || principalHasAdminRole(principal);
+}
+
+export function resolveRoleBasedSessionType(
+  principal: Pick<AuthenticatedPrincipal, "roles" | "roleCodes" | "permissions">,
+): RoleBasedSessionType {
+  return principalHasAdminAccess(principal) ? "admin" : "user";
+}
+
+export function resolveRoleBasedSessionTtlDays(
+  principal: Pick<AuthenticatedPrincipal, "roles" | "roleCodes" | "permissions">,
+  config: RoleBasedSessionTtlConfig,
+): number {
+  return resolveRoleBasedSessionType(principal) === "admin"
+    ? config.adminSessionTtlDays
+    : config.userSessionTtlDays;
+}
+
+function addDays(value: Date, days: number): Date {
+  return new Date(value.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+export function calculateSessionExpiresAt(
+  principal: Pick<AuthenticatedPrincipal, "roles" | "roleCodes" | "permissions">,
+  config: RoleBasedSessionTtlConfig,
+  now: Date = new Date(),
+): Date {
+  return addDays(now, resolveRoleBasedSessionTtlDays(principal, config));
+}
+
+export function capRotatedSessionExpiresAt(
+  existingExpiresAt: Date,
+  principal: Pick<AuthenticatedPrincipal, "roles" | "roleCodes" | "permissions">,
+  config: RoleBasedSessionTtlConfig,
+  now: Date = new Date(),
+): Date {
+  const roleBasedCandidate = calculateSessionExpiresAt(principal, config, now);
+  return new Date(Math.min(existingExpiresAt.getTime(), roleBasedCandidate.getTime()));
+}
+
+export function isSessionExpired(
+  session: Pick<UserSessionRecord, "expiresAt"> | Date,
+  now: Date = new Date(),
+): boolean {
+  const expiresAt = session instanceof Date ? session : session.expiresAt;
+  return expiresAt.getTime() <= now.getTime();
+}
+
 function normalizePrincipal(record: any): AuthenticatedPrincipal | null {
   if (!record || record.status !== "active") {
     return null;
@@ -503,10 +561,6 @@ export async function updateUserPhone(
   return principal;
 }
 
-function principalHasAdminAccess(principal: AuthenticatedPrincipal): boolean {
-  return principal.permissions.includes("admin.manage") || principalHasAdminRole(principal);
-}
-
 export async function isLastActiveAdminUser(
   userId: string,
   options: { readonly client?: DatabaseClient } = {},
@@ -635,7 +689,7 @@ export async function getActiveUserSessionByRefreshToken(
     return null;
   }
 
-  if (record.expiresAt.getTime() <= (options.now ?? new Date()).getTime()) {
+  if (isSessionExpired(record, options.now ?? new Date())) {
     return null;
   }
 

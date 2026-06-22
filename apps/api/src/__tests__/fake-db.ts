@@ -6,7 +6,8 @@ import { signAccessToken } from "../auth-routes.js";
 export const testAuthConfig: AuthConfig = {
   jwtSecret: "test-jwt-secret-must-be-at-least-32-chars",
   accessTokenTtlSeconds: 900,
-  refreshTokenTtlDays: 30,
+  userSessionTtlDays: 7,
+  adminSessionTtlDays: 3,
   adminAuthBypass: false,
 };
 
@@ -145,7 +146,10 @@ function entitlementKey(input: { readonly orderId: string; readonly type: string
   return `${input.orderId}:${input.type}`;
 }
 
-function creditLedgerKey(input: { readonly orderId?: string | null; readonly reason: string }): string {
+function creditLedgerKey(input: {
+  readonly orderId?: string | null;
+  readonly reason: string;
+}): string {
   return `${input.orderId ?? "none"}:${input.reason}`;
 }
 
@@ -618,10 +622,7 @@ export async function createFakeDatabaseClient(): Promise<{
           .filter((product) => where?.enabled === undefined || product.enabled === where.enabled)
           .sort((left, right) => {
             if (Array.isArray(orderBy)) {
-              return (
-                left.sortOrder - right.sortOrder ||
-                left.code.localeCompare(right.code)
-              );
+              return left.sortOrder - right.sortOrder || left.code.localeCompare(right.code);
             }
             return left.sortOrder - right.sortOrder;
           })
@@ -671,9 +672,7 @@ export async function createFakeDatabaseClient(): Promise<{
           return state.paymentOrders.get(where.orderNo) ?? null;
         }
         if (where.id !== undefined) {
-          return (
-            [...state.paymentOrders.values()].find((order) => order.id === where.id) ?? null
-          );
+          return [...state.paymentOrders.values()].find((order) => order.id === where.id) ?? null;
         }
         return null;
       },
@@ -748,10 +747,11 @@ export async function createFakeDatabaseClient(): Promise<{
         return notification;
       },
       findMany: async ({ where, orderBy, take }: any = {}) =>
-        [...state.paymentNotifications.values()].filter(
-          (notification) =>
-            where?.orderNo === undefined || notification.orderNo === where.orderNo,
-        )
+        [...state.paymentNotifications.values()]
+          .filter(
+            (notification) =>
+              where?.orderNo === undefined || notification.orderNo === where.orderNo,
+          )
           .sort((left, right) =>
             orderBy?.[0]?.createdAt === "asc"
               ? left.createdAt.getTime() - right.createdAt.getTime()
