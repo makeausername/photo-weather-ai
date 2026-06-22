@@ -13,6 +13,7 @@ import {
   Textarea,
   cn,
 } from "../../../components/ui";
+import { getAdaptiveGridClassName, getAdaptiveGridItemClassName } from "./admin-adaptive-grid";
 
 type LoadState = "loading" | "ready" | "saving" | "error";
 
@@ -77,6 +78,8 @@ export function AdminProductsClient({
     [products, selectedCode],
   );
   const summary = useMemo(() => summarizeProducts(products), [products]);
+  const metricCount = 4;
+  const useProductSidePanel = products.length > 1;
 
   function selectProduct(product: AdminBillingProduct) {
     setSelectedCode(product.code);
@@ -148,14 +151,41 @@ export function AdminProductsClient({
         </p>
       ) : null}
 
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="上架套餐数" value={`${summary.enabledCount}`} />
-        <MetricCard label="可购买套餐数" value={`${summary.purchasableCount}`} />
-        <MetricCard label="最高价套餐" value={summary.highestPriceText} />
-        <MetricCard label="试用状态" value={summary.trialText} />
+      <section
+        className={getAdaptiveGridClassName(metricCount, {
+          variant: "metric",
+          allowFourMetricColumns: true,
+        })}
+      >
+        <MetricCard
+          className={getAdaptiveGridItemClassName(metricCount, 0, { variant: "metric" })}
+          label="上架套餐数"
+          value={`${summary.enabledCount}`}
+        />
+        <MetricCard
+          className={getAdaptiveGridItemClassName(metricCount, 1, { variant: "metric" })}
+          label="可购买套餐数"
+          value={`${summary.purchasableCount}`}
+        />
+        <MetricCard
+          className={getAdaptiveGridItemClassName(metricCount, 2, { variant: "metric" })}
+          label="最高价套餐"
+          value={summary.highestPriceText}
+        />
+        <MetricCard
+          className={getAdaptiveGridItemClassName(metricCount, 3, { variant: "metric" })}
+          label="试用状态"
+          value={summary.trialText}
+        />
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px] xl:items-start">
+      <section
+        className={cn(
+          "grid gap-5 xl:items-start",
+          useProductSidePanel && "xl:grid-cols-[minmax(0,1fr)_390px]",
+        )}
+        data-admin-product-layout={useProductSidePanel ? "side-edit" : "stacked-edit"}
+      >
         <Card className="p-4 sm:p-5">
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
@@ -295,7 +325,7 @@ function EditPanel({
             onChange={(event) => onDraftChange({ ...draft, description: event.target.value })}
           />
         </FormField>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className={getAdaptiveGridClassName(2, { breakpoint: "sm" })}>
           <FormField label="价格（元）" hint={trial ? "试用套餐固定为 0 元。" : undefined}>
             <Input
               type="number"
@@ -310,7 +340,7 @@ function EditPanel({
             <Input value={formatDuration(product.durationDays)} disabled />
           </FormField>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className={getAdaptiveGridClassName(2, { breakpoint: "sm" })}>
           <FormField label="排序">
             <Input
               type="number"
@@ -379,9 +409,17 @@ function EditPanel({
   );
 }
 
-function MetricCard({ label, value }: { readonly label: string; readonly value: string }) {
+function MetricCard({
+  label,
+  value,
+  className,
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly className?: string;
+}) {
   return (
-    <Card className="p-4">
+    <Card className={cn("p-4", className)}>
       <p className="text-xs font-semibold text-muted-foreground">{label}</p>
       <p className="mt-2 text-2xl font-bold text-card-foreground">{value}</p>
     </Card>

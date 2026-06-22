@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { getProviderModuleLayout } from "./admin-providers-client";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(resolve(__dirname, "admin-providers-client.tsx"), "utf8");
@@ -50,6 +51,14 @@ const providerDetailSource = sourceBetween(
 );
 
 describe("admin provider module source", () => {
+  it("classifies provider layouts by item count", () => {
+    expect(getProviderModuleLayout(0)).toBe("empty");
+    expect(getProviderModuleLayout(1)).toBe("single-detail");
+    expect(getProviderModuleLayout(2)).toBe("top");
+    expect(getProviderModuleLayout(3)).toBe("top");
+    expect(getProviderModuleLayout(4)).toBe("side");
+  });
+
   it("promotes provider categories into the AdminShell sidebar", () => {
     for (const snippet of [
       '{ href: "/admin", label: "控制台" }',
@@ -250,7 +259,9 @@ describe("admin provider module source", () => {
       expect(source).not.toContain(forbidden);
     }
 
-    expect(source).toContain("visibleProviders.map((provider) => renderProviderListRow(provider))");
+    expect(source).toContain(
+      "visibleProviders.map((provider, index) => renderProviderListRow(provider, index))",
+    );
     expect(source).not.toContain("providers.map((provider) => renderProviderListRow(provider))");
   });
 
@@ -284,10 +295,16 @@ describe("admin provider module source", () => {
 
   it("uses adaptive readable provider lists without hard truncating display names", () => {
     for (const snippet of [
-      "const useSideProviderList = visibleProviders.length >= 3",
+      "const providerModuleLayout = getProviderModuleLayout(visibleProviders.length)",
+      'const useSideProviderList = providerModuleLayout === "side"',
+      'data-provider-layout={providerModuleLayout}',
+      'providerModuleLayout === "single-detail"',
+      "data-provider-single-detail",
       "xl:grid-cols-[minmax(420px,500px)_minmax(0,1fr)]",
       'data-provider-list-layout={useSideProviderList ? "side" : "top"}',
-      'useSideProviderList ? "grid" : "grid gap-3 p-3 md:grid-cols-2"',
+      "getAdaptiveGridClassName(visibleProviders.length",
+      "getAdaptiveGridItemClassName(visibleProviders.length, index",
+      "选择一个服务商后，在下方维护完整配置和连接测试。",
       "break-words text-sm font-bold leading-5 text-card-foreground",
       "break-words text-xs leading-5 text-muted-foreground",
       "providerTypeLabel(provider.providerType)",
@@ -296,6 +313,7 @@ describe("admin provider module source", () => {
     }
 
     expect(source).not.toContain("xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]");
+    expect(source).not.toContain('visibleProviders.length === 1 && "md:grid-cols-1"');
     expect(providerListRowSource).not.toContain("truncate");
     expect(providerListRowSource).not.toContain("{provider.providerCode}");
     expect(providerDetailSource).not.toContain("{provider.providerCode}");
@@ -308,7 +326,8 @@ describe("admin provider module source", () => {
       "createProviderConnectionTestRequestInit()",
       "启用该服务商",
       'getFieldByKey(provider, "realCallEnabled")',
-      "requiredConfigFields.map((field) => renderConfigField(provider, field))",
+      "requiredConfigFields.map((field, index) =>",
+      "renderConfigField(provider, field)",
       "secretFields.map((field) =>",
       "maskedSecretLabel(provider, field.key)",
       "toggleSecretVisibility(provider.id, field.key)",

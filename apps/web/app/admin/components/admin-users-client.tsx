@@ -12,6 +12,7 @@ import {
   Input,
   Select,
   Table,
+  cn,
 } from "../../../components/ui";
 import { safeDisplayNameFromUser } from "../../../components/display-labels";
 import {
@@ -24,6 +25,7 @@ import {
   type AdminUserListItem,
   type AdminUserListResponse,
 } from "../admin-api";
+import { getAdaptiveGridClassName, getAdaptiveGridItemClassName } from "./admin-adaptive-grid";
 
 type PendingAction =
   | { readonly kind: "disable"; readonly user: AdminUserListItem }
@@ -208,11 +210,29 @@ export function AdminUsersClient() {
     }
   }
 
+  const summaryCardItems = summaryCards(response);
+  const filterFieldCount = 6;
+  const createFieldCount = 6;
+
   return (
     <div className="grid gap-5">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        {summaryCards(response).map((card) => (
-          <Card key={card.title} className="grid gap-2 p-4">
+      <div
+        className={getAdaptiveGridClassName(summaryCardItems.length, {
+          variant: "metric",
+          allowThreeMetricColumns: true,
+        })}
+      >
+        {summaryCardItems.map((card, index) => (
+          <Card
+            key={card.title}
+            className={cn(
+              getAdaptiveGridItemClassName(summaryCardItems.length, index, {
+                variant: "metric",
+                allowThreeMetricColumns: true,
+              }),
+              "grid gap-2 p-4",
+            )}
+          >
             <p className="text-xs font-semibold text-muted-foreground">{card.title}</p>
             <p className="text-2xl font-bold text-foreground">{loading ? "--" : card.value}</p>
           </Card>
@@ -221,7 +241,12 @@ export function AdminUsersClient() {
 
       <Card className="grid gap-4 p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div className="grid flex-1 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <div
+            className={cn(
+              "flex-1",
+              getAdaptiveGridClassName(filterFieldCount, { variant: "form" }),
+            )}
+          >
             <FormField label="搜索">
               <Input
                 value={filters.q}
@@ -324,7 +349,7 @@ export function AdminUsersClient() {
               邮箱或手机号至少填写一个；生成的临时密码只会在创建成功后显示一次。
             </p>
           </div>
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className={getAdaptiveGridClassName(createFieldCount, { variant: "form" })}>
             <FormField label="邮箱">
               <Input
                 value={createForm.email}

@@ -28,6 +28,7 @@ import {
   updateAdminUserRoles,
   type AdminUserDetail,
 } from "../admin-api";
+import { getAdaptiveGridClassName } from "./admin-adaptive-grid";
 
 type TabKey = "overview" | "orders" | "credits" | "history" | "sessions" | "audit";
 type PendingAction = "disable" | "enable" | "reset" | "revoke" | null;
@@ -218,7 +219,12 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
               </Button>
             </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div
+            className={getAdaptiveGridClassName(10, {
+              variant: "metric",
+              allowThreeMetricColumns: true,
+            })}
+          >
             <InfoItem label="会员套餐" value={user.access.currentPlanName} />
             <InfoItem
               label="会员到期"
@@ -285,7 +291,7 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
       </div>
 
       {tab === "overview" ? (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className={getAdaptiveGridClassName(2, { breakpoint: "lg", gapClassName: "gap-4" })}>
           <Card className="grid gap-4 p-5">
             <h2 className="text-lg font-bold">编辑资料</h2>
             <div className="grid gap-3">
@@ -382,7 +388,7 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
       ) : null}
 
       {tab === "credits" ? (
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className={getAdaptiveGridClassName(2, { breakpoint: "xl", gapClassName: "gap-4" })}>
           <Table aria-label="用户权益">
             <thead className="bg-muted text-xs font-semibold text-muted-foreground">
               <tr>

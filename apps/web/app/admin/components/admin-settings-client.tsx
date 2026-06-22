@@ -13,6 +13,7 @@ import {
 } from "../../../components/ui";
 import { adminApiFetch } from "../admin-api";
 import type { JsonValue, SafeSystemSetting } from "../admin-api";
+import { getAdaptiveGridClassName } from "./admin-adaptive-grid";
 
 type SettingsResponse = {
   readonly settings: SafeSystemSetting[];
@@ -253,7 +254,14 @@ export function AdminSettingsClient() {
               const saveState = statusByKey[setting.key];
 
               return (
-                <article key={setting.key} className="grid gap-5 p-5 lg:grid-cols-[0.9fr_1.1fr]">
+                <article
+                  key={setting.key}
+                  className={getAdaptiveGridClassName(2, {
+                    breakpoint: "lg",
+                    gapClassName: "gap-5",
+                    className: "p-5",
+                  })}
+                >
                   <div className="grid content-start gap-3">
                     <div>
                       <h3 className="font-bold text-foreground">{text.label}</h3>

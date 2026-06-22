@@ -31,6 +31,7 @@ import {
   type AdminOrderTimelineItem,
   type AdminPaymentOrderDetail,
 } from "../admin-api";
+import { getAdaptiveGridClassName } from "./admin-adaptive-grid";
 
 type PendingAction = "mark-paid" | "cancel" | "close" | null;
 
@@ -170,7 +171,12 @@ export function AdminOrderDetailClient({ orderNo }: { readonly orderNo: string }
             </div>
             <Badge variant="info">{status}</Badge>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div
+            className={getAdaptiveGridClassName(8, {
+              variant: "metric",
+              allowThreeMetricColumns: true,
+            })}
+          >
             <InfoItem label="金额" value={formatMoney(detail.order.amountCents)} />
             <InfoItem label="币种" value={detail.order.currency} />
             <InfoItem label="支付流水" value={maskProviderTradeNo(detail.order.providerTradeNo)} />
@@ -218,7 +224,7 @@ export function AdminOrderDetailClient({ orderNo }: { readonly orderNo: string }
         </Card>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className={getAdaptiveGridClassName(2, { breakpoint: "lg", gapClassName: "gap-4" })}>
         <Card className="grid gap-4 p-5">
           <h2 className="text-lg font-bold">用户信息</h2>
           {detail.user ? (
@@ -277,7 +283,7 @@ export function AdminOrderDetailClient({ orderNo }: { readonly orderNo: string }
         </div>
       </Card>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className={getAdaptiveGridClassName(2, { breakpoint: "xl", gapClassName: "gap-4" })}>
         <Table aria-label="支付通知">
           <thead className="bg-muted text-xs font-semibold text-muted-foreground">
             <tr>
@@ -325,7 +331,7 @@ export function AdminOrderDetailClient({ orderNo }: { readonly orderNo: string }
         </Table>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className={getAdaptiveGridClassName(2, { breakpoint: "xl", gapClassName: "gap-4" })}>
         <Table aria-label="订单积分流水">
           <thead className="bg-muted text-xs font-semibold text-muted-foreground">
             <tr>

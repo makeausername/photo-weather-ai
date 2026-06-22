@@ -27,6 +27,10 @@ import {
 } from "../admin-api";
 import { Badge, Button, EmptyState, FormField, Input, Select, cn } from "../../../components/ui";
 import {
+  getAdaptiveGridClassName,
+  getAdaptiveGridItemClassName,
+} from "./admin-adaptive-grid";
+import {
   isProviderSaveDisabled,
   isProviderTestDisabled,
   providerSaveButtonLabel,
@@ -102,6 +106,25 @@ type ProviderMeta = {
   readonly capabilities: readonly string[];
   readonly requiredConfigKeys: readonly string[];
 };
+export type ProviderModuleLayout = "empty" | "single-detail" | "top" | "side";
+
+export function getProviderModuleLayout(providerCount: number): ProviderModuleLayout {
+  const count = Number.isFinite(providerCount) ? Math.max(0, Math.floor(providerCount)) : 0;
+
+  if (count <= 0) {
+    return "empty";
+  }
+
+  if (count === 1) {
+    return "single-detail";
+  }
+
+  if (count >= 4) {
+    return "side";
+  }
+
+  return "top";
+}
 
 const defaultRealDevCallFlags: RealDevCallFlags = {
   amap: false,
@@ -960,11 +983,21 @@ function StatusFacts({
   ] as const;
 
   return (
-    <dl className="grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-4">
-      {facts.map((fact) => (
+    <dl
+      className={getAdaptiveGridClassName(facts.length, {
+        variant: "metric",
+        allowFourMetricColumns: true,
+        gapClassName: "gap-2",
+        className: "text-xs",
+      })}
+    >
+      {facts.map((fact, index) => (
         <div
           key={fact.label}
-          className="min-w-0 rounded-md border border-border bg-background/45 px-3 py-2"
+          className={cn(
+            getAdaptiveGridItemClassName(facts.length, index, { variant: "metric" }),
+            "rounded-md border border-border bg-background/45 px-3 py-2",
+          )}
         >
           <dt className="text-muted-foreground">{fact.label}</dt>
           <dd className="mt-1">
@@ -1081,8 +1114,21 @@ function AdvancedConfigContent({
           />
         </FormField>
         {advancedConfigFields.length > 0 ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {advancedConfigFields.map((field) => renderConfigField(provider, field))}
+          <div
+            className={getAdaptiveGridClassName(advancedConfigFields.length, {
+              breakpoint: "sm",
+            })}
+          >
+            {advancedConfigFields.map((field, index) => (
+              <div
+                key={field.key}
+                className={getAdaptiveGridItemClassName(advancedConfigFields.length, index, {
+                  breakpoint: "sm",
+                })}
+              >
+                {renderConfigField(provider, field)}
+              </div>
+            ))}
           </div>
         ) : null}
       </div>
@@ -1322,6 +1368,9 @@ function CdnOperationsPanel({ providers }: { readonly providers: readonly SafePr
           { value: "directory", label: "目录" },
         ];
 
+  const showCdnProviderSideRail = cdnProviders.length > 1;
+  const cdnOperationPanelCount = 2;
+
   return (
     <section
       data-cdn-operation-panel
@@ -1340,7 +1389,13 @@ function CdnOperationsPanel({ providers }: { readonly providers: readonly SafePr
         </Badge>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(220px,320px)_minmax(0,1fr)]">
+      <div
+        className={cn(
+          "grid gap-3",
+          showCdnProviderSideRail && "lg:grid-cols-[minmax(220px,320px)_minmax(0,1fr)]",
+        )}
+        data-cdn-operation-layout={showCdnProviderSideRail ? "side-provider" : "stacked"}
+      >
         <FormField label="服务商">
           <Select
             value={selectedProviderId}
@@ -1354,8 +1409,13 @@ function CdnOperationsPanel({ providers }: { readonly providers: readonly SafePr
           </Select>
         </FormField>
 
-        <div className="grid gap-3 md:grid-cols-2">
-          <section className="grid gap-3 rounded-md border border-border bg-background/35 p-3">
+        <div className={getAdaptiveGridClassName(cdnOperationPanelCount, { breakpoint: "md" })}>
+          <section
+            className={cn(
+              getAdaptiveGridItemClassName(cdnOperationPanelCount, 0, { breakpoint: "md" }),
+              "grid gap-3 rounded-md border border-border bg-background/35 p-3",
+            )}
+          >
             <div className="flex items-center justify-between gap-2">
               <SectionTitle title="缓存刷新" description="URL 与目录会按已配置 CDN 域名校验。" />
               <Select
@@ -1393,7 +1453,12 @@ function CdnOperationsPanel({ providers }: { readonly providers: readonly SafePr
             </Button>
           </section>
 
-          <section className="grid gap-3 rounded-md border border-border bg-background/35 p-3">
+          <section
+            className={cn(
+              getAdaptiveGridItemClassName(cdnOperationPanelCount, 1, { breakpoint: "md" }),
+              "grid gap-3 rounded-md border border-border bg-background/35 p-3",
+            )}
+          >
             <SectionTitle title="URL 预热" description="预热 URL 同样会按已配置 CDN 域名校验。" />
             <FormField label="CDN 预热 URL">
               <textarea
@@ -1524,7 +1589,14 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     [selectedProviderId, visibleProviders],
   );
   const detailProvider = selectedProvider ?? preferredVisibleProvider;
-  const useSideProviderList = visibleProviders.length >= 3;
+  const providerModuleLayout = getProviderModuleLayout(visibleProviders.length);
+  const useSideProviderList = providerModuleLayout === "side";
+  const overviewItems = [
+    { label: "模块服务商", value: overview.totalCount },
+    { label: "已启用", value: overview.enabledCount },
+    { label: "真实调用", value: overview.realEnabledCount },
+    { label: "需要处理", value: overview.needsAttentionCount },
+  ];
 
   useEffect(() => {
     if (!preferredVisibleProvider) {
@@ -1803,7 +1875,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     setSelectedProviderId(provider.id);
   }
 
-  function renderProviderListRow(provider: SafeProviderConfig) {
+  function renderProviderListRow(provider: SafeProviderConfig, index: number) {
     const meta = getMeta(provider);
     const saveState = saveStateByProvider[provider.id];
     const testState = testStateByProvider[provider.id];
@@ -1820,6 +1892,9 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         data-provider-summary={providerIdentityKey(provider)}
         className={cn(
           "grid min-w-0 gap-3 px-3 py-3 transition",
+          useSideProviderList
+            ? "min-w-0"
+            : getAdaptiveGridItemClassName(visibleProviders.length, index, { breakpoint: "md" }),
           useSideProviderList
             ? "border-b border-border last:border-b-0"
             : "rounded-md border border-border",
@@ -1925,6 +2000,33 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     const isSaving = isProviderSaveDisabled(saveState);
     const isTesting = isProviderTestDisabled(testState);
     const advancedOpen = advancedProviders[provider.id] ?? false;
+    const basicControls = [
+      {
+        key: "enabled",
+        node: (
+          <CompactSwitch
+            label="启用该服务商"
+            description="控制该服务商是否可被后台流程读取。"
+            checked={enabledDrafts[provider.id] ?? provider.enabled}
+            onChange={(checked) => {
+              markProviderDirty(provider.id);
+              setEnabledDrafts((current) => ({
+                ...current,
+                [provider.id]: checked,
+              }));
+            }}
+          />
+        ),
+      },
+      ...(realCallField
+        ? [
+            {
+              key: realCallField.key,
+              node: renderConfigField(provider, realCallField),
+            },
+          ]
+        : []),
+    ];
 
     return (
       <article
@@ -1968,20 +2070,22 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               title="基础开关"
               description="保存开关只更新后台参数；真实调用开关生效后，测试连接才会请求真实服务。"
             />
-            <div className="grid gap-2 sm:grid-cols-2">
-              <CompactSwitch
-                label="启用该服务商"
-                description="控制该服务商是否可被后台流程读取。"
-                checked={enabledDrafts[provider.id] ?? provider.enabled}
-                onChange={(checked) => {
-                  markProviderDirty(provider.id);
-                  setEnabledDrafts((current) => ({
-                    ...current,
-                    [provider.id]: checked,
-                  }));
-                }}
-              />
-              {realCallField ? renderConfigField(provider, realCallField) : null}
+            <div
+              className={getAdaptiveGridClassName(basicControls.length, {
+                breakpoint: "sm",
+                gapClassName: "gap-2",
+              })}
+            >
+              {basicControls.map((control, index) => (
+                <div
+                  key={control.key}
+                  className={getAdaptiveGridItemClassName(basicControls.length, index, {
+                    breakpoint: "sm",
+                  })}
+                >
+                  {control.node}
+                </div>
+              ))}
             </div>
           </section>
 
@@ -1995,8 +2099,21 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               }
             />
             {requiredConfigFields.length > 0 ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {requiredConfigFields.map((field) => renderConfigField(provider, field))}
+              <div
+                className={getAdaptiveGridClassName(requiredConfigFields.length, {
+                  breakpoint: "sm",
+                })}
+              >
+                {requiredConfigFields.map((field, index) => (
+                  <div
+                    key={field.key}
+                    className={getAdaptiveGridItemClassName(requiredConfigFields.length, index, {
+                      breakpoint: "sm",
+                    })}
+                  >
+                    {renderConfigField(provider, field)}
+                  </div>
+                ))}
               </div>
             ) : (
               <p className="rounded-md border border-border bg-background/45 px-3 py-2 text-sm text-muted-foreground">
@@ -2167,17 +2284,19 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
 
       <section
         aria-label={`${moduleDefinition.title}模块概览`}
-        className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4"
+        className={getAdaptiveGridClassName(overviewItems.length, {
+          variant: "metric",
+          allowFourMetricColumns: true,
+          gapClassName: "gap-2",
+        })}
       >
-        {[
-          { label: "模块服务商", value: overview.totalCount },
-          { label: "已启用", value: overview.enabledCount },
-          { label: "真实调用", value: overview.realEnabledCount },
-          { label: "需要处理", value: overview.needsAttentionCount },
-        ].map((item) => (
+        {overviewItems.map((item, index) => (
           <div
             key={item.label}
-            className="rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm"
+            className={cn(
+              getAdaptiveGridItemClassName(overviewItems.length, index, { variant: "metric" }),
+              "rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm",
+            )}
           >
             <p className="text-xs font-semibold text-muted-foreground">{item.label}</p>
             <p className="mt-1 text-xl font-bold leading-tight text-card-foreground">
@@ -2190,56 +2309,73 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       <section
         className={cn(
           "grid gap-4",
-          visibleProviders.length > 0 &&
+          visibleProviders.length > 1 &&
             (useSideProviderList
               ? "xl:grid-cols-[minmax(420px,500px)_minmax(0,1fr)]"
               : "xl:grid-cols-1"),
         )}
         data-provider-module-grid
+        data-provider-layout={providerModuleLayout}
       >
-        <section
-          aria-label={`${moduleDefinition.title}服务商列表`}
-          data-provider-list
-          data-provider-list-layout={useSideProviderList ? "side" : "top"}
-          className="min-w-0 overflow-hidden rounded-lg border border-border bg-card shadow-sm"
-        >
-          <div className="flex flex-col gap-2 border-b border-border px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold text-primary">当前模块</p>
-              <h3 className="mt-1 text-lg font-bold text-foreground">{moduleDefinition.title}</h3>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                选择一个服务商后，在右侧维护完整配置和连接测试。
-              </p>
-            </div>
-            <Badge variant="muted" className="rounded-md">
-              {visibleProviders.length} 个服务商
-            </Badge>
-          </div>
-
-          {visibleProviders.length > 0 ? (
-            <ul
-              data-provider-list-group={moduleDefinition.key}
-              className={cn(
-                "min-w-0",
-                useSideProviderList ? "grid" : "grid gap-3 p-3 md:grid-cols-2",
-                !useSideProviderList && visibleProviders.length === 1 && "md:grid-cols-1",
-              )}
-            >
-              {visibleProviders.map((provider) => renderProviderListRow(provider))}
-            </ul>
-          ) : (
-            <EmptyState
-              title={`当前没有可管理的${moduleDefinition.title}服务商`}
-              description="请确认后台 API 已返回该模块的安全服务商配置。"
-            />
-          )}
-        </section>
-
-        {visibleProviders.length > 0 ? (
-          <section data-provider-detail-panel className="min-w-0">
-            {detailProvider ? renderProviderDetail(detailProvider) : null}
+        {providerModuleLayout === "single-detail" && detailProvider ? (
+          <section data-provider-single-detail className="min-w-0">
+            {renderProviderDetail(detailProvider)}
           </section>
-        ) : null}
+        ) : (
+          <>
+            <section
+              aria-label={`${moduleDefinition.title}服务商列表`}
+              data-provider-list
+              data-provider-list-layout={useSideProviderList ? "side" : "top"}
+              className="min-w-0 overflow-hidden rounded-lg border border-border bg-card shadow-sm"
+            >
+              <div className="flex flex-col gap-2 border-b border-border px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-primary">当前模块</p>
+                  <h3 className="mt-1 text-lg font-bold text-foreground">
+                    {moduleDefinition.title}
+                  </h3>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    {useSideProviderList
+                      ? "选择一个服务商后，在右侧维护完整配置和连接测试。"
+                      : "选择一个服务商后，在下方维护完整配置和连接测试。"}
+                  </p>
+                </div>
+                <Badge variant="muted" className="rounded-md">
+                  {visibleProviders.length} 个服务商
+                </Badge>
+              </div>
+
+              {visibleProviders.length > 0 ? (
+                <ul
+                  data-provider-list-group={moduleDefinition.key}
+                  className={cn(
+                    "min-w-0",
+                    useSideProviderList
+                      ? "grid"
+                      : getAdaptiveGridClassName(visibleProviders.length, {
+                          breakpoint: "md",
+                          className: "p-3",
+                        }),
+                  )}
+                >
+                  {visibleProviders.map((provider, index) => renderProviderListRow(provider, index))}
+                </ul>
+              ) : (
+                <EmptyState
+                  title={`当前没有可管理的${moduleDefinition.title}服务商`}
+                  description="请确认后台 API 已返回该模块的安全服务商配置。"
+                />
+              )}
+            </section>
+
+            {visibleProviders.length > 0 ? (
+              <section data-provider-detail-panel className="min-w-0">
+                {detailProvider ? renderProviderDetail(detailProvider) : null}
+              </section>
+            ) : null}
+          </>
+        )}
       </section>
 
       {moduleDefinition.key === "cdn" ? <CdnOperationsPanel providers={visibleProviders} /> : null}

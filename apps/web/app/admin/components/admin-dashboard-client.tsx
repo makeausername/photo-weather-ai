@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Badge, Card, EmptyState, Table } from "../../../components/ui";
+import { Badge, Card, EmptyState, Table, cn } from "../../../components/ui";
 import { adminApiFetch } from "../admin-api";
 import type {
   AdminAuditLog,
@@ -10,6 +10,7 @@ import type {
   AdminUserListResponse,
   SafeProviderConfig,
 } from "../admin-api";
+import { getAdaptiveGridClassName, getAdaptiveGridItemClassName } from "./admin-adaptive-grid";
 
 type DashboardState = {
   readonly settingsOk: boolean | null;
@@ -122,9 +123,21 @@ export function AdminDashboardClient() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {summaryCards.map((card) => (
-          <Card key={card.title} className="grid gap-3 p-5">
+      <div
+        className={getAdaptiveGridClassName(summaryCards.length, {
+          variant: "metric",
+          allowFourMetricColumns: true,
+          gapClassName: "gap-4",
+        })}
+      >
+        {summaryCards.map((card, index) => (
+          <Card
+            key={card.title}
+            className={cn(
+              getAdaptiveGridItemClassName(summaryCards.length, index, { variant: "metric" }),
+              "grid gap-3 p-5",
+            )}
+          >
             <div className="flex items-start justify-between gap-3">
               <h2 className="text-sm font-semibold text-muted-foreground">{card.title}</h2>
               <Badge variant={card.badge === "正常" ? "success" : "muted"}>{card.badge}</Badge>
@@ -137,10 +150,13 @@ export function AdminDashboardClient() {
         ))}
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className={getAdaptiveGridClassName(2, { breakpoint: "md", gapClassName: "gap-4" })}>
         <Link
           href="/admin/users"
-          className="rounded-lg border border-border bg-card p-5 shadow-sm transition hover:border-primary hover:bg-secondary"
+          className={cn(
+            getAdaptiveGridItemClassName(2, 0, { breakpoint: "md" }),
+            "rounded-lg border border-border bg-card p-5 shadow-sm transition hover:border-primary hover:bg-secondary",
+          )}
         >
           <p className="text-sm font-semibold text-muted-foreground">运营模块</p>
           <h2 className="mt-2 text-xl font-bold text-foreground">用户管理</h2>
@@ -150,7 +166,10 @@ export function AdminDashboardClient() {
         </Link>
         <Link
           href="/admin/orders"
-          className="rounded-lg border border-border bg-card p-5 shadow-sm transition hover:border-primary hover:bg-secondary"
+          className={cn(
+            getAdaptiveGridItemClassName(2, 1, { breakpoint: "md" }),
+            "rounded-lg border border-border bg-card p-5 shadow-sm transition hover:border-primary hover:bg-secondary",
+          )}
         >
           <p className="text-sm font-semibold text-muted-foreground">运营模块</p>
           <h2 className="mt-2 text-xl font-bold text-foreground">订单管理</h2>
