@@ -2,7 +2,7 @@ import * as React from "react";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import HomePage from "../page";
 import {
   astroScenarioConfig,
@@ -10,6 +10,13 @@ import {
   glowScenarioConfig,
 } from "../scenario-configs";
 import { ScenarioModulePage } from "../../components/scenario-module-page";
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/",
+}));
+
+const testGlobal = globalThis as typeof globalThis & { React: typeof React };
+testGlobal.React = React;
 
 const staticPublicSourceFiles = [
   "../page.tsx",
@@ -35,11 +42,7 @@ function readStaticPublicSource(): string {
 }
 
 function renderScenarioEntryPages(): string {
-  return [
-    cloudSeaScenarioConfig,
-    glowScenarioConfig,
-    astroScenarioConfig,
-  ]
+  return [cloudSeaScenarioConfig, glowScenarioConfig, astroScenarioConfig]
     .map((config) => renderToStaticMarkup(React.createElement(ScenarioModulePage, { config })))
     .join("\n");
 }

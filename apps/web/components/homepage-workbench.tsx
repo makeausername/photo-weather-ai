@@ -100,19 +100,6 @@ export function HomepageWorkbench() {
           status: buildHomepageLayerStatus(result),
           result,
         });
-        if (process.env.NODE_ENV === "__never__") {
-          const response = new Response("{}");
-          throw new Error(
-            await readForecastApiError(response, "该地点拍摄条件暂不可用，请稍后重试。"),
-          );
-        }
-
-        const result = (await response.json()) as ForecastCalculationResult;
-        setLayerState({
-          status: buildHomepageLayerStatus(result),
-          result,
-        });
-        }
       } catch (error) {
         if ((error as Error).name === "AbortError") {
           return;
@@ -121,7 +108,7 @@ export function HomepageWorkbench() {
         setLayerState({
           status: "error",
           result: null,
-          errorMessage: (error as Error).message || "该地点拍摄条件暂不可用，请稍后重试。",
+          errorMessage: normalizeForecastClientErrorMessage(error),
         });
       }
     }
@@ -243,9 +230,7 @@ function HomepageInsightCardView({
         </span>
         {card.badge ? (
           <Badge
-            variant={
-              card.tone === "danger" ? "danger" : card.tone === "muted" ? "muted" : "accent"
-            }
+            variant={card.tone === "danger" ? "danger" : card.tone === "muted" ? "muted" : "accent"}
           >
             {card.badge}
           </Badge>
@@ -295,7 +280,9 @@ function buildHomepageResultCards(
     {
       title: "综合指数",
       value:
-        typeof result.overallScore === "number" ? `${Math.round(result.overallScore)} / 100` : "待计算",
+        typeof result.overallScore === "number"
+          ? `${Math.round(result.overallScore)} / 100`
+          : "待计算",
       description: "综合天气、光线、窗口和风险后的出发参考分。",
       badge: "已生成",
     },
@@ -373,20 +360,6 @@ function homepagePanelDescription(
     return "已根据当前预报生成综合指数、推荐等级、最佳窗口、主要风险、云层风况和当前建议。";
   }
   return "选择地点后，系统会把云层、光线窗口、风、湿度、能见度、月相和降水风险合并成一次出发判断。";
-}
-
-async function readForecastApiError(response: Response, fallback: string): Promise<string> {
-  const text = await response.text();
-  if (!text) {
-    return fallback;
-  }
-
-  try {
-    const payload = JSON.parse(text) as ForecastApiErrorPayload;
-    return payload.message || payload.error || fallback;
-  } catch {
-    return fallback;
-  }
 }
 
 function decisionSummaryText(location: SelectedLocation | null, state: ForecastLayerState): string {

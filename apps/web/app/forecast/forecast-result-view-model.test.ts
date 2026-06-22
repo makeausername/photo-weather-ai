@@ -54,6 +54,7 @@ import {
   createForecastResultContextId,
   parseSubjectDetailSearchParams,
 } from "./subject-detail-links";
+import { upgradeRequiredDefaultMessage, upgradeRequiredTitle } from "../../components/api-client";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/forecast",
@@ -2171,7 +2172,9 @@ function resultWithUnifiedTerrainDisplayState(
     maxElevation5km,
     avgElevation5km: relief === null ? null : Math.round((elevation - relief + elevation) / 2),
     elevationDiff5km: relief,
-    terrainType: isLowElevation ? ("unknown" as const) : base.terrainAnalysis.terrainProfile.terrainType,
+    terrainType: isLowElevation
+      ? ("unknown" as const)
+      : base.terrainAnalysis.terrainProfile.terrainType,
     exposureType: isLowElevation
       ? ("unknown" as const)
       : base.terrainAnalysis.terrainProfile.exposureType,
@@ -2191,8 +2194,7 @@ function resultWithUnifiedTerrainDisplayState(
     directionSamples: options.terrainHorizon?.directionSamples ?? [],
     milkyWayAssessment: options.terrainHorizon,
   };
-  const dataNotice =
-    "天气数据：正式数据；地形数据：本地 DEM 地形剖面；天文数据：本地算法计算。";
+  const dataNotice = "天气数据：正式数据；地形数据：本地 DEM 地形剖面；天文数据：本地算法计算。";
 
   return {
     ...base,
@@ -2233,7 +2235,9 @@ function resultWithUnifiedTerrainDisplayState(
         localReliefMeters: relief === null ? undefined : relief,
         providerElevationMeters: elevation,
         terrainType: isLowElevation ? "unknown" : base.cloudSeaAnalysis.terrainSupport.terrainType,
-        exposureType: isLowElevation ? "unknown" : base.cloudSeaAnalysis.terrainSupport.exposureType,
+        exposureType: isLowElevation
+          ? "unknown"
+          : base.cloudSeaAnalysis.terrainSupport.exposureType,
         messageZh:
           relief === null
             ? "DEM 已返回方向遮挡，周边高差统计暂未返回。"
@@ -5417,11 +5421,7 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const windowSection = sectionBetween(
-      html,
-      "CloudSeaWindowCards",
-      "CloudSeaDailyCards",
-    );
+    const windowSection = sectionBetween(html, "CloudSeaWindowCards", "CloudSeaDailyCards");
 
     expect(viewModel.terrainContext.shouldDowngradeCloudSeaWording).toBe(true);
     expect(viewModel.hero.title).toBe("瓯江河畔 低云/晨雾参考");
@@ -5498,11 +5498,7 @@ describe("forecast result target-aware view model", () => {
       }),
     );
     const actionPlan = sectionBetween(html, "CloudSeaActionPlan", "CloudSeaRiskSummary");
-    const windowSection = sectionBetween(
-      html,
-      "CloudSeaWindowCards",
-      "CloudSeaDailyCards",
-    );
+    const windowSection = sectionBetween(html, "CloudSeaWindowCards", "CloudSeaDailyCards");
 
     expect(viewModel.recommendationGuard.finalRecommendationLabel).toBe("不建议专程");
     expect(viewModel.travelDecision).toBe("no_go");
@@ -5725,6 +5721,43 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("重新选择地点");
     expect(html).toContain("已自动重试但仍未成功");
     expect(html).not.toMatch(/provider|cache key|stack|AbortError|C:\\|\/app\/|https?:\/\//i);
+  });
+
+  it("renders upgrade_required as a dedicated forecast access state", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ForecastDecisionErrorState, {
+        target: "general",
+        query: { ...queryForTarget("general"), horizon: "7d" },
+        message: "",
+        code: "upgrade_required",
+        onRetry: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('data-forecast-upgrade-required="true"');
+    expect(html).toContain(upgradeRequiredTitle);
+    expect(html).toContain(upgradeRequiredDefaultMessage);
+    expect(html).not.toContain('data-testid="decision-error-card"');
+    expect(html).not.toMatch(/stack|AbortError|C:\\|\/app\/|passwordHash|refreshTokenHash/i);
+  });
+
+  it("renders AI upgrade_required as an upgrade CTA instead of a retry failure", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AiExplanationPanel, {
+        status: "error",
+        explanation: null,
+        errorCode: "upgrade_required",
+        errorMessage: "",
+        retryable: false,
+        onGenerate: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('data-ai-upgrade-required="true"');
+    expect(html).toContain(upgradeRequiredTitle);
+    expect(html).toContain(upgradeRequiredDefaultMessage);
+    expect(html).not.toContain("AbortError");
+    expect(html).not.toMatch(/stack|C:\\|\/app\/|passwordHash|refreshTokenHash/i);
   });
 
   it("keeps ForecastResultClient calculation keyed by stable query key instead of raw object identity", () => {
@@ -6375,9 +6408,7 @@ describe("forecast result target-aware view model", () => {
     expect(professionalDataSection).not.toContain("行动方案");
     expect(professionalDataSection).not.toContain("风险与复核");
 
-    expect(html.indexOf("CloudSeaWindowCards")).toBeLessThan(
-      html.indexOf("CloudSeaDailyTrend"),
-    );
+    expect(html.indexOf("CloudSeaWindowCards")).toBeLessThan(html.indexOf("CloudSeaDailyTrend"));
     expect(html.indexOf("CloudSeaDailyTrend")).toBeLessThan(
       html.indexOf("CloudSeaDecisionSupport"),
     );
@@ -7878,9 +7909,7 @@ describe("forecast result target-aware view model", () => {
     expect(cloudSeaShellViewModel.primarySummary).toContain("白墙风险");
     expect(cloudSeaShellViewModel.primarySummary).toContain("云顶高度");
     expect(cloudSeaShellViewModel.primarySummary).toContain("能见度");
-    expect(cloudSeaViewModel.dataNotice).toContain(
-      "地形高差未返回时，不按已确认云海地形处理",
-    );
+    expect(cloudSeaViewModel.dataNotice).toContain("地形高差未返回时，不按已确认云海地形处理");
     expect(cloudSeaOutput).not.toContain("目标方向地形地平线");
     expect(cloudSeaOutput).not.toContain("地形净空角");
 
@@ -8377,7 +8406,11 @@ describe("forecast result target-aware view model", () => {
       .flatMap((item) => [item.label, item.value ?? "", item.detail])
       .join(" ");
 
-    for (const output of [`${generalHtml} ${generalTerrainText}`, glowHtml, `${astroHtml} ${astroProfessionalText}`]) {
+    for (const output of [
+      `${generalHtml} ${generalTerrainText}`,
+      glowHtml,
+      `${astroHtml} ${astroProfessionalText}`,
+    ]) {
       expect(output).toContain("地形净空角");
       expect(output).not.toContain("clearance");
       expect(output).not.toContain("暂未接入周边 DEM 剖面");

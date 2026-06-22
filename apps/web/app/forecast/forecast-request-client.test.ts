@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ForecastCalculationResult, ForecastQueryInput } from "@photo-weather/shared";
+import { clearAdminSession, storeAdminSession, type AdminAuthSession } from "../admin/admin-api";
 import type { ForecastRequestError } from "./forecast-request-client";
 import {
   clearForecastRequestClientCachesForTest,
@@ -40,10 +41,80 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+type StorageMock = Storage & {
+  readonly dumpKeys: () => readonly string[];
+};
+
+function createStorageMock(): StorageMock {
+  const values = new Map<string, string>();
+
+  return {
+    get length() {
+      return values.size;
+    },
+    clear: () => values.clear(),
+    getItem: (key) => values.get(key) ?? null,
+    key: (index) => Array.from(values.keys())[index] ?? null,
+    removeItem: (key) => {
+      values.delete(key);
+    },
+    setItem: (key, value) => {
+      values.set(key, value);
+    },
+    dumpKeys: () => Array.from(values.keys()),
+  };
+}
+
+function installBrowserStorage(): {
+  readonly localStorage: StorageMock;
+  readonly sessionStorage: StorageMock;
+} {
+  const localStorage = createStorageMock();
+  const sessionStorage = createStorageMock();
+  vi.stubGlobal("window", {
+    localStorage,
+    sessionStorage,
+    location: {
+      pathname: "/forecast",
+      search: "",
+      href: "",
+      assign: vi.fn(),
+    },
+  });
+  return { localStorage, sessionStorage };
+}
+
+function adminSession(accessToken = "paid-access-token"): AdminAuthSession {
+  return {
+    accessToken,
+    refreshToken: "refresh-token",
+    accessTokenExpiresAt: "2099-01-01T00:00:00.000Z",
+    sessionExpiresAt: "2099-01-02T00:00:00.000Z",
+    sessionRoleType: "user",
+    user: {
+      id: "user-paid",
+      email: "paid@example.com",
+      phone: null,
+      displayName: "Paid User",
+      status: "active",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      lastLoginAt: null,
+    },
+    profile: null,
+    roles: [],
+    roleCodes: [],
+    permissions: [],
+    isAdmin: false,
+  };
+}
+
 describe("forecast request client", () => {
   afterEach(() => {
+    clearAdminSession();
     clearForecastRequestClientCachesForTest();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("retries a transient forecast calculate failure and returns the recovered result", async () => {
@@ -163,33 +234,30 @@ describe("forecast request client", () => {
   });
 
   it("serves the last successful same-key result when later transient retries fail", async () => {
-    const recovered = resultForTarget("glow");
-    const failingFetcher = vi.fn().mockResolvedValue(jsonResponse({ error: "temporary" }, 503));
+    const query = { ...baseQuery, horizon: "24h", target: "general" } as const;
+    const recovered = resultForTarget("general");
+    const failingFetcher = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse({ error: "temporary" }, 503)));
 
     await expect(
-      requestForecastCalculation(
-        { ...baseQuery, target: "glow" },
-        {
-          fetcher: vi.fn().mockResolvedValue(jsonResponse(recovered)) as unknown as typeof fetch,
-          retryDelayMs: [0, 0],
-          successCacheTtlMs: -1,
-          staleCacheTtlMs: 60_000,
-          useSessionStorage: false,
-        },
-      ),
+      requestForecastCalculation(query, {
+        fetcher: vi.fn().mockResolvedValue(jsonResponse(recovered)) as unknown as typeof fetch,
+        retryDelayMs: [0, 0],
+        successCacheTtlMs: -1,
+        staleCacheTtlMs: 60_000,
+        useSessionStorage: false,
+      }),
     ).resolves.toEqual(recovered);
 
     await expect(
-      requestForecastCalculation(
-        { ...baseQuery, target: "glow" },
-        {
-          fetcher: failingFetcher as unknown as typeof fetch,
-          retryDelayMs: [0, 0],
-          successCacheTtlMs: -1,
-          staleCacheTtlMs: 60_000,
-          useSessionStorage: false,
-        },
-      ),
+      requestForecastCalculation(query, {
+        fetcher: failingFetcher as unknown as typeof fetch,
+        retryDelayMs: [0, 0],
+        successCacheTtlMs: -1,
+        staleCacheTtlMs: 60_000,
+        useSessionStorage: false,
+      }),
     ).resolves.toEqual(recovered);
     expect(failingFetcher).toHaveBeenCalledTimes(3);
   });
@@ -213,4 +281,92 @@ describe("forecast request client", () => {
       expect(fetcher).toHaveBeenCalledTimes(1);
     },
   );
+
+  it("allows guest 24h forecast requests without Authorization", async () => {
+    installBrowserStorage();
+    const recovered = resultForTarget("general");
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse(recovered));
+
+    await expect(
+      requestForecastCalculation(
+        { ...baseQuery, horizon: "24h", target: "general" },
+        {
+          fetcher: fetcher as unknown as typeof fetch,
+          retryDelayMs: [0, 0],
+          useSessionStorage: false,
+        },
+      ),
+    ).resolves.toEqual(recovered);
+
+    const init = fetcher.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(init?.headers).toMatchObject({ "Content-Type": "application/json" });
+    expect(init?.headers).not.toHaveProperty("Authorization");
+  });
+
+  it("sends Authorization for logged-in forecast calculations", async () => {
+    installBrowserStorage();
+    storeAdminSession(adminSession("forecast-access-token"));
+    const recovered = resultForTarget("general");
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse(recovered));
+
+    await expect(
+      requestForecastCalculation(
+        { ...baseQuery, horizon: "7d", target: "general" },
+        {
+          fetcher: fetcher as unknown as typeof fetch,
+          retryDelayMs: [0, 0],
+          useSessionStorage: false,
+        },
+      ),
+    ).resolves.toEqual(recovered);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://localhost:4000/forecast/calculate",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer forecast-access-token",
+        }),
+      }),
+    );
+  });
+
+  it("keeps guest forecast cache separate from logged-in full-access cache", async () => {
+    const { sessionStorage } = installBrowserStorage();
+    storeAdminSession(adminSession("full-access-token"));
+    const loggedInResult = {
+      ...resultForTarget("general"),
+      summary: "logged-in full result",
+    } as ForecastCalculationResult;
+    const guestResult = {
+      ...resultForTarget("general"),
+      summary: "guest basic result",
+    } as ForecastCalculationResult;
+    const loggedInFetcher = vi.fn().mockResolvedValue(jsonResponse(loggedInResult));
+    const guestFetcher = vi.fn().mockResolvedValue(jsonResponse(guestResult));
+    const query = { ...baseQuery, horizon: "24h", target: "general" } as const;
+
+    await expect(
+      requestForecastCalculation(query, {
+        fetcher: loggedInFetcher as unknown as typeof fetch,
+        retryDelayMs: [0, 0],
+        successCacheTtlMs: 60_000,
+        staleCacheTtlMs: 60_000,
+      }),
+    ).resolves.toEqual(loggedInResult);
+
+    clearAdminSession();
+
+    await expect(
+      requestForecastCalculation(query, {
+        fetcher: guestFetcher as unknown as typeof fetch,
+        retryDelayMs: [0, 0],
+        successCacheTtlMs: 60_000,
+        staleCacheTtlMs: 60_000,
+      }),
+    ).resolves.toEqual(guestResult);
+
+    expect(loggedInFetcher).toHaveBeenCalledTimes(1);
+    expect(guestFetcher).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.dumpKeys().join(" ")).not.toContain("full-access-token");
+  });
 });

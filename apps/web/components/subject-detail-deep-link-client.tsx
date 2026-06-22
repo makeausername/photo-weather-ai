@@ -15,9 +15,7 @@ import {
   GlowResultPage,
   type DecisionProgressContext,
 } from "../app/forecast/forecast-result-client";
-import {
-  requestForecastCalculation,
-} from "../app/forecast/forecast-request-client";
+import { requestForecastCalculation } from "../app/forecast/forecast-request-client";
 import { buildForecastResultViewModel } from "../app/forecast/forecast-result-view-model";
 import {
   formatSubjectDetailWindowLabel,
@@ -56,10 +54,7 @@ type LoadState =
 
 type ForecastCalculateRequest = ForecastQueryInput & SubjectDetailRequestOptions;
 
-export function SubjectDetailDeepLinkClient({
-  target,
-  parsed,
-}: SubjectDetailDeepLinkClientProps) {
+export function SubjectDetailDeepLinkClient({ target, parsed }: SubjectDetailDeepLinkClientProps) {
   const initialState = useMemo<LoadState>(() => {
     if (parsed.kind === "invalid") {
       return {
@@ -73,7 +68,11 @@ export function SubjectDetailDeepLinkClient({
   }, [parsed]);
   const [state, setState] = useState<LoadState>(initialState);
   const context =
-    parsed.kind === "ready" ? parsed.context : parsed.kind === "invalid" ? parsed.context : undefined;
+    parsed.kind === "ready"
+      ? parsed.context
+      : parsed.kind === "invalid"
+        ? parsed.context
+        : undefined;
   const cloudSeaFallbackQuery =
     target === "cloud_sea" && parsed.kind === "ready" ? parsed.fallbackQuery : null;
 
@@ -141,7 +140,9 @@ export function SubjectDetailDeepLinkClient({
 
   return (
     <PublicShell contentClassName="grid gap-5 pb-14">
-      {context ? <GeneralSourceContextBar context={context} query={queryForContext(state)} /> : null}
+      {context ? (
+        <GeneralSourceContextBar context={context} query={queryForContext(state)} />
+      ) : null}
 
       {state.status === "loading" ? (
         target === "cloud_sea" ? (
@@ -218,10 +219,7 @@ function SubjectResultContent({
     }),
     [query, target],
   );
-  const viewModel = useMemo(
-    () => buildForecastResultViewModel(result, target),
-    [result, target],
-  );
+  const viewModel = useMemo(() => buildForecastResultViewModel(result, target), [result, target]);
 
   if (target === "cloud_sea" && viewModel.cloudSea) {
     return (
@@ -229,7 +227,7 @@ function SubjectResultContent({
         query={subjectQuery}
         result={result}
         viewModel={viewModel.cloudSea}
-        returnUrl={context?.source === "general" ? (context.returnUrl ?? "/") : undefined}
+        returnUrl={context?.source === "general" ? context.returnUrl ?? "/" : undefined}
       />
     );
   }
@@ -274,7 +272,9 @@ function GeneralSourceContextBar({
           <span className="text-muted-foreground">日期：{date}</span>
           <span className="text-muted-foreground">窗口：{windowLabel}</span>
           {query?.horizon ? (
-            <span className="text-muted-foreground">范围：{forecastHorizonLabels[query.horizon]}</span>
+            <span className="text-muted-foreground">
+              范围：{forecastHorizonLabels[query.horizon]}
+            </span>
           ) : null}
         </div>
         <a
@@ -311,29 +311,6 @@ function SubjectContextFallbackCard({
       </a>
     </Card>
   );
-}
-
-async function readApiErrorMessage(response: Response): Promise<string> {
-  const text = await response.text();
-  if (!text) {
-    return "专项判断暂时不可用，请返回综合判断或重新选择地点后再试。";
-  }
-
-  try {
-    const payload = JSON.parse(text) as {
-      readonly messageZh?: string;
-      readonly message?: string;
-      readonly error?: string;
-    };
-    return (
-      payload.messageZh ||
-      payload.message ||
-      payload.error ||
-      "专项判断暂时不可用，请返回综合判断或重新选择地点后再试。"
-    );
-  } catch {
-    return "专项判断暂时不可用，请返回综合判断或重新选择地点后再试。";
-  }
 }
 
 function queryForContext(state: LoadState): ForecastQueryInput | undefined {

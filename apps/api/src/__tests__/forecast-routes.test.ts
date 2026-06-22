@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import type { NormalizedDailyWeather, NormalizedHourlyWeather } from "@photo-weather/shared";
 import type {
@@ -3350,6 +3352,18 @@ describe("forecast query validation route", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(firstResponse.body).not.toContain("deepseek-secret");
     expect(secondResponse.body).not.toContain("deepseek-secret");
+  });
+
+  it("keeps DeepSeek interpretation cache keys scoped by access state", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("../forecast-routes.ts", import.meta.url)),
+      "utf8",
+    );
+
+    expect(source).toContain("createForecastInterpretationCacheKey(result, access)");
+    expect(source).toContain("activeProductCode");
+    expect(source).toContain("access:${accessScope}:report");
+    expect(source).toContain("access:${accessScope}:result");
   });
 
   it("rejects unsupported horizon and target for calculation", async () => {

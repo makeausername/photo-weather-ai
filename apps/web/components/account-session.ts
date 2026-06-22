@@ -11,11 +11,7 @@ import {
 } from "../app/admin/admin-api";
 import type { ForecastHorizon, ForecastQueryInput, ForecastTarget } from "@photo-weather/shared";
 import { loginServiceUnavailableMessage, sanitizeAuthErrorMessage } from "./auth-errors";
-import {
-  publicApiFetch,
-  requiredAuthApiFetch,
-  retryableServiceMessage,
-} from "./api-client";
+import { publicApiFetch, requiredAuthApiFetch, retryableServiceMessage } from "./api-client";
 
 export type PublicAccountSession = {
   readonly user: SafeAdminUser;
@@ -276,95 +272,33 @@ export async function getCaptchaPublicConfig(): Promise<CaptchaPublicConfig> {
   };
 }
 
-async function refreshCurrentAccountSession(): Promise<PublicAccountSession | null> {
-  const tokens = getStoredAdminTokens();
-  if (!tokens) {
-    return null;
-  }
-
-  const response = await fetch(`${apiBaseUrl}/auth/refresh`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ refreshToken: tokens.refreshToken }),
-  });
-
-  if (!response.ok) {
-    clearAdminSession();
-    return null;
-  }
-
-  const session = (await response.json()) as AdminAuthSession;
-  storeAdminSession(session);
-  return session;
-}
-
 async function accountApiFetch<TResponse>(
   path: string,
   init: RequestInit = {},
   options: { readonly retryOnUnauthorized?: boolean } = { retryOnUnauthorized: true },
 ): Promise<TResponse> {
-  if (process.env.NODE_ENV !== "__legacy_account_fetch__") {
-    return requiredAuthApiFetch<TResponse>(path, init, {
-      retryOnUnauthorized: options.retryOnUnauthorized,
-      fallbackMessage: retryableServiceMessage,
-    });
-  }
-  const tokens = getStoredAdminTokens();
-  if (!tokens) {
-    throw new Error("请先登录后再操作。");
-  }
-
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${tokens.accessToken}`,
-      ...init.headers,
-    },
+  return requiredAuthApiFetch<TResponse>(path, init, {
+    retryOnUnauthorized: options.retryOnUnauthorized,
+    fallbackMessage: retryableServiceMessage,
   });
-
-  if (response.status === 401 && options.retryOnUnauthorized !== false) {
-    const refreshed = await refreshCurrentAccountSession();
-    if (refreshed) {
-      return accountApiFetch<TResponse>(path, init, { retryOnUnauthorized: false });
-    }
-  }
-
-  if (!response.ok) {
-    throw new Error(await readPublicApiError(response, "账户操作失败，请稍后重试。"));
-  }
-
-  return (await response.json()) as TResponse;
 }
 
 export async function getCurrentAccountSession(): Promise<PublicAccountSession | null> {
-  const tokens = getStoredAdminTokens();
-  if (!tokens) {
+  if (!getStoredAdminTokens()) {
     return null;
   }
 
-  const response = await fetch(`${apiBaseUrl}/auth/me`, {
-    headers: {
-      Authorization: `Bearer ${tokens.accessToken}`,
-    },
-  });
-
-  if (response.status === 401) {
-    return refreshCurrentAccountSession();
-  }
-
-  if (response.status === 403) {
-    clearAdminSession();
+  try {
+    return await requiredAuthApiFetch<PublicAccountSession>(
+      "/auth/me",
+      {},
+      {
+        fallbackMessage: publicSessionExpiredMessage,
+      },
+    );
+  } catch {
     return null;
   }
-
-  if (!response.ok) {
-    return null;
-  }
-
-  return (await response.json()) as PublicAccountSession;
 }
 
 export async function loginPublicAccount(
@@ -561,33 +495,18 @@ export async function listAccountBillingOrders(
 }
 
 export async function listPublicBillingProducts(): Promise<readonly PublicBillingProduct[]> {
-  if (process.env.NODE_ENV !== "__legacy_public_products_fetch__") {
-    const payload = await publicApiFetch<{
-      readonly products?: readonly PublicBillingProduct[];
-    }>(
-      "/billing/products",
-      {
-        headers: { Accept: "application/json" },
-        cache: "no-store",
-      },
-      {
-        fallbackMessage: retryableServiceMessage,
-      },
-    );
-    return payload.products ?? [];
-  }
-  const response = await fetch(`${apiBaseUrl}/billing/products`, {
-    headers: { Accept: "application/json" },
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error(await readPublicApiError(response, "暂时无法读取套餐。"));
-  }
-
-  const payload = (await response.json()) as {
+  const payload = await publicApiFetch<{
     readonly products?: readonly PublicBillingProduct[];
-  };
+  }>(
+    "/billing/products",
+    {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    },
+    {
+      fallbackMessage: retryableServiceMessage,
+    },
+  );
   return payload.products ?? [];
 }
 

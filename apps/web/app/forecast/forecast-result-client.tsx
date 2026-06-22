@@ -37,7 +37,6 @@ import {
   ApiClientError,
   currentAuthCacheScope,
   optionalAuthApiFetch,
-  sanitizeApiErrorMessage,
   upgradeRequiredDefaultMessage,
   upgradeRequiredTitle,
 } from "../../components/api-client";
@@ -105,7 +104,7 @@ import {
 } from "./result-dashboard-components";
 import {
   isForecastRequestAbortError,
-  normalizeForecastClientErrorMessage,
+  normalizeForecastClientError,
   requestForecastCalculation,
   stableForecastQueryKey,
 } from "./forecast-request-client";
@@ -367,21 +366,6 @@ const scoreLevelLabels: Record<ForecastScoreLevel, string> = {
   good: "较好",
   excellent: "优秀",
 };
-
-async function readApiJsonPayload(response: Response): Promise<unknown> {
-  const text = await response.text();
-  if (!text) {
-    return {};
-  }
-
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return {
-      message: text,
-    };
-  }
-}
 
 export function shouldStartAiExplanationRequest(status: AiStatus, inFlight: boolean): boolean {
   return status !== "loading" && !inFlight;
@@ -1964,39 +1948,17 @@ function useForecastAiInterpretation(
     setAiErrorMessage("");
     setAiRetryable(false);
     try {
-      const tokens = getStoredAdminTokens();
-      const response = await fetch(`${apiBaseUrl}/forecast/ai-explain`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(tokens ? { Authorization: `Bearer ${tokens.accessToken}` } : {}),
+      const data = await optionalAuthApiFetch<AiExplainResponse>(
+        "/forecast/ai-explain",
+        {
+          method: "POST",
+          body: JSON.stringify(query),
+          signal: controller.signal,
         },
-        body: JSON.stringify(query),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        const errorPayload = await readApiJsonPayload(response);
-        const outcome = normalizeAiExplainResponse({
-          success: false,
-          ...(isRecord(errorPayload)
-            ? errorPayload
-            : {
-                messageZh: publicAiExplanationMessage("unknown"),
-              }),
-        });
-        applyAiExplainOutcome(outcome, {
-          setAiExplanation,
-          setAiErrorCode,
-          setAiErrorMessage,
-          setAiRetryable,
-          setAiStatus,
-        });
-        logAiExplanationClientEvent({ ...outcome, targetCode: query.target });
-        return;
-      }
-
-      const data = await readApiJsonPayload(response);
+        {
+          fallbackMessage: publicAiExplanationMessage("unknown"),
+        },
+      );
       const outcome = normalizeAiExplainResponse(data);
       if (outcome.cacheable && outcome.explanation) {
         cacheAiExplanation(currentCacheKey, outcome.explanation);
@@ -2051,6 +2013,7 @@ export function ForecastAiInterpretationSection({
     <AiExplanationPanel
       status={aiInterpretation.status}
       explanation={aiInterpretation.explanation}
+      errorCode={aiInterpretation.errorCode}
       errorMessage={aiInterpretation.errorMessage}
       retryable={aiInterpretation.retryable}
       onGenerate={aiInterpretation.generate}
@@ -2062,6 +2025,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
   const [status, setStatus] = useState<LoadStatus>(query ? "loading" : "idle");
   const [result, setResult] = useState<ForecastCalculationResult | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
+  const [errorCode, setErrorCode] = useState("");
   const [retryNonce, setRetryNonce] = useState(0);
   const aiInterpretation = useForecastAiInterpretation(query, result);
   const latestQueryRef = useRef<ForecastQueryInput | null>(query);
@@ -2099,6 +2063,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
       setStatus("idle");
       setResult(null);
       setErrorMessage("");
+      setErrorCode("");
       return;
     }
 
@@ -2121,6 +2086,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
       setStatus("ready");
     }
     setErrorMessage("");
+    setErrorCode("");
 
     async function calculateForecast() {
       try {
@@ -2169,7 +2135,9 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
           return;
         }
 
-        setErrorMessage(normalizeForecastClientErrorMessage(error));
+        const normalizedError = normalizeForecastClientError(error);
+        setErrorMessage(normalizedError.publicMessage);
+        setErrorCode(normalizedError.code ?? "");
         setStatus("error");
       }
     }
@@ -2242,6 +2210,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
           target={isCloudSeaFlow ? "cloud_sea" : "general"}
           query={query}
           message={errorMessage}
+          code={errorCode}
           onRetry={retryForecast}
         />
       ) : null}
@@ -2252,6 +2221,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
           result={result}
           aiStatus={aiInterpretation.status}
           aiExplanation={aiInterpretation.explanation}
+          aiErrorCode={aiInterpretation.errorCode}
           aiErrorMessage={aiInterpretation.errorMessage}
           aiRetryable={aiInterpretation.retryable}
           onGenerateAiExplanation={aiInterpretation.generate}
@@ -2338,13 +2308,19 @@ export function ForecastDecisionErrorState({
   target,
   query,
   message,
+  code,
   onRetry,
 }: {
   readonly target: DecisionTemplateTarget;
   readonly query: ForecastQueryInput;
   readonly message: string;
+  readonly code?: string;
   readonly onRetry?: () => void;
 }) {
+  if (code === "upgrade_required") {
+    return <ForecastUpgradeRequiredState query={query} message={message} />;
+  }
+
   const horizonLabel = decisionProgressHorizonLabel(query);
 
   if (target === "cloud_sea") {
@@ -2426,6 +2402,63 @@ export function ForecastDecisionErrorState({
         description: "页面会优先呈现是否值得去、什么时候到、拍什么和需要规避的风险。",
       }}
     />
+  );
+}
+
+function ForecastUpgradeRequiredState({
+  query,
+  message,
+}: {
+  readonly query: ForecastQueryInput;
+  readonly message: string;
+}) {
+  const description = message.trim() || upgradeRequiredDefaultMessage;
+  const returnPath =
+    query.target === "cloud_sea"
+      ? "/cloud-sea"
+      : query.target === "glow"
+        ? "/glow"
+        : query.target === "astro"
+          ? "/astro"
+          : "/#analysis";
+
+  return (
+    <Card
+      className="grid gap-4 border-warning bg-warning/10 p-5"
+      data-forecast-upgrade-required="true"
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="warning">{forecastTargetLabels[query.target]}</Badge>
+        <Badge variant="muted">{forecastHorizonLabels[query.horizon]}</Badge>
+        <Badge variant="muted">{query.name}</Badge>
+      </div>
+      <div className="grid gap-2">
+        <h2 className="text-xl font-bold leading-7 text-card-foreground">{upgradeRequiredTitle}</h2>
+        <p className="max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="primary"
+          size="sm"
+          onClick={() => {
+            window.location.assign("/pricing");
+          }}
+        >
+          查看套餐
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            window.location.assign(returnPath);
+          }}
+        >
+          重新选择地点
+        </Button>
+      </div>
+    </Card>
   );
 }
 
@@ -3723,6 +3756,7 @@ function ForecastResultView({
   result,
   aiStatus,
   aiExplanation,
+  aiErrorCode,
   aiErrorMessage,
   aiRetryable,
   onGenerateAiExplanation,
@@ -3731,6 +3765,7 @@ function ForecastResultView({
   readonly result: ForecastCalculationResult;
   readonly aiStatus: AiStatus;
   readonly aiExplanation: ForecastAiExplanation | null;
+  readonly aiErrorCode: string;
   readonly aiErrorMessage: string;
   readonly aiRetryable: boolean;
   readonly onGenerateAiExplanation: () => void;
@@ -3748,6 +3783,7 @@ function ForecastResultView({
         viewModel={viewModel}
         aiStatus={aiStatus}
         aiExplanation={aiExplanation}
+        aiErrorCode={aiErrorCode}
         aiErrorMessage={aiErrorMessage}
         aiRetryable={aiRetryable}
         onGenerateAiExplanation={onGenerateAiExplanation}
@@ -3824,6 +3860,7 @@ function ForecastResultView({
         <AiExplanationPanel
           status={aiStatus}
           explanation={aiExplanation}
+          errorCode={aiErrorCode}
           errorMessage={aiErrorMessage}
           retryable={aiRetryable}
           onGenerate={onGenerateAiExplanation}
@@ -8375,6 +8412,7 @@ export function ComprehensiveForecastView({
   viewModel,
   aiStatus,
   aiExplanation,
+  aiErrorCode = "",
   aiErrorMessage,
   aiRetryable,
   onGenerateAiExplanation,
@@ -8384,6 +8422,7 @@ export function ComprehensiveForecastView({
   readonly viewModel: ForecastResultViewModel;
   readonly aiStatus: AiStatus;
   readonly aiExplanation: ForecastAiExplanation | null;
+  readonly aiErrorCode?: string;
   readonly aiErrorMessage: string;
   readonly aiRetryable: boolean;
   readonly onGenerateAiExplanation: () => void;
@@ -8412,6 +8451,7 @@ export function ComprehensiveForecastView({
       <AiExplanationPanel
         status={aiStatus}
         explanation={aiExplanation}
+        errorCode={aiErrorCode}
         errorMessage={aiErrorMessage}
         retryable={aiRetryable}
         onGenerate={onGenerateAiExplanation}
@@ -9582,16 +9622,19 @@ function MockWarningCard({
 export function AiExplanationPanel({
   status,
   explanation,
+  errorCode,
   errorMessage,
   retryable,
   onGenerate,
 }: {
   readonly status: AiStatus;
   readonly explanation: ForecastAiExplanation | null;
+  readonly errorCode?: string;
   readonly errorMessage: string;
   readonly retryable: boolean;
   readonly onGenerate: () => void;
 }) {
+  const isUpgradeRequired = errorCode === "upgrade_required";
   const visibleExplanation = isDisplayableAiExplanation(explanation) ? explanation : null;
   const visibleContent = visibleExplanation
     ? visibleExplanation.displayContent ?? normalizeAiExplanationContent(visibleExplanation)
@@ -9610,11 +9653,13 @@ export function AiExplanationPanel({
   const buttonLabel =
     status === "loading"
       ? "正在生成智能解读..."
-      : retryable
-        ? "重试智能解读"
-        : hasCompletedExplanation
-          ? "已生成智能解读"
-          : "生成智能解读";
+      : isUpgradeRequired
+        ? upgradeRequiredTitle
+        : retryable
+          ? "重试智能解读"
+          : hasCompletedExplanation
+            ? "已生成智能解读"
+            : "生成智能解读";
 
   return (
     <Card className="p-4 shadow-sm">
@@ -9625,7 +9670,7 @@ export function AiExplanationPanel({
         <Button
           className="min-w-[132px] shrink-0"
           variant="secondary"
-          disabled={status === "loading" || hasCompletedExplanation}
+          disabled={status === "loading" || hasCompletedExplanation || isUpgradeRequired}
           onClick={onGenerate}
         >
           {buttonLabel}
@@ -9638,7 +9683,30 @@ export function AiExplanationPanel({
         </p>
       ) : null}
 
-      {errorMessage ? (
+      {isUpgradeRequired ? (
+        <div
+          className="mt-3 grid gap-3 rounded-lg border border-warning/70 bg-warning/10 px-3 py-3 text-sm leading-6 text-card-foreground"
+          data-ai-upgrade-required="true"
+        >
+          <div>
+            <p className="font-semibold">{upgradeRequiredTitle}</p>
+            <p className="mt-1 text-muted-foreground">
+              {errorMessage || upgradeRequiredDefaultMessage}
+            </p>
+          </div>
+          <div>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                window.location.assign("/pricing");
+              }}
+            >
+              查看套餐
+            </Button>
+          </div>
+        </div>
+      ) : errorMessage ? (
         <p className="mt-3 rounded-lg border border-warning/70 bg-muted px-3 py-2 text-sm leading-6 text-card-foreground">
           {errorMessage}
         </p>

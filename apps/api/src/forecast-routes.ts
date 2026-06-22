@@ -599,12 +599,7 @@ export function registerForecastRoutes(
       return sendZodError(reply, parsedBody.error);
     }
 
-    const {
-      useAiExplanation,
-      timezone,
-      startDateTime,
-      ...query
-    } = parsedBody.data;
+    const { useAiExplanation, timezone, startDateTime, ...query } = parsedBody.data;
     let access: ForecastAccessStatus | null;
     try {
       access = await resolveForecastAccessForRequest({
@@ -773,7 +768,7 @@ export function registerForecastRoutes(
       );
     }
 
-    const cacheKey = createForecastInterpretationCacheKey(result);
+    const cacheKey = createForecastInterpretationCacheKey(result, access);
     const cachedInterpretation = readCachedDeepSeekForecastInterpretation(cacheKey);
     if (cachedInterpretation) {
       request.log.info({
@@ -980,16 +975,8 @@ async function calculateForecastWithRouteResilience(options: {
   readonly result: ForecastCalculationWithAiResult;
   readonly servedStale: boolean;
 }> {
-  const {
-    cacheKey,
-    query,
-    requestOptions,
-    cacheState,
-    services,
-    resilience,
-    logger,
-    route,
-  } = options;
+  const { cacheKey, query, requestOptions, cacheState, services, resilience, logger, route } =
+    options;
   const cached = readCachedValue(cacheState.fresh, cacheKey);
   if (cached) {
     logForecastCalculationCacheEvent({
@@ -1185,7 +1172,11 @@ function classifyForecastCalculationError(error: unknown): ForecastTransientClas
   }
 
   const normalized = normalizeError(error);
-  if (/timeout|timed out|fetch failed|network|ECONNRESET|ECONNREFUSED|EAI_AGAIN/i.test(normalized.message)) {
+  if (
+    /timeout|timed out|fetch failed|network|ECONNRESET|ECONNREFUSED|EAI_AGAIN/i.test(
+      normalized.message,
+    )
+  ) {
     return { transient: true, category: "network_or_timeout" };
   }
 
@@ -2136,19 +2127,37 @@ function bestSubjectLabel(result: ForecastCalculationResult, index: number): str
   return rankedScores[index]?.label ?? rankedScores[0]?.label ?? "综合题材";
 }
 
-function createForecastInterpretationCacheKey(result: ForecastCalculationResult): string {
+function createForecastInterpretationCacheKey(
+  result: ForecastCalculationResult,
+  access: Pick<ForecastAccessStatus, "tier" | "activeProductCode" | "hasFullAccess">,
+): string {
+  const accessScope = createHash("sha256")
+    .update(
+      JSON.stringify({
+        tier: access.tier,
+        activeProductCode: access.activeProductCode ?? null,
+        hasFullAccess: access.hasFullAccess,
+      }),
+    )
+    .digest("hex")
+    .slice(0, 12);
   const resultWithIds = result as ForecastCalculationResult & {
     readonly resultId?: unknown;
     readonly reportId?: unknown;
   };
   if (typeof resultWithIds.reportId === "string" && resultWithIds.reportId.trim()) {
-    return `report:${resultWithIds.reportId.trim()}`;
+    return `access:${accessScope}:report:${resultWithIds.reportId.trim()}`;
   }
   if (typeof resultWithIds.resultId === "string" && resultWithIds.resultId.trim()) {
-    return `result:${resultWithIds.resultId.trim()}`;
+    return `access:${accessScope}:result:${resultWithIds.resultId.trim()}`;
   }
 
   const stableSummary = {
+    access: {
+      tier: access.tier,
+      activeProductCode: access.activeProductCode ?? null,
+      hasFullAccess: access.hasFullAccess,
+    },
     location: {
       id: result.place.id,
       name: result.place.name,
