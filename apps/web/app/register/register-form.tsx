@@ -44,6 +44,44 @@ export function buildRegisteredLoginHref(identifier: string): string {
   return `/login?${params.toString()}`;
 }
 
+type RegisterSubmitValidationInput = {
+  readonly targetIsValid: boolean;
+  readonly code: string;
+  readonly password: string;
+  readonly confirmPassword: string;
+  readonly isSubmitting: boolean;
+};
+
+export function getRegisterPasswordStatusMessage(
+  password: string,
+  confirmPassword: string,
+): string | null {
+  if (password.length < 8) {
+    return "密码至少需要 8 个字符。";
+  }
+
+  if (password !== confirmPassword) {
+    return "两次输入的密码不一致。";
+  }
+
+  return null;
+}
+
+export function canSubmitRegisterForm({
+  targetIsValid,
+  code,
+  password,
+  confirmPassword,
+  isSubmitting,
+}: RegisterSubmitValidationInput): boolean {
+  return (
+    targetIsValid &&
+    /^\d{6}$/.test(code.trim()) &&
+    getRegisterPasswordStatusMessage(password, confirmPassword) === null &&
+    !isSubmitting
+  );
+}
+
 export function RegisterForm() {
   const router = useRouter();
   const [channel, setChannel] = useState<RegisterVerificationChannel>("email");
@@ -63,17 +101,15 @@ export function RegisterForm() {
   const targetIsValid = isTargetValid(channel, target);
   const canRegister = useMemo(
     () =>
-      targetIsValid &&
-      /^\d{6}$/.test(code.trim()) &&
-      password.length >= 8 &&
-      password === confirmPassword &&
-      !isSubmitting,
+      canSubmitRegisterForm({
+        targetIsValid,
+        code,
+        password,
+        confirmPassword,
+        isSubmitting,
+      }),
     [code, confirmPassword, isSubmitting, password, targetIsValid],
   );
-  const passwordRequirements = [
-    { label: "至少 8 个字符", met: password.length >= 8 },
-    { label: "两次输入一致", met: Boolean(confirmPassword) && password === confirmPassword },
-  ] as const;
 
   useEffect(() => {
     if (cooldown <= 0) {
@@ -140,15 +176,10 @@ export function RegisterForm() {
       return;
     }
 
-    if (password.length < 8) {
+    const passwordStatusMessage = getRegisterPasswordStatusMessage(password, confirmPassword);
+    if (passwordStatusMessage) {
       setStatusTone("error");
-      setStatus("密码至少需要 8 个字符。");
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setStatusTone("error");
-      setStatus("两次输入的密码不一致。");
+      setStatus(passwordStatusMessage);
       return;
     }
 
@@ -283,30 +314,6 @@ export function RegisterForm() {
             required
           />
         </FormField>
-
-        <div className="grid gap-2 rounded-lg border border-border bg-muted/35 p-3">
-          <p className="text-xs font-bold text-card-foreground">密码要求</p>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {passwordRequirements.map((item) => (
-              <span
-                key={item.label}
-                className={cn(
-                  "inline-flex items-center gap-2 text-xs font-medium",
-                  item.met ? "text-success" : "text-muted-foreground",
-                )}
-              >
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    "h-2 w-2 rounded-full",
-                    item.met ? "bg-success" : "bg-muted-foreground/45",
-                  )}
-                />
-                {item.label}
-              </span>
-            ))}
-          </div>
-        </div>
 
         <AuthStatusMessage message={status} tone={statusTone} />
 
