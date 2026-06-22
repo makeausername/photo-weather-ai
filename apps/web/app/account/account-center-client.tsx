@@ -13,7 +13,6 @@ import {
   getAccountAccess,
   getCurrentAccountSession,
   listAccountBillingOrders,
-  listAccountEntitlements,
   listAccountForecastHistory,
   logoutPublicAccount,
   sendAccountEmailCode,
@@ -37,7 +36,7 @@ import {
 type LoadState = "loading" | "ready";
 type FormState = "idle" | "loading" | "success" | "error";
 
-const emptyValue = "暂无数据";
+const emptyValue = "未设置";
 
 const statusLabels: Record<string, string> = {
   active: "正常",
@@ -53,7 +52,7 @@ const unauthenticatedPromptItems = [
 
 export const accountCenterSectionLabels = [
   "账户概览",
-  "订单与权益",
+  "会员与套餐",
   "账户资料",
   "安全设置",
   "查询历史",
@@ -195,7 +194,7 @@ export function AuthenticatedAccountCenter({
   return (
     <div className="grid gap-5">
       <AccountOverviewCard session={session} />
-      <BillingSummaryCard initialSummary={initialBillingSummary} />
+      <MembershipSummaryCard session={session} initialSummary={initialBillingSummary} />
       <ForecastHistoryCard initialHistory={initialHistory} />
 
       <div
@@ -330,9 +329,11 @@ function SecuritySettingsCard({
   );
 }
 
-function BillingSummaryCard({
+function MembershipSummaryCard({
+  session,
   initialSummary,
 }: {
+  readonly session: PublicAccountSession;
   readonly initialSummary?: {
     readonly orders: readonly AccountBillingOrderRecord[];
     readonly entitlements: readonly AccountEntitlementRecord[];
@@ -342,12 +343,7 @@ function BillingSummaryCard({
   const [orders, setOrders] = useState<readonly AccountBillingOrderRecord[]>(
     initialSummary?.orders ?? [],
   );
-  const [entitlements, setEntitlements] = useState<readonly AccountEntitlementRecord[]>(
-    initialSummary?.entitlements ?? [],
-  );
-  const [access, setAccess] = useState<AccountAccessStatus | null>(
-    initialSummary?.access ?? null,
-  );
+  const [access, setAccess] = useState<AccountAccessStatus | null>(initialSummary?.access ?? null);
   const [state, setState] = useState<LoadState>(initialSummary ? "ready" : "loading");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -356,7 +352,6 @@ function BillingSummaryCard({
 
     if (initialSummary) {
       setOrders(initialSummary.orders);
-      setEntitlements(initialSummary.entitlements);
       setAccess(initialSummary.access ?? null);
       setState("ready");
       setErrorMessage("");
@@ -365,11 +360,10 @@ function BillingSummaryCard({
       };
     }
 
-    Promise.all([listAccountBillingOrders({ limit: 5 }), listAccountEntitlements(), getAccountAccess()])
-      .then(([nextOrders, nextEntitlements, nextAccess]) => {
+    Promise.all([listAccountBillingOrders({ limit: 5 }), getAccountAccess()])
+      .then(([nextOrders, nextAccess]) => {
         if (!cancelled) {
           setOrders(nextOrders);
-          setEntitlements(nextEntitlements);
           setAccess(nextAccess);
           setState("ready");
           setErrorMessage("");
@@ -378,10 +372,9 @@ function BillingSummaryCard({
       .catch((error) => {
         if (!cancelled) {
           setOrders([]);
-          setEntitlements([]);
           setAccess(null);
           setState("ready");
-          setErrorMessage(error instanceof Error ? error.message : "订单与权益暂时无法加载。");
+          setErrorMessage(error instanceof Error ? error.message : "会员状态暂时无法加载。");
         }
       });
 
@@ -390,128 +383,401 @@ function BillingSummaryCard({
     };
   }, [initialSummary]);
 
-  const paidCount = orders.filter((order) => order.status === "paid").length;
-  const entitlementCount = entitlements.length;
-  const accessBadge = access?.hasFullAccess ? "success" : "warning";
-  const paidPlanName =
-    access && ["monthly", "quarterly", "yearly"].includes(access.tier)
-      ? access.currentPlanName
-      : null;
-  const trialRemaining =
-    access?.tier === "trial" && access.remainingDays !== null
-      ? `${access.remainingDays} 天`
-      : access?.trialExpired
-        ? "试用已结束"
-        : null;
-  const accessNotice = access
-    ? access.tier === "trial"
-      ? "试用期内可使用完整摄影判断；到期后会自动回到免费版。"
-      : access.upgradeRequiredForFullAccess
-        ? "当前为免费版，仅可查询未来 24 小时基础天气。"
-        : "当前拥有完整访问权限，续费后有效期自动顺延。"
-    : null;
+  const membership =
+    state === "ready" && !errorMessage ? buildMembershipViewModel(access, orders, session) : null;
 
   return (
-    <Card className="p-5 shadow-sm sm:p-6">
+    <Card data-account-membership-panel="compact" className="p-5 shadow-sm sm:p-6">
       <SectionTitle
-        title="订单与会员"
-        description="当前访问权限由后台权益计算，订单金额、套餐时长和会员有效期不读取前端状态。"
-        aside={access ? <Badge variant={accessBadge}>{access.currentPlanName}</Badge> : null}
+        title="会员与套餐"
+        description="这里显示当前套餐、到期时间和最近订单。"
+        aside={
+          membership ? (
+            <Badge variant={membership.badgeVariant}>{membership.tierLabel}</Badge>
+          ) : null
+        }
       />
       {state === "loading" ? (
         <p className="mt-4 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-          正在读取订单与会员状态...
+          正在读取会员状态...
         </p>
       ) : null}
       {errorMessage ? <StatusMessage state="error" message={errorMessage} /> : null}
-      {state === "ready" ? (
-        <div className="mt-4 grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
-          <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-1">
-            <SummaryField label="当前权限" value={access?.currentPlanName ?? null} />
-            <SummaryField label="试用剩余" value={trialRemaining} />
-            <SummaryField label="付费套餐" value={paidPlanName} />
-            <SummaryField label="到期时间" value={formatOptionalDateTime(access?.entitlementExpiresAt ?? null)} />
-            <SummaryField
-              label="剩余天数"
-              value={access?.remainingDays === null || access?.remainingDays === undefined ? null : `${access.remainingDays} 天`}
-            />
-            <SummaryField label="可查时长" value={`未来 ${access?.maxForecastHours ?? 24} 小时`} />
-            <SummaryField label="权益记录" value={`${entitlementCount} 条`} />
-            <SummaryField label="已支付订单" value={`${paidCount} 笔`} />
-          </dl>
-          <div className="grid gap-2">
-            {accessNotice ? (
-              <div className="rounded-lg border border-border bg-muted/35 p-3">
-                <p className="text-sm font-bold text-card-foreground">会员状态</p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">{accessNotice}</p>
-                {!access?.upgradeRequiredForFullAccess ? (
-                  <Link
-                    href="/pricing"
-                    className="mt-3 inline-flex h-9 w-fit items-center rounded-lg border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary"
-                  >
-                    续费/升级
-                  </Link>
+      {membership ? (
+        <div className="mt-4 grid min-w-0 gap-4" data-membership-state={membership.state}>
+          <div className="rounded-lg border border-border bg-muted/35 p-4">
+            <div className="flex min-w-0 flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant={membership.badgeVariant}>{membership.tierLabel}</Badge>
+                  <Badge variant="muted">{membership.maxForecastRange}</Badge>
+                </div>
+                <p className="mt-3 text-base font-bold leading-6 text-card-foreground">
+                  {membership.primaryMessage}
+                </p>
+                {membership.secondaryMessage ? (
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    {membership.secondaryMessage}
+                  </p>
                 ) : null}
               </div>
-            ) : null}
-            {access?.upgradeRequiredForFullAccess ? (
-              <div className="rounded-lg border border-warning bg-card p-3">
-                <p className="text-sm font-bold text-card-foreground">当前为免费访问</p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  {access.freeLimitMessage}
-                </p>
+              {membership.primaryAction ? (
                 <Link
-                  href="/pricing"
-                  className="mt-3 inline-flex h-9 w-fit items-center rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
+                  href={membership.primaryAction.href}
+                  className={cn(
+                    "inline-flex h-9 shrink-0 items-center justify-center rounded-lg px-3 text-sm font-semibold transition",
+                    membership.primaryAction.variant === "primary"
+                      ? "bg-primary text-primary-foreground shadow-sm hover:bg-[var(--primary-hover)]"
+                      : "border border-border bg-card text-foreground hover:border-primary hover:bg-secondary",
+                  )}
                 >
-                  查看月卡/季卡/年卡
+                  {membership.primaryAction.label}
                 </Link>
-              </div>
-            ) : null}
-            {orders.length === 0 ? <BillingEmptyState /> : null}
-            {orders.map((order) => (
-              <BillingOrderRow key={order.orderNo} order={order} />
-            ))}
+              ) : null}
+            </div>
           </div>
+
+          {membership.detailItems.length > 0 ? (
+            <dl className="grid min-w-0 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+              {membership.detailItems.map((item) => (
+                <MembershipDetailField key={item.label} item={item} />
+              ))}
+            </dl>
+          ) : null}
+
+          {membership.renewalCopy ? (
+            <p className="rounded-lg bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
+              {membership.renewalCopy}
+            </p>
+          ) : null}
+
+          <RecentMembershipOrders
+            orders={membership.recentOrders}
+            emptyMessage={membership.emptyOrdersMessage}
+          />
         </div>
       ) : null}
     </Card>
   );
 }
 
-function BillingEmptyState() {
+type MembershipState = "admin" | "trial" | "paid" | "free";
+
+type MembershipDetailItem = {
+  readonly label: string;
+  readonly value: string;
+};
+
+type MembershipPrimaryAction = {
+  readonly href: string;
+  readonly label: string;
+  readonly variant: "primary" | "secondary";
+};
+
+type MembershipViewModel = {
+  readonly state: MembershipState;
+  readonly tierLabel: string;
+  readonly badgeVariant: AccountBadgeVariant;
+  readonly maxForecastRange: string;
+  readonly primaryMessage: string;
+  readonly secondaryMessage?: string;
+  readonly primaryAction?: MembershipPrimaryAction;
+  readonly detailItems: readonly MembershipDetailItem[];
+  readonly renewalCopy?: string;
+  readonly recentOrders: readonly AccountBillingOrderRecord[];
+  readonly emptyOrdersMessage?: string;
+};
+
+function buildMembershipViewModel(
+  access: AccountAccessStatus | null,
+  orders: readonly AccountBillingOrderRecord[],
+  session: PublicAccountSession,
+): MembershipViewModel {
+  const admin = shouldShowAdminEntry(session) || access?.tier === "admin";
+  const effectiveAccess = access ?? fallbackMembershipAccess(session, admin);
+  const state = membershipStateForAccess(effectiveAccess, admin);
+  const recentOrders = selectRecentMembershipOrders(effectiveAccess, orders, state);
+  const tierLabel = membershipTierLabel(effectiveAccess, state);
+  const emptyOrdersMessage =
+    recentOrders.length === 0 && (state === "free" || effectiveAccess.trialExpired)
+      ? "暂无订单记录"
+      : undefined;
+
+  return {
+    state,
+    tierLabel,
+    badgeVariant: membershipBadgeVariant(state, effectiveAccess),
+    maxForecastRange: membershipMaxForecastRange(effectiveAccess, state),
+    primaryMessage: membershipPrimaryMessage(effectiveAccess, state),
+    secondaryMessage: membershipSecondaryMessage(effectiveAccess, state),
+    primaryAction: membershipPrimaryAction(state),
+    detailItems: membershipDetailItems(effectiveAccess, state, tierLabel),
+    renewalCopy: membershipRenewalCopy(state),
+    recentOrders,
+    emptyOrdersMessage,
+  };
+}
+
+function fallbackMembershipAccess(
+  session: PublicAccountSession,
+  admin: boolean,
+): AccountAccessStatus {
+  return {
+    userId: session.user.id,
+    tier: admin ? "admin" : "free",
+    hasFullAccess: admin,
+    maxForecastHours: admin ? 168 : 24,
+    allowedTargets: admin ? ["general", "cloud_sea", "glow", "astro"] : ["general"],
+    canUseAiExplanation: admin,
+    canViewFullHistory: admin,
+    currentPlanName: admin ? "管理员" : "免费版",
+    remainingDays: null,
+    trialExpired: false,
+    upgradeRequiredForFullAccess: !admin,
+    freeLimitMessage: "当前账户只能查看未来 24 小时基础天气。",
+    reason: admin ? "admin" : "none",
+  };
+}
+
+function membershipStateForAccess(access: AccountAccessStatus, admin: boolean): MembershipState {
+  if (admin || access.tier === "admin") {
+    return "admin";
+  }
+  if (access.tier === "trial" && access.hasFullAccess) {
+    return "trial";
+  }
+  if (isPaidMembershipTier(access.tier) && access.hasFullAccess) {
+    return "paid";
+  }
+  return "free";
+}
+
+function membershipTierLabel(access: AccountAccessStatus, state: MembershipState): string {
+  if (state === "admin") {
+    return "管理员";
+  }
+  if (state === "free") {
+    return "免费版";
+  }
+  return access.currentPlanName;
+}
+
+function membershipBadgeVariant(
+  state: MembershipState,
+  access: AccountAccessStatus,
+): AccountBadgeVariant {
+  if (state === "admin" || state === "paid" || state === "trial") {
+    return "success";
+  }
+  return access.trialExpired ? "warning" : "muted";
+}
+
+function membershipMaxForecastRange(access: AccountAccessStatus, state: MembershipState): string {
+  if (state === "admin") {
+    return "完整访问";
+  }
+  return `未来 ${access.maxForecastHours} 小时`;
+}
+
+function membershipPrimaryMessage(access: AccountAccessStatus, state: MembershipState): string {
+  if (state === "admin") {
+    return "管理员拥有完整访问权限，不受套餐限制。";
+  }
+  if (state === "trial") {
+    return "试用期内可使用完整摄影判断。";
+  }
+  if (state === "paid") {
+    return "当前套餐可使用完整摄影判断。";
+  }
+  return `可查询：未来 ${access.maxForecastHours} 小时基础天气`;
+}
+
+function membershipSecondaryMessage(
+  access: AccountAccessStatus,
+  state: MembershipState,
+): string | undefined {
+  if (state !== "free") {
+    return undefined;
+  }
+  if (access.trialExpired) {
+    return "7 天试用已结束，开通套餐后恢复完整摄影判断。";
+  }
+  if (access.reason === "expired") {
+    return "套餐已到期，开通套餐后恢复完整摄影判断。";
+  }
+  return undefined;
+}
+
+function membershipPrimaryAction(state: MembershipState): MembershipPrimaryAction | undefined {
+  if (state === "admin") {
+    return { href: "/admin", label: "进入管理后台", variant: "primary" };
+  }
+  if (state === "free") {
+    return { href: "/pricing", label: "查看月卡/季卡/年卡", variant: "primary" };
+  }
+  if (state === "trial") {
+    return { href: "/pricing", label: "续费/升级", variant: "secondary" };
+  }
+  return { href: "/pricing", label: "续费", variant: "secondary" };
+}
+
+function membershipDetailItems(
+  access: AccountAccessStatus,
+  state: MembershipState,
+  tierLabel: string,
+): readonly MembershipDetailItem[] {
+  if (state === "admin") {
+    return [
+      { label: "管理员权限", value: "完整访问" },
+      { label: "可查时长", value: "完整访问" },
+      { label: "套餐限制", value: "不受套餐限制" },
+    ];
+  }
+
+  if (state === "trial") {
+    return compactOptionalFields([
+      compactOptionalField("试用剩余", formatRemainingDays(access.remainingDays)),
+      compactOptionalField(
+        "到期时间",
+        formatOptionalMembershipDate(access.entitlementExpiresAt ?? null),
+      ),
+      { label: "权限范围", value: "完整权限" },
+    ]);
+  }
+
+  if (state === "paid") {
+    return compactOptionalFields([
+      { label: "当前套餐", value: tierLabel },
+      compactOptionalField(
+        "到期时间",
+        formatOptionalMembershipDate(access.entitlementExpiresAt ?? null),
+      ),
+      compactOptionalField("剩余天数", formatRemainingDays(access.remainingDays)),
+      { label: "权限范围", value: "完整权限" },
+    ]);
+  }
+
+  return [
+    { label: "当前版本", value: "免费版" },
+    { label: "可查时长", value: `未来 ${access.maxForecastHours} 小时` },
+    { label: "权限范围", value: "基础天气" },
+  ];
+}
+
+function membershipRenewalCopy(state: MembershipState): string | undefined {
+  if (state === "trial") {
+    return "续费后，有效期会接在当前试用到期后顺延。";
+  }
+  if (state === "paid") {
+    return "续费后，有效期会从当前到期时间继续顺延。";
+  }
+  return undefined;
+}
+
+function selectRecentMembershipOrders(
+  access: AccountAccessStatus,
+  orders: readonly AccountBillingOrderRecord[],
+  state: MembershipState,
+): readonly AccountBillingOrderRecord[] {
+  if (state === "admin") {
+    return [];
+  }
+  const paidOrders = orders.filter((order) => order.status === "paid");
+  if (state === "paid" || state === "trial") {
+    return paidOrders.slice(0, 3);
+  }
+  return (access.trialExpired ? paidOrders : orders).slice(0, 3);
+}
+
+function shouldShowRecentOrders(
+  orders: readonly AccountBillingOrderRecord[],
+  emptyMessage?: string,
+): boolean {
+  return orders.length > 0 || Boolean(emptyMessage);
+}
+
+function compactOptionalField(
+  label: string,
+  value: string | null | undefined,
+): MembershipDetailItem | null {
+  const trimmed = value?.trim();
+  return trimmed ? { label, value: trimmed } : null;
+}
+
+function compactOptionalFields(
+  items: readonly (MembershipDetailItem | null)[],
+): readonly MembershipDetailItem[] {
+  return items.filter((item): item is MembershipDetailItem => item !== null);
+}
+
+function formatRemainingDays(days: number | null | undefined): string | null {
+  return typeof days === "number" && Number.isFinite(days) ? `${days} 天` : null;
+}
+
+function formatOptionalMembershipDate(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+  const formatted = formatOptionalDateTime(value);
+  return formatted === emptyValue ? null : formatted;
+}
+
+function isPaidMembershipTier(tier: AccountAccessStatus["tier"]): boolean {
+  return tier === "monthly" || tier === "quarterly" || tier === "yearly";
+}
+
+function MembershipDetailField({ item }: { readonly item: MembershipDetailItem }) {
   return (
-    <div className="mt-4 flex flex-col gap-3 rounded-lg border border-dashed border-border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <p className="text-sm font-bold text-card-foreground">暂无订单</p>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          购买月卡、季卡或年卡后，订单状态和会员有效期会显示在这里。
-        </p>
-      </div>
-      <Link
-        href="/pricing"
-        className="inline-flex h-9 w-fit items-center rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
-      >
-        查看定价
-      </Link>
+    <div className="min-w-0 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+      <dt className="text-xs font-semibold text-muted-foreground">{item.label}</dt>
+      <dd className="mt-1 break-words text-sm font-bold text-card-foreground">{item.value}</dd>
     </div>
   );
 }
 
-function BillingOrderRow({ order }: { readonly order: AccountBillingOrderRecord }) {
+function RecentMembershipOrders({
+  orders,
+  emptyMessage,
+}: {
+  readonly orders: readonly AccountBillingOrderRecord[];
+  readonly emptyMessage?: string;
+}) {
+  if (!shouldShowRecentOrders(orders, emptyMessage)) {
+    return null;
+  }
+
+  return (
+    <div className="grid min-w-0 gap-2" data-membership-orders="compact">
+      <p className="text-sm font-bold text-card-foreground">最近订单</p>
+      {orders.length > 0 ? (
+        <div className="grid gap-2">
+          {orders.map((order) => (
+            <MembershipOrderRow key={order.orderNo} order={order} />
+          ))}
+        </div>
+      ) : (
+        <p className="rounded-lg bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
+          {emptyMessage}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function MembershipOrderRow({ order }: { readonly order: AccountBillingOrderRecord }) {
   return (
     <article className="rounded-lg border border-border bg-muted/30 p-3">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap gap-2">
-            <Badge variant={billingStatusVariant(order.status)}>{billingStatusLabel(order.status)}</Badge>
+            <Badge variant={billingStatusVariant(order.status)}>
+              {billingStatusLabel(order.status)}
+            </Badge>
             <Badge variant="muted">{billingProviderLabel(order.provider)}</Badge>
           </div>
-          <p className="mt-2 break-all text-sm font-bold text-card-foreground">
-            {order.orderNo}
-          </p>
+          <p className="mt-2 break-all text-sm font-bold text-card-foreground">{order.orderNo}</p>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            {order.productCode} · {formatPriceCny(order.amountCents)}
+            {billingProductLabel(order.productCode)} · {formatPriceCny(order.amountCents)}
           </p>
         </div>
         <p className="shrink-0 text-xs text-muted-foreground">
@@ -601,14 +867,16 @@ function ForecastHistoryCard({
 
 function HistoryEmptyState() {
   return (
-    <div className="mt-4 rounded-lg border border-dashed border-border bg-muted/30 p-4">
-      <p className="text-sm font-bold text-card-foreground">暂无查询历史</p>
-      <p className="mt-1 text-xs leading-5 text-muted-foreground">
-        完成一次天气分析后，最近记录会自动出现在这里。
-      </p>
+    <div className="mt-4 flex flex-col gap-3 rounded-lg bg-muted/30 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        <p className="text-sm font-bold text-card-foreground">暂无查询历史</p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          完成一次天气分析后，最近记录会自动出现在这里。
+        </p>
+      </div>
       <Link
         href="/"
-        className="mt-3 inline-flex h-9 items-center rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
+        className="inline-flex h-8 w-fit shrink-0 items-center rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
       >
         开始分析
       </Link>
@@ -1231,6 +1499,16 @@ function billingProviderLabel(provider: AccountBillingOrderRecord["provider"]): 
     return "支付宝";
   }
   return "模拟支付";
+}
+
+function billingProductLabel(productCode: string): string {
+  const labels: Record<string, string> = {
+    monthly_full: "月卡",
+    quarterly_full: "季卡",
+    yearly_full: "年卡",
+    trial_7_days: "7 天试用",
+  };
+  return labels[productCode] ?? "会员套餐";
 }
 
 function formatPriceCny(amountCents: number): string {

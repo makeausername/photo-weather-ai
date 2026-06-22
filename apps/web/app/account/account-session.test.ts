@@ -127,6 +127,53 @@ const cloudSeaHistoryRecord: AccountForecastHistoryRecord = {
   updatedAt: "2026-06-21T08:00:00.000Z",
 };
 
+const baseFreeAccess: AccountAccessStatus = {
+  userId: "user-1",
+  tier: "free",
+  hasFullAccess: false,
+  maxForecastHours: 24,
+  allowedTargets: ["general"],
+  canUseAiExplanation: false,
+  canViewFullHistory: false,
+  currentPlanName: "免费版",
+  remainingDays: null,
+  trialExpired: false,
+  upgradeRequiredForFullAccess: true,
+  freeLimitMessage: "当前账户只能查看未来 24 小时基础天气。",
+  reason: "none",
+};
+
+function createAccountAccess(overrides: Partial<AccountAccessStatus> = {}): AccountAccessStatus {
+  return {
+    ...baseFreeAccess,
+    ...overrides,
+  };
+}
+
+const baseBillingOrder: AccountBillingOrderRecord = {
+  orderNo: "P202606210001",
+  provider: "wechat_pay",
+  amountCents: 1900,
+  currency: "CNY",
+  productCode: "monthly_full",
+  status: "paid",
+  paidAt: "2026-06-21T08:05:00.000Z",
+  expiresAt: null,
+  providerTradeNo: "wx-transaction-id",
+  entitlementGrantedAt: "2026-06-21T08:05:01.000Z",
+  createdAt: "2026-06-21T08:00:00.000Z",
+  updatedAt: "2026-06-21T08:05:01.000Z",
+};
+
+function createBillingOrderRecord(
+  overrides: Partial<AccountBillingOrderRecord> = {},
+): AccountBillingOrderRecord {
+  return {
+    ...baseBillingOrder,
+    ...overrides,
+  };
+}
+
 afterEach(() => {
   routerReplaceMock.mockReset();
   vi.restoreAllMocks();
@@ -288,7 +335,7 @@ describe("account center foundation", () => {
     expect(accountMetadata.title).toBe("账户中心 - 逐光天气");
     expect(accountCenterSectionLabels).toEqual([
       "账户概览",
-      "订单与权益",
+      "会员与套餐",
       "账户资料",
       "安全设置",
       "查询历史",
@@ -328,8 +375,8 @@ describe("account center foundation", () => {
     expect(html).toContain("账户资料");
     expect(html).toContain("绑定方式");
     expect(html).toContain("安全设置");
-    expect(html).toContain("订单与会员");
-    expect(html).toContain("正在读取订单与会员状态");
+    expect(html).toContain("会员与套餐");
+    expect(html).toContain("正在读取会员状态");
     expect(html).toContain("查询历史");
     expect(html).toContain("暂无查询历史");
     expect(html).toContain("修改密码");
@@ -396,24 +443,127 @@ describe("account center foundation", () => {
     expect(html).not.toContain("坐标不足");
   });
 
-  it("renders billing orders and entitlements without provider internals", () => {
+  it("renders a clean admin membership state without missing trial or paid fields", () => {
+    const adminHtml = renderAuthenticatedAccountCenter(
+      {
+        ...baseAccountSession,
+        roles: [{ id: "role-admin", code: "admin", name: "admin", displayName: "管理员" }],
+        roleCodes: ["admin"],
+        permissions: ["admin.manage"],
+        isAdmin: true,
+      },
+      [],
+      {
+        orders: [],
+        entitlements: [],
+        access: createAccountAccess({
+          tier: "admin",
+          hasFullAccess: true,
+          maxForecastHours: 168,
+          allowedTargets: ["general", "cloud_sea", "glow", "astro"],
+          canUseAiExplanation: true,
+          canViewFullHistory: true,
+          currentPlanName: "管理员",
+          upgradeRequiredForFullAccess: false,
+          reason: "admin",
+        }),
+      },
+    );
+
+    expect(adminHtml).toContain('data-account-membership-panel="compact"');
+    expect(adminHtml).toContain('data-membership-state="admin"');
+    expect(adminHtml).toContain("管理员");
+    expect(adminHtml).toContain("完整访问");
+    expect(adminHtml).toContain("不受套餐限制");
+    expect(adminHtml).toContain("进入管理后台");
+    expect(adminHtml).toContain('href="/admin"');
+    expect(adminHtml).not.toContain("试用剩余");
+    expect(adminHtml).not.toContain("付费套餐");
+    expect(adminHtml).not.toContain("到期时间");
+    expect(adminHtml).not.toContain("剩余天数");
+    expect(adminHtml).not.toContain("暂无数据");
+    expect(adminHtml).not.toContain(">暂无订单<");
+    expect(adminHtml).not.toContain("暂无订单记录");
+    expect(adminHtml).not.toContain("border-dashed");
+  });
+
+  it("renders a clean free membership state with one upgrade CTA", () => {
     const html = renderAuthenticatedAccountCenter(baseAccountSession, [], {
-      orders: [
-        {
-          orderNo: "P202606210001",
-          provider: "wechat_pay",
-          amountCents: 1900,
-          currency: "CNY",
-          productCode: "monthly_full",
-          status: "paid",
-          paidAt: "2026-06-21T08:05:00.000Z",
-          expiresAt: null,
-          providerTradeNo: "wx-transaction-id",
-          entitlementGrantedAt: "2026-06-21T08:05:01.000Z",
-          createdAt: "2026-06-21T08:00:00.000Z",
-          updatedAt: "2026-06-21T08:05:01.000Z",
-        },
-      ],
+      orders: [],
+      entitlements: [],
+      access: baseFreeAccess,
+    });
+
+    expect(html).toContain('data-membership-state="free"');
+    expect(html).toContain("免费版");
+    expect(html).toContain("可查询：未来 24 小时基础天气");
+    expect(html).toContain("查看月卡/季卡/年卡");
+    expect(html).toContain('href="/pricing"');
+    expect(html).toContain("暂无订单记录");
+    expect(html).not.toContain("付费套餐");
+    expect(html).not.toContain("试用剩余");
+    expect(html).not.toContain("暂无数据");
+    expect(html).not.toContain(">暂无订单<");
+    expect(html).not.toContain("border-dashed");
+  });
+
+  it("renders an expired trial as a concise free-state membership message", () => {
+    const html = renderAuthenticatedAccountCenter(baseAccountSession, [], {
+      orders: [],
+      entitlements: [],
+      access: createAccountAccess({
+        trialExpired: true,
+        reason: "expired",
+      }),
+    });
+
+    expect(html).toContain('data-membership-state="free"');
+    expect(html).toContain("免费版");
+    expect(html).toContain("7 天试用已结束，开通套餐后恢复完整摄影判断。");
+    expect(html).toContain("查看月卡/季卡/年卡");
+    expect(html).not.toContain("付费套餐");
+    expect(html).not.toContain("试用剩余");
+    expect(html).not.toContain("暂无数据");
+  });
+
+  it("renders active trial membership with remaining days and expiration only", () => {
+    const html = renderAuthenticatedAccountCenter(baseAccountSession, [], {
+      orders: [],
+      entitlements: [],
+      access: createAccountAccess({
+        tier: "trial",
+        hasFullAccess: true,
+        maxForecastHours: 168,
+        allowedTargets: ["general", "cloud_sea", "glow", "astro"],
+        canUseAiExplanation: true,
+        canViewFullHistory: true,
+        activeEntitlementId: "entitlement-trial",
+        activeProductCode: "trial_7_days",
+        entitlementExpiresAt: "2026-06-29T08:05:01.000Z",
+        currentPlanName: "7 天试用",
+        remainingDays: 7,
+        upgradeRequiredForFullAccess: false,
+        reason: "trial_active",
+      }),
+    });
+
+    expect(html).toContain('data-membership-state="trial"');
+    expect(html).toContain("7 天试用");
+    expect(html).toContain("试用剩余");
+    expect(html).toContain("7 天");
+    expect(html).toContain("到期时间");
+    expect(html).toContain("2026/06/29");
+    expect(html).toContain("完整权限");
+    expect(html).toContain("续费/升级");
+    expect(html).toContain("续费后，有效期会接在当前试用到期后顺延。");
+    expect(html).not.toContain("付费套餐");
+    expect(html).not.toContain("暂无订单记录");
+    expect(html).not.toContain("暂无数据");
+  });
+
+  it("renders paid membership with plan, expiration, remaining days, renewal CTA, and compact recent order", () => {
+    const html = renderAuthenticatedAccountCenter(baseAccountSession, [], {
+      orders: [createBillingOrderRecord()],
       entitlements: [
         {
           id: "entitlement-1",
@@ -425,8 +575,7 @@ describe("account center foundation", () => {
           grantedAt: "2026-06-21T08:05:01.000Z",
         },
       ],
-      access: {
-        userId: "user-1",
+      access: createAccountAccess({
         tier: "monthly",
         hasFullAccess: true,
         maxForecastHours: 168,
@@ -438,26 +587,31 @@ describe("account center foundation", () => {
         entitlementExpiresAt: "2026-07-21T08:05:01.000Z",
         currentPlanName: "月卡",
         remainingDays: 30,
-        trialExpired: false,
         upgradeRequiredForFullAccess: false,
-        freeLimitMessage: "当前账户只能查看未来 24 小时基础天气。",
         reason: "paid_active",
-      },
+      }),
     });
 
-    expect(html).toContain("订单与会员");
-    expect(html).toContain("当前权限");
+    expect(html).toContain('data-membership-state="paid"');
+    expect(html).toContain("会员与套餐");
+    expect(html).toContain("当前套餐");
     expect(html).toContain("月卡");
-    expect(html).toContain("续费后有效期自动顺延");
-    expect(html).toContain("续费/升级");
+    expect(html).toContain("到期时间");
+    expect(html).toContain("2026/07/21");
+    expect(html).toContain("剩余天数");
+    expect(html).toContain("30 天");
+    expect(html).toContain("完整权限");
+    expect(html).toContain(">续费</a>");
+    expect(html).toContain("续费后，有效期会从当前到期时间继续顺延。");
     expect(html).toContain("未来 168 小时");
-    expect(html).toContain("权益记录");
-    expect(html).toContain("1 条");
-    expect(html).toContain("已支付订单");
-    expect(html).toContain("1 笔");
+    expect(html).toContain("最近订单");
     expect(html).toContain("P202606210001");
     expect(html).toContain("微信支付");
     expect(html).toContain("已支付");
+    expect(html).not.toContain("monthly_full");
+    expect(html).not.toContain("权益记录");
+    expect(html).not.toContain("已支付订单");
+    expect(html).not.toContain("暂无数据");
     for (const rawProviderDetail of [
       "providerPayload",
       "rawBody",
@@ -473,16 +627,22 @@ describe("account center foundation", () => {
     }
   });
 
-  it("renders a compact billing empty state only when billing data has loaded", () => {
+  it("keeps membership empty orders compact and avoids large blank desktop panels", () => {
     const html = renderAuthenticatedAccountCenter(baseAccountSession, [], {
       orders: [],
       entitlements: [],
+      access: baseFreeAccess,
     });
 
-    expect(html).toContain("暂无订单");
-    expect(html).toContain("购买月卡、季卡或年卡后，订单状态和会员有效期会显示在这里。");
-    expect(html).toContain("查看定价");
-    expect(html).toContain('href="/pricing"');
+    expect(html).toContain('data-account-membership-panel="compact"');
+    expect(html).toContain('data-membership-orders="compact"');
+    expect(html).toContain("暂无订单记录");
+    expect(html).not.toContain(">暂无订单<");
+    expect(html).not.toContain("购买月卡、季卡或年卡后，订单状态和会员有效期会显示在这里。");
+    expect(html).not.toContain("查看定价");
+    expect(html).not.toContain("lg:grid-cols-[220px_minmax(0,1fr)]");
+    expect(html).not.toContain("border-dashed");
+    expect(html).not.toContain("overflow-x-auto");
   });
 
   it("renders a compact and useful empty history state", () => {
@@ -610,6 +770,7 @@ describe("account center foundation", () => {
       "暂无查询记录",
       "暂无收藏机位",
       "暂无已保存报告",
+      "暂无数据",
       "占位",
       "开发",
       "coming soon",
