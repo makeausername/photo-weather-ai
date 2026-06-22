@@ -1,21 +1,19 @@
-export const loginAuthTrustItems = [
+export const loginAuthIntroItems = [
   {
-    title: "保存常用查询与历史记录",
-    description: "登录后可回到最近分析过的地点和结果，减少重复输入。",
+    title: "最近看过的地点更容易找回",
+    description: "登录后，可以回到之前分析过的地点和结果，不必每次从头输入。",
   },
   {
-    title: "管理订单、权益和账户安全",
-    description: "账户中心集中展示权益、绑定方式、密码和登录状态。",
+    title: "订单和可用次数放在一起",
+    description: "购买记录、剩余次数、邮箱和手机号都可以在账户中心查看。",
   },
   {
-    title: "按权限进入运营控制台",
-    description: "管理员登录后从账户中心进入后台，不在公开页暴露管理功能。",
+    title: "有权限时显示后台入口",
+    description: "管理员登录后，会在账户中心看到后台入口；普通账户不会显示。",
   },
 ] as const;
 
-export const loginAuthWorkflowItems = [
-  { label: "查询记录", value: "常用地点与结果统一保存" },
-  { label: "权益管理", value: "订单状态和可用次数清晰可查" },
-  { label: "安全设置", value: "邮箱、手机和密码集中维护" },
-  { label: "后台入口", value: "仅对具备权限的账户显示" },
-] as const;
+export const loginAuthPanelNote = {
+  title: "登录后可以做什么",
+  description: "查看历史分析、订单和账户设置；如果账户有管理员权限，也从这里进入后台。",
+} as const;

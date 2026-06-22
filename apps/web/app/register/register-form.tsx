@@ -173,12 +173,12 @@ export function RegisterForm() {
 
   return (
     <AuthCard
-      eyebrow="新账户"
-      title="创建逐光天气账户"
-      description="选择邮箱或短信验证方式，设置密码后即可进入账户体系。"
+      eyebrow="账户"
+      title="创建账户"
+      description="选择邮箱或短信验证，设置密码后就可以用这个账户登录。"
     >
       <div
-        className="mb-4 grid grid-cols-2 gap-2 rounded-lg border border-border bg-muted p-1"
+        className="mb-4 grid grid-cols-2 gap-1 rounded-lg border border-border bg-muted/70 p-1"
         aria-label="注册方式"
       >
         {[
@@ -189,7 +189,7 @@ export function RegisterForm() {
             key={item.value}
             type="button"
             className={cn(
-              "h-9 rounded-md text-sm font-semibold transition",
+              "h-10 rounded-md text-sm font-semibold transition",
               channel === item.value
                 ? "bg-card text-card-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",
@@ -240,7 +240,7 @@ export function RegisterForm() {
         )}
 
         <FormField label="验证码">
-          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_136px]">
             <Input
               type="text"
               inputMode="numeric"
@@ -254,7 +254,7 @@ export function RegisterForm() {
             <Button
               type="button"
               variant="secondary"
-              className="w-full min-w-[132px] sm:w-auto"
+              className="w-full"
               disabled={!targetIsValid || cooldown > 0 || isSendingCode}
               onClick={() => void handleSendCode()}
             >
@@ -316,7 +316,7 @@ export function RegisterForm() {
           </Button>
           <Link
             href="/login"
-            className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-card px-4 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary"
+            className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-card px-4 text-sm font-semibold text-muted-foreground transition hover:border-primary hover:bg-secondary hover:text-foreground"
           >
             已有账户，去登录
           </Link>

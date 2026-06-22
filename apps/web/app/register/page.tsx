@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { AuthProductPanel, PublicAuthLayout } from "../../components/public-auth";
 import { PublicShell } from "../../components/public-shell";
-import { registerAuthTrustItems, registerAuthWorkflowItems } from "./auth-content";
+import { registerAuthIntroItems, registerAuthPanelNote } from "./auth-content";
 import { RegisterForm } from "./register-form";
 
 export const metadata: Metadata = {
@@ -14,11 +14,12 @@ export default function RegisterPage() {
       <PublicAuthLayout
         productPanel={
           <AuthProductPanel
-            eyebrow="创建逐光天气账户"
-            title="完成验证，开始管理你的摄影出行记录"
-            description="用邮箱或手机号创建账户，后续可保存查询历史、查看订单权益，并维护安全验证方式。"
-            trustItems={registerAuthTrustItems}
-            workflowItems={registerAuthWorkflowItems}
+            eyebrow="账户"
+            title="创建账户，保存你的拍摄判断"
+            description="用邮箱或手机号完成验证。以后可以在账户中心查看历史记录、订单和绑定方式。"
+            trustItems={registerAuthIntroItems}
+            noteTitle={registerAuthPanelNote.title}
+            note={registerAuthPanelNote.description}
           />
         }
       >

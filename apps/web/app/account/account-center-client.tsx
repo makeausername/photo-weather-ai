@@ -24,7 +24,6 @@ import {
   type PublicAccountSession,
 } from "../../components/account-session";
 import type { AccountRole, JsonValue } from "../admin/admin-api";
-import { AuthTrustList } from "../../components/public-auth";
 import { Badge, Button, Card, FormField, Input, cn } from "../../components/ui";
 import {
   forecastHorizonLabels,
@@ -43,6 +42,12 @@ const statusLabels: Record<string, string> = {
   disabled: "已停用",
   pending: "待确认",
 };
+
+const unauthenticatedPromptItems = [
+  ["历史分析", "查看之前分析过的地点和结果。"],
+  ["订单和次数", "确认订单状态与剩余可用次数。"],
+  ["绑定方式", "维护邮箱、手机号和登录密码。"],
+] as const;
 
 export const accountCenterSectionLabels = [
   "账户概览",
@@ -124,15 +129,15 @@ export function AccountCenterClient() {
 
 export function UnauthenticatedAccountPrompt() {
   return (
-    <Card data-auth-account-prompt="commercial-auth-prompt" className="overflow-hidden shadow-soft">
-      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="p-5 sm:p-6">
-          <p className="text-sm font-bold text-primary">账户中心</p>
+    <Card data-auth-account-prompt="compact-auth-prompt" className="p-5 shadow-sm sm:p-6">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] lg:items-start">
+        <div className="min-w-0">
+          <p className="text-xs font-bold text-primary">账户</p>
           <h2 className="mt-3 text-2xl font-bold leading-tight text-card-foreground">
             登录后查看账户中心
           </h2>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-            账户中心用于管理查询历史、订单权益、绑定方式和登录安全。登录后会根据账户权限显示可用功能。
+            登录后可以查看历史分析、订单和绑定方式；如果还没有账户，可以先用邮箱或手机号注册。
           </p>
           <div className="mt-5 flex flex-col gap-3 sm:flex-row">
             <Link
@@ -149,23 +154,13 @@ export function UnauthenticatedAccountPrompt() {
             </Link>
           </div>
         </div>
-        <div className="border-t border-border bg-muted/35 p-5 sm:p-6 lg:border-l lg:border-t-0">
-          <AuthTrustList
-            items={[
-              {
-                title: "查询历史",
-                description: "查看最近保存的地点和分析结果。",
-              },
-              {
-                title: "订单与权益",
-                description: "确认订单状态和可用预测次数。",
-              },
-              {
-                title: "账户安全",
-                description: "维护密码、邮箱和手机绑定方式。",
-              },
-            ]}
-          />
+        <div className="grid gap-3 rounded-lg border border-border bg-muted/35 p-4">
+          {unauthenticatedPromptItems.map(([title, description]) => (
+            <div key={title} className="grid gap-1">
+              <p className="text-sm font-bold text-card-foreground">{title}</p>
+              <p className="text-xs leading-5 text-muted-foreground">{description}</p>
+            </div>
+          ))}
         </div>
       </div>
     </Card>

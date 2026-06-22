@@ -29,7 +29,9 @@ export function LoginForm({ initialIdentifier = "", registered = false }: LoginF
   const router = useRouter();
   const [identifier, setIdentifier] = useState(initialIdentifier);
   const [password, setPassword] = useState("");
-  const [status, setStatus] = useState(registered ? "账户创建成功，请登录逐光天气。" : "");
+  const [status, setStatus] = useState(
+    registered ? "账户已创建，可以用刚才的邮箱或手机号登录。" : "",
+  );
   const [statusTone, setStatusTone] = useState<AuthFormStatusTone>(
     registered ? "success" : "info",
   );
@@ -66,9 +68,9 @@ export function LoginForm({ initialIdentifier = "", registered = false }: LoginF
 
   return (
     <AuthCard
-      eyebrow="账户登录"
-      title="欢迎回来"
-      description="使用邮箱或手机号登录，继续管理查询历史、订单权益和账户安全。"
+      eyebrow="账户"
+      title="登录"
+      description="输入邮箱或手机号和密码，继续查看你的历史分析与账户信息。"
     >
       <form className="grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
         <FormField label="邮箱或手机号">
@@ -100,13 +102,13 @@ export function LoginForm({ initialIdentifier = "", registered = false }: LoginF
           <div className="grid gap-2 sm:grid-cols-2">
             <Link
               href="/register"
-              className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-card px-4 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary"
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-card px-4 text-sm font-semibold text-muted-foreground transition hover:border-primary hover:bg-secondary hover:text-foreground"
             >
               创建账户
             </Link>
             <Link
               href="/"
-              className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-card px-4 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary"
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-card px-4 text-sm font-semibold text-muted-foreground transition hover:border-primary hover:bg-secondary hover:text-foreground"
             >
               返回首页
             </Link>
@@ -114,7 +116,7 @@ export function LoginForm({ initialIdentifier = "", registered = false }: LoginF
         </div>
 
         <p className="text-xs leading-5 text-muted-foreground">
-          管理员登录后，可在账户中心按权限进入后台运营控制台。
+          有管理员权限的账户登录后，会在账户中心看到后台入口。
         </p>
       </form>
     </AuthCard>

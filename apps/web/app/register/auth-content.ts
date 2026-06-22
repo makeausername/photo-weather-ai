@@ -1,21 +1,19 @@
-export const registerAuthTrustItems = [
+export const registerAuthIntroItems = [
   {
-    title: "创建账户后保存查询历史",
-    description: "成功登录后，最近分析和常用地点可在账户中心继续查看。",
+    title: "历史分析以后还能找到",
+    description: "注册后，最近做过的天气判断会跟随账户保留，换设备也方便回看。",
   },
   {
-    title: "统一管理订单与权益",
-    description: "预测次数、订单状态和账户权益集中在一个清晰入口。",
+    title: "订单和次数跟随账户",
+    description: "购买记录、剩余可用次数和绑定方式会放在账户中心。",
   },
   {
-    title: "安全邮箱或短信验证",
-    description: "通过邮箱或手机号验证码完成注册，后续可继续维护绑定方式。",
+    title: "邮箱或手机号都可以使用",
+    description: "用邮箱或中国大陆手机号完成验证，之后都可以作为登录方式。",
   },
 ] as const;
 
-export const registerAuthWorkflowItems = [
-  { label: "注册方式", value: "邮箱或中国大陆手机号" },
-  { label: "验证流程", value: "验证码确认后创建账户" },
-  { label: "安全凭据", value: "密码至少 8 个字符" },
-  { label: "登录跳转", value: "注册成功后回到登录页" },
-] as const;
+export const registerAuthPanelNote = {
+  title: "注册前准备",
+  description: "准备一个可以接收验证码的邮箱或手机号，并设置至少 8 个字符的密码。",
+} as const;
