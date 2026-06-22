@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import { AuthProductPanel, PublicAuthLayout } from "../../components/public-auth";
+import { PublicAuthLayout } from "../../components/public-auth";
 import { PublicShell } from "../../components/public-shell";
-import { loginAuthIntroItems, loginAuthPanelNote } from "./auth-content";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = {
@@ -22,21 +21,8 @@ export default function LoginPage({ searchParams }: LoginPageProps) {
 
   return (
     <PublicShell contentClassName="pb-10 sm:pb-12">
-      <PublicAuthLayout
-        productPanel={
-          <AuthProductPanel
-            eyebrow="账户"
-            title="登录账户，继续查看你的拍摄记录"
-            description="用邮箱或手机号登录。登录后可以查看历史分析、订单和账户设置。"
-            trustItems={loginAuthIntroItems}
-            noteTitle={loginAuthPanelNote.title}
-            note={loginAuthPanelNote.description}
-          />
-        }
-      >
-        <div className="w-full">
-          <LoginForm initialIdentifier={initialIdentifier} registered={registered} />
-        </div>
+      <PublicAuthLayout>
+        <LoginForm initialIdentifier={initialIdentifier} registered={registered} />
       </PublicAuthLayout>
     </PublicShell>
   );
