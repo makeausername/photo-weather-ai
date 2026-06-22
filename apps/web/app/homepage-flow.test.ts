@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   forecastHorizonLabels,
   type ForecastCalculationResult,
+  type ForecastHorizon,
   type ForecastQueryInput,
 } from "@photo-weather/shared";
 import { describe, expect, it, vi } from "vitest";
@@ -28,6 +29,7 @@ import {
   requestBrowserCurrentCoordinates,
   sanitizePlaceSearchErrorMessage,
   shouldShowPlaceSearchResults,
+  HorizonSelector,
   type PlaceSearchResult,
 } from "../components/place-search-card";
 import {
@@ -196,7 +198,7 @@ describe("homepage forecast flow", () => {
 
     expect(url.pathname).toBe("/forecast");
     expect(url.searchParams.get("target")).toBe("general");
-    expect(url.searchParams.get("horizon")).toBe("48h");
+    expect(url.searchParams.get("horizon")).toBe("24h");
     expect(url.searchParams.get("latWgs84")).toBe(String(samplePlace.latitudeWgs84));
     expect(url.searchParams.get("lngWgs84")).toBe(String(samplePlace.longitudeWgs84));
     expect(url.searchParams.get("latitudeWgs84")).toBe(String(samplePlace.latitudeWgs84));
@@ -547,6 +549,22 @@ describe("homepage forecast flow", () => {
     expect(hasExactButton(html, "星空银河")).toBe(false);
   });
 
+  it("renders extended horizon options as disabled when the access gate locks them", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(HorizonSelector, {
+        value: "24h",
+        onChange: () => undefined,
+        disabledOptions: new Set<ForecastHorizon>(["48h", "72h", "7d"]),
+      }),
+    );
+
+    expect(html.match(/disabled=""/g)).toHaveLength(3);
+    expect(html).toContain(forecastHorizonLabels["24h"]);
+    expect(html).toContain(forecastHorizonLabels["48h"]);
+    expect(html).toContain(forecastHorizonLabels["72h"]);
+    expect(html).toContain(forecastHorizonLabels["7d"]);
+  });
+
   it("does not render popular spot sections on the homepage", () => {
     const panelHtml = renderToStaticMarkup(React.createElement(HomepageSearchPanel));
     const pageHtml = renderToStaticMarkup(React.createElement(HomePage));
@@ -781,7 +799,7 @@ describe("homepage forecast flow", () => {
       elevationMeters: null,
       elevationSource: "unknown",
       elevationConfidence: "low",
-      horizon: "48h",
+      horizon: "24h",
       target: "general",
     });
     expect(payload.photoSpotId).toBeUndefined();

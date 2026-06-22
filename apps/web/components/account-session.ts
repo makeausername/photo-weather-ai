@@ -11,6 +11,11 @@ import {
 } from "../app/admin/admin-api";
 import type { ForecastHorizon, ForecastQueryInput, ForecastTarget } from "@photo-weather/shared";
 import { loginServiceUnavailableMessage, sanitizeAuthErrorMessage } from "./auth-errors";
+import {
+  publicApiFetch,
+  requiredAuthApiFetch,
+  retryableServiceMessage,
+} from "./api-client";
 
 export type PublicAccountSession = {
   readonly user: SafeAdminUser;
@@ -300,6 +305,12 @@ async function accountApiFetch<TResponse>(
   init: RequestInit = {},
   options: { readonly retryOnUnauthorized?: boolean } = { retryOnUnauthorized: true },
 ): Promise<TResponse> {
+  if (process.env.NODE_ENV !== "__legacy_account_fetch__") {
+    return requiredAuthApiFetch<TResponse>(path, init, {
+      retryOnUnauthorized: options.retryOnUnauthorized,
+      fallbackMessage: retryableServiceMessage,
+    });
+  }
   const tokens = getStoredAdminTokens();
   if (!tokens) {
     throw new Error("请先登录后再操作。");
@@ -550,6 +561,21 @@ export async function listAccountBillingOrders(
 }
 
 export async function listPublicBillingProducts(): Promise<readonly PublicBillingProduct[]> {
+  if (process.env.NODE_ENV !== "__legacy_public_products_fetch__") {
+    const payload = await publicApiFetch<{
+      readonly products?: readonly PublicBillingProduct[];
+    }>(
+      "/billing/products",
+      {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      },
+      {
+        fallbackMessage: retryableServiceMessage,
+      },
+    );
+    return payload.products ?? [];
+  }
   const response = await fetch(`${apiBaseUrl}/billing/products`, {
     headers: { Accept: "application/json" },
     cache: "no-store",

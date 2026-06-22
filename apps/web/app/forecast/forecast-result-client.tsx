@@ -34,6 +34,14 @@ import { MoonPhaseCalendar } from "../../components/moon-phase-calendar";
 import { Badge, Button, Card, cn } from "../../components/ui";
 import { saveForecastHistory } from "../../components/account-session";
 import {
+  ApiClientError,
+  currentAuthCacheScope,
+  optionalAuthApiFetch,
+  sanitizeApiErrorMessage,
+  upgradeRequiredDefaultMessage,
+  upgradeRequiredTitle,
+} from "../../components/api-client";
+import {
   buildForecastResultViewModel,
   filterAstroPublicProfessionalDataGroups,
   getForecastResultPageShellCopy,
@@ -225,6 +233,7 @@ type ForecastAiExplanation = {
 };
 
 type AiExplainResponse = {
+  readonly error?: string;
   readonly ok?: boolean;
   readonly success?: boolean;
   readonly targetCode?: ForecastQueryInput["target"];
@@ -315,7 +324,6 @@ type AiExplainResponse = {
   };
 };
 
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 export const deepSeekBackendTimeoutMaxMs = 120_000;
 export const aiExplainFrontendTimeoutMs = 130_000;
 
@@ -334,6 +342,7 @@ type NormalizedAiExplainOutcome = {
   readonly retryable: boolean;
   readonly success: boolean;
   readonly cacheable: boolean;
+  readonly errorCode?: string;
   readonly errorCategory: AiExplainErrorCategory | "none";
   readonly backendErrorCategory: AiExplainErrorCategory | "none";
   readonly parseSuccess?: boolean;
@@ -390,7 +399,7 @@ export function createAiExplanationCacheKey({
     readStringField(resultWithIds, "reportId") ??
     readStringField(resultWithIds, "resultId") ??
     createForecastResultContextId(query, result);
-  return `${aiExplanationCachePrefix}${stableResultId}`;
+  return `${aiExplanationCachePrefix}${currentAuthCacheScope()}:${stableResultId}`;
 }
 
 export function readCachedAiExplanation(cacheKey: string): ForecastAiExplanation | null {
@@ -468,6 +477,7 @@ export function normalizeAiExplainResponse(
   _deterministicFallback: ForecastAiExplanation | null = null,
 ): NormalizedAiExplainOutcome {
   const response = isRecord(payload) ? (payload as AiExplainResponse) : {};
+  const errorCode = readStringField(response, "error");
   const diagnostics = isRecord(response.diagnostics) ? response.diagnostics : undefined;
   const meta = isRecord(response.meta)
     ? (response.meta as NonNullable<AiExplainResponse["meta"]>)
@@ -499,7 +509,7 @@ export function normalizeAiExplainResponse(
   const retryable =
     typeof response.retryable === "boolean"
       ? response.retryable
-      : frontendErrorCategory
+      : errorCode === "upgrade_required" || frontendErrorCategory
         ? false
         : backendErrorCategory !== "none" && isRetryableAiExplainCategory(backendErrorCategory);
   const message = frontendErrorCategory
@@ -516,6 +526,7 @@ export function normalizeAiExplainResponse(
       retryable: false,
       success: true,
       cacheable: true,
+      errorCode,
       errorCategory: backendErrorCategory,
       backendErrorCategory,
       parseSuccess,
@@ -529,7 +540,12 @@ export function normalizeAiExplainResponse(
   }
 
   const category =
-    frontendErrorCategory ?? (backendErrorCategory === "none" ? "unknown" : backendErrorCategory);
+    frontendErrorCategory ??
+    (errorCode === "upgrade_required"
+      ? "none"
+      : backendErrorCategory === "none"
+        ? "unknown"
+        : backendErrorCategory);
   return {
     status: "error",
     explanation: null,
@@ -537,6 +553,7 @@ export function normalizeAiExplainResponse(
     retryable,
     success: false,
     cacheable: false,
+    errorCode,
     errorCategory: category,
     backendErrorCategory,
     parseSuccess,
@@ -553,6 +570,21 @@ function normalizeAiExplainThrownError(
   error: unknown,
   latencyMs: number,
 ): NormalizedAiExplainOutcome {
+  if (error instanceof ApiClientError) {
+    return {
+      status: "error",
+      explanation: null,
+      errorMessage: normalizeAiExplanationErrorMessage(error.publicMessage),
+      retryable: error.retryable,
+      success: false,
+      cacheable: false,
+      errorCode: error.code,
+      errorCategory: error.code === "upgrade_required" ? "none" : "unknown",
+      backendErrorCategory: "none",
+      parseSuccess: false,
+      latencyMs,
+    };
+  }
   const errorCategory: AiExplainErrorCategory = isAbortError(error) ? "timeout" : "network_error";
   const message = publicAiExplanationMessage(errorCategory);
 
@@ -1641,12 +1673,14 @@ function applyAiExplainOutcome(
   outcome: NormalizedAiExplainOutcome,
   setters: {
     readonly setAiExplanation: (value: ForecastAiExplanation | null) => void;
+    readonly setAiErrorCode: (value: string) => void;
     readonly setAiErrorMessage: (value: string) => void;
     readonly setAiRetryable: (value: boolean) => void;
     readonly setAiStatus: (value: AiStatus) => void;
   },
 ): void {
   setters.setAiExplanation(outcome.explanation);
+  setters.setAiErrorCode(outcome.errorCode ?? "");
   setters.setAiErrorMessage(outcome.errorMessage);
   setters.setAiRetryable(outcome.retryable);
   setters.setAiStatus(outcome.status);
@@ -1838,6 +1872,7 @@ export function resolveForecastPageMode({
 type ForecastAiInterpretationState = {
   readonly status: AiStatus;
   readonly explanation: ForecastAiExplanation | null;
+  readonly errorCode: string;
   readonly errorMessage: string;
   readonly retryable: boolean;
   readonly generate: () => void;
@@ -1849,6 +1884,7 @@ function useForecastAiInterpretation(
 ): ForecastAiInterpretationState {
   const [aiStatus, setAiStatus] = useState<AiStatus>("idle");
   const [aiExplanation, setAiExplanation] = useState<ForecastAiExplanation | null>(null);
+  const [aiErrorCode, setAiErrorCode] = useState("");
   const [aiErrorMessage, setAiErrorMessage] = useState("");
   const [aiRetryable, setAiRetryable] = useState(false);
   const aiRequestInFlightRef = useRef(false);
@@ -1864,6 +1900,7 @@ function useForecastAiInterpretation(
     aiRequestInFlightRef.current = false;
     setAiStatus("idle");
     setAiExplanation(null);
+    setAiErrorCode("");
     setAiErrorMessage("");
     setAiRetryable(false);
 
@@ -1901,11 +1938,13 @@ function useForecastAiInterpretation(
         retryable: false,
         success: true,
         cacheable: false,
+        errorCode: "",
         errorCategory: "none",
         backendErrorCategory: "none",
       };
       applyAiExplainOutcome(cacheOutcome, {
         setAiExplanation,
+        setAiErrorCode,
         setAiErrorMessage,
         setAiRetryable,
         setAiStatus,
@@ -1920,14 +1959,17 @@ function useForecastAiInterpretation(
     aiAbortControllerRef.current = controller;
     aiRequestInFlightRef.current = true;
     setAiExplanation(null);
+    setAiErrorCode("");
     setAiStatus("loading");
     setAiErrorMessage("");
     setAiRetryable(false);
     try {
+      const tokens = getStoredAdminTokens();
       const response = await fetch(`${apiBaseUrl}/forecast/ai-explain`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(tokens ? { Authorization: `Bearer ${tokens.accessToken}` } : {}),
         },
         body: JSON.stringify(query),
         signal: controller.signal,
@@ -1945,6 +1987,7 @@ function useForecastAiInterpretation(
         });
         applyAiExplainOutcome(outcome, {
           setAiExplanation,
+          setAiErrorCode,
           setAiErrorMessage,
           setAiRetryable,
           setAiStatus,
@@ -1960,6 +2003,7 @@ function useForecastAiInterpretation(
       }
       applyAiExplainOutcome(outcome, {
         setAiExplanation,
+        setAiErrorCode,
         setAiErrorMessage,
         setAiRetryable,
         setAiStatus,
@@ -1969,6 +2013,7 @@ function useForecastAiInterpretation(
       const outcome = normalizeAiExplainThrownError(error, Date.now() - startedAt);
       applyAiExplainOutcome(outcome, {
         setAiExplanation,
+        setAiErrorCode,
         setAiErrorMessage,
         setAiRetryable,
         setAiStatus,
@@ -1986,6 +2031,7 @@ function useForecastAiInterpretation(
   return {
     status: aiStatus,
     explanation: aiExplanation,
+    errorCode: aiErrorCode,
     errorMessage: aiErrorMessage,
     retryable: aiRetryable,
     generate: generateAiExplanation,

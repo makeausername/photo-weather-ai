@@ -15,7 +15,9 @@ import {
   GlowResultPage,
   type DecisionProgressContext,
 } from "../app/forecast/forecast-result-client";
-import { getStoredAdminTokens } from "../app/admin/admin-api";
+import {
+  requestForecastCalculation,
+} from "../app/forecast/forecast-request-client";
 import { buildForecastResultViewModel } from "../app/forecast/forecast-result-view-model";
 import {
   formatSubjectDetailWindowLabel,
@@ -28,8 +30,6 @@ import {
 } from "../app/forecast/subject-detail-links";
 import { PublicShell } from "./public-shell";
 import { Badge, Card } from "./ui";
-
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
 type SubjectDetailDeepLinkClientProps = {
   readonly target: SubjectDetailTarget;
@@ -112,21 +112,7 @@ export function SubjectDetailDeepLinkClient({
           ...parsed.fallbackQuery,
           ...parsed.requestOptions,
         };
-        const tokens = getStoredAdminTokens();
-        const response = await fetch(`${apiBaseUrl}/forecast/calculate`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(tokens ? { Authorization: `Bearer ${tokens.accessToken}` } : {}),
-          },
-          body: JSON.stringify(requestBody),
-        });
-
-        if (!response.ok) {
-          throw new Error(await readApiErrorMessage(response));
-        }
-
-        const result = (await response.json()) as ForecastCalculationResult;
+        const result = await requestForecastCalculation(requestBody);
         if (!cancelled) {
           setState({
             status: "ready",

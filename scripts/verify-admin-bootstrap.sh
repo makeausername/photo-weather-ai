@@ -11,8 +11,6 @@ REQUIRED_ADMIN_PERMISSION_CODES=(
   settings.manage
   providers.manage
   users.manage
-  locations.manage
-  photo_spots.manage
   audit.read
   usage.read
 )

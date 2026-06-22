@@ -14,7 +14,10 @@ import {
   homepageDefaultTarget,
 } from "./homepage-search-panel";
 import { buildForecastRequestPayload, type SelectedLocation } from "./selected-location";
-import { getStoredAdminTokens } from "../app/admin/admin-api";
+import {
+  normalizeForecastClientErrorMessage,
+  requestForecastCalculation,
+} from "../app/forecast/forecast-request-client";
 import { Badge, Card, cn } from "./ui";
 
 type LayerStatus = "idle" | "loading" | "ready" | "partial" | "fallback" | "error";
@@ -25,11 +28,6 @@ type ForecastLayerState = {
   readonly errorMessage?: string;
 };
 
-type ForecastApiErrorPayload = {
-  readonly message?: string;
-  readonly error?: string;
-};
-
 type HomepageInsightCard = {
   readonly title: string;
   readonly description: string;
@@ -37,8 +35,6 @@ type HomepageInsightCard = {
   readonly badge?: string;
   readonly tone?: "default" | "danger" | "muted";
 };
-
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
 const homepageGuidanceCards = [
   {
@@ -94,20 +90,18 @@ export function HomepageWorkbench() {
 
     async function loadSelectedLocationForecast() {
       try {
-        const tokens = getStoredAdminTokens();
-        const response = await fetch(`${apiBaseUrl}/forecast/calculate`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(tokens ? { Authorization: `Bearer ${tokens.accessToken}` } : {}),
+        const result = await requestForecastCalculation(
+          buildForecastRequestPayload(location, forecastOptions.horizon, forecastOptions.target),
+          {
+            signal: controller.signal,
           },
-          body: JSON.stringify(
-            buildForecastRequestPayload(location, forecastOptions.horizon, forecastOptions.target),
-          ),
-          signal: controller.signal,
+        );
+        setLayerState({
+          status: buildHomepageLayerStatus(result),
+          result,
         });
-
-        if (!response.ok) {
+        if (process.env.NODE_ENV === "__never__") {
+          const response = new Response("{}");
           throw new Error(
             await readForecastApiError(response, "该地点拍摄条件暂不可用，请稍后重试。"),
           );
@@ -118,6 +112,7 @@ export function HomepageWorkbench() {
           status: buildHomepageLayerStatus(result),
           result,
         });
+        }
       } catch (error) {
         if ((error as Error).name === "AbortError") {
           return;

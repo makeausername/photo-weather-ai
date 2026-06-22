@@ -1,4 +1,9 @@
 import type { ForecastCalculationResult, ForecastQueryInput } from "@photo-weather/shared";
+import {
+  ApiClientError,
+  currentAuthCacheScope,
+  optionalAuthApiFetch,
+} from "../../components/api-client";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
@@ -29,6 +34,11 @@ type ForecastCacheRecord = {
 
 type ForecastInFlightRecord = {
   readonly promise: Promise<ForecastCalculationResult>;
+};
+
+export type ForecastCalculationRequestInput = ForecastQueryInput & {
+  readonly useAiExplanation?: boolean;
+  readonly startDateTime?: string;
 };
 
 export type ForecastRequestErrorOptions = {
@@ -82,7 +92,7 @@ export type RequestForecastCalculationOptions = {
 const forecastSuccessCache = new Map<string, ForecastCacheRecord>();
 const forecastInFlightRequests = new Map<string, ForecastInFlightRecord>();
 
-export function stableForecastQueryKey(query: ForecastQueryInput): string {
+export function stableForecastQueryKey(query: ForecastCalculationRequestInput): string {
   return JSON.stringify({
     name: query.name,
     source: query.source,
@@ -100,20 +110,26 @@ export function stableForecastQueryKey(query: ForecastQueryInput): string {
     elevationConfidence: query.elevationConfidence ?? null,
     locationId: query.locationId ?? null,
     photoSpotId: query.photoSpotId ?? null,
+    startDateTime: query.startDateTime ?? null,
+    useAiExplanation: query.useAiExplanation ?? false,
   });
 }
 
 export async function requestForecastCalculation(
-  query: ForecastQueryInput,
+  query: ForecastCalculationRequestInput,
   options: RequestForecastCalculationOptions = {},
 ): Promise<ForecastCalculationResult> {
-  const queryKey = stableForecastQueryKey(query);
-  const cached = readCachedForecastResult(queryKey, {
-    allowStale: false,
-    useSessionStorage: options.useSessionStorage ?? true,
-  });
-  if (cached) {
-    return cached;
+  const cacheable = isFrontendForecastCacheable(query);
+  const authCacheKey = currentAuthCacheScope();
+  const queryKey = `${stableForecastQueryKey(query)}|auth:${authCacheKey}`;
+  if (cacheable) {
+    const cached = readCachedForecastResult(queryKey, {
+      allowStale: false,
+      useSessionStorage: options.useSessionStorage ?? true,
+    });
+    if (cached) {
+      return cached;
+    }
   }
 
   const inFlight = forecastInFlightRequests.get(queryKey);
@@ -124,24 +140,22 @@ export async function requestForecastCalculation(
   const requestPromise = retryWithBackoff(
     async () => {
       throwIfAborted(options.signal);
-      const response = await (options.fetcher ?? fetch)(
-        `${options.baseUrl ?? apiBaseUrl}/forecast/calculate`,
+      const result = await optionalAuthApiFetch<ForecastCalculationResult>(
+        "/forecast/calculate",
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
           body: JSON.stringify(query),
           signal: options.signal,
         },
+        {
+          baseUrl: options.baseUrl ?? apiBaseUrl,
+          fetcher: options.fetcher,
+          fallbackMessage: forecastCalculationGenericFailureMessage,
+        },
       );
-
-      if (!response.ok) {
-        throw await normalizeForecastApiError(response);
+      if (cacheable) {
+        writeCachedForecastResult(queryKey, result, options);
       }
-
-      const result = (await response.json()) as ForecastCalculationResult;
-      writeCachedForecastResult(queryKey, result, options);
       return result;
     },
     {
@@ -151,7 +165,7 @@ export async function requestForecastCalculation(
       shouldRetry: isTransientForecastError,
     },
   ).catch((error) => {
-    if (isTransientForecastError(error)) {
+    if (cacheable && isTransientForecastError(error)) {
       const stale = readCachedForecastResult(queryKey, {
         allowStale: true,
         useSessionStorage: options.useSessionStorage ?? true,
@@ -204,7 +218,9 @@ export async function normalizeForecastApiError(response: Response): Promise<For
   const status = response.status;
   const transient = isTransientForecastStatus(status);
   const publicMessage =
-    status === 400
+    code === "upgrade_required"
+      ? safeValidationMessage(payload)
+      : status === 400
       ? safeValidationMessage(payload)
       : transient
         ? forecastCalculationTransientFailureMessage
@@ -256,9 +272,19 @@ export function clearForecastRequestClientCachesForTest(): void {
   forecastInFlightRequests.clear();
 }
 
-function normalizeForecastClientError(error: unknown): ForecastRequestError {
+export function normalizeForecastClientError(error: unknown): ForecastRequestError {
   if (error instanceof ForecastRequestError) {
     return error;
+  }
+  if (error instanceof ApiClientError) {
+    return new ForecastRequestError(error.publicMessage, {
+      status: error.status,
+      code: error.code,
+      retryable: error.retryable,
+      transient: error.retryable && isTransientForecastStatus(error.status),
+      publicMessage: error.publicMessage,
+      cause: error,
+    });
   }
   if (isForecastRequestAbortError(error)) {
     return new ForecastRequestError("", {
@@ -283,6 +309,10 @@ function normalizeForecastClientError(error: unknown): ForecastRequestError {
     publicMessage: forecastCalculationGenericFailureMessage,
     cause: error,
   });
+}
+
+function isFrontendForecastCacheable(query: ForecastCalculationRequestInput): boolean {
+  return query.target === "general" && query.horizon === "24h" && query.useAiExplanation !== true;
 }
 
 function readCachedForecastResult(
