@@ -15,7 +15,12 @@ import {
   validateSettingKey,
   validateSettingValue,
 } from "@photo-weather/db";
-import type { DatabaseClient, JsonValue, ProviderType } from "@photo-weather/db";
+import type {
+  AdminAuditLogRecord,
+  DatabaseClient,
+  JsonValue,
+  ProviderType,
+} from "@photo-weather/db";
 import { MockGeoProvider } from "@photo-weather/geo";
 import type { GeoProvider } from "@photo-weather/geo";
 import {
@@ -323,6 +328,11 @@ export type AdminRoutesOptions = {
 
 function toAuditJson(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue;
+}
+
+function safeAuditLogResponse(log: AdminAuditLogRecord) {
+  const { beforeJson: _beforeJson, afterJson: _afterJson, ...safeLog } = log;
+  return safeLog;
 }
 
 function calibrationLocationKeyFromQuery(input: {
@@ -2571,7 +2581,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
     });
 
     return {
-      logs,
+      logs: logs.map(safeAuditLogResponse),
     };
   });
 }

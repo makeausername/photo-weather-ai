@@ -326,9 +326,18 @@ export type AdminAuditLogInput = {
 export type AdminAuditLogRecord = {
   readonly id: string;
   readonly actorUserId: string | null;
+  readonly actorDisplayName: string;
+  readonly actorEmailMasked: string | null;
+  readonly actorPhoneMasked: string | null;
+  readonly actorLabel: string;
   readonly action: string;
+  readonly actionLabel: string;
   readonly targetType: string;
   readonly targetId: string | null;
+  readonly targetLabel: string;
+  readonly targetSummary: string;
+  readonly technicalActorUserId: string | null;
+  readonly technicalTargetId: string | null;
   readonly beforeJson: JsonValue | null;
   readonly afterJson: JsonValue | null;
   readonly ipAddress: string | null;

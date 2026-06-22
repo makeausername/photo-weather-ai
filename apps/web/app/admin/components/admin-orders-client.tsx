@@ -14,6 +14,11 @@ import {
   Table,
 } from "../../../components/ui";
 import {
+  paymentProviderDisplayName,
+  productDisplayName,
+  safeDisplayNameFromUser,
+} from "../../../components/display-labels";
+import {
   cancelAdminOrder,
   closeAdminOrder,
   fetchAdminOrders,
@@ -68,15 +73,6 @@ function statusBadge(status: string) {
           ? "danger"
           : "muted";
   return <Badge variant={variant}>{status}</Badge>;
-}
-
-function providerLabel(provider: string): string {
-  const labels: Record<string, string> = {
-    wechat_pay: "微信支付",
-    alipay: "支付宝",
-    mock: "Mock",
-  };
-  return labels[provider] ?? provider;
 }
 
 function canSimpleOperate(order: AdminPaymentOrderListItem): boolean {
@@ -147,7 +143,9 @@ export function AdminOrdersClient() {
     try {
       if (pendingAction.kind === "mark-paid") {
         const result = await markAdminOrderPaid(pendingAction.order.orderNo);
-        setStatus(result.entitlementGranted ? "订单已手动标记支付并发放权益。" : "订单已是支付完成状态。");
+        setStatus(
+          result.entitlementGranted ? "订单已手动标记支付并发放权益。" : "订单已是支付完成状态。",
+        );
       }
       if (pendingAction.kind === "cancel") {
         await cancelAdminOrder(pendingAction.order.orderNo);
@@ -221,7 +219,7 @@ export function AdminOrdersClient() {
               onChange={(event) =>
                 setFilters((current) => ({ ...current, productCode: event.target.value }))
               }
-              placeholder="productCode"
+              placeholder="月卡 / 季卡 / 年卡"
             />
           </FormField>
           <FormField label="支付状态">
@@ -270,21 +268,27 @@ export function AdminOrdersClient() {
             {response.items.map((order) => (
               <tr key={order.orderNo}>
                 <td className="px-3 py-2.5">
-                  <Link className="break-all font-semibold text-primary" href={`/admin/orders/${encodeURIComponent(order.orderNo)}`}>
+                  <Link
+                    className="break-all font-semibold text-primary"
+                    href={`/admin/orders/${encodeURIComponent(order.orderNo)}`}
+                  >
                     {order.orderNo}
                   </Link>
                 </td>
                 <td className="px-3 py-2.5">
                   {order.user ? (
-                    <Link className="font-semibold text-foreground" href={`/admin/users/${encodeURIComponent(order.user.id)}`}>
-                      {order.user.displayName ?? order.user.email ?? order.user.phone ?? order.user.id}
+                    <Link
+                      className="font-semibold text-foreground"
+                      href={`/admin/users/${encodeURIComponent(order.user.id)}`}
+                    >
+                      {safeDisplayNameFromUser(order.user)}
                     </Link>
                   ) : (
-                    "-"
+                    "未知用户"
                   )}
                 </td>
-                <td className="px-3 py-2.5">{order.productCode}</td>
-                <td className="px-3 py-2.5">{providerLabel(order.provider)}</td>
+                <td className="px-3 py-2.5">{productDisplayName(order.productCode)}</td>
+                <td className="px-3 py-2.5">{paymentProviderDisplayName(order.provider)}</td>
                 <td className="px-3 py-2.5 font-semibold">{formatMoney(order.amountCents)}</td>
                 <td className="px-3 py-2.5">{statusBadge(order.status)}</td>
                 <td className="px-3 py-2.5 text-muted-foreground">{formatDate(order.paidAt)}</td>
@@ -361,4 +365,3 @@ export function AdminOrdersClient() {
     </div>
   );
 }
-

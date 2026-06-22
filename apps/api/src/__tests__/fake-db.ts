@@ -895,7 +895,7 @@ export async function createFakeDatabaseClient(): Promise<{
         state.auditLogs.unshift(log);
         return log;
       },
-      findMany: async ({ where, orderBy, take }: any = {}) =>
+      findMany: async ({ where, orderBy, take, include }: any = {}) =>
         state.auditLogs
           .filter((log) => {
             if (!where?.OR) {
@@ -916,7 +916,10 @@ export async function createFakeDatabaseClient(): Promise<{
               ? left.createdAt.getTime() - right.createdAt.getTime()
               : right.createdAt.getTime() - left.createdAt.getTime(),
           )
-          .slice(0, take ?? 50),
+          .slice(0, take ?? 50)
+          .map((log) =>
+            include?.actor ? { ...log, actor: state.users.get(log.actorUserId) ?? null } : log,
+          ),
     },
     location: {
       findUnique: async ({ where }: any) => {

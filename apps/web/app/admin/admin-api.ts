@@ -82,9 +82,18 @@ export type AdminGeoSearchResult = {
 export type AdminAuditLog = {
   readonly id: string;
   readonly actorUserId: string | null;
+  readonly actorDisplayName: string;
+  readonly actorEmailMasked: string | null;
+  readonly actorPhoneMasked: string | null;
+  readonly actorLabel: string;
   readonly action: string;
+  readonly actionLabel: string;
   readonly targetType: string;
   readonly targetId: string | null;
+  readonly targetLabel: string;
+  readonly targetSummary: string;
+  readonly technicalActorUserId?: string | null;
+  readonly technicalTargetId?: string | null;
   readonly ipAddress: string | null;
   readonly userAgent: string | null;
   readonly createdAt: string;
@@ -432,9 +441,18 @@ export type AdminUserSessionItem = {
 export type AdminUserAuditLogItem = {
   readonly id: string;
   readonly actorUserId: string | null;
+  readonly actorDisplayName: string;
+  readonly actorEmailMasked: string | null;
+  readonly actorPhoneMasked: string | null;
+  readonly actorLabel: string;
   readonly action: string;
+  readonly actionLabel: string;
   readonly targetType: string;
   readonly targetId: string | null;
+  readonly targetLabel: string;
+  readonly targetSummary: string;
+  readonly technicalActorUserId?: string | null;
+  readonly technicalTargetId?: string | null;
   readonly ipAddress: string | null;
   readonly userAgent: string | null;
   readonly createdAt: string;
@@ -1046,9 +1064,7 @@ export async function resetAdminUserPassword(
   });
 }
 
-export async function revokeAdminUserSessions(
-  userId: string,
-): Promise<{
+export async function revokeAdminUserSessions(userId: string): Promise<{
   readonly revokedSessionCount: number;
   readonly sessions: readonly AdminUserSessionItem[];
 }> {

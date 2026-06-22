@@ -1,7 +1,12 @@
 import { randomBytes } from "node:crypto";
 
 import { getPrismaClient } from "./client.js";
-import { buildAccountAccessStatus, resolveUserForecastAccess, type AccountAccessStatus } from "./access.js";
+import {
+  buildAccountAccessStatus,
+  resolveUserForecastAccess,
+  type AccountAccessStatus,
+} from "./access.js";
+import { buildAuditLogDisplay } from "./audit-display.js";
 import {
   DuplicateUserEmailError,
   DuplicateUserPhoneError,
@@ -132,7 +137,23 @@ export type AdminUserSessionItem = {
 
 export type AdminUserAuditLogItem = Pick<
   AdminAuditLogRecord,
-  "id" | "actorUserId" | "action" | "targetType" | "targetId" | "ipAddress" | "userAgent" | "createdAt"
+  | "id"
+  | "actorUserId"
+  | "actorDisplayName"
+  | "actorEmailMasked"
+  | "actorPhoneMasked"
+  | "actorLabel"
+  | "action"
+  | "actionLabel"
+  | "targetType"
+  | "targetId"
+  | "targetLabel"
+  | "targetSummary"
+  | "technicalActorUserId"
+  | "technicalTargetId"
+  | "ipAddress"
+  | "userAgent"
+  | "createdAt"
 >;
 
 export type AdminUserOperationalSummary = {
@@ -324,14 +345,15 @@ function maskPhone(phone: string | null): string | null {
   return phone.length === 11 ? `${phone.slice(0, 3)}****${phone.slice(-4)}` : phone;
 }
 
-function dateInRange(value: Date | null | undefined, from?: Date | null, to?: Date | null): boolean {
+function dateInRange(
+  value: Date | null | undefined,
+  from?: Date | null,
+  to?: Date | null,
+): boolean {
   if (!value) {
     return !from && !to;
   }
-  return (
-    (!from || value.getTime() >= from.getTime()) &&
-    (!to || value.getTime() <= to.getTime())
-  );
+  return (!from || value.getTime() >= from.getTime()) && (!to || value.getTime() <= to.getTime());
 }
 
 function normalizePaymentOrder(record: any): AdminUserOrderItem {
@@ -409,12 +431,31 @@ function normalizeSession(record: any, now = new Date()): AdminUserSessionItem {
 }
 
 function normalizeAuditLog(record: any): AdminUserAuditLogItem {
-  return {
-    id: record.id,
+  const display = buildAuditLogDisplay({
     actorUserId: record.actorUserId ?? null,
+    actor: record.actor ?? null,
     action: record.action,
     targetType: record.targetType,
     targetId: record.targetId ?? null,
+    beforeJson: record.beforeJson ?? null,
+    afterJson: record.afterJson ?? null,
+  });
+
+  return {
+    id: record.id,
+    actorUserId: record.actorUserId ?? null,
+    actorDisplayName: display.actorDisplayName,
+    actorEmailMasked: display.actorEmailMasked,
+    actorPhoneMasked: display.actorPhoneMasked,
+    actorLabel: display.actorLabel,
+    action: record.action,
+    actionLabel: display.actionLabel,
+    targetType: record.targetType,
+    targetId: record.targetId ?? null,
+    targetLabel: display.targetLabel,
+    targetSummary: display.targetSummary,
+    technicalActorUserId: display.technicalActorUserId,
+    technicalTargetId: display.technicalTargetId,
     ipAddress: record.ipAddress ?? null,
     userAgent: record.userAgent ?? null,
     createdAt: record.createdAt,
@@ -540,6 +581,7 @@ async function listAuditLogsForUser(
     },
     orderBy: [{ createdAt: "desc" }],
     take: limit ?? 20,
+    include: { actor: true },
   });
   return records.map(normalizeAuditLog);
 }
@@ -674,11 +716,10 @@ export async function listAdminUsers(
     .filter((item) => !input.q || userMatchesSearch(item, input.q))
     .filter((item) => !input.status || input.status === "all" || item.status === input.status)
     .filter((item) => !roleFilter || item.roleCodes.includes(roleFilter))
-    .filter((item) => input.hasOrders === undefined || (item.orderCount > 0) === input.hasOrders)
+    .filter((item) => input.hasOrders === undefined || item.orderCount > 0 === input.hasOrders)
     .filter(
       (item) =>
-        input.hasCredits === undefined ||
-        (item.currentCreditBalance > 0) === input.hasCredits,
+        input.hasCredits === undefined || item.currentCreditBalance > 0 === input.hasCredits,
     )
     .filter((item) => dateInRange(item.createdAt, input.createdFrom, input.createdTo))
     .filter((item) => dateInRange(item.lastLoginAt, input.lastLoginFrom, input.lastLoginTo))
@@ -710,17 +751,20 @@ export async function getAdminUserDetail(
   const record = await getUserRecord(userId, client);
   const profile = safeUser(record);
   const parts = principalParts(record);
-  const [orders, history, auditLogs, sessions, entitlements, creditLedger, access] = await Promise.all([
-    listOrdersForUser(userId, client),
-    listForecastHistoryForUser(userId, client),
-    listAuditLogsForUser(userId, client, 20),
-    listUserSessionsForAdmin({ userId, limit: 20 }, { client, now }),
-    listEntitlementsForUser(userId, client),
-    listCreditLedgerForUser(userId, client),
-    resolveUserForecastAccess({ userId, client, now }),
-  ]);
+  const [orders, history, auditLogs, sessions, entitlements, creditLedger, access] =
+    await Promise.all([
+      listOrdersForUser(userId, client),
+      listForecastHistoryForUser(userId, client),
+      listAuditLogsForUser(userId, client, 20),
+      listUserSessionsForAdmin({ userId, limit: 20 }, { client, now }),
+      listEntitlementsForUser(userId, client),
+      listCreditLedgerForUser(userId, client),
+      resolveUserForecastAccess({ userId, client, now }),
+    ]);
   const paidOrders = orders.filter((order) => order.status === "paid");
-  const unpaidOrders = orders.filter((order) => !["paid", "closed", "canceled", "refunded"].includes(order.status));
+  const unpaidOrders = orders.filter(
+    (order) => !["paid", "closed", "canceled", "refunded"].includes(order.status),
+  );
   const activeEntitlements = entitlements.filter(
     (item) => !item.expiresAt || item.expiresAt.getTime() > now.getTime(),
   );
@@ -1059,7 +1103,10 @@ export async function updateUserRolesByAdmin(
 export async function revokeUserSessionsByAdmin(
   input: { readonly userId: string },
   options: { readonly client?: DatabaseClient; readonly now?: Date } = {},
-): Promise<{ readonly revokedSessionCount: number; readonly sessions: readonly AdminUserSessionItem[] }> {
+): Promise<{
+  readonly revokedSessionCount: number;
+  readonly sessions: readonly AdminUserSessionItem[];
+}> {
   const client = await resolveClient(options.client);
   await getUserRecord(input.userId, client);
   const revokedSessionCount = await revokeUserSessions(
@@ -1068,7 +1115,10 @@ export async function revokeUserSessionsByAdmin(
   );
   return {
     revokedSessionCount,
-    sessions: await listUserSessionsForAdmin({ userId: input.userId }, { client, now: options.now }),
+    sessions: await listUserSessionsForAdmin(
+      { userId: input.userId },
+      { client, now: options.now },
+    ),
   };
 }
 

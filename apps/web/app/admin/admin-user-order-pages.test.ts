@@ -9,16 +9,45 @@ import { AdminOrdersClient } from "./components/admin-orders-client";
 import { AdminProductsClient } from "./components/admin-products-client";
 import { AdminUsersClient } from "./components/admin-users-client";
 import type { AdminBillingProduct } from "./admin-api";
+import {
+  actionDisplayName,
+  looksLikeCuid,
+  paymentProviderDisplayName,
+  productDisplayName,
+  providerDisplayName,
+} from "../../components/display-labels";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const componentDir = resolve(__dirname, "components");
 const adminShellSource = readFileSync(resolve(componentDir, "admin-shell.tsx"), "utf8");
 const usersClientSource = readFileSync(resolve(componentDir, "admin-users-client.tsx"), "utf8");
-const userDetailSource = readFileSync(resolve(componentDir, "admin-user-detail-client.tsx"), "utf8");
+const userDetailSource = readFileSync(
+  resolve(componentDir, "admin-user-detail-client.tsx"),
+  "utf8",
+);
 const ordersClientSource = readFileSync(resolve(componentDir, "admin-orders-client.tsx"), "utf8");
-const orderDetailSource = readFileSync(resolve(componentDir, "admin-order-detail-client.tsx"), "utf8");
-const productsClientSource = readFileSync(resolve(componentDir, "admin-products-client.tsx"), "utf8");
+const orderDetailSource = readFileSync(
+  resolve(componentDir, "admin-order-detail-client.tsx"),
+  "utf8",
+);
+const productsClientSource = readFileSync(
+  resolve(componentDir, "admin-products-client.tsx"),
+  "utf8",
+);
+const dashboardClientSource = readFileSync(
+  resolve(componentDir, "admin-dashboard-client.tsx"),
+  "utf8",
+);
+const auditClientSource = readFileSync(resolve(componentDir, "admin-audit-client.tsx"), "utf8");
+const providersClientSource = readFileSync(
+  resolve(componentDir, "admin-providers-client.tsx"),
+  "utf8",
+);
 const adminApiSource = readFileSync(resolve(__dirname, "admin-api.ts"), "utf8");
+const accountCenterSource = readFileSync(
+  resolve(__dirname, "..", "account", "account-center-client.tsx"),
+  "utf8",
+);
 const userPageSource = readFileSync(resolve(__dirname, "users", "page.tsx"), "utf8");
 const orderPageSource = readFileSync(resolve(__dirname, "orders", "page.tsx"), "utf8");
 const productPageSource = readFileSync(resolve(__dirname, "products", "page.tsx"), "utf8");
@@ -126,7 +155,6 @@ describe("admin user and order console pages", () => {
       "试用状态",
       "套餐列表",
       "套餐名称",
-      "productCode",
       "价格（元）",
       "权益时长",
       "公开可购买",
@@ -138,12 +166,62 @@ describe("admin user and order console pages", () => {
     }
     expect(productsClientSource).toContain("updateAdminProduct");
     expect(productsClientSource).not.toContain("metadataJson");
+    expect(html).not.toContain("BillingProduct");
+    expect(html).not.toContain("productCode");
+    expect(html).not.toContain("monthly_full");
+    expect(html).not.toContain("trial_7_days");
     expect(html).not.toContain("raw JSON");
     expect(html).not.toContain("metadataJson");
     expect(html).not.toContain("占位");
     expect(html).not.toContain("敬请期待");
     expect(html).not.toContain("coming soon");
     expect(html).not.toContain("暂无功能");
+  });
+
+  it("uses shared display labels for technical actions, providers, and products", () => {
+    expect(looksLikeCuid("cmqlyyel1000qsqe4rq15qz2k")).toBe(true);
+    expect(actionDisplayName("auth.refresh.success")).toBe("刷新登录状态");
+    expect(actionDisplayName("foo.bar.baz")).toBe("系统操作");
+    expect(providerDisplayName("cdn", "aliyun_cdn")).toBe("阿里云 CDN");
+    expect(paymentProviderDisplayName("wechat_pay")).toBe("微信支付");
+    expect(productDisplayName("monthly_full")).toBe("月卡");
+  });
+
+  it("keeps raw identifiers out of primary admin and account display paths", () => {
+    expect(dashboardClientSource).toContain("log.actorLabel");
+    expect(dashboardClientSource).toContain("log.actionLabel");
+    expect(dashboardClientSource).toContain("log.targetLabel");
+    expect(dashboardClientSource).toContain("log.targetSummary");
+    expect(auditClientSource).toContain("log.actorLabel");
+    expect(auditClientSource).toContain("log.actionLabel");
+    expect(auditClientSource).toContain("log.targetLabel");
+    expect(auditClientSource).toContain("log.targetSummary");
+
+    for (const source of [
+      dashboardClientSource,
+      auditClientSource,
+      userDetailSource,
+      orderDetailSource,
+    ]) {
+      expect(source).not.toContain("{log.action}</td>");
+      expect(source).not.toContain("{log.targetType} / {log.targetId");
+      expect(source).not.toContain("{log.actorUserId");
+    }
+
+    expect(usersClientSource).toContain("safeDisplayNameFromUser");
+    expect(usersClientSource).not.toContain("用户 ID");
+    expect(userDetailSource).toContain("safeDisplayNameFromUser");
+    expect(userDetailSource).not.toContain("user.profile.id");
+    expect(userDetailSource).toContain("productDisplayName(order.productCode)");
+    expect(orderDetailSource).toContain("safeDisplayNameFromUser(detail.user)");
+    expect(orderDetailSource).toContain("maskProviderTradeNo");
+    expect(orderDetailSource).not.toContain("detail.product.code");
+    expect(orderDetailSource).not.toContain("detail.order.providerTradeNo ??");
+    expect(productsClientSource).not.toContain(">productCode<");
+    expect(productsClientSource).not.toContain(">BillingProduct<");
+    expect(providersClientSource).toContain("providerTypeLabel(provider.providerType)");
+    expect(accountCenterSource).toContain("productDisplayName(productCode)");
+    expect(accountCenterSource).not.toContain("coming soon");
   });
 
   it("covers detail sections, safe operation labels, and confirm/cancel dialogs", () => {
@@ -176,10 +254,15 @@ describe("admin user and order console pages", () => {
       expect(orderDetailSource).toContain(snippet);
     }
 
-    for (const source of [usersClientSource, userDetailSource, ordersClientSource, orderDetailSource]) {
+    for (const source of [
+      usersClientSource,
+      userDetailSource,
+      ordersClientSource,
+      orderDetailSource,
+    ]) {
       expect(source).toContain("ConfirmDialog");
-      expect(source).toContain("confirmLabel=\"确认\"");
-      expect(source).toContain("cancelLabel=\"取消\"");
+      expect(source).toContain('confirmLabel="确认"');
+      expect(source).toContain('cancelLabel="取消"');
     }
   });
 
@@ -235,7 +318,14 @@ describe("admin user and order console pages", () => {
       orderPageSource,
       productPageSource,
     ]) {
-      for (const forbidden of ["占位", "敬请期待", "coming soon", "暂无功能", "min-h-[", "h-[520px]"]) {
+      for (const forbidden of [
+        "占位",
+        "敬请期待",
+        "coming soon",
+        "暂无功能",
+        "min-h-[",
+        "h-[520px]",
+      ]) {
         expect(source).not.toContain(forbidden);
       }
     }

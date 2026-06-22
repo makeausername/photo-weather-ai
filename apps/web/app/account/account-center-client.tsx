@@ -26,6 +26,7 @@ import {
 } from "../../components/account-session";
 import type { AccountRole, JsonValue } from "../admin/admin-api";
 import { Badge, Button, Card, FormField, Input, cn } from "../../components/ui";
+import { paymentProviderDisplayName, productDisplayName } from "../../components/display-labels";
 import {
   forecastHorizonLabels,
   forecastTargetLabels,
@@ -390,7 +391,7 @@ function MembershipSummaryCard({
     <Card data-account-membership-panel="compact" className="p-5 shadow-sm sm:p-6">
       <SectionTitle
         title="会员与套餐"
-        description="这里显示当前套餐、到期时间和最近订单。"
+        description="这里显示当前套餐、访问权限和最近订单。"
         aside={
           membership ? (
             <Badge variant={membership.badgeVariant}>{membership.tierLabel}</Badge>
@@ -1492,23 +1493,11 @@ function billingStatusVariant(status: AccountBillingOrderRecord["status"]): Acco
 }
 
 function billingProviderLabel(provider: AccountBillingOrderRecord["provider"]): string {
-  if (provider === "wechat_pay") {
-    return "微信支付";
-  }
-  if (provider === "alipay") {
-    return "支付宝";
-  }
-  return "模拟支付";
+  return paymentProviderDisplayName(provider);
 }
 
 function billingProductLabel(productCode: string): string {
-  const labels: Record<string, string> = {
-    monthly_full: "月卡",
-    quarterly_full: "季卡",
-    yearly_full: "年卡",
-    trial_7_days: "7 天试用",
-  };
-  return labels[productCode] ?? "会员套餐";
+  return productDisplayName(productCode);
 }
 
 function formatPriceCny(amountCents: number): string {

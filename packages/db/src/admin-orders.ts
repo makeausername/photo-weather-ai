@@ -1,4 +1,5 @@
 import { getPrismaClient } from "./client.js";
+import { buildAuditLogDisplay } from "./audit-display.js";
 import { safeUser } from "./auth.js";
 import type {
   AdminAuditLogRecord,
@@ -115,7 +116,21 @@ export type AdminOrderCreditLedgerItem = {
 
 export type AdminOrderAuditLogItem = Pick<
   AdminAuditLogRecord,
-  "id" | "actorUserId" | "action" | "targetType" | "targetId" | "createdAt"
+  | "id"
+  | "actorUserId"
+  | "actorDisplayName"
+  | "actorEmailMasked"
+  | "actorPhoneMasked"
+  | "actorLabel"
+  | "action"
+  | "actionLabel"
+  | "targetType"
+  | "targetId"
+  | "targetLabel"
+  | "targetSummary"
+  | "technicalActorUserId"
+  | "technicalTargetId"
+  | "createdAt"
 >;
 
 export type AdminPaymentOrderDetail = {
@@ -190,9 +205,7 @@ function normalizeProductSummary(record: any): AdminPaymentProductSummary {
 }
 
 async function loadUserSummary(userId: string, client: DatabaseClient) {
-  const user = client.user
-    ? await client.user.findUnique({ where: { id: userId } })
-    : null;
+  const user = client.user ? await client.user.findUnique({ where: { id: userId } }) : null;
   return normalizeUserSummary(user);
 }
 
@@ -203,7 +216,10 @@ async function loadProductSummary(productCode: string, client: DatabaseClient) {
   return normalizeProductSummary(product);
 }
 
-function normalizeOrderListItem(record: any, user: AdminPaymentUserSummary | null): AdminPaymentOrderListItem {
+function normalizeOrderListItem(
+  record: any,
+  user: AdminPaymentUserSummary | null,
+): AdminPaymentOrderListItem {
   return {
     orderNo: record.orderNo,
     user,
@@ -265,24 +281,44 @@ function normalizeCreditLedger(record: any): AdminOrderCreditLedgerItem {
 }
 
 function normalizeAuditLog(record: any): AdminOrderAuditLogItem {
-  return {
-    id: record.id,
+  const display = buildAuditLogDisplay({
     actorUserId: record.actorUserId ?? null,
+    actor: record.actor ?? null,
     action: record.action,
     targetType: record.targetType,
     targetId: record.targetId ?? null,
+    beforeJson: record.beforeJson ?? null,
+    afterJson: record.afterJson ?? null,
+  });
+
+  return {
+    id: record.id,
+    actorUserId: record.actorUserId ?? null,
+    actorDisplayName: display.actorDisplayName,
+    actorEmailMasked: display.actorEmailMasked,
+    actorPhoneMasked: display.actorPhoneMasked,
+    actorLabel: display.actorLabel,
+    action: record.action,
+    actionLabel: display.actionLabel,
+    targetType: record.targetType,
+    targetId: record.targetId ?? null,
+    targetLabel: display.targetLabel,
+    targetSummary: display.targetSummary,
+    technicalActorUserId: display.technicalActorUserId,
+    technicalTargetId: display.technicalTargetId,
     createdAt: record.createdAt,
   };
 }
 
-function dateInRange(value: Date | null | undefined, from?: Date | null, to?: Date | null): boolean {
+function dateInRange(
+  value: Date | null | undefined,
+  from?: Date | null,
+  to?: Date | null,
+): boolean {
   if (!value) {
     return !from && !to;
   }
-  return (
-    (!from || value.getTime() >= from.getTime()) &&
-    (!to || value.getTime() <= to.getTime())
-  );
+  return (!from || value.getTime() >= from.getTime()) && (!to || value.getTime() <= to.getTime());
 }
 
 function orderMatchesSearch(item: AdminPaymentOrderListItem, q: string): boolean {
@@ -359,19 +395,28 @@ export async function listAdminPaymentOrders(
   const filtered = items
     .filter((item) => !input.q || orderMatchesSearch(item, input.q))
     .filter((item) => !input.status || input.status === "all" || item.status === input.status)
-    .filter((item) => !input.provider || input.provider === "all" || item.provider === input.provider)
     .filter(
-      (item) => !input.productCode || input.productCode === "all" || item.productCode === input.productCode,
+      (item) => !input.provider || input.provider === "all" || item.provider === input.provider,
+    )
+    .filter(
+      (item) =>
+        !input.productCode || input.productCode === "all" || item.productCode === input.productCode,
     )
     .filter((item) => !input.userId || item.user?.id === input.userId)
     .filter((item) => input.paid === undefined || (item.status === "paid") === input.paid)
     .filter((item) => dateInRange(item.createdAt, input.createdFrom, input.createdTo))
     .filter((item) => dateInRange(item.paidAt, input.paidFrom, input.paidTo))
     .filter(
-      (item) => input.amountMinCents === undefined || input.amountMinCents === null || item.amountCents >= input.amountMinCents,
+      (item) =>
+        input.amountMinCents === undefined ||
+        input.amountMinCents === null ||
+        item.amountCents >= input.amountMinCents,
     )
     .filter(
-      (item) => input.amountMaxCents === undefined || input.amountMaxCents === null || item.amountCents <= input.amountMaxCents,
+      (item) =>
+        input.amountMaxCents === undefined ||
+        input.amountMaxCents === null ||
+        item.amountCents <= input.amountMaxCents,
     )
     .sort((left, right) => sortOrders(left, right, input.sort ?? "created_desc"));
 
@@ -461,6 +506,7 @@ async function listOrderAuditLogs(
     },
     orderBy: [{ createdAt: "desc" }],
     take: 20,
+    include: { actor: true },
   });
   return records.map(normalizeAuditLog);
 }
@@ -569,9 +615,7 @@ export async function updateAdminPaymentOrderDetail(
     data: {
       metadataJson: {
         ...baseMetadata,
-        ...(input.adminNote === undefined
-          ? {}
-          : { adminNote: input.adminNote?.trim() || null }),
+        ...(input.adminNote === undefined ? {} : { adminNote: input.adminNote?.trim() || null }),
       },
     },
   });
@@ -593,4 +637,3 @@ export function adminOrderAuditSnapshot(detail: AdminPaymentOrderDetail): JsonVa
     }),
   ) as JsonValue;
 }
-

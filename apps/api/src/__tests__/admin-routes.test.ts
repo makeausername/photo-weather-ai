@@ -96,10 +96,118 @@ describe("admin config routes", () => {
     expect(auditResponse.json().logs).toHaveLength(1);
     expect(auditResponse.json().logs[0]).toMatchObject({
       actorUserId: "admin-user",
+      actorLabel: "Test Admin",
       action: "system_setting.update",
+      actionLabel: "更新系统设置",
       targetType: "system_setting",
       targetId: "site.name",
+      targetLabel: "站点名称",
+      targetSummary: "系统设置",
+      technicalActorUserId: "admin-user",
+      technicalTargetId: "site.name",
     });
+    expect(auditResponse.json().logs[0]).not.toHaveProperty("beforeJson");
+    expect(auditResponse.json().logs[0]).not.toHaveProperty("afterJson");
+  });
+
+  it("returns human-readable audit display fields without sensitive audit JSON", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+    state.auditLogs.push(
+      {
+        id: "audit-known-actor",
+        actorUserId: "admin-user",
+        action: "auth.login.success",
+        targetType: "auth",
+        targetId: "cmqlyyel1000qsqe4rq15qz2k",
+        beforeJson: {
+          passwordHash: "hashed-password",
+        },
+        afterJson: {
+          targetMasked: "ad***@example.com",
+          refreshTokenHash: "refresh-token-hash",
+        },
+        ipAddress: null,
+        userAgent: null,
+        createdAt: new Date("2026-06-21T00:00:00.000Z"),
+      },
+      {
+        id: "audit-system",
+        actorUserId: null,
+        action: "cdn.refresh",
+        targetType: "cdn_provider",
+        targetId: "cdn:aliyun_cdn",
+        beforeJson: null,
+        afterJson: {
+          providerType: "cdn",
+          providerCode: "aliyun_cdn",
+          displayName: "阿里云 CDN",
+          secretJson: {
+            accessKeySecret: "aliyun-secret",
+          },
+        },
+        ipAddress: null,
+        userAgent: null,
+        createdAt: new Date("2026-06-21T00:01:00.000Z"),
+      },
+      {
+        id: "audit-missing-actor",
+        actorUserId: "deleted-user",
+        action: "foo.bar.baz",
+        targetType: "user",
+        targetId: "cmqlyyel1000qsqe4rq15qz2k",
+        beforeJson: null,
+        afterJson: null,
+        ipAddress: null,
+        userAgent: null,
+        createdAt: new Date("2026-06-21T00:02:00.000Z"),
+      },
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/audit-logs",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.logs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "audit-known-actor",
+          actorLabel: "Test Admin",
+          actionLabel: "登录成功",
+          targetLabel: "账户登录",
+          targetSummary: "ad***@example.com",
+          technicalActorUserId: "admin-user",
+          technicalTargetId: "cmqlyyel1000qsqe4rq15qz2k",
+        }),
+        expect.objectContaining({
+          id: "audit-system",
+          actorLabel: "系统",
+          actionLabel: "CDN 缓存刷新",
+          targetLabel: "阿里云 CDN",
+          targetSummary: "CDN 加速配置",
+          technicalActorUserId: null,
+          technicalTargetId: "cdn:aliyun_cdn",
+        }),
+        expect.objectContaining({
+          id: "audit-missing-actor",
+          actorLabel: "未知用户",
+          actionLabel: "系统操作",
+          targetLabel: "用户",
+          targetSummary: "用户账户",
+        }),
+      ]),
+    );
+    for (const log of body.logs) {
+      expect(log).not.toHaveProperty("beforeJson");
+      expect(log).not.toHaveProperty("afterJson");
+    }
+    expect(response.body).not.toContain("passwordHash");
+    expect(response.body).not.toContain("refreshTokenHash");
+    expect(response.body).not.toContain("aliyun-secret");
   });
 
   it("rejects updates to non-editable settings", async () => {

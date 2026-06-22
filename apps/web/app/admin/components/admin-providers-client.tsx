@@ -566,6 +566,21 @@ function providerName(provider: SafeProviderConfig): string {
   return getMeta(provider)?.displayName ?? provider.displayName ?? "服务商";
 }
 
+function providerTypeLabel(providerType: string): string {
+  const labels: Record<string, string> = {
+    ai: "智能解读",
+    billing: "支付收款",
+    captcha: "人机验证",
+    cdn: "CDN 加速",
+    email: "邮箱验证",
+    geo: "地图服务",
+    sms: "短信验证",
+    storage: "对象存储",
+    weather: "天气数据",
+  };
+  return labels[providerType] ?? "服务商配置";
+}
+
 function getPresetFields(
   provider: SafeProviderConfig,
   target: "configJson" | "secretJson",
@@ -1825,8 +1840,8 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                 <span className="break-words text-sm font-bold leading-5 text-card-foreground">
                   {providerName(provider)}
                 </span>
-                <span className="break-all text-xs leading-5 text-muted-foreground">
-                  {provider.providerCode}
+                <span className="break-words text-xs leading-5 text-muted-foreground">
+                  {providerTypeLabel(provider.providerType)}
                 </span>
               </span>
               {needsAttention ? (
@@ -1923,7 +1938,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
             <div className="flex flex-wrap items-center gap-2">
               <h4 className="text-base font-bold text-card-foreground">{providerName(provider)}</h4>
               <Badge variant="muted" className="rounded-md">
-                {provider.providerCode}
+                {providerTypeLabel(provider.providerType)}
               </Badge>
             </div>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">

@@ -28,24 +28,6 @@ const initialState: DashboardState = {
   orderSummary: null,
 };
 
-const actionLabels: Record<string, string> = {
-  "system_setting.update": "更新系统设置",
-  "provider_config.update": "更新服务商配置",
-  "location.create": "旧版地点记录新增",
-  "location.update": "旧版地点记录编辑",
-  "location.delete": "旧版地点记录删除",
-  "photo_spot.create": "旧版拍摄点记录新增",
-  "photo_spot.update": "旧版拍摄点记录编辑",
-  "photo_spot.delete": "旧版拍摄点记录删除",
-};
-
-const targetTypeLabels: Record<string, string> = {
-  system_setting: "系统设置",
-  provider_config: "服务商配置",
-  location: "旧版地点",
-  photo_spot: "旧版拍摄点",
-};
-
 function formatDate(value: string): string {
   return new Date(value).toLocaleString("zh-CN", {
     timeZone: "Asia/Shanghai",
@@ -182,7 +164,7 @@ export function AdminDashboardClient() {
         <div className="border-b border-border px-5 py-4">
           <h2 className="text-lg font-bold">最近操作</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            最近 5 条后台审计日志，敏感字段由后端脱敏。
+            展示近期后台操作，系统会保留必要的安全记录。
           </p>
         </div>
         {state.auditLogs.length > 0 ? (
@@ -199,14 +181,14 @@ export function AdminDashboardClient() {
               {state.auditLogs.map((log) => (
                 <tr key={log.id}>
                   <td className="px-3 py-2.5 text-card-foreground">{formatDate(log.createdAt)}</td>
-                  <td className="px-3 py-2.5 font-medium">
-                    {actionLabels[log.action] ?? log.action}
-                  </td>
+                  <td className="px-3 py-2.5 font-medium">{log.actionLabel}</td>
                   <td className="px-3 py-2.5 text-muted-foreground">
-                    {targetTypeLabels[log.targetType] ?? log.targetType}
-                    {log.targetId ? ` / ${log.targetId}` : ""}
+                    <span className="font-medium text-card-foreground">{log.targetLabel}</span>
+                    {log.targetSummary ? (
+                      <span className="block text-xs">{log.targetSummary}</span>
+                    ) : null}
                   </td>
-                  <td className="px-3 py-2.5 text-muted-foreground">{log.actorUserId ?? "系统"}</td>
+                  <td className="px-3 py-2.5 text-muted-foreground">{log.actorLabel}</td>
                 </tr>
               ))}
             </tbody>

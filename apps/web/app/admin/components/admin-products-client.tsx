@@ -1,12 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { listAdminProducts, updateAdminProduct, type AdminBillingProduct } from "../admin-api";
 import {
-  listAdminProducts,
-  updateAdminProduct,
-  type AdminBillingProduct,
-} from "../admin-api";
-import { Badge, Button, Card, FormField, Input, SwitchRow, Table, Textarea, cn } from "../../../components/ui";
+  Badge,
+  Button,
+  Card,
+  FormField,
+  Input,
+  SwitchRow,
+  Table,
+  Textarea,
+  cn,
+} from "../../../components/ui";
 
 type LoadState = "loading" | "ready" | "saving" | "error";
 
@@ -158,7 +164,7 @@ export function AdminProductsClient({
                 公开定价、购买状态和权益时长由后台产品配置统一控制。
               </p>
             </div>
-            <Badge variant="muted">BillingProduct</Badge>
+            <Badge variant="muted">套餐配置</Badge>
           </div>
 
           {state === "loading" ? (
@@ -171,7 +177,6 @@ export function AdminProductsClient({
             <thead className="border-b border-border bg-muted/40 text-xs text-muted-foreground">
               <tr>
                 <th className="px-3 py-2">套餐名称</th>
-                <th className="px-3 py-2">productCode</th>
                 <th className="px-3 py-2">价格</th>
                 <th className="px-3 py-2">时长</th>
                 <th className="px-3 py-2">状态</th>
@@ -185,12 +190,7 @@ export function AdminProductsClient({
             <tbody className="divide-y divide-border">
               {products.map((product) => (
                 <tr key={product.code} className="align-top">
-                  <td className="px-3 py-3 font-semibold text-card-foreground">
-                    {product.name}
-                  </td>
-                  <td className="px-3 py-3 font-mono text-xs text-muted-foreground">
-                    {product.code}
-                  </td>
+                  <td className="px-3 py-3 font-semibold text-card-foreground">{product.name}</td>
                   <td className="px-3 py-3">{formatPrice(product.amountCents)}</td>
                   <td className="px-3 py-3">{formatDuration(product.durationDays)}</td>
                   <td className="px-3 py-3">
@@ -275,7 +275,7 @@ function EditPanel({
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-card-foreground">编辑套餐</h2>
-          <p className="mt-1 font-mono text-xs text-muted-foreground">{product.code}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{product.name}</p>
         </div>
         <Badge variant={trial ? "warning" : standard ? "success" : "muted"}>
           {trial ? "内部试用" : standard ? "公开套餐" : "历史产品"}

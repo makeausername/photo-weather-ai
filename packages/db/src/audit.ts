@@ -1,4 +1,5 @@
 import { getPrismaClient } from "./client.js";
+import { buildAuditLogDisplay } from "./audit-display.js";
 import { isPlainJsonObject } from "./json.js";
 import { maskSecretValue } from "./secrets.js";
 import type {
@@ -65,12 +66,31 @@ export async function createAuditLog(
 }
 
 function normalizeAuditLog(record: any): AdminAuditLogRecord {
-  return {
-    id: record.id,
+  const display = buildAuditLogDisplay({
     actorUserId: record.actorUserId ?? null,
+    actor: record.actor ?? null,
     action: record.action,
     targetType: record.targetType,
     targetId: record.targetId ?? null,
+    beforeJson: record.beforeJson ?? null,
+    afterJson: record.afterJson ?? null,
+  });
+
+  return {
+    id: record.id,
+    actorUserId: record.actorUserId ?? null,
+    actorDisplayName: display.actorDisplayName,
+    actorEmailMasked: display.actorEmailMasked,
+    actorPhoneMasked: display.actorPhoneMasked,
+    actorLabel: display.actorLabel,
+    action: record.action,
+    actionLabel: display.actionLabel,
+    targetType: record.targetType,
+    targetId: record.targetId ?? null,
+    targetLabel: display.targetLabel,
+    targetSummary: display.targetSummary,
+    technicalActorUserId: display.technicalActorUserId,
+    technicalTargetId: display.technicalTargetId,
     beforeJson: record.beforeJson ?? null,
     afterJson: record.afterJson ?? null,
     ipAddress: record.ipAddress ?? null,
@@ -87,6 +107,7 @@ export async function listAuditLogs(
   const records = await client.adminAuditLog.findMany({
     take,
     orderBy: { createdAt: "desc" },
+    include: { actor: true },
   });
 
   return records.map((record) => normalizeAuditLog(record));

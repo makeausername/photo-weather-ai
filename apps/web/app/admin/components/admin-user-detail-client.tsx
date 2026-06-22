@@ -13,6 +13,12 @@ import {
   Table,
 } from "../../../components/ui";
 import {
+  entitlementTypeDisplayName,
+  ledgerReasonDisplayName,
+  productDisplayName,
+  safeDisplayNameFromUser,
+} from "../../../components/display-labels";
+import {
   disableAdminUser,
   enableAdminUser,
   fetchAdminUserDetail,
@@ -54,7 +60,7 @@ function roleLabel(roleCode: string): string {
     admin: "管理员",
     super_admin: "超级管理员",
   };
-  return labels[roleCode] ?? roleCode;
+  return labels[roleCode] ?? "自定义角色";
 }
 
 function statusBadge(status: string) {
@@ -180,6 +186,8 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
     );
   }
 
+  const userDisplayLabel = safeDisplayNameFromUser(user.profile);
+
   return (
     <div className="grid gap-5">
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
@@ -188,16 +196,17 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="break-words text-2xl font-bold text-foreground">
-                  {user.profile.displayName ?? user.profile.email ?? user.profile.phone ?? user.profile.id}
+                  {userDisplayLabel}
                 </h2>
                 {statusBadge(user.profile.status)}
               </div>
-              <p className="mt-2 break-all text-sm text-muted-foreground">{user.profile.id}</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
                 variant={user.profile.status === "active" ? "danger" : "success"}
-                onClick={() => setPendingAction(user.profile.status === "active" ? "disable" : "enable")}
+                onClick={() =>
+                  setPendingAction(user.profile.status === "active" ? "disable" : "enable")
+                }
               >
                 {user.profile.status === "active" ? "禁用" : "启用"}
               </Button>
@@ -213,11 +222,18 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
             <InfoItem label="会员套餐" value={user.access.currentPlanName} />
             <InfoItem
               label="会员到期"
-              value={user.access.entitlementExpiresAt ? formatDate(user.access.entitlementExpiresAt) : "免费/不限"}
+              value={
+                user.access.entitlementExpiresAt
+                  ? formatDate(user.access.entitlementExpiresAt)
+                  : "免费/不限"
+              }
             />
             <InfoItem label="积分余额" value={user.creditBalance} />
             <InfoItem label="支付金额" value={formatMoney(user.summary.totalPaidAmountCents)} />
-            <InfoItem label="订单数" value={`${user.summary.orderCount} / 已付 ${user.summary.paidOrderCount}`} />
+            <InfoItem
+              label="订单数"
+              value={`${user.summary.orderCount} / 已付 ${user.summary.paidOrderCount}`}
+            />
             <InfoItem label="查询历史" value={user.summary.forecastHistoryCount} />
             <InfoItem label="活跃会话" value={user.summary.activeSessionCount} />
             <InfoItem label="最近登录" value={formatDate(user.profile.lastLoginAt)} />
@@ -229,14 +245,25 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
         <Card className="grid gap-4 p-5">
           <div>
             <h2 className="text-lg font-bold">操作区</h2>
-            <p className="mt-1 text-sm text-muted-foreground">资料、密码、状态和角色变更都会写入审计日志。</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              资料、密码、状态和角色变更都会写入审计日志。
+            </p>
           </div>
-          <Badge variant="info" className="w-fit">{status}</Badge>
+          <Badge variant="info" className="w-fit">
+            {status}
+          </Badge>
           {temporaryPassword ? (
             <div className="rounded-md border border-warning bg-card p-3">
               <p className="text-xs font-semibold text-warning">临时密码仅显示一次</p>
-              <p className="mt-2 break-all font-mono text-sm text-foreground">{temporaryPassword}</p>
-              <Button className="mt-3" size="sm" variant="secondary" onClick={() => setTemporaryPassword(null)}>
+              <p className="mt-2 break-all font-mono text-sm text-foreground">
+                {temporaryPassword}
+              </p>
+              <Button
+                className="mt-3"
+                size="sm"
+                variant="secondary"
+                onClick={() => setTemporaryPassword(null)}
+              >
                 已记录
               </Button>
             </div>
@@ -287,14 +314,19 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
                 />
               </FormField>
             </div>
-            <Button className="justify-self-start" onClick={saveProfile}>保存资料</Button>
+            <Button className="justify-self-start" onClick={saveProfile}>
+              保存资料
+            </Button>
           </Card>
 
           <Card className="grid gap-4 p-5">
             <h2 className="text-lg font-bold">角色管理</h2>
             <div className="grid gap-2">
               {["user", "admin", "super_admin"].map((roleCode) => (
-                <label key={roleCode} className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <label
+                  key={roleCode}
+                  className="flex items-center gap-2 text-sm font-semibold text-foreground"
+                >
                   <input
                     type="checkbox"
                     checked={roleCodes.includes(roleCode)}
@@ -304,7 +336,9 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
                 </label>
               ))}
             </div>
-            <Button className="justify-self-start" onClick={saveRoles}>保存角色</Button>
+            <Button className="justify-self-start" onClick={saveRoles}>
+              保存角色
+            </Button>
           </Card>
         </div>
       ) : null}
@@ -326,11 +360,14 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
               {user.recentOrders.map((order) => (
                 <tr key={order.orderNo}>
                   <td className="px-3 py-2.5">
-                    <Link className="font-semibold text-primary" href={`/admin/orders/${encodeURIComponent(order.orderNo)}`}>
+                    <Link
+                      className="font-semibold text-primary"
+                      href={`/admin/orders/${encodeURIComponent(order.orderNo)}`}
+                    >
                       {order.orderNo}
                     </Link>
                   </td>
-                  <td className="px-3 py-2.5">{order.productCode}</td>
+                  <td className="px-3 py-2.5">{productDisplayName(order.productCode)}</td>
                   <td className="px-3 py-2.5">{formatMoney(order.amountCents)}</td>
                   <td className="px-3 py-2.5">{order.status}</td>
                   <td className="px-3 py-2.5">{formatDate(order.paidAt)}</td>
@@ -358,7 +395,7 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
             <tbody className="divide-y divide-border">
               {user.entitlements.map((item) => (
                 <tr key={item.id}>
-                  <td className="px-3 py-2.5">{item.type}</td>
+                  <td className="px-3 py-2.5">{entitlementTypeDisplayName(item.type)}</td>
                   <td className="px-3 py-2.5">{item.quantity}</td>
                   <td className="px-3 py-2.5">{item.remainingQuantity ?? "-"}</td>
                   <td className="px-3 py-2.5">{formatDate(item.grantedAt)}</td>
@@ -380,7 +417,7 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
                 <tr key={item.id}>
                   <td className="px-3 py-2.5">{item.delta}</td>
                   <td className="px-3 py-2.5">{item.balanceAfter}</td>
-                  <td className="px-3 py-2.5">{item.reason}</td>
+                  <td className="px-3 py-2.5">{ledgerReasonDisplayName(item.reason)}</td>
                   <td className="px-3 py-2.5">{formatDate(item.createdAt)}</td>
                 </tr>
               ))}
@@ -432,7 +469,13 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
           <tbody className="divide-y divide-border">
             {user.recentSessions.map((session) => (
               <tr key={session.id}>
-                <td className="px-3 py-2.5">{session.active ? <Badge variant="success">活跃</Badge> : <Badge variant="muted">失效</Badge>}</td>
+                <td className="px-3 py-2.5">
+                  {session.active ? (
+                    <Badge variant="success">活跃</Badge>
+                  ) : (
+                    <Badge variant="muted">失效</Badge>
+                  )}
+                </td>
                 <td className="px-3 py-2.5">{session.ipAddress ?? "-"}</td>
                 <td className="max-w-md break-words px-3 py-2.5">{session.userAgent ?? "-"}</td>
                 <td className="px-3 py-2.5">{formatDate(session.createdAt)}</td>
@@ -457,9 +500,14 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
             {user.recentAuditLogs.map((log) => (
               <tr key={log.id}>
                 <td className="px-3 py-2.5">{formatDate(log.createdAt)}</td>
-                <td className="px-3 py-2.5">{log.action}</td>
-                <td className="px-3 py-2.5">{log.targetType} / {log.targetId ?? "-"}</td>
-                <td className="px-3 py-2.5">{log.actorUserId ?? "系统"}</td>
+                <td className="px-3 py-2.5">{log.actionLabel}</td>
+                <td className="px-3 py-2.5">
+                  <div className="grid gap-0.5">
+                    <span className="font-medium text-foreground">{log.targetLabel}</span>
+                    <span className="text-xs text-muted-foreground">{log.targetSummary}</span>
+                  </div>
+                </td>
+                <td className="px-3 py-2.5">{log.actorLabel}</td>
               </tr>
             ))}
           </tbody>
@@ -479,7 +527,7 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
         }
         description={
           <span>
-            {user.profile.displayName ?? user.profile.email ?? user.profile.id}
+            {userDisplayLabel}
             {pendingAction === "reset"
               ? " 将获得一个只显示一次的临时密码。"
               : pendingAction === "revoke"

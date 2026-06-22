@@ -13,6 +13,7 @@ import {
   Select,
   Table,
 } from "../../../components/ui";
+import { safeDisplayNameFromUser } from "../../../components/display-labels";
 import {
   createAdminUser,
   disableAdminUser,
@@ -78,7 +79,7 @@ function roleLabels(roleCodes: readonly string[]): string {
     admin: "管理员",
     super_admin: "超级管理员",
   };
-  return roleCodes.map((roleCode) => labels[roleCode] ?? roleCode).join(" / ");
+  return roleCodes.map((roleCode) => labels[roleCode] ?? "自定义角色").join(" / ");
 }
 
 function summaryCards(response: AdminUserListResponse) {
@@ -224,8 +225,10 @@ export function AdminUsersClient() {
             <FormField label="搜索">
               <Input
                 value={filters.q}
-                onChange={(event) => setFilters((current) => ({ ...current, q: event.target.value }))}
-                placeholder="邮箱、手机号、昵称或用户 ID"
+                onChange={(event) =>
+                  setFilters((current) => ({ ...current, q: event.target.value }))
+                }
+                placeholder="邮箱、手机号或昵称"
               />
             </FormField>
             <FormField label="状态">
@@ -302,7 +305,12 @@ export function AdminUsersClient() {
           <p className="mt-2 break-all rounded-md bg-muted px-3 py-2 font-mono text-sm text-foreground">
             {temporaryPassword}
           </p>
-          <Button className="mt-3" variant="secondary" size="sm" onClick={() => setTemporaryPassword(null)}>
+          <Button
+            className="mt-3"
+            variant="secondary"
+            size="sm"
+            onClick={() => setTemporaryPassword(null)}
+          >
             已记录
           </Button>
         </Card>
@@ -407,8 +415,10 @@ export function AdminUsersClient() {
             {response.items.map((user) => (
               <tr key={user.id}>
                 <td className="px-3 py-2.5">
-                  <p className="font-semibold text-foreground">{user.displayName ?? "未命名用户"}</p>
-                  <p className="break-all text-xs text-muted-foreground">{user.id}</p>
+                  <p className="font-semibold text-foreground">{safeDisplayNameFromUser(user)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {user.displayName ? "显示名称" : "账户标识"}
+                  </p>
                 </td>
                 <td className="px-3 py-2.5 text-muted-foreground">
                   <p>{user.emailMasked ?? "-"}</p>
@@ -417,7 +427,9 @@ export function AdminUsersClient() {
                 <td className="px-3 py-2.5 text-card-foreground">{roleLabels(user.roleCodes)}</td>
                 <td className="px-3 py-2.5">{statusBadge(user.status)}</td>
                 <td className="px-3 py-2.5">
-                  <p className="font-semibold text-card-foreground">{user.access.currentPlanName}</p>
+                  <p className="font-semibold text-card-foreground">
+                    {user.access.currentPlanName}
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     {user.access.entitlementExpiresAt
                       ? `${formatDate(user.access.entitlementExpiresAt)} 到期`
@@ -427,11 +439,17 @@ export function AdminUsersClient() {
                   </p>
                 </td>
                 <td className="px-3 py-2.5">
-                  <p className="font-semibold">{user.orderCount} 单 / {user.paidOrderCount} 已付</p>
-                  <p className="text-xs text-muted-foreground">{formatMoney(user.totalPaidAmountCents)}</p>
+                  <p className="font-semibold">
+                    {user.orderCount} 单 / {user.paidOrderCount} 已付
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatMoney(user.totalPaidAmountCents)}
+                  </p>
                 </td>
                 <td className="px-3 py-2.5 font-semibold">{user.currentCreditBalance}</td>
-                <td className="px-3 py-2.5 text-muted-foreground">{formatDate(user.lastLoginAt)}</td>
+                <td className="px-3 py-2.5 text-muted-foreground">
+                  {formatDate(user.lastLoginAt)}
+                </td>
                 <td className="px-3 py-2.5 text-muted-foreground">{formatDate(user.createdAt)}</td>
                 <td className="px-3 py-2.5">
                   <div className="flex flex-wrap gap-1.5">
@@ -453,10 +471,18 @@ export function AdminUsersClient() {
                     >
                       {user.status === "active" ? "禁用" : "启用"}
                     </Button>
-                    <Button size="sm" variant="secondary" onClick={() => setPendingAction({ kind: "reset", user })}>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setPendingAction({ kind: "reset", user })}
+                    >
                       重置密码
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setPendingAction({ kind: "revoke", user })}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setPendingAction({ kind: "revoke", user })}
+                    >
                       撤销会话
                     </Button>
                   </div>
@@ -485,7 +511,7 @@ export function AdminUsersClient() {
         }
         description={
           <span>
-            {pendingAction?.user.displayName ?? pendingAction?.user.emailMasked ?? pendingAction?.user.id}
+            {safeDisplayNameFromUser(pendingAction?.user)}
             {pendingAction?.kind === "reset"
               ? " 将获得一个只显示一次的临时密码。"
               : pendingAction?.kind === "revoke"

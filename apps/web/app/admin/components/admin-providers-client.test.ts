@@ -43,6 +43,11 @@ const providerListRowSource = sourceBetween(
   "function renderProviderListRow",
   "function renderProviderDetail",
 );
+const providerDetailSource = sourceBetween(
+  source,
+  "function renderProviderDetail",
+  "if (providers.length === 0",
+);
 
 describe("admin provider module source", () => {
   it("promotes provider categories into the AdminShell sidebar", () => {
@@ -284,13 +289,16 @@ describe("admin provider module source", () => {
       'data-provider-list-layout={useSideProviderList ? "side" : "top"}',
       'useSideProviderList ? "grid" : "grid gap-3 p-3 md:grid-cols-2"',
       "break-words text-sm font-bold leading-5 text-card-foreground",
-      "break-all text-xs leading-5 text-muted-foreground",
+      "break-words text-xs leading-5 text-muted-foreground",
+      "providerTypeLabel(provider.providerType)",
     ]) {
       expect(source).toContain(snippet);
     }
 
     expect(source).not.toContain("xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]");
     expect(providerListRowSource).not.toContain("truncate");
+    expect(providerListRowSource).not.toContain("{provider.providerCode}");
+    expect(providerDetailSource).not.toContain("{provider.providerCode}");
   });
 
   it("preserves selected-provider save, test, enable, real-call, secret, and detail actions", () => {

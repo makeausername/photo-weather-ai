@@ -1,5 +1,14 @@
 export { createAuditLog, listAuditLogs, sanitizeAuditJson } from "./audit.js";
 export {
+  actionDisplayName,
+  buildAuditLogDisplay,
+  maskEmail,
+  maskPhone,
+  productDisplayName,
+  providerDisplayName,
+  safeUserDisplayLabel,
+} from "./audit-display.js";
+export {
   buildAccountAccessStatus,
   checkForecastAccess,
   fullForecastAccessEntitlementType,
