@@ -78,9 +78,13 @@ type DeepSeekRequestBody = {
 
 type DeepSeekChatResponse = {
   readonly choices?: readonly {
+    readonly index?: unknown;
     readonly message?: {
       readonly content?: unknown;
+      readonly reasoning_content?: unknown;
+      readonly [key: string]: unknown;
     };
+    readonly text?: unknown;
     readonly finish_reason?: unknown;
   }[];
 };
@@ -90,6 +94,7 @@ export type DeepSeekRequestPreview = {
   readonly body: DeepSeekRequestBody;
   readonly promptSizeChars: number;
   readonly outputMode: "json_object" | "text_with_json_fallback";
+  readonly emptyContentFallbackMessages?: readonly DeepSeekChatMessage[];
 };
 
 export type DeepSeekSafeUpstreamDiagnostics = {
@@ -99,6 +104,12 @@ export type DeepSeekSafeUpstreamDiagnostics = {
   readonly upstreamMessageSanitized?: string;
   readonly upstreamRequestId?: string;
   readonly rawResponseSizeChars?: number;
+  readonly finishReason?: string;
+  readonly choiceIndex?: number;
+  readonly messageKeys?: readonly string[];
+  readonly contentType?: string;
+  readonly contentLength?: number;
+  readonly reasoningContentLength?: number;
 };
 
 export type DeepSeekRequestDiagnostics = DeepSeekSafeUpstreamDiagnostics & {
@@ -106,8 +117,12 @@ export type DeepSeekRequestDiagnostics = DeepSeekSafeUpstreamDiagnostics & {
   readonly compatibilityFallbackUsed: boolean;
   readonly disabledResponseFormat: boolean;
   readonly disabledReasoningEffort: boolean;
+  readonly emptyContentFallbackUsed: boolean;
   readonly firstFailureUpstreamCode?: string;
   readonly finalFailureUpstreamCode?: string;
+  readonly finalFinishReason?: string;
+  readonly finalContentType?: string;
+  readonly finalContentLength?: number;
 };
 
 export type DeepSeekForecastExplanationResult = ForecastAiExplanationParseResult & {
@@ -286,6 +301,7 @@ export type DeepSeekProviderErrorOptions = {
   readonly compatibilityFallbackUsed?: boolean;
   readonly disabledResponseFormat?: boolean;
   readonly disabledReasoningEffort?: boolean;
+  readonly emptyContentFallbackUsed?: boolean;
   readonly firstFailureUpstreamCode?: string;
   readonly finalFailureUpstreamCode?: string;
   readonly upstreamStatusCode?: number;
@@ -294,6 +310,15 @@ export type DeepSeekProviderErrorOptions = {
   readonly upstreamMessageSanitized?: string;
   readonly upstreamRequestId?: string;
   readonly rawResponseSizeChars?: number;
+  readonly finishReason?: string;
+  readonly choiceIndex?: number;
+  readonly messageKeys?: readonly string[];
+  readonly contentType?: string;
+  readonly contentLength?: number;
+  readonly reasoningContentLength?: number;
+  readonly finalFinishReason?: string;
+  readonly finalContentType?: string;
+  readonly finalContentLength?: number;
   readonly cause?: unknown;
 };
 
@@ -309,6 +334,7 @@ export class DeepSeekProviderError extends Error {
   readonly compatibilityFallbackUsed?: boolean;
   readonly disabledResponseFormat?: boolean;
   readonly disabledReasoningEffort?: boolean;
+  readonly emptyContentFallbackUsed?: boolean;
   readonly firstFailureUpstreamCode?: string;
   readonly finalFailureUpstreamCode?: string;
   readonly upstreamStatusCode?: number;
@@ -317,6 +343,15 @@ export class DeepSeekProviderError extends Error {
   readonly upstreamMessageSanitized?: string;
   readonly upstreamRequestId?: string;
   readonly rawResponseSizeChars?: number;
+  readonly finishReason?: string;
+  readonly choiceIndex?: number;
+  readonly messageKeys?: readonly string[];
+  readonly contentType?: string;
+  readonly contentLength?: number;
+  readonly reasoningContentLength?: number;
+  readonly finalFinishReason?: string;
+  readonly finalContentType?: string;
+  readonly finalContentLength?: number;
   override readonly cause?: unknown;
 
   constructor(options: DeepSeekProviderErrorOptions) {
@@ -333,6 +368,7 @@ export class DeepSeekProviderError extends Error {
     this.compatibilityFallbackUsed = options.compatibilityFallbackUsed;
     this.disabledResponseFormat = options.disabledResponseFormat;
     this.disabledReasoningEffort = options.disabledReasoningEffort;
+    this.emptyContentFallbackUsed = options.emptyContentFallbackUsed;
     this.firstFailureUpstreamCode = options.firstFailureUpstreamCode;
     this.finalFailureUpstreamCode = options.finalFailureUpstreamCode;
     this.upstreamStatusCode = options.upstreamStatusCode;
@@ -341,6 +377,15 @@ export class DeepSeekProviderError extends Error {
     this.upstreamMessageSanitized = options.upstreamMessageSanitized;
     this.upstreamRequestId = options.upstreamRequestId;
     this.rawResponseSizeChars = options.rawResponseSizeChars;
+    this.finishReason = options.finishReason;
+    this.choiceIndex = options.choiceIndex;
+    this.messageKeys = options.messageKeys;
+    this.contentType = options.contentType;
+    this.contentLength = options.contentLength;
+    this.reasoningContentLength = options.reasoningContentLength;
+    this.finalFinishReason = options.finalFinishReason;
+    this.finalContentType = options.finalContentType;
+    this.finalContentLength = options.finalContentLength;
     this.cause = options.cause;
   }
 }
@@ -513,6 +558,7 @@ type DeepSeekRequestAttempt = {
   readonly body: DeepSeekRequestBody;
   readonly disabledResponseFormat: boolean;
   readonly disabledReasoningEffort: boolean;
+  readonly emptyContentFallbackPrompt: boolean;
 };
 
 type DeepSeekRequestSuccess = {
@@ -520,16 +566,22 @@ type DeepSeekRequestSuccess = {
   readonly diagnostics: DeepSeekRequestDiagnostics;
 };
 
+type DeepSeekRequestAttemptSuccess = {
+  readonly content: string;
+  readonly upstreamDiagnostics: DeepSeekSafeUpstreamDiagnostics;
+};
+
 function cloneDeepSeekRequestBody(
   body: DeepSeekRequestBody,
   options: {
     readonly disableResponseFormat?: boolean;
     readonly disableReasoningEffort?: boolean;
+    readonly messages?: readonly DeepSeekChatMessage[];
   } = {},
 ): DeepSeekRequestBody {
   const next: DeepSeekRequestBody = {
     model: body.model,
-    messages: body.messages,
+    messages: options.messages ?? body.messages,
     temperature: body.temperature,
     max_tokens: body.max_tokens,
     stream: false,
@@ -543,12 +595,16 @@ function cloneDeepSeekRequestBody(
   return next;
 }
 
-function buildDeepSeekRequestAttempts(body: DeepSeekRequestBody): readonly DeepSeekRequestAttempt[] {
+function buildDeepSeekRequestAttempts(
+  request: DeepSeekRequestPreview,
+): readonly DeepSeekRequestAttempt[] {
+  const body = request.body;
   const attempts: DeepSeekRequestAttempt[] = [
     {
       body,
       disabledResponseFormat: false,
       disabledReasoningEffort: false,
+      emptyContentFallbackPrompt: false,
     },
   ];
   const hasResponseFormat = Boolean(body.response_format);
@@ -559,6 +615,7 @@ function buildDeepSeekRequestAttempts(body: DeepSeekRequestBody): readonly DeepS
       body: cloneDeepSeekRequestBody(body, { disableResponseFormat: true }),
       disabledResponseFormat: true,
       disabledReasoningEffort: false,
+      emptyContentFallbackPrompt: false,
     });
   }
 
@@ -567,10 +624,11 @@ function buildDeepSeekRequestAttempts(body: DeepSeekRequestBody): readonly DeepS
       body: cloneDeepSeekRequestBody(body, { disableReasoningEffort: true }),
       disabledResponseFormat: false,
       disabledReasoningEffort: true,
+      emptyContentFallbackPrompt: false,
     });
   }
 
-  if (hasResponseFormat && hasReasoningEffort) {
+  if (hasResponseFormat && hasReasoningEffort && !request.emptyContentFallbackMessages) {
     attempts.push({
       body: cloneDeepSeekRequestBody(body, {
         disableResponseFormat: true,
@@ -578,6 +636,20 @@ function buildDeepSeekRequestAttempts(body: DeepSeekRequestBody): readonly DeepS
       }),
       disabledResponseFormat: true,
       disabledReasoningEffort: true,
+      emptyContentFallbackPrompt: false,
+    });
+  }
+
+  if (request.emptyContentFallbackMessages) {
+    attempts.push({
+      body: cloneDeepSeekRequestBody(body, {
+        disableResponseFormat: true,
+        disableReasoningEffort: true,
+        messages: request.emptyContentFallbackMessages,
+      }),
+      disabledResponseFormat: hasResponseFormat,
+      disabledReasoningEffort: hasReasoningEffort,
+      emptyContentFallbackPrompt: true,
     });
   }
 
@@ -749,6 +821,14 @@ function isDeepSeekCompatibilityError(error: DeepSeekProviderError): boolean {
   );
 }
 
+function isDeepSeekEmptyContentCompatibilityError(error: DeepSeekProviderError): boolean {
+  return (
+    error.errorCategory === "provider_parse_error" &&
+    error.parseStrategy === "failed" &&
+    (error.contentLength ?? error.responseSizeChars ?? 0) === 0
+  );
+}
+
 function deepSeekHttpErrorMessageZh(
   status: number,
   diagnostics: DeepSeekSafeUpstreamDiagnostics,
@@ -788,6 +868,7 @@ function augmentDeepSeekProviderError(
     readonly compatibilityFallbackUsed: boolean;
     readonly disabledResponseFormat: boolean;
     readonly disabledReasoningEffort: boolean;
+    readonly emptyContentFallbackUsed: boolean;
     readonly firstFailure?: DeepSeekProviderError;
   },
 ): DeepSeekProviderError {
@@ -803,6 +884,7 @@ function augmentDeepSeekProviderError(
     compatibilityFallbackUsed: options.compatibilityFallbackUsed,
     disabledResponseFormat: options.disabledResponseFormat,
     disabledReasoningEffort: options.disabledReasoningEffort,
+    emptyContentFallbackUsed: options.emptyContentFallbackUsed || error.emptyContentFallbackUsed,
     firstFailureUpstreamCode: deepSeekFailureCode(options.firstFailure ?? error),
     finalFailureUpstreamCode: deepSeekFailureCode(error),
     upstreamStatusCode: error.upstreamStatusCode,
@@ -811,6 +893,15 @@ function augmentDeepSeekProviderError(
     upstreamMessageSanitized: error.upstreamMessageSanitized,
     upstreamRequestId: error.upstreamRequestId,
     rawResponseSizeChars: error.rawResponseSizeChars,
+    finishReason: error.finishReason,
+    choiceIndex: error.choiceIndex,
+    messageKeys: error.messageKeys,
+    contentType: error.contentType,
+    contentLength: error.contentLength,
+    reasoningContentLength: error.reasoningContentLength,
+    finalFinishReason: error.finalFinishReason ?? error.finishReason,
+    finalContentType: error.finalContentType ?? error.contentType,
+    finalContentLength: error.finalContentLength ?? error.contentLength,
     cause: error.cause,
   });
 }
@@ -820,15 +911,23 @@ function buildDeepSeekRequestDiagnostics(options: {
   readonly compatibilityFallbackUsed: boolean;
   readonly disabledResponseFormat: boolean;
   readonly disabledReasoningEffort: boolean;
+  readonly emptyContentFallbackUsed?: boolean;
   readonly firstFailure?: DeepSeekProviderError;
   readonly finalFailure?: DeepSeekProviderError;
   readonly upstreamDiagnostics?: DeepSeekSafeUpstreamDiagnostics;
 }): DeepSeekRequestDiagnostics {
+  const finishReason =
+    options.upstreamDiagnostics?.finishReason ?? options.finalFailure?.finishReason;
+  const contentType =
+    options.upstreamDiagnostics?.contentType ?? options.finalFailure?.contentType;
+  const contentLength =
+    options.upstreamDiagnostics?.contentLength ?? options.finalFailure?.contentLength;
   return {
     attempts: options.attempts,
     compatibilityFallbackUsed: options.compatibilityFallbackUsed,
     disabledResponseFormat: options.disabledResponseFormat,
     disabledReasoningEffort: options.disabledReasoningEffort,
+    emptyContentFallbackUsed: options.emptyContentFallbackUsed ?? false,
     firstFailureUpstreamCode: deepSeekFailureCode(options.firstFailure),
     finalFailureUpstreamCode: deepSeekFailureCode(options.finalFailure),
     upstreamStatusCode: options.upstreamDiagnostics?.upstreamStatusCode,
@@ -836,7 +935,21 @@ function buildDeepSeekRequestDiagnostics(options: {
     upstreamErrorType: options.upstreamDiagnostics?.upstreamErrorType,
     upstreamMessageSanitized: options.upstreamDiagnostics?.upstreamMessageSanitized,
     upstreamRequestId: options.upstreamDiagnostics?.upstreamRequestId,
-    rawResponseSizeChars: options.upstreamDiagnostics?.rawResponseSizeChars,
+    rawResponseSizeChars:
+      options.upstreamDiagnostics?.rawResponseSizeChars ?? options.finalFailure?.rawResponseSizeChars,
+    finishReason,
+    choiceIndex:
+      options.upstreamDiagnostics?.choiceIndex ?? options.finalFailure?.choiceIndex,
+    messageKeys:
+      options.upstreamDiagnostics?.messageKeys ?? options.finalFailure?.messageKeys,
+    contentType,
+    contentLength,
+    reasoningContentLength:
+      options.upstreamDiagnostics?.reasoningContentLength ??
+      options.finalFailure?.reasoningContentLength,
+    finalFinishReason: finishReason,
+    finalContentType: contentType,
+    finalContentLength: contentLength,
   };
 }
 
@@ -844,19 +957,180 @@ function getMessageContent(
   response: DeepSeekChatResponse,
   latencyMs?: number,
   responseSizeChars?: number,
-): string {
-  const content = response.choices?.[0]?.message?.content;
-  if (typeof content !== "string" || content.trim().length === 0) {
-    throw deepSeekError({
-      errorCategory: "provider_parse_error",
-      messageZh: "DeepSeek 返回内容为空。",
-      latencyMs,
-      responseSizeChars: typeof content === "string" ? content.length : responseSizeChars,
-      parseStrategy: "failed",
-    });
+): DeepSeekRequestAttemptSuccess {
+  const choice = response.choices?.[0];
+  const message = choice?.message;
+  const messageRecord = isPlainRecord(message) ? message : undefined;
+  const content = messageRecord?.content;
+  const reasoningContent = messageRecord?.reasoning_content;
+  const messageContent = extractTextFromDeepSeekContent(content);
+  const choiceText = extractTextFromDeepSeekContent(choice?.text);
+  const reasoningText =
+    typeof reasoningContent === "string" ? stripMarkdownCodeFence(reasoningContent).trim() : "";
+  const baseDiagnostics: DeepSeekSafeUpstreamDiagnostics = {
+    finishReason: readDiagnosticString(choice?.finish_reason),
+    choiceIndex: readDiagnosticNumber(choice?.index) ?? (choice ? 0 : undefined),
+    messageKeys: messageRecord ? Object.keys(messageRecord).sort().slice(0, 24) : undefined,
+    contentType: deepSeekContentType(content),
+    contentLength: deepSeekContentValueLength(content),
+    reasoningContentLength: typeof reasoningContent === "string" ? reasoningContent.length : 0,
+    rawResponseSizeChars: responseSizeChars,
+  };
+
+  if (messageContent) {
+    return {
+      content: messageContent,
+      upstreamDiagnostics: {
+        ...baseDiagnostics,
+        contentType: baseDiagnostics.contentType ?? "message_content",
+        contentLength: messageContent.length,
+      },
+    };
   }
 
-  return content;
+  if (choiceText) {
+    return {
+      content: choiceText,
+      upstreamDiagnostics: {
+        ...baseDiagnostics,
+        contentType: "choice_text",
+        contentLength: choiceText.length,
+      },
+    };
+  }
+
+  if (isUsableReasoningFallbackText(reasoningText)) {
+    return {
+      content: reasoningText,
+      upstreamDiagnostics: {
+        ...baseDiagnostics,
+        contentType: "reasoning_content",
+        contentLength: reasoningText.length,
+      },
+    };
+  }
+
+  throw deepSeekError({
+    errorCategory: "provider_parse_error",
+    messageZh: "DeepSeek 返回内容为空。",
+    latencyMs,
+    responseSizeChars: baseDiagnostics.contentLength ?? 0,
+    parseStrategy: "failed",
+    rawResponseSizeChars: responseSizeChars,
+    finishReason: baseDiagnostics.finishReason,
+    choiceIndex: baseDiagnostics.choiceIndex,
+    messageKeys: baseDiagnostics.messageKeys,
+    contentType: baseDiagnostics.contentType,
+    contentLength: baseDiagnostics.contentLength,
+    reasoningContentLength: baseDiagnostics.reasoningContentLength,
+    finalFinishReason: baseDiagnostics.finishReason,
+    finalContentType: baseDiagnostics.contentType,
+    finalContentLength: baseDiagnostics.contentLength,
+  });
+}
+
+function readDiagnosticString(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? limitText(trimmed, 120) : undefined;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return undefined;
+}
+
+function readDiagnosticNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function deepSeekContentType(value: unknown): string {
+  if (Array.isArray(value)) {
+    return "array";
+  }
+  if (value === null) {
+    return "null";
+  }
+  return typeof value;
+}
+
+function deepSeekContentValueLength(value: unknown): number {
+  if (typeof value === "string") {
+    return value.length;
+  }
+  if (Array.isArray(value)) {
+    return value.reduce(
+      (sum, item) => sum + (extractTextFromDeepSeekContentPart(item)?.length ?? 0),
+      0,
+    );
+  }
+  return 0;
+}
+
+function extractTextFromDeepSeekContent(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const text = value
+    .map((item) => extractTextFromDeepSeekContentPart(item))
+    .filter((item): item is string => Boolean(item))
+    .join("\n")
+    .trim();
+  return text.length > 0 ? text : undefined;
+}
+
+function extractTextFromDeepSeekContentPart(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+  if (!isPlainRecord(value)) {
+    return undefined;
+  }
+
+  const type = readDiagnosticString(value.type)?.toLowerCase();
+  if (type && type !== "text" && type !== "output_text") {
+    return undefined;
+  }
+
+  for (const key of ["text", "content", "value"] as const) {
+    const text = extractTextFromDeepSeekTextPartValue(value[key]);
+    if (text) {
+      return text;
+    }
+  }
+  return undefined;
+}
+
+function extractTextFromDeepSeekTextPartValue(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+  if (isPlainRecord(value) && typeof value.value === "string") {
+    const trimmed = value.value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+  return undefined;
+}
+
+function isUsableReasoningFallbackText(text: string): boolean {
+  if (!isMeaningfulAiText(text)) {
+    return false;
+  }
+  const cjkCount = text.match(/[\u3400-\u9fff]/gu)?.length ?? 0;
+  if (cjkCount < 12) {
+    return false;
+  }
+  if (/思考过程|推理过程|我需要|先分析|用户要求|题目要求/u.test(text)) {
+    return false;
+  }
+  return /结论|建议|风险|窗口|复核|值得|不建议|可以|需要|主要|备选/u.test(text);
 }
 
 function parseDeepSeekChatResponse(text: string, latencyMs: number): DeepSeekChatResponse {
@@ -3147,6 +3421,8 @@ function buildForecastExplanationUserPayload(
   const targetConfig = forecastAiTargetConfigFor(input.forecastResult.target);
   const isBudget = detail === "budget";
   const isGlowBudget = input.forecastResult.target === "glow" && detail === "budget";
+  const prefersShortPracticalOutput =
+    input.forecastResult.target === "glow" || input.forecastResult.target === "general";
   const isAstroTarget = input.forecastResult.target === "astro";
   const compactSharedKeys = isAstroTarget
     ? "shared ForecastAiExplanation JSON keys; focus on conclusion, bestPlan, weatherTrend, subjectAdvice.astroMilkyWayZh, riskAndGear, and finalAdvice."
@@ -3166,36 +3442,27 @@ function buildForecastExplanationUserPayload(
         "Explain deterministic photo-weather forecast facts in concise Simplified Chinese.",
     targetCode: targetConfig?.targetCode ?? input.forecastResult.target,
     targetSubjectZh: targetConfig?.subjectZh ?? null,
-    outputMode: "short_practical_json",
-    outputLength: isGlowBudget
+    outputMode: prefersShortPracticalOutput ? "short_practical_text_or_json" : "short_practical_json",
+    outputLength: input.forecastResult.target === "general"
+      ? "350-550 Chinese chars. Prefer concise practical sections; JSON is optional if unstable."
+      : isGlowBudget
       ? "500-700 Chinese chars. No Markdown."
+      : input.forecastResult.target === "glow"
+        ? "320-520 Chinese chars. Prefer concise practical sections; JSON is optional if unstable."
       : isBudget
         ? "450-650 Chinese chars. No Markdown."
       : targetConfig?.outputLength ?? "600-900 Chinese characters total. No Markdown.",
-    preferredVisibleSectionsZh: isBudget ? null : targetConfig?.visibleSectionsZh ?? null,
+    preferredVisibleSectionsZh: targetConfig?.visibleSectionsZh ?? null,
     promptPrioritiesZh: isGlowBudget
       ? ["是否值得去；朝霞/晚霞概率；最佳本地时间；到达时间；主因、主风险和备选方案。"]
       : isBudget
-        ? null
+        ? targetConfig?.promptPrioritiesZh ?? null
         : targetConfig?.promptPrioritiesZh ?? null,
     requiredKeys:
       input.forecastResult.target === "glow"
-        ? isGlowBudget
-          ? "shared ForecastAiExplanation JSON keys: conclusion, bestPlan, weatherTrend, subjectAdvice, riskAndGear, finalAdvice"
-          : {
-              conclusion: ["titleZh", "summaryZh", "oneSentenceDecisionZh"],
-              bestPlan: [
-                "primaryTargetZh",
-                "bestWindowZh",
-                "recommendedArrivalZh",
-                "whyThisWindowZh",
-                "backupPlanZh",
-              ],
-              weatherTrend: ["trendSummaryZh", "rainSummaryZh"],
-              subjectAdvice: ["sunriseGlowZh", "sunsetGlowZh"],
-              riskAndGear: ["keyRisks", "gearZh"],
-              finalAdvice: ["goNoGoZh", "ifDedicatedTripZh", "nextCheckZh"],
-            }
+        ? "Prefer summaryText/conclusion/reasons/suggestions/risks, or core ForecastAiExplanation keys: conclusion, bestPlan, weatherTrend, subjectAdvice, riskAndGear, finalAdvice."
+        : input.forecastResult.target === "general"
+          ? "Prefer summaryText/conclusion/reasons/suggestions/risks, or core ForecastAiExplanation keys: conclusion, bestPlan, weatherTrend, subjectAdvice, riskAndGear, finalAdvice. Do not fill optional details that are not in computedForecastFacts."
         : isBudget
           ? compactSharedKeys
         : isAstroTarget
@@ -3241,10 +3508,7 @@ function buildForecastExplanationUserPayload(
           "Do not change sunrise/sunset glow probability, deterministic sunriseGlowScore/sunsetGlowScore, windows, sun times, cloud/aerosol/terrain values, or recommendation; do not recompute or use cloud-sea wording.",
         ]
       : isBudget
-        ? [
-            "Use only computedForecastFacts; missing facts need recheck, never filling.",
-            "Do not recompute, invent, or override weather, terrain, astronomy, coordinates, scores, risks, windows, or recommendations.",
-          ]
+        ? [...baseConstraints, ...(targetConfig?.constraints ?? [])]
       : [...baseConstraints, ...(targetConfig?.constraints ?? [])],
     userGoal: input.userGoal ?? null,
     computedForecastFacts: buildDeepSeekForecastPromptFacts(input.forecastResult, detail),
@@ -3831,6 +4095,42 @@ function buildJsonOnlySystemPrompt(
   ].join("\n");
 }
 
+function buildTextCompatibleSystemPrompt(detail?: DeepSeekForecastContextDetail): string {
+  const sectionNames = ["是否值得去", "主要窗口", "主要风险", "备选策略", "复核重点"];
+
+  return [
+    "Explain only deterministic forecast facts from the supplied payload.",
+    "Do not calculate, invent, infer, or override weather, astronomy, terrain, road, travel, safety, score, recommendation, or on-site facts.",
+    detail === "budget"
+      ? "Keep the answer very short and practical."
+      : "Keep the answer concise and practical.",
+    `Use Simplified Chinese section text with these headings: ${sectionNames.join(" / ")}.`,
+    "If a fact is missing, say evidence is insufficient or omit that conclusion.",
+    "Do not output Markdown tables or code fences.",
+  ].join("\n");
+}
+
+function buildDeepSeekForecastTextFallbackMessages(
+  messages: readonly DeepSeekChatMessage[],
+  detail: DeepSeekForecastContextDetail,
+): readonly DeepSeekChatMessage[] {
+  const userMessage = messages.find((message) => message.role === "user");
+  return [
+    {
+      role: "system",
+      content: buildTextCompatibleSystemPrompt(detail),
+    },
+    {
+      role: "user",
+      content: [
+        "Use the deterministic JSON facts below as the only source of truth.",
+        "JSON output is optional in this compatibility attempt; useful Chinese section text is acceptable.",
+        userMessage?.content ?? "",
+      ].join("\n"),
+    },
+  ];
+}
+
 export function buildDeepSeekForecastExplanationRequest(
   input: ForecastExplanationInput,
   options: Pick<
@@ -3896,6 +4196,10 @@ export function buildDeepSeekForecastExplanationRequest(
     body,
     promptSizeChars: buildPromptSizeChars(messages),
     outputMode: jsonOutputEnabled ? "json_object" : "text_with_json_fallback",
+    emptyContentFallbackMessages: buildDeepSeekForecastTextFallbackMessages(
+      messages,
+      promptDetail,
+    ),
   };
 }
 
@@ -5064,17 +5368,25 @@ export class DeepSeekProvider implements AIProvider {
     request: DeepSeekRequestPreview,
   ): Promise<DeepSeekRequestSuccess> {
     const apiKey = this.getApiKey();
-    const attempts = buildDeepSeekRequestAttempts(request.body);
+    const attempts = buildDeepSeekRequestAttempts(request);
     let firstFailure: DeepSeekProviderError | undefined;
     let lastFailure: DeepSeekProviderError | undefined;
+    let disabledResponseFormat = false;
+    let disabledReasoningEffort = false;
+    let emptyContentFallbackUsed = false;
 
     for (let attemptIndex = 0; attemptIndex < attempts.length; attemptIndex += 1) {
       const attempt = attempts[attemptIndex];
       if (!attempt) {
         continue;
       }
+      disabledResponseFormat ||= attempt.disabledResponseFormat;
+      disabledReasoningEffort ||= attempt.disabledReasoningEffort;
       const compatibilityFallbackUsed =
-        attempt.disabledResponseFormat || attempt.disabledReasoningEffort;
+        attemptIndex > 0 ||
+        disabledResponseFormat ||
+        disabledReasoningEffort ||
+        emptyContentFallbackUsed;
       const attemptRequest: DeepSeekRequestPreview = {
         ...request,
         body: attempt.body,
@@ -5082,15 +5394,17 @@ export class DeepSeekProvider implements AIProvider {
       };
 
       try {
-        const content = await this.requestOnce(attemptRequest, apiKey);
+        const result = await this.requestOnce(attemptRequest, apiKey);
         return {
-          content,
+          content: result.content,
           diagnostics: buildDeepSeekRequestDiagnostics({
             attempts: attemptIndex + 1,
             compatibilityFallbackUsed,
-            disabledResponseFormat: attempt.disabledResponseFormat,
-            disabledReasoningEffort: attempt.disabledReasoningEffort,
+            disabledResponseFormat,
+            disabledReasoningEffort,
+            emptyContentFallbackUsed,
             firstFailure,
+            upstreamDiagnostics: result.upstreamDiagnostics,
           }),
         };
       } catch (error) {
@@ -5103,17 +5417,24 @@ export class DeepSeekProvider implements AIProvider {
         );
         lastFailure = normalized;
         firstFailure ??= normalized;
+        if (isDeepSeekEmptyContentCompatibilityError(normalized)) {
+          emptyContentFallbackUsed = true;
+        }
 
         if (
           attemptIndex >= attempts.length - 1 ||
-          !isDeepSeekCompatibilityError(normalized)
+          (!isDeepSeekCompatibilityError(normalized) &&
+            !isDeepSeekEmptyContentCompatibilityError(normalized))
         ) {
+          const failureCompatibilityFallbackUsed =
+            compatibilityFallbackUsed || emptyContentFallbackUsed || attemptIndex > 0;
           throw augmentDeepSeekProviderError(normalized, {
             promptSizeChars: request.promptSizeChars,
             attempts: attemptIndex + 1,
-            compatibilityFallbackUsed,
-            disabledResponseFormat: attempt.disabledResponseFormat,
-            disabledReasoningEffort: attempt.disabledReasoningEffort,
+            compatibilityFallbackUsed: failureCompatibilityFallbackUsed,
+            disabledResponseFormat,
+            disabledReasoningEffort,
+            emptyContentFallbackUsed,
             firstFailure,
           });
         }
@@ -5131,8 +5452,9 @@ export class DeepSeekProvider implements AIProvider {
         promptSizeChars: request.promptSizeChars,
         attempts: attempts.length,
         compatibilityFallbackUsed: attempts.length > 1,
-        disabledResponseFormat: attempts.some((attempt) => attempt.disabledResponseFormat),
-        disabledReasoningEffort: attempts.some((attempt) => attempt.disabledReasoningEffort),
+        disabledResponseFormat,
+        disabledReasoningEffort,
+        emptyContentFallbackUsed,
         firstFailure,
       },
     );
@@ -5141,7 +5463,7 @@ export class DeepSeekProvider implements AIProvider {
   private async requestOnce(
     request: DeepSeekRequestPreview,
     apiKey: string,
-  ): Promise<string> {
+  ): Promise<DeepSeekRequestAttemptSuccess> {
     const startedAt = Date.now();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);

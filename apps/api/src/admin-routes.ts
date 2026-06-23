@@ -739,6 +739,11 @@ function deepSeekAdminExplanationFailureResponse(input: {
     compatibilityFallbackUsed: providerError?.compatibilityFallbackUsed ?? false,
     disabledResponseFormat: providerError?.disabledResponseFormat ?? false,
     disabledReasoningEffort: providerError?.disabledReasoningEffort ?? false,
+    emptyContentFallbackUsed: providerError?.emptyContentFallbackUsed ?? false,
+    finishReason: providerError?.finalFinishReason ?? providerError?.finishReason,
+    contentType: providerError?.finalContentType ?? providerError?.contentType,
+    contentLength: providerError?.finalContentLength ?? providerError?.contentLength,
+    messageKeys: providerError?.messageKeys,
     upstreamStatusCode: statusCode,
     upstreamErrorCode: providerError?.upstreamErrorCode,
     upstreamErrorType: providerError?.upstreamErrorType,
@@ -1717,9 +1722,18 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
           compatibilityFallbackUsed: result.requestDiagnostics.compatibilityFallbackUsed,
           disabledResponseFormat: result.requestDiagnostics.disabledResponseFormat,
           disabledReasoningEffort: result.requestDiagnostics.disabledReasoningEffort,
+          emptyContentFallbackUsed: result.requestDiagnostics.emptyContentFallbackUsed,
+          finishReason:
+            result.requestDiagnostics.finalFinishReason ?? result.requestDiagnostics.finishReason,
+          contentType:
+            result.requestDiagnostics.finalContentType ?? result.requestDiagnostics.contentType,
+          contentLength:
+            result.requestDiagnostics.finalContentLength ?? result.requestDiagnostics.contentLength,
+          messageKeys: result.requestDiagnostics.messageKeys,
           firstFailureUpstreamCode: result.requestDiagnostics.firstFailureUpstreamCode,
           finalFailureUpstreamCode: result.requestDiagnostics.finalFailureUpstreamCode,
-          rawResponseSizeChars: result.rawResponseSizeChars,
+          rawResponseSizeChars:
+            result.requestDiagnostics.rawResponseSizeChars ?? result.rawResponseSizeChars,
           messageZh,
           message: messageZh,
         };

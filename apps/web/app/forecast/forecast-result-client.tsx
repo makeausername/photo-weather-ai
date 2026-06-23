@@ -301,6 +301,11 @@ type AiExplainResponse = {
     readonly compatibilityFallbackUsed?: boolean;
     readonly disabledResponseFormat?: boolean;
     readonly disabledReasoningEffort?: boolean;
+    readonly emptyContentFallbackUsed?: boolean;
+    readonly finishReason?: string;
+    readonly contentType?: string;
+    readonly contentLength?: number;
+    readonly messageKeys?: readonly string[];
     readonly upstreamStatusCode?: number;
     readonly upstreamErrorCode?: string;
     readonly upstreamErrorType?: string;
@@ -330,6 +335,11 @@ type AiExplainResponse = {
     readonly compatibilityFallbackUsed?: boolean;
     readonly disabledResponseFormat?: boolean;
     readonly disabledReasoningEffort?: boolean;
+    readonly emptyContentFallbackUsed?: boolean;
+    readonly finishReason?: string;
+    readonly contentType?: string;
+    readonly contentLength?: number;
+    readonly messageKeys?: readonly string[];
     readonly upstreamStatusCode?: number;
     readonly upstreamErrorCode?: string;
     readonly upstreamErrorType?: string;

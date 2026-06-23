@@ -760,6 +760,13 @@ export function registerForecastRoutes(
         upstreamErrorType: undefined,
         upstreamMessageSanitized: undefined,
         compatibilityFallbackUsed: false,
+        disabledResponseFormat: false,
+        disabledReasoningEffort: false,
+        emptyContentFallbackUsed: false,
+        finishReason: undefined,
+        contentType: undefined,
+        contentLength: undefined,
+        messageKeys: undefined,
         responseSizeChars: 0,
         rawResponseSizeChars: 0,
       });
@@ -795,6 +802,7 @@ export function registerForecastRoutes(
         compatibilityFallbackUsed: false,
         disabledResponseFormat: false,
         disabledReasoningEffort: false,
+        emptyContentFallbackUsed: false,
         errorCategory: null,
         responseSizeChars: safeResponseSizeChars(cachedInterpretation.interpretation),
         rawResponseSizeChars: aiExplanationRawResponseSizeChars(
@@ -857,11 +865,18 @@ export function registerForecastRoutes(
         compatibilityFallbackUsed: retryResult.requestDiagnostics.compatibilityFallbackUsed,
         disabledResponseFormat: retryResult.requestDiagnostics.disabledResponseFormat,
         disabledReasoningEffort: retryResult.requestDiagnostics.disabledReasoningEffort,
+        emptyContentFallbackUsed: retryResult.requestDiagnostics.emptyContentFallbackUsed,
+        finishReason: retryResult.requestDiagnostics.finalFinishReason,
+        contentType: retryResult.requestDiagnostics.finalContentType,
+        contentLength: retryResult.requestDiagnostics.finalContentLength,
+        messageKeys: retryResult.requestDiagnostics.messageKeys,
         firstFailureUpstreamCode: retryResult.requestDiagnostics.firstFailureUpstreamCode,
         finalFailureUpstreamCode: retryResult.requestDiagnostics.finalFailureUpstreamCode,
         errorCategory: null,
         responseSizeChars: safeResponseSizeChars(retryResult.explanation),
-        rawResponseSizeChars: aiExplanationRawResponseSizeChars(retryResult.explanation),
+        rawResponseSizeChars:
+          retryResult.requestDiagnostics.rawResponseSizeChars ??
+          aiExplanationRawResponseSizeChars(retryResult.explanation),
       });
 
       return reply.send(
@@ -901,8 +916,13 @@ export function registerForecastRoutes(
         compatibilityFallbackUsed: normalized.compatibilityFallbackUsed,
         disabledResponseFormat: normalized.disabledResponseFormat,
         disabledReasoningEffort: normalized.disabledReasoningEffort,
+        emptyContentFallbackUsed: normalized.emptyContentFallbackUsed,
+        finishReason: normalized.finalFinishReason ?? normalized.finishReason,
+        contentType: normalized.finalContentType ?? normalized.contentType,
+        contentLength: normalized.finalContentLength ?? normalized.contentLength,
+        messageKeys: normalized.messageKeys,
         responseSizeChars: normalized.responseSizeChars,
-        rawResponseSizeChars: normalized.responseSizeChars ?? 0,
+        rawResponseSizeChars: normalized.rawResponseSizeChars ?? normalized.responseSizeChars ?? 0,
       });
       return reply.send(
         buildAiExplainFailureResponse({
@@ -913,7 +933,7 @@ export function registerForecastRoutes(
           latencyMs,
           promptSizeChars: failurePromptSizeChars,
           attempts: normalized.attempts,
-          rawResponseSizeChars: normalized.responseSizeChars ?? 0,
+          rawResponseSizeChars: normalized.rawResponseSizeChars ?? normalized.responseSizeChars ?? 0,
           parseStrategy: normalized.parseStrategy,
           upstreamStatusCode: normalized.upstreamStatusCode,
           upstreamErrorCode: normalized.upstreamErrorCode,
@@ -922,6 +942,11 @@ export function registerForecastRoutes(
           compatibilityFallbackUsed: normalized.compatibilityFallbackUsed,
           disabledResponseFormat: normalized.disabledResponseFormat,
           disabledReasoningEffort: normalized.disabledReasoningEffort,
+          emptyContentFallbackUsed: normalized.emptyContentFallbackUsed,
+          finishReason: normalized.finalFinishReason ?? normalized.finishReason,
+          contentType: normalized.finalContentType ?? normalized.contentType,
+          contentLength: normalized.finalContentLength ?? normalized.contentLength,
+          messageKeys: normalized.messageKeys,
           firstFailureUpstreamCode: normalized.firstFailureUpstreamCode,
           finalFailureUpstreamCode: normalized.finalFailureUpstreamCode,
         }),
@@ -1758,7 +1783,15 @@ function buildAiExplainSuccessResponse(options: {
   const parseStrategy = aiExplanationParseStrategy(options.interpretation);
   const parseSuccess = aiExplanationParseSuccess(options.interpretation);
   const fallbackUsed = aiExplanationFallbackUsed(options.interpretation);
-  const rawResponseSizeChars = aiExplanationRawResponseSizeChars(options.interpretation);
+  const rawResponseSizeChars =
+    options.requestDiagnostics?.rawResponseSizeChars ??
+    aiExplanationRawResponseSizeChars(options.interpretation);
+  const finishReason =
+    options.requestDiagnostics?.finalFinishReason ?? options.requestDiagnostics?.finishReason;
+  const contentType =
+    options.requestDiagnostics?.finalContentType ?? options.requestDiagnostics?.contentType;
+  const contentLength =
+    options.requestDiagnostics?.finalContentLength ?? options.requestDiagnostics?.contentLength;
   const explanation = withAiExplanationDisplayFields(options.interpretation);
   const meta = {
     targetCode: options.targetCode,
@@ -1776,6 +1809,10 @@ function buildAiExplainSuccessResponse(options: {
     compatibilityFallbackUsed: options.requestDiagnostics?.compatibilityFallbackUsed ?? false,
     disabledResponseFormat: options.requestDiagnostics?.disabledResponseFormat ?? false,
     disabledReasoningEffort: options.requestDiagnostics?.disabledReasoningEffort ?? false,
+    emptyContentFallbackUsed: options.requestDiagnostics?.emptyContentFallbackUsed ?? false,
+    finishReason,
+    contentType,
+    contentLength,
     firstFailureUpstreamCode: options.requestDiagnostics?.firstFailureUpstreamCode,
     finalFailureUpstreamCode: options.requestDiagnostics?.finalFailureUpstreamCode,
   };
@@ -1800,6 +1837,10 @@ function buildAiExplainSuccessResponse(options: {
     compatibilityFallbackUsed: options.requestDiagnostics?.compatibilityFallbackUsed ?? false,
     disabledResponseFormat: options.requestDiagnostics?.disabledResponseFormat ?? false,
     disabledReasoningEffort: options.requestDiagnostics?.disabledReasoningEffort ?? false,
+    emptyContentFallbackUsed: options.requestDiagnostics?.emptyContentFallbackUsed ?? false,
+    finishReason,
+    contentType,
+    contentLength,
     retryable: false,
     cacheHit: options.cacheHit,
     fallback: false,
@@ -1821,6 +1862,11 @@ function buildAiExplainSuccessResponse(options: {
       compatibilityFallbackUsed: options.requestDiagnostics?.compatibilityFallbackUsed ?? false,
       disabledResponseFormat: options.requestDiagnostics?.disabledResponseFormat ?? false,
       disabledReasoningEffort: options.requestDiagnostics?.disabledReasoningEffort ?? false,
+      emptyContentFallbackUsed: options.requestDiagnostics?.emptyContentFallbackUsed ?? false,
+      finishReason,
+      contentType,
+      contentLength,
+      messageKeys: options.requestDiagnostics?.messageKeys,
       firstFailureUpstreamCode: options.requestDiagnostics?.firstFailureUpstreamCode,
       finalFailureUpstreamCode: options.requestDiagnostics?.finalFailureUpstreamCode,
     },
@@ -1844,6 +1890,11 @@ function buildAiExplainFailureResponse(options: {
   readonly compatibilityFallbackUsed?: boolean;
   readonly disabledResponseFormat?: boolean;
   readonly disabledReasoningEffort?: boolean;
+  readonly emptyContentFallbackUsed?: boolean;
+  readonly finishReason?: string;
+  readonly contentType?: string;
+  readonly contentLength?: number;
+  readonly messageKeys?: readonly string[];
   readonly firstFailureUpstreamCode?: string;
   readonly finalFailureUpstreamCode?: string;
 }) {
@@ -1882,6 +1933,10 @@ function buildAiExplainFailureResponse(options: {
     compatibilityFallbackUsed: options.compatibilityFallbackUsed ?? false,
     disabledResponseFormat: options.disabledResponseFormat ?? false,
     disabledReasoningEffort: options.disabledReasoningEffort ?? false,
+    emptyContentFallbackUsed: options.emptyContentFallbackUsed ?? false,
+    finishReason: options.finishReason,
+    contentType: options.contentType,
+    contentLength: options.contentLength,
     upstreamStatusCode: options.upstreamStatusCode,
     upstreamErrorCode: options.upstreamErrorCode,
     upstreamMessageSanitized: options.upstreamMessageSanitized,
@@ -1901,6 +1956,11 @@ function buildAiExplainFailureResponse(options: {
       compatibilityFallbackUsed: options.compatibilityFallbackUsed ?? false,
       disabledResponseFormat: options.disabledResponseFormat ?? false,
       disabledReasoningEffort: options.disabledReasoningEffort ?? false,
+      emptyContentFallbackUsed: options.emptyContentFallbackUsed ?? false,
+      finishReason: options.finishReason,
+      contentType: options.contentType,
+      contentLength: options.contentLength,
+      messageKeys: options.messageKeys,
       upstreamStatusCode: options.upstreamStatusCode,
       upstreamErrorCode: options.upstreamErrorCode,
       upstreamErrorType: options.upstreamErrorType,
@@ -1928,6 +1988,11 @@ function buildAiExplainFailureResponse(options: {
       compatibilityFallbackUsed: options.compatibilityFallbackUsed ?? false,
       disabledResponseFormat: options.disabledResponseFormat ?? false,
       disabledReasoningEffort: options.disabledReasoningEffort ?? false,
+      emptyContentFallbackUsed: options.emptyContentFallbackUsed ?? false,
+      finishReason: options.finishReason,
+      contentType: options.contentType,
+      contentLength: options.contentLength,
+      messageKeys: options.messageKeys,
       upstreamStatusCode: options.upstreamStatusCode,
       upstreamErrorCode: options.upstreamErrorCode,
       upstreamErrorType: options.upstreamErrorType,
@@ -2412,6 +2477,7 @@ function withDeepSeekRouteAttemptCount(error: unknown, attempts: number): unknow
     compatibilityFallbackUsed: error.compatibilityFallbackUsed,
     disabledResponseFormat: error.disabledResponseFormat,
     disabledReasoningEffort: error.disabledReasoningEffort,
+    emptyContentFallbackUsed: error.emptyContentFallbackUsed,
     firstFailureUpstreamCode: error.firstFailureUpstreamCode,
     finalFailureUpstreamCode: error.finalFailureUpstreamCode,
     upstreamStatusCode: error.upstreamStatusCode,
@@ -2420,6 +2486,15 @@ function withDeepSeekRouteAttemptCount(error: unknown, attempts: number): unknow
     upstreamMessageSanitized: error.upstreamMessageSanitized,
     upstreamRequestId: error.upstreamRequestId,
     rawResponseSizeChars: error.rawResponseSizeChars,
+    finishReason: error.finishReason,
+    choiceIndex: error.choiceIndex,
+    messageKeys: error.messageKeys,
+    contentType: error.contentType,
+    contentLength: error.contentLength,
+    reasoningContentLength: error.reasoningContentLength,
+    finalFinishReason: error.finalFinishReason,
+    finalContentType: error.finalContentType,
+    finalContentLength: error.finalContentLength,
     cause: error.cause,
   });
 }
@@ -2484,6 +2559,7 @@ function normalizeDeepSeekExplanationError(error: unknown): {
   readonly latencyMs?: number;
   readonly promptSizeChars?: number;
   readonly responseSizeChars?: number;
+  readonly rawResponseSizeChars?: number;
   readonly parseStrategy: ForecastAiExplanationParseStrategy;
   readonly attempts?: number;
   readonly upstreamStatusCode?: number;
@@ -2493,6 +2569,16 @@ function normalizeDeepSeekExplanationError(error: unknown): {
   readonly compatibilityFallbackUsed?: boolean;
   readonly disabledResponseFormat?: boolean;
   readonly disabledReasoningEffort?: boolean;
+  readonly emptyContentFallbackUsed?: boolean;
+  readonly finishReason?: string;
+  readonly choiceIndex?: number;
+  readonly messageKeys?: readonly string[];
+  readonly contentType?: string;
+  readonly contentLength?: number;
+  readonly reasoningContentLength?: number;
+  readonly finalFinishReason?: string;
+  readonly finalContentType?: string;
+  readonly finalContentLength?: number;
   readonly firstFailureUpstreamCode?: string;
   readonly finalFailureUpstreamCode?: string;
 } {
@@ -2512,6 +2598,7 @@ function normalizeDeepSeekExplanationError(error: unknown): {
       latencyMs: providerError?.latencyMs,
       promptSizeChars: providerError?.promptSizeChars,
       responseSizeChars: providerError?.responseSizeChars,
+      rawResponseSizeChars: providerError?.rawResponseSizeChars,
       parseStrategy: providerError?.parseStrategy ?? "failed",
       message: "DeepSeek 解读暂时超时，已保留确定性分析结果，可稍后重试。",
       attempts: providerError?.attempts,
@@ -2522,6 +2609,16 @@ function normalizeDeepSeekExplanationError(error: unknown): {
       compatibilityFallbackUsed: providerError?.compatibilityFallbackUsed,
       disabledResponseFormat: providerError?.disabledResponseFormat,
       disabledReasoningEffort: providerError?.disabledReasoningEffort,
+      emptyContentFallbackUsed: providerError?.emptyContentFallbackUsed,
+      finishReason: providerError?.finishReason,
+      choiceIndex: providerError?.choiceIndex,
+      messageKeys: providerError?.messageKeys,
+      contentType: providerError?.contentType,
+      contentLength: providerError?.contentLength,
+      reasoningContentLength: providerError?.reasoningContentLength,
+      finalFinishReason: providerError?.finalFinishReason,
+      finalContentType: providerError?.finalContentType,
+      finalContentLength: providerError?.finalContentLength,
       firstFailureUpstreamCode: providerError?.firstFailureUpstreamCode,
       finalFailureUpstreamCode: providerError?.finalFailureUpstreamCode,
     };
@@ -2546,6 +2643,7 @@ function normalizeDeepSeekExplanationError(error: unknown): {
     latencyMs: providerError?.latencyMs,
     promptSizeChars: providerError?.promptSizeChars,
     responseSizeChars: providerError?.responseSizeChars,
+    rawResponseSizeChars: providerError?.rawResponseSizeChars,
     parseStrategy: providerError?.parseStrategy ?? "failed",
     message: "DeepSeek 解读暂时不可用，已保留确定性分析结果。",
     attempts: providerError?.attempts,
@@ -2556,6 +2654,16 @@ function normalizeDeepSeekExplanationError(error: unknown): {
     compatibilityFallbackUsed: providerError?.compatibilityFallbackUsed,
     disabledResponseFormat: providerError?.disabledResponseFormat,
     disabledReasoningEffort: providerError?.disabledReasoningEffort,
+    emptyContentFallbackUsed: providerError?.emptyContentFallbackUsed,
+    finishReason: providerError?.finishReason,
+    choiceIndex: providerError?.choiceIndex,
+    messageKeys: providerError?.messageKeys,
+    contentType: providerError?.contentType,
+    contentLength: providerError?.contentLength,
+    reasoningContentLength: providerError?.reasoningContentLength,
+    finalFinishReason: providerError?.finalFinishReason,
+    finalContentType: providerError?.finalContentType,
+    finalContentLength: providerError?.finalContentLength,
     firstFailureUpstreamCode: providerError?.firstFailureUpstreamCode,
     finalFailureUpstreamCode: providerError?.finalFailureUpstreamCode,
   };

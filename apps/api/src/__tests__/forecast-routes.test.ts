@@ -3240,6 +3240,109 @@ describe("forecast query validation route", () => {
     expect(response.body).not.toContain("Authorization");
   });
 
+  it("returns a real explanation when DeepSeek empty-content fallback succeeds", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
+      const requestBody = JSON.parse(String(init?.body));
+      if (fetchMock.mock.calls.length === 1) {
+        expect(requestBody).toHaveProperty("response_format");
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                index: 0,
+                finish_reason: "stop",
+                message: { content: "" },
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      expect(requestBody).not.toHaveProperty("response_format");
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              index: 0,
+              finish_reason: "stop",
+              message: {
+                content: JSON.stringify(buildDeepSeekExplanationContent("空内容重试成功")),
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const provider = state.providers.get("ai:deepseek");
+    state.providers.set("ai:deepseek", {
+      ...provider,
+      enabled: true,
+      configJson: {
+        ...(provider.configJson ?? {}),
+        realCallEnabled: true,
+        model: "deepseek-v4-pro",
+      },
+      secretJson: {
+        apiKey: "deepseek-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "deep****cret",
+      },
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: forecastTestAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/ai-explain",
+      payload: {
+        ...validPayload,
+        photoSpotId: "spot-empty-content-retry",
+      },
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body).toMatchObject({
+      success: true,
+      source: "deepseek",
+      fallback: false,
+      model: "deepseek-v4-pro",
+      parseStrategy: "strict_json",
+      compatibilityFallbackUsed: true,
+      disabledResponseFormat: true,
+      emptyContentFallbackUsed: true,
+      finishReason: "stop",
+      contentType: "string",
+      summaryText: expect.stringContaining("空内容重试成功"),
+      diagnostics: expect.objectContaining({
+        attempts: 2,
+        compatibilityFallbackUsed: true,
+        disabledResponseFormat: true,
+        emptyContentFallbackUsed: true,
+        finishReason: "stop",
+        contentType: "string",
+        contentLength: expect.any(Number),
+        rawResponseSizeChars: expect.any(Number),
+      }),
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(response.body).not.toContain("deepseek-secret");
+    expect(response.body).not.toContain("Authorization");
+    expect(response.body).not.toContain("messages");
+  });
+
   it("falls back to deterministic interpretation when DeepSeek JSON parsing fails", async () => {
     const fetchMock = vi.fn(
       async () =>

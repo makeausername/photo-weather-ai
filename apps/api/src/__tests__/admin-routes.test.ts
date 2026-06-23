@@ -2121,6 +2121,9 @@ describe("admin config routes", () => {
       attempts: 1,
       parseStrategy: "strict_json",
       compatibilityFallbackUsed: false,
+      emptyContentFallbackUsed: false,
+      contentType: "string",
+      contentLength: expect.any(Number),
       message: expect.stringContaining("DeepSeek 真实解读测试通过"),
     });
     expect(response.body).not.toContain("deepseek-real-secret");
@@ -2191,9 +2194,10 @@ describe("admin config routes", () => {
       success: false,
       providerCode: "deepseek",
       model: "deepseek-v4-pro",
-      attempts: 2,
+      attempts: 3,
       compatibilityFallbackUsed: true,
       disabledResponseFormat: true,
+      emptyContentFallbackUsed: false,
       upstreamStatusCode: 400,
       upstreamErrorCode: "unsupported_parameter",
       upstreamErrorType: "invalid_request_error",

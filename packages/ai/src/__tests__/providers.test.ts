@@ -1430,6 +1430,89 @@ describe("AI providers", () => {
     expect(JSON.stringify(forecastResultFixture.scores)).toBe(scoresBefore);
   });
 
+  it("extracts DeepSeek content array text parts", async () => {
+    const payload = createRuleBasedForecastExplanation(forecastResultFixture);
+    const fetcher = async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              index: 0,
+              finish_reason: "stop",
+              message: {
+                content: [
+                  {
+                    type: "text",
+                    text: JSON.stringify(payload),
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    const provider = new DeepSeekProvider({
+      enabled: true,
+      realModeEnabled: true,
+      apiKey: "sk-array",
+      fetcher,
+    });
+
+    const result = await provider.generateForecastExplanationWithDiagnostics({
+      forecastResult: forecastResultFixture,
+    });
+
+    expect(result.explanation.metadata?.parseStrategy).toBe("strict_json");
+    expect(result.requestDiagnostics).toMatchObject({
+      attempts: 1,
+      finishReason: "stop",
+      finalFinishReason: "stop",
+      contentType: "array",
+      finalContentType: "array",
+      messageKeys: ["content"],
+    });
+    expect(result.requestDiagnostics.contentLength).toBeGreaterThan(0);
+    expect(JSON.stringify(result)).not.toContain("sk-array");
+  });
+
+  it("extracts DeepSeek choices[0].text content", async () => {
+    const payload = createRuleBasedForecastExplanation(forecastResultFixture);
+    const fetcher = async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              index: 0,
+              finish_reason: "stop",
+              text: JSON.stringify(payload),
+              message: {},
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    const provider = new DeepSeekProvider({
+      enabled: true,
+      realModeEnabled: true,
+      apiKey: "sk-choice-text",
+      fetcher,
+    });
+
+    const result = await provider.generateForecastExplanationWithDiagnostics({
+      forecastResult: forecastResultFixture,
+    });
+
+    expect(result.explanation.metadata?.parseStrategy).toBe("strict_json");
+    expect(result.requestDiagnostics).toMatchObject({
+      attempts: 1,
+      finishReason: "stop",
+      contentType: "choice_text",
+      finalContentType: "choice_text",
+    });
+    expect(JSON.stringify(result)).not.toContain("sk-choice-text");
+  });
+
   it("retries DeepSeek 400 unsupported response_format without response_format", async () => {
     const payload = createRuleBasedForecastExplanation(forecastResultFixture);
     const requestBodies: unknown[] = [];
@@ -1607,11 +1690,15 @@ describe("AI providers", () => {
   });
 
   it("classifies empty DeepSeek content separately from JSON parse errors", async () => {
-    const fetcher = async () =>
-      new Response(
+    let calls = 0;
+    const fetcher = async () => {
+      calls += 1;
+      return new Response(
         JSON.stringify({
           choices: [
             {
+              index: 0,
+              finish_reason: "stop",
               message: {
                 content: "",
               },
@@ -1625,10 +1712,11 @@ describe("AI providers", () => {
           },
         },
       );
+    };
     const provider = new DeepSeekProvider({
       enabled: true,
       realModeEnabled: true,
-      apiKey: "sk-test",
+      apiKey: "sk-empty",
       fetcher,
     });
 
@@ -1640,7 +1728,227 @@ describe("AI providers", () => {
       errorCategory: "provider_parse_error",
       parseStrategy: "failed",
       messageZh: "DeepSeek 返回内容为空。",
+      attempts: 3,
+      compatibilityFallbackUsed: true,
+      disabledResponseFormat: true,
+      emptyContentFallbackUsed: true,
+      finishReason: "stop",
+      contentType: "string",
+      contentLength: 0,
+      messageKeys: ["content"],
+      rawResponseSizeChars: expect.any(Number),
     });
+    expect(calls).toBe(3);
+  });
+
+  it("retries empty DeepSeek content without response_format and succeeds", async () => {
+    const payload = createRuleBasedForecastExplanation(forecastResultFixture);
+    const requestBodies: unknown[] = [];
+    const fetcher = async (_input: string | URL, init?: RequestInit) => {
+      const requestBody = JSON.parse(String(init?.body));
+      requestBodies.push(requestBody);
+      if (requestBodies.length === 1) {
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                index: 0,
+                finish_reason: "stop",
+                message: { content: "" },
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              index: 0,
+              finish_reason: "stop",
+              message: {
+                content: JSON.stringify(payload),
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    };
+    const provider = new DeepSeekProvider({
+      enabled: true,
+      realModeEnabled: true,
+      apiKey: "sk-empty-retry",
+      fetcher,
+    });
+
+    const result = await provider.generateForecastExplanationWithDiagnostics({
+      forecastResult: forecastResultFixture,
+    });
+
+    expect(requestBodies).toHaveLength(2);
+    expect(requestBodies[0]).toMatchObject({ response_format: { type: "json_object" } });
+    expect(requestBodies[1]).not.toHaveProperty("response_format");
+    expect(result.requestDiagnostics).toMatchObject({
+      attempts: 2,
+      compatibilityFallbackUsed: true,
+      disabledResponseFormat: true,
+      emptyContentFallbackUsed: true,
+      finishReason: "stop",
+      contentType: "string",
+      finalFinishReason: "stop",
+      finalContentType: "string",
+      messageKeys: ["content"],
+    });
+    expect(result.explanation.metadata?.parseStrategy).toBe("strict_json");
+    expect(JSON.stringify(result)).not.toContain("sk-empty-retry");
+  });
+
+  it("uses a minimal text-compatible request after repeated empty content", async () => {
+    const requestBodies: Record<string, unknown>[] = [];
+    const fetcher = async (_input: string | URL, init?: RequestInit) => {
+      const requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      requestBodies.push(requestBody);
+      if (requestBodies.length < 3) {
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                index: 0,
+                finish_reason: "stop",
+                message: { content: "" },
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              index: 0,
+              finish_reason: "stop",
+              message: {
+                content:
+                  "是否值得去：清晨窗口可作为主计划，但不要只为单一信号专程。\n主要窗口：按确定性主窗口提前到位，现场复核低云和降水。\n主要风险：短临降水、白墙和阵风仍需复核。\n备选策略：失败时改拍近景或远山层次。\n复核重点：出发前复核云层、降水和风。",
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    };
+    const provider = new DeepSeekProvider({
+      enabled: true,
+      realModeEnabled: true,
+      apiKey: "sk-text-fallback",
+      fetcher,
+    });
+
+    const result = await provider.generateForecastExplanationWithDiagnostics({
+      forecastResult: forecastResultFixture,
+    });
+
+    expect(requestBodies).toHaveLength(3);
+    expect(requestBodies[2]).toMatchObject({
+      model: "deepseek-v4-pro",
+      temperature: expect.any(Number),
+      max_tokens: expect.any(Number),
+      stream: false,
+    });
+    expect(requestBodies[2]).not.toHaveProperty("response_format");
+    expect(requestBodies[2]).not.toHaveProperty("reasoning_effort");
+    expect(JSON.stringify(requestBodies[2])).toContain("是否值得去");
+    expect(result.requestDiagnostics).toMatchObject({
+      attempts: 3,
+      compatibilityFallbackUsed: true,
+      disabledResponseFormat: true,
+      emptyContentFallbackUsed: true,
+      finishReason: "stop",
+      contentType: "string",
+    });
+    expect(result.explanation.metadata).toMatchObject({
+      parseStrategy: "plain_text_fallback",
+      fallbackUsed: true,
+    });
+    expect(result.explanation.conclusion.summaryZh).toContain("清晨窗口");
+    expect(JSON.stringify(result)).not.toContain("sk-text-fallback");
+  });
+
+  it("keeps DeepSeek empty-content compatibility fallbacks bounded when reasoning is enabled", async () => {
+    const requestBodies: Record<string, unknown>[] = [];
+    const fetcher = async (_input: string | URL, init?: RequestInit) => {
+      const requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      requestBodies.push(requestBody);
+      if (requestBodies.length < 4) {
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                index: 0,
+                finish_reason: "stop",
+                message: { content: "" },
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              index: 0,
+              finish_reason: "stop",
+              message: {
+                content:
+                  "是否值得去：可以按确定性窗口轻量执行，但不建议只为单一信号远程专程。\n主要窗口：优先执行已计算出的主窗口。\n主要风险：降水、云层和风仍需临近复核。\n备选策略：若窗口失败，转为近景或城市夜景。\n复核重点：出发前复核云量、降水和风。",
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    };
+    const provider = new DeepSeekProvider({
+      enabled: true,
+      realModeEnabled: true,
+      apiKey: "sk-thinking-empty",
+      thinkingEnabled: true,
+      reasoningEffort: "medium",
+      fetcher,
+    });
+
+    const result = await provider.generateForecastExplanationWithDiagnostics({
+      forecastResult: forecastResultFixture,
+    });
+
+    expect(requestBodies).toHaveLength(4);
+    expect(requestBodies[0]).toMatchObject({
+      response_format: { type: "json_object" },
+      reasoning_effort: "medium",
+    });
+    expect(requestBodies[1]).not.toHaveProperty("response_format");
+    expect(requestBodies[1]).toHaveProperty("reasoning_effort", "medium");
+    expect(requestBodies[2]).toMatchObject({ response_format: { type: "json_object" } });
+    expect(requestBodies[2]).not.toHaveProperty("reasoning_effort");
+    expect(requestBodies[3]).not.toHaveProperty("response_format");
+    expect(requestBodies[3]).not.toHaveProperty("reasoning_effort");
+    expect(JSON.stringify(requestBodies[3])).toContain("是否值得去");
+    expect(result.requestDiagnostics).toMatchObject({
+      attempts: 4,
+      compatibilityFallbackUsed: true,
+      disabledResponseFormat: true,
+      disabledReasoningEffort: true,
+      emptyContentFallbackUsed: true,
+    });
+    expect(result.explanation.metadata?.parseStrategy).toBe("plain_text_fallback");
+    expect(JSON.stringify(result)).not.toContain("sk-thinking-empty");
   });
 
   it("rejects oversized prompts with a structured prompt_too_large error", () => {
@@ -1714,7 +2022,9 @@ describe("AI providers", () => {
   });
 
   it("classifies upstream DeepSeek unauthorized responses without exposing the key", async () => {
+    let calls = 0;
     const fetcher = async (_input: string | URL, init?: RequestInit) => {
+      calls += 1;
       expect(init?.headers).toMatchObject({
         Authorization: "Bearer sk-test-secret",
       });
@@ -1740,6 +2050,7 @@ describe("AI providers", () => {
     await expect(provider.testConnection()).rejects.not.toMatchObject({
       message: expect.stringContaining("sk-test-secret"),
     });
+    expect(calls).toBe(2);
   });
 
   it("validates DeepSeek forecast explanation output shape", () => {

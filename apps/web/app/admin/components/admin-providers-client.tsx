@@ -1038,6 +1038,24 @@ function ProviderTestDetails({ result }: { readonly result?: MockConnectionTestR
     typeof result.compatibilityFallbackUsed === "boolean"
       ? ["compatibilityFallbackUsed", String(result.compatibilityFallbackUsed)]
       : null,
+    typeof result.disabledResponseFormat === "boolean"
+      ? ["disabledResponseFormat", String(result.disabledResponseFormat)]
+      : null,
+    typeof result.disabledReasoningEffort === "boolean"
+      ? ["disabledReasoningEffort", String(result.disabledReasoningEffort)]
+      : null,
+    typeof result.emptyContentFallbackUsed === "boolean"
+      ? ["emptyContentFallbackUsed", String(result.emptyContentFallbackUsed)]
+      : null,
+    result.finishReason ? ["finishReason", result.finishReason] : null,
+    result.contentType ? ["contentType", result.contentType] : null,
+    typeof result.contentLength === "number"
+      ? ["contentLength", String(result.contentLength)]
+      : null,
+    typeof result.rawResponseSizeChars === "number"
+      ? ["rawResponseSizeChars", String(result.rawResponseSizeChars)]
+      : null,
+    result.messageKeys?.length ? ["messageKeys", result.messageKeys.join(",")] : null,
     typeof result.upstreamStatusCode === "number"
       ? ["upstreamStatusCode", String(result.upstreamStatusCode)]
       : null,

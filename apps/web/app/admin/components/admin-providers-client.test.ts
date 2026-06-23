@@ -457,6 +457,11 @@ describe("admin provider module source", () => {
     expect(source).toContain("真实解读测试");
     expect(source).toContain("parseStrategy");
     expect(source).toContain("compatibilityFallbackUsed");
+    expect(source).toContain("disabledResponseFormat");
+    expect(source).toContain("emptyContentFallbackUsed");
+    expect(source).toContain("finishReason");
+    expect(source).toContain("contentLength");
+    expect(source).toContain("rawResponseSizeChars");
     expect(source).toContain("upstreamMessageSanitized");
     expect(source).toContain("providerTestButtonLabel(testState)");
     expect(source).toContain('aria-label="测试连接"');
