@@ -14,7 +14,6 @@ import {
   getCurrentAccountSession,
   listAccountBillingOrders,
   listAccountForecastHistory,
-  logoutPublicAccount,
   sendAccountEmailCode,
   sendAccountPhoneCode,
   shouldShowAdminEntry,
@@ -65,7 +64,6 @@ export function AccountCenterClient() {
   const router = useRouter();
   const [state, setState] = useState<LoadState>("loading");
   const [session, setSession] = useState<PublicAccountSession | null>(null);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,17 +87,6 @@ export function AccountCenterClient() {
     };
   }, []);
 
-  async function handleLogout() {
-    setIsLoggingOut(true);
-    try {
-      await logoutPublicAccount();
-      setSession(null);
-      router.replace("/");
-    } finally {
-      setIsLoggingOut(false);
-    }
-  }
-
   function handleAccountDeleted() {
     setSession(null);
     router.replace("/");
@@ -120,8 +107,6 @@ export function AccountCenterClient() {
   return (
     <AuthenticatedAccountCenter
       session={session}
-      onLogout={() => void handleLogout()}
-      isLoggingOut={isLoggingOut}
       onSessionUpdate={setSession}
       onAccountDeleted={handleAccountDeleted}
     />
@@ -170,16 +155,12 @@ export function UnauthenticatedAccountPrompt() {
 
 export function AuthenticatedAccountCenter({
   session,
-  onLogout,
-  isLoggingOut,
   onSessionUpdate,
   onAccountDeleted,
   initialHistory,
   initialBillingSummary,
 }: {
   readonly session: PublicAccountSession;
-  readonly onLogout: () => void;
-  readonly isLoggingOut: boolean;
   readonly onSessionUpdate?: (session: PublicAccountSession) => void;
   readonly onAccountDeleted?: () => void;
   readonly initialHistory?: readonly AccountForecastHistoryRecord[];
@@ -201,11 +182,7 @@ export function AuthenticatedAccountCenter({
       >
         <div className="grid gap-5">
           <ProfileCard session={session} />
-          <SecuritySettingsCard
-            onLogout={onLogout}
-            isLoggingOut={isLoggingOut}
-            onSessionUpdate={onSessionUpdate}
-          />
+          <SecuritySettingsCard onSessionUpdate={onSessionUpdate} />
         </div>
         <div className="grid gap-5">
           <ContactBindingCard session={session} onSessionUpdate={onSessionUpdate} />
@@ -292,35 +269,15 @@ function ContactBindingCard({
 }
 
 function SecuritySettingsCard({
-  onLogout,
-  isLoggingOut,
   onSessionUpdate,
 }: {
-  readonly onLogout: () => void;
-  readonly isLoggingOut: boolean;
   readonly onSessionUpdate?: (session: PublicAccountSession) => void;
 }) {
   return (
     <Card className="p-5 shadow-sm sm:p-6">
-      <SectionTitle title="安全设置" description="修改密码会保留当前会话，并撤销其他登录会话。" />
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-start">
+      <SectionTitle title="安全设置" description="修改密码会保留本设备登录，并撤销其他登录会话。" />
+      <div className="mt-4">
         <ChangePasswordForm onSessionUpdate={onSessionUpdate} />
-        <div className="rounded-lg border border-border bg-muted/40 p-4">
-          <p className="text-sm font-bold text-card-foreground">当前会话</p>
-          <p className="mt-2 text-xs leading-5 text-muted-foreground">
-            如需更换设备或结束本机登录，可直接退出账户。
-          </p>
-          <Button
-            type="button"
-            variant="secondary"
-            size="md"
-            className="mt-4 w-full"
-            disabled={isLoggingOut}
-            onClick={onLogout}
-          >
-            {isLoggingOut ? "正在退出..." : "退出登录"}
-          </Button>
-        </div>
       </div>
     </Card>
   );

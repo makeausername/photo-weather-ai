@@ -2,6 +2,7 @@ import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  changeAccountPassword,
   confirmRegisterPublicAccount,
   createBillingOrder,
   getCaptchaPublicConfig,
@@ -251,6 +252,8 @@ describe("public account navigation", () => {
     expect(html).toContain('href="/account"');
     expect(html).toContain("账户中心");
     expect(html).toContain("退出登录");
+    expect(html.match(/退出登录/g)?.length ?? 0).toBe(1);
+    expect(html).toMatch(/<button\b[^>]*role="menuitem"[^>]*>\s*退出登录\s*<\/button>/);
     expect(html).not.toContain('href="/#analysis"');
     expect(html).not.toContain('href="/pricing"');
     expect(html).not.toContain('href="/admin"');
@@ -380,13 +383,20 @@ describe("account center foundation", () => {
     expect(html).toContain("查询历史");
     expect(html).toContain("暂无查询历史");
     expect(html).toContain("修改密码");
+    expect(html).toContain("当前密码");
+    expect(html).toContain("新密码");
+    expect(html).toContain("确认新密码");
+    expect(html).toContain("保存新密码");
     expect(html).toContain("修改绑定邮箱");
     expect(html).toContain("绑定/修改手机");
     expect(html).toContain("注销账户");
     expect(html).toContain("2026/06/01");
     expect(html).toContain("2026/06/10");
     expect(html).toContain("2026/06/17");
-    expect(html).toContain("退出登录");
+    expect(html).not.toContain("当前会话");
+    expect(html).not.toContain("退出登录");
+    expect(html).not.toContain("正在退出");
+    expect(html).not.toContain("如需更换设备或结束本机登录");
     expect(html).not.toContain("权限与角色");
     expect(html).not.toContain("暂无额外权限");
     expect(html).not.toContain("admin.manage");
@@ -684,6 +694,11 @@ describe("account center foundation", () => {
       }
       expect(html).not.toContain("min-h-[");
       expect(html).not.toMatch(/\bmin-h-(?:4[8-9]|[5-9]\d|\d{3,})\b/);
+      expect(html).not.toContain("lg:grid-cols-[minmax(0,1fr)_220px]");
+      expect(html).not.toContain("当前会话");
+      expect(html).not.toContain("退出登录");
+      expect(html).toContain("安全设置");
+      expect(html).toContain("保存新密码");
       expect(html).not.toContain(">placeholder<");
       expect(html).not.toContain("filler");
       expect(html).not.toContain("coming soon");
@@ -1015,8 +1030,6 @@ function renderAuthenticatedAccountCenter(
   return renderToStaticMarkup(
     React.createElement(AuthenticatedAccountCenter, {
       session,
-      onLogout: () => undefined,
-      isLoggingOut: false,
       initialHistory,
       initialBillingSummary,
     }),
@@ -1184,6 +1197,43 @@ describe("public registration session API", () => {
     expect(String((init as RequestInit).body)).not.toContain("durationDays");
     expect(String((init as RequestInit).body)).not.toContain("grantType");
     expect(String((init as RequestInit).body)).not.toContain("hasFullAccess");
+  });
+
+  it("submits account password changes with the current refresh token", async () => {
+    installBrowserWindow();
+    storeAdminSession(createStoredSession());
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(baseAccountSession), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(
+      changeAccountPassword({
+        currentPassword: "old-public88",
+        newPassword: "new-public88",
+        confirmNewPassword: "new-public88",
+      }),
+    ).resolves.toMatchObject({
+      user: {
+        id: "user-1",
+      },
+    });
+
+    const [, init] = fetchSpy.mock.calls[0] ?? [];
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:4000/account/change-password",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({
+      currentPassword: "old-public88",
+      newPassword: "new-public88",
+      confirmNewPassword: "new-public88",
+      currentRefreshToken: "account-refresh-token",
+    });
   });
 
   it("clears public account storage when refresh token is expired or invalid", async () => {
