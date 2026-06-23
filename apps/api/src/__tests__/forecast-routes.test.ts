@@ -2938,28 +2938,34 @@ describe("forecast query validation route", () => {
     expect(response.body).not.toContain("deepseek-secret");
   });
 
-  it("returns useful plain DeepSeek text as a successful fallback interpretation", async () => {
-    const fetchMock = vi.fn(
-      async () =>
-        new Response(
-          JSON.stringify({
-            choices: [
-              {
-                message: {
-                  content:
-                    "\u7ed3\u8bba\uff1a\u6e05\u6668\u7a97\u53e3\u53ef\u4f5c\u4e3a\u4e3b\u8ba1\u5212\uff0c\u4f46\u4e0d\u8981\u53ea\u4e3a\u5355\u4e00\u4fe1\u53f7\u4e13\u7a0b\u3002\n\u7406\u7531\uff1a\u4f4e\u4e91\u3001\u6e7f\u5ea6\u548c\u5730\u5f62\u4fe1\u53f7\u66f4\u96c6\u4e2d\uff0c\u4ecd\u9700\u77ed\u4e34\u590d\u6838\u3002\n\u5efa\u8bae\uff1a\u6309\u4e3b\u7a97\u53e3\u63d0\u524d\u5230\u4f4d\uff0c\u5931\u8d25\u65f6\u6539\u62cd\u8fd1\u666f\u3002\n\u98ce\u9669\uff1a\u77ed\u4e34\u964d\u6c34\u3001\u767d\u5899\u548c\u9635\u98ce\u4ecd\u9700\u73b0\u573a\u590d\u6838\u3002",
-                },
+  it("returns useful plain DeepSeek text as a displayable success interpretation", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
+      const requestBody = JSON.parse(String(init?.body));
+      expect(requestBody).toMatchObject({
+        model: "deepseek-v4-pro",
+        max_tokens: 2400,
+      });
+      expect(requestBody).not.toHaveProperty("response_format");
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              finish_reason: "length",
+              message: {
+                content:
+                  "\u7ed3\u8bba\uff1a\u6e05\u6668\u7a97\u53e3\u53ef\u4f5c\u4e3a\u4e3b\u8ba1\u5212\uff0c\u4f46\u4e0d\u8981\u53ea\u4e3a\u5355\u4e00\u4fe1\u53f7\u4e13\u7a0b\u3002\n\u7406\u7531\uff1a\u4f4e\u4e91\u3001\u6e7f\u5ea6\u548c\u5730\u5f62\u4fe1\u53f7\u66f4\u96c6\u4e2d\uff0c\u4ecd\u9700\u77ed\u4e34\u590d\u6838\u3002\n\u5efa\u8bae\uff1a\u6309\u4e3b\u7a97\u53e3\u63d0\u524d\u5230\u4f4d\uff0c\u5931\u8d25\u65f6\u6539\u62cd\u8fd1\u666f\u3002\n\u98ce\u9669\uff1a\u77ed\u4e34\u964d\u6c34\u3001\u767d\u5899\u548c\u9635\u98ce\u4ecd\u9700\u73b0\u573a\u590d\u6838\u3002",
               },
-            ],
-          }),
-          {
-            status: 200,
-            headers: {
-              "Content-Type": "application/json",
             },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
           },
-        ),
-    );
+        },
+      );
+    });
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
     const provider = state.providers.get("ai:deepseek");
@@ -3003,14 +3009,25 @@ describe("forecast query validation route", () => {
       success: true,
       source: "deepseek",
       fallback: false,
+      displaySuccess: true,
+      hasDisplayableAiContent: true,
       model: "deepseek-v4-pro",
+      outputMode: "text_with_json_fallback",
       parseSuccess: false,
       parseStrategy: "plain_text_fallback",
       fallbackUsed: true,
+      providerFallbackUsed: true,
+      deterministicFallbackUsed: false,
+      finishReason: "length",
       rawResponseSizeChars: expect.any(Number),
       summaryText: expect.stringContaining("\u6e05\u6668\u7a97\u53e3"),
       explanation: expect.objectContaining({
         summaryText: expect.stringContaining("\u6e05\u6668\u7a97\u53e3"),
+        displayOnly: true,
+        displayContent: expect.objectContaining({
+          hasContent: true,
+          summaryText: expect.stringContaining("\u6e05\u6668\u7a97\u53e3"),
+        }),
       }),
       interpretation: expect.objectContaining({
         summaryText: expect.stringContaining("\u6e05\u6668\u7a97\u53e3"),
@@ -3028,13 +3045,22 @@ describe("forecast query validation route", () => {
         model: "deepseek-v4-pro",
         parseStrategy: "plain_text_fallback",
         fallbackUsed: true,
+        providerFallbackUsed: true,
+        deterministicFallbackUsed: false,
+        displaySuccess: true,
+        hasDisplayableAiContent: true,
       }),
       diagnostics: expect.objectContaining({
         providerCode: "deepseek",
         model: "deepseek-v4-pro",
+        displaySuccess: true,
+        hasDisplayableAiContent: true,
         parseSuccess: false,
         parseStrategy: "plain_text_fallback",
         fallbackUsed: true,
+        providerFallbackUsed: true,
+        deterministicFallbackUsed: false,
+        finishReason: "length",
         rawResponseSizeChars: expect.any(Number),
       }),
     });
@@ -3043,32 +3069,37 @@ describe("forecast query validation route", () => {
   });
 
   it("returns a frontend-friendly success contract for strict JSON explanation content", async () => {
-    const fetchMock = vi.fn(
-      async () =>
-        new Response(
-          JSON.stringify({
-            choices: [
-              {
-                message: {
-                  content: JSON.stringify({
-                    summaryText: "严格 JSON 摘要可直接展示。",
-                    conclusion: "清晨窗口可以作为主计划，但仍需复核短临低云。",
-                    reasons: ["低云、湿度和地形信号集中在清晨。"],
-                    suggestions: ["按主窗口提前到位，失败时转拍远山层次。"],
-                    risks: ["短临降水和白墙仍需现场复核。"],
-                  }),
-                },
+    const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
+      const requestBody = JSON.parse(String(init?.body));
+      expect(requestBody).toMatchObject({
+        model: "deepseek-v4-pro",
+        max_tokens: 2400,
+      });
+      expect(requestBody).not.toHaveProperty("response_format");
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  summaryText: "严格 JSON 摘要可直接展示。",
+                  conclusion: "清晨窗口可以作为主计划，但仍需复核短临低云。",
+                  reasons: ["低云、湿度和地形信号集中在清晨。"],
+                  suggestions: ["按主窗口提前到位，失败时转拍远山层次。"],
+                  risks: ["短临降水和白墙仍需现场复核。"],
+                }),
               },
-            ],
-          }),
-          {
-            status: 200,
-            headers: {
-              "Content-Type": "application/json",
             },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
           },
-        ),
-    );
+        },
+      );
+    });
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
     const provider = state.providers.get("ai:deepseek");
@@ -3113,10 +3144,15 @@ describe("forecast query validation route", () => {
       success: true,
       source: "deepseek",
       fallback: false,
+      displaySuccess: true,
+      hasDisplayableAiContent: true,
       model: "deepseek-v4-pro",
+      outputMode: "text_with_json_fallback",
       parseSuccess: true,
       parseStrategy: "strict_json",
       fallbackUsed: false,
+      providerFallbackUsed: false,
+      deterministicFallbackUsed: false,
       summaryText: expect.stringContaining("严格 JSON"),
       explanation: expect.objectContaining({
         summaryText: expect.stringContaining("严格 JSON"),
@@ -3134,11 +3170,15 @@ describe("forecast query validation route", () => {
         model: "deepseek-v4-pro",
         parseStrategy: "strict_json",
         fallbackUsed: false,
+        displaySuccess: true,
+        hasDisplayableAiContent: true,
       }),
       diagnostics: expect.objectContaining({
         providerCode: "deepseek",
         model: "deepseek-v4-pro",
         parseStrategy: "strict_json",
+        displaySuccess: true,
+        hasDisplayableAiContent: true,
       }),
     });
     expect(body).not.toHaveProperty("scores");
@@ -3146,33 +3186,16 @@ describe("forecast query validation route", () => {
     expect(response.body).not.toContain("deepseek-secret");
   });
 
-  it("returns a real explanation when DeepSeek compatibility retry succeeds", async () => {
+  it("uses text-first forecast explanation requests while still parsing JSON content", async () => {
     const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
       const requestBody = JSON.parse(String(init?.body));
-      if (fetchMock.mock.calls.length === 1) {
-        expect(requestBody).toHaveProperty("response_format");
-        return new Response(
-          JSON.stringify({
-            error: {
-              type: "invalid_request_error",
-              code: "unsupported_parameter",
-              message: "Unsupported parameter: response_format",
-            },
-          }),
-          {
-            status: 400,
-            headers: { "Content-Type": "application/json", "x-request-id": "ds-api-1" },
-          },
-        );
-      }
-
       expect(requestBody).not.toHaveProperty("response_format");
       return new Response(
         JSON.stringify({
           choices: [
             {
               message: {
-                content: JSON.stringify(buildDeepSeekExplanationContent("兼容重试成功")),
+                content: JSON.stringify(buildDeepSeekExplanationContent("文本优先成功")),
               },
             },
           ],
@@ -3224,18 +3247,22 @@ describe("forecast query validation route", () => {
       source: "deepseek",
       fallback: false,
       model: "deepseek-v4-pro",
+      outputMode: "text_with_json_fallback",
       parseStrategy: "strict_json",
-      compatibilityFallbackUsed: true,
-      disabledResponseFormat: true,
-      summaryText: expect.stringContaining("兼容重试成功"),
+      compatibilityFallbackUsed: false,
+      disabledResponseFormat: false,
+      displaySuccess: true,
+      hasDisplayableAiContent: true,
+      summaryText: expect.stringContaining("文本优先成功"),
       diagnostics: expect.objectContaining({
-        attempts: 2,
-        compatibilityFallbackUsed: true,
-        disabledResponseFormat: true,
-        firstFailureUpstreamCode: "unsupported_parameter",
+        attempts: 1,
+        compatibilityFallbackUsed: false,
+        disabledResponseFormat: false,
+        displaySuccess: true,
+        hasDisplayableAiContent: true,
       }),
     });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(response.body).not.toContain("deepseek-secret");
     expect(response.body).not.toContain("Authorization");
   });
@@ -3244,7 +3271,7 @@ describe("forecast query validation route", () => {
     const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
       const requestBody = JSON.parse(String(init?.body));
       if (fetchMock.mock.calls.length === 1) {
-        expect(requestBody).toHaveProperty("response_format");
+        expect(requestBody).not.toHaveProperty("response_format");
         return new Response(
           JSON.stringify({
             choices: [
@@ -3260,6 +3287,7 @@ describe("forecast query validation route", () => {
       }
 
       expect(requestBody).not.toHaveProperty("response_format");
+      expect(JSON.stringify(requestBody)).toContain("Simplified Chinese section text");
       return new Response(
         JSON.stringify({
           choices: [
@@ -3321,7 +3349,7 @@ describe("forecast query validation route", () => {
       model: "deepseek-v4-pro",
       parseStrategy: "strict_json",
       compatibilityFallbackUsed: true,
-      disabledResponseFormat: true,
+      disabledResponseFormat: false,
       emptyContentFallbackUsed: true,
       finishReason: "stop",
       contentType: "string",
@@ -3329,7 +3357,7 @@ describe("forecast query validation route", () => {
       diagnostics: expect.objectContaining({
         attempts: 2,
         compatibilityFallbackUsed: true,
-        disabledResponseFormat: true,
+        disabledResponseFormat: false,
         emptyContentFallbackUsed: true,
         finishReason: "stop",
         contentType: "string",

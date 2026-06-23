@@ -4891,9 +4891,7 @@ describe("forecast result target-aware view model", () => {
     expect(outcome.errorCategory).toBe("frontend_contract_error");
     expect(outcome.backendErrorCategory).toBe("none");
     expect(outcome.explanation).toBeNull();
-    expect(outcome.errorMessage).toBe(
-      "智能解读暂时不可用（返回格式异常），确定性判断已保留。",
-    );
+    expect(outcome.errorMessage).toBe("智能解读暂时不可用（返回格式异常），确定性判断已保留。");
   });
 
   it("honors backend retryable false for DeepSeek provider HTTP failures", () => {
@@ -4978,11 +4976,17 @@ describe("forecast result target-aware view model", () => {
       success: true,
       interpretation:
         "\u7ed3\u8bba\uff1a\u6e05\u6668\u7a97\u53e3\u53ef\u4f5c\u4e3a\u4e3b\u8ba1\u5212\uff0c\u4f46\u4e0d\u8981\u53ea\u4e3a\u5355\u4e00\u4fe1\u53f7\u4e13\u7a0b\u3002",
+      displaySuccess: true,
+      hasDisplayableAiContent: true,
       parseSuccess: false,
       parseStrategy: "plain_text_fallback",
+      finishReason: "length",
       diagnostics: {
+        displaySuccess: true,
+        hasDisplayableAiContent: true,
         parseSuccess: false,
         parseStrategy: "plain_text_fallback",
+        finishReason: "length",
       },
     });
     const html = renderToStaticMarkup(
@@ -5003,8 +5007,9 @@ describe("forecast result target-aware view model", () => {
     expect(outcome.parseSuccess).toBe(false);
     expect(outcome.errorMessage).toBe("");
     expect(outcome.explanation?.conclusion.summaryZh).toContain("\u6e05\u6668\u7a97\u53e3");
+    expect(outcome.explanation?.metadata?.parseStrategy).toBe("plain_text_fallback");
     expect(html).toContain("\u6e05\u6668\u7a97\u53e3");
-    expect(html).not.toContain("鏅鸿兘瑙ｈ鏆傛椂涓嶅彲鐢?");
+    expect(html).not.toContain("智能解读暂时不可用");
   });
 
   it("caches successful interpretation by stable forecast result key", () => {

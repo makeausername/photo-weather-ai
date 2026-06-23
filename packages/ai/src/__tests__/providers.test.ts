@@ -182,6 +182,7 @@ describe("AI providers", () => {
     expect(request.url).toBe("https://example.deepseek.test/chat/completions");
     expect(request.body).toMatchObject({
       model: "deepseek-v4-pro",
+      max_tokens: 2400,
       response_format: {
         type: "json_object",
       },
@@ -201,6 +202,44 @@ describe("AI providers", () => {
     expect(JSON.stringify(request.body)).not.toContain("weatherTimeline");
     expect(request.promptSizeChars).toBeLessThanOrEqual(6000);
     expect(JSON.stringify(request.body)).not.toContain("sk-");
+  });
+
+  it("can send forecast explanations in text-first mode while still parsing JSON content", async () => {
+    const payload = createRuleBasedForecastExplanation(forecastResultFixture);
+    const requestBodies: Record<string, unknown>[] = [];
+    const fetcher = async (_input: string | URL, init?: RequestInit) => {
+      const requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      requestBodies.push(requestBody);
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { content: JSON.stringify(payload) } }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    };
+    const provider = new DeepSeekProvider({
+      enabled: true,
+      realModeEnabled: true,
+      apiKey: "sk-text-first",
+      forecastExplanationJsonOutputEnabled: false,
+      fetcher,
+    });
+
+    const result = await provider.generateForecastExplanationWithDiagnostics({
+      forecastResult: forecastResultFixture,
+    });
+
+    expect(requestBodies).toHaveLength(1);
+    expect(requestBodies[0]).toMatchObject({
+      model: "deepseek-v4-pro",
+      max_tokens: 2400,
+      stream: false,
+    });
+    expect(requestBodies[0]).not.toHaveProperty("response_format");
+    expect(JSON.stringify(requestBodies[0])).toContain("Simplified Chinese section text");
+    expect(result.parseStrategy).toBe("strict_json");
+    expect(result.explanation.metadata?.source).toBe("deepseek");
+    expect(JSON.stringify(result)).not.toContain("sk-text-first");
   });
 
   it("passes cloud-sea through the shared target configuration and request payload", () => {
@@ -1396,6 +1435,7 @@ describe("AI providers", () => {
         JSON.stringify({
           choices: [
             {
+              finish_reason: "length",
               message: {
                 content:
                   "\u7ed3\u8bba\uff1a\u6e05\u6668\u7a97\u53e3\u53ef\u4f5c\u4e3a\u4e3b\u8ba1\u5212\uff0c\u4f46\u4e0d\u8981\u53ea\u4e3a\u5355\u4e00\u4fe1\u53f7\u4e13\u7a0b\u3002\n\u7406\u7531\uff1a\u4f4e\u4e91\u3001\u6e7f\u5ea6\u548c\u5730\u5f62\u4fe1\u53f7\u66f4\u96c6\u4e2d\uff0c\u4ecd\u9700\u77ed\u4e34\u590d\u6838\u3002\n\u5efa\u8bae\uff1a\u6309\u4e3b\u7a97\u53e3\u63d0\u524d\u5230\u4f4d\uff0c\u5931\u8d25\u65f6\u6539\u62cd\u8fd1\u666f\u3002\n\u98ce\u9669\uff1a\u77ed\u4e34\u964d\u6c34\u3001\u767d\u5899\u548c\u9635\u98ce\u4ecd\u9700\u73b0\u573a\u590d\u6838\u3002",
@@ -1417,17 +1457,103 @@ describe("AI providers", () => {
       fetcher,
     });
 
-    const explanation = await provider.generateForecastExplanation({
+    const result = await provider.generateForecastExplanationWithDiagnostics({
       forecastResult: forecastResultFixture,
     });
+    const explanation = result.explanation;
 
     expect(explanation.metadata).toMatchObject({
       source: "deepseek",
       parseStrategy: "plain_text_fallback",
       fallbackUsed: true,
+      finishReason: "length",
+    });
+    expect(result).toMatchObject({
+      parseSuccess: false,
+      fallbackUsed: true,
+      requestDiagnostics: expect.objectContaining({
+        attempts: 1,
+        finishReason: "length",
+      }),
+    });
+    expect(explanation.displayOnly).toBe(true);
+    expect(explanation.displayContent).toMatchObject({
+      hasContent: true,
+      summaryText: expect.stringContaining("\u6e05\u6668\u7a97\u53e3"),
+      reasons: expect.arrayContaining([expect.stringContaining("\u4f4e\u4e91")]),
+      suggestions: expect.arrayContaining([expect.stringContaining("\u63d0\u524d\u5230\u4f4d")]),
+      risks: expect.arrayContaining([expect.stringContaining("\u77ed\u4e34\u964d\u6c34")]),
     });
     expect(explanation.conclusion.summaryZh).toContain("\u6e05\u6668\u7a97\u53e3");
     expect(JSON.stringify(forecastResultFixture.scores)).toBe(scoresBefore);
+  });
+
+  it("retries compact text mode when length-truncated content is too short to display", async () => {
+    const requestBodies: Record<string, unknown>[] = [];
+    const fetcher = async (_input: string | URL, init?: RequestInit) => {
+      const requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      requestBodies.push(requestBody);
+      if (requestBodies.length === 1) {
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                index: 0,
+                finish_reason: "length",
+                message: { content: "结论：" },
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              index: 0,
+              finish_reason: "stop",
+              message: {
+                content:
+                  "是否值得去：清晨窗口可作为主计划，但不要只为单一信号专程。\n主要窗口：按确定性主窗口提前到位，现场复核低云和降水。\n主要风险：短临降水、白墙和阵风仍需复核。\n备选策略：失败时改拍近景或远山层次。\n复核重点：出发前复核云层、降水和风。",
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    };
+    const provider = new DeepSeekProvider({
+      enabled: true,
+      realModeEnabled: true,
+      apiKey: "sk-length-retry",
+      forecastExplanationJsonOutputEnabled: false,
+      fetcher,
+    });
+
+    const result = await provider.generateForecastExplanationWithDiagnostics({
+      forecastResult: forecastResultFixture,
+    });
+
+    expect(requestBodies).toHaveLength(2);
+    expect(requestBodies[0]).not.toHaveProperty("response_format");
+    expect(requestBodies[1]).not.toHaveProperty("response_format");
+    expect(JSON.stringify(requestBodies[1])).toContain("是否值得去");
+    expect(result.requestDiagnostics).toMatchObject({
+      attempts: 2,
+      compatibilityFallbackUsed: true,
+      disabledResponseFormat: false,
+      finishReason: "stop",
+      contentType: "string",
+    });
+    expect(result.explanation.metadata).toMatchObject({
+      parseStrategy: "plain_text_fallback",
+      fallbackUsed: true,
+      finishReason: "stop",
+    });
+    expect(result.explanation.displayContent?.summaryText).toContain("清晨窗口");
+    expect(JSON.stringify(result)).not.toContain("sk-length-retry");
   });
 
   it("extracts DeepSeek content array text parts", async () => {

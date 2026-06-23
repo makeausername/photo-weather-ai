@@ -2043,10 +2043,8 @@ describe("admin config routes", () => {
       const requestBody = JSON.parse(String(init?.body));
       expect(requestBody).toMatchObject({
         model: "deepseek-v4-pro",
-        response_format: {
-          type: "json_object",
-        },
       });
+      expect(requestBody).not.toHaveProperty("response_format");
 
       return new Response(
         JSON.stringify({
@@ -2115,10 +2113,13 @@ describe("admin config routes", () => {
       success: true,
       providerCode: "deepseek",
       model: "deepseek-v4-pro",
-      outputMode: "json_object",
+      outputMode: "text_with_json_fallback",
       promptSizeChars: expect.any(Number),
       latencyMs: expect.any(Number),
       attempts: 1,
+      parseSuccess: true,
+      displaySuccess: true,
+      hasDisplayableAiContent: true,
       parseStrategy: "strict_json",
       compatibilityFallbackUsed: false,
       emptyContentFallbackUsed: false,
@@ -2133,23 +2134,24 @@ describe("admin config routes", () => {
   });
 
   it("reports DeepSeek explanation test upstream failure with safe diagnostics", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          error: {
-            type: "invalid_request_error",
-            code: "unsupported_parameter",
-            message: "Unsupported parameter: response_format",
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              type: "invalid_request_error",
+              code: "unsupported_parameter",
+              message: "Unsupported parameter: response_format",
+            },
+          }),
+          {
+            status: 400,
+            headers: {
+              "Content-Type": "application/json",
+              "x-request-id": "ds-admin-1",
+            },
           },
-        }),
-        {
-          status: 400,
-          headers: {
-            "Content-Type": "application/json",
-            "x-request-id": "ds-admin-1",
-          },
-        },
-      ),
+        ),
     );
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
@@ -2194,9 +2196,13 @@ describe("admin config routes", () => {
       success: false,
       providerCode: "deepseek",
       model: "deepseek-v4-pro",
-      attempts: 3,
+      outputMode: "text_with_json_fallback",
+      attempts: 2,
+      parseSuccess: false,
+      displaySuccess: false,
+      hasDisplayableAiContent: false,
       compatibilityFallbackUsed: true,
-      disabledResponseFormat: true,
+      disabledResponseFormat: false,
       emptyContentFallbackUsed: false,
       upstreamStatusCode: 400,
       upstreamErrorCode: "unsupported_parameter",

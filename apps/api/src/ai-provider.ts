@@ -19,6 +19,7 @@ export type AiProviderRuntimeOptions = {
   readonly dbClient?: DatabaseClient;
   readonly env?: NodeJS.ProcessEnv;
   readonly fetcher?: DeepSeekProviderOptions["fetcher"];
+  readonly forecastExplanationJsonOutputEnabled?: DeepSeekProviderOptions["forecastExplanationJsonOutputEnabled"];
 };
 
 export type ResolvedDeepSeekRuntimeConfig = {
@@ -330,6 +331,7 @@ export async function createRealDeepSeekProvider(
     reasoningEffort: config.reasoningEffort,
     timeoutMs: config.timeoutMs,
     jsonOutputEnabled: config.jsonOutputEnabled,
+    forecastExplanationJsonOutputEnabled: options.forecastExplanationJsonOutputEnabled ?? false,
     fetcher: options.fetcher,
   });
 }

@@ -33,6 +33,8 @@ import type {
   AIProvider,
   DecisionCardInput,
   ForecastAiExplanation,
+  ForecastAiExplanationDisplayContent,
+  ForecastAiExplanationDisplaySection,
   ForecastAiExplanationParseStrategy,
   ForecastAnalysis,
   ForecastAnalysisInput,
@@ -56,6 +58,7 @@ export type DeepSeekProviderOptions = {
   readonly thinkingEnabled?: boolean;
   readonly reasoningEffort?: DeepSeekReasoningEffort;
   readonly jsonOutputEnabled?: boolean;
+  readonly forecastExplanationJsonOutputEnabled?: boolean;
   readonly timeoutMs?: number;
 };
 
@@ -274,6 +277,7 @@ const deepSeekProviderDisabledMessage =
 const defaultBaseUrl = "https://api.deepseek.com";
 const defaultTemperature = 0.2;
 const defaultMaxTokens = 1200;
+const minForecastExplanationMaxTokens = 2400;
 const defaultTimeoutMs = 120000;
 const targetInterpretationPromptChars = 4000;
 const defaultInterpretationPromptMaxChars = 6000;
@@ -464,6 +468,7 @@ export const forecastAiExplanationSchema = z.object({
         .optional(),
       fallbackUsed: z.boolean().optional(),
       rawResponseSizeChars: z.number().int().nonnegative().optional(),
+      finishReason: nonEmptyZh.optional(),
     })
     .optional(),
 });
@@ -502,6 +507,10 @@ function normalizeMaxTokens(value: number | undefined, fallback = defaultMaxToke
   }
 
   return Math.min(8192, Math.max(1, Math.round(value)));
+}
+
+function normalizeForecastExplanationMaxTokens(value: number | undefined): number {
+  return Math.max(minForecastExplanationMaxTokens, normalizeMaxTokens(value));
 }
 
 function normalizePromptMaxChars(value: number | undefined): number {
@@ -773,9 +782,7 @@ function deepSeekFailureCode(error: DeepSeekProviderError | undefined): string |
   return (
     error.upstreamErrorCode ??
     error.upstreamErrorType ??
-    (typeof error.upstreamStatusCode === "number"
-      ? `http_${error.upstreamStatusCode}`
-      : undefined)
+    (typeof error.upstreamStatusCode === "number" ? `http_${error.upstreamStatusCode}` : undefined)
   );
 }
 
@@ -793,7 +800,9 @@ function isDeepSeekInvalidModelError(error: DeepSeekProviderError): boolean {
     .join(" ")
     .toLowerCase();
 
-  return /model/.test(text) && /not found|not_exist|not exist|invalid|unsupported|unavailable/.test(text);
+  return (
+    /model/.test(text) && /not found|not_exist|not exist|invalid|unsupported|unavailable/.test(text)
+  );
 }
 
 function isDeepSeekCompatibilityError(error: DeepSeekProviderError): boolean {
@@ -918,8 +927,7 @@ function buildDeepSeekRequestDiagnostics(options: {
 }): DeepSeekRequestDiagnostics {
   const finishReason =
     options.upstreamDiagnostics?.finishReason ?? options.finalFailure?.finishReason;
-  const contentType =
-    options.upstreamDiagnostics?.contentType ?? options.finalFailure?.contentType;
+  const contentType = options.upstreamDiagnostics?.contentType ?? options.finalFailure?.contentType;
   const contentLength =
     options.upstreamDiagnostics?.contentLength ?? options.finalFailure?.contentLength;
   return {
@@ -936,12 +944,11 @@ function buildDeepSeekRequestDiagnostics(options: {
     upstreamMessageSanitized: options.upstreamDiagnostics?.upstreamMessageSanitized,
     upstreamRequestId: options.upstreamDiagnostics?.upstreamRequestId,
     rawResponseSizeChars:
-      options.upstreamDiagnostics?.rawResponseSizeChars ?? options.finalFailure?.rawResponseSizeChars,
+      options.upstreamDiagnostics?.rawResponseSizeChars ??
+      options.finalFailure?.rawResponseSizeChars,
     finishReason,
-    choiceIndex:
-      options.upstreamDiagnostics?.choiceIndex ?? options.finalFailure?.choiceIndex,
-    messageKeys:
-      options.upstreamDiagnostics?.messageKeys ?? options.finalFailure?.messageKeys,
+    choiceIndex: options.upstreamDiagnostics?.choiceIndex ?? options.finalFailure?.choiceIndex,
+    messageKeys: options.upstreamDiagnostics?.messageKeys ?? options.finalFailure?.messageKeys,
     contentType,
     contentLength,
     reasoningContentLength:
@@ -3442,16 +3449,19 @@ function buildForecastExplanationUserPayload(
         "Explain deterministic photo-weather forecast facts in concise Simplified Chinese.",
     targetCode: targetConfig?.targetCode ?? input.forecastResult.target,
     targetSubjectZh: targetConfig?.subjectZh ?? null,
-    outputMode: prefersShortPracticalOutput ? "short_practical_text_or_json" : "short_practical_json",
-    outputLength: input.forecastResult.target === "general"
-      ? "350-550 Chinese chars. Prefer concise practical sections; JSON is optional if unstable."
-      : isGlowBudget
-      ? "500-700 Chinese chars. No Markdown."
-      : input.forecastResult.target === "glow"
-        ? "320-520 Chinese chars. Prefer concise practical sections; JSON is optional if unstable."
-      : isBudget
-        ? "450-650 Chinese chars. No Markdown."
-      : targetConfig?.outputLength ?? "600-900 Chinese characters total. No Markdown.",
+    outputMode: prefersShortPracticalOutput
+      ? "short_practical_text_or_json"
+      : "short_practical_json",
+    outputLength:
+      input.forecastResult.target === "general"
+        ? "350-550 Chinese chars. Prefer concise practical sections; JSON is optional if unstable."
+        : isGlowBudget
+          ? "500-700 Chinese chars. No Markdown."
+          : input.forecastResult.target === "glow"
+            ? "320-520 Chinese chars. Prefer concise practical sections; JSON is optional if unstable."
+            : isBudget
+              ? "450-650 Chinese chars. No Markdown."
+              : targetConfig?.outputLength ?? "600-900 Chinese characters total. No Markdown.",
     preferredVisibleSectionsZh: targetConfig?.visibleSectionsZh ?? null,
     promptPrioritiesZh: isGlowBudget
       ? ["是否值得去；朝霞/晚霞概率；最佳本地时间；到达时间；主因、主风险和备选方案。"]
@@ -3463,45 +3473,50 @@ function buildForecastExplanationUserPayload(
         ? "Prefer summaryText/conclusion/reasons/suggestions/risks, or core ForecastAiExplanation keys: conclusion, bestPlan, weatherTrend, subjectAdvice, riskAndGear, finalAdvice."
         : input.forecastResult.target === "general"
           ? "Prefer summaryText/conclusion/reasons/suggestions/risks, or core ForecastAiExplanation keys: conclusion, bestPlan, weatherTrend, subjectAdvice, riskAndGear, finalAdvice. Do not fill optional details that are not in computedForecastFacts."
-        : isBudget
-          ? compactSharedKeys
-        : isAstroTarget
-          ? "shared ForecastAiExplanation JSON keys; focus on conclusion, bestPlan, weatherTrend, subjectAdvice.astroMilkyWayZh, riskAndGear, and finalAdvice."
-          : {
-              conclusion: [
-                "titleZh",
-                "summaryZh",
-                "recommendedDayZh",
-                "recommendationLevelZh",
-                "whetherWorthDedicatedTripZh",
-                "oneSentenceDecisionZh",
-              ],
-              bestPlan: [
-                "primaryTargetZh",
-                "bestDateZh",
-                "bestWindowZh",
-                "recommendedArrivalZh",
-                "whyThisWindowZh",
-                "backupPlanZh",
-              ],
-              weatherTrend: [
-                "trendSummaryZh",
-                "temperatureSummaryZh",
-                "rainSummaryZh",
-                "windSummaryZh",
-                "transparencySummaryZh",
-              ],
-              dayByDay: "1 item in budget mode, 1-2 items otherwise",
-              subjectAdvice: [
-                "cloudSeaZh",
-                "sunriseGlowZh",
-                "sunsetGlowZh",
-                "astroMilkyWayZh",
-                "transparencyZh",
-              ],
-              riskAndGear: ["keyRisks", "clothingZh", "gearZh", "safetyZh"],
-              finalAdvice: ["goNoGoZh", "ifAlreadyNearbyZh", "ifDedicatedTripZh", "nextCheckZh"],
-            },
+          : isBudget
+            ? compactSharedKeys
+            : isAstroTarget
+              ? "shared ForecastAiExplanation JSON keys; focus on conclusion, bestPlan, weatherTrend, subjectAdvice.astroMilkyWayZh, riskAndGear, and finalAdvice."
+              : {
+                  conclusion: [
+                    "titleZh",
+                    "summaryZh",
+                    "recommendedDayZh",
+                    "recommendationLevelZh",
+                    "whetherWorthDedicatedTripZh",
+                    "oneSentenceDecisionZh",
+                  ],
+                  bestPlan: [
+                    "primaryTargetZh",
+                    "bestDateZh",
+                    "bestWindowZh",
+                    "recommendedArrivalZh",
+                    "whyThisWindowZh",
+                    "backupPlanZh",
+                  ],
+                  weatherTrend: [
+                    "trendSummaryZh",
+                    "temperatureSummaryZh",
+                    "rainSummaryZh",
+                    "windSummaryZh",
+                    "transparencySummaryZh",
+                  ],
+                  dayByDay: "1 item in budget mode, 1-2 items otherwise",
+                  subjectAdvice: [
+                    "cloudSeaZh",
+                    "sunriseGlowZh",
+                    "sunsetGlowZh",
+                    "astroMilkyWayZh",
+                    "transparencyZh",
+                  ],
+                  riskAndGear: ["keyRisks", "clothingZh", "gearZh", "safetyZh"],
+                  finalAdvice: [
+                    "goNoGoZh",
+                    "ifAlreadyNearbyZh",
+                    "ifDedicatedTripZh",
+                    "nextCheckZh",
+                  ],
+                },
     constraints: isGlowBudget
       ? [
           "Use only computedForecastFacts; missing facts need recheck, never filling.",
@@ -3509,7 +3524,7 @@ function buildForecastExplanationUserPayload(
         ]
       : isBudget
         ? [...baseConstraints, ...(targetConfig?.constraints ?? [])]
-      : [...baseConstraints, ...(targetConfig?.constraints ?? [])],
+        : [...baseConstraints, ...(targetConfig?.constraints ?? [])],
     userGoal: input.userGoal ?? null,
     computedForecastFacts: buildDeepSeekForecastPromptFacts(input.forecastResult, detail),
   };
@@ -4110,11 +4125,10 @@ function buildTextCompatibleSystemPrompt(detail?: DeepSeekForecastContextDetail)
   ].join("\n");
 }
 
-function buildDeepSeekForecastTextFallbackMessages(
-  messages: readonly DeepSeekChatMessage[],
+function buildDeepSeekForecastTextMessages(
+  userContent: string,
   detail: DeepSeekForecastContextDetail,
 ): readonly DeepSeekChatMessage[] {
-  const userMessage = messages.find((message) => message.role === "user");
   return [
     {
       role: "system",
@@ -4124,11 +4138,19 @@ function buildDeepSeekForecastTextFallbackMessages(
       role: "user",
       content: [
         "Use the deterministic JSON facts below as the only source of truth.",
-        "JSON output is optional in this compatibility attempt; useful Chinese section text is acceptable.",
-        userMessage?.content ?? "",
+        "Prefer concise Simplified Chinese section text. If you output JSON, it must still describe only the supplied facts.",
+        userContent,
       ].join("\n"),
     },
   ];
+}
+
+function buildDeepSeekForecastTextFallbackMessages(
+  messages: readonly DeepSeekChatMessage[],
+  detail: DeepSeekForecastContextDetail,
+): readonly DeepSeekChatMessage[] {
+  const userMessage = messages.find((message) => message.role === "user");
+  return buildDeepSeekForecastTextMessages(userMessage?.content ?? "", detail);
 }
 
 export function buildDeepSeekForecastExplanationRequest(
@@ -4149,31 +4171,26 @@ export function buildDeepSeekForecastExplanationRequest(
   const responseFormat = normalizeResponseFormat(options.responseFormat);
   const jsonOutputEnabled = options.jsonOutputEnabled ?? responseFormat === "json_object";
   const promptMaxChars = normalizePromptMaxChars(options.promptMaxChars);
+  const createMessages = (userContentForPrompt: string, detail: DeepSeekForecastContextDetail) =>
+    jsonOutputEnabled
+      ? [
+          {
+            role: "system" as const,
+            content: buildJsonOnlySystemPrompt(input.forecastResult.target, detail),
+          },
+          {
+            role: "user" as const,
+            content: userContentForPrompt,
+          },
+        ]
+      : buildDeepSeekForecastTextMessages(userContentForPrompt, detail);
   let promptDetail: DeepSeekForecastContextDetail = "minimal";
   let userContent = JSON.stringify(buildForecastExplanationUserPayload(input, promptDetail));
-  let messages: readonly DeepSeekChatMessage[] = [
-    {
-      role: "system",
-      content: buildJsonOnlySystemPrompt(input.forecastResult.target, promptDetail),
-    },
-    {
-      role: "user",
-      content: userContent,
-    },
-  ];
+  let messages: readonly DeepSeekChatMessage[] = createMessages(userContent, promptDetail);
   if (buildPromptSizeChars(messages) > targetInterpretationPromptChars) {
     promptDetail = "budget";
     userContent = JSON.stringify(buildForecastExplanationUserPayload(input, promptDetail));
-    messages = [
-      {
-        role: "system",
-        content: buildJsonOnlySystemPrompt(input.forecastResult.target, promptDetail),
-      },
-      {
-        role: "user",
-        content: userContent,
-      },
-    ];
+    messages = createMessages(userContent, promptDetail);
   }
   assertInterpretationPayloadSize(userContent, promptMaxChars);
   assertInterpretationMessagesSize(messages, promptMaxChars);
@@ -4181,7 +4198,7 @@ export function buildDeepSeekForecastExplanationRequest(
     model: normalizeModel(options.defaultModel),
     messages,
     temperature: normalizeTemperature(options.temperature),
-    max_tokens: normalizeMaxTokens(options.maxTokens),
+    max_tokens: normalizeForecastExplanationMaxTokens(options.maxTokens),
     stream: false,
   };
   if (jsonOutputEnabled) {
@@ -4196,10 +4213,7 @@ export function buildDeepSeekForecastExplanationRequest(
     body,
     promptSizeChars: buildPromptSizeChars(messages),
     outputMode: jsonOutputEnabled ? "json_object" : "text_with_json_fallback",
-    emptyContentFallbackMessages: buildDeepSeekForecastTextFallbackMessages(
-      messages,
-      promptDetail,
-    ),
+    emptyContentFallbackMessages: buildDeepSeekForecastTextFallbackMessages(messages, promptDetail),
   };
 }
 
@@ -4575,6 +4589,9 @@ function formatPercent(value: number | null | undefined): string {
 function parseForecastAiExplanationOutput(
   rawOutput: string,
   result: ForecastCalculationResult,
+  options: {
+    readonly finishReason?: string;
+  } = {},
 ): ForecastAiExplanationParseResult {
   const rawResponseSizeChars = rawOutput.length;
   let parseError: unknown;
@@ -4589,6 +4606,7 @@ function parseForecastAiExplanationOutput(
           parsed.strategy,
           rawResponseSizeChars,
           false,
+          options.finishReason,
         ),
         parseStrategy: parsed.strategy,
         parseSuccess: true,
@@ -4607,6 +4625,7 @@ function parseForecastAiExplanationOutput(
         "plain_text_fallback",
         rawResponseSizeChars,
         true,
+        options.finishReason,
       ),
       parseStrategy: "plain_text_fallback",
       parseSuccess: false,
@@ -4914,6 +4933,7 @@ function withDeepSeekParseMetadata(
   parseStrategy: ForecastAiExplanationParseStrategy,
   rawResponseSizeChars: number,
   fallbackUsed: boolean,
+  finishReason?: string,
 ): ForecastAiExplanation {
   return {
     ...explanation,
@@ -4923,6 +4943,7 @@ function withDeepSeekParseMetadata(
       parseStrategy,
       fallbackUsed,
       rawResponseSizeChars,
+      ...(finishReason ? { finishReason } : {}),
     },
   };
 }
@@ -5055,12 +5076,18 @@ function createPlainTextForecastExplanation(
   result: ForecastCalculationResult,
 ): ForecastAiExplanation {
   const fallback = createRuleBasedForecastExplanation(result);
-  const sections = splitPlainTextSections(text);
+  const displayContent = createPlainTextDisplayContent(text);
+  const sections = displayContent.sections.map((section) => section.text);
   const allText = limitText(text.trim(), 900);
-  const conclusion = sections[0] ?? allText;
-  const why = sections[1] ?? fallback.bestPlan.whyThisWindowZh;
-  const advice = sections[2] ?? fallback.finalAdvice.goNoGoZh;
-  const risk = sections[3] ?? fallback.riskAndGear.keyRisks[0] ?? fallback.finalAdvice.nextCheckZh;
+  const conclusion =
+    displayContent.conclusion ?? displayContent.summaryText ?? sections[0] ?? allText;
+  const why = displayContent.reasons[0] ?? sections[1] ?? fallback.bestPlan.whyThisWindowZh;
+  const advice = displayContent.suggestions[0] ?? sections[2] ?? fallback.finalAdvice.goNoGoZh;
+  const risk =
+    displayContent.risks[0] ??
+    sections[3] ??
+    fallback.riskAndGear.keyRisks[0] ??
+    fallback.finalAdvice.nextCheckZh;
 
   return {
     ...fallback,
@@ -5088,6 +5115,12 @@ function createPlainTextForecastExplanation(
       goNoGoZh: advice,
       nextCheckZh: risk,
     },
+    summaryText: displayContent.summaryText ?? conclusion,
+    reasons: displayContent.reasons,
+    suggestions: displayContent.suggestions,
+    risks: displayContent.risks,
+    displayContent,
+    displayOnly: true,
     metadata: {
       source: "deepseek",
       noteZh: "Plain text response normalized by API.",
@@ -5095,40 +5128,171 @@ function createPlainTextForecastExplanation(
   };
 }
 
-function splitPlainTextSections(text: string): readonly string[] {
+function createPlainTextDisplayContent(text: string): ForecastAiExplanationDisplayContent {
+  const sections = splitPlainTextDisplaySections(text);
+  const allText = limitText(text.trim(), 900);
+  const firstSection = sections[0];
+  const title = firstSection?.title;
+  const sectionText = (keywords: readonly string[]): readonly string[] =>
+    sections
+      .filter((section) => keywords.some((keyword) => section.title.includes(keyword)))
+      .map((section) => section.text);
+  const conclusion = sectionText(["结论", "判断", "是否值得"])[0] ?? firstSection?.text ?? allText;
+  const reasons = sectionText(["理由", "依据", "为什么", "天气"]);
+  const suggestions = sectionText(["建议", "行动", "窗口", "备选", "策略"]);
+  const risks = sectionText(["风险", "复核"]);
+
+  return {
+    hasContent: true,
+    ...(title ? { title } : {}),
+    summaryText: conclusion,
+    conclusion: firstPlainTextSentence(conclusion),
+    reasons,
+    suggestions,
+    risks,
+    sections,
+  };
+}
+
+function splitPlainTextDisplaySections(
+  text: string,
+): readonly ForecastAiExplanationDisplaySection[] {
   const lines = text
     .replace(/\r\n/g, "\n")
     .split("\n")
-    .map((line) => line.trim())
+    .map((line) => line.trim().replace(/^[-*]\s*/, ""))
     .filter(Boolean);
-  const sections: string[] = [];
-  let current: string[] = [];
+  const sections: ForecastAiExplanationDisplaySection[] = [];
+  let currentTitle = "智能解读";
+  let currentLines: string[] = [];
+
+  const flush = () => {
+    if (currentLines.length === 0) {
+      return;
+    }
+    sections.push({
+      title: currentTitle,
+      text: limitText(currentLines.join(" "), 320),
+    });
+    currentLines = [];
+  };
 
   for (const line of lines) {
-    const normalizedHeading = line
-      .replace(/^#+\s*/, "")
-      .replace(/[:：]$/, "")
-      .trim();
-    const isHeading = normalizedHeading.length <= 12 && current.length > 0;
-    if (isHeading) {
-      sections.push(limitText(current.join(" "), 260));
-      current = [];
+    const colonMatch = line.match(/^([^：:]{1,16})[：:]\s*(.+)$/u);
+    if (colonMatch) {
+      flush();
+      currentTitle = colonMatch[1]?.trim() || "智能解读";
+      currentLines.push(colonMatch[2]?.trim() ?? "");
       continue;
     }
-    current.push(line.replace(/^[-*]\s*/, ""));
+
+    const heading = line
+      .replace(/^#+\s*/, "")
+      .replace(/[：:]$/, "")
+      .trim();
+    if (heading.length > 0 && heading.length <= 12 && currentLines.length > 0) {
+      flush();
+      currentTitle = heading;
+      continue;
+    }
+
+    currentLines.push(line);
   }
 
-  if (current.length > 0) {
-    sections.push(limitText(current.join(" "), 260));
-  }
+  flush();
 
-  return sections.length > 0 ? sections : [limitText(text.trim(), 260)];
+  return sections.length > 0
+    ? sections
+    : [
+        {
+          title: "智能解读",
+          text: limitText(text.trim(), 320),
+        },
+      ];
 }
 
 function firstPlainTextSentence(text: string): string {
   const trimmed = text.trim();
   const sentence = trimmed.split(/[。！？!?]/)[0]?.trim();
   return sentence ? limitText(sentence, 120) : limitText(trimmed, 120);
+}
+
+function shouldRetryCompactTextAfterLength(
+  rawOutput: DeepSeekRequestSuccess,
+  request: DeepSeekRequestPreview,
+): boolean {
+  const finishReason =
+    rawOutput.diagnostics.finalFinishReason ?? rawOutput.diagnostics.finishReason;
+  return (
+    finishReason === "length" &&
+    rawOutput.content.trim().length > 0 &&
+    !isMeaningfulPlainTextResponse(rawOutput.content) &&
+    Boolean(request.emptyContentFallbackMessages)
+  );
+}
+
+function buildCompactTextRetryRequest(request: DeepSeekRequestPreview): DeepSeekRequestPreview {
+  const messages = request.emptyContentFallbackMessages ?? request.body.messages;
+  const body = cloneDeepSeekRequestBody(request.body, {
+    disableResponseFormat: true,
+    disableReasoningEffort: true,
+    messages,
+  });
+  return {
+    ...request,
+    body,
+    promptSizeChars: buildPromptSizeChars(messages),
+    outputMode: "text_with_json_fallback",
+    emptyContentFallbackMessages: undefined,
+  };
+}
+
+function mergeDeepSeekRequestDiagnostics(
+  first: DeepSeekRequestDiagnostics,
+  second: DeepSeekRequestDiagnostics,
+  originalRequest: DeepSeekRequestPreview,
+): DeepSeekRequestDiagnostics {
+  return buildDeepSeekRequestDiagnostics({
+    attempts: first.attempts + second.attempts,
+    compatibilityFallbackUsed: true,
+    disabledResponseFormat:
+      first.disabledResponseFormat ||
+      second.disabledResponseFormat ||
+      Boolean(originalRequest.body.response_format),
+    disabledReasoningEffort:
+      first.disabledReasoningEffort ||
+      second.disabledReasoningEffort ||
+      Boolean(originalRequest.body.reasoning_effort),
+    emptyContentFallbackUsed: first.emptyContentFallbackUsed || second.emptyContentFallbackUsed,
+    upstreamDiagnostics: {
+      rawResponseSizeChars: second.rawResponseSizeChars,
+      finishReason: second.finalFinishReason ?? second.finishReason,
+      choiceIndex: second.choiceIndex,
+      messageKeys: second.messageKeys,
+      contentType: second.finalContentType ?? second.contentType,
+      contentLength: second.finalContentLength ?? second.contentLength,
+      reasoningContentLength: second.reasoningContentLength,
+    },
+  });
+}
+
+function augmentParseErrorWithDiagnostics(
+  error: unknown,
+  diagnostics: DeepSeekRequestDiagnostics,
+  promptSizeChars: number,
+): unknown {
+  if (!isDeepSeekProviderError(error)) {
+    return error;
+  }
+
+  return augmentDeepSeekProviderError(error, {
+    promptSizeChars,
+    attempts: diagnostics.attempts,
+    compatibilityFallbackUsed: diagnostics.compatibilityFallbackUsed,
+    disabledResponseFormat: diagnostics.disabledResponseFormat,
+    disabledReasoningEffort: diagnostics.disabledReasoningEffort,
+    emptyContentFallbackUsed: diagnostics.emptyContentFallbackUsed,
+  });
 }
 
 export class DeepSeekProvider implements AIProvider {
@@ -5146,6 +5310,7 @@ export class DeepSeekProvider implements AIProvider {
   readonly thinkingEnabled: boolean;
   readonly reasoningEffort: DeepSeekReasoningEffort;
   readonly jsonOutputEnabled: boolean;
+  readonly forecastExplanationJsonOutputEnabled: boolean;
   readonly timeoutMs: number;
 
   constructor(private readonly options: DeepSeekProviderOptions = {}) {
@@ -5159,6 +5324,8 @@ export class DeepSeekProvider implements AIProvider {
     this.thinkingEnabled = options.thinkingEnabled ?? false;
     this.reasoningEffort = normalizeReasoningEffort(options.reasoningEffort);
     this.jsonOutputEnabled = options.jsonOutputEnabled ?? this.responseFormat === "json_object";
+    this.forecastExplanationJsonOutputEnabled =
+      options.forecastExplanationJsonOutputEnabled ?? this.jsonOutputEnabled;
     this.timeoutMs = normalizeTimeoutMs(options.timeoutMs);
     this.enabled = options.enabled ?? false;
     this.realModeEnabled = options.realModeEnabled ?? options.mode === "real";
@@ -5267,14 +5434,53 @@ export class DeepSeekProvider implements AIProvider {
       responseFormat: this.responseFormat,
       thinkingEnabled: this.thinkingEnabled,
       reasoningEffort: this.reasoningEffort,
-      jsonOutputEnabled: this.jsonOutputEnabled,
+      jsonOutputEnabled: this.forecastExplanationJsonOutputEnabled,
     });
     const rawOutput = await this.requestWithDiagnostics(request);
-    const parsed = parseForecastAiExplanationOutput(rawOutput.content, input.forecastResult);
-    return {
-      ...parsed,
-      requestDiagnostics: rawOutput.diagnostics,
-    };
+    try {
+      const parsed = parseForecastAiExplanationOutput(rawOutput.content, input.forecastResult, {
+        finishReason: rawOutput.diagnostics.finalFinishReason ?? rawOutput.diagnostics.finishReason,
+      });
+      return {
+        ...parsed,
+        requestDiagnostics: rawOutput.diagnostics,
+      };
+    } catch (error) {
+      if (shouldRetryCompactTextAfterLength(rawOutput, request)) {
+        const retryRequest = buildCompactTextRetryRequest(request);
+        const retryOutput = await this.requestWithDiagnostics(retryRequest);
+        try {
+          const parsed = parseForecastAiExplanationOutput(
+            retryOutput.content,
+            input.forecastResult,
+            {
+              finishReason:
+                retryOutput.diagnostics.finalFinishReason ?? retryOutput.diagnostics.finishReason,
+            },
+          );
+          return {
+            ...parsed,
+            requestDiagnostics: mergeDeepSeekRequestDiagnostics(
+              rawOutput.diagnostics,
+              retryOutput.diagnostics,
+              request,
+            ),
+          };
+        } catch (retryError) {
+          throw augmentParseErrorWithDiagnostics(
+            retryError,
+            mergeDeepSeekRequestDiagnostics(
+              rawOutput.diagnostics,
+              retryOutput.diagnostics,
+              request,
+            ),
+            retryRequest.promptSizeChars,
+          );
+        }
+      }
+
+      throw augmentParseErrorWithDiagnostics(error, rawOutput.diagnostics, request.promptSizeChars);
+    }
   }
 
   async testConnection(): Promise<{ readonly message: string }> {

@@ -32,6 +32,22 @@ export type ForecastAiExplanationParseStrategy =
   | "plain_text_fallback"
   | "failed";
 
+export type ForecastAiExplanationDisplaySection = {
+  readonly title: string;
+  readonly text: string;
+};
+
+export type ForecastAiExplanationDisplayContent = {
+  readonly hasContent: boolean;
+  readonly title?: string;
+  readonly summaryText?: string;
+  readonly conclusion?: string;
+  readonly reasons: readonly string[];
+  readonly suggestions: readonly string[];
+  readonly risks: readonly string[];
+  readonly sections: readonly ForecastAiExplanationDisplaySection[];
+};
+
 export type ForecastAiExplanation = {
   readonly conclusion: {
     readonly titleZh: string;
@@ -89,12 +105,19 @@ export type ForecastAiExplanation = {
     readonly ifDedicatedTripZh: string;
     readonly nextCheckZh: string;
   };
+  readonly summaryText?: string;
+  readonly reasons?: readonly string[];
+  readonly suggestions?: readonly string[];
+  readonly risks?: readonly string[];
+  readonly displayContent?: ForecastAiExplanationDisplayContent;
+  readonly displayOnly?: boolean;
   readonly metadata?: {
     readonly source: "deepseek" | "deterministic_fallback";
     readonly noteZh?: string;
     readonly parseStrategy?: ForecastAiExplanationParseStrategy;
     readonly fallbackUsed?: boolean;
     readonly rawResponseSizeChars?: number;
+    readonly finishReason?: string;
   };
 };
 

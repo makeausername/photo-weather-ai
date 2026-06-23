@@ -248,6 +248,10 @@ type AiExplainResponse = {
   readonly text?: string;
   readonly content?: string;
   readonly fallback?: boolean;
+  readonly displaySuccess?: boolean;
+  readonly hasDisplayableAiContent?: boolean;
+  readonly providerFallbackUsed?: boolean;
+  readonly deterministicFallbackUsed?: boolean;
   readonly errorCategory?:
     | "frontend_contract_error"
     | "provider_disabled"
@@ -297,6 +301,10 @@ type AiExplainResponse = {
       | "plain_text_fallback"
       | "failed";
     readonly fallbackUsed?: boolean;
+    readonly displaySuccess?: boolean;
+    readonly hasDisplayableAiContent?: boolean;
+    readonly providerFallbackUsed?: boolean;
+    readonly deterministicFallbackUsed?: boolean;
     readonly rawResponseSizeChars?: number;
     readonly compatibilityFallbackUsed?: boolean;
     readonly disabledResponseFormat?: boolean;
@@ -329,6 +337,10 @@ type AiExplainResponse = {
       | "plain_text_fallback"
       | "failed";
     readonly fallbackUsed?: boolean;
+    readonly displaySuccess?: boolean;
+    readonly hasDisplayableAiContent?: boolean;
+    readonly providerFallbackUsed?: boolean;
+    readonly deterministicFallbackUsed?: boolean;
     readonly rawResponseSizeChars?: number;
     readonly cacheHit?: boolean;
     readonly errorCategory?: AiExplainErrorCategory;
@@ -490,12 +502,14 @@ export function normalizeAiExplainResponse(
   const meta = isRecord(response.meta)
     ? (response.meta as NonNullable<AiExplainResponse["meta"]>)
     : undefined;
+  const responseMetadata = normalizeAiResponseMetadata(response, diagnostics, meta);
   const successSignal = hasAiExplainSuccessSignal(response);
   const displayContent = normalizeAiExplanationContent(response);
   const directExplanationCandidate = extractAiExplanationFromResponse(response);
   const directExplanation = normalizeDisplayableAiExplanation(
     directExplanationCandidate,
     displayContent,
+    responseMetadata,
   );
   const invalidSuccessfulResponse = successSignal && !directExplanation;
   const backendErrorCategory =
@@ -616,7 +630,9 @@ function hasAiExplainSuccessSignal(response: AiExplainResponse): boolean {
   return (
     !hasAiExplainFailureSignal(response) &&
     (readAiExplainBooleanField(response, "ok") === true ||
-      readAiExplainBooleanField(response, "success") === true)
+      readAiExplainBooleanField(response, "success") === true ||
+      readAiExplainDisplayBooleanField(response, "displaySuccess") === true ||
+      readAiExplainDisplayBooleanField(response, "hasDisplayableAiContent") === true)
   );
 }
 
@@ -639,23 +655,63 @@ function readAiExplainBooleanField(
   );
 }
 
+function readAiExplainDisplayBooleanField(
+  response: AiExplainResponse,
+  key: "displaySuccess" | "hasDisplayableAiContent",
+): boolean | undefined {
+  return (
+    booleanField(response, key) ??
+    booleanField(response.data, key) ??
+    booleanField(response.result, key) ??
+    booleanField(response.payload, key) ??
+    booleanField(response.diagnostics, key) ??
+    booleanField(response.meta, key)
+  );
+}
+
 function normalizeDisplayableAiExplanation(
   explanation: ForecastAiExplanation | null,
   displayContent: NormalizedAiExplanationContent,
+  metadata?: ForecastAiExplanation["metadata"],
 ): ForecastAiExplanation | null {
   if (explanation?.metadata?.source === "deterministic_fallback") {
     return null;
   }
 
   if (isDisplayableAiExplanation(explanation)) {
-    return withAiExplanationDisplayContent(explanation, displayContent);
+    return withAiExplanationResponseMetadata(
+      withAiExplanationDisplayContent(explanation, displayContent),
+      metadata,
+    );
   }
 
   if (displayContent.hasContent) {
-    return explanationFromDisplayContent(displayContent);
+    return explanationFromDisplayContent(displayContent, metadata);
   }
 
   return null;
+}
+
+function withAiExplanationResponseMetadata(
+  explanation: ForecastAiExplanation,
+  metadata?: ForecastAiExplanation["metadata"],
+): ForecastAiExplanation {
+  if (!metadata) {
+    return explanation;
+  }
+
+  return {
+    ...explanation,
+    metadata: {
+      ...metadata,
+      ...explanation.metadata,
+      source: explanation.metadata?.source ?? metadata.source,
+      parseStrategy: explanation.metadata?.parseStrategy ?? metadata.parseStrategy,
+      fallbackUsed: explanation.metadata?.fallbackUsed ?? metadata.fallbackUsed,
+      rawResponseSizeChars:
+        explanation.metadata?.rawResponseSizeChars ?? metadata.rawResponseSizeChars,
+    },
+  };
 }
 
 function extractAiExplanationFromResponse(
@@ -1521,6 +1577,8 @@ const aiDisplayContentIgnoredKeys = new Set([
   "dayByDay",
   "diagnostics",
   "displayContent",
+  "displaySuccess",
+  "hasDisplayableAiContent",
   "error",
   "errorCategory",
   "explanation",
@@ -1542,6 +1600,7 @@ const aiDisplayContentIgnoredKeys = new Set([
   "payload",
   "promptSizeChars",
   "providerCode",
+  "providerFallbackUsed",
   "rawResponseSizeChars",
   "reasoning",
   "reasons",
@@ -1555,6 +1614,7 @@ const aiDisplayContentIgnoredKeys = new Set([
   "subjectAdvice",
   "success",
   "suggestions",
+  "deterministicFallbackUsed",
   "summary",
   "summaryText",
   "summaryZh",
@@ -1661,6 +1721,53 @@ function normalizeAiMetadata(value: unknown): ForecastAiExplanation["metadata"] 
   return {
     source,
     ...(noteZh ? { noteZh } : {}),
+    ...(parseStrategy ? { parseStrategy } : {}),
+    ...(typeof fallbackUsed === "boolean" ? { fallbackUsed } : {}),
+    ...(typeof rawResponseSizeChars === "number" ? { rawResponseSizeChars } : {}),
+  };
+}
+
+function normalizeAiResponseMetadata(
+  response: AiExplainResponse,
+  diagnostics: AiExplainResponse["diagnostics"] | undefined,
+  meta: AiExplainResponse["meta"] | undefined,
+): ForecastAiExplanation["metadata"] | undefined {
+  const parseStrategy =
+    normalizeAiParseStrategy(response.parseStrategy) ??
+    normalizeAiParseStrategy(diagnostics?.parseStrategy) ??
+    normalizeAiParseStrategy(meta?.parseStrategy);
+  const fallbackUsed =
+    typeof response.providerFallbackUsed === "boolean"
+      ? response.providerFallbackUsed
+      : typeof response.fallbackUsed === "boolean"
+        ? response.fallbackUsed
+        : typeof diagnostics?.providerFallbackUsed === "boolean"
+          ? diagnostics.providerFallbackUsed
+          : typeof diagnostics?.fallbackUsed === "boolean"
+            ? diagnostics.fallbackUsed
+            : typeof meta?.providerFallbackUsed === "boolean"
+              ? meta.providerFallbackUsed
+              : typeof meta?.fallbackUsed === "boolean"
+                ? meta.fallbackUsed
+                : undefined;
+  const rawResponseSizeChars =
+    typeof response.rawResponseSizeChars === "number" &&
+    Number.isFinite(response.rawResponseSizeChars)
+      ? response.rawResponseSizeChars
+      : typeof diagnostics?.rawResponseSizeChars === "number" &&
+          Number.isFinite(diagnostics.rawResponseSizeChars)
+        ? diagnostics.rawResponseSizeChars
+        : typeof meta?.rawResponseSizeChars === "number" &&
+            Number.isFinite(meta.rawResponseSizeChars)
+          ? meta.rawResponseSizeChars
+          : undefined;
+
+  if (!parseStrategy && typeof fallbackUsed !== "boolean" && rawResponseSizeChars === undefined) {
+    return undefined;
+  }
+
+  return {
+    source: "deepseek",
     ...(parseStrategy ? { parseStrategy } : {}),
     ...(typeof fallbackUsed === "boolean" ? { fallbackUsed } : {}),
     ...(typeof rawResponseSizeChars === "number" ? { rawResponseSizeChars } : {}),

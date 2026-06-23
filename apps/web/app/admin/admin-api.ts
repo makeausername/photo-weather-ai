@@ -226,6 +226,9 @@ export type MockConnectionTestResult = {
   readonly timeoutMs?: number;
   readonly promptSizeChars?: number;
   readonly attempts?: number;
+  readonly parseSuccess?: boolean;
+  readonly displaySuccess?: boolean;
+  readonly hasDisplayableAiContent?: boolean;
   readonly parseStrategy?: string;
   readonly compatibilityFallbackUsed?: boolean;
   readonly disabledResponseFormat?: boolean;
@@ -234,6 +237,7 @@ export type MockConnectionTestResult = {
   readonly finishReason?: string;
   readonly contentType?: string;
   readonly contentLength?: number;
+  readonly reasoningContentLength?: number;
   readonly messageKeys?: readonly string[];
   readonly upstreamStatusCode?: number;
   readonly upstreamErrorCode?: string;

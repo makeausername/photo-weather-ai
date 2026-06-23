@@ -56,7 +56,11 @@ import {
 } from "@photo-weather/weather";
 import { MockTerrainProvider, type TerrainProvider } from "@photo-weather/terrain";
 import { buildMockForecastInput, calculateForecast } from "@photo-weather/scoring";
-import { buildDeepSeekForecastExplanationRequest, isDeepSeekProviderError } from "@photo-weather/ai";
+import {
+  buildDeepSeekForecastExplanationRequest,
+  isDeepSeekProviderError,
+  type ForecastAiExplanation,
+} from "@photo-weather/ai";
 import type { ForecastQueryInput } from "@photo-weather/shared";
 import { z } from "zod";
 import type { AuthConfig } from "./auth-routes.js";
@@ -692,6 +696,20 @@ function buildAdminDeepSeekExplanationTestForecast() {
   return calculateForecast(buildMockForecastInput(deepSeekAdminExplanationTestQuery));
 }
 
+function isDisplayableAdminAiExplanation(explanation: ForecastAiExplanation): boolean {
+  return Boolean(
+    explanation.summaryText ||
+      explanation.displayContent?.summaryText ||
+      explanation.displayContent?.conclusion ||
+      (explanation.reasons?.length ?? 0) > 0 ||
+      (explanation.suggestions?.length ?? 0) > 0 ||
+      (explanation.risks?.length ?? 0) > 0 ||
+      (explanation.displayContent?.sections.length ?? 0) > 0 ||
+      explanation.conclusion.summaryZh ||
+      explanation.conclusion.oneSentenceDecisionZh,
+  );
+}
+
 function deepSeekAdminTestBase(
   runtimeConfig: RuntimeDeepSeekAdminConfig,
   connectionMode: "mock" | "real",
@@ -731,10 +749,13 @@ function deepSeekAdminExplanationFailureResponse(input: {
   return {
     success: false,
     ...deepSeekAdminTestBase(input.runtimeConfig, "real"),
-    outputMode: input.runtimeConfig.jsonOutputEnabled ? "json_object" : "text_with_json_fallback",
+    outputMode: "text_with_json_fallback",
     promptSizeChars: providerError?.promptSizeChars ?? input.promptSizeChars,
     latencyMs: providerError?.latencyMs ?? input.latencyMs,
     attempts: providerError?.attempts ?? 1,
+    parseSuccess: false,
+    displaySuccess: false,
+    hasDisplayableAiContent: false,
     parseStrategy: providerError?.parseStrategy ?? "failed",
     compatibilityFallbackUsed: providerError?.compatibilityFallbackUsed ?? false,
     disabledResponseFormat: providerError?.disabledResponseFormat ?? false,
@@ -743,6 +764,7 @@ function deepSeekAdminExplanationFailureResponse(input: {
     finishReason: providerError?.finalFinishReason ?? providerError?.finishReason,
     contentType: providerError?.finalContentType ?? providerError?.contentType,
     contentLength: providerError?.finalContentLength ?? providerError?.contentLength,
+    reasoningContentLength: providerError?.reasoningContentLength,
     messageKeys: providerError?.messageKeys,
     upstreamStatusCode: statusCode,
     upstreamErrorCode: providerError?.upstreamErrorCode,
@@ -1587,13 +1609,10 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
   );
 
   app.post("/admin/providers/email/aliyun_smtp/send-test", async (request, reply) => {
-    const auth = await requireAnyAdminPermission(
-      request,
-      reply,
-      client,
-      authConfig,
-      ["providers.manage", "admin.manage"],
-    );
+    const auth = await requireAnyAdminPermission(request, reply, client, authConfig, [
+      "providers.manage",
+      "admin.manage",
+    ]);
     if (!auth) {
       return reply;
     }
@@ -1630,123 +1649,127 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
     return result;
   });
 
-  app.post(
-    "/admin/providers/ai/deepseek/test-explanation",
-    async (request, reply) => {
-      const auth = await requirePermission(request, reply, client, authConfig, "providers.manage", {
-        onAuthFailure: (error) => providerTestAuthFailureResponse("ai", "deepseek", error),
+  app.post("/admin/providers/ai/deepseek/test-explanation", async (request, reply) => {
+    const auth = await requirePermission(request, reply, client, authConfig, "providers.manage", {
+      onAuthFailure: (error) => providerTestAuthFailureResponse("ai", "deepseek", error),
+    });
+    if (!auth) {
+      return reply;
+    }
+
+    const runtimeConfig = await readRuntimeDeepSeekConfig({ dbClient: client, env });
+    if (!runtimeConfig.realCallEnabled) {
+      return {
+        success: false,
+        ...deepSeekAdminTestBase(runtimeConfig, "mock"),
+        outputMode: "text_with_json_fallback",
+        promptSizeChars: 0,
+        latencyMs: 0,
+        attempts: 0,
+        parseSuccess: false,
+        displaySuccess: false,
+        hasDisplayableAiContent: false,
+        parseStrategy: "failed",
+        compatibilityFallbackUsed: false,
+        error: "real_call_disabled",
+        errorCategory: "provider_disabled",
+        messageZh: "请先启用 DeepSeek 真实调用，再运行真实解读测试。",
+        message: "请先启用 DeepSeek 真实调用，再运行真实解读测试。",
+      };
+    }
+
+    if (!runtimeConfig.enabled) {
+      return sendProviderTestFailure(reply, {
+        providerType: "ai",
+        providerCode: "deepseek",
+        mode: runtimeConfig.analysisMode,
+        modeLabelZh: runtimeConfig.modeLabelZh,
+        error: "provider_not_enabled",
+        messageZh: "DeepSeek 服务商未启用，请先在后台服务商配置中启用 DeepSeek。",
       });
-      if (!auth) {
-        return reply;
-      }
+    }
 
-      const runtimeConfig = await readRuntimeDeepSeekConfig({ dbClient: client, env });
-      if (!runtimeConfig.realCallEnabled) {
-        return {
-          success: false,
-          ...deepSeekAdminTestBase(runtimeConfig, "mock"),
-          outputMode: runtimeConfig.jsonOutputEnabled ? "json_object" : "text_with_json_fallback",
-          promptSizeChars: 0,
-          latencyMs: 0,
-          attempts: 0,
-          parseStrategy: "failed",
-          compatibilityFallbackUsed: false,
-          error: "real_call_disabled",
-          errorCategory: "provider_disabled",
-          messageZh: "请先启用 DeepSeek 真实调用，再运行真实解读测试。",
-          message: "请先启用 DeepSeek 真实调用，再运行真实解读测试。",
-        };
-      }
+    if (!runtimeConfig.apiKeyPresent) {
+      return sendProviderTestFailure(reply, {
+        providerType: "ai",
+        providerCode: "deepseek",
+        mode: runtimeConfig.analysisMode,
+        modeLabelZh: runtimeConfig.modeLabelZh,
+        error: "provider_key_missing",
+        messageZh: "请先填写 DeepSeek API Key。",
+      });
+    }
 
-      if (!runtimeConfig.enabled) {
-        return sendProviderTestFailure(reply, {
-          providerType: "ai",
-          providerCode: "deepseek",
-          mode: runtimeConfig.analysisMode,
-          modeLabelZh: runtimeConfig.modeLabelZh,
-          error: "provider_not_enabled",
-          messageZh: "DeepSeek 服务商未启用，请先在后台服务商配置中启用 DeepSeek。",
-        });
-      }
+    const startedAt = Date.now();
+    let promptSizeChars = 0;
+    let outputMode: "json_object" | "text_with_json_fallback" = runtimeConfig.jsonOutputEnabled
+      ? "json_object"
+      : "text_with_json_fallback";
 
-      if (!runtimeConfig.apiKeyPresent) {
-        return sendProviderTestFailure(reply, {
-          providerType: "ai",
-          providerCode: "deepseek",
-          mode: runtimeConfig.analysisMode,
-          modeLabelZh: runtimeConfig.modeLabelZh,
-          error: "provider_key_missing",
-          messageZh: "请先填写 DeepSeek API Key。",
-        });
-      }
+    try {
+      const forecastResult = buildAdminDeepSeekExplanationTestForecast();
+      const preview = buildDeepSeekForecastExplanationRequest(
+        { forecastResult },
+        {
+          baseUrl: runtimeConfig.baseUrl,
+          defaultModel: runtimeConfig.model,
+          temperature: runtimeConfig.temperature,
+          maxTokens: runtimeConfig.maxTokens,
+          promptMaxChars: runtimeConfig.promptMaxChars,
+          responseFormat: runtimeConfig.responseFormat,
+          thinkingEnabled: runtimeConfig.thinkingEnabled,
+          reasoningEffort: runtimeConfig.reasoningEffort,
+          jsonOutputEnabled: false,
+        },
+      );
+      promptSizeChars = preview.promptSizeChars;
+      outputMode = preview.outputMode;
+      const deepSeekProvider = await createRealDeepSeekProvider({ dbClient: client, env });
+      const result = await deepSeekProvider.generateForecastExplanationWithDiagnostics({
+        forecastResult,
+      });
+      const latencyMs = Date.now() - startedAt;
+      const messageZh = `DeepSeek 真实解读测试通过，耗时 ${latencyMs}ms。`;
 
-      const startedAt = Date.now();
-      let promptSizeChars = 0;
-      let outputMode: "json_object" | "text_with_json_fallback" = runtimeConfig.jsonOutputEnabled
-        ? "json_object"
-        : "text_with_json_fallback";
-
-      try {
-        const forecastResult = buildAdminDeepSeekExplanationTestForecast();
-        const preview = buildDeepSeekForecastExplanationRequest(
-          { forecastResult },
-          {
-            baseUrl: runtimeConfig.baseUrl,
-            defaultModel: runtimeConfig.model,
-            temperature: runtimeConfig.temperature,
-            maxTokens: runtimeConfig.maxTokens,
-            promptMaxChars: runtimeConfig.promptMaxChars,
-            responseFormat: runtimeConfig.responseFormat,
-            thinkingEnabled: runtimeConfig.thinkingEnabled,
-            reasoningEffort: runtimeConfig.reasoningEffort,
-            jsonOutputEnabled: runtimeConfig.jsonOutputEnabled,
-          },
-        );
-        promptSizeChars = preview.promptSizeChars;
-        outputMode = preview.outputMode;
-        const deepSeekProvider = await createRealDeepSeekProvider({ dbClient: client, env });
-        const result = await deepSeekProvider.generateForecastExplanationWithDiagnostics({
-          forecastResult,
-        });
-        const latencyMs = Date.now() - startedAt;
-        const messageZh = `DeepSeek 真实解读测试通过，耗时 ${latencyMs}ms。`;
-
-        return {
-          success: true,
-          ...deepSeekAdminTestBase(runtimeConfig, "real"),
-          outputMode,
-          promptSizeChars,
-          latencyMs,
-          attempts: result.requestDiagnostics.attempts,
-          parseStrategy: result.parseStrategy,
-          compatibilityFallbackUsed: result.requestDiagnostics.compatibilityFallbackUsed,
-          disabledResponseFormat: result.requestDiagnostics.disabledResponseFormat,
-          disabledReasoningEffort: result.requestDiagnostics.disabledReasoningEffort,
-          emptyContentFallbackUsed: result.requestDiagnostics.emptyContentFallbackUsed,
-          finishReason:
-            result.requestDiagnostics.finalFinishReason ?? result.requestDiagnostics.finishReason,
-          contentType:
-            result.requestDiagnostics.finalContentType ?? result.requestDiagnostics.contentType,
-          contentLength:
-            result.requestDiagnostics.finalContentLength ?? result.requestDiagnostics.contentLength,
-          messageKeys: result.requestDiagnostics.messageKeys,
-          firstFailureUpstreamCode: result.requestDiagnostics.firstFailureUpstreamCode,
-          finalFailureUpstreamCode: result.requestDiagnostics.finalFailureUpstreamCode,
-          rawResponseSizeChars:
-            result.requestDiagnostics.rawResponseSizeChars ?? result.rawResponseSizeChars,
-          messageZh,
-          message: messageZh,
-        };
-      } catch (error) {
-        return deepSeekAdminExplanationFailureResponse({
-          runtimeConfig,
-          error,
-          latencyMs: Date.now() - startedAt,
-          promptSizeChars,
-        });
-      }
-    },
-  );
+      return {
+        success: true,
+        ...deepSeekAdminTestBase(runtimeConfig, "real"),
+        outputMode,
+        promptSizeChars,
+        latencyMs,
+        attempts: result.requestDiagnostics.attempts,
+        parseSuccess: result.parseSuccess,
+        displaySuccess: isDisplayableAdminAiExplanation(result.explanation),
+        hasDisplayableAiContent: isDisplayableAdminAiExplanation(result.explanation),
+        parseStrategy: result.parseStrategy,
+        compatibilityFallbackUsed: result.requestDiagnostics.compatibilityFallbackUsed,
+        disabledResponseFormat: result.requestDiagnostics.disabledResponseFormat,
+        disabledReasoningEffort: result.requestDiagnostics.disabledReasoningEffort,
+        emptyContentFallbackUsed: result.requestDiagnostics.emptyContentFallbackUsed,
+        finishReason:
+          result.requestDiagnostics.finalFinishReason ?? result.requestDiagnostics.finishReason,
+        contentType:
+          result.requestDiagnostics.finalContentType ?? result.requestDiagnostics.contentType,
+        contentLength:
+          result.requestDiagnostics.finalContentLength ?? result.requestDiagnostics.contentLength,
+        reasoningContentLength: result.requestDiagnostics.reasoningContentLength,
+        messageKeys: result.requestDiagnostics.messageKeys,
+        firstFailureUpstreamCode: result.requestDiagnostics.firstFailureUpstreamCode,
+        finalFailureUpstreamCode: result.requestDiagnostics.finalFailureUpstreamCode,
+        rawResponseSizeChars:
+          result.requestDiagnostics.rawResponseSizeChars ?? result.rawResponseSizeChars,
+        messageZh,
+        message: messageZh,
+      };
+    } catch (error) {
+      return deepSeekAdminExplanationFailureResponse({
+        runtimeConfig,
+        error,
+        latencyMs: Date.now() - startedAt,
+        promptSizeChars,
+      });
+    }
+  });
 
   app.post<{ Params: { providerType: string; providerCode: string } }>(
     "/admin/providers/:providerType/:providerCode/test-connection",

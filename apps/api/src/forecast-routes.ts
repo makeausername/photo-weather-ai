@@ -112,6 +112,22 @@ type DisplayableAiExplanation = ForecastAiExplanation & {
   readonly reasons: readonly string[];
   readonly suggestions: readonly string[];
   readonly risks: readonly string[];
+  readonly displayContent: DisplayableAiContent;
+  readonly displayOnly?: boolean;
+};
+
+type DisplayableAiContent = {
+  readonly hasContent: boolean;
+  readonly title?: string;
+  readonly summaryText?: string;
+  readonly conclusion?: string;
+  readonly reasons: readonly string[];
+  readonly suggestions: readonly string[];
+  readonly risks: readonly string[];
+  readonly sections: readonly {
+    readonly title: string;
+    readonly text: string;
+  }[];
 };
 
 const deepSeekForecastInterpretationCacheTtlMs = 1000 * 60 * 60;
@@ -799,6 +815,12 @@ export function registerForecastRoutes(
         parseSuccess: aiExplanationParseSuccess(cachedInterpretation.interpretation),
         parseStrategy: aiExplanationParseStrategy(cachedInterpretation.interpretation),
         fallbackUsed: aiExplanationFallbackUsed(cachedInterpretation.interpretation),
+        displaySuccess: hasDisplayableAiContent(
+          withAiExplanationDisplayFields(cachedInterpretation.interpretation),
+        ),
+        hasDisplayableAiContent: hasDisplayableAiContent(
+          withAiExplanationDisplayFields(cachedInterpretation.interpretation),
+        ),
         compatibilityFallbackUsed: false,
         disabledResponseFormat: false,
         disabledReasoningEffort: false,
@@ -862,6 +884,12 @@ export function registerForecastRoutes(
         parseSuccess: aiExplanationParseSuccess(retryResult.explanation),
         parseStrategy: aiExplanationParseStrategy(retryResult.explanation),
         fallbackUsed: aiExplanationFallbackUsed(retryResult.explanation),
+        displaySuccess: hasDisplayableAiContent(
+          withAiExplanationDisplayFields(retryResult.explanation),
+        ),
+        hasDisplayableAiContent: hasDisplayableAiContent(
+          withAiExplanationDisplayFields(retryResult.explanation),
+        ),
         compatibilityFallbackUsed: retryResult.requestDiagnostics.compatibilityFallbackUsed,
         disabledResponseFormat: retryResult.requestDiagnostics.disabledResponseFormat,
         disabledReasoningEffort: retryResult.requestDiagnostics.disabledReasoningEffort,
@@ -869,6 +897,7 @@ export function registerForecastRoutes(
         finishReason: retryResult.requestDiagnostics.finalFinishReason,
         contentType: retryResult.requestDiagnostics.finalContentType,
         contentLength: retryResult.requestDiagnostics.finalContentLength,
+        reasoningContentLength: retryResult.requestDiagnostics.reasoningContentLength,
         messageKeys: retryResult.requestDiagnostics.messageKeys,
         firstFailureUpstreamCode: retryResult.requestDiagnostics.firstFailureUpstreamCode,
         finalFailureUpstreamCode: retryResult.requestDiagnostics.finalFailureUpstreamCode,
@@ -933,7 +962,8 @@ export function registerForecastRoutes(
           latencyMs,
           promptSizeChars: failurePromptSizeChars,
           attempts: normalized.attempts,
-          rawResponseSizeChars: normalized.rawResponseSizeChars ?? normalized.responseSizeChars ?? 0,
+          rawResponseSizeChars:
+            normalized.rawResponseSizeChars ?? normalized.responseSizeChars ?? 0,
           parseStrategy: normalized.parseStrategy,
           upstreamStatusCode: normalized.upstreamStatusCode,
           upstreamErrorCode: normalized.upstreamErrorCode,
@@ -1751,7 +1781,7 @@ function estimateDeepSeekPromptSize(
         responseFormat: runtimeDeepSeek.responseFormat,
         thinkingEnabled: runtimeDeepSeek.thinkingEnabled,
         reasoningEffort: runtimeDeepSeek.reasoningEffort,
-        jsonOutputEnabled: runtimeDeepSeek.jsonOutputEnabled,
+        jsonOutputEnabled: false,
       },
     );
     return request.promptSizeChars;
@@ -1793,6 +1823,9 @@ function buildAiExplainSuccessResponse(options: {
   const contentLength =
     options.requestDiagnostics?.finalContentLength ?? options.requestDiagnostics?.contentLength;
   const explanation = withAiExplanationDisplayFields(options.interpretation);
+  const displaySuccess = hasDisplayableAiContent(explanation);
+  const providerFallbackUsed = fallbackUsed;
+  const deterministicFallbackUsed = false;
   const meta = {
     targetCode: options.targetCode,
     providerCode: "deepseek" as const,
@@ -1801,9 +1834,13 @@ function buildAiExplainSuccessResponse(options: {
     promptSizeChars: options.promptSizeChars,
     latencyMs: options.latencyMs,
     attempts: options.attempts,
+    displaySuccess,
+    hasDisplayableAiContent: displaySuccess,
     parseSuccess,
     parseStrategy,
     fallbackUsed,
+    providerFallbackUsed,
+    deterministicFallbackUsed,
     rawResponseSizeChars,
     cacheHit: options.cacheHit,
     compatibilityFallbackUsed: options.requestDiagnostics?.compatibilityFallbackUsed ?? false,
@@ -1813,6 +1850,7 @@ function buildAiExplainSuccessResponse(options: {
     finishReason,
     contentType,
     contentLength,
+    reasoningContentLength: options.requestDiagnostics?.reasoningContentLength,
     firstFailureUpstreamCode: options.requestDiagnostics?.firstFailureUpstreamCode,
     finalFailureUpstreamCode: options.requestDiagnostics?.finalFailureUpstreamCode,
   };
@@ -1825,6 +1863,8 @@ function buildAiExplainSuccessResponse(options: {
     explanation,
     interpretation: explanation,
     summaryText: explanation.summaryText,
+    displaySuccess,
+    hasDisplayableAiContent: displaySuccess,
     meta,
     latencyMs: options.latencyMs,
     promptSizeChars: options.promptSizeChars,
@@ -1834,6 +1874,8 @@ function buildAiExplainSuccessResponse(options: {
     parseSuccess,
     parseStrategy,
     fallbackUsed,
+    providerFallbackUsed,
+    deterministicFallbackUsed,
     compatibilityFallbackUsed: options.requestDiagnostics?.compatibilityFallbackUsed ?? false,
     disabledResponseFormat: options.requestDiagnostics?.disabledResponseFormat ?? false,
     disabledReasoningEffort: options.requestDiagnostics?.disabledReasoningEffort ?? false,
@@ -1841,6 +1883,7 @@ function buildAiExplainSuccessResponse(options: {
     finishReason,
     contentType,
     contentLength,
+    reasoningContentLength: options.requestDiagnostics?.reasoningContentLength,
     retryable: false,
     cacheHit: options.cacheHit,
     fallback: false,
@@ -1853,11 +1896,15 @@ function buildAiExplainSuccessResponse(options: {
       outputMode: deepSeekOutputMode(options.runtimeDeepSeek),
       latencyMs: options.latencyMs,
       attempts: options.attempts,
+      displaySuccess,
+      hasDisplayableAiContent: displaySuccess,
       parseSuccess,
       parseStrategy,
       responseSizeChars,
       rawResponseSizeChars,
       fallbackUsed,
+      providerFallbackUsed,
+      deterministicFallbackUsed,
       cacheHit: options.cacheHit,
       compatibilityFallbackUsed: options.requestDiagnostics?.compatibilityFallbackUsed ?? false,
       disabledResponseFormat: options.requestDiagnostics?.disabledResponseFormat ?? false,
@@ -1866,6 +1913,7 @@ function buildAiExplainSuccessResponse(options: {
       finishReason,
       contentType,
       contentLength,
+      reasoningContentLength: options.requestDiagnostics?.reasoningContentLength,
       messageKeys: options.requestDiagnostics?.messageKeys,
       firstFailureUpstreamCode: options.requestDiagnostics?.firstFailureUpstreamCode,
       finalFailureUpstreamCode: options.requestDiagnostics?.finalFailureUpstreamCode,
@@ -1916,6 +1964,10 @@ function buildAiExplainFailureResponse(options: {
     source: "fallback" as const,
     targetCode: options.result.target,
     fallback: true,
+    displaySuccess: false,
+    hasDisplayableAiContent: false,
+    providerFallbackUsed: false,
+    deterministicFallbackUsed: true,
     fallbackInterpretation: fallback,
     explanation: fallback,
     interpretation: fallback,
@@ -1948,9 +2000,13 @@ function buildAiExplainFailureResponse(options: {
       promptSizeChars: options.promptSizeChars,
       latencyMs: options.latencyMs,
       attempts: options.attempts ?? 0,
+      displaySuccess: false,
+      hasDisplayableAiContent: false,
       parseSuccess: false,
       parseStrategy,
       fallbackUsed: true,
+      providerFallbackUsed: false,
+      deterministicFallbackUsed: true,
       rawResponseSizeChars,
       errorCategory: options.errorCategory,
       compatibilityFallbackUsed: options.compatibilityFallbackUsed ?? false,
@@ -1979,11 +2035,15 @@ function buildAiExplainFailureResponse(options: {
       outputMode,
       latencyMs: options.latencyMs,
       attempts: options.attempts ?? 0,
+      displaySuccess: false,
+      hasDisplayableAiContent: false,
       parseSuccess: false,
       parseStrategy,
       responseSizeChars,
       rawResponseSizeChars,
       fallback: true,
+      providerFallbackUsed: false,
+      deterministicFallbackUsed: true,
       errorCategory: options.errorCategory,
       compatibilityFallbackUsed: options.compatibilityFallbackUsed ?? false,
       disabledResponseFormat: options.disabledResponseFormat ?? false,
@@ -2004,9 +2064,9 @@ function buildAiExplainFailureResponse(options: {
 }
 
 function deepSeekOutputMode(
-  runtimeDeepSeek: RuntimeDeepSeekConfig,
+  _runtimeDeepSeek: RuntimeDeepSeekConfig,
 ): "json_object" | "text_with_json_fallback" {
-  return runtimeDeepSeek.jsonOutputEnabled ? "json_object" : "text_with_json_fallback";
+  return "text_with_json_fallback";
 }
 
 function safeResponseSizeChars(value: unknown): number {
@@ -2043,25 +2103,138 @@ function withAiExplanationDisplayFields(
 ): DisplayableAiExplanation {
   const summaryText =
     firstDisplayableAiText([
+      interpretation.summaryText,
+      interpretation.displayContent?.summaryText,
+      interpretation.displayContent?.conclusion,
       interpretation.conclusion.oneSentenceDecisionZh,
       interpretation.conclusion.summaryZh,
       interpretation.bestPlan.whyThisWindowZh,
       interpretation.finalAdvice.goNoGoZh,
     ]) ?? "已生成基于当前确定性结果的智能解读。";
+  const reasons = nonEmptyAiTextArray([
+    ...(interpretation.reasons ?? []),
+    ...(interpretation.displayContent?.reasons ?? []),
+    interpretation.bestPlan.whyThisWindowZh,
+    interpretation.weatherTrend.trendSummaryZh,
+  ]);
+  const suggestions = nonEmptyAiTextArray([
+    ...(interpretation.suggestions ?? []),
+    ...(interpretation.displayContent?.suggestions ?? []),
+    interpretation.finalAdvice.goNoGoZh,
+    interpretation.bestPlan.backupPlanZh,
+    interpretation.finalAdvice.nextCheckZh,
+  ]);
+  const risks = nonEmptyAiTextArray([
+    ...(interpretation.risks ?? []),
+    ...(interpretation.displayContent?.risks ?? []),
+    ...interpretation.riskAndGear.keyRisks,
+  ]);
+  const displayContent =
+    normalizeAiExplanationDisplayContent(interpretation.displayContent) ??
+    buildAiExplanationDisplayContent(interpretation, {
+      summaryText,
+      reasons,
+      suggestions,
+      risks,
+    });
   return {
     ...interpretation,
     summaryText,
-    reasons: nonEmptyAiTextArray([
-      interpretation.bestPlan.whyThisWindowZh,
-      interpretation.weatherTrend.trendSummaryZh,
-    ]),
-    suggestions: nonEmptyAiTextArray([
-      interpretation.finalAdvice.goNoGoZh,
-      interpretation.bestPlan.backupPlanZh,
-      interpretation.finalAdvice.nextCheckZh,
-    ]),
-    risks: nonEmptyAiTextArray(interpretation.riskAndGear.keyRisks),
+    reasons,
+    suggestions,
+    risks,
+    displayContent,
+    ...(interpretation.displayOnly === true ? { displayOnly: true } : {}),
   };
+}
+
+function buildAiExplanationDisplayContent(
+  interpretation: ForecastAiExplanation,
+  fields: {
+    readonly summaryText: string;
+    readonly reasons: readonly string[];
+    readonly suggestions: readonly string[];
+    readonly risks: readonly string[];
+  },
+): DisplayableAiContent {
+  const sections = [
+    {
+      title: "一句话结论",
+      text: interpretation.conclusion.oneSentenceDecisionZh,
+    },
+    {
+      title: "天气大势",
+      text: interpretation.weatherTrend.trendSummaryZh,
+    },
+    {
+      title: "最终建议",
+      text: interpretation.finalAdvice.goNoGoZh,
+    },
+  ].filter((section) => cleanAiDisplayText(section.text));
+
+  return {
+    hasContent: true,
+    title: interpretation.conclusion.titleZh,
+    summaryText: fields.summaryText,
+    conclusion: interpretation.conclusion.oneSentenceDecisionZh,
+    reasons: fields.reasons,
+    suggestions: fields.suggestions,
+    risks: fields.risks,
+    sections,
+  };
+}
+
+function normalizeAiExplanationDisplayContent(
+  value: ForecastAiExplanation["displayContent"],
+): DisplayableAiContent | null {
+  if (!value?.hasContent) {
+    return null;
+  }
+  const sections = value.sections
+    .map((section) => ({
+      title: cleanAiDisplayText(section.title) ?? "智能解读",
+      text: cleanAiDisplayText(section.text),
+    }))
+    .filter((section): section is { readonly title: string; readonly text: string } =>
+      Boolean(section.text),
+    );
+  const summaryText = cleanAiDisplayText(value.summaryText);
+  const conclusion = cleanAiDisplayText(value.conclusion);
+  const reasons = nonEmptyAiTextArray(value.reasons);
+  const suggestions = nonEmptyAiTextArray(value.suggestions);
+  const risks = nonEmptyAiTextArray(value.risks);
+  const hasContent = Boolean(
+    summaryText ||
+      conclusion ||
+      reasons.length > 0 ||
+      suggestions.length > 0 ||
+      risks.length > 0 ||
+      sections.length > 0,
+  );
+  return hasContent
+    ? {
+        hasContent: true,
+        ...(cleanAiDisplayText(value.title) ? { title: cleanAiDisplayText(value.title) } : {}),
+        ...(summaryText ? { summaryText } : {}),
+        ...(conclusion ? { conclusion } : {}),
+        reasons,
+        suggestions,
+        risks,
+        sections,
+      }
+    : null;
+}
+
+function hasDisplayableAiContent(explanation: DisplayableAiExplanation): boolean {
+  return Boolean(
+    explanation.summaryText ||
+      explanation.displayContent.summaryText ||
+      explanation.displayContent.conclusion ||
+      explanation.reasons.length > 0 ||
+      explanation.suggestions.length > 0 ||
+      explanation.risks.length > 0 ||
+      explanation.displayContent.sections.length > 0,
+  );
 }
 
 function firstDisplayableAiText(

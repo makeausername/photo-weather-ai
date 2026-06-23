@@ -27,10 +27,7 @@ import {
   refreshCdnCache,
 } from "../admin-api";
 import { Badge, Button, EmptyState, FormField, Input, Select, cn } from "../../../components/ui";
-import {
-  getAdaptiveGridClassName,
-  getAdaptiveGridItemClassName,
-} from "./admin-adaptive-grid";
+import { getAdaptiveGridClassName, getAdaptiveGridItemClassName } from "./admin-adaptive-grid";
 import {
   isProviderSaveDisabled,
   isProviderTestDisabled,
@@ -1034,6 +1031,13 @@ function ProviderTestDetails({ result }: { readonly result?: MockConnectionTestR
       ? ["promptSizeChars", String(result.promptSizeChars)]
       : null,
     typeof result.attempts === "number" ? ["attempts", String(result.attempts)] : null,
+    typeof result.parseSuccess === "boolean" ? ["parseSuccess", String(result.parseSuccess)] : null,
+    typeof result.displaySuccess === "boolean"
+      ? ["displaySuccess", String(result.displaySuccess)]
+      : null,
+    typeof result.hasDisplayableAiContent === "boolean"
+      ? ["hasDisplayableAiContent", String(result.hasDisplayableAiContent)]
+      : null,
     result.parseStrategy ? ["parseStrategy", result.parseStrategy] : null,
     typeof result.compatibilityFallbackUsed === "boolean"
       ? ["compatibilityFallbackUsed", String(result.compatibilityFallbackUsed)]
@@ -1051,6 +1055,9 @@ function ProviderTestDetails({ result }: { readonly result?: MockConnectionTestR
     result.contentType ? ["contentType", result.contentType] : null,
     typeof result.contentLength === "number"
       ? ["contentLength", String(result.contentLength)]
+      : null,
+    typeof result.reasoningContentLength === "number"
+      ? ["reasoningContentLength", String(result.reasoningContentLength)]
       : null,
     typeof result.rawResponseSizeChars === "number"
       ? ["rawResponseSizeChars", String(result.rawResponseSizeChars)]
@@ -1099,7 +1106,10 @@ function EmailTestResultDetails({ result }: { readonly result?: AdminEmailTestRe
   return (
     <div
       data-email-test-result
-      className={cn("rounded-md border px-3 py-2 text-sm", stateClass(result.success ? "saved" : "error"))}
+      className={cn(
+        "rounded-md border px-3 py-2 text-sm",
+        stateClass(result.success ? "saved" : "error"),
+      )}
     >
       <p className="font-semibold">{message}</p>
       <p className="mt-1 text-xs leading-5 text-muted-foreground">收件人：{result.toMasked}</p>
@@ -1586,16 +1596,18 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   const [saveStateByProvider, setSaveStateByProvider] = useState<Record<string, RowState>>({});
   const [testStateByProvider, setTestStateByProvider] = useState<Record<string, RowState>>({});
   const [testResultByProvider, setTestResultByProvider] = useState<TestResultDrafts>({});
-  const [explanationTestStateByProvider, setExplanationTestStateByProvider] =
-    useState<Record<string, RowState>>({});
+  const [explanationTestStateByProvider, setExplanationTestStateByProvider] = useState<
+    Record<string, RowState>
+  >({});
   const [explanationTestResultByProvider, setExplanationTestResultByProvider] =
     useState<TestResultDrafts>({});
   const [emailTestDrafts, setEmailTestDrafts] = useState<Record<string, string>>({});
   const [emailTestStateByProvider, setEmailTestStateByProvider] = useState<
     Record<string, RowState>
   >({});
-  const [emailTestResultByProvider, setEmailTestResultByProvider] =
-    useState<EmailTestResultDrafts>({});
+  const [emailTestResultByProvider, setEmailTestResultByProvider] = useState<EmailTestResultDrafts>(
+    {},
+  );
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const savingProviderIds = useRef(new Set<string>());
   const testingProviderIds = useRef(new Set<string>());
@@ -1996,7 +2008,9 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
           message:
             result.messageZh ??
             result.message ??
-            (result.success === false ? "DeepSeek 真实解读测试失败。" : "DeepSeek 真实解读测试通过。"),
+            (result.success === false
+              ? "DeepSeek 真实解读测试失败。"
+              : "DeepSeek 真实解读测试通过。"),
         },
       }));
     } catch (error) {
@@ -2068,8 +2082,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         ...current,
         [provider.id]: {
           status: "error",
-          message:
-            error instanceof Error ? error.message : "测试邮件发送失败，请检查配置后重试。",
+          message: error instanceof Error ? error.message : "测试邮件发送失败，请检查配置后重试。",
         },
       }));
     } finally {
@@ -2092,10 +2105,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         data-email-send-test-panel
         className="grid gap-3 rounded-md border border-border bg-background/35 px-3 py-3"
       >
-        <SectionTitle
-          title="发送测试邮件"
-          description="真实测试会通过当前 SMTP 配置发送邮件。"
-        />
+        <SectionTitle title="发送测试邮件" description="真实测试会通过当前 SMTP 配置发送邮件。" />
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
           <FormField label="测试邮箱">
             <Input
@@ -2623,7 +2633,9 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                         }),
                   )}
                 >
-                  {visibleProviders.map((provider, index) => renderProviderListRow(provider, index))}
+                  {visibleProviders.map((provider, index) =>
+                    renderProviderListRow(provider, index),
+                  )}
                 </ul>
               ) : (
                 <EmptyState

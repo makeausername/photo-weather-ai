@@ -265,7 +265,7 @@ export const providerFieldPresets = [
   {
     providerCode: "deepseek",
     helpText:
-      "DeepSeek 仅用于解释系统已计算出的评分、风险和拍摄建议，不负责重新计算天气、天文和地形数据。",
+      "DeepSeek 仅用于解释系统已计算出的评分、风险和拍摄建议，不负责重新计算天气、天文和地形数据。预报智能解读默认使用文本优先模式，系统会自动识别 JSON 或普通中文文本。",
     fields: [
       {
         key: "realCallEnabled",
@@ -336,6 +336,7 @@ export const providerFieldPresets = [
         target: "configJson",
         control: "number",
         defaultValue: 1200,
+        helpText: "后台配置可保持默认；预报智能解读低于 2400 时会自动提升有效输出上限。",
         min: 128,
         max: 8192,
         step: 1,
