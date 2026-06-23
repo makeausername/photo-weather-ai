@@ -297,7 +297,7 @@ describe("admin provider module source", () => {
     for (const snippet of [
       "const providerModuleLayout = getProviderModuleLayout(visibleProviders.length)",
       'const useSideProviderList = providerModuleLayout === "side"',
-      'data-provider-layout={providerModuleLayout}',
+      "data-provider-layout={providerModuleLayout}",
       'providerModuleLayout === "single-detail"',
       "data-provider-single-detail",
       "xl:grid-cols-[minmax(420px,500px)_minmax(0,1fr)]",
@@ -373,6 +373,42 @@ describe("admin provider module source", () => {
 
     expect(source).toContain("maskedSecretJson");
     expect(source).toContain("secretFieldDrafts");
+    expect(source).not.toContain("provider.secretJson");
+  });
+
+  it("keeps Aliyun SMS endpoint optional and shows the default hint", () => {
+    const smsMetaSource = sourceBetween(
+      source,
+      '"sms:aliyun_sms": {',
+      '"captcha:tencent_captcha": {',
+    );
+    const smsFieldPresetSource = sourceBetween(
+      providerFieldsSource,
+      'providerCode: "aliyun_sms"',
+      'providerCode: "tencent_captcha"',
+    );
+
+    expect(smsMetaSource).toContain('requiredConfigKeys: ["regionId", "signName", "templateCode"]');
+    expect(smsMetaSource).not.toContain('"endpoint"');
+    expect(smsFieldPresetSource).toContain(
+      'placeholder: "留空则使用默认值：https://dysmsapi.aliyuncs.com"',
+    );
+    expect(smsFieldPresetSource).toContain(
+      'helpText: "正常管理员无需填写；留空时系统会使用默认阿里云短信地址。"',
+    );
+  });
+
+  it("keeps Aliyun SMS AccessKey Secret masked in the provider page", () => {
+    const smsFieldPresetSource = sourceBetween(
+      providerFieldsSource,
+      'providerCode: "aliyun_sms"',
+      'providerCode: "tencent_captcha"',
+    );
+
+    expect(smsFieldPresetSource).toContain('key: "accessKeySecret"');
+    expect(smsFieldPresetSource).toContain('target: "secretJson"');
+    expect(smsFieldPresetSource).toContain("password: true");
+    expect(providerDetailSource).toContain("maskedSecretLabel(provider, field.key)");
     expect(source).not.toContain("provider.secretJson");
   });
 

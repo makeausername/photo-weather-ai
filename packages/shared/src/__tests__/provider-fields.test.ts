@@ -178,6 +178,8 @@ describe("provider field presets", () => {
           key: "endpoint",
           label: "Endpoint",
           target: "configJson",
+          placeholder: "留空则使用默认值：https://dysmsapi.aliyuncs.com",
+          helpText: "正常管理员无需填写；留空时系统会使用默认阿里云短信地址。",
           advanced: true,
         }),
         expect.objectContaining({ key: "signName", label: "短信签名", target: "configJson" }),

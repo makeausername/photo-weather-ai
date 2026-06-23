@@ -944,7 +944,8 @@ export const providerFieldPresets = [
         key: "endpoint",
         label: "Endpoint",
         target: "configJson",
-        placeholder: "https://dysmsapi.aliyuncs.com",
+        placeholder: "留空则使用默认值：https://dysmsapi.aliyuncs.com",
+        helpText: "正常管理员无需填写；留空时系统会使用默认阿里云短信地址。",
         advanced: true,
       },
       {

@@ -1367,6 +1367,74 @@ describe("auth routes", () => {
     });
   });
 
+  it("sends account phone codes through Aliyun SMS when endpoint is empty", async () => {
+    const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("https://dysmsapi.aliyuncs.com");
+      const body = String(init?.body);
+      expect(body).toContain("RegionId=cn-hangzhou");
+      expect(body).toContain("TemplateCode=SMS_123456");
+      return new Response(JSON.stringify({ Code: "OK", RequestId: "req-account-phone" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const smsProvider = state.providers.get("sms:aliyun_sms");
+    state.providers.set("sms:aliyun_sms", {
+      ...smsProvider,
+      enabled: true,
+      configJson: {
+        ...(smsProvider.configJson ?? {}),
+        realCallEnabled: true,
+        endpoint: "",
+        regionId: "",
+        signName: "逐光天气",
+        templateCode: "SMS_123456",
+      },
+      secretJson: {
+        accessKeyId: "sms-access-key-id",
+        accessKeySecret: "sms-access-key-secret",
+      },
+      maskedSecretJson: {
+        accessKeyId: "sms****y-id",
+        accessKeySecret: "sms****cret",
+      },
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      env: {
+        ...registerTestEnv,
+        AUTH_VERIFICATION_SENDER_MODE: "real",
+      },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/account/phone/send-code",
+      headers: adminAuthorizationHeader("plain-user"),
+      payload: {
+        phone: "13900139000",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: true,
+      channel: "sms",
+      mode: "real",
+      targetMasked: "139****9000",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect([...state.verificationCodes.values()][0]).toMatchObject({
+      channel: "sms",
+      purpose: "change_phone",
+      target: "13900139000",
+    });
+  });
+
   it("rejects duplicate phone targets before account phone verification", async () => {
     const { client, state } = await createFakeDatabaseClient();
     state.users.set("admin-user", {

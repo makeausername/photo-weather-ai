@@ -18,6 +18,10 @@ export type VerificationSenderResult = {
   readonly messageZh: string;
   readonly error?: string;
   readonly missingFields?: readonly string[];
+  readonly upstreamCode?: string;
+  readonly upstreamMessageSanitized?: string;
+  readonly upstreamRequestId?: string;
+  readonly upstreamBizId?: string;
 };
 
 export type VerificationSendInput = {
@@ -69,13 +73,22 @@ function isJsonRecord(value: JsonValue | null | undefined): value is JsonRecord 
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function readString(record: JsonValue | null | undefined, key: string, fallback = ""): string {
+export function readString(
+  record: JsonValue | null | undefined,
+  key: string,
+  fallback = "",
+): string {
   if (!isJsonRecord(record)) {
     return fallback;
   }
 
   const value = record[key];
-  return typeof value === "string" ? value.trim() : fallback;
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed : fallback;
 }
 
 function readBoolean(record: JsonValue | null | undefined, key: string, fallback = false): boolean {
@@ -373,6 +386,91 @@ function signAliyunQuery(params: Record<string, string>, accessKeySecret: string
   return createHmac("sha1", `${accessKeySecret}&`).update(stringToSign).digest("base64");
 }
 
+type UnknownRecord = {
+  readonly [key: string]: unknown;
+};
+
+type AliyunSmsDiagnostic = {
+  readonly upstreamCode?: string;
+  readonly upstreamMessageSanitized?: string;
+  readonly upstreamRequestId?: string;
+  readonly upstreamBizId?: string;
+};
+
+function isUnknownRecord(value: unknown): value is UnknownRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readResponseString(record: UnknownRecord, key: string): string | undefined {
+  const value = record[key];
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function sanitizeAliyunDiagnosticMessage(
+  message: string | undefined,
+  sensitiveValues: readonly string[],
+): string | undefined {
+  if (!message) {
+    return undefined;
+  }
+
+  let sanitized = message.replace(/[\r\n\t]+/g, " ").trim();
+  for (const sensitiveValue of sensitiveValues) {
+    const trimmed = sensitiveValue.trim();
+    if (trimmed) {
+      sanitized = sanitized.split(trimmed).join("[redacted]");
+    }
+  }
+
+  sanitized = sanitized
+    .replace(
+      /\b(AccessKeySecret|accessKeySecret|Authorization|authorization)\s*[:=]\s*[^&\s,;]+/g,
+      "$1=[redacted]",
+    )
+    .replace(/\b(Signature)\s*[:=]\s*[^&\s,;]+/gi, "$1=[redacted]")
+    .replace(/\b(TemplateParam)\s*[:=]\s*[^&\s,;]+/gi, "$1=[redacted]")
+    .slice(0, 300)
+    .trim();
+
+  return sanitized || undefined;
+}
+
+async function parseAliyunSmsDiagnostic(
+  response: Response,
+  sensitiveValues: readonly string[],
+): Promise<AliyunSmsDiagnostic> {
+  const payload = await response.json().catch(() => null);
+  if (!isUnknownRecord(payload)) {
+    return {};
+  }
+
+  return {
+    upstreamCode: readResponseString(payload, "Code"),
+    upstreamMessageSanitized: sanitizeAliyunDiagnosticMessage(
+      readResponseString(payload, "Message"),
+      sensitiveValues,
+    ),
+    upstreamRequestId: readResponseString(payload, "RequestId"),
+    upstreamBizId: readResponseString(payload, "BizId"),
+  };
+}
+
+function logAliyunSmsFailure(diagnostic: AliyunSmsDiagnostic): void {
+  console.warn(
+    {
+      providerCode: "aliyun_sms",
+      error: "sms_send_failed",
+      ...diagnostic,
+    },
+    "Aliyun SMS send failed",
+  );
+}
+
 export class AliyunSmsVerificationSender implements VerificationSender {
   constructor(private readonly options: SenderOptions = {}) {}
 
@@ -414,6 +512,13 @@ export class AliyunSmsVerificationSender implements VerificationSender {
       const body = Object.entries(params)
         .map(([key, value]) => `${percentEncode(key)}=${percentEncode(value)}`)
         .join("&");
+      const sensitiveDiagnosticValues = [
+        config.accessKeyId,
+        config.accessKeySecret,
+        input.code,
+        params.Signature,
+        body,
+      ];
 
       const response = await fetch(config.endpoint, {
         method: "POST",
@@ -423,9 +528,9 @@ export class AliyunSmsVerificationSender implements VerificationSender {
         body,
         signal: controller.signal,
       });
-      const payload = (await response.json().catch(() => ({}))) as { readonly Code?: string };
+      const diagnostic = await parseAliyunSmsDiagnostic(response, sensitiveDiagnosticValues);
 
-      if (response.ok && payload.Code === "OK") {
+      if (response.ok && diagnostic.upstreamCode === "OK") {
         return {
           success: true,
           channel: "sms",
@@ -435,6 +540,7 @@ export class AliyunSmsVerificationSender implements VerificationSender {
         };
       }
 
+      logAliyunSmsFailure(diagnostic);
       return {
         success: false,
         channel: "sms",
@@ -442,8 +548,17 @@ export class AliyunSmsVerificationSender implements VerificationSender {
         mode: "real",
         error: "sms_send_failed",
         messageZh: safeUnavailableMessage("sms"),
+        ...diagnostic,
       };
-    } catch {
+    } catch (error) {
+      console.warn(
+        {
+          providerCode: "aliyun_sms",
+          error: "sms_send_failed",
+          errorName: error instanceof Error ? error.name : typeof error,
+        },
+        "Aliyun SMS send failed",
+      );
       return {
         success: false,
         channel: "sms",
@@ -554,6 +669,7 @@ export async function checkVerificationProviderConfig(input: {
     providerCode: "aliyun_sms",
     mode: "config_check",
     configReady,
-    messageZh: "短信服务配置完整；本次未发送真实短信。",
+    messageZh:
+      "短信服务配置完整；endpoint 留空时将使用默认阿里云短信地址。如需验证 AccessKey、签名和模板，请使用真实测试短信。",
   };
 }

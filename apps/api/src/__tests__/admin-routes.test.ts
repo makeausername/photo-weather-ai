@@ -808,6 +808,58 @@ describe("admin config routes", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("accepts complete Aliyun SMS config when endpoint and regionId are empty defaults", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("verification provider config check must not call network");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const smsProvider = state.providers.get("sms:aliyun_sms");
+    state.providers.set("sms:aliyun_sms", {
+      ...smsProvider,
+      enabled: true,
+      configJson: {
+        ...(smsProvider.configJson ?? {}),
+        realCallEnabled: true,
+        endpoint: "",
+        regionId: "",
+        signName: "逐光天气",
+        templateCode: "SMS_123456",
+      },
+      secretJson: {
+        accessKeyId: "sms-secret-id",
+        accessKeySecret: "sms-secret-secret",
+      },
+      maskedSecretJson: {
+        accessKeyId: "sms****id",
+        accessKeySecret: "sms****cret",
+      },
+    });
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/providers/sms/aliyun_sms/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: true,
+      mode: "config_check",
+      connectionMode: "mock",
+      modeLabelZh: "配置检查",
+      providerCode: "aliyun_sms",
+      providerNameZh: "阿里云短信",
+      configReady: true,
+      message:
+        "短信服务配置完整；endpoint 留空时将使用默认阿里云短信地址。如需验证 AccessKey、签名和模板，请使用真实测试短信。",
+    });
+    expect(response.json().missingFields).toBeUndefined();
+    expect(response.body).not.toContain("sms-secret-secret");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("checks billing providers without creating payment orders or exposing secrets", async () => {
     const fetchMock = vi.fn(() => {
       throw new Error("billing provider config checks must not call network");
