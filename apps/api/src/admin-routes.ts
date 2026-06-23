@@ -55,6 +55,9 @@ import {
   QWeatherClient,
 } from "@photo-weather/weather";
 import { MockTerrainProvider, type TerrainProvider } from "@photo-weather/terrain";
+import { buildMockForecastInput, calculateForecast } from "@photo-weather/scoring";
+import { buildDeepSeekForecastExplanationRequest, isDeepSeekProviderError } from "@photo-weather/ai";
+import type { ForecastQueryInput } from "@photo-weather/shared";
 import { z } from "zod";
 import type { AuthConfig } from "./auth-routes.js";
 import { requirePermission } from "./auth-routes.js";
@@ -667,6 +670,85 @@ function providerDiagnosticResponse(result: ProviderDiagnosticResult) {
     testedAt: new Date().toISOString(),
     error: result.errorCategory,
     message: result.messageZh,
+  };
+}
+
+type RuntimeDeepSeekAdminConfig = Awaited<ReturnType<typeof readRuntimeDeepSeekConfig>>;
+
+const deepSeekAdminExplanationTestQuery = {
+  name: "黄山光明顶",
+  source: "local_photo_spot",
+  latitudeGcj02: 30.13254,
+  longitudeGcj02: 118.16876,
+  latitudeWgs84: 30.13012,
+  longitudeWgs84: 118.16389,
+  horizon: "24h",
+  target: "general",
+  locationId: "admin-deepseek-test-location",
+  photoSpotId: "admin-deepseek-test-spot",
+} as const satisfies ForecastQueryInput;
+
+function buildAdminDeepSeekExplanationTestForecast() {
+  return calculateForecast(buildMockForecastInput(deepSeekAdminExplanationTestQuery));
+}
+
+function deepSeekAdminTestBase(
+  runtimeConfig: RuntimeDeepSeekAdminConfig,
+  connectionMode: "mock" | "real",
+) {
+  return {
+    mode: runtimeConfig.analysisMode,
+    ...createProviderTestMetadata("ai", "deepseek", connectionMode, runtimeConfig.modeLabelZh),
+    model: runtimeConfig.model,
+  };
+}
+
+function deepSeekAdminErrorCode(statusCode: number | undefined): string {
+  if (statusCode === 401 || statusCode === 403) {
+    return "invalid_key";
+  }
+  if (statusCode === 429) {
+    return "rate_limited";
+  }
+  if (typeof statusCode === "number" && statusCode >= 500) {
+    return "upstream_unavailable";
+  }
+  return "provider_test_failed";
+}
+
+function deepSeekAdminExplanationFailureResponse(input: {
+  readonly runtimeConfig: RuntimeDeepSeekAdminConfig;
+  readonly error: unknown;
+  readonly latencyMs: number;
+  readonly promptSizeChars: number;
+}) {
+  const providerError = isDeepSeekProviderError(input.error) ? input.error : undefined;
+  const statusCode = providerError?.statusCode ?? providerError?.upstreamStatusCode;
+  const errorCategory = providerError?.errorCategory ?? "unknown";
+  const messageZh =
+    providerError?.messageZh ?? "DeepSeek 真实解读测试失败，请检查服务商配置和上游状态。";
+
+  return {
+    success: false,
+    ...deepSeekAdminTestBase(input.runtimeConfig, "real"),
+    outputMode: input.runtimeConfig.jsonOutputEnabled ? "json_object" : "text_with_json_fallback",
+    promptSizeChars: providerError?.promptSizeChars ?? input.promptSizeChars,
+    latencyMs: providerError?.latencyMs ?? input.latencyMs,
+    attempts: providerError?.attempts ?? 1,
+    parseStrategy: providerError?.parseStrategy ?? "failed",
+    compatibilityFallbackUsed: providerError?.compatibilityFallbackUsed ?? false,
+    disabledResponseFormat: providerError?.disabledResponseFormat ?? false,
+    disabledReasoningEffort: providerError?.disabledReasoningEffort ?? false,
+    upstreamStatusCode: statusCode,
+    upstreamErrorCode: providerError?.upstreamErrorCode,
+    upstreamErrorType: providerError?.upstreamErrorType,
+    upstreamMessageSanitized: providerError?.upstreamMessageSanitized,
+    rawResponseSizeChars: providerError?.rawResponseSizeChars ?? providerError?.responseSizeChars,
+    error: deepSeekAdminErrorCode(statusCode),
+    errorCategory,
+    statusCode,
+    messageZh,
+    message: messageZh,
   };
 }
 
@@ -1542,6 +1624,115 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
 
     return result;
   });
+
+  app.post(
+    "/admin/providers/ai/deepseek/test-explanation",
+    async (request, reply) => {
+      const auth = await requirePermission(request, reply, client, authConfig, "providers.manage", {
+        onAuthFailure: (error) => providerTestAuthFailureResponse("ai", "deepseek", error),
+      });
+      if (!auth) {
+        return reply;
+      }
+
+      const runtimeConfig = await readRuntimeDeepSeekConfig({ dbClient: client, env });
+      if (!runtimeConfig.realCallEnabled) {
+        return {
+          success: false,
+          ...deepSeekAdminTestBase(runtimeConfig, "mock"),
+          outputMode: runtimeConfig.jsonOutputEnabled ? "json_object" : "text_with_json_fallback",
+          promptSizeChars: 0,
+          latencyMs: 0,
+          attempts: 0,
+          parseStrategy: "failed",
+          compatibilityFallbackUsed: false,
+          error: "real_call_disabled",
+          errorCategory: "provider_disabled",
+          messageZh: "请先启用 DeepSeek 真实调用，再运行真实解读测试。",
+          message: "请先启用 DeepSeek 真实调用，再运行真实解读测试。",
+        };
+      }
+
+      if (!runtimeConfig.enabled) {
+        return sendProviderTestFailure(reply, {
+          providerType: "ai",
+          providerCode: "deepseek",
+          mode: runtimeConfig.analysisMode,
+          modeLabelZh: runtimeConfig.modeLabelZh,
+          error: "provider_not_enabled",
+          messageZh: "DeepSeek 服务商未启用，请先在后台服务商配置中启用 DeepSeek。",
+        });
+      }
+
+      if (!runtimeConfig.apiKeyPresent) {
+        return sendProviderTestFailure(reply, {
+          providerType: "ai",
+          providerCode: "deepseek",
+          mode: runtimeConfig.analysisMode,
+          modeLabelZh: runtimeConfig.modeLabelZh,
+          error: "provider_key_missing",
+          messageZh: "请先填写 DeepSeek API Key。",
+        });
+      }
+
+      const startedAt = Date.now();
+      let promptSizeChars = 0;
+      let outputMode: "json_object" | "text_with_json_fallback" = runtimeConfig.jsonOutputEnabled
+        ? "json_object"
+        : "text_with_json_fallback";
+
+      try {
+        const forecastResult = buildAdminDeepSeekExplanationTestForecast();
+        const preview = buildDeepSeekForecastExplanationRequest(
+          { forecastResult },
+          {
+            baseUrl: runtimeConfig.baseUrl,
+            defaultModel: runtimeConfig.model,
+            temperature: runtimeConfig.temperature,
+            maxTokens: runtimeConfig.maxTokens,
+            promptMaxChars: runtimeConfig.promptMaxChars,
+            responseFormat: runtimeConfig.responseFormat,
+            thinkingEnabled: runtimeConfig.thinkingEnabled,
+            reasoningEffort: runtimeConfig.reasoningEffort,
+            jsonOutputEnabled: runtimeConfig.jsonOutputEnabled,
+          },
+        );
+        promptSizeChars = preview.promptSizeChars;
+        outputMode = preview.outputMode;
+        const deepSeekProvider = await createRealDeepSeekProvider({ dbClient: client, env });
+        const result = await deepSeekProvider.generateForecastExplanationWithDiagnostics({
+          forecastResult,
+        });
+        const latencyMs = Date.now() - startedAt;
+        const messageZh = `DeepSeek 真实解读测试通过，耗时 ${latencyMs}ms。`;
+
+        return {
+          success: true,
+          ...deepSeekAdminTestBase(runtimeConfig, "real"),
+          outputMode,
+          promptSizeChars,
+          latencyMs,
+          attempts: result.requestDiagnostics.attempts,
+          parseStrategy: result.parseStrategy,
+          compatibilityFallbackUsed: result.requestDiagnostics.compatibilityFallbackUsed,
+          disabledResponseFormat: result.requestDiagnostics.disabledResponseFormat,
+          disabledReasoningEffort: result.requestDiagnostics.disabledReasoningEffort,
+          firstFailureUpstreamCode: result.requestDiagnostics.firstFailureUpstreamCode,
+          finalFailureUpstreamCode: result.requestDiagnostics.finalFailureUpstreamCode,
+          rawResponseSizeChars: result.rawResponseSizeChars,
+          messageZh,
+          message: messageZh,
+        };
+      } catch (error) {
+        return deepSeekAdminExplanationFailureResponse({
+          runtimeConfig,
+          error,
+          latencyMs: Date.now() - startedAt,
+          promptSizeChars,
+        });
+      }
+    },
+  );
 
   app.post<{ Params: { providerType: string; providerCode: string } }>(
     "/admin/providers/:providerType/:providerCode/test-connection",

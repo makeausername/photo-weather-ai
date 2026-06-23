@@ -92,7 +92,29 @@ export type DeepSeekRequestPreview = {
   readonly outputMode: "json_object" | "text_with_json_fallback";
 };
 
-export type ForecastAiInterpretationTargetCode = "cloud_sea" | "glow" | "general";
+export type DeepSeekSafeUpstreamDiagnostics = {
+  readonly upstreamStatusCode?: number;
+  readonly upstreamErrorCode?: string;
+  readonly upstreamErrorType?: string;
+  readonly upstreamMessageSanitized?: string;
+  readonly upstreamRequestId?: string;
+  readonly rawResponseSizeChars?: number;
+};
+
+export type DeepSeekRequestDiagnostics = DeepSeekSafeUpstreamDiagnostics & {
+  readonly attempts: number;
+  readonly compatibilityFallbackUsed: boolean;
+  readonly disabledResponseFormat: boolean;
+  readonly disabledReasoningEffort: boolean;
+  readonly firstFailureUpstreamCode?: string;
+  readonly finalFailureUpstreamCode?: string;
+};
+
+export type DeepSeekForecastExplanationResult = ForecastAiExplanationParseResult & {
+  readonly requestDiagnostics: DeepSeekRequestDiagnostics;
+};
+
+export type ForecastAiInterpretationTargetCode = "cloud_sea" | "glow" | "general" | "astro";
 
 type ForecastAiTargetConfig = {
   readonly targetCode: ForecastAiInterpretationTargetCode;
@@ -176,6 +198,22 @@ export const forecastAiTargetConfigs = {
       "If data is missing or weak, say evidence is insufficient or omit that conclusion.",
     ],
   },
+  astro: {
+    targetCode: "astro",
+    subjectZh: "星空银河",
+    task: "Explain deterministic astro/Milky Way forecast facts in concise Simplified Chinese.",
+    outputLength: "500-750 Chinese characters total. No Markdown.",
+    visibleSectionsZh: ["是否值得去", "最佳夜间窗口", "月光与光污染", "主要风险", "行动建议"],
+    promptPrioritiesZh: [
+      "先回答是否值得专程观星/拍银河；只根据天文黑夜、月光、银河窗口、云量、能见度、通透度、光污染、地形地平线、露水和风等事实判断。",
+      "分别说明环境光污染和银河方向光害；有天文黑夜不等于能拍银河；给出复核点和备选目标。",
+    ],
+    constraints: [
+      "For astro, deterministic astronomical night, moon, Milky Way windows, light-pollution facts, terrain horizon, blockers, and recommendation are authoritative.",
+      "Do not invent moon phase, moon altitude, Milky Way visibility, light pollution, SQM/Bortle, terrain clearance, weather, road, safety, or travel facts.",
+      "Separate opportunity, risk, and action; do not overpromise Milky Way when light pollution, moonlight, cloud, visibility, or terrain is unfavorable.",
+    ],
+  },
 } satisfies Record<ForecastAiInterpretationTargetCode, ForecastAiTargetConfig>;
 
 function forecastAiTargetConfigFor(
@@ -185,6 +223,7 @@ function forecastAiTargetConfigFor(
     case "cloud_sea":
     case "glow":
     case "general":
+    case "astro":
       return forecastAiTargetConfigs[target];
     default:
       return undefined;
@@ -243,6 +282,18 @@ export type DeepSeekProviderErrorOptions = {
   readonly promptSizeChars?: number;
   readonly responseSizeChars?: number;
   readonly parseStrategy?: ForecastAiExplanationParseStrategy;
+  readonly attempts?: number;
+  readonly compatibilityFallbackUsed?: boolean;
+  readonly disabledResponseFormat?: boolean;
+  readonly disabledReasoningEffort?: boolean;
+  readonly firstFailureUpstreamCode?: string;
+  readonly finalFailureUpstreamCode?: string;
+  readonly upstreamStatusCode?: number;
+  readonly upstreamErrorCode?: string;
+  readonly upstreamErrorType?: string;
+  readonly upstreamMessageSanitized?: string;
+  readonly upstreamRequestId?: string;
+  readonly rawResponseSizeChars?: number;
   readonly cause?: unknown;
 };
 
@@ -254,6 +305,18 @@ export class DeepSeekProviderError extends Error {
   readonly promptSizeChars?: number;
   readonly responseSizeChars?: number;
   readonly parseStrategy?: ForecastAiExplanationParseStrategy;
+  readonly attempts?: number;
+  readonly compatibilityFallbackUsed?: boolean;
+  readonly disabledResponseFormat?: boolean;
+  readonly disabledReasoningEffort?: boolean;
+  readonly firstFailureUpstreamCode?: string;
+  readonly finalFailureUpstreamCode?: string;
+  readonly upstreamStatusCode?: number;
+  readonly upstreamErrorCode?: string;
+  readonly upstreamErrorType?: string;
+  readonly upstreamMessageSanitized?: string;
+  readonly upstreamRequestId?: string;
+  readonly rawResponseSizeChars?: number;
   override readonly cause?: unknown;
 
   constructor(options: DeepSeekProviderErrorOptions) {
@@ -266,6 +329,18 @@ export class DeepSeekProviderError extends Error {
     this.promptSizeChars = options.promptSizeChars;
     this.responseSizeChars = options.responseSizeChars;
     this.parseStrategy = options.parseStrategy;
+    this.attempts = options.attempts;
+    this.compatibilityFallbackUsed = options.compatibilityFallbackUsed;
+    this.disabledResponseFormat = options.disabledResponseFormat;
+    this.disabledReasoningEffort = options.disabledReasoningEffort;
+    this.firstFailureUpstreamCode = options.firstFailureUpstreamCode;
+    this.finalFailureUpstreamCode = options.finalFailureUpstreamCode;
+    this.upstreamStatusCode = options.upstreamStatusCode;
+    this.upstreamErrorCode = options.upstreamErrorCode;
+    this.upstreamErrorType = options.upstreamErrorType;
+    this.upstreamMessageSanitized = options.upstreamMessageSanitized;
+    this.upstreamRequestId = options.upstreamRequestId;
+    this.rawResponseSizeChars = options.rawResponseSizeChars;
     this.cause = options.cause;
   }
 }
@@ -432,6 +507,337 @@ function applyReasoningEffort(
 
 function deepSeekError(options: DeepSeekProviderErrorOptions): DeepSeekProviderError {
   return new DeepSeekProviderError(options);
+}
+
+type DeepSeekRequestAttempt = {
+  readonly body: DeepSeekRequestBody;
+  readonly disabledResponseFormat: boolean;
+  readonly disabledReasoningEffort: boolean;
+};
+
+type DeepSeekRequestSuccess = {
+  readonly content: string;
+  readonly diagnostics: DeepSeekRequestDiagnostics;
+};
+
+function cloneDeepSeekRequestBody(
+  body: DeepSeekRequestBody,
+  options: {
+    readonly disableResponseFormat?: boolean;
+    readonly disableReasoningEffort?: boolean;
+  } = {},
+): DeepSeekRequestBody {
+  const next: DeepSeekRequestBody = {
+    model: body.model,
+    messages: body.messages,
+    temperature: body.temperature,
+    max_tokens: body.max_tokens,
+    stream: false,
+  };
+  if (!options.disableResponseFormat && body.response_format) {
+    next.response_format = body.response_format;
+  }
+  if (!options.disableReasoningEffort && body.reasoning_effort) {
+    next.reasoning_effort = body.reasoning_effort;
+  }
+  return next;
+}
+
+function buildDeepSeekRequestAttempts(body: DeepSeekRequestBody): readonly DeepSeekRequestAttempt[] {
+  const attempts: DeepSeekRequestAttempt[] = [
+    {
+      body,
+      disabledResponseFormat: false,
+      disabledReasoningEffort: false,
+    },
+  ];
+  const hasResponseFormat = Boolean(body.response_format);
+  const hasReasoningEffort = Boolean(body.reasoning_effort);
+
+  if (hasResponseFormat) {
+    attempts.push({
+      body: cloneDeepSeekRequestBody(body, { disableResponseFormat: true }),
+      disabledResponseFormat: true,
+      disabledReasoningEffort: false,
+    });
+  }
+
+  if (hasReasoningEffort) {
+    attempts.push({
+      body: cloneDeepSeekRequestBody(body, { disableReasoningEffort: true }),
+      disabledResponseFormat: false,
+      disabledReasoningEffort: true,
+    });
+  }
+
+  if (hasResponseFormat && hasReasoningEffort) {
+    attempts.push({
+      body: cloneDeepSeekRequestBody(body, {
+        disableResponseFormat: true,
+        disableReasoningEffort: true,
+      }),
+      disabledResponseFormat: true,
+      disabledReasoningEffort: true,
+    });
+  }
+
+  return attempts;
+}
+
+function requestOutputModeFromBody(
+  body: DeepSeekRequestBody,
+): DeepSeekRequestPreview["outputMode"] {
+  return body.response_format ? "json_object" : "text_with_json_fallback";
+}
+
+function safeParseJsonObject(text: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    return isPlainRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function readUnknownRecordField(
+  value: Record<string, unknown> | null | undefined,
+  key: string,
+): unknown {
+  return value ? value[key] : undefined;
+}
+
+function readNestedRecord(
+  value: Record<string, unknown> | null | undefined,
+  key: string,
+): Record<string, unknown> | null {
+  const nested = readUnknownRecordField(value, key);
+  return isPlainRecord(nested) ? nested : null;
+}
+
+function readStringFromUnknown(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function firstStringFromUnknown(values: readonly unknown[]): string | undefined {
+  for (const value of values) {
+    const text = readStringFromUnknown(value);
+    if (text) {
+      return text;
+    }
+  }
+  return undefined;
+}
+
+function sanitizeDeepSeekUpstreamMessage(value: unknown): string | undefined {
+  const text = readStringFromUnknown(value);
+  if (!text) {
+    return undefined;
+  }
+
+  let sanitized = text
+    .replace(/Bearer\s+[A-Za-z0-9._=-]+/gi, "Bearer [redacted]")
+    .replace(/\bsk-[A-Za-z0-9._=-]+/gi, "[redacted-api-key]")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (
+    sanitized.length > 320 &&
+    /authorization|api[_-]?key|messages?|prompt|request body|content/i.test(sanitized)
+  ) {
+    return "上游错误信息包含请求上下文，已隐藏原文。";
+  }
+
+  sanitized = sanitized.replace(/"content"\s*:\s*"[^"]{80,}"/gi, '"content":"[redacted]"');
+  return limitText(sanitized, 320);
+}
+
+function extractDeepSeekUpstreamDiagnostics(
+  response: Response,
+  responseText: string,
+): DeepSeekSafeUpstreamDiagnostics {
+  const parsed = safeParseJsonObject(responseText);
+  const errorRecord = readNestedRecord(parsed, "error") ?? parsed;
+  const upstreamErrorCode = firstStringFromUnknown([
+    readUnknownRecordField(errorRecord, "code"),
+    readUnknownRecordField(errorRecord, "error_code"),
+    readUnknownRecordField(parsed, "code"),
+  ]);
+  const upstreamErrorType = firstStringFromUnknown([
+    readUnknownRecordField(errorRecord, "type"),
+    readUnknownRecordField(errorRecord, "error_type"),
+    readUnknownRecordField(parsed, "type"),
+  ]);
+  const upstreamMessageSanitized = sanitizeDeepSeekUpstreamMessage(
+    firstStringFromUnknown([
+      readUnknownRecordField(errorRecord, "message"),
+      readUnknownRecordField(errorRecord, "msg"),
+      readUnknownRecordField(parsed, "message"),
+      parsed ? undefined : responseText,
+    ]),
+  );
+  const upstreamRequestId = firstStringFromUnknown([
+    response.headers.get("x-request-id"),
+    response.headers.get("x-ds-request-id"),
+    response.headers.get("x-deepseek-request-id"),
+    response.headers.get("cf-ray"),
+    readUnknownRecordField(errorRecord, "request_id"),
+    readUnknownRecordField(parsed, "request_id"),
+  ]);
+
+  return {
+    upstreamStatusCode: response.status,
+    upstreamErrorCode,
+    upstreamErrorType,
+    upstreamMessageSanitized,
+    upstreamRequestId,
+    rawResponseSizeChars: responseText.length,
+  };
+}
+
+function deepSeekFailureCode(error: DeepSeekProviderError | undefined): string | undefined {
+  if (!error) {
+    return undefined;
+  }
+  return (
+    error.upstreamErrorCode ??
+    error.upstreamErrorType ??
+    (typeof error.upstreamStatusCode === "number"
+      ? `http_${error.upstreamStatusCode}`
+      : undefined)
+  );
+}
+
+function isDeepSeekInvalidModelError(error: DeepSeekProviderError): boolean {
+  if (error.statusCode !== 400 && error.upstreamStatusCode !== 400) {
+    return false;
+  }
+  const text = [
+    error.upstreamErrorCode,
+    error.upstreamErrorType,
+    error.upstreamMessageSanitized,
+    error.messageZh,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return /model/.test(text) && /not found|not_exist|not exist|invalid|unsupported|unavailable/.test(text);
+}
+
+function isDeepSeekCompatibilityError(error: DeepSeekProviderError): boolean {
+  if (error.statusCode !== 400 && error.upstreamStatusCode !== 400) {
+    return false;
+  }
+  if (isDeepSeekInvalidModelError(error)) {
+    return false;
+  }
+
+  const text = [
+    error.upstreamErrorCode,
+    error.upstreamErrorType,
+    error.upstreamMessageSanitized,
+    error.messageZh,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    /response_format|reasoning_effort/.test(text) ||
+    /unsupported|not supported|unrecognized|unknown parameter|invalid parameter/.test(text) ||
+    (/invalid_request_error/.test(text) && /parameter|param|response|reasoning/.test(text))
+  );
+}
+
+function deepSeekHttpErrorMessageZh(
+  status: number,
+  diagnostics: DeepSeekSafeUpstreamDiagnostics,
+): string {
+  const diagnosticText = [
+    diagnostics.upstreamErrorCode,
+    diagnostics.upstreamErrorType,
+    diagnostics.upstreamMessageSanitized,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (status === 401 || status === 403) {
+    return "DeepSeek API Key 无效或权限不足。";
+  }
+  if (status === 429) {
+    return "DeepSeek 上游限流，请稍后重试。";
+  }
+  if (status >= 500) {
+    return "DeepSeek 上游服务暂时不可用。";
+  }
+  if (status === 400 && /model/.test(diagnosticText)) {
+    return "DeepSeek 模型不存在或不可用。";
+  }
+  if (status === 400 && /response_format|reasoning_effort|parameter|param/.test(diagnosticText)) {
+    return "DeepSeek 不支持当前可选请求参数。";
+  }
+  return `DeepSeek 服务请求失败，状态码 ${status}。`;
+}
+
+function augmentDeepSeekProviderError(
+  error: DeepSeekProviderError,
+  options: {
+    readonly promptSizeChars?: number;
+    readonly attempts: number;
+    readonly compatibilityFallbackUsed: boolean;
+    readonly disabledResponseFormat: boolean;
+    readonly disabledReasoningEffort: boolean;
+    readonly firstFailure?: DeepSeekProviderError;
+  },
+): DeepSeekProviderError {
+  return deepSeekError({
+    errorCategory: error.errorCategory,
+    messageZh: error.messageZh,
+    statusCode: error.statusCode,
+    latencyMs: error.latencyMs,
+    promptSizeChars: error.promptSizeChars ?? options.promptSizeChars,
+    responseSizeChars: error.responseSizeChars,
+    parseStrategy: error.parseStrategy,
+    attempts: options.attempts,
+    compatibilityFallbackUsed: options.compatibilityFallbackUsed,
+    disabledResponseFormat: options.disabledResponseFormat,
+    disabledReasoningEffort: options.disabledReasoningEffort,
+    firstFailureUpstreamCode: deepSeekFailureCode(options.firstFailure ?? error),
+    finalFailureUpstreamCode: deepSeekFailureCode(error),
+    upstreamStatusCode: error.upstreamStatusCode,
+    upstreamErrorCode: error.upstreamErrorCode,
+    upstreamErrorType: error.upstreamErrorType,
+    upstreamMessageSanitized: error.upstreamMessageSanitized,
+    upstreamRequestId: error.upstreamRequestId,
+    rawResponseSizeChars: error.rawResponseSizeChars,
+    cause: error.cause,
+  });
+}
+
+function buildDeepSeekRequestDiagnostics(options: {
+  readonly attempts: number;
+  readonly compatibilityFallbackUsed: boolean;
+  readonly disabledResponseFormat: boolean;
+  readonly disabledReasoningEffort: boolean;
+  readonly firstFailure?: DeepSeekProviderError;
+  readonly finalFailure?: DeepSeekProviderError;
+  readonly upstreamDiagnostics?: DeepSeekSafeUpstreamDiagnostics;
+}): DeepSeekRequestDiagnostics {
+  return {
+    attempts: options.attempts,
+    compatibilityFallbackUsed: options.compatibilityFallbackUsed,
+    disabledResponseFormat: options.disabledResponseFormat,
+    disabledReasoningEffort: options.disabledReasoningEffort,
+    firstFailureUpstreamCode: deepSeekFailureCode(options.firstFailure),
+    finalFailureUpstreamCode: deepSeekFailureCode(options.finalFailure),
+    upstreamStatusCode: options.upstreamDiagnostics?.upstreamStatusCode,
+    upstreamErrorCode: options.upstreamDiagnostics?.upstreamErrorCode,
+    upstreamErrorType: options.upstreamDiagnostics?.upstreamErrorType,
+    upstreamMessageSanitized: options.upstreamDiagnostics?.upstreamMessageSanitized,
+    upstreamRequestId: options.upstreamDiagnostics?.upstreamRequestId,
+    rawResponseSizeChars: options.upstreamDiagnostics?.rawResponseSizeChars,
+  };
 }
 
 function getMessageContent(
@@ -2739,13 +3145,18 @@ function buildForecastExplanationUserPayload(
   detail: DeepSeekForecastContextDetail,
 ) {
   const targetConfig = forecastAiTargetConfigFor(input.forecastResult.target);
+  const isBudget = detail === "budget";
   const isGlowBudget = input.forecastResult.target === "glow" && detail === "budget";
+  const isAstroTarget = input.forecastResult.target === "astro";
+  const compactSharedKeys = isAstroTarget
+    ? "shared ForecastAiExplanation JSON keys; focus on conclusion, bestPlan, weatherTrend, subjectAdvice.astroMilkyWayZh, riskAndGear, and finalAdvice."
+    : "shared ForecastAiExplanation JSON keys: conclusion, bestPlan, weatherTrend, dayByDay, subjectAdvice, riskAndGear, finalAdvice.";
   const baseConstraints = [
-    "Use only computedForecastFacts. Do not calculate, invent, or override weather, terrain, astronomy, coordinates, scores, risks, or windows.",
+    "Use only computedForecastFacts; do not calculate, invent, or override weather, terrain, astronomy, coordinates, scores, risks, or windows.",
     "If a fact is missing, say it needs a near-term recheck. Do not fill unknown values.",
     "Do not infer low/mid/high cloud layers from total cloud.",
     "If dataStatus.isMock=true, clearly call it demo data.",
-    "Return JSON only when possible; plain structured Chinese text is acceptable if JSON mode fails.",
+    "Return JSON when possible; structured Chinese is acceptable if JSON fails.",
   ];
 
   return {
@@ -2758,11 +3169,15 @@ function buildForecastExplanationUserPayload(
     outputMode: "short_practical_json",
     outputLength: isGlowBudget
       ? "500-700 Chinese chars. No Markdown."
+      : isBudget
+        ? "450-650 Chinese chars. No Markdown."
       : targetConfig?.outputLength ?? "600-900 Chinese characters total. No Markdown.",
-    preferredVisibleSectionsZh: targetConfig?.visibleSectionsZh ?? null,
+    preferredVisibleSectionsZh: isBudget ? null : targetConfig?.visibleSectionsZh ?? null,
     promptPrioritiesZh: isGlowBudget
       ? ["是否值得去；朝霞/晚霞概率；最佳本地时间；到达时间；主因、主风险和备选方案。"]
-      : targetConfig?.promptPrioritiesZh ?? null,
+      : isBudget
+        ? null
+        : targetConfig?.promptPrioritiesZh ?? null,
     requiredKeys:
       input.forecastResult.target === "glow"
         ? isGlowBudget
@@ -2781,46 +3196,55 @@ function buildForecastExplanationUserPayload(
               riskAndGear: ["keyRisks", "gearZh"],
               finalAdvice: ["goNoGoZh", "ifDedicatedTripZh", "nextCheckZh"],
             }
-        : {
-            conclusion: [
-              "titleZh",
-              "summaryZh",
-              "recommendedDayZh",
-              "recommendationLevelZh",
-              "whetherWorthDedicatedTripZh",
-              "oneSentenceDecisionZh",
-            ],
-            bestPlan: [
-              "primaryTargetZh",
-              "bestDateZh",
-              "bestWindowZh",
-              "recommendedArrivalZh",
-              "whyThisWindowZh",
-              "backupPlanZh",
-            ],
-            weatherTrend: [
-              "trendSummaryZh",
-              "temperatureSummaryZh",
-              "rainSummaryZh",
-              "windSummaryZh",
-              "transparencySummaryZh",
-            ],
-            dayByDay: "1 item in budget mode, 1-2 items otherwise",
-            subjectAdvice: [
-              "cloudSeaZh",
-              "sunriseGlowZh",
-              "sunsetGlowZh",
-              "astroMilkyWayZh",
-              "transparencyZh",
-            ],
-            riskAndGear: ["keyRisks", "clothingZh", "gearZh", "safetyZh"],
-            finalAdvice: ["goNoGoZh", "ifAlreadyNearbyZh", "ifDedicatedTripZh", "nextCheckZh"],
-          },
+        : isBudget
+          ? compactSharedKeys
+        : isAstroTarget
+          ? "shared ForecastAiExplanation JSON keys; focus on conclusion, bestPlan, weatherTrend, subjectAdvice.astroMilkyWayZh, riskAndGear, and finalAdvice."
+          : {
+              conclusion: [
+                "titleZh",
+                "summaryZh",
+                "recommendedDayZh",
+                "recommendationLevelZh",
+                "whetherWorthDedicatedTripZh",
+                "oneSentenceDecisionZh",
+              ],
+              bestPlan: [
+                "primaryTargetZh",
+                "bestDateZh",
+                "bestWindowZh",
+                "recommendedArrivalZh",
+                "whyThisWindowZh",
+                "backupPlanZh",
+              ],
+              weatherTrend: [
+                "trendSummaryZh",
+                "temperatureSummaryZh",
+                "rainSummaryZh",
+                "windSummaryZh",
+                "transparencySummaryZh",
+              ],
+              dayByDay: "1 item in budget mode, 1-2 items otherwise",
+              subjectAdvice: [
+                "cloudSeaZh",
+                "sunriseGlowZh",
+                "sunsetGlowZh",
+                "astroMilkyWayZh",
+                "transparencyZh",
+              ],
+              riskAndGear: ["keyRisks", "clothingZh", "gearZh", "safetyZh"],
+              finalAdvice: ["goNoGoZh", "ifAlreadyNearbyZh", "ifDedicatedTripZh", "nextCheckZh"],
+            },
     constraints: isGlowBudget
       ? [
           "Use only computedForecastFacts; missing facts need recheck, never filling.",
           "Do not change sunrise/sunset glow probability, deterministic sunriseGlowScore/sunsetGlowScore, windows, sun times, cloud/aerosol/terrain values, or recommendation; do not recompute or use cloud-sea wording.",
         ]
+      : isBudget
+        ? [
+            "Use only computedForecastFacts; missing facts need recheck, never filling.",
+            "Do not recompute, invent, or override weather, terrain, astronomy, coordinates, scores, risks, windows, or recommendations.",
+          ]
       : [...baseConstraints, ...(targetConfig?.constraints ?? [])],
     userGoal: input.userGoal ?? null,
     computedForecastFacts: buildDeepSeekForecastPromptFacts(input.forecastResult, detail),
@@ -3392,18 +3816,18 @@ function buildJsonOnlySystemPrompt(
   if (target === "glow" && detail === "budget") {
     return [
       "Explain only deterministic forecast facts. Do not recompute or invent weather, sun times, cloud, aerosol, terrain, scores, windows, or recommendation.",
+      "Separate opportunity, risk, and action; write like a photography planning assistant.",
       "Return one JSON object in Simplified Chinese. No Markdown.",
     ].join("\n");
   }
 
   return [
-    "You are only allowed to explain and organize deterministic forecast results. Never recompute or invent weather, cloud, cloud-sea, terrain, astronomy, score, recommendation, risk, or window data.",
-    "Return concise Simplified Chinese. Prefer one JSON object matching the requested schema; if exact JSON is not possible, return concise structured Chinese text without extra commentary.",
-    "你是面向中国风光摄影用户的拍摄天气解读助手。",
-    "只解释已经计算好的确定性结果，不得计算、覆盖或改写天气、天文、地形、坐标或评分数据。",
-    "不得编造天气数据，不得覆盖 deterministic scores，不得声称 mock weather 是真实 forecast。",
-    "输出简体中文。",
-    "必须只输出 json 对象，不要输出 Markdown、解释文字或代码块。",
+    "Explain deterministic forecast results only; never recompute or invent weather, cloud, cloud-sea, terrain, astronomy, score, recommendation, risk, or window data.",
+    "Separate opportunity, risk, and action; write like a photography planning assistant. Never invent moon phase, terrain, travel, road, safety, or on-site facts.",
+    "Return concise Simplified Chinese; prefer requested JSON, otherwise concise structured Chinese only.",
+    "你是风光摄影拍摄天气解读助手，只解释已计算好的确定性结果。",
+    "不得计算、覆盖或改写天气、天文、地形、坐标或评分数据；不得编造天气、月相、地形、交通、安全或现场条件。",
+    "不得声称 mock weather 是真实 forecast。输出简体中文，只输出 json 对象，不要输出 Markdown、解释文字或代码块。",
   ].join("\n");
 }
 
@@ -4507,8 +4931,27 @@ export class DeepSeekProvider implements AIProvider {
   async generateForecastExplanation(
     input: ForecastExplanationInput,
   ): Promise<ForecastAiExplanation> {
+    return (await this.generateForecastExplanationWithDiagnostics(input)).explanation;
+  }
+
+  async generateForecastExplanationWithDiagnostics(
+    input: ForecastExplanationInput,
+  ): Promise<DeepSeekForecastExplanationResult> {
     if (this.options.mode === "mock") {
-      return createRuleBasedForecastExplanation(input.forecastResult);
+      const explanation = createRuleBasedForecastExplanation(input.forecastResult);
+      return {
+        explanation,
+        parseStrategy: explanation.metadata?.parseStrategy ?? "strict_json",
+        parseSuccess: true,
+        fallbackUsed: explanation.metadata?.fallbackUsed ?? true,
+        rawResponseSizeChars: 0,
+        requestDiagnostics: buildDeepSeekRequestDiagnostics({
+          attempts: 0,
+          compatibilityFallbackUsed: false,
+          disabledResponseFormat: false,
+          disabledReasoningEffort: false,
+        }),
+      };
     }
 
     const request = buildDeepSeekForecastExplanationRequest(input, {
@@ -4522,8 +4965,12 @@ export class DeepSeekProvider implements AIProvider {
       reasoningEffort: this.reasoningEffort,
       jsonOutputEnabled: this.jsonOutputEnabled,
     });
-    const rawOutput = await this.request(request);
-    return parseForecastAiExplanationOutput(rawOutput, input.forecastResult).explanation;
+    const rawOutput = await this.requestWithDiagnostics(request);
+    const parsed = parseForecastAiExplanationOutput(rawOutput.content, input.forecastResult);
+    return {
+      ...parsed,
+      requestDiagnostics: rawOutput.diagnostics,
+    };
   }
 
   async testConnection(): Promise<{ readonly message: string }> {
@@ -4610,7 +5057,91 @@ export class DeepSeekProvider implements AIProvider {
   }
 
   private async request(request: DeepSeekRequestPreview): Promise<string> {
+    return (await this.requestWithDiagnostics(request)).content;
+  }
+
+  private async requestWithDiagnostics(
+    request: DeepSeekRequestPreview,
+  ): Promise<DeepSeekRequestSuccess> {
     const apiKey = this.getApiKey();
+    const attempts = buildDeepSeekRequestAttempts(request.body);
+    let firstFailure: DeepSeekProviderError | undefined;
+    let lastFailure: DeepSeekProviderError | undefined;
+
+    for (let attemptIndex = 0; attemptIndex < attempts.length; attemptIndex += 1) {
+      const attempt = attempts[attemptIndex];
+      if (!attempt) {
+        continue;
+      }
+      const compatibilityFallbackUsed =
+        attempt.disabledResponseFormat || attempt.disabledReasoningEffort;
+      const attemptRequest: DeepSeekRequestPreview = {
+        ...request,
+        body: attempt.body,
+        outputMode: requestOutputModeFromBody(attempt.body),
+      };
+
+      try {
+        const content = await this.requestOnce(attemptRequest, apiKey);
+        return {
+          content,
+          diagnostics: buildDeepSeekRequestDiagnostics({
+            attempts: attemptIndex + 1,
+            compatibilityFallbackUsed,
+            disabledResponseFormat: attempt.disabledResponseFormat,
+            disabledReasoningEffort: attempt.disabledReasoningEffort,
+            firstFailure,
+          }),
+        };
+      } catch (error) {
+        const normalized = normalizeDeepSeekRequestError(
+          error,
+          error instanceof DeepSeekProviderError && typeof error.latencyMs === "number"
+            ? error.latencyMs
+            : 0,
+          request.promptSizeChars,
+        );
+        lastFailure = normalized;
+        firstFailure ??= normalized;
+
+        if (
+          attemptIndex >= attempts.length - 1 ||
+          !isDeepSeekCompatibilityError(normalized)
+        ) {
+          throw augmentDeepSeekProviderError(normalized, {
+            promptSizeChars: request.promptSizeChars,
+            attempts: attemptIndex + 1,
+            compatibilityFallbackUsed,
+            disabledResponseFormat: attempt.disabledResponseFormat,
+            disabledReasoningEffort: attempt.disabledReasoningEffort,
+            firstFailure,
+          });
+        }
+      }
+    }
+
+    throw augmentDeepSeekProviderError(
+      lastFailure ??
+        deepSeekError({
+          errorCategory: "unknown",
+          messageZh: "DeepSeek 解读暂时不可用。",
+          promptSizeChars: request.promptSizeChars,
+        }),
+      {
+        promptSizeChars: request.promptSizeChars,
+        attempts: attempts.length,
+        compatibilityFallbackUsed: attempts.length > 1,
+        disabledResponseFormat: attempts.some((attempt) => attempt.disabledResponseFormat),
+        disabledReasoningEffort: attempts.some((attempt) => attempt.disabledReasoningEffort),
+        firstFailure,
+      },
+    );
+  }
+
+  private async requestOnce(
+    request: DeepSeekRequestPreview,
+    apiKey: string,
+  ): Promise<string> {
     const startedAt = Date.now();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -4629,20 +5160,20 @@ export class DeepSeekProvider implements AIProvider {
       const latencyMs = Date.now() - startedAt;
 
       if (!response.ok) {
+        const upstreamDiagnostics = extractDeepSeekUpstreamDiagnostics(response, text);
         throw deepSeekError({
           errorCategory: classifyDeepSeekHttpError(response.status),
-          messageZh:
-            response.status === 401 || response.status === 403
-              ? "DeepSeek API Key 无效或权限不足。"
-              : response.status === 429
-                ? "DeepSeek 上游限流，请稍后重试。"
-                : response.status >= 500
-                  ? "DeepSeek 上游服务暂时不可用。"
-                  : `DeepSeek 服务请求失败，状态码 ${response.status}。`,
+          messageZh: deepSeekHttpErrorMessageZh(response.status, upstreamDiagnostics),
           statusCode: response.status,
           latencyMs,
           promptSizeChars: request.promptSizeChars,
           responseSizeChars: text.length,
+          upstreamStatusCode: upstreamDiagnostics.upstreamStatusCode,
+          upstreamErrorCode: upstreamDiagnostics.upstreamErrorCode,
+          upstreamErrorType: upstreamDiagnostics.upstreamErrorType,
+          upstreamMessageSanitized: upstreamDiagnostics.upstreamMessageSanitized,
+          upstreamRequestId: upstreamDiagnostics.upstreamRequestId,
+          rawResponseSizeChars: upstreamDiagnostics.rawResponseSizeChars,
         });
       }
 

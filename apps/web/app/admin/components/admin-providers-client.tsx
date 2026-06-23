@@ -1029,6 +1029,23 @@ function ProviderTestDetails({ result }: { readonly result?: MockConnectionTestR
     result.apiHost ? ["API Host", result.apiHost] : null,
     result.endpoint ? ["Endpoint", result.endpoint] : null,
     result.model ? ["模型", result.model] : null,
+    result.outputMode ? ["outputMode", result.outputMode] : null,
+    typeof result.promptSizeChars === "number"
+      ? ["promptSizeChars", String(result.promptSizeChars)]
+      : null,
+    typeof result.attempts === "number" ? ["attempts", String(result.attempts)] : null,
+    result.parseStrategy ? ["parseStrategy", result.parseStrategy] : null,
+    typeof result.compatibilityFallbackUsed === "boolean"
+      ? ["compatibilityFallbackUsed", String(result.compatibilityFallbackUsed)]
+      : null,
+    typeof result.upstreamStatusCode === "number"
+      ? ["upstreamStatusCode", String(result.upstreamStatusCode)]
+      : null,
+    result.upstreamErrorCode ? ["upstreamErrorCode", result.upstreamErrorCode] : null,
+    result.upstreamErrorType ? ["upstreamErrorType", result.upstreamErrorType] : null,
+    result.upstreamMessageSanitized
+      ? ["upstreamMessageSanitized", result.upstreamMessageSanitized]
+      : null,
     result.packages?.length ? ["Packages", result.packages.join(",")] : null,
   ].filter((item): item is [string, string] => Boolean(item));
 
@@ -1551,6 +1568,10 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   const [saveStateByProvider, setSaveStateByProvider] = useState<Record<string, RowState>>({});
   const [testStateByProvider, setTestStateByProvider] = useState<Record<string, RowState>>({});
   const [testResultByProvider, setTestResultByProvider] = useState<TestResultDrafts>({});
+  const [explanationTestStateByProvider, setExplanationTestStateByProvider] =
+    useState<Record<string, RowState>>({});
+  const [explanationTestResultByProvider, setExplanationTestResultByProvider] =
+    useState<TestResultDrafts>({});
   const [emailTestDrafts, setEmailTestDrafts] = useState<Record<string, string>>({});
   const [emailTestStateByProvider, setEmailTestStateByProvider] = useState<
     Record<string, RowState>
@@ -1560,6 +1581,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const savingProviderIds = useRef(new Set<string>());
   const testingProviderIds = useRef(new Set<string>());
+  const testingExplanationProviderIds = useRef(new Set<string>());
   const sendingEmailTestProviderIds = useRef(new Set<string>());
 
   const loadProviders = useCallback(async () => {
@@ -1926,6 +1948,52 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     }
   }
 
+  async function testDeepSeekExplanation(provider: SafeProviderConfig) {
+    if (
+      testingExplanationProviderIds.current.has(provider.id) ||
+      explanationTestStateByProvider[provider.id]?.status === "testing"
+    ) {
+      return;
+    }
+
+    testingExplanationProviderIds.current.add(provider.id);
+    setExplanationTestStateByProvider((current) => ({
+      ...current,
+      [provider.id]: {
+        status: "testing",
+        message: "测试中，正在生成真实智能解读...",
+      },
+    }));
+
+    try {
+      const result = await adminApiFetch<MockConnectionTestResult>(
+        "/admin/providers/ai/deepseek/test-explanation",
+        createProviderConnectionTestRequestInit(),
+      );
+      setExplanationTestResultByProvider((current) => ({ ...current, [provider.id]: result }));
+      setExplanationTestStateByProvider((current) => ({
+        ...current,
+        [provider.id]: {
+          status: result.success === false ? "error" : "saved",
+          message:
+            result.messageZh ??
+            result.message ??
+            (result.success === false ? "DeepSeek 真实解读测试失败。" : "DeepSeek 真实解读测试通过。"),
+        },
+      }));
+    } catch (error) {
+      setExplanationTestStateByProvider((current) => ({
+        ...current,
+        [provider.id]: {
+          status: "error",
+          message: providerTestErrorMessage(provider, error),
+        },
+      }));
+    } finally {
+      testingExplanationProviderIds.current.delete(provider.id);
+    }
+  }
+
   function updateEmailTestDraft(providerId: string, value: string) {
     setEmailTestDrafts((current) => ({ ...current, [providerId]: value }));
     setEmailTestStateByProvider((current) => {
@@ -2154,9 +2222,11 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     const secretFields = getPresetFields(provider, "secretJson");
     const saveState = saveStateByProvider[provider.id];
     const testState = testStateByProvider[provider.id];
+    const explanationTestState = explanationTestStateByProvider[provider.id];
     const dirty = dirtyProviders[provider.id] ?? false;
     const isSaving = isProviderSaveDisabled(saveState);
     const isTesting = isProviderTestDisabled(testState);
+    const isExplanationTesting = isProviderTestDisabled(explanationTestState);
     const advancedOpen = advancedProviders[provider.id] ?? false;
     const basicControls = [
       {
@@ -2372,6 +2442,9 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
             <div className="flex min-w-0 flex-wrap gap-2">
               <FeedbackPill state={saveState} dirty={dirty} />
               <FeedbackPill state={testState} />
+              {provider.providerType === "ai" && provider.providerCode === "deepseek" ? (
+                <FeedbackPill state={explanationTestState} />
+              ) : null}
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
               <Button
@@ -2389,9 +2462,22 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               >
                 {providerTestButtonLabel(testState)}
               </Button>
+              {provider.providerType === "ai" && provider.providerCode === "deepseek" ? (
+                <Button
+                  variant="secondary"
+                  aria-label="真实解读测试"
+                  disabled={isExplanationTesting}
+                  onClick={() => void testDeepSeekExplanation(provider)}
+                >
+                  {explanationTestState?.status === "testing" ? "测试中..." : "真实解读测试"}
+                </Button>
+              ) : null}
             </div>
           </div>
           <ProviderTestDetails result={testResultByProvider[provider.id]} />
+          {provider.providerType === "ai" && provider.providerCode === "deepseek" ? (
+            <ProviderTestDetails result={explanationTestResultByProvider[provider.id]} />
+          ) : null}
         </footer>
       </article>
     );

@@ -4526,13 +4526,13 @@ describe("forecast result target-aware view model", () => {
         viewModel,
         aiStatus: "error",
         aiExplanation: null,
-        aiErrorMessage: "智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。",
+        aiErrorMessage: "智能解读暂时不可用，确定性判断已保留。",
         aiRetryable: true,
         onGenerateAiExplanation: vi.fn(),
       }),
     );
 
-    expect(html).toContain("智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。");
+    expect(html).toContain("智能解读暂时不可用，确定性判断已保留。");
     expect(html).toContain("重试智能解读");
     expect(html).toContain("综合出片指数");
     expect(html).toContain("逐日拍摄判断");
@@ -4854,7 +4854,7 @@ describe("forecast result target-aware view model", () => {
     expect(outcome.explanation).toBeNull();
     expect(outcome.retryable).toBe(true);
     expect(outcome.cacheable).toBe(false);
-    expect(html).toContain("智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。");
+    expect(html).toContain("智能解读暂时不可用（上游超时），确定性判断已保留。");
     expect(html).toContain("重试智能解读");
     expect(html).not.toContain("确定性简版解读在 DeepSeek 超时后仍然可见。");
     expect(html).not.toContain("确定性简版");
@@ -4892,7 +4892,7 @@ describe("forecast result target-aware view model", () => {
     expect(outcome.backendErrorCategory).toBe("none");
     expect(outcome.explanation).toBeNull();
     expect(outcome.errorMessage).toBe(
-      "智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。",
+      "智能解读暂时不可用（返回格式异常），确定性判断已保留。",
     );
   });
 
@@ -4942,7 +4942,7 @@ describe("forecast result target-aware view model", () => {
     expect(outcome.status).toBe("error");
     expect(outcome.retryable).toBe(true);
     expect(html).toContain("重试智能解读");
-    expect(html).toContain("智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。");
+    expect(html).toContain("智能解读暂时不可用（暂时不可用），确定性判断已保留。");
     expect(html).toContain("综合出片指数");
   });
 

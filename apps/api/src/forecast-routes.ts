@@ -31,6 +31,7 @@ import {
   DeepSeekProviderError,
   isDeepSeekProviderError,
   type DeepSeekInterpretationErrorCategory,
+  type DeepSeekRequestDiagnostics,
   type ForecastAiExplanation,
   type ForecastAiExplanationParseStrategy,
 } from "@photo-weather/ai";
@@ -749,10 +750,16 @@ export function registerForecastRoutes(
         promptSizeChars,
         outputMode: runtimeDeepSeek ? deepSeekOutputMode(runtimeDeepSeek) : "unavailable",
         latencyMs: 0,
+        attempts: 0,
         success: false,
         parseSuccess: false,
         parseStrategy: "failed",
         errorCategory: unavailableCategory ?? "provider_disabled",
+        upstreamStatusCode: undefined,
+        upstreamErrorCode: undefined,
+        upstreamErrorType: undefined,
+        upstreamMessageSanitized: undefined,
+        compatibilityFallbackUsed: false,
         responseSizeChars: 0,
         rawResponseSizeChars: 0,
       });
@@ -785,6 +792,9 @@ export function registerForecastRoutes(
         parseSuccess: aiExplanationParseSuccess(cachedInterpretation.interpretation),
         parseStrategy: aiExplanationParseStrategy(cachedInterpretation.interpretation),
         fallbackUsed: aiExplanationFallbackUsed(cachedInterpretation.interpretation),
+        compatibilityFallbackUsed: false,
+        disabledResponseFormat: false,
+        disabledReasoningEffort: false,
         errorCategory: null,
         responseSizeChars: safeResponseSizeChars(cachedInterpretation.interpretation),
         rawResponseSizeChars: aiExplanationRawResponseSizeChars(
@@ -844,6 +854,11 @@ export function registerForecastRoutes(
         parseSuccess: aiExplanationParseSuccess(retryResult.explanation),
         parseStrategy: aiExplanationParseStrategy(retryResult.explanation),
         fallbackUsed: aiExplanationFallbackUsed(retryResult.explanation),
+        compatibilityFallbackUsed: retryResult.requestDiagnostics.compatibilityFallbackUsed,
+        disabledResponseFormat: retryResult.requestDiagnostics.disabledResponseFormat,
+        disabledReasoningEffort: retryResult.requestDiagnostics.disabledReasoningEffort,
+        firstFailureUpstreamCode: retryResult.requestDiagnostics.firstFailureUpstreamCode,
+        finalFailureUpstreamCode: retryResult.requestDiagnostics.finalFailureUpstreamCode,
         errorCategory: null,
         responseSizeChars: safeResponseSizeChars(retryResult.explanation),
         rawResponseSizeChars: aiExplanationRawResponseSizeChars(retryResult.explanation),
@@ -858,6 +873,7 @@ export function registerForecastRoutes(
           promptSizeChars,
           attempts: retryResult.attempts,
           cacheHit: false,
+          requestDiagnostics: retryResult.requestDiagnostics,
         }),
       );
     } catch (error) {
@@ -876,7 +892,15 @@ export function registerForecastRoutes(
         success: false,
         parseSuccess: false,
         parseStrategy: normalized.parseStrategy,
+        attempts: normalized.attempts ?? 0,
         errorCategory: normalized.errorCategory,
+        upstreamStatusCode: normalized.upstreamStatusCode,
+        upstreamErrorCode: normalized.upstreamErrorCode,
+        upstreamErrorType: normalized.upstreamErrorType,
+        upstreamMessageSanitized: normalized.upstreamMessageSanitized,
+        compatibilityFallbackUsed: normalized.compatibilityFallbackUsed,
+        disabledResponseFormat: normalized.disabledResponseFormat,
+        disabledReasoningEffort: normalized.disabledReasoningEffort,
         responseSizeChars: normalized.responseSizeChars,
         rawResponseSizeChars: normalized.responseSizeChars ?? 0,
       });
@@ -891,6 +915,15 @@ export function registerForecastRoutes(
           attempts: normalized.attempts,
           rawResponseSizeChars: normalized.responseSizeChars ?? 0,
           parseStrategy: normalized.parseStrategy,
+          upstreamStatusCode: normalized.upstreamStatusCode,
+          upstreamErrorCode: normalized.upstreamErrorCode,
+          upstreamErrorType: normalized.upstreamErrorType,
+          upstreamMessageSanitized: normalized.upstreamMessageSanitized,
+          compatibilityFallbackUsed: normalized.compatibilityFallbackUsed,
+          disabledResponseFormat: normalized.disabledResponseFormat,
+          disabledReasoningEffort: normalized.disabledReasoningEffort,
+          firstFailureUpstreamCode: normalized.firstFailureUpstreamCode,
+          finalFailureUpstreamCode: normalized.finalFailureUpstreamCode,
         }),
       );
     }
@@ -1719,6 +1752,7 @@ function buildAiExplainSuccessResponse(options: {
   readonly promptSizeChars: number;
   readonly attempts: number;
   readonly cacheHit: boolean;
+  readonly requestDiagnostics?: DeepSeekRequestDiagnostics;
 }) {
   const responseSizeChars = safeResponseSizeChars(options.interpretation);
   const parseStrategy = aiExplanationParseStrategy(options.interpretation);
@@ -1739,6 +1773,11 @@ function buildAiExplainSuccessResponse(options: {
     fallbackUsed,
     rawResponseSizeChars,
     cacheHit: options.cacheHit,
+    compatibilityFallbackUsed: options.requestDiagnostics?.compatibilityFallbackUsed ?? false,
+    disabledResponseFormat: options.requestDiagnostics?.disabledResponseFormat ?? false,
+    disabledReasoningEffort: options.requestDiagnostics?.disabledReasoningEffort ?? false,
+    firstFailureUpstreamCode: options.requestDiagnostics?.firstFailureUpstreamCode,
+    finalFailureUpstreamCode: options.requestDiagnostics?.finalFailureUpstreamCode,
   };
   return {
     ok: true,
@@ -1758,6 +1797,9 @@ function buildAiExplainSuccessResponse(options: {
     parseSuccess,
     parseStrategy,
     fallbackUsed,
+    compatibilityFallbackUsed: options.requestDiagnostics?.compatibilityFallbackUsed ?? false,
+    disabledResponseFormat: options.requestDiagnostics?.disabledResponseFormat ?? false,
+    disabledReasoningEffort: options.requestDiagnostics?.disabledReasoningEffort ?? false,
     retryable: false,
     cacheHit: options.cacheHit,
     fallback: false,
@@ -1776,6 +1818,11 @@ function buildAiExplainSuccessResponse(options: {
       rawResponseSizeChars,
       fallbackUsed,
       cacheHit: options.cacheHit,
+      compatibilityFallbackUsed: options.requestDiagnostics?.compatibilityFallbackUsed ?? false,
+      disabledResponseFormat: options.requestDiagnostics?.disabledResponseFormat ?? false,
+      disabledReasoningEffort: options.requestDiagnostics?.disabledReasoningEffort ?? false,
+      firstFailureUpstreamCode: options.requestDiagnostics?.firstFailureUpstreamCode,
+      finalFailureUpstreamCode: options.requestDiagnostics?.finalFailureUpstreamCode,
     },
   };
 }
@@ -1790,6 +1837,15 @@ function buildAiExplainFailureResponse(options: {
   readonly attempts?: number;
   readonly rawResponseSizeChars?: number;
   readonly parseStrategy?: ForecastAiExplanationParseStrategy;
+  readonly upstreamStatusCode?: number;
+  readonly upstreamErrorCode?: string;
+  readonly upstreamErrorType?: string;
+  readonly upstreamMessageSanitized?: string;
+  readonly compatibilityFallbackUsed?: boolean;
+  readonly disabledResponseFormat?: boolean;
+  readonly disabledReasoningEffort?: boolean;
+  readonly firstFailureUpstreamCode?: string;
+  readonly finalFailureUpstreamCode?: string;
 }) {
   const fallback = buildDeterministicFallbackInterpretation(options.result);
   const messageZh = deepSeekInterpretationMessageZh(options.errorCategory, true);
@@ -1823,6 +1879,12 @@ function buildAiExplainFailureResponse(options: {
     rawResponseSizeChars,
     parseSuccess: false,
     parseStrategy,
+    compatibilityFallbackUsed: options.compatibilityFallbackUsed ?? false,
+    disabledResponseFormat: options.disabledResponseFormat ?? false,
+    disabledReasoningEffort: options.disabledReasoningEffort ?? false,
+    upstreamStatusCode: options.upstreamStatusCode,
+    upstreamErrorCode: options.upstreamErrorCode,
+    upstreamMessageSanitized: options.upstreamMessageSanitized,
     meta: {
       targetCode: options.result.target,
       providerCode: "deepseek" as const,
@@ -1836,6 +1898,15 @@ function buildAiExplainFailureResponse(options: {
       fallbackUsed: true,
       rawResponseSizeChars,
       errorCategory: options.errorCategory,
+      compatibilityFallbackUsed: options.compatibilityFallbackUsed ?? false,
+      disabledResponseFormat: options.disabledResponseFormat ?? false,
+      disabledReasoningEffort: options.disabledReasoningEffort ?? false,
+      upstreamStatusCode: options.upstreamStatusCode,
+      upstreamErrorCode: options.upstreamErrorCode,
+      upstreamErrorType: options.upstreamErrorType,
+      upstreamMessageSanitized: options.upstreamMessageSanitized,
+      firstFailureUpstreamCode: options.firstFailureUpstreamCode,
+      finalFailureUpstreamCode: options.finalFailureUpstreamCode,
     },
     error: legacyAiExplanationErrorCode(options.errorCategory),
     message: messageZh,
@@ -1854,6 +1925,15 @@ function buildAiExplainFailureResponse(options: {
       rawResponseSizeChars,
       fallback: true,
       errorCategory: options.errorCategory,
+      compatibilityFallbackUsed: options.compatibilityFallbackUsed ?? false,
+      disabledResponseFormat: options.disabledResponseFormat ?? false,
+      disabledReasoningEffort: options.disabledReasoningEffort ?? false,
+      upstreamStatusCode: options.upstreamStatusCode,
+      upstreamErrorCode: options.upstreamErrorCode,
+      upstreamErrorType: options.upstreamErrorType,
+      upstreamMessageSanitized: options.upstreamMessageSanitized,
+      firstFailureUpstreamCode: options.firstFailureUpstreamCode,
+      finalFailureUpstreamCode: options.finalFailureUpstreamCode,
     },
   };
 }
@@ -2277,26 +2357,71 @@ function legacyAiExplanationErrorCode(
 async function generateDeepSeekExplanationWithRetry(options: {
   readonly provider: Awaited<ReturnType<typeof createRealDeepSeekProvider>>;
   readonly forecastResult: ForecastCalculationResult;
-}): Promise<{ readonly explanation: ForecastAiExplanation; readonly attempts: number }> {
+}): Promise<{
+  readonly explanation: ForecastAiExplanation;
+  readonly attempts: number;
+  readonly requestDiagnostics: DeepSeekRequestDiagnostics;
+}> {
   let lastError: unknown;
+  let attempts = 0;
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
+      const result = await options.provider.generateForecastExplanationWithDiagnostics({
+        forecastResult: options.forecastResult,
+      });
+      attempts += result.requestDiagnostics.attempts;
       return {
-        explanation: await options.provider.generateForecastExplanation({
-          forecastResult: options.forecastResult,
-        }),
-        attempts: attempt,
+        explanation: result.explanation,
+        attempts,
+        requestDiagnostics: {
+          ...result.requestDiagnostics,
+          attempts,
+        },
       };
     } catch (error) {
-      lastError = error;
+      const providerAttempts =
+        isDeepSeekProviderError(error) && typeof error.attempts === "number"
+          ? Math.max(1, error.attempts)
+          : 1;
+      attempts += providerAttempts;
+      lastError = withDeepSeekRouteAttemptCount(error, attempts);
       if (attempt >= 2 || !isRetryableDeepSeekInterpretationError(error)) {
-        throw error;
+        throw lastError;
       }
       await delay(700);
     }
   }
 
   throw lastError;
+}
+
+function withDeepSeekRouteAttemptCount(error: unknown, attempts: number): unknown {
+  if (!isDeepSeekProviderError(error)) {
+    return error;
+  }
+
+  return new DeepSeekProviderError({
+    errorCategory: error.errorCategory,
+    messageZh: error.messageZh,
+    statusCode: error.statusCode,
+    latencyMs: error.latencyMs,
+    promptSizeChars: error.promptSizeChars,
+    responseSizeChars: error.responseSizeChars,
+    parseStrategy: error.parseStrategy,
+    attempts,
+    compatibilityFallbackUsed: error.compatibilityFallbackUsed,
+    disabledResponseFormat: error.disabledResponseFormat,
+    disabledReasoningEffort: error.disabledReasoningEffort,
+    firstFailureUpstreamCode: error.firstFailureUpstreamCode,
+    finalFailureUpstreamCode: error.finalFailureUpstreamCode,
+    upstreamStatusCode: error.upstreamStatusCode,
+    upstreamErrorCode: error.upstreamErrorCode,
+    upstreamErrorType: error.upstreamErrorType,
+    upstreamMessageSanitized: error.upstreamMessageSanitized,
+    upstreamRequestId: error.upstreamRequestId,
+    rawResponseSizeChars: error.rawResponseSizeChars,
+    cause: error.cause,
+  });
 }
 
 async function withDeepSeekExplanationDeadline<T>(
@@ -2361,6 +2486,15 @@ function normalizeDeepSeekExplanationError(error: unknown): {
   readonly responseSizeChars?: number;
   readonly parseStrategy: ForecastAiExplanationParseStrategy;
   readonly attempts?: number;
+  readonly upstreamStatusCode?: number;
+  readonly upstreamErrorCode?: string;
+  readonly upstreamErrorType?: string;
+  readonly upstreamMessageSanitized?: string;
+  readonly compatibilityFallbackUsed?: boolean;
+  readonly disabledResponseFormat?: boolean;
+  readonly disabledReasoningEffort?: boolean;
+  readonly firstFailureUpstreamCode?: string;
+  readonly finalFailureUpstreamCode?: string;
 } {
   const providerError = isDeepSeekProviderError(error) ? error : undefined;
   if (
@@ -2380,6 +2514,16 @@ function normalizeDeepSeekExplanationError(error: unknown): {
       responseSizeChars: providerError?.responseSizeChars,
       parseStrategy: providerError?.parseStrategy ?? "failed",
       message: "DeepSeek 解读暂时超时，已保留确定性分析结果，可稍后重试。",
+      attempts: providerError?.attempts,
+      upstreamStatusCode: providerError?.upstreamStatusCode,
+      upstreamErrorCode: providerError?.upstreamErrorCode,
+      upstreamErrorType: providerError?.upstreamErrorType,
+      upstreamMessageSanitized: providerError?.upstreamMessageSanitized,
+      compatibilityFallbackUsed: providerError?.compatibilityFallbackUsed,
+      disabledResponseFormat: providerError?.disabledResponseFormat,
+      disabledReasoningEffort: providerError?.disabledReasoningEffort,
+      firstFailureUpstreamCode: providerError?.firstFailureUpstreamCode,
+      finalFailureUpstreamCode: providerError?.finalFailureUpstreamCode,
     };
   }
 
@@ -2404,6 +2548,16 @@ function normalizeDeepSeekExplanationError(error: unknown): {
     responseSizeChars: providerError?.responseSizeChars,
     parseStrategy: providerError?.parseStrategy ?? "failed",
     message: "DeepSeek 解读暂时不可用，已保留确定性分析结果。",
+    attempts: providerError?.attempts,
+    upstreamStatusCode: providerError?.upstreamStatusCode,
+    upstreamErrorCode: providerError?.upstreamErrorCode,
+    upstreamErrorType: providerError?.upstreamErrorType,
+    upstreamMessageSanitized: providerError?.upstreamMessageSanitized,
+    compatibilityFallbackUsed: providerError?.compatibilityFallbackUsed,
+    disabledResponseFormat: providerError?.disabledResponseFormat,
+    disabledReasoningEffort: providerError?.disabledReasoningEffort,
+    firstFailureUpstreamCode: providerError?.firstFailureUpstreamCode,
+    finalFailureUpstreamCode: providerError?.finalFailureUpstreamCode,
   };
 }
 

@@ -452,10 +452,17 @@ describe("admin provider module source", () => {
     expect(source).toContain(
       "`/admin/providers/${provider.providerType}/${provider.providerCode}/test-connection`",
     );
+    expect(source).toContain('"/admin/providers/ai/deepseek/test-explanation"');
+    expect(source).toContain('aria-label="真实解读测试"');
+    expect(source).toContain("真实解读测试");
+    expect(source).toContain("parseStrategy");
+    expect(source).toContain("compatibilityFallbackUsed");
+    expect(source).toContain("upstreamMessageSanitized");
     expect(source).toContain("providerTestButtonLabel(testState)");
     expect(source).toContain('aria-label="测试连接"');
     expect(source).not.toContain("raw JSON");
     expect(source).not.toContain("JSON.stringify(result)");
+    expect(source).not.toContain("full prompt");
   });
 
   it("does not add placeholder or filler layout copy", () => {

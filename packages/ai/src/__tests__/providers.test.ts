@@ -189,7 +189,7 @@ describe("AI providers", () => {
     });
     expect(JSON.stringify(request.body)).toContain("short_practical_json");
     expect(JSON.stringify(request.body)).toContain(
-      "Do not calculate, invent, or override weather, terrain, astronomy, coordinates, scores, risks, or windows.",
+      "Use only computedForecastFacts; do not calculate, invent, or override weather, terrain, astronomy, coordinates, scores, risks, or windows.",
     );
     expect(JSON.stringify(request.body)).toContain(
       "Do not infer low/mid/high cloud layers from total cloud.",
@@ -254,9 +254,59 @@ describe("AI providers", () => {
     expect(constraints).toContain("Do not invent moonlight, Milky Way, glow, or cloud-sea details");
     expect(constraints).toContain("If data is missing or weak");
     expect(constraints).toContain("Do not use cloud-sea or glow wording as the primary task");
+    expect(request.body.messages.find((message) => message.role === "system")?.content).toContain(
+      "Separate opportunity, risk, and action",
+    );
+    expect(request.body.messages.find((message) => message.role === "system")?.content).toContain(
+      "photography planning assistant",
+    );
+    expect(request.body.messages.find((message) => message.role === "system")?.content).toContain(
+      "Never invent moon phase, terrain, travel",
+    );
     expect(payload.computedForecastFacts.targetCode).toBe("general");
     expect(payload.computedForecastFacts.cloudSea).toBeUndefined();
     expect(payload.computedForecastFacts.glow).toBeUndefined();
+  });
+
+  it("passes astro through a deterministic photography planning prompt", () => {
+    const request = buildDeepSeekForecastExplanationRequest({
+      forecastResult: {
+        ...forecastResultFixture,
+        target: "astro",
+      },
+    });
+    const payload = readForecastExplanationUserPayload(request);
+    const constraints = payload.constraints.join("\n");
+
+    expect(forecastAiTargetConfigs.astro.targetCode).toBe("astro");
+    expect(payload.targetCode).toBe("astro");
+    expect(payload.targetSubjectZh).toBe("星空银河");
+    expect(payload.preferredVisibleSectionsZh).toEqual([
+      "是否值得去",
+      "最佳夜间窗口",
+      "月光与光污染",
+      "主要风险",
+      "行动建议",
+    ]);
+    expect(payload.promptPrioritiesZh?.join("")).toContain("天文黑夜");
+    expect(payload.promptPrioritiesZh?.join("")).toContain("环境光污染和银河方向光害");
+    expect(payload.computedForecastFacts.targetCode).toBe("astro");
+    expect(payload.computedForecastFacts.cloudSea).toBeUndefined();
+    expect(payload.computedForecastFacts.glow).toBeUndefined();
+    expect(payload.computedForecastFacts.astro).toMatchObject({
+      contextVersion: "astro-night-decision-v1",
+      deterministicOnly: true,
+    });
+    expect(constraints).toContain("Do not invent moon phase, moon altitude");
+    expect(constraints).toContain("Separate opportunity, risk, and action");
+    expect(constraints).toContain("do not overpromise Milky Way");
+    expect(request.body.messages.find((message) => message.role === "system")?.content).toContain(
+      "photography planning assistant",
+    );
+    expect(request.body.messages.find((message) => message.role === "system")?.content).toContain(
+      "Never invent moon phase, terrain, travel",
+    );
+    expect(JSON.stringify(request.body)).not.toMatch(/api[_-]?key|secret|sk-/i);
   });
 
   it("builds a glow-specific DeepSeek prompt from concise deterministic facts", () => {
@@ -1378,6 +1428,182 @@ describe("AI providers", () => {
     });
     expect(explanation.conclusion.summaryZh).toContain("\u6e05\u6668\u7a97\u53e3");
     expect(JSON.stringify(forecastResultFixture.scores)).toBe(scoresBefore);
+  });
+
+  it("retries DeepSeek 400 unsupported response_format without response_format", async () => {
+    const payload = createRuleBasedForecastExplanation(forecastResultFixture);
+    const requestBodies: unknown[] = [];
+    const fetcher = async (_input: string | URL, init?: RequestInit) => {
+      const requestBody = JSON.parse(String(init?.body));
+      requestBodies.push(requestBody);
+      if (requestBodies.length === 1) {
+        return new Response(
+          JSON.stringify({
+            error: {
+              type: "invalid_request_error",
+              code: "unsupported_parameter",
+              message: "Unsupported parameter: response_format",
+            },
+          }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json", "x-request-id": "ds-req-1" },
+          },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { content: JSON.stringify(payload) } }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    };
+    const provider = new DeepSeekProvider({
+      enabled: true,
+      realModeEnabled: true,
+      apiKey: "sk-response-format",
+      fetcher,
+    });
+
+    const result = await provider.generateForecastExplanationWithDiagnostics({
+      forecastResult: forecastResultFixture,
+    });
+
+    expect(requestBodies).toHaveLength(2);
+    expect(requestBodies[0]).toMatchObject({
+      model: "deepseek-v4-pro",
+      response_format: { type: "json_object" },
+    });
+    expect(requestBodies[1]).not.toHaveProperty("response_format");
+    expect(result.requestDiagnostics).toMatchObject({
+      attempts: 2,
+      compatibilityFallbackUsed: true,
+      disabledResponseFormat: true,
+      firstFailureUpstreamCode: "unsupported_parameter",
+    });
+    expect(JSON.stringify(result)).not.toContain("sk-response-format");
+    expect(result.explanation.metadata?.parseStrategy).toBe("strict_json");
+  });
+
+  it("retries DeepSeek 400 unsupported reasoning_effort without reasoning_effort", async () => {
+    const payload = createRuleBasedForecastExplanation(forecastResultFixture);
+    const requestBodies: unknown[] = [];
+    const fetcher = async (_input: string | URL, init?: RequestInit) => {
+      const requestBody = JSON.parse(String(init?.body));
+      requestBodies.push(requestBody);
+      if (requestBodies.length === 1) {
+        return new Response(
+          JSON.stringify({
+            error: {
+              type: "invalid_request_error",
+              code: "unsupported_parameter",
+              message: "Unsupported parameter: reasoning_effort",
+            },
+          }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { content: JSON.stringify(payload) } }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    };
+    const provider = new DeepSeekProvider({
+      enabled: true,
+      realModeEnabled: true,
+      apiKey: "sk-reasoning",
+      jsonOutputEnabled: false,
+      thinkingEnabled: true,
+      reasoningEffort: "medium",
+      fetcher,
+    });
+
+    const result = await provider.generateForecastExplanationWithDiagnostics({
+      forecastResult: forecastResultFixture,
+    });
+
+    expect(requestBodies).toHaveLength(2);
+    expect(requestBodies[0]).toMatchObject({ reasoning_effort: "medium" });
+    expect(requestBodies[1]).not.toHaveProperty("reasoning_effort");
+    expect(result.requestDiagnostics).toMatchObject({
+      attempts: 2,
+      compatibilityFallbackUsed: true,
+      disabledReasoningEffort: true,
+      firstFailureUpstreamCode: "unsupported_parameter",
+    });
+  });
+
+  it("does not compatibility-retry DeepSeek 400 invalid model diagnostics", async () => {
+    const fetcher = async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            type: "invalid_request_error",
+            code: "model_not_found",
+            message: "Model deepseek-v4-pro not found",
+          },
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    const provider = new DeepSeekProvider({
+      enabled: true,
+      realModeEnabled: true,
+      apiKey: "sk-invalid-model",
+      fetcher,
+    });
+
+    await expect(
+      provider.generateForecastExplanation({
+        forecastResult: forecastResultFixture,
+      }),
+    ).rejects.toMatchObject({
+      errorCategory: "provider_http_error",
+      statusCode: 400,
+      attempts: 1,
+      upstreamErrorCode: "model_not_found",
+      upstreamMessageSanitized: "Model deepseek-v4-pro not found",
+    });
+  });
+
+  it("returns safe DeepSeek 429 upstream diagnostics", async () => {
+    const fetcher = async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            type: "rate_limit_error",
+            code: "rate_limit_exceeded",
+            message: "Too many requests",
+          },
+        }),
+        { status: 429, headers: { "Content-Type": "application/json" } },
+      );
+    const provider = new DeepSeekProvider({
+      enabled: true,
+      realModeEnabled: true,
+      apiKey: "sk-rate-limit",
+      fetcher,
+    });
+
+    await provider
+      .generateForecastExplanation({
+        forecastResult: forecastResultFixture,
+      })
+      .catch((error) => {
+        expect(isDeepSeekProviderError(error)).toBe(true);
+        expect(error).toMatchObject({
+          errorCategory: "provider_http_error",
+          statusCode: 429,
+          attempts: 1,
+          upstreamErrorCode: "rate_limit_exceeded",
+          upstreamErrorType: "rate_limit_error",
+          upstreamMessageSanitized: "Too many requests",
+        });
+        expect(JSON.stringify(error)).not.toContain("sk-rate-limit");
+      });
   });
 
   it("classifies empty DeepSeek content separately from JSON parse errors", async () => {

@@ -2034,6 +2034,177 @@ describe("admin config routes", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("tests a real DeepSeek explanation through mocked fetch with safe diagnostics", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer deepseek-real-secret",
+      });
+      expect(String(init?.body)).not.toContain("deepseek-real-secret");
+      const requestBody = JSON.parse(String(init?.body));
+      expect(requestBody).toMatchObject({
+        model: "deepseek-v4-pro",
+        response_format: {
+          type: "json_object",
+        },
+      });
+
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  summaryText: "后台真实解读测试成功。",
+                  conclusion: "后台真实解读测试成功。",
+                  reasons: ["使用确定性 mock 预报载荷。"],
+                  suggestions: ["继续复核真实业务入口。"],
+                  risks: ["短临天气仍需复核。"],
+                }),
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const deepSeekProvider = state.providers.get("ai:deepseek");
+    state.providers.set("ai:deepseek", {
+      ...deepSeekProvider,
+      enabled: true,
+      configJson: {
+        ...(deepSeekProvider.configJson ?? {}),
+        realCallEnabled: true,
+        analysisMode: "professional",
+        maxTokens: 1200,
+        promptMaxChars: 6000,
+        thinkingEnabled: false,
+        reasoningEffort: "none",
+      },
+      secretJson: {
+        apiKey: "deepseek-real-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "deep****cret",
+      },
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/providers/ai/deepseek/test-explanation",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: true,
+      providerCode: "deepseek",
+      model: "deepseek-v4-pro",
+      outputMode: "json_object",
+      promptSizeChars: expect.any(Number),
+      latencyMs: expect.any(Number),
+      attempts: 1,
+      parseStrategy: "strict_json",
+      compatibilityFallbackUsed: false,
+      message: expect.stringContaining("DeepSeek 真实解读测试通过"),
+    });
+    expect(response.body).not.toContain("deepseek-real-secret");
+    expect(response.body).not.toContain("Authorization");
+    expect(response.body).not.toContain("messages");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports DeepSeek explanation test upstream failure with safe diagnostics", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            type: "invalid_request_error",
+            code: "unsupported_parameter",
+            message: "Unsupported parameter: response_format",
+          },
+        }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json",
+            "x-request-id": "ds-admin-1",
+          },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const deepSeekProvider = state.providers.get("ai:deepseek");
+    state.providers.set("ai:deepseek", {
+      ...deepSeekProvider,
+      enabled: true,
+      configJson: {
+        ...(deepSeekProvider.configJson ?? {}),
+        realCallEnabled: true,
+        analysisMode: "professional",
+        maxTokens: 1200,
+        promptMaxChars: 6000,
+        thinkingEnabled: false,
+        reasoningEffort: "none",
+      },
+      secretJson: {
+        apiKey: "deepseek-real-secret",
+      },
+      maskedSecretJson: {
+        apiKey: "deep****cret",
+      },
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/providers/ai/deepseek/test-explanation",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: false,
+      providerCode: "deepseek",
+      model: "deepseek-v4-pro",
+      attempts: 2,
+      compatibilityFallbackUsed: true,
+      disabledResponseFormat: true,
+      upstreamStatusCode: 400,
+      upstreamErrorCode: "unsupported_parameter",
+      upstreamErrorType: "invalid_request_error",
+      upstreamMessageSanitized: "Unsupported parameter: response_format",
+      parseStrategy: "failed",
+    });
+    expect(response.body).not.toContain("deepseek-real-secret");
+    expect(response.body).not.toContain("Authorization");
+    expect(response.body).not.toContain("messages");
+  });
+
   it("reports DeepSeek upstream 401 as provider auth failure, not admin auth failure", async () => {
     const fetchMock = vi.fn(async () => {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {

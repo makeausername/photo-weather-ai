@@ -298,6 +298,13 @@ type AiExplainResponse = {
       | "failed";
     readonly fallbackUsed?: boolean;
     readonly rawResponseSizeChars?: number;
+    readonly compatibilityFallbackUsed?: boolean;
+    readonly disabledResponseFormat?: boolean;
+    readonly disabledReasoningEffort?: boolean;
+    readonly upstreamStatusCode?: number;
+    readonly upstreamErrorCode?: string;
+    readonly upstreamErrorType?: string;
+    readonly upstreamMessageSanitized?: string;
     readonly fallback?: boolean;
     readonly errorCategory?: AiExplainErrorCategory;
   };
@@ -320,6 +327,13 @@ type AiExplainResponse = {
     readonly rawResponseSizeChars?: number;
     readonly cacheHit?: boolean;
     readonly errorCategory?: AiExplainErrorCategory;
+    readonly compatibilityFallbackUsed?: boolean;
+    readonly disabledResponseFormat?: boolean;
+    readonly disabledReasoningEffort?: boolean;
+    readonly upstreamStatusCode?: number;
+    readonly upstreamErrorCode?: string;
+    readonly upstreamErrorType?: string;
+    readonly upstreamMessageSanitized?: string;
   };
 };
 
@@ -498,9 +512,11 @@ export function normalizeAiExplainResponse(
         : backendErrorCategory !== "none" && isRetryableAiExplainCategory(backendErrorCategory);
   const message = frontendErrorCategory
     ? publicAiExplanationMessage(frontendErrorCategory)
-    : readStringField(response, "messageZh") ??
-      readStringField(response, "message") ??
-      publicAiExplanationMessage(backendErrorCategory);
+    : backendErrorCategory !== "none"
+      ? publicAiExplanationMessage(backendErrorCategory)
+      : readStringField(response, "messageZh") ??
+        readStringField(response, "message") ??
+        publicAiExplanationMessage(backendErrorCategory);
 
   if (successSignal && directExplanation) {
     return {
@@ -1709,10 +1725,39 @@ function logAiExplanationClientEvent(
 }
 
 function publicAiExplanationMessage(category: AiExplainErrorCategory | "none"): string {
-  if (category === "frontend_contract_error") {
-    return "智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。";
+  const reason = publicAiExplanationReasonLabel(category);
+  return reason
+    ? `智能解读暂时不可用（${reason}），确定性判断已保留。`
+    : "智能解读暂时不可用，确定性判断已保留。";
+}
+
+function publicAiExplanationReasonLabel(category: AiExplainErrorCategory | "none"): string | null {
+  switch (category) {
+    case "provider_disabled":
+    case "config_missing":
+    case "disabled":
+    case "missing_api_key":
+    case "upstream_401":
+      return "服务配置问题";
+    case "upstream_429":
+      return "上游限流";
+    case "timeout":
+      return "上游超时";
+    case "provider_invalid_response":
+    case "provider_parse_error":
+    case "parse_error":
+    case "empty_response":
+    case "frontend_contract_error":
+      return "返回格式异常";
+    case "network_error":
+    case "provider_http_error":
+    case "upstream_5xx":
+    case "prompt_too_large":
+    case "unknown":
+      return "暂时不可用";
+    case "none":
+      return null;
   }
-  return "智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。";
 }
 
 function isRetryableAiExplainCategory(category: AiExplainErrorCategory | "none"): boolean {
@@ -3736,8 +3781,10 @@ function formatAstroWindowForUi(window: AstroWindowLike, timezone = "Asia/Shangh
 }
 
 function normalizeAiExplanationErrorMessage(message: string | undefined): string {
-  void message;
-  return "智能解读暂时不可用，请稍后重试。当前确定性判断结果仍可正常参考。";
+  const trimmed = message?.trim();
+  return trimmed && trimmed.startsWith("智能解读暂时不可用")
+    ? trimmed
+    : "智能解读暂时不可用，确定性判断已保留。";
 }
 
 function InvalidQueryCard({ message }: { readonly message?: string }) {
