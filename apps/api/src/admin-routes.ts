@@ -58,6 +58,7 @@ import { MockTerrainProvider, type TerrainProvider } from "@photo-weather/terrai
 import { z } from "zod";
 import type { AuthConfig } from "./auth-routes.js";
 import { requirePermission } from "./auth-routes.js";
+import { requireAnyAdminPermission } from "./admin-permissions.js";
 import {
   createRealDeepSeekProvider,
   normalizeDeepSeekAdminConfigJson,
@@ -100,7 +101,11 @@ import {
   type CdnTestConnectionResult,
 } from "./cdn-provider.js";
 import { checkTencentCaptchaConfig } from "./captcha-provider.js";
-import { checkVerificationProviderConfig } from "./verification-senders.js";
+import {
+  checkVerificationProviderConfig,
+  sendAliyunSmtpTestEmail,
+  type SmtpTransportFactory,
+} from "./verification-senders.js";
 
 const jsonSchema: z.ZodType<JsonValue> = z.lazy(() =>
   z.union([
@@ -190,6 +195,10 @@ const providerConnectionTestSchema = z
     mode: z.enum(["mock", "fixture", "real"]).optional(),
   })
   .optional();
+
+const emailProviderSendTestSchema = z.object({
+  to: z.string().trim().email("请输入有效测试邮箱。"),
+});
 
 const storageProviderCodeSchema = z.enum(["local_storage", "aliyun_oss", "tencent_cos"]);
 
@@ -324,6 +333,7 @@ export type AdminRoutesOptions = {
   readonly historicalWeatherProvider?: HistoricalWeatherProvider;
   readonly terrainProvider?: TerrainProvider;
   readonly env?: NodeJS.ProcessEnv;
+  readonly emailTransportFactory?: SmtpTransportFactory;
 };
 
 function toAuditJson(value: unknown): JsonValue {
@@ -1488,6 +1498,50 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       };
     },
   );
+
+  app.post("/admin/providers/email/aliyun_smtp/send-test", async (request, reply) => {
+    const auth = await requireAnyAdminPermission(
+      request,
+      reply,
+      client,
+      authConfig,
+      ["providers.manage", "admin.manage"],
+    );
+    if (!auth) {
+      return reply;
+    }
+
+    const parsedBody = emailProviderSendTestSchema.safeParse(request.body ?? {});
+    if (!parsedBody.success) {
+      return sendZodError(reply, parsedBody.error);
+    }
+
+    const result = await sendAliyunSmtpTestEmail({
+      to: parsedBody.data.to,
+      dbClient: client,
+      emailTransportFactory: options.emailTransportFactory,
+    });
+
+    await createAuditLog(
+      {
+        actorUserId: auth.auditActorUserId,
+        action: "provider.email.test_send",
+        targetType: "provider_config",
+        targetId: "email:aliyun_smtp",
+        afterJson: toAuditJson({
+          toMasked: result.toMasked,
+          success: result.success,
+          errorCode: result.errorCode ?? null,
+          responseCode: result.responseCode ?? null,
+        }),
+        ipAddress: request.ip,
+        userAgent: request.headers["user-agent"] ?? null,
+      },
+      { client },
+    );
+
+    return result;
+  });
 
   app.post<{ Params: { providerType: string; providerCode: string } }>(
     "/admin/providers/:providerType/:providerCode/test-connection",

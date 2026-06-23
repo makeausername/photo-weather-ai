@@ -132,7 +132,13 @@ describe("provider field presets", () => {
     expect(getProviderFieldPreset("aliyun_smtp")?.fields).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ key: "realCallEnabled", target: "configJson" }),
-        expect.objectContaining({ key: "host", label: "SMTP Host", target: "configJson" }),
+        expect.objectContaining({
+          key: "host",
+          label: "SMTP Host",
+          target: "configJson",
+          placeholder: "smtp.qiye.aliyun.com",
+          helpText: "阿里云企业邮箱通常填写 smtp.qiye.aliyun.com。",
+        }),
         expect.objectContaining({
           key: "port",
           label: "SMTP 端口",
@@ -141,6 +147,7 @@ describe("provider field presets", () => {
           defaultValue: 465,
           min: 1,
           max: 65535,
+          helpText: "SSL/TLS 通常使用 465；如果邮箱服务支持 STARTTLS，可使用 587。",
         }),
         expect.objectContaining({
           key: "secure",
@@ -149,17 +156,25 @@ describe("provider field presets", () => {
           control: "boolean",
           defaultValue: true,
         }),
-        expect.objectContaining({ key: "fromAddress", label: "发件邮箱", target: "configJson" }),
+        expect.objectContaining({
+          key: "fromAddress",
+          label: "发件邮箱",
+          target: "configJson",
+          helpText: "通常应与 SMTP 用户名保持一致。",
+        }),
         expect.objectContaining({
           key: "username",
           label: "SMTP 用户名",
           target: "secretJson",
+          placeholder: "例如 support@domain.com；留空则保持现有密钥不变",
+          helpText: "通常填写完整邮箱地址，例如 support@domain.com。",
           password: true,
         }),
         expect.objectContaining({
           key: "password",
           label: "SMTP 密码 / 授权码",
           target: "secretJson",
+          helpText: "填写邮箱密码或客户端授权码，不是阿里云 AccessKey。",
           password: true,
         }),
       ]),

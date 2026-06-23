@@ -428,6 +428,36 @@ describe("admin provider module source", () => {
     }
   });
 
+  it("adds a separate real SMTP test email panel only for Aliyun SMTP", () => {
+    for (const snippet of [
+      "isAliyunSmtpProvider(provider) ? renderEmailTestPanel(provider) : null",
+      "data-email-send-test-panel",
+      'title="发送测试邮件"',
+      'description="真实测试会通过当前 SMTP 配置发送邮件。"',
+      'label="测试邮箱"',
+      "发送测试邮件",
+      "/admin/providers/email/aliyun_smtp/send-test",
+      "EmailTestResultDetails",
+      "result.messageZh",
+      "result.toMasked",
+      "errorCode",
+      "responseCode",
+      "command",
+      "response",
+      "测试邮件已发送，请检查收件箱或垃圾箱。",
+    ]) {
+      expect(source).toContain(snippet);
+    }
+
+    expect(source).toContain(
+      "`/admin/providers/${provider.providerType}/${provider.providerCode}/test-connection`",
+    );
+    expect(source).toContain("providerTestButtonLabel(testState)");
+    expect(source).toContain('aria-label="测试连接"');
+    expect(source).not.toContain("raw JSON");
+    expect(source).not.toContain("JSON.stringify(result)");
+  });
+
   it("does not add placeholder or filler layout copy", () => {
     for (const forbidden of [
       "占位",

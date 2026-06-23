@@ -1,7 +1,43 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApiServer } from "../server.js";
+import type { SmtpTransportFactory } from "../verification-senders.js";
 import { adminAuthorizationHeader, createFakeDatabaseClient, testAuthConfig } from "./fake-db.js";
+
+function enableAliyunSmtpProvider(
+  state: Awaited<ReturnType<typeof createFakeDatabaseClient>>["state"],
+  overrides: {
+    readonly enabled?: boolean;
+    readonly configJson?: Record<string, unknown>;
+    readonly secretJson?: Record<string, unknown>;
+  } = {},
+) {
+  const provider = state.providers.get("email:aliyun_smtp");
+  state.providers.set("email:aliyun_smtp", {
+    ...provider,
+    enabled: overrides.enabled ?? true,
+    configJson: {
+      ...(provider.configJson ?? {}),
+      realCallEnabled: true,
+      host: "smtp.qiye.aliyun.com",
+      port: 465,
+      secure: true,
+      fromName: "逐光天气",
+      fromAddress: "support@example.com",
+      timeoutMs: 10000,
+      ...overrides.configJson,
+    },
+    secretJson: {
+      username: "support@example.com",
+      password: "smtp-auth-secret",
+      ...overrides.secretJson,
+    },
+    maskedSecretJson: {
+      username: "supp****.com",
+      password: "smtp****cret",
+    },
+  });
+}
 
 describe("admin config routes", () => {
   let app: FastifyInstance | undefined;
@@ -764,13 +800,26 @@ describe("admin config routes", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("checks verification providers without sending email or SMS when real calls are disabled", async () => {
+  it("checks verification providers without sending email or SMS from config checks", async () => {
     const fetchMock = vi.fn(() => {
       throw new Error("verification provider config check must not call network");
     });
     vi.stubGlobal("fetch", fetchMock);
-    const { client } = await createFakeDatabaseClient();
-    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+    const { client, state } = await createFakeDatabaseClient();
+    enableAliyunSmtpProvider(state, {
+      configJson: {
+        realCallEnabled: false,
+      },
+    });
+    const emailTransportFactory = vi.fn(() => {
+      throw new Error("email config checks must not create SMTP transports");
+    }) as unknown as SmtpTransportFactory;
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      emailTransportFactory,
+    });
 
     const emailResponse = await app.inject({
       method: "POST",
@@ -791,8 +840,9 @@ describe("admin config routes", () => {
       modeLabelZh: "配置检查",
       providerCode: "aliyun_smtp",
       providerNameZh: "阿里云企业邮箱 SMTP",
-      configReady: false,
-      message: "当前为模拟测试，未发送真实邮件/短信。",
+      configReady: true,
+      message:
+        "邮件服务配置完整；本次未发送真实邮件。如需验证 SMTP 登录和发信能力，请使用“发送测试邮件”。",
     });
     expect(smsResponse.statusCode).toBe(200);
     expect(smsResponse.json()).toMatchObject({
@@ -806,6 +856,7 @@ describe("admin config routes", () => {
       message: "当前为模拟测试，未发送真实邮件/短信。",
     });
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(emailTransportFactory).not.toHaveBeenCalled();
   });
 
   it("accepts complete Aliyun SMS config when endpoint and regionId are empty defaults", async () => {
@@ -1069,6 +1120,188 @@ describe("admin config routes", () => {
     expect(emailResponse.body).not.toContain("smtp-secret-user");
     expect(smsResponse.body).not.toContain("sms-secret-id");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("requires admin provider permission and validates recipient email for SMTP send-test", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    enableAliyunSmtpProvider(state);
+    const sendMail = vi.fn(async () => undefined);
+    const emailTransportFactory: SmtpTransportFactory = vi.fn(() => ({ sendMail }));
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      emailTransportFactory,
+    });
+
+    const unauthenticatedResponse = await app.inject({
+      method: "POST",
+      url: "/admin/providers/email/aliyun_smtp/send-test",
+      payload: { to: "test@example.com" },
+    });
+    const normalUserResponse = await app.inject({
+      method: "POST",
+      url: "/admin/providers/email/aliyun_smtp/send-test",
+      headers: adminAuthorizationHeader("plain-user"),
+      payload: { to: "test@example.com" },
+    });
+    const invalidEmailResponse = await app.inject({
+      method: "POST",
+      url: "/admin/providers/email/aliyun_smtp/send-test",
+      headers: adminAuthorizationHeader(),
+      payload: { to: "not-an-email" },
+    });
+
+    expect(unauthenticatedResponse.statusCode).toBe(401);
+    expect(normalUserResponse.statusCode).toBe(403);
+    expect(invalidEmailResponse.statusCode).toBe(400);
+    expect(sendMail).not.toHaveBeenCalled();
+    expect(emailTransportFactory).not.toHaveBeenCalled();
+  });
+
+  it("sends a real admin SMTP test email through the configured provider and returns safe success", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    enableAliyunSmtpProvider(state);
+    const sendMail = vi.fn(async (message: unknown) => {
+      expect(message).toMatchObject({
+        from: '"逐光天气" <support@example.com>',
+        to: "receiver@example.com",
+        subject: "逐光天气邮件测试",
+        text: "这是一封逐光天气 SMTP 测试邮件。如果你收到，说明邮箱发信配置可用。",
+      });
+    });
+    const emailTransportFactory: SmtpTransportFactory = vi.fn(() => ({ sendMail }));
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      emailTransportFactory,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/providers/email/aliyun_smtp/send-test",
+      headers: adminAuthorizationHeader(),
+      payload: { to: "receiver@example.com" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: true,
+      providerCode: "aliyun_smtp",
+      mode: "real",
+      toMasked: "re***r@example.com",
+      messageZh: "测试邮件已发送，请检查收件箱或垃圾箱。",
+    });
+    expect(sendMail).toHaveBeenCalledTimes(1);
+    expect(emailTransportFactory).toHaveBeenCalledTimes(1);
+    expect(response.body).not.toContain("smtp-auth-secret");
+    expect(response.body).not.toContain("secretJson");
+    expect(state.auditLogs.at(-1)).toMatchObject({
+      actorUserId: "admin-user",
+      action: "provider.email.test_send",
+      targetType: "provider_config",
+      targetId: "email:aliyun_smtp",
+      afterJson: {
+        toMasked: "re***r@example.com",
+        success: true,
+        errorCode: null,
+        responseCode: null,
+      },
+    });
+  });
+
+  it.each([
+    {
+      name: "EAUTH 526",
+      error: Object.assign(new Error("Invalid login for support@example.com smtp-auth-secret"), {
+        code: "EAUTH",
+        responseCode: 526,
+        command: "AUTH PLAIN smtp-auth-secret",
+        response: "526 Authentication failed for support@example.com password=smtp-auth-secret",
+      }),
+      expectedMessage: "SMTP 认证失败，请检查邮箱密码或客户端授权码。",
+      expected: {
+        errorCode: "EAUTH",
+        responseCode: 526,
+      },
+    },
+    {
+      name: "connection timeout",
+      error: Object.assign(new Error("connect ETIMEDOUT smtp.qiye.aliyun.com:465"), {
+        code: "ETIMEDOUT",
+        command: "CONN",
+      }),
+      expectedMessage: "SMTP 连接失败，请检查 Host、端口、SSL/TLS 和服务器网络。",
+      expected: {
+        errorCode: "ETIMEDOUT",
+      },
+    },
+    {
+      name: "sender mismatch",
+      error: Object.assign(new Error("sender rejected: support@example.com"), {
+        code: "EENVELOPE",
+        responseCode: 553,
+        command: "MAIL FROM",
+        response: "553 sender rejected support@example.com auth=smtp-auth-secret",
+      }),
+      expectedMessage: "发件邮箱可能与 SMTP 登录账号不匹配。",
+      expected: {
+        errorCode: "EENVELOPE",
+        responseCode: 553,
+      },
+    },
+  ])("returns safe admin SMTP diagnostics for $name failures", async (testCase) => {
+    const warnMock = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { client, state } = await createFakeDatabaseClient();
+    enableAliyunSmtpProvider(state);
+    const sendMail = vi.fn(async () => {
+      throw testCase.error;
+    });
+    const emailTransportFactory: SmtpTransportFactory = vi.fn(() => ({ sendMail }));
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      emailTransportFactory,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/providers/email/aliyun_smtp/send-test",
+      headers: adminAuthorizationHeader(),
+      payload: { to: "receiver@example.com" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: false,
+      providerCode: "aliyun_smtp",
+      mode: "real",
+      toMasked: "re***r@example.com",
+      messageZh: testCase.expectedMessage,
+      ...testCase.expected,
+    });
+    const serialized = JSON.stringify({
+      response: response.json(),
+      logs: warnMock.mock.calls,
+      audit: state.auditLogs.at(-1),
+    });
+    expect(serialized).not.toContain("smtp-auth-secret");
+    expect(serialized).not.toContain("support@example.com");
+    expect(serialized).not.toContain("receiver@example.com");
+    expect(serialized).not.toContain("secretJson");
+    expect(warnMock).toHaveBeenCalledTimes(1);
+    expect(state.auditLogs.at(-1)).toMatchObject({
+      action: "provider.email.test_send",
+      targetId: "email:aliyun_smtp",
+      afterJson: {
+        toMasked: "re***r@example.com",
+        success: false,
+        errorCode: testCase.expected.errorCode,
+        responseCode: testCase.expected.responseCode ?? null,
+      },
+    });
   });
 
   it("tests a real QWeather connection through mocked fetch outside NODE_ENV=test", async () => {

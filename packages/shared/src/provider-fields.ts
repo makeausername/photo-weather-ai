@@ -866,6 +866,7 @@ export const providerFieldPresets = [
         label: "SMTP Host",
         target: "configJson",
         placeholder: "smtp.qiye.aliyun.com",
+        helpText: "阿里云企业邮箱通常填写 smtp.qiye.aliyun.com。",
       },
       {
         key: "port",
@@ -876,6 +877,7 @@ export const providerFieldPresets = [
         min: 1,
         max: 65535,
         step: 1,
+        helpText: "SSL/TLS 通常使用 465；如果邮箱服务支持 STARTTLS，可使用 587。",
       },
       {
         key: "secure",
@@ -894,6 +896,7 @@ export const providerFieldPresets = [
         key: "fromAddress",
         label: "发件邮箱",
         target: "configJson",
+        helpText: "通常应与 SMTP 用户名保持一致。",
       },
       {
         key: "timeoutMs",
@@ -910,7 +913,8 @@ export const providerFieldPresets = [
         key: "username",
         label: "SMTP 用户名",
         target: "secretJson",
-        placeholder: keepExistingSecretPlaceholder,
+        placeholder: "例如 support@domain.com；留空则保持现有密钥不变",
+        helpText: "通常填写完整邮箱地址，例如 support@domain.com。",
         password: true,
       },
       {
@@ -918,6 +922,7 @@ export const providerFieldPresets = [
         label: "SMTP 密码 / 授权码",
         target: "secretJson",
         placeholder: keepExistingSecretPlaceholder,
+        helpText: "填写邮箱密码或客户端授权码，不是阿里云 AccessKey。",
         password: true,
       },
     ],

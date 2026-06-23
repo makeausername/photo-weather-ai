@@ -247,6 +247,21 @@ export type MockConnectionTestResult = {
   readonly message: string;
 };
 
+export type AdminEmailTestResult = {
+  readonly success: boolean;
+  readonly providerCode: "aliyun_smtp";
+  readonly mode: "real" | "config_check";
+  readonly messageZh: string;
+  readonly toMasked: string;
+  readonly error?: string;
+  readonly missingFields?: readonly string[];
+  readonly errorCode?: string;
+  readonly responseCode?: number;
+  readonly command?: string;
+  readonly response?: string;
+  readonly errorMessageSanitized?: string;
+};
+
 export type AdminCdnProviderCode = "aliyun_cdn" | "tencent_cdn";
 
 export type AdminCdnRefreshType = "file" | "directory" | "url" | "path";

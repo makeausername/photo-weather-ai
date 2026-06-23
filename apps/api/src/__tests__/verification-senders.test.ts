@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AliyunSmsVerificationSender,
+  SmtpEmailVerificationSender,
   checkVerificationProviderConfig,
   readString,
+  sendAliyunSmtpTestEmail,
 } from "../verification-senders.js";
 import { createFakeDatabaseClient } from "./fake-db.js";
 
@@ -43,6 +45,40 @@ function enableAliyunSmsProvider(
   });
 }
 
+function enableAliyunSmtpProvider(
+  state: Awaited<ReturnType<typeof createFakeDatabaseClient>>["state"],
+  overrides: {
+    readonly configJson?: Record<string, unknown>;
+    readonly secretJson?: Record<string, unknown>;
+  } = {},
+) {
+  const provider = state.providers.get("email:aliyun_smtp");
+  state.providers.set("email:aliyun_smtp", {
+    ...provider,
+    enabled: true,
+    configJson: {
+      ...(provider.configJson ?? {}),
+      realCallEnabled: true,
+      host: "smtp.qiye.aliyun.com",
+      port: 465,
+      secure: true,
+      fromName: "逐光天气",
+      fromAddress: "support@example.com",
+      timeoutMs: 10000,
+      ...overrides.configJson,
+    },
+    secretJson: {
+      username: "support@example.com",
+      password: "smtp-auth-secret",
+      ...overrides.secretJson,
+    },
+    maskedSecretJson: {
+      username: "supp****.com",
+      password: "smtp****cret",
+    },
+  });
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -63,6 +99,81 @@ describe("verification sender config readers", () => {
     expect(readString({ signName: "" }, "signName")).toBe("");
     expect(readString({ templateCode: "   " }, "templateCode")).toBe("");
     expect(readString(null, "accessKeySecret")).toBe("");
+  });
+});
+
+describe("Aliyun SMTP verification sender", () => {
+  it("returns public-safe failure text while logging redacted SMTP diagnostics", async () => {
+    const warnMock = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { client, state } = await createFakeDatabaseClient();
+    enableAliyunSmtpProvider(state);
+    const sendMail = vi.fn(async () => {
+      throw Object.assign(
+        new Error("Invalid login support@example.com smtp-auth-secret verification 246810"),
+        {
+          code: "EAUTH",
+          responseCode: 526,
+          command: "AUTH PLAIN smtp-auth-secret",
+          response: "526 auth failed support@example.com password=smtp-auth-secret code=246810",
+        },
+      );
+    });
+
+    const result = await new SmtpEmailVerificationSender({
+      dbClient: client,
+      emailTransportFactory: () => ({ sendMail }),
+    }).send({
+      channel: "email",
+      purpose: "register",
+      target: "new.user@example.com",
+      code: "246810",
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      providerCode: "aliyun_smtp",
+      mode: "real",
+      error: "email_send_failed",
+      messageZh: "邮件服务暂不可用，请稍后重试。",
+      errorCode: "EAUTH",
+      responseCode: 526,
+    });
+    const serialized = JSON.stringify({
+      result,
+      logs: warnMock.mock.calls,
+    });
+    expect(serialized).not.toContain("smtp-auth-secret");
+    expect(serialized).not.toContain("support@example.com");
+    expect(serialized).not.toContain("new.user@example.com");
+    expect(serialized).not.toContain("246810");
+    expect(warnMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a friendly admin diagnostic when SMTP sending dependency is unavailable", async () => {
+    const warnMock = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { client, state } = await createFakeDatabaseClient();
+    enableAliyunSmtpProvider(state);
+
+    const result = await sendAliyunSmtpTestEmail({
+      dbClient: client,
+      to: "receiver@example.com",
+      emailTransportFactory: () => {
+        throw Object.assign(new Error("nodemailer createTransport missing"), {
+          code: "NODEMAILER_UNAVAILABLE",
+        });
+      },
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      providerCode: "aliyun_smtp",
+      mode: "real",
+      toMasked: "re***r@example.com",
+      errorCode: "NODEMAILER_UNAVAILABLE",
+      messageZh: "邮件发送依赖不可用，请检查 API 镜像依赖。",
+    });
+    expect(JSON.stringify({ result, logs: warnMock.mock.calls })).not.toContain("smtp-auth-secret");
+    expect(warnMock).toHaveBeenCalledTimes(1);
   });
 });
 

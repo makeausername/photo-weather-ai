@@ -9,6 +9,7 @@ import {
   sessionInvalidMessage,
 } from "../auth-routes.js";
 import { buildApiServer } from "../server.js";
+import type { VerificationSender } from "../verification-senders.js";
 import { adminAuthorizationHeader, createFakeDatabaseClient, testAuthConfig } from "./fake-db.js";
 
 const registerTestEnv: NodeJS.ProcessEnv = {
@@ -298,6 +299,55 @@ describe("auth routes", () => {
     });
     expect(storedCode.codeHash).toHaveLength(64);
     expect(storedCode.codeHash).not.toBe(response.body.mockCode);
+  });
+
+  it("sends a registration email code through a mocked real SMTP sender", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const verificationSender: VerificationSender = {
+      send: vi.fn(async (input) => {
+        expect(input).toMatchObject({
+          channel: "email",
+          purpose: "register",
+          target: "real.smtp@example.com",
+        });
+        expect(input.code).toMatch(/^\d{6}$/);
+        return {
+          success: true,
+          channel: "email",
+          providerCode: "aliyun_smtp",
+          mode: "real",
+          messageZh: "验证码已发送，请查收。",
+        } as const;
+      }),
+    };
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      env: {
+        ...registerTestEnv,
+        AUTH_VERIFICATION_SENDER_MODE: "real",
+      },
+      verificationSender,
+    });
+
+    const response = await sendRegisterCode(app, {
+      channel: "email",
+      target: "real.smtp@example.com",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      mode: "real",
+    });
+    expect(response.body.mockCode).toBeUndefined();
+    expect(verificationSender.send).toHaveBeenCalledTimes(1);
+    expect([...state.verificationCodes.values()][0]).toMatchObject({
+      channel: "email",
+      purpose: "register",
+      target: "real.smtp@example.com",
+    });
   });
 
   it("returns public captcha config without server secrets", async () => {
@@ -1327,6 +1377,57 @@ describe("auth routes", () => {
     expect(response.json()).toMatchObject({
       error: "duplicate_email",
     });
+  });
+
+  it("keeps account email verification failures public-safe when SMTP fails", async () => {
+    const { client } = await createFakeDatabaseClient();
+    const verificationSender: VerificationSender = {
+      send: vi.fn(async () => ({
+        success: false,
+        channel: "email",
+        providerCode: "aliyun_smtp",
+        mode: "real",
+        error: "email_send_failed",
+        messageZh: "邮件服务暂不可用，请稍后重试。",
+        errorCode: "EAUTH",
+        responseCode: 526,
+        command: "AUTH PLAIN",
+        response: "526 Authentication failed smtp-auth-secret",
+        errorMessageSanitized: "Invalid login smtp-auth-secret verification 246810",
+      }) as const),
+    };
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      env: {
+        ...registerTestEnv,
+        AUTH_VERIFICATION_SENDER_MODE: "real",
+      },
+      verificationSender,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/account/email/send-code",
+      headers: adminAuthorizationHeader("plain-user"),
+      payload: {
+        email: "safe-public@example.com",
+      },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({
+      error: "email_send_failed",
+      channel: "email",
+      mode: "real",
+      message: "邮件服务暂不可用，请稍后重试。",
+    });
+    expect(response.body).not.toContain("EAUTH");
+    expect(response.body).not.toContain("526");
+    expect(response.body).not.toContain("smtp-auth-secret");
+    expect(response.body).not.toContain("246810");
+    expect(verificationSender.send).toHaveBeenCalledTimes(1);
   });
 
   it("confirms an account email verification code and updates the email", async () => {

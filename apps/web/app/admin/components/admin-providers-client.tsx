@@ -12,6 +12,7 @@ import {
   type ProviderFieldDefinition,
 } from "../../../../../packages/shared/src/provider-fields";
 import type {
+  AdminEmailTestResult,
   AdminCdnOperationResult,
   AdminCdnProviderCode,
   AdminCdnRefreshType,
@@ -89,6 +90,7 @@ type RowState = ProviderSaveFeedbackState;
 type FieldDrafts = Record<string, Record<string, string>>;
 type ClearSecretDrafts = Record<string, Record<string, boolean>>;
 type TestResultDrafts = Record<string, MockConnectionTestResult | undefined>;
+type EmailTestResultDrafts = Record<string, AdminEmailTestResult | undefined>;
 
 type RealDevCallFlags = {
   readonly amap: boolean;
@@ -781,6 +783,10 @@ function isOpenMeteoProvider(provider: SafeProviderConfig): boolean {
   return provider.providerType === "weather" && provider.providerCode === "open_meteo";
 }
 
+function isAliyunSmtpProvider(provider: SafeProviderConfig): boolean {
+  return provider.providerType === "email" && provider.providerCode === "aliyun_smtp";
+}
+
 function openMeteoMode(provider: SafeProviderConfig): "free" | "customer" {
   return readStringJson(readJsonField(provider.configJson, "mode")) === "customer"
     ? "customer"
@@ -1039,6 +1045,45 @@ function ProviderTestDetails({ result }: { readonly result?: MockConnectionTestR
         </div>
       ))}
     </dl>
+  );
+}
+
+function EmailTestResultDetails({ result }: { readonly result?: AdminEmailTestResult }) {
+  if (!result) {
+    return null;
+  }
+
+  const message = result.success ? "测试邮件已发送，请检查收件箱或垃圾箱。" : result.messageZh;
+  const details = [
+    result.errorCode ? ["errorCode", result.errorCode] : null,
+    typeof result.responseCode === "number" ? ["responseCode", String(result.responseCode)] : null,
+    result.command ? ["command", result.command] : null,
+    result.response ? ["response", result.response] : null,
+  ].filter((item): item is [string, string] => Boolean(item));
+
+  return (
+    <div
+      data-email-test-result
+      className={cn("rounded-md border px-3 py-2 text-sm", stateClass(result.success ? "saved" : "error"))}
+    >
+      <p className="font-semibold">{message}</p>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">收件人：{result.toMasked}</p>
+      {result.missingFields?.length ? (
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          待补充：{result.missingFields.join("、")}
+        </p>
+      ) : null}
+      {details.length ? (
+        <dl className="mt-2 grid gap-1 text-xs leading-5">
+          {details.map(([label, value]) => (
+            <div key={label} className="grid gap-1 sm:grid-cols-[120px_minmax(0,1fr)]">
+              <dt className="font-semibold text-muted-foreground">{label}</dt>
+              <dd className="min-w-0 break-words text-card-foreground">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+    </div>
   );
 }
 
@@ -1506,9 +1551,16 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   const [saveStateByProvider, setSaveStateByProvider] = useState<Record<string, RowState>>({});
   const [testStateByProvider, setTestStateByProvider] = useState<Record<string, RowState>>({});
   const [testResultByProvider, setTestResultByProvider] = useState<TestResultDrafts>({});
+  const [emailTestDrafts, setEmailTestDrafts] = useState<Record<string, string>>({});
+  const [emailTestStateByProvider, setEmailTestStateByProvider] = useState<
+    Record<string, RowState>
+  >({});
+  const [emailTestResultByProvider, setEmailTestResultByProvider] =
+    useState<EmailTestResultDrafts>({});
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const savingProviderIds = useRef(new Set<string>());
   const testingProviderIds = useRef(new Set<string>());
+  const sendingEmailTestProviderIds = useRef(new Set<string>());
 
   const loadProviders = useCallback(async () => {
     setLoadState({ status: "saving", message: `正在刷新${moduleDefinition.title}状态...` });
@@ -1533,6 +1585,9 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       setConfigFieldDrafts(createConfigFieldDrafts(managedProviders));
       setSecretFieldDrafts(createEmptyFieldDrafts(managedProviders));
       setClearSecretDrafts(createClearSecretDrafts(managedProviders));
+      setEmailTestDrafts(Object.fromEntries(managedProviders.map((provider) => [provider.id, ""])));
+      setEmailTestStateByProvider({});
+      setEmailTestResultByProvider({});
       setDirtyProviders(
         Object.fromEntries(managedProviders.map((provider) => [provider.id, false])),
       );
@@ -1871,8 +1926,111 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     }
   }
 
+  function updateEmailTestDraft(providerId: string, value: string) {
+    setEmailTestDrafts((current) => ({ ...current, [providerId]: value }));
+    setEmailTestStateByProvider((current) => {
+      const state = current[providerId];
+      if (!state || state.status === "testing") {
+        return current;
+      }
+      return { ...current, [providerId]: { status: "idle" } };
+    });
+  }
+
+  async function sendTestEmail(provider: SafeProviderConfig) {
+    if (
+      sendingEmailTestProviderIds.current.has(provider.id) ||
+      emailTestStateByProvider[provider.id]?.status === "testing"
+    ) {
+      return;
+    }
+
+    const to = (emailTestDrafts[provider.id] ?? "").trim();
+    if (!to) {
+      setEmailTestStateByProvider((current) => ({
+        ...current,
+        [provider.id]: { status: "error", message: "请填写测试邮箱。" },
+      }));
+      return;
+    }
+
+    sendingEmailTestProviderIds.current.add(provider.id);
+    setEmailTestStateByProvider((current) => ({
+      ...current,
+      [provider.id]: { status: "testing", message: "正在发送测试邮件..." },
+    }));
+
+    try {
+      const result = await adminApiFetch<AdminEmailTestResult>(
+        "/admin/providers/email/aliyun_smtp/send-test",
+        {
+          method: "POST",
+          body: JSON.stringify({ to }),
+        },
+      );
+      setEmailTestResultByProvider((current) => ({ ...current, [provider.id]: result }));
+      setEmailTestStateByProvider((current) => ({
+        ...current,
+        [provider.id]: {
+          status: result.success ? "saved" : "error",
+          message: result.messageZh,
+        },
+      }));
+    } catch (error) {
+      setEmailTestResultByProvider((current) => ({ ...current, [provider.id]: undefined }));
+      setEmailTestStateByProvider((current) => ({
+        ...current,
+        [provider.id]: {
+          status: "error",
+          message:
+            error instanceof Error ? error.message : "测试邮件发送失败，请检查配置后重试。",
+        },
+      }));
+    } finally {
+      sendingEmailTestProviderIds.current.delete(provider.id);
+    }
+  }
+
   function selectProvider(provider: SafeProviderConfig) {
     setSelectedProviderId(provider.id);
+  }
+
+  function renderEmailTestPanel(provider: SafeProviderConfig) {
+    const state = emailTestStateByProvider[provider.id];
+    const result = emailTestResultByProvider[provider.id];
+    const isSending =
+      sendingEmailTestProviderIds.current.has(provider.id) || state?.status === "testing";
+
+    return (
+      <section
+        data-email-send-test-panel
+        className="grid gap-3 rounded-md border border-border bg-background/35 px-3 py-3"
+      >
+        <SectionTitle
+          title="发送测试邮件"
+          description="真实测试会通过当前 SMTP 配置发送邮件。"
+        />
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+          <FormField label="测试邮箱">
+            <Input
+              type="email"
+              value={emailTestDrafts[provider.id] ?? ""}
+              placeholder="test@example.com"
+              onChange={(event) => updateEmailTestDraft(provider.id, event.target.value)}
+            />
+          </FormField>
+          <Button disabled={isSending} onClick={() => void sendTestEmail(provider)}>
+            {isSending ? "发送中..." : "发送测试邮件"}
+          </Button>
+        </div>
+        {state?.message && !result ? (
+          <div className={cn("rounded-md border px-3 py-2 text-sm", stateClass(state.status))}>
+            {state.message}
+          </div>
+        ) : null}
+        <EmailTestResultDetails result={result} />
+      </section>
+    );
   }
 
   function renderProviderListRow(provider: SafeProviderConfig, index: number) {
@@ -2182,6 +2340,8 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               </p>
             )}
           </section>
+
+          {isAliyunSmtpProvider(provider) ? renderEmailTestPanel(provider) : null}
 
           <ProviderCardErrorBoundary providerLabel={providerName(provider)}>
             <AdvancedConfigContent

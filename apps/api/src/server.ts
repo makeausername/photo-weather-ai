@@ -28,6 +28,7 @@ import { registerForecastRoutes } from "./forecast-routes.js";
 import { resolveGeoProvider, resolveReverseGeocodeProvider } from "./geo-provider.js";
 import { registerPaymentRoutes } from "./payment-routes.js";
 import { registerSearchRoutes } from "./search-routes.js";
+import type { SmtpTransportFactory, VerificationSender } from "./verification-senders.js";
 import { createRuntimeWeatherDataService } from "./weather-provider.js";
 
 export type ApiServerOptions = {
@@ -41,6 +42,8 @@ export type ApiServerOptions = {
   readonly astroServiceClient?: AstroServiceClientLike;
   readonly paymentFetcher?: typeof fetch;
   readonly captchaFetcher?: typeof fetch;
+  readonly verificationSender?: VerificationSender;
+  readonly emailTransportFactory?: SmtpTransportFactory;
   readonly env?: NodeJS.ProcessEnv;
   readonly logger?: boolean;
 };
@@ -547,9 +550,15 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     dbClient: options.dbClient,
     authConfig,
     env,
+    verificationSender: options.verificationSender,
     captchaFetcher: options.captchaFetcher,
   });
-  registerAccountRoutes(app, { dbClient: options.dbClient, authConfig, env });
+  registerAccountRoutes(app, {
+    dbClient: options.dbClient,
+    authConfig,
+    env,
+    verificationSender: options.verificationSender,
+  });
   registerPaymentRoutes(app, {
     dbClient: options.dbClient,
     authConfig,
@@ -580,6 +589,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     resolveGeoProvider: resolveRuntimeGeoProvider,
     terrainProvider: options.terrainProvider,
     env,
+    emailTransportFactory: options.emailTransportFactory,
   });
   registerAdminUserRoutes(app, {
     dbClient: options.dbClient,
