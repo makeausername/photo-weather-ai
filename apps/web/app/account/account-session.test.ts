@@ -340,9 +340,9 @@ describe("account center foundation", () => {
       "安全设置",
       "查询历史",
       "绑定方式",
-      "管理入口",
       "注销账户",
     ]);
+    expect(accountCenterSectionLabels).not.toContain("管理入口");
   });
 
   it("shows the unauthenticated account login prompt", () => {
@@ -477,6 +477,9 @@ describe("account center foundation", () => {
     expect(adminHtml).toContain("不受套餐限制");
     expect(adminHtml).toContain("进入管理后台");
     expect(adminHtml).toContain('href="/admin"');
+    expect(adminHtml.match(/进入管理后台/g)?.length ?? 0).toBe(1);
+    expect(adminHtml).not.toContain("管理入口");
+    expect(adminHtml).not.toContain("管理系统配置、服务商配置和历史校准。");
     expect(adminHtml).not.toContain("试用剩余");
     expect(adminHtml).not.toContain("付费套餐");
     expect(adminHtml).not.toContain("到期时间");
@@ -687,12 +690,16 @@ describe("account center foundation", () => {
       expect(html).not.toContain("\u5360\u4f4d");
       expect(html).not.toContain("\u656c\u8bf7\u671f\u5f85");
       expect(html).not.toContain("\u6682\u65e0\u529f\u80fd");
+      expect(html).not.toContain("overflow-x-auto");
+      expect(html).not.toContain("管理系统配置、服务商配置和历史校准。");
     }
 
     expect(userHtml).not.toContain('href="/admin"');
+    expect(userHtml).not.toContain("进入管理后台");
     expect(userHtml).not.toContain("data-account-admin-placeholder");
     expect(userHtml).not.toContain("data-empty-admin-slot");
-    expect(adminHtml).toContain('href="/admin"');
+    expect(adminHtml).not.toContain("data-account-admin-placeholder");
+    expect(adminHtml).not.toContain("data-empty-admin-slot");
   });
 
   it("keeps the profile-missing layout free of sparse preference and permission cards", () => {
@@ -709,23 +716,45 @@ describe("account center foundation", () => {
     expect(html).not.toContain("账户偏好将在保存后显示");
   });
 
-  it("renders the admin card only for admin sessions", () => {
+  it("renders one membership admin CTA only for admin sessions", () => {
     const userHtml = renderAuthenticatedAccountCenter(baseAccountSession);
-    const adminHtml = renderAuthenticatedAccountCenter({
-      ...baseAccountSession,
-      roles: [{ id: "role-admin", code: "admin", name: "admin", displayName: "管理员" }],
-      roleCodes: ["admin"],
-      permissions: ["admin.manage"],
-      isAdmin: true,
-    });
+    const adminHtml = renderAuthenticatedAccountCenter(
+      {
+        ...baseAccountSession,
+        roles: [{ id: "role-admin", code: "admin", name: "admin", displayName: "管理员" }],
+        roleCodes: ["admin"],
+        permissions: ["admin.manage"],
+        isAdmin: true,
+      },
+      [],
+      {
+        orders: [],
+        entitlements: [],
+        access: createAccountAccess({
+          tier: "admin",
+          hasFullAccess: true,
+          maxForecastHours: 168,
+          allowedTargets: ["general", "cloud_sea", "glow", "astro"],
+          canUseAiExplanation: true,
+          canViewFullHistory: true,
+          currentPlanName: "管理员",
+          upgradeRequiredForFullAccess: false,
+          reason: "admin",
+        }),
+      },
+    );
     const adminMenuHtml = renderPublicAccountMenu({ showAdminEntry: true });
 
-    expect(userHtml).not.toContain("管理后台");
-    expect(adminHtml).toContain("管理后台");
+    expect(userHtml).not.toContain("进入管理后台");
+    expect(userHtml).not.toContain('href="/admin"');
+    expect(adminHtml).toContain('data-account-membership-panel="compact"');
+    expect(adminHtml).toContain('data-membership-state="admin"');
     expect(adminHtml).toContain("进入管理后台");
-    expect(adminHtml).toContain("管理系统配置、服务商配置和历史校准。");
     expect(adminHtml).toContain('href="/admin"');
+    expect(adminHtml.match(/进入管理后台/g)?.length ?? 0).toBe(1);
     expect(adminHtml).toContain("管理员");
+    expect(adminHtml).not.toContain("管理入口");
+    expect(adminHtml).not.toContain("管理系统配置、服务商配置和历史校准。");
     expect(adminHtml).not.toContain("admin.manage");
     expect(adminHtml).not.toContain("audit.read");
     expect(adminHtml).not.toContain("providers.manage");
@@ -742,15 +771,35 @@ describe("account center foundation", () => {
       "users.manage",
       "usage.read",
     ];
-    const html = renderAuthenticatedAccountCenter({
-      ...baseAccountSession,
-      roles: [{ id: "role-admin", code: "admin", name: "admin", displayName: "admin" }],
-      roleCodes: ["admin"],
-      permissions: rawPermissionCodes,
-      isAdmin: true,
-    });
+    const html = renderAuthenticatedAccountCenter(
+      {
+        ...baseAccountSession,
+        roles: [{ id: "role-admin", code: "admin", name: "admin", displayName: "admin" }],
+        roleCodes: ["admin"],
+        permissions: rawPermissionCodes,
+        isAdmin: true,
+      },
+      [],
+      {
+        orders: [],
+        entitlements: [],
+        access: createAccountAccess({
+          tier: "admin",
+          hasFullAccess: true,
+          maxForecastHours: 168,
+          allowedTargets: ["general", "cloud_sea", "glow", "astro"],
+          canUseAiExplanation: true,
+          canViewFullHistory: true,
+          currentPlanName: "管理员",
+          upgradeRequiredForFullAccess: false,
+          reason: "admin",
+        }),
+      },
+    );
 
     expect(html).toContain('href="/admin"');
+    expect(html.match(/进入管理后台/g)?.length ?? 0).toBe(1);
+    expect(html).not.toContain("管理入口");
     for (const permissionCode of rawPermissionCodes) {
       expect(html).not.toContain(permissionCode);
     }

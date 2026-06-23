@@ -58,7 +58,6 @@ export const accountCenterSectionLabels = [
   "安全设置",
   "查询历史",
   "绑定方式",
-  "管理入口",
   "注销账户",
 ] as const;
 
@@ -190,8 +189,6 @@ export function AuthenticatedAccountCenter({
     readonly access?: AccountAccessStatus;
   };
 }) {
-  const showAdminEntry = shouldShowAdminEntry(session);
-
   return (
     <div className="grid gap-5">
       <AccountOverviewCard session={session} />
@@ -209,7 +206,6 @@ export function AuthenticatedAccountCenter({
             isLoggingOut={isLoggingOut}
             onSessionUpdate={onSessionUpdate}
           />
-          {showAdminEntry ? <AdminAccessCard /> : null}
         </div>
         <div className="grid gap-5">
           <ContactBindingCard session={session} onSessionUpdate={onSessionUpdate} />
@@ -949,24 +945,6 @@ function HistoryRow({
         </div>
       </div>
     </article>
-  );
-}
-
-function AdminAccessCard() {
-  return (
-    <Card className="border-primary p-5 shadow-sm">
-      <Badge variant="muted">管理入口</Badge>
-      <h2 className="mt-3 text-lg font-bold text-card-foreground">管理后台</h2>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">
-        管理系统配置、服务商配置和历史校准。
-      </p>
-      <Link
-        href="/admin"
-        className="mt-4 inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
-      >
-        进入管理后台
-      </Link>
-    </Card>
   );
 }
 
