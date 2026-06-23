@@ -109,7 +109,7 @@ export function AdminDashboardClient() {
         ? `¥${(state.orderSummary.totalRevenueCents / 100).toFixed(2)}`
         : "--",
       description: state.orderSummary
-        ? `${state.orderSummary.paidOrders} 笔已支付，今日 ¥${(state.orderSummary.todayRevenueCents / 100).toFixed(2)}`
+        ? `${state.orderSummary.paidOrders} 笔付费订单，今日 ¥${(state.orderSummary.todayRevenueCents / 100).toFixed(2)}`
         : "等待订单统计",
       badge: "订单",
     },

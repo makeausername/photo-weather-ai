@@ -163,6 +163,14 @@ export function AdminOrderDetailClient({ orderNo }: { readonly orderNo: string }
                   {detail.order.orderNo}
                 </h2>
                 {statusBadge(detail.order.status)}
+                <Badge variant={detail.order.billingCategory === "system_grant" ? "info" : "muted"}>
+                  {detail.order.billingCategoryLabel}
+                </Badge>
+                {detail.order.adminLabels.map((label) => (
+                  <Badge key={label} variant="muted">
+                    {label}
+                  </Badge>
+                ))}
               </div>
               <p className="mt-2 text-sm text-muted-foreground">
                 {paymentProviderDisplayName(detail.order.provider)} /{" "}
@@ -172,12 +180,16 @@ export function AdminOrderDetailClient({ orderNo }: { readonly orderNo: string }
             <Badge variant="info">{status}</Badge>
           </div>
           <div
-            className={getAdaptiveGridClassName(8, {
+            className={getAdaptiveGridClassName(9, {
               variant: "metric",
               allowThreeMetricColumns: true,
             })}
           >
             <InfoItem label="金额" value={formatMoney(detail.order.amountCents)} />
+            <InfoItem
+              label="收入统计"
+              value={detail.order.revenueEligible ? "计入收入" : "不计入收入"}
+            />
             <InfoItem label="币种" value={detail.order.currency} />
             <InfoItem label="支付流水" value={maskProviderTradeNo(detail.order.providerTradeNo)} />
             <InfoItem

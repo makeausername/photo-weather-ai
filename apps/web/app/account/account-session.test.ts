@@ -23,6 +23,7 @@ import {
   loginServiceUnavailableMessage,
   sanitizeAuthErrorMessage,
 } from "../../components/auth-errors";
+import { CollapsibleSection } from "../../components/collapsible-section";
 import {
   PublicAccountEntry,
   PublicAccountMenuContent,
@@ -381,7 +382,10 @@ describe("account center foundation", () => {
     expect(html).toContain("会员与套餐");
     expect(html).toContain("正在读取会员状态");
     expect(html).toContain("查询历史");
-    expect(html).toContain("暂无查询历史");
+    expect(html).toContain("查询历史默认收起，展开后查看最近分析。");
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain("展开");
+    expect(html).not.toContain("暂无查询历史");
     expect(html).toContain("修改密码");
     expect(html).toContain("当前密码");
     expect(html).toContain("新密码");
@@ -426,7 +430,7 @@ describe("account center foundation", () => {
     }
   });
 
-  it("renders compact forecast history rows with correct target jump links", () => {
+  it("keeps forecast history collapsed by default while preserving target jump links", () => {
     const html = renderAuthenticatedAccountCenter(baseAccountSession, [cloudSeaHistoryRecord]);
     const href = buildForecastHistoryHref(cloudSeaHistoryRecord);
 
@@ -443,14 +447,48 @@ describe("account center foundation", () => {
     expect(href).toContain("timezone=Asia%2FShanghai");
     expect(href).toContain("locationId=location-test");
     expect(href).toContain("photoSpotId=spot-test");
-    expect(html).toContain("测试山顶");
-    expect(html).toContain("云海");
-    expect(html).toContain("未来48小时");
-    expect(html).toContain("推荐前往");
-    expect(html).toContain("82 分");
-    expect(html).toContain("打开分析");
-    expect(html).toContain('href="/cloud-sea?');
+    expect(html).toContain("查询历史");
+    expect(html).toContain("1 笔");
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain("测试山顶");
+    expect(html).not.toContain("推荐前往");
+    expect(html).not.toContain("82 分");
+    expect(html).not.toContain("打开分析");
+    expect(html).not.toContain('href="/cloud-sea?');
     expect(html).not.toContain("坐标不足");
+  });
+
+  it("renders collapsed-section children only after expansion", () => {
+    const closedHtml = renderToStaticMarkup(
+      React.createElement(
+        CollapsibleSection,
+        {
+          title: "查询历史",
+          description: "查询历史默认收起，展开后查看最近分析。",
+          count: 1,
+        },
+        React.createElement("div", null, "测试山顶"),
+      ),
+    );
+    const openHtml = renderToStaticMarkup(
+      React.createElement(
+        CollapsibleSection,
+        {
+          title: "查询历史",
+          description: "查询历史默认收起，展开后查看最近分析。",
+          count: 1,
+          open: true,
+        },
+        React.createElement("div", null, "测试山顶"),
+      ),
+    );
+
+    expect(closedHtml).toContain('aria-expanded="false"');
+    expect(closedHtml).toContain("展开");
+    expect(closedHtml).not.toContain("测试山顶");
+    expect(openHtml).toContain('aria-expanded="true"');
+    expect(openHtml).toContain("收起");
+    expect(openHtml).toContain("测试山顶");
   });
 
   it("renders a clean admin membership state without missing trial or paid fields", () => {
@@ -512,7 +550,9 @@ describe("account center foundation", () => {
     expect(html).toContain("可查询：未来 24 小时基础天气");
     expect(html).toContain("查看月卡/季卡/年卡");
     expect(html).toContain('href="/pricing"');
-    expect(html).toContain("暂无订单记录");
+    expect(html).toContain("付费订单");
+    expect(html).toContain("0 笔");
+    expect(html).not.toContain("暂无付费订单");
     expect(html).not.toContain("付费套餐");
     expect(html).not.toContain("试用剩余");
     expect(html).not.toContain("暂无数据");
@@ -541,7 +581,15 @@ describe("account center foundation", () => {
 
   it("renders active trial membership with remaining days and expiration only", () => {
     const html = renderAuthenticatedAccountCenter(baseAccountSession, [], {
-      orders: [],
+      orders: [
+        createBillingOrderRecord({
+          orderNo: "T202606210001",
+          provider: "mock",
+          amountCents: 0,
+          productCode: "trial_7_days",
+          providerTradeNo: "registration_trial:user-1",
+        }),
+      ],
       entitlements: [],
       access: createAccountAccess({
         tier: "trial",
@@ -569,12 +617,19 @@ describe("account center foundation", () => {
     expect(html).toContain("完整权限");
     expect(html).toContain("续费/升级");
     expect(html).toContain("续费后，有效期会接在当前试用到期后顺延。");
+    expect(html).toContain("付费订单");
+    expect(html).toContain("0 笔");
     expect(html).not.toContain("付费套餐");
+    expect(html).not.toContain("T202606210001");
+    expect(html).not.toContain("模拟支付");
+    expect(html).not.toContain("¥0.00");
+    expect(html).not.toContain("registration_trial");
+    expect(html).not.toContain("trial_7_days");
     expect(html).not.toContain("暂无订单记录");
     expect(html).not.toContain("暂无数据");
   });
 
-  it("renders paid membership with plan, expiration, remaining days, renewal CTA, and compact recent order", () => {
+  it("renders paid membership with plan, expiration, remaining days, renewal CTA, and collapsed paid orders", () => {
     const html = renderAuthenticatedAccountCenter(baseAccountSession, [], {
       orders: [createBillingOrderRecord()],
       entitlements: [
@@ -617,10 +672,12 @@ describe("account center foundation", () => {
     expect(html).toContain(">续费</a>");
     expect(html).toContain("续费后，有效期会从当前到期时间继续顺延。");
     expect(html).toContain("未来 168 小时");
-    expect(html).toContain("最近订单");
-    expect(html).toContain("P202606210001");
-    expect(html).toContain("微信支付");
-    expect(html).toContain("已支付");
+    expect(html).toContain("付费订单");
+    expect(html).toContain("1 笔");
+    expect(html).toContain("付费订单只展示月卡、季卡、年卡等实际购买记录。");
+    expect(html).not.toContain("P202606210001");
+    expect(html).not.toContain("微信支付");
+    expect(html).not.toContain("已支付</");
     expect(html).not.toContain("monthly_full");
     expect(html).not.toContain("权益记录");
     expect(html).not.toContain("已支付订单");
@@ -649,7 +706,9 @@ describe("account center foundation", () => {
 
     expect(html).toContain('data-account-membership-panel="compact"');
     expect(html).toContain('data-membership-orders="compact"');
-    expect(html).toContain("暂无订单记录");
+    expect(html).toContain("付费订单");
+    expect(html).toContain("0 笔");
+    expect(html).not.toContain("暂无付费订单");
     expect(html).not.toContain(">暂无订单<");
     expect(html).not.toContain("购买月卡、季卡或年卡后，订单状态和会员有效期会显示在这里。");
     expect(html).not.toContain("查看定价");
@@ -658,13 +717,14 @@ describe("account center foundation", () => {
     expect(html).not.toContain("overflow-x-auto");
   });
 
-  it("renders a compact and useful empty history state", () => {
+  it("keeps empty history collapsed by default without large placeholders", () => {
     const html = renderAuthenticatedAccountCenter(baseAccountSession, []);
 
-    expect(html).toContain("暂无查询历史");
-    expect(html).toContain("完成一次天气分析后，最近记录会自动出现在这里。");
-    expect(html).toContain("开始分析");
-    expect(html).toContain('href="/"');
+    expect(html).toContain("查询历史");
+    expect(html).toContain("查询历史默认收起，展开后查看最近分析。");
+    expect(html).not.toContain("暂无查询历史");
+    expect(html).not.toContain("完成一次天气分析后，最近记录会自动出现在这里。");
+    expect(html).not.toContain("开始分析");
     expect(html).not.toContain("占位");
   });
 

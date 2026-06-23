@@ -4,7 +4,10 @@ import {
   fullForecastAccessEntitlementType,
   getForecastAccessSettings,
   isInternalTrialProduct,
+  monthlyFullAccessProductCode,
+  quarterlyFullAccessProductCode,
   trialFullAccessProductCode,
+  yearlyFullAccessProductCode,
 } from "./access.js";
 import { createAuditLog } from "./audit.js";
 import { getPrismaClient } from "./client.js";
@@ -298,6 +301,57 @@ function readBooleanMetadata(value: JsonValue | null | undefined, key: string): 
   return typeof field === "boolean" ? field : null;
 }
 
+const publicFullAccessPurchaseProductCodes = new Set<string>([
+  monthlyFullAccessProductCode,
+  quarterlyFullAccessProductCode,
+  yearlyFullAccessProductCode,
+]);
+
+export function isInternalTrialOrder(
+  order: Pick<
+    PaymentOrderRecord,
+    "productCode" | "metadataJson" | "providerTradeNo" | "provider" | "amountCents"
+  >,
+): boolean {
+  const source = readStringMetadata(order.metadataJson, "source");
+  const internal = readBooleanMetadata(order.metadataJson, "internal");
+  return (
+    order.productCode === trialFullAccessProductCode ||
+    internal === true ||
+    source === "registration_trial" ||
+    order.providerTradeNo?.startsWith("registration_trial:") === true ||
+    (order.provider === "mock" &&
+      order.amountCents === 0 &&
+      order.productCode === trialFullAccessProductCode)
+  );
+}
+
+export function isUserVisibleBillingOrder(
+  order: Pick<
+    PaymentOrderRecord,
+    "productCode" | "metadataJson" | "providerTradeNo" | "provider" | "amountCents"
+  >,
+): boolean {
+  if (isInternalTrialOrder(order) || order.amountCents <= 0) {
+    return false;
+  }
+
+  if (!publicFullAccessPurchaseProductCodes.has(order.productCode)) {
+    return false;
+  }
+
+  return order.provider === "wechat_pay" || order.provider === "alipay" || order.provider === "mock";
+}
+
+export function isPaidUserPurchaseOrder(
+  order: Pick<
+    PaymentOrderRecord,
+    "productCode" | "metadataJson" | "providerTradeNo" | "provider" | "amountCents" | "status"
+  >,
+): boolean {
+  return isUserVisibleBillingOrder(order) && order.status === "paid" && order.amountCents > 0;
+}
+
 function productGrantsFullForecastAccess(product: BillingProductRecord): boolean {
   if (!product.durationDays || product.durationDays <= 0) {
     return false;
@@ -446,6 +500,20 @@ export async function listUserPaymentOrders(
     take: input.limit ?? 20,
   });
   return records.map(normalizePaymentOrder);
+}
+
+export async function listUserVisibleBillingOrders(
+  input: { readonly userId: string; readonly limit?: number },
+  options: { readonly client?: DatabaseClient } = {},
+): Promise<PaymentOrderRecord[]> {
+  const client = await resolveClient(options.client);
+  const paymentOrder = requireDelegate(client.paymentOrder, "paymentOrder");
+  const records = await paymentOrder.findMany({
+    where: { userId: input.userId },
+    orderBy: [{ createdAt: "desc" }],
+  });
+  const limit = input.limit ?? 20;
+  return records.map(normalizePaymentOrder).filter(isUserVisibleBillingOrder).slice(0, limit);
 }
 
 export async function updatePaymentOrderStatus(

@@ -408,6 +408,7 @@ export type AdminUserOrderItem = {
   readonly expiresAt: string | null;
   readonly providerTradeNo: string | null;
   readonly entitlementGrantedAt: string | null;
+  readonly revenueEligible: boolean;
   readonly createdAt: string;
   readonly updatedAt: string;
 };
@@ -534,6 +535,10 @@ export type AdminPaymentOrderListItem = {
   readonly expiresAt: string | null;
   readonly providerTradeNo: string | null;
   readonly entitlementGrantedAt: string | null;
+  readonly billingCategory: "paid_purchase" | "system_grant" | "other";
+  readonly billingCategoryLabel: string;
+  readonly revenueEligible: boolean;
+  readonly adminLabels: readonly string[];
   readonly createdAt: string;
   readonly updatedAt: string;
 };
@@ -551,6 +556,7 @@ export type AdminPaymentOrderListResponse = {
     readonly paidOrders: number;
     readonly unpaidOrders: number;
     readonly failedOrCanceledOrders: number;
+    readonly systemGrantOrders: number;
     readonly totalRevenueCents: number;
     readonly todayRevenueCents: number;
   };

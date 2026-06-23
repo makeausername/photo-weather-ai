@@ -24,6 +24,7 @@ import {
   type PublicAccountSession,
 } from "../../components/account-session";
 import type { AccountRole, JsonValue } from "../admin/admin-api";
+import { CollapsibleSection } from "../../components/collapsible-section";
 import { Badge, Button, Card, FormField, Input, cn } from "../../components/ui";
 import { paymentProviderDisplayName, productDisplayName } from "../../components/display-labels";
 import {
@@ -344,7 +345,7 @@ function MembershipSummaryCard({
     <Card data-account-membership-panel="compact" className="p-5 shadow-sm sm:p-6">
       <SectionTitle
         title="会员与套餐"
-        description="这里显示当前套餐、访问权限和最近订单。"
+        description="这里显示当前套餐和访问权限。"
         aside={
           membership ? (
             <Badge variant={membership.badgeVariant}>{membership.tierLabel}</Badge>
@@ -406,7 +407,7 @@ function MembershipSummaryCard({
           ) : null}
 
           <RecentMembershipOrders
-            orders={membership.recentOrders}
+            orders={membership.paidOrders}
             emptyMessage={membership.emptyOrdersMessage}
           />
         </div>
@@ -438,7 +439,7 @@ type MembershipViewModel = {
   readonly primaryAction?: MembershipPrimaryAction;
   readonly detailItems: readonly MembershipDetailItem[];
   readonly renewalCopy?: string;
-  readonly recentOrders: readonly AccountBillingOrderRecord[];
+  readonly paidOrders: readonly AccountBillingOrderRecord[];
   readonly emptyOrdersMessage?: string;
 };
 
@@ -450,11 +451,11 @@ function buildMembershipViewModel(
   const admin = shouldShowAdminEntry(session) || access?.tier === "admin";
   const effectiveAccess = access ?? fallbackMembershipAccess(session, admin);
   const state = membershipStateForAccess(effectiveAccess, admin);
-  const recentOrders = selectRecentMembershipOrders(effectiveAccess, orders, state);
+  const paidOrders = selectPaidMembershipOrders(orders, state);
   const tierLabel = membershipTierLabel(effectiveAccess, state);
   const emptyOrdersMessage =
-    recentOrders.length === 0 && (state === "free" || effectiveAccess.trialExpired)
-      ? "暂无订单记录"
+    state !== "admin" && paidOrders.length === 0
+      ? "暂无付费订单"
       : undefined;
 
   return {
@@ -467,7 +468,7 @@ function buildMembershipViewModel(
     primaryAction: membershipPrimaryAction(state),
     detailItems: membershipDetailItems(effectiveAccess, state, tierLabel),
     renewalCopy: membershipRenewalCopy(state),
-    recentOrders,
+    paidOrders,
     emptyOrdersMessage,
   };
 }
@@ -538,7 +539,7 @@ function membershipPrimaryMessage(access: AccountAccessStatus, state: Membership
     return "管理员拥有完整访问权限，不受套餐限制。";
   }
   if (state === "trial") {
-    return "试用期内可使用完整摄影判断。";
+    return "系统赠送的 7 天试用已自动生效。";
   }
   if (state === "paid") {
     return "当前套餐可使用完整摄影判断。";
@@ -628,26 +629,32 @@ function membershipRenewalCopy(state: MembershipState): string | undefined {
   return undefined;
 }
 
-function selectRecentMembershipOrders(
-  access: AccountAccessStatus,
+function selectPaidMembershipOrders(
   orders: readonly AccountBillingOrderRecord[],
   state: MembershipState,
 ): readonly AccountBillingOrderRecord[] {
   if (state === "admin") {
     return [];
   }
-  const paidOrders = orders.filter((order) => order.status === "paid");
-  if (state === "paid" || state === "trial") {
-    return paidOrders.slice(0, 3);
-  }
-  return (access.trialExpired ? paidOrders : orders).slice(0, 3);
+  const paidOrders = orders.filter(isPublicPaidMembershipOrder);
+  return paidOrders.slice(0, 5);
 }
 
-function shouldShowRecentOrders(
+function shouldShowMembershipOrders(
   orders: readonly AccountBillingOrderRecord[],
   emptyMessage?: string,
 ): boolean {
   return orders.length > 0 || Boolean(emptyMessage);
+}
+
+function isPublicPaidMembershipOrder(order: AccountBillingOrderRecord): boolean {
+  return (
+    order.status === "paid" &&
+    order.amountCents > 0 &&
+    (order.productCode === "monthly_full" ||
+      order.productCode === "quarterly_full" ||
+      order.productCode === "yearly_full")
+  );
 }
 
 function compactOptionalField(
@@ -696,24 +703,32 @@ function RecentMembershipOrders({
   readonly orders: readonly AccountBillingOrderRecord[];
   readonly emptyMessage?: string;
 }) {
-  if (!shouldShowRecentOrders(orders, emptyMessage)) {
+  if (!shouldShowMembershipOrders(orders, emptyMessage)) {
     return null;
   }
 
   return (
-    <div className="grid min-w-0 gap-2" data-membership-orders="compact">
-      <p className="text-sm font-bold text-card-foreground">最近订单</p>
-      {orders.length > 0 ? (
-        <div className="grid gap-2">
-          {orders.map((order) => (
-            <MembershipOrderRow key={order.orderNo} order={order} />
-          ))}
-        </div>
-      ) : (
-        <p className="rounded-lg bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
-          {emptyMessage}
-        </p>
-      )}
+    <div data-membership-orders="compact">
+      <CollapsibleSection
+        title="付费订单"
+        description="付费订单只展示月卡、季卡、年卡等实际购买记录。"
+        count={orders.length}
+        defaultOpen={false}
+        lazyRender
+        className="rounded-lg bg-muted/25 px-3 py-3"
+      >
+        {orders.length > 0 ? (
+          <div className="grid gap-2">
+            {orders.map((order) => (
+              <MembershipOrderRow key={order.orderNo} order={order} />
+            ))}
+          </div>
+        ) : (
+          <p className="rounded-lg bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
+            {emptyMessage}
+          </p>
+        )}
+      </CollapsibleSection>
     </div>
   );
 }
@@ -747,19 +762,25 @@ function ForecastHistoryCard({
 }: {
   readonly initialHistory?: readonly AccountForecastHistoryRecord[];
 }) {
+  const [open, setOpen] = useState(false);
   const [items, setItems] = useState<readonly AccountForecastHistoryRecord[] | null>(
     initialHistory ?? null,
   );
-  const [state, setState] = useState<LoadState>(initialHistory === undefined ? "loading" : "ready");
+  const [state, setState] = useState<LoadState>("ready");
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
-    let cancelled = false;
-
     if (initialHistory !== undefined) {
       setItems(initialHistory);
       setState("ready");
       setErrorMessage("");
+    }
+  }, [initialHistory]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!open || initialHistory !== undefined || items !== null) {
       return () => {
         cancelled = true;
       };
@@ -785,7 +806,7 @@ function ForecastHistoryCard({
     return () => {
       cancelled = true;
     };
-  }, [initialHistory]);
+  }, [initialHistory, items, open]);
 
   async function handleDelete(id: string) {
     try {
@@ -796,25 +817,41 @@ function ForecastHistoryCard({
     }
   }
 
+  function handleHistoryOpenChange(nextOpen: boolean) {
+    setOpen(nextOpen);
+    if (nextOpen && initialHistory === undefined && items === null) {
+      setState("loading");
+    }
+  }
+
   const history = items ?? [];
 
   return (
     <Card className="p-5 shadow-sm sm:p-6">
-      <SectionTitle title="查询历史" description="最近成功分析的地点会保存在这里。" />
-      {state === "loading" ? (
-        <p className="mt-4 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-          正在读取查询历史...
-        </p>
-      ) : null}
-      {errorMessage ? <StatusMessage state="error" message={errorMessage} /> : null}
-      {state === "ready" && history.length === 0 ? <HistoryEmptyState /> : null}
-      {history.length > 0 ? (
-        <div className="mt-4 grid gap-3">
-          {history.map((item) => (
-            <HistoryRow key={item.id} item={item} onDelete={() => void handleDelete(item.id)} />
-          ))}
-        </div>
-      ) : null}
+      <CollapsibleSection
+        title="查询历史"
+        description="查询历史默认收起，展开后查看最近分析。"
+        count={items?.length}
+        open={open}
+        onOpenChange={handleHistoryOpenChange}
+        defaultOpen={false}
+        lazyRender
+      >
+        {state === "loading" ? (
+          <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+            正在读取查询历史...
+          </p>
+        ) : null}
+        {errorMessage ? <StatusMessage state="error" message={errorMessage} /> : null}
+        {state === "ready" && history.length === 0 ? <HistoryEmptyState /> : null}
+        {history.length > 0 ? (
+          <div className="grid gap-3">
+            {history.map((item) => (
+              <HistoryRow key={item.id} item={item} onDelete={() => void handleDelete(item.id)} />
+            ))}
+          </div>
+        ) : null}
+      </CollapsibleSection>
     </Card>
   );
 }

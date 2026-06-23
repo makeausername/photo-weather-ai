@@ -19,6 +19,7 @@ import {
   updateUserPassword,
 } from "./auth.js";
 import { hashUserPassword } from "./passwords.js";
+import { isPaidUserPurchaseOrder } from "./payments.js";
 import type {
   AdminAuditLogRecord,
   AuthenticatedPrincipal,
@@ -82,6 +83,7 @@ export type AdminUserOrderItem = {
   readonly expiresAt: Date | null;
   readonly providerTradeNo: string | null;
   readonly entitlementGrantedAt: Date | null;
+  readonly revenueEligible: boolean;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 };
@@ -368,6 +370,7 @@ function normalizePaymentOrder(record: any): AdminUserOrderItem {
     expiresAt: record.expiresAt ?? null,
     providerTradeNo: record.providerTradeNo ?? null,
     entitlementGrantedAt: record.entitlementGrantedAt ?? null,
+    revenueEligible: isPaidUserPurchaseOrder(record),
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
@@ -599,7 +602,7 @@ export async function getUserOperationalSummary(
     listEntitlementsForUser(input.userId, client),
     listCreditLedgerForUser(input.userId, client),
   ]);
-  const paidOrders = orders.filter((order) => order.status === "paid");
+  const paidOrders = orders.filter((order) => order.revenueEligible);
   const currentCreditBalance =
     creditLedger[0]?.balanceAfter ??
     creditLedger.reduce((total, entry) => total + Number(entry.delta ?? 0), 0);
@@ -761,7 +764,7 @@ export async function getAdminUserDetail(
       listCreditLedgerForUser(userId, client),
       resolveUserForecastAccess({ userId, client, now }),
     ]);
-  const paidOrders = orders.filter((order) => order.status === "paid");
+  const paidOrders = orders.filter((order) => order.revenueEligible);
   const unpaidOrders = orders.filter(
     (order) => !["paid", "closed", "canceled", "refunded"].includes(order.status),
   );

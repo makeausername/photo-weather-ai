@@ -47,6 +47,7 @@ const initialResponse: AdminPaymentOrderListResponse = {
     paidOrders: 0,
     unpaidOrders: 0,
     failedOrCanceledOrders: 0,
+    systemGrantOrders: 0,
     totalRevenueCents: 0,
     todayRevenueCents: 0,
   },
@@ -84,9 +85,10 @@ function canSimpleOperate(order: AdminPaymentOrderListItem): boolean {
 function summaryCards(response: AdminPaymentOrderListResponse) {
   return [
     { title: "订单总数", value: response.summary.totalOrders },
-    { title: "已支付", value: response.summary.paidOrders },
+    { title: "付费订单", value: response.summary.paidOrders },
     { title: "待支付", value: response.summary.unpaidOrders },
     { title: "失败/取消", value: response.summary.failedOrCanceledOrders },
+    { title: "系统赠送", value: response.summary.systemGrantOrders },
     { title: "总收入", value: formatMoney(response.summary.totalRevenueCents) },
     { title: "今日收入", value: formatMoney(response.summary.todayRevenueCents) },
   ];
@@ -306,7 +308,21 @@ export function AdminOrdersClient() {
                     "未知用户"
                   )}
                 </td>
-                <td className="px-3 py-2.5">{productDisplayName(order.productCode)}</td>
+                <td className="px-3 py-2.5">
+                  <div className="grid gap-1.5">
+                    <span>{productDisplayName(order.productCode)}</span>
+                    <div className="flex flex-wrap gap-1">
+                      <Badge variant={order.billingCategory === "system_grant" ? "info" : "muted"}>
+                        {order.billingCategoryLabel}
+                      </Badge>
+                      {order.adminLabels.map((label) => (
+                        <Badge key={label} variant="muted">
+                          {label}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                </td>
                 <td className="px-3 py-2.5">{paymentProviderDisplayName(order.provider)}</td>
                 <td className="px-3 py-2.5 font-semibold">{formatMoney(order.amountCents)}</td>
                 <td className="px-3 py-2.5">{statusBadge(order.status)}</td>

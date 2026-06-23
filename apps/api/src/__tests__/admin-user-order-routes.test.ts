@@ -69,7 +69,13 @@ describe("admin user and order routes", () => {
 
   it("lists users with operational summaries and never returns password hashes", async () => {
     const { client, state } = await createFakeDatabaseClient();
-    createOrder(state, { orderNo: "PUSERLIST", status: "paid", paidAt: new Date("2026-06-21T01:00:00.000Z") });
+    createOrder(state, {
+      orderNo: "PUSERLIST",
+      productCode: "monthly_full",
+      amountCents: 1900,
+      status: "paid",
+      paidAt: new Date("2026-06-21T01:00:00.000Z"),
+    });
     state.userCreditLedger.set("payment-order-0:payment_entitlement_grant", {
       id: "ledger-1",
       userId: "plain-user",
@@ -302,6 +308,77 @@ describe("admin user and order routes", () => {
     expect(detail.body).not.toContain("raw-payment-signature");
     expect(detail.body).not.toContain("raw-private-payment-payload");
     expect(detail.body).not.toContain("authorization");
+  });
+
+  it("labels registration trial grants for admins without counting them as paid revenue", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const paidOrder = createOrder(state, {
+      orderNo: "PPAIDMONTHLY",
+      productCode: "monthly_full",
+      amountCents: 1900,
+      status: "paid",
+      paidAt: new Date("2026-06-21T01:00:00.000Z"),
+      createdAt: new Date("2026-06-21T00:01:00.000Z"),
+      providerTradeNo: "manual:PPAIDMONTHLY",
+      providerPayloadJson: null,
+    });
+    const trialOrder = createOrder(state, {
+      orderNo: "TREGISTERTRIAL",
+      productCode: "trial_7_days",
+      amountCents: 0,
+      status: "paid",
+      paidAt: new Date("2026-06-21T01:01:00.000Z"),
+      createdAt: new Date("2026-06-21T00:02:00.000Z"),
+      provider: "mock",
+      providerTradeNo: "registration_trial:plain-user",
+      providerPayloadJson: null,
+      metadataJson: {
+        internal: true,
+        source: "registration_trial",
+      },
+    });
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, env: testEnv, logger: false });
+
+    const list = await app.inject({
+      method: "GET",
+      url: "/admin/orders",
+      headers: adminAuthorizationHeader(),
+    });
+    const detail = await app.inject({
+      method: "GET",
+      url: `/admin/orders/${trialOrder.orderNo}`,
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(list.statusCode).toBe(200);
+    expect(list.json().summary).toMatchObject({
+      totalOrders: 2,
+      paidOrders: 1,
+      systemGrantOrders: 1,
+      totalRevenueCents: 1900,
+    });
+    expect(list.json().items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          orderNo: paidOrder.orderNo,
+          billingCategory: "paid_purchase",
+          revenueEligible: true,
+        }),
+        expect.objectContaining({
+          orderNo: trialOrder.orderNo,
+          billingCategory: "system_grant",
+          billingCategoryLabel: "系统赠送 / 注册试用",
+          adminLabels: ["系统赠送", "注册试用", "非收入订单"],
+          revenueEligible: false,
+        }),
+      ]),
+    );
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json().order.order).toMatchObject({
+      orderNo: trialOrder.orderNo,
+      billingCategory: "system_grant",
+      revenueEligible: false,
+    });
   });
 
   it("keeps manual mark-paid idempotent and blocks canceling paid orders", async () => {

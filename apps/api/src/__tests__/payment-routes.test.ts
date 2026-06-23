@@ -117,6 +117,45 @@ async function createBillingOrder(
   };
 }
 
+function insertStoredPaymentOrder(
+  state: any,
+  input: {
+    readonly orderNo: string;
+    readonly productCode: string;
+    readonly amountCents: number;
+    readonly provider?: "mock" | "wechat_pay" | "alipay";
+    readonly userId?: string;
+    readonly status?: "created" | "pending" | "paid" | "closed" | "canceled" | "failed" | "refunded";
+    readonly createdAt?: Date;
+    readonly paidAt?: Date | null;
+    readonly providerTradeNo?: string | null;
+    readonly metadataJson?: Record<string, unknown> | null;
+  },
+) {
+  const now = input.createdAt ?? new Date("2026-06-21T08:00:00.000Z");
+  const order = {
+    id: `payment-order-${state.paymentOrders.size}`,
+    orderNo: input.orderNo,
+    userId: input.userId ?? "plain-user",
+    provider: input.provider ?? "wechat_pay",
+    amountCents: input.amountCents,
+    currency: "CNY",
+    productCode: input.productCode,
+    productId: state.billingProducts.get(input.productCode)?.id ?? null,
+    status: input.status ?? "paid",
+    paidAt: input.paidAt === undefined ? now : input.paidAt,
+    expiresAt: null,
+    providerTradeNo: input.providerTradeNo ?? `trade:${input.orderNo}`,
+    providerPayloadJson: null,
+    metadataJson: input.metadataJson ?? null,
+    entitlementGrantedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  };
+  state.paymentOrders.set(order.orderNo, order);
+  return order;
+}
+
 function createWechatNotifyBody(input: {
   readonly orderNo: string;
   readonly amountCents: number;
@@ -353,6 +392,73 @@ describe("payment routes", () => {
     );
     expect(disabled.statusCode).toBe(404);
     expect(disabled.json()).toMatchObject({ error: "product_not_found" });
+  });
+
+  it("filters registration trial grants out of user billing orders and direct order lookup", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, env: testEnv, logger: false });
+    const monthly = insertStoredPaymentOrder(state, {
+      orderNo: "PUSERMONTHLY",
+      productCode: "monthly_full",
+      amountCents: 1900,
+      createdAt: new Date("2026-06-21T08:00:00.000Z"),
+    });
+    insertStoredPaymentOrder(state, {
+      orderNo: "PUSERQUARTERLY",
+      productCode: "quarterly_full",
+      amountCents: 4900,
+      createdAt: new Date("2026-06-21T08:01:00.000Z"),
+    });
+    insertStoredPaymentOrder(state, {
+      orderNo: "PUSERYEARLY",
+      productCode: "yearly_full",
+      amountCents: 16800,
+      createdAt: new Date("2026-06-21T08:02:00.000Z"),
+    });
+    const trial = insertStoredPaymentOrder(state, {
+      orderNo: "TUSERTRIAL",
+      productCode: "trial_7_days",
+      amountCents: 0,
+      provider: "mock",
+      createdAt: new Date("2026-06-21T08:03:00.000Z"),
+      providerTradeNo: "registration_trial:plain-user",
+      metadataJson: {
+        internal: true,
+        source: "registration_trial",
+      },
+    });
+
+    const list = await app.inject({
+      method: "GET",
+      url: "/billing/orders?limit=2",
+      headers: adminAuthorizationHeader("plain-user"),
+    });
+    const detail = await app.inject({
+      method: "GET",
+      url: `/billing/orders/${trial.orderNo}`,
+      headers: adminAuthorizationHeader("plain-user"),
+    });
+    const paidDetail = await app.inject({
+      method: "GET",
+      url: `/billing/orders/${monthly.orderNo}`,
+      headers: adminAuthorizationHeader("plain-user"),
+    });
+
+    expect(list.statusCode).toBe(200);
+    expect(list.json().items.map((order: any) => order.orderNo)).toEqual([
+      "PUSERYEARLY",
+      "PUSERQUARTERLY",
+    ]);
+    expect(JSON.stringify(list.json())).not.toContain("TUSERTRIAL");
+    expect(JSON.stringify(list.json())).not.toContain("registration_trial");
+    expect(detail.statusCode).toBe(404);
+    expect(detail.json()).toMatchObject({ error: "order_not_found" });
+    expect(paidDetail.statusCode).toBe(200);
+    expect(paidDetail.json().order).toMatchObject({
+      orderNo: "PUSERMONTHLY",
+      productCode: "monthly_full",
+      amountCents: 1900,
+    });
   });
 
   it("uses the current DB product amount and duration for paid full-access orders", async () => {

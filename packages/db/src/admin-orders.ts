@@ -1,6 +1,7 @@
 import { getPrismaClient } from "./client.js";
 import { buildAuditLogDisplay } from "./audit-display.js";
 import { safeUser } from "./auth.js";
+import { isInternalTrialOrder, isPaidUserPurchaseOrder } from "./payments.js";
 import type {
   AdminAuditLogRecord,
   BillingProductRecord,
@@ -65,6 +66,10 @@ export type AdminPaymentOrderListItem = {
   readonly expiresAt: Date | null;
   readonly providerTradeNo: string | null;
   readonly entitlementGrantedAt: Date | null;
+  readonly billingCategory: "paid_purchase" | "system_grant" | "other";
+  readonly billingCategoryLabel: string;
+  readonly revenueEligible: boolean;
+  readonly adminLabels: readonly string[];
   readonly createdAt: Date;
   readonly updatedAt: Date;
 };
@@ -153,6 +158,7 @@ export type AdminPaymentOrderListSummary = {
   readonly paidOrders: number;
   readonly unpaidOrders: number;
   readonly failedOrCanceledOrders: number;
+  readonly systemGrantOrders: number;
   readonly totalRevenueCents: number;
   readonly todayRevenueCents: number;
 };
@@ -220,6 +226,13 @@ function normalizeOrderListItem(
   record: any,
   user: AdminPaymentUserSummary | null,
 ): AdminPaymentOrderListItem {
+  const internalTrial = isInternalTrialOrder(record);
+  const revenueEligible = isPaidUserPurchaseOrder(record);
+  const billingCategory = internalTrial
+    ? "system_grant"
+    : revenueEligible
+      ? "paid_purchase"
+      : "other";
   return {
     orderNo: record.orderNo,
     user,
@@ -232,6 +245,14 @@ function normalizeOrderListItem(
     expiresAt: record.expiresAt ?? null,
     providerTradeNo: record.providerTradeNo ?? null,
     entitlementGrantedAt: record.entitlementGrantedAt ?? null,
+    billingCategory,
+    billingCategoryLabel: internalTrial
+      ? "系统赠送 / 注册试用"
+      : revenueEligible
+        ? "付费购买"
+        : "普通订单",
+    revenueEligible,
+    adminLabels: internalTrial ? ["系统赠送", "注册试用", "非收入订单"] : [],
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
@@ -374,18 +395,19 @@ export async function listAdminPaymentOrders(
   todayStart.setHours(0, 0, 0, 0);
   const summary: AdminPaymentOrderListSummary = {
     totalOrders: items.length,
-    paidOrders: items.filter((item) => item.status === "paid").length,
+    paidOrders: items.filter((item) => item.revenueEligible).length,
     unpaidOrders: items.filter((item) => ["created", "pending"].includes(item.status)).length,
     failedOrCanceledOrders: items.filter((item) =>
       ["failed", "canceled", "closed"].includes(item.status),
     ).length,
+    systemGrantOrders: items.filter((item) => item.billingCategory === "system_grant").length,
     totalRevenueCents: items
-      .filter((item) => item.status === "paid")
+      .filter((item) => item.revenueEligible)
       .reduce((total, item) => total + item.amountCents, 0),
     todayRevenueCents: items
       .filter(
         (item) =>
-          item.status === "paid" &&
+          item.revenueEligible &&
           item.paidAt !== null &&
           item.paidAt.getTime() >= todayStart.getTime(),
       )
@@ -633,6 +655,8 @@ export function adminOrderAuditSnapshot(detail: AdminPaymentOrderDetail): JsonVa
       status: detail.order.status,
       paidAt: detail.order.paidAt,
       entitlementGrantedAt: detail.order.entitlementGrantedAt,
+      billingCategory: detail.order.billingCategory,
+      revenueEligible: detail.order.revenueEligible,
       adminNote: detail.order.adminNote,
     }),
   ) as JsonValue;

@@ -8,9 +8,10 @@ import {
   getPaymentOrderByOrderNo,
   grantPaymentEntitlementOnce,
   isPublicPurchasableBillingProduct,
+  isUserVisibleBillingOrder,
   listPublicBillingProducts,
   listUserEntitlements,
-  listUserPaymentOrders,
+  listUserVisibleBillingOrders,
   markPaymentOrderPaid,
   PaymentAmountMismatchError,
   PaymentOrderAccessDeniedError,
@@ -512,7 +513,7 @@ export function registerPaymentRoutes(app: FastifyInstance, options: PaymentRout
     if (!parsedQuery.success) {
       return sendZodError(reply, parsedQuery.error);
     }
-    const orders = await listUserPaymentOrders(
+    const orders = await listUserVisibleBillingOrders(
       { userId: context.principal.user.id, limit: parsedQuery.data.limit ?? 20 },
       { client },
     );
@@ -545,6 +546,9 @@ export function registerPaymentRoutes(app: FastifyInstance, options: PaymentRout
         { orderNo: parsedParams.data.orderNo, userId: context.principal.user.id },
         { client },
       );
+      if (!isUserVisibleBillingOrder(order)) {
+        return sendError(reply, 404, "order_not_found", "未找到该订单。");
+      }
       return { order: orderResponse(order) };
     } catch (error) {
       if (
@@ -573,6 +577,9 @@ export function registerPaymentRoutes(app: FastifyInstance, options: PaymentRout
           { orderNo: parsedParams.data.orderNo, userId: context.principal.user.id },
           { client },
         );
+        if (!isUserVisibleBillingOrder(order)) {
+          return sendError(reply, 404, "order_not_found", "未找到该订单。");
+        }
         if (order.status === "paid") {
           return sendError(reply, 409, "paid_order_cannot_cancel", "已支付订单不能取消。");
         }

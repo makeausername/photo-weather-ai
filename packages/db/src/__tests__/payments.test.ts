@@ -6,7 +6,11 @@ import {
   grantFullForecastAccessFromOrderOnce,
   grantPaymentEntitlementOnce,
   grantRegistrationTrialForUserOnce,
+  isInternalTrialOrder,
+  isPaidUserPurchaseOrder,
+  isUserVisibleBillingOrder,
   listUserEntitlements,
+  listUserVisibleBillingOrders,
   markPaymentOrderPaid,
   PaymentAmountMismatchError,
   PaymentEntitlementGrantError,
@@ -220,6 +224,62 @@ describe("payment helpers", () => {
     expect(state.entitlements.size).toBe(1);
     expect(state.ledger.size).toBe(1);
     await expect(listUserEntitlements({ userId: "user-1" }, { client })).resolves.toHaveLength(1);
+  });
+
+  it("keeps registration trial orders internal while listing paid user purchases", async () => {
+    const { client, state } = createPaymentFakeClient();
+    await createPaymentOrder(
+      {
+        orderNo: "PVISIBLE001",
+        userId: "user-visible",
+        provider: "wechat_pay",
+        amountCents: 1900,
+        productCode: "monthly_full",
+      },
+      { client },
+    );
+    const paid = await markPaymentOrderPaid(
+      {
+        orderNo: "PVISIBLE001",
+        provider: "wechat_pay",
+        amountCents: 1900,
+        providerTradeNo: "wx-visible-1",
+      },
+      { client },
+    );
+    const trial = {
+      id: "order-trial",
+      orderNo: "TTRIAL001",
+      userId: "user-visible",
+      provider: "mock",
+      amountCents: 0,
+      currency: "CNY",
+      productCode: "trial_7_days",
+      productId: state.products.get("trial_7_days").id,
+      status: "paid",
+      paidAt: new Date("2026-06-21T00:01:00.000Z"),
+      expiresAt: null,
+      providerTradeNo: "registration_trial:user-visible",
+      providerPayloadJson: null,
+      metadataJson: {
+        internal: true,
+        source: "registration_trial",
+      },
+      entitlementGrantedAt: new Date("2026-06-21T00:01:00.000Z"),
+      createdAt: new Date("2026-06-21T00:01:00.000Z"),
+      updatedAt: new Date("2026-06-21T00:01:00.000Z"),
+    } as const;
+    state.orders.set(trial.orderNo, trial);
+
+    expect(isInternalTrialOrder(trial)).toBe(true);
+    expect(isUserVisibleBillingOrder(trial)).toBe(false);
+    expect(isPaidUserPurchaseOrder(trial)).toBe(false);
+    expect(isInternalTrialOrder(paid)).toBe(false);
+    expect(isUserVisibleBillingOrder(paid)).toBe(true);
+    expect(isPaidUserPurchaseOrder(paid)).toBe(true);
+    await expect(
+      listUserVisibleBillingOrders({ userId: "user-visible", limit: 10 }, { client }),
+    ).resolves.toEqual([expect.objectContaining({ orderNo: "PVISIBLE001" })]);
   });
 
   it("rejects amount mismatch and does not mark the order paid", async () => {
