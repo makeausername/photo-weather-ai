@@ -95,7 +95,7 @@ export const openAiDefaultTemperature = 0.2;
 
 export const openAiDefaultMaxTokens = 1200;
 
-export const openAiDefaultPromptMaxChars = 6000;
+export const openAiDefaultPromptMaxChars = 12000;
 
 export function normalizeOpenAiModel(value: string | undefined): string {
   const trimmed = value?.trim();
@@ -412,7 +412,7 @@ export const providerFieldPresets = [
         control: "number",
         defaultValue: openAiDefaultPromptMaxChars,
         min: 3000,
-        max: 6000,
+        max: 20000,
         step: 100,
         advanced: true,
       },

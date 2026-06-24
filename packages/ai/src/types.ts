@@ -48,6 +48,43 @@ export type ForecastAiExplanationDisplayContent = {
   readonly sections: readonly ForecastAiExplanationDisplaySection[];
 };
 
+export type ForecastAiExplanationSectionKey =
+  | "overview"
+  | "timeline"
+  | "subject_advice"
+  | "risk_gear"
+  | "final_decision";
+
+export type ForecastAiExplanationSectionStatus = "success" | "fallback" | "failed" | "skipped";
+
+export type ForecastAiExplanationSectionResult = {
+  readonly key: ForecastAiExplanationSectionKey;
+  readonly titleZh: string;
+  readonly status: ForecastAiExplanationSectionStatus;
+  readonly textZh: string;
+  readonly bulletPointsZh: readonly string[];
+  readonly errorCategory?: string;
+  readonly promptSizeChars?: number;
+  readonly promptMaxChars?: number;
+  readonly compactingApplied?: boolean;
+  readonly responseSizeChars?: number;
+  readonly parseStrategy?: ForecastAiExplanationParseStrategy;
+  readonly model?: string;
+  readonly latencyMs?: number;
+};
+
+export type ForecastAiExplanationSectionedResult = {
+  readonly version: "forecast-ai-sectioned-v1";
+  readonly providerCode: "openai";
+  readonly model?: string;
+  readonly sections: readonly ForecastAiExplanationSectionResult[];
+  readonly success: boolean;
+  readonly displaySuccess: boolean;
+  readonly promptMaxChars?: number;
+  readonly promptSizeChars?: number;
+  readonly responseSizeChars?: number;
+};
+
 export type ForecastAiExplanation = {
   readonly conclusion: {
     readonly titleZh: string;
@@ -110,6 +147,8 @@ export type ForecastAiExplanation = {
   readonly suggestions?: readonly string[];
   readonly risks?: readonly string[];
   readonly displayContent?: ForecastAiExplanationDisplayContent;
+  readonly sections?: readonly ForecastAiExplanationSectionResult[];
+  readonly sectionedExplanation?: ForecastAiExplanationSectionedResult;
   readonly displayOnly?: boolean;
   readonly metadata?: {
     readonly source: "deepseek" | "openai" | "deterministic_fallback";

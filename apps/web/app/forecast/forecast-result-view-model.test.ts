@@ -4940,7 +4940,8 @@ describe("forecast result target-aware view model", () => {
     expect(outcome.status).toBe("error");
     expect(outcome.retryable).toBe(true);
     expect(html).toContain("重试智能解读");
-    expect(html).toContain("智能解读暂时不可用（暂时不可用），确定性判断已保留。");
+    expect(html).toContain("智能解读暂时不可用，确定性判断已保留。");
+    expect(html).not.toContain("智能解读暂时不可用（暂时不可用）");
     expect(html).toContain("综合出片指数");
   });
 
@@ -4966,6 +4967,105 @@ describe("forecast result target-aware view model", () => {
     expect(outcome.explanation?.conclusion.oneSentenceDecisionZh).toContain(
       "sections 字段也应被映射为可展示解读。",
     );
+  });
+
+  it("renders sectioned GPT / OpenAI explanation with section-level fallback only", () => {
+    const sectionedSections = [
+      {
+        key: "overview",
+        titleZh: "综合结论",
+        status: "success",
+        textZh: "分节总览来自 GPT，只解释确定性天气判断。",
+        bulletPointsZh: ["不重新计算评分。"],
+        parseStrategy: "strict_json",
+        model: "gpt-5.4",
+      },
+      {
+        key: "timeline",
+        titleZh: "窗口节奏",
+        status: "fallback",
+        textZh: "时间线使用确定性兜底。",
+        bulletPointsZh: [],
+        errorCategory: "provider_http_error",
+        parseStrategy: "failed",
+      },
+      {
+        key: "risk_gear",
+        titleZh: "风险与装备",
+        status: "failed",
+        textZh: "",
+        bulletPointsZh: [],
+        errorCategory: "provider_parse_error",
+        parseStrategy: "failed",
+      },
+    ] as const;
+    const explanation = {
+      ...aiExplanationForTest("分节总览来自 GPT，只解释确定性天气判断。"),
+      sections: sectionedSections,
+      sectionedExplanation: {
+        version: "forecast-ai-sectioned-v1",
+        providerCode: "openai",
+        model: "gpt-5.4",
+        sections: sectionedSections,
+        success: true,
+        displaySuccess: true,
+      },
+      metadata: {
+        source: "openai",
+        parseStrategy: "failed",
+        fallbackUsed: true,
+      },
+    };
+    const outcome = normalizeAiExplainResponse({
+      ok: true,
+      success: true,
+      source: "openai",
+      explanation,
+      sections: sectionedSections,
+      sectionedExplanation: explanation.sectionedExplanation,
+      displaySuccess: true,
+      hasDisplayableAiContent: true,
+      parseSuccess: false,
+      parseStrategy: "failed",
+      diagnostics: {
+        parseSuccess: false,
+        parseStrategy: "failed",
+        rawPrompt: "Authorization: Bearer sk-should-not-render",
+      },
+    });
+    const html = renderAiPanelFromOutcome(outcome);
+
+    expect(outcome.status).toBe("ready");
+    expect(outcome.parseSuccess).toBe(false);
+    expect(html).toContain("综合结论");
+    expect(html).toContain("分节总览来自 GPT，只解释确定性天气判断。");
+    expect(html).toContain("窗口节奏");
+    expect(html).toContain("时间线使用确定性兜底。");
+    expect(html).toContain("本节使用确定性结果生成兜底解读。");
+    expect(html).toContain("风险与装备");
+    expect(html).toContain("本节智能解读暂时不可用，确定性判断已保留。");
+    expect(html).not.toContain("智能解读暂时不可用（暂时不可用）");
+    expect(html).not.toContain("Authorization");
+    expect(html).not.toContain("sk-should-not-render");
+    expect(html).not.toContain("rawPrompt");
+  });
+
+  it("maps prompt_too_large to a clean public message", () => {
+    const outcome = normalizeAiExplainResponse({
+      success: false,
+      errorCategory: "prompt_too_large",
+      retryable: true,
+      diagnostics: {
+        parseSuccess: false,
+        errorCategory: "prompt_too_large",
+      },
+    });
+
+    expect(outcome.status).toBe("error");
+    expect(outcome.errorMessage).toBe(
+      "智能解读内容过长，系统已保留确定性天气判断，请稍后重试或缩短预报范围。",
+    );
+    expect(outcome.errorMessage).not.toContain("暂时不可用（暂时不可用）");
   });
 
   it("renders successful plain-text fallback without unavailable state", () => {

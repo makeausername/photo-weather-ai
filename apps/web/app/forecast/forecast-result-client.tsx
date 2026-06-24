@@ -154,6 +154,43 @@ const emptyAiExplanationContent: NormalizedAiExplanationContent = {
   sections: [],
 };
 
+type ForecastAiExplanationSectionKey =
+  | "overview"
+  | "timeline"
+  | "subject_advice"
+  | "risk_gear"
+  | "final_decision";
+
+type ForecastAiExplanationSectionStatus = "success" | "fallback" | "failed" | "skipped";
+
+type ForecastAiExplanationSectionResult = {
+  readonly key: ForecastAiExplanationSectionKey;
+  readonly titleZh: string;
+  readonly status: ForecastAiExplanationSectionStatus;
+  readonly textZh: string;
+  readonly bulletPointsZh: readonly string[];
+  readonly errorCategory?: string;
+  readonly promptSizeChars?: number;
+  readonly responseSizeChars?: number;
+  readonly parseStrategy?:
+    | "strict_json"
+    | "fenced_json"
+    | "extracted_json"
+    | "plain_text_fallback"
+    | "failed";
+  readonly model?: string;
+  readonly latencyMs?: number;
+};
+
+type ForecastAiExplanationSectionedResult = {
+  readonly version: "forecast-ai-sectioned-v1";
+  readonly providerCode: "openai";
+  readonly model?: string;
+  readonly sections: readonly ForecastAiExplanationSectionResult[];
+  readonly success: boolean;
+  readonly displaySuccess: boolean;
+};
+
 type ForecastAiExplanation = {
   readonly conclusion: {
     readonly titleZh: string;
@@ -216,6 +253,8 @@ type ForecastAiExplanation = {
   readonly suggestions?: readonly string[];
   readonly risks?: readonly string[];
   readonly displayContent?: NormalizedAiExplanationContent;
+  readonly sections?: readonly ForecastAiExplanationSectionResult[];
+  readonly sectionedExplanation?: ForecastAiExplanationSectionedResult;
   readonly displayOnly?: boolean;
   readonly metadata?: {
     readonly source: "openai" | "deterministic_fallback";
@@ -241,6 +280,7 @@ type AiExplainResponse = {
   readonly interpretation?: unknown;
   readonly fallbackInterpretation?: unknown;
   readonly sections?: unknown;
+  readonly sectionedExplanation?: unknown;
   readonly data?: unknown;
   readonly result?: unknown;
   readonly payload?: unknown;
@@ -720,6 +760,7 @@ function extractAiExplanationFromResponse(
   const candidates = [
     response.explanation,
     response.interpretation,
+    response.sectionedExplanation,
     response.sections,
     response.summaryText,
     response.text,
@@ -729,18 +770,21 @@ function extractAiExplanationFromResponse(
     response.payload,
     nestedField(response.data, "explanation"),
     nestedField(response.data, "interpretation"),
+    nestedField(response.data, "sectionedExplanation"),
     nestedField(response.data, "sections"),
     nestedField(response.data, "summaryText"),
     nestedField(response.data, "text"),
     nestedField(response.data, "content"),
     nestedField(response.result, "explanation"),
     nestedField(response.result, "interpretation"),
+    nestedField(response.result, "sectionedExplanation"),
     nestedField(response.result, "sections"),
     nestedField(response.result, "summaryText"),
     nestedField(response.result, "text"),
     nestedField(response.result, "content"),
     nestedField(response.payload, "explanation"),
     nestedField(response.payload, "interpretation"),
+    nestedField(response.payload, "sectionedExplanation"),
     nestedField(response.payload, "sections"),
     nestedField(response.payload, "summaryText"),
     nestedField(response.payload, "text"),
@@ -1239,6 +1283,7 @@ function completeForecastAiExplanationFromPartial(
         .map(normalizeAiDay)
         .filter((day): day is ForecastAiExplanation["dayByDay"][number] => Boolean(day))
     : [];
+  const sectionedExplanation = normalizeAiSectionedExplanation(value);
 
   return withAiExplanationMetadata(
     {
@@ -1327,6 +1372,12 @@ function completeForecastAiExplanationFromPartial(
       suggestions: displayContent.suggestions,
       risks: displayContent.risks,
       ...(displayContent.hasContent ? { displayContent } : {}),
+      ...(sectionedExplanation
+        ? {
+            sections: sectionedExplanation.sections,
+            sectionedExplanation,
+          }
+        : {}),
       metadata: normalizeAiMetadata(value.metadata),
     },
     normalizeAiMetadata(value.metadata)?.source ?? "openai",
@@ -1645,6 +1696,7 @@ function normalizeAiSection(
     ? nested.flatMap((item) => (typeof item === "string" ? [item] : [])).join("；")
     : "";
   const text =
+    readStringField(value, "textZh") ??
     readStringField(value, "contentZh") ??
     readStringField(value, "content") ??
     readStringField(value, "summaryZh") ??
@@ -1652,7 +1704,7 @@ function normalizeAiSection(
     readStringField(value, "body") ??
     readStringField(value, "text") ??
     readStringField(value, "value") ??
-    nestedText;
+    (nestedText || stringArrayField(value, "bulletPointsZh").join(" "));
   if (!text) {
     return [];
   }
@@ -1667,6 +1719,118 @@ function normalizeAiSection(
       text,
     },
   ];
+}
+
+function normalizeAiSectionedExplanation(value: unknown): ForecastAiExplanationSectionedResult | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const source = isRecord(value.sectionedExplanation) ? value.sectionedExplanation : value;
+  if (!isRecord(source)) {
+    return null;
+  }
+  const rawSections = Array.isArray(source.sections) ? source.sections : [];
+  const sections = rawSections
+    .map(normalizeAiSectionResult)
+    .filter((section): section is ForecastAiExplanationSectionResult => Boolean(section));
+  if (sections.length === 0) {
+    return null;
+  }
+  return {
+    version: "forecast-ai-sectioned-v1",
+    providerCode: "openai",
+    ...(readStringField(source, "model") ? { model: readStringField(source, "model") } : {}),
+    sections,
+    success: booleanField(source, "success") ?? sections.some(sectionHasVisibleAiText),
+    displaySuccess:
+      booleanField(source, "displaySuccess") ?? sections.some(sectionHasVisibleAiText),
+  };
+}
+
+function normalizeAiSectionResult(value: unknown): ForecastAiExplanationSectionResult | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const key = normalizeAiSectionKey(value.key);
+  if (!key) {
+    return null;
+  }
+  const bulletPointsZh = readAiTextArray(value.bulletPointsZh ?? value.bulletsZh ?? value.bullets);
+  const textZh =
+    readStringField(value, "textZh") ??
+    readStringField(value, "text") ??
+    readStringField(value, "contentZh") ??
+    readStringField(value, "content") ??
+    bulletPointsZh.join(" ");
+  const status = normalizeAiSectionStatus(value.status);
+  if (!textZh && bulletPointsZh.length === 0 && status !== "failed" && status !== "skipped") {
+    return null;
+  }
+  return {
+    key,
+    titleZh: readStringField(value, "titleZh") ?? sectionTitleFallback(key),
+    status,
+    textZh: textZh ?? "",
+    bulletPointsZh,
+    ...(readStringField(value, "errorCategory")
+      ? { errorCategory: readStringField(value, "errorCategory") }
+      : {}),
+    ...(numericField(value, "promptSizeChars")
+      ? { promptSizeChars: numericField(value, "promptSizeChars") }
+      : {}),
+    ...(numericField(value, "responseSizeChars")
+      ? { responseSizeChars: numericField(value, "responseSizeChars") }
+      : {}),
+    ...(normalizeAiParseStrategy(value.parseStrategy)
+      ? { parseStrategy: normalizeAiParseStrategy(value.parseStrategy) }
+      : {}),
+    ...(readStringField(value, "model") ? { model: readStringField(value, "model") } : {}),
+    ...(numericField(value, "latencyMs") ? { latencyMs: numericField(value, "latencyMs") } : {}),
+  };
+}
+
+function normalizeAiSectionKey(value: unknown): ForecastAiExplanationSectionKey | null {
+  return value === "overview" ||
+    value === "timeline" ||
+    value === "subject_advice" ||
+    value === "risk_gear" ||
+    value === "final_decision"
+    ? value
+    : null;
+}
+
+function normalizeAiSectionStatus(value: unknown): ForecastAiExplanationSectionStatus {
+  return value === "success" || value === "fallback" || value === "failed" || value === "skipped"
+    ? value
+    : "success";
+}
+
+function sectionTitleFallback(key: ForecastAiExplanationSectionKey): string {
+  switch (key) {
+    case "overview":
+      return "综合结论";
+    case "timeline":
+      return "窗口节奏";
+    case "subject_advice":
+      return "题材建议";
+    case "risk_gear":
+      return "风险与装备";
+    case "final_decision":
+      return "最终行动";
+  }
+}
+
+function readAiTextArray(value: unknown): readonly string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean);
+}
+
+function sectionHasVisibleAiText(section: ForecastAiExplanationSectionResult): boolean {
+  return section.textZh.trim().length > 0 || section.bulletPointsZh.length > 0;
 }
 
 function withAiExplanationMetadata(
@@ -1842,6 +2006,12 @@ function logAiExplanationClientEvent(
 }
 
 function publicAiExplanationMessage(category: AiExplainErrorCategory | "none"): string {
+  if (category === "prompt_too_large") {
+    return "智能解读内容过长，系统已保留确定性天气判断，请稍后重试或缩短预报范围。";
+  }
+  if (category === "unknown" || category === "none") {
+    return "智能解读暂时不可用，确定性判断已保留。";
+  }
   const reason = publicAiExplanationReasonLabel(category);
   return reason
     ? `智能解读暂时不可用（${reason}），确定性判断已保留。`
@@ -3899,6 +4069,12 @@ function formatAstroWindowForUi(window: AstroWindowLike, timezone = "Asia/Shangh
 
 function normalizeAiExplanationErrorMessage(message: string | undefined): string {
   const trimmed = message?.trim();
+  if (
+    trimmed &&
+    (trimmed.startsWith("智能解读暂时不可用") || trimmed.startsWith("智能解读内容过长"))
+  ) {
+    return trimmed;
+  }
   return trimmed && trimmed.startsWith("智能解读暂时不可用")
     ? trimmed
     : "智能解读暂时不可用，确定性判断已保留。";
@@ -9803,9 +9979,13 @@ export function AiExplanationPanel({
   const visibleContent = visibleExplanation
     ? visibleExplanation.displayContent ?? normalizeAiExplanationContent(visibleExplanation)
     : emptyAiExplanationContent;
+  const visibleSectionedSections =
+    visibleExplanation?.sectionedExplanation?.sections ?? visibleExplanation?.sections ?? [];
+  const hasSectionedExplanation = visibleSectionedSections.length > 0;
   const shouldRenderDisplayOnlyContent = visibleExplanation?.displayOnly === true;
   const shouldRenderSupplementalGroups = Boolean(
-    !shouldRenderDisplayOnlyContent &&
+    !hasSectionedExplanation &&
+      !shouldRenderDisplayOnlyContent &&
       visibleContent.hasContent &&
       ((visibleExplanation?.reasons?.length ?? 0) > 0 ||
         (visibleExplanation?.suggestions?.length ?? 0) > 0 ||
@@ -9878,7 +10058,9 @@ export function AiExplanationPanel({
 
       {visibleExplanation ? (
         <div className="mt-4 grid gap-3">
-          {shouldRenderDisplayOnlyContent ? (
+          {hasSectionedExplanation ? (
+            <AiSectionedExplanationSections sections={visibleSectionedSections} />
+          ) : shouldRenderDisplayOnlyContent ? (
             <AiDisplayContentSections content={visibleContent} showSummary />
           ) : (
             <>
@@ -9989,6 +10171,50 @@ function AiDisplayContentSections({
           <p className="text-sm leading-6 text-muted-foreground">{section.text}</p>
         </AiTextSection>
       ))}
+    </>
+  );
+}
+
+function AiSectionedExplanationSections({
+  sections,
+}: {
+  readonly sections: readonly ForecastAiExplanationSectionResult[];
+}) {
+  return (
+    <>
+      {sections.map((section) => {
+        const hasText = section.textZh.trim().length > 0 || section.bulletPointsZh.length > 0;
+        const notice =
+          section.status === "fallback"
+            ? "本节使用确定性结果生成兜底解读。"
+            : section.status === "failed" || section.status === "skipped"
+              ? "本节智能解读暂时不可用，确定性判断已保留。"
+              : "";
+        return (
+          <AiTextSection key={section.key} title={section.titleZh}>
+            {notice ? (
+              <p className="mb-2 text-xs font-semibold leading-5 text-muted-foreground">
+                {notice}
+              </p>
+            ) : null}
+            {section.textZh.trim() ? (
+              <p className="text-sm leading-6 text-card-foreground">{section.textZh}</p>
+            ) : null}
+            {section.bulletPointsZh.length > 0 ? (
+              <ul className="mt-2 grid gap-1 text-sm leading-6 text-muted-foreground">
+                {section.bulletPointsZh.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            ) : null}
+            {!hasText ? (
+              <p className="text-sm leading-6 text-muted-foreground">
+                本节暂无可展示内容，请先参考页面上的确定性天气判断。
+              </p>
+            ) : null}
+          </AiTextSection>
+        );
+      })}
     </>
   );
 }

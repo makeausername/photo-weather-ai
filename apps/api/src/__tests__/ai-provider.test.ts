@@ -199,7 +199,7 @@ describe("OpenAI runtime resolver", () => {
         OPENAI_DEFAULT_MODEL: "gpt-4.1",
         OPENAI_BASE_URL: "https://env.openai.example",
         OPENAI_TIMEOUT_MS: "60000",
-        OPENAI_AI_EXPLAIN_PROMPT_MAX_CHARS: "5500",
+        OPENAI_AI_EXPLAIN_PROMPT_MAX_CHARS: "20000",
       },
     );
 
@@ -210,7 +210,7 @@ describe("OpenAI runtime resolver", () => {
       model: "gpt-4.1",
       baseUrl: "https://env.openai.example",
       timeoutMs: 60000,
-      promptMaxChars: 5500,
+      promptMaxChars: 20000,
     });
     expect(JSON.stringify(config)).not.toContain("sk-env");
   });
@@ -228,7 +228,7 @@ describe("OpenAI runtime resolver", () => {
       baseUrl: "https://api.openai.com",
       temperature: 0.2,
       maxTokens: 1200,
-      promptMaxChars: 6000,
+      promptMaxChars: 12000,
       timeoutMs: 120000,
       mode: "responses_api",
     });
@@ -254,7 +254,7 @@ describe("OpenAI runtime resolver", () => {
       baseUrl: "https://api.openai.com",
       temperature: 2,
       maxTokens: 128,
-      promptMaxChars: 6000,
+      promptMaxChars: 20000,
       timeoutMs: 1000,
     });
   });

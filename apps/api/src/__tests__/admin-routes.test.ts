@@ -510,7 +510,7 @@ describe("admin config routes", () => {
         defaultModel: "gpt-5.4-mini",
         temperature: 0.2,
         maxTokens: 1200,
-        promptMaxChars: 6000,
+        promptMaxChars: 12000,
         timeoutMs: 120000,
       },
       maskedSecretJson: {
@@ -1984,7 +1984,7 @@ describe("admin config routes", () => {
         ...(openAiProvider.configJson ?? {}),
         realCallEnabled: true,
         maxTokens: 1200,
-        promptMaxChars: 6000,
+        promptMaxChars: 12000,
       },
       secretJson: {
         apiKey: "openai-real-secret",
@@ -2059,7 +2059,7 @@ describe("admin config routes", () => {
         ...(openAiProvider.configJson ?? {}),
         realCallEnabled: true,
         maxTokens: 1200,
-        promptMaxChars: 6000,
+        promptMaxChars: 12000,
       },
       secretJson: {
         apiKey: "openai-real-secret",
@@ -2139,7 +2139,7 @@ describe("admin config routes", () => {
         ...(openAiProvider.configJson ?? {}),
         realCallEnabled: true,
         maxTokens: 1200,
-        promptMaxChars: 6000,
+        promptMaxChars: 12000,
       },
       secretJson: {
         apiKey: "openai-real-secret",

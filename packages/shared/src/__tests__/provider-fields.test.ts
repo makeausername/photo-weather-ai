@@ -72,7 +72,8 @@ describe("provider field presets", () => {
         expect.objectContaining({
           key: "promptMaxChars",
           target: "configJson",
-          defaultValue: 6000,
+          defaultValue: 12000,
+          max: 20000,
           advanced: true,
         }),
       ]),

@@ -6,16 +6,18 @@ import type {
 } from "@photo-weather/shared";
 import {
   buildCloudSeaAiExplainPayload,
+  buildCompactForecastExplanationFacts,
   buildDeepSeekForecastContext,
   buildDeepSeekForecastExplanationRequest,
   buildOpenAiForecastExplanationRequest,
+  buildSectionPromptFromCompactFacts,
   buildGlowAiExplainPayload,
   createRuleBasedForecastExplanation,
   DeepSeekProvider,
   forecastAiTargetConfigs,
+  forecastAiExplanationSectionKeys,
   forecastAiExplanationSchema,
   isDeepSeekProviderError,
-  isOpenAiProviderError,
   MockAIProvider,
   OpenAiProvider,
   RuleOnlyProvider,
@@ -255,6 +257,45 @@ describe("AI providers", () => {
     expect(JSON.stringify(result)).not.toContain("sk-text-first");
   });
 
+  it("builds compact OpenAI forecast facts without full raw forecast arrays", () => {
+    const facts = buildCompactForecastExplanationFacts(forecastResultFixture);
+    const serialized = JSON.stringify(facts);
+
+    expect(facts).toMatchObject({
+      contextVersion: "openai-forecast-explanation-compact-v1",
+      deterministicOnly: true,
+      target: forecastResultFixture.target,
+      horizon: forecastResultFixture.horizon,
+    });
+    expect(facts.keyHourSummaries.length).toBeLessThanOrEqual(8);
+    expect(serialized).toContain("keyHourSummaries");
+    expect(serialized).not.toContain("professionalHourlyData");
+    expect(serialized).not.toContain("weatherTimeline");
+  });
+
+  it("keeps section prompts for a normal 24h general forecast within budget", () => {
+    const facts = buildCompactForecastExplanationFacts({
+      ...forecastResultFixture,
+      target: "general",
+      horizon: "24h",
+    });
+
+    for (const sectionKey of forecastAiExplanationSectionKeys) {
+      const request = buildSectionPromptFromCompactFacts(sectionKey, facts, {
+        defaultModel: "gpt-5.4",
+        promptMaxChars: 12000,
+      });
+
+      expect(request.sectionKey).toBe(sectionKey);
+      expect(request.promptMaxChars).toBe(12000);
+      expect(request.promptSizeChars).toBeLessThanOrEqual(12000);
+      expect(request.body.model).toBe("gpt-5.4");
+      expect(request.body.store).toBe(false);
+      expect(request.body.input).toContain(`"sectionKey":"${sectionKey}"`);
+      expect(request.body.input).toContain("computedForecastFacts");
+    }
+  });
+
   it("builds an OpenAI Responses API forecast explanation request without secrets", () => {
     const request = buildOpenAiForecastExplanationRequest(
       {
@@ -271,11 +312,15 @@ describe("AI providers", () => {
     expect(request.outputMode).toBe("text_with_json_fallback");
     expect(request.body).toMatchObject({
       model: "gpt-4.1",
-      max_output_tokens: 900,
+      max_output_tokens: 700,
       store: false,
       stream: false,
     });
+    expect(request.sectionKey).toBe("overview");
+    expect(request.promptMaxChars).toBe(12000);
+    expect(request.promptSizeChars).toBeLessThanOrEqual(12000);
     expect(request.body.instructions).toContain("Use only computedForecastFacts");
+    expect(request.body.input).toContain('"sectionKey":"overview"');
     expect(request.body.input).toContain("computedForecastFacts");
     expect(JSON.stringify(request.body)).not.toContain("sk-");
   });
@@ -313,25 +358,125 @@ describe("AI providers", () => {
       forecastResult: forecastResultFixture,
     });
 
-    expect(requestBodies).toHaveLength(1);
-    expect(requestBodies[0]).toMatchObject({
-      model: "gpt-5.5",
-      store: false,
-      stream: false,
-    });
+    expect(requestBodies).toHaveLength(5);
+    expect(requestBodies.map((body) => body.model)).toEqual([
+      "gpt-5.5",
+      "gpt-5.5",
+      "gpt-5.5",
+      "gpt-5.5",
+      "gpt-5.5",
+    ]);
+    expect(requestBodies.every((body) => body.store === false)).toBe(true);
+    expect(requestBodies.every((body) => body.stream === false)).toBe(true);
+    expect(requestBodies.map((body) => JSON.parse(String(body.input)).sectionKey)).toEqual([
+      "overview",
+      "timeline",
+      "subject_advice",
+      "risk_gear",
+      "final_decision",
+    ]);
     expect(result).toMatchObject({
       parseSuccess: true,
       parseStrategy: "strict_json",
       fallbackUsed: false,
       requestDiagnostics: expect.objectContaining({
-        attempts: 1,
+        attempts: 5,
         contentType: "output_text",
       }),
+    });
+    expect(result.explanation.sections?.map((section) => section.key)).toEqual([
+      "overview",
+      "timeline",
+      "subject_advice",
+      "risk_gear",
+      "final_decision",
+    ]);
+    expect(result.explanation.sections?.every((section) => section.status === "success")).toBe(
+      true,
+    );
+    expect(result.explanation.sectionedExplanation).toMatchObject({
+      version: "forecast-ai-sectioned-v1",
+      providerCode: "openai",
+      model: "gpt-5.5",
+      displaySuccess: true,
     });
     expect(result.explanation.metadata?.source).toBe("openai");
     expect(JSON.stringify(result)).not.toContain("sk-openai-test");
     expect(JSON.stringify(result)).not.toContain("relay-secret");
     expect(JSON.stringify(result)).not.toContain("computedForecastFacts");
+  });
+
+  it("keeps displayable sectioned content when one OpenAI section fails", async () => {
+    const successText =
+      "\u786e\u5b9a\u6027\u7ed3\u8bba\uff1a\u672c\u8282\u53ea\u89e3\u91ca\u5df2\u6709\u5929\u6c14\u7ed3\u679c\uff0c\u4e0d\u91cd\u7b97\u6307\u6807\u3002";
+    const requestBodies: Record<string, unknown>[] = [];
+    const fetcher = async (_input: string | URL, init?: RequestInit) => {
+      const requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      const sectionKey = JSON.parse(String(requestBody.input)).sectionKey as string;
+      requestBodies.push(requestBody);
+      if (sectionKey === "timeline") {
+        return openAiResponse(
+          {
+            error: {
+              code: "section_down",
+              type: "server_error",
+              message: "temporary upstream section failure",
+            },
+          },
+          { status: 500 },
+        );
+      }
+
+      return openAiResponse({
+        output_text: JSON.stringify({
+          textZh: successText,
+          bulletPointsZh: [successText],
+        }),
+        status: "completed",
+      });
+    };
+    const provider = new OpenAiProvider({
+      enabled: true,
+      realModeEnabled: true,
+      apiKey: "sk-openai-test",
+      defaultModel: "gpt-5.4",
+      fetcher,
+    });
+
+    const result = await provider.generateForecastExplanationWithDiagnostics({
+      forecastResult: forecastResultFixture,
+    });
+
+    expect(requestBodies).toHaveLength(5);
+    expect(requestBodies.every((body) => body.store === false)).toBe(true);
+    expect(requestBodies.every((body) => body.model === "gpt-5.4")).toBe(true);
+    expect(result).toMatchObject({
+      parseSuccess: false,
+      parseStrategy: "failed",
+      fallbackUsed: true,
+      requestDiagnostics: expect.objectContaining({
+        attempts: 5,
+        compatibilityFallbackUsed: true,
+        finalFailureUpstreamCode: "section_down",
+      }),
+    });
+    expect(result.explanation.sectionedExplanation).toMatchObject({
+      success: true,
+      displaySuccess: true,
+    });
+    expect(result.explanation.displayContent?.hasContent).toBe(true);
+    expect(result.explanation.sections?.map((section) => section.status)).toEqual([
+      "success",
+      "fallback",
+      "success",
+      "success",
+      "success",
+    ]);
+    expect(result.explanation.sections?.[1]).toMatchObject({
+      key: "timeline",
+      errorCategory: "provider_http_error",
+    });
+    expect(JSON.stringify(result)).not.toContain("sk-openai-test");
   });
 
   it("extracts OpenAI output content text arrays and treats plain Chinese text as displayable success", async () => {
@@ -435,7 +580,46 @@ describe("AI providers", () => {
       errorCategory: "config_missing",
     });
 
-    await expect(
+    const expectFallbackResult = async (
+      provider: OpenAiProvider,
+      errorCategory: string,
+      upstreamCode?: string,
+    ) => {
+      const result = await provider.generateForecastExplanationWithDiagnostics({
+        forecastResult: forecastResultFixture,
+      });
+
+      expect(result).toMatchObject({
+        parseSuccess: false,
+        parseStrategy: "failed",
+        fallbackUsed: true,
+        requestDiagnostics: expect.objectContaining({
+          attempts: 5,
+          compatibilityFallbackUsed: true,
+          ...(upstreamCode ? { finalFailureUpstreamCode: upstreamCode } : {}),
+        }),
+      });
+      expect(result.explanation.metadata).toMatchObject({
+        source: "openai",
+        parseStrategy: "failed",
+        fallbackUsed: true,
+      });
+      expect(result.explanation.sectionedExplanation).toMatchObject({
+        version: "forecast-ai-sectioned-v1",
+        providerCode: "openai",
+        displaySuccess: true,
+      });
+      expect(result.explanation.sections).toHaveLength(5);
+      expect(result.explanation.sections?.every((section) => section.status === "fallback")).toBe(
+        true,
+      );
+      expect(
+        result.explanation.sections?.every((section) => section.errorCategory === errorCategory),
+      ).toBe(true);
+      expect(JSON.stringify(result)).not.toContain("sk-openai-test");
+    };
+
+    await expectFallbackResult(
       new OpenAiProvider({
         enabled: true,
         realModeEnabled: true,
@@ -451,33 +635,24 @@ describe("AI providers", () => {
             },
             { status: 401, headers: { "x-request-id": "req-test" } },
           ),
-      }).generateForecastExplanationWithDiagnostics({ forecastResult: forecastResultFixture }),
-    ).rejects.toMatchObject({
-      errorCategory: "provider_http_error",
-      upstreamStatusCode: 401,
-      upstreamErrorCode: "invalid_api_key",
-      upstreamMessageSanitized: expect.not.stringContaining("sk-openai-test"),
-    });
+      }),
+      "provider_http_error",
+      "invalid_api_key",
+    );
 
-    try {
-      await new OpenAiProvider({
+    await expectFallbackResult(
+      new OpenAiProvider({
         enabled: true,
         realModeEnabled: true,
         apiKey: "sk-openai-test",
         fetcher: async () => {
           throw new TypeError("network down");
         },
-      }).generateForecastExplanationWithDiagnostics({ forecastResult: forecastResultFixture });
-      throw new Error("Expected network failure");
-    } catch (error) {
-      expect(isOpenAiProviderError(error)).toBe(true);
-      expect(error).toMatchObject({
-        errorCategory: "network_error",
-      });
-      expect(JSON.stringify(error)).not.toContain("sk-openai-test");
-    }
+      }),
+      "network_error",
+    );
 
-    await expect(
+    await expectFallbackResult(
       new OpenAiProvider({
         enabled: true,
         realModeEnabled: true,
@@ -485,10 +660,9 @@ describe("AI providers", () => {
         fetcher: async () => {
           throw new DOMException("The operation timed out.", "AbortError");
         },
-      }).generateForecastExplanationWithDiagnostics({ forecastResult: forecastResultFixture }),
-    ).rejects.toMatchObject({
-      errorCategory: "timeout",
-    });
+      }),
+      "timeout",
+    );
   });
 
   it("passes cloud-sea through the shared target configuration and request payload", () => {

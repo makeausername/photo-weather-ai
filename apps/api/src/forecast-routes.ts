@@ -797,7 +797,7 @@ export function registerForecastRoutes(
       );
     }
 
-    const cacheKey = createForecastInterpretationCacheKey(result, access);
+    const cacheKey = createForecastInterpretationCacheKey(result, access, runtimeOpenAi);
     const cachedInterpretation = readCachedOpenAiForecastInterpretation(cacheKey);
     if (cachedInterpretation) {
       request.log.info({
@@ -863,19 +863,23 @@ export function registerForecastRoutes(
           promptSizeChars,
         },
       );
-      writeCachedOpenAiForecastInterpretation(cacheKey, {
-        interpretation: retryResult.explanation,
-        model: runtimeOpenAi.model,
-        promptSizeChars,
-        createdAt: Date.now(),
-      });
+      const sectionedPromptSizeChars =
+        retryResult.explanation.sectionedExplanation?.promptSizeChars ?? promptSizeChars;
+      if (shouldCacheOpenAiForecastInterpretation(retryResult.explanation)) {
+        writeCachedOpenAiForecastInterpretation(cacheKey, {
+          interpretation: retryResult.explanation,
+          model: runtimeOpenAi.model,
+          promptSizeChars: sectionedPromptSizeChars,
+          createdAt: Date.now(),
+        });
+      }
       request.log.info({
         route: "/forecast/ai-explain",
         targetCode: result.target,
         providerCode: "openai",
         model: runtimeOpenAi.model,
         timeoutMs: runtimeOpenAi.timeoutMs,
-        promptSizeChars,
+        promptSizeChars: sectionedPromptSizeChars,
         outputMode: openAiOutputMode(runtimeOpenAi),
         latencyMs: Date.now() - startedAt,
         attempts: retryResult.attempts,
@@ -913,7 +917,7 @@ export function registerForecastRoutes(
           runtimeOpenAi,
           targetCode: result.target,
           latencyMs: Date.now() - startedAt,
-          promptSizeChars,
+          promptSizeChars: sectionedPromptSizeChars,
           attempts: retryResult.attempts,
           cacheHit: false,
           requestDiagnostics: retryResult.requestDiagnostics,
@@ -1857,6 +1861,8 @@ function buildAiExplainSuccessResponse(options: {
     model: options.runtimeOpenAi.model,
     explanation,
     interpretation: explanation,
+    sections: explanation.sections ?? explanation.sectionedExplanation?.sections ?? [],
+    sectionedExplanation: explanation.sectionedExplanation,
     summaryText: explanation.summaryText,
     displaySuccess,
     hasDisplayableAiContent: displaySuccess,
@@ -2086,11 +2092,20 @@ function aiExplanationFallbackUsed(interpretation: ForecastAiExplanation): boole
 }
 
 function aiExplanationParseSuccess(interpretation: ForecastAiExplanation): boolean {
-  return aiExplanationParseStrategy(interpretation) !== "plain_text_fallback";
+  const parseStrategy = aiExplanationParseStrategy(interpretation);
+  return parseStrategy !== "plain_text_fallback" && parseStrategy !== "failed";
 }
 
 function aiExplanationRawResponseSizeChars(interpretation: ForecastAiExplanation): number {
   return interpretation.metadata?.rawResponseSizeChars ?? safeResponseSizeChars(interpretation);
+}
+
+function shouldCacheOpenAiForecastInterpretation(interpretation: ForecastAiExplanation): boolean {
+  const sections = interpretation.sections ?? interpretation.sectionedExplanation?.sections;
+  if (sections && sections.length > 0) {
+    return sections.some((section) => section.status === "success");
+  }
+  return hasDisplayableAiContent(withAiExplanationDisplayFields(interpretation));
 }
 
 function withAiExplanationDisplayFields(
@@ -2443,6 +2458,7 @@ function bestSubjectLabel(result: ForecastCalculationResult, index: number): str
 function createForecastInterpretationCacheKey(
   result: ForecastCalculationResult,
   access: Pick<ForecastAccessStatus, "tier" | "activeProductCode" | "hasFullAccess">,
+  runtimeOpenAi?: Pick<RuntimeOpenAiConfig, "model">,
 ): string {
   const accessScope = createHash("sha256")
     .update(
@@ -2454,18 +2470,36 @@ function createForecastInterpretationCacheKey(
     )
     .digest("hex")
     .slice(0, 12);
+  const aiScope = createHash("sha256")
+    .update(
+      JSON.stringify({
+        providerCode: "openai",
+        model: runtimeOpenAi?.model ?? openAiDefaultModel,
+        target: result.target,
+        horizon: result.horizon,
+        locationKey: result.place.id || result.place.name,
+        sectionedExplanationVersion: "forecast-ai-sectioned-v1",
+      }),
+    )
+    .digest("hex")
+    .slice(0, 12);
   const resultWithIds = result as ForecastCalculationResult & {
     readonly resultId?: unknown;
     readonly reportId?: unknown;
   };
   if (typeof resultWithIds.reportId === "string" && resultWithIds.reportId.trim()) {
-    return `access:${accessScope}:report:${resultWithIds.reportId.trim()}`;
+    return `ai:${aiScope}:access:${accessScope}:report:${resultWithIds.reportId.trim()}`;
   }
   if (typeof resultWithIds.resultId === "string" && resultWithIds.resultId.trim()) {
-    return `access:${accessScope}:result:${resultWithIds.resultId.trim()}`;
+    return `ai:${aiScope}:access:${accessScope}:result:${resultWithIds.resultId.trim()}`;
   }
 
   const stableSummary = {
+    ai: {
+      providerCode: "openai",
+      model: runtimeOpenAi?.model ?? openAiDefaultModel,
+      sectionedExplanationVersion: "forecast-ai-sectioned-v1",
+    },
     access: {
       tier: access.tier,
       activeProductCode: access.activeProductCode ?? null,

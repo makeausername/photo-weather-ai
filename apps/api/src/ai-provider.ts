@@ -232,7 +232,7 @@ export function resolveOpenAiRuntimeConfig(
         readEnvNumber(env.OPENAI_AI_EXPLAIN_PROMPT_MAX_CHARS),
       openAiDefaultPromptMaxChars,
       3000,
-      6000,
+      20000,
     ),
     timeoutMs: clampInteger(
       readNumber(configJson.timeoutMs) ?? readEnvNumber(env.OPENAI_TIMEOUT_MS),
@@ -269,7 +269,7 @@ export function normalizeOpenAiAdminConfigJson(
       readNumber(current.promptMaxChars),
       openAiDefaultPromptMaxChars,
       3000,
-      6000,
+      20000,
     ),
     timeoutMs: clampInteger(readNumber(current.timeoutMs), openAiDefaultTimeoutMs, 1000, 120000),
   };

@@ -2837,23 +2837,40 @@ describe("forecast query validation route", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
-      success: false,
-      source: "fallback",
-      fallback: true,
-      fallbackInterpretation: expect.objectContaining({
-        metadata: expect.objectContaining({
-          source: "deterministic_fallback",
-        }),
-      }),
-      errorCategory: "timeout",
-      retryable: true,
-      error: "ai_explanation_timeout",
-      messageZh: expect.stringContaining("GPT / OpenAI 请求超时"),
+      success: true,
+      source: "openai",
+      fallback: false,
+      displaySuccess: true,
+      hasDisplayableAiContent: true,
+      fallbackUsed: true,
+      providerFallbackUsed: true,
+      deterministicFallbackUsed: false,
+      retryable: false,
       latencyMs: expect.any(Number),
       model: "gpt-4.1",
       promptSizeChars: expect.any(Number),
       parseSuccess: false,
+      parseStrategy: "failed",
+      sectionedExplanation: expect.objectContaining({
+        version: "forecast-ai-sectioned-v1",
+        providerCode: "openai",
+        displaySuccess: true,
+      }),
+      sections: expect.arrayContaining([
+        expect.objectContaining({
+          key: "overview",
+          status: "fallback",
+          errorCategory: "timeout",
+        }),
+      ]),
       explanation: expect.objectContaining({
+        sections: expect.arrayContaining([
+          expect.objectContaining({
+            key: "overview",
+            status: "fallback",
+            errorCategory: "timeout",
+          }),
+        ]),
         conclusion: expect.objectContaining({
           recommendedDayZh: expect.any(String),
         }),
@@ -2862,12 +2879,16 @@ describe("forecast query validation route", () => {
         model: "gpt-4.1",
         timeoutMs: 60000,
         promptSizeChars: expect.any(Number),
+        attempts: 5,
         parseSuccess: false,
-        fallback: true,
+        parseStrategy: "failed",
+        fallbackUsed: true,
+        providerFallbackUsed: true,
+        compatibilityFallbackUsed: true,
+        finalFailureUpstreamCode: "timeout",
       }),
-      message: expect.stringContaining("GPT / OpenAI 请求超时"),
     });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(response.body.length).toBeGreaterThan(2);
     expect(response.body).not.toContain("openai-secret");
   });
@@ -2918,23 +2939,36 @@ describe("forecast query validation route", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
-      success: false,
-      source: "fallback",
-      fallback: true,
-      errorCategory: "provider_http_error",
-      messageZh: expect.stringContaining("API Key"),
+      success: true,
+      source: "openai",
+      fallback: false,
+      displaySuccess: true,
+      hasDisplayableAiContent: true,
+      fallbackUsed: true,
+      providerFallbackUsed: true,
+      deterministicFallbackUsed: false,
       retryable: false,
-      error: "ai_explanation_unavailable",
       model: "gpt-4.1",
       parseSuccess: false,
+      parseStrategy: "failed",
+      sections: expect.arrayContaining([
+        expect.objectContaining({
+          key: "overview",
+          status: "fallback",
+          errorCategory: "provider_http_error",
+        }),
+      ]),
       diagnostics: expect.objectContaining({
         model: "gpt-4.1",
+        attempts: 5,
         parseSuccess: false,
-        fallback: true,
-        errorCategory: "provider_http_error",
+        parseStrategy: "failed",
+        fallbackUsed: true,
+        providerFallbackUsed: true,
+        compatibilityFallbackUsed: true,
       }),
     });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(response.body).not.toContain("openai-secret");
   });
 
@@ -2943,10 +2977,11 @@ describe("forecast query validation route", () => {
       const requestBody = JSON.parse(String(init?.body));
       expect(requestBody).toMatchObject({
         model: "gpt-4.1",
-        max_output_tokens: 1200,
         store: false,
         stream: false,
       });
+      expect([500, 700, 900]).toContain(requestBody.max_output_tokens);
+      expect(String(requestBody.input)).toContain("computedForecastFacts");
       expect(requestBody).not.toHaveProperty("response_format");
       return new Response(
         JSON.stringify({
@@ -3014,6 +3049,17 @@ describe("forecast query validation route", () => {
       fallbackUsed: true,
       providerFallbackUsed: true,
       deterministicFallbackUsed: false,
+      sections: expect.arrayContaining([
+        expect.objectContaining({
+          key: "overview",
+          status: "success",
+          parseStrategy: "plain_text_fallback",
+        }),
+      ]),
+      sectionedExplanation: expect.objectContaining({
+        version: "forecast-ai-sectioned-v1",
+        displaySuccess: true,
+      }),
       finishReason: "length",
       rawResponseSizeChars: expect.any(Number),
       summaryText: expect.stringContaining("\u6e05\u6668\u7a97\u53e3"),
@@ -3049,6 +3095,7 @@ describe("forecast query validation route", () => {
       diagnostics: expect.objectContaining({
         providerCode: "openai",
         model: "gpt-4.1",
+        attempts: 5,
         displaySuccess: true,
         hasDisplayableAiContent: true,
         parseSuccess: false,
@@ -3060,7 +3107,7 @@ describe("forecast query validation route", () => {
         rawResponseSizeChars: expect.any(Number),
       }),
     });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(response.body).not.toContain("openai-secret");
   });
 
@@ -3069,10 +3116,11 @@ describe("forecast query validation route", () => {
       const requestBody = JSON.parse(String(init?.body));
       expect(requestBody).toMatchObject({
         model: "relay-future-json",
-        max_output_tokens: 1200,
         store: false,
         stream: false,
       });
+      expect([500, 700, 900]).toContain(requestBody.max_output_tokens);
+      expect(String(requestBody.input)).toContain("computedForecastFacts");
       expect(requestBody).not.toHaveProperty("response_format");
       return new Response(
         JSON.stringify({
@@ -3147,11 +3195,20 @@ describe("forecast query validation route", () => {
       providerFallbackUsed: false,
       deterministicFallbackUsed: false,
       summaryText: expect.stringContaining("严格 JSON"),
+      sections: expect.arrayContaining([
+        expect.objectContaining({
+          key: "overview",
+          status: "success",
+        }),
+      ]),
+      sectionedExplanation: expect.objectContaining({
+        version: "forecast-ai-sectioned-v1",
+        providerCode: "openai",
+        model: "relay-future-json",
+        displaySuccess: true,
+      }),
       explanation: expect.objectContaining({
         summaryText: expect.stringContaining("严格 JSON"),
-        reasons: expect.arrayContaining(["低云、湿度和地形信号集中在清晨。"]),
-        suggestions: expect.arrayContaining(["按主窗口提前到位，失败时转拍远山层次。"]),
-        risks: expect.arrayContaining(["短临降水和白墙仍需现场复核。"]),
         metadata: expect.objectContaining({
           source: "openai",
           parseStrategy: "strict_json",
@@ -3169,19 +3226,26 @@ describe("forecast query validation route", () => {
       diagnostics: expect.objectContaining({
         providerCode: "openai",
         model: "relay-future-json",
+        attempts: 5,
         parseStrategy: "strict_json",
         displaySuccess: true,
         hasDisplayableAiContent: true,
       }),
     });
     expect(body).not.toHaveProperty("scores");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(response.body).not.toContain("openai-secret");
   });
 
   it("uses text-first forecast explanation requests while still parsing JSON content", async () => {
     const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
       const requestBody = JSON.parse(String(init?.body));
+      expect(requestBody).toMatchObject({
+        model: "gpt-4.1",
+        store: false,
+        stream: false,
+      });
+      expect(String(requestBody.input)).toContain("computedForecastFacts");
       expect(requestBody).not.toHaveProperty("response_format");
       return new Response(
         JSON.stringify({
@@ -3241,15 +3305,21 @@ describe("forecast query validation route", () => {
       displaySuccess: true,
       hasDisplayableAiContent: true,
       summaryText: expect.stringContaining("文本优先成功"),
+      sections: expect.arrayContaining([
+        expect.objectContaining({
+          key: "overview",
+          status: "success",
+        }),
+      ]),
       diagnostics: expect.objectContaining({
-        attempts: 1,
+        attempts: 5,
         compatibilityFallbackUsed: false,
         disabledResponseFormat: false,
         displaySuccess: true,
         hasDisplayableAiContent: true,
       }),
     });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(response.body).not.toContain("openai-secret");
     expect(response.body).not.toContain("Authorization");
   });
@@ -3306,27 +3376,39 @@ describe("forecast query validation route", () => {
 
     expect(response.statusCode).toBe(200);
     expect(body).toMatchObject({
-      success: false,
-      source: "fallback",
-      fallback: true,
+      success: true,
+      source: "openai",
+      fallback: false,
       model: "gpt-4.1",
+      displaySuccess: true,
+      hasDisplayableAiContent: true,
       parseSuccess: false,
       parseStrategy: "failed",
-      compatibilityFallbackUsed: false,
+      fallbackUsed: true,
+      providerFallbackUsed: true,
+      deterministicFallbackUsed: false,
+      compatibilityFallbackUsed: true,
       disabledResponseFormat: false,
       emptyContentFallbackUsed: false,
-      errorCategory: "provider_parse_error",
+      sections: expect.arrayContaining([
+        expect.objectContaining({
+          key: "overview",
+          status: "fallback",
+          errorCategory: "provider_parse_error",
+        }),
+      ]),
       diagnostics: expect.objectContaining({
-        attempts: 1,
-        compatibilityFallbackUsed: false,
+        attempts: 5,
+        compatibilityFallbackUsed: true,
         disabledResponseFormat: false,
         emptyContentFallbackUsed: false,
-        fallback: true,
-        errorCategory: "provider_parse_error",
+        fallbackUsed: true,
+        providerFallbackUsed: true,
+        parseStrategy: "failed",
         rawResponseSizeChars: expect.any(Number),
       }),
     });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(response.body).not.toContain("openai-secret");
     expect(response.body).not.toContain("Authorization");
     expect(response.body).not.toContain("messages");
@@ -3383,23 +3465,28 @@ describe("forecast query validation route", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
-      success: false,
-      source: "fallback",
-      fallback: true,
-      fallbackInterpretation: expect.objectContaining({
-        metadata: expect.objectContaining({
-          source: "deterministic_fallback",
-        }),
-      }),
-      errorCategory: "provider_parse_error",
-      messageZh: expect.stringContaining("GPT / OpenAI 返回内容无法解析"),
-      retryable: true,
+      success: true,
+      source: "openai",
+      fallback: false,
+      displaySuccess: true,
+      hasDisplayableAiContent: true,
+      fallbackUsed: true,
+      providerFallbackUsed: true,
+      deterministicFallbackUsed: false,
+      retryable: false,
       latencyMs: expect.any(Number),
       model: "gpt-4.1",
       promptSizeChars: expect.any(Number),
       parseSuccess: false,
       parseStrategy: "failed",
       rawResponseSizeChars: expect.any(Number),
+      sections: expect.arrayContaining([
+        expect.objectContaining({
+          key: "overview",
+          status: "fallback",
+          errorCategory: "provider_parse_error",
+        }),
+      ]),
       explanation: expect.objectContaining({
         conclusion: expect.objectContaining({
           recommendedDayZh: expect.any(String),
@@ -3407,14 +3494,16 @@ describe("forecast query validation route", () => {
       }),
       diagnostics: expect.objectContaining({
         model: "gpt-4.1",
+        attempts: 5,
         parseSuccess: false,
         parseStrategy: "failed",
-        fallback: true,
-        errorCategory: "provider_parse_error",
+        fallbackUsed: true,
+        providerFallbackUsed: true,
+        compatibilityFallbackUsed: true,
         rawResponseSizeChars: expect.any(Number),
       }),
     });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(response.body).not.toContain("openai-secret");
   });
 
@@ -3488,6 +3577,17 @@ describe("forecast query validation route", () => {
       parseSuccess: true,
       cacheHit: false,
       summaryText: expect.stringContaining("缓存命中"),
+      sections: expect.arrayContaining([
+        expect.objectContaining({
+          key: "overview",
+          status: "success",
+        }),
+      ]),
+      sectionedExplanation: expect.objectContaining({
+        version: "forecast-ai-sectioned-v1",
+        providerCode: "openai",
+        displaySuccess: true,
+      }),
       explanation: expect.objectContaining({
         summaryText: expect.stringContaining("缓存命中"),
       }),
@@ -3501,6 +3601,7 @@ describe("forecast query validation route", () => {
         providerCode: "openai",
         model: "gpt-4.1",
         parseStrategy: "strict_json",
+        cacheHit: false,
       }),
     });
     expect(secondResponse.json()).toMatchObject({
@@ -3511,6 +3612,12 @@ describe("forecast query validation route", () => {
       parseSuccess: true,
       cacheHit: true,
       latencyMs: 0,
+      sections: expect.arrayContaining([
+        expect.objectContaining({
+          key: "overview",
+          status: "success",
+        }),
+      ]),
       interpretation: expect.objectContaining({
         summaryText: expect.stringContaining("缓存命中"),
         conclusion: expect.objectContaining({
@@ -3523,7 +3630,7 @@ describe("forecast query validation route", () => {
         cacheHit: true,
       }),
     });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(firstResponse.body).not.toContain("openai-secret");
     expect(secondResponse.body).not.toContain("openai-secret");
   });
@@ -3534,10 +3641,12 @@ describe("forecast query validation route", () => {
       "utf8",
     );
 
-    expect(source).toContain("createForecastInterpretationCacheKey(result, access)");
+    expect(source).toContain("createForecastInterpretationCacheKey(result, access, runtimeOpenAi)");
+    expect(source).toContain("sectionedExplanationVersion");
+    expect(source).toContain("model: runtimeOpenAi?.model ?? openAiDefaultModel");
     expect(source).toContain("activeProductCode");
-    expect(source).toContain("access:${accessScope}:report");
-    expect(source).toContain("access:${accessScope}:result");
+    expect(source).toContain("ai:${aiScope}:access:${accessScope}:report");
+    expect(source).toContain("ai:${aiScope}:access:${accessScope}:result");
   });
 
   it("rejects unsupported horizon and target for calculation", async () => {
