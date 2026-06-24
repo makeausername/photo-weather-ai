@@ -505,8 +505,9 @@ describe("admin config routes", () => {
       configJson: {
         baseUrl: "https://api.openai.com",
         realCallEnabled: true,
-        model: "gpt-4.1",
-        defaultModel: "gpt-4.1",
+        model: "gpt-5.4-mini",
+        customModel: "",
+        defaultModel: "gpt-5.4-mini",
         temperature: 0.2,
         maxTokens: 1200,
         promptMaxChars: 6000,
@@ -1592,7 +1593,7 @@ describe("admin config routes", () => {
       success: true,
       mode: "responses_api",
       connectionMode: "mock",
-      model: "gpt-4.1",
+      model: "gpt-5.4-mini",
       message: "当前为模拟测试，未请求 GPT / OpenAI 服务。",
     });
     expect(response.body).not.toContain("openai-test-secret");
@@ -1951,7 +1952,7 @@ describe("admin config routes", () => {
       expect(String(init?.body)).not.toContain("openai-real-secret");
       const requestBody = JSON.parse(String(init?.body));
       expect(requestBody).toMatchObject({
-        model: "gpt-4.1",
+        model: "gpt-5.4-mini",
         input: expect.any(String),
         instructions: expect.any(String),
         max_output_tokens: 120,
@@ -2014,7 +2015,7 @@ describe("admin config routes", () => {
       mode: "responses_api",
       connectionMode: "real",
       modeLabelZh: "GPT / OpenAI",
-      model: "gpt-4.1",
+      model: "gpt-5.4-mini",
       latencyMs: expect.any(Number),
       message: "GPT / OpenAI 连接测试通过。",
     });
@@ -2031,7 +2032,7 @@ describe("admin config routes", () => {
       expect(String(init?.body)).not.toContain("openai-real-secret");
       const requestBody = JSON.parse(String(init?.body));
       expect(requestBody).toMatchObject({
-        model: "gpt-4.1",
+        model: "gpt-5.4-mini",
       });
       expect(requestBody).not.toHaveProperty("response_format");
 
@@ -2087,7 +2088,7 @@ describe("admin config routes", () => {
     expect(response.json()).toMatchObject({
       success: true,
       providerCode: "openai",
-      model: "gpt-4.1",
+      model: "gpt-5.4-mini",
       outputMode: "text_with_json_fallback",
       promptSizeChars: expect.any(Number),
       latencyMs: expect.any(Number),
@@ -2167,7 +2168,7 @@ describe("admin config routes", () => {
     expect(response.json()).toMatchObject({
       success: false,
       providerCode: "openai",
-      model: "gpt-4.1",
+      model: "gpt-5.4-mini",
       outputMode: "text_with_json_fallback",
       attempts: 1,
       parseSuccess: false,
@@ -2363,7 +2364,7 @@ describe("admin config routes", () => {
       success: true,
       mode: "responses_api",
       connectionMode: "mock",
-      model: "gpt-4.1",
+      model: "gpt-5.4-mini",
     });
     expect(qWeatherResponse.statusCode).toBe(200);
     expect(qWeatherResponse.json()).toMatchObject({

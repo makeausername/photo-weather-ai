@@ -7,6 +7,8 @@ import { getRuntimeProviderConfig } from "@photo-weather/db";
 import type { DatabaseClient, JsonValue, ProviderConfigRecord } from "@photo-weather/db";
 import {
   normalizeOpenAiModel,
+  normalizeOpenAiModelSelection,
+  openAiCustomModelValue,
   openAiDefaultBaseUrl,
   openAiDefaultMaxTokens,
   openAiDefaultModel,
@@ -170,19 +172,36 @@ function readOpenAiRealCallEnabled(
   return readBoolean(configJson.realCallEnabled) ?? readOptInFlag(env.ENABLE_REAL_OPENAI);
 }
 
-export function resolveOpenAiRuntimeConfig(
-  provider: ProviderConfigRecord | null,
-  env: NodeJS.ProcessEnv = process.env,
-): ResolvedOpenAiRuntimeConfig {
-  const { secretJson, configJson } = readSecretAndConfig(provider);
-  const model = normalizeOpenAiModel(
-    readString(configJson.model) ??
-      readString(secretJson.model) ??
+function resolveOpenAiModel(
+  configJson: Record<string, JsonValue>,
+  secretJson: Record<string, JsonValue>,
+  env: NodeJS.ProcessEnv,
+): string {
+  const configuredModel = readString(configJson.model);
+
+  if (configuredModel === openAiCustomModelValue) {
+    return normalizeOpenAiModel(readString(configJson.customModel));
+  }
+
+  if (configuredModel !== undefined) {
+    return normalizeOpenAiModelSelection(configuredModel);
+  }
+
+  return normalizeOpenAiModel(
+    readString(secretJson.model) ??
       readString(configJson.defaultModel) ??
       readString(secretJson.defaultModel) ??
       readEnvString(env.OPENAI_DEFAULT_MODEL) ??
       openAiDefaultModel,
   );
+}
+
+export function resolveOpenAiRuntimeConfig(
+  provider: ProviderConfigRecord | null,
+  env: NodeJS.ProcessEnv = process.env,
+): ResolvedOpenAiRuntimeConfig {
+  const { secretJson, configJson } = readSecretAndConfig(provider);
+  const model = resolveOpenAiModel(configJson, secretJson, env);
   const apiKey = readOpenAiApiKey(provider, env);
   const internalRelayToken = readOpenAiInternalRelayToken(provider, env);
 
@@ -231,11 +250,18 @@ export function normalizeOpenAiAdminConfigJson(
   configJson: JsonValue | undefined,
 ): Record<string, JsonValue> {
   const current = isJsonObject(configJson) ? { ...configJson } : {};
+  const model = normalizeOpenAiModelSelection(readString(current.model));
+  const customModel = readString(current.customModel) ?? "";
+  const defaultModel =
+    model === openAiCustomModelValue
+      ? normalizeOpenAiModel(customModel)
+      : normalizeOpenAiModel(model);
 
   return {
     realCallEnabled: readBoolean(current.realCallEnabled) ?? false,
-    model: normalizeOpenAiModel(readString(current.model)),
-    defaultModel: normalizeOpenAiModel(readString(current.defaultModel) ?? readString(current.model)),
+    model,
+    customModel,
+    defaultModel,
     baseUrl: readString(current.baseUrl) ?? openAiDefaultBaseUrl,
     temperature: clampNumber(readNumber(current.temperature), openAiDefaultTemperature, 0, 2),
     maxTokens: clampInteger(readNumber(current.maxTokens), openAiDefaultMaxTokens, 128, 8192),
@@ -245,12 +271,7 @@ export function normalizeOpenAiAdminConfigJson(
       3000,
       6000,
     ),
-    timeoutMs: clampInteger(
-      readNumber(current.timeoutMs),
-      openAiDefaultTimeoutMs,
-      1000,
-      120000,
-    ),
+    timeoutMs: clampInteger(readNumber(current.timeoutMs), openAiDefaultTimeoutMs, 1000, 120000),
   };
 }
 

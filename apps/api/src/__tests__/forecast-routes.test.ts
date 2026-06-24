@@ -2667,7 +2667,7 @@ describe("forecast query validation route", () => {
       retryable: false,
       error: "ai_explanation_unavailable",
       latencyMs: 0,
-      model: "gpt-4.1",
+      model: "gpt-5.4-mini",
       promptSizeChars: expect.any(Number),
       parseSuccess: false,
       explanation: expect.objectContaining({
@@ -2676,7 +2676,7 @@ describe("forecast query validation route", () => {
         }),
       }),
       diagnostics: expect.objectContaining({
-        model: "gpt-4.1",
+        model: "gpt-5.4-mini",
         parseSuccess: false,
         fallback: true,
         errorCategory: "config_missing",
@@ -3068,7 +3068,7 @@ describe("forecast query validation route", () => {
     const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
       const requestBody = JSON.parse(String(init?.body));
       expect(requestBody).toMatchObject({
-        model: "gpt-4.1",
+        model: "relay-future-json",
         max_output_tokens: 1200,
         store: false,
         stream: false,
@@ -3101,7 +3101,8 @@ describe("forecast query validation route", () => {
       configJson: {
         ...(provider.configJson ?? {}),
         realCallEnabled: true,
-        model: "gpt-4.1",
+        model: "custom",
+        customModel: "relay-future-json",
       },
       secretJson: {
         apiKey: "openai-secret",
@@ -3138,7 +3139,7 @@ describe("forecast query validation route", () => {
       fallback: false,
       displaySuccess: true,
       hasDisplayableAiContent: true,
-      model: "gpt-4.1",
+      model: "relay-future-json",
       outputMode: "text_with_json_fallback",
       parseSuccess: true,
       parseStrategy: "strict_json",
@@ -3159,7 +3160,7 @@ describe("forecast query validation route", () => {
       }),
       meta: expect.objectContaining({
         providerCode: "openai",
-        model: "gpt-4.1",
+        model: "relay-future-json",
         parseStrategy: "strict_json",
         fallbackUsed: false,
         displaySuccess: true,
@@ -3167,7 +3168,7 @@ describe("forecast query validation route", () => {
       }),
       diagnostics: expect.objectContaining({
         providerCode: "openai",
-        model: "gpt-4.1",
+        model: "relay-future-json",
         parseStrategy: "strict_json",
         displaySuccess: true,
         hasDisplayableAiContent: true,

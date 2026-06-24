@@ -55,7 +55,39 @@ export const deepSeekResponseFormat = "json_object";
 
 export const openAiDefaultBaseUrl = "https://api.openai.com";
 
-export const openAiDefaultModel = "gpt-4.1";
+export const openAiDefaultModel = "gpt-5.4-mini";
+
+export const openAiCustomModelValue = "custom";
+
+export const openAiPresetModelValues = [
+  "gpt-5.5",
+  "gpt-5.4",
+  "gpt-5.4-mini",
+  "gpt-5.4-nano",
+  "gpt-4.1",
+  "gpt-4.1-mini",
+  "gpt-4.1-nano",
+  "gpt-4o",
+  "gpt-4o-mini",
+] as const;
+
+export type OpenAiPresetModelValue = (typeof openAiPresetModelValues)[number];
+
+export const openAiModelOptions = [
+  ...openAiPresetModelValues.map((value) => ({
+    value,
+    label: value,
+  })),
+  {
+    value: openAiCustomModelValue,
+    label: "自定义模型",
+  },
+] as const satisfies readonly ProviderFieldOption[];
+
+const openAiModelSelectionValues = new Set<string>([
+  ...openAiPresetModelValues,
+  openAiCustomModelValue,
+]);
 
 export const openAiDefaultTimeoutMs = 120000;
 
@@ -68,6 +100,11 @@ export const openAiDefaultPromptMaxChars = 6000;
 export function normalizeOpenAiModel(value: string | undefined): string {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : openAiDefaultModel;
+}
+
+export function normalizeOpenAiModelSelection(value: string | undefined): string {
+  const trimmed = value?.trim();
+  return trimmed && openAiModelSelectionValues.has(trimmed) ? trimmed : openAiDefaultModel;
 }
 
 export const deepSeekModelOptions = [
@@ -283,52 +320,60 @@ export const providerFieldPresets = [
   {
     providerCode: "openai",
     helpText:
-      "GPT / OpenAI ?????????????????????????????????????????????????? OpenAI Base URL??????? OpenAI ????? Base URL?API Key ????????????????????????",
+      "GPT / OpenAI 仅用于解释系统已计算出的评分、风险和拍摄建议，不负责重新计算天气、天文、地形、概率和时间窗口。生产环境可填写 OpenAI 官方 Base URL，也可填写 OpenAI 兼容中转 Base URL；API Key 和中转密钥只保存在服务端，不会暴露给浏览器。",
     fields: [
       {
         key: "realCallEnabled",
-        label: "??????",
+        label: "启用真实调用",
         target: "configJson",
         control: "boolean",
         defaultValue: false,
-        helpText: "???????????????????? GPT / OpenAI ????????",
+        helpText: "启用后，手动生成智能解读和测试连接会请求 GPT / OpenAI 服务。",
       },
       {
         key: "model",
-        label: "??",
+        label: "模型",
         target: "configJson",
+        control: "select",
+        options: openAiModelOptions,
         defaultValue: openAiDefaultModel,
         placeholder: openAiDefaultModel,
-        helpText: "???? gpt-4.1??????????? OpenAI Responses API ?????",
+        helpText: "可选择常用 GPT 模型；如需使用未列出的模型，请选择“自定义模型”并填写模型 ID。",
+      },
+      {
+        key: "customModel",
+        label: "自定义模型 ID",
+        target: "configJson",
+        helpText: "当模型选择为“自定义模型”时使用；可填写 OpenAI 或兼容中转支持的模型 ID。",
       },
       {
         key: "apiKey",
-        label: "OpenAI API Key / ??????",
+        label: "OpenAI API Key / 中转授权密钥",
         target: "secretJson",
         placeholder: keepExistingSecretPlaceholder,
         password: true,
       },
       {
         key: "internalRelayToken",
-        label: "??????",
+        label: "内部中转密钥",
         target: "secretJson",
         placeholder: keepExistingSecretPlaceholder,
         password: true,
         advanced: true,
-        helpText: "???????????? X-Internal-AI-Token ??????????",
+        helpText: "如使用内部中转，可通过 X-Internal-AI-Token 传递服务端内部鉴权密钥。",
       },
       {
         key: "baseUrl",
-        label: "?????Base URL?",
+        label: "接口地址（Base URL）",
         target: "configJson",
         placeholder: openAiDefaultBaseUrl,
         defaultValue: openAiDefaultBaseUrl,
         advanced: true,
-        helpText: "??? OpenAI ??????? OpenAI Responses API ????????",
+        helpText: "可填写 OpenAI 官方地址，也可填写兼容 OpenAI Responses API 的私有中转地址。",
       },
       {
         key: "timeoutMs",
-        label: "????????",
+        label: "请求超时（毫秒）",
         target: "configJson",
         control: "number",
         defaultValue: openAiDefaultTimeoutMs,
@@ -339,7 +384,7 @@ export const providerFieldPresets = [
       },
       {
         key: "temperature",
-        label: "???Temperature?",
+        label: "温度（temperature）",
         target: "configJson",
         control: "number",
         defaultValue: openAiDefaultTemperature,
@@ -350,11 +395,11 @@ export const providerFieldPresets = [
       },
       {
         key: "maxTokens",
-        label: "???? Token",
+        label: "最大输出 Token",
         target: "configJson",
         control: "number",
         defaultValue: openAiDefaultMaxTokens,
-        helpText: "?????????????????? 2400 ?????????????",
+        helpText: "后台可保持默认；预报智能解读低于 2400 时可由服务端自动提高有效输出上限。",
         min: 128,
         max: 8192,
         step: 1,
@@ -362,7 +407,7 @@ export const providerFieldPresets = [
       },
       {
         key: "promptMaxChars",
-        label: "Prompt Max Chars",
+        label: "Prompt 最大字符数",
         target: "configJson",
         control: "number",
         defaultValue: openAiDefaultPromptMaxChars,

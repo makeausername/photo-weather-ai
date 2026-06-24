@@ -4,6 +4,10 @@ import { Component, useCallback, useEffect, useMemo, useRef, useState } from "re
 import type { ErrorInfo, ReactNode } from "react";
 import {
   getProviderFieldPreset,
+  openAiCustomModelValue,
+  openAiDefaultBaseUrl,
+  openAiDefaultModel,
+  openAiDefaultTimeoutMs,
   tencentCaptchaDefaultCaptchaType,
   tencentCaptchaDefaultEndpoint,
   tencentCaptchaDefaultSdkUrl,
@@ -165,7 +169,7 @@ const providerModules = [
   {
     key: "ai",
     title: "智能解读",
-    description: "管理 OpenAI 智能解读配置，不参与确定性天气、天文和地形计算。",
+    description: "管理 GPT / OpenAI 智能解读配置，不参与确定性天气、天文和地形计算。",
     apiProviderTypes: ["ai"],
   },
   {
@@ -244,7 +248,7 @@ const providerMeta: Record<ProviderKey, ProviderMeta> = {
     displayName: "GPT / OpenAI",
     purpose: "用于智能解读、文案生成和结果说明，不改写确定性评分。",
     capabilities: ["智能解读", "文案生成", "结果说明"],
-    requiredConfigKeys: ["model"],
+    requiredConfigKeys: ["model", "customModel"],
   },
   "billing:wechat_pay": {
     key: "billing:wechat_pay",
@@ -356,9 +360,10 @@ const providerConfigDefaults: Partial<Record<string, Record<string, JsonValue>>>
     retryCount: 1,
   },
   openai: {
-    baseUrl: "https://api.openai.com",
-    model: "gpt-4.1",
-    timeoutMs: 120000,
+    baseUrl: openAiDefaultBaseUrl,
+    model: openAiDefaultModel,
+    customModel: "",
+    timeoutMs: openAiDefaultTimeoutMs,
   },
   wechat_pay: {
     realCallEnabled: false,
@@ -1737,6 +1742,31 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     }));
   }
 
+  function selectedOpenAiModel(provider: SafeProviderConfig): string {
+    const modelField = getFieldByKey(provider, "model");
+    const savedModel = readStringJson(readJsonField(provider.configJson, "model"));
+    return (
+      configFieldDrafts[provider.id]?.model ??
+      savedModel ??
+      (modelField ? providerFieldDefaultToInput(provider, modelField) : "")
+    );
+  }
+
+  function shouldShowConfigField(
+    provider: SafeProviderConfig,
+    field: ProviderFieldDefinition,
+  ): boolean {
+    if (
+      provider.providerType === "ai" &&
+      provider.providerCode === "openai" &&
+      field.key === "customModel"
+    ) {
+      return selectedOpenAiModel(provider) === openAiCustomModelValue;
+    }
+
+    return true;
+  }
+
   function renderConfigField(provider: SafeProviderConfig, field: ProviderFieldDefinition) {
     const value =
       configFieldDrafts[provider.id]?.[field.key] ?? providerFieldDefaultToInput(provider, field);
@@ -1951,9 +1981,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
           message:
             result.messageZh ??
             result.message ??
-            (result.success === false
-              ? "OpenAI 真实解读测试失败。"
-              : "OpenAI 真实解读测试通过。"),
+            (result.success === false ? "OpenAI 真实解读测试失败。" : "OpenAI 真实解读测试通过。"),
         },
       }));
     } catch (error) {
@@ -2188,8 +2216,12 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   function renderProviderDetail(provider: SafeProviderConfig) {
     const meta = getMeta(provider);
     const realCallField = getFieldByKey(provider, "realCallEnabled");
-    const requiredConfigFields = getRequiredConfigFields(provider);
-    const advancedConfigFields = getAdvancedConfigFields(provider);
+    const requiredConfigFields = getRequiredConfigFields(provider).filter((field) =>
+      shouldShowConfigField(provider, field),
+    );
+    const advancedConfigFields = getAdvancedConfigFields(provider).filter((field) =>
+      shouldShowConfigField(provider, field),
+    );
     const secretFields = getPresetFields(provider, "secretJson");
     const saveState = saveStateByProvider[provider.id];
     const testState = testStateByProvider[provider.id];

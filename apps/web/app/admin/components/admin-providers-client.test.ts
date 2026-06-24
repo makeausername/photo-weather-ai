@@ -118,8 +118,7 @@ describe("admin provider module source", () => {
       {
         route: "ai",
         title: 'title="智能解读"',
-        description:
-          "管理 GPT / OpenAI 智能解读配置。AI 只负责说明和文案生成，不参与确定性天气、天文和地形计算。",
+        description: "管理 GPT / OpenAI 智能解读配置，不参与确定性天气、天文和地形计算。",
         providerType: 'providerType="ai"',
       },
       {
@@ -238,6 +237,64 @@ describe("admin provider module source", () => {
     ]) {
       expect(source).toContain(snippet);
     }
+  });
+
+  it("uses GPT / OpenAI as the active AI provider with a dropdown and custom model field", () => {
+    const openAiMetaSource = sourceBetween(source, '"ai:openai": {', '"billing:wechat_pay": {');
+    const openAiFieldPresetSource = sourceBetween(
+      providerFieldsSource,
+      'providerCode: "openai"',
+      'providerCode: "qweather"',
+    );
+    const openAiModelOptionsSource = sourceBetween(
+      providerFieldsSource,
+      "export const openAiPresetModelValues",
+      "const openAiModelSelectionValues",
+    );
+
+    expect(openAiMetaSource).toContain('displayName: "GPT / OpenAI"');
+    expect(openAiMetaSource).toContain(
+      'purpose: "用于智能解读、文案生成和结果说明，不改写确定性评分。"',
+    );
+    expect(openAiMetaSource).toContain('capabilities: ["智能解读", "文案生成", "结果说明"]');
+    expect(openAiMetaSource).toContain('requiredConfigKeys: ["model", "customModel"]');
+    expect(openAiMetaSource).not.toContain("DeepSeek");
+
+    for (const snippet of [
+      'key: "model"',
+      'label: "模型"',
+      'control: "select"',
+      "options: openAiModelOptions",
+      'key: "customModel"',
+      'label: "自定义模型 ID"',
+      'label: "OpenAI API Key / 中转授权密钥"',
+      'label: "内部中转密钥"',
+      'label: "接口地址（Base URL）"',
+      'label: "Prompt 最大字符数"',
+    ]) {
+      expect(openAiFieldPresetSource).toContain(snippet);
+    }
+
+    for (const snippet of [
+      '"gpt-5.5"',
+      '"gpt-5.4"',
+      '"gpt-5.4-mini"',
+      '"gpt-5.4-nano"',
+      '"gpt-4.1"',
+      '"gpt-4.1-mini"',
+      '"gpt-4.1-nano"',
+      '"gpt-4o"',
+      '"gpt-4o-mini"',
+      "value: openAiCustomModelValue",
+    ]) {
+      expect(openAiModelOptionsSource).toContain(snippet);
+    }
+
+    expect(source).toContain("openAiCustomModelValue");
+    expect(source).toContain('field.key === "customModel"');
+    expect(source).toContain("selectedOpenAiModel(provider) === openAiCustomModelValue");
+    expect(openAiMetaSource).not.toContain("????");
+    expect(openAiFieldPresetSource).not.toContain("????");
   });
 
   it("removes internal provider category cards, search, and the all-provider list", () => {

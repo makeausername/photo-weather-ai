@@ -22,6 +22,7 @@ import {
   forecastHorizonLabels,
   localDateKey,
   normalizeForecastQueryInput,
+  openAiDefaultModel,
   forecastQueryInputSchema,
   forecastTargetLabels,
 } from "@photo-weather/shared";
@@ -751,9 +752,7 @@ export function registerForecastRoutes(
       dbClient: options.dbClient,
       env,
     });
-    const promptSizeChars = runtimeOpenAi
-      ? estimateOpenAiPromptSize(result, runtimeOpenAi)
-      : 0;
+    const promptSizeChars = runtimeOpenAi ? estimateOpenAiPromptSize(result, runtimeOpenAi) : 0;
     const unavailableCategory = classifyRuntimeOpenAiUnavailable(runtimeOpenAi);
 
     if (!runtimeOpenAi || unavailableCategory) {
@@ -761,7 +760,7 @@ export function registerForecastRoutes(
         route: "/forecast/ai-explain",
         targetCode: result.target,
         providerCode: "openai",
-        model: runtimeOpenAi?.model ?? "gpt-4.1",
+        model: runtimeOpenAi?.model ?? openAiDefaultModel,
         timeoutMs: runtimeOpenAi?.timeoutMs ?? 120000,
         promptSizeChars,
         outputMode: runtimeOpenAi ? openAiOutputMode(runtimeOpenAi) : "unavailable",
@@ -1945,7 +1944,7 @@ function buildAiExplainFailureResponse(options: {
   const fallback = buildDeterministicFallbackInterpretation(options.result);
   const messageZh = openAiInterpretationMessageZh(options.errorCategory, true);
   const retryable = options.retryable ?? isRetryableOpenAiErrorCategory(options.errorCategory);
-  const model = options.runtimeOpenAi?.model ?? "gpt-4.1";
+  const model = options.runtimeOpenAi?.model ?? openAiDefaultModel;
   const timeoutMs = options.runtimeOpenAi?.timeoutMs ?? 120000;
   const outputMode = options.runtimeOpenAi
     ? openAiOutputMode(options.runtimeOpenAi)

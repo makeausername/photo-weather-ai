@@ -58,6 +58,133 @@ describe("OpenAI runtime resolver", () => {
     expect(JSON.stringify(config)).not.toContain("relay-secret");
   });
 
+  it("accepts configured GPT / OpenAI preset models", () => {
+    expect(
+      resolveOpenAiRuntimeConfig(
+        {
+          ...baseProvider,
+          configJson: {
+            model: "gpt-5.5",
+          },
+        },
+        {
+          NODE_ENV: "development",
+        },
+      ).model,
+    ).toBe("gpt-5.5");
+
+    expect(
+      resolveOpenAiRuntimeConfig(
+        {
+          ...baseProvider,
+          configJson: {
+            model: "gpt-5.4-mini",
+          },
+        },
+        {
+          NODE_ENV: "development",
+        },
+      ).model,
+    ).toBe("gpt-5.4-mini");
+  });
+
+  it("resolves custom GPT / OpenAI model IDs without preset validation", () => {
+    const config = resolveOpenAiRuntimeConfig(
+      {
+        ...baseProvider,
+        configJson: {
+          model: "custom",
+          customModel: "  relay-preview-2026-06  ",
+        },
+      },
+      {
+        NODE_ENV: "development",
+      },
+    );
+
+    expect(config.model).toBe("relay-preview-2026-06");
+  });
+
+  it("falls back to the default model when custom or preset selection is empty or invalid", () => {
+    expect(
+      resolveOpenAiRuntimeConfig(
+        {
+          ...baseProvider,
+          configJson: {
+            model: "custom",
+            customModel: "  ",
+          },
+          secretJson: {
+            model: "gpt-5.5",
+          },
+        },
+        {
+          NODE_ENV: "development",
+          OPENAI_DEFAULT_MODEL: "gpt-4o",
+        },
+      ).model,
+    ).toBe("gpt-5.4-mini");
+
+    expect(
+      resolveOpenAiRuntimeConfig(
+        {
+          ...baseProvider,
+          configJson: {
+            model: "",
+          },
+        },
+        {
+          NODE_ENV: "development",
+        },
+      ).model,
+    ).toBe("gpt-5.4-mini");
+
+    expect(
+      resolveOpenAiRuntimeConfig(
+        {
+          ...baseProvider,
+          configJson: {
+            model: "not-a-dropdown-option",
+          },
+        },
+        {
+          NODE_ENV: "development",
+        },
+      ).model,
+    ).toBe("gpt-5.4-mini");
+  });
+
+  it("keeps legacy secret and env model fallbacks flexible when no config model is selected", () => {
+    expect(
+      resolveOpenAiRuntimeConfig(
+        {
+          ...baseProvider,
+          configJson: {},
+          secretJson: {
+            model: "relay-secret-model",
+          },
+        },
+        {
+          NODE_ENV: "development",
+        },
+      ).model,
+    ).toBe("relay-secret-model");
+
+    expect(
+      resolveOpenAiRuntimeConfig(
+        {
+          ...baseProvider,
+          configJson: {},
+          secretJson: {},
+        },
+        {
+          NODE_ENV: "development",
+          OPENAI_DEFAULT_MODEL: "relay-env-model",
+        },
+      ).model,
+    ).toBe("relay-env-model");
+  });
+
   it("uses OpenAI env fallback values without enabling real calls in tests", () => {
     const config = resolveOpenAiRuntimeConfig(
       {
@@ -88,7 +215,7 @@ describe("OpenAI runtime resolver", () => {
     expect(JSON.stringify(config)).not.toContain("sk-env");
   });
 
-  it("defaults to disabled gpt-4.1 Responses API config", () => {
+  it("defaults to disabled GPT / OpenAI Responses API config", () => {
     const config = resolveOpenAiRuntimeConfig(null, {
       NODE_ENV: "development",
     });
@@ -97,7 +224,7 @@ describe("OpenAI runtime resolver", () => {
       enabled: false,
       realCallEnabled: false,
       apiKeyPresent: false,
-      model: "gpt-4.1",
+      model: "gpt-5.4-mini",
       baseUrl: "https://api.openai.com",
       temperature: 0.2,
       maxTokens: 1200,
@@ -112,6 +239,7 @@ describe("OpenAI runtime resolver", () => {
       normalizeOpenAiAdminConfigJson({
         realCallEnabled: true,
         model: "",
+        customModel: " future-relay ",
         baseUrl: "",
         temperature: 3,
         maxTokens: 32,
@@ -120,13 +248,27 @@ describe("OpenAI runtime resolver", () => {
       }),
     ).toMatchObject({
       realCallEnabled: true,
-      model: "gpt-4.1",
-      defaultModel: "gpt-4.1",
+      model: "gpt-5.4-mini",
+      customModel: "future-relay",
+      defaultModel: "gpt-5.4-mini",
       baseUrl: "https://api.openai.com",
       temperature: 2,
       maxTokens: 128,
       promptMaxChars: 6000,
       timeoutMs: 1000,
+    });
+  });
+
+  it("normalizes custom admin model selection while preserving unknown custom IDs", () => {
+    expect(
+      normalizeOpenAiAdminConfigJson({
+        model: "custom",
+        customModel: " relay-future-model ",
+      }),
+    ).toMatchObject({
+      model: "custom",
+      customModel: "relay-future-model",
+      defaultModel: "relay-future-model",
     });
   });
 });

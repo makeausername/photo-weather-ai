@@ -305,6 +305,7 @@ describe("AI providers", () => {
       realModeEnabled: true,
       apiKey: "sk-openai-test",
       internalRelayToken: "relay-secret",
+      defaultModel: "gpt-5.5",
       fetcher,
     });
 
@@ -314,7 +315,7 @@ describe("AI providers", () => {
 
     expect(requestBodies).toHaveLength(1);
     expect(requestBodies[0]).toMatchObject({
-      model: "gpt-4.1",
+      model: "gpt-5.5",
       store: false,
       stream: false,
     });
