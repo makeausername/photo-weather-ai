@@ -296,6 +296,66 @@ describe("AI providers", () => {
     }
   });
 
+  it("adds horizon-specific OpenAI section guidance without recalculating deterministic facts", () => {
+    const baseFacts = buildCompactForecastExplanationFacts({
+      ...forecastResultFixture,
+      target: "general",
+      horizon: "24h",
+    });
+    const instructionsFor = (horizon: string) =>
+      buildSectionPromptFromCompactFacts("overview", {
+        ...baseFacts,
+        horizon: horizon as ForecastCalculationResult["horizon"],
+      }).body.instructions;
+
+    expect(instructionsFor("24h")).toContain("Horizon style: 24h");
+    expect(instructionsFor("24h")).toContain("immediate execution");
+    expect(instructionsFor("24h")).toContain("arrival timing");
+    expect(instructionsFor("24h")).toContain("short-term risks");
+    expect(instructionsFor("24h")).toContain("nowcasting");
+    expect(instructionsFor("48h")).toContain("Compare today and tomorrow");
+    expect(instructionsFor("48h")).toContain("backup plan");
+    expect(instructionsFor("72h")).toContain("Rank the top 1-2 windows");
+    expect(instructionsFor("72h")).toContain("recheck");
+    expect(instructionsFor("7d")).toContain("daily trend");
+    expect(instructionsFor("7d")).toContain("uncertainty increases");
+    expect(instructionsFor("30d")).toContain("Do not pretend to provide precise hour-level weather");
+    expect(instructionsFor("30d")).toContain("planning value");
+    expect(instructionsFor("90d")).toContain("seasonal planning and destination scouting");
+    expect(instructionsFor("90d")).toContain("recheck closer horizons");
+    expect(instructionsFor("unknown")).toContain("Horizon style: unknown");
+    expect(instructionsFor("24h")).toContain("Do not recalculate or invent weather");
+  });
+
+  it("adds target-specific OpenAI prompt guidance for cloud sea, glow, astro, and general", () => {
+    const baseFacts = buildCompactForecastExplanationFacts({
+      ...forecastResultFixture,
+      target: "general",
+      horizon: "24h",
+    });
+    const instructionsFor = (
+      target: ForecastCalculationResult["target"],
+      sectionKey: (typeof forecastAiExplanationSectionKeys)[number] = "overview",
+    ) =>
+      buildSectionPromptFromCompactFacts(sectionKey, {
+        ...baseFacts,
+        target,
+      }).body.instructions;
+
+    expect(instructionsFor("cloud_sea")).toContain("Target style: cloud_sea");
+    expect(instructionsFor("cloud_sea")).toContain("humidity");
+    expect(instructionsFor("cloud_sea")).toContain("whiteout");
+    expect(instructionsFor("glow")).toContain("Target style: glow");
+    expect(instructionsFor("glow")).toContain("sunrise/sunset");
+    expect(instructionsFor("glow")).toContain("pre-position timing");
+    expect(instructionsFor("astro")).toContain("Target style: astro");
+    expect(instructionsFor("astro")).toContain("Milky Way");
+    expect(instructionsFor("astro")).toContain("light pollution");
+    expect(instructionsFor("general")).toContain("Target style: general");
+    expect(instructionsFor("general")).toContain("值不值得去");
+    expect(instructionsFor("general", "timeline")).not.toContain("值不值得去");
+  });
+
   it("builds an OpenAI Responses API forecast explanation request without secrets", () => {
     const request = buildOpenAiForecastExplanationRequest(
       {
@@ -370,10 +430,10 @@ describe("AI providers", () => {
     expect(requestBodies.every((body) => body.stream === false)).toBe(true);
     expect(requestBodies.map((body) => JSON.parse(String(body.input)).sectionKey)).toEqual([
       "overview",
+      "final_decision",
       "timeline",
       "subject_advice",
       "risk_gear",
-      "final_decision",
     ]);
     expect(result).toMatchObject({
       parseSuccess: true,

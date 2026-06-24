@@ -125,6 +125,14 @@ export const forecastAiExplanationSectionKeys = [
   "final_decision",
 ] as const satisfies readonly ForecastAiExplanationSectionKey[];
 
+const forecastAiExplanationGenerationOrder = [
+  "overview",
+  "final_decision",
+  "timeline",
+  "subject_advice",
+  "risk_gear",
+] as const satisfies readonly ForecastAiExplanationSectionKey[];
+
 const sectionTitleZh: Record<ForecastAiExplanationSectionKey, string> = {
   overview: "综合结论",
   timeline: "窗口节奏",
@@ -139,6 +147,25 @@ const sectionMaxTokens: Record<ForecastAiExplanationSectionKey, number> = {
   subject_advice: 900,
   risk_gear: 700,
   final_decision: 500,
+};
+
+type ForecastAiPromptHorizon = "24h" | "48h" | "72h" | "7d" | "30d" | "90d" | "unknown";
+
+const horizonInstructions: Record<ForecastAiPromptHorizon, string> = {
+  "24h":
+    "Horizon style: 24h. Focus on immediate execution, exact hour windows, arrival timing, short-term risks, whether it is worth going today, and what to shoot first. Avoid long-term speculation. Remind the user to check short-term nowcasting before departure. Keep paragraphs concise and action-oriented.",
+  "48h":
+    "Horizon style: 48h. Compare today and tomorrow, identify the better day/time period, explain confidence differences between near-term and next-day windows, and give a backup plan if the better window shifts.",
+  "72h":
+    "Horizon style: 72h. Treat this as a 3-day travel decision. Rank the top 1-2 windows, explain which day is worth planning around, give a practical threshold for dedicated trip / nearby trip / wait, and state when to recheck.",
+  "7d":
+    "Horizon style: 7d. Focus on daily trend instead of excessive hour-by-hour detail. Pick top 1-2 candidate days/windows, explain trend changes in cloud, precipitation, transparency, wind, and moon/astro when relevant. State that uncertainty increases for later days and tell the user when to decide and recheck.",
+  "30d":
+    "Horizon style: 30d. Do not pretend to provide precise hour-level weather. Focus on medium-range trend, seasonal or climatological tendency, planning value, and uncertainty. Do not invent exact shooting windows unless deterministic facts provide them. Tell the user to use 7d/72h/24h forecasts for the final departure decision.",
+  "90d":
+    "Horizon style: 90d. Treat this as seasonal planning and destination scouting, not a precise weather forecast. Focus on broad suitability, likely seasonal opportunities, preparation, and timing strategy. Avoid exact claims unless deterministic facts provide them. Tell the user to recheck closer horizons before travel.",
+  unknown:
+    "Horizon style: unknown. Match the advice to the deterministic forecast range. Prefer concrete execution for short ranges and trend/uncertainty framing for long ranges. Do not invent precision beyond the supplied facts.",
 };
 
 type OpenAiCompactForecastFactsDetail = "standard" | "budget";
@@ -661,7 +688,82 @@ function sectionOutputMaxTokens(
   return Math.max(300, Math.min(sectionMaxTokens[sectionKey], configured));
 }
 
-function buildSectionInstructions(sectionKey: ForecastAiExplanationSectionKey): string {
+function promptHorizonForFacts(
+  horizon: OpenAiCompactForecastExplanationFacts["horizon"] | string,
+): ForecastAiPromptHorizon {
+  return horizon === "24h" ||
+    horizon === "48h" ||
+    horizon === "72h" ||
+    horizon === "7d" ||
+    horizon === "30d" ||
+    horizon === "90d"
+    ? horizon
+    : "unknown";
+}
+
+function isLongRangePromptHorizon(horizon: ForecastAiPromptHorizon): boolean {
+  return horizon === "7d" || horizon === "30d" || horizon === "90d";
+}
+
+const sectionKeyOverviewInstruction =
+  "For the overview section, answer in Chinese: 值不值得去、最适合拍什么、什么时候去、如果只选一个窗口该选哪一个。";
+
+function targetInstructions(
+  target: OpenAiCompactForecastExplanationFacts["target"],
+  horizon: ForecastAiPromptHorizon,
+  sectionKey: ForecastAiExplanationSectionKey,
+): string {
+  const longRange = isLongRangePromptHorizon(horizon);
+  switch (target) {
+    case "cloud_sea":
+      return [
+        "Target style: cloud_sea. Emphasize humidity, low cloud or fog signal, wind, precipitation, terrain/elevation, whiteout, and safety.",
+        horizon === "24h" || horizon === "48h"
+          ? "For this short cloud-sea horizon, emphasize arrival timing and retreat timing."
+          : "",
+        longRange
+          ? "For long-range cloud-sea horizons, identify candidate days and tell the user when to recheck."
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+    case "glow":
+      return [
+        "Target style: glow. Emphasize sunrise/sunset, twilight window, cloud layers, horizon obstruction, precipitation, and wind.",
+        horizon === "24h" ? "For 24h glow advice, give exact pre-position timing." : "",
+        longRange
+          ? "For long-range glow horizons, identify candidate days and warn that uncertainty is higher."
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+    case "astro":
+      return [
+        "Target style: astro. Emphasize moon, astronomical night, Milky Way window, cloud cover, transparency, wind, and light pollution.",
+        horizon === "24h" || horizon === "48h"
+          ? "For this short astro horizon, give an actionable night window and fallback."
+          : "",
+        longRange
+          ? "For long-range astro horizons, identify candidate nights and tell the user when to recheck."
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+    case "general":
+    default:
+      return [
+        "Target style: general. Balance cloud sea, glow, astro, transparency, and travel risk.",
+        sectionKey === "overview" ? sectionKeyOverviewInstruction : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+  }
+}
+
+function buildSectionInstructions(
+  sectionKey: ForecastAiExplanationSectionKey,
+  facts: OpenAiCompactForecastExplanationFacts,
+): string {
   const focusBySection: Record<ForecastAiExplanationSectionKey, string> = {
     overview:
       "本节只写整体去不去、推荐等级、优先题材和核心原因，避免展开逐小时细节。",
@@ -684,6 +786,8 @@ function buildSectionInstructions(sectionKey: ForecastAiExplanationSectionKey): 
     "Avoid AI-flavored empty wording.",
     "Avoid data source names unless present in deterministic user-facing basis.",
     "Keep output useful and concise.",
+    horizonInstructions[promptHorizonForFacts(facts.horizon)],
+    targetInstructions(facts.target, promptHorizonForFacts(facts.horizon), sectionKey),
     focusBySection[sectionKey],
     'Return either compact JSON {"textZh":"...","bulletPointsZh":["..."]} or plain Chinese text for this one section only.',
   ].join("\n");
@@ -698,12 +802,14 @@ export function buildSectionPromptFromCompactFacts(
   > = {},
 ): OpenAiRequestPreview {
   const promptMaxChars = normalizePromptMaxChars(options.promptMaxChars);
-  const instructions = buildSectionInstructions(sectionKey);
+  const horizonProfile = promptHorizonForFacts(facts.horizon);
+  const instructions = buildSectionInstructions(sectionKey, facts);
   const buildInput = (computedForecastFacts: Record<string, unknown>) =>
     JSON.stringify({
       task: "Generate one section of a deterministic photo-weather forecast explanation.",
       sectionKey,
       titleZh: sectionTitleZh[sectionKey],
+      horizonProfile,
       outputLanguage: "Simplified Chinese",
       computedForecastFacts,
     });
@@ -1100,6 +1206,34 @@ function sectionHasDisplayableContent(section: ForecastAiExplanationSectionResul
   return isDisplayableSectionText(section.textZh) || section.bulletPointsZh.length > 0;
 }
 
+const sectionDisplayOrder = new Map<ForecastAiExplanationSectionKey, number>(
+  forecastAiExplanationSectionKeys.map((key, index) => [key, index]),
+);
+
+function orderSectionsForDisplay(
+  sections: readonly ForecastAiExplanationSectionResult[],
+): readonly ForecastAiExplanationSectionResult[] {
+  return [...sections].sort(
+    (left, right) =>
+      (sectionDisplayOrder.get(left.key) ?? Number.MAX_SAFE_INTEGER) -
+      (sectionDisplayOrder.get(right.key) ?? Number.MAX_SAFE_INTEGER),
+  );
+}
+
+function shouldStopSectionGenerationForDeadline(options: {
+  readonly startedAt: number;
+  readonly timeoutMs: number;
+  readonly sections: readonly ForecastAiExplanationSectionResult[];
+}): boolean {
+  if (!options.sections.some(sectionHasDisplayableContent)) {
+    return false;
+  }
+  const elapsedMs = Date.now() - options.startedAt;
+  const remainingMs = options.timeoutMs - elapsedMs;
+  const guardMs = Math.min(20_000, Math.max(5_000, Math.floor(options.timeoutMs * 0.15)));
+  return remainingMs <= guardMs;
+}
+
 function synthesizeSectionedForecastExplanation(
   result: ForecastCalculationResult,
   sectionedExplanation: ForecastAiExplanationSectionedResult,
@@ -1385,6 +1519,7 @@ export class OpenAiProvider implements AIProvider {
 
     const facts = buildCompactForecastExplanationFacts(input.forecastResult);
     const sections: ForecastAiExplanationSectionResult[] = [];
+    const generationStartedAt = Date.now();
     let attempts = 0;
     let rawResponseSizeChars = 0;
     let promptSizeChars = 0;
@@ -1393,8 +1528,9 @@ export class OpenAiProvider implements AIProvider {
     let finalFailure: OpenAiProviderError | undefined;
     let finalDiagnostics: OpenAiRequestDiagnostics | undefined;
 
-    for (const sectionKey of forecastAiExplanationSectionKeys) {
+    for (const sectionKey of forecastAiExplanationGenerationOrder) {
       let request: OpenAiRequestPreview | undefined;
+      let requestAttemptCounted = false;
       const startedAt = Date.now();
       try {
         request = buildSectionPromptFromCompactFacts(sectionKey, facts, {
@@ -1423,12 +1559,22 @@ export class OpenAiProvider implements AIProvider {
             latencyMs: Date.now() - startedAt,
           }),
         );
+        if (
+          shouldStopSectionGenerationForDeadline({
+            startedAt: generationStartedAt,
+            timeoutMs: this.timeoutMs,
+            sections,
+          })
+        ) {
+          break;
+        }
         continue;
       }
 
       try {
         const rawOutput = await this.requestWithDiagnostics(request);
         attempts += rawOutput.diagnostics.attempts;
+        requestAttemptCounted = true;
         rawResponseSizeChars +=
           rawOutput.diagnostics.rawResponseSizeChars ?? rawOutput.content.length;
         finalDiagnostics = rawOutput.diagnostics;
@@ -1456,7 +1602,9 @@ export class OpenAiProvider implements AIProvider {
         if (!shouldUseSectionFallback(normalized)) {
           throw normalized;
         }
-        attempts += normalized.attempts ?? 1;
+        if (!requestAttemptCounted) {
+          attempts += normalized.attempts ?? 1;
+        }
         firstFailure ??= normalized;
         finalFailure = normalized;
         compatibilityFallbackUsed = true;
@@ -1472,9 +1620,19 @@ export class OpenAiProvider implements AIProvider {
           }),
         );
       }
+      if (
+        shouldStopSectionGenerationForDeadline({
+          startedAt: generationStartedAt,
+          timeoutMs: this.timeoutMs,
+          sections,
+        })
+      ) {
+        break;
+      }
     }
 
-    const displaySuccess = sections.some(sectionHasDisplayableContent);
+    const orderedSections = orderSectionsForDisplay(sections);
+    const displaySuccess = orderedSections.some(sectionHasDisplayableContent);
     if (!displaySuccess) {
       throw openAiError({
         errorCategory: finalFailure?.errorCategory ?? "provider_parse_error",
@@ -1487,15 +1645,15 @@ export class OpenAiProvider implements AIProvider {
       });
     }
 
-    const parseStrategy: ForecastAiExplanationParseStrategy = sections.some(
+    const parseStrategy: ForecastAiExplanationParseStrategy = orderedSections.some(
       (section) => section.parseStrategy === "plain_text_fallback",
     )
       ? "plain_text_fallback"
-      : sections.some((section) => section.status !== "success")
+      : orderedSections.some((section) => section.status !== "success")
         ? "failed"
-        : sections.some((section) => section.parseStrategy === "fenced_json")
+        : orderedSections.some((section) => section.parseStrategy === "fenced_json")
           ? "fenced_json"
-          : sections.some((section) => section.parseStrategy === "extracted_json")
+          : orderedSections.some((section) => section.parseStrategy === "extracted_json")
             ? "extracted_json"
             : "strict_json";
     const parseSuccess =
@@ -1503,8 +1661,9 @@ export class OpenAiProvider implements AIProvider {
       parseStrategy === "fenced_json" ||
       parseStrategy === "extracted_json";
     const fallbackUsed =
-      sections.some((section) => section.status !== "success") || parseStrategy !== "strict_json";
-    const responseSizeChars = sections.reduce(
+      orderedSections.some((section) => section.status !== "success") ||
+      parseStrategy !== "strict_json";
+    const responseSizeChars = orderedSections.reduce(
       (total, section) => total + (section.responseSizeChars ?? 0),
       0,
     );
@@ -1512,7 +1671,7 @@ export class OpenAiProvider implements AIProvider {
       version: openAiSectionedExplanationVersion,
       providerCode: "openai",
       model: this.defaultModel,
-      sections,
+      sections: orderedSections,
       success: true,
       displaySuccess,
       promptMaxChars: this.promptMaxChars,

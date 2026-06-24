@@ -283,6 +283,7 @@ type AiExplainResponse = {
   readonly ok?: boolean;
   readonly success?: boolean;
   readonly targetCode?: ForecastQueryInput["target"];
+  readonly providerCode?: string;
   readonly source?: "openai" | "fallback";
   readonly explanation?: unknown;
   readonly interpretation?: unknown;
@@ -709,18 +710,10 @@ function normalizeAiExplainThrownError(
 
 function hasAiExplainSuccessSignal(response: AiExplainResponse): boolean {
   return (
-    !hasAiExplainFailureSignal(response) &&
-    (readAiExplainBooleanField(response, "ok") === true ||
-      readAiExplainBooleanField(response, "success") === true ||
-      readAiExplainDisplayBooleanField(response, "displaySuccess") === true ||
-      readAiExplainDisplayBooleanField(response, "hasDisplayableAiContent") === true)
-  );
-}
-
-function hasAiExplainFailureSignal(response: AiExplainResponse): boolean {
-  return (
-    readAiExplainBooleanField(response, "ok") === false ||
-    readAiExplainBooleanField(response, "success") === false
+    readAiExplainBooleanField(response, "ok") === true ||
+    readAiExplainBooleanField(response, "success") === true ||
+    readAiExplainDisplayBooleanField(response, "displaySuccess") === true ||
+    readAiExplainDisplayBooleanField(response, "hasDisplayableAiContent") === true
   );
 }
 
@@ -756,7 +749,9 @@ function normalizeDisplayableAiExplanation(
   metadata?: ForecastAiExplanation["metadata"],
 ): ForecastAiExplanation | null {
   if (explanation?.metadata?.source === "deterministic_fallback") {
-    return null;
+    return displayContent.hasContent
+      ? explanationFromDisplayContent(displayContent, metadata ?? { source: "openai" })
+      : null;
   }
 
   if (isDisplayableAiExplanation(explanation)) {
@@ -1549,7 +1544,7 @@ function normalizedAiSectionsFromSectionedExplanation(
     }
     return [
       {
-        title: sectionTitleFallback(section.key),
+        title: normalizeAiPublicSectionTitle(section.titleZh, section.key),
         text,
       },
     ];
@@ -1927,7 +1922,7 @@ function normalizeAiSectionResult(value: unknown): ForecastAiExplanationSectionR
   }
   return {
     key,
-    titleZh: sectionTitleFallback(key),
+    titleZh: readStringField(value, "titleZh") ?? sectionTitleFallback(key),
     status,
     textZh: textZh ?? "",
     bulletPointsZh,
@@ -1959,7 +1954,11 @@ function normalizeAiSectionKey(value: unknown): ForecastAiExplanationSectionKey 
 }
 
 function normalizeAiPublicSectionTitle(title: string | undefined, fallbackTitle: string): string {
-  const key = normalizeAiSectionKey(fallbackTitle) ?? normalizeAiSectionKey(title);
+  const titleKey = normalizeAiSectionKey(title);
+  if (title && !titleKey) {
+    return title;
+  }
+  const key = titleKey ?? normalizeAiSectionKey(fallbackTitle);
   if (key) {
     return sectionTitleFallback(key);
   }
@@ -2159,47 +2158,15 @@ function logAiExplanationClientEvent(
   console.info("forecast_ai_explain_client", payload);
 }
 
-function publicAiExplanationMessage(category: AiExplainErrorCategory | "none"): string {
-  const unavailableMessage = "智能解读暂时不可用，确定性判断已保留。";
-  if (category === "prompt_too_large") {
-    return "智能解读内容过长，系统已保留确定性天气判断，请稍后重试或缩短预报范围。";
-  }
-  if (category === "unknown" || category === "none" || category === "frontend_contract_error") {
-    return unavailableMessage;
-  }
-  const reason = publicAiExplanationReasonLabel(category);
-  return reason && reason !== "暂时不可用"
-    ? `智能解读暂时不可用（${reason}），确定性判断已保留。`
-    : unavailableMessage;
-}
+const publicAiUnavailableMessage = "智能解读暂时不可用，确定性天气判断已保留。";
+const publicAiPromptTooLargeMessage =
+  "智能解读内容过长，系统已保留确定性天气判断，请稍后重试或缩短预报范围。";
 
-function publicAiExplanationReasonLabel(category: AiExplainErrorCategory | "none"): string | null {
-  switch (category) {
-    case "provider_disabled":
-    case "config_missing":
-    case "disabled":
-    case "missing_api_key":
-    case "upstream_401":
-      return "服务配置问题";
-    case "upstream_429":
-      return "上游限流";
-    case "timeout":
-      return "上游超时";
-    case "provider_invalid_response":
-    case "provider_parse_error":
-    case "parse_error":
-    case "empty_response":
-    case "frontend_contract_error":
-      return "返回格式异常";
-    case "network_error":
-    case "provider_http_error":
-    case "upstream_5xx":
-    case "prompt_too_large":
-    case "unknown":
-      return "暂时不可用";
-    case "none":
-      return null;
+function publicAiExplanationMessage(category: AiExplainErrorCategory | "none"): string {
+  if (category === "prompt_too_large") {
+    return publicAiPromptTooLargeMessage;
   }
+  return publicAiUnavailableMessage;
 }
 
 function isRetryableAiExplainCategory(category: AiExplainErrorCategory | "none"): boolean {
@@ -4224,15 +4191,13 @@ function formatAstroWindowForUi(window: AstroWindowLike, timezone = "Asia/Shangh
 
 function normalizeAiExplanationErrorMessage(message: string | undefined): string {
   const trimmed = message?.trim();
-  if (
-    trimmed &&
-    (trimmed.startsWith("智能解读暂时不可用") || trimmed.startsWith("智能解读内容过长"))
-  ) {
-    return trimmed;
+  if (trimmed?.startsWith("智能解读内容过长")) {
+    return publicAiPromptTooLargeMessage;
   }
-  return trimmed && trimmed.startsWith("智能解读暂时不可用")
-    ? trimmed
-    : "智能解读暂时不可用，确定性判断已保留。";
+  if (trimmed?.startsWith("智能解读暂时不可用")) {
+    return publicAiUnavailableMessage;
+  }
+  return publicAiUnavailableMessage;
 }
 
 function InvalidQueryCard({ message }: { readonly message?: string }) {
@@ -10149,7 +10114,8 @@ export function AiExplanationPanel({
         visibleContent.sections.length > 0),
   );
   const hasCompletedExplanation = Boolean(visibleExplanation) && !retryable && status !== "loading";
-  const loadingText = "GPT / OpenAI 解读可能需要约 1-2 分钟，当前确定性判断结果仍可正常参考。";
+  const loadingText =
+    "系统正在综合天气、天文和地形结果生成智能解读，预计需要 1-2 分钟；当前确定性判断可先正常参考。";
   const buttonLabel =
     status === "loading"
       ? "正在生成智能解读..."
@@ -10362,10 +10328,13 @@ function AiSectionedExplanationSections({
           section.status === "fallback"
             ? "本节使用确定性结果生成兜底解读。"
             : section.status === "failed" || section.status === "skipped"
-              ? "本节智能解读暂时不可用，确定性判断已保留。"
+              ? "本节智能解读暂时不可用，确定性天气判断已保留。"
               : "";
         return (
-          <AiTextSection key={section.key} title={sectionTitleFallback(section.key)}>
+          <AiTextSection
+            key={section.key}
+            title={normalizeAiPublicSectionTitle(section.titleZh, section.key)}
+          >
             {notice ? (
               <p className="mb-2 text-xs font-semibold leading-5 text-muted-foreground">{notice}</p>
             ) : null}

@@ -1856,6 +1856,7 @@ function buildAiExplainSuccessResponse(options: {
   return {
     ok: true,
     success: true,
+    providerCode: "openai" as const,
     source: "openai" as const,
     targetCode: options.targetCode,
     model: options.runtimeOpenAi.model,
