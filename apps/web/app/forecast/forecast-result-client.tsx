@@ -182,6 +182,14 @@ type ForecastAiExplanationSectionResult = {
   readonly latencyMs?: number;
 };
 
+const publicAiSectionTitleByKey: Record<ForecastAiExplanationSectionKey, string> = {
+  overview: "总体判断",
+  timeline: "最佳拍摄窗口",
+  subject_advice: "题材建议",
+  risk_gear: "风险与装备",
+  final_decision: "最终行动建议",
+};
+
 type ForecastAiExplanationSectionedResult = {
   readonly version: "forecast-ai-sectioned-v1";
   readonly providerCode: "openai";
@@ -281,6 +289,7 @@ type AiExplainResponse = {
   readonly fallbackInterpretation?: unknown;
   readonly sections?: unknown;
   readonly sectionedExplanation?: unknown;
+  readonly displayContent?: unknown;
   readonly data?: unknown;
   readonly result?: unknown;
   readonly payload?: unknown;
@@ -545,7 +554,8 @@ export function normalizeAiExplainResponse(
   const responseMetadata = normalizeAiResponseMetadata(response, diagnostics, meta);
   const successSignal = hasAiExplainSuccessSignal(response);
   const displayContent = normalizeAiExplanationContent(response);
-  const directExplanationCandidate = extractAiExplanationFromResponse(response);
+  const directExplanationSelection = selectAiExplanationFromResponse(response);
+  const directExplanationCandidate = directExplanationSelection?.explanation ?? null;
   const directExplanation = normalizeDisplayableAiExplanation(
     directExplanationCandidate,
     displayContent,
@@ -583,7 +593,7 @@ export function normalizeAiExplainResponse(
         publicAiExplanationMessage(backendErrorCategory);
 
   if (successSignal && directExplanation) {
-    return {
+    const outcome: NormalizedAiExplainOutcome = {
       status: "ready",
       explanation: directExplanation,
       errorMessage: "",
@@ -601,6 +611,13 @@ export function normalizeAiExplainResponse(
         diagnostics?.promptSizeChars ??
         meta?.promptSizeChars,
     };
+    debugAiExplainNormalization({
+      successSignal,
+      displayContentHasContent: displayContent.hasContent,
+      candidateUsed: directExplanationSelection?.candidateName ?? "displayContent",
+      frontendContractError: false,
+    });
+    return outcome;
   }
 
   const category =
@@ -610,7 +627,7 @@ export function normalizeAiExplainResponse(
       : backendErrorCategory === "none"
         ? "unknown"
         : backendErrorCategory);
-  return {
+  const outcome: NormalizedAiExplainOutcome = {
     status: "error",
     explanation: null,
     errorMessage: normalizeAiExplanationErrorMessage(message),
@@ -628,6 +645,30 @@ export function normalizeAiExplainResponse(
       diagnostics?.promptSizeChars ??
       meta?.promptSizeChars,
   };
+  debugAiExplainNormalization({
+    successSignal,
+    displayContentHasContent: displayContent.hasContent,
+    candidateUsed: directExplanationSelection?.candidateName ?? "none",
+    frontendContractError: outcome.errorCategory === "frontend_contract_error",
+  });
+  return outcome;
+}
+
+function debugAiExplainNormalization(options: {
+  readonly successSignal: boolean;
+  readonly displayContentHasContent: boolean;
+  readonly candidateUsed: string;
+  readonly frontendContractError: boolean;
+}): void {
+  if (process.env.NODE_ENV !== "development") {
+    return;
+  }
+  console.debug("forecast_ai_explain_normalize", {
+    successSignal: options.successSignal,
+    displayContentHasContent: options.displayContentHasContent,
+    candidateUsed: options.candidateUsed,
+    frontendContractError: options.frontendContractError,
+  });
 }
 
 function normalizeAiExplainThrownError(
@@ -754,59 +795,81 @@ function withAiExplanationResponseMetadata(
   };
 }
 
-function extractAiExplanationFromResponse(
-  response: AiExplainResponse,
-): ForecastAiExplanation | null {
-  const candidates = [
-    response.explanation,
-    response.interpretation,
-    response.sectionedExplanation,
-    response.sections,
-    response.summaryText,
-    response.text,
-    response.content,
-    response.data,
-    response.result,
-    response.payload,
-    nestedField(response.data, "explanation"),
-    nestedField(response.data, "interpretation"),
-    nestedField(response.data, "sectionedExplanation"),
-    nestedField(response.data, "sections"),
-    nestedField(response.data, "summaryText"),
-    nestedField(response.data, "text"),
-    nestedField(response.data, "content"),
-    nestedField(response.result, "explanation"),
-    nestedField(response.result, "interpretation"),
-    nestedField(response.result, "sectionedExplanation"),
-    nestedField(response.result, "sections"),
-    nestedField(response.result, "summaryText"),
-    nestedField(response.result, "text"),
-    nestedField(response.result, "content"),
-    nestedField(response.payload, "explanation"),
-    nestedField(response.payload, "interpretation"),
-    nestedField(response.payload, "sectionedExplanation"),
-    nestedField(response.payload, "sections"),
-    nestedField(response.payload, "summaryText"),
-    nestedField(response.payload, "text"),
-    nestedField(response.payload, "content"),
-  ];
+type AiExplanationCandidateSelection = {
+  readonly explanation: ForecastAiExplanation;
+  readonly candidateName: string;
+};
 
-  for (const candidate of candidates) {
-    const explanation = normalizeForecastAiExplanationCandidate(candidate);
-    if (explanation) {
-      return explanation;
+function selectAiExplanationFromResponse(
+  response: AiExplainResponse,
+): AiExplanationCandidateSelection | null {
+  let deterministicFallbackCandidate: AiExplanationCandidateSelection | null = null;
+  let nonDisplayableCandidate: AiExplanationCandidateSelection | null = null;
+
+  for (const candidate of aiExplanationCandidateValues(response)) {
+    const explanation = normalizeForecastAiExplanationCandidate(candidate.value);
+    if (!explanation) {
+      continue;
     }
+
+    const selection = {
+      explanation,
+      candidateName: candidate.name,
+    };
+    if (explanation.metadata?.source === "deterministic_fallback") {
+      deterministicFallbackCandidate ??= selection;
+      continue;
+    }
+    if (isDisplayableAiExplanation(explanation)) {
+      return selection;
+    }
+    nonDisplayableCandidate ??= selection;
   }
 
-  return null;
+  return nonDisplayableCandidate ?? deterministicFallbackCandidate;
+}
+
+function aiExplanationCandidateValues(
+  response: AiExplainResponse,
+): readonly { readonly name: string; readonly value: unknown }[] {
+  const candidates: { name: string; value: unknown }[] = [];
+  const add = (name: string, value: unknown) => {
+    if (value !== undefined && value !== null) {
+      candidates.push({ name, value });
+    }
+  };
+  const addFromContainer = (name: string, value: unknown) => {
+    if (!isRecord(value)) {
+      return;
+    }
+    add(`${name}.explanation`, value.explanation);
+    add(`${name}.interpretation`, value.interpretation);
+    add(`${name}.sectionedExplanation`, value.sectionedExplanation);
+    add(`${name}.sections`, value.sections);
+    add(`${name}.displayContent`, value.displayContent);
+    add(`${name}.summaryText`, value.summaryText);
+    add(`${name}.text`, value.text);
+    add(`${name}.content`, value.content);
+  };
+
+  addFromContainer("response", response);
+  addFromContainer("response.data", response.data);
+  addFromContainer("response.result", response.result);
+  addFromContainer("response.payload", response.payload);
+  add("response.data", response.data);
+  add("response.result", response.result);
+  add("response.payload", response.payload);
+  add("response", response);
+
+  return candidates;
 }
 
 function normalizeForecastAiExplanationCandidate(value: unknown): ForecastAiExplanation | null {
   if (isForecastAiExplanationLike(value)) {
-    return withAiExplanationDisplayContent(
+    const explanation = withNormalizedAiSectionedExplanation(
       withAiExplanationMetadata(value, value.metadata?.source ?? "openai"),
-      normalizeAiExplanationContent(value),
     );
+    return withAiExplanationDisplayContent(explanation, normalizeAiExplanationContent(value));
   }
 
   if (!isRecord(value)) {
@@ -818,7 +881,21 @@ function normalizeForecastAiExplanationCandidate(value: unknown): ForecastAiExpl
         sections: [{ title: "智能解读", text: value.trim() }],
       });
     }
+    if (Array.isArray(value)) {
+      const sectionedExplanation = normalizeAiSectionedExplanation({ sections: value });
+      return sectionedExplanation
+        ? explanationFromSectionedExplanation(sectionedExplanation)
+        : explanationFromSections(normalizeAiSections(value));
+    }
     return null;
+  }
+
+  const sectionedExplanation = normalizeAiSectionedExplanation(value);
+  if (sectionedExplanation) {
+    return explanationFromSectionedExplanation(
+      sectionedExplanation,
+      normalizeAiMetadata(value.metadata),
+    );
   }
 
   const nested =
@@ -865,6 +942,13 @@ function isDisplayableAiExplanation(
       (isForecastAiExplanationLike(explanation) ||
         normalizeAiExplanationContent(explanation).hasContent) &&
       explanation.metadata?.source !== "deterministic_fallback",
+  );
+}
+
+function isDeterministicFallbackRecord(value: Record<string, unknown>): boolean {
+  return (
+    value.source === "deterministic_fallback" ||
+    (isRecord(value.metadata) && value.metadata.source === "deterministic_fallback")
   );
 }
 
@@ -945,6 +1029,10 @@ function collectAiExplanationContent(
     return;
   }
 
+  if (isDeterministicFallbackRecord(value)) {
+    return;
+  }
+
   const displayContent = normalizeExistingAiDisplayContent(value.displayContent);
   if (displayContent.hasContent) {
     mergeAiExplanationContent(accumulator, displayContent);
@@ -1003,6 +1091,11 @@ function collectAiExplanationContent(
   collectPlanContent(recordField(value, "bestPlan"), accumulator);
   collectRiskContent(recordField(value, "riskAndGear"), accumulator);
   collectFinalAdviceContent(recordField(value, "finalAdvice"), accumulator);
+
+  const sectionedExplanation = normalizeAiSectionedExplanation(value);
+  if (sectionedExplanation) {
+    addAiSections(accumulator, normalizedAiSectionsFromSectionedExplanation(sectionedExplanation));
+  }
 
   const sectionsValue = nestedField(value, "sections");
   if (sectionsValue !== undefined) {
@@ -1217,7 +1310,7 @@ function uniqueAiSections(
   const unique: NormalizedAiExplanationSection[] = [];
 
   for (const section of sections) {
-    const title = cleanAiContentText(section.title) ?? "智能解读";
+    const title = normalizeAiPublicSectionTitle(cleanAiContentText(section.title), "智能解读");
     const text = cleanAiContentText(section.text);
     if (!text) {
       continue;
@@ -1409,6 +1502,71 @@ function normalizeAiDay(value: unknown): ForecastAiExplanation["dayByDay"][numbe
     transparencyZh: readStringField(value, "transparencyZh") ?? "详见通透度评分",
     bestWindowZh: readStringField(value, "bestWindowZh") ?? "详见时间窗口",
     actionZh: readStringField(value, "actionZh") ?? "按确定性结果复核现场条件。",
+  };
+}
+
+function explanationFromSectionedExplanation(
+  sectionedExplanation: ForecastAiExplanationSectionedResult,
+  metadata?: ForecastAiExplanation["metadata"],
+): ForecastAiExplanation | null {
+  const sections = normalizedAiSectionsFromSectionedExplanation(sectionedExplanation);
+  if (sections.length === 0) {
+    return null;
+  }
+  const displayContent: NormalizedAiExplanationContent = {
+    ...emptyAiExplanationContent,
+    hasContent: true,
+    title: "智能解读",
+    sections,
+  };
+  const explanation = explanationFromDisplayContent(
+    displayContent,
+    metadata ?? { source: "openai" },
+  );
+  if (!explanation) {
+    return null;
+  }
+
+  return {
+    ...explanation,
+    sections: sectionedExplanation.sections,
+    sectionedExplanation,
+    displayOnly: true,
+    metadata: {
+      ...(metadata ?? { source: "openai" as const }),
+      source: "openai",
+    },
+  };
+}
+
+function normalizedAiSectionsFromSectionedExplanation(
+  sectionedExplanation: ForecastAiExplanationSectionedResult,
+): readonly NormalizedAiExplanationSection[] {
+  return sectionedExplanation.sections.flatMap((section) => {
+    const text = cleanAiContentText(section.textZh) ?? section.bulletPointsZh.join(" ");
+    if (!text) {
+      return [];
+    }
+    return [
+      {
+        title: sectionTitleFallback(section.key),
+        text,
+      },
+    ];
+  });
+}
+
+function withNormalizedAiSectionedExplanation(
+  explanation: ForecastAiExplanation,
+): ForecastAiExplanation {
+  const sectionedExplanation = normalizeAiSectionedExplanation(explanation);
+  if (!sectionedExplanation) {
+    return explanation;
+  }
+  return {
+    ...explanation,
+    sections: sectionedExplanation.sections,
+    sectionedExplanation,
   };
 }
 
@@ -1711,17 +1869,18 @@ function normalizeAiSection(
 
   return [
     {
-      title:
-        readStringField(value, "titleZh") ??
-        readStringField(value, "title") ??
-        readStringField(value, "key") ??
-        fallbackTitle,
+      title: normalizeAiPublicSectionTitle(
+        readStringField(value, "titleZh") ?? readStringField(value, "title"),
+        readStringField(value, "key") ?? fallbackTitle,
+      ),
       text,
     },
   ];
 }
 
-function normalizeAiSectionedExplanation(value: unknown): ForecastAiExplanationSectionedResult | null {
+function normalizeAiSectionedExplanation(
+  value: unknown,
+): ForecastAiExplanationSectionedResult | null {
   if (!isRecord(value)) {
     return null;
   }
@@ -1768,7 +1927,7 @@ function normalizeAiSectionResult(value: unknown): ForecastAiExplanationSectionR
   }
   return {
     key,
-    titleZh: readStringField(value, "titleZh") ?? sectionTitleFallback(key),
+    titleZh: sectionTitleFallback(key),
     status,
     textZh: textZh ?? "",
     bulletPointsZh,
@@ -1799,6 +1958,14 @@ function normalizeAiSectionKey(value: unknown): ForecastAiExplanationSectionKey 
     : null;
 }
 
+function normalizeAiPublicSectionTitle(title: string | undefined, fallbackTitle: string): string {
+  const key = normalizeAiSectionKey(fallbackTitle) ?? normalizeAiSectionKey(title);
+  if (key) {
+    return sectionTitleFallback(key);
+  }
+  return title ?? fallbackTitle;
+}
+
 function normalizeAiSectionStatus(value: unknown): ForecastAiExplanationSectionStatus {
   return value === "success" || value === "fallback" || value === "failed" || value === "skipped"
     ? value
@@ -1806,27 +1973,14 @@ function normalizeAiSectionStatus(value: unknown): ForecastAiExplanationSectionS
 }
 
 function sectionTitleFallback(key: ForecastAiExplanationSectionKey): string {
-  switch (key) {
-    case "overview":
-      return "综合结论";
-    case "timeline":
-      return "窗口节奏";
-    case "subject_advice":
-      return "题材建议";
-    case "risk_gear":
-      return "风险与装备";
-    case "final_decision":
-      return "最终行动";
-  }
+  return publicAiSectionTitleByKey[key];
 }
 
 function readAiTextArray(value: unknown): readonly string[] {
   if (!Array.isArray(value)) {
     return [];
   }
-  return value
-    .map((item) => (typeof item === "string" ? item.trim() : ""))
-    .filter(Boolean);
+  return value.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean);
 }
 
 function sectionHasVisibleAiText(section: ForecastAiExplanationSectionResult): boolean {
@@ -2006,16 +2160,17 @@ function logAiExplanationClientEvent(
 }
 
 function publicAiExplanationMessage(category: AiExplainErrorCategory | "none"): string {
+  const unavailableMessage = "智能解读暂时不可用，确定性判断已保留。";
   if (category === "prompt_too_large") {
     return "智能解读内容过长，系统已保留确定性天气判断，请稍后重试或缩短预报范围。";
   }
-  if (category === "unknown" || category === "none") {
-    return "智能解读暂时不可用，确定性判断已保留。";
+  if (category === "unknown" || category === "none" || category === "frontend_contract_error") {
+    return unavailableMessage;
   }
   const reason = publicAiExplanationReasonLabel(category);
-  return reason
+  return reason && reason !== "暂时不可用"
     ? `智能解读暂时不可用（${reason}），确定性判断已保留。`
-    : "智能解读暂时不可用，确定性判断已保留。";
+    : unavailableMessage;
 }
 
 function publicAiExplanationReasonLabel(category: AiExplainErrorCategory | "none"): string | null {
@@ -9982,6 +10137,7 @@ export function AiExplanationPanel({
   const visibleSectionedSections =
     visibleExplanation?.sectionedExplanation?.sections ?? visibleExplanation?.sections ?? [];
   const hasSectionedExplanation = visibleSectionedSections.length > 0;
+  const hasDisplayContentSections = visibleContent.sections.length > 0;
   const shouldRenderDisplayOnlyContent = visibleExplanation?.displayOnly === true;
   const shouldRenderSupplementalGroups = Boolean(
     !hasSectionedExplanation &&
@@ -10060,6 +10216,8 @@ export function AiExplanationPanel({
         <div className="mt-4 grid gap-3">
           {hasSectionedExplanation ? (
             <AiSectionedExplanationSections sections={visibleSectionedSections} />
+          ) : hasDisplayContentSections ? (
+            <AiDisplayContentOnlySections sections={visibleContent.sections} />
           ) : shouldRenderDisplayOnlyContent ? (
             <AiDisplayContentSections content={visibleContent} showSummary />
           ) : (
@@ -10133,6 +10291,22 @@ export function AiExplanationPanel({
   );
 }
 
+function AiDisplayContentOnlySections({
+  sections,
+}: {
+  readonly sections: readonly NormalizedAiExplanationSection[];
+}) {
+  return (
+    <>
+      {sections.map((section) => (
+        <AiTextSection key={`${section.title}-${section.text}`} title={section.title}>
+          <p className="text-sm leading-6 text-card-foreground">{section.text}</p>
+        </AiTextSection>
+      ))}
+    </>
+  );
+}
+
 function AiDisplayContentSections({
   content,
   showSummary,
@@ -10191,11 +10365,9 @@ function AiSectionedExplanationSections({
               ? "本节智能解读暂时不可用，确定性判断已保留。"
               : "";
         return (
-          <AiTextSection key={section.key} title={section.titleZh}>
+          <AiTextSection key={section.key} title={sectionTitleFallback(section.key)}>
             {notice ? (
-              <p className="mb-2 text-xs font-semibold leading-5 text-muted-foreground">
-                {notice}
-              </p>
+              <p className="mb-2 text-xs font-semibold leading-5 text-muted-foreground">{notice}</p>
             ) : null}
             {section.textZh.trim() ? (
               <p className="text-sm leading-6 text-card-foreground">{section.textZh}</p>
