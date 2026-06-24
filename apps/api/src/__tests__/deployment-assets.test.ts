@@ -25,7 +25,7 @@ const productionScripts = [
   "scripts/import-terrain-dem.sh",
   "scripts/check-terrain-dem.sh",
   "scripts/test-providers.sh",
-  "scripts/test-deepseek-interpretation.sh",
+  "scripts/test-openai-interpretation.sh",
 ] as const;
 
 const bashScripts = [
@@ -203,8 +203,8 @@ describe("production deployment assets", () => {
       "QWEATHER_API_KEY=",
       "QWEATHER_API_HOST=",
       "AMAP_API_KEY=",
-      "DEEPSEEK_API_KEY=",
-      "DEEPSEEK_BASE_URL=",
+      "OPENAI_API_KEY=",
+      "OPENAI_BASE_URL=",
       "OPEN_METEO_API_KEY=",
       "OPEN_METEO_CUSTOMER_ENDPOINT=",
     ]) {
@@ -843,7 +843,7 @@ describe("production deployment assets", () => {
     expect(script).toContain("meteoblueAttempted:");
     expect(script).toContain("meteoblueSuccess:");
     expect(script).toContain("meteobluePartial:");
-    expect(script).toContain("deepSeekInterpretationStatus:");
+    expect(script).toContain("openAiInterpretationStatus:");
     expect(script).toContain("dataConfidence:");
     expect(script).toContain("agreementLevel:");
     expect(script).toContain("disagreementLevel:");
@@ -861,11 +861,12 @@ describe("production deployment assets", () => {
     expect(script).not.toMatch(/apikey=.*\\$\\{/i);
   });
 
-  it("ships a secret-safe DeepSeek interpretation diagnostic script", () => {
-    const script = readRepoFile("scripts/test-deepseek-interpretation.sh");
+  it("ships a secret-safe GPT / OpenAI interpretation diagnostic script", () => {
+    const script = readRepoFile("scripts/test-openai-interpretation.sh");
 
     expect(script).toContain("model: ${config.model}");
-    expect(script).toContain('config.model !== "deepseek-v4-pro"');
+    expect(script).toContain("readRuntimeOpenAiConfig");
+    expect(script).toContain('body.source === "openai"');
     expect(script).toContain("timeoutMs: ${config.timeoutMs}");
     expect(script).toContain("http://127.0.0.1:4000/forecast/ai-explain");
     expect(script).toContain("timeout 130s");
@@ -877,6 +878,7 @@ describe("production deployment assets", () => {
     expect(script).toContain("No API keys or secrets will be printed.");
     expect(script).not.toMatch(/echo .*API_KEY/);
     expect(script).not.toMatch(/console\.log\(.*apiKey[:=]/i);
+    expect(script).not.toContain("deepseek-v4-pro");
   });
 
   it("keeps the placeholder worker alive and documents that interpretation does not depend on it", () => {

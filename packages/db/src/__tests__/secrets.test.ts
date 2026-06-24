@@ -38,18 +38,18 @@ describe("secret masking", () => {
   it("redacts secret-like audit metadata fields", () => {
     expect(
       sanitizeAuditJson({
-        providerCode: "deepseek",
+        providerCode: "openai",
         apiKey: "sk-1234567890",
         config: {
-          baseUrl: "https://api.deepseek.com",
+          baseUrl: "https://api.openai.com",
           accessKeySecret: "oss-secret",
         },
       }),
     ).toEqual({
-      providerCode: "deepseek",
+      providerCode: "openai",
       apiKey: "sk-1****7890",
       config: {
-        baseUrl: "https://api.deepseek.com",
+        baseUrl: "https://api.openai.com",
         accessKeySecret: "oss-****cret",
       },
     });

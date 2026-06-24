@@ -12,7 +12,7 @@ describe("provider field presets", () => {
   it("defines visual fields for common provider secrets", () => {
     expect(providerFieldPresets.map((preset) => preset.providerCode)).toEqual(
       expect.arrayContaining([
-        "deepseek",
+        "openai",
         "qweather",
         "open_meteo",
         "meteoblue",
@@ -42,19 +42,15 @@ describe("provider field presets", () => {
   });
 
   it("separates editable config fields from masked secret fields", () => {
-    expect(getProviderFieldPreset("deepseek")?.fields).toEqual(
+    expect(getProviderFieldPreset("openai")?.fields).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ key: "apiKey", target: "secretJson" }),
+        expect.objectContaining({ key: "internalRelayToken", target: "secretJson" }),
         expect.objectContaining({ key: "realCallEnabled", target: "configJson" }),
-        expect.objectContaining({
-          key: "analysisMode",
-          target: "configJson",
-          control: "select",
-        }),
         expect.objectContaining({
           key: "model",
           target: "configJson",
-          control: "select",
+          defaultValue: "gpt-4.1",
         }),
         expect.objectContaining({ key: "baseUrl", target: "configJson", advanced: true }),
         expect.objectContaining({

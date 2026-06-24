@@ -119,7 +119,7 @@ describe("admin provider module source", () => {
         route: "ai",
         title: 'title="智能解读"',
         description:
-          "管理 DeepSeek 智能解读配置。AI 只负责说明和文案生成，不参与确定性天气、天文和地形计算。",
+          "管理 GPT / OpenAI 智能解读配置。AI 只负责说明和文案生成，不参与确定性天气、天文和地形计算。",
         providerType: 'providerType="ai"',
       },
       {
@@ -207,9 +207,9 @@ describe("admin provider module source", () => {
       'displayName: "和风天气"',
       'displayName: "Open-Meteo"',
       'displayName: "meteoblue"',
-      '"ai:deepseek"',
+      '"ai:openai"',
       'group: "ai"',
-      'displayName: "DeepSeek"',
+      'displayName: "GPT / OpenAI"',
       '"billing:wechat_pay"',
       '"billing:alipay"',
       'group: "billing"',
@@ -260,7 +260,7 @@ describe("admin provider module source", () => {
     }
 
     expect(source).toContain(
-      "visibleProviders.map((provider, index) => renderProviderListRow(provider, index))",
+      "visibleProviders.map((provider, index) =>\n                    renderProviderListRow(provider, index),\n                  )",
     );
     expect(source).not.toContain("providers.map((provider) => renderProviderListRow(provider))");
   });
@@ -452,7 +452,7 @@ describe("admin provider module source", () => {
     expect(source).toContain(
       "`/admin/providers/${provider.providerType}/${provider.providerCode}/test-connection`",
     );
-    expect(source).toContain('"/admin/providers/ai/deepseek/test-explanation"');
+    expect(source).toContain('"/admin/providers/ai/openai/test-explanation"');
     expect(source).toContain('aria-label="真实解读测试"');
     expect(source).toContain("真实解读测试");
     expect(source).toContain("parseStrategy");

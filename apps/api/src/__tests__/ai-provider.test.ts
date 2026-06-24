@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ProviderConfigRecord } from "@photo-weather/db";
-import { normalizeDeepSeekAdminConfigJson, resolveDeepSeekRuntimeConfig } from "../ai-provider.js";
+import { normalizeOpenAiAdminConfigJson, resolveOpenAiRuntimeConfig } from "../ai-provider.js";
 
 const baseProvider: ProviderConfigRecord = {
-  id: "provider-deepseek",
+  id: "provider-openai",
   providerType: "ai",
-  providerCode: "deepseek",
-  displayName: "DeepSeek",
+  providerCode: "openai",
+  displayName: "GPT / OpenAI",
   enabled: true,
   priority: 100,
   configJson: {},
@@ -16,17 +16,23 @@ const baseProvider: ProviderConfigRecord = {
   updatedAt: new Date("2026-01-01T00:00:00.000Z"),
 };
 
-describe("DeepSeek runtime resolver", () => {
-  it("overrides fast mode to deepseek-v4-pro", () => {
-    const config = resolveDeepSeekRuntimeConfig(
+describe("OpenAI runtime resolver", () => {
+  it("resolves admin OpenAI config without exposing secrets", () => {
+    const config = resolveOpenAiRuntimeConfig(
       {
         ...baseProvider,
         configJson: {
           realCallEnabled: true,
-          analysisMode: "fast",
+          model: "gpt-4.1-mini",
+          baseUrl: "https://relay.example",
+          temperature: 0.4,
+          maxTokens: 1800,
+          promptMaxChars: 5000,
+          timeoutMs: 90000,
         },
         secretJson: {
           apiKey: "sk-test",
+          internalRelayToken: "relay-secret",
         },
       },
       {
@@ -38,160 +44,89 @@ describe("DeepSeek runtime resolver", () => {
       enabled: true,
       realCallEnabled: true,
       apiKeyPresent: true,
-      analysisMode: "professional",
-      model: "deepseek-v4-pro",
-      responseFormat: "json_object",
-      temperature: 0.2,
-      maxTokens: 1200,
-      promptMaxChars: 6000,
-      thinkingEnabled: false,
-      reasoningEffort: "none",
-      timeoutMs: 120000,
-      modeLabelZh: "专业模式",
+      internalRelayTokenPresent: true,
+      model: "gpt-4.1-mini",
+      baseUrl: "https://relay.example",
+      temperature: 0.4,
+      maxTokens: 1800,
+      promptMaxChars: 5000,
+      timeoutMs: 90000,
+      mode: "responses_api",
+      modeLabelZh: "GPT / OpenAI",
     });
     expect(JSON.stringify(config)).not.toContain("sk-test");
+    expect(JSON.stringify(config)).not.toContain("relay-secret");
   });
 
-  it("resolves professional mode to deepseek-v4-pro", () => {
-    const config = resolveDeepSeekRuntimeConfig(
+  it("uses OpenAI env fallback values without enabling real calls in tests", () => {
+    const config = resolveOpenAiRuntimeConfig(
       {
         ...baseProvider,
-        configJson: {
-          realCallEnabled: true,
-          analysisMode: "professional",
-        },
+        configJson: {},
+        secretJson: {},
       },
       {
-        NODE_ENV: "development",
-        DEEPSEEK_API_KEY: "sk-env",
+        NODE_ENV: "test",
+        ENABLE_REAL_OPENAI: "true",
+        OPENAI_API_KEY: "sk-env",
+        OPENAI_DEFAULT_MODEL: "gpt-4.1",
+        OPENAI_BASE_URL: "https://env.openai.example",
+        OPENAI_TIMEOUT_MS: "60000",
+        OPENAI_AI_EXPLAIN_PROMPT_MAX_CHARS: "5500",
       },
     );
 
     expect(config).toMatchObject({
+      enabled: true,
+      realCallEnabled: false,
       apiKeyPresent: true,
-      analysisMode: "professional",
-      model: "deepseek-v4-pro",
-      maxTokens: 1200,
-      promptMaxChars: 6000,
-      thinkingEnabled: false,
-      reasoningEffort: "none",
-      modeLabelZh: "专业模式",
+      model: "gpt-4.1",
+      baseUrl: "https://env.openai.example",
+      timeoutMs: 60000,
+      promptMaxChars: 5500,
     });
     expect(JSON.stringify(config)).not.toContain("sk-env");
   });
 
-  it("maps legacy or stale models to deepseek-v4-pro", () => {
-    expect(
-      resolveDeepSeekRuntimeConfig(
-        {
-          ...baseProvider,
-          configJson: {
-            defaultModel: "deepseek-chat",
-          },
-        },
-        {
-          NODE_ENV: "development",
-        },
-      ),
-    ).toMatchObject({
-      analysisMode: "professional",
-      model: "deepseek-v4-pro",
+  it("defaults to disabled gpt-4.1 Responses API config", () => {
+    const config = resolveOpenAiRuntimeConfig(null, {
+      NODE_ENV: "development",
     });
-
-    expect(
-      resolveDeepSeekRuntimeConfig(
-        {
-          ...baseProvider,
-          configJson: {
-            defaultModel: "deepseek-reasoner",
-          },
-        },
-        {
-          NODE_ENV: "development",
-        },
-      ),
-    ).toMatchObject({
-      analysisMode: "professional",
-      model: "deepseek-v4-pro",
-    });
-
-    expect(
-      resolveDeepSeekRuntimeConfig(
-        {
-          ...baseProvider,
-          configJson: {
-            model: "legacy-fast-model",
-          },
-        },
-        {
-          NODE_ENV: "development",
-        },
-      ),
-    ).toMatchObject({
-      analysisMode: "professional",
-      model: "deepseek-v4-pro",
-    });
-
-    const staleFlashLikeModel = ["deepseek-v4", "flash"].join("-");
-    const normalized = resolveDeepSeekRuntimeConfig(
-      {
-        ...baseProvider,
-        configJson: {
-          model: staleFlashLikeModel,
-        },
-      },
-      {
-        NODE_ENV: "development",
-      },
-    );
-    expect(normalized.model).toBe("deepseek-v4-pro");
-    expect(JSON.stringify(normalized)).not.toContain("flash");
-  });
-
-  it("uses admin config before env fallback", () => {
-    const config = resolveDeepSeekRuntimeConfig(
-      {
-        ...baseProvider,
-        configJson: {
-          realCallEnabled: false,
-          analysisMode: "fast",
-        },
-      },
-      {
-        NODE_ENV: "development",
-        ENABLE_REAL_DEEPSEEK: "true",
-        DEEPSEEK_DEFAULT_MODEL: "deepseek-v4-pro",
-        DEEPSEEK_BASE_URL: "https://env.deepseek.example",
-      },
-    );
 
     expect(config).toMatchObject({
+      enabled: false,
       realCallEnabled: false,
-      analysisMode: "professional",
-      model: "deepseek-v4-pro",
-      baseUrl: "https://env.deepseek.example",
+      apiKeyPresent: false,
+      model: "gpt-4.1",
+      baseUrl: "https://api.openai.com",
+      temperature: 0.2,
+      maxTokens: 1200,
+      promptMaxChars: 6000,
+      timeoutMs: 120000,
+      mode: "responses_api",
     });
   });
 
   it("normalizes admin config fields for safe storage", () => {
     expect(
-      normalizeDeepSeekAdminConfigJson({
+      normalizeOpenAiAdminConfigJson({
         realCallEnabled: true,
-        analysisMode: "professional",
+        model: "",
+        baseUrl: "",
+        temperature: 3,
+        maxTokens: 32,
+        promptMaxChars: 999999,
+        timeoutMs: 10,
       }),
     ).toMatchObject({
       realCallEnabled: true,
-      analysisMode: "professional",
-      model: "deepseek-v4-pro",
-      baseUrl: "https://api.deepseek.com",
-      responseFormat: "json_object",
-      temperature: 0.2,
-      maxTokens: 1200,
+      model: "gpt-4.1",
+      defaultModel: "gpt-4.1",
+      baseUrl: "https://api.openai.com",
+      temperature: 2,
+      maxTokens: 128,
       promptMaxChars: 6000,
-      thinkingEnabled: false,
-      reasoningEffort: "none",
-      timeoutMs: 120000,
-      modelPolicyNoteZh: "当前项目固定使用 deepseek-v4-pro。",
+      timeoutMs: 1000,
     });
   });
 });

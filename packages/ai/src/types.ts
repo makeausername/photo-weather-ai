@@ -112,7 +112,7 @@ export type ForecastAiExplanation = {
   readonly displayContent?: ForecastAiExplanationDisplayContent;
   readonly displayOnly?: boolean;
   readonly metadata?: {
-    readonly source: "deepseek" | "deterministic_fallback";
+    readonly source: "deepseek" | "openai" | "deterministic_fallback";
     readonly noteZh?: string;
     readonly parseStrategy?: ForecastAiExplanationParseStrategy;
     readonly fallbackUsed?: boolean;

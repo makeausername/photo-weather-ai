@@ -1,4 +1,4 @@
-import { isDeepSeekProviderError, type DeepSeekProviderOptions } from "@photo-weather/ai";
+import { isOpenAiProviderError, type OpenAiProviderOptions } from "@photo-weather/ai";
 import { AmapProvider } from "@photo-weather/geo";
 import {
   isWeatherProviderError,
@@ -8,7 +8,7 @@ import {
 } from "@photo-weather/weather";
 import type { DatabaseClient } from "@photo-weather/db";
 import type { ForecastWeatherSourceErrorCategory } from "@photo-weather/shared";
-import { createRealDeepSeekProvider, readRuntimeDeepSeekConfig } from "./ai-provider.js";
+import { createRealOpenAiProvider, readRuntimeOpenAiConfig } from "./ai-provider.js";
 import { readRuntimeAmapConfig } from "./geo-provider.js";
 import {
   createMeteoblueClientFromRuntimeConfig,
@@ -22,7 +22,7 @@ export const providerDiagnosticCodes = [
   "open_meteo",
   "qweather",
   "amap",
-  "deepseek",
+  "openai",
 ] as const;
 
 export type ProviderDiagnosticCode = (typeof providerDiagnosticCodes)[number];
@@ -97,9 +97,9 @@ const providerMetadata: Record<
     providerType: "weather",
     providerNameZh: "meteoblue",
   },
-  deepseek: {
+  openai: {
     providerType: "ai",
-    providerNameZh: "DeepSeek",
+    providerNameZh: "GPT / OpenAI",
   },
 };
 
@@ -127,8 +127,8 @@ export async function runProviderDiagnostic(
       return testOpenMeteoProvider(options);
     case "meteoblue":
       return testMeteoblueProvider(options);
-    case "deepseek":
-      return testDeepSeekProvider(options);
+    case "openai":
+      return testOpenAiProvider(options);
   }
 
   throw new Error(`Unsupported provider diagnostic code: ${options.providerCode}`);
@@ -271,8 +271,8 @@ function realCallDisabledMessage(providerCode: ProviderDiagnosticCode): string {
       return "当前为模拟测试，未请求真实天气服务。";
     case "meteoblue":
       return "当前为模拟测试，未请求 meteoblue 服务。";
-    case "deepseek":
-      return "当前为模拟测试，未请求 DeepSeek 服务。";
+    case "openai":
+      return "当前为模拟测试，未请求 GPT / OpenAI 服务。";
   }
 }
 
@@ -516,10 +516,10 @@ async function testMeteoblueProvider(
   }
 }
 
-async function testDeepSeekProvider(
+async function testOpenAiProvider(
   options: ProviderDiagnosticOptions,
 ): Promise<ProviderDiagnosticResult> {
-  const config = await readRuntimeDeepSeekConfig({
+  const config = await readRuntimeOpenAiConfig({
     dbClient: options.dbClient,
     env: options.env,
   });
@@ -528,41 +528,41 @@ async function testDeepSeekProvider(
     realCallEnabled: config.realCallEnabled,
     apiKeyPresent: config.apiKeyPresent,
     baseUrl: config.baseUrl,
-    mode: config.analysisMode,
+    mode: config.mode,
     modeLabelZh: config.modeLabelZh,
     model: config.model,
     timeoutMs: config.timeoutMs,
   };
-  const preflight = preflightDiagnostic("deepseek", common);
+  const preflight = preflightDiagnostic("openai", common);
   if (preflight) {
     return preflight;
   }
   if (!config.apiKeyPresent || !config.apiKey) {
-    return skippedDiagnostic("deepseek", {
+    return skippedDiagnostic("openai", {
       ...common,
       connectionMode: "real",
       errorCategory: "provider_key_missing",
-      messageZh: "请先填写 DeepSeek API Key。",
+      messageZh: "请先填写 GPT / OpenAI API Key。",
     });
   }
 
   try {
     const startedAt = Date.now();
-    const provider = await createRealDeepSeekProvider({
+    const provider = await createRealOpenAiProvider({
       dbClient: options.dbClient,
       env: options.env,
-      fetcher: options.fetcher as DeepSeekProviderOptions["fetcher"],
+      fetcher: options.fetcher as OpenAiProviderOptions["fetcher"],
     });
     const result = await provider.testConnection();
-    return successfulDiagnostic("deepseek", {
+    return successfulDiagnostic("openai", {
       ...common,
       latencyMs: Date.now() - startedAt,
-      messageZh: result.message || `DeepSeek 连接测试通过，当前使用${config.modeLabelZh}。`,
+      messageZh: result.message || `GPT / OpenAI 连接测试通过，当前使用${config.modeLabelZh}。`,
     });
   } catch (error) {
-    return failedDiagnostic("deepseek", {
+    return failedDiagnostic("openai", {
       ...common,
-      ...classifyProviderDiagnosticError(error, "DeepSeek 连接测试失败。", config.apiKey),
+      ...classifyProviderDiagnosticError(error, "GPT / OpenAI 连接测试失败。", config.apiKey),
     });
   }
 }
@@ -586,9 +586,9 @@ function classifyProviderDiagnosticError(
     };
   }
 
-  if (isDeepSeekProviderError(error)) {
+  if (isOpenAiProviderError(error)) {
     return {
-      errorCategory: mapDeepSeekDiagnosticErrorCategory(error.errorCategory, error.statusCode),
+      errorCategory: mapOpenAiDiagnosticErrorCategory(error.errorCategory, error.statusCode),
       messageZh: sanitizeDiagnosticMessage(error.messageZh, secret),
       statusCode: error.statusCode,
       latencyMs: error.latencyMs,
@@ -610,7 +610,7 @@ function classifyProviderDiagnosticError(
   };
 }
 
-function mapDeepSeekDiagnosticErrorCategory(
+function mapOpenAiDiagnosticErrorCategory(
   category: string,
   statusCode?: number,
 ): ForecastWeatherSourceErrorCategory {

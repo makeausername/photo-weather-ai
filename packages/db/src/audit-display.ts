@@ -66,6 +66,7 @@ const actionLabels: Record<string, string> = {
 };
 
 const providerLabels: Record<string, string> = {
+  "ai:openai": "GPT / OpenAI",
   "ai:deepseek": "DeepSeek",
   "billing:alipay": "支付宝",
   "billing:mock": "模拟支付",

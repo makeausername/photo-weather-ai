@@ -1,3 +1,5 @@
+// Deprecated legacy provider kept for parser tests and old config compatibility.
+// Production forecast AI explanation now uses OpenAiProvider.
 import {
   buildCloudLayerCompletenessContext,
   buildCloudSeaCloudBasisConsistencyContext,
@@ -4586,11 +4588,12 @@ function formatPercent(value: number | null | undefined): string {
   return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value)}%` : "待复核";
 }
 
-function parseForecastAiExplanationOutput(
+export function parseForecastAiExplanationOutput(
   rawOutput: string,
   result: ForecastCalculationResult,
   options: {
     readonly finishReason?: string;
+    readonly source?: "deepseek" | "openai";
   } = {},
 ): ForecastAiExplanationParseResult {
   const rawResponseSizeChars = rawOutput.length;
@@ -4607,6 +4610,7 @@ function parseForecastAiExplanationOutput(
           rawResponseSizeChars,
           false,
           options.finishReason,
+          options.source ?? "deepseek",
         ),
         parseStrategy: parsed.strategy,
         parseSuccess: true,
@@ -4626,6 +4630,7 @@ function parseForecastAiExplanationOutput(
         rawResponseSizeChars,
         true,
         options.finishReason,
+        options.source ?? "deepseek",
       ),
       parseStrategy: "plain_text_fallback",
       parseSuccess: false,
@@ -4934,12 +4939,13 @@ function withDeepSeekParseMetadata(
   rawResponseSizeChars: number,
   fallbackUsed: boolean,
   finishReason?: string,
+  source: "deepseek" | "openai" = "deepseek",
 ): ForecastAiExplanation {
   return {
     ...explanation,
     metadata: {
       ...explanation.metadata,
-      source: "deepseek",
+      source,
       parseStrategy,
       fallbackUsed,
       rawResponseSizeChars,

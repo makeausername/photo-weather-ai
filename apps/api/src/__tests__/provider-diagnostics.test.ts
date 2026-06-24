@@ -5,13 +5,13 @@ import { createFakeDatabaseClient } from "./fake-db.js";
 describe("provider diagnostics CLI helpers", () => {
   it("parses provider and all flags", () => {
     expect(parseProviderDiagnosticsArgs(["--provider", "meteoblue"])).toEqual(["meteoblue"]);
-    expect(parseProviderDiagnosticsArgs(["--provider=deepseek"])).toEqual(["deepseek"]);
+    expect(parseProviderDiagnosticsArgs(["--provider=openai"])).toEqual(["openai"]);
     expect(parseProviderDiagnosticsArgs(["--all"])).toEqual([
       "meteoblue",
       "open_meteo",
       "qweather",
       "amap",
-      "deepseek",
+      "openai",
     ]);
   });
 
@@ -135,22 +135,21 @@ describe("provider diagnostics CLI helpers", () => {
     expect(JSON.stringify(result)).not.toContain("meteoblue-cli-secret");
   });
 
-  it("distinguishes DeepSeek upstream auth failure from local admin auth", async () => {
+  it("distinguishes GPT / OpenAI upstream auth failure from local admin auth", async () => {
     const { client, state } = await createFakeDatabaseClient();
-    const deepSeekProvider = state.providers.get("ai:deepseek");
-    state.providers.set("ai:deepseek", {
-      ...deepSeekProvider,
+    const openAiProvider = state.providers.get("ai:openai");
+    state.providers.set("ai:openai", {
+      ...openAiProvider,
       enabled: true,
       configJson: {
-        ...(deepSeekProvider.configJson ?? {}),
+        ...(openAiProvider.configJson ?? {}),
         realCallEnabled: true,
-        analysisMode: "fast",
       },
       secretJson: {
-        apiKey: "deepseek-cli-secret",
+        apiKey: "openai-cli-secret",
       },
       maskedSecretJson: {
-        apiKey: "deep****cret",
+        apiKey: "open****cret",
       },
     });
     const fetcher = vi.fn(async () => {
@@ -163,7 +162,7 @@ describe("provider diagnostics CLI helpers", () => {
     }) as unknown as typeof fetch;
 
     const [result] = await runProviderDiagnostics({
-      providerCodes: ["deepseek"],
+      providerCodes: ["openai"],
       dbClient: client,
       env: {
         ...process.env,
@@ -173,14 +172,14 @@ describe("provider diagnostics CLI helpers", () => {
     });
 
     expect(result).toMatchObject({
-      providerCode: "deepseek",
+      providerCode: "openai",
       attempted: true,
       success: false,
       statusCode: 401,
       errorCategory: "invalid_key",
-      messageZh: "DeepSeek API Key 无效或权限不足。",
+      messageZh: "GPT / OpenAI API Key 或中转鉴权令牌无效。",
     });
     expect(result?.messageZh).not.toContain("登录状态已失效");
-    expect(JSON.stringify(result)).not.toContain("deepseek-cli-secret");
+    expect(JSON.stringify(result)).not.toContain("openai-cli-secret");
   });
 });

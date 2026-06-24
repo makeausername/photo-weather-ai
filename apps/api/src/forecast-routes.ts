@@ -26,12 +26,12 @@ import {
   forecastTargetLabels,
 } from "@photo-weather/shared";
 import {
-  buildDeepSeekForecastExplanationRequest,
+  buildOpenAiForecastExplanationRequest,
   createRuleBasedForecastExplanation,
-  DeepSeekProviderError,
-  isDeepSeekProviderError,
-  type DeepSeekInterpretationErrorCategory,
-  type DeepSeekRequestDiagnostics,
+  OpenAiProviderError,
+  isOpenAiProviderError,
+  type OpenAiInterpretationErrorCategory,
+  type OpenAiRequestDiagnostics,
   type ForecastAiExplanation,
   type ForecastAiExplanationParseStrategy,
 } from "@photo-weather/ai";
@@ -59,9 +59,9 @@ import {
 } from "@photo-weather/weather";
 import { z, type ZodError } from "zod";
 import {
-  createRealDeepSeekProvider,
-  readRuntimeDeepSeekConfig,
-  type RuntimeDeepSeekConfig,
+  createRealOpenAiProvider,
+  readRuntimeOpenAiConfig,
+  type RuntimeOpenAiConfig,
 } from "./ai-provider.js";
 import { authenticateRequest, type AuthConfig } from "./auth-routes.js";
 import type { WeatherDataServiceLike } from "./weather-provider.js";
@@ -100,7 +100,7 @@ type ForecastCalculationWithAiResult = ForecastCalculationResult & {
   aiExplanationError?: string;
 };
 
-type CachedDeepSeekForecastInterpretation = {
+type CachedOpenAiForecastInterpretation = {
   readonly interpretation: ForecastAiExplanation;
   readonly model: string;
   readonly promptSizeChars: number;
@@ -130,8 +130,8 @@ type DisplayableAiContent = {
   }[];
 };
 
-const deepSeekForecastInterpretationCacheTtlMs = 1000 * 60 * 60;
-const deepSeekForecastInterpretationCache = new Map<string, CachedDeepSeekForecastInterpretation>();
+const openAiForecastInterpretationCacheTtlMs = 1000 * 60 * 60;
+const openAiForecastInterpretationCache = new Map<string, CachedOpenAiForecastInterpretation>();
 const defaultForecastCalculateCacheTtlMs = 5 * 60 * 1000;
 const defaultForecastCalculateStaleIfErrorTtlMs = 30 * 60 * 1000;
 const defaultForecastCalculateCacheMaxEntries = 256;
@@ -747,24 +747,24 @@ export function registerForecastRoutes(
         reply,
       });
     }
-    const runtimeDeepSeek = await readRuntimeDeepSeekConfigOrDisabled({
+    const runtimeOpenAi = await readRuntimeOpenAiConfigOrDisabled({
       dbClient: options.dbClient,
       env,
     });
-    const promptSizeChars = runtimeDeepSeek
-      ? estimateDeepSeekPromptSize(result, runtimeDeepSeek)
+    const promptSizeChars = runtimeOpenAi
+      ? estimateOpenAiPromptSize(result, runtimeOpenAi)
       : 0;
-    const unavailableCategory = classifyRuntimeDeepSeekUnavailable(runtimeDeepSeek);
+    const unavailableCategory = classifyRuntimeOpenAiUnavailable(runtimeOpenAi);
 
-    if (!runtimeDeepSeek || unavailableCategory) {
+    if (!runtimeOpenAi || unavailableCategory) {
       request.log.info({
         route: "/forecast/ai-explain",
         targetCode: result.target,
-        providerCode: "deepseek",
-        model: runtimeDeepSeek?.model ?? "deepseek-v4-pro",
-        timeoutMs: runtimeDeepSeek?.timeoutMs ?? 120000,
+        providerCode: "openai",
+        model: runtimeOpenAi?.model ?? "gpt-4.1",
+        timeoutMs: runtimeOpenAi?.timeoutMs ?? 120000,
         promptSizeChars,
-        outputMode: runtimeDeepSeek ? deepSeekOutputMode(runtimeDeepSeek) : "unavailable",
+        outputMode: runtimeOpenAi ? openAiOutputMode(runtimeOpenAi) : "unavailable",
         latencyMs: 0,
         attempts: 0,
         success: false,
@@ -789,7 +789,7 @@ export function registerForecastRoutes(
       return reply.send(
         buildAiExplainFailureResponse({
           result,
-          runtimeDeepSeek,
+          runtimeOpenAi,
           errorCategory: unavailableCategory ?? "provider_disabled",
           latencyMs: 0,
           promptSizeChars,
@@ -799,16 +799,16 @@ export function registerForecastRoutes(
     }
 
     const cacheKey = createForecastInterpretationCacheKey(result, access);
-    const cachedInterpretation = readCachedDeepSeekForecastInterpretation(cacheKey);
+    const cachedInterpretation = readCachedOpenAiForecastInterpretation(cacheKey);
     if (cachedInterpretation) {
       request.log.info({
         route: "/forecast/ai-explain",
         targetCode: result.target,
-        providerCode: "deepseek",
+        providerCode: "openai",
         model: cachedInterpretation.model,
-        timeoutMs: runtimeDeepSeek.timeoutMs,
+        timeoutMs: runtimeOpenAi.timeoutMs,
         promptSizeChars: cachedInterpretation.promptSizeChars,
-        outputMode: deepSeekOutputMode(runtimeDeepSeek),
+        outputMode: openAiOutputMode(runtimeOpenAi),
         latencyMs: 0,
         attempts: 0,
         success: true,
@@ -836,7 +836,7 @@ export function registerForecastRoutes(
       return reply.send(
         buildAiExplainSuccessResponse({
           interpretation: cachedInterpretation.interpretation,
-          runtimeDeepSeek,
+          runtimeOpenAi,
           targetCode: result.target,
           latencyMs: 0,
           promptSizeChars: cachedInterpretation.promptSizeChars,
@@ -849,35 +849,35 @@ export function registerForecastRoutes(
     const startedAt = Date.now();
 
     try {
-      const deepSeekProvider = await createRealDeepSeekProvider({
+      const openAiProvider = await createRealOpenAiProvider({
         dbClient: options.dbClient,
         env,
         fetcher: globalThis.fetch,
       });
-      const retryResult = await withDeepSeekExplanationDeadline(
-        generateDeepSeekExplanationWithRetry({
-          provider: deepSeekProvider,
+      const retryResult = await withOpenAiExplanationDeadline(
+        generateOpenAiExplanationWithRetry({
+          provider: openAiProvider,
           forecastResult: result,
         }),
         {
-          timeoutMs: runtimeDeepSeek.timeoutMs,
+          timeoutMs: runtimeOpenAi.timeoutMs,
           promptSizeChars,
         },
       );
-      writeCachedDeepSeekForecastInterpretation(cacheKey, {
+      writeCachedOpenAiForecastInterpretation(cacheKey, {
         interpretation: retryResult.explanation,
-        model: runtimeDeepSeek.model,
+        model: runtimeOpenAi.model,
         promptSizeChars,
         createdAt: Date.now(),
       });
       request.log.info({
         route: "/forecast/ai-explain",
         targetCode: result.target,
-        providerCode: "deepseek",
-        model: runtimeDeepSeek.model,
-        timeoutMs: runtimeDeepSeek.timeoutMs,
+        providerCode: "openai",
+        model: runtimeOpenAi.model,
+        timeoutMs: runtimeOpenAi.timeoutMs,
         promptSizeChars,
-        outputMode: deepSeekOutputMode(runtimeDeepSeek),
+        outputMode: openAiOutputMode(runtimeOpenAi),
         latencyMs: Date.now() - startedAt,
         attempts: retryResult.attempts,
         success: true,
@@ -911,7 +911,7 @@ export function registerForecastRoutes(
       return reply.send(
         buildAiExplainSuccessResponse({
           interpretation: retryResult.explanation,
-          runtimeDeepSeek,
+          runtimeOpenAi,
           targetCode: result.target,
           latencyMs: Date.now() - startedAt,
           promptSizeChars,
@@ -921,17 +921,17 @@ export function registerForecastRoutes(
         }),
       );
     } catch (error) {
-      const normalized = normalizeDeepSeekExplanationError(error);
+      const normalized = normalizeOpenAiExplanationError(error);
       const latencyMs = normalized.latencyMs ?? Date.now() - startedAt;
       const failurePromptSizeChars = normalized.promptSizeChars ?? promptSizeChars;
       request.log.warn({
         route: "/forecast/ai-explain",
         targetCode: result.target,
-        providerCode: "deepseek",
-        model: runtimeDeepSeek.model,
-        timeoutMs: runtimeDeepSeek.timeoutMs,
+        providerCode: "openai",
+        model: runtimeOpenAi.model,
+        timeoutMs: runtimeOpenAi.timeoutMs,
         promptSizeChars: failurePromptSizeChars,
-        outputMode: deepSeekOutputMode(runtimeDeepSeek),
+        outputMode: openAiOutputMode(runtimeOpenAi),
         latencyMs,
         success: false,
         parseSuccess: false,
@@ -956,7 +956,7 @@ export function registerForecastRoutes(
       return reply.send(
         buildAiExplainFailureResponse({
           result,
-          runtimeDeepSeek,
+          runtimeOpenAi,
           errorCategory: normalized.errorCategory,
           retryable: normalized.retryable,
           latencyMs,
@@ -1742,46 +1742,42 @@ function firstFiniteNumber(values: readonly (number | null | undefined)[]): numb
   );
 }
 
-async function readRuntimeDeepSeekConfigOrDisabled(options: {
+async function readRuntimeOpenAiConfigOrDisabled(options: {
   readonly dbClient?: DatabaseClient;
   readonly env?: NodeJS.ProcessEnv;
-}): Promise<RuntimeDeepSeekConfig | null> {
+}): Promise<RuntimeOpenAiConfig | null> {
   try {
-    return await readRuntimeDeepSeekConfig(options);
+    return await readRuntimeOpenAiConfig(options);
   } catch {
     return null;
   }
 }
 
-function classifyRuntimeDeepSeekUnavailable(
-  runtimeDeepSeek: RuntimeDeepSeekConfig | null,
-): DeepSeekInterpretationErrorCategory | null {
-  if (!runtimeDeepSeek?.enabled || !runtimeDeepSeek.realCallEnabled) {
+function classifyRuntimeOpenAiUnavailable(
+  runtimeOpenAi: RuntimeOpenAiConfig | null,
+): OpenAiInterpretationErrorCategory | null {
+  if (!runtimeOpenAi?.enabled || !runtimeOpenAi.realCallEnabled) {
     return "provider_disabled";
   }
-  if (!runtimeDeepSeek.apiKeyPresent) {
+  if (!runtimeOpenAi.apiKeyPresent) {
     return "config_missing";
   }
   return null;
 }
 
-function estimateDeepSeekPromptSize(
+function estimateOpenAiPromptSize(
   result: ForecastCalculationResult,
-  runtimeDeepSeek: RuntimeDeepSeekConfig,
+  runtimeOpenAi: RuntimeOpenAiConfig,
 ): number {
   try {
-    const request = buildDeepSeekForecastExplanationRequest(
+    const request = buildOpenAiForecastExplanationRequest(
       { forecastResult: result },
       {
-        baseUrl: runtimeDeepSeek.baseUrl,
-        defaultModel: runtimeDeepSeek.model,
-        temperature: runtimeDeepSeek.temperature,
-        maxTokens: runtimeDeepSeek.maxTokens,
-        promptMaxChars: runtimeDeepSeek.promptMaxChars,
-        responseFormat: runtimeDeepSeek.responseFormat,
-        thinkingEnabled: runtimeDeepSeek.thinkingEnabled,
-        reasoningEffort: runtimeDeepSeek.reasoningEffort,
-        jsonOutputEnabled: false,
+        baseUrl: runtimeOpenAi.baseUrl,
+        defaultModel: runtimeOpenAi.model,
+        temperature: runtimeOpenAi.temperature,
+        maxTokens: runtimeOpenAi.maxTokens,
+        promptMaxChars: runtimeOpenAi.promptMaxChars,
       },
     );
     return request.promptSizeChars;
@@ -1801,13 +1797,13 @@ function withDeterministicAiExplanation(
 
 function buildAiExplainSuccessResponse(options: {
   readonly interpretation: ForecastAiExplanation;
-  readonly runtimeDeepSeek: RuntimeDeepSeekConfig;
+  readonly runtimeOpenAi: RuntimeOpenAiConfig;
   readonly targetCode: ForecastCalculationResult["target"];
   readonly latencyMs: number;
   readonly promptSizeChars: number;
   readonly attempts: number;
   readonly cacheHit: boolean;
-  readonly requestDiagnostics?: DeepSeekRequestDiagnostics;
+  readonly requestDiagnostics?: OpenAiRequestDiagnostics;
 }) {
   const responseSizeChars = safeResponseSizeChars(options.interpretation);
   const parseStrategy = aiExplanationParseStrategy(options.interpretation);
@@ -1828,9 +1824,9 @@ function buildAiExplainSuccessResponse(options: {
   const deterministicFallbackUsed = false;
   const meta = {
     targetCode: options.targetCode,
-    providerCode: "deepseek" as const,
-    model: options.runtimeDeepSeek.model,
-    timeoutMs: options.runtimeDeepSeek.timeoutMs,
+    providerCode: "openai" as const,
+    model: options.runtimeOpenAi.model,
+    timeoutMs: options.runtimeOpenAi.timeoutMs,
     promptSizeChars: options.promptSizeChars,
     latencyMs: options.latencyMs,
     attempts: options.attempts,
@@ -1857,9 +1853,9 @@ function buildAiExplainSuccessResponse(options: {
   return {
     ok: true,
     success: true,
-    source: "deepseek" as const,
+    source: "openai" as const,
     targetCode: options.targetCode,
-    model: options.runtimeDeepSeek.model,
+    model: options.runtimeOpenAi.model,
     explanation,
     interpretation: explanation,
     summaryText: explanation.summaryText,
@@ -1868,7 +1864,7 @@ function buildAiExplainSuccessResponse(options: {
     meta,
     latencyMs: options.latencyMs,
     promptSizeChars: options.promptSizeChars,
-    outputMode: deepSeekOutputMode(options.runtimeDeepSeek),
+    outputMode: openAiOutputMode(options.runtimeOpenAi),
     responseSizeChars,
     rawResponseSizeChars,
     parseSuccess,
@@ -1889,11 +1885,11 @@ function buildAiExplainSuccessResponse(options: {
     fallback: false,
     diagnostics: {
       targetCode: options.targetCode,
-      providerCode: "deepseek",
-      model: options.runtimeDeepSeek.model,
-      timeoutMs: options.runtimeDeepSeek.timeoutMs,
+      providerCode: "openai",
+      model: options.runtimeOpenAi.model,
+      timeoutMs: options.runtimeOpenAi.timeoutMs,
       promptSizeChars: options.promptSizeChars,
-      outputMode: deepSeekOutputMode(options.runtimeDeepSeek),
+      outputMode: openAiOutputMode(options.runtimeOpenAi),
       latencyMs: options.latencyMs,
       attempts: options.attempts,
       displaySuccess,
@@ -1923,8 +1919,8 @@ function buildAiExplainSuccessResponse(options: {
 
 function buildAiExplainFailureResponse(options: {
   readonly result: ForecastCalculationResult;
-  readonly runtimeDeepSeek: RuntimeDeepSeekConfig | null;
-  readonly errorCategory: DeepSeekInterpretationErrorCategory;
+  readonly runtimeOpenAi: RuntimeOpenAiConfig | null;
+  readonly errorCategory: OpenAiInterpretationErrorCategory;
   readonly retryable?: boolean;
   readonly latencyMs: number;
   readonly promptSizeChars: number;
@@ -1947,12 +1943,12 @@ function buildAiExplainFailureResponse(options: {
   readonly finalFailureUpstreamCode?: string;
 }) {
   const fallback = buildDeterministicFallbackInterpretation(options.result);
-  const messageZh = deepSeekInterpretationMessageZh(options.errorCategory, true);
-  const retryable = options.retryable ?? isRetryableDeepSeekErrorCategory(options.errorCategory);
-  const model = options.runtimeDeepSeek?.model ?? "deepseek-v4-pro";
-  const timeoutMs = options.runtimeDeepSeek?.timeoutMs ?? 120000;
-  const outputMode = options.runtimeDeepSeek
-    ? deepSeekOutputMode(options.runtimeDeepSeek)
+  const messageZh = openAiInterpretationMessageZh(options.errorCategory, true);
+  const retryable = options.retryable ?? isRetryableOpenAiErrorCategory(options.errorCategory);
+  const model = options.runtimeOpenAi?.model ?? "gpt-4.1";
+  const timeoutMs = options.runtimeOpenAi?.timeoutMs ?? 120000;
+  const outputMode = options.runtimeOpenAi
+    ? openAiOutputMode(options.runtimeOpenAi)
     : "unavailable";
   const responseSizeChars = safeResponseSizeChars(fallback);
   const rawResponseSizeChars = options.rawResponseSizeChars ?? 0;
@@ -1994,7 +1990,7 @@ function buildAiExplainFailureResponse(options: {
     upstreamMessageSanitized: options.upstreamMessageSanitized,
     meta: {
       targetCode: options.result.target,
-      providerCode: "deepseek" as const,
+      providerCode: "openai" as const,
       model,
       timeoutMs,
       promptSizeChars: options.promptSizeChars,
@@ -2028,7 +2024,7 @@ function buildAiExplainFailureResponse(options: {
     message: messageZh,
     diagnostics: {
       targetCode: options.result.target,
-      providerCode: "deepseek",
+      providerCode: "openai",
       model,
       timeoutMs,
       promptSizeChars: options.promptSizeChars,
@@ -2063,8 +2059,8 @@ function buildAiExplainFailureResponse(options: {
   };
 }
 
-function deepSeekOutputMode(
-  _runtimeDeepSeek: RuntimeDeepSeekConfig,
+function openAiOutputMode(
+  _runtimeOpenAi: RuntimeOpenAiConfig,
 ): "json_object" | "text_with_json_fallback" {
   return "text_with_json_fallback";
 }
@@ -2522,29 +2518,29 @@ function bucketForecastGeneratedAt(value: string): string {
   return date.toISOString();
 }
 
-function readCachedDeepSeekForecastInterpretation(
+function readCachedOpenAiForecastInterpretation(
   cacheKey: string,
-): CachedDeepSeekForecastInterpretation | null {
-  const cached = deepSeekForecastInterpretationCache.get(cacheKey);
+): CachedOpenAiForecastInterpretation | null {
+  const cached = openAiForecastInterpretationCache.get(cacheKey);
   if (!cached) {
     return null;
   }
-  if (Date.now() - cached.createdAt > deepSeekForecastInterpretationCacheTtlMs) {
-    deepSeekForecastInterpretationCache.delete(cacheKey);
+  if (Date.now() - cached.createdAt > openAiForecastInterpretationCacheTtlMs) {
+    openAiForecastInterpretationCache.delete(cacheKey);
     return null;
   }
   return cached;
 }
 
-function writeCachedDeepSeekForecastInterpretation(
+function writeCachedOpenAiForecastInterpretation(
   cacheKey: string,
-  cached: CachedDeepSeekForecastInterpretation,
+  cached: CachedOpenAiForecastInterpretation,
 ): void {
-  deepSeekForecastInterpretationCache.set(cacheKey, cached);
+  openAiForecastInterpretationCache.set(cacheKey, cached);
 }
 
-function deepSeekInterpretationMessageZh(
-  category: DeepSeekInterpretationErrorCategory,
+function openAiInterpretationMessageZh(
+  category: OpenAiInterpretationErrorCategory,
   fallbackAvailable: boolean,
 ): string {
   const suffix = fallbackAvailable
@@ -2552,27 +2548,27 @@ function deepSeekInterpretationMessageZh(
     : "确定性判断结果仍可正常参考，可稍后重试。";
   switch (category) {
     case "provider_disabled":
-      return `DeepSeek 智能解读未启用，${suffix}`;
+      return `GPT / OpenAI 智能解读未启用，${suffix}`;
     case "config_missing":
-      return `DeepSeek API Key 未配置，${suffix}`;
+      return `GPT / OpenAI API Key 未配置，${suffix}`;
     case "timeout":
-      return `DeepSeek 请求超时，${suffix}`;
+      return `GPT / OpenAI 请求超时，${suffix}`;
     case "network_error":
-      return `DeepSeek 网络请求失败，${suffix}`;
+      return `GPT / OpenAI 网络请求失败，${suffix}`;
     case "provider_http_error":
-      return `DeepSeek API Key 无效或权限不足，${suffix}`;
+      return `GPT / OpenAI API Key 无效或权限不足，${suffix}`;
     case "provider_invalid_response":
-      return `DeepSeek 返回格式异常，${suffix}`;
+      return `GPT / OpenAI 返回格式异常，${suffix}`;
     case "provider_parse_error":
-      return `DeepSeek 返回内容无法解析，${suffix}`;
+      return `GPT / OpenAI 返回内容无法解析，${suffix}`;
     case "prompt_too_large":
-      return `DeepSeek 解读上下文过大，${suffix}`;
+      return `GPT / OpenAI 解读上下文过大，${suffix}`;
     case "unknown":
-      return `DeepSeek 解读暂时不可用，${suffix}`;
+      return `GPT / OpenAI 解读暂时不可用，${suffix}`;
   }
 }
 
-function isRetryableDeepSeekErrorCategory(category: DeepSeekInterpretationErrorCategory): boolean {
+function isRetryableOpenAiErrorCategory(category: OpenAiInterpretationErrorCategory): boolean {
   return (
     category === "timeout" ||
     category === "network_error" ||
@@ -2582,23 +2578,23 @@ function isRetryableDeepSeekErrorCategory(category: DeepSeekInterpretationErrorC
   );
 }
 
-function isRetryableDeepSeekHttpStatus(statusCode: number | undefined): boolean {
+function isRetryableOpenAiHttpStatus(statusCode: number | undefined): boolean {
   return statusCode === 429 || (typeof statusCode === "number" && statusCode >= 500);
 }
 
 function legacyAiExplanationErrorCode(
-  category: DeepSeekInterpretationErrorCategory,
+  category: OpenAiInterpretationErrorCategory,
 ): "ai_explanation_timeout" | "ai_explanation_unavailable" {
   return category === "timeout" ? "ai_explanation_timeout" : "ai_explanation_unavailable";
 }
 
-async function generateDeepSeekExplanationWithRetry(options: {
-  readonly provider: Awaited<ReturnType<typeof createRealDeepSeekProvider>>;
+async function generateOpenAiExplanationWithRetry(options: {
+  readonly provider: Awaited<ReturnType<typeof createRealOpenAiProvider>>;
   readonly forecastResult: ForecastCalculationResult;
 }): Promise<{
   readonly explanation: ForecastAiExplanation;
   readonly attempts: number;
-  readonly requestDiagnostics: DeepSeekRequestDiagnostics;
+  readonly requestDiagnostics: OpenAiRequestDiagnostics;
 }> {
   let lastError: unknown;
   let attempts = 0;
@@ -2618,12 +2614,12 @@ async function generateDeepSeekExplanationWithRetry(options: {
       };
     } catch (error) {
       const providerAttempts =
-        isDeepSeekProviderError(error) && typeof error.attempts === "number"
+        isOpenAiProviderError(error) && typeof error.attempts === "number"
           ? Math.max(1, error.attempts)
           : 1;
       attempts += providerAttempts;
-      lastError = withDeepSeekRouteAttemptCount(error, attempts);
-      if (attempt >= 2 || !isRetryableDeepSeekInterpretationError(error)) {
+      lastError = withOpenAiRouteAttemptCount(error, attempts);
+      if (attempt >= 2 || !isRetryableOpenAiInterpretationError(error)) {
         throw lastError;
       }
       await delay(700);
@@ -2633,12 +2629,12 @@ async function generateDeepSeekExplanationWithRetry(options: {
   throw lastError;
 }
 
-function withDeepSeekRouteAttemptCount(error: unknown, attempts: number): unknown {
-  if (!isDeepSeekProviderError(error)) {
+function withOpenAiRouteAttemptCount(error: unknown, attempts: number): unknown {
+  if (!isOpenAiProviderError(error)) {
     return error;
   }
 
-  return new DeepSeekProviderError({
+  return new OpenAiProviderError({
     errorCategory: error.errorCategory,
     messageZh: error.messageZh,
     statusCode: error.statusCode,
@@ -2672,7 +2668,7 @@ function withDeepSeekRouteAttemptCount(error: unknown, attempts: number): unknow
   });
 }
 
-async function withDeepSeekExplanationDeadline<T>(
+async function withOpenAiExplanationDeadline<T>(
   promise: Promise<T>,
   options: {
     readonly timeoutMs: number;
@@ -2688,9 +2684,9 @@ async function withDeepSeekExplanationDeadline<T>(
       new Promise<T>((_, reject) => {
         timeout = setTimeout(() => {
           reject(
-            new DeepSeekProviderError({
+            new OpenAiProviderError({
               errorCategory: "timeout",
-              messageZh: "DeepSeek 服务请求超时。",
+              messageZh: "GPT / OpenAI 服务请求超时。",
               promptSizeChars: options.promptSizeChars,
             }),
           );
@@ -2704,12 +2700,12 @@ async function withDeepSeekExplanationDeadline<T>(
   }
 }
 
-function isRetryableDeepSeekInterpretationError(error: unknown): boolean {
-  if (isDeepSeekProviderError(error)) {
+function isRetryableOpenAiInterpretationError(error: unknown): boolean {
+  if (isOpenAiProviderError(error)) {
     return (
       error.errorCategory === "network_error" ||
       (error.errorCategory === "provider_http_error" &&
-        isRetryableDeepSeekHttpStatus(error.statusCode))
+        isRetryableOpenAiHttpStatus(error.statusCode))
     );
   }
 
@@ -2722,11 +2718,11 @@ function delay(milliseconds: number): Promise<void> {
   });
 }
 
-function normalizeDeepSeekExplanationError(error: unknown): {
+function normalizeOpenAiExplanationError(error: unknown): {
   readonly statusCode: 503 | 504;
   readonly error: "ai_explanation_timeout" | "ai_explanation_unavailable";
   readonly message: string;
-  readonly errorCategory: DeepSeekInterpretationErrorCategory;
+  readonly errorCategory: OpenAiInterpretationErrorCategory;
   readonly messageZh: string;
   readonly retryable: boolean;
   readonly latencyMs?: number;
@@ -2755,10 +2751,10 @@ function normalizeDeepSeekExplanationError(error: unknown): {
   readonly firstFailureUpstreamCode?: string;
   readonly finalFailureUpstreamCode?: string;
 } {
-  const providerError = isDeepSeekProviderError(error) ? error : undefined;
+  const providerError = isOpenAiProviderError(error) ? error : undefined;
   if (
-    (isDeepSeekProviderError(error) && error.errorCategory === "timeout") ||
-    (isDeepSeekProviderError(error) && isAbortOrTimeoutError(error.cause)) ||
+    (isOpenAiProviderError(error) && error.errorCategory === "timeout") ||
+    (isOpenAiProviderError(error) && isAbortOrTimeoutError(error.cause)) ||
     isAbortOrTimeoutError(readErrorCause(error)) ||
     isAbortOrTimeoutError(error)
   ) {
@@ -2766,14 +2762,14 @@ function normalizeDeepSeekExplanationError(error: unknown): {
       statusCode: 504,
       error: "ai_explanation_timeout",
       errorCategory: "timeout",
-      messageZh: "DeepSeek 解读暂时超时，已保留确定性分析结果，可稍后重试。",
+      messageZh: "GPT / OpenAI 解读暂时超时，已保留确定性分析结果，可稍后重试。",
       retryable: true,
       latencyMs: providerError?.latencyMs,
       promptSizeChars: providerError?.promptSizeChars,
       responseSizeChars: providerError?.responseSizeChars,
       rawResponseSizeChars: providerError?.rawResponseSizeChars,
       parseStrategy: providerError?.parseStrategy ?? "failed",
-      message: "DeepSeek 解读暂时超时，已保留确定性分析结果，可稍后重试。",
+      message: "GPT / OpenAI 解读暂时超时，已保留确定性分析结果，可稍后重试。",
       attempts: providerError?.attempts,
       upstreamStatusCode: providerError?.upstreamStatusCode,
       upstreamErrorCode: providerError?.upstreamErrorCode,
@@ -2800,12 +2796,12 @@ function normalizeDeepSeekExplanationError(error: unknown): {
   const errorCategory = providerError?.errorCategory ?? "unknown";
   const retryable =
     errorCategory === "provider_http_error"
-      ? isRetryableDeepSeekHttpStatus(providerError?.statusCode)
-      : isRetryableDeepSeekErrorCategory(errorCategory);
+      ? isRetryableOpenAiHttpStatus(providerError?.statusCode)
+      : isRetryableOpenAiErrorCategory(errorCategory);
   const messageZh =
     errorCategory === "provider_http_error" && providerError?.statusCode === 401
-      ? "DeepSeek API Key 无效或权限不足，确定性分析结果已保留。"
-      : "DeepSeek 解读暂时不可用，已保留确定性分析结果，可稍后重试。";
+      ? "GPT / OpenAI API Key 无效或权限不足，确定性分析结果已保留。"
+      : "GPT / OpenAI 解读暂时不可用，已保留确定性分析结果，可稍后重试。";
 
   return {
     statusCode: 503,
@@ -2818,7 +2814,7 @@ function normalizeDeepSeekExplanationError(error: unknown): {
     responseSizeChars: providerError?.responseSizeChars,
     rawResponseSizeChars: providerError?.rawResponseSizeChars,
     parseStrategy: providerError?.parseStrategy ?? "failed",
-    message: "DeepSeek 解读暂时不可用，已保留确定性分析结果。",
+    message: "GPT / OpenAI 解读暂时不可用，已保留确定性分析结果。",
     attempts: providerError?.attempts,
     upstreamStatusCode: providerError?.upstreamStatusCode,
     upstreamErrorCode: providerError?.upstreamErrorCode,

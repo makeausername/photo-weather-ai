@@ -658,8 +658,8 @@ render_env_file() {
         QWEATHER_API_HOST) write_env_var "${key}" "${QWEATHER_API_HOST}" >> "${tmp_file}" ;;
         AMAP_API_KEY) write_env_var "${key}" "${AMAP_API_KEY}" >> "${tmp_file}" ;;
         AMAP_WEB_SERVICE_KEY) write_env_var "${key}" "${AMAP_WEB_SERVICE_KEY}" >> "${tmp_file}" ;;
-        DEEPSEEK_API_KEY) write_env_var "${key}" "${DEEPSEEK_API_KEY}" >> "${tmp_file}" ;;
-        DEEPSEEK_BASE_URL) write_env_var "${key}" "${DEEPSEEK_BASE_URL}" >> "${tmp_file}" ;;
+        OPENAI_API_KEY) write_env_var "${key}" "${OPENAI_API_KEY}" >> "${tmp_file}" ;;
+        OPENAI_BASE_URL) write_env_var "${key}" "${OPENAI_BASE_URL}" >> "${tmp_file}" ;;
         OPEN_METEO_API_KEY) write_env_var "${key}" "${OPEN_METEO_API_KEY}" >> "${tmp_file}" ;;
         OPEN_METEO_MODE) write_env_var "${key}" "${OPEN_METEO_MODE}" >> "${tmp_file}" ;;
         OPEN_METEO_CUSTOMER_ENDPOINT) write_env_var "${key}" "${OPEN_METEO_CUSTOMER_ENDPOINT}" >> "${tmp_file}" ;;
@@ -1557,8 +1557,8 @@ collect_configuration() {
   AMAP_WEB_SERVICE_KEY=""
   QWEATHER_API_KEY=""
   QWEATHER_API_HOST=""
-  DEEPSEEK_API_KEY=""
-  DEEPSEEK_BASE_URL="https://api.deepseek.com"
+  OPENAI_API_KEY=""
+  OPENAI_BASE_URL="https://api.openai.com"
   OPEN_METEO_API_KEY=""
   OPEN_METEO_MODE="free"
   OPEN_METEO_CUSTOMER_ENDPOINT=""
@@ -1583,10 +1583,10 @@ print_deployment_summary() {
   printf '数据库名称：%s\n' "${POSTGRES_DB}"
   printf '数据库用户：%s\n' "${POSTGRES_USER}"
   printf '管理员邮箱：%s\n' "${ADMIN_EMAIL}"
-  printf '第三方服务：Amap=%s / QWeather=%s / DeepSeek=%s / Open-Meteo=%s\n' \
+  printf '第三方服务：Amap=%s / QWeather=%s / GPT/OpenAI=%s / Open-Meteo=%s\n' \
     "$(provider_enabled_label "${AMAP_API_KEY:-}")" \
     "$(provider_enabled_label "${QWEATHER_API_KEY:-}")" \
-    "$(provider_enabled_label "${DEEPSEEK_API_KEY:-}")" \
+    "$(provider_enabled_label "${OPENAI_API_KEY:-}")" \
     "$(provider_enabled_label "${OPEN_METEO_API_KEY:-}")"
   printf '需要安装 Docker：%s\n' "$(docker_install_needed_label)"
   printf 'Install region: %s\n' "${INSTALL_REGION}"

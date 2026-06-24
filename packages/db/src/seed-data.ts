@@ -229,7 +229,7 @@ const systemSettings = [
   },
   {
     key: "ai.defaultProvider",
-    valueJson: "deepseek",
+    valueJson: "openai",
     valueType: "select",
     group: "ai",
     label: "默认 AI 服务商",
@@ -240,7 +240,7 @@ const systemSettings = [
   },
   {
     key: "ai.defaultModel",
-    valueJson: "deepseek-v4-pro",
+    valueJson: "gpt-4.1",
     valueType: "string",
     group: "ai",
     label: "默认 AI 模型",
@@ -320,8 +320,26 @@ const systemSettings = [
 const providerConfigs = [
   {
     providerType: "ai",
+    providerCode: "openai",
+    displayName: "GPT / OpenAI",
+    enabled: false,
+    priority: 100,
+    configJson: {
+      baseUrl: "https://api.openai.com",
+      realCallEnabled: false,
+      model: "gpt-4.1",
+      temperature: 0.2,
+      maxTokens: 1200,
+      promptMaxChars: 6000,
+      timeoutMs: 120000,
+    },
+    secretJson: {},
+    maskedSecretJson: {},
+  },
+  {
+    providerType: "ai",
     providerCode: "deepseek",
-    displayName: "DeepSeek",
+    displayName: "DeepSeek (deprecated)",
     enabled: false,
     priority: 100,
     configJson: {

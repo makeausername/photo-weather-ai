@@ -1,55 +1,50 @@
 import {
-  DeepSeekProvider,
-  missingDeepSeekApiKeyMessage,
-  type DeepSeekProviderOptions,
+  missingOpenAiApiKeyMessage,
+  OpenAiProvider,
+  type OpenAiProviderOptions,
 } from "@photo-weather/ai";
 import { getRuntimeProviderConfig } from "@photo-weather/db";
 import type { DatabaseClient, JsonValue, ProviderConfigRecord } from "@photo-weather/db";
 import {
-  deepSeekResponseFormat,
-  deepSeekProfessionalModel,
-  getDeepSeekModeRuntimeDefaults,
-  normalizeDeepSeekAnalysisMode,
-  normalizeDeepSeekModel,
-  type DeepSeekAnalysisMode,
-  type DeepSeekReasoningEffort,
+  normalizeOpenAiModel,
+  openAiDefaultBaseUrl,
+  openAiDefaultMaxTokens,
+  openAiDefaultModel,
+  openAiDefaultPromptMaxChars,
+  openAiDefaultTemperature,
+  openAiDefaultTimeoutMs,
 } from "@photo-weather/shared";
 
 export type AiProviderRuntimeOptions = {
   readonly dbClient?: DatabaseClient;
   readonly env?: NodeJS.ProcessEnv;
-  readonly fetcher?: DeepSeekProviderOptions["fetcher"];
-  readonly forecastExplanationJsonOutputEnabled?: DeepSeekProviderOptions["forecastExplanationJsonOutputEnabled"];
+  readonly fetcher?: OpenAiProviderOptions["fetcher"];
 };
 
-export type ResolvedDeepSeekRuntimeConfig = {
+export type ResolvedOpenAiRuntimeConfig = {
   readonly enabled: boolean;
   readonly realCallEnabled: boolean;
   readonly apiKeyPresent: boolean;
-  readonly analysisMode: DeepSeekAnalysisMode;
   readonly baseUrl: string;
   readonly model: string;
-  readonly responseFormat: "json_object";
   readonly temperature: number;
   readonly maxTokens: number;
   readonly promptMaxChars: number;
-  readonly thinkingEnabled: boolean;
-  readonly reasoningEffort: DeepSeekReasoningEffort;
   readonly timeoutMs: number;
+  readonly mode: "responses_api";
   readonly modeLabelZh: string;
+  readonly internalRelayTokenPresent: boolean;
 };
 
-export type RuntimeDeepSeekConfig = ResolvedDeepSeekRuntimeConfig & {
+export type RuntimeOpenAiConfig = ResolvedOpenAiRuntimeConfig & {
   readonly providerEnabled: boolean;
   readonly realModeEnabled: boolean;
   readonly apiKey?: string;
+  readonly authToken?: string;
+  readonly internalRelayToken?: string;
   readonly defaultModel: string;
-  readonly jsonOutputEnabled: boolean;
+  readonly jsonOutputEnabled: false;
 };
-
-const defaultDeepSeekBaseUrl = "https://api.deepseek.com";
-const defaultDeepSeekTimeoutMs = 120000;
-const defaultDeepSeekPromptMaxChars = 6000;
 
 function isJsonObject(value: JsonValue | null | undefined): value is Record<string, JsonValue> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -139,15 +134,31 @@ function readSecretAndConfig(provider: ProviderConfigRecord | null): {
   };
 }
 
-function readDeepSeekApiKey(
+function readOpenAiApiKey(
   provider: ProviderConfigRecord | null,
   env: NodeJS.ProcessEnv,
 ): string | undefined {
   const { secretJson } = readSecretAndConfig(provider);
-  return readString(secretJson.apiKey) ?? readEnvString(env.DEEPSEEK_API_KEY);
+  return (
+    readString(secretJson.apiKey) ??
+    readString(secretJson.authToken) ??
+    readEnvString(env.OPENAI_API_KEY)
+  );
 }
 
-function readDeepSeekRealCallEnabled(
+function readOpenAiInternalRelayToken(
+  provider: ProviderConfigRecord | null,
+  env: NodeJS.ProcessEnv,
+): string | undefined {
+  const { secretJson } = readSecretAndConfig(provider);
+  return (
+    readString(secretJson.internalRelayToken) ??
+    readString(secretJson.relayToken) ??
+    readEnvString(env.OPENAI_INTERNAL_RELAY_TOKEN)
+  );
+}
+
+function readOpenAiRealCallEnabled(
   provider: ProviderConfigRecord | null,
   env: NodeJS.ProcessEnv,
 ): boolean {
@@ -156,186 +167,137 @@ function readDeepSeekRealCallEnabled(
   }
 
   const { configJson } = readSecretAndConfig(provider);
-  return readBoolean(configJson.realCallEnabled) ?? readOptInFlag(env.ENABLE_REAL_DEEPSEEK);
+  return readBoolean(configJson.realCallEnabled) ?? readOptInFlag(env.ENABLE_REAL_OPENAI);
 }
 
-function normalizeReasoningEffort(
-  value: string | undefined,
-  fallback: DeepSeekReasoningEffort,
-): DeepSeekReasoningEffort {
-  if (value === "none" || value === "low" || value === "medium" || value === "high") {
-    return value;
-  }
-
-  return fallback;
-}
-
-export function resolveDeepSeekRuntimeConfig(
+export function resolveOpenAiRuntimeConfig(
   provider: ProviderConfigRecord | null,
   env: NodeJS.ProcessEnv = process.env,
-): ResolvedDeepSeekRuntimeConfig {
+): ResolvedOpenAiRuntimeConfig {
   const { secretJson, configJson } = readSecretAndConfig(provider);
-  const configuredMode = readString(configJson.analysisMode);
-  const hasConfiguredMode = configuredMode === "professional";
-  const configuredModel =
+  const model = normalizeOpenAiModel(
     readString(configJson.model) ??
-    readString(secretJson.model) ??
-    readString(configJson.defaultModel) ??
-    readString(secretJson.defaultModel);
-  const envModel = readEnvString(env.DEEPSEEK_DEFAULT_MODEL);
-  const analysisMode = normalizeDeepSeekAnalysisMode(
-    configuredMode,
-    hasConfiguredMode ? undefined : configuredModel ?? envModel,
+      readString(secretJson.model) ??
+      readString(configJson.defaultModel) ??
+      readString(secretJson.defaultModel) ??
+      readEnvString(env.OPENAI_DEFAULT_MODEL) ??
+      openAiDefaultModel,
   );
-  const modeDefaults = getDeepSeekModeRuntimeDefaults(analysisMode);
-  const model = normalizeDeepSeekModel(
-    hasConfiguredMode
-      ? modeDefaults.model
-      : configuredModel ?? envModel ?? modeDefaults.model ?? deepSeekProfessionalModel,
-  );
-  const thinkingEnabled =
-    readBoolean(configJson.thinkingEnabled) ??
-    readBoolean(secretJson.thinkingEnabled) ??
-    modeDefaults.thinkingEnabled;
-  const reasoningEffort = thinkingEnabled
-    ? normalizeReasoningEffort(
-        readString(configJson.reasoningEffort) ?? readString(secretJson.reasoningEffort),
-        modeDefaults.reasoningEffort === "none" ? "medium" : modeDefaults.reasoningEffort,
-      )
-    : "none";
+  const apiKey = readOpenAiApiKey(provider, env);
+  const internalRelayToken = readOpenAiInternalRelayToken(provider, env);
 
   return {
     enabled: provider?.enabled ?? false,
-    realCallEnabled: readDeepSeekRealCallEnabled(provider, env),
-    apiKeyPresent: Boolean(readDeepSeekApiKey(provider, env)),
-    analysisMode,
+    realCallEnabled: readOpenAiRealCallEnabled(provider, env),
+    apiKeyPresent: Boolean(apiKey),
     baseUrl:
       readString(configJson.baseUrl) ??
       readString(secretJson.baseUrl) ??
-      readEnvString(env.DEEPSEEK_BASE_URL) ??
-      defaultDeepSeekBaseUrl,
+      readEnvString(env.OPENAI_BASE_URL) ??
+      openAiDefaultBaseUrl,
     model,
-    responseFormat: deepSeekResponseFormat,
     temperature: clampNumber(
       readNumber(configJson.temperature) ?? readNumber(secretJson.temperature),
-      modeDefaults.temperature,
+      openAiDefaultTemperature,
       0,
       2,
     ),
     maxTokens: clampInteger(
       readNumber(configJson.maxTokens) ?? readNumber(secretJson.maxTokens),
-      modeDefaults.maxTokens,
+      openAiDefaultMaxTokens,
       128,
       8192,
     ),
     promptMaxChars: clampInteger(
       readNumber(configJson.promptMaxChars) ??
-        readEnvNumber(env.DEEPSEEK_AI_EXPLAIN_PROMPT_MAX_CHARS),
-      defaultDeepSeekPromptMaxChars,
+        readEnvNumber(env.OPENAI_AI_EXPLAIN_PROMPT_MAX_CHARS),
+      openAiDefaultPromptMaxChars,
       3000,
       6000,
     ),
-    thinkingEnabled,
-    reasoningEffort,
     timeoutMs: clampInteger(
-      readNumber(configJson.timeoutMs),
-      defaultDeepSeekTimeoutMs,
-      120000,
+      readNumber(configJson.timeoutMs) ?? readEnvNumber(env.OPENAI_TIMEOUT_MS),
+      openAiDefaultTimeoutMs,
+      1000,
       120000,
     ),
-    modeLabelZh: modeDefaults.modeLabelZh,
+    mode: "responses_api",
+    modeLabelZh: "GPT / OpenAI",
+    internalRelayTokenPresent: Boolean(internalRelayToken),
   };
 }
 
-export function normalizeDeepSeekAdminConfigJson(
+export function normalizeOpenAiAdminConfigJson(
   configJson: JsonValue | undefined,
 ): Record<string, JsonValue> {
   const current = isJsonObject(configJson) ? { ...configJson } : {};
-  const analysisMode = normalizeDeepSeekAnalysisMode(
-    readString(current.analysisMode),
-    readString(current.model) ?? readString(current.defaultModel),
-  );
-  const modeDefaults = getDeepSeekModeRuntimeDefaults(analysisMode);
-  const thinkingEnabled = readBoolean(current.thinkingEnabled) ?? modeDefaults.thinkingEnabled;
-  const reasoningEffort = thinkingEnabled
-    ? normalizeReasoningEffort(
-        readString(current.reasoningEffort),
-        modeDefaults.reasoningEffort === "none" ? "medium" : modeDefaults.reasoningEffort,
-      )
-    : "none";
 
   return {
-    ...current,
     realCallEnabled: readBoolean(current.realCallEnabled) ?? false,
-    analysisMode,
-    model: modeDefaults.model,
-    defaultModel: modeDefaults.model,
-    baseUrl: readString(current.baseUrl) ?? defaultDeepSeekBaseUrl,
-    responseFormat: deepSeekResponseFormat,
-    temperature: clampNumber(readNumber(current.temperature), modeDefaults.temperature, 0, 2),
-    maxTokens: clampInteger(readNumber(current.maxTokens), modeDefaults.maxTokens, 128, 8192),
+    model: normalizeOpenAiModel(readString(current.model)),
+    defaultModel: normalizeOpenAiModel(readString(current.defaultModel) ?? readString(current.model)),
+    baseUrl: readString(current.baseUrl) ?? openAiDefaultBaseUrl,
+    temperature: clampNumber(readNumber(current.temperature), openAiDefaultTemperature, 0, 2),
+    maxTokens: clampInteger(readNumber(current.maxTokens), openAiDefaultMaxTokens, 128, 8192),
     promptMaxChars: clampInteger(
       readNumber(current.promptMaxChars),
-      defaultDeepSeekPromptMaxChars,
+      openAiDefaultPromptMaxChars,
       3000,
       6000,
     ),
-    thinkingEnabled,
-    reasoningEffort,
-    modelPolicyNoteZh: "当前项目固定使用 deepseek-v4-pro。",
     timeoutMs: clampInteger(
       readNumber(current.timeoutMs),
-      defaultDeepSeekTimeoutMs,
-      120000,
+      openAiDefaultTimeoutMs,
+      1000,
       120000,
     ),
   };
 }
 
-export async function readRuntimeDeepSeekConfig(
+export async function readRuntimeOpenAiConfig(
   options: Pick<AiProviderRuntimeOptions, "dbClient" | "env"> = {},
-): Promise<RuntimeDeepSeekConfig> {
+): Promise<RuntimeOpenAiConfig> {
   const env = options.env ?? process.env;
-  const provider = await getRuntimeProviderConfig("ai", "deepseek", {
+  const provider = await getRuntimeProviderConfig("ai", "openai", {
     client: options.dbClient,
   });
-  const resolved = resolveDeepSeekRuntimeConfig(provider, env);
-  const apiKey = readDeepSeekApiKey(provider, env);
+  const resolved = resolveOpenAiRuntimeConfig(provider, env);
+  const apiKey = readOpenAiApiKey(provider, env);
+  const internalRelayToken = readOpenAiInternalRelayToken(provider, env);
 
   return {
     ...resolved,
     providerEnabled: resolved.enabled,
     realModeEnabled: resolved.realCallEnabled,
     apiKey,
+    authToken: apiKey,
+    internalRelayToken,
     defaultModel: resolved.model,
-    jsonOutputEnabled: resolved.responseFormat === "json_object",
+    jsonOutputEnabled: false,
   };
 }
 
-export async function createRealDeepSeekProvider(
+export async function createRealOpenAiProvider(
   options: AiProviderRuntimeOptions = {},
-): Promise<DeepSeekProvider> {
-  const config = await readRuntimeDeepSeekConfig(options);
+): Promise<OpenAiProvider> {
+  const config = await readRuntimeOpenAiConfig(options);
 
-  return new DeepSeekProvider({
+  return new OpenAiProvider({
     enabled: config.enabled,
     realModeEnabled: config.realCallEnabled,
     apiKey: config.apiKey,
+    authToken: config.authToken,
+    internalRelayToken: config.internalRelayToken,
     baseUrl: config.baseUrl,
     defaultModel: config.model,
     temperature: config.temperature,
     maxTokens: config.maxTokens,
     promptMaxChars: config.promptMaxChars,
-    responseFormat: config.responseFormat,
-    thinkingEnabled: config.thinkingEnabled,
-    reasoningEffort: config.reasoningEffort,
     timeoutMs: config.timeoutMs,
-    jsonOutputEnabled: config.jsonOutputEnabled,
-    forecastExplanationJsonOutputEnabled: options.forecastExplanationJsonOutputEnabled ?? false,
     fetcher: options.fetcher,
   });
 }
 
-export function getMissingDeepSeekApiKeyMessage(): string {
-  return missingDeepSeekApiKeyMessage;
+export function getMissingOpenAiApiKeyMessage(): string {
+  return missingOpenAiApiKeyMessage;
 }

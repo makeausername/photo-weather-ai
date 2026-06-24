@@ -70,7 +70,7 @@ describe("historical calibration CLI", () => {
     expect(output.join("\n")).toContain("calibrationHint=");
     expect(output.join("\n")).not.toContain("QWEATHER_API_KEY");
     expect(output.join("\n")).not.toContain("METEOBLUE_API_KEY");
-    expect(output.join("\n")).not.toContain("DEEPSEEK_API_KEY");
+    expect(output.join("\n")).not.toContain("OPENAI_API_KEY");
     vi.unstubAllGlobals();
   });
 });

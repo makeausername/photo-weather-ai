@@ -218,7 +218,7 @@ type ForecastAiExplanation = {
   readonly displayContent?: NormalizedAiExplanationContent;
   readonly displayOnly?: boolean;
   readonly metadata?: {
-    readonly source: "deepseek" | "deterministic_fallback";
+    readonly source: "openai" | "deterministic_fallback";
     readonly noteZh?: string;
     readonly parseStrategy?:
       | "strict_json"
@@ -236,7 +236,7 @@ type AiExplainResponse = {
   readonly ok?: boolean;
   readonly success?: boolean;
   readonly targetCode?: ForecastQueryInput["target"];
-  readonly source?: "deepseek" | "fallback";
+  readonly source?: "openai" | "fallback";
   readonly explanation?: unknown;
   readonly interpretation?: unknown;
   readonly fallbackInterpretation?: unknown;
@@ -359,7 +359,7 @@ type AiExplainResponse = {
   };
 };
 
-export const deepSeekBackendTimeoutMaxMs = 120_000;
+export const openAiBackendTimeoutMaxMs = 120_000;
 export const aiExplainFrontendTimeoutMs = 130_000;
 
 type AiExplainErrorCategory = NonNullable<AiExplainResponse["errorCategory"]>;
@@ -760,7 +760,7 @@ function extractAiExplanationFromResponse(
 function normalizeForecastAiExplanationCandidate(value: unknown): ForecastAiExplanation | null {
   if (isForecastAiExplanationLike(value)) {
     return withAiExplanationDisplayContent(
-      withAiExplanationMetadata(value, value.metadata?.source ?? "deepseek"),
+      withAiExplanationMetadata(value, value.metadata?.source ?? "openai"),
       normalizeAiExplanationContent(value),
     );
   }
@@ -1329,7 +1329,7 @@ function completeForecastAiExplanationFromPartial(
       ...(displayContent.hasContent ? { displayContent } : {}),
       metadata: normalizeAiMetadata(value.metadata),
     },
-    normalizeAiMetadata(value.metadata)?.source ?? "deepseek",
+    normalizeAiMetadata(value.metadata)?.source ?? "openai",
   );
 }
 
@@ -1445,7 +1445,7 @@ function explanationFromSections(
       nextCheckZh: "下次重点复核短临降水、低云、能见度和阵风。",
     },
     metadata: {
-      source: "deepseek",
+      source: "openai",
       noteZh: "已兼容后端 sections 响应格式。",
     },
   };
@@ -1534,7 +1534,7 @@ function explanationFromDisplayContent(
     displayContent: content,
     displayOnly: true,
     metadata: metadata ?? {
-      source: "deepseek",
+      source: "openai",
       noteZh: "已兼容后端智能解读响应格式。",
     },
   };
@@ -1710,7 +1710,7 @@ function normalizeAiMetadata(value: unknown): ForecastAiExplanation["metadata"] 
   if (!isRecord(value)) {
     return undefined;
   }
-  const source = value.source === "deterministic_fallback" ? "deterministic_fallback" : "deepseek";
+  const source = value.source === "deterministic_fallback" ? "deterministic_fallback" : "openai";
   const noteZh = readStringField(value, "noteZh");
   const parseStrategy = normalizeAiParseStrategy(value.parseStrategy);
   const fallbackUsed = typeof value.fallbackUsed === "boolean" ? value.fallbackUsed : undefined;
@@ -1767,7 +1767,7 @@ function normalizeAiResponseMetadata(
   }
 
   return {
-    source: "deepseek",
+    source: "openai",
     ...(parseStrategy ? { parseStrategy } : {}),
     ...(typeof fallbackUsed === "boolean" ? { fallbackUsed } : {}),
     ...(typeof rawResponseSizeChars === "number" ? { rawResponseSizeChars } : {}),
@@ -9813,7 +9813,7 @@ export function AiExplanationPanel({
         visibleContent.sections.length > 0),
   );
   const hasCompletedExplanation = Boolean(visibleExplanation) && !retryable && status !== "loading";
-  const loadingText = "DeepSeek V4 Pro 解读可能需要约 1-2 分钟，当前确定性判断结果仍可正常参考。";
+  const loadingText = "GPT / OpenAI 解读可能需要约 1-2 分钟，当前确定性判断结果仍可正常参考。";
   const buttonLabel =
     status === "loading"
       ? "正在生成智能解读..."

@@ -29,6 +29,7 @@ export type ProviderFieldPreset = {
   readonly fields: readonly ProviderFieldDefinition[];
 };
 
+// Deprecated DeepSeek field helpers kept only for legacy config normalization.
 export const deepSeekAnalysisModes = ["professional"] as const;
 
 export type DeepSeekAnalysisMode = (typeof deepSeekAnalysisModes)[number];
@@ -51,6 +52,23 @@ export const deepSeekProfessionalModel = "deepseek-v4-pro";
 export const deepSeekDefaultModel = deepSeekProfessionalModel;
 
 export const deepSeekResponseFormat = "json_object";
+
+export const openAiDefaultBaseUrl = "https://api.openai.com";
+
+export const openAiDefaultModel = "gpt-4.1";
+
+export const openAiDefaultTimeoutMs = 120000;
+
+export const openAiDefaultTemperature = 0.2;
+
+export const openAiDefaultMaxTokens = 1200;
+
+export const openAiDefaultPromptMaxChars = 6000;
+
+export function normalizeOpenAiModel(value: string | undefined): string {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : openAiDefaultModel;
+}
 
 export const deepSeekModelOptions = [
   {
@@ -263,68 +281,68 @@ const keepExistingSecretPlaceholder = "留空则保持现有密钥不变";
 
 export const providerFieldPresets = [
   {
-    providerCode: "deepseek",
+    providerCode: "openai",
     helpText:
-      "DeepSeek 仅用于解释系统已计算出的评分、风险和拍摄建议，不负责重新计算天气、天文和地形数据。预报智能解读默认使用文本优先模式，系统会自动识别 JSON 或普通中文文本。",
+      "GPT / OpenAI ?????????????????????????????????????????????????? OpenAI Base URL??????? OpenAI ????? Base URL?API Key ????????????????????????",
     fields: [
       {
         key: "realCallEnabled",
-        label: "启用真实调用",
+        label: "??????",
         target: "configJson",
         control: "boolean",
         defaultValue: false,
-        helpText: "启用后，手动生成智能解读和测试连接会请求 DeepSeek 服务。",
-      },
-      {
-        key: "analysisMode",
-        label: "解读模型",
-        target: "configJson",
-        control: "select",
-        options: deepSeekAnalysisModeOptions,
-        defaultValue: "professional",
-        helpText: "当前项目固定使用 deepseek-v4-pro。",
+        helpText: "???????????????????? GPT / OpenAI ????????",
       },
       {
         key: "model",
-        label: "模型",
+        label: "??",
         target: "configJson",
-        control: "select",
-        options: deepSeekModelOptions,
-        defaultValue: deepSeekDefaultModel,
-        helpText: "当前项目固定使用 deepseek-v4-pro：高质量解读模型。",
+        defaultValue: openAiDefaultModel,
+        placeholder: openAiDefaultModel,
+        helpText: "???? gpt-4.1??????????? OpenAI Responses API ?????",
       },
       {
         key: "apiKey",
-        label: "DeepSeek API Key",
+        label: "OpenAI API Key / ??????",
         target: "secretJson",
         placeholder: keepExistingSecretPlaceholder,
         password: true,
       },
       {
-        key: "baseUrl",
-        label: "接口地址（Base URL）",
-        target: "configJson",
-        placeholder: "https://api.deepseek.com",
-        defaultValue: "https://api.deepseek.com",
+        key: "internalRelayToken",
+        label: "??????",
+        target: "secretJson",
+        placeholder: keepExistingSecretPlaceholder,
+        password: true,
         advanced: true,
+        helpText: "???????????? X-Internal-AI-Token ??????????",
+      },
+      {
+        key: "baseUrl",
+        label: "?????Base URL?",
+        target: "configJson",
+        placeholder: openAiDefaultBaseUrl,
+        defaultValue: openAiDefaultBaseUrl,
+        advanced: true,
+        helpText: "??? OpenAI ??????? OpenAI Responses API ????????",
       },
       {
         key: "timeoutMs",
-        label: "请求超时（毫秒）",
+        label: "????????",
         target: "configJson",
         control: "number",
-        defaultValue: 120000,
-        min: 120000,
+        defaultValue: openAiDefaultTimeoutMs,
+        min: 1000,
         max: 120000,
         step: 100,
         advanced: true,
       },
       {
         key: "temperature",
-        label: "温度（Temperature）",
+        label: "???Temperature?",
         target: "configJson",
         control: "number",
-        defaultValue: 0.2,
+        defaultValue: openAiDefaultTemperature,
         min: 0,
         max: 2,
         step: 0.1,
@@ -332,11 +350,11 @@ export const providerFieldPresets = [
       },
       {
         key: "maxTokens",
-        label: "最大输出 Token",
+        label: "???? Token",
         target: "configJson",
         control: "number",
-        defaultValue: 1200,
-        helpText: "后台配置可保持默认；预报智能解读低于 2400 时会自动提升有效输出上限。",
+        defaultValue: openAiDefaultMaxTokens,
+        helpText: "?????????????????? 2400 ?????????????",
         min: 128,
         max: 8192,
         step: 1,
@@ -347,27 +365,10 @@ export const providerFieldPresets = [
         label: "Prompt Max Chars",
         target: "configJson",
         control: "number",
-        defaultValue: 6000,
+        defaultValue: openAiDefaultPromptMaxChars,
         min: 3000,
         max: 6000,
         step: 100,
-        advanced: true,
-      },
-      {
-        key: "reasoningEffort",
-        label: "推理强度",
-        target: "configJson",
-        control: "select",
-        options: deepSeekReasoningEffortOptions,
-        defaultValue: "none",
-        advanced: true,
-      },
-      {
-        key: "thinkingEnabled",
-        label: "思考模式",
-        target: "configJson",
-        control: "boolean",
-        defaultValue: false,
         advanced: true,
       },
     ],

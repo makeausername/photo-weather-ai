@@ -40,7 +40,7 @@ const validPayload = {
   photoSpotId: "spot-guangmingding",
 } as const;
 
-function buildDeepSeekExplanationContent(label: string) {
+function buildOpenAiExplanationContent(label: string) {
   return {
     conclusion: {
       titleZh: "黄山光明顶拍摄天气解读",
@@ -101,7 +101,7 @@ function buildDeepSeekExplanationContent(label: string) {
       nextCheckZh: "复核降水、低云、能见度和阵风。",
     },
     metadata: {
-      source: "deepseek" as const,
+      source: "openai" as const,
     },
   };
 }
@@ -765,7 +765,7 @@ describe("forecast query validation route", () => {
     expect(getForecast).not.toHaveBeenCalled();
   });
 
-  it("rejects guest AI explanation before calculating forecast or calling DeepSeek", async () => {
+  it("rejects guest AI explanation before calculating forecast or calling GPT / OpenAI", async () => {
     const getCurrentWeather = vi.fn();
     const getForecast = vi.fn();
     const weatherProvider = {
@@ -2589,7 +2589,7 @@ describe("forecast query validation route", () => {
     expect(body.dataNotice).toContain("天文数据：本地算法计算");
   });
 
-  it("can return a rule-based explanation from calculate without DeepSeek", async () => {
+  it("can return a rule-based explanation from calculate without GPT / OpenAI", async () => {
     const fetchMock = vi.fn(() => {
       throw new Error("real network calls are disabled in forecast tests");
     });
@@ -2619,14 +2619,14 @@ describe("forecast query validation route", () => {
     });
   });
 
-  it("returns a deterministic fallback when DeepSeek real call is enabled without a key", async () => {
+  it("returns a deterministic fallback when GPT / OpenAI real call is enabled without a key", async () => {
     const fetchMock = vi.fn(() => {
       throw new Error("real network calls are disabled in forecast tests");
     });
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
-    const provider = state.providers.get("ai:deepseek");
-    state.providers.set("ai:deepseek", {
+    const provider = state.providers.get("ai:openai");
+    state.providers.set("ai:openai", {
       ...provider,
       enabled: true,
       configJson: {
@@ -2663,11 +2663,11 @@ describe("forecast query validation route", () => {
         }),
       }),
       errorCategory: "config_missing",
-      messageZh: expect.stringContaining("DeepSeek API Key 未配置"),
+      messageZh: expect.stringContaining("GPT / OpenAI API Key 未配置"),
       retryable: false,
       error: "ai_explanation_unavailable",
       latencyMs: 0,
-      model: "deepseek-v4-pro",
+      model: "gpt-4.1",
       promptSizeChars: expect.any(Number),
       parseSuccess: false,
       explanation: expect.objectContaining({
@@ -2676,7 +2676,7 @@ describe("forecast query validation route", () => {
         }),
       }),
       diagnostics: expect.objectContaining({
-        model: "deepseek-v4-pro",
+        model: "gpt-4.1",
         parseSuccess: false,
         fallback: true,
         errorCategory: "config_missing",
@@ -2743,26 +2743,26 @@ describe("forecast query validation route", () => {
     expect(calculateMock).toHaveBeenCalledTimes(2);
   });
 
-  it("does not block forecast calculation on DeepSeek when useAiExplanation is requested", async () => {
+  it("does not block forecast calculation on GPT / OpenAI when useAiExplanation is requested", async () => {
     const fetchMock = vi.fn(() => {
-      throw new DOMException("DeepSeek should not be called by calculate", "AbortError");
+      throw new DOMException("GPT / OpenAI should not be called by calculate", "AbortError");
     });
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
-    const provider = state.providers.get("ai:deepseek");
-    state.providers.set("ai:deepseek", {
+    const provider = state.providers.get("ai:openai");
+    state.providers.set("ai:openai", {
       ...provider,
       enabled: true,
       configJson: {
         ...(provider.configJson ?? {}),
         realCallEnabled: true,
-        model: "deepseek-v4-pro",
+        model: "gpt-4.1",
       },
       secretJson: {
-        apiKey: "deepseek-secret",
+        apiKey: "openai-secret",
       },
       maskedSecretJson: {
-        apiKey: "deep****cret",
+        apiKey: "open****cret",
       },
     });
     app = buildApiServer({
@@ -2793,30 +2793,30 @@ describe("forecast query validation route", () => {
       }),
     });
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(response.body).not.toContain("deepseek-secret");
+    expect(response.body).not.toContain("openai-secret");
   });
 
-  it("returns a non-fatal timeout message for manual DeepSeek interpretation", async () => {
+  it("returns a non-fatal timeout message for manual GPT / OpenAI interpretation", async () => {
     const fetchMock = vi.fn(async () => {
       throw new DOMException("Request timed out", "AbortError");
     });
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
-    const provider = state.providers.get("ai:deepseek");
-    state.providers.set("ai:deepseek", {
+    const provider = state.providers.get("ai:openai");
+    state.providers.set("ai:openai", {
       ...provider,
       enabled: true,
       configJson: {
         ...(provider.configJson ?? {}),
         realCallEnabled: true,
-        model: "deepseek-v4-pro",
+        model: "gpt-4.1",
         timeoutMs: 60000,
       },
       secretJson: {
-        apiKey: "deepseek-secret",
+        apiKey: "openai-secret",
       },
       maskedSecretJson: {
-        apiKey: "deep****cret",
+        apiKey: "open****cret",
       },
     });
     app = buildApiServer({
@@ -2848,9 +2848,9 @@ describe("forecast query validation route", () => {
       errorCategory: "timeout",
       retryable: true,
       error: "ai_explanation_timeout",
-      messageZh: expect.stringContaining("DeepSeek 请求超时"),
+      messageZh: expect.stringContaining("GPT / OpenAI 请求超时"),
       latencyMs: expect.any(Number),
-      model: "deepseek-v4-pro",
+      model: "gpt-4.1",
       promptSizeChars: expect.any(Number),
       parseSuccess: false,
       explanation: expect.objectContaining({
@@ -2859,20 +2859,20 @@ describe("forecast query validation route", () => {
         }),
       }),
       diagnostics: expect.objectContaining({
-        model: "deepseek-v4-pro",
-        timeoutMs: 120000,
+        model: "gpt-4.1",
+        timeoutMs: 60000,
         promptSizeChars: expect.any(Number),
         parseSuccess: false,
         fallback: true,
       }),
-      message: expect.stringContaining("DeepSeek 请求超时"),
+      message: expect.stringContaining("GPT / OpenAI 请求超时"),
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(response.body.length).toBeGreaterThan(2);
-    expect(response.body).not.toContain("deepseek-secret");
+    expect(response.body).not.toContain("openai-secret");
   });
 
-  it("reports DeepSeek upstream auth failures as non-retryable fallback", async () => {
+  it("reports GPT / OpenAI upstream auth failures as non-retryable fallback", async () => {
     const fetchMock = vi.fn(
       async () =>
         new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -2884,20 +2884,20 @@ describe("forecast query validation route", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
-    const provider = state.providers.get("ai:deepseek");
-    state.providers.set("ai:deepseek", {
+    const provider = state.providers.get("ai:openai");
+    state.providers.set("ai:openai", {
       ...provider,
       enabled: true,
       configJson: {
         ...(provider.configJson ?? {}),
         realCallEnabled: true,
-        model: "deepseek-v4-pro",
+        model: "gpt-4.1",
       },
       secretJson: {
-        apiKey: "deepseek-secret",
+        apiKey: "openai-secret",
       },
       maskedSecretJson: {
-        apiKey: "deep****cret",
+        apiKey: "open****cret",
       },
     });
     app = buildApiServer({
@@ -2925,38 +2925,34 @@ describe("forecast query validation route", () => {
       messageZh: expect.stringContaining("API Key"),
       retryable: false,
       error: "ai_explanation_unavailable",
-      model: "deepseek-v4-pro",
+      model: "gpt-4.1",
       parseSuccess: false,
       diagnostics: expect.objectContaining({
-        model: "deepseek-v4-pro",
+        model: "gpt-4.1",
         parseSuccess: false,
         fallback: true,
         errorCategory: "provider_http_error",
       }),
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(response.body).not.toContain("deepseek-secret");
+    expect(response.body).not.toContain("openai-secret");
   });
 
-  it("returns useful plain DeepSeek text as a displayable success interpretation", async () => {
+  it("returns useful plain GPT / OpenAI text as a displayable success interpretation", async () => {
     const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
       const requestBody = JSON.parse(String(init?.body));
       expect(requestBody).toMatchObject({
-        model: "deepseek-v4-pro",
-        max_tokens: 2400,
+        model: "gpt-4.1",
+        max_output_tokens: 1200,
+        store: false,
+        stream: false,
       });
       expect(requestBody).not.toHaveProperty("response_format");
       return new Response(
         JSON.stringify({
-          choices: [
-            {
-              finish_reason: "length",
-              message: {
-                content:
-                  "\u7ed3\u8bba\uff1a\u6e05\u6668\u7a97\u53e3\u53ef\u4f5c\u4e3a\u4e3b\u8ba1\u5212\uff0c\u4f46\u4e0d\u8981\u53ea\u4e3a\u5355\u4e00\u4fe1\u53f7\u4e13\u7a0b\u3002\n\u7406\u7531\uff1a\u4f4e\u4e91\u3001\u6e7f\u5ea6\u548c\u5730\u5f62\u4fe1\u53f7\u66f4\u96c6\u4e2d\uff0c\u4ecd\u9700\u77ed\u4e34\u590d\u6838\u3002\n\u5efa\u8bae\uff1a\u6309\u4e3b\u7a97\u53e3\u63d0\u524d\u5230\u4f4d\uff0c\u5931\u8d25\u65f6\u6539\u62cd\u8fd1\u666f\u3002\n\u98ce\u9669\uff1a\u77ed\u4e34\u964d\u6c34\u3001\u767d\u5899\u548c\u9635\u98ce\u4ecd\u9700\u73b0\u573a\u590d\u6838\u3002",
-              },
-            },
-          ],
+          output_text:
+            "\u7ed3\u8bba\uff1a\u6e05\u6668\u7a97\u53e3\u53ef\u4f5c\u4e3a\u4e3b\u8ba1\u5212\uff0c\u4f46\u4e0d\u8981\u53ea\u4e3a\u5355\u4e00\u4fe1\u53f7\u4e13\u7a0b\u3002\n\u7406\u7531\uff1a\u4f4e\u4e91\u3001\u6e7f\u5ea6\u548c\u5730\u5f62\u4fe1\u53f7\u66f4\u96c6\u4e2d\uff0c\u4ecd\u9700\u77ed\u4e34\u590d\u6838\u3002\n\u5efa\u8bae\uff1a\u6309\u4e3b\u7a97\u53e3\u63d0\u524d\u5230\u4f4d\uff0c\u5931\u8d25\u65f6\u6539\u62cd\u8fd1\u666f\u3002\n\u98ce\u9669\uff1a\u77ed\u4e34\u964d\u6c34\u3001\u767d\u5899\u548c\u9635\u98ce\u4ecd\u9700\u73b0\u573a\u590d\u6838\u3002",
+          finish_reason: "length",
         }),
         {
           status: 200,
@@ -2968,20 +2964,20 @@ describe("forecast query validation route", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
-    const provider = state.providers.get("ai:deepseek");
-    state.providers.set("ai:deepseek", {
+    const provider = state.providers.get("ai:openai");
+    state.providers.set("ai:openai", {
       ...provider,
       enabled: true,
       configJson: {
         ...(provider.configJson ?? {}),
         realCallEnabled: true,
-        model: "deepseek-v4-pro",
+        model: "gpt-4.1",
       },
       secretJson: {
-        apiKey: "deepseek-secret",
+        apiKey: "openai-secret",
       },
       maskedSecretJson: {
-        apiKey: "deep****cret",
+        apiKey: "open****cret",
       },
     });
     app = buildApiServer({
@@ -3007,11 +3003,11 @@ describe("forecast query validation route", () => {
     expect(response.json()).toMatchObject({
       ok: true,
       success: true,
-      source: "deepseek",
+      source: "openai",
       fallback: false,
       displaySuccess: true,
       hasDisplayableAiContent: true,
-      model: "deepseek-v4-pro",
+      model: "gpt-4.1",
       outputMode: "text_with_json_fallback",
       parseSuccess: false,
       parseStrategy: "plain_text_fallback",
@@ -3032,7 +3028,7 @@ describe("forecast query validation route", () => {
       interpretation: expect.objectContaining({
         summaryText: expect.stringContaining("\u6e05\u6668\u7a97\u53e3"),
         metadata: expect.objectContaining({
-          source: "deepseek",
+          source: "openai",
           parseStrategy: "plain_text_fallback",
           fallbackUsed: true,
         }),
@@ -3041,8 +3037,8 @@ describe("forecast query validation route", () => {
         }),
       }),
       meta: expect.objectContaining({
-        providerCode: "deepseek",
-        model: "deepseek-v4-pro",
+        providerCode: "openai",
+        model: "gpt-4.1",
         parseStrategy: "plain_text_fallback",
         fallbackUsed: true,
         providerFallbackUsed: true,
@@ -3051,8 +3047,8 @@ describe("forecast query validation route", () => {
         hasDisplayableAiContent: true,
       }),
       diagnostics: expect.objectContaining({
-        providerCode: "deepseek",
-        model: "deepseek-v4-pro",
+        providerCode: "openai",
+        model: "gpt-4.1",
         displaySuccess: true,
         hasDisplayableAiContent: true,
         parseSuccess: false,
@@ -3065,32 +3061,28 @@ describe("forecast query validation route", () => {
       }),
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(response.body).not.toContain("deepseek-secret");
+    expect(response.body).not.toContain("openai-secret");
   });
 
   it("returns a frontend-friendly success contract for strict JSON explanation content", async () => {
     const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
       const requestBody = JSON.parse(String(init?.body));
       expect(requestBody).toMatchObject({
-        model: "deepseek-v4-pro",
-        max_tokens: 2400,
+        model: "gpt-4.1",
+        max_output_tokens: 1200,
+        store: false,
+        stream: false,
       });
       expect(requestBody).not.toHaveProperty("response_format");
       return new Response(
         JSON.stringify({
-          choices: [
-            {
-              message: {
-                content: JSON.stringify({
-                  summaryText: "严格 JSON 摘要可直接展示。",
-                  conclusion: "清晨窗口可以作为主计划，但仍需复核短临低云。",
-                  reasons: ["低云、湿度和地形信号集中在清晨。"],
-                  suggestions: ["按主窗口提前到位，失败时转拍远山层次。"],
-                  risks: ["短临降水和白墙仍需现场复核。"],
-                }),
-              },
-            },
-          ],
+          output_text: JSON.stringify({
+            summaryText: "严格 JSON 摘要可直接展示。",
+            conclusion: "清晨窗口可以作为主计划，但仍需复核短临低云。",
+            reasons: ["低云、湿度和地形信号集中在清晨。"],
+            suggestions: ["按主窗口提前到位，失败时转拍远山层次。"],
+            risks: ["短临降水和白墙仍需现场复核。"],
+          }),
         }),
         {
           status: 200,
@@ -3102,20 +3094,20 @@ describe("forecast query validation route", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
-    const provider = state.providers.get("ai:deepseek");
-    state.providers.set("ai:deepseek", {
+    const provider = state.providers.get("ai:openai");
+    state.providers.set("ai:openai", {
       ...provider,
       enabled: true,
       configJson: {
         ...(provider.configJson ?? {}),
         realCallEnabled: true,
-        model: "deepseek-v4-pro",
+        model: "gpt-4.1",
       },
       secretJson: {
-        apiKey: "deepseek-secret",
+        apiKey: "openai-secret",
       },
       maskedSecretJson: {
-        apiKey: "deep****cret",
+        apiKey: "open****cret",
       },
     });
     app = buildApiServer({
@@ -3142,11 +3134,11 @@ describe("forecast query validation route", () => {
     expect(body).toMatchObject({
       ok: true,
       success: true,
-      source: "deepseek",
+      source: "openai",
       fallback: false,
       displaySuccess: true,
       hasDisplayableAiContent: true,
-      model: "deepseek-v4-pro",
+      model: "gpt-4.1",
       outputMode: "text_with_json_fallback",
       parseSuccess: true,
       parseStrategy: "strict_json",
@@ -3160,22 +3152,22 @@ describe("forecast query validation route", () => {
         suggestions: expect.arrayContaining(["按主窗口提前到位，失败时转拍远山层次。"]),
         risks: expect.arrayContaining(["短临降水和白墙仍需现场复核。"]),
         metadata: expect.objectContaining({
-          source: "deepseek",
+          source: "openai",
           parseStrategy: "strict_json",
           fallbackUsed: false,
         }),
       }),
       meta: expect.objectContaining({
-        providerCode: "deepseek",
-        model: "deepseek-v4-pro",
+        providerCode: "openai",
+        model: "gpt-4.1",
         parseStrategy: "strict_json",
         fallbackUsed: false,
         displaySuccess: true,
         hasDisplayableAiContent: true,
       }),
       diagnostics: expect.objectContaining({
-        providerCode: "deepseek",
-        model: "deepseek-v4-pro",
+        providerCode: "openai",
+        model: "gpt-4.1",
         parseStrategy: "strict_json",
         displaySuccess: true,
         hasDisplayableAiContent: true,
@@ -3183,7 +3175,7 @@ describe("forecast query validation route", () => {
     });
     expect(body).not.toHaveProperty("scores");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(response.body).not.toContain("deepseek-secret");
+    expect(response.body).not.toContain("openai-secret");
   });
 
   it("uses text-first forecast explanation requests while still parsing JSON content", async () => {
@@ -3192,33 +3184,27 @@ describe("forecast query validation route", () => {
       expect(requestBody).not.toHaveProperty("response_format");
       return new Response(
         JSON.stringify({
-          choices: [
-            {
-              message: {
-                content: JSON.stringify(buildDeepSeekExplanationContent("文本优先成功")),
-              },
-            },
-          ],
+          output_text: JSON.stringify(buildOpenAiExplanationContent("文本优先成功")),
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
     });
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
-    const provider = state.providers.get("ai:deepseek");
-    state.providers.set("ai:deepseek", {
+    const provider = state.providers.get("ai:openai");
+    state.providers.set("ai:openai", {
       ...provider,
       enabled: true,
       configJson: {
         ...(provider.configJson ?? {}),
         realCallEnabled: true,
-        model: "deepseek-v4-pro",
+        model: "gpt-4.1",
       },
       secretJson: {
-        apiKey: "deepseek-secret",
+        apiKey: "openai-secret",
       },
       maskedSecretJson: {
-        apiKey: "deep****cret",
+        apiKey: "open****cret",
       },
     });
     app = buildApiServer({
@@ -3244,9 +3230,9 @@ describe("forecast query validation route", () => {
     expect(response.statusCode).toBe(200);
     expect(body).toMatchObject({
       success: true,
-      source: "deepseek",
+      source: "openai",
       fallback: false,
-      model: "deepseek-v4-pro",
+      model: "gpt-4.1",
       outputMode: "text_with_json_fallback",
       parseStrategy: "strict_json",
       compatibilityFallbackUsed: false,
@@ -3263,62 +3249,38 @@ describe("forecast query validation route", () => {
       }),
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(response.body).not.toContain("deepseek-secret");
+    expect(response.body).not.toContain("openai-secret");
     expect(response.body).not.toContain("Authorization");
   });
 
-  it("returns a real explanation when DeepSeek empty-content fallback succeeds", async () => {
+  it("falls back safely when GPT / OpenAI returns empty content", async () => {
     const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
       const requestBody = JSON.parse(String(init?.body));
-      if (fetchMock.mock.calls.length === 1) {
-        expect(requestBody).not.toHaveProperty("response_format");
-        return new Response(
-          JSON.stringify({
-            choices: [
-              {
-                index: 0,
-                finish_reason: "stop",
-                message: { content: "" },
-              },
-            ],
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
-      }
-
       expect(requestBody).not.toHaveProperty("response_format");
-      expect(JSON.stringify(requestBody)).toContain("Simplified Chinese section text");
       return new Response(
         JSON.stringify({
-          choices: [
-            {
-              index: 0,
-              finish_reason: "stop",
-              message: {
-                content: JSON.stringify(buildDeepSeekExplanationContent("空内容重试成功")),
-              },
-            },
-          ],
+          output_text: "",
+          status: "completed",
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
     });
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
-    const provider = state.providers.get("ai:deepseek");
-    state.providers.set("ai:deepseek", {
+    const provider = state.providers.get("ai:openai");
+    state.providers.set("ai:openai", {
       ...provider,
       enabled: true,
       configJson: {
         ...(provider.configJson ?? {}),
         realCallEnabled: true,
-        model: "deepseek-v4-pro",
+        model: "gpt-4.1",
       },
       secretJson: {
-        apiKey: "deepseek-secret",
+        apiKey: "openai-secret",
       },
       maskedSecretJson: {
-        apiKey: "deep****cret",
+        apiKey: "open****cret",
       },
     });
     app = buildApiServer({
@@ -3343,46 +3305,38 @@ describe("forecast query validation route", () => {
 
     expect(response.statusCode).toBe(200);
     expect(body).toMatchObject({
-      success: true,
-      source: "deepseek",
-      fallback: false,
-      model: "deepseek-v4-pro",
-      parseStrategy: "strict_json",
-      compatibilityFallbackUsed: true,
+      success: false,
+      source: "fallback",
+      fallback: true,
+      model: "gpt-4.1",
+      parseSuccess: false,
+      parseStrategy: "failed",
+      compatibilityFallbackUsed: false,
       disabledResponseFormat: false,
-      emptyContentFallbackUsed: true,
-      finishReason: "stop",
-      contentType: "string",
-      summaryText: expect.stringContaining("空内容重试成功"),
+      emptyContentFallbackUsed: false,
+      errorCategory: "provider_parse_error",
       diagnostics: expect.objectContaining({
-        attempts: 2,
-        compatibilityFallbackUsed: true,
+        attempts: 1,
+        compatibilityFallbackUsed: false,
         disabledResponseFormat: false,
-        emptyContentFallbackUsed: true,
-        finishReason: "stop",
-        contentType: "string",
-        contentLength: expect.any(Number),
+        emptyContentFallbackUsed: false,
+        fallback: true,
+        errorCategory: "provider_parse_error",
         rawResponseSizeChars: expect.any(Number),
       }),
     });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(response.body).not.toContain("deepseek-secret");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(response.body).not.toContain("openai-secret");
     expect(response.body).not.toContain("Authorization");
     expect(response.body).not.toContain("messages");
   });
 
-  it("falls back to deterministic interpretation when DeepSeek JSON parsing fails", async () => {
+  it("falls back to deterministic interpretation when GPT / OpenAI JSON parsing fails", async () => {
     const fetchMock = vi.fn(
       async () =>
         new Response(
           JSON.stringify({
-            choices: [
-              {
-                message: {
-                  content: "{not-json",
-                },
-              },
-            ],
+            output_text: "{not-json",
           }),
           {
             status: 200,
@@ -3394,20 +3348,20 @@ describe("forecast query validation route", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
-    const provider = state.providers.get("ai:deepseek");
-    state.providers.set("ai:deepseek", {
+    const provider = state.providers.get("ai:openai");
+    state.providers.set("ai:openai", {
       ...provider,
       enabled: true,
       configJson: {
         ...(provider.configJson ?? {}),
         realCallEnabled: true,
-        model: "deepseek-v4-pro",
+        model: "gpt-4.1",
       },
       secretJson: {
-        apiKey: "deepseek-secret",
+        apiKey: "openai-secret",
       },
       maskedSecretJson: {
-        apiKey: "deep****cret",
+        apiKey: "open****cret",
       },
     });
     app = buildApiServer({
@@ -3437,10 +3391,10 @@ describe("forecast query validation route", () => {
         }),
       }),
       errorCategory: "provider_parse_error",
-      messageZh: expect.stringContaining("DeepSeek 返回内容无法解析"),
+      messageZh: expect.stringContaining("GPT / OpenAI 返回内容无法解析"),
       retryable: true,
       latencyMs: expect.any(Number),
-      model: "deepseek-v4-pro",
+      model: "gpt-4.1",
       promptSizeChars: expect.any(Number),
       parseSuccess: false,
       parseStrategy: "failed",
@@ -3451,7 +3405,7 @@ describe("forecast query validation route", () => {
         }),
       }),
       diagnostics: expect.objectContaining({
-        model: "deepseek-v4-pro",
+        model: "gpt-4.1",
         parseSuccess: false,
         parseStrategy: "failed",
         fallback: true,
@@ -3460,21 +3414,15 @@ describe("forecast query validation route", () => {
       }),
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(response.body).not.toContain("deepseek-secret");
+    expect(response.body).not.toContain("openai-secret");
   });
 
-  it("caches successful DeepSeek interpretation by a stable forecast result key", async () => {
+  it("caches successful GPT / OpenAI interpretation by a stable forecast result key", async () => {
     const fetchMock = vi.fn(
       async () =>
         new Response(
           JSON.stringify({
-            choices: [
-              {
-                message: {
-                  content: JSON.stringify(buildDeepSeekExplanationContent("缓存命中")),
-                },
-              },
-            ],
+            output_text: JSON.stringify(buildOpenAiExplanationContent("缓存命中")),
           }),
           {
             status: 200,
@@ -3486,20 +3434,20 @@ describe("forecast query validation route", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
-    const provider = state.providers.get("ai:deepseek");
-    state.providers.set("ai:deepseek", {
+    const provider = state.providers.get("ai:openai");
+    state.providers.set("ai:openai", {
       ...provider,
       enabled: true,
       configJson: {
         ...(provider.configJson ?? {}),
         realCallEnabled: true,
-        model: "deepseek-v4-pro",
+        model: "gpt-4.1",
       },
       secretJson: {
-        apiKey: "deepseek-secret",
+        apiKey: "openai-secret",
       },
       maskedSecretJson: {
-        apiKey: "deep****cret",
+        apiKey: "open****cret",
       },
     });
     app = buildApiServer({
@@ -3534,8 +3482,8 @@ describe("forecast query validation route", () => {
     expect(firstResponse.json()).toMatchObject({
       ok: true,
       success: true,
-      source: "deepseek",
-      model: "deepseek-v4-pro",
+      source: "openai",
+      model: "gpt-4.1",
       parseSuccess: true,
       cacheHit: false,
       summaryText: expect.stringContaining("缓存命中"),
@@ -3549,16 +3497,16 @@ describe("forecast query validation route", () => {
         }),
       }),
       meta: expect.objectContaining({
-        providerCode: "deepseek",
-        model: "deepseek-v4-pro",
+        providerCode: "openai",
+        model: "gpt-4.1",
         parseStrategy: "strict_json",
       }),
     });
     expect(secondResponse.json()).toMatchObject({
       ok: true,
       success: true,
-      source: "deepseek",
-      model: "deepseek-v4-pro",
+      source: "openai",
+      model: "gpt-4.1",
       parseSuccess: true,
       cacheHit: true,
       latencyMs: 0,
@@ -3569,17 +3517,17 @@ describe("forecast query validation route", () => {
         }),
       }),
       meta: expect.objectContaining({
-        providerCode: "deepseek",
-        model: "deepseek-v4-pro",
+        providerCode: "openai",
+        model: "gpt-4.1",
         cacheHit: true,
       }),
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(firstResponse.body).not.toContain("deepseek-secret");
-    expect(secondResponse.body).not.toContain("deepseek-secret");
+    expect(firstResponse.body).not.toContain("openai-secret");
+    expect(secondResponse.body).not.toContain("openai-secret");
   });
 
-  it("keeps DeepSeek interpretation cache keys scoped by access state", () => {
+  it("keeps GPT / OpenAI interpretation cache keys scoped by access state", () => {
     const source = readFileSync(
       fileURLToPath(new URL("../forecast-routes.ts", import.meta.url)),
       "utf8",

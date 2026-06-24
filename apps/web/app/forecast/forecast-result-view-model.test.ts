@@ -26,7 +26,7 @@ import {
   aiExplainFrontendTimeoutMs,
   cacheAiExplanation,
   createAiExplanationCacheKey,
-  deepSeekBackendTimeoutMaxMs,
+  openAiBackendTimeoutMaxMs,
   normalizeAiExplanationContent,
   normalizeAiExplainResponse,
   professionalHourlySignalDisplayForTarget,
@@ -2823,8 +2823,8 @@ function queryForTarget(target: ForecastCalculationResult["target"]): ForecastQu
 }
 
 function aiExplanationForTest(
-  decision = "DeepSeek 成功生成的拍摄结论。",
-  source: "deepseek" | "deterministic_fallback" = "deepseek",
+  decision = "GPT / OpenAI 成功生成的拍摄结论。",
+  source: "openai" | "deterministic_fallback" = "openai",
 ) {
   return {
     conclusion: {
@@ -4621,12 +4621,12 @@ describe("forecast result target-aware view model", () => {
   it("clears loading and renders a success=true interpretation response", () => {
     const result = resultForTarget("general");
     const viewModel = buildForecastResultViewModel(result, "general");
-    const explanation = aiExplanationForTest("DeepSeek 成功返回后应立即展示这条结论。");
+    const explanation = aiExplanationForTest("GPT / OpenAI 成功返回后应立即展示这条结论。");
     const outcome = normalizeAiExplainResponse({
       success: true,
       interpretation: explanation,
       retryable: false,
-      model: "deepseek-v4-pro",
+      model: "gpt-4.1",
       promptSizeChars: 11712,
       latencyMs: 69883,
       diagnostics: {
@@ -4650,7 +4650,7 @@ describe("forecast result target-aware view model", () => {
     expect(outcome.status).toBe("ready");
     expect(outcome.errorMessage).toBe("");
     expect(outcome.cacheable).toBe(true);
-    expect(html).toContain("DeepSeek 成功返回后应立即展示这条结论。");
+    expect(html).toContain("GPT / OpenAI 成功返回后应立即展示这条结论。");
     expect(html).not.toContain("正在生成解读");
     expect(html).toContain("已生成智能解读");
     expect(html).toContain("disabled");
@@ -4669,8 +4669,8 @@ describe("forecast result target-aware view model", () => {
         risks: ["短临降水和白墙仍需现场复核。"],
       },
       meta: {
-        providerCode: "deepseek",
-        model: "deepseek-v4-pro",
+        providerCode: "openai",
+        model: "gpt-4.1",
         parseSuccess: true,
         parseStrategy: "strict_json",
         fallbackUsed: false,
@@ -4691,7 +4691,7 @@ describe("forecast result target-aware view model", () => {
 
     expect(outcome.status).toBe("ready");
     expect(outcome.errorMessage).toBe("");
-    expect(outcome.model).toBe("deepseek-v4-pro");
+    expect(outcome.model).toBe("gpt-4.1");
     expect(outcome.explanation?.conclusion.oneSentenceDecisionZh).toContain("清晨窗口");
     expect(html).toContain("清晨窗口可作为主计划");
     expect(html).toContain("低云、湿度和地形信号集中在清晨");
@@ -4703,8 +4703,8 @@ describe("forecast result target-aware view model", () => {
       ok: true,
       summaryText: "只有 summaryText 时也必须展示智能解读内容。",
       meta: {
-        providerCode: "deepseek",
-        model: "deepseek-v4-pro",
+        providerCode: "openai",
+        model: "gpt-4.1",
         parseSuccess: true,
         parseStrategy: "strict_json",
         fallbackUsed: false,
@@ -4714,7 +4714,7 @@ describe("forecast result target-aware view model", () => {
     expect(outcome.status).toBe("ready");
     expect(outcome.errorMessage).toBe("");
     expect(outcome.explanation?.conclusion.summaryZh).toContain("只有 summaryText");
-    expect(outcome.explanation?.metadata?.source).toBe("deepseek");
+    expect(outcome.explanation?.metadata?.source).toBe("openai");
   });
 
   it("normalizes displayable AI explanation fields without requiring the legacy full shape", () => {
@@ -4733,7 +4733,7 @@ describe("forecast result target-aware view model", () => {
           text: "result.explanation 也应被识别。",
         },
       },
-      model: "deepseek-v4-pro",
+      model: "gpt-4.1",
       parseSuccess: true,
     });
 
@@ -4758,7 +4758,7 @@ describe("forecast result target-aware view model", () => {
         summaryText: "explanation.summaryText 应直接展示。",
       },
       parseSuccess: true,
-      model: "deepseek-v4-pro",
+      model: "gpt-4.1",
     });
     const html = renderAiPanelFromOutcome(outcome);
 
@@ -4797,7 +4797,7 @@ describe("forecast result target-aware view model", () => {
         },
       },
       parseSuccess: true,
-      model: "deepseek-v4-pro",
+      model: "gpt-4.1",
     });
     const html = renderAiPanelFromOutcome(outcome);
 
@@ -4812,17 +4812,17 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("智能解读暂时不可用");
   });
 
-  it("keeps the frontend timeout longer than the configurable DeepSeek backend timeout", () => {
-    expect(deepSeekBackendTimeoutMaxMs).toBe(120000);
+  it("keeps the frontend timeout longer than the configurable GPT / OpenAI backend timeout", () => {
+    expect(openAiBackendTimeoutMaxMs).toBe(120000);
     expect(aiExplainFrontendTimeoutMs).toBeGreaterThanOrEqual(120000);
-    expect(aiExplainFrontendTimeoutMs).toBeGreaterThanOrEqual(deepSeekBackendTimeoutMaxMs);
+    expect(aiExplainFrontendTimeoutMs).toBeGreaterThanOrEqual(openAiBackendTimeoutMaxMs);
   });
 
-  it("renders a compact error when DeepSeek fails and does not show deterministic fallback sections", () => {
+  it("renders a compact error when GPT / OpenAI fails and does not show deterministic fallback sections", () => {
     const result = resultForTarget("general");
     const viewModel = buildForecastResultViewModel(result, "general");
     const fallback = aiExplanationForTest(
-      "确定性简版解读在 DeepSeek 超时后仍然可见。",
+      "确定性简版解读在 GPT / OpenAI 超时后仍然可见。",
       "deterministic_fallback",
     );
     const outcome = normalizeAiExplainResponse({
@@ -4856,7 +4856,7 @@ describe("forecast result target-aware view model", () => {
     expect(outcome.cacheable).toBe(false);
     expect(html).toContain("智能解读暂时不可用（上游超时），确定性判断已保留。");
     expect(html).toContain("重试智能解读");
-    expect(html).not.toContain("确定性简版解读在 DeepSeek 超时后仍然可见。");
+    expect(html).not.toContain("确定性简版解读在 GPT / OpenAI 超时后仍然可见。");
     expect(html).not.toContain("确定性简版");
     expect(html).not.toContain("基于确定性计算结果生成的简版解读");
     expect(html).not.toContain("一句话结论");
@@ -4871,15 +4871,15 @@ describe("forecast result target-aware view model", () => {
 
   it("ignores fallback when a success response has invalid interpretation data", () => {
     const fallback = aiExplanationForTest(
-      "DeepSeek 返回无效结构时继续显示确定性简版解读。",
+      "GPT / OpenAI 返回无效结构时继续显示确定性简版解读。",
       "deterministic_fallback",
     );
     const outcome = normalizeAiExplainResponse(
       {
         success: true,
-        source: "deepseek",
+        source: "openai",
         interpretation: {},
-        model: "deepseek-v4-pro",
+        model: "gpt-4.1",
         parseSuccess: true,
       },
       fallback,
@@ -4894,12 +4894,12 @@ describe("forecast result target-aware view model", () => {
     expect(outcome.errorMessage).toBe("智能解读暂时不可用（返回格式异常），确定性判断已保留。");
   });
 
-  it("honors backend retryable false for DeepSeek provider HTTP failures", () => {
+  it("honors backend retryable false for GPT / OpenAI provider HTTP failures", () => {
     const outcome = normalizeAiExplainResponse({
       success: false,
       errorCategory: "provider_http_error",
       retryable: false,
-      messageZh: "DeepSeek API Key invalid.",
+      messageZh: "GPT / OpenAI API Key invalid.",
       diagnostics: {
         parseSuccess: false,
         errorCategory: "provider_http_error",
@@ -5016,16 +5016,16 @@ describe("forecast result target-aware view model", () => {
     const query = queryForTarget("general");
     const result = resultForTarget("general");
     const cacheKey = createAiExplanationCacheKey({ query, result });
-    const explanation = aiExplanationForTest("缓存命中的解读不需要重复请求 DeepSeek。");
+    const explanation = aiExplanationForTest("缓存命中的解读不需要重复请求 GPT / OpenAI。");
 
     cacheAiExplanation(cacheKey, explanation);
 
     expect(readCachedAiExplanation(cacheKey)?.conclusion.oneSentenceDecisionZh).toBe(
-      "缓存命中的解读不需要重复请求 DeepSeek。",
+      "缓存命中的解读不需要重复请求 GPT / OpenAI。",
     );
   });
 
-  it("prevents duplicate DeepSeek clicks while a request is running", () => {
+  it("prevents duplicate GPT / OpenAI clicks while a request is running", () => {
     expect(shouldStartAiExplanationRequest("loading", false)).toBe(false);
     expect(shouldStartAiExplanationRequest("idle", true)).toBe(false);
     expect(shouldStartAiExplanationRequest("idle", false)).toBe(true);
@@ -5100,7 +5100,7 @@ describe("forecast result target-aware view model", () => {
             nextCheckZh: "复核短临降水、低云和阵风。",
           },
           metadata: {
-            source: "deepseek",
+            source: "openai",
           },
         },
         aiErrorMessage: "",
@@ -9225,7 +9225,7 @@ describe("forecast result target-aware view model", () => {
     });
     const result = {
       ...resultWithAstroLightPollution(lightPollution, [lightPollution, lightPollution]),
-      aiExplanationError: "DeepSeek 服务请求超时。",
+      aiExplanationError: "GPT / OpenAI 服务请求超时。",
     } as ForecastCalculationResult;
     const viewModel = buildAstroForecastViewModel(result);
     const html = renderToStaticMarkup(

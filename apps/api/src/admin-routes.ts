@@ -57,8 +57,8 @@ import {
 import { MockTerrainProvider, type TerrainProvider } from "@photo-weather/terrain";
 import { buildMockForecastInput, calculateForecast } from "@photo-weather/scoring";
 import {
-  buildDeepSeekForecastExplanationRequest,
-  isDeepSeekProviderError,
+  buildOpenAiForecastExplanationRequest,
+  isOpenAiProviderError,
   type ForecastAiExplanation,
 } from "@photo-weather/ai";
 import type { ForecastQueryInput } from "@photo-weather/shared";
@@ -67,9 +67,9 @@ import type { AuthConfig } from "./auth-routes.js";
 import { requirePermission } from "./auth-routes.js";
 import { requireAnyAdminPermission } from "./admin-permissions.js";
 import {
-  createRealDeepSeekProvider,
-  normalizeDeepSeekAdminConfigJson,
-  readRuntimeDeepSeekConfig,
+  createRealOpenAiProvider,
+  normalizeOpenAiAdminConfigJson,
+  readRuntimeOpenAiConfig,
 } from "./ai-provider.js";
 import { createRealAmapProvider, readRuntimeAmapConfig } from "./geo-provider.js";
 import {
@@ -473,7 +473,7 @@ function getProviderNameZh(providerType: string, providerCode: string): string {
     "weather:qweather": "和风天气",
     "weather:open_meteo": "Open-Meteo",
     "weather:meteoblue": "meteoblue",
-    "ai:deepseek": "DeepSeek",
+    "ai:openai": "GPT / OpenAI",
     "email:aliyun_smtp": "阿里云企业邮箱 SMTP",
     "sms:aliyun_sms": "阿里云短信",
     "storage:local_storage": "本地存储",
@@ -662,7 +662,7 @@ function providerDiagnosticResponse(result: ProviderDiagnosticResult) {
   const modeZh = result.connectionMode === "real" ? result.modeLabelZh ?? "真实服务" : "模拟测试";
   const mode =
     result.connectionMode === "mock"
-      ? result.providerCode === "deepseek"
+      ? result.providerCode === "openai"
         ? result.mode ?? "mock"
         : "mock"
       : result.mode ?? "real";
@@ -677,9 +677,9 @@ function providerDiagnosticResponse(result: ProviderDiagnosticResult) {
   };
 }
 
-type RuntimeDeepSeekAdminConfig = Awaited<ReturnType<typeof readRuntimeDeepSeekConfig>>;
+type RuntimeOpenAiAdminConfig = Awaited<ReturnType<typeof readRuntimeOpenAiConfig>>;
 
-const deepSeekAdminExplanationTestQuery = {
+const openAiAdminExplanationTestQuery = {
   name: "黄山光明顶",
   source: "local_photo_spot",
   latitudeGcj02: 30.13254,
@@ -687,13 +687,13 @@ const deepSeekAdminExplanationTestQuery = {
   latitudeWgs84: 30.13012,
   longitudeWgs84: 118.16389,
   horizon: "24h",
-  target: "general",
-  locationId: "admin-deepseek-test-location",
-  photoSpotId: "admin-deepseek-test-spot",
+  target: "cloud_sea",
+  locationId: "admin-openai-test-location",
+  photoSpotId: "admin-openai-test-spot",
 } as const satisfies ForecastQueryInput;
 
-function buildAdminDeepSeekExplanationTestForecast() {
-  return calculateForecast(buildMockForecastInput(deepSeekAdminExplanationTestQuery));
+function buildAdminOpenAiExplanationTestForecast() {
+  return calculateForecast(buildMockForecastInput(openAiAdminExplanationTestQuery));
 }
 
 function isDisplayableAdminAiExplanation(explanation: ForecastAiExplanation): boolean {
@@ -710,18 +710,18 @@ function isDisplayableAdminAiExplanation(explanation: ForecastAiExplanation): bo
   );
 }
 
-function deepSeekAdminTestBase(
-  runtimeConfig: RuntimeDeepSeekAdminConfig,
+function openAiAdminTestBase(
+  runtimeConfig: RuntimeOpenAiAdminConfig,
   connectionMode: "mock" | "real",
 ) {
   return {
-    mode: runtimeConfig.analysisMode,
-    ...createProviderTestMetadata("ai", "deepseek", connectionMode, runtimeConfig.modeLabelZh),
+    mode: runtimeConfig.mode,
+    ...createProviderTestMetadata("ai", "openai", connectionMode, runtimeConfig.modeLabelZh),
     model: runtimeConfig.model,
   };
 }
 
-function deepSeekAdminErrorCode(statusCode: number | undefined): string {
+function openAiAdminErrorCode(statusCode: number | undefined): string {
   if (statusCode === 401 || statusCode === 403) {
     return "invalid_key";
   }
@@ -734,21 +734,21 @@ function deepSeekAdminErrorCode(statusCode: number | undefined): string {
   return "provider_test_failed";
 }
 
-function deepSeekAdminExplanationFailureResponse(input: {
-  readonly runtimeConfig: RuntimeDeepSeekAdminConfig;
+function openAiAdminExplanationFailureResponse(input: {
+  readonly runtimeConfig: RuntimeOpenAiAdminConfig;
   readonly error: unknown;
   readonly latencyMs: number;
   readonly promptSizeChars: number;
 }) {
-  const providerError = isDeepSeekProviderError(input.error) ? input.error : undefined;
+  const providerError = isOpenAiProviderError(input.error) ? input.error : undefined;
   const statusCode = providerError?.statusCode ?? providerError?.upstreamStatusCode;
   const errorCategory = providerError?.errorCategory ?? "unknown";
   const messageZh =
-    providerError?.messageZh ?? "DeepSeek 真实解读测试失败，请检查服务商配置和上游状态。";
+    providerError?.messageZh ?? "GPT / OpenAI 真实解读测试失败，请检查服务商配置和上游状态。";
 
   return {
     success: false,
-    ...deepSeekAdminTestBase(input.runtimeConfig, "real"),
+    ...openAiAdminTestBase(input.runtimeConfig, "real"),
     outputMode: "text_with_json_fallback",
     promptSizeChars: providerError?.promptSizeChars ?? input.promptSizeChars,
     latencyMs: providerError?.latencyMs ?? input.latencyMs,
@@ -771,7 +771,7 @@ function deepSeekAdminExplanationFailureResponse(input: {
     upstreamErrorType: providerError?.upstreamErrorType,
     upstreamMessageSanitized: providerError?.upstreamMessageSanitized,
     rawResponseSizeChars: providerError?.rawResponseSizeChars ?? providerError?.responseSizeChars,
-    error: deepSeekAdminErrorCode(statusCode),
+    error: openAiAdminErrorCode(statusCode),
     errorCategory,
     statusCode,
     messageZh,
@@ -1455,7 +1455,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       groups: groupBy(providers, (provider) => provider.providerType),
       realDevCallFlags: {
         amap: (await readRuntimeAmapConfig({ dbClient: client, env })).realModeEnabled,
-        deepseek: (await readRuntimeDeepSeekConfig({ dbClient: client, env })).realModeEnabled,
+        openai: (await readRuntimeOpenAiConfig({ dbClient: client, env })).realModeEnabled,
         qweather: (await readRuntimeQWeatherConfig({ dbClient: client, env })).realModeEnabled,
         openMeteo: (await readRuntimeOpenMeteoConfig({ dbClient: client, env })).realModeEnabled,
         meteoblue: (await readRuntimeMeteoblueConfig({ dbClient: client, env })).realModeEnabled,
@@ -1525,7 +1525,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       const providerPatch = { ...parsedBody.data };
       if (
         providerType === "ai" &&
-        request.params.providerCode === "deepseek" &&
+        request.params.providerCode === "openai" &&
         providerPatch.configJson !== undefined
       ) {
         const incomingConfigJson = isJsonObjectValue(providerPatch.configJson)
@@ -1535,25 +1535,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
           ...(isJsonObjectValue(existingProvider.configJson) ? existingProvider.configJson : {}),
           ...incomingConfigJson,
         };
-        if (
-          incomingConfigJson.analysisMode !== undefined &&
-          incomingConfigJson.maxTokens === undefined
-        ) {
-          delete mergedConfigJson.maxTokens;
-        }
-        if (
-          incomingConfigJson.analysisMode !== undefined &&
-          incomingConfigJson.thinkingEnabled === undefined
-        ) {
-          delete mergedConfigJson.thinkingEnabled;
-        }
-        if (
-          incomingConfigJson.analysisMode !== undefined &&
-          incomingConfigJson.reasoningEffort === undefined
-        ) {
-          delete mergedConfigJson.reasoningEffort;
-        }
-        providerPatch.configJson = normalizeDeepSeekAdminConfigJson({
+        providerPatch.configJson = normalizeOpenAiAdminConfigJson({
           ...mergedConfigJson,
         });
       }
@@ -1649,19 +1631,19 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
     return result;
   });
 
-  app.post("/admin/providers/ai/deepseek/test-explanation", async (request, reply) => {
+  app.post("/admin/providers/ai/openai/test-explanation", async (request, reply) => {
     const auth = await requirePermission(request, reply, client, authConfig, "providers.manage", {
-      onAuthFailure: (error) => providerTestAuthFailureResponse("ai", "deepseek", error),
+      onAuthFailure: (error) => providerTestAuthFailureResponse("ai", "openai", error),
     });
     if (!auth) {
       return reply;
     }
 
-    const runtimeConfig = await readRuntimeDeepSeekConfig({ dbClient: client, env });
+    const runtimeConfig = await readRuntimeOpenAiConfig({ dbClient: client, env });
     if (!runtimeConfig.realCallEnabled) {
       return {
         success: false,
-        ...deepSeekAdminTestBase(runtimeConfig, "mock"),
+        ...openAiAdminTestBase(runtimeConfig, "mock"),
         outputMode: "text_with_json_fallback",
         promptSizeChars: 0,
         latencyMs: 0,
@@ -1673,30 +1655,30 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
         compatibilityFallbackUsed: false,
         error: "real_call_disabled",
         errorCategory: "provider_disabled",
-        messageZh: "请先启用 DeepSeek 真实调用，再运行真实解读测试。",
-        message: "请先启用 DeepSeek 真实调用，再运行真实解读测试。",
+        messageZh: "请先启用 GPT / OpenAI 真实调用，再运行真实解读测试。",
+        message: "请先启用 GPT / OpenAI 真实调用，再运行真实解读测试。",
       };
     }
 
     if (!runtimeConfig.enabled) {
       return sendProviderTestFailure(reply, {
         providerType: "ai",
-        providerCode: "deepseek",
-        mode: runtimeConfig.analysisMode,
+        providerCode: "openai",
+        mode: runtimeConfig.mode,
         modeLabelZh: runtimeConfig.modeLabelZh,
         error: "provider_not_enabled",
-        messageZh: "DeepSeek 服务商未启用，请先在后台服务商配置中启用 DeepSeek。",
+        messageZh: "GPT / OpenAI 服务商未启用，请先在后台服务商配置中启用 GPT / OpenAI。",
       });
     }
 
     if (!runtimeConfig.apiKeyPresent) {
       return sendProviderTestFailure(reply, {
         providerType: "ai",
-        providerCode: "deepseek",
-        mode: runtimeConfig.analysisMode,
+        providerCode: "openai",
+        mode: runtimeConfig.mode,
         modeLabelZh: runtimeConfig.modeLabelZh,
         error: "provider_key_missing",
-        messageZh: "请先填写 DeepSeek API Key。",
+        messageZh: "请先填写 GPT / OpenAI API Key。",
       });
     }
 
@@ -1707,8 +1689,8 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       : "text_with_json_fallback";
 
     try {
-      const forecastResult = buildAdminDeepSeekExplanationTestForecast();
-      const preview = buildDeepSeekForecastExplanationRequest(
+      const forecastResult = buildAdminOpenAiExplanationTestForecast();
+      const preview = buildOpenAiForecastExplanationRequest(
         { forecastResult },
         {
           baseUrl: runtimeConfig.baseUrl,
@@ -1716,24 +1698,20 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
           temperature: runtimeConfig.temperature,
           maxTokens: runtimeConfig.maxTokens,
           promptMaxChars: runtimeConfig.promptMaxChars,
-          responseFormat: runtimeConfig.responseFormat,
-          thinkingEnabled: runtimeConfig.thinkingEnabled,
-          reasoningEffort: runtimeConfig.reasoningEffort,
-          jsonOutputEnabled: false,
         },
       );
       promptSizeChars = preview.promptSizeChars;
       outputMode = preview.outputMode;
-      const deepSeekProvider = await createRealDeepSeekProvider({ dbClient: client, env });
-      const result = await deepSeekProvider.generateForecastExplanationWithDiagnostics({
+      const openAiProvider = await createRealOpenAiProvider({ dbClient: client, env });
+      const result = await openAiProvider.generateForecastExplanationWithDiagnostics({
         forecastResult,
       });
       const latencyMs = Date.now() - startedAt;
-      const messageZh = `DeepSeek 真实解读测试通过，耗时 ${latencyMs}ms。`;
+      const messageZh = `GPT / OpenAI 真实解读测试通过，耗时 ${latencyMs}ms。`;
 
       return {
         success: true,
-        ...deepSeekAdminTestBase(runtimeConfig, "real"),
+        ...openAiAdminTestBase(runtimeConfig, "real"),
         outputMode,
         promptSizeChars,
         latencyMs,
@@ -1762,7 +1740,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
         message: messageZh,
       };
     } catch (error) {
-      return deepSeekAdminExplanationFailureResponse({
+      return openAiAdminExplanationFailureResponse({
         runtimeConfig,
         error,
         latencyMs: Date.now() - startedAt,
@@ -2019,12 +1997,12 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
         }
       }
 
-      if (request.params.providerType === "ai" && request.params.providerCode === "deepseek") {
-        const runtimeConfig = await readRuntimeDeepSeekConfig({ dbClient: client, env });
+      if (request.params.providerType === "ai" && request.params.providerCode === "openai") {
+        const runtimeConfig = await readRuntimeOpenAiConfig({ dbClient: client, env });
         if (!runtimeConfig.realCallEnabled) {
           return {
             success: true,
-            mode: runtimeConfig.analysisMode,
+            mode: runtimeConfig.mode,
             connectionMode: "mock",
             modeZh: "模拟测试",
             modeLabelZh: "模拟测试",
@@ -2037,8 +2015,8 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
             testedAt: new Date().toISOString(),
             sampleLocation: "黄山光明顶",
             model: runtimeConfig.model,
-            messageZh: "当前为模拟测试，未请求 DeepSeek 服务。",
-            message: "当前为模拟测试，未请求 DeepSeek 服务。",
+            messageZh: "当前为模拟测试，未请求 GPT / OpenAI 服务。",
+            message: "当前为模拟测试，未请求 GPT / OpenAI 服务。",
           };
         }
 
@@ -2046,10 +2024,10 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
           return sendProviderTestFailure(reply, {
             providerType: request.params.providerType,
             providerCode: request.params.providerCode,
-            mode: runtimeConfig.analysisMode,
+            mode: runtimeConfig.mode,
             modeLabelZh: runtimeConfig.modeLabelZh,
             error: "provider_not_enabled",
-            messageZh: "DeepSeek 服务商未启用，请先在后台服务商配置中启用 DeepSeek。",
+            messageZh: "GPT / OpenAI 服务商未启用，请先在后台服务商配置中启用 GPT / OpenAI。",
           });
         }
 
@@ -2057,22 +2035,22 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
           return sendProviderTestFailure(reply, {
             providerType: request.params.providerType,
             providerCode: request.params.providerCode,
-            mode: runtimeConfig.analysisMode,
+            mode: runtimeConfig.mode,
             modeLabelZh: runtimeConfig.modeLabelZh,
             error: "provider_key_missing",
-            messageZh: "请先填写 DeepSeek API Key。",
+            messageZh: "请先填写 GPT / OpenAI API Key。",
           });
         }
 
         try {
           const startedAt = Date.now();
-          const deepSeekProvider = await createRealDeepSeekProvider({ dbClient: client, env });
-          const result = await deepSeekProvider.testConnection();
+          const openAiProvider = await createRealOpenAiProvider({ dbClient: client, env });
+          const result = await openAiProvider.testConnection();
           const latencyMs = Date.now() - startedAt;
 
           return {
             success: true,
-            mode: runtimeConfig.analysisMode,
+            mode: runtimeConfig.mode,
             ...createProviderTestMetadata(
               request.params.providerType,
               request.params.providerCode,
@@ -2082,19 +2060,19 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
             model: runtimeConfig.model,
             latencyMs,
             messageZh:
-              result.message || `DeepSeek 连接测试通过，当前使用${runtimeConfig.modeLabelZh}。`,
+              result.message || `GPT / OpenAI 连接测试通过，当前使用${runtimeConfig.modeLabelZh}。`,
             message:
-              result.message || `DeepSeek 连接测试通过，当前使用${runtimeConfig.modeLabelZh}。`,
+              result.message || `GPT / OpenAI 连接测试通过，当前使用${runtimeConfig.modeLabelZh}。`,
           };
         } catch (error) {
           return sendProviderTestFailure(reply, {
             providerType: request.params.providerType,
             providerCode: request.params.providerCode,
-            mode: runtimeConfig.analysisMode,
+            mode: runtimeConfig.mode,
             modeLabelZh: runtimeConfig.modeLabelZh,
             error: "provider_test_failed",
             messageZh: sanitizeProviderErrorMessage(
-              (error as Error).message || "DeepSeek 连接测试失败。",
+              (error as Error).message || "GPT / OpenAI 连接测试失败。",
               runtimeConfig.apiKey,
             ),
           });

@@ -59,22 +59,19 @@ if ! bash "${CHECK_ENV_SCRIPT}" >/dev/null; then
 fi
 echo "envValidation: ok"
 
-echo "DeepSeek interpretation diagnostics"
+echo "GPT / OpenAI interpretation diagnostics"
 echo "No API keys or secrets will be printed."
 
 echo "step: read-runtime-config"
 api_node --input-type=module -e '
-const { readRuntimeDeepSeekConfig } = await import("./apps/api/dist/ai-provider.js");
-const config = await readRuntimeDeepSeekConfig();
+const { readRuntimeOpenAiConfig } = await import("./apps/api/dist/ai-provider.js");
+const config = await readRuntimeOpenAiConfig();
 console.log(`providerEnabled: ${config.providerEnabled}`);
 console.log(`realCallEnabled: ${config.realCallEnabled}`);
 console.log(`apiKeyPresent: ${config.apiKeyPresent}`);
 console.log(`model: ${config.model}`);
 console.log(`timeoutMs: ${config.timeoutMs}`);
-if (config.model !== "deepseek-v4-pro") {
-  console.error("modelPolicyError: expected deepseek-v4-pro");
-  process.exit(1);
-}
+
 '
 
 echo "step: request-forecast-ai-explain"
@@ -139,18 +136,18 @@ const fallbackInterpretation =
   body.fallbackInterpretation ||
   (body.source === "fallback" ? interpretation : null) ||
   (body.fallback === true ? body.explanation : null);
-const deepSeekSuccess =
+const openAiSuccess =
   statusCode >= 200 &&
   statusCode < 300 &&
   body.success === true &&
-  body.source === "deepseek" &&
+  body.source === "openai" &&
   Boolean(interpretation);
 const fallbackSuccess =
   statusCode >= 200 &&
   statusCode < 300 &&
   body.source === "fallback" &&
   Boolean(fallbackInterpretation);
-const source = body.source || (deepSeekSuccess ? "deepseek" : fallbackSuccess ? "fallback" : "unknown");
+const source = body.source || (openAiSuccess ? "openai" : fallbackSuccess ? "fallback" : "unknown");
 const promptSizeChars =
   typeof body.promptSizeChars === "number"
     ? body.promptSizeChars
@@ -183,7 +180,7 @@ const responseLatencyMs =
       : latencyMs;
 
 console.log(`promptSizeChars: ${promptSizeChars}`);
-console.log(`success: ${deepSeekSuccess}`);
+console.log(`success: ${openAiSuccess}`);
 console.log(`source: ${source}`);
 console.log(`parseSuccess: ${parseSuccess}`);
 console.log(`parseStrategy: ${parseStrategy}`);
@@ -199,12 +196,12 @@ if (fetchError) {
   process.exit(1);
 }
 
-if (!deepSeekSuccess && !fallbackSuccess) {
+if (!openAiSuccess && !fallbackSuccess) {
   console.log(
     `messageZh: ${
       body.messageZh ||
       body.message ||
-      "DeepSeek 未成功，且后端没有返回可用的确定性兜底解读。"
+      "GPT / OpenAI 未成功，且后端没有返回可用的确定性兜底解读。"
     }`,
   );
   process.exit(1);
@@ -267,18 +264,18 @@ const fallbackInterpretation =
   body.fallbackInterpretation ||
   (body.source === "fallback" ? interpretation : null) ||
   (body.fallback === true ? body.explanation : null);
-const deepSeekSuccess =
+const openAiSuccess =
   statusCode >= 200 &&
   statusCode < 300 &&
   body.success === true &&
-  body.source === "deepseek" &&
+  body.source === "openai" &&
   Boolean(interpretation);
 const fallbackSuccess =
   statusCode >= 200 &&
   statusCode < 300 &&
   body.source === "fallback" &&
   Boolean(fallbackInterpretation);
-const source = body.source || (deepSeekSuccess ? "deepseek" : fallbackSuccess ? "fallback" : "unknown");
+const source = body.source || (openAiSuccess ? "openai" : fallbackSuccess ? "fallback" : "unknown");
 const promptSizeChars =
   typeof body.promptSizeChars === "number"
     ? body.promptSizeChars
@@ -311,7 +308,7 @@ const responseLatencyMs =
       : latencyMs;
 
 console.log(`promptSizeChars: ${promptSizeChars}`);
-console.log(`success: ${deepSeekSuccess}`);
+console.log(`success: ${openAiSuccess}`);
 console.log(`source: ${source}`);
 console.log(`parseSuccess: ${parseSuccess}`);
 console.log(`parseStrategy: ${parseStrategy}`);
@@ -327,12 +324,12 @@ if (fetchError) {
   process.exit(1);
 }
 
-if (!deepSeekSuccess && !fallbackSuccess) {
+if (!openAiSuccess && !fallbackSuccess) {
   console.log(
     `messageZh: ${
       body.messageZh ||
       body.message ||
-      "DeepSeek 未成功，且后端没有返回可用的确定性兜底解读。"
+      "GPT / OpenAI 未成功，且后端没有返回可用的确定性兜底解读。"
     }`,
   );
   process.exit(1);

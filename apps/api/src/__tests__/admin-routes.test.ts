@@ -278,12 +278,12 @@ describe("admin config routes", () => {
     expect(response.statusCode).toBe(200);
     const body = response.json();
     expect(body.providers.map((provider: any) => provider.providerCode)).toEqual(
-      expect.arrayContaining(["deepseek", "qweather", "open_meteo", "meteoblue", "amap"]),
+      expect.arrayContaining(["openai", "qweather", "open_meteo", "meteoblue", "amap"]),
     );
     expect(body.groups.storage).toBeTruthy();
     expect(body.realDevCallFlags).toEqual({
       amap: false,
-      deepseek: false,
+      openai: false,
       qweather: false,
       openMeteo: false,
       meteoblue: false,
@@ -478,12 +478,11 @@ describe("admin config routes", () => {
 
     const response = await app.inject({
       method: "PATCH",
-      url: "/admin/providers/ai/deepseek",
+      url: "/admin/providers/ai/openai",
       headers: adminAuthorizationHeader(),
       payload: {
         enabled: true,
         configJson: {
-          analysisMode: "professional",
           realCallEnabled: true,
         },
         secretJson: {
@@ -497,23 +496,21 @@ describe("admin config routes", () => {
     const body = response.json();
     expect(body).toMatchObject({
       success: true,
-      messageZh: "DeepSeek 配置已保存。",
+      messageZh: "GPT / OpenAI 配置已保存。",
     });
     expect(body.provider).toMatchObject({
       providerType: "ai",
-      providerCode: "deepseek",
+      providerCode: "openai",
       enabled: true,
       configJson: {
-        baseUrl: "https://api.deepseek.com",
+        baseUrl: "https://api.openai.com",
         realCallEnabled: true,
-        analysisMode: "professional",
-        model: "deepseek-v4-pro",
-        responseFormat: "json_object",
+        model: "gpt-4.1",
+        defaultModel: "gpt-4.1",
         temperature: 0.2,
         maxTokens: 1200,
         promptMaxChars: 6000,
-        thinkingEnabled: false,
-        reasoningEffort: "none",
+        timeoutMs: 120000,
       },
       maskedSecretJson: {
         apiKey: "sk-r****cret",
@@ -530,7 +527,7 @@ describe("admin config routes", () => {
     expect(auditResponse.json().logs[0]).toMatchObject({
       actorUserId: "admin-user",
       action: "provider_config.update",
-      targetId: "ai:deepseek",
+      targetId: "ai:openai",
     });
     expect(JSON.stringify(auditResponse.json())).not.toContain("sk-real-secret");
   });
@@ -1570,42 +1567,42 @@ describe("admin config routes", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps DeepSeek connection tests in mock mode by default and hides secrets", async () => {
+  it("keeps GPT / OpenAI connection tests in mock mode by default and hides secrets", async () => {
     const { client, state } = await createFakeDatabaseClient();
-    const deepSeekProvider = state.providers.get("ai:deepseek");
-    state.providers.set("ai:deepseek", {
-      ...deepSeekProvider,
+    const openAiProvider = state.providers.get("ai:openai");
+    state.providers.set("ai:openai", {
+      ...openAiProvider,
       secretJson: {
-        apiKey: "deepseek-test-secret",
+        apiKey: "openai-test-secret",
       },
       maskedSecretJson: {
-        apiKey: "deep****cret",
+        apiKey: "open****cret",
       },
     });
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
 
     const response = await app.inject({
       method: "POST",
-      url: "/admin/providers/ai/deepseek/test-connection",
+      url: "/admin/providers/ai/openai/test-connection",
       headers: adminAuthorizationHeader(),
     });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       success: true,
-      mode: "professional",
+      mode: "responses_api",
       connectionMode: "mock",
-      model: "deepseek-v4-pro",
-      message: "当前为模拟测试，未请求 DeepSeek 服务。",
+      model: "gpt-4.1",
+      message: "当前为模拟测试，未请求 GPT / OpenAI 服务。",
     });
-    expect(response.body).not.toContain("deepseek-test-secret");
+    expect(response.body).not.toContain("openai-test-secret");
     expect(response.body).not.toContain("secretJson");
   });
 
   it("uses admin real-call settings before env fallback when listing providers", async () => {
     const { client, state } = await createFakeDatabaseClient();
     const amapProvider = state.providers.get("geo:amap");
-    const deepSeekProvider = state.providers.get("ai:deepseek");
+    const openAiProvider = state.providers.get("ai:openai");
     state.providers.set("geo:amap", {
       ...amapProvider,
       configJson: {
@@ -1613,10 +1610,10 @@ describe("admin config routes", () => {
         realCallEnabled: true,
       },
     });
-    state.providers.set("ai:deepseek", {
-      ...deepSeekProvider,
+    state.providers.set("ai:openai", {
+      ...openAiProvider,
       configJson: {
-        ...(deepSeekProvider.configJson ?? {}),
+        ...(openAiProvider.configJson ?? {}),
         realCallEnabled: false,
       },
     });
@@ -1627,7 +1624,7 @@ describe("admin config routes", () => {
         ...process.env,
         NODE_ENV: "development",
         ENABLE_REAL_AMAP: "false",
-        ENABLE_REAL_DEEPSEEK: "true",
+        ENABLE_REAL_OPENAI: "true",
       },
       logger: false,
     });
@@ -1641,17 +1638,17 @@ describe("admin config routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().realDevCallFlags).toEqual({
       amap: true,
-      deepseek: false,
+      openai: false,
       qweather: false,
       openMeteo: false,
       meteoblue: false,
     });
   });
 
-  it("returns Chinese no-key errors for real Amap and DeepSeek connection tests", async () => {
+  it("returns Chinese no-key errors for real Amap and GPT / OpenAI connection tests", async () => {
     const { client, state } = await createFakeDatabaseClient();
     const amapProvider = state.providers.get("geo:amap");
-    const deepSeekProvider = state.providers.get("ai:deepseek");
+    const openAiProvider = state.providers.get("ai:openai");
     state.providers.set("geo:amap", {
       ...amapProvider,
       enabled: true,
@@ -1662,11 +1659,11 @@ describe("admin config routes", () => {
       secretJson: {},
       maskedSecretJson: {},
     });
-    state.providers.set("ai:deepseek", {
-      ...deepSeekProvider,
+    state.providers.set("ai:openai", {
+      ...openAiProvider,
       enabled: true,
       configJson: {
-        ...(deepSeekProvider.configJson ?? {}),
+        ...(openAiProvider.configJson ?? {}),
         realCallEnabled: true,
       },
       secretJson: {},
@@ -1687,9 +1684,9 @@ describe("admin config routes", () => {
       url: "/admin/providers/geo/amap/test-connection",
       headers: adminAuthorizationHeader(),
     });
-    const deepSeekResponse = await app.inject({
+    const openAiResponse = await app.inject({
       method: "POST",
-      url: "/admin/providers/ai/deepseek/test-connection",
+      url: "/admin/providers/ai/openai/test-connection",
       headers: adminAuthorizationHeader(),
     });
 
@@ -1701,13 +1698,13 @@ describe("admin config routes", () => {
       providerNameZh: "高德地图",
       message: "请先填写高德 Web 服务 Key。",
     });
-    expect(deepSeekResponse.statusCode).toBe(200);
-    expect(deepSeekResponse.json()).toMatchObject({
+    expect(openAiResponse.statusCode).toBe(200);
+    expect(openAiResponse.json()).toMatchObject({
       success: false,
       error: "provider_key_missing",
-      providerCode: "deepseek",
-      providerNameZh: "DeepSeek",
-      message: "请先填写 DeepSeek API Key。",
+      providerCode: "openai",
+      providerNameZh: "GPT / OpenAI",
+      message: "请先填写 GPT / OpenAI API Key。",
     });
   });
 
@@ -1946,32 +1943,27 @@ describe("admin config routes", () => {
     expect(response.body).not.toContain("meteoblue-real-secret");
   });
 
-  it("tests a real DeepSeek connection through mocked fetch outside NODE_ENV=test", async () => {
+  it("tests a real GPT / OpenAI connection through mocked fetch outside NODE_ENV=test", async () => {
     const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
       expect(init?.headers).toMatchObject({
-        Authorization: "Bearer deepseek-real-secret",
+        Authorization: "Bearer openai-real-secret",
       });
-      expect(String(init?.body)).not.toContain("deepseek-real-secret");
+      expect(String(init?.body)).not.toContain("openai-real-secret");
       const requestBody = JSON.parse(String(init?.body));
       expect(requestBody).toMatchObject({
-        model: "deepseek-v4-pro",
-        response_format: {
-          type: "json_object",
-        },
+        model: "gpt-4.1",
+        input: expect.any(String),
+        instructions: expect.any(String),
+        max_output_tokens: 120,
+        store: false,
+        stream: false,
       });
+      expect(requestBody).not.toHaveProperty("response_format");
       expect(requestBody).not.toHaveProperty("reasoning_effort");
 
       return new Response(
         JSON.stringify({
-          choices: [
-            {
-              message: {
-                content: JSON.stringify({
-                  message: "DeepSeek 连接测试通过。",
-                }),
-              },
-            },
-          ],
+          output_text: "GPT / OpenAI 连接测试通过。",
         }),
         {
           status: 200,
@@ -1983,24 +1975,21 @@ describe("admin config routes", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
-    const deepSeekProvider = state.providers.get("ai:deepseek");
-    state.providers.set("ai:deepseek", {
-      ...deepSeekProvider,
+    const openAiProvider = state.providers.get("ai:openai");
+    state.providers.set("ai:openai", {
+      ...openAiProvider,
       enabled: true,
       configJson: {
-        ...(deepSeekProvider.configJson ?? {}),
+        ...(openAiProvider.configJson ?? {}),
         realCallEnabled: true,
-        analysisMode: "professional",
         maxTokens: 1200,
         promptMaxChars: 6000,
-        thinkingEnabled: false,
-        reasoningEffort: "none",
       },
       secretJson: {
-        apiKey: "deepseek-real-secret",
+        apiKey: "openai-real-secret",
       },
       maskedSecretJson: {
-        apiKey: "deep****cret",
+        apiKey: "open****cret",
       },
     });
     app = buildApiServer({
@@ -2015,52 +2004,41 @@ describe("admin config routes", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: "/admin/providers/ai/deepseek/test-connection",
+      url: "/admin/providers/ai/openai/test-connection",
       headers: adminAuthorizationHeader(),
     });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       success: true,
-      mode: "professional",
+      mode: "responses_api",
       connectionMode: "real",
-      modeLabelZh: "专业模式",
-      model: "deepseek-v4-pro",
+      modeLabelZh: "GPT / OpenAI",
+      model: "gpt-4.1",
       latencyMs: expect.any(Number),
-      message: "DeepSeek 连接测试通过。",
+      message: "GPT / OpenAI 连接测试通过。",
     });
-    expect(response.body).not.toContain("deepseek-real-secret");
+    expect(response.body).not.toContain("openai-real-secret");
     expect(response.body).not.toContain("secretJson");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("tests a real DeepSeek explanation through mocked fetch with safe diagnostics", async () => {
+  it("tests a real GPT / OpenAI explanation through mocked fetch with safe diagnostics", async () => {
     const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
       expect(init?.headers).toMatchObject({
-        Authorization: "Bearer deepseek-real-secret",
+        Authorization: "Bearer openai-real-secret",
       });
-      expect(String(init?.body)).not.toContain("deepseek-real-secret");
+      expect(String(init?.body)).not.toContain("openai-real-secret");
       const requestBody = JSON.parse(String(init?.body));
       expect(requestBody).toMatchObject({
-        model: "deepseek-v4-pro",
+        model: "gpt-4.1",
       });
       expect(requestBody).not.toHaveProperty("response_format");
 
       return new Response(
         JSON.stringify({
-          choices: [
-            {
-              message: {
-                content: JSON.stringify({
-                  summaryText: "后台真实解读测试成功。",
-                  conclusion: "后台真实解读测试成功。",
-                  reasons: ["使用确定性 mock 预报载荷。"],
-                  suggestions: ["继续复核真实业务入口。"],
-                  risks: ["短临天气仍需复核。"],
-                }),
-              },
-            },
-          ],
+          output_text:
+            "是否值得去：后台真实解读测试成功，清晨窗口可以作为主计划，但不要只为单一信号专程出发。\n主要窗口：按确定性预报给出的清晨窗口提前到位，现场复核低云上沿、能见度和阵风。\n主要风险：短临降水、白墙、阵风和道路安全仍需复核，AI 不重新计算天气、天文、地形或评分。\n备选策略：如果低云不开口，改拍近景、远山层次或等下一段稳定窗口。\n复核重点：出发前再次确认雷达、低云高度、降水概率和现场可达性。",
         }),
         {
           status: 200,
@@ -2072,24 +2050,21 @@ describe("admin config routes", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
-    const deepSeekProvider = state.providers.get("ai:deepseek");
-    state.providers.set("ai:deepseek", {
-      ...deepSeekProvider,
+    const openAiProvider = state.providers.get("ai:openai");
+    state.providers.set("ai:openai", {
+      ...openAiProvider,
       enabled: true,
       configJson: {
-        ...(deepSeekProvider.configJson ?? {}),
+        ...(openAiProvider.configJson ?? {}),
         realCallEnabled: true,
-        analysisMode: "professional",
         maxTokens: 1200,
         promptMaxChars: 6000,
-        thinkingEnabled: false,
-        reasoningEffort: "none",
       },
       secretJson: {
-        apiKey: "deepseek-real-secret",
+        apiKey: "openai-real-secret",
       },
       maskedSecretJson: {
-        apiKey: "deep****cret",
+        apiKey: "open****cret",
       },
     });
     app = buildApiServer({
@@ -2104,36 +2079,36 @@ describe("admin config routes", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: "/admin/providers/ai/deepseek/test-explanation",
+      url: "/admin/providers/ai/openai/test-explanation",
       headers: adminAuthorizationHeader(),
     });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       success: true,
-      providerCode: "deepseek",
-      model: "deepseek-v4-pro",
+      providerCode: "openai",
+      model: "gpt-4.1",
       outputMode: "text_with_json_fallback",
       promptSizeChars: expect.any(Number),
       latencyMs: expect.any(Number),
       attempts: 1,
-      parseSuccess: true,
+      parseSuccess: false,
       displaySuccess: true,
       hasDisplayableAiContent: true,
-      parseStrategy: "strict_json",
+      parseStrategy: "plain_text_fallback",
       compatibilityFallbackUsed: false,
       emptyContentFallbackUsed: false,
-      contentType: "string",
+      contentType: "output_text",
       contentLength: expect.any(Number),
-      message: expect.stringContaining("DeepSeek 真实解读测试通过"),
+      message: expect.stringContaining("GPT / OpenAI 真实解读测试通过"),
     });
-    expect(response.body).not.toContain("deepseek-real-secret");
+    expect(response.body).not.toContain("openai-real-secret");
     expect(response.body).not.toContain("Authorization");
     expect(response.body).not.toContain("messages");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("reports DeepSeek explanation test upstream failure with safe diagnostics", async () => {
+  it("reports GPT / OpenAI explanation test upstream failure with safe diagnostics", async () => {
     const fetchMock = vi.fn(
       async () =>
         new Response(
@@ -2155,24 +2130,21 @@ describe("admin config routes", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
-    const deepSeekProvider = state.providers.get("ai:deepseek");
-    state.providers.set("ai:deepseek", {
-      ...deepSeekProvider,
+    const openAiProvider = state.providers.get("ai:openai");
+    state.providers.set("ai:openai", {
+      ...openAiProvider,
       enabled: true,
       configJson: {
-        ...(deepSeekProvider.configJson ?? {}),
+        ...(openAiProvider.configJson ?? {}),
         realCallEnabled: true,
-        analysisMode: "professional",
         maxTokens: 1200,
         promptMaxChars: 6000,
-        thinkingEnabled: false,
-        reasoningEffort: "none",
       },
       secretJson: {
-        apiKey: "deepseek-real-secret",
+        apiKey: "openai-real-secret",
       },
       maskedSecretJson: {
-        apiKey: "deep****cret",
+        apiKey: "open****cret",
       },
     });
     app = buildApiServer({
@@ -2187,21 +2159,21 @@ describe("admin config routes", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: "/admin/providers/ai/deepseek/test-explanation",
+      url: "/admin/providers/ai/openai/test-explanation",
       headers: adminAuthorizationHeader(),
     });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       success: false,
-      providerCode: "deepseek",
-      model: "deepseek-v4-pro",
+      providerCode: "openai",
+      model: "gpt-4.1",
       outputMode: "text_with_json_fallback",
-      attempts: 2,
+      attempts: 1,
       parseSuccess: false,
       displaySuccess: false,
       hasDisplayableAiContent: false,
-      compatibilityFallbackUsed: true,
+      compatibilityFallbackUsed: false,
       disabledResponseFormat: false,
       emptyContentFallbackUsed: false,
       upstreamStatusCode: 400,
@@ -2210,12 +2182,12 @@ describe("admin config routes", () => {
       upstreamMessageSanitized: "Unsupported parameter: response_format",
       parseStrategy: "failed",
     });
-    expect(response.body).not.toContain("deepseek-real-secret");
+    expect(response.body).not.toContain("openai-real-secret");
     expect(response.body).not.toContain("Authorization");
     expect(response.body).not.toContain("messages");
   });
 
-  it("reports DeepSeek upstream 401 as provider auth failure, not admin auth failure", async () => {
+  it("reports GPT / OpenAI upstream 401 as provider auth failure, not admin auth failure", async () => {
     const fetchMock = vi.fn(async () => {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
@@ -2226,20 +2198,19 @@ describe("admin config routes", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
-    const deepSeekProvider = state.providers.get("ai:deepseek");
-    state.providers.set("ai:deepseek", {
-      ...deepSeekProvider,
+    const openAiProvider = state.providers.get("ai:openai");
+    state.providers.set("ai:openai", {
+      ...openAiProvider,
       enabled: true,
       configJson: {
-        ...(deepSeekProvider.configJson ?? {}),
+        ...(openAiProvider.configJson ?? {}),
         realCallEnabled: true,
-        analysisMode: "fast",
       },
       secretJson: {
-        apiKey: "deepseek-real-secret",
+        apiKey: "openai-real-secret",
       },
       maskedSecretJson: {
-        apiKey: "deep****cret",
+        apiKey: "open****cret",
       },
     });
     app = buildApiServer({
@@ -2254,7 +2225,7 @@ describe("admin config routes", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: "/admin/providers/ai/deepseek/test-connection",
+      url: "/admin/providers/ai/openai/test-connection",
       headers: adminAuthorizationHeader(),
       payload: {},
     });
@@ -2266,10 +2237,10 @@ describe("admin config routes", () => {
       statusCode: 401,
       error: "invalid_key",
       errorCategory: "invalid_key",
-      message: "DeepSeek API Key 无效或权限不足。",
+      message: "GPT / OpenAI API Key 或中转鉴权令牌无效。",
     });
     expect(response.body).not.toContain("登录状态已失效");
-    expect(response.body).not.toContain("deepseek-real-secret");
+    expect(response.body).not.toContain("openai-real-secret");
   });
 
   it("forces real provider connection tests back to mock mode under NODE_ENV=test", async () => {
@@ -2279,7 +2250,7 @@ describe("admin config routes", () => {
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
     const amapProvider = state.providers.get("geo:amap");
-    const deepSeekProvider = state.providers.get("ai:deepseek");
+    const openAiProvider = state.providers.get("ai:openai");
     const qWeatherProvider = state.providers.get("weather:qweather");
     const openMeteoProvider = state.providers.get("weather:open_meteo");
     const meteoblueProvider = state.providers.get("weather:meteoblue");
@@ -2297,18 +2268,18 @@ describe("admin config routes", () => {
         apiKey: "amap****cret",
       },
     });
-    state.providers.set("ai:deepseek", {
-      ...deepSeekProvider,
+    state.providers.set("ai:openai", {
+      ...openAiProvider,
       enabled: true,
       configJson: {
-        ...(deepSeekProvider.configJson ?? {}),
+        ...(openAiProvider.configJson ?? {}),
         realCallEnabled: true,
       },
       secretJson: {
-        apiKey: "deepseek-test-secret",
+        apiKey: "openai-test-secret",
       },
       maskedSecretJson: {
-        apiKey: "deep****cret",
+        apiKey: "open****cret",
       },
     });
     state.providers.set("weather:qweather", {
@@ -2361,9 +2332,9 @@ describe("admin config routes", () => {
       url: "/admin/providers/geo/amap/test-connection",
       headers: adminAuthorizationHeader(),
     });
-    const deepSeekResponse = await app.inject({
+    const openAiResponse = await app.inject({
       method: "POST",
-      url: "/admin/providers/ai/deepseek/test-connection",
+      url: "/admin/providers/ai/openai/test-connection",
       headers: adminAuthorizationHeader(),
     });
     const qWeatherResponse = await app.inject({
@@ -2387,12 +2358,12 @@ describe("admin config routes", () => {
       success: true,
       mode: "mock",
     });
-    expect(deepSeekResponse.statusCode).toBe(200);
-    expect(deepSeekResponse.json()).toMatchObject({
+    expect(openAiResponse.statusCode).toBe(200);
+    expect(openAiResponse.json()).toMatchObject({
       success: true,
-      mode: "professional",
+      mode: "responses_api",
       connectionMode: "mock",
-      model: "deepseek-v4-pro",
+      model: "gpt-4.1",
     });
     expect(qWeatherResponse.statusCode).toBe(200);
     expect(qWeatherResponse.json()).toMatchObject({

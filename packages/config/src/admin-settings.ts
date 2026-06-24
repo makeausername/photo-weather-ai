@@ -33,22 +33,22 @@ export type AdminSettingDefinition = {
 
 export const adminSettingDefinitions = [
   {
-    key: "ai.deepseek.apiKey",
-    label: "DeepSeek API key",
+    key: "ai.openai.apiKey",
+    label: "OpenAI API key",
     category: "ai",
     valueType: "secret",
     scope: "server",
-    envVar: "DEEPSEEK_API_KEY",
+    envVar: "OPENAI_API_KEY",
     encryptedAtRest: true,
   },
   {
-    key: "ai.deepseek.baseUrl",
-    label: "DeepSeek base URL",
+    key: "ai.openai.baseUrl",
+    label: "OpenAI base URL",
     category: "ai",
     valueType: "url",
     scope: "server",
-    envVar: "DEEPSEEK_BASE_URL",
-    defaultValue: "https://api.deepseek.com",
+    envVar: "OPENAI_BASE_URL",
+    defaultValue: "https://api.openai.com",
     encryptedAtRest: false,
   },
   {

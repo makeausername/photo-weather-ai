@@ -14,14 +14,14 @@ function createFakeClient(): DatabaseClient {
   const settings = new Map<string, any>();
   const providers = new Map<string, any>();
 
-  providers.set("ai:deepseek", {
-    id: "provider-deepseek",
+  providers.set("ai:openai", {
+    id: "provider-openai",
     providerType: "ai",
-    providerCode: "deepseek",
-    displayName: "DeepSeek",
+    providerCode: "openai",
+    displayName: "GPT / OpenAI",
     enabled: false,
     priority: 100,
-    configJson: { model: "legacy-fast-model" },
+    configJson: { model: "gpt-4.1" },
     secretJson: { apiKey: "sk-1234567890" },
     maskedSecretJson: null,
     createdAt: now,
@@ -147,11 +147,11 @@ describe("system setting helpers", () => {
       client,
     });
     const secret = await setSystemSetting({
-      key: "ai.deepseek.apiKey",
+      key: "ai.openai.apiKey",
       valueJson: "sk-1234567890",
       valueType: "secret",
       group: "ai",
-      label: "DeepSeek API key",
+      label: "GPT / OpenAI API key",
       client,
     });
 
@@ -167,11 +167,11 @@ describe("system setting helpers", () => {
 describe("provider config helpers", () => {
   it("returns safe provider configs without raw secret JSON", async () => {
     const client = createFakeClient();
-    const providerConfig = await getProviderConfig("ai", "deepseek", { client });
+    const providerConfig = await getProviderConfig("ai", "openai", { client });
 
     expect(providerConfig).toMatchObject({
       providerType: "ai",
-      providerCode: "deepseek",
+      providerCode: "openai",
       maskedSecretJson: { apiKey: "sk-1****7890" },
     });
     expect("secretJson" in (providerConfig as unknown as Record<string, unknown>)).toBe(false);
@@ -181,7 +181,7 @@ describe("provider config helpers", () => {
     const client = createFakeClient();
     const updated = await updateProviderConfig({
       providerType: "ai",
-      providerCode: "deepseek",
+      providerCode: "openai",
       enabled: true,
       configJson: { retry: { maxAttempts: 2 } },
       secretJson: { apiKey: "new-secret-value" },
@@ -191,7 +191,7 @@ describe("provider config helpers", () => {
     expect(updated).toMatchObject({
       enabled: true,
       configJson: {
-        model: "legacy-fast-model",
+        model: "gpt-4.1",
         retry: { maxAttempts: 2 },
       },
       maskedSecretJson: { apiKey: "new-****alue" },
@@ -207,17 +207,17 @@ describe("provider config helpers", () => {
     const client = createFakeClient();
     await updateProviderConfig({
       providerType: "ai",
-      providerCode: "deepseek",
+      providerCode: "openai",
       secretJson: {
         apiKey: "new-secret-value",
-        baseUrl: "https://api.deepseek.com",
+        baseUrl: "https://api.openai.com",
       },
       client,
     });
 
     const blankUpdate = await updateProviderConfig({
       providerType: "ai",
-      providerCode: "deepseek",
+      providerCode: "openai",
       secretJson: {
         apiKey: "",
       },
@@ -231,7 +231,7 @@ describe("provider config helpers", () => {
 
     const cleared = await updateProviderConfig({
       providerType: "ai",
-      providerCode: "deepseek",
+      providerCode: "openai",
       clearSecretKeys: ["apiKey"],
       client,
     });

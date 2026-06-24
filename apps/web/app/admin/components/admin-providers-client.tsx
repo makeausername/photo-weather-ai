@@ -3,9 +3,7 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import {
-  getDeepSeekModeRuntimeDefaults,
   getProviderFieldPreset,
-  normalizeDeepSeekAnalysisMode,
   tencentCaptchaDefaultCaptchaType,
   tencentCaptchaDefaultEndpoint,
   tencentCaptchaDefaultSdkUrl,
@@ -72,7 +70,7 @@ type ProviderKey =
   | "weather:qweather"
   | "weather:open_meteo"
   | "weather:meteoblue"
-  | "ai:deepseek"
+  | "ai:openai"
   | "billing:wechat_pay"
   | "billing:alipay"
   | "email:aliyun_smtp"
@@ -91,7 +89,7 @@ type EmailTestResultDrafts = Record<string, AdminEmailTestResult | undefined>;
 
 type RealDevCallFlags = {
   readonly amap: boolean;
-  readonly deepseek: boolean;
+  readonly openai: boolean;
   readonly qweather: boolean;
   readonly openMeteo: boolean;
   readonly meteoblue: boolean;
@@ -127,7 +125,7 @@ export function getProviderModuleLayout(providerCount: number): ProviderModuleLa
 
 const defaultRealDevCallFlags: RealDevCallFlags = {
   amap: false,
-  deepseek: false,
+  openai: false,
   qweather: false,
   openMeteo: false,
   meteoblue: false,
@@ -138,7 +136,7 @@ const providerOrder: readonly ProviderKey[] = [
   "weather:qweather",
   "weather:open_meteo",
   "weather:meteoblue",
-  "ai:deepseek",
+  "ai:openai",
   "billing:wechat_pay",
   "billing:alipay",
   "email:aliyun_smtp",
@@ -167,7 +165,7 @@ const providerModules = [
   {
     key: "ai",
     title: "智能解读",
-    description: "管理 DeepSeek 智能解读配置，不参与确定性天气、天文和地形计算。",
+    description: "管理 OpenAI 智能解读配置，不参与确定性天气、天文和地形计算。",
     apiProviderTypes: ["ai"],
   },
   {
@@ -240,10 +238,10 @@ const providerMeta: Record<ProviderKey, ProviderMeta> = {
     capabilities: ["Forecast API", "云层增强", "专业预报", "商业精度提升"],
     requiredConfigKeys: ["baseUrl", "packages"],
   },
-  "ai:deepseek": {
-    key: "ai:deepseek",
+  "ai:openai": {
+    key: "ai:openai",
     group: "ai",
-    displayName: "DeepSeek",
+    displayName: "GPT / OpenAI",
     purpose: "用于智能解读、文案生成和结果说明，不改写确定性评分。",
     capabilities: ["智能解读", "文案生成", "结果说明"],
     requiredConfigKeys: ["model"],
@@ -357,9 +355,9 @@ const providerConfigDefaults: Partial<Record<string, Record<string, JsonValue>>>
     timeoutMs: 10000,
     retryCount: 1,
   },
-  deepseek: {
-    baseUrl: "https://api.deepseek.com",
-    model: "deepseek-v4-pro",
+  openai: {
+    baseUrl: "https://api.openai.com",
+    model: "gpt-4.1",
     timeoutMs: 120000,
   },
   wechat_pay: {
@@ -653,43 +651,10 @@ function maskedSecretLabel(provider: SafeProviderConfig, key: string): string {
 
 function createConfigFieldDraft(provider: SafeProviderConfig): Record<string, string> {
   const configJson = isJsonObject(provider.configJson) ? provider.configJson : {};
-  const defaultConfig = providerConfigDefaults[provider.providerCode] ?? {};
-  const deepSeekMode =
-    provider.providerCode === "deepseek"
-      ? normalizeDeepSeekAnalysisMode(
-          readStringJson(configJson.analysisMode),
-          readStringJson(configJson.model) ??
-            readStringJson(configJson.defaultModel) ??
-            readStringJson(defaultConfig.model),
-        )
-      : null;
-  const deepSeekDefaults = deepSeekMode ? getDeepSeekModeRuntimeDefaults(deepSeekMode) : null;
 
   return Object.fromEntries(
     getPresetFields(provider, "configJson").map((field) => {
       const value = configJson[field.key];
-      if (provider.providerCode === "deepseek") {
-        if (field.key === "analysisMode") {
-          return [field.key, deepSeekMode ?? "professional"];
-        }
-        if ((field.key === "model" || field.key === "defaultModel") && value === undefined) {
-          return [
-            field.key,
-            providerFieldDefaultToInput(provider, field) ||
-              deepSeekDefaults?.model ||
-              "deepseek-v4-pro",
-          ];
-        }
-        if (deepSeekDefaults && field.key === "maxTokens" && value === undefined) {
-          return [field.key, String(deepSeekDefaults.maxTokens)];
-        }
-        if (deepSeekDefaults && field.key === "thinkingEnabled" && value === undefined) {
-          return [field.key, String(deepSeekDefaults.thinkingEnabled)];
-        }
-        if (deepSeekDefaults && field.key === "reasoningEffort" && value === undefined) {
-          return [field.key, deepSeekDefaults.reasoningEffort];
-        }
-      }
 
       return [
         field.key,
@@ -744,8 +709,8 @@ function getRealDevCallFlagKey(provider: SafeProviderConfig): keyof RealDevCallF
     return "amap";
   }
 
-  if (provider.providerType === "ai" && provider.providerCode === "deepseek") {
-    return "deepseek";
+  if (provider.providerType === "ai" && provider.providerCode === "openai") {
+    return "openai";
   }
 
   if (provider.providerType === "weather" && provider.providerCode === "qweather") {
@@ -1740,24 +1705,6 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     }));
   }
 
-  function applyDeepSeekModel(provider: SafeProviderConfig, model: string) {
-    const analysisMode = normalizeDeepSeekAnalysisMode(undefined, model);
-    const defaults = getDeepSeekModeRuntimeDefaults(analysisMode);
-    markProviderDirty(provider.id);
-    setConfigFieldDrafts((current) => ({
-      ...current,
-      [provider.id]: {
-        ...(current[provider.id] ?? {}),
-        analysisMode,
-        model: defaults.model,
-        defaultModel: defaults.model,
-        maxTokens: String(defaults.maxTokens),
-        reasoningEffort: defaults.reasoningEffort,
-        thinkingEnabled: String(defaults.thinkingEnabled),
-      },
-    }));
-  }
-
   function updateSecretField(providerId: string, key: string, value: string) {
     markProviderDirty(providerId);
     setSecretFieldDrafts((current) => ({
@@ -1812,10 +1759,6 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
           <Select
             value={value}
             onChange={(event) => {
-              if (provider.providerCode === "deepseek" && field.key === "model") {
-                applyDeepSeekModel(provider, event.target.value);
-                return;
-              }
               updateConfigField(provider, field.key, event.target.value);
             }}
           >
@@ -1978,7 +1921,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     }
   }
 
-  async function testDeepSeekExplanation(provider: SafeProviderConfig) {
+  async function testOpenAIExplanation(provider: SafeProviderConfig) {
     if (
       testingExplanationProviderIds.current.has(provider.id) ||
       explanationTestStateByProvider[provider.id]?.status === "testing"
@@ -1997,7 +1940,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
 
     try {
       const result = await adminApiFetch<MockConnectionTestResult>(
-        "/admin/providers/ai/deepseek/test-explanation",
+        "/admin/providers/ai/openai/test-explanation",
         createProviderConnectionTestRequestInit(),
       );
       setExplanationTestResultByProvider((current) => ({ ...current, [provider.id]: result }));
@@ -2009,8 +1952,8 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
             result.messageZh ??
             result.message ??
             (result.success === false
-              ? "DeepSeek 真实解读测试失败。"
-              : "DeepSeek 真实解读测试通过。"),
+              ? "OpenAI 真实解读测试失败。"
+              : "OpenAI 真实解读测试通过。"),
         },
       }));
     } catch (error) {
@@ -2470,7 +2413,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
             <div className="flex min-w-0 flex-wrap gap-2">
               <FeedbackPill state={saveState} dirty={dirty} />
               <FeedbackPill state={testState} />
-              {provider.providerType === "ai" && provider.providerCode === "deepseek" ? (
+              {provider.providerType === "ai" && provider.providerCode === "openai" ? (
                 <FeedbackPill state={explanationTestState} />
               ) : null}
             </div>
@@ -2490,12 +2433,12 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               >
                 {providerTestButtonLabel(testState)}
               </Button>
-              {provider.providerType === "ai" && provider.providerCode === "deepseek" ? (
+              {provider.providerType === "ai" && provider.providerCode === "openai" ? (
                 <Button
                   variant="secondary"
                   aria-label="真实解读测试"
                   disabled={isExplanationTesting}
-                  onClick={() => void testDeepSeekExplanation(provider)}
+                  onClick={() => void testOpenAIExplanation(provider)}
                 >
                   {explanationTestState?.status === "testing" ? "测试中..." : "真实解读测试"}
                 </Button>
@@ -2503,7 +2446,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
             </div>
           </div>
           <ProviderTestDetails result={testResultByProvider[provider.id]} />
-          {provider.providerType === "ai" && provider.providerCode === "deepseek" ? (
+          {provider.providerType === "ai" && provider.providerCode === "openai" ? (
             <ProviderTestDetails result={explanationTestResultByProvider[provider.id]} />
           ) : null}
         </footer>

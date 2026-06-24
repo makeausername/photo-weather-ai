@@ -88,6 +88,7 @@ export function providerDisplayName(
   providerCode: string | null | undefined,
 ): string {
   const labels: Record<string, string> = {
+    "ai:openai": "GPT / OpenAI",
     "ai:deepseek": "DeepSeek",
     "billing:alipay": "支付宝",
     "billing:mock": "模拟支付",
