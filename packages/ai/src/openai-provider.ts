@@ -13,7 +13,6 @@ import {
   buildDeepSeekForecastContext,
   createRuleBasedForecastExplanation,
   isDeepSeekProviderError,
-  parseForecastAiExplanationOutput,
 } from "./deepseek-provider.js";
 import { MockAIProvider } from "./mock-provider.js";
 import type {
@@ -63,7 +62,9 @@ export type OpenAiRequestPreview = {
   readonly promptSizeChars: number;
   readonly promptMaxChars?: number;
   readonly sectionKey?: ForecastAiExplanationSectionKey;
+  readonly sectionKeys?: readonly ForecastAiExplanationSectionKey[];
   readonly compactingApplied?: boolean;
+  readonly generationMode?: "one_shot_sectioned";
   readonly outputMode: "text_with_json_fallback";
 };
 
@@ -115,7 +116,7 @@ export type OpenAiInterpretationErrorCategory =
   | "prompt_too_large"
   | "unknown";
 
-const openAiSectionedExplanationVersion = "forecast-ai-sectioned-v1" as const;
+const openAiSectionedExplanationVersion = "forecast-ai-sectioned-one-shot-v2" as const;
 
 export const forecastAiExplanationSectionKeys = [
   "overview",
@@ -125,20 +126,12 @@ export const forecastAiExplanationSectionKeys = [
   "final_decision",
 ] as const satisfies readonly ForecastAiExplanationSectionKey[];
 
-const forecastAiExplanationGenerationOrder = [
-  "overview",
-  "final_decision",
-  "timeline",
-  "subject_advice",
-  "risk_gear",
-] as const satisfies readonly ForecastAiExplanationSectionKey[];
-
 const sectionTitleZh: Record<ForecastAiExplanationSectionKey, string> = {
-  overview: "综合结论",
-  timeline: "窗口节奏",
+  overview: "总体判断",
+  timeline: "最佳拍摄窗口",
   subject_advice: "题材建议",
   risk_gear: "风险与装备",
-  final_decision: "最终行动",
+  final_decision: "最终行动建议",
 };
 
 const sectionMaxTokens: Record<ForecastAiExplanationSectionKey, number> = {
@@ -158,8 +151,7 @@ const horizonInstructions: Record<ForecastAiPromptHorizon, string> = {
     "Horizon style: 48h. Compare today and tomorrow, identify the better day/time period, explain confidence differences between near-term and next-day windows, and give a backup plan if the better window shifts.",
   "72h":
     "Horizon style: 72h. Treat this as a 3-day travel decision. Rank the top 1-2 windows, explain which day is worth planning around, give a practical threshold for dedicated trip / nearby trip / wait, and state when to recheck.",
-  "7d":
-    "Horizon style: 7d. Focus on daily trend instead of excessive hour-by-hour detail. Pick top 1-2 candidate days/windows, explain trend changes in cloud, precipitation, transparency, wind, and moon/astro when relevant. State that uncertainty increases for later days and tell the user when to decide and recheck.",
+  "7d": "Horizon style: 7d. Focus on daily trend instead of excessive hour-by-hour detail. Pick top 1-2 candidate days/windows, explain trend changes in cloud, precipitation, transparency, wind, and moon/astro when relevant. State that uncertainty increases for later days and tell the user when to decide and recheck.",
   "30d":
     "Horizon style: 30d. Do not pretend to provide precise hour-level weather. Focus on medium-range trend, seasonal or climatological tendency, planning value, and uncertainty. Do not invent exact shooting windows unless deterministic facts provide them. Tell the user to use 7d/72h/24h forecasts for the final departure decision.",
   "90d":
@@ -432,21 +424,20 @@ export function buildCompactForecastExplanationFacts(
         },
       ),
       astro: compactSignalForFacts(
-        sharedContext.astroAiExplainPayload ??
-          {
-            astroShootable: result.astroAnalysis.astroShootable,
-            weatherBlockers: result.astroAnalysis.weatherBlockers.slice(0, 3),
-            stars: topicScores.find(scoreHasKey("stars")),
-            milkyWay: topicScores.find(scoreHasKey("milkyWay")),
-            lightPollution: result.astroAnalysis.lightPollution
-              ? {
-                  dataAvailable: result.astroAnalysis.lightPollution.dataAvailable,
-                  ambientLevelZh: result.astroAnalysis.lightPollution.ambientRiskLevelLabelZh,
-                  targetDirectionLevelZh:
-                    result.astroAnalysis.lightPollution.targetDirectionLevelLabelZh ?? null,
-                }
-              : null,
-          },
+        sharedContext.astroAiExplainPayload ?? {
+          astroShootable: result.astroAnalysis.astroShootable,
+          weatherBlockers: result.astroAnalysis.weatherBlockers.slice(0, 3),
+          stars: topicScores.find(scoreHasKey("stars")),
+          milkyWay: topicScores.find(scoreHasKey("milkyWay")),
+          lightPollution: result.astroAnalysis.lightPollution
+            ? {
+                dataAvailable: result.astroAnalysis.lightPollution.dataAvailable,
+                ambientLevelZh: result.astroAnalysis.lightPollution.ambientRiskLevelLabelZh,
+                targetDirectionLevelZh:
+                  result.astroAnalysis.lightPollution.targetDirectionLevelLabelZh ?? null,
+              }
+            : null,
+        },
       ),
       transparency: compactSignalForFacts(topicScores.find(scoreHasKey("transparency"))),
     },
@@ -547,7 +538,8 @@ function compactProfessionalHourlyFacts(
       cloudLowPercent: row.cloudLowPercent,
       cloudMidPercent: row.cloudMidPercent,
       cloudHighPercent: row.cloudHighPercent,
-      temperatureC: row.displayedTemperatureC ?? row.terrainAdjustedTemperatureC ?? row.rawTemperatureC,
+      temperatureC:
+        row.displayedTemperatureC ?? row.terrainAdjustedTemperatureC ?? row.rawTemperatureC,
       dewPointSpreadC: row.dewPointSpreadC,
       humidityPercent: row.relativeHumidityPercent,
       precipitationAmountMm: row.precipitationAmountMm,
@@ -708,6 +700,16 @@ function isLongRangePromptHorizon(horizon: ForecastAiPromptHorizon): boolean {
 const sectionKeyOverviewInstruction =
   "For the overview section, answer in Chinese: 值不值得去、最适合拍什么、什么时候去、如果只选一个窗口该选哪一个。";
 
+const sectionFocusInstructions: Record<ForecastAiExplanationSectionKey, string> = {
+  overview: "本节只写整体去不去、推荐等级、优先题材和核心原因，避免展开逐小时细节。",
+  timeline: "本节只写 24h / 48h / 72h / 7d 的窗口节奏；什么时候拍什么必须来自事实。",
+  subject_advice:
+    "本节只写云海、日出朝霞、日落晚霞、星空银河、通透度等题材建议；缺失值要直说未提供。",
+  risk_gear: "本节只写降水、风、温度、道路/安全、穿衣、器材和备选计划，不编造现场道路或管制。",
+  final_decision:
+    "本节只写最终行动：专程、附近顺路、等待、下一次复核时间；不要新增确定性结果之外的时间。",
+};
+
 function targetInstructions(
   target: OpenAiCompactForecastExplanationFacts["target"],
   horizon: ForecastAiPromptHorizon,
@@ -764,19 +766,6 @@ function buildSectionInstructions(
   sectionKey: ForecastAiExplanationSectionKey,
   facts: OpenAiCompactForecastExplanationFacts,
 ): string {
-  const focusBySection: Record<ForecastAiExplanationSectionKey, string> = {
-    overview:
-      "本节只写整体去不去、推荐等级、优先题材和核心原因，避免展开逐小时细节。",
-    timeline:
-      "本节只写 24h / 48h / 72h / 7d 的窗口节奏；什么时候拍什么必须来自事实。",
-    subject_advice:
-      "本节只写云海、日出朝霞、日落晚霞、星空银河、通透度等题材建议；缺失值要直说未提供。",
-    risk_gear:
-      "本节只写降水、风、温度、道路/安全、穿衣、器材和备选计划，不编造现场道路或管制。",
-    final_decision:
-      "本节只写最终行动：专程、附近顺路、等待、下一次复核时间；不要新增确定性结果之外的时间。",
-  };
-
   return [
     "You are only explaining deterministic forecast facts.",
     "Use only computedForecastFacts from the input payload.",
@@ -788,7 +777,7 @@ function buildSectionInstructions(
     "Keep output useful and concise.",
     horizonInstructions[promptHorizonForFacts(facts.horizon)],
     targetInstructions(facts.target, promptHorizonForFacts(facts.horizon), sectionKey),
-    focusBySection[sectionKey],
+    sectionFocusInstructions[sectionKey],
     'Return either compact JSON {"textZh":"...","bulletPointsZh":["..."]} or plain Chinese text for this one section only.',
   ].join("\n");
 }
@@ -821,7 +810,10 @@ export function buildSectionPromptFromCompactFacts(
   let promptSizeChars = instructions.length + userInput.length;
 
   if (promptSizeChars > promptMaxChars) {
-    compacted = trimCompactFactsToBudget(compacted.facts, Math.max(800, promptMaxChars - instructions.length - 900));
+    compacted = trimCompactFactsToBudget(
+      compacted.facts,
+      Math.max(800, promptMaxChars - instructions.length - 900),
+    );
     userInput = buildInput(compacted.facts);
     promptSizeChars = instructions.length + userInput.length;
   }
@@ -854,6 +846,176 @@ export function buildSectionPromptFromCompactFacts(
   };
 }
 
+function buildOneShotSectionedInstructions(facts: OpenAiCompactForecastExplanationFacts): string {
+  const horizonProfile = promptHorizonForFacts(facts.horizon);
+  const perSectionRules = forecastAiExplanationSectionKeys
+    .map((sectionKey) =>
+      [
+        `${sectionKey} / ${sectionTitleZh[sectionKey]}:`,
+        targetInstructions(facts.target, horizonProfile, sectionKey),
+        sectionFocusInstructions[sectionKey],
+      ]
+        .filter(Boolean)
+        .join(" "),
+    )
+    .join("\n");
+
+  return [
+    "You are only explaining deterministic forecast facts.",
+    "Use only computedForecastFacts from the input payload.",
+    "Do not recalculate or invent weather, astronomy, terrain, score, probability, time windows, moon phase, Milky Way windows, cloud sea probability, glow probability, or risk facts.",
+    "If facts are insufficient, state the limitation in Chinese.",
+    "Write practical Simplified Chinese advice for photographers and travel decisions.",
+    "Avoid AI-flavored empty wording.",
+    "Avoid data source names unless present in deterministic user-facing basis.",
+    "Keep output useful and concise.",
+    "Generate all five forecast explanation sections in one single response.",
+    `Required section keys in this exact order: ${forecastAiExplanationSectionKeys.join(", ")}.`,
+    'Return strict JSON only when possible. Required JSON shape: {"sections":[{"key":"overview","titleZh":"总体判断","status":"success","textZh":"...","bulletPointsZh":["..."]},{"key":"timeline","titleZh":"最佳拍摄窗口","status":"success","textZh":"...","bulletPointsZh":["..."]},{"key":"subject_advice","titleZh":"题材建议","status":"success","textZh":"...","bulletPointsZh":["..."]},{"key":"risk_gear","titleZh":"风险与装备","status":"success","textZh":"...","bulletPointsZh":["..."]},{"key":"final_decision","titleZh":"最终行动建议","status":"success","textZh":"...","bulletPointsZh":["..."]}]}',
+    "Do not omit a section. If a section has limited facts, keep the section and explain the limitation from deterministic facts.",
+    horizonInstructions[horizonProfile],
+    perSectionRules,
+  ].join("\n");
+}
+
+function compactForecastFactsForOneShot(
+  facts: OpenAiCompactForecastExplanationFacts,
+): Record<string, unknown> {
+  return {
+    ...facts,
+    bestWindows: facts.bestWindows.slice(0, 3),
+    keyDaySummaries: facts.keyDaySummaries.slice(0, 3),
+    keyHourSummaries: facts.keyHourSummaries.slice(0, 8),
+    risks: facts.risks.slice(0, 6),
+    deterministicSafetyNotes: facts.deterministicSafetyNotes.slice(0, 4),
+  };
+}
+
+function minimalOneShotForecastFacts(
+  facts: OpenAiCompactForecastExplanationFacts,
+): Record<string, unknown> {
+  return {
+    contextVersion: facts.contextVersion,
+    deterministicOnly: facts.deterministicOnly,
+    detail: "budget",
+    location: facts.location,
+    target: facts.target,
+    horizon: facts.horizon,
+    timezone: facts.timezone,
+    forecastRange: facts.forecastRange,
+    overall: facts.overall,
+    bestWindows: facts.bestWindows.slice(0, 1),
+    keyDaySummaries: facts.keyDaySummaries.slice(0, 1),
+    keyHourSummaries: facts.keyHourSummaries.slice(0, 2),
+    risks: facts.risks.slice(0, 2),
+    terrainBasis: facts.terrainBasis,
+    sourceBasis: facts.sourceBasis,
+    deterministicSafetyNotes: facts.deterministicSafetyNotes.slice(0, 2),
+    limitationZh:
+      "确定性结果已压缩为一份最小事实摘要；不得补算或编造未提供的小时、概率、天文、地形和风险事实。",
+  };
+}
+
+function oneShotOutputMaxTokens(configuredMaxTokens: number | undefined): number {
+  return normalizeMaxTokens(configuredMaxTokens);
+}
+
+export function buildOneShotSectionedForecastPrompt(
+  facts: OpenAiCompactForecastExplanationFacts,
+  options: Pick<
+    OpenAiProviderOptions,
+    "baseUrl" | "defaultModel" | "temperature" | "maxTokens" | "promptMaxChars"
+  > = {},
+): OpenAiRequestPreview {
+  const promptMaxChars = normalizePromptMaxChars(options.promptMaxChars);
+  const horizonProfile = promptHorizonForFacts(facts.horizon);
+  const instructions = buildOneShotSectionedInstructions(facts);
+  const buildInput = (computedForecastFacts: Record<string, unknown>) =>
+    JSON.stringify({
+      task: "Generate one deterministic photo-weather forecast explanation containing all five sections.",
+      generationMode: "one_shot_sectioned",
+      sectionKeys: forecastAiExplanationSectionKeys,
+      sectionTitlesZh: sectionTitleZh,
+      horizonProfile,
+      outputLanguage: "Simplified Chinese",
+      computedForecastFacts,
+    });
+  const buildCandidate = (candidateFacts: Record<string, unknown>) => {
+    const userInput = buildInput(candidateFacts);
+    return {
+      userInput,
+      promptSizeChars: instructions.length + userInput.length,
+    };
+  };
+  const factsBudget = Math.max(1200, promptMaxChars - instructions.length - 900);
+  const standardCompacted = trimCompactFactsToBudget(
+    compactForecastFactsForOneShot(facts),
+    factsBudget,
+  );
+  let compactingApplied = standardCompacted.compactingApplied;
+  let candidate = buildCandidate(standardCompacted.facts);
+
+  if (candidate.promptSizeChars > promptMaxChars) {
+    const budgetCompacted = trimCompactFactsToBudget(
+      compactForecastFactsForOneShot({ ...facts, detail: "budget" }),
+      Math.max(900, promptMaxChars - instructions.length - 1000),
+    );
+    compactingApplied = true;
+    candidate = buildCandidate(budgetCompacted.facts);
+  }
+
+  if (candidate.promptSizeChars > promptMaxChars) {
+    const minimalCompacted = trimCompactFactsToBudget(
+      minimalOneShotForecastFacts(facts),
+      Math.max(600, promptMaxChars - instructions.length - 1100),
+    );
+    compactingApplied = true;
+    candidate = buildCandidate(minimalCompacted.facts);
+  }
+
+  if (candidate.promptSizeChars > promptMaxChars) {
+    throw openAiError({
+      errorCategory: "prompt_too_large",
+      messageZh:
+        "GPT / OpenAI one-shot sectioned prompt is too large; deterministic fallback will be used.",
+      promptSizeChars: candidate.promptSizeChars,
+      parseStrategy: "failed",
+    });
+  }
+
+  return {
+    url: `${normalizeBaseUrl(options.baseUrl)}/v1/responses`,
+    body: {
+      model: normalizeOpenAiModel(options.defaultModel),
+      instructions,
+      input: candidate.userInput,
+      temperature: normalizeTemperature(options.temperature),
+      max_output_tokens: oneShotOutputMaxTokens(options.maxTokens),
+      store: false,
+      stream: false,
+    },
+    promptSizeChars: candidate.promptSizeChars,
+    promptMaxChars,
+    sectionKeys: forecastAiExplanationSectionKeys,
+    compactingApplied,
+    generationMode: "one_shot_sectioned",
+    outputMode: "text_with_json_fallback",
+  };
+}
+
+export function buildOpenAiSectionedForecastExplanationRequest(
+  input: ForecastExplanationInput,
+  options: Pick<
+    OpenAiProviderOptions,
+    "baseUrl" | "defaultModel" | "temperature" | "maxTokens" | "promptMaxChars"
+  > = {},
+): OpenAiRequestPreview {
+  return buildOneShotSectionedForecastPrompt(
+    buildCompactForecastExplanationFacts(input.forecastResult),
+    options,
+  );
+}
+
 export function buildOpenAiForecastExplanationRequest(
   input: ForecastExplanationInput,
   options: Pick<
@@ -861,11 +1023,7 @@ export function buildOpenAiForecastExplanationRequest(
     "baseUrl" | "defaultModel" | "temperature" | "maxTokens" | "promptMaxChars"
   > = {},
 ): OpenAiRequestPreview {
-  return buildSectionPromptFromCompactFacts(
-    "overview",
-    buildCompactForecastExplanationFacts(input.forecastResult),
-    options,
-  );
+  return buildOpenAiSectionedForecastExplanationRequest(input, options);
 }
 
 type OpenAiRequestAttemptSuccess = {
@@ -885,8 +1043,7 @@ function buildOpenAiRequestDiagnostics(options: {
 }): OpenAiRequestDiagnostics {
   const finishReason =
     options.upstreamDiagnostics?.finishReason ?? options.finalFailure?.finishReason;
-  const contentType =
-    options.upstreamDiagnostics?.contentType ?? options.finalFailure?.contentType;
+  const contentType = options.upstreamDiagnostics?.contentType ?? options.finalFailure?.contentType;
   const contentLength =
     options.upstreamDiagnostics?.contentLength ?? options.finalFailure?.contentLength;
   return {
@@ -975,62 +1132,254 @@ function augmentOpenAiProviderError(
   });
 }
 
-type ParsedOpenAiSection = Pick<
-  ForecastAiExplanationSectionResult,
-  "status" | "textZh" | "bulletPointsZh" | "parseStrategy"
->;
+type ParsedOpenAiSectionedExplanation = {
+  readonly sections: readonly ForecastAiExplanationSectionResult[];
+  readonly parseStrategy: ForecastAiExplanationParseStrategy;
+  readonly parseSuccess: boolean;
+  readonly fallbackUsed: boolean;
+  readonly rawResponseSizeChars: number;
+};
 
-function parseOpenAiForecastExplanationSectionOutput(
+export function parseOpenAiSectionedForecastExplanationOutput(
   rawOutput: string,
-  sectionKey: ForecastAiExplanationSectionKey,
-): ParsedOpenAiSection {
+  result: ForecastCalculationResult,
+  options: {
+    readonly model?: string;
+    readonly promptSizeChars?: number;
+    readonly promptMaxChars?: number;
+    readonly compactingApplied?: boolean;
+    readonly latencyMs?: number;
+  } = {},
+): ParsedOpenAiSectionedExplanation {
   const rawResponseSizeChars = rawOutput.length;
   try {
-    const parseStrategy: ForecastAiExplanationParseStrategy =
-      stripMarkdownCodeFence(rawOutput.trim()) !== rawOutput.trim() ? "fenced_json" : "strict_json";
-    const parsed = parseJsonObjectWithExtraction(rawOutput);
-    if (isPlainRecord(parsed)) {
-      const textZh =
-        readTextValue(parsed.textZh) ??
-        readTextValue(parsed.text) ??
-        readTextValue(parsed.contentZh) ??
-        readTextValue(parsed.content) ??
-        readTextValue(parsed.summaryZh) ??
-        readTextValue(parsed.summary) ??
-        readLegacyExplanationTextForSection(parsed, sectionKey);
-      const bulletPointsZh = readStringArrayValue(
-        parsed.bulletPointsZh ?? parsed.bulletsZh ?? parsed.bullets ?? parsed.points,
+    const parsed = parseJsonObjectWithStrategy(rawOutput);
+    if (isPlainRecord(parsed.value)) {
+      const parsedSections = parseOpenAiOneShotSectionsFromRecord(
+        parsed.value,
+        parsed.strategy,
+        options,
       );
-      const textFromBullets = bulletPointsZh.join(" ");
-      const text = limitText((textZh ?? textFromBullets).trim(), 1200);
-      if (isDisplayableSectionText(text) || bulletPointsZh.length > 0) {
+      if (parsedSections.some(sectionHasDisplayableContent)) {
+        const sections = fillMissingOpenAiOneShotSections(result, parsedSections, options);
         return {
-          status: "success",
-          textZh: text,
-          bulletPointsZh,
-          parseStrategy,
+          sections,
+          parseStrategy: parsed.strategy,
+          parseSuccess: true,
+          fallbackUsed: sections.some((section) => section.status !== "success"),
+          rawResponseSizeChars,
         };
       }
     }
-  } catch {
-    // Fall through to plain-text handling.
+    throw openAiError({
+      errorCategory: "provider_parse_error",
+      messageZh: "GPT / OpenAI sectioned response has no displayable content.",
+      responseSizeChars: rawResponseSizeChars,
+      rawResponseSizeChars,
+      parseStrategy: "failed",
+    });
+  } catch (error) {
+    if (isOpenAiProviderError(error)) {
+      throw error;
+    }
+    // Plain text handling is intentionally last, after all JSON strategies fail.
   }
 
   const text = stripMarkdownCodeFence(rawOutput).trim();
   if (isDisplayableSectionText(text)) {
-    return {
+    const overviewSection: ForecastAiExplanationSectionResult = {
+      key: "overview",
+      titleZh: sectionTitleZh.overview,
       status: "success",
       textZh: limitText(text, 1200),
       bulletPointsZh: splitSectionBulletPoints(text),
+      ...(options.promptSizeChars ? { promptSizeChars: options.promptSizeChars } : {}),
+      ...(options.promptMaxChars ? { promptMaxChars: options.promptMaxChars } : {}),
+      ...(options.compactingApplied ? { compactingApplied: true } : {}),
+      responseSizeChars: rawOutput.length,
       parseStrategy: "plain_text_fallback",
+      ...(options.model ? { model: options.model } : {}),
+      ...(options.latencyMs ? { latencyMs: options.latencyMs } : {}),
+    };
+    return {
+      sections: fillMissingOpenAiOneShotSections(result, [overviewSection], options),
+      parseStrategy: "plain_text_fallback",
+      parseSuccess: false,
+      fallbackUsed: true,
+      rawResponseSizeChars,
     };
   }
 
   throw openAiError({
     errorCategory: "provider_parse_error",
-    messageZh: "GPT / OpenAI section response could not be parsed.",
+    messageZh: "GPT / OpenAI sectioned response has no displayable content.",
     responseSizeChars: rawResponseSizeChars,
+    rawResponseSizeChars,
     parseStrategy: "failed",
+  });
+}
+
+function parseOpenAiOneShotSectionsFromRecord(
+  value: Record<string, unknown>,
+  parseStrategy: ForecastAiExplanationParseStrategy,
+  options: {
+    readonly model?: string;
+    readonly promptSizeChars?: number;
+    readonly promptMaxChars?: number;
+    readonly compactingApplied?: boolean;
+    readonly latencyMs?: number;
+  },
+): readonly ForecastAiExplanationSectionResult[] {
+  const sourceSections = Array.isArray(value.sections)
+    ? value.sections
+    : isPlainRecord(value.sectionedExplanation) &&
+        Array.isArray(value.sectionedExplanation.sections)
+      ? value.sectionedExplanation.sections
+      : [];
+  const parsedSections = sourceSections
+    .map((section) => parseOpenAiOneShotSectionResult(section, parseStrategy, options))
+    .filter((section): section is ForecastAiExplanationSectionResult => Boolean(section));
+
+  if (parsedSections.length > 0) {
+    return dedupeOpenAiSectionsByKey(parsedSections);
+  }
+
+  const legacySections: ForecastAiExplanationSectionResult[] = [];
+  for (const sectionKey of forecastAiExplanationSectionKeys) {
+    const text = readLegacyExplanationTextForSection(value, sectionKey);
+    if (!text || !isDisplayableSectionText(text)) {
+      continue;
+    }
+    legacySections.push({
+      key: sectionKey,
+      titleZh: sectionTitleZh[sectionKey],
+      status: "success",
+      textZh: text,
+      bulletPointsZh: splitSectionBulletPoints(text),
+      ...(options.promptSizeChars ? { promptSizeChars: options.promptSizeChars } : {}),
+      ...(options.promptMaxChars ? { promptMaxChars: options.promptMaxChars } : {}),
+      ...(options.compactingApplied ? { compactingApplied: true } : {}),
+      parseStrategy,
+      ...(options.model ? { model: options.model } : {}),
+      ...(options.latencyMs ? { latencyMs: options.latencyMs } : {}),
+    });
+  }
+
+  return dedupeOpenAiSectionsByKey(legacySections);
+}
+
+function parseOpenAiOneShotSectionResult(
+  value: unknown,
+  parseStrategy: ForecastAiExplanationParseStrategy,
+  options: {
+    readonly model?: string;
+    readonly promptSizeChars?: number;
+    readonly promptMaxChars?: number;
+    readonly compactingApplied?: boolean;
+    readonly latencyMs?: number;
+  },
+): ForecastAiExplanationSectionResult | null {
+  if (!isPlainRecord(value)) {
+    return null;
+  }
+  const key = normalizeForecastAiExplanationSectionKey(value.key);
+  if (!key) {
+    return null;
+  }
+  const bulletPointsZh = readStringArrayValue(
+    value.bulletPointsZh ?? value.bulletsZh ?? value.bullets ?? value.points,
+  );
+  const textZh =
+    readTextValue(value.textZh) ??
+    readTextValue(value.text) ??
+    readTextValue(value.contentZh) ??
+    readTextValue(value.content) ??
+    readTextValue(value.summaryZh) ??
+    readTextValue(value.summary) ??
+    bulletPointsZh.join(" ");
+  const text = limitText(textZh.trim(), 1200);
+  if (!isDisplayableSectionText(text) && bulletPointsZh.length === 0) {
+    return null;
+  }
+
+  return {
+    key,
+    titleZh:
+      readTextValue(value.titleZh) ??
+      readTextValue(value.title) ??
+      readTextValue(value.nameZh) ??
+      sectionTitleZh[key],
+    status: normalizeOpenAiSectionStatus(value.status),
+    textZh: text,
+    bulletPointsZh,
+    ...(options.promptSizeChars ? { promptSizeChars: options.promptSizeChars } : {}),
+    ...(options.promptMaxChars ? { promptMaxChars: options.promptMaxChars } : {}),
+    ...(options.compactingApplied ? { compactingApplied: true } : {}),
+    parseStrategy,
+    ...(options.model ? { model: options.model } : {}),
+    ...(options.latencyMs ? { latencyMs: options.latencyMs } : {}),
+  };
+}
+
+function normalizeForecastAiExplanationSectionKey(
+  value: unknown,
+): ForecastAiExplanationSectionKey | null {
+  return forecastAiExplanationSectionKeys.includes(value as ForecastAiExplanationSectionKey)
+    ? (value as ForecastAiExplanationSectionKey)
+    : null;
+}
+
+function normalizeOpenAiSectionStatus(
+  value: unknown,
+): ForecastAiExplanationSectionResult["status"] {
+  return value === "fallback" || value === "failed" || value === "skipped" ? value : "success";
+}
+
+function dedupeOpenAiSectionsByKey(
+  sections: readonly ForecastAiExplanationSectionResult[],
+): readonly ForecastAiExplanationSectionResult[] {
+  const byKey = new Map<ForecastAiExplanationSectionKey, ForecastAiExplanationSectionResult>();
+  for (const section of sections) {
+    if (!byKey.has(section.key)) {
+      byKey.set(section.key, section);
+    }
+  }
+  return orderSectionsForDisplay(Array.from(byKey.values()));
+}
+
+function fillMissingOpenAiOneShotSections(
+  result: ForecastCalculationResult,
+  sections: readonly ForecastAiExplanationSectionResult[],
+  options: {
+    readonly model?: string;
+    readonly promptSizeChars?: number;
+    readonly promptMaxChars?: number;
+    readonly compactingApplied?: boolean;
+    readonly latencyMs?: number;
+  },
+): readonly ForecastAiExplanationSectionResult[] {
+  const byKey = new Map(sections.map((section) => [section.key, section]));
+  return forecastAiExplanationSectionKeys.map((sectionKey) => {
+    const section = byKey.get(sectionKey);
+    if (section && sectionHasDisplayableContent(section) && section.status === "success") {
+      return {
+        ...section,
+        titleZh: sectionTitleZh[sectionKey],
+        ...(options.promptSizeChars ? { promptSizeChars: options.promptSizeChars } : {}),
+        ...(options.promptMaxChars ? { promptMaxChars: options.promptMaxChars } : {}),
+        ...(options.compactingApplied ? { compactingApplied: true } : {}),
+        ...(options.model ? { model: options.model } : {}),
+        ...(options.latencyMs ? { latencyMs: options.latencyMs } : {}),
+      };
+    }
+    return deterministicFallbackSection(result, sectionKey, {
+      errorCategory: "provider_parse_error",
+      promptSizeChars: options.promptSizeChars,
+      promptMaxChars: options.promptMaxChars,
+      parseStrategy: "failed",
+      model: options.model,
+      latencyMs: options.latencyMs,
+    });
   });
 }
 
@@ -1130,13 +1479,6 @@ function isDisplayableSectionText(text: string): boolean {
   return cjkCount >= 6 || compact.length >= 24;
 }
 
-function shouldUseSectionFallback(error: unknown): boolean {
-  return !(
-    isOpenAiProviderError(error) &&
-    (error.errorCategory === "provider_disabled" || error.errorCategory === "config_missing")
-  );
-}
-
 function deterministicFallbackSection(
   result: ForecastCalculationResult,
   sectionKey: ForecastAiExplanationSectionKey,
@@ -1188,9 +1530,7 @@ function deterministicFallbackSection(
     key: sectionKey,
     titleZh: sectionTitleZh[sectionKey],
     status: textZh ? "fallback" : "failed",
-    textZh:
-      textZh ||
-      "本节智能解读暂时不可用，确定性天气判断已保留，请先参考页面上的确定性结果。",
+    textZh: textZh || "本节智能解读暂时不可用，确定性天气判断已保留，请先参考页面上的确定性结果。",
     bulletPointsZh: splitSectionBulletPoints(textZh),
     ...(options.errorCategory ? { errorCategory: options.errorCategory } : {}),
     ...(options.promptSizeChars ? { promptSizeChars: options.promptSizeChars } : {}),
@@ -1220,20 +1560,6 @@ function orderSectionsForDisplay(
   );
 }
 
-function shouldStopSectionGenerationForDeadline(options: {
-  readonly startedAt: number;
-  readonly timeoutMs: number;
-  readonly sections: readonly ForecastAiExplanationSectionResult[];
-}): boolean {
-  if (!options.sections.some(sectionHasDisplayableContent)) {
-    return false;
-  }
-  const elapsedMs = Date.now() - options.startedAt;
-  const remainingMs = options.timeoutMs - elapsedMs;
-  const guardMs = Math.min(20_000, Math.max(5_000, Math.floor(options.timeoutMs * 0.15)));
-  return remainingMs <= guardMs;
-}
-
 function synthesizeSectionedForecastExplanation(
   result: ForecastCalculationResult,
   sectionedExplanation: ForecastAiExplanationSectionedResult,
@@ -1244,7 +1570,9 @@ function synthesizeSectionedForecastExplanation(
   },
 ): ForecastAiExplanation {
   const fallback = createRuleBasedForecastExplanation(result);
-  const sectionByKey = new Map(sectionedExplanation.sections.map((section) => [section.key, section]));
+  const sectionByKey = new Map(
+    sectionedExplanation.sections.map((section) => [section.key, section]),
+  );
   const textFor = (key: ForecastAiExplanationSectionKey, fallbackText: string): string =>
     sectionByKey.get(key)?.textZh || fallbackText;
   const bulletsFor = (key: ForecastAiExplanationSectionKey): readonly string[] =>
@@ -1461,11 +1789,17 @@ export class OpenAiProvider implements AIProvider {
       };
     }
 
-    return this.generateSectionedForecastExplanationWithDiagnostics(input);
+    return this.generateOneShotSectionedForecastExplanationWithDiagnostics(input);
+  }
+
+  private async generateOneShotSectionedForecastExplanationWithDiagnostics(
+    input: ForecastExplanationInput,
+  ): Promise<OpenAiForecastExplanationResult> {
+    this.getAuthToken();
 
     let request: OpenAiRequestPreview;
     try {
-      request = buildOpenAiForecastExplanationRequest(input, {
+      request = buildOpenAiSectionedForecastExplanationRequest(input, {
         baseUrl: this.baseUrl,
         defaultModel: this.defaultModel,
         temperature: this.temperature,
@@ -1476,197 +1810,73 @@ export class OpenAiProvider implements AIProvider {
       throw normalizeOpenAiRequestError(error, 0);
     }
 
+    const startedAt = Date.now();
     const rawOutput = await this.requestWithDiagnostics(request);
+    const latencyMs = Date.now() - startedAt;
+    let parsed: ParsedOpenAiSectionedExplanation;
     try {
-      const parsed = parseForecastAiExplanationOutput(rawOutput.content, input.forecastResult, {
-        finishReason:
-          rawOutput.diagnostics.finalFinishReason ?? rawOutput.diagnostics.finishReason,
-        source: "openai",
-      });
-      return {
-        ...parsed,
-        requestDiagnostics: rawOutput.diagnostics,
-      };
-    } catch (error: any) {
-      if (isDeepSeekProviderError(error)) {
-        throw openAiError({
-          errorCategory:
-            error.errorCategory === "prompt_too_large" ? "prompt_too_large" : "provider_parse_error",
-          messageZh:
-            error.errorCategory === "prompt_too_large"
-              ? "GPT / OpenAI 解读上下文过大，已停止发送请求。"
-              : "GPT / OpenAI 返回内容无法解析。",
-          responseSizeChars: error.responseSizeChars,
-          rawResponseSizeChars:
-            rawOutput.diagnostics.rawResponseSizeChars ?? error.rawResponseSizeChars,
-          parseStrategy: error.parseStrategy ?? "failed",
-          attempts: rawOutput.diagnostics.attempts,
-          contentType: rawOutput.diagnostics.finalContentType,
-          contentLength: rawOutput.diagnostics.finalContentLength,
-          finishReason: rawOutput.diagnostics.finalFinishReason,
-          messageKeys: rawOutput.diagnostics.messageKeys,
-          cause: error,
-        });
-      }
-      throw error;
-    }
-  }
-
-  private async generateSectionedForecastExplanationWithDiagnostics(
-    input: ForecastExplanationInput,
-  ): Promise<OpenAiForecastExplanationResult> {
-    this.getAuthToken();
-
-    const facts = buildCompactForecastExplanationFacts(input.forecastResult);
-    const sections: ForecastAiExplanationSectionResult[] = [];
-    const generationStartedAt = Date.now();
-    let attempts = 0;
-    let rawResponseSizeChars = 0;
-    let promptSizeChars = 0;
-    let compatibilityFallbackUsed = false;
-    let firstFailure: OpenAiProviderError | undefined;
-    let finalFailure: OpenAiProviderError | undefined;
-    let finalDiagnostics: OpenAiRequestDiagnostics | undefined;
-
-    for (const sectionKey of forecastAiExplanationGenerationOrder) {
-      let request: OpenAiRequestPreview | undefined;
-      let requestAttemptCounted = false;
-      const startedAt = Date.now();
-      try {
-        request = buildSectionPromptFromCompactFacts(sectionKey, facts, {
-          baseUrl: this.baseUrl,
-          defaultModel: this.defaultModel,
-          temperature: this.temperature,
-          maxTokens: this.maxTokens,
-          promptMaxChars: this.promptMaxChars,
-        });
-        promptSizeChars += request.promptSizeChars;
-      } catch (error) {
-        const normalized = normalizeOpenAiRequestError(error, 0);
-        if (!shouldUseSectionFallback(normalized)) {
-          throw normalized;
-        }
-        firstFailure ??= normalized;
-        finalFailure = normalized;
-        compatibilityFallbackUsed = true;
-        sections.push(
-          deterministicFallbackSection(input.forecastResult, sectionKey, {
-            errorCategory: normalized.errorCategory,
-            promptSizeChars: normalized.promptSizeChars,
-            promptMaxChars: this.promptMaxChars,
-            parseStrategy: normalized.parseStrategy ?? "failed",
-            model: this.defaultModel,
-            latencyMs: Date.now() - startedAt,
-          }),
-        );
-        if (
-          shouldStopSectionGenerationForDeadline({
-            startedAt: generationStartedAt,
-            timeoutMs: this.timeoutMs,
-            sections,
-          })
-        ) {
-          break;
-        }
-        continue;
-      }
-
-      try {
-        const rawOutput = await this.requestWithDiagnostics(request);
-        attempts += rawOutput.diagnostics.attempts;
-        requestAttemptCounted = true;
-        rawResponseSizeChars +=
-          rawOutput.diagnostics.rawResponseSizeChars ?? rawOutput.content.length;
-        finalDiagnostics = rawOutput.diagnostics;
-        const parsed = parseOpenAiForecastExplanationSectionOutput(rawOutput.content, sectionKey);
-        sections.push({
-          key: sectionKey,
-          titleZh: sectionTitleZh[sectionKey],
-          status: parsed.status,
-          textZh: parsed.textZh,
-          bulletPointsZh: parsed.bulletPointsZh,
-          promptSizeChars: request.promptSizeChars,
-          ...(request.promptMaxChars ? { promptMaxChars: request.promptMaxChars } : {}),
-          ...(request.compactingApplied ? { compactingApplied: true } : {}),
-          responseSizeChars: rawOutput.content.length,
-          parseStrategy: parsed.parseStrategy,
+      parsed = parseOpenAiSectionedForecastExplanationOutput(
+        rawOutput.content,
+        input.forecastResult,
+        {
           model: this.defaultModel,
-          latencyMs: Date.now() - startedAt,
-        });
-      } catch (error) {
-        const normalized = normalizeOpenAiRequestError(
-          error,
-          Date.now() - startedAt,
-          request.promptSizeChars,
-        );
-        if (!shouldUseSectionFallback(normalized)) {
-          throw normalized;
-        }
-        if (!requestAttemptCounted) {
-          attempts += normalized.attempts ?? 1;
-        }
-        firstFailure ??= normalized;
-        finalFailure = normalized;
-        compatibilityFallbackUsed = true;
-        rawResponseSizeChars += normalized.rawResponseSizeChars ?? normalized.responseSizeChars ?? 0;
-        sections.push(
-          deterministicFallbackSection(input.forecastResult, sectionKey, {
-            errorCategory: normalized.errorCategory,
-            promptSizeChars: normalized.promptSizeChars ?? request.promptSizeChars,
-            promptMaxChars: request.promptMaxChars,
-            parseStrategy: normalized.parseStrategy ?? "failed",
-            model: this.defaultModel,
-            latencyMs: Date.now() - startedAt,
-          }),
-        );
-      }
-      if (
-        shouldStopSectionGenerationForDeadline({
-          startedAt: generationStartedAt,
-          timeoutMs: this.timeoutMs,
-          sections,
-        })
-      ) {
-        break;
-      }
+          promptSizeChars: request.promptSizeChars,
+          promptMaxChars: request.promptMaxChars,
+          compactingApplied: request.compactingApplied,
+          latencyMs,
+        },
+      );
+    } catch (error) {
+      const normalized = normalizeOpenAiRequestError(error, latencyMs, request.promptSizeChars);
+      throw openAiError({
+        errorCategory: normalized.errorCategory,
+        messageZh: normalized.messageZh,
+        statusCode: normalized.statusCode,
+        latencyMs,
+        promptSizeChars: normalized.promptSizeChars ?? request.promptSizeChars,
+        responseSizeChars: normalized.responseSizeChars ?? rawOutput.content.length,
+        rawResponseSizeChars:
+          rawOutput.diagnostics.rawResponseSizeChars ?? normalized.rawResponseSizeChars,
+        parseStrategy: normalized.parseStrategy ?? "failed",
+        attempts: rawOutput.diagnostics.attempts,
+        compatibilityFallbackUsed: false,
+        disabledResponseFormat: false,
+        disabledReasoningEffort: false,
+        emptyContentFallbackUsed: false,
+        finishReason: rawOutput.diagnostics.finalFinishReason,
+        contentType: rawOutput.diagnostics.finalContentType,
+        contentLength: rawOutput.diagnostics.finalContentLength,
+        messageKeys: rawOutput.diagnostics.messageKeys,
+        cause: normalized,
+      });
     }
 
-    const orderedSections = orderSectionsForDisplay(sections);
+    const orderedSections = orderSectionsForDisplay(
+      parsed.sections.map((section) =>
+        section.status === "success"
+          ? {
+              ...section,
+              responseSizeChars: rawOutput.content.length,
+            }
+          : section,
+      ),
+    );
     const displaySuccess = orderedSections.some(sectionHasDisplayableContent);
     if (!displaySuccess) {
       throw openAiError({
-        errorCategory: finalFailure?.errorCategory ?? "provider_parse_error",
+        errorCategory: "provider_parse_error",
         messageZh: "GPT / OpenAI sectioned explanation has no displayable content.",
-        attempts,
-        promptSizeChars,
-        rawResponseSizeChars,
+        attempts: rawOutput.diagnostics.attempts,
+        promptSizeChars: request.promptSizeChars,
+        rawResponseSizeChars:
+          rawOutput.diagnostics.rawResponseSizeChars ?? parsed.rawResponseSizeChars,
         parseStrategy: "failed",
-        cause: finalFailure,
       });
     }
 
-    const parseStrategy: ForecastAiExplanationParseStrategy = orderedSections.some(
-      (section) => section.parseStrategy === "plain_text_fallback",
-    )
-      ? "plain_text_fallback"
-      : orderedSections.some((section) => section.status !== "success")
-        ? "failed"
-        : orderedSections.some((section) => section.parseStrategy === "fenced_json")
-          ? "fenced_json"
-          : orderedSections.some((section) => section.parseStrategy === "extracted_json")
-            ? "extracted_json"
-            : "strict_json";
-    const parseSuccess =
-      parseStrategy === "strict_json" ||
-      parseStrategy === "fenced_json" ||
-      parseStrategy === "extracted_json";
-    const fallbackUsed =
-      orderedSections.some((section) => section.status !== "success") ||
-      parseStrategy !== "strict_json";
-    const responseSizeChars = orderedSections.reduce(
-      (total, section) => total + (section.responseSizeChars ?? 0),
-      0,
-    );
+    const rawResponseSizeChars =
+      rawOutput.diagnostics.rawResponseSizeChars ?? parsed.rawResponseSizeChars;
+    const responseSizeChars = rawOutput.content.length;
     const sectionedExplanation: ForecastAiExplanationSectionedResult = {
       version: openAiSectionedExplanationVersion,
       providerCode: "openai",
@@ -1675,35 +1885,33 @@ export class OpenAiProvider implements AIProvider {
       success: true,
       displaySuccess,
       promptMaxChars: this.promptMaxChars,
-      promptSizeChars,
+      promptSizeChars: request.promptSizeChars,
       responseSizeChars,
     };
     const explanation = synthesizeSectionedForecastExplanation(
       input.forecastResult,
       sectionedExplanation,
       {
-        parseStrategy,
-        fallbackUsed,
+        parseStrategy: parsed.parseStrategy,
+        fallbackUsed: parsed.fallbackUsed,
         rawResponseSizeChars,
       },
     );
     const requestDiagnostics: OpenAiRequestDiagnostics = {
-      ...(finalDiagnostics ?? buildOpenAiRequestDiagnostics({ attempts: 0 })),
-      attempts,
-      compatibilityFallbackUsed,
+      ...rawOutput.diagnostics,
+      attempts: rawOutput.diagnostics.attempts,
+      compatibilityFallbackUsed: false,
       disabledResponseFormat: false,
       disabledReasoningEffort: false,
       emptyContentFallbackUsed: false,
       rawResponseSizeChars,
-      finalFailureUpstreamCode: failureCode(finalFailure),
-      firstFailureUpstreamCode: failureCode(firstFailure),
     };
 
     return {
       explanation,
-      parseStrategy,
-      parseSuccess,
-      fallbackUsed,
+      parseStrategy: parsed.parseStrategy,
+      parseSuccess: parsed.parseSuccess,
+      fallbackUsed: parsed.fallbackUsed,
       rawResponseSizeChars,
       requestDiagnostics,
     };
@@ -1755,7 +1963,9 @@ export class OpenAiProvider implements AIProvider {
     return (await this.requestWithDiagnostics(request)).content;
   }
 
-  private async requestWithDiagnostics(request: OpenAiRequestPreview): Promise<OpenAiRequestSuccess> {
+  private async requestWithDiagnostics(
+    request: OpenAiRequestPreview,
+  ): Promise<OpenAiRequestSuccess> {
     const authToken = this.getAuthToken();
     try {
       const result = await this.requestOnce(request, authToken);
@@ -2029,7 +2239,9 @@ function extractTextFromOpenAiResponse(value: unknown): OpenAiExtractedText {
     };
   }
 
-  const messageText = collectOpenAiText([value.message, value.content, value.text]).join("\n").trim();
+  const messageText = collectOpenAiText([value.message, value.content, value.text])
+    .join("\n")
+    .trim();
   if (messageText) {
     return {
       content: messageText,
@@ -2130,6 +2342,31 @@ function parseJsonObjectWithExtraction(rawOutput: string): unknown {
       throw firstError;
     }
     return JSON.parse(extracted);
+  }
+}
+
+function parseJsonObjectWithStrategy(rawOutput: string): {
+  readonly value: unknown;
+  readonly strategy: Exclude<ForecastAiExplanationParseStrategy, "plain_text_fallback" | "failed">;
+} {
+  const trimmed = rawOutput.trim();
+  try {
+    return { value: JSON.parse(trimmed), strategy: "strict_json" };
+  } catch (firstError) {
+    const unfenced = stripMarkdownCodeFence(trimmed);
+    if (unfenced !== trimmed) {
+      try {
+        return { value: JSON.parse(unfenced), strategy: "fenced_json" };
+      } catch {
+        // Continue to object extraction below.
+      }
+    }
+
+    const extracted = extractFirstJsonObject(trimmed);
+    if (!extracted) {
+      throw firstError;
+    }
+    return { value: JSON.parse(extracted), strategy: "extracted_json" };
   }
 }
 

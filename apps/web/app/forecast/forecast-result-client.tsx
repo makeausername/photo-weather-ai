@@ -191,7 +191,7 @@ const publicAiSectionTitleByKey: Record<ForecastAiExplanationSectionKey, string>
 };
 
 type ForecastAiExplanationSectionedResult = {
-  readonly version: "forecast-ai-sectioned-v1";
+  readonly version: "forecast-ai-sectioned-v1" | "forecast-ai-sectioned-one-shot-v2";
   readonly providerCode: "openai";
   readonly model?: string;
   readonly sections: readonly ForecastAiExplanationSectionResult[];
@@ -1891,7 +1891,10 @@ function normalizeAiSectionedExplanation(
     return null;
   }
   return {
-    version: "forecast-ai-sectioned-v1",
+    version:
+      readStringField(source, "version") === "forecast-ai-sectioned-v1"
+        ? "forecast-ai-sectioned-v1"
+        : "forecast-ai-sectioned-one-shot-v2",
     providerCode: "openai",
     ...(readStringField(source, "model") ? { model: readStringField(source, "model") } : {}),
     sections,

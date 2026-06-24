@@ -133,6 +133,8 @@ type DisplayableAiContent = {
 
 const openAiForecastInterpretationCacheTtlMs = 1000 * 60 * 60;
 const openAiForecastInterpretationCache = new Map<string, CachedOpenAiForecastInterpretation>();
+const openAiForecastExplanationGenerationMode = "one_shot_sectioned" as const;
+const openAiForecastExplanationCacheVersion = "forecast-ai-sectioned-one-shot-v2" as const;
 const defaultForecastCalculateCacheTtlMs = 5 * 60 * 1000;
 const defaultForecastCalculateStaleIfErrorTtlMs = 30 * 60 * 1000;
 const defaultForecastCalculateCacheMaxEntries = 256;
@@ -759,10 +761,16 @@ export function registerForecastRoutes(
       request.log.info({
         route: "/forecast/ai-explain",
         targetCode: result.target,
+        horizon: result.horizon,
         providerCode: "openai",
         model: runtimeOpenAi?.model ?? openAiDefaultModel,
         timeoutMs: runtimeOpenAi?.timeoutMs ?? 120000,
+        generationMode: openAiForecastExplanationGenerationMode,
+        openAiRequestCount: 0,
+        sectionCount: 0,
+        sectionKeys: [],
         promptSizeChars,
+        promptMaxChars: runtimeOpenAi?.promptMaxChars ?? 0,
         outputMode: runtimeOpenAi ? openAiOutputMode(runtimeOpenAi) : "unavailable",
         latencyMs: 0,
         attempts: 0,
@@ -800,13 +808,27 @@ export function registerForecastRoutes(
     const cacheKey = createForecastInterpretationCacheKey(result, access, runtimeOpenAi);
     const cachedInterpretation = readCachedOpenAiForecastInterpretation(cacheKey);
     if (cachedInterpretation) {
+      const cachedDisplayExplanation = withAiExplanationDisplayFields(
+        cachedInterpretation.interpretation,
+      );
+      const cachedSections =
+        cachedDisplayExplanation.sections ??
+        cachedDisplayExplanation.sectionedExplanation?.sections ??
+        [];
+      const cachedSectionKeys = cachedSections.map((section) => section.key);
       request.log.info({
         route: "/forecast/ai-explain",
         targetCode: result.target,
+        horizon: result.horizon,
         providerCode: "openai",
         model: cachedInterpretation.model,
         timeoutMs: runtimeOpenAi.timeoutMs,
+        generationMode: openAiForecastExplanationGenerationMode,
+        openAiRequestCount: 0,
+        sectionCount: cachedSections.length,
+        sectionKeys: cachedSectionKeys,
         promptSizeChars: cachedInterpretation.promptSizeChars,
+        promptMaxChars: runtimeOpenAi.promptMaxChars,
         outputMode: openAiOutputMode(runtimeOpenAi),
         latencyMs: 0,
         attempts: 0,
@@ -814,12 +836,8 @@ export function registerForecastRoutes(
         parseSuccess: aiExplanationParseSuccess(cachedInterpretation.interpretation),
         parseStrategy: aiExplanationParseStrategy(cachedInterpretation.interpretation),
         fallbackUsed: aiExplanationFallbackUsed(cachedInterpretation.interpretation),
-        displaySuccess: hasDisplayableAiContent(
-          withAiExplanationDisplayFields(cachedInterpretation.interpretation),
-        ),
-        hasDisplayableAiContent: hasDisplayableAiContent(
-          withAiExplanationDisplayFields(cachedInterpretation.interpretation),
-        ),
+        displaySuccess: hasDisplayableAiContent(cachedDisplayExplanation),
+        hasDisplayableAiContent: hasDisplayableAiContent(cachedDisplayExplanation),
         compatibilityFallbackUsed: false,
         disabledResponseFormat: false,
         disabledReasoningEffort: false,
@@ -854,7 +872,7 @@ export function registerForecastRoutes(
         fetcher: globalThis.fetch,
       });
       const retryResult = await withOpenAiExplanationDeadline(
-        generateOpenAiExplanationWithRetry({
+        generateOpenAiExplanationOnce({
           provider: openAiProvider,
           forecastResult: result,
         }),
@@ -873,13 +891,24 @@ export function registerForecastRoutes(
           createdAt: Date.now(),
         });
       }
+      const displayExplanation = withAiExplanationDisplayFields(retryResult.explanation);
+      const displaySuccess = hasDisplayableAiContent(displayExplanation);
+      const sections =
+        displayExplanation.sections ?? displayExplanation.sectionedExplanation?.sections ?? [];
+      const sectionKeys = sections.map((section) => section.key);
       request.log.info({
         route: "/forecast/ai-explain",
         targetCode: result.target,
+        horizon: result.horizon,
         providerCode: "openai",
         model: runtimeOpenAi.model,
         timeoutMs: runtimeOpenAi.timeoutMs,
+        generationMode: openAiForecastExplanationGenerationMode,
+        openAiRequestCount: 1,
+        sectionCount: sections.length,
+        sectionKeys,
         promptSizeChars: sectionedPromptSizeChars,
+        promptMaxChars: runtimeOpenAi.promptMaxChars,
         outputMode: openAiOutputMode(runtimeOpenAi),
         latencyMs: Date.now() - startedAt,
         attempts: retryResult.attempts,
@@ -887,12 +916,8 @@ export function registerForecastRoutes(
         parseSuccess: aiExplanationParseSuccess(retryResult.explanation),
         parseStrategy: aiExplanationParseStrategy(retryResult.explanation),
         fallbackUsed: aiExplanationFallbackUsed(retryResult.explanation),
-        displaySuccess: hasDisplayableAiContent(
-          withAiExplanationDisplayFields(retryResult.explanation),
-        ),
-        hasDisplayableAiContent: hasDisplayableAiContent(
-          withAiExplanationDisplayFields(retryResult.explanation),
-        ),
+        displaySuccess,
+        hasDisplayableAiContent: displaySuccess,
         compatibilityFallbackUsed: retryResult.requestDiagnostics.compatibilityFallbackUsed,
         disabledResponseFormat: retryResult.requestDiagnostics.disabledResponseFormat,
         disabledReasoningEffort: retryResult.requestDiagnostics.disabledReasoningEffort,
@@ -930,10 +955,16 @@ export function registerForecastRoutes(
       request.log.warn({
         route: "/forecast/ai-explain",
         targetCode: result.target,
+        horizon: result.horizon,
         providerCode: "openai",
         model: runtimeOpenAi.model,
         timeoutMs: runtimeOpenAi.timeoutMs,
+        generationMode: openAiForecastExplanationGenerationMode,
+        openAiRequestCount: normalized.attempts ?? 0,
+        sectionCount: 0,
+        sectionKeys: [],
         promptSizeChars: failurePromptSizeChars,
+        promptMaxChars: runtimeOpenAi.promptMaxChars,
         outputMode: openAiOutputMode(runtimeOpenAi),
         latencyMs,
         success: false,
@@ -1825,12 +1856,20 @@ function buildAiExplainSuccessResponse(options: {
   const displaySuccess = hasDisplayableAiContent(explanation);
   const providerFallbackUsed = fallbackUsed;
   const deterministicFallbackUsed = false;
+  const sections = explanation.sections ?? explanation.sectionedExplanation?.sections ?? [];
+  const sectionKeys = sections.map((section) => section.key);
+  const openAiRequestCount = options.cacheHit ? 0 : 1;
   const meta = {
     targetCode: options.targetCode,
     providerCode: "openai" as const,
     model: options.runtimeOpenAi.model,
     timeoutMs: options.runtimeOpenAi.timeoutMs,
+    generationMode: openAiForecastExplanationGenerationMode,
+    openAiRequestCount,
+    sectionCount: sections.length,
+    sectionKeys,
     promptSizeChars: options.promptSizeChars,
+    promptMaxChars: options.runtimeOpenAi.promptMaxChars,
     latencyMs: options.latencyMs,
     attempts: options.attempts,
     displaySuccess,
@@ -1860,9 +1899,11 @@ function buildAiExplainSuccessResponse(options: {
     source: "openai" as const,
     targetCode: options.targetCode,
     model: options.runtimeOpenAi.model,
+    generationMode: openAiForecastExplanationGenerationMode,
+    openAiRequestCount,
     explanation,
     interpretation: explanation,
-    sections: explanation.sections ?? explanation.sectionedExplanation?.sections ?? [],
+    sections,
     sectionedExplanation: explanation.sectionedExplanation,
     summaryText: explanation.summaryText,
     displaySuccess,
@@ -1870,6 +1911,9 @@ function buildAiExplainSuccessResponse(options: {
     meta,
     latencyMs: options.latencyMs,
     promptSizeChars: options.promptSizeChars,
+    promptMaxChars: options.runtimeOpenAi.promptMaxChars,
+    sectionCount: sections.length,
+    sectionKeys,
     outputMode: openAiOutputMode(options.runtimeOpenAi),
     responseSizeChars,
     rawResponseSizeChars,
@@ -1894,7 +1938,12 @@ function buildAiExplainSuccessResponse(options: {
       providerCode: "openai",
       model: options.runtimeOpenAi.model,
       timeoutMs: options.runtimeOpenAi.timeoutMs,
+      generationMode: openAiForecastExplanationGenerationMode,
+      openAiRequestCount,
+      sectionCount: sections.length,
+      sectionKeys,
       promptSizeChars: options.promptSizeChars,
+      promptMaxChars: options.runtimeOpenAi.promptMaxChars,
       outputMode: openAiOutputMode(options.runtimeOpenAi),
       latencyMs: options.latencyMs,
       attempts: options.attempts,
@@ -1959,13 +2008,18 @@ function buildAiExplainFailureResponse(options: {
   const responseSizeChars = safeResponseSizeChars(fallback);
   const rawResponseSizeChars = options.rawResponseSizeChars ?? 0;
   const parseStrategy = options.parseStrategy ?? "failed";
+  const openAiRequestCount = options.attempts ?? 0;
 
   return {
     ok: false,
     success: false,
     source: "fallback" as const,
     targetCode: options.result.target,
+    providerCode: "openai" as const,
+    generationMode: openAiForecastExplanationGenerationMode,
+    openAiRequestCount,
     fallback: true,
+    fallbackUsed: true,
     displaySuccess: false,
     hasDisplayableAiContent: false,
     providerFallbackUsed: false,
@@ -1979,6 +2033,9 @@ function buildAiExplainFailureResponse(options: {
     latencyMs: options.latencyMs,
     model,
     promptSizeChars: options.promptSizeChars,
+    promptMaxChars: options.runtimeOpenAi?.promptMaxChars ?? 0,
+    sectionCount: 0,
+    sectionKeys: [],
     outputMode,
     responseSizeChars,
     rawResponseSizeChars,
@@ -1999,7 +2056,12 @@ function buildAiExplainFailureResponse(options: {
       providerCode: "openai" as const,
       model,
       timeoutMs,
+      generationMode: openAiForecastExplanationGenerationMode,
+      openAiRequestCount,
+      sectionCount: 0,
+      sectionKeys: [],
       promptSizeChars: options.promptSizeChars,
+      promptMaxChars: options.runtimeOpenAi?.promptMaxChars ?? 0,
       latencyMs: options.latencyMs,
       attempts: options.attempts ?? 0,
       displaySuccess: false,
@@ -2033,7 +2095,12 @@ function buildAiExplainFailureResponse(options: {
       providerCode: "openai",
       model,
       timeoutMs,
+      generationMode: openAiForecastExplanationGenerationMode,
+      openAiRequestCount,
+      sectionCount: 0,
+      sectionKeys: [],
       promptSizeChars: options.promptSizeChars,
+      promptMaxChars: options.runtimeOpenAi?.promptMaxChars ?? 0,
       outputMode,
       latencyMs: options.latencyMs,
       attempts: options.attempts ?? 0,
@@ -2479,7 +2546,7 @@ function createForecastInterpretationCacheKey(
         target: result.target,
         horizon: result.horizon,
         locationKey: result.place.id || result.place.name,
-        sectionedExplanationVersion: "forecast-ai-sectioned-v1",
+        sectionedExplanationVersion: openAiForecastExplanationCacheVersion,
       }),
     )
     .digest("hex")
@@ -2499,7 +2566,7 @@ function createForecastInterpretationCacheKey(
     ai: {
       providerCode: "openai",
       model: runtimeOpenAi?.model ?? openAiDefaultModel,
-      sectionedExplanationVersion: "forecast-ai-sectioned-v1",
+      sectionedExplanationVersion: openAiForecastExplanationCacheVersion,
     },
     access: {
       tier: access.tier,
@@ -2622,7 +2689,7 @@ function legacyAiExplanationErrorCode(
   return category === "timeout" ? "ai_explanation_timeout" : "ai_explanation_unavailable";
 }
 
-async function generateOpenAiExplanationWithRetry(options: {
+async function generateOpenAiExplanationOnce(options: {
   readonly provider: Awaited<ReturnType<typeof createRealOpenAiProvider>>;
   readonly forecastResult: ForecastCalculationResult;
 }): Promise<{
@@ -2630,37 +2697,24 @@ async function generateOpenAiExplanationWithRetry(options: {
   readonly attempts: number;
   readonly requestDiagnostics: OpenAiRequestDiagnostics;
 }> {
-  let lastError: unknown;
-  let attempts = 0;
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
-    try {
-      const result = await options.provider.generateForecastExplanationWithDiagnostics({
-        forecastResult: options.forecastResult,
-      });
-      attempts += result.requestDiagnostics.attempts;
-      return {
-        explanation: result.explanation,
+  try {
+    const result = await options.provider.generateForecastExplanationWithDiagnostics({
+      forecastResult: options.forecastResult,
+    });
+    const attempts = result.requestDiagnostics.attempts;
+    return {
+      explanation: result.explanation,
+      attempts,
+      requestDiagnostics: {
+        ...result.requestDiagnostics,
         attempts,
-        requestDiagnostics: {
-          ...result.requestDiagnostics,
-          attempts,
-        },
-      };
-    } catch (error) {
-      const providerAttempts =
-        isOpenAiProviderError(error) && typeof error.attempts === "number"
-          ? Math.max(1, error.attempts)
-          : 1;
-      attempts += providerAttempts;
-      lastError = withOpenAiRouteAttemptCount(error, attempts);
-      if (attempt >= 2 || !isRetryableOpenAiInterpretationError(error)) {
-        throw lastError;
-      }
-      await delay(700);
-    }
+      },
+    };
+  } catch (error) {
+    const attempts =
+      isOpenAiProviderError(error) && typeof error.attempts === "number" ? error.attempts : 1;
+    throw withOpenAiRouteAttemptCount(error, attempts);
   }
-
-  throw lastError;
 }
 
 function withOpenAiRouteAttemptCount(error: unknown, attempts: number): unknown {
@@ -2732,24 +2786,6 @@ async function withOpenAiExplanationDeadline<T>(
       clearTimeout(timeout);
     }
   }
-}
-
-function isRetryableOpenAiInterpretationError(error: unknown): boolean {
-  if (isOpenAiProviderError(error)) {
-    return (
-      error.errorCategory === "network_error" ||
-      (error.errorCategory === "provider_http_error" &&
-        isRetryableOpenAiHttpStatus(error.statusCode))
-    );
-  }
-
-  return isAbortOrTimeoutError(readErrorCause(error)) || isAbortOrTimeoutError(error);
-}
-
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, milliseconds);
-  });
 }
 
 function normalizeOpenAiExplanationError(error: unknown): {

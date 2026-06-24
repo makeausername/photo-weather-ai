@@ -74,7 +74,7 @@ export type ForecastAiExplanationSectionResult = {
 };
 
 export type ForecastAiExplanationSectionedResult = {
-  readonly version: "forecast-ai-sectioned-v1";
+  readonly version: "forecast-ai-sectioned-v1" | "forecast-ai-sectioned-one-shot-v2";
   readonly providerCode: "openai";
   readonly model?: string;
   readonly sections: readonly ForecastAiExplanationSectionResult[];
