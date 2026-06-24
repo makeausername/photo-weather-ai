@@ -646,7 +646,6 @@ function buildServerHistoryAccessMeta(input: {
       input.access.hasFullAccess && (input.query.target !== "general" || hours > 24),
     horizonHours: hours,
     target: input.query.target,
-    aiExplanationIncluded: false,
     professionalTableIncluded: input.access.hasFullAccess,
     fullReportIncluded: input.access.hasFullAccess,
     generatedAt: input.now.toISOString(),

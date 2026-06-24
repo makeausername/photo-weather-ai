@@ -108,7 +108,6 @@ function usageText(): string {
     "      pnpm test-provider --provider open_meteo",
     "      pnpm test-provider --provider qweather",
     "      pnpm test-provider --provider amap",
-    "      pnpm test-provider --provider openai",
     "      pnpm test-provider --all",
   ].join("\n");
 }

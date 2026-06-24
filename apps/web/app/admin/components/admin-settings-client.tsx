@@ -28,7 +28,6 @@ const groupLabels: Record<string, string> = {
   site: "站点",
   locale: "本地化",
   map: "地图",
-  ai: "智能解读",
   weather: "天气",
   scoring: "评分",
   storage: "存储",
@@ -73,14 +72,6 @@ const settingText: Record<string, { readonly label: string; readonly description
   "map.displayCoordinateSystem": {
     label: "地图显示坐标系",
     description: "地图展示使用 GCJ-02，天气、天文和地形计算使用 WGS84。",
-  },
-  "ai.defaultProvider": {
-    label: "默认智能解读服务商",
-    description: "解读流程使用的默认服务商代码。",
-  },
-  "ai.defaultModel": {
-    label: "默认解读模型",
-    description: "解读请求使用的默认模型标识。",
   },
   "weather.primaryProvider": {
     label: "主天气服务商",
@@ -161,10 +152,11 @@ export function AdminSettingsClient() {
     setLoadState({ status: "saving", message: "正在加载系统设置..." });
     try {
       const response = await adminApiFetch<SettingsResponse>("/admin/settings");
-      setSettings(response.settings);
+      const visibleSettings = response.settings.filter((setting) => setting.group !== "ai");
+      setSettings(visibleSettings);
       setEditValues(
         Object.fromEntries(
-          response.settings.map((setting) => [setting.key, stringifyValue(setting.valueJson)]),
+          visibleSettings.map((setting) => [setting.key, stringifyValue(setting.valueJson)]),
         ),
       );
       setLoadState({ status: "saved", message: "系统设置已加载。" });

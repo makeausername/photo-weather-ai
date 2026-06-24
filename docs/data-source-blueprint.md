@@ -9,7 +9,6 @@
 - 不把真实 API Key 写入仓库或文档。
 - 付费接口必须通过后台配置、显式启用和成本记录控制。
 - 同一地点、同一时间窗口、同一 provider 的结果必须优先复用缓存。
-- AI 只解释确定性事实，不生成天气、天文、地形或坐标事实。
 
 ## Location and Spot Module / Amap
 
@@ -29,23 +28,6 @@
 - key 配置在后台 provider settings 中，`.env.local` 只能作为本地开发兜底。
 - Amap 坐标不直接用于天文计算；必须将 GCJ-02 明确转换为 WGS84，并在结果中保留两个坐标系。
 
-## AI Explanation Module / DeepSeek
-
-- required data：确定性评分结果、关键依据、风险列表、最佳窗口、备选计划、用户题材目标。
-- preferred source：DeepSeek explanation only。
-- free/open/local option：规则解释、模板摘要、无 AI 解释。
-- paid option if needed：DeepSeek API，固定使用 `deepseek-v4-pro` 高质量解读模型。
-- development mode：允许真实开发测试，但必须后台启用 provider、启用真实调用并配置 key；自动化测试必须 mock 或 rule-only。
-- production mode：默认手动触发生成，后续可按付费权益开放自动生成。
-- cost risk：每次 forecast 自动生成解释会快速增加成本。
-- accuracy risk：模型可能补全不存在的天气事实或过度承诺。
-- fallback strategy：规则解释、显示确定性评分和原始依据、禁用 AI 段落。
-
-特别约束：
-
-- DeepSeek 只用于解释和决策文案。
-- 永远不得发明天气、天文、地形、坐标、评分或数据源事实。
-- AI 输出必须能被确定性输入约束；缺失字段必须如实说明。
 
 ## Weather Module / QWeather
 
@@ -132,7 +114,7 @@ clear sky.
 - paid option if needed：后续支付 provider、短信 provider、对象存储 provider；只有进入商业化阶段才启用。
 - development mode：占位、mock quota、mock billing，不调用真实支付、短信或存储服务。
 - production mode：按用户、套餐、provider 和报告保存行为记录额度和成本；保存报告必须关联数据源快照。
-- cost risk：不受控保存报告、AI 自动生成和付费 provider 查询会放大成本。
+- cost risk：不受控保存报告、批量导出和付费 provider 查询会放大成本。
 - accuracy risk：用户反馈可能主观、样本稀疏或缺少原始拍摄条件。
 - fallback strategy：保留本地报告摘要、显示未开通状态、允许用户手动补充反馈，付费 provider 不可用时不阻断基础查询。
 

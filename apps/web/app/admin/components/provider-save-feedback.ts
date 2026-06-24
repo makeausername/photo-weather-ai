@@ -42,14 +42,6 @@ export function providerSaveSuccessMessage(provider: ProviderIdentity): string {
     return "meteoblue 配置已保存。";
   }
 
-  if (provider.providerCode === "openai") {
-    return "GPT / OpenAI 配置已保存。";
-  }
-
-  if (provider.providerCode === "deepseek") {
-    return "DeepSeek 配置已保存。";
-  }
-
   if (provider.providerCode === "amap") {
     return "高德地图 配置已保存。";
   }

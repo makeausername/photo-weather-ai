@@ -1,12 +1,12 @@
 # 准确性策略
 
-逐光天气的准确性来自确定性数据、可解释算法、持续校准和透明展示，不来自 AI 直接“猜测”结果。
+逐光天气的准确性来自确定性数据、可解释算法、持续校准和透明展示，不来自文案层“猜测”结果。
 
 ## 基本原则
 
-- 不依赖 AI 生成确定性事实。
+- 不依赖文案摘要生成确定性事实。
 - 确定性事实来自天气、天文、地形、光污染和机位数据源。
-- AI 只解释和组织已经计算出的事实、评分、风险和建议。
+- 展示层只组织已经计算出的事实、评分、风险和建议。
 - 所有关键结论都应能追溯到字段、provider、计算版本和缺失状态。
 - 缺失字段、估算字段和 provider 冲突必须进入置信度计算。
 
@@ -19,7 +19,7 @@
 - User feedback loop：允许用户反馈是否出片、云海是否成立、银河是否可见、白墙是否发生。
 - Historical backtesting later：用历史天气、天文和用户反馈验证评分阈值。
 - Spot-specific calibration：针对黄山、老君山、武功山等热门机位逐步建立局地校准。
-- Data source transparency in UI：结果页必须展示天气、天文、地形、光污染和 AI 解释的来源状态。
+- Data source transparency in UI：结果页必须展示天气、天文、地形和光污染的来源状态。
 
 ## Cloud sea accuracy strategy
 
@@ -146,7 +146,7 @@ Milky Way light-pollution scoring and display:
 - 付费天气 API 用于提升中国地区覆盖、可靠性、预警和空气质量。
 - Open-Meteo 可作为云层、能见度、露点和多模型辅助来源。
 - 地形和光污染优先本地缓存，避免逐请求付费。
-- AI 解释默认手动触发，不作为每次查询的必需步骤。
+- 文案摘要不得触发额外付费 provider 调用。
 - 热门机位可预取和缓存，长尾地点按需查询。
 - API 成本、缓存命中率和用户价值必须进入后台运营监控。
 
@@ -162,4 +162,4 @@ Milky Way light-pollution scoring and display:
 
 ## Historical Calibration V1
 
-历史校准把预测结果、历史天气和真实观测标签连起来，用同一套 deterministic scoring rules 做历史回放，再统计命中率、误报率和漏报率。普通结果页只在样本量足够时显示保守提示，不展示 provider/debug 细节，也不让 AI 参与天气或评分计算。详细流程见 `docs/historical-calibration-v1.md`。
+历史校准把预测结果、历史天气和真实观测标签连起来，用同一套 deterministic scoring rules 做历史回放，再统计命中率、误报率和漏报率。普通结果页只在样本量足够时显示保守提示，不展示 provider/debug 细节，也不让展示层参与天气或评分计算。详细流程见 `docs/historical-calibration-v1.md`。

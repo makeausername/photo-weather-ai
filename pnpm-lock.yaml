@@ -47,9 +47,6 @@ importers:
 
   apps/api:
     dependencies:
-      '@photo-weather/ai':
-        specifier: workspace:*
-        version: link:../../packages/ai
       '@photo-weather/calendar':
         specifier: workspace:*
         version: link:../../packages/calendar
@@ -141,18 +138,6 @@ importers:
       '@photo-weather/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-
-  packages/ai:
-    dependencies:
-      '@photo-weather/shared':
-        specifier: workspace:*
-        version: link:../shared
-      '@photo-weather/weather':
-        specifier: workspace:*
-        version: link:../weather
-      zod:
-        specifier: 3.23.8
-        version: 3.23.8
 
   packages/astro:
     dependencies:

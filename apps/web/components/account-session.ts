@@ -167,7 +167,6 @@ export type AccountAccessStatus = {
   readonly hasFullAccess: boolean;
   readonly maxForecastHours: number;
   readonly allowedTargets: readonly string[];
-  readonly canUseAiExplanation: boolean;
   readonly canViewFullHistory: boolean;
   readonly activeEntitlementId?: string;
   readonly activeProductCode?: string;

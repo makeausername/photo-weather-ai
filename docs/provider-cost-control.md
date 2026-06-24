@@ -19,7 +19,7 @@ Cache keys should include:
 - provider。
 - generatedAt bucket。
 - forecast model or endpoint version if relevant。
-- data type：current, hourly, daily, alerts, air quality, elevation, light pollution, AI explanation。
+- data type：current, hourly, daily, alerts, air quality, elevation, light pollution。
 
 Rules:
 
@@ -27,7 +27,7 @@ Rules:
 - Deduplicate same place/time requests.
 - Avoid repeated provider calls for same forecast window.
 - Store provider update time and local fetch time separately.
-- Reuse cached weather facts for AI explanation; AI should not trigger a second weather fetch.
+- Reuse cached weather facts for deterministic summaries and result displays.
 
 ## Prefetch strategy
 
@@ -36,16 +36,6 @@ Rules:
 - Do not prefetch long-tail locations by default.
 - Prefetch windows should match product horizons, not arbitrary provider windows.
 - Stop prefetch automatically when provider quota or cost threshold is close to limit.
-
-## AI cost control
-
-- Avoid unnecessary AI calls.
-- DeepSeek explanation should use a manual generation button before auto generation.
-- Cache AI explanation by deterministic report hash when appropriate.
-- Regenerate only when underlying deterministic facts, user target, or report language changes.
-- Free users can receive rule-based explanation by default.
-- Paid users can receive higher quota or professional mode later.
-- AI failure must not block deterministic forecast results.
 
 ## Weather provider controls
 
@@ -68,7 +58,7 @@ Rules:
 
 - Separate free users and paid users later.
 - Per-user quota later.
-- Quotas should count paid-provider forecast calls and AI explanation calls separately.
+- Quotas should count paid-provider forecast calls separately from saved-report and export actions.
 - Saved reports should reuse existing fetched data when possible.
 - Admins need emergency provider disable switches.
 
@@ -94,4 +84,4 @@ When cost controls prevent a paid call:
 - Use free/open/local fallback if available.
 - Display lower confidence instead of inventing precision.
 - Keep deterministic scoring available when enough fields remain.
-- Disable or defer AI explanation if deterministic results are incomplete or cost quota is exhausted.
+- Disable paid-provider calls when deterministic results are incomplete or cost quota is exhausted.

@@ -36,8 +36,6 @@ describe("database seed data", () => {
     const seedData = buildSeedData();
 
     expect(seedData.providerConfigs.map((provider) => provider.providerCode)).toEqual([
-      "openai",
-      "deepseek",
       "qweather",
       "open_meteo",
       "meteoblue",
@@ -56,24 +54,6 @@ describe("database seed data", () => {
     ]);
     expect(seedData.providerConfigs).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          providerType: "ai",
-          providerCode: "openai",
-          displayName: "GPT / OpenAI",
-          enabled: false,
-          priority: 100,
-          configJson: expect.objectContaining({
-            baseUrl: "https://api.openai.com",
-            realCallEnabled: false,
-            model: "gpt-4.1",
-            temperature: 0.2,
-            maxTokens: 1200,
-            promptMaxChars: 6000,
-            timeoutMs: 120000,
-          }),
-          secretJson: {},
-          maskedSecretJson: {},
-        }),
         expect.objectContaining({
           providerType: "billing",
           providerCode: "wechat_pay",

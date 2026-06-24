@@ -32,7 +32,6 @@ const providerPageSources = [
   providerIndexPageSource,
   readProviderPage("geo"),
   readProviderPage("weather"),
-  readProviderPage("ai"),
   readProviderPage("billing"),
   readProviderPage("notification"),
   readProviderPage("captcha"),
@@ -68,7 +67,6 @@ describe("admin provider module source", () => {
       '{ href: "/admin/settings", label: "系统设置" }',
       '{ href: "/admin/providers/geo", label: "地图服务" }',
       '{ href: "/admin/providers/weather", label: "天气数据" }',
-      '{ href: "/admin/providers/ai", label: "智能解读" }',
       '{ href: "/admin/providers/billing", label: "支付收款" }',
       '{ href: "/admin/providers/notification", label: "邮箱短信" }',
       '{ href: "/admin/providers/captcha", label: "人机验证" }',
@@ -85,6 +83,7 @@ describe("admin provider module source", () => {
     expect(adminShellSource).toContain('label: "配置"');
     expect(adminShellSource).toContain('label: "运维"');
     expect(adminShellSource).not.toContain('{ href: "/admin/providers", label: "服务商配置" }');
+    expect(adminShellSource).not.toContain('/admin/providers/ai');
   });
 
   it("keeps the AdminShell sidebar wide enough for first-class module labels", () => {
@@ -114,12 +113,6 @@ describe("admin provider module source", () => {
         title: 'title="天气数据"',
         description: "管理和风天气、Open-Meteo、meteoblue 等天气数据源、逐小时预报和云层分层配置。",
         providerType: 'providerType="weather"',
-      },
-      {
-        route: "ai",
-        title: 'title="智能解读"',
-        description: "管理 GPT / OpenAI 智能解读配置，不参与确定性天气、天文和地形计算。",
-        providerType: 'providerType="ai"',
       },
       {
         route: "billing",
@@ -172,8 +165,6 @@ describe("admin provider module source", () => {
       'apiProviderTypes: ["geo"]',
       'key: "weather"',
       'apiProviderTypes: ["weather"]',
-      'key: "ai"',
-      'apiProviderTypes: ["ai"]',
       'key: "billing"',
       'apiProviderTypes: ["billing"]',
       'key: "notification"',
@@ -206,9 +197,6 @@ describe("admin provider module source", () => {
       'displayName: "和风天气"',
       'displayName: "Open-Meteo"',
       'displayName: "meteoblue"',
-      '"ai:openai"',
-      'group: "ai"',
-      'displayName: "GPT / OpenAI"',
       '"billing:wechat_pay"',
       '"billing:alipay"',
       'group: "billing"',
@@ -237,64 +225,19 @@ describe("admin provider module source", () => {
     ]) {
       expect(source).toContain(snippet);
     }
+    expect(source).not.toContain('"ai:openai"');
+    expect(source).not.toContain('group: "ai"');
+    expect(source).not.toContain("GPT / OpenAI");
   });
 
-  it("uses GPT / OpenAI as the active AI provider with a dropdown and custom model field", () => {
-    const openAiMetaSource = sourceBetween(source, '"ai:openai": {', '"billing:wechat_pay": {');
-    const openAiFieldPresetSource = sourceBetween(
-      providerFieldsSource,
-      'providerCode: "openai"',
-      'providerCode: "qweather"',
-    );
-    const openAiModelOptionsSource = sourceBetween(
-      providerFieldsSource,
-      "export const openAiPresetModelValues",
-      "const openAiModelSelectionValues",
-    );
-
-    expect(openAiMetaSource).toContain('displayName: "GPT / OpenAI"');
-    expect(openAiMetaSource).toContain(
-      'purpose: "用于智能解读、文案生成和结果说明，不改写确定性评分。"',
-    );
-    expect(openAiMetaSource).toContain('capabilities: ["智能解读", "文案生成", "结果说明"]');
-    expect(openAiMetaSource).toContain('requiredConfigKeys: ["model", "customModel"]');
-    expect(openAiMetaSource).not.toContain("DeepSeek");
-
-    for (const snippet of [
-      'key: "model"',
-      'label: "模型"',
-      'control: "select"',
-      "options: openAiModelOptions",
-      'key: "customModel"',
-      'label: "自定义模型 ID"',
-      'label: "OpenAI API Key / 中转授权密钥"',
-      'label: "内部中转密钥"',
-      'label: "接口地址（Base URL）"',
-      'label: "Prompt 最大字符数"',
-    ]) {
-      expect(openAiFieldPresetSource).toContain(snippet);
-    }
-
-    for (const snippet of [
-      '"gpt-5.5"',
-      '"gpt-5.4"',
-      '"gpt-5.4-mini"',
-      '"gpt-5.4-nano"',
-      '"gpt-4.1"',
-      '"gpt-4.1-mini"',
-      '"gpt-4.1-nano"',
-      '"gpt-4o"',
-      '"gpt-4o-mini"',
-      "value: openAiCustomModelValue",
-    ]) {
-      expect(openAiModelOptionsSource).toContain(snippet);
-    }
-
-    expect(source).toContain("openAiCustomModelValue");
-    expect(source).toContain('field.key === "customModel"');
-    expect(source).toContain("selectedOpenAiModel(provider) === openAiCustomModelValue");
-    expect(openAiMetaSource).not.toContain("????");
-    expect(openAiFieldPresetSource).not.toContain("????");
+  it("does not expose the retired AI provider module or OpenAI field preset", () => {
+    expect(providerPageSources).not.toContain('providerType="ai"');
+    expect(existsSync(resolve(providersRouteDir, "ai", "page.tsx"))).toBe(false);
+    expect(source).not.toContain("openAiCustomModelValue");
+    expect(source).not.toContain('field.key === "customModel"');
+    expect(source).not.toContain("selectedOpenAiModel");
+    expect(providerFieldsSource).not.toContain('providerCode: "openai"');
+    expect(providerFieldsSource).not.toContain("openAiModelOptions");
   });
 
   it("removes internal provider category cards, search, and the all-provider list", () => {
@@ -509,17 +452,17 @@ describe("admin provider module source", () => {
     expect(source).toContain(
       "`/admin/providers/${provider.providerType}/${provider.providerCode}/test-connection`",
     );
-    expect(source).toContain('"/admin/providers/ai/openai/test-explanation"');
-    expect(source).toContain('aria-label="真实解读测试"');
-    expect(source).toContain("真实解读测试");
-    expect(source).toContain("parseStrategy");
-    expect(source).toContain("compatibilityFallbackUsed");
-    expect(source).toContain("disabledResponseFormat");
-    expect(source).toContain("emptyContentFallbackUsed");
-    expect(source).toContain("finishReason");
-    expect(source).toContain("contentLength");
-    expect(source).toContain("rawResponseSizeChars");
-    expect(source).toContain("upstreamMessageSanitized");
+    expect(source).not.toContain('"/admin/providers/ai/openai/test-explanation"');
+    expect(source).not.toContain('aria-label="真实解读测试"');
+    expect(source).not.toContain("真实解读测试");
+    expect(source).not.toContain("parseStrategy");
+    expect(source).not.toContain("compatibilityFallbackUsed");
+    expect(source).not.toContain("disabledResponseFormat");
+    expect(source).not.toContain("emptyContentFallbackUsed");
+    expect(source).not.toContain("finishReason");
+    expect(source).not.toContain("contentLength");
+    expect(source).not.toContain("rawResponseSizeChars");
+    expect(source).not.toContain("upstreamMessageSanitized");
     expect(source).toContain("providerTestButtonLabel(testState)");
     expect(source).toContain('aria-label="测试连接"');
     expect(source).not.toContain("raw JSON");

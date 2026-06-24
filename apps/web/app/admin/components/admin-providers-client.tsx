@@ -4,10 +4,6 @@ import { Component, useCallback, useEffect, useMemo, useRef, useState } from "re
 import type { ErrorInfo, ReactNode } from "react";
 import {
   getProviderFieldPreset,
-  openAiCustomModelValue,
-  openAiDefaultBaseUrl,
-  openAiDefaultModel,
-  openAiDefaultTimeoutMs,
   tencentCaptchaDefaultCaptchaType,
   tencentCaptchaDefaultEndpoint,
   tencentCaptchaDefaultSdkUrl,
@@ -50,7 +46,6 @@ type ProvidersResponse = {
 type ProviderGroupKey =
   | "geo"
   | "weather"
-  | "ai"
   | "billing"
   | "notification"
   | "captcha"
@@ -59,7 +54,6 @@ type ProviderGroupKey =
 type ProviderApiType =
   | "geo"
   | "weather"
-  | "ai"
   | "billing"
   | "email"
   | "sms"
@@ -74,7 +68,6 @@ type ProviderKey =
   | "weather:qweather"
   | "weather:open_meteo"
   | "weather:meteoblue"
-  | "ai:openai"
   | "billing:wechat_pay"
   | "billing:alipay"
   | "email:aliyun_smtp"
@@ -93,7 +86,6 @@ type EmailTestResultDrafts = Record<string, AdminEmailTestResult | undefined>;
 
 type RealDevCallFlags = {
   readonly amap: boolean;
-  readonly openai: boolean;
   readonly qweather: boolean;
   readonly openMeteo: boolean;
   readonly meteoblue: boolean;
@@ -129,7 +121,6 @@ export function getProviderModuleLayout(providerCount: number): ProviderModuleLa
 
 const defaultRealDevCallFlags: RealDevCallFlags = {
   amap: false,
-  openai: false,
   qweather: false,
   openMeteo: false,
   meteoblue: false,
@@ -140,7 +131,6 @@ const providerOrder: readonly ProviderKey[] = [
   "weather:qweather",
   "weather:open_meteo",
   "weather:meteoblue",
-  "ai:openai",
   "billing:wechat_pay",
   "billing:alipay",
   "email:aliyun_smtp",
@@ -165,12 +155,6 @@ const providerModules = [
     title: "天气数据",
     description: "管理和风天气、Open-Meteo、meteoblue 等天气数据源、逐小时预报和云层分层配置。",
     apiProviderTypes: ["weather"],
-  },
-  {
-    key: "ai",
-    title: "智能解读",
-    description: "管理 GPT / OpenAI 智能解读配置，不参与确定性天气、天文和地形计算。",
-    apiProviderTypes: ["ai"],
   },
   {
     key: "billing",
@@ -241,14 +225,6 @@ const providerMeta: Record<ProviderKey, ProviderMeta> = {
     purpose: "meteoblue 可作为专业增强天气源，用于 Forecast API 真实测试和后续多源融合。",
     capabilities: ["Forecast API", "云层增强", "专业预报", "商业精度提升"],
     requiredConfigKeys: ["baseUrl", "packages"],
-  },
-  "ai:openai": {
-    key: "ai:openai",
-    group: "ai",
-    displayName: "GPT / OpenAI",
-    purpose: "用于智能解读、文案生成和结果说明，不改写确定性评分。",
-    capabilities: ["智能解读", "文案生成", "结果说明"],
-    requiredConfigKeys: ["model", "customModel"],
   },
   "billing:wechat_pay": {
     key: "billing:wechat_pay",
@@ -358,12 +334,6 @@ const providerConfigDefaults: Partial<Record<string, Record<string, JsonValue>>>
   amap: {
     timeoutMs: 10000,
     retryCount: 1,
-  },
-  openai: {
-    baseUrl: openAiDefaultBaseUrl,
-    model: openAiDefaultModel,
-    customModel: "",
-    timeoutMs: openAiDefaultTimeoutMs,
   },
   wechat_pay: {
     realCallEnabled: false,
@@ -593,7 +563,6 @@ function providerName(provider: SafeProviderConfig): string {
 
 function providerTypeLabel(providerType: string): string {
   const labels: Record<string, string> = {
-    ai: "智能解读",
     billing: "支付收款",
     captcha: "人机验证",
     cdn: "CDN 加速",
@@ -712,10 +681,6 @@ function stateClass(status: RowState["status"]): string {
 function getRealDevCallFlagKey(provider: SafeProviderConfig): keyof RealDevCallFlags | null {
   if (provider.providerType === "geo" && provider.providerCode === "amap") {
     return "amap";
-  }
-
-  if (provider.providerType === "ai" && provider.providerCode === "openai") {
-    return "openai";
   }
 
   if (provider.providerType === "weather" && provider.providerCode === "qweather") {
@@ -990,57 +955,17 @@ function ProviderTestDetails({ result }: { readonly result?: MockConnectionTestR
   }
 
   const details = [
-    result.modeLabelZh ? ["模式", result.modeLabelZh] : null,
-    typeof result.latencyMs === "number" ? ["耗时", `${Math.round(result.latencyMs)}ms`] : null,
-    result.statusCode ? ["上游状态", String(result.statusCode)] : null,
+    result.modeLabelZh ? ["Mode", result.modeLabelZh] : null,
+    typeof result.latencyMs === "number" ? ["Latency", `${Math.round(result.latencyMs)}ms`] : null,
+    result.statusCode ? ["Upstream status", String(result.statusCode)] : null,
     result.apiHost ? ["API Host", result.apiHost] : null,
     result.endpoint ? ["Endpoint", result.endpoint] : null,
-    result.model ? ["模型", result.model] : null,
-    result.outputMode ? ["outputMode", result.outputMode] : null,
-    typeof result.promptSizeChars === "number"
-      ? ["promptSizeChars", String(result.promptSizeChars)]
-      : null,
     typeof result.attempts === "number" ? ["attempts", String(result.attempts)] : null,
-    typeof result.parseSuccess === "boolean" ? ["parseSuccess", String(result.parseSuccess)] : null,
-    typeof result.displaySuccess === "boolean"
-      ? ["displaySuccess", String(result.displaySuccess)]
-      : null,
-    typeof result.hasDisplayableAiContent === "boolean"
-      ? ["hasDisplayableAiContent", String(result.hasDisplayableAiContent)]
-      : null,
-    result.parseStrategy ? ["parseStrategy", result.parseStrategy] : null,
-    typeof result.compatibilityFallbackUsed === "boolean"
-      ? ["compatibilityFallbackUsed", String(result.compatibilityFallbackUsed)]
-      : null,
-    typeof result.disabledResponseFormat === "boolean"
-      ? ["disabledResponseFormat", String(result.disabledResponseFormat)]
-      : null,
-    typeof result.disabledReasoningEffort === "boolean"
-      ? ["disabledReasoningEffort", String(result.disabledReasoningEffort)]
-      : null,
-    typeof result.emptyContentFallbackUsed === "boolean"
-      ? ["emptyContentFallbackUsed", String(result.emptyContentFallbackUsed)]
-      : null,
-    result.finishReason ? ["finishReason", result.finishReason] : null,
-    result.contentType ? ["contentType", result.contentType] : null,
-    typeof result.contentLength === "number"
-      ? ["contentLength", String(result.contentLength)]
-      : null,
-    typeof result.reasoningContentLength === "number"
-      ? ["reasoningContentLength", String(result.reasoningContentLength)]
-      : null,
-    typeof result.rawResponseSizeChars === "number"
-      ? ["rawResponseSizeChars", String(result.rawResponseSizeChars)]
-      : null,
-    result.messageKeys?.length ? ["messageKeys", result.messageKeys.join(",")] : null,
     typeof result.upstreamStatusCode === "number"
       ? ["upstreamStatusCode", String(result.upstreamStatusCode)]
       : null,
     result.upstreamErrorCode ? ["upstreamErrorCode", result.upstreamErrorCode] : null,
     result.upstreamErrorType ? ["upstreamErrorType", result.upstreamErrorType] : null,
-    result.upstreamMessageSanitized
-      ? ["upstreamMessageSanitized", result.upstreamMessageSanitized]
-      : null,
     result.packages?.length ? ["Packages", result.packages.join(",")] : null,
   ].filter((item): item is [string, string] => Boolean(item));
 
@@ -1566,11 +1491,6 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   const [saveStateByProvider, setSaveStateByProvider] = useState<Record<string, RowState>>({});
   const [testStateByProvider, setTestStateByProvider] = useState<Record<string, RowState>>({});
   const [testResultByProvider, setTestResultByProvider] = useState<TestResultDrafts>({});
-  const [explanationTestStateByProvider, setExplanationTestStateByProvider] = useState<
-    Record<string, RowState>
-  >({});
-  const [explanationTestResultByProvider, setExplanationTestResultByProvider] =
-    useState<TestResultDrafts>({});
   const [emailTestDrafts, setEmailTestDrafts] = useState<Record<string, string>>({});
   const [emailTestStateByProvider, setEmailTestStateByProvider] = useState<
     Record<string, RowState>
@@ -1581,7 +1501,6 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const savingProviderIds = useRef(new Set<string>());
   const testingProviderIds = useRef(new Set<string>());
-  const testingExplanationProviderIds = useRef(new Set<string>());
   const sendingEmailTestProviderIds = useRef(new Set<string>());
 
   const loadProviders = useCallback(async () => {
@@ -1740,31 +1659,6 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         [key]: !(current[providerId]?.[key] ?? false),
       },
     }));
-  }
-
-  function selectedOpenAiModel(provider: SafeProviderConfig): string {
-    const modelField = getFieldByKey(provider, "model");
-    const savedModel = readStringJson(readJsonField(provider.configJson, "model"));
-    return (
-      configFieldDrafts[provider.id]?.model ??
-      savedModel ??
-      (modelField ? providerFieldDefaultToInput(provider, modelField) : "")
-    );
-  }
-
-  function shouldShowConfigField(
-    provider: SafeProviderConfig,
-    field: ProviderFieldDefinition,
-  ): boolean {
-    if (
-      provider.providerType === "ai" &&
-      provider.providerCode === "openai" &&
-      field.key === "customModel"
-    ) {
-      return selectedOpenAiModel(provider) === openAiCustomModelValue;
-    }
-
-    return true;
   }
 
   function renderConfigField(provider: SafeProviderConfig, field: ProviderFieldDefinition) {
@@ -1948,52 +1842,6 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       }));
     } finally {
       testingProviderIds.current.delete(provider.id);
-    }
-  }
-
-  async function testOpenAIExplanation(provider: SafeProviderConfig) {
-    if (
-      testingExplanationProviderIds.current.has(provider.id) ||
-      explanationTestStateByProvider[provider.id]?.status === "testing"
-    ) {
-      return;
-    }
-
-    testingExplanationProviderIds.current.add(provider.id);
-    setExplanationTestStateByProvider((current) => ({
-      ...current,
-      [provider.id]: {
-        status: "testing",
-        message: "测试中，正在生成真实智能解读...",
-      },
-    }));
-
-    try {
-      const result = await adminApiFetch<MockConnectionTestResult>(
-        "/admin/providers/ai/openai/test-explanation",
-        createProviderConnectionTestRequestInit(),
-      );
-      setExplanationTestResultByProvider((current) => ({ ...current, [provider.id]: result }));
-      setExplanationTestStateByProvider((current) => ({
-        ...current,
-        [provider.id]: {
-          status: result.success === false ? "error" : "saved",
-          message:
-            result.messageZh ??
-            result.message ??
-            (result.success === false ? "OpenAI 真实解读测试失败。" : "OpenAI 真实解读测试通过。"),
-        },
-      }));
-    } catch (error) {
-      setExplanationTestStateByProvider((current) => ({
-        ...current,
-        [provider.id]: {
-          status: "error",
-          message: providerTestErrorMessage(provider, error),
-        },
-      }));
-    } finally {
-      testingExplanationProviderIds.current.delete(provider.id);
     }
   }
 
@@ -2216,20 +2064,14 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   function renderProviderDetail(provider: SafeProviderConfig) {
     const meta = getMeta(provider);
     const realCallField = getFieldByKey(provider, "realCallEnabled");
-    const requiredConfigFields = getRequiredConfigFields(provider).filter((field) =>
-      shouldShowConfigField(provider, field),
-    );
-    const advancedConfigFields = getAdvancedConfigFields(provider).filter((field) =>
-      shouldShowConfigField(provider, field),
-    );
+    const requiredConfigFields = getRequiredConfigFields(provider);
+    const advancedConfigFields = getAdvancedConfigFields(provider);
     const secretFields = getPresetFields(provider, "secretJson");
     const saveState = saveStateByProvider[provider.id];
     const testState = testStateByProvider[provider.id];
-    const explanationTestState = explanationTestStateByProvider[provider.id];
     const dirty = dirtyProviders[provider.id] ?? false;
     const isSaving = isProviderSaveDisabled(saveState);
     const isTesting = isProviderTestDisabled(testState);
-    const isExplanationTesting = isProviderTestDisabled(explanationTestState);
     const advancedOpen = advancedProviders[provider.id] ?? false;
     const basicControls = [
       {
@@ -2445,9 +2287,6 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
             <div className="flex min-w-0 flex-wrap gap-2">
               <FeedbackPill state={saveState} dirty={dirty} />
               <FeedbackPill state={testState} />
-              {provider.providerType === "ai" && provider.providerCode === "openai" ? (
-                <FeedbackPill state={explanationTestState} />
-              ) : null}
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
               <Button
@@ -2465,22 +2304,9 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               >
                 {providerTestButtonLabel(testState)}
               </Button>
-              {provider.providerType === "ai" && provider.providerCode === "openai" ? (
-                <Button
-                  variant="secondary"
-                  aria-label="真实解读测试"
-                  disabled={isExplanationTesting}
-                  onClick={() => void testOpenAIExplanation(provider)}
-                >
-                  {explanationTestState?.status === "testing" ? "测试中..." : "真实解读测试"}
-                </Button>
-              ) : null}
             </div>
           </div>
           <ProviderTestDetails result={testResultByProvider[provider.id]} />
-          {provider.providerType === "ai" && provider.providerCode === "openai" ? (
-            <ProviderTestDetails result={explanationTestResultByProvider[provider.id]} />
-          ) : null}
         </footer>
       </article>
     );

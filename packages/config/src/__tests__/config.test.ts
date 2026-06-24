@@ -15,9 +15,9 @@ describe("environment config", () => {
       sentryDsn: undefined,
     });
     expect(config.serverEnv.ENABLE_REAL_AMAP).toBe(false);
-    expect(config.serverEnv.ENABLE_REAL_OPENAI).toBe(false);
-    expect(config.serverEnv.OPENAI_DEFAULT_MODEL).toBe("gpt-4.1");
-    expect(config.serverEnv.OPENAI_BASE_URL).toBe("https://api.openai.com");
+    expect("ENABLE_REAL_OPENAI" in config.serverEnv).toBe(false);
+    expect("OPENAI_DEFAULT_MODEL" in config.serverEnv).toBe(false);
+    expect("OPENAI_BASE_URL" in config.serverEnv).toBe(false);
     expect(config.serverEnv.QWEATHER_API_HOST).toBeUndefined();
     expect(config.serverEnv.QWEATHER_LANGUAGE).toBe("zh");
     expect(config.serverEnv.QWEATHER_UNIT).toBe("metric");
@@ -29,11 +29,10 @@ describe("environment config", () => {
       NODE_ENV: "development",
       STORAGE_PROVIDER: "local",
       ENABLE_REAL_AMAP: "true",
-      ENABLE_REAL_OPENAI: "true",
     });
 
     expect(config.serverEnv.ENABLE_REAL_AMAP).toBe(true);
-    expect(config.serverEnv.ENABLE_REAL_OPENAI).toBe(true);
+    expect("ENABLE_REAL_OPENAI" in config.serverEnv).toBe(false);
   });
 
   it("requires core deployment secrets in production", () => {
@@ -46,7 +45,7 @@ describe("environment config", () => {
 
   it("defines visual admin keys for future configuration", () => {
     expect(adminSettingDefinitions.some((setting) => setting.key === "ai.openai.apiKey")).toBe(
-      true,
+      false,
     );
     expect(
       adminSettingDefinitions.some((setting) => setting.key === "scoring.weights.cloudCover"),

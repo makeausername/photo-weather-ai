@@ -77,7 +77,6 @@ function paidFeatures(product: PublicBillingProduct): readonly string[] {
         "7 天完整摄影判断窗口",
         "云海 / 朝霞晚霞 / 星空银河",
         "专业逐小时表格",
-        "AI 解读（服务启用时）",
         "会员期内完整历史报告",
       ];
 }

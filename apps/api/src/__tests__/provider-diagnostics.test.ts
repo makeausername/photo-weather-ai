@@ -5,14 +5,13 @@ import { createFakeDatabaseClient } from "./fake-db.js";
 describe("provider diagnostics CLI helpers", () => {
   it("parses provider and all flags", () => {
     expect(parseProviderDiagnosticsArgs(["--provider", "meteoblue"])).toEqual(["meteoblue"]);
-    expect(parseProviderDiagnosticsArgs(["--provider=openai"])).toEqual(["openai"]);
     expect(parseProviderDiagnosticsArgs(["--all"])).toEqual([
       "meteoblue",
       "open_meteo",
       "qweather",
       "amap",
-      "openai",
     ]);
+    expect(() => parseProviderDiagnosticsArgs(["--provider=openai"])).toThrow();
   });
 
   it("runs without browser cookies and never prints provider secrets", async () => {
@@ -135,51 +134,4 @@ describe("provider diagnostics CLI helpers", () => {
     expect(JSON.stringify(result)).not.toContain("meteoblue-cli-secret");
   });
 
-  it("distinguishes GPT / OpenAI upstream auth failure from local admin auth", async () => {
-    const { client, state } = await createFakeDatabaseClient();
-    const openAiProvider = state.providers.get("ai:openai");
-    state.providers.set("ai:openai", {
-      ...openAiProvider,
-      enabled: true,
-      configJson: {
-        ...(openAiProvider.configJson ?? {}),
-        realCallEnabled: true,
-      },
-      secretJson: {
-        apiKey: "openai-cli-secret",
-      },
-      maskedSecretJson: {
-        apiKey: "open****cret",
-      },
-    });
-    const fetcher = vi.fn(async () => {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-    }) as unknown as typeof fetch;
-
-    const [result] = await runProviderDiagnostics({
-      providerCodes: ["openai"],
-      dbClient: client,
-      env: {
-        ...process.env,
-        NODE_ENV: "production",
-      },
-      fetcher,
-    });
-
-    expect(result).toMatchObject({
-      providerCode: "openai",
-      attempted: true,
-      success: false,
-      statusCode: 401,
-      errorCategory: "invalid_key",
-      messageZh: "GPT / OpenAI API Key 或中转鉴权令牌无效。",
-    });
-    expect(result?.messageZh).not.toContain("登录状态已失效");
-    expect(JSON.stringify(result)).not.toContain("openai-cli-secret");
-  });
 });

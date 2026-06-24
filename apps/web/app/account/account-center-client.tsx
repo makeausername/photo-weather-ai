@@ -483,7 +483,6 @@ function fallbackMembershipAccess(
     hasFullAccess: admin,
     maxForecastHours: admin ? 168 : 24,
     allowedTargets: admin ? ["general", "cloud_sea", "glow", "astro"] : ["general"],
-    canUseAiExplanation: admin,
     canViewFullHistory: admin,
     currentPlanName: admin ? "管理员" : "免费版",
     remainingDays: null,

@@ -16,7 +16,6 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@photo-weather/ai": "workspace:*",
     "@photo-weather/calendar": "workspace:*",
     "@photo-weather/calibration": "workspace:*",
     "@photo-weather/config": "workspace:*",

@@ -17,7 +17,6 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@photo-weather/ai": ["packages/ai/src/index.ts"],
       "@photo-weather/astro": ["packages/astro/src/index.ts"],
       "@photo-weather/billing": ["packages/billing/src/index.ts"],
       "@photo-weather/calibration": ["packages/calibration/src/index.ts"],

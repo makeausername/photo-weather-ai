@@ -11,7 +11,6 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@photo-weather/ai": fromRoot("./packages/ai/src/index.ts"),
       "@photo-weather/astro": fromRoot("./packages/astro/src/index.ts"),
       "@photo-weather/billing": fromRoot("./packages/billing/src/index.ts"),
       "@photo-weather/calibration": fromRoot("./packages/calibration/src/index.ts"),

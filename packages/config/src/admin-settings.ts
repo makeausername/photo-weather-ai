@@ -10,7 +10,6 @@ export type AdminSettingValueType =
 export type AdminSettingScope = "public" | "server";
 
 export type AdminSettingCategory =
-  | "ai"
   | "billing"
   | "deployment"
   | "geo"
@@ -32,25 +31,6 @@ export type AdminSettingDefinition = {
 };
 
 export const adminSettingDefinitions = [
-  {
-    key: "ai.openai.apiKey",
-    label: "OpenAI API key",
-    category: "ai",
-    valueType: "secret",
-    scope: "server",
-    envVar: "OPENAI_API_KEY",
-    encryptedAtRest: true,
-  },
-  {
-    key: "ai.openai.baseUrl",
-    label: "OpenAI base URL",
-    category: "ai",
-    valueType: "url",
-    scope: "server",
-    envVar: "OPENAI_BASE_URL",
-    defaultValue: "https://api.openai.com",
-    encryptedAtRest: false,
-  },
   {
     key: "geo.amap.apiKey",
     label: "Amap API key",

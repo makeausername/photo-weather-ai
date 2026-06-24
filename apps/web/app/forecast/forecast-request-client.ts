@@ -37,7 +37,6 @@ type ForecastInFlightRecord = {
 };
 
 export type ForecastCalculationRequestInput = ForecastQueryInput & {
-  readonly useAiExplanation?: boolean;
   readonly startDateTime?: string;
 };
 
@@ -111,7 +110,6 @@ export function stableForecastQueryKey(query: ForecastCalculationRequestInput): 
     locationId: query.locationId ?? null,
     photoSpotId: query.photoSpotId ?? null,
     startDateTime: query.startDateTime ?? null,
-    useAiExplanation: query.useAiExplanation ?? false,
   });
 }
 
@@ -312,7 +310,7 @@ export function normalizeForecastClientError(error: unknown): ForecastRequestErr
 }
 
 function isFrontendForecastCacheable(query: ForecastCalculationRequestInput): boolean {
-  return query.target === "general" && query.horizon === "24h" && query.useAiExplanation !== true;
+  return query.target === "general" && query.horizon === "24h";
 }
 
 function readCachedForecastResult(

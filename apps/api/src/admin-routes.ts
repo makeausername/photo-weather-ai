@@ -55,22 +55,10 @@ import {
   QWeatherClient,
 } from "@photo-weather/weather";
 import { MockTerrainProvider, type TerrainProvider } from "@photo-weather/terrain";
-import { buildMockForecastInput, calculateForecast } from "@photo-weather/scoring";
-import {
-  buildOpenAiForecastExplanationRequest,
-  isOpenAiProviderError,
-  type ForecastAiExplanation,
-} from "@photo-weather/ai";
-import type { ForecastQueryInput } from "@photo-weather/shared";
 import { z } from "zod";
 import type { AuthConfig } from "./auth-routes.js";
 import { requirePermission } from "./auth-routes.js";
 import { requireAnyAdminPermission } from "./admin-permissions.js";
-import {
-  createRealOpenAiProvider,
-  normalizeOpenAiAdminConfigJson,
-  readRuntimeOpenAiConfig,
-} from "./ai-provider.js";
 import { createRealAmapProvider, readRuntimeAmapConfig } from "./geo-provider.js";
 import {
   providerDiagnosticCodeFromRoute,
@@ -473,7 +461,6 @@ function getProviderNameZh(providerType: string, providerCode: string): string {
     "weather:qweather": "和风天气",
     "weather:open_meteo": "Open-Meteo",
     "weather:meteoblue": "meteoblue",
-    "ai:openai": "GPT / OpenAI",
     "email:aliyun_smtp": "阿里云企业邮箱 SMTP",
     "sms:aliyun_sms": "阿里云短信",
     "storage:local_storage": "本地存储",
@@ -660,12 +647,7 @@ function providerTestAuthFailureResponse(
 
 function providerDiagnosticResponse(result: ProviderDiagnosticResult) {
   const modeZh = result.connectionMode === "real" ? result.modeLabelZh ?? "真实服务" : "模拟测试";
-  const mode =
-    result.connectionMode === "mock"
-      ? result.providerCode === "openai"
-        ? result.mode ?? "mock"
-        : "mock"
-      : result.mode ?? "real";
+  const mode = result.connectionMode === "mock" ? "mock" : result.mode ?? "real";
   return {
     ...result,
     mode,
@@ -674,108 +656,6 @@ function providerDiagnosticResponse(result: ProviderDiagnosticResult) {
     testedAt: new Date().toISOString(),
     error: result.errorCategory,
     message: result.messageZh,
-  };
-}
-
-type RuntimeOpenAiAdminConfig = Awaited<ReturnType<typeof readRuntimeOpenAiConfig>>;
-
-const openAiAdminExplanationTestQuery = {
-  name: "黄山光明顶",
-  source: "local_photo_spot",
-  latitudeGcj02: 30.13254,
-  longitudeGcj02: 118.16876,
-  latitudeWgs84: 30.13012,
-  longitudeWgs84: 118.16389,
-  horizon: "24h",
-  target: "cloud_sea",
-  locationId: "admin-openai-test-location",
-  photoSpotId: "admin-openai-test-spot",
-} as const satisfies ForecastQueryInput;
-
-function buildAdminOpenAiExplanationTestForecast() {
-  return calculateForecast(buildMockForecastInput(openAiAdminExplanationTestQuery));
-}
-
-function isDisplayableAdminAiExplanation(explanation: ForecastAiExplanation): boolean {
-  return Boolean(
-    explanation.summaryText ||
-      explanation.displayContent?.summaryText ||
-      explanation.displayContent?.conclusion ||
-      (explanation.reasons?.length ?? 0) > 0 ||
-      (explanation.suggestions?.length ?? 0) > 0 ||
-      (explanation.risks?.length ?? 0) > 0 ||
-      (explanation.displayContent?.sections.length ?? 0) > 0 ||
-      explanation.conclusion.summaryZh ||
-      explanation.conclusion.oneSentenceDecisionZh,
-  );
-}
-
-function openAiAdminTestBase(
-  runtimeConfig: RuntimeOpenAiAdminConfig,
-  connectionMode: "mock" | "real",
-) {
-  return {
-    mode: runtimeConfig.mode,
-    ...createProviderTestMetadata("ai", "openai", connectionMode, runtimeConfig.modeLabelZh),
-    model: runtimeConfig.model,
-  };
-}
-
-function openAiAdminErrorCode(statusCode: number | undefined): string {
-  if (statusCode === 401 || statusCode === 403) {
-    return "invalid_key";
-  }
-  if (statusCode === 429) {
-    return "rate_limited";
-  }
-  if (typeof statusCode === "number" && statusCode >= 500) {
-    return "upstream_unavailable";
-  }
-  return "provider_test_failed";
-}
-
-function openAiAdminExplanationFailureResponse(input: {
-  readonly runtimeConfig: RuntimeOpenAiAdminConfig;
-  readonly error: unknown;
-  readonly latencyMs: number;
-  readonly promptSizeChars: number;
-}) {
-  const providerError = isOpenAiProviderError(input.error) ? input.error : undefined;
-  const statusCode = providerError?.statusCode ?? providerError?.upstreamStatusCode;
-  const errorCategory = providerError?.errorCategory ?? "unknown";
-  const messageZh =
-    providerError?.messageZh ?? "GPT / OpenAI 真实解读测试失败，请检查服务商配置和上游状态。";
-
-  return {
-    success: false,
-    ...openAiAdminTestBase(input.runtimeConfig, "real"),
-    outputMode: "text_with_json_fallback",
-    promptSizeChars: providerError?.promptSizeChars ?? input.promptSizeChars,
-    latencyMs: providerError?.latencyMs ?? input.latencyMs,
-    attempts: providerError?.attempts ?? 1,
-    parseSuccess: false,
-    displaySuccess: false,
-    hasDisplayableAiContent: false,
-    parseStrategy: providerError?.parseStrategy ?? "failed",
-    compatibilityFallbackUsed: providerError?.compatibilityFallbackUsed ?? false,
-    disabledResponseFormat: providerError?.disabledResponseFormat ?? false,
-    disabledReasoningEffort: providerError?.disabledReasoningEffort ?? false,
-    emptyContentFallbackUsed: providerError?.emptyContentFallbackUsed ?? false,
-    finishReason: providerError?.finalFinishReason ?? providerError?.finishReason,
-    contentType: providerError?.finalContentType ?? providerError?.contentType,
-    contentLength: providerError?.finalContentLength ?? providerError?.contentLength,
-    reasoningContentLength: providerError?.reasoningContentLength,
-    messageKeys: providerError?.messageKeys,
-    upstreamStatusCode: statusCode,
-    upstreamErrorCode: providerError?.upstreamErrorCode,
-    upstreamErrorType: providerError?.upstreamErrorType,
-    upstreamMessageSanitized: providerError?.upstreamMessageSanitized,
-    rawResponseSizeChars: providerError?.rawResponseSizeChars ?? providerError?.responseSizeChars,
-    error: openAiAdminErrorCode(statusCode),
-    errorCategory,
-    statusCode,
-    messageZh,
-    message: messageZh,
   };
 }
 
@@ -1449,13 +1329,13 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       enabledOnly: parsedQuery.data.enabledOnly,
       client,
     });
+    const visibleProviders = providers.filter((provider) => provider.providerType !== "ai");
 
     return {
-      providers,
-      groups: groupBy(providers, (provider) => provider.providerType),
+      providers: visibleProviders,
+      groups: groupBy(visibleProviders, (provider) => provider.providerType),
       realDevCallFlags: {
         amap: (await readRuntimeAmapConfig({ dbClient: client, env })).realModeEnabled,
-        openai: (await readRuntimeOpenAiConfig({ dbClient: client, env })).realModeEnabled,
         qweather: (await readRuntimeQWeatherConfig({ dbClient: client, env })).realModeEnabled,
         openMeteo: (await readRuntimeOpenMeteoConfig({ dbClient: client, env })).realModeEnabled,
         meteoblue: (await readRuntimeMeteoblueConfig({ dbClient: client, env })).realModeEnabled,
@@ -1478,6 +1358,9 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
         providerType = request.params.providerType;
       } catch (error) {
         return sendError(reply, 400, "invalid_provider", (error as Error).message);
+      }
+      if (providerType === "ai") {
+        return sendError(reply, 404, "provider_not_found", "Provider config was not found.");
       }
 
       const provider = await getProviderConfig(providerType, request.params.providerCode, {
@@ -1509,6 +1392,9 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       } catch (error) {
         return sendError(reply, 400, "invalid_provider", (error as Error).message);
       }
+      if (providerType === "ai") {
+        return sendError(reply, 404, "provider_not_found", "Provider config was not found.");
+      }
 
       const parsedBody = providerPatchSchema.safeParse(request.body);
       if (!parsedBody.success) {
@@ -1523,22 +1409,6 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
       }
 
       const providerPatch = { ...parsedBody.data };
-      if (
-        providerType === "ai" &&
-        request.params.providerCode === "openai" &&
-        providerPatch.configJson !== undefined
-      ) {
-        const incomingConfigJson = isJsonObjectValue(providerPatch.configJson)
-          ? providerPatch.configJson
-          : {};
-        const mergedConfigJson: Record<string, JsonValue> = {
-          ...(isJsonObjectValue(existingProvider.configJson) ? existingProvider.configJson : {}),
-          ...incomingConfigJson,
-        };
-        providerPatch.configJson = normalizeOpenAiAdminConfigJson({
-          ...mergedConfigJson,
-        });
-      }
       if (
         providerType === "weather" &&
         providerPatch.configJson !== undefined &&
@@ -1631,124 +1501,6 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
     return result;
   });
 
-  app.post("/admin/providers/ai/openai/test-explanation", async (request, reply) => {
-    const auth = await requirePermission(request, reply, client, authConfig, "providers.manage", {
-      onAuthFailure: (error) => providerTestAuthFailureResponse("ai", "openai", error),
-    });
-    if (!auth) {
-      return reply;
-    }
-
-    const runtimeConfig = await readRuntimeOpenAiConfig({ dbClient: client, env });
-    if (!runtimeConfig.realCallEnabled) {
-      return {
-        success: false,
-        ...openAiAdminTestBase(runtimeConfig, "mock"),
-        outputMode: "text_with_json_fallback",
-        promptSizeChars: 0,
-        latencyMs: 0,
-        attempts: 0,
-        parseSuccess: false,
-        displaySuccess: false,
-        hasDisplayableAiContent: false,
-        parseStrategy: "failed",
-        compatibilityFallbackUsed: false,
-        error: "real_call_disabled",
-        errorCategory: "provider_disabled",
-        messageZh: "请先启用 GPT / OpenAI 真实调用，再运行真实解读测试。",
-        message: "请先启用 GPT / OpenAI 真实调用，再运行真实解读测试。",
-      };
-    }
-
-    if (!runtimeConfig.enabled) {
-      return sendProviderTestFailure(reply, {
-        providerType: "ai",
-        providerCode: "openai",
-        mode: runtimeConfig.mode,
-        modeLabelZh: runtimeConfig.modeLabelZh,
-        error: "provider_not_enabled",
-        messageZh: "GPT / OpenAI 服务商未启用，请先在后台服务商配置中启用 GPT / OpenAI。",
-      });
-    }
-
-    if (!runtimeConfig.apiKeyPresent) {
-      return sendProviderTestFailure(reply, {
-        providerType: "ai",
-        providerCode: "openai",
-        mode: runtimeConfig.mode,
-        modeLabelZh: runtimeConfig.modeLabelZh,
-        error: "provider_key_missing",
-        messageZh: "请先填写 GPT / OpenAI API Key。",
-      });
-    }
-
-    const startedAt = Date.now();
-    let promptSizeChars = 0;
-    let outputMode: "json_object" | "text_with_json_fallback" = runtimeConfig.jsonOutputEnabled
-      ? "json_object"
-      : "text_with_json_fallback";
-
-    try {
-      const forecastResult = buildAdminOpenAiExplanationTestForecast();
-      const preview = buildOpenAiForecastExplanationRequest(
-        { forecastResult },
-        {
-          baseUrl: runtimeConfig.baseUrl,
-          defaultModel: runtimeConfig.model,
-          temperature: runtimeConfig.temperature,
-          maxTokens: runtimeConfig.maxTokens,
-          promptMaxChars: runtimeConfig.promptMaxChars,
-        },
-      );
-      promptSizeChars = preview.promptSizeChars;
-      outputMode = preview.outputMode;
-      const openAiProvider = await createRealOpenAiProvider({ dbClient: client, env });
-      const result = await openAiProvider.generateForecastExplanationWithDiagnostics({
-        forecastResult,
-      });
-      const latencyMs = Date.now() - startedAt;
-      const messageZh = `GPT / OpenAI 真实解读测试通过，耗时 ${latencyMs}ms。`;
-
-      return {
-        success: true,
-        ...openAiAdminTestBase(runtimeConfig, "real"),
-        outputMode,
-        promptSizeChars,
-        latencyMs,
-        attempts: result.requestDiagnostics.attempts,
-        parseSuccess: result.parseSuccess,
-        displaySuccess: isDisplayableAdminAiExplanation(result.explanation),
-        hasDisplayableAiContent: isDisplayableAdminAiExplanation(result.explanation),
-        parseStrategy: result.parseStrategy,
-        compatibilityFallbackUsed: result.requestDiagnostics.compatibilityFallbackUsed,
-        disabledResponseFormat: result.requestDiagnostics.disabledResponseFormat,
-        disabledReasoningEffort: result.requestDiagnostics.disabledReasoningEffort,
-        emptyContentFallbackUsed: result.requestDiagnostics.emptyContentFallbackUsed,
-        finishReason:
-          result.requestDiagnostics.finalFinishReason ?? result.requestDiagnostics.finishReason,
-        contentType:
-          result.requestDiagnostics.finalContentType ?? result.requestDiagnostics.contentType,
-        contentLength:
-          result.requestDiagnostics.finalContentLength ?? result.requestDiagnostics.contentLength,
-        reasoningContentLength: result.requestDiagnostics.reasoningContentLength,
-        messageKeys: result.requestDiagnostics.messageKeys,
-        firstFailureUpstreamCode: result.requestDiagnostics.firstFailureUpstreamCode,
-        finalFailureUpstreamCode: result.requestDiagnostics.finalFailureUpstreamCode,
-        rawResponseSizeChars:
-          result.requestDiagnostics.rawResponseSizeChars ?? result.rawResponseSizeChars,
-        messageZh,
-        message: messageZh,
-      };
-    } catch (error) {
-      return openAiAdminExplanationFailureResponse({
-        runtimeConfig,
-        error,
-        latencyMs: Date.now() - startedAt,
-        promptSizeChars,
-      });
-    }
-  });
-
   app.post<{ Params: { providerType: string; providerCode: string } }>(
     "/admin/providers/:providerType/:providerCode/test-connection",
     async (request, reply) => {
@@ -1769,6 +1521,9 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
         validateProviderCode(request.params.providerCode);
       } catch (error) {
         return sendError(reply, 400, "invalid_provider", (error as Error).message);
+      }
+      if (request.params.providerType === "ai") {
+        return sendError(reply, 404, "provider_not_found", "Provider config was not found.");
       }
 
       const parsedBody = providerConnectionTestSchema.safeParse(request.body ?? {});
@@ -1997,87 +1752,6 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
         }
       }
 
-      if (request.params.providerType === "ai" && request.params.providerCode === "openai") {
-        const runtimeConfig = await readRuntimeOpenAiConfig({ dbClient: client, env });
-        if (!runtimeConfig.realCallEnabled) {
-          return {
-            success: true,
-            mode: runtimeConfig.mode,
-            connectionMode: "mock",
-            modeZh: "模拟测试",
-            modeLabelZh: "模拟测试",
-            providerType: request.params.providerType,
-            providerCode: request.params.providerCode,
-            providerNameZh: getProviderNameZh(
-              request.params.providerType,
-              request.params.providerCode,
-            ),
-            testedAt: new Date().toISOString(),
-            sampleLocation: "黄山光明顶",
-            model: runtimeConfig.model,
-            messageZh: "当前为模拟测试，未请求 GPT / OpenAI 服务。",
-            message: "当前为模拟测试，未请求 GPT / OpenAI 服务。",
-          };
-        }
-
-        if (!runtimeConfig.enabled) {
-          return sendProviderTestFailure(reply, {
-            providerType: request.params.providerType,
-            providerCode: request.params.providerCode,
-            mode: runtimeConfig.mode,
-            modeLabelZh: runtimeConfig.modeLabelZh,
-            error: "provider_not_enabled",
-            messageZh: "GPT / OpenAI 服务商未启用，请先在后台服务商配置中启用 GPT / OpenAI。",
-          });
-        }
-
-        if (!runtimeConfig.apiKeyPresent) {
-          return sendProviderTestFailure(reply, {
-            providerType: request.params.providerType,
-            providerCode: request.params.providerCode,
-            mode: runtimeConfig.mode,
-            modeLabelZh: runtimeConfig.modeLabelZh,
-            error: "provider_key_missing",
-            messageZh: "请先填写 GPT / OpenAI API Key。",
-          });
-        }
-
-        try {
-          const startedAt = Date.now();
-          const openAiProvider = await createRealOpenAiProvider({ dbClient: client, env });
-          const result = await openAiProvider.testConnection();
-          const latencyMs = Date.now() - startedAt;
-
-          return {
-            success: true,
-            mode: runtimeConfig.mode,
-            ...createProviderTestMetadata(
-              request.params.providerType,
-              request.params.providerCode,
-              "real",
-              runtimeConfig.modeLabelZh,
-            ),
-            model: runtimeConfig.model,
-            latencyMs,
-            messageZh:
-              result.message || `GPT / OpenAI 连接测试通过，当前使用${runtimeConfig.modeLabelZh}。`,
-            message:
-              result.message || `GPT / OpenAI 连接测试通过，当前使用${runtimeConfig.modeLabelZh}。`,
-          };
-        } catch (error) {
-          return sendProviderTestFailure(reply, {
-            providerType: request.params.providerType,
-            providerCode: request.params.providerCode,
-            mode: runtimeConfig.mode,
-            modeLabelZh: runtimeConfig.modeLabelZh,
-            error: "provider_test_failed",
-            messageZh: sanitizeProviderErrorMessage(
-              (error as Error).message || "GPT / OpenAI 连接测试失败。",
-              runtimeConfig.apiKey,
-            ),
-          });
-        }
-      }
 
       if (request.params.providerType === "weather") {
         if (request.params.providerCode === "qweather") {

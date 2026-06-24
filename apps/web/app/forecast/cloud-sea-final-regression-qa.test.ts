@@ -18,7 +18,6 @@ import {
   type CloudSeaRegressionFixtureName,
 } from "./__tests__/fixtures/cloudSeaRegressionFixtures";
 import {
-  AiExplanationPanel,
   CloudSeaResultPage,
   type ForecastPageMode,
   resolveForecastPageMode,
@@ -301,8 +300,6 @@ describe("Cloud Sea result page final regression QA", () => {
     expect(rendered.html).toContain("CloudSeaReasoning");
     expect(rendered.html).toContain("CloudSeaActionPlan");
     expect(rendered.html).toContain("CloudSeaRiskSummary");
-    expect(rendered.html).toContain('data-cloud-sea-section="CloudSeaAiInterpretation"');
-    expect(rendered.html).toContain("生成智能解读");
     expect(rendered.html).toContain("总云量 %");
     expect(rendered.html).toContain("高云量 %");
     expect(rendered.html).toContain("中云量 %");
@@ -321,13 +318,8 @@ describe("Cloud Sea result page final regression QA", () => {
       "CloudSeaRiskSummary",
       "CloudSeaProfessionalData",
       "CloudSeaProfessionalHourlyData",
-      "CloudSeaAiInterpretation",
     ]);
-    const professionalSection = sectionBetween(
-      rendered.html,
-      "CloudSeaProfessionalData",
-      "CloudSeaAiInterpretation",
-    );
+    const professionalSection = sectionAfter(rendered.html, "CloudSeaProfessionalData");
     expect(professionalSection).not.toContain("CloudSeaReasoning");
     expect(professionalSection).not.toContain("CloudSeaActionPlan");
     expect(professionalSection).not.toContain("CloudSeaRiskSummary");
@@ -339,21 +331,11 @@ describe("Cloud Sea result page final regression QA", () => {
     );
     const nearTermSection = sectionBetween(html, "CloudSeaNearTermWeather", "CloudSeaWindowCards");
     const actionSection = sectionBetween(html, "CloudSeaActionPlan", "CloudSeaRiskSummary");
-    const professionalSection = sectionBetween(
-      html,
-      "CloudSeaProfessionalData",
-      "CloudSeaAiInterpretation",
-    );
+    const professionalSection = sectionAfter(html, "CloudSeaProfessionalData");
 
     expect(viewModel.displayTemperatureContext.basis).toBe("terrain_adjusted");
     expect(viewModel.displayData.displayDataMeta.temperatureBasis).toBe("terrain_adjusted");
-    expect(viewModel.displayData.aiInterpretationPayload.displayTemperatureContext.basis).toBe(
-      "terrain_adjusted",
-    );
     expect(viewModel.displayTemperatureContext.displayTemperatureC).toBe(18);
-    expect(
-      viewModel.displayData.aiInterpretationPayload.displayTemperatureContext.displayTemperatureC,
-    ).toBe(18);
     expect(nearTermSection).toContain("机位估算温度");
     expect(nearTermSection).toContain("18°C");
     expect(nearTermSection).toMatch(/山地体感\s*16°C/);
@@ -414,9 +396,6 @@ describe("Cloud Sea result page final regression QA", () => {
     expect(viewModel.displayData.displayDataMeta.staleFieldWarnings).toContain(
       "near-term precipitation display ignored stale zero current-weather amount",
     );
-    expect(
-      viewModel.displayData.aiInterpretationPayload.professionalHourlySummary.precipitationAmountMm,
-    ).toBe(1.2);
   });
 
   it("labels high-mountain raw-only temperature as raw grid reference with a warning", () => {
@@ -486,11 +465,7 @@ describe("Cloud Sea result page final regression QA", () => {
     const { html } = renderCloudSeaFixture(
       cloudSeaRegressionFixture("genericMissingLayerDataCase"),
     );
-    const professionalSection = sectionBetween(
-      html,
-      "CloudSeaProfessionalData",
-      "CloudSeaAiInterpretation",
-    );
+    const professionalSection = sectionAfter(html, "CloudSeaProfessionalData");
 
     expect(professionalSection).toContain("需复核");
     expect(professionalSection).toMatch(/data-professional-hourly-cell="cloud-total"[^>]*>88%/);
@@ -506,11 +481,7 @@ describe("Cloud Sea result page final regression QA", () => {
     const { html, viewModel } = renderCloudSeaFixture(
       cloudSeaRegressionFixture("genericCloudBasisMismatchCase"),
     );
-    const professionalSection = sectionBetween(
-      html,
-      "CloudSeaProfessionalData",
-      "CloudSeaAiInterpretation",
-    );
+    const professionalSection = sectionAfter(html, "CloudSeaProfessionalData");
 
     expect(viewModel.cloudBasisConsistency.cloudBasisLevel).toBe("mixed_basis");
     expect(
@@ -518,9 +489,6 @@ describe("Cloud Sea result page final regression QA", () => {
         (card) => card.key === "cloud_visibility",
       )?.value,
     ).toContain("低云 70%");
-    expect(
-      viewModel.displayData.aiInterpretationPayload.professionalHourlySummary.cloudLowPercent,
-    ).toBe(70);
     expect(viewModel.recommendationGuard.finalRecommendationLevel).toBe("cautious_reference");
     expect(professionalSection).toMatch(/data-professional-hourly-cell="cloud-total"[\s\S]*?20%/);
     expect(professionalSection).toMatch(/data-professional-hourly-cell="cloud-low"[^>]*>70%/);
@@ -538,9 +506,6 @@ describe("Cloud Sea result page final regression QA", () => {
 
     expect(viewModel.recommendationGuard.finalRecommendationLevel).toBe("cautious_reference");
     expect(viewModel.displayData.recommendationCards[0]?.value).toBe(
-      viewModel.recommendationGuard.finalRecommendationLabel,
-    );
-    expect(viewModel.displayData.aiInterpretationPayload.finalRecommendation.label).toBe(
       viewModel.recommendationGuard.finalRecommendationLabel,
     );
     expect(viewModel.displayData.actionPlan).toHaveLength(viewModel.actionPlan.length);
@@ -690,11 +655,7 @@ describe("Cloud Sea result page final regression QA", () => {
 
   it("keeps professional hourly table columns visible after copy polish", () => {
     const { html } = renderCloudSeaFixture(cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase"));
-    const professionalSection = sectionBetween(
-      html,
-      "CloudSeaProfessionalData",
-      "CloudSeaAiInterpretation",
-    );
+    const professionalSection = sectionAfter(html, "CloudSeaProfessionalData");
 
     for (const header of [
       "专业小时数据",
@@ -736,59 +697,6 @@ describe("Cloud Sea result page final regression QA", () => {
     ).toBe("meaningful_precipitation");
     expect(meaningful.html).toContain("可计量降水");
     expect(meaningful.html).toContain("防水");
-  });
-
-  it("places Cloud Sea AI interpretation at the bottom and does not auto-run it", () => {
-    const fixture = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
-    const fetchMock = vi.fn(() => {
-      throw new Error("Cloud Sea AI interpretation should be manual-trigger only");
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    try {
-      const { html } = renderCloudSeaFixture(fixture);
-      const aiSection = sectionAfter(html, "CloudSeaAiInterpretation");
-
-      expect(fetchMock).not.toHaveBeenCalled();
-      expect(html).toContain("生成智能解读");
-      expectMarkersInOrder(html, [
-        "CloudSeaDailyCards",
-        "CloudSeaDailyTrend",
-        "CloudSeaDecisionSupport",
-        "CloudSeaReasoning",
-        "CloudSeaActionPlan",
-        "CloudSeaRiskSummary",
-        "CloudSeaProfessionalData",
-        "CloudSeaProfessionalHourlyData",
-        "CloudSeaAiInterpretation",
-        "智能解读",
-      ]);
-      expect(aiSection).not.toContain("CloudSeaProfessionalHourlyData");
-      expect(aiSection).not.toContain("CloudSeaReasoning");
-      expect(aiSection).not.toContain("CloudSeaActionPlan");
-      expect(aiSection).not.toContain("CloudSeaRiskSummary");
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
-  it("only calls the intelligent interpretation handler from the generate button", () => {
-    const onGenerate = vi.fn();
-    const element = AiExplanationPanel({
-      status: "idle",
-      explanation: null,
-      errorMessage: "",
-      retryable: false,
-      onGenerate,
-    });
-    const onClick = firstOnClickHandler(element);
-
-    expect(onGenerate).not.toHaveBeenCalled();
-    expect(onClick).not.toBeNull();
-
-    onClick?.();
-
-    expect(onGenerate).toHaveBeenCalledTimes(1);
   });
 
   it("keeps General Forecast page mode independent from Cloud Sea-specific result logic", () => {
@@ -859,22 +767,4 @@ function countOccurrences(value: string, needle: string): number {
     return 0;
   }
   return value.split(needle).length - 1;
-}
-
-function firstOnClickHandler(node: React.ReactNode): (() => void) | null {
-  if (!React.isValidElement<{ children?: React.ReactNode; onClick?: () => void }>(node)) {
-    return null;
-  }
-  if (typeof node.props.onClick === "function") {
-    return node.props.onClick;
-  }
-
-  for (const child of React.Children.toArray(node.props.children)) {
-    const handler = firstOnClickHandler(child);
-    if (handler) {
-      return handler;
-    }
-  }
-
-  return null;
 }

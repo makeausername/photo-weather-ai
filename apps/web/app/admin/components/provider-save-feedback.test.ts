@@ -21,9 +21,6 @@ describe("provider save feedback", () => {
     expect(providerSaveSuccessMessage({ providerType: "weather", providerCode: "meteoblue" })).toBe(
       "meteoblue 配置已保存。",
     );
-    expect(providerSaveSuccessMessage({ providerType: "ai", providerCode: "openai" })).toBe(
-      "GPT / OpenAI 配置已保存。",
-    );
     expect(providerSaveSuccessMessage({ providerType: "geo", providerCode: "amap" })).toBe(
       "高德地图 配置已保存。",
     );

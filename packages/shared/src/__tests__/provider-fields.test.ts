@@ -1,23 +1,10 @@
 ﻿import { describe, expect, it } from "vitest";
-import {
-  getDeepSeekModeRuntimeDefaults,
-  deepSeekModelOptions,
-  getProviderFieldPreset,
-  normalizeOpenAiModel,
-  normalizeOpenAiModelSelection,
-  normalizeDeepSeekAnalysisMode,
-  normalizeDeepSeekModel,
-  openAiCustomModelValue,
-  openAiDefaultModel,
-  openAiModelOptions,
-  providerFieldPresets,
-} from "../provider-fields.js";
+import { getProviderFieldPreset, providerFieldPresets } from "../provider-fields.js";
 
 describe("provider field presets", () => {
   it("defines visual fields for common provider secrets", () => {
     expect(providerFieldPresets.map((preset) => preset.providerCode)).toEqual(
       expect.arrayContaining([
-        "openai",
         "qweather",
         "open_meteo",
         "meteoblue",
@@ -35,6 +22,9 @@ describe("provider field presets", () => {
         "alipay",
       ]),
     );
+    expect(providerFieldPresets.map((preset) => preset.providerCode)).not.toEqual(
+      expect.arrayContaining(["openai", "deepseek"]),
+    );
 
     expect(getProviderFieldPreset("amap")?.fields).toContainEqual(
       expect.objectContaining({
@@ -47,37 +37,8 @@ describe("provider field presets", () => {
   });
 
   it("separates editable config fields from masked secret fields", () => {
-    expect(getProviderFieldPreset("openai")?.fields).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ key: "apiKey", target: "secretJson" }),
-        expect.objectContaining({ key: "internalRelayToken", target: "secretJson" }),
-        expect.objectContaining({ key: "realCallEnabled", target: "configJson" }),
-        expect.objectContaining({
-          key: "model",
-          target: "configJson",
-          control: "select",
-          defaultValue: openAiDefaultModel,
-        }),
-        expect.objectContaining({
-          key: "customModel",
-          target: "configJson",
-        }),
-        expect.objectContaining({ key: "baseUrl", target: "configJson", advanced: true }),
-        expect.objectContaining({
-          key: "timeoutMs",
-          target: "configJson",
-          defaultValue: 120000,
-          advanced: true,
-        }),
-        expect.objectContaining({
-          key: "promptMaxChars",
-          target: "configJson",
-          defaultValue: 12000,
-          max: 20000,
-          advanced: true,
-        }),
-      ]),
-    );
+    expect(getProviderFieldPreset("openai")).toBeUndefined();
+    expect(getProviderFieldPreset("deepseek")).toBeUndefined();
 
     const qweatherFields = getProviderFieldPreset("qweather")?.fields;
     expect(qweatherFields).toEqual(
@@ -133,54 +94,6 @@ describe("provider field presets", () => {
         expect.objectContaining({ key: "retryCount", target: "configJson", advanced: true }),
       ]),
     );
-  });
-
-  it("defines a GPT / OpenAI model dropdown with custom model support", () => {
-    const openAiPreset = getProviderFieldPreset("openai");
-    const fields = openAiPreset?.fields ?? [];
-    const modelField = fields.find((field) => field.key === "model");
-    const customModelField = fields.find((field) => field.key === "customModel");
-
-    expect(openAiDefaultModel).toBe("gpt-5.4-mini");
-    expect(openAiModelOptions.map((option) => option.value)).toEqual([
-      "gpt-5.5",
-      "gpt-5.4",
-      "gpt-5.4-mini",
-      "gpt-5.4-nano",
-      "gpt-4.1",
-      "gpt-4.1-mini",
-      "gpt-4.1-nano",
-      "gpt-4o",
-      "gpt-4o-mini",
-      openAiCustomModelValue,
-    ]);
-    expect(modelField).toMatchObject({
-      label: "模型",
-      target: "configJson",
-      control: "select",
-      defaultValue: "gpt-5.4-mini",
-      options: openAiModelOptions,
-    });
-    expect(customModelField).toMatchObject({
-      key: "customModel",
-      label: "自定义模型 ID",
-      target: "configJson",
-    });
-    expect(normalizeOpenAiModelSelection("not-a-preset")).toBe(openAiDefaultModel);
-    expect(normalizeOpenAiModel("future-relay-model")).toBe("future-relay-model");
-  });
-
-  it("keeps GPT / OpenAI provider copy readable Chinese without question placeholders", () => {
-    const openAiPreset = getProviderFieldPreset("openai");
-    const serialized = JSON.stringify(openAiPreset);
-
-    expect(serialized).not.toContain("????");
-    expect(serialized).toContain("仅用于解释系统已计算出的评分");
-    expect(serialized).toContain("启用真实调用");
-    expect(serialized).toContain("OpenAI API Key / 中转授权密钥");
-    expect(serialized).toContain("内部中转密钥");
-    expect(serialized).toContain("接口地址（Base URL）");
-    expect(serialized).toContain("Prompt 最大字符数");
   });
 
   it("defines editable account verification provider fields without exposing secrets", () => {
@@ -630,22 +543,4 @@ describe("provider field presets", () => {
     );
   });
 
-  it("keeps DeepSeek model dropdown values centralized", () => {
-    expect(deepSeekModelOptions.map((option) => option.value)).toEqual(["deepseek-v4-pro"]);
-    expect(normalizeDeepSeekModel("deepseek-reasoner")).toBe("deepseek-v4-pro");
-    expect(normalizeDeepSeekModel("deepseek-chat")).toBe("deepseek-v4-pro");
-    expect(normalizeDeepSeekModel("custom-model")).toBe("deepseek-v4-pro");
-  });
-
-  it("maps DeepSeek modes and legacy models to v4 pro runtime defaults", () => {
-    expect(getDeepSeekModeRuntimeDefaults("professional")).toMatchObject({
-      model: "deepseek-v4-pro",
-      maxTokens: 1200,
-      thinkingEnabled: false,
-      reasoningEffort: "none",
-    });
-    expect(normalizeDeepSeekAnalysisMode(undefined, "deepseek-chat")).toBe("professional");
-    expect(normalizeDeepSeekAnalysisMode(undefined, "deepseek-reasoner")).toBe("professional");
-    expect(normalizeDeepSeekAnalysisMode("fast", "legacy-fast-model")).toBe("professional");
-  });
 });

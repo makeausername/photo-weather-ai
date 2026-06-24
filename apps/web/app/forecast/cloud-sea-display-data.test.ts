@@ -20,7 +20,7 @@ const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
 
 describe("Cloud Sea display data rolling horizon", () => {
-  it("surfaces score calibration caps in score card, window card, action plan, and AI payload", () => {
+  it("surfaces score calibration caps in score card, window card, action plan,", () => {
     const fixture = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
     const capReason = "厚实多层云覆盖下开口稳定性不足，最终分数不按近满分处理。";
     const capPhrase = "厚实多层云覆盖下开口稳定性不足，最终分数不按近满分处理";
@@ -92,17 +92,9 @@ describe("Cloud Sea display data rolling horizon", () => {
     expect(display.actionPlan.find((item) => item.key === "departure")?.detail).toContain(
       "出发前必须复核云顶高度、降水和开口",
     );
-    expect(display.aiInterpretationPayload.scoreCalibration).toMatchObject({
-      rawFormationScore: 92,
-      calibratedShootabilityScore: 65,
-      finalCloudSeaScore: 65,
-      capApplied: true,
-      capReasons: [capReason],
-      shouldDowngradeToCautious: true,
-    });
   });
 
-  it("renders Cloud Sea important windows with full date labels in cards, daily judgment, action plan, and AI payload", () => {
+  it("renders Cloud Sea important windows with full date labels in cards, daily judgment, and action plan", () => {
     const fixture = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
     const result = cloudSeaImportantWindowResult(fixture.result);
     const viewModel = buildCloudSeaForecastViewModel(result);
@@ -158,14 +150,6 @@ describe("Cloud Sea display data rolling horizon", () => {
     expect(viewModel.displayData.riskReview.find((item) => item.label === "影响时段")?.value).toBe(
       expectedWindow,
     );
-    expect(
-      viewModel.displayData.aiInterpretationPayload.actionPlan.find(
-        (item) => item.key === "main-window",
-      )?.value,
-    ).toBe(expectedReferenceWindow);
-    expect(
-      viewModel.displayData.aiInterpretationPayload.precipitationSignalContext.mainTimeRangeZh,
-    ).toBe(expectedWindow);
     expect(html).toContain(expectedWindow);
     expect(html).toContain(expectedArrivalReference);
     expect(html).toContain(expectedBackup);
@@ -263,7 +247,7 @@ describe("Cloud Sea display data rolling horizon", () => {
     });
   });
 
-  it("aligns professional table, near-term cards, temperature context, and AI payload to the same rolling rows", () => {
+  it("aligns professional table, near-term cards, temperature context, to the same rolling rows", () => {
     const fixture = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
     const baseRow = fixture.result.professionalHourlyData?.[0];
     if (!baseRow) {
@@ -301,14 +285,6 @@ describe("Cloud Sea display data rolling horizon", () => {
     expect(
       display.currentNearTermWeather.cards.find((card) => card.key === "temperature")?.value,
     ).toContain("5");
-    expect(display.aiInterpretationPayload.professionalHourlySummary).toMatchObject({
-      rowCount: 24,
-      nearTermRowCount: 6,
-      anchorStart: "2026-06-02T11:00:00+08:00",
-      anchorEnd: "2026-06-03T10:00:00+08:00",
-      precipitationAmountMm: 2.2,
-      precipitationProbabilityPercent: 80,
-    });
   });
 
   it("keeps the professional table free of same-day filtering logic", () => {

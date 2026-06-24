@@ -1,7 +1,6 @@
 import { Readable } from "node:stream";
 import { createConnection } from "node:net";
 import Fastify from "fastify";
-import { MockAIProvider } from "@photo-weather/ai";
 import { getPrismaClient, type DatabaseClient } from "@photo-weather/db";
 import { MockGeoProvider } from "@photo-weather/geo";
 import type { GeoProvider } from "@photo-weather/geo";
@@ -97,7 +96,6 @@ const publicRateLimitedRoutes = new Set([
   "POST /account/delete",
   "POST /account/forecast-history",
   "POST /forecast/calculate",
-  "POST /forecast/ai-explain",
   "POST /billing/orders",
   "GET /billing/orders",
   "GET /search/places",
@@ -445,7 +443,6 @@ export function buildApiServer(options: ApiServerOptions = {}) {
       ? undefined
       : createRuntimeWeatherDataService({ dbClient: options.dbClient, env });
   const geoProvider = options.geoProvider ?? new MockGeoProvider();
-  const aiProvider = new MockAIProvider();
   const authConfig = options.authConfig ?? loadAuthConfig();
   const resolveRuntimeGeoProvider = () =>
     resolveGeoProvider({
@@ -524,24 +521,6 @@ export function buildApiServer(options: ApiServerOptions = {}) {
         redis,
         astroService,
       },
-    };
-  });
-
-  app.get("/foundation/mock-decision", async () => {
-    const place = await geoProvider.geocode("Huangshan");
-    const currentWeather = await weatherProvider.getCurrentWeather({
-      coordinates: place.coordinates,
-    });
-    const decision = await aiProvider.generateDecisionCard({
-      place,
-      forecastSummary: currentWeather.summary,
-      score: 82,
-    });
-
-    return {
-      place,
-      currentWeather,
-      decision,
     };
   });
 

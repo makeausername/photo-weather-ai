@@ -70,14 +70,6 @@ export const wholeSiteFunctionalRegressionMatrix = [
     coverage: "shared scenario page and forecast route tests",
   },
   {
-    id: "ai_explanation",
-    area: "public_frontend",
-    auth: "optional_auth",
-    expected:
-      "AI explanation sends Authorization when present and shows upgrade UI on access errors.",
-    coverage: "forecast-result-client and forecast-result-view-model tests",
-  },
-  {
     id: "pricing_page",
     area: "public_frontend",
     auth: "public",
@@ -272,7 +264,6 @@ const requiredMatrixIds = [
   "cloud_sea_entry",
   "glow_entry",
   "astro_entry",
-  "ai_explanation",
   "pricing_page",
   "login_page",
   "register_page",
@@ -312,7 +303,6 @@ describe("whole-site functional regression matrix", () => {
   it("keeps protected flows tied to auth-aware or backend-gated coverage", () => {
     const protectedIds = [
       "homepage_logged_in_full_access_forecast",
-      "ai_explanation",
       "forecast_history",
       "guest_free_extended_rejected",
       "guest_free_subject_rejected",

@@ -269,7 +269,6 @@ describe("forecast access resolver", () => {
       hasFullAccess: false,
       maxForecastHours: 24,
       allowedTargets: ["general"],
-      canUseAiExplanation: false,
       canViewFullHistory: false,
       reason: "none",
     } as const;
@@ -279,7 +278,6 @@ describe("forecast access resolver", () => {
       hasFullAccess: true,
       maxForecastHours: 168,
       allowedTargets: ["general", "cloud_sea", "glow", "astro"],
-      canUseAiExplanation: true,
       canViewFullHistory: true,
       reason: "paid_active",
     } as const;

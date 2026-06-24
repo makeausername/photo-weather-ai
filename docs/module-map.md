@@ -71,7 +71,6 @@
 边界要求：
 
 - 默认不依赖在线天文 API。
-- 天文事实不得由 DeepSeek 或其他 AI 生成。
 - 只使用 WGS84 坐标和明确时区。
 
 ## D. Terrain Module
@@ -134,15 +133,12 @@
 
 - 评分只使用归一化后的确定性输入。
 - 评分结果必须可解释，不直接读取服务商原始 JSON。
-- AI Explanation Module 可以解释评分，但不得覆盖评分。
 
-## G. AI Explanation Module
 
 目标：把确定性评分、风险和建议组织成专业、清晰、可读的摄影建议。
 
 功能范围：
 
-- DeepSeek explanation only。
 - 解释 deterministic scores。
 - 总结风险。
 - 提供摄影建议。
@@ -156,7 +152,7 @@
 - 不计算地形事实。
 - 不生成或覆盖坐标。
 - 不编造缺失数据。
-- 没有真实 AI 配置或用户未触发时，使用规则解释或不生成 AI 解释。
+- 缺失数据时使用规则解释或不生成对应段落。
 
 ## H. User Center Module
 

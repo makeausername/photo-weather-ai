@@ -39,7 +39,7 @@
 
 不做：
 
-- 不让 AI 计算天气、天文、地形或评分事实。
+- 不让文案摘要或展示层计算天气、天文、地形或评分事实。
 - 不绕过 provider normalization 直接读取原始 provider JSON 做评分。
 
 ## Stage 3: Controlled real-provider development
@@ -48,7 +48,6 @@
 
 范围：
 
-- real Amap and DeepSeek dev calls。
 - server/staging QWeather/Open-Meteo tests。
 - caching and usage logs。
 - provider failure handling。
@@ -59,7 +58,6 @@
 
 - 本地自动化测试仍然 mock / fixture。
 - QWeather / Open-Meteo 真实 forecast 测试默认放在 server/staging。
-- Amap 和 DeepSeek 真实开发调用必须后台显式启用。
 
 ## Stage 4: Real forecast decision pipeline
 
@@ -141,14 +139,14 @@
 
 Future Codex tasks must not narrow the product scope.
 
-If a task touches weather, astronomy, terrain, scoring, provider normalization, AI explanation, result pages, data-source display, or user decision copy, it must preserve this boundary:
+If a task touches weather, astronomy, terrain, scoring, provider normalization, result pages, data-source display, or user decision copy, it must preserve this boundary:
 
 逐光天气 should eventually cover at least Tianwentong + Lijing Weather style information and provide more detailed photography decision support.
 
 Operational rules for future Codex work:
 
 - Read `DESIGN.md` before public UI or product architecture changes.
-- Keep deterministic facts out of AI generation.
+- Keep deterministic facts out of generated copy and display-only helpers.
 - Keep real provider calls opt-in and controlled by admin/provider configuration.
 - Preserve GCJ-02 for display and WGS84 for weather/astronomy/terrain/scoring calculations.
 - Prefer mock, fixture, local deterministic, cached, or open data before paid API calls.

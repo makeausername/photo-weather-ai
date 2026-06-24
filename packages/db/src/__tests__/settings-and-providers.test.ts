@@ -14,15 +14,15 @@ function createFakeClient(): DatabaseClient {
   const settings = new Map<string, any>();
   const providers = new Map<string, any>();
 
-  providers.set("ai:openai", {
-    id: "provider-openai",
-    providerType: "ai",
-    providerCode: "openai",
-    displayName: "GPT / OpenAI",
+  providers.set("weather:qweather", {
+    id: "provider-qweather",
+    providerType: "weather",
+    providerCode: "qweather",
+    displayName: "QWeather",
     enabled: false,
-    priority: 100,
-    configJson: { model: "gpt-4.1" },
-    secretJson: { apiKey: "sk-1234567890" },
+    priority: 10,
+    configJson: { apiHost: "https://devapi.qweather.com", timeoutMs: 10000 },
+    secretJson: { apiKey: "qw-1234567890" },
     maskedSecretJson: null,
     createdAt: now,
     updatedAt: now,
@@ -147,15 +147,15 @@ describe("system setting helpers", () => {
       client,
     });
     const secret = await setSystemSetting({
-      key: "ai.openai.apiKey",
-      valueJson: "sk-1234567890",
+      key: "weather.qweather.apiKey",
+      valueJson: "qw-1234567890",
       valueType: "secret",
-      group: "ai",
-      label: "GPT / OpenAI API key",
+      group: "weather",
+      label: "QWeather API key",
       client,
     });
 
-    expect(secret.valueJson).toBe("sk-1****7890");
+    expect(secret.valueJson).toBe("qw-1****7890");
     await expect(getSystemSetting("site.name", { client })).resolves.toMatchObject({
       key: "site.name",
       valueJson: "Photo Weather AI",
@@ -167,12 +167,12 @@ describe("system setting helpers", () => {
 describe("provider config helpers", () => {
   it("returns safe provider configs without raw secret JSON", async () => {
     const client = createFakeClient();
-    const providerConfig = await getProviderConfig("ai", "openai", { client });
+    const providerConfig = await getProviderConfig("weather", "qweather", { client });
 
     expect(providerConfig).toMatchObject({
-      providerType: "ai",
-      providerCode: "openai",
-      maskedSecretJson: { apiKey: "sk-1****7890" },
+      providerType: "weather",
+      providerCode: "qweather",
+      maskedSecretJson: { apiKey: "qw-1****7890" },
     });
     expect("secretJson" in (providerConfig as unknown as Record<string, unknown>)).toBe(false);
   });
@@ -180,8 +180,8 @@ describe("provider config helpers", () => {
   it("masks secrets on provider updates and preserves safe list output", async () => {
     const client = createFakeClient();
     const updated = await updateProviderConfig({
-      providerType: "ai",
-      providerCode: "openai",
+      providerType: "weather",
+      providerCode: "qweather",
       enabled: true,
       configJson: { retry: { maxAttempts: 2 } },
       secretJson: { apiKey: "new-secret-value" },
@@ -191,7 +191,8 @@ describe("provider config helpers", () => {
     expect(updated).toMatchObject({
       enabled: true,
       configJson: {
-        model: "gpt-4.1",
+        apiHost: "https://devapi.qweather.com",
+        timeoutMs: 10000,
         retry: { maxAttempts: 2 },
       },
       maskedSecretJson: { apiKey: "new-****alue" },
@@ -199,25 +200,25 @@ describe("provider config helpers", () => {
     expect("secretJson" in (updated as unknown as Record<string, unknown>)).toBe(false);
 
     await expect(
-      listProviderConfigs({ providerType: "ai", enabledOnly: true, client }),
+      listProviderConfigs({ providerType: "weather", enabledOnly: true, client }),
     ).resolves.toHaveLength(1);
   });
 
   it("preserves existing provider secrets on blank input and supports explicit clear", async () => {
     const client = createFakeClient();
     await updateProviderConfig({
-      providerType: "ai",
-      providerCode: "openai",
+      providerType: "weather",
+      providerCode: "qweather",
       secretJson: {
         apiKey: "new-secret-value",
-        baseUrl: "https://api.openai.com",
+        apiHost: "https://devapi.qweather.com",
       },
       client,
     });
 
     const blankUpdate = await updateProviderConfig({
-      providerType: "ai",
-      providerCode: "openai",
+      providerType: "weather",
+      providerCode: "qweather",
       secretJson: {
         apiKey: "",
       },
@@ -226,18 +227,18 @@ describe("provider config helpers", () => {
 
     expect(blankUpdate.maskedSecretJson).toMatchObject({
       apiKey: "new-****alue",
-      baseUrl: "http****.com",
+      apiHost: "http****.com",
     });
 
     const cleared = await updateProviderConfig({
-      providerType: "ai",
-      providerCode: "openai",
+      providerType: "weather",
+      providerCode: "qweather",
       clearSecretKeys: ["apiKey"],
       client,
     });
 
     expect(cleared.maskedSecretJson).toEqual({
-      baseUrl: "http****.com",
+      apiHost: "http****.com",
     });
     expect("secretJson" in (cleared as unknown as Record<string, unknown>)).toBe(false);
   });

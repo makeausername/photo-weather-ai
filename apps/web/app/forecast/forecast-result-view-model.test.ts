@@ -13,7 +13,6 @@ import {
   type TerrainHorizonAssessment,
 } from "@photo-weather/shared";
 import {
-  AiExplanationPanel,
   ComprehensiveForecastView,
   AstroResultPage,
   CloudSeaProfessionalHourlyDataPanel,
@@ -23,17 +22,9 @@ import {
   ForecastResultClient,
   GlowResultPage,
   SourceDiagnosticsPanel,
-  aiExplainFrontendTimeoutMs,
-  cacheAiExplanation,
-  createAiExplanationCacheKey,
-  openAiBackendTimeoutMaxMs,
-  normalizeAiExplanationContent,
-  normalizeAiExplainResponse,
   professionalHourlySignalDisplayForTarget,
   providerDiagnosticText,
-  readCachedAiExplanation,
   resolveForecastPageMode,
-  shouldStartAiExplanationRequest,
 } from "./forecast-result-client";
 import {
   buildAstroForecastViewModel,
@@ -62,24 +53,6 @@ vi.mock("next/navigation", () => ({
 
 const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
-
-function firstOnClickHandler(node: React.ReactNode): (() => void) | null {
-  if (!React.isValidElement<{ children?: React.ReactNode; onClick?: () => void }>(node)) {
-    return null;
-  }
-  if (typeof node.props.onClick === "function") {
-    return node.props.onClick;
-  }
-
-  for (const child of React.Children.toArray(node.props.children)) {
-    const handler = firstOnClickHandler(child);
-    if (handler) {
-      return handler;
-    }
-  }
-
-  return null;
-}
 
 function score(key: string, label: string, value: number): ForecastScore {
   return {
@@ -2822,87 +2795,6 @@ function queryForTarget(target: ForecastCalculationResult["target"]): ForecastQu
   };
 }
 
-function aiExplanationForTest(
-  decision = "GPT / OpenAI 成功生成的拍摄结论。",
-  source: "openai" | "deterministic_fallback" = "openai",
-) {
-  return {
-    conclusion: {
-      titleZh: "拍摄天气解读",
-      summaryZh: "未来 48 小时以确定性天气和题材评分为准。",
-      recommendedDayZh: "优先关注第一天清晨。",
-      recommendationLevelZh: "值得等待",
-      whetherWorthDedicatedTripZh: "专程前需要临近复核。",
-      oneSentenceDecisionZh: decision,
-    },
-    bestPlan: {
-      primaryTargetZh: "云海与晨光",
-      bestDateZh: "2026 年 5 月 20 日",
-      bestWindowZh: "2026 年 5 月 20 日 05:00-07:00",
-      recommendedArrivalZh: "建议 04:20 前到位。",
-      whyThisWindowZh: "低云、湿度和光线窗口组合更值得观察。",
-      backupPlanZh: "若云层不开口，转拍远山层次。",
-    },
-    weatherTrend: {
-      trendSummaryZh: "云量偏多，需要等待短时开口。",
-      temperatureSummaryZh: "山顶清晨偏凉。",
-      rainSummaryZh: "降水风险较低。",
-      windSummaryZh: "风力可控。",
-      transparencySummaryZh: "通透度中等，需要现场复核。",
-    },
-    dayByDay: [
-      {
-        dateZh: "2026 年 5 月 20 日",
-        recommendationZh: "清晨优先观察。",
-        scoreZh: "综合 76 分",
-        temperatureZh: "10-18°C",
-        rainZh: "低风险",
-        cloudSeaZh: "云海机会较好",
-        glowZh: "朝霞可观察",
-        sunsetGlowZh: "晚霞备选",
-        astroZh: "星空需复核云量",
-        transparencyZh: "中等",
-        bestWindowZh: "05:00-07:00",
-        actionZh: "提前到位复核低云上沿。",
-      },
-    ],
-    subjectAdvice: {
-      cloudSeaZh: "云海机会较好，但要复核白墙风险。",
-      sunriseGlowZh: "朝霞可观察。",
-      sunsetGlowZh: "晚霞作为备选。",
-      astroMilkyWayZh: "星空银河需要复核云量和月光。",
-      transparencyZh: "通透度中等。",
-    },
-    riskAndGear: {
-      keyRisks: ["低云过厚会压住视野。"],
-      clothingZh: "准备防风外套。",
-      gearZh: "三脚架、防潮袋和备用电池。",
-      safetyZh: "保留撤离时间。",
-    },
-    finalAdvice: {
-      goNoGoZh: "可观察，专程需复核。",
-      ifAlreadyNearbyZh: "若已在附近，可以按窗口短时等待。",
-      ifDedicatedTripZh: "不建议只押单一题材专程。",
-      nextCheckZh: "复核短临降水、低云、能见度和阵风。",
-    },
-    metadata: {
-      source,
-    },
-  };
-}
-
-function renderAiPanelFromOutcome(outcome: ReturnType<typeof normalizeAiExplainResponse>): string {
-  return renderToStaticMarkup(
-    React.createElement(AiExplanationPanel, {
-      status: outcome.status,
-      explanation: outcome.explanation,
-      errorMessage: outcome.errorMessage,
-      retryable: outcome.retryable,
-      onGenerate: vi.fn(),
-    }),
-  );
-}
-
 function countOccurrences(text: string, pattern: string): number {
   return text.split(pattern).length - 1;
 }
@@ -2962,6 +2854,12 @@ function sectionBetween(html: string, startMarker: string, endMarker: string): s
   const end = html.indexOf(endMarker, start + startMarker.length);
 
   return start >= 0 && end > start ? html.slice(start, end) : "";
+}
+
+function sectionAfter(html: string, startMarker: string): string {
+  const start = html.indexOf(startMarker);
+
+  return start >= 0 ? html.slice(start) : "";
 }
 
 function expectMarkersInOrder(html: string, markers: readonly string[]): void {
@@ -3177,11 +3075,6 @@ describe("forecast result target-aware view model", () => {
         query: queryForTarget("general"),
         result,
         viewModel,
-        aiStatus: "idle",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
       }),
     );
 
@@ -3265,11 +3158,6 @@ describe("forecast result target-aware view model", () => {
         query: queryForTarget("general"),
         result,
         viewModel,
-        aiStatus: "idle",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
       }),
     );
 
@@ -3288,11 +3176,6 @@ describe("forecast result target-aware view model", () => {
         query: queryForTarget("general"),
         result,
         viewModel,
-        aiStatus: "idle",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
       }),
     );
 
@@ -3413,11 +3296,6 @@ describe("forecast result target-aware view model", () => {
         query: queryForTarget("general"),
         result,
         viewModel,
-        aiStatus: "idle",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
       }),
     );
     const dailySection = html.slice(
@@ -3647,11 +3525,6 @@ describe("forecast result target-aware view model", () => {
         query: queryForTarget("general"),
         result,
         viewModel,
-        aiStatus: "idle",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
       }),
     );
     const topDecisionCards = html.slice(
@@ -3690,11 +3563,6 @@ describe("forecast result target-aware view model", () => {
         query,
         result,
         viewModel,
-        aiStatus: "idle",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
       }),
     );
     const summarySection = sectionBetween(
@@ -3790,11 +3658,6 @@ describe("forecast result target-aware view model", () => {
         query: queryForTarget("general"),
         result,
         viewModel,
-        aiStatus: "idle",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
       }),
     );
     const windowSection = sectionBetween(
@@ -3831,11 +3694,6 @@ describe("forecast result target-aware view model", () => {
         query: queryForTarget("general"),
         result,
         viewModel,
-        aiStatus: "idle",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
       }),
     );
 
@@ -3855,11 +3713,6 @@ describe("forecast result target-aware view model", () => {
         query: queryForTarget("general"),
         result,
         viewModel,
-        aiStatus: "idle",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
       }),
     );
 
@@ -3903,11 +3756,6 @@ describe("forecast result target-aware view model", () => {
         query: queryForTarget("general"),
         result,
         viewModel,
-        aiStatus: "idle",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
       }),
     );
     const dailySection = html.slice(
@@ -4037,11 +3885,6 @@ describe("forecast result target-aware view model", () => {
         query: queryForTarget("general"),
         result,
         viewModel,
-        aiStatus: "idle",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
       }),
     );
     const dailySection = html.slice(
@@ -4085,11 +3928,6 @@ describe("forecast result target-aware view model", () => {
         query: queryForTarget("general"),
         result,
         viewModel,
-        aiStatus: "idle",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
       }),
     );
 
@@ -4137,11 +3975,6 @@ describe("forecast result target-aware view model", () => {
         query: queryForTarget("general"),
         result,
         viewModel,
-        aiStatus: "idle",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
       }),
     );
 
@@ -4210,11 +4043,6 @@ describe("forecast result target-aware view model", () => {
         query: queryForTarget("general"),
         result,
         viewModel,
-        aiStatus: "idle",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
       }),
     );
     const summarySection = sectionBetween(
@@ -4265,11 +4093,6 @@ describe("forecast result target-aware view model", () => {
         query: queryForTarget("general"),
         result,
         viewModel,
-        aiStatus: "idle",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
       }),
     );
     const summarySection = sectionBetween(
@@ -4343,11 +4166,6 @@ describe("forecast result target-aware view model", () => {
         query: queryForTarget("general"),
         result,
         viewModel,
-        aiStatus: "idle",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
       }),
     );
 
@@ -4391,11 +4209,6 @@ describe("forecast result target-aware view model", () => {
         query: queryForTarget("general"),
         result,
         viewModel,
-        aiStatus: "idle",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
       }),
     );
 
@@ -4465,11 +4278,6 @@ describe("forecast result target-aware view model", () => {
         query: queryForTarget("general"),
         result,
         viewModel,
-        aiStatus: "idle",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
       }),
     );
     const dailySection = html.slice(
@@ -4514,710 +4322,6 @@ describe("forecast result target-aware view model", () => {
     expect(calibrationCard?.value).toBe("谨慎参考");
     expect(calibrationCard?.detail).toContain("历史校准");
     expect(calibrationCard?.tone).toBe("accent");
-  });
-
-  it("keeps deterministic forecast content visible when optional intelligent interpretation fails", () => {
-    const result = resultForTarget("general");
-    const viewModel = buildForecastResultViewModel(result, "general");
-    const html = renderToStaticMarkup(
-      React.createElement(ComprehensiveForecastView, {
-        query: queryForTarget("general"),
-        result,
-        viewModel,
-        aiStatus: "error",
-        aiExplanation: null,
-        aiErrorMessage: "智能解读暂时不可用，确定性判断已保留。",
-        aiRetryable: true,
-        onGenerateAiExplanation: vi.fn(),
-      }),
-    );
-
-    expect(html).toContain("智能解读暂时不可用，确定性判断已保留。");
-    expect(html).toContain("重试智能解读");
-    expect(html).toContain("综合出片指数");
-    expect(html).toContain("逐日拍摄判断");
-    expect(html).toContain("出行建议");
-    expect(html).not.toContain("分析失败");
-  });
-
-  it("disables the intelligent interpretation trigger while a request is loading", () => {
-    const result = resultForTarget("general");
-    const viewModel = buildForecastResultViewModel(result, "general");
-    const html = renderToStaticMarkup(
-      React.createElement(ComprehensiveForecastView, {
-        query: queryForTarget("general"),
-        result,
-        viewModel,
-        aiStatus: "loading",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
-      }),
-    );
-
-    expect(html).toContain("正在生成智能解读...");
-    expect(html).toContain("disabled");
-    expect(html).toContain("综合出片指数");
-  });
-
-  it("does not render deterministic fallback from the forecast result before AI is clicked", () => {
-    const fallback = aiExplanationForTest(
-      "基于确定性计算结果生成的简版解读在页面加载后立即可见。",
-      "deterministic_fallback",
-    );
-    const result = {
-      ...resultForTarget("general"),
-      aiExplanation: fallback,
-    } as ForecastCalculationResult & { aiExplanation: ReturnType<typeof aiExplanationForTest> };
-    const viewModel = buildForecastResultViewModel(result, "general");
-    const onGenerateAiExplanation = vi.fn();
-    const html = renderToStaticMarkup(
-      React.createElement(ComprehensiveForecastView, {
-        query: queryForTarget("general"),
-        result,
-        viewModel,
-        aiStatus: "idle",
-        aiExplanation: fallback,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation,
-      }),
-    );
-
-    expect(html).toContain("智能解读");
-    expect(html).toContain("生成智能解读");
-    expect(html).not.toContain("可手动生成更自然的摄影建议，当前判断结果不依赖 AI。");
-    expect(html).not.toContain("可生成智能解读");
-    expect(html).not.toContain('data-ai-interpretation-empty-state="compact"');
-    expect(html).not.toContain("确定性简版");
-    expect(html).not.toContain("基于确定性计算结果生成的简版解读");
-    expect(html).not.toContain("基于确定性计算结果生成的简版解读在页面加载后立即可见。");
-    expect(html).not.toContain("一句话结论");
-    expect(html).not.toContain("最建议关注");
-    expect(onGenerateAiExplanation).not.toHaveBeenCalled();
-    expect(html).not.toContain("智能解读暂时不可用");
-  });
-
-  it("calls the manual intelligent interpretation handler only from the generate button", () => {
-    const onGenerate = vi.fn();
-    const element = AiExplanationPanel({
-      status: "idle",
-      explanation: null,
-      errorMessage: "",
-      retryable: false,
-      onGenerate,
-    });
-    const onClick = firstOnClickHandler(element);
-
-    expect(onGenerate).not.toHaveBeenCalled();
-    expect(onClick).not.toBeNull();
-
-    onClick?.();
-
-    expect(onGenerate).toHaveBeenCalledTimes(1);
-  });
-
-  it("clears loading and renders a success=true interpretation response", () => {
-    const result = resultForTarget("general");
-    const viewModel = buildForecastResultViewModel(result, "general");
-    const explanation = aiExplanationForTest("GPT / OpenAI 成功返回后应立即展示这条结论。");
-    const outcome = normalizeAiExplainResponse({
-      success: true,
-      interpretation: explanation,
-      retryable: false,
-      model: "gpt-4.1",
-      promptSizeChars: 11712,
-      latencyMs: 69883,
-      diagnostics: {
-        parseSuccess: true,
-        timeoutMs: 120000,
-      },
-    });
-    const html = renderToStaticMarkup(
-      React.createElement(ComprehensiveForecastView, {
-        query: queryForTarget("general"),
-        result,
-        viewModel,
-        aiStatus: outcome.status,
-        aiExplanation: outcome.explanation,
-        aiErrorMessage: outcome.errorMessage,
-        aiRetryable: outcome.retryable,
-        onGenerateAiExplanation: vi.fn(),
-      }),
-    );
-
-    expect(outcome.status).toBe("ready");
-    expect(outcome.errorMessage).toBe("");
-    expect(outcome.cacheable).toBe(true);
-    expect(html).toContain("GPT / OpenAI 成功返回后应立即展示这条结论。");
-    expect(html).not.toContain("正在生成解读");
-    expect(html).toContain("已生成智能解读");
-    expect(html).toContain("disabled");
-  });
-
-  it("renders ok=true strict_json explanation content with simple frontend fields", () => {
-    const result = resultForTarget("general");
-    const viewModel = buildForecastResultViewModel(result, "general");
-    const outcome = normalizeAiExplainResponse({
-      ok: true,
-      explanation: {
-        conclusion: "清晨窗口可作为主计划，专程出发前仍需复核短临低云。",
-        summaryText: "严格 JSON 摘要也应直接展示。",
-        reasons: ["低云、湿度和地形信号集中在清晨。"],
-        suggestions: ["按主窗口提前到位，失败时转拍远山层次。"],
-        risks: ["短临降水和白墙仍需现场复核。"],
-      },
-      meta: {
-        providerCode: "openai",
-        model: "gpt-4.1",
-        parseSuccess: true,
-        parseStrategy: "strict_json",
-        fallbackUsed: false,
-      },
-    });
-    const html = renderToStaticMarkup(
-      React.createElement(ComprehensiveForecastView, {
-        query: queryForTarget("general"),
-        result,
-        viewModel,
-        aiStatus: outcome.status,
-        aiExplanation: outcome.explanation,
-        aiErrorMessage: outcome.errorMessage,
-        aiRetryable: outcome.retryable,
-        onGenerateAiExplanation: vi.fn(),
-      }),
-    );
-
-    expect(outcome.status).toBe("ready");
-    expect(outcome.errorMessage).toBe("");
-    expect(outcome.model).toBe("gpt-4.1");
-    expect(outcome.explanation?.conclusion.oneSentenceDecisionZh).toContain("清晨窗口");
-    expect(html).toContain("清晨窗口可作为主计划");
-    expect(html).toContain("低云、湿度和地形信号集中在清晨");
-    expect(html).not.toContain("智能解读暂时不可用");
-  });
-
-  it("renders ok=true summaryText-only responses without unavailable state", () => {
-    const outcome = normalizeAiExplainResponse({
-      ok: true,
-      summaryText: "只有 summaryText 时也必须展示智能解读内容。",
-      meta: {
-        providerCode: "openai",
-        model: "gpt-4.1",
-        parseSuccess: true,
-        parseStrategy: "strict_json",
-        fallbackUsed: false,
-      },
-    });
-
-    expect(outcome.status).toBe("ready");
-    expect(outcome.errorMessage).toBe("");
-    expect(outcome.explanation?.conclusion.summaryZh).toContain("只有 summaryText");
-    expect(outcome.explanation?.metadata?.source).toBe("openai");
-  });
-
-  it("normalizes displayable AI explanation fields without requiring the legacy full shape", () => {
-    const content = normalizeAiExplanationContent({
-      success: true,
-      explanation: {
-        title: "AI 判断",
-        conclusion: "结构化结论应被识别。",
-        summaryText: "结构化摘要应被识别。",
-        reasons: ["结构化原因"],
-        suggestions: ["结构化建议"],
-        risks: ["结构化风险"],
-      },
-      result: {
-        explanation: {
-          text: "result.explanation 也应被识别。",
-        },
-      },
-      model: "gpt-4.1",
-      parseSuccess: true,
-    });
-
-    expect(content).toMatchObject({
-      hasContent: true,
-      title: "AI 判断",
-      conclusion: "结构化结论应被识别。",
-      summaryText: "结构化摘要应被识别。",
-      reasons: ["结构化原因"],
-      suggestions: ["结构化建议"],
-      risks: ["结构化风险"],
-    });
-    expect(content.sections.map((section) => section.text)).toContain(
-      "result.explanation 也应被识别。",
-    );
-  });
-
-  it("renders success=true explanation.summaryText responses without unavailable state", () => {
-    const outcome = normalizeAiExplainResponse({
-      success: true,
-      explanation: {
-        summaryText: "explanation.summaryText 应直接展示。",
-      },
-      parseSuccess: true,
-      model: "gpt-4.1",
-    });
-    const html = renderAiPanelFromOutcome(outcome);
-
-    expect(outcome.status).toBe("ready");
-    expect(html).toContain("explanation.summaryText 应直接展示。");
-    expect(html).not.toContain("智能解读暂时不可用");
-  });
-
-  it("renders success=true content and text fallback responses", () => {
-    const contentOutcome = normalizeAiExplainResponse({
-      success: true,
-      content: "content 字段应作为智能解读展示。",
-      parseSuccess: true,
-    });
-    const textOutcome = normalizeAiExplainResponse({
-      ok: true,
-      text: "text 字段应作为智能解读展示。",
-      parseSuccess: true,
-    });
-
-    expect(renderAiPanelFromOutcome(contentOutcome)).toContain("content 字段应作为智能解读展示。");
-    expect(renderAiPanelFromOutcome(textOutcome)).toContain("text 字段应作为智能解读展示。");
-    expect(contentOutcome.status).toBe("ready");
-    expect(textOutcome.status).toBe("ready");
-  });
-
-  it("renders success=true result.explanation responses without unavailable state", () => {
-    const outcome = normalizeAiExplainResponse({
-      success: true,
-      result: {
-        explanation: {
-          conclusion: "result.explanation 结论应直接展示。",
-          reasons: ["result.explanation 原因应展示。"],
-          suggestions: ["result.explanation 建议应展示。"],
-          risks: ["result.explanation 风险应展示。"],
-        },
-      },
-      parseSuccess: true,
-      model: "gpt-4.1",
-    });
-    const html = renderAiPanelFromOutcome(outcome);
-
-    expect(outcome.status).toBe("ready");
-    expect(html).toContain("result.explanation 结论应直接展示。");
-    expect(html).toContain("判断依据");
-    expect(html).toContain("result.explanation 原因应展示。");
-    expect(html).toContain("行动建议");
-    expect(html).toContain("result.explanation 建议应展示。");
-    expect(html).toContain("风险与复核");
-    expect(html).toContain("result.explanation 风险应展示。");
-    expect(html).not.toContain("智能解读暂时不可用");
-  });
-
-  it("keeps the frontend timeout longer than the configurable GPT / OpenAI backend timeout", () => {
-    expect(openAiBackendTimeoutMaxMs).toBe(120000);
-    expect(aiExplainFrontendTimeoutMs).toBeGreaterThanOrEqual(120000);
-    expect(aiExplainFrontendTimeoutMs).toBeGreaterThanOrEqual(openAiBackendTimeoutMaxMs);
-  });
-
-  it("renders a compact error when GPT / OpenAI fails and does not show deterministic fallback sections", () => {
-    const result = resultForTarget("general");
-    const viewModel = buildForecastResultViewModel(result, "general");
-    const fallback = aiExplanationForTest(
-      "确定性简版解读在 GPT / OpenAI 超时后仍然可见。",
-      "deterministic_fallback",
-    );
-    const outcome = normalizeAiExplainResponse({
-      success: false,
-      fallback: true,
-      explanation: fallback,
-      errorCategory: "timeout",
-      retryable: true,
-      diagnostics: {
-        parseSuccess: false,
-        errorCategory: "timeout",
-        timeoutMs: 120000,
-      },
-    });
-    const html = renderToStaticMarkup(
-      React.createElement(ComprehensiveForecastView, {
-        query: queryForTarget("general"),
-        result,
-        viewModel,
-        aiStatus: outcome.status,
-        aiExplanation: outcome.explanation,
-        aiErrorMessage: outcome.errorMessage,
-        aiRetryable: outcome.retryable,
-        onGenerateAiExplanation: vi.fn(),
-      }),
-    );
-
-    expect(outcome.status).toBe("error");
-    expect(outcome.explanation).toBeNull();
-    expect(outcome.retryable).toBe(true);
-    expect(outcome.cacheable).toBe(false);
-    expect(html).toContain("智能解读暂时不可用（上游超时），确定性判断已保留。");
-    expect(html).toContain("重试智能解读");
-    expect(html).not.toContain("确定性简版解读在 GPT / OpenAI 超时后仍然可见。");
-    expect(html).not.toContain("确定性简版");
-    expect(html).not.toContain("基于确定性计算结果生成的简版解读");
-    expect(html).not.toContain("一句话结论");
-    expect(html).not.toContain("最建议关注");
-    expect(html).not.toContain("天气大势");
-    expect(html).not.toContain("逐日建议");
-    expect(html).not.toContain("题材判断");
-    expect(html).not.toContain("风险与装备");
-    expect(html).not.toContain("最终建议");
-    expect(html).toContain("综合出片指数");
-  });
-
-  it("ignores fallback when a success response has invalid interpretation data", () => {
-    const fallback = aiExplanationForTest(
-      "GPT / OpenAI 返回无效结构时继续显示确定性简版解读。",
-      "deterministic_fallback",
-    );
-    const outcome = normalizeAiExplainResponse(
-      {
-        success: true,
-        source: "openai",
-        interpretation: {},
-        model: "gpt-4.1",
-        parseSuccess: true,
-      },
-      fallback,
-    );
-
-    expect(outcome.status).toBe("error");
-    expect(outcome.success).toBe(false);
-    expect(outcome.cacheable).toBe(false);
-    expect(outcome.errorCategory).toBe("frontend_contract_error");
-    expect(outcome.backendErrorCategory).toBe("none");
-    expect(outcome.explanation).toBeNull();
-    expect(outcome.errorMessage).toBe("智能解读暂时不可用（返回格式异常），确定性判断已保留。");
-  });
-
-  it("honors backend retryable false for GPT / OpenAI provider HTTP failures", () => {
-    const outcome = normalizeAiExplainResponse({
-      success: false,
-      errorCategory: "provider_http_error",
-      retryable: false,
-      messageZh: "GPT / OpenAI API Key invalid.",
-      diagnostics: {
-        parseSuccess: false,
-        errorCategory: "provider_http_error",
-      },
-    });
-
-    expect(outcome.status).toBe("error");
-    expect(outcome.retryable).toBe(false);
-    expect(outcome.errorCategory).toBe("provider_http_error");
-    expect(outcome.errorMessage).not.toContain("API Key");
-  });
-
-  it("shows retry without hiding deterministic forecast content when no fallback is available", () => {
-    const result = resultForTarget("general");
-    const viewModel = buildForecastResultViewModel(result, "general");
-    const outcome = normalizeAiExplainResponse({
-      success: false,
-      errorCategory: "network_error",
-      retryable: true,
-      diagnostics: {
-        parseSuccess: false,
-        errorCategory: "network_error",
-      },
-    });
-    const html = renderToStaticMarkup(
-      React.createElement(ComprehensiveForecastView, {
-        query: queryForTarget("general"),
-        result,
-        viewModel,
-        aiStatus: outcome.status,
-        aiExplanation: outcome.explanation,
-        aiErrorMessage: outcome.errorMessage,
-        aiRetryable: outcome.retryable,
-        onGenerateAiExplanation: vi.fn(),
-      }),
-    );
-
-    expect(outcome.status).toBe("error");
-    expect(outcome.retryable).toBe(true);
-    expect(html).toContain("重试智能解读");
-    expect(html).toContain("智能解读暂时不可用，确定性判断已保留。");
-    expect(html).not.toContain("智能解读暂时不可用（暂时不可用）");
-    expect(html).toContain("综合出片指数");
-  });
-
-  it("maps success=true sections responses into a renderable interpretation", () => {
-    const outcome = normalizeAiExplainResponse({
-      success: true,
-      sections: {
-        conclusion: {
-          titleZh: "一句话结论",
-          contentZh: "sections 字段也应被映射为可展示解读。",
-        },
-        weather: {
-          titleZh: "天气趋势",
-          contentZh: "云量偏多，等待短时开口。",
-        },
-      },
-      diagnostics: {
-        parseSuccess: true,
-      },
-    });
-
-    expect(outcome.status).toBe("ready");
-    expect(outcome.explanation?.conclusion.oneSentenceDecisionZh).toContain(
-      "sections 字段也应被映射为可展示解读。",
-    );
-  });
-
-  it("renders sectioned GPT / OpenAI explanation with section-level fallback only", () => {
-    const sectionedSections = [
-      {
-        key: "overview",
-        titleZh: "综合结论",
-        status: "success",
-        textZh: "分节总览来自 GPT，只解释确定性天气判断。",
-        bulletPointsZh: ["不重新计算评分。"],
-        parseStrategy: "strict_json",
-        model: "gpt-5.4",
-      },
-      {
-        key: "timeline",
-        titleZh: "窗口节奏",
-        status: "fallback",
-        textZh: "时间线使用确定性兜底。",
-        bulletPointsZh: [],
-        errorCategory: "provider_http_error",
-        parseStrategy: "failed",
-      },
-      {
-        key: "risk_gear",
-        titleZh: "风险与装备",
-        status: "failed",
-        textZh: "",
-        bulletPointsZh: [],
-        errorCategory: "provider_parse_error",
-        parseStrategy: "failed",
-      },
-    ] as const;
-    const explanation = {
-      ...aiExplanationForTest("分节总览来自 GPT，只解释确定性天气判断。"),
-      sections: sectionedSections,
-      sectionedExplanation: {
-        version: "forecast-ai-sectioned-v1",
-        providerCode: "openai",
-        model: "gpt-5.4",
-        sections: sectionedSections,
-        success: true,
-        displaySuccess: true,
-      },
-      metadata: {
-        source: "openai",
-        parseStrategy: "failed",
-        fallbackUsed: true,
-      },
-    };
-    const outcome = normalizeAiExplainResponse({
-      ok: true,
-      success: true,
-      source: "openai",
-      explanation,
-      sections: sectionedSections,
-      sectionedExplanation: explanation.sectionedExplanation,
-      displaySuccess: true,
-      hasDisplayableAiContent: true,
-      parseSuccess: false,
-      parseStrategy: "failed",
-      diagnostics: {
-        parseSuccess: false,
-        parseStrategy: "failed",
-        rawPrompt: "Authorization: Bearer sk-should-not-render",
-      },
-    });
-    const html = renderAiPanelFromOutcome(outcome);
-
-    expect(outcome.status).toBe("ready");
-    expect(outcome.parseSuccess).toBe(false);
-    expect(html).toContain("综合结论");
-    expect(html).toContain("分节总览来自 GPT，只解释确定性天气判断。");
-    expect(html).toContain("窗口节奏");
-    expect(html).toContain("时间线使用确定性兜底。");
-    expect(html).toContain("本节使用确定性结果生成兜底解读。");
-    expect(html).toContain("风险与装备");
-    expect(html).toContain("本节智能解读暂时不可用，确定性判断已保留。");
-    expect(html).not.toContain("智能解读暂时不可用（暂时不可用）");
-    expect(html).not.toContain("Authorization");
-    expect(html).not.toContain("sk-should-not-render");
-    expect(html).not.toContain("rawPrompt");
-  });
-
-  it("maps prompt_too_large to a clean public message", () => {
-    const outcome = normalizeAiExplainResponse({
-      success: false,
-      errorCategory: "prompt_too_large",
-      retryable: true,
-      diagnostics: {
-        parseSuccess: false,
-        errorCategory: "prompt_too_large",
-      },
-    });
-
-    expect(outcome.status).toBe("error");
-    expect(outcome.errorMessage).toBe(
-      "智能解读内容过长，系统已保留确定性天气判断，请稍后重试或缩短预报范围。",
-    );
-    expect(outcome.errorMessage).not.toContain("暂时不可用（暂时不可用）");
-  });
-
-  it("renders successful plain-text fallback without unavailable state", () => {
-    const result = resultForTarget("general");
-    const viewModel = buildForecastResultViewModel(result, "general");
-    const outcome = normalizeAiExplainResponse({
-      ok: true,
-      success: true,
-      interpretation:
-        "\u7ed3\u8bba\uff1a\u6e05\u6668\u7a97\u53e3\u53ef\u4f5c\u4e3a\u4e3b\u8ba1\u5212\uff0c\u4f46\u4e0d\u8981\u53ea\u4e3a\u5355\u4e00\u4fe1\u53f7\u4e13\u7a0b\u3002",
-      displaySuccess: true,
-      hasDisplayableAiContent: true,
-      parseSuccess: false,
-      parseStrategy: "plain_text_fallback",
-      finishReason: "length",
-      diagnostics: {
-        displaySuccess: true,
-        hasDisplayableAiContent: true,
-        parseSuccess: false,
-        parseStrategy: "plain_text_fallback",
-        finishReason: "length",
-      },
-    });
-    const html = renderToStaticMarkup(
-      React.createElement(ComprehensiveForecastView, {
-        query: queryForTarget("general"),
-        result,
-        viewModel,
-        aiStatus: outcome.status,
-        aiExplanation: outcome.explanation,
-        aiErrorMessage: outcome.errorMessage,
-        aiRetryable: outcome.retryable,
-        onGenerateAiExplanation: vi.fn(),
-      }),
-    );
-
-    expect(outcome.status).toBe("ready");
-    expect(outcome.success).toBe(true);
-    expect(outcome.parseSuccess).toBe(false);
-    expect(outcome.errorMessage).toBe("");
-    expect(outcome.explanation?.conclusion.summaryZh).toContain("\u6e05\u6668\u7a97\u53e3");
-    expect(outcome.explanation?.metadata?.parseStrategy).toBe("plain_text_fallback");
-    expect(html).toContain("\u6e05\u6668\u7a97\u53e3");
-    expect(html).not.toContain("智能解读暂时不可用");
-  });
-
-  it("caches successful interpretation by stable forecast result key", () => {
-    const query = queryForTarget("general");
-    const result = resultForTarget("general");
-    const cacheKey = createAiExplanationCacheKey({ query, result });
-    const explanation = aiExplanationForTest("缓存命中的解读不需要重复请求 GPT / OpenAI。");
-
-    cacheAiExplanation(cacheKey, explanation);
-
-    expect(readCachedAiExplanation(cacheKey)?.conclusion.oneSentenceDecisionZh).toBe(
-      "缓存命中的解读不需要重复请求 GPT / OpenAI。",
-    );
-  });
-
-  it("prevents duplicate GPT / OpenAI clicks while a request is running", () => {
-    expect(shouldStartAiExplanationRequest("loading", false)).toBe(false);
-    expect(shouldStartAiExplanationRequest("idle", true)).toBe(false);
-    expect(shouldStartAiExplanationRequest("idle", false)).toBe(true);
-  });
-
-  it("renders structured intelligent interpretation sections after a successful AI response", () => {
-    const result = resultForTarget("general");
-    const viewModel = buildForecastResultViewModel(result, "general");
-    const html = renderToStaticMarkup(
-      React.createElement(ComprehensiveForecastView, {
-        query: queryForTarget("general"),
-        result,
-        viewModel,
-        aiStatus: "ready",
-        aiExplanation: {
-          conclusion: {
-            titleZh: "黄山光明顶摄影天气决策",
-            summaryZh: "未来48小时云量偏多，清晨窗口更值得关注。",
-            recommendedDayZh: "最建议关注 2026年5月20日清晨。",
-            recommendationLevelZh: "值得等待",
-            whetherWorthDedicatedTripZh: "谨慎参考",
-            oneSentenceDecisionZh: "可观察，但不建议只押单一题材专程出发。",
-          },
-          bestPlan: {
-            primaryTargetZh: "清晨云海",
-            bestDateZh: "2026年5月20日",
-            bestWindowZh: "2026年5月20日 05:00–07:00",
-            recommendedArrivalZh: "建议到达：2026年5月20日 04:20 前",
-            whyThisWindowZh: "清晨低云和湿度组合较好。",
-            backupPlanZh: "2026年5月20日 17:56–19:41 晚霞备选。",
-          },
-          weatherTrend: {
-            trendSummaryZh: "整体云量偏多，等待云层开口。",
-            temperatureSummaryZh: "山顶估算温度约 10-18°C。",
-            rainSummaryZh: "降水风险低。",
-            windSummaryZh: "风力可控。",
-            transparencySummaryZh: "通透度一般，远山层次需复核。",
-          },
-          dayByDay: [
-            {
-              dateZh: "2026年5月20日 星期三",
-              recommendationZh: "清晨可观察。",
-              scoreZh: "综合 78 分",
-              temperatureZh: "10-18°C",
-              rainZh: "降水风险低",
-              cloudSeaZh: "云海机会 82 分",
-              glowZh: "朝霞可关注",
-              sunsetGlowZh: "晚霞备选",
-              astroZh: "天气需复核",
-              transparencyZh: "通透度 72 分",
-              bestWindowZh: "2026年5月20日 05:00–07:00",
-              actionZh: "提前到位观察低云上沿。",
-            },
-          ],
-          subjectAdvice: {
-            cloudSeaZh: "云海机会较好，白墙风险需复核。",
-            sunriseGlowZh: "日出和朝霞有机会。",
-            sunsetGlowZh: "日落后余晖仅作备选。",
-            astroMilkyWayZh: "有天文窗口不代表能拍银河，需复核云量。",
-            transparencyZh: "通透度一般。",
-          },
-          riskAndGear: {
-            keyRisks: ["演示数据需要复核"],
-            clothingZh: "清晨偏凉，带防风外套。",
-            gearZh: "三脚架、防潮袋、备用电池。",
-            safetyZh: "保留撤离时间。",
-          },
-          finalAdvice: {
-            goNoGoZh: "谨慎参考。",
-            ifAlreadyNearbyZh: "已在附近可观察。",
-            ifDedicatedTripZh: "不建议只为单一窗口专程。",
-            nextCheckZh: "复核短临降水、低云和阵风。",
-          },
-          metadata: {
-            source: "openai",
-          },
-        },
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
-      }),
-    );
-
-    expect(html).toContain("一句话结论");
-    expect(html).toContain("最建议关注");
-    expect(html).toContain("天气大势");
-    expect(html).toContain("逐日建议");
-    expect(html).toContain("题材判断");
-    expect(html).toContain("风险与装备");
-    expect(html).toContain("最终建议");
-    expect(html).not.toContain("确定性简版");
-    expect(html).toContain("2026年5月20日 05:00–07:00");
   });
 
   it("shows meteoblue source diagnostics with exact category and safe message", () => {
@@ -5846,25 +4950,6 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toMatch(/stack|AbortError|C:\\|\/app\/|passwordHash|refreshTokenHash/i);
   });
 
-  it("renders AI upgrade_required as an upgrade CTA instead of a retry failure", () => {
-    const html = renderToStaticMarkup(
-      React.createElement(AiExplanationPanel, {
-        status: "error",
-        explanation: null,
-        errorCode: "upgrade_required",
-        errorMessage: "",
-        retryable: false,
-        onGenerate: vi.fn(),
-      }),
-    );
-
-    expect(html).toContain('data-ai-upgrade-required="true"');
-    expect(html).toContain(upgradeRequiredTitle);
-    expect(html).toContain(upgradeRequiredDefaultMessage);
-    expect(html).not.toContain("AbortError");
-    expect(html).not.toMatch(/stack|C:\\|\/app\/|passwordHash|refreshTokenHash/i);
-  });
-
   it("keeps ForecastResultClient calculation keyed by stable query key instead of raw object identity", () => {
     const source = readFileSync(
       fileURLToPath(new URL("./forecast-result-client.tsx", import.meta.url)),
@@ -6051,11 +5136,7 @@ describe("forecast result target-aware view model", () => {
         "CloudSeaDecisionSupport",
         "CloudSeaProfessionalData",
       );
-      const professionalDataSection = sectionBetween(
-        html,
-        "CloudSeaProfessionalData",
-        "CloudSeaAiInterpretation",
-      );
+      const professionalDataSection = sectionAfter(html, "CloudSeaProfessionalData");
       expect(dailyCardSection).toContain('data-testid="cloud-sea-daily-card-grid"');
       expect(dailyCardSection).toContain('data-cloud-sea-daily-card-grid="true"');
       expect(dailyCardSection).toContain("grid-cols-4");
@@ -6110,12 +5191,6 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain('data-result-judgment-basis-grid="true"');
       expect(html).toContain('data-result-action-plan-grid="true"');
       expect(html).not.toContain("CloudSeaStackedLayout");
-      expect(html).toContain('data-cloud-sea-section="CloudSeaAiInterpretation"');
-      expect(html).toContain("智能解读");
-      expect(html).toContain("生成智能解读");
-      expect(html).not.toContain("可手动生成更自然的摄影建议，当前判断结果不依赖 AI。");
-      expect(html).not.toContain("可生成智能解读");
-      expect(html).not.toContain('data-ai-interpretation-empty-state="compact"');
       expect(html).not.toContain("确定性简版");
       expect(html).not.toContain("基于确定性计算结果生成的简版解读");
       expect(html).not.toContain("CloudSeaActionSummary");
@@ -6162,7 +5237,6 @@ describe("forecast result target-aware view model", () => {
       expect(html.indexOf("CloudSeaDailyTrend")).toBeLessThan(html.indexOf("判断依据"));
       expect(html.indexOf("判断依据")).toBeLessThan(html.indexOf("行动方案"));
       expect(html.indexOf("行动方案")).toBeLessThan(html.indexOf("风险与复核"));
-      expect(html.indexOf("风险与复核")).toBeLessThan(html.indexOf("智能解读"));
       expectMarkersInOrder(html, [
         "CloudSeaWindowDecision",
         "CloudSeaHeroConclusion",
@@ -6176,8 +5250,6 @@ describe("forecast result target-aware view model", () => {
         "CloudSeaActionPlan",
         "CloudSeaRiskSummary",
         "CloudSeaProfessionalData",
-        "CloudSeaAiInterpretation",
-        "智能解读",
       ]);
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
@@ -6281,98 +5353,6 @@ describe("forecast result target-aware view model", () => {
               : "min-[1180px]:col-span-2";
         expect(className).toContain(expectedDesktopSpan);
       });
-    }
-  });
-
-  it("places Cloud Sea intelligent interpretation after deterministic result sections", () => {
-    const base = resultWithProfessionalHourlyData();
-    const context = agreementContext();
-    const result: ForecastCalculationResult = {
-      ...base,
-      weatherDataMode: "real",
-      weatherFusionSummary: weatherFusionSummaryWithAgreement(context),
-      cloudSeaAnalysis: {
-        ...base.cloudSeaAnalysis,
-        confidenceLevel: "high",
-      },
-    };
-    const viewModel = buildCloudSeaForecastViewModel(result);
-    const fetchMock = vi.fn(() => {
-      throw new Error("cloud sea AI interpretation should not auto-run on result render");
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    try {
-      const html = renderToStaticMarkup(
-        React.createElement(CloudSeaResultPage, {
-          query: queryForTarget("cloud_sea"),
-          result,
-          viewModel,
-          returnUrl: "/forecast?target=general",
-        }),
-      );
-      const aiIndex = html.indexOf("智能解读");
-      const dataCaution = viewModel.dataCaution ?? "";
-      const afterAiSection = html.slice(aiIndex);
-      const decisionSupportSection = sectionBetween(
-        html,
-        "CloudSeaDecisionSupport",
-        "CloudSeaProfessionalData",
-      );
-      const professionalDataSection = sectionBetween(
-        html,
-        "CloudSeaProfessionalData",
-        "CloudSeaAiInterpretation",
-      );
-
-      expect(aiIndex).toBeGreaterThanOrEqual(0);
-      expect(html).toContain("生成智能解读");
-      expect(html).toContain("专业小时数据");
-      expect(decisionSupportSection).toContain("CloudSeaReasoning");
-      expect(decisionSupportSection).toContain("CloudSeaActionPlan");
-      expect(decisionSupportSection).toContain("CloudSeaRiskSummary");
-      expect(professionalDataSection).toContain("专业小时数据");
-      expect(professionalDataSection).toContain("CloudSeaProfessionalHourlyData");
-      expect(professionalDataSection).not.toContain("CloudSeaReasoning");
-      expect(professionalDataSection).not.toContain("CloudSeaActionPlan");
-      expect(professionalDataSection).not.toContain("CloudSeaRiskSummary");
-      expect(html).toContain("总云量 %");
-      expect(html).toContain("高云量 %");
-      expect(html).toContain("中云量 %");
-      expect(html).toContain("低云量 %");
-      expect(professionalDataSection).not.toContain("CloudSeaMultiSourceAgreement");
-      expect(professionalDataSection).not.toContain("多源一致性");
-      expect(html).not.toContain("CloudSeaMultiSourceAgreement");
-      expect(html).not.toContain("多源一致性");
-      expect(dataCaution).toContain("低云分歧较大");
-      expectMarkersInOrder(html, [
-        "CloudSeaWindowDecision",
-        "CloudSeaTopResultHeader",
-        "CloudSeaCoreMetrics",
-        "CloudSeaNearTermWeather",
-        "CloudSeaWindowCards",
-        "CloudSeaDailyCards",
-        "CloudSeaDailyTrend",
-        "CloudSeaDecisionSupport",
-        "CloudSeaReasoning",
-        "CloudSeaActionPlan",
-        "CloudSeaRiskSummary",
-        "CloudSeaProfessionalData",
-        "CloudSeaProfessionalHourlyData",
-        "CloudSeaAiInterpretation",
-        "智能解读",
-      ]);
-      expect(html.indexOf(dataCaution)).toBeLessThan(aiIndex);
-      expect(afterAiSection).not.toContain("专业小时数据");
-      expect(afterAiSection).not.toContain("每日云海判断");
-      expect(afterAiSection).not.toContain("判断依据");
-      expect(afterAiSection).not.toContain("行动方案");
-      expect(afterAiSection).not.toContain("风险与复核");
-      expect(afterAiSection).not.toContain("多源一致性");
-      expect(afterAiSection).not.toContain("返回综合判断");
-      expect(fetchMock).not.toHaveBeenCalled();
-    } finally {
-      vi.unstubAllGlobals();
     }
   });
 
@@ -6497,11 +5477,7 @@ describe("forecast result target-aware view model", () => {
       "CloudSeaDecisionSupport",
       "CloudSeaProfessionalData",
     );
-    const professionalDataSection = sectionBetween(
-      html,
-      "CloudSeaProfessionalData",
-      "CloudSeaAiInterpretation",
-    );
+    const professionalDataSection = sectionAfter(html, "CloudSeaProfessionalData");
     expect(decisionSupportSection).toContain("CloudSeaReasoning");
     expect(decisionSupportSection).toContain("CloudSeaActionPlan");
     expect(decisionSupportSection).toContain("CloudSeaRiskSummary");
@@ -6551,11 +5527,7 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const professionalSection = sectionBetween(
-      html,
-      "CloudSeaProfessionalData",
-      "CloudSeaAiInterpretation",
-    );
+    const professionalSection = sectionAfter(html, "CloudSeaProfessionalData");
 
     expect(viewModel.cloudBasisConsistency).toMatchObject({
       cloudBasisLevel: "mixed_basis",
@@ -6704,11 +5676,7 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const professionalDataSection = sectionBetween(
-      html,
-      "CloudSeaProfessionalData",
-      "CloudSeaAiInterpretation",
-    );
+    const professionalDataSection = sectionAfter(html, "CloudSeaProfessionalData");
     const decisionSupportSection = sectionBetween(
       html,
       "CloudSeaDecisionSupport",
@@ -6795,11 +5763,7 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const professionalDataSection = sectionBetween(
-      html,
-      "CloudSeaProfessionalData",
-      "CloudSeaAiInterpretation",
-    );
+    const professionalDataSection = sectionAfter(html, "CloudSeaProfessionalData");
     const decisionSupportSection = sectionBetween(
       html,
       "CloudSeaDecisionSupport",
@@ -6857,11 +5821,7 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const professionalSection = sectionBetween(
-      html,
-      "CloudSeaProfessionalData",
-      "CloudSeaAiInterpretation",
-    );
+    const professionalSection = sectionAfter(html, "CloudSeaProfessionalData");
     const professionalHourlyTable = sectionBetween(
       professionalSection,
       'data-cloud-sea-professional-table-scroll="true"',
@@ -7093,11 +6053,7 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const professionalSection = sectionBetween(
-      html,
-      "CloudSeaProfessionalData",
-      "CloudSeaAiInterpretation",
-    );
+    const professionalSection = sectionAfter(html, "CloudSeaProfessionalData");
 
     expect(viewModel.cloudLayerCompleteness).toMatchObject({
       cloudLayerBasis: "total_only",
@@ -7714,9 +6670,6 @@ describe("forecast result target-aware view model", () => {
       expect(html).not.toContain("天气：演示天气数据");
       expect(html).not.toContain("地形：演示数据");
       expect(html).not.toContain("天文数据：本地算法计算");
-      expect(html).toContain('data-glow-section="GlowAiInterpretation"');
-      expect(html).toContain('data-ai-interpretation-target="glow"');
-      expect(html).toContain("生成智能解读");
       expect(html).toContain("GlowResultPage");
       expect(html).toContain("GlowHeroConclusion");
       expect(html).toContain("GlowDailyOpportunities");
@@ -7727,7 +6680,6 @@ describe("forecast result target-aware view model", () => {
         "GlowDailyOpportunities",
         "GlowDecisionSupport",
         "GlowProfessionalData",
-        "GlowAiInterpretation",
       ]);
       expect(html).not.toContain("云海");
       expect(html).not.toContain("白墙");
@@ -7765,51 +6717,6 @@ describe("forecast result target-aware view model", () => {
     } finally {
       vi.unstubAllGlobals();
     }
-  });
-
-  it("uses the exact shared intelligent interpretation component for cloud-sea, glow, and astro", () => {
-    const source = readFileSync(
-      fileURLToPath(new URL("./forecast-result-client.tsx", import.meta.url)),
-      "utf8",
-    );
-    const sharedComponentSource = source.slice(
-      source.indexOf("export function ForecastAiInterpretationSection"),
-      source.indexOf("export function ForecastResultClient"),
-    );
-    const hookSource = source.slice(
-      source.indexOf("function useForecastAiInterpretation"),
-      source.indexOf("export function ForecastAiInterpretationSection"),
-    );
-    const cloudSeaPageSource = source.slice(
-      source.indexOf("export function CloudSeaResultPage"),
-      source.indexOf("export function GlowResultPage"),
-    );
-    const glowPageSource = source.slice(
-      source.indexOf("export function GlowResultPage"),
-      source.indexOf("export function AstroResultPage"),
-    );
-    const astroPageSource = source.slice(
-      source.indexOf("export function AstroResultPage"),
-      source.indexOf("function CloudSeaTopResultHeader"),
-    );
-    const sharedSectionCall = "<ForecastAiInterpretationSection query={query} result={result} />";
-
-    expect(sharedComponentSource).toContain("AiExplanationPanel");
-    expect(hookSource).toContain("/forecast/ai-explain");
-    expect(hookSource).toContain("normalizeAiExplainResponse");
-    expect(cloudSeaPageSource).toContain(sharedSectionCall);
-    expect(glowPageSource).toContain(sharedSectionCall);
-    expect(astroPageSource).toContain(sharedSectionCall);
-    expect(astroPageSource).not.toContain("emptyStateVariant");
-    expect(cloudSeaPageSource).toContain('data-cloud-sea-section="CloudSeaAiInterpretation"');
-    expect(glowPageSource).toContain('data-glow-section="GlowAiInterpretation"');
-    expect(astroPageSource).toContain('data-astro-section="AstroAiInterpretation"');
-    expect(glowPageSource).not.toContain("GlowAiInterpretationSection");
-    expect(glowPageSource).not.toContain("useGlowAiInterpretation");
-    expect(glowPageSource).not.toContain("/forecast/glow-ai");
-    expect(astroPageSource).not.toContain("AstroAiInterpretationSection");
-    expect(astroPageSource).not.toContain("useAstroAiInterpretation");
-    expect(astroPageSource).not.toContain("/forecast/astro-ai");
   });
 
   it("uses the same shared professional hourly section for cloud-sea, glow, and astro", () => {
@@ -7982,11 +6889,6 @@ describe("forecast result target-aware view model", () => {
         query: queryForTarget("general"),
         result: generalResult,
         viewModel: generalViewModel,
-        aiStatus: "idle",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
       }),
     );
     const generalOutput = `${generalViewModel.primarySummary} ${generalViewModel.dataNotice} ${generalHtml}`;
@@ -8333,11 +7235,6 @@ describe("forecast result target-aware view model", () => {
         query: queryForTarget("general"),
         result,
         viewModel,
-        aiStatus: "idle",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
       }),
     );
     const terrainText = viewModel.detailSections
@@ -8461,11 +7358,6 @@ describe("forecast result target-aware view model", () => {
         query: queryForTarget("general"),
         result: generalResult,
         viewModel: generalViewModel,
-        aiStatus: "idle",
-        aiExplanation: null,
-        aiErrorMessage: "",
-        aiRetryable: false,
-        onGenerateAiExplanation: vi.fn(),
       }),
     );
     const generalTerrainText = generalViewModel.detailSections
@@ -9325,7 +8217,6 @@ describe("forecast result target-aware view model", () => {
     });
     const result = {
       ...resultWithAstroLightPollution(lightPollution, [lightPollution, lightPollution]),
-      aiExplanationError: "GPT / OpenAI 服务请求超时。",
     } as ForecastCalculationResult;
     const viewModel = buildAstroForecastViewModel(result);
     const html = renderToStaticMarkup(
@@ -9534,75 +8425,6 @@ describe("forecast result target-aware view model", () => {
     },
   );
 
-  it.each([
-    [
-      "24h recommended high confidence",
-      () => {
-        const result = resultWithAstroHourlyRange("24h", 24);
-        return {
-          ...result,
-          astroAnalysis: { ...result.astroAnalysis, confidenceLevel: "high" as const },
-        };
-      },
-    ],
-    [
-      "48h recommended low confidence",
-      () => {
-        const result = resultWithAstroHourlyRange("48h", 48);
-        return {
-          ...result,
-          astroAnalysis: { ...result.astroAnalysis, confidenceLevel: "low" as const },
-        };
-      },
-    ],
-    [
-      "72h not recommended low confidence",
-      () => {
-        const result = {
-          ...resultWithBlockedAstro("astro"),
-          ...pickAstroHourlyFields(resultWithAstroHourlyRange("72h", 72)),
-        };
-        return {
-          ...result,
-          astroAnalysis: { ...result.astroAnalysis, confidenceLevel: "low" as const },
-        };
-      },
-    ],
-    [
-      "7d recommended high confidence",
-      () => {
-        const result = resultWithAstroHourlyRange("7d", 168);
-        return {
-          ...result,
-          astroAnalysis: { ...result.astroAnalysis, confidenceLevel: "high" as const },
-        };
-      },
-    ],
-  ] as const)("keeps Astro AI interpretation idle state clean for %s", (_label, createResult) => {
-    const result = createResult();
-    const viewModel = buildAstroForecastViewModel(result);
-    const html = renderToStaticMarkup(
-      React.createElement(AstroResultPage, {
-        query: { ...queryForTarget("astro"), horizon: result.horizon },
-        result,
-        viewModel,
-      }),
-    );
-    const aiSectionIndex = html.indexOf('data-astro-section="AstroAiInterpretation"');
-    const aiSection = html.slice(aiSectionIndex);
-
-    expect(aiSectionIndex).toBeGreaterThanOrEqual(0);
-    expect(aiSection).toContain("智能解读");
-    expect(aiSection).toContain("生成智能解读");
-    expect(aiSection).not.toContain("可手动生成更自然的摄影建议");
-    expect(aiSection).not.toContain("当前判断结果不依赖 AI");
-    expect(aiSection).not.toContain("可生成智能解读");
-    expect(aiSection).not.toContain("不会改变");
-    expect(aiSection).not.toContain("输出");
-    expect(aiSection).not.toMatch(/>来源</);
-    expect(aiSection).not.toContain('data-ai-interpretation-empty-state="compact"');
-  });
-
   it("normalizes future astro public nights to the selected local start date without hiding by CSS", () => {
     const base = resultWithAstroHourlyRange("48h", 48);
     const firstDay = base.astroAnalysis.dailyAstro[0]!;
@@ -9792,12 +8614,6 @@ describe("forecast result target-aware view model", () => {
       expect(html).not.toContain("data-astro-why-factor");
       expect(html).toContain('data-astro-section="AstroProfessionalData"');
       expect(html).toContain('data-astro-professional-data-expanded="false"');
-      expect(html).toContain('data-astro-section="AstroAiInterpretation"');
-      expect(html).toContain('data-ai-interpretation-target="astro"');
-      expect(html).toContain("生成智能解读");
-      expect(html).not.toContain('data-ai-interpretation-empty-state="compact"');
-      expect(html).not.toContain("可手动生成更自然的摄影建议，当前判断结果不依赖 AI。");
-      expect(html).not.toContain("可生成智能解读");
       expect(countOccurrences(html, 'data-astro-night-card="true"')).toBe(
         viewModel.nightlyCards.length,
       );
@@ -9810,7 +8626,6 @@ describe("forecast result target-aware view model", () => {
         'data-astro-decision-layout="single-main"',
         "AstroNightOpportunitySection",
         "AstroProfessionalData",
-        "AstroAiInterpretation",
       ]);
       expect(html).not.toContain("天文黑夜与无月黑夜");
       expect(html).not.toContain("月出月落");
@@ -9947,11 +8762,6 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("逐小时摘要");
     expect(html).not.toContain("小时表默认折叠");
     expect(html).not.toContain('data-astro-professional-data-body="true"');
-    expect(html).toContain("智能解读");
-    expect(html).toContain("生成智能解读");
-    expect(html).not.toContain('data-ai-interpretation-empty-state="compact"');
-    expect(html).not.toContain("可生成智能解读");
-    expect(html).not.toContain("可手动生成更自然的摄影建议，当前判断结果不依赖 AI。");
   });
 
   it("hides astro public diagnostics and source metadata while keeping usable result content", () => {

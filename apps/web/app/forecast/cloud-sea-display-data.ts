@@ -12,7 +12,6 @@ import {
   type CloudSeaRecommendationExplanation,
   type CloudSeaRecommendationGuardOutput,
   type CloudSeaAnalysisWindow,
-  type CloudSeaScoreCalibrationContext,
   type CloudSeaWindowRiskContext,
   type CloudSeaWeatherVariableConsistencyContext,
   type ForecastCalculationResult,
@@ -118,101 +117,6 @@ export type ProfessionalHourlyDisplayData = {
 
 export type CloudSeaProfessionalHourlyDisplayData = ProfessionalHourlyDisplayData;
 
-export type CloudSeaAiInterpretationDisplayPayload = {
-  readonly finalRecommendation: {
-    readonly label: string;
-    readonly reasonZh: string;
-    readonly actionSummaryZh: string;
-  };
-  readonly explanationContext: {
-    readonly oneLineConclusionZh: string;
-    readonly confidenceExplanationZh: string;
-    readonly reviewPointsZh: readonly string[];
-  };
-  readonly displayTemperatureContext: Pick<
-    CloudSeaDisplayTemperatureContext,
-    | "basis"
-    | "displayTemperatureC"
-    | "displayTemperatureRangeC"
-    | "bodyFeelTemperatureC"
-    | "bodyFeelRangeC"
-    | "basisLabelZh"
-    | "userTemperatureSummaryZh"
-    | "clothingAdviceZh"
-  >;
-  readonly precipitationSignalContext: Pick<
-    CloudSeaPrecipitationSignalContext,
-    | "precipitationSignalType"
-    | "precipitationImpactLevel"
-    | "maxProbabilityPercent"
-    | "maxAmountMm"
-    | "mainTimeRangeZh"
-    | "riskLabelZh"
-    | "userSummaryZh"
-    | "actionAdviceZh"
-    | "shouldDowngradeWindow"
-  >;
-  readonly windowRiskContext: Pick<
-    CloudSeaWindowRiskContext,
-    | "windowRainImpact"
-    | "preWindowRainImpact"
-    | "duringWindowRainImpact"
-    | "postWindowRainImpact"
-    | "windowOpeningConfidence"
-    | "windowOpeningConfidenceLabelZh"
-    | "cloudTopReviewNeed"
-    | "whiteoutReviewLevel"
-    | "whiteoutReviewLabelZh"
-    | "temperaturePreparationLevel"
-    | "scoreCapReasons"
-    | "precipitationWindowSummaryZh"
-    | "whiteoutWindowSummaryZh"
-    | "actionAdviceZh"
-    | "equipmentAdviceZh"
-  >;
-  readonly cloudLayerCoverageContext: Pick<
-    CloudLayerCompletenessContext,
-    | "cloudLayerBasis"
-    | "layerCompletenessLevel"
-    | "totalHoursCount"
-    | "completeLayerHoursCount"
-    | "missingLayerHoursCount"
-    | "lowLayerMissingHoursCount"
-    | "userNoteZh"
-  >;
-  readonly scoreCalibration: Pick<
-    CloudSeaScoreCalibrationContext,
-    | "rawFormationScore"
-    | "rawShootabilityScore"
-    | "calibratedFormationScore"
-    | "calibratedShootabilityScore"
-    | "finalCloudSeaScore"
-    | "scoreBand"
-    | "confidenceLevel"
-    | "capApplied"
-    | "capReasons"
-    | "scoreExplanationZh"
-    | "recommendationExplanationZh"
-    | "shouldBlockStrongRecommendation"
-    | "shouldDowngradeToCautious"
-    | "shouldDowngradeToBackup"
-  >;
-  readonly professionalHourlySummary: {
-    readonly rowCount: number;
-    readonly nearTermRowCount: number;
-    readonly anchorStart: string;
-    readonly anchorEnd: string;
-    readonly precipitationAmountMm: number | null;
-    readonly precipitationProbabilityPercent: number | null;
-    readonly cloudLowPercent: number | null;
-    readonly cloudMidPercent: number | null;
-    readonly cloudHighPercent: number | null;
-    readonly visibilityMeters: number | null;
-  };
-  readonly actionPlan: readonly CloudSeaActionPlanItem[];
-  readonly riskReview: readonly ForecastResultSectionItem[];
-};
-
 export type CloudSeaImportantWindowDisplay = {
   readonly displayLabelZh: string;
   readonly startTime: string | null;
@@ -269,7 +173,6 @@ export type CloudSeaDisplayData = {
   readonly actionPlan: readonly CloudSeaActionPlanItem[];
   readonly riskReview: readonly ForecastResultSectionItem[];
   readonly multiSourceConsistency: ForecastMultiSourceAgreementContext | null;
-  readonly aiInterpretationPayload: CloudSeaAiInterpretationDisplayPayload;
   readonly displayDataMeta: CloudSeaDisplayDataMeta;
 };
 
@@ -412,16 +315,6 @@ export function buildCloudSeaDisplayData(
     actionPlan,
     riskReview: input.riskReview,
     multiSourceConsistency: input.ruleContext.multiSourceAgreementContext,
-    aiInterpretationPayload: buildAiInterpretationDisplayPayload({
-      input,
-      currentNearTermWeather,
-      cloudLayerCompleteness,
-      displayDataMeta,
-      precipitationSignalContext: displayPrecipitationSignalContext,
-      windowRiskContext,
-      actionPlan,
-      riskReview: input.riskReview,
-    }),
     displayDataMeta,
   };
 }
@@ -1264,113 +1157,6 @@ function buildDisplayDataMeta(input: {
           ? "partial"
           : "aligned",
     staleFieldWarnings: staleWarnings,
-  };
-}
-
-function buildAiInterpretationDisplayPayload(input: {
-  readonly input: BuildCloudSeaDisplayDataInput;
-  readonly currentNearTermWeather: CloudSeaCurrentNearTermWeatherDisplay;
-  readonly cloudLayerCompleteness: CloudLayerCompletenessContext;
-  readonly displayDataMeta: CloudSeaDisplayDataMeta;
-  readonly precipitationSignalContext: CloudSeaPrecipitationSignalContext;
-  readonly windowRiskContext: CloudSeaWindowRiskContext;
-  readonly actionPlan: readonly CloudSeaActionPlanItem[];
-  readonly riskReview: readonly ForecastResultSectionItem[];
-}): CloudSeaAiInterpretationDisplayPayload {
-  const cloudSummary = cloudLayerSummary(input.currentNearTermWeather.rows);
-  const precipitationSummary = precipitationSummaryForRows(
-    input.currentNearTermWeather.rows,
-    input.precipitationSignalContext,
-  );
-  const scoreCalibration = input.input.result.cloudSeaAnalysis.scoreCalibration;
-  return {
-    finalRecommendation: {
-      label: input.input.recommendationGuard.finalRecommendationLabel,
-      reasonZh: input.input.recommendationGuard.reasonZh,
-      actionSummaryZh: input.input.recommendationExplanation.actionSummaryZh,
-    },
-    explanationContext: {
-      oneLineConclusionZh: input.input.recommendationExplanation.oneLineConclusionZh,
-      confidenceExplanationZh: input.input.recommendationExplanation.confidenceExplanationZh,
-      reviewPointsZh: input.input.recommendationExplanation.reviewPointsZh,
-    },
-    displayTemperatureContext: {
-      basis: input.input.displayTemperatureContext.basis,
-      displayTemperatureC: input.input.displayTemperatureContext.displayTemperatureC,
-      displayTemperatureRangeC: input.input.displayTemperatureContext.displayTemperatureRangeC,
-      bodyFeelTemperatureC: input.input.displayTemperatureContext.bodyFeelTemperatureC,
-      bodyFeelRangeC: input.input.displayTemperatureContext.bodyFeelRangeC,
-      basisLabelZh: input.input.displayTemperatureContext.basisLabelZh,
-      userTemperatureSummaryZh: input.input.displayTemperatureContext.userTemperatureSummaryZh,
-      clothingAdviceZh: input.input.displayTemperatureContext.clothingAdviceZh,
-    },
-    precipitationSignalContext: {
-      precipitationSignalType: input.precipitationSignalContext.precipitationSignalType,
-      precipitationImpactLevel: input.precipitationSignalContext.precipitationImpactLevel,
-      maxProbabilityPercent: input.precipitationSignalContext.maxProbabilityPercent,
-      maxAmountMm: input.precipitationSignalContext.maxAmountMm,
-      mainTimeRangeZh: input.precipitationSignalContext.mainTimeRangeZh,
-      riskLabelZh: input.precipitationSignalContext.riskLabelZh,
-      userSummaryZh: input.precipitationSignalContext.userSummaryZh,
-      actionAdviceZh: input.precipitationSignalContext.actionAdviceZh,
-      shouldDowngradeWindow: input.precipitationSignalContext.shouldDowngradeWindow,
-    },
-    windowRiskContext: {
-      windowRainImpact: input.windowRiskContext.windowRainImpact,
-      preWindowRainImpact: input.windowRiskContext.preWindowRainImpact,
-      duringWindowRainImpact: input.windowRiskContext.duringWindowRainImpact,
-      postWindowRainImpact: input.windowRiskContext.postWindowRainImpact,
-      windowOpeningConfidence: input.windowRiskContext.windowOpeningConfidence,
-      windowOpeningConfidenceLabelZh: input.windowRiskContext.windowOpeningConfidenceLabelZh,
-      cloudTopReviewNeed: input.windowRiskContext.cloudTopReviewNeed,
-      whiteoutReviewLevel: input.windowRiskContext.whiteoutReviewLevel,
-      whiteoutReviewLabelZh: input.windowRiskContext.whiteoutReviewLabelZh,
-      temperaturePreparationLevel: input.windowRiskContext.temperaturePreparationLevel,
-      scoreCapReasons: input.windowRiskContext.scoreCapReasons,
-      precipitationWindowSummaryZh: input.windowRiskContext.precipitationWindowSummaryZh,
-      whiteoutWindowSummaryZh: input.windowRiskContext.whiteoutWindowSummaryZh,
-      actionAdviceZh: input.windowRiskContext.actionAdviceZh,
-      equipmentAdviceZh: input.windowRiskContext.equipmentAdviceZh,
-    },
-    cloudLayerCoverageContext: {
-      cloudLayerBasis: input.cloudLayerCompleteness.cloudLayerBasis,
-      layerCompletenessLevel: input.cloudLayerCompleteness.layerCompletenessLevel,
-      totalHoursCount: input.cloudLayerCompleteness.totalHoursCount,
-      completeLayerHoursCount: input.cloudLayerCompleteness.completeLayerHoursCount,
-      missingLayerHoursCount: input.cloudLayerCompleteness.missingLayerHoursCount,
-      lowLayerMissingHoursCount: input.cloudLayerCompleteness.lowLayerMissingHoursCount,
-      userNoteZh: input.cloudLayerCompleteness.userNoteZh,
-    },
-    scoreCalibration: {
-      rawFormationScore: scoreCalibration.rawFormationScore,
-      rawShootabilityScore: scoreCalibration.rawShootabilityScore,
-      calibratedFormationScore: scoreCalibration.calibratedFormationScore,
-      calibratedShootabilityScore: scoreCalibration.calibratedShootabilityScore,
-      finalCloudSeaScore: scoreCalibration.finalCloudSeaScore,
-      scoreBand: scoreCalibration.scoreBand,
-      confidenceLevel: scoreCalibration.confidenceLevel,
-      capApplied: scoreCalibration.capApplied,
-      capReasons: scoreCalibration.capReasons,
-      scoreExplanationZh: scoreCalibration.scoreExplanationZh,
-      recommendationExplanationZh: scoreCalibration.recommendationExplanationZh,
-      shouldBlockStrongRecommendation: scoreCalibration.shouldBlockStrongRecommendation,
-      shouldDowngradeToCautious: scoreCalibration.shouldDowngradeToCautious,
-      shouldDowngradeToBackup: scoreCalibration.shouldDowngradeToBackup,
-    },
-    professionalHourlySummary: {
-      rowCount: input.displayDataMeta.normalizedHourlyRowCount,
-      nearTermRowCount: input.currentNearTermWeather.rows.length,
-      anchorStart: input.displayDataMeta.anchorStart,
-      anchorEnd: input.displayDataMeta.anchorEnd,
-      precipitationAmountMm: precipitationSummary.amountMm,
-      precipitationProbabilityPercent: precipitationSummary.probabilityPercent,
-      cloudLowPercent: cloudSummary.cloudLowPercent,
-      cloudMidPercent: cloudSummary.cloudMidPercent,
-      cloudHighPercent: cloudSummary.cloudHighPercent,
-      visibilityMeters: cloudSummary.visibilityMeters,
-    },
-    actionPlan: input.actionPlan,
-    riskReview: input.riskReview,
   };
 }
 

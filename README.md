@@ -78,7 +78,7 @@ bash scripts/evaluate-sky-darkness-benchmarks.sh deploy/calibration/runtime/bort
 
 Generated audit reports belong under `deploy/calibration/runtime/`, which is ignored by Git. The sky-darkness benchmark wrapper uses `--format json`, `--format csv`, `--format markdown`, or `--format all`; `--json` is accepted as a compatibility alias for `--format json`. The workflow compares supplied independent references with the production estimator and never rewrites production thresholds automatically. Mismatch-investigation runs also write dedicated mismatch CSV/JSON files and audit-only candidate-analysis Markdown/JSON files. See [Bortle Calibration Mismatch Investigation](docs/bortle-calibration-mismatch-investigation.md) for output meanings, candidate simulation rules, evidence sufficiency gates, and how to add future SQM or independently verified Bortle references.
 
-These documents define the strategic product boundary for 逐光天气. Future Codex tasks must not narrow the product into a simple weather query site or an AI text explanation tool. If a task touches weather, astronomy, terrain, scoring, provider normalization, AI explanation, result pages, or data-source display, preserve this boundary: 逐光天气 should eventually cover at least Tianwentong + Lijing Weather style information and provide more detailed photography decision support.
+These documents define the strategic product boundary for 逐光天气. Future Codex tasks must not narrow the product into a simple weather query site or a text-summary tool. If a task touches weather, astronomy, terrain, scoring, provider normalization, result pages, or data-source display, preserve this boundary: 逐光天气 should eventually cover at least Tianwentong + Lijing Weather style information and provide more detailed photography decision support.
 
 逐光天气是面向中国大陆风光摄影用户的天气与拍摄机会判断系统，公开标语为“风光摄影出行判断工具”。当前仓库处于自托管 SaaS 产品基础与界面打磨阶段，重点是数据库、后台配置、地点/机位资料、亮色默认主题和前端 UI 基线。
 
@@ -101,7 +101,6 @@ These documents define the strategic product boundary for 逐光天气. Future C
 - 公开 forecast 结果页：同一产品 shell 下的目标感知 dashboard 布局，左侧地点/查询摘要，中间按 `general` / `cloud_sea` / `glow` / `astro` 展示对应主卡、窗口、分项评分和判断依据，右侧展示对应风险、建议、计算依据和数据状态；结果页已按 24h / 48h / 72h / 7d 选择范围生成窗口和逐日判断，星空银河结果页支持整月月相日历。
 - 云海结果页已专项化：`target=cloud_sea` 不再复用通用 forecast 模板，单独展示云海机会、白墙风险、出行推荐、最佳清晨窗口、逐日云海趋势、云海/白墙区别、云海时间窗口、出行建议和备选拍摄方案。
 - 云海页将云海机会、白墙风险和出行推荐拆成独立确定性输出，并把地形/海拔证据、天气证据、低云分层缺失提示和数据状态作为独立模块；真实天气和真实 DEM 接入前，天气与地形仍可能显示为演示数据或样例数据。
-- Astro Calculation Service V1：新增 `apps/astro-service`，使用 FastAPI、Pydantic、Skyfield、zoneinfo 和本地 `de421.bsp` 计算星空银河所需天文窗口；运行时不调用在线天文 API，不使用 DeepSeek / AI 计算天文结果。
 - Product Copy Polish V1：公开首页、专题页、结果页、账户空状态和后台服务商配置已去除开发味提示；公开数据状态使用“天气数据：演示数据”“地形数据：演示数据”“天文数据：本地天文服务计算”或“天文数据：简化本地估算”等产品化表达，并保留产品化的数据诚实说明。
 - Scenario Module Pages V1：`/cloud-sea`、`/glow`、`/astro` 已升级为云海、朝霞晚霞、星空银河专项入口页，复用地点搜索、预报范围选择和 forecast 查询跳转流程；`/spots` 已升级为机位库 V1，`/pricing` 仍使用“即将开放”型中文产品页。
 - Spot Library V1：`/spots` 提供公开机位库列表，支持关键词、题材、地区、海拔和数据状态筛选；`/spots/[slug]` 提供机位详情页；机位卡片和详情页都可直接生成 `/forecast` 快速分析链接，并携带名称、`source=local_photo_spot`、GCJ-02 坐标、WGS84 坐标、`photoSpotId`、`elevationMeters`、`horizon` 和 `target`。
@@ -115,7 +114,6 @@ These documents define the strategic product boundary for 逐光天气. Future C
 - Weather Intelligence Core V1：`packages/weather` 提供 QWeather、Open-Meteo、meteoblue 接口、标准化天气模型、多源融合、字段级/目标级置信度、冲突标记、缓存 key 与服务商使用日志基础；自动化测试继续只使用 mock / fixture / mocked fetch，不调用真实外部天气接口。
 - QWeather / Open-Meteo / meteoblue Provider V1：和风天气作为中国主天气源，Open-Meteo 作为云层、露点、能见度、气压和多模型辅助源，meteoblue 作为专业商业增强源预留接口；Windy 只作为用户手动工作流的准确率 benchmark / reference，不作为自动化核心数据源。
 - Terrain Core V1：`packages/terrain` 已提供地形/海拔类型契约、地形 provider 接口、演示地形数据 provider、周边高差计算、云海地形潜力分类和地平线遮挡基础；正式海拔与 DEM 数据接入后将用于提升云海和遮挡判断。
-- 公开 forecast 端点：`POST /forecast/validate-query` 只校验查询输入并返回中文标签；`POST /forecast/calculate` 未启用真实天气服务商时使用 MockWeatherProvider / fixture 标准化天气和演示地形，后台启用 QWeather / Open-Meteo 真实调用并保存必要配置后可进入多源天气融合。`target=astro` 可在 `ENABLE_ASTRO_SERVICE=true` 时调用本地 Python 天文服务；未启用时使用明确标注的简化本地估算，不调用在线天文 API 或 AI 服务；`POST /forecast/ai-explain` 默认返回规则解读，只有后台启用 DeepSeek 服务商、启用真实调用且 Key 已保存时才请求真实 DeepSeek。
 - 后台登录页：宽屏产品式登录布局、中文表单、样式化错误提示和单一返回前台入口。
 - 后台控制台布局：约 252px 亮色侧栏、紧凑顶部标题区、当前管理员信息、主题切换、返回前台、退出登录和更宽的内容区域。
 - 后台页面视觉层：系统设置、服务商配置、地点管理、机位管理、审计日志使用统一卡片、表格、表单、按钮、空状态、横向可滚动表格和更克制的自然色 active 状态。
@@ -125,7 +123,6 @@ These documents define the strategic product boundary for 逐光天气. Future C
 
 - 完整生产级真实天气回测、真实 DEM、供应商成本仪表盘和长期精度校准；当前已具备 QWeather / Open-Meteo / meteoblue 配置、手动测试连接、多源融合、缓存、使用日志和本地 VIIRS 夜光栅格光污染参考基础。
 - 真实 DEM / elevation provider 接入；Open-Meteo Elevation 当前默认禁用，不参与本地自动化测试。
-- 生产级 DeepSeek 或其他 AI 自动分析流程；当前只允许后台服务商配置显式启用后的 DeepSeek 解读调用。
 - 支付、套餐、额度和商业化流程。
 - 生产级 Cookie/Session 加固。
 - 短信登录、真实查询历史、收藏机位持久化、额度控制、付费套餐、订阅计费和已保存报告。
@@ -154,7 +151,6 @@ These documents define the strategic product boundary for 逐光天气. Future C
 
 ## Forecast 计算核心 V1
 
-当前 `/forecast` 是拍摄天气分析结果页，用于展示用户选择的地点、预报范围、分析目标、坐标信息和评分结果。页面会调用 `POST /forecast/calculate`，后端通过天气运行时读取后台服务商配置：未启用真实天气时使用 `MockWeatherProvider` / fixture 数据，启用后可按服务商能力聚合 QWeather 与 Open-Meteo，并通过 `WeatherIntelligenceService` 输出融合后的 `WeatherDataBundle`、来源摘要、冲突标记和置信度。`target=astro` 可通过 `ASTRO_SERVICE_URL` 调用本地 Python 天文服务；未启用时保留明确标注的 JS 简化本地估算。默认不会调用在线天文 API、DeepSeek、存储、支付或短信服务；高德地图、DeepSeek 和真实天气只在后台服务商配置中启用真实调用、服务商已启用且必要凭据已配置时允许真实调用，环境开关只作为旧配置兜底。
 
 当前计算核心覆盖：
 
@@ -186,7 +182,6 @@ These documents define the strategic product boundary for 逐光天气. Future C
 - 天文摘要使用 Calendar Core 生成的 `targetDates`，不会在 astro / scoring 内部再生成独立日期。
 - `target=astro` 的精确路径由 `apps/astro-service` 提供：FastAPI 接收 WGS84 经纬度、可选海拔、时区、预报范围和起始时间，返回太阳、月亮、夜间和银河窗口结构。
 - 天文服务使用本地缓存星历文件，例如 `apps/astro-service/data/de421.bsp`。服务运行时不会下载星历，也不会调用在线天文 API；缺少星历时会返回明确错误。
-- 日出 / 日落、暮光、天文月相、月亮照明、盈亏方向、月出 / 月落、逐小时月亮高度、天文黑夜、无月黑夜和银河窗口不使用 DeepSeek / AI 计算。
 - 星空银河页面支持整月月相日历，可按上个月、下个月和回到本月浏览；月相日历基于本地天文计算逐日生成月相、月亮照明和主要月相摘要，不调用外部天气或天文服务。
 - 农历日期、中文农历文本和二十四节气来自 `packages/calendar` 中的本地 `lunar-typescript`，仅用于历法展示，不作为月亮照明、月亮高度或月光影响的计算来源。
 - 月相日历的数据结构已预留农历展示字段，后续可继续扩展更完整的农历信息、节气提醒或观星节奏提示。
@@ -194,7 +189,6 @@ These documents define the strategic product boundary for 逐光天气. Future C
 - MockWeatherProvider 不再生成固定日出 / 日落字段；需要日出日落时优先使用本地 Python 天文服务，未启用服务时才使用明确标注的简化本地估算。
 - 自动化测试会校验天文计算不触发在线外部天文 API；Node 侧只会在 `ENABLE_ASTRO_SERVICE=true` 时调用 `ASTRO_SERVICE_URL` 指向的本地服务。
 - 天文结果会随 forecast pipeline 一起进入 `ForecastCalculationResult.astroSummaries`，供结果页展示日出日落、月相月照、农历日期、节气、月出月落、天文黑夜窗口和银河窗口。
-- 真实天气准确率仍需要未来接入 QWeather / Open-Meteo 真实预报、云层 / 能见度校准和地形遮挡数据；DeepSeek 当前只解释确定性结果，不计算天气、天文、地形或评分。
 
 日历与预报时间约定：
 
@@ -230,7 +224,6 @@ These documents define the strategic product boundary for 逐光天气. Future C
 - 朝霞晚霞
 - 星空银河
 
-当前查询契约由 `@photo-weather/shared` 中的 `forecastQueryInputSchema` 维护，前端 URL 会显式携带地点名称、来源、GCJ-02 坐标、WGS84 坐标、预报范围、分析目标、可用的海拔以及可用的本地地点 / 机位 ID。`POST /forecast/calculate` 会先复用该 schema 校验输入，再构造 `ForecastCalculationInput` 并返回 `ForecastCalculationResult`；可选 `useAiExplanation=true` 时会附带规则兜底解读，只有后台 `ai/deepseek` 启用真实调用且 Key 已保存时才尝试 DeepSeek。结果页按钮调用 `POST /forecast/ai-explain`，不会在页面加载时自动调用 DeepSeek。
 
 Scenario Module Pages V1：
 
@@ -251,7 +244,6 @@ Spot Library V1：
 - `/forecast` 会按所选 horizon 返回 `dailySummaries`、`targetDailyBreakdown` 和跨范围 `bestWindows`；7d 结果展示多日摘要，24h / 48h / 72h / 7d 都使用同一组 `forecastStart` / `forecastEnd` / `targetDates`。
 - 星空银河结果页在观测判断内容下方提供“月相日历”，支持查看当前整月月相、月亮照明和主要月相日期，并可在前后月份之间切换。
 - 真实天气数据仍未接入；结果页默认继续使用演示天气数据和演示地形数据生成体验结果，除非未来显式启用真实 provider。
-- DeepSeek 解读仍是可选后续能力；结果页基础判断、评分、窗口和风险不依赖 DeepSeek，也不会在页面加载时自动调用外部解释服务。
 
 公开用户邮箱密码登录和注册已接入 Public User Auth V1。当前公开导航使用统一“账户”入口；未登录时进入 `/login`，已登录时可进入 `/account`，管理员账号才会在账户菜单或账户中心看到“管理后台”。短信登录、真实查询历史、收藏机位持久化、额度控制和付费套餐计划在后续阶段实现，不属于当前 forecast 查询基础步骤。
 
@@ -270,7 +262,6 @@ Spot Library V1：
 - `packages/terrain`：Terrain Core V1，包含地形/海拔数据契约、mock terrain provider、地形剖面、高差计算、云海地形潜力分类、地平线遮挡辅助判断和禁用的 Open-Meteo Elevation provider。
 - `packages/astro`：JS 简化本地估算与整月月相日历基础，作为未启用 Python 天文服务时的明确标注兜底。
 - `packages/scoring`：本地 forecast mock 数据构造器、摄影评分 helper、朝霞/晚霞/云海/白墙/星空/银河/通透度计算器、云海专项确定性分析和综合推荐分类。
-- `packages/ai`：AI 服务接口、mock provider、规则兜底和 DeepSeek 开发模式 JSON 解读 provider。
 - `packages/storage`：存储服务接口与 mock 存储。
 - `packages/billing`：计费与额度基础类型。
 
@@ -413,13 +404,8 @@ AMAP_WEB_SERVICE_KEY=
 AMAP_BASE_URL=https://restapi.amap.com
 ```
 
-DeepSeek API Key、分析模式和真实调用开关优先在后台服务商配置页填写。普通管理员只需要填写 API Key、选择分析模式、启用服务商、启用真实调用、保存并测试连接；`.env.local` 只用于本机开发兜底，不要提交：
 
 ```bash
-ENABLE_REAL_DEEPSEEK=false
-DEEPSEEK_API_KEY=
-DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_DEFAULT_MODEL=deepseek-v4-pro
 ```
 
 天气服务商也优先在后台服务商配置页填写。和风天气普通管理员只需要填写 API Key、API Host、启用服务商、启用真实调用、保存并测试连接；Open-Meteo 支持免费开发模式和商业客户模式，免费模式不需要 API Key，商业客户模式需要按账号要求填写 API Key 和 Customer Endpoint；meteoblue Free Weather API 可用于后台 Forecast API 测试，默认数据包为 `basic-1h,clouds-1h`。QWeather API Host 在和风天气控制台的开发者信息中查看，形如 `xxxxx.qweatherapi.com`，后台表单和环境变量都填写不带 `https://` 的主机名；请求超时、重试次数、语言、单位和原始配置默认折叠在“高级配置”中：
@@ -448,11 +434,9 @@ METEOBLUE_PACKAGES=basic-1h,clouds-1h
 
 后台 `geo/amap` 已启用、`configJson.realCallEnabled=true` 且已配置高德 Web 服务 Key 后，公开地点搜索和后台高德测试连接可以请求真实高德 Web Service。若数据库配置中没有 `realCallEnabled` 字段，才会读取 `ENABLE_REAL_AMAP` 作为兜底。高德返回坐标按 GCJ-02 处理，并同步归一化为 WGS84；天气、天文、地形和评分计算仍只使用 WGS84。
 
-后台 `ai/deepseek` 已启用、`configJson.realCallEnabled=true` 且已配置 DeepSeek API Key 后，forecast 结果页可以手动点击“生成智能解读”。当前项目固定使用 `deepseek-v4-pro` 高质量解读模型；旧的 `deepseek-chat`、`deepseek-reasoner` 或其他历史保存模型会在运行时统一覆盖为 `deepseek-v4-pro`。若数据库配置中没有 `realCallEnabled` 字段，才会读取 `ENABLE_REAL_DEEPSEEK` 作为兜底。DeepSeek 只解释确定性输入中的评分、风险、最佳窗口、建议和备用方案，不计算或覆盖天气、天文、地形、坐标和评分；演示数据场景下不得声称真实天气准确率。Base URL、温度、最大输出 Token、推理强度和思考模式属于高级配置，后台默认折叠；JSON 输出模式固定为 `response_format: { type: "json_object" }`。
 
 和风天气真实连接测试已接入 `/v7/weather/now`，仅在后台已启用服务商、启用真实调用、API Key 和 API Host 均已保存后，由管理员点击“测试连接”触发。Open-Meteo 免费模式测试可由管理员手动触发安全公共端点，商业客户模式启用真实调用时必须填写 Key。meteoblue 在未启用真实调用时只返回“当前为模拟测试，未请求 meteoblue 服务。”，启用真实调用但缺少 Key 时返回“请先填写 meteoblue API Key。”，Key 已保存后会请求 Forecast API package URL。自动化测试不会调用真实 QWeather、Open-Meteo 或 meteoblue API。
 
-本地自动化测试默认使用 `MockGeoProvider`、规则兜底和 mocked fetch，不会读取真实高德 / DeepSeek / 天气服务商密钥，也不会调用真实外部网络接口。
 
 如需清理 Next.js 缓存后启动：
 
@@ -493,9 +477,7 @@ corepack pnpm create-admin
 DATABASE_URL=postgresql://photo_weather:photo_weather@postgres:5432/photo_weather_ai
 ```
 
-Provider secrets 和永久服务商配置属于数据库后台配置，不应写进业务代码。Seed data 只创建基础服务商和空密钥对象，不包含真实 DeepSeek、QWeather、Open-Meteo、高德地图、存储、短信或支付凭据。
 
-`/admin/providers` 提供分组服务商配置控制台，顶部显示已启用、真实调用、密钥已保存和需要处理数量。高德地图、和风天气、Open-Meteo、meteoblue 和 DeepSeek 使用统一卡片、统一保存状态、统一测试连接状态和紧凑能力标签。高级配置默认折叠，普通管理员不需要编辑原始 JSON。保存配置后后台会显示服务商专属成功提示；密钥保存后 API 只返回 `maskedSecretJson`，不会返回原始 `secretJson`；空密钥输入表示保留现有密钥不变，如需删除已保存字段请使用后台表单中的清除操作。更详细的配置说明见 [docs/admin-providers.md](docs/admin-providers.md)。
 
 Seed data 包含未核验的中国风光摄影示例地点与机位：
 
@@ -554,7 +536,6 @@ GET  /auth/me
 GET   /search/places?q=
 POST  /forecast/validate-query
 POST  /forecast/calculate
-POST  /forecast/ai-explain
 
 GET   /admin/settings
 GET   /admin/settings/:key
@@ -591,9 +572,7 @@ GET   /admin/audit-logs
 - 审计日志：`audit.read`
 - `/admin` 状态：`code=admin` 或 `admin.manage`
 
-服务商测试连接默认仍为模拟测试，不调用真实外部服务。高德地图、DeepSeek、和风天气、Open-Meteo 和 meteoblue 都支持管理员手动真实测试：必须同时满足后台服务商已启用、后台“启用真实调用”已打开、必要凭据或模式配置已保存，并由管理员点击“测试连接”。和风天气还必须填写 API Host；Open-Meteo 商业客户模式必须填写 API Key；meteoblue 当前只启用后台 Forecast API 测试，不自动加入 forecast 计算流程。自动化测试强制模拟测试。若旧数据库记录缺少 `realCallEnabled` 字段，才会读取环境变量作为兜底。
 
-后台“测试连接”按钮会向 `/admin/providers/:providerType/:providerCode/test-connection` 发送 `{}`。未启用真实调用时，高德返回“当前为模拟测试，未请求高德地图服务。”，DeepSeek 返回“当前为模拟测试，未请求 DeepSeek 服务。”并带回当前模式和模型；和风天气返回“当前为模拟测试，未请求和风天气服务。”，Open-Meteo 返回“当前为模拟测试，未请求真实天气服务。”，meteoblue 返回“当前为模拟测试，未请求 meteoblue 服务。”。启用真实调用但缺少 Key 时，高德、DeepSeek、和风天气、meteoblue 分别返回“请先填写高德 Web 服务 Key。”“请先填写 DeepSeek API Key。”“请先填写和风天气 API Key。”“请先填写 meteoblue API Key。”；和风天气缺少 API Host 时返回“请先填写和风天气 API Host。”；Open-Meteo 商业客户模式缺少 Key 时返回“商业客户模式请先填写 Open-Meteo API Key。”。接口响应和日志不得暴露原始密钥。
 
 ## 后台控制台
 
@@ -604,7 +583,6 @@ GET   /admin/audit-logs
 /admin
 /admin/settings
 /admin/providers
-/admin/providers/ai
 /admin/providers/weather
 /admin/providers/geo
 /admin/providers/storage
@@ -635,14 +613,12 @@ GET   /admin/audit-logs
 - 自动化测试不调用真实 meteoblue；只允许使用 mocked fetch 验证 Forecast API 请求构造、配置解析和缺少 Key 错误。
 - 不调用真实 Open-Meteo Elevation 或其他 DEM / elevation API；Terrain Core V1 默认只使用 `MockTerrainProvider`。
 - 自动化测试不调用高德地图真实接口；真实高德只允许人工本地开发或部署环境中通过后台服务商配置显式启用，`ENABLE_REAL_AMAP` 只作为缺少后台字段时的兜底。
-- 自动化测试不调用 DeepSeek；真实 DeepSeek 只允许人工本地开发或部署环境中通过后台服务商配置显式启用，`ENABLE_REAL_DEEPSEEK` 只作为缺少后台字段时的兜底。
 - 天文计算只使用本地 `astronomy-engine`，不调用在线天文 API。
 - 日历、农历和节气只使用本地 Calendar Core 与 `lunar-typescript`，不调用在线日历 API。
 - 不调用真实存储、短信、支付或计费服务。
 
 本地和测试默认天气服务商为 `mock`。如需验证服务商 adapter，可显式设置 `WEATHER_PROVIDER=qweather|open_meteo` 且 `WEATHER_PROVIDER_MODE=fixture`；`WEATHER_PROVIDER_MODE=real` 在 `NODE_ENV=test` 下会 fail closed，不会悄悄发起网络请求。后台 QWeather / Open-Meteo / meteoblue 真实测试连接可用于人工本地开发或 staging 验证，必须由管理员显式启用服务商、启用真实调用并配置必要凭据。自动化测试仍强制模拟测试。
 
-高德地图 provider 当前只负责地点搜索、地理编码、逆地理编码和坐标归一化。地图展示使用 GCJ-02；天气、天文、地形、DEM 和后续评分计算必须使用 WGS84。DeepSeek 只负责解释确定性 forecast 结果，不负责计算真实天气、天文、地形或评分。
 
 ## Docker
 

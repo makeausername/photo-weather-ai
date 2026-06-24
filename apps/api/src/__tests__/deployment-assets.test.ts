@@ -25,7 +25,6 @@ const productionScripts = [
   "scripts/import-terrain-dem.sh",
   "scripts/check-terrain-dem.sh",
   "scripts/test-providers.sh",
-  "scripts/test-openai-interpretation.sh",
 ] as const;
 
 const bashScripts = [
@@ -203,8 +202,6 @@ describe("production deployment assets", () => {
       "QWEATHER_API_KEY=",
       "QWEATHER_API_HOST=",
       "AMAP_API_KEY=",
-      "OPENAI_API_KEY=",
-      "OPENAI_BASE_URL=",
       "OPEN_METEO_API_KEY=",
       "OPEN_METEO_CUSTOMER_ENDPOINT=",
     ]) {
@@ -843,7 +840,6 @@ describe("production deployment assets", () => {
     expect(script).toContain("meteoblueAttempted:");
     expect(script).toContain("meteoblueSuccess:");
     expect(script).toContain("meteobluePartial:");
-    expect(script).toContain("openAiInterpretationStatus:");
     expect(script).toContain("dataConfidence:");
     expect(script).toContain("agreementLevel:");
     expect(script).toContain("disagreementLevel:");
@@ -861,31 +857,11 @@ describe("production deployment assets", () => {
     expect(script).not.toMatch(/apikey=.*\\$\\{/i);
   });
 
-  it("ships a secret-safe GPT / OpenAI interpretation diagnostic script", () => {
-    const script = readRepoFile("scripts/test-openai-interpretation.sh");
-
-    expect(script).toContain("model: ${config.model}");
-    expect(script).toContain("readRuntimeOpenAiConfig");
-    expect(script).toContain('body.source === "openai"');
-    expect(script).toContain("timeoutMs: ${config.timeoutMs}");
-    expect(script).toContain("http://127.0.0.1:4000/forecast/ai-explain");
-    expect(script).toContain("timeout 130s");
-    expect(script).toContain("source:");
-    expect(script).toContain("parseSuccess:");
-    expect(script).toContain("parseStrategy:");
-    expect(script).toContain("rawResponseSizeChars:");
-    expect(script).toContain("fallbackSuccess:");
-    expect(script).toContain("No API keys or secrets will be printed.");
-    expect(script).not.toMatch(/echo .*API_KEY/);
-    expect(script).not.toMatch(/console\.log\(.*apiKey[:=]/i);
-    expect(script).not.toContain("deepseek-v4-pro");
-  });
-
   it("keeps the placeholder worker alive and documents that interpretation does not depend on it", () => {
     const workerSource = readRepoFile("apps/worker/src/index.ts");
 
-    expect(workerSource).toContain("Forecast interpretation runs synchronously in the api service");
-    expect(workerSource).toContain("worker is not required for /forecast/ai-explain");
+    expect(workerSource).toContain("Forecast calculation runs synchronously in the api service");
+    expect(workerSource).toContain("no worker queue is required");
     expect(workerSource).toContain("setInterval");
     expect(workerSource).toContain("idle heartbeat");
   });

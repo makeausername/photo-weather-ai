@@ -463,40 +463,4 @@ describe("local astro diagnostics scripts", () => {
     expect(combined).not.toContain("METEOBLUE_API_KEY");
     expect(combined).not.toContain("OPENAI_API_KEY");
   });
-
-  it("prints GPT / OpenAI interpretation diagnostics without raw secrets", () => {
-    const script = readRepoFile("scripts/test-openai-interpretation.sh");
-
-    for (const expected of [
-      "model: ${config.model}",
-      "timeoutMs: ${config.timeoutMs}",
-      "readRuntimeOpenAiConfig",
-      'body.source === "openai"',
-      "success:",
-      "source:",
-      "parseSuccess:",
-      "parseStrategy:",
-      "rawResponseSizeChars:",
-      "errorCategory:",
-      "messageZh:",
-      "promptSizeChars:",
-      "retryable:",
-      "latencyMs:",
-      "fallbackSuccess:",
-    ]) {
-      expect(script).toContain(expected);
-    }
-
-    expect(script).toContain("No API keys or secrets will be printed.");
-    expect(script).toContain("apiKeyPresent");
-    expect(script).toContain("api_node()");
-    expect(script).toContain("compose exec -T api node");
-    expect(script).toContain("timeout 130s");
-    expect(script).toContain("print_timeout_result");
-    expect(script).not.toContain('started_ms="$(node');
-    expect(script).not.toContain('ended_ms="$(node');
-    expect(script).not.toContain('node - "$response_file"');
-    expect(script).not.toContain("OPENAI_API_KEY");
-    expect(script).not.toContain("deepseek-v4-pro");
-  });
 });

@@ -99,8 +99,8 @@ describe("admin config routes", () => {
     expect(response.statusCode).toBe(200);
     const body = response.json();
     expect(body.settings.map((setting: any) => setting.key)).toContain("site.name");
-    expect(body.settings.map((setting: any) => setting.key)).toContain("ai.defaultProvider");
-    expect(body.groups.ai).toBeTruthy();
+    expect(body.settings.map((setting: any) => setting.key)).not.toContain("ai.defaultProvider");
+    expect(body.groups.ai).toBeUndefined();
   });
 
   it("updates an editable setting and writes an authenticated audit log", async () => {
@@ -278,12 +278,12 @@ describe("admin config routes", () => {
     expect(response.statusCode).toBe(200);
     const body = response.json();
     expect(body.providers.map((provider: any) => provider.providerCode)).toEqual(
-      expect.arrayContaining(["openai", "qweather", "open_meteo", "meteoblue", "amap"]),
+      expect.arrayContaining(["qweather", "open_meteo", "meteoblue", "amap"]),
     );
+    expect(body.providers.map((provider: any) => provider.providerCode)).not.toContain("openai");
     expect(body.groups.storage).toBeTruthy();
     expect(body.realDevCallFlags).toEqual({
       amap: false,
-      openai: false,
       qweather: false,
       openMeteo: false,
       meteoblue: false,
@@ -472,7 +472,7 @@ describe("admin config routes", () => {
     expect(JSON.stringify(auditResponse.json())).not.toContain("wrong-place-secret");
   });
 
-  it("updates provider config and never exposes raw secrets", async () => {
+  it("returns 404 for retired AI provider config endpoints", async () => {
     const { client } = await createFakeDatabaseClient();
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
 
@@ -491,46 +491,9 @@ describe("admin config routes", () => {
       },
     });
 
-    expect(response.statusCode).toBe(200);
-    const bodyText = response.body;
-    const body = response.json();
-    expect(body).toMatchObject({
-      success: true,
-      messageZh: "GPT / OpenAI 配置已保存。",
-    });
-    expect(body.provider).toMatchObject({
-      providerType: "ai",
-      providerCode: "openai",
-      enabled: true,
-      configJson: {
-        baseUrl: "https://api.openai.com",
-        realCallEnabled: true,
-        model: "gpt-5.4-mini",
-        customModel: "",
-        defaultModel: "gpt-5.4-mini",
-        temperature: 0.2,
-        maxTokens: 1200,
-        promptMaxChars: 12000,
-        timeoutMs: 120000,
-      },
-      maskedSecretJson: {
-        apiKey: "sk-r****cret",
-      },
-    });
-    expect(bodyText).not.toContain("secretJson");
-    expect(bodyText).not.toContain("sk-real-secret");
-
-    const auditResponse = await app.inject({
-      method: "GET",
-      url: "/admin/audit-logs",
-      headers: adminAuthorizationHeader(),
-    });
-    expect(auditResponse.json().logs[0]).toMatchObject({
-      actorUserId: "admin-user",
-      action: "provider_config.update",
-      targetId: "ai:openai",
-    });
-    expect(JSON.stringify(auditResponse.json())).not.toContain("sk-real-secret");
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ error: "provider_not_found" });
+    expect(response.body).not.toContain("sk-real-secret");
   });
 
   it("saves CDN config with masked server-only secrets", async () => {
@@ -1568,147 +1531,6 @@ describe("admin config routes", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps GPT / OpenAI connection tests in mock mode by default and hides secrets", async () => {
-    const { client, state } = await createFakeDatabaseClient();
-    const openAiProvider = state.providers.get("ai:openai");
-    state.providers.set("ai:openai", {
-      ...openAiProvider,
-      secretJson: {
-        apiKey: "openai-test-secret",
-      },
-      maskedSecretJson: {
-        apiKey: "open****cret",
-      },
-    });
-    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/admin/providers/ai/openai/test-connection",
-      headers: adminAuthorizationHeader(),
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({
-      success: true,
-      mode: "responses_api",
-      connectionMode: "mock",
-      model: "gpt-5.4-mini",
-      message: "当前为模拟测试，未请求 GPT / OpenAI 服务。",
-    });
-    expect(response.body).not.toContain("openai-test-secret");
-    expect(response.body).not.toContain("secretJson");
-  });
-
-  it("uses admin real-call settings before env fallback when listing providers", async () => {
-    const { client, state } = await createFakeDatabaseClient();
-    const amapProvider = state.providers.get("geo:amap");
-    const openAiProvider = state.providers.get("ai:openai");
-    state.providers.set("geo:amap", {
-      ...amapProvider,
-      configJson: {
-        ...(amapProvider.configJson ?? {}),
-        realCallEnabled: true,
-      },
-    });
-    state.providers.set("ai:openai", {
-      ...openAiProvider,
-      configJson: {
-        ...(openAiProvider.configJson ?? {}),
-        realCallEnabled: false,
-      },
-    });
-    app = buildApiServer({
-      dbClient: client,
-      authConfig: testAuthConfig,
-      env: {
-        ...process.env,
-        NODE_ENV: "development",
-        ENABLE_REAL_AMAP: "false",
-        ENABLE_REAL_OPENAI: "true",
-      },
-      logger: false,
-    });
-
-    const response = await app.inject({
-      method: "GET",
-      url: "/admin/providers",
-      headers: adminAuthorizationHeader(),
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json().realDevCallFlags).toEqual({
-      amap: true,
-      openai: false,
-      qweather: false,
-      openMeteo: false,
-      meteoblue: false,
-    });
-  });
-
-  it("returns Chinese no-key errors for real Amap and GPT / OpenAI connection tests", async () => {
-    const { client, state } = await createFakeDatabaseClient();
-    const amapProvider = state.providers.get("geo:amap");
-    const openAiProvider = state.providers.get("ai:openai");
-    state.providers.set("geo:amap", {
-      ...amapProvider,
-      enabled: true,
-      configJson: {
-        ...(amapProvider.configJson ?? {}),
-        realCallEnabled: true,
-      },
-      secretJson: {},
-      maskedSecretJson: {},
-    });
-    state.providers.set("ai:openai", {
-      ...openAiProvider,
-      enabled: true,
-      configJson: {
-        ...(openAiProvider.configJson ?? {}),
-        realCallEnabled: true,
-      },
-      secretJson: {},
-      maskedSecretJson: {},
-    });
-    app = buildApiServer({
-      dbClient: client,
-      authConfig: testAuthConfig,
-      env: {
-        ...process.env,
-        NODE_ENV: "development",
-      },
-      logger: false,
-    });
-
-    const amapResponse = await app.inject({
-      method: "POST",
-      url: "/admin/providers/geo/amap/test-connection",
-      headers: adminAuthorizationHeader(),
-    });
-    const openAiResponse = await app.inject({
-      method: "POST",
-      url: "/admin/providers/ai/openai/test-connection",
-      headers: adminAuthorizationHeader(),
-    });
-
-    expect(amapResponse.statusCode).toBe(200);
-    expect(amapResponse.json()).toMatchObject({
-      success: false,
-      error: "provider_key_missing",
-      providerCode: "amap",
-      providerNameZh: "高德地图",
-      message: "请先填写高德 Web 服务 Key。",
-    });
-    expect(openAiResponse.statusCode).toBe(200);
-    expect(openAiResponse.json()).toMatchObject({
-      success: false,
-      error: "provider_key_missing",
-      providerCode: "openai",
-      providerNameZh: "GPT / OpenAI",
-      message: "请先填写 GPT / OpenAI API Key。",
-    });
-  });
-
   it("guards Open-Meteo customer mode and meteoblue missing keys", async () => {
     const { client, state } = await createFakeDatabaseClient();
     const openMeteoProvider = state.providers.get("weather:open_meteo");
@@ -1944,306 +1766,6 @@ describe("admin config routes", () => {
     expect(response.body).not.toContain("meteoblue-real-secret");
   });
 
-  it("tests a real GPT / OpenAI connection through mocked fetch outside NODE_ENV=test", async () => {
-    const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
-      expect(init?.headers).toMatchObject({
-        Authorization: "Bearer openai-real-secret",
-      });
-      expect(String(init?.body)).not.toContain("openai-real-secret");
-      const requestBody = JSON.parse(String(init?.body));
-      expect(requestBody).toMatchObject({
-        model: "gpt-5.4-mini",
-        input: expect.any(String),
-        instructions: expect.any(String),
-        max_output_tokens: 120,
-        store: false,
-        stream: false,
-      });
-      expect(requestBody).not.toHaveProperty("response_format");
-      expect(requestBody).not.toHaveProperty("reasoning_effort");
-
-      return new Response(
-        JSON.stringify({
-          output_text: "GPT / OpenAI 连接测试通过。",
-        }),
-        {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json",
-          },
-        },
-      );
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    const { client, state } = await createFakeDatabaseClient();
-    const openAiProvider = state.providers.get("ai:openai");
-    state.providers.set("ai:openai", {
-      ...openAiProvider,
-      enabled: true,
-      configJson: {
-        ...(openAiProvider.configJson ?? {}),
-        realCallEnabled: true,
-        maxTokens: 1200,
-        promptMaxChars: 12000,
-      },
-      secretJson: {
-        apiKey: "openai-real-secret",
-      },
-      maskedSecretJson: {
-        apiKey: "open****cret",
-      },
-    });
-    app = buildApiServer({
-      dbClient: client,
-      authConfig: testAuthConfig,
-      env: {
-        ...process.env,
-        NODE_ENV: "development",
-      },
-      logger: false,
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/admin/providers/ai/openai/test-connection",
-      headers: adminAuthorizationHeader(),
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({
-      success: true,
-      mode: "responses_api",
-      connectionMode: "real",
-      modeLabelZh: "GPT / OpenAI",
-      model: "gpt-5.4-mini",
-      latencyMs: expect.any(Number),
-      message: "GPT / OpenAI 连接测试通过。",
-    });
-    expect(response.body).not.toContain("openai-real-secret");
-    expect(response.body).not.toContain("secretJson");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("tests a real GPT / OpenAI explanation through mocked fetch with safe diagnostics", async () => {
-    const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
-      expect(init?.headers).toMatchObject({
-        Authorization: "Bearer openai-real-secret",
-      });
-      expect(String(init?.body)).not.toContain("openai-real-secret");
-      const requestBody = JSON.parse(String(init?.body));
-      expect(requestBody).toMatchObject({
-        model: "gpt-5.4-mini",
-      });
-      expect(requestBody).not.toHaveProperty("response_format");
-
-      return new Response(
-        JSON.stringify({
-          output_text:
-            "是否值得去：后台真实解读测试成功，清晨窗口可以作为主计划，但不要只为单一信号专程出发。\n主要窗口：按确定性预报给出的清晨窗口提前到位，现场复核低云上沿、能见度和阵风。\n主要风险：短临降水、白墙、阵风和道路安全仍需复核，AI 不重新计算天气、天文、地形或评分。\n备选策略：如果低云不开口，改拍近景、远山层次或等下一段稳定窗口。\n复核重点：出发前再次确认雷达、低云高度、降水概率和现场可达性。",
-        }),
-        {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json",
-          },
-        },
-      );
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    const { client, state } = await createFakeDatabaseClient();
-    const openAiProvider = state.providers.get("ai:openai");
-    state.providers.set("ai:openai", {
-      ...openAiProvider,
-      enabled: true,
-      configJson: {
-        ...(openAiProvider.configJson ?? {}),
-        realCallEnabled: true,
-        maxTokens: 1200,
-        promptMaxChars: 12000,
-      },
-      secretJson: {
-        apiKey: "openai-real-secret",
-      },
-      maskedSecretJson: {
-        apiKey: "open****cret",
-      },
-    });
-    app = buildApiServer({
-      dbClient: client,
-      authConfig: testAuthConfig,
-      env: {
-        ...process.env,
-        NODE_ENV: "development",
-      },
-      logger: false,
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/admin/providers/ai/openai/test-explanation",
-      headers: adminAuthorizationHeader(),
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({
-      success: true,
-      providerCode: "openai",
-      model: "gpt-5.4-mini",
-      outputMode: "text_with_json_fallback",
-      promptSizeChars: expect.any(Number),
-      latencyMs: expect.any(Number),
-      attempts: 1,
-      parseSuccess: false,
-      displaySuccess: true,
-      hasDisplayableAiContent: true,
-      parseStrategy: "plain_text_fallback",
-      compatibilityFallbackUsed: false,
-      emptyContentFallbackUsed: false,
-      contentType: "output_text",
-      contentLength: expect.any(Number),
-      message: expect.stringContaining("GPT / OpenAI 真实解读测试通过"),
-    });
-    expect(response.body).not.toContain("openai-real-secret");
-    expect(response.body).not.toContain("Authorization");
-    expect(response.body).not.toContain("messages");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("reports GPT / OpenAI explanation test upstream failure with safe diagnostics", async () => {
-    const fetchMock = vi.fn(
-      async () =>
-        new Response(
-          JSON.stringify({
-            error: {
-              type: "invalid_request_error",
-              code: "unsupported_parameter",
-              message: "Unsupported parameter: response_format",
-            },
-          }),
-          {
-            status: 400,
-            headers: {
-              "Content-Type": "application/json",
-              "x-request-id": "ds-admin-1",
-            },
-          },
-        ),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    const { client, state } = await createFakeDatabaseClient();
-    const openAiProvider = state.providers.get("ai:openai");
-    state.providers.set("ai:openai", {
-      ...openAiProvider,
-      enabled: true,
-      configJson: {
-        ...(openAiProvider.configJson ?? {}),
-        realCallEnabled: true,
-        maxTokens: 1200,
-        promptMaxChars: 12000,
-      },
-      secretJson: {
-        apiKey: "openai-real-secret",
-      },
-      maskedSecretJson: {
-        apiKey: "open****cret",
-      },
-    });
-    app = buildApiServer({
-      dbClient: client,
-      authConfig: testAuthConfig,
-      env: {
-        ...process.env,
-        NODE_ENV: "development",
-      },
-      logger: false,
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/admin/providers/ai/openai/test-explanation",
-      headers: adminAuthorizationHeader(),
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({
-      success: false,
-      providerCode: "openai",
-      model: "gpt-5.4-mini",
-      outputMode: "text_with_json_fallback",
-      attempts: 1,
-      parseSuccess: false,
-      displaySuccess: false,
-      hasDisplayableAiContent: false,
-      compatibilityFallbackUsed: false,
-      disabledResponseFormat: false,
-      emptyContentFallbackUsed: false,
-      upstreamStatusCode: 400,
-      upstreamErrorCode: "unsupported_parameter",
-      upstreamErrorType: "invalid_request_error",
-      upstreamMessageSanitized: "Unsupported parameter: response_format",
-      parseStrategy: "failed",
-    });
-    expect(response.body).not.toContain("openai-real-secret");
-    expect(response.body).not.toContain("Authorization");
-    expect(response.body).not.toContain("messages");
-  });
-
-  it("reports GPT / OpenAI upstream 401 as provider auth failure, not admin auth failure", async () => {
-    const fetchMock = vi.fn(async () => {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    const { client, state } = await createFakeDatabaseClient();
-    const openAiProvider = state.providers.get("ai:openai");
-    state.providers.set("ai:openai", {
-      ...openAiProvider,
-      enabled: true,
-      configJson: {
-        ...(openAiProvider.configJson ?? {}),
-        realCallEnabled: true,
-      },
-      secretJson: {
-        apiKey: "openai-real-secret",
-      },
-      maskedSecretJson: {
-        apiKey: "open****cret",
-      },
-    });
-    app = buildApiServer({
-      dbClient: client,
-      authConfig: testAuthConfig,
-      env: {
-        ...process.env,
-        NODE_ENV: "production",
-      },
-      logger: false,
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/admin/providers/ai/openai/test-connection",
-      headers: adminAuthorizationHeader(),
-      payload: {},
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({
-      success: false,
-      attempted: true,
-      statusCode: 401,
-      error: "invalid_key",
-      errorCategory: "invalid_key",
-      message: "GPT / OpenAI API Key 或中转鉴权令牌无效。",
-    });
-    expect(response.body).not.toContain("登录状态已失效");
-    expect(response.body).not.toContain("openai-real-secret");
-  });
-
   it("forces real provider connection tests back to mock mode under NODE_ENV=test", async () => {
     const fetchMock = vi.fn(() => {
       throw new Error("real network calls are disabled in automated tests");
@@ -2251,7 +1773,6 @@ describe("admin config routes", () => {
     vi.stubGlobal("fetch", fetchMock);
     const { client, state } = await createFakeDatabaseClient();
     const amapProvider = state.providers.get("geo:amap");
-    const openAiProvider = state.providers.get("ai:openai");
     const qWeatherProvider = state.providers.get("weather:qweather");
     const openMeteoProvider = state.providers.get("weather:open_meteo");
     const meteoblueProvider = state.providers.get("weather:meteoblue");
@@ -2267,20 +1788,6 @@ describe("admin config routes", () => {
       },
       maskedSecretJson: {
         apiKey: "amap****cret",
-      },
-    });
-    state.providers.set("ai:openai", {
-      ...openAiProvider,
-      enabled: true,
-      configJson: {
-        ...(openAiProvider.configJson ?? {}),
-        realCallEnabled: true,
-      },
-      secretJson: {
-        apiKey: "openai-test-secret",
-      },
-      maskedSecretJson: {
-        apiKey: "open****cret",
       },
     });
     state.providers.set("weather:qweather", {
@@ -2333,11 +1840,6 @@ describe("admin config routes", () => {
       url: "/admin/providers/geo/amap/test-connection",
       headers: adminAuthorizationHeader(),
     });
-    const openAiResponse = await app.inject({
-      method: "POST",
-      url: "/admin/providers/ai/openai/test-connection",
-      headers: adminAuthorizationHeader(),
-    });
     const qWeatherResponse = await app.inject({
       method: "POST",
       url: "/admin/providers/weather/qweather/test-connection",
@@ -2358,13 +1860,6 @@ describe("admin config routes", () => {
     expect(amapResponse.json()).toMatchObject({
       success: true,
       mode: "mock",
-    });
-    expect(openAiResponse.statusCode).toBe(200);
-    expect(openAiResponse.json()).toMatchObject({
-      success: true,
-      mode: "responses_api",
-      connectionMode: "mock",
-      model: "gpt-5.4-mini",
     });
     expect(qWeatherResponse.statusCode).toBe(200);
     expect(qWeatherResponse.json()).toMatchObject({

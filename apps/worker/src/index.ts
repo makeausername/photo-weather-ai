@@ -14,9 +14,7 @@ export function createWorkerRuntime(): WorkerRuntime {
 
 export function startWorkerRuntime(runtime = createWorkerRuntime()): { readonly stop: () => void } {
   console.log(`${runtime.service} started in ${runtime.queueMode} mode`);
-  console.log(
-    "Forecast interpretation runs synchronously in the api service; worker is not required for /forecast/ai-explain.",
-  );
+  console.log("Forecast calculation runs synchronously in the api service; no worker queue is required.");
 
   const keepAlive = setInterval(() => {
     console.log(`${runtime.service} idle heartbeat; no background queues are enabled.`);

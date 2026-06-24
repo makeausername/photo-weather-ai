@@ -1,4 +1,3 @@
-import { isOpenAiProviderError, type OpenAiProviderOptions } from "@photo-weather/ai";
 import { AmapProvider } from "@photo-weather/geo";
 import {
   isWeatherProviderError,
@@ -8,7 +7,6 @@ import {
 } from "@photo-weather/weather";
 import type { DatabaseClient } from "@photo-weather/db";
 import type { ForecastWeatherSourceErrorCategory } from "@photo-weather/shared";
-import { createRealOpenAiProvider, readRuntimeOpenAiConfig } from "./ai-provider.js";
 import { readRuntimeAmapConfig } from "./geo-provider.js";
 import {
   createMeteoblueClientFromRuntimeConfig,
@@ -22,7 +20,6 @@ export const providerDiagnosticCodes = [
   "open_meteo",
   "qweather",
   "amap",
-  "openai",
 ] as const;
 
 export type ProviderDiagnosticCode = (typeof providerDiagnosticCodes)[number];
@@ -37,7 +34,7 @@ export type ProviderDiagnosticErrorCategory =
   | "real_call_disabled";
 
 export type ProviderDiagnosticResult = {
-  readonly providerType: "weather" | "geo" | "ai";
+  readonly providerType: "weather" | "geo";
   readonly providerCode: ProviderDiagnosticCode;
   readonly providerNameZh: string;
   readonly enabled: boolean;
@@ -97,10 +94,6 @@ const providerMetadata: Record<
     providerType: "weather",
     providerNameZh: "meteoblue",
   },
-  openai: {
-    providerType: "ai",
-    providerNameZh: "GPT / OpenAI",
-  },
 };
 
 export function providerDiagnosticCodeFromRoute(
@@ -127,8 +120,6 @@ export async function runProviderDiagnostic(
       return testOpenMeteoProvider(options);
     case "meteoblue":
       return testMeteoblueProvider(options);
-    case "openai":
-      return testOpenAiProvider(options);
   }
 
   throw new Error(`Unsupported provider diagnostic code: ${options.providerCode}`);
@@ -271,8 +262,6 @@ function realCallDisabledMessage(providerCode: ProviderDiagnosticCode): string {
       return "当前为模拟测试，未请求真实天气服务。";
     case "meteoblue":
       return "当前为模拟测试，未请求 meteoblue 服务。";
-    case "openai":
-      return "当前为模拟测试，未请求 GPT / OpenAI 服务。";
   }
 }
 
@@ -516,57 +505,6 @@ async function testMeteoblueProvider(
   }
 }
 
-async function testOpenAiProvider(
-  options: ProviderDiagnosticOptions,
-): Promise<ProviderDiagnosticResult> {
-  const config = await readRuntimeOpenAiConfig({
-    dbClient: options.dbClient,
-    env: options.env,
-  });
-  const common = {
-    enabled: config.enabled,
-    realCallEnabled: config.realCallEnabled,
-    apiKeyPresent: config.apiKeyPresent,
-    baseUrl: config.baseUrl,
-    mode: config.mode,
-    modeLabelZh: config.modeLabelZh,
-    model: config.model,
-    timeoutMs: config.timeoutMs,
-  };
-  const preflight = preflightDiagnostic("openai", common);
-  if (preflight) {
-    return preflight;
-  }
-  if (!config.apiKeyPresent || !config.apiKey) {
-    return skippedDiagnostic("openai", {
-      ...common,
-      connectionMode: "real",
-      errorCategory: "provider_key_missing",
-      messageZh: "请先填写 GPT / OpenAI API Key。",
-    });
-  }
-
-  try {
-    const startedAt = Date.now();
-    const provider = await createRealOpenAiProvider({
-      dbClient: options.dbClient,
-      env: options.env,
-      fetcher: options.fetcher as OpenAiProviderOptions["fetcher"],
-    });
-    const result = await provider.testConnection();
-    return successfulDiagnostic("openai", {
-      ...common,
-      latencyMs: Date.now() - startedAt,
-      messageZh: result.message || `GPT / OpenAI 连接测试通过，当前使用${config.modeLabelZh}。`,
-    });
-  } catch (error) {
-    return failedDiagnostic("openai", {
-      ...common,
-      ...classifyProviderDiagnosticError(error, "GPT / OpenAI 连接测试失败。", config.apiKey),
-    });
-  }
-}
-
 function classifyProviderDiagnosticError(
   error: unknown,
   fallbackMessageZh: string,
@@ -586,15 +524,6 @@ function classifyProviderDiagnosticError(
     };
   }
 
-  if (isOpenAiProviderError(error)) {
-    return {
-      errorCategory: mapOpenAiDiagnosticErrorCategory(error.errorCategory, error.statusCode),
-      messageZh: sanitizeDiagnosticMessage(error.messageZh, secret),
-      statusCode: error.statusCode,
-      latencyMs: error.latencyMs,
-    };
-  }
-
   const name = error instanceof Error ? error.name : "";
   if (name === "AbortError") {
     return {
@@ -608,33 +537,6 @@ function classifyProviderDiagnosticError(
     errorCategory: "provider_error",
     messageZh: sanitizeDiagnosticMessage(message || fallbackMessageZh, secret),
   };
-}
-
-function mapOpenAiDiagnosticErrorCategory(
-  category: string,
-  statusCode?: number,
-): ForecastWeatherSourceErrorCategory {
-  switch (category) {
-    case "provider_disabled":
-      return "skipped";
-    case "config_missing":
-      return "missing_config";
-    case "timeout":
-      return "timeout";
-    case "network_error":
-      return "network";
-    case "provider_http_error":
-      return statusCode === 401 || statusCode === 403 ? "invalid_key" : "provider_error";
-    case "unknown":
-      return "provider_error";
-    case "provider_invalid_response":
-    case "provider_parse_error":
-      return "parse_error";
-    case "prompt_too_large":
-      return "unsupported";
-    default:
-      return "provider_error";
-  }
 }
 
 function sanitizeDiagnosticMessage(message: string, secret?: string): string {

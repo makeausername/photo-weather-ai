@@ -56,7 +56,6 @@ Meteoblue historical 只保留接口枚举和来源占位。没有明确配置�
 
 约束：
 
-- 不调用 DeepSeek。
 - 不调用实时 forecast provider。
 - 不读取 provider secret。
 - 不创建单独的简化评分模型。

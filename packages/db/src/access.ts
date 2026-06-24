@@ -51,7 +51,6 @@ export type ForecastAccessStatus = {
   readonly hasFullAccess: boolean;
   readonly maxForecastHours: number;
   readonly allowedTargets: readonly string[];
-  readonly canUseAiExplanation: boolean;
   readonly canViewFullHistory: boolean;
   readonly activeEntitlementId?: string;
   readonly activeProductCode?: string;
@@ -262,7 +261,6 @@ function fullAccessStatus(input: {
     hasFullAccess: true,
     maxForecastHours: input.maxForecastHours,
     allowedTargets: fullTargets,
-    canUseAiExplanation: true,
     canViewFullHistory: true,
     activeEntitlementId: input.entitlement?.id,
     activeProductCode: readProductCode(input.entitlement?.metadataJson) ?? undefined,
@@ -283,7 +281,6 @@ function freeStatus(input: {
     hasFullAccess: false,
     maxForecastHours: input.maxForecastHours,
     allowedTargets: freeTargets,
-    canUseAiExplanation: false,
     canViewFullHistory: false,
     expiredProductCode: input.expiredProductCode ?? undefined,
     reason: input.reason,
@@ -422,7 +419,6 @@ export function upgradeRequiredResponse(access: ForecastAccessStatus) {
 export function checkForecastAccess(input: {
   readonly access: ForecastAccessStatus;
   readonly target: string;
-  readonly useAiExplanation?: boolean;
   readonly forecastStart: Date;
   readonly forecastEnd: Date;
   readonly now?: Date;
@@ -432,10 +428,6 @@ export function checkForecastAccess(input: {
 
   if (!input.access.allowedTargets.includes(input.target)) {
     return { allowed: false, statusCode: 402, reason: "target_requires_upgrade" };
-  }
-
-  if (input.useAiExplanation && !input.access.canUseAiExplanation) {
-    return { allowed: false, statusCode: 402, reason: "ai_requires_upgrade" };
   }
 
   if (!input.access.hasFullAccess) {

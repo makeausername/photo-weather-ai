@@ -66,8 +66,6 @@ const actionLabels: Record<string, string> = {
 };
 
 const providerLabels: Record<string, string> = {
-  "ai:openai": "GPT / OpenAI",
-  "ai:deepseek": "DeepSeek",
   "billing:alipay": "支付宝",
   "billing:mock": "模拟支付",
   "billing:wechat_pay": "微信支付",
@@ -86,7 +84,6 @@ const providerLabels: Record<string, string> = {
 };
 
 const providerTypeSummaries: Record<string, string> = {
-  ai: "智能解读配置",
   billing: "支付收款配置",
   captcha: "人机验证配置",
   cdn: "CDN 加速配置",

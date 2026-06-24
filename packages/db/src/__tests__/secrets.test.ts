@@ -38,18 +38,18 @@ describe("secret masking", () => {
   it("redacts secret-like audit metadata fields", () => {
     expect(
       sanitizeAuditJson({
-        providerCode: "openai",
-        apiKey: "sk-1234567890",
+        providerCode: "qweather",
+        apiKey: "qw-1234567890",
         config: {
-          baseUrl: "https://api.openai.com",
+          apiHost: "https://devapi.qweather.com",
           accessKeySecret: "oss-secret",
         },
       }),
     ).toEqual({
-      providerCode: "openai",
-      apiKey: "sk-1****7890",
+      providerCode: "qweather",
+      apiKey: "qw-1****7890",
       config: {
-        baseUrl: "https://api.openai.com",
+        apiHost: "https://devapi.qweather.com",
         accessKeySecret: "oss-****cret",
       },
     });
