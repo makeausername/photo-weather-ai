@@ -347,15 +347,6 @@ export function PricingClient({
     setOrder(null);
   }
 
-  function handleSelectProduct(productCode: string) {
-    const changed = productCode !== selectedProductCode;
-    setSelectedProductCode(productCode);
-    if (changed) {
-      clearOrderState();
-    }
-    setMessage("");
-  }
-
   function handleStartCheckout(productCode: string) {
     const changed = productCode !== selectedProductCode;
     setSelectedProductCode(productCode);
@@ -452,10 +443,9 @@ export function PricingClient({
               <PaidPlanCard
                 key={product.code}
                 product={product}
-                selected={selectedProduct?.code === product.code}
+                selected={checkoutActive && selectedProduct?.code === product.code}
                 loggedIn={loggedIn}
                 submitting={state === "submitting" && selectedProductCode === product.code}
-                onSelect={() => handleSelectProduct(product.code)}
                 onStartCheckout={() => handleStartCheckout(product.code)}
               />
             ))}
@@ -483,14 +473,12 @@ function PaidPlanCard({
   selected,
   loggedIn,
   submitting,
-  onSelect,
   onStartCheckout,
 }: {
   readonly product: PublicBillingProduct;
   readonly selected: boolean;
   readonly loggedIn: boolean;
   readonly submitting: boolean;
-  readonly onSelect: () => void;
   readonly onStartCheckout: () => void;
 }) {
   const badgeText = displayProductBadgeText(product);
@@ -499,7 +487,7 @@ function PaidPlanCard({
   return (
     <Card
       className={cn(
-        "grid gap-4 p-5 transition",
+        "grid grid-rows-[auto_auto_1fr_auto] gap-4 p-5 transition",
         selected ? "border-primary shadow-soft" : "border-border",
       )}
     >
@@ -524,18 +512,15 @@ function PaidPlanCard({
           <li key={feature}>{feature}</li>
         ))}
       </ul>
-      <div className="grid gap-2">
-        <Button type="button" variant="secondary" onClick={onSelect}>
-          选择套餐
-        </Button>
+      <div>
         {loggedIn ? (
-          <Button type="button" disabled={submitting} onClick={onStartCheckout}>
+          <Button type="button" className="w-full" disabled={submitting} onClick={onStartCheckout}>
             {submitting ? "创建中..." : "立即购买"}
           </Button>
         ) : (
           <Link
             href="/login?returnTo=%2Fpricing"
-            className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
+            className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
           >
             登录后购买
           </Link>
