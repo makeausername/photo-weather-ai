@@ -89,7 +89,7 @@ export function PublicHeader(props?: PublicHeaderProps) {
         </div>
 
         <div className="hidden shrink-0 items-center justify-end gap-2 min-[1200px]:flex">
-          <PublicAccountEntry />
+          <PublicAccountEntry variant="desktop" />
         </div>
 
         <button
@@ -104,9 +104,12 @@ export function PublicHeader(props?: PublicHeaderProps) {
       </nav>
 
       {menuOpen ? (
-        <div id="public-mobile-menu" className="border-t border-border bg-card min-[1200px]:hidden">
-          <div className="grid w-full min-w-0 gap-3 px-[clamp(16px,4vw,72px)] py-3">
-            <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
+        <div
+          id="public-mobile-menu"
+          className="w-full max-w-full min-w-0 border-t border-border bg-card min-[1200px]:hidden"
+        >
+          <div className="grid w-full max-w-full min-w-0 gap-3 px-[clamp(16px,4vw,72px)] py-3">
+            <div className="grid w-full max-w-full min-w-0 grid-cols-2 gap-1 sm:grid-cols-3">
               {navLinks.map((link) => (
                 <NavLink
                   key={link.href}
@@ -117,8 +120,8 @@ export function PublicHeader(props?: PublicHeaderProps) {
                 />
               ))}
             </div>
-            <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
-              <PublicAccountEntry onNavigate={() => setMenuOpen(false)} />
+            <div className="grid w-full max-w-full min-w-0 gap-2 border-t border-border pt-3">
+              <PublicAccountEntry variant="mobile" onNavigate={() => setMenuOpen(false)} />
             </div>
           </div>
         </div>

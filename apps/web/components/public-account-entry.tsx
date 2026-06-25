@@ -11,15 +11,19 @@ import { cn } from "./ui";
 
 type PublicAccountEntryProps = {
   readonly onNavigate?: () => void;
+  readonly variant?: "desktop" | "mobile";
 };
+
+type PublicAccountMenuPlacement = "dropdown" | "inline";
 
 export const publicAccountMenuLinks = [
   { href: "/account", label: "账户中心" },
 ] as const;
 
-export function PublicAccountEntry({ onNavigate }: PublicAccountEntryProps) {
+export function PublicAccountEntry({ onNavigate, variant = "desktop" }: PublicAccountEntryProps) {
   const [session, setSession] = useState<PublicAccountSession | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const isMobile = variant === "mobile";
 
   useEffect(() => {
     let cancelled = false;
@@ -46,7 +50,10 @@ export function PublicAccountEntry({ onNavigate }: PublicAccountEntryProps) {
       <Link
         href="/login"
         onClick={onNavigate}
-        className="inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary"
+        className={cn(
+          "inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary",
+          isMobile && "w-full max-w-full min-w-0 justify-center",
+        )}
       >
         账户
       </Link>
@@ -67,11 +74,12 @@ export function PublicAccountEntry({ onNavigate }: PublicAccountEntryProps) {
   }
 
   return (
-    <div className="relative">
+    <div className={cn(isMobile ? "grid w-full max-w-full min-w-0" : "relative")}>
       <button
         type="button"
         className={cn(
           "inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary",
+          isMobile && "w-full max-w-full min-w-0 justify-center",
           menuOpen && "border-primary bg-secondary",
         )}
         aria-expanded={menuOpen}
@@ -83,6 +91,7 @@ export function PublicAccountEntry({ onNavigate }: PublicAccountEntryProps) {
 
       {menuOpen ? (
         <PublicAccountMenuContent
+          placement={isMobile ? "inline" : "dropdown"}
           onNavigate={handleNavigate}
           onLogout={() => void handleLogout()}
         />
@@ -92,16 +101,23 @@ export function PublicAccountEntry({ onNavigate }: PublicAccountEntryProps) {
 }
 
 export function PublicAccountMenuContent({
+  placement = "dropdown",
   onNavigate,
   onLogout,
 }: {
+  readonly placement?: PublicAccountMenuPlacement;
   readonly onNavigate?: () => void;
   readonly onLogout: () => void;
 }) {
   return (
     <div
       role="menu"
-      className="absolute right-0 z-50 mt-2 grid min-w-48 overflow-hidden rounded-lg border border-border bg-card p-1 shadow-soft"
+      className={cn(
+        "mt-2 grid overflow-hidden rounded-lg border border-border bg-card p-1 shadow-soft",
+        placement === "dropdown"
+          ? "absolute right-0 z-50 min-w-48"
+          : "w-full max-w-full min-w-0",
+      )}
     >
       {publicAccountMenuLinks.map((item) => (
         <AccountMenuLink
