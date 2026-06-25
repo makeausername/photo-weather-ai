@@ -13,6 +13,16 @@ import { Badge, Button, Card, cn } from "./ui";
 const defaultTimezone = "Asia/Shanghai";
 const weekLabels = ["一", "二", "三", "四", "五", "六", "日"] as const;
 const fullMoonShadowPath = "M 5 50 A 45 45 0 1 0 95 50 A 45 45 0 1 0 5 50";
+const compactMoonPhaseNames: Record<MoonCalendarDay["phaseNameZh"], string> = {
+  新月: "新月",
+  娥眉月: "娥眉",
+  上弦月: "上弦",
+  盈凸月: "盈凸",
+  满月: "满月",
+  亏凸月: "亏凸",
+  下弦月: "下弦",
+  残月: "残月",
+};
 
 type MoonPhaseCalendarProps = {
   readonly latitudeWgs84: number;
@@ -61,7 +71,7 @@ export function MoonPhaseCalendar({
   }
 
   return (
-    <Card className={cn("p-5 shadow-sm", className)}>
+    <Card className={cn("max-w-full min-w-0 overflow-hidden p-5 shadow-sm", className)}>
       <div className="flex flex-col gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -92,28 +102,33 @@ export function MoonPhaseCalendar({
         </div>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MoonSummaryItem label="本月新月" day={calendar.summary.newMoon} />
         <MoonSummaryItem label="本月满月" day={calendar.summary.fullMoon} />
         <MoonSummaryItem label="上弦月" day={calendar.summary.firstQuarter} />
         <MoonSummaryItem label="下弦月" day={calendar.summary.lastQuarter} />
       </div>
 
-      <div className="mt-5 rounded-lg border border-border bg-muted p-2 sm:p-3">
-        <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-muted-foreground">
-          {weekLabels.map((label) => (
-            <span key={label} className="py-1">
-              {label}
-            </span>
-          ))}
-        </div>
-        <div className="mt-2 grid grid-cols-7 gap-1">
-          {Array.from({ length: calendar.firstDayOfWeek }, (_, index) => (
-            <span key={`empty-${index}`} aria-hidden="true" className="min-h-[76px]" />
-          ))}
-          {calendar.days.map((day) => (
-            <MoonCalendarCell key={day.date} day={day} />
-          ))}
+      <div
+        className="mt-5 max-w-full overflow-x-auto rounded-lg border border-border bg-muted p-2 sm:p-3"
+        data-moon-calendar-scroll="true"
+      >
+        <div className="min-w-[480px]" data-moon-calendar-inner="true">
+          <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-muted-foreground">
+            {weekLabels.map((label) => (
+              <span key={label} className="whitespace-nowrap py-1">
+                {label}
+              </span>
+            ))}
+          </div>
+          <div className="mt-2 grid grid-cols-7 gap-1">
+            {Array.from({ length: calendar.firstDayOfWeek }, (_, index) => (
+              <span key={`empty-${index}`} aria-hidden="true" className="min-h-[76px]" />
+            ))}
+            {calendar.days.map((day) => (
+              <MoonCalendarCell key={day.date} day={day} />
+            ))}
+          </div>
         </div>
       </div>
     </Card>
@@ -128,7 +143,7 @@ function MoonSummaryItem({
   readonly day: MoonCalendarDay | undefined;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-muted p-3">
+    <div className="min-w-0 rounded-lg border border-border bg-muted p-3">
       <p className="text-xs font-semibold text-muted-foreground">{label}</p>
       <p className="mt-1 text-base font-bold text-card-foreground">
         {day ? day.dateLabel : "暂无"}
@@ -144,11 +159,12 @@ function MoonSummaryItem({
 
 function MoonCalendarCell({ day }: { readonly day: MoonCalendarDay }) {
   const isMajorPhase = day.isNewMoon || day.isFullMoon || day.isFirstQuarter || day.isLastQuarter;
+  const compactPhaseName = compactMoonPhaseName(day.phaseNameZh);
 
   return (
     <div
       className={cn(
-        "min-h-[76px] rounded-lg border bg-card p-1.5 text-center shadow-sm sm:min-h-[96px] sm:p-2",
+        "min-h-[76px] min-w-0 rounded-lg border bg-card p-1.5 text-center shadow-sm sm:min-h-[96px] sm:p-2",
         day.isToday ? "border-primary ring-2 ring-ring" : "border-border",
         isMajorPhase && !day.isToday ? "border-accent" : "",
       )}
@@ -166,8 +182,11 @@ function MoonCalendarCell({ day }: { readonly day: MoonCalendarDay }) {
         illumination={day.illumination}
         className="mx-auto mt-1 h-7 w-7 sm:h-9 sm:w-9"
       />
-      <p className="mt-1 truncate text-[11px] font-semibold leading-4 text-card-foreground">
-        {day.phaseNameZh}
+      <p
+        className="mt-1 whitespace-nowrap text-[11px] font-semibold leading-4 text-card-foreground"
+        title={day.phaseNameZh}
+      >
+        {compactPhaseName}
       </p>
       <p className="hidden text-[11px] leading-4 text-muted-foreground min-[520px]:block">
         {formatPercent(day.illumination)}
@@ -179,6 +198,10 @@ function MoonCalendarCell({ day }: { readonly day: MoonCalendarDay }) {
       ) : null}
     </div>
   );
+}
+
+function compactMoonPhaseName(phaseName: MoonCalendarDay["phaseNameZh"]): string {
+  return compactMoonPhaseNames[phaseName];
 }
 
 function MoonPhaseIcon({

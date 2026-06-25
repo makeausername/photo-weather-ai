@@ -64,7 +64,7 @@ export function PublicHeader(props?: PublicHeaderProps) {
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-card/92 backdrop-blur-xl">
-      <nav className="flex w-full items-center gap-4 px-[clamp(24px,4vw,72px)] py-3 min-[1200px]:grid min-[1200px]:grid-cols-[minmax(220px,1fr)_auto_minmax(220px,1fr)]">
+      <nav className="flex w-full min-w-0 items-center gap-4 px-[clamp(16px,4vw,72px)] py-3 min-[1200px]:grid min-[1200px]:grid-cols-[minmax(220px,1fr)_auto_minmax(220px,1fr)]">
         <Link
           href="/"
           className="flex min-w-0 shrink-0 items-center gap-3"
@@ -105,7 +105,7 @@ export function PublicHeader(props?: PublicHeaderProps) {
 
       {menuOpen ? (
         <div id="public-mobile-menu" className="border-t border-border bg-card min-[1200px]:hidden">
-          <div className="grid w-full gap-3 px-[clamp(24px,4vw,72px)] py-3">
+          <div className="grid w-full min-w-0 gap-3 px-[clamp(16px,4vw,72px)] py-3">
             <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
               {navLinks.map((link) => (
                 <NavLink

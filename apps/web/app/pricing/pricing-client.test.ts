@@ -141,8 +141,11 @@ describe("pricing checkout client", () => {
     expect(html).not.toContain("创建订单");
     expect(html).not.toContain(pricingCheckoutIntroCopy);
     expect(html).not.toContain(oldInternalCheckoutCopy);
-    expect(html).toContain("登录后购买");
-    expect(html).toContain('href="/login?returnTo=%2Fpricing"');
+    expect(html).not.toContain("选择套餐");
+    expect(html).not.toContain("立即购买");
+    expect(html.match(/登录后购买/g) ?? []).toHaveLength(3);
+    expect(html.match(/href="\/login\?returnTo=%2Fpricing"/g) ?? []).toHaveLength(3);
+    expect(html).not.toContain("border-primary shadow-soft");
     expect(html).not.toContain('href="/register"');
     expect(html).not.toContain("注册领取 7 天完整权限");
     expect(html).toContain("查看账户权益");
@@ -154,12 +157,21 @@ describe("pricing checkout client", () => {
     expect(pricingClientSource).not.toContain("sm:grid-cols-2 xl:grid-cols-4");
     expect(pricingClientSource).toContain("lg:grid-cols-3");
     expect(pricingClientSource).toContain("checkoutActive ? (");
-    expect(pricingClientSource).toContain("onSelect={() => handleSelectProduct(product.code)}");
+    expect(pricingClientSource).not.toContain("onSelect");
+    expect(pricingClientSource).not.toContain("handleSelectProduct");
+    expect(pricingClientSource).not.toContain('variant="secondary" onClick={onSelect}');
+    expect(pricingClientSource).toContain(
+      "selected={checkoutActive && selectedProduct?.code === product.code}",
+    );
     expect(pricingClientSource).toContain(
       "onStartCheckout={() => handleStartCheckout(product.code)}",
     );
     expect(pricingClientSource).toContain("setCheckoutStarted(true)");
     expect(pricingClientSource).toContain("clearOrderState()");
+    expect(pricingClientSource).toMatch(
+      /function handleStartCheckout\(productCode: string\) \{[\s\S]*const changed = productCode !== selectedProductCode;[\s\S]*setSelectedProductCode\(productCode\);[\s\S]*if \(changed\) \{\s*clearOrderState\(\);\s*\}\s*setCheckoutStarted\(true\);/,
+    );
+    expect(pricingClientSource).toContain("selectedProduct={selectedProduct}");
 
     for (const forbidden of [
       "providerPayload",
@@ -180,7 +192,10 @@ describe("pricing checkout client", () => {
       React.createElement(PricingClient, { initialProducts: products, initialLoggedIn: true }),
     );
 
-    expect(html).toContain("立即购买");
+    expect(html).not.toContain("选择套餐");
+    expect(html).not.toContain("登录后购买");
+    expect(html.match(/立即购买/g) ?? []).toHaveLength(3);
+    expect(html).not.toContain("border-primary shadow-soft");
     expect(html).not.toContain("确认订单");
     expect(html).not.toContain("支付方式");
     expect(html).not.toContain("微信支付");
@@ -191,6 +206,10 @@ describe("pricing checkout client", () => {
     expect(pricingClientSource).toContain("createBillingOrder({ productCode, provider })");
     expect(pricingClientSource).toContain("<CheckoutPanel");
     expect(pricingClientSource).toContain("onCreateOrder={() => void handleCreateOrder()}");
+    expect(pricingClientSource).toContain(
+      'className="w-full" disabled={submitting} onClick={onStartCheckout}',
+    );
+    expect(pricingClientSource).toContain("grid grid-rows-[auto_auto_1fr_auto]");
     expect(pricingClientSource).not.toContain("durationDays:");
     expect(pricingClientSource).not.toContain("grantType:");
     expect(pricingClientSource).not.toContain("hasFullAccess:");

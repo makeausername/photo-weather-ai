@@ -48,7 +48,7 @@ export function ResultDashboardShell({
 }: ResultDashboardShellProps) {
   return (
     <section
-      className={cn(className, "mx-auto grid w-full max-w-[1560px] gap-5")}
+      className={cn(className, "mx-auto grid w-full max-w-[1560px] min-w-0 gap-5")}
       data-forecast-decision-page-shell="true"
       data-result-dashboard-shell="true"
       data-result-target={target}
@@ -93,7 +93,7 @@ export function DecisionContextCard({
 }: DecisionContextCardProps) {
   return (
     <Card
-      className={cn(className, "grid gap-4 p-4 shadow-sm")}
+      className={cn(className, "grid min-w-0 max-w-full gap-4 p-4 shadow-sm")}
       data-decision-context-card="true"
       data-result-target={target}
       data-testid={dataTestId}
@@ -106,7 +106,7 @@ export function DecisionContextCard({
       </div>
 
       {details.length > 0 ? (
-        <dl className="grid gap-3 text-sm">
+        <dl className="grid min-w-0 gap-3 text-sm">
           {details.map((detail) => (
             <DecisionDefinitionItem key={detail.label} label={detail.label} value={detail.value} />
           ))}
@@ -144,7 +144,7 @@ export function DecisionLoadingCard({
 }: DecisionLoadingCardProps) {
   return (
     <Card
-      className={cn(className, "p-5 shadow-sm")}
+      className={cn(className, "min-w-0 max-w-full p-5 shadow-sm")}
       data-decision-loading-card="true"
       data-forecast-loading-card="true"
       data-result-page-state-card="loading"
@@ -182,7 +182,7 @@ export function DecisionLoadingCard({
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
       ) : null}
       {details && details.length > 0 ? (
-        <dl className="mt-4 grid gap-2 rounded-lg border border-border bg-muted p-3 text-sm min-[720px]:grid-cols-2">
+        <dl className="mt-4 grid min-w-0 gap-2 rounded-lg border border-border bg-muted p-3 text-sm min-[720px]:grid-cols-2">
           {details.map((detail) => (
             <DecisionCompactDefinition
               key={detail.label}
@@ -218,7 +218,7 @@ export function DecisionInfoCard({
 }: DecisionInfoCardProps) {
   return (
     <Card
-      className={cn(className, "p-5 shadow-sm")}
+      className={cn(className, "min-w-0 max-w-full p-5 shadow-sm")}
       data-decision-info-card="true"
       data-result-target={target}
       data-testid={dataTestId}
@@ -229,7 +229,7 @@ export function DecisionInfoCard({
       </div>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
       {details && details.length > 0 ? (
-        <dl className="mt-4 grid gap-2 text-sm">
+        <dl className="mt-4 grid min-w-0 gap-2 text-sm">
           {details.map((detail) => (
             <DecisionDefinitionItem key={detail.label} label={detail.label} value={detail.value} />
           ))}
@@ -266,7 +266,7 @@ export function DecisionErrorCard({
 }: DecisionErrorCardProps) {
   return (
     <Card
-      className={cn(className, "border-danger p-5 shadow-sm")}
+      className={cn(className, "min-w-0 max-w-full border-danger p-5 shadow-sm")}
       data-decision-error-card="true"
       data-forecast-error-card="true"
       data-result-page-state-card="error"
@@ -298,7 +298,7 @@ export function DecisionErrorCard({
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
       ) : null}
       {details && details.length > 0 ? (
-        <dl className="mt-4 grid gap-2 rounded-lg border border-border bg-muted p-3 text-sm min-[720px]:grid-cols-2">
+        <dl className="mt-4 grid min-w-0 gap-2 rounded-lg border border-border bg-muted p-3 text-sm min-[720px]:grid-cols-2">
           {details.map((detail) => (
             <DecisionCompactDefinition
               key={detail.label}
@@ -344,7 +344,7 @@ export function DecisionLoadingTemplate({
       dataCloudSeaPageMode={dataCloudSeaPageMode}
     >
       <section
-        className="grid gap-5 min-[900px]:grid-cols-[clamp(300px,32vw,360px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(320px,23vw,380px)_minmax(0,1fr)_clamp(320px,23vw,380px)] min-[1200px]:items-start"
+        className="grid min-w-0 gap-5 min-[900px]:grid-cols-[clamp(300px,32vw,360px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(320px,23vw,380px)_minmax(0,1fr)_clamp(320px,23vw,380px)] min-[1200px]:items-start"
         data-decision-loading-template="true"
         data-forecast-loading-state="true"
         data-result-page-state="loading"
@@ -356,12 +356,12 @@ export function DecisionLoadingTemplate({
         })}
       >
         <div
-          className="grid content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]"
+          className="grid min-w-0 content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]"
           data-decision-context-region="true"
         >
           <DecisionContextCard {...context} target={target} />
         </div>
-        <div className="grid gap-5 min-[1200px]:contents">
+        <div className="grid min-w-0 gap-5 min-[1200px]:contents">
           <DecisionLoadingCard
             {...loading}
             target={target}
@@ -401,7 +401,7 @@ export function DecisionErrorTemplate({
       dataCloudSeaPageMode={dataCloudSeaPageMode}
     >
       <section
-        className="grid gap-5 min-[900px]:grid-cols-[clamp(300px,32vw,360px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(320px,23vw,380px)_minmax(0,1fr)_clamp(320px,23vw,380px)] min-[1200px]:items-start"
+        className="grid min-w-0 gap-5 min-[900px]:grid-cols-[clamp(300px,32vw,360px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(320px,23vw,380px)_minmax(0,1fr)_clamp(320px,23vw,380px)] min-[1200px]:items-start"
         data-decision-error-template="true"
         data-forecast-error-state="true"
         data-result-page-state="error"
@@ -413,12 +413,12 @@ export function DecisionErrorTemplate({
         })}
       >
         <div
-          className="grid content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]"
+          className="grid min-w-0 content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]"
           data-decision-context-region="true"
         >
           <DecisionContextCard {...context} target={target} />
         </div>
-        <div className="grid gap-5 min-[1200px]:contents">
+        <div className="grid min-w-0 gap-5 min-[1200px]:contents">
           <DecisionErrorCard
             {...error}
             target={target}
@@ -487,7 +487,7 @@ export function ResultHeaderRow({
     <header
       className={cn(
         className,
-        "grid gap-4 min-[880px]:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] min-[880px]:items-stretch",
+        "grid min-w-0 max-w-full gap-4 min-[880px]:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] min-[880px]:items-stretch",
       )}
       data-forecast-result-header="true"
       data-result-header-row="true"
@@ -518,7 +518,7 @@ export function ResultHeaderSummaryCard({
 }: ResultHeaderSummaryCardProps) {
   return (
     <Card
-      className={cn(className, "h-full p-5 shadow-sm")}
+      className={cn(className, "h-full min-w-0 max-w-full p-5 shadow-sm")}
       data-forecast-result-summary-card="true"
       data-result-header-summary-card="true"
       data-result-target={target}
@@ -560,7 +560,7 @@ export function ResultScoreCard({
 
   return (
     <Card
-      className={cn(className, "grid h-full content-between gap-4 p-5 shadow-sm")}
+      className={cn(className, "grid h-full min-w-0 max-w-full content-between gap-4 p-5 shadow-sm")}
       data-forecast-score-card="true"
       data-result-score-card="true"
       data-result-target={target}
@@ -605,7 +605,10 @@ export function ResultMetricGrid({
 }: ResultMetricGridProps) {
   return (
     <section
-      className={cn(className, "grid items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-3")}
+      className={cn(
+        className,
+        "grid min-w-0 max-w-full items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-3",
+      )}
       data-forecast-metric-grid="true"
       data-result-metric-grid="true"
       data-result-target={target}
@@ -635,7 +638,7 @@ export function ResultMetricCard({
 }: ResultMetricCardProps) {
   return (
     <div
-      className={cn(className, "h-full")}
+      className={cn(className, "h-full min-w-0 max-w-full")}
       data-forecast-metric-card="true"
       data-result-metric-card="true"
       data-result-target={target}
@@ -667,7 +670,7 @@ export function DailyDecisionSection({
 }: DailyDecisionSectionProps) {
   return (
     <section
-      className={cn(className, "grid gap-3")}
+      className={cn(className, "grid min-w-0 max-w-full gap-3")}
       data-forecast-daily-decision-list="true"
       data-result-daily-section="true"
       data-result-target={target}
@@ -699,7 +702,7 @@ export function CurrentWeatherSection({
 }: CurrentWeatherSectionProps) {
   return (
     <section
-      className={cn(className, "grid gap-3")}
+      className={cn(className, "grid min-w-0 max-w-full gap-3")}
       data-forecast-current-weather-cards="true"
       data-result-current-weather-section="true"
       data-result-target={target}
@@ -725,7 +728,7 @@ export function JudgmentBasisGrid({
 }) {
   return (
     <div
-      className={cn(className, "grid gap-3")}
+      className={cn(className, "grid min-w-0 max-w-full gap-3")}
       data-result-judgment-basis-grid="true"
       data-result-target={target}
     >
@@ -745,7 +748,7 @@ export function ActionPlanGrid({
 }) {
   return (
     <div
-      className={cn(className, "grid gap-3")}
+      className={cn(className, "grid min-w-0 max-w-full gap-3")}
       data-result-action-plan-grid="true"
       data-result-target={target}
     >

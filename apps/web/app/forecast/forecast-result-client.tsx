@@ -374,11 +374,11 @@ function DashboardFrame({
   readonly children: ReactNode;
 }) {
   return (
-    <section className="grid gap-5 min-[900px]:grid-cols-[clamp(300px,32vw,360px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(320px,23vw,380px)_minmax(0,1fr)_clamp(320px,23vw,380px)] min-[1200px]:items-start">
-      <aside className="grid content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]">
+    <section className="grid min-w-0 max-w-full gap-5 min-[900px]:grid-cols-[clamp(300px,32vw,360px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(320px,23vw,380px)_minmax(0,1fr)_clamp(320px,23vw,380px)] min-[1200px]:items-start">
+      <aside className="grid min-w-0 content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]">
         <QuerySummaryPanel query={query} />
       </aside>
-      <div className="grid gap-5 min-[1200px]:contents">{children}</div>
+      <div className="grid min-w-0 gap-5 min-[1200px]:contents">{children}</div>
     </section>
   );
 }
@@ -4679,7 +4679,7 @@ function ProfessionalHourlyCloudSection({
       ) : null}
 
       <div
-        className={cn("mt-4 grid gap-3", !expanded && "hidden")}
+        className={cn("mt-4 grid min-w-0 max-w-full gap-3", !expanded && "hidden")}
         data-professional-hourly-expanded={expanded ? "true" : "false"}
       >
         <div className="flex flex-wrap items-center gap-2">
@@ -4709,7 +4709,7 @@ function ProfessionalHourlyCloudSection({
         </p>
 
         <div
-          className="max-w-full overflow-x-auto rounded-lg border border-border bg-card"
+          className="max-w-full overflow-x-auto min-w-0 rounded-lg border border-border bg-card"
           data-cloud-sea-professional-table-scroll="true"
         >
           <table className="w-full min-w-[1280px] border-collapse text-left text-[12px] leading-5">
@@ -4781,7 +4781,7 @@ function ProfessionalHourlyCloudSection({
     return (
       <section
         className={cn(
-          "ProfessionalHourlyCloudSection grid gap-3",
+          "ProfessionalHourlyCloudSection grid min-w-0 max-w-full gap-3",
           target === "cloud_sea" &&
             "CloudSeaProfessionalHourlyData cloud-sea-professional-hourly-data",
         )}
@@ -4806,7 +4806,7 @@ function ProfessionalHourlyCloudSection({
   return (
     <Card
       className={cn(
-        "ProfessionalHourlyCloudSection p-4 shadow-sm",
+        "ProfessionalHourlyCloudSection min-w-0 max-w-full p-4 shadow-sm",
         target === "cloud_sea" &&
           "CloudSeaProfessionalHourlyData cloud-sea-professional-hourly-data",
         target === "glow" && "glow-professional-hourly-cloud-section",

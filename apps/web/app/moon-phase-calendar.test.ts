@@ -1,4 +1,6 @@
 import * as React from "react";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MoonPhaseCalendar } from "../components/moon-phase-calendar";
@@ -36,6 +38,10 @@ describe("MoonPhaseCalendar", () => {
     expect(html).toContain("满月");
     expect(html).toContain("今天");
     expect(html).toContain("农历");
+    expect(html).toContain('data-moon-calendar-scroll="true"');
+    expect(html).toContain('data-moon-calendar-inner="true"');
+    expect(html).toContain("min-w-[480px]");
+    expect(html).toContain("grid-cols-7");
   });
 
   it("renders locally without external API access", () => {
@@ -48,4 +54,36 @@ describe("MoonPhaseCalendar", () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("keeps the mobile calendar scroll-safe without truncating phase labels", () => {
+    const html = renderToStaticMarkup(React.createElement(MoonPhaseCalendar, calendarProps));
+    const source = readFileSync(
+      fileURLToPath(new URL("../components/moon-phase-calendar.tsx", import.meta.url)),
+      "utf8",
+    );
+    const calendarScroll = sectionBetween(
+      html,
+      'data-moon-calendar-scroll="true"',
+      "</section>",
+    );
+
+    expect(html).toContain("mt-5 max-w-full overflow-x-auto");
+    expect(calendarScroll).toContain("min-w-[480px]");
+    expect(calendarScroll).toContain(">一</span>");
+    expect(calendarScroll).toContain(">日</span>");
+    expect(html).toContain('title="娥眉月"');
+    expect(html).toContain(">娥眉</p>");
+    expect(html).not.toContain(">娥眉月</p>");
+    expect(source).toContain("compactMoonPhaseNames");
+    expect(source).not.toContain("mt-1 truncate text-[11px] font-semibold");
+  });
 });
+
+function sectionBetween(source: string, start: string, end: string): string {
+  const startIndex = source.indexOf(start);
+  if (startIndex === -1) {
+    return "";
+  }
+  const endIndex = source.indexOf(end, startIndex);
+  return source.slice(startIndex, endIndex === -1 ? undefined : endIndex + end.length);
+}

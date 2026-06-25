@@ -156,7 +156,7 @@ export function Badge({ children, variant = "default", className }: BadgeProps) 
 
 export function Table({ className, ...props }: TableHTMLAttributes<HTMLTableElement>) {
   return (
-    <div className="w-full overflow-x-auto rounded-lg border border-border bg-card">
+    <div className="w-full max-w-full min-w-0 overflow-x-auto rounded-lg border border-border bg-card">
       <table
         className={cn(
           "w-full min-w-[760px] border-collapse text-left text-[13px] leading-5",

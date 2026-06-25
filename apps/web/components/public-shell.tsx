@@ -11,10 +11,13 @@ type PublicShellProps = {
 
 export function PublicShell({ children, className, contentClassName }: PublicShellProps) {
   return (
-    <div className={cn("min-h-screen bg-background text-foreground", className)}>
+    <div className={cn("min-h-screen overflow-x-hidden bg-background text-foreground", className)}>
       <PublicHeader />
       <div
-        className={cn("w-full px-[clamp(24px,4vw,72px)] py-6 sm:py-8 lg:py-9", contentClassName)}
+        className={cn(
+          "w-full min-w-0 px-[clamp(16px,4vw,72px)] py-6 sm:py-8 lg:py-9",
+          contentClassName,
+        )}
       >
         {children}
       </div>
