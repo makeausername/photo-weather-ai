@@ -31,7 +31,7 @@ export function PublicAuthLayout({
 type AuthCardProps = {
   readonly eyebrow: string;
   readonly title: string;
-  readonly description: string;
+  readonly description?: string;
   readonly children: ReactNode;
 };
 
@@ -43,7 +43,9 @@ export function AuthCard({ eyebrow, title, description, children }: AuthCardProp
         <h1 className="mt-1.5 text-xl font-bold leading-tight text-card-foreground sm:text-2xl">
           {title}
         </h1>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+        {description ? (
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+        ) : null}
       </div>
       {children}
     </Card>
