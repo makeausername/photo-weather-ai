@@ -3057,7 +3057,7 @@ function GlowNearTermWeatherSection({ viewModel }: { readonly viewModel: GlowFor
     >
       <GlowSectionHeading
         title="当前 / 近时段霞光天气"
-        description="聚焦中高云条件、通透度、低云遮挡风险与地平线遮挡，辅助判断晨昏拍摄窗口。"
+        description="聚焦霞光云层载体、光路遮挡、云层压制、低云/雾墙与通透度，辅助判断晨昏拍摄窗口。"
         badge="天气相关"
       />
       <div className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr))]">
@@ -6438,7 +6438,7 @@ function generalSubjectAction(
 
   if (key === "sunriseGlow") {
     return recommendationLabel === "推荐" || recommendationLabel === "可观察"
-      ? "日出前完成构图，复核东方低云遮挡。"
+      ? "日出前完成构图，复核东方光路云缝。"
       : "可顺带观察，不建议作为唯一目标。";
   }
 
@@ -7914,9 +7914,18 @@ function buildGlowSubjectBreakdownCard(
         ? score.reasons.filter((item) => item.includes("日出") || item.includes("朝霞"))
         : score.reasons.filter((item) => item.includes("日落") || item.includes("晚霞")),
       isSunrise
-        ? "朝霞按日出前后中高云、低云遮挡、降水和通透度综合判断。"
-        : "晚霞按日落前后中高云承载、低云遮挡、降水和通透度综合判断。",
+        ? "朝霞按日出前后中高云、光路遮挡、云层压制、低云/雾墙、降水和通透度综合判断。"
+        : "晚霞按日落前后中高云承载、光路遮挡、云层压制、低云/雾墙、降水和通透度综合判断。",
     );
+  const lightPathAvailable = analysis.glowLightPathDataAvailability === "available";
+  const lightPathDetail = lightPathAvailable
+    ? `霞光光路遮挡风险${analysis.labels.glowLightPathObstructionRisk}，${analysis.glowLightPathObstructionRisk} 分。`
+    : "太阳方向光路缺少足够的方向性数据，需现场复核地平线云缝。";
+  const isCorePathOpen =
+    lightPathAvailable &&
+    analysis.glowLightPathObstructionRisk < 65 &&
+    analysis.cloudSuppressionRisk < 65 &&
+    analysis.lowCloudFogWallRisk < 70;
 
   return {
     key,
@@ -7930,12 +7939,12 @@ function buildGlowSubjectBreakdownCard(
     windowLabel: `${isSunrise ? "日出暖光窗口" : "日落暖光 / 日落后余晖窗口"}：${windowText}`,
     reason: `${reason}${rainText}`,
     actionSuggestion:
-      glowScore >= 70 && analysis.lowCloudObstructionRisk < 65
+      glowScore >= 70 && isCorePathOpen
         ? isSunrise
-          ? "朝霞窗口具备等待价值，建议日出前完成构图并复核东方低云遮挡。"
-          : "晚霞窗口具备等待价值，建议日落前观察西向中高云和透光缝。"
+          ? "朝霞窗口具备等待价值，建议日出前完成构图并复核东方光路云缝。"
+          : "晚霞窗口具备等待价值，建议日落前观察西向中高云和光路云缝。"
         : isSunrise
-          ? "朝霞仅作谨慎观察，若低云偏厚可转拍云雾层次和远山。"
+          ? "朝霞仅作谨慎观察，若光路或云层压制不利，可转拍云雾层次和远山。"
           : "日落前后可观察云层开口，但不建议只为晚霞专程前往。",
     detailItems: [
       {
@@ -7947,14 +7956,27 @@ function buildGlowSubjectBreakdownCard(
         value: windowText,
       },
       {
-        label: "低云遮挡",
-        value: `${analysis.labels.lowCloudObstruction}（${analysis.lowCloudObstructionRisk} 分）`,
+        label: "低云/雾墙",
+        value: `${analysis.labels.lowCloudFogWallRisk}（${analysis.lowCloudFogWallRisk} 分）`,
         detail:
-          analysis.lowCloudObstructionRisk >= 65
-            ? isSunrise
-              ? "低云偏厚，日出方向可能被遮挡。"
-              : "低云偏厚，日落前后需要现场确认西向开口。"
-            : "低云遮挡暂未成为主要阻断项。",
+          analysis.lowCloudFogWallRisk >= 65
+            ? "低云或雾墙风险偏高，说明近地视野需要复核，不等同于太阳方向光路已打开。"
+            : "低云/雾墙暂未成为主要阻断项。",
+      },
+      {
+        label: "霞光光路",
+        value: lightPathAvailable
+          ? `${analysis.labels.glowLightPathObstructionRisk}（${analysis.glowLightPathObstructionRisk} 分）`
+          : "需现场复核",
+        detail: lightPathDetail,
+      },
+      {
+        label: "云层压制",
+        value: `${analysis.labels.cloudSuppressionRisk}（${analysis.cloudSuppressionRisk} 分）`,
+        detail:
+          analysis.cloudSuppressionRisk >= 65
+            ? "云量或云层厚度可能压住色彩，不宜只凭云层载体押强霞。"
+            : "云层压制暂未成为主要阻断项。",
       },
       {
         label: "色彩云条件",
@@ -8595,7 +8617,25 @@ function windowActionLabel(window: ForecastResultWindow): string {
 
 function glowGeneralFactsText(result: ForecastCalculationResult): string {
   const analysis = result.glowAnalysis;
-  return `朝霞机会 ${analysis.sunriseGlowScore} 分，晚霞机会 ${analysis.sunsetGlowScore} 分；色彩云条件${analysis.labels.colorCarrier}（${analysis.colorCarrierScore} 分），低云遮挡风险${analysis.labels.lowCloudObstruction}（${analysis.lowCloudObstructionRisk} 分）。${glowRainImpactText(analysis)}`;
+  return `朝霞机会 ${analysis.sunriseGlowScore} 分，晚霞机会 ${analysis.sunsetGlowScore} 分；霞光云层载体${analysis.labels.colorCarrier}（${analysis.glowCarrierScore ?? analysis.colorCarrierScore} 分），低云/雾墙风险${analysis.labels.lowCloudFogWallRisk}（${analysis.lowCloudFogWallRisk ?? analysis.lowCloudObstructionRisk} 分），霞光光路遮挡风险${analysis.labels.glowLightPathObstructionRisk}（${analysis.glowLightPathObstructionRisk} 分），云层压制风险${analysis.labels.cloudSuppressionRisk}（${analysis.cloudSuppressionRisk} 分）。${glowLightPathClientText(analysis)}${glowRainImpactText(analysis)}`;
+}
+
+function glowLightPathClientText(
+  analysis: Pick<
+    ForecastCalculationResult["glowAnalysis"],
+    "glowLightPathDataAvailability" | "glowLightPathObstructionRisk"
+  >,
+): string {
+  if (analysis.glowLightPathDataAvailability === "insufficient") {
+    return "太阳方向光路缺少足够的方向性数据，需现场复核地平线云缝。";
+  }
+  if (analysis.glowLightPathObstructionRisk >= 70) {
+    return "霞光光路遮挡风险偏高，需优先复核太阳方向云缝。";
+  }
+  if (analysis.glowLightPathObstructionRisk >= 45) {
+    return "霞光光路遮挡风险中等，需现场复核地平线光路。";
+  }
+  return "霞光光路遮挡风险较低。";
 }
 
 function glowGeneralWindowText(result: ForecastCalculationResult): string {

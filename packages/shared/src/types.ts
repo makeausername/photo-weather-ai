@@ -1277,6 +1277,8 @@ export type GlowProbabilityCalibrationMode = "heuristic";
 
 export type GlowVividnessLevel = "weak" | "slightly_weak" | "moderate" | "strong" | "very_strong";
 
+export type GlowRiskDataAvailability = "available" | "insufficient";
+
 export type GlowProviderAgreementStatus =
   | "unavailable"
   | "single_source"
@@ -1318,7 +1320,13 @@ export type GlowModelMetricResult = {
 
 export type GlowScoreBreakdown = {
   readonly colorCarrierScore: number;
+  readonly glowCarrierScore: number;
   readonly lowCloudObstructionRisk: number;
+  readonly lowCloudFogWallRisk: number;
+  readonly glowLightPathObstructionRisk: number;
+  readonly glowLightPathDataAvailability: GlowRiskDataAvailability;
+  readonly glowLightPathConfidence: GlowConfidenceLevel;
+  readonly cloudSuppressionRisk: number;
   readonly visibilityColorQualityScore: number;
   readonly aerosolScore?: number;
   readonly precipitationDisruptionRisk: number;
@@ -1354,6 +1362,9 @@ export type GlowAssessmentLabels = {
   readonly sunriseGlowOpportunity: GlowChanceLabel;
   readonly sunsetGlowOpportunity: GlowChanceLabel;
   readonly lowCloudObstruction: GlowChanceLabel;
+  readonly lowCloudFogWallRisk: GlowChanceLabel;
+  readonly glowLightPathObstructionRisk: GlowChanceLabel;
+  readonly cloudSuppressionRisk: GlowChanceLabel;
   readonly colorCarrier: GlowColorCarrierLabel;
   readonly bestWindowLabel: string;
   readonly watchableWindowLabel?: string;
@@ -1364,7 +1375,13 @@ export type GlowAssessment = {
   readonly sunriseGlowScore: number;
   readonly sunsetGlowScore: number;
   readonly lowCloudObstructionRisk: number;
+  readonly lowCloudFogWallRisk: number;
+  readonly glowLightPathObstructionRisk: number;
+  readonly glowLightPathDataAvailability: GlowRiskDataAvailability;
+  readonly glowLightPathConfidence: GlowConfidenceLevel;
+  readonly cloudSuppressionRisk: number;
   readonly colorCarrierScore: number;
+  readonly glowCarrierScore: number;
   readonly precipitationDisruptionRisk: number;
   readonly visibilityColorQualityScore: number;
   readonly practicalGlowScore: number;
@@ -1410,7 +1427,13 @@ export type GlowWindow = {
   readonly scoreBreakdown?: GlowScoreBreakdown;
   readonly modelResults?: readonly GlowModelMetricResult[];
   readonly colorCarrierScore?: number;
+  readonly glowCarrierScore?: number;
   readonly lowCloudObstructionRisk?: number;
+  readonly lowCloudFogWallRisk?: number;
+  readonly glowLightPathObstructionRisk?: number;
+  readonly glowLightPathDataAvailability?: GlowRiskDataAvailability;
+  readonly glowLightPathConfidence?: GlowConfidenceLevel;
+  readonly cloudSuppressionRisk?: number;
   readonly precipitationDisruptionRisk?: number;
   readonly visibilityColorQualityScore?: number;
   readonly aerosolScore?: number;
@@ -1487,6 +1510,12 @@ export type DailyGlow = {
   readonly sunsetScoreBreakdown?: GlowScoreBreakdown;
   readonly colorCarrierScore?: number;
   readonly lowCloudObstructionRisk?: number;
+  readonly lowCloudFogWallRisk?: number;
+  readonly glowLightPathObstructionRisk?: number;
+  readonly glowLightPathDataAvailability?: GlowRiskDataAvailability;
+  readonly glowLightPathConfidence?: GlowConfidenceLevel;
+  readonly cloudSuppressionRisk?: number;
+  readonly glowCarrierScore?: number;
   readonly precipitationDisruptionRisk?: number;
   readonly visibilityColorQualityScore?: number;
   readonly aerosolScore?: number;

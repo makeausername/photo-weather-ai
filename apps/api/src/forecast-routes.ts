@@ -17,10 +17,7 @@ import {
   type ForecastQueryInput,
   type TerrainAnalysisSummary,
   type TerrainHorizonDirectionSample,
-  formatLocalDateLabel,
-  formatLocalTimeRange,
   forecastHorizonLabels,
-  localDateKey,
   normalizeForecastQueryInput,
   forecastQueryInputSchema,
   forecastTargetLabels,
@@ -1379,45 +1376,6 @@ function firstFiniteNumber(values: readonly (number | null | undefined)[]): numb
   );
 }
 
-function filterPublicEmergencyWindows<
-  TWindow extends { readonly date?: string; readonly startTime?: string },
->(result: ForecastCalculationResult, windows: readonly TWindow[]): readonly TWindow[] {
-  const startDate =
-    localDateKey(result.calendarBasis.forecastStart, result.calendarBasis.timezone) ??
-    result.calendarBasis.forecastStart.slice(0, 10);
-  return windows.filter((window) => {
-    const windowDate =
-      window.date ??
-      localDateKey(window.startTime, result.calendarBasis.timezone) ??
-      window.startTime?.slice(0, 10) ??
-      "";
-    return windowDate >= startDate;
-  });
-}
-
-function filterPublicEmergencyDailySummaries<TDaily extends { readonly date: string }>(
-  result: ForecastCalculationResult,
-  dailySummaries: readonly TDaily[],
-): readonly TDaily[] {
-  const startDate =
-    localDateKey(result.calendarBasis.forecastStart, result.calendarBasis.timezone) ??
-    result.calendarBasis.forecastStart.slice(0, 10);
-  return dailySummaries.filter((summary) => summary.date >= startDate);
-}
-
-function bestSubjectLabel(result: ForecastCalculationResult, index: number): string {
-  const rankedScores = [
-    result.scores.cloudSea,
-    result.scores.sunriseGlow,
-    result.scores.sunsetGlow,
-    result.scores.milkyWay,
-    result.scores.stars,
-    result.scores.transparency,
-  ].sort((left, right) => right.score - left.score);
-
-  return rankedScores[index]?.label ?? rankedScores[0]?.label ?? "综合题材";
-}
-
 function roundCoordinateForCache(value: number): number {
   return Math.round(value * 100000) / 100000;
 }
@@ -1567,7 +1525,15 @@ function logGlowScoringDiagnostics(
         components: window.scoreBreakdown
           ? {
               colorCarrierScore: window.scoreBreakdown.colorCarrierScore,
+              glowCarrierScore: window.scoreBreakdown.glowCarrierScore,
               lowCloudObstructionRisk: window.scoreBreakdown.lowCloudObstructionRisk,
+              lowCloudFogWallRisk: window.scoreBreakdown.lowCloudFogWallRisk,
+              glowLightPathObstructionRisk:
+                window.scoreBreakdown.glowLightPathObstructionRisk,
+              glowLightPathDataAvailability:
+                window.scoreBreakdown.glowLightPathDataAvailability,
+              glowLightPathConfidence: window.scoreBreakdown.glowLightPathConfidence,
+              cloudSuppressionRisk: window.scoreBreakdown.cloudSuppressionRisk,
               visibilityColorQualityScore: window.scoreBreakdown.visibilityColorQualityScore,
               precipitationDisruptionRisk: window.scoreBreakdown.precipitationDisruptionRisk,
               terrainScore: window.scoreBreakdown.terrainScore,

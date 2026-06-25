@@ -3616,7 +3616,7 @@ function buildTargetDailyBreakdown(
         : metricFromWindow(
             sunriseWindow,
             "朝霞机会",
-            "日出前后中高云、降水和地形遮挡共同影响朝霞表现。",
+            "日出前后中高云、光路遮挡、云层压制、低云/雾墙、降水和地形共同影响朝霞表现。",
             scores.sunriseGlow.score,
           ),
       sunsetGlow: dailyGlow
@@ -3629,7 +3629,7 @@ function buildTargetDailyBreakdown(
         : metricFromWindow(
             sunsetWindow,
             "晚霞机会",
-            "日落前后中高云承载、低云遮挡和降水风险共同影响晚霞表现。",
+            "日落前后中高云承载、光路遮挡、云层压制、低云/雾墙和降水风险共同影响晚霞表现。",
             scores.sunsetGlow.score,
           ),
       cloudSea: dailyCloudSea

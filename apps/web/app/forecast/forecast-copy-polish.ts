@@ -136,12 +136,19 @@ function buildGlowSummary(result: ForecastCalculationResult): string {
         : analysis.rainOverlapsSunsetWindow
           ? "降水主要影响日落前后窗口"
           : "降水暂未成为晨昏主窗口的主要阻断";
+  const lightPathText =
+    analysis.glowLightPathDataAvailability === "insufficient"
+      ? "太阳方向光路需现场复核"
+      : `霞光光路遮挡${analysis.labels.glowLightPathObstructionRisk}`;
   const action =
-    preferredScore >= 70 && analysis.lowCloudObstructionRisk < 65
+    preferredScore >= 70 &&
+    analysis.glowLightPathDataAvailability === "available" &&
+    analysis.glowLightPathObstructionRisk < 65 &&
+    analysis.cloudSuppressionRisk < 65
       ? `可围绕${preferred}窗口等待，优先确认太阳方向开口和中高云色彩载体。`
       : "适合顺带观察晨昏光线，不建议只押大面积霞光，现场优先看地平线开口、降水和能见度。";
 
-  return `日出/日落与民用曙暮光窗口中，${preferred}机会相对更高；中高云色彩载体${analysis.labels.colorCarrier}，低云遮挡${analysis.labels.lowCloudObstruction}；${rainRisk}；${action}`;
+  return `日出/日落与民用曙暮光窗口中，${preferred}机会相对更高；中高云色彩载体${analysis.labels.colorCarrier}，低云/雾墙风险${analysis.labels.lowCloudFogWallRisk}，${lightPathText}，云层压制${analysis.labels.cloudSuppressionRisk}；${rainRisk}；${action}`;
 }
 
 function buildAstroSummary(result: ForecastCalculationResult): string {
@@ -211,9 +218,19 @@ function mainDecisionRisk(result: ForecastCalculationResult, target: ForecastTar
       : "白墙、降水和能见度暂未形成高等级阻断";
   }
   if (target === "glow") {
-    return result.glowAnalysis.lowCloudObstructionRisk >= 65
-      ? "主要风险是太阳方向低云遮挡和色彩载体不稳定"
-      : "低云遮挡、降水和能见度暂未形成高等级阻断";
+    if (result.glowAnalysis.glowLightPathDataAvailability === "insufficient") {
+      return "主要风险是太阳方向光路数据不足，需现场复核地平线云缝";
+    }
+    if (result.glowAnalysis.glowLightPathObstructionRisk >= 65) {
+      return "主要风险是霞光光路遮挡偏高";
+    }
+    if (result.glowAnalysis.cloudSuppressionRisk >= 65) {
+      return "主要风险是云层压制偏高，云量或云层厚度可能压住色彩";
+    }
+    if (result.glowAnalysis.lowCloudFogWallRisk >= 65) {
+      return "主要风险是低云/雾墙偏高，近地视野需要现场复核";
+    }
+    return "光路遮挡、云层压制、低云/雾墙、降水和能见度暂未形成高等级阻断";
   }
   if (target === "astro") {
     const blocker = result.astroAnalysis.weatherBlockers[0];
@@ -252,7 +269,7 @@ function targetReviewText(target: ForecastTarget): string {
     return "重点复核云图、降水、能见度、云顶高度和低云是否贴近机位。";
   }
   if (target === "glow") {
-    return "重点复核日出/日落方向开口、低云遮挡、降水和能见度。";
+    return "重点复核日出/日落方向光路开口、云层压制、低云/雾墙、降水和能见度。";
   }
   if (target === "astro") {
     return "重点复核天文黑夜、月光、银河窗口、云量、光污染方向和地形地平线。";
@@ -265,7 +282,7 @@ function targetDataBoundary(result: ForecastCalculationResult, target: ForecastT
     return "地形高差未返回时，不按已确认云海地形处理；降水、低云和能见度需临近出发前复核。";
   }
   if (target === "glow") {
-    return "日出/日落方向地形遮挡缺测时，不按无遮挡处理；降水、低云遮挡和能见度需临近出发前复核。";
+    return "日出/日落方向光路或地形遮挡缺测时，不按无遮挡处理；降水、云层压制、低云/雾墙和能见度需临近出发前复核。";
   }
   if (target === "astro") {
     return "地形地平线缺测时，不按银河方向无遮挡处理；光污染为卫星夜光参考，不等于现场 SQM 实测。";

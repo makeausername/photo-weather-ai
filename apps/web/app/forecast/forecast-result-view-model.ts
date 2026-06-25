@@ -1070,8 +1070,11 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
         "sunsetGlow",
         "朝霞 / 晚霞机会",
         `朝霞${result.glowAnalysis.labels.sunriseGlowOpportunity} / 晚霞${result.glowAnalysis.labels.sunsetGlowOpportunity}`,
-        `朝霞 ${result.glowAnalysis.sunriseGlowScore} 分，晚霞 ${result.glowAnalysis.sunsetGlowScore} 分；色彩云条件${result.glowAnalysis.labels.colorCarrier}（${result.glowAnalysis.colorCarrierScore} 分），低云遮挡风险${result.glowAnalysis.labels.lowCloudObstruction}（${result.glowAnalysis.lowCloudObstructionRisk} 分）。${glowRainOverlapText(result.glowAnalysis)}`,
-        result.glowAnalysis.lowCloudObstructionRisk >= 70 ? "danger" : "accent",
+        `朝霞 ${result.glowAnalysis.sunriseGlowScore} 分，晚霞 ${result.glowAnalysis.sunsetGlowScore} 分；霞光云层载体${result.glowAnalysis.labels.colorCarrier}（${result.glowAnalysis.glowCarrierScore ?? result.glowAnalysis.colorCarrierScore} 分），低云/雾墙风险${result.glowAnalysis.labels.lowCloudFogWallRisk}（${result.glowAnalysis.lowCloudFogWallRisk ?? result.glowAnalysis.lowCloudObstructionRisk} 分），霞光光路遮挡风险${result.glowAnalysis.labels.glowLightPathObstructionRisk}（${result.glowAnalysis.glowLightPathObstructionRisk} 分），云层压制风险${result.glowAnalysis.labels.cloudSuppressionRisk}（${result.glowAnalysis.cloudSuppressionRisk} 分）。${glowLightPathPublicCopy(result.glowAnalysis)}${glowRainOverlapText(result.glowAnalysis)}`,
+        result.glowAnalysis.glowLightPathObstructionRisk >= 70 ||
+          result.glowAnalysis.cloudSuppressionRisk >= 70
+          ? "danger"
+          : "accent",
       ),
       textCard(
         "glow-observable-window",
@@ -1781,7 +1784,11 @@ export function buildGlowForecastViewModel(
   result: ForecastCalculationResult,
 ): GlowForecastViewModel {
   const analysis = result.glowAnalysis;
-  const lowCloudRiskLabel = glowRiskLabel(analysis.lowCloudObstructionRisk);
+  const lowCloudFogWallRiskLabel = glowRiskLabel(
+    analysis.lowCloudFogWallRisk ?? analysis.lowCloudObstructionRisk,
+  );
+  const lightPathRiskLabel = glowRiskLabel(analysis.glowLightPathObstructionRisk);
+  const cloudSuppressionRiskLabel = glowRiskLabel(analysis.cloudSuppressionRisk);
   const professionalHourlyData = buildProfessionalHourlyDisplayDataForResult({
     result,
     focusWindows: buildGlowProfessionalFocusWindows(analysis),
@@ -1823,7 +1830,7 @@ export function buildGlowForecastViewModel(
         `${analysis.sunriseGlowScore} 分`,
         firstText(
           result.scores.sunriseGlow.reasons,
-          "按日出前后中高云、低云遮挡、通透度和地形遮挡折算。",
+          "按日出前后霞光云层载体、光路遮挡、云层压制、低云/雾墙、通透度和地形遮挡折算。",
         ),
         "accent",
         analysis.sunriseGlowScore,
@@ -1835,7 +1842,7 @@ export function buildGlowForecastViewModel(
         `${analysis.sunsetGlowScore} 分`,
         firstText(
           result.scores.sunsetGlow.reasons,
-          "按日落前后中高云承载、低云遮挡、降水和通透度折算。",
+          "按日落前后霞光云层载体、光路遮挡、云层压制、低云/雾墙、降水和通透度折算。",
         ),
         "accent",
         analysis.sunsetGlowScore,
@@ -1855,10 +1862,18 @@ export function buildGlowForecastViewModel(
       textCard(
         "glow-main-action",
         "risk",
-        "低云遮挡风险",
-        `${lowCloudRiskLabel}（${analysis.lowCloudObstructionRisk} 分）`,
-        recommendedAction,
-        analysis.lowCloudObstructionRisk >= 70 ? "danger" : "info",
+        "霞光风险拆解",
+        `光路${lightPathRiskLabel} / 云层压制${cloudSuppressionRiskLabel}`,
+        [
+          `低云/雾墙风险${lowCloudFogWallRiskLabel}（${analysis.lowCloudFogWallRisk ?? analysis.lowCloudObstructionRisk} 分）`,
+          `霞光光路遮挡风险${lightPathRiskLabel}（${analysis.glowLightPathObstructionRisk} 分）`,
+          `云层压制风险${cloudSuppressionRiskLabel}（${analysis.cloudSuppressionRisk} 分）`,
+          glowLightPathPublicCopy(analysis),
+          recommendedAction,
+        ].join("；"),
+        analysis.glowLightPathObstructionRisk >= 70 || analysis.cloudSuppressionRisk >= 70
+          ? "danger"
+          : "info",
       ),
       textCard(
         "glow-aerosol-transparency",
@@ -2088,8 +2103,26 @@ function buildGlowProfessionalEvidence(
       key: "glow-evidence-occurrence",
       label: "是否容易出现",
       value: `${Math.round(analysis.occurrenceProbabilityPercent)}%`,
-      detail: "按中高云承载、低云遮挡、降水干扰、通透度、数据完整度和可用来源一致性校准。",
+      detail: "按霞光云层载体、光路遮挡、云层压制、低云/雾墙、降水干扰、通透度和数据完整度校准。",
       tone: analysis.occurrenceProbabilityPercent >= 65 ? "accent" : "info",
+    },
+    {
+      key: "glow-evidence-risk-breakdown",
+      label: "霞光风险拆解",
+      value: `光路${glowRiskLabel(analysis.glowLightPathObstructionRisk)} / 云层压制${glowRiskLabel(
+        analysis.cloudSuppressionRisk,
+      )}`,
+      detail: [
+        `低云/雾墙风险${glowRiskLabel(
+          analysis.lowCloudFogWallRisk ?? analysis.lowCloudObstructionRisk,
+        )}`,
+        glowLightPathPublicCopy(analysis),
+        `云层压制风险${glowRiskLabel(analysis.cloudSuppressionRisk)}`,
+      ].join("；"),
+      tone:
+        analysis.glowLightPathObstructionRisk >= 70 || analysis.cloudSuppressionRisk >= 70
+          ? "danger"
+          : "info",
     },
     {
       key: "glow-evidence-vividness",
@@ -2107,7 +2140,10 @@ function buildGlowProfessionalEvidence(
       value: glowPrimaryBlockerLabel(analysis, terrainObstructionSummary),
       detail: glowRainOverlapText(analysis),
       tone:
-        analysis.lowCloudObstructionRisk >= 70 || analysis.precipitationDisruptionRisk >= 70
+        analysis.glowLightPathObstructionRisk >= 70 ||
+        analysis.cloudSuppressionRisk >= 70 ||
+        analysis.lowCloudFogWallRisk >= 70 ||
+        analysis.precipitationDisruptionRisk >= 70
           ? "danger"
           : "info",
     },
@@ -2213,10 +2249,37 @@ function glowProfessionalScoringComponentItems(
     },
     {
       key: "low-cloud",
-      label: "低云遮挡",
-      value: glowRiskLabel(breakdown.lowCloudObstructionRisk),
-      detail: "低云越高，越可能压住太阳方向。",
-      tone: breakdown.lowCloudObstructionRisk >= 70 ? "danger" : "info",
+      label: "低云/雾墙",
+      value: glowRiskLabel(breakdown.lowCloudFogWallRisk ?? breakdown.lowCloudObstructionRisk),
+      detail: "近地低云、雾、低层层云或白墙风险，不等同于太阳方向光路已打开或被遮挡。",
+      tone:
+        (breakdown.lowCloudFogWallRisk ?? breakdown.lowCloudObstructionRisk) >= 70
+          ? "danger"
+          : "info",
+    },
+    {
+      key: "light-path",
+      label: "霞光光路遮挡",
+      value:
+        breakdown.glowLightPathDataAvailability === "insufficient"
+          ? "需现场复核"
+          : glowRiskLabel(breakdown.glowLightPathObstructionRisk),
+      detail:
+        breakdown.glowLightPathDataAvailability === "insufficient"
+          ? "太阳方向光路缺少足够的方向性数据，需现场复核地平线云缝。"
+          : "根据可用的太阳方向、地形/地平线和窗口云层风险判断低角度光路。",
+      tone:
+        breakdown.glowLightPathDataAvailability === "insufficient" ||
+        breakdown.glowLightPathObstructionRisk >= 70
+          ? "danger"
+          : "info",
+    },
+    {
+      key: "cloud-suppression",
+      label: "云层压制",
+      value: glowRiskLabel(breakdown.cloudSuppressionRisk),
+      detail: "云量、云层厚度、均匀覆盖、降水和通透度共同决定色彩是否被压住。",
+      tone: breakdown.cloudSuppressionRisk >= 70 ? "danger" : "info",
     },
     {
       key: "precipitation",
@@ -2236,7 +2299,7 @@ function glowProfessionalScoringComponentItems(
       key: "practical",
       label: "前往建议",
       value: `${Math.round(breakdown.practicalSuitabilityScore)} 分`,
-      detail: "综合出现概率、鲜艳度、低云、降水、地形、风湿和可信度。",
+      detail: "综合载体、光路、云层压制、低云/雾墙、降水、地形、风湿和可信度。",
       tone: scoreTone(breakdown.practicalSuitabilityScore),
     },
   ];
@@ -2262,8 +2325,17 @@ function glowPrimaryBlockerLabel(
   if (analysis.precipitationDisruptionRisk >= 70) {
     return "降水干扰";
   }
-  if (analysis.lowCloudObstructionRisk >= 70) {
-    return "低云遮挡";
+  if (analysis.glowLightPathDataAvailability === "insufficient") {
+    return "光路需现场复核";
+  }
+  if (analysis.glowLightPathObstructionRisk >= 70) {
+    return "霞光光路遮挡";
+  }
+  if (analysis.cloudSuppressionRisk >= 70) {
+    return "云层压制";
+  }
+  if ((analysis.lowCloudFogWallRisk ?? analysis.lowCloudObstructionRisk) >= 70) {
+    return "低云/雾墙";
   }
   if (analysis.visibilityColorQualityScore < 50) {
     return "通透度偏弱";
@@ -2275,6 +2347,24 @@ function glowPrimaryBlockerLabel(
     return "地形遮挡";
   }
   return "暂无单一强阻碍";
+}
+
+function glowLightPathPublicCopy(
+  analysis: Pick<
+    GlowAnalysisResult,
+    "glowLightPathDataAvailability" | "glowLightPathObstructionRisk"
+  >,
+): string {
+  if (analysis.glowLightPathDataAvailability === "insufficient") {
+    return "太阳方向光路缺少足够的方向性数据，需现场复核地平线云缝。";
+  }
+  if (analysis.glowLightPathObstructionRisk >= 70) {
+    return "霞光光路遮挡风险偏高，低角度太阳光可能难以通过地平线方向光路。";
+  }
+  if (analysis.glowLightPathObstructionRisk >= 45) {
+    return "霞光光路遮挡风险中等，到场后仍需复核太阳方向云缝。";
+  }
+  return "霞光光路遮挡风险较低，但仍需结合现场地平线云缝复核。";
 }
 
 function scoreTone(score: number): ForecastResultCardTone {
@@ -7901,7 +7991,7 @@ function buildGlowDailyTrend(
       postRainOpeningLabel: glowPostRainOpeningLabel(
         day.postRainOpeningChance ?? analysis.postRainOpeningChance,
       ),
-      lowCloudRiskLabel: `${day.labels?.lowCloudObstruction ?? glowRiskLabel(day.lowCloudObstructionRisk ?? analysis.lowCloudObstructionRisk)}（${day.lowCloudObstructionRisk ?? analysis.lowCloudObstructionRisk} 分）`,
+      lowCloudRiskLabel: `低云/雾墙 ${day.labels?.lowCloudFogWallRisk ?? glowRiskLabel(day.lowCloudFogWallRisk ?? analysis.lowCloudFogWallRisk ?? analysis.lowCloudObstructionRisk)}（${day.lowCloudFogWallRisk ?? analysis.lowCloudFogWallRisk ?? analysis.lowCloudObstructionRisk} 分）`,
       colorCarrierLabel: `${day.labels?.colorCarrier ?? glowColorCarrierLabel(day.colorCarrierScore ?? analysis.colorCarrierScore)}（${day.colorCarrierScore ?? analysis.colorCarrierScore} 分）`,
       cloudLayerSummaryLabel: buildGlowDailyCloudLayerSummary(day, analysis),
       aerosolTransparencyLabel: buildGlowDailyAerosolLabel(day, analysis),
@@ -8263,8 +8353,14 @@ function buildGlowDailyCloudLayerSummary(
   analysis: GlowAnalysisResult,
 ): string {
   const carrierScore = day.colorCarrierScore ?? analysis.colorCarrierScore;
-  const lowCloudRisk = day.lowCloudObstructionRisk ?? analysis.lowCloudObstructionRisk;
-  return `色彩载体 ${Math.round(carrierScore)} 分，低云遮挡 ${Math.round(lowCloudRisk)} 分`;
+  const lightPathRisk =
+    day.glowLightPathObstructionRisk ?? analysis.glowLightPathObstructionRisk;
+  const suppressionRisk = day.cloudSuppressionRisk ?? analysis.cloudSuppressionRisk;
+  const lowCloudRisk =
+    day.lowCloudFogWallRisk ?? analysis.lowCloudFogWallRisk ?? analysis.lowCloudObstructionRisk;
+  return `霞光云层载体 ${Math.round(carrierScore)} 分，光路遮挡 ${Math.round(
+    lightPathRisk,
+  )} 分，云层压制 ${Math.round(suppressionRisk)} 分，低云/雾墙 ${Math.round(lowCloudRisk)} 分`;
 }
 
 function buildGlowDailyAerosolLabel(

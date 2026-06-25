@@ -879,7 +879,13 @@ const baseResult: ForecastCalculationResult = {
     sunriseGlowScore: 70,
     sunsetGlowScore: 74,
     lowCloudObstructionRisk: 42,
+    lowCloudFogWallRisk: 42,
+    glowLightPathObstructionRisk: 34,
+    glowLightPathDataAvailability: "available",
+    glowLightPathConfidence: "medium",
+    cloudSuppressionRisk: 36,
     colorCarrierScore: 76,
+    glowCarrierScore: 76,
     precipitationDisruptionRisk: 18,
     visibilityColorQualityScore: 80,
     practicalGlowScore: 72,
@@ -906,7 +912,13 @@ const baseResult: ForecastCalculationResult = {
     },
     scoreBreakdown: {
       colorCarrierScore: 76,
+      glowCarrierScore: 76,
       lowCloudObstructionRisk: 42,
+      lowCloudFogWallRisk: 42,
+      glowLightPathObstructionRisk: 34,
+      glowLightPathDataAvailability: "available",
+      glowLightPathConfidence: "medium",
+      cloudSuppressionRisk: 36,
       visibilityColorQualityScore: 80,
       aerosolScore: 82,
       precipitationDisruptionRisk: 18,
@@ -928,6 +940,9 @@ const baseResult: ForecastCalculationResult = {
       sunriseGlowOpportunity: "中",
       sunsetGlowOpportunity: "高",
       lowCloudObstruction: "低",
+      lowCloudFogWallRisk: "低",
+      glowLightPathObstructionRisk: "低",
+      cloudSuppressionRisk: "低",
       colorCarrier: "好",
       bestWindowLabel: "最佳霞光窗口：2026-05-20 晚霞峰值窗口 17:56-19:41",
       watchableWindowLabel: "可观察窗口：暂无",
@@ -948,6 +963,8 @@ const baseResult: ForecastCalculationResult = {
         start: "2026-05-20T17:56:00+08:00",
         end: "2026-05-20T19:41:00+08:00",
         score: 74,
+        occurrenceProbabilityPercent: 73,
+        practicalSuitabilityScore: 74,
         riskTags: ["风险可控"],
         noteZh: "晚霞窗口中高云和通透度较可用，适合提前到位观察色彩发展。",
       },
@@ -958,7 +975,9 @@ const baseResult: ForecastCalculationResult = {
         start: "2026-05-20T04:30:00+08:00",
         end: "2026-05-20T06:15:00+08:00",
         score: 70,
-        riskTags: ["低云遮挡"],
+        occurrenceProbabilityPercent: 68,
+        practicalSuitabilityScore: 70,
+        riskTags: ["低云/雾墙"],
         noteZh: "朝霞窗口可作为谨慎参考，重点观察中高云是否继续保留色彩载体。",
       },
       {
@@ -968,6 +987,8 @@ const baseResult: ForecastCalculationResult = {
         start: "2026-05-21T17:57:00+08:00",
         end: "2026-05-21T19:42:00+08:00",
         score: 72,
+        occurrenceProbabilityPercent: 71,
+        practicalSuitabilityScore: 72,
         riskTags: ["风险可控"],
         noteZh: "晚霞窗口中高云和通透度较可用，适合提前到位观察色彩发展。",
       },
@@ -989,10 +1010,16 @@ const baseResult: ForecastCalculationResult = {
           start: "2026-05-20T17:56:00+08:00",
           end: "2026-05-20T19:41:00+08:00",
           score: 74,
+          occurrenceProbabilityPercent: 73,
+          practicalSuitabilityScore: 74,
           riskTags: ["风险可控"],
           noteZh: "晚霞窗口中高云和通透度较可用，适合提前到位观察色彩发展。",
         },
         bestTarget: "sunset",
+        sunriseOccurrenceProbabilityPercent: 68,
+        sunsetOccurrenceProbabilityPercent: 73,
+        sunrisePracticalSuitabilityScore: 70,
+        sunsetPracticalSuitabilityScore: 74,
         recommendationLabel: "值得等待",
         keyReason: "晚霞 74 分高于朝霞，优先观察日落前云层移动和西向通透度。",
         riskNote: "风险可控",
@@ -1009,10 +1036,16 @@ const baseResult: ForecastCalculationResult = {
           start: "2026-05-21T17:57:00+08:00",
           end: "2026-05-21T19:42:00+08:00",
           score: 72,
+          occurrenceProbabilityPercent: 71,
+          practicalSuitabilityScore: 72,
           riskTags: ["风险可控"],
           noteZh: "晚霞窗口中高云和通透度较可用，适合提前到位观察色彩发展。",
         },
         bestTarget: "sunset",
+        sunriseOccurrenceProbabilityPercent: 64,
+        sunsetOccurrenceProbabilityPercent: 71,
+        sunrisePracticalSuitabilityScore: 66,
+        sunsetPracticalSuitabilityScore: 72,
         recommendationLabel: "值得等待",
         keyReason: "晚霞 72 分高于朝霞，优先观察日落前云层移动和西向通透度。",
         riskNote: "风险可控",
@@ -1029,7 +1062,7 @@ const baseResult: ForecastCalculationResult = {
         label: "低云",
         value: "38%",
         effect: "neutral",
-        noteZh: "低云可能遮挡太阳方向，低云过厚会导致无明显霞光或只剩白光。",
+        noteZh: "低云会增加近地雾墙或低云墙风险；太阳方向光路需单独复核。",
       },
       {
         label: "中云",
@@ -1131,12 +1164,12 @@ const baseResult: ForecastCalculationResult = {
         noteZh: "日落方向遮挡角用于判断最后一束暖光和余晖是否容易被山脊挡住。",
       },
     ],
-    riskReasons: ["低云遮挡风险中等，需要现场观察太阳方向是否留有透光缝。"],
+    riskReasons: ["低云/雾墙风险中等，只能说明近地雾墙需要复核，不等同于太阳方向光路已打开。"],
     opportunityReasons: ["晚霞最佳参考为晚霞峰值窗口，评分 74 分。"],
     travelRecommendations: [
       "朝霞：建议日出前 40-60 分钟到达机位，先完成构图、测光和安全检查。",
-      "晚霞：建议日落前 60 分钟观察云层移动，重点看太阳方向是否留有透光缝。",
-      "如果低云遮挡太阳方向，优先寻找更高机位或转拍层峦、云缝光和局部暖色。",
+      "晚霞：建议日落前 60 分钟观察云层移动，重点看太阳方向光路云缝。",
+      "如果低云/雾墙风险偏高，优先寻找更高机位或转拍层峦、雾气层次和局部暖色。",
     ],
     backupPlans: [
       {
@@ -1145,9 +1178,9 @@ const baseResult: ForecastCalculationResult = {
         detail: "利用清晰空气和低角度侧光保留空间层次。",
       },
       {
-        condition: "低云遮挡",
+        condition: "低云/雾墙",
         action: "转更高机位或拍雾中局部",
-        detail: "寻找能越过低云的视角。",
+        detail: "低云或雾墙只说明近地视野风险；光路不明时需现场复核地平线云缝。",
       },
     ],
     missingDataNotes: ["当前天气数据为演示数据，结果仅用于体验分析流程。"],
@@ -3551,7 +3584,7 @@ describe("forecast result target-aware view model", () => {
     expect(dailySection).not.toContain("白墙风险");
     expect(html).toContain("机位估算温度：24°C / 体感温度 25°C");
     expect(html).toContain("预报接近该地点海拔，未额外修正");
-    expect(html).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风|高德/i);
+    expect(html).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风天气|高德地图/i);
   });
 
   it("renders exactly five compact subject summaries on the general opportunity section", () => {
@@ -3699,10 +3732,91 @@ describe("forecast result target-aware view model", () => {
 
     expect(html).toContain("朝霞机会 70 分");
     expect(html).toContain("晚霞机会 74 分");
-    expect(html).toContain("色彩云条件好");
-    expect(html).toContain("低云遮挡风险低");
+    expect(html).toContain("霞光云层载体好");
+    expect(html).toContain("低云/雾墙风险低");
+    expect(html).toContain("霞光光路遮挡风险低");
+    expect(html).toContain("云层压制风险低");
+    expect(html).not.toContain("低云遮挡风险低");
     expect(html).toContain("主要可观察窗口");
     expect(html).toContain("高确定性拍摄窗口");
+  });
+
+  it("keeps public glow obstruction copy separated and provider-neutral when light-path data is insufficient", () => {
+    const base = resultForTarget("general");
+    const result: ForecastCalculationResult = {
+      ...base,
+      glowAnalysis: {
+        ...base.glowAnalysis,
+        lowCloudObstructionRisk: 38,
+        lowCloudFogWallRisk: 38,
+        glowLightPathObstructionRisk: 48,
+        glowLightPathDataAvailability: "insufficient",
+        glowLightPathConfidence: "low",
+        cloudSuppressionRisk: 72,
+        practicalGlowScore: 54,
+        practicalSuitabilityScore: 54,
+        glowTravelScore: 54,
+        recommendationLabel: "谨慎参考",
+        labels: {
+          ...base.glowAnalysis.labels,
+          lowCloudObstruction: "低",
+          lowCloudFogWallRisk: "低",
+          glowLightPathObstructionRisk: "中",
+          cloudSuppressionRisk: "高",
+        },
+        scoreBreakdown: {
+          ...base.glowAnalysis.scoreBreakdown,
+          lowCloudObstructionRisk: 38,
+          lowCloudFogWallRisk: 38,
+          glowLightPathObstructionRisk: 48,
+          glowLightPathDataAvailability: "insufficient",
+          glowLightPathConfidence: "low",
+          cloudSuppressionRisk: 72,
+          practicalSuitabilityScore: 54,
+        },
+        riskReasons: [
+          "太阳方向光路缺少足够的方向性数据，需现场复核地平线云缝。",
+          "云层压制风险高，云量或云层厚度可能压住色彩。",
+        ],
+      },
+    };
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(html).toContain("低云/雾墙风险低");
+    expect(html).toContain("霞光光路遮挡风险中");
+    expect(html).toContain("云层压制风险高");
+    expect(html).toContain("太阳方向光路缺少足够的方向性数据，需现场复核地平线云缝");
+    expect(html).not.toContain("低云遮挡风险");
+    expect(html).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风|高德/i);
+    expect(html).not.toMatch(/智能解读|\bAI\b/i);
+
+    const glowResult: ForecastCalculationResult = {
+      ...resultForTarget("glow"),
+      glowAnalysis: result.glowAnalysis,
+    };
+    const glowViewModel = buildGlowForecastViewModel(glowResult);
+    const glowHtml = renderToStaticMarkup(
+      React.createElement(GlowResultPage, {
+        query: queryForTarget("glow"),
+        result: glowResult,
+        viewModel: glowViewModel,
+      }),
+    );
+
+    expect(glowHtml).toContain("低云/雾墙风险低");
+    expect(glowHtml).toContain("霞光光路遮挡风险中");
+    expect(glowHtml).toContain("云层压制风险高");
+    expect(glowHtml).toContain("太阳方向光路缺少足够的方向性数据，需现场复核地平线云缝");
+    expect(glowHtml).not.toContain("低云遮挡风险");
+    expect(glowHtml).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风天气|高德地图/i);
+    expect(glowHtml).not.toMatch(/智能解读|\bAI\b/i);
   });
 
   it("omits the old subject breakdown grid from the general dashboard", () => {
@@ -6293,7 +6407,7 @@ describe("forecast result target-aware view model", () => {
       "朝霞机会",
       "晚霞机会",
       "最佳霞光窗口",
-      "低云遮挡风险",
+      "霞光风险拆解",
     ]);
     expect(viewModel.detailSections.map((section) => section.title)).toEqual(
       expect.arrayContaining([
@@ -6321,12 +6435,12 @@ describe("forecast result target-aware view model", () => {
       "朝霞机会",
       "晚霞机会",
       "最佳霞光窗口",
-      "低云遮挡风险",
+      "霞光风险拆解",
       "气溶胶与通透度",
       "地形遮挡",
     ]);
     expect(viewModel.dailyTrend.map((item) => item.date)).toEqual(["2026-05-20", "2026-05-21"]);
-    expect(viewModel.dailyTrend[0]?.cloudLayerSummaryLabel).toContain("色彩载体");
+    expect(viewModel.dailyTrend[0]?.cloudLayerSummaryLabel).toContain("霞光云层载体");
     expect(viewModel.dailyTrend[0]?.aerosolTransparencyLabel).toContain("气溶胶");
     expect(viewModel.professionalHourlyData.rows.length).toBeGreaterThan(0);
     expect(viewModel.professionalHourlyData.rowAnnotations?.length).toBeGreaterThan(0);
@@ -6363,7 +6477,7 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.professionalEvidence.length).toBeGreaterThanOrEqual(5);
     expect(viewModel.travelRecommendations.join("")).toContain("日出前 40-60 分钟到达机位");
     expect(viewModel.backupPlans.map((plan) => plan.condition)).toEqual(
-      expect.arrayContaining(["无霞但通透", "低云遮挡"]),
+      expect.arrayContaining(["无霞但通透", "低云/雾墙"]),
     );
   });
 
@@ -6935,8 +7049,10 @@ describe("forecast result target-aware view model", () => {
     expect(glowShellViewModel.primarySummary).toContain("日出/日落");
     expect(glowShellViewModel.primarySummary).toContain("民用曙暮光");
     expect(glowShellViewModel.primarySummary).toContain("中高云色彩载体");
-    expect(glowShellViewModel.primarySummary).toContain("低云遮挡");
-    expect(glowShellViewModel.primarySummary).toMatch(/太阳方向开口|地平线开口/);
+    expect(glowShellViewModel.primarySummary).toContain("低云/雾墙");
+    expect(glowShellViewModel.primarySummary).toContain("霞光光路遮挡");
+    expect(glowShellViewModel.primarySummary).toContain("云层压制");
+    expect(glowShellViewModel.primarySummary).toMatch(/太阳方向开口|地平线开口|太阳方向光路/);
     expect(glowOutput).not.toContain("白墙风险");
     expect(glowOutput).not.toContain("云顶高度");
 

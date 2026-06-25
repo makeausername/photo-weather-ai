@@ -2,6 +2,7 @@ import {
   glowVividnessLevelForIndex,
   type GlowPostRainOpeningChance,
   type GlowProbabilityCalibrationMode,
+  type GlowRiskDataAvailability,
   type GlowWindowType,
 } from "@photo-weather/shared";
 import { averageWeightedScore, clampScore } from "./helpers.js";
@@ -11,6 +12,10 @@ export const glowOccurrenceProbabilityCalibrationMode: GlowProbabilityCalibratio
 export type GlowOccurrenceProbabilityCalibrationInput = {
   readonly colorCarrierScore: number;
   readonly lowCloudObstructionRisk: number;
+  readonly lowCloudFogWallRisk: number;
+  readonly glowLightPathObstructionRisk: number;
+  readonly glowLightPathDataAvailability: GlowRiskDataAvailability;
+  readonly cloudSuppressionRisk: number;
   readonly precipitationDisruptionRisk: number;
   readonly visibilityColorQualityScore: number;
   readonly providerAgreementScore: number;
@@ -30,6 +35,10 @@ export type GlowPracticalSuitabilityInput = {
   readonly occurrenceProbabilityPercent: number;
   readonly vividnessIndex: number;
   readonly lowCloudObstructionRisk: number;
+  readonly lowCloudFogWallRisk: number;
+  readonly glowLightPathObstructionRisk: number;
+  readonly glowLightPathDataAvailability: GlowRiskDataAvailability;
+  readonly cloudSuppressionRisk: number;
   readonly precipitationDisruptionRisk: number;
   readonly visibilityColorQualityScore: number;
   readonly aerosolScore?: number;
@@ -47,16 +56,26 @@ export function calibrateGlowOccurrenceProbability(
   input: GlowOccurrenceProbabilityCalibrationInput,
 ): number {
   const base = averageWeightedScore([
-    { score: input.colorCarrierScore, weight: 0.36 },
-    { score: 100 - input.lowCloudObstructionRisk, weight: 0.22 },
-    { score: 100 - input.precipitationDisruptionRisk, weight: 0.14 },
-    { score: input.visibilityColorQualityScore, weight: 0.1 },
-    { score: input.providerAgreementScore, weight: 0.08 },
-    { score: input.dataCompletenessScore, weight: 0.06 },
-    { score: input.temporalProximityScore, weight: 0.04 },
+    { score: input.colorCarrierScore, weight: 0.3 },
+    { score: 100 - input.glowLightPathObstructionRisk, weight: 0.2 },
+    { score: 100 - input.cloudSuppressionRisk, weight: 0.18 },
+    { score: 100 - input.lowCloudFogWallRisk, weight: 0.08 },
+    { score: 100 - input.precipitationDisruptionRisk, weight: 0.08 },
+    { score: input.visibilityColorQualityScore, weight: 0.07 },
+    { score: input.providerAgreementScore, weight: 0.04 },
+    { score: input.dataCompletenessScore, weight: 0.03 },
+    { score: input.temporalProximityScore, weight: 0.02 },
   ]);
   const lowCloudHardBlockPenalty =
-    input.lowCloudObstructionRisk >= 88 ? 18 : input.lowCloudObstructionRisk >= 76 ? 10 : 0;
+    input.lowCloudFogWallRisk >= 88 ? 12 : input.lowCloudFogWallRisk >= 76 ? 7 : 0;
+  const lightPathPenalty =
+    input.glowLightPathObstructionRisk >= 86
+      ? 20
+      : input.glowLightPathObstructionRisk >= 72
+        ? 12
+        : 0;
+  const suppressionPenalty =
+    input.cloudSuppressionRisk >= 82 ? 18 : input.cloudSuppressionRisk >= 68 ? 10 : 0;
   const rainHardBlockPenalty =
     input.precipitationDisruptionRisk >= 85
       ? 18
@@ -65,8 +84,18 @@ export function calibrateGlowOccurrenceProbability(
         : 0;
   const carrierWeakPenalty =
     input.colorCarrierScore < 30 ? 14 : input.colorCarrierScore < 45 ? 7 : 0;
+  const lightPathUncertaintyPenalty =
+    input.glowLightPathDataAvailability === "insufficient" ? 6 : 0;
 
-  return clampScore(base - lowCloudHardBlockPenalty - rainHardBlockPenalty - carrierWeakPenalty);
+  return clampScore(
+    base -
+      lowCloudHardBlockPenalty -
+      lightPathPenalty -
+      suppressionPenalty -
+      rainHardBlockPenalty -
+      carrierWeakPenalty -
+      lightPathUncertaintyPenalty,
+  );
 }
 
 // Vividness estimates color strength if glow occurs. It does not use travel
@@ -85,22 +114,40 @@ export function calculateGlowPracticalSuitabilityScore(
   input: GlowPracticalSuitabilityInput,
 ): number {
   const base = averageWeightedScore([
-    { score: input.occurrenceProbabilityPercent, weight: 0.34 },
-    { score: input.vividnessIndex, weight: 0.24 },
-    { score: 100 - input.lowCloudObstructionRisk, weight: 0.1 },
-    { score: 100 - input.precipitationDisruptionRisk, weight: 0.1 },
-    { score: input.visibilityColorQualityScore, weight: 0.08 },
-    { score: input.terrainScore, weight: 0.06 },
-    { score: input.windHumidityScore, weight: 0.04 },
-    { score: input.confidence, weight: 0.04 },
+    { score: input.occurrenceProbabilityPercent, weight: 0.28 },
+    { score: input.vividnessIndex, weight: 0.2 },
+    { score: 100 - input.glowLightPathObstructionRisk, weight: 0.16 },
+    { score: 100 - input.cloudSuppressionRisk, weight: 0.14 },
+    { score: 100 - input.lowCloudFogWallRisk, weight: 0.06 },
+    { score: 100 - input.precipitationDisruptionRisk, weight: 0.08 },
+    { score: input.visibilityColorQualityScore, weight: 0.05 },
+    { score: input.terrainScore, weight: 0.04 },
+    { score: input.windHumidityScore, weight: 0.03 },
+    { score: input.confidence, weight: 0.06 },
   ]);
   const lowCloudPenalty =
-    input.lowCloudObstructionRisk >= 90
-      ? 28
-      : input.lowCloudObstructionRisk >= 78
-        ? 20
-        : input.lowCloudObstructionRisk >= 65
+    input.lowCloudFogWallRisk >= 90
+      ? 18
+      : input.lowCloudFogWallRisk >= 78
+        ? 12
+        : input.lowCloudFogWallRisk >= 65
+          ? 6
+          : 0;
+  const lightPathPenalty =
+    input.glowLightPathObstructionRisk >= 88
+      ? 32
+      : input.glowLightPathObstructionRisk >= 76
+        ? 22
+        : input.glowLightPathObstructionRisk >= 62
           ? 10
+          : 0;
+  const suppressionPenalty =
+    input.cloudSuppressionRisk >= 86
+      ? 28
+      : input.cloudSuppressionRisk >= 74
+        ? 18
+        : input.cloudSuppressionRisk >= 60
+          ? 9
           : 0;
   const rainPenalty =
     input.precipitationDisruptionRisk >= 85
@@ -126,19 +173,25 @@ export function calculateGlowPracticalSuitabilityScore(
     input.postRainOpeningChance === "high" ? 7 : input.postRainOpeningChance === "medium" ? 4 : 0;
   const aerosolBonus = input.aerosolScore !== undefined && input.aerosolScore >= 80 ? 3 : 0;
   const blueHourPenalty = input.type === "blue_hour_transition" ? 12 : 0;
+  const lightPathUncertaintyPenalty =
+    input.glowLightPathDataAvailability === "insufficient" ? 8 : 0;
 
-  return clampScore(
+  const score = clampScore(
     base +
       rainOpeningBonus +
       aerosolBonus -
       lowCloudPenalty -
+      lightPathPenalty -
+      suppressionPenalty -
       rainPenalty -
       visibilityPenalty -
       aerosolPenalty -
       terrainPenalty -
       blueHourPenalty -
-      activeRainPenalty,
+      activeRainPenalty -
+      lightPathUncertaintyPenalty,
   );
+  return input.glowLightPathDataAvailability === "insufficient" ? Math.min(score, 64) : score;
 }
 
 export function glowVividnessLevelForScore(index: number) {

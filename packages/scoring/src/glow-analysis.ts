@@ -15,6 +15,7 @@ import type {
   GlowProviderAgreement,
   GlowProviderModelSource,
   GlowRecommendationLabel,
+  GlowRiskDataAvailability,
   GlowScoreBreakdown,
   GlowTerrainObstructionAssessment,
   GlowVividnessLevel,
@@ -50,8 +51,14 @@ type GlowCandidate = GlowWindow & {
 
 type GlowComponentScores = {
   readonly colorCarrierScore: number;
+  readonly glowCarrierScore: number;
   readonly lowCloudPassScore: number;
   readonly lowCloudRisk: number;
+  readonly lowCloudFogWallRisk: number;
+  readonly glowLightPathObstructionRisk: number;
+  readonly glowLightPathDataAvailability: GlowRiskDataAvailability;
+  readonly glowLightPathConfidence: GlowAnalysisResult["confidenceLevel"];
+  readonly cloudSuppressionRisk: number;
   readonly visibilityColorQualityScore: number;
   readonly aerosolScore?: number;
   readonly precipitationPassScore: number;
@@ -71,6 +78,12 @@ type GlowComponentScores = {
   readonly rainOverlapsWindow: boolean;
   readonly postRainOpeningChance: GlowPostRainOpeningChance;
   readonly glowWindowRainRisk: GlowWindowRainRisk;
+};
+
+type GlowLightPathAssessment = {
+  readonly risk: number;
+  readonly dataAvailability: GlowRiskDataAvailability;
+  readonly confidence: GlowAnalysisResult["confidenceLevel"];
 };
 
 const oneHourMs = 60 * 60 * 1000;
@@ -97,7 +110,13 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
       scoreBreakdown: components.scoreBreakdown,
       modelResults: components.modelResults,
       colorCarrierScore: components.colorCarrierScore,
+      glowCarrierScore: components.glowCarrierScore,
       lowCloudObstructionRisk: components.lowCloudRisk,
+      lowCloudFogWallRisk: components.lowCloudFogWallRisk,
+      glowLightPathObstructionRisk: components.glowLightPathObstructionRisk,
+      glowLightPathDataAvailability: components.glowLightPathDataAvailability,
+      glowLightPathConfidence: components.glowLightPathConfidence,
+      cloudSuppressionRisk: components.cloudSuppressionRisk,
       precipitationDisruptionRisk: components.precipitationDisruptionRisk,
       visibilityColorQualityScore: components.visibilityColorQualityScore,
       aerosolScore: components.aerosolScore,
@@ -130,6 +149,8 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
       (window) =>
         window.score < 42 ||
         (window.lowCloudObstructionRisk ?? 0) >= 76 ||
+        (window.glowLightPathObstructionRisk ?? 0) >= 76 ||
+        (window.cloudSuppressionRisk ?? 0) >= 74 ||
         (window.precipitationDisruptionRisk ?? 0) >= 70,
     )
     .sort((left, right) => {
@@ -158,7 +179,12 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
     "sunset",
     (candidate) => candidate.practicalSuitabilityScore ?? candidate.practicalScore ?? candidate.score,
   );
-  const lowCloudObstructionRisk = calculateLowCloudObstructionRisk(input, candidates);
+  const lowCloudObstructionRisk = calculateLowCloudObstructionRisk(candidates);
+  const lowCloudFogWallRisk = lowCloudObstructionRisk;
+  const glowLightPathObstructionRisk = calculateGlowLightPathObstructionRisk(candidates);
+  const glowLightPathDataAvailability = aggregateGlowLightPathDataAvailability(candidates);
+  const glowLightPathConfidence = aggregateGlowLightPathConfidence(candidates);
+  const cloudSuppressionRisk = calculateCloudSuppressionRiskForCandidates(input, candidates);
   const colorCarrierScore = maxCandidateScore(
     candidates,
     (candidate) => candidate.colorCarrierScore,
@@ -186,6 +212,9 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
     sunrisePracticalScore,
     sunsetPracticalScore,
     lowCloudObstructionRisk,
+    glowLightPathObstructionRisk,
+    glowLightPathDataAvailability,
+    cloudSuppressionRisk,
     precipitationDisruptionRisk,
     visibilityColorQualityScore,
     input,
@@ -195,7 +224,10 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
       ? rawGlowTravelScore
       : Math.min(rawGlowTravelScore, watchableGlowWindows.length > 0 ? 54 : 38);
   const missingDataNotes = buildGlowMissingDataNotes(input);
-  const confidence = calculateGlowConfidenceScore(input, missingDataNotes);
+  const confidence = clampScore(
+    calculateGlowConfidenceScore(input, missingDataNotes) -
+      visibilityQualityConfidencePenalty(visibilityColorQualityScore),
+  );
   const occurrenceProbabilityPercent = maxCandidateScore(
     candidates,
     (candidate) => candidate.occurrenceProbabilityPercent,
@@ -219,6 +251,11 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
     candidates,
     colorCarrierScore,
     lowCloudObstructionRisk,
+    lowCloudFogWallRisk,
+    glowLightPathObstructionRisk,
+    glowLightPathDataAvailability,
+    glowLightPathConfidence,
+    cloudSuppressionRisk,
     visibilityColorQualityScore,
     precipitationDisruptionRisk,
     practicalSuitabilityScore: glowTravelScore,
@@ -238,6 +275,8 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
     sunriseGlowScore,
     sunsetGlowScore,
     lowCloudObstructionRisk,
+    glowLightPathObstructionRisk,
+    cloudSuppressionRisk,
     colorCarrierScore,
     bestGlowWindows[0],
     watchableGlowWindows[0],
@@ -250,7 +289,13 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
     sunriseGlowScore,
     sunsetGlowScore,
     lowCloudObstructionRisk,
+    lowCloudFogWallRisk,
+    glowLightPathObstructionRisk,
+    glowLightPathDataAvailability,
+    glowLightPathConfidence,
+    cloudSuppressionRisk,
     colorCarrierScore,
+    glowCarrierScore: colorCarrierScore,
     precipitationDisruptionRisk,
     visibilityColorQualityScore,
     practicalGlowScore: glowTravelScore,
@@ -285,7 +330,12 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
     aerosolEvidence: buildAerosolEvidence(aerosolAssessment),
     terrainObstructionAssessments,
     terrainObstructionEvidence: buildTerrainEvidence(input),
-    riskReasons: buildGlowRiskReasons(input, candidates, lowCloudObstructionRisk),
+    riskReasons: buildGlowRiskReasons(input, candidates, {
+      lowCloudFogWallRisk,
+      glowLightPathObstructionRisk,
+      glowLightPathDataAvailability,
+      cloudSuppressionRisk,
+    }),
     opportunityReasons: buildGlowOpportunityReasons(input, candidates),
     travelRecommendations: buildGlowTravelRecommendations(sunriseGlowScore, sunsetGlowScore),
     backupPlans: buildGlowBackupPlans(),
@@ -323,7 +373,9 @@ export function buildGlowForecastScore(
     reasons:
       reasons.length > 0
         ? reasons
-        : [`${label}评分综合了中高云、低云遮挡、通透度、降水、风湿稳定性和地形遮挡。`],
+        : [
+            `${label}评分综合了霞光云层载体、光路遮挡、云层压制、低云/雾墙、通透度、降水、风湿稳定性和地形遮挡。`,
+          ],
     risks,
   };
 }
@@ -466,12 +518,25 @@ function calculateGlowComponents(
   const window = candidate.weatherWindow;
   const phase = candidate.phase;
   const colorCarrierScore = scoreColorCarrier(window);
-  const lowCloudRisk = scoreLowCloudObstructionRisk(input, window, phase);
+  const lowCloudFogWallRisk = scoreLowCloudFogWallRisk(window);
+  const lowCloudRisk = lowCloudFogWallRisk;
   const precipitationDisruptionRisk = calculatePrecipitationDisruptionRisk(window);
   const precipitationPassScore = 100 - precipitationDisruptionRisk;
   const visibilityColorQualityScore = scoreVisibilityColorQuality(window);
   const aerosolScore = scoreAerosolAtmosphere(window);
   const terrain = scoreTerrainObstruction(input, phase);
+  const cloudSuppressionRisk = scoreCloudSuppressionRisk(window, {
+    colorCarrierScore,
+    visibilityColorQualityScore,
+    precipitationDisruptionRisk,
+  });
+  const lightPathAssessment = assessGlowLightPathObstruction(input, window, phase, {
+    lowCloudFogWallRisk,
+    cloudSuppressionRisk,
+    precipitationDisruptionRisk,
+    visibilityColorQualityScore,
+    terrainScore: terrain,
+  });
   const windHumidity = scoreWindHumidity(window);
   const missingDataReasons = buildGlowWindowMissingDataReasons(input, window);
   const dataCompletenessScore = scoreGlowWindowDataCompleteness(input, window);
@@ -484,11 +549,15 @@ function calculateGlowComponents(
   const temporalProximityScore = scoreGlowTemporalProximity(candidate);
   const confidence = clampScore(
     calculateGlowConfidenceScore(input, buildGlowMissingDataNotes(input)) -
-      providerAgreement.confidenceAdjustment,
+      providerAgreement.confidenceAdjustment -
+      visibilityQualityConfidencePenalty(visibilityColorQualityScore) -
+      (lightPathAssessment.dataAvailability === "insufficient" ? 12 : 0),
   );
   const conditionScore = scoreGlowCondition({
     colorCarrierScore,
-    lowCloudRisk,
+    lowCloudFogWallRisk,
+    glowLightPathObstructionRisk: lightPathAssessment.risk,
+    cloudSuppressionRisk,
     visibilityColorQualityScore,
     aerosolScore,
     precipitationPassScore,
@@ -501,6 +570,10 @@ function calculateGlowComponents(
   const occurrenceProbabilityPercent = calibrateGlowOccurrenceProbability({
     colorCarrierScore,
     lowCloudObstructionRisk: lowCloudRisk,
+    lowCloudFogWallRisk,
+    glowLightPathObstructionRisk: lightPathAssessment.risk,
+    glowLightPathDataAvailability: lightPathAssessment.dataAvailability,
+    cloudSuppressionRisk,
     precipitationDisruptionRisk,
     visibilityColorQualityScore,
     providerAgreementScore,
@@ -519,6 +592,10 @@ function calculateGlowComponents(
     occurrenceProbabilityPercent,
     vividnessIndex,
     lowCloudObstructionRisk: lowCloudRisk,
+    lowCloudFogWallRisk,
+    glowLightPathObstructionRisk: lightPathAssessment.risk,
+    glowLightPathDataAvailability: lightPathAssessment.dataAvailability,
+    cloudSuppressionRisk,
     precipitationDisruptionRisk,
     visibilityColorQualityScore,
     aerosolScore,
@@ -531,7 +608,13 @@ function calculateGlowComponents(
   });
   const scoreBreakdown: GlowScoreBreakdown = {
     colorCarrierScore,
+    glowCarrierScore: colorCarrierScore,
     lowCloudObstructionRisk: lowCloudRisk,
+    lowCloudFogWallRisk,
+    glowLightPathObstructionRisk: lightPathAssessment.risk,
+    glowLightPathDataAvailability: lightPathAssessment.dataAvailability,
+    glowLightPathConfidence: lightPathAssessment.confidence,
+    cloudSuppressionRisk,
     visibilityColorQualityScore,
     aerosolScore,
     precipitationDisruptionRisk,
@@ -551,8 +634,14 @@ function calculateGlowComponents(
 
   return {
     colorCarrierScore,
+    glowCarrierScore: colorCarrierScore,
     lowCloudRisk,
     lowCloudPassScore: 100 - lowCloudRisk,
+    lowCloudFogWallRisk,
+    glowLightPathObstructionRisk: lightPathAssessment.risk,
+    glowLightPathDataAvailability: lightPathAssessment.dataAvailability,
+    glowLightPathConfidence: lightPathAssessment.confidence,
+    cloudSuppressionRisk,
     visibilityColorQualityScore,
     aerosolScore,
     precipitationPassScore,
@@ -613,6 +702,12 @@ function buildGlowWindowMissingDataReasons(
   if (glowProviderModelGroups(window).length <= 1) {
     reasons.push("provider_model_agreement_unavailable");
   }
+  if (
+    !hasDeterministicGlowLightPathData(input, "sunrise") &&
+    !hasDeterministicGlowLightPathData(input, "sunset")
+  ) {
+    reasons.push("glow_light_path_direction_insufficient");
+  }
   return [...new Set(reasons)];
 }
 
@@ -642,6 +737,12 @@ function scoreGlowWindowDataCompleteness(
   if (glowProviderModelGroups(window).length <= 1) {
     score -= 8;
   }
+  if (
+    !hasDeterministicGlowLightPathData(input, "sunrise") &&
+    !hasDeterministicGlowLightPathData(input, "sunset")
+  ) {
+    score -= 12;
+  }
   if (input.weatherDataMode !== "real") {
     score -= 12;
   }
@@ -658,15 +759,32 @@ function calculateGlowModelMetricResults(
 ): readonly GlowModelMetricResult[] {
   return glowProviderModelGroups(candidate.weatherWindow).map((group) => {
     const colorCarrierScore = scoreColorCarrier(group.rows);
-    const lowCloudRisk = scoreLowCloudObstructionRisk(input, group.rows, candidate.phase);
+    const lowCloudFogWallRisk = scoreLowCloudFogWallRisk(group.rows);
+    const lowCloudRisk = lowCloudFogWallRisk;
     const precipitationDisruptionRisk = calculatePrecipitationDisruptionRisk(group.rows);
     const visibilityColorQualityScore = scoreVisibilityColorQuality(group.rows);
     const aerosolScore = scoreAerosolAtmosphere(group.rows);
     const terrainScore = scoreTerrainObstruction(input, candidate.phase);
     const windHumidityScore = scoreWindHumidity(group.rows);
+    const cloudSuppressionRisk = scoreCloudSuppressionRisk(group.rows, {
+      colorCarrierScore,
+      visibilityColorQualityScore,
+      precipitationDisruptionRisk,
+    });
+    const lightPathAssessment = assessGlowLightPathObstruction(input, group.rows, candidate.phase, {
+      lowCloudFogWallRisk,
+      cloudSuppressionRisk,
+      precipitationDisruptionRisk,
+      visibilityColorQualityScore,
+      terrainScore,
+    });
     const occurrenceProbabilityPercent = calibrateGlowOccurrenceProbability({
       colorCarrierScore,
       lowCloudObstructionRisk: lowCloudRisk,
+      lowCloudFogWallRisk,
+      glowLightPathObstructionRisk: lightPathAssessment.risk,
+      glowLightPathDataAvailability: lightPathAssessment.dataAvailability,
+      cloudSuppressionRisk,
       precipitationDisruptionRisk,
       visibilityColorQualityScore,
       providerAgreementScore: 60,
@@ -684,6 +802,10 @@ function calculateGlowModelMetricResults(
       occurrenceProbabilityPercent,
       vividnessIndex,
       lowCloudObstructionRisk: lowCloudRisk,
+      lowCloudFogWallRisk,
+      glowLightPathObstructionRisk: lightPathAssessment.risk,
+      glowLightPathDataAvailability: lightPathAssessment.dataAvailability,
+      cloudSuppressionRisk,
       precipitationDisruptionRisk,
       visibilityColorQualityScore,
       aerosolScore,
@@ -695,7 +817,12 @@ function calculateGlowModelMetricResults(
         weatherWindow: group.rows,
       }),
       type: candidate.type,
-      confidence: clampScore(calculateGlowConfidenceScore(input, options.missingDataReasons) - 6),
+      confidence: clampScore(
+        calculateGlowConfidenceScore(input, options.missingDataReasons) -
+          6 -
+          visibilityQualityConfidencePenalty(visibilityColorQualityScore) -
+          (lightPathAssessment.dataAvailability === "insufficient" ? 12 : 0),
+      ),
     });
 
     return {
@@ -707,7 +834,12 @@ function calculateGlowModelMetricResults(
       vividnessIndex,
       vividnessLevel: glowVividnessLevelForScore(vividnessIndex),
       practicalSuitabilityScore,
-      confidence: clampScore(calculateGlowConfidenceScore(input, options.missingDataReasons) - 6),
+      confidence: clampScore(
+        calculateGlowConfidenceScore(input, options.missingDataReasons) -
+          6 -
+          visibilityQualityConfidencePenalty(visibilityColorQualityScore) -
+          (lightPathAssessment.dataAvailability === "insufficient" ? 12 : 0),
+      ),
     };
   });
 }
@@ -903,6 +1035,11 @@ function aggregateGlowScoreBreakdown(input: {
   readonly candidates: readonly GlowCandidate[];
   readonly colorCarrierScore: number;
   readonly lowCloudObstructionRisk: number;
+  readonly lowCloudFogWallRisk: number;
+  readonly glowLightPathObstructionRisk: number;
+  readonly glowLightPathDataAvailability: GlowRiskDataAvailability;
+  readonly glowLightPathConfidence: GlowAnalysisResult["confidenceLevel"];
+  readonly cloudSuppressionRisk: number;
   readonly visibilityColorQualityScore: number;
   readonly precipitationDisruptionRisk: number;
   readonly practicalSuitabilityScore: number;
@@ -918,7 +1055,13 @@ function aggregateGlowScoreBreakdown(input: {
   }
   return {
     colorCarrierScore: input.colorCarrierScore,
+    glowCarrierScore: input.colorCarrierScore,
     lowCloudObstructionRisk: input.lowCloudObstructionRisk,
+    lowCloudFogWallRisk: input.lowCloudFogWallRisk,
+    glowLightPathObstructionRisk: input.glowLightPathObstructionRisk,
+    glowLightPathDataAvailability: input.glowLightPathDataAvailability,
+    glowLightPathConfidence: input.glowLightPathConfidence,
+    cloudSuppressionRisk: input.cloudSuppressionRisk,
     visibilityColorQualityScore: input.visibilityColorQualityScore,
     precipitationDisruptionRisk: input.precipitationDisruptionRisk,
     terrainScore: 0,
@@ -954,7 +1097,9 @@ function spread(values: readonly number[]): number {
 
 function scoreGlowCondition(components: {
   readonly colorCarrierScore: number;
-  readonly lowCloudRisk: number;
+  readonly lowCloudFogWallRisk: number;
+  readonly glowLightPathObstructionRisk: number;
+  readonly cloudSuppressionRisk: number;
   readonly visibilityColorQualityScore: number;
   readonly aerosolScore?: number;
   readonly precipitationPassScore: number;
@@ -962,12 +1107,14 @@ function scoreGlowCondition(components: {
   readonly windHumidity: number;
 }): number {
   const weightedScores = [
-    { score: components.colorCarrierScore, weight: 0.38 },
-    { score: 100 - components.lowCloudRisk, weight: 0.2 },
-    { score: components.visibilityColorQualityScore, weight: 0.17 },
-    { score: components.precipitationPassScore, weight: 0.12 },
-    { score: components.terrain, weight: 0.1 },
-    { score: components.windHumidity, weight: 0.03 },
+    { score: components.colorCarrierScore, weight: 0.32 },
+    { score: 100 - components.glowLightPathObstructionRisk, weight: 0.2 },
+    { score: 100 - components.cloudSuppressionRisk, weight: 0.18 },
+    { score: 100 - components.lowCloudFogWallRisk, weight: 0.08 },
+    { score: components.visibilityColorQualityScore, weight: 0.1 },
+    { score: components.precipitationPassScore, weight: 0.06 },
+    { score: components.terrain, weight: 0.04 },
+    { score: components.windHumidity, weight: 0.02 },
   ];
   if (typeof components.aerosolScore === "number") {
     weightedScores.push({ score: components.aerosolScore, weight: 0.08 });
@@ -1024,11 +1171,7 @@ function scoreTotalCloud(cloudTotal: number): number {
   return clampScore(70 - Math.abs(cloudTotal - 45) * 0.35);
 }
 
-function scoreLowCloudObstructionRisk(
-  input: ForecastCalculationInput,
-  window: readonly NormalizedHourlyWeather[],
-  phase: GlowPhase,
-): number {
+function scoreLowCloudFogWallRisk(window: readonly NormalizedHourlyWeather[]): number {
   const lowCloud = averageDefined(window, (hour) => hour.cloudLow);
   const cloudTotal = averageHourly(window, (hour) => hour.cloudTotal);
   const humidity = averageDefined(window, (hour) => hour.humidity) ?? 0;
@@ -1048,13 +1191,146 @@ function scoreLowCloudObstructionRisk(
               : lowCloud < 40
                 ? 18 + lowCloud * 0.45
                 : 38 + (lowCloud - 40) * 1.5;
-  const horizonAngle = horizonAngleForPhase(input, phase);
-  const horizonRisk = typeof horizonAngle === "number" ? Math.max(0, horizonAngle - 7) * 2.2 : 5;
-  const directionRisk = hasBlockedDirection(input, phase) ? 16 : 0;
   const totalCloudRisk = cloudTotal > 90 && (lowCloud ?? 0) > 55 ? 10 : 0;
   const fogRisk = (visibility ?? 99) < 5 && humidity >= 92 ? 12 : fogOrMist ? 10 : 0;
 
-  return clampScore(baseRisk + horizonRisk + directionRisk + totalCloudRisk + fogRisk);
+  return clampScore(baseRisk + totalCloudRisk + fogRisk);
+}
+
+function scoreCloudSuppressionRisk(
+  window: readonly NormalizedHourlyWeather[],
+  scores: {
+    readonly colorCarrierScore: number;
+    readonly visibilityColorQualityScore: number;
+    readonly precipitationDisruptionRisk: number;
+  },
+): number {
+  const lowCloud = averageDefined(window, (hour) => hour.cloudLow);
+  const midCloud = averageDefined(window, (hour) => hour.cloudMid);
+  const highCloud = averageDefined(window, (hour) => hour.cloudHigh);
+  const totalCloud = averageDefined(window, (hour) => hour.cloudTotal);
+  const humidity = averageDefined(window, (hour) => hour.humidity);
+  const layerValues = [lowCloud, midCloud, highCloud].filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  );
+  const layerAverage =
+    layerValues.length > 0
+      ? layerValues.reduce((sum, value) => sum + value, 0) / layerValues.length
+      : undefined;
+  const denseLowRisk =
+    lowCloud === undefined
+      ? 18
+      : lowCloud >= 92
+        ? 36
+        : lowCloud >= 76
+          ? 26
+          : lowCloud >= 62
+            ? 14
+            : 0;
+  const denseMidRisk =
+    midCloud === undefined
+      ? 14
+      : midCloud >= 92
+        ? 32
+        : midCloud >= 78
+          ? 22
+          : midCloud >= 68
+            ? 12
+            : 0;
+  const denseTotalRisk =
+    totalCloud === undefined
+      ? 16
+      : totalCloud >= 96
+        ? 34
+        : totalCloud >= 90
+          ? 26
+          : totalCloud >= 82
+            ? 14
+            : 0;
+  const uniformLayerRisk =
+    layerValues.length >= 3 &&
+    (layerAverage ?? 0) >= 74 &&
+    Math.max(...layerValues) - Math.min(...layerValues) <= 18
+      ? 14
+      : 0;
+  const precipitationRisk =
+    scores.precipitationDisruptionRisk >= 70
+      ? 22
+      : scores.precipitationDisruptionRisk >= 45
+        ? 10
+        : 0;
+  const transparencyRisk =
+    scores.visibilityColorQualityScore < 42
+      ? 18
+      : scores.visibilityColorQualityScore < 56
+        ? 8
+        : 0;
+  const carrierOverpromiseRisk = scores.colorCarrierScore >= 68 && denseTotalRisk >= 26 ? 10 : 0;
+  const humidityRisk =
+    humidity !== undefined && humidity >= 94 && scores.visibilityColorQualityScore < 60 ? 8 : 0;
+
+  return clampScore(
+    denseLowRisk +
+      denseMidRisk +
+      denseTotalRisk +
+      uniformLayerRisk +
+      precipitationRisk +
+      transparencyRisk +
+      carrierOverpromiseRisk +
+      humidityRisk,
+  );
+}
+
+function assessGlowLightPathObstruction(
+  input: ForecastCalculationInput,
+  window: readonly NormalizedHourlyWeather[],
+  phase: GlowPhase,
+  scores: {
+    readonly lowCloudFogWallRisk: number;
+    readonly cloudSuppressionRisk: number;
+    readonly precipitationDisruptionRisk: number;
+    readonly visibilityColorQualityScore: number;
+    readonly terrainScore: number;
+  },
+): GlowLightPathAssessment {
+  const hasDirectionalData = hasDeterministicGlowLightPathData(input, phase);
+  const terrainRisk = 100 - scores.terrainScore;
+  const denseCloudChannelRisk = Math.max(
+    scores.cloudSuppressionRisk * 0.72,
+    scores.lowCloudFogWallRisk * 0.52,
+  );
+  const precipitationRisk =
+    scores.precipitationDisruptionRisk >= 70
+      ? 18
+      : scores.precipitationDisruptionRisk >= 45
+        ? 8
+        : 0;
+  const transparencyRisk =
+    scores.visibilityColorQualityScore < 42
+      ? 10
+      : scores.visibilityColorQualityScore < 55
+        ? 5
+        : 0;
+  const cloudLayerMissingPenalty = hasCloudLayerGaps(window) ? 8 : 0;
+  const unknownDirectionPenalty = hasDirectionalData ? 0 : 12;
+  const risk = clampScore(
+    denseCloudChannelRisk +
+      Math.max(0, terrainRisk - 28) * 0.75 +
+      precipitationRisk +
+      transparencyRisk +
+      cloudLayerMissingPenalty +
+      unknownDirectionPenalty,
+  );
+
+  return {
+    risk,
+    dataAvailability: hasDirectionalData ? "available" : "insufficient",
+    confidence: hasDirectionalData
+      ? input.terrainAnalysis.terrainProfile.elevationConfidence === "high"
+        ? "high"
+        : "medium"
+      : "low",
+  };
 }
 
 function scoreVisibilityColorQuality(window: readonly NormalizedHourlyWeather[]): number {
@@ -1084,6 +1360,16 @@ function scoreVisibilityColorQuality(window: readonly NormalizedHourlyWeather[])
           : 0;
 
   return clampScore(visibilityScore * 0.62 + transparencyScore * 0.38 - humidityPenalty);
+}
+
+function visibilityQualityConfidencePenalty(visibilityColorQualityScore: number): number {
+  if (visibilityColorQualityScore < 42) {
+    return 12;
+  }
+  if (visibilityColorQualityScore < 55) {
+    return 6;
+  }
+  return 0;
 }
 
 function scoreAerosolAtmosphere(window: readonly NormalizedHourlyWeather[]): number | undefined {
@@ -1243,7 +1529,8 @@ function calculatePostRainOpeningChance(
 
 function scoreTerrainObstruction(input: ForecastCalculationInput, phase: GlowPhase): number {
   const horizonAngle = horizonAngleForPhase(input, phase);
-  const directionPenalty = hasBlockedDirection(input, phase) ? 24 : 0;
+  const hasDeterministicLightPath = hasDeterministicGlowLightPathData(input, phase);
+  const directionPenalty = hasDeterministicLightPath && hasBlockedDirection(input, phase) ? 24 : 0;
   const terrainConfidencePenalty =
     input.terrainAnalysis.terrainProfile.elevationConfidence === "low" ? 4 : 0;
   const viewingDirection = input.terrainAnalysis.terrainProfile.viewingDirection;
@@ -1333,20 +1620,61 @@ function phaseOptionalMetric(
   return phaseMetric(phaseCandidates, phase, selector, options);
 }
 
-function calculateLowCloudObstructionRisk(
-  input: ForecastCalculationInput,
-  candidates: readonly GlowCandidate[],
-): number {
+function calculateLowCloudObstructionRisk(candidates: readonly GlowCandidate[]): number {
   if (candidates.length === 0) {
     return 0;
   }
 
   const maxRisk = Math.max(
     ...candidates.map((candidate) =>
-      scoreLowCloudObstructionRisk(input, candidate.weatherWindow, candidate.phase),
+      scoreLowCloudFogWallRisk(candidate.weatherWindow),
     ),
   );
   return clampScore(maxRisk);
+}
+
+function calculateGlowLightPathObstructionRisk(candidates: readonly GlowCandidate[]): number {
+  return maxCandidateScore(
+    candidates,
+    (candidate) => candidate.glowLightPathObstructionRisk,
+    () => 0,
+  );
+}
+
+function calculateCloudSuppressionRiskForCandidates(
+  input: ForecastCalculationInput,
+  candidates: readonly GlowCandidate[],
+): number {
+  return maxCandidateScore(
+    candidates,
+    (candidate) => candidate.cloudSuppressionRisk,
+    () =>
+      scoreCloudSuppressionRisk(input.hourlyWeather, {
+        colorCarrierScore: scoreColorCarrier(input.hourlyWeather),
+        visibilityColorQualityScore: scoreVisibilityColorQuality(input.hourlyWeather),
+        precipitationDisruptionRisk: calculatePrecipitationDisruptionRisk(input.hourlyWeather),
+      }),
+  );
+}
+
+function aggregateGlowLightPathDataAvailability(
+  candidates: readonly GlowCandidate[],
+): GlowRiskDataAvailability {
+  return candidates.some((candidate) => candidate.glowLightPathDataAvailability === "available")
+    ? "available"
+    : "insufficient";
+}
+
+function aggregateGlowLightPathConfidence(
+  candidates: readonly GlowCandidate[],
+): GlowAnalysisResult["confidenceLevel"] {
+  if (candidates.some((candidate) => candidate.glowLightPathConfidence === "high")) {
+    return "high";
+  }
+  if (candidates.some((candidate) => candidate.glowLightPathConfidence === "medium")) {
+    return "medium";
+  }
+  return "low";
 }
 
 function maxCandidateScore(
@@ -1363,19 +1691,25 @@ function maxCandidateScore(
 function isShootableGlowWindow(window: GlowCandidate): boolean {
   const colorCarrierScore = window.colorCarrierScore ?? 0;
   const lowCloudRisk = window.lowCloudObstructionRisk ?? 100;
+  const lightPathRisk = window.glowLightPathObstructionRisk ?? 100;
+  const cloudSuppressionRisk = window.cloudSuppressionRisk ?? 100;
   const precipitationRisk = window.precipitationDisruptionRisk ?? 100;
   const visibilityScore = window.visibilityColorQualityScore ?? 0;
   const aerosolScore = window.aerosolScore ?? 65;
   const terrainScore = window.terrainScore ?? 50;
+  const lightPathAvailable = window.glowLightPathDataAvailability === "available";
 
   return (
     window.score >= 60 &&
     colorCarrierScore >= 55 &&
     lowCloudRisk < 76 &&
+    lightPathRisk < 70 &&
+    cloudSuppressionRisk < 68 &&
     precipitationRisk < 58 &&
     visibilityScore >= 52 &&
     aerosolScore >= 38 &&
     terrainScore >= 45 &&
+    lightPathAvailable &&
     !window.rainOverlapsWindow
   );
 }
@@ -1518,6 +1852,9 @@ function calculateGlowTravelScore(
   sunriseGlowScore: number,
   sunsetGlowScore: number,
   lowCloudObstructionRisk: number,
+  glowLightPathObstructionRisk: number,
+  glowLightPathDataAvailability: GlowRiskDataAvailability,
+  cloudSuppressionRisk: number,
   precipitationDisruptionRisk: number,
   visibilityColorQualityScore: number,
   input: ForecastCalculationInput,
@@ -1532,16 +1869,28 @@ function calculateGlowTravelScore(
     precipitationDisruptionRisk >= 78 ? 16 : precipitationDisruptionRisk >= 58 ? 8 : 0;
   const lowCloudPenalty =
     lowCloudObstructionRisk >= 82 ? 12 : lowCloudObstructionRisk >= 70 ? 6 : 0;
+  const lightPathPenalty =
+    glowLightPathObstructionRisk >= 82 ? 18 : glowLightPathObstructionRisk >= 68 ? 9 : 0;
+  const suppressionPenalty =
+    cloudSuppressionRisk >= 80 ? 16 : cloudSuppressionRisk >= 65 ? 8 : 0;
+  const lightPathUncertaintyPenalty =
+    glowLightPathDataAvailability === "insufficient" ? 8 : 0;
 
-  return clampScore(
+  const score = clampScore(
     bestGlow * 0.58 +
       secondGlow * 0.14 +
       visibilityScore * 0.14 +
-      (100 - lowCloudObstructionRisk) * 0.08 +
+      (100 - glowLightPathObstructionRisk) * 0.08 +
+      (100 - cloudSuppressionRisk) * 0.04 +
+      (100 - lowCloudObstructionRisk) * 0.04 +
       (100 - precipitationDisruptionRisk) * 0.06 -
       rainPenalty -
-      lowCloudPenalty,
+      lowCloudPenalty -
+      lightPathPenalty -
+      suppressionPenalty -
+      lightPathUncertaintyPenalty,
   );
+  return glowLightPathDataAvailability === "insufficient" ? Math.min(score, 64) : score;
 }
 
 function buildDailyGlow(
@@ -1581,6 +1930,8 @@ function buildDailyGlow(
         (window) =>
           window.score < 42 ||
           (window.lowCloudObstructionRisk ?? 0) >= 76 ||
+          (window.glowLightPathObstructionRisk ?? 0) >= 76 ||
+          (window.cloudSuppressionRisk ?? 0) >= 74 ||
           (window.precipitationDisruptionRisk ?? 0) >= 70,
       )
       .sort(
@@ -1604,6 +1955,19 @@ function buildDailyGlow(
       (window) => window.lowCloudObstructionRisk,
       () => 0,
     );
+    const lowCloudFogWallRisk = lowCloudObstructionRisk;
+    const glowLightPathObstructionRisk = maxCandidateScore(
+      dayWindows,
+      (window) => window.glowLightPathObstructionRisk,
+      () => 0,
+    );
+    const cloudSuppressionRisk = maxCandidateScore(
+      dayWindows,
+      (window) => window.cloudSuppressionRisk,
+      () => 0,
+    );
+    const glowLightPathDataAvailability = aggregateGlowLightPathDataAvailability(dayWindows);
+    const glowLightPathConfidence = aggregateGlowLightPathConfidence(dayWindows);
     const precipitationDisruptionRisk = maxCandidateScore(
       dayWindows,
       (window) => window.precipitationDisruptionRisk,
@@ -1690,6 +2054,12 @@ function buildDailyGlow(
       sunsetScoreBreakdown: sunsetBestWindow?.scoreBreakdown,
       colorCarrierScore,
       lowCloudObstructionRisk,
+      lowCloudFogWallRisk,
+      glowLightPathObstructionRisk,
+      glowLightPathDataAvailability,
+      glowLightPathConfidence,
+      cloudSuppressionRisk,
+      glowCarrierScore: colorCarrierScore,
       precipitationDisruptionRisk,
       visibilityColorQualityScore,
       aerosolScore,
@@ -1697,6 +2067,8 @@ function buildDailyGlow(
         sunriseScore,
         sunsetScore,
         lowCloudObstructionRisk,
+        glowLightPathObstructionRisk,
+        cloudSuppressionRisk,
         colorCarrierScore,
         publicBestWindow,
         publicWatchableWindow,
@@ -1747,7 +2119,7 @@ function dailyKeyReason(
     return `朝霞 ${sunriseScore} 分、晚霞 ${sunsetScore} 分，两个窗口都值得纳入计划。`;
   }
   if (bestTarget === "sunrise") {
-    return `朝霞 ${sunriseScore} 分高于晚霞，优先关注日出前后中高云和东方低云遮挡。`;
+    return `朝霞 ${sunriseScore} 分高于晚霞，优先关注日出前后中高云、东方光路和云层压制风险。`;
   }
   if (bestTarget === "sunset") {
     return `晚霞 ${sunsetScore} 分高于朝霞，优先观察日落前云层移动和西向通透度。`;
@@ -1776,7 +2148,7 @@ function buildCloudLayerEvidence(
       label: "低云",
       value: formatPercentValue(cloudLow),
       effect: cloudLow !== undefined && cloudLow > 70 ? "risk" : "neutral",
-      noteZh: "低云可能遮挡太阳方向，低云过厚会导致无明显霞光或只剩白光。",
+      noteZh: "低云偏厚会增加近地雾墙和低云墙风险；太阳方向光路是否打开需依赖独立方向性数据或现场复核。",
     },
     {
       label: "中云",
@@ -2123,16 +2495,33 @@ function buildTerrainEvidence(input: ForecastCalculationInput): readonly GlowEvi
 function buildGlowRiskReasons(
   input: ForecastCalculationInput,
   candidates: readonly GlowCandidate[],
-  lowCloudObstructionRisk: number,
+  risks: {
+    readonly lowCloudFogWallRisk: number;
+    readonly glowLightPathObstructionRisk: number;
+    readonly glowLightPathDataAvailability: GlowRiskDataAvailability;
+    readonly cloudSuppressionRisk: number;
+  },
 ): readonly string[] {
   const reasons: string[] = [];
   const bestSunrise = bestPhaseWindow(candidates, "sunrise");
   const bestSunset = bestPhaseWindow(candidates, "sunset");
 
-  if (lowCloudObstructionRisk >= 75) {
-    reasons.push("低云遮挡风险高，太阳方向可能被低云压住，导致无明显霞光或只剩白光。");
-  } else if (lowCloudObstructionRisk >= 50) {
-    reasons.push("低云遮挡风险中等，需要现场观察太阳方向是否留有透光缝。");
+  if (risks.lowCloudFogWallRisk >= 75) {
+    reasons.push("低云/雾墙风险高，近地低云、雾或低云墙可能压住机位视野。");
+  } else if (risks.lowCloudFogWallRisk >= 50) {
+    reasons.push("低云/雾墙风险中等，只能说明近地雾墙需要复核，不等同于太阳方向光路已打开。");
+  }
+  if (risks.glowLightPathDataAvailability === "insufficient") {
+    reasons.push("太阳方向光路缺少足够的方向性数据，需现场复核地平线云缝。");
+  } else if (risks.glowLightPathObstructionRisk >= 70) {
+    reasons.push("霞光光路遮挡风险偏高，低角度太阳光可能难以穿过地平线方向光路。");
+  } else if (risks.glowLightPathObstructionRisk >= 45) {
+    reasons.push("霞光光路遮挡风险中等，建议到场后重点复核太阳方向云缝和地平线。");
+  }
+  if (risks.cloudSuppressionRisk >= 70) {
+    reasons.push("云层压制风险高，云量或云层厚度可能压住色彩，不宜只凭云层载体专程押强霞。");
+  } else if (risks.cloudSuppressionRisk >= 50) {
+    reasons.push("云层载体存在，但云层压制风险也存在，适合附近蹲守并保留备选题材。");
   }
   if (bestSunrise?.riskTags.length) {
     reasons.push(`朝霞风险：${bestSunrise.riskTags.join("、")}。`);
@@ -2195,9 +2584,9 @@ function buildGlowTravelRecommendations(
   const best = Math.max(sunriseGlowScore, sunsetGlowScore);
   return [
     "朝霞：建议日出前 40-60 分钟到达机位，先完成构图、测光和安全检查。",
-    "晚霞：建议日落前 60 分钟观察云层移动，重点看太阳方向是否留有透光缝。",
-    "如果低云遮挡太阳方向，优先寻找更高机位或转拍层峦、云缝光和局部暖色。",
-    "如果高云较好但低云不足，适合长焦山脊、远山层次和城市远景。",
+    "晚霞：建议日落前 60 分钟观察云层移动；方向性光路数据不足时，需现场复核地平线云缝。",
+    "如果低云/雾墙风险偏高，优先寻找更高机位或转拍层峦、雾气层次和局部暖色。",
+    "如果云层载体较好但压制风险存在，适合附近蹲守并同步准备长焦山脊、远山层次和城市远景。",
     best >= 65
       ? "当前霞光信号具备等待价值，但正式天气数据启用前不建议单点押注。"
       : "当前霞光信号偏保守，更适合把霞光作为顺带观察目标。",
@@ -2212,9 +2601,9 @@ function buildGlowBackupPlans(): readonly GlowBackupPlan[] {
       detail: "利用清晰空气和低角度侧光保留空间层次，不强求大面积色彩。",
     },
     {
-      condition: "低云遮挡",
+      condition: "低云/雾墙",
       action: "转更高机位或拍雾中局部",
-      detail: "寻找能越过低云的视角；无法越过时转向局部山体、林线和云雾氛围。",
+      detail: "低云或雾墙只说明近地视野风险；光路不明时需现场复核地平线云缝。",
     },
     {
       condition: "高云不足",
@@ -2267,6 +2656,12 @@ function buildGlowMissingDataNotes(input: ForecastCalculationInput): readonly st
   if (terrainMissing) {
     notes.push(missingTerrainNote);
   }
+  if (
+    !hasDeterministicGlowLightPathData(input, "sunrise") &&
+    !hasDeterministicGlowLightPathData(input, "sunset")
+  ) {
+    notes.push("太阳方向光路缺少足够的方向性数据，需现场复核地平线云缝。");
+  }
   if (input.weatherDataMode !== "real") {
     notes.push("当前天气数据为演示数据，结果仅用于体验分析流程。");
   }
@@ -2314,6 +2709,12 @@ function calculateGlowConfidenceScore(
   if (terrainMissing) {
     confidenceScore -= 12;
   }
+  if (
+    !hasDeterministicGlowLightPathData(input, "sunrise") &&
+    !hasDeterministicGlowLightPathData(input, "sunset")
+  ) {
+    confidenceScore -= 12;
+  }
   if (input.terrainAnalysis.terrainProfile.elevationConfidence === "low") {
     confidenceScore -= 8;
   }
@@ -2341,6 +2742,8 @@ function buildGlowLabels(
   sunriseGlowScore: number,
   sunsetGlowScore: number,
   lowCloudObstructionRisk: number,
+  glowLightPathObstructionRisk: number,
+  cloudSuppressionRisk: number,
   colorCarrierScore: number,
   bestWindow: GlowWindow | undefined,
   watchableWindow: GlowWindow | undefined,
@@ -2350,6 +2753,9 @@ function buildGlowLabels(
     sunriseGlowOpportunity: chanceLabel(sunriseGlowScore),
     sunsetGlowOpportunity: chanceLabel(sunsetGlowScore),
     lowCloudObstruction: riskLabel(lowCloudObstructionRisk),
+    lowCloudFogWallRisk: riskLabel(lowCloudObstructionRisk),
+    glowLightPathObstructionRisk: riskLabel(glowLightPathObstructionRisk),
+    cloudSuppressionRisk: riskLabel(cloudSuppressionRisk),
     colorCarrier: colorCarrierLabel(colorCarrierScore),
     bestWindowLabel: bestWindow
       ? `最佳霞光窗口：${formatGlowWindowLabel(bestWindow)}`
@@ -2404,8 +2810,16 @@ function buildGlowWindowRiskTags(
   components: GlowComponentScores,
 ): readonly string[] {
   const tags: string[] = [];
-  if (components.lowCloudRisk >= 70) {
-    tags.push("低云遮挡");
+  if (components.lowCloudFogWallRisk >= 70) {
+    tags.push("低云/雾墙");
+  }
+  if (components.glowLightPathDataAvailability === "insufficient") {
+    tags.push("光路需现场复核");
+  } else if (components.glowLightPathObstructionRisk >= 70) {
+    tags.push("光路遮挡");
+  }
+  if (components.cloudSuppressionRisk >= 70) {
+    tags.push("云层压制");
   }
   if (components.colorCarrierScore < 55) {
     tags.push("中高云不足");
@@ -2440,8 +2854,17 @@ function buildGlowWindowNote(
   components: GlowComponentScores,
 ): string {
   const target = phase === "sunrise" ? "朝霞" : "晚霞";
-  if (components.lowCloudRisk >= 70) {
-    return `${target}窗口低云遮挡风险偏高，应优先复核太阳方向是否被低云压住。`;
+  if (components.glowLightPathDataAvailability === "insufficient") {
+    return `${target}窗口太阳方向光路缺少足够的方向性数据，需现场复核地平线云缝。`;
+  }
+  if (components.glowLightPathObstructionRisk >= 70) {
+    return `${target}窗口霞光光路遮挡风险偏高，不建议只凭云层载体专程押强霞。`;
+  }
+  if (components.cloudSuppressionRisk >= 70) {
+    return `${target}窗口云层载体较好但云层压制风险偏高，适合附近蹲守，不宜只凭分数专程押强霞。`;
+  }
+  if (components.lowCloudFogWallRisk >= 70) {
+    return `${target}窗口低云/雾墙风险偏高，应优先复核近地雾墙和机位视野。`;
   }
   if (components.precipitationDisruptionRisk >= 70) {
     return `${target}窗口降水正在干扰或高度重叠，不建议把它作为主拍窗口。`;
@@ -2455,8 +2878,13 @@ function buildGlowWindowNote(
   if (components.visibilityColorQualityScore < 52) {
     return `${target}窗口通透度偏弱，色彩和远景层次不稳定，仅作备选观察。`;
   }
-  if (components.colorCarrierScore >= 70 && components.visibilityColorQualityScore >= 65) {
-    return `${target}窗口中高云和通透度较可用，适合提前到位观察色彩发展。`;
+  if (
+    components.colorCarrierScore >= 70 &&
+    components.visibilityColorQualityScore >= 65 &&
+    components.cloudSuppressionRisk < 50 &&
+    components.glowLightPathObstructionRisk < 50
+  ) {
+    return `${target}窗口中高云、通透度和光路风险较可用，适合提前到位观察色彩发展。`;
   }
   if (type === "afterglow") {
     return "余晖阶段更依赖西向高云和通透度，适合继续等待 20-30 分钟。";
@@ -2630,6 +3058,23 @@ function hasDirectionalTerrainProfile(input: ForecastCalculationInput): boolean 
     typeof profile.maxElevation5km === "number" ||
     horizon.blockedDirectionsZh.length > 0
   );
+}
+
+function hasDeterministicGlowLightPathData(
+  input: ForecastCalculationInput,
+  phase: GlowPhase,
+): boolean {
+  const horizonAngle = horizonAngleForPhase(input, phase);
+  const hasTerrainDirection =
+    hasDirectionalTerrainProfile(input) &&
+    typeof horizonAngle === "number" &&
+    Number.isFinite(horizonAngle);
+  const hasSolarDirection = input.astroSummaries.some((astro) => {
+    const azimuth = phase === "sunrise" ? astro.sunriseAzimuth : astro.sunsetAzimuth;
+    return typeof azimuth === "number" && Number.isFinite(azimuth);
+  });
+
+  return hasTerrainDirection && hasSolarDirection;
 }
 
 function terrainEffect(

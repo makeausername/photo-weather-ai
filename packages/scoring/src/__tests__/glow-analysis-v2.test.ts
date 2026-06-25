@@ -315,7 +315,7 @@ describe("glow analysis v2", () => {
     expect(favorableAnalysis.sunriseGlowScore).toBeGreaterThan(noCarrierAnalysis.sunriseGlowScore);
   });
 
-  it("raises low cloud obstruction and lowers practical score when low cloud is excessive", () => {
+  it("raises low cloud or fog wall risk and lowers practical score when low cloud is excessive", () => {
     const openLowCloud = patchAllWeather(favorableGlowInput(), {
       cloudTotal: 58,
       cloudLow: 24,
@@ -328,8 +328,27 @@ describe("glow analysis v2", () => {
     const open = calculateGlowAnalysis(openLowCloud);
     const blocked = calculateGlowAnalysis(blockedLowCloud);
 
-    expect(blocked.lowCloudObstructionRisk).toBeGreaterThan(open.lowCloudObstructionRisk);
+    expect(blocked.lowCloudFogWallRisk).toBeGreaterThan(open.lowCloudFogWallRisk);
+    expect(blocked.lowCloudObstructionRisk).toBe(blocked.lowCloudFogWallRisk);
     expect(blocked.practicalGlowScore).toBeLessThan(open.practicalGlowScore);
+  });
+
+  it("keeps low-cloud fog-wall risk separate from deterministic light-path obstruction", () => {
+    const open = favorableGlowInput();
+    const eastBlocked = withHorizon(open, {
+      sunriseHorizonAngle: 18,
+      blockedDirectionsZh: ["东"],
+    });
+
+    const openAnalysis = calculateGlowAnalysis(open);
+    const blockedAnalysis = calculateGlowAnalysis(eastBlocked);
+
+    expect(blockedAnalysis.lowCloudFogWallRisk).toBe(openAnalysis.lowCloudFogWallRisk);
+    expect(blockedAnalysis.glowLightPathDataAvailability).toBe("available");
+    expect(blockedAnalysis.glowLightPathObstructionRisk).toBeGreaterThan(
+      openAnalysis.glowLightPathObstructionRisk,
+    );
+    expect(blockedAnalysis.riskReasons.join("")).not.toContain("低云遮挡太阳方向");
   });
 
   it("penalizes total overcast even when cloud layers exist", () => {
@@ -344,6 +363,46 @@ describe("glow analysis v2", () => {
     expect(calculateGlowAnalysis(overcast).practicalGlowScore).toBeLessThan(
       calculateGlowAnalysis(favorable).practicalGlowScore,
     );
+  });
+
+  it("does not recommend strong glow when carrier clouds are present but cloud suppression is high", () => {
+    const suppressed = patchAllWeather(favorableGlowInput(), {
+      cloudTotal: 92,
+      cloudLow: 20,
+      cloudMid: 92,
+      cloudHigh: 88,
+      visibility: 2,
+      photographyTransparencyScore: 42,
+      precipitation: 0,
+      precipitationAmountMm: 0,
+      precipitationProbability: 5,
+    });
+
+    const analysis = calculateGlowAnalysis(suppressed);
+
+    expect(analysis.glowCarrierScore).toBeGreaterThanOrEqual(55);
+    expect(analysis.cloudSuppressionRisk).toBeGreaterThanOrEqual(70);
+    expect(analysis.recommendationLabel).not.toBe("推荐重点关注");
+    expect(analysis.bestGlowWindows).toHaveLength(0);
+  });
+
+  it("downgrades glow confidence and suitability when transparency is poor", () => {
+    const clear = favorableGlowInput();
+    const hazy = patchAllWeather(clear, {
+      visibility: 3,
+      photographyTransparencyScore: 28,
+      humidity: 92,
+      weatherTextZh: "霾",
+    });
+
+    const clearAnalysis = calculateGlowAnalysis(clear);
+    const hazyAnalysis = calculateGlowAnalysis(hazy);
+
+    expect(hazyAnalysis.visibilityColorQualityScore).toBeLessThan(
+      clearAnalysis.visibilityColorQualityScore,
+    );
+    expect(hazyAnalysis.confidence).toBeLessThan(clearAnalysis.confidence);
+    expect(hazyAnalysis.practicalGlowScore).toBeLessThan(clearAnalysis.practicalGlowScore);
   });
 
   it("lowers the sunrise score when active rain overlaps the sunrise window", () => {
@@ -536,7 +595,45 @@ describe("glow analysis v2", () => {
     const unknownAnalysis = calculateGlowAnalysis(unknownTerrain);
 
     expect(unknownAnalysis.confidence).toBeLessThan(openAnalysis.confidence);
-    expect(unknownAnalysis.lowCloudObstructionRisk).toBeLessThan(70);
+    expect(unknownAnalysis.glowLightPathDataAvailability).toBe("insufficient");
+    expect(unknownAnalysis.glowLightPathConfidence).toBe("low");
+    expect(unknownAnalysis.lowCloudFogWallRisk).toBeLessThan(70);
+    expect(unknownAnalysis.practicalGlowScore).toBeLessThanOrEqual(64);
+    expect(unknownAnalysis.bestGlowWindows).toHaveLength(0);
+    expect(unknownAnalysis.riskReasons.join("")).toContain(
+      "太阳方向光路缺少足够的方向性数据",
+    );
+  });
+
+  it("does not apply directional terrain obstruction when the phase horizon is missing", () => {
+    const open = favorableGlowInput();
+    const blockedButNoHorizon = withHorizon(open, {
+      sunriseHorizonAngle: undefined,
+      blockedDirectionsZh: ["东"],
+    });
+    const deterministicBlocked = withHorizon(open, {
+      sunriseHorizonAngle: 18,
+      blockedDirectionsZh: ["东"],
+    });
+
+    const unknownAnalysis = calculateGlowAnalysis(blockedButNoHorizon);
+    const deterministicAnalysis = calculateGlowAnalysis(deterministicBlocked);
+    const unknownSunrise = allGlowWindows(blockedButNoHorizon).find(
+      (window) => window.phase === "sunrise",
+    );
+    const deterministicSunrise = allGlowWindows(deterministicBlocked).find(
+      (window) => window.phase === "sunrise",
+    );
+
+    expect(deterministicAnalysis.glowLightPathDataAvailability).toBe("available");
+    expect(unknownSunrise?.glowLightPathDataAvailability).toBe("insufficient");
+    expect(deterministicSunrise?.glowLightPathDataAvailability).toBe("available");
+    expect(unknownSunrise?.glowLightPathObstructionRisk).toBeLessThan(
+      deterministicSunrise?.glowLightPathObstructionRisk ?? 0,
+    );
+    expect(unknownAnalysis.glowLightPathObstructionRisk).toBeLessThanOrEqual(
+      deterministicAnalysis.glowLightPathObstructionRisk,
+    );
   });
 
   it("returns no high-certainty glow window when nothing is shootable", () => {
