@@ -138,10 +138,6 @@ export function LoginForm({ initialIdentifier = "", registered = false }: LoginF
             </Link>
           </div>
         </div>
-
-        <p className="text-xs leading-5 text-muted-foreground">
-          有管理员权限的账户登录后，会在账户中心看到后台入口。
-        </p>
       </form>
     </AuthCard>
   );

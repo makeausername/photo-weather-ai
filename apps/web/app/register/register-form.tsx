@@ -237,11 +237,7 @@ export function RegisterForm() {
   }
 
   return (
-    <AuthCard
-      eyebrow="账户"
-      title="创建账户"
-      description="选择邮箱或短信验证，设置密码后就可以用这个账户登录。"
-    >
+    <AuthCard eyebrow="账户" title="创建账户">
       <div
         className="mb-4 grid grid-cols-2 gap-1 rounded-lg border border-border bg-muted/70 p-1"
         aria-label="注册方式"
