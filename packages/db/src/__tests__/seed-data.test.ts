@@ -304,6 +304,7 @@ describe("database seed data", () => {
         }),
         expect.objectContaining({
           code: "monthly_full",
+          description: "开通后 30 天内查看完整摄影判断、专业时序表和历史报告。",
           amountCents: 1900,
           currency: "CNY",
           credits: 0,
@@ -314,11 +315,18 @@ describe("database seed data", () => {
             publicPurchasable: true,
             grantType: "full_forecast_access",
             plan: "monthly",
-            featureBullets: expect.arrayContaining(["完整摄影判断"]),
+            featureBullets: [
+              "未来多日完整摄影判断",
+              "云海 / 朝霞晚霞 / 星空银河",
+              "专业逐小时表格",
+              "会员期内完整历史报告",
+              "适合短期出行和临时追光",
+            ],
           }),
         }),
         expect.objectContaining({
           code: "quarterly_full",
+          description: "开通后 90 天内查看完整摄影判断、专业时序表和历史报告。",
           durationDays: 90,
           metadataJson: expect.objectContaining({
             publicVisible: true,
@@ -327,10 +335,19 @@ describe("database seed data", () => {
             plan: "quarterly",
             recommended: true,
             badgeText: "推荐",
+            featureBullets: [
+              "未来多日完整摄影判断",
+              "云海 / 朝霞晚霞 / 星空银河",
+              "专业逐小时表格",
+              "会员期内完整历史报告",
+              "适合连续旅行和多地踩点",
+              "续费后有效期自动顺延",
+            ],
           }),
         }),
         expect.objectContaining({
           code: "yearly_full",
+          description: "开通后 365 天内查看完整摄影判断、专业时序表和历史报告。",
           durationDays: 365,
           metadataJson: expect.objectContaining({
             publicVisible: true,
@@ -338,6 +355,14 @@ describe("database seed data", () => {
             grantType: "full_forecast_access",
             plan: "yearly",
             badgeText: "最划算",
+            featureBullets: [
+              "全年完整摄影判断",
+              "云海 / 朝霞晚霞 / 星空银河",
+              "专业逐小时表格",
+              "全年完整历史报告",
+              "适合长期风光摄影规划",
+              "续费后有效期自动顺延",
+            ],
           }),
         }),
         expect.objectContaining({

@@ -19,10 +19,126 @@ export type BillingProduct = PublicBillingProduct;
 
 const paidPlanCodes = new Set(["monthly_full", "quarterly_full", "yearly_full"]);
 
+const planDisplayCopy: Partial<
+  Record<
+    string,
+    {
+      readonly name: string;
+      readonly description: string;
+    }
+  >
+> = {
+  monthly_full: {
+    name: "月卡",
+    description: "开通后 30 天内查看完整摄影判断、专业时序表和历史报告。",
+  },
+  quarterly_full: {
+    name: "季卡",
+    description: "开通后 90 天内查看完整摄影判断、专业时序表和历史报告。",
+  },
+  yearly_full: {
+    name: "年卡",
+    description: "开通后 365 天内查看完整摄影判断、专业时序表和历史报告。",
+  },
+};
+
+const planFeatureCopy: Partial<Record<string, readonly string[]>> = {
+  monthly_full: [
+    "未来多日完整摄影判断",
+    "云海 / 朝霞晚霞 / 星空银河",
+    "专业逐小时表格",
+    "会员期内完整历史报告",
+    "适合短期出行和临时追光",
+  ],
+  quarterly_full: [
+    "未来多日完整摄影判断",
+    "云海 / 朝霞晚霞 / 星空银河",
+    "专业逐小时表格",
+    "会员期内完整历史报告",
+    "适合连续旅行和多地踩点",
+    "续费后有效期自动顺延",
+  ],
+  yearly_full: [
+    "全年完整摄影判断",
+    "云海 / 朝霞晚霞 / 星空银河",
+    "专业逐小时表格",
+    "全年完整历史报告",
+    "适合长期风光摄影规划",
+    "续费后有效期自动顺延",
+  ],
+};
+
+const fallbackPaidFeatures = [
+  "完整摄影判断",
+  "云海 / 朝霞晚霞 / 星空银河",
+  "专业逐小时表格",
+  "会员期内完整历史报告",
+] as const;
+
+const stalePricingCopyPatternTexts = [
+  ["A", "I", "\\s*", "解读"].join(""),
+  ["智能", "解读"].join(""),
+  ["G", "P", "T"].join(""),
+  ["Open", "A", "I"].join(""),
+  ["\\b", "A", "I", "\\b"].join(""),
+];
+
+const stalePricingCopyPatterns = stalePricingCopyPatternTexts.map(
+  (pattern) => new RegExp(pattern, "gi"),
+);
+
+const legacyPlanDescriptions: Partial<Record<string, readonly string[]>> = {
+  monthly_full: ["开通后 30 天内可查看完整摄影判断、专业时序表。", "开通完整摄影判断 30 天。"],
+  quarterly_full: ["开通后 90 天内可查看完整摄影判断、专业时序表。", "开通完整摄影判断 90 天。"],
+  yearly_full: ["开通后 365 天内可查看完整摄影判断、专业时序表。", "开通完整摄影判断 365 天。"],
+};
+
+const legacyPlanFeatureKeys: Partial<Record<string, readonly string[]>> = {
+  monthly_full: [
+    featureKey([
+      "完整摄影判断",
+      "云海 / 朝霞晚霞 / 星空银河",
+      "专业逐小时表格",
+      "会员期内完整历史报告",
+    ]),
+    featureKey(["完整摄影判断", "专业逐小时表格"]),
+  ],
+  quarterly_full: [
+    featureKey([
+      "完整摄影判断",
+      "云海 / 朝霞晚霞 / 星空银河",
+      "专业逐小时表格",
+      "续费后有效期自动顺延",
+    ]),
+    featureKey(["完整摄影判断", "云海 / 朝霞晚霞 / 星空银河"]),
+  ],
+  yearly_full: [
+    featureKey([
+      "完整摄影判断",
+      "云海 / 朝霞晚霞 / 星空银河",
+      "专业逐小时表格",
+      "全年完整历史报告",
+    ]),
+    featureKey(["完整历史报告", "会员期内完整历史报告"]),
+  ],
+};
+
+const paymentProviderOptions = [
+  { value: "wechat_pay", label: "微信支付" },
+  { value: "alipay", label: "支付宝" },
+] as const satisfies readonly {
+  readonly value: BillingPaymentProvider;
+  readonly label: string;
+}[];
+
+export const pricingCheckoutIntroCopy =
+  "确认套餐信息后选择支付方式。支付完成后，会员权益将自动生效。";
+
 export const pricingCheckoutLabels = [
   "月卡",
   "季卡",
   "年卡",
+  "确认订单",
   "微信支付",
   "支付宝",
   "创建订单",
@@ -68,15 +184,61 @@ function planOrder(code: string): number {
 }
 
 function paidFeatures(product: PublicBillingProduct): readonly string[] {
-  return product.featureBullets.length > 0
-    ? product.featureBullets
-    : [
-        "完整摄影判断",
-        "7 天完整摄影判断窗口",
-        "云海 / 朝霞晚霞 / 星空银河",
-        "专业逐小时表格",
-        "会员期内完整历史报告",
-      ];
+  const features = product.featureBullets
+    .map((feature) => sanitizePricingCopy(feature))
+    .filter((feature): feature is string => Boolean(feature));
+  const planFeatures = planFeatureCopy[product.code];
+  if (
+    planFeatures &&
+    (product.featureBullets.some((feature) => containsStalePricingCopy(feature)) ||
+      legacyPlanFeatureKeys[product.code]?.includes(featureKey(features)))
+  ) {
+    return planFeatures;
+  }
+
+  return features.length > 0 ? features : fallbackPaidFeatures;
+}
+
+function displayProductName(product: PublicBillingProduct): string {
+  return sanitizePricingCopy(product.name) ?? planDisplayCopy[product.code]?.name ?? "套餐";
+}
+
+function displayProductDescription(product: PublicBillingProduct): string | null {
+  const description = sanitizePricingCopy(product.description);
+  const defaultDescription = planDisplayCopy[product.code]?.description ?? null;
+  if (description && legacyPlanDescriptions[product.code]?.includes(description)) {
+    return defaultDescription;
+  }
+  return description ?? defaultDescription;
+}
+
+function displayProductBadgeText(product: PublicBillingProduct): string | null {
+  return sanitizePricingCopy(product.badgeText);
+}
+
+function sanitizePricingCopy(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const sanitized = stalePricingCopyPatterns
+    .reduce((current, pattern) => current.replace(pattern, ""), value)
+    .replace(/\s*([、，,。；;：:])\s*/g, "$1")
+    .replace(/[、，,；;：:]+/g, "、")
+    .replace(/^[\s、，,。；;：:]+|[\s、，,；;：:]+$/g, "")
+    .replace(/\(\s*\)|（\s*）/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  return /[0-9A-Za-z\u4e00-\u9fff]/.test(sanitized) ? sanitized : null;
+}
+
+function containsStalePricingCopy(value: string): boolean {
+  return stalePricingCopyPatternTexts.some((pattern) => new RegExp(pattern, "i").test(value));
+}
+
+function featureKey(features: readonly string[]): string {
+  return features.join("\n");
 }
 
 export function PricingClient({
@@ -98,6 +260,7 @@ export function PricingClient({
     initialPaidProducts?.[0]?.code ?? "",
   );
   const [provider, setProvider] = useState<BillingPaymentProvider>("wechat_pay");
+  const [checkoutStarted, setCheckoutStarted] = useState(false);
   const [checkout, setCheckout] = useState<BillingCheckoutPayload | null>(null);
   const [order, setOrder] = useState<AccountBillingOrderRecord | null>(null);
   const [loggedIn, setLoggedIn] = useState(initialLoggedIn);
@@ -177,16 +340,53 @@ export function PricingClient({
     [products, selectedProductCode],
   );
 
-  async function handleCreateOrder(productCode: string) {
+  const checkoutActive = checkoutStarted && loggedIn;
+
+  function clearOrderState() {
+    setCheckout(null);
+    setOrder(null);
+  }
+
+  function handleSelectProduct(productCode: string) {
+    const changed = productCode !== selectedProductCode;
+    setSelectedProductCode(productCode);
+    if (changed) {
+      clearOrderState();
+    }
+    setMessage("");
+  }
+
+  function handleStartCheckout(productCode: string) {
+    const changed = productCode !== selectedProductCode;
     setSelectedProductCode(productCode);
     if (!loggedIn) {
       setMessage("请先登录或注册后再购买套餐。注册即送 7 天完整权限。");
       return;
     }
 
+    if (changed) {
+      clearOrderState();
+    }
+    setCheckoutStarted(true);
+    setMessage("");
+  }
+
+  async function handleCreateOrder() {
+    if (!selectedProduct) {
+      setMessage("请选择套餐后再创建订单。");
+      return;
+    }
+    if (!loggedIn) {
+      setCheckoutStarted(false);
+      setMessage("请先登录或注册后再购买套餐。注册即送 7 天完整权限。");
+      return;
+    }
+
+    const productCode = selectedProduct.code;
+    setCheckoutStarted(true);
     setState("submitting");
     setMessage("");
-    setCheckout(null);
+    clearOrderState();
     try {
       const result = await createBillingOrder({ productCode, provider });
       setOrder(result.order);
@@ -208,8 +408,8 @@ export function PricingClient({
               定价方案
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-              新用户注册即送 7 天完整权限。试用结束后自动回到免费版，可继续查询未来
-              24 小时基础天气。
+              新用户注册即送 7 天完整权限。试用结束后自动回到免费版，可继续查询未来 24
+              小时基础天气。
             </p>
           </div>
           <Link
@@ -232,8 +432,19 @@ export function PricingClient({
           </p>
         ) : null}
 
-        <section id="paid-plans" className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <section
+          id="paid-plans"
+          className={cn(
+            "grid gap-4",
+            checkoutActive ? "lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start" : "",
+          )}
+        >
+          <div
+            className={cn(
+              "grid gap-3 sm:grid-cols-2",
+              checkoutActive ? "xl:grid-cols-3" : "lg:grid-cols-3",
+            )}
+          >
             {state === "loading" ? (
               <Card className="p-5 text-sm text-muted-foreground">正在读取套餐...</Card>
             ) : null}
@@ -244,19 +455,23 @@ export function PricingClient({
                 selected={selectedProduct?.code === product.code}
                 loggedIn={loggedIn}
                 submitting={state === "submitting" && selectedProductCode === product.code}
-                onSelect={() => setSelectedProductCode(product.code)}
-                onCreateOrder={() => void handleCreateOrder(product.code)}
+                onSelect={() => handleSelectProduct(product.code)}
+                onStartCheckout={() => handleStartCheckout(product.code)}
               />
             ))}
           </div>
 
-          <CheckoutPanel
-            provider={provider}
-            onProviderChange={setProvider}
-            selectedProduct={selectedProduct}
-            order={order}
-            checkout={checkout}
-          />
+          {checkoutActive ? (
+            <CheckoutPanel
+              provider={provider}
+              onProviderChange={setProvider}
+              selectedProduct={selectedProduct}
+              order={order}
+              checkout={checkout}
+              submitting={state === "submitting"}
+              onCreateOrder={() => void handleCreateOrder()}
+            />
+          ) : null}
         </section>
       </div>
     </PublicShell>
@@ -269,15 +484,18 @@ function PaidPlanCard({
   loggedIn,
   submitting,
   onSelect,
-  onCreateOrder,
+  onStartCheckout,
 }: {
   readonly product: PublicBillingProduct;
   readonly selected: boolean;
   readonly loggedIn: boolean;
   readonly submitting: boolean;
   readonly onSelect: () => void;
-  readonly onCreateOrder: () => void;
+  readonly onStartCheckout: () => void;
 }) {
+  const badgeText = displayProductBadgeText(product);
+  const description = displayProductDescription(product);
+
   return (
     <Card
       className={cn(
@@ -289,12 +507,14 @@ function PaidPlanCard({
         <div>
           <div className="flex flex-wrap gap-2">
             {product.recommended ? <Badge variant="accent">推荐</Badge> : null}
-            {product.badgeText ? <Badge variant="info">{product.badgeText}</Badge> : null}
+            {badgeText ? <Badge variant="info">{badgeText}</Badge> : null}
           </div>
-          <h2 className="mt-3 text-lg font-bold text-card-foreground">{product.name}</h2>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            {product.description}
-          </p>
+          <h2 className="mt-3 text-lg font-bold text-card-foreground">
+            {displayProductName(product)}
+          </h2>
+          {description ? (
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>
+          ) : null}
         </div>
         <Badge variant="muted">{product.durationText}</Badge>
       </div>
@@ -309,7 +529,7 @@ function PaidPlanCard({
           选择套餐
         </Button>
         {loggedIn ? (
-          <Button type="button" disabled={submitting} onClick={onCreateOrder}>
+          <Button type="button" disabled={submitting} onClick={onStartCheckout}>
             {submitting ? "创建中..." : "立即购买"}
           </Button>
         ) : (
@@ -331,48 +551,59 @@ function CheckoutPanel({
   selectedProduct,
   order,
   checkout,
+  submitting,
+  onCreateOrder,
 }: {
   readonly provider: BillingPaymentProvider;
   readonly onProviderChange: (provider: BillingPaymentProvider) => void;
   readonly selectedProduct: PublicBillingProduct | null;
   readonly order: AccountBillingOrderRecord | null;
   readonly checkout: BillingCheckoutPayload | null;
+  readonly submitting: boolean;
+  readonly onCreateOrder: () => void;
 }) {
+  const selectedProviderLabel =
+    paymentProviderOptions.find((item) => item.value === provider)?.label ?? "微信支付";
+
   return (
     <Card className="grid gap-4 p-5 shadow-sm">
       <div>
-        <h2 className="text-lg font-bold text-card-foreground">支付方式</h2>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          订单金额、权益时长和发放类型由后台产品配置读取。
-        </p>
+        <h2 className="text-lg font-bold text-card-foreground">确认订单</h2>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">{pricingCheckoutIntroCopy}</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        {[
-          { value: "wechat_pay", label: "微信支付" },
-          { value: "alipay", label: "支付宝" },
-        ].map((item) => (
-          <button
-            key={item.value}
-            type="button"
-            className={cn(
-              "h-10 rounded-lg border px-3 text-sm font-semibold transition",
-              provider === item.value
-                ? "border-primary bg-secondary text-secondary-foreground"
-                : "border-border bg-card text-card-foreground hover:border-primary",
-            )}
-            onClick={() => onProviderChange(item.value as BillingPaymentProvider)}
-          >
-            {item.label}
-          </button>
-        ))}
+      <div className="grid gap-2">
+        <p className="text-sm font-semibold text-card-foreground">支付方式</p>
+        <div className="grid grid-cols-2 gap-2">
+          {paymentProviderOptions.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              className={cn(
+                "h-10 rounded-lg border px-3 text-sm font-semibold transition",
+                provider === item.value
+                  ? "border-primary bg-secondary text-secondary-foreground"
+                  : "border-border bg-card text-card-foreground hover:border-primary",
+              )}
+              onClick={() => onProviderChange(item.value)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <dl className="grid gap-2 rounded-lg border border-border bg-muted/30 p-3 text-sm">
         <div className="flex justify-between gap-3">
           <dt className="text-muted-foreground">已选套餐</dt>
           <dd className="font-semibold text-card-foreground">
-            {selectedProduct ? selectedProduct.name : "请选择套餐"}
+            {selectedProduct ? displayProductName(selectedProduct) : "请选择套餐"}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt className="text-muted-foreground">套餐金额</dt>
+          <dd className="font-semibold text-card-foreground">
+            {selectedProduct ? formatPrice(selectedProduct) : "-"}
           </dd>
         </div>
         <div className="flex justify-between gap-3">
@@ -382,10 +613,14 @@ function CheckoutPanel({
           </dd>
         </div>
         <div className="flex justify-between gap-3">
-          <dt className="text-muted-foreground">续费规则</dt>
-          <dd className="font-semibold text-card-foreground">续费后有效期自动顺延</dd>
+          <dt className="text-muted-foreground">支付方式</dt>
+          <dd className="font-semibold text-card-foreground">{selectedProviderLabel}</dd>
         </div>
       </dl>
+
+      <Button type="button" disabled={!selectedProduct || submitting} onClick={onCreateOrder}>
+        {submitting ? "创建中..." : "创建订单"}
+      </Button>
 
       {order ? <OrderStatusPanel order={order} checkout={checkout} /> : null}
     </Card>
