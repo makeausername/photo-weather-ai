@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { PublicAccountEntry } from "./public-account-entry";
-import { ThemeToggle } from "./theme-toggle";
 import { cn } from "./ui";
 
 export const publicHeaderActionLabels = ["账户"] as const;
@@ -90,7 +89,6 @@ export function PublicHeader(props?: PublicHeaderProps) {
         </div>
 
         <div className="hidden shrink-0 items-center justify-end gap-2 min-[1200px]:flex">
-          <ThemeToggle compact />
           <PublicAccountEntry />
         </div>
 
@@ -120,7 +118,6 @@ export function PublicHeader(props?: PublicHeaderProps) {
               ))}
             </div>
             <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
-              <ThemeToggle compact />
               <PublicAccountEntry onNavigate={() => setMenuOpen(false)} />
             </div>
           </div>

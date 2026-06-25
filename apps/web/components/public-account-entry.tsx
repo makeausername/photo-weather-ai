@@ -7,6 +7,7 @@ import {
   logoutPublicAccount,
   type PublicAccountSession,
 } from "./account-session";
+import { ThemePreferenceMenuSection } from "./theme-toggle";
 import { cn } from "./ui";
 
 type PublicAccountEntryProps = {
@@ -111,6 +112,7 @@ export function PublicAccountMenuContent({
           onNavigate={onNavigate}
         />
       ))}
+      <ThemePreferenceMenuSection />
       <button
         type="button"
         role="menuitem"
