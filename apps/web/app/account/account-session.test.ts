@@ -252,11 +252,7 @@ describe("public account navigation", () => {
     expect(html).toContain('href="/account"');
     expect(html).toContain("账户中心");
     expect(html).toContain("退出登录");
-    expect(html).toContain("外观");
-    expect(html).toContain("跟随系统");
-    expect(html).toContain("浅色");
-    expect(html).toContain("深色");
-    expect(html.match(/role="menuitemradio"/g)?.length ?? 0).toBe(3);
+    expect(html).not.toContain('role="menuitemradio"');
     expect(html.match(/退出登录/g)?.length ?? 0).toBe(1);
     expect(html).toMatch(/<button\b[^>]*role="menuitem"[^>]*>\s*退出登录\s*<\/button>/);
     expect(html).not.toContain('href="/#analysis"');

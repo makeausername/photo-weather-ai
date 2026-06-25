@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { sanitizeAuthErrorMessage } from "../../../components/auth-errors";
-import { ThemeToggle } from "../../../components/theme-toggle";
 import { Button, Card, FormField, Input } from "../../../components/ui";
 import { clearAdminSession, loginAdmin, sessionHasAdminAccess } from "../admin-api";
 
@@ -47,7 +46,6 @@ export default function AdminLoginPage() {
             <span className="text-xs text-muted-foreground">管理控制台</span>
           </span>
         </a>
-        <ThemeToggle compact />
       </div>
 
       <section className="mx-auto grid min-h-[calc(100vh-5rem)] w-full max-w-[1180px] gap-8 py-8 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-center">

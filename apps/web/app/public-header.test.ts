@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -23,9 +21,6 @@ type PublicHeaderTestProps = {
 };
 
 const PublicHeaderForTest = PublicHeader as React.ComponentType<PublicHeaderTestProps>;
-const publicHeaderSourcePath = fileURLToPath(
-  new URL("../components/public-header.tsx", import.meta.url),
-);
 
 const expectedNavLinks = [
   { href: "/", label: "首页" },
@@ -52,9 +47,8 @@ describe("public header", () => {
     expect(html).not.toContain("开始分析");
     expect(html).not.toContain('href="/#analysis"');
     expect(html).toContain("账户");
-    expect(html).not.toContain('aria-label="主题切换"');
-    expect(html).not.toContain(">浅<");
-    expect(html).not.toContain(">深<");
+    expect(html).not.toContain('role="group"');
+    expect(html).not.toContain('aria-pressed="');
 
     for (const link of expectedNavLinks) {
       expect(findRenderedLink(html, link.href, link.label)).toBeTruthy();
@@ -68,20 +62,12 @@ describe("public header", () => {
     expect(html).not.toContain("开始分析");
     expect(html).not.toContain('href="/#analysis"');
     expect(html).toContain("账户");
-    expect(html).not.toContain('aria-label="主题切换"');
-    expect(html).not.toContain(">浅<");
-    expect(html).not.toContain(">深<");
+    expect(html).not.toContain('role="group"');
+    expect(html).not.toContain('aria-pressed="');
 
     for (const link of expectedNavLinks) {
       expect(findRenderedLink(html, link.href, link.label)).toBeTruthy();
     }
-  });
-
-  it("does not import or render ThemeToggle directly", () => {
-    const source = readFileSync(publicHeaderSourcePath, "utf8");
-
-    expect(source).not.toContain("ThemeToggle");
-    expect(source).not.toContain("./theme-toggle");
   });
 
   it("preserves active state for the homepage and nested public routes", () => {

@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { ThemeToggle } from "../../../components/theme-toggle";
 import { cn } from "../../../components/ui";
 import { AdminSessionBadge } from "./admin-session-badge";
 
@@ -119,7 +118,6 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
               >
                 返回前台
               </Link>
-              <ThemeToggle compact />
               <AdminSessionBadge />
             </div>
           </div>
