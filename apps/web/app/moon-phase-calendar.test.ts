@@ -38,10 +38,9 @@ describe("MoonPhaseCalendar", () => {
     expect(html).toContain("满月");
     expect(html).toContain("今天");
     expect(html).toContain("农历");
-    expect(html).toContain('data-moon-calendar-scroll="true"');
-    expect(html).toContain('data-moon-calendar-inner="true"');
-    expect(html).toContain("min-w-[480px]");
     expect(html).toContain("grid-cols-7");
+    expect(html).toContain('data-moon-calendar-day="2026-05-01"');
+    expect(html).toContain('data-moon-calendar-day="2026-05-31"');
   });
 
   it("renders locally without external API access", () => {
@@ -55,35 +54,30 @@ describe("MoonPhaseCalendar", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("keeps the mobile calendar scroll-safe without truncating phase labels", () => {
+  it("keeps the mobile calendar width-fluid without truncating phase labels", () => {
     const html = renderToStaticMarkup(React.createElement(MoonPhaseCalendar, calendarProps));
     const source = readFileSync(
       fileURLToPath(new URL("../components/moon-phase-calendar.tsx", import.meta.url)),
       "utf8",
     );
-    const calendarScroll = sectionBetween(
-      html,
-      'data-moon-calendar-scroll="true"',
-      "</section>",
-    );
 
-    expect(html).toContain("mt-5 max-w-full overflow-x-auto");
-    expect(calendarScroll).toContain("min-w-[480px]");
-    expect(calendarScroll).toContain(">一</span>");
-    expect(calendarScroll).toContain(">日</span>");
+    expect(html).toContain("mt-5 w-full max-w-full min-w-0");
+    expect(html).not.toContain("overflow-x-auto");
+    expect(html).not.toContain("min-w-[480px]");
+    expect(html).not.toContain('data-moon-calendar-scroll="true"');
+    expect(html).not.toContain('data-moon-calendar-inner="true"');
+    const renderedDays = html.match(/data-moon-calendar-day=/g) ?? [];
+
+    expect(html).toContain(">一</span>");
+    expect(html).toContain(">日</span>");
+    expect(renderedDays).toHaveLength(31);
     expect(html).toContain('title="娥眉月"');
     expect(html).toContain(">娥眉</p>");
     expect(html).not.toContain(">娥眉月</p>");
     expect(source).toContain("compactMoonPhaseNames");
-    expect(source).not.toContain("mt-1 truncate text-[11px] font-semibold");
+    expect(source).toContain("h-5 w-5 min-[390px]:h-6 min-[390px]:w-6");
+    expect(source).toContain("text-[10px] font-semibold");
+    expect(source).not.toContain("whitespace-nowrap");
+    expect(source).not.toContain("truncate");
   });
 });
-
-function sectionBetween(source: string, start: string, end: string): string {
-  const startIndex = source.indexOf(start);
-  if (startIndex === -1) {
-    return "";
-  }
-  const endIndex = source.indexOf(end, startIndex);
-  return source.slice(startIndex, endIndex === -1 ? undefined : endIndex + end.length);
-}

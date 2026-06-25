@@ -734,7 +734,7 @@ function RecentMembershipOrders({
 
 function MembershipOrderRow({ order }: { readonly order: AccountBillingOrderRecord }) {
   return (
-    <article className="rounded-lg border border-border bg-muted/30 p-3">
+    <article className="min-w-0 max-w-full rounded-lg border border-border bg-muted/30 p-3">
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap gap-2">
@@ -826,7 +826,7 @@ function ForecastHistoryCard({
   const history = items ?? [];
 
   return (
-    <Card className="p-5 shadow-sm sm:p-6">
+    <Card className="min-w-0 max-w-full p-5 shadow-sm sm:p-6">
       <CollapsibleSection
         title="查询历史"
         description="查询历史默认收起，展开后查看最近分析。"
@@ -890,8 +890,8 @@ function HistoryRow({
       : null;
 
   return (
-    <article className="rounded-lg border border-border bg-muted/30 p-3">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <article className="min-w-0 max-w-full rounded-lg border border-border bg-muted/30 p-3">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap gap-2">
             <Badge variant="muted">{targetLabel}</Badge>

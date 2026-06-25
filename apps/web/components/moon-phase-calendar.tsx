@@ -71,7 +71,7 @@ export function MoonPhaseCalendar({
   }
 
   return (
-    <Card className={cn("max-w-full min-w-0 overflow-hidden p-5 shadow-sm", className)}>
+    <Card className={cn("max-w-full min-w-0 overflow-hidden p-3 shadow-sm sm:p-5", className)}>
       <div className="flex flex-col gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -109,26 +109,25 @@ export function MoonPhaseCalendar({
         <MoonSummaryItem label="下弦月" day={calendar.summary.lastQuarter} />
       </div>
 
-      <div
-        className="mt-5 max-w-full overflow-x-auto rounded-lg border border-border bg-muted p-2 sm:p-3"
-        data-moon-calendar-scroll="true"
-      >
-        <div className="min-w-[480px]" data-moon-calendar-inner="true">
-          <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-muted-foreground">
-            {weekLabels.map((label) => (
-              <span key={label} className="whitespace-nowrap py-1">
-                {label}
-              </span>
-            ))}
-          </div>
-          <div className="mt-2 grid grid-cols-7 gap-1">
-            {Array.from({ length: calendar.firstDayOfWeek }, (_, index) => (
-              <span key={`empty-${index}`} aria-hidden="true" className="min-h-[76px]" />
-            ))}
-            {calendar.days.map((day) => (
-              <MoonCalendarCell key={day.date} day={day} />
-            ))}
-          </div>
+      <div className="mt-5 w-full max-w-full min-w-0 rounded-lg border border-border bg-muted p-1 min-[390px]:p-1.5 sm:p-3">
+        <div className="grid min-w-0 grid-cols-7 gap-0.5 text-center text-[10px] font-semibold text-muted-foreground min-[390px]:gap-1 min-[390px]:text-xs">
+          {weekLabels.map((label) => (
+            <span key={label} className="py-1">
+              {label}
+            </span>
+          ))}
+        </div>
+        <div className="mt-1.5 grid min-w-0 grid-cols-7 gap-0.5 min-[390px]:mt-2 min-[390px]:gap-1">
+          {Array.from({ length: calendar.firstDayOfWeek }, (_, index) => (
+            <span
+              key={`empty-${index}`}
+              aria-hidden="true"
+              className="min-h-[64px] min-[390px]:min-h-[72px] sm:min-h-[96px]"
+            />
+          ))}
+          {calendar.days.map((day) => (
+            <MoonCalendarCell key={day.date} day={day} />
+          ))}
         </div>
       </div>
     </Card>
@@ -163,27 +162,31 @@ function MoonCalendarCell({ day }: { readonly day: MoonCalendarDay }) {
 
   return (
     <div
+      data-moon-calendar-day={day.date}
       className={cn(
-        "min-h-[76px] min-w-0 rounded-lg border bg-card p-1.5 text-center shadow-sm sm:min-h-[96px] sm:p-2",
+        "min-h-[64px] min-w-0 rounded-lg border bg-card p-1 text-center shadow-sm min-[390px]:min-h-[72px] min-[390px]:p-1.5 sm:min-h-[96px] sm:p-2",
         day.isToday ? "border-primary ring-2 ring-ring" : "border-border",
         isMajorPhase && !day.isToday ? "border-accent" : "",
       )}
     >
       <div className="flex items-start justify-between gap-1">
-        <span className="text-xs font-bold text-card-foreground">{day.date.slice(-2)}</span>
+        <span className="text-[11px] font-bold text-card-foreground min-[390px]:text-xs">
+          {day.date.slice(-2)}
+        </span>
         {day.isToday ? (
-          <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-bold text-secondary-foreground">
-            今天
+          <span className="rounded-full bg-secondary px-1 py-0.5 text-[10px] font-bold text-secondary-foreground min-[390px]:px-1.5">
+            <span className="min-[390px]:hidden">今</span>
+            <span className="hidden min-[390px]:inline">今天</span>
           </span>
         ) : null}
       </div>
       <MoonPhaseIcon
         phaseValue={day.phaseValue}
         illumination={day.illumination}
-        className="mx-auto mt-1 h-7 w-7 sm:h-9 sm:w-9"
+        className="mx-auto mt-1 h-5 w-5 min-[390px]:h-6 min-[390px]:w-6 sm:h-9 sm:w-9"
       />
       <p
-        className="mt-1 whitespace-nowrap text-[11px] font-semibold leading-4 text-card-foreground"
+        className="mt-1 text-[10px] font-semibold leading-4 text-card-foreground min-[390px]:text-[11px]"
         title={day.phaseNameZh}
       >
         {compactPhaseName}
@@ -192,7 +195,7 @@ function MoonCalendarCell({ day }: { readonly day: MoonCalendarDay }) {
         {formatPercent(day.illumination)}
       </p>
       {day.lunarDateText ? (
-        <p className="hidden truncate text-[11px] leading-4 text-muted-foreground sm:block">
+        <p className="hidden text-[11px] leading-4 text-muted-foreground sm:block">
           农历{day.lunarDateText}
         </p>
       ) : null}

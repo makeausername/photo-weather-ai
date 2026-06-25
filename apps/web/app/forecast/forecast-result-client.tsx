@@ -31,7 +31,7 @@ import {
 } from "@photo-weather/shared";
 import { PublicShell } from "../../components/public-shell";
 import { MoonPhaseCalendar } from "../../components/moon-phase-calendar";
-import { Badge, Button, Card, cn } from "../../components/ui";
+import { Badge, Button, Card, ResponsiveDataScroller, cn } from "../../components/ui";
 import { saveForecastHistory } from "../../components/account-session";
 import {
   upgradeRequiredDefaultMessage,
@@ -4708,10 +4708,7 @@ function ProfessionalHourlyCloudSection({
           {rows.length} / {expectedRowCount} 小时。{professionalUsageText}
         </p>
 
-        <div
-          className="max-w-full overflow-x-auto min-w-0 rounded-lg border border-border bg-card"
-          data-cloud-sea-professional-table-scroll="true"
-        >
+        <ResponsiveDataScroller data-cloud-sea-professional-table-scroll="true">
           <table className="w-full min-w-[1280px] border-collapse text-left text-[12px] leading-5">
             <thead className="bg-muted text-xs text-muted-foreground">
               <tr>
@@ -4772,7 +4769,7 @@ function ProfessionalHourlyCloudSection({
               )}
             </tbody>
           </table>
-        </div>
+        </ResponsiveDataScroller>
       </div>
     </>
   );

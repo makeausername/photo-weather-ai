@@ -5580,7 +5580,8 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("可拍窗口</span>");
     expect(html).toContain('data-professional-hourly-row="2026-05-20T05:00:00+08:00"');
     expect(html).not.toContain('data-professional-hourly-row="2026-05-20T13:00:00+08:00"');
-    expect(html).toContain("max-w-full overflow-x-auto");
+    expect(html).toContain("w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain");
+    expect(html).toContain("[-webkit-overflow-scrolling:touch]");
     expect(html).toContain("min-w-[1280px]");
     expect(html).toContain("sticky left-0");
     expect(html).not.toContain("meteoblue");

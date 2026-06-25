@@ -391,9 +391,9 @@ export function PricingClient({
 
   return (
     <PublicShell contentClassName="pb-14">
-      <div className="grid gap-6">
-        <header className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div>
+      <div className="grid min-w-0 max-w-full gap-6">
+        <header className="flex min-w-0 max-w-full flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
             <Badge variant="muted">订阅套餐</Badge>
             <h1 className="mt-3 text-3xl font-bold tracking-normal text-foreground sm:text-[36px]">
               定价方案
@@ -405,7 +405,7 @@ export function PricingClient({
           </div>
           <Link
             href="/account"
-            className="inline-flex h-10 w-fit items-center rounded-lg border border-border bg-card px-4 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary"
+            className="inline-flex h-10 w-fit shrink-0 items-center rounded-lg border border-border bg-card px-4 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary"
           >
             查看账户权益
           </Link>
@@ -426,18 +426,20 @@ export function PricingClient({
         <section
           id="paid-plans"
           className={cn(
-            "grid gap-4",
+            "grid min-w-0 max-w-full gap-4",
             checkoutActive ? "lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start" : "",
           )}
         >
           <div
             className={cn(
-              "grid gap-3 sm:grid-cols-2",
+              "grid min-w-0 max-w-full gap-3 sm:grid-cols-2",
               checkoutActive ? "xl:grid-cols-3" : "lg:grid-cols-3",
             )}
           >
             {state === "loading" ? (
-              <Card className="p-5 text-sm text-muted-foreground">正在读取套餐...</Card>
+              <Card className="min-w-0 max-w-full p-5 text-sm text-muted-foreground">
+                正在读取套餐...
+              </Card>
             ) : null}
             {products.map((product) => (
               <PaidPlanCard
@@ -487,12 +489,12 @@ function PaidPlanCard({
   return (
     <Card
       className={cn(
-        "grid grid-rows-[auto_auto_1fr_auto] gap-4 p-5 transition",
+        "grid min-w-0 max-w-full grid-rows-[auto_auto_1fr_auto] gap-4 p-5 transition",
         selected ? "border-primary shadow-soft" : "border-border",
       )}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div>
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0">
           <div className="flex flex-wrap gap-2">
             {product.recommended ? <Badge variant="accent">推荐</Badge> : null}
             {badgeText ? <Badge variant="info">{badgeText}</Badge> : null}
@@ -504,7 +506,9 @@ function PaidPlanCard({
             <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>
           ) : null}
         </div>
-        <Badge variant="muted">{product.durationText}</Badge>
+        <Badge variant="muted" className="shrink-0">
+          {product.durationText}
+        </Badge>
       </div>
       <p className="text-2xl font-bold text-foreground">{formatPrice(product)}</p>
       <ul className="grid gap-2 text-sm leading-6 text-muted-foreground">
@@ -551,8 +555,8 @@ function CheckoutPanel({
     paymentProviderOptions.find((item) => item.value === provider)?.label ?? "微信支付";
 
   return (
-    <Card className="grid gap-4 p-5 shadow-sm">
-      <div>
+    <Card className="grid min-w-0 max-w-full gap-4 p-5 shadow-sm">
+      <div className="min-w-0">
         <h2 className="text-lg font-bold text-card-foreground">确认订单</h2>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">{pricingCheckoutIntroCopy}</p>
       </div>

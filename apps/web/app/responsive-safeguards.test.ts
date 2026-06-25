@@ -21,8 +21,9 @@ describe("responsive safeguards", () => {
       React.createElement(PublicShell, null, React.createElement("main", null, "响应式内容")),
     );
 
-    expect(html).toContain("min-h-screen overflow-x-hidden");
-    expect(html).toContain("w-full min-w-0 px-[clamp(16px,4vw,72px)]");
+    expect(html).toContain("min-h-screen bg-background");
+    expect(html).not.toContain("overflow-x-hidden bg-background");
+    expect(html).toContain("w-full max-w-full min-w-0 px-[clamp(16px,4vw,72px)]");
     expect(html).toContain("flex w-full min-w-0 items-center");
     expect(html).toContain("mx-auto flex w-full max-w-[1560px] min-w-0");
     expect(html).not.toContain("px-[clamp(24px,4vw,72px)]");
@@ -33,17 +34,26 @@ describe("responsive safeguards", () => {
     const moonSource = readAppSource("../components/moon-phase-calendar.tsx");
     const dashboardSource = readAppSource("./forecast/result-dashboard-components.tsx");
     const forecastSource = readAppSource("./forecast/forecast-result-client.tsx");
+    const pricingSource = readAppSource("./pricing/pricing-client.tsx");
     const combinedSource = [uiSource, moonSource, dashboardSource, forecastSource].join("\n");
+    const cardCalendarSource = [moonSource, dashboardSource, pricingSource].join("\n");
 
-    expect(uiSource).toContain("w-full max-w-full min-w-0 overflow-x-auto");
-    expect(moonSource).toContain('data-moon-calendar-scroll="true"');
-    expect(moonSource).toContain('className="min-w-[480px]"');
+    expect(uiSource).toContain("export function ResponsiveDataScroller");
+    expect(uiSource).toContain("w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain");
+    expect(uiSource).toContain("[-webkit-overflow-scrolling:touch]");
+    expect(moonSource).toContain("mt-5 w-full max-w-full min-w-0");
+    expect(moonSource).not.toContain("data-moon-calendar-scroll");
+    expect(moonSource).not.toContain("data-moon-calendar-inner");
+    expect(moonSource).not.toContain("min-w-[480px]");
+    expect(moonSource).not.toContain("overflow-x-auto");
     expect(dashboardSource).toContain("grid min-w-0 max-w-full items-stretch");
     expect(forecastSource).toContain('data-cloud-sea-professional-table-scroll="true"');
-    expect(forecastSource).toContain("max-w-full overflow-x-auto min-w-0");
+    expect(forecastSource).toContain("<ResponsiveDataScroller");
     expect(combinedSource).not.toContain("w-screen");
     expect(combinedSource).not.toContain("w-[100vw]");
     expect(combinedSource).not.toContain("min-w-[100vw]");
+    expect(combinedSource).not.toContain("min-w-[480px]");
+    expect(cardCalendarSource).not.toMatch(/min-w-\[(?:[3-9]\d{2,}|[1-9]\d{3,})px\]/);
   });
 });
 
