@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
 import {
   createBillingOrder,
   getBillingOrder,
@@ -21,7 +20,6 @@ export type BillingProduct = PublicBillingProduct;
 const paidPlanCodes = new Set(["monthly_full", "quarterly_full", "yearly_full"]);
 
 export const pricingCheckoutLabels = [
-  "免费版",
   "月卡",
   "季卡",
   "年卡",
@@ -234,40 +232,8 @@ export function PricingClient({
           </p>
         ) : null}
 
-        <section className="grid gap-3 lg:grid-cols-2">
-          <ComparisonCard
-            title="免费版"
-            items={["未来 24 小时基础天气", "基础结果视图", "适合临时查看近端天气"]}
-            action={
-              <Link
-                href="/#analysis"
-                className="inline-flex h-9 w-fit items-center rounded-lg border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary"
-              >
-                开始查询
-              </Link>
-            }
-          />
-          <ComparisonCard
-            title="付费套餐"
-            items={[
-              "完整摄影判断",
-              "云海 / 朝霞晚霞 / 星空银河",
-              "专业逐小时表格与历史报告",
-            ]}
-            action={
-              <a
-                href="#paid-plans"
-                className="inline-flex h-9 w-fit items-center rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
-              >
-                查看套餐
-              </a>
-            }
-          />
-        </section>
-
         <section id="paid-plans" className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <FreePlanCard loggedIn={loggedIn} />
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {state === "loading" ? (
               <Card className="p-5 text-sm text-muted-foreground">正在读取套餐...</Card>
             ) : null}
@@ -294,52 +260,6 @@ export function PricingClient({
         </section>
       </div>
     </PublicShell>
-  );
-}
-
-function ComparisonCard({
-  title,
-  items,
-  action,
-}: {
-  readonly title: string;
-  readonly items: readonly string[];
-  readonly action: ReactNode;
-}) {
-  return (
-    <Card className="p-5">
-      <h2 className="text-lg font-bold text-card-foreground">{title}</h2>
-      <ul className="mt-3 grid gap-2 text-sm leading-6 text-muted-foreground">
-        {items.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
-      <div className="mt-4">{action}</div>
-    </Card>
-  );
-}
-
-function FreePlanCard({ loggedIn }: { readonly loggedIn: boolean }) {
-  return (
-    <Card className="grid gap-4 p-5">
-      <div>
-        <Badge variant="muted">永久免费</Badge>
-        <h2 className="mt-3 text-lg font-bold text-card-foreground">免费版</h2>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">未来 24 小时基础天气。</p>
-      </div>
-      <p className="text-2xl font-bold text-foreground">¥0.00</p>
-      <ul className="grid gap-2 text-sm leading-6 text-muted-foreground">
-        <li>基础结果视图</li>
-        <li>未来 24 小时基础天气</li>
-        <li>试用到期后自动回到免费版</li>
-      </ul>
-      <Link
-        href={loggedIn ? "/account" : "/register"}
-        className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-card px-4 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary"
-      >
-        {loggedIn ? "查看账户" : "注册领取 7 天完整权限"}
-      </Link>
-    </Card>
   );
 }
 
