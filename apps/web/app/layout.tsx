@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { ThemePreferenceController } from "../components/theme-toggle";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,14 +17,32 @@ type RootLayoutProps = {
 
 const themeScript = `
 (function() {
-  try {
-    var storedTheme = window.localStorage.getItem("photo_weather_theme");
-    var theme = storedTheme === "dark" || storedTheme === "light" ? storedTheme : "light";
+  var storageKey = "photo_weather_theme";
+  var systemThemeQuery = "(prefers-color-scheme: dark)";
+
+  function getSystemTheme() {
+    if (typeof window.matchMedia === "function" && window.matchMedia(systemThemeQuery).matches) {
+      return "dark";
+    }
+
+    return "light";
+  }
+
+  function applyTheme(theme) {
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.colorScheme = theme;
+  }
+
+  try {
+    var storedTheme = window.localStorage.getItem(storageKey);
+    var preference =
+      storedTheme === "system" || storedTheme === "dark" || storedTheme === "light"
+        ? storedTheme
+        : "system";
+    var theme = preference === "system" ? getSystemTheme() : preference;
+    applyTheme(theme);
   } catch (error) {
-    document.documentElement.dataset.theme = "light";
-    document.documentElement.style.colorScheme = "light";
+    applyTheme("light");
   }
 })();
 `;
@@ -34,7 +53,10 @@ export default function RootLayout({ children }: RootLayoutProps) {
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body>{children}</body>
+      <body>
+        <ThemePreferenceController />
+        {children}
+      </body>
     </html>
   );
 }
