@@ -395,7 +395,7 @@ function sourcePriority(candidate: HourlyCandidate): number {
   if (candidate.providerId === openMeteoIconCloudLayerProviderName) {
     return 0;
   }
-  if (candidate.providerId === openMeteoForecastCloudLayerProviderName) {
+  if (isOpenMeteoForecastProviderId(candidate.providerId)) {
     return 1;
   }
   if (
@@ -418,6 +418,13 @@ function sourcePriority(candidate: HourlyCandidate): number {
   const order: readonly WeatherProviderCode[] = ["meteoblue", "qweather", "mock"];
   const index = order.indexOf(candidate.bundle.providerCode);
   return index === -1 ? order.length + 1 : index + 2;
+}
+
+function isOpenMeteoForecastProviderId(providerId: string | undefined): boolean {
+  return (
+    providerId === openMeteoForecastCloudLayerProviderName ||
+    providerId?.startsWith(`${openMeteoForecastCloudLayerProviderName}:`) === true
+  );
 }
 
 function hasCompleteCloudLayerGroup(hour: NormalizedHourlyWeather): boolean {

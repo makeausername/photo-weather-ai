@@ -60,6 +60,8 @@ export const openMeteoCustomerEndpoint = "https://customer-api.open-meteo.com";
 
 export const openMeteoDefaultModel = "forecast";
 
+export const openMeteoForecastModelListDefault = "best_match,gfs_seamless,gfs_global";
+
 export const openMeteoModeOptions = [
   {
     value: "free",
@@ -262,6 +264,16 @@ export const providerFieldPresets = [
         label: "模型偏好",
         target: "configJson",
         placeholder: "best_match",
+        advanced: true,
+      },
+      {
+        key: "modelList",
+        label: "模型列表",
+        target: "configJson",
+        placeholder: openMeteoForecastModelListDefault,
+        defaultValue: openMeteoForecastModelListDefault,
+        helpText:
+          "用英文逗号分隔，系统会把多个模型作为独立校验源参与融合；普通生产建议保留默认。",
         advanced: true,
       },
       {

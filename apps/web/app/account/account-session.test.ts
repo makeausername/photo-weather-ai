@@ -267,6 +267,38 @@ describe("public account navigation", () => {
     expect(html).not.toContain("管理后台入口");
   });
 
+  it("keeps desktop account menu content positioned as a dropdown", () => {
+    const html = renderPublicAccountMenu({ placement: "dropdown" });
+
+    expect(html).toContain("absolute right-0 z-50");
+    expect(html).toContain("min-w-48");
+    expect(html).not.toContain("w-full max-w-full min-w-0");
+  });
+
+  it("renders mobile account menu content in flow without dropdown positioning", () => {
+    const html = renderPublicAccountMenu({ placement: "inline" });
+
+    expect(html).toContain("w-full max-w-full min-w-0");
+    expect(html).not.toContain("absolute right-0");
+    expect(html).not.toContain("z-50");
+  });
+
+  it("wires mobile account menu navigation and logout callbacks", () => {
+    const onNavigate = vi.fn();
+    const onLogout = vi.fn();
+    const children = getPublicAccountMenuChildren({ placement: "inline", onNavigate, onLogout });
+    const accountLink = children.find((child) => child.props.href === "/account");
+    const logoutButton = children.find((child) => child.type === "button");
+
+    expect(accountLink?.props.onNavigate).toBe(onNavigate);
+    accountLink?.props.onNavigate?.();
+    expect(onNavigate).toHaveBeenCalledTimes(1);
+
+    expect(logoutButton?.props.onClick).toBe(onLogout);
+    logoutButton?.props.onClick?.();
+    expect(onLogout).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps admin entry out of the header menu even when admin-like menu state is passed", () => {
     const html = renderPublicAccountMenu({
       session: {
@@ -1098,6 +1130,22 @@ function renderPublicAccountMenu(extraProps: Record<string, unknown> = {}): stri
       onLogout: () => undefined,
     } as React.ComponentProps<typeof PublicAccountMenuContent> & Record<string, unknown>),
   );
+}
+
+type PublicAccountMenuChildProps = {
+  readonly href?: string;
+  readonly onNavigate?: () => void;
+  readonly onClick?: () => void;
+};
+
+function getPublicAccountMenuChildren(
+  props: React.ComponentProps<typeof PublicAccountMenuContent>,
+): Array<React.ReactElement<PublicAccountMenuChildProps>> {
+  const menu = PublicAccountMenuContent(props);
+
+  return React.Children.toArray(menu.props.children).filter(
+    React.isValidElement,
+  ) as Array<React.ReactElement<PublicAccountMenuChildProps>>;
 }
 
 describe("login error sanitization", () => {

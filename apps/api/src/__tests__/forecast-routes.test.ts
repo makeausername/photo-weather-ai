@@ -1205,6 +1205,117 @@ describe("forecast query validation route", () => {
     expect(JSON.stringify(body)).not.toContain("meteoblue-secret");
   });
 
+  it("keeps forecast calculation available when one Open-Meteo model fails", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    configureRealWeatherProviders(state);
+    const openMeteoProvider = state.providers.get("weather:open_meteo");
+    state.providers.set("weather:open_meteo", {
+      ...openMeteoProvider,
+      configJson: {
+        ...(openMeteoProvider.configJson ?? {}),
+        realCallEnabled: true,
+        mode: "free",
+        modelList: "best_match,gfs_seamless",
+      },
+    });
+    const requestedOpenMeteoModels: string[] = [];
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("qweather.example/v7/weather/now")) {
+        return new Response(
+          JSON.stringify({
+            code: "200",
+            now: {
+              obsTime: "2026-05-20T00:00:00+08:00",
+              temp: "13",
+              feelsLike: "11",
+              icon: "101",
+              text: "澶氫簯",
+              wind360: "120",
+              windSpeed: "9",
+              humidity: "82",
+              pressure: "1008",
+              vis: "22",
+              cloud: "52",
+              dew: "10",
+            },
+          }),
+        );
+      }
+      if (url.includes("qweather.example/v7/weather/")) {
+        return new Response(
+          JSON.stringify(
+            url.includes("7d") ? buildQWeatherDailyPayload() : buildQWeatherHourlyPayload(),
+          ),
+        );
+      }
+      if (url.includes("api.open-meteo.com/v1/forecast")) {
+        const model = new URL(url).searchParams.get("models") ?? "missing";
+        requestedOpenMeteoModels.push(model);
+        if (model === "gfs_seamless") {
+          return new Response(JSON.stringify({ reason: "unsupported model variables" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify(buildOpenMeteoPayload()));
+      }
+      if (url.includes("my.meteoblue.com/packages/basic-1h_clouds-1h")) {
+        return new Response(JSON.stringify(buildMeteobluePayload()));
+      }
+
+      throw new Error(`unexpected test URL: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: forecastTestAuthConfig,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+        ENABLE_ASTRO_SERVICE: "false",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        target: "general",
+        horizon: "48h",
+      },
+    });
+    const body = response.json();
+    const openMeteoSummaries = body.weatherSourceSummaries.filter(
+      (summary: { providerCode: string }) => summary.providerCode === "open_meteo",
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(body.weatherDataMode).toBe("real");
+    expect(requestedOpenMeteoModels).toEqual(
+      expect.arrayContaining(["icon_global", "best_match", "gfs_seamless"]),
+    );
+    expect(openMeteoSummaries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          providerId: "openMeteoForecastCloudLayerProvider:best_match",
+          modelName: "best_match",
+          success: true,
+        }),
+        expect.objectContaining({
+          providerId: "openMeteoForecastCloudLayerProvider:gfs_seamless",
+          modelName: "gfs_seamless",
+          success: false,
+          errorCategory: "provider_error",
+        }),
+      ]),
+    );
+    expect(JSON.stringify(body)).not.toContain("qweather-secret");
+    expect(JSON.stringify(body)).not.toContain("meteoblue-secret");
+  });
+
   it("requests buffered provider coverage before clipping future48 Cloud Sea display rows", async () => {
     const { client, state } = await createFakeDatabaseClient();
     configureRealWeatherProviders(state);

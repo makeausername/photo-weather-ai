@@ -15,6 +15,7 @@ import {
   openMeteoIconCloudLayerParserVersion,
   OpenMeteoForecastCloudLayerClient,
   OpenMeteoForecastCloudLayerProvider,
+  openMeteoForecastCloudLayerParserVersion,
   OpenMeteoAirQualityClient,
   OpenMeteoProvider,
   QWeatherClient,
@@ -45,6 +46,9 @@ import {
 } from "@photo-weather/shared";
 
 const meteoblueParserVersion = "meteoblue-data1h-time-v3";
+export const openMeteoForecastCloudLayerDefaultModelList =
+  "best_match,gfs_seamless,gfs_global";
+const openMeteoForecastModelListLimit = 5;
 
 export type WeatherProviderRuntimeOptions = {
   readonly dbClient?: DatabaseClient;
@@ -90,6 +94,7 @@ export type ResolvedOpenMeteoRuntimeConfig = {
   readonly customerEndpoint?: string;
   readonly defaultModel: string;
   readonly modelPreference?: string;
+  readonly modelList: readonly string[];
   readonly iconModel: string;
   readonly timezone: string;
   readonly timeoutMs: number;
@@ -382,6 +387,62 @@ function serializeMeteobluePackageList(value: JsonValue | string | undefined): s
   return normalizeMeteobluePackageList(value).join(",");
 }
 
+export function normalizeOpenMeteoForecastModelList(
+  value: JsonValue | string | undefined,
+): readonly string[] {
+  const rawModels = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(",")
+      : [];
+  const models: string[] = [];
+
+  for (const item of rawModels) {
+    const model = typeof item === "string" ? item.trim() : "";
+    if (!/^[A-Za-z0-9_-]+$/.test(model) || models.includes(model)) {
+      continue;
+    }
+    models.push(model);
+    if (models.length >= openMeteoForecastModelListLimit) {
+      break;
+    }
+  }
+
+  return models;
+}
+
+function defaultOpenMeteoForecastModelList(): readonly string[] {
+  return normalizeOpenMeteoForecastModelList(openMeteoForecastCloudLayerDefaultModelList);
+}
+
+function resolveOpenMeteoForecastModelList(input: {
+  readonly configuredModelList?: JsonValue | string;
+  readonly envModelList?: string;
+  readonly modelPreference?: string;
+}): readonly string[] {
+  const explicitSource = input.configuredModelList ?? input.envModelList;
+  if (explicitSource !== undefined) {
+    const explicitModels = normalizeOpenMeteoForecastModelList(explicitSource);
+    return explicitModels.length > 0 ? explicitModels : defaultOpenMeteoForecastModelList();
+  }
+
+  const preferredModels = normalizeOpenMeteoForecastModelList(input.modelPreference);
+  if (preferredModels.length > 0) {
+    return normalizeOpenMeteoForecastModelList([
+      ...preferredModels,
+      "gfs_seamless",
+      "gfs_global",
+    ]);
+  }
+
+  return defaultOpenMeteoForecastModelList();
+}
+
+function serializeOpenMeteoForecastModelList(value: JsonValue | string | undefined): string {
+  const models = normalizeOpenMeteoForecastModelList(value);
+  return (models.length > 0 ? models : defaultOpenMeteoForecastModelList()).join(",");
+}
+
 export function resolveQWeatherRuntimeConfig(
   provider: ProviderConfigRecord | null,
   env: NodeJS.ProcessEnv = process.env,
@@ -437,6 +498,15 @@ export function resolveOpenMeteoRuntimeConfig(
   const customerEndpoint = normalizeEndpoint(configuredCustomerEndpoint, openMeteoCustomerEndpoint);
   const realCallEnabled = readWeatherRealCallEnabled(provider, env, "open_meteo");
   const endpoint = mode === "customer" ? customerEndpoint : openMeteoFreeEndpoint;
+  const modelPreference =
+    readString(configJson.modelPreference) ?? readEnvString(env.OPEN_METEO_MODEL_PREFERENCE);
+  const modelList = resolveOpenMeteoForecastModelList({
+    configuredModelList: Object.prototype.hasOwnProperty.call(configJson, "modelList")
+      ? configJson.modelList
+      : undefined,
+    envModelList: readEnvString(env.OPEN_METEO_MODEL_LIST),
+    modelPreference,
+  });
 
   return {
     enabled: provider?.enabled ?? readEnvBoolean(env.OPEN_METEO_ENABLED) ?? false,
@@ -456,8 +526,8 @@ export function resolveOpenMeteoRuntimeConfig(
       readString(configJson.defaultModel) ??
       readEnvString(env.OPEN_METEO_DEFAULT_MODEL) ??
       openMeteoDefaultModel,
-    modelPreference:
-      readString(configJson.modelPreference) ?? readEnvString(env.OPEN_METEO_MODEL_PREFERENCE),
+    modelPreference,
+    modelList,
     iconModel:
       readString(configJson.iconModel) ??
       readEnvString(env.OPEN_METEO_ICON_MODEL) ??
@@ -569,6 +639,7 @@ export function normalizeOpenMeteoAdminConfigJson(
     mode,
     baseUrl: readString(current.baseUrl) ?? openMeteoDefaultBaseUrl,
     defaultModel: readString(current.defaultModel) ?? openMeteoDefaultModel,
+    modelList: serializeOpenMeteoForecastModelList(current.modelList),
     iconModel: readString(current.iconModel) ?? openMeteoIconCloudLayerDefaultModel,
     timezone: readString(current.timezone) ?? "Asia/Shanghai",
     timeoutMs: clampInteger(readNumber(current.timeoutMs), weatherDefaultTimeoutMs, 1000, 30000),
@@ -749,23 +820,26 @@ async function resolveRuntimeWeatherProviders(
           }),
         }),
       );
-      providers.push(
-        new OpenMeteoForecastCloudLayerProvider({
-          client: new OpenMeteoForecastCloudLayerClient({
-            endpoint: openMeteo.mode === "customer" ? openMeteo.endpoint : openMeteo.baseUrl,
-            mode: openMeteo.mode,
-            apiKey: openMeteo.apiKey,
-            timezone: openMeteo.timezone,
-            timeoutMs: openMeteo.timeoutMs,
-            retryCount: openMeteo.retryCount,
+      for (const modelName of openMeteo.modelList) {
+        providers.push(
+          new OpenMeteoForecastCloudLayerProvider({
+            client: new OpenMeteoForecastCloudLayerClient({
+              endpoint: openMeteo.mode === "customer" ? openMeteo.endpoint : openMeteo.baseUrl,
+              mode: openMeteo.mode,
+              apiKey: openMeteo.apiKey,
+              timezone: openMeteo.timezone,
+              timeoutMs: openMeteo.timeoutMs,
+              retryCount: openMeteo.retryCount,
+              modelName,
+            }),
+            airQualityClient: new OpenMeteoAirQualityClient({
+              timezone: openMeteo.timezone,
+              timeoutMs: openMeteo.timeoutMs,
+              retryCount: openMeteo.retryCount,
+            }),
           }),
-          airQualityClient: new OpenMeteoAirQualityClient({
-            timezone: openMeteo.timezone,
-            timeoutMs: openMeteo.timeoutMs,
-            retryCount: openMeteo.retryCount,
-          }),
-        }),
-      );
+        );
+      }
     } else if (!openMeteo.realCallEnabled) {
       providers.push(new OpenMeteoProvider());
     } else {
@@ -833,8 +907,21 @@ function buildRuntimeSnapshot(
       parserVersion: openMeteoIconCloudLayerParserVersion,
       modelFamily: "icon",
       modelName: openMeteo.modelPreference ?? openMeteo.iconModel,
+      modelList: openMeteo.modelList,
       configUpdatedAt: openMeteo.configUpdatedAt,
     },
+    ...openMeteo.modelList.map((modelName) => ({
+      providerCode: "open_meteo",
+      enabled: openMeteo.enabled,
+      realCallEnabled: openMeteo.realCallEnabled,
+      apiKeyPresent: openMeteo.apiKeyPresent,
+      endpoint: openMeteo.endpoint,
+      baseUrl: openMeteo.baseUrl,
+      parserVersion: openMeteoForecastCloudLayerParserVersion,
+      modelFamily: "open_meteo",
+      modelName,
+      configUpdatedAt: openMeteo.configUpdatedAt,
+    })),
     {
       providerCode: "meteoblue",
       enabled: meteoblue.enabled,
@@ -862,6 +949,7 @@ function buildRuntimeCacheNamespace(snapshot: readonly ForecastProviderRuntimeSn
       parserVersion: provider.parserVersion,
       modelFamily: provider.modelFamily,
       modelName: provider.modelName,
+      modelList: provider.modelList,
       configUpdatedAt: provider.configUpdatedAt,
     })),
   );

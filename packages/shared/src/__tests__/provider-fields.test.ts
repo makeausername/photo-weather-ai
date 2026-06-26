@@ -66,6 +66,12 @@ describe("provider field presets", () => {
           target: "secretJson",
         }),
         expect.objectContaining({ key: "customerEndpoint", target: "configJson" }),
+        expect.objectContaining({
+          key: "modelList",
+          target: "configJson",
+          defaultValue: "best_match,gfs_seamless,gfs_global",
+          advanced: true,
+        }),
         expect.objectContaining({ key: "defaultModel", target: "configJson", advanced: true }),
       ]),
     );

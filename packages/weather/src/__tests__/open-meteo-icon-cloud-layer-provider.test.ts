@@ -3,10 +3,10 @@ import {
   buildOpenMeteoIconCloudLayerUrl,
   buildOpenMeteoForecastCloudLayerUrl,
   normalizeOpenMeteoIconCloudLayers,
-  openMeteoForecastCloudLayerProviderName,
   OpenMeteoIconCloudLayerClient,
   openMeteoIconCloudLayerProviderName,
   OpenMeteoIconCloudLayerProvider,
+  openMeteoForecastCloudLayerProviderId,
   OpenMeteoForecastCloudLayerClient,
   OpenMeteoForecastCloudLayerProvider,
   WeatherIntelligenceService,
@@ -98,6 +98,7 @@ describe("OpenMeteoIconCloudLayerProvider", () => {
           timezone: "Asia/Shanghai",
           timeoutMs: 1000,
           retryCount: 0,
+          modelName: "gfs_seamless",
         },
         {
           coordinates,
@@ -110,7 +111,7 @@ describe("OpenMeteoIconCloudLayerProvider", () => {
 
     expect(url.origin).toBe("https://api.open-meteo.com");
     expect(url.pathname).toBe("/v1/forecast");
-    expect(url.searchParams.get("models")).toBeNull();
+    expect(url.searchParams.get("models")).toBe("gfs_seamless");
     expect(url.searchParams.get("forecast_hours")).toBe("54");
     expect(url.searchParams.get("forecast_days")).toBe("3");
     expect(url.searchParams.get("timezone")).toBe("Asia/Shanghai");
@@ -128,6 +129,51 @@ describe("OpenMeteoIconCloudLayerProvider", () => {
         "visibility",
       ]),
     );
+  });
+
+  it("builds a standard Open-Meteo Forecast URL for gfs_global", () => {
+    const url = new URL(
+      buildOpenMeteoForecastCloudLayerUrl(
+        {
+          endpoint: "https://api.open-meteo.com/v1",
+          mode: "free",
+          timezone: "Asia/Shanghai",
+          timeoutMs: 1000,
+          retryCount: 0,
+          modelName: "gfs_global",
+        },
+        {
+          coordinates,
+          forecastHours: 72,
+        },
+      ),
+    );
+
+    expect(url.searchParams.get("models")).toBe("gfs_global");
+    expect(url.searchParams.get("forecast_hours")).toBe("72");
+  });
+
+  it("defaults the standard Open-Meteo Forecast provider to best_match", async () => {
+    let requestedUrl: string | undefined;
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      requestedUrl = String(input);
+      return new Response(JSON.stringify(payload({ hours: 72 })));
+    });
+    const client = new OpenMeteoForecastCloudLayerClient({
+      endpoint: "https://api.open-meteo.com",
+      timeoutMs: 1000,
+      retryCount: 0,
+      fetcher: fetcher as unknown as typeof fetch,
+    });
+
+    const result = await client.fetchCloudLayers({
+      coordinates,
+      forecastHours: 72,
+    });
+
+    expect(client.modelName).toBe("best_match");
+    expect(result.modelName).toBe("best_match");
+    expect(new URL(requestedUrl!).searchParams.get("models")).toBe("best_match");
   });
 
   it("normalizes same-source total, low, mid, and high cloud layers without filling gaps", () => {
@@ -313,7 +359,7 @@ describe("OpenMeteoIconCloudLayerProvider", () => {
     expect(bundle.fusionSummary?.cloudLayerCoverage?.providerCoverageSummary).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          providerId: openMeteoForecastCloudLayerProviderName,
+          providerId: openMeteoForecastCloudLayerProviderId("best_match"),
           returnedHours: 72,
           cloudLowHours: 72,
           cloudMidHours: 72,
@@ -326,6 +372,84 @@ describe("OpenMeteoIconCloudLayerProvider", () => {
           cloudMidHours: 0,
           cloudHighHours: 0,
           error: expect.any(String),
+        }),
+      ]),
+    );
+  });
+
+  it("keeps multiple Open-Meteo Forecast models as distinct source summaries", async () => {
+    const gfsSeamlessFetcher = vi.fn(
+      async () => new Response(JSON.stringify(payload({ hours: 72 }))),
+    );
+    const gfsGlobalFetcher = vi.fn(async () => {
+      const body = payload({ hours: 72 }) as unknown as {
+        hourly: {
+          cloud_cover_low: unknown[];
+          cloud_cover_mid: unknown[];
+          cloud_cover_high: unknown[];
+        };
+      };
+      body.hourly.cloud_cover_low = Array.from({ length: 72 }, () => 18);
+      body.hourly.cloud_cover_mid = Array.from({ length: 72 }, () => 44);
+      body.hourly.cloud_cover_high = Array.from({ length: 72 }, () => 57);
+      return new Response(JSON.stringify(body));
+    });
+    const service = new WeatherIntelligenceService({
+      providers: [
+        new OpenMeteoForecastCloudLayerProvider({
+          client: new OpenMeteoForecastCloudLayerClient({
+            endpoint: "https://api.open-meteo.com",
+            timeoutMs: 1000,
+            retryCount: 0,
+            modelName: "gfs_seamless",
+            fetcher: gfsSeamlessFetcher,
+          }),
+        }),
+        new OpenMeteoForecastCloudLayerProvider({
+          client: new OpenMeteoForecastCloudLayerClient({
+            endpoint: "https://api.open-meteo.com",
+            timeoutMs: 1000,
+            retryCount: 0,
+            modelName: "gfs_global",
+            fetcher: gfsGlobalFetcher,
+          }),
+        }),
+      ],
+    });
+
+    const bundle = await service.getWeatherDataBundle(requestInput());
+    const summaries = bundle.sourceSummaries?.filter(
+      (summary) => summary.providerCode === "open_meteo",
+    );
+
+    expect(gfsSeamlessFetcher).toHaveBeenCalled();
+    expect(gfsGlobalFetcher).toHaveBeenCalled();
+    expect(summaries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          providerId: openMeteoForecastCloudLayerProviderId("gfs_seamless"),
+          modelFamily: "open_meteo",
+          modelName: "gfs_seamless",
+          success: true,
+        }),
+        expect.objectContaining({
+          providerId: openMeteoForecastCloudLayerProviderId("gfs_global"),
+          modelFamily: "open_meteo",
+          modelName: "gfs_global",
+          success: true,
+        }),
+      ]),
+    );
+    expect(new Set(summaries?.map((summary) => summary.providerId)).size).toBe(2);
+    expect(bundle.fusionSummary?.cloudLayerCoverage?.providerCoverageSummary).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          providerId: openMeteoForecastCloudLayerProviderId("gfs_seamless"),
+          modelName: "gfs_seamless",
+        }),
+        expect.objectContaining({
+          providerId: openMeteoForecastCloudLayerProviderId("gfs_global"),
+          modelName: "gfs_global",
         }),
       ]),
     );

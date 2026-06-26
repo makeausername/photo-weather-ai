@@ -33,6 +33,12 @@ export const openMeteoForecastCloudLayerDefaultModel = "best_match";
 export const openMeteoForecastCloudLayerParserVersion =
   "open-meteo-forecast-cloud-layer-v1";
 
+export function openMeteoForecastCloudLayerProviderId(modelName: string): string {
+  return `${openMeteoForecastCloudLayerProviderName}:${normalizeOpenMeteoForecastModelName(
+    modelName,
+  )}`;
+}
+
 const openMeteoForecastHourlyFields = [
   "cloud_cover",
   "cloud_cover_low",
@@ -79,6 +85,7 @@ export type OpenMeteoForecastCloudLayerClientOptions = {
   readonly timezone?: string;
   readonly timeoutMs?: number;
   readonly retryCount?: number;
+  readonly modelName?: string;
   readonly fetcher?: typeof fetch;
 };
 
@@ -87,6 +94,7 @@ export type OpenMeteoForecastCloudLayerRequest = {
   readonly elevationMeters?: number;
   readonly forecastHours?: number;
   readonly timezone?: string;
+  readonly modelName?: string;
 };
 
 export type OpenMeteoForecastCloudLayerFetchResult<TBody> = {
@@ -102,7 +110,7 @@ export type OpenMeteoForecastCloudLayerFetchResult<TBody> = {
 
 type OpenMeteoForecastCloudLayerMetadata = {
   readonly sourceFamily: "open_meteo";
-  readonly modelFamily: "best_match";
+  readonly modelFamily: "open_meteo";
   readonly modelName: string;
   readonly basis: "explicit_cloud_layers";
   readonly requestedForecastHours: number;
@@ -115,7 +123,7 @@ type OpenMeteoForecastCloudLayerMetadata = {
 export type OpenMeteoForecastCloudLayerUrlOptions = Required<
   Pick<
     OpenMeteoForecastCloudLayerClientOptions,
-    "endpoint" | "mode" | "timezone" | "timeoutMs" | "retryCount"
+    "endpoint" | "mode" | "timezone" | "timeoutMs" | "retryCount" | "modelName"
   >
 > &
   Pick<OpenMeteoForecastCloudLayerClientOptions, "apiKey">;
@@ -125,7 +133,7 @@ export class OpenMeteoForecastCloudLayerClient {
   private readonly options: Required<
     Pick<
       OpenMeteoForecastCloudLayerClientOptions,
-      "endpoint" | "mode" | "timezone" | "timeoutMs" | "retryCount"
+      "endpoint" | "mode" | "timezone" | "timeoutMs" | "retryCount" | "modelName"
     >
   > &
     Pick<OpenMeteoForecastCloudLayerClientOptions, "apiKey">;
@@ -138,14 +146,23 @@ export class OpenMeteoForecastCloudLayerClient {
       timezone: options.timezone ?? "Asia/Shanghai",
       timeoutMs: options.timeoutMs ?? 10000,
       retryCount: options.retryCount ?? 1,
+      modelName: normalizeOpenMeteoForecastModelName(options.modelName),
     };
     this.fetcher = options.fetcher ?? fetch;
+  }
+
+  get modelName(): string {
+    return this.options.modelName;
   }
 
   async fetchCloudLayers(
     request: OpenMeteoForecastCloudLayerRequest,
   ): Promise<OpenMeteoForecastCloudLayerFetchResult<Record<string, unknown>>> {
-    return this.fetchJson(buildOpenMeteoForecastCloudLayerUrl(this.options, request), request);
+    const modelName = normalizeOpenMeteoForecastModelName(request.modelName, this.options.modelName);
+    return this.fetchJson(
+      buildOpenMeteoForecastCloudLayerUrl({ ...this.options, modelName }, request),
+      { ...request, modelName },
+    );
   }
 
   private async fetchJson(
@@ -166,7 +183,7 @@ export class OpenMeteoForecastCloudLayerClient {
         });
         const text = await response.text();
         const latencyMs = Date.now() - startedAt;
-        const body = parseJsonBody(text, latencyMs);
+        const body = parseJsonBody(text, latencyMs, request.modelName);
 
         if (response.status >= 500 && attempt < attempts) {
           lastError = openMeteoForecastError({
@@ -174,7 +191,7 @@ export class OpenMeteoForecastCloudLayerClient {
             messageZh: "云层分层补全源暂不可用。",
             statusCode: response.status,
             latencyMs,
-          });
+          }, request.modelName);
           continue;
         }
 
@@ -188,7 +205,7 @@ export class OpenMeteoForecastCloudLayerClient {
                 : "云层分层补全源暂不可用。",
             statusCode: response.status,
             latencyMs,
-          });
+          }, request.modelName);
         }
 
         return {
@@ -202,10 +219,14 @@ export class OpenMeteoForecastCloudLayerClient {
             typeof request.elevationMeters === "number" && Number.isFinite(request.elevationMeters)
               ? "explicit_elevation"
               : "default_dem",
-          modelName: openMeteoForecastCloudLayerDefaultModel,
+          modelName: normalizeOpenMeteoForecastModelName(request.modelName),
         };
       } catch (error) {
-        lastError = normalizeOpenMeteoForecastError(error, Date.now() - startedAt);
+        lastError = normalizeOpenMeteoForecastError(
+          error,
+          Date.now() - startedAt,
+          request.modelName,
+        );
         if (attempt >= attempts) {
           throw lastError;
         }
@@ -221,25 +242,34 @@ export class OpenMeteoForecastCloudLayerClient {
 }
 
 export class OpenMeteoForecastCloudLayerProvider implements WeatherProvider {
-  readonly source = source;
+  readonly source;
 
   private readonly forecastRequests = new Map<
     string,
     Promise<OpenMeteoForecastCloudLayerFetchResult<Record<string, unknown>>>
   >();
   private readonly metadataByKey = new Map<string, OpenMeteoForecastCloudLayerMetadata>();
+  private readonly modelName: string;
+  private readonly providerId: string;
 
   constructor(
     private readonly options: {
       readonly client: OpenMeteoForecastCloudLayerClient;
       readonly airQualityClient?: OpenMeteoAirQualityClient;
     },
-  ) {}
+  ) {
+    this.modelName = options.client.modelName;
+    this.providerId = openMeteoForecastCloudLayerProviderId(this.modelName);
+    this.source = {
+      ...source,
+      displayName: `${source.displayName} (${this.modelName})`,
+    };
+  }
 
   async getCurrentWeather(input: WeatherRequestInput): Promise<CurrentWeather> {
     const firstHour = (await this.getHourlyForecast(input))[0];
     if (!firstHour) {
-      throw openMeteoForecastError({
+      throw this.openMeteoForecastError({
         errorCategory: "parse_error",
         messageZh: "云层分层补全源未返回可用小时数据。",
       });
@@ -269,9 +299,9 @@ export class OpenMeteoForecastCloudLayerProvider implements WeatherProvider {
         forecastHours: input.hours,
       })
         .slice(0, responseHoursForRequest(input))
-        .map(markOpenMeteoForecastHour);
+        .map((hour) => markOpenMeteoForecastHour(hour, this.forecastSourceMetadata()));
     } catch (error) {
-      throw openMeteoForecastError({
+      throw this.openMeteoForecastError({
         errorCategory: "parse_error",
         messageZh: "云层分层补全源返回格式异常。",
         cause: error,
@@ -306,7 +336,9 @@ export class OpenMeteoForecastCloudLayerProvider implements WeatherProvider {
   }
 
   normalizeHourlyWeather(input: unknown): readonly NormalizedHourlyWeather[] {
-    return normalizeOpenMeteoIconCloudLayers(input).map(markOpenMeteoForecastHour);
+    return normalizeOpenMeteoIconCloudLayers(input).map((hour) =>
+      markOpenMeteoForecastHour(hour, this.forecastSourceMetadata()),
+    );
   }
 
   normalizeDailyWeather(input: unknown): readonly NormalizedDailyWeather[] {
@@ -342,7 +374,7 @@ export class OpenMeteoForecastCloudLayerProvider implements WeatherProvider {
     }
 
     return {
-      providerId: openMeteoForecastCloudLayerProviderName,
+      providerId: this.providerId,
       sourceFamily: metadata.sourceFamily,
       modelFamily: metadata.modelFamily,
       modelName: metadata.modelName,
@@ -373,11 +405,12 @@ export class OpenMeteoForecastCloudLayerProvider implements WeatherProvider {
         elevationMeters: input.elevationMeters,
         forecastHours: requestedForecastHours(input.hours),
         timezone: input.timezone,
+        modelName: this.modelName,
       })
       .then((result) => {
         this.metadataByKey.set(key, {
           sourceFamily: "open_meteo",
-          modelFamily: "best_match",
+          modelFamily: "open_meteo",
           modelName: result.modelName,
           basis: "explicit_cloud_layers",
           requestedForecastHours: result.requestedForecastHours,
@@ -404,7 +437,27 @@ export class OpenMeteoForecastCloudLayerProvider implements WeatherProvider {
       expectedRowCount: input.expectedRowCount,
       providerCoverageVersion: input.providerCoverageVersion,
       timezone: input.timezone,
+      modelName: this.modelName,
     });
+  }
+
+  private forecastSourceMetadata(): {
+    readonly sourceId: string;
+    readonly modelName: string;
+  } {
+    return {
+      sourceId: this.providerId,
+      modelName: this.modelName,
+    };
+  }
+
+  private openMeteoForecastError(
+    options: Omit<
+      ConstructorParameters<typeof WeatherProviderError>[0],
+      "providerCode" | "providerLabelZh" | "dataMode"
+    >,
+  ): WeatherProviderError {
+    return openMeteoForecastError(options, this.modelName);
   }
 }
 
@@ -425,6 +478,10 @@ export function buildOpenMeteoForecastCloudLayerUrl(
   url.searchParams.set("wind_speed_unit", "ms");
   url.searchParams.set("precipitation_unit", "mm");
   url.searchParams.set("timeformat", "iso8601");
+  const modelName = normalizeOpenMeteoForecastModelName(options.modelName);
+  if (modelName.length > 0) {
+    url.searchParams.set("models", modelName);
+  }
 
   if (typeof request.elevationMeters === "number" && Number.isFinite(request.elevationMeters)) {
     url.searchParams.set("elevation", formatNumber(request.elevationMeters));
@@ -436,17 +493,27 @@ export function buildOpenMeteoForecastCloudLayerUrl(
   return url.toString();
 }
 
-function markOpenMeteoForecastHour(hour: NormalizedHourlyWeather): NormalizedHourlyWeather {
+function markOpenMeteoForecastHour(
+  hour: NormalizedHourlyWeather,
+  metadata: {
+    readonly sourceId: string;
+    readonly modelName: string;
+  },
+): NormalizedHourlyWeather {
   return {
     ...hour,
     providerLabelZh: source.providerLabelZh,
     dataMode: source.mode,
-    fieldMetadata: markFieldMetadata(hour.fieldMetadata),
+    fieldMetadata: markFieldMetadata(hour.fieldMetadata, metadata),
   };
 }
 
 function markFieldMetadata(
   metadata: NormalizedWeatherFieldMetadataMap | undefined,
+  forecastMetadata: {
+    readonly sourceId: string;
+    readonly modelName: string;
+  },
 ): NormalizedWeatherFieldMetadataMap | undefined {
   if (!metadata) {
     return metadata;
@@ -459,8 +526,8 @@ function markFieldMetadata(
         ? {
             ...value,
             providerLabelZh: source.providerLabelZh,
-            sourceId: openMeteoForecastCloudLayerProviderName,
-            modelName: openMeteoForecastCloudLayerDefaultModel,
+            sourceId: forecastMetadata.sourceId,
+            modelName: forecastMetadata.modelName,
           }
         : value,
     ]),
@@ -472,31 +539,46 @@ function openMeteoForecastError(
     ConstructorParameters<typeof WeatherProviderError>[0],
     "providerCode" | "providerLabelZh" | "dataMode"
   >,
+  modelName = openMeteoForecastCloudLayerDefaultModel,
 ): WeatherProviderError {
+  const normalizedModelName = normalizeOpenMeteoForecastModelName(modelName);
   return new WeatherProviderError({
     providerCode: source.providerCode,
     providerLabelZh: source.providerLabelZh,
     dataMode: source.mode,
     sourceSummaryMetadata: {
-      providerId: openMeteoForecastCloudLayerProviderName,
+      providerId: openMeteoForecastCloudLayerProviderId(normalizedModelName),
       availableFields: [],
       extractedFields: [],
       missingFields: ["cloudTotal", "cloudLow", "cloudMid", "cloudHigh"],
       diagnosticStatus: "forecast_layer_source_failed",
       parserVersion: openMeteoForecastCloudLayerParserVersion,
+      sourceFamily: "open_meteo",
+      modelFamily: "open_meteo",
+      modelName: normalizedModelName,
     },
     ...options,
   });
 }
 
-function normalizeOpenMeteoForecastError(error: unknown, latencyMs: number): WeatherProviderError {
+function normalizeOpenMeteoForecastError(
+  error: unknown,
+  latencyMs: number,
+  modelName = openMeteoForecastCloudLayerDefaultModel,
+): WeatherProviderError {
   if (error instanceof WeatherProviderError) {
     return error;
   }
+  const buildError = (
+    options: Omit<
+      ConstructorParameters<typeof WeatherProviderError>[0],
+      "providerCode" | "providerLabelZh" | "dataMode"
+    >,
+  ) => openMeteoForecastError(options, modelName);
 
   const name = error instanceof Error ? error.name : "";
   if (name === "AbortError") {
-    return openMeteoForecastError({
+    return buildError({
       errorCategory: "timeout",
       messageZh: "云层分层补全源请求超时。",
       latencyMs,
@@ -504,12 +586,20 @@ function normalizeOpenMeteoForecastError(error: unknown, latencyMs: number): Wea
     });
   }
 
-  return openMeteoForecastError({
+  return buildError({
     errorCategory: "network",
     messageZh: "云层分层补全源网络不可用。",
     latencyMs,
     cause: error,
   });
+}
+
+function normalizeOpenMeteoForecastModelName(
+  value: string | undefined,
+  fallback = openMeteoForecastCloudLayerDefaultModel,
+): string {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : fallback;
 }
 
 function normalizeOpenMeteoForecastEndpoint(endpoint: string): string {
@@ -567,11 +657,21 @@ function formatNumber(value: number, digits = 1): string {
   return value.toFixed(digits).replace(/\.?0+$/, "");
 }
 
-function parseJsonBody(text: string, latencyMs: number): Record<string, unknown> {
+function parseJsonBody(
+  text: string,
+  latencyMs: number,
+  modelName = openMeteoForecastCloudLayerDefaultModel,
+): Record<string, unknown> {
+  const buildError = (
+    options: Omit<
+      ConstructorParameters<typeof WeatherProviderError>[0],
+      "providerCode" | "providerLabelZh" | "dataMode"
+    >,
+  ) => openMeteoForecastError(options, modelName);
   try {
     return JSON.parse(text) as Record<string, unknown>;
   } catch {
-    throw openMeteoForecastError({
+    throw buildError({
       errorCategory: "parse_error",
       messageZh: "云层分层补全源返回格式异常。",
       latencyMs,

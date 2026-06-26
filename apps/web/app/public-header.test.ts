@@ -43,10 +43,13 @@ describe("public header", () => {
 
   it("renders desktop header controls without a duplicate start-analysis CTA", () => {
     const html = renderHeader();
+    const accountLink = findRenderedLink(html, "/login", publicHeaderActionLabels[0]);
 
     expect(html).not.toContain("开始分析");
     expect(html).not.toContain('href="/#analysis"');
     expect(html).toContain("账户");
+    expect(accountLink).toContain('href="/login"');
+    expect(accountLink).not.toContain("w-full max-w-full min-w-0");
     expect(html).not.toContain('role="group"');
     expect(html).not.toContain('aria-pressed="');
 
@@ -57,8 +60,15 @@ describe("public header", () => {
 
   it("renders the mobile menu without a duplicate start-analysis action", () => {
     const html = renderHeader({ initialMenuOpen: true });
+    const mobileMenu = findMobileMenu(html);
+    const mobileAccountLink = findRenderedLink(mobileMenu, "/login", publicHeaderActionLabels[0]);
 
     expect(html).toContain('id="public-mobile-menu"');
+    expect(mobileMenu).toContain("w-full max-w-full min-w-0");
+    expect(mobileMenu).toContain("grid w-full max-w-full min-w-0 gap-2 border-t");
+    expect(mobileMenu).not.toContain("absolute right-0");
+    expect(mobileMenu).not.toContain("z-50");
+    expect(mobileAccountLink).toContain("w-full max-w-full min-w-0 justify-center");
     expect(html).not.toContain("开始分析");
     expect(html).not.toContain('href="/#analysis"');
     expect(html).toContain("账户");
@@ -95,6 +105,18 @@ function findRenderedLink(html: string, href: string, label: string): string {
   );
 
   return match?.[0] ?? "";
+}
+
+function findMobileMenu(html: string): string {
+  const start = html.indexOf('id="public-mobile-menu"');
+
+  if (start === -1) {
+    return "";
+  }
+
+  const end = html.indexOf("</header>", start);
+
+  return html.slice(start, end === -1 ? html.length : end);
 }
 
 function escapeRegExp(value: string): string {

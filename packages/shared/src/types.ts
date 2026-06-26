@@ -617,6 +617,7 @@ export type ForecastProviderRuntimeSnapshot = {
   readonly parserVersion?: string;
   readonly modelFamily?: string;
   readonly modelName?: string;
+  readonly modelList?: readonly string[];
   readonly configUpdatedAt?: string;
 };
 
@@ -2263,6 +2264,7 @@ export type WeatherFusionSummary = {
   readonly confidenceLevel: WeatherConfidenceLevel;
   readonly confidenceByTarget?: Partial<Record<ForecastTarget, number>>;
   readonly conflictStatusZh: string;
+  readonly conflictFlagsCount?: number;
   readonly dataStatusZh: string;
   readonly sourceSummaries?: readonly ForecastWeatherSourceSummary[];
   readonly missingDataNotes?: readonly string[];

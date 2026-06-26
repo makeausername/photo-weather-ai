@@ -1905,6 +1905,8 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
               endpoint: result.endpoint,
               statusCode: result.statusCode,
               latencyMs: result.latencyMs,
+              modelList: runtimeConfig.modelList,
+              modelCount: runtimeConfig.modelList.length,
               messageZh: result.success
                 ? `Open-Meteo 连接测试通过，耗时 ${Math.round(result.latencyMs)}ms。`
                 : result.messageZh,
@@ -2410,6 +2412,8 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
           timeoutMs: openMeteo.timeoutMs,
           retryCount: openMeteo.retryCount,
           modelPreference: openMeteo.modelPreference ?? null,
+          modelList: openMeteo.modelList,
+          modelCount: openMeteo.modelList.length,
         },
         meteoblue: {
           enabled: meteoblue.enabled,

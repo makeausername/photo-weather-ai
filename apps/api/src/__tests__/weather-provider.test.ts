@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { ProviderConfigRecord } from "@photo-weather/db";
 import {
   normalizeOpenMeteoAdminConfigJson,
+  normalizeOpenMeteoForecastModelList,
   normalizeMeteoblueAdminConfigJson,
   normalizeQWeatherAdminConfigJson,
+  openMeteoForecastCloudLayerDefaultModelList,
   resolveMeteoblueRuntimeConfig,
   resolveOpenMeteoRuntimeConfig,
   resolveQWeatherRuntimeConfig,
@@ -216,6 +218,75 @@ describe("weather runtime resolvers", () => {
     });
   });
 
+  it("defaults Open-Meteo forecast model list to best_match and GFS models", () => {
+    const config = resolveOpenMeteoRuntimeConfig(
+      {
+        ...baseOpenMeteoProvider,
+        configJson: {
+          realCallEnabled: true,
+          mode: "free",
+        },
+      },
+      {
+        NODE_ENV: "development",
+      },
+    );
+
+    expect(config.modelList).toEqual(["best_match", "gfs_seamless", "gfs_global"]);
+    expect(config.modelList.join(",")).toBe(openMeteoForecastCloudLayerDefaultModelList);
+  });
+
+  it("uses explicit Open-Meteo modelList from admin config before env", () => {
+    const config = resolveOpenMeteoRuntimeConfig(
+      {
+        ...baseOpenMeteoProvider,
+        configJson: {
+          realCallEnabled: true,
+          mode: "free",
+          modelList: "best_match,gfs_global",
+        },
+      },
+      {
+        NODE_ENV: "development",
+        OPEN_METEO_MODEL_LIST: "gfs_seamless",
+      },
+    );
+
+    expect(config.modelList).toEqual(["best_match", "gfs_global"]);
+  });
+
+  it("keeps modelPreference backward compatible when modelList is absent", () => {
+    const config = resolveOpenMeteoRuntimeConfig(
+      {
+        ...baseOpenMeteoProvider,
+        configJson: {
+          realCallEnabled: true,
+          mode: "free",
+          modelPreference: "best_match",
+        },
+      },
+      {
+        NODE_ENV: "development",
+      },
+    );
+
+    expect(config.modelList).toEqual(["best_match", "gfs_seamless", "gfs_global"]);
+  });
+
+  it("normalizes Open-Meteo modelList values and caps count", () => {
+    expect(
+      normalizeOpenMeteoForecastModelList(
+        " best_match,../bad,gfs_seamless,gfs_seamless,gfs_global,icon_global,ecmwf_ifs025,cma_grapes_global ",
+      ),
+    ).toEqual([
+      "best_match",
+      "gfs_seamless",
+      "gfs_global",
+      "icon_global",
+      "ecmwf_ifs025",
+    ]);
+  });
+
   it("resolves meteoblue config and keeps keys masked", () => {
     const config = resolveMeteoblueRuntimeConfig(
       {
@@ -269,6 +340,7 @@ describe("weather runtime resolvers", () => {
       baseUrl: "https://api.open-meteo.com/v1",
       customerEndpoint: "https://customer-api.open-meteo.com",
       defaultModel: "forecast",
+      modelList: "best_match,gfs_seamless,gfs_global",
       iconModel: "icon_global",
       timezone: "Asia/Shanghai",
       timeoutMs: 10000,

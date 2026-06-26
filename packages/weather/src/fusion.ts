@@ -192,6 +192,7 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
       confidenceLevel,
       confidenceByTarget,
       conflictStatusZh,
+      conflictFlagsCount: conflictFlags.length,
       dataStatusZh,
       sourceSummaries,
       missingDataNotes,
@@ -280,6 +281,7 @@ function emptyFusionResult(): WeatherFusionResult {
         general: 0,
       },
       conflictStatusZh: "无明显冲突",
+      conflictFlagsCount: 0,
       dataStatusZh: "天气数据：演示数据",
       sourceSummaries: [],
       multiSourceAgreementContext: buildMultiSourceAgreementContext({

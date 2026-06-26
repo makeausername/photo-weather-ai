@@ -274,7 +274,11 @@ async function createForecastCalculateRuntimeCacheSalt(options: {
         };
       }),
     );
-    return JSON.stringify(providers);
+    return JSON.stringify({
+      providers,
+      openMeteoModelList: options.env.OPEN_METEO_MODEL_LIST ?? null,
+      openMeteoModelPreference: options.env.OPEN_METEO_MODEL_PREFERENCE ?? null,
+    });
   }
 
   return JSON.stringify({
@@ -285,6 +289,8 @@ async function createForecastCalculateRuntimeCacheSalt(options: {
     openMeteoMode: options.env.OPEN_METEO_MODE ?? null,
     openMeteoBaseUrl: options.env.OPEN_METEO_BASE_URL ?? null,
     openMeteoCustomerEndpoint: options.env.OPEN_METEO_CUSTOMER_ENDPOINT ?? null,
+    openMeteoModelList: options.env.OPEN_METEO_MODEL_LIST ?? null,
+    openMeteoModelPreference: options.env.OPEN_METEO_MODEL_PREFERENCE ?? null,
     meteoblueBaseUrl: options.env.METEOBLUE_BASE_URL ?? null,
     meteobluePackages: options.env.METEOBLUE_PACKAGES ?? options.env.METEOBLUE_PACKAGE_NAME ?? null,
   });
@@ -962,6 +968,7 @@ async function calculateForecastResultWithCalibration(
     astroServiceConfig,
     logger,
   );
+  logWeatherRuntimeFusionDiagnostics(logger, result);
   logCloudSeaCoverageDiagnostics(logger, result);
   logGlowScoringDiagnostics(logger, result);
   return attachCalibrationHint(result, query, dbClient);
@@ -1408,6 +1415,53 @@ function logForecastCalculationStart(options: {
       locationName: normalizedQuery.locationName ?? rawQuery.locationName,
     },
     "Forecast calculation started",
+  );
+}
+
+function logWeatherRuntimeFusionDiagnostics(
+  logger: FastifyBaseLogger,
+  result: ForecastCalculationResult,
+): void {
+  const sourceSummaries = result.weatherSourceSummaries ?? [];
+  const openMeteoModelSummaries = sourceSummaries.filter(
+    (summary) => summary.providerCode === "open_meteo" && summary.modelName,
+  );
+  const failedOpenMeteoModels = openMeteoModelSummaries.filter((summary) => !summary.success);
+  const runtimeOpenMeteoModels = (result.weatherProviderRuntimeSnapshot ?? [])
+    .filter(
+      (snapshot) =>
+        snapshot.providerCode === "open_meteo" &&
+        snapshot.modelFamily === "open_meteo" &&
+        typeof snapshot.modelName === "string",
+    )
+    .map((snapshot) => snapshot.modelName as string);
+  const openMeteoModelList = [
+    ...new Set([
+      ...runtimeOpenMeteoModels,
+      ...openMeteoModelSummaries.flatMap((summary) => (summary.modelName ? [summary.modelName] : [])),
+    ]),
+  ];
+
+  logger.info(
+    {
+      route: "/forecast/calculate",
+      target: result.target,
+      sourceSummaryCount: sourceSummaries.length,
+      openMeteoModelList,
+      openMeteoModelCount: openMeteoModelList.length,
+      failedOpenMeteoModelCount: failedOpenMeteoModels.length,
+      failedOpenMeteoModels: failedOpenMeteoModels.map((summary) => summary.modelName),
+      conflictFlagsCount: result.weatherFusionSummary?.conflictFlagsCount ?? null,
+      confidenceByTarget: result.weatherFusionSummary?.confidenceByTarget ?? null,
+      cacheHitCount: sourceSummaries.filter((summary) => summary.cacheHit === true).length,
+      cacheHits: sourceSummaries
+        .filter((summary) => summary.cacheHit === true)
+        .map((summary) => ({
+          providerCode: summary.providerCode,
+          modelName: summary.modelName,
+        })),
+    },
+    "Weather runtime fusion diagnostics",
   );
 }
 
