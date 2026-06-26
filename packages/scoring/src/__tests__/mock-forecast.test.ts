@@ -148,6 +148,17 @@ describe("mock forecast input builder", () => {
     expect(result.dailySummaries).toHaveLength(2);
     expect(result.targetDailyBreakdown).toHaveLength(2);
     expect(result.bestWindows.length).toBeGreaterThan(0);
+    expect(result.finalScore).toBeTypeOf("number");
+    expect(result.finalScore).toBeLessThanOrEqual(result.overallScore);
+    expect(result.finalRecommendationLevel).toBeDefined();
+    expect(result.finalRecommendationLabel).toBeTruthy();
+    expect(result.finalTripDecisionLabel).toBeTruthy();
+    expect(result.finalDecisionSummaryZh).toContain(result.finalTripDecisionLabel);
+    expect(result.decisionConvergence).toMatchObject({
+      finalScore: result.finalScore,
+      finalRecommendationLabel: result.finalRecommendationLabel,
+      decisionMode: result.decisionMode,
+    });
   });
 
   it("does not output January 1 windows unless tests inject January 1", () => {

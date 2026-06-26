@@ -1779,11 +1779,31 @@ function logWeatherRuntimeFusionDiagnostics(
   const aerosolDiagnostics = result.weatherFusionSummary?.aerosolDiagnostics;
   const multiModelConsensusDiagnostics =
     result.weatherFusionSummary?.multiModelConsensusDiagnostics;
+  const appliedDecisionCaps = result.appliedCaps ?? [];
 
   logger.info(
     {
       route: "/forecast/calculate",
       target: result.target,
+      horizon: result.horizon,
+      finalDecisionMode: result.decisionMode ?? null,
+      finalDecisionConfidence: result.decisionConfidence ?? null,
+      finalScore: result.finalScore ?? null,
+      baseScore: result.overallScore,
+      finalRecommendationLevel: result.finalRecommendationLevel ?? null,
+      baseRecommendationLevel: result.recommendationLevel,
+      appliedDecisionCaps,
+      decisionRiskReasonCount: result.riskReasonsZh?.length ?? 0,
+      decisionPositiveReasonCount: result.positiveReasonsZh?.length ?? 0,
+      decisionUncertaintyReasonCount: result.uncertaintyReasonsZh?.length ?? 0,
+      terrainCapApplied: appliedDecisionCaps.some((cap) => cap.includes("terrain")),
+      transparencyCapApplied: appliedDecisionCaps.includes("transparency"),
+      multiModelCapApplied: appliedDecisionCaps.includes("multi_model"),
+      precipitationWindCapApplied: appliedDecisionCaps.includes("precipitation_wind"),
+      whiteoutCapApplied: appliedDecisionCaps.includes("cloud_sea_whiteout"),
+      astroCapApplied: appliedDecisionCaps.some((cap) => cap.startsWith("astro_")),
+      glowCapApplied: appliedDecisionCaps.some((cap) => cap.startsWith("glow_")),
+      cloudSeaCapApplied: appliedDecisionCaps.some((cap) => cap.startsWith("cloud_sea")),
       sourceSummaryCount: sourceSummaries.length,
       openMeteoModelList,
       openMeteoModelCount: openMeteoModelList.length,

@@ -275,21 +275,23 @@ function buildHomepageResultCards(
   const current = result.currentWeather;
   const bestWindow = result.bestWindows[0];
   const mainRisk = result.riskFlags[0];
+  const finalResultLabel = result.finalRecommendationLabel ?? result.recommendationLabel;
+  const finalDecisionSummary = result.finalDecisionSummaryZh ?? decisionSummaryText(location, state);
 
   return [
     {
       title: "综合指数",
       value:
-        typeof result.overallScore === "number"
-          ? `${Math.round(result.overallScore)} / 100`
+        typeof (result.finalScore ?? result.overallScore) === "number"
+          ? `${Math.round(result.finalScore ?? result.overallScore)} / 100`
           : "待计算",
       description: "综合天气、光线、窗口和风险后的出发参考分。",
       badge: "已生成",
     },
     {
       title: "推荐等级",
-      value: result.recommendationLabel || "待计算",
-      description: decisionSummaryText(location, state),
+      value: finalResultLabel || "待计算",
+      description: finalDecisionSummary,
       badge: "判断",
     },
     {

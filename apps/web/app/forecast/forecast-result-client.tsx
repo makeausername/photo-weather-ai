@@ -359,8 +359,8 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
 function buildForecastHistorySummary(result: ForecastCalculationResult) {
   const bestWindow = result.bestWindows[0];
   return {
-    overallScore: result.overallScore,
-    recommendationLabel: result.recommendationLabel,
+    overallScore: result.finalScore ?? result.overallScore,
+    recommendationLabel: result.finalRecommendationLabel ?? result.recommendationLabel,
     bestWindowStart: bestWindow?.startTime ?? null,
     bestWindowEnd: bestWindow?.endTime ?? null,
   };
@@ -1107,7 +1107,20 @@ function dailyDecisionBadgeVariant(label: string | undefined): BadgeVariant {
   return "muted";
 }
 
+function finalDecisionScore(result: ForecastCalculationResult): number {
+  return result.finalScore ?? result.overallScore;
+}
+
+function finalRecommendationLabel(result: ForecastCalculationResult): string {
+  return result.finalRecommendationLabel ?? result.recommendationLabel;
+}
+
 function departureRecommendationLabel(result: ForecastCalculationResult): string {
+  if (result.finalTripDecisionLabel) {
+    return result.finalTripDecisionLabel;
+  }
+  const recommendationLabel = finalRecommendationLabel(result);
+  const decisionScore = finalDecisionScore(result);
   const firstDailyDecision = result.target === "general" ? result.dailySummaries[0] : undefined;
   if (firstDailyDecision?.dedicatedTripRecommendation === "不建议专程前往") {
     return firstDailyDecision.nearbyObservationRecommendation === "已在附近可观察"
@@ -1118,13 +1131,13 @@ function departureRecommendationLabel(result: ForecastCalculationResult): string
     return firstDailyDecision.dedicatedTripRecommendation;
   }
 
-  if (result.recommendationLabel.includes("不建议") || result.overallScore < 45) {
+  if (recommendationLabel.includes("不建议") || decisionScore < 45) {
     return "不建议专程前往";
   }
-  if (result.recommendationLabel.includes("谨慎") || result.overallScore < 65) {
+  if (recommendationLabel.includes("谨慎") || decisionScore < 65) {
     return "谨慎参考";
   }
-  if (result.recommendationLabel.includes("强推荐")) {
+  if (recommendationLabel.includes("强推荐")) {
     return "强推荐专程";
   }
   return "推荐安排";
@@ -1176,7 +1189,7 @@ function userFacingResultText(text: string): string {
 }
 
 function primaryReasonSentence(result: ForecastCalculationResult): string {
-  return userFacingResultText(firstText(result.keyReasons, result.summary));
+  return userFacingResultText(result.finalDecisionSummaryZh ?? firstText(result.keyReasons, result.summary));
 }
 
 function arrivalAdviceValue(
@@ -2901,7 +2914,13 @@ function GlowHeroConclusion({
             {query.name}
           </h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
-            {recommendation.headline}，{recommendation.conciseReason}
+            {result.finalDecisionSummaryZh ? (
+              result.finalDecisionSummaryZh
+            ) : (
+              <>
+                {recommendation.headline}，{recommendation.conciseReason}
+              </>
+            )}
           </p>
           <div className="mt-4 flex flex-wrap gap-x-3 gap-y-1 text-xs leading-5 text-muted-foreground">
             <span>时间范围：{result.calendarBasis.forecastRangeLabel}</span>
@@ -6552,9 +6571,9 @@ function ComprehensiveContextBar({
       <ForecastScoreCard
         target="general"
         label="综合出片指数"
-        score={result.overallScore}
+        score={finalDecisionScore(result)}
         badgeLabel={departureRecommendationLabel(result)}
-        badgeVariant={recommendationBadgeVariant(result.recommendationLabel)}
+        badgeVariant={recommendationBadgeVariant(finalRecommendationLabel(result))}
         summary={userFacingResultText(primaryReasonSentence(result))}
       />
     </ForecastResultHeader>
@@ -6577,8 +6596,8 @@ function ComprehensiveCoreDecisionCards({
       "comprehensive-recommendation",
       "recommendation",
       "推荐等级",
-      result.recommendationLabel,
-      departureRecommendationLabel(result),
+      finalRecommendationLabel(result),
+      result.finalDecisionSummaryZh ?? departureRecommendationLabel(result),
       "primary",
     ),
     textCard(
@@ -6595,7 +6614,7 @@ function ComprehensiveCoreDecisionCards({
       "到达建议",
       arrivalAdviceValue(bestWindow, result.calendarBasis.timezone),
       arrivalAdviceDetail(bestWindow, result.calendarBasis.timezone),
-      result.overallScore >= 65 ? "primary" : "accent",
+      finalDecisionScore(result) >= 65 ? "primary" : "accent",
     ),
     generalCloudMistCard(result),
     textCard(

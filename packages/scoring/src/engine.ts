@@ -71,6 +71,7 @@ import { analyzeCloudSea, cloudSeaRecommendationLevel } from "./cloud-sea-analys
 import { classifyCloudLayerRoles } from "./cloud-layer-roles.js";
 import { calculateAstroAnalysis } from "./astro-analysis.js";
 import { buildClothingGuide } from "./clothing-guide.js";
+import { convergeForecastDecision } from "./decision-convergence.js";
 import { buildGlowForecastScore, calculateGlowAnalysis } from "./glow-analysis.js";
 import {
   calculatePhotographyTransparencyScore,
@@ -188,6 +189,31 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
         : input.target === "astro"
           ? astroAnalysis.recommendationLabel
           : generalForecastRecommendationLabel(overallScore, bestWindows, riskFlags);
+  const decisionConvergence = convergeForecastDecision({
+    input: calculationInput,
+    target: calculationInput.target,
+    baseOverallScore: overallScore,
+    baseRecommendationLevel: recommendationLevel,
+    baseRecommendationLabel: recommendationLabel,
+    scores,
+    cloudSeaAnalysis,
+    glowAnalysis,
+    astroAnalysis,
+    riskFlags,
+    bestWindows,
+  });
+  const keyReasons = uniqueStrings([
+    ...decisionConvergence.positiveReasonsZh,
+    ...decisionConvergence.riskReasonsZh,
+    ...decisionConvergence.uncertaintyReasonsZh,
+    ...buildKeyReasons(calculationInput, scores),
+  ]).slice(0, 6);
+  const photographyAdvice = uniqueStrings([
+    decisionConvergence.finalDecisionSummaryZh,
+    ...decisionConvergence.riskReasonsZh.slice(0, 2),
+    ...decisionConvergence.uncertaintyReasonsZh.slice(0, 1),
+    ...buildPhotographyAdvice(calculationInput, scores, riskFlags, bestWindows),
+  ]).slice(0, 8);
   const targetDailyBreakdown = buildTargetDailyBreakdown(
     calculationInput,
     scores,
@@ -209,10 +235,24 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
     overallScore,
     recommendationLevel,
     recommendationLabel,
+    finalScore: decisionConvergence.finalScore,
+    finalRecommendationLevel: decisionConvergence.finalRecommendationLevel,
+    finalRecommendationLabel: decisionConvergence.finalRecommendationLabel,
+    finalTripDecisionLabel: decisionConvergence.finalTripDecisionLabel,
+    finalDecisionSummaryZh: decisionConvergence.finalDecisionSummaryZh,
+    decisionConfidence: decisionConvergence.decisionConfidence,
+    decisionMode: decisionConvergence.decisionMode,
+    capReasonsZh: decisionConvergence.capReasonsZh,
+    positiveReasonsZh: decisionConvergence.positiveReasonsZh,
+    riskReasonsZh: decisionConvergence.riskReasonsZh,
+    uncertaintyReasonsZh: decisionConvergence.uncertaintyReasonsZh,
+    appliedCaps: decisionConvergence.appliedCaps,
+    publicDecisionTags: decisionConvergence.publicDecisionTags,
+    decisionConvergence,
     summary: buildSummary(
       calculationInput,
-      overallScore,
-      recommendationLabel,
+      decisionConvergence.finalScore,
+      decisionConvergence.finalRecommendationLabel,
       scores,
       bestWindows,
     ),
@@ -227,8 +267,8 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
     targetDailyBreakdown,
     bestWindows,
     riskFlags,
-    keyReasons: buildKeyReasons(calculationInput, scores),
-    photographyAdvice: buildPhotographyAdvice(calculationInput, scores, riskFlags, bestWindows),
+    keyReasons,
+    photographyAdvice,
     dataNotice: buildDataNotice(calculationInput),
     isMock: calculationInput.isMock,
     dataSourceLabel: calculationInput.dataSourceLabel,

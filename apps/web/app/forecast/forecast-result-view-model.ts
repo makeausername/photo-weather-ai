@@ -1004,6 +1004,8 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
   const scoreCards = allScoreKeys.map((key) => result.scores[key]);
   const resultWindows = buildGeneralResultWindows(result);
   const bestWindow = resultWindows.find(isExecutableResultWindow);
+  const decisionLabel = finalRecommendationLabel(result);
+  const decisionSummary = finalDecisionSummary(result, "general");
   const calibrationCard = result.calibrationHint
     ? textCard(
         "historical-calibration",
@@ -1023,14 +1025,14 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
     targetLabel: forecastTargetLabels.general,
     pageTitle: shellCopy.pageTitle,
     pageSubtitle: shellCopy.pageSubtitle,
-    primarySummary: buildForecastPrimarySummary(result, "general"),
-    recommendationLabel: result.recommendationLabel,
+    primarySummary: decisionSummary,
+    recommendationLabel: decisionLabel,
     primaryCards: [
       textCard(
         "recommendation",
         "recommendation",
         "推荐等级",
-        result.recommendationLabel,
+        decisionLabel,
         "按云海、霞光、星空银河、通透度和风险综合判断。",
         "primary",
       ),
@@ -1710,6 +1712,18 @@ function firstDisplaySentence(value: string): string {
   return value.split(/[。！？]/)[0]?.trim() || value;
 }
 
+function finalRecommendationLabel(result: ForecastCalculationResult): string {
+  return result.finalRecommendationLabel ?? result.recommendationLabel;
+}
+
+function finalDecisionSummary(
+  result: ForecastCalculationResult,
+  target: ForecastTarget,
+  options?: Parameters<typeof buildForecastPrimarySummary>[2],
+): string {
+  return result.finalDecisionSummaryZh ?? buildForecastPrimarySummary(result, target, options);
+}
+
 function firstFiniteNumber(values: readonly (number | null | undefined)[]): number | undefined {
   return values.find(
     (value): value is number => typeof value === "number" && Number.isFinite(value),
@@ -1745,10 +1759,10 @@ function buildCloudSeaViewModel(result: ForecastCalculationResult): ForecastResu
     targetLabel: forecastTargetLabels.cloud_sea,
     pageTitle: shellCopy.pageTitle,
     pageSubtitle: shellCopy.pageSubtitle,
-    primarySummary: buildForecastPrimarySummary(result, "cloud_sea", {
+    primarySummary: finalDecisionSummary(result, "cloud_sea", {
       cloudSeaDowngraded: cloudSea.terrainContext.shouldDowngradeCloudSeaWording,
     }),
-    recommendationLabel: cloudSea.hero.recommendationLabel,
+    recommendationLabel: finalRecommendationLabel(result),
     primaryCards: cloudSea.coreCards,
     scoreCards: [result.scores.cloudSea, result.scores.whiteoutRisk, result.scores.transparency],
     bestWindows: cloudSeaWindows,
@@ -1914,11 +1928,12 @@ function buildGlowOverallRecommendation(
   analysis: GlowAnalysisResult,
 ): GlowOverallRecommendation {
   const selectedWindow = selectOverallGlowWindowState(result, analysis);
-  const recommendation = selectedWindow
+  const baseRecommendation = selectedWindow
     ? glowRecommendationForLifecycle(selectedWindow.state, selectedWindow.score)
     : "暂无后续窗口";
+  const recommendation = baseRecommendation;
   const preferredTarget = selectedWindow
-    ? glowPreferredTargetLabel(selectedWindow.phase, recommendation)
+    ? glowPreferredTargetLabel(selectedWindow.phase, baseRecommendation)
     : "暂不专程";
   const backupPlan = analysis.backupPlans[0]
     ? `${analysis.backupPlans[0].condition}：${analysis.backupPlans[0].action}`
@@ -2932,8 +2947,8 @@ function buildGlowViewModel(result: ForecastCalculationResult): ForecastResultVi
     targetLabel: forecastTargetLabels.glow,
     pageTitle: shellCopy.pageTitle,
     pageSubtitle: shellCopy.pageSubtitle,
-    primarySummary: buildForecastPrimarySummary(result, "glow"),
-    recommendationLabel: result.glowAnalysis.recommendationLabel,
+    primarySummary: finalDecisionSummary(result, "glow"),
+    recommendationLabel: finalRecommendationLabel(result),
     primaryCards: glow.coreCards,
     scoreCards: [result.scores.sunriseGlow, result.scores.sunsetGlow, result.scores.transparency],
     bestWindows: resultWindows,
@@ -2976,8 +2991,8 @@ function buildAstroViewModel(result: ForecastCalculationResult): ForecastResultV
     targetLabel: forecastTargetLabels.astro,
     pageTitle: shellCopy.pageTitle,
     pageSubtitle: shellCopy.pageSubtitle,
-    primarySummary: buildForecastPrimarySummary(result, "astro"),
-    recommendationLabel: result.astroAnalysis.recommendationLabel,
+    primarySummary: finalDecisionSummary(result, "astro"),
+    recommendationLabel: finalRecommendationLabel(result),
     primaryCards: astroForecast.coreCards,
     scoreCards: [result.scores.stars, result.scores.milkyWay, result.scores.transparency],
     bestWindows: astroWindows,
@@ -6165,7 +6180,7 @@ function buildAstroDecisionSummary({
         : "暂不专程，等待临近复核";
 
   return {
-    recommendationLabel: worth?.value ?? result.astroAnalysis.recommendationLabel,
+    recommendationLabel: result.finalRecommendationLabel ?? worth?.value ?? result.astroAnalysis.recommendationLabel,
     recommendationTone: worth?.tone ?? "muted",
     bestNightLabel: bestNight?.localEveningDateLabel ?? "暂无明确最佳夜",
     bestWindowLabel: bestWindow?.value ?? "暂无可靠最佳拍摄窗口",
@@ -6178,7 +6193,7 @@ function buildAstroDecisionSummary({
     mainRiskDetail: blocker?.detail ?? "仍需在出行前复核天气、月光、光污染和现场安全。",
     secondaryRiskLabel: `${lightPollution.publicDirectionDecisionLabel} / ${terrainHorizon.publicDecisionLabel}`,
     confidenceLabel: confidence,
-    oneSentenceAdvice,
+    oneSentenceAdvice: result.finalDecisionSummaryZh ?? oneSentenceAdvice,
     lightPollutionLabel: `${lightPollution.publicDecisionLabel} / ${lightPollution.publicDirectionDecisionLabel}`,
     terrainLabel: terrainHorizon.publicDecisionLabel,
   };

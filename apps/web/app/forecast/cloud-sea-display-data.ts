@@ -264,6 +264,10 @@ export function buildCloudSeaDisplayData(
   });
   const travelDecision = deriveCloudSeaDisplayTravelDecision(input);
   const importantWindows = buildImportantWindowDisplayData(input, travelDecision);
+  const finalRecommendationLabel =
+    input.result.finalRecommendationLabel ?? input.header.recommendationLabel;
+  const finalDecisionSummary = input.result.finalDecisionSummaryZh ?? input.scoreCardSummary;
+  const finalScore = input.result.finalScore ?? input.result.cloudSeaAnalysis.shootableScore;
   const recommendationCards = applyImportantWindowRecommendationLabels(
     input.recommendationCards,
     importantWindows,
@@ -278,6 +282,8 @@ export function buildCloudSeaDisplayData(
   return {
     header: {
       ...input.header,
+      recommendationLabel: finalRecommendationLabel,
+      conclusion: input.result.finalDecisionSummaryZh ?? input.header.conclusion,
       bestWindowLabel: windowDisplayValueForDecision(
         importantWindows.bestWindow.displayLabelZh,
         travelDecision,
@@ -299,10 +305,10 @@ export function buildCloudSeaDisplayData(
     },
     scoreCard: {
       label: input.terrainContext.vocabulary.scoreCardLabel,
-      score: clampScorePercent(input.result.cloudSeaAnalysis.shootableScore),
-      badgeLabel: input.header.recommendationLabel,
-      badgeVariant: recommendationBadgeVariant(input.header.recommendationLabel),
-      summary: input.scoreCardSummary,
+      score: clampScorePercent(finalScore),
+      badgeLabel: finalRecommendationLabel,
+      badgeVariant: recommendationBadgeVariant(finalRecommendationLabel),
+      summary: finalDecisionSummary,
     },
     recommendationCards,
     currentNearTermWeather,

@@ -1035,6 +1035,31 @@ export type ForecastRecommendationLevel =
   | "worth_waiting"
   | "recommended";
 
+export type ForecastDecisionConfidence = "high" | "medium" | "low";
+
+export type ForecastDecisionMode =
+  | "strong_go"
+  | "nearby_watch"
+  | "wait_for_update"
+  | "not_recommended"
+  | "data_insufficient";
+
+export type ForecastDecisionConvergenceResult = {
+  readonly finalScore: number;
+  readonly finalRecommendationLevel: ForecastRecommendationLevel;
+  readonly finalRecommendationLabel: string;
+  readonly finalTripDecisionLabel: string;
+  readonly finalDecisionSummaryZh: string;
+  readonly decisionConfidence: ForecastDecisionConfidence;
+  readonly decisionMode: ForecastDecisionMode;
+  readonly capReasonsZh: readonly string[];
+  readonly positiveReasonsZh: readonly string[];
+  readonly riskReasonsZh: readonly string[];
+  readonly uncertaintyReasonsZh: readonly string[];
+  readonly appliedCaps: readonly string[];
+  readonly publicDecisionTags: readonly string[];
+};
+
 export type ForecastScoreSet = {
   readonly sunriseGlow: ForecastScore;
   readonly sunsetGlow: ForecastScore;
@@ -2193,6 +2218,20 @@ export type ForecastCalculationResult = {
   readonly overallScore: number;
   readonly recommendationLevel: ForecastRecommendationLevel;
   readonly recommendationLabel: string;
+  readonly finalScore?: number;
+  readonly finalRecommendationLevel?: ForecastRecommendationLevel;
+  readonly finalRecommendationLabel?: string;
+  readonly finalTripDecisionLabel?: string;
+  readonly finalDecisionSummaryZh?: string;
+  readonly decisionConfidence?: ForecastDecisionConfidence;
+  readonly decisionMode?: ForecastDecisionMode;
+  readonly capReasonsZh?: readonly string[];
+  readonly positiveReasonsZh?: readonly string[];
+  readonly riskReasonsZh?: readonly string[];
+  readonly uncertaintyReasonsZh?: readonly string[];
+  readonly appliedCaps?: readonly string[];
+  readonly publicDecisionTags?: readonly string[];
+  readonly decisionConvergence?: ForecastDecisionConvergenceResult;
   readonly summary: string;
   readonly scores: ForecastScoreSet;
   readonly cloudSeaAnalysis: CloudSeaAnalysisResult;
