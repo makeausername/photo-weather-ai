@@ -949,11 +949,23 @@ function StatusFacts({
   );
 }
 
+const alipayKeyFieldKeys = new Set(["appPrivateKeyPem", "alipayPublicKeyPem"]);
+const alipayKeyFormatHint =
+  "密钥格式无法识别，请确认粘贴的是支付宝密钥工具生成的完整应用私钥/支付宝公钥。";
+
 function ProviderTestDetails({ result }: { readonly result?: MockConnectionTestResult }) {
   if (!result) {
     return null;
   }
 
+  const missingFieldsText = result.missingFields?.length
+    ? `待补充：${result.missingFields.join("、")}`
+    : null;
+  const invalidFieldsText = result.invalidFields?.length
+    ? `格式异常：${result.invalidFields.join("、")}`
+    : null;
+  const hasAlipayKeyFormatError =
+    result.invalidFields?.some((field) => alipayKeyFieldKeys.has(field)) ?? false;
   const details = [
     result.modeLabelZh ? ["Mode", result.modeLabelZh] : null,
     typeof result.latencyMs === "number" ? ["Latency", `${Math.round(result.latencyMs)}ms`] : null,
@@ -969,19 +981,33 @@ function ProviderTestDetails({ result }: { readonly result?: MockConnectionTestR
     result.packages?.length ? ["Packages", result.packages.join(",")] : null,
   ].filter((item): item is [string, string] => Boolean(item));
 
-  if (details.length === 0) {
+  if (
+    !missingFieldsText &&
+    !invalidFieldsText &&
+    !hasAlipayKeyFormatError &&
+    details.length === 0
+  ) {
     return null;
   }
 
   return (
-    <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs leading-5 text-muted-foreground">
-      {details.map(([label, value]) => (
-        <div key={label} className="flex min-w-0 gap-1">
-          <dt className="shrink-0 font-semibold">{label}:</dt>
-          <dd className="min-w-0 break-words text-card-foreground">{value}</dd>
-        </div>
-      ))}
-    </dl>
+    <div className="grid gap-1 text-xs leading-5 text-muted-foreground">
+      {hasAlipayKeyFormatError ? (
+        <p className="font-medium text-danger">{alipayKeyFormatHint}</p>
+      ) : null}
+      {missingFieldsText ? <p>{missingFieldsText}</p> : null}
+      {invalidFieldsText ? <p>{invalidFieldsText}</p> : null}
+      {details.length ? (
+        <dl className="flex flex-wrap gap-x-4 gap-y-1">
+          {details.map(([label, value]) => (
+            <div key={label} className="flex min-w-0 gap-1">
+              <dt className="shrink-0 font-semibold">{label}:</dt>
+              <dd className="min-w-0 break-words text-card-foreground">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+    </div>
   );
 }
 

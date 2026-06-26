@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApiServer } from "../server.js";
@@ -37,6 +38,21 @@ function enableAliyunSmtpProvider(
       password: "smtp****cret",
     },
   });
+}
+
+function createAlipayPemPair() {
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  return {
+    privateKeyPem: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+    publicKeyPem: publicKey.export({ type: "spki", format: "pem" }).toString(),
+  };
+}
+
+function stripPemEnvelope(value: string): string {
+  return value
+    .replace(/-----BEGIN [^-]+-----/g, "")
+    .replace(/-----END [^-]+-----/g, "")
+    .replace(/\s+/g, "");
 }
 
 describe("admin config routes", () => {
@@ -954,6 +970,58 @@ describe("admin config routes", () => {
     );
     expect(wechatResponse.body).not.toContain("not-a-private-key");
     expect(alipayResponse.body).not.toContain("not-a-public-key");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts bare Alipay key-tool output during billing config checks", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("billing provider config checks must not call network");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, state } = await createFakeDatabaseClient();
+    const alipayProvider = state.providers.get("billing:alipay");
+    const pair = createAlipayPemPair();
+    const barePrivateKey = stripPemEnvelope(pair.privateKeyPem);
+    const barePublicKey = stripPemEnvelope(pair.publicKeyPem);
+    state.providers.set("billing:alipay", {
+      ...alipayProvider,
+      enabled: true,
+      configJson: {
+        ...(alipayProvider.configJson ?? {}),
+        realCallEnabled: true,
+        appId: "alipay-app-id",
+        notifyUrl: "https://example.com/billing/alipay/notify",
+      },
+      secretJson: {
+        appPrivateKeyPem: barePrivateKey,
+        alipayPublicKeyPem: barePublicKey,
+      },
+      maskedSecretJson: {
+        appPrivateKeyPem: "[set]",
+        alipayPublicKeyPem: "[set]",
+      },
+    });
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/providers/billing/alipay/test-connection",
+      headers: adminAuthorizationHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: true,
+      mode: "config_check",
+      connectionMode: "mock",
+      providerType: "billing",
+      providerCode: "alipay",
+      configReady: true,
+      missingFields: [],
+      invalidFields: [],
+    });
+    expect(response.body).not.toContain(barePrivateKey);
+    expect(response.body).not.toContain(barePublicKey);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

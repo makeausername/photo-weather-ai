@@ -601,19 +601,19 @@ export const providerFieldPresets = [
       },
       {
         key: "appPrivateKeyPem",
-        label: "应用私钥 PEM",
+        label: "应用私钥",
         target: "secretJson",
         placeholder: keepExistingSecretPlaceholder,
         password: true,
-        helpText: "仅用于服务端生成 RSA2 签名。",
+        helpText: "可直接粘贴支付宝密钥工具生成的密钥内容；支持裸密钥或带 BEGIN/END 的 PEM 格式。",
       },
       {
         key: "alipayPublicKeyPem",
-        label: "支付宝公钥 PEM",
+        label: "支付宝公钥",
         target: "secretJson",
         placeholder: keepExistingSecretPlaceholder,
         password: true,
-        helpText: "用于验签支付宝异步通知。",
+        helpText: "可直接粘贴支付宝密钥工具生成的密钥内容；支持裸密钥或带 BEGIN/END 的 PEM 格式。",
       },
       {
         key: "gatewayUrl",

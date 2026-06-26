@@ -83,7 +83,7 @@ describe("admin provider module source", () => {
     expect(adminShellSource).toContain('label: "配置"');
     expect(adminShellSource).toContain('label: "运维"');
     expect(adminShellSource).not.toContain('{ href: "/admin/providers", label: "服务商配置" }');
-    expect(adminShellSource).not.toContain('/admin/providers/ai');
+    expect(adminShellSource).not.toContain("/admin/providers/ai");
   });
 
   it("keeps the AdminShell sidebar wide enough for first-class module labels", () => {
@@ -357,8 +357,8 @@ describe("admin provider module source", () => {
       "商户私钥 PEM",
       "API v3 密钥",
       "平台公钥 PEM",
-      "应用私钥 PEM",
-      "支付宝公钥 PEM",
+      "应用私钥",
+      "支付宝公钥",
       "支付宝网关",
       "CDN 加速域名",
       "默认刷新类型",
@@ -374,6 +374,16 @@ describe("admin provider module source", () => {
     expect(source).toContain("maskedSecretJson");
     expect(source).toContain("secretFieldDrafts");
     expect(source).not.toContain("provider.secretJson");
+    expect(providerFieldsSource).toContain(
+      "可直接粘贴支付宝密钥工具生成的密钥内容；支持裸密钥或带 BEGIN/END 的 PEM 格式。",
+    );
+    expect(providerFieldsSource).not.toContain('label: "应用私钥 PEM"');
+    expect(providerFieldsSource).not.toContain('label: "支付宝公钥 PEM"');
+    expect(source).toContain(
+      "密钥格式无法识别，请确认粘贴的是支付宝密钥工具生成的完整应用私钥/支付宝公钥。",
+    );
+    expect(source).toContain('new Set(["appPrivateKeyPem", "alipayPublicKeyPem"])');
+    expect(source).toContain("result.invalidFields?.some");
   });
 
   it("keeps Aliyun SMS endpoint optional and shows the default hint", () => {

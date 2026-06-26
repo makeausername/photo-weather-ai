@@ -9,8 +9,7 @@ import {
 } from "node:crypto";
 
 export function sanitizePaymentErrorMessage(error: unknown, fallback: string): string {
-  const raw =
-    error instanceof Error ? error.message : typeof error === "string" ? error : fallback;
+  const raw = error instanceof Error ? error.message : typeof error === "string" ? error : fallback;
   const firstLine = raw.trim().split(/\r?\n/)[0]?.slice(0, 300) ?? "";
   if (!firstLine) {
     return fallback;
@@ -91,11 +90,46 @@ export function createNonce(length = 16): string {
   return randomBytes(length).toString("hex");
 }
 
+export function normalizePemLineBreaks(value: string): string {
+  return value
+    .trim()
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\n")
+    .replace(/\r\n?/g, "\n")
+    .trim();
+}
+
+function wrapBareBase64Key(value: string, label: "PRIVATE KEY" | "PUBLIC KEY"): string {
+  const normalized = normalizePemLineBreaks(value);
+  if (!normalized || normalized.includes("-----BEGIN")) {
+    return normalized;
+  }
+
+  const body =
+    normalized
+      .replace(/\s+/g, "")
+      .match(/.{1,64}/g)
+      ?.join("\n") ?? "";
+  if (!body) {
+    return "";
+  }
+  return `-----BEGIN ${label}-----\n${body}\n-----END ${label}-----`;
+}
+
+export function normalizePrivateKeyPem(value: string): string {
+  return wrapBareBase64Key(value, "PRIVATE KEY");
+}
+
+export function normalizePublicKeyPem(value: string): string {
+  return wrapBareBase64Key(value, "PUBLIC KEY");
+}
+
 export function rsaSha256Sign(message: string, privateKeyPem: string): string {
   const signer = createSign("RSA-SHA256");
   signer.update(message, "utf8");
   signer.end();
-  return signer.sign(createPrivateKey(privateKeyPem), "base64");
+  return signer.sign(createPrivateKey(normalizePrivateKeyPem(privateKeyPem)), "base64");
 }
 
 export function rsaSha256Verify(
@@ -106,22 +140,28 @@ export function rsaSha256Verify(
   const verifier = createVerify("RSA-SHA256");
   verifier.update(message, "utf8");
   verifier.end();
-  return verifier.verify(createPublicKey(publicKeyPem), signatureBase64, "base64");
+  return verifier.verify(
+    createPublicKey(normalizePublicKeyPem(publicKeyPem)),
+    signatureBase64,
+    "base64",
+  );
 }
 
 export function assertPrivateKeyPem(value: string): boolean {
-  if (!value.trim()) {
+  const normalized = normalizePrivateKeyPem(value);
+  if (!normalized) {
     return false;
   }
-  createPrivateKey(value);
+  createPrivateKey(normalized);
   return true;
 }
 
 export function assertPublicKeyPem(value: string): boolean {
-  if (!value.trim()) {
+  const normalized = normalizePublicKeyPem(value);
+  if (!normalized) {
     return false;
   }
-  createPublicKey(value);
+  createPublicKey(normalized);
   return true;
 }
 

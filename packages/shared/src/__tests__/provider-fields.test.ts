@@ -538,15 +538,19 @@ describe("provider field presets", () => {
         expect.objectContaining({ key: "notifyUrl", target: "configJson" }),
         expect.objectContaining({
           key: "appPrivateKeyPem",
-          label: "应用私钥 PEM",
+          label: "应用私钥",
           target: "secretJson",
           password: true,
+          helpText:
+            "可直接粘贴支付宝密钥工具生成的密钥内容；支持裸密钥或带 BEGIN/END 的 PEM 格式。",
         }),
         expect.objectContaining({
           key: "alipayPublicKeyPem",
-          label: "支付宝公钥 PEM",
+          label: "支付宝公钥",
           target: "secretJson",
           password: true,
+          helpText:
+            "可直接粘贴支付宝密钥工具生成的密钥内容；支持裸密钥或带 BEGIN/END 的 PEM 格式。",
         }),
         expect.objectContaining({
           key: "gatewayUrl",
@@ -556,5 +560,13 @@ describe("provider field presets", () => {
         }),
       ]),
     );
+    const alipayFields = getProviderFieldPreset("alipay")?.fields ?? [];
+    expect(
+      alipayFields.some(
+        (field) =>
+          (field.key === "appPrivateKeyPem" || field.key === "alipayPublicKeyPem") &&
+          field.label.includes("PEM"),
+      ),
+    ).toBe(false);
   });
 });
