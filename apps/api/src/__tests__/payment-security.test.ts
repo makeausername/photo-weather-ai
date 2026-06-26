@@ -1,6 +1,8 @@
 import { generateKeyPairSync } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  alipayCanonicalString,
+  alipayRequestSignContent,
   assertPrivateKeyPem,
   assertPublicKeyPem,
   normalizePrivateKeyPem,
@@ -30,6 +32,33 @@ function stripPemEnvelope(value: string): string {
 }
 
 describe("payment security key normalization", () => {
+  it("builds Alipay request sign content with sign_type and ASCII ordering", () => {
+    const params = new Map<string, string>([
+      ["b", "2"],
+      ["sign", "already-signed"],
+      ["sign_type", "RSA2"],
+      ["A", "1"],
+      ["_", "underscore"],
+      ["empty", ""],
+    ]);
+
+    expect(alipayRequestSignContent(params)).toBe("A=1&_=underscore&b=2&sign_type=RSA2");
+  });
+
+  it("keeps Alipay callback verify content excluding sign and sign_type", () => {
+    const params = new Map<string, string>([
+      ["trade_status", "TRADE_SUCCESS"],
+      ["sign_type", "RSA2"],
+      ["sign", "callback-signature"],
+      ["app_id", "alipay-app-id"],
+      ["out_trade_no", "order-1"],
+    ]);
+
+    expect(alipayCanonicalString(params)).toBe(
+      "app_id=alipay-app-id&out_trade_no=order-1&trade_status=TRADE_SUCCESS",
+    );
+  });
+
   it("validates bare Base64 Alipay key-tool private and public keys", () => {
     const pair = createPemPair();
     const barePrivateKey = stripPemEnvelope(pair.privateKeyPem);

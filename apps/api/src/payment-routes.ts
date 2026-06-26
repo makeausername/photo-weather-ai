@@ -481,6 +481,14 @@ export function registerPaymentRoutes(app: FastifyInstance, options: PaymentRout
         clientMode: parsedBody.data.clientMode,
         returnUrl,
       });
+      if (
+        parsedBody.data.provider === "alipay" &&
+        payment.providerPayloadJson &&
+        typeof payment.providerPayloadJson === "object" &&
+        !Array.isArray(payment.providerPayloadJson)
+      ) {
+        request.log.info(payment.providerPayloadJson, "Created Alipay checkout request");
+      }
       const updatedOrder = await updatePaymentOrderStatus(
         {
           orderNo: order.orderNo,

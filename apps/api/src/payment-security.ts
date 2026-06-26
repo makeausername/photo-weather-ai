@@ -7,6 +7,7 @@ import {
   createVerify,
   randomBytes,
 } from "node:crypto";
+import iconv from "iconv-lite";
 
 export function sanitizePaymentErrorMessage(error: unknown, fallback: string): string {
   const raw = error instanceof Error ? error.message : typeof error === "string" ? error : fallback;
@@ -100,7 +101,7 @@ export function normalizePemLineBreaks(value: string): string {
     .trim();
 }
 
-function wrapBareBase64Key(value: string, label: "PRIVATE KEY" | "PUBLIC KEY"): string {
+export function ensurePemBlock(value: string, label: "PRIVATE KEY" | "PUBLIC KEY"): string {
   const normalized = normalizePemLineBreaks(value);
   if (!normalized || normalized.includes("-----BEGIN")) {
     return normalized;
@@ -118,16 +119,28 @@ function wrapBareBase64Key(value: string, label: "PRIVATE KEY" | "PUBLIC KEY"): 
 }
 
 export function normalizePrivateKeyPem(value: string): string {
-  return wrapBareBase64Key(value, "PRIVATE KEY");
+  return ensurePemBlock(value, "PRIVATE KEY");
 }
 
 export function normalizePublicKeyPem(value: string): string {
-  return wrapBareBase64Key(value, "PUBLIC KEY");
+  return ensurePemBlock(value, "PUBLIC KEY");
 }
 
-export function rsaSha256Sign(message: string, privateKeyPem: string): string {
+function encodePaymentText(value: string, charset: string): Buffer {
+  const normalizedCharset = charset.trim().toLowerCase().replace("_", "-");
+  if (normalizedCharset === "gbk" || normalizedCharset === "gb2312") {
+    return iconv.encode(value, "gbk");
+  }
+  return Buffer.from(value, "utf8");
+}
+
+export function rsaSha256Sign(
+  message: string,
+  privateKeyPem: string,
+  charset = "utf-8",
+): string {
   const signer = createSign("RSA-SHA256");
-  signer.update(message, "utf8");
+  signer.update(encodePaymentText(message, charset));
   signer.end();
   return signer.sign(createPrivateKey(normalizePrivateKeyPem(privateKeyPem)), "base64");
 }
@@ -136,9 +149,10 @@ export function rsaSha256Verify(
   message: string,
   signatureBase64: string,
   publicKeyPem: string,
+  charset = "utf-8",
 ): boolean {
   const verifier = createVerify("RSA-SHA256");
-  verifier.update(message, "utf8");
+  verifier.update(encodePaymentText(message, charset));
   verifier.end();
   return verifier.verify(
     createPublicKey(normalizePublicKeyPem(publicKeyPem)),
@@ -206,12 +220,32 @@ export function encryptWechatResourceForFixture(input: {
   return Buffer.concat([encrypted, cipher.getAuthTag()]).toString("base64");
 }
 
-export function alipayCanonicalString(params: ReadonlyMap<string, string>): string {
+function compareAsciiKeys([left]: readonly [string, string], [right]: readonly [string, string]) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function alipaySortedContent(
+  params: ReadonlyMap<string, string>,
+  options: { readonly excludeSignType: boolean },
+): string {
   return [...params.entries()]
-    .filter(([key, value]) => key !== "sign" && key !== "sign_type" && value !== "")
-    .sort(([left], [right]) => left.localeCompare(right))
+    .filter(
+      ([key, value]) =>
+        key !== "sign" &&
+        (!options.excludeSignType || key !== "sign_type") &&
+        value.trim() !== "",
+    )
+    .sort(compareAsciiKeys)
     .map(([key, value]) => `${key}=${value}`)
     .join("&");
+}
+
+export function alipayRequestSignContent(params: ReadonlyMap<string, string>): string {
+  return alipaySortedContent(params, { excludeSignType: false });
+}
+
+export function alipayCanonicalString(params: ReadonlyMap<string, string>): string {
+  return alipaySortedContent(params, { excludeSignType: true });
 }
 
 export function parseFormUrlEncodedBody(rawBody: string): Map<string, string> {

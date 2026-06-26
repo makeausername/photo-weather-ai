@@ -29,6 +29,13 @@ function createPemPair(): PemPair {
   };
 }
 
+function stripPemEnvelope(value: string): string {
+  return value
+    .replace(/-----BEGIN [^-]+-----/g, "")
+    .replace(/-----END [^-]+-----/g, "")
+    .replace(/\s+/g, "");
+}
+
 function enableWechatProvider(state: any, pair = createPemPair()) {
   const current = state.providers.get("billing:wechat_pay");
   state.providers.set("billing:wechat_pay", {
@@ -60,22 +67,32 @@ function enableWechatProvider(state: any, pair = createPemPair()) {
   return pair;
 }
 
-function enableAlipayProvider(state: any, pair = createPemPair()) {
+function enableAlipayProvider(
+  state: any,
+  pair = createPemPair(),
+  options: {
+    readonly realCallEnabled?: boolean;
+    readonly mode?: "page" | "wap";
+    readonly appPrivateKeyPem?: string;
+    readonly alipayPublicKeyPem?: string;
+  } = {},
+) {
   const current = state.providers.get("billing:alipay");
   state.providers.set("billing:alipay", {
     ...current,
     enabled: true,
     configJson: {
       ...(current.configJson ?? {}),
-      realCallEnabled: false,
+      realCallEnabled: options.realCallEnabled ?? false,
+      mode: options.mode ?? "page",
       appId: "alipay-app-id",
       notifyUrl: "https://example.com/billing/alipay/notify",
       returnUrl: "https://example.com/billing/alipay/return",
       sellerId: "seller-1000",
     },
     secretJson: {
-      appPrivateKeyPem: pair.privateKeyPem,
-      alipayPublicKeyPem: pair.publicKeyPem,
+      appPrivateKeyPem: options.appPrivateKeyPem ?? pair.privateKeyPem,
+      alipayPublicKeyPem: options.alipayPublicKeyPem ?? pair.publicKeyPem,
     },
     maskedSecretJson: {
       appPrivateKeyPem: "[set]",
@@ -113,6 +130,11 @@ async function createBillingOrder(
     readonly checkout: {
       readonly kind: string;
       readonly message: string;
+      readonly actionUrl?: string;
+      readonly method?: string;
+      readonly charset?: string;
+      readonly fields?: Record<string, string>;
+      readonly redirectUrl?: string;
     };
   };
 }
@@ -487,6 +509,93 @@ describe("payment routes", () => {
         durationDays: 45,
       }),
     });
+  });
+
+  it("creates real Alipay page payments as POST form payloads with bare keys", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const pair = createPemPair();
+    enableAlipayProvider(state, pair, {
+      realCallEnabled: true,
+      mode: "page",
+      appPrivateKeyPem: stripPemEnvelope(pair.privateKeyPem),
+      alipayPublicKeyPem: stripPemEnvelope(pair.publicKeyPem),
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: { ...testEnv, NODE_ENV: "production" },
+      logger: false,
+    });
+
+    const body = await createBillingOrder(app, "alipay", "monthly_full");
+    const checkout = body.checkout;
+    const fields = checkout.fields ?? {};
+    const bizContent = JSON.parse(fields.biz_content ?? "{}") as Record<string, string>;
+    const storedOrder = state.paymentOrders.get(body.order.orderNo);
+
+    expect(checkout).toMatchObject({
+      kind: "form_post",
+      actionUrl: "https://openapi.alipay.com/gateway.do",
+      method: "POST",
+      charset: "utf-8",
+    });
+    expect(checkout.redirectUrl).toBeUndefined();
+    expect(checkout.actionUrl).not.toContain("?");
+    expect(fields).toMatchObject({
+      app_id: "alipay-app-id",
+      method: "alipay.trade.page.pay",
+      sign_type: "RSA2",
+      notify_url: "https://example.com/billing/alipay/notify",
+      return_url: "/pricing",
+    });
+    expect(fields.sign).toEqual(expect.any(String));
+    expect(bizContent).toMatchObject({
+      out_trade_no: body.order.orderNo,
+      total_amount: "19.00",
+      subject: "月卡",
+      product_code: "FAST_INSTANT_TRADE_PAY",
+    });
+    expect(storedOrder?.providerPayloadJson).toMatchObject({
+      provider: "alipay",
+      method: "alipay.trade.page.pay",
+      mode: "page",
+      orderNo: body.order.orderNo,
+      gatewayHost: "openapi.alipay.com",
+      charset: "utf-8",
+      signType: "RSA2",
+      transportMode: "server_post_form",
+    });
+    expect(JSON.stringify(storedOrder?.providerPayloadJson)).not.toContain('"sign":');
+    expect(JSON.stringify(storedOrder?.providerPayloadJson)).not.toContain("biz_content");
+    expect(JSON.stringify(body)).not.toContain(pair.privateKeyPem);
+    expect(JSON.stringify(body)).not.toContain(pair.publicKeyPem);
+    expect(JSON.stringify(body)).not.toContain("redirect_url");
+  });
+
+  it("creates real Alipay wap payments as POST form payloads", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    enableAlipayProvider(state, createPemPair(), {
+      realCallEnabled: true,
+      mode: "wap",
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: { ...testEnv, NODE_ENV: "production" },
+      logger: false,
+    });
+
+    const body = await createBillingOrder(app, "alipay", "quarterly_full");
+    const fields = body.checkout.fields ?? {};
+    const bizContent = JSON.parse(fields.biz_content ?? "{}") as Record<string, string>;
+
+    expect(body.checkout).toMatchObject({
+      kind: "form_post",
+      actionUrl: "https://openapi.alipay.com/gateway.do",
+      method: "POST",
+    });
+    expect(fields.method).toBe("alipay.trade.wap.pay");
+    expect(bizContent.product_code).toBe("QUICK_WAP_WAY");
   });
 
   it("rejects invalid WeChat signatures and processes valid notifications idempotently", async () => {

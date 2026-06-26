@@ -28,6 +28,7 @@
     "ali-oss": "^6.23.0",
     "cos-nodejs-sdk-v5": "^2.15.4",
     "fastify": "4.27.0",
+    "iconv-lite": "0.6.3",
     "nodemailer": "6.9.13",
     "zod": "3.23.8"
   }

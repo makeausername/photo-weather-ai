@@ -43,6 +43,14 @@ export type PublicCheckoutPayload =
       readonly message: string;
     }
   | {
+      readonly kind: "form_post";
+      readonly actionUrl: string;
+      readonly method: "POST";
+      readonly charset: string;
+      readonly fields: Record<string, string>;
+      readonly message: string;
+    }
+  | {
       readonly kind: "form_html";
       readonly formHtml: string;
       readonly message: string;

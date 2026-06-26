@@ -1,6 +1,7 @@
 import type { JsonValue, PaymentProviderCode } from "@photo-weather/db";
 import {
   alipayCanonicalString,
+  alipayRequestSignContent,
   amountCentsToDecimalString,
   decimalAmountToCents,
   parseFormUrlEncodedBody,
@@ -35,24 +36,32 @@ export class AlipayProvider implements PaymentProvider {
     }
 
     const params = this.createRequestParams(input);
-    const canonical = alipayCanonicalString(params);
-    const signature = rsaSha256Sign(canonical, this.config.appPrivateKeyPem);
+    const canonical = alipayRequestSignContent(params);
+    const signature = rsaSha256Sign(canonical, this.config.appPrivateKeyPem, this.config.charset);
     params.set("sign", signature);
-
-    const redirectUrl = `${this.config.gatewayUrl}?${new URLSearchParams(
-      [...params.entries()],
-    ).toString()}`;
+    const method = params.get("method") ?? "";
+    const fields = Object.fromEntries(params.entries());
     return {
       provider: "alipay",
       mode: this.config.mode,
       realCall: true,
       providerPayloadJson: {
-        gatewayUrl: this.config.gatewayUrl,
-        method: params.get("method") ?? "",
+        provider: "alipay",
+        method,
+        mode: this.config.mode,
+        orderNo: input.order.orderNo,
+        gatewayHost: gatewayHostOf(this.config.gatewayUrl),
+        charset: this.config.charset,
+        signType: this.config.signType,
+        transportMode: "server_post_form",
+        subjectLength: input.product.name.length,
       },
       publicPayload: {
-        kind: "redirect_url",
-        redirectUrl,
+        kind: "form_post",
+        actionUrl: this.config.gatewayUrl,
+        method: "POST",
+        charset: this.config.charset,
+        fields,
         message: "请跳转到支付宝完成支付。",
       },
     };
@@ -75,7 +84,14 @@ export class AlipayProvider implements PaymentProvider {
     }
 
     try {
-      if (!rsaSha256Verify(canonical, signature, this.config.alipayPublicKeyPem)) {
+      if (
+        !rsaSha256Verify(
+          canonical,
+          signature,
+          this.config.alipayPublicKeyPem,
+          params.get("charset") ?? this.config.charset,
+        )
+      ) {
         return {
           ok: false,
           error: "invalid_signature",
@@ -174,4 +190,12 @@ function formatAlipayTimestamp(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
     date.getHours(),
   )}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function gatewayHostOf(value: string): string {
+  try {
+    return new URL(value).host;
+  } catch {
+    return "invalid";
+  }
 }

@@ -144,6 +144,14 @@ export type BillingCheckoutPayload =
   | { readonly kind: "mock"; readonly message: string }
   | { readonly kind: "qr_code"; readonly codeUrl: string; readonly message: string }
   | { readonly kind: "redirect_url"; readonly redirectUrl: string; readonly message: string }
+  | {
+      readonly kind: "form_post";
+      readonly actionUrl: string;
+      readonly method: "POST";
+      readonly charset: string;
+      readonly fields: Record<string, string>;
+      readonly message: string;
+    }
   | { readonly kind: "form_html"; readonly formHtml: string; readonly message: string };
 
 export type CreateBillingOrderResponse = {

@@ -650,7 +650,7 @@ function OrderStatusPanel({
   );
 }
 
-function CheckoutPayloadView({ checkout }: { readonly checkout: BillingCheckoutPayload }) {
+export function CheckoutPayloadView({ checkout }: { readonly checkout: BillingCheckoutPayload }) {
   if (checkout.kind === "qr_code") {
     return (
       <div className="rounded-lg border border-border bg-muted/30 p-3">
@@ -671,6 +671,23 @@ function CheckoutPayloadView({ checkout }: { readonly checkout: BillingCheckoutP
       >
         前往支付
       </a>
+    );
+  }
+
+  if (checkout.kind === "form_post") {
+    return (
+      <form
+        action={checkout.actionUrl}
+        method={checkout.method}
+        acceptCharset={checkout.charset}
+        className="grid gap-2"
+      >
+        {Object.entries(checkout.fields).map(([name, value]) => (
+          <input key={name} type="hidden" name={name} value={value} />
+        ))}
+        <Button type="submit">前往支付宝支付</Button>
+        <p className="text-xs leading-5 text-muted-foreground">{checkout.message}</p>
+      </form>
     );
   }
 

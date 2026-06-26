@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
+  CheckoutPayloadView,
   PricingClient,
   pricingCheckoutIntroCopy,
   pricingCheckoutLabels,
@@ -93,6 +94,39 @@ const products: readonly BillingProduct[] = [
 ];
 
 describe("pricing checkout client", () => {
+  it("renders Alipay form_post checkout as a POST form with hidden fields", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CheckoutPayloadView, {
+        checkout: {
+          kind: "form_post",
+          actionUrl: "https://openapi.alipay.com/gateway.do",
+          method: "POST",
+          charset: "utf-8",
+          message: "Continue to Alipay.",
+          fields: {
+            app_id: "alipay-app-id",
+            method: "alipay.trade.page.pay",
+            sign_type: "RSA2",
+            sign: "signed-value",
+            biz_content: "{\"out_trade_no\":\"P1000\"}",
+          },
+        },
+      }),
+    );
+
+    expect(html).toContain('action="https://openapi.alipay.com/gateway.do"');
+    expect(html).toContain('method="POST"');
+    expect(html).toContain('accept-charset="utf-8"');
+    expect(html).toContain('type="hidden"');
+    expect(html).toContain('name="app_id"');
+    expect(html).toContain('value="alipay.trade.page.pay"');
+    expect(html).toContain('name="sign_type"');
+    expect(html).toContain("前往支付宝支付");
+    expect(pricingClientSource).toContain('checkout.kind === "form_post"');
+    expect(pricingClientSource).toContain('type="hidden" name={name} value={value}');
+    expect(pricingClientSource).not.toContain("dangerouslySetInnerHTML");
+  });
+
   it("renders paid plans without default checkout, stale copy, or free purchase cards", () => {
     const html = renderToStaticMarkup(
       React.createElement(PricingClient, { initialProducts: products }),
@@ -209,7 +243,7 @@ describe("pricing checkout client", () => {
     expect(pricingClientSource).toContain(
       'className="w-full" disabled={submitting} onClick={onStartCheckout}',
     );
-    expect(pricingClientSource).toContain("grid grid-rows-[auto_auto_1fr_auto]");
+    expect(pricingClientSource).toContain("grid min-w-0 max-w-full grid-rows-[auto_auto_1fr_auto]");
     expect(pricingClientSource).not.toContain("durationDays:");
     expect(pricingClientSource).not.toContain("grantType:");
     expect(pricingClientSource).not.toContain("hasFullAccess:");
